@@ -1069,6 +1069,10 @@ Flash: the table in [feature-matrix.md](../feature-matrix.md#dm-1701-and-md-380)
 stored uncompressed, need more flash than the default image leaves free. With gzip off the radio serves the plain
 status page.
 
+Satellite tracking defaults off on this radio (`CONFIG_SATELLITE_TLE`): the current amateur image exceeds the 464 KB
+application region by 19,540 B with the feature enabled. Keep it off until the satellite build can fit without reaching
+the codec sectors.
+
 
 ## 20. Facts moved from the shared specs
 

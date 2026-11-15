@@ -71,6 +71,7 @@ is `tools/bringup.py list --radio <id>`.
 | `beep` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial, needs re-run |
 | `vibrate` | off | ✕ | not recorded | ✕ | ✕ | ✕ | ✕ |
 | `gps` | pass (seed) | not recorded | ✕ | not recorded | not recorded | not recorded | not recorded |
+| `satellite_tle` | not recorded | not recorded | not recorded | not recorded | off | not recorded | not recorded |
 | `position` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_data_rx` | not recorded | pass (seed) | pass (seed) | not recorded | not recorded | not recorded | pass, needs re-run |
 | `dmr_sms` | not recorded | pass (seed) | pass (seed) | not recorded | pass (seed) | not recorded | pass, needs re-run |
@@ -259,7 +260,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `APRS_RX` | ● | ● | ● | … | … | ● | ● |
 | `APRS_IGATE` | ● | ○ | ● | … | … | ○ | ● |
 | `GPS_SKY` | ● | ● | ✕ | ● | ● | ● | ● |
-| `SATELLITE_TLE` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
+| `SATELLITE_TLE` | ● | ● | ● | ● | ○ | ● | ● |
 | `KEY_ASSIGN` | ● | ● | ● | ● | ● | ● | ● |
 | `CHANNEL_LIST` | ● | ● | ● | ● | ● | ● | ● |
 | `CHANNEL_EDIT` | ● | ● | ● | ● | ● | ● | ● |
@@ -390,7 +391,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 
 | Feature | Switch | Bytes DM-1701 | Bytes MD-380 | Notes |
 |---|---|---:|---:|---|
-| Satellite TLE inventory transfer and tracking | `SATELLITE_TLE` | — | — | Not measured; default off. Uses 12 KB of update staging when enabled on a radio with a dedicated satellite flash range |
+| Satellite TLE inventory transfer and tracking | `SATELLITE_TLE` | — | — | Not measured. Enabled by default for full and amateur builds with enough program flash; disabled in commercial builds and by default on MD-380, where the amateur image currently exceeds its application region by 19,540 B. Uses 12 KB of update staging when enabled on a radio with a dedicated satellite flash range |
 | Settings and codeplug storage on SPI NAND | `NAND_STORAGE` | — | — | For radios whose data flash is SPI NAND: on for the DB25-D (about 6.6 KB flash, 1.5 KB RAM), not in these columns. These radios have SPI NOR and don't use it ([nand-sectors](spec/nand-sectors.md)) |
 
 ## Bench

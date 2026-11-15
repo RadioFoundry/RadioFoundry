@@ -260,10 +260,12 @@ capability as unavailable, and the PC tool must not attempt a raw flash fallback
 
 ## 7. Configuration and feature switch
 
-Satellite support is behind `CONFIG_SATELLITE_TLE` in `config/features.mk` and `core/config.h`. It is enabled only
-where the build has debug-link support and enough flash. With the switch off, no satellite parser, propagator, pass
-service or tracking UI is included, and the normal build remains clean. The append-only settings record retains a
-single unused selection byte so its layout stays consistent across feature configurations.
+Satellite support is behind `CONFIG_SATELLITE_TLE` in `config/features.mk` and `core/config.h`. It is enabled by default
+in full and amateur builds on boards with enough program flash and disabled in commercial builds. A board may default
+it off when the feature does not fit. Persistent inventory transfer also needs a dedicated satellite-data flash range
+in the board map. With the switch off, no satellite parser, propagator, pass service or tracking UI is included, and
+the normal build remains clean. The append-only settings record retains a single unused selection byte so its layout
+stays consistent across feature configurations.
 
 Persist the user's selected TLE index using RadioFoundry's settings interface. The nominal frequency pair is the
 current channel or VFO configuration and is not copied into satellite settings. Treat TLE data as replaceable orbital

@@ -226,9 +226,10 @@ BOARD_SCHEMA = {
         "stub": _opt({"id": _req(int), "tested": _req(bool),
                       "hold_power": _opt(bool), "progmem": _opt(int),	# the HR_C7000 universal stub
                       "stock_console": _opt(STOCK_CONSOLES), "read_rate": _opt(int),
-                      # the data flash offset of STUB_WRITE_TEST bytes no area of the flash map, no protected region
-                      # and no other firmware's known data uses: stubtool --write-test erases and programs only there
+                      # data flash offset and optional length (defaults to STUB_WRITE_TEST) of the blank area
+                      # stubtool --write-test erases and programs; it must not overlap stored or protected data
                       "write_test": _opt(int),
+                      "write_test_size": _opt(int),
                       # where the factory calibration is, for a backup: in a data flash, the 4 KB page of the stock
                       # codeplug area [0, area) whose last byte is page_id; on a radio whose data memory is a NAND,
                       # the 4 KB sectors of the program flash (progmem) and the NAND (nand) that each hold a copy
@@ -716,8 +717,8 @@ class Board:
                        progmem=s["progmem"], stock_console=s.get("stock_console"))
             if "calibration" in s:
                 out["calibration"] = s["calibration"]
-            if "write_test" in s:		# start and end: the length is the registry's alone
-                out["write_test"] = [s["write_test"], s["write_test"] + STUB_WRITE_TEST]
+            if "write_test" in s:		# start and end: the length defaults to 16 KB
+                out["write_test"] = [s["write_test"], s["write_test"] + s.get("write_test_size", STUB_WRITE_TEST)]
         return out
 
     def map_areas(self):
@@ -999,12 +1000,14 @@ def hardware_problems(bid, unsupported, unconfirmed, built, hw):
     return out
 
 
-def write_test_problems(start, nand, spi_size, areas, protect, floor=0):
-    """Why [flash.stub] write_test can't be the stub's data flash test region [start, start + STUB_WRITE_TEST): a NAND
+def write_test_problems(start, nand, spi_size, areas, protect, floor=0, size=STUB_WRITE_TEST):
+    """Why [flash.stub] write_test can't be the stub's data flash test region [start, start + size): a NAND
     (never written by the stub tool), a negative offset, below the board's write floor (the radio's own data), off the
     sector boundaries, past the chip (an address past it wraps to a low one), or over an area of the flash map or a
     protected region. areas: Board.map_areas(); protect: the data entries; floor: write_floor()."""
-    end = start + STUB_WRITE_TEST
+    if size <= 0 or size % DATA_SECTOR:
+        return ["size is not a positive multiple of 0x%X" % DATA_SECTOR]
+    end = start + size
     if nand:
         return ["the data memory is a NAND, which the stub tool never writes"]
     out = []
@@ -1275,9 +1278,12 @@ def check(root=ROOT):
                 for k in set(stub) - {"id", "tested"} - set(bs["keys"]) - set(bs["optional"]):
                     bad("flash.stub %s is not a key of the %s stub (platform.toml board_stub)" % (k, bs["tool"]))
                 wt = stub.get("write_test")
+                if "write_test_size" in stub and wt is None:
+                    bad("flash.stub write_test_size needs write_test")
                 if wt is not None:
                     for why in write_test_problems(wt, b.nand, b.data["flash"]["backup"]["spi_size"], b.map_areas(),
-                                                   [p for p in b.protect if p["mem"] == "data"], b.write_floor):
+                                                   [p for p in b.protect if p["mem"] == "data"], b.write_floor,
+                                                   stub.get("write_test_size", STUB_WRITE_TEST)):
                         bad("flash.stub write_test 0x%X: %s" % (wt, why))
                 cal = stub.get("calibration")
                 if cal is not None and set(cal) not in ({"area", "page_id"}, {"progmem", "nand", "magic"}):
@@ -1719,20 +1725,28 @@ def self_test():
                                                                fixture_board.map_areas(), [])),
        "map_areas: the satellite sectors are protected from stub writes")
     areas = [(0x700000, 0x710000, "EEPROM"), (0x711000, 0x719000, "settings"), (0x719000, 0x71B000, "journal"),
-             (0x720000, 0xF00000, "flash image")]
+             (0x71B000, 0x71E000, "satellite data"), (0x720000, 0xF00000, "flash image")]
     prot = [{"start": 0x1000, "end": 0xC9000, "what": "cal"}]
-    ok(write_test_problems(0x71C000, False, 0x1000000, areas, prot) == [], "write_test: a free gap of the map")
+    ok(write_test_problems(0x71C000, False, 0x1000000, areas, prot) == ["overlaps satellite data (0x71B000-0x71E000)"],
+       "write_test: refuses satellite data")
+    ok(write_test_problems(0x71E000, False, 0x1000000, areas, prot, size=0x2000) == [],
+       "write_test: accepts the remaining two sectors")
+    ok(write_test_problems(0x71E000, False, 0x1000000, areas, prot, size=0x1800) ==
+       ["size is not a positive multiple of 0x1000"], "write_test: requires whole sectors")
     ok(len(write_test_problems(0xC00000, False, 0x1000000, areas, prot)) == 1, "write_test: inside the flash image")
-    ok(len(write_test_problems(0x71A000, False, 0x1000000, areas, prot)) == 1, "write_test: over the journal's end")
+    ok(any("journal" in p for p in write_test_problems(0x71A000, False, 0x1000000, areas, prot)),
+       "write_test: over the journal's end")
     ok(len(write_test_problems(0x2000, False, 0x1000000, areas, prot)) == 1, "write_test: over a protected region")
     ok(any("past the data flash" in w for w in write_test_problems(0x71C000, False, 0x200000, areas, prot)),
        "write_test: past a smaller chip")
-    ok(write_test_problems(0x71B800, False, 0x1000000, areas, prot) == ["not on a 0x1000 sector boundary"],
+    ok(any("not on a 0x1000 sector boundary" in p for p in
+           write_test_problems(0x71B800, False, 0x1000000, areas, prot)),
        "write_test: off a sector boundary")
     ok(write_test_problems(0x71C000, True, 0x1000000, [], []) != [], "write_test: never on a NAND")
     ok(write_test_problems(-0x4000, False, 0x1000000, areas, []) == ["a negative offset"], "write_test: not below 0")
     ok(write_test_problems(0x500000, False, 0x1000000, areas, prot, 0x700000) == ["below the write floor 0x700000 (the "
-       "radio's own data)"] and write_test_problems(0x71C000, False, 0x1000000, areas, prot, 0x700000) == [],
+       "radio's own data)"] and write_test_problems(0x71E000, False, 0x1000000, areas, prot, 0x700000,
+                                                      size=0x2000) == [],
        "write_test: not below the board's write floor")
     ok(openfw_bases("-DX=1 -DCODEPLUG_OPENFW_EEPROM_BASE=0x700000u -DCODEPLUG_OPENFW_FLASH_BASE=0x720000u") ==
        (0x700000, 0x720000) and openfw_bases("-DX=1") == (0, 0x20000) and openfw_bases(None) == (0, 0x20000),

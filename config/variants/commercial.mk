@@ -10,3 +10,5 @@
 CONFIG_HOTSPOT ?= n
 # APRS is an amateur radio service; KISS over TCP and the APRS-IS client go with it
 CONFIG_APRS ?= n
+# Satellite tracking is an amateur-radio feature
+CONFIG_SATELLITE_TLE ?= n
