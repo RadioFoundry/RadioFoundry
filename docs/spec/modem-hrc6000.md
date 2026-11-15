@@ -237,6 +237,12 @@ Whether bit 7 raises the line by itself is unverified.
 one for the burst. A voice handler takes a burst number 1..6 at most once per 45 ms. It drops a second report that
 comes within 45 ms of the last voice burst taken.
 
+**The same status reported again one slot later.** In direct mode the chip can report a burst a second time at the
+next timeslot interrupt, with the same status and payload. The driver drops a report of the same kind (and, for data,
+the same payload) within 45 ms as a repeat. Idle bursts with BS sync are exempt: a base station sends a burst in every
+slot, and every idle burst has the same bits, so on a carrier idle on both slots each slot's idle looks like a repeat
+of the one before. Dropped, the carrier looked silent: a repeater's hang time looked like no signal.
+
 **Timing of a burst report.** For a burst received in step with the chip's slot timing, the received-data interrupt
 comes 3-5 ms after the timeslot interrupt (2-10 ms observed). A delay of 25-30 ms means the chip's timing is out of
 step with the sender, because it locked to noise or to another station. The receiver should then be resynchronized.
