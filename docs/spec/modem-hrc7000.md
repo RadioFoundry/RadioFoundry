@@ -685,7 +685,7 @@ On the SDR bench (an MS simulator answering a confirmed packet with MS sync, 4-6
 | RadioFoundry: each RX timeslot interrupt | TXRX = 0x8040 for the coming chip slot when a voice header or voice burst came on it in the last 390 ms (no terminator since), else 0x40. Both slots can have it: an SFR user hears the talker and the repeat. Without the flag the chip leaves the voice RAM as it was, and the burst reads the last one decoded (gotchas 14.15) |
 | Voice deframe | read RX_TYPE_INFO, 27 bytes from the voice RAM; burst number from bits 14:12; LC header / terminator / CSBK / data from the RX RAM |
 | BS sync received (recv_sync_type 1) | the other side is a repeater: track the TC bit (RX_TYPE_INFO b22) to find which slot is ours. Locked after 4 bursts in a row, one per slot, with TC alternating; held while a burst came in the last 390 ms. RX_TYPE_INFO b19 and LAYER2_STATUS b30/b31 are not usable for this |
-| Color-code scan | while idle with no CC filter, step LOCAL_CC through the codes; hold while receiving. No scan during TX or its slot-lock wait; reconfiguration keeps any-CC listening |
+| Color-code scan | while idle with no CC filter, step LOCAL_CC through the codes; hold while receiving. No scan during TX or its slot-lock wait; reconfiguration keeps any-CC listening; a receiver restart doesn't reset the step timer, so retunes faster than a step don't hold the scan |
 | Late entry (bit 2) | embedded LC is in the RX RAM; voice reception should start at the next burst A |
 | End | terminator (data type 2) or loss of bursts; TXRX_CTRL = 0 |
 | Reception over (nothing taken for 390 ms) | the 5.2 restart: the chip drops the sender's slot timing and its timeslot interrupts stop |

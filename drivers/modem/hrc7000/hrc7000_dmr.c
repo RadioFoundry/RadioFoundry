@@ -235,9 +235,9 @@ static void chip_rx_restart(hrc7000_dmr_t *e)
 {
 	clear_requests(e);	// the restart discards what they would report; a stale one would keep its source dead
 	if (e->tx_state == TXS_IDLE) {
+		// Not the scan's timer: a restart at every frequency step (a channel scan) would keep the scan from stepping
 		e->cc_cur = e->cc_filter >= 0 ? (uint8_t)e->cc_filter : e->cc_cur;
 		set_cc(e, e->cc_cur);
-		e->cc_tick = e->tick;
 	}
 	w(e, C7_WORK_MODE, C7_WORK_MODE_FM);
 	w(e, C7_WORK_MODE, C7_WORK_MODE_DMR);
@@ -329,12 +329,12 @@ static void tx_finish(hrc7000_dmr_t *e, bool restart)
 	e->st.tx_done++;
 	// Through a repeater the restart at once, as the original firmware does: both slot syncs released and a new TC
 	// lock, so the next transmission's slots come from the repeater's timing, not ours (issue 72). Direct: the hold
+	e->cc_tick = e->tick;	// the scan stays on the code it was on for a while after our transmission
 	if (restart || e->cfg.repeater || BS_ACTIVE(e)) {
 		chip_rx_restart(e);
 	} else {
 		e->cc_cur = e->cc_filter >= 0 ? (uint8_t)e->cc_filter : e->cc_cur;
 		set_cc(e, e->cc_cur);
-		e->cc_tick = e->tick;
 		rx_hold(e);
 	}
 	ev_simple(e, DMR_EV_TX_DONE, e->tx_ts, tick_arg(e));

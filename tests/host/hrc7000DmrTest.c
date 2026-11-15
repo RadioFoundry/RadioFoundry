@@ -453,6 +453,14 @@ static void test_tx_color_code(void)
 		tick(false);
 	}
 	CHECK(REG(C7_LOCAL_CC) == 6 && eng.st.cc_scan_steps == steps + 1);
+	// Receiver restarts faster than the scan's step (a channel scan retunes each frequency) don't hold the scan back
+	for (int i = 0; i < 12; i++) {
+		if (i % 3 == 0) {
+			hrc7000_dmr_rx_restart(&eng);
+		}
+		tick(false);
+	}
+	CHECK(eng.st.cc_scan_steps >= steps + 3);
 }
 
 static void test_cc_restore(void)

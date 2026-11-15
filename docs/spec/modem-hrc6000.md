@@ -393,7 +393,8 @@ slot in two from then on.
 
 Reconfiguration keeps any-CC listening. The receive code stays in 0x1F while an aligned start waits for its slot.
 Before the first TX slot, the driver writes the channel's transmit code; after TX it restores the receive code.
-A receive filter changed during TX takes effect when TX finishes.
+A receive filter or reconfiguration during TX takes effect when TX finishes: the receiver restarts then (5.1),
+in place of a direct transmission's end hold.
 
 The chip only deframes bursts whose CC matches 0x1F unless 0x41 bit 3 is set. To follow an unknown CC: at each system
 interrupt with an SNR margin of at least 5 dB, compare 0x52's CC with the last one seen (within 200 ms). On every
