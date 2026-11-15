@@ -339,7 +339,7 @@ typedef struct {
 	uint32_t roger_ms;		// start of the roger beep's current step (the end tone's, sigtone.h), 0 = none
 	uint8_t roger_n, roger_i;	// its steps and the one sounding
 	bool roger_lead;		// the tone running is the start tone on air (PTT is down): it ends with the microphone live
-	beep_seg_t roger_seg[SIG_STEPS];
+	beep_seg_t roger_seg[SIG_STEPS + 1];	// + the start tone's guard
 #endif
 #if CONFIG_DTMF
 	bool dtmf_held;			// the key of the digit sounding (view.dtmf) is still down

@@ -4213,10 +4213,10 @@ static void fm_lead_start(radio_sm_t *sm, uint32_t now_ms)
 		return;
 	}
 	beep_seg_t *g = sm->roger_seg;
-	uint8_t n = sig_chain(sm->set.sig_hz[SIG_EV_BEGIN], sm->set.sig_ms[SIG_EV_BEGIN], SIG_EV_BEGIN, g);
-	if (g[0].hz != 0 && !board.radio->tx_tone(g[0].hz)) {
-		return;
-	}
+	// The carrier alone first (SIG_FM_GUARD_MS): a receiver's squelch opens after the transmitter has settled, and the
+	// first steps of the tone are gone by then
+	g[0] = (beep_seg_t){ 0, SIG_FM_GUARD_MS };
+	uint8_t n = (uint8_t)(sig_chain(sm->set.sig_hz[SIG_EV_BEGIN], sm->set.sig_ms[SIG_EV_BEGIN], SIG_EV_BEGIN, g + 1) + 1u);
 	sm->roger_n = n;
 	sm->roger_i = 0;
 	sm->roger_ms = now_ms != 0 ? now_ms : 1;

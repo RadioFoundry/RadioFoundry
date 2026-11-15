@@ -15,6 +15,8 @@
 
 #define SIG_STEPS	10u	// ten: an eight tone ZVEI or a CPS call tone's five and some to spare
 #define SIG_AIR_GUARD_MS 60u	// silence the DMR on air copy carries before a start tone and after an end tone: a link that
+#define SIG_FM_GUARD_MS 150u	// the carrier without a tone before an FM start tone on air: the transmitter settles and a
+			// receiver's squelch opens, so the first steps are not lost
 				// drops the first or last frames of a transmission (a hotspot) loses this instead of the tone
 #define SIG_AIR_STEPS	(SIG_STEPS + 1u)	// a chain and its guard
 #define SIG_MAX_MS	900u	// a sequence's total length is cut to this: it holds the transmission or the speaker (on air

@@ -3658,14 +3658,17 @@ static void test_sig_fm(void)
 	run(300);
 	CHECK(sm.view.state == RS_IDLE && !sm.view.roger);
 
-	// The start tone on air: right after keying the three steps go out as tone, then the microphone is live (tone 0) and the
-	// transmission goes on; a release during it ends the transmission as usual
+	// The start tone on air: after keying the carrier goes alone for SIG_FM_GUARD_MS (the transmitter settles, a receiver's
+	// squelch opens), then the three steps go out as tone and the microphone is live (tone 0) and the transmission goes
+	// on; a release during it ends the transmission as usual
 	start();
 	settings(set_sig_begin_air);
 	hw.tone_calls = 0;
 	req(RREQ_PTT, 1);
 	run(5);
-	CHECK(sm.view.state == RS_TX && hw.tone_hz == 1000 && !sm.view.roger && sm.roger_lead);
+	CHECK(sm.view.state == RS_TX && hw.tone_hz == 0 && !sm.view.roger && sm.roger_lead);
+	run(SIG_FM_GUARD_MS);
+	CHECK(hw.tone_hz == 1000);
 	run(50);
 	CHECK(hw.tone_hz == 1400);
 	run(50);
@@ -3680,7 +3683,7 @@ static void test_sig_fm(void)
 	start();
 	settings(set_sig_begin_air);
 	req(RREQ_PTT, 1);
-	run(30);
+	run(SIG_FM_GUARD_MS + 30);
 	CHECK(hw.tone_hz != 0 && sm.roger_lead);
 	req(RREQ_PTT, 0);
 	CHECK(sm.view.state == RS_IDLE && hw.tone_hz == 0 && !sm.roger_lead && hw.tx_off_calls == 1);
@@ -3699,7 +3702,7 @@ static void test_sig_fm(void)
 	settings(set_sig_begin_both);
 	beep_get_stats(&b0);
 	req(RREQ_PTT, 1);
-	run(100);
+	run(SIG_FM_GUARD_MS + 100);
 	beep_get_stats(&b1);
 	CHECK(sm.view.state == RS_TX && b1.played == b0.played + 1 && hw.tone_calls > 0);
 	req(RREQ_PTT, 0);
@@ -3707,7 +3710,7 @@ static void test_sig_fm(void)
 	settings(set_sig_begin_air);
 	hw.has_tx_tone = false;
 	req(RREQ_PTT, 1);
-	run(200);
+	run(SIG_FM_GUARD_MS + 200);
 	CHECK(sm.view.state == RS_TX && !sm.roger_lead);
 	req(RREQ_PTT, 0);
 
