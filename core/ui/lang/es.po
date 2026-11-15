@@ -2373,12 +2373,16 @@ msgid "License: "
 msgstr "Licencia: "
 
 #: core/ui/ui_menus.c
-msgid "Authors:"
-msgstr "Autores:"
+msgid "Maintainers:"
+msgstr "Mantenedores:"
 
 #: core/ui/ui_menus.c
-msgid "Author:"
-msgstr "Autor:"
+msgid "Maintainer:"
+msgstr "Mantenedor:"
+
+#: core/ui/ui_menus.c
+msgid "Contributors:"
+msgstr "Colaboradores:"
 
 #: core/ui/ui_menus.c
 msgid "Spleen font: BSD-2-Clause"
