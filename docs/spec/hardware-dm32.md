@@ -1010,14 +1010,15 @@ From the radio's firmware (code read, not measured):
 
 | Item | Value |
 |---|---|
-| When | the RX frequency is in 108.000 to 136.000 MHz (exclusive). AM is chosen by the frequency alone; no channel field |
+| When | the RX frequency is in 108.000 MHz (inclusive) to 136.000 MHz (exclusive). AM is chosen by the frequency alone; no channel field |
 | 0x43 | 0x0048: receive filter 14:12 = 0 (about 1.7 kHz), weak-signal bandwidth 0, narrow |
 | 0x47 | 0x6740 (AF type 7), written at the set-up and again when the audio is unmuted |
 | 0x13 | 0x03FF, then a gain loop rewrites it (below) |
 | 0x4A | 0x5450, written only here and never restored |
-| Not written | 0x04 (the AM demodulator enable bit: AM is 0x47 type 7 alone), 0x7E, 0x2B, 0x48, sub-audio |
+| 0x48 | 0x31E0 with a stored setting s (1-15) ORed into bits 3:0, at each air band tune (s = 13, 0x31ED, when out of range). The FM and DMR set-ups leave 0xBBBF |
+| Not written | 0x04 (the AM demodulator enable bit: AM is 0x47 type 7 alone), 0x7E, 0x2B, 0x49, 0x10-0x12, 0x14, sub-audio |
 | Leaving AM | 0x13 = 0x037E, then the FM or DMR set-up |
-| Gain loop | each tick: the 0x67 reading (bits 8:0) averaged with the one before; dB = (average - 142) / 2. 10 dB or more: down at once to the table entry about (dB - 8) below the current one. Under -6 dB and 30 ticks since the last change: up one entry. Any change, or -6 dB and over, starts the 30 ticks again. The table holds 42 0x13 words from 0x000 (-93 dB) to 0x03FF (0 dB). The RSSI isn't corrected for the gain |
+| Gain loop | a tick every 10 ms in AM (empty channel included) and one at the end of each tune: the 0x67 reading (bits 8:0) averaged with the raw reading before (0 after a tune); dB = (average - 142) / 2, truncated toward 0. 1 to 9 dB over (average 144-161): down one entry every tick. 10 dB or more: down at once to the entry at or under (current dB - (dB - 8)). Any cut, and any tick at -6 dB and over, sets a 30-tick hold; under -6 dB with the hold at 0: up one entry each tick (a raise doesn't restart the hold). So it holds the average at 129-143. 0x13 is written every tick. The index is kept across tunes (0x13 = 0x03FF at the set-up lasts only until the tune's tick). The table holds 42 0x13 words from 0x000 (-93 dB) to 0x03FF (0 dB), plus a power-on start entry 0x03BE (-7 dB). The RSSI isn't corrected for the gain |
 | Squelch | 0x78 = n << 8 \| (n - 1) on the raw 0x67 scale, n from the factory page's air band rows (11.2: 0x80 level 9, 0x85 level 1, at five points over 108-136 MHz), interpolated by level and frequency. One radio's rows: 61 (level 9) and 71 (level 1), about 30-40 below its FM rows |
 
 On the bench (radio on a dummy load, an AM carrier from the SDR bench, a desk with a raised noise floor):
@@ -1034,11 +1035,26 @@ decides; the factory rows can't be compared with 0x67 as it reads here.
 What RadioFoundry does: `rx_am` in `boards/dm32/radio_dm32.c` is the FM receive path (VHF LNA, speaker source to the
 FD6818, A2) with that set-up: 0x43 = 0x0048, 0x47 = 0x6740, 0x13 = 0x03FF and its gain loop at every status poll, 0x4A
 = 0x5450, each AM tune (`fd6818_set_am`, `fd6818_am_status`). Leaving AM writes 0x13 = 0x037E, 0x47 = 0x0140 and 0x4A as
-it read before. The squelch works on noise_sq plus 17 (`fd6818_am_noise`): level 1 opens under 47, as the chip's own
+it read before. The gain loop (`fd6818_agc_step`) runs at each status poll, so its hold counts polls; it starts from
+full gain at each AM tune and writes 0x13 only when the gain changes. The squelch works on noise_sq plus 17 (`fd6818_am_noise`): level 1 opens under 47, as the chip's own
 squelch does, and each level is 3 dB tighter; the factory rows are not read. The RSSI shown adds the gain the loop took
 off back. The RDA5807M runs through the shared HR_C7000 glue (`platform/hrc7000/bcast_hrc.c`)
 on PTA25 / PTA26 with no enable pin; its audio path turns the amplifier on and leaves the speaker source alone (B4).
 The air band is an RX-only band of 108-136 MHz and the broadcast range 65-108 MHz in `boards/dm32/board.c`.
+
+**Where the gain loop settles.** Measured on a DM-32UV (rf A): a steady AM carrier from the SDR bench at four levels
+10 dB apart (30 dB in all) (on a 2 m frequency, which a bench build received as AM: same set-up and VHF path), 0x67 read over the
+debug link once the loop had settled:
+
+| Signal | 0x67 median (10-90 %) | 0x13 |
+|---|---|---|
+| weakest | 137 (135-139) | 0x05E |
+| +10 dB | 142 (140-143) | 0x01F |
+| +20 dB | 140 (140-141) | 0x00D |
+| +30 dB | 142 (141-142) | 0x003 |
+
+Without the one-entry cuts at 1-9 dB over, the loop settled the same carriers at 148-158 (3-8 dB over the target),
+where #545 reports AM audio distorted.
 
 ---
 
