@@ -155,8 +155,9 @@ export function putName(b, off, len, text) {
 			bytes = [TEXT_TO_BYTE[ch]];
 		} else {
 			const cp = ch.codePointAt(0);
-			if (cp >= 0x20 && cp < 0x7F) bytes = [cp];
-			else if (cp >= 0xA0 && cp <= 0xFF) bytes = [cp];
+			if (cp === 0x81 || cp === 0x83) bytes = [cp];	// font glyph bytes (middle dot, degree): keep as-is
+			else if (cp >= 0x20 && cp < 0x7F) bytes = [cp];
+			else if (cp >= 0xA0 && cp < 0xFF) bytes = [cp];
 			else if (cp >= 0x800 && cp <= 0xFFFF) bytes = [0xE0 | (cp >> 12), 0x80 | ((cp >> 6) & 0x3F), 0x80 | (cp & 0x3F)];
 			else bytes = [0x3F];
 		}

@@ -283,10 +283,10 @@ test("a name keeps Latin-1 middot and degree bytes, not the font glyph bytes", (
 	// "·" (U+00B7) and "°" (U+00B0) are Latin-1 bytes B7 and B0; putName must keep them as such (TEXT_TO_BYTE no longer
 	// maps them), and getName must read them back as the characters
 	const n = new Uint8Array(16).fill(0xFF);
-	putName(n, "A·B°C");
+	putName(n, 0, n.length, "A·B°C");
 	assert.equal(n[1], 0xB7);
 	assert.equal(n[3], 0xB0);
-	assert.equal(getName(n), "A·B°C");
+	assert.equal(getName(n, 0, n.length), "A·B°C");
 });
 
 test("a Chinese name round-trips as UTF-8 and nameBytes counts it in bytes", () => {
@@ -294,14 +294,14 @@ test("a Chinese name round-trips as UTF-8 and nameBytes counts it in bytes", () 
 	assert.equal(nameBytes("中道"), 6);
 	assert.equal(nameBytes("A·B"), 3);	// the middot kept as one Latin-1 byte
 	const n = new Uint8Array(16).fill(0xFF);
-	putName(n, "中道");
+	putName(n, 0, n.length, "中道");
 	assert.deepEqual([...n.slice(0, 6)], [0xE4, 0xB8, 0xAD, 0xE9, 0x81, 0x93]);
-	assert.equal(getName(n), "中道");
+	assert.equal(getName(n, 0, n.length), "中道");
 	// a mixed Latin-1 and UTF-8 name round-trips too
 	const m = new Uint8Array(16).fill(0xFF);
-	putName(m, "A中");
+	putName(m, 0, m.length, "A中");
 	assert.deepEqual([...m.slice(0, 4)], [0x41, 0xE4, 0xB8, 0xAD]);
-	assert.equal(getName(m), "A中");
+	assert.equal(getName(m, 0, m.length), "A中");
 });
 
 // --- Reaching the radio (transport.js) against a simulated radio ---

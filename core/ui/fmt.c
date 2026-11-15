@@ -4,6 +4,7 @@
 #include "fmt.h"
 #include "font.h"
 #include "i18n.h"
+#include "gfx.h"
 
 void sb_init(sbuf_t *b, char *buf, size_t len)
 {
@@ -232,14 +233,15 @@ size_t ui_text_cells(const char *s)
 {
 	size_t cells = 0;
 	for (const char *p = s; *p; ) {
-		uint8_t c = (uint8_t)*p;
-		if ((c & 0xF0) == 0xE0 && ((uint8_t)p[1] & 0xC0) == 0x80 && ((uint8_t)p[2] & 0xC0) == 0x80) {
-			cells += 2;
-			p += 3;
-		} else {
-			cells += 1;
-			p += 1;
-		}
+		int seq;
+#if CONFIG_LANG_ZH
+		uint32_t cp = gfx_utf8_next(p, &seq);
+		cells += (cp > 0xFF) ? 2 : seq;
+#else
+		seq = 1;
+		cells += 1;
+#endif
+		p += seq;
 	}
 	return cells;
 }
@@ -250,18 +252,20 @@ void sb_cut_text(sbuf_t *b, const char *s, size_t max_cells)
 {
 	size_t cells = 0;
 	for (const char *p = s; *p; ) {
-		uint8_t c = (uint8_t)*p;
-		size_t step, cw;
-		if ((c & 0xF0) == 0xE0 && ((uint8_t)p[1] & 0xC0) == 0x80 && ((uint8_t)p[2] & 0xC0) == 0x80) {
-			step = 3; cw = 2;
-		} else {
-			step = 1; cw = 1;
-		}
+		int seq;
+		size_t cw;
+#if CONFIG_LANG_ZH
+		uint32_t cp = gfx_utf8_next(p, &seq);
+		cw = (cp > 0xFF) ? 2 : seq;
+#else
+		seq = 1;
+		cw = 1;
+#endif
 		if (cells + cw > max_cells)
 			break;
 		cells += cw;
-		for (size_t k = 0; k < step; k++)
+		for (size_t k = 0; k < (size_t)seq; k++)
 			sb_chr(b, p[k]);
-		p += step;
+		p += seq;
 	}
 }
