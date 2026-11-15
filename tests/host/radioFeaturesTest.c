@@ -3581,6 +3581,11 @@ static void set_sig_begin_both(radio_settings_t *s)
 	s->sig_fm[SIG_EV_BEGIN] = SIG_OUT_BOTH;
 	sig_chain_put(s, SIG_EV_BEGIN, blip_hz, blip_ms, 1);
 }
+static void set_sig_begin_both_chirp(radio_settings_t *s)
+{
+	s->sig_fm[SIG_EV_BEGIN] = SIG_OUT_BOTH;
+	sig_chain_put(s, SIG_EV_BEGIN, chirp_hz, chirp_ms, 3);
+}
 static void set_sig_idle_local(radio_settings_t *s)
 {
 	s->sig_fm[SIG_EV_IDLE] = SIG_OUT_LOCAL;
@@ -3730,7 +3735,7 @@ static void test_sig_fm(void)
 	radio_side.tx_tone_side = r_tx_tone_side;
 	board.radio = &radio_side;
 	start();
-	settings(set_sig_begin_both);
+	settings(set_sig_begin_both_chirp);
 	hw.side = false;
 	hw.side_calls = 0;
 	beep_get_stats(&b0);
@@ -3738,7 +3743,9 @@ static void test_sig_fm(void)
 	run(50);
 	beep_get_stats(&b1);
 	CHECK(sm.view.state == RS_TX && b1.played == b0.played && hw.side && hw.tone_calls > 0);
-	run(500);
+	run(30);
+	CHECK(hw.side && hw.tone_calls >= 2);		// still on through the steps
+	run(600);
 	CHECK(!hw.side && sm.view.state == RS_TX && !sm.roger_lead);
 	req(RREQ_PTT, 0);
 	run(300);

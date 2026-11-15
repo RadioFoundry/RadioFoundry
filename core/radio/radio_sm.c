@@ -4129,11 +4129,16 @@ static void fm_unkey(radio_sm_t *sm, bool keyed, uint32_t now_ms)
 }
 
 #if CONFIG_FM_TX_TONES
+// The start tone's sidetone stays on through the silent steps of the chain; it ends with the chain
+static void tone_side_off(void)
+{
+	if (board.radio->tx_tone_side != NULL) {
+		board.radio->tx_tone_side(false);
+	}
+}
+
 static bool tx_tone(uint16_t hz)
 {
-	if (hz == 0 && board.radio->tx_tone_side != NULL) {
-		board.radio->tx_tone_side(false);	// the start tone's sidetone ends with the tone
-	}
 	return board.radio->tx_tone != NULL && board.radio->tx_tone(hz);
 }
 
@@ -4176,6 +4181,7 @@ static void roger_poll(radio_sm_t *sm, uint32_t now_ms)
 		sm->roger_ms += sm->roger_seg[sm->roger_i].ms;	// from the step's own start: no drift over the steps
 		if (++sm->roger_i >= sm->roger_n) {
 			tx_tone(0);
+			tone_side_off();
 			sm->roger_ms = 0;
 			if (sm->roger_lead) {
 				sm->roger_lead = false;	// the start tone is over: the transmission goes on, the microphone live
@@ -4193,6 +4199,7 @@ static void roger_cancel(radio_sm_t *sm)
 {
 	if (sm->roger_ms != 0) {
 		tx_tone(0);
+		tone_side_off();
 		sm->roger_ms = 0;
 		sm->roger_lead = false;
 		sm->view.roger = false;
