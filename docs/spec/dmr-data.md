@@ -772,8 +772,8 @@ portable (confirmed: also its TMS ACK back). Each failing case was sent at least
 - The portable sends confirmed data at rate 3/4 and unconfirmed at rate 1/2; BrandMeister sends confirmed at rate 3/4
   (5.1.1). We send the same: IP packets confirmed at rate 3/4, unconfirmed at rate 1/2 (`IP_CONFIRMED_RATE`,
   `IP_UNCONFIRMED_RATE` in `dmrDataService.c`). Text and other packets outside the IP path stay at rate 1/2. A
-  modem that can't send rate 3/4 blocks a receiver decodes (`hal_dmr_modem_t.tx_rate34_bad`) sends confirmed IP at
-  rate 1/2 instead, which a receiver decodes but this portable refuses (below). The debug link can set either rate for
+  modem whose rate 3/4 blocks fail a receiver's CRC-9 check (`hal_dmr_modem_t.tx_rate34_bad`) sends confirmed IP at
+  rate 1/2 instead, which such a receiver decodes but this portable refuses (below). The debug link can set either rate for
   the bench (`data.ip_cnf_rate`, debuglink.md 3.12 op 12).
 - Rate 1/2 confirmed: the portable answers the first try with a NACK (class 1, type 1, packet CRC failed), each retry
   with a selective ACK that has only block 0. Our blocks follow B.3.9 and B.3.10, and both CRCs, computed the same
