@@ -63,7 +63,7 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "banner_call_alert", "alert:9995678" },
 	{ "banner_radio_check", "call:9991234,91,g wait:11000 ctx 4 wait:1000" },
 	{ "message_view", "msg:9991234,Meet_at_the_north_lot_in_15_minutes._Bring_the_spare_battery. ctx" },
-	// a text the message screen shortens: Read all, and the whole text on its own page
+	// a text the message screen shortens: Full message, and the whole text on its own page
 	{ "message_long", "msg:9991234," LONG_SMS " ctx" },
 	{ "message_read", "msg:9991234," LONG_SMS " ctx ok" },
 	{ "quick_dmr", "quick" },

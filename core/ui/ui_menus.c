@@ -682,7 +682,7 @@ static bool text_page_key(const input_event_t *ev, uint16_t *first, uint16_t max
 // ======================= Messages =======================
 
 #define MSG_APRS_ARG	0x8000u
-#define MSG_LONG_ARG	0x4000u	// the text is shortened on the message screen: Read all comes first (set on entry)
+#define MSG_LONG_ARG	0x4000u	// the message screen shortens the text: Full message is the first row (set on entry)
 #define MSG_INDEX(arg)	((uint16_t)((arg) & ~(MSG_APRS_ARG | MSG_LONG_ARG)))
 _Static_assert(DMR_DATA_INBOX_SIZE <= MSG_LONG_ARG && APRS_MESSAGES <= MSG_LONG_ARG,
 	       "an inbox index must stay under the arg's flag bits");
@@ -824,8 +824,8 @@ static const ui_scr_def_t messages_screen = {
 	.count = msgs_count, .item = msgs_item, .select = msgs_select, .context = msgs_context,
 };
 
-// One message: the text, then canned replies first, call, delete. A text the screen shortens gets Read all first,
-// which shows all of it on a page of its own
+// One message: the text, then canned replies first, call, delete. A text the screen shortens gets a Full message row
+// first, which shows all of it on a page of its own
 
 enum { MV_READ, MV_REPLY_OK, MV_REPLY_WAY, MV_CALL, MV_DELETE, MV_COUNT };
 
@@ -836,8 +836,8 @@ static uint8_t message_aprs_index(void) { return (uint8_t)message_index(); }
 static const char *msg_title(void);
 static const char *msg_body(void);
 
-// The action of row i. Whether Read all is there is decided once, on entry, and kept in the frame's arg: decided at
-// each draw, a row would appear or go when "9m ago" became "10m ago", and OK on Call could land on Delete
+// The action of row i. Whether the Full message row is there is decided once, on entry, and kept in the frame's arg:
+// decided at each draw, a row would appear or go when "9m ago" became "10m ago", and OK on Call could land on Delete
 static uint8_t msg_action(uint16_t i)
 {
 	return (uint8_t)(i + ((ui_frame()->arg & MSG_LONG_ARG) ? MV_READ : MV_REPLY_OK));
@@ -865,7 +865,7 @@ static uint16_t msg_count(void) { return (uint16_t)(MV_COUNT - msg_action(0)); }
 
 static void msg_item(uint16_t i, ui_item_t *it)
 {
-	static const char *const names[] = { TRN("Read all"), TRN("Reply \"OK\""), TRN("Reply \"On my way\""),
+	static const char *const names[] = { TRN("Full message"), TRN("Reply \"OK\""), TRN("Reply \"On my way\""),
 					     TRN("Call"), TRN("Delete") };
 	uint8_t a = msg_action(i);
 	str_copy(it->label, sizeof it->label, tr(names[a]));
@@ -997,7 +997,7 @@ static const ui_scr_def_t message_screen = {
 	.title = msg_title, .body = msg_body, .enter = msg_enter,
 };
 
-// The whole text of a message on a page of its own (the message screen's Read all; arg: the message screen's)
+// The whole text of a message on a page of its own (the message screen's Full message row; arg: the message screen's)
 static uint16_t msg_read_first;	// first line shown
 static uint16_t msg_read_max;	// the largest first line (from the last draw)
 
