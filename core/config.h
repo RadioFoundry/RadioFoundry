@@ -285,6 +285,18 @@
 #ifndef CONFIG_APRS_IGATE
 #define CONFIG_APRS_IGATE		(CONFIG_APRS_RX && CONFIG_HOSTLINK)
 #endif
+// The air interface (docs/spec/air-interface.md): the framer for digital modes the core frames itself (core/air) and
+// the board's provider behind board.air. P25 Phase 1 conventional (core/p25) is the first mode on it. AIR_RAW: bench
+// access to raw symbols over the debug link
+#ifndef CONFIG_AIR
+#define CONFIG_AIR			0
+#endif
+#ifndef CONFIG_P25
+#define CONFIG_P25			CONFIG_AIR
+#endif
+#ifndef CONFIG_AIR_RAW
+#define CONFIG_AIR_RAW			0
+#endif
 // The GPS status screen: the satellites (NMEA GSV / GSA) on a sky plot and signal bars, the fix's quality, the grid
 // locator (core/position/nmea_sky.c, core/ui/ui_gps.c). Needs GPS
 #ifndef CONFIG_GPS_SKY
@@ -385,6 +397,12 @@
 #endif
 #if CONFIG_NET_PPP && !(CONFIG_HOSTLINK && CONFIG_DMR_IP_GATEWAY)
 #error "CONFIG_NET_PPP needs CONFIG_HOSTLINK and CONFIG_DMR_IP_GATEWAY"
+#endif
+#if (CONFIG_P25 || CONFIG_AIR_RAW) && !CONFIG_AIR
+#error "CONFIG_P25 and CONFIG_AIR_RAW need CONFIG_AIR"
+#endif
+#if CONFIG_AIR_RAW && !CONFIG_DEBUGLINK
+#error "CONFIG_AIR_RAW needs CONFIG_DEBUGLINK"
 #endif
 #if CONFIG_NET_TCP && !CONFIG_DMR_IP_GATEWAY
 #error "CONFIG_NET_TCP needs CONFIG_DMR_IP_GATEWAY"

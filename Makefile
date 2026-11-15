@@ -97,6 +97,12 @@ endif
 ifeq ($(CONFIG_APRS),y)
 CORE_DIRS += core/aprs
 endif
+ifeq ($(CONFIG_AIR),y)
+CORE_DIRS += core/air core/fec
+endif
+ifeq ($(CONFIG_P25),y)
+CORE_DIRS += core/p25
+endif
 ifeq ($(CONFIG_POSITION),y)
 CORE_DIRS += core/position
 endif
