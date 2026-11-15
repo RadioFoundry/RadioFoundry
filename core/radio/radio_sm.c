@@ -208,6 +208,8 @@ static uint8_t sig_out(const radio_sm_t *sm, sig_event_t ev)
 #endif
 }
 
+// An FM start tone on the speaker plays before keying (fm_key): the key waits for it and this much more, the beep's lead
+#define FM_PRE_TAIL_MS		40u
 // Whether the event's tone sounds on the speaker instead of the radio's own: the setting says so, on a channel that
 // allows beeps
 static bool sig_local_on(const radio_sm_t *sm, sig_event_t ev)
@@ -215,16 +217,18 @@ static bool sig_local_on(const radio_sm_t *sm, sig_event_t ev)
 	return CONFIG_BEEP && !sm->view.ch.no_beep && sig_out_local(sig_out(sm, ev));
 }
 
-// The event's tone on the speaker
-static void sig_local(radio_sm_t *sm, sig_event_t ev)
+// The event's tone on the speaker; its length in ms
+static uint32_t sig_local(radio_sm_t *sm, sig_event_t ev)
 {
 #if CONFIG_BEEP && CONFIG_SIG_TONES
 	beep_seg_t seg[SIG_STEPS];
 	uint8_t n = sig_chain(sm->set.sig_hz[ev], sm->set.sig_ms[ev], ev, seg);
 	beep_play_custom(seg, n, beep_level_now(sm), beep_shared_now());
+	return sig_total_ms(seg, n);
 #else
 	(void)sm;
 	(void)ev;
+	return 0;
 #endif
 }
 
@@ -4220,6 +4224,48 @@ static void fm_lead_start(radio_sm_t *sm, uint32_t now_ms)
 }
 #endif
 
+// Keys the transmitter of an FM channel and starts its start tones (ptt_down, or radio_sm_poll once the speaker's has played)
+static void fm_key(radio_sm_t *sm, uint32_t now_ms)
+{
+#if CONFIG_NET_USRP
+	// The host's audio replaces the microphone: never key without a way to send it
+	const hal_audio_tap_t *tap = board.audio_tap;
+	if (sm->host_audio && (tap == NULL || tap->fm_tx_inject == NULL)) {
+		deny(sm, TXDENY_MODE);
+		return;
+	}
+#endif
+	sm->view.state = RS_TX;		// speaker off, red LED on, before keying
+	sm->view.tx_auto = false;
+	sm->view.last_tx_ms = now_ms != 0 ? now_ms : 1;
+	sm->view.tx_deny = TXDENY_NONE;
+	sm->view.tx_elapsed_ms = 0;
+	sm->tx_start_ms = now_ms;
+	outputs(sm);
+	const channel_t *ch = &sm->view.ch;
+	if (!key_tx(ch->tx_hz, (radio_bw_t)ch->bw, sm->view.power, &ch->tx_tone)) {
+		deny(sm, board_refusal());
+		return;
+	}
+#if CONFIG_NET_USRP
+	// The board ends the injection itself at tx_off() / rx()
+	if (sm->host_audio && !tap->fm_tx_inject(audio_mux_fm_pull, AUDIO_TAP_VOICE)) {
+		board.radio->tx_off();
+		deny(sm, TXDENY_MODE);
+		return;
+	}
+#endif
+	// The start of transmission tone on the speaker, where the board can sound a beep while it transmits (the others
+	// played it before keying, ptt_down)
+	if ((board.caps & CAP_BEEP_NOT_ON_AIR) == 0 && sig_local_on(sm, SIG_EV_BEGIN)) {
+		sig_local(sm, SIG_EV_BEGIN);
+	}
+#if CONFIG_FM_TX_TONES && CONFIG_SIG_TONES
+	fm_lead_start(sm, now_ms);	// and on air
+#endif
+	changed(sm);
+}
+
 static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 {
 	if (sm->ptt) {
@@ -4286,43 +4332,22 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		return;
 	}
 #endif
-#if CONFIG_NET_USRP
-	// The host's audio replaces the microphone: never key without a way to send it
-	const hal_audio_tap_t *tap = board.audio_tap;
-	if (sm->host_audio && (tap == NULL || tap->fm_tx_inject == NULL)) {
-		deny(sm, TXDENY_MODE);
-		return;
+#if CONFIG_BEEP && CONFIG_SIG_TONES
+	// A board whose beeps can't sound while it transmits (CAP_BEEP_NOT_ON_AIR): the speaker copy of the start tone
+	// plays first, with the key held, and the transmitter keys when it has ended (fm_key from radio_sm_poll), as the
+	// DMR talk permit does. The on air copy follows on the carrier
+	if ((board.caps & CAP_BEEP_NOT_ON_AIR) != 0 && !sm->host_audio && sig_local_on(sm, SIG_EV_BEGIN)) {
+		uint32_t ms = sig_local(sm, SIG_EV_BEGIN);
+		if (ms != 0) {
+			sm->fm_pre_end = now_ms + ms + FM_PRE_TAIL_MS;
+			if (sm->fm_pre_end == 0) {
+				sm->fm_pre_end = 1;
+			}
+			return;
+		}
 	}
 #endif
-	sm->view.state = RS_TX;		// speaker off, red LED on, before keying
-	sm->view.tx_auto = false;
-	sm->view.last_tx_ms = now_ms != 0 ? now_ms : 1;
-	sm->view.tx_deny = TXDENY_NONE;
-	sm->view.tx_elapsed_ms = 0;
-	sm->tx_start_ms = now_ms;
-	outputs(sm);
-	const channel_t *ch = &sm->view.ch;
-	if (!key_tx(ch->tx_hz, (radio_bw_t)ch->bw, sm->view.power, &ch->tx_tone)) {
-		deny(sm, board_refusal());
-		return;
-	}
-#if CONFIG_NET_USRP
-	// The board ends the injection itself at tx_off() / rx()
-	if (sm->host_audio && !tap->fm_tx_inject(audio_mux_fm_pull, AUDIO_TAP_VOICE)) {
-		board.radio->tx_off();
-		deny(sm, TXDENY_MODE);
-		return;
-	}
-#endif
-	// The start of transmission tone on the speaker. CAP_BEEP_NOT_ON_AIR is about the DMR engine closing the audio path
-	// while it transmits; the FM transmitter doesn't, so the speaker copy plays on every board
-	if (sig_local_on(sm, SIG_EV_BEGIN)) {
-		sig_local(sm, SIG_EV_BEGIN);
-	}
-#if CONFIG_FM_TX_TONES && CONFIG_SIG_TONES
-	fm_lead_start(sm, now_ms);	// and on air
-#endif
-	changed(sm);
+	fm_key(sm, now_ms);
 }
 
 // roger: send the roger beep (if set) before unkeying
@@ -4333,6 +4358,10 @@ static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms)
 	}
 	sm->ptt = false;
 	activity(sm, now_ms);
+	if (sm->fm_pre_end != 0) {
+		sm->fm_pre_end = 0;	// released during the start tone on the speaker: never keyed
+		return;
+	}
 	if (sm->host_audio) {
 		roger = false;		// the host sends its own audio, tones included
 	}
@@ -6394,6 +6423,14 @@ static int16_t rssi_held(radio_sm_t *sm, int16_t rssi_dbm)
 
 void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 {
+#if CONFIG_BEEP && CONFIG_SIG_TONES
+	if (sm->fm_pre_end != 0 && (int32_t)(now_ms - sm->fm_pre_end) >= 0) {
+		sm->fm_pre_end = 0;
+		if (sm->ptt) {
+			fm_key(sm, now_ms);
+		}
+	}
+#endif
 	radio_status_t st;
 	sm->led_now = now_ms;
 	if (sm->led_timed || sm->deny_led) {

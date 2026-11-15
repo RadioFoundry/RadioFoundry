@@ -264,6 +264,7 @@ typedef struct {
 	bool vol_hold;			// RREQ_VOLUME_HOLD: the level stays, the knob is ignored
 
 	bool ptt;			// PTT held
+	uint32_t fm_pre_end;		// FM, a board whose beeps can't sound on air: the start tone plays before keying, until then (0: no)
 	bool host_audio;		// this PTT is a host audio session's (USRP): its audio, not the microphone
 	uint32_t host_pushes;		// the host's audio pushes last seen, and when they last moved (the watchdog)
 	uint32_t host_push_ms;

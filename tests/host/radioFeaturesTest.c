@@ -3721,18 +3721,30 @@ static void test_sig_fm(void)
 	CHECK(sm.view.state == RS_TX && b1.played == b0.played + 1);
 	req(RREQ_PTT, 0);
 	run(100);
-	// ... and on a board whose DMR beeps can't sound on air too: that limit is the DMR engine's, FM keys no such gate
+	// ... on a board whose beeps can't sound on air it plays first, with the key held, and the transmitter keys after it
 	uint32_t caps = board.caps;
 	board.caps |= CAP_BEEP_NOT_ON_AIR;
 	start();
 	settings(set_sig_begin_local);
 	beep_get_stats(&b0);
 	req(RREQ_PTT, 1);
-	run(50);
+	run(10);
 	beep_get_stats(&b1);
-	CHECK(sm.view.state == RS_TX && b1.played == b0.played + 1);
+	CHECK(sm.view.state != RS_TX && b1.played == b0.played + 1);
+	for (int i = 0; i < 300 && sm.view.state != RS_TX; i++) {
+		run(10);
+	}
+	CHECK(sm.view.state == RS_TX);
 	req(RREQ_PTT, 0);
 	run(100);
+	// ... and a PTT let go during that tone never keys
+	start();
+	settings(set_sig_begin_local);
+	req(RREQ_PTT, 1);
+	run(10);
+	req(RREQ_PTT, 0);
+	run(1500);
+	CHECK(sm.view.state != RS_TX);
 	board.caps = caps;
 	// ... and not on a no-beep channel
 	start();
