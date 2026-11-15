@@ -535,10 +535,7 @@ silence and not the tone. The guard counts in the tone's length for the tail hol
 three superframes (1080 ms) the over is held for.
 
 On the speaker the start tone follows the board: a board with `CAP_BEEP_NOT_ON_AIR` plays a DMR start tone before keying,
-in the talk permit's hold (`permit_before_key`), and plays the FM start tone before keying too: the PTT is held, the
-speaker copy plays, and the transmitter keys when it has ended (`fm_pre_end`, plus `FM_PRE_TAIL_MS`); a PTT let go
-meanwhile never keys. The on air copy follows on the carrier, after `SIG_FM_GUARD_MS` (150 ms) of the carrier alone: a receiver's squelch opens after the transmitter has settled, and the
-first steps would be lost. Other boards play it as they key. The end
+in the talk permit's hold (`permit_before_key`), and plays the FM start tone on the speaker as it keys (only the DMR engine closes the audio path). A board with `hal_radio_t.tx_tone_side` (the modem's sidetone) hears an FM start tone set to speaker + air from the tone sent on air: the core turns the sidetone on with the tone and off when it ends, and plays no separate beep. The end
 tone plays once the transmitter is off, and on a board whose audio path is closed while the DMR engine sends its last burst
 (`hal_audio_t.speaker_blocked`) a little after that: audio queued while the path is closed is dropped when it opens, so the
 core waits for it, at most `DMR_END_WAIT_MS` (400 ms), and then plays it whole.

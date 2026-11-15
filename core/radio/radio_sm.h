@@ -264,7 +264,6 @@ typedef struct {
 	bool vol_hold;			// RREQ_VOLUME_HOLD: the level stays, the knob is ignored
 
 	bool ptt;			// PTT held
-	uint32_t fm_pre_end;		// FM, a board whose beeps can't sound on air: the start tone plays before keying, until then (0: no)
 	bool host_audio;		// this PTT is a host audio session's (USRP): its audio, not the microphone
 	uint32_t host_pushes;		// the host's audio pushes last seen, and when they last moved (the watchdog)
 	uint32_t host_push_ms;
@@ -339,7 +338,7 @@ typedef struct {
 	uint32_t roger_ms;		// start of the roger beep's current step (the end tone's, sigtone.h), 0 = none
 	uint8_t roger_n, roger_i;	// its steps and the one sounding
 	bool roger_lead;		// the tone running is the start tone on air (PTT is down): it ends with the microphone live
-	beep_seg_t roger_seg[SIG_STEPS + 1];	// + the start tone's guard
+	beep_seg_t roger_seg[SIG_STEPS];
 #endif
 #if CONFIG_DTMF
 	bool dtmf_held;			// the key of the digit sounding (view.dtmf) is still down

@@ -53,6 +53,8 @@ static struct {
 	bool audio;
 	bool led[2];
 	uint16_t tone_hz;	// tx_tone
+	bool side;		// tx_tone_side
+	unsigned side_calls;
 	int tone_calls;
 	uint16_t tone_log[16];
 	bool asleep;
@@ -159,6 +161,7 @@ static bool r_tx_dtmf(char digit)
 	hw.dtmf = digit;
 	return true;
 }
+static void r_tx_tone_side(bool on) { hw.side = on; hw.side_calls++; }
 static void r_rx_sleep(bool sleep)
 {
 	hw.asleep = sleep;
@@ -3658,17 +3661,14 @@ static void test_sig_fm(void)
 	run(300);
 	CHECK(sm.view.state == RS_IDLE && !sm.view.roger);
 
-	// The start tone on air: after keying the carrier goes alone for SIG_FM_GUARD_MS (the transmitter settles, a receiver's
-	// squelch opens), then the three steps go out as tone and the microphone is live (tone 0) and the transmission goes
-	// on; a release during it ends the transmission as usual
+	// The start tone on air: right after keying the three steps go out as tone, then the microphone is live (tone 0) and the
+	// transmission goes on; a release during it ends the transmission as usual
 	start();
 	settings(set_sig_begin_air);
 	hw.tone_calls = 0;
 	req(RREQ_PTT, 1);
 	run(5);
-	CHECK(sm.view.state == RS_TX && hw.tone_hz == 0 && !sm.view.roger && sm.roger_lead);
-	run(SIG_FM_GUARD_MS);
-	CHECK(hw.tone_hz == 1000);
+	CHECK(sm.view.state == RS_TX && hw.tone_hz == 1000 && !sm.view.roger && sm.roger_lead);
 	run(50);
 	CHECK(hw.tone_hz == 1400);
 	run(50);
@@ -3683,7 +3683,7 @@ static void test_sig_fm(void)
 	start();
 	settings(set_sig_begin_air);
 	req(RREQ_PTT, 1);
-	run(SIG_FM_GUARD_MS + 30);
+	run(30);
 	CHECK(hw.tone_hz != 0 && sm.roger_lead);
 	req(RREQ_PTT, 0);
 	CHECK(sm.view.state == RS_IDLE && hw.tone_hz == 0 && !sm.roger_lead && hw.tx_off_calls == 1);
@@ -3702,7 +3702,7 @@ static void test_sig_fm(void)
 	settings(set_sig_begin_both);
 	beep_get_stats(&b0);
 	req(RREQ_PTT, 1);
-	run(SIG_FM_GUARD_MS + 100);
+	run(100);
 	beep_get_stats(&b1);
 	CHECK(sm.view.state == RS_TX && b1.played == b0.played + 1 && hw.tone_calls > 0);
 	req(RREQ_PTT, 0);
@@ -3710,7 +3710,7 @@ static void test_sig_fm(void)
 	settings(set_sig_begin_air);
 	hw.has_tx_tone = false;
 	req(RREQ_PTT, 1);
-	run(SIG_FM_GUARD_MS + 200);
+	run(200);
 	CHECK(sm.view.state == RS_TX && !sm.roger_lead);
 	req(RREQ_PTT, 0);
 
@@ -3724,30 +3724,46 @@ static void test_sig_fm(void)
 	CHECK(sm.view.state == RS_TX && b1.played == b0.played + 1);
 	req(RREQ_PTT, 0);
 	run(100);
-	// ... on a board whose beeps can't sound on air it plays first, with the key held, and the transmitter keys after it
+	// A board with a sidetone: speaker + air is the tone on air with the sidetone on, no beep and no wait, and the
+	// sidetone is off when the tone ends
+	hal_radio_t radio_side = fake_radio;
+	radio_side.tx_tone_side = r_tx_tone_side;
+	board.radio = &radio_side;
+	start();
+	settings(set_sig_begin_both);
+	hw.side = false;
+	hw.side_calls = 0;
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	run(50);
+	beep_get_stats(&b1);
+	CHECK(sm.view.state == RS_TX && b1.played == b0.played && hw.side && hw.tone_calls > 0);
+	run(500);
+	CHECK(!hw.side && sm.view.state == RS_TX && !sm.roger_lead);
+	req(RREQ_PTT, 0);
+	run(300);
+	// Air only: no sidetone. Speaker only: the beep
+	start();
+	settings(set_sig_begin_air);
+	hw.side_calls = 0;
+	req(RREQ_PTT, 1);
+	run(100);
+	CHECK(hw.side_calls == 0 && !hw.side);
+	req(RREQ_PTT, 0);
+	run(300);
+	board.radio = &fake_radio;
+	// ... and on a board whose DMR beeps can't sound on air too: that limit is the DMR engine's, FM keys no such gate
 	uint32_t caps = board.caps;
 	board.caps |= CAP_BEEP_NOT_ON_AIR;
 	start();
 	settings(set_sig_begin_local);
 	beep_get_stats(&b0);
 	req(RREQ_PTT, 1);
-	run(10);
+	run(50);
 	beep_get_stats(&b1);
-	CHECK(sm.view.state != RS_TX && b1.played == b0.played + 1);
-	for (int i = 0; i < 300 && sm.view.state != RS_TX; i++) {
-		run(10);
-	}
-	CHECK(sm.view.state == RS_TX);
+	CHECK(sm.view.state == RS_TX && b1.played == b0.played + 1);
 	req(RREQ_PTT, 0);
 	run(100);
-	// ... and a PTT let go during that tone never keys
-	start();
-	settings(set_sig_begin_local);
-	req(RREQ_PTT, 1);
-	run(10);
-	req(RREQ_PTT, 0);
-	run(1500);
-	CHECK(sm.view.state != RS_TX);
 	board.caps = caps;
 	// ... and not on a no-beep channel
 	start();

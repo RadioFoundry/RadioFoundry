@@ -104,11 +104,13 @@ static bool afsk_tx;		// APRS tones play through the prompt FIFO into the modula
 // The speaker amplifier is on while any user wants it
 #define AMP_RADIO	0x01u	// receive audio
 #define AMP_PCM		0x02u	// speaker PCM
+#define AMP_SIDE	0x40u	// the transmitted tone's sidetone
 #define AMP_BCAST	0x04u	// the broadcast receiver (dm32_bcast_audio)
 
 static void speaker_source(void);
 static void ring_play(void);
 static void amp(uint8_t who, bool on);
+static void tx_tone_side(bool on);
 
 // ---- FD6818 bus ----
 
@@ -561,6 +563,7 @@ static void tx_end(bool keep)
 
 static void tx_off(void)
 {
+	tx_tone_side(false);
 	tx_end(false);
 }
 
@@ -588,6 +591,23 @@ static bool tx_tone(uint16_t hz)
 	}
 	hrc7000_tx_tone(&modem, hz, hrc7000_dtmf_dev(tx_hz, tx_wide));
 	return true;
+}
+
+// The sidetone: the codec plays the modem's tone, the speaker listens to the codec (speaker_source: not receiving)
+static void tx_tone_side(bool on)
+{
+	if (on && (!transmitting || mode != RADIO_MODE_FM)) {
+		return;
+	}
+	uint32_t s = hrc_irq_save();
+	if (on) {
+		hrc7000_tx_tone_side(&modem, true);
+		amp(AMP_SIDE, true);
+	} else {
+		amp(AMP_SIDE, false);
+		hrc7000_tx_tone_side(&modem, false);
+	}
+	hrc_irq_restore(s);
 }
 
 static bool tx_tone_key(bool down)
@@ -796,6 +816,7 @@ const hal_radio_t dm32_radio = {
 	.tx_tone = tx_tone,
 	.tx_tail = tx_tail,
 	.tx_tone_key = tx_tone_key,
+	.tx_tone_side = tx_tone_side,
 #if CONFIG_DTMF
 	.tx_dtmf = tx_dtmf,
 #endif
