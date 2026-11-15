@@ -30,6 +30,13 @@ class FakeConfig:
 needs_toml = H.skip_if(sys.version_info < (3, 11), "bench", "reading the rig's file needs Python 3.11 or later")
 
 
+@pytest.fixture(autouse=True)
+def _run_config_kept(monkeypatch):
+    """configure() makes its config the run's (hil_config.CONFIG): put the run's own back after each test, or every
+    later test's transmission is checked against a fake config's tx_mhz (none) and refused"""
+    monkeypatch.setattr(hil_config, "CONFIG", hil_config.CONFIG)
+
+
 def rig_file(tmp_path, text):
     p = tmp_path / "hil.toml"
     p.write_text(text)

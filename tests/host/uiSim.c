@@ -145,6 +145,8 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "diagnostics", "ok 6 7" },
 	{ "roaming", "ok 6 6 1 wait:4000" },
 	{ "settings", "ok 7" },
+	{ "settings_sound", "ok 7 1" },
+	{ "settings_sound_tones", "ok 7 1 down down down down down down" },	// the tones (radio-features.md)
 	{ "settings_display", "ok 7 2" },
 	{ "settings_editor", "ok 7 2 ok up" },
 	{ "settings_freq_trim", "trim ok 7 up ok up" },	// on a radio with a reference trim (radio-features.md 6.1)

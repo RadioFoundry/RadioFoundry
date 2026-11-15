@@ -101,11 +101,13 @@ The encode flags word is a set of feature bits, one value on every call of a tra
 
 ## Vendor firmware versions
 
-Every DM-32UV build from 01.01.032 to 01.01.049 carries the same codec: the same length (0x14600), the same run
+Every DM-32UV build from 01.01.032 to 01.01.049, and the NRFB 050 build, carries the same codec: the same length
+(0x14600), the same run
 address (0x16CDC), the same entry points (the 049 column above) and byte-identical tables (`10684c33...`). Inside the
 codec ranges the code differs only in its table pointers. The rest of the differences fall in the other code that lies
 inside the window but isn't codec. Each version links the codec to its own flash addresses, so `tools/hrc7000_codec.py`
-keys each file by its SHA-256 and finds the codec in a program flash read by content, then by address.
+keys each file by its SHA-256 and finds the codec in a program flash read by content, then by address. The NRFB build
+is known only from a program flash read, so its profile is keyed by the SHA-256 of the code window.
 
 | Build | Code, flash | Tables, flash | Tables, modem RAM | Same code as |
 |---|---|---|---|---|
@@ -119,17 +121,20 @@ keys each file by its SHA-256 and finds the codec in a program flash read by con
 | 01.L01.048 | 0x030C4444 | 0x03070468 | 0x18000EA8 | |
 | 01.01.049 | 0x030C687C | 0x03072628 | 0x18000EA8 | 047 |
 | 01.01.049 NRF and fanti builds | 0x030C7914, 0x030C7954 | 0x03072E80, 0x03072EC0 | 0x18000EB0 | each other |
+| NRFB.01.050 (program flash read) | 0x030C72D8 | 0x03072810 | 0x18000EC0 | |
 
 Rules for the addresses:
 
 | Value | Rule |
 |---|---|
 | Run address | The three self-referencing pool words (section "Self-containment and position dependence") give it. Every build has 0x16CDC |
-| Table RAM address | Every table literal in the codec ranges moves by the same constant against 049: none for 032 to 049, +8 for the NRF and fanti builds (81 literals).  |
+| Table RAM address | Every table literal in the codec ranges moves by the same constant against 049: none for 032 to 049, +8 for the NRF and fanti builds, +0x18 for NRFB 050 (69 literals in the reachable code). Everything else in the reachable codec code, the three self references included, is byte-identical to the NRF build's |
 | Table window | The 64-byte head CRC (`TABLES_HEAD_CRC`), then the SHA-256 |
 
-The NRF and fanti tables end at 0x18003E28, 8 bytes above the 049 window, so the DM-32UV linker script reserves modem
-SRAM up to 0x18003E28. The slot's version tag is the build number (32 to 49), and the host reports it as
+The NRFB tables end at 0x18003E38, 0x10 above the NRF and fanti ones (0x18003E28) and 0x18 above the 049 window, so the
+DM-32UV linker script reserves modem SRAM up to 0x18003E38. A RadioFoundry build with the older limit refuses an NRFB
+slot (its table window check fails): the radio needs a build with this limit to use the codec.
+The slot's version tag is the build number (32 to 50), and the host reports it as
 `dm32-<three digits>`.
 
 ## C. Codec state init tables
@@ -184,8 +189,8 @@ How RadioFoundry runs it ([codec-placement.md](codec-placement.md), "HR_C7000 ra
    (0x43A00..0x58000), adds (window start - run address) to each listed word, checks the first two words, and
    copies the tables to their modem RAM address (049: 0x18000EA8).
 3. **Memory map** (`boards/dm32/memory.ld`): one RAM region for RadioFoundry from 0x10000 to the codec window. The modem RAM
-   window 0x18000E48..0x18003E28 (the union of the builds' tables) is reserved.
-4. **Versions**: every DM-32UV build with a codec map (six maps in `tools/rfoundry/rfoundry/codec_maps/dm32/`) runs in the
+   window 0x18000E48..0x18003E38 (the union of the builds' tables) is reserved.
+4. **Versions**: every DM-32UV build with a codec map (eight maps in `tools/rfoundry/rfoundry/codec_maps/dm32/`) runs in the
    same window, since only the 3 words depend on the run address.
 
 ## Open items

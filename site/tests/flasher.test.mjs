@@ -22,7 +22,7 @@ import { pictureSrc } from "../static/js/flasher/radiotop.js";
 import { readRadio, makeBundle, openBundle, bundleFolder, notBundle, bundleName, CODEPLUG_SPAN } from "../static/js/flasher/backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug } from "../static/js/flasher/restore.js";
 import { Selection } from "../static/js/flasher/select.js";
-import { decideCodec, DecisionError } from "../static/js/flasher/decide.js";
+import { codecPresent, decideCodec, DecisionError } from "../static/js/flasher/decide.js";
 import { findKey, readBootKey } from "../static/js/flasher/bootkey.js";
 import { codecSegments, readCodec } from "../static/js/flasher/codecsave.js";
 import { detect, convertersFor } from "../static/js/flasher/codeplug.js";
@@ -550,6 +550,18 @@ test("codec decision follows rfoundry's rules", () => {
 	assert.equal(decideCodec(board, m, { probe: { board: "DM-1701", codec: "dm1701-v0206-csv" }, haveStock: true }).mode, MERGE);
 	assert.throws(() => decideCodec(board, m, {}), DecisionError);
 	assert.throws(() => decideCodec(fb.boards.md380, m, {}), DecisionError);
+});
+
+// A codec slot's board reports the stock build its slot came from (rfoundry Board.codec_present): any build counts, an
+// unknown slot or another board's codec doesn't; a stock-file board has only its profile's id
+test("a reported codec counts for the board", () => {
+	const dm32 = fb.boards.dm32;
+	assert.equal(dm32.codec_tagged, true);
+	for (const c of [dm32.codec.id, "dm32-048", "dm32-050"]) assert.ok(codecPresent(dm32, c), c);
+	for (const c of ["dm32-unknown", "absent", null, undefined, "dm1801pro-049", "dm32-49"]) assert.ok(!codecPresent(dm32, c), String(c));
+	const keeps = { ...dm32, keep_codec_supported: true };	// an update that leaves the slot alone
+	assert.equal(decideCodec(keeps, fx.manifest, { probe: { board: dm32.debuglink_names[0], codec: "dm32-048" } }).mode, KEEP);
+	assert.ok(codecPresent(board, board.codec.id) && !codecPresent(board, "dm1701-050"));
 });
 
 test("a la carte selection keeps dependencies and finds prebuilt variants", () => {

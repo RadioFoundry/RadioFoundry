@@ -281,6 +281,8 @@ def flash_boards():
 				  "installed": list(b.codec.installed), "sources": list(b.codec.sources)},
 			"debuglink_names": list(b.debuglink_names), "releasable": b.releasable,
 			"keep_codec_supported": b.keep_codec_supported, "key_sha256": b.key_sha256,
+			# a codec slot's board reports its codec as "<board>-<build>" (decide.js codecPresent)
+			"codec_tagged": b.codec_tool == "hrc7000_codec",
 			"dfu_ids": list(b.dfu_ids) if b.dfu_ids else None, "dfu_string1": b.dfu_string1,
 			"dfu_product": b.dfu_product, "dfu_layout": b.dfu_layout,
 			# a hardware option the original firmware's version settles before an install (origversion.js), or null

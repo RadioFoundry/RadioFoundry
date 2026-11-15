@@ -421,6 +421,20 @@ On air with this (2026-10-18): calls are taken with the caller and talk group, a
 but the speaker plays only a faint buzz (4.8). Leads, not checked: 0x0E (HPoutEn, bit 7; RadioFoundry writes 0x44, which
 leaves it off), 0x37 (DAC gain), the I2S data line directions and sample rate (unknown 17).
 
+### 4.9.1 Receiving between our bursts
+
+Through a repeater, a voice over hears the repeater's outbound between its own bursts (the modem's
+`tx_listen_split`, [dmr-modem.md 2.8](dmr-modem.md)). One synthesizer serves receive and transmit, so the board
+retunes per burst (`radio_md380.c`):
+
+| When | What |
+|---|---|
+| After each burst (the engine's `rf(false)`, PA off) | The synthesizer to the receive LO, the HR_C5000's receiver input on (4:0x26), the receive tune DAC, the receive path on. No lock wait |
+| RF_TX_INTER, 2.5 ms early | 4:0x12 bits 5-0 = 25 (100 us steps) while the transmission listens, restored at its end (only when it was read: a slot where it can't be read or set isn't listened to). Receiver input off, the synthesizer to the transmit VCO, lock detect waited for (at most 2 ms), then the PA at the slot as without the lead |
+
+The chip receives the other slot as it does when idle, and its bursts go to the stack as heard while sending. On the
+SDR bench, 45 key-ups of 45 got through a repeater whose hang ended around the key-up, against 13 of 15 without it.
+
 ### 4.10 Codec and audio routing
 
 DMR receive audio plays with the LINEOUT values below (on air, 2026-10-19: our test, not authoritative). This section
@@ -586,6 +600,10 @@ Measured on RadioFoundry (UHF, 446.000 MHz, raw ADC, a second radio nearby; 2026
 |---|---|---|
 | no signal | 690-760 | 1340-1620 |
 | FM carrier, shown as -71 dBm | 2720-2732 | 39-81 |
+
+On a UHF MD-380 on 2026-11-14 (440-468 MHz, no signal) RSSI read 1736 (shown as -92 dBm), with BUSY at 1478; a DMR
+signal read -71 dBm. The no-signal level isn't stable from one session to the next, so nothing should take this
+reading as an absolute level: the DMR scan counts it from the floor it measures ([gotchas](gotchas.md) 17.4).
 
 BUSY falls with a signal (larger = more noise). With the USB programming cable in the accessory jack the receiver
 doesn't detect a signal at all (RSSI stays near the no-signal level): read these values with the cable out (a log

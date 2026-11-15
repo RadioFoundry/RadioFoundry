@@ -224,9 +224,9 @@ typedef struct {
 	// Zone share: the zones imported last, so the same zone sent again updates its import instead of adding a copy
 	// (docs/spec/zone-share.md 5.4); key 0 = unused, the oldest replaced first
 	settings_zs_import_t zs_import[SETTINGS_ZS_IMPORTS];
-	// The volume knob's options (Settings > Sound on a radio whose MCU reads the knob; appended): SETTINGS_KNOB_*,
-	// 0 = all off, as an older record reads
-	uint8_t knob_flags;
+	// Sound options (appended; was knob_flags, bit 0 only): SETTINGS_KNOB_LOCK, then the Settings > Sound tones off
+	// in bits 4..7 (settings_tones_off). 0 = the knob works and every tone is on, as an older record reads
+	uint8_t sound_flags;
 	// The VFOs' SFR role (docs/spec/sfr.md 4): byte A of a codeplug channel's SFR bytes (core/dmr/sfr.h), role bits 0 =
 	// none (was reserved9[0..1]: an older record reads none). The VFO's outbound color code is its own (no byte B)
 	uint8_t vfo_sfr;		// the first VFO
@@ -329,8 +329,22 @@ static inline void settings_set_crash_contact(settings_t *s, uint16_t num)
 	s->updown_home = (uint8_t)((s->updown_home & 0x83u) | (((num >> 6) & 0x1Fu) << 2));
 }
 
-// settings_t.knob_flags
+// settings_t.sound_flags (bits 1..3 reserved, 0)
 #define SETTINGS_KNOB_LOCK		0x01u	// the volume knob does nothing while the keys are locked (Settings > Key lock > Knob when locked Off)
+#define SETTINGS_TONES_OFF_SHIFT	4	// radio_settings_t.tones_off, the radio's own copy of the codeplug's tone keys
+#define SETTINGS_TONES_OFF_MASK		0xF0u
+
+// The tones off bits (bit n = radio_tone_rows[n] off). Firmware from before them only tests and changes bit 0, so
+// they survive it.
+static inline uint8_t settings_tones_off(const settings_t *s)
+{
+	return (uint8_t)((s->sound_flags & SETTINGS_TONES_OFF_MASK) >> SETTINGS_TONES_OFF_SHIFT);
+}
+static inline void settings_set_tones_off(settings_t *s, uint8_t off)
+{
+	s->sound_flags = (uint8_t)((s->sound_flags & ~SETTINGS_TONES_OFF_MASK) |
+				   ((off << SETTINGS_TONES_OFF_SHIFT) & SETTINGS_TONES_OFF_MASK));
+}
 
 // settings_t.ui_flags (defaults: hints, message tone, talker alias, PTT when locked and vibrate on)
 #define SETTINGS_UI_LARGE_TEXT		0x01u
