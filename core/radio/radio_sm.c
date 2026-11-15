@@ -929,14 +929,21 @@ static bool bcl_busy(const radio_sm_t *sm)
 // stops (hotspot_set_direct_key_hook), so no burst waits for this task's next poll
 static void direct_key_sync(radio_sm_t *sm)
 {
-	bool on = sm->sfr_rpt;
+	for (;;) {
+		bool on = sm->sfr_rpt;
 #if CONFIG_HOTSPOT
-	on = on || (sm->hotspot && hotspot_sfr_repeating());
+		on = on || (sm->hotspot && hotspot_sfr_repeating());
 #endif
-	if (on != sm->direct_key && board.radio->dmr_direct_key != NULL) {
-		board.radio->dmr_direct_key(on);
+		if (on == sm->direct_key) {
+			return;
+		}
+		if (board.radio->dmr_direct_key != NULL) {
+			board.radio->dmr_direct_key(on);
+		}
+		sm->direct_key = on;
+		// Read again: the hotspot may have told the board otherwise between our read and our write, and ours must
+		// not be the stale last word
 	}
-	sm->direct_key = on;
 }
 #else
 static inline void direct_key_sync(radio_sm_t *sm)
