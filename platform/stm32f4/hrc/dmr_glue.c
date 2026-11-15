@@ -758,6 +758,7 @@ static bool bs_keyed(void)
 #endif
 
 const hal_dmr_modem_t stm32_hrc_dmr = {
+	.aes_voice = true,
 	.start = start, .stop = stop, .configure = configure, .rx_restart = rx_restart, .rx_lock_slot = rx_lock_slot,
 	.tx_begin = tx_begin, .tx_queue = tx_queue, .tx_queue_space = tx_queue_space, .tx_end = tx_end,
 	.tx_abort = tx_abort, .set_embedded_lc = set_embedded_lc, .set_cc_filter = set_cc_filter,

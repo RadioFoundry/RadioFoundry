@@ -134,7 +134,41 @@ static bool reboot(uint8_t mode)
 	return false;	// not reached
 }
 
+#if CONFIG_DMR_AES256
+// RM0090, RNG: discard the startup word, check sticky/current errors, and reject repeated output.
+static bool random_word(uint32_t *word)
+{
+	static bool started, failed;
+	static uint32_t previous;
+	if (failed) return false;
+	if (!started) {
+		RCC->AHB2ENR |= RCC_AHB2ENR_RNGEN;
+		(void)RCC->AHB2ENR;
+		RNG->CR = RNG_CR_RNGEN;
+	}
+	for (unsigned attempt = 0; attempt < 100000u; attempt++) {
+		uint32_t status = RNG->SR;
+		if (status & (RNG_SR_SECS | RNG_SR_CECS | RNG_SR_SEIS | RNG_SR_CEIS)) {
+			failed = true;
+			return false;
+		}
+		if (!(status & RNG_SR_DRDY)) continue;
+		uint32_t value = RNG->DR;
+		if (!started) { previous = value; started = true; continue; }
+		if (value == previous) { failed = true; return false; }
+		previous = value;
+		*word = value;
+		return true;
+	}
+	failed = true;
+	return false;
+}
+#endif
+
 const hal_system_t stm32_system = {
+#if CONFIG_DMR_AES256
+	.random = random_word,
+#endif
 	.chip = chip,
 	.read = read,
 	.mem_window = mem_window,

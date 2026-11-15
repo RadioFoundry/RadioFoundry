@@ -25,6 +25,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "hal_dmr_modem.h"
+#include "config.h"
+#if CONFIG_DMR_AES256
+#include "dmr_aes.h"
+#endif
 #include "dmr/call/dmr_lc.h"
 
 #define DMR_AMBE_FRAME_BYTES		9	// one 72-bit AMBE+2 air frame (with its FEC), 20 ms
@@ -108,7 +112,12 @@ typedef struct {
 	uint8_t wakeup_attempts;	// BS_Dwn_Act tries, 0 = DMR_CALL_WAKEUP_ATTEMPTS
 	uint16_t fade_ms;		// 0 = DMR_CALL_FADE_MS
 	uint8_t tx_fid;			// voice LC FID (privacy schemes: 0x10)
+	bool aes_required;		// retain refusal semantics when an AES-selected setting is loaded without the cipher
 	uint8_t tx_svc;			// voice LC service options (privacy bit, emergency, priority)
+#if CONFIG_DMR_AES256
+	const dmr_aes_keys_t *aes;	// radio-task-owned key snapshot, including keys available for RX
+	bool (*entropy)(uint32_t *word);	// healthy random value or false; no clock fallback
+#endif
 	dmr_privacy_fn privacy;		// NULL = none: bursts with PI set are not played
 	void *privacy_ctx;
 	char tx_alias[DMR_TA_TEXT_MAX + 1];	// our talker alias, "" = none (CONFIG_DMR_TALKER_ALIAS)
@@ -141,7 +150,7 @@ typedef struct {
 	bool late_entry;	// acquired from the embedded LC, no header heard
 	bool emergency;		// the emergency service option
 	bool pi_header;		// a PI header (data type 0) was heard for this call
-	uint8_t pi_alg;		// its first two octets (algorithm and key ID in the DMRA layout; not interpreted)
+	uint8_t pi_alg;		// algorithm and key ID from PI information octets 0 and 2
 	uint8_t pi_key;
 	char alias[DMR_TA_TEXT_MAX + 1];	// talker alias so far, "" if none
 	bool alias_complete;
@@ -200,6 +209,8 @@ typedef struct {
 	uint8_t cc;			// the channel's (or the call's, with any_cc)
 	uint8_t ts;
 	bool rmo;
+	uint8_t aes_tx_slot;	// selected AES TX slot; no key material
+	bool aes_rx_ready;	// synchronized AES receive stream
 	bool repeater_up;		// RMO: outbound heard recently
 	int16_t rssi_dbm;		// last burst of the current / last call, 0 = unknown
 	dmr_caller_t caller;		// RX: the current call; TX: us -> target

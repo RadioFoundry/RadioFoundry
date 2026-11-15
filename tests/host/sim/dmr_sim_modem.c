@@ -115,6 +115,7 @@ static void set_cc_filter(int8_t cc) { sim.cc_filter = cc; }
 static bool is_transmitting(void) { return sim.tx_active; }
 
 const hal_dmr_modem_t sim_modem = {
+	.aes_voice = true,
 	.start = start, .stop = stop, .configure = configure, .rx_restart = rx_restart, .rx_lock_slot = rx_lock_slot,
 	.tx_begin = tx_begin, .tx_queue = tx_queue, .tx_queue_space = tx_queue_space, .tx_end = tx_end,
 	.tx_abort = tx_abort, .set_embedded_lc = set_embedded_lc, .set_cc_filter = set_cc_filter,
@@ -157,12 +158,17 @@ static void send_one(void)
 		a->kind = b.kind;
 		a->voice_index = b.voice_index;
 		a->host_crc = b.host_crc;
+		a->encrypted = b.encrypted;
 		a->sync = b.sync_override;
 		a->len = b.len;
 		memcpy(a->payload, b.payload, b.len);
 		a->slot = sim.slot;
 		if (b.kind == DMR_BURST_VOICE) {
 			a->lcss = dmr_emb_lcss(b.voice_index);
+			if (b.emb_valid) {
+				a->lcss = 0;
+				memcpy(a->emb, b.emb, 4);
+			}
 			if (b.voice_index >= 1 && b.voice_index <= 4) {
 				uint8_t frag[4][4];
 

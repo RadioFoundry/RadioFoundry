@@ -15,6 +15,9 @@
 #include "radio/radio_bcast.h"
 #include "input/input.h"
 #include "settings/settings.h"
+#if CONFIG_DMR_AES256
+#include "codeplug/codeplug_privacy.h"
+#endif
 #include <string.h>
 #include "config.h"
 #if CONFIG_POSITION
@@ -167,12 +170,22 @@ bool ui_svc_hear_all(bool on)
 // does (the UI says to add one). Off keeps the key in its slot (settings-store.md 3.1)
 bool ui_svc_privacy(bool on)
 {
+	static settings_t st; // too big for the UI task's stack
+	settings_read(&st);
+#if CONFIG_DMR_AES256
+	if (st.aes_preferred) {
+		static codeplug_aes_keys_t keys;
+		uint8_t valid = codeplug_aes_load(&keys) != 0 ? keys.valid : st.aes_valid;
+		if (on && (st.aes_preferred > SETTINGS_AES_KEYS || !(valid & (1u << (st.aes_preferred - 1)))))
+			return false; // Never fall back to a weaker stored key when AES was selected.
+		radio_req_dmr_aes(on ? st.aes_preferred : 0);
+		return true;
+	}
+#endif
 	if (!on) {
 		radio_req_dmr_privacy(DMR_PRIVACY_OFF, 0);
 		return true;
 	}
-	static settings_t st;	// too big for the UI task's stack
-	settings_read(&st);
 	for (int pass = 0; pass < 2; pass++) {
 		for (uint8_t i = 0; i < SETTINGS_PRIVACY_KEYS; i++) {
 			if (pass == 0 && i + 1u != st.privacy_active) {

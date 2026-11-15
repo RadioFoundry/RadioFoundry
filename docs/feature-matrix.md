@@ -50,6 +50,7 @@ is `tools/bringup.py list --radio <id>`.
 | `bcast_fm` | not recorded | ✕ | not recorded | not written | ✕ | ✕ | ✕ |
 | `rx_ext` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not written |
 | `dmr_voice` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | partial, needs re-run |
+| `dmr_aes256` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_privacy` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `dmr_talker_alias` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `dmr_gps` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
@@ -115,7 +116,7 @@ is `tools/bringup.py list --radio <id>`.
 | `net_webctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `net_rigctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `net_usrp` | not recorded | not recorded | not recorded | not written | not recorded | not recorded | pass, needs re-run |
-| `net_aprsis` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
+| `net_aprsis` | not recorded | not recorded | not recorded | not recorded | off | not recorded | pass, needs re-run |
 | `mdns` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `tftp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `tftp_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
@@ -177,6 +178,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `FM` | ● | ● | ● | ● | ● | ● | ● |
 | `SUBTONE` | ● | ● | ● | ● | ● | ● | ● |
 | `DMR` | ● | ● | ● | ● | ● | ● | ● |
+| `DMR_AES256` | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_PRIVACY` | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_TALKER_ALIAS` | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_GPS` | ● | ● | ● | ● | ● | ● | ● |
@@ -196,7 +198,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `NET_HTTP_GZIP` | ● | ● | ● | ● | ● | ● | ● |
 | `NET_WEBCTL` | ● | ● | ● | ● | ● | ● | ● |
 | `NET_RIGCTL` | ● | ● | ● | ● | ● | ● | ● |
-| `NET_APRSIS` | ● | ● | ● | ● | ● | ● | ● |
+| `NET_APRSIS` | ● | ● | ● | ● | ○ | ● | ● |
 | `NET_USRP` | ● | ● | ● | … | ● | ● | ● |
 | `MDNS` | ● | ● | ● | ● | ● | ● | ● |
 | `TFTP` | ● | ● | ● | ● | ● | ● | ● |

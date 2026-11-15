@@ -9,8 +9,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include "codeplug/codeplug.h"
-#include "codeplug/codeplug_kv.h"
+#include "codeplug/codeplug_privacy.h"
 #include "storage/storage.h"
+#include "fuzz.h"
 #include "sim/sim_flash.h"
 
 static int failures;
@@ -586,6 +587,74 @@ static void test_power_cut(void)
 	CHECK(o > 0 && nw > 0);
 }
 
+static void test_privacy_records(void)
+{
+	fresh();
+	uint8_t key_record[CODEPLUG_AES_RECORD_SIZE + 2] = { 1, 3, 7 };
+	key_record[35] = 239;
+	for (unsigned i = 0; i < 32; i++) key_record[3 + i] = (uint8_t)i;
+	key_record[68] = 0xA5; key_record[69] = 0x5A;
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_AES_KEYS, key_record, sizeof(key_record)));
+	codeplug_aes_keys_t keys;
+	CHECK(codeplug_aes_load(&keys) == 1 && keys.valid == 3 && keys.id[0] == 7 && keys.id[1] == 239);
+	CHECK(memcmp(keys.key[0], key_record + 3, 32) == 0);
+	channel_t ch = { .name = "AES test", .rx_hz = 446006250, .tx_hz = 446006250, .mode = RADIO_MODE_DMR,
+		.timeslot = 1, .color_code = 1, .power = CODEPLUG_POWER_DEFAULT,
+		.privacy_mode = CODEPLUG_PRIVACY_AES256, .privacy_id = 7 };
+	CHECK(codeplug_set_channel(1, &ch));
+	channel_t got;
+	CHECK(codeplug_channel(1, &got) && got.privacy_mode == CODEPLUG_PRIVACY_AES256 && got.privacy_id == 7);
+	strcpy(got.name, "Renamed AES");
+	CHECK(codeplug_set_channel(1, &got));
+	CHECK(codeplug_channel(1, &got) && got.privacy_mode == CODEPLUG_PRIVACY_AES256);
+	// A complete map covers the last channel, and appended fields survive a channel edit.
+	static uint8_t map_record[CODEPLUG_PRIVACY_MAP_SIZE + 2];
+	CHECK(codeplug_kv_get(CODEPLUG_KEY_CHANNEL_PRIVACY, map_record, sizeof(map_record)) == CODEPLUG_PRIVACY_MAP_SIZE);
+	map_record[CODEPLUG_PRIVACY_MAP_SIZE] = 0x5A;
+	map_record[CODEPLUG_PRIVACY_MAP_SIZE + 1] = 0xA5;
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_CHANNEL_PRIVACY, map_record, sizeof(map_record)));
+	ch.privacy_id = 239;
+	CHECK(codeplug_set_channel(1024, &ch));
+	CHECK(codeplug_channel(1024, &got) && got.privacy_mode == CODEPLUG_PRIVACY_AES256 && got.privacy_id == 239);
+	CHECK(codeplug_kv_get(CODEPLUG_KEY_CHANNEL_PRIVACY, map_record, sizeof(map_record)) == sizeof(map_record));
+	CHECK(map_record[CODEPLUG_PRIVACY_MAP_SIZE] == 0x5A && map_record[CODEPLUG_PRIVACY_MAP_SIZE + 1] == 0xA5);
+	ch.privacy_mode = CODEPLUG_PRIVACY_CLEAR;
+	CHECK(codeplug_set_channel(1, &ch));
+	CHECK(codeplug_channel(1, &got) && got.privacy_mode == CODEPLUG_PRIVACY_CLEAR);
+	key_record[35] = 7; // Ambiguous IDs must not fall back to local keys.
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_AES_KEYS, key_record, sizeof(key_record)));
+	CHECK(codeplug_aes_load(&keys) == -1 && keys.valid == 0);
+	key_record[0] = 2;
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_AES_KEYS, key_record, sizeof(key_record)));
+	CHECK(codeplug_aes_load(&keys) == -1 && keys.valid == 0);
+	// An unknown map version and a corrupt RFKV area cannot silently become clear/inherited voice.
+	map_record[0] = 2;
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_CHANNEL_PRIVACY, map_record, sizeof(map_record)));
+	CHECK(codeplug_channel(1, &got) && got.privacy_mode == CODEPLUG_PRIVACY_INVALID);
+	CHECK(!codeplug_set_channel(1, &ch));
+	sim_flash_data[AREA + 8] ^= 1;
+	CHECK(codeplug_channel(1, &got) && got.privacy_mode == CODEPLUG_PRIVACY_INVALID);
+}
+
+static void test_privacy_fuzz(void)
+{
+	fresh();
+	fuzz_t f;
+	fuzz_init(&f, 0xAE5256);
+	for (long i = 0; i < fuzz_iters(500); i++) {
+		uint8_t record[CODEPLUG_AES_RECORD_SIZE + 16] = { 1, 3, 7 };
+		record[35] = 239;
+		int n = fuzz_mutate(&f, record, CODEPLUG_AES_RECORD_SIZE, sizeof(record));
+		CHECK(codeplug_kv_set(CODEPLUG_KEY_AES_KEYS, record, (uint16_t)n));
+		codeplug_aes_keys_t keys;
+		int rc = codeplug_aes_load(&keys);
+		CHECK(rc == 1 || rc == -1);
+		CHECK(keys.valid <= 3);
+		CHECK(rc == 1 || keys.valid == 0);
+		CHECK(keys.valid != 3 || keys.id[0] != keys.id[1]);
+	}
+}
+
 int main(void)
 {
 	test_blank();
@@ -603,6 +672,8 @@ int main(void)
 	test_head();
 	test_serial_commit();
 	test_power_cut();
+	test_privacy_records();
+	test_privacy_fuzz();
 	sim_flash_free();
 	if (failures) {
 		printf("codeplugKvTest: %d failure(s)\n", failures);

@@ -3128,7 +3128,7 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 		sb_str(&b, s->hear_all ? TR("On") : TR("Off"));
 		return feat(UI_FEAT_HEAR_ALL);
 	case QT_PRIVACY:
-		sb_str(&b, s->privacy ? TR("On") : TR("Off"));
+		sb_str(&b, (s->privacy || v->dmr.privacy) ? TR("On") : TR("Off"));
 		return feat(UI_FEAT_PRIVACY) && CONFIG_DMR_PRIVACY;
 	case QT_TALK_TO:
 		if (v->dmr.target_private)

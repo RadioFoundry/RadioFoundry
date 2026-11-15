@@ -375,6 +375,10 @@ msgid "Timeslot 2 for now"
 msgstr "暂时时隙 2"
 
 #: core/ui/ui_app.c
+msgid "Encryption is set by this channel"
+msgstr "加密由当前信道设置"
+
+#: core/ui/ui_app.c
 msgid "Privacy on for now"
 msgstr "暂时开启加密"
 

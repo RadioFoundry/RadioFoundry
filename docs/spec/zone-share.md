@@ -101,6 +101,11 @@ The sender takes the zone's channels in order, each with its contact, while the 
 channels. The rest are left out, and the UI says how many go ("Sending 40 of 60 channels"). Nothing else of the
 codeplug is sent: no scan lists, no RX group lists, no privacy keys.
 
+The sender refuses a share containing a selected channel that requires AES-256 or has an invalid privacy policy.
+The sharing record cannot carry that requirement, so it must not turn an encrypted channel into a clear one.
+Keys are never sent. A channel's explicit clear or inherit policy is not represented in the sharing format;
+the received channel follows the receiving radio's inherited selection.
+
 ## 5. Receiving
 
 ### 5.1 The setting

@@ -19,6 +19,7 @@
 #define SETTINGS_SAVE_DELAY_MS	2000
 #define SETTINGS_NAME_LEN	16
 #define SETTINGS_PRIVACY_KEYS	4
+#define SETTINGS_AES_KEYS	2
 #define SETTINGS_UNSET8		0xFFu	// "not set: the radio's default" in an 8-bit field
 #define SETTINGS_ROAM_ZONE_BYTES	10	// roaming zone bits for zones 0..79
 
@@ -232,6 +233,14 @@ typedef struct {
 	uint8_t vfo_sfr;		// the first VFO
 	uint8_t vfo2_sfr;		// the second
 	uint8_t reserved9;
+	// Appended AES key ring: valid bits distinguish an unset slot from an all-zero key.
+	uint8_t aes_key[SETTINGS_AES_KEYS][32];
+	uint8_t aes_id[SETTINGS_AES_KEYS];
+	uint8_t aes_valid;
+	uint8_t aes_tx_slot; // 1..2, zero disables encrypted TX
+	uint8_t aes_preferred; // retained by the privacy toggle; explicit basic-privacy selection clears it
+	uint8_t aes_reserved[3];
+	uint8_t vfo_privacy[2][2]; // mode, key ID retained when an encrypted channel is copied to either VFO
 } settings_t;
 
 // Pages: settings_t is stored as records of SETTINGS_PAGE_BYTES each (settings-store.md 2.1). Only the pages its size
@@ -449,6 +458,8 @@ settings_load_t settings_init(void);
 
 // A consistent copy
 void settings_read(settings_t *out);
+// A terminated name without placing the whole key-bearing settings record on a caller's stack.
+void settings_read_radio_name(char out[SETTINGS_NAME_LEN + 1]);
 // Change: begin returns the live copy (under a short lock), end releases it and notes the time if anything changed
 settings_t *settings_begin(void);
 void settings_end(uint32_t now_ms);

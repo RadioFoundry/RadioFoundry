@@ -28,7 +28,7 @@ _Static_assert(SETTINGS_PAGES <= SETTINGS_PAGES_MAX, "settings_t outgrew its pag
 _Static_assert(sizeof(settings_t) % 4 == 0, "settings_t has tail padding");
 _Static_assert(offsetof(settings_t, dual_b) == SETTINGS_PAGE_BYTES, "page 1 starts at its first field");
 _Static_assert(offsetof(settings_t, ref_trim_ppb) % 2 == 0, "ref_trim_ppb is aligned");
-_Static_assert(sizeof(settings_t) == 396, "settings_t changed size: update docs/spec/settings-store.md 3 and this");
+_Static_assert(sizeof(settings_t) == 472, "settings_t changed size: update docs/spec/settings-store.md 3 and this");
 
 static settings_t live;			// under the quick lock
 static settings_t saved;		// what the newest record holds (or the defaults)
@@ -235,6 +235,15 @@ void settings_read(settings_t *out)
 	storage_quick_lock();
 	ensure();
 	*out = live;
+	storage_quick_unlock();
+}
+
+void settings_read_radio_name(char out[SETTINGS_NAME_LEN + 1])
+{
+	storage_quick_lock();
+	ensure();
+	memcpy(out, live.radio_name, SETTINGS_NAME_LEN);
+	out[SETTINGS_NAME_LEN] = '\0';
 	storage_quick_unlock();
 }
 

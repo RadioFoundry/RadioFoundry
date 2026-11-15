@@ -26,6 +26,9 @@
 #include "radio/radio.h"
 #include "storage/storage.h"
 #include "settings/settings.h"
+#if CONFIG_DMR_AES256
+#include "settings/settings_aes.h"
+#endif
 #include "ui/gfx.h"
 
 #ifndef RFOUNDRY_GIT
@@ -50,6 +53,7 @@ enum {
 	OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT,
 	OP_DMR_TARGET, OP_DMR_CONTACT, OP_DMR_CALL_BACK, OP_DMR_TARGET_CLEAR, OP_DMR_PRIVACY,
 	// 20-24: the radio features' (DL_OP_SCAN .. DL_OP_SETTING, debuglink_view_radio.c)
+	OP_DMR_AES = 39,		// slot, key ID, flags (valid=1, select=2), 32 key octets
 	OP_USB_NETWORK = 25,
 	// 26: DMR roaming (DL_OP_ROAM, debuglink_view_radio.c)
 	OP_USB_NET_SETTINGS = 27,	// flags u8, link IP u32 (stored; docs/spec/usb-network.md 5)
@@ -450,7 +454,7 @@ static size_t cmd_radio(const uint8_t *req, uint16_t len, uint8_t *out)
 		[OP_POWER] = 1, [OP_SQUELCH] = 1, [OP_BANDWIDTH] = 1, [OP_TONE] = 4, [OP_MONITOR] = 1, [OP_CLEAR_TEMP] = 0,
 		[OP_REPLY_CANCEL] = 0, [OP_HOTSPOT_EXIT] = 0,
 		[OP_DMR_TARGET] = 4, [OP_DMR_CONTACT] = 2, [OP_DMR_CALL_BACK] = 0, [OP_DMR_TARGET_CLEAR] = 0,
-		[OP_DMR_PRIVACY] = 3, [OP_USB_NETWORK] = 1, [OP_USB_NET_SETTINGS] = 5,
+		[OP_DMR_AES] = 35, [OP_DMR_PRIVACY] = 3, [OP_USB_NETWORK] = 1, [OP_USB_NET_SETTINGS] = 5,
 #if CONFIG_NET_PPP
 		[OP_PPP] = 1,
 #endif
@@ -555,6 +559,26 @@ static size_t cmd_radio(const uint8_t *req, uint16_t len, uint8_t *out)
 #if CONFIG_DMR_PRIVACY
 		radio_req_dmr_privacy(a[0], get16(a + 1));
 		break;
+#else
+		return status_only(out, DL_ST_UNAVAILABLE);
+#endif
+	case OP_DMR_AES:
+#if CONFIG_DMR_AES256
+	{
+		if (len != 36 || a[0] > SETTINGS_AES_KEYS || (a[2] & ~3u) ||
+		    (a[0] == 0 && (a[2] & 1u))) return status_only(out, DL_ST_BAD_ARG);
+		radio_get_view(&view);
+		if (view.state == RS_TX) return status_only(out, DL_ST_BUSY);
+		settings_t *st = settings_begin();
+		uint8_t active;
+		if (!settings_aes_provision(st, a[0], a[1], a[2], a + 3, &active)) {
+			settings_end(now);
+			return status_only(out, DL_ST_BAD_ARG);
+		}
+		settings_end(now);
+		radio_req_dmr_aes(active);
+		break;
+	}
 #else
 		return status_only(out, DL_ST_UNAVAILABLE);
 #endif

@@ -13,10 +13,10 @@ plan for a native format. Nothing in section 4 is built yet.
 - Edits on the radio are safe against power cuts (`settings-store.md` 4) and cost one sector rewrite each, not a
   whole-image rewrite.
 - The open-firmware layout keeps working for as long as qdmr and the open-firmware CPS are the tools people have.
-- The native format carries what the open-firmware one can't: per-channel privacy key slot, more zones, longer names, and
+- The native format carries more zones, longer names, and
   per-channel features without overloading vendor flag bits.
-- Radio-wide state, keys included, lives in the settings store, not in the codeplug. A codeplug file can be shared
-  without leaking keys or the owner's last channel.
+- Radio-wide runtime state lives in the settings store. AES keys and per-channel privacy are already carried by the
+  [codeplug settings area](codeplug-settings.md#33-aes-provisioning-and-channel-privacy); a binary file with keys is private.
 
 ## 2. The editing model (built)
 
@@ -106,11 +106,12 @@ The fields `channel_t` holds today, plus what the open-firmware record can't hol
 | dmr_id | 4 | 0 = the radio's |
 | tot_s | 2 | 0 = the radio's |
 | alias_tx | 1 | `CODEPLUG_ALIAS_*` bits |
-| **privacy_slot** | 1 | 0 = the radio-wide choice (`settings.privacy_active`), 1..4 = that key slot of the settings store (`settings-store.md` 3.1), 0xFF = privacy off on this channel |
+| privacy_mode, privacy_id | 2 | 0 inherit, 1 clear, 2 AES-256; the second byte is the AES on-air key ID, not a settings slot |
 | reserved | to 64 bytes | 0, append only |
 
-The privacy key itself is never in the codeplug. A channel names a slot. The open-firmware layout has no field for it, so
-until the native format exists every channel uses the radio-wide slot.
+The editing model already holds these privacy fields. The current open-firmware image stores them in the channel
+privacy map and carries its AES key ring separately ([codeplug-settings.md](codeplug-settings.md) 3.3). The future
+native representation must preserve that policy and on-air ID; the former proposal for a basic-privacy slot is obsolete.
 
 ## 4. Storage plan (not built)
 

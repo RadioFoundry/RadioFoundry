@@ -273,8 +273,8 @@ To set the key on the radio, open **Settings > Privacy** (**OK**, **7**, **4**).
 2. On **Key**, press **OK**. Type the key in decimal with the number keys (Motorola 1 to 255, Anytone 0 to 65535).
    Press **OK** again.
 
-The radio keeps the key across restarts. Setting the type back to Off removes the key and turns privacy off. The codeplug
-can't hold privacy keys yet. Developers can also load a key over USB with the debug tool:
+The radio keeps the key across restarts. Setting the type back to Off removes the key and turns privacy off.
+Basic-privacy keys stay in local settings. Developers can also load a key over USB with the debug tool:
 
 ```
 tools/rfoundry_debug.py radio privacy moto 5          # Motorola basic privacy, key 5
@@ -284,6 +284,49 @@ tools/rfoundry_debug.py radio privacy off
 
 Without a key, the Privacy tile shows "No privacy key: set one in Settings > Privacy". The keys are stored without
 protection in the radio's flash.
+
+### AES-256
+
+With `CONFIG_DMR_AES256`, use the Codeplug Editor's **Radio > AES-256** fields to enter up to two keys. Each key
+needs exactly 64 hexadecimal digits and an on-air key ID from 0 to 255. Use different IDs for the two slots and
+the same key and ID on the other radio. A key is 32 bytes, not a passphrase. Clear a slot's key field to remove it.
+
+For each DMR channel, choose its privacy policy:
+
+| Choice | Transmit behavior |
+|---|---|
+| Inherit | Uses the radio-wide privacy selection |
+| Clear | Sends clear voice regardless of that selection |
+| AES-256 | Requires the channel's on-air key ID to match an installed key; otherwise PTT is refused |
+
+Copy to VFO keeps this policy and key ID across restarts. The Privacy tile changes the radio-wide selection;
+an explicit channel or VFO policy takes precedence. Loaded keys remain available for receive.
+
+Save or transfer the binary codeplug to retain the keys and policies. **Keep that binary private: it contains
+the keys without protection.** The editor refuses qdmr YAML, channel CSV, and whole-codeplug CSV export while
+keys or explicit channel privacy policies are present; those formats cannot preserve this provisioning safely.
+Other table CSV exports remain available. qdmr YAML containing commercial encryption keys is refused on import.
+
+Developers can provision local fallback keys over the debug link:
+
+```
+tools/rfoundry_debug.py radio aes 1 7
+tools/rfoundry_debug.py radio aes off
+```
+
+The first command prompts privately for a 64-digit hexadecimal key, installs it in slot 1 with on-air key ID 7,
+and selects it for transmit. The second command disables the radio-wide AES transmit selection while keeping
+receive keys. These local keys are used only when the codeplug has no AES key-ring record. A codeplug ring,
+including an explicitly empty ring, takes precedence. Keys and the selected transmit slot survive restart.
+Settings > Privacy remains the basic-privacy editor. The Privacy tile turns the selected radio-wide AES key off
+and back on. It refuses a missing AES key instead of falling back to basic privacy. Selecting a basic-privacy
+type in Settings turns the radio-wide AES selection off and clears that preference.
+
+Receive needs the call's privacy header; joining after that header is not yet supported by the hardware drivers.
+An encrypted PTT request is refused when its key, modem support, or healthy hardware entropy is missing. An
+underrun ends encrypted transmission rather than inserting clear silence. Keys are stored without flash
+protection. The 32-bit message indicator cannot guarantee IV uniqueness; rotate keys for sustained use.
+Hardware and vendor compatibility are pending manual tests. See the [protocol and limits](../spec/dmr-aes256.md).
 
 ## Position in calls
 

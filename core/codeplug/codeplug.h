@@ -48,7 +48,11 @@ typedef struct {
 	uint8_t sfr_flag1;
 	uint8_t sfr_a;
 	uint8_t sfr_b;
+	uint8_t privacy_mode;	// CODEPLUG_PRIVACY_*; zero preserves legacy radio-wide behavior
+	uint8_t privacy_id;	// on-air key ID when privacy_mode is AES256
 } channel_t;
+
+enum { CODEPLUG_PRIVACY_INHERIT, CODEPLUG_PRIVACY_CLEAR, CODEPLUG_PRIVACY_AES256, CODEPLUG_PRIVACY_INVALID };
 
 // channel_t.alias_tx: what the channel sends as talker alias on each timeslot (text = our radio name)
 #define CODEPLUG_ALIAS_TS1_TEXT	0x01u

@@ -17,7 +17,7 @@ when it passes the filters, and shown either way:
 | Group (FLCO 0) | its talkgroup is the talk target's, all call (0xFFFFFF), in the channel's RX group list (listen list), the reply target's during the reply window, or hear all, "digital monitor" in the UI (the hear-all latch: the MONITOR key's press toggles it on a DMR channel, its release does nothing (#19); Quick 5; `radio_req_dmr_hear_all`; until the channel changes, DMR stops (a mode change), or BACK on Home; the end of a call doesn't end it) |
 | Private (FLCO 3) | addressed to our ID (the channel's DMR ID override, else the radio's), or all call, or hear all |
 | Our own ID as source | not while we transmit or for `DMR_CALL_OWN_ECHO_MS` (700 ms) after our call ended or was cut short (the repeater's echo of it); later it is judged as any other call, so a parrot's playback of our call plays (#294). A terminator from our ID ends only the call with its LC, never another station's |
-| Encrypted | only with a privacy key, and never after a PI header (section 5) |
+| Encrypted | with a matching basic-privacy key, or a validated AES-256 PI and matching full-width key (section 5) |
 
 A call that doesn't pass is shown as busy ("not played") while it lasts, and counts for polite channel access.
 
@@ -82,7 +82,7 @@ tones. In DMR it works like a DMR channel that has no codeplug record behind it:
 | Own ID | The radio's, as on a channel without an ID of its own |
 | Talk target | A typed ID or talkgroup, or a codeplug contact, private or group. Default: talkgroup 9, as a channel with no contact and no RX group list |
 | Heard | The talk target's group, all call, private calls to our ID, the reply window, and everything with digital monitor. The VFO has no RX group list, so no other talkgroup is played (it is shown as busy), as on a DMR channel whose list is empty |
-| Power, TOT, privacy key | The radio's, as on a channel (the VFO's power level, the radio's TOT, the radio-wide privacy key) |
+| Power, TOT, privacy | The VFO's power and privacy mode/key ID; the radio's TOT. Privacy inherits the radio-wide choice until copied from a channel |
 
 Not in the VFO: talker alias (a channel's setting), roaming, the "hear all by default" setting, saving to a channel.
 
@@ -117,12 +117,13 @@ back the channel as it was, without the temporary changes, as any channel change
 | RX and TX frequency | Both, so a repeater offset stays (the VFO is then a split VFO; a new RX frequency, typed or stepped, keeps the offset while RX stays in its transmit band and TX lands there too, `board_offset_carries`; a move to another band, or TX off the band, makes the VFO simplex). Direct-mode channels (DMO) copy RX only |
 | Mode, bandwidth | Both |
 | Power | The level in effect; a channel on "default" stays on the radio's default |
+| Privacy | TX mode (inherit, clear, or AES-256) and on-air key ID. Key material stays in its key ring |
 | CTCSS / DCS, RX and TX (FM) | Both. A DMR channel has none: the VFO keeps its own for its FM mode |
 | Color code, timeslot (DMR) | Both. The slot is the one in use: a timeslot chosen for now, else the talk contact's override, else the channel's |
 | Talk target (DMR) | The ID and the group / private flag of what the channel would send now: a target chosen for now, else its contact, else the first talkgroup of its RX group list, else talkgroup 9 (the channel default). A one-shot or reply target is not copied |
 | FM channel into a VFO that has DMR values | Color code, timeslot and talk target stay as the VFO had them |
 
-Not copied, because the VFO has nothing to hold them: the RX group list, the privacy key, roaming, the data and
+Not copied, because the VFO has nothing to hold them: the RX group list, key material, roaming, the data and
 emergency settings, the talker alias, TOT and the squelch level (a radio setting, not the VFO's). They apply to the VFO
 as the radio-wide values.
 
@@ -211,9 +212,15 @@ and loads the active slot at boot (`settings-store.md` 3.1); the open-firmware c
 set it.
 
 PI header (data type 0, CRC-CCITT masked 0x6969): heard between the voice LC header and burst A, it marks the call
-encrypted and its first two octets are kept for display (algorithm and key ID in the common layout; not interpreted).
+encrypted. Algorithm and key ID are read from information octets 0 and 2; octet 1 is the manufacturer identifier.
 A PI header heard just before a late entry is attached to that call. A PI header means an MI-based scheme the static
-keystream can't undo, so such a call is never played, key or not. We never send PI headers.
+keystream can't undo, so such a call cannot use the basic-privacy hook.
+
+AES-256 voice (`CONFIG_DMR_AES256`) uses a separate stateful cipher path with PI TX/RX and two full-width key slots.
+RADIO op 39 provisions the keys and selects the transmit slot. Without a matching key or trustworthy synchronization,
+encrypted receive is muted; without a key, modem support, or healthy entropy, encrypted PTT is refused. Current
+hardware receive needs the PI header; raw embedded-block late entry is implemented in the portable stack but not
+exposed by those drivers. Protocol, tests, and current limits: [dmr-aes256.md](dmr-aes256.md).
 
 The HR_C6000 reports the EMB PI bit unreliably for voice, so its driver clears it (`modem-hrc6000.md`); on that modem
 privacy is recognized from the service options and PI headers only.
@@ -284,6 +291,6 @@ last one's slot timing can be decoded at that timing to its end.
   (set a known hang time, read the byte) on the bench; the reply time setting (`rs_reply_s`) overrides it meanwhile.
 - DMR ID database plain format: the 4-byte BCD ID is read as a little-endian word (the spec doesn't say).
 - A codeplug TOT of 0 means "off" in the vendor layout; here it falls back to the radio's TOT.
-- Emergency alarm and emergency call TX are in `dmr-emergency.md`. No enhanced privacy. GPS Info is host-tested
+- Emergency alarm and emergency call TX are in `dmr-emergency.md`. No ARC4 enhanced privacy. AES-256 is described in section 5. GPS Info is host-tested
   (`dmrCallTest`) and on air both ways against the SDR bench (`docs/testing/on-air-coverage.md`). Not done: GPS Info in the hotspot's own
   transmissions (it relays the host's), a separate Settings > Location toggle for it (it lives on the APRS page).

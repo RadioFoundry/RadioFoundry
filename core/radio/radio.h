@@ -409,6 +409,9 @@ void radio_req_dmr_focus(uint32_t id, bool private_call);
 // Load a basic privacy key (type dmrPrivacyType_t, 0 = off). Held in RAM until changed or the radio restarts
 void radio_req_dmr_privacy(uint8_t type, uint16_t key);
 #endif
+#if CONFIG_DMR_AES256
+void radio_req_dmr_aes(uint8_t slot);
+#endif
 #endif
 // Scan (CONFIG_SCAN; no-ops otherwise). A zone scan starts from the current channel, a VFO scan steps the VFO by its
 // step between lo_hz and hi_hz (both 0: the band the VFO is in), dual watch alternates between the current channel

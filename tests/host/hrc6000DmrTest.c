@@ -1326,6 +1326,32 @@ static void test_halt(void)
 	CHECK(eng.st.ticks == ticks);	// ISRs ignored when off
 }
 
+static void test_encrypted_underrun(void)
+{
+	fresh_engine();
+	pending_burst = false;
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 0, DMR_ACCESS_IMPOLITE));
+	dmr_tx_burst_t f = mk(DMR_BURST_VOICE, 5, false);
+	f.encrypted = true;
+	f.emb_valid = true;
+	memcpy(f.emb, "\x44\x42\x88\x81", 4);
+	CHECK(hrc6000_dmr_tx_queue(&eng, &f));
+	uint32_t t = 6000000;
+	int type, control;
+	tx_tick(t, &type, &control);
+	CHECK(type == 0x58 && control == 0x80 && last_write(2, 0x29) == 0x44);
+	bool block = false;
+	for (int i = 0; i < nx; i++)
+		if (!xlog[i].read && xlog[i].page == 2 && xlog[i].reg == 0x29 && xlog[i].n == 4)
+			block |= memcmp(xlog[i].data, f.emb, 4) == 0;
+	CHECK(block);
+	int written = voice_writes;
+	tx_tick(t += 30000, &type, &control);
+	tx_tick(t += 30000, &type, &control);
+	drain();
+	CHECK(control != 0x80 && voice_writes == written && count_ev(DMR_EV_TX_REJECTED) == 1);
+}
+
 int main(void)
 {
 	hrc6000_attach(&dev, &bus);
@@ -1339,6 +1365,7 @@ int main(void)
 	test_tx_empty_slot();
 	test_tx_fill();
 	test_tx_crc_and_underrun();
+	test_encrypted_underrun();
 	test_tx_end_hold();
 	test_tx_aligned_rmo();
 	test_tx_aligned_deaf();

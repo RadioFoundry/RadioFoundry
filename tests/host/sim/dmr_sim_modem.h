@@ -17,6 +17,7 @@ typedef struct {
 	uint8_t kind;		// dmr_burst_kind_t
 	uint8_t voice_index;
 	bool host_crc;
+	bool encrypted;
 	uint8_t sync;		// dmr_tx_burst_t.sync_override
 	uint8_t len;
 	uint8_t payload[DMR_PAYLOAD_MAX];

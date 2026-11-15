@@ -374,8 +374,11 @@ static void arm(hrc7000_dmr_t *e, const dmr_tx_burst_t *b)
 			buf10[9] = hrc7000_dmr_emb_checksum(lc);
 			write_tx_ram(e, buf10, 10);
 		}
+		if (b->emb_valid)
+			for (unsigned i = 0; i < 4; i++) e->dev->buf[C7_TX_RAM + 0x29 + i] = b->emb[i];
+		w(e, C7_VOICE_EMB_CTRL, b->emb_valid ? 0 : 2);
 		e->next_voice = (uint8_t)((idx + 1u) % 6u);
-		w(e, C7_LAYER2_SEND_TYPE, hrc7000_dmr_send_type(kind, idx, e->lcss));
+		w(e, C7_LAYER2_SEND_TYPE, hrc7000_dmr_send_type(kind, idx, b->emb_valid ? false : e->lcss));
 	} else {
 		uint8_t n;
 		uint8_t buf[24];
@@ -411,6 +414,7 @@ static void arm(hrc7000_dmr_t *e, const dmr_tx_burst_t *b)
 	}
 	w(e, C7_LAYER2_TXRX_CTRL, TXRX_TX);
 	e->ops->pa_arm(e->ops->ctx);	// every arming starts the PA one-shot (hardware-dm32.md 8.6)
+	e->last_encrypted = b->encrypted;
 	e->last_kind = kind;
 	e->tx_last_arm = e->tick;
 	e->tx_any = true;
@@ -546,6 +550,12 @@ static void tx_tick(hrc7000_dmr_t *e)
 		} else if (e->tx_end_req && e->tx_any) {
 			w(e, C7_LAYER2_TXRX_CTRL, TXRX_NONE);
 			e->tx_state = TXS_DRAIN;
+			break;
+		} else if (e->last_kind == DMR_BURST_VOICE && e->last_encrypted) {
+			e->st.tx_underrun++;
+			w(e, C7_LAYER2_TXRX_CTRL, TXRX_NONE);
+			e->tx_state = TXS_DRAIN;
+			ev_simple(e, DMR_EV_TX_REJECTED, e->tx_ts, tick_arg(e));
 			break;
 		} else if (e->last_kind == DMR_BURST_VOICE) {
 			dmr_tx_burst_t s = { .kind = DMR_BURST_VOICE, .voice_index = e->next_voice, .len = 0 };

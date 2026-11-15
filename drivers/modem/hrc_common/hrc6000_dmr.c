@@ -462,6 +462,8 @@ static void setup_burst(hrc6000_dmr_t *e, const dmr_tx_burst_t *b)
 		uint8_t frame[DMR_VOICE_BYTES];
 		memcpy(frame, b->len >= DMR_VOICE_BYTES ? b->payload : ambe_silence, DMR_VOICE_BYTES);
 		hrc6000_dmr_voice(e->dev, true, frame);
+		if (b->emb_valid)
+			hrc_write_burst(e->dev, HRC_PAGE_DATA, 0x29, b->emb, 4);
 	} else if (kind == DMR_BURST_IDLE) {
 		write_page2(e, 0x18, b->payload, b->len, 12);	// its own place, keeps the LC at 0x00
 	} else {
@@ -483,9 +485,10 @@ static void setup_burst(hrc6000_dmr_t *e, const dmr_tx_burst_t *b)
 		}
 	}
 	w(e->dev, R_SLOT_CTL, CTL_TX);
-	w(e->dev, R_TX_TYPE, (uint8_t)(hrc6000_dmr_reg50(kind, idx) | (voice ? e->dev->chip->voice_lcss(idx) : 0u)));
+	w(e->dev, R_TX_TYPE, (uint8_t)(hrc6000_dmr_reg50(kind, idx) | (voice && !b->emb_valid ? e->dev->chip->voice_lcss(idx) : 0u)));
 	e->ctl_next = CTL_TX;
 
+	e->last_encrypted = b->encrypted;
 	e->last_kind = kind;
 	if (voice) {
 		e->last_voice = idx;
@@ -556,6 +559,13 @@ static void tx_slot(hrc6000_dmr_t *e)
 		return;
 	}
 	// Underrun: keep a voice call going (dmr-modem.md 6.1 point 2), repeat a header, else leave the slot empty
+	if (e->last_kind == DMR_BURST_VOICE && e->last_encrypted) {
+		e->st.tx_underrun++;
+		set_ctl(e, CTL_NONE);
+		e->tx_state = TXS_ENDING;
+		push(e, DMR_EV_TX_REJECTED, e->phase_ts[e->tx_phase], e->tick);
+		return;
+	}
 	if (e->last_kind == DMR_BURST_VOICE) {
 		e->st.tx_underrun++;
 		dmr_tx_burst_t s = { .kind = DMR_BURST_VOICE, .voice_index = (uint8_t)((e->last_voice + 1u) % 6u),

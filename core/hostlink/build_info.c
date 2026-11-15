@@ -24,6 +24,9 @@ const char build_features[] =
 #if CONFIG_DMR
 	"DMR,"
 #endif
+#if CONFIG_DMR_AES256
+	"DMR_AES256,"
+#endif
 #if CONFIG_DMR_PRIVACY
 	"DMR_PRIVACY,"
 #endif

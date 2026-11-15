@@ -104,6 +104,7 @@ below are for an STM32F4 radio.
 | `CONFIG_GPS_SKY` | = GPS | the GPS screen under Tools > Position: satellites on a sky plot and signal bars, fix quality, grid locator (`core/position/nmea_sky.c`, `core/ui/ui_gps.c`; `docs/spec/ui.md` 2.3). Off, that page is text |
 | `CONFIG_APRS_IGATE` | = APRS_RX and HOSTLINK (n where flash is short) | the iGate rules, RF to APRS-IS and messages back, with the host helper `tools/aprs_gate.py` holding the APRS-IS connection |
 | `CONFIG_DMR` | y | DMR voice: modem driver, call stack, AMBE FEC, vocoder hosting, PCM audio |
+| `CONFIG_DMR_AES256` | = DMR | AES-256 voice, full-width keys and PI signaling; provisioning over the debug link, manual hardware acceptance pending (`docs/spec/dmr-aes256.md`) |
 | `CONFIG_DMR_PRIVACY` | = DMR | basic privacy (Motorola / Anytone BP) on the voice path, `core/dmr/dmrPrivacy.c` (`docs/spec/dmr-voice.md` 5) |
 | `CONFIG_DMR_TALKER_ALIAS` | = DMR | talker alias decode and our own alias TX (`docs/spec/dmr-voice.md` 3) |
 | `CONFIG_DMR_GPS` | = DMR | ETSI GPS Info in the embedded LC (FLCO 8): the caller's position on the receive screen (with distance and bearing when ours is known), in Recent and on the debug link; ours sent in the alias superframes when Settings > Location > Send in DMR calls is on and there is a position (GPS, host, fixed: `docs/spec/position.md`; no APRS needed; `docs/spec/dmr-voice.md`) |

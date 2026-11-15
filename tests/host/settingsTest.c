@@ -9,6 +9,7 @@
 #include <stddef.h>
 #include "storage/storage.h"
 #include "settings/settings.h"
+#include "settings/settings_aes.h"
 #include "sim/sim_flash.h"
 
 static int failures;
@@ -1128,6 +1129,45 @@ static void test_write_across_sectors(void)
 	CHECK(sim_flash_violations() == 0);
 }
 
+static void test_aes_keys(void)
+{
+	sim_flash_create(FLASH_SIZE, &map);
+	boot();
+	settings_t *w = settings_begin();
+	uint8_t key[32] = { 0 }, selected;
+	CHECK(settings_aes_provision(w, 1, 0, 3, key, &selected) && selected == 1);
+	CHECK(!settings_aes_provision(w, 2, 0, 3, key, &selected));
+	CHECK(!settings_aes_provision(w, 3, 1, 3, key, &selected));
+	CHECK(!settings_aes_provision(w, 0, 1, 1, key, &selected));
+	CHECK(!settings_aes_provision(w, 1, 1, 4, key, &selected));
+	CHECK(settings_aes_provision(w, 1, 0, 0, key, &selected) && w->aes_valid == 0);
+	CHECK(settings_aes_provision(w, 0, 0, 2, key, &selected) && selected == 0);
+	memcpy(w->radio_name, "ABCDEFGHIJKLMNOP", SETTINGS_NAME_LEN);
+	w->aes_valid = 3; w->aes_tx_slot = 2;
+	w->aes_id[0] = 0; w->aes_id[1] = 239;
+	for (unsigned i = 0; i < 32; i++) w->aes_key[1][i] = (uint8_t)i;
+	settings_end(1);
+	CHECK(settings_flush());
+	boot();
+	settings_t s;
+	settings_read(&s);
+	CHECK(s.aes_valid == 3 && s.aes_tx_slot == 2 && s.aes_id[1] == 239);
+	char name[SETTINGS_NAME_LEN + 1];
+	settings_read_radio_name(name);
+	CHECK(strcmp(name, "ABCDEFGHIJKLMNOP") == 0);
+	for (unsigned i = 0; i < 32; i++) CHECK(s.aes_key[1][i] == i && s.aes_key[0][i] == 0);
+	// A complete pre-AES two-page record loads with the appended key ring disabled.
+	sim_flash_create(FLASH_SIZE, &map);
+	put_record(&map, 0, 0, 1, SETTINGS_LAYOUT | (1u << SETTINGS_PAGE_SHIFT), 396 - SETTINGS_PAGE_BYTES,
+		(const uint8_t *)&s + SETTINGS_PAGE_BYTES, true, true);
+	put_record(&map, 0, 1, 2, SETTINGS_LAYOUT, SETTINGS_PAGE_BYTES, &s, true, true);
+	boot();
+	settings_read(&s);
+	CHECK(s.aes_valid == 0 && s.aes_tx_slot == 0);
+	for (unsigned i = 0; i < SETTINGS_AES_KEYS; i++)
+		for (unsigned j = 0; j < 32; j++) CHECK(s.aes_key[i][j] == 0);
+}
+
 int main(void)
 {
 	test_journal_basic();
@@ -1143,6 +1183,7 @@ int main(void)
 	test_sound_flags();
 	test_map_end();
 	test_settings_pages();
+	test_aes_keys();
 	test_settings_gateway_upgrade();
 	test_settings_bad_records();
 	test_settings_worn_sector();

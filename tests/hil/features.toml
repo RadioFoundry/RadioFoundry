@@ -80,6 +80,12 @@ switch = "DMR"
 spec = "docs/spec/dmr-voice.md"
 source = ["core/dmr/call", "core/dmr/ambe", "core/dmr/fec", "drivers/modem", "hal/hal_dmr_modem.h", "hal/hal_vocoder.h"]
 
+[feature.dmr_aes256]
+switch = "DMR_AES256"
+spec = "docs/spec/dmr-aes256.md"
+source = ["core/dmr/call", "core/settings", "core/radio", "hal/hal_dmr_modem.h", "hal/hal_system.h", "drivers/modem", "platform/stm32f4/sysboot.c"]
+manual = ["Check encrypted TX and RX, late entry, and key selection against each claimed vendor mode; record the peer model and firmware. Untested on hardware."]
+
 [feature.dmr_privacy]
 switch = "DMR_PRIVACY"
 spec = "docs/spec/dmr-voice.md"

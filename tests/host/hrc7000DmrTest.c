@@ -1393,6 +1393,25 @@ static void test_bs_mode_cleared(void)
 	CHECK(REG(C7_BS_CACH) == 0);
 }
 
+static void test_encrypted_underrun(void)
+{
+	setup();
+	hrc7000_dmr_run(&eng);
+	CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	dmr_tx_burst_t f = voice(5, 0x42);
+	f.encrypted = true; f.emb_valid = true;
+	memcpy(f.emb, "\x44\x42\x88\x81", 4);
+	CHECK(hrc7000_dmr_tx_queue(&eng, &f));
+	tick(true);
+	CHECK(REG(C7_LAYER2_SEND_TYPE) == 0x58 && REG(C7_VOICE_EMB_CTRL) == 0);
+	CHECK(memcmp((const void *)(buf + C7_TX_RAM + 0x29), f.emb, 4) == 0);
+	int arms = pa_arms;
+	tick(true);
+	tick(true);
+	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0 && pa_arms == arms);
+	CHECK(count_kind(DMR_EV_TX_REJECTED, NULL) == 1);
+}
+
 int main(void)
 {
 	test_pure();
@@ -1404,6 +1423,7 @@ int main(void)
 	test_rx_resync();
 	test_cc_scan();
 	test_tx();
+	test_encrypted_underrun();
 	test_tx_end_hold();
 	test_tx_edges();
 	test_lost_requests();

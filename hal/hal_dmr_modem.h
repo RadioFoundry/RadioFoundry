@@ -59,6 +59,8 @@ typedef struct {
 	int16_t rssi_dbm;	// 0 = unknown
 	uint8_t len;		// payload bytes: 27 voice, 12 rate 1/2 (LC/CSBK/header 9+3 CRC), 18 rate 3/4, 24 rate 1
 	uint8_t payload[DMR_PAYLOAD_MAX];
+	bool emb_valid;		// raw 32-bit non-RC single-burst embedded block, when exposed by the modem
+	uint8_t emb[4];
 	uint8_t lc[9];		// full LC without CRC
 } dmr_burst_t;
 
@@ -96,6 +98,9 @@ typedef struct {
 typedef struct {
 	uint8_t kind;		// dmr_burst_kind_t
 	uint8_t voice_index;	// voice: 0..5
+	bool emb_valid;		// override the voice burst's embedded block (LCSS 00)
+	uint8_t emb[4];
+	bool encrypted;		// no clear-silence substitution if an encrypted TX underruns
 	bool host_crc;		// payload already carries its CRC (CRC_MCU_Control)
 	uint8_t sync_override;	// dmr_sync_family_t, DMR_SYNC_NONE = normal MS sync
 	uint8_t len;
@@ -139,6 +144,7 @@ enum { DMR_BS_CACH_NONE, DMR_BS_CACH_OURS, DMR_BS_CACH_CHIP, DMR_BS_CACH_UNKNOWN
 
 typedef struct {
 	// Chip on and in DMR mode (after the board's RF side is in DMR mode); events start flowing to cb
+	bool aes_voice;		// PI TX and raw single-burst embedded TX are implemented
 	bool (*start)(const dmr_config_t *cfg, dmr_event_cb_t cb, void *ctx);
 	void (*stop)(void);		// back to the FM / idle state of the chip
 	void (*configure)(const dmr_config_t *cfg);

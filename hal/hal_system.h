@@ -63,6 +63,8 @@ typedef struct {
 	// an aligned word inside the platform's register windows. Writes *val when write, then reads the register back into
 	// *val; the read has the register's side effects (a read-to-clear EOI acknowledges). False outside the windows
 	bool (*reg)(uint32_t addr, uint32_t *val, bool write);
+	// Optional healthy hardware entropy; false on timeout or health failure. Never a clock/UID fallback.
+	bool (*random)(uint32_t *word);
 #if defined(CONFIG_STUB_ENTRY) && CONFIG_STUB_ENTRY
 	uint32_t stub_run_addr;		// last, so a file built without config.h sees the same layout before it
 	// Optional (NULL: any image): the loaded image may run here. The STM32 refuses one that doesn't feed the IWDG

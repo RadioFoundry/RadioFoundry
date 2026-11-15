@@ -9,6 +9,7 @@
 #include "radio/radio_sm.h"
 #include "radio/tones.h"
 #include "settings/settings.h"
+#include "codeplug/codeplug_privacy.h"
 #include "config.h"
 #include "hal_dtmf.h"
 #if CONFIG_ZONE_WRITE
@@ -804,6 +805,8 @@ static void vfo_copy(radio_sm_t *sm, uint32_t now_ms)
 	v->rx_hz = c->rx_hz;
 	v->tx_hz = c->tx_hz != 0 && !c->dmo ? c->tx_hz : c->rx_hz;
 	v->mode = c->mode;
+	v->privacy_mode = c->privacy_mode;
+	v->privacy_id = c->privacy_id;
 	v->bw = c->bw;
 	v->power = sm->temp_power ? sm->view.power : c->power;
 	if (c->mode == RADIO_MODE_DMR) {
@@ -1109,6 +1112,17 @@ static void dmr_load_channel(radio_sm_t *sm)
 	}
 }
 
+#if CONFIG_DMR_AES256
+_Static_assert(DMR_AES_SLOTS == SETTINGS_AES_KEYS, "AES settings and call-stack slot counts differ");
+static dmr_aes_keys_t aes_keys;
+static settings_t aes_settings;
+static codeplug_aes_keys_t codeplug_aes;
+
+static bool aes_entropy(uint32_t *word)
+{
+	return board.system && board.system->random && board.system->random(word);
+}
+#endif
 #if CONFIG_DMR_PRIVACY
 static dmrPrivacyKey_t privacy_key;	// the call stack's privacy hook context (radio task only)
 #endif
@@ -1201,10 +1215,11 @@ static void dmr_configure(radio_sm_t *sm)
 		cfg.tx_alias_format = DMR_TA_ISO8;
 	}
 #endif
-	bool privacy = false;
+	bool privacy = ch->privacy_mode == CODEPLUG_PRIVACY_INHERIT && sm->aes_tx_slot != 0;
+	cfg.aes_required = privacy || ch->privacy_mode >= CODEPLUG_PRIVACY_AES256;
 #if CONFIG_DMR_PRIVACY
-	privacy = sm->privacy_type != DMR_PRIVACY_OFF;
-	if (privacy) {
+	privacy = privacy || (ch->privacy_mode == CODEPLUG_PRIVACY_INHERIT && sm->privacy_type != DMR_PRIVACY_OFF);
+	if (ch->privacy_mode == CODEPLUG_PRIVACY_INHERIT && sm->privacy_type != DMR_PRIVACY_OFF) {
 		privacy_key.type = (dmrPrivacyType_t)sm->privacy_type;
 		privacy_key.key = sm->privacy_key;
 		cfg.privacy = dmrPrivacyCallHook;
@@ -1212,6 +1227,26 @@ static void dmr_configure(radio_sm_t *sm)
 		cfg.tx_fid = dmrPrivacyFID(privacy_key.type, cfg.tx_fid);
 		cfg.tx_svc = dmrPrivacyServiceOptions(privacy_key.type, cfg.tx_svc);
 	}
+#endif
+#if CONFIG_DMR_AES256
+	settings_read(&aes_settings);
+	memcpy(aes_keys.key, aes_settings.aes_key, sizeof(aes_keys.key));
+	memcpy(aes_keys.id, aes_settings.aes_id, sizeof(aes_keys.id));
+	aes_keys.valid = aes_settings.aes_valid;
+	if (codeplug_aes_load(&codeplug_aes) != 0) {
+		memcpy(aes_keys.key, codeplug_aes.key, sizeof(aes_keys.key));
+		memcpy(aes_keys.id, codeplug_aes.id, sizeof(aes_keys.id));
+		aes_keys.valid = codeplug_aes.valid;
+	}
+	aes_keys.tx_slot = ch->privacy_mode == CODEPLUG_PRIVACY_INHERIT ? sm->aes_tx_slot : 0;
+	if (ch->privacy_mode >= CODEPLUG_PRIVACY_AES256) {
+		aes_keys.tx_slot = 0; // aes_required keeps a missing key from becoming clear voice.
+		for (unsigned i = 0; ch->privacy_mode == CODEPLUG_PRIVACY_AES256 && i < DMR_AES_SLOTS; i++)
+			if ((aes_keys.valid & (1u << i)) && aes_keys.id[i] == ch->privacy_id) aes_keys.tx_slot = (uint8_t)(i + 1);
+	}
+	cfg.aes = &aes_keys;
+	cfg.entropy = aes_entropy;
+	privacy = cfg.aes_required || privacy;
 #endif
 #if CONFIG_DMR_EMERGENCY
 	// In emergency: every call carries the emergency service option, goes to the emergency target, and doesn't wait
@@ -4488,6 +4523,7 @@ static void apply_prefs(radio_sm_t *sm, const settings_t *st)
 		sm->privacy_key = 0;
 	}
 #endif
+	sm->aes_tx_slot = st->aes_tx_slot;
 #endif
 	set_temporary(sm);
 }
@@ -4556,6 +4592,8 @@ static void restore_vfo(radio_sm_t *sm, const settings_t *st, uint8_t idx)
 	sm->vfo_ch.rx_tone = tones_valid(&rx) ? rx : (subtone_t){ TONE_NONE, 0 };
 	sm->vfo_ch.tx_tone = tones_valid(&tx) ? tx : (subtone_t){ TONE_NONE, 0 };
 	vfo_sfr_set(&sm->vfo_ch, v.sfr_a);
+	sm->vfo_ch.privacy_mode = st->vfo_privacy[idx != 0][0];
+	sm->vfo_ch.privacy_id = st->vfo_privacy[idx != 0][1];
 	sm->vfo_seeded = true;
 }
 
@@ -4563,6 +4601,8 @@ static void restore_vfo(radio_sm_t *sm, const settings_t *st, uint8_t idx)
 static void persist_vfo(const radio_sm_t *sm, settings_t *st, uint8_t idx)
 {
 	const channel_t *v = &sm->vfo_ch;
+	st->vfo_privacy[idx != 0][0] = v->privacy_mode;
+	st->vfo_privacy[idx != 0][1] = v->privacy_id;
 	uint8_t power = v->power == CODEPLUG_POWER_DEFAULT ? SETTINGS_UNSET8 : v->power;
 #if CONFIG_DUAL_WATCH
 	if (idx != 0) {
@@ -5657,11 +5697,33 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		if (type >= DMR_PRIVACY_NUM_TYPES || (type != DMR_PRIVACY_OFF && !dmrPrivacyKeyIsValid(type, key))) {
 			break;
 		}
+		sm->aes_tx_slot = 0;
+		settings_t *saved_aes = settings_begin();
+		saved_aes->aes_tx_slot = 0;
+		saved_aes->aes_preferred = 0;
+		settings_end(now_ms);
 		sm->privacy_type = type;
 		sm->privacy_key = type != DMR_PRIVACY_OFF ? key : 0;
 		if (sm->dmr_running) {
 			dmr_configure(sm);
 		}
+		changed(sm);
+		break;
+	}
+#endif
+#if CONFIG_DMR_AES256
+	case RREQ_DMR_AES: {
+		if ((uint32_t)req->arg > DMR_AES_SLOTS || sm->view.state == RS_TX) break;
+		sm->aes_tx_slot = (uint8_t)req->arg;
+		settings_t *saved_aes = settings_begin();
+		saved_aes->aes_tx_slot = sm->aes_tx_slot;
+		if (sm->aes_tx_slot) {
+			saved_aes->aes_preferred = sm->aes_tx_slot;
+			saved_aes->privacy_active = 0;
+			sm->privacy_type = 0; sm->privacy_key = 0;
+		}
+		settings_end(now_ms);
+		if (sm->dmr_running) dmr_configure(sm);
 		changed(sm);
 		break;
 	}
@@ -6379,7 +6441,17 @@ void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 {
 	sm->led_now = now_ms;
 	if (codeplug_kv_serial() != kv_seen) {
-		kv_load(sm, now_ms);	// a key written (menu, debug link): its value only, without a codeplug reload
+		kv_load(sm, now_ms);	// a key written (menu, debug link)
+#if CONFIG_DMR
+		if (!sm->view.vfo && sm->view.channel_number) {
+			channel_t updated;
+			if (codeplug_channel(sm->view.channel_number, &updated)) {
+				sm->view.ch.privacy_mode = updated.privacy_mode;
+				sm->view.ch.privacy_id = updated.privacy_id;
+			}
+		}
+		if (sm->dmr_running) dmr_configure(sm);
+#endif
 	}
 #if CONFIG_FM_TX_TONES
 	if (sm->burst_timed && !sm->burst_held && now_ms - sm->burst_ms >= RADIO_BURST_MIN_MS) {

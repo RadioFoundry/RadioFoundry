@@ -75,7 +75,7 @@ so with two pages a sector is erased once every 64 saves.
 ### 2.1 Pages
 
 `settings_t` is longer than one slot's payload, so it is stored as pages: page k holds bytes `236 * k` on.
-`SETTINGS_PAGES` is the number its size needs (2 now, 396 bytes); the page field allows 16 (3776 bytes). Each page is
+`SETTINGS_PAGES` is the number its size needs (2 now, 472 bytes); the page field allows 16 (3776 bytes). Each page is
 a record with its own length, so `settings_t` grows by appending fields, and a short page fills the fields it has.
 
 | Rule | Why |
@@ -193,14 +193,29 @@ later) and a type (`privacy_type[i]`, `dmrPrivacyType_t`). `privacy_active` pick
 4, or 0 for privacy off. Turning privacy off keeps the key in its slot.
 
 Today the radio core writes slot 1 when the key is set (the debug link's `RADIO` privacy op) and loads the
-active slot at boot, checking it with `dmrPrivacyKeyIsValid`. A per-channel choice of key will be a slot number in
-the native channel record (`codeplug-native.md` 3: 0 = the radio-wide choice, 1 to 4 = that slot). The keys
-themselves stay in the settings and never go into a codeplug file, so a codeplug can be shared without its keys.
+active slot at boot, checking it with `dmrPrivacyKeyIsValid`. Basic-privacy keys stay in local settings. The
+codeplug's per-channel policy selects inherit, clear, or AES-256 by on-air ID, not a basic-privacy slot
+([codeplug-settings.md](codeplug-settings.md) 3.3). AES keys can be carried in the codeplug (3.2).
 
 **Open: the keys are stored in plain text in the SPI NOR.** Anyone with the radio and a flash reader, or with the
 CPS shim's area 1 reads, can see them. The settings area is outside what the open-firmware CPS reads by region, but area 1
 reads any address. Options: refuse area 1 reads of the settings area, or obfuscate with a key from the MCU's UID.
 Neither stops a determined reader, and basic privacy is weak anyway.
+
+### 3.2 AES-256 key slots
+
+Appended at byte 396: `aes_key[2][32]` (64 bytes), `aes_id[2]` (2 bytes), `aes_valid` (1 byte), and
+`aes_tx_slot` (1 byte), `aes_preferred` (1 byte), and three reserved bytes. At byte 468, `vfo_privacy[2][2]` adds
+four bytes: TX privacy mode and on-air key ID for each VFO. Total settings size is 472 bytes, still two pages.
+An older record supplies zero for missing fields, so a VFO without a saved policy inherits the radio-wide choice.
+Valid-mask bits 0 and 1 distinguish
+unset slots from valid all-zero keys. TX slot 0 disables AES transmit; 1 and 2 select a slot. The other valid
+key remains available for receive. The privacy toggle retains `aes_preferred` so enabling it again uses AES; selecting basic privacy clears that preference. Duplicate on-air key IDs are refused during provisioning. An old record loads
+these fields as zero. RADIO op 39 writes this local ring; diagnostics do not return key bytes. A codeplug AES ring
+overrides the local ring when present, including an explicitly empty ring. Only absence permits local fallback.
+Both stores hold keys without wrapping; codeplug binaries containing keys are private provisioning files.
+See [AES-256 voice](dmr-aes256.md) and [codeplug records](codeplug-settings.md#33-aes-provisioning-and-channel-privacy).
+
 
 ## 4. The sector journal
 

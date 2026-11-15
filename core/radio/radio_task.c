@@ -347,6 +347,9 @@ void radio_req_dmr_focus(uint32_t id, bool private_call)
 {
 	post(RREQ_DMR_FOCUS, (int32_t)((id & 0xFFFFFFu) | (private_call ? 1u << 24 : 0u)), pdMS_TO_TICKS(20));
 }
+#if CONFIG_DMR_AES256
+void radio_req_dmr_aes(uint8_t slot) { post(RREQ_DMR_AES, slot, 0); }
+#endif
 #if CONFIG_DMR_PRIVACY
 void radio_req_dmr_privacy(uint8_t type, uint16_t key) { post(RREQ_DMR_PRIVACY, (int32_t)(((uint32_t)type << 16) | key), 0); }
 #endif

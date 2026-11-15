@@ -682,6 +682,7 @@ static int export_list(const char *name, uint8_t flags, const uint16_t *list, ui
 		if (!codeplug_channel(list[i], &ch)) {
 			continue;
 		}
+		if (ch.privacy_mode >= CODEPLUG_PRIVACY_AES256) return 0; // The sharing record cannot carry an encryption requirement.
 		channel_on_air(&ch, &z);
 		int need = 0;
 		uint8_t ref = 0;

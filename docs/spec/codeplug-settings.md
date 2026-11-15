@@ -100,6 +100,8 @@ continuation keeps the reserved bytes and the header length as it found them.
 | 0x0004 | TOT warning tone | bool | Off silences the tone before the transmit time-out | `sound_flags` bit 5 | Tones in the build (`CONFIG_BEEP`) |
 | 0x0005 | Battery tone | bool | Off silences the low and critical battery tones | `sound_flags` bit 6 | Tones in the build (`CONFIG_BEEP`) |
 | 0x0006 | TX denied tone | bool | Off silences the tone when PTT is refused or the time-out cuts a transmission | `sound_flags` bit 7 | Tones in the build (`CONFIG_BEEP`) |
+| 0x0007 | AES-256 keys | record | Versioned two-slot key ring (3.3) | Local AES ring used only when this record is absent | `CONFIG_DMR_AES256` |
+| 0x0008 | Channel privacy | record | Versioned map of channel TX privacy mode and on-air key ID (3.3) | Codeplug data; VFO copies live in settings | DMR; AES TX requires `CONFIG_DMR_AES256` |
 
 **Radio's own copy** is the setting's field in the settings store ([settings-store.md](settings-store.md) 3). Every
 scalar key has one (3.2).
@@ -110,7 +112,8 @@ which keys a radio supports, so a row's requires is written for that, not for a 
 support is still kept and carried (4).
 
 A key is listed in four places: this table, `CODEPLUG_KEY_*` in `core/codeplug/codeplug_kv.h`, a row of a firmware
-table (5.1) and a row of the Codeplug Editor's `KEYS` (7). `tools/check_keys.py` checks that they agree: the same
+table (5.1) and a row of the Codeplug Editor's `KEYS` (7). The AES records use their own firmware and editor serializers
+(`codeplug_privacy.h`, `privacy.js`) instead of scalar tables. `tools/check_keys.py` checks that they agree: the same
 keys, each once, of the same type.
 
 ### 3.1 Types
@@ -147,7 +150,8 @@ A new key is added to this table in the same change that first writes it.
 - **A record for settings that are only valid together.** If taking one from the codeplug and the other from the
   radio's own copy could give a combination nobody set (a target ID with the other's "is a radio" flag), they are one
   key of type record, present or absent as a whole.
-- **Every scalar and record key has the radio's own copy** in the settings store, and the key holds over it (5). A
+- **Every scalar and record key has the radio's own copy** in the settings store, and the key holds over it (5), except
+  the channel privacy map, which is codeplug data (3.3). A
   setting never lives only in the area: with another firmware's codeplug the area reads empty and can't be written,
   and the setting must still work and still be set from the menu. A key family (below) is the exception: a list is
   codeplug data and has no second copy.
@@ -164,6 +168,27 @@ A list that belongs to a radio's controls is a family too: the keypad buttons, o
 button's action. Ranges are assigned in blocks of 256 from 0x0100 up (0x0100-0x01FF the first), so a family can grow
 to its block and no further without a new row. A list that may outgrow a block is split into two families by the
 change that needs it, never by moving the first.
+
+### 3.3 AES provisioning and channel privacy
+
+Key `0x0007` is a 68-byte record: version 1 at offset 0, valid-slot mask at offset 1 (bits 0 and 1), then two
+33-byte slots at offsets 2 and 35. Each slot holds its eight-bit on-air key ID followed by the 32 key octets in
+written hex order. Both valid slots must have different IDs. Valid bits distinguish empty slots from all-zero keys.
+The record is authoritative when present, including when both slots are empty. A missing record leaves the local
+settings ring available; a short record, unknown record version, or duplicate valid IDs supplies no usable keys.
+Keys are stored without wrapping. A binary codeplug carrying this record is private provisioning data.
+
+Key `0x0008` is a 2049-byte record: version 1 at offset 0, then two bytes for each channel 1 through 1024. Channel
+n begins at offset `1 + 2 * (n - 1)`: TX privacy mode, then on-air key ID. Mode 0 inherits the radio-wide selection,
+1 forces clear TX, and 2 requires AES-256 with that ID. Writers set the ID to zero outside mode 2. The map contains
+no key material. An absent map means inherit. A short map, unknown version, unknown mode, or recognized invalid
+or newer settings area refuses affected DMR TX rather than making it clear. An AES channel whose ID has no key
+also refuses PTT. These are TX policies; loaded keys remain available for receive.
+
+Both records may grow by appended bytes, which writers preserve. Their version and minimum length are checked
+before use; short encryption records do not acquire defaults under the general record-growth rule below.
+The channel map belongs to the codeplug, so it has no local settings copy. The VFOs retain copied mode/ID pairs
+separately in [settings](settings-store.md#32-aes-256-key-slots).
 
 ## 4. Rules for readers and writers
 

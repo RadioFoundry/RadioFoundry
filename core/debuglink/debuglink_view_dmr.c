@@ -103,6 +103,9 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 			d->focus_private, d->one_shot);
 		dl_text(t, "dmr.target_manual=%u\ndmr.privacy=%u\ndmr.alias_tx=%u\ndmr.gps_tx_channel=%u\n",
 			d->target_manual, d->privacy, d->alias_tx, d->gps_tx_channel);
+#if CONFIG_DMR_AES256
+		dl_text(t, "dmr.aes256=1\ndmr.aes_tx_slot=%u\ndmr.aes_rx_ready=%u\n", cv->aes_tx_slot, cv->aes_rx_ready);
+#endif
 		dl_text(t, "dmr.underruns=%u\n", (unsigned)d->underruns);
 		if (board.dmr != NULL && board.dmr->health != NULL) {
 			// Modem interrupts the driver found lost and recovered from; the first one's controller words

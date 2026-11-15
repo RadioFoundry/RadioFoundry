@@ -644,6 +644,14 @@ static void test_export(void)
 	uint8_t copy[ZS_RECORD_MAX];
 
 	memcpy(copy, recbuf, (size_t)len);
+	channel_t encrypted;
+	CHECK(codeplug_channel(1, &encrypted));
+	encrypted.privacy_mode = CODEPLUG_PRIVACY_AES256;
+	encrypted.privacy_id = 7;
+	CHECK(codeplug_set_channel(1, &encrypted));
+	CHECK(zone_export_channel(1, recbuf, sizeof(recbuf)) == 0);
+	CHECK(zone_export_zone(0, recbuf, sizeof(recbuf), &included) == 0);
+
 	fresh();
 	with_zones();
 	zone_import_result_t r;

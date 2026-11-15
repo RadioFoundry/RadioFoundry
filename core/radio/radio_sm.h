@@ -166,6 +166,7 @@ typedef enum {
 	RREQ_WAKE,		// radio_task.c: tick now (a DMR transmission ended: dmr_call_set_wake); never radio_sm_request
 	RREQ_VOLUME_HOLD,	// arg: 1 hold the level and ignore the knob (keys locked), 0 follow it again
 	RREQ_VFO_SFR,		// the VFO's SFR role (CONFIG_SFR): arg = byte A, as a channel's (sfr.h); VFO only
+	RREQ_DMR_AES,		// reload AES keys from settings; arg is TX slot (0 off)
 } radio_req_type_t;
 
 // RREQ_TONE's argument: which (RADIO_TONE_*) in bits 25:24, the tone type in 23:16, the value in 15:0
@@ -405,6 +406,7 @@ typedef struct {
 	uint8_t win_group_s, win_private_s;	// reply windows in effect (dmr_configure)
 	uint8_t privacy_type;		// dmrPrivacyType_t, 0 = off
 	uint16_t privacy_key;
+	uint8_t aes_tx_slot;
 	char radio_name[CODEPLUG_RADIO_NAME_LEN + 1];	// our talker alias text
 	uint16_t group_hang_ms, private_hang_ms;	// codeplug hang times, 0 = the stack's default reply window
 	uint32_t hs_rx_hz, hs_tx_hz;	// hotspot frequencies

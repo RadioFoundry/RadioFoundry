@@ -1421,6 +1421,10 @@ static void quick_activate(int tile)
 		}
 		break;
 	case QT_PRIVACY:
+		if (view->ch.privacy_mode != CODEPLUG_PRIVACY_INHERIT) {
+			ui_toast(TR("Encryption is set by this channel"));
+			break;
+		}
 		if (ui_svc_privacy(!ui_st.privacy)) {
 			ui_st.privacy = !ui_st.privacy;
 			ui_toast(ui_st.privacy ? TR("Privacy on for now") : TR("Privacy off"));

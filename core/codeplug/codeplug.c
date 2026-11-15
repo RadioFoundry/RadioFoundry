@@ -6,7 +6,7 @@
 // Edits rewrite records through the sector journal (core/storage) and keep every byte the model doesn't own.
 #include <string.h>
 #include "codeplug.h"
-#include "codeplug_kv.h"	// CODEPLUG_KV_ADDR: Start new clears the settings area
+#include "codeplug_privacy.h"	// CODEPLUG_KV_ADDR: Start new clears the settings area
 #include "board.h"
 #include "storage/storage.h"
 
@@ -758,6 +758,42 @@ uint32_t codeplug_channel_errors(void)
 	return ch_errors;
 }
 
+#if CONFIG_DMR
+// Serialized access under storage_lock; a full map fits in one settings-area record.
+static uint8_t privacy_map[CODEPLUG_PRIVACY_MAP_SIZE];
+
+static int privacy_map_load(void)
+{
+	int n = codeplug_kv_get(CODEPLUG_KEY_CHANNEL_PRIVACY, privacy_map, sizeof(privacy_map));
+	if (n < 0) {
+		uint16_t length, entries;
+		codeplug_kv_state_t state = codeplug_kv_info(&length, &entries);
+		if (state != CODEPLUG_KV_EMPTY && state != CODEPLUG_KV_VALID) {
+			uint8_t magic[4];
+			if (state == CODEPLUG_KV_NEWER || !flash_read(EE(CODEPLUG_KV_ADDR), magic, 4) ||
+			    memcmp(magic, "RFKV", 4) == 0) return -1;
+		}
+		memset(privacy_map, 0, sizeof(privacy_map));
+		privacy_map[0] = 1;
+		return 0;
+	}
+	return n >= (int)sizeof(privacy_map) && privacy_map[0] == 1 ? 1 : -1;
+}
+
+static bool privacy_map_store(uint16_t number, const channel_t *ch)
+{
+	int state = privacy_map_load();
+	if (state < 0 || ch->privacy_mode > CODEPLUG_PRIVACY_AES256) return false;
+	unsigned at = 1 + 2 * (number - 1u);
+	uint8_t id = ch->privacy_mode == CODEPLUG_PRIVACY_AES256 ? ch->privacy_id : 0;
+	if (privacy_map[at] == ch->privacy_mode && privacy_map[at + 1] == id) return true;
+	privacy_map[at] = ch->privacy_mode;
+	privacy_map[at + 1] = id;
+	codeplug_kv_op_t op = { CODEPLUG_KEY_CHANNEL_PRIVACY, sizeof(privacy_map) | CODEPLUG_KV_HEAD, privacy_map };
+	return codeplug_kv_write(&op, 1);
+}
+#endif
+
 bool codeplug_channel(uint16_t number, channel_t *out)
 {
 	bool ok;
@@ -773,6 +809,15 @@ bool codeplug_channel(uint16_t number, channel_t *out)
 		ok = false;
 		break;
 	}
+#if CONFIG_DMR
+	if (ok && source == CODEPLUG_OPENFW) {
+		int state = privacy_map_load();
+		unsigned at = 1 + 2 * (number - 1u);
+		out->privacy_mode = state < 0 ? CODEPLUG_PRIVACY_INVALID : privacy_map[at];
+		out->privacy_id = state < 0 ? 0 : privacy_map[at + 1];
+		if (out->privacy_mode > CODEPLUG_PRIVACY_AES256) out->privacy_mode = CODEPLUG_PRIVACY_INVALID;
+	}
+#endif
 	storage_unlock();
 	return ok;
 }
@@ -1025,6 +1070,10 @@ bool codeplug_set_channel(uint16_t number, const channel_t *ch)
 	// A channel shown may be rewritten in an unknown bank: its in-use bit is set already, the bitmap isn't written
 	bool ok = materialize() && (is_used(number) || bank_known(number)) &&
 		  flash_read(channel_addr(number), r, sizeof(r));
+#if CONFIG_DMR
+	if (ok && ch->privacy_mode != CODEPLUG_PRIVACY_INHERIT && ch->privacy_mode != CODEPLUG_PRIVACY_CLEAR)
+		ok = privacy_map_store(number, ch);
+#endif
 	if (ok) {
 		if (!is_used(number)) {
 			blank_channel(r);	// a free slot's bytes aren't ours to keep (another firmware's, or deleted)
@@ -1039,6 +1088,10 @@ bool codeplug_set_channel(uint16_t number, const channel_t *ch)
 			set_used(number, false);
 		}
 	}
+#if CONFIG_DMR
+	if (ok && (ch->privacy_mode == CODEPLUG_PRIVACY_INHERIT || ch->privacy_mode == CODEPLUG_PRIVACY_CLEAR))
+		ok = privacy_map_store(number, ch);
+#endif
 	if (ok) {
 		find_max();
 		serial++;

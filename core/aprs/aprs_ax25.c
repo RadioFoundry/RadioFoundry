@@ -110,13 +110,17 @@ static uint8_t path_from_codeplug(const codeplug_aprs_t *cp)
 
 // A path in the codeplug we haven't taken yet (a CPS wrote it) replaces ours: the path lives in both places and the
 // last one changed wins (aprs.md 11). Outside the lock
-static void take_codeplug_path(const settings_t *st, const codeplug_aprs_t *cp)
+static void take_codeplug_path(const codeplug_aprs_t *cp)
 {
 	uint8_t path = path_from_codeplug(cp);
-	if (path >= APRS_PATH_COUNT || st->aprs_cp_path == path + 1u) {
+	if (path >= APRS_PATH_COUNT) {
 		return;
 	}
 	settings_t *s = settings_begin();
+	if (s->aprs_cp_path == path + 1u) {
+		settings_end(aprs_s.now);
+		return;
+	}
 	if (s->aprs_stored != 1) {
 		aprs_cfg_store_defaults(s);	// so the path can be stored
 	}
@@ -174,15 +178,15 @@ bool aprs_path_to_codeplug(void)
 void aprs_ax25_identity(void)
 {
 	char name[CODEPLUG_NAME_LEN + 1];
-	settings_t st;
+	char saved_name[SETTINGS_NAME_LEN + 1];
 	codeplug_aprs_t cp;
-	settings_read(&st);
+	settings_read_radio_name(saved_name);
 	bool have_cp = codeplug_aprs(1, &cp);
 	LOCK();
 	memcpy(name, aprs_s.test_call, sizeof(aprs_s.test_call));
 	UNLOCK();
 	if (name[0] == '\0') {
-		memcpy(name, st.radio_name, SETTINGS_NAME_LEN);
+		memcpy(name, saved_name, SETTINGS_NAME_LEN);
 		name[SETTINGS_NAME_LEN] = '\0';
 	}
 	if (name[0] == '\0') {
@@ -217,7 +221,7 @@ void aprs_ax25_identity(void)
 	aprs_s.cp_serial = codeplug_serial();
 	aprs_s.ident_ms = aprs_s.now;
 	if (have_cp) {
-		take_codeplug_path(&st, &cp);
+		take_codeplug_path(&cp);
 	}
 }
 

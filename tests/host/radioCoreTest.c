@@ -23,7 +23,7 @@
 #include "dmr/dmr_emergency.h"
 #include "ui/ui_svc.h"
 #include "storage/storage.h"
-#include "codeplug/codeplug_kv.h"
+#include "codeplug/codeplug_privacy.h"
 #include "dmr/dmrPrivacy.h"
 #include "dmr/dmrData.h"
 #include "sim/sim_flash.h"
@@ -271,6 +271,8 @@ uint32_t codeplug_dmr_id(void) { return own_dmr_id; }
 
 // The codeplug's settings area: the ARS server key (the gateway's is built out, CONFIG_DMR_IP_GATEWAY=0) and the
 // Settings > Sound tone keys, one-byte bools (kv_tone: -1 absent)
+static bool kv_aes_present;
+static uint8_t kv_aes[CODEPLUG_AES_RECORD_SIZE];
 static bool kv_ars_present;
 static uint8_t kv_serial;
 static uint32_t kv_ars;
@@ -279,6 +281,10 @@ static bool kv_held;	// a CPS session holds the flash, or another firmware's cod
 static bool kv_is_tone(uint16_t key) { return key >= CODEPLUG_KEY_CALL_END_TONE && key <= CODEPLUG_KEY_TX_DENY_TONE; }
 int codeplug_kv_get(uint16_t key, void *buf, uint16_t max)
 {
+	if (key == CODEPLUG_KEY_AES_KEYS && kv_aes_present) {
+		memcpy(buf, kv_aes, max < sizeof(kv_aes) ? max : sizeof(kv_aes));
+		return sizeof(kv_aes);
+	}
 	if (kv_is_tone(key)) {
 		if (kv_tone[key - CODEPLUG_KEY_CALL_END_TONE] < 0) {
 			return -1;
@@ -2443,6 +2449,71 @@ static void reload_channel(void)
 	run(50);
 }
 
+static void test_channel_privacy(void)
+{
+	dmr_start(true);
+	settings_t *st = settings_begin();
+	st->aes_valid = 1;
+	st->aes_id[0] = 7;
+	settings_end(now);
+	memset(kv_aes, 0, sizeof(kv_aes));
+	kv_aes[0] = 1; kv_aes[1] = 2; kv_aes[35] = 239;
+	kv_aes_present = true;
+	chans[4].privacy_mode = CODEPLUG_PRIVACY_AES256;
+	chans[4].privacy_id = 239;
+	reload_channel();
+	CHECK(sm.view.dmr.privacy);
+#if CONFIG_DMR_AES256
+	CHECK(dmr_call_view()->aes_tx_slot == 2);
+#endif
+	// A present codeplug ring replaces local provisioning, even when it is empty.
+	chans[4].privacy_id = 7;
+	reload_channel();
+	CHECK(dmr_call_view()->aes_tx_slot == 0);
+	req(RREQ_PTT, 1); run(300);
+	CHECK(sm.view.state != RS_TX && dmr_call_view()->tx_error == DMR_TX_ERR_REJECTED);
+	req(RREQ_PTT, 0); run(300);
+	chans[4].privacy_id = 239;
+	kv_aes[1] = 0;
+	reload_channel();
+	CHECK(dmr_call_view()->aes_tx_slot == 0 && sm.view.dmr.privacy);
+	kv_aes[1] = 2;
+	reload_channel();
+#if CONFIG_VFO_DMR
+	req(RREQ_VFO_COPY, 0); run(50);
+	CHECK(sm.view.vfo && sm.view.ch.privacy_mode == CODEPLUG_PRIVACY_AES256 && sm.view.ch.privacy_id == 239);
+	boot(); run(50);
+	CHECK(sm.view.vfo && sm.view.ch.privacy_mode == CODEPLUG_PRIVACY_AES256 && sm.view.ch.privacy_id == 239);
+	req(RREQ_VFO, 0); run(50);
+#endif
+	// An explicit clear channel overrides the selected radio-wide AES mode.
+	st = settings_begin(); st->aes_tx_slot = 1; settings_end(now);
+	chans[4].privacy_mode = CODEPLUG_PRIVACY_CLEAR;
+	reload_channel();
+	CHECK(!sm.view.dmr.privacy && dmr_call_view()->aes_tx_slot == 0);
+	req(RREQ_PTT, 1); run(300);
+	CHECK(sm.view.state == RS_TX);
+	req(RREQ_PTT, 0); run(1000);
+#if CONFIG_DMR_AES256
+	chans[4].privacy_mode = CODEPLUG_PRIVACY_INHERIT;
+	st = settings_begin(); st->aes_preferred = 2; st->aes_valid = 0; settings_end(now);
+	reload_channel();
+	CHECK(ui_svc_privacy(true) && sm.aes_tx_slot == 2);
+	CHECK(ui_svc_privacy(false));
+	kv_aes[1] = 0; kv_serial++; run(50);
+	CHECK(!ui_svc_privacy(true));
+	kv_aes[1] = 2; kv_serial++; run(50);
+#endif
+	chans[4].privacy_mode = CODEPLUG_PRIVACY_INVALID;
+	reload_channel();
+	req(RREQ_PTT, 1); run(300);
+	CHECK(sm.view.state != RS_TX && dmr_call_view()->tx_error == DMR_TX_ERR_REJECTED);
+	req(RREQ_PTT, 0); run(300);
+	kv_aes_present = false;
+	settings_defaults(settings_begin()); settings_end(now);
+	setup_codeplug();
+}
+
 static void tx_once(void)
 {
 	req(RREQ_PTT, 1);
@@ -3142,6 +3213,7 @@ void radio_req_dmr_focus(uint32_t id, bool p)
 	req(RREQ_DMR_FOCUS, (int32_t)((id & 0xFFFFFFu) | (p ? 1u << 24 : 0)));
 }
 void radio_req_dmr_privacy(uint8_t type, uint16_t key) { req(RREQ_DMR_PRIVACY, (int32_t)(((uint32_t)type << 16) | key)); }
+void radio_req_dmr_aes(uint8_t slot) { req(RREQ_DMR_AES, slot); }
 static uint16_t input_long, input_repeat;
 void input_set_timing(uint16_t l, uint16_t r) { input_long = l; input_repeat = r; }
 static bool ptt_blocked;
@@ -3785,6 +3857,20 @@ static void test_ui_glue(void)
 	settings_end(now);
 	CHECK(ui_svc_privacy(true) && d->privacy);
 	CHECK(ui_svc_privacy(false) && !d->privacy);
+#if CONFIG_DMR_AES256
+	st = settings_begin();
+	st->aes_valid = 1; st->aes_id[0] = 7;
+	settings_end(now);
+	req(RREQ_DMR_AES, 1);
+	CHECK(d->privacy && sm.aes_tx_slot == 1);
+	CHECK(ui_svc_privacy(false) && !d->privacy);
+	CHECK(ui_svc_privacy(true) && d->privacy && sm.aes_tx_slot == 1 && sm.privacy_type == DMR_PRIVACY_OFF);
+	CHECK(ui_svc_privacy(false));
+	st = settings_begin(); st->aes_valid = 0; settings_end(now);
+	CHECK(!ui_svc_privacy(true) && !d->privacy); // A stored BP key must not become a fallback.
+	req(RREQ_DMR_PRIVACY, 0);
+	st = settings_begin(); st->aes_preferred = 0; settings_end(now);
+#endif
 
 	// Settings with a store field now: kept across "power cycles" (settings_t), the reply window in the radio core
 	CHECK(ui_svc_setting_set(UI_SET_AUTO_LOCK_S, 60) && ui_svc_setting_get(UI_SET_AUTO_LOCK_S) == 60);
@@ -5070,7 +5156,7 @@ static void test_factory_reset(void)
 	CHECK(settings_flush());
 	n_ev = 0;
 	CHECK(ui_svc_factory_reset());
-	sim_flash_cut_after(436);	// the settings records (page 1: 176 + 4 bytes, page 0: 252 + 4) go in, the native erase fails
+	sim_flash_cut_after(sizeof(settings_t) + 40);	// both settings records commit, then the native erase fails
 	storage_job_poll();
 	sim_flash_power_on();
 	CHECK(n_ev == 1 && strstr(last_ev.text, "native") != NULL);
@@ -5572,6 +5658,7 @@ int main(void)
 	test_dmr_denied();
 	test_dmr_wake_leds();
 	test_dmr_voice_features();
+	test_channel_privacy();
 	test_dmr_contact_added();
 	test_ui_requests();
 	test_ui_glue();

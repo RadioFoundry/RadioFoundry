@@ -1070,6 +1070,11 @@ stored uncompressed, need more flash than the default image leaves free. With gz
 status page.
 
 
+AES-256 voice is built by default but untested on this radio. AES codeplug support exceeds the default flash
+budget by 80 bytes, so APRS-IS is off by default. The maximal configuration also leaves KISS over TCP and USRP
+off to stay within 464 KB, following the board's optional IP-service priority.
+The default configuration retains them. Protocol and manual acceptance: [dmr-aes256.md](dmr-aes256.md).
+
 ## 20. Facts moved from the shared specs
 
 - Settings and storage: on a 16 MB part the core's map is settings 0x011000 (32 KB, 8 sectors), journal 0x019000,

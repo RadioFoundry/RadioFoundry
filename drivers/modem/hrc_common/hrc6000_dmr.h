@@ -325,6 +325,7 @@ typedef struct {
 	dmr_tx_burst_t txq[HRC6000_DMR_TXQ_DEPTH];
 	volatile uint8_t txq_head, txq_tail;
 	dmr_tx_burst_t last_hdr;	// repeated when the queue runs dry in the header phase
+	bool last_encrypted;
 	uint8_t last_kind;
 	uint8_t last_voice;
 	uint8_t emb_lc[9];

@@ -373,6 +373,10 @@ msgid "Timeslot 2 for now"
 msgstr "Timeslot 2 per ora"
 
 #: core/ui/ui_app.c
+msgid "Encryption is set by this channel"
+msgstr "La cifratura è impostata dal canale"
+
+#: core/ui/ui_app.c
 msgid "Privacy on for now"
 msgstr "Privacy on per ora"
 

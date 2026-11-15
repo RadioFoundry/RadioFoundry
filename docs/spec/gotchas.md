@@ -393,8 +393,8 @@ A; it is unverified on the HR_C5000 and HR_C7000.
 
 **6.3 ISR-safe contact lookup.** The privacy contact's ID must come from a cache that is safe to read in the modem ISR.
 
-**6.4 PI headers are dropped by the receive path.** MI-based schemes need the modem to send and receive a PI header
-(data type 0); late entry in burst F is an open risk. Research note, privacy feasibility.
+**6.4 Stateful privacy needs PI support.** MI-based schemes need the modem to send and receive a PI header
+(data type 0); late entry in burst F is an open risk. AES PI TX/RX is now implemented. The hardware receive paths still do not expose the raw single-burst key announcement needed for PI-less encrypted late entry; see [dmr-aes256.md](dmr-aes256.md).
 
 ## 7. ARS, TMS, LRRP, UDT
 

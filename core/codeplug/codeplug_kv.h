@@ -22,6 +22,9 @@
 #define CODEPLUG_KEY_BATTERY_TONE	0x0005u	// bool: the low and critical battery tones
 #define CODEPLUG_KEY_TX_DENY_TONE	0x0006u	// bool: the tone when PTT is refused or a transmission cut
 
+#define CODEPLUG_KEY_AES_KEYS	0x0007u	// record: AES-256 key ring, version and two complete key slots
+#define CODEPLUG_KEY_CHANNEL_PRIVACY	0x0008u	// record: per-channel TX privacy mode and on-air key ID
+
 // How a key's value is encoded (docs/spec/codeplug-settings.md 3.1): the encoding, never a width. A type is never
 // redefined, only grown by appending bytes
 enum {

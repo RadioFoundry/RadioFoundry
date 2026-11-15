@@ -110,6 +110,12 @@ static struct {
 	dmr_burst_t le_burst;
 	uint32_t le_burst_slot;
 	// PI header heard before the call was (late entry after a missed voice LC header)
+#if CONFIG_DMR_AES256
+	dmr_aes_t aes_rx, aes_tx;
+	dmr_aes_keys_t aes_keys;
+	uint8_t aes_pending[12];
+	bool aes_pi_left;
+#endif
 	bool pi_pending;
 	uint32_t pi_pending_ms;
 	uint8_t pi_pending_alg, pi_pending_key;
@@ -530,6 +536,10 @@ static void dual_flush(void);
 
 static void rx_end(uint32_t now)
 {
+#if CONFIG_DMR_AES256
+	dmr_aes_reset(&s.aes_rx);
+#endif
+	s.pi_pending = false;
 	if (s.rx == RXC_NONE)
 		return;
 	if (s.rx == RXC_PLAY) {
@@ -573,6 +583,11 @@ static void rx_lc(const uint8_t lc[DMR_LC_BYTES], const dmr_burst_t *b, bool lat
 	dmr_lc_unpack(lc, &l);
 
 	bool continuing = s.rx != RXC_NONE;
+#if CONFIG_DMR_AES256
+	dmr_aes_reset(&s.aes_rx);
+	if (s.pi_pending && !elapsed(now, s.pi_pending_ms, true, fade_ms()))
+		dmr_aes_pi(&s.aes_rx, s.cfg.aes, s.aes_pending, l.dst);
+#endif
 	bool new_talker = !continuing || l.src != s.view.caller.src;
 	bool resumed = late && !continuing && rx_resuming(lc, b, now);
 
@@ -597,14 +612,14 @@ static void rx_lc(const uint8_t lc[DMR_LC_BYTES], const dmr_burst_t *b, bool lat
 	c->to_us = !c->group && l.dst == s.cfg.own_id;
 	c->fid = l.fid;
 	c->svc = l.svc;
-	bool was_encrypted = continuing && c->encrypted;
+	bool was_encrypted = continuing && !new_talker && c->encrypted;
 
 	c->encrypted = (l.svc & DMR_SVC_PRIVACY) != 0 || was_encrypted;
 	c->emergency = (l.svc & DMR_SVC_EMERGENCY) != 0;
 	c->late_entry = late;
 	memcpy(c->alias, s.ta.text, sizeof(c->alias));
 	c->alias_complete = s.ta.complete;
-	if (!continuing) {
+	if (!continuing || new_talker) {
 		c->pi_header = false;
 		c->pi_alg = c->pi_key = 0;
 		if (s.pi_pending && !elapsed(now, s.pi_pending_ms, true, fade_ms())) {
@@ -700,17 +715,33 @@ static void rx_play(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 		s.dirty = true;
 	}
 	// No key, or a PI header: an MI-based scheme the static key hook can't undo (docs/spec/gotchas.md 6.4)
-	if (enc && (!s.cfg.privacy || s.view.caller.pi_header)) {
+	uint8_t v[DMR_VOICE_BYTES];
+	bool aes = false;
+#if CONFIG_DMR_AES256
+	if (enc && s.cfg.aes && (s.view.caller.pi_header || !s.cfg.privacy)) {
+		if (s.view.caller.pi_header && s.view.caller.pi_alg != DMR_AES_ALGORITHM) {
+			stats.rx_enc_dropped++;
+			sink_lost(DMR_AMBE_FRAMES_PER_BURST);
+			return;
+		}
+		aes = dmr_aes_receive(&s.aes_rx, s.cfg.aes, b, slot, now, v);
+		if (!aes) {
+			stats.rx_enc_dropped++;
+			sink_lost(DMR_AMBE_FRAMES_PER_BURST);
+			return;
+		}
+	}
+#endif
+	if (enc && !aes && (!s.cfg.privacy || s.view.caller.pi_header)) {
 		stats.rx_enc_dropped++;
 		TR_WHAT('e');
 		sink_lost(DMR_AMBE_FRAMES_PER_BURST);	// no key: never play the scrambled voice
 		return;
 	}
 
-	uint8_t v[DMR_VOICE_BYTES];
-
-	memcpy(v, b->payload, DMR_VOICE_BYTES);
-	if (enc)
+	if (!aes)
+		memcpy(v, b->payload, DMR_VOICE_BYTES);
+	if (enc && !aes)
 		s.cfg.privacy(v, i, false, s.cfg.privacy_ctx);
 	stats.rx_voice_bursts++;
 	TR_WHAT('p');
@@ -932,14 +963,17 @@ static void rx_pi_header(const dmr_burst_t *b, uint32_t now)
 
 		ok = b->payload[10] == (uint8_t)(crc >> 8) && b->payload[11] == (uint8_t)crc;
 	}
-	if (!ok || b->len < 2)
+	if (!ok || b->len < 12)
 		return;
 	stats.rx_pi_headers++;
 	if (s.rx == RXC_NONE) {
 		s.pi_pending = true;
 		s.pi_pending_ms = now;
 		s.pi_pending_alg = b->payload[0];
-		s.pi_pending_key = b->payload[1];
+		s.pi_pending_key = b->payload[2];
+#if CONFIG_DMR_AES256
+		memcpy(s.aes_pending, b->payload, 12);
+#endif
 		return;
 	}
 
@@ -949,7 +983,13 @@ static void rx_pi_header(const dmr_burst_t *b, uint32_t now)
 		stats.rx_encrypted_calls++;
 	c->pi_header = true;
 	c->pi_alg = b->payload[0];
-	c->pi_key = b->payload[1];
+	c->pi_key = b->payload[2];
+#if CONFIG_DMR_AES256
+	// A repeated cached PI must not rewind an established stream.
+	if (!s.aes_rx.have_index || memcmp(s.aes_pending, b->payload, 10) != 0)
+		dmr_aes_pi(&s.aes_rx, s.cfg.aes, b->payload, c->dst);
+	memcpy(s.aes_pending, b->payload, 12);
+#endif
 	c->encrypted = true;
 	s.dirty = true;
 }
@@ -1121,6 +1161,10 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 
 static void source_end(void)
 {
+#if CONFIG_DMR_AES256
+	dmr_aes_reset(&s.aes_tx);
+	s.aes_pi_left = false;
+#endif
 	if (s.source && s.source->end)
 		s.source->end(s.source->ctx);
 }
@@ -1146,6 +1190,10 @@ static void data_end(uint8_t err);
 
 static void tx_deny(uint8_t err)
 {
+#if CONFIG_DMR_AES256
+	dmr_aes_reset(&s.aes_tx);
+	s.aes_pi_left = false;
+#endif
 	if (s.data_active) {	// a burst list, not PTT: its owner hears about it, nothing is shown
 		data_end(err);
 		return;
@@ -1203,6 +1251,14 @@ static bool tx_put(uint8_t kind, uint8_t index, bool host_crc, const uint8_t *pa
 	tb.voice_index = index;
 	tb.host_crc = host_crc;
 	tb.sync_override = tx_sync();
+#if CONFIG_DMR_AES256
+	tb.encrypted = kind == DMR_BURST_VOICE && s.aes_tx.ready;
+	if (tb.encrypted && index == 5) {
+		uint32_t embedded = dmr_aes_announcement(s.aes_tx.id);
+		tb.emb_valid = true;
+		for (unsigned i = 0; i < 4; i++) tb.emb[i] = (uint8_t)(embedded >> (24 - 8 * i));
+	}
+#endif
 	tb.len = len;
 	memcpy(tb.payload, payload, len);
 	if (!s.modem->tx_queue(&tb))
@@ -1248,6 +1304,15 @@ static void tx_fill(uint32_t now)
 			s.headers_left--;
 			continue;
 		}
+#if CONFIG_DMR_AES256
+		if (s.aes_pi_left) {
+			uint8_t pi[12];
+			dmr_aes_make_pi(&s.aes_tx, s.tx_target_used.id, pi);
+			if (!tx_put(DMR_BURST_PI_HEADER, 0, true, pi, 12)) return;
+			s.aes_pi_left = false;
+			continue;
+		}
+#endif
 		if (s.stop_req && s.voice_index == 0) {
 			tx_terminate(now, inflight);	// superframe boundary
 			return;
@@ -1268,10 +1333,17 @@ static void tx_fill(uint32_t now)
 		uint8_t v[DMR_VOICE_BYTES];
 
 		memcpy(v, s.stage, DMR_VOICE_BYTES);
+#if CONFIG_DMR_AES256
+		if (s.aes_tx.ready) dmr_aes_voice(&s.aes_tx, v, s.voice_index, true);
+		else
+#endif
 		if (s.cfg.privacy && (s.cfg.tx_svc & DMR_SVC_PRIVACY))
 			s.cfg.privacy(v, s.voice_index, true, s.cfg.privacy_ctx);
 		if (!tx_put(DMR_BURST_VOICE, s.voice_index, false, v, DMR_VOICE_BYTES))
 			return;	// keep the staged frames for the next try
+#if CONFIG_DMR_AES256
+		if (s.aes_tx.ready && s.voice_index == 5) dmr_aes_advance(&s.aes_tx);
+#endif
 		s.stage_n = 0;
 		if (s.voice_index == 0 && s.tx_sf < 255)
 			s.tx_sf++;
@@ -1291,6 +1363,32 @@ static void tx_start_voice(uint32_t now)
 		.dst = t.id & DMR_ID_MAX,
 		.src = s.cfg.own_id & DMR_ID_MAX,
 	};
+	if (s.cfg.aes_required &&
+#if CONFIG_DMR_AES256
+		(!s.cfg.aes || s.cfg.aes->tx_slot == 0)
+#else
+		true
+#endif
+	) {
+		tx_deny(DMR_TX_ERR_REJECTED);
+		return;
+	}
+#if CONFIG_DMR_AES256
+	dmr_aes_reset(&s.aes_tx);
+	s.aes_pi_left = false;
+	if (s.cfg.aes && s.cfg.aes->tx_slot) {
+		uint8_t slot = s.cfg.aes->tx_slot;
+		uint32_t mi = 0;
+		if (slot > DMR_AES_SLOTS || !(s.cfg.aes->valid & (1u << (slot - 1))) ||
+		    !s.modem->aes_voice || !s.cfg.entropy || !s.cfg.entropy(&mi) || mi == 0 ||
+		    !dmr_aes_begin(&s.aes_tx, s.cfg.aes, s.cfg.aes->id[slot - 1], mi)) {
+			tx_deny(DMR_TX_ERR_REJECTED);
+			return;
+		}
+		l.fid = 0x10; l.svc |= DMR_SVC_PRIVACY;
+		s.aes_pi_left = true;
+	}
+#endif
 	dmr_timing_t timing;
 
 	if (s.cfg.rmo)
@@ -1803,7 +1901,12 @@ void dmr_call_configure(const dmr_call_config_t *cfg)
 	bool rf_change = !s.configured || cfg->cc != s.cfg.cc || cfg->ts != s.cfg.ts || cfg->rmo != s.cfg.rmo ||
 			 cfg->listen.any_cc != s.cfg.listen.any_cc || cfg->access != s.cfg.access ||
 			 cfg->own_id != s.cfg.own_id || cfg->sfr_user != s.cfg.sfr_user || cfg->tx_sync != s.cfg.tx_sync ||
-			 cfg->rx_sync != s.cfg.rx_sync || cfg->sfr_rx != s.cfg.sfr_rx || cfg->cc2 != s.cfg.cc2;
+			 cfg->rx_sync != s.cfg.rx_sync || cfg->sfr_rx != s.cfg.sfr_rx || cfg->cc2 != s.cfg.cc2 ||
+			 cfg->aes_required != s.cfg.aes_required;
+#if CONFIG_DMR_AES256
+	if ((cfg->aes && memcmp(cfg->aes, &s.aes_keys, sizeof(s.aes_keys)) != 0) ||
+	    (!cfg->aes && s.cfg.aes)) rf_change = true;
+#endif
 	bool target_change = !same_target(cfg->talk_target, s.cfg.talk_target);
 
 	if (rf_change && s.configured) {
@@ -1818,7 +1921,14 @@ void dmr_call_configure(const dmr_call_config_t *cfg)
 		rx_end(s.now);
 		s.rpt_seen = s.rpt_bursts = false;
 	}
+#if CONFIG_DMR_AES256
+	if (cfg->aes) s.aes_keys = *cfg->aes;
+	else memset(&s.aes_keys, 0, sizeof(s.aes_keys));
+#endif
 	s.cfg = *cfg;
+#if CONFIG_DMR_AES256
+	s.cfg.aes = cfg->aes ? &s.aes_keys : NULL;
+#endif
 	if (s.cfg.ts != 2)
 		s.cfg.ts = 1;
 	s.cfg.cc &= 0x0F;
@@ -1904,6 +2014,12 @@ static bool data_receiving(uint32_t now)
 static void view_update(uint32_t now)
 {
 	dmr_call_view_t *v = &s.view;
+#if CONFIG_DMR_AES256
+	uint8_t aes_slot = s.cfg.aes ? s.cfg.aes->tx_slot : 0;
+	if (v->aes_tx_slot != aes_slot || v->aes_rx_ready != s.aes_rx.ready) s.dirty = true;
+	v->aes_tx_slot = aes_slot;
+	v->aes_rx_ready = s.aes_rx.ready;
+#endif
 	uint8_t state, phase;
 
 	if (transmitting() || s.tx == TX_WAKE_LISTEN || s.tx == TX_PERMIT)

@@ -2366,7 +2366,7 @@ static void test_pi_header_and_emergency(void)
 {
 	dmr_call_config_t c = base_cfg();
 	uint8_t lc[9];
-	static const uint8_t info[10] = { 0x21, 0x05, 0x12, 0x34, 0x56, 0x78, 0x00, 0x00, 0x5B, 0x00 };
+	static const uint8_t info[10] = { 0x21, 0x10, 0x05, 0x34, 0x56, 0x78, 0x00, 0x00, 0x5B, 0x00 };
 	unsigned frame = 1;
 	dmr_call_stats_t st;
 
@@ -3036,6 +3036,125 @@ static void test_sfr_dualpath_rx(void)
 }
 #endif
 
+static void test_required_aes_unavailable(void)
+{
+	dmr_call_config_t c = base_cfg();
+	c.aes_required = true;
+	setup(&c);
+	dmr_call_ptt(true);
+	run_ms(300);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_DENIED && sim.air_count == 0);
+	dmr_call_stop();
+}
+
+#if CONFIG_DMR_AES256
+static bool aes_entropy_ok;
+static bool aes_test_entropy(uint32_t *value)
+{
+	*value = 0x12345678;
+	return aes_entropy_ok;
+}
+
+static bool aes_zero_frame(uint8_t frame[9], void *ctx)
+{
+	uint8_t bits[49] = { 0 };
+	ambeFecEncode(bits, frame);
+	return true;
+}
+
+static unsigned aes_frames;
+static void aes_check_frame(const uint8_t frame[9], void *ctx)
+{
+	uint8_t bits[49];
+	ambeFecDecode(frame, bits, NULL);
+	for (unsigned i = 0; i < 45; i++) CHECK(bits[i] == 0);
+	aes_frames++;
+}
+
+static void test_aes_calls(void)
+{
+	static sim_air_t captured[SIM_AIR_MAX];
+	dmr_aes_keys_t keys = { .valid = 1, .tx_slot = 1, .id = { 1 } };
+	for (unsigned i = 0; i < 32; i++) keys.key[0][i] = (uint8_t)i;
+	dmr_call_config_t c = base_cfg();
+	c.aes = &keys;
+	c.entropy = aes_test_entropy;
+	static const dmr_voice_source_t zeros = { .next = aes_zero_frame };
+	static const dmr_voice_sink_t decoded = { .frame = aes_check_frame };
+	for (unsigned missing = 0; missing < 3; missing++) {
+		aes_entropy_ok = missing != 0;
+		keys.valid = missing == 1 ? 0 : 1;
+		c.entropy = missing == 2 ? NULL : aes_test_entropy;
+		setup(&c);
+		dmr_call_ptt(true);
+		run_ms(300);
+		CHECK(V()->phase == DMR_CALL_PHASE_TX_DENIED && sim.air_count == 0);
+	}
+	c.aes_required = true;
+	c.aes = NULL;
+	setup(&c);
+	dmr_call_ptt(true);
+	run_ms(300);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_DENIED && sim.air_count == 0);
+	c.aes_required = false;
+	c.aes = &keys;
+	keys.valid = 1; c.entropy = aes_test_entropy;
+	aes_entropy_ok = true;
+	setup(&c);
+	dmr_call_set_voice(&sink, &zeros);
+	dmr_call_ptt(true);
+	run_ms(1300);
+	dmr_call_ptt(false);
+	run_ms(600);
+	unsigned count = sim.air_count, pi_count = 0, voice_count = 0, f_count = 0;
+	memcpy(captured, sim.air, count * sizeof(*captured));
+	for (unsigned i = 0; i < count; i++) {
+		const sim_air_t *a = &captured[i];
+		if (a->kind == DMR_BURST_PI_HEADER) {
+			pi_count++;
+			CHECK(a->payload[0] == 0x25 && a->payload[1] == 0x10 && a->payload[2] == 1 && voice_count == 0);
+		}
+		if (a->kind == DMR_BURST_VOICE) {
+			CHECK(a->encrypted && pi_count == 1);
+			voice_count++;
+			if (a->voice_index == 5) {
+				static const uint8_t expected[4] = { 0x44, 0x42, 0x88, 0x81 };
+				CHECK(a->lcss == 0 && memcmp(a->emb, expected, 4) == 0);
+				f_count++;
+			}
+		}
+	}
+	CHECK(pi_count == 1 && voice_count >= 18 && f_count >= 3);
+	// Feed the actual transmitted headers and voice through the real receive call stack.
+	c.own_id++;
+	keys.tx_slot = 0;
+	setup(&c);
+	aes_frames = 0;
+	dmr_call_set_voice(&decoded, NULL);
+	for (unsigned i = 0; i < count; i++) {
+		const sim_air_t *a = &captured[i];
+		dmr_burst_t b = { .kind = a->kind, .voice_index = a->voice_index, .cc = 1, .ts = 1,
+			.crc_ok = true, .in_step = true, .sync = DMR_SYNC_MS, .len = a->len };
+		memcpy(b.payload, a->payload, a->len);
+		if (a->kind == DMR_BURST_VOICE && a->voice_index == 5) {
+			b.emb_valid = true;
+			memcpy(b.emb, a->emb, 4);
+		}
+		sim_rx(&b);
+		run_ms(60);
+	}
+	CHECK(aes_frames == 3 * voice_count);
+	CHECK(!V()->aes_rx_ready); // Terminator destroyed the receive cipher state.
+	// Reconfiguring to a clear channel must leave AES off on the next PTT.
+	c.aes = NULL;
+	setup(&c);
+	dmr_call_ptt(true);
+	run_ms(600);
+	for (unsigned i = 0; i < sim.air_count; i++) CHECK(sim.air[i].kind != DMR_BURST_PI_HEADER && !sim.air[i].encrypted);
+	dmr_call_stop();
+}
+#endif
+
 int main(void)
 {
 	test_lc_pack();
@@ -3076,6 +3195,10 @@ int main(void)
 	test_pi_header_and_emergency();
 	test_private_calls();
 	test_basic_privacy();
+	test_required_aes_unavailable();
+#if CONFIG_DMR_AES256
+	test_aes_calls();
+#endif
 	test_gps_lc();
 	test_gps_call();
 	test_sfr_user();

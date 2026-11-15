@@ -902,6 +902,17 @@ class DebugLink:
         """Load a basic privacy key in RAM: kind off | moto (key 1-255) | anytone (key 0-65535)."""
         self.radio(OP_DMR_PRIVACY, struct.pack("<BH", PRIVACY_TYPES[kind] if isinstance(kind, str) else kind, key))
 
+    def dmr_aes(self, slot, key_id=0, key=None, select=True):
+        """Provision an AES-256 voice key. Slot 0 disables encrypted TX; keys are never read back."""
+        if not 0 <= slot <= 2 or not 0 <= key_id <= 255:
+            raise ValueError("AES slot must be 0..2 and key ID 0..255")
+        if key is not None and (len(key) != 64 or any(c not in "0123456789abcdefABCDEF" for c in key)):
+            raise ValueError("AES key must contain exactly 64 hexadecimal digits")
+        if slot == 0 and key is not None:
+            raise ValueError("slot 0 disables TX and cannot hold a key")
+        flags = (1 if key is not None else 0) | (2 if select else 0)
+        self.radio(39, bytes([slot, key_id, flags]) + (bytes.fromhex(key) if key is not None else bytes(32)))
+
     def usb_network(self, on):
         """Switch the USB personality after the reply: network adapter (CDC-NCM) or serial port. The radio
         re-enumerates; in network mode the debug link answers over UDP (--port udp:<radio IP>)."""
@@ -1441,6 +1452,14 @@ def cmd_radio(link, a):
         link.dmr_target_clear()
     elif op == "privacy":             # privacy off | moto KEY | anytone KEY
         link.dmr_privacy(args[0], int(args[1], 0) if len(args) > 1 else 0)
+    elif op == "aes":                 # aes off | SLOT KEY_ID (prompts for key, avoiding shell history)
+        if args == ["off"]:
+            link.dmr_aes(0)
+        elif len(args) == 2:
+            import getpass
+            link.dmr_aes(int(args[0], 0), int(args[1], 0), getpass.getpass("AES-256 key (64 hex digits): "))
+        else:
+            raise SystemExit("aes off | SLOT KEY_ID")
     elif op == "scan":                # scan stop|zone|vfo|dual POS|cancel|nuisance|toggle|select a|b
         if args[:1] == ["select"]:
             if len(args) < 2 or args[1].lower() not in ("a", "b"):
@@ -2203,7 +2222,7 @@ def main(argv=None):
     p = sub.add_parser("radio")
     p.add_argument("op", choices=["channel", "pos", "zone", "vfo", "freq", "step", "power", "squelch", "bw", "tone",
                                   "monitor", "clear", "reply-cancel", "hotspot-exit", "target", "contact", "call-back",
-                                  "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set", "usb",
+                                  "target-clear", "privacy", "aes", "scan", "scan-vfo", "beep", "burst", "set", "usb",
                                   "usb-settings", "ppp", "vibrate", "mode", "cc", "ts", "sfr", "copy-vfo", "voice-test", "dtmf",
                                   "tx-limit", "tx-drive", "pa-keyup"])
     p.add_argument("args", nargs="*")
