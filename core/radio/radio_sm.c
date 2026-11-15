@@ -452,7 +452,7 @@ static void outputs(radio_sm_t *sm)
 {
 	bool tx = sm->view.state == RS_TX;
 	bool fm = sm->view.ch.mode == RADIO_MODE_FM && !sm->hotspot;
-	bool open = !tx && fm && (sm->view.monitor || sm->view.state == RS_RX);
+	bool open = !tx && fm && (sm->view.monitor || sm->view.state == RS_RX || (sm->view.state == RS_TX_DENIED && sm->deny_rx));
 	bool green = open;
 #if CONFIG_DMR
 	if (!fm && !tx && sm->view.state == RS_RX && sm->view.dmr.state == RDMR_RX) {
@@ -970,15 +970,22 @@ static uint8_t board_refusal(void)
 	return board_hwopt_pending() != NULL ? TXDENY_HWOPT : TXDENY_REFUSED;
 }
 
+// A busy refusal is quiet: the screen says "Channel busy", and no tone covers the call being received. On FM that
+// call plays on while PTT is held (deny_rx, set by ptt_press)
 static void deny(radio_sm_t *sm, uint8_t reason)
 {
+	if (reason != TXDENY_BUSY) {
+		sm->deny_rx = false;
+	}
 	sm->view.state = RS_TX_DENIED;
 	sm->view.tx_deny = reason;
 	sm->view.tot_warning = false;
 	deny_led_start(sm);
 	outputs(sm);
 	changed(sm);
-	beep(sm, BEEP_TX_DENY);
+	if (reason != TXDENY_BUSY) {
+		beep(sm, BEEP_TX_DENY);
+	}
 }
 
 // The TX timer in the view, and the warning tot_warn_s before the time-out (FM and DMR)
@@ -3890,13 +3897,18 @@ static void fm_tx_end(radio_sm_t *sm, bool keyed, uint32_t now_ms)
 	sm->tail_ms = 0;
 #endif
 	if (sm->view.state == RS_TX || sm->view.state == RS_TX_DENIED) {
-		sm->view.state = RS_IDLE;
+		// A busy refusal's reception goes on as it was, its tone already heard; anything else starts from idle
+		bool rx_on = sm->view.state == RS_TX_DENIED && sm->deny_rx;
+		sm->deny_rx = false;
+		sm->view.state = rx_on ? RS_RX : RS_IDLE;
 		sm->view.tx_deny = TXDENY_NONE;
 		sm->view.tot_warning = false;
 		sm->view.tone_burst = false;
 		sm->view.roger = false;
 		sm->close_count = 0;
-		reset_tone(sm);
+		if (!rx_on) {
+			reset_tone(sm);
+		}
 		outputs(sm);
 		changed(sm);
 	}
@@ -4027,6 +4039,7 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		return;
 	}
 #endif
+	bool was_rx = sm->view.state == RS_RX;
 	end_reception(sm, now_ms);
 
 	uint8_t reason = tx_check(sm);
@@ -4034,6 +4047,7 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		if (reason == TXDENY_INHIBIT && !sm->set.tx_inhibit) {
 			tx_limit_refused(sm->view.ch.tx_hz);	// counted here: tx_check is also a plain test elsewhere
 		}
+		sm->deny_rx = reason == TXDENY_BUSY && was_rx && sm->view.ch.mode == RADIO_MODE_FM;
 		deny(sm, reason);
 		return;
 	}
@@ -6307,6 +6321,20 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		return;
 	}
 	if (sm->view.state == RS_TX_DENIED) {
+		if (sm->deny_rx) {
+			// A busy refusal over a reception: its audio plays on until the squelch would have closed
+			follow_tone(sm, st.tone_ok);
+			uint8_t sq = sm->view.squelch;
+			bool holds = sm->view.tone_ok &&
+				     (sq == 0 || st.noise < radio_sm_squelch_open_below(sq) + RADIO_SQL_HYST_DB);
+			if (holds) {
+				sm->close_count = 0;
+			} else if (++sm->close_count >= close_polls()) {
+				sm->deny_rx = false;
+				sm->close_count = 0;
+				outputs(sm);
+			}
+		}
 		return;
 	}
 

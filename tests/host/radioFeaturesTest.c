@@ -2487,6 +2487,7 @@ static void test_beep_follows_volume(void)
 static void set_bcl_carrier(radio_settings_t *s) { s->bcl = RADIO_BCL_CARRIER; }
 static void set_bcl_tone(radio_settings_t *s) { s->bcl = RADIO_BCL_WRONG_TONE; }
 static void set_inhibit(radio_settings_t *s) { s->tx_inhibit = true; }
+static void clear_inhibit(radio_settings_t *s) { s->tx_inhibit = false; }
 
 static void test_bcl_inhibit(void)
 {
@@ -2494,11 +2495,37 @@ static void test_bcl_inhibit(void)
 	settings(set_bcl_carrier);
 	signal_on(0, 146520000, 30, no_tone);
 	run(100);
+	CHECK(sm.view.state == RS_RX && hw.audio);
+	beep_stats_t b0, b1;
+	beep_get_stats(&b0);
 	req(RREQ_PTT, 1);
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BUSY && hw.tx_calls == 0);
+	// A busy refusal is quiet and the call plays on through it, and after PTT is let go
+	run(200);
+	beep_get_stats(&b1);
+	CHECK(hw.audio && b1.played == b0.played && sm.view.state == RS_TX_DENIED);
 	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_RX && hw.audio);
+	// The call ends while PTT is held: its audio stops then, the refusal stays until the release
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_BUSY && hw.audio);
 	hw.sig[0].hz = 0;
+	run(300);
+	CHECK(sm.view.state == RS_TX_DENIED && !hw.audio);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_IDLE && !hw.audio);
 	run(100);
+	// Another refusal still has its tone
+	settings(set_inhibit);
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_INHIBIT);
+	run(50);
+	beep_get_stats(&b1);
+	CHECK(b1.played > b0.played);
+	req(RREQ_PTT, 0);
+	run(600);
+	settings(clear_inhibit);
 	req(RREQ_PTT, 1);
 	CHECK(sm.view.state == RS_TX);
 	req(RREQ_PTT, 0);
