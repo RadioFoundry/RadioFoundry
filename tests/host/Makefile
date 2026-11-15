@@ -90,6 +90,16 @@ lrrpTest: lrrpTest.c fuzz.h $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmrLrrp.h $(CORE)/
 	$(CC) $(CFLAGS) -Wshadow -o $@ lrrpTest.c $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c -lm
 
 # The air queue on a fake data service (docs/spec/dmr-data.md 12): byte ring, order, wrap, refusals, timing
+# The shared FEC of the modes on the air interface (core/fec) against the standard's matrices, and the framer
+# (core/air) on made-up symbol streams
+FEC     := $(wildcard $(CORE)/fec/*.c)
+TESTS   += fecTest airFramerTest
+fecTest: fecTest.c $(FEC) $(wildcard $(CORE)/fec/*.h)
+	$(CC) $(CFLAGS) -Wshadow -o $@ fecTest.c $(FEC)
+
+airFramerTest: airFramerTest.c $(CORE)/air/air_framer.c $(CORE)/air/air_framer.h $(CORE)/air/air_syms.h $(ROOT)/hal/hal_air.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ airFramerTest.c $(CORE)/air/air_framer.c
+
 TESTS   += airQueueTest
 airQueueTest: airQueueTest.c fuzz.h $(CORE)/dmr/dmrAirQueue.c $(CORE)/dmr/dmrAirQueue.h $(DATA) $(FRAME)
 	$(CC) $(CFLAGS) -Wshadow -o $@ airQueueTest.c $(CORE)/dmr/dmrAirQueue.c $(DATA) $(FRAME)
@@ -141,6 +151,8 @@ run: $(TESTS)
 	./dmrPrivacyTest
 	./lrrpTest
 	./airQueueTest
+	./fecTest | tail -1
+	./airFramerTest
 	./radioKeysTest
 	./zoneShareTest
 	./zoneShareSvcTest
