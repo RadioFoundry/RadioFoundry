@@ -225,11 +225,6 @@ static __attribute__((noinline)) int32_t setting_get_radio(uint8_t id)
 static __attribute__((noinline)) int32_t setting_get_flash(uint8_t id)
 {
 	settings_t st;
-#if CONFIG_KEY_ASSIGN
-	if (id >= UI_SET_KEY_FIRST && id <= UI_SET_KEY_LAST) {
-		return key_get(id);
-	}
-#endif
 	switch (id) {
 	case UI_SET_VOLUME:
 		settings_read(&st);
@@ -419,6 +414,11 @@ static __attribute__((noinline)) int32_t setting_get_flash(uint8_t id)
 
 int32_t ui_svc_setting_get(uint8_t id)
 {
+#if CONFIG_KEY_ASSIGN
+	if (id >= UI_SET_KEY_FIRST && id <= UI_SET_KEY_LAST) {	// not under setting_get_flash's settings_t: key_apply is deep
+		return key_get(id);
+	}
+#endif
 	int32_t val = setting_get_radio(id);
 	return val != INT32_MIN ? val : setting_get_flash(id);
 }

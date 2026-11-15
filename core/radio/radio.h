@@ -515,6 +515,8 @@ uint8_t radio_beep_level(uint8_t cap, int16_t volume_percent);
 void radio_settings_default(radio_settings_t *s);
 void radio_set_settings(const radio_settings_t *s);
 void radio_get_settings(radio_settings_t *s);
+// Two of its fields, without a copy of all of it on the caller's stack: the SFR rx mode and the CW ID interval
+void radio_get_sfr_settings(uint8_t *rx, uint8_t *cwid);
 // view.power_off without copying the view (the housekeeping task polls it)
 bool radio_power_off_wanted(void);
 // Switching off: the radio core sends what has to go out first (the ARS deregistration). radio_power_off_busy() is

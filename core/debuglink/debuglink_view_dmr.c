@@ -91,10 +91,10 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		dl_text(t, "dmr.tx_alias=%s\n", alias);
 		dl_text(t, "dmr.rmo=%u\ndmr.repeater_up=%u\n", d->rmo, d->repeater_up);
 		// The channel's SFR role (sfrRole_t; sfr.md 4) and whether its repeater role has the modem
-		radio_settings_t rs;
-		radio_get_settings(&rs);
-		dl_text(t, "dmr.sfr_role=%u\ndmr.sfr_rpt=%u\ndmr.sfr_rx=%u\n", d->sfr_role, d->sfr_rpt, rs.sfr_rx);
-		dl_text(t, "dmr.sfr_cwid=%u\ndmr.sfr_cw=%u\ndmr.sfr_cwid_sent=%u\ndmr.sfr_cwid_cut=%u\n", rs.sfr_cwid, d->sfr_cw,
+		uint8_t sfr_rx, sfr_cwid;
+		radio_get_sfr_settings(&sfr_rx, &sfr_cwid);
+		dl_text(t, "dmr.sfr_role=%u\ndmr.sfr_rpt=%u\ndmr.sfr_rx=%u\n", d->sfr_role, d->sfr_rpt, sfr_rx);
+		dl_text(t, "dmr.sfr_cwid=%u\ndmr.sfr_cw=%u\ndmr.sfr_cwid_sent=%u\ndmr.sfr_cwid_cut=%u\n", sfr_cwid, d->sfr_cw,
 			d->sfr_cwid_sent, d->sfr_cwid_cut);
 		dl_text(t, "dmr.target_id=%u\ndmr.target_private=%u\n", (unsigned)d->target_id, d->target_private);
 		dl_text_kv_str(t, "dmr.target_name", d->target_name);
