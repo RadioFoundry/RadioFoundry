@@ -230,12 +230,50 @@ transmitting in the slot after the next one, in phase with the bursts being rece
 - Then listen: the repeater is up when its outbound is heard with the slot number toggling correctly more than 3 times
   in a row.
 - No answer within 600 ms: send again, up to the configured number of attempts; then report failure to the user.
+- The CSBK goes on our own timing (`DMR_TIMING_OWN`): no repeater is heard, so there is nothing to align to. On the
+  timing the modem last had, from a repeater that had just dropped, the HR_C6000 sent nothing: its passive timing had
+  no repeater left to follow. A CSBK whose transmission ends without going on air (`DMR_EV_TX_DONE` with no
+  `DMR_EV_TX_SLOT_STARTED`, the modem no longer sending) is sent again at once, as the next attempt
+  (`call.tx_wake_lost`).
+- While a key-up waits for its first slot (the wake-up queued, or the aligned voice start not yet on the air), the
+  modem's slot numbers don't count as the repeater heard: the modem labels slots from the timing it last had, which
+  kept a repeater that had dropped "up". A repeater that dropped as the hang ended then got no wake-up.
+- A voice start through a repeater that the modem gives up before its first burst (`DMR_EV_TX_REJECTED` or
+  `DMR_EV_TX_DONE` with nothing sent: no slot timing to align to) wakes the repeater again instead of being refused:
+  once per key-up, and only while PTT is held, with the whole wake-up's attempts. A second such start is refused. The
+  refused start's own `DMR_EV_TX_DONE` comes after its rejection, so a wake-up waits for its CSBK's
+  `DMR_EV_TX_SLOT_STARTED` before taking a `DMR_EV_TX_DONE` as its own.
+- Where the modem reports the repeater's bursts (received, or heard between ours), only those say it is up; its slot
+  numbers don't. They run on from the timing it last had, so a repeater that had dropped counted as up for a key-up
+  0.6 s later, and a second wake-up counted as answered by them.
+- Our own ID as the source while a key-up lasts is our echo: the repeater replays an over it heard while down once a
+  wake-up starts it. It never makes the channel busy.
+- A start through a repeater that never gets a slot (no timing at all, so the modem's own wait never runs out) is cut
+  by the stall timeout; it wakes the repeater again as above instead of being refused.
 - A short PTT press still runs the whole wake-up (the user only starts the call; other radios do the same). On release the
   stack keeps listening and retrying. If the repeater answers after release, nothing is sent and the call view's
   `wake_admits` counter goes up, so the radio plays its talk permit tone. If no repeater is heard in the last attempt, the
   call ends with `DMR_TX_ERR_NO_REPEATER` and the radio plays its deny tone.
 
 ### 2.8 Hang time and TX hold-off
+
+- The repeater can drop under our over: its hang ended just as we keyed, and it took our voice as nothing. Learning
+  its hang to predict that is not general (hangs differ per repeater and per call type), so the stack reacts instead.
+  Where the radio's RF can receive the repeater's outbound between our bursts on a split channel (the modem's
+  `tx_listen_split`; `DMR_CALL_TX_LISTEN`, `dmr_call_set_tx_listen`), a voice over through a repeater listens there.
+  A repeater burst is BS sync on our color code: a neighbor's on another one (heard where the modem doesn't filter
+  the color code) is not ours. No repeater burst for `DMR_CALL_TX_DROP_MS` (240 ms) once our bursts are on the air
+  means it dropped
+  (`call.tx_rpt_drops`): the over ends with a terminator, not an abort (an abort mid-voice left the next CSBK
+  undecodable on the HR_C5000), the repeater is woken again (2.7, once per key-up) and the voice starts again. After
+  that wake-up only the repeater's own bursts count as its answer. Before our first burst the same holds: an aligned
+  start waits for the repeater's slot, and one that dropped as we keyed (its last bursts taken as up, or as the
+  answer to our wake-up) gives none. With no repeater burst for `DMR_CALL_TX_START_DROP_MS` (540 ms) since the start,
+  the start is aborted and the repeater woken, not left to the modem's own 1.5 s timeout, longer than a short key-up.
+  Longer than under the over: after our wake-up the HR_C5000 at times hears nothing of a repeater that is up until
+  the modem searches again (every 240 ms, [modem-hrc6000.md](modem-hrc6000.md) 5), so the modem gets two searches
+  first. `call.rx_in_tx` and `call.rx_bs_in_tx` count what was heard while sending. A radio whose RF can't (the
+  modem's `tx_listen_split` NULL or false) sends as before and doesn't see the drop.
 
 - Repeater call hang time: the repeater keeps the outbound up after a call; an MS that keys in it does not need BS
   activation and should reply on the same slot (and talkgroup, if group hang applies).

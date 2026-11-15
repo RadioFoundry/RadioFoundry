@@ -96,6 +96,10 @@ continuation keeps the reserved bytes and the header length as it found them.
 |---|---|---|---|---|---|
 | 0x0001 | ARS server | id | The presence server's DMR ID for ARS registration ([dmr-data.md](dmr-data.md) 6); 0 = ARS off | `ds_ars_server` | ARS in the build (`CONFIG_DMR_ARS`) |
 | 0x0002 | IP gateway | id | The DMR ID of the radio that takes the host's off-net IP packets ([usb-network.md](usb-network.md) 3.1); 0 = none | `ds_ip_gateway` | IP gateway in the build (`CONFIG_DMR_IP_GATEWAY`) |
+| 0x0003 | Call end tone | bool | Off silences the tone when a DMR call heard ends (Settings > Sound) | `sound_flags` bit 4 | DMR and tones in the build (`CONFIG_DMR`, `CONFIG_BEEP`) |
+| 0x0004 | TOT warning tone | bool | Off silences the tone before the transmit time-out | `sound_flags` bit 5 | Tones in the build (`CONFIG_BEEP`) |
+| 0x0005 | Battery tone | bool | Off silences the low and critical battery tones | `sound_flags` bit 6 | Tones in the build (`CONFIG_BEEP`) |
+| 0x0006 | TX denied tone | bool | Off silences the tone when PTT is refused or the time-out cuts a transmission | `sound_flags` bit 7 | Tones in the build (`CONFIG_BEEP`) |
 
 **Radio's own copy** is the setting's field in the settings store ([settings-store.md](settings-store.md) 3). Every
 scalar key has one (3.2).
@@ -207,9 +211,10 @@ the shared sector buffer, or when the storage region isn't ours ([settings-store
 
 Scalar keys are applied through tables (`core/codeplug/codeplug_keys.c`). An owner of settings has one table, a row
 per key: the key, its type, the setting's range, whether the build has it, and the offset and size of a field in the
-owner's settings struct. The owner is whatever holds that struct: the data service's settings are the radio core's
-(`radio_keys` in `core/radio/radio_keys.h`), a block of UI settings would be the UI's, in `core/ui/`. There is no
-table of all keys: the radio core doesn't reach into the UI's settings, nor the other way.
+owner's settings struct, so a struct has one table. The owner is whatever holds that struct: the radio core holds
+the data service's settings (`radio_keys` in `core/radio/radio_keys.h`) and the Settings > Sound tones
+(`radio_tone_rows`, next to it), and a block of UI settings would be the UI's, in `core/ui/`. There is no table of all
+keys: the radio core doesn't reach into the UI's settings, nor the other way.
 
 | Call | |
 |---|---|
@@ -221,8 +226,10 @@ An owner uses them the same way everywhere: read its settings, apply the table, 
 anything changed. A new scalar key is a row there, a row in section 3 and a row in the Codeplug Editor (7), and no
 code.
 
-A setting that isn't a plain field (bits packed into a byte) is unpacked by its owner into a plain struct first. A
-record key is read and written by its owner with `codeplug_kv_get` and a `CODEPLUG_KV_HEAD` set.
+A setting that isn't a plain field (bits packed into a byte) is unpacked by its owner into a plain struct first. The
+tones are: `radio_settings_t.tones_off` holds a bit per tone, set when it is off, and `radio_tones_unpack` /
+`radio_tones_pack` turn it into the four bools of `radio_tones_t` and back. A record key is read and written by its
+owner with `codeplug_kv_get` and a `CODEPLUG_KV_HEAD` set.
 
 ### 5.2 A key and the radio's own copy
 
@@ -245,7 +252,8 @@ record key is read and written by its owner with `codeplug_kv_get` and a `CODEPL
 - **A factory reset** resets the radio's own copies and leaves the codeplug, so a key that is present still holds.
 
 The ARS server and the IP gateway are set from the menu (Settings > Connections > Data services, [ui.md](ui.md)) and
-the debug link's DMR_DATA SETTINGS and IP_SETTINGS ([debuglink.md](debuglink.md) 3.12).
+the debug link's DMR_DATA SETTINGS and IP_SETTINGS ([debuglink.md](debuglink.md) 3.12). The tones are set from
+Settings > Sound.
 
 Debug link view `cps`: `cpkv.state` (`valid`, `empty`: no area, `bad`: invalid, `newer`: a later version),
 `cpkv.length` (data length) and `cpkv.keys` (entries).

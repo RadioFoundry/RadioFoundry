@@ -24,10 +24,21 @@ static xfer_t xlog[8192];
 static int nx;
 static uint8_t rd[8][256];
 
+static int fail_reads, fail_writes;	// this many transfers of each kind fail next (logged all the same)
+
 static bool fake_transfer(void *ctx, const uint8_t *hdr, uint8_t hdr_len, const uint8_t *tx, uint8_t *rx, uint16_t len)
 {
 	uint8_t page = hdr[0] & 7u, reg = hdr[1];
 	bool read = (hdr[0] & 0x80u) != 0;
+	int *fail = read ? &fail_reads : &fail_writes;
+	if (*fail > 0) {
+		(*fail)--;
+		if (nx < (int)(sizeof(xlog) / sizeof(xlog[0]))) {
+			xlog[nx] = (xfer_t){ page, reg, (uint8_t)len, read, { 0 } };
+		}
+		nx++;
+		return false;
+	}
 	if (nx < (int)(sizeof(xlog) / sizeof(xlog[0]))) {
 		xfer_t *x = &xlog[nx];
 		x->page = page;
@@ -150,6 +161,48 @@ static void test_chip(void)
 	nx = 0;
 	CHECK(hrc_set_dmr_id(&c5.hrc, 0x123456u));		// low byte first
 	CHECK(last_write(0, 0x14) == 0x56 && last_write(0, 0x15) == 0x34 && last_write(0, 0x16) == 0x12);
+}
+
+// --- The TX lead for listening between bursts (4:0x12) ---
+
+static void test_tx_lead(void)
+{
+	hrc5000_t c5;
+	hrc5000_attach(&c5, &bus, false);
+	hrc5000_lead_t l = { 0 };
+	rd[0][0x12] = 0xC5;	// bits 7-6 kept; the configuration page is 0 on the wire
+
+	nx = 0;
+	CHECK(hrc5000_tx_lead_on(&c5, &l, 25));
+	CHECK(count_reads(0, 0x12) == 1 && last_write(0, 0x12) == (0xC0 | 25));
+	CHECK(hrc5000_tx_lead_on(&c5, &l, 25) && nx == 2);	// already on: no traffic
+	CHECK(hrc5000_tx_lead_off(&c5, &l) && last_write(0, 0x12) == 0xC5 && !l.on && !l.kept);
+	nx = 0;
+	CHECK(hrc5000_tx_lead_off(&c5, &l) && nx == 0);	// nothing to put back
+
+	// The read fails: nothing written then, and nothing at the end (it once wrote 0 back there)
+	nx = 0;
+	fail_reads = 1;
+	CHECK(!hrc5000_tx_lead_on(&c5, &l, 25) && !l.on && !l.kept);
+	CHECK(count_writes(0, 0x12) == 0);
+	CHECK(hrc5000_tx_lead_off(&c5, &l) && count_writes(0, 0x12) == 0);
+
+	// The write fails: not on, the value read kept; the next call writes again without reading, the end puts it back
+	nx = 0;
+	fail_writes = 1;
+	CHECK(!hrc5000_tx_lead_on(&c5, &l, 25) && !l.on && l.kept);
+	CHECK(hrc5000_tx_lead_on(&c5, &l, 25) && l.on);
+	CHECK(count_reads(0, 0x12) == 1 && count_writes(0, 0x12) == 2);
+	CHECK(hrc5000_tx_lead_off(&c5, &l) && last_write(0, 0x12) == 0xC5);
+
+	// The lead's write fails and so does the first restore: the end tries again
+	nx = 0;
+	fail_writes = 1;
+	CHECK(!hrc5000_tx_lead_on(&c5, &l, 25) && l.kept);
+	fail_writes = 1;
+	CHECK(!hrc5000_tx_lead_off(&c5, &l) && l.kept && !l.on);
+	CHECK(hrc5000_tx_lead_off(&c5, &l) && !l.kept && last_write(0, 0x12) == 0xC5);
+	rd[0][0x12] = 0;
 }
 
 // --- Register traffic ---
@@ -733,10 +786,10 @@ static void test_tick_rx_resume(void)
 	hrc6000_dmr_stats(&eng, &st);
 	CHECK(st.lc_resumed == 1);
 
-	// One report only: nothing proves it, the voice count decides (the second F)
+	// One report only: nothing proves it, the sticky rule decides (the A after the first whole superframe)
 	resume_opts_t one = { .gap = 26, .reports = 1 };
 	r = resume_run(&one);
-	CHECK(r.lc_at >= 12);
+	CHECK(r.lc_at >= 7 && r.lc_at <= 8);
 
 	// Someone else came on in the gap: their LC at the first report, handed over at once (never the old one)
 	resume_opts_t other = { .gap = 26, .reports = 2, .lc2 = res_other };
@@ -751,12 +804,13 @@ static void test_tick_rx_resume(void)
 	// The call ended by its terminator: the same LC after it is a new call, by the sticky LC rule
 	resume_opts_t term = { .terminator = true, .gap = 26, .reports = 2 };
 	r = resume_run(&term);
-	CHECK(r.lc_at >= 12);
+	CHECK(r.lc_at >= 7 && r.lc_at <= 8);
+	CHECK(memcmp(r.lc, res_lc, 9) == 0);
 
 	// Too long after the call: a new one
 	resume_opts_t late = { .gap = 70, .reports = 2 };
 	r = resume_run(&late);
-	CHECK(r.lc_at >= 12);
+	CHECK(r.lc_at >= 7 && r.lc_at <= 8);
 }
 
 // A post-access read's LC with no reception after it stays out of later receptions: the flag that keeps it for the
@@ -1342,6 +1396,7 @@ static void test_two_slots(void)
 int main(void)
 {
 	test_chip();
+	test_tx_lead();
 	test_modes();
 	test_engine();
 	test_tick_rx();

@@ -29,6 +29,14 @@
 #define F_PROBE		0x40u	// a zero window probe may go out once
 #define F_ONE		0x80u	// after a timeout one segment at a time until new data is acknowledged (RFC 5681 3.1)
 
+// A second address of ours that connections may be opened to (tcp_input_to): only the web pages' switch to serial
+// (CONFIG_USB_SERIAL_REQUEST) uses it, so a build without it keeps neither the field nor the code
+#if CONFIG_USB_SERIAL_REQUEST
+#define LIP(c)		((c)->lip)
+#else
+#define LIP(c)		0u
+#endif
+
 typedef struct {
 	uint8_t state;
 	uint8_t flags;
@@ -37,6 +45,9 @@ typedef struct {
 	uint8_t gen;		// bumped on every allocation (a handle reused inside a callback is noticed)
 	const tcp_app_t *app;
 	uint32_t rip;
+#if CONFIG_USB_SERIAL_REQUEST
+	uint32_t lip;		// the address the peer opened to when it isn't local_ip() (tcp_input_to), else 0
+#endif
 	uint16_t rport, lport;
 	uint32_t iss, snd_una, snd_nxt, snd_max, rcv_nxt;	// snd_max: the highest sent (SND.NXT goes back on a timeout)
 	uint16_t snd_wnd, mss;
@@ -125,7 +136,7 @@ static void send_segment(int i, uint8_t flags, uint32_t seq, int off, int len)
 	conn_t *c = &conns[i];
 	uint8_t *s = io->buffer();
 	int hdr = (flags & SYN) ? (TCP_HEADER + 4) : TCP_HEADER;
-	uint32_t local = io->local_ip();
+	uint32_t local = (LIP(c) != 0) ? LIP(c) : io->local_ip();
 
 	if (local == 0) {
 		return;
@@ -148,17 +159,18 @@ static void send_segment(int i, uint8_t flags, uint32_t seq, int off, int len)
 		s[hdr + k] = c->txbuf[(c->txhead + off + k) % TCP_TXBUF];
 	}
 	put16(&s[16], tcp_checksum(local, c->rip, s, hdr + len));
-	if (io->send(c->rip, hdr + len)) {
+	if ((LIP(c) != 0) ? io->send_from(LIP(c), c->rip, hdr + len) : io->send(c->rip, hdr + len)) {
 		stats.segs_out++;
 	}
 	c->flags &= (uint8_t)~F_ACK_NOW;	// any segment carries the ACK
 }
 
 // A RST answering a segment that belongs to no connection (RFC 9293 3.10.7.1)
-static void send_reset(uint32_t dst, uint16_t sport, uint16_t dport, uint32_t seq, uint32_t ack, bool with_ack)
+// from: the address it was sent to when that isn't local_ip(), else 0
+static void send_reset(uint32_t from, uint32_t dst, uint16_t sport, uint16_t dport, uint32_t seq, uint32_t ack, bool with_ack)
 {
 	uint8_t *s = io->buffer();
-	uint32_t local = io->local_ip();
+	uint32_t local = (from != 0) ? from : io->local_ip();
 
 	if (local == 0) {
 		return;
@@ -173,7 +185,7 @@ static void send_reset(uint32_t dst, uint16_t sport, uint16_t dport, uint32_t se
 	put16(&s[16], 0);
 	put16(&s[18], 0);
 	put16(&s[16], tcp_checksum(local, dst, s, TCP_HEADER));
-	if (io->send(dst, TCP_HEADER)) {
+	if ((from != 0) ? io->send_from(from, dst, TCP_HEADER) : io->send(dst, TCP_HEADER)) {
 		stats.segs_out++;
 		stats.rst_out++;
 	}
@@ -229,7 +241,7 @@ static int alloc(void)
 		}
 	}
 	if ((tw < 0) && (fw >= 0)) {
-		send_reset(conns[fw].rip, conns[fw].lport, conns[fw].rport, conns[fw].snd_nxt, 0, false);
+		send_reset(LIP(&conns[fw]), conns[fw].rip, conns[fw].lport, conns[fw].rport, conns[fw].snd_nxt, 0, false);
 		return fw;
 	}
 	return tw;
@@ -393,7 +405,7 @@ static void segment_for(int i, uint8_t flags, uint32_t seq, uint32_t ackn, uint1
 	if (c->state == TCP_SYN_SENT) {
 		if ((flags & ACK) && (ackn != c->iss + 1u)) {
 			if (!(flags & RST)) {
-				send_reset(c->rip, c->lport, c->rport, ackn, 0, false);
+				send_reset(LIP(c), c->rip, c->lport, c->rport, ackn, 0, false);
 			}
 			return;
 		}
@@ -467,7 +479,7 @@ static void segment_for(int i, uint8_t flags, uint32_t seq, uint32_t ackn, uint1
 	// ACK (3.10.7.4, fifth check)
 	if (c->state == TCP_SYN_RCVD) {
 		if (ackn != c->iss + 1u) {
-			send_reset(c->rip, c->lport, c->rport, ackn, 0, false);
+			send_reset(LIP(c), c->rip, c->lport, c->rport, ackn, 0, false);
 			return;
 		}
 		c->snd_una = ackn;
@@ -607,15 +619,34 @@ static void segment_for(int i, uint8_t flags, uint32_t seq, uint32_t ackn, uint1
 
 void tcp_input(uint32_t src, const uint8_t *seg, int len, uint32_t now_ms)
 {
+	if (io != NULL) {
+		tcp_input_to(src, io->local_ip(), seg, len, now_ms);
+	}
+}
+
+void tcp_input_to(uint32_t src, uint32_t dst, const uint8_t *seg, int len, uint32_t now_ms)
+{
 	if ((io == NULL) || (len < TCP_HEADER)) {
 		return;
 	}
+	// a second address of ours: its connections answer from it, which the IP layer must be able to do
+	uint32_t lip = (dst == io->local_ip()) ? 0 : dst;
+
+#if CONFIG_USB_SERIAL_REQUEST
+	if ((lip != 0) && (io->send_from == NULL)) {
+		return;
+	}
+#else
+	if (lip != 0) {
+		return;
+	}
+#endif
 	int hdr = (seg[12] >> 4) * 4;
 
 	if ((hdr < TCP_HEADER) || (hdr > len)) {
 		return;
 	}
-	if (tcp_checksum(src, io->local_ip(), seg, len) != 0) {
+	if (tcp_checksum(src, dst, seg, len) != 0) {
 		stats.bad_checksum++;
 		return;
 	}
@@ -632,7 +663,7 @@ void tcp_input(uint32_t src, const uint8_t *seg, int len, uint32_t now_ms)
 	for (int i = 0; i < TCP_CONNS; i++) {
 		conn_t *c = &conns[i];
 
-		if ((c->state != TCP_CLOSED) && (c->rip == src) && (c->rport == sport) && (c->lport == dport)) {
+		if ((c->state != TCP_CLOSED) && (c->rip == src) && (LIP(c) == lip) && (c->rport == sport) && (c->lport == dport)) {
 			if ((c->state == TCP_TIME_WAIT) && (flags & SYN) && !(flags & ACK)) {
 				c->state = TCP_CLOSED;	// a new incarnation (RFC 9293 3.6.1): take it as a fresh SYN
 				break;
@@ -654,9 +685,9 @@ void tcp_input(uint32_t src, const uint8_t *seg, int len, uint32_t now_ms)
 	if ((app == NULL) || !(flags & SYN) || (flags & ACK)) {
 		// No such connection or port (3.10.7.1)
 		if (flags & ACK) {
-			send_reset(src, dport, sport, ackn, 0, false);
+			send_reset(lip, src, dport, sport, ackn, 0, false);
 		} else {
-			send_reset(src, dport, sport, 0, seq + (uint32_t)dlen + ((flags & SYN) ? 1u : 0u) + ((flags & FIN) ? 1u : 0u), true);
+			send_reset(lip, src, dport, sport, 0, seq + (uint32_t)dlen + ((flags & SYN) ? 1u : 0u) + ((flags & FIN) ? 1u : 0u), true);
 		}
 		if (flags & SYN) {
 			stats.refused++;
@@ -673,6 +704,9 @@ void tcp_input(uint32_t src, const uint8_t *seg, int len, uint32_t now_ms)
 	conn_t *c = &conns[i];
 
 	c->rip = src;
+#if CONFIG_USB_SERIAL_REQUEST
+	c->lip = lip;
+#endif
 	c->rport = sport;
 	c->lport = dport;
 	c->rcv_nxt = seq + 1u;
@@ -710,7 +744,7 @@ static void expire(int i, uint32_t now)
 	} else if (++c->retries > (syn ? TCP_SYN_RETRIES : TCP_RETRIES)) {
 		stats.timeouts++;
 		if (!syn) {
-			send_reset(c->rip, c->lport, c->rport, c->snd_nxt, 0, false);
+			send_reset(LIP(c), c->rip, c->lport, c->rport, c->snd_nxt, 0, false);
 		}
 		if (c->state == TCP_SYN_RCVD) {
 			c->state = TCP_CLOSED;	// the application never saw it
@@ -754,7 +788,7 @@ void tcp_poll(uint32_t now_ms)
 		    ((now_ms - c->last_rx) >= TCP_KEEPALIVE_MS) && ((c->ka_next == 0) || DUE(now_ms, c->ka_next))) {
 			if (c->probes >= TCP_KEEPALIVE_PROBES) {
 				stats.timeouts++;
-				send_reset(c->rip, c->lport, c->rport, c->snd_nxt, 0, false);
+				send_reset(LIP(c), c->rip, c->lport, c->rport, c->snd_nxt, 0, false);
 				drop(i, true);
 				continue;
 			}
@@ -887,7 +921,7 @@ void tcp_abort(int i)
 	conn_t *c = &conns[i];
 
 	if ((c->state != TCP_SYN_SENT) && (c->state != TCP_TIME_WAIT)) {
-		send_reset(c->rip, c->lport, c->rport, c->snd_nxt, 0, false);
+		send_reset(LIP(c), c->rip, c->lport, c->rport, c->snd_nxt, 0, false);
 	}
 	c->state = TCP_CLOSED;
 	c->flags = 0;

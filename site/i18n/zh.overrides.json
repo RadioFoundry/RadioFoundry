@@ -88,6 +88,7 @@
  "feature.HOSTLINK.help": "主机链路（core/hostlink）：经板子的主机口提供 MMDVM 热点、CPS 和调试链路（USB CDC，或没有 USB 的电台使用编程线的 UART）",
  "feature.USB_NETWORK.title": "USB 网卡（CDC-NCM）",
  "feature.USB_NETWORK.help": "USB 网卡角色（CDC-NCM，运行时与串口角色切换；需要 USB）",
+ "feature.USB_SERIAL_REQUEST.title": "从网页退出网络模式",
  "feature.NET_PPP.title": "串口主机口上的 PPP（IPv4 进入网关）",
  "feature.NET_PPP.help": "串口主机口上的 IPv4 over PPP，接入 IP 网关及其服务：适用于唯一主机链路是 USB 串口线的电台，也作为 USB 串口上的后备（需要 HOSTLINK 和 DMR_IP_GATEWAY，并默认开启后者；core/net/ppp.c、core/hostlink/hostlink_ppp.c，docs/spec/ppp.md）。对唯一 IP 链路是它的电台在 config.mk 中开启；USB 电台关闭（docs/feature-matrix.md）",
  "feature.HOTSPOT.title": "MMDVM 热点",

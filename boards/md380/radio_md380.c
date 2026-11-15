@@ -81,6 +81,12 @@ static const pa_keyup_cfg_t keyup_cfg = { .dead_pm = 563, .knee_us = 91, .slope_
 					  .window_us = DMR_KEY_INT_AHEAD_US - 880u, .settle_us = 506,
 					  .pa_us = KEYUP_MAX_AHEAD_US, .ease_pm = 0 };
 
+// Receive the repeater's outbound between our bursts (the modem's tx_listen_split): after each burst the synthesizer goes to the receive LO and the receiver on; RF_TX_INTER comes LISTEN_LEAD_STEPS earlier, and
+// there the synthesizer goes back to the carrier, lock detect is waited for, and the PA keys at the slot as before
+#define LISTEN_LEAD_STEPS	25u	// 4:0x12 bits 5-0, about 100 us steps: 2.5 ms
+#define LISTEN_LEAD_US		(LISTEN_LEAD_STEPS * 100u)
+#define LISTEN_LOCK_MAX_US	2000u
+
 // Voice SPI2 (hardware-md380.md 4.4): PB13 SCK, PB14 MISO, PB15 MOSI (AF5), chip select PIN_C5000_VCS
 #define VOICE_SPI_PINS		(GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15)
 #define VOICE_SPI_TIMEOUT_MS	2
@@ -120,6 +126,8 @@ static struct {
 	volatile uint32_t key_apc;	// the drive of the last point, for the PA's own point
 	uint8_t dmr_mod2, dmr_mod1;
 	uint32_t rf_skipped, rf_unarmed, rf_rx_back;
+	volatile bool dmr_lead;		// RF_TX_INTER advanced for listening (LISTEN_LEAD_STEPS)
+	hrc5000_lead_t lead;		// 4:0x12 before that
 } r;
 
 static DAC_HandleTypeDef dac;
@@ -289,6 +297,8 @@ static void pa_on(uint32_t drive)
 	PIN_WRITE(PIN_APC_EN, true);
 }
 
+static void listen_rx(void);
+
 // One key-up point (radio/pa_keyup.h): the drive on DAC1, and at the PA's own point the supply and the loop
 static void key_point(uint8_t kind)
 {
@@ -317,6 +327,7 @@ void TIM7_IRQHandler(void)
 	if (r.key_i >= r.key_ns) {	// the burst is over
 		pa_timer_stop();
 		pa_off();
+		listen_rx();
 		return;
 	}
 	for (;;) {
@@ -427,11 +438,45 @@ static void rx_path(bool on)
 
 // --- DMR per-burst RF switching: modem ISR context ---
 
+// After one of our bursts, while the transmission listens (tx_listen): the receiver back on the RX frequency for the
+// slot between, and RF_TX_INTER advanced for the retune back (modem ISR or TIM7, the PA already off)
+static void listen_rx(void)
+{
+	if (!r.dmr_armed || !r.dmr_tx_tuned || !r.rx_valid || !stm32_hrc_dmr_tx_listening()) {
+		return;
+	}
+	if (!r.dmr_lead) {
+		// Without the lead there's no time to retune for our next burst: this slot isn't listened to
+		r.dmr_lead = hrc5000_tx_lead_on(&r.modem, &r.lead, LISTEN_LEAD_STEPS);
+		count(r.dmr_lead);
+		if (!r.dmr_lead) {
+			return;
+		}
+	}
+	(void)pll_tune(rx_vco_hz(r.rx_hz), false, false);
+	count(hrc5000_dmr_rx_in(&r.modem, true));
+	dac1_set(r.rx_tune_dac);
+	rx_path(true);
+	r.dmr_tx_tuned = false;
+}
+
+// Task level (the transmission's end or disarm)
+static void lead_restore(void)
+{
+	if (r.lead.kept) {
+		count(hrc5000_tx_lead_off(&r.modem, &r.lead));
+	}
+	r.dmr_lead = false;
+}
+
 bool md380_rf_dmr_switch(bool tx)
 {
+	uint32_t t0 = hal_micros();
+
 	if (!tx) {
 		if (!pa_timer_running) {
 			pa_off();	// else the one-shot ends the burst on time
+			listen_rx();
 		}
 		return true;
 	}
@@ -440,14 +485,26 @@ bool md380_rf_dmr_switch(bool tx)
 		return false;
 	}
 	if (!r.dmr_tx_tuned) {
+		bool back = r.dmr_lead;	// from listening: only the receiver's input and the synthesizer
 		// First burst: receiver off, the HR_C5000's transmit set, the synthesizer to the transmit VCO
 		rx_path(false);
-		count(hrc5000_dmr_path(&r.modem, true, r.dmr_mod2, r.dmr_mod1, C5000_MIC_GAIN));
+		count(back ? hrc5000_dmr_rx_in(&r.modem, false)
+			   : hrc5000_dmr_path(&r.modem, true, r.dmr_mod2, r.dmr_mod1, C5000_MIC_GAIN));
 		if (!pll_tune(tx_vco_hz(r.dmr_tx_hz), true, false)) {
 			r.rf_skipped++;
 			return false;	// out of range: no RF
 		}
 		r.dmr_tx_tuned = true;
+		if (back) {
+			// From the receive LO: lock detect before the PA, normally well inside the lead
+			while (!PIN_READ(PIN_PLL_LD) && hal_micros() - t0 < LISTEN_LOCK_MAX_US) {
+			}
+		}
+	}
+	if (r.dmr_lead) {
+		// RF_TX_INTER came LISTEN_LEAD_US early: the PA at the slot, as without the lead
+		while (hal_micros() - t0 < LISTEN_LEAD_US) {
+		}
 	}
 	pa_timer_start();	// the key-up points, then the PA drop
 	return true;
@@ -489,7 +546,10 @@ static void rf_dmr_wait_lock(void)
 // the burst on air
 static bool rf_dmr_tx_done(void)
 {
-	if (!r.dmr_armed || !r.dmr_tx_tuned || !r.rx_valid) {
+	bool listened = r.dmr_lead;	// tx_listen may have left the receive side on: the whole receive set-up anyway
+
+	lead_restore();
+	if (!r.dmr_armed || (!r.dmr_tx_tuned && !listened) || !r.rx_valid) {
 		return false;
 	}
 	pa_timer_stop();
@@ -521,6 +581,7 @@ static const stm32_hrc_dmr_board_t dmr_board = {
 	.tx_wait_lock = rf_dmr_wait_lock,
 	.tx_done = rf_dmr_tx_done,
 	.tx_end = dmr_tx_end,
+	.listen_split = true,
 };
 
 // Stop per-burst keying (task level): disarm, drop a transmission still running, PA off
@@ -532,6 +593,7 @@ static void dmr_disarm(void)
 	}
 	pa_timer_stop();
 	pa_off();
+	lead_restore();
 }
 
 static void dmr_enter(void)

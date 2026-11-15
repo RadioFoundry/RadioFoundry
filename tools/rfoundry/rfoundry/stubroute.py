@@ -34,7 +34,7 @@ def run(board, image, port=None, backup_dir=None, log=print, stubtool=None):
         raise StubRouteError("the %s has no stub" % board.name)
     if port is None:
         from . import debuglink
-        ports = debuglink.find_ports() or []
+        ports = debuglink.find_ports() or debuglink.find_network_radios()	# serial, else a radio in network mode
         if len(ports) != 1:
             raise StubRouteError("give --port: %s" % ("no RadioFoundry debug link found" if not ports else
                                                       "more than one found (%s)" % ", ".join(ports)))

@@ -135,6 +135,14 @@ static void ui_task(void *arg)
 		bool got = input_next(&ev, wait);
 		if (rests)
 			rested = hal_millis();
+		// The view before the key: the radio core may have changed while this task waited (the VFO turned off from
+		// the host link, a scan stopping), and a key read against the old view sends the wrong request (a VFO step
+		// the core drops on a channel)
+		uint32_t s = radio_view_serial();
+		if (s != serial) {
+			serial = s;
+			radio_get_view(&view);
+		}
 		if (got) {
 			bool was_off = backlight_now == 0;
 			set_backlight(ui_app_brightness());
@@ -143,8 +151,8 @@ static void ui_task(void *arg)
 			dirty = true;
 		}
 		now = hal_millis();
-		uint32_t s = radio_view_serial();
-		if (s != serial) {
+		s = radio_view_serial();
+		if (s != serial) {	// and after it: what the key changed shows in this pass
 			serial = s;
 			radio_get_view(&view);
 		}

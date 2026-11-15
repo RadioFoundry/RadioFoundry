@@ -31,6 +31,7 @@ void hal_delay_ms(uint32_t ms) { now_ms += ms; }
 // ---- pcap ----
 static FILE *pcap;
 bool net_capture = true;
+uint32_t net_test_radio_ip = RADIO_IP;
 static void pcap_write(const uint8_t *f, int len)
 {
 	if (!net_capture) {
@@ -112,7 +113,7 @@ static void peer_segment(peer_t *p, uint8_t flags, const void *data, int len)
 	ip[8] = 64;
 	ip[9] = 6;
 	put32(ip + 12, p->ip);
-	put32(ip + 16, RADIO_IP);
+	put32(ip + 16, net_test_radio_ip);
 	uint32_t sum = 0;
 	for (int k = 0; k < 20; k += 2) {
 		sum += get16(ip + k);
@@ -134,7 +135,7 @@ static void peer_segment(peer_t *p, uint8_t flags, const void *data, int len)
 	if (len > 0) {
 		memcpy(t + 20, data, (size_t)len);
 	}
-	put16(t + 16, tcp_checksum(p->ip, RADIO_IP, t, 20 + len));
+	put16(t + 16, tcp_checksum(p->ip, net_test_radio_ip, t, 20 + len));
 	pcap_write(f, 54 + len);
 	p->snd_nxt += (uint32_t)len + ((flags & 0x03) ? 1u : 0u);
 	ipGatewayEthernetIn(f, 54 + len);
@@ -166,7 +167,8 @@ static bool peer_take(const uint8_t *f, int len)
 	int hdr = (t[12] >> 4) * 4;
 	int dlen = get16(ip + 2) - 20 - hdr;
 	uint8_t flags = t[13];
-	CHECK(tcp_checksum(RADIO_IP, dst, t, hdr + dlen) == 0);
+	CHECK(get32(ip + 12) == net_test_radio_ip);	// the radio answers from the address it was spoken to at
+	CHECK(tcp_checksum(net_test_radio_ip, dst, t, hdr + dlen) == 0);
 	for (int i = 0; i < npeers; i++) {
 		peer_t *p = peers[i];
 		if (p->ip != dst || p->port != get16(t + 2)) {
