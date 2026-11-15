@@ -82,8 +82,9 @@ export class Dfu {
 		await this.waitDone(what);
 	}
 
-	// Erase the plan's sectors, write each, exit (the radio restarts). The application's first sector is erased first and
-	// written last (plan.js writeOrder): a run cut short leaves no application to start. programMode: this
+	// Erase the plan's sectors (in the bootloader's order), write each, exit (the radio restarts). A codec move erases the
+	// application's first sector first and writes it last (plan.js writeOrder): a move cut short leaves no application
+	// to start. programMode: this
 	// bootloader session already took 91 01 (a backup read its SPI flash, origbackup.js); the bootloader takes 91 01 only
 	// once, so the write starts at 91 31
 	async run(plan, key, progress = () => {}, { programMode = false } = {}) {

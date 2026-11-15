@@ -17,7 +17,7 @@ import { makePlan, KEEP, MERGE } from "../static/js/flasher/plan.js";
 import { Dfu } from "../static/js/flasher/dfu.js";
 import { FakeRadio, simulation, randomBytes, rng } from "../static/js/flasher/fake.js";
 import { decideCodec, DecisionError } from "../static/js/flasher/decide.js";
-import { codecSegments, needsMove, readCodec } from "../static/js/flasher/codecsave.js";
+import { codecSegments, loadCodec, readCodec, saveCodec } from "../static/js/flasher/codecsave.js";
 
 const DIR = process.env.RFOUNDRY_SITE_FIXTURES || "build/site-tests";
 const fb = JSON.parse(readFileSync(join(DIR, "flash-boards.json"), "utf8"));
@@ -71,7 +71,6 @@ test("a codec in an earlier layout is found, checked and moved to where it goes 
 		// over the debug link: the copy as the radio holds it, which the merge then moves
 		const got = await readCodec(mem(radio), sim.board, sim.fb);
 		assert.deepEqual(got.segments, sim.formerSegments.slice(0, -1), id);
-		assert.ok(needsMove(got.profile, got.segments));
 		assert.deepEqual(await codecSegments(got.profile, got.segments, sim.fb), sim.codecSegments, id);
 		// the stock windows are a layout too, moved the same way
 		assert.deepEqual(await codecSegments(sim.profile, sim.stockSegments, sim.fb), sim.codecSegments, id);
@@ -89,7 +88,6 @@ test("the current layout is checked by CRC-32 where the profile pins no SHA-256"
 		assert.ok(stockfw.placedWindows(sim.profile).some(([, , sha]) => sha === null), id);
 		const radio = new FakeRadio(sim, { state: "rfoundry", spiSize: 0x200000 });
 		const got = await readCodec(mem(radio), sim.board, sim.fb);
-		assert.ok(!needsMove(got.profile, got.segments));
 		assert.deepEqual(await codecSegments(got.profile, got.segments, sim.fb), sim.codecSegments, id);
 		const [a, d] = sim.codecSegments[1];
 		radio.flash[a - BASE + d.length - 1] ^= 0x80;
@@ -127,7 +125,7 @@ test("the decision for a codec in an earlier layout: the copy read back, else th
 // The bootloader route with the copy read back before anything is erased: the codec where it goes now
 async function bootloaderInstall(sim, radio, copy, img) {
 	const codec = await codecSegments(copy.profile, copy.segments, sim.fb);
-	const plan = makePlan(sim.board, [[sim.board.app_base, img]], MERGE, codec, stockfw.layoutWindows(copy.profile, sim.fb));
+	const plan = makePlan(sim.board, [[sim.board.app_base, img]], MERGE, codec, stockfw.layoutWindows(copy.profile, sim.fb), { vectorLast: true });
 	radio.enterBootloader();
 	await new Dfu(radio.dfuTransport(), noWait).run(plan, sim.key);
 	assert.deepEqual(radio.violations, []);
@@ -154,7 +152,7 @@ test("an install that stops halfway through the move is finished from the same c
 		// the first run stops halfway (the cable pulled): every sector erased and a few blocks written. The radio holds
 		// neither layout whole; whatever it starts, the user brings it to its bootloader for the next run
 		const codec = await codecSegments(copy.profile, copy.segments, sim.fb);
-		const plan = makePlan(sim.board, [[sim.board.app_base, img]], MERGE, codec, stockfw.layoutWindows(copy.profile, sim.fb));
+		const plan = makePlan(sim.board, [[sim.board.app_base, img]], MERGE, codec, stockfw.layoutWindows(copy.profile, sim.fb), { vectorLast: true });
 		radio.enterBootloader();
 		const t = radio.dfuTransport();
 		const cut = { ...t, async out(...a) { if (radio.blocks >= 4) throw new Error("the device has been lost"); return t.out(...a); } };
@@ -180,7 +178,13 @@ test("the bootloader route erases the vector table's sector first and writes it 
 		const base = sim.board.app_base;
 		const sec = sim.board.sectors.find((s) => s.addr === base);
 		const codec = await codecSegments(copy.profile, copy.segments, sim.fb);
-		const plan = makePlan(sim.board, [[base, img]], MERGE, codec, stockfw.layoutWindows(copy.profile, sim.fb));
+		const plan = makePlan(sim.board, [[base, img]], MERGE, codec, stockfw.layoutWindows(copy.profile, sim.fb), { vectorLast: true });
+		// an install that doesn't move the codec keeps the board's order (plan.py)
+		const plain = makePlan(sim.board, [[base, img]], MERGE, codec, stockfw.layoutWindows(copy.profile, sim.fb));
+		assert.deepEqual(plain.eraseOrder, plain.erase);
+		assert.deepEqual(plain.writeOrder, plain.writes);
+		assert.ok(!plain.describe().some((l) => l.startsWith("order:")));
+		assert.ok(plan.describe().some((l) => l.startsWith("order:")));
 		// every DNLOAD that went through: ["erase", addr], ["block", its sector] or ["command"]
 		const run = async (left) => {
 			const events = [];
@@ -237,4 +241,57 @@ test("the page: a move takes a copy only when this browser keeps it, through the
 	assert.doesNotMatch(route, /stored/);
 	assert.match(src, /stockfw\.extract\(S\.stock\.data, await getKey\(S\.board\)/, "the loader route takes the codec from the stock file");
 	assert.match(src, /e\.codecGuard[\s\S]{0,200}resetChip/, "a codec guard refusal restarts the radio out of the loader");
+	// the move's codec is settled before the radio is handed to the loader, so a refusal leaves it as it was
+	const go = src.slice(src.indexOf("const go = button(t(\"flash.f4.go\")"));
+	assert.ok(go.indexOf("stubSegments(") > 0 && go.indexOf("stubSegments(") < go.indexOf("enterFromRFoundry("));
+	assert.doesNotMatch(src, /writeImage\([^)]*stubSegments/);
+	// any failure in the loader restarts the radio; only a loader that doesn't answer is tried again
+	assert.match(src, /stub\.erased \? "flash\.f4\.failed_bootloader"/);
+	// only a move writes the vector table's sector last
+	assert.match(src, /vectorLast: !!S\.decision\.moves/);
+	// a move reads the radio's codec again, and takes only this radio's saved copy when it can't
+	assert.match(src, /!moves && \(await loadCodec/);
+	assert.match(src, /loadCodec\(S\.board, fb\(\), \{ uid, strict: true \}\)/);
+});
+
+// IndexedDB as much of it as codecsave.js uses
+function fakeIndexedDB() {
+	const data = new Map();
+	const store = { put(v, k) { data.set(k, v); return { result: k }; }, get(k) { return { result: data.get(k) }; } };
+	const db = {
+		createObjectStore() {},
+		close() {},
+		transaction() {
+			const t = { objectStore: () => store };
+			queueMicrotask(() => t.oncomplete());
+			return t;
+		},
+	};
+	return { data, open() { const r = {}; queueMicrotask(() => { r.result = db; r.onupgradeneeded?.(); r.onsuccess(); }); return r; } };
+}
+
+test("one saved copy per radio: a move never takes another radio's", async () => {
+	const idb = fakeIndexedDB();
+	globalThis.indexedDB = idb;
+	try {
+		const id = MOVING[0];
+		const { sim, radio } = await former(id);
+		const got = await readCodec(mem(radio), sim.board, sim.fb);
+		const A = "00AA11BB22CC33DD44EE55FF", B = "99aa11bb22cc33dd44ee55ff";
+		assert.ok(await saveCodec(sim.board, got.segments, A));
+		assert.ok(idb.data.has(`${id}-${sim.board.codec.id}-${A.toLowerCase()}`));
+		const mine = await loadCodec(sim.board, sim.fb, { uid: A, strict: true });
+		assert.deepEqual(mine.segments, got.segments);
+		assert.equal(mine.uid, A.toLowerCase());
+		assert.equal(await loadCodec(sim.board, sim.fb, { uid: B, strict: true }), null, "radio B: not A's copy");
+		assert.equal(await loadCodec(sim.board, sim.fb, { uid: B }), null, "nor outside a move");
+		// a radio that can't say which it is (in its bootloader): the copy saved last
+		assert.equal((await loadCodec(sim.board, sim.fb)).uid, A.toLowerCase());
+		// a copy an earlier page saved without a UID: outside a move only
+		assert.ok(await saveCodec(sim.board, got.segments));
+		assert.equal((await loadCodec(sim.board, sim.fb, { uid: B })).uid, null);
+		assert.equal(await loadCodec(sim.board, sim.fb, { uid: B, strict: true }), null);
+	} finally {
+		delete globalThis.indexedDB;
+	}
 });
