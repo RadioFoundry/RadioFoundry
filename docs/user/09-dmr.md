@@ -30,6 +30,9 @@ The radio plays a group call when one of these is true:
 The radio plays a private call addressed to your DMR ID. It shows every other call on the slot as "Other TG: not
 played" and treats the channel as busy while it lasts.
 
+On a repeater channel the radio hears only its own timeslot. A call it joins partway through shows that call's
+caller and talkgroup, never those of a call on the other timeslot or of an earlier call.
+
 ## Who you talk to
 
 **PTT** sends to, in this order:
@@ -247,7 +250,6 @@ The beep at the end of a call you hear is the call end tone. The channel's **Tal
 ## Digital monitor
 
 Digital monitor plays every talkgroup on this frequency, timeslot and color code.
-Calls on the other timeslot must not replace the displayed caller, including when joining a call already in progress.
 
 - Press **Monitor** on a DMR channel (a short press; it acts when you let go). The radio shows "Digital monitor on" and
   the chips show "DMon". Press it again to turn it off. On an FM channel the same key opens the squelch while you hold it.

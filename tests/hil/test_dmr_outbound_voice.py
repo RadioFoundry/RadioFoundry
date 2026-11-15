@@ -15,6 +15,7 @@ on an outbound refuses the job (`unsupported`), which is a skip.
 | both | a call on TS1 and one on TS2 at the same time | its own slot's call, not the other's |
 | overlap | TS2 starts 1.5 s into a TS1 call | its own slot's call, not the other's |
 | late | one call with no headers, joined at burst A-F | the call from the embedded LC, marked late entry |
+| late_beside | a call on the other slot, then one with no headers on the radio's slot 0.72 s later | its own slot's call from its own embedded LC, marked late entry; never the other slot's talker |
 | wrong_cc | one call on the radio's slot, sent with another color code | no call |
 
 Needs --outbound-mhz (or outbound_mhz in the rig's file) and a duplex DMR channel receiving it; --dmr-cc is the
