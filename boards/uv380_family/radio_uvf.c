@@ -884,12 +884,12 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	count(at1846s_set_freq(&r.rf, (uint32_t)((int32_t)hz + offset)));
 	count(at1846s_set_state(&r.rf, AT1846S_STATE_FM_TX));
 
+	uvf_backlight_tx(true);	// the TX rate before the PA comes on
 	apc_set(drive);
 	PIN_WRITE(PIN_PA_EN1, true);
 	PIN_WRITE(PIN_PA_BAND, uhf);
 	PIN_WRITE(PIN_PA_EN2, true);
 	r.tx_on = true;
-	uvf_backlight_tx(true);
 	return true;
 }
 

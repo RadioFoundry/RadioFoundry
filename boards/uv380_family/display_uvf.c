@@ -209,8 +209,9 @@ static void bl_init(void)
 	TIM1->CR1 = TIM_CR1_ARPE | TIM_CR1_CEN;
 }
 
-// The brightness at the rate in use. Interrupts off: called from the backlight's task and from the radio's tx/rx, and
-// the period and compare are written as a pair (both preloaded, they take effect together at the next cycle)
+// The brightness at the rate in use. Interrupts off: called from the backlight's task and from the radio's tx/rx. The
+// period and compare are preloaded, so they take effect at the next cycle; a rate change loads them at once
+// (uvf_backlight_tx)
 static void bl_apply(void)
 {
 	uint32_t primask = __get_PRIMASK();
@@ -245,6 +246,11 @@ void uvf_backlight_tx(bool tx)
 	if (tx != bl_tx) {
 		bl_tx = tx;
 		bl_apply();
+		if (bl_running) {
+			// The new rate now, not at the next update (up to a 2 kHz cycle later, or the pair split by an
+			// update between the two writes): the update event loads both preloads and starts a cycle
+			TIM1->EGR = TIM_EGR_UG;
+		}
 	}
 }
 
