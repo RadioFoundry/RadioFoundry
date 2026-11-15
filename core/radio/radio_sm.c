@@ -90,15 +90,16 @@ static void cw_cancel(radio_sm_t *sm);
 
 static const uint32_t vfo_start_hz[] = { 146520000, 145500000, 446000000, 433500000 };
 
-// The VFO's step in use: auto follows the width (the air band's channels are 25 kHz apart); in the broadcast band
-// it is the broadcast step setting's
+// The VFO's step in use: auto follows the width (the air band's channels are 25 kHz apart). In the broadcast band
+// it is always the broadcast step setting's, whatever the VFO step: a fixed 12.5 kHz step for the other bands
+// shouldn't make the stations 8 or 16 knob clicks apart
 static void step_update(radio_sm_t *sm)
 {
 	uint32_t hz = sm->vfo_step_set;
 	if (hz == 0)
 		hz = sm->view.ch.bw == RADIO_BW_25K || sm->view.am ? 25000u : RADIO_VFO_STEP_HZ;
 #if CONFIG_BCAST_FM
-	if (sm->vfo_step_set == 0 && sm->view.bcast)
+	if (sm->view.bcast)
 		hz = radio_bcast_step_hz(sm->set.bcast_step);
 #endif
 	sm->view.vfo_step_hz = hz;
@@ -385,8 +386,8 @@ static void reset_tone(radio_sm_t *sm)
 // The APRS job's phases (aprs_phase)
 enum { APRS_RF_OFF = 0, APRS_RF_LISTEN, APRS_RF_KEYUP, APRS_RF_SEND };
 
-// A broadcast station is listened to, not squelched: the state stays RX (so the screen shows the level and the LED is on)
-// whatever the signal, and the audio plays. A scan keeps the squelch to stop on stations
+// A broadcast station is listened to, not squelched: the state stays RX (so the screen shows the level; the LED stays
+// off, outputs()) whatever the signal, and the audio plays. A scan keeps the squelch to stop on stations
 static bool bcast_listening(const radio_sm_t *sm)
 {
 #if CONFIG_BCAST_FM
@@ -492,6 +493,9 @@ static void outputs(radio_sm_t *sm)
 	}
 #endif
 	bool red = tx;
+	if (bcast) {
+		green = false;	// a broadcast station playing isn't a call: the LED stays dark (after dual watch's use above)
+	}
 	led_signals(sm, &red, &green);
 	if (sm->green_out != (int8_t)green) {
 		sm->green_out = (int8_t)green;
@@ -862,7 +866,7 @@ static void vfo_step(radio_sm_t *sm, int dir, uint32_t now_ms)
 	int64_t hz = (int64_t)sm->view.ch.rx_hz + (int64_t)dir * sm->view.vfo_step_hz;
 #endif
 #if CONFIG_BCAST_FM
-	if (sm->view.bcast && sm->vfo_step_set == 0) {
+	if (sm->view.bcast) {
 		hz = radio_bcast_step(sm->view.ch.rx_hz, dir, sm->set.bcast_step);	// 200 kHz lands on the odd tenths
 	}
 #endif
