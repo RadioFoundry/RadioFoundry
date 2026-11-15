@@ -254,7 +254,8 @@ typedef struct {
 	uint32_t last_tx_ms;	// hal_millis() when the last transmission began, 0 = none yet
 	uint16_t tot_s;		// TX time-out, 0 = none
 	uint32_t last_rx_ms;	// hal_millis() at the end of the last reception, 0 = none yet
-	uint32_t vfo_step_hz;	// the VFO's step in use: as set, or with vfo_step_auto the width's (12.5 or 25 kHz)
+	uint32_t vfo_step_hz;	// the VFO's step in use: as set, or with vfo_step_auto the width's (12.5 or 25 kHz); in
+				// the broadcast band always the broadcast step
 	bool vfo_step_auto;
 	codeplug_source_t source;
 	bool hotspot;		// the radio is an MMDVM hotspot: the host link drives the modem, channel keys are off

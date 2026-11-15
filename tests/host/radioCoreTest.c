@@ -164,13 +164,15 @@ static const band_t bands[] = {
 };
 static bool rx_ext_on;
 static const char *const power_names[] = { "L", "M", "H" };
-// Keys: only what the side key glue (ui_svc_storage.c) needs, two side keys
+// Keys: only what the side key glue (ui_svc_storage.c) needs, two side keys and an arrow programmable on Home
 static const keymap_entry_t keymap[] = {
 	{ 0, ACT_SELECT, ACT_SELECT, false, false, 0 },
 	{ 1, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
 	{ 2, ACT_TALK_TARGET, ACT_USER_2, false, false, 0 },
+	{ 3, ACT_NAV_LEFT, ACT_USER_1, false, true, 0 },
 };
 static const uint8_t side_keys[] = { 1, 2 };
+static const uint8_t home_keys[] = { 3 };
 
 static int gps_enable_calls;
 static bool gps_enabled;
@@ -207,9 +209,11 @@ const board_t board = {
 	.power_names = power_names,
 	.power_default = 1,
 	.keymap = keymap,
-	.keymap_len = 3,
+	.keymap_len = 4,
 	.side_keys = side_keys,
 	.side_key_count = 2,
+	.home_keys = home_keys,
+	.home_key_count = 1,
 	.radio = &fake_radio,
 	.power = &fake_power,
 	.dmr = &sim_modem,
@@ -3182,7 +3186,7 @@ static bool ptt_blocked;
 void input_set_ptt_block(bool b) { ptt_blocked = b; }
 static bool dtmf_blocked;
 void input_set_dtmf_block(bool b) { dtmf_blocked = b; }
-static keymap_entry_t got_keymap[3];
+static keymap_entry_t got_keymap[4];
 static int keymap_sets;
 void input_set_keymap(const keymap_entry_t *map) { memcpy(got_keymap, map, sizeof(got_keymap)); keymap_sets++; }
 void hostlink_set_hotspot_allowed(bool on) { (void)on; }
@@ -4549,7 +4553,18 @@ static void test_side_keys(void)
 	CHECK(keymap_sets == 2 && got_keymap[1].short_action == ACT_POWER && !got_keymap[1].raw_edges);
 	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_POWER);
 	CHECK(cp_quick[0] == 0);		// not yet: the job does it
-	CHECK(!ui_svc_setting_set(UI_SET_KEY_FIRST + 4, KEYFN_SCAN));	// this radio has two side keys
+	CHECK(!ui_svc_setting_set(UI_SET_KEY_FIRST + 6, KEYFN_SCAN));	// two side keys and one home key
+	// The home key (role 2): not Monitor; a function makes it send ACT_HOME_KEY_1, the UI's to turn back
+	CHECK(!ui_svc_key_offered(UI_SET_KEY_FIRST + 4, KEYFN_MONITOR) && ui_svc_key_offered(UI_SET_KEY_FIRST + 2, KEYFN_MONITOR));
+	CHECK(!ui_svc_setting_set(UI_SET_KEY_FIRST + 4, KEYFN_MONITOR));
+	CHECK(ui_svc_home_key(ACT_NAV_LEFT, GESTURE_PRESS, true) == ACT_NAV_LEFT);
+	CHECK(ui_svc_setting_set(UI_SET_KEY_FIRST + 4, KEYFN_POWER));
+	CHECK(got_keymap[3].short_action == ACT_HOME_KEY_1 && got_keymap[3].long_action == ACT_HOME_KEY_1);
+	CHECK(ui_svc_home_key(ACT_HOME_KEY_1, GESTURE_PRESS, true) == ACT_POWER);
+	CHECK(ui_svc_home_key(ACT_HOME_KEY_1, GESTURE_PRESS, false) == ACT_NAV_LEFT);
+	CHECK(ui_svc_home_key(ACT_HOME_KEY_1, GESTURE_LONG, true) == ACT_USER_1);
+	CHECK(ui_svc_setting_set(UI_SET_KEY_FIRST + 4, KEYFN_DEFAULT));
+	CHECK(got_keymap[3].short_action == ACT_NAV_LEFT);
 	CHECK(!ui_svc_setting_set(UI_SET_KEY_FIRST + 2, KEYFN_COUNT));
 	uint32_t ser = cp_serial;
 	ui_svc_keys_poll();
@@ -4582,6 +4597,13 @@ static void test_side_keys(void)
 	ui_svc_keys_poll();
 	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_SCAN && ui_svc_setting_get(UI_SET_KEY_FIRST + 3) == KEYFN_ZONE_UP);
 	CHECK(got_keymap[2].long_action == ACT_ZONE_UP);
+	// A CPS put Monitor on the home key (role 2): it acts as Default, and Settings says so
+	memset(cp_quick, 0, sizeof(cp_quick));
+	cp_quick[0] = KEYASSIGN_MARKER;
+	cp_quick[3] = KEYFN_MONITOR;
+	cp_serial++;
+	ui_svc_keys_poll();
+	CHECK(got_keymap[3].short_action == ACT_NAV_LEFT && ui_svc_setting_get(UI_SET_KEY_FIRST + 4) == KEYFN_DEFAULT);
 	memset(cp_quick, 0, sizeof(cp_quick));	// leave the board's key map for what follows
 	cp_serial++;
 	ui_svc_keys_poll();

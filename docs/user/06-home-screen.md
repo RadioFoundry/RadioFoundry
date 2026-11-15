@@ -83,7 +83,7 @@ answers, and packet data from a computer on USB or serial. While it does, the st
 lights and Home says SENDING. Data the radio receives shows RX on the status line.
 
 When the radio refuses to transmit, the status line shows NO TX and the LEDs flash red, green, red, green, red, green
-once with the deny tone. The screen says why, and the hint row says what to do:
+once with the deny tone. On a busy channel there is no tone, and the call you are hearing keeps playing. The screen says why, and the hint row says what to do:
 
 | Message | Cause | What to do |
 |---|---|---|

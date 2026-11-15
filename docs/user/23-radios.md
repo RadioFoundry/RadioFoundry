@@ -36,7 +36,7 @@ The manual names keys by the job they do. Each radio puts those jobs on its own 
 | **Talk target** | Talk target picker | Hold **#** | Hold **#** | Hold **#** | Hold **#** | Hold **P2** | Hold **#** |
 | **A/B** | Dual watch: the other channel / dual watch on or off | SK2 | SK2 | SK2 | SK2 | TONE/T.SEL | A/B key, SK2 |
 | **Power level** | Next power level / emergency (held 1.5 s) | SK3 | None | None | None | None | None |
-| **Previous zone**, **Next zone** | Step the zone on Home | P1, P2 | None | None | Left, Right | None | Left, Right |
+| **Previous zone**, **Next zone** | Step the zone on Home | P1, P2 | None | None | P1, P2 | None | Left, Right |
 | **VFO** | Between the channel and the VFO / copy the channel to the VFO | None | None | None | None | None | VFO/MR key |
 | **Volume** | Open the volume editor. Radios without a volume knob only | None: the knob | None: the knob | None: the knob | None: the knob | VOL/SQL | None: the knob |
 | **PTT** | Transmit | PTT | PTT | PTT | PTT | PTT on the microphone | PTT |
@@ -50,11 +50,12 @@ These are the defaults. **Settings > Keys** can give other jobs to every key the
 | DM-1701 | SK1, SK2, SK3, P1, P2 |
 | MD-380 | SK1, SK2 |
 | MD-UV380 | SK1, SK2 |
-| DM-32UV | SK1, SK2 |
+| DM-32UV | SK1, SK2, and P1, P2 on Home |
 | DB25-D PRO | P3, TONE/T.SEL, the microphone's P4 and P5 |
 | DM-1801 Pro | SK1, SK2, SOS, A/B, VFO/MR |
 
-OK, Back, the arrows, the number keys, **\***, **#**, PTT and the volume stay as they are. On the DB25-D PRO that
+OK, Back, the arrows, the number keys, **\***, **#**, PTT and the volume stay as they are. Where the arrows are
+printed P1 and P2 (DM-32UV), what you set for them works on Home only: in the menus they stay left and right. On the DB25-D PRO that
 includes P1, P2 and the microphone's P6 and P7, which are **\*** and **#** there.
 
 The hints at the bottom of the screen use these names. A radio that knows its own name for a key shows that instead
@@ -409,14 +410,14 @@ Follow [Installing](02-installing.md) with these values. To keep the stock codep
 | Green Menu / OK key | **OK** |
 | Red Back key | **Back** |
 | Up, Down | **Up**, **Down** |
-| Left, Right | Press or hold: **Previous zone**, **Next zone**. The key labels are unchecked |
+| P1, P2 (left and right on the 4-way key) | On Home, press or hold: **Previous zone**, **Next zone**, or what Settings > Keys sets for them. Left and right in the menus |
 | SK1 (the side key below **PTT**) | **Monitor**. Held with **PTT** at power-on, it starts the bootloader |
 | SK2 | **A/B** |
 | **PTT** | **PTT** |
 | Channel knob | Channel knob |
 
-No **Power level** key and no emergency key: the radio's third programmable side key hasn't been located yet. Change
-the power with **\***, **1**.
+No **Power level** key and no emergency key by default. Give them to P1 or P2 in Settings > Keys (emergency on a
+hold), or change the power with **\***, **1**.
 
 ### DM-32UV power levels
 

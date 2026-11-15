@@ -419,7 +419,7 @@ position in the list is its role. Each role has a press and a long press, and ea
 | Monitor (2) | MONITOR as raw edges; the radio core picks by mode (#19): FM, the squelch open while held; DMR, a short press toggles digital monitor (the hear all latch) on its release | yes | no (but the key's hold slot works with it: on DMR channels a hold runs the hold function and doesn't toggle; on FM holding is the squelch break and the UI drops it) |
 | Talk target (3) | TALK_TARGET | yes | yes |
 | Power level (4) | POWER: the next level | yes | yes |
-| Next zone (5), Previous zone (6) | ZONE_UP, ZONE_DOWN | yes | yes |
+| Next zone (5), Prev zone (6) | ZONE_UP, ZONE_DOWN | yes | yes |
 | Scan (7) | SCAN: on / off | yes | yes |
 | Emergency (8) | EMERGENCY, hold to activate (1.5 s) | no: P2 | yes |
 | (9) | retired (was Hear all / Digital monitor): reads as Default. The Monitor function toggles digital monitor on DMR (#19) | no | no |
@@ -449,11 +449,24 @@ marker the slots are another firmware's and every key is the board's; the first 
 marker. A value that isn't a `keyfn_t`, or isn't allowed in its
 slot (monitor on a long press, emergency on a press), reads as Default. The values are append-only (gotchas 9.11).
 
+**Home keys.** A board may also list keys the menus need but that are printed as programmable keys (arrows printed P1,
+P2): `board.home_keys`, `home_key_names`, `home_key_count`, up to `KEYASSIGN_HOME_KEYS` (4). Their roles follow the
+side keys (`side_key_count + i`), in the same slots and Settings > Keys rows. A home key with a function in either slot
+sends `ACT_HOME_KEY_1 + i` on a press and a long press (`keyassign_build_home`, repeat kept). The UI turns that back
+first thing (`ui_svc_home_key`, `keyassign_home_event`): on Home (the bottom of the stack, no frequency being typed)
+the slot's function, or the key map's own action for Default, nothing for Nothing, and a long press's repeats send
+nothing once it has a function; on any other screen the key map's own action, so the arrows keep working in the menus.
+Monitor and Tone burst need raw edges, and Emergency the 1.5 s hold the input engine gives only a key whose long action
+is Emergency (a home key's long action is its home key action, so its hold would fire at the ordinary long press). None
+of the three can go on a home key (`keyassign_home_allowed`): Settings skips them and a slot holding one reads as
+Default. Settings shows Default as what the key does on Home ("Prev zone", "Next zone").
+With dual watch on, Home's arrows pick A or B (a home key left at Default still does).
+
 Both places edit the same slots, so there is one copy:
 
 - Settings > Keys (rows SK1, SK1 hold, SK2, ...: a pair per role, named by `side_key_names`): the change applies at once
   (`keyassign_build`, then `input_set_keymap`, which the input task takes when no key is held) and a storage job
-  writes the slots. A failed write shows "Couldn't save the keys: for now only". Rows past `side_key_count` are left
+  writes the slots. A failed write shows "Couldn't save the keys: for now only". Rows past `side_key_count + home_key_count` are left
   out of the list.
 - The codeplug (a CPS or TFTP write): `ui_svc_keys_poll` reads the slots again when `codeplug_serial()` changes and
   rebuilds the key map. qdmr has no editor for them; a CPS that writes back an old image brings back its keys.
