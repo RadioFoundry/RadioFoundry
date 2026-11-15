@@ -52,9 +52,11 @@ BOARD_NOT_WRITTEN += AUDIO_PROBE	# no board.audio_tap yet
 # translations: maximal keeps Spanish, as the default build does (Italian builds on the other boards)
 # APRS-IS (about 2.7 KB) is left out of maximal too, which had 156 bytes left: with no APRS receive here it only gates
 # RF positions out, so it is the first IP service to go. The default build keeps it. It defaults on, so it is set off,
-# not only skipped. The smoothed fonts (FONT_AA) are off by default here and build on the other boards
-MAXIMAL_SKIP := NET_PPP LANG_IT LANG_DEFAULT_IT NET_APRSIS FONT_AA
-MAXIMAL_VARS := CONFIG_NET_APRSIS=n
+# not only skipped. KISS over TCP (about 0.75 KB, transmit only here for the same reason) went next, when the host
+# link's noise trial left maximal 104 bytes short. The smoothed fonts (FONT_AA) are off by default here and build
+# on the other boards
+MAXIMAL_SKIP := NET_PPP LANG_IT LANG_DEFAULT_IT NET_APRSIS NET_KISS FONT_AA
+MAXIMAL_VARS := CONFIG_NET_APRSIS=n CONFIG_NET_KISS=n
 # When the default build runs out of room, the IP services go first, the weakest here first: APRS-IS (NET_APRSIS, about
 # 2.7 KB: with no APRS receive it only gates RF positions out), then KISS over TCP (NET_KISS, about 0.75 KB, transmit
 # only for the same reason), then USRP or SNMP. Each serves its own kind of user over the same USB network link, so

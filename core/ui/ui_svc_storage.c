@@ -721,21 +721,15 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 
 // --- Codeplug writes, on the housekeeping task (storage_job_post) ---
 
-// text: English, marked TRN. The UI translates it when it shows it (tr), so a translation longer than the event's 40
-// bytes isn't cut, and this task needs no language. The English must fit: a cut text never matches its translation
-static void save_failed_text(const char *text)
+// why: a key (TRN). The UI shows it in the language in use (tr), so this task needs no language
+static void save_failed(tr_id_t why)
 {
 	ui_event_t ev;
 	memset(&ev, 0, sizeof ev);
 	ev.kind = UI_EV_SAVE_FAILED;
-	strncpy(ev.text, text, sizeof ev.text - 1);
+	ev.why = why;
 	ui_notify(&ev);
 }
-
-#define save_failed(s)	do { \
-	_Static_assert(sizeof(s) <= sizeof((ui_event_t){0}.text), "the text fits ui_event_t.text"); \
-	save_failed_text(s); \
-} while (0)
 
 // What the job writes: a copy of the radio's view taken when the UI asked (the job runs up to 100 ms later), and the
 // talk target for a permanent one. Only the UI task fills it, and only while no job is pending
@@ -859,7 +853,7 @@ static void cp_answer_job(void *ctx)
 		fn(NULL);
 	} else {
 		cp_drop();
-		save_failed(TRN("Couldn't write the codeplug: not saved"));
+		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
 	}
 }
 
@@ -882,7 +876,7 @@ static void dmr_id_job(void *ctx)
 {
 	(void)ctx;
 	if (!codeplug_set_dmr_id(job.id))
-		save_failed(TRN("Couldn't write the codeplug: not saved"));
+		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
 }
 
 static bool dmr_id_post(uint32_t id)
@@ -910,7 +904,7 @@ static void data_id_job(void *ctx)
 	was = set;
 	codeplug_keys_set_field(row, &set, job.id);
 	if (!codeplug_keys_store(radio_keys, RADIO_KEYS_N, &was, &set))
-		save_failed(TRN("Couldn't write the codeplug: not saved"));
+		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
 	else
 		dmr_data_set_settings(&set);
 }
@@ -940,7 +934,7 @@ static void tone_job(void *ctx)
 	now = was;
 	codeplug_keys_set_field(codeplug_keys_find(radio_tone_rows, RADIO_TONE_ROWS_N, job.channel), &now, job.temp);
 	if (!codeplug_keys_store(radio_tone_rows, RADIO_TONE_ROWS_N, &was, &now)) {
-		save_failed(TRN("Couldn't write the codeplug: not saved"));
+		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
 		return;
 	}
 	// Read again after the write (a flash write can take a while): a setting the UI or the debug link changed
@@ -969,7 +963,7 @@ static void save_channel_job(void *ctx)
 {
 	(void)ctx;
 	if (!codeplug_channel(job.channel, &job_ch)) {
-		save_failed(TRN("Couldn't read the channel: not saved"));
+		save_failed(TRN(STORE_ERR_CHANNEL_READ, "Couldn't read the channel: not saved"));
 		return;
 	}
 	if (job.temp & RADIO_TEMP_POWER)
@@ -987,7 +981,7 @@ static void save_channel_job(void *ctx)
 	if (job.temp & RADIO_TEMP_TS)
 		job_ch.timeslot = job.now.timeslot;
 	if (!codeplug_set_channel(job.channel, &job_ch)) {
-		save_failed(TRN("Couldn't write the codeplug: not saved"));
+		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
 		return;
 	}
 	if (job.temp & RADIO_TEMP_SQUELCH) {
@@ -1028,7 +1022,7 @@ static void write_channel_job(void *ctx)
 {
 	(void)ctx;
 	if (!codeplug_set_channel(job.channel, &job.now)) {
-		save_failed(TRN("Couldn't write the codeplug: not saved"));
+		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
 		return;
 	}
 	if (job.temp != 0) {
@@ -1055,7 +1049,7 @@ static void write_contact_job(void *ctx)
 {
 	(void)ctx;
 	if (!codeplug_set_contact(job.channel, &job.contact)) {
-		save_failed(TRN("Couldn't write the codeplug: not saved"));
+		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
 	}
 }
 
@@ -1079,18 +1073,18 @@ bool ui_svc_write_contact(uint16_t index, const contact_t *c)
 static zone_op_t zq[ZONE_QUEUE];
 static volatile uint8_t zq_head, zq_tail;
 
-static const char *zone_edit_text(zone_edit_result_t r)
+static tr_id_t zone_edit_text(zone_edit_result_t r)
 {
 	switch (r) {
-	case ZONE_EDIT_FULL: return TRN("Zone full: not saved");
-	case ZONE_EDIT_ZONES_FULL: return TRN("No room for another zone");
-	case ZONE_EDIT_IN_ZONE: return TRN("Already in this zone");
-	case ZONE_EDIT_NO_FREE: return TRN("No free channel");
-	case ZONE_EDIT_NO_NAME: return TRN("Give it a name first");
-	case ZONE_EDIT_EDGE: return TRN("Already at the end");
-	case ZONE_EDIT_NO_ZONE: return TRN("That zone is gone");
-	case ZONE_EDIT_NO_CHANNEL: return TRN("That channel is gone");
-	default: return TRN("Couldn't write the codeplug: not saved");
+	case ZONE_EDIT_FULL: return TRN(STORE_ERR_ZONE_FULL, "Zone full: not saved");
+	case ZONE_EDIT_ZONES_FULL: return TRN(ZONE_ERR_NO_ROOM, "No room for another zone");
+	case ZONE_EDIT_IN_ZONE: return TRN(STORE_ERR_ALREADY_IN_ZONE, "Already in this zone");
+	case ZONE_EDIT_NO_FREE: return TRN(TOAST_NO_FREE_CHANNEL, "No free channel");
+	case ZONE_EDIT_NO_NAME: return TRN(TOAST_NAME_FIRST, "Give it a name first");
+	case ZONE_EDIT_EDGE: return TRN(STORE_ERR_ALREADY_AT_END, "Already at the end");
+	case ZONE_EDIT_NO_ZONE: return TRN(STORE_ERR_ZONE_GONE, "That zone is gone");
+	case ZONE_EDIT_NO_CHANNEL: return TRN(STORE_ERR_CHANNEL_GONE, "That channel is gone");
+	default: return TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved");
 	}
 }
 
@@ -1152,18 +1146,18 @@ static void save_target_job(void *ctx)
 {
 	(void)ctx;
 	if (!codeplug_channel(job.channel, &job_ch)) {
-		save_failed(TRN("Couldn't read the channel: for now only"));
+		save_failed(TRN(STORE_ERR_TARGET_CHANNEL_READ, "Couldn't read the channel: for now only"));
 		return;
 	}
 	// A contact record that couldn't be read counts as not stored: nothing is written then
 	uint16_t found = codeplug_contact_find_index(job.id, !job.private_call, &job.target);
 	if (found == 0) {
-		save_failed(TRN("Not a stored contact: for now only"));
+		save_failed(TRN(STORE_ERR_TARGET_NOT_STORED, "Not a stored contact: for now only"));
 		return;
 	}
 	job_ch.contact = found;
 	if (!codeplug_set_channel(job.channel, &job_ch)) {
-		save_failed(TRN("Codeplug not written: for now only"));
+		save_failed(TRN(STORE_ERR_TARGET_NOT_WRITTEN, "Codeplug not written: for now only"));
 		return;
 	}
 	radio_req_dmr_target_clear();	// the channel's own target is this one now
@@ -1206,11 +1200,11 @@ static void factory_reset_job(void *ctx)
 	bool saved = settings_flush();
 	storage_native_t n = storage_native_erase();
 	if (!saved && storage_ready()) {
-		save_failed(TRN("Reset: the settings couldn't be saved"));
+		save_failed(TRN(STORE_ERR_RESET_SETTINGS, "Reset: the settings couldn't be saved"));
 		return;
 	}
 	if (n == STORAGE_NATIVE_FAILED && storage_ready()) {
-		save_failed(TRN("Reset: native area couldn't be erased"));
+		save_failed(TRN(STORE_ERR_RESET_ERASE, "Reset: native area couldn't be erased"));
 		return;
 	}
 	if (board.system != NULL && board.system->reboot != NULL) {
@@ -1256,7 +1250,7 @@ static void name_job(void *ctx)
 					    job.channel == UI_NAME_BOOT2 ? job.name : l2);
 	}
 	if (!ok)
-		save_failed("Couldn't write the codeplug: not saved");
+		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
 }
 
 bool ui_svc_name_set(uint8_t which, const char *text)
@@ -1285,6 +1279,7 @@ static void key_apply(void)
 	keymap_entry_t map[INPUT_KEYS_MAX];
 	uint8_t n = board.keymap_len > INPUT_KEYS_MAX ? INPUT_KEYS_MAX : board.keymap_len;
 	keyassign_build(board.keymap, n, board.side_keys, board.side_key_count, key_slots, map);
+	keyassign_build_home(map, n, board.home_keys, board.home_key_count, board.side_key_count, key_slots);
 	input_set_keymap(map);
 }
 
@@ -1306,7 +1301,7 @@ static void key_write_job(void *ctx)
 {
 	(void)ctx;
 	if (!codeplug_set_quick_keys(key_job_slots)) {
-		save_failed(TRN("Couldn't save the keys: for now only"));
+		save_failed(TRN(STORE_ERR_KEYS_NOT_SAVED, "Couldn't save the keys: for now only"));
 	}
 }
 
@@ -1336,15 +1331,46 @@ static int32_t key_get(uint8_t id)
 		key_load();
 	}
 	uint8_t k = (uint8_t)(id - UI_SET_KEY_FIRST);
-	return keyassign_get(key_slots, k / 2u, (k & 1u) != 0);
+	uint8_t fn = keyassign_get(key_slots, k / 2u, (k & 1u) != 0);
+	// A home key's slot holding what it can't do (Monitor, Tone burst from a CPS) reads as Default, as it acts
+	if (k / 2u >= board.side_key_count && !keyassign_home_allowed(fn, (k & 1u) != 0)) {
+		return KEYFN_DEFAULT;
+	}
+	return fn;
+}
+
+uint8_t ui_svc_home_key(uint8_t action, uint8_t gesture, bool home)
+{
+	if (action < ACT_HOME_KEY_1) {
+		return action;
+	}
+	if (!key_loaded) {
+		key_load();
+	}
+	uint8_t n = board.keymap_len > INPUT_KEYS_MAX ? INPUT_KEYS_MAX : board.keymap_len;
+	return keyassign_home_event(action, gesture, home, board.keymap, n, board.home_keys, board.home_key_count,
+				    board.side_key_count, key_slots);
+}
+
+bool ui_svc_key_offered(uint8_t id, int32_t value)
+{
+	uint8_t k = (uint8_t)(id - UI_SET_KEY_FIRST);
+	if (id < UI_SET_KEY_FIRST || id > UI_SET_KEY_LAST || value < 0 || value >= KEYFN_COUNT) {
+		return false;
+	}
+	if (k / 2u < board.side_key_count) {
+		return keyassign_allowed((uint8_t)value, (k & 1u) != 0);
+	}
+	return k / 2u < board.side_key_count + board.home_key_count &&
+	       keyassign_home_allowed((uint8_t)value, (k & 1u) != 0);
 }
 
 static bool key_set(uint8_t id, int32_t value)
 {
-	uint8_t k = (uint8_t)(id - UI_SET_KEY_FIRST);
-	if (k / 2u >= board.side_key_count || value < 0 || value >= KEYFN_COUNT) {
+	if (!ui_svc_key_offered(id, value)) {
 		return false;
 	}
+	uint8_t k = (uint8_t)(id - UI_SET_KEY_FIRST);
 	if (!key_loaded) {
 		key_load();
 	}

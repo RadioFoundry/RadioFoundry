@@ -98,6 +98,16 @@ export function saveBytes(image) {
 	return image.bytes.subarray(0, Math.max(CODEPLUG_SPAN, idDbTop(image.bytes)));
 }
 
+// A saved file's name without its extension: the codeplug's name and the local date and time, name-YYYY-MM-DD-HHMM, so
+// saves taken over time sort and never collide. A name that already ends in one (a dated file, loaded again) gets
+// the new one in its place
+const DATED = /-\d{4}-\d{2}-\d{2}-\d{4}$/;
+export function datedName(name, when = new Date()) {
+	const p = (n) => String(n).padStart(2, "0");
+	const stamp = `${when.getFullYear()}-${p(when.getMonth() + 1)}-${p(when.getDate())}-${p(when.getHours())}${p(when.getMinutes())}`;
+	return `${(name || "codeplug").replace(DATED, "") || "codeplug"}-${stamp}`;
+}
+
 // codeplug.bin for the radio's TFTP server (USB network mode, docs/spec/tftp.md 5.2): the codeplug, and the ID database
 // in its image layout when there is one, so one file carries both. The radio takes the database part only when the
 // client announces the file's size, and only format N below the radio's openfw_end: a format C database goes in the

@@ -155,7 +155,9 @@ discard them; the answer starts on "No, keep editing". Saving any channel drops 
 channel you are on: the radio reloads it from the codeplug.
 
 The radio won't save a channel without a name, with RX outside its bands, with TX where it can't transmit (set RX only
-instead), or a DMR channel without a TX contact. It says which.
+instead), a DMR channel in the broadcast band or in the air band (on a radio that receives AM there), or a DMR channel
+without a TX contact, unless it is RX only. It says which. A DMR channel where the radio receives but can't transmit
+saves when it is RX only.
 
 **Save as new channel** stores the edited copy at the lowest free number and leaves the original as it was.
 **Tune to this ch** tunes the channel and **Share channel to...** sends it to another radio ([Sharing a zone](#sharing-a-zone));
@@ -254,8 +256,8 @@ what you typed as you go.
 ### Stepping
 
 **Up**, **Down** and the channel knob change the VFO frequency by its step. The step is **Settings > Talk > VFO step**. Its
-default, **Auto**, follows the width: 25 kHz at 25K (and in AM), 12.5 kHz at 12.5K, and the FM broadcast step in the
-broadcast band. The step is in the status strip.
+default, **Auto**, follows the width: 25 kHz at 25K (and in AM) and 12.5 kHz at 12.5K. In the broadcast band the step
+is always the FM broadcast step, whatever the VFO step. The step is in the status strip.
 
 ### Split (repeater offset)
 
@@ -336,7 +338,7 @@ frequency, its TX frequency follows RX, and its mode shows as "AM (air band)" or
 isn't RX Only or is DMR.
 
 In the air band the squelch works as on any FM channel. A broadcast station plays whatever the squelch level, so a
-fading station isn't cut, and the screen and LED show it is receiving. The squelch only stops a scan on a station:
+fading station isn't cut, and the screen shows it is receiving. The LED stays off: a station isn't a call. The squelch only stops a scan on a station:
 while a scan runs, the broadcast band is quiet between stations.
 
 In the broadcast band the knob and **Up** / **Down** step 200 kHz, landing on the odd tenths (88.1, 88.3 ... 107.9)

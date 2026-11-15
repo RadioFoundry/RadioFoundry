@@ -96,6 +96,12 @@ typedef struct {
 	const uint8_t *side_keys;
 	const char *const *side_key_names;
 	uint8_t side_key_count;
+	// Keys the menus need that are also programmable on Home (arrows printed P1, P2): their press and long press do
+	// the user's function on Home and stay the key map's elsewhere. Roles after the side keys (side_key_count + i),
+	// up to KEYASSIGN_HOME_KEYS, and side + home keys up to KEYASSIGN_ROLES. home_key_names as printed on the radio
+	const uint8_t *home_keys;
+	const char *const *home_key_names;
+	uint8_t home_key_count;
 	// Optional: what the screen hints call the keys that send QUICK and CONTEXT on a radio without * and # keys
 	// ("P1", "P2"; docs/spec/ui.md 1); NULL: "*" and "#"
 	const char *quick_label;

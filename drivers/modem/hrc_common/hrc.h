@@ -36,6 +36,9 @@ typedef struct {
 	bool mcu_crc;			// CRC_MCU_Control: a burst's CRC can be sent as given (else the chip makes its own)
 	bool sync_reg;			// the sync type register 0x5F exists
 	bool mode_per_channel;		// 4:0x10 depends on the channel (repeater or not) and is rewritten when it changes
+	// 0x41 bit 3 (CC_Match_Ctrl) deframes bursts of any color code: with the color code filter off the receiver
+	// takes every call as it comes, no 0x1F rewrites or restarts to follow a new code (modem-hrc6000.md 5.4)
+	bool cc_any_rx;
 	uint8_t (*dmr_mode)(bool repeater);		// 4:0x10 for DMR
 	// 4:0x52 bit 2 is the TC of the last burst received, 1 = TS2 starting, and changes only in slots opened for
 	// receive: the repeater slot lock keeps both slots open

@@ -150,8 +150,9 @@ def test_late_entry(radio, sdr_bench, pytestconfig):
     The radio hears from burst C of the second superframe, but takes voice only from a burst A on, so the first
     embedded LC it can assemble is the third superframe's (bursts 14-17): played from its F (burst 18, 19 bursts) if
     the modem has it in its LC page by F's report, else from the next A (burst 19, 18 bursts). A call with the same LC
-    as the one before (the same talker again) can't be told from the modem's sticky LC buffer at first: taken one
-    superframe later (burst 24), 13 bursts. HIL 2026-10-10: 7 on aa79493 (the stack waited a superframe more on top of
+    as the one before (the same talker again) can't be told from the modem's sticky LC buffer at first: taken at the
+    burst A after the reception's first whole superframe, 12 or 13 bursts (HIL 2026-11-14: 8 on the HR_C5000 while
+    the driver waited for the second F). HIL 2026-10-10: 7 on aa79493 (the stack waited a superframe more on top of
     the driver's rule), 13 for the new LC on c8c9b23 (the page still held the old LC at F's report).
     The modem's LC trace (dle log lines, lc / lc2 / lt diagnostics) is printed for each late call.
     A radio whose modem plays the voice itself (dmr.modem_voice=1) counts bursts its driver paces by time up to the
@@ -169,7 +170,8 @@ def test_late_entry(radio, sdr_bench, pytestconfig):
     d, v = _bench_call(radio, sdr_bench, pytestconfig, late=8, superframes=6)    # the same LC again
     _print_lc_trace(radio)
     assert d["call.rx_calls"] == 1 and d["call.rx_late_entries"] == 1 and d["call.rx_calls_played"] == 1, d
-    # 13 with a sticky LC buffer (HR_C6000); a modem that hands over only LCs it assembled has no stale LC to wait out
+    # 12-13 with a sticky LC buffer (HR_C6000, HR_C5000); a modem that hands over only LCs it assembled has no stale
+    # LC to wait out
     assert 12 <= d["call.rx_voice_bursts"] <= 14 or 18 <= d["call.rx_voice_bursts"] <= 20 + extra, d
     assert v["last.src"] == str(BENCH_SRC), v
 
@@ -267,8 +269,8 @@ def test_call_end_tone_setting(radio, sdr_bench, pytestconfig):
             L.setting("tones_off", want)
             radio.wait_for(lambda x: x.get("beep.tones_off") == str(want), timeout=5, sections=("audio",),
                            what="the call end tone setting")
-            # _bench_call zeroes the counters (beep.played with them) before the call: what it counts after is the
-            # call's tones
+            # _bench_call resets the counters before the call, beep.played with them: count from there (HIL
+            # 2026-11-14: read before it, a tone from earlier showed as -1)
             d, _ = _bench_call(radio, sdr_bench, pytestconfig, superframes=3)
             assert d["call.rx_calls"] == 1, d
             deadline = time.monotonic() + 4.0           # the tone follows the call's end

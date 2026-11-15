@@ -36,12 +36,14 @@ typedef struct {
 	uint8_t noise;
 	subtone_t tone;		// the sub-audio the transmitter sends
 	bool tdma;		// DMR direct mode: on air every other 30 ms slot (the noise reading drops between bursts)
+	int16_t dbm;		// the strength reading on it (0 = -80)
 } sig_t;
 
 static uint32_t now;
 
 static struct {
 	uint32_t rx_hz;
+	int16_t floor_dbm;	// the strength reading with no signal (0 = -125)
 	uint32_t rx_ms;		// when rx() last tuned
 	subtone_t rx_tone;
 	int rx_calls;
@@ -118,13 +120,13 @@ static void r_status(radio_status_t *st)
 		hw.status_asleep++;
 	}
 	st->noise = 120;
-	st->rssi_dbm = -125;
+	st->rssi_dbm = hw.floor_dbm != 0 ? hw.floor_dbm : -125;
 	st->carrier = false;
 	st->tone_ok = hw.rx_tone.type == TONE_NONE;
 	for (int i = 0; i < MAX_SIG; i++) {
 		if (hw.sig[i].hz != 0 && hw.sig[i].hz == hw.rx_hz && !(hw.sig[i].tdma && (now / 30u) % 2u != 0)) {
 			st->noise = hw.sig[i].noise;
-			st->rssi_dbm = -80;
+			st->rssi_dbm = hw.sig[i].dbm != 0 ? hw.sig[i].dbm : -80;
 			st->tone_ok = hw.rx_tone.type == TONE_NONE || same_tone(hw.rx_tone, hw.sig[i].tone);
 		}
 	}
@@ -1855,6 +1857,65 @@ static void test_scan_dmr_noise_deaf(void)
 	hw.sig[0].hz = 0;
 }
 
+// HIL 2026-11-14 (test_scan_stops_on_dmr_call, gotchas 17.4): a receiver whose strength reading isn't calibrated read
+// -91 dBm on every empty channel, above the DMR scan's strength scale (-100 dBm at the default level), so every stop
+// probed for 700 ms instead of listening 150 ms, and a sweep of the zone took longer than the bench's call. The scale
+// now also sits above the floor read on the stops before. Empty channels: one probe at most (the first stop, with no
+// floor yet), then the dwell; a call 20 dB over that floor still holds the scan, through the noise reading or, on a
+// receiver whose noise reading doesn't follow DMR, through the strength alone
+static void test_scan_dmr_high_floor(void)
+{
+	start();
+	all_dmr();
+	hw.floor_dbm = -91;
+	req(RREQ_ZONE_POS, 6);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	uint32_t steps = sm.scan.steps;
+	run(3000);
+	CHECK(sm.scan.steps - steps >= 12);
+	CHECK(sm.scan.probes <= 1);
+	req(RREQ_SCAN, RSCAN_STOP);
+
+	for (int deaf = 0; deaf <= 1; deaf++) {
+		for (uint32_t phase = 0; phase < 360; phase += 90) {
+			start();
+			all_dmr();
+			hw.floor_dbm = -91;
+			signal_on(0, 438500000, deaf ? 120 : 2, no_tone);
+			hw.sig[0].tdma = true;
+			hw.sig[0].dbm = -71;
+			air.on = true;
+			air.hz = 438500000;
+			air.t0 = now + 300 + phase;
+			air.dst = 9;
+			air.lc_at = 1;
+			req(RREQ_ZONE_POS, 6);
+			req(RREQ_SCAN, RSCAN_ZONE);
+			uint32_t arrived = 0, held_ms = 0;
+			bool left = false;
+			for (int i = 0; i < 400 && held_ms == 0; i++) {
+				run(25);
+				if (sm.view.zone_pos == 5 && arrived == 0) {
+					arrived = now;
+				}
+				left |= arrived != 0 && sm.view.zone_pos != 5;
+				if (sm.view.zone_pos == 5 && sm.view.scan_phase == SCAN_PH_HOLD && sm.view.dmr.state == RDMR_RX) {
+					held_ms = now - arrived;
+				}
+			}
+			if (held_ms == 0 || left) {
+				printf("  high-floor DMR scan: deaf %d, phase %u ms: held %u ms after arriving, left %d\n", deaf,
+				       (unsigned)phase, (unsigned)held_ms, left);
+			}
+			CHECK(arrived != 0 && held_ms != 0 && !left);
+			req(RREQ_SCAN, RSCAN_STOP);
+		}
+	}
+	hw.floor_dbm = 0;
+	hw.sig[0].hz = 0;
+	hw.sig[0].dbm = 0;
+}
+
 // ---- Dual watch (CONFIG_DUAL_WATCH): two channels of any zone or the VFO, PTT on the selected one ----
 #if CONFIG_DUAL_WATCH
 static void dual(radio_dual_ref_t a, radio_dual_ref_t b, uint8_t sel)
@@ -2711,6 +2772,34 @@ static void test_beep_follows_volume(void)
 static void set_bcl_carrier(radio_settings_t *s) { s->bcl = RADIO_BCL_CARRIER; }
 static void set_bcl_tone(radio_settings_t *s) { s->bcl = RADIO_BCL_WRONG_TONE; }
 static void set_inhibit(radio_settings_t *s) { s->tx_inhibit = true; }
+static void clear_inhibit(radio_settings_t *s) { s->tx_inhibit = false; }
+
+// A DMR call that plays: PTT refused as busy is quiet (no deny tone, no call end tone), the call plays on
+static void test_dmr_busy_quiet(void)
+{
+	start();
+	signal_on(0, 438500000, 30, no_tone);
+	req(RREQ_ZONE_POS, 5);
+	run(100);
+	hear_call(9, 1, 1, false);
+	CHECK(sm.view.dmr.state == RDMR_RX);
+	beep_stats_t b0, b1;
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	hear_call(9, 1, 1, false);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BUSY);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played);
+	req(RREQ_PTT, 0);
+	hear_call(9, 1, 1, false);
+	CHECK(sm.view.dmr.state == RDMR_RX);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played);
+	hear_call(9, 1, 0, true);
+	run(1000);
+	CHECK(sm.view.dmr.state == RDMR_IDLE);
+	hw.sig[0].hz = 0;
+}
 
 static void test_bcl_inhibit(void)
 {
@@ -2718,11 +2807,37 @@ static void test_bcl_inhibit(void)
 	settings(set_bcl_carrier);
 	signal_on(0, 146520000, 30, no_tone);
 	run(100);
+	CHECK(sm.view.state == RS_RX && hw.audio);
+	beep_stats_t b0, b1;
+	beep_get_stats(&b0);
 	req(RREQ_PTT, 1);
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BUSY && hw.tx_calls == 0);
+	// A busy refusal is quiet and the call plays on through it, and after PTT is let go
+	run(200);
+	beep_get_stats(&b1);
+	CHECK(hw.audio && b1.played == b0.played && sm.view.state == RS_TX_DENIED);
 	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_RX && hw.audio);
+	// The call ends while PTT is held: its audio stops then, the refusal stays until the release
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_BUSY && hw.audio);
 	hw.sig[0].hz = 0;
+	run(300);
+	CHECK(sm.view.state == RS_TX_DENIED && !hw.audio);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_IDLE && !hw.audio);
 	run(100);
+	// Another refusal still has its tone
+	settings(set_inhibit);
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_INHIBIT);
+	run(50);
+	beep_get_stats(&b1);
+	CHECK(b1.played > b0.played);
+	req(RREQ_PTT, 0);
+	run(600);
+	settings(clear_inhibit);
 	req(RREQ_PTT, 1);
 	CHECK(sm.view.state == RS_TX);
 	req(RREQ_PTT, 0);
@@ -2731,8 +2846,13 @@ static void test_bcl_inhibit(void)
 	req(RREQ_ZONE_POS, 1);
 	signal_on(0, 146940000, 30, (subtone_t){ TONE_CTCSS, 1230 });
 	run(400);
+	beep_get_stats(&b0);
 	req(RREQ_PTT, 1);
-	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BUSY);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BUSY && !hw.audio);
+	// Nothing playing (the squelch stays shut on the wrong tone): the tone is the only sign of the refusal
+	run(50);
+	beep_get_stats(&b1);
+	CHECK(b1.played > b0.played);
 	req(RREQ_PTT, 0);
 	hw.sig[0].tone = (subtone_t){ TONE_CTCSS, 1000 };
 	run(400);
@@ -4043,6 +4163,7 @@ int main(void)
 	test_scan_led();
 	test_scan_dmr_kept_timing();
 	test_scan_dmr_noise_deaf();
+	test_scan_dmr_high_floor();
 	test_dual_watch();
 #if CONFIG_DUAL_WATCH
 	test_dual_wait();
@@ -4053,6 +4174,7 @@ int main(void)
 	test_tot_and_beeps();
 	test_beep_follows_volume();
 	test_bcl_inhibit();
+	test_dmr_busy_quiet();
 	test_tx_limit();
 	test_roger_burst();
 	test_burst_key();

@@ -39,53 +39,53 @@ is `tools/bringup.py list --radio <id>`.
 | Feature | DM-32UV | DM-1701 | DM-1801 Pro | DB25-D PRO | MD-380 | MD-UV380 | MD-9600 | AT-D578UV (GD32F303) | AT-D578UV (AT32F435) |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | `fm` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | partial, needs re-run | fail | not recorded |
-| `ref_trim` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | pass, needs re-run | partial | not recorded |
-| `subtone` | pass (seed) | pass (seed) | pass (seed) | not recorded | pass (seed) | not recorded | pass, needs re-run | pass | not recorded |
-| `fm_tx_tones` | not recorded | pass (seed) | not recorded | not recorded | not written | not recorded | pass, needs re-run | pass | not recorded |
+| `ref_trim` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | pass, needs re-run | partial, needs re-run | not recorded |
+| `subtone` | pass (seed) | pass (seed) | pass (seed) | not recorded | pass (seed) | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
+| `fm_tx_tones` | not recorded | pass (seed) | not recorded | not recorded | not written | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
 | `tone_burst_key` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial, needs re-run | not recorded |
-| `dtmf` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | pass, needs re-run | pass | not recorded |
-| `vox` | not written | not recorded | not recorded | not written | not recorded | not recorded | pass, needs re-run | pass | not recorded |
-| `battery_save` | pass (seed) | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass | not recorded |
+| `dtmf` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
+| `vox` | not written | not recorded | not recorded | not written | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
+| `battery_save` | pass (seed) | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
 | `am_rx` | not recorded | ✕ | not recorded | ✕ | ✕ | ✕ | ✕ | fail | not recorded |
-| `bcast_fm` | not recorded | ✕ | not recorded | not written | ✕ | ✕ | ✕ | pass | not recorded |
+| `bcast_fm` | not recorded | ✕ | not recorded | not written | ✕ | ✕ | ✕ | pass, needs re-run | not recorded |
 | `rx_ext` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not written | not recorded | not recorded |
 | `dmr_voice` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | partial, needs re-run | fail | not recorded |
 | `dmr_privacy` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | not written | not written |
-| `dmr_talker_alias` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass | not recorded |
-| `dmr_gps` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass | not recorded |
+| `dmr_talker_alias` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
+| `dmr_gps` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
 | `dmr_emergency` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass | pass | not recorded |
-| `dmr_roaming` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | partial | not recorded |
+| `dmr_roaming` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | partial, needs re-run | not recorded |
 | `dmr_signaling` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass | not recorded |
-| `vfo` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass | not recorded |
+| `vfo` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
 | `vfo_fm` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial, needs re-run | fail | not recorded |
-| `vfo_dmr` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass, needs re-run | pass | not recorded |
-| `channel_list` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass | not recorded |
-| `channel_edit` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass | not recorded |
-| `zone_edit` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass | not recorded |
+| `vfo_dmr` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
+| `channel_list` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
+| `channel_edit` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
+| `zone_edit` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
 | `contact_edit` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `volume_bar` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `volume_lock` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `key_assign` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `scan` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass | not recorded |
-| `dual_watch` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | partial, needs re-run | partial | not recorded |
+| `scan` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
+| `dual_watch` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | partial, needs re-run | partial, needs re-run | not recorded |
 | `beep` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial, needs re-run | fail | not recorded |
 | `vibrate` | off | ✕ | not recorded | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
-| `bt_ptt` | off | ✕ | ✕ | off | ✕ | ✕ | off | pass | not recorded |
+| `bt_ptt` | off | ✕ | ✕ | off | ✕ | ✕ | off | pass, needs re-run | not recorded |
 | `gps` | pass (seed) | not recorded | ✕ | not recorded | not recorded | not recorded | not recorded | partial | not recorded |
-| `position` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | not recorded |
+| `position` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | not recorded |
 | `dmr_data_rx` | not recorded | pass (seed) | pass (seed) | not recorded | not recorded | not recorded | pass, needs re-run | pass | not recorded |
-| `dmr_sms` | not recorded | pass (seed) | pass (seed) | not recorded | pass (seed) | not recorded | pass, needs re-run | pass | not recorded |
-| `dmr_tms` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass | not recorded |
+| `dmr_sms` | not recorded | pass (seed) | pass (seed) | not recorded | pass (seed) | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
+| `dmr_tms` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
 | `dmr_ars` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `dmr_lrrp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass | not recorded |
+| `dmr_lrrp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
 | `dmr_udp_compress` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | partial | not recorded |
 | `dmr_confirmed` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | partial | not recorded |
 | `sfr` | not recorded | pass (seed) | pass (seed) | not recorded | ✕ | not recorded | ✕ | not written | not written |
 | `sfr_dualpath_rx` | not recorded | not recorded | not recorded | not recorded | ✕ | not recorded | not recorded | not written | not written |
 | `sfr_cwid` | not recorded | not recorded | not recorded | not recorded | ✕ | not recorded | pass, needs re-run | not written | not written |
 | `aprs` | pass (seed) | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | partial | not recorded |
-| `aprs_afsk` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial | not recorded |
-| `aprs_dmr` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | not recorded |
+| `aprs_afsk` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial, needs re-run | not recorded |
+| `aprs_dmr` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | not recorded |
 | `aprs_rx` | pass (seed) | not recorded | not recorded | not written | not written | not recorded | pass | off | not recorded |
 | `aprs_igate` | not recorded | off | not recorded | not written | not written | off | pass, needs re-run | off | not recorded |
 | `gps_sky` | not recorded | not recorded | ✕ | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
@@ -124,13 +124,13 @@ is `tools/bringup.py list --radio <id>`.
 | `iddb_compact` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | fail | not recorded |
 | `snmp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | off | not recorded |
 | `net_ppp` | not recorded | off | pass (seed) | pass (seed) | off | off | off | off | off |
-| `ui_navigation` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass | not recorded |
-| `key_lock` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass | not recorded |
+| `ui_navigation` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
+| `key_lock` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
 | `channel_knob` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | pass | not recorded |
-| `hand_mic` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | not recorded |
-| `ui_settings` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial, needs re-run | partial | not recorded |
-| `diag` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass | not recorded |
-| `ui_color` | not recorded | not recorded | ✕ | not recorded | not recorded | not recorded | ✕ | pass | not recorded |
+| `hand_mic` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | not recorded |
+| `ui_settings` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial, needs re-run | partial, needs re-run | not recorded |
+| `diag` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
+| `ui_color` | not recorded | not recorded | ✕ | not recorded | not recorded | not recorded | ✕ | pass, needs re-run | not recorded |
 | `font_xl` | not recorded | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `font_aa` | not recorded | off | off | off | off | off | ✕ | off | off |
 | `font_big` | not recorded | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
@@ -140,7 +140,7 @@ is `tools/bringup.py list --radio <id>`.
 | `lang_default_es` | off | off | off | off | off | off | off | off | off |
 | `lang_default_it` | off | off | off | off | off | off | off | off | off |
 | `lang_default_zh` | off | ✕ | ✕ | ✕ | ✕ | ✕ | off | off | off |
-| `radio_controls` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass, needs re-run | pass | not recorded |
+| `radio_controls` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
 | `settings_store` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass, needs re-run | pass | not recorded |
 | `codeplug_foreign` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass | not recorded |
 | `nand_storage` | ✕ | ✕ | ✕ | not recorded | ✕ | ✕ | ✕ | not recorded | not recorded |
@@ -382,7 +382,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Anti-aliased fonts | `FONT_AA` | 3,004* | — | Smooth text on color panels (measured 2026-10-17); the DM-32's image grew 9.5 KB with it and `FONT_XL` |
 | Larger text | `FONT_BIG` | — | — | 9x18 lists and labels on 240 px color panels (needs `FONT_AA`); 3,588 B on the DM-32 (measured 2026-10-17) |
 | Spanish on the radio | `LANG_ES` | 28,456 | 28,348 | The first language brings the lookup and the accented letters of every font (about 7.5 KB); the rest is its text. Measured 2026-10-31 |
-| Italian on the radio | `LANG_IT` | 17,304 | 17,304 | Off by default; measured with Spanish on (its text, and the hashes of strings Spanish leaves untranslated). Alone it costs about as much as Spanish |
+| Italian on the radio | `LANG_IT` | 17,304 | 17,304 | Off by default; measured with Spanish on (its text and its offsets). Alone it costs about as much as Spanish |
 | Chinese on the radio | `LANG_ZH` | 32,856 | 32,856 | Off by default. Not the text alone: 15,360 B of 16x16 glyphs (480 characters, `core/ui/cjk_font_data.c`) and about 17 KB of UTF-8 text, with the text layer's decoder. Needs a 16 px line height: a 240 px color radio draws its words in 8x16 and shows Chinese on every screen, while a layout whose words use the 5x8 or 6x12 font (128x64, 160x128) has no room for it and must not build it. Measured with Spanish on, 2026-11-04 |
 | Start in Spanish | `LANG_DEFAULT_ES` | 0 | 0 | The language the radio starts in until the user picks one (needs `LANG_ES`); the web flasher sets it from its Radio language choice |
 | Start in Italian | `LANG_DEFAULT_IT` | 0 | 0 | As `LANG_DEFAULT_ES` (needs `LANG_IT`) |

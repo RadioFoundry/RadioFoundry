@@ -104,7 +104,7 @@ typedef struct {
 	char ev;	// F burst F's report, f F reported again (a repeat, dropped), A burst A while no LC yet, P post-access
 			// interrupt, p post-access shortly before the reception started, H voice LC header
 	char res;	// n differs from the capture (taken), s same as the capture (held back), v same but taken (more than
-			// STALE_LC_VOICE voice bursts), c CRC error flagged, k kept for the next voice burst, o maybe the
+			// STALE_LC_VOICE voice bursts; at A, after a whole superframe), c CRC error flagged, k kept for the next voice burst, o maybe the
 			// other slot's (held back, modem-hrc6000.md 5.2), r an interrupted call's, read twice (5.6), - not used
 	uint8_t tk;	// ticks since the capture (255: 255 or more)
 	uint8_t vss;	// voice bursts taken in this reception at the time
@@ -262,6 +262,8 @@ typedef struct {
 	bool lc_kept;		// lc_keep holds an LC seen outside a voice report, for the next voice burst taken
 	uint8_t lc_keep[9];
 	bool f_crc_bad;		// the last F taken flagged a CRC error (its LC isn't taken at the next A either)
+	bool f_whole;		// the last F taken closed a superframe all of this reception's (B-E heard after an A),
+				// with no CRC error: by the next A page 2 holds that superframe's LC
 	uint8_t scap_lc[9];	// page 2 at the first status report of a quiet period (late entry: before any burst taken)
 	uint32_t scap_tick;
 	bool scap_valid;

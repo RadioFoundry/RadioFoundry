@@ -311,7 +311,10 @@ Voice: 27 bytes from page 3 on V_SPI (three 72-bit AMBE+2 frames with their FEC,
 - **The LC registers are sticky.** Page 2 keeps the previous call's LC until the new one is decoded. On a new
   reception, the first LC read may be the last call's. Either wait for two superframes (burst A seen twice after the
   slot lock) before trusting it, or capture page 2 when the reception starts and accept an LC only when it differs
-  from that capture, or after more than one superframe of voice.
+  from that capture, or after more than one superframe of voice. The driver takes an unchanged LC at the burst A after
+  the reception's first whole superframe (A-F of this reception, F with no CRC error), by then written to page 2 (next
+  item): the same talker again. HIL 2026-11-14 on the HR_C5000: waiting for the second F, a late entry with the last
+  call's LC played 8 bursts instead of 12.
   The driver captures page 2 at the first report of a quiet period (a status report before any burst is taken, for a
   late entry), else at the first burst.
 - The voice header's LC and the terminator's LC are read at their bursts; during voice, the embedded LC appears in
@@ -391,11 +394,26 @@ slot in two from then on.
 
 ### 5.4 Color code acquisition (when the user's CC filter is off)
 
-The chip only deframes bursts whose CC matches 0x1F unless 0x41 bit 3 is set. To follow an unknown CC: at each system
-interrupt with an SNR margin of at least 5 dB, compare 0x52's CC with the last one seen (within 200 ms). On every
-second match write the new CC to 0x1F and rewrite 0x40=0xC3 (through a repeater also the 0x41 resync sequence: 0x20,
-0x00, 0x20, 0x50), then wait 3 ms (a busy wait in the interrupt: faster rewrites crashed the radio). After 8 matches
-the CC is held. Release the hold after 5 s of no received audio while idle.
+Reconfiguration keeps any-CC listening. The receive code stays in 0x1F while an aligned start waits for its slot.
+Before the first TX slot, the driver writes the channel's transmit code; after TX it restores the receive code.
+A receive filter or reconfiguration during TX takes effect when TX finishes: the receiver restarts then (5.1),
+in place of a direct transmission's end hold.
+
+The chip only deframes bursts whose CC matches 0x1F unless 0x41 bit 3 (CC_Match_Ctrl) is set.
+
+**HR_C6000:** with the filter off, every receive write to 0x41 sets bit 3 (0x58 in place of 0x50), so the chip
+deframes every call whatever its CC. The driver only notes the CC seen in 0x52 (two matches within 200 ms), for
+the next transmission; it doesn't rewrite 0x1F or restart the receiver. Restarting on a CC change lost the first
+call after the change: its headers always, its voice in most tries. With bit 3 set, the first call after a change
+decodes in full, through a repeater and in direct mode with each call on another CC.
+
+**HR_C5000** (bit 3 not confirmed on this chip): follow an unknown CC. At each system interrupt with an SNR margin
+of at least 5 dB, compare 0x52's CC with the last one seen (within 200 ms). On every second match write the new CC
+to 0x1F and rewrite 0x40=0xC3 (through a repeater also the 0x41 resync sequence: 0x20, 0x00, 0x20, 0x50), then
+wait 3 ms (a busy wait in the interrupt: faster rewrites crashed the radio). After 8 matches the CC is held.
+Release the hold after 5 s of no received audio while idle.
+
+The driver chooses by the chip description's `cc_any_rx`.
 
 ### 5.5 End of a reception
 
@@ -418,13 +436,13 @@ the embedded LC is complete (subject to the sticky-LC rule above). The driver re
 LC that differs from the capture for the next voice burst (counted as `lc2 p=`, traced as `P`). On the HR_C5000 the
 interrupt comes once per superframe, just after burst E (bench trace), and starts the decoder, so it comes
 before the reception. An LC read then that differs from the last capture is kept for the reception's first burst
-(traced `pk`): the capture that follows holds that same LC, and the sticky rule would make it wait for the second F.
+(traced `pk`): the capture that follows holds that same LC, and the sticky rule would make it wait for the next A.
 On the HR_C6000, on the bench (a call joined at burst C of its second superframe), it came before the next F
 in most runs and the LC was taken there; on a weak signal it came one superframe later in 2 of 9 runs, page 2
 still held the old LC at F, and the call played from the superframe after that.
 
 **Resuming a call.** A call that stopped with no terminator and comes back has the sticky LC problem in its worst
-form: the LC in page 2 is the call's own, so the sticky rule waits for the second F (22 ticks). That page 2 still
+form: the LC in page 2 is the call's own, so the sticky rule waits for the A after the first whole superframe. That page 2 still
 shows the call's LC proves nothing: it would show the same if another caller had started. The post-access interrupt
 does prove it, read twice:
 
@@ -686,7 +704,7 @@ From our SFR work (on air in MMDVM SFR):
   up the next outbound slot goes out in the one after), bursts 31.3 ms with 0.2 ms ramps, within 25 Hz.
 - 0x10 bit 2 (relay) gives BS framing with a CACH whose AT / TC come from 0x52 (written) and short LC from TX RAM
   0x24 (9.1). An ETSI single-frequency BS uses guard-time framing without a CACH (TS 102 361-1 4.6.2).
-- 0x41 bit 3 (CC_Match_Ctrl) lets the chip deframe any CC while keyed (experiment switch, effect unconfirmed).
+- 0x41 bit 3 (CC_Match_Ctrl) lets the chip deframe any CC (5.4).
 - The AT1846S TX/RX switch per burst over I2C takes about 0.5 ms from the interrupt.
 
 ### 9.1 Continuous BS outbound (split duplex TX half)

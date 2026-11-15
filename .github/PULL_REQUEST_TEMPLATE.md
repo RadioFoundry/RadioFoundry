@@ -32,6 +32,8 @@ end generated
 - [ ] Clean room: written from `docs/spec/`, datasheets, public standards or permissively licensed code. Nothing
       copied, translated or paraphrased from other firmware, GPL code, vendor SDKs or disassembly
       ([CLEANROOM.md](https://github.com/radiofoundry/radiofoundry/blob/main/docs/CLEANROOM.md)).
+- [ ] This is my own work, or I have the right to submit it, and I license it under the project's MIT license
+      ([contributing.md](https://github.com/radiofoundry/radiofoundry/blob/main/docs/dev/contributing.md#license-of-contributions)).
 - [ ] No AMBE codec, stock firmware, bootloader keys, flash or memory dumps or audio recordings in the diff.
 - [ ] SPDX header on every new file.
 - [ ] `core/` stays radio independent: no board headers, no radio defines.
