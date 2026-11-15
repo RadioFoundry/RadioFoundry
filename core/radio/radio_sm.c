@@ -1765,7 +1765,8 @@ static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
 		if (!sm->view.ch.no_beep) {
 			if (st == RDMR_TX && sm->set.talk_permit && !early) {
 				beep(sm, BEEP_TX_PERMIT);
-			} else if (sm->dmr_prev_state == RDMR_RX && (st == RDMR_IDLE || st == RDMR_RX_OTHER)) {
+			} else if (sm->dmr_prev_state == RDMR_RX && (st == RDMR_IDLE || st == RDMR_RX_OTHER) &&
+				   sm->view.state != RS_TX_DENIED) {	// a refusal's idle: the call plays on
 				beep(sm, BEEP_CALL_END);
 			}
 		}
