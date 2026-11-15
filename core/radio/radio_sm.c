@@ -2665,7 +2665,7 @@ static void scan_stop(radio_sm_t *sm, bool cancel, uint32_t now_ms)
 		dual_busy_set(sm, 0);
 	}
 #if CONFIG_DMR
-	bool hear_all = hear_all_on(sm) && kind != SCAN_DUAL;
+	bool hear_all = hear_all_on(sm);	// never in dual watch (hear_all_on)
 #endif
 	scan_end(sc);
 	if (cancel) {
@@ -2781,7 +2781,9 @@ static void scan_start(radio_sm_t *sm, uint8_t kind, uint32_t lo_hz, uint32_t hi
 	scan_cfg_t cfg;
 	scan_config(sm, kind, &cfg);
 #if CONFIG_DMR
-	sm->scan_hear_all = sm->hear_all_latch;	// digital monitor on here: on at every stop (#595)
+	// Digital monitor on here (latched on this channel, not one left behind): on at every stop (#595)
+	sm->scan_hear_all = sm->hear_all_latch && sm->latch_ch == sm->view.channel_number &&
+			    sm->latch_vfo == sm->view.vfo;
 #endif
 	sc->origin_vfo = sm->view.vfo;
 	sc->origin_pos = sm->view.zone_pos;

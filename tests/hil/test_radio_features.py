@@ -683,12 +683,13 @@ def test_scan_digital_monitor_any_talkgroup(radio, sdr_bench, pytestconfig):
     radio.find_channel(hz, "dmr")
     if as_int(radio.core().get("zone_size"), 0) < 2:
         skip("state", "the DMR test channel's zone has one channel")
-    radio.press("quick")	# find_channel left the radio on it
-    radio.wait_for(lambda v: v.get("ui.screen") == "quick", sections=("link",), what="quick screen")
-    radio.press("5")
-    radio.wait_for(lambda v: v.get("dmr.hear_all_latch") == "1", sections=("dmr",), what="digital monitor on")
-    if radio.screen() == "quick":
-        radio.press("back")
+    if radio.link.view(["dmr"]).get("dmr.hear_all_latch") != "1":	# Monitor by default may have it on already
+        radio.press("quick")	# find_channel left the radio on it
+        radio.wait_for(lambda v: v.get("ui.screen") == "quick", sections=("link",), what="quick screen")
+        radio.press("5")
+        radio.wait_for(lambda v: v.get("dmr.hear_all_latch") == "1", sections=("dmr",), what="digital monitor on")
+        if radio.screen() == "quick":
+            radio.press("back")
     held, latched, done = [], set(), threading.Event()
 
     def watch():
@@ -696,7 +697,7 @@ def test_scan_digital_monitor_any_talkgroup(radio, sdr_bench, pytestconfig):
             v = radio.link.view(["core", "features", "dmr"])
             if v.get("scan_phase") == "hold":
                 held.append(v.get("rx_hz"))
-            if v.get("scan") == "zone":
+            if v.get("scan") == "zone" and v.get("mode") == "dmr":	# an FM stop has no DMR latch to show
                 latched.add(v.get("dmr.hear_all_latch"))
             time.sleep(0.05)
 
@@ -708,7 +709,8 @@ def test_scan_digital_monitor_any_talkgroup(radio, sdr_bench, pytestconfig):
                 wait_features(radio, lambda v: v.get("scan") == "zone", 1.0, "scan=zone")
                 t.start()
                 with sdr_bench.lease():
-                    sdr_bench.voice_call(freq, cc, SCAN_DMON_OTHER_TG, superframes=20, calls=1)
+                    # Two calls: the scan starts on the test channel, so it comes back only after a lap of the zone
+                    sdr_bench.voice_call(freq, cc, SCAN_DMON_OTHER_TG, superframes=20, calls=2)
             finally:
                 done.set()
                 t.join(2)

@@ -26,7 +26,7 @@ If dual watch is running, starting a scan stops it. The radio stays on the selec
   if it needs one). A DMR channel stops it when the radio plays a call.
 - Turn on [digital monitor](09-dmr.md) before you start the scan to stop on a call to any talkgroup, not only
   the channel's talkgroup and RX group list. It stays on at every channel and on the one the scan ends on. Pressing
-  **Monitor** during the scan turns it off or on for the rest of the scan.
+  **Monitor** on a DMR channel during the scan turns it off or on for the rest of the scan.
 - On a signal the scan holds. It moves on 2 s after the signal ends, and stays if the signal comes back.
 - Holding **Monitor** pauses the scan.
 
