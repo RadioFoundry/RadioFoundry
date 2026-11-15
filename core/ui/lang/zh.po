@@ -2907,16 +2907,16 @@ msgid "FM idle tone"
 msgstr "FM 空闲音"
 
 #: core/ui/ui_menus.c
-msgid "Start tone steps"
-msgstr "起始音步骤"
+msgid "Start steps"
+msgstr "起始步骤"
 
 #: core/ui/ui_menus.c
-msgid "End tone steps"
-msgstr "结束音步骤"
+msgid "End steps"
+msgstr "结束步骤"
 
 #: core/ui/ui_menus.c
-msgid "Idle tone steps"
-msgstr "空闲音步骤"
+msgid "Idle steps"
+msgstr "空闲步骤"
 
 #: core/ui/ui_menus.c
 msgid "Brightness"

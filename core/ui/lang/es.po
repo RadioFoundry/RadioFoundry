@@ -2905,16 +2905,16 @@ msgid "FM idle tone"
 msgstr "Tono de canal libre FM"
 
 #: core/ui/ui_menus.c
-msgid "Start tone steps"
-msgstr "Pasos tono inicio"
+msgid "Start steps"
+msgstr "Pasos inicio"
 
 #: core/ui/ui_menus.c
-msgid "End tone steps"
-msgstr "Pasos tono fin"
+msgid "End steps"
+msgstr "Pasos fin"
 
 #: core/ui/ui_menus.c
-msgid "Idle tone steps"
-msgstr "Pasos tono libre"
+msgid "Idle steps"
+msgstr "Pasos libre"
 
 #: core/ui/ui_menus.c
 msgid "Brightness"

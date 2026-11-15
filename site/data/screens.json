@@ -867,5 +867,23 @@
    "group": "settings",
    "needs": []
   }
+ },
+ "settings_signaling": {
+  "group": "settings",
+  "needs": [
+   "UI_SETTINGS"
+  ]
+ },
+ "signaling_steps": {
+  "group": "settings",
+  "needs": [
+   "UI_SETTINGS"
+  ]
+ },
+ "signaling_step_edit": {
+  "group": "settings",
+  "needs": [
+   "UI_SETTINGS"
+  ]
  }
 }

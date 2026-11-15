@@ -537,7 +537,7 @@ static const flow_t flows[] = {
 	// (screen sig-chain). Start 1 is set100 (Hz) and set130 (ms), step 2 set101 and set131. A step: OK, the frequency,
 	// OK, the length, OK; a value off the 10 steps or past the range is refused with what fits
 	{ "S signaling tones group opens", "", "ok 7 up up ok down down down down down down",
-	  "screen=group shows=Start_tone_steps", 11, false },
+	  "screen=group shows=Start_steps", 11, false },
 	{ "S signaling tones: a chain's steps open", "ok 7 up up ok down down down down down down", "ok",
 	  "screen=sig-chain shows=Step_1", 1, false },
 	{ "S signaling tones: a step typed and saved", "ok 7 up up ok down down down down down down ok down",

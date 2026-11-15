@@ -5718,9 +5718,9 @@ static const set_item_t s_sigtones[] = {
 	LIST(TRN("FM end tone"), "roger signaling", UI_SET_SIG_FM + SIG_EV_END, v_sigout_local, n_sigout_local),
 #endif
 	LIST(TRN("FM idle tone"), "channel free signaling", UI_SET_SIG_FM + SIG_EV_IDLE, v_sigout_local, n_sigout_local),
-	ACTION(TRN("Start tone steps"), "signaling chain frequency length pitch", SA_SIG_BEGIN),
-	ACTION(TRN("End tone steps"), "signaling chain frequency length pitch roger", SA_SIG_END),
-	ACTION(TRN("Idle tone steps"), "signaling chain frequency length pitch channel free", SA_SIG_IDLE),
+	ACTION(TRN("Start steps"), "signaling chain frequency length pitch", SA_SIG_BEGIN),
+	ACTION(TRN("End steps"), "signaling chain frequency length pitch roger", SA_SIG_END),
+	ACTION(TRN("Idle steps"), "signaling chain frequency length pitch channel free", SA_SIG_IDLE),
 };
 #endif
 static const set_item_t s_display[] = {
