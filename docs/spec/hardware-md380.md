@@ -1065,7 +1065,7 @@ configuration registers, audio routing), and [gotchas.md](gotchas.md) 2.6, 3.3, 
 ## 19. Sizes
 
 Flash: the table in [feature-matrix.md](../feature-matrix.md#dm-1701-and-md-380) and the per-feature figures in
-[feature-matrix.md](../feature-matrix.md). With LTO: default UHF image 465,912 B of 868,352 B (848 KB), maximal 469,168 B.
+[feature-matrix.md](../feature-matrix.md). With LTO: default UHF image 472,036 B of 868,352 B (848 KB), maximal 500,956 B.
 
 `CONFIG_NET_WEBCTL` follows `CONFIG_NET_HTTP_GZIP` on this radio (`boards/md380/config.mk`): web control's files,
 stored uncompressed, need more flash than the default image leaves free. With gzip off the radio serves the plain
