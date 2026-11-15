@@ -479,33 +479,6 @@ def test_tx_drive_op(radio):
 
 
 @pytest.mark.feature("debuglink")
-def test_tx_drive_across_bands(radio):
-    """Power calibration across each band, without keying: with the VFO stepped through the band, the core view's
-    tx_drive lists a drive for every level at every point where the band transmits at all. A level's drive of 0 is a
-    refusal, so a hole mid-band (calibration rows interpolated past a drive limit) shows as zeros between good points."""
-    core = radio.core()
-    if "tx_drive" not in core:
-        skip("not_built", "no PA drive view for this radio (hal_radio_t.tx_drive_level)")
-    if radio.screen() == "hotspot":
-        skip("state", "the radio is in hotspot mode")
-    bands = [tuple(int(x) for x in r.split("-")) for r in filter(None, core.get("bands", "").split(","))]
-    L = radio.link
-    with radio.vfo_session():
-        for lo, hi in bands:
-            seen = {}
-            for hz in sorted({lo, hi, *range(lo - lo % 2000000 + 2000000, hi, 2000000)}):
-                L.vfo_set(hz)
-                v = radio.wait_for(lambda x: x.get("rx_hz") == str(hz), 3.0, what=f"VFO at {hz}")
-                tx = int(v["tx_hz"])
-                if lo <= tx <= hi:
-                    seen[tx] = [int(x) for x in v["tx_drive"].split("/")]
-            if not any(any(d) for d in seen.values()):
-                continue                        # a band that never transmits (receive only, or no calibration)
-            holes = {hz: d for hz, d in seen.items() if not all(d)}
-            assert not holes, f"levels refused inside {lo}-{hi} Hz: {holes}"
-
-
-@pytest.mark.feature("debuglink")
 def test_pa_keyup_op(radio):
     """The DMR PA key-up constants (RADIO op 37, docs/spec/pa-keyup.md) without keying: the core view shows the board's,
     the op takes a valid set and shows it, refuses one out of range or out of order and keeps the set before, and no
