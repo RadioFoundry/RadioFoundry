@@ -113,6 +113,7 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x1F` | IDDB | DMR ID u32 (3.23); `CONFIG_DMR` builds, else status 4 | format u8, records u32, found u8, text (3.23) |
 | `0x20` | CHIP_REG | chip u8, page u8, register u8 [+ value u32]; or chip `0xFF`, address u32 [+ value u32] (3.24) | the register's value u32 (3.24) |
 | `0x21` | HWOPT | operation u8 + arguments (3.25) | the options as key=value text, or none (3.25) |
+| `0x22` | AIR | operation u8 + arguments (3.26); `CONFIG_AIR_RAW` builds, else status 1 | samples, receive chunks, the session's fit, or none (3.26) |
 
 ### 3.1 VERSION
 
@@ -829,6 +830,55 @@ the same list less the hidden ones; a radio without options has no such row and 
 
 `rfoundry_debug.py hwopt` lists them; `rfoundry_debug.py hwopt "Board revision" V4A/V5` sets one.
 
+### 3.26 AIR
+
+Bench access to the air interface (`hal/hal_air.h`): the board's receive tap
+(`board.baseband`, `hal/hal_baseband.h`) as raw samples, and a session on its provider (`board.air`, `hal/hal_air.h`)
+with a profile the host sends: its receive chunks, and a transmission of the host's symbols. One tap or one session at
+a time. `CONFIG_AIR_RAW` builds only (it needs `CONFIG_AIR` and `CONFIG_DEBUGLINK`); other builds answer unknown
+command (1). A board without a tap or a provider answers unavailable (4). Little endian throughout.
+
+The radio core hands the radio over through `debuglink_air_core_t` (`core/debuglink/debuglink_air.h`): enter (the DMR
+call stack stopped, the radio receiving in DMR on the channel's frequency), leave, and transmit on / off. Without that
+hook the tap and a receive session still open while the radio is idle in DMR (busy (3) otherwise), and TX_KEY answers
+unavailable (4).
+
+| Op | Name | Arguments | Reply after the status |
+|---|---|---|---|
+| 0 | STATUS | none | key=value text: `air.built`, `air.provider`, `air.tap`, `air.core` (1 = the hook is set), `air.state` (`idle`, `tap`, `open`), `air.keyed`, `air.rx_chunks`, `air.rx_dropped`, `air.tx_started`, `air.tx_started_us`, `air.tx_underruns`, `air.tx_space_events`, `air.tx_done`, `air.tx_done_us`, `air.tap_gaps`, `air.tx_chunk_syms`, `air.tx_queue_depth`; while open `air.tx_space`, `air.now_us` |
+| 1 | TAP_START | bits u8 (8 or 16), shift u8 (0-15) | rate_hz u32, lo_hz u16, hi_hz u16, counts_per_khz u16 (0 unknown), channels u8 |
+| 2 | TAP_READ | none | seq u32 (the first sample's number), t_us u32 (its time), gaps u32, n u16, then n samples: int16, or int8 after an arithmetic shift right by shift, clipped |
+| 3 | TAP_STOP | none | none |
+| 4 | OPEN | flags u8 (bit 0: soft values in the records), profile | fit u32 (`AIR_FIT_*`), tx_chunk_syms u16, tx_queue_depth u8. Refused (7) with fit u32 when the provider can't, bad argument (2) for a malformed profile |
+| 5 | CLOSE | none | none. Ends a transmission first (PA off) |
+| 6 | RX_READ | none | dropped u32 (chunks lost since open: the host read too slowly), count u8, then the records |
+| 7 | RX_RESTART | none | none (`hal_air_t.rx_restart`) |
+| 8 | TX_DATA | flags u8 (`AIR_TX_LAST`, `AIR_TX_SLOT_EMPTY`), nsyms u8 (1..tx_chunk_syms), the symbols packed | free chunks u8. Busy (3) with the same byte when the queue is full |
+| 9 | TX_KEY | max_ms u16 (0: 30 s) | none. Refused (7) by the core's transmit checks |
+| 10 | TX_END | none | none (`hal_air_t.tx_end`) |
+| 11 | TX_ABORT | none | none (`hal_air_t.tx_abort`) |
+
+The profile is `air_profile_t` packed: sym_rate u16, levels u8, shape u8, shape_param u8, dev_outer_hz u16, timing u8,
+bw u8, slot_syms u16, sync_every_syms u16, idle u8, nsyncs u8 (15 bytes), then per sync 11 bytes: id u8, nsyms u8,
+max_errs u8, flags u8, frame_at i8, syms 6 bytes. A request carries at most 64 bytes, so at most 4 syncs.
+
+A receive record: t_us u32, nsyms u16, flags u8 (`AIR_CHUNK_*`; bit 7: soft values follow), sync_at i16, sync_id u8,
+the hard symbols ((nsyms + 3) / 4 bytes, packed as `hal_air.h` says), then nsyms soft values (int8) when bit 7 is set.
+The session keeps about 1.3 kB of records, from the RTOS heap while open: 18 chunks of 48 symbols with soft values, 58
+without. At 4800 symbols/s the records come at about 7 kB/s with soft values and 1.8 kB/s without; a 115200 baud host
+link carries about 11 kB/s.
+
+The tap's gaps counts reads whose first sample was not where the previous read ended by the clock: samples the board
+dropped because the host read too slowly. 16-bit samples at 8 kHz are 16 kB/s: on a 115200 baud host link use 8 bits.
+
+A transmission: TX_DATA until the queue is full or the symbols end, TX_KEY, then TX_DATA as space comes, the last chunk
+with `AIR_TX_LAST` (or TX_END). The core keys the transmitter at the lowest power level after its transmit checks
+(inhibit, the test TX limit, band, battery) and then calls `board.air->tx_begin`. At `AIR_EV_TX_DONE` the session asks
+the core for TX off; the core's own time-out and max_ms end it otherwise. Nothing here keys the transmitter by itself.
+
+`rfoundry_debug.py air status`, `air tap --seconds S --out F.raw [--bits 8]`, `air open --profile p25`,
+`air rx --seconds S --out F.jsonl`, `air tx --syms F`, `air close`.
+
 ## 4. Safety
 
 - PTT: a firmware time-out on every injected PTT (10 s maximum); the host tool refuses longer holds; the radio
@@ -845,6 +895,8 @@ the same list less the hidden ones; a radio without options has no such row and 
 - RX2 BRIDGE and RESTART need their token and are refused while transmitting. The bridge keeps the transmitter off
   and ends in a restart (3.22).
 - HWOPT SET is refused while transmitting (3.25).
+- AIR (bench builds only) keys the transmitter only through the radio core, which applies its transmit checks and the
+  lowest power level; without the core's hook TX_KEY is unavailable (3.26).
 - REBOOT needs the chip UID's low word as a token, is refused while transmitting, and the ROM DFU mode is refused
   unless RDP is level 0. The host tool checks RDP too.
 - Memory dumps are never written inside a git tree (the vendor bootloader is proprietary).

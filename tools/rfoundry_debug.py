@@ -39,6 +39,11 @@
                                                 wram PAGE ADDR HEXBYTES | watch MS MASK [RAMADDR] |
                                                 mod MS HZ STEPS [PAGE REG] |
                                                 music MS HZ AMP [le]
+    rfoundry_debug.py air status|close|restart|abort  the air interface on the bench (CONFIG_AIR_RAW; debuglink.md 3.26)
+    rfoundry_debug.py air tap --seconds S --out F.raw [--bits 8|16]   the receive tap's samples
+    rfoundry_debug.py air open --profile p25 [--dev HZ] [--hard-only]  a session on the board's provider
+    rfoundry_debug.py air rx --seconds S --out F.jsonl                 its receive chunks
+    rfoundry_debug.py air tx --syms F [--max-ms MS]                    send the file's symbols (the radio core keys)
     rfoundry_debug.py split view                     the split duplex view (role, epoch, offset, buffers, underruns, CACH)
     rfoundry_debug.py split variant N [REG=VAL ...]  the BS framing experiment's variant for the next TX half key-up
                                                 (docs/spec/split-duplex.md 10.1; raw page 4 pairs with N = 255)
@@ -84,6 +89,21 @@ CRASH = 0x1B                        # the crash log (CONFIG_CRASH_LOG; docs/spec
 CRASH_OP_CLEAR, CRASH_OP_TEST = range(2)
 HWOPT = 0x21                        # the board's hardware options (docs/spec/debuglink.md 3.25)
 HWOPT_OP_LIST, HWOPT_OP_SET = range(2)
+AIR = 0x22                          # the air interface on the bench (CONFIG_AIR_RAW; docs/spec/debuglink.md 3.26)
+AIR_OP_STATUS, AIR_OP_TAP_START, AIR_OP_TAP_READ, AIR_OP_TAP_STOP, AIR_OP_OPEN, AIR_OP_CLOSE, AIR_OP_RX_READ, \
+    AIR_OP_RX_RESTART, AIR_OP_TX_DATA, AIR_OP_TX_KEY, AIR_OP_TX_END, AIR_OP_TX_ABORT = range(12)
+AIR_OPEN_SOFT = 0x01
+AIR_TX_LAST = 0x01
+AIR_FIT = {0x1: "rx", 0x2: "tx", 0x4: "soft", 0x8: "shape_approx", 0x10: "dev_approx", 0x20: "rate_doubled",
+           0x40: "needs_sync", 0x80: "tdma", 0x100: "full_duplex", 0x8000: "untested"}
+AIR_CHUNK_FLAGS = {0x1: "gap", 0x2: "free_run", 0x4: "slot", 0x8: "no_signal"}
+# Profiles by name (hal_air.h air_profile_t). p25: conventional P25 Phase 1 C4FM (core/p25/p25_rx.c)
+AIR_PROFILES = {
+    "p25": {"sym_rate": 4800, "levels": 4, "shape": 1, "shape_param": 20, "dev_outer_hz": 1800, "timing": 0, "bw": 0,
+            "slot_syms": 0, "sync_every_syms": 864, "idle": 0x5F,
+            "syncs": [{"id": 0, "nsyms": 24, "max_errs": 4, "flags": 0, "frame_at": 0,
+                       "syms": bytes([0x55, 0x75, 0xF5, 0xFF, 0x77, 0xFF])}]},
+}
 CRASH_TESTS = {"trap": 1, "assert": 2, "hang": 3, "stall": 4}
 CRASH_TOKEN = 0x48535243            # 'CRSH'
 WATCHDOG = 0x1D                     # the hardware watchdog's bench tests (CONFIG_WATCHDOG; docs/spec/debuglink.md 3.21)
@@ -624,6 +644,91 @@ class DebugLink:
     def hwopt_set(self, option, choice):
         """Store a choice; raises DebugLinkError (status 7) when the board refuses it or the radio transmits."""
         self.request(HWOPT, bytes([HWOPT_OP_SET, option, choice]))
+
+    # ── the air interface (CONFIG_AIR_RAW, docs/spec/debuglink.md 3.26) ──
+    def air_status(self):
+        return parse_kv(self.request(AIR, bytes([AIR_OP_STATUS]))[1].decode("ascii", "replace"))
+
+    def air_tap_start(self, bits=16, shift=0):
+        """The board's receive tap on: {rate_hz, lo_hz, hi_hz, counts_per_khz, channels}"""
+        r = self.request(AIR, bytes([AIR_OP_TAP_START, bits, shift]))[1]
+        rate, lo, hi, cpk, ch = struct.unpack_from("<IHHHB", r)
+        return {"rate_hz": rate, "lo_hz": lo, "hi_hz": hi, "counts_per_khz": cpk, "channels": ch}
+
+    def air_tap_read(self, bits=16):
+        """(seq, t_us, gaps, samples as bytes: int16 LE, or int8)"""
+        r = self.request(AIR, bytes([AIR_OP_TAP_READ]))[1]
+        seq, t_us, gaps, n = struct.unpack_from("<IIIH", r)
+        return seq, t_us, gaps, bytes(r[14:14 + n * (2 if bits == 16 else 1)])
+
+    def air_tap_stop(self):
+        self.request(AIR, bytes([AIR_OP_TAP_STOP]))
+
+    def air_open(self, prof, soft=True):
+        """A session on the board's provider: {fit (names), tx_chunk_syms, tx_queue_depth}"""
+        b = struct.pack("<HBBBHBBHHBB", prof["sym_rate"], prof["levels"], prof["shape"], prof["shape_param"],
+                        prof["dev_outer_hz"], prof["timing"], prof["bw"], prof["slot_syms"], prof["sync_every_syms"],
+                        prof["idle"], len(prof["syncs"]))
+        for y in prof["syncs"]:
+            b += struct.pack("<BBBBb", y["id"], y["nsyms"], y["max_errs"], y["flags"], y["frame_at"]) + \
+                y["syms"].ljust(6, b"\0")
+        try:
+            r = self.request(AIR, bytes([AIR_OP_OPEN, AIR_OPEN_SOFT if soft else 0]) + b)[1]
+        except DebugLinkError as e:
+            if e.status == ST_REFUSED and len(e.data) >= 4:
+                fit = struct.unpack_from("<I", e.data)[0]
+                raise DebugLinkError(f"air open refused (fit {self._fit_names(fit) or 'none'})", e.status, e.data)
+            raise
+        fit, chunk, depth = struct.unpack_from("<IHB", r)
+        return {"fit": self._fit_names(fit), "tx_chunk_syms": chunk, "tx_queue_depth": depth}
+
+    @staticmethod
+    def _fit_names(fit):
+        return [n for bit, n in AIR_FIT.items() if fit & bit]
+
+    def air_close(self):
+        self.request(AIR, bytes([AIR_OP_CLOSE]))
+
+    def air_rx_read(self):
+        """(dropped, [records]): {t_us, nsyms, flags, sync_at, sync_id, hard (bytes), soft (list or None)}"""
+        r = self.request(AIR, bytes([AIR_OP_RX_READ]))[1]
+        dropped, count = struct.unpack_from("<IB", r)
+        at, out = 5, []
+        for _ in range(count):
+            t_us, nsyms, flags, sync_at, sync_id = struct.unpack_from("<IHBhB", r, at)
+            at += 10
+            hard = bytes(r[at:at + (nsyms + 3) // 4])
+            at += (nsyms + 3) // 4
+            soft = None
+            if flags & 0x80:
+                soft = list(struct.unpack_from(f"<{nsyms}b", r, at))
+                at += nsyms
+            out.append({"t_us": t_us, "nsyms": nsyms, "flags": flags & 0x7F, "sync_at": sync_at, "sync_id": sync_id,
+                        "hard": hard, "soft": soft})
+        return dropped, out
+
+    def air_rx_restart(self):
+        self.request(AIR, bytes([AIR_OP_RX_RESTART]))
+
+    def air_tx_data(self, syms, nsyms, last=False):
+        """Queue one chunk; the queue's free chunks after it, or None when it was full (try again)"""
+        try:
+            r = self.request(AIR, bytes([AIR_OP_TX_DATA, AIR_TX_LAST if last else 0, nsyms]) + syms, busy_wait=0)[1]
+        except DebugLinkError as e:
+            if e.status == ST_BUSY:
+                return None
+            raise
+        return r[0]
+
+    def air_tx_key(self, max_ms=0):
+        """The radio core keys the transmitter (its checks, the lowest power); refused or unavailable raise"""
+        self.request(AIR, struct.pack("<BH", AIR_OP_TX_KEY, max_ms))
+
+    def air_tx_end(self):
+        self.request(AIR, bytes([AIR_OP_TX_END]))
+
+    def air_tx_abort(self):
+        self.request(AIR, bytes([AIR_OP_TX_ABORT]))
 
     def iddb(self, dmr_id=0):
         """The DMR ID database as the radio sees it, and the text it shows for dmr_id: {format, records, found, text}"""
@@ -2052,6 +2157,113 @@ def cmd_hwopt(link, a):
     return 0
 
 
+def cmd_air(link, a):
+    if a.op == "status":
+        for k, v in link.air_status().items():
+            print(f"{k}={v}")
+    elif a.op == "tap":
+        if not a.out:
+            print("air tap: --out FILE.raw", file=sys.stderr)
+            return 2
+        info = link.air_tap_start(a.bits, a.shift)
+        n, gaps, t0 = 0, 0, None
+        try:
+            with open(a.out, "wb") as f:
+                end = time.monotonic() + a.seconds
+                while time.monotonic() < end:
+                    seq, t_us, gaps, data = link.air_tap_read(a.bits)
+                    t0 = t_us if t0 is None else t0
+                    f.write(data)
+                    n += len(data) // (2 if a.bits == 16 else 1)
+                    if not data:
+                        time.sleep(0.01)
+        finally:
+            link.air_tap_stop()
+        fmt = "int16 LE" if a.bits == 16 else f"int8 (>> {a.shift})"
+        print(f"{n} samples, {fmt}, {info['rate_hz']} Hz, band {info['lo_hz']}-{info['hi_hz']} Hz, "
+              f"counts/kHz {info['counts_per_khz'] or 'unknown'}, {info['channels']} channel(s), {gaps} gap(s) -> {a.out}")
+        return 1 if gaps else 0
+    elif a.op == "open":
+        prof = dict(AIR_PROFILES[a.profile])
+        if a.dev:
+            prof["dev_outer_hz"] = a.dev
+        r = link.air_open(prof, soft=not a.hard_only)
+        print(f"open: fit {' '.join(r['fit'])}; tx chunks of {r['tx_chunk_syms']} symbols, {r['tx_queue_depth']} queued")
+    elif a.op == "close":
+        link.air_close()
+        print("closed")
+    elif a.op == "restart":
+        link.air_rx_restart()
+    elif a.op == "abort":
+        link.air_tx_abort()
+    elif a.op == "rx":
+        if not a.out:
+            print("air rx: --out FILE.jsonl", file=sys.stderr)
+            return 2
+        chunks, dropped = 0, 0
+        with open(a.out, "w") as f:
+            end = time.monotonic() + a.seconds
+            while time.monotonic() < end:
+                dropped, recs = link.air_rx_read()
+                for c in recs:
+                    c["hard"] = c["hard"].hex()
+                    c["flags"] = [n for bit, n in AIR_CHUNK_FLAGS.items() if c["flags"] & bit]
+                    f.write(json.dumps(c) + "\n")
+                chunks += len(recs)
+                if not recs:
+                    time.sleep(0.02)
+        print(f"{chunks} chunks, {dropped} dropped on the radio -> {a.out}")
+        return 1 if dropped else 0
+    elif a.op == "tx":
+        if not a.syms:
+            print("air tx: --syms FILE (dibits packed four to a byte, the first in bits 7-6)", file=sys.stderr)
+            return 2
+        with open(a.syms, "rb") as f:
+            data = f.read()
+        nsyms = a.nsyms or len(data) * 4
+        st = link.air_status()
+        per = int(st.get("air.tx_chunk_syms", "144"))
+        chunks = [(data[i // 4:(i + per) // 4], min(per, nsyms - i)) for i in range(0, nsyms, per)]
+        if not chunks:
+            return 2
+        max_ms = a.max_ms or min(30000, 1000 + nsyms * 1000 // 4800)
+        sent, keyed = 0, False
+        deadline = time.monotonic() + max_ms / 1000 + 2
+        while sent < len(chunks) and time.monotonic() < deadline:
+            syms, n = chunks[sent]
+            space = link.air_tx_data(syms[:(n + 3) // 4], n, last=sent == len(chunks) - 1)
+            if space is None:
+                if not keyed:
+                    break           # the queue full before the key: key now
+                time.sleep(0.005)
+                continue
+            sent += 1
+            if not keyed and (space == 0 or sent == len(chunks)):
+                link.air_tx_key(max_ms)
+                keyed = True
+        if not keyed:
+            link.air_tx_key(max_ms)
+        while sent < len(chunks) and time.monotonic() < deadline:
+            syms, n = chunks[sent]
+            if link.air_tx_data(syms[:(n + 3) // 4], n, last=sent == len(chunks) - 1) is None:
+                time.sleep(0.005)
+            else:
+                sent += 1
+        done0 = int(st.get("air.tx_done", "0"))
+        while time.monotonic() < deadline:
+            st = link.air_status()
+            if int(st.get("air.tx_done", "0")) > done0:
+                break
+            time.sleep(0.05)
+        else:
+            link.air_tx_abort()
+            print(f"air tx: no TX_DONE in time, aborted ({sent} of {len(chunks)} chunks)", file=sys.stderr)
+            return 1
+        print(f"{nsyms} symbols in {len(chunks)} chunks; underruns {st.get('air.tx_underruns')}, "
+              f"on air {(int(st['air.tx_done_us']) - int(st['air.tx_started_us'])) / 1000:.0f} ms")
+    return 0
+
+
 def cmd_reboot(link, a):
     c = link.chip()
     print_chip(c)
@@ -2244,6 +2456,18 @@ def main(argv=None):
     p = sub.add_parser("hwopt", help="hardware options: list, or set OPTION CHOICE (docs/spec/debuglink.md 3.25)")
     p.add_argument("option", nargs="?", help="number or name, e.g. 'Board revision'")
     p.add_argument("choice", nargs="?", help="one of the option's choices, e.g. V4A/V5")
+    p = sub.add_parser("air", help="the air interface on the bench (CONFIG_AIR_RAW builds; docs/spec/debuglink.md 3.26)")
+    p.add_argument("op", choices=["status", "tap", "open", "rx", "tx", "restart", "abort", "close"])
+    p.add_argument("--seconds", type=float, default=5.0, help="tap, rx: how long")
+    p.add_argument("--out", help="tap: raw samples; rx: one JSON chunk per line")
+    p.add_argument("--bits", type=int, choices=[8, 16], default=16, help="tap: sample width (8 halves the link load)")
+    p.add_argument("--shift", type=int, default=8, help="tap --bits 8: right shift before the clip")
+    p.add_argument("--profile", choices=sorted(AIR_PROFILES), default="p25", help="open: the mode's profile")
+    p.add_argument("--dev", type=int, help="open: outer deviation in Hz instead of the profile's")
+    p.add_argument("--hard-only", action="store_true", help="open: no soft values in the receive records")
+    p.add_argument("--syms", help="tx: symbol file, dibits packed four to a byte, the first in bits 7-6")
+    p.add_argument("--nsyms", type=int, help="tx: symbols in the file (default: all of it)")
+    p.add_argument("--max-ms", type=int, help="tx: the transmission's cap (default: its length + 1 s, 30 s at most)")
     p = sub.add_parser("iddb", help="the DMR ID database: its format and records, and the text for each ID given "
                        "(docs/spec/debuglink.md 3.23)")
     p.add_argument("ids", nargs="*", type=int)
@@ -2316,6 +2540,8 @@ def main(argv=None):
                 return cmd_watchdog(link, a)
             elif a.cmd == "hwopt":
                 return cmd_hwopt(link, a)
+            elif a.cmd == "air":
+                return cmd_air(link, a)
             elif a.cmd == "storage":
                 return cmd_storage(link, a)
             elif a.cmd == "rx2":
