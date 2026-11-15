@@ -12,6 +12,9 @@ CONFIG_DISPLAY_INSET_LEFT ?= 2
 # not written
 CONFIG_FM_TX_TONES ?= n
 CONFIG_DTMF ?= n
+# The signaling tones (user-defined start, end and idle tone chains, about 6.4 KB) don't fit: the default build has
+# about 3 KB left. The plain beeps stay. Supported, so not in BOARD_NOT_WRITTEN: a leaner build can turn it on
+CONFIG_SIG_TONES ?= n
 CONFIG_APRS_RX ?= n
 # SFR needs CRC_MCU_Control, which the HR_C5000 lacks (docs/spec/sfr.md); the split duplex glue is written for the
 # HR_C6000 and HR_C7000 only
@@ -53,8 +56,8 @@ BOARD_NOT_WRITTEN += AUDIO_PROBE	# no board.audio_tap yet
 # RF positions out, so it is the first IP service to go. The default build keeps it. It defaults on, so it is set off,
 # not only skipped. KISS over TCP (about 0.75 KB, transmit only here for the same reason) went next, when the host
 # link's noise trial left maximal 104 bytes short
-MAXIMAL_SKIP := NET_PPP LANG_IT LANG_DEFAULT_IT NET_APRSIS NET_KISS
-MAXIMAL_VARS := CONFIG_NET_APRSIS=n CONFIG_NET_KISS=n
+MAXIMAL_SKIP := NET_PPP LANG_IT LANG_DEFAULT_IT NET_APRSIS NET_KISS SIG_TONES
+MAXIMAL_VARS := CONFIG_NET_APRSIS=n CONFIG_NET_KISS=n CONFIG_SIG_TONES=n
 # When the default build runs out of room, the IP services go first, the weakest here first: APRS-IS (NET_APRSIS, about
 # 2.7 KB: with no APRS receive it only gates RF positions out), then KISS over TCP (NET_KISS, about 0.75 KB, transmit
 # only for the same reason), then USRP or SNMP. Each serves its own kind of user over the same USB network link, so
