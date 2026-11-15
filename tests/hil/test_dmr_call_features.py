@@ -147,8 +147,9 @@ def test_late_entry(radio, sdr_bench, pytestconfig):
     The radio hears from burst C of the second superframe, but takes voice only from a burst A on, so the first
     embedded LC it can assemble is the third superframe's (bursts 14-17): played from its F (burst 18, 19 bursts) if
     the modem has it in its LC page by F's report, else from the next A (burst 19, 18 bursts). A call with the same LC
-    as the one before (the same talker again) can't be told from the modem's sticky LC buffer at first: taken one
-    superframe later (burst 24), 13 bursts. HIL 2026-10-10: 7 on aa79493 (the stack waited a superframe more on top of
+    as the one before (the same talker again) can't be told from the modem's sticky LC buffer at first: taken at the
+    burst A after the reception's first whole superframe, 12 or 13 bursts (HIL 2026-11-14: 8 on the HR_C5000 while
+    the driver waited for the second F). HIL 2026-10-10: 7 on aa79493 (the stack waited a superframe more on top of
     the driver's rule), 13 for the new LC on c8c9b23 (the page still held the old LC at F's report).
     The modem's LC trace (dle log lines, lc / lc2 / lt diagnostics) is printed for each late call."""
     _on_dmr_channel(radio, pytestconfig)
@@ -163,7 +164,8 @@ def test_late_entry(radio, sdr_bench, pytestconfig):
     d, v = _bench_call(radio, sdr_bench, pytestconfig, late=8, superframes=6)    # the same LC again
     _print_lc_trace(radio)
     assert d["call.rx_calls"] == 1 and d["call.rx_late_entries"] == 1 and d["call.rx_calls_played"] == 1, d
-    # 13 with a sticky LC buffer (HR_C6000); a modem that hands over only LCs it assembled has no stale LC to wait out
+    # 12-13 with a sticky LC buffer (HR_C6000, HR_C5000); a modem that hands over only LCs it assembled has no stale
+    # LC to wait out
     assert 12 <= d["call.rx_voice_bursts"] <= 14 or 18 <= d["call.rx_voice_bursts"] <= 20, d
     assert v["last.src"] == str(BENCH_SRC), v
 
@@ -229,3 +231,53 @@ def test_talk_target_requests(radio, pytestconfig):
         L.dmr_target_clear()
         if "DMR_PRIVACY" in radio.features():
             L.dmr_privacy("off")
+
+
+def _features(radio):
+    return radio.view(["features"])
+
+
+@pytest.mark.feature("beep")
+@pytest.mark.rf
+@pytest.mark.bench_service
+@pytest.mark.bench_modem
+def test_call_end_tone_setting(radio, sdr_bench, pytestconfig):
+    """Settings > Sound > Call end tone: a call heard ends with the call end tone when it is on, and with no tone when
+    it is off (the setting's bit in beep.tones_off, set with the SETTING op; the tone counted by beep.played). The
+    setting and the tone volume are put back afterwards."""
+    _on_dmr_channel(radio, pytestconfig)
+    f = _features(radio)
+    if f.get("beep.built") != "1":
+        skip("not_built", "built without the beeps")
+    tones = radio.view(["audio"]).get("beep.tones_off")
+    if tones is None:
+        skip("not_built", "firmware without the Settings > Sound tone settings (beep.tones_off)")
+    was_off, was_level = int(tones), int(f["set.beep_level"])
+    L = radio.link
+    played = {}
+    try:
+        if was_level == 0:              # tone volume 0 mutes every tone: the setting couldn't show
+            L.setting("beep_level", 50)
+        for on in (False, True):
+            want = was_off & ~1 if on else was_off | 1      # bit 0: the call end tone
+            L.setting("tones_off", want)
+            radio.wait_for(lambda x: x.get("beep.tones_off") == str(want), timeout=5, sections=("audio",),
+                           what="the call end tone setting")
+            # _bench_call resets the counters before the call, beep.played with them: count from there (HIL
+            # 2026-11-14: read before it, a tone from earlier showed as -1)
+            d, _ = _bench_call(radio, sdr_bench, pytestconfig, superframes=3)
+            assert d["call.rx_calls"] == 1, d
+            deadline = time.monotonic() + 4.0           # the tone follows the call's end
+            while True:
+                n = int(_features(radio)["beep.played"])
+                if n or time.monotonic() > deadline:
+                    break
+                time.sleep(0.2)
+            played[on] = n
+        print("beeps after the call, tone off / on:", played[False], played[True])
+        assert played[False] == 0, f"{played[False]} tone(s) after a call with the call end tone off"
+        assert played[True] >= 1, "no call end tone after a call with the tone on"
+    finally:
+        L.setting("tones_off", was_off)
+        if was_level == 0:
+            L.setting("beep_level", 0)

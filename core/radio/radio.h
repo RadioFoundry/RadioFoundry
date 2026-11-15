@@ -58,6 +58,8 @@ typedef struct {
 	uint8_t beep_level;	// 0 = silent .. 100: the loudest a beep gets (it follows the volume up to this)
 	bool key_beep;		// radio_req_beep(BEEP_KEY) sounds
 	bool talk_permit;	// DMR: the talk permit tone when the voice goes on air (channels without no_beep)
+	uint8_t tones_off;	// Settings > Sound tones off, bit n for radio_tone_rows[n] (radio_keys.h); a key of the
+				// codeplug's settings area holds over it (docs/spec/codeplug-settings.md 5.2)
 	// VOX (CONFIG_VOX)
 	uint8_t vox;		// radio_vox_t
 	uint8_t vox_level;	// sensitivity 1 (needs a loud voice) .. 10
@@ -141,7 +143,8 @@ typedef struct {
 	bool codec;		// the vocoder is merged: voice plays and PTT works
 	uint8_t state;		// radio_dmr_state_t
 	uint32_t own_id;
-	uint8_t cc, ts;
+	uint8_t cc, ts;		// the channel's
+	uint8_t rx_cc, rx_ts;	// the call heard (digital monitor: any color code, either slot); rx_ts 0 = unknown
 	bool rmo;		// through a repeater
 	bool repeater_up;
 	// Where PTT goes now (the reply target during the reply window)
@@ -251,7 +254,8 @@ typedef struct {
 	uint32_t last_tx_ms;	// hal_millis() when the last transmission began, 0 = none yet
 	uint16_t tot_s;		// TX time-out, 0 = none
 	uint32_t last_rx_ms;	// hal_millis() at the end of the last reception, 0 = none yet
-	uint32_t vfo_step_hz;	// the VFO's step in use: as set, or with vfo_step_auto the width's (12.5 or 25 kHz)
+	uint32_t vfo_step_hz;	// the VFO's step in use: as set, or with vfo_step_auto the width's (12.5 or 25 kHz); in
+				// the broadcast band always the broadcast step
 	bool vfo_step_auto;
 	codeplug_source_t source;
 	bool hotspot;		// the radio is an MMDVM hotspot: the host link drives the modem, channel keys are off

@@ -23,6 +23,7 @@
 #include "settings/settings.h"
 #include "radio/tx_limit.h"
 #include "codeplug/codeplug_kv.h"	// the settings area fakes
+#include "radio/radio_keys.h"
 
 static int failures;
 static int checks;
@@ -35,12 +36,14 @@ typedef struct {
 	uint8_t noise;
 	subtone_t tone;		// the sub-audio the transmitter sends
 	bool tdma;		// DMR direct mode: on air every other 30 ms slot (the noise reading drops between bursts)
+	int16_t dbm;		// the strength reading on it (0 = -80)
 } sig_t;
 
 static uint32_t now;
 
 static struct {
 	uint32_t rx_hz;
+	int16_t floor_dbm;	// the strength reading with no signal (0 = -125)
 	uint32_t rx_ms;		// when rx() last tuned
 	subtone_t rx_tone;
 	int rx_calls;
@@ -117,13 +120,13 @@ static void r_status(radio_status_t *st)
 		hw.status_asleep++;
 	}
 	st->noise = 120;
-	st->rssi_dbm = -125;
+	st->rssi_dbm = hw.floor_dbm != 0 ? hw.floor_dbm : -125;
 	st->carrier = false;
 	st->tone_ok = hw.rx_tone.type == TONE_NONE;
 	for (int i = 0; i < MAX_SIG; i++) {
 		if (hw.sig[i].hz != 0 && hw.sig[i].hz == hw.rx_hz && !(hw.sig[i].tdma && (now / 30u) % 2u != 0)) {
 			st->noise = hw.sig[i].noise;
-			st->rssi_dbm = -80;
+			st->rssi_dbm = hw.sig[i].dbm != 0 ? hw.sig[i].dbm : -80;
 			st->tone_ok = hw.rx_tone.type == TONE_NONE || same_tone(hw.rx_tone, hw.sig[i].tone);
 		}
 	}
@@ -312,12 +315,45 @@ bool codeplug_zone(uint16_t i, zone_t *out)
 }
 static const contact_t contacts[] = { { "Local", 9, CONTACT_GROUP, 0 } };
 uint32_t codeplug_dmr_id(void) { return 9996543; }
-int codeplug_kv_get(uint16_t key, void *buf, uint16_t max) { (void)key; (void)buf; (void)max; return -1; }	// no settings area
+// The settings area holds only the Settings > Sound tone keys here: one-byte bools, -1 absent (kv_tone_set)
+static int16_t kv_tone[CODEPLUG_KEY_TX_DENY_TONE - CODEPLUG_KEY_CALL_END_TONE + 1] = { -1, -1, -1, -1 };
+static uint8_t kv_serial;
+int codeplug_kv_get(uint16_t key, void *buf, uint16_t max)
+{
+	if (key < CODEPLUG_KEY_CALL_END_TONE || key > CODEPLUG_KEY_TX_DENY_TONE || kv_tone[key - CODEPLUG_KEY_CALL_END_TONE] < 0) {
+		return -1;
+	}
+	if (max > 0) {
+		*(uint8_t *)buf = (uint8_t)kv_tone[key - CODEPLUG_KEY_CALL_END_TONE];
+	}
+	return 1;
+}
 bool codeplug_kv_write(const codeplug_kv_op_t *ops, uint8_t n) { (void)ops; (void)n; return false; }
-void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi) { (void)c; (void)lo; (void)hi; }
+static void kv_tone_set(uint16_t key, int16_t v)
+{
+	kv_tone[key - CODEPLUG_KEY_CALL_END_TONE] = v;
+	kv_serial++;	// as codeplug_kv_write: the radio core reads the keys again
+}
+void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi)
+{
+	c->at = lo < CODEPLUG_KEY_CALL_END_TONE ? CODEPLUG_KEY_CALL_END_TONE : lo;
+	c->hi = hi > CODEPLUG_KEY_TX_DENY_TONE ? CODEPLUG_KEY_TX_DENY_TONE : hi;
+}
 int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max)
-	{ (void)c; (void)key; (void)buf; (void)max; return -1; }
-uint8_t codeplug_kv_serial(void) { return 0; }
+{
+	for (; c->at <= c->hi; c->at++) {
+		int16_t v = kv_tone[c->at - CODEPLUG_KEY_CALL_END_TONE];
+		if (v >= 0) {
+			*key = c->at++;
+			if (max > 0) {
+				*(uint8_t *)buf = (uint8_t)v;
+			}
+			return 1;
+		}
+	}
+	return -1;
+}
+uint8_t codeplug_kv_serial(void) { return kv_serial; }
 bool codeplug_contact(uint16_t index, contact_t *out)
 {
 	if (index != 1) {
@@ -1646,6 +1682,65 @@ static void test_scan_dmr_noise_deaf(void)
 	hw.sig[0].hz = 0;
 }
 
+// HIL 2026-11-14 (test_scan_stops_on_dmr_call, gotchas 17.4): a receiver whose strength reading isn't calibrated read
+// -91 dBm on every empty channel, above the DMR scan's strength scale (-100 dBm at the default level), so every stop
+// probed for 700 ms instead of listening 150 ms, and a sweep of the zone took longer than the bench's call. The scale
+// now also sits above the floor read on the stops before. Empty channels: one probe at most (the first stop, with no
+// floor yet), then the dwell; a call 20 dB over that floor still holds the scan, through the noise reading or, on a
+// receiver whose noise reading doesn't follow DMR, through the strength alone
+static void test_scan_dmr_high_floor(void)
+{
+	start();
+	all_dmr();
+	hw.floor_dbm = -91;
+	req(RREQ_ZONE_POS, 6);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	uint32_t steps = sm.scan.steps;
+	run(3000);
+	CHECK(sm.scan.steps - steps >= 12);
+	CHECK(sm.scan.probes <= 1);
+	req(RREQ_SCAN, RSCAN_STOP);
+
+	for (int deaf = 0; deaf <= 1; deaf++) {
+		for (uint32_t phase = 0; phase < 360; phase += 90) {
+			start();
+			all_dmr();
+			hw.floor_dbm = -91;
+			signal_on(0, 438500000, deaf ? 120 : 2, no_tone);
+			hw.sig[0].tdma = true;
+			hw.sig[0].dbm = -71;
+			air.on = true;
+			air.hz = 438500000;
+			air.t0 = now + 300 + phase;
+			air.dst = 9;
+			air.lc_at = 1;
+			req(RREQ_ZONE_POS, 6);
+			req(RREQ_SCAN, RSCAN_ZONE);
+			uint32_t arrived = 0, held_ms = 0;
+			bool left = false;
+			for (int i = 0; i < 400 && held_ms == 0; i++) {
+				run(25);
+				if (sm.view.zone_pos == 5 && arrived == 0) {
+					arrived = now;
+				}
+				left |= arrived != 0 && sm.view.zone_pos != 5;
+				if (sm.view.zone_pos == 5 && sm.view.scan_phase == SCAN_PH_HOLD && sm.view.dmr.state == RDMR_RX) {
+					held_ms = now - arrived;
+				}
+			}
+			if (held_ms == 0 || left) {
+				printf("  high-floor DMR scan: deaf %d, phase %u ms: held %u ms after arriving, left %d\n", deaf,
+				       (unsigned)phase, (unsigned)held_ms, left);
+			}
+			CHECK(arrived != 0 && held_ms != 0 && !left);
+			req(RREQ_SCAN, RSCAN_STOP);
+		}
+	}
+	hw.floor_dbm = 0;
+	hw.sig[0].hz = 0;
+	hw.sig[0].dbm = 0;
+}
+
 // ---- Dual watch (CONFIG_DUAL_WATCH): two channels of any zone or the VFO, PTT on the selected one ----
 #if CONFIG_DUAL_WATCH
 static void dual(radio_dual_ref_t a, radio_dual_ref_t b, uint8_t sel)
@@ -2392,6 +2487,34 @@ static void test_beep_follows_volume(void)
 static void set_bcl_carrier(radio_settings_t *s) { s->bcl = RADIO_BCL_CARRIER; }
 static void set_bcl_tone(radio_settings_t *s) { s->bcl = RADIO_BCL_WRONG_TONE; }
 static void set_inhibit(radio_settings_t *s) { s->tx_inhibit = true; }
+static void clear_inhibit(radio_settings_t *s) { s->tx_inhibit = false; }
+
+// A DMR call that plays: PTT refused as busy is quiet (no deny tone, no call end tone), the call plays on
+static void test_dmr_busy_quiet(void)
+{
+	start();
+	signal_on(0, 438500000, 30, no_tone);
+	req(RREQ_ZONE_POS, 5);
+	run(100);
+	hear_call(9, 1, 1, false);
+	CHECK(sm.view.dmr.state == RDMR_RX);
+	beep_stats_t b0, b1;
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	hear_call(9, 1, 1, false);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BUSY);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played);
+	req(RREQ_PTT, 0);
+	hear_call(9, 1, 1, false);
+	CHECK(sm.view.dmr.state == RDMR_RX);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played);
+	hear_call(9, 1, 0, true);
+	run(1000);
+	CHECK(sm.view.dmr.state == RDMR_IDLE);
+	hw.sig[0].hz = 0;
+}
 
 static void test_bcl_inhibit(void)
 {
@@ -2399,11 +2522,37 @@ static void test_bcl_inhibit(void)
 	settings(set_bcl_carrier);
 	signal_on(0, 146520000, 30, no_tone);
 	run(100);
+	CHECK(sm.view.state == RS_RX && hw.audio);
+	beep_stats_t b0, b1;
+	beep_get_stats(&b0);
 	req(RREQ_PTT, 1);
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BUSY && hw.tx_calls == 0);
+	// A busy refusal is quiet and the call plays on through it, and after PTT is let go
+	run(200);
+	beep_get_stats(&b1);
+	CHECK(hw.audio && b1.played == b0.played && sm.view.state == RS_TX_DENIED);
 	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_RX && hw.audio);
+	// The call ends while PTT is held: its audio stops then, the refusal stays until the release
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_BUSY && hw.audio);
 	hw.sig[0].hz = 0;
+	run(300);
+	CHECK(sm.view.state == RS_TX_DENIED && !hw.audio);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_IDLE && !hw.audio);
 	run(100);
+	// Another refusal still has its tone
+	settings(set_inhibit);
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_INHIBIT);
+	run(50);
+	beep_get_stats(&b1);
+	CHECK(b1.played > b0.played);
+	req(RREQ_PTT, 0);
+	run(600);
+	settings(clear_inhibit);
 	req(RREQ_PTT, 1);
 	CHECK(sm.view.state == RS_TX);
 	req(RREQ_PTT, 0);
@@ -2412,8 +2561,13 @@ static void test_bcl_inhibit(void)
 	req(RREQ_ZONE_POS, 1);
 	signal_on(0, 146940000, 30, (subtone_t){ TONE_CTCSS, 1230 });
 	run(400);
+	beep_get_stats(&b0);
 	req(RREQ_PTT, 1);
-	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BUSY);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BUSY && !hw.audio);
+	// Nothing playing (the squelch stays shut on the wrong tone): the tone is the only sign of the refusal
+	run(50);
+	beep_get_stats(&b1);
+	CHECK(b1.played > b0.played);
 	req(RREQ_PTT, 0);
 	hw.sig[0].tone = (subtone_t){ TONE_CTCSS, 1000 };
 	run(400);
@@ -2642,6 +2796,85 @@ static void test_roger_burst(void)
 		req(RREQ_TONE_BURST, 0);
 		board.radio = &fake_radio;
 	}
+}
+
+// A channel with its tone burst on: each PTT key-up opens with one timed burst, then the microphone (channel_t.tone_burst)
+static void test_channel_burst(void)
+{
+	start();
+	// Off (the default): PTT keys with no tone
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && !sm.view.tone_burst && hw.tone_hz == 0);
+	req(RREQ_PTT, 0);
+	run(300);
+	CHECK(sm.view.state == RS_IDLE);
+
+	chans[1].tone_burst = true;
+	req(RREQ_ZONE_POS, 0);
+	run(50);
+	CHECK(sm.view.ch.tone_burst);
+	int tx = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && sm.ptt && sm.view.tone_burst && hw.tone_hz == RADIO_BURST_HZ && hw.tx_calls == tx + 1);
+	CHECK(!sm.burst_keyed);	// the PTT owns the carrier, not the burst
+	run(RADIO_BURST_MIN_MS - 20);
+	CHECK(sm.view.tone_burst && hw.tone_hz == RADIO_BURST_HZ);
+	run(40);
+	CHECK(sm.view.state == RS_TX && sm.ptt && !sm.view.tone_burst && hw.tone_hz == 0);	// the microphone follows
+	run(2000);
+	CHECK(sm.view.state == RS_TX && hw.tone_hz == 0);	// once per key-up
+	req(RREQ_PTT, 0);
+	run(300);
+	CHECK(sm.view.state == RS_IDLE);
+	// Released during the burst: unkeys at once, the tone with it
+	req(RREQ_PTT, 1);
+	run(100);
+	CHECK(sm.view.tone_burst);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_IDLE && !sm.view.tone_burst && hw.tone_hz == 0 && !sm.burst_timed);
+	run(300);
+	// The next key-up has it again
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tone_burst && hw.tone_hz == RADIO_BURST_HZ);
+	req(RREQ_PTT, 0);
+	run(300);
+
+	// The tone refused: the error beep warns that the repeater may not open, and the PTT's transmission goes on
+	hw.has_tx_tone = false;
+	beep_stats_t b0, b1;
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && sm.ptt && !sm.view.tone_burst);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played + 1);
+	req(RREQ_PTT, 0);
+	run(300);
+	hw.has_tx_tone = true;
+
+	// Host audio (USRP): the host sends its own tones, so no burst over them
+	tap_hw = (typeof(tap_hw)){ .ok = true };
+	int16_t pcm[AUDIO_BLOCK_SAMPLES] = { 0 };
+	req(RREQ_PTT, 2);
+	CHECK(sm.view.state == RS_TX && sm.host_audio && !sm.view.tone_burst && hw.tone_hz == 0);
+	for (int i = 0; i < 10; i++) {
+		audio_mux_host_push(pcm, AUDIO_BLOCK_SAMPLES);
+		run(20);
+	}
+	CHECK(sm.view.state == RS_TX && !sm.view.tone_burst && hw.tone_hz == 0);
+	req(RREQ_PTT, 0);
+	run(300);
+	CHECK(sm.view.state == RS_IDLE);
+
+	// Never on DMR, whatever the record holds
+	chans[6].tone_burst = true;
+	req(RREQ_ZONE_POS, 5);
+	run(50);
+	req(RREQ_PTT, 1);
+	run(50);
+	CHECK(!sm.view.tone_burst && hw.tone_hz == 0);
+	req(RREQ_PTT, 0);
+	run(1000);
+	chans[1].tone_burst = chans[6].tone_burst = false;
 }
 
 // The side key owns a minimum duration; the debug link still has explicit on/off control.
@@ -3119,6 +3352,87 @@ static void test_dmr_beeps(void)
 	chans[6].no_beep = false;
 }
 
+// Settings > Sound: a tone key of the codeplug's settings area at 0 silences its beeps, at 1 or absent they play
+// (codeplug-settings.md 3), and the radio core takes a key written without a codeplug reload
+static void set_tones_off(radio_settings_t *s) { s->tones_off = RADIO_TONES_MASK; }
+
+static void test_tone_keys(void)
+{
+	beep_stats_t b0, b1;
+	settings_t st;
+	static const struct { uint16_t key; uint8_t beep; } rows[] = {
+		{ CODEPLUG_KEY_TOT_WARN_TONE, BEEP_TOT_WARN }, { CODEPLUG_KEY_BATTERY_TONE, BEEP_BATTERY_LOW },
+		{ CODEPLUG_KEY_BATTERY_TONE, BEEP_BATTERY_CRIT }, { CODEPLUG_KEY_TX_DENY_TONE, BEEP_TX_DENY },
+	};
+
+	start();
+	req(RREQ_ZONE_POS, 5);
+	run(50);
+	// The call end tone, from a call heard
+	kv_tone_set(CODEPLUG_KEY_CALL_END_TONE, 0);
+	run(50);
+	beep_get_stats(&b0);
+	hear_call(9, 1, 1, true);
+	run(200);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played);
+	kv_tone_set(CODEPLUG_KEY_CALL_END_TONE, 1);
+	run(3000);
+	beep_get_stats(&b0);
+	hear_call(9, 1, 1, true);
+	run(200);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played + 1);
+	kv_tone_set(CODEPLUG_KEY_CALL_END_TONE, -1);
+	run(3000);
+	// The others, as the radio core plays them; each key silences only its own
+	for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+		kv_tone_set(rows[i].key, 0);
+		run(50);
+		beep_get_stats(&b0);
+		req(RREQ_BEEP, rows[i].beep);
+		run(1000);
+		beep_get_stats(&b1);
+		CHECK(b1.played == b0.played);
+		req(RREQ_BEEP, BEEP_ERROR);
+		run(1000);
+		beep_get_stats(&b1);
+		CHECK(b1.played == b0.played + 1);
+		kv_tone_set(rows[i].key, 1);
+		run(50);
+		beep_get_stats(&b0);
+		req(RREQ_BEEP, rows[i].beep);
+		run(1000);
+		beep_get_stats(&b1);
+		CHECK(b1.played == b0.played + 1);
+		kv_tone_set(rows[i].key, -1);
+	}
+	// The radio's own copy (docs/spec/codeplug-settings.md 5.2) follows a key and is saved: with the key removed and
+	// after a reboot the tone stays off
+	kv_tone_set(CODEPLUG_KEY_TX_DENY_TONE, 0);
+	run(50);
+	kv_tone_set(CODEPLUG_KEY_TX_DENY_TONE, -1);
+	run(50);
+	settings_read(&st);
+	CHECK(sm.set.tones_off == 0x08u && settings_tones_off(&st) == 0x08u);
+	radio_sm_init(&sm, now);
+	run(100);
+	beep_get_stats(&b0);
+	req(RREQ_BEEP, BEEP_TX_DENY);
+	run(1000);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played && sm.set.tones_off == 0x08u);
+	// A key that is present holds against a settings change made another way; an absent one lets it through
+	kv_tone_set(CODEPLUG_KEY_TX_DENY_TONE, 0);
+	kv_tone_set(CODEPLUG_KEY_CALL_END_TONE, 1);
+	run(50);
+	settings(set_tones_off);
+	settings_read(&st);
+	CHECK(sm.set.tones_off == (RADIO_TONES_MASK & ~0x01u) && settings_tones_off(&st) == sm.set.tones_off);
+	kv_tone_set(CODEPLUG_KEY_TX_DENY_TONE, -1);
+	kv_tone_set(CODEPLUG_KEY_CALL_END_TONE, -1);
+}
+
 static void set_no_permit(radio_settings_t *s) { s->talk_permit = false; }
 
 // A board whose beeps can't sound on air (CAP_BEEP_NOT_ON_AIR): the short talk permit plays in a hold before keying,
@@ -3503,6 +3817,7 @@ int main(void)
 	test_scan_dmr_mid_call();
 	test_scan_dmr_kept_timing();
 	test_scan_dmr_noise_deaf();
+	test_scan_dmr_high_floor();
 	test_dual_watch();
 #if CONFIG_DUAL_WATCH
 	test_dual_wait();
@@ -3512,9 +3827,11 @@ int main(void)
 	test_tot_and_beeps();
 	test_beep_follows_volume();
 	test_bcl_inhibit();
+	test_dmr_busy_quiet();
 	test_tx_limit();
 	test_roger_burst();
 	test_burst_key();
+	test_channel_burst();
 	test_burst_deadlines();
 	test_burst_key_host_overlap();
 	test_burst_key_denied();
@@ -3532,6 +3849,7 @@ int main(void)
 	test_battery_save();
 	test_dmr_beeps();
 	test_dmr_permit_before_key();
+	test_tone_keys();
 	test_dmr_short_press_wake();
 	test_vibrate();
 	test_host_audio();

@@ -444,7 +444,7 @@ msgstr "Nessun risultato: Indietro cancella"
 msgid "Receive only. Sensitivity not rated"
 msgstr "Solo ricezione. Sensibilità non specificata"
 
-#: core/ui/ui_app.c
+#: core/ui/ui_app.c core/ui/ui_menus.c
 msgid "Emergency: not in this build"
 msgstr "Emergenza: non in questa build"
 
@@ -731,6 +731,42 @@ msgstr "Ancora niente sentito"
 #: core/ui/ui_aprs.c core/ui/ui_menus.c
 msgid "Message"
 msgstr "Messaggio"
+
+#: core/ui/ui_aprs.c
+msgid "No longer in list"
+msgstr "Non più in elenco"
+
+#: core/ui/ui_aprs.c
+msgid "{Distance|Dist|}"
+msgstr "{Distanza|Dist|}"
+
+#: core/ui/ui_aprs.c
+msgid "Direct"
+msgstr "Diretto"
+
+#: core/ui/ui_aprs.c
+msgid "Via digipeater"
+msgstr "Via digipeater"
+
+#: core/ui/ui_aprs.c
+msgid "{Position age|Pos age}"
+msgstr "{Età posizione|Età pos}"
+
+#: core/ui/ui_aprs.c core/ui/ui_gps.c
+msgid "Speed"
+msgstr "Velocità"
+
+#: core/ui/ui_aprs.c
+msgid "Course"
+msgstr "Rotta"
+
+#: core/ui/ui_aprs.c
+msgid "Symbol"
+msgstr "Simbolo"
+
+#: core/ui/ui_aprs.c
+msgid "Packets"
+msgstr "Pacchetti"
 
 #: core/ui/ui_aprs.c
 msgid "OK choose  Back"
@@ -1053,10 +1089,6 @@ msgid "Alt"
 msgstr "Alt"
 
 #: core/ui/ui_gps.c
-msgid "Speed"
-msgstr "Velocità"
-
-#: core/ui/ui_gps.c
 msgid "No positions yet"
 msgstr "Ancora nessuna posizione"
 
@@ -1279,6 +1311,10 @@ msgstr "OK apri  # rispondi  Indietro"
 #: core/ui/ui_menus.c
 msgid "No messages yet"
 msgstr "Ancora nessun messaggio"
+
+#: core/ui/ui_menus.c
+msgid "Full message"
+msgstr "Messaggio completo"
 
 #: core/ui/ui_menus.c
 msgid "Reply \"OK\""
@@ -1603,6 +1639,10 @@ msgstr "CTCSS/DCS RX"
 #: core/ui/ui_menus.c
 msgid "TX CTCSS/DCS"
 msgstr "CTCSS/DCS TX"
+
+#: core/ui/ui_menus.c
+msgid "Tone burst"
+msgstr "Tono di apertura"
 
 #: core/ui/ui_menus.c
 msgid "Color code"
@@ -2333,12 +2373,16 @@ msgid "License: "
 msgstr "Licenza: "
 
 #: core/ui/ui_menus.c
-msgid "Authors:"
-msgstr "Autori:"
+msgid "Maintainers:"
+msgstr "Manutentori:"
 
 #: core/ui/ui_menus.c
-msgid "Author:"
-msgstr "Autore:"
+msgid "Maintainer:"
+msgstr "Manutentore:"
+
+#: core/ui/ui_menus.c
+msgid "Contributors:"
+msgstr "Contributori:"
 
 #: core/ui/ui_menus.c
 msgid "Spleen font: BSD-2-Clause"
@@ -2721,7 +2765,7 @@ msgid "Next zone"
 msgstr "Zona succ."
 
 #: core/ui/ui_menus.c
-msgid "Previous zone"
+msgid "Prev zone"
 msgstr "Zona prec."
 
 #: core/ui/ui_menus.c
@@ -2731,10 +2775,6 @@ msgstr "Blocco tasti"
 #: core/ui/ui_menus.c
 msgid "Home zone"
 msgstr "Zona casa"
-
-#: core/ui/ui_menus.c
-msgid "Tone burst"
-msgstr "Tono di apertura"
 
 #: core/ui/ui_menus.c
 msgid "Copy to VFO"
@@ -2791,6 +2831,30 @@ msgstr "Volume toni"
 #: core/ui/ui_menus.c
 msgid "Talk permit tone"
 msgstr "Tono via libera"
+
+#: core/ui/ui_menus.c
+msgid "Call end tone"
+msgstr "Tono fine chiamata"
+
+#: core/ui/ui_menus.c
+msgid "TOT warning tone"
+msgstr "Tono avviso TOT"
+
+#: core/ui/ui_menus.c
+msgid "Battery tone"
+msgstr "Tono batteria"
+
+#: core/ui/ui_menus.c
+msgid "TX denied tone"
+msgstr "Tono TX negata"
+
+#: core/ui/ui_menus.c
+msgid "Scan stop tone"
+msgstr "Tono stop scansione"
+
+#: core/ui/ui_menus.c
+msgid "Emergency tone"
+msgstr "Tono emergenza"
 
 #: core/ui/ui_menus.c
 msgid "Voice prompts"
@@ -3080,6 +3144,10 @@ msgstr "0-9 apri  Indietro"
 msgid "Talk permit tone: not in this build"
 msgstr "Tono via libera: non in questa build"
 
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "DMR: not in this build"
+msgstr "DMR: non in questa build"
+
 #: core/ui/ui_menus.c
 msgid "This radio has no vibration motor"
 msgstr "Questa radio non ha motore vibrazione"
@@ -3303,10 +3371,6 @@ msgstr "ROAM"
 #: core/ui/ui_screens.c
 msgid "Step "
 msgstr "Passo "
-
-#: core/ui/ui_screens.c
-msgid "DMR: not in this build"
-msgstr "DMR: non in questa build"
 
 #: core/ui/ui_screens.c
 msgid "No TX frequency"

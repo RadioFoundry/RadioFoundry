@@ -50,6 +50,9 @@
 // RADIO_DMR_SQL_L1_DBM, RADIO_SQL_DB_PER_STEP more a level (5, the default, above -100 dBm). Some receivers' noise
 // reading doesn't follow a DMR signal (gotchas 17.3)
 #define RADIO_DMR_SQL_L1_DBM	(-112)
+// ... and level 1 at least this far above the floor the scan measured on the stops before (scan_floor): an uncalibrated
+// strength reading can sit above the scale with no signal at all (gotchas 17.4)
+#define RADIO_DMR_SQL_L1_FLOOR_DB	6
 // While APRS receive listens (aprs.md 5.3): a packet's tones at full deviation push the noise reading over the line
 // for a poll or two, and on a radio whose modem gates it, a closed squelch zeroes the receive audio, so a packet came apart (on air,
 // 2026-10-13). On the APRS frequency the squelch holds this many polls (300 ms) instead
@@ -242,6 +245,7 @@ typedef struct {
 	uint8_t base_squelch;		// squelch without the temporary change
 	bool temp_power;
 	bool temp_squelch;
+	bool squelch_save;		// a squelch set in the VFO: the radio's default, written by persist()
 	uint8_t base_bw;		// the channel's own bandwidth and tones, for undoing temporary changes
 	subtone_t base_rx_tone;
 	subtone_t base_tx_tone;
@@ -286,6 +290,7 @@ typedef struct {
 	uint32_t led_now;
 	uint32_t deny_led_ms;		// a TX deny: red, green, red, green, red, green from here
 	bool deny_led;
+	bool deny_rx;			// FM: PTT refused as busy over a reception, which plays on while PTT is held
 	uint32_t wake_led_ms;		// a repeater wake-up burst went out here: red for RADIO_LED_WAKE_MS
 	bool wake_led;
 	uint8_t wake_seen;		// dmr_call_view_t.wake_sent last seen

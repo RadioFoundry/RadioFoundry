@@ -115,7 +115,9 @@ Check the result before writing it to the radio. The radio's codeplug stays as i
 the editor can't open yet can be converted with qdmr first (`dmrconf decode`), then opened as YAML.
 
 **Save** writes a codeplug file, a qdmr codeplug (`.yaml`), the open table as CSV, every table as a `.zip` of CSV files,
-or `codeplug.bin` for USB network mode.
+or `codeplug.bin` for USB network mode. Every save but `codeplug.bin` is named after the codeplug with the date and time
+added, such as `codeplug-2026-11-10-2215.yaml`, so saves never overwrite each other. Opening a dated file and
+saving it again replaces the date and time.
 
 CSV files have a header row with the column names, and refer to other records by name (a channel's TX contact, a
 zone's channels). Save a table first to see the columns. An import matches rows to existing records by number, then by
@@ -172,7 +174,7 @@ TFTP (USB network mode) and other CPS programs use the older format.
 | Item | Fields RadioFoundry uses |
 |---|---|
 | General settings | Your DMR ID. The callsign (radio name, 8 characters, sent as talker alias). The group and private call hang times (the reply window). The ARS server and IP gateway, when set |
-| Channels (up to 1024) | Name, receive and transmit frequency, mode (FM or DMR), bandwidth, receive and transmit tones, power, receive only, color code, timeslot, talk target contact, RX group list (listen list), a per-channel DMR ID, force direct mode, transmit timeout (Radio Default: the radio's own, [TX timeout](08-fm.md#transmit-timeout)), talker alias, zone scan skip, VOX allowed, no beep, no battery saving |
+| Channels (up to 1024) | Name, receive and transmit frequency, mode (FM or DMR), bandwidth, receive and transmit tones, power, receive only, color code, timeslot, talk target contact, RX group list (listen list), a per-channel DMR ID, force direct mode, transmit timeout (Radio Default: the radio's own, [TX timeout](08-fm.md#transmit-timeout)), talker alias, zone scan skip, VOX allowed, 1750 Hz tone burst, no beep, no battery saving |
 | Zones | Name and channel list. Without zones, the radio shows one zone with all channels |
 | Contacts (up to 1024) | Name, DMR ID or talkgroup, private or group, timeslot override |
 | RX group lists | The talkgroups each channel listens to |

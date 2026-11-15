@@ -39,6 +39,12 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 | Volume | 0 to 16 | 8 | The speaker volume, on radios without a volume knob only (the row is not shown on the others). 0 is mute. The **Volume** key opens a screen that changes it faster ([Radio reference](23-radios.md#key-roles)) | Works |
 | Tone volume | 0 to 10 | 5 | The loudest the radio's beeps get. Beeps follow the speaker volume up to this level, so turning the volume down makes them quieter too | Works |
 | Talk permit tone | On, Off | On | The beep when a DMR transmission starts ([DMR](09-dmr.md)) | Works |
+| Call end tone | On, Off | On | The two-note beep when a DMR call you heard ends | Works |
+| TOT warning tone | On, Off | On | The beep a few seconds before the transmit time-out cuts a transmission | Works |
+| Battery tone | On, Off | On | The beeps for a low and a critical battery | Works |
+| TX denied tone | On, Off | On | The low tone when the radio refuses PTT or the time-out cuts a transmission | Works |
+| Scan stop tone | On, Off | Off | A short beep when a scan stops on a signal | Works |
+| Emergency tone | On, Off | On | The warble when the radio hears someone's emergency. Dimmed in a build without DMR emergency | Works |
 | Voice prompts | On, Off | Off | Spoken prompts. There is no recorded speech yet | Dimmed |
 | Message tone | On, Off | On | A three-note tone when a text message arrives | Works |
 | Vibrate | On, Off | On | The radio vibrates for a text message, a call alert, a private call to you and an emergency it hears. Only on radios with a vibration motor ([Radio reference](23-radios.md)) | Works |
@@ -138,18 +144,23 @@ error beep on DMR channels or hardware without transmit tones. Availability is i
 PTT when locked also controls the Tone burst key; power-off ends the burst immediately without a roger beep.
 During VOX, the burst runs to completion before the full VOX quiet tail begins.
 Pressing and releasing the key during a debug-link burst leaves that burst running until its own limit or stop.
+For a repeater that always needs the tone, turn on **Tone burst** in the channel's settings instead
+([Editing a channel](07-channels-zones-vfo.md#editing-a-channel)): every PTT on that channel then starts with 1 s of
+1750 Hz, no key needed.
 
 | Setting | Values | Default | What it does | Status |
 |---|---|---|---|---|
 | Long press time | 400 to 1200 ms, steps of 100 | 600 ms | How long you hold a key for a long press | Works |
 | Key repeat | 60 to 300 ms, steps of 20 | 120 ms | The repeat rate of **Up** and **Down** while held | Works |
 | Up/Down on Home | Channel, Zone, Talk target | Channel | What **Up** and **Down** change on Home. Talk target steps through the channel's contact and its listen list on DMR channels. On FM channels they change the channel | Works |
-| One row per key, named as on the radio (SK1, SK2, ...) | Default, Nothing, Monitor, Talk target, Power level, Next zone, Previous zone, Scan, Key lock, Home zone, Tone burst, Copy to VFO, VFO/Channel, Call back, TG name / number | Default | What a press of the key does. Default is what the [key roles](23-radios.md#key-roles) say. Monitor opens the squelch while you hold the key on FM, and turns digital monitor on or off on DMR. Key lock locks and unlocks the keys. Call back talks to the last call heard. Home zone goes to the codeplug's first zone: put your home zone first in the CPS. Copy to VFO copies the channel to the VFO and opens it ([the VFO](07-channels-zones-vfo.md#copy-a-channel-to-the-vfo)); in the VFO it says "Already in VFO". VFO/Channel goes between the channel and the VFO, as a **VFO/MR** key does ([the VFO](07-channels-zones-vfo.md#the-vfo)). TG name / number switches Home's talk line between the talkgroup's name first and its number first (Settings > Display > Talkgroup name first). The list offers both on radios with a VFO | Works |
-| The key's name and "hold" (SK1 hold, ...) | Default, Nothing, Talk target, Power level, Next zone, Previous zone, Scan, Emergency, Key lock, Home zone, Copy to VFO, VFO/Channel, Call back, TG name / number | Default | What holding the key does. Emergency needs a 1.5 s hold. With Monitor as the press, the hold works on DMR channels; on FM holding the key keeps the squelch open (for an open squelch that stays, use **\***, **5**) | Works |
+| One row per key, named as on the radio (SK1, SK2, ...) | Default, Nothing, Monitor, Talk target, Power level, Next zone, Prev zone, Scan, Key lock, Home zone, Tone burst, Copy to VFO, VFO/Channel, Call back, TG name / number | Default | What a press of the key does. Default is what the [key roles](23-radios.md#key-roles) say. Monitor opens the squelch while you hold the key on FM, and turns digital monitor on or off on DMR. Key lock locks and unlocks the keys. Call back talks to the last call heard. Home zone goes to the codeplug's first zone: put your home zone first in the CPS. Copy to VFO copies the channel to the VFO and opens it ([the VFO](07-channels-zones-vfo.md#copy-a-channel-to-the-vfo)); in the VFO it says "Already in VFO". VFO/Channel goes between the channel and the VFO, as a **VFO/MR** key does ([the VFO](07-channels-zones-vfo.md#the-vfo)). TG name / number switches Home's talk line between the talkgroup's name first and its number first (Settings > Display > Talkgroup name first). The list offers both on radios with a VFO | Works |
+| The key's name and "hold" (SK1 hold, ...) | Default, Nothing, Talk target, Power level, Next zone, Prev zone, Scan, Emergency, Key lock, Home zone, Copy to VFO, VFO/Channel, Call back, TG name / number | Default | What holding the key does. Emergency needs a 1.5 s hold. With Monitor as the press, the hold works on DMR channels; on FM holding the key keeps the squelch open (for an open squelch that stays, use **\***, **5**) | Works |
 
-The list has a row pair for each key the menus don't need; [the radio's list](23-radios.md#key-roles) says which. The
-key settings are also in the codeplug, so a codeplug written to the radio can set them, and a change here is written to
-the codeplug.
+The list has a row pair for each key the menus don't need; [the radio's list](23-radios.md#key-roles) says which. On a
+radio whose arrows are printed P1 and P2, they have rows too: what you set works on Home, and in the menus they stay
+arrows. They can't take Monitor or Tone burst, which need the key held, or Emergency, which needs a 1.5 s hold. Left at
+Default they show what they do on Home (Prev zone, Next zone). The key settings are also in the codeplug, so a codeplug
+written to the radio can set them, and a change here is written to the codeplug.
 
 ### Key lock (key 9)
 
@@ -172,7 +183,7 @@ When the keys lock by themselves and what still works while they are locked ([Ke
 
 | Item | What it does |
 |---|---|
-| About | One line each: Firmware ("RadioFoundry"), Release (the release name, such as v26.11; not shown for a build between releases), Build (the commit it was built from), Date (the commit's date, or the build's for a build with local changes) and Radio (the radio model). Then the authors and the license of each part: RadioFoundry (MIT), the third-party libraries, and the AMBE+2 codec. The codec shows as "stock": it comes from your radio's own firmware and isn't part of RadioFoundry. The page is text in small print, with nothing cut short and no status bar. The status bar comes back during a call. **Up**, **Down** or the knob scroll a page longer than the screen |
+| About | One line each: Firmware ("RadioFoundry"), Release (the release name, such as v26.11; not shown for a build between releases), Build (the commit it was built from), Date (the commit's date, or the build's for a build with local changes) and Radio (the radio model). Then RadioFoundry's license (MIT), its maintainers, where its contributors are listed, and the license of each other part: the third-party libraries and the AMBE+2 codec. The codec shows as "stock": it comes from your radio's own firmware and isn't part of RadioFoundry. The page is text in small print, with nothing cut short and no status bar. The status bar comes back during a call. **Up**, **Down** or the knob scroll a page longer than the screen |
 | Codeplug | Where the channels come from (built-in or from the CPS), the number of zones and channels |
 | Diagnostics | The diagnostics page (also **OK**, **6**, **7**) |
 | Factory reset | Puts every setting back to its default ([below](#factory-reset)) |

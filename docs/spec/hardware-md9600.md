@@ -360,7 +360,7 @@ frequency point, labeled 5 W, 10 W, 25 W and 40 W. The labels are wrong: the row
 | 1 | 509 | 1 W | 892 | 1 W |
 | 2 | 680 | 5 W | 947 | 5 W |
 | 3 | rows 2-3 (UHF) or 1-2 (VHF) at 25 W | 25 W | as UHF | 25 W |
-| 4 | top row + 337 | 45 W | top row + 45 | 50 W |
+| 4 | top row + 337 (at most 3500) | 45 W | top row + 45 (at most 3500) | 50 W |
 
 The short check with this table (section 4 of the procedure, FM carrier, watts):
 
@@ -379,9 +379,12 @@ at 144.100 and 0.20 W at 151.5125. One fixed drive can't hold 250 mW from 144 to
 calibrated at 146 MHz, the middle of 2 m, and hold ±2 dB across it. The HIL wattmeter check keys at 445 and 146 MHz
 for that reason.
 
-A radio whose rows give levels that don't rise, or a top level over 2300 counts, transmits on no level. The debug
-link's `tx_drive` view key shows each level's drive, and RADIO op 36 sets one transmission's drive
-([debuglink.md](debuglink.md)). RadioFoundry refuses TX without an accepted table.
+The top level follows each radio's own top row. The factory rows differ between radios, so its bound sits well past any
+row seen: the top level stops at 3500 counts. The output is flat long before that (2250 gave 47.1 W), so a radio clamped
+there still makes its top level. A row byte of 0xFF or 0x00 is no value, and a radio whose rows give levels that don't
+rise transmits on no level. RadioFoundry refuses TX without an accepted table. The debug link's `tx_drive` view key
+shows each level's drive. RADIO op 36 sets one transmission's drive ([debuglink.md](debuglink.md)) to any value the DAC
+can give, up to its full scale (4095), past the top level's bound.
 
 ### 5.7 RSSI, noise, squelch
 

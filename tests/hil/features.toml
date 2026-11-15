@@ -314,6 +314,10 @@ spec = "docs/spec/crash-log.md"
 switch = "USB_NETWORK"
 spec = "docs/spec/usb-network.md"
 
+[feature.usb_serial_request]
+switch = "USB_SERIAL_REQUEST"
+spec = "docs/spec/usb-network.md"
+
 [feature.dmr_ip_gateway]
 switch = "DMR_IP_GATEWAY"
 spec = "docs/spec/dmr-data.md"

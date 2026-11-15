@@ -1435,7 +1435,7 @@ static void draw_chips_dmr(const radio_view_t *v, const ui_state_t *s)
 		x = gfx_text(f, x, L->chips_y, buf, temp ? ui_col.warn : ui_col.fg) + f->w;
 	}
 	if (v->dmr.rmo)
-		x = gfx_text(f, x, L->chips_y, v->dmr.repeater_up ? "RPT" : "Rpt", ui_col.fg) + f->w;
+		x = gfx_text(f, x, L->chips_y, "Rpt", ui_col.fg) + f->w;	// a repeater channel; the signal bars show it heard
 #if CONFIG_DMR_ROAMING
 	// Roaming here: Roam, Lock when locked to the site, amber Roam? when the site is weak (dmr-roaming.md 6.2)
 	if (v->roam.state != RROAM_STATE_OFF) {
@@ -1599,7 +1599,11 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 		sb_chr(&b, ' ');
 	}
 	sb_str(&b, "TS");
-	sb_u32(&b, d->ts, 1);
+	sb_u32(&b, d->rx_ts ? d->rx_ts : d->ts, 1);
+	if (d->hear_all && d->rx_cc != d->cc) {	// found by digital monitor: the code to set to talk to them
+		sb_str(&b, " CC");
+		sb_u32(&b, d->rx_cc, 1);
+	}
 	if (d->late_entry)
 		sb_str(&b, TR(" late"));
 	if (d->call.encrypted)
@@ -2612,7 +2616,7 @@ static size_t label_len(const char *t)
 }
 
 int ui_draw_text_page(const radio_view_t *v, const ui_state_t *s, const char *title, const char *text,
-	uint16_t *first)
+	uint16_t *first, bool labels)
 {
 	const ui_layout_t *L = &ui_layout;
 	const font_t *f = L->tiny;
@@ -2636,7 +2640,7 @@ int ui_draw_text_page(const radio_view_t *v, const ui_state_t *s, const char *ti
 	for (int i = 0; *t; i++) {
 		// a label only where a line of the text starts, never on a wrapped value's next line
 		bool starts = t == text || t[-1] == '\n';
-		size_t lab = starts ? label_len(t) : 0;
+		size_t lab = starts && labels ? label_len(t) : 0;
 		t = wrap_line(f, t, w, line, sizeof line);
 		int r = i - *first;
 		if (r < 0)
@@ -2741,6 +2745,27 @@ static void row_text(const font_t *f, int x, int y, int w, const char *label, co
 	}
 }
 
+// Where a list's body ends: half the room below y (a message keeps its replies in view), all of it without rows
+static int list_body_end(const ui_list_t *l, int y, int y_end)
+{
+	return l->count ? y + (y_end - y) / 2 + ui_layout.small->h : y_end;
+}
+
+bool ui_list_body_fits(const ui_state_t *s, const ui_list_t *l)
+{
+	const font_t *f = ui_layout.small;
+	int y = list_top(NULL, NULL, l, false);
+	int y_end = list_body_end(l, y, list_bottom(s));
+	char line[64];
+	// as wrap_text: a line that doesn't fit is where ui_draw_list shortens the text
+	for (const char *t = l->body; t != NULL && *t; y += f->h) {
+		if (y + f->h > y_end)
+			return false;
+		t = wrap_line(f, t, gfx_width(), line, sizeof line);
+	}
+	return true;
+}
+
 int ui_list_rows(const ui_list_t *l)
 {
 	int y = list_top(NULL, NULL, l, false);
@@ -2759,8 +2784,7 @@ void ui_draw_list(const radio_view_t *v, const ui_state_t *s, const ui_list_t *l
 	int y = list_top(v, s, l, true);
 	int y_end = list_bottom(s);
 	if (l->body != NULL) {
-		int body_end = l->count ? y + (y_end - y) / 2 + f->h : y_end;
-		y = wrap_text(f, l->body, y, body_end, true, ui_col.fg);
+		y = wrap_text(f, l->body, y, list_body_end(l, y, y_end), true, ui_col.fg);
 		if (l->count) {
 			gfx_hline(0, y, w, ui_col.line);
 			y += 2;

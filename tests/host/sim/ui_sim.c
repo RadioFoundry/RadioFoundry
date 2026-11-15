@@ -385,6 +385,8 @@ static hal_power_t power = { .battery_pct = p_battery };
 // The air band receive only, as on radios that have it (docs/spec/airband-and-broadcast.md 3.2)
 static const band_t bands[] = { { 136000000, 174000000, true }, { 400000000, 480000000, true },
 				{ 108000000, 136000000, false } };
+// "rxonly": a radio whose transmitter isn't written yet, every band receive only
+static const band_t rx_only_bands[] = { { 136000000, 174000000, false }, { 400000000, 480000000, false } };
 static const char *const power_names[] = { "50mW", "250mW", "500mW", "750mW", "1W", "2W", "3W", "4W", "5W" };
 
 static bool afsk_tx_start(const uint8_t *t, uint16_t n, uint16_t baud, uint16_t mark, uint16_t space, uint8_t level)
@@ -428,6 +430,9 @@ static struct {
 	bool message;		// "aprs:message": an unread APRS message
 	bool message_read;
 	uint32_t message_ms;
+	bool evicted;
+	bool no_speed, no_course, zero_motion, no_station_pos, same_age, empty_text, long_text;
+	bool reordered;		// a packet moves the second station to the front
 	bool no_pos;		// "aprs:nopos": no position of our own (no GPS fix, no fixed position)
 	aprs_cfg_t cfg;
 	uint32_t sent;
@@ -470,21 +475,37 @@ bool ui_svc_aprs_send_now(void)
 	aprs_sim.sent++;
 	return true;
 }
-uint8_t ui_svc_aprs_station_count(void) { return aprs_sim.off ? 0 : 2; }
+uint8_t ui_svc_aprs_station_count(void) { return aprs_sim.off || aprs_sim.evicted ? 0 : 2; }
 bool ui_svc_aprs_station(uint8_t i, aprs_station_t *out)
 {
 	static const char *const calls[] = { "Q4WABC-15", "QJ4XYZ" };	// the longest call there is, and one without a position
-	if (aprs_sim.off || i >= 2)
+	if (aprs_sim.off || aprs_sim.evicted || i >= 2)
 		return false;
 	memset(out, 0, sizeof *out);
+	i ^= aprs_sim.reordered ? 1u : 0u;
 	strcpy(out->call, calls[i]);
 	out->heard_ms = now_ms > 60000u * (i + 1u) ? now_ms - 60000u * (i + 1u) : 0;
 	out->direct = i == 0;
-	out->has_pos = i == 0;
+	out->has_pos = i == 0 && !aprs_sim.no_station_pos;
 	out->lat = 338000000;	// 14.5 km NE of our fixed position (ui_svc_aprs_view)
 	out->lon = -840000000;
-	out->pos_ms = 0;	// the position heard at start, the packets since (heard_ms) without one
+	out->speed_kn = aprs_sim.no_speed || i != 0 ? 0xFFFFu : aprs_sim.zero_motion ? 0 : 10;
+	out->course = aprs_sim.no_course || i != 0 ? 0xFFFFu : aprs_sim.zero_motion ? 0 : 40;
+	out->sym_table = i == 0 && !aprs_sim.empty_text ? '/' : 0;
+	out->sym_code = i == 0 ? '>' : 0;
+	out->count = 3;
+	strcpy(out->text, aprs_sim.empty_text ? "" : aprs_sim.long_text ? "12345678901234567890123" :
+	       i == 0 ? "On the road" : "At home");
+	out->pos_ms = aprs_sim.same_age ? out->heard_ms : 0;	// the position heard at start, the packets since (heard_ms) without one
 	return true;
+}
+bool ui_svc_aprs_station_find(const char *call, aprs_station_t *out)
+{
+	for (uint8_t i = 0; i < ui_svc_aprs_station_count(); i++) {
+		if (ui_svc_aprs_station(i, out) && strcmp(out->call, call) == 0)
+			return true;
+	}
+	return false;
 }
 // The engine's range for station 0 from our position (the sim has no aprs_fmt.c: the figures, not the math)
 bool ui_svc_aprs_range(const aprs_station_t *s, uint32_t *m, uint16_t *deg)
@@ -1145,7 +1166,7 @@ static void load_channel(void)
 	view.dmr.hear_all = view.monitor;
 	view.dmr.active = view.ch.mode == RADIO_MODE_DMR;
 	view.dmr.codec = true;
-	view.dmr.cc = view.ch.color_code;
+	view.dmr.cc = view.dmr.rx_cc = view.ch.color_code;
 	view.dmr.ts = view.ch.timeslot;
 	view.dmr.reply_active = false;
 	reply_until = 0;
@@ -1198,7 +1219,7 @@ static void sim_vfo(bool on)
 		view.ch.color_code = vfo_cc;
 		view.ch.timeslot = vfo_ts;
 		view.dmr.active = vfo_mode == RADIO_MODE_DMR;
-		view.dmr.cc = vfo_cc;
+		view.dmr.cc = view.dmr.rx_cc = vfo_cc;
 		view.dmr.ts = vfo_ts;
 		view.channel_number = 0;
 		view.temp = 0;		// the VFO has no temporary changes
@@ -1327,7 +1348,7 @@ void radio_req_clear_temporary(void)
 	view.temp = 0;
 	view.temporary = false;
 	view.dmr.active = view.ch.mode == RADIO_MODE_DMR;
-	view.dmr.cc = view.ch.color_code;
+	view.dmr.cc = view.dmr.rx_cc = view.ch.color_code;
 	view.dmr.ts = view.ch.timeslot;
 	temp_target = 0;
 	default_target();
@@ -1638,7 +1659,7 @@ bool ui_svc_dmr_timeslot(uint8_t ts)
 bool ui_svc_dmr_color_code(uint8_t cc)
 {
 	retune();
-	view.dmr.cc = view.ch.color_code = cc;
+	view.dmr.cc = view.dmr.rx_cc = view.ch.color_code = cc;
 	if (view.vfo) {
 		vfo_cc = cc;
 		changed();
@@ -2131,6 +2152,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	board.side_key_names = maps[map].names;
 	board.side_key_count = maps[map].side_n;
 	board.caps = maps[map].caps;
+	board.bands = bands;
+	board.band_count = sizeof bands / sizeof bands[0];
 	power.supply_mv = NULL;
 	// The MD-9600's panel names its QUICK and CONTEXT keys in the hints
 	board.quick_label = map == SIM_MAP_P ? "P1" : NULL;
@@ -2207,6 +2230,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_ARS_SERVER, 0);
 	ui_svc_setting_set(UI_SET_IP_GATEWAY, 0);
 	ui_svc_setting_set(UI_SET_PTT_LOCKED, 1);
+	for (uint8_t id = UI_SET_CALL_END_TONE; id <= UI_SET_EMERGENCY_TONE; id++)
+		ui_svc_setting_set(id, id != UI_SET_SCAN_TONE);	// as on a new radio: the scan stop tone off, the rest on
 	ui_svc_setting_set(UI_SET_HEAR_ALL_DEFAULT, 0);
 	ui_svc_setting_set(UI_SET_NOISE_REDUCTION, 1);
 	ui_svc_setting_set(UI_SET_MIC_AGC, 0);
@@ -2848,6 +2873,19 @@ static bool run_token(char *t, char *err, size_t len)
 		if (aprs_sim.message)
 			aprs_sim.message_ms = now_ms;
 		aprs_sim.no_pos = strcmp(arg, "nopos") == 0;
+		aprs_sim.reordered = strcmp(arg, "reorder") == 0;
+		aprs_sim.evicted = strcmp(arg, "evict") == 0;
+		aprs_sim.no_speed = strcmp(arg, "nospeed") == 0 || strcmp(arg, "speedunknown") == 0;
+		aprs_sim.no_course = strcmp(arg, "nospeed") == 0 || strcmp(arg, "courseunknown") == 0;
+		aprs_sim.zero_motion = strcmp(arg, "zero") == 0;
+		aprs_sim.no_station_pos = strcmp(arg, "stationnopos") == 0;
+		aprs_sim.same_age = strcmp(arg, "sameage") == 0;
+		aprs_sim.empty_text = strcmp(arg, "emptytext") == 0;
+		aprs_sim.long_text = strcmp(arg, "longtext") == 0;
+		if (strcmp(arg, "heard") == 0) {
+			ui_push(SCR_APRS_HEARD, 0);
+			advance(200);
+		}
 		if (strcmp(arg, "custom") == 0)
 			aprs_sim.cfg.freq_hz = 144930000;
 		return true;
@@ -2907,6 +2945,11 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "foreign") == 0) {	// the codeplug is another firmware's: the first edit asks
 		sim_foreign = true;
+		return true;
+	}
+	if (strcmp(t, "rxonly") == 0) {	// no band may transmit
+		board.bands = rx_only_bands;
+		board.band_count = sizeof rx_only_bands / sizeof rx_only_bands[0];
 		return true;
 	}
 	if (strcmp(t, "nobattery") == 0) {

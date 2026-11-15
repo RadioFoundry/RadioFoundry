@@ -43,11 +43,45 @@ void scan_end(scan_t *s)
 
 void scan_tuned(scan_t *s, uint32_t now_ms)
 {
+	if (s->stop_min_ok) {
+		s->floor_dbm[s->floor_at] = s->stop_min_dbm;
+		s->floor_at = (uint8_t)((s->floor_at + 1u) % SCAN_FLOOR_STOPS);
+		if (s->floor_n < SCAN_FLOOR_STOPS) {
+			s->floor_n++;
+		}
+		s->stop_min_ok = false;
+	}
 	s->tuned_ms = now_ms;
 	s->heard = false;
 	s->synced = false;
 	s->steps++;
 	phase(s, SCAN_PH_LISTEN, now_ms);
+}
+
+void scan_level(scan_t *s, uint32_t now_ms, int16_t dbm)
+{
+	if (now_ms - s->tuned_ms < SCAN_SETTLE_MS) {
+		return;
+	}
+	if (!s->stop_min_ok || dbm < s->stop_min_dbm) {
+		s->stop_min_dbm = dbm;
+		s->stop_min_ok = true;
+	}
+}
+
+bool scan_floor(const scan_t *s, int16_t *dbm)
+{
+	if (s->floor_n == 0) {
+		return false;
+	}
+	int16_t m = s->floor_dbm[0];
+	for (uint8_t i = 1; i < s->floor_n; i++) {
+		if (s->floor_dbm[i] < m) {
+			m = s->floor_dbm[i];
+		}
+	}
+	*dbm = m;
+	return true;
 }
 
 void scan_pause(scan_t *s, bool paused, uint32_t now_ms)

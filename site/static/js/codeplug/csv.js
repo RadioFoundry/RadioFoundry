@@ -318,6 +318,7 @@ export const TABLES = {
 			c("All Skip", "allSkip", asBool, (r) => yesNo(r.allSkip), ["Scan Skip"]),
 			c("Zone Skip", "zoneSkip", asBool, (r) => yesNo(r.zoneSkip)),
 			c("VOX", "vox", asBool, (r) => yesNo(r.vox)),
+			c("Tone Burst", "toneBurst", asBool, (r) => yesNo(r.toneBurst), ["1750 Hz"]),
 			c("No Beep", "noBeep", asBool, (r) => yesNo(r.noBeep)),
 			c("No Eco", "noEco", asBool, (r) => yesNo(r.noEco)),
 			c("DMO", "dmo", asBool, (r) => yesNo(r.dmo)),

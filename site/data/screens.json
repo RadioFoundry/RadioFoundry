@@ -272,6 +272,18 @@
     "DMR_SMS"
    ]
   },
+  "message_long": {
+   "group": "messages",
+   "needs": [
+    "DMR_SMS"
+   ]
+  },
+  "message_read": {
+   "group": "messages",
+   "needs": [
+    "DMR_SMS"
+   ]
+  },
   "compose": {
    "group": "messages",
    "needs": [
@@ -693,6 +705,24 @@
     "APRS"
    ]
   },
+  "aprs_station": {
+   "group": "tools",
+   "needs": [
+    "APRS_RX"
+   ]
+  },
+  "aprs_station_evicted": {
+   "group": "tools",
+   "needs": [
+    "APRS_RX"
+   ]
+  },
+  "aprs_station_text": {
+   "group": "tools",
+   "needs": [
+    "APRS_RX"
+   ]
+  },
   "gps_sky": {
    "group": "tools",
    "needs": [
@@ -718,6 +748,18 @@
    ]
   },
   "settings": {
+   "group": "settings",
+   "needs": [
+    "UI_SETTINGS"
+   ]
+  },
+  "settings_sound": {
+   "group": "settings",
+   "needs": [
+    "UI_SETTINGS"
+   ]
+  },
+  "settings_sound_tones": {
    "group": "settings",
    "needs": [
     "UI_SETTINGS"

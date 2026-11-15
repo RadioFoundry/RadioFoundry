@@ -13,13 +13,14 @@ import { LIMITS, decodeGeneral } from "../codeplug/records.js";
 import { CpsSerial, TransportError, estimate, keepIdentity, IDENTITY, iddbRanges } from "../codeplug/transport.js";
 import { FastError } from "../codeplug/fastlink.js";
 import { areaForWrite, KEYS } from "../codeplug/kv.js";
+import { toSerial, CLICK_WAIT_MS } from "../flasher/netmode.js";
 import { convert as convertDb, readHeader as dbHeader } from "../codeplug/iddb.js";
 import { convertIddb, iddbEnd } from "../codeplug/sources/output.js";
 import { FakeCpsRadio } from "../codeplug/fakecps.js";
 import { Grid } from "./grid.js";
 import { History } from "./undo.js";
 import { bulkColumns, columns, channelForm, formDialog, membersDialog, refLabel, parseAreaKey } from "./views.js";
-import { openFile, saveBytes, tftpBytes, FileError, imageFrom, saveDraft, loadDraft, clearDraft } from "./files.js";
+import { openFile, saveBytes, tftpBytes, datedName, FileError, imageFrom, saveDraft, loadDraft, clearDraft } from "./files.js";
 import { extensions } from "./extensions.js";
 import "./parts.js";
 import * as diag from "../diag.js";
@@ -385,6 +386,18 @@ function radioTab() {
 	};
 	// a number kept as a key of the settings area (kv.js KEYS): the row gives its range, empty is an absent key
 	const areaKey = (name) => (v) => parseAreaKey(KEYS.find((row) => row.name === name), v, t);
+	// a bool kept as a key of the settings area: Not set (an absent key, the radio keeps its own), On or Off
+	const onOff = (key, label) => {
+		const sel = h("select", { id: "g-" + key },
+			h("option", { value: "" }, t("editor.general.not_set")),
+			h("option", { value: "1" }, t("editor.general.on")),
+			h("option", { value: "0" }, t("editor.general.off")));
+		sel.value = g[key] == null ? "" : g[key] ? "1" : "0";
+		sel.addEventListener("change", () => change(t("editor.undo.edit"),
+			() => (S.model.general = { ...S.model.general, [key]: sel.value === "" ? null : sel.value === "1" })));
+		return h("div", { class: "form-row" }, h("label", { for: "g-" + key }, label), sel,
+			h("span", { class: "small muted" }, t("editor.general.tone_help")));
+	};
 	const parts = [
 		h("div", { class: "form-grid ed-radio-form" },
 			field("dmrId", t("editor.general.dmr_id"), 8, t("editor.general.dmr_id_help"), num(0, 0xFFFFFF)),
@@ -394,7 +407,11 @@ function radioTab() {
 			field("groupHang", t("editor.general.group_hang"), 3, t("editor.general.hang_help"), num(0, 255)),
 			field("privateHang", t("editor.general.private_hang"), 3, t("editor.general.hang_help"), num(0, 255)),
 			field("arsServer", t("editor.general.ars_server"), 8, t("editor.general.ars_server_help"), areaKey("arsServer")),
-			field("ipGateway", t("editor.general.ip_gateway"), 8, t("editor.general.ip_gateway_help"), areaKey("ipGateway"))),
+			field("ipGateway", t("editor.general.ip_gateway"), 8, t("editor.general.ip_gateway_help"), areaKey("ipGateway")),
+			onOff("callEndTone", t("editor.general.call_end_tone")),
+			onOff("totWarnTone", t("editor.general.tot_warn_tone")),
+			onOff("batteryTone", t("editor.general.battery_tone")),
+			onOff("txDenyTone", t("editor.general.tx_deny_tone"))),
 	];
 	if (S.conn) {
 		const p = S.conn.probe;
@@ -462,7 +479,7 @@ function saveFile(kind) {
 		say(t("editor.saved_tftp"), "info");
 		return;
 	}
-	download(`${S.fileName || "codeplug"}.bin`, saveBytes(img));
+	download(`${datedName(S.fileName)}.bin`, saveBytes(img));
 	S.dirty = false;
 	refresh();
 	draftSoon();
@@ -499,7 +516,10 @@ async function connect() {
 	} else {
 		if (!serialSupported()) throw new TransportError("no_serial");
 		// one chooser for both links: the radio's own USB port, or a programming cable, told apart by the port's USB ID.
-		// A port granted before where RadioFoundry answers needs no chooser
+		// A port granted before where RadioFoundry answers needs no chooser. A radio in USB network mode is asked for
+		// its serial port first, where WebUSB reaches it (netmode.js); it goes back when it restarts. The wait is short:
+		// the chooser below must still open in this click
+		await toSerial({ http: false, ms: CLICK_WAIT_MS });
 		const known = await knownRadioPort([RFOUNDRY_USB, ...CABLES]);
 		let port = known?.port;
 		if (!port) {
@@ -508,6 +528,14 @@ async function connect() {
 			} catch (e) {
 				if (e?.name !== "NotFoundError") throw e;
 				say(t("editor.connect.none"), "warn");
+				// the message says a radio in network mode isn't listed: the radio's own page switches it where
+				// WebUSB couldn't (netmode.js). A tab, so from a click
+				const go = button(t("flash.net.switch"), async () => {
+					go.disabled = true;
+					const r = await toSerial();
+					say(t(r.back ? "flash.net.switched" : "flash.net.switch_unseen"), r.back ? "info" : "warn");
+				});
+				messages.firstChild?.append(h("p", {}, go), h("p", { class: "small" }, t("flash.net.not_secure")));
 				return null;
 			}
 		}
