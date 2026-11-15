@@ -1043,15 +1043,17 @@ static void test_cal(void)
 	cal_put(0x10 + 3, 125, 5);
 	md9600_cal_load();
 	for (uint8_t l = 0; l < 5; l++) {
-		CHECK(md9600_cal_apc(434050000u, l, &dac) && md9600_cal_apc(400000000u, l, &dac));
+		CHECK(md9600_cal_apc(434050000u, l, &dac));
 	}
+	uint16_t top_row;
+	CHECK(md9600_cal_pa_row(434050000u, 3, &top_row) && md9600_cal_apc(434050000u, 4, &dac) && dac == top_row + 337);
 	CHECK(md9600_cal_pa_row(440000000u, 3, &dac) && dac == 126 * 16);
 	CHECK(md9600_cal_apc(440000000u, 4, &dac) && dac == 126 * 16 + 337);
-	// A top row near the DAC's full scale: the top level stops there
+	// A top row near the DAC's full scale: the top level stops there, 25 W still between the rows around it
 	cal_put(0x10, 250, 3);
 	md9600_cal_load();
 	CHECK(md9600_cal_apc(400000000u, 4, &dac) && dac == MD9600_APC_MAX);
-	CHECK(md9600_cal_apc(400000000u, 3, &dac) && dac < MD9600_APC_MAX);
+	CHECK(md9600_cal_apc(400000000u, 3, &dac) && dac == 1232 + (4000 - 1232) * 8 / 152);
 
 	// A PA row that doesn't rise with the level, or rows so low that 25 W falls under 5 W's fixed drive: no level
 	// transmits

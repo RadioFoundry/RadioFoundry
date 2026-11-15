@@ -360,7 +360,7 @@ frequency point, labeled 5 W, 10 W, 25 W and 40 W. The labels are wrong: the row
 | 1 | 509 | 1 W | 892 | 1 W |
 | 2 | 680 | 5 W | 947 | 5 W |
 | 3 | rows 2-3 (UHF) or 1-2 (VHF) at 25 W | 25 W | as UHF | 25 W |
-| 4 | top row + 337 | 45 W | top row + 45 | 50 W |
+| 4 | top row + 337 (at most 4095) | 45 W | top row + 45 (at most 4095) | 50 W |
 
 The short check with this table (section 4 of the procedure, FM carrier, watts):
 
@@ -380,9 +380,10 @@ calibrated at 146 MHz, the middle of 2 m, and hold ±2 dB across it. The HIL wat
 for that reason.
 
 The top level follows each radio's own top row. The factory rows differ between radios, so a drive limit measured on
-one radio doesn't hold for the rest: only the DAC's full scale (4095) bounds the top level and the override. A radio whose rows give levels that don't rise transmits on no level. The debug
-link's `tx_drive` view key shows each level's drive, and RADIO op 36 sets one transmission's drive
-([debuglink.md](debuglink.md)). RadioFoundry refuses TX without an accepted table.
+one radio doesn't hold for the rest: only the DAC's full scale (4095) bounds the top level and the override. A radio
+whose rows give levels that don't rise transmits on no level. The debug link's `tx_drive` view key shows each level's
+drive, and RADIO op 36 sets one transmission's drive ([debuglink.md](debuglink.md)). RadioFoundry refuses TX without
+an accepted table.
 
 ### 5.7 RSSI, noise, squelch
 
