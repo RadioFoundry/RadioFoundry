@@ -1301,7 +1301,6 @@ static void test_ext_space(void)
 	CHECK(st[7] == 22 && st[8] == 22);
 }
 
-// A-2 / T-USB-2: hotspot mode never depends on DTR being set, only on it dropping
 // A UART host link that saw a 0xE0 (a loose cable puts noise on the line): a trial. Noise gets no reply and never the
 // modem; a host's GET_VERSION is answered at once and its next command takes the modem
 static void test_trial(void)
@@ -1384,6 +1383,7 @@ static void test_trial(void)
 	mmdvm_end();
 }
 
+// A-2 / T-USB-2: hotspot mode never depends on DTR being set, only on it dropping
 static void test_hostlink_dtr(void)
 {
 	hostlink_session_t hs;

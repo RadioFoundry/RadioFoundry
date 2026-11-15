@@ -192,7 +192,7 @@ static bool host_like(uint8_t command, const uint8_t *p, uint8_t plen)
 		return plen >= 7;
 #if CONFIG_HOTSPOT_SPLIT
 	case MMDVM_RFOUNDRY_SPLIT:
-		return true;
+		return plen >= 1;	// its subcommand
 #endif
 	default:
 		return false;

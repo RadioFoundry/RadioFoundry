@@ -586,7 +586,9 @@ static void hostlink_task(void *arg)
 			hostlink_leave_t why = hostlink_session_check(&session, port->connected(), true, exit_now,
 								      now - last);
 
-			if (why != HOSTLINK_STAY) {
+			if ((why != HOSTLINK_STAY) && mmdvm_in_trial()) {
+				trial_failed();		// DTR dropped or hotspot turned off before a host showed: no trace either
+			} else if (why != HOSTLINK_STAY) {
 				leave_hotspot(why);
 			}
 #else
