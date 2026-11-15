@@ -413,6 +413,31 @@ function radioTab() {
 			onOff("batteryTone", t("editor.general.battery_tone")),
 			onOff("txDenyTone", t("editor.general.tx_deny_tone"))),
 	];
+	parts.push(h("h3", {}, "AES-256"), h("p", { class: "small muted" }, t("editor.aes.help")));
+	for (let slot = 0; slot < 2; slot++) {
+		const current = S.model.general.aesKeys?.[slot];
+		const id = h("input", { type: "number", min: 0, max: 255, value: current?.id ?? 0 });
+		const key = h("input", { type: "password", maxlength: 64, value: current?.key ?? "", autocomplete: "new-password", spellcheck: "false" });
+		const error = h("span", { class: "small ed-err" });
+		const save = () => {
+			const keyId = Number(id.value), value = key.value.trim();
+			if (!Number.isInteger(keyId) || keyId < 0 || keyId > 255 || value && !/^[0-9a-f]{64}$/i.test(value)) {
+				error.textContent = t("editor.problem.aes_key"); return;
+			}
+			if (!value && !current) return;
+			change(t("editor.undo.edit"), () => {
+				const aesKeys = (S.model.general.aesKeys || [null, null]).slice();
+				aesKeys[slot] = value ? { id: keyId, key: value.toLowerCase() } : null;
+				S.model.general = { ...S.model.general, aesKeys, aesInvalid: false };
+			});
+		};
+		id.addEventListener("change", save); key.addEventListener("change", save);
+		const idLabel = `aes-id-${slot}`, keyLabel = `aes-key-${slot}`;
+		id.id = idLabel; key.id = keyLabel;
+		parts.push(h("div", { class: "form-grid" },
+			h("label", { for: idLabel }, t("editor.aes.slot", { n: slot + 1 }) + " · " + t("editor.aes.key_id")), id,
+			h("label", { for: keyLabel }, t("editor.aes.key")), key, error));
+	}
 	if (S.conn) {
 		const p = S.conn.probe;
 		parts.push(h("h3", {}, t("editor.connected_radio")), h("dl", { class: "specs" },

@@ -1953,5 +1953,20 @@
  "flash.backup.failed": "Il backup si è interrotto prima di finire e non è stato salvato nulla. {error}",
  "flash.backup.retry_how": "Scegli Riprova per ricominciare il backup. Se si interrompe di nuovo, spegni e riaccendi la radio, attendi la schermata principale e riprova. Se continua a interrompersi, scegli Solo calibrazione per salvare almeno la calibrazione di fabbrica, e segnala il problema.",
  "flash.backup.retry_how_small": "Scegli Riprova. Se si interrompe di nuovo, spegni e riaccendi la radio, attendi la schermata principale e riprova. Se continua a interrompersi, segnala il problema.",
- "flash.backup.after_channels": "Dopo il backup, l'installatore converte i canali, le zone e i contatti originali per RadioFoundry e li scrive nella radio. Il backup conserva il codeplug originale. Senza backup, chiede prima di scriverli."
+ "flash.backup.after_channels": "Dopo il backup, l'installatore converte i canali, le zone e i contatti originali per RadioFoundry e li scrive nella radio. Il backup conserva il codeplug originale. Senza backup, chiede prima di scriverli.",
+ "editor.aes.mode": "Cifratura",
+ "editor.aes.inherit": "Impostazione generale della radio",
+ "editor.aes.clear": "Voce in chiaro",
+ "editor.aes.key_id": "ID chiave",
+ "editor.aes.key": "Chiave AES (64 cifre esadecimali)",
+ "editor.aes.slot": "Posizione chiave {n}",
+ "editor.aes.help": "Le chiavi sono incluse nei codeplug binari salvati. Mantenere privati questi file. Svuotare un campo chiave per cancellare quella posizione.",
+ "editor.problem.aes_key": "Inserire esattamente 64 cifre esadecimali e un ID chiave da 0 a 255.",
+ "editor.problem.aes_duplicate": "Gli ID delle chiavi AES devono essere univoci.",
+ "editor.problem.aes_mode": "Selezionare una modalità di cifratura del canale valida.",
+ "editor.problem.aes_missing": "Questo canale seleziona un ID chiave AES che non è configurato.",
+ "editor.field.aesKeys": "Impostazioni di cifratura",
+ "editor.qdmr.err.encryption": "Usare un codeplug binario RadioFoundry per conservare le chiavi e le impostazioni di cifratura dei canali. YAML e CSV non possono conservarle.",
+ "editor.field.privacyMode": "Cifratura",
+ "editor.field.privacyId": "ID chiave"
 }

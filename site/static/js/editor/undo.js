@@ -17,7 +17,7 @@ function snapshot(m) {
 		for (const r of m[t]) objects.set(r, copy(r));
 	}
 	for (const v of m.vfo) if (v) objects.set(v, copy(v));
-	return { tables, objects, general: { ...m.general }, base: m.base, iddb: m.iddb };
+	return { tables, objects, general: { ...m.general, aesKeys: m.general.aesKeys?.map((k) => k && { ...k }) ?? null }, base: m.base, iddb: m.iddb };
 }
 
 function copy(r) {
@@ -32,7 +32,7 @@ function restore(m, s) {
 		for (const k of Object.keys(obj)) if (!(k in c)) delete obj[k];
 		Object.assign(obj, copy(c));
 	}
-	m.general = { ...s.general };
+	m.general = { ...s.general, aesKeys: s.general.aesKeys?.map((k) => k && { ...k }) ?? null };
 	m.base = s.base;
 	m.iddb = s.iddb;
 }

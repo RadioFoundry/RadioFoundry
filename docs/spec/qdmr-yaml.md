@@ -52,7 +52,7 @@ The top-level keys, in qdmr's order:
 | `scanLists` | Scan lists | Dropped |
 | `positioning` | `- aprs: {...}` APRS systems, `- dmr: {...}` DMR position reporting | APRS only |
 | `roaming` | Roaming channels and zones | Dropped |
-| `commercial` | `encryptionKeys` | Dropped |
+| `commercial` | `encryptionKeys` | Nonempty encryption-key lists refuse the import |
 | `sms` | Message format and templates | Dropped |
 
 Older qdmr versions and the manual name the element types `digital` and `analog`. The import accepts both spellings;
@@ -208,13 +208,19 @@ A symbol from the alternate table, or `/D` and `/J`, exports as `None` with a no
 ## 4. What each direction reports
 
 The import returns the record counts and a list of notes, each a code and a count, for what it changed or left out:
-names shortened, scan lists, roaming, encryption keys, DMR position reporting, APRS periods, extra path entries,
+names shortened, scan lists, roaming, DMR position reporting, APRS periods, extra path entries,
 unknown icons, lists and zones over their limits, records over the table limits, unknown element types, channels
 without a valid frequency, sub-tones that aren't CTCSS or DCS, channels whose timeout was off. The editor lists them after the import.
 
 The export returns notes for SFR settings, power levels qdmr has no name for, channel locations rounded to a locator,
 APRS frequencies with no FM channel to name, APRS symbols with no icon, and the silent and ambiguity flags. The VFOs
 and the DMR ID database are never part of a qdmr file.
+
+An import with a nonempty `commercial.encryptionKeys` list is refused before replacing any tables. Export is
+refused when the editor holds an AES key ring, invalid AES provisioning, or any explicit channel privacy policy.
+Use the binary codeplug to preserve [AES keys and channel policies](codeplug-settings.md#33-aes-provisioning-and-channel-privacy);
+these are not silently dropped during export. A successful unencrypted YAML import clears the editor's AES ring
+and replaces channel policies with inherit along with the channel table.
 
 An import replaces the channel, zone, contact, DTMF contact, RX group list and APRS tables and the settings in 3.1, as
 one undoable change. Everything else in the open codeplug (the VFO frequencies, the radio's other settings, the DMR ID

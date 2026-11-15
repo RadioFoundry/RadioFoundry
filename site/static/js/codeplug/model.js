@@ -18,16 +18,21 @@ import { parseTone } from "./fields.js";
 import { readHeader } from "./iddb.js";
 import { decodeArea, keyValid, KEYS } from "./kv.js";
 
+import { decodePrivacy, encodePrivacy, validAesKey } from "./privacy.js";
+
 const REFS = ["contact", "rxList", "aprs"];
 
 export function decode(image) {
 	const b = image.bytes;
+	const privacy = decodePrivacy(b);
 	const m = {
 		general: decodeGeneral(b),
 		channels: [], vfo: [], zones: [], contacts: [], rxLists: [], dtmfContacts: [], aprs: [],
 		iddb: readHeader(b),
 		base: image,
 	};
+	m.general.aesKeys = privacy.aesKeys;
+	m.general.aesInvalid = privacy.keyInvalid;
 	for (let n = 1; n <= LIMITS.contacts; n++) {
 		const c = decodeContact(b.subarray(CONTACTS + (n - 1) * CONTACT_SIZE, CONTACTS + n * CONTACT_SIZE));
 		if (c) m.contacts.push({ number: n, ...c });
@@ -49,7 +54,7 @@ export function decode(image) {
 	for (let n = 1; n <= LIMITS.channels; n++) {
 		if (!channelUsed(b, n)) continue;
 		const c = decodeChannel(b.subarray(channelAddr(n), channelAddr(n) + CH_SIZE));
-		if (c) m.channels.push(linkRefs(m, { number: n, ...c }));
+		if (c) m.channels.push(linkRefs(m, { number: n, ...c, ...privacy.channel(n) }));
 	}
 	for (const a of VFO) {
 		const c = decodeChannel(b.subarray(a, a + CH_SIZE));
@@ -215,6 +220,7 @@ export function encode(m) {
 	}
 
 	encodeGeneral(m.general, b);
+	encodePrivacy(m, b);
 	fixLucz(b, m);
 	return img;
 }
@@ -239,7 +245,7 @@ export function newChannel(fields = {}) {
 		number: null, name: "", rxHz: 446006250, txHz: 446006250, mode: "fm", power: 0, tot: 0, rxTone: "",
 		txTone: "", bw: 12.5, rxOnly: false, allSkip: false, zoneSkip: false, vox: false, squelch: 0, colorCode: 1,
 		timeslot: 1, contact: null, rxList: null, aprs: null, dmrId: 0, noBeep: false, noEco: false, dmo: false,
-		roam: false, aliasTs1: 0, aliasTs2: 0, useLocation: false, lat: 0, lon: 0, sfr: false, sfrA: 0, sfrB: 0,
+		privacyMode: 0, privacyId: 0, roam: false, aliasTs1: 0, aliasTs2: 0, useLocation: false, lat: 0, lon: 0, sfr: false, sfrA: 0, sfrB: 0,
 		toneBurst: false, ...fields,
 	};
 }
@@ -295,11 +301,15 @@ export function validate(m, { bands = null } = {}) {
 	// an area of a version the editor doesn't know reads as empty and is never written: a value set here is lost
 	if (areaKeys.length && m.base && decodeArea(m.base.bytes).state === "newer") warn("general", null, areaKeys[0].name, "settings_area_newer");
 
+	if (g.aesInvalid || g.aesKeys && (g.aesKeys.length > 2 || g.aesKeys.some((k) => !validAesKey(k)))) err("general", null, "aesKeys", "aes_key");
+	if (g.aesKeys?.[0] && g.aesKeys?.[1] && g.aesKeys[0].id === g.aesKeys[1].id) err("general", null, "aesKeys", "aes_duplicate");
 	const counts = [["channels", LIMITS.channels], ["contacts", LIMITS.contacts], ["rxLists", LIMITS.rxLists],
 		["zones", LIMITS.zones], ["dtmfContacts", LIMITS.dtmfContacts], ["aprs", LIMITS.aprs]];
 	for (const [t, max] of counts) if (m[t].length > max) err(t, null, null, "too_many", { max, count: m[t].length });
 
 	for (const c of m.channels) {
+		if (![0, 1, 2].includes(c.privacyMode ?? 0)) err("channels", c, "privacyMode", "aes_mode");
+		if (c.privacyMode === 2 && !g.aesKeys?.some((k) => k && validAesKey(k) && k.id === c.privacyId)) err("channels", c, "privacyId", "aes_missing");
 		if (!c.name) err("channels", c, "name", "no_name");
 		if (c.name.length > LIMITS.name) err("channels", c, "name", "too_long", { max: LIMITS.name });
 		for (const f of ["rxHz", "txHz"]) {

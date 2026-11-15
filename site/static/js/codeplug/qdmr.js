@@ -6,6 +6,7 @@
 // was left out. The mapping was learned from qdmr's manual and from files qdmr writes and reads, never its source.
 
 import { parse, stringify, flow, Tag } from "./yaml.js";
+import { hasPrivacy } from "./privacy.js";
 import { LIMITS } from "./records.js";
 import { parseTone } from "./fields.js";
 
@@ -163,6 +164,7 @@ export function importQdmr(m, yamlText) {
 	if (!doc || typeof doc !== "object" || Array.isArray(doc) || !(doc.channels || doc.contacts || doc.radioIDs)) {
 		throw new QdmrError("not_qdmr");
 	}
+	if (doc.commercial?.encryptionKeys?.length) throw new QdmrError("encryption");
 	const notes = new Map();
 	const note = (code, n = 1) => notes.set(code, (notes.get(code) || 0) + n);
 	const list = (k) => (Array.isArray(doc[k]) ? doc[k] : []);
@@ -335,7 +337,7 @@ export function importQdmr(m, yamlText) {
 		const v = doc[k];
 		if (v && (Array.isArray(v) ? v.length : Object.values(v).some((x) => Array.isArray(x) ? x.length : x))) note(k === "scanLists" ? "scan_lists" : "roaming");
 	}
-	if (doc.commercial?.encryptionKeys?.length) note("encryption");
+
 
 	// Into the model: numbers in file order, so the radio shows the channels as qdmr lists them
 	const tables = { channels, contacts, rxLists, dtmfContacts, aprs, zones };
@@ -348,6 +350,8 @@ export function importQdmr(m, yamlText) {
 	// the VFOs keep their frequencies; references into the old tables can't stay
 	for (const v of m.vfo) if (v) Object.assign(v, { contact: null, rxList: null, aprs: null });
 	const g = m.general;
+	g.aesKeys = null;
+	g.aesInvalid = false;
 	if (defId) {
 		g.dmrId = defId.number;
 		g.radioName = shorten(defId.name, LIMITS.radioName);
@@ -371,6 +375,7 @@ export function importQdmr(m, yamlText) {
 
 // qdmr YAML for the model: {text, notes}
 export function exportQdmr(m) {
+	if (hasPrivacy(m)) throw new QdmrError("encryption");
 	const notes = new Map();
 	const note = (code, n = 1) => notes.set(code, (notes.get(code) || 0) + n);
 	const g = m.general;

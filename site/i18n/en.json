@@ -1953,5 +1953,20 @@
  "flash.backup.failed": "The backup stopped before it finished, and nothing was saved. {error}",
  "flash.backup.retry_how": "Choose Try Again to start the backup over. If it stops again, turn the radio off and on, wait for its home screen, and try again. If it keeps stopping, choose Calibration only so that at least the factory calibration is saved, and report the problem.",
  "flash.backup.retry_how_small": "Choose Try Again. If it stops again, turn the radio off and on, wait for its home screen, and try again. If it keeps stopping, report the problem.",
- "flash.backup.after_channels": "After the backup, the installer converts the original channels, zones and contacts for RadioFoundry and writes them to the radio. The backup keeps the original codeplug. Without a backup, it asks before writing them."
+ "flash.backup.after_channels": "After the backup, the installer converts the original channels, zones and contacts for RadioFoundry and writes them to the radio. The backup keeps the original codeplug. Without a backup, it asks before writing them.",
+ "editor.aes.mode": "Encryption",
+ "editor.aes.inherit": "Radio-wide setting",
+ "editor.aes.clear": "Clear voice",
+ "editor.aes.key_id": "Key ID",
+ "editor.aes.key": "AES key (64 hex digits)",
+ "editor.aes.slot": "Key slot {n}",
+ "editor.aes.help": "Keys are included in saved binary codeplugs. Keep these files private. Empty a key field to delete that slot.",
+ "editor.problem.aes_key": "Enter exactly 64 hexadecimal digits and a key ID from 0 to 255.",
+ "editor.problem.aes_duplicate": "AES key IDs must be unique.",
+ "editor.problem.aes_mode": "Select a valid channel encryption mode.",
+ "editor.problem.aes_missing": "This channel selects an AES key ID that is not provisioned.",
+ "editor.field.aesKeys": "Encryption settings",
+ "editor.qdmr.err.encryption": "Use a RadioFoundry binary codeplug to keep encryption keys and channel settings. YAML and CSV cannot preserve them.",
+ "editor.field.privacyMode": "Encryption",
+ "editor.field.privacyId": "Key ID"
 }

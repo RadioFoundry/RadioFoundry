@@ -1953,5 +1953,20 @@
  "flash.backup.failed": "备份未完成即中断，未保存任何内容。{error}",
  "flash.backup.retry_how": "选择“重试”重新开始备份。若再次中断，请关闭电台再开机，等待主屏幕出现后重试。若仍反复中断，请选择“仅校准”，至少保存出厂校准，并报告问题。",
  "flash.backup.retry_how_small": "选择“重试”。若再次中断，请关闭电台再开机，等待主屏幕出现后重试。若仍反复中断，请报告问题。",
- "flash.backup.after_channels": "备份后，安装程序会转换原厂的信道、区域和联系人供 RadioFoundry 使用并写入电台。备份保留原厂电台频率。没有备份时，写入前会先询问。"
+ "flash.backup.after_channels": "备份后，安装程序会转换原厂的信道、区域和联系人供 RadioFoundry 使用并写入电台。备份保留原厂电台频率。没有备份时，写入前会先询问。",
+ "editor.aes.mode": "加密",
+ "editor.aes.inherit": "电台全局设置",
+ "editor.aes.clear": "明文语音",
+ "editor.aes.key_id": "密钥 ID",
+ "editor.aes.key": "AES 密钥（64 位十六进制数字）",
+ "editor.aes.slot": "密钥槽 {n}",
+ "editor.aes.help": "保存的二进制码表包含密钥。请妥善保管这些文件。清空密钥字段可删除对应槽中的密钥。",
+ "editor.problem.aes_key": "请输入恰好 64 位十六进制数字和 0 到 255 的密钥 ID。",
+ "editor.problem.aes_duplicate": "AES 密钥 ID 必须唯一。",
+ "editor.problem.aes_mode": "请选择有效的信道加密模式。",
+ "editor.problem.aes_missing": "此信道选择的 AES 密钥 ID 尚未配置。",
+ "editor.field.aesKeys": "加密设置",
+ "editor.qdmr.err.encryption": "请使用 RadioFoundry 二进制码表保留密钥和信道设置。YAML 和 CSV 无法保留这些加密信息。",
+ "editor.field.privacyMode": "加密",
+ "editor.field.privacyId": "密钥 ID"
 }

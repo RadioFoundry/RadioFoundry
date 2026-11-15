@@ -262,6 +262,8 @@ export function channelForm(m, t) {
 		fm(chk("toneBurst", "editor.col.tone_burst")),
 		dmr({ group: t("editor.form.digital") }),
 		dmr(sel("colorCode", "editor.col.cc", () => [...Array(16).keys()].map((n) => [n, String(n)]))),
+		dmr(sel("privacyMode", "editor.aes.mode", () => [[0, t("editor.aes.inherit")], [1, t("editor.aes.clear")], [2, "AES-256"]])),
+		dmr({ ...txt("privacyId", "editor.aes.key_id", int(0, 255)(t), (v) => String(v ?? 0)), show: (r) => r.privacyMode === 2 }),
 		dmr(sel("timeslot", "editor.col.ts", () => [[1, "1"], [2, "2"]])),
 		dmr(sel("contact", "editor.col.contact", () => refOptions(m.contacts, t))),
 		dmr(sel("rxList", "editor.col.rx_list", () => refOptions(m.rxLists, t))),

@@ -5,6 +5,7 @@
 
 import { register } from "./extensions.js";
 import { exportTable, exportAll, importTable, importAll, TABLES, CsvError } from "../codeplug/csv.js";
+import { hasPrivacy } from "../codeplug/privacy.js";
 import { zip } from "../flasher/zip.js";
 
 const TABLE_TABS = Object.keys(TABLES);
@@ -40,11 +41,13 @@ register({
 const base = (api) => api.fileName || "codeplug";
 
 function saveTable(api, table) {
+	if (table === "channels" && hasPrivacy(api.model)) return api.say(api.t("editor.qdmr.err.encryption"), "bad");
 	// a byte order mark, so spreadsheet programs read the names as UTF-8
 	api.download(`${base(api)}-${TABLES[table].file}`, new TextEncoder().encode("﻿" + exportTable(api.model, table)));
 }
 
 async function saveAll(api) {
+	if (hasPrivacy(api.model)) return api.say(api.t("editor.qdmr.err.encryption"), "bad");
 	api.download(`${base(api)}-csv.zip`, await zip(exportAll(api.model)));
 }
 

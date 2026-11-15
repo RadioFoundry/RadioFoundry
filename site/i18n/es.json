@@ -1953,5 +1953,20 @@
  "flash.backup.failed": "La copia de seguridad se detuvo antes de terminar y no se guardó nada. {error}",
  "flash.backup.retry_how": "Elige Reintentar para empezar la copia de nuevo. Si vuelve a detenerse, apaga y enciende la radio, espera a su pantalla de inicio y vuelve a intentarlo. Si sigue deteniéndose, elige Solo calibración para guardar al menos la calibración de fábrica, e informa del problema.",
  "flash.backup.retry_how_small": "Elige Reintentar. Si vuelve a detenerse, apaga y enciende la radio, espera a su pantalla de inicio y vuelve a intentarlo. Si sigue deteniéndose, informa del problema.",
- "flash.backup.after_channels": "Después de la copia de seguridad, el instalador convierte los canales, zonas y contactos originales al formato de RadioFoundry y los escribe en la radio. La copia de seguridad conserva el codeplug original. Si no se hace copia de seguridad, pregunta antes de escribirlos."
+ "flash.backup.after_channels": "Después de la copia de seguridad, el instalador convierte los canales, zonas y contactos originales al formato de RadioFoundry y los escribe en la radio. La copia de seguridad conserva el codeplug original. Si no se hace copia de seguridad, pregunta antes de escribirlos.",
+ "editor.aes.mode": "Cifrado",
+ "editor.aes.inherit": "Ajuste general de la radio",
+ "editor.aes.clear": "Voz sin cifrar",
+ "editor.aes.key_id": "ID de clave",
+ "editor.aes.key": "Clave AES (64 dígitos hexadecimales)",
+ "editor.aes.slot": "Ranura de clave {n}",
+ "editor.aes.help": "Las claves se incluyen en los codeplugs binarios guardados. Mantenga estos archivos privados. Vacíe un campo de clave para borrar esa ranura.",
+ "editor.problem.aes_key": "Introduzca exactamente 64 dígitos hexadecimales y un ID de clave de 0 a 255.",
+ "editor.problem.aes_duplicate": "Los ID de claves AES deben ser únicos.",
+ "editor.problem.aes_mode": "Seleccione un modo de cifrado de canal válido.",
+ "editor.problem.aes_missing": "Este canal selecciona un ID de clave AES que no está configurado.",
+ "editor.field.aesKeys": "Ajustes de cifrado",
+ "editor.qdmr.err.encryption": "Use un codeplug binario de RadioFoundry para conservar las claves y los ajustes de cifrado de los canales. YAML y CSV no pueden conservarlos.",
+ "editor.field.privacyMode": "Cifrado",
+ "editor.field.privacyId": "ID de clave"
 }

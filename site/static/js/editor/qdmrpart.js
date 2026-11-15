@@ -20,7 +20,13 @@ register({
 });
 
 function save(api) {
-	const { text, notes } = exportQdmr(api.model);
+	let result;
+	try { result = exportQdmr(api.model); } catch (e) {
+		if (!(e instanceof QdmrError)) throw e;
+		api.say(api.t(`editor.qdmr.err.${e.code}`), "bad");
+		return;
+	}
+	const { text, notes } = result;
 	api.download(`${api.fileName || "codeplug"}.yaml`, new TextEncoder().encode(text));
 	if (notes.length) report(api, api.t("editor.qdmr.saved_title"), api.t("editor.qdmr.saved_notes"), notes);
 }
