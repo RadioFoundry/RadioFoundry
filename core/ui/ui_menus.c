@@ -13,6 +13,7 @@
 #include "font.h"
 #include "fmt.h"
 #include "codeplug/codeplug.h"
+#include "dmr/dmrDataService.h"
 #include "config.h"
 #include "hal_time.h"
 #include "radio/tones.h"
@@ -683,6 +684,8 @@ static bool text_page_key(const input_event_t *ev, uint16_t *first, uint16_t max
 #define MSG_APRS_ARG	0x8000u
 #define MSG_LONG_ARG	0x4000u	// the text is shortened on the message screen: Read all comes first (set on entry)
 #define MSG_INDEX(arg)	((uint16_t)((arg) & ~(MSG_APRS_ARG | MSG_LONG_ARG)))
+_Static_assert(DMR_DATA_INBOX_SIZE <= MSG_LONG_ARG && APRS_MESSAGES <= MSG_LONG_ARG,
+	       "an inbox index must stay under the arg's flag bits");
 
 static bool aprs_new_available(void)
 {
