@@ -282,6 +282,18 @@ static void rx_hold(hrc7000_dmr_t *e)
 // chip keeps the timing of a sender that left (it then only reports unusable and abnormal slots and takes no new
 // call). After a restart, only new modem activity schedules another one. Only with
 // a color code set: the color code scan restarts the receiver itself
+// Modem activity: the stale count starts with the first after a restart (counting the slot it reports), not at the
+// restart. After a long silence (an empty channel gives no slot interrupts) a count from the restart had run out, and
+// the first interrupt of the next call restarted the receiver under its header. An armed count (a hold after TX) keeps
+// its start
+static void resync_arm(hrc7000_dmr_t *e)
+{
+	if (!e->resync_pending) {
+		e->t_resync = now(e) - SLOT_US;
+		e->resync_pending = true;
+	}
+}
+
 static void rx_resync(hrc7000_dmr_t *e)
 {
 	if (e->cc_filter < 0 || !e->resync_pending) {
@@ -778,7 +790,7 @@ void hrc7000_dmr_isr_sys(hrc7000_dmr_t *e)
 		}
 #endif
 		if (list & (SYS_DEFRAME | SYS_ABNORMAL)) {
-			e->resync_pending = true;
+			resync_arm(e);
 		}
 		if (list & SYS_LATE_LC) {
 			// Embedded LC assembled from a superframe: in the RX RAM (2.8), handed over with the next voice burst
@@ -843,7 +855,7 @@ void hrc7000_dmr_isr_timeslot(hrc7000_dmr_t *e, bool tx_vector)
 			lock_tick(e);
 		}
 		if (!tx_ticking(e)) {
-			e->resync_pending = true;
+			resync_arm(e);
 			rx_tick(e);	// armed: the TX vector ticks from the next slot
 		}
 	}

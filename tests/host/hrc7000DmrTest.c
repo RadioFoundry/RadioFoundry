@@ -378,6 +378,19 @@ static void test_rx_resync(void)
 	tick(false);
 	CHECK(eng.st.rx_stale == 2);
 	count_kind(0xFF, NULL);
+
+	// A long silence after a restart (no slot interrupts), then a call: its first interrupts don't restart the
+	// receiver, the 600 ms count starts with them
+	hrc7000_dmr_rx_restart(&eng);
+	rs = eng.st.rx_restarts;
+	now += 2000000u;
+	hrc7000_dmr_poll(&eng);
+	tick(false);
+	CHECK(eng.st.rx_restarts == rs);
+	deframe(rti(1, 0, 2, 0, 0, 0));
+	tick(false);
+	CHECK(eng.st.rx_restarts == rs && eng.st.rx_stale == 2);
+	count_kind(0xFF, NULL);
 }
 
 static void test_cc_scan(void)
@@ -659,9 +672,16 @@ static void test_resync_without_ticks(void)
 	now += 1000000u;
 	hrc7000_dmr_poll(&eng);
 	CHECK(eng.st.rx_restarts == rs + 1);
-	// System interrupts with only unusable bursts must not hold stale timing forever.
+	// System interrupts with only unusable bursts must not hold stale timing forever, but the count starts with the
+	// first of them, not at the restart a second ago (that would restart under a new call's first burst)
 	deframe((rti(0, 0, 1, 0, 0, 0) & ~3u) | 1u);
 	hrc7000_dmr_poll(&eng);
+	CHECK(eng.st.rx_restarts == rs + 1);
+	for (int i = 0; i < 20; i++) {
+		now += 30000u;
+		deframe((rti(0, 0, 1, 0, 0, 0) & ~3u) | 1u);
+		hrc7000_dmr_poll(&eng);
+	}
 	CHECK(eng.st.rx_restarts == rs + 2 && eng.st.rx_stale == 1);
 	CHECK(eng.tick == 0);
 }
