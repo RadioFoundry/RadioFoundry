@@ -2411,7 +2411,7 @@ def code_map(prof, code=None):
     """The codec map for a profile's code (a synthetic profile carries its own, "map"), or None"""
     if prof.get("map"):
         return prof["map"]
-    found = codecmap.by_code_sha(codecmap.load_maps(), prof["code"][2])
+    found = codecmap.by_code_sha(codecmap.shipped(), prof["code"][2])
     return found[0] if found else None
 
 
