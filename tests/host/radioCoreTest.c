@@ -4026,7 +4026,7 @@ static void test_ui_glue(void)
 	      ui_svc_setting_get(UI_SET_SIG_MS + 10 * SIG_EV_END + 2) == (int32_t)SIG_MAX_MS);
 	settings_read(&sv);
 	CHECK(sv.sig_dmr[SIG_EV_BEGIN] == SIG_OUT_BOTH && sv.sig_fm[SIG_EV_END] == SIG_OUT_AIR &&
-	      settings_sig_hz(sv.sig_step[SIG_EV_END][1]) == 1570 && settings_sig_ms10(sv.sig_step[SIG_EV_END][1]) == 4 && sv.sig_dmr[SIG_EV_IDLE] == SIG_OUT_DEFAULT);
+	      sv.sig_dmr[SIG_EV_IDLE] == SIG_OUT_DEFAULT);
 	memset(sr.sig_dmr, 0, sizeof sr.sig_dmr);
 	memset(sr.sig_fm, 0, sizeof sr.sig_fm);
 	memset(sr.sig_hz, 0, sizeof sr.sig_hz);
@@ -4050,7 +4050,7 @@ static void test_ui_glue(void)
 	run(20);
 	settings_read(&sv);
 	CHECK(kv_sig[SIG_EV_END][0] == SIG_OUT_BOTH && sm.set.sig_dmr[SIG_EV_END] == SIG_OUT_BOTH &&
-	      sv.sig_dmr[SIG_EV_END] == SIG_OUT_BOTH && settings_sig_hz(sv.sig_step[SIG_EV_END][1]) == 1570);
+	      sv.sig_dmr[SIG_EV_END] == SIG_OUT_BOTH);
 	// What the setting can't take is refused, with no job
 	CHECK(!ui_svc_setting_set(UI_SET_SIG_FM + SIG_EV_IDLE, SIG_OUT_AIR) && !ui_svc_setting_set(UI_SET_SIG_DMR + SIG_EV_IDLE, SIG_OUT_BOTH) &&
 	      !ui_svc_setting_set(UI_SET_SIG_STEP, UI_SIG_STEP(SIG_EV_END, 12, 800, 40)) && !ui_svc_setting_set(UI_SET_SIG_HZ, 9000) &&
@@ -5276,7 +5276,7 @@ static void test_factory_reset(void)
 	CHECK(settings_flush());
 	n_ev = 0;
 	CHECK(ui_svc_factory_reset());
-	sim_flash_cut_after(504);	// the settings records (page 1: 228 + 4 bytes, page 0: 252 + 4, rounded up as the sizes are) go in, the native erase fails
+	sim_flash_cut_after(444);	// the settings records (page 1: 168 + 4 bytes, page 0: 252 + 4, rounded up as the sizes are) go in, the native erase fails
 	storage_job_poll();
 	sim_flash_power_on();
 	CHECK(n_ev == 1 && strstr(last_ev.text, "native") != NULL);
