@@ -27,7 +27,7 @@
 typedef void (*air_softmodem_out_t)(const air_chunk_t *c, void *ctx);
 
 // The receiver's state: the caller's memory (a provider with no RAM to spare lays it over buffers its idle DMR
-// engine does not use during a session). About 330 bytes
+// engine does not use during a session). About 380 bytes
 typedef struct {
 	const air_profile_t *p;
 	air_softmodem_out_t out;
@@ -37,16 +37,18 @@ typedef struct {
 	// Input: offset, level, the interpolator
 	int32_t dc;				// slow average of the input, x 1024: the tap's own offset
 	int32_t env;				// slow average of its magnitude, x 1024 (a tap of unknown scale only)
-	uint32_t gain;				// summed input counts to line units, x 65536
+	uint32_t gain;				// summed input counts to line units, x 65536 (GAIN_MAX at most)
 	uint16_t track_n;			// samples until the averages slow down a step
 	uint8_t track_shift;			// their time constant: 2^shift samples
 	bool gain_known;			// the tap gave counts_per_khz: the level is not tracked, only fitted on syncs
 	bool running;				// samples have come since the open or the last reset
 	bool locked;				// a sync set the timing and levels not long ago: the averages hold
-	int16_t in[AIR_SOFTMODEM_TAPS];		// the newest input samples, a ring
-	uint8_t in_at;
+	int16_t in[2 * AIR_SOFTMODEM_TAPS];	// the newest input samples, each written twice, TAPS apart: the last TAPS
+	uint8_t in_at;				// are always one run, in[in_at + 1] the oldest
 	uint16_t step, den;			// input samples per filtered sample, as a fraction
 	uint16_t pos;				// the next filtered sample's place between two input samples, in 1/den
+	uint16_t ph_r;				// pos x phases / den, kept without a divide: its remainder ...
+	uint8_t ph;				// ... and its whole part, the interpolator phase
 	// The receive filter (an integrate and dump over box samples) and its output, the line
 	int16_t sum[AIR_SOFTMODEM_SPS];
 	int32_t acc;
@@ -54,9 +56,16 @@ typedef struct {
 	int8_t line[AIR_SOFTMODEM_LINE];	// line units (16 per symbol level at nominal), a ring: the newest at line_at - 1
 	uint8_t line_at;
 	uint8_t line_n;				// valid samples in it (saturates)
+	uint8_t phase;				// line_at modulo SPS: the sample phase, steps' index
+	bool fitted;				// the sample before this one was fitted: last_q is its error
+	// The sync search's gate: per sample phase, one bit per symbol back (bit 0 the newest): that sample was above
+	// the one a symbol before it. A pattern is fitted only where the large steps of its last 17 symbols are all
+	// there but one
+	uint16_t steps[AIR_SOFTMODEM_SPS];
+	uint16_t gate_up[AIR_SYNCS_MAX];	// per pattern: the bits of its steps up ...
+	uint16_t gate_mask[AIR_SYNCS_MAX];	// ... and which bits are steps of four levels or more (0: no gate)
+	uint8_t valid;				// bit i: pattern i can be fitted (its length, more than one level)
 	// The sync search: the best fit so far of the peak being climbed
-	int8_t s1[AIR_SYNCS_MAX];		// per pattern: the sum of its levels, and of their squares (0: not searched)
-	uint8_t s2[AIR_SYNCS_MAX];
 	uint16_t cand_q, cand_prev_q, last_q;	// fit errors (0xFFFF none): the candidate's, the sample's before it
 	int16_t cand_lvl, cand_off;		// x 256
 	uint8_t cand_sync;
@@ -75,8 +84,7 @@ typedef struct {
 	uint8_t sync_id;
 	uint8_t flags;
 	uint32_t t_chunk_us;
-	uint8_t hard[AIR_SOFTMODEM_CHUNK / 4];
-	int8_t soft[AIR_SOFTMODEM_CHUNK];
+	int8_t soft[AIR_SOFTMODEM_CHUNK];	// (the hard symbols are sliced from these when the chunk goes out)
 } air_softmodem_t;
 
 // What receive through this tap gives a profile: AIR_FIT_RX | AIR_FIT_SOFT, or 0 when the tap's band or rate can't

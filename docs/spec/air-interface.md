@@ -64,6 +64,7 @@ after `close`; the board's RF side is already tuned and in its digital mode.
 | `tx_abort()` | stop at once and drop the queue |
 | `now_us()` | the clock of every time stamp here: free running microseconds |
 | `slot_clock()`, `slot_slew()` | TDMA providers: the latest slot boundary, and stretching the next slot |
+| `rx_load(work_us, span_us)` | optional: what receive costs the MCU since `open`: the time the provider spent turning samples into symbols, and the time of signal they covered. NULL when a chip does that work |
 
 Constants a provider states: `tx_chunk_syms`, `tx_queue_depth`, `tx_lead_ms` (how far ahead of the air the queue
 must be kept) and `time_accuracy_us`.
@@ -138,7 +139,8 @@ down to a hundredth of it).
 | Offset | a slow average of the input is taken off; it holds while a signal is locked |
 | Resampling | a polyphase interpolator (12 phases, 8 taps) to five samples per symbol |
 | Receive filter | an integrate and dump over one symbol for C4FM and square pulses, a shorter one otherwise |
-| Sync fit | at every filtered sample, the newest symbol-spaced samples are fitted to each pattern (level and offset, least squares). Where the error passes through a minimum under the limit, that sample is a symbol center; a parabola through the neighbors places it between samples |
+| Sync fit | the newest symbol-spaced samples are fitted to each pattern (level and offset, least squares). Where the error passes through a minimum under the limit, that sample is a symbol center; a parabola through the neighbors places it between samples |
+| Gate | the fit runs only where a pattern can be: per sample phase the modem keeps one bit per symbol (this sample was above the one a symbol before), and a pattern is fitted when the steps of four levels or more among its last 17 symbols are all there but one. Two missing steps put a fit over the limit whatever the rest does, so the gate changes no output; it removes the fit from all but a few percent of the samples of noise or data |
 | Output | symbols leave from the far end of a delay line 26 symbols long, sampled on the latest sync's timing and scaled by its level and offset, so a sync is sampled on the timing it gave |
 | Level | a tap of known scale starts at the profile's deviation. A tap of unknown scale follows the input's average magnitude until the first sync gives the level |
 
@@ -146,8 +148,25 @@ Between syncs the timing, level and offset hold. Two crystal clocks do not move 
 a mode whose syncs recur gets every frame on fresh timing. Chunks say `AIR_CHUNK_FREE_RUN` when no sync was seen
 within the profile's spacing, and `AIR_CHUNK_GAP` after a hole in the samples (the modem starts over).
 
-Cost: 2.9 KB of code and about 330 bytes of state, which the provider places. No transmit half is written: a
+Cost: 3.3 KB of code and about 370 bytes of state, which the provider places. No transmit half is written: a
 provider with a tap for receive only sends through its chip.
+
+The work is per filtered sample, 24,000 a second at 4800 symbols, so that path decides the load. Its rules are in
+`core/dsp/fxp.h`, with the kernels the signal code shares (the interpolator's dot product, exact scaling in 32-bit
+steps, 64-bit products for the voice codecs), each in plain C and with a core's own instructions where they help:
+
+| Rule | Why |
+|---|---|
+| No 64-bit product, no divide, no `%` on a ring index | a library call or a divide instruction per sample on a core without a long multiply |
+| `int` or `unsigned` counters and indexes | a narrower one costs an extend on every step on some cores |
+| The input history written twice, a filter's length apart | the interpolator reads its samples as one run, so a core with paired 16 x 16 multiply-accumulates takes them two at a time |
+| The fit behind the gate | it was nine tenths of the work |
+
+Measured on the `hrc7000` platform (no paired multiplies, no long multiply without its HI/LO unit) with an 8 kHz
+tap and the P25 profile, receiving noise: 8.5 % of the CPU (`rx_load`), against 33 % with the fit at every sample,
+a 64-bit gain product and ring indexes by `%`. The HI/LO unit's multiply-accumulate would save one instruction in
+eight of the dot product and is not used: the context switch does not save HI and LO. Open: a provider that knows
+the channel is empty (`AIR_CHUNK_NO_SIGNAL`) could stop feeding the modem.
 
 ## 7. The session
 
@@ -185,5 +204,6 @@ Transmit states: idle, priming, on, ending (the last symbol is queued), done.
 |---|---|
 | `tests/host/fecTest.c` | the shared codes against the standard's matrices |
 | `tests/host/airFramerTest.c` | sync search, levels, head hook, pieces, history, coasting, transmit packing |
-| `tests/host/airSoftmodemTest.c` | the soft modem on a modeled tap: every tap phase, 8 to 48 kHz, scale and offset errors, noise, other pulse shapes, a P25 call end to end |
+| `tests/host/airSoftmodemTest.c` | the soft modem on a modeled tap: every tap phase, 8 to 48 kHz, scale and offset errors, noise, other pulse shapes, a P25 call end to end; the same output with the gate and with every sample fitted |
+| `tests/host/fxpTest.c` | the shared fixed-point kernels against wide arithmetic |
 | `tests/host/p25EngineTest.c` | the session under two P25 engines on made-up providers |

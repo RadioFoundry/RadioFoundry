@@ -64,6 +64,8 @@ typedef struct {
 	uint32_t tx_underruns;	// ... of those, idle for want of a chunk mid-transmission
 	uint32_t tx_done;
 	uint32_t stalls;	// no slot boundary for 200 ms while transmitting: dropped
+	uint32_t modem_us;	// time in the soft modem ...
+	uint32_t modem_span_us;	// ... for this much signal
 } hrc7000_air_stats_t;
 
 // Receive is the rest state; the transmit states follow the slots: START (set up, the first slot not yet taken), RUN,

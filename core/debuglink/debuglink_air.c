@@ -443,6 +443,12 @@ static void status_text(dl_text_t *t)
 		dl_text(t, "air.tx_chunk_syms=%u\nair.tx_queue_depth=%u\n", board.air->tx_chunk_syms,
 			board.air->tx_queue_depth);
 	}
+	if (open_on && board.air != NULL && board.air->rx_load != NULL) {
+		uint32_t work, span;
+
+		board.air->rx_load(&work, &span);
+		dl_text(t, "air.rx_work_us=%u\nair.rx_span_us=%u\n", (unsigned)work, (unsigned)span);
+	}
 	if (open_on && board.air != NULL) {
 		dl_text(t, "air.tx_space=%u\nair.now_us=%u\n", board.air->tx_space(), (unsigned)board.air->now_us());
 	}

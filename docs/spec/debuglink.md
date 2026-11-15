@@ -845,7 +845,7 @@ unavailable (4).
 
 | Op | Name | Arguments | Reply after the status |
 |---|---|---|---|
-| 0 | STATUS | none | key=value text: `air.built`, `air.provider`, `air.tap`, `air.core` (1 = the hook is set), `air.state` (`idle`, `tap`, `open`), `air.keyed`, `air.rx_chunks`, `air.rx_dropped`, `air.tx_started`, `air.tx_started_us`, `air.tx_underruns`, `air.tx_space_events`, `air.tx_done`, `air.tx_done_us`, `air.tap_gaps`, `air.tx_chunk_syms`, `air.tx_queue_depth`; while open `air.tx_space`, `air.now_us` |
+| 0 | STATUS | none | key=value text: `air.built`, `air.provider`, `air.tap`, `air.core` (1 = the hook is set), `air.state` (`idle`, `tap`, `open`), `air.keyed`, `air.rx_chunks`, `air.rx_dropped`, `air.tx_started`, `air.tx_started_us`, `air.tx_underruns`, `air.tx_space_events`, `air.tx_done`, `air.tx_done_us`, `air.tap_gaps`, `air.tx_chunk_syms`, `air.tx_queue_depth`; while open `air.tx_space`, `air.now_us`, and from a provider that counts its receive load `air.rx_work_us`, `air.rx_span_us` (`hal_air_t.rx_load`: work / span is the share of the CPU) |
 | 1 | TAP_START | bits u8 (8 or 16), shift u8 (0-15) | rate_hz u32, lo_hz u16, hi_hz u16, counts_per_khz u16 (0 unknown), channels u8 |
 | 2 | TAP_READ | none | seq u32 (the first sample's number), t_us u32 (its time), gaps u32, n u16, then n samples: int16, or int8 after an arithmetic shift right by shift, clipped |
 | 3 | TAP_STOP | none | none |

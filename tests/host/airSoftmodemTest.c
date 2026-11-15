@@ -306,7 +306,7 @@ static void testFit(void)
 	bb.rx_rate_hz = 96000;
 	CHECK(air_softmodem_rx_fit(&p, &bb) == 0, "96 kHz needs a decimator the board must do");
 	CHECK(!air_softmodem_rx_open(&m, &p, 96000, 0, on_chunk, NULL) && air_softmodem_rx_open(&m, &p, 8000, 0, on_chunk, NULL), "open follows the rate");
-	CHECK(sizeof(air_softmodem_t) <= 360, "state is %zu bytes", sizeof(air_softmodem_t));
+	CHECK(sizeof(air_softmodem_t) <= 400, "state is %zu bytes", sizeof(air_softmodem_t));	// (three 8-byte pointers here)
 }
 
 // A stream of P25-shaped symbols at every tap phase and a few tap rates: no symbol wrong, soft values on their
@@ -421,6 +421,58 @@ static void testNoise(void)
 		}
 		CHECK(out_nsync == 0 && out_total > 57000 && (out_flags_and & AIR_CHUNK_FREE_RUN), "noise only (%u): %u syncs, %u symbols", k, out_nsync, out_total);
 	}
+}
+
+// The gate only saves work: with it, and with every sample fitted, the same symbols, soft values and syncs come out
+static void testGate(void)
+{
+	static uint8_t ref_hard[OUT_MAX];
+	static int8_t ref_soft[OUT_MAX];
+	static const double sigma[] = { 0, 300, 600, 900, 1500, 3000 };
+	uint32_t runs = 0;
+
+	for (uint8_t prof = 0; prof < 2; prof++) {
+		air_profile_t p = prof ? dmr_like() : p25_air_mode.profile;
+		air_softmodem_t m;
+
+		air_stream(&p, prof, 6000, 300, prof ? 288 : 864);
+		modulate(&p, 0);
+		for (uint8_t i = 0; i < 6; i++) {
+			for (uint8_t known = 0; known < 2; known++) {
+				uint32_t ref_n, ref_at[64], diff = 0;
+				uint8_t ref_nsync;
+				double ref_t[64];
+
+				sample_tap(8000, 5 + i, 3600, known ? 2000 : 700, 400, sigma[i]);
+				CHECK(air_softmodem_rx_open(&m, &p, 8000, known ? 2000 : 0, on_chunk, NULL), "open");
+				CHECK(m.gate_mask[0] != 0, "profile %u has a gate", prof);
+				memset(m.gate_mask, 0, sizeof(m.gate_mask));	// no gate: every sample is fitted
+				out_reset();
+				feed(&m, 8000, 0, tap_n, 256);
+				ref_n = out_n;
+				ref_nsync = out_nsync;
+				memcpy(ref_hard, out_hard, out_n);
+				memcpy(ref_soft, out_soft, out_n);
+				for (uint8_t k = 0; k < out_nsync; k++) {
+					ref_at[k] = out_sync[k].at;
+					ref_t[k] = out_sync[k].t_us;
+				}
+				air_softmodem_rx_open(&m, &p, 8000, known ? 2000 : 0, on_chunk, NULL);
+				out_reset();
+				feed(&m, 8000, 0, tap_n, 256);
+				CHECK(out_n == ref_n && out_nsync == ref_nsync, "profile %u sigma %.0f: %u symbols, %u syncs with the gate, %u, %u without",
+				      prof, sigma[i], out_n, out_nsync, ref_n, ref_nsync);
+				for (uint32_t k = 0; k < out_n && k < ref_n; k++)
+					diff += out_hard[k] != ref_hard[k] || out_soft[k] != ref_soft[k];
+				for (uint8_t k = 0; k < out_nsync && k < ref_nsync; k++)
+					diff += out_sync[k].at != ref_at[k] || out_sync[k].t_us != ref_t[k];
+				CHECK(diff == 0, "profile %u sigma %.0f known %u: %u differences", prof, sigma[i], known, diff);
+				CHECK(i > 1 || out_nsync >= 5, "profile %u sigma %.0f: %u syncs", prof, sigma[i], out_nsync);	// (unknown scale: a third of the level)
+				runs++;
+			}
+		}
+	}
+	printf("  gate: %u runs the same with it and without\n", runs);
 }
 
 // The other pulse shapes and rates
@@ -632,6 +684,7 @@ int main(void)
 	testClean();
 	testLevels();
 	testNoise();
+	testGate();
 	testShapes();
 	testCall();
 	testHole();

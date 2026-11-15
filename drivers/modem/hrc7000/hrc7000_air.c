@@ -535,7 +535,10 @@ static void rx_samples(hrc7000_air_t *a)
 		if (a->gap_half[(t / HALF) % 2u]) {
 			air_softmodem_rx_reset(a->sm);	// lost samples or a new set-up before this one: timing starts over
 		}
+		uint32_t t0 = now(a);
 		air_softmodem_rx(a->sm, &a->buf->ring[t % HRC7000_AIR_RING], HALF, sample_time(a, t));
+		a->st.modem_us += now(a) - t0;
+		a->st.modem_span_us += HALF * SAMPLE_US;
 		__atomic_thread_fence(__ATOMIC_RELEASE);
 		a->tail = t + HALF;
 	}

@@ -2159,8 +2159,11 @@ def cmd_hwopt(link, a):
 
 def cmd_air(link, a):
     if a.op == "status":
-        for k, v in link.air_status().items():
+        st = link.air_status()
+        for k, v in st.items():
             print(f"{k}={v}")
+        if int(st.get("air.rx_span_us", "0")):      # what receive costs the radio's CPU (hal_air_t.rx_load)
+            print(f"air.rx_load_pct={100 * int(st['air.rx_work_us']) / int(st['air.rx_span_us']):.1f}")
     elif a.op == "tap":
         if not a.out:
             print("air tap: --out FILE.raw", file=sys.stderr)

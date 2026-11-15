@@ -115,9 +115,14 @@ TESTS   += p25EngineTest
 p25EngineTest: p25EngineTest.c $(CORE)/p25/p25_engine.c $(CORE)/p25/p25_engine.h $(CORE)/air/air_session.c $(CORE)/air/air_session.h $(CORE)/air/air_framer.c $(P25) $(FEC)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ p25EngineTest.c $(CORE)/p25/p25_engine.c $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(P25) $(FEC)
 
+# The fixed-point kernels the signal code shares (core/dsp/fxp.h)
+TESTS   += fxpTest
+fxpTest: fxpTest.c $(CORE)/dsp/fxp.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ fxpTest.c
+
 # The soft modem's receiver on a modeled tap, alone and under the framer and the P25 receive hooks
 TESTS   += airSoftmodemTest
-airSoftmodemTest: airSoftmodemTest.c $(CORE)/air/air_softmodem.c $(CORE)/air/air_softmodem.h $(CORE)/air/air_framer.c $(P25) $(FEC) $(ROOT)/hal/hal_baseband.h
+airSoftmodemTest: airSoftmodemTest.c $(CORE)/air/air_softmodem.c $(CORE)/air/air_softmodem.h $(CORE)/dsp/fxp.h $(CORE)/air/air_framer.c $(P25) $(FEC) $(ROOT)/hal/hal_baseband.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ airSoftmodemTest.c $(CORE)/air/air_softmodem.c $(CORE)/air/air_framer.c $(P25) $(FEC) -lm
 
 airFramerTest: airFramerTest.c $(CORE)/air/air_framer.c $(CORE)/air/air_framer.h $(CORE)/air/air_syms.h $(ROOT)/hal/hal_air.h
@@ -177,6 +182,7 @@ run: $(TESTS)
 	./fecTest | tail -1
 	./airFramerTest
 	./p25Test
+	./fxpTest
 	./airSoftmodemTest | tail -1
 	./p25EngineTest
 	./hrc6000AirTest

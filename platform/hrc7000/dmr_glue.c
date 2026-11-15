@@ -583,10 +583,17 @@ HRC_FLASHFUNC static void air_tx_end(void) { if (air_on) hrc7000_air_tx_end(AIR)
 HRC_FLASHFUNC static void air_tx_abort(void) { if (air_on) hrc7000_air_tx_abort(AIR); }
 static uint32_t air_now_us(void) { return hrc_micros(); }
 
+static void air_rx_load(uint32_t *work_us, uint32_t *span_us)
+{
+	*work_us = air_on ? AIR->st.modem_us : 0;
+	*span_us = air_on ? AIR->st.modem_span_us : 0;
+}
+
 const hal_air_t hrc_air = {
 	.fit = air_fit, .open = air_open, .close = air_close, .rx_restart = air_rx_restart, .tx_begin = air_tx_begin,
 	.tx_queue = air_tx_queue, .tx_space = air_tx_space, .tx_end = air_tx_end, .tx_abort = air_tx_abort,
-	.now_us = air_now_us, .slot_clock = NULL, .slot_slew = NULL, .tx_chunk_syms = HRC7000_AIR_SYMS,
+	.now_us = air_now_us, .slot_clock = NULL, .slot_slew = NULL, .rx_load = air_rx_load,
+	.tx_chunk_syms = HRC7000_AIR_SYMS,
 	.tx_queue_depth = HRC7000_AIR_TXQ, .tx_lead_ms = HRC7000_AIR_TX_LEAD_MS, .time_accuracy_us = HRC7000_AIR_TIME_US,
 };
 
