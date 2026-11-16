@@ -12,6 +12,7 @@
 #include "ui_screens.h"
 #include "ui_svc.h"
 #include "i18n.h"
+#include "config.h"	// the switches that shape the types below
 
 typedef enum {
 	SCR_HOME, SCR_QUICK, SCR_HUB, SCR_FIND, SCR_ACTIONS, SCR_CONTACTS, SCR_MESSAGES, SCR_MESSAGE, SCR_COMPOSE,
@@ -41,6 +42,9 @@ typedef enum {
 	SCR_MESSAGE_TEXT,		// message body editor
 	SCR_MESSAGE_READ,		// a message's whole text, scrolled (the message screen's Full message row)
 	SCR_DATA_SERVICES,		// Settings > Connections > Data services: ARS server, IP gateway (CONFIG_DMR_ARS / _IP_GATEWAY)
+#if CONFIG_BACKLIGHT_TEST
+	SCR_BL_TEST,			// Settings > Advanced > Backlight tests
+#endif
 	SCR_COUNT
 } ui_scr_t;
 
@@ -104,6 +108,9 @@ typedef struct {
 	bool (*key)(const input_event_t *ev);		// screen keys before the list's own (true: used)
 	void (*draw)(void);				// own drawing instead of the list
 	void (*enter)(void);				// on push
+#if CONFIG_BACKLIGHT_TEST
+	void (*leave)(void);				// on leaving the stack (BACK, Home, replaced)
+#endif
 	const ui_filter_def_t *filter;			// SF_FILTER: the rows before filtering (NULL: not a filtered list)
 } ui_scr_def_t;
 
@@ -116,6 +123,10 @@ ui_frame_t *ui_frame(void);
 uint8_t ui_depth(void);
 void ui_push(uint8_t scr, uint16_t arg);
 void ui_pop(void);
+#if CONFIG_BACKLIGHT_TEST
+// The backlight tests: hold the light at a percent (0-100) against the dim and off times, or -1 to let it go
+void ui_backlight_hold(int16_t percent);
+#endif
 void ui_go_home(void);
 void ui_toast(const char *text);
 // Save temporary channel changes and tell the user why a save cannot start

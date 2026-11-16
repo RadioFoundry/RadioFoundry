@@ -181,7 +181,9 @@ export function syncModes(m) {
 export function setKind(m, c, kind, mode = "dmr") {
 	if (!kind) {
 		if (c.kind) {
-			c.rxOnly = !c.tagTx;
+			// a kind without frequencies of its own left its system's in the record: never a place to transmit (as
+			// removeModes)
+			c.rxOnly = !c.tagTx || (!c.baseOwn && kindRow(c.kind)?.module.ownFreqs === false);
 			Object.assign(c, { system: null, tagTx: false, baseOwn: false, fallback: null, params: null, tagRaw: null });
 		}
 		c.kind = 0;

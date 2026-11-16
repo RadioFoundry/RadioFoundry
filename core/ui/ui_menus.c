@@ -5003,6 +5003,264 @@ static const ui_scr_def_t about_screen = {
 	.name = "about", .flags = SF_FIELD | SF_NO_STRIP, .key = about_key, .draw = about_draw, .enter = about_enter,
 };
 
+// ======================= Backlight tests (Settings > Advanced > Backlight tests) =======================
+
+#if CONFIG_BACKLIGHT_TEST
+// A bench tool (docs/testing/backlight-curve.md), so its text is untranslated. OK steps through the pages the board
+// has; each draws the boot splash with its reading.
+// 1, the PWM compare value (the board's raw hooks): the knob steps 1; Up / Down 1 on a knob with end stops, else 50;
+//    digits type a value, applied at as many digits as the maximum has (# applies fewer, BACK takes one back); * the
+//    rate; OK held flips to full and back. Shows the duty and the on and off time a period.
+// 2, the brightness, 0-100 % in 10 % steps: kept as the setting on leaving it (10 % for 0).
+// 3, the PWM rate at that brightness (the board's rates): the standard one again on leaving it.
+enum { BT_RAW, BT_LEVEL, BT_RATE, BT_COUNT };
+static uint8_t bt_page, bt_pct, bt_rate, bt_ndig;
+static bool bt_full;		// page 1: OK held shows full, to compare the value against
+static uint32_t bt_hz, bt_typed;
+static uint16_t bt_raw;
+
+static const hal_display_t *bt_disp(void) { return board.display; }
+
+static bool bt_has_raw(void)
+{
+	const hal_display_t *d = bt_disp();
+	return d->set_backlight_raw != NULL && d->backlight_raw != NULL && d->backlight_raw_max != 0;
+}
+
+static bool bt_has_rate(void)
+{
+	return bt_has_raw() && bt_disp()->set_backlight_rate != NULL && bt_disp()->backlight_rates > 1;
+}
+
+static bool bt_page_ok(uint8_t p)
+{
+	return p == BT_LEVEL || (p == BT_RAW && bt_has_raw()) || (p == BT_RATE && bt_has_rate());
+}
+
+static uint8_t bt_std(void)
+{
+	return bt_disp()->backlight_rate_std < bt_disp()->backlight_rates ? bt_disp()->backlight_rate_std : 0;
+}
+
+static void bt_level(uint8_t pct)
+{
+	if (bt_disp()->set_backlight != NULL)
+		bt_disp()->set_backlight(pct);
+}
+
+static void bt_set_rate(uint8_t i)
+{
+	bt_rate = i;
+	bt_hz = bt_has_rate() ? bt_disp()->set_backlight_rate(i) : 0;
+}
+
+// The digits the maximum compare value has: a typed value is applied at that many
+static uint8_t bt_max_digits(void)
+{
+	uint8_t n = 1;
+	for (uint32_t v = bt_disp()->backlight_raw_max; v >= 10u; v /= 10u)
+		n++;
+	return n;
+}
+
+static void bt_set_raw(uint32_t v)
+{
+	uint32_t max = bt_disp()->backlight_raw_max;
+	bt_raw = (uint16_t)(v > max ? max : v);
+	bt_full = false;
+	bt_disp()->set_backlight_raw(bt_raw);
+}
+
+// Leaving a page (to the next, or off the screen)
+static void bt_end(void)
+{
+	bt_ndig = 0;
+	bt_full = false;
+	if (bt_page == BT_LEVEL) {
+		if (bt_pct == 0)
+			bt_pct = 10;
+		ui_backlight_hold(bt_pct);
+		ui_st.brightness = bt_pct;
+		ui_svc_setting_set(UI_SET_BRIGHTNESS, bt_pct);
+	} else if (bt_rate != bt_std()) {
+		bt_set_rate(bt_std());
+	}
+	bt_level(bt_pct);	// the level again over a raw value
+}
+
+static void bt_begin(void)
+{
+	if (bt_page == BT_RAW) {
+		bt_raw = bt_disp()->backlight_raw();
+		if (bt_has_rate())
+			bt_set_rate(bt_std());
+	} else if (bt_page == BT_RATE) {
+		bt_set_rate(bt_std());
+	}
+}
+
+static void bt_enter(void)
+{
+	bt_pct = ui_st.brightness;
+	ui_backlight_hold(bt_pct);
+	bt_rate = bt_has_rate() ? bt_std() : 0;
+	bt_hz = 0;
+	bt_ndig = 0;
+	bt_full = false;
+	bt_page = BT_RAW;
+	while (!bt_page_ok(bt_page))
+		bt_page++;
+	bt_begin();
+}
+
+static void bt_leave(void)
+{
+	bt_end();
+	ui_backlight_hold(-1);
+}
+
+static void bt_draw(void)
+{
+	char a[24], b[24];
+	sbuf_t sa, sb;
+	sb_init(&sa, a, sizeof a);
+	sb_init(&sb, b, sizeof b);
+	if (bt_page == BT_LEVEL) {
+		sb_str(&sa, "Brightness");
+		sb_u32(&sb, bt_pct, 1);
+		sb_chr(&sb, '%');
+	} else if (bt_page == BT_RATE) {
+		sb_str(&sa, "PWM rate");
+		sb_u32(&sb, bt_hz, 1);
+		sb_str(&sb, " Hz");
+	} else {
+		// "7324 Hz CV 2137" / "52.1% 71.2/65.3us" (on / off time a period); "CV 21_" while typing; "full" held
+		uint32_t max = bt_disp()->backlight_raw_max;
+		uint16_t raw = bt_full ? (uint16_t)max : bt_raw;
+		if (bt_hz != 0) {
+			sb_u32(&sa, bt_hz, 1);
+			sb_str(&sa, " Hz ");
+		}
+		sb_str(&sa, "CV ");
+		if (bt_ndig != 0) {
+			sb_u32(&sa, bt_typed, bt_ndig);
+			sb_chr(&sa, '_');
+		} else {
+			sb_u32(&sa, raw, 1);
+		}
+		if (bt_full) {
+			sb_str(&sb, "full");
+		} else {
+			uint32_t pm = (uint32_t)raw * 1000u / max;	// duty, 0.1 %
+			sb_u32(&sb, pm / 10u, 1);
+			sb_chr(&sb, '.');
+			sb_u32(&sb, pm % 10u, 1);
+			sb_chr(&sb, '%');
+			if (bt_hz != 0) {
+				uint32_t period = 1000000000u / bt_hz;	// ns
+				uint32_t on = (uint32_t)((uint64_t)raw * 1000000000u / ((uint64_t)bt_hz * max));
+				uint32_t off = period > on ? period - on : 0;
+				sb_chr(&sb, ' ');
+				sb_u32(&sb, on / 1000u, 1);
+				sb_chr(&sb, '.');
+				sb_u32(&sb, on % 1000u / 100u, 1);
+				sb_chr(&sb, '/');
+				sb_u32(&sb, off / 1000u, 1);
+				sb_chr(&sb, '.');
+				sb_u32(&sb, off % 1000u / 100u, 1);
+				sb_str(&sb, "us");
+			}
+		}
+	}
+	ui_draw_splash(board.name, RFOUNDRY_RELEASE[0] != '\0' ? RFOUNDRY_RELEASE : RFOUNDRY_GIT, a, b);
+}
+
+// A step from the knob (1) or Up / Down: 1 on a knob with end stops, which can't turn far, else 50
+static int bt_step(const input_event_t *ev)
+{
+	if (ev->action == ACT_ENC_STEP)
+		return ev->value > 0 ? 1 : ev->value < 0 ? -1 : 0;
+	if (ev->gesture != GESTURE_PRESS && ev->gesture != GESTURE_REPEAT)
+		return 0;
+	int n = bt_page == BT_RAW && !(board.input != NULL && board.input->encoder_limited) ? 50 : 1;
+	return ev->action == ACT_NAV_UP ? n : ev->action == ACT_NAV_DOWN ? -n : 0;
+}
+
+static bool bt_raw_key(const input_event_t *ev)
+{
+	bool press = ev->gesture == GESTURE_PRESS;
+	if (ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 && press) {
+		bt_typed = (bt_ndig == 0 ? 0 : bt_typed * 10u) + (uint32_t)(ev->action - ACT_DIGIT_0);
+		if (++bt_ndig >= bt_max_digits()) {
+			bt_ndig = 0;
+			bt_set_raw(bt_typed);
+		}
+		return true;
+	}
+	if (bt_ndig != 0 && press && ev->action == ACT_CONTEXT) {	// #: apply what is typed
+		bt_ndig = 0;
+		bt_set_raw(bt_typed);
+		return true;
+	}
+	if (bt_ndig != 0 && press && ev->action == ACT_BACK) {		// a digit back
+		bt_typed /= 10u;
+		bt_ndig--;
+		return true;
+	}
+	if (ev->action == ACT_SELECT && ev->gesture == GESTURE_LONG) {
+		bt_ndig = 0;
+		bt_full = !bt_full;
+		bt_disp()->set_backlight_raw(bt_full ? bt_disp()->backlight_raw_max : bt_raw);
+		return true;
+	}
+	if (ev->action == ACT_QUICK && press && bt_has_rate()) {
+		bt_set_rate((uint8_t)((bt_rate + 1u) % bt_disp()->backlight_rates));
+		return true;
+	}
+	int d = bt_step(ev);
+	if (d == 0)
+		return false;
+	bt_ndig = 0;
+	int32_t v = (int32_t)bt_raw + d;
+	bt_set_raw(v < 0 ? 0u : (uint32_t)v);
+	return true;
+}
+
+static bool bt_key(const input_event_t *ev)
+{
+	bool used;
+	if (ev->action == ACT_SELECT && ev->gesture == GESTURE_PRESS) {
+		bt_end();
+		do {
+			bt_page = (uint8_t)((bt_page + 1u) % BT_COUNT);
+		} while (!bt_page_ok(bt_page));
+		bt_begin();
+		used = true;
+	} else if (bt_page == BT_RAW) {
+		used = bt_raw_key(ev);
+	} else {
+		int d = bt_step(ev);
+		used = d != 0;
+		if (used && bt_page == BT_LEVEL) {
+			int p = bt_pct + d * 10;
+			bt_pct = (uint8_t)(p < 0 ? 0 : p > 100 ? 100 : p);
+			ui_backlight_hold(bt_pct);
+			bt_level(bt_pct);
+		} else if (used) {
+			int r = bt_rate + d, k = bt_disp()->backlight_rates;
+			bt_set_rate((uint8_t)(r < 0 ? 0 : r >= k ? k - 1 : r));
+		}
+	}
+	if (used)
+		ui_dirty();
+	return used;
+}
+
+static const ui_scr_def_t bl_test_screen = {
+	.name = "bltest", .flags = 0, .key = bt_key, .draw = bt_draw, .enter = bt_enter, .leave = bt_leave,
+};
+#endif
+
 // ======================= Roaming (Tools > Roaming, docs/spec/dmr-roaming.md 6.2) =======================
 
 enum { RM_ZONE, RM_NOW, RM_LOCK, RM_SURVEY, RM_BEACON, RM_LEN, RM_PROBE, RM_COUNT };
@@ -5688,7 +5946,8 @@ static const ui_scr_def_t tools_screen = {
 #if CONFIG_UI_SETTINGS
 
 typedef enum { ST_TOGGLE, ST_LIST, ST_NUMBER, ST_ACTION } set_type_t;
-enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_CRASH, SA_LANGUAGE, SA_HARDWARE, SA_FIXED_POS, SA_DATA_SERVICES };
+enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_CRASH, SA_LANGUAGE, SA_HARDWARE, SA_FIXED_POS, SA_DATA_SERVICES,
+       SA_BL_TEST };
 
 typedef struct {
 	tr_id_t name;			// TRN; TR_NONE for a key's row (set_name)
@@ -6082,6 +6341,11 @@ static const set_item_t s_advanced[] = {
 	ACTION(TRN(TITLE_ABOUT, "About"), "firmware version license authors", SA_FIRMWARE),
 	ACTION(TRN(TITLE_CODEPLUG, "Codeplug"), NULL, SA_CODEPLUG),
 	ACTION(TRN(TITLE_DIAGNOSTICS, "Diagnostics"), "debug", SA_DIAG),
+#if CONFIG_BACKLIGHT_TEST
+	// Beside Diagnostics, so it moves the rows below it down one: the flows that reach them count the presses
+	// (tests/host/uiFlowTest.c ADV_BELOW_DIAG). Not ideal; rows found by name instead of position would end that
+	ACTION(TRX(TITLE_BACKLIGHT_TESTS, "Backlight tests"), "brightness PWM duty rate", SA_BL_TEST),
+#endif
 	ACTION(TRN(SET_ROW_FACTORY_RESET, "Factory reset"), "erase", SA_RESET),
 	// After Factory reset, so its place (and its tests' key presses) stays
 #if CONFIG_CRASH_SCREEN
@@ -6501,6 +6765,9 @@ static void group_select(uint16_t i, bool hold)
 		case SA_LANGUAGE: ui_push(SCR_LANGUAGE, 0); break;
 #if DATA_IDS
 		case SA_DATA_SERVICES: ui_push(SCR_DATA_SERVICES, 0); break;
+#if CONFIG_BACKLIGHT_TEST
+		case SA_BL_TEST: ui_push(SCR_BL_TEST, 0); break;
+#endif
 #endif
 #if CONFIG_CRASH_SCREEN
 		case SA_CRASH: ui_push(SCR_CRASH, 0); break;
@@ -7051,6 +7318,9 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_CP_FOREIGN] = &cpf_screen,
 #if DATA_IDS
 	[SCR_DATA_SERVICES] = &ds_screen,
+#endif
+#if CONFIG_BACKLIGHT_TEST
+	[SCR_BL_TEST] = &bl_test_screen,
 #endif
 #if CONFIG_REF_TRIM
 	[SCR_REF_TRIM] = &trim_screen,

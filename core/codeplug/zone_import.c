@@ -370,8 +370,23 @@ static uint8_t add_system(const zsSystem_t *s)
 	return (uint8_t)n;
 }
 
-// The record's systems here: the radio's own of that identity (never changed), else a whole one added. One sent as
-// its identity alone that the radio doesn't have stays missing: its channels come in unavailable
+// Whether a channel the import takes (in band) is on the record's system i: a system none of them uses isn't added
+static bool system_used(int i)
+{
+	zsTag_t t;
+	zsChannel_t z;
+
+	for (int k = 0; k < rec.tags; k++) {
+		if (zsTagAt(&rec, k, &t) && t.system == i + 1 && zsChannelAt(&rec, t.channel - 1, &z) &&
+		    zone_import_in_band(&z)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// The record's systems here: the radio's own of that identity (never changed), else a whole one an imported channel is
+// on, added. One sent as its identity alone that the radio doesn't have stays missing: its channels come in unavailable
 static void place_systems(zone_import_result_t *res)
 {
 	for (int i = 0; i < rec.systems; i++) {
@@ -382,7 +397,7 @@ static void place_systems(zone_import_result_t *res)
 			continue;
 		}
 		sys_here[i] = find_system(&s);
-		if (sys_here[i] == CODEPLUG_SYSTEM_NONE && s.level == ZS_LEVEL_WHOLE) {
+		if (sys_here[i] == CODEPLUG_SYSTEM_NONE && s.level == ZS_LEVEL_WHOLE && system_used(i)) {
 			sys_here[i] = add_system(&s);
 			res->systems_added += sys_here[i] != CODEPLUG_SYSTEM_NONE;
 		}
@@ -391,17 +406,24 @@ static void place_systems(zone_import_result_t *res)
 
 // Record channel i's tag, if it has one, for channel n here named name. Transmit stays allowed only on a system the
 // radio has, whose listen-only flag then rules; every other channel comes in receive only (5.3)
+// Tags are in channel order (zsParse checked it): write_tag goes on from the first one not yet passed
+static int tag_next;
+
 static bool write_tag(int i, uint16_t n, const char *name, zone_import_result_t *res)
 {
 	zsTag_t t;
 
-	for (int k = 0; k < rec.tags; k++) {
-		if (!zsTagAt(&rec, k, &t)) {
+	for (; tag_next < rec.tags; tag_next++) {
+		if (!zsTagAt(&rec, tag_next, &t)) {
 			return false;
 		}
-		if (t.channel != i + 1) {
+		if (t.channel < i + 1) {
 			continue;
 		}
+		if (t.channel > i + 1) {
+			return true;	// channel i has none
+		}
+		tag_next++;
 		codeplug_tag_t tag;
 
 		memset(&tag, 0, sizeof(tag));
@@ -425,6 +447,7 @@ static zone_import_status_t write_channels(zone_import_result_t *res)
 	channel_t ch;
 
 #if CONFIG_ZONE_SHARE_MODES
+	tag_next = 0;
 	if (rec.flags & ZS_FLAG_MODES) {
 		place_systems(res);
 	}
@@ -900,12 +923,13 @@ static bool system_on_air(uint8_t n, zsSystem_t *s, int *size)
 }
 
 // System n for the record: *size the octets carrying it adds (0 when it is in already, or isn't carried: sharing off,
-// no such system, the record's systems full). With add, it goes in
-static void system_index(uint8_t n, int *size, bool add)
+// no such system, the record's systems full) and in *entries the entries it carries, for system_add
+static void system_index(uint8_t n, int *size, uint8_t *entries)
 {
 	zsSystem_t s;
 
 	*size = 0;
+	*entries = 0;
 	for (uint8_t k = 0; k < ex_nsys; k++) {
 		if (ex_sys[k] == n) {
 			return;
@@ -915,10 +939,14 @@ static void system_index(uint8_t n, int *size, bool add)
 		*size = 0;
 		return;
 	}
-	if (add) {
-		ex_entries += s.entries;
-		ex_sys[ex_nsys++] = n;
-	}
+	*entries = s.entries;
+}
+
+// System n, which system_index sized, goes in
+static void system_add(uint8_t n, uint8_t entries)
+{
+	ex_entries += entries;
+	ex_sys[ex_nsys++] = n;
 }
 
 // Channel number's tag as the record carries it (ch read by codeplug_channel, ch->kind set); false when its parameter
@@ -1023,6 +1051,7 @@ static int export_list(const char *name, uint8_t flags, const uint16_t *list, ui
 		}
 		int need = 0;
 		bool add_sys = false;
+		uint8_t sys_entries = 0;
 
 		if (ch.kind != CODEPLUG_KIND_NONE) {
 #if CONFIG_ZONE_SHARE_MODES
@@ -1034,7 +1063,7 @@ static int export_list(const char *name, uint8_t flags, const uint16_t *list, ui
 				continue;
 			}
 			need += zsTagSize(&t) + ((tags == 0) ? 2 : 0);
-			system_index(ch.system, &sys_size, false);
+			system_index(ch.system, &sys_size, &sys_entries);
 			need += sys_size;
 			add_sys = sys_size > 0;
 #else
@@ -1072,13 +1101,12 @@ static int export_list(const char *name, uint8_t flags, const uint16_t *list, ui
 		if (ch.kind != CODEPLUG_KIND_NONE) {
 			tags++;
 			if (add_sys) {
-				int sys_size;
-
-				system_index(ch.system, &sys_size, true);
+				system_add(ch.system, sys_entries);
 			}
 		}
 #else
 		(void)add_sys;
+		(void)sys_entries;
 #endif
 		ch_ct[channels] = z.dmr ? ref : 0;
 		ch_num[channels++] = list[i];

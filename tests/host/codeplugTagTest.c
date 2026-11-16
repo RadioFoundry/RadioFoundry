@@ -251,6 +251,12 @@ static void test_stale_and_delete(void)
 	channel_t c = make("T Ops", RADIO_MODE_DMR, true);
 	CHECK(codeplug_set_channel(10, &c));
 	CHECK(!codeplug_tag_read(10, &r) && get(10).kind == CODEPLUG_KIND_NONE);
+
+	// A later firmware's area is never rewritten: a delete with no tag to take still succeeds
+	CHECK(codeplug_kv_set_u32(0x7000u, 1));
+	sim_flash_data[EE + CODEPLUG_KV_ADDR + 4] = CODEPLUG_KV_VERSION + 1;
+	CHECK(codeplug_delete_channel(10));
+	CHECK(!codeplug_channel_used(10));
 }
 
 static void test_unknown_kind(void)

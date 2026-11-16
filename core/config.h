@@ -145,6 +145,9 @@
 #ifndef CONFIG_DIAG
 #define CONFIG_DIAG			1
 #endif
+#ifndef CONFIG_BACKLIGHT_TEST
+#define CONFIG_BACKLIGHT_TEST		0
+#endif
 #ifndef CONFIG_FONT_XL
 #define CONFIG_FONT_XL			1
 #endif

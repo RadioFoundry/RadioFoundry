@@ -117,7 +117,10 @@ bool codeplug_tag_copy(uint16_t from, uint16_t to, const channel_t *ch)
 
 bool codeplug_tag_remove(uint16_t number)
 {
-	return !number_ok(number) || codeplug_kv_remove(tag_key(number));
+	// Nothing stored, nothing to write: a codeplug without tags (or an area a later firmware wrote, never ours to
+	// rewrite) still deletes its channels
+	uint8_t b;
+	return !number_ok(number) || codeplug_kv_get(tag_key(number), &b, 1) < 0 || codeplug_kv_remove(tag_key(number));
 }
 
 // Whether the area holds any tag, found once per change of codeplug_kv_serial(): a codeplug without tags pays no

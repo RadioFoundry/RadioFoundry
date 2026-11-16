@@ -802,6 +802,18 @@ static void test_modes(void)
 	CHECK(codeplug_channel(z.channels[2], &ch) && ch.kind == 1 && ch.system == 4 && !ch.rx_only);
 	CHECK(codeplug_system(4, &sys, block, sizeof(block)) == 3 && sys.flags == 0 && strcmp(sys.name, "Mine") == 0);
 
+	// A whole system none of the imported channels uses (its one channel out of this radio's bands) isn't added
+	fresh();
+	with_zones();
+	uint32_t hi = bands[1].hi_hz;
+	bands[1].hi_hz = 453000000;
+	CHECK(zone_import_zone(sent, len, 77, imports, &res) == ZI_OK && res.channels == 3 && res.out_of_band == 1 &&
+	      res.systems_added == 0 && res.unavailable == 2);
+	bands[1].hi_hz = hi;
+	CHECK(codeplug_system(0, &sys, block, sizeof(block)) < 0);
+	at = -1;
+	CHECK(codeplug_sys_entry_next(&at, 0, 0, &ent, block, sizeof(block)) < 0);
+
 	// The undo takes the added system with the channels: a codeplug with no room for the last channel
 	fresh();
 	with_zones();
