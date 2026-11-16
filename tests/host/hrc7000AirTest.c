@@ -177,10 +177,11 @@ static void slot(void)
 
 static const volatile uint8_t *ram_half(int h) { return &buf[C7_TX_RAM + (h == 0 ? 0x00u : 0x24u)]; }
 
-static bool half_is(int h, const air_tx_chunk_t *c)
+// The bytes a boundary writes: all but the last, which waits for the next boundary (half_full)
+static bool half_bytes(int h, const air_tx_chunk_t *c, int nbytes)
 {
 	const volatile uint8_t *ram = ram_half(h);
-	for (int i = 0; i < HRC7000_AIR_HALF_BYTES; i++) {
+	for (int i = 0; i < nbytes; i++) {
 		uint8_t want = IDLE;
 		int n = c == NULL ? 0 : c->nsyms;
 		if (4 * i + 4 <= n) {
@@ -194,6 +195,20 @@ static bool half_is(int h, const air_tx_chunk_t *c)
 		}
 	}
 	return true;
+}
+
+static bool half_is(int h, const air_tx_chunk_t *c) { return half_bytes(h, c, HRC7000_AIR_HALF_BYTES - 1); }
+static bool half_full(int h, const air_tx_chunk_t *c) { return half_bytes(h, c, HRC7000_AIR_HALF_BYTES); }
+
+// The idle slots after the RF TX interrupt: the queue waits, nothing counted
+static void lead(void)
+{
+	uint32_t under = A->st.tx_underruns;
+	for (int i = 0; i < HRC7000_AIR_TX_LEAD_SLOTS; i++) {
+		slot();
+		CHECK(half_full(0, NULL) && half_full(1, NULL));
+	}
+	CHECK(A->st.tx_underruns == under);
 }
 
 static air_tx_chunk_t chunk(int k, uint16_t nsyms, uint8_t flags)
@@ -432,31 +447,41 @@ static void test_tx(void)
 	copy_half();
 	CHECK(A->st.halves == 0 && A->st.overruns == 0);
 
-	// The RF TX interrupt keys the RF once
-	hrc7000_air_isr_rftx(A);
-	hrc7000_air_isr_rftx(A);
-	CHECK(rf_on == 1 && pa_arms == 1 && rf_state);
-
+	// A boundary before the RF TX interrupt: idle, the queue waits
 	REG(C7_LAYER2_TXRX_CTRL) = 0;
 	now = t_begin + 10000;
 	hrc7000_air_isr_timeslot(A);
+	CHECK(half_full(0, NULL) && half_full(1, NULL) && REG(C7_LAYER2_TXRX_CTRL) == 0x80u);
+	CHECK(hrc7000_air_tx_space(A) == 0);
+
+	// The RF TX interrupt keys the RF once, then idle slots while the RF chain comes up
+	hrc7000_air_isr_rftx(A);
+	hrc7000_air_isr_rftx(A);
+	CHECK(rf_on == 1 && pa_arms == 1 && rf_state);
+	lead();
+	CHECK(hrc7000_air_tx_space(A) == 0);
+	uint32_t slots0 = A->st.tx_slots;
+	int h = A->half, g = h ^ 1;	// the idle slots moved which half comes first
+
+	// Each boundary writes the half the next slot reads, its last byte at the boundary after
+	slot();
 	uint32_t b1 = now;
-	CHECK(half_is(0, &c[0]) && half_is(1, NULL) && REG(C7_LAYER2_TXRX_CTRL) == 0x80u);
+	CHECK(half_is(h, &c[0]) && !half_full(h, &c[0]) && half_full(g, NULL));
 	// The same boundary's PHY_RDY: nothing more
 	now += 800;
 	phy_rdy();
-	CHECK(A->st.tx_slots == 1);
+	CHECK(A->st.tx_slots == slots0 + 1);
 
 	slot();
-	CHECK(half_is(1, &c[1]) && half_is(0, &c[0]));
+	CHECK(half_is(g, &c[1]) && half_full(h, &c[0]));
 	slot();
-	CHECK(half_is(0, &c[2]) && half_is(1, &c[1]));
+	CHECK(half_is(h, &c[2]) && half_full(g, &c[1]));
 	slot();
-	CHECK(half_is(1, &c[3]) && half_is(0, &c[2]));	// the last one padded with idle
+	CHECK(half_is(g, &c[3]) && half_full(h, &c[2]));	// the last one padded with idle
 	CHECK(rf_state && rf_off == 0);
 	slot();
-	CHECK(half_is(0, NULL) && rf_state);	// the tail: idle while the last chunk leaves the air
-	CHECK(A->st.tx_slots == 5 && A->st.tx_underruns == 0);
+	CHECK(half_is(h, NULL) && half_full(g, &c[3]) && rf_state);	// the tail: idle while the last chunk leaves the air
+	CHECK(A->st.tx_slots == slots0 + 5 && A->st.tx_underruns == 0);
 	slot();
 	CHECK(!rf_state && rf_off == 1 && !hrc7000_air_tx_active(A));
 	CHECK(REG(C7_RF_MOD_BIAS) == DMR_MOD_BIAS && copy_set_up());
@@ -484,10 +509,11 @@ static void test_underrun_and_end(void)
 	air_tx_chunk_t c0 = chunk(0, 144, 0), c1 = chunk(1, 144, 0);
 	CHECK(hrc7000_air_tx_queue(A, &c0) && hrc7000_air_tx_begin(A));
 	hrc7000_air_isr_rftx(A);
+	lead();
 	slot();
 	CHECK(half_is(0, &c0));
 	slot();
-	CHECK(half_is(1, NULL) && A->st.tx_underruns == 1);
+	CHECK(half_is(1, NULL) && half_full(0, &c0) && A->st.tx_underruns == 1);
 	slot();
 	CHECK(half_is(0, NULL) && A->st.tx_underruns == 2);
 	CHECK(hrc7000_air_tx_queue(A, &c1));
@@ -515,6 +541,7 @@ static void test_underrun_and_end(void)
 	hrc7000_air_tx_end(A);
 	CHECK(hrc7000_air_tx_begin(A));
 	hrc7000_air_isr_rftx(A);
+	lead();
 	slot();
 	slot();
 	CHECK(half_is(1, &c1));

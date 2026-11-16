@@ -1045,11 +1045,16 @@ between slots. One 36-byte TX RAM half is one 144-symbol chunk (30 ms at 4800 sy
 1. `tx_begin` (at least one chunk queued, the core has called the board's TX on): save RF_MOD_BIAS and write it scaled
    (10.3); TXRX 0, SLOTON 0, WORK_MODE 0x80 then 0x22; both halves idle (the profile's idle byte); LAYER2_CONTROL
    0x82 (own TX timing); AUDIO_BUFFER_CLR 3. The copy stops for the transmission.
-2. The first RF TX interrupt keys the RF (the board's `rf` and `pa_arm` ops), once, held to the end.
+2. The first RF TX interrupt keys the RF (the board's `rf` and `pa_arm` ops), once, held to the end. Until then, and
+   for `HRC7000_AIR_TX_LEAD_SLOTS` (2) boundaries after it, each boundary sends an idle slot and the queue waits (no
+   underrun counted): the carrier is up about 45 ms before it carries modulation, and a first chunk sent in that time
+   was lost.
 3. Each slot boundary (the first of the timeslot or PHY_RDY interrupts in a slot; one more within 15 ms is the same
-   slot) writes only the half the next slot reads, alternating from half 0, then TXRX 0x80. A half takes the oldest
-   queued chunk, idle after a short last chunk; with none queued, idle and one `AIR_EV_TX_UNDERRUN`. The slot set up
-   at a boundary is on air about 5 ms later: `AIR_EV_TX_STARTED` carries that time plus half a symbol.
+   slot) writes only the half the next slot reads, alternating, then TXRX 0x80. A half takes the oldest queued chunk,
+   idle after a short last chunk; with none queued, idle and one `AIR_EV_TX_UNDERRUN`. The half's last byte (symbols
+   140-143) is written at the next boundary, first thing: the chip reads it after the boundary that rewrites its half,
+   so written with the rest it went out with the chunk two slots later. The slot set up at a boundary is on air about
+   5 ms later: `AIR_EV_TX_STARTED` carries that time plus half a symbol.
 4. After the `AIR_TX_LAST` chunk (or `tx_end` with nothing queued) one idle slot, then at the next boundary: TXRX 0,
    RF off, RF_MOD_BIAS back, the copy set up again (or WORK_MODE 0x80 without a receiver), `AIR_EV_TX_DONE`.
 5. Watchdog (modem task): no slot boundary for 200 ms, or no RF TX interrupt 200 ms after `tx_begin`, ends the
@@ -1057,6 +1062,17 @@ between slots. One 36-byte TX RAM half is one 144-symbol chunk (30 ms at 4800 sy
 
 Writing both halves at each boundary corrupted the end of the slot on air; writing only the next one gave no errors
 (measured). WORK_MODE 0x02 (continuous) never keyed on the bench.
+
+A P25 call from one HR_C7000 radio (lowest power, 4.5 s keyed, 26388 symbols), recorded on the SDR bench and compared
+with the symbols the radio queued (measured):
+
+| Driver | Units decoded | Symbol errors | Errors at symbols 140-142 of a slot | Soft EVM |
+|---|---|---|---|---|
+| Last byte with the rest, no idle lead | 31 of 32: the header lost | 1.60 % | 50-75 % | 16.2 % |
+| Last byte one boundary late, two idle slots | 32 of 32 | 0.34 %, no position in the slot above 10 % | 0-10 % | 10.0 % |
+
+The wrong symbols at 140-142 matched the chunk written into the same half two slots later. Outer deviation measured
+1610-1685 Hz against 1800 Hz asked (89-94 %).
 
 ### 10.3 Deviation
 
@@ -1071,9 +1087,7 @@ every shape but RRC 0.2 is `AIR_FIT_SHAPE_APPROX`.
 | Item | Check |
 |---|---|
 | The copy in DMR | 4FSK at a known deviation through the tap: polarity, counts per kHz, the band's edges, clipping at the reset AF gain |
-| Receive through the soft modem | A P25 signal from the SDR bench framed with the copy as the only input |
 | Transmit after receive | Once, an RF TX interrupt never came after a physical layer receive session until a restart; whether the copy set-up does the same |
-| Transmit rate and shape | A P25 test pattern decoded by the bench at 1800 Hz outer deviation |
 | Timing | t_us of a received symbol against the bench's |
 | FM and DMR after close | A DMR call and an FM call after a session, without a restart |
 

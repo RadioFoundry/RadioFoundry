@@ -196,10 +196,26 @@ static AIR_ISR void take_half(hrc7000_air_t *a, uint32_t t)
 
 // --- Transmit (10.2) ---
 
-// The TX RAM half the next slot reads: the chunk, idle after its last symbol; NULL = all idle
-static AIR_ISR void fill_half(hrc7000_air_t *a, const air_tx_chunk_t *c)
+static inline volatile uint8_t *half_ram(hrc7000_air_t *a, uint8_t h)
 {
-	volatile uint8_t *ram = &a->dev->buf[C7_TX_RAM + (a->half == 0 ? RAM_HALF0 : RAM_HALF1)];
+	return &a->dev->buf[C7_TX_RAM + (h == 0 ? RAM_HALF0 : RAM_HALF1)];
+}
+
+// The last byte a boundary held back, written at the next one: the chip reads a half's last byte after the boundary
+// that rewrites the half, so written with the rest it went out with the chunk two slots later (10.2)
+static AIR_ISR void last_byte_out(hrc7000_air_t *a)
+{
+	if (a->last_due) {
+		half_ram(a, a->last_half)[HRC7000_AIR_HALF_BYTES - 1] = a->last_byte;
+		a->last_due = false;
+	}
+}
+
+// The TX RAM half the next slot reads: the chunk, idle after its last symbol; NULL = all idle. late: the last byte
+// waits for the next boundary (last_byte_out)
+static AIR_ISR void fill_half(hrc7000_air_t *a, const air_tx_chunk_t *c, bool late)
+{
+	volatile uint8_t *ram = half_ram(a, a->half);
 	uint16_t n = c == NULL ? 0 : c->nsyms > HRC7000_AIR_SYMS ? HRC7000_AIR_SYMS : c->nsyms;
 	uint8_t idle = a->p->idle;
 
@@ -212,14 +228,20 @@ static AIR_ISR void fill_half(hrc7000_air_t *a, const air_tx_chunk_t *c)
 			uint8_t keep = (uint8_t)(0xFFu << (8u - 2u * (n - 4u * i)));
 			b = (uint8_t)((c->syms[i] & keep) | (idle & (uint8_t)~keep));
 		}
-		ram[i] = b;
+		if (late && i == HRC7000_AIR_HALF_BYTES - 1) {
+			a->last_byte = b;
+			a->last_half = a->half;
+			a->last_due = true;
+		} else {
+			ram[i] = b;
+		}
 	}
 	a->half ^= 1u;		// only the half the next slot reads: writing both corrupted the end of the slot on air
 }
 
 static AIR_ISR void write_half(hrc7000_air_t *a, const air_tx_chunk_t *c)
 {
-	fill_half(a, c);
+	fill_half(a, c, true);
 	w(a, C7_LAYER2_TXRX_CTRL, TXRX_SEND);
 	a->st.tx_slots++;
 }
@@ -237,6 +259,7 @@ static AIR_ISR void tx_stop(hrc7000_air_t *a, uint32_t t, bool chip)
 	}
 	a->txq_tail = a->txq_head;
 	a->end_req = false;
+	a->last_due = false;
 	if (chip) {
 		if (a->mod_saved) {
 			w(a, C7_RF_MOD_BIAS, a->mod_bias);
@@ -262,6 +285,15 @@ static AIR_ISR void boundary(hrc7000_air_t *a, uint32_t t)
 	}
 	a->tick_any = true;
 	a->t_tick = t;
+	last_byte_out(a);	// first thing: its half was set up at the boundary before
+	if (a->tx == HRC7000_AIR_START && (!a->pa || a->lead > 0)) {
+		// The RF chain is not modulating yet: idle until it is (the queue waits, no underrun)
+		if (a->pa) {
+			a->lead--;
+		}
+		write_half(a, NULL);
+		return;
+	}
 	switch (a->tx) {
 	case HRC7000_AIR_TAIL:
 		tx_stop(a, t, true);	// the idle slot after the last chunk is on air: the PA ramps down in it
@@ -588,8 +620,10 @@ bool hrc7000_air_tx_begin(hrc7000_air_t *a)
 		w(a, C7_WORK_MODE, WORK_MODE_PHY);
 		// Idle in both halves until the first chunk's slot, so an early key sends idle. Half 0 first
 		a->half = 0;
-		fill_half(a, NULL);
-		fill_half(a, NULL);
+		fill_half(a, NULL, false);
+		fill_half(a, NULL, false);
+		a->last_due = false;
+		a->lead = HRC7000_AIR_TX_LEAD_SLOTS;
 		w(a, C7_LAYER2_CONTROL, L2_PHY_TX_MASTER);	// own timing: the first boundary comes within a slot
 		w(a, C7_AUDIO_BUFFER_CLR, 0x03);
 		a->t_begin = now(a);

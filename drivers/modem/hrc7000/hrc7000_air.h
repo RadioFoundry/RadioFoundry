@@ -36,6 +36,8 @@
 #define HRC7000_AIR_TXQ		4	// transmit chunks, 120 ms (a power of two)
 #define HRC7000_AIR_EVQ		8	// events ISR -> task (a power of two)
 #define HRC7000_AIR_TX_LEAD_MS	60	// a chunk is taken about 5 ms before its slot is on air; one more slot of margin
+#define HRC7000_AIR_TX_LEAD_SLOTS 2	// idle slots after the RF TX interrupt before the first chunk: the radio's RF chain
+					// carries no modulation for about 45 ms after the carrier (modem-hrc7000.md 10.2)
 #define HRC7000_AIR_TIME_US	2000	// t_us accuracy: interrupt latency; the receive delay through the chips is not measured
 #define HRC7000_AIR_RATE_HZ	8000u
 #define HRC7000_AIR_RX_LO_HZ	0u	// with the band-pass off (10.1: not measured)
@@ -104,6 +106,10 @@ typedef struct hrc7000_air {
 	// Transmit
 	volatile uint8_t tx;	// HRC7000_AIR_RX / START / RUN / LAST / TAIL
 	uint8_t half;		// the TX RAM half the next slot reads
+	uint8_t lead;		// idle slots still to send once the PA is up, before the first chunk
+	bool last_due;		// the last byte of half last_half waits for the next boundary (10.2: read late)
+	uint8_t last_half;
+	uint8_t last_byte;
 	volatile uint8_t txq_head, txq_tail;
 	bool end_req;		// tx_end with nothing queued: the transmission ends with what went
 	bool underrun;		// idle sent since the last chunk
