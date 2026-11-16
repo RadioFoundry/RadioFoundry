@@ -327,8 +327,10 @@ captures come from its FM discriminator (`fsk4_bench.py disc`).
 | `p25tool.py disc voice.raw --meta voice.json` | the radio's call on the granted channel (a conventional call) |
 | `p25tool.py inbound in.dibits --expect in.json --src 1234567 --tg 201` | the three requests a radio sends, for checking the decode side |
 
-`--X-at FIRST[:COUNT]` names the units (from 0) that carry an answer; the expect file gives each unit's symbol
-position. A file of 8192 symbols or fewer goes in the bench's request and can be repeated (`fsk4_bench.py tx --repeat`).
+`--X-at FIRST[:COUNT[:EVERY]]` names the units (from 0) that carry an answer: COUNT units from FIRST (0: to the
+end), each EVERYth of them. A unit holds three blocks at most, so three answers in every unit leave no broadcast and
+a receiver never learns the system's identity: a file that answers all through gives each answer its own unit
+(`--reg-at 0:0:3 --aff-at 1:0:3 --grant-at 2:0:3`). The expect file gives each unit's symbol position. A file of 8192 symbols or fewer goes in the bench's request and can be repeated (`fsk4_bench.py tx --repeat`).
 `p25tool.py selftest` covers the answers and the inbound decode, as symbols and through the C4FM model.
 
 ## 9. Not confirmed

@@ -14,7 +14,7 @@ than its sources).
                [--meta IN.json] [--expect EXP.json]
     p25tool.py cc OUT.dibits --expect EXP.json [--nac 293] [--wacn BEE00] [--sysid 2F3] [--rfss N] [--site N]
                [--units N] [--ch 1004] [--base HZ] [--spacing HZ] [--tx-offset HZ]
-               [--grant TG:CH[:SRC[:SVC]] [--grant-at FIRST[:COUNT]]] [--reg UNIT[:RV] [--reg-at FIRST[:COUNT]]]
+               [--grant TG:CH[:SRC[:SVC]] [--grant-at FIRST[:COUNT[:EVERY]]]] [--reg UNIT[:RV] [--reg-at FIRST[:COUNT[:EVERY]]]]
                [--aff UNIT:TG[:GAV] [--aff-at ...]] [--deny UNIT[:REASON[:SVC]] [--deny-at ...]]
                [--queue UNIT[:REASON[:SVC]] [--queue-at ...]]
     p25tool.py inbound OUT.dibits --expect EXP.json [--nac 293] [--src N] [--tg N] [--wacn BEE00] [--sysid 2F3]
@@ -44,8 +44,9 @@ values' error against the ideal levels (an EVM in percent of the outer level).
 
 cc writes a trunked system's control channel: units of one to three trunking signaling blocks back to back (network
 and RFSS status, the channel identifier with --tx-offset as the inbound offset, an adjacent site, a secondary control
-channel). Answers to one unit go ahead of the broadcasts in the units --X-at names (FIRST[:COUNT], unit numbers from
-0; COUNT 0 or left out: to the end; the expect file gives each unit's symbol position): --grant a group voice grant
+channel). Answers to one unit go ahead of the broadcasts in the units --X-at names (FIRST[:COUNT[:EVERY]], unit
+numbers from 0; COUNT 0 or left out: to the end; EVERY: each EVERYth of them, which leaves a file that answers all
+through room for its broadcasts; the expect file gives each unit's symbol position): --grant a group voice grant
 (CH in hex: identifier in the top four bits; default from unit 10), --reg a registration response (RV 0 accept, 1
 fail, 2 deny, 3 refused; from unit 5), --aff an affiliation response (from unit 8), --deny and --queue a deny or
 queued response to a group voice request (REASON 0x10 and 0x2F unless given; from unit 12). Play the file in a loop
@@ -544,6 +545,16 @@ def cmd_selftest(a):
         print(f"{'ok  ' if ok else 'FAIL'} cc with answers: blocks {r['blocks_found']} of {r['blocks_expected']}, {got}")
         if not ok:
             fails.append("cc with answers")
+        # A site that answers all through its file, one answer a unit: the broadcasts keep their turn
+        run(["cc", p("loop.dibits"), p("loop.json"), "--units", 27, "--reg", 1234567, "--reg-at", "0:0:3", "--aff",
+             "1234567:201", "--aff-at", "1:0:3", "--grant", "201:100a:1234567", "--grant-at", "2:0:3"])
+        msgs = [b["msg"] for d in run(["decode", p("loop.dibits"), "--trunk"]) if d["ev"] == "unit"
+                for b in d.get("blocks", [])]
+        got = {k: sum(1 for m in msgs if m.get("kind") == k) for k in ("reg_rsp", "aff_rsp", "grant", "net", "iden")}
+        ok = got["reg_rsp"] == got["aff_rsp"] == got["grant"] == 9 and got["net"] >= 3 and got["iden"] >= 3
+        print(f"{'ok  ' if ok else 'FAIL'} cc answering every third unit: {got}")
+        if not ok:
+            fails.append("cc answering every third unit")
         # A radio's inbound bursts, as symbols and through the C4FM model
         run(["inbound", p("in.dibits"), p("in.json"), "--src", 1234567, "--tg", 201, "--reps", 3])
         with open(p("in.json")) as f:
@@ -628,16 +639,16 @@ def main(argv=None):
     c.add_argument("--base", type=int, default=None, help="its identifier's base, Hz (851006250)")
     c.add_argument("--spacing", type=int, default=None, help="its identifier's spacing, Hz (6250)")
     c.add_argument("--grant", default=None, metavar="TG:CH[:SRC[:SVC]]", help="a group voice grant (CH in hex; SVC a number, 0x40 encrypted)")
-    c.add_argument("--grant-at", default=None, metavar="FIRST[:COUNT]", help="the units with the grant (10)")
+    c.add_argument("--grant-at", default=None, metavar="FIRST[:COUNT[:EVERY]]", help="the units with the grant (10)")
     c.add_argument("--tx-offset", type=int, default=None, help="the identifier's inbound offset, Hz, 250 kHz steps (0)")
     c.add_argument("--reg", default=None, metavar="UNIT[:RV]", help="a registration response")
-    c.add_argument("--reg-at", default=None, metavar="FIRST[:COUNT]", help="(5)")
+    c.add_argument("--reg-at", default=None, metavar="FIRST[:COUNT[:EVERY]]", help="(5)")
     c.add_argument("--aff", default=None, metavar="UNIT:TG[:GAV]", help="an affiliation response")
-    c.add_argument("--aff-at", default=None, metavar="FIRST[:COUNT]", help="(8)")
+    c.add_argument("--aff-at", default=None, metavar="FIRST[:COUNT[:EVERY]]", help="(8)")
     c.add_argument("--deny", default=None, metavar="UNIT[:REASON[:SVC]]", help="a deny response")
-    c.add_argument("--deny-at", default=None, metavar="FIRST[:COUNT]", help="(12)")
+    c.add_argument("--deny-at", default=None, metavar="FIRST[:COUNT[:EVERY]]", help="(12)")
     c.add_argument("--queue", default=None, metavar="UNIT[:REASON[:SVC]]", help="a queued response")
-    c.add_argument("--queue-at", default=None, metavar="FIRST[:COUNT]", help="(12)")
+    c.add_argument("--queue-at", default=None, metavar="FIRST[:COUNT[:EVERY]]", help="(12)")
     c.add_argument("--unpacked", action="store_true", help="one symbol a byte")
     c.set_defaults(fn=cmd_cc)
 

@@ -391,10 +391,11 @@ static int cmd_gen(const char *out_path, const char *exp_path, const opts_t *o)
 static void tsbk_json(FILE *f, const uint8_t blk[P25_TSBK_BYTES]);
 static void isp_json(FILE *f, const uint8_t blk[P25_TSBK_BYTES]);
 
-// An answer's units: --X-at FIRST[:COUNT] (COUNT 0 or left out: every unit from FIRST on)
+// An answer's units: --X-at FIRST[:COUNT[:EVERY]] (COUNT 0 or left out: to the end; EVERY: each EVERYth unit from
+// FIRST, so answers given all through a file leave its units room for the broadcasts)
 typedef struct {
 	bool on;
-	long first, count;
+	long first, count, every;
 	p25_tsbk_t m;
 } cc_answer_t;
 
@@ -404,15 +405,16 @@ static void cc_at(const opts_t *o, const char *name, long dflt, cc_answer_t *a)
 
 	a->first = dflt;
 	a->count = 0;
-	if (v && sscanf(v, "%ld:%ld", &a->first, &a->count) < 1)
-		die("FIRST[:COUNT] units for", name);
-	if (a->first < 0 || a->count < 0)
+	a->every = 1;
+	if (v && sscanf(v, "%ld:%ld:%ld", &a->first, &a->count, &a->every) < 1)
+		die("FIRST[:COUNT[:EVERY]] units for", name);
+	if (a->first < 0 || a->count < 0 || a->every < 1)
 		die("an option is out of range", name);
 }
 
 static bool cc_answer_in(const cc_answer_t *a, long u)
 {
-	return a->on && u >= a->first && (a->count == 0 || u < a->first + a->count);
+	return a->on && u >= a->first && (a->count == 0 || u < a->first + a->count) && (u - a->first) % a->every == 0;
 }
 
 static int cmd_cc(const char *out_path, const char *exp_path, const opts_t *o)
