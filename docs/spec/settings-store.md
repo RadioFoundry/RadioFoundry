@@ -98,7 +98,8 @@ changes have rested `SETTINGS_SAVE_DELAY_MS` (2 s), so turning the knob through 
 **Who writes what**:
 
 - The radio core (`radio_sm.c` `persist()`): VFO or channel mode, the zone, the channel number and its position,
-  the VFO's frequency and settings, and the privacy key in use.
+  the VFO's frequency and settings, the privacy key in use, and `squelch` when it was changed in the VFO (squelch is
+  radio-wide, so a VFO change is the default; a saved channel writes it the same way).
 - The radio core, for `radio_set_settings()`: the `rs_*` fields (TOT, busy channel lockout, scan, beeps, VOX,
   battery saving, backlight times; `radio-features.md` 1). `rs_stored` 0 means the radio core's defaults.
 - The radio core's data tick, for the DMR data service (`dmr-data.md`; the ARS server and IP gateway follow the

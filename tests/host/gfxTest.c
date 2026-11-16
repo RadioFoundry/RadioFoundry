@@ -142,7 +142,7 @@ static void render_set(const char *cls)
 	v.ch.rx_hz = 453625000; v.ch.tx_hz = 453625000;
 	v.ch.color_code = 2; v.ch.timeslot = 1;
 	v.ch.tx_tone.type = TONE_NONE;
-	v.dmr.active = true; v.dmr.codec = true; v.dmr.cc = 2; v.dmr.ts = 1; v.dmr.own_id = 9996543;
+	v.dmr.active = true; v.dmr.codec = true; v.dmr.cc = v.dmr.rx_cc = 2; v.dmr.ts = 1; v.dmr.own_id = 9996543;
 	v.dmr.target_id = 201; strcpy(v.dmr.target_name, "Main Ops");
 	v.dmr.last.src = 9991234; strcpy(v.dmr.last.src_name, "Joe"); v.dmr.last.dst = 91; v.dmr.last.group = true;
 	v.dmr.last_ms = s.now_ms - 120000;

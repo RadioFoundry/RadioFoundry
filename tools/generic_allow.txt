@@ -61,7 +61,6 @@ site/static/js/flasher/app.js per-radio route or stock format data
 site/static/js/flasher/backup.js per-radio route or stock format data
 site/static/js/flasher/c7000.js per-radio route or stock format data
 site/static/js/flasher/c7000ui.js per-radio route or stock format data
-site/static/js/flasher/codecsave.js per-radio route or stock format data
 site/static/js/flasher/codeplug.js per-radio route or stock format data
 site/static/js/flasher/f4stub.js per-radio route or stock format data
 site/static/js/flasher/fake.js per-radio route or stock format data

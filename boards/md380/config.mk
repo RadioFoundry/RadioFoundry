@@ -8,8 +8,6 @@
 CONFIG_DISPLAY_INSET ?= 0
 CONFIG_DISPLAY_INSET_TOP ?= 1
 CONFIG_DISPLAY_INSET_LEFT ?= 2
-# Satellite tracking exceeds this board's 464 KB application region by 19,540 B even in the amateur build
-CONFIG_SATELLITE_TLE ?= n
 # The FM TX tones (roger beep, 1750 Hz burst), DTMF and APRS AFSK need a TX tone path through the HR_C5000 or the PC7 PWM:
 # not written
 CONFIG_FM_TX_TONES ?= n

@@ -20,19 +20,19 @@ static satellite_record_summary_t pass_record;
 static void satellite_line2_kept(void)
 {
 	if (strlen(edit_line2) != SATELLITE_TLE_LINE_LENGTH) {
-		ui_toast(TR("TLE update failed"));
+		ui_toast(TR(TLE_UPDATE_FAILED_2, "TLE update failed"));
 		return;
 	}
 	if (ui_svc_satellite_replace(selected, edit_line1, edit_line2))
-		ui_toast(TR("TLE update queued"));
+		ui_toast(TR(TLE_UPDATE_QUEUED, "TLE update queued"));
 	else
-		ui_toast(TR("Satellite unavailable"));
+		ui_toast(TR(SATELLITE_UNAVAILABLE_4, "Satellite unavailable"));
 }
 
 static void satellite_line1_kept(void)
 {
 	if (strlen(edit_line1) != SATELLITE_TLE_LINE_LENGTH) {
-		ui_toast(TR("TLE update failed"));
+		ui_toast(TR(TLE_UPDATE_FAILED_2, "TLE update failed"));
 		return;
 	}
 	edit_line2[0] = '\0';
@@ -42,7 +42,7 @@ static void satellite_line1_kept(void)
 static void satellite_edit(void)
 {
 	if (ui_svc_satellite_update_busy() || selected >= ui_svc_satellite_count()) {
-		ui_toast(TR("Satellite unavailable"));
+		ui_toast(TR(SATELLITE_UNAVAILABLE_4, "Satellite unavailable"));
 		return;
 	}
 	edit_line1[0] = '\0';
@@ -182,7 +182,7 @@ static void draw_path(int y, const radio_view_t *view, const satellite_path_view
 	int width = gfx_width() - 16;
 	int plot_y = y;
 	if (!view->satellite_pass_valid) {
-		gfx_text(ui_layout.small, 8, y, TR("Predicting passes"), ui_col.dim);
+		gfx_text(ui_layout.small, 8, y, TR(PREDICTING_PASSES_2, "Predicting passes"), ui_col.dim);
 		plot_y += ui_layout.small->h + 2;
 	}
 	int available = ui_layout.hint_y - plot_y - 2;
@@ -196,7 +196,6 @@ static void draw_path(int y, const radio_view_t *view, const satellite_path_view
 	path_circle(cx, cy, radius / 2, ui_col.line);
 	gfx_hline(cx - radius, cy, 2 * radius + 1, ui_col.line);
 	gfx_vline(cx, cy - radius, 2 * radius + 1, ui_col.line);
-	gfx_text(ui_layout.tiny, cx + 2, cy - radius, "N", ui_col.dim);
 	if (path->count == 1u) {
 		int point_x, point_y;
 		path_point_xy(path, 0u, cx, cy, radius, &point_x, &point_y);
@@ -229,6 +228,7 @@ static void draw_path(int y, const radio_view_t *view, const satellite_path_view
 		path_sky_xy(path->azimuth_deg, (uint8_t)elevation, cx, cy, radius, &current_x, &current_y);
 		gfx_fill(current_x - 1, current_y - 1, 3, 3, ui_col.warn);
 	}
+	gfx_text(ui_layout.tiny, cx + 2, cy - radius, "N", ui_col.dim);
 	(void)compact;
 }
 
@@ -248,9 +248,9 @@ static void satellite_pass_item(uint16_t row_index, ui_item_t *item)
 	if (status != RADIO_SAT_SCAN_COMPLETE) {
 		item->flags = UI_ITEM_INFO;
 		if (status == RADIO_SAT_SCAN_UNAVAILABLE) {
-			str_copy(item->label, sizeof(item->label), TR("GPS/time unavailable"));
+			str_copy(item->label, sizeof(item->label), TR(GPS_TIME_UNAVAILABLE, "GPS/time unavailable"));
 		} else {
-			str_copy(item->label, sizeof(item->label), TR("Predicting passes"));
+			str_copy(item->label, sizeof(item->label), TR(PREDICTING_PASSES_2, "Predicting passes"));
 			sbuf_t b;
 			sb_init(&b, item->value, sizeof(item->value));
 			sb_u32(&b, completed, 1);
@@ -267,7 +267,7 @@ static void satellite_pass_item(uint16_t row_index, ui_item_t *item)
 	sbuf_t b;
 	sb_init(&b, item->value, sizeof(item->value));
 	if (pass.visible_now) {
-		sb_str(&b, TR("Now"));
+		sb_str(&b, TR(NOW, "Now"));
 	} else {
 		satellite_eta_minutes(&b, pass.aos_minutes);
 	}
@@ -283,7 +283,7 @@ static void satellite_pass_select(uint16_t row_index, bool hold)
 	if (!ui_svc_satellite_pass((uint8_t)row_index, &pass))
 		return;
 	if (!ui_svc_satellite_track(true, pass.record_index)) {
-		ui_toast(TR("Satellite unavailable"));
+		ui_toast(TR(SATELLITE_UNAVAILABLE_4, "Satellite unavailable"));
 		return;
 	}
 	ui_push(SCR_SATELLITE, pass.record_index);
@@ -295,8 +295,8 @@ static void satellite_passes_enter(void)
 }
 
 const ui_scr_def_t ui_satellite_passes_screen = {
-	.name = "satellite-passes", .flags = SF_LIST | SF_FIELD, .prefix = TRN("Next passes"),
-	.hint = TRN("Up Down pick  Back"), .empty = TRN("No passes in next 24h"),
+	.name = "satellite-passes", .flags = SF_LIST | SF_FIELD, .prefix = TRN(NEXT_PASSES, "Next passes"),
+	.hint = TRN(UP_DOWN_PICK_BACK, "Up Down pick  Back"), .empty = TRN(NO_PASSES_IN_NEXT_24H, "No passes in next 24h"),
 	.count = satellite_pass_count, .item = satellite_pass_item, .select = satellite_pass_select,
 	.enter = satellite_passes_enter,
 };
@@ -316,68 +316,68 @@ static void satellite_draw(void)
 	if (view->satellite_tracking && view->satellite_index == selected)
 		ui_svc_satellite_path(&path);
 	gfx_clear(ui_col.bg);
-	int y = ui_draw_top(view, &ui_st, TR("Satellite"), have_record ? record.name : "") + 2;
+	int y = ui_draw_top(view, &ui_st, TR(SATELLITE_2, "Satellite"), have_record ? record.name : "") + 2;
 	if (!have_record) {
-		gfx_text(ui_layout.small, 0, y, TR("No TLE records installed"), ui_col.warn);
+		gfx_text(ui_layout.small, 0, y, TR(NO_TLE_RECORDS_INSTALLED, "No TLE records installed"), ui_col.warn);
 	} else if (compact) {
 		if (view->satellite_tracking && view->satellite_index == selected) {
-			const char *status = view->satellite_status == SATELLITE_TRACKING_VISIBLE ? TR("Visible") :
-				view->satellite_status == SATELLITE_TRACKING_BELOW_HORIZON ? TR("Below horizon") :
-				TR("Waiting for position/time");
-			row(&y, TR("Tracking"), status, view->satellite_status == SATELLITE_TRACKING_VISIBLE ?
+			const char *status = view->satellite_status == SATELLITE_TRACKING_VISIBLE ? TR(VISIBLE_2, "Visible") :
+				view->satellite_status == SATELLITE_TRACKING_BELOW_HORIZON ? TR(BELOW_HORIZON_2, "Below horizon") :
+				TR(WAITING_FOR_POSITION_TIME_2, "Waiting for position/time");
+			row(&y, TR(TRACKING_4, "Tracking"), status, view->satellite_status == SATELLITE_TRACKING_VISIBLE ?
 			     ui_col.rx : ui_col.warn);
 			satellite_frequency_rows(&y, value, sizeof(value), view);
 			if (view->satellite_pass_valid && !view->satellite_pass_visible_now) {
 				uint32_t minutes = view->satellite_aos_in_s / 60u;
 				sb_init(&b, value, sizeof(value));
 				satellite_eta_minutes(&b, minutes);
-				row(&y, TR("AOS in"), value, ui_col.fg);
+				row(&y, TR(AOS_IN_2, "AOS in"), value, ui_col.fg);
 			}
 			draw_path(y, view, &path, compact);
 		} else {
-			row(&y, TR("Tracking"), view->satellite_tracking ? TR("Other satellite") : TR("Off"), ui_col.dim);
+			row(&y, TR(TRACKING_4, "Tracking"), view->satellite_tracking ? TR(OTHER_SATELLITE_2, "Other satellite") : TR(VALUE_OFF, "Off"), ui_col.dim);
 		}
 	} else {
 		sb_init(&b, value, sizeof(value));
 		sb_str(&b, "NORAD ");
 		sb_u32(&b, record.catalog_id, 1);
-		row(&y, TR("Catalog"), value, ui_col.fg);
+		row(&y, TR(CATALOG, "Catalog"), value, ui_col.fg);
 		if (view->satellite_tracking && view->satellite_index == selected) {
-			const char *status = view->satellite_status == SATELLITE_TRACKING_VISIBLE ? TR("Visible") :
-				view->satellite_status == SATELLITE_TRACKING_BELOW_HORIZON ? TR("Below horizon") :
-				TR("Waiting for position/time");
-			row(&y, TR("Tracking"), status, view->satellite_status == SATELLITE_TRACKING_VISIBLE ?
+			const char *status = view->satellite_status == SATELLITE_TRACKING_VISIBLE ? TR(VISIBLE_2, "Visible") :
+				view->satellite_status == SATELLITE_TRACKING_BELOW_HORIZON ? TR(BELOW_HORIZON_2, "Below horizon") :
+				TR(WAITING_FOR_POSITION_TIME_2, "Waiting for position/time");
+			row(&y, TR(TRACKING_4, "Tracking"), status, view->satellite_status == SATELLITE_TRACKING_VISIBLE ?
 			     ui_col.rx : ui_col.warn);
 			satellite_frequency_rows(&y, value, sizeof(value), view);
 			if (view->satellite_pass_valid) {
 				if (view->satellite_pass_visible_now) {
-					row(&y, TR("Next pass"), TR("Visible now"), ui_col.rx);
+					row(&y, TR(NEXT_PASS, "Next pass"), TR(VISIBLE_NOW, "Visible now"), ui_col.rx);
 				} else {
 					uint32_t minutes = view->satellite_aos_in_s / 60u;
 					sb_init(&b, value, sizeof(value));
 					satellite_eta_minutes(&b, minutes);
-					row(&y, TR("AOS in"), value, ui_col.fg);
+					row(&y, TR(AOS_IN_2, "AOS in"), value, ui_col.fg);
 				}
 				if (!view->satellite_los_known && !view->satellite_pass_visible_now) {
-					row(&y, TR("LOS"), TR("Calculating"), ui_col.dim);
+					row(&y, TR(LOS, "LOS"), TR(CALCULATING, "Calculating"), ui_col.dim);
 				} else if (view->satellite_pass_horizon_clipped) {
-					row(&y, "", TR("LOS beyond forecast"), ui_col.dim);
+					row(&y, "", TR(LOS_BEYOND_FORECAST, "LOS beyond forecast"), ui_col.dim);
 				} else {
 					uint32_t minutes = view->satellite_los_in_s / 60u;
 					sb_init(&b, value, sizeof(value));
 					satellite_eta_minutes(&b, minutes);
-					row(&y, TR("LOS in"), value, ui_col.fg);
+					row(&y, TR(LOS_IN, "LOS in"), value, ui_col.fg);
 				}
 			}
 			draw_path(y, view, &path, compact);
 		} else {
-			row(&y, TR("Tracking"), view->satellite_tracking ? TR("Other satellite") : TR("Off"), ui_col.dim);
+			row(&y, TR(TRACKING_4, "Tracking"), view->satellite_tracking ? TR(OTHER_SATELLITE_2, "Other satellite") : TR(VALUE_OFF, "Off"), ui_col.dim);
 		}
 	}
 	bool so50_active = have_record && record.catalog_id == 27607u && view->satellite_tracking &&
 		view->satellite_index == selected;
-	ui_draw_bottom(&ui_st, so50_active ? TR("Up Down satellite  OK track  Hold OK arm  # TLE  Back") :
-		TR("Up Down satellite  OK track  # TLE  Back"));
+	ui_draw_bottom(&ui_st, so50_active ? TR(UP_DOWN_SATELLITE_OK_TRACK, "Up Down satellite  OK track  Hold OK arm  # TLE  Back") :
+		TR(UP_DOWN_SATELLITE_OK_TRACK_2, "Up Down satellite  OK track  # TLE  Back"));
 	ui_draw_banner(&ui_st);
 }
 
@@ -391,7 +391,7 @@ static bool satellite_key(const input_event_t *ev)
 		if (view->satellite_tracking && view->satellite_index == selected &&
 		    ui_svc_satellite_summary(selected, &pass_record) && pass_record.catalog_id == 27607u) {
 			ui_svc_satellite_arm();
-			ui_toast(TR("SO-50 arm requested"));
+			ui_toast(TR(SO_50_ARM_REQUESTED, "SO-50 arm requested"));
 			return true;
 		}
 	} else if (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_REPEAT) {
@@ -406,7 +406,7 @@ static bool satellite_key(const input_event_t *ev)
 			const radio_view_t *view = ui_view();
 			bool active = view->satellite_tracking && view->satellite_index == selected;
 			if (!ui_svc_satellite_track(!active, selected))
-				ui_toast(TR("Satellite unavailable"));
+				ui_toast(TR(SATELLITE_UNAVAILABLE_4, "Satellite unavailable"));
 			ui_dirty();
 			return true;
 		}

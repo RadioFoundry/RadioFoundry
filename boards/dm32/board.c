@@ -70,6 +70,9 @@ static const keymap_entry_t keymap[] = {
 // Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h): the side keys top to bottom
 static const uint8_t side_keys[] = { KEY_SK1, KEY_SK2 };
 static const char *const side_key_names[] = { "SK1", "SK2" };
+// The arrows left and right of the 4-way key are printed P1 and P2: programmable on Home, arrows in the menus
+static const uint8_t home_keys[] = { KEY_LEFT, KEY_RIGHT };
+static const char *const home_key_names[] = { "P1", "P2" };
 
 const board_t board = {
 	.name = "DM-32UV",
@@ -91,6 +94,9 @@ const board_t board = {
 	.side_keys = side_keys,
 	.side_key_names = side_key_names,
 	.side_key_count = sizeof(side_keys),
+	.home_keys = home_keys,
+	.home_key_names = home_key_names,
+	.home_key_count = sizeof(home_keys),
 	.radio = &dm32_radio,
 	.power = &dm32_power,
 	.flash = &hrc_flash_spi0,

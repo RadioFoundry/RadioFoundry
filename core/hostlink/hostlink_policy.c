@@ -30,3 +30,8 @@ hostlink_leave_t hostlink_session_check(hostlink_session_t *s, bool connected, b
 	}
 	return HOSTLINK_STAY;
 }
+
+bool hostlink_trial_failed(bool open, bool dropped, bool junk, uint32_t since_entry_ms)
+{
+	return !open && (dropped || junk || (since_entry_ms > HOSTLINK_HOTSPOT_OPEN_MS));
+}

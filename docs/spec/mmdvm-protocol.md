@@ -413,6 +413,9 @@ D-Star, YSF, P25, NXDN, M17 and POCSAG data: NAK 2.
 
 Commands follow each other about 10 ms apart at the modem port, so ACK quickly (within 10 ms is ideal), and in any case before any other frame.
 
+In hotspot mode's trial the radio answers the first host-like frame but takes the modem only with the second
+([open-firmware-cps.md 6](open-firmware-cps.md#6-hotspot-mode-switch-0xe0), trial). Both startups above pass.
+
 The order is SET_FREQ before SET_CONFIG. The bench tools also send SET_FREQ,
 SET_CONFIG, SET_MODE in that order, and skip GET_VERSION entirely. The modem must accept these commands in any order, repeated, at any time.
 

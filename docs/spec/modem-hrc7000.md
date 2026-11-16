@@ -52,7 +52,7 @@ Offsets from 0x11000000. Values are the ones the driver writes unless noted.
 | Offset | Register | Fields | Value used | Why |
 |---|---|---|---|---|
 | 0x100 | WORK_MODE | b8 digital_analog_en; b7 modulator_mode (0 DMR, 1 FM); b6 Tier II; b5 timeslot mode; b4:3 layer (0 PHY, 1 L2, 2 L3); b2 is_repeater; b1 is_aligned; b0 work_slot_sel | **0x80** FM, **0x6E** DMR (Tier II, timeslot, layer 2, repeater bit, aligned, slot 1) | Only these two values are ever written. Timeslot choice is done in software with LAYER2_TXRX_CTRL, not with work_slot_sel |
-| 0x104 | RF_MODE | b25 phase_avg_en; b24 af_mode; b23:16 AF gain (n/16); b15 RX IQ invert; b14:13 RX mode; b12 dynamic sync threshold; b11 use_dual_phy (second timeslot receive channel, 2.1a); b9 soft ramp; b7 TX IQ invert / deviation mapping; b6:5 TX mode (3 = two-point) | **0x03269860**: AF receive on with averaging, gain 0x26 (2.375), RX IQ inverted, dynamic sync threshold, b11 set (2.1a), two-point modulation | Written once at init and left in both modes. Do not switch to 0x03269060 (b11 clear) in DMR |
+| 0x104 | RF_MODE | b25 phase_avg_en; b24 af_mode; b23:16 AF gain (n/16); b15 RX IQ invert; b14:13 RX mode; b12 dynamic sync threshold; b11 use_dual_phy (second timeslot receive channel, 2.1a); b9 soft ramp; b7 TX IQ invert / deviation mapping; b6:5 TX mode (3 = two-point) | **0x03269860**: AF receive on with averaging, gain 0x26 (2.375), RX IQ inverted, dynamic sync threshold, b11 set (2.1a), two-point modulation | Written at init and left in both modes, but b12 is cleared while LOCAL_CC has cc_opt = 1 (no CC filter). Do not switch to 0x03269060 (b11 clear) in DMR |
 | 0x108 | SIG_CENTER | b31:24 TX I bias, b23:16 TX Q bias, b15:8 / b7:0 RX I/Q bias | (cal << 24) or (cal << 16) | TX center from factory calibration (board-specific) |
 | 0x10C | TX_IF_FREQ | b23:0 | 0x0BB800 (reset value) | |
 | 0x110 | RF_CONTROL | b20:16 tx_pre_on (100 us steps); b13:8 rf_pre_on_tx (RF TX interrupt advance, 100 us); b5:0 rf_pre_on_rx | **0x00041F1A**: tx_pre_on 0.4 ms, RF TX interrupt **3.1 ms** before the TX burst, RF RX interrupt 2.6 ms before RX | 0x00040A0A (1.0 ms) gave bad timeslots at low power. b13:8 is per board (`hrc7000_t.rf_tx_lead`): a board whose 3.1 ms clipped the inbound burst before ours uses a shorter lead: 0x14 (2.0 ms), 0x06 (0.6 ms) or 0x04 (0.4 ms), each from a sweep on that board (the boards' hardware pages). b20:16 is per board too (`hrc7000_t.tx_pre_on`, default 4): it advances the TX data to make up for the board's RF TX path delay, about 0.107 ms earlier on air per step. A board whose inbound burst runs late against the outbound sets a larger value from a measurement (the boards' hardware pages). The RF TX interrupt's lead moves only the carrier, not the burst |
@@ -134,7 +134,7 @@ repeated LC).
 | 0x36C | DATAH_CRC_MASK | 0xCCCC | data header CRC-16 mask (the datasheet's reset 0xA5A5 is wrong for ETSI) |
 | 0x370–0x37C | (undocumented) | 0xF0, 0x1FF, 0x10F, 0x00 |
 | 0x380 | CRC8_INIT | 0 | short LC CRC-8 init |
-| 0x384 | LOCAL_CC | color code in b3:0; b9:8 cc_opt = 0 (deframe only on matching CC); b16 encryption type | Set per channel; when cc_opt = 1 RF_MODE b12 must be 0 |
+| 0x384 | LOCAL_CC | color code in b3:0; b9:8 cc_opt: 0 = deframe only on matching CC, 1 = deframe any CC; b16 encryption type | cc_opt 0 and the filter's code with a CC filter; cc_opt 1 without one (RF_MODE b12 must then be 0). Channel TX code after slot lock, receive code restored after TX |
 | 0x388 | VOICE_EMB_CTRL | 0 at init, **2** when entering DMR receive | b1 = burst F EMB from the chip's own RC encoder; b0 = PI bit for bursts B–E |
 | 0x38C | SCRAMBLE_REG | 0 | built-in simple voice scrambler keys (RX in b31:16, TX in b15:0); unused |
 
@@ -642,7 +642,9 @@ Used at DMR entry, after TX through a repeater (direct: 5.2a), after a stalled t
 
 A sequence of TXRX 0xC00000, 0, 0xC00000, 0x8040 with no SLOTON writes, or a busy wait in the color code probe, does not acquire sync reliably. Use this one everywhere.
 
-A restart also forgets what was heard: the polite-access busy window (`dmr-modem.md`) starts again with the next burst taken. The window is counted in timeslot interrupts, and on an empty channel they stop after a restart, so a station heard just before one stayed "busy" for good. Every polite start was then refused (`tx_rejected`) until the radio left DMR: after a one-burst data response, the restart at the end of the transmission came well inside the window.
+A restart also forgets what was heard: the polite-access busy window (`dmr-modem.md`) starts again with the next burst taken. Polite access ages the last decoded activity by `now_us`, with a 360 ms window, independently of timeslot interrupts. Every usable burst refreshes the window, including one later dropped by the slot or CRC filter; unusable deframes do not. The own-color-code and all-activity policies retain their existing color-code checks.
+
+Receive recovery uses wall time too, from both the timeslot handler and the task poll: more than 390 ms without another usable burst, 600 ms of stale activity without a usable burst, or 150 ms after a direct TX hold. A restart clears the pending recovery; subsequent slot interrupts, deframes or abnormal-slot reports schedule it again, and the 600 ms count starts with the first of them, not at the restart (after a long silence, a count from the restart would restart the receiver under the next call's first burst). A silent receiver is not restarted repeatedly. This permits recovery when timeslot interrupts stop but system interrupts continue. Host register-model tests cover stopped timeslot interrupts.
 
 ### 5.2a End of a direct transmission: the hold
 
@@ -685,7 +687,7 @@ On the SDR bench (an MS simulator answering a confirmed packet with MS sync, 4-6
 | RadioFoundry: each RX timeslot interrupt | TXRX = 0x8040 for the coming chip slot when a voice header or voice burst came on it in the last 390 ms (no terminator since), else 0x40. Both slots can have it: an SFR user hears the talker and the repeat. Without the flag the chip leaves the voice RAM as it was, and the burst reads the last one decoded (gotchas 14.15) |
 | Voice deframe | read RX_TYPE_INFO, 27 bytes from the voice RAM; burst number from bits 14:12; LC header / terminator / CSBK / data from the RX RAM |
 | BS sync received (recv_sync_type 1) | the other side is a repeater: track the TC bit (RX_TYPE_INFO b22) to find which slot is ours. Locked after 4 bursts in a row, one per slot, with TC alternating; held while a burst came in the last 390 ms. RX_TYPE_INFO b19 and LAYER2_STATUS b30/b31 are not usable for this |
-| Color-code scan | set LOCAL_CC to the received CC, then LAYER2_CONTROL = 0xC0 and, in repeater mode, the 5.2 restart steps 4–7 (no busy wait) |
+| Any color code | no CC filter: LOCAL_CC cc_opt = 1 deframes every code, RX_TYPE_INFO b7:4 gives the code heard, and RF_MODE b12 is 0 (fixed sync threshold, as cc_opt 1 requires). The receiver restarts at the end of a reception as with a filter. A scan stepping LOCAL_CC through the codes heard nothing on the SDR bench: it stepped at timeslot interrupts, and they stop while the chip hears a code it doesn't deframe |
 | Late entry (bit 2) | embedded LC is in the RX RAM; voice reception should start at the next burst A |
 | End | terminator (data type 2) or loss of bursts; TXRX_CTRL = 0 |
 | Reception over (nothing taken for 390 ms) | the 5.2 restart: the chip drops the sender's slot timing and its timeslot interrupts stop |
@@ -694,6 +696,10 @@ On the SDR bench (an MS simulator answering a confirmed packet with MS sync, 4-6
 ---
 
 ## 6. Transmit sequences
+
+LOCAL_CC keeps the receive code during an aligned start's TC lock wait. Once locked, or at an unaligned start,
+the driver writes the channel's transmit code in bits 3:0 and keeps it through the final burst. After TX it restores
+the receive filter or scan code. A receive filter changed during TX takes effect when TX finishes.
 
 All transmit actions happen in the timeslot interrupts: the CPU arms one slot at a time with TXRX_CTRL = 0x80 and
 leaves the other slot unused (0x00, or 0x40 / 0x8040 to listen: `tx_listen`, an SFR's inbound slot), giving one burst per 60 ms in its timeslot (datasheet figures 99–100). Every arming also starts the PA one-shot of a board without burst sequences (3.1a). The RF TX interrupt that follows keys the RF

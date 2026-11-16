@@ -31,6 +31,10 @@
 #include "ui/ui_screens.h"
 #include "ui/gfx.h"
 
+// A message as long as a DMR message can be (143 characters): the message screen shortens it
+#define LONG_SMS "Your_Special_Configuration_is:_Active_SMS:_LONG_SMS_Delay:_2.5_s_Retries:_3_Language:_English_" \
+	"Time_zone:_UTC_Units:_metric_Echo:_off_Thanks."
+
 // Screens for the gallery: a name and the script that reaches it from Home (zone 0, channel 3, a DMR channel)
 static const struct { const char *name, *script; } gallery[] = {
 	{ "boot", "splash" },
@@ -59,6 +63,9 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "banner_call_alert", "alert:9995678" },
 	{ "banner_radio_check", "call:9991234,91,g wait:11000 ctx 4 wait:1000" },
 	{ "message_view", "msg:9991234,Meet_at_the_north_lot_in_15_minutes._Bring_the_spare_battery. ctx" },
+	// a text the message screen shortens: Full message, and the whole text on its own page
+	{ "message_long", "msg:9991234," LONG_SMS " ctx" },
+	{ "message_read", "msg:9991234," LONG_SMS " ctx ok" },
 	{ "quick_dmr", "quick" },
 	{ "quick_fm", "down quick" },
 	{ "quick_fm_squelch", "down quick 2 up" },

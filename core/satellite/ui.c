@@ -22,7 +22,7 @@ static void satellite_replace_job(void *ctx)
 	if (!satellite_store_replace(pending_index, pending_line1, pending_line2)) {
 		ui_event_t ev = { 0 };
 		ev.kind = UI_EV_SAVE_FAILED;
-		str_copy(ev.text, sizeof(ev.text), TRN("Couldn't save satellite TLE"));
+		str_copy(ev.text, sizeof(ev.text), TR(SATELLITE_ERR_TLE_SAVE, "Couldn't save satellite TLE"));
 		ui_notify(&ev);
 	}
 	pending_line1 = NULL;

@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "config.h"
+#include "i18n.h"
 #include "radio/radio.h"
 #include "codeplug/zone_edit.h"
 #if CONFIG_SATELLITE_TLE
@@ -349,8 +350,8 @@ typedef enum {
 	UI_SET_MIC_AGC,		// the vocoder's mic AGC on DMR TX (accent bits 6-7); while on, mic gain is step 5 and dimmed
 	UI_SET_SFR_RX,		// what an SFR user channel hears, dmr_sfr_rx_t (Settings > Talk, CONFIG_SFR; radio_settings_t.sfr_rx)
 	UI_SET_SFR_CWID,	// the SFR repeater's CW ID interval code 0..4 (Settings > Talk, CONFIG_SFR_CWID; radio_settings_t.sfr_cwid)
-	// The VFO's automatic step in the broadcast band (Settings > Talk, CONFIG_BCAST_FM; radio_settings_t.bcast_step) in
-	// kHz: 200 (the odd tenths) or 100
+	// The VFO's step in the broadcast band, whatever the VFO step (Settings > Talk, CONFIG_BCAST_FM;
+	// radio_settings_t.bcast_step) in kHz: 200 (the odd tenths) or 100
 	UI_SET_BCAST_STEP,
 	UI_SET_ZONE_OFFERS,	// accept zone shares from other radios: 1 on (the default), 0 off (settings_t.zs_offers)
 	UI_SET_DMR_ID,		// the radio's own DMR ID in the codeplug, 1..CODEPLUG_DMR_ID_MAX (a set is a codeplug write job)
@@ -413,12 +414,12 @@ typedef enum {
 	UI_EV_HOTSPOT_STARTED,	// the host started hotspot mode
 	UI_EV_SCAN_STOPPED,	// the scan stopped on a channel
 	UI_EV_CALL_ALERT_RESULT,	// our call alert: ok = the radio answered, else no answer after the retries
-	UI_EV_SAVE_FAILED,	// a save to the codeplug the UI asked for failed later (text: what failed)
+	UI_EV_SAVE_FAILED,	// a save to the codeplug the UI asked for failed later (why: what failed)
 	UI_EV_POWER_OFF_FAILED,	// auto power off dropped the power latch but the radio is still on (the knob holds it)
 	UI_EV_ZONE_OFFER,	// another radio (id, name) offers a zone or channel (index 1): text "Zone Club, 24 channels"
 	UI_EV_ZONE_SENT,	// our zone to id (index 1: a talkgroup): ok = it went out whole
 	UI_EV_ZONE_IMPORTED,	// the import ended: ok with name (the zone here), index (channels), id 1 for an update; else
-				// text says why
+				// why says why
 	UI_EV_CODEPLUG_FOREIGN,	// a codeplug write is held: ask what to do with another firmware's codeplug
 } ui_event_kind_t;
 
@@ -429,7 +430,10 @@ typedef struct {
 	uint32_t id;
 	uint32_t ms;
 	char name[17];
-	char text[40];
+	union {
+		char text[40];
+		tr_id_t why;	// UI_EV_SAVE_FAILED, UI_EV_ZONE_IMPORTED: what failed, a key (TR_NONE: none)
+	};
 } ui_event_t;
 // The owner's two boot screen lines from the codeplug (storage-cps); empty strings when there are none
 void ui_svc_boot_text(char line1[17], char line2[17]);
@@ -449,5 +453,10 @@ void ui_svc_poll(void);
 // Every UI pass: the side key assignment follows a codeplug a CPS wrote, and a change made in Settings goes to the
 // codeplug (CONFIG_KEY_ASSIGN)
 void ui_svc_keys_poll(void);
+// A home key's event (ACT_HOME_KEY_n, board.home_keys): the action it does now, its function on Home (home true) or
+// the key's own action elsewhere; ACT_NONE for nothing. Any other action comes back as it is (CONFIG_KEY_ASSIGN)
+uint8_t ui_svc_home_key(uint8_t action, uint8_t gesture, bool home);
+// Settings > Keys: value may go in the setting id's slot (a home key's role can't hold Monitor or Tone burst)
+bool ui_svc_key_offered(uint8_t id, int32_t value);
 
 #endif

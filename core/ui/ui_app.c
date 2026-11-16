@@ -24,6 +24,7 @@
 #include "input/input.h"
 #include "radio/tones.h"
 #include "config.h"
+#include "codeplug/codeplug_modes.h"	// CODEPLUG_KIND_NONE
 #if CONFIG_HOTSPOT || (CONFIG_USB_NETWORK && CONFIG_HOSTLINK)
 #include "hostlink/hostlink.h"
 #endif
@@ -69,7 +70,8 @@ static char home_hint[32];
 // The hint's keys part, in the language in use: the quick settings key, or holding OK on a radio without it
 static const char *home_hint_keys(void)
 {
-	return has_quick_key ? TR("OK Menu  * Quick") : TR("OK Menu  Hold OK Quick");
+	return has_quick_key ? TR(HOME_HINT_MENU_QUICK, "OK Menu  * Quick") :
+		TR(HOME_HINT_MENU_HOLD_QUICK, "OK Menu  Hold OK Quick");
 }
 #if CONFIG_HOTSPOT
 static bool hs_diag;	// hotspot mode: the diagnostics page instead of the Hotspot screen
@@ -145,10 +147,28 @@ static void update_focus_target(void)
 		ui_svc_focus_target(0, false);
 }
 
+#if CONFIG_BACKLIGHT_TEST
+// Screens from the top down to stack level `from` leave the stack: each runs its leave hook (the backlight tests give
+// the light back)
+static void left(uint8_t from)
+{
+	for (uint8_t i = sp; i >= from && i > 0; i--) {
+		if (ui_scr[stack[i].scr]->leave != NULL)
+			ui_scr[stack[i].scr]->leave();
+	}
+}
+#define ON_BL_TEST()	(stack[sp].scr == SCR_BL_TEST)
+#else
+#define left(from)	((void)0)
+#define ON_BL_TEST()	false
+#endif
+
 void ui_push(uint8_t scr, uint16_t arg)
 {
-	if (sp + 1 >= UI_STACK_MAX)
+	if (sp + 1 >= UI_STACK_MAX) {
+		left(UI_STACK_MAX - 1);
 		sp = UI_STACK_MAX - 2;	// never deeper than the stack: the oldest levels stay, the newest is replaced
+	}
 	sp++;
 	stack[sp].scr = scr;
 	stack[sp].arg = arg;
@@ -191,13 +211,14 @@ static void cp_question_gone(uint8_t from)
 {
 	for (uint8_t i = from; i <= sp; i++) {
 		if (stack[i].scr == SCR_CP_FOREIGN && ui_svc_codeplug_answer(UI_CP_CANCEL))
-			ui_toast(TR("Not saved"));
+			ui_toast(TR(CPLUG_TOAST_NOT_SAVED, "Not saved"));
 	}
 }
 
 void ui_pop(void)
 {
 	cp_question_gone(sp);
+	left(sp);
 	if (sp > 0)
 		sp--;
 	if (ui_scr[stack[sp].scr]->flags & SF_FILTER)
@@ -213,6 +234,7 @@ void ui_pop(void)
 void ui_go_home(void)
 {
 	cp_question_gone(1);
+	left(1);
 	sp = 0;
 	ui_st.quick_edit = false;
 	entry_cancel();
@@ -437,7 +459,7 @@ void ui_sb_target(char *buf, size_t len, const ui_target_t *t)
 	sbuf_t b;
 	sb_init(&b, buf, len);
 	if (t->id == 0xFFFFFFu) {
-		sb_str(&b, TR("All call"));
+		sb_str(&b, TR(VALUE_ALL_CALL, "All call"));
 		return;
 	}
 	if (t->group) {
@@ -472,20 +494,20 @@ void ui_talk(const ui_target_t *t, bool permanent)
 		// No codeplug writer yet: use it for now and say so
 		if (ui_svc_talk_to(t->id, !t->group, UI_TALK_TEMPORARY)) {
 			ui_go_home();
-			ui_toast(TR("For now only: save it in qdmr"));
+			ui_toast(TR(TALK_TOAST_FOR_NOW_ONLY, "For now only: save it in qdmr"));
 		} else {
-			ui_toast(TR("Talk target: not in this build"));
+			ui_toast(TR(WHY_TALK_TARGET_NOT_IN_BUILD, "Talk target: not in this build"));
 		}
 		return;
 	}
 	if (!permanent && !ui_svc_talk_to(t->id, !t->group, UI_TALK_TEMPORARY)) {
-		ui_toast(TR("Talk target: not in this build"));
+		ui_toast(TR(WHY_TALK_TARGET_NOT_IN_BUILD, "Talk target: not in this build"));
 		return;
 	}
 	ui_go_home();
 	sbuf_t b;
 	sb_init(&b, msg, sizeof msg);
-	sb_str(&b, permanent ? TR("Default now: ") : TR("Talking to "));
+	sb_str(&b, permanent ? TR(TALK_TOAST_DEFAULT_NOW, "Default now: ") : TR(TALK_TOAST_TALKING_TO, "Talking to "));
 	sb_str(&b, name);
 	ui_toast(msg);
 }
@@ -525,7 +547,7 @@ static void open_caller_actions(void)
 	if (caller_target(&t))
 		ui_open_actions(&t);
 	else
-		ui_toast(TR("No calls heard yet"));
+		ui_toast(TR(EMPTY_NO_CALLS_HEARD, "No calls heard yet"));
 }
 
 void ui_open_caller_actions(void)
@@ -609,7 +631,7 @@ static void handle_event(const ui_event_t *ev)
 	name_mark = NULL;	// a mark from an earlier event would point into this same buffer
 	switch (ev->kind) {
 	case UI_EV_MESSAGE:
-		sb_str(&b, TR("Message from "));
+		sb_str(&b, TR(MSG_BANNER_FROM, "Message from "));
 		station(&b, ev);
 		{
 			// The banner shows two lines of the message: more than the event carries, from the inbox
@@ -624,25 +646,27 @@ static void handle_event(const ui_event_t *ev)
 		break;
 	case UI_EV_MESSAGE_SENT:
 		if (ev->ok) {
-			sb_str(&b, ev->index == 1 ? TR("Sent to ") : TR("Delivered to "));
+			sb_str(&b, ev->index == 1 ? TR(BANNER_SENT_TO, "Sent to ") :
+				TR(MSG_BANNER_DELIVERED_TO, "Delivered to "));
 			station(&b, ev);
 			banner(UI_BANNER_RESULT, false, ev->id, title, NULL);
 		} else {
-			sb_str(&b, TR("No answer from "));
+			sb_str(&b, TR(BANNER_NO_ANSWER_FROM, "No answer from "));
 			station(&b, ev);
-			banner(UI_BANNER_RESULT, true, ev->id, title, TR("Not delivered: send again"));
+			banner(UI_BANNER_RESULT, true, ev->id, title,
+				TR(MSG_BANNER_NOT_DELIVERED, "Not delivered: send again"));
 		}
 		break;
 	case UI_EV_CALL_ALERT:
-		sb_str(&b, TR("Call alert from "));
+		sb_str(&b, TR(ALERT_BANNER_FROM, "Call alert from "));
 		station(&b, ev);
-		banner(UI_BANNER_CALL_ALERT, false, ev->id, title, TR("PTT replies"));
+		banner(UI_BANNER_CALL_ALERT, false, ev->id, title, TR(HINT_PTT_REPLIES, "PTT replies"));
 		vibrate(UI_VIBE_CALL);
 		break;
 	case UI_EV_PRIVATE_CALL:
-		sb_str(&b, TR("Private call from "));
+		sb_str(&b, TR(CALL_BANNER_PRIVATE_FROM, "Private call from "));
 		station(&b, ev);
-		banner(UI_BANNER_PRIVATE, false, ev->id, title, TR("PTT replies"));
+		banner(UI_BANNER_PRIVATE, false, ev->id, title, TR(HINT_PTT_REPLIES, "PTT replies"));
 		vibrate(UI_VIBE_CALL);
 		break;
 	case UI_EV_RADIO_CHECK:
@@ -651,7 +675,7 @@ static void handle_event(const ui_event_t *ev)
 			char t[24];
 			sbuf_t tb;
 			sb_init(&tb, t, sizeof t);
-			sb_str(&tb, TR("answered ("));
+			sb_str(&tb, TR(CHECK_BANNER_ANSWERED, "answered ("));
 			sb_u32(&tb, ev->ms / 1000u, 1);
 			sb_chr(&tb, '.');
 			sb_u32(&tb, (ev->ms % 1000u) / 100u, 1);
@@ -659,9 +683,10 @@ static void handle_event(const ui_event_t *ev)
 			banner(UI_BANNER_RESULT, false, ev->id, title, t);
 		} else {
 			sb_init(&b, title, sizeof title);
-			sb_str(&b, TR("No answer from "));
+			sb_str(&b, TR(BANNER_NO_ANSWER_FROM, "No answer from "));
 			station(&b, ev);
-			banner(UI_BANNER_RESULT, true, ev->id, title, TR("Off or out of range: try later"));
+			banner(UI_BANNER_RESULT, true, ev->id, title,
+				TR(BANNER_OFF_OR_OUT_OF_RANGE, "Off or out of range: try later"));
 		}
 		break;
 	case UI_EV_EMERGENCY:
@@ -673,13 +698,11 @@ static void handle_event(const ui_event_t *ev)
 		vibrate(UI_VIBE_EMERGENCY);
 		break;
 	case UI_EV_HOTSPOT_STARTED:
-		banner(UI_BANNER_INFO, false, 0, TR("Hotspot started by host"), TR("OK stops it"));
+		banner(UI_BANNER_INFO, false, 0, TR(HOTSPOT_BANNER_STARTED_BY_HOST, "Hotspot started by host"),
+			TR(HOTSPOT_BANNER_OK_STOPS, "OK stops it"));
 		break;
 	case UI_EV_SAVE_FAILED: {
-		static char msg[sizeof ev->text];
-		memcpy(msg, ev->text, sizeof msg);
-		msg[sizeof msg - 1] = 0;
-		ui_toast(msg[0] ? tr(msg) : TR("Couldn't save: try again"));	// msg: a TRN text of ui_svc_storage.c
+		ui_toast(ev->why != TR_NONE ? tr(ev->why) : TR(TOAST_SAVE_FAILED, "Couldn't save: try again"));
 		ui_menus_save_failed();
 		break;
 	}
@@ -692,12 +715,13 @@ static void handle_event(const ui_event_t *ev)
 	case UI_EV_CALL_ALERT_RESULT:
 		if (ev->ok) {
 			station(&b, ev);
-			sb_str(&b, TR(" answered the alert"));
+			sb_str(&b, TR(ALERT_BANNER_ANSWERED, " answered the alert"));
 			banner(UI_BANNER_RESULT, false, ev->id, title, NULL);
 		} else {
-			sb_str(&b, TR("No answer from "));
+			sb_str(&b, TR(BANNER_NO_ANSWER_FROM, "No answer from "));
 			station(&b, ev);
-			banner(UI_BANNER_RESULT, true, ev->id, title, TR("Off or out of range: try later"));
+			banner(UI_BANNER_RESULT, true, ev->id, title,
+				TR(BANNER_OFF_OR_OUT_OF_RANGE, "Off or out of range: try later"));
 		}
 		break;
 	case UI_EV_POWER_OFF_FAILED:
@@ -705,12 +729,14 @@ static void handle_event(const ui_event_t *ev)
 		power_off_due = false;
 		off_warned = false;
 		last_use_ms = now;
-		banner(UI_BANNER_INFO, true, 0, TR("Couldn't switch off"), TR("Turn the knob off"));
+		banner(UI_BANNER_INFO, true, 0, TR(AUTOOFF_BANNER_FAILED, "Couldn't switch off"),
+			TR(AUTOOFF_BANNER_TURN_KNOB_OFF, "Turn the knob off"));
 		break;
 	case UI_EV_SCAN_STOPPED:
 		break;
 	case UI_EV_ZONE_OFFER:
-		sb_str(&b, ev->index ? TR(GLYPH_DOWNLOAD " Channel from ") : TR(GLYPH_DOWNLOAD " Zone from "));
+		sb_str(&b, ev->index ? TR(SHARE_BANNER_CHANNEL_FROM, GLYPH_DOWNLOAD " Channel from ") :
+			TR(SHARE_BANNER_ZONE_FROM, GLYPH_DOWNLOAD " Zone from "));
 		station(&b, ev);
 		banner(UI_BANNER_ZONE_OFFER, false, ev->id, title, ev->text);
 		if (ui_st.message_tone)
@@ -718,24 +744,28 @@ static void handle_event(const ui_event_t *ev)
 		vibrate(UI_VIBE_MESSAGE);
 		break;
 	case UI_EV_ZONE_SENT:
-		sb_str(&b, ev->ok ? TR("Sent to ") : TR("Not sent to "));
+		sb_str(&b, ev->ok ? TR(BANNER_SENT_TO, "Sent to ") : TR(SHARE_BANNER_NOT_SENT_TO, "Not sent to "));
 		if (ev->index && !ev->name[0])
 			sb_str(&b, "TG ");
 		station(&b, ev);
-		banner(UI_BANNER_RESULT, !ev->ok, ev->id, title, ev->ok ? NULL : TR("Try again on a DMR channel"));
+		banner(UI_BANNER_RESULT, !ev->ok, ev->id, title, ev->ok ? NULL :
+			TR(SHARE_BANNER_TRY_ON_DMR, "Try again on a DMR channel"));
 		break;
 	case UI_EV_ZONE_IMPORTED:
 		if (ev->ok) {
 			char text[32];
 			sbuf_t tb;
 			sb_init(&tb, text, sizeof text);
-			sb_str(&b, ev->id ? TR("Updated ") : TR("Imported "));
+			sb_str(&b, ev->id ? TR(SHARE_BANNER_UPDATED, "Updated ") :
+				TR(SHARE_BANNER_IMPORTED, "Imported "));
 			sb_str(&b, ev->name);
 			sb_u32(&tb, ev->index, 1);
-			sb_str(&tb, ev->index == 1 ? TR(" channel, receive only") : TR(" channels, receive only"));
+			sb_str(&tb, ev->index == 1 ? TR(SHARE_BANNER_CHANNEL_RX_ONLY, " channel, receive only") :
+				TR(SHARE_BANNER_CHANNELS_RX_ONLY, " channels, receive only"));
 			banner(UI_BANNER_RESULT, false, 0, title, text);
 		} else {
-			banner(UI_BANNER_RESULT, true, 0, TR("Zone not imported"), tr(ev->text));	// a TRN text of ui_svc_zone.c
+			banner(UI_BANNER_RESULT, true, 0, TR(SHARE_BANNER_NOT_IMPORTED, "Zone not imported"),
+				tr(ev->why));
 		}
 		break;
 	default:
@@ -798,7 +828,7 @@ bool ui_freq_entry_digit(char *digits, uint8_t *len, char d)
 	ui_bands_text(bands, sizeof bands, false);
 	sbuf_t b;
 	sb_init(&b, hint, sizeof hint);
-	sb_str(&b, TR("Bands: "));
+	sb_str(&b, TR(FREQ_TOAST_BANDS, "Bands: "));
 	sb_str(&b, bands);
 	ui_toast(hint);
 	return false;
@@ -816,12 +846,12 @@ uint32_t ui_freq_parse(const char *digits, uint8_t len)
 uint32_t ui_freq_entry_hz(const char *digits, uint8_t len)
 {
 	if (len < UI_ENTRY_MHZ) {
-		ui_toast(TR("Type at least the MHz digits"));
+		ui_toast(TR(FREQ_TOAST_TYPE_MHZ_DIGITS, "Type at least the MHz digits"));
 		return 0;
 	}
 	uint32_t hz = ui_freq_parse(digits, len);
 	if (hz == 0)
-		ui_toast(TR("Not in a band: type more digits"));
+		ui_toast(TR(FREQ_TOAST_NOT_IN_BAND, "Not in a band: type more digits"));
 	return hz;
 }
 
@@ -830,7 +860,7 @@ static void entry_digit(char d)
 	if (!ui_st.entry)
 		ui_st.entry_len = 0;	// digits Split left behind (quick settings type into the same buffer)
 	if (ui_st.entry_len >= UI_ENTRY_MAX) {
-		ui_toast(TR("All digits typed: OK or # tunes"));
+		ui_toast(TR(FREQ_TOAST_ALL_DIGITS_TYPED, "All digits typed: OK or # tunes"));
 		return;
 	}
 	if (!ui_freq_entry_digit(ui_st.entry_digits, &ui_st.entry_len, d))
@@ -854,15 +884,18 @@ static void entry_commit(void)
 // Digital monitor (the DMR hear all latch: every talkgroup on the slot and color code)
 static inline const char *dmon_text(bool on)
 {
-	return on ? TR("Digital monitor on") : TR("Digital monitor off");
+	return on ? TR(DMON_TOAST_ON, "Digital monitor on") : TR(DMON_TOAST_OFF, "Digital monitor off");
 }
 #endif
 
 // The key lock toasts, with a shorter form for the narrow displays (text alternates, font.h)
 static inline const char *locked_text(bool star)
 {
-	return star ? TR(TEXT_ALT_OPEN "Keys locked: hold * to unlock" TEXT_ALT_NEXT "Locked: hold * to unlock" TEXT_ALT_CLOSE) :
-		TR(TEXT_ALT_OPEN "Keys locked: hold Back to unlock" TEXT_ALT_NEXT "Locked: hold Back to unlock" TEXT_ALT_CLOSE);
+	return star ?
+		TR(LOCK_HINT_HOLD_STAR, TEXT_ALT_OPEN "Keys locked: hold * to unlock"
+			TEXT_ALT_NEXT "Locked: hold * to unlock" TEXT_ALT_CLOSE) :
+		TR(LOCK_HINT_HOLD_BACK, TEXT_ALT_OPEN "Keys locked: hold Back to unlock"
+			TEXT_ALT_NEXT "Locked: hold Back to unlock" TEXT_ALT_CLOSE);
 }
 
 static int8_t nav_dir(const input_event_t *ev)
@@ -905,20 +938,20 @@ static int digit_of(const input_event_t *ev)
 bool ui_try_save_channel(void)
 {
 	if (view->vfo) {
-		ui_toast(TR("VFO settings save automatically"));
+		ui_toast(TR(CHAN_TOAST_VFO_SAVES_ITSELF, "VFO settings save automatically"));
 	} else if (view->hotspot) {
-		ui_toast(TR("Stop hotspot to save"));
+		ui_toast(TR(CHAN_TOAST_STOP_HOTSPOT_TO_SAVE, "Stop hotspot to save"));
 	} else if (!view->temporary && !ui_st.privacy) {
-		ui_toast(TR("Nothing to save"));
+		ui_toast(TR(CHAN_TOAST_NOTHING_TO_SAVE, "Nothing to save"));
 	} else if (view->channel_number == 0) {
-		ui_toast(TR("Pick a saved channel"));
+		ui_toast(TR(CHAN_TOAST_PICK_SAVED_CHANNEL, "Pick a saved channel"));
 	} else if (!(ui_svc_features() & UI_FEAT_SAVE_CHANNEL)) {
-		ui_toast(TR("Channel saving unavailable"));
+		ui_toast(TR(CHAN_TOAST_SAVING_UNAVAILABLE, "Channel saving unavailable"));
 	} else if (ui_svc_save_channel()) {
-		ui_toast(TR("Saved to channel"));
+		ui_toast(TR(CHAN_TOAST_SAVED_TO_CHANNEL, "Saved to channel"));
 		return true;
 	} else {
-		ui_toast(TR("Save busy: try again"));
+		ui_toast(TR(CHAN_TOAST_SAVE_BUSY, "Save busy: try again"));
 	}
 	return false;
 }
@@ -944,7 +977,7 @@ static void zone_go(uint16_t zi, bool home)
 	radio_req_zone(zi);
 	sbuf_t b;
 	sb_init(&b, msg, sizeof msg);
-	sb_str(&b, home ? TR("Home zone: ") : TR("Zone: "));
+	sb_str(&b, home ? TR(ZONE_TOAST_HOME_ZONE, "Home zone: ") : TR(ZONE_TOAST_ZONE, "Zone: "));
 	if (codeplug_zone(zi, &z))
 		sb_str(&b, z.name);
 	ui_toast(msg);
@@ -958,7 +991,7 @@ static void zone_step(int dir)
 #endif
 	uint16_t n = codeplug_zone_count();
 	if (n < 2) {
-		ui_toast(TR("Only one zone"));
+		ui_toast(TR(ZONE_TOAST_ONLY_ONE, "Only one zone"));
 		return;
 	}
 	zone_go((uint16_t)((view->zone_index + n + dir) % n), false);
@@ -971,19 +1004,20 @@ static void copy_to_vfo(void)
 	switch (ui_svc_vfo_copy(view)) {
 	case VFO_COPY_OK:
 		ui_go_home();
-		ui_toast(TR("Copied to VFO"));
+		ui_toast(TR(VFO_TOAST_COPIED, "Copied to VFO"));
 		break;
 	case VFO_COPY_ALREADY:
-		ui_toast(TR("Already in VFO"));
+		ui_toast(TR(VFO_TOAST_ALREADY_IN_VFO, "Already in VFO"));
 		break;
 	case VFO_COPY_NO_MODE:
-		ui_toast(view->ch.mode == RADIO_MODE_DMR ? TR("VFO: no DMR in this build") : TR("VFO: no FM in this build"));
+		ui_toast(view->ch.mode == RADIO_MODE_DMR ? TR(WHY_VFO_NO_DMR_IN_BUILD, "VFO: no DMR in this build") :
+			TR(WHY_VFO_NO_FM_IN_BUILD, "VFO: no FM in this build"));
 		break;
 	case VFO_COPY_OUT_OF_BAND:
-		ui_toast(TR("VFO: frequency outside its bands"));
+		ui_toast(TR(VFO_WHY_OUTSIDE_BANDS, "VFO: frequency outside its bands"));
 		break;
 	default:
-		ui_toast(TR("VFO: not in this build"));
+		ui_toast(TR(WHY_VFO_NOT_IN_BUILD, "VFO: not in this build"));
 		break;
 	}
 }
@@ -992,7 +1026,7 @@ static void copy_to_vfo(void)
 static void vfo_key(void)
 {
 	if (!CONFIG_VFO_FM && !CONFIG_VFO_DMR) {
-		ui_toast(TR("VFO: not in this build"));
+		ui_toast(TR(WHY_VFO_NOT_IN_BUILD, "VFO: not in this build"));
 		return;
 	}
 #if CONFIG_DUAL_WATCH
@@ -1001,7 +1035,7 @@ static void vfo_key(void)
 #endif
 	bool was = view->vfo;	// the view may change at once (the host simulator)
 	radio_req_vfo(!was);
-	ui_toast(was ? TR("Back to channels") : "VFO");
+	ui_toast(was ? TR(VFO_TOAST_BACK_TO_CHANNELS, "Back to channels") : "VFO");
 }
 
 void ui_scan_toggle(void)
@@ -1012,11 +1046,12 @@ void ui_scan_toggle(void)
 #endif
 	bool on = !ui_st.scanning;
 	if (!ui_svc_scan(on)) {
-		ui_toast(TR("Scan: not in this build"));
+		ui_toast(TR(WHY_SCAN_NOT_IN_BUILD, "Scan: not in this build"));
 		return;
 	}
 	ui_st.scanning = on;
-	ui_toast(!on ? TR("Scan stopped") : view->vfo ? TR("Scanning the band") : TR("Scanning this zone"));
+	ui_toast(!on ? TR(SCAN_TOAST_STOPPED, "Scan stopped") : view->vfo ?
+		TR(SCAN_TOAST_SCANNING_BAND, "Scanning the band") : TR(SCAN_TOAST_SCANNING_ZONE, "Scanning this zone"));
 }
 
 #if CONFIG_DMR
@@ -1059,7 +1094,8 @@ static bool talk_step(int dir)
 	ui_sb_target(name, sizeof name, &t);
 	sbuf_t b;
 	sb_init(&b, msg, sizeof msg);
-	sb_str(&b, next == 0 ? TR("Default: ") : TR("Talking to "));	// the channel's own talkgroup again, or a listen list one
+	// the channel's own talkgroup again, or a listen list one
+	sb_str(&b, next == 0 ? TR(TALK_TOAST_DEFAULT, "Default: ") : TR(TALK_TOAST_TALKING_TO, "Talking to "));
 	sb_str(&b, name);
 	ui_toast(msg);
 	return true;
@@ -1100,9 +1136,9 @@ bool ui_home_key(const input_event_t *ev)
 		static char msg[48];
 		sbuf_t b;
 		sb_init(&b, msg, sizeof msg);
-		sb_str(&b, TR("Speed dial "));
+		sb_str(&b, TR(DIAL_TOAST_SPEED_DIAL, "Speed dial "));
 		sb_u32(&b, (uint32_t)d, 1);
-		sb_str(&b, TR(" is empty: set it in qdmr"));
+		sb_str(&b, TR(DIAL_TOAST_IS_EMPTY, " is empty: set it in qdmr"));
 		ui_toast(msg);
 		return true;
 	}
@@ -1149,11 +1185,11 @@ bool ui_home_key(const input_event_t *ev)
 		} else if (ui_st.scanning) {
 			ui_svc_scan(false);
 			ui_st.scanning = false;
-			ui_toast(TR("Scan stopped"));
+			ui_toast(TR(SCAN_TOAST_STOPPED, "Scan stopped"));
 #if CONFIG_DMR
 		} else if (view->ch.mode == RADIO_MODE_DMR && view->dmr.reply_active) {
 			radio_req_reply_cancel();
-			ui_toast(TR("Reply ended"));
+			ui_toast(TR(HOME_TOAST_REPLY_ENDED, "Reply ended"));
 		} else if (ui_st.hear_all) {
 			ui_svc_hear_all(false);
 			ui_st.hear_all = false;
@@ -1164,7 +1200,7 @@ bool ui_home_key(const input_event_t *ev)
 			ui_svc_talk_to(0, false, UI_TALK_DEFAULT);
 			if (ui_st.privacy && ui_svc_privacy(false))
 				ui_st.privacy = false;
-			ui_toast(TR("Changes undone"));
+			ui_toast(TR(HOME_TOAST_CHANGES_UNDONE, "Changes undone"));
 #if CONFIG_DUAL_WATCH
 		} else if (ui_st.dual.on) {
 			ui_dual_back();
@@ -1268,7 +1304,7 @@ static bool split_commit(void)
 	if (hz == 0)
 		return false;
 	if (!board_in_band(hz, true)) {
-		ui_toast(TR("Can't transmit there"));
+		ui_toast(TR(QUICK_TOAST_CANT_TX_THERE, "Can't transmit there"));
 		return false;
 	}
 	radio_req_vfo_tx(hz);
@@ -1315,7 +1351,7 @@ static void quick_close_editor(void)
 	if (kind == QT_SPLIT && ui_st.quick_edit && !split_commit())
 		return;		// the editor stays open on what was typed
 	if (kind == QT_CC && ui_st.quick_edit && !ui_svc_dmr_color_code(ui_st.cc_edit))
-		ui_toast(TR("Color code: not in this build"));
+		ui_toast(TR(WHY_COLOR_CODE_NOT_IN_BUILD, "Color code: not in this build"));
 	if (kind == QT_BRIGHTNESS)
 		ui_svc_setting_set(UI_SET_BRIGHTNESS, ui_st.brightness);
 	ui_st.quick_edit = false;
@@ -1326,14 +1362,16 @@ static void quick_unavailable(uint8_t kind)
 	switch (kind) {
 	case QT_TONE:
 	case QT_BANDWIDTH:
-		ui_toast(view->ch.mode == RADIO_MODE_DMR ? TR("FM only: this is a DMR channel") : TR("Not in this build"));
+		ui_toast(view->ch.mode == RADIO_MODE_DMR ?
+			TR(QUICK_WHY_FM_ONLY_DMR_CHANNEL, "FM only: this is a DMR channel") :
+			TR(WHY_NOT_IN_BUILD, "Not in this build"));
 		break;
-	case QT_PRIVACY: ui_toast(TR("Privacy: not in this build")); break;
-	case QT_SCAN: ui_toast(TR("Scan: not in this build")); break;
-	case QT_MODE: ui_toast(TR("VFO: one mode in this build")); break;
-	case QT_TO_VFO: ui_toast(TR("VFO: not in this build")); break;
-	case QT_VOX: ui_toast(TR("VOX: not on this radio yet")); break;
-	default: ui_toast(TR("Not in this build")); break;
+	case QT_PRIVACY: ui_toast(TR(WHY_PRIVACY_NOT_IN_BUILD, "Privacy: not in this build")); break;
+	case QT_SCAN: ui_toast(TR(WHY_SCAN_NOT_IN_BUILD, "Scan: not in this build")); break;
+	case QT_MODE: ui_toast(TR(WHY_VFO_ONE_MODE_IN_BUILD, "VFO: one mode in this build")); break;
+	case QT_TO_VFO: ui_toast(TR(WHY_VFO_NOT_IN_BUILD, "VFO: not in this build")); break;
+	case QT_VOX: ui_toast(TR(WHY_VOX_NOT_ON_RADIO_YET, "VOX: not on this radio yet")); break;
+	default: ui_toast(TR(WHY_NOT_IN_BUILD, "Not in this build")); break;
 	}
 }
 
@@ -1350,7 +1388,8 @@ static void quick_activate(int tile)
 	case QT_BANDWIDTH: {
 		bool wide = view->ch.bw != RADIO_BW_25K;
 		radio_req_bandwidth(wide ? RADIO_BW_25K : RADIO_BW_12K5);
-		ui_toast(wide ? TR("Bandwidth 25 kHz") : TR("Bandwidth 12.5 kHz"));
+		ui_toast(wide ? TR(QUICK_TOAST_BANDWIDTH_25_KHZ, "Bandwidth 25 kHz") :
+			TR(QUICK_TOAST_BANDWIDTH_12_5_KHZ, "Bandwidth 12.5 kHz"));
 		break;
 	}
 	case QT_TONE: {
@@ -1359,7 +1398,7 @@ static void quick_activate(int tile)
 		ui_st.tone_target = same ? RADIO_TONE_BOTH : RADIO_TONE_TX;
 		ui_st.tone_edit = view->ch.tx_tone;
 		ui_st.quick_edit = true;
-		ui_toast(TR("Up/Dn tone  # TX/RX"));
+		ui_toast(TR(QUICK_TOAST_TONE_KEYS, "Up/Dn tone  # TX/RX"));
 		break;
 	}
 	case QT_TO_VFO:
@@ -1372,7 +1411,8 @@ static void quick_activate(int tile)
 	case QT_MODE: {
 		bool to_dmr = view->ch.mode != RADIO_MODE_DMR;	// the view may change at once (the host simulator)
 		if (to_dmr && (view->am || view->bcast)) {
-			ui_toast(view->am ? TR("AM only in the air band") : TR("FM only in the broadcast band"));
+			ui_toast(view->am ? TR(QUICK_WHY_AM_ONLY_AIR_BAND, "AM only in the air band") :
+				TR(QUICK_WHY_FM_ONLY_BROADCAST, "FM only in the broadcast band"));
 			break;
 		}
 		if (ui_svc_mode(to_dmr ? RADIO_MODE_DMR : RADIO_MODE_FM))
@@ -1387,7 +1427,8 @@ static void quick_activate(int tile)
 		break;
 	case QT_VOX:
 		if (ui_svc_vox(!view->vox_on))
-			ui_toast(view->vox_on ? TR("VOX off") : TR("VOX on: speak to transmit"));
+			ui_toast(view->vox_on ? TR(QUICK_TOAST_VOX_OFF, "VOX off") :
+				TR(QUICK_TOAST_VOX_ON, "VOX on: speak to transmit"));
 		else
 			quick_unavailable(kind);
 		break;
@@ -1402,8 +1443,10 @@ static void quick_activate(int tile)
 	case QT_TIMESLOT: {
 		uint8_t ts = view->dmr.ts ? view->dmr.ts : view->ch.timeslot;
 		if (ui_svc_dmr_timeslot(ts == 2 ? 1 : 2))
-			ui_toast(view->vfo ? (ts == 2 ? TR("Timeslot 1") : TR("Timeslot 2")) :
-				ts == 2 ? TR("Timeslot 1 for now") : TR("Timeslot 2 for now"));
+			ui_toast(view->vfo ? (ts == 2 ? TR(QUICK_TOAST_TIMESLOT_1, "Timeslot 1") :
+				TR(QUICK_TOAST_TIMESLOT_2, "Timeslot 2")) :
+				ts == 2 ? TR(QUICK_TOAST_TIMESLOT_1_FOR_NOW, "Timeslot 1 for now") :
+					TR(QUICK_TOAST_TIMESLOT_2_FOR_NOW, "Timeslot 2 for now"));
 		else
 			quick_unavailable(kind);
 		break;
@@ -1423,9 +1466,10 @@ static void quick_activate(int tile)
 	case QT_PRIVACY:
 		if (ui_svc_privacy(!ui_st.privacy)) {
 			ui_st.privacy = !ui_st.privacy;
-			ui_toast(ui_st.privacy ? TR("Privacy on for now") : TR("Privacy off"));
+			ui_toast(ui_st.privacy ? TR(QUICK_TOAST_PRIVACY_ON_FOR_NOW, "Privacy on for now") :
+				TR(QUICK_TOAST_PRIVACY_OFF, "Privacy off"));
 		} else {
-			ui_toast(TR("No privacy key: set one in Settings > Privacy"));
+			ui_toast(TR(QUICK_WHY_NO_PRIVACY_KEY, "No privacy key: set one in Settings > Privacy"));
 		}
 		break;
 	case QT_TALK_TO:
@@ -1442,7 +1486,7 @@ static void quick_activate(int tile)
 		static char msg[16];
 		sbuf_t b;
 		sb_init(&b, msg, sizeof msg);
-		sb_str(&b, TR("Power "));
+		sb_str(&b, TR(QUICK_TOAST_POWER, "Power "));
 		sb_str(&b, ui_power_name(next, view->ch.tx_hz));
 		ui_toast(msg);
 		break;
@@ -1476,7 +1520,7 @@ bool ui_quick_key(const input_event_t *ev)
 			ui_st.quick_edit = false;
 		} else if (ui_st.quick_edit && kind == QT_SPLIT) {
 			if (ui_st.entry_len >= UI_ENTRY_MAX)
-				ui_toast(TR("All digits typed: OK sets TX"));
+				ui_toast(TR(QUICK_TOAST_ALL_DIGITS_TYPED, "All digits typed: OK sets TX"));
 			else
 				(void)ui_freq_entry_digit(ui_st.entry_digits, &ui_st.entry_len, (char)('0' + d));
 		} else if (ui_st.quick_edit && kind == QT_CC) {
@@ -1502,10 +1546,12 @@ bool ui_quick_key(const input_event_t *ev)
 			ui_st.tone_target = ui_st.tone_target == RADIO_TONE_BOTH ? RADIO_TONE_TX :
 				ui_st.tone_target == RADIO_TONE_TX ? RADIO_TONE_RX : RADIO_TONE_BOTH;
 			ui_st.tone_edit = ui_st.tone_target == RADIO_TONE_RX ? view->ch.rx_tone : view->ch.tx_tone;
-			ui_toast(ui_st.tone_target == RADIO_TONE_BOTH ? TR("Tone for RX and TX") :
-				ui_st.tone_target == RADIO_TONE_TX ? TR("Tone for TX only") : TR("Tone for RX only"));
+			ui_toast(ui_st.tone_target == RADIO_TONE_BOTH ?
+				TR(QUICK_TOAST_TONE_RX_AND_TX, "Tone for RX and TX") :
+				ui_st.tone_target == RADIO_TONE_TX ? TR(QUICK_TOAST_TONE_TX_ONLY, "Tone for TX only") :
+					TR(QUICK_TOAST_TONE_RX_ONLY, "Tone for RX only"));
 		} else if (press) {
-			ui_toast(TR("No actions here"));
+			ui_toast(TR(TOAST_NO_ACTIONS_HERE, "No actions here"));
 		}
 		return true;
 	case ACT_SELECT:
@@ -1622,7 +1668,7 @@ bool ui_emergency_key(const input_event_t *ev)
 	if (ev->action == ACT_SELECT) {
 		ui_svc_emergency_dismiss();
 		ui_pop();
-		ui_toast(TR("Emergency acknowledged"));
+		ui_toast(TR(EMERG_TOAST_ACKNOWLEDGED, "Emergency acknowledged"));
 		return true;
 	}
 	if (ev->action == ACT_CONTEXT) {
@@ -1653,11 +1699,11 @@ static void hotspot_key(const input_event_t *ev)
 	if ((ev->action == ACT_SELECT && press) || (ev->action == ACT_BACK && ev->gesture == GESTURE_LONG)) {
 		hostlink_hotspot_exit();
 		hs_diag = false;
-		ui_toast(TR("Hotspot stopped"));
+		ui_toast(TR(HOTSPOT_TOAST_STOPPED, "Hotspot stopped"));
 	} else if (ev->action == ACT_QUICK && press) {
 		hs_diag = !hs_diag;
 	} else if (press && !(hs_diag && ev->action == ACT_BACK)) {
-		ui_toast(TR("Hotspot on: OK stops it"));
+		ui_toast(TR(HOTSPOT_TOAST_ON_OK_STOPS, "Hotspot on: OK stops it"));
 	}
 }
 #endif
@@ -1725,14 +1771,16 @@ static inline __attribute__((always_inline)) bool list_key(const ui_scr_def_t *d
 				}
 			}
 		}
-		ui_toast(TR("No item with that number"));
+		ui_toast(TR(LIST_TOAST_NO_ITEM_NUMBER, "No item with that number"));
 		return true;
 	}
 	switch (ev->action) {
 	case ACT_SELECT:
 		if (n == 0 || d->select == NULL) {
 			if (press || ev->gesture == GESTURE_LONG)
-				ui_toast(ev->gesture == GESTURE_LONG ? TR("Nothing to save here") : TR("Nothing to open"));
+				ui_toast(ev->gesture == GESTURE_LONG ?
+					TR(LIST_TOAST_NOTHING_TO_SAVE, "Nothing to save here") :
+					TR(LIST_TOAST_NOTHING_TO_OPEN, "Nothing to open"));
 			return true;
 		}
 		if (press || ev->gesture == GESTURE_LONG)
@@ -1744,7 +1792,7 @@ static inline __attribute__((always_inline)) bool list_key(const ui_scr_def_t *d
 		if (d->context != NULL && n > 0)
 			d->context(f->focus);
 		else
-			ui_toast(TR("No actions here"));
+			ui_toast(TR(TOAST_NO_ACTIONS_HERE, "No actions here"));
 		return true;
 	case ACT_BACK:
 		if (!press)
@@ -1771,29 +1819,29 @@ static void list_draw(const ui_scr_def_t *d)
 	static char header[24];
 	ui_list_t l;
 	memset(&l, 0, sizeof l);
-	l.prefix = tr(d->prefix);	// a screen definition's text is marked TRN: translated here
+	l.prefix = tr(d->prefix);	// a screen definition's text is a key (TRN): translated here
 	l.name = list_title_name(d);
 	l.count = d->count();
 	l.focus = f->focus;
 	l.top = &f->top;
 	l.item = d->item;
 	l.empty = tr(d->empty);
-	l.hint = tr(d->hint);
+	l.hint = (d->flags & SF_HINT_FN) ? d->hint_fn() : tr(d->hint);
 	l.body = d->body != NULL ? d->body() : NULL;
 	if ((d->flags & SF_FILTER) && filter_keys[0]) {
 		sbuf_t b;
 		sb_init(&b, header, sizeof header);
-		sb_str(&b, TR("Find: "));
+		sb_str(&b, TR(LIST_TITLE_FIND, "Find: "));
 		sb_str(&b, filter_keys);
 		sb_chr(&b, '_');
 		l.header = header;
 		if (l.count == 0)
-			l.empty = TR("No match: Back deletes a key");
+			l.empty = TR(LIST_EMPTY_NO_MATCH, "No match: Back deletes a key");
 	}
 	if (d->flags & SF_FIND) {
 		sbuf_t b;
 		sb_init(&b, header, sizeof header);
-		sb_str(&b, TR("Find: "));
+		sb_str(&b, TR(LIST_TITLE_FIND, "Find: "));
 		sb_str(&b, ui_find_query());
 		sb_chr(&b, '_');
 		l.header = header;
@@ -1864,6 +1912,28 @@ void ui_app_init(void)
 }
 
 uint8_t ui_app_brightness(void) { return ui_st.brightness; }
+
+#if CONFIG_BACKLIGHT_TEST
+// The backlight tests hold the light: the UI task's dim and off times and key wake-ups leave it alone while held
+static int16_t backlight_hold = -1;
+static bool backlight_reapply;
+
+void ui_backlight_hold(int16_t percent)
+{
+	if (percent < 0 && backlight_hold >= 0)
+		backlight_reapply = true;	// the tests wrote the board behind the task's back: it writes its level again
+	backlight_hold = percent;
+}
+
+int16_t ui_app_backlight_hold(void) { return backlight_hold; }
+
+bool ui_app_take_backlight_reapply(void)
+{
+	bool r = backlight_reapply;
+	backlight_reapply = false;
+	return r;
+}
+#endif
 bool ui_app_power_off_due(void) { return power_off_due; }
 
 static uint16_t clamp_u16(int32_t v) { return (uint16_t)(v < 0 ? 0 : v > 0xFFFF ? 0xFFFF : v); }
@@ -1875,7 +1945,7 @@ void ui_apply_setting(uint8_t id, int32_t v)
 #if CONFIG_RX_EXT
 	case UI_SET_RX_EXT:
 		if (v != 0)
-			ui_toast(TR("Receive only. Sensitivity not rated"));
+			ui_toast(TR(SET_TOAST_RX_PAST_BANDS, "Receive only. Sensitivity not rated"));
 		break;
 #endif
 	case UI_SET_BRIGHTNESS: ui_st.brightness = (uint8_t)(v >= 10 && v <= 100 ? v : 100); break;
@@ -1935,11 +2005,12 @@ static bool emergency_key(const input_event_t *ev)
 		return false;
 	bool on = ui_svc_emergency_active();	// the radio core's state: a cancel over the debug link counts too
 	if (!(ui_svc_features() & UI_FEAT_EMERGENCY)) {
-		ui_toast(TR("Emergency: not in this build"));
+		ui_toast(TR(WHY_EMERGENCY_NOT_IN_BUILD, "Emergency: not in this build"));
 	} else if (!ui_svc_emergency(!on)) {
-		ui_toast(TR("Emergency needs a DMR channel and ID"));
+		ui_toast(TR(EMERG_WHY_NEEDS_DMR_AND_ID, "Emergency needs a DMR channel and ID"));
 	} else {
-		ui_toast(!on ? TR("EMERGENCY sent: hold again to cancel") : TR("Emergency canceled"));
+		ui_toast(!on ? TR(EMERG_TOAST_SENT, "EMERGENCY sent: hold again to cancel") :
+			TR(EMERG_TOAST_CANCELED, "Emergency canceled"));
 	}
 	return true;
 }
@@ -1953,7 +2024,7 @@ static void call_back_key(void)
 		if (r->out)
 			continue;
 		if (!CONFIG_DMR || view->ch.mode != RADIO_MODE_DMR) {
-			ui_toast(TR("Call back: DMR only"));
+			ui_toast(TR(HOME_WHY_CALL_BACK_DMR_ONLY, "Call back: DMR only"));
 			return;
 		}
 		ui_target_t t;
@@ -1966,11 +2037,21 @@ static void call_back_key(void)
 		ui_talk(&t, false);
 		return;
 	}
-	ui_toast(TR("No calls heard yet"));
+	ui_toast(TR(EMPTY_NO_CALLS_HEARD, "No calls heard yet"));
 }
 
 void ui_app_key(const input_event_t *ev)
 {
+	// A programmed home key (P1, P2: board.home_keys): its function on Home, its arrow everywhere else. Home is the
+	// bottom of the stack, not while a frequency is typed there
+	input_event_t home_ev;
+	if (ev->action >= ACT_HOME_KEY_1 && ev->action <= ACT_HOME_KEY_4) {
+		home_ev = *ev;
+		home_ev.action = ui_svc_home_key(ev->action, ev->gesture, sp == 0 && !ui_st.entry);
+		if (home_ev.action == ACT_NONE)
+			return;
+		ev = &home_ev;
+	}
 	dirty = true;
 	last_key_ms = now;
 	last_use_ms = now;
@@ -1978,8 +2059,8 @@ void ui_app_key(const input_event_t *ev)
 	if (ev->action == ACT_PTT && ev->gesture == GESTURE_DOWN && ui_st.locked && !ui_st.ptt_locked) {
 		// The input layer kept this press from the radio (Settings > Key lock > PTT when locked)
 		ui_svc_beep(UI_BEEP_ERROR);
-		ui_toast(has_quick_key ? TR("PTT is off while locked: hold * to unlock") :
-			TR("PTT is off while locked: hold Back to unlock"));
+		ui_toast(has_quick_key ? TR(LOCK_TOAST_PTT_OFF_HOLD_STAR, "PTT is off while locked: hold * to unlock") :
+			TR(LOCK_TOAST_PTT_OFF_HOLD_BACK, "PTT is off while locked: hold Back to unlock"));
 		return;
 	}
 	// The monitor key on DMR: a short press toggles digital monitor (the radio core does it on the release; the
@@ -2019,7 +2100,7 @@ void ui_app_key(const input_event_t *ev)
 	if (ui_st.locked) {
 		if (lock_key) {
 			set_locked(false);
-			ui_toast(TR("Keys unlocked"));
+			ui_toast(TR(LOCK_TOAST_UNLOCKED, "Keys unlocked"));
 		} else if (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG || ev->action == ACT_ENC_STEP) {
 			ui_toast(locked_text(has_quick_key));
 		}
@@ -2043,7 +2124,7 @@ void ui_app_key(const input_event_t *ev)
 	}
 	if (ev->action == ACT_CONTEXT && ev->gesture == GESTURE_LONG) {
 		if (!CONFIG_DMR || view->ch.mode != RADIO_MODE_DMR)
-			ui_toast(TR("Talk target: DMR channels only"));
+			ui_toast(TR(TALK_WHY_DMR_CHANNELS_ONLY, "Talk target: DMR channels only"));
 		else if (stack[sp].scr != SCR_PICKER)
 			ui_push(SCR_PICKER, 0);
 		return;
@@ -2052,7 +2133,7 @@ void ui_app_key(const input_event_t *ev)
 		if (CONFIG_DMR && view->ch.mode == RADIO_MODE_DMR)
 			ui_push(SCR_PICKER, 0);
 		else
-			ui_toast(TR("Talk target: DMR channels only"));
+			ui_toast(TR(TALK_WHY_DMR_CHANNELS_ONLY, "Talk target: DMR channels only"));
 		return;
 	}
 	// A reassigned side key (core/input/keyassign.h): the same on a press and a long press, on any screen
@@ -2084,12 +2165,13 @@ void ui_app_key(const input_event_t *ev)
 			// Saved like Settings > Display > Talkgroup name first, so the choice survives a power cycle
 			ui_svc_setting_set(UI_SET_LABEL_FIRST, !ui_st.label_first);
 			ui_apply_setting(UI_SET_LABEL_FIRST, !ui_st.label_first);
-			ui_toast(ui_st.label_first ? TR("Talkgroup name first") : TR("Talkgroup number first"));
+			ui_toast(ui_st.label_first ? TR(SET_LABEL_TG_NAME_FIRST, "Talkgroup name first") :
+				TR(HOME_TOAST_TG_NUMBER_FIRST, "Talkgroup number first"));
 			return;
 #endif
 		case ACT_VOLUME:
 			if (!(ui_svc_features() & UI_FEAT_VOLUME))
-				ui_toast(TR("Volume: use the knob"));
+				ui_toast(TR(HOME_TOAST_VOLUME_USE_KNOB, "Volume: use the knob"));
 			else if (stack[sp].scr == SCR_VOLUME)
 				ui_pop();
 			else
@@ -2128,7 +2210,7 @@ void ui_app_key(const input_event_t *ev)
 		return;
 	}
 	if (ev->action == ACT_USER_3 && ev->gesture == GESTURE_LONG) {
-		ui_toast(TR("Voice prompts: not in this build"));
+		ui_toast(TR(WHY_VOICE_PROMPTS_NOT_IN_BUILD, "Voice prompts: not in this build"));
 		return;
 	}
 	// In text entry * and # are the typewriter's keys, not quick settings or a banner's
@@ -2148,7 +2230,8 @@ void ui_app_key(const input_event_t *ev)
 	// QUICK opens quick settings from any screen; BACK returns to where the user was
 	const ui_scr_def_t *d = ui_scr[stack[sp].scr];
 	if (ev->action == ACT_QUICK && ev->gesture == GESTURE_PRESS && stack[sp].scr != SCR_QUICK &&
-			stack[sp].scr != SCR_DIAG && stack[sp].scr != SCR_HOME && !typing) {
+			stack[sp].scr != SCR_DIAG && stack[sp].scr != SCR_HOME && !typing &&
+			!ON_BL_TEST()) {	// * steps the rate in the backlight tests
 		ui_push(SCR_QUICK, 0);
 		return;
 	}
@@ -2162,7 +2245,7 @@ void ui_app_key(const input_event_t *ev)
 		return;
 	}
 	if (ev->gesture == GESTURE_PRESS && ev->action != ACT_ENC_STEP)
-		ui_toast(TR("Not used here"));
+		ui_toast(TR(HOME_TOAST_KEY_NOT_USED, "Not used here"));
 }
 
 // Auto power off (Settings > Power saving): after auto_off_min without a key press, a call, a scan or the hotspot, a
@@ -2178,7 +2261,8 @@ static void use_tick(const radio_view_t *v)
 	uint32_t idle = now - last_use_ms, limit = (uint32_t)ui_st.auto_off_min * 60000u;
 	if (!off_warned && idle + 60000u >= limit) {
 		off_warned = true;
-		banner(UI_BANNER_INFO, true, 0, TR("Switching off in 1 min"), TR("Any key keeps it on"));
+		banner(UI_BANNER_INFO, true, 0, TR(AUTOOFF_BANNER_IN_1_MIN, "Switching off in 1 min"),
+			TR(AUTOOFF_BANNER_ANY_KEY_KEEPS_ON, "Any key keeps it on"));
 		ui_svc_beep(UI_BEEP_ERROR);
 	}
 	if (idle >= limit)
@@ -2203,9 +2287,9 @@ static void battery_tick(const radio_view_t *v)
 	batt_warned_ms = now;
 	sbuf_t b;
 	sb_init(&b, text, sizeof text);
-	sb_str(&b, TR("Battery "));
+	sb_str(&b, TR(BATT_BANNER_BATTERY, "Battery "));
 	sb_u32(&b, pct, 1);
-	sb_str(&b, TR("%: charge soon"));
+	sb_str(&b, TR(BATT_PART_CHARGE_SOON, "%: charge soon"));
 	banner(UI_BANNER_INFO, true, 0, text, NULL);
 	if (v->battery == RADIO_BATT_OK)
 		ui_svc_beep(UI_BEEP_BATTERY_LOW);
@@ -2343,7 +2427,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 			if (top < sp) {
 				sp = (uint8_t)(top + 1u);
 				ui_pop();	// down to the screen below the first one whose zone was deleted
-				ui_toast(TR("That zone was deleted"));
+				ui_toast(TR(ZONE_TOAST_WAS_DELETED, "That zone was deleted"));
 			}
 		}
 		ui_frame_t *f = &stack[sp];
@@ -2368,7 +2452,8 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	// "DMR modem off" only once it's been off a while: a channel or mode change (APRS on FM and back, a retune)
 	// turns the modem off for a moment, and a warning that flashes up for a few frames only worries
 	static uint32_t dmr_off_since;
-	if (v->ch.mode == RADIO_MODE_DMR && !v->dmr.active && !v->dmr.sfr_rpt) {	// an SFR repeater has the modem
+	// an SFR repeater has the modem; a channel of another kind never starts it
+	if (v->ch.mode == RADIO_MODE_DMR && v->ch.kind == CODEPLUG_KIND_NONE && !v->dmr.active && !v->dmr.sfr_rpt) {
 		if (dmr_off_since == 0)
 			dmr_off_since = now != 0 ? now : 1;
 	} else {
@@ -2430,7 +2515,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 		static char moved[12 + CODEPLUG_NAME_LEN];
 		sbuf_t b;
 		sb_init(&b, moved, sizeof moved);
-		sb_str(&b, TR("Moved to "));
+		sb_str(&b, TR(ROAM_TOAST_MOVED_TO, "Moved to "));
 		sb_str(&b, v->ch.name);
 		ui_toast(moved);
 	}
