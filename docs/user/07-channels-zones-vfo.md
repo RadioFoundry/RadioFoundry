@@ -327,8 +327,9 @@ A build with P25 ([build options](../build-config.md)) on a radio whose feature 
 
 A P25 channel comes from a codeplug written on a computer, a zone shared by another radio, or the VFO: in P25, open
 **Channels**, **New channel from current settings** and save it. The channel keeps the network access codes, the
-talkgroup (when a contact has that talkgroup; else talkgroup 1) and talkaround. On a radio without P25 the channel shows
-as P25 and stays silent.
+talkgroup (when a contact has that talkgroup; else talkgroup 1) and talkaround. A shared one comes in receive only, as
+every shared channel does: turn RX only off in its settings. On a radio without P25 the channel shows as P25 and stays
+silent.
 
 - Home shows it as in the VFO. It hears its talkgroup, calls to everyone and calls to your ID, unless the codeplug
   says to hear every call.
