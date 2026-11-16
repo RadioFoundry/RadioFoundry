@@ -42,4 +42,23 @@ extern const uint8_t imbe_silence[IMBE_BYTES];
 int imbe_unpack(imbe_state_t *s, const uint8_t imbe[IMBE_BYTES], mbe_params_t *p);
 void imbe_state_reset(imbe_state_t *s);
 
+// The quantizer alone, the inverse of imbe_unpack. b0: the pitch code, 0..207 (the pitch period is (b0 + 39.5) / 2
+// samples). p->v and p->a hold the voicing and the log2 model amplitudes (Q11, the scale imbe_unpack gives) of the
+// imbe_pitch_harmonics(b0) harmonics; a voicing band is three harmonics and takes its first one's. Writes the frame,
+// advances s as the receiver's dequantizer will, and leaves in p the parameters the receiver reconstructs.
+void imbe_pack(imbe_state_t *s, int b0, mbe_params_t *p, uint8_t out[IMBE_BYTES]);
+int imbe_pitch_harmonics(int b0);
+
+// The encoder: 160 samples of speech to a frame's 88 bits (the caller adds the frame's FEC). The estimator of the MBE
+// core (mbe_est.h) finds the parameters; the scratch can be the decoder's while it is not decoding.
+struct mbe_est_state;
+typedef struct {
+	imbe_state_t *s;		// kept
+	struct mbe_est_state *est;	// kept: mbe_est_state_t
+	mbe_params_t *p;		// scratch
+	int32_t *buf;			// scratch: MBE_BUF_WORDS
+} imbe_enc_mem_t;
+void imbe_enc_init(const imbe_enc_mem_t *m);
+void imbe_enc_frame(const imbe_enc_mem_t *m, const int16_t pcm[MBE_FRAME_LEN], uint8_t out[IMBE_BYTES]);
+
 #endif

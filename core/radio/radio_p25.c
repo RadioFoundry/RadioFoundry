@@ -259,9 +259,23 @@ bool radio_p25_poll(radio_p25_view_t *v)
 	return changed;
 }
 
+// The voice path encodes the mic from the header on, so the first voice frames are ready when the engine asks
+static void voice_tx(bool on)
+{
+#if CONFIG_IMBE
+	p25VoiceTx(on);
+#else
+	(void)on;
+#endif
+}
+
 bool radio_p25_tx_prepare(void)
 {
-	return mem != NULL && p25_engine_tx_prepare(&mem->eng);
+	if (mem == NULL || !p25_engine_tx_prepare(&mem->eng)) {
+		return false;
+	}
+	voice_tx(true);
+	return true;
 }
 
 bool radio_p25_tx_go(void)
@@ -272,6 +286,7 @@ bool radio_p25_tx_go(void)
 void radio_p25_tx_stop(void)
 {
 	if (mem != NULL) {
+		voice_tx(false);	// the engine fills the LDU on air with silence
 		p25_engine_tx_stop(&mem->eng);
 	}
 }
@@ -279,6 +294,7 @@ void radio_p25_tx_stop(void)
 void radio_p25_tx_abort(void)
 {
 	if (mem != NULL) {
+		voice_tx(false);
 		p25_engine_tx_abort(&mem->eng);
 	}
 }
@@ -291,6 +307,7 @@ uint8_t radio_p25_tx_state(void)
 void radio_p25_tx_clear(void)
 {
 	if (mem != NULL) {
+		voice_tx(false);
 		p25_engine_tx_clear(&mem->eng);
 	}
 }

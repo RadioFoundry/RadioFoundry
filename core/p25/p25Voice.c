@@ -11,6 +11,9 @@
 #if (P25_VOICE_QUEUE & (P25_VOICE_QUEUE - 1)) != 0 || P25_VOICE_QUEUE > 128 || P25_VOICE_QUEUE < 2 * P25_VOICE_FRAMES
 #error "P25_VOICE_QUEUE must be a power of two up to 128 holding two LDUs"
 #endif
+#if (P25_VOICE_TX_QUEUE & (P25_VOICE_TX_QUEUE - 1)) != 0 || P25_VOICE_TX_QUEUE > 128
+#error "P25_VOICE_TX_QUEUE must be a power of two up to 128"
+#endif
 
 #define LOAD(x)		__atomic_load_n(&(x), __ATOMIC_ACQUIRE)
 #define STORE(x, v)	__atomic_store_n(&(x), (v), __ATOMIC_RELEASE)
@@ -19,13 +22,21 @@ static const hal_audio_t *aud;
 static bool streaming;			// radio task only
 static p25_voice_mem_t *mem;		// set before the stream starts, cleared after it stops
 static imbe_mem_t dec;			// the decoder's pointers into mem
+static imbe_enc_mem_t enc;		// the encoder's: the decoder's prediction state and scratch, its own history
 
 // Queue: producer the provider's task (head), consumer the audio callback (tail)
 static uint8_t rx_head, rx_tail;
 // Call boundaries, written by the provider's task only: a start bumps the sequence, an end copies it
 static uint8_t rx_seq, rx_end_seq;
 
+// Transmit. The radio task counts transmissions (odd while one is on); the queue's producer is the audio callback
+// (head), its consumer the provider's task (tail). Frames of an earlier transmission are dropped by their count
+static uint8_t tx_gen;
+static uint8_t tx_head, tx_tail;
+static uint16_t mic_gain_q8 = 256;	// p25VoiceSetMicGain: the mic samples times this / 256 before encoding
+
 // Audio callback state
+static uint8_t cb_tx_gen;		// the transmission the encoder runs for (even: none)
 static uint8_t cb_seq;
 static bool cb_live, cb_primed, cb_playing, cb_speaker, cb_mixing;
 static uint8_t cb_lead;			// silent blocks left before the first frame plays
@@ -82,12 +93,22 @@ static void rx_end(void *ctx)
 	STORE(rx_end_seq, rx_seq);
 }
 
-// No encoder yet: every frame is silence. An encoder hands over its next frame here (false: none ready, the engine
-// sends silence and counts it as filler)
+// The encoder's next frame (false: none ready; the engine waits while the air can spare it, then sends silence and
+// counts it as filler)
 static bool tx_voice(uint8_t imbe[P25_IMBE_BYTES], void *ctx)
 {
 	(void)ctx;
-	memcpy(imbe, imbe_silence, P25_IMBE_BYTES);
+	uint8_t g = LOAD(tx_gen), t = tx_tail, h = LOAD(tx_head);
+
+	while (t != h && mem->tq[t & (P25_VOICE_TX_QUEUE - 1)].gen != g) {
+		t++;	// left over from an earlier transmission
+	}
+	if (t == h) {
+		STORE(tx_tail, t);
+		return false;
+	}
+	memcpy(imbe, mem->tq[t & (P25_VOICE_TX_QUEUE - 1)].imbe, P25_IMBE_BYTES);
+	STORE(tx_tail, (uint8_t)(t + 1));
 	stats.tx_frames++;
 	return true;
 }
@@ -186,15 +207,69 @@ static void rx_block(int16_t *spk)
 	}
 }
 
+// One mic block into the transmission g: encoded and queued for the engine
+static void tx_block(uint8_t g, const int16_t *mic)
+{
+	int16_t scaled[AUDIO_BLOCK_SAMPLES];
+	uint16_t gain = LOAD(mic_gain_q8);
+	uint32_t peak = 0;
+
+	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+		int32_t v = gain == 256 ? mic[i] : ((int32_t)mic[i] * gain) / 256;
+
+		v = v > 32767 ? 32767 : v < -32768 ? -32768 : v;
+		scaled[i] = (int16_t)v;
+		if ((uint32_t)(v < 0 ? -v : v) > peak) {
+			peak = (uint32_t)(v < 0 ? -v : v);
+		}
+	}
+	if (peak > stats.tx_mic_peak) {
+		stats.tx_mic_peak = peak;
+	}
+	uint8_t h = tx_head;
+	if ((uint8_t)(h - LOAD(tx_tail)) >= P25_VOICE_TX_QUEUE) {
+		// The engine is not taking frames (not started yet, or ending): the encoder still runs, to keep its history
+		uint8_t drop[P25_IMBE_BYTES];
+
+		imbe_enc_frame(&enc, scaled, drop);
+		stats.tx_encoded++;
+		stats.tx_dropped++;
+		return;
+	}
+	p25_voice_tx_entry_t *e = &mem->tq[h & (P25_VOICE_TX_QUEUE - 1)];
+	e->gen = g;
+	imbe_enc_frame(&enc, scaled, e->imbe);
+	stats.tx_encoded++;
+	if (memcmp(e->imbe, imbe_silence, P25_IMBE_BYTES) == 0) {
+		stats.tx_silent++;
+	}
+	STORE(tx_head, (uint8_t)(h + 1));
+}
+
 void p25VoiceAudioBlock(const int16_t *mic, int16_t *spk, void *ctx)
 {
-	(void)mic;	// the encoder's input, once there is one
 	(void)ctx;
 	if (LOAD(mem) == NULL) {
 		silence(spk);
 		return;
 	}
-	rx_block(spk);
+	uint8_t g = LOAD(tx_gen);
+	if ((g & 1u) != 0) {
+		if (g != cb_tx_gen) {
+			cb_tx_gen = g;
+			stats.tx_mic_peak = 0;
+			imbe_enc_init(&enc);
+		}
+		tx_block(g, mic);
+		silence(spk);
+	} else {
+		if ((cb_tx_gen & 1u) != 0) {
+			// The encoder used the decoder's prediction state: a call still coming in starts from none
+			cb_tx_gen = g;
+			imbe_dec_init(&dec);
+		}
+		rx_block(spk);
+	}
 	p25_voice_mixer_t mix = LOAD(mixer);
 	if (mix != NULL && mix(spk)) {
 		cb_mixing = true;
@@ -219,6 +294,8 @@ void p25VoiceBegin(p25_voice_mem_t *m)
 	// The stream is stopped (p25VoiceEnd) and the engine not started: nothing else touches this state now
 	rx_head = rx_tail = 0;
 	rx_seq = rx_end_seq = 0;
+	tx_head = tx_tail = 0;
+	tx_gen = cb_tx_gen = 0;
 	cb_seq = 0;
 	cb_live = cb_primed = cb_playing = cb_speaker = cb_mixing = false;
 	dec.s = &m->st;
@@ -228,6 +305,10 @@ void p25VoiceBegin(p25_voice_mem_t *m)
 	dec.mbe.cur = &m->cur;
 	dec.mbe.buf = m->buf;
 	imbe_dec_init(&dec);
+	enc.s = &m->st;
+	enc.est = &m->est;
+	enc.p = &m->pr;
+	enc.buf = m->buf;
 	STORE(mem, m);
 }
 
@@ -236,6 +317,25 @@ void p25VoicePoll(void)
 	if (!streaming && aud != NULL && LOAD(mem) != NULL && LOAD(rx_seq) != 0) {
 		streaming = aud->start(p25VoiceAudioBlock, NULL);
 	}
+}
+
+void p25VoiceTx(bool on)
+{
+	if (LOAD(mem) == NULL || on == ((tx_gen & 1u) != 0)) {
+		return;
+	}
+	STORE(tx_gen, (uint8_t)(tx_gen + 1));
+	if (on && !streaming && aud != NULL) {
+		streaming = aud->start(p25VoiceAudioBlock, NULL);
+	}
+}
+
+void p25VoiceSetMicGain(uint8_t step)
+{
+	// 2 dB a step around unity at 5, as the DMR voice path's
+	static const uint16_t q8[11] = { 81, 102, 128, 161, 203, 256, 322, 406, 511, 643, 810 };
+
+	STORE(mic_gain_q8, q8[step > 10 ? 10 : step]);
 }
 
 void p25VoiceEnd(void)
