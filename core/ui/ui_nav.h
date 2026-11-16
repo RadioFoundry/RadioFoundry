@@ -39,8 +39,7 @@ typedef enum {
 	SCR_APRS_TO,			// destination callsign editor for APRS transmission
 	SCR_APRS_STATION,		// a heard station's actions
 	SCR_MESSAGE_TEXT,		// message body editor
-	SCR_TONEFIND,			// find an unknown FM carrier and its sub-audio tone (CONFIG_TONE_FIND)
-	SCR_RSSI,			// the current frequency's signal strength in dBm, with peak and trend (Tools > Signal)
+	SCR_MESSAGE_READ,		// a message's whole text, scrolled (the message screen's Full message row)
 	SCR_DATA_SERVICES,		// Settings > Connections > Data services: ARS server, IP gateway (CONFIG_DMR_ARS / _IP_GATEWAY)
 	SCR_COUNT
 } ui_scr_t;
@@ -52,6 +51,7 @@ typedef enum {
 #define SF_FIELD	0x08u	// "field use": at most 3 levels from Home (P4)
 #define SF_FIND		0x10u	// digits type the query (Find)
 #define SF_NO_STRIP	0x20u	// no status strip while the radio is idle (About: the owner's call); RX / TX bring it back
+#define SF_HINT_FN	0x40u	// the hint is built when drawn (hint_fn), not a marked text (hint)
 
 typedef struct {
 	uint8_t scr;
@@ -88,9 +88,12 @@ typedef struct {
 typedef struct {
 	const char *name;	// the debug link's / simulator's name for it
 	uint8_t flags;
-	const char *prefix;	// title
-	const char *hint;
-	const char *empty;
+	tr_id_t prefix;		// title (TRN; TR_NONE: none)
+	union {
+		tr_id_t hint;			// TRN; TR_NONE: none
+		const char *(*hint_fn)(void);	// SF_HINT_FN: the hint, built in the language in use
+	};
+	tr_id_t empty;		// shown when count is 0 (TRN; TR_NONE: none)
 	uint16_t (*count)(void);
 	void (*item)(uint16_t i, ui_item_t *it);
 	void (*select)(uint16_t i, bool hold);		// SELECT; hold = long SELECT (save / make permanent)

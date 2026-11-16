@@ -164,13 +164,15 @@ static const band_t bands[] = {
 };
 static bool rx_ext_on;
 static const char *const power_names[] = { "L", "M", "H" };
-// Keys: only what the side key glue (ui_svc_storage.c) needs, two side keys
+// Keys: only what the side key glue (ui_svc_storage.c) needs, two side keys and an arrow programmable on Home
 static const keymap_entry_t keymap[] = {
 	{ 0, ACT_SELECT, ACT_SELECT, false, false, 0 },
 	{ 1, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
 	{ 2, ACT_TALK_TARGET, ACT_USER_2, false, false, 0 },
+	{ 3, ACT_NAV_LEFT, ACT_USER_1, false, true, 0 },
 };
 static const uint8_t side_keys[] = { 1, 2 };
+static const uint8_t home_keys[] = { 3 };
 
 static int gps_enable_calls;
 static bool gps_enabled;
@@ -207,9 +209,11 @@ const board_t board = {
 	.power_names = power_names,
 	.power_default = 1,
 	.keymap = keymap,
-	.keymap_len = 3,
+	.keymap_len = 4,
 	.side_keys = side_keys,
 	.side_key_count = 2,
+	.home_keys = home_keys,
+	.home_key_count = 1,
 	.radio = &fake_radio,
 	.power = &fake_power,
 	.dmr = &sim_modem,
@@ -1310,6 +1314,7 @@ static void test_dmr_rx(void)
 	CHECK(!d->hear_all_latch && !sm.view.monitor);
 	req(RREQ_MONITOR, 0);
 	CHECK(d->hear_all && d->hear_all_latch && !sm.view.monitor && !hw.audio);
+	CHECK(sim.cc_filter == -1 && sim.locked_ts == 0);	// any color code, either slot
 	hear_call(true, 3100, 9997777, 2, 1, true);
 	CHECK(d->last.dst == 3100);
 	// Released after its hold function ran: no toggle
@@ -1318,7 +1323,7 @@ static void test_dmr_rx(void)
 	CHECK(d->hear_all_latch);
 	req(RREQ_MONITOR, 1);
 	req(RREQ_MONITOR, 0);
-	CHECK(!d->hear_all && !d->hear_all_latch);
+	CHECK(!d->hear_all && !d->hear_all_latch && sim.cc_filter == 2);
 	// Another color code: ignored
 	hear_call(true, 201, 9991234, 5, 1, false);
 	CHECK(sm.view.state == RS_IDLE);
@@ -1336,6 +1341,31 @@ static void test_dmr_rx(void)
 	CHECK(sm.view.ch.mode == RADIO_MODE_FM && !sim.started && !d->active && aud.stops > 0 && !aud.started);
 	req(RREQ_CH_STEP, -1);
 	CHECK(sim.started && d->active);
+}
+
+static void reload_channel(void);
+
+// A channel change publishes the new channel's color code, timeslot and repeater mode with it, in one update: a
+// reader between the change and the call stack's next tick (dual watch's snapshot of the pane, at every hop) never
+// sees the new channel with the old one's timeslot
+static void test_dmr_channel_change_view(void)
+{
+	dmr_start(false);
+	const radio_dmr_view_t *d = &sm.view.dmr;
+	chans[1].mode = RADIO_MODE_DMR;
+	chans[1].rx_hz = 438600000;
+	chans[1].tx_hz = 433600000;
+	chans[1].color_code = 5;
+	chans[1].timeslot = 2;
+	reload_channel();
+	run(50);
+	CHECK(sm.view.channel_number == 4 && d->ts == 1 && d->cc == 2 && !d->rmo);
+	req(RREQ_ZONE_POS, 0);			// no poll: what a reader sees right after the change
+	CHECK(sm.view.channel_number == 1 && d->ts == 2 && d->cc == 5 && d->rmo);
+	req(RREQ_ZONE_POS, 3);
+	CHECK(sm.view.channel_number == 4 && d->ts == 1 && d->cc == 2 && !d->rmo);
+	run(50);
+	CHECK(d->ts == 1 && d->cc == 2 && !d->rmo);
 }
 
 static void test_dmr_tx(void)
@@ -3181,7 +3211,7 @@ static bool ptt_blocked;
 void input_set_ptt_block(bool b) { ptt_blocked = b; }
 static bool dtmf_blocked;
 void input_set_dtmf_block(bool b) { dtmf_blocked = b; }
-static keymap_entry_t got_keymap[3];
+static keymap_entry_t got_keymap[4];
 static int keymap_sets;
 void input_set_keymap(const keymap_entry_t *map) { memcpy(got_keymap, map, sizeof(got_keymap)); keymap_sets++; }
 void hostlink_set_hotspot_allowed(bool on) { (void)on; }
@@ -3584,7 +3614,7 @@ static void test_ui_glue(void)
 	n_ev = 0;
 	CHECK(ui_svc_save_channel());
 	storage_job_poll();
-	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "not saved") != NULL);
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(tr_en(last_ev.why), "not saved") != NULL);
 	CHECK(sm.view.temporary);
 	cp_write_fails = false;
 	req(RREQ_CLEAR_TEMP, 0);
@@ -3600,7 +3630,7 @@ static void test_ui_glue(void)
 	CHECK(ui_svc_talk_to(9999999, true, UI_TALK_PERMANENT));	// not a stored contact: stays for now
 	storage_job_poll();
 	run(20);
-	CHECK(n_ev == 1 && strstr(last_ev.text, "for now only") != NULL && d->target_manual && d->target_id == 9999999);
+	CHECK(n_ev == 1 && strstr(tr_en(last_ev.why), "for now only") != NULL && d->target_manual && d->target_id == 9999999);
 	chans[4].contact = 1;
 	reload_channel();
 	// Another firmware's codeplug: the write is held and the UI asked; nothing written until the answer
@@ -3696,7 +3726,7 @@ static void test_ui_glue(void)
 		storage_job_poll();
 		run(100);
 		CHECK(zone_writes == zw + 2 && zones[0].channels[pos] == num && !ui_svc_zone_pending());
-		CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "Already") != NULL);
+		CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(tr_en(last_ev.why), "Already") != NULL);
 		uint32_t applied;
 		uint8_t last;
 		zone_edit_stats(&applied, &last);
@@ -4307,17 +4337,17 @@ static void test_ui_settings(void)
 	n_ev = 0;
 	CHECK(ui_svc_save_channel());
 	storage_job_poll();
-	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "read the channel") != NULL);
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(tr_en(last_ev.why), "read the channel") != NULL);
 	n_ev = 0;
 	CHECK(ui_svc_save_talk_target(9, false));
 	storage_job_poll();
-	CHECK(n_ev == 1 && strstr(last_ev.text, "for now only") != NULL);
+	CHECK(n_ev == 1 && strstr(tr_en(last_ev.why), "for now only") != NULL);
 	used[4] = true;
 	cp_write_fails = true;			// the contact found, the write fails
 	n_ev = 0;
 	CHECK(ui_svc_save_talk_target(9, false));
 	storage_job_poll();
-	CHECK(n_ev == 1 && strcmp(last_ev.text, "Codeplug not written: for now only") == 0);	// whole: tr() finds it
+	CHECK(n_ev == 1 && strcmp(tr_en(last_ev.why), "Codeplug not written: for now only") == 0);
 	cp_write_fails = false;
 	CHECK(cp_writes == w);
 	// The squelch saved with the channel goes to the default squelch preference
@@ -4548,7 +4578,18 @@ static void test_side_keys(void)
 	CHECK(keymap_sets == 2 && got_keymap[1].short_action == ACT_POWER && !got_keymap[1].raw_edges);
 	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_POWER);
 	CHECK(cp_quick[0] == 0);		// not yet: the job does it
-	CHECK(!ui_svc_setting_set(UI_SET_KEY_FIRST + 4, KEYFN_SCAN));	// this radio has two side keys
+	CHECK(!ui_svc_setting_set(UI_SET_KEY_FIRST + 6, KEYFN_SCAN));	// two side keys and one home key
+	// The home key (role 2): not Monitor; a function makes it send ACT_HOME_KEY_1, the UI's to turn back
+	CHECK(!ui_svc_key_offered(UI_SET_KEY_FIRST + 4, KEYFN_MONITOR) && ui_svc_key_offered(UI_SET_KEY_FIRST + 2, KEYFN_MONITOR));
+	CHECK(!ui_svc_setting_set(UI_SET_KEY_FIRST + 4, KEYFN_MONITOR));
+	CHECK(ui_svc_home_key(ACT_NAV_LEFT, GESTURE_PRESS, true) == ACT_NAV_LEFT);
+	CHECK(ui_svc_setting_set(UI_SET_KEY_FIRST + 4, KEYFN_POWER));
+	CHECK(got_keymap[3].short_action == ACT_HOME_KEY_1 && got_keymap[3].long_action == ACT_HOME_KEY_1);
+	CHECK(ui_svc_home_key(ACT_HOME_KEY_1, GESTURE_PRESS, true) == ACT_POWER);
+	CHECK(ui_svc_home_key(ACT_HOME_KEY_1, GESTURE_PRESS, false) == ACT_NAV_LEFT);
+	CHECK(ui_svc_home_key(ACT_HOME_KEY_1, GESTURE_LONG, true) == ACT_USER_1);
+	CHECK(ui_svc_setting_set(UI_SET_KEY_FIRST + 4, KEYFN_DEFAULT));
+	CHECK(got_keymap[3].short_action == ACT_NAV_LEFT);
 	CHECK(!ui_svc_setting_set(UI_SET_KEY_FIRST + 2, KEYFN_COUNT));
 	uint32_t ser = cp_serial;
 	ui_svc_keys_poll();
@@ -4569,7 +4610,7 @@ static void test_side_keys(void)
 	CHECK(ui_svc_setting_set(UI_SET_KEY_FIRST + 3, KEYFN_ZONE_DOWN));
 	ui_svc_keys_poll();
 	storage_job_poll();
-	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "save the keys") != NULL);
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(tr_en(last_ev.why), "save the keys") != NULL);
 	CHECK(got_keymap[2].long_action == ACT_ZONE_DOWN && cp_quick[2] == KEYFN_ZONE_UP << 8);
 	cp_quick_fail = false;
 	// Layout 1 (three roles, a slot per gesture), as an older build wrote it: read as it is
@@ -4581,6 +4622,13 @@ static void test_side_keys(void)
 	ui_svc_keys_poll();
 	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_SCAN && ui_svc_setting_get(UI_SET_KEY_FIRST + 3) == KEYFN_ZONE_UP);
 	CHECK(got_keymap[2].long_action == ACT_ZONE_UP);
+	// A CPS put Monitor on the home key (role 2): it acts as Default, and Settings says so
+	memset(cp_quick, 0, sizeof(cp_quick));
+	cp_quick[0] = KEYASSIGN_MARKER;
+	cp_quick[3] = KEYFN_MONITOR;
+	cp_serial++;
+	ui_svc_keys_poll();
+	CHECK(got_keymap[3].short_action == ACT_NAV_LEFT && ui_svc_setting_get(UI_SET_KEY_FIRST + 4) == KEYFN_DEFAULT);
 	memset(cp_quick, 0, sizeof(cp_quick));	// leave the board's key map for what follows
 	cp_serial++;
 	ui_svc_keys_poll();
@@ -5093,7 +5141,7 @@ static void test_factory_reset(void)
 	sim_flash_bad_range(reset_map.settings_addr, reset_map.settings_size);
 	CHECK(ui_svc_factory_reset());
 	storage_job_poll();
-	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "settings") != NULL);
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(tr_en(last_ev.why), "settings") != NULL);
 	sim_flash_bad_range(0, 0);
 	// The native area won't erase (ours, then the flash cut out under it)
 	CHECK(sim_flash.write(reset_map.native_addr, magic, 4));
@@ -5106,7 +5154,7 @@ static void test_factory_reset(void)
 	sim_flash_cut_after(436);	// the settings records (page 1: 176 + 4 bytes, page 0: 252 + 4) go in, the native erase fails
 	storage_job_poll();
 	sim_flash_power_on();
-	CHECK(n_ev == 1 && strstr(last_ev.text, "native") != NULL);
+	CHECK(n_ev == 1 && strstr(tr_en(last_ev.why), "native") != NULL);
 	sim_flash.map = NULL;
 	storage_init();			// back to no flash for anything after
 	settings_init();
@@ -5590,6 +5638,7 @@ int main(void)
 	test_temp_bw_tone();
 	test_tone_lists();
 	test_dmr_rx();
+	test_dmr_channel_change_view();
 	test_dmr_rssi_hold();
 	test_fm_rssi_raw();
 	test_dmr_tx();

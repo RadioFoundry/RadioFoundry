@@ -254,8 +254,8 @@ what you typed as you go.
 ### Stepping
 
 **Up**, **Down** and the channel knob change the VFO frequency by its step. The step is **Settings > Talk > VFO step**. Its
-default, **Auto**, follows the width: 25 kHz at 25K (and in AM), 12.5 kHz at 12.5K, and the FM broadcast step in the
-broadcast band. The step is in the status strip.
+default, **Auto**, follows the width: 25 kHz at 25K (and in AM) and 12.5 kHz at 12.5K. In the broadcast band the step
+is always the FM broadcast step, whatever the VFO step. The step is in the status strip.
 
 ### Split (repeater offset)
 
@@ -336,7 +336,7 @@ frequency, its TX frequency follows RX, and its mode shows as "AM (air band)" or
 isn't RX Only or is DMR.
 
 In the air band the squelch works as on any FM channel. A broadcast station plays whatever the squelch level, so a
-fading station isn't cut, and the screen and LED show it is receiving. The squelch only stops a scan on a station:
+fading station isn't cut, and the screen shows it is receiving. The LED stays off: a station isn't a call. The squelch only stops a scan on a station:
 while a scan runs, the broadcast band is quiet between stations.
 
 In the broadcast band the knob and **Up** / **Down** step 200 kHz, landing on the odd tenths (88.1, 88.3 ... 107.9)

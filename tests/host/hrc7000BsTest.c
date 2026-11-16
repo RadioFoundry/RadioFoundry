@@ -303,6 +303,7 @@ static void test_stall_and_release(void)
 	memset(&dc, 0, sizeof(dc));
 	dc.cc = 7;
 	hrc7000_dmr_configure(&eng, &dc);
+	hrc7000_dmr_set_cc_filter(&eng, 7);	// as the callers do after configure
 	CHECK(REG(C7_WORK_MODE) == C7_WORK_MODE_PHY);	// untouched meanwhile
 	hrc7000_bs_stop(&eng);
 	CHECK(REG(C7_LOCAL_CC) == 7);
