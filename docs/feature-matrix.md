@@ -265,6 +265,9 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `ZONE_EDIT` | ● | ● | ● | ● | ● | ● | ● |
 | `CONTACT_EDIT` | ● | ● | ● | ● | ● | ● | ● |
 | `VOLUME_BAR` | ● | ● | ● | ● | ● | ● | ● |
+| `AIR` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
+| `P25` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
+| `P25_TRUNK` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | Voltage reading (board, no switch) | Battery | Battery | Battery | None | Battery | Battery | Supply |
 | Clock kept through power-off (board, no switch) | Yes | ? | Yes | ? | ? | ? | ? |
 <!-- end generated -->

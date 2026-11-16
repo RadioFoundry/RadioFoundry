@@ -285,6 +285,17 @@
 #ifndef CONFIG_APRS_IGATE
 #define CONFIG_APRS_IGATE		(CONFIG_APRS_RX && CONFIG_HOSTLINK)
 #endif
+// The air interface: digital modes the core frames itself. P25 Phase 1 conventional (core/p25) is the first; here only
+// its codeplug codec (docs/spec/p25-codeplug.md). P25_TRUNK: the codec of P25 trunked systems and channels
+#ifndef CONFIG_AIR
+#define CONFIG_AIR			0
+#endif
+#ifndef CONFIG_P25
+#define CONFIG_P25			CONFIG_AIR
+#endif
+#ifndef CONFIG_P25_TRUNK
+#define CONFIG_P25_TRUNK		0
+#endif
 // The GPS status screen: the satellites (NMEA GSV / GSA) on a sky plot and signal bars, the fix's quality, the grid
 // locator (core/position/nmea_sky.c, core/ui/ui_gps.c). Needs GPS
 #ifndef CONFIG_GPS_SKY
@@ -445,6 +456,12 @@
 #endif
 #if CONFIG_GPS_SKY && !CONFIG_GPS
 #error "CONFIG_GPS_SKY needs CONFIG_GPS"
+#endif
+#if CONFIG_P25 && !CONFIG_AIR
+#error "CONFIG_P25 needs CONFIG_AIR"
+#endif
+#if CONFIG_P25_TRUNK && !CONFIG_P25
+#error "CONFIG_P25_TRUNK needs CONFIG_P25"
 #endif
 #if (CONFIG_APRS_RX && !CONFIG_APRS_AFSK) || (CONFIG_APRS_IGATE && !(CONFIG_APRS_RX && CONFIG_HOSTLINK))
 #error "an APRS sub-feature is on without its parent (APRS_RX needs APRS_AFSK; APRS_IGATE needs APRS_RX and HOSTLINK)"

@@ -650,7 +650,17 @@ static void test_parked_kind(void)
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_MODE && hw.tx_calls == 0);
 	req(RREQ_PTT, 0);
 	CHECK(radio_vfo_copy_check(&sm.view.ch, false) != VFO_COPY_OK);
-	// Unknown ids the same
+	// P25 conventional and trunked (the radio core runs neither: parked with CONFIG_P25 on or off), unknown ids the same
+	static const uint8_t kinds[] = { CODEPLUG_KIND_P25, CODEPLUG_KIND_P25_TRUNK };
+	for (unsigned i = 0; i < sizeof kinds; i++) {
+		chans[6].kind = kinds[i];
+		req(RREQ_ZONE, 0);
+		req(RREQ_ZONE, 1);
+		CHECK(sm.view.ch.kind == kinds[i] && sm.board_mode == RADIO_MODE_FM && !sim.started);
+		req(RREQ_PTT, 1);
+		CHECK(sm.view.tx_deny == TXDENY_MODE && hw.tx_calls == 0);
+		req(RREQ_PTT, 0);
+	}
 	chans[6].kind = 0x99;
 	req(RREQ_ZONE, 0);
 	req(RREQ_ZONE, 1);

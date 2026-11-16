@@ -1210,6 +1210,23 @@ run-cptag: codeplugTagTest
 	./codeplugTagTest
 .PHONY: run-cptag
 
+# P25 in the codeplug (core/p25/p25_codeplug.c): the shared vectors, conventional and trunked set-ups; built with the
+# trunked part off as well
+TESTS   += p25CodeplugTest p25CodeplugConvTest
+P25CP   := $(CPTAG) $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug_records.c $(CORE)/p25/p25_codeplug.c
+
+p25CodeplugTest: p25CodeplugTest.c $(P25CP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/p25/*.h) ../vectors/channel-modes.txt
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_P25_TRUNK=1 -o $@ p25CodeplugTest.c $(P25CP)
+
+p25CodeplugConvTest: p25CodeplugTest.c $(P25CP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/p25/*.h) ../vectors/channel-modes.txt
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_P25_TRUNK=0 -o $@ p25CodeplugTest.c $(P25CP)
+
+run: run-p25cp
+run-p25cp: p25CodeplugTest p25CodeplugConvTest
+	./p25CodeplugTest
+	./p25CodeplugConvTest
+.PHONY: run-p25cp
+
 # Zone editing (core/codeplug/zone_edit.c) on the real codeplug over a simulated flash: add, move, remove, copy,
 # rename, delete, a new channel added in one step, the limits
 ZEDIT   := $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c $(CORE)/codeplug/zone_settle.c $(CPEDIT) \

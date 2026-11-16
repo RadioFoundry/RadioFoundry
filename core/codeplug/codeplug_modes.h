@@ -15,11 +15,14 @@
 
 // Channel kinds: the first byte of a channel tag
 #define CODEPLUG_KINDS(X) \
-	X(1, DMR_TRUNK, "T3", 0)	/* DMR Tier III trunked: the trunking engine is not in this tree yet */
+	X(1, DMR_TRUNK, "T3", 0)	/* DMR Tier III trunked: the trunking engine is not in this tree yet */ \
+	X(2, P25, "P25", 0)		/* P25 conventional: CONFIG_P25 once the radio core runs the engine */ \
+	X(3, P25_TRUNK, "P25T", 0)	/* P25 trunked: CONFIG_P25_TRUNK once an engine follows it */
 
 // System types: the first byte of a system record
 #define CODEPLUG_SYSTEM_TYPES(X) \
-	X(1, DMR_TRUNK, "T3", 0)	/* a DMR Tier III system */
+	X(1, DMR_TRUNK, "T3", 0)	/* a DMR Tier III system */ \
+	X(3, P25_TRUNK, "P25T", 0)	/* a P25 trunked system (2 is reserved for a P25 conventional one) */
 
 // A test (or a build that adds a mode out of tree) may append rows of its own, defined before this header
 #ifndef CODEPLUG_KINDS_EXTRA
@@ -30,9 +33,9 @@
 #endif
 
 // Whether this build reads the mode-scoped record families (codeplug_records.h): the OR of the build conditions of the
-// modes that use them. None yet, so no build carries the code; a test defines it 1
+// modes that use them: P25 reads its radio-wide record. A test defines it 1
 #ifndef CODEPLUG_MODE_RECORDS
-#define CODEPLUG_MODE_RECORDS	0
+#define CODEPLUG_MODE_RECORDS	(CONFIG_P25)
 #endif
 
 #define CODEPLUG_KIND_ENUM(id, token, name, built)	CODEPLUG_KIND_##token = id,
