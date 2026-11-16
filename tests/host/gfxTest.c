@@ -512,8 +512,9 @@ static void test_cjk_layout(void)
 }
 #endif
 
-// ui_text_cells and sb_cut_text: a CJK character is two display cells, and a cut never splits one. A Chinese name the
-// talk line must truncate stays whole or drops whole
+#if CONFIG_LANG_ZH
+// ui_text_cells and sb_cut_text with a CJK catalog: a CJK character is two display cells, and a cut never splits one.
+// A Chinese name the talk line must truncate stays whole or drops whole
 static void test_text_cells(void)
 {
 	char out[64];
@@ -536,11 +537,17 @@ static void test_text_cells(void)
 	sb_cut_text(&b, "AB", 4);
 	CHECK(strcmp(out, "AB") == 0);
 }
+#endif
 
 int main(void)
 {
 	mkdir("out", 0755);
+#if CONFIG_LANG_ZH
 	test_text_cells();
+#else
+	// without a CJK catalog the text layer draws each UTF-8 byte as one Latin-1 character: "中" is three cells
+	CHECK(ui_text_cells("中") == 3);
+#endif
 
 	char buf[32];
 	sbuf_t b;

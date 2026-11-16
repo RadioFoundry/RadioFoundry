@@ -304,6 +304,25 @@ test("a Chinese name round-trips as UTF-8 and nameBytes counts it in bytes", () 
 	assert.equal(getName(m, 0, m.length), "A中");
 });
 
+test("font glyph bytes 0x80-0x85 round-trip, a name's 0xFF terminator stops reading", () => {
+	// 0x80-0x85 are the font's extra glyphs with no Latin-1 byte (…, middle dot, →, degree, ⤒, ⤓). A codeplug that
+	// already holds them must decode and save back to the same bytes, not turn them into '?'
+	for (const b of [0x80, 0x81, 0x82, 0x83, 0x84, 0x85]) {
+		const field = new Uint8Array(16).fill(0xFF);
+		field[0] = b;
+		const text = getName(field, 0, field.length);
+		const saved = new Uint8Array(16).fill(0xFF);
+		putName(saved, 0, saved.length, text);
+		assert.equal(saved[0], b, `glyph byte 0x${b.toString(16)} round-trips`);
+	}
+	// ÿ (U+00FF) is the name terminator, not a Latin-1 letter the field can hold: putName writes '?' for it
+	const y = new Uint8Array(16).fill(0xFF);
+	putName(y, 0, y.length, "ÿ");
+	assert.equal(y[0], 0x3F);
+	assert.equal(getName(y, 0, y.length), "?");
+	assert.equal(nameBytes("ÿ"), 1);
+});
+
 // --- Reaching the radio (transport.js) against a simulated radio ---
 
 import { CpsSerial, changes, writeRanges, TransportError, keepIdentity } from "../static/js/codeplug/transport.js";

@@ -2262,7 +2262,7 @@ function bootloaderPanel(title, makePlanFn, onDone, what, { inline = false } = {
 		// through h(): the DOM's own replaceChildren writes a null as the text "null"
 		box.replaceChildren(...h("div", {}, inline ? null : h("h2", {}, title),
 			h("h3", {}, t("flash.write.bootloader_title")),
-			withPicture(h("ol", { class: "steps" }, S.radio.flash.bootloader.map((s, i) => h("li", {}, tOr("flash.bootloader." + i, s))),
+			withPicture(h("ol", { class: "steps" }, S.radio.flash.bootloader.map((s) => h("li", {}, tOr(s, s))),
 				h("li", {}, t("flash.write.then_connect")))),
 			S.fakeRadio ? h("p", {}, button(t("flash.sim.enter_bootloader"), () => { S.fakeRadio.enterBootloader(); log.add("(simulated) radio in update mode"); }, { quiet: true })) : null,
 			winHelp, inline ? slot : null, fp, status,
@@ -3050,7 +3050,7 @@ function updateModeCheck(go) {
 	}, { primary: true });
 	S.forward([giveUp, check]);
 	return panel(t("flash.help.um_title"), h("p", {}, t("flash.help.um_lead")),
-		withPicture(h("ol", { class: "steps" }, S.radio.flash.bootloader.map((x, i) => h("li", {}, tOr("flash.bootloader." + i, x))), h("li", {}, t("flash.help.um_then")))),
+		withPicture(h("ol", { class: "steps" }, S.radio.flash.bootloader.map((x) => h("li", {}, tOr(x, x))), h("li", {}, t("flash.help.um_then")))),
 		S.fakeRadio ? h("p", {}, button(t("flash.sim.enter_bootloader"), () => S.fakeRadio.enterBootloader(), { quiet: true })) : null, status);
 }
 
@@ -3108,7 +3108,7 @@ function fixChooser(st, go) {
 function stuckInUpdateMode() {
 	return h("div", {}, h("p", {}, t("flash.help.iap_cause")), h("p", {}, t("flash.help.iap_nokeys")),
 		h("p", { class: "small" }, t("flash.help.iap_enter")),
-		withPicture(h("ol", { class: "steps small" }, S.radio.flash.bootloader.map((x, i) => h("li", {}, tOr("flash.bootloader." + i, x))))),
+		withPicture(h("ol", { class: "steps small" }, S.radio.flash.bootloader.map((x) => h("li", {}, tOr(x, x))))),
 		h("p", { class: "small muted" }, t("flash.help.iap_original")));
 }
 

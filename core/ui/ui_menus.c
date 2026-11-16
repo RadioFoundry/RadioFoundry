@@ -4852,10 +4852,7 @@ static uint16_t about_max;	// the largest first line (from the last draw)
 
 static const char *about_text(void)
 {
-	// sb_str drops what doesn't fit, whole characters and all: the longest version and radio name, a Chinese build's
-	// UTF-8 labels and the authors and licenses from AUTHORS and THIRD_PARTY come to about 440 bytes. 400 cut the last
-	// line short, and the About page shows every line (docs/user/17-settings.md)
-	static char t[CONFIG_LANG_ZH ? 512 : 400];
+	static char t[ABOUT_TEXT_MAX];
 	sbuf_t b;
 	sb_init(&b, t, sizeof t);
 	// every line "Label: value" (ui_draw_text_page shows labels dim), each on its own line: "RadioFoundry v26.11" was
