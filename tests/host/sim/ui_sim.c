@@ -1158,12 +1158,12 @@ static void default_target(void)
 }
 
 #if CONFIG_DMR_TRUNK
-// Trunked channels (dmr-trunking.md 12.4), after the "t3" token: channel 3 uses the system "County", set up; channel 5
+// Trunked channels (dmr-trunking-codeplug.md 4), after the "t3" token: channel 3 uses the system "County", set up; channel 5
 // "Metro", not set up. On a usable one the radio is registered; "t3state:" changes what it is doing
 static bool t3_tagged;
-int ui_svc_t3_channel(uint16_t num, const char *name, bool *usable)
+int ui_svc_t3_channel(uint16_t num, const channel_t *ch, bool *usable)
 {
-	(void)name;
+	(void)ch;
 	if (!t3_tagged || (num != 3 && num != 5))
 		return -1;
 	if (usable != NULL)
@@ -1614,7 +1614,7 @@ static struct {
 	bool sent_one;			// the last send: one channel, from this zone and position
 	uint16_t sent_zone, sent_pos;
 } zs_sim;
-static const struct { const char *name; uint32_t hz; bool dmr; bool in_band; bool t3_locked; } zs_chans[] = {
+static const struct { const char *name; uint32_t hz; bool dmr; bool in_band; bool unavailable; } zs_chans[] = {
 	{ "Club rpt", 146760000, false, true, false }, { "Club DMR", 442375000, true, true, false },
 	{ "Simplex", 146520000, false, true, false }, { "Club TG 2", 442375000, true, true, false },
 	{ "Field day", 446350000, true, true, false }, { "Club 900", 927500000, true, false, false },
@@ -1642,7 +1642,7 @@ bool ui_svc_zone_offer(ui_zone_offer_t *out)
 	out->src = zs_sim.src;
 	out->channels = zs_sim.channel ? 1 : (uint8_t)ZS_SIM_CHANNELS;
 	out->in_band = zs_sim.channel ? 1 : (uint8_t)(ZS_SIM_CHANNELS - 1);
-	out->t3_locked = zs_sim.channel ? 0 : 1;
+	out->unavailable = zs_sim.channel ? 0 : 1;
 	strcpy(out->name, zs_sim.channel ? "Club rpt" : "Club net");
 	strcpy(out->from, contact_name(zs_sim.src, false));
 	return true;
@@ -1658,7 +1658,7 @@ bool ui_svc_zone_offer_channel(uint32_t which, uint16_t i, ui_zone_offer_ch_t *o
 	out->rx_hz = zs_chans[i].hz;
 	out->dmr = zs_chans[i].dmr;
 	out->in_band = zs_chans[i].in_band;
-	out->t3_locked = zs_chans[i].t3_locked;
+	out->unavailable = zs_chans[i].unavailable;
 	return true;
 }
 void ui_svc_zone_offer_reject(uint32_t which)

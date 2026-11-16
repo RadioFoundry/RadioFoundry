@@ -133,13 +133,13 @@ Ids are only appended and never reused. A kind and a system type that belong tog
 
 | Kind | Name | Short | Built when | Spec |
 |---|---|---|---|---|
-| 1 | DMR Tier III trunked | T3 | not yet (the trunking engine is not in this tree) | [dmr-trunking-codeplug.md](dmr-trunking-codeplug.md) |
+| 1 | DMR Tier III trunked | T3 | `CONFIG_DMR_TRUNK` | [dmr-trunking-codeplug.md](dmr-trunking-codeplug.md) |
 | 2 | P25 conventional | P25 | not yet (no P25 engine in this tree; the codec is `CONFIG_P25`) | [p25-codeplug.md](p25-codeplug.md) |
 | 3 | P25 trunked | P25T | not yet (the codec is `CONFIG_P25_TRUNK`) | [p25-codeplug.md](p25-codeplug.md) |
 
 | System type | Name | Short | Built when | Spec |
 |---|---|---|---|---|
-| 1 | DMR Tier III system | T3 | not yet | [dmr-trunking-codeplug.md](dmr-trunking-codeplug.md) |
+| 1 | DMR Tier III system | T3 | `CONFIG_DMR_TRUNK` | [dmr-trunking-codeplug.md](dmr-trunking-codeplug.md) |
 | 2 | Reserved: P25 conventional system (identity and keys) | | | |
 | 3 | P25 trunked system | P25T | not yet | [p25-codeplug.md](p25-codeplug.md) |
 

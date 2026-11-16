@@ -1,78 +1,60 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Tier III systems and trunked channels from the codeplug (radio_trunk.h, docs/spec/dmr-trunking.md 12)
+// Tier III systems and trunked channels from the codeplug (radio_trunk.h, docs/spec/dmr-trunking-codeplug.md): system
+// type 1 and channel kind 1 of the generic layer (codeplug_records.h, codeplug_tag.h)
 #include <string.h>
 #include "radio/radio_trunk.h"
 #include "codeplug/codeplug.h"
 #include "codeplug/codeplug_kv.h"
-#include "radio/radio_trunk_rec.h"
+#include "codeplug/codeplug_records.h"
+#include "codeplug/codeplug_tag.h"
 
 #if CONFIG_DMR_TRUNK
-// The options a codeplug may set: the rest are the debug link's (monitor, learning the system code)
-#define CP_OPTS		(T3_OPT_LISTEN_ONLY | T3_OPT_ALLCALL | T3_OPT_EMERGENCY_ANY | T3_OPT_PRIVATE | T3_OPT_REG_TG | \
-			 T3_OPT_ALS | T3_OPT_KILL | T3_OPT_NO_ROAM | T3_OPT_STUN)
+// The options a codeplug may set: the rest are the debug link's (monitor, learning the system code). Listen only is
+// the system header's transmit flag, never an option bit
+#define CP_OPTS		(T3_OPT_ALLCALL | T3_OPT_EMERGENCY_ANY | T3_OPT_PRIVATE | T3_OPT_REG_TG | T3_OPT_ALS | T3_OPT_KILL | \
+			 T3_OPT_NO_ROAM | T3_OPT_STUN)
+#define OPT_IP_GW	0x1000u		// off-net IP through the system's IP gateway (the radio core's, not the engine's)
 
+// The type's block (1): the fields up to the site count, then the sites
+#define BLOCK_MIN	23u
+#define BLOCK_LEN	(BLOCK_MIN + 2u * T3_SITES_MAX)
+#define PLAN_TX_LOW	0x01u
+#define PLAN_NO_LEARN	0x02u
+#define CHAN_BODY	11u		// a system channel's body (2): LCN, MS receive Hz, MS transmit Hz, color code
+#define KEY_LEN		16u
 
-uint16_t radio_t3_name_check(const char *name)
+static uint16_t rd16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
+static uint32_t rd32(const uint8_t *p) { return (uint32_t)rd16(p) | ((uint32_t)rd16(p + 2) << 16); }
+
+// System n's header, and its block into v (at most cap octets; v holds CODEPLUG_SYS_HDR more): the block's stored
+// length, -1 when n is past the systems the radio runs, absent or not a Tier III one
+static int sys_read(uint8_t n, codeplug_system_t *h, uint8_t *v, uint16_t cap)
 {
-	uint32_t h = 2166136261u;
-	bool end = false;
-	for (int i = 0; i < CODEPLUG_NAME_LEN; i++) {
-		uint8_t c = end ? 0u : (uint8_t)name[i];
-		end = end || c == 0u;
-		h = (h ^ c) * 16777619u;
+	if (n >= RADIO_T3_SYSTEMS) {
+		return -1;
 	}
-	return (uint16_t)(h ^ (h >> 16));
-}
-
-bool radio_t3_tag(uint16_t c, const char *name, radio_t3_tag_t *tag)
-{
-	uint8_t v[TAG_LEN];
-	if (c == 0 || c > CODEPLUG_CHANNELS_MAX ||
-	    codeplug_kv_get((uint16_t)(CODEPLUG_KEY_T3_TAG + c - 1u), v, sizeof v) < (int)TAG_LEN ||
-	    v[0] >= RADIO_T3_SYSTEMS || rd16(&v[2]) != radio_t3_name_check(name)) {
-		return false;
-	}
-	tag->sys = v[0];
-	tag->flags = v[1];
-	tag->fb_chan = rd16(&v[4]);
-	tag->fb_check = rd16(&v[6]);
-	return true;
+	int len = codeplug_system(n, h, v, cap);
+	return len >= 0 && h->type == CODEPLUG_SYSTYPE_DMR_TRUNK ? len : -1;
 }
 
 bool radio_t3_name(uint8_t n, char *name)
 {
-	uint8_t v[CODEPLUG_NAME_LEN];
+	uint8_t v[CODEPLUG_SYS_HDR];
+	codeplug_system_t h;
 	name[0] = '\0';
-	if (n >= RADIO_T3_SYSTEMS || codeplug_kv_get((uint16_t)(CODEPLUG_KEY_T3_SYSTEM + n), v, sizeof v) < (int)SYS_LEN) {
+	if (sys_read(n, &h, v, 0) < 0) {
 		return false;
 	}
-	memcpy(name, v, CODEPLUG_NAME_LEN);
-	name[CODEPLUG_NAME_LEN] = '\0';
+	memcpy(name, h.name, CODEPLUG_NAME_LEN + 1);
 	return true;
-}
-
-uint16_t radio_t3_next_chan(uint8_t n, uint16_t after, uint8_t *rec)
-{
-	codeplug_kv_cursor_t c;
-	uint8_t r[CHAN_LEN];
-	uint16_t key, best = 0;
-	int len;
-	codeplug_kv_begin(&c, (uint16_t)(after + 1u), CODEPLUG_KEY_T3_CHAN + 0xFFu);
-	while ((len = codeplug_kv_next(&c, &key, r, sizeof r)) >= 0) {
-		if (len >= (int)CHAN_LEN && r[0] == n && (best == 0 || key < best)) {
-			best = key;
-			memcpy(rec, r, CHAN_LEN);
-		}
-	}
-	return best;
 }
 
 // The key of system n into cfg: false when it has none
 static bool load_key(uint8_t n, t3_cfg_t *c)
 {
 	uint8_t v[KEY_LEN + 3u];
-	int len = codeplug_kv_get((uint16_t)(CODEPLUG_KEY_T3_KEY + n), v, sizeof v);
+	int len = codeplug_system_secret(n, v, sizeof v);
 	if (len < (int)KEY_LEN) {
 		return false;
 	}
@@ -84,37 +66,41 @@ static bool load_key(uint8_t n, t3_cfg_t *c)
 
 bool radio_t3_load(uint8_t n, radio_t3_setup_t *s)
 {
-	uint8_t v[SYS_LEN];
+	uint8_t v[CODEPLUG_SYS_HDR + BLOCK_LEN];
+	codeplug_system_t h;
 	radio_t3_reset(s);
-	if (n >= RADIO_T3_SYSTEMS || codeplug_kv_get((uint16_t)(CODEPLUG_KEY_T3_SYSTEM + n), v, sizeof v) < (int)SYS_LEN) {
+	int len = sys_read(n, &h, v, BLOCK_LEN);
+	if (len < (int)BLOCK_MIN) {
 		return false;
 	}
 	t3_cfg_t *c = &s->cfg;
 	s->sys = n;
-	c->auth.model = v[16] & 0x03u;
-	c->auth.net = rd16(&v[17]);
-	c->auth.category = v[19] == T3_PAR_B ? T3_PAR_B : T3_PAR_A;
-	s->cc = v[20] & 0x0Fu;
-	uint16_t opts = rd16(&v[21]);
-	c->opts = opts & CP_OPTS;
-	s->ip_gw = (opts & SYS_IP_GW) != 0;
-	c->own_id = rd32(&v[23]) <= CODEPLUG_DMR_ID_MAX ? rd32(&v[23]) : 0;
-	s->fb_hold_s = v[28];
-	s->fb_chan = rd16(&v[29]);
-	s->fb_check = rd16(&v[62]);
-	c->plan.fixed.base_hz = rd32(&v[31]);
-	c->plan.fixed.first = rd16(&v[35]);
-	c->plan.fixed.sep = v[37];
-	c->plan.fixed.tx_low = (v[38] & PLAN_TX_LOW) != 0;
-	c->plan.learn = (v[38] & PLAN_NO_LEARN) == 0;
-	c->plan.fixed.split_hz = rd32(&v[39]);
-	c->leave_dbm = (int8_t)v[43];
-	c->ps_rq = v[44] <= 7u ? v[44] : 0;
-	for (uint8_t i = 0; i < v[45] && i < T3_SITES_MAX; i++) {
-		c->sites[c->auth.nsites++] = rd16(&v[46 + 2 * i]);
+	c->auth.model = v[0] & 0x03u;
+	c->auth.net = rd16(&v[1]);
+	c->auth.category = v[3] == T3_PAR_B ? T3_PAR_B : T3_PAR_A;
+	s->cc = v[4] & 0x0Fu;
+	uint16_t opts = rd16(&v[5]);
+	// The transmit side is the header's flag: a record without it (a zeroed one too) never registers or transmits
+	c->opts = (uint16_t)((opts & CP_OPTS) | ((h.flags & CODEPLUG_SYS_TX) != 0 ? 0u : T3_OPT_LISTEN_ONLY));
+	s->ip_gw = (opts & OPT_IP_GW) != 0;
+	c->own_id = h.own_id <= CODEPLUG_DMR_ID_MAX ? h.own_id : 0;
+	s->fb_hold_s = v[7];
+	s->fb_chan = h.fb_chan;
+	s->fb_check = h.fb_check;
+	c->plan.fixed.base_hz = rd32(&v[8]);
+	c->plan.fixed.first = rd16(&v[12]);
+	c->plan.fixed.sep = v[14];
+	c->plan.fixed.tx_low = (v[15] & PLAN_TX_LOW) != 0;
+	c->plan.learn = (v[15] & PLAN_NO_LEARN) == 0;
+	c->plan.fixed.split_hz = rd32(&v[16]);
+	c->leave_dbm = (int8_t)v[20];
+	c->ps_rq = v[21] <= 7u ? v[21] : 0;
+	// The sites the block holds (a record cut short names fewer)
+	for (uint8_t i = 0; i < v[22] && i < T3_SITES_MAX && (int)(BLOCK_MIN + 2u * i + 2u) <= len; i++) {
+		c->sites[c->auth.nsites++] = rd16(&v[BLOCK_MIN + 2u * i]);
 	}
 	bool keyed = load_key(n, c);
-	// The short data poll (12.7): UDT_Format, the blocks asked for, then the reply's octets in that format
+	// The short data poll (5): UDT_Format, the blocks asked for, then the reply's octets in that format
 	uint8_t p[2u + T3_UDT_MAX];
 	// (a get gives the stored length, which may pass what it copied: a record is cut to the buffer)
 	int plen = codeplug_kv_get((uint16_t)(CODEPLUG_KEY_T3_POLL + n), p, sizeof p);
@@ -126,7 +112,7 @@ bool radio_t3_load(uint8_t n, radio_t3_setup_t *s)
 		memcpy(s->poll_reply, p + 2, c->poll_len);
 	}
 #if CONFIG_DMR_TRUNK_SUPL
-	// Supplementary user data offered with each call (12.8): UDT_Format, then the octets (the poll's buffer)
+	// Supplementary user data offered with each call (5): UDT_Format, then the octets (the poll's buffer)
 	plen = codeplug_kv_get((uint16_t)(CODEPLUG_KEY_T3_SUPL + n), p, 1u + T3_UDT_MAX);
 	plen = plen > (int)(1u + T3_UDT_MAX) ? (int)(1u + T3_UDT_MAX) : plen;
 	if (plen >= 2) {
@@ -136,37 +122,39 @@ bool radio_t3_load(uint8_t n, radio_t3_setup_t *s)
 	}
 #endif
 
-	// Channels in key order: the plan's table, and the control channels among them
-	uint8_t r[CHAN_LEN];
-	for (uint16_t key = radio_t3_next_chan(n, CODEPLUG_KEY_T3_CHAN - 1u, r); key != 0 && s->nchans < RADIO_T3_CHANS;
-	     key = radio_t3_next_chan(n, key, r)) {
-		t3_chan_t ch = { .lcn = rd16(&r[2]), .rx_hz = rd32(&r[4]), .tx_hz = rd32(&r[8]), .cc = r[12] };
+	// Channels in entry order: the plan's table, and the control channels among them
+	codeplug_sys_entry_t e;
+	uint8_t r[CHAN_BODY];
+	int at = -1;
+	while (s->nchans < RADIO_T3_CHANS && codeplug_sys_entry_next(&at, n, CODEPLUG_ENTRY_CHANNEL, &e, r, sizeof r) >= 0) {
+		if (e.len < CHAN_BODY) {
+			continue;
+		}
+		t3_chan_t ch = { .lcn = rd16(&r[0]), .rx_hz = rd32(&r[2]), .tx_hz = rd32(&r[6]), .cc = r[10] };
 		s->chans[s->nchans++] = ch;
-		if ((r[1] & CHAN_CTRL) != 0 && c->nctrl < T3_CTRL_MAX) {
+		if ((e.flags & CODEPLUG_ENTRY_CONTROL) != 0 && c->nctrl < T3_CTRL_MAX) {
 			c->ctrl[c->nctrl++] = ch;
 		}
 	}
 	radio_t3_fix(s);
-	return c->nctrl > 0 && (keyed || (opts & SYS_AUTHENTICATES) == 0);
+	return c->nctrl > 0 && (keyed || (h.flags & CODEPLUG_SYS_NEEDS_KEY) == 0);
 }
 
 bool radio_t3_usable(uint8_t n)
 {
-	// The checks of radio_t3_load without its buffer: the record, a control channel, the key if one is needed
-	uint8_t v[SYS_LEN], r[CHAN_LEN], k[KEY_LEN];
-	if (n >= RADIO_T3_SYSTEMS || codeplug_kv_get((uint16_t)(CODEPLUG_KEY_T3_SYSTEM + n), v, sizeof v) < (int)SYS_LEN) {
+	// The checks of radio_t3_load without its buffer: the record, the key if one is needed, a control channel
+	uint8_t v[CODEPLUG_SYS_HDR], k[KEY_LEN];
+	codeplug_system_t h;
+	if (sys_read(n, &h, v, 0) < (int)BLOCK_MIN) {
 		return false;
 	}
-	if ((rd16(&v[21]) & SYS_AUTHENTICATES) != 0 &&
-	    codeplug_kv_get((uint16_t)(CODEPLUG_KEY_T3_KEY + n), k, sizeof k) < (int)KEY_LEN) {
+	if ((h.flags & CODEPLUG_SYS_NEEDS_KEY) != 0 && codeplug_system_secret(n, k, sizeof k) < (int)KEY_LEN) {
 		return false;
 	}
-	codeplug_kv_cursor_t c;
-	uint16_t key;
-	int len;
-	codeplug_kv_begin(&c, CODEPLUG_KEY_T3_CHAN, CODEPLUG_KEY_T3_CHAN + 0xFFu);
-	while ((len = codeplug_kv_next(&c, &key, r, sizeof r)) >= 0) {
-		if (len >= (int)CHAN_LEN && r[0] == n && (r[1] & CHAN_CTRL) != 0) {
+	codeplug_sys_entry_t e;
+	int at = -1;
+	while (codeplug_sys_entry_next(&at, n, CODEPLUG_ENTRY_CHANNEL, &e, k, 0) >= 0) {
+		if (e.len >= CHAN_BODY && (e.flags & CODEPLUG_ENTRY_CONTROL) != 0) {
 			return true;
 		}
 	}
@@ -223,17 +211,22 @@ void radio_t3_talk(const channel_t *ch, radio_t3_setup_t *s)
 	}
 }
 
-uint16_t radio_t3_fallback(const radio_t3_tag_t *tag, const radio_t3_setup_t *s, channel_t *out)
+uint16_t radio_t3_fallback(uint16_t number, const radio_t3_setup_t *s, channel_t *out)
 {
-	if ((tag->flags & RADIO_T3_TAG_NO_FALLBACK) != 0) {
-		return 0;
+	codeplug_tag_t t;
+	uint16_t n = s->fb_chan, check = s->fb_check;
+	if (codeplug_tag_read(number, &t)) {
+		if ((t.flags & RADIO_T3_TAG_NO_FALLBACK) != 0) {
+			return 0;
+		}
+		if ((t.flags & CODEPLUG_TAG_FALLBACK) != 0) {
+			n = t.fb_chan;		// the channel's own, 0: none
+			check = t.fb_check;
+		}
 	}
-	uint16_t n = tag->fb_chan != 0 ? tag->fb_chan : s->fb_chan;
-	uint16_t check = tag->fb_chan != 0 ? tag->fb_check : s->fb_check;
-	radio_t3_tag_t t;
-	if (n == 0 || !codeplug_channel(n, out) || radio_t3_name_check(out->name) != check ||
-	    radio_t3_tag(n, out->name, &t)) {
-		return 0;	// none, gone, renamed (renumbered), or itself trunked
+	if (n == 0 || !codeplug_channel(n, out) || codeplug_name_check(out->name) != check ||
+	    out->kind != CODEPLUG_KIND_NONE) {
+		return 0;	// none, gone, renamed (renumbered), or a channel of a kind (itself trunked)
 	}
 	return n;
 }

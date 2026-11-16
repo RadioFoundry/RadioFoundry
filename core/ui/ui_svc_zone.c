@@ -102,7 +102,7 @@ bool ui_svc_zone_offer(ui_zone_offer_t *out)
 	for (int i = 0; i < rec.channels; i++)
 		if (zsChannelAt(&rec, i, &ch) && zone_import_in_band(&ch)) {
 			out->in_band++;
-			out->t3_locked += zone_import_t3_locked(&rec, i);
+			out->unavailable += zone_import_unavailable(&rec, i);
 		}
 	if (out->channel && zsChannelAt(&rec, 0, &ch))
 		strcpy(out->name, ch.name);
@@ -128,7 +128,7 @@ bool ui_svc_zone_offer_channel(uint32_t serial, uint16_t i, ui_zone_offer_ch_t *
 	out->rx_hz = ch.rxHz;
 	out->dmr = ch.dmr;
 	out->in_band = zone_import_in_band(&ch);
-	out->t3_locked = zone_import_t3_locked(&rec, i);
+	out->unavailable = zone_import_unavailable(&rec, i);
 	return true;
 }
 

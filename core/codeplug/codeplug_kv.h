@@ -21,13 +21,9 @@
 #define CODEPLUG_KEY_TOT_WARN_TONE	0x0004u	// bool: the tone before the TX time-out
 #define CODEPLUG_KEY_BATTERY_TONE	0x0005u	// bool: the low and critical battery tones
 #define CODEPLUG_KEY_TX_DENY_TONE	0x0006u	// bool: the tone when PTT is refused or a transmission cut
-// Key families (record lists): record n is base + n
-#define CODEPLUG_KEY_T3_SYSTEM	0x0100u		// Tier III systems, 0x0100-0x01FF (docs/spec/dmr-trunking.md 12)
-#define CODEPLUG_KEY_T3_CHAN	0x0200u		// their channels, 0x0200-0x02FF
-#define CODEPLUG_KEY_T3_KEY	0x0300u		// their authentication keys, 0x0300-0x03FF
-#define CODEPLUG_KEY_T3_TAG	0x0400u		// trunked channel tags, 0x0400 + channel - 1 (0x0400-0x07FF)
-#define CODEPLUG_KEY_T3_POLL	0x0800u		// their short data poll setting and reply, 0x0800-0x08FF
-#define CODEPLUG_KEY_T3_SUPL	0x0900u		// the supplementary user data the radio offers on them, 0x0900-0x09FF
+// Tier III systems' own records, key = base + system (docs/spec/dmr-trunking-codeplug.md 5)
+#define CODEPLUG_KEY_T3_POLL	0x0800u		// the short data poll setting and reply, 0x0800-0x08FF
+#define CODEPLUG_KEY_T3_SUPL	0x0900u		// the supplementary user data the radio offers, 0x0900-0x09FF
 
 // Key families (record lists): record n is base + n (docs/spec/channel-modes.md 3). Every range is reserved whole,
 // so a later mode never renumbers

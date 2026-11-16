@@ -2405,7 +2405,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 			static char msg[CODEPLUG_NAME_LEN + 32];	// the toast keeps the pointer
 			sbuf_t b;
 			sb_init(&b, msg, sizeof msg);
-			sb_str(&b, TR("Back on "));
+			sb_str(&b, TR(TRUNK_TOAST_BACK_ON, "Back on "));
 			sb_str(&b, name);
 			ui_toast(msg);
 		}
@@ -2414,7 +2414,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	static uint16_t poll_fails_seen;
 	if (v->t3.poll_fails != poll_fails_seen) {
 		if ((uint16_t)(v->t3.poll_fails - poll_fails_seen) < 0x8000u)
-			ui_toast(TR("Poll: no short data"));
+			ui_toast(TR(TRUNK_TOAST_POLL_NO_DATA, "Poll: no short data"));
 		poll_fails_seen = v->t3.poll_fails;
 	}
 #endif

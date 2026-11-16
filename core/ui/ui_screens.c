@@ -1360,7 +1360,7 @@ bool ui_sb_gw_caller(sbuf_t *b, uint32_t src)
 #if CONFIG_DMR_TRUNK_GW
 	char num[24];
 	if (ui_svc_t3_cli(src, num, sizeof num)) {
-		sb_str(b, num[0] != '\0' ? num : TR("Phone line"));
+		sb_str(b, num[0] != '\0' ? num : TR(TRUNK_WORD_PHONE_LINE, "Phone line"));
 		return true;
 	}
 #else
@@ -1467,21 +1467,21 @@ static const char *t3_state_word(const radio_view_t *v, bool *warn)
 {
 	*warn = true;
 	if (v->t3.unavail)
-		return TR("System not set up");
+		return TR(TRUNK_WHY_SYSTEM_NOT_SET_UP, "System not set up");
 	if (v->t3.fallback != 0)
-		return TR("Fallback");		// on the system's fallback channel, or looking for the system from it
+		return TR(TRUNK_STATE_FALLBACK, "Fallback");		// on the system's fallback channel, or looking for the system from it
 	if (!v->t3.on || v->t3.state == T3_HUNT)
-		return TR("Searching");
+		return TR(TRUNK_STATE_SEARCHING, "Searching");
 	if (v->t3.state == T3_FOLLOW) {
 		*warn = false;
-		return TR("In call");
+		return TR(TRUNK_STATE_IN_CALL, "In call");
 	}
 	if (v->t3.reg == T3_REG_DENIED)
-		return TR("Refused");
+		return TR(TRUNK_STATE_REFUSED, "Refused");
 	if (v->t3.reg == T3_REG_NEEDED || v->t3.reg == T3_REG_UNKNOWN)
-		return TR("Registering");
+		return TR(TRUNK_STATE_REGISTERING, "Registering");
 	*warn = false;
-	return TR("Ready");
+	return TR(TRUNK_STATE_READY, "Ready");
 }
 
 // Chips on a trunked channel: the system's name, what the radio does on it, power. Slot and color code are the
@@ -1495,7 +1495,7 @@ static void draw_chips_t3(const radio_view_t *v)
 	if (named != v->t3.sys) {
 		named = v->t3.sys;
 		if (!ui_svc_t3_name((uint8_t)(v->t3.sys - 1u), name) || name[0] == '\0')
-			str_copy(name, sizeof name, TR("System"));
+			str_copy(name, sizeof name, TR(TRUNK_WORD_SYSTEM, "System"));
 	}
 	bool warn;
 	const char *st = t3_state_word(v, &warn);

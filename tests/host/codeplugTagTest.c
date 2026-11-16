@@ -117,7 +117,9 @@ static void test_tag(void)
 	CHECK(c.kind == TEST_KIND && c.system == 2 && !c.rx_only && c.mode == RADIO_MODE_DMR);
 	CHECK(codeplug_kind_built(c.kind) && strcmp(codeplug_kind_name(c.kind), "TST") == 0);
 	CHECK(codeplug_systype_built(TEST_SYSTYPE) && strcmp(codeplug_systype_name(TEST_SYSTYPE), "TSY") == 0);
-	CHECK(!codeplug_kind_built(0) && !codeplug_kind_built(0xFF) && !codeplug_kind_built(CODEPLUG_KIND_DMR_TRUNK));
+	// A kind the registry names with no engine behind it isn't built; one with an engine follows its switch
+	CHECK(!codeplug_kind_built(0) && !codeplug_kind_built(0xFF) && !codeplug_kind_built(CODEPLUG_KIND_P25_TRUNK));
+	CHECK(codeplug_kind_built(CODEPLUG_KIND_DMR_TRUNK) == (CONFIG_DMR_TRUNK != 0));
 	CHECK(strcmp(codeplug_kind_name(CODEPLUG_KIND_DMR_TRUNK), "T3") == 0);
 
 	// The parameter block, whole and cut

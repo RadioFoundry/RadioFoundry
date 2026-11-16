@@ -37,7 +37,8 @@
 #include "radio/battery.h"
 #if CONFIG_DMR_TRUNK_TX
 #include "radio/radio_trunk.h"
-#include "radio/radio_trunk_rec.h"
+#include "codeplug/codeplug_tag.h"
+#include "codeplug/codeplug_records.h"
 #include "dmr/fec/dmrCach.h"
 #include "dmr/trunk/t3_pdu.h"
 #include "dmr/trunk/t3_sys.h"
@@ -262,6 +263,7 @@ bool codeplug_channel(uint16_t n, channel_t *out)
 		return false;
 	}
 	*out = chans[n];
+	codeplug_tag_apply(n, out);	// the real tag layer over the fake settings area: a live tag gives the kind
 	return true;
 }
 uint16_t codeplug_zone_count(void) { return nzones; }
@@ -290,7 +292,7 @@ static uint8_t kv_serial;
 static uint32_t kv_ars;
 static int16_t kv_tone[CODEPLUG_KEY_TX_DENY_TONE - CODEPLUG_KEY_CALL_END_TONE + 1] = { -1, -1, -1, -1 };
 static bool kv_held;	// a CPS session holds the flash, or another firmware's codeplug: no key can be written
-// Tier III keys (0x0100-0x04FF: systems, system channels, keys, channel tags), kept in key order
+// Record keys (0x0100 up: systems, system entries, secrets, channel tags, Tier III's own), kept in key order
 #define KV_T3_MAX	24
 static struct {
 	uint16_t key;
@@ -357,6 +359,9 @@ static bool kv_set(uint16_t key, const uint8_t *v, uint16_t len)
 	return true;
 }
 uint8_t codeplug_kv_serial(void) { return kv_serial; }
+// The tag layer's writes (codeplug_tag.c): none in these tests
+bool codeplug_kv_set(uint16_t key, const void *value, uint16_t len) { (void)key; (void)value; (void)len; return false; }
+bool codeplug_kv_remove(uint16_t key) { (void)key; return false; }
 // The walk: c->at the next single key to try, up to CODEPLUG_KEY_TX_DENY_TONE, then the Tier III keys in order
 void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi)
 {
@@ -690,11 +695,11 @@ static void test_parked_kind(void)
 {
 	setup_codeplug();
 	chans[6].mode = RADIO_MODE_DMR;
-	chans[6].kind = CODEPLUG_KIND_DMR_TRUNK;	// not built on main
+	chans[6].kind = CODEPLUG_KIND_P25;		// the radio core runs no P25
 	chans[6].rx_only = false;			// its tag allows TX: the build still refuses
 	start();
 	req(RREQ_ZONE, 1);
-	CHECK(sm.view.channel_number == 6 && sm.view.ch.kind == CODEPLUG_KIND_DMR_TRUNK);
+	CHECK(sm.view.channel_number == 6 && sm.view.ch.kind == CODEPLUG_KIND_P25);
 	CHECK(sm.board_mode == RADIO_MODE_FM && hw_mode == RADIO_MODE_FM && !sim.started && hw.rx_hz == 145500000);
 	rx_signal(10, true);
 	poll_for(200);
@@ -703,8 +708,8 @@ static void test_parked_kind(void)
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_MODE && hw.tx_calls == 0);
 	req(RREQ_PTT, 0);
 	CHECK(radio_vfo_copy_check(&sm.view.ch, false) != VFO_COPY_OK);
-	// P25 conventional and trunked (the radio core runs neither: parked with CONFIG_P25 on or off), unknown ids the same
-	static const uint8_t kinds[] = { CODEPLUG_KIND_P25, CODEPLUG_KIND_P25_TRUNK };
+	// P25 trunked too (the radio core runs neither: parked with CONFIG_P25 on or off), unknown ids the same
+	static const uint8_t kinds[] = { CODEPLUG_KIND_P25_TRUNK };
 	for (unsigned i = 0; i < sizeof kinds; i++) {
 		chans[6].kind = kinds[i];
 		req(RREQ_ZONE, 0);
@@ -6427,40 +6432,56 @@ static void test_t3_als(void)
 	sim.repeater = false;
 }
 
-// Trunked channels in the codeplug (dmr-trunking.md 12): system n's record, its control channel and a key
+// Trunked channels in the codeplug (dmr-trunking-codeplug.md): system n's record and its control channel. opts: the
+// block's options, plus two bits these tests give the header's flags with: 0x0800 the system needs a key,
+// T3_OPT_LISTEN_ONLY no transmit side
+#define T3_CP_NEEDS_KEY	0x0800u
+#define SYS_IP_GW	0x1000u
 static void t3_cp_system(uint8_t n, uint16_t opts, uint8_t hold_s, uint16_t fb_chan, const char *fb_name)
 {
-	uint8_t v[64];
+	uint8_t v[CODEPLUG_SYS_HDR + 39];
+	uint8_t *b = &v[CODEPLUG_SYS_HDR];
 	memset(v, 0, sizeof(v));
-	snprintf((char *)v, 16, "Sys %u", n);
-	v[16] = T3_MODEL_SMALL;
-	v[17] = 5;			// NET 5
-	v[19] = T3_PAR_A;
-	v[20] = 2;			// CC
-	v[21] = (uint8_t)opts;
-	v[22] = (uint8_t)(opts >> 8);
-	v[28] = hold_s;
-	v[29] = (uint8_t)fb_chan;
-	v[30] = (uint8_t)(fb_chan >> 8);
-	uint16_t check = fb_name != NULL ? radio_t3_name_check(fb_name) : 0;
-	v[62] = (uint8_t)check;
-	v[63] = (uint8_t)(check >> 8);
-	kv_t3_set((uint16_t)(CODEPLUG_KEY_T3_SYSTEM + n), v, 64);
-	uint8_t c[13] = { n, 0x01, 1, 0 };	// a control channel, LCN 1
-	for (int i = 0; i < 4; i++) {
-		c[4 + i] = (uint8_t)(T3_RX_HZ >> (8 * i));
-		c[8 + i] = (uint8_t)(T3_TX_HZ >> (8 * i));
+	v[0] = CODEPLUG_SYSTYPE_DMR_TRUNK;
+	v[1] = (uint8_t)(((opts & T3_CP_NEEDS_KEY) != 0 ? CODEPLUG_SYS_NEEDS_KEY : 0u) |
+			 ((opts & T3_OPT_LISTEN_ONLY) != 0 ? 0u : CODEPLUG_SYS_TX));
+	v[3] = 4;			// the identity: model, NET, category
+	v[8] = (uint8_t)fb_chan;
+	v[9] = (uint8_t)(fb_chan >> 8);
+	uint16_t check = fb_name != NULL ? codeplug_name_check(fb_name) : 0;
+	v[10] = (uint8_t)check;
+	v[11] = (uint8_t)(check >> 8);
+	snprintf((char *)&v[12], 16, "Sys %u", n);
+	opts &= (uint16_t)~(T3_CP_NEEDS_KEY | T3_OPT_LISTEN_ONLY);
+	b[0] = T3_MODEL_SMALL;
+	b[1] = 5;			// NET 5
+	b[3] = T3_PAR_A;
+	b[4] = 2;			// CC
+	b[5] = (uint8_t)opts;
+	b[6] = (uint8_t)(opts >> 8);
+	b[7] = hold_s;
+	kv_t3_set((uint16_t)(CODEPLUG_KEY_SYSTEM + n), v, sizeof(v));
+	uint8_t c[CODEPLUG_SYS_ENTRY_HDR + 11] = { n, CODEPLUG_ENTRY_CHANNEL, CODEPLUG_GROUP_NONE, CODEPLUG_ENTRY_CONTROL, 1, 0 };
+	for (int i = 0; i < 4; i++) {	// a control channel, LCN 1
+		c[6 + i] = (uint8_t)(T3_RX_HZ >> (8 * i));
+		c[10 + i] = (uint8_t)(T3_TX_HZ >> (8 * i));
 	}
-	c[12] = 2;
-	kv_t3_set((uint16_t)(CODEPLUG_KEY_T3_CHAN + n), c, 13);
+	c[14] = 2;
+	kv_t3_set((uint16_t)(CODEPLUG_KEY_SYS_CHAN + n), c, sizeof(c));
 }
 
-// Channel c (named in the fake codeplug) tagged to system n
+// Channel c (named in the fake codeplug) tagged to system n, with these tag flags
+static void t3_cp_tag_flags(uint16_t c, uint8_t n, uint8_t flags)
+{
+	uint16_t check = codeplug_name_check(chans[c].name);
+	uint8_t t[CODEPLUG_TAG_HDR] = { CODEPLUG_KIND_DMR_TRUNK, n, (uint8_t)check, (uint8_t)(check >> 8), flags };
+	kv_t3_set((uint16_t)(CODEPLUG_KEY_CH_TAG + c - 1u), t, sizeof(t));
+}
+
+// The same, transmit allowed (as an editor writes a new one)
 static void t3_cp_tag(uint16_t c, uint8_t n)
 {
-	uint16_t check = radio_t3_name_check(chans[c].name);
-	uint8_t t[8] = { n, 0, (uint8_t)check, (uint8_t)(check >> 8) };
-	kv_t3_set((uint16_t)(CODEPLUG_KEY_T3_TAG + c - 1u), t, 8);
+	t3_cp_tag_flags(c, n, CODEPLUG_TAG_TX);
 }
 
 // Zone "Tones" (index 2) made two trunked channels of system 0, as an editor writes them: DMR, receive only, the
@@ -6538,7 +6559,7 @@ static void test_t3_channels(void)
 	CHECK(radio_t3v.sys == 0 && !radio_t3v.on && sm.view.ch.rx_only);
 	strcpy(chans[7].name, "Ops A");
 
-	t3_cp_system(1, T3_OPT_PRIVATE | 0x0800u, 0, 0, NULL);	// authenticates, no key in the codeplug
+	t3_cp_system(1, T3_OPT_PRIVATE | T3_CP_NEEDS_KEY, 0, 0, NULL);	// authenticates, no key in the codeplug
 	t3_cp_tag(8, 1);
 	req(RREQ_ZONE_POS, 1);
 	run(100);
@@ -6555,6 +6576,73 @@ static void test_t3_channels(void)
 	CHECK(sm.view.channel_number == 7);
 	req(RREQ_CH_STEP, -1);
 	CHECK(sm.view.channel_number == 7);
+	t3_cp_done();
+}
+
+// A trunked channel transmits only when its tag allows it and its system is one the radio runs with a transmit side
+// (channel-modes.md 3 and 4): a receive-only channel and a system without the transmit flag camp and listen, send
+// nothing on the control channel and refuse PTT; a channel that names no system, or one with no record, is unavailable
+static void t3_no_tx(void)
+{
+	unsigned air = sim.air_count;
+	t3_site_run(600);
+	req(RREQ_PTT, 1);
+	t3_site_run(300);
+	CHECK(sm.view.state != RS_TX && sim.air_count == air);
+	req(RREQ_PTT, 0);
+	t3_site_run(120);
+	CHECK(sim.air_count == air);
+}
+
+static void test_t3_never_keys(void)
+{
+	t3_cp_zone(T3_OPT_PRIVATE, 0, 0, NULL);
+	t3_cp_tag_flags(8, 0, 0);			// "Ops B": a zeroed flags byte, receive only
+	req(RREQ_ZONE, 2);
+	req(RREQ_ZONE_POS, 1);
+	t3_no_tx();
+	CHECK(sm.view.channel_number == 8 && radio_t3v.on && !radio_t3v.unavail && sm.view.ch.rx_only);
+	CHECK(radio_t3v.state == T3_CAMPED);		// it listens to its system
+
+	// "Ops A" may transmit; its system's header has no transmit flag: listen only, whatever the tag says
+	t3_cp_system(0, T3_OPT_PRIVATE | T3_OPT_LISTEN_ONLY, 0, 0, NULL);
+	req(RREQ_ZONE, 0);
+	run(100);
+	req(RREQ_ZONE, 2);
+	req(RREQ_ZONE_POS, 0);
+	t3_no_tx();
+	CHECK(sm.view.channel_number == 7 && radio_t3v.on && radio_t3v.state == T3_CAMPED);
+
+	// No system named, then a system with no record: unavailable, nothing started
+	t3_cp_tag(7, CODEPLUG_SYSTEM_NONE);
+	req(RREQ_ZONE, 0);
+	run(100);
+	req(RREQ_ZONE, 2);
+	req(RREQ_ZONE_POS, 0);
+	t3_no_tx();
+	CHECK(radio_t3v.sys == 0xFF && radio_t3v.unavail && !radio_t3v.on && sm.view.ch.rx_only);
+	t3_cp_tag(7, 5);
+	req(RREQ_ZONE, 0);
+	run(100);
+	req(RREQ_ZONE, 2);
+	req(RREQ_ZONE_POS, 0);
+	t3_no_tx();
+	CHECK(radio_t3v.sys == 6 && radio_t3v.unavail && !radio_t3v.on && sm.view.ch.rx_only);
+
+	// The same channel with its system's transmit side back asks for its call: the checks above can see a transmit
+	t3_cp_system(0, T3_OPT_PRIVATE, 0, 0, NULL);
+	t3_cp_tag(7, 0);
+	req(RREQ_ZONE, 0);
+	run(100);
+	req(RREQ_ZONE, 2);
+	req(RREQ_ZONE_POS, 0);
+	t3_site_run(600);
+	unsigned air = sim.air_count;
+	req(RREQ_PTT, 1);
+	t3_site_run(300);
+	CHECK(sim.air_count > air && t3_sent(T3_OP_C_RAND) > 0 && !sm.view.ch.rx_only);
+	req(RREQ_PTT, 0);
+	t3_site_run(300);
 	t3_cp_done();
 }
 
@@ -7166,6 +7254,7 @@ int main(void)
 	test_t3_short_lc();
 	test_t3_power_save();
 	test_t3_channels();
+	test_t3_never_keys();
 	test_t3_fallback();
 #endif
 	test_dmr_stalled();

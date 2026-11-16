@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// A DMR Tier III trunked system on the radio (docs/spec/dmr-trunking.md 11, 12). The system is staged in RAM
+// A DMR Tier III trunked system on the radio (docs/spec/dmr-trunking.md 11, dmr-trunking-codeplug.md). The system is staged in RAM
 // (radio_t3_staged), by the debug link or from the codeplug (radio_t3_load); RADIO_T3_START hands it to the radio core,
 // which runs the engine (dmr/trunk/t3_ms.h) on the channel the radio is on.
 #ifndef RFOUNDRY_RADIO_TRUNK_H
@@ -29,10 +29,10 @@ typedef enum {
 #include "codeplug/codeplug.h"
 
 #define RADIO_T3_CHANS	8	// programmed channels (the plan's table; control channels are among them)
-#define RADIO_T3_SYSTEMS	8	// systems read from the codeplug (keys CODEPLUG_KEY_T3_SYSTEM + 0..7)
+#define RADIO_T3_SYSTEMS	8	// systems the radio runs: the codeplug's system records 0-7 (a stun names one in 3 bits)
 #define RADIO_T3_STAGED	0xFFu	// radio_t3_setup_t.sys of a system the debug link set up
 
-// Fallback (docs/spec/dmr-trunking.md 12.5)
+// Fallback (docs/spec/dmr-trunking.md 12)
 #define RADIO_T3_FALLBACK_HOLD_S	30	// hunting this long with no TSCC: to the fallback channel
 #define RADIO_T3_TUNE_HOLD_MS		500	// a retune waits at most this long for a burst list to go out
 #define RADIO_T3_PROBE_MS		10000	// on the fallback channel: how often the radio looks for the TSCC
@@ -71,14 +71,8 @@ typedef struct {
 
 enum { RADIO_T3_DIV_CLEAR, RADIO_T3_DIV_SET, RADIO_T3_DIV_CLEAR_IN };
 
-// A trunked channel's tag (docs/spec/dmr-trunking.md 12.4)
-typedef struct {
-	uint8_t sys;		// system n
-	uint8_t flags;		// RADIO_T3_TAG_*
-	uint16_t fb_chan;	// this channel's fallback, 0 = the system's, and its name check
-	uint16_t fb_check;
-} radio_t3_tag_t;
-#define RADIO_T3_TAG_NO_FALLBACK	0x01u
+// A trunked channel's own tag flag (dmr-trunking-codeplug.md 4; the common ones are CODEPLUG_TAG_*)
+#define RADIO_T3_TAG_NO_FALLBACK	0x10u
 
 // The setup the debug link writes to (host link task); RADIO_T3_START copies it into the radio core
 radio_t3_setup_t *radio_t3_staged(void);
@@ -90,44 +84,19 @@ void radio_t3_fix(radio_t3_setup_t *s);
 // the first in w[0]'s top one, 0xF after the last (B.3.3)
 void radio_t3_dial_args(const char *digits, uint32_t w[2]);
 #endif
-// The name check of a channel name (12.4): FNV-1a over it NUL padded to 16 octets, the halves XORed
-uint16_t radio_t3_name_check(const char *name);
-// Channel c's tag; false when it has none, or its name check doesn't match name (the channel's)
-bool radio_t3_tag(uint16_t c, const char *name, radio_t3_tag_t *tag);
-// System n of the codeplug (12.1-12.3) into s, with no talkgroups: false (s reset) when it is absent, too short or not
-// usable (no control channel, or it authenticates and has no key)
+// System n of the codeplug (dmr-trunking-codeplug.md 1-3, 5) into s, with no talkgroups: false (s reset) when it is
+// absent, not a Tier III one, too short or not usable (no control channel, or it needs a key and has none). A system
+// without the transmit side is listen only (T3_OPT_LISTEN_ONLY)
 bool radio_t3_load(uint8_t n, radio_t3_setup_t *s);
 // The channel's talk target and the talkgroups of its RX group list into s (replacing any)
 void radio_t3_talk(const channel_t *ch, radio_t3_setup_t *s);
 // Whether system n is usable
 bool radio_t3_usable(uint8_t n);
-// System n's name (CODEPLUG_NAME_LEN + 1 bytes); false when it is absent
+// System n's name (CODEPLUG_NAME_LEN + 1 bytes); false when it is absent or not a Tier III one
 bool radio_t3_name(uint8_t n, char *name);
-// The fallback for a trunked channel with this tag on system s (12.5) into out: its channel number, 0 when none (none
-// set, the channel gone, renamed or itself trunked)
-uint16_t radio_t3_fallback(const radio_t3_tag_t *tag, const radio_t3_setup_t *s, channel_t *out);
-
-#if CONFIG_ZONE_SHARE
-// Zone sharing (docs/spec/zone-share.md 4.2): systems in and out of a share record. Codeplug writes: the storage job
-// that imports, never the radio task
-#include "dmr/zoneShare.h"
-// System n as its sharing setting allows (12.6), its channels into chan (ZS_SYS_CHANS_MAX): false when it is absent or
-// not shared. *fb_chan: its fallback channel (0: none), for the caller to point at in the record. Never the radio's
-// own ID
-bool radio_t3_share_out(uint8_t n, zsSystem_t *s, zsSysChan_t *chan, uint16_t *fb_chan);
-// The system here with this system code (model, NET, category), -1: none
-int radio_t3_find(uint8_t model, uint16_t net, uint8_t category);
-// System `index` of a record written to the lowest free n (its channels and key with it, sharing off): n, -1 no room
-// or a flash error (anything written is removed). s: that system, as zsSystemAt read it
-int radio_t3_share_in(const zsRecord_t *rec, int index, const zsSystem_t *s);
-// System n's fallback channel set to channel c (the record's, once imported) and its name check
-bool radio_t3_set_fallback(uint8_t n, uint16_t c, const char *name);
-// System n, its channels and key removed (an import undone)
-void radio_t3_remove(uint8_t n);
-// Channel c tagged with system n (its name for the check); the tag removed
-bool radio_t3_tag_set(uint16_t c, uint8_t n, const char *name);
-void radio_t3_tag_remove(uint16_t c);
-#endif
+// The fallback for trunked channel `number` on system s into out: its channel number, 0 when none (none set, the
+// channel gone, renamed or not a conventional one). The channel's own (its tag's) goes before the system's
+uint16_t radio_t3_fallback(uint16_t number, const radio_t3_setup_t *s, channel_t *out);
 #endif
 
 #endif

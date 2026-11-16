@@ -254,7 +254,7 @@ static void act_item(uint16_t i, ui_item_t *it)
 			it->flags |= UI_ITEM_DIM;
 		break;
 	case A_POLL:
-		sb_str(&b, TR("Poll short data"));
+		sb_str(&b, TR(TRUNK_ROW_POLL_SHORT_DATA, "Poll short data"));
 		break;
 	default:
 		break;
@@ -336,7 +336,7 @@ static void act_select(uint16_t i, bool hold)
 #if CONFIG_DMR_TRUNK_TX
 	case A_POLL:
 		ui_svc_t3_poll(ui_target.id);	// the answer arrives as a message; ui_app says when none comes
-		sb_str(&b, TR("Polling "));
+		sb_str(&b, TR(TRUNK_TOAST_POLLING, "Polling "));
 		sb_str(&b, name);
 		sb_str(&b, "...");
 		ui_go_home();
@@ -1284,14 +1284,14 @@ static const ui_scr_def_t channels_screen = {
 	.filter = &(const ui_filter_def_t){ .raw_count = chans_raw_count, .raw_label = chans_raw_label },
 };
 
-// A trunked channel whose system isn't set up (dmr-trunking.md 12.4) is locked out: selecting it says why
+// A trunked channel whose system isn't set up (dmr-trunking-codeplug.md 4) is locked out: selecting it says why
 static bool ch_locked(uint16_t num)
 {
 #if CONFIG_DMR_TRUNK
 	static channel_t ch;
 	bool usable = true;
-	if (codeplug_channel(num, &ch) && ui_svc_t3_channel(num, ch.name, &usable) >= 0 && !usable) {
-		ui_toast(TR("System not set up"));
+	if (codeplug_channel(num, &ch) && ui_svc_t3_channel(num, &ch, &usable) >= 0 && !usable) {
+		ui_toast(TR(TRUNK_WHY_SYSTEM_NOT_SET_UP, "System not set up"));
 		return true;
 	}
 #else
@@ -1302,7 +1302,7 @@ static bool ch_locked(uint16_t num)
 
 // A channel row's value: its RX frequency and what it talks to, the talkgroup on DMR ("TG3113", "ID9991234" for a
 // private contact) or "FM". The whole name comes first; where both don't fit beside it, the frequency and the bare
-// number, then the talkgroup alone (text alternates). A trunked channel (dmr-trunking.md 12.4) names its system where
+// number, then the talkgroup alone (text alternates). A trunked channel (dmr-trunking-codeplug.md 4) names its system where
 // the frequency would be. Returns false for a trunked channel whose system isn't set up: the caller dims the row
 static bool sb_channel_row(sbuf_t *b, uint16_t num, const channel_t *ch)
 {
@@ -1310,8 +1310,9 @@ static bool sb_channel_row(sbuf_t *b, uint16_t num, const channel_t *ch)
 	uint8_t prefix = 0;	// "TG" / "ID": left out in the middle form
 	sbuf_t wb;
 	sb_init(&wb, what, sizeof what);
-	if (ch->kind != CODEPLUG_KIND_NONE) {
-		sb_str(&wb, codeplug_kind_name(ch->kind));	// another kind (docs/spec/channel-modes.md): its short name
+	// Another kind (docs/spec/channel-modes.md): its short name. A trunked channel this build runs says its talkgroup
+	if (ch->kind != CODEPLUG_KIND_NONE && !(CONFIG_DMR_TRUNK && ch->kind == CODEPLUG_KIND_DMR_TRUNK)) {
+		sb_str(&wb, codeplug_kind_name(ch->kind));
 	} else
 #if CONFIG_DMR
 	if (ch->mode == RADIO_MODE_DMR) {
@@ -1328,11 +1329,11 @@ static bool sb_channel_row(sbuf_t *b, uint16_t num, const channel_t *ch)
 	}
 #if CONFIG_DMR_TRUNK
 	bool usable;
-	int sys = ui_svc_t3_channel(num, ch->name, &usable);
+	int sys = ui_svc_t3_channel(num, ch, &usable);
 	if (sys >= 0) {
 		char name[CODEPLUG_NAME_LEN + 1];
 		if (!usable) {
-			sb_str(b, TR("System not set up"));
+			sb_str(b, TR(TRUNK_WHY_SYSTEM_NOT_SET_UP, "System not set up"));
 			return false;
 		}
 		ui_svc_t3_name((uint8_t)sys, name);
@@ -1887,12 +1888,12 @@ static const char *offer_body(void)
 		sb_u32(&b, (uint32_t)(offer.channels - offer.in_band), 1);
 		sb_str(&b, TR(SHARE_BODY_NOT_IN_BAND, " not in band"));
 	}
-	if (offer.t3_locked != 0) {
+	if (offer.unavailable != 0) {
 		// Trunked channels whose system neither this radio nor the share has (zone-share.md 5.2)
 		sb_str(&b, ". ");
-		sb_u32(&b, offer.t3_locked, 1);
-		sb_str(&b, offer.t3_locked == 1 ? TR(" trunked channel unavailable: system not set up") :
-			   TR(" trunked channels unavailable: system not set up"));
+		sb_u32(&b, offer.unavailable, 1);
+		sb_str(&b, offer.unavailable == 1 ? TR(SHARE_BODY_CHANNEL_NO_SYSTEM, " trunked channel unavailable: system not set up") :
+			   TR(SHARE_BODY_CHANNELS_NO_SYSTEM, " trunked channels unavailable: system not set up"));
 	}
 	return body;
 }
@@ -1932,8 +1933,8 @@ static void preview_item(uint16_t i, ui_item_t *it)
 		it->flags |= UI_ITEM_DIM;
 		return;
 	}
-	if (ch.t3_locked) {
-		sb_str(&b, TR(TEXT_ALT_OPEN "System not set up" TEXT_ALT_NEXT "No system" TEXT_ALT_CLOSE));
+	if (ch.unavailable) {
+		sb_str(&b, TR(SHARE_VALUE_NO_SYSTEM, TEXT_ALT_OPEN "System not set up" TEXT_ALT_NEXT "No system" TEXT_ALT_CLOSE));
 		it->flags |= UI_ITEM_DIM;
 		return;
 	}

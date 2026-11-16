@@ -128,9 +128,10 @@ bool ui_svc_vfo_get(uint8_t index, channel_t *out);
 bool ui_svc_roam(uint8_t cmd);			// radio_roam_cmd_t: zone on / off, roam now, lock / unlock
 
 #if CONFIG_DMR_TRUNK
-// --- Trunked channels (docs/spec/dmr-trunking.md 12.4). The system in use is radio_view_t.t3 ---
-// Channel num's system (-1: a conventional channel); *usable (may be NULL): the system is set up
-int ui_svc_t3_channel(uint16_t num, const char *name, bool *usable);
+// --- Trunked channels (docs/spec/dmr-trunking-codeplug.md 4). The system in use is radio_view_t.t3 ---
+// The system of channel num, read as ch (-1: not a trunked channel; 0xFF: it names none); *usable (may be NULL): the
+// system is set up
+int ui_svc_t3_channel(uint16_t num, const channel_t *ch, bool *usable);
 bool ui_svc_t3_name(uint8_t n, char *name);	// system n's name (CODEPLUG_NAME_LEN + 1); false: no such system
 void ui_svc_t3_poll(uint32_t id);	// poll an MS for its short data (radio_req_t3_poll)
 // CONFIG_DMR_TRUNK_GW (else no-ops): the digits ("0-9*#", up to 16) the next call through a dialling gateway sends,
@@ -266,7 +267,7 @@ typedef struct {
 	uint32_t src;		// the sender's DMR ID
 	uint8_t channels;	// in the record
 	uint8_t in_band;	// of them, the ones this radio can receive (the rest are left out)
-	uint8_t t3_locked;	// of those, trunked ones whose system isn't set up: they come in locked out
+	uint8_t unavailable;	// of those, channels on a system the radio doesn't have: they come in unavailable
 	char name[17];		// the zone's (or channel's) name as sent
 	char from[17];		// the sender's contact name, "" when not a contact
 } ui_zone_offer_t;
@@ -281,7 +282,7 @@ typedef struct {
 	uint32_t rx_hz;
 	bool dmr;
 	bool in_band;
-	bool t3_locked;		// trunked, and its system isn't set up here
+	bool unavailable;	// on a system the radio doesn't have
 } ui_zone_offer_ch_t;
 bool ui_svc_zone_offer_channel(uint32_t serial, uint16_t i, ui_zone_offer_ch_t *out);
 void ui_svc_zone_offer_reject(uint32_t serial);

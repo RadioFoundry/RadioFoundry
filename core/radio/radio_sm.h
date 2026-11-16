@@ -435,10 +435,10 @@ typedef struct {
 	// A Tier III trunked system (radio_trunk.h): the engine drives the channel the radio is on
 	bool t3_on;
 	bool t3_pending;		// a trunked channel was selected: start its system (t3s) at the next t3_tick
-	bool t3_tagged;			// the channel is a trunked one (t3_tag)
-	radio_t3_tag_t t3_tag;
+	bool t3_tagged;			// the channel is a trunked one (channel_t.kind)
+	bool t3_ch_rx;			// and receive only (its tag): the system runs listen only from it
 	uint8_t t3_kv;			// codeplug_kv_serial() when t3s was loaded from the codeplug
-	uint8_t t3_fb;			// fallback (dmr-trunking.md 12.5): 0 off, 1 on the fallback channel, 2 probing
+	uint8_t t3_fb;			// fallback (dmr-trunking.md 12): 0 off, 1 on the fallback channel, 2 probing
 	uint16_t t3_fb_number;		// the fallback channel, 0: none
 	uint32_t t3_hunt_ms;		// since when the engine has been hunting with no TSCC (0: it isn't)
 	uint32_t t3_probe_ms;		// on the fallback channel: when to look next; probing: until when

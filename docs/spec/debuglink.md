@@ -940,8 +940,9 @@ codeplug tool would. Every op starts with the op u8 and the key u16. Writes go t
 | 2 | SET | offset u16, bytes | none. Offset 0: the value is these bytes. Otherwise they replace the value's from offset, which must be inside a value of at most 128 bytes; the value grows if they run past its end. So a value longer than a request is set in pieces |
 | 3 | REMOVE | none | none |
 
-`DebugLink.cpkv_get`, `cpkv_set` (in pieces), `cpkv_remove`; `t3_system_record` and `t3_chan_record` encode a
-trunked system's records.
+`DebugLink.cpkv_get`, `cpkv_set` (in pieces), `cpkv_remove`; `system_record` and `tag_record` encode a system and a
+channel tag ([channel-modes.md](channel-modes.md)), `t3_system_record`, `t3_chan_record` and `t3_tag_record` a trunked
+system's.
 
 ## 4. Safety
 

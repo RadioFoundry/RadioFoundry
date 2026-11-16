@@ -61,7 +61,7 @@ enum {
 	DL_T3_INTERRUPT = 18,	// stop the talker in the call followed: end ALS u8 (0: status 125, 1: status 123)
 	DL_T3_SDPOLL = 19,	// poll an MS for its short data: to u32, UDT_Format u8, blocks u8 (1-4)
 	DL_T3_POLL_REPLY = 20,	// the answer to a poll: UDT_Format u8, then 0-46 octets (none: refused)
-	DL_T3_LOAD = 21,	// stage system n u8 of the codeplug (dmr-trunking.md 12), not started
+	DL_T3_LOAD = 21,	// stage system n u8 of the codeplug (dmr-trunking-codeplug.md), not started
 	DL_T3_SUPL = 22,	// supplementary user data offered with each call: UDT_Format u8, then 0-46 octets (none: off)
 	DL_T3_DIAL = 23,	// the digits a call through a dialling gateway sends: 0-44 of "0-9*#" (none: off)
 };

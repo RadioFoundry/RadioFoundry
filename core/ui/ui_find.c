@@ -393,7 +393,7 @@ static void find_item(uint16_t i, ui_item_t *it)
 		sb_u32(&b, r->ref, 1);
 		break;
 	case FR_PHONE:
-		sb_str(&b, TR("Phone call "));
+		sb_str(&b, TR(TRUNK_ROW_PHONE_CALL, "Phone call "));
 		sb_str(&b, query);
 		break;
 	case FR_SETTING: {

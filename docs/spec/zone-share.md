@@ -106,7 +106,8 @@ codeplug is sent: no scan lists, no RX group lists, no privacy keys.
 ### 4.2 The modes part
 
 Channels of a kind ([channel-modes.md](channel-modes.md)) go with their tags and the systems they are on. Builds with
-a mode's codec carry them (`CONFIG_ZONE_SHARE_MODES`, on with `CONFIG_P25` and `CONFIG_ZONE_SHARE`). A record holds
+a mode that has channels of a kind carry them (`CONFIG_ZONE_SHARE_MODES`, on with `CONFIG_ZONE_SHARE` and `CONFIG_P25`
+or `CONFIG_DMR_TRUNK`). A record holds
 the part only when it has such a channel, so a share of plain channels is the same as before. Every length is one
 octet. Kinds' and system types' bytes are opaque here: their mode modules read them.
 
@@ -208,7 +209,7 @@ With a modes part (4.2), after the import's channels are chosen:
 | Transmit | kept only on a channel whose system the radio has; the system's listen-only flag then rules. Every other channel is receive only (5.3) |
 | Undo | a failed import removes the systems, entries and secrets it added with its channels |
 
-The banner does not yet say how many came in unavailable.
+The offer counts the channels that will come in unavailable, and the banner after the import says how many did.
 
 ## 6. Directory requests
 

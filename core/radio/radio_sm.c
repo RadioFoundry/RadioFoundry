@@ -12,6 +12,7 @@
 #include "config.h"
 #include "hal_dtmf.h"
 #include "codeplug/codeplug_modes.h"	// channel kinds (docs/spec/channel-modes.md): parked channels, in every build
+#include "codeplug/codeplug_tag.h"	// CODEPLUG_SYSTEM_NONE
 #if CONFIG_ZONE_WRITE
 #include "codeplug/zone_edit.h"
 #define ZONE_WRITE_BUSY()	zone_edit_busy()
@@ -705,9 +706,9 @@ static void set_channel(radio_sm_t *sm, uint16_t pos, const channel_t *ch)
 	sm->view.channel_number = sm->zone.channels[pos];
 	load_channel(sm, ch);
 #if CONFIG_DMR_TRUNK
-	if (sm->t3_tagged && !radio_t3v.unavail) {
-		sm->view.ch.rx_only = false;	// the record's flag keeps firmware without trunking off the air; the site
-						// grants every transmission here
+	if (sm->t3_tagged && radio_t3v.unavail) {
+		sm->view.ch.rx_only = true;	// a system that can't be used: the tag's transmit bit keys nothing on the
+						// record's frequencies
 	}
 #endif
 }
@@ -924,14 +925,12 @@ static void vfo_step(radio_sm_t *sm, int dir, uint32_t now_ms)
 	tune(sm, now_ms);
 }
 
-// A trunked channel whose system isn't set up (dmr-trunking.md 12.4): stepping passes it by
-static bool channel_locked(uint16_t number, const channel_t *ch)
+// A trunked channel whose system isn't set up (dmr-trunking-codeplug.md 4): stepping passes it by
+static bool channel_locked(const channel_t *ch)
 {
 #if CONFIG_DMR_TRUNK
-	radio_t3_tag_t tag;
-	return radio_t3_tag(number, ch->name, &tag) && !radio_t3_usable(tag.sys);
+	return ch->kind == CODEPLUG_KIND_DMR_TRUNK && !radio_t3_usable(ch->system);
 #else
-	(void)number;
 	(void)ch;
 	return false;
 #endif
@@ -946,7 +945,7 @@ static void channel_step(radio_sm_t *sm, int dir, uint32_t now_ms)
 		if (i >= sm->zone.count || !find_channel(&sm->zone, start, dir, &pos, &ch)) {
 			return;		// nothing else in the zone the radio can use
 		}
-		if (!channel_locked(sm->zone.channels[pos], &ch)) {
+		if (!channel_locked(&ch)) {
 			break;
 		}
 		start = pos + dir;
@@ -3308,27 +3307,25 @@ static void t3_off(radio_sm_t *sm)
 	radio_t3v.fallback = 0;
 }
 
-// A channel selected (docs/spec/dmr-trunking.md 12.4): a trunked one starts its system, or on the system running takes
-// the channel's talk target and talkgroups; an unavailable one leaves any; a conventional one leaves it
+// A channel selected (docs/spec/dmr-trunking-codeplug.md 4): a trunked one starts its system, or on the system running
+// takes the channel's talk target and talkgroups; an unavailable one leaves any; a conventional one leaves it
 static void t3_channel(radio_sm_t *sm, uint16_t number, const channel_t *ch)
 {
-	radio_t3_tag_t tag;
-	if (number == 0 || !radio_t3_tag(number, ch->name, &tag)) {
+	if (number == 0 || ch->kind != CODEPLUG_KIND_DMR_TRUNK) {
 		t3_off(sm);
 		return;
 	}
 	sm->t3_fb = 0;
 	radio_t3v.fallback = 0;
 	radio_t3v.unavail = false;
-	sm->t3_tag = tag;
 	sm->t3_tagged = true;
-	if (sm->t3_on && t3s.sys == tag.sys && sm->t3_kv == codeplug_kv_serial()) {
+	if (sm->t3_on && t3s.sys == ch->system && sm->t3_ch_rx == ch->rx_only && sm->t3_kv == codeplug_kv_serial()) {
 		// Another channel of the system running: the same TSCC, the new channel's talkgroups
 		uint8_t ntg = t3s.cfg.ntg;
 		t3_tg_t tg[T3_TG_MAX];
 		memcpy(tg, t3s.cfg.tg, sizeof(tg));
 		radio_t3_talk(ch, &t3s);
-		sm->t3_fb_number = radio_t3_fallback(&tag, &t3s, &sm->t3_fb_ch);
+		sm->t3_fb_number = radio_t3_fallback(number, &t3s, &sm->t3_fb_ch);
 		if (ntg != t3s.cfg.ntg || memcmp(tg, t3s.cfg.tg, ntg * sizeof(tg[0])) != 0) {
 			t3_ms_groups_changed(&t3m, sm->t3_now);
 		}
@@ -3336,15 +3333,21 @@ static void t3_channel(radio_sm_t *sm, uint16_t number, const channel_t *ch)
 	}
 	t3_leave(sm);
 	sm->t3_pending = false;
-	radio_t3v.sys = (uint8_t)(tag.sys + 1u);
-	if (!radio_t3_load(tag.sys, &t3s)) {
-		radio_t3v.unavail = true;	// no control channel, or no key where the system authenticates
+	// (a channel that names no system still shows as a trunked one)
+	radio_t3v.sys = (uint8_t)(ch->system < CODEPLUG_SYSTEM_NONE ? ch->system + 1u : CODEPLUG_SYSTEM_NONE);
+	if (!radio_t3_load(ch->system, &t3s)) {
+		radio_t3v.unavail = true;	// no such system, no control channel, or no key where the system needs one
 		sm->t3_fb_number = 0;
 		return;
 	}
 	sm->t3_kv = codeplug_kv_serial();
+	sm->t3_ch_rx = ch->rx_only;
+	if (ch->rx_only) {
+		// A receive-only channel never transmits (channel-modes.md 2.1): no registration from it either
+		t3s.cfg.opts |= T3_OPT_LISTEN_ONLY;
+	}
 	radio_t3_talk(ch, &t3s);
-	sm->t3_fb_number = radio_t3_fallback(&tag, &t3s, &sm->t3_fb_ch);
+	sm->t3_fb_number = radio_t3_fallback(number, &t3s, &sm->t3_fb_ch);
 	sm->t3_pending = true;		// started by t3_tick, which has the clock
 }
 
@@ -3651,7 +3654,6 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 		channel_t ch;
 		if (codeplug_channel(sm->view.channel_number, &ch)) {
 			load_channel(sm, &ch);
-			sm->view.ch.rx_only = false;
 		}
 		sm->t3_fb = 0;
 		radio_t3v.fallback = 0;
