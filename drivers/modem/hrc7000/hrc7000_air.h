@@ -44,10 +44,10 @@
 
 // The large buffers. The board hands over memory the DMR slot engine leaves unused while the chip is held (its event
 // queue), so a session costs no RAM of its own: hence may_alias
-typedef struct __attribute__((may_alias)) {
+typedef struct {
 	int16_t ring[HRC7000_AIR_RING];
 	air_tx_chunk_t txq[HRC7000_AIR_TXQ];
-} hrc7000_air_buf_t;
+} __attribute__((may_alias)) hrc7000_air_buf_t;
 
 typedef struct {
 	uint8_t kind;		// air_event_kind_t
@@ -75,7 +75,7 @@ enum { HRC7000_AIR_RX, HRC7000_AIR_START, HRC7000_AIR_RUN, HRC7000_AIR_LAST, HRC
 #if CONFIG_AIR
 
 // may_alias: it lives in the slot engine's event queue too
-typedef struct __attribute__((may_alias)) hrc7000_air {
+typedef struct hrc7000_air {
 	hrc7000_t *dev;
 	const hrc7000_dmr_ops_t *ops;
 	hrc7000_air_buf_t *buf;
@@ -115,7 +115,7 @@ typedef struct __attribute__((may_alias)) hrc7000_air {
 	uint32_t mod_bias;	// RF_MOD_BIAS before tx_begin
 
 	hrc7000_air_stats_t st;
-} hrc7000_air_t;
+} __attribute__((may_alias)) hrc7000_air_t;
 
 // Pure: what the chip can do with a profile, transmit side (AIR_FIT_TX and its qualifiers); the receive side is the
 // soft modem's on the tap (air_softmodem_rx_fit)

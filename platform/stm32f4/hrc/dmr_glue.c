@@ -52,10 +52,10 @@ static void *volatile stack_ctx;
 #if CONFIG_AIR
 // An air interface session (stm32_hrc_air) holds the chip: the three lines and the task go to it, and its state lives
 // in the halted engine's event queue (no RAM of its own)
-typedef struct __attribute__((may_alias)) {
+typedef struct {
 	hrc6000_air_t a;
 	hrc6000_air_buf_t b;
-} air_mem_t;
+} __attribute__((may_alias)) air_mem_t;
 _Static_assert(sizeof(air_mem_t) <= sizeof(eng.evq), "the air session no longer fits the slot engine's event queue");
 #define AIR		(&((air_mem_t *)(void *)eng.evq)->a)
 static volatile bool air_on;

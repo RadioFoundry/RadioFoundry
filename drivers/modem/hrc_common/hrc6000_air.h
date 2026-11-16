@@ -45,11 +45,11 @@ typedef struct {
 
 // The large buffers. The board hands over memory the DMR slot engine leaves unused while a session holds the chip (its
 // event queue), so a session costs no RAM of its own: hence may_alias
-typedef struct __attribute__((may_alias)) {
+typedef struct {
 	uint8_t raw[HRC6000_AIR_RAW_BYTES];
 	hrc6000_air_rec_t rec[HRC6000_AIR_RXQ];
 	air_tx_chunk_t txq[HRC6000_AIR_TXQ];
-} hrc6000_air_buf_t;
+} __attribute__((may_alias)) hrc6000_air_buf_t;
 
 typedef struct {
 	uint8_t kind;		// air_event_kind_t
@@ -76,7 +76,7 @@ typedef struct {
 enum { HRC6000_AIR_RX, HRC6000_AIR_START, HRC6000_AIR_RUN, HRC6000_AIR_LAST, HRC6000_AIR_TAIL };
 
 // may_alias: it lives in the slot engine's event queue too (hrc6000_air_buf_t)
-typedef struct __attribute__((may_alias)) hrc6000_air {
+typedef struct hrc6000_air {
 	hrc_t *dev;
 	const hrc6000_dmr_ops_t *ops;
 	hrc6000_air_buf_t *buf;
@@ -122,7 +122,7 @@ typedef struct __attribute__((may_alias)) hrc6000_air {
 	uint8_t tx_mod2, tx_mod1;	// ... and the one written for the profile
 
 	hrc6000_air_stats_t st;
-} hrc6000_air_t;
+} __attribute__((may_alias)) hrc6000_air_t;
 
 #if CONFIG_AIR
 
