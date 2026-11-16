@@ -1038,7 +1038,7 @@ baofengCalTest: baofengCalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c $(ROO
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ baofengCalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c
 
 run: run-drivers
-run-drivers: fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest plugPttTest hrc7000DmrTest baofengCalTest rda5807mTest \
+run-drivers: fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest plugPttTest hrc7000DmrTest hrc7000AirTest baofengCalTest rda5807mTest \
              lis3dhTest hrc7000BsTest hrc7000DmrTestSplit
 	./hrc7000BsTest
 	./hrc7000DmrTestSplit
