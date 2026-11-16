@@ -402,6 +402,7 @@ typedef struct {
 	bool hear_all_latch;
 	uint16_t latch_ch;
 	bool latch_vfo;
+	bool scan_hear_all;	// ... and carried by a scan (not dual watch) started with it on: on at every stop
 	// The focused row's target (RREQ_DMR_FOCUS) and the one-shot target PTT took from it: the talk target until
 	// one_shot_until (0 = while the call goes on), on channel one_shot_ch
 	uint32_t focus_id;

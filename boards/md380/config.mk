@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-# MD-380 feature defaults (config/features.mk lists them all). 464 KB for code and read-only data: flash sectors 3-7;
-# the codec sectors 8-11 are never linked into (boards/md380/memory.ld, docs/spec/codec-placement.md).
+# MD-380 feature defaults (config/features.mk lists them all). 848 KB for code and read-only data: flash sectors 3-10;
+# the codec sector 11 is never linked into (boards/md380/memory.ld, docs/spec/codec-placement.md).
 # 160x128 display. The case edge crowds the top row and the two left columns (seen on the radio, 2026-10-16);
 # right and bottom are close but usable (hardware-md380.md 7). The fault trace, the large font and LTO follow the
 # platform (platform/stm32f4/config.mk)
@@ -49,16 +49,6 @@ BOARD_NOT_WRITTEN += APRS_RX	# no APRS receive audio path yet (the HR_C5000's I2
 BOARD_NOT_WRITTEN += APRS_IGATE	# needs APRS receive (above)
 BOARD_NOT_WRITTEN += HOTSPOT_SPLIT	# the split duplex glue is HR_C6000 and HR_C7000 only (docs/spec/split-duplex.md)
 BOARD_NOT_WRITTEN += AUDIO_PROBE	# no board.audio_tap yet
-# Supported, but the maximal configuration leaves these off too: PPP stands in for the USB network adapter on UART-only
-# radios (docs/spec/ppp.md), and this one has the adapter. Every switch on doesn't fit the 464 KB of flash with two
-# translations: maximal keeps Spanish, as the default build does (Italian builds on the other boards)
-# APRS-IS (about 2.7 KB) is left out of maximal too, which had 156 bytes left: with no APRS receive here it only gates
-# RF positions out, so it is the first IP service to go. The default build keeps it. It defaults on, so it is set off,
-# not only skipped. KISS over TCP (about 0.75 KB, transmit only here for the same reason) went next, when the host
-# link's noise trial left maximal 104 bytes short. The signaling tones (off here by default, above) left the strings of
-# their menus in the language tables and some settings code behind, 728 bytes over: USRP, the next of the list below, goes
-MAXIMAL_SKIP := NET_PPP LANG_IT LANG_DEFAULT_IT NET_APRSIS NET_KISS SIG_TONES NET_USRP
-MAXIMAL_VARS := CONFIG_NET_APRSIS=n CONFIG_NET_KISS=n CONFIG_SIG_TONES=n CONFIG_NET_USRP=n
 # When the default build runs out of room, the IP services go first, the weakest here first: APRS-IS (NET_APRSIS, about
 # 2.7 KB: with no APRS receive it only gates RF positions out), then KISS over TCP (NET_KISS, about 0.75 KB, transmit
 # only for the same reason), then USRP or SNMP. Each serves its own kind of user over the same USB network link, so

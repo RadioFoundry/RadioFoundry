@@ -3619,7 +3619,7 @@ static void test_ui_glue(void)
 	n_ev = 0;
 	CHECK(ui_svc_save_channel());
 	storage_job_poll();
-	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "not saved") != NULL);
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(tr_en(last_ev.why), "not saved") != NULL);
 	CHECK(sm.view.temporary);
 	cp_write_fails = false;
 	req(RREQ_CLEAR_TEMP, 0);
@@ -3635,7 +3635,7 @@ static void test_ui_glue(void)
 	CHECK(ui_svc_talk_to(9999999, true, UI_TALK_PERMANENT));	// not a stored contact: stays for now
 	storage_job_poll();
 	run(20);
-	CHECK(n_ev == 1 && strstr(last_ev.text, "for now only") != NULL && d->target_manual && d->target_id == 9999999);
+	CHECK(n_ev == 1 && strstr(tr_en(last_ev.why), "for now only") != NULL && d->target_manual && d->target_id == 9999999);
 	chans[4].contact = 1;
 	reload_channel();
 	// Another firmware's codeplug: the write is held and the UI asked; nothing written until the answer
@@ -3731,7 +3731,7 @@ static void test_ui_glue(void)
 		storage_job_poll();
 		run(100);
 		CHECK(zone_writes == zw + 2 && zones[0].channels[pos] == num && !ui_svc_zone_pending());
-		CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "Already") != NULL);
+		CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(tr_en(last_ev.why), "Already") != NULL);
 		uint32_t applied;
 		uint8_t last;
 		zone_edit_stats(&applied, &last);
@@ -4462,17 +4462,17 @@ static void test_ui_settings(void)
 	n_ev = 0;
 	CHECK(ui_svc_save_channel());
 	storage_job_poll();
-	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "read the channel") != NULL);
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(tr_en(last_ev.why), "read the channel") != NULL);
 	n_ev = 0;
 	CHECK(ui_svc_save_talk_target(9, false));
 	storage_job_poll();
-	CHECK(n_ev == 1 && strstr(last_ev.text, "for now only") != NULL);
+	CHECK(n_ev == 1 && strstr(tr_en(last_ev.why), "for now only") != NULL);
 	used[4] = true;
 	cp_write_fails = true;			// the contact found, the write fails
 	n_ev = 0;
 	CHECK(ui_svc_save_talk_target(9, false));
 	storage_job_poll();
-	CHECK(n_ev == 1 && strcmp(last_ev.text, "Codeplug not written: for now only") == 0);	// whole: tr() finds it
+	CHECK(n_ev == 1 && strcmp(tr_en(last_ev.why), "Codeplug not written: for now only") == 0);
 	cp_write_fails = false;
 	CHECK(cp_writes == w);
 	// The squelch saved with the channel goes to the default squelch preference
@@ -4735,7 +4735,7 @@ static void test_side_keys(void)
 	CHECK(ui_svc_setting_set(UI_SET_KEY_FIRST + 3, KEYFN_ZONE_DOWN));
 	ui_svc_keys_poll();
 	storage_job_poll();
-	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "save the keys") != NULL);
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(tr_en(last_ev.why), "save the keys") != NULL);
 	CHECK(got_keymap[2].long_action == ACT_ZONE_DOWN && cp_quick[2] == KEYFN_ZONE_UP << 8);
 	cp_quick_fail = false;
 	// Layout 1 (three roles, a slot per gesture), as an older build wrote it: read as it is
@@ -5266,7 +5266,7 @@ static void test_factory_reset(void)
 	sim_flash_bad_range(reset_map.settings_addr, reset_map.settings_size);
 	CHECK(ui_svc_factory_reset());
 	storage_job_poll();
-	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "settings") != NULL);
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(tr_en(last_ev.why), "settings") != NULL);
 	sim_flash_bad_range(0, 0);
 	// The native area won't erase (ours, then the flash cut out under it)
 	CHECK(sim_flash.write(reset_map.native_addr, magic, 4));
@@ -5279,7 +5279,7 @@ static void test_factory_reset(void)
 	sim_flash_cut_after(444);	// the settings records (page 1: 168 + 4 bytes, page 0: 252 + 4, rounded up as the sizes are) go in, the native erase fails
 	storage_job_poll();
 	sim_flash_power_on();
-	CHECK(n_ev == 1 && strstr(last_ev.text, "native") != NULL);
+	CHECK(n_ev == 1 && strstr(tr_en(last_ev.why), "native") != NULL);
 	sim_flash.map = NULL;
 	storage_init();			// back to no flash for anything after
 	settings_init();

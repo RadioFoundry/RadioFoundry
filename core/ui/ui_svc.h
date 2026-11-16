@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "config.h"
+#include "i18n.h"
 #include "radio/radio.h"
 #include "codeplug/zone_edit.h"
 
@@ -405,12 +406,12 @@ typedef enum {
 	UI_EV_HOTSPOT_STARTED,	// the host started hotspot mode
 	UI_EV_SCAN_STOPPED,	// the scan stopped on a channel
 	UI_EV_CALL_ALERT_RESULT,	// our call alert: ok = the radio answered, else no answer after the retries
-	UI_EV_SAVE_FAILED,	// a save to the codeplug the UI asked for failed later (text: what failed)
+	UI_EV_SAVE_FAILED,	// a save to the codeplug the UI asked for failed later (why: what failed)
 	UI_EV_POWER_OFF_FAILED,	// auto power off dropped the power latch but the radio is still on (the knob holds it)
 	UI_EV_ZONE_OFFER,	// another radio (id, name) offers a zone or channel (index 1): text "Zone Club, 24 channels"
 	UI_EV_ZONE_SENT,	// our zone to id (index 1: a talkgroup): ok = it went out whole
 	UI_EV_ZONE_IMPORTED,	// the import ended: ok with name (the zone here), index (channels), id 1 for an update; else
-				// text says why
+				// why says why
 	UI_EV_CODEPLUG_FOREIGN,	// a codeplug write is held: ask what to do with another firmware's codeplug
 } ui_event_kind_t;
 
@@ -421,7 +422,10 @@ typedef struct {
 	uint32_t id;
 	uint32_t ms;
 	char name[17];
-	char text[40];
+	union {
+		char text[40];
+		tr_id_t why;	// UI_EV_SAVE_FAILED, UI_EV_ZONE_IMPORTED: what failed, a key (TR_NONE: none)
+	};
 } ui_event_t;
 // The owner's two boot screen lines from the codeplug (storage-cps); empty strings when there are none
 void ui_svc_boot_text(char line1[17], char line2[17]);

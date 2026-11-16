@@ -82,7 +82,10 @@ its LC included) the probe lasts up to 1.5 s: a call already in progress is take
 next complete superframe at best and the one after it when the modem's sticky LC equals this call's (about 1.1 s from
 the retune). Each DMR stop on a new frequency restarts the modem's receiver, so it searches from the retune and not on the
 last transmitter's slot timing ([gotchas](gotchas.md) 17.2). A call known not to be for us (another talkgroup) ends
-the probe. Empty channels still move on after the dwell.
+the probe. Digital monitor on when a zone or VFO scan starts (the hear-all latch, [dmr-voice.md](dmr-voice.md) 1) stays on
+at every stop (`hear_all_latch` in the view), so a call to any talkgroup is played and holds the scan; the channel the
+scan ends on, by STOP, CANCEL or PTT, keeps it latched. Toggling it during the scan turns it on or off for the rest of
+the scan. Dual watch doesn't carry it. Empty channels still move on after the dwell.
 The view counts the stops probed (`scan_probes`) and those with sync (`scan_synced`) for each scan. Active: the scan holds
 (`scan_phase=hold`), then follows `scan_resume`; after the signal ends it waits `scan_delay_ms` (`resume`) and picks
 up again if the signal comes back. MONITOR held pauses the scan (`paused`).

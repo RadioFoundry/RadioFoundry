@@ -334,11 +334,13 @@ The name starts as the target's name, else "TG 3100" for a talkgroup or the ID f
 
 ### 2.5 Languages
 
-The UI's text is English in the source, marked for translation (`core/ui/i18n.h`): `TR("...")` returns the text in
-the language in use, `TRN("...")` marks a static table's entry that is translated where it is shown (screen
-titles, hints and empty texts are translated in `list_draw`). A lookup hashes the English (FNV-1a) and searches the
-language's sorted table; text without a translation, and anything that isn't marked (names, numbers, the standard
-abbreviations), is shown as it is. The tables are built by `tools/i18n.py` from `core/ui/lang/<code>.po`
+The UI's text is English in the source, marked for translation with a key (`core/ui/i18n.h`): `TR(KEY, "...")`
+returns the text in the language in use, `TRN(KEY, "...")` is a `tr_id_t` for a static table's entry that is
+translated where it is shown (screen titles, hints and empty texts are translated in `list_draw`), and `TRX(KEY, "...")`
+one for table text no catalog translates. With a language built a `tr_id_t` is the key's number and a lookup reads
+the language's table at it; a key without a translation shows its English, from the English table. Without any
+language built it is the English itself. Anything that isn't marked (names, numbers, the standard abbreviations) is
+shown as it is. The tables are built by `tools/i18n.py` from the marks and `core/ui/lang/<code>.po`, an entry per key
 ([translating.md](../dev/translating.md)).
 
 | Rule | |

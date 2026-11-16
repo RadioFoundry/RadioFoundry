@@ -1250,6 +1250,18 @@ static bool permit_before_key(const radio_sm_t *sm)
 	return CONFIG_BEEP && (board.caps & CAP_BEEP_NOT_ON_AIR) != 0 && permit_local(sm) && !sm->view.ch.no_beep;
 }
 
+// Digital monitor on now: latched on this channel, or carried by a zone or VFO scan started with it on, so every
+// stop hears every talkgroup and a call on any of them holds the scan (#595)
+static bool hear_all_on(const radio_sm_t *sm)
+{
+#if CONFIG_SCAN
+	if (sm->scan_hear_all && scan_on(&sm->scan) && sm->scan.kind != SCAN_DUAL) {
+		return true;
+	}
+#endif
+	return sm->hear_all_latch;
+}
+
 static void dmr_configure(radio_sm_t *sm)
 {
 	const channel_t *ch = &sm->view.ch;
@@ -1279,7 +1291,7 @@ static void dmr_configure(radio_sm_t *sm)
 	cfg.talk_target.id = sm->one_shot ? sm->one_shot_id : sm->manual ? sm->manual_id : sm->talk_id;
 	cfg.talk_target.private_call = sm->one_shot ? sm->one_shot_private : sm->manual ? sm->manual_private :
 		sm->talk_private;
-	cfg.listen.hear_all = sm->view.monitor || sm->hear_all_latch;
+	cfg.listen.hear_all = sm->view.monitor || hear_all_on(sm);
 	// Digital monitor hears everything on the frequency: any color code, either timeslot (dmr-voice.md 1)
 	cfg.listen.any_cc = cfg.listen.both_ts = cfg.listen.hear_all;
 	cfg.listen.groups = sm->listen;
@@ -1344,7 +1356,7 @@ static void dmr_configure(radio_sm_t *sm)
 	dmr_call_configure(&cfg);
 	sm->view.dmr.own_id = cfg.own_id;
 	sm->view.dmr.hear_all = cfg.listen.hear_all;
-	sm->view.dmr.hear_all_latch = sm->hear_all_latch;
+	sm->view.dmr.hear_all_latch = hear_all_on(sm);
 	sm->view.dmr.one_shot = sm->one_shot;
 	sm->view.dmr.target_manual = sm->manual;
 	// The target with its flags in one update (dmr_publish copies the stack's own at the next tick): a reader never
@@ -1412,14 +1424,15 @@ static void dmr_reconfigure(radio_sm_t *sm)
 	changed(sm);
 }
 
-// Digital monitor (the hear all latch: every talkgroup on the slot and color code) on or off, for this channel
-// (RREQ_DMR_HEAR_ALL, and the monitor key's press on DMR)
+// Digital monitor (the hear all latch: every talkgroup on the slot and color code) on or off, for this channel, and
+// during a scan for the rest of the scan (RREQ_DMR_HEAR_ALL, and the monitor key's press on DMR)
 static void set_hear_all_latch(radio_sm_t *sm, bool on)
 {
-	if (on == sm->hear_all_latch) {
+	if (on == hear_all_on(sm)) {
 		return;
 	}
 	sm->hear_all_latch = on;
+	sm->scan_hear_all = on;
 	sm->latch_ch = sm->view.channel_number;
 	sm->latch_vfo = sm->view.vfo;
 	sm->view.dmr.hear_all_latch = on;
@@ -2797,6 +2810,9 @@ static void scan_stop(radio_sm_t *sm, bool cancel, uint32_t now_ms)
 		rx2_release(sm);
 		dual_busy_set(sm, 0);
 	}
+#if CONFIG_DMR
+	bool hear_all = hear_all_on(sm);	// never in dual watch (hear_all_on)
+#endif
 	scan_end(sc);
 	if (cancel) {
 		if (kind == SCAN_DUAL) {
@@ -2816,6 +2832,13 @@ static void scan_stop(radio_sm_t *sm, bool cancel, uint32_t now_ms)
 			}
 		}
 	}
+#if CONFIG_DMR
+	// A scan with digital monitor leaves it on, latched on the channel it ends on (the stack still hears all)
+	sm->scan_hear_all = false;
+	if (hear_all && sm->view.ch.mode == RADIO_MODE_DMR) {
+		set_hear_all_latch(sm, true);
+	}
+#endif
 	scan_publish(sm);
 }
 
@@ -2903,6 +2926,11 @@ static void scan_start(radio_sm_t *sm, uint8_t kind, uint32_t lo_hz, uint32_t hi
 	}
 	scan_cfg_t cfg;
 	scan_config(sm, kind, &cfg);
+#if CONFIG_DMR
+	// Digital monitor on here (latched on this channel, not one left behind): on at every stop (#595)
+	sm->scan_hear_all = sm->hear_all_latch && sm->latch_ch == sm->view.channel_number &&
+			    sm->latch_vfo == sm->view.vfo;
+#endif
 	sc->origin_vfo = sm->view.vfo;
 	sc->origin_pos = sm->view.zone_pos;
 	sc->origin_hz = sm->view.ch.rx_hz;
@@ -5743,7 +5771,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		// the key is held. A key held across a change to DMR is still released here
 		if (sm->view.ch.mode == RADIO_MODE_DMR && !sm->view.monitor) {
 			if (req->arg == 0) {
-				set_hear_all_latch(sm, !sm->hear_all_latch);
+				set_hear_all_latch(sm, !hear_all_on(sm));
 			}
 			break;
 		}
