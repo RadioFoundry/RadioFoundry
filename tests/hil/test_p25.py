@@ -210,7 +210,8 @@ def test_p25_stored_channel(radio, backup_dir):
     p25_ready(radio)
     import cps_client
     from test_cps import codeplug_edited, pick_channel, read_backup
-    probe, _ = read_backup(radio, backup_dir, "p25probe")
+    regions = cps_client.REGIONS["radio"]      # with the settings area, where the tag goes
+    probe, _ = read_backup(radio, backup_dir, "p25probe", regions)
     lo, hi = cps_client.SETTINGS_AREA
     if cps_client.area_state(probe[lo:hi]) != "valid":
         skip("state", "the codeplug settings area isn't valid: the restore couldn't take the tag back")
@@ -223,7 +224,7 @@ def test_p25_stored_channel(radio, backup_dir):
     ch = cps_client.decode_channel(probe, number)
     _, a = cps_client.channel_addr(number)
     talkaround = ch["rx_hz"] == ch["tx_hz"] or bool(probe[a + 0x26] & 0x04)    # automatic, or direct mode set
-    with codeplug_edited(radio, backup_dir, lambda img: make_p25(img, number), "p25"):
+    with codeplug_edited(radio, backup_dir, lambda img: make_p25(img, number), "p25", regions):
         v = radio.wait_for(lambda x: x.get("ch.kind") == str(KIND_P25) and x.get("p25.on") == "1", 5.0,
                            sections=("core", "channel", "p25"), what="the stored P25 channel running")
         assert v.get("mode") == "p25", v
