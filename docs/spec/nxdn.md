@@ -14,8 +14,9 @@ State:
 |---|---|
 | Frame codec: FSW, LICH, scrambler, SACCH, FACCH1, the four VCH (1, 2) | written, host tested |
 | Receive, the call layer, the engine (3, 4, 7) | written, host tested; 4800 bit/s, and 9600 bit/s with half-rate voice |
-| Voice (5) | the 72-bit VCH go to and come from the vocoder the board hosts for DMR (`hal_vocoder_t`); not connected yet |
-| The radio core, codeplug, UI | not written (6, 10) |
+| Voice (5) | through the DMR side's voice path to the vocoder the board hosts (`hal_vocoder_t`); host tested |
+| The radio core: mode, settings, PTT, debug link, home screen (6) | written, host tested |
+| Codeplug, channel editor, scan | not written (10) |
 | On air | untested |
 | 9600 bit/s full-rate voice (EFR), data, trunking, encryption | not written (10). Encrypted calls are recognized and not played |
 
@@ -143,31 +144,68 @@ carries it scrambled with the frame (2) and otherwise as the vocoder gives it: i
 standard's two FEC test frames (7.2.1) give the same 72 bits through the DMR side's frame FEC (`nxdnTest`), so the
 frame is the one the board's DMR vocoder takes.
 
-The voice path is that hosted vocoder, through `hal_vocoder_t`: the engine's `rx_voice` hook hands each 72-bit frame
-on, `tx_voice` takes one. Nothing in the tree encodes or decodes NXDN speech: the engine, the call layer, the tests
-and `nxdntool` move made-up 72-bit patterns.
+The voice path is the DMR side's (`core/dmr/ambe/ambeVoice.c`, [dmr-voice.md](dmr-voice.md)): the engine's `rx_voice`
+hook hands each 72-bit frame to its sink, which takes the FEC off (`ambeFec`, 72 to 49 bits) and queues the 49
+parameter bits for `hal_vocoder_t`; `tx_voice` takes the next frame from its source, which encodes the microphone's
+49 bits and adds the FEC. The audio stream runs while the engine does. Nothing in the tree encodes or decodes NXDN
+speech: the engine, the call layer, the tests and `nxdntool` move made-up patterns.
 
-| Open | What |
+| Item | State |
 |---|---|
-| Bit order | the order of the 72 bits the vocoder's interface expects against the NXDN VCH order (7.2): to check on the first board that connects it |
-| Silence | the engine's `silence` frame comes from the vocoder; none is defined yet |
+| Bit order | settled: the standard's FEC test frames (7.2.1) are what `ambeFecEncode` gives for their parameter bits (`nxdnTest`), so the VCH is the DMR frame bit for bit |
+| Silence | the DMR side's silence frame (`dmr_ambe_silence`), which is 7.2.1's second test frame |
 | 9600 bit/s full rate (EFR, 144-bit VCH, 7200 bit/s) | out of scope: such calls are held, not played |
 
-## 6. Settings a channel will need
+## 6. The radio core (`core/radio/radio_nxdn.c`)
 
-Not written: the codeplug and the radio core carry none of this yet.
+`RADIO_MODE_NXDN` runs the engine on the board's air interface with the board in its digital mode and the DMR stack
+stopped, as P25 does ([p25.md](p25.md) 7). The engine's memory is its own, or with P25 built and no lending vocoder
+the memory P25 keeps for itself (one engine runs at a time).
 
-| Setting | Values | Notes |
+| State | Engine | PTT |
 |---|---|---|
-| Rate | 4800 bit/s (6.25 kHz), 9600 bit/s (12.5 kHz) | the engine's `rate9600`; a rate change is a new session |
-| RAN, receive | 0 to 63 | 0 takes every RAN (TS 1-B 4.1.7.1) |
-| RAN, transmit | 1 to 63 | |
-| Unit ID | 1 to 65519 (9) | the source of what the radio sends |
-| Call | group or individual, ID | `tx_call_type`, `tx_dst` |
-| Group squelch | 0 (RAN only) or a group ID | `rx_gid`: group calls to it or to all, individual calls to the unit (TS 1-B 4.1.7) |
-| Talk-around | on, off | direct or through a repeater; the frames are inbound either way (table 5.2-2) |
-| Emergency | on, off | the control option's bit |
-| Bandwidth | 6.25 kHz at 4800 bit/s | radios set 12.5 kHz today (9) |
+| NXDN, the provider's fit has TX at the rate | running | keys: preamble, header, voice, release frame |
+| NXDN, the fit has RX only | running, receive only | refused, `TXDENY_AIR_NO_TX` ("This mode: receive only") |
+| NXDN, the fit has neither | not started (`nxdn.begin_fails`) | refused, `TXDENY_REFUSED` |
+| No codec on a board that needs one | running | refused, `TXDENY_NO_CODEC` |
+| Leaving NXDN, a retune | stopped, started again on the new frequency | |
+
+Transmit timing, the time-out and the release follow P25's (one table of operations per air mode, `radio_air.h`).
+Settings sent while transmitting take effect when the transmission ends; a rate change starts the engine over.
+
+### 6.1 Selecting it
+
+| Where | How |
+|---|---|
+| VFO | the mode tile: FM, DMR, P25, NXDN in turn, each where the board runs it (`radio_nxdn_fits`); saved with the VFO |
+| A channel | a temporary mode change (debug link op 31, mode 3); the codeplug stores FM and DMR only, so Save to channel stores FM |
+| Debug link | `rfoundry_debug.py radio mode nxdn` ([debuglink.md](debuglink.md) 3.8) |
+
+Refused in the listen-only bands, and where the board's air interface carries neither rate.
+
+### 6.2 Settings
+
+RAM only, one set for every channel and the VFO (`radio_req_nxdn_settings`, debug link op 40, `rfoundry_debug.py radio
+nxdn`). The codeplug carries none of this yet (10).
+
+| Setting | Values | Default | Notes |
+|---|---|---|---|
+| Rate | 4800 bit/s, 9600 bit/s | 9600 | the engine's `rate9600`; a rate change is a new session |
+| RAN, receive | 0 to 63 | 0 | 0 takes every RAN (TS 1-B 4.1.7.1) |
+| RAN, transmit | 0 to 63 | 1 | |
+| Unit ID | 1 to 65519 (9) | 1 | the source of what the radio sends |
+| Call | group or unit, ID | group 1 | `tx_call_type`, `tx_dst` |
+| Group squelch | 0 (RAN only) or a group ID | 0 | `rx_gid`: group calls to it or to all, unit calls to the unit (TS 1-B 4.1.7) |
+| Emergency | on, off | off | the control option's bit |
+| Bandwidth | 12.5 kHz | | radios set 12.5 kHz at both rates (9) |
+| Talk-around | | | not a setting: the frames are inbound either way (table 5.2-2) |
+
+### 6.3 What it shows
+
+| Where | What |
+|---|---|
+| Home screen | the mode name, the group or unit PTT calls on the talk line, the power, transmit RAN and rate in the chips; a call heard: who calls whom, or why it isn't played (encrypted, another group) |
+| Debug link | the `nxdn` view section ([debuglink.md](debuglink.md) 3.7): the call, the settings, the provider's fit at each rate, counters |
 
 ## 7. The engine (`core/nxdn/nxdn_engine.c`)
 
@@ -192,7 +230,7 @@ Memory on Cortex-M4 (`-Os`):
 | Deepest receive stack below the framer | about 310 (call layer 80, field decoder 72, Viterbi 160) |
 
 The radio core needs from a board: a provider (`board_t.air`) whose fit takes 2400 or 4800 symbols/s with a 10- and a
-19-symbol sync, and its vocoder (`hal_vocoder_t`) for the 72-bit frames.
+19-symbol sync, and its vocoder (`hal_vocoder_t`) for the 72-bit frames (6).
 
 ## 8. Tests
 
@@ -201,7 +239,10 @@ The radio core needs from a board: a provider (`board_t.air`) whose fit takes 24
 | `tests/host/fecTest.c` (`test_conv`) | the Viterbi decoder: clean, punctured, soft against hard in noise |
 | `tests/host/nxdnTest.c` | the scrambler against its register, the syncs, the LICH and its parity, SACCH and FACCH1 round trips through errors and CRC checks, VCH places, the 7.2.1 FEC frames, messages; calls through the framer: clear, RAN squelch, RAN 0, late entry, LICH coasting, symbol errors, a header sync with an error, encrypted, 9600 bit/s |
 | `tests/host/nxdnEngineTest.c` | two engines on made-up providers at both rates: a call heard with its fields and voice in order, an encoder stall covered by silence, no underruns, late entry, group and individual squelch, a squelch change mid-call, an abort, another RAN, RAN 0, an encrypted call; a call through a modeled discriminator tap and the soft modem at 2400 symbols/s, eight calls per noise level |
-| `tools/bench/nxdntool.py selftest` | the bench tool (below) both ways at both rates, with bit errors and through the soft modem |
+| `tests/host/radioCoreTest.c` (`radioCoreTestNxdn`, `radioCoreTestP25Nxdn`) | the radio core against an NXDN engine on a fake provider: a call heard, its voice in order to the vocoder, another RAN, group squelch; PTT heard by the far engine with the settings, settings sent mid-transmission, 4800 bit/s, a TX-only and an RX-only fit, no fit, the time-out; the mode by request, the debug link and the VFO saved; P25 and NXDN in turn in the same memory |
+| `tests/host/uiFlowTest.c` | the mode tile's order, the home screen in NXDN, the FM-only tiles |
+| `tests/hil/test_nxdn.py` | on the radio: the mode switch, the settings; opt-in, an over decoded off air by the SDR bench's 4FSK receiver and `nxdntool` |
+| `tools/bench/nxdntool.py selftest` | the bench tool (below) both ways at both rates, with bit errors and through the soft modem, from bench receiver records, the summary line |
 
 The soft modem test (8 kHz tap, 2000 counts per kHz, so the outer level is 2100 counts and the step between levels
 1400): every call whole up to 300 counts of noise; at 400 and 500 one call in eight misses its header and is joined
@@ -210,7 +251,13 @@ bits: their own FEC is the vocoder's.
 
 `tools/bench/nxdntool.py` (built from `tools/bench/nxdn/`) runs the firmware's code on the host: `gen` writes a call as
 symbols with an expect file, `mod` turns symbols into discriminator samples, `decode` and `disc` read them back
-through the framer (and the soft modem) and compare. Voice is made-up patterns.
+through the framer (and the soft modem) and compare. `decode` reads what `p25tool.py decode` reads: a dibit file, the
+bench receiver's records (`--records`) or `rfoundry_debug.py air rx` records (`--air-jsonl`), and ends with a summary:
+RAN, source, destination, call type, frames, voice frames, CRC failures. Voice is made-up patterns.
+
+An over checked off air: the radio in NXDN on a test frequency, the SDR bench's 4FSK receiver on it (2400 baud at
+4800 bit/s, 4800 baud at 9600 bit/s, root raised cosine, the FSW `CDF59` as a 10-symbol sync), its symbols through
+`nxdntool.py decode --records` (`test_nxdn_tx_off_air`).
 
 ## 9. Unconfirmed
 
@@ -227,9 +274,11 @@ scrambler examples), so the codec checks against itself and the clauses only.
 | A 6.25 kHz channel | radios set 12.5 kHz; whether a board's filter can do 6.25 is per board | table 2.3-1 |
 | A short sync | one wrong symbol in a header's FSW makes the framer miss the header (10 symbols, the fit's limit); the call is joined late at the next superframe | 5.3.1.2 |
 | Unit ID range | 1 to 65519 (the top IDs are special) | TS 1-B |
+| A board's transmit pulse | the provider's shaping at the profile's symbol rate and deviation, as its fit reports (`AIR_FIT_SHAPE_APPROX`, `AIR_FIT_DEV_APPROX`); whether a receiver of another make takes it is untested | 3.4, 3.5 |
+| Voice on air | the VCH bit order is settled against 7.2.1 (5); a call heard by a radio of another make is untested | 7.2 |
 
 ## 10. Not written
 
-The radio core's NXDN channel mode, the codeplug and site editor settings (6), UI, scan, the vocoder connection (5),
-9600 bit/s full rate, data (UDCH, short data), trunking (RCCH), status and other supplementary messages,
+A stored NXDN channel (the codeplug and site editor settings of 6.2), settings per channel, a settings screen on the
+radio, scan and dual watch in NXDN, 9600 bit/s full rate, data (UDCH, short data), trunking (RCCH), status and other supplementary messages,
 encryption, a transmit filter in a provider.

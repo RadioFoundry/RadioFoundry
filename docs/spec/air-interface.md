@@ -186,12 +186,17 @@ before the queue falls under the provider's lead, or the provider sends idle sym
 
 Transmit states: idle, priming, on, ending (the last symbol is queued), done.
 
+In the radio core each mode on the air interface fills one table of these steps (`radio_air_ops_t`,
+`core/radio/radio_air.h`: running, no TX, prepare, go, stop, abort, state, clear), so PTT, the time-out and the
+release are one path for every mode. A mode whose session opened with `AIR_FIT_RX` and no `AIR_FIT_TX` refuses PTT
+before anything is queued: `tx_deny=air_no_tx` ("This mode: receive only").
+
 ## 8. Users
 
 | User | State |
 |---|---|
 | P25 Phase 1 conventional voice | written, host tested ([p25.md](p25.md)) |
-| NXDN conventional voice, 4800 and 9600 bit/s | written, host tested ([nxdn.md](nxdn.md)); no radio core runs it yet |
+| NXDN conventional voice, 4800 and 9600 bit/s | written, host tested, in the radio core ([nxdn.md](nxdn.md) 6) |
 | A DMR engine on symbols | not written. The interface carries TDMA (slot length, slot events, the slot clock, per-slot transmit chunks, syncs inside the burst); today's DMR runs on the modem chip's own layer 2 |
 | 2-level modes | carried (the dibit map, the soft modem's fit) |
 | AFSK (APRS) | not a symbol mode: its tones ride the audio band. The sample taps can feed a demodulator for it; nothing uses them for that yet |
