@@ -16,6 +16,17 @@
 #include "ui/i18n.h"
 #include "config.h"
 
+// Settings > Advanced: Backlight tests (CONFIG_BACKLIGHT_TEST) sits under Diagnostics and moves the rows below it
+// (Factory reset, Crash log) down one, so the flows that reach them press Down once more. Not ideal: hardcoded row
+// positions should go once flows can find a row by its name
+#if CONFIG_BACKLIGHT_TEST
+#define ADV_BELOW_DIAG		"down "
+#define ADV_BELOW_DIAG_N	1
+#else
+#define ADV_BELOW_DIAG		""
+#define ADV_BELOW_DIAG_N	0
+#endif
+
 static int fails, flows_run;
 
 typedef struct {
@@ -151,6 +162,17 @@ static const flow_t flows[] = {
 	{ "S freq trim: past 10.0 ppm is refused", "trim ok 7 up ok up ok 1 0", "1", "toast=Up_to_10.0", 1, false },
 	{ "S freq trim: OK leaves", "trim ok 7 up ok up ok", "ok", "screen=group shows=Freq_trim", 1, false },
 	{ "S no freq trim without the hook", "", "ok 7 up ok", "hides=Freq_trim", 4, false },
+#if CONFIG_BACKLIGHT_TEST
+	// Settings > Advanced > Backlight tests, under Diagnostics. The sim's display has the raw hooks (4096 counts, three
+	// rates, 7324 Hz standard), so the compare value page comes first
+	{ "S backlight tests", "", "ok 7 up ok down down down ok", "screen=bltest shows=CV", 8, false },
+	{ "S backlight tests: digits set the value", "ok 7 up ok down down down ok", "2 1 3 7", "shows=CV_2137", 4, false },
+	{ "S backlight tests: # applies fewer digits", "ok 7 up ok down down down ok", "5 0 ctx", "shows=CV_50", 3, false },
+	{ "S backlight tests: Up steps 50", "ok 7 up ok down down down ok 2 1 3 7", "up", "shows=CV_2187", 1, false },
+	{ "S backlight tests: OK to brightness", "ok 7 up ok down down down ok", "ok", "shows=Brightness", 1, false },
+	{ "S backlight tests: OK to the rate", "ok 7 up ok down down down ok", "ok ok", "shows=PWM_rate", 2, false },
+	{ "S backlight tests: BACK leaves", "ok 7 up ok down down down ok", "back", "screen=group", 1, false },
+#endif
 	// Settings > Display > Language, the last row (i18n.h; set78 = UI_SET_LANGUAGE, 'e' << 8 | 's' = 25971 Spanish,
 	// 'e' << 8 | 'n' = 25966 English picked; 0 never picked)
 	{ "S language list", "", "ok 7 2 up ok", "screen=language shows=English", 5, false },
@@ -686,8 +708,8 @@ static const flow_t flows[] = {
 	  "sent=1 aprs_to=Q4WAB-9 text=OK", 1, false },
 	{ "A not in this build", "aprs:off", "ok 6 8 2", "toast=APRS:_not aprs_auto=0", 4, false },
 	// The crash log and its report (docs/spec/crash-log.md): Settings > Advanced > Crash log, after the restart
-	{ "C crash log from Advanced", "crash:on", "ok 7 up ok down down down down ok", "screen=crash shows=Fault_3 shows=Crash_Log crash_seen=1",
-	  9, false },
+	{ "C crash log from Advanced", "crash:on", "ok 7 up ok down down down " ADV_BELOW_DIAG "down ok", "screen=crash shows=Fault_3 shows=Crash_Log crash_seen=1",
+	  9 + ADV_BELOW_DIAG_N, false },
 	{ "C crash: Off neither asks nor sends", "crash:on wait:2500", "", "screen=home crash_sends=0 crash_seen=0", 0, false },
 	{ "C crash: Ask prompts after the restart", "crash:ask wait:2500", "", "screen=crash shows=USA?",
 	  0, false },
@@ -696,18 +718,18 @@ static const flow_t flows[] = {
 	  false },
 	{ "C crash: Auto sends without a prompt", "crash:auto wait:2500", "", "screen=home crash_sends=1 crash_seen=1", 0,
 	  false },
-	{ "C crash: send needs a target", "crash:on ok 7 up ok down down down down ok", "1", "crash_sends=0 toast=Pick_Send_to",
+	{ "C crash: send needs a target", "crash:on ok 7 up ok down down down " ADV_BELOW_DIAG "down ok", "1", "crash_sends=0 toast=Pick_Send_to",
 	  1, false },
-	{ "C crash: Send to picks a contact", "crash:on ok 7 up ok down down down down ok", "2 ok", "screen=crash shows=USA", 2,
+	{ "C crash: Send to picks a contact", "crash:on ok 7 up ok down down down " ADV_BELOW_DIAG "down ok", "2 ok", "screen=crash shows=USA", 2,
 	  false },
-	{ "C crash: send from the menu", "crash:on ok 7 up ok down down down down ok 2 ok", "1", "crash_sends=1", 1, false },
-	{ "C crash: After a crash cycles", "crash:on ok 7 up ok down down down down ok", "3", "shows=Ask", 1, false },
-	{ "C crash: cleared", "crash:on ok 7 up ok down down down down ok", "4", "crash_have=0 shows=No_crash_recorded", 1, false },
-	{ "C crash: nothing to clear", "ok 7 up ok down down down down ok", "4", "toast=none shows=No_crash_recorded", 1, false },
-	{ "C crash: nothing to send", "ok 7 up ok down down down down ok", "1", "toast=No_crash crash_sends=0", 1, false },
-	{ "C crash: a send that can't start says so", "crash:on crashtx:refuse ok 7 up ok down down down down ok 2 ok", "1",
+	{ "C crash: send from the menu", "crash:on ok 7 up ok down down down " ADV_BELOW_DIAG "down ok 2 ok", "1", "crash_sends=1", 1, false },
+	{ "C crash: After a crash cycles", "crash:on ok 7 up ok down down down " ADV_BELOW_DIAG "down ok", "3", "shows=Ask", 1, false },
+	{ "C crash: cleared", "crash:on ok 7 up ok down down down " ADV_BELOW_DIAG "down ok", "4", "crash_have=0 shows=No_crash_recorded", 1, false },
+	{ "C crash: nothing to clear", "ok 7 up ok down down down " ADV_BELOW_DIAG "down ok", "4", "toast=none shows=No_crash_recorded", 1, false },
+	{ "C crash: nothing to send", "ok 7 up ok down down down " ADV_BELOW_DIAG "down ok", "1", "toast=No_crash crash_sends=0", 1, false },
+	{ "C crash: a send that can't start says so", "crash:on crashtx:refuse ok 7 up ok down down down " ADV_BELOW_DIAG "down ok 2 ok", "1",
 	  "toast=Can't_send crash_sends=0", 1, false },
-	{ "C crash: Ask without a target asks for one", "crash:on ok 7 up ok down down down down ok", "3",
+	{ "C crash: Ask without a target asks for one", "crash:on ok 7 up ok down down down " ADV_BELOW_DIAG "down ok", "3",
 	  "shows=Ask toast=Pick_Send_to_as_well", 1, false },
 	{ "C crash: Auto says when the report is out", "crash:auto wait:2500", "", "toast=Crash_report_sent", 0, false },
 	{ "C crash: Auto says when the report failed", "crash:auto crashtx:fail wait:2500", "",
@@ -717,7 +739,7 @@ static const flow_t flows[] = {
 	{ "C crash: no prompt off Home", "crash:ask ok wait:2500", "", "screen=hub crash_seen=0", 0, false },
 	{ "C crash: the prompt once back on Home", "crash:ask ok wait:2500 back wait:100", "", "screen=crash shows=USA?", 0,
 	  false },
-	{ "C crash: a seen record isn't asked about", "crash:ask ok 7 up ok down down down down ok long:back wait:2500", "",
+	{ "C crash: a seen record isn't asked about", "crash:ask ok 7 up ok down down down " ADV_BELOW_DIAG "down ok long:back wait:2500", "",
 	  "screen=home crash_sends=0", 0, false },
 	// Digit keys while transmitting (#37)
 	{ "T FM transmitting: a digit does nothing (#37)", "down pttdown", "5", "screen=home toast=none", 1, false },

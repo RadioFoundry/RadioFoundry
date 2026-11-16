@@ -128,6 +128,7 @@ is `tools/bringup.py list --radio <id>`.
 | `channel_knob` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `ui_settings` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial, needs re-run |
 | `diag` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
+| `backlight_test` | off | off | off | off | off | off | off |
 | `ui_color` | not recorded | not recorded | ✕ | not recorded | not recorded | not recorded | ✕ |
 | `font_xl` | not recorded | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `font_aa` | not recorded | off | off | off | off | off | ✕ |
@@ -221,6 +222,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `VFO_FM` | ● | ● | ● | ● | ● | ● | ● |
 | `VFO_DMR` | ● | ● | ● | ● | ● | ● | ● |
 | `DIAG` | ● | ● | ● | ● | ● | ● | ● |
+| `BACKLIGHT_TEST` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `FONT_XL` | ● | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `FONT_AA` | ● | ○ | ○ | ○ | ○ | ○ | ✕ |
 | `FONT_BIG` | ● | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
@@ -373,6 +375,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 |---|---|---:|---:|---|
 | Settings menu on the radio | `UI_SETTINGS` | 5,304 | 5,640 |  |
 | Diagnostics page | `DIAG` | 3,752 | 3,532 |  |
+| Backlight test pages | `BACKLIGHT_TEST` | 1,536 | 1,552 | Off by default; bench work ([backlight-curve.md](testing/backlight-curve.md)) |
 | Color screen settings (theme, highlight color, filled status bar) | `UI_COLOR` | 672 | 608 | Off on the DM-1801 Pro (monochrome screen; 628 B there). Measured 2026-10-17; DM-1701 with LTO 612 B |
 | 16x32 font | `FONT_XL` | 6,352* | — | Only useful at 240 px and wider (MD-380 is 160 px). Anti-aliased on the DM-32 (7.4 KB of glyphs) |
 | Anti-aliased fonts | `FONT_AA` | 3,004* | — | Smooth text on color panels (measured 2026-10-17); the DM-32's image grew 9.5 KB with it and `FONT_XL` |

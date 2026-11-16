@@ -146,10 +146,28 @@ static void update_focus_target(void)
 		ui_svc_focus_target(0, false);
 }
 
+#if CONFIG_BACKLIGHT_TEST
+// Screens from the top down to stack level `from` leave the stack: each runs its leave hook (the backlight tests give
+// the light back)
+static void left(uint8_t from)
+{
+	for (uint8_t i = sp; i >= from && i > 0; i--) {
+		if (ui_scr[stack[i].scr]->leave != NULL)
+			ui_scr[stack[i].scr]->leave();
+	}
+}
+#define ON_BL_TEST()	(stack[sp].scr == SCR_BL_TEST)
+#else
+#define left(from)	((void)0)
+#define ON_BL_TEST()	false
+#endif
+
 void ui_push(uint8_t scr, uint16_t arg)
 {
-	if (sp + 1 >= UI_STACK_MAX)
+	if (sp + 1 >= UI_STACK_MAX) {
+		left(UI_STACK_MAX - 1);
 		sp = UI_STACK_MAX - 2;	// never deeper than the stack: the oldest levels stay, the newest is replaced
+	}
 	sp++;
 	stack[sp].scr = scr;
 	stack[sp].arg = arg;
@@ -199,6 +217,7 @@ static void cp_question_gone(uint8_t from)
 void ui_pop(void)
 {
 	cp_question_gone(sp);
+	left(sp);
 	if (sp > 0)
 		sp--;
 	if (ui_scr[stack[sp].scr]->flags & SF_FILTER)
@@ -214,6 +233,7 @@ void ui_pop(void)
 void ui_go_home(void)
 {
 	cp_question_gone(1);
+	left(1);
 	sp = 0;
 	ui_st.quick_edit = false;
 	entry_cancel();
@@ -1891,6 +1911,28 @@ void ui_app_init(void)
 }
 
 uint8_t ui_app_brightness(void) { return ui_st.brightness; }
+
+#if CONFIG_BACKLIGHT_TEST
+// The backlight tests hold the light: the UI task's dim and off times and key wake-ups leave it alone while held
+static int16_t backlight_hold = -1;
+static bool backlight_reapply;
+
+void ui_backlight_hold(int16_t percent)
+{
+	if (percent < 0 && backlight_hold >= 0)
+		backlight_reapply = true;	// the tests wrote the board behind the task's back: it writes its level again
+	backlight_hold = percent;
+}
+
+int16_t ui_app_backlight_hold(void) { return backlight_hold; }
+
+bool ui_app_take_backlight_reapply(void)
+{
+	bool r = backlight_reapply;
+	backlight_reapply = false;
+	return r;
+}
+#endif
 bool ui_app_power_off_due(void) { return power_off_due; }
 
 static uint16_t clamp_u16(int32_t v) { return (uint16_t)(v < 0 ? 0 : v > 0xFFFF ? 0xFFFF : v); }
@@ -2187,7 +2229,8 @@ void ui_app_key(const input_event_t *ev)
 	// QUICK opens quick settings from any screen; BACK returns to where the user was
 	const ui_scr_def_t *d = ui_scr[stack[sp].scr];
 	if (ev->action == ACT_QUICK && ev->gesture == GESTURE_PRESS && stack[sp].scr != SCR_QUICK &&
-			stack[sp].scr != SCR_DIAG && stack[sp].scr != SCR_HOME && !typing) {
+			stack[sp].scr != SCR_DIAG && stack[sp].scr != SCR_HOME && !typing &&
+			!ON_BL_TEST()) {	// * steps the rate in the backlight tests
 		ui_push(SCR_QUICK, 0);
 		return;
 	}
