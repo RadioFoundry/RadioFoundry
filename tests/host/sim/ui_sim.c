@@ -374,9 +374,17 @@ static void d_flush_indexed(const void *fb, const uint16_t *pal, uint16_t y0, ui
 	(void)fb; (void)pal; (void)y0; (void)y1;
 }
 static void d_backlight(uint8_t p) { (void)p; }
+// The backlight tests' raw hooks (CONFIG_BACKLIGHT_TEST): a 4096-count period at 7324 Hz, three rates
+static uint16_t bl_raw;
+static void d_backlight_raw(uint16_t v) { bl_raw = v; }
+static uint16_t d_backlight_raw_get(void) { return bl_raw; }
+static uint32_t d_backlight_rate(uint8_t i) { return 29296u >> (i < 3 ? i * 2 : 2); }
 static hal_display_t disp = { .width = 160, .height = 120, .bpp = 16, .init = d_init, .flush = d_flush,
 			      .flush_indexed = d_flush_indexed,
-			      .set_backlight = d_backlight };
+			      .set_backlight = d_backlight,
+			      .backlight_raw_max = 4096, .set_backlight_raw = d_backlight_raw,
+			      .backlight_raw = d_backlight_raw_get, .backlight_rates = 3, .backlight_rate_std = 1,
+			      .set_backlight_rate = d_backlight_rate };
 static uint8_t battery = 84;
 static uint8_t p_battery(void) { return battery; }
 static uint16_t p_supply(void) { return 13800; }	// the sim's view carries the reading (supply:<mv>)
