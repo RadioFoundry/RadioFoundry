@@ -6293,6 +6293,17 @@ static void test_p25_vfo(void)
 	if (!sm.view.vfo)
 		req(RREQ_VFO, 1);
 	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_P25 && radio_p25_running());
+	CHECK(sm.view.vfo_drop == 0);
+	// A board that can't run P25: the VFO comes back in its default mode, and vfo_drop says why
+	req(RREQ_VFO, 0);
+	run(5000);
+	air_nofit = true;
+	boot();
+	if (!sm.view.vfo)
+		req(RREQ_VFO, 1);
+	CHECK(sm.view.vfo && sm.view.ch.mode != RADIO_MODE_P25 && !radio_p25_running());
+	CHECK(sm.view.vfo_drop == RADIO_MODE_P25 + 1);
+	air_nofit = false;
 	req(RREQ_VFO, 0);
 }
 

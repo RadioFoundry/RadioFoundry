@@ -18,6 +18,7 @@
 #include "ui/gfx.h"
 #include "ui/ui_screens.h"
 #include "radio/radio.h"
+#include "settings/settings.h"
 #if CONFIG_HOTSPOT
 #include "hotspot/hotspot.h"
 #endif
@@ -142,6 +143,7 @@ void stub_entry_service(void)
 		dlog("stub: entry dropped, the radio is transmitting");
 		return;
 	}
+	settings_flush();			// a change still in its save delay outlives the flash (the stub never saves)
 	// The monitor never touches the RF chips, so whatever the transmitter is doing now lasts the whole session. Put
 	// it in receive even when the core thinks it's idle (a hotspot burst the core doesn't track as RS_TX)
 	if (board.radio != NULL && board.radio->tx_off != NULL) {

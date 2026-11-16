@@ -259,6 +259,8 @@ typedef struct {
 	uint32_t vfo_step_hz;	// the VFO's step in use: as set, or with vfo_step_auto the width's (12.5 or 25 kHz); in
 				// the broadcast band always the broadcast step
 	bool vfo_step_auto;
+	uint8_t vfo_drop;	// a saved VFO's mode that this build or board can't run, + 1 (it came back in the default
+				// mode instead); 0 none. Set at power-up only
 	codeplug_source_t source;
 	bool hotspot;		// the radio is an MMDVM hotspot: the host link drives the modem, channel keys are off
 	// Scan (CONFIG_SCAN; all 0 otherwise)

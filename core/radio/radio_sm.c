@@ -4928,6 +4928,9 @@ static void restore_vfo(radio_sm_t *sm, const settings_t *st, uint8_t idx)
 	sm->vfo_ch.mode = v.mode == RADIO_MODE_DMR && CONFIG_VFO_DMR ? RADIO_MODE_DMR :
 		v.mode == RADIO_MODE_FM && CONFIG_VFO_FM ? RADIO_MODE_FM :
 		v.mode == RADIO_MODE_P25 && p25_ok() ? RADIO_MODE_P25 : VFO_MODE_DEFAULT;
+	if (sm->vfo_ch.mode != v.mode) {
+		sm->view.vfo_drop = (uint8_t)(v.mode + 1u);	// the debug link's vfo_drop: why the VFO came back changed
+	}
 	sm->vfo_ch.bw = v.bw == RADIO_BW_25K ? RADIO_BW_25K : RADIO_BW_12K5;
 	sm->vfo_ch.power = v.power < board.power_count ? v.power : CODEPLUG_POWER_DEFAULT;
 	sm->vfo_ch.color_code = v.cc <= 15 ? v.cc : 1;

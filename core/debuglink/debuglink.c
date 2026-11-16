@@ -712,6 +712,7 @@ static void reboot_now(void)
 		dlog("debuglink: reboot %u aborted (%u)", reboot_mode, why);
 		return;
 	}
+	settings_flush();	// a change still in its save delay (a mode picked just before) survives the restart
 	if (!board.system->reboot(reboot_mode)) {
 		dlog("debuglink: reboot %u failed (%u)", reboot_mode, DL_REBOOT_ARM_FAILED);
 	}

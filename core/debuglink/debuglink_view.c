@@ -135,7 +135,7 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "tx_elapsed_ms=%u\ntot_s=%u\n", (unsigned)v->tx_elapsed_ms, v->tot_s);
 	dl_text(t, "last_rx_ms=%u\nlast_tx_ms=%u\ntx_auto=%u\nwakes=%u\n", (unsigned)v->last_rx_ms,
 		(unsigned)v->last_tx_ms, v->tx_auto, radio_view_wakes(v));
-	dl_text(t, "vfo_step_hz=%u\n", (unsigned)v->vfo_step_hz);
+	dl_text(t, "vfo_step_hz=%u\nvfo_drop=%u\n", (unsigned)v->vfo_step_hz, v->vfo_drop);
 	dl_text(t, "codeplug=%s\n", v->source < 3 ? sources[v->source] : "?");
 	dl_text(t, "hotspot=%u\n", v->hotspot);
 	uint32_t handled, dropped;
