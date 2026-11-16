@@ -508,10 +508,11 @@ static void deny_led_start(radio_sm_t *sm)
 
 // A channel of a kind the radio doesn't run (docs/spec/channel-modes.md 6): tuned to its frequency but silent, never
 // scanned and never keyed, whatever its record says. A built kind's mode module took its channel when it was read
-// (channel_read), which gave it the mode's own: P25, the only one so far
+// (channel_read), which gave it the mode's own: P25 or NXDN
 static bool parked(const channel_t *ch)
 {
-	return ch->kind != CODEPLUG_KIND_NONE && !(codeplug_kind_built(ch->kind) && ch->mode == RADIO_MODE_P25);
+	return ch->kind != CODEPLUG_KIND_NONE && !(codeplug_kind_built(ch->kind) &&
+						   (ch->mode == RADIO_MODE_P25 || ch->mode == RADIO_MODE_NXDN));
 }
 
 // Channel number from the codeplug as the radio runs it: the mode module of its kind takes it
@@ -522,6 +523,9 @@ static bool channel_read(uint16_t number, channel_t *ch)
 	}
 #if CONFIG_P25
 	radio_p25_take(ch);
+#endif
+#if CONFIG_NXDN
+	radio_nxdn_take(ch);
 #endif
 	return true;
 }
@@ -4188,8 +4192,11 @@ static uint32_t p25_own_id(const radio_sm_t *sm)
 #endif
 }
 
-// The stored channel P25 runs on, 0 in the VFO: its tag gives the parameters (radio_p25_params)
-static uint16_t p25_number(const radio_sm_t *sm)
+#endif
+
+#if CONFIG_AIR
+// The stored channel an air mode runs on, 0 in the VFO: its tag gives the parameters (radio_p25_params, radio_nxdn.c)
+static uint16_t air_number(const radio_sm_t *sm)
 {
 	return sm->view.vfo ? 0u : sm->view.channel_number;
 }
@@ -4272,13 +4279,13 @@ static void air_begin(radio_sm_t *sm)
 {
 #if CONFIG_NXDN
 	if (sm->view.ch.mode == RADIO_MODE_NXDN) {
-		radio_nxdn_begin(&sm->view.ch);
+		radio_nxdn_begin(&sm->view.ch, air_number(sm));
 		radio_nxdn_poll(&sm->view.nxdn);
 		return;
 	}
 #endif
 #if CONFIG_P25
-	radio_p25_begin(&sm->view.ch, p25_number(sm), p25_own_id(sm));
+	radio_p25_begin(&sm->view.ch, air_number(sm), p25_own_id(sm));
 	radio_p25_poll(&sm->view.p25);
 #endif
 }
@@ -4361,12 +4368,12 @@ static void air_apply(radio_sm_t *sm)
 {
 #if CONFIG_NXDN
 	if (nxdn_now(sm)) {
-		radio_nxdn_apply(&sm->view.ch);
+		radio_nxdn_apply(&sm->view.ch, air_number(sm));
 		return;
 	}
 #endif
 #if CONFIG_P25
-	radio_p25_apply(&sm->view.ch, p25_number(sm), p25_own_id(sm));
+	radio_p25_apply(&sm->view.ch, air_number(sm), p25_own_id(sm));
 #endif
 }
 #endif
@@ -6516,7 +6523,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	case RREQ_P25_SET:
 		// radio_task.c copied the settings in: the engine takes them now, or when its transmission is done (air_tick)
 		if (radio_p25_running()) {
-			radio_p25_apply(&sm->view.ch, p25_number(sm), p25_own_id(sm));
+			radio_p25_apply(&sm->view.ch, air_number(sm), p25_own_id(sm));
 		}
 		changed(sm);
 		break;
@@ -6525,7 +6532,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	case RREQ_NXDN_SET:
 		// The same for NXDN; a new rate starts the engine over (radio_nxdn_apply)
 		if (radio_nxdn_running()) {
-			radio_nxdn_apply(&sm->view.ch);
+			radio_nxdn_apply(&sm->view.ch, air_number(sm));
 		} else if (sm->view.ch.mode == RADIO_MODE_NXDN && sm->board_mode == RADIO_MODE_DMR && !BENCH_HELD(sm) &&
 			   radio_nxdn_fits()) {
 			air_begin(sm);		// not running at the old rate: perhaps at the new one

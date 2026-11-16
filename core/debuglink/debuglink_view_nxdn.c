@@ -30,6 +30,13 @@ void debuglink_view_nxdn(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "nxdn.rate=%u\nnxdn.rx_ran=%u\nnxdn.tx_ran=%u\nnxdn.rx_gid=%u\nnxdn.unit_id=%u\n",
 		s.rate9600 ? 9600u : 4800u, s.rx_ran, s.tx_ran, s.rx_gid, s.unit_id);
 	dl_text(t, "nxdn.unit_call=%u\nnxdn.tx_dst=%u\nnxdn.tx_emergency=%u\n", s.unit_call, s.tx_dst, s.emergency);
+	if (radio_nxdn_in_force(&s)) {
+		// What the engine runs on: a stored NXDN channel's own, else the settings above
+		dl_text(t, "nxdn.run.rate=%u\nnxdn.run.rx_ran=%u\nnxdn.run.tx_ran=%u\nnxdn.run.rx_gid=%u\n",
+			s.rate9600 ? 9600u : 4800u, s.rx_ran, s.tx_ran, s.rx_gid);
+		dl_text(t, "nxdn.run.unit_id=%u\nnxdn.run.unit_call=%u\nnxdn.run.tx_dst=%u\n", s.unit_id, s.unit_call,
+			s.tx_dst);
+	}
 	radio_nxdn_stats(&c);
 	dl_text(t, "nxdn.begins=%u\nnxdn.begin_fails=%u\nnxdn.rx_calls=%u\nnxdn.tx_calls=%u\nnxdn.tx_filler=%u\n",
 		(unsigned)c.begins, (unsigned)c.begin_fails, (unsigned)c.rx_calls, (unsigned)c.tx_calls,

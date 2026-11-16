@@ -8,6 +8,15 @@ Undoing the change brings the channel's own mode back with the engine stopped. N
 
 test_nxdn_settings: the NXDN settings (op 40, RAM only) round trip through the nxdn view and are put back.
 
+test_nxdn_stored_channel (opt-in: --allow-codeplug-write; nothing is sent): the channel on view is made a stored NXDN
+channel over CPS (nxdn-codeplug.md 2): its record the safe stand-in (DMR, receive only, no contact, its own unit ID
+STORED_UNIT), a tag of kind 4 with no system and receive only, 4800 bit/s, selective squelch, RX RAN STORED_RAN and TX
+RAN STORED_TX_RAN, and the radio-wide unit ID record RADIO_UNIT (1). A settings area that is erased is made new. The
+radio must read it back as that kind (`ch.kind=4`), run NXDN on it (`mode=nxdn`, `nxdn.on=1`) with the channel's
+parameters, not the settings' (`nxdn.run.*`: the rate, both RANs, the unit ID the channel's own, a group call to group
+1, `rx_gid` 1), and drop it again once the backup is written back. Skipped where the settings area is neither valid
+nor erased.
+
 test_nxdn_tx_off_air[9600|4800] (opt-in: --allow-rf --allow-service-stop --nxdn-mhz MHz; the radio transmits, the bench
 only receives): the VFO on --nxdn-mhz in NXDN at the lowest power, at that rate, RAN TEST_RAN, unit TEST_UNIT calling
 group TEST_GROUP, keys for PTT_S through the debug link while the bench's 4FSK receiver (the rx op, mode fsk4: 2400 or
@@ -104,6 +113,76 @@ def test_nxdn_settings(radio):
         radio.link.nxdn_settings(**old)
     radio.wait_for(lambda x: x.get("nxdn.rx_gid") == str(old["rx_gid"]), 2.0, sections=("nxdn",),
                    what="settings put back")
+
+
+# --- A stored NXDN channel (nxdn-codeplug.md, channel-modes.md 2) ---
+
+KIND_NXDN = 4
+KEY_CH_TAG = 0x0400         # codeplug-settings.md 3: channel tags, 0x0400 + channel - 1
+KEY_UNIT = 0x0A00 + KIND_NXDN   # the radio-wide record (channel-modes.md 5.5)
+STORED_RAN = 9
+STORED_TX_RAN = 5
+STORED_UNIT = 2345          # the channel's own
+RADIO_UNIT = 4321           # the radio-wide record's: the channel's own comes first
+CH_LFLAG1, LFLAG1_ID, CH_DMR_ID, CH_CONTACT = 0x26, 0x80, 0x27, 0x2E    # the channel record (codeplug.md)
+
+
+def new_area(size):
+    """An empty valid settings area (codeplug-settings.md 2.1): the header, no entries, the rest erased"""
+    import zlib
+    head = b"RFKV" + bytes([1, 16]) + (0).to_bytes(2, "little") + zlib.crc32(b"").to_bytes(4, "little") + bytes(4)
+    return head + b"\xff" * (size - len(head))
+
+
+def make_nxdn(img, number):
+    """Channel number of img made a receive-only stored NXDN channel: the stand-in record, then its tag"""
+    import cps_client
+    from test_p25 import area_with, name_check
+    _, a = cps_client.channel_addr(number)
+    img[a + 0x18] = 1                   # DMR
+    img[a + 0x33] |= 0x04               # receive only
+    img[a + CH_CONTACT:a + CH_CONTACT + 2] = bytes(2)                  # no contact: group 1
+    img[a + CH_LFLAG1] |= LFLAG1_ID
+    img[a + CH_DMR_ID:a + CH_DMR_ID + 3] = STORED_UNIT.to_bytes(3, "big")
+    tag = bytes([KIND_NXDN, 0xFF]) + name_check(img[a:a + 16]).to_bytes(2, "little") + bytes([0])   # no TX flag
+    block = bytes([0x05, STORED_RAN, 0x80 | STORED_TX_RAN])            # 4800 bit/s, selective, RX and TX RAN
+    lo, hi = cps_client.SETTINGS_AREA
+    area = img[lo:hi]
+    if cps_client.area_state(area) != "valid":
+        area = new_area(hi - lo)
+    area = area_with(area, KEY_CH_TAG + number - 1, tag + block)
+    img[lo:hi] = area_with(area, KEY_UNIT, RADIO_UNIT.to_bytes(2, "little"))
+
+
+@pytest.mark.feature("nxdn")
+@pytest.mark.codeplug_write
+def test_nxdn_stored_channel(radio, backup_dir):
+    nxdn_view(radio)
+    if "NXDN" not in radio.features():
+        skip("not_built", "NXDN isn't in the radio's feature list")
+    import cps_client
+    from test_cps import codeplug_edited, pick_channel, read_backup
+    probe, _ = read_backup(radio, backup_dir, "nxdnprobe")
+    lo, hi = cps_client.SETTINGS_AREA
+    if cps_client.area_state(probe[lo:hi]) not in ("valid", "empty"):
+        skip("state", "the codeplug settings area is neither valid nor erased: not ours to write")
+    core = radio.core()
+    number = pick_channel(radio, probe)
+    if core.get("vfo") == "1" or number != as_int(core.get("channel_number"), 0):
+        skip("state", "the radio isn't on a stored channel")
+    if core.get("am") == "1" or core.get("bcast") == "1":
+        skip("state", "the channel is in a listen-only band: no NXDN there")
+    with codeplug_edited(radio, backup_dir, lambda img: make_nxdn(img, number), "nxdn"):
+        v = radio.wait_for(lambda x: x.get("ch.kind") == str(KIND_NXDN) and x.get("nxdn.on") == "1", 5.0,
+                           sections=("core", "channel", "nxdn"), what="the stored NXDN channel running")
+        assert v.get("mode") == "nxdn", v
+        assert v.get("nxdn.run.rate") == "4800", v
+        assert v.get("nxdn.run.rx_ran") == str(STORED_RAN) and v.get("nxdn.run.tx_ran") == str(STORED_TX_RAN), v
+        assert v.get("nxdn.run.unit_id") == str(STORED_UNIT), v
+        assert v.get("nxdn.run.unit_call") == "0" and v.get("nxdn.run.tx_dst") == "1", v
+        assert v.get("nxdn.run.rx_gid") == "1", v
+    radio.wait_for(lambda x: x.get("ch.kind") == "0" and x.get("nxdn.on") != "1", 5.0,
+                   sections=("core", "channel", "nxdn"), what="the channel back as it was, NXDN stopped")
 
 
 def nxdn_decode(job, rate):

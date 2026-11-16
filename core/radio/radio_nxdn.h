@@ -5,8 +5,8 @@
 // channel's NXDN parameters, and a compact view for the radio view. radio_sm.c decides when NXDN runs and keys the
 // transmitter (radio_air.h); nothing here keys it.
 //
-// The parameters are the RAM settings the debug link changes (radio_req_nxdn_settings), for the VFO and a channel
-// whose mode was changed to NXDN for now. A stored NXDN channel will fill the same struct (radio_nxdn_params).
+// The parameters of a stored NXDN channel are its own (docs/spec/nxdn-codeplug.md); the VFO and a channel whose mode
+// was changed to NXDN for now take the RAM settings the debug link changes (radio_req_nxdn_settings).
 #ifndef RADIO_NXDN_H
 #define RADIO_NXDN_H
 
@@ -15,7 +15,7 @@
 #include "config.h"
 #include "codeplug/codeplug.h"
 
-// The NXDN settings (RAM only, reset at start-up), what a channel will carry (nxdn.md 6)
+// The NXDN settings (RAM only, reset at start-up; nxdn.md 6.2): the VFO's, and the shape of what is in force
 typedef struct {
 	bool rate9600;		// 9600 bit/s (4800 symbols/s), else 4800 bit/s (2400 symbols/s)
 	uint8_t rx_ran;		// 0 (every RAN) to 63
@@ -73,17 +73,25 @@ void radio_nxdn_init(void);
 bool radio_nxdn_fits(void);
 // What the provider gives the rate (AIR_FIT_*; any task)
 uint32_t radio_nxdn_fit(bool rate9600);
+// A channel read from the codeplug, as the radio runs it: a live NXDN channel (kind 4) becomes RADIO_MODE_NXDN where
+// the board carries NXDN and its frequency allows a digital mode. False: left as read (parked)
+bool radio_nxdn_take(channel_t *ch);
 void radio_nxdn_settings(radio_nxdn_settings_t *out);		// any task
 void radio_nxdn_set_settings(const radio_nxdn_settings_t *s);	// radio task (RREQ_NXDN_SET)
 
-// Radio task. begin: the board tuned in its digital mode, its DMR stack stopped; the audio stream starts. False: no
-// memory, no provider or no fit at the rate (NXDN then receives nothing and refuses PTT)
-bool radio_nxdn_begin(const channel_t *ch);
+// The parameters in force, as settings: false when the engine isn't running. Any task: a read that crosses a change
+// of channel may mix the two (diagnostics only)
+bool radio_nxdn_in_force(radio_nxdn_settings_t *out);
+
+// Radio task. begin: the board tuned in its digital mode, its DMR stack stopped; the audio stream starts. number: the
+// stored channel ch is (0: the VFO, or none): a live NXDN channel's tag gives the parameters, else the settings. False:
+// no memory, no provider or no fit at the rate (NXDN then receives nothing and refuses PTT)
+bool radio_nxdn_begin(const channel_t *ch, uint16_t number);
 void radio_nxdn_end(void);
 bool radio_nxdn_running(void);
 void radio_nxdn_retuned(void);
 // The settings changed: the engine takes them (not while transmitting). A new rate starts the engine over
-void radio_nxdn_apply(const channel_t *ch);
+void radio_nxdn_apply(const channel_t *ch, uint16_t number);
 // Every tick: the view and the counters. True when the view changed
 bool radio_nxdn_poll(radio_nxdn_view_t *v);
 
