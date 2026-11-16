@@ -186,12 +186,15 @@ def test_nxdn_stored_channel(radio, backup_dir):
                    sections=("core", "channel", "nxdn"), what="the channel back as it was, NXDN stopped")
 
 
-def nxdn_decode(job, rate):
-    """nxdntool's JSON lines for an fsk4 rx job's records"""
+def nxdn_decode(job, rate, done=None):
+    """nxdntool's JSON lines for an fsk4 rx job's records; done (the job's last record) says why there are none"""
     import nxdntool
-    recs = [r for r in job.records if any(isinstance(r.get(k), str) for k in ("dibits", "syms", "symbols"))]
+    recs = [r for r in job.records if any(isinstance(r.get(k), (str, dict)) for k in ("dibits", "syms", "symbols"))]
     if not recs:
-        skip("bench", "the bench board sent no symbols (the fsk4 rx op's records)")
+        what = (done or {}).get("summary")
+        if what and what.get("carrier") is False and not what.get("keyings"):
+            raise AssertionError(f"the bench board heard no carrier while the radio keyed: {what}")
+        skip("bench", f"the bench board sent no symbols (the fsk4 rx op's records): {what}")
     with tempfile.TemporaryDirectory() as tmp:
         path = os.path.join(tmp, "rx.jsonl")
         with open(path, "w") as f:
@@ -241,11 +244,13 @@ def test_nxdn_tx_off_air(radio, sdr_bench, pytestconfig, rate):
                 time.sleep(0.5)
                 radio.ptt_for(PTT_S)
                 radio.wait_for(lambda x: x.get("state") != "tx", timeout=3, what="TX ended")
-                job.wait(PTT_S + 20)
+                done = job.wait(PTT_S + 20)
             v = radio.view(["nxdn"])
+            print(f"\nnxdn tx: calls {calls0}->{v.get('nxdn.tx_calls')}, underruns {under0}->"
+                  f"{v.get('nxdn.tx_underruns')}; bench {done.get('summary')}")
         finally:
             L.nxdn_settings(**old)
-    lines = nxdn_decode(job, rate)
+    lines = nxdn_decode(job, rate, done)
     m = nxdntool.summary(lines)
     syncs = [r for r in job.records if "sync" in r or "offset_hz" in r]
     print(f"\nnxdn off air at {rate} bit/s: {nxdntool.summary_text(m)}; bench syncs {len(syncs)}")

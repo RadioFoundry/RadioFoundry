@@ -144,8 +144,8 @@ def summary_text(m):
 
 def records_to_syms(path, tmp):
     """Records (JSON lines) to one symbol a byte: `rfoundry_debug.py air rx` chunks ("hard", "nsyms") or the bench
-    receiver's records (a "rec" with its sliced symbols as hex in "dibits", "syms" or "symbols", and "n"). Packed four
-    a byte, the first in bits 7-6"""
+    receiver's records (a "rec" with its sliced symbols as hex in "dibits", "syms" or "symbols", and "n"; or the
+    bench API's {"dibits": {"n", "hex"}}). Packed four a byte, the first in bits 7-6"""
     out, gaps = bytearray(), 0
     with open(path) as f:
         for line in f:
@@ -157,10 +157,15 @@ def records_to_syms(path, tmp):
                 gaps += 1 if "GAP" in (d.get("flags") or []) else 0
             else:
                 r = d.get("rec") or {}
-                key = next((k for k in ("dibits", "syms", "symbols") if isinstance(r.get(k), str)), None)
+                key = next((k for k in ("dibits", "syms", "symbols") if isinstance(r.get(k), (str, dict))), None)
                 if key is None:
                     continue
-                h = r[key]
+                if isinstance(r[key], dict):    # the bench API's form: {"dibits": {"t", "k", "n", "hex"}}
+                    h, r = r[key].get("hex"), r[key]
+                    if not isinstance(h, str):
+                        continue
+                else:
+                    h = r[key]
                 n = r.get("n") or r.get("nsyms") or 4 * (len(h) // 2)
             b = bytes.fromhex(h)
             out += bytes((b[i >> 2] >> (6 - 2 * (i & 3))) & 3 for i in range(n))

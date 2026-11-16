@@ -198,6 +198,8 @@ def cmd_rx(a):
         for key in ("dibits", "syms", "symbols"):
             if isinstance(r.get(key), str):
                 add_hex(r[key], r.get("n") or r.get("nsyms"))
+            elif isinstance(r.get(key), dict) and isinstance(r[key].get("hex"), str):
+                add_hex(r[key]["hex"], r[key].get("n"))     # the bench API's form: {"dibits": {"t", "k", "n", "hex"}}
             elif isinstance(d.get(key), dict) and data is not None:
                 add_hex(data.hex(), d[key].get("n") or d[key].get("nsyms"))
         if "rec" in d and not a.quiet:
