@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 /*
  * P25 voice between the engine (p25_engine.h, 88-bit full-rate voice frames) and the board's PCM audio
- * (hal_audio_t). docs/spec/p25.md 7.
+ * (hal_audio_t). docs/spec/p25.md 5.
  *
  *  RX: the engine's rx_voice hook queues each frame; the audio block callback takes one per 20 ms and decodes it
  *      with the full-rate decoder (core/mbe/imbe.h). Frames come nine at a time (one LDU every 180 ms), so playback

@@ -75,6 +75,26 @@ switch = "RX_EXT"
 hardware = "a receiver chip whose documents give a range past the rated bands"
 spec = "docs/spec/radio-features.md"
 
+[feature.air]
+switch = "AIR"
+spec = "docs/spec/air-interface.md"
+source = ["core/air", "core/fec", "hal/hal_air.h", "hal/hal_baseband.h"]
+
+[feature.p25]
+switch = "P25"
+spec = "docs/spec/p25.md"
+source = ["core/p25", "core/radio/radio_p25.c", "core/radio/radio_p25.h"]
+
+[feature.imbe]
+switch = "IMBE"
+spec = "docs/spec/p25.md"
+source = ["core/mbe/imbe.h", "core/mbe/imbe_dec.c", "core/mbe/imbe_tab.c", "core/mbe/imbe_tab.h", "core/p25/p25Voice.c"]
+
+[feature.mbe]
+switch = "MBE"
+spec = "docs/spec/p25.md"
+source = ["core/mbe"]
+
 [feature.dmr_voice]
 switch = "DMR"
 spec = "docs/spec/dmr-voice.md"
@@ -486,6 +506,11 @@ spec = "docs/spec/codec-placement.md"
 source = ["tools/rfoundry/rfoundry"]
 
 # ── Bench ──
+
+[feature.air_raw]
+switch = "AIR_RAW"
+spec = "docs/spec/debuglink.md"
+source = ["core/debuglink/debuglink_air.c", "core/debuglink/debuglink_air.h"]
 
 [feature.audio_probe]
 switch = "AUDIO_PROBE"
