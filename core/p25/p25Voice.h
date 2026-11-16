@@ -9,12 +9,14 @@
  *      starts once a whole LDU is queued and P25_VOICE_LEAD more blocks have passed: the next LDU then arrives with
  *      that much to spare. A frame the FEC could not trust, and a block with nothing queued during a call, go to the
  *      decoder as bad: it repeats the last good frame, then mutes.
- *  TX: there is no encoder yet. The engine's tx_voice hook gives a silence frame (imbe_silence) per call, so a
- *      transmission carries silence; an encoder fills the same hook from the mic blocks later.
+ *  TX: while a transmission is on (p25VoiceTx) the audio block callback encodes each mic block with the full-rate
+ *      encoder and queues the frame; the engine's tx_voice hook takes them one at a time. With none ready the hook
+ *      says so and the engine sends silence (its tx_filler). The speaker is silent meanwhile.
  *
- * Threading: p25VoiceBegin, p25VoicePoll and p25VoiceEnd run in the radio core's task, the hooks in the provider's
- * task, the decoder only in the audio callback. The queue is single producer / single consumer and call boundaries
- * are counters each side only reads from the other, as in core/dmr/ambe/ambeVoice.c. No RTOS call.
+ * Threading: p25VoiceBegin, p25VoicePoll, p25VoiceTx and p25VoiceEnd run in the radio core's task, the hooks in the
+ * provider's task, the decoder and the encoder only in the audio callback. Each queue is single producer / single
+ * consumer and call boundaries are counters each side only reads from the other, as in core/dmr/ambe/ambeVoice.c.
+ * No RTOS call.
  *
  * Memory is the caller's (p25_voice_mem_t): it may be lent by something idle while P25 runs (hal_vocoder_t.lend).
  */
@@ -25,11 +27,13 @@
 #include <stdint.h>
 #include "hal_audio.h"
 #include "../mbe/imbe.h"
+#include "../mbe/mbe_est.h"
 #include "p25_engine.h"
 
 #define P25_VOICE_QUEUE		32	// frames (640 ms), power of two: two LDUs and room for jitter
 #define P25_VOICE_PRIME		P25_VOICE_FRAMES	// frames queued before playback starts: one LDU
 #define P25_VOICE_LEAD		2	// blocks of silence after that, the margin for the next LDU
+#define P25_VOICE_TX_QUEUE	8	// encoded frames waiting for the engine (160 ms), power of two
 
 typedef struct {
 	uint8_t seq;		// the call it belongs to
@@ -37,9 +41,18 @@ typedef struct {
 	uint8_t imbe[P25_IMBE_BYTES];
 } p25_voice_entry_t;
 
-// Everything the voice path needs while P25 runs: the queue and the decoder's kept and scratch memory
+typedef struct {
+	uint8_t gen;		// the transmission it belongs to
+	uint8_t imbe[P25_IMBE_BYTES];
+} p25_voice_tx_entry_t;
+
+// Everything the voice path needs while P25 runs: the queues, and the decoder's and the encoder's kept and scratch
+// memory. A radio transmits or receives, so the two share the prediction state and the scratch; only the estimator's
+// history is the encoder's own
 typedef struct {
 	p25_voice_entry_t q[P25_VOICE_QUEUE];
+	p25_voice_tx_entry_t tq[P25_VOICE_TX_QUEUE];
+	mbe_est_state_t est;
 	imbe_state_t st;
 	mbe_params_t pr;
 	mbe_state_t ms;
@@ -59,7 +72,11 @@ typedef struct {
 	uint32_t rx_bit_errors;	// bits corrected by the FEC in good frames
 	uint32_t rx_queue_max;	// most frames queued at once (of P25_VOICE_QUEUE)
 	uint32_t rx_peak;	// largest decoded sample (absolute) in the latest call that played
-	uint32_t tx_frames;	// frames handed to the engine for transmission (silence until an encoder exists)
+	uint32_t tx_frames;	// frames handed to the engine for transmission
+	uint32_t tx_encoded;	// mic blocks encoded
+	uint32_t tx_dropped;	// encoded frames dropped, queue full (the engine took none in time)
+	uint32_t tx_silent;	// of tx_encoded, the frames the encoder made silence frames (no signal at all)
+	uint32_t tx_mic_peak;	// largest mic sample (absolute, after the gain) in the latest transmission
 } p25_voice_stats_t;
 
 // The board's PCM audio (NULL: frames are counted, nothing plays). Once, at start-up
@@ -68,6 +85,11 @@ void p25VoiceInit(const hal_audio_t *audio);
 void p25VoiceBegin(p25_voice_mem_t *mem);
 // Radio task, every tick while P25 runs: starts the audio stream once a call is heard
 void p25VoicePoll(void);
+// A transmission starts (the stream starts if it was not running; from the next block the mic is encoded) or ends.
+// Radio task, around the engine's transmit calls
+void p25VoiceTx(bool on);
+// The mic samples' gain step, as ambeVoiceSetMicGain (radio/mic_gain.h). Any task
+void p25VoiceSetMicGain(uint8_t step);
 // Stop (radio task, after p25_engine_end): the stream stops and mem is free again
 void p25VoiceEnd(void);
 // Whether the voice stream runs (its callback owns hal_audio_t). Radio task only

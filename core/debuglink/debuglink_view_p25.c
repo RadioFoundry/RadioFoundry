@@ -59,6 +59,8 @@ void debuglink_view_p25(const radio_view_t *v, dl_text_t *t)
 		(unsigned)vs.rx_bit_errors);
 	dl_text(t, "p25v.queue_max=%u\np25v.peak=%u\np25v.tx_frames=%u\n", (unsigned)vs.rx_queue_max,
 		(unsigned)vs.rx_peak, (unsigned)vs.tx_frames);
+	dl_text(t, "p25v.tx_encoded=%u\np25v.tx_dropped=%u\np25v.tx_silent=%u\np25v.tx_mic_peak=%u\n",
+		(unsigned)vs.tx_encoded, (unsigned)vs.tx_dropped, (unsigned)vs.tx_silent, (unsigned)vs.tx_mic_peak);
 #else
 	dl_text(t, "p25v.built=0\n");
 #endif
