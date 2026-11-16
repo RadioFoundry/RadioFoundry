@@ -1851,6 +1851,22 @@ is well above the "mic muted, no tone" row.
   before it leaves the bootloader in DFU; a later half application may crash but never bricks. Enter the bootloader by hand (PTT and side
   key 1 at power-on) and flash again.
 
+## Air interface (`CONFIG_P25`, `CONFIG_NXDN`)
+
+`board.air` is the HR_C6000's physical layer mode ([modem-hrc6000.md](modem-hrc6000.md) 10). Checked on this radio
+against the SDR bench, at the lowest power:
+
+| What | Result |
+|---|---|
+| P25 conventional transmit ([p25.md](p25.md) 9, `test_p25_tx_off_air`) | 19 units, 153 voice frames, none bad, no voice bit corrected; outer deviation 1924 Hz, carrier 75 Hz low |
+| P25 conventional receive (`test_p25_rx_from_bench`) | at -117 dBm: 72 of 72 voice frames, 1 bad, played |
+| A stored P25 or NXDN channel written over CPS | runs the mode on its own parameters, plain again after the restore; receive only, its transmit not keyed |
+| P25 trunked ([p25-trunking.md](p25-trunking.md), `test_p25_trunk_tx`) | the bench's control channel held; registration, affiliation and voice requests heard off air; two calls keyed on the granted channel, each a header, 5 pairs of voice units and a terminator; back on the control channel after. A call granted to another unit followed to a second transmitter and played (by hand) |
+| NXDN transmit ([nxdn.md](nxdn.md), `test_nxdn_tx_off_air`) | 9600 bit/s: 78 frames, outer deviation 2399 Hz; 4800 bit/s: 40 frames, 1012 Hz; no CRC failure |
+| NXDN receive | none: the chip gives no receive fit for NXDN (modem-hrc6000.md 10.5) |
+
+Not checked: a call with a radio of another make, a live trunked system, how the encoded voice sounds.
+
 ## Receive past the rated bands
 
 134-136, 200-260 and 480-520 MHz: the AT1846S data sheet. Receive only, FM, off by default ([radio-features.md](radio-features.md) 6.2). Not measured on the radio.

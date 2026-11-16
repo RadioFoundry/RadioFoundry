@@ -15,15 +15,17 @@ State:
 
 | Part | Written | Host tested | Run on a radio |
 |---|---|---|---|
-| Trunking signaling units (TSDU) and the header of a multi-block trunking packet: receive, FEC, CRC | yes | yes | no |
-| Outbound messages a listener needs (2) | yes | yes | no |
-| The follower: hunt, hold, follow, return (4) | yes | yes, also through the soft modem with noise | no |
-| The radio core: a trunked channel, its retunes, the UI (7) | yes | yes | no |
-| Inbound requests and their answers (2.1) | yes | yes | no |
-| Registration, affiliation, voice request, transmit on the grant, return (5) | yes | yes (`radioCoreTestP25T`, a fake site) | no |
-| Bench control channel and inbound decode (`tools/bench/p25tool.py`, 8) | yes | `p25tool.py selftest` | no |
+| Trunking signaling units (TSDU) and the header of a multi-block trunking packet: receive, FEC, CRC | yes | yes | the bench's control channel (8): 152 blocks with 1 CRC failure while only listening; one or two blocks lost around each of its own bursts |
+| Outbound messages a listener needs (2) | yes | yes | the bench's: network and RFSS status, the identifier, grants |
+| The follower: hunt, hold, follow, return (4) | yes | yes, also through the soft modem with noise | a grant to another unit's call followed to a second bench transmitter, its voice played, back on the control channel after the terminator (by hand: `test_p25_trunk_tx` has one transmitter) |
+| The radio core: a trunked channel, its retunes, the UI (7) | yes | yes | yes, a channel written over CPS |
+| Inbound requests and their answers (2.1) | yes | yes | the three requests decoded off air by `p25tool.py`; the bench's answers taken |
+| Registration, affiliation, voice request, transmit on the grant, return (5) | yes | yes (`radioCoreTestP25T`, a fake site) | `test_p25_trunk_tx` |
+| Bench control channel and inbound decode (`tools/bench/p25tool.py`, 8) | yes | `p25tool.py selftest` | yes |
 | Unit to unit calls out, emergency, deregistration, location registration, acknowledgements, roaming by signal level, TDMA (Phase 2) voice channels, multi-block message bodies | no | | |
 
+The radio runs are against a control channel `p25tool.py` writes from the same descriptions as the firmware, so they
+check the radio's timing, retunes and transmissions, not the layouts: no live system has been heard or answered.
 Every message layout of the transmit side comes from published descriptions, not a capture: 9 lists them.
 
 Sources: published descriptions of TIA-102.AABB (trunking control channel formats), TIA-102.AABC (trunking messages)

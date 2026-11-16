@@ -911,7 +911,12 @@ C4FM calls at 1800 Hz: the record placement, the erasures and the level scale of
 symbols before the first voice unit) is not detected; the re-arm K records later brings the receiver back on the
 next one. The transmit side is checked off air with a C4FM voice call into a bench receiver: the header first,
 every unit decoded, no voice bit corrected, voice units 180 ms apart, the outer deviation 7 % over 1800 Hz with the
-calibrated pair. On air still to check: the receive
+calibrated pair. A trunked call runs on it: the control channel held, the three requests sent as single bursts and
+heard off air, the retune to the granted channel inside the grant's wait ([p25-trunking.md](p25-trunking.md)).
+NXDN ([nxdn.md](nxdn.md)) transmits at both rates, checked off air: 2400 symbols/s with an outer deviation of 1012 Hz,
+4800 symbols/s with 2399 Hz, no CRC failure in either. It is not received: the chip's correlator needs a sync of 24
+outer symbols that comes again within `RX_SPACING_MAX` (10.2), and NXDN has a 10-symbol frame sync word, so the fit
+gives NXDN transmit only. On air still to check: the receive
 set-up straight after the DMR one and after a transmission (one entry straight from a layer 2 restart gave no
 interrupts until a set-up with 0x41 = 0x40 had run once); the receive delay for t_us; the TX_STARTED time; the PA key
 and drop against the chunks.

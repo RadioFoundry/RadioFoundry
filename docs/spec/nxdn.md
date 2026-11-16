@@ -18,7 +18,7 @@ State:
 | The radio core: mode, settings, PTT, debug link, home screen (6) | written, host tested |
 | Codeplug channels, the site's Codeplug Editor ([nxdn-codeplug.md](nxdn-codeplug.md)) | written, host tested |
 | Channel editor on the radio, scan | not written (10) |
-| On air | untested |
+| On air | transmit checked off air on a radio at both rates (`test_nxdn_tx_off_air`); receive not yet: the one provider tried has no receive fit for NXDN (6) |
 | 9600 bit/s full-rate voice (EFR), data, trunking, encryption | not written (10). Encrypted calls are recognized and not played |
 
 ## 1. On air
@@ -166,6 +166,7 @@ the memory P25 keeps for itself (one engine runs at a time).
 | State | Engine | PTT |
 |---|---|---|
 | NXDN, the provider's fit has TX at the rate | running | keys: preamble, header, voice, release frame |
+| NXDN, the fit has TX only | running, nothing is received | keys |
 | NXDN, the fit has RX only | running, receive only | refused, `TXDENY_AIR_NO_TX` ("This mode: receive only") |
 | NXDN, the fit has neither | not started (`nxdn.begin_fails`) | refused, `TXDENY_REFUSED` |
 | No codec on a board that needs one | running | refused, `TXDENY_NO_CODEC` |
@@ -244,7 +245,7 @@ The radio core needs from a board: a provider (`board_t.air`) whose fit takes 24
 | `tests/host/nxdnEngineTest.c` | two engines on made-up providers at both rates: a call heard with its fields and voice in order, an encoder stall covered by silence, no underruns, late entry, group and individual squelch, a squelch change mid-call, an abort, another RAN, RAN 0, an encrypted call; a call through a modeled discriminator tap and the soft modem at 2400 symbols/s, eight calls per noise level |
 | `tests/host/radioCoreTest.c` (`radioCoreTestNxdn`, `radioCoreTestP25Nxdn`) | the radio core against an NXDN engine on a fake provider: a call heard, its voice in order to the vocoder, another RAN, group squelch; PTT heard by the far engine with the settings, settings sent mid-transmission, 4800 bit/s, a TX-only and an RX-only fit, no fit, the time-out; the mode by request, the debug link and the VFO saved; P25 and NXDN in turn in the same memory |
 | `tests/host/uiFlowTest.c` | the mode tile's order, the home screen in NXDN, the FM-only tiles |
-| `tests/hil/test_nxdn.py` | on the radio: the mode switch, the settings; opt-in, an over decoded off air by the SDR bench's 4FSK receiver and `nxdntool` |
+| `tests/hil/test_nxdn.py` | on the radio: the mode switch, the settings, a stored channel written over CPS; opt-in, an over decoded off air by the SDR bench's 4FSK receiver and `nxdntool` (one HR_C6000 radio: 9600 bit/s 78 frames, outer deviation 2399 Hz; 4800 bit/s 40 frames, 1012 Hz; no CRC failure), and a call the bench plays received (`test_nxdn_rx_from_bench`, skipped where the fit has no RX) |
 | `tools/bench/nxdntool.py selftest` | the bench tool (below) both ways at both rates, with bit errors and through the soft modem, from bench receiver records, the summary line |
 
 The soft modem test (8 kHz tap, 2000 counts per kHz, so the outer level is 2100 counts and the step between levels
