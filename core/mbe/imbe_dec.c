@@ -23,23 +23,26 @@
 // (Q16 inside a frame); cosines come from the core's table.
 #include <string.h>
 #include "imbe.h"
+#include "imbe_q.h"
 #include "imbe_tab.h"
 #include "mbe_dsp.h"
 #include "../dsp/fxp.h"
 
-#define OUT_GAIN	5751	// log2 7 in Q11: the model amplitude to PCM units
-#define W0_STEPS	208	// valid pitch codes 0..207
-#define Q16_STEP	21475	// 1e-5 / 2 in Q16, as the table steps are in 1e-5 and the levels are odd multiples of half a step
+#define OUT_GAIN	IMBE_OUT_GAIN
+#define W0_STEPS	IMBE_W0_STEPS
+#define Q16_STEP	IMBE_Q16_STEP
 
-typedef struct {
-	const uint8_t *in;
-	int i;				// next bit of the frame
-	uint16_t val[MBE_MAXL + 2];	// the quantizer values b1 .. b(L+1)
-} bits_t;
+typedef imbe_bits_t bits_t;
 
+// one bit between the frame and a quantizer value: out of the frame, or into it when the frame is being built
 static void take(bits_t *c, int b, int pos)
 {
-	c->val[b] |= (uint16_t)(((c->in[c->i >> 3] >> (7 - (c->i & 7))) & 1) << pos);
+	int sh = 7 - (c->i & 7);
+
+	if (c->out)
+		c->out[c->i >> 3] |= (uint8_t)(((c->val[b] >> pos) & 1) << sh);
+	else
+		c->val[b] |= (uint16_t)(((c->in[c->i >> 3] >> sh) & 1) << pos);
 	c->i++;
 }
 
@@ -48,7 +51,7 @@ static int bit_at(const uint8_t *in, int i) { return (in[i >> 3] >> (7 - (i & 7)
 // The frame's bits 6..84 in the order of the standard's prioritized layout: the top three bits of b2; then the bits of
 // b3.. by position, highest first, lowest b first; after the 39th of those the K voicing bits and two more of b2; the
 // last bit is b2's lowest. nb[b] is the bit count of b3..b(L+1).
-static void layout(bits_t *c, int L, int K, const uint8_t *nb)
+void imbe_q_layout(imbe_bits_t *c, int L, int K, const uint8_t *nb)
 {
 	int n = 0;
 
@@ -79,42 +82,86 @@ void imbe_state_reset(imbe_state_t *s)
 	s->L = 30;
 }
 
+uint32_t imbe_q_w0(int b0)
+{
+	// w0 = 4 pi / (b0 + 39.5) rad per sample, as a 2^32 = one turn phase step
+	return (0xFFFFFFFFu / (uint32_t)(2 * b0 + 79)) << 2;
+}
+
+int imbe_q_alloc(int b0, int *K, uint8_t nb[MBE_MAXL + 2])
+{
+	int L = (9254 * ((b0 + 40) >> 2)) / 10000;	// harmonics up to 4 kHz
+	int L9 = L - 9, off = L9 * (L9 + 5) / 2;
+
+	*K = L < 37 ? (L + 2) / 3 : 12;
+	memset(nb, 0, MBE_MAXL + 2);
+	for (int m = 0; m < 5; m++)
+		nb[3 + m] = imbe_ba_bits[L9 * 5 + m];
+	for (int b = 8; b <= L + 1; b++, off++)
+		nb[b] = (imbe_hoba[off >> 1] >> ((off & 1) * 4)) & 15;
+	return L;
+}
+
+void imbe_q_predict(imbe_state_t *s, int L, int32_t pr[MBE_MAXL + 1])
+{
+	int32_t rho, rcp, sum = 0, S;
+	int rem = 0, ik = 0;
+	int32_t *ya = pr;
+
+	// prediction from the last frame: its log amplitudes resampled to this frame's harmonic count (linear between
+	// neighbors), scaled by rho, the mean of the prediction removed
+	if (L <= 15)
+		rho = 13107;
+	else if (L <= 24)
+		rho = ((30 * L - 50) * 32768 + 500) / 1000;
+	else
+		rho = 22938;
+	if (L > s->L)
+		for (int l = s->L + 1; l <= L; l++)
+			s->lg[l] = s->lg[s->L];
+	rcp = (int32_t)((1u << 30) / (uint32_t)L);
+	for (int l = 1; l <= L; l++) {
+		int32_t p0, p1, d;
+
+		rem += s->L;
+		while (rem >= L) {
+			rem -= L;
+			ik++;
+		}
+		p0 = s->lg[ik];
+		p1 = s->lg[ik + 1];
+		d = fxp_mulshr(rem, rcp, 15);		// rem / L, Q15 (rem < L: rem * rcp < 2^30)
+		ya[l] = p0 * 32 + fxp_mulshr((p1 - p0) * 32, d, 15);
+		sum += ya[l];
+	}
+	S = fxp_mulshr(fxp_mulshr(sum, rho, 15), rcp, 30);
+	for (int l = 1; l <= L; l++)
+		pr[l] = fxp_mulshr(ya[l], rho, 15) - S;
+}
+
 int imbe_unpack(imbe_state_t *s, const uint8_t imbe[IMBE_BYTES], mbe_params_t *p)
 {
 	int b0 = (((imbe[0] >> 2) & 0x3F) << 2) | (bit_at(imbe, 85) << 1) | bit_at(imbe, 86);
 	int L, L9, K, q, r, e = 0;
-	uint32_t x;
 	bits_t c;
 	uint8_t nb[MBE_MAXL + 2];
 	int32_t G[7], R[7], T[MBE_MAXL + 1];
-	int32_t rho, rcp, sum = 0, S, ya[MBE_MAXL + 1];
-	int rem = 0, ik = 0;
+	int32_t ya[MBE_MAXL + 1];
 
 	if (b0 >= W0_STEPS)
 		return (b0 >= 216 && b0 <= 219) ? IMBE_FRAME_SILENCE : IMBE_FRAME_INVALID;
 	// pitch: w0 = 4 pi / (b0 + 39.5) rad per sample, as a 2^32 = one turn phase step; L harmonics up to 4 kHz
-	x = (uint32_t)(2 * b0 + 79);
-	p->w0 = (0xFFFFFFFFu / x) << 2;
-	L = (9254 * ((b0 + 40) >> 2)) / 10000;
+	p->w0 = imbe_q_w0(b0);
+	L = imbe_q_alloc(b0, &K, nb);
 	L9 = L - 9;
-	K = L < 37 ? (L + 2) / 3 : 12;
 	p->L = (int16_t)L;
 	p->flags = 0;
 
-	// bit allocation, then the quantizer values
+	// the quantizer values
 	memset(&c, 0, sizeof c);
 	c.in = imbe;
 	c.i = 6;
-	memset(nb, 0, sizeof nb);
-	for (int m = 0; m < 5; m++)
-		nb[3 + m] = imbe_ba_bits[L9 * 5 + m];
-	{
-		int off = L9 * (L9 + 5) / 2;
-
-		for (int b = 8; b <= L + 1; b++, off++)
-			nb[b] = (imbe_hoba[off >> 1] >> ((off & 1) * 4)) & 15;
-	}
-	layout(&c, L, K, nb);
+	imbe_q_layout(&c, L, K, nb);
 
 	// voicing: one bit for each three harmonics, the lowest band first
 	{
@@ -181,35 +228,9 @@ int imbe_unpack(imbe_state_t *s, const uint8_t imbe[IMBE_BYTES], mbe_params_t *p
 		}
 	}
 
-	// prediction from the last frame: its log amplitudes resampled to this frame's harmonic count (linear between
-	// neighbors), scaled by rho, the mean of the prediction removed
-	if (L <= 15)
-		rho = 13107;
-	else if (L <= 24)
-		rho = ((30 * L - 50) * 32768 + 500) / 1000;
-	else
-		rho = 22938;
-	if (L > s->L)
-		for (int l = s->L + 1; l <= L; l++)
-			s->lg[l] = s->lg[s->L];
-	rcp = (int32_t)((1u << 30) / (uint32_t)L);
+	imbe_q_predict(s, L, ya);
 	for (int l = 1; l <= L; l++) {
-		int32_t p0, p1, d;
-
-		rem += s->L;
-		while (rem >= L) {
-			rem -= L;
-			ik++;
-		}
-		p0 = s->lg[ik];
-		p1 = s->lg[ik + 1];
-		d = fxp_mulshr(rem, rcp, 15);		// rem / L, Q15 (rem < L: rem * rcp < 2^30)
-		ya[l] = p0 * 32 + fxp_mulshr((p1 - p0) * 32, d, 15);
-		sum += ya[l];
-	}
-	S = fxp_mulshr(fxp_mulshr(sum, rho, 15), rcp, 30);
-	for (int l = 1; l <= L; l++) {
-		int32_t y = T[l] + fxp_mulshr(ya[l], rho, 15) - S;
+		int32_t y = T[l] + ya[l];
 
 		p->a[l - 1] = (int16_t)fxp_clamp((y + 16) >> 5, -32767, 32767);
 	}

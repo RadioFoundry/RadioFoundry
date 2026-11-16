@@ -121,6 +121,11 @@ TESTS   += mbeTest
 mbeTest: mbeTest.c $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ mbeTest.c $(MBE) -lm
 
+# The full-rate voice encoder (core/mbe): the quantizer against the dequantizer
+TESTS   += imbeEncTest
+imbeEncTest: imbeEncTest.c $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ imbeEncTest.c $(MBE) -lm
+
 # The P25 voice path: engine frames through the full-rate decoder to PCM blocks (core/p25/p25Voice.c)
 TESTS   += p25VoiceTest
 p25VoiceTest: p25VoiceTest.c $(CORE)/p25/p25Voice.c $(CORE)/p25/p25Voice.h $(MBE) $(wildcard $(CORE)/mbe/*.h)
@@ -195,6 +200,7 @@ run: $(TESTS)
 	./p25Test
 	./fxpTest
 	./mbeTest | tail -1
+	./imbeEncTest | tail -1
 	./airSoftmodemTest | tail -1
 	./p25EngineTest
 	./p25VoiceTest
