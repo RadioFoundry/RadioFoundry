@@ -665,10 +665,10 @@ static const flow_t flows[] = {
 #if CONFIG_DMR_TRUNK_GW
 	// Telephone calls through the PSTN gateway (dmr-trunking.md 7.6): a typed number on a trunked system, last in Find
 	{ "T Find offers a phone call on a trunked system", "t3 dlpos:3", "5 5 5 1 2 3 4",
-	  "screen=find shows=Phone_call_5551234 dial=5551234", 7, false },
+	  "screen=find shows=Phone_call_5551234 dial=", 7, false },	// typed, not chosen: the dial stays
 	{ "T no phone call on a conventional channel", "", "5 5 5 1 2 3 4", "screen=find hides=Phone_call dial=", 7, false },
 	{ "T PTT on the phone call row calls the gateway", "t3 dlpos:3 5 5 5 1 2 3 4", "up",
-	  "focus=Phone_call focusid=16776896", 1, false },
+	  "focus=Phone_call focusid=16776896 dial=5551234", 1, false },
 	{ "T OK on it talks to the gateway", "t3 dlpos:3 5 5 5 1 2 3 4", "up ok",
 	  "screen=home talk=16776896 toast=Talking_to_5551234", 2, false },
 	{ "T no actions on a phone call", "t3 dlpos:3 5 5 5 1 2 3 4 up", "ctx", "screen=find toast=No_actions", 1, false },

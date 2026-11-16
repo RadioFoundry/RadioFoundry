@@ -256,11 +256,9 @@ void ui_find_run(void)
 #endif
 #if CONFIG_DMR_TRUNK_GW
 	// On a trunked system, the digits as a telephone number: a private call to the PSTN gateway, which asks for them
-	// (dmr-trunking.md 7.6). The radio holds the digits from now, so PTT on the row sends them
-	if (v->t3.on) {
+	// (dmr-trunking.md 7.6). The radio takes the digits when the row is focused or chosen (find_target)
+	if (v->t3.on)
 		add(FR_PHONE, 0);
-		ui_svc_t3_dial(query);
-	}
 #endif
 }
 
@@ -306,8 +304,11 @@ static bool find_target(uint16_t i, ui_target_t *t)
 		return true;
 #if CONFIG_DMR_TRUNK_GW
 	case FR_PHONE:
+		// The row focused (PTT talks to it) or chosen: the radio holds these digits for the gateway's request, and
+		// a search typed without calling leaves the system's dial alone
 		t->id = T3_ID_PSTNI;
 		str_copy(t->name, sizeof t->name, query);
+		ui_svc_t3_dial(query);
 		return true;
 #endif
 	case FR_PRIVATE: {
