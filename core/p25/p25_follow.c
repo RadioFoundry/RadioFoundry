@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The receive-only P25 trunking follower (p25_follow.h, docs/spec/p25-trunking.md 4).
+// The P25 trunking follower (p25_follow.h, docs/spec/p25-trunking.md 4) and its transmit side (5).
 #include "../config.h"
 #if CONFIG_P25_TRUNK	// the whole file
 #include "p25_follow.h"
@@ -8,11 +8,15 @@
 #include <string.h>
 
 // It sits in memory the caller places, with the engine; the tightest radio lends both from its vocoder
-_Static_assert(sizeof(p25_follow_t) <= 400, "the trunking follower grew past its budget");
+_Static_assert(sizeof(p25_follow_t) <= 480, "the trunking follower grew past its budget");
 
 #define IDEN_VALID	0x01
 #define IDEN_PROG	0x02	// programmed: never replaced off air
 #define IDEN_TDMA	0x04
+#define IDEN_OFF	0x08	// the transmit offset is known
+#define IDEN_OFF_STEP	0x10	// ... in channel spacings, else in 250 kHz units
+
+#define NO_OP		0xFF	// acc.pend: nothing waiting
 
 enum { PH_DWELL, PH_IDENT, PH_BACKOFF };
 // Why a voice channel is left
@@ -29,9 +33,16 @@ static void count(uint16_t *c)
 		(*c)++;
 }
 
+static void count8(uint8_t *c)
+{
+	if (*c != UINT8_MAX)
+		(*c)++;
+}
+
 static void tune(p25_follow_t *f, uint32_t hz, uint8_t what, uint32_t id)
 {
 	f->tuning = true;
+	f->acc.heard = false;
 	if (f->hooks->tune)
 		f->hooks->tune(hz, what, id, f->ctx);
 }
@@ -46,20 +57,47 @@ static uint32_t chan_hz(const p25_follow_t *f, uint16_t ch)
 	return p25_chan_hz(ch, i->base_hz, i->spacing5, i->slots);
 }
 
+// The subscriber's transmit frequency for a channel whose receive frequency is rx: 0 when the offset is not known
+static uint32_t chan_tx_hz(const p25_follow_t *f, uint16_t ch, uint32_t rx)
+{
+	const p25_follow_iden_e *i = &f->iden[ch >> 12];
+	uint32_t mag = (uint32_t)(i->tx_off < 0 ? -(int32_t)i->tx_off : i->tx_off);
+	uint32_t unit = (i->flags & IDEN_OFF_STEP) ? i->spacing5 * 5u : 250000u;
+
+	if (!rx || !(i->flags & IDEN_VALID) || !(i->flags & IDEN_OFF) || !unit || mag > UINT32_MAX / unit)
+		return 0;
+	mag *= unit;
+	if (i->tx_off < 0)
+		return mag < rx ? rx - mag : 0;
+	return mag <= UINT32_MAX - rx ? rx + mag : 0;
+}
+
 static void iden_learn(p25_follow_t *f, const p25_iden_air_t *a)
 {
 	p25_follow_iden_e *i = &f->iden[a->id & 15];
 	uint32_t spacing5 = (uint32_t)a->spacing * 25u;
 
-	if ((f->cfg->flags & P25_FOLLOW_PLAN_ONLY) || (i->flags & IDEN_PROG))
+	if (f->cfg->flags & P25_FOLLOW_PLAN_ONLY)
 		return;
+	if (i->flags & IDEN_PROG) {
+		// A programmed identifier without a transmit offset takes the one off air (only that)
+		if (!(i->flags & IDEN_OFF)) {
+			i->tx_off = a->tx_off;
+			i->flags |= (uint8_t)(IDEN_OFF | (a->form == P25_OP_IDEN_UP ? 0 : IDEN_OFF_STEP));
+		}
+		return;
+	}
 	// The base is in 5 Hz steps: one past 32 bits of Hz, or none, is not a channel plan
 	if (!a->base || a->base > UINT32_MAX / 5 || !spacing5)
 		return;
 	i->base_hz = a->base * 5u;
 	i->spacing5 = (uint16_t)spacing5;
 	i->slots = a->slots ? a->slots : 1;
-	i->flags = (uint8_t)(IDEN_VALID | (a->tdma ? IDEN_TDMA : 0));
+	// The transmit offset: the general form's unit is 250 kHz, the VHF/UHF and TDMA forms' the channel spacing
+	// (unconfirmed, docs/spec/p25-trunking.md 8)
+	i->tx_off = a->tx_off;
+	i->flags = (uint8_t)(IDEN_VALID | IDEN_OFF | (a->form == P25_OP_IDEN_UP ? 0 : IDEN_OFF_STEP) |
+			     (a->tdma ? IDEN_TDMA : 0));
 	f->view.idens |= (uint16_t)(1u << (a->id & 15));
 }
 
@@ -77,6 +115,24 @@ static uint32_t cc_hz(const p25_follow_t *f, uint8_t i)
 		return c->hz ? c->hz : c->chan ? chan_hz(f, c->chan) : 0;
 	}
 	return chan_hz(f, f->learn[i - f->cfg->ncc]);
+}
+
+// The inbound frequency of control channel i: programmed, else its receive frequency plus its identifier's offset (its
+// channel number programmed, learned, or the one its own broadcasts give)
+static uint32_t cc_tx_hz(const p25_follow_t *f, uint8_t i)
+{
+	uint16_t ch = 0;
+
+	if (i < f->cfg->ncc) {
+		if (f->cfg->cc[i].tx_hz)
+			return f->cfg->cc[i].tx_hz;
+		ch = f->cfg->cc[i].chan;
+	} else if (i < cc_count(f)) {
+		ch = f->learn[i - f->cfg->ncc];
+	}
+	if (!ch)
+		ch = f->acc.cc_chan;
+	return ch ? chan_tx_hz(f, ch, cc_hz(f, i)) : 0;
 }
 
 static void cc_learn(p25_follow_t *f, uint16_t ch)
@@ -137,8 +193,11 @@ static void hunt_try(p25_follow_t *f, uint32_t now)
 		tune(f, f->view.cc_hz, P25_FOLLOW_TUNE_CONTROL, 0);
 }
 
+static void acc_lost(p25_follow_t *f);
+
 static void hunt_start(p25_follow_t *f, uint32_t now)
 {
+	acc_lost(f);
 	f->view.state = P25_FOLLOW_HUNT;
 	count(&f->view.hunts);
 	f->t_nocc = now;
@@ -155,6 +214,10 @@ static void accept(p25_follow_t *f, uint16_t nac, uint32_t now)
 	f->view.fallback = false;
 	f->good = f->view.cc;
 	f->t_good = now;
+	f->acc.t_cc = now;
+	f->acc.heard = true;
+	if (f->view.reg == P25_REG_NO_TX)
+		f->view.reg = P25_REG_IDLE;	// this one may have an inbound frequency
 }
 
 static bool any_wacn(const p25_follow_cfg_t *c) { return c->wacn > 0xFFFFFu; }
@@ -264,6 +327,297 @@ static void leave(p25_follow_t *f, uint8_t why, uint32_t now)
 	tune(f, f->view.cc_hz, P25_FOLLOW_TUNE_CONTROL, 0);
 }
 
+
+// ── The transmit side: registration, affiliation, voice requests (docs/spec/p25-trunking.md 5) ──
+static bool tx_on(const p25_follow_t *f)
+{
+	return (f->cfg->flags & P25_FOLLOW_TX) && f->cfg->unit_id;
+}
+
+static uint32_t acc_rand(p25_follow_t *f, uint32_t span)
+{
+	uint32_t r = f->acc.rng;
+
+	r ^= r << 13;
+	r ^= r >> 17;
+	r ^= r << 5;
+	f->acc.rng = r;
+	return span ? r % span : 0;
+}
+
+static void acc_queue(p25_follow_t *f, uint8_t op, uint32_t now, uint32_t wait)
+{
+	f->acc.pend = op;
+	f->acc.tries = 0;
+	f->acc.sent = false;
+	f->acc.t_next = now + wait;
+}
+
+static void acc_drop(p25_follow_t *f)
+{
+	f->acc.pend = NO_OP;
+	f->acc.sent = false;
+}
+
+static void denied(p25_follow_t *f, uint8_t svc, uint8_t reason)
+{
+	f->view.deny_svc = svc;
+	f->view.deny_reason = reason;
+	count8(&f->view.denials);
+}
+
+static void reg_start(p25_follow_t *f, uint32_t now)
+{
+	p25_follow_acc_t *a = &f->acc;
+
+	if (f->view.req == P25_REQ_WAIT || f->view.req == P25_REQ_QUEUED)
+		f->view.req = P25_REQ_TIMEOUT;	// (registration takes the inbound side: a request in hand is dropped)
+	f->view.reg = P25_REG_WAIT;
+	f->view.aff_tg = 0;
+	a->reg_sysid = f->view.sysid;
+	a->reg_rfss = f->view.rfss;
+	a->reg_site = f->view.site;
+	acc_queue(f, P25_ISP_U_REG_REQ, now, acc_rand(f, 2 * P25_ACC_GAP_MS));
+}
+
+static void aff_start(p25_follow_t *f, uint32_t now)
+{
+	if (!f->cfg->talk_group) {
+		f->view.reg = P25_REG_READY;	// nothing to affiliate to
+		acc_drop(f);
+		return;
+	}
+	f->view.reg = P25_REG_AFF;
+	acc_queue(f, P25_ISP_GRP_AFF_REQ, now, acc_rand(f, P25_ACC_GAP_MS));
+}
+
+// The control channel was lost: what waited for it ends. A registration that was accepted stands; one under way
+// starts again on the next control channel
+static void acc_lost(p25_follow_t *f)
+{
+	p25_follow_acc_t *a = &f->acc;
+
+	a->site_heard = false;
+	a->cc_chan = 0;
+	f->view.rfss = f->view.site = 0xFF;
+	if (f->view.req == P25_REQ_WAIT || f->view.req == P25_REQ_QUEUED)
+		f->view.req = P25_REQ_TIMEOUT;
+	if (f->view.reg == P25_REG_WAIT || f->view.reg == P25_REG_AFF)
+		f->view.reg = P25_REG_IDLE;
+	acc_drop(f);
+}
+
+// The site's identity heard: registered elsewhere, register here
+static void acc_site(p25_follow_t *f)
+{
+	p25_follow_acc_t *a = &f->acc;
+	uint8_t r = f->view.reg;
+
+	a->site_heard = true;
+	if (r == P25_REG_OFF || r == P25_REG_IDLE || r == P25_REG_NO_TX)
+		return;
+	if (a->reg_site == 0xFF) {
+		// Registration began before the site was heard: it is this one
+		a->reg_sysid = f->view.sysid;
+		a->reg_rfss = f->view.rfss;
+		a->reg_site = f->view.site;
+		return;
+	}
+	if (a->reg_sysid != f->view.sysid || a->reg_rfss != f->view.rfss || a->reg_site != f->view.site) {
+		f->view.reg = P25_REG_IDLE;
+		acc_drop(f);
+	}
+}
+
+// The block in hand goes now: on the control channel's inbound frequency, through the caller
+static void acc_send(p25_follow_t *f, uint32_t now)
+{
+	const p25_follow_cfg_t *c = f->cfg;
+	p25_follow_acc_t *a = &f->acc;
+	uint32_t hz = cc_tx_hz(f, f->view.cc);
+	uint8_t blk[P25_TSBK_BYTES];
+	p25_isp_t m;
+
+	if (!hz) {
+		if (a->pend == P25_ISP_GRP_V_REQ)
+			f->view.req = P25_REQ_NO_CHAN;
+		f->view.reg = P25_REG_NO_TX;
+		acc_drop(f);
+		return;
+	}
+	memset(&m, 0, sizeof m);
+	m.opcode = a->pend;
+	m.src = c->unit_id;
+	m.tg = c->talk_group;
+	m.wacn = f->view.wacn <= 0xFFFFFu ? f->view.wacn : any_wacn(c) ? 0 : c->wacn;
+	m.sysid = f->view.sysid <= 0xFFFu ? f->view.sysid : any_sysid(c) ? 0 : c->sysid;
+	p25_isp_make(&m, blk);
+	if (!f->hooks->send || !f->hooks->send(hz, blk, f->ctx))
+		count8(&f->view.send_fail);	// (as a block without an answer: sent again)
+	else if (a->pend == P25_ISP_U_REG_REQ)
+		count8(&f->view.reg_tx);
+	else if (a->pend == P25_ISP_GRP_AFF_REQ)
+		count8(&f->view.aff_tx);
+	else
+		count8(&f->view.req_tx);
+	a->sent = true;
+	a->t_sent = now;
+}
+
+// The block in hand got no answer after its last send
+static void acc_no_answer(p25_follow_t *f, uint32_t now)
+{
+	uint8_t op = f->acc.pend;
+
+	acc_drop(f);
+	count8(&f->view.timeouts);
+	if (op == P25_ISP_GRP_V_REQ) {
+		f->view.req = P25_REQ_TIMEOUT;
+	} else {
+		f->view.reg = P25_REG_RETRY;
+		f->acc.t_sent = now;
+	}
+}
+
+// On the control channel held, every tick: registration when due, the block in hand sent, resent or given up
+static void acc_tick(p25_follow_t *f, uint32_t now)
+{
+	p25_follow_acc_t *a = &f->acc;
+
+	if (!tx_on(f))
+		return;
+	if (!(f->cfg->flags & P25_FOLLOW_NO_REG)) {
+		if (f->view.reg == P25_REG_IDLE && (a->site_heard || elapsed(now, a->t_cc, P25_ACC_SITE_MS))) {
+			reg_start(f, now);
+		} else if (f->view.reg == P25_REG_RETRY && elapsed(now, a->t_sent, a->backoff)) {
+			a->backoff = a->backoff * 2 > P25_ACC_RETRY_MAX ? P25_ACC_RETRY_MAX : a->backoff * 2;
+			reg_start(f, now);
+		}
+	}
+	if (a->pend == NO_OP)
+		return;
+	if (a->sent) {
+		bool queued = f->view.req == P25_REQ_QUEUED;
+
+		if (!elapsed(now, a->t_sent, queued ? P25_ACC_QUEUE_MS : P25_ACC_ANSWER_MS))
+			return;
+		if (queued || ++a->tries >= P25_ACC_TRIES) {
+			acc_no_answer(f, now);
+			return;
+		}
+		a->sent = false;
+		a->t_next = now + P25_ACC_GAP_MS + acc_rand(f, 3 * P25_ACC_GAP_MS);
+		return;
+	}
+	// Sent only after a block of this channel was heard since the tune, so its status symbols are known
+	if ((int32_t)(now - a->t_next) < 0 || !a->heard)
+		return;
+	if (a->busy) {
+		count8(&f->view.inb_busy);
+		a->t_next = now + P25_ACC_BUSY_MS + acc_rand(f, 3 * P25_ACC_BUSY_MS);
+		return;
+	}
+	acc_send(f, now);
+}
+
+// Answers addressed to us
+static void acc_block(p25_follow_t *f, const p25_tsbk_t *m, uint32_t now)
+{
+	const p25_follow_cfg_t *c = f->cfg;
+	p25_follow_acc_t *a = &f->acc;
+
+	switch (m->kind) {
+	case P25_TSBK_REG_RSP:
+		if (m->u.reg.id != c->unit_id || f->view.reg != P25_REG_WAIT)
+			return;
+		if (m->u.reg.rv == P25_RV_ACCEPT) {
+			count8(&f->view.reg_ok);
+			a->backoff = P25_ACC_RETRY_MS;
+			aff_start(f, now);
+		} else if (m->u.reg.rv == P25_RV_FAIL) {
+			acc_drop(f);
+			f->view.reg = P25_REG_RETRY;
+			a->t_sent = now;
+		} else {
+			acc_drop(f);
+			f->view.reg = P25_REG_DENIED;
+			denied(f, P25_ISP_U_REG_REQ, m->u.reg.rv);
+		}
+		break;
+	case P25_TSBK_AFF_RSP:
+		if (m->u.aff.dst != c->unit_id || f->view.reg != P25_REG_AFF || m->u.aff.tg != c->talk_group)
+			return;
+		acc_drop(f);
+		if (m->u.aff.gav == P25_RV_ACCEPT) {
+			count8(&f->view.aff_ok);
+			f->view.reg = P25_REG_READY;
+			f->view.aff_tg = m->u.aff.tg;
+		} else if (m->u.aff.gav == P25_RV_FAIL) {
+			f->view.reg = P25_REG_RETRY;
+			a->t_sent = now;
+		} else {
+			f->view.reg = P25_REG_DENIED;
+			denied(f, P25_ISP_GRP_AFF_REQ, m->u.aff.gav);
+		}
+		break;
+	case P25_TSBK_DENY:
+	case P25_TSBK_QUEUED:
+		// The answer names the request by its opcode
+		if (m->u.rsp.dst != c->unit_id || a->pend == NO_OP || m->u.rsp.svc != a->pend)
+			return;
+		if (m->kind == P25_TSBK_QUEUED) {
+			if (a->pend == P25_ISP_GRP_V_REQ) {
+				count8(&f->view.queued);
+				f->view.req = P25_REQ_QUEUED;
+				a->sent = true;
+				a->t_sent = now;
+			}
+			return;
+		}
+		denied(f, m->u.rsp.svc, m->u.rsp.reason);
+		if (a->pend == P25_ISP_GRP_V_REQ)
+			f->view.req = P25_REQ_DENIED;
+		else
+			f->view.reg = P25_REG_DENIED;
+		acc_drop(f);
+		break;
+	default:
+		break;
+	}
+}
+
+// A grant: true when it is ours (the answer to our voice request), which tunes our voice channel
+static bool acc_grant(p25_follow_t *f, uint8_t op, const p25_grant_t *g, uint32_t now)
+{
+	const p25_follow_cfg_t *c = f->cfg;
+	uint32_t rx, tx;
+
+	if ((f->view.req != P25_REQ_WAIT && f->view.req != P25_REQ_QUEUED) || op != P25_OP_GRP_V_GRANT ||
+	    g->src != c->unit_id || g->tg != c->talk_group)
+		return false;
+	acc_drop(f);
+	count8(&f->view.req_grant);
+	rx = chan_hz(f, g->ch);
+	tx = chan_tx_hz(f, g->ch, rx);
+	if (!rx || !tx || (f->iden[g->ch >> 12].flags & IDEN_TDMA)) {
+		f->view.req = P25_REQ_NO_CHAN;
+		return true;
+	}
+	f->view.req = P25_REQ_TALK;
+	f->view.state = P25_FOLLOW_VOICE;
+	f->view.voice_hz = rx;
+	f->view.talk_hz = tx;
+	f->view.unit_call = false;
+	f->view.enc = false;
+	f->view.tg = g->tg;
+	f->view.src = c->unit_id;
+	f->view.dst = 0;
+	f->left_ch = f->acc.talk_ch = g->ch;
+	f->t_call = f->t_good = now;
+	tune(f, rx, P25_FOLLOW_TUNE_TALK, g->tg);
+	return true;
+}
+
 // ── Blocks ──
 static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_t nac, uint32_t now)
 {
@@ -312,6 +666,7 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 		accept(f, nac, now);
 	}
 	f->t_good = now;
+	f->acc.heard = true;
 	if (!known)
 		return;
 	switch (m.kind) {
@@ -328,11 +683,14 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 		}
 		f->view.wacn = m.u.net.wacn;
 		f->view.sysid = m.u.net.sysid;
+		f->acc.cc_chan = m.u.net.ch;
 		break;
 	case P25_TSBK_RFSS:
 		f->view.sysid = m.u.site.sysid;
 		f->view.rfss = m.u.site.rfss;
 		f->view.site = m.u.site.site;
+		f->acc.cc_chan = m.u.site.ch;
+		acc_site(f);
 		break;
 	case P25_TSBK_ADJ:
 		if (any_sysid(c) || m.u.site.sysid == c->sysid)
@@ -346,11 +704,21 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 		const p25_grant_t *g = &m.u.grant;
 
 		count(&f->view.grants);
+		// While we ask for a channel, nothing else is followed
+		if (acc_grant(f, m.opcode, g, now) || f->view.req == P25_REQ_WAIT || f->view.req == P25_REQ_QUEUED)
+			break;
 		if (!consider(f, m.opcode, g->unit, g->ch, g->tg, g->dst, g->src, g->has_svc, g->svc, now) && g->ch2 &&
 		    m.opcode == P25_OP_GRP_V_UPDT)
 			consider(f, m.opcode, false, g->ch2, g->tg2, 0, 0, false, 0, now);
 		break;
 	}
+	case P25_TSBK_REG_RSP:
+	case P25_TSBK_AFF_RSP:
+	case P25_TSBK_DENY:
+	case P25_TSBK_QUEUED:
+		if (tx_on(f))
+			acc_block(f, &m, now);
+		break;
 	default:
 		break;
 	}
@@ -382,8 +750,25 @@ void p25_follow_begin(p25_follow_t *f, const p25_follow_cfg_t *cfg, const p25_fo
 		i->spacing5 = (uint16_t)(p->spacing_hz / 5);
 		i->slots = p->slots > 1 ? p->slots : 1;
 		i->flags = (uint8_t)(IDEN_VALID | IDEN_PROG | (p->tdma ? IDEN_TDMA : 0));
+		// The transmit offset in 250 kHz units where it is a multiple of them, else in spacings; 0 is not known
+		if (p->tx_off_hz && p->tx_off_hz % 250000 == 0 && p->tx_off_hz / 250000 <= INT16_MAX &&
+		    p->tx_off_hz / 250000 >= -INT16_MAX) {
+			i->tx_off = (int16_t)(p->tx_off_hz / 250000);
+			i->flags |= IDEN_OFF;
+		} else if (p->tx_off_hz && p->tx_off_hz % (int32_t)p->spacing_hz == 0 &&
+			   p->tx_off_hz / (int32_t)p->spacing_hz <= INT16_MAX && p->tx_off_hz / (int32_t)p->spacing_hz >= -INT16_MAX) {
+			i->tx_off = (int16_t)(p->tx_off_hz / (int32_t)p->spacing_hz);
+			i->flags |= IDEN_OFF | IDEN_OFF_STEP;
+		}
 		f->view.idens |= (uint16_t)(1u << n);
 	}
+	f->acc.pend = NO_OP;
+	f->acc.backoff = P25_ACC_RETRY_MS;
+	f->acc.rng = (cfg->unit_id * 2654435761u) ^ now ^ 0x5A5A5A5Au;
+	if (!f->acc.rng)
+		f->acc.rng = 1;
+	f->view.reg = !tx_on(f) || (cfg->flags & P25_FOLLOW_NO_REG) ? P25_REG_OFF : P25_REG_IDLE;
+	f->view.deny_svc = 0xFF;
 	f->seq = 1;
 	hunt_start(f, now);
 	f->seq = 2;
@@ -429,6 +814,11 @@ void p25_follow_unit(p25_follow_t *f, const p25_rx_unit_t *u, uint32_t now)
 	switch (u->duid) {
 	case P25_DUID_TSDU: {
 		uint8_t n = u->nsyms <= p25_blocks_syms(1) ? 1 : u->nsyms <= p25_blocks_syms(2) ? 2 : 3;
+		uint16_t nss = (uint16_t)(u->nsyms / 36);
+
+		// The site's status symbols say whether its inbound channel is busy: the last one of the unit counts
+		if (nss)
+			f->acc.busy = p25_status_get(u->air, (uint16_t)(nss - 1)) == P25_SS_BUSY;
 
 		for (uint8_t k = 0; k < n && !f->tuning; k++) {
 			if (p25_block_get(u->air, k, blk) < 0) {
@@ -464,7 +854,8 @@ void p25_follow_unit(p25_follow_t *f, const p25_rx_unit_t *u, uint32_t now)
 		break;
 	case P25_DUID_TDU:
 	case P25_DUID_TDULC:
-		if (f->view.state == P25_FOLLOW_VOICE)
+		// (on our own voice channel the caller ends it: p25_follow_talk_end)
+		if (f->view.state == P25_FOLLOW_VOICE && f->view.req != P25_REQ_TALK)
 			leave(f, LEAVE_TERM, now);
 		break;
 	default:
@@ -475,7 +866,7 @@ void p25_follow_unit(p25_follow_t *f, const p25_rx_unit_t *u, uint32_t now)
 
 void p25_follow_call(p25_follow_t *f, const p25_call_t *c, uint32_t now)
 {
-	if (f->tuning || f->view.state != P25_FOLLOW_VOICE)
+	if (f->tuning || f->view.state != P25_FOLLOW_VOICE || f->view.req == P25_REQ_TALK)
 		return;
 	view_begin(f);
 	if (c->have_lc && c->lc.lcf == P25_LCF_GROUP && !f->view.unit_call && c->lc.tgid != f->view.tg) {
@@ -523,10 +914,18 @@ void p25_follow_tick(p25_follow_t *f, uint32_t now)
 		if (elapsed(now, f->t_good, P25_FOLLOW_CC_LOST_MS)) {
 			count(&f->view.cc_lost);
 			hunt_start(f, now);
+		} else {
+			acc_tick(f, now);
 		}
 		break;
 	case P25_FOLLOW_VOICE:
-		if (elapsed(now, f->t_good, c->voice_lost_ms ? c->voice_lost_ms : P25_FOLLOW_VOICE_LOST_MS)) {
+		if (f->view.req == P25_REQ_TALK) {
+			// We transmit there and hear nothing: only the end the caller reports, or a limit, brings us back
+			if (elapsed(now, f->t_call, P25_ACC_TALK_MAX_MS)) {
+				f->view.req = P25_REQ_IDLE;
+				leave(f, LEAVE_OTHER, now);
+			}
+		} else if (elapsed(now, f->t_good, c->voice_lost_ms ? c->voice_lost_ms : P25_FOLLOW_VOICE_LOST_MS)) {
 			count(&f->view.voice_lost);
 			leave(f, LEAVE_OTHER, now);
 		} else if (elapsed(now, f->t_call, c->call_max_ms ? c->call_max_ms : P25_FOLLOW_CALL_MAX_MS)) {
@@ -547,6 +946,53 @@ void p25_follow_view(const p25_follow_t *f, p25_follow_view_t *out)
 		seq = f->seq;
 		*out = f->view;
 	} while ((seq & 1) || seq != f->seq);
+}
+
+uint8_t p25_follow_can_talk(const p25_follow_view_t *v, uint8_t flags)
+{
+	if (!(flags & P25_FOLLOW_TX) || v->reg == P25_REG_NO_TX)
+		return P25_TALK_OFF;
+	if (v->state != P25_FOLLOW_CONTROL && v->state != P25_FOLLOW_VOICE)
+		return P25_TALK_NO_CC;
+	if (!(flags & P25_FOLLOW_NO_REG) && v->reg != P25_REG_READY)
+		return P25_TALK_NOT_REG;
+	return P25_TALK_OK;
+}
+
+void p25_follow_ptt(p25_follow_t *f, bool down, uint32_t now)
+{
+	if (f->view.state == P25_FOLLOW_OFF)
+		return;
+	view_begin(f);
+	f->acc.ptt = down;
+	if (!down) {
+		// Released before the grant: the request is dropped (a grant that comes later is not taken)
+		if (f->view.req != P25_REQ_TALK) {
+			if (f->acc.pend == P25_ISP_GRP_V_REQ)
+				acc_drop(f);
+			f->view.req = P25_REQ_IDLE;
+		}
+	} else if (tx_on(f) && f->view.req != P25_REQ_TALK && f->view.req != P25_REQ_WAIT &&
+		   f->view.req != P25_REQ_QUEUED && p25_follow_can_talk(&f->view, f->cfg->flags) == P25_TALK_OK) {
+		f->view.req = P25_REQ_WAIT;
+		f->view.deny_svc = 0xFF;
+		acc_queue(f, P25_ISP_GRP_V_REQ, now, acc_rand(f, P25_ACC_GAP_MS));
+		// Following a call (our group's in its hang time too): back to the control channel to ask there
+		if (f->view.state == P25_FOLLOW_VOICE)
+			leave(f, LEAVE_TERM, now);
+	}
+	view_end(f);
+}
+
+void p25_follow_talk_end(p25_follow_t *f, uint32_t now)
+{
+	if (f->view.req != P25_REQ_TALK)
+		return;
+	view_begin(f);
+	f->view.req = P25_REQ_IDLE;
+	if (f->view.state == P25_FOLLOW_VOICE)
+		leave(f, LEAVE_TERM, now);
+	view_end(f);
 }
 
 #endif
