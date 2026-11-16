@@ -32,6 +32,15 @@ framer and call layer, built for the host) decodes it. Pass criteria:
 - on the radio: p25.tx_calls one more, no p25.tx_underruns.
 The carrier offset the soft modem measures is printed, not judged: it includes the bench board's own error.
 
+test_p25_trunk_follow (opt-in: --p25-trunk-channel NAME; nothing is sent, PTT is not pressed): the stored P25 trunked
+channel of that name, its system's control channel heard at the rig (p25-trunking.md 6). The radio must run P25 on it
+(`mode=p25`, `ch.kind=3`), the follower must hold a control channel (`p25t.state=2`) within CC_WAIT_S with most blocks
+decoded (CRC failures at most MAX_CRC_FAIL of them), and the system it names must be the one the codeplug gives (when
+that isn't "any"; printed). For FOLLOW_WAIT_S it watches for a call it follows: one followed counts a reception
+(`p25.rx_calls`), and the follower is back on the control channel afterwards. No call in that time is printed, not
+failed: traffic is the system's. Leaving the channel stops the follower (`p25t.on=0`). Skipped without
+CONFIG_P25_TRUNK, and where the board can't carry P25 (the channel stays parked).
+
 Skipped without CONFIG_P25, on a channel in a listen-only band, and in hotspot mode."""
 import os
 import statistics
@@ -318,3 +327,82 @@ def test_p25_tx_off_air(radio, sdr_bench, pytestconfig):
     assert DEV_PCT[0] <= outer / 18 <= DEV_PCT[1], f"outer deviation {outer:.0f} Hz"
     assert (as_int(v.get("p25.tx_calls")) or 0) == calls0 + 1, "the radio counted no P25 call"
     assert (as_int(v.get("p25.tx_underruns")) or 0) == under0, "the air ran dry during the call"
+
+
+# --- A trunked channel (p25-trunking.md 6): receive only ---
+
+KIND_P25_TRUNK = 3
+CC_WAIT_S = 30.0            # a hunt over every programmed control channel, with its backoff
+FOLLOW_WAIT_S = float(os.environ.get("RFOUNDRY_HIL_P25T_FOLLOW_S", "120"))
+MAX_CRC_FAIL = 0.2          # of the blocks: a control channel heard well enough to follow
+
+
+def select_named(radio, name):
+    """Select the first channel named name, any zone; AssertionError if none"""
+    L = radio.link
+    radio.leave_vfo()
+    count = int(radio.core().get("zone_count") or 1)
+    for zone in range(count):
+        radio._req_until(lambda: L.zone(zone), lambda v: v.get("zone_index") == str(zone), f"zone {zone}")
+        size = int(radio.core().get("zone_size") or 0)
+        for pos in range(size):
+            radio._req_until(lambda: L.zone_pos(pos), lambda x: x.get("zone_pos") == str(pos), f"position {pos}")
+            if radio.view(["channel"]).get("ch.name") == name:
+                return
+    raise AssertionError(f"no channel named {name!r} in any zone")
+
+
+def trunk_view(radio):
+    return radio.view(["p25", "p25_trunk"])
+
+
+@pytest.mark.feature("p25_trunk")
+def test_p25_trunk_follow(radio, pytestconfig):
+    name = rig(pytestconfig, "p25-trunk-channel")
+    if "P25_TRUNK" not in radio.features():
+        skip("not_built", "built without CONFIG_P25_TRUNK")
+    p25_ready(radio)
+    snap = radio.snapshot()
+    try:
+        select_named(radio, name)
+        ch = radio.view(["core", "channel"])
+        if ch.get("ch.kind") != str(KIND_P25_TRUNK):
+            skip("state", f"channel {name!r} is kind {ch.get('ch.kind')}, not a P25 trunked one")
+        if ch.get("mode") != "p25":
+            skip("no_hw", "the channel is parked: the board's air interface can't carry P25")
+        v = radio.wait_for(lambda x: x.get("p25t.on") == "1" and x.get("p25t.state") == "2", CC_WAIT_S,
+                           sections=("p25_trunk",), what="the follower on the system's control channel")
+        print(f"\np25 trunk: control channel {int(v['p25t.cc_hz']) / 1e6:.5f} MHz (cc {v['p25t.cc']}), "
+              f"NAC {int(v['p25t.nac']):03X}, WACN {int(v['p25t.wacn']):05X} system {int(v['p25t.sysid']):03X} "
+              f"RFSS {v['p25t.rfss']} site {v['p25t.site']}")
+        time.sleep(3.0)
+        v = trunk_view(radio)
+        blocks, crc = as_int(v.get("p25t.blocks")) or 0, as_int(v.get("p25t.crc_fail")) or 0
+        print(f"blocks {blocks}, CRC failures {crc}, identifiers {int(v['p25t.idens']):04X}, "
+              f"grants {v.get('p25t.grants')}, retunes {v.get('p25t.retunes')}, skips {v.get('p25t.skips')}")
+        assert blocks > 0, "nothing decoded on the control channel"
+        assert crc <= MAX_CRC_FAIL * (blocks + crc), f"{crc} CRC failures to {blocks} blocks"
+        calls0 = as_int(v.get("p25.rx_calls")) or 0
+        follows0 = as_int(v.get("p25t.follows")) or 0
+        end = time.time() + FOLLOW_WAIT_S
+        followed = None
+        while time.time() < end:
+            v = trunk_view(radio)
+            if (as_int(v.get("p25t.follows")) or 0) > follows0:
+                followed = v
+                break
+            time.sleep(0.5)
+        if followed is None:
+            print(f"no call followed in {FOLLOW_WAIT_S:.0f} s (grants {v.get('p25t.grants')}, refused "
+                  f"{v.get('p25t.refused')} TG {v.get('p25t.refused_tg')})")
+        else:
+            print(f"followed TG {followed.get('p25t.tg')} from {followed.get('p25t.src')} on "
+                  f"{int(followed['p25t.voice_hz']) / 1e6:.5f} MHz")
+            v = radio.wait_for(lambda x: x.get("p25t.state") == "2", 130.0, sections=("p25", "p25_trunk"),
+                               what="the follower back on the control channel")
+            assert (as_int(v.get("p25.rx_calls")) or 0) > calls0 or (as_int(v.get("p25t.wrong_call")) or 0) > 0 \
+                or (as_int(v.get("p25t.voice_lost")) or 0) > 0, "a call followed but nothing received on it"
+    finally:
+        radio.restore(snap)
+    if radio.view(["channel"]).get("ch.kind") != str(KIND_P25_TRUNK):
+        radio.wait_for(lambda x: x.get("p25t.on") == "0", 3.0, sections=("p25_trunk",), what="the follower stopped")
