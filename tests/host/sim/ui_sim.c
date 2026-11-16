@@ -803,6 +803,10 @@ bool p25_conv_params(uint16_t number, const channel_t *ch, p25_conv_t *out)
 }
 bool radio_p25_fits(void) { return p25_radio; }
 #endif
+#if CONFIG_NXDN
+static bool nxdn_radio;		// below: the "nxdn" token
+bool radio_nxdn_fits(void) { return nxdn_radio; }
+#endif
 
 // Zones the zone editor wrote (ui_svc_zone_edit, the real zone_edit.c on these fakes): once one is written, every
 // zone is a copy here, which the editor changes
