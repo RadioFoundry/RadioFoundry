@@ -107,7 +107,7 @@ is `tools/bringup.py list --radio <id>`.
 | `usb_serial_request` | off | not recorded | off | off | not recorded | not recorded | not recorded |
 | `dmr_ip_gateway` | not recorded | not recorded | pass (seed) | not recorded | not recorded | not recorded | pass, needs re-run |
 | `dmr_tx_spacing` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
-| `zone_share` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial |
+| `zone_share` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial, needs re-run |
 | `dmr_control_station` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `net_tcp` | not recorded | not recorded | pass (seed) | pass (seed) | not recorded | not recorded | pass, needs re-run |
 | `net_kiss` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
@@ -129,6 +129,7 @@ is `tools/bringup.py list --radio <id>`.
 | `channel_knob` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `ui_settings` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial, needs re-run |
 | `diag` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
+| `backlight_test` | off | off | off | off | off | off | off |
 | `ui_color` | not recorded | not recorded | ✕ | not recorded | not recorded | not recorded | ✕ |
 | `font_xl` | not recorded | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `font_aa` | not recorded | off | off | off | off | off | ✕ |
@@ -222,6 +223,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `VFO_FM` | ● | ● | ● | ● | ● | ● | ● |
 | `VFO_DMR` | ● | ● | ● | ● | ● | ● | ● |
 | `DIAG` | ● | ● | ● | ● | ● | ● | ● |
+| `BACKLIGHT_TEST` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `FONT_XL` | ● | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `FONT_AA` | ● | ○ | ○ | ○ | ○ | ○ | ✕ |
 | `FONT_BIG` | ● | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
@@ -292,6 +294,8 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | DMR emergency (alarm, emergency call, hot mic) | `DMR_EMERGENCY` | 3,296 | 3,188 |  |
 | Repeater roaming | `DMR_ROAMING` | 11,952 | 12,380 |  |
 | CSBK signaling: call alert, radio check | `DMR_SIGNALING` | 592 | 752 |  |
+| P25 channels in the codeplug: the conventional codec | `P25` | 56 | — | Off by default. The codec only: a P25 channel is shown as a mode not in this build ([p25-codeplug.md](spec/p25-codeplug.md)). With `P25_TRUNK`, DM-1701; nothing calls the codec yet, so the build keeps little of it |
+| P25 trunked systems in the codeplug: the codec | `P25_TRUNK` | — | — | Needs `P25`. Off by default; no firmware follows a P25 system yet |
 | VFO (hand-tuned frequency) | `VFO` | 656 | 516 | Includes the DMR VFO; `VFO` and `VFO_DMR` re-measured 2026-10-17 (DM-1701 plain build, MD-380 with LTO). Copy to VFO ([dmr-voice.md](spec/dmr-voice.md) 2.2) is on top of that figure, behind the same switch: about 630 B on the DM-1701 and 730 B on the MD-380 (default builds, LTO as each has it), 750 B on the C-SKY radios |
 | FM VFO | `VFO_FM` | 504 | 452 |  |
 | DMR VFO (color code, slot, talk target typed in; mode change FM / DMR) | `VFO_DMR` | 144 | 104 | The VFO's mode, color code, slot and talk target are settings of the VFO, kept across power cycles ([dmr-voice.md](spec/dmr-voice.md) 2.1) |
@@ -376,6 +380,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 |---|---|---:|---:|---|
 | Settings menu on the radio | `UI_SETTINGS` | 5,304 | 5,640 |  |
 | Diagnostics page | `DIAG` | 3,752 | 3,532 |  |
+| Backlight test pages | `BACKLIGHT_TEST` | 1,536 | 1,552 | Off by default; bench work ([backlight-curve.md](testing/backlight-curve.md)) |
 | Color screen settings (theme, highlight color, filled status bar) | `UI_COLOR` | 672 | 608 | Off on the DM-1801 Pro (monochrome screen; 628 B there). Measured 2026-10-17; DM-1701 with LTO 612 B |
 | 16x32 font | `FONT_XL` | 6,352* | — | Only useful at 240 px and wider (MD-380 is 160 px). Anti-aliased on the DM-32 (7.4 KB of glyphs) |
 | Anti-aliased fonts | `FONT_AA` | 3,004* | — | Smooth text on color panels (measured 2026-10-17); the DM-32's image grew 9.5 KB with it and `FONT_XL` |

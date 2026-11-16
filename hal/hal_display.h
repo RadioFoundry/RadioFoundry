@@ -32,6 +32,18 @@ typedef struct {
 	// bpp 4 instead of flush: the same with the palette, 16 RGB565 colors the indexes stand for
 	void (*flush_indexed)(const void *fb, const uint16_t *palette, uint16_t y0, uint16_t y1);
 	void (*set_backlight)(uint8_t percent);
+	// Optional, for the backlight tests (Settings > Advanced > Backlight tests, CONFIG_BACKLIGHT_TEST): the PWM compare value straight, 0
+	// (off) .. backlight_raw_max (on through the whole period), and the one in force. A board without them has the
+	// brightness page alone
+	uint16_t backlight_raw_max;
+	void (*set_backlight_raw)(uint16_t value);
+	uint16_t (*backlight_raw)(void);
+	// Optional, with the above: the PWM rates the board can run, fastest first, backlight_rate_std its standard one.
+	// Selects rate i (< backlight_rates) and returns its frequency in Hz; the compare value keeps its meaning at every
+	// rate. Without them (or with one rate) there is no rate page
+	uint8_t backlight_rates;
+	uint8_t backlight_rate_std;
+	uint32_t (*set_backlight_rate)(uint8_t i);
 	// Optional, for the debug link
 	void (*panel)(hal_display_panel_t *p);
 } hal_display_t;

@@ -500,6 +500,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	// synthesizer on the TX frequency here left the radio deaf to the repeater's downlink
 	fd6818_set_freq(&fd, synth_hz(mode == RADIO_MODE_DMR && have_rx ? rx_hz : hz));
 	hrc_dac_b_power(true);
+	transmitting = true;
 	if (mode == RADIO_MODE_DMR) {
 		// 8.5 "Enter DMR TX": the PA select and drive wait for each burst's sequence. Between bursts the radio
 		// receives: the FD6818 in RX and the LNA on until the RF task switches to the first burst (burst_on). In TX
@@ -537,7 +538,6 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		}
 		pa_key();
 	}
-	transmitting = true;
 	ring_play();
 	return true;
 }
