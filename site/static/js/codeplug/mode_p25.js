@@ -104,6 +104,7 @@ export function decodeTsys(b) {
 		})(),
 		skipEnc: (u8(b, 7) & 1) !== 0,
 		planOnly: (u8(b, 7) & 2) !== 0,
+		noReg: (u8(b, 7) & 4) !== 0,
 		holdS: u8(b, 8),
 		roamDbm: s8(b, 9),
 	};
@@ -114,7 +115,7 @@ export function encodeTsys(s, prev = null) {
 	put24(v, 0, s.wacn == null ? WACN_ANY : s.wacn & 0xFFFFF);
 	put16(v, 3, s.sysid == null ? SYSID_ANY : s.sysid & 0x0FFF);
 	put16(v, 5, s.ccNac == null ? 0 : NAC_SET | (s.ccNac & 0x0FFF));
-	v[7] = (v[7] & ~3) | (s.skipEnc ? 1 : 0) | (s.planOnly ? 2 : 0);
+	v[7] = (v[7] & ~7) | (s.skipEnc ? 1 : 0) | (s.planOnly ? 2 : 0) | (s.noReg ? 4 : 0);
 	v[8] = s.holdS & 0xFF;
 	v[9] = s.roamDbm & 0xFF;
 	return v;
@@ -127,8 +128,8 @@ export const p25System = {
 	id: 3,
 	feature: "P25_TRUNK",
 	idLen: 5,
-	defaultTx: false,	// a new system is listen only: no firmware transmits on one yet
-	newFields: () => ({ wacn: null, sysid: null, ccNac: null, skipEnc: false, planOnly: false, holdS: 0, roamDbm: 0 }),
+	defaultTx: false,	// a new system is listen only until the user turns transmit on
+	newFields: () => ({ wacn: null, sysid: null, ccNac: null, skipEnc: false, planOnly: false, noReg: false, holdS: 0, roamDbm: 0 }),
 	decode: decodeTsys,
 	encode: encodeTsys,
 	identity: (s) => `WACN ${s.wacn == null ? "*" : s.wacn.toString(16).toUpperCase()} · SYS ${s.sysid == null ? "*" : s.sysid.toString(16).toUpperCase()}`,
@@ -138,6 +139,7 @@ export const p25System = {
 		optHex("ccNac", "editor.p25.cc_nac", 0xFFF, 3),
 		{ key: "skipEnc", label: "editor.p25.skip_enc", type: "bool" },
 		{ key: "planOnly", label: "editor.p25.plan_only", type: "bool", advanced: true },
+		{ key: "noReg", label: "editor.p25.no_reg", type: "bool", advanced: true },
 		{ key: "holdS", label: "editor.p25.hold", type: "int", min: 0, max: 255, advanced: true },
 		{ key: "roamDbm", label: "editor.p25.roam_dbm", type: "int", min: -128, max: 127, advanced: true },
 	],

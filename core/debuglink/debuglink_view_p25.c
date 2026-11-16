@@ -103,6 +103,14 @@ __attribute__((noinline)) void debuglink_view_p25_trunk(dl_text_t *t)
 		f->wrong_sys, f->hunts, f->cc_lost, f->voice_lost, f->wrong_call);
 	dl_text(t, "p25t.retunes=%u\np25t.untuned=%u\np25t.skips=%u\n", (unsigned)tv.retunes, (unsigned)tv.untuned,
 		(unsigned)tv.skips);
+	// The transmit side (p25-trunking.md 5)
+	dl_text(t, "p25t.tx=%u\np25t.reg=%u\np25t.req=%u\np25t.aff_tg=%u\np25t.talk_hz=%u\np25t.deny_svc=%u\np25t.deny_reason=%u\n",
+		(unsigned)tv.tx, f->reg, f->req, f->aff_tg, (unsigned)f->talk_hz, f->deny_svc, f->deny_reason);
+	dl_text(t, "p25t.reg_tx=%u\np25t.reg_ok=%u\np25t.aff_tx=%u\np25t.aff_ok=%u\np25t.req_tx=%u\np25t.req_grant=%u\n",
+		f->reg_tx, f->reg_ok, f->aff_tx, f->aff_ok, f->req_tx, f->req_grant);
+	dl_text(t, "p25t.denials=%u\np25t.queued=%u\np25t.timeouts=%u\np25t.send_fail=%u\np25t.inb_busy=%u\n",
+		f->denials, f->queued, f->timeouts, f->send_fail, f->inb_busy);
+	dl_text(t, "p25t.bursts=%u\np25t.burst_refused=%u\n", (unsigned)tv.bursts, (unsigned)tv.burst_refused);
 #else
 	dl_text(t, "p25t.built=0\n");
 #endif

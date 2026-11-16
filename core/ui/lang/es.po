@@ -4228,6 +4228,31 @@ msgid "Finding system"
 msgstr "Buscando sistema"
 
 #: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_WAIT"
+msgid "Wait"
+msgstr "Espere"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_QUEUED"
+msgid "Queued"
+msgstr "En cola"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_DENIED"
+msgid "Denied"
+msgstr "Denegado"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_REG_DENIED"
+msgid "Reg. denied"
+msgstr "Reg. denegado"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_REG"
+msgid "Registering"
+msgstr "Registrando"
+
+#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_P25T_CONTROL"
 msgid "Control channel"
 msgstr "Canal de control"
@@ -4346,6 +4371,31 @@ msgstr "La radio no quiso transmitir"
 msgctxt "DENY_WHY_AIR_BENCH"
 msgid "Air bench: PTT off"
 msgstr "Banco de aire: sin PTT"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_P25T_NO_CC"
+msgid "No control channel"
+msgstr "Sin canal de control"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_P25T_NOT_REG"
+msgid "Not registered yet"
+msgstr "Aún no registrado"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_P25T_DENIED"
+msgid "System denied the call"
+msgstr "Sistema denegó llamada"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_P25T_NO_ANSWER"
+msgid "No answer from system"
+msgstr "Sistema no responde"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_P25T_NO_CHAN"
+msgid "Voice channel unusable"
+msgstr "Canal de voz inválido"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_NOT_ALLOWED"

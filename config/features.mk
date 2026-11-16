@@ -293,8 +293,9 @@ CONFIG_MBE := $(CONFIG_IMBE)
 # diagnostics: debug link commands that open an air interface session and move raw symbols, for bench tests (needs an
 # air-framed mode such as P25 or NXDN, and DEBUGLINK; docs/spec/debuglink.md)
 CONFIG_AIR_RAW ?= n
-# P25 trunked: the codec of its systems and channels (docs/spec/p25-codeplug.md 3) and, receive only, a control channel
-# decoded and voice channel grants followed (core/p25/p25_follow.c, docs/spec/p25-trunking.md). Needs P25
+# P25 trunked: the codec of its systems and channels (docs/spec/p25-codeplug.md 3), a control channel decoded and voice
+# channel grants followed, and where the system allows it registration, voice requests and transmit on the grant
+# (core/p25/p25_follow.c, docs/spec/p25-trunking.md). Needs P25
 CONFIG_P25_TRUNK ?= n
 # the GPS status screen: satellites on a sky plot and signal bars, fix quality, grid locator (core/position/nmea_sky.c,
 # core/ui/ui_gps.c, docs/spec/position.md 3). Needs GPS; off, Tools > Position is a page of text

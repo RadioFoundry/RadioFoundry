@@ -256,7 +256,11 @@ static int cmd_gen(const char *out_path, const char *exp_path, const opts_t *o)
 	size_t n = 0;
 	long frames_left, frames_total, nflip = 0;
 	FILE *e = fopen(exp_path, "w");
-	int first_unit = 1, nvoice_in_unit = 0, ended = 0;
+	// Voice frames go in ahead of their LDU's head (the transmit path asks for them early): they wait here and go
+	// in the expect file with the LDU that carries them, P25_VOICE_FRAMES each
+	static uint8_t vq[4 * P25_VOICE_FRAMES][P25_IMBE_BYTES];
+	unsigned vq_head = 0, vq_n = 0;
+	int first_unit = 1, ended = 0;
 	uint8_t unit_duid = 0xFF;
 	size_t unit_at = 0;
 
@@ -317,9 +321,6 @@ static int cmd_gen(const char *out_path, const char *exp_path, const opts_t *o)
 				fprintf(e, "%s{\"duid\":%u,\"name\":\"%s\",\"at\":%zu,\"nsyms\":%u", first_unit ? "" : ",",
 					unit_duid, duid_name(unit_duid), unit_at, t.nsyms);
 				first_unit = 0;
-				if (unit_duid == P25_DUID_LDU1 || unit_duid == P25_DUID_LDU2)
-					fputs(",\"voice\":[", e);
-				nvoice_in_unit = 0;
 			}
 			if (n + k > GEN_MAX_SYMS)
 				die("too long", NULL);
@@ -327,8 +328,15 @@ static int cmd_gen(const char *out_path, const char *exp_path, const opts_t *o)
 				syms[n++] = air_sym_get(t.unit, (uint16_t)(first + i));
 			if (t.sent + k == t.nsyms) {
 				// The unit is whole: its symbols for the checker
-				if (unit_duid == P25_DUID_LDU1 || unit_duid == P25_DUID_LDU2)
+				if (unit_duid == P25_DUID_LDU1 || unit_duid == P25_DUID_LDU2) {
+					fputs(",\"voice\":[", e);
+					for (unsigned v = 0; v < P25_VOICE_FRAMES && vq_n > 0; v++, vq_n--) {
+						fprintf(e, "%s", v ? "," : "");
+						put_hex(e, vq[vq_head], P25_IMBE_BYTES);
+						vq_head = (vq_head + 1) % (sizeof vq / sizeof vq[0]);
+					}
 					fputc(']', e);
+				}
 				fputs(",\"syms\":", e);
 				put_hex(e, t.unit, (size_t)(t.nsyms + 3) / 4);
 				fputc('}', e);
@@ -342,9 +350,9 @@ static int cmd_gen(const char *out_path, const char *exp_path, const opts_t *o)
 					frame[i] = (uint8_t)rng();
 			else
 				memcpy(frame, fixed, sizeof frame);
-			fprintf(e, "%s", nvoice_in_unit ? "," : "");
-			put_hex(e, frame, sizeof frame);
-			nvoice_in_unit++;
+			if (vq_n == sizeof vq / sizeof vq[0])
+				die("voice frames queued past their LDUs", NULL);
+			memcpy(vq[(vq_head + vq_n++) % (sizeof vq / sizeof vq[0])], frame, sizeof frame);
 			p25_call_tx_voice(&t, frame);
 			frames_left--;
 		} else if (!ended) {
@@ -376,9 +384,36 @@ static int cmd_gen(const char *out_path, const char *exp_path, const opts_t *o)
 }
 
 // ── cc: a control channel. Its broadcasts in turn (network and RFSS status, the channel identifier, an adjacent
-// site, a secondary control channel), one to three blocks a unit, units back to back; with --grant, a group voice
-// grant in every unit from --grant-at on. For the bench and the tests: a radio sends none of this ──
+// site, a secondary control channel), one to three blocks a unit, units back to back. Answers to one unit go ahead of
+// the broadcasts in the units their --X-at names: a registration response (--reg), an affiliation response (--aff),
+// a group voice grant (--grant), a deny (--deny) or queued (--queue) response. For the bench and the tests: a radio
+// sends none of this ──
 static void tsbk_json(FILE *f, const uint8_t blk[P25_TSBK_BYTES]);
+static void isp_json(FILE *f, const uint8_t blk[P25_TSBK_BYTES]);
+
+// An answer's units: --X-at FIRST[:COUNT] (COUNT 0 or left out: every unit from FIRST on)
+typedef struct {
+	bool on;
+	long first, count;
+	p25_tsbk_t m;
+} cc_answer_t;
+
+static void cc_at(const opts_t *o, const char *name, long dflt, cc_answer_t *a)
+{
+	const char *v = opt(o, name);
+
+	a->first = dflt;
+	a->count = 0;
+	if (v && sscanf(v, "%ld:%ld", &a->first, &a->count) < 1)
+		die("FIRST[:COUNT] units for", name);
+	if (a->first < 0 || a->count < 0)
+		die("an option is out of range", name);
+}
+
+static bool cc_answer_in(const cc_answer_t *a, long u)
+{
+	return a->on && u >= a->first && (a->count == 0 || u < a->first + a->count);
+}
 
 static int cmd_cc(const char *out_path, const char *exp_path, const opts_t *o)
 {
@@ -387,19 +422,71 @@ static int cmd_cc(const char *out_path, const char *exp_path, const opts_t *o)
 	uint32_t wacn = (uint32_t)opt_long(o, "--wacn", 0xBEE00, 16);
 	uint16_t sysid = (uint16_t)opt_long(o, "--sysid", 0x2F3, 16);
 	uint8_t rfss = (uint8_t)opt_long(o, "--rfss", 1, 10), site = (uint8_t)opt_long(o, "--site", 1, 10);
-	long units = opt_long(o, "--units", 40, 10), grant_at = opt_long(o, "--grant-at", 10, 10);
+	long units = opt_long(o, "--units", 40, 10), grant_at = 10;
 	long base = opt_long(o, "--base", 851006250, 10), spacing = opt_long(o, "--spacing", 6250, 10);
 	uint16_t ch = (uint16_t)opt_long(o, "--ch", 0x1004, 16);
-	long g_tg = -1, g_ch = 0, g_src = 1, g_svc = 0;
+	long g_tg = -1, g_ch = 0, g_src = 1, g_svc = 0, tx_off = opt_long(o, "--tx-offset", 0, 10);
+	long r_unit, r_rv = P25_RV_ACCEPT, a_unit, a_tg, a_gav = P25_RV_ACCEPT, d_unit, d_svc, d_reason;
+	cc_answer_t ans[5];
 	uint8_t *syms;
 	size_t n = 0;
 	FILE *e = fopen(exp_path, "w");
 
+	memset(ans, 0, sizeof ans);
 	if (opt(o, "--grant") && sscanf(opt(o, "--grant"), "%ld:%lx:%ld:%li", &g_tg, &g_ch, &g_src, &g_svc) < 2)
 		die("--grant TG:CH[:SRC[:SVC]] (CH in hex)", opt(o, "--grant"));
 	if (!e || nac > 0xFFF || wacn > 0xFFFFF || sysid > 0xFFF || units < 1 || units > 100000 || base <= 0 ||
-	    base / 5 > 0xFFFFFFFFl || spacing <= 0 || spacing % 125 || spacing / 125 > 1023)
+	    base / 5 > 0xFFFFFFFFl || spacing <= 0 || spacing % 125 || spacing / 125 > 1023 || tx_off % 250000 ||
+	    tx_off / 250000 > 8191 || tx_off / 250000 < -8191)
 		die("an option is out of range", NULL);
+	if (g_tg >= 0) {
+		ans[0].on = true;
+		cc_at(o, "--grant-at", grant_at, &ans[0]);
+		ans[0].m.kind = P25_TSBK_GRANT;
+		ans[0].m.opcode = P25_OP_GRP_V_GRANT;
+		ans[0].m.u.grant.svc = (uint8_t)g_svc;
+		ans[0].m.u.grant.ch = (uint16_t)g_ch;
+		ans[0].m.u.grant.tg = (uint16_t)g_tg;
+		ans[0].m.u.grant.src = (uint32_t)g_src;
+	}
+	if (opt(o, "--reg")) {
+		if (sscanf(opt(o, "--reg"), "%ld:%ld", &r_unit, &r_rv) < 1 || r_rv < 0 || r_rv > 3)
+			die("--reg UNIT[:RV] (RV 0 accept, 1 fail, 2 deny, 3 refused)", opt(o, "--reg"));
+		ans[1].on = true;
+		cc_at(o, "--reg-at", 5, &ans[1]);
+		ans[1].m.kind = P25_TSBK_REG_RSP;
+		ans[1].m.u.reg.rv = (uint8_t)r_rv;
+		ans[1].m.u.reg.sysid = sysid;
+		ans[1].m.u.reg.id = (uint32_t)r_unit;
+		ans[1].m.u.reg.addr = (uint32_t)r_unit;
+	}
+	if (opt(o, "--aff")) {
+		if (sscanf(opt(o, "--aff"), "%ld:%ld:%ld", &a_unit, &a_tg, &a_gav) < 2 || a_gav < 0 || a_gav > 3)
+			die("--aff UNIT:TG[:GAV] (GAV 0 accept, 1 fail, 2 deny, 3 refused)", opt(o, "--aff"));
+		ans[2].on = true;
+		cc_at(o, "--aff-at", 8, &ans[2]);
+		ans[2].m.kind = P25_TSBK_AFF_RSP;
+		ans[2].m.u.aff.gav = (uint8_t)a_gav;
+		ans[2].m.u.aff.ann = (uint16_t)a_tg;
+		ans[2].m.u.aff.tg = (uint16_t)a_tg;
+		ans[2].m.u.aff.dst = (uint32_t)a_unit;
+	}
+	for (int q = 0; q < 2; q++) {
+		const char *name = q ? "--queue" : "--deny";
+
+		if (!opt(o, name))
+			continue;
+		d_svc = P25_ISP_GRP_V_REQ;
+		d_reason = q ? 0x2F : 0x10;
+		if (sscanf(opt(o, name), "%ld:%li:%li", &d_unit, &d_reason, &d_svc) < 1)
+			die("UNIT[:REASON[:SVC]] for", name);
+		ans[3 + q].on = true;
+		cc_at(o, q ? "--queue-at" : "--deny-at", 12, &ans[3 + q]);
+		ans[3 + q].m.kind = q ? P25_TSBK_QUEUED : P25_TSBK_DENY;
+		ans[3 + q].m.u.rsp.svc = (uint8_t)d_svc;
+		ans[3 + q].m.u.rsp.reason = (uint8_t)d_reason;
+		ans[3 + q].m.u.rsp.dst = (uint32_t)d_unit;
+	}
 	syms = malloc((size_t)units * p25_blocks_syms(3));
 	if (!syms)
 		die("out of memory", NULL);
@@ -409,16 +496,16 @@ static int cmd_cc(const char *out_path, const char *exp_path, const opts_t *o)
 		p25_tsbk_t m;
 		unsigned k = 0, nb = 1 + (unsigned)(u % 3);
 
-		if (g_tg >= 0 && u >= grant_at) {
-			memset(&m, 0, sizeof m);
-			m.kind = P25_TSBK_GRANT;
-			m.opcode = P25_OP_GRP_V_GRANT;
-			m.u.grant.svc = (uint8_t)g_svc;
-			m.u.grant.ch = (uint16_t)g_ch;
-			m.u.grant.tg = (uint16_t)g_tg;
-			m.u.grant.src = (uint32_t)g_src;
-			p25_tsbk_make(&m, b[k++]);
+		// Answers first; the broadcasts fill the unit to its one to three blocks
+		for (int q = 0; q < 5; q++) {
+			if (!cc_answer_in(&ans[q], u))
+				continue;
+			if (k == 3)
+				die("more than three answers in one unit", NULL);
+			p25_tsbk_make(&ans[q].m, b[k++]);
 		}
+		if (nb < k)
+			nb = k;
 		while (k < nb) {
 			uint8_t which = (uint8_t)(rot++ % 5);
 
@@ -449,6 +536,7 @@ static int cmd_cc(const char *out_path, const char *exp_path, const opts_t *o)
 				m.u.iden.base = (uint32_t)(base / 5);
 				m.u.iden.spacing = (uint16_t)(spacing / 125);
 				m.u.iden.bw_khz8 = 100;
+				m.u.iden.tx_off = (int16_t)(tx_off / 250000);
 				break;
 			default:
 				m.kind = P25_TSBK_SCCB;
@@ -481,6 +569,60 @@ static int cmd_cc(const char *out_path, const char *exp_path, const opts_t *o)
 	return 0;
 }
 
+// ── inbound: the bursts a radio sends on the control channel's inbound frequency, as p25_follow builds them (a
+// registration, an affiliation and a group voice request, idle symbols between), for checking the decode side ──
+static int cmd_inbound(const char *out_path, const char *exp_path, const opts_t *o)
+{
+	static uint8_t unit[P25_UNIT_BYTES_MAX];
+	uint16_t nac = (uint16_t)opt_long(o, "--nac", P25_NAC_DEFAULT, 16);
+	long gap = opt_long(o, "--gap", 480, 10), reps = opt_long(o, "--reps", 1, 10);
+	uint8_t idle = p25_air_mode.profile.idle, *syms;
+	p25_isp_t m[3];
+	size_t n = 0;
+	FILE *e = fopen(exp_path, "w");
+
+	if (!e || nac > 0xFFF || gap < 0 || gap > 48000 || reps < 1 || reps > 1000)
+		die("an option is out of range", NULL);
+	memset(m, 0, sizeof m);
+	m[0].opcode = P25_ISP_U_REG_REQ;
+	m[1].opcode = P25_ISP_GRP_AFF_REQ;
+	m[2].opcode = P25_ISP_GRP_V_REQ;
+	for (int i = 0; i < 3; i++) {
+		m[i].wacn = (uint32_t)opt_long(o, "--wacn", 0xBEE00, 16);
+		m[i].sysid = (uint16_t)opt_long(o, "--sysid", 0x2F3, 16);
+		m[i].tg = (uint16_t)opt_long(o, "--tg", 1, 10);
+		m[i].src = (uint32_t)opt_long(o, "--src", 1, 10);
+	}
+	m[2].svc = (uint8_t)opt_long(o, "--svc", 0, 0);
+	syms = malloc((size_t)reps * 3 * (size_t)(gap + P25_UNIT_SYMS_MAX) + (size_t)gap);
+	if (!syms)
+		die("out of memory", NULL);
+	for (long i = 0; i < gap; i++)
+		syms[n++] = (uint8_t)((idle >> (6 - 2 * (i & 3))) & 3);
+	fprintf(e, "{\"format\":\"p25-cc-expect/1\",\"inbound\":true,\"nac\":%u,\"units\":[", nac);
+	for (long r = 0; r < reps; r++)
+		for (int i = 0; i < 3; i++) {
+			uint8_t blk[P25_TSBK_BYTES];
+			uint16_t ns;
+
+			p25_isp_make(&m[i], blk);
+			ns = p25_isp_unit(unit, nac, blk);
+			fprintf(e, "%s{\"at\":%zu,\"nsyms\":%u,\"blocks\":[", r || i ? "," : "", n, ns);
+			isp_json(e, blk);
+			fputs("]}", e);
+			for (uint16_t k = 0; k < ns; k++)
+				syms[n++] = air_sym_get(unit, k);
+			for (long k = 0; k < gap; k++)
+				syms[n++] = (uint8_t)((idle >> (6 - 2 * (k & 3))) & 3);
+		}
+	fprintf(e, "],\"total_syms\":%zu}\n", n);
+	fclose(e);
+	write_syms(out_path, syms, n, flag(o, "--unpacked"), idle);
+	printf("{\"ev\":\"inbound\",\"syms\":%zu,\"units\":%ld}\n", n, reps * 3);
+	free(syms);
+	return 0;
+}
+
 // ── decode and disc: units out through the framer and the call layer ──
 static p25_call_rx_t g_call;
 static air_framer_t g_fr;
@@ -497,7 +639,8 @@ static void frame_hook(const air_frame_t *f, void *ctx)
 	g_frame_soft = NULL;
 }
 
-static const char *const KIND[] = { "other", "mfr", "grant", "iden", "net", "rfss", "adj", "sccb", "sys_srv" };
+static const char *const KIND[] = { "other", "mfr", "grant", "iden", "net", "rfss", "adj", "sccb", "sys_srv", "reg_rsp",
+				     "aff_rsp", "deny", "queued" };
 
 static void tsbk_json(FILE *f, const uint8_t blk[P25_TSBK_BYTES])
 {
@@ -538,7 +681,51 @@ static void tsbk_json(FILE *f, const uint8_t blk[P25_TSBK_BYTES])
 		fprintf(f, ",\"rfss\":%u,\"site\":%u,\"ch\":[%u,%u]", m.u.sccb.rfss, m.u.sccb.site, m.u.sccb.ch[0],
 			m.u.sccb.ch[1]);
 		break;
+	case P25_TSBK_REG_RSP:
+		fprintf(f, ",\"rv\":%u,\"sysid\":%u,\"id\":%u,\"addr\":%u", m.u.reg.rv, m.u.reg.sysid, m.u.reg.id,
+			m.u.reg.addr);
+		break;
+	case P25_TSBK_AFF_RSP:
+		fprintf(f, ",\"global\":%s,\"gav\":%u,\"ann\":%u,\"tg\":%u,\"dst\":%u", m.u.aff.global ? "true" : "false",
+			m.u.aff.gav, m.u.aff.ann, m.u.aff.tg, m.u.aff.dst);
+		break;
+	case P25_TSBK_DENY:
+	case P25_TSBK_QUEUED:
+		fprintf(f, ",\"aiv\":%s,\"svc\":%u,\"reason\":%u,\"info\":%u,\"dst\":%u", m.u.rsp.aiv ? "true" : "false",
+			m.u.rsp.svc, m.u.rsp.reason, m.u.rsp.info, m.u.rsp.dst);
+		break;
 	default:
+		break;
+	}
+	fputc('}', f);
+}
+
+// An inbound block (a radio's, on the control channel's inbound frequency): its own opcodes
+static int g_inbound;
+
+static void isp_json(FILE *f, const uint8_t blk[P25_TSBK_BYTES])
+{
+	p25_isp_t m;
+	bool known = p25_isp_parse(blk, &m);
+
+	fprintf(f, "{\"raw\":");
+	put_hex(f, blk, P25_TSBK_BYTES);
+	fprintf(f, ",\"inbound\":true,\"opcode\":%u,\"mfid\":%u,\"last\":%s", blk[0] & 0x3F, blk[1],
+		(blk[0] & P25_TSBK_LB) ? "true" : "false");
+	if (!known) {
+		fputs(",\"kind\":\"other\"}", f);
+		return;
+	}
+	switch (m.opcode) {
+	case P25_ISP_GRP_V_REQ:
+		fprintf(f, ",\"kind\":\"grp_v_req\",\"svc\":%u,\"tg\":%u,\"src\":%u", m.svc, m.tg, m.src);
+		break;
+	case P25_ISP_GRP_AFF_REQ:
+		fprintf(f, ",\"kind\":\"grp_aff_req\",\"emergency\":%s,\"sysid\":%u,\"tg\":%u,\"src\":%u",
+			m.emergency ? "true" : "false", m.sysid, m.tg, m.src);
+		break;
+	default:
+		fprintf(f, ",\"kind\":\"u_reg_req\",\"wacn\":%u,\"sysid\":%u,\"src\":%u", m.wacn, m.sysid, m.src);
 		break;
 	}
 	fputc('}', f);
@@ -563,6 +750,8 @@ static void blocks_json(const p25_rx_unit_t *u)
 				       h.format, h.sap, h.mfid, h.blocks, h.opcode);
 			else
 				printf("{\"mbt\":false}");
+		} else if (g_inbound) {
+			isp_json(stdout, blk);
 		} else {
 			tsbk_json(stdout, blk);
 		}
@@ -675,7 +864,8 @@ static void rx_setup(const opts_t *o)
 	p25_call_rx_init(&g_call, nac, &sink, NULL);
 	g_call_unit = g_call.rx.unit;
 	g_call.rx.unit = unit_hook;
-	g_call.rx.trunk = flag(o, "--trunk");
+	g_inbound = flag(o, "--inbound");
+	g_call.rx.trunk = flag(o, "--trunk") || g_inbound;
 	air_framer_init(&g_fr, &g_mode, &g_call.rx, hard, soft, P25_UNIT_SYMS_MAX);
 }
 
@@ -943,7 +1133,7 @@ int main(int argc, char **argv)
 	opts_t o;
 
 	if (argc < 3) {
-		fprintf(stderr, "usage: p25tool gen OUT EXPECT | cc OUT EXPECT | decode IN | disc IN | mod IN OUT [options]  "
+		fprintf(stderr, "usage: p25tool gen OUT EXPECT | cc OUT EXPECT | inbound OUT EXPECT | decode IN | disc IN | mod IN OUT [options]  "
 			"(tools/bench/p25tool.py)\n");
 		return 2;
 	}
@@ -956,6 +1146,11 @@ int main(int argc, char **argv)
 		o.argc = argc - 4;
 		o.argv = argv + 4;
 		return cmd_cc(argv[2], argv[3], &o);
+	}
+	if (!strcmp(argv[1], "inbound") && argc >= 4) {
+		o.argc = argc - 4;
+		o.argv = argv + 4;
+		return cmd_inbound(argv[2], argv[3], &o);
 	}
 	if (!strcmp(argv[1], "mod") && argc >= 4) {
 		o.argc = argc - 4;

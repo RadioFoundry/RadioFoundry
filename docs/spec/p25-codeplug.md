@@ -6,8 +6,8 @@
 The stored records of P25 channels and systems, on the generic layer of [channel-modes.md](channel-modes.md). Little
 endian throughout. The firmware's codec is `core/p25/p25_codeplug.c` (`CONFIG_P25`, `CONFIG_P25_TRUNK`). The radio core
 runs a conventional channel (kind 2) where the build has `CONFIG_P25` and the board's air interface receives P25
-([p25.md](p25.md) 7.1); elsewhere it is parked ([channel-modes.md](channel-modes.md) 6). No firmware runs a trunked
-channel yet.
+([p25.md](p25.md) 7.1); elsewhere it is parked ([channel-modes.md](channel-modes.md) 6). With `CONFIG_P25_TRUNK` it
+runs a trunked channel (kind 3) the same way ([p25-trunking.md](p25-trunking.md) 7).
 
 | Id | Kind | System type |
 |---|---|---|
@@ -85,22 +85,21 @@ the block kept byte for byte; a copy at another number takes the source's tag ([
 
 ## 3. Trunked system (type 3)
 
-No firmware reads these records yet: the layout is defined ahead of the trunking engine, for following a control
-channel without transmitting.
+Read by the trunking follower ([p25-trunking.md](p25-trunking.md) 6).
 
 The generic header ([channel-modes.md](channel-modes.md) 7.1), with identity length 5 and flag bit 1 (transmit side)
-clear by default. The own ID is the radio's unit ID on the system, 0 = the radio-wide one (1). The type's block:
+clear by default: a system without it is listen only, and the radio never registers or transmits on it. The own ID is the radio's unit ID on the system, 0 = the radio-wide one (1). The type's block:
 
 | Offset | Size | Field |
 |---|---|---|
 | 0 | 3 | WACN, bits 19-0; 0xFFFFFF = any |
 | 3 | 2 | System ID, bits 11-0; 0xFFFF = any |
 | 5 | 2 | Control channel NAC: bit 15 set = bits 11-0 hold it; clear = any |
-| 7 | 1 | Options: bit 0 skip encrypted calls; bit 1 use only the programmed channel plan (don't learn it from the control channel). Bits 2-7: 0 |
+| 7 | 1 | Options: bit 0 skip encrypted calls; bit 1 use only the programmed channel plan (don't learn it from the control channel); bit 2 don't register or affiliate (PTT asks for a voice channel at once). Bits 3-7: 0 |
 | 8 | 1 | Hold time after a call in seconds, 0 = the radio's |
 | 9 | 1 | Change site below this dBm (signed; 0 = the radio's roaming threshold) |
 
-Registration, affiliation, authentication and traffic keys are appended later; keys use the traffic key family
+Authentication and traffic keys are appended later; keys use the traffic key family
 ([channel-modes.md](channel-modes.md) 5.4).
 
 ### 3.1 Sites
@@ -112,7 +111,8 @@ in the system (0-254). Body: RFSS (1), site (1), 0xFF = not known. Both are for 
 
 Entries of class 0, flag bit 0 set, group = the site's. Entry order is the hunt order: the first is the primary.
 Body: the channel number (2: identifier in bits 15-12, channel in bits 11-0; 0 = given by frequency only), RX Hz (4),
-TX Hz (4, 0 = none; kept for transmit later).
+TX Hz (4: the inbound frequency where the radio sends its requests; 0 = from the channel number and the identifier's
+transmit offset).
 
 ### 3.3 Channel identifier plan
 
@@ -123,7 +123,7 @@ control channel. Body:
 |---|---|---|
 | 0 | 4 | Base frequency Hz |
 | 4 | 4 | Channel spacing Hz |
-| 8 | 4 | Transmit offset Hz, signed |
+| 8 | 4 | Transmit offset Hz, signed (inbound minus outbound; 0 = take it from the control channel) |
 | 12 | 4 | Bandwidth Hz |
 | 16 | 1 | Channel type: 0 FDMA, 1 TDMA |
 | 17 | 1 | TDMA: slots per carrier (0 = 2) |
@@ -132,7 +132,8 @@ A grant on a TDMA identifier is recognized and reported; its voice is not decode
 
 ## 4. Trunked channel (kind 3)
 
-The tag names the system; flag bit 0 (transmit allowed) clear by default; bit 2 with the fallback fields: the
+The tag names the system; flag bit 0 (transmit allowed) clear by default, and the transmit side needs it, the
+system's transmit side (3), a unit ID and a talk group; bit 2 with the fallback fields: the
 channel's own fallback, else the system's; kind bit 4: no fallback on this channel. The parameter block:
 
 | Offset | Size | Field |

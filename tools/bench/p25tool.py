@@ -13,7 +13,12 @@ than its sources).
     p25tool.py disc IN.raw --rate HZ [--full HZ | --counts-per-khz N] [--invert] [--bits 8 --shift S] [--skip S]
                [--meta IN.json] [--expect EXP.json]
     p25tool.py cc OUT.dibits --expect EXP.json [--nac 293] [--wacn BEE00] [--sysid 2F3] [--rfss N] [--site N]
-               [--units N] [--ch 1004] [--base HZ] [--spacing HZ] [--grant TG:CH[:SRC[:SVC]] [--grant-at UNIT]]
+               [--units N] [--ch 1004] [--base HZ] [--spacing HZ] [--tx-offset HZ]
+               [--grant TG:CH[:SRC[:SVC]] [--grant-at FIRST[:COUNT]]] [--reg UNIT[:RV] [--reg-at FIRST[:COUNT]]]
+               [--aff UNIT:TG[:GAV] [--aff-at ...]] [--deny UNIT[:REASON[:SVC]] [--deny-at ...]]
+               [--queue UNIT[:REASON[:SVC]] [--queue-at ...]]
+    p25tool.py inbound OUT.dibits --expect EXP.json [--nac 293] [--src N] [--tg N] [--wacn BEE00] [--sysid 2F3]
+               [--svc N] [--gap SYMS] [--reps N]
     p25tool.py mod IN.dibits OUT.raw [--rate HZ] [--full HZ] [--dev-scale PCT] [--offset HZ] [--noise HZ] [--ppm P]
                [--invert] [--carrier-gap S] [--carrier-lead S] [--seed S]
     p25tool.py selftest
@@ -37,10 +42,20 @@ debug link reports it; without either the soft modem follows the level itself. -
 other sense. It adds the soft modem's syncs (time, outer deviation, carrier offset) and, with --expect, the soft
 values' error against the ideal levels (an EVM in percent of the outer level).
 
-cc writes a trunked system's control channel for receive tests: units of one to three trunking signaling blocks back
-to back (network and RFSS status, the channel identifier, an adjacent site, a secondary control channel), with
---grant a group voice grant in every unit from --grant-at on (CH in hex: identifier in the top four bits). decode and
-disc with --trunk take trunking units too and print each block's message; with a cc expect file they compare blocks.
+cc writes a trunked system's control channel: units of one to three trunking signaling blocks back to back (network
+and RFSS status, the channel identifier with --tx-offset as the inbound offset, an adjacent site, a secondary control
+channel). Answers to one unit go ahead of the broadcasts in the units --X-at names (FIRST[:COUNT], unit numbers from
+0; COUNT 0 or left out: to the end; the expect file gives each unit's symbol position): --grant a group voice grant
+(CH in hex: identifier in the top four bits; default from unit 10), --reg a registration response (RV 0 accept, 1
+fail, 2 deny, 3 refused; from unit 5), --aff an affiliation response (from unit 8), --deny and --queue a deny or
+queued response to a group voice request (REASON 0x10 and 0x2F unless given; from unit 12). Play the file in a loop
+for a site that keeps answering. decode and disc with --trunk take trunking units too and print each block's message;
+with a cc expect file they compare blocks.
+
+inbound writes the bursts a radio sends on the control channel's inbound frequency: a registration request, an
+affiliation request and a group voice request, one block each, --gap idle symbols around them. decode and disc with
+--inbound read blocks by the inbound opcodes: run them on a capture of the inbound frequency to see what the radio
+sent. The radio's voice on the granted channel is a conventional transmission: decode and disc read it as they are.
 
 mod models a C4FM transmitter and a discriminator (for tests): samples a disc capture would hold.
 
@@ -61,6 +76,7 @@ SRC = os.path.join(HERE, "p25")
 BIN = os.path.join(ROOT, "build", "bench", "p25tool")
 LEVEL = {1: 3, 0: 1, 2: -1, 3: -3}
 SS_NAMES = ("talkaround", "busy", "unknown", "idle")
+RV = ("accepted", "failed", "denied", "refused")
 
 
 def build():
@@ -147,6 +163,18 @@ def msg_text(m):
     elif k in ("rfss", "adj"):
         s += (f" {'RFSS' if k == 'rfss' else 'adjacent site'} status: system {m['sysid']:03X} RFSS {m['rfss']} "
               f"site {m['site']} ch {m['ch']:04X}")
+    elif k == "reg_rsp":
+        s += f" registration response: unit {m['id']} {RV[m['rv']]}, system {m['sysid']:03X}, address {m['addr']}"
+    elif k == "aff_rsp":
+        s += f" affiliation response: unit {m['dst']} TG {m['tg']} {RV[m['gav']]}{' (global)' if m['global'] else ''}"
+    elif k in ("deny", "queued"):
+        s += f" {'deny' if k == 'deny' else 'queued'} response: unit {m['dst']} to 0x{m['svc']:02X}, reason 0x{m['reason']:02X}"
+    elif k == "u_reg_req":
+        s += f" registration request: unit {m['src']} WACN {m['wacn']:05X} system {m['sysid']:03X}"
+    elif k == "grp_aff_req":
+        s += f" affiliation request: unit {m['src']} TG {m['tg']} system {m['sysid']:03X}"
+    elif k == "grp_v_req":
+        s += f" group voice request: unit {m['src']} TG {m['tg']} svc {m['svc']:02X}"
     elif k == "sccb":
         s += f" secondary control channels: " + ", ".join(f"{c:04X}" for c in m["ch"] if c)
     else:
@@ -363,7 +391,7 @@ def cmd_decode(a):
             args = ["decode", sp, "--unpacked", "--soft", fp]
         else:
             args += pass_opts(a, ["unpacked", "soft"])
-        lines = run(args + pass_opts(a, ["nac", "trunk"]))
+        lines = run(args + pass_opts(a, ["nac", "trunk", "inbound"]))
     return report(lines, a, False)
 
 
@@ -384,14 +412,22 @@ def cmd_disc(a):
         args = ["disc", inp, "--rate", int(round(float(rate)))]
         if full:
             args += ["--full", full]
-        lines = run(args + pass_opts(a, ["counts-per-khz", "invert", "bits", "shift", "skip", "nac", "trunk"]))
+        lines = run(args + pass_opts(a, ["counts-per-khz", "invert", "bits", "shift", "skip", "nac", "trunk", "inbound"]))
     return report(lines, a, True)
 
 
 def cmd_cc(a):
     d = run(["cc", a.out, a.expect] + pass_opts(a, ["nac", "wacn", "sysid", "rfss", "site", "units", "ch", "base",
-                                                    "spacing", "grant", "grant-at", "unpacked"]))[-1]
+                                                    "spacing", "tx-offset", "grant", "grant-at", "reg", "reg-at", "aff",
+                                                    "aff-at", "deny", "deny-at", "queue", "queue-at", "unpacked"]))[-1]
     print(f"{a.out}: {d['syms']} symbols ({d['syms'] / 4800:.3f} s at 4800/s), {d['units']} units; expect: {a.expect}")
+    return 0
+
+
+def cmd_inbound(a):
+    d = run(["inbound", a.out, a.expect] + pass_opts(a, ["nac", "src", "tg", "wacn", "sysid", "svc", "gap", "reps",
+                                                         "unpacked"]))[-1]
+    print(f"{a.out}: {d['syms']} symbols ({d['syms'] / 4800:.3f} s at 4800/s), {d['units']} bursts; expect: {a.expect}")
     return 0
 
 
@@ -489,6 +525,40 @@ def cmd_selftest(a):
         print(f"{'ok  ' if r['blocks_found'] == 0 else 'FAIL'} cc without --trunk: no blocks taken")
         if r["blocks_found"]:
             fails.append("cc without --trunk")
+        # A site answering unit 1234567: registration, affiliation to TG 201, a grant, a deny to another unit
+        run(["cc", p("site.dibits"), p("site.json"), "--units", 40, "--tx-offset", -45000000, "--reg", 1234567,
+             "--reg-at", "3:4", "--aff", "1234567:201", "--aff-at", "8:4", "--grant", "201:100a:1234567",
+             "--grant-at", "14:6", "--deny", "7654321", "--deny-at", "22:2", "--queue", "7654321:0x2f", "--queue-at",
+             "26:2"])
+        with open(p("site.json")) as f:
+            es = json.load(f)
+        lines = run(["decode", p("site.dibits"), "--trunk"])
+        r = compare_cc(lines, es)
+        msgs = [b["msg"] for d in lines if d["ev"] == "unit" for b in d.get("blocks", [])]
+        got = {k: sum(1 for m in msgs if m.get("kind") == k) for k in ("reg_rsp", "aff_rsp", "grant", "deny", "queued")}
+        ok = (r["blocks_found"] == r["blocks_expected"] and got == {"reg_rsp": 4, "aff_rsp": 4, "grant": 6, "deny": 2,
+                                                                    "queued": 2}
+              and all(m["id"] == 1234567 and m["rv"] == 0 for m in msgs if m.get("kind") == "reg_rsp")
+              and all(m["tg"] == 201 and m["dst"] == 1234567 for m in msgs if m.get("kind") == "aff_rsp")
+              and all(m["tx_off"] == -180 for m in msgs if m.get("kind") == "iden"))
+        print(f"{'ok  ' if ok else 'FAIL'} cc with answers: blocks {r['blocks_found']} of {r['blocks_expected']}, {got}")
+        if not ok:
+            fails.append("cc with answers")
+        # A radio's inbound bursts, as symbols and through the C4FM model
+        run(["inbound", p("in.dibits"), p("in.json"), "--src", 1234567, "--tg", 201, "--reps", 3])
+        with open(p("in.json")) as f:
+            ei = json.load(f)
+        for what, lines in (("inbound decode", run(["decode", p("in.dibits"), "--inbound"])),
+                            ("inbound disc 8 kHz, noise 300 Hz", (run(["mod", p("in.dibits"), p("in.raw"), "--rate",
+                                                                        8000, "--full", 5000, "--noise", 300]),
+                                                                    run(["disc", p("in.raw"), "--rate", 8000, "--full",
+                                                                         5000, "--inbound"]))[1])):
+            r = compare_cc(lines, ei)
+            kinds = [b["msg"].get("kind") for d in lines if d["ev"] == "unit" for b in d.get("blocks", [])]
+            ok = r["blocks_found"] == r["blocks_expected"] == 9 and kinds == ["u_reg_req", "grp_aff_req", "grp_v_req"] * 3
+            print(f"{'ok  ' if ok else 'FAIL'} {what}: blocks {r['blocks_found']} of {r['blocks_expected']}")
+            if not ok:
+                fails.append(what)
     print(f"selftest: {'all passed' if not fails else str(len(fails)) + ' failed: ' + ', '.join(fails)}")
     return 1 if fails else 0
 
@@ -522,6 +592,7 @@ def main(argv=None):
         s.add_argument("--nac", default=None, help="hex: take only this NAC (F7E: any, the default)")
         s.add_argument("--json", action="store_true", help="the JSON lines as they are")
         s.add_argument("--trunk", action="store_true", help="take trunking signaling and packets too, and print them")
+        s.add_argument("--inbound", action="store_true", help="as --trunk, the blocks read as a radio's inbound ones")
 
     d = sub.add_parser("decode", help="symbols through the framer and the call layer")
     d.add_argument("input")
@@ -557,9 +628,32 @@ def main(argv=None):
     c.add_argument("--base", type=int, default=None, help="its identifier's base, Hz (851006250)")
     c.add_argument("--spacing", type=int, default=None, help="its identifier's spacing, Hz (6250)")
     c.add_argument("--grant", default=None, metavar="TG:CH[:SRC[:SVC]]", help="a group voice grant (CH in hex; SVC a number, 0x40 encrypted)")
-    c.add_argument("--grant-at", type=int, default=None, metavar="UNIT", help="the first unit with the grant (10)")
+    c.add_argument("--grant-at", default=None, metavar="FIRST[:COUNT]", help="the units with the grant (10)")
+    c.add_argument("--tx-offset", type=int, default=None, help="the identifier's inbound offset, Hz, 250 kHz steps (0)")
+    c.add_argument("--reg", default=None, metavar="UNIT[:RV]", help="a registration response")
+    c.add_argument("--reg-at", default=None, metavar="FIRST[:COUNT]", help="(5)")
+    c.add_argument("--aff", default=None, metavar="UNIT:TG[:GAV]", help="an affiliation response")
+    c.add_argument("--aff-at", default=None, metavar="FIRST[:COUNT]", help="(8)")
+    c.add_argument("--deny", default=None, metavar="UNIT[:REASON[:SVC]]", help="a deny response")
+    c.add_argument("--deny-at", default=None, metavar="FIRST[:COUNT]", help="(12)")
+    c.add_argument("--queue", default=None, metavar="UNIT[:REASON[:SVC]]", help="a queued response")
+    c.add_argument("--queue-at", default=None, metavar="FIRST[:COUNT]", help="(12)")
     c.add_argument("--unpacked", action="store_true", help="one symbol a byte")
     c.set_defaults(fn=cmd_cc)
+
+    i = sub.add_parser("inbound", help="a radio's inbound bursts as dibits, and their expect file")
+    i.add_argument("out")
+    i.add_argument("--expect", required=True)
+    i.add_argument("--nac", default=None, help="hex (293)")
+    i.add_argument("--src", type=int, default=None, help="the unit (1)")
+    i.add_argument("--tg", type=int, default=None, help="the talk group (1)")
+    i.add_argument("--wacn", default=None, help="hex (BEE00)")
+    i.add_argument("--sysid", default=None, help="hex (2F3)")
+    i.add_argument("--svc", type=int, default=None, help="the voice request's service options (0)")
+    i.add_argument("--gap", type=int, default=None, help="idle symbols between bursts (480)")
+    i.add_argument("--reps", type=int, default=None, help="the three bursts this many times (1)")
+    i.add_argument("--unpacked", action="store_true", help="one symbol a byte")
+    i.set_defaults(fn=cmd_inbound)
 
     m = sub.add_parser("mod", help="a C4FM model: dibits to discriminator samples (int16 LE)")
     m.add_argument("input")

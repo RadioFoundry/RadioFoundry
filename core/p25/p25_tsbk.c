@@ -231,6 +231,31 @@ bool p25_tsbk_parse(const uint8_t blk[P25_TSBK_BYTES], p25_tsbk_t *m)
 		m->u.svc.supp = arg(blk, 32, 24);
 		m->u.svc.prio = (uint8_t)arg(blk, 56, 8);
 		return true;
+	case P25_OP_U_REG_RSP:
+		m->kind = P25_TSBK_REG_RSP;
+		m->u.reg.rv = (uint8_t)arg(blk, 2, 2);
+		m->u.reg.sysid = (uint16_t)arg(blk, 4, 12);
+		m->u.reg.id = arg(blk, 16, 24);
+		m->u.reg.addr = arg(blk, 40, 24);
+		return true;
+	case P25_OP_GRP_AFF_RSP:
+		m->kind = P25_TSBK_AFF_RSP;
+		m->u.aff.global = arg(blk, 0, 1) != 0;
+		m->u.aff.gav = (uint8_t)arg(blk, 6, 2);
+		m->u.aff.ann = (uint16_t)arg(blk, 8, 16);
+		m->u.aff.tg = (uint16_t)arg(blk, 24, 16);
+		m->u.aff.dst = arg(blk, 40, 24);
+		return true;
+	case P25_OP_DENY_RSP:
+	case P25_OP_QUE_RSP:
+		m->kind = m->opcode == P25_OP_DENY_RSP ? P25_TSBK_DENY : P25_TSBK_QUEUED;
+		m->u.rsp.aiv = arg(blk, 0, 1) != 0;
+		m->u.rsp.ex = arg(blk, 1, 1) != 0;
+		m->u.rsp.svc = (uint8_t)arg(blk, 2, 6);
+		m->u.rsp.reason = (uint8_t)arg(blk, 8, 8);
+		m->u.rsp.info = arg(blk, 16, 24);
+		m->u.rsp.dst = arg(blk, 40, 24);
+		return true;
 	default:
 		m->kind = P25_TSBK_OTHER;
 		return false;
@@ -321,12 +346,106 @@ void p25_tsbk_make(const p25_tsbk_t *m, uint8_t blk[P25_TSBK_BYTES])
 		arg_put(blk, 32, 24, m->u.svc.supp);
 		arg_put(blk, 56, 8, m->u.svc.prio);
 		break;
+	case P25_TSBK_REG_RSP:
+		op = P25_OP_U_REG_RSP;
+		arg_put(blk, 2, 2, m->u.reg.rv);
+		arg_put(blk, 4, 12, m->u.reg.sysid);
+		arg_put(blk, 16, 24, m->u.reg.id);
+		arg_put(blk, 40, 24, m->u.reg.addr);
+		break;
+	case P25_TSBK_AFF_RSP:
+		op = P25_OP_GRP_AFF_RSP;
+		arg_put(blk, 0, 1, m->u.aff.global);
+		arg_put(blk, 6, 2, m->u.aff.gav);
+		arg_put(blk, 8, 16, m->u.aff.ann);
+		arg_put(blk, 24, 16, m->u.aff.tg);
+		arg_put(blk, 40, 24, m->u.aff.dst);
+		break;
+	case P25_TSBK_DENY:
+	case P25_TSBK_QUEUED:
+		op = m->kind == P25_TSBK_DENY ? P25_OP_DENY_RSP : P25_OP_QUE_RSP;
+		arg_put(blk, 0, 1, m->u.rsp.aiv);
+		arg_put(blk, 1, 1, m->u.rsp.ex);
+		arg_put(blk, 2, 6, m->u.rsp.svc);
+		arg_put(blk, 8, 8, m->u.rsp.reason);
+		arg_put(blk, 16, 24, m->u.rsp.info);
+		arg_put(blk, 40, 24, m->u.rsp.dst);
+		break;
 	default:
 		break;
 	}
 	blk[0] = (uint8_t)((m->last ? P25_TSBK_LB : 0) | (m->prot ? P25_TSBK_P : 0) | (op & 0x3F));
 	blk[1] = m->mfid;
 	p25_tsbk_seal(blk);
+}
+
+// ── Inbound signaling (layouts in docs/spec/p25-trunking.md 2.1; their argument places are unconfirmed) ──
+void p25_isp_make(const p25_isp_t *m, uint8_t blk[P25_TSBK_BYTES])
+{
+	memset(blk, 0, P25_TSBK_BYTES);
+	blk[0] = (uint8_t)(P25_TSBK_LB | (m->opcode & 0x3F));
+	blk[1] = m->mfid;
+	switch (m->opcode) {
+	case P25_ISP_GRP_V_REQ:
+		arg_put(blk, 0, 8, m->svc);
+		arg_put(blk, 24, 16, m->tg);
+		arg_put(blk, 40, 24, m->src);
+		break;
+	case P25_ISP_GRP_AFF_REQ:
+		arg_put(blk, 0, 1, m->emergency);
+		arg_put(blk, 4, 12, m->sysid);
+		arg_put(blk, 16, 16, m->tg);
+		arg_put(blk, 32, 24, m->src);
+		break;
+	case P25_ISP_U_REG_REQ:
+		arg_put(blk, 8, 20, m->wacn);
+		arg_put(blk, 28, 12, m->sysid);
+		arg_put(blk, 40, 24, m->src);
+		break;
+	default:
+		break;
+	}
+	p25_tsbk_seal(blk);
+}
+
+bool p25_isp_parse(const uint8_t blk[P25_TSBK_BYTES], p25_isp_t *m)
+{
+	memset(m, 0, sizeof *m);
+	m->opcode = blk[0] & 0x3F;
+	m->mfid = blk[1];
+	if (m->mfid != 0 || (blk[0] & P25_TSBK_P))
+		return false;
+	switch (m->opcode) {
+	case P25_ISP_GRP_V_REQ:
+		m->svc = (uint8_t)arg(blk, 0, 8);
+		m->tg = (uint16_t)arg(blk, 24, 16);
+		m->src = arg(blk, 40, 24);
+		break;
+	case P25_ISP_GRP_AFF_REQ:
+		m->emergency = arg(blk, 0, 1) != 0;
+		m->sysid = (uint16_t)arg(blk, 4, 12);
+		m->tg = (uint16_t)arg(blk, 16, 16);
+		m->src = arg(blk, 32, 24);
+		break;
+	case P25_ISP_U_REG_REQ:
+		m->wacn = arg(blk, 8, 20);
+		m->sysid = (uint16_t)arg(blk, 28, 12);
+		m->src = arg(blk, 40, 24);
+		break;
+	default:
+		return false;
+	}
+	m->known = true;
+	return true;
+}
+
+uint16_t p25_isp_unit(uint8_t *unit, uint16_t nac, const uint8_t blk[P25_TSBK_BYTES])
+{
+	uint16_t n = p25_blocks_syms(1);
+
+	p25_unit_begin(unit, n, nac, P25_DUID_TSDU, P25_SS_UNKNOWN);
+	p25_block_put(unit, 0, blk);
+	return n;
 }
 
 // ── Multi-block trunking: the header block (octet places unverified) ──

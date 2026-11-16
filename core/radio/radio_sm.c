@@ -1013,7 +1013,9 @@ static bool key_tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *t
 static uint8_t tx_check(const radio_sm_t *sm)
 {
 	const channel_t *ch = &sm->view.ch;
-	if (sm->set.tx_inhibit || !tx_limit_allows(ch->tx_hz)) {
+	// A trunked channel's frequencies are the system's: checked when it keys (p25t_tick, p25t_burst)
+	bool trunk = ch->kind == CODEPLUG_KIND_P25_TRUNK;
+	if (sm->set.tx_inhibit || (!trunk && !tx_limit_allows(ch->tx_hz))) {
 		return TXDENY_INHIBIT;		// the test TX limit denies PTT as the inhibit does
 	}
 #if CONFIG_AM_RX
@@ -1029,19 +1031,24 @@ static uint8_t tx_check(const radio_sm_t *sm)
 	if (parked(ch)) {
 		return TXDENY_MODE;	// before receive only: the record underneath says so, the mode is the reason
 	}
-	if (ch->kind == CODEPLUG_KIND_P25_TRUNK) {
-		return TXDENY_RX_ONLY;	// a trunked P25 channel is listened to, never keyed (docs/spec/p25-trunking.md 6)
-	}
-	if (ch->tx_hz == 0) {
+	if (trunk) {
+		// Its tag's receive only, the system's listen only, or no follower with a transmit side (p25-trunking.md 7)
+#if CONFIG_P25_TRUNK
+		if (ch->rx_only || !radio_p25_trunk_tx()) {
+			return TXDENY_RX_ONLY;
+		}
+#else
+		return TXDENY_RX_ONLY;
+#endif
+	} else if (ch->tx_hz == 0) {
 		return TXDENY_NO_FREQ;
-	}
-	if (ch->rx_only) {
+	} else if (ch->rx_only) {
 		return TXDENY_RX_ONLY;
 	}
 	if (ch->mode == RADIO_MODE_DMR ? !CONFIG_DMR : ch->mode == RADIO_MODE_P25 ? !CONFIG_P25 : !CONFIG_FM) {
 		return TXDENY_MODE;
 	}
-	if (!board_in_band(ch->tx_hz, true)) {
+	if (!trunk && !board_in_band(ch->tx_hz, true)) {
 		return TXDENY_BAND;
 	}
 	if (board_hwopt_pending() != NULL) {
@@ -4175,6 +4182,9 @@ static void p25_stop(radio_sm_t *sm)
 		board.radio->tx_off();
 	}
 	sm->p25_tx = false;
+#if CONFIG_P25_TRUNK
+	sm->p25_req = sm->p25_talk = false;
+#endif
 	sm->view.p25.flags = 0;
 	sm->view.p25.tx = AIR_TX_IDLE;
 	sm->view.p25.trunk = RADIO_P25_TRUNK_OFF;
@@ -4183,10 +4193,9 @@ static void p25_stop(radio_sm_t *sm)
 // PTT on a P25 channel, tx_check passed: the header queued, the transmitter keyed at the channel's power, the
 // provider started (hal_air.h: it keys only inside that). A refusal after the engine began ends at its AIR_TX_DONE
 // in p25_tick, which switches off
-static void p25_key(radio_sm_t *sm, uint32_t now_ms)
+static void p25_key(radio_sm_t *sm, uint32_t now_ms, uint32_t hz)
 {
 	static const subtone_t none = { TONE_NONE, 0 };
-	const channel_t *ch = &sm->view.ch;
 
 	if (!radio_p25_running()) {
 		deny(sm, TXDENY_REFUSED);	// no engine on this board (no provider, no fit, no memory)
@@ -4206,7 +4215,7 @@ static void p25_key(radio_sm_t *sm, uint32_t now_ms)
 	sm->view.tx_elapsed_ms = 0;
 	sm->tx_start_ms = now_ms;
 	outputs(sm);
-	if (!key_tx(ch->tx_hz, RADIO_BW_12K5, sm->view.power, &none)) {
+	if (!key_tx(hz, RADIO_BW_12K5, sm->view.power, &none)) {
 		radio_p25_tx_abort();
 		deny(sm, board_refusal());
 		return;
@@ -4219,6 +4228,96 @@ static void p25_key(radio_sm_t *sm, uint32_t now_ms)
 	radio_p25_poll(&sm->view.p25);	// the engine's transmit state in the view now, not at the next tick
 	changed(sm);
 }
+
+#if CONFIG_P25_TRUNK
+// --- P25 trunked (docs/spec/p25-trunking.md 7): PTT asks the follower for a voice channel; it keys there on the grant.
+// Between calls the follower's inbound bursts (registration, affiliation, requests) go out on the control channel's
+// inbound frequency through the same engine and checks ---
+
+// PTT on a trunked channel, tx_check passed
+static void p25t_ptt(radio_sm_t *sm)
+{
+	uint8_t why = radio_p25_trunk_ptt(true);
+	if (why != RADIO_P25T_WHY_NONE) {
+		sm->view.p25.twhy = why;	// (the next poll keeps it)
+		deny(sm, TXDENY_TRUNK);
+		return;
+	}
+	sm->p25_req = true;
+	changed(sm);
+}
+
+// A frequency the follower gives us to transmit on: the board's transmit bands, and no listen-only band
+static bool p25t_tx_ok(uint32_t hz)
+{
+	return hz != 0 && board_in_band(hz, true) && !radio_listen_band(hz);
+}
+
+// One inbound block: the transmit checks a channel's PTT has (the inhibit, the battery, a hardware option, the band),
+// then keyed for the burst alone. The view stays idle (no red LED, no TX timer); p25_tick switches off at its end
+static void p25t_burst(radio_sm_t *sm, uint32_t hz)
+{
+	static const subtone_t none = { TONE_NONE, 0 };
+
+	if (sm->set.tx_inhibit || !p25t_tx_ok(hz) || board_hwopt_pending() != NULL || sm->batt.level == BATT_CRITICAL ||
+	    sm->view.ch.rx_only) {
+		radio_p25_trunk_burst_drop();
+		return;
+	}
+	if (!radio_p25_trunk_burst_start()) {
+		radio_p25_tx_abort();
+		sm->p25_tx = radio_p25_tx_state() != AIR_TX_IDLE;
+		return;
+	}
+	sm->p25_tx = true;
+	if (!key_tx(hz, RADIO_BW_12K5, sm->view.power, &none)) {
+		radio_p25_tx_abort();		// AIR_TX_DONE follows: p25_tick clears it
+		return;
+	}
+	sm->p25_keyed = true;
+	radio_p25_tx_go();			// (false: AIR_TX_DONE already)
+}
+
+// Every tick on a trunked channel: a request's grant keys the transmitter, its failure denies; bursts between calls
+static void p25t_tick(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (sm->p25_req && !sm->p25_tx) {
+		uint32_t hz = 0;
+		uint8_t r = radio_p25_trunk_talk(&hz);
+		if (r == RADIO_P25T_GO) {
+			sm->p25_req = false;
+			if (!sm->ptt) {
+				radio_p25_trunk_talk_end();	// released meanwhile
+			} else if (!p25t_tx_ok(hz)) {
+				radio_p25_trunk_talk_end();
+				deny(sm, TXDENY_BAND);
+			} else {
+				sm->p25_talk = true;
+				p25_key(sm, now_ms, hz);
+				if (!sm->p25_tx) {
+					sm->p25_talk = false;	// refused before the engine began: no AIR_TX_DONE to end it
+					radio_p25_trunk_talk_end();
+				}
+			}
+			changed(sm);
+		} else if (r == RADIO_P25T_FAIL) {
+			sm->p25_req = false;
+			radio_p25_trunk_ptt(false);
+			radio_p25_poll(&sm->view.p25);	// its twhy now
+			if (sm->ptt) {
+				deny(sm, TXDENY_TRUNK);
+			}
+			changed(sm);
+		}
+	}
+	if (!sm->p25_tx && sm->view.state != RS_TX) {
+		uint32_t hz = radio_p25_trunk_burst_hz();
+		if (hz != 0) {
+			p25t_burst(sm, hz);
+		}
+	}
+}
+#endif
 
 // Every tick on a P25 channel: the engine's view, the end of a transmission, the receive state
 static void p25_tick(radio_sm_t *sm, uint32_t now_ms)
@@ -4233,6 +4332,12 @@ static void p25_tick(radio_sm_t *sm, uint32_t now_ms)
 		}
 		radio_p25_tx_clear();
 		sm->p25_tx = false;
+#if CONFIG_P25_TRUNK
+		if (sm->p25_talk) {
+			sm->p25_talk = false;
+			radio_p25_trunk_talk_end();	// back to the control channel
+		}
+#endif
 		radio_p25_apply(&sm->view.ch, p25_number(sm), p25_own_id(sm));	// settings sent while it transmitted (RREQ_P25_SET)
 		if (sm->view.state == RS_TX) {
 			fm_tx_end(sm, true, now_ms);	// (the transmitter is off already)
@@ -4243,6 +4348,11 @@ static void p25_tick(radio_sm_t *sm, uint32_t now_ms)
 		}
 		changed(sm);
 	}
+#if CONFIG_P25_TRUNK
+	if (radio_p25_trunked()) {
+		p25t_tick(sm, now_ms);
+	}
+#endif
 	if (sm->p25_tx || sm->view.state == RS_TX || sm->view.state == RS_TX_DENIED) {
 		return;
 	}
@@ -4349,8 +4459,14 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 #endif
 #if CONFIG_P25
 	if (sm->view.ch.mode == RADIO_MODE_P25) {
+#if CONFIG_P25_TRUNK
+		if (radio_p25_trunked()) {
+			p25t_ptt(sm);		// the grant keys it (p25t_tick)
+			return;
+		}
+#endif
 		if (!sm->p25_tx) {
-			p25_key(sm, now_ms);
+			p25_key(sm, now_ms, sm->view.ch.tx_hz);
 		}		// else the last transmission is still ending: p25_tick keys again once it is done
 		return;
 	}
@@ -4398,6 +4514,12 @@ static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms)
 		roger = false;		// the host sends its own audio, tones included
 	}
 #if CONFIG_P25
+#if CONFIG_P25_TRUNK
+	if (radio_p25_trunked()) {
+		radio_p25_trunk_ptt(false);	// a request not granted yet is dropped
+		sm->p25_req = false;
+	}
+#endif
 	if (sm->p25_tx && sm->view.state == RS_TX) {
 		radio_p25_tx_stop();	// the LDU on air is finished and a terminator sent; p25_tick ends it at done
 		return;

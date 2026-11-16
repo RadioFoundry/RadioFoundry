@@ -137,7 +137,7 @@ Ids are only appended and never reused. A kind and a system type that belong tog
 |---|---|---|---|---|
 | 1 | DMR Tier III trunked | T3 | not yet (the trunking engine is not in this tree) | [dmr-trunking-codeplug.md](dmr-trunking-codeplug.md) |
 | 2 | P25 conventional | P25 | `CONFIG_P25` and a board whose air interface receives P25 (`radio_p25_fits`) | [p25-codeplug.md](p25-codeplug.md) |
-| 3 | P25 trunked | P25T | `CONFIG_P25_TRUNK` and a board whose air interface receives P25; receive only ([p25-trunking.md](p25-trunking.md) 6) | [p25-codeplug.md](p25-codeplug.md) |
+| 3 | P25 trunked | P25T | `CONFIG_P25_TRUNK` and a board whose air interface receives P25; receive, and transmit where the system allows it ([p25-trunking.md](p25-trunking.md) 5, 7) | [p25-codeplug.md](p25-codeplug.md) |
 
 | System type | Name | Short | Built when | Spec |
 |---|---|---|---|---|

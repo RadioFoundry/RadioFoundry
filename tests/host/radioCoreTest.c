@@ -257,8 +257,20 @@ static struct {
 	uint32_t units, rot;
 	uint8_t unit[P25_UNIT_BYTES_MAX];
 	uint16_t unit_syms, unit_at;
+	// The inbound side: what the radio sends on cc_in_hz, and how the site answers (SITE_ANS_*)
+	uint32_t cc_in_hz;
+	uint8_t ans_reg, ans_aff, ans_req;
+	uint8_t in[P25_UNIT_BYTES_MAX];
+	uint16_t in_n;
+	uint16_t reg_rx, aff_rx, req_rx, bad_rx;
+	p25_isp_t last;
+	uint8_t out[P25_TSBK_BYTES];	// an answer, sent as the first block of the next out_reps units
+	uint8_t out_reps;
+	uint8_t grant_after;		// a queued request: units until its grant
 } site;
+enum { SITE_ANS_ACCEPT, SITE_ANS_DENY, SITE_ANS_NONE, SITE_ANS_QUEUE };
 static void site_chunk(uint8_t *syms);
+static void site_inbound(const uint8_t *syms, uint16_t n, bool last);
 #endif
 
 static void air_deliver(fake_air_t *to, const uint8_t *syms, uint16_t n)
@@ -334,6 +346,11 @@ static void air_step1(uint8_t i)
 	air_tx_chunk_t c = p->q[0];
 	memmove(p->q, p->q + 1, (size_t)(--p->qn) * sizeof(c));
 	p->sent += c.nsyms;
+#if CONFIG_P25_TRUNK
+	if (i == 0 && site.on && hw.tx_hz == site.cc_in_hz) {
+		site_inbound(c.syms, c.nsyms, (c.flags & AIR_TX_LAST) != 0);	// the site's receiver, not the far radio
+	} else
+#endif
 	air_deliver(far, c.syms, c.nsyms);
 	if (c.flags & AIR_TX_LAST) {
 		p->on = false;
@@ -6663,7 +6680,7 @@ static void test_p25_stored(void)
 }
 
 #if CONFIG_P25_TRUNK
-// ---- P25 trunked (docs/spec/p25-trunking.md 6): a site on the fake air (site above), the far radio its voice ----
+// ---- P25 trunked (docs/spec/p25-trunking.md 7): a site on the fake air (site above), the far radio its voice ----
 #define TS_WACN		0xBEE00u
 #define TS_SYSID	0x2F3u
 #define TS_NAC		0x293u
@@ -6679,6 +6696,18 @@ static void site_unit(void)
 	unsigned n = 0;
 
 	site.units++;
+	if (site.grant_after != 0 && --site.grant_after == 0) {
+		p25_tsbk_t m = { .kind = P25_TSBK_GRANT, .opcode = P25_OP_GRP_V_GRANT };
+		m.u.grant.ch = 0x100A;
+		m.u.grant.tg = site.last.tg;
+		m.u.grant.src = site.last.src;
+		p25_tsbk_make(&m, site.out);
+		site.out_reps = 3;
+	}
+	if (site.out_reps != 0) {
+		site.out_reps--;
+		memcpy(b[n++], site.out, P25_TSBK_BYTES);
+	}
 	if (site.grant_tg != 0) {
 		p25_tsbk_t m = { .kind = P25_TSBK_GRANT, .opcode = P25_OP_GRP_V_GRANT };
 		m.u.grant.svc = site.grant_enc ? P25_SVC_PROTECTED : 0;
@@ -6733,6 +6762,67 @@ static void site_unit(void)
 		p25_block_put(site.unit, (uint8_t)k, b[k]);
 	}
 	site.unit_at = 0;
+}
+
+// The site hears the radio's inbound burst (on cc_in_hz): its TSDU found, decoded and answered as ans_* say
+static void site_answer(const p25_tsbk_t *m)
+{
+	p25_tsbk_make(m, site.out);
+	site.out_reps = 3;
+}
+static void site_inbound(const uint8_t *syms, uint16_t n, bool last)
+{
+	for (uint16_t i = 0; i < n && site.in_n < P25_UNIT_SYMS_MAX; i++) {
+		air_sym_put(site.in, site.in_n++, air_sym_get(syms, i));
+	}
+	if (!last) {
+		return;
+	}
+	uint16_t got = site.in_n;
+	site.in_n = 0;
+	uint8_t blk[P25_TSBK_BYTES];
+	uint16_t nac;
+	uint8_t duid;
+	p25_isp_t q;
+	if (got < 180 || p25_nid_get(site.in, &nac, &duid) < 0 || duid != P25_DUID_TSDU || nac != TS_NAC ||
+	    p25_block_get(site.in, 0, blk) < 0 || !p25_isp_parse(blk, &q)) {
+		site.bad_rx++;
+		return;
+	}
+	site.last = q;
+	p25_tsbk_t m = { 0 };
+	if (q.opcode == P25_ISP_U_REG_REQ) {
+		site.reg_rx++;
+		if (site.ans_reg == SITE_ANS_NONE) {
+			return;
+		}
+		m.kind = P25_TSBK_REG_RSP;
+		m.u.reg = (typeof(m.u.reg)){ .rv = site.ans_reg == SITE_ANS_DENY ? P25_RV_DENY : P25_RV_ACCEPT, .sysid = TS_SYSID,
+					     .id = q.src, .addr = q.src };
+	} else if (q.opcode == P25_ISP_GRP_AFF_REQ) {
+		site.aff_rx++;
+		if (site.ans_aff == SITE_ANS_NONE) {
+			return;
+		}
+		m.kind = P25_TSBK_AFF_RSP;
+		m.u.aff = (typeof(m.u.aff)){ .gav = site.ans_aff == SITE_ANS_DENY ? P25_RV_DENY : P25_RV_ACCEPT, .ann = q.tg,
+					     .tg = q.tg, .dst = q.src };
+	} else {
+		site.req_rx++;
+		if (site.ans_req == SITE_ANS_NONE) {
+			return;
+		}
+		if (site.ans_req == SITE_ANS_ACCEPT) {
+			site.grant_after = 1;
+			return;
+		}
+		m.kind = site.ans_req == SITE_ANS_DENY ? P25_TSBK_DENY : P25_TSBK_QUEUED;
+		m.u.rsp = (typeof(m.u.rsp)){ .svc = q.opcode, .reason = site.ans_req == SITE_ANS_DENY ? 0x59 : 0x2F, .dst = q.src };
+		if (site.ans_req == SITE_ANS_QUEUE) {
+			site.grant_after = 40;	// the grant 2.4 s later
+		}
+	}
+	site_answer(&m);
 }
 
 // One chunk of the control channel: its units back to back
@@ -6819,8 +6909,9 @@ static void test_p25_trunk(void)
 	req(RREQ_PTT, 0);
 	run(100);
 	CHECK(!radio_p25_tx_prepare() && !fair[0].on);
-	// The same with the record's receive only cleared: a trunked channel is never keyed
+	// The same with the record's (the tag's) receive only cleared on a listen-only system
 	chans[3].rx_only = false;
+	stored_trunk.listen_only = true;
 	req(RREQ_ZONE_POS, 0);
 	req(RREQ_ZONE_POS, 2);
 	req(RREQ_PTT, 1);
@@ -6927,10 +7018,153 @@ static void test_p25_trunk(void)
 }
 #endif
 
+#if CONFIG_P25_TRUNK
+// The transmit side on a trunked channel (docs/spec/p25-trunking.md 5, 7): registration and affiliation through the
+// site's inbound receiver, PTT's request, the grant, the call on the voice channel heard by the far radio, the return;
+// queued, denied and unanswered requests
+#define TS_OFFSET	5000000		// identifier 1's transmit offset
+static void test_p25_trunk_tx(void)
+{
+	static char buf[4096];
+	const radio_p25_view_t *v = &sm.view.p25;
+	radio_p25_stats_t st;
+
+	setup_codeplug_p25();
+	add(3, "P25T sys", TS_CC1, RADIO_MODE_DMR, false, 2);
+	chans[3].kind = CODEPLUG_KIND_P25_TRUNK;
+	chans[3].system = 0;
+	memset(&stored_trunk, 0, sizeof stored_trunk);
+	stored_trunk.sys = (p25_tsys_t){ .wacn = TS_WACN, .sysid = TS_SYSID, .cc_nac = TS_NAC };
+	stored_trunk.unit_id = 4321;
+	stored_trunk.ctl_count = 1;
+	stored_trunk.ctl[0] = (p25_ctl_t){ .chan = 0x1001, .rx_hz = TS_CC1 };
+	stored_trunk.ctl_site[0] = 7;
+	stored_trunk.iden_set = 1u << 1;
+	stored_trunk.iden[1] = (p25_iden_t){ .base_hz = TS_BASE, .spacing_hz = 12500, .tx_offset_hz = TS_OFFSET,
+					     .type = P25_IDEN_FDMA };
+	stored_trunk.talk_group = 201;
+	memset(&site, 0, sizeof site);
+	site.cc_hz = TS_CC1;
+	site.cc_in_hz = TS_CC1 + TS_OFFSET;
+	site.voice_hz = TS_VOICE;
+	site.ans_reg = site.ans_aff = SITE_ANS_NONE;
+	site.on = true;
+	start();
+	p25_defaults();
+	aud.feed = true;
+	far_begin(TS_NAC, 1001, false, 201);	// the far radio listens on the voice channel
+
+	// PTT before the system is found: no control channel
+	req(RREQ_ZONE_POS, 2);
+	CHECK(radio_p25_trunked() && radio_p25_trunk_tx() && (v->flags & RADIO_P25_TRUNK_TX));
+	int keyed = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_P25T_WHY_NO_CC);
+	req(RREQ_PTT, 0);
+	// Registration, unanswered: sent on the control channel's inbound frequency, retried
+	run(4000);
+	CHECK(site.reg_rx >= 2 && site.bad_rx == 0 && site.last.src == 4321 && site.last.wacn == TS_WACN && hw.tx_hz == TS_CC1 + TS_OFFSET);
+	CHECK(v->trunk == RADIO_P25_TRUNK_CONTROL && v->treg == P25_REG_RETRY && !hw.keyed && hw.rx_hz == TS_CC1);
+	CHECK(sm.view.state == RS_IDLE && fair[0].keyed_violations == 0);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_P25T_WHY_NOT_REG && hw.tx_calls == keyed + site.reg_rx);
+	req(RREQ_PTT, 0);
+	// Answered (the next round, after the pause): affiliation to the talk group, then ready
+	site.ans_reg = site.ans_aff = SITE_ANS_ACCEPT;
+	run(P25_ACC_RETRY_MS + 1000);
+	CHECK(v->treg == P25_REG_READY && site.aff_rx == 1 && site.last.tg == 201 && site.last.sysid == TS_SYSID);
+	p25t_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25t.tx=1\np25t.reg=4\np25t.req=0\np25t.aff_tg=201\n") != NULL);
+	CHECK(strstr(buf, "p25t.aff_tx=1\np25t.aff_ok=1\n") != NULL && strstr(buf, "p25t.reg_ok=1\n") != NULL);
+	radio_p25_stats(&st);
+	CHECK(st.trunk_bursts == site.reg_rx + site.aff_rx && st.trunk_burst_refused == 0 && st.tx_calls == 0);
+
+	// PTT: the request, the grant, the call on the voice channel's transmit frequency, then back
+	site.ans_req = SITE_ANS_ACCEPT;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_IDLE && sm.p25_req);
+	run(600);
+	CHECK(site.req_rx == 1 && site.last.opcode == P25_ISP_GRP_V_REQ && site.last.tg == 201 && site.last.src == 4321);
+	CHECK(sm.view.state == RS_TX && hw.keyed && hw.tx_hz == TS_VOICE + TS_OFFSET && hw.rx_hz == TS_VOICE);
+	CHECK(v->trunk == RADIO_P25_TRUNK_VOICE && v->treq == P25_REQ_TALK);
+	run(1500);
+	CHECK(sm.view.state == RS_TX && far_heard.starts == 1 && far_heard.call.lc.tgid == 201 && far_heard.call.lc.src == 4321);
+	req(RREQ_PTT, 0);
+	run(600);
+	CHECK(!hw.keyed && sm.view.state != RS_TX && far_heard.ends == 1 && hw.rx_hz == TS_CC1 && v->trunk == RADIO_P25_TRUNK_CONTROL);
+	CHECK(v->treq == P25_REQ_IDLE && fair[0].keyed_violations == 0);
+	radio_p25_stats(&st);
+	CHECK(st.tx_calls == 1);
+	run(1500);
+
+	// Queued, then granted
+	site.ans_req = SITE_ANS_QUEUE;
+	req(RREQ_PTT, 1);
+	run(800);
+	CHECK(v->treq == P25_REQ_QUEUED && sm.view.state == RS_IDLE && !hw.keyed);
+	run(2500);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == TS_VOICE + TS_OFFSET && site.req_rx == 2);
+	req(RREQ_PTT, 0);
+	run(1500);
+	CHECK(!hw.keyed && hw.rx_hz == TS_CC1 && v->trunk == RADIO_P25_TRUNK_CONTROL);
+
+	// Denied
+	site.ans_req = SITE_ANS_DENY;
+	req(RREQ_PTT, 1);
+	run(800);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_P25T_WHY_DENIED);
+	p25t_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25t.deny_svc=0\np25t.deny_reason=89\n") != NULL);
+	req(RREQ_PTT, 0);
+	run(500);
+	// Unanswered: three sends, then refused
+	site.ans_req = SITE_ANS_NONE;
+	uint16_t sent = site.req_rx;
+	req(RREQ_PTT, 1);
+	run(5000);
+	CHECK(sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_P25T_WHY_NO_ANSWER && site.req_rx == sent + 3);
+	req(RREQ_PTT, 0);
+	// Released while waiting: the grant that comes later is not used
+	site.ans_req = SITE_ANS_QUEUE;
+	req(RREQ_PTT, 1);
+	run(500);
+	req(RREQ_PTT, 0);
+	keyed = hw.tx_calls;
+	run(3000);
+	CHECK(!hw.keyed && hw.tx_calls == keyed && v->treq == P25_REQ_IDLE);
+	run(1500);
+
+	// The transmit inhibit: PTT refused, and no burst goes out
+	sm.set.tx_inhibit = true;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_INHIBIT);
+	req(RREQ_PTT, 0);
+	sm.set.tx_inhibit = false;
+
+	// A listen-only system: receive only as before, nothing sent
+	stored_trunk.listen_only = true;
+	req(RREQ_ZONE_POS, 0);
+	sent = site.reg_rx;
+	keyed = hw.tx_calls;
+	req(RREQ_ZONE_POS, 2);
+	run(4000);
+	CHECK(radio_p25_trunked() && !radio_p25_trunk_tx() && v->treg == P25_REG_OFF && site.reg_rx == sent && hw.tx_calls == keyed);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_RX_ONLY && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	stored_trunk.listen_only = false;
+	req(RREQ_ZONE_POS, 0);
+	far_stop();
+	site.on = false;
+}
+
+#endif
+
 static void test_p25(void)
 {
 #if CONFIG_P25_TRUNK
 	test_p25_trunk();
+	test_p25_trunk_tx();
 #endif
 	test_p25_rx();
 	test_p25_stored();
