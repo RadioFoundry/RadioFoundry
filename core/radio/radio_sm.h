@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "radio/radio.h"
+#include "radio/radio_squelch.h"
 #include "radio/scan.h"
 #include "radio/battery.h"
 #include "radio/morse.h"
@@ -31,17 +32,9 @@
 #define RADIO_LED_DENY_STEP_MS	100
 #define RADIO_LED_DENY_STEPS	6
 #define RADIO_TOT_DEFAULT_S	180	// TX time-out
-#define RADIO_SQUELCH_DEFAULT	5
-#define RADIO_SQUELCH_MAX	9
 #define RADIO_VFO_STEP_HZ	12500
 
-// Software squelch on the chip's noise reading (1 dB units, larger = more noise). Level 0 is always open.
-// Level 1..9 opens when noise < RADIO_SQL_OPEN_L1 - (level - 1) * RADIO_SQL_DB_PER_STEP, so 1 = 64 (loose) .. 9 = 40 (tight),
-// and closes once noise rises RADIO_SQL_HYST_DB above that for RADIO_SQL_CLOSE_POLLS polls in a row.
-#define RADIO_SQL_OPEN_L1	64
-#define RADIO_SQL_DB_PER_STEP	3
-#define RADIO_SQL_HYST_DB	3
-#define RADIO_SQL_CLOSE_POLLS	2
+// The squelch levels (RADIO_SQUELCH_*, RADIO_SQL_*): radio/radio_squelch.h
 // A carrier that goes: the noise jumps far over the line at once, while a fade crosses it by a little. A reading this
 // far above the close line (open threshold + RADIO_SQL_HYST_DB) closes after one poll, which halves the squelch tail
 // (radio-features.md 3.5)

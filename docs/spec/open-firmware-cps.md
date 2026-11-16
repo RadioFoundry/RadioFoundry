@@ -289,7 +289,8 @@ header, 5 MBC continuation, 6 data header, 7 Rate 1/2 data, 8 Rate 3/4 data, 9 i
 
 The MMDVM protocol itself is public and is specified separately. The switch works as follows:
 
-- **Entering.** In programming mode, a request whose first byte is 0xE0 and that is at least 3 bytes long switches
+- **Entering.** In programming mode, a request whose first byte is 0xE0, at least 3 bytes long with a plausible
+  MMDVM length and command (a lone 0xE0 is line noise and is dropped), switches
   the radio to hotspot mode, if a hotspot type is configured (MMDVM or BlueDV) and DMR isn't disabled. There is no
   CPS reply. The request is queued as the first MMDVM frame. The radio also stops GPS NMEA output, so MMDVMHost
   doesn't see stray text.

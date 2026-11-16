@@ -2,6 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // The radio view as key=value text for GET_VIEW (docs/spec/debuglink.md 3.7). One key per line; keys are stable
 // (DL_VIEW_VERSION is bumped when one changes meaning or goes away); new keys may appear anywhere in a section.
+#include <string.h>
 #include "config.h"
 #include "board.h"
 #include "hal_time.h"
@@ -171,6 +172,14 @@ static void channel_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "ch.tone_burst=%u\n", c->tone_burst);
 	// The SFR bytes A and B as stored (sfr.h; 0,0 = none); dmr.sfr_role is the role in force
 	dl_text(t, "ch.sfr=%u,%u\n", c->sfr_flag1 ? c->sfr_a : 0u, c->sfr_flag1 ? c->sfr_b : 0u);
+	// The second receiver while it has dual watch's other channel (v->rx2): a signal or a call for us there, and the
+	// DMR call's source. A HIL test sees a call on that channel here: the main receiver never goes there
+	rx2_status_t r2;
+	memset(&r2, 0, sizeof(r2));
+	if (v->rx2 && board.rx2 != NULL) {
+		board.rx2->status(&r2);
+	}
+	dl_text(t, "rx2.active=%u\nrx2.src=%u\n", r2.tuned && r2.active, (unsigned)r2.src);
 }
 
 // mtu_lines and ppp_lines are not inlined: net_link_section is, into debuglink_view_section, which is on the host
@@ -228,6 +237,7 @@ static void hotspot_section(dl_text_t *t)
 	dl_text(t, "hostlink=%s\n", (unsigned)m < 4 ? modes[m] : "?");
 	dl_text(t, "hostlink.left=%s\n", (unsigned)l < 5 ? leaves[l] : "?");
 	dl_text(t, "hostlink.noise=%lu\n", (unsigned long)hostlink_hotspot_noise());
+	dl_text(t, "hostlink.noise_bytes=%u\n", (unsigned)hostlink_noise_bytes());
 	dl_text(t, "usb.network=%u\nusb.net_up=%u\n", hostlink_network_mode(),
 		(board.netif != NULL) && board.netif->up());
 #if CONFIG_DMR_IP_GATEWAY
@@ -325,8 +335,18 @@ static void sfr_section(dl_text_t *t)
 	dl_text(t, "sfr.tx_bursts=%u\nsfr.tx_idle=%u\nsfr.tx_starts=%u\nsfr.up=%u\nsfr.up_lost=%u\n",
 		(unsigned)st->tx_bursts, (unsigned)st->tx_idle, (unsigned)st->tx_starts,
 		(unsigned)st->up_bursts, (unsigned)st->up_lost);
-	dl_text(t, "sfr.tx_beacons=%u\nsfr.tx_gaps=%u\nsfr.evq_drops=%u\n", (unsigned)st->tx_beacons,
-		(unsigned)st->tx_gaps, (unsigned)c.evq_drops);
+	dl_text(t, "sfr.tx_beacons=%u\nsfr.tx_gaps=%u\nsfr.evq_drops=%u\nsfr.split=%u\n", (unsigned)st->tx_beacons,
+		(unsigned)st->tx_gaps, (unsigned)c.evq_drops, st->tx_split);
+	// The second transmitter (hal_dmr_modem_t.tx_split_stats): ready, the last transmission's place, its counts
+	dmr_split_stats_t sp;
+	memset(&sp, 0, sizeof(sp));
+	if (board.dmr != NULL && board.dmr->tx_split_stats != NULL) {
+		board.dmr->tx_split_stats(&sp);
+	}
+	dl_text(t, "sfr.split_ready=%u\nsfr.split_remote=%u\nsfr.split_events=%u\nsfr.split_bursts=%u\n", sp.ready,
+		sp.remote, (unsigned)sp.events, (unsigned)sp.bursts);
+	dl_text(t, "sfr.split_ends_forced=%u\nsfr.split_fallbacks=%u\n", (unsigned)sp.ends_forced,
+		(unsigned)sp.fallbacks);
 	// Why bursts were ignored: on the outbound slot, another color code; the last one's CC and type (sfrRunner.h)
 	dl_text(t, "sfr.ignored_slot=%u\nsfr.ignored_cc=%u\nsfr.last_ignored=%02x\n", (unsigned)st->rx_ignored_slot,
 		(unsigned)st->rx_ignored_cc, st->last_ignored);

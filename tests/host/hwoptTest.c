@@ -22,6 +22,11 @@ void radio_get_view(radio_view_t *v)
 	v->state = radio_state;
 }
 
+radio_state_t radio_get_state(void)
+{
+	return (radio_state_t)radio_state;
+}
+
 static int8_t rev = HWOPT_NONE;
 static int8_t mode;
 static bool mode_ok = true;

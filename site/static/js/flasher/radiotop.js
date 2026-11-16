@@ -64,7 +64,9 @@ const screenShot = (radio, sc) => (radio?.gallery && SCREEN_SHOTS[sc] ? `${ROOT}
 // no picture of its screens) | any (the state doesn't matter yet: no screen line in the caption)
 // knob: null | "cycle" (off, then on) | "on"
 // note: a line for the caption in place of the LED's, while the LED says nothing
-export function radioTop(radio, initial = {}) {
+// hasLed false: the chip the cable reaches drives no LED (they are on another SoC): none is drawn and the caption names
+// no blink
+export function radioTop(radio, initial = {}, { hasLed = true } = {}) {
 	const src = pictureSrc(radio);
 	const pct = radio?.frame_geometry?.screen_pct;
 	const shot = h("img", { alt: "", class: "rt-shot", hidden: true });
@@ -76,17 +78,17 @@ export function radioTop(radio, initial = {}) {
 	const label = h("strong", {});
 	const lamp = h("div", { class: "rt-lamp" }, svg("svg", { viewBox: "0 0 24 24", width: 24, height: 24, "aria-hidden": "true" }, glow, led), label);
 	const caption = h("p", { class: "rt-caption" });
-	const el = h("figure", { class: "radio-top" }, pic, lamp, caption);
+	const el = h("figure", { class: "radio-top" }, pic, hasLed ? lamp : null, caption);
 	const set = ({ led: l = "off", screen: sc = "off", knob = null, note = null } = {}) => {
 		el.dataset.led = l;
 		el.dataset.screen = sc;
 		el.dataset.knob = knob || "";
-		label.textContent = l === "off" ? "" : t(`flash.c7.visual.tag_${l}`);
+		label.textContent = l === "off" || !hasLed ? "" : t(`flash.c7.visual.tag_${l}`);
 		const url = screenShot(radio, sc);
 		shot.hidden = !url;
 		if (url && shot.getAttribute("src") !== url) shot.setAttribute("src", url);
 		const words = [knob === "cycle" ? t("flash.c7.visual.cycle") : knob === "on" ? t("flash.c7.visual.on") : null,
-			note || t(`flash.c7.visual.led_${l}`), sc === "any" ? null : t(`flash.c7.visual.screen_${sc}`)].filter(Boolean);
+			note || (hasLed ? t(`flash.c7.visual.led_${l}`) : null), sc === "any" ? null : t(`flash.c7.visual.screen_${sc}`)].filter(Boolean);
 		caption.replaceChildren(...words.map((w) => h("span", {}, w)));
 		pic.setAttribute("aria-label", [radio?.name, ...words].filter(Boolean).join(" "));
 		// restart the animation on every change, so "done" plays its three flashes from the start

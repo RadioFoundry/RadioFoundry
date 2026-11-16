@@ -117,3 +117,14 @@ export class Selection {
 		return `make BOARD=${this.radio.id}${args.length ? " " + args.join(" ") : ""}`;
 	}
 }
+
+// The selection for a radio's second chip (radios.json flash.second, with its own board's switches per variant), built
+// with the radio's: its configuration of the same variant, less what the radio's selection turned off (a radio built
+// without DMR gets a second receiver without it). What the selection added is the main chip's alone.
+export function secondSelection(sel, second) {
+	const s = new Selection({ id: second.board, config: second.config, required: second.required || [], unsupported: [], not_written: [] },
+		sel.features, sel.variants);
+	s.useVariant(sel.base);
+	for (const n of sel.diff(sel.base).removed) s.set(n, false);
+	return s;
+}

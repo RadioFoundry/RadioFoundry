@@ -24,6 +24,8 @@ typedef struct {
 	uint32_t starve_ms;	// when it did (the last feed before the reset)
 	uint32_t last_pass_ms;	// the host link task's last loop pass (watchdog_task_pass)
 	bool passed;		// it has passed once: the stall check runs from then on
+	uint32_t link_limit_ms;	// the link watch: restart after this long without a debug frame, 0 off
+	uint32_t link_last_ms;	// its last frame
 } watchdog_state_t;
 
 // The stall check's limit: the host link's task blocked this long (waiting, so the idle task still feeds) is stuck. Far
@@ -45,6 +47,11 @@ void watchdog_task_pass(uint32_t now_ms);
 // The stall check's test: true once the host link's task last passed WATCHDOG_STALL_MS ago or more, after its first
 // pass and unless a bench test starves the watchdog
 bool watchdog_stalled(uint32_t now_ms);
+// The link watch (DL_CMD_LINK_HOLD): a debug client asks that the radio restart if no valid frame comes for limit_ms
+// (0 stops it), so a dead link recovers without a power cycle. cause (from the tick interrupt) gives the record's cause
+void watchdog_link_watch(uint32_t now_ms, uint32_t limit_ms, uint32_t (*cause)(uint32_t now_ms));
+void watchdog_link_frame(uint32_t now_ms);
+bool watchdog_link_lost(uint32_t now_ms);
 // The hang check's test: true once the last feed is at least three quarters of timeout_ms ago, after the idle task has
 // run once and unless a bench test starves the watchdog on purpose (that test times the hardware reset). timeout_ms 0
 // (not running) never hangs

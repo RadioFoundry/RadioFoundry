@@ -380,10 +380,11 @@ static bool sfr_dualpath_rx(void)
 #endif
 
 // Burst A has no color code on air (voice sync where B-F have the EMB): whatever CC the modem gives it is not the
-// burst's (0x52 at A's report has held a junk one on the bench)
+// burst's (0x52 at A's report has held a junk one on the bench). Nor is that of a B-F whose EMB failed its check
+// (crc_ok): its CC is noise, while its voice frames carry their own FEC
 static bool cc_known(const dmr_burst_t *b)
 {
-	return !(b->kind == DMR_BURST_VOICE && b->voice_index % 6 == 0);
+	return !(b->kind == DMR_BURST_VOICE && (b->voice_index % 6 == 0 || !b->crc_ok));
 }
 
 // The slot number is only known through a repeater (CACH) or from the TDMA direct mode sync
@@ -709,7 +710,8 @@ static void rx_play(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 	s.last_voice_ms = now;
 	s.last_voice_slot = slot;
 
-	bool enc = b->pi || (s.view.caller.svc & DMR_SVC_PRIVACY) || s.view.caller.pi_header;
+	// The PI bit is in the EMB: one that failed its check says nothing
+	bool enc = (b->pi && b->crc_ok) || (s.view.caller.svc & DMR_SVC_PRIVACY) || s.view.caller.pi_header;
 
 	if (enc && !s.view.caller.encrypted) {
 		s.view.caller.encrypted = true;
@@ -777,7 +779,7 @@ static void dual_flush(void)
 // A voice burst of the call to play. Encrypted voice can't be checked (the FEC is over the scrambled bits): played
 static void dual_take(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 {
-	bool enc = b->pi || (s.view.caller.svc & DMR_SVC_PRIVACY) || s.view.caller.pi_header;
+	bool enc = (b->pi && b->crc_ok) || (s.view.caller.svc & DMR_SVC_PRIVACY) || s.view.caller.pi_header;
 	uint8_t bad = enc ? 0 : frames_bad(b->payload);
 
 	if (bad == 0 && s.vq_n == 0) {
@@ -986,8 +988,9 @@ static bool rx_header_lc(const dmr_burst_t *b, uint8_t mask, uint8_t lc[DMR_LC_B
 	return false;
 }
 
-// A burst of another color code than ours (the modem doesn't filter with any_cc, polite to all or two CCs). Burst A is
-// never filtered on its color code (cc_known: every A was dropped here once, three frames concealed per superframe)
+// A burst of another color code than ours (the modem doesn't filter with any_cc, polite to all or two CCs). Burst A, or a
+// B-F whose EMB failed its check, is never filtered on its color code (cc_known: every A was dropped here once, three
+// frames concealed per superframe, and a dropped bad-EMB burst lost three good frames each time)
 static bool cc_other(const dmr_burst_t *b)
 {
 	return !s.cfg.listen.any_cc && cc_known(b) && b->cc != s.cfg.cc &&

@@ -185,6 +185,25 @@ test("backup: unticking the program memory says such a backup can't restore the 
 	assert.equal(note.hidden, false, "shown once it is unticked");
 });
 
+test("led_hints false: the steps describe no LED, on the radio's own chip or its second", () => {
+	const quiet = json("radios.json").radios.filter((r) => fb.c7000.boards[r.flash.board] && r.flash.led_hints === false);
+	for (const r of quiet) {
+		const s = r.flash.second;
+		assert.ok(!s || s.led_hints === false, `${r.id}: its second SoC follows the radio`);
+		// as app.js secondRadio() makes it
+		const chips = [r, ...(s ? [{ ...r, id: s.board, second_of: r.id, flash: { ...s, via: r.flash.board } }] : [])];
+		for (const radio of chips) {
+			const state = { radio, task: "install", forward() {}, data: { fb } };
+			c7ui.init({ S: state, fb: () => fb, helpLink: () => null, reset() {} });
+			state.c7 = { log: { add() {}, el: new El("div") }, stream: null };
+			const box = c7ui.connectView();
+			const lamps = (e) => (e instanceof El ? (e.className === "rt-lamp" ? 1 : 0) + e.children.reduce((n, c) => n + lamps(c), 0) : 0);
+			assert.equal(lamps(box), 0, `${radio.id}: no LED drawn on the radio's picture`);
+			assert.doesNotMatch(box.textContent, /\bLEDs?\b|blink/i, `${radio.id}: ${box.textContent}`);
+		}
+	}
+});
+
 test("backup: a backup made through an untried stock build offers its program memory read with a report", async (t) => {
 	// what the run touches of the browser: the leave warning and the backup's download
 	globalThis.window ??= { addEventListener() {}, removeEventListener() {} };
@@ -529,4 +548,114 @@ test("backup: after Restart Radio the task ends on a finished screen, not at the
 	assert.equal(state.step, 0);
 	assert.equal(state.c7, null, "the install starts with a new session: its check step reads the radio itself");
 	assert.equal(state.backupDone, undefined, "nothing tells the next task its backup is done");
+});
+
+// A radio with a second chip (flash.second): the write step installs both, one after the other (c7000ui.js S.chain)
+const twoChip = json("radios.json").radios.find((r) => r.flash.second && fb.c7000.boards[r.id]);
+const installImage = (r, seed) => {
+	const img = Uint8Array.from({ length: 8192 }, (_, i) => (i * seed + 1) & 0xFF);
+	const fs = r.flash.first_stage;
+	if (fs) {	// an install image: the first stage's signature, then RadioFoundry's reset handler (iap.js checkInstallImage)
+		img.set(fs.head.match(/../g).map((x) => parseInt(x, 16)), 0);
+		img.set([0x80, 0xC0, 0x20, 0x70], fs.size);
+	}
+	return img;
+};
+function twoChipHost({ second = true } = {}) {
+	globalThis.window ??= { addEventListener() {}, removeEventListener() {} };
+	if (!("classList" in El.prototype)) Object.defineProperty(El.prototype, "classList", { get() { return { add() {}, remove() {} }; } });
+	const C = fb.c7000;
+	const forwards = [], calls = { next: 0, render: 0, exit: 0, writes: [], resets: [] };
+	const other = { ...twoChip, id: twoChip.flash.second.board, second_of: twoChip.id, flash: { ...twoChip.flash.second, via: twoChip.flash.board } };
+	const state = { radio: twoChip, task: "install", step: 4, forward: (b) => forwards.push(b), data: { fb, radios: [twoChip] }, fakeC7: {},
+		firmware: { image: installImage(twoChip, 7), source: "radio image", manifest: { version: "t" },
+			second: second ? { image: installImage(other, 11), source: "second image", manifest: { version: "t" } } : null } };
+	const stub = (id = state.radio.id) => ({ attach: async () => true, dump: async () => new Uint8Array(C.app_start).fill(0xA5), ledSequence: async () => {},
+		resetChip: async () => { calls.resets.push(id); }, passExit: async () => { calls.exit++; return true; },
+		writeProgram: async (data, start, { onSector }) => {
+			onSector(C.app_start, "todo");
+			onSector(C.app_start, "written");
+			calls.writes.push(state.radio.id);
+			return { written: 1, same: 0 };
+		} });
+	const session = () => ({ log: { add() {}, el: new El("div") }, stream: null, decision: { mode: "keep" }, analysis: {}, stub: stub() });
+	state.c7 = session();
+	c7ui.init({ S: state, fb: () => fb, helpLink: () => null, reset() {}, flashStarted: () => 0, flashFinished() {}, flashMark() {},
+		errorText: (e) => e.message, next() { calls.next++; }, render() { calls.render++; }, stepName: () => "write",
+		// as app.js toSecond()
+		toSecond() {
+			if (!state.firmware.second) return false;
+			state.first = { radio: state.radio, firmware: state.firmware };
+			state.radio = other;
+			state.firmware = state.firmware.second;
+			return true;
+		} });
+	return { state, forwards, calls, other, session };
+}
+
+test("a radio with a second chip: one Install writes the radio's chip and goes on in the same step, the second chip's write starts by itself", async () => {
+	assert.ok(twoChip, "a radio with flash.second in radios.json");
+	const { state, forwards, calls, other, session } = twoChipHost();
+	const { allBackends } = await import("../static/js/flasher/backends.js");
+	const backend = allBackends().find((b) => b.id === "c7000-stub");
+	const box = c7ui.writeView();
+	assert.doesNotMatch(box.textContent, /takes two firmware images/, "no separate narration: one card of both parts");
+	assert.match(box.textContent, new RegExp(`^Install${twoChip.name}.*radio image.*Receiver B.*second image`));
+	assert.equal(state.chain.stage, "write");
+	assert.ok(!backend.noBack("write"), "Back still leads to the radio's own steps before its write");
+	forwards.at(-1).click();
+	for (let i = 0; i < 200 && !calls.render; i++) await sleep(20);
+	assert.deepEqual(calls.writes, [twoChip.id]);
+	assert.equal(state.chain.stage, "connect", "on to the second chip, still in the write step");
+	assert.equal(state.radio.id, other.id);
+	assert.deepEqual(calls.resets, [], "the radio's chip doesn't restart: its loader passes the cable to the second chip");
+	assert.ok(state.c7.main, "the radio chip's loader goes with the second chip's session");
+	assert.equal(calls.next, 0, "no step of its own in between");
+	assert.ok(backend.noBack("write"), "no Back into the first chip's steps once it is written");
+	// the second chip's loader answers through the first (the connect stage, not run here): its write needs no click
+	state.c7 = { ...session(), main: state.c7.main, passing: true };
+	state.chain.stage = "write2";
+	const shown = forwards.length;
+	const part = c7ui.writeView();
+	assert.match(part.textContent, new RegExp(`^Install${twoChip.name}.*Written. It restarts once receiver B is done.*Receiver B.*Installing`));
+	for (let i = 0; i < 200 && !calls.next; i++) await sleep(20);
+	assert.deepEqual(calls.writes, [twoChip.id, other.id], "written without a click");
+	assert.ok(forwards.slice(shown).every((b) => !b || !b.listeners || b.disabled !== undefined), "its Install button was never needed");
+	assert.equal(calls.exit, 1, "the radio chip's loader takes the cable back");
+	assert.deepEqual(calls.resets, [other.id, twoChip.id], "the second chip restarts, then the first");
+	assert.equal(calls.next, 1, "on to the done step");
+	assert.equal(state.chain.stage, "done");
+	assert.ok(backend.noBack("done"));
+});
+
+test("a radio with a second chip and no image for it: the radio's chip alone, as on any radio", async () => {
+	const { state, forwards, calls } = twoChipHost({ second: false });
+	const box = c7ui.writeView();
+	assert.doesNotMatch(box.textContent, /Receiver B/);
+	assert.equal(state.chain, null);
+	forwards.at(-1).click();
+	for (let i = 0; i < 200 && !calls.next; i++) await sleep(20);
+	assert.equal(calls.next, 1);
+	assert.equal(calls.render, 0);
+});
+
+test("the second chip's stages: the steps' own ways back stay within them", async () => {
+	const { state, calls } = twoChipHost();
+	c7ui.writeView();
+	// a write that lost its loader goes two steps back: from the second chip's write, to its connect stage
+	state.chain.stage = "write2";
+	state.c7.decision = { mode: "keep" };
+	state.c7.stub.writeProgram = async () => { throw new Error("cable"); };
+	state.c7.stub.attach = async () => false;
+	state.radio = { ...twoChip, id: twoChip.flash.second.board, second_of: twoChip.id, flash: { ...twoChip.flash.second, via: twoChip.flash.board } };
+	state.first = { radio: twoChip, firmware: state.firmware };
+	state.firmware = state.firmware.second;
+	const forwards = [];
+	state.forward = (b) => forwards.push(b);
+	c7ui.writeView();
+	for (let i = 0; i < 200 && !/again/i.test(forwards.at(-1)?.textContent || ""); i++) await sleep(20);
+	forwards.at(-1).click();
+	for (let i = 0; i < 200 && !calls.render; i++) await sleep(20);
+	assert.equal(state.chain.stage, "connect");
+	assert.equal(state.step, 4, "the page stays on the write step");
 });

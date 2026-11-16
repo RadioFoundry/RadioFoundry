@@ -212,6 +212,9 @@ static uint8_t probe_start(uint16_t hz, uint16_t amp, uint8_t flags)
 	}
 	probing = true;
 	speaker_route = (flags & PROBE_FLAG_SPEAKER) != 0;
+	if (aud->spk_beep != NULL) {
+		aud->spk_beep(false);	// the probe's tone at the volume, not a beep's gain left from the last stream
+	}
 	if (aud->speaker_pcm != NULL) {
 		aud->speaker_pcm(speaker_route);
 	}

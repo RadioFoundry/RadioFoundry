@@ -40,6 +40,11 @@ typedef struct {
 	// Optional: speaker audio other than silence is still queued or playing (a beep's tail in the driver's buffers).
 	// NULL: none is held past the block callback
 	bool (*spk_pending)(void);
+	// Optional: the speaker blocks from now on hold beeps only (true: a beep's own stream, or the voice stream with no
+	// call playing) or may hold received voice (false). Called from the block callback, every block. A board whose
+	// PCM speaker gain follows the volume plays beep-only blocks at its fixed beep gain instead, so beeps sound at
+	// beep_level whatever the volume, and none at volume 0. NULL: beeps follow the volume (radio-features.md 4)
+	void (*spk_beep)(bool on);
 	// Optional: the stream's timing (debug link view audio.*). NULL: not counted
 	void (*stream_stats)(audio_stream_stats_t *out);
 } hal_audio_t;

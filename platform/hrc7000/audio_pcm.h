@@ -18,6 +18,9 @@
 void hrc_audio_pcm_attach(hrc7000_t *modem, void (*speaker_pcm)(bool on));
 // Keep speaker PCM out of the prompt FIFO while another user owns it (APRS AFSK); what is queued plays after
 void hrc_audio_pcm_hold(bool on);
+// A gain on the speaker samples, Q15 (32768 = as they come), for a volume below the codec DAC's floor
+// (hrc7000_sample_gain_q15). From the next block on
+void hrc_audio_pcm_spk_gain(uint16_t q15);
 
 // The board's AUDIO_CONTROL b7 (ring play: speaker PCM, APRS AFSK), held clear while the gate is closed. Interrupts on
 // or off
@@ -62,6 +65,7 @@ void hrc_audio_pcm_mic_stats(uint8_t *level, uint16_t *peak, uint32_t *halves, b
 #if !CONFIG_DMR
 static inline void hrc_audio_pcm_attach(hrc7000_t *modem, void (*speaker_pcm)(bool on)) { (void)modem; (void)speaker_pcm; }
 static inline void hrc_audio_pcm_hold(bool on) { (void)on; }
+static inline void hrc_audio_pcm_spk_gain(uint16_t q15) { (void)q15; }
 // No DMR, no gate: ring play is the board's alone (APRS AFSK)
 static inline void hrc_audio_pcm_ring(hrc7000_t *modem, bool want)
 {

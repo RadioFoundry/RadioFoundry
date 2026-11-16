@@ -355,6 +355,9 @@ void beep_audio_block(const int16_t *mic, int16_t *spk, void *ctx)
 	if (!on) {
 		cb_lead = 0;
 	}
+	if (aud != NULL && aud->spk_beep != NULL) {
+		aud->spk_beep(true);	// nothing but the beep in this stream
+	}
 	if (aud != NULL && aud->speaker_pcm != NULL) {
 		aud->speaker_pcm(on);	// every block: the voice stream may have switched the route since (cheap when equal)
 	}

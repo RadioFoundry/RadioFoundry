@@ -30,8 +30,16 @@ static void handler(const uint8_t *buf, size_t len, uint32_t now_ms)
 	cps_feed(buf, len, now_ms);
 }
 
+static uint32_t answered(void)
+{
+	cps_stats_t s;
+
+	cps_get_stats(&s);
+	return s.requests - s.refused;
+}
+
 void cps_openfw_start(void)
 {
 	cps_init(&io);
-	hostlink_set_cps_handler(handler, cps_mid_request);
+	hostlink_set_cps_handler(handler, cps_mid_request, cps_request_start, answered);
 }

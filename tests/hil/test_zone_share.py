@@ -28,6 +28,7 @@ from test_dmr_ip import _setup
 from hil_config import rig
 
 ZS_PORT = 4100
+ZS_GROUP = 998877       # no codeplug's contact: the digits typed on the share screen leave only the typed-ID rows
 
 
 def _zs(radio):
@@ -80,6 +81,11 @@ def test_send_channel_heard(radio, sdr_bench, pytestconfig):
         radio.press("hash")
         radio.press(_send_channel_menu(radio))
         _screen(radio, "zone_share_to")
+        # A typed talkgroup, whatever the codeplug's first contact is: a group goes unconfirmed, while a private ID
+        # waits for an ACK the bench doesn't send. The rows for a typed ID are private first, then the talkgroup
+        for digit in str(ZS_GROUP):
+            radio.press(digit)
+        radio.press("down")
         radio.press("ok")
         v = radio.wait_for(lambda x: int(x.get("zs.sends", 0)) > int(before["zs.sends"]) and
                            x.get("zs.send_state") in ("2", "3"), timeout=20, sections=("air",),
@@ -91,6 +97,7 @@ def test_send_channel_heard(radio, sdr_bench, pytestconfig):
     print("bench heard:", [{k: p.get(k) for k in ("dpf", "group", "dst", "complete", "crc_ok")} for p in ours])
     if not ours:
         pytest.fail("the bench heard no datagram to port 4100 from the radio")
+    assert ours[0].get("group") and ours[0].get("dst") == ZS_GROUP, ours[0]
     payload = bytes.fromhex(ours[0]["payload"])
     # Fragment 1 of 1 (one channel fits one message): version 1, type 1, index 0 count 1, offset 0, then the record,
     # which starts with version 1 and its length (the rest of the payload)

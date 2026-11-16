@@ -21,7 +21,7 @@ import * as explain from "../static/js/flasher/explain.js";
 import { pictureSrc } from "../static/js/flasher/radiotop.js";
 import { readRadio, makeBundle, openBundle, bundleFolder, notBundle, bundleName, CODEPLUG_SPAN } from "../static/js/flasher/backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug } from "../static/js/flasher/restore.js";
-import { Selection } from "../static/js/flasher/select.js";
+import { Selection, secondSelection } from "../static/js/flasher/select.js";
 import { codecPresent, decideCodec, DecisionError } from "../static/js/flasher/decide.js";
 import { findKey, readBootKey } from "../static/js/flasher/bootkey.js";
 import { codecSegments, readCodec } from "../static/js/flasher/codecsave.js";
@@ -304,10 +304,12 @@ test("a known build without a codec map: the version named, the file offered, th
 	assert.deepEqual(explain.supportedFiles(c, "b"), { files: ["B 001 build", "b-002.bin"], also: ["a program flash read of the radio"] });
 	assert.deepEqual(explain.supportedFiles(c, "d"), { files: [], also: ["a program flash read of the radio"] });
 	assert.deepEqual(explain.supportedFiles({ boards: {} }, "q"), { files: [], also: [] });
-	// every C-SKY radio in the data lists at least one stock file, profiles first
+	// every C-SKY radio in the data lists at least one stock file, profiles first: those of the boards whose codec it
+	// takes before its own (codec_boards: the GD-88's B lists A's files first)
 	for (const id of Object.keys(fb.c7000?.boards || {})) {
 		const { files } = explain.supportedFiles(fb, id);
-		const named = (fb.c7000.profiles || []).filter((p) => p.board === id && p.stock_file).map((p) => p.name);
+		const named = (fb.c7000.boards[id].codec_boards || [id]).flatMap((b) =>
+			(fb.c7000.profiles || []).filter((p) => p.board === b && p.stock_file).map((p) => p.name));
 		assert.deepEqual(files.slice(0, named.length), named, id);
 	}
 	// the notice folds a long list, never a short one
@@ -638,6 +640,27 @@ test("a la carte selection keeps dependencies and finds prebuilt variants", () =
 	assert.ok(m.notWritten("DTMF") && !m.supported("DTMF"));
 	m.set("DTMF", true);
 	assert.ok(!m.on.has("DTMF"), "not written for this radio");
+});
+
+test("a radio's second chip is built with it: its own switches of the same variant, less what the radio's selection turned off", () => {
+	const radio = json("radios.json").radios.find((r) => r.flash.second);
+	const second = radio.flash.second;
+	const features = json("features.json").features, variants = json("variants.json").variants;
+	const s = new Selection(radio, features, variants);
+	for (const v of variants) {
+		s.useVariant(v.id);
+		assert.deepEqual([...secondSelection(s, second).on].sort(), second.config[v.id], `${v.id}: the second board's own configuration`);
+	}
+	s.useVariant("full");
+	// what the radio adds or has beyond the second chip's switches is the radio's alone
+	assert.ok(radio.config.full.some((n) => !second.config.full.includes(n)), "the radio has switches its second chip lacks");
+	assert.ok(second.config.full.includes("DMR") && s.on.has("DMR"));
+	s.set("DMR", false);
+	const b = secondSelection(s, second);
+	assert.ok(!b.on.has("DMR"), "a radio built without DMR gets a second receiver without it");
+	for (const f of features) if (b.on.has(f.name)) assert.ok(!(f.needs?.all || []).includes("DMR"), `${f.name} needs DMR`);
+	assert.ok(second.required.every((n) => b.on.has(n)), "what the second board requires stays");
+	assert.equal(b.radio.id, second.board);
 });
 
 test("codeplug formats", () => {

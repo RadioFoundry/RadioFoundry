@@ -87,6 +87,11 @@ The runner assumes these of `hal_dmr_modem_t`; they are the open work for each r
    with `host_crc` sent as they are; `DMR_BURST_EMPTY`: nothing sent in that slot (received with `tx_listen`).
 5. `DMR_EV_TX_SLOT_STARTED` once per burst taken from its queue, `DMR_EV_TX_DONE` after `tx_end` has drained it.
 6. An SFR channel never switches to repeater (RMO) mode on BS sync (gotchas 14.7).
+7. Optional, `tx_split(on)`: a radio with a second transmitter on another SoC sends the repeat there, while this modem
+   only receives. The runner turns it on when it starts and off when it stops (`sfr.split` in the view); without it
+   (NULL, or false: the other SoC is down) the runner keys this modem as above. The receiver then never turns around
+   for our bursts: a turnaround on the same chip costs inbound bursts (gotchas 14.13). The link and the other SoC's
+   part: [rx2-link.md](rx2-link.md) 2.4.
 
 Status per modem driver:
 

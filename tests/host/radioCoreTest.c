@@ -5609,6 +5609,27 @@ static void test_sfr_cwid(void)
 	run(6000);
 	CHECK(sm.cw_phase == 0 && sm.view.dmr.sfr_cwid_cut == 2 && sm.sfr_rpt && hw_mode == RADIO_MODE_DMR);
 
+	// A radio with a second transmitter (tx_split): on with the role, off for the ID, on again after it, and off
+	// when the role ends. Left on, every later DMR transmission would go to the second transmitter
+	chans[4].sfr_flag1 = 0;
+	reload_channel();
+	strcpy(sm.radio_name, "q0bis");
+	sim.split_offer = true;
+	chans[4].sfr_flag1 = SFR_CHANNEL_FLAG1_ENABLED;
+	reload_channel();
+	CHECK(sm.sfr_rpt && sim.split);
+	sfr_call_through();
+	for (int i = 0; i < 2000 && sm.cw_phase == 0; i++) {
+		run(5);
+	}
+	CHECK(sm.cw_phase != 0 && !sim.split);
+	run(4500);
+	CHECK(sm.cw_phase == 0 && sm.sfr_rpt && sim.split);
+	chans[4].sfr_flag1 = 0;
+	reload_channel();
+	CHECK(!sm.sfr_rpt && !sim.split);
+	sim.split_offer = false;
+
 	memcpy(sm.radio_name, name0, sizeof(name0));
 	set = sm.set;
 	set.sfr_cwid = 0;

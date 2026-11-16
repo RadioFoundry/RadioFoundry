@@ -18,6 +18,7 @@ radio until a power cycle, as before.
 | Assert | 4 | `configASSERT` (the platforms' `FreeRTOSConfig.h`) | the line | the caller of the assertion |
 | Hang | 5 | the hang check in the tick interrupt (1.1), with `CONFIG_WATCHDOG` | ms since the last watchdog feed | where the interrupted task was |
 | Stall | 6 | the stall check in the tick interrupt (1.1.1), with `CONFIG_WATCHDOG` | ms since the host link's task last passed its loop | where the interrupted task was (often the idle task's): the stalled task's wait is in the snapshot (1.2) |
+| Link lost | 7 | the link watch in the tick interrupt (1.1.2), with `CONFIG_WATCHDOG` | the port's state (1.1.2) | where the interrupted task was |
 
 The capture runs with interrupts off, on a stack of its own (1 KB), and calls nothing that waits. It turns the
 transmitter off first (8), with or without the crash log. It adds the running
@@ -75,6 +76,22 @@ link's loop (`core/hostlink/hostlink.c`) and the tick.
 | Never | before the loop's first pass, with the watchdog stopped, or while a bench test starves the idle task |
 | Record | kind 6, `cause` the ms since the last pass; the snapshot (1.2) shows what the host link's task (`host`) waits on |
 | Then | as the hang check: the store and the restart, so the link comes back without a power cycle |
+
+#### 1.1.2 The link watch
+
+A debug client can ask for this with LINK_HOLD ([debuglink.md](debuglink.md) 3.27). If no valid frame comes for its
+limit, the tick interrupt turns the transmitter off, stores a record and restarts the radio. The stall check covers a
+stuck host link task; this covers a task that runs while the port no longer delivers frames. A client that never asks
+is never watched. Code: `watchdog_link_watch` and `watchdog_link_lost` in `core/app/watchdog.c`.
+
+| `cause` bits | Meaning |
+|---|---|
+| 31-24 | the port's mode: 0 idle, 1 hotspot, 2 CPS, 3 TNC |
+| 23-16 | seconds since the port last gave a byte, 255 for that long or more, or never |
+| 15-0 | debug frames with a bad CRC since start |
+
+A client still sending when the record was made tells the failures apart: bytes seen recently with bad frames means a
+corrupted line or a mode that swallows them; no byte for the whole limit means the port stopped receiving.
 
 ### 1.2 The other tasks
 

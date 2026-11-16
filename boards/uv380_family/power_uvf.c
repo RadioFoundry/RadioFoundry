@@ -9,6 +9,7 @@
 #include "hal_time.h"
 #include "radio/power_switch.h"
 #include "audio/miclevel/miclevel.h"
+#include "power/knob/knob.h"
 
 enum { CH_VOLUME, CH_BATTERY, CH_MIC, CH_TEMP, CH_COUNT };
 #define SCANS			16		// about 220 us per scan at 9 MHz ADC clock and 480-cycle sampling: 3.5 ms window
@@ -19,8 +20,6 @@ enum { CH_VOLUME, CH_BATTERY, CH_MIC, CH_TEMP, CH_COUNT };
 // Volume pot (spec 11.2): log taper, the breakpoint sits near the middle of the rotation; the ends and the break are the
 // radio's (uvf_variant)
 #define VOL_MIN			((int32_t)uvf_variant.vol_min)
-#define VOL_BREAK		((int32_t)uvf_variant.vol_break)
-#define VOL_MAX			((int32_t)uvf_variant.vol_max)
 #define VOL_MUTE_ZONE		5		// counts above the minimum that still read 0
 #define VOL_HYSTERESIS		5
 
@@ -162,16 +161,10 @@ static int8_t volume(void)
 	if (vol_muted) {
 		return 0;
 	}
-	int32_t pct;
-	if (raw < VOL_BREAK) {
-		pct = (raw - VOL_MIN) * 50 / (VOL_BREAK - VOL_MIN);
-	} else {
-		pct = 50 + (raw - VOL_BREAK) * 50 / (VOL_MAX - VOL_BREAK);
-	}
+	const uint16_t pts[3] = { uvf_variant.vol_min, uvf_variant.vol_break, uvf_variant.vol_max };
+	int32_t pct = knob_curve_pct(raw, pts, 3);
 	if (pct < 1) {
 		pct = 1;	// out of the mute zone always means some volume
-	} else if (pct > 100) {
-		pct = 100;
 	}
 	return (int8_t)pct;
 }

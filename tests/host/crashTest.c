@@ -316,6 +316,10 @@ static void test_summary(void)
 	r.cause = 60005;
 	crash_summary(&r, s, sizeof s);
 	CHECK(strcmp(s, "Stall at 0802C4A9 for 60005 ms in radio") == 0);
+	r.kind = CRASH_KIND_LINK;
+	r.cause = 0x02050007u;
+	crash_summary(&r, s, sizeof s);
+	CHECK(strcmp(s, "Link lost at 0802C4A9 port 2 last byte 5 s bad 7 in radio") == 0);
 	CHECK(strcmp(crash_kind_name(0), "Crash") == 0);
 
 	// Cut to the buffer, always terminated
@@ -487,6 +491,11 @@ void radio_get_view(radio_view_t *v)
 {
 	memset(v, 0, sizeof *v);
 	v->state = fake_radio_state;
+}
+
+radio_state_t radio_get_state(void)
+{
+	return (radio_state_t)fake_radio_state;
 }
 
 // The stall test waits for good: after a few waits the fake leaves it, as the stall check's restart would

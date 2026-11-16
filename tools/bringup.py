@@ -564,6 +564,26 @@ def cmd_run(args):
     return rc
 
 
+def reported_feature_errors():
+    """A HIL test that asks `"X" in radio.features()` needs X in the version reply's features= (build_info.c); a
+    switch missing there makes the test skip as not built on every radio"""
+    with open(os.path.join(ROOT, "core", "hostlink", "build_info.c")) as f:
+        reported = set(re.findall(r'"([A-Z0-9_]+),"', f.read()))
+    errs = []
+    hil = os.path.join(ROOT, "tests", "hil")
+    for name in sorted(os.listdir(hil)):
+        if not name.endswith(".py"):
+            continue
+        with open(os.path.join(hil, name)) as f:
+            src = f.read()
+        asked = set(re.findall(r'"([A-Z][A-Z0-9_]+)"\s+(?:not\s+)?in\s+\w+\.features\(\)', src))
+        for group in re.findall(r'for\s+\w+\s+in\s+\(([^)]*)\):\s*\n\s*if\s+\w+\s+not\s+in\s+\w+\.features\(\)', src):
+            asked |= set(re.findall(r'"([A-Z0-9_]+)"', group))
+        for s in sorted(asked - reported):
+            errs.append(f"tests/hil/{name}: asks the radio for {s}, which core/hostlink/build_info.c doesn't report")
+    return errs
+
+
 def check(feats, boards, records, found, all_switches):
     """The consistency errors (strings), and notes. Missing or stale records are never errors: only a malformed
     checklist, marker, override or record is."""
@@ -661,6 +681,7 @@ def check(feats, boards, records, found, all_switches):
                     notes.append(f"{where}: feature {f} is no longer in the checklist")
             if re.search(r"/dev/|usbmodem|://|\bserial[=:]", json.dumps(r)):
                 errs.append(f"{where}: names a port, host or serial number")
+    errs += reported_feature_errors()
     # TODO(commit 9): the claim blocks in the docs (feature matrix, README, 23-radios.md) are generated from the
     # records; until they exist there is nothing to compare, so claims against records is not checked yet
     notes.append("claims against records: not checked until the docs' claim blocks are generated")

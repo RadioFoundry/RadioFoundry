@@ -42,9 +42,7 @@ size_t debuglink_cmd_hwopt(const uint8_t *req, uint16_t len, uint8_t *out, size_
 			out[0] = DL_ST_BAD_ARG;
 			return 1;
 		}
-		radio_view_t v;
-		radio_get_view(&v);
-		if (v.state == RS_TX) {
+		if (radio_get_state() == RS_TX) {
 			out[0] = DL_ST_REFUSED;		// never change the hardware's description under a transmission
 			return 1;
 		}

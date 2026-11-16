@@ -62,6 +62,12 @@ static uint8_t current_source(void)
 static void unhandled(void)
 {
 	uint8_t source = current_source();
+	// Masked as it came in: a request the CPU held from before hrc_irq_init masked the PIC (hardware-dm32.md 4.1),
+	// not a source left without a handler. Not counted, or every restart with a second SoC talking reported one
+	uint32_t mask = source < 32 ? PIC_MASK : PIC_MASK_1;
+	if ((mask & (1u << (source & 31u))) != 0) {
+		return;
+	}
 	unhandled_count++;
 	unhandled_source = source;
 	hrc_irq_enable(source, false);

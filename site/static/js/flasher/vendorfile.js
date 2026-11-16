@@ -83,10 +83,14 @@ export async function identifyFile(data, fb, boardId = null) {
 	const c = fb.c7000;
 	const cprof = c?.profiles.find((p) => p.stock_file?.sha256 === sha);
 	if (cprof) {
+		// another board's file whose codec this board runs (c7.codecBoards: the main SoC's file for a second SoC) is this board's
+		// codec source, marked codecFrom: it never restores this board's firmware
+		const board = boardId && boardId !== cprof.board && c7.codecBoards(c, boardId).includes(cprof.board) ? boardId : cprof.board;
 		// a known file whose codec areas fail their check: the page's data is wrong, not the file; the other files in a
 		// zip are still reported
 		try {
-			return { sha, board: cprof.board, kind: "codec", how: "sha256", known: cprof.name, codec: await c7.codecFromFile(data, c, cprof.board) };
+			return { sha, board, kind: "codec", how: "sha256", known: cprof.name, codec: await c7.codecFromFile(data, c, board),
+				...(board !== cprof.board ? { codecFrom: cprof.board } : {}) };
 		} catch (e) {
 			return { sha, board: null, known: cprof.name, problem: "internal", why: e.message };
 		}
@@ -124,7 +128,8 @@ export async function identifyFile(data, fb, boardId = null) {
 		for (const id of Object.keys(c.boards).sort((a, b) => (b === boardId) - (a === boardId))) {
 			try {
 				const codec = await c7.codecFromFile(data, c, id);
-				return { sha, board: id, kind: "codec", how: "codec hashes", known: codec.profile?.name, codec };
+				return { sha, board: id, kind: "codec", how: "codec hashes", known: codec.profile?.name, codec,
+					...(codec.profile && codec.profile.board !== id ? { codecFrom: codec.profile.board } : {}) };
 			} catch (e) {
 				if (e.code === "unmapped") unmapped ||= e.message;
 				else if (e.code === "internal") return { sha, board: null, problem: "internal", why: e.message };
@@ -169,6 +174,7 @@ export function describe(opened, fb, boardId) {
 		const m = f.match;
 		const what = !m.board ? m.why
 			: m.board !== boardId ? `for the ${name(m.board)}, not this radio`
+			: m.kind === "codec" && m.codecFrom ? `${m.known || "known"}: the ${name(m.codecFrom)}'s codec, which this one runs too (never restored as this one's firmware)`
 			: m.kind === "codec" && m.profile?.file_radio ? `${m.known || "known"}: ${m.profile.file_radio} firmware, the codec only (no bootloader key; never restored as this radio's firmware)`
 			: m.kind === "codec" ? `${m.known || "known"}: the codec${fb.boards[m.board]?.key_sha256 ? " and the bootloader key" : ""}`
 			: m.kind === "readout" ? `a flash readout of ${m.known}: the installer takes the manufacturer's firmware file instead`

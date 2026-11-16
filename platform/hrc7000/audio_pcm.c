@@ -62,6 +62,7 @@ static void *block_ctx;
 static volatile bool running;
 static bool spk_routed;		// the last speaker_pcm() state
 static volatile bool fifo_held;	// another user (the board's AFSK) owns the FIFO: speaker PCM waits
+static volatile uint16_t spk_gain = 32768u;	// Q15, hrc_audio_pcm_spk_gain
 // underruns: pushes that emptied the queue while loud audio played and the FIFO still had room (it ran dry next)
 static volatile uint32_t blocks, overruns, underruns;
 static bool spk_primed;		// SPK_PRIME_BLOCKS were queued since the last spk_drop: the pushes go on
@@ -194,8 +195,16 @@ static void audio_task(void *arg)
 			uint8_t gen = spk_gen;
 			cb(mic, q, block_ctx);
 			bool loud = false;
-			for (uint32_t i = 0; i < AUDIO_BLOCK_SAMPLES && !loud; i++) {
-				loud = q[i] != 0;
+			uint32_t g = spk_gain;
+			for (uint32_t i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+				if (q[i] != 0) {
+					loud = true;	// before the gain: a quiet beep still counts as sound for the gate
+					if (g < 32768u) {
+						q[i] = (int16_t)(((int32_t)q[i] * (int32_t)g) >> 15);
+					}
+				} else if (loud && g >= 32768u) {
+					break;
+				}
 			}
 			// A gate edge emptied the queue during cb() (another task): this block is as stale as the rest
 			s = hrc_irq_save();
@@ -217,6 +226,11 @@ void hrc_audio_pcm_attach(hrc7000_t *m, void (*speaker_pcm)(bool on))
 	// The meter's interrupt changes AUDIO_CONTROL b4 (isr_pcm_wr): from now on every shadow update, the board's FM
 	// receive, transmit, idle and DMR entry included, runs with interrupts off
 	hrc7000_set_crit(m, hrc_irq_save, hrc_irq_restore);
+}
+
+void hrc_audio_pcm_spk_gain(uint16_t q15)
+{
+	spk_gain = q15;
 }
 
 void hrc_audio_pcm_hold(bool on)

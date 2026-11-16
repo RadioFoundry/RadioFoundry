@@ -492,6 +492,15 @@ int main(void)
 	CHECK(stops == 1 && !speaker_on, "stop");
 	ambeVoiceSink()->begin(NULL, NULL);
 	CHECK(starts == 2, "restarted after stop");
+	// A beep's own stream routed the speaker (a talk permit tone), then the voice stream took the callback over with
+	// nothing to play: its first block gives the route back
+	ambeVoiceStop();
+	fake_speaker(true);
+	ambeVoiceSink()->begin(NULL, NULL);
+	block();
+	CHECK(starts == 3 && !speaker_on, "the route a beep left on is sent off on the stream's first block");
+	block();
+	CHECK(!speaker_on, "and stays off");
 	printf("# ambeVoiceTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures ? 1 : 0;
 }

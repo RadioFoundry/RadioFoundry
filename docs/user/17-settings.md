@@ -37,7 +37,7 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 |---|---|---|---|---|
 | Key tones | On, Off | On | A short beep on each key press | Works |
 | Volume | 0 to 16 | 8 | The speaker volume, on radios without a volume knob only (the row is not shown on the others). 0 is mute. The **Volume** key opens a screen that changes it faster ([Radio reference](23-radios.md#key-roles)) | Works |
-| Tone volume | 0 to 10 | 5 | The loudest the radio's beeps get. Beeps follow the speaker volume up to this level, so turning the volume down makes them quieter too | Works |
+| Tone volume | 0 to 10 | 5 | The loudest the radio's beeps get. Beeps follow the speaker volume up to this level, so turning the volume down makes them quieter too. Some radios play beeps at this level whatever the volume, except volume 0 ([Radios](23-radios.md)) | Works |
 | Talk permit tone | On, Off | On | The beep when a DMR transmission starts ([DMR](09-dmr.md)) | Works |
 | Call end tone | On, Off | On | The two-note beep when a DMR call you heard ends | Works |
 | TOT warning tone | On, Off | On | The beep a few seconds before the transmit time-out cuts a transmission | Works |

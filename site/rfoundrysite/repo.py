@@ -220,6 +220,18 @@ def registry(view="site"):
 	return json.loads(r.stdout)
 
 
+def switches(bid, feature_names, variant_ids):
+	"""A board's required switches and the ones each variant turns on: (required, {variant: [names]})."""
+	config = {}
+	for v in variant_ids:
+		cfg = dict(l.split("=", 1) for l in make(bid, "print-config", None if v == "full" else v).split())
+		unknown = set(cfg) - set(feature_names)
+		if unknown:
+			raise SourceError("make print-config for %s lists unknown switches %s" % (bid, sorted(unknown)))
+		config[v] = sorted(k for k, val in cfg.items() if val == "y")
+	return make(bid, "print-required").split(), config
+
+
 BOARD_STATUSES = ("supported", "testing", "in_progress", "planned")
 # a board's [status] level as the site's badge: a radio still being brought up reads "in development"
 LEVEL_STATUS = {"supported": "supported", "testing": "testing", "bring-up": "testing"}
@@ -240,14 +252,11 @@ def boards(feature_names, variant_ids):
 		# the hardware can, the board's code doesn't yet (config.mk BOARD_NOT_WRITTEN): never shown as unavailable
 		r["not_written_reasons"] = r["not_written"]
 		r["not_written"] = list(r["not_written"])
-		r["required"] = make(bid, "print-required").split()
-		r["config"] = {}
-		for v in variant_ids:
-			cfg = dict(l.split("=", 1) for l in make(bid, "print-config", None if v == "full" else v).split())
-			unknown = set(cfg) - set(feature_names)
-			if unknown:
-				raise SourceError("make print-config for %s lists unknown switches %s" % (bid, sorted(unknown)))
-			r["config"][v] = sorted(k for k, val in cfg.items() if val == "y")
+		r["required"], r["config"] = switches(bid, feature_names, variant_ids)
+		# a second chip is built with the radio, from its own board's switches: the page asks for both images at once
+		second = r["flash"].get("second")
+		if second:
+			second["required"], second["config"] = switches(second["board"], feature_names, variant_ids)
 		out.append(r)
 	# the radio survey's radios without a board (docs/spec/radios.md Port cells, read by the registry)
 	return out, [dict(p, support=p["note"]) for p in reg["planned"]]
@@ -333,8 +342,13 @@ def c7000_flash():
 			       # and the board profile the universal stub gets (CONFIG). A stock console, the update mode and
 			       # the read rate are in radios.json flash
 			       "progmem_size": lay.get("progmem_size", dc.PROGMEM_SIZE), "data_flash": lay.get("data_flash", True),
+			       # the boards whose profiles give this board its codec, preferred first (hrc7000_codec.py
+			       # codec_boards: a second SoC that runs the first SoC's codec, then its own)
+			       "codec_boards": list(lay.get("codec_boards", (bid,))),
 			       "calibration": lay.get("calibration"),
-			       "stub_board": {k: st.C7_BOARDS[bid][k] for k in ("id", "latch", "key", "nand")} if bid in st.C7_BOARDS
+			       # (CONFIG), with its LED pins, UART and bridge where the board has them (a second SoC)
+			       "stub_board": {k: (list(v) if isinstance(v, tuple) else v) for k, v in st.C7_BOARDS[bid].items()
+					      if k in ("id", "latch", "key", "nand", "leds", "uart", "bridge")} if bid in st.C7_BOARDS
 			       else {k: st.GENERIC[k] for k in ("id", "latch", "key", "nand")},
 			       # the board's [[flash.protect]] (progmem offsets are the stub's: from the program flash's base),
 			       # which every write and restore here checks first (protect.js)

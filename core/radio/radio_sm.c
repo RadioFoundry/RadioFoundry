@@ -168,8 +168,13 @@ static void beep(radio_sm_t *sm, uint8_t b)
 		return;		// Settings > Sound turned it off (the codeplug's settings area)
 	}
 	uint8_t level = sm->set.beep_level;
+	// A board with spk_beep plays beeps at their own gain: beep_level as it is, none at volume 0
 	if (board.radio != NULL && board.radio->volume != NULL && !board.radio->volume_pcm) {
-		level = radio_beep_level(level, sm->volume_sent);
+		if (board.audio == NULL || board.audio->spk_beep == NULL) {
+			level = radio_beep_level(level, sm->volume_sent);
+		} else if (sm->volume_sent == 0) {
+			level = 0;
+		}
 	}
 	beep_play((beep_t)b, level, shared);
 #else
@@ -249,13 +254,7 @@ static uint8_t channel_power(const channel_t *ch)
 
 uint8_t radio_sm_squelch_open_below(uint8_t level)
 {
-	if (level == 0) {
-		return 255;
-	}
-	if (level > RADIO_SQUELCH_MAX) {
-		level = RADIO_SQUELCH_MAX;
-	}
-	return (uint8_t)(RADIO_SQL_OPEN_L1 - (level - 1) * RADIO_SQL_DB_PER_STEP);
+	return radio_squelch_open_below(level);
 }
 
 bool radio_view_wakes(const radio_view_t *v)

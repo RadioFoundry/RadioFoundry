@@ -45,9 +45,7 @@ void debuglink_view_watchdog(dl_text_t *t)
 
 static bool on_air(void)
 {
-	radio_view_t v;
-	radio_get_view(&v);
-	return v.state == RS_TX;
+	return radio_get_state() == RS_TX;	// not the whole view: it is too big for the host task's stack
 }
 
 static uint32_t get32(const uint8_t *p)

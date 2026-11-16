@@ -146,7 +146,9 @@ This is a behavioral diagram, not a structure to copy. The states and what they 
 - **Slot lock** (DMO): lock to the slot of the first valid burst; receive one slot in two.
 - **Filters** applied to every burst: color code; timeslot (RMO, if the slot filter is on); destination
   (talkgroup / receive group / private call to us / all call 0xFFFFFF passes everything); privacy indicator (bursts
-  with PI set are only played when privacy is configured for that call).
+  with PI set are only played when privacy is configured for that call). A voice burst's color code and PI come from
+  its EMB, so burst A (no EMB) and a B-F whose EMB failed its QR check skip both filters: the voice frames carry their
+  own FEC and are played.
 - **Start of call**: a voice LC header with good CRC, or late entry (2.4). Do not announce the caller from the LC
   until it is known to be this call's (modems may hold the previous call's LC: see 2.4).
 - **During voice**: every burst A-F is handed to the vocoder in order; a missing burst is replaced by silence; the

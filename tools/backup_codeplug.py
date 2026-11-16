@@ -411,9 +411,10 @@ def self_test():
         check(d == b"\x04", "a NAND data memory part")
     expect_error(lambda: board_layout("no-such-board"), "unknown board")
 
-    # every board's open-firmware image is found, also where hal_flash_map_t sits in a family directory
-    for bid in boards.board_dirs():
-        check(board_layout(bid)["openfw"] is not None, "%s: no openfw_eeprom found" % bid)
+    # every board's open-firmware image is found, also where hal_flash_map_t sits in a family directory. A board with
+    # no flash map keeps no codeplug (a second SoC, whose radio's main one stores it)
+    for bid, b in boards.load().items():
+        check(not b.flash_map or board_layout(bid)["openfw"] is not None, "%s: no openfw_eeprom found" % bid)
 
     # every [stock_codeplug] in boards/ names a layout this tool knows
     for bid in boards.board_dirs():

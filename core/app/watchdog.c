@@ -11,6 +11,7 @@
 #endif
 
 static watchdog_state_t st;
+static uint32_t (*link_cause)(uint32_t now_ms);
 
 void watchdog_idle(uint32_t now_ms)
 {
@@ -58,6 +59,23 @@ bool watchdog_stalled(uint32_t now_ms)
 	return st.passed && !st.starving && now_ms - st.last_pass_ms >= WATCHDOG_STALL_MS;
 }
 
+void watchdog_link_watch(uint32_t now_ms, uint32_t limit_ms, uint32_t (*cause)(uint32_t now_ms))
+{
+	link_cause = cause;
+	st.link_last_ms = now_ms;
+	st.link_limit_ms = limit_ms;	// last: the tick interrupt reads it first
+}
+
+void watchdog_link_frame(uint32_t now_ms)
+{
+	st.link_last_ms = now_ms;
+}
+
+bool watchdog_link_lost(uint32_t now_ms)
+{
+	return (st.link_limit_ms != 0) && !st.starving && ((now_ms - st.link_last_ms) >= st.link_limit_ms);
+}
+
 #if CONFIG_CRASH_LOG
 void watchdog_tick(void)
 {
@@ -68,6 +86,9 @@ void watchdog_tick(void)
 	}
 	if (watchdog_stalled(now) && hal_watchdog_timeout_ms() != 0) {	// as the hang check: not with the watchdog stopped
 		hal_crash_hang(CRASH_KIND_STALL, now - st.last_pass_ms);
+	}
+	if (watchdog_link_lost(now)) {
+		hal_crash_hang(CRASH_KIND_LINK, (link_cause != NULL) ? link_cause(now) : 0u);
 	}
 }
 #endif
