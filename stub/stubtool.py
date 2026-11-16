@@ -449,6 +449,11 @@ class FrameError(DumpError):
     """A damaged, short or missing frame, or a sector that failed its CRC: worth asking again."""
 
 
+class LineNoise(DumpError):
+    """The line never goes quiet: data keeps coming that nothing asked for (a faulty cable or adapter, a plug half in,
+    or a device that talks by itself). No request can be told from it, so nothing is tried over it."""
+
+
 class NoAnswer(DumpError):
     """RadioFoundry's debug link did not answer a request at all (no radio running it on the port). A caller that
     retries with --attach (a stub an earlier run left running) tells it from other errors by this class's name."""
@@ -859,6 +864,8 @@ class Radio:
                 self.drain(0.3)
                 info = self.hello()
                 break
+            except LineNoise:
+                raise
             except DumpError:
                 continue
         if info is None:
@@ -1608,13 +1615,25 @@ class Radio:
             raise FrameError("frame checksum")
         return hdr[1], body
 
-    def drain(self, quiet=0.4):
-        """Read and drop what the stub is still streaming, until the line has been quiet for `quiet` seconds."""
+    DRAIN_LIMIT = 8.0   # s: the longest thing a stub still sends is the rest of one read, under 6 s at 115200 baud
+
+    def drain(self, quiet=0.4, limit=None):
+        """Read and drop what the stub is still streaming, until the line has been quiet for `quiet` seconds. A line
+        still not quiet after `limit` seconds (DRAIN_LIMIT) carries data nothing asked for: LineNoise, where the wait
+        once never ended."""
+        limit = self.DRAIN_LIMIT if limit is None else limit
         self.set_timeout(0.05)
-        last = time.monotonic()
+        start = last = time.monotonic()
+        got = 0
         while time.monotonic() - last < quiet:
-            if self.port.read(4096):
+            n = len(self.port.read(4096))
+            if n:
+                got += n
                 last = time.monotonic()
+                if last - start >= limit:
+                    raise LineNoise("the line never goes quiet: %d bytes in %.0f s that nothing asked for. The programming "
+                                    "cable or its adapter is at fault: unplug it from the computer, plug it back in, push "
+                                    "the plug fully into the radio, or use another cable" % (got, last - start))
         self.port.reset_input_buffer()
 
     def sectors(self, mem, addr, count, compress=True):
@@ -2943,6 +2962,32 @@ def self_test():
             check(False, "an old stub: a protected region still refused")
         except DumpError as e:
             check("protected region" in str(e), "an old stub: a protected region still refused (%s)" % e)
+    # a line that never goes quiet (a faulty cable): the wait for quiet ends, and attach says why instead of trying on
+    class NoisyPort:
+        timeout = 0.05
+        baudrate = 115200
+
+        def read(self, n):
+            time.sleep(0.002)
+            return b"\x55"
+
+        def write(self, b):
+            return len(b)
+
+        def reset_input_buffer(self):
+            pass
+
+    noisy = Radio(NoisyPort(), log=quiet)
+    noisy.DRAIN_LIMIT = 0.2
+    t0 = time.monotonic()
+    try:
+        noisy.attach()
+        check(False, "a line that never goes quiet ends the attach")
+    except LineNoise as e:
+        check("never goes quiet" in str(e) and "cable" in str(e), "a noisy line is named with what to do (%s)" % e)
+    except DumpError as e:
+        check(False, "a noisy line is LineNoise, not %r" % e)
+    check(time.monotonic() - t0 < 2, "the wait for a quiet line ends")
     print("stubtool self-test %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),
                                                     "" if len(fails) == 1 else "s"))
     return 0 if not fails else 1

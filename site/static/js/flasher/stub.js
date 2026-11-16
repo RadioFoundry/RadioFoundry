@@ -55,6 +55,8 @@ const ROM_GAVE_UP = [0x00, 0x10, 0x00, 0x03], ROM_NAK = [0x02, 0x0A, 0x00, 0x03]
 // ms once the greeting is seen: the ROM drops what reaches it before its greeting, so only the answers sent after that
 // count, and the ROM's 48 ms must be covered however late the greeting shows here (hardware-dm32.md 13.3)
 export const ROM_REPEAT = 30, ROM_REPEAT_AFTER = 150;
+// How long a wait for a quiet line lasts at most, in ms (Stub.drain)
+export const limits = { drain: 8000 };
 // memory: SSI base, the GPIO chip select (the data flash's is PTA18), size. A radio's data memory is either the SPI NOR
 // flash (q128) or an SPI NAND on the same bus and chip select (nand): the universal stub reads the NAND's 2 KB pages
 // without their spare bytes, two to a 4 KB sector, when a read or checksum request carries NAND_FLAG and the stub was
@@ -163,6 +165,7 @@ export class Stub {
 		// the board's protected regions (c7000.boards[id].protect, board.toml [[flash.protect]]), from the profile
 		// configure() gets: every erase and program checks them before it is sent
 		this.protect = [];
+		this.noise = null;	// {bytes, ms} once a wait for a quiet line gave up (drain)
 	}
 
 	async readExact(n, timeout) {
@@ -479,12 +482,24 @@ export class Stub {
 		}
 	}
 
-	// Drop what the stub still streams until the line has been quiet for `quiet` ms
-	async drain(quiet = 400) {
+	// Drop what the stub still streams until the line has been quiet for `quiet` ms: true once it is. The longest
+	// thing a stub still sends is the rest of one read (WINDOW sectors, under 6 s at 115200 baud), so a line that is
+	// not quiet after limits.drain carries data nothing asked for: a faulty cable or adapter, a plug half in, or a
+	// device that talks by itself. The wait ends there (false) with what came in this.noise, where it once never ended
+	async drain(quiet = 400, limit = limits.drain) {
+		const t0 = Date.now();
+		let bytes = 0;
 		for (;;) {
 			this.s.clear();
 			await sleep(quiet);
-			if (!this.s.buf.length) return;
+			if (!this.s.buf.length) return true;
+			bytes += this.s.buf.length;
+			const ms = Date.now() - t0;
+			if (ms >= limit) {
+				this.noise = { bytes, ms };
+				this.log(`the line never went quiet: ${bytes} bytes in ${(ms / 1000).toFixed(1)} s that nothing asked for`);
+				return false;
+			}
 		}
 	}
 

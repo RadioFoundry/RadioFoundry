@@ -8,8 +8,9 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
 import * as diag from "../static/js/diag.js";
-import { SerialStream, Link, probe, silence, whyNoAnswer, noAnswerKey, writtenWithoutLink, parseRadioInfo, flashBytes, browserErrorKey, grantedPorts, knownRadioPort } from "../static/js/flasher/link.js";
+import { SerialStream, CableError, limits, Link, probe, silence, whyNoAnswer, noAnswerKey, writtenWithoutLink, parseRadioInfo, flashBytes, browserErrorKey, grantedPorts, knownRadioPort } from "../static/js/flasher/link.js";
 import { CpsSerial, TransportError } from "../static/js/codeplug/transport.js";
+import { Stub, limits as stubLimits } from "../static/js/flasher/stub.js";
 import { openFile, FileError } from "../static/js/editor/files.js";
 
 beforeEach(() => diag.reset());
@@ -130,6 +131,71 @@ test("a radio power-cycled with the cable in: hundreds of breaks in a row never 
 	const noted = diag.report().log.slice(before).filter((e) => /serial read/.test(e.text));
 	assert.ok(noted.length < 30, `a burst is noted sparingly (${noted.length} lines)`);
 	assert.ok(!noted.some((e) => /read stopped/.test(e.text)));
+	await s.close();
+});
+
+// Field: a low-quality programming cable held the connect step at "Searching for the radio" until the page was
+// started over, every time, until the cable was unplugged: the wait for a quiet line had no end
+test("a line that never goes quiet ends the wait for it, with what came in; a quiet one ends it at once", async (t) => {
+	const was = stubLimits.drain;
+	stubLimits.drain = 150;
+	const s = { buf: new Uint8Array(0), clear() { this.buf = new Uint8Array(0); }, async write() {} };
+	const noise = setInterval(() => { s.buf = Uint8Array.of(...s.buf, 0x55); }, 5);
+	t.after(() => { stubLimits.drain = was; clearInterval(noise); });
+	const lines = [];
+	const stub = new Stub(s, { log: (l) => lines.push(l) });
+	const t0 = Date.now();
+	assert.equal(await stub.drain(30), false);
+	assert.ok(Date.now() - t0 < 1000, "the wait ends");
+	assert.ok(stub.noise.bytes > 5 && stub.noise.ms >= 150, JSON.stringify(stub.noise));
+	assert.match(lines.join("\n"), /never went quiet: \d+ bytes/);
+	clearInterval(noise);
+	const quiet = new Stub(s, { log() {} });
+	assert.equal(await quiet.drain(30), true);
+	assert.equal(quiet.noise, null);
+});
+
+test("a write the adapter never takes ends as a cable fault, and so does every write after it, at once", async (t) => {
+	const was = { ...limits };
+	Object.assign(limits, { write: 60 });
+	t.after(() => Object.assign(limits, was));
+	const port = new FakePort();
+	let aborted = 0, released = 0;
+	const s = await SerialStream.open(port);
+	port.writable = { getWriter: () => ({ write: () => new Promise(() => {}), abort: async () => { aborted++; }, releaseLock: () => { released++; } }) };
+	const t0 = Date.now();
+	await assert.rejects(s.write(new Uint8Array(4)), (e) => e instanceof CableError && e.code === "stalled");
+	assert.ok(Date.now() - t0 < 2000, "the write is given up");
+	assert.deepEqual([aborted, released], [1, 1], "what is queued is dropped and the writer let go");
+	assert.ok(diag.report().log.some((e) => /write stalled/.test(e.text)));
+	const t1 = Date.now();
+	await assert.rejects(s.write(new Uint8Array(4)), CableError);
+	assert.ok(Date.now() - t1 < 50, "no second wait");
+	// a write the adapter takes is not touched by the limit
+	const ok = await SerialStream.open(new FakePort());
+	const sent = [];
+	ok.port.writable = { getWriter: () => ({ write: async (d) => { sent.push(d.length); }, releaseLock() {} }) };
+	await ok.write(new Uint8Array(7));
+	assert.deepEqual(sent, [7]);
+});
+
+test("a port that never opens ends as a cable fault", async (t) => {
+	const was = { ...limits };
+	Object.assign(limits, { open: 60 });
+	t.after(() => Object.assign(limits, was));
+	await assert.rejects(SerialStream.open({ open: () => new Promise(() => {}) }), (e) => e instanceof CableError && e.code === "stalled");
+});
+
+test("the line errors of a port are counted, for the page's verdict on a cable that never carried the radio's greeting", async () => {
+	const port = new FakePort();
+	const s = await SerialStream.open(port);
+	for (const name of ["BreakError", "FramingError", "BreakError"]) {
+		await new Promise((r) => setTimeout(r, 5));
+		lineError(port, name);
+	}
+	await new Promise((r) => setTimeout(r, 5));
+	assert.equal(s.lineErrors, 3);
+	assert.equal(s.received, 0);
 	await s.close();
 });
 

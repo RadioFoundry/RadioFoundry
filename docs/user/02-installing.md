@@ -361,6 +361,23 @@ Finish (and Update when the radio runs RadioFoundry).
 **Programming cables:** cables with a CH340 chip can be unreliable for backups and installs. If one fails, try a cable
 with an FTDI, CP210x or PL2303 chip. The installer warns when it sees a CH340 cable.
 
+**Cable problems the installer names:** the connect step tells a faulty cable from a radio that doesn't answer, and
+says what to do about it.
+
+| The installer says | What it found |
+|---|---|
+| The cable keeps delivering data that nothing asked for | The line never goes quiet, so the radio can't be heard. **Continue Anyway** goes on with the same cable |
+| The cable disconnected from the computer | The cable left the computer's USB while the page used it |
+| The cable stopped taking data from the computer | The cable's adapter or its driver stopped responding |
+
+For each: unplug the cable from the computer, wait a few seconds, plug it back in (not through a hub), push the plug
+fully into the radio and select **Try Again**. If it returns, use another cable.
+
+While the installer waits for the radio to turn on, it shows how much the cable has carried (bytes and line errors).
+A count that stays at zero while you turn the radio off and on means the plug isn't making contact or the cable is
+faulty. A count that moves without the radio being found means the cable reads the radio badly: push the plug fully
+in, or use a cable with another chip.
+
 **When the cable can't prepare the radio:** a radio installed over its programming cable first gets a small loader in
 its memory. When the radio turns on, it waits only about 1/20 of a second for the installer's answer, and some cables
 and USB hubs are slower than that. So the installer keeps sending its answer while the radio starts (this used to be the

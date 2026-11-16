@@ -28,7 +28,7 @@ import { radioPicture, holdKeys } from "./radiotop.js";
 import { validRef, refShort, defaultRef, firmwareName, betaLink } from "./version.js";
 import { verify, segments, forDevBuild } from "./manifest.js";
 import { Dfu, DfuError, NormalModeError, WebUsbTransport, checkKey, usbSupported } from "./dfu.js";
-import { Link, LinkError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, whyNoAnswer, noAnswerKey, serialSupported, serialApi, browserErrorKey, knownRadioPort } from "./link.js";
+import { Link, LinkError, CableError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, whyNoAnswer, noAnswerKey, serialSupported, serialApi, browserErrorKey, knownRadioPort } from "./link.js";
 import { readRadio, makeBundle, openBundle, bundleFolder, notBundle, bundleName, describeFirmware, CODEPLUG_SPAN } from "./backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug, codeplugLayout } from "./restore.js";
 import { Selection } from "./select.js";
@@ -85,6 +85,8 @@ function errorText(e) {
 	if (e instanceof DecisionError && e.key) return said(e.key, e.args) + (e.hint ? " " + t("flash.codec.why_not.hint") : "");
 	const withRaw = (key) => `${t(key)} (${raw})`;
 	if (e instanceof NetworkModeError) return t("flash.net.found");
+	// the cable's own fault (a port that never opened, an adapter that stopped taking data): what it is, then what to do
+	if (e instanceof CableError) return `${withRaw(`flash.cable.${e.code}`)} ${t("flash.cable.fix")}`;
 	const browser = browserErrorKey(e);
 	if (browser) return ["flash.err.no_device", "flash.err.security", "flash.err.gesture"].includes(browser) ? t(browser) : withRaw(browser);
 	if (e instanceof DfuError && /^USB transfer/.test(raw)) return withRaw("flash.err.connection_lost");
