@@ -335,8 +335,9 @@ static void air_abort(uint8_t i) { fair[i].qn = 0; fair[i].on = false; fair[i].a
 	static void air_end##i(void) { air_end(i); } \
 	static void air_abort##i(void) { air_abort(i); } \
 	static uint32_t air_now##i(void) { return fair[i].now_us; } \
+	static void air_load##i(uint32_t *w, uint32_t *s) { *w = 1000u + i; *s = 20000u; } \
 	static const hal_air_t fake_air##i = { air_fit, air_open##i, air_close##i, air_restart##i, air_begin##i, air_queue##i, \
-					       air_space##i, air_end##i, air_abort##i, air_now##i, NULL, NULL, NULL, AIR_CHUNK, \
+					       air_space##i, air_end##i, air_abort##i, air_now##i, NULL, NULL, air_load##i, AIR_CHUNK, \
 					       AIR_DEPTH, 60, 100 };
 FAKE_AIR(0)
 FAKE_AIR(1)
@@ -5906,6 +5907,7 @@ static void test_p25_rx(void)
 	CHECK(st.begins == 1 && st.begin_fails == 0 && st.mem_lent == 1);
 	p25_view_text(buf, sizeof buf);
 	CHECK(strstr(buf, "p25.built=1\np25.on=1\np25.rx=0\n") != NULL && strstr(buf, "p25.rx_nac=659\n") != NULL);
+	CHECK(strstr(buf, "p25.tx=0\np25.rx_work_us=1000\np25.rx_span_us=20000\n") != NULL);	// the provider's load
 	run(300);				// noise: no call
 	CHECK(sm.view.state == RS_IDLE && !hw.led[LED_GREEN] && !aud.started);
 
@@ -6173,6 +6175,11 @@ static void test_p25_leave(void)
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ RADIO_MODE_FM, 0xFF, 0 }, 3) == DL_ST_OK);
 	CHECK(sm.view.ch.mode == RADIO_MODE_FM && hw_mode == RADIO_MODE_FM && !radio_p25_running() && !fair[0].open);
 	CHECK(fair[0].closes == 1 && sm.view.p25.flags == 0 && (sm.view.temp & RADIO_TEMP_MODE));
+	{
+		char buf[1024];
+		p25_view_text(buf, sizeof buf);
+		CHECK(strstr(buf, "p25.on=0\n") != NULL && strstr(buf, "rx_work_us") == NULL);	// no load off P25
+	}
 	// ... P25 again
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ RADIO_MODE_P25, 0xFF, 0 }, 3) == DL_ST_OK);
 	CHECK(sm.view.ch.mode == RADIO_MODE_P25 && hw_mode == RADIO_MODE_DMR && radio_p25_running() && fair[0].open);

@@ -5,6 +5,7 @@
 #include "config.h"
 #include "debuglink/debuglink.h"
 #if CONFIG_P25
+#include "board.h"
 #include "radio/radio_p25.h"
 #if CONFIG_IMBE
 #include "p25/p25Voice.h"
@@ -24,6 +25,14 @@ void debuglink_view_p25(const radio_view_t *v, dl_text_t *t)
 		(p->flags & RADIO_P25_ENC) != 0, (p->flags & RADIO_P25_UNIT) != 0, (p->flags & RADIO_P25_LATE) != 0);
 	dl_text(t, "p25.nac=%u\np25.src=%u\np25.dst=%u\np25.tx=%u\n", p->nac, (unsigned)p->src, (unsigned)p->dst,
 		p->tx);
+	if ((p->flags & RADIO_P25_ON) != 0 && board.air != NULL && board.air->rx_load != NULL) {
+		uint32_t work, span;
+
+		// What receive costs the MCU since the engine opened the provider: work / span is the share of the CPU.
+		// Early in the section: a reply cut short loses counters, not this
+		board.air->rx_load(&work, &span);
+		dl_text(t, "p25.rx_work_us=%u\np25.rx_span_us=%u\n", (unsigned)work, (unsigned)span);
+	}
 	radio_p25_settings(&s);
 	dl_text(t, "p25.rx_nac=%u\np25.tx_nac=%u\np25.rx_tgid=%u\np25.talkaround=%u\np25.unit_call=%u\n", s.rx_nac,
 		s.tx_nac, s.rx_tgid, s.talkaround, s.unit_call);
