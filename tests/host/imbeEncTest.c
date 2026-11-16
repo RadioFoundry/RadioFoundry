@@ -265,12 +265,98 @@ static void test_noise(void)
 	free(r);
 }
 
+// a voice that starts creaky, every second pulse weaker, and then settles: the pitch search finds twice the period
+// at the start, and holds on to it after, since a period's double fits a periodic signal as well as the period. The
+// spectrum has to settle it (a harmonic in every band, or in every second one)
+static void test_period_not_doubled(void)
+{
+	rig_t *r = malloc(sizeof *r);
+	static int16_t in[40 * MBE_FRAME_LEN];
+	int wrong = 0, frames = 0;
+
+	for (int b0 = 23; b0 <= 63; b0 += 4) {		// periods of 31.25 to 51.25 samples
+		double period = (b0 + 39.5) / 2, w = 2 * M_PI / period;
+		int L = imbe_pitch_harmonics(b0);
+
+		rig_init(r);
+		for (int n = 0; n < 40 * MBE_FRAME_LEN; n++) {
+			double v = 0;
+
+			for (int l = 1; l <= L; l++) {
+				v += 3000.0 / l * cos(w * l * n + l * l * 0.37);
+				if (n < 8 * MBE_FRAME_LEN)
+					v += 1500.0 / l * cos(w * (l - 0.5) * n + l * 1.3);
+			}
+			in[n] = (int16_t)lrint(v);
+		}
+		for (int f = 0; f < 40; f++) {
+			uint8_t bits[IMBE_BYTES];
+
+			imbe_enc_frame(&r->m, in + f * MBE_FRAME_LEN, bits);
+			if (f >= 12) {
+				frames++;
+				wrong += abs(frame_b0(bits) - b0) > 1;
+			}
+		}
+	}
+	printf("# after a creaky start: %d of %d frames with another pitch\n", wrong, frames);
+	CHECK(wrong == 0, "%d of %d frames coded with another pitch (the double period held?)", wrong, frames);
+	free(r);
+}
+
+// quiet input. Samples of a few units are still sound, not a silence frame; only zeros are. And a quiet hum, one
+// harmonic far above the rest with the frame's mean under what the gain code can say, keeps its level: the weak
+// harmonics are raised, not the whole frame
+static void test_quiet(void)
+{
+	rig_t *r = malloc(sizeof *r);
+	static int16_t in[60 * MBE_FRAME_LEN], out[60 * MBE_FRAME_LEN];
+	int silent = 0, not_silent = 0;
+	double lvl;
+
+	rig_init(r);
+	for (int n = 0; n < 60 * MBE_FRAME_LEN; n++)
+		in[n] = (int16_t)lrint(2 * gauss());
+	for (int f = 0; f < 60; f++) {
+		uint8_t bits[IMBE_BYTES];
+
+		imbe_enc_frame(&r->m, in + f * MBE_FRAME_LEN, bits);
+		silent += !memcmp(bits, imbe_silence, IMBE_BYTES);
+	}
+	CHECK(silent == 0, "%d of 60 frames of quiet noise sent as silence frames", silent);
+	memset(in, 0, sizeof in);
+	for (int f = 0; f < 60; f++) {
+		uint8_t bits[IMBE_BYTES];
+
+		imbe_enc_frame(&r->m, in + f * MBE_FRAME_LEN, bits);
+		if (f >= 5)		// the high-pass and the window run out first
+			not_silent += !!memcmp(bits, imbe_silence, IMBE_BYTES);
+	}
+	CHECK(not_silent == 0, "%d of 55 frames of zeros not sent as silence frames", not_silent);
+
+	rig_init(r);
+	for (int n = 0; n < 60 * MBE_FRAME_LEN; n++)
+		in[n] = (int16_t)lrint(60 * cos(2 * M_PI * 110 * n / 8000.0) + 0.4 * gauss());
+	for (int f = 0; f < 60; f++) {
+		uint8_t bits[IMBE_BYTES];
+
+		imbe_enc_frame(&r->m, in + f * MBE_FRAME_LEN, bits);
+		imbe_dec_frame(&r->d, bits, 0, out + f * MBE_FRAME_LEN);
+	}
+	lvl = 20 * log10(rms_of(out + 10 * MBE_FRAME_LEN, 50 * MBE_FRAME_LEN) / rms_of(in + 10 * MBE_FRAME_LEN, 50 * MBE_FRAME_LEN));
+	printf("# quiet hum: level through encoder and decoder %+.2f dB\n", lvl);
+	CHECK(fabs(lvl) < 3, "quiet hum's level off by %.2f dB", lvl);
+	free(r);
+}
+
 int main(void)
 {
 	test_bits_round_trip();
 	test_envelope();
 	test_harmonic();
 	test_noise();
+	test_period_not_doubled();
+	test_quiet();
 	printf("%s: %d checks, %d failures\n", failures ? "imbeEncTest FAILED" : "# imbeEncTest PASSED", checks, failures);
 	return failures != 0;
 }
