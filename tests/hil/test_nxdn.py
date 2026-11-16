@@ -46,6 +46,13 @@ frames, which the bench tool carries without looking inside. On the radio: one r
 SPEECH_LATE of the frames into the voice path (voice.rx_in), none counted silent, bad, lost or overflowed, and the
 decoded PCM peaking at PEAK_MIN or more (voice.rx_peak): the radio's vocoder decoded speech, not noise. What the
 speaker plays is not measured. Skipped without a vocoder in the firmware (dmr.codec=0).
+
+test_nxdn_scan_from_bench[zone|dual] (opt-in: --allow-rf --allow-service-stop --allow-codeplug-write --nxdn-mhz MHz;
+the bench transmits, the radio only receives): the channel on view made a stored NXDN channel on --nxdn-mhz, a zone
+scan or dual watch with the zone's next channel started (nxdn.md 6.4, radio-features.md 2.1), and the bench's calls
+at 4800 bit/s with RAN STORED_RAN to group 1, up to SCAN_CALLS of them, until the scan holds on that channel
+(`scan_phase=hold`). Skipped without CONFIG_SCAN, in a zone of one channel, or where the air interface can't receive
+4800 bit/s.
 """
 import json
 import os
@@ -454,3 +461,78 @@ def test_nxdn_rx_speech(radio, sdr_bench, pytestconfig, rate):
     peak = stats.get("voice.rx_peak")
     assert peak is not None and int(peak) >= PEAK_MIN, \
         f"decoded speech peaks at {peak} (silent output: wrong bits into the decoder?): {d}"
+
+
+SCAN_CALLS = 4          # calls the bench sends while the scan comes round to the NXDN channel
+SCAN_VOICE_FRAMES = 120 # 2.4 s a call: longer than a scan's round of a short zone
+
+
+@pytest.mark.feature("nxdn")
+@pytest.mark.feature("scan")
+@pytest.mark.rf
+@pytest.mark.codeplug_write
+@pytest.mark.bench_service
+@pytest.mark.bench_modem
+@pytest.mark.parametrize("kind", ["zone", "dual"])
+def test_nxdn_scan_from_bench(radio, sdr_bench, backup_dir, pytestconfig, kind):
+    import nxdntool
+    import cps_client
+    from test_cps import codeplug_edited, pick_channel, read_backup
+    mhz = rig(pytestconfig, "nxdn-mhz")
+    v = nxdn_view(radio)
+    if "NXDN" not in radio.features():
+        skip("not_built", "NXDN isn't in the radio's feature list")
+    if (as_int(v.get("nxdn.fit4800")) or 0) & AIR_FIT_RX == 0:
+        skip("no_hw", "the radio's air interface can't receive NXDN at 4800 bit/s")
+    if as_int(radio.link.view(["features"]).get("scan.built"), 0) != 1:
+        skip("not_built", "built without CONFIG_SCAN")
+    regions = cps_client.REGIONS["radio"]
+    probe, _ = read_backup(radio, backup_dir, "nxdnscan", regions)
+    lo, hi = cps_client.SETTINGS_AREA
+    if cps_client.area_state(probe[lo:hi]) != "valid":
+        skip("state", "the codeplug settings area isn't valid: the restore couldn't take the tag back")
+    core = radio.core()
+    number = pick_channel(radio, probe)
+    if core.get("vfo") == "1" or number != as_int(core.get("channel_number"), 0):
+        skip("state", "the radio isn't on a stored channel")
+    if as_int(core.get("zone_size"), 0) < 2:
+        skip("state", "the current zone needs two channels or more to scan")
+    baud, dev = RATES["4800"]
+    with codeplug_edited(radio, backup_dir, lambda img: make_nxdn(img, number, round(mhz * 1e6)), "nxdnscan", regions):
+        radio.wait_for(lambda x: x.get("ch.kind") == str(KIND_NXDN) and x.get("nxdn.on") == "1", 5.0,
+                       sections=("core", "channel", "nxdn"), what="the stored NXDN channel running")
+        if kind == "dual":
+            radio.link.scan("dual", (as_int(core.get("zone_pos"), 0) + 1) % as_int(core.get("zone_size"), 1))
+        else:
+            radio.link.scan("zone")
+        held = None
+        try:
+            radio.wait_for(lambda x: x.get("scan") == kind, 1.0, sections=("features",), what=f"scan={kind}")
+            with tempfile.TemporaryDirectory() as tmp, sdr_bench.lease():
+                path, exp = os.path.join(tmp, "call.dibits"), os.path.join(tmp, "call.json")
+                try:
+                    nxdntool.run(["gen", path, exp, "--ran", STORED_RAN, "--group", 1, "--src", TEST_UNIT,
+                                  "--voice-frames", SCAN_VOICE_FRAMES, "--lead", baud // 4])
+                except SystemExit as e:
+                    pytest.fail(f"nxdntool: {e}")
+                with open(path, "rb") as f:
+                    data = f.read()
+                n = len(data) * 4
+                assert n <= FSK4_HEX_MAX, f"the call holds {n} symbols, past {FSK4_HEX_MAX}"
+                for _ in range(SCAN_CALLS):
+                    tx = sdr_bench.tx_start("fsk4", mhz, None, max_s=n / baud + 2, symbols=n, hex=data.hex(),
+                                            shape="rrc", baud=baud, dev_hz=dev, clip_hz=4064)
+                    while held is None and not tx.req.done.is_set():
+                        x = radio.link.view(["core", "features", "nxdn"])
+                        if x.get("scan_phase") == "hold" and x.get("channel_number") == str(number):
+                            held = x
+                    tx.wait(n / baud + 30)
+                    if held is not None:
+                        break
+        finally:
+            radio.link.scan("cancel")
+            radio.wait_for(lambda x: x.get("scan") == "off", 3.0, sections=("features",), what="scan off")
+    assert held is not None, f"the {kind} scan never held on channel {number} in {SCAN_CALLS} calls"
+    print(f"\n{kind} scan held on channel {number}: {held.get('nxdn.src')} -> {held.get('nxdn.dst')}, "
+          f"RAN {held.get('nxdn.ran')}")
+    assert held.get("nxdn.dst") in ("1", "0"), held        # 0: held before the call's addresses were read
