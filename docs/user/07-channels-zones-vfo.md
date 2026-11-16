@@ -288,8 +288,8 @@ In the VFO, **\***, **5** (**\***, **6** in the DMR VFO) is **TX freq** (the spl
 
 ### DMR in the VFO
 
-**\***, **4** in the VFO switches it between FM and DMR on the same frequency ("VFO: DMR"), and to P25 after DMR on a
-radio that runs P25 ([P25 in the VFO](#p25-in-the-vfo)). In DMR the quick settings are the DMR ones:
+**\***, **4** in the VFO switches it between FM and DMR on the same frequency ("VFO: DMR"), and to P25 and NXDN after DMR on a
+radio that runs them ([P25 in the VFO](#p25-in-the-vfo), [NXDN in the VFO](#nxdn-in-the-vfo)). In DMR the quick settings are the DMR ones:
 
 | Key | Tile | What it does in the DMR VFO |
 |---|---|---|
@@ -316,7 +316,7 @@ A build with P25 ([build options](../build-config.md)) on a radio whose feature 
 ("VFO: P25"). The VFO keeps the mode when the radio is switched off.
 
 - It hears clear P25 voice calls on network access code 293, to every talkgroup. Encrypted calls stay silent.
-- PTT sends a P25 call to talkgroup 1 with no voice yet: the radio has no P25 voice encoder.
+- PTT sends a P25 voice call to talkgroup 1 from your P25 unit ID, or your DMR ID when the codeplug has none.
 - Home shows "P25", what PTT calls ("TG 1") and the network access code ("NAC 293"). During a call it shows who calls
   and where ("ID 3101234 > TG 7"), or why the call isn't played ("Encrypted: not played", "Other TG: not played").
   FM's tone and width tiles say "FM only: this is a P25 channel".
@@ -337,6 +337,53 @@ silent.
   when RX and TX are the same frequency).
 - **OK** on Mode makes it a plain FM channel when you save.
 - Scan and dual watch skip P25 channels.
+
+### P25 trunked channels
+
+A build with P25 trunking adds channels that belong to a P25 trunked system (Phase 1 voice channels). The system
+(its control channels, its identity, your unit ID) and its channels (one talkgroup each) come from a codeplug written
+on a computer. The channel's settings show "P25T" as the mode.
+
+| Home says | What the radio is doing |
+|---|---|
+| Finding system | Trying the system's control channels in turn |
+| Control channel | On the control channel, waiting for a call to the channel's talkgroup |
+| Following TG 201 | On the voice channel of a call. It goes back to the control channel when the call ends |
+| Registering | Transmit is on: registering with the system and joining the talkgroup |
+| TG 201 | Registered. PTT asks the system for a voice channel |
+| Wait, Queued | PTT is held and the request is with the system. Talk when home shows the transmission |
+| Denied, Reg. denied | The system refused the request or the registration |
+
+- A system set to listen only, a channel set to RX only, or one without a unit ID or talkgroup never transmits: PTT
+  says "RX only".
+- Calls to other talkgroups are not followed.
+- Calls to one unit, emergency and Phase 2 (TDMA) voice channels are not there yet.
+- Scan and dual watch skip these channels.
+- This has run against a test control channel only, not yet on a working system.
+
+### NXDN in the VFO
+
+A build with NXDN on a radio whose feature list has it adds NXDN to the VFO's modes after P25 ("VFO: NXDN"). It
+is NXDN conventional voice at 9600 bit/s (12.5 kHz) or 4800 bit/s (6.25 kHz), through the radio's DMR voice codec.
+
+- It hears clear voice calls on every radio access number (RAN), to every group. Encrypted calls stay silent.
+- PTT sends a voice call to group 1 with RAN 1 at 9600 bit/s, as unit 1 until a computer sets another ID.
+- Home shows "NXDN", what PTT calls ("TG 1"), the RAN sent and the rate ("RAN 1 9600"). During a call it shows who
+  calls and where, or why the call isn't played. FM's tone and width tiles say "FM only: this is NXDN".
+- The rate, the RANs, the unit ID and the group can be changed only from a computer for now
+  (`rfoundry_debug.py radio nxdn`), and the change lasts until the radio is switched off.
+- Some radios only transmit NXDN or only receive it ([feature matrix](../feature-matrix.md)). One that only receives
+  says "This mode: receive only" on PTT.
+
+### NXDN channels
+
+An NXDN channel comes from a codeplug written on a computer, a zone shared by another radio, or the VFO: in NXDN,
+open **Channels**, **New channel from current settings** and save it. The channel keeps the rate, the RANs, the
+squelch and the group (when a contact has that group; else group 1).
+
+- Home shows it as in the VFO. The channel's settings show "NXDN" as the mode.
+- The rate, the RANs and the squelch can't be changed on the radio yet, only from a computer.
+- Scan and dual watch skip NXDN channels.
 
 ### Leaving the VFO
 

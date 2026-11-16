@@ -310,7 +310,7 @@ and affiliation, PTT refused before them, a request granted (the radio keys on t
 with its unit and group, then comes back), a denied and a queued request, no answer (three sends, then a timeout), a
 grant to a channel outside the bands. `p25TrunkTest` checks the inbound layouts and the follower's access timers.
 `tests/hil/test_p25.py`: `test_p25_trunk_follow` (opt-in, receive only) on a live system, and `test_p25_trunk_tx`
-(opt-in, the bench and the radio transmit) against a control channel the bench plays (8); neither run on a radio yet.
+(opt-in, the bench and the radio transmit) against a control channel the bench plays (8). The second has run on a radio; the first needs a live system.
 
 ## 8. Bench tools
 
