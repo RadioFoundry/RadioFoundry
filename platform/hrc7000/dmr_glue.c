@@ -583,10 +583,11 @@ HRC_FLASHFUNC static void air_tx_end(void) { if (air_on) hrc7000_air_tx_end(AIR)
 HRC_FLASHFUNC static void air_tx_abort(void) { if (air_on) hrc7000_air_tx_abort(AIR); }
 static uint32_t air_now_us(void) { return hrc_micros(); }
 
-static void air_rx_load(uint32_t *work_us, uint32_t *span_us)
+static bool air_rx_load(uint32_t *work_us, uint32_t *span_us)
 {
 	*work_us = air_on ? AIR->st.modem_us : 0;
 	*span_us = air_on ? AIR->st.modem_span_us : 0;
+	return true;
 }
 
 const hal_air_t hrc_air = {

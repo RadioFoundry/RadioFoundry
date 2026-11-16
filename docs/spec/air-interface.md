@@ -68,7 +68,7 @@ after `close`; the board's RF side is already tuned and in its digital mode.
 | `tx_abort()` | stop at once and drop the queue |
 | `now_us()` | the clock of every time stamp here: free running microseconds |
 | `slot_clock()`, `slot_slew()` | TDMA providers: the latest slot boundary, and stretching the next slot |
-| `rx_load(work_us, span_us)` | optional: what receive costs the MCU since `open`: the time the provider spent turning samples into symbols, and the time of signal they covered. NULL when a chip does that work |
+| `rx_load(work_us, span_us)` | optional: what receive costs the MCU since `open`: the time the provider spent turning samples into symbols, and the time of signal they covered. NULL when a chip does that work; false when a chip does it for the profile that is open |
 
 Constants a provider states: `tx_chunk_syms`, `tx_queue_depth`, `tx_lead_ms` (how far ahead of the air the queue
 must be kept) and `time_accuracy_us`.

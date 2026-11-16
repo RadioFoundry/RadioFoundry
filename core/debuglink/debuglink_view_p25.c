@@ -30,8 +30,9 @@ void debuglink_view_p25(const radio_view_t *v, dl_text_t *t)
 
 		// What receive costs the MCU since the engine opened the provider: work / span is the share of the CPU.
 		// Early in the section: a reply cut short loses counters, not this
-		board.air->rx_load(&work, &span);
-		dl_text(t, "p25.rx_work_us=%u\np25.rx_span_us=%u\n", (unsigned)work, (unsigned)span);
+		if (board.air->rx_load(&work, &span)) {
+			dl_text(t, "p25.rx_work_us=%u\np25.rx_span_us=%u\n", (unsigned)work, (unsigned)span);
+		}
 	}
 	radio_p25_settings(&s);
 	dl_text(t, "p25.rx_nac=%u\np25.tx_nac=%u\np25.rx_tgid=%u\np25.talkaround=%u\np25.unit_call=%u\n", s.rx_nac,

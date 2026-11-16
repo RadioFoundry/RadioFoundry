@@ -153,8 +153,9 @@ typedef struct {
 	bool (*slot_clock)(uint32_t *counter, uint32_t *t_us);
 	int32_t (*slot_slew)(int32_t us);
 	// Optional (NULL: not counted, a chip does the work). What receive costs this MCU since open: the microseconds
-	// the provider spent turning samples into symbols, and the microseconds of signal they covered
-	void (*rx_load)(uint32_t *work_us, uint32_t *span_us);
+	// the provider spent turning samples into symbols, and the microseconds of signal they covered. false: a chip
+	// does the work for the profile that is open (nothing is counted, the two are 0)
+	bool (*rx_load)(uint32_t *work_us, uint32_t *span_us);
 	uint16_t tx_chunk_syms;		// symbols per transmit chunk (every chunk but the last is full)
 	uint8_t tx_queue_depth;		// chunks the queue holds
 	uint16_t tx_lead_ms;		// how far ahead of the air the queue must be kept: the framer holds this much queued

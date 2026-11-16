@@ -436,7 +436,7 @@ static void air_abort(uint8_t i) { fair[i].qn = 0; fair[i].on = false; fair[i].a
 	static void air_end##i(void) { air_end(i); } \
 	static void air_abort##i(void) { air_abort(i); } \
 	static uint32_t air_now##i(void) { return fair[i].now_us; } \
-	static void air_load##i(uint32_t *w, uint32_t *s) { *w = 1000u + i; *s = 20000u; } \
+	static bool air_load##i(uint32_t *w, uint32_t *s) { *w = 1000u + i; *s = 20000u; return true; } \
 	static const hal_air_t fake_air##i = { air_fit##i, air_open##i, air_close##i, air_restart##i, air_begin##i, air_queue##i, \
 					       air_space##i, air_end##i, air_abort##i, air_now##i, NULL, NULL, air_load##i, AIR_CHUNK, \
 					       AIR_DEPTH, 60, 100 };

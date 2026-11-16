@@ -1009,10 +1009,14 @@ static uint32_t air_now_us(void)
 	return now_us(NULL);
 }
 
-static void air_rx_load(uint32_t *work_us, uint32_t *span_us)
+// Only a session that receives through the FM copy costs the MCU a modem; the chip's correlator does the others'
+static bool air_rx_load(uint32_t *work_us, uint32_t *span_us)
 {
-	*work_us = air_on ? AIR->st.modem_us : 0;
-	*span_us = air_on ? AIR->st.modem_span_us : 0;
+	bool copy = air_on && AIR->rx_copy;
+
+	*work_us = copy ? AIR->st.modem_us : 0;
+	*span_us = copy ? AIR->st.modem_span_us : 0;
+	return copy;
 }
 
 const hal_air_t stm32_hrc_air = {
