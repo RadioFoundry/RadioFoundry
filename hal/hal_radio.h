@@ -8,7 +8,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-typedef enum { RADIO_MODE_FM, RADIO_MODE_DMR } radio_mode_t;
+// RADIO_MODE_P25 is a channel's mode only (the radio core runs P25 with the board in RADIO_MODE_DMR, its modem
+// chip's digital mode, docs/spec/p25.md 7): set_mode never gets it
+typedef enum { RADIO_MODE_FM, RADIO_MODE_DMR, RADIO_MODE_P25 } radio_mode_t;
 typedef enum { RADIO_BW_12K5, RADIO_BW_25K } radio_bw_t;
 
 typedef enum { TONE_NONE, TONE_CTCSS, TONE_DCS, TONE_DCS_INV } tone_type_t;

@@ -30,6 +30,13 @@
 #include "radio/beep.h"	// beep_t (beep_play only with CONFIG_BEEP)
 #include "radio/vibe.h"	// vibe_t (vibe_play only with CONFIG_VIBRATE)
 #include "radio/tx_limit.h"	// the test TX limit (radio-features.md 3.1)
+#if CONFIG_P25
+#include "radio/radio_p25.h"	// P25 conventional (docs/spec/p25.md 7)
+#include "air/air_session.h"	// air_tx_state_t
+#if CONFIG_IMBE
+#include "p25/p25Voice.h"
+#endif
+#endif
 #if CONFIG_NET_USRP || CONFIG_APRS_RX
 #include "usbaudio/audio_mux.h"	// the PCM stream shared with a host audio session and APRS
 #endif
@@ -87,6 +94,11 @@ static void cw_cancel(radio_sm_t *sm);
 #define VFO_AVAILABLE	(CONFIG_VFO_FM || CONFIG_VFO_DMR)
 // The mode a VFO starts in
 #define VFO_MODE_DEFAULT	(CONFIG_VFO_FM ? RADIO_MODE_FM : RADIO_MODE_DMR)
+#if CONFIG_AIR_RAW
+#define BENCH_HELD(sm)		((sm)->air_bench)	// the debug link's air interface bench has the modem
+#else
+#define BENCH_HELD(sm)		false
+#endif
 
 static const uint32_t vfo_start_hz[] = { 146520000, 145500000, 446000000, 433500000 };
 
@@ -155,14 +167,24 @@ static void activity(radio_sm_t *sm, uint32_t now_ms)
 #endif
 }
 
-// A beep at the settings' level: mixed into the DMR voice stream when it runs, else on its own stream
+// Whether a voice stream (DMR or P25) owns the PCM audio: beeps are mixed into it
+static inline bool voice_streaming(void)
+{
+	bool on = false;
+#if CONFIG_DMR
+	on = ambeVoiceStreaming();
+#endif
+#if CONFIG_P25 && CONFIG_IMBE
+	on = on || p25VoiceStreaming();
+#endif
+	return on;
+}
+
+// A beep at the settings' level: mixed into the voice stream when one runs, else on its own stream
 static void beep(radio_sm_t *sm, uint8_t b)
 {
 #if CONFIG_BEEP
-	bool shared = false;
-#if CONFIG_DMR
-	shared = ambeVoiceStreaming();
-#endif
+	bool shared = voice_streaming();
 	if (radio_tone_off(sm->set.tones_off, b)) {
 		return;		// Settings > Sound turned it off (the codeplug's settings area)
 	}
@@ -274,6 +296,11 @@ bool radio_view_wakes(const radio_view_t *v)
 #if CONFIG_DMR
 		if (v->ch.mode == RADIO_MODE_DMR) {
 			return v->dmr.state == RDMR_RX;	// a call that plays; not data or a call we don't play
+		}
+#endif
+#if CONFIG_P25
+		if (v->ch.mode == RADIO_MODE_P25) {
+			return (v->p25.flags & RADIO_P25_PLAYED) != 0;
 		}
 #endif
 		return true;		// FM: the squelch opened, something plays
@@ -454,6 +481,12 @@ static void outputs(radio_sm_t *sm)
 	bool fm = sm->view.ch.mode == RADIO_MODE_FM && !sm->hotspot;
 	bool open = !tx && fm && (sm->view.monitor || sm->view.state == RS_RX || (sm->view.state == RS_TX_DENIED && sm->deny_rx));
 	bool green = open;
+#if CONFIG_P25
+	if (sm->view.ch.mode == RADIO_MODE_P25 && !tx && sm->view.state == RS_RX &&
+	    (sm->view.p25.flags & RADIO_P25_PLAYED) != 0) {
+		green = true;
+	}
+#endif
 #if CONFIG_DMR
 	if (!fm && !tx && sm->view.state == RS_RX && sm->view.dmr.state == RDMR_RX) {
 		green = true;
@@ -520,6 +553,11 @@ static void end_reception(radio_sm_t *sm, uint32_t now_ms)
 // Receive on what view.ch says now
 static void dmr_begin(radio_sm_t *sm);
 static void dmr_end(radio_sm_t *sm);
+#if CONFIG_P25
+// Not inlined: tune's frame is on the radio task's deepest path
+static void p25_stop(radio_sm_t *sm) __attribute__((noinline));
+static void p25_begin(radio_sm_t *sm) __attribute__((noinline));
+#endif
 
 #if CONFIG_BCAST_FM
 // The broadcast receiver on or off. Off mutes it first
@@ -598,14 +636,22 @@ static void tune(radio_sm_t *sm, uint32_t now_ms)
 	sm->view.rx_sleeping = false;
 #endif
 	radio_mode_t mode = (CONFIG_DMR && sm->view.ch.mode == RADIO_MODE_DMR) ? RADIO_MODE_DMR : RADIO_MODE_FM;
-	// No sub-audio squelch in DMR, whatever tone the channel or the VFO still holds from its FM settings
+#if CONFIG_P25
+	// P25 runs with the board in its digital mode, the DMR stack stopped; a retune starts the engine over
+	bool p25 = sm->view.ch.mode == RADIO_MODE_P25;
+	if (p25) {
+		mode = RADIO_MODE_P25;
+	}
+#endif
+	// No sub-audio squelch in DMR or P25, whatever tone the channel or the VFO still holds from its FM settings
 	static const subtone_t no_tone = { TONE_NONE, 0 };
 	if (sm->board_mode == RADIO_MODE_DMR && mode != RADIO_MODE_DMR) {
-		dmr_end(sm);		// the call stack lets go of the modem before the chip leaves DMR
+		dmr_end(sm);		// the call stack (or P25) lets go of the modem before the chip leaves DMR
 	}
-	if (mode != sm->board_mode) {
-		sm->board_mode = mode;
-		board.radio->set_mode(mode);
+	radio_mode_t board_mode = mode == RADIO_MODE_P25 ? RADIO_MODE_DMR : mode;
+	if (board_mode != sm->board_mode) {
+		sm->board_mode = board_mode;
+		board.radio->set_mode(board_mode);
 	}
 #if CONFIG_AM_RX
 	if (sm->view.am && !board.radio->rx_am(sm->view.ch.rx_hz, (radio_bw_t)sm->view.ch.bw)) {
@@ -616,11 +662,16 @@ static void tune(radio_sm_t *sm, uint32_t now_ms)
 	bcast_tune(sm);		// the channel receiver keeps its last frequency, muted, while the broadcast one plays
 #endif
 	if (!sm->view.am && !sm->view.bcast)
-		board.radio->rx(sm->view.ch.rx_hz, (radio_bw_t)sm->view.ch.bw,
-				mode == RADIO_MODE_DMR ? &no_tone : &sm->view.ch.rx_tone);
+		board.radio->rx(sm->view.ch.rx_hz, mode == RADIO_MODE_P25 ? RADIO_BW_12K5 : (radio_bw_t)sm->view.ch.bw,
+				mode != RADIO_MODE_FM ? &no_tone : &sm->view.ch.rx_tone);
 	if (mode == RADIO_MODE_DMR) {
 		dmr_begin(sm);		// after set_mode(DMR): the modem only starts in DMR mode
 	}
+#if CONFIG_P25
+	if (mode == RADIO_MODE_P25) {
+		p25_begin(sm);
+	}
+#endif
 	outputs(sm);
 	changed(sm);
 }
@@ -944,7 +995,7 @@ static uint8_t tx_check(const radio_sm_t *sm)
 	if (ch->rx_only) {
 		return TXDENY_RX_ONLY;
 	}
-	if (ch->mode == RADIO_MODE_DMR ? !CONFIG_DMR : !CONFIG_FM) {
+	if (ch->mode == RADIO_MODE_DMR ? !CONFIG_DMR : ch->mode == RADIO_MODE_P25 ? !CONFIG_P25 : !CONFIG_FM) {
 		return TXDENY_MODE;
 	}
 	if (!board_in_band(ch->tx_hz, true)) {
@@ -1501,6 +1552,9 @@ static void dmr_reconfigure_sfr(radio_sm_t *sm)
 // Leaving DMR (or into hotspot mode): drop any transmission, stop the stack and the PCM stream
 static void dmr_end(radio_sm_t *sm)
 {
+#if CONFIG_P25
+	p25_stop(sm);
+#endif
 #if CONFIG_SFR
 	sfr_rpt_end(sm);
 #endif
@@ -2305,7 +2359,11 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 
 #else
 static void dmr_begin(radio_sm_t *sm) { (void)sm; }
+#if CONFIG_P25
+static void dmr_end(radio_sm_t *sm) { p25_stop(sm); }
+#else
 static void dmr_end(radio_sm_t *sm) { (void)sm; }
+#endif
 #endif
 
 // --- Scan (radio/scan.c decides; this tunes) ---
@@ -4035,6 +4093,133 @@ static void roger_cancel(radio_sm_t *sm)
 }
 #endif
 
+#if CONFIG_P25
+// --- P25 conventional: radio_p25.c runs the engine and the voice; here, when it runs and the transmitter ---
+
+static uint32_t p25_own_id(const radio_sm_t *sm)
+{
+#if CONFIG_DMR
+	return sm->own_id;
+#else
+	(void)sm;
+	return codeplug_dmr_id();
+#endif
+}
+
+// On a P25 channel, the board in its digital mode and tuned: the engine starts (dmr_end stopped any before)
+static void p25_begin(radio_sm_t *sm)
+{
+	radio_p25_begin(&sm->view.ch, p25_own_id(sm));
+	radio_p25_poll(&sm->view.p25);
+}
+
+// P25 stops (leaving it, or something else takes the modem): the engine closes, which cuts a transmission, and the
+// transmitter goes off. Called from dmr_end, so every path that takes the modem stops P25 too
+static void p25_stop(radio_sm_t *sm)
+{
+	radio_p25_end();
+	if (sm->p25_keyed) {
+		sm->p25_keyed = false;
+		board.radio->tx_off();
+	}
+	sm->p25_tx = false;
+	sm->view.p25.flags = 0;
+	sm->view.p25.tx = AIR_TX_IDLE;
+}
+
+// PTT on a P25 channel, tx_check passed: the header queued, the transmitter keyed at the channel's power, the
+// provider started (hal_air.h: it keys only inside that). A refusal after the engine began ends at its AIR_TX_DONE
+// in p25_tick, which switches off
+static void p25_key(radio_sm_t *sm, uint32_t now_ms)
+{
+	static const subtone_t none = { TONE_NONE, 0 };
+	const channel_t *ch = &sm->view.ch;
+
+	if (!radio_p25_running()) {
+		deny(sm, TXDENY_REFUSED);	// no engine on this board (no provider, no fit, no memory)
+		return;
+	}
+	bool primed = radio_p25_tx_prepare();
+	sm->p25_tx = radio_p25_tx_state() != AIR_TX_IDLE;
+	if (!primed) {
+		radio_p25_tx_abort();
+		deny(sm, TXDENY_REFUSED);
+		return;
+	}
+	sm->view.state = RS_TX;		// speaker off, red LED on, before keying
+	sm->view.tx_auto = false;
+	sm->view.last_tx_ms = now_ms != 0 ? now_ms : 1;
+	sm->view.tx_deny = TXDENY_NONE;
+	sm->view.tx_elapsed_ms = 0;
+	sm->tx_start_ms = now_ms;
+	outputs(sm);
+	if (!key_tx(ch->tx_hz, RADIO_BW_12K5, sm->view.power, &none)) {
+		radio_p25_tx_abort();
+		deny(sm, board_refusal());
+		return;
+	}
+	sm->p25_keyed = true;
+	if (!radio_p25_tx_go()) {
+		deny(sm, TXDENY_REFUSED);	// AIR_TX_DONE already: the tick switches off
+		return;
+	}
+	changed(sm);
+}
+
+// Every tick on a P25 channel: the engine's view, the end of a transmission, the receive state
+static void p25_tick(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (radio_p25_poll(&sm->view.p25)) {
+		changed(sm);
+	}
+	if (sm->p25_tx && radio_p25_tx_state() == AIR_TX_DONE) {
+		if (sm->p25_keyed) {
+			sm->p25_keyed = false;
+			board.radio->tx_off();
+		}
+		radio_p25_tx_clear();
+		sm->p25_tx = false;
+		if (sm->view.state == RS_TX) {
+			fm_tx_end(sm, true, now_ms);	// (the transmitter is off already)
+			if (sm->ptt) {
+				sm->ptt = false;	// pressed again while the last one ended: a new transmission
+				ptt_down(sm, now_ms);
+			}
+		}
+		changed(sm);
+	}
+	if (sm->p25_tx || sm->view.state == RS_TX || sm->view.state == RS_TX_DENIED) {
+		return;
+	}
+	// A call on our NAC shows as a reception; its voice plays only if it passes the squelch (RADIO_P25_PLAYED)
+	bool rx = (sm->view.p25.flags & RADIO_P25_RX) != 0;
+	if (rx && sm->view.state == RS_IDLE) {
+		sm->view.state = RS_RX;
+		activity(sm, now_ms);
+		changed(sm);
+	} else if (!rx && sm->view.state == RS_RX) {
+		end_reception(sm, now_ms);
+		changed(sm);
+	}
+	outputs(sm);
+}
+
+// The TX timer and the time-out while a P25 transmission runs (radio_sm_poll)
+static void p25_poll_tx(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (sm->view.state != RS_TX || !sm->p25_tx) {
+		return;
+	}
+	tx_timer(sm, now_ms);
+	if (sm->view.tot_s != 0 && sm->view.tx_elapsed_ms >= (uint32_t)sm->view.tot_s * 1000) {
+		radio_p25_tx_abort();		// cut at once; AIR_TX_DONE follows and p25_tick switches off
+		if (sm->ptt) {
+			deny(sm, TXDENY_TIMEOUT);	// until PTT is released
+		}
+	}
+}
+#endif
+
 static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 {
 	if (sm->ptt) {
@@ -4077,6 +4262,12 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		deny(sm, TXDENY_HOTSPOT);	// the host link transmits for the hotspot; PTT does nothing until it ends
 		return;
 	}
+#if CONFIG_AIR_RAW
+	if (sm->air_bench) {
+		deny(sm, TXDENY_HOTSPOT);	// the same for the air interface bench
+		return;
+	}
+#endif
 #if CONFIG_DMR && CONFIG_SFR
 	if (sm->sfr_rpt) {
 		deny(sm, TXDENY_SFR_RPT);	// the repeater keys for the calls it repeats
@@ -4098,6 +4289,14 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_DMR
 	if (sm->view.ch.mode == RADIO_MODE_DMR) {
 		dmr_ptt_down(sm, now_ms);
+		return;
+	}
+#endif
+#if CONFIG_P25
+	if (sm->view.ch.mode == RADIO_MODE_P25) {
+		if (!sm->p25_tx) {
+			p25_key(sm, now_ms);
+		}		// else the last transmission is still ending: p25_tick keys again once it is done
 		return;
 	}
 #endif
@@ -4143,6 +4342,12 @@ static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms)
 	if (sm->host_audio) {
 		roger = false;		// the host sends its own audio, tones included
 	}
+#if CONFIG_P25
+	if (sm->p25_tx && sm->view.state == RS_TX) {
+		radio_p25_tx_stop();	// the LDU on air is finished and a terminator sent; p25_tick ends it at done
+		return;
+	}
+#endif
 #if CONFIG_DMR
 	if (sm->dmr_running) {
 		dmr_call_ptt(false);
@@ -4422,6 +4627,11 @@ static void hotspot_enter(radio_sm_t *sm, uint32_t rx_hz, uint32_t now_ms)
 	if (sm->hotspot || board.dmr == NULL || sm->ptt || sm->view.state == RS_TX || keyed) {
 		return;		// refused for now: the hotspot asks again
 	}
+#if CONFIG_AIR_RAW
+	if (sm->air_bench) {
+		return;		// the air interface bench has the modem
+	}
+#endif
 #if CONFIG_SFR_CWID
 	cw_cancel(sm);
 #endif
@@ -4485,6 +4695,111 @@ static void hotspot_leave(radio_sm_t *sm, uint32_t now_ms)
 	sm->view.hotspot = false;
 	sm->hs_carrier = false;
 	tune(sm, now_ms);	// the channel again; on a DMR channel the call stack takes the modem back
+}
+#endif
+
+#if CONFIG_AIR_RAW
+// --- The debug link's air interface bench (debuglink_air.h): it takes the modem as a hotspot does, and keys only
+// through here ---
+
+static void bench_unkey(radio_sm_t *sm)
+{
+	if (!sm->bench_keyed) {
+		return;
+	}
+	sm->bench_keyed = false;
+	board.radio->tx_off();
+	sm->view.state = RS_IDLE;
+	outputs(sm);
+	changed(sm);
+}
+
+// The DMR stack and P25 stopped, the board receiving in its digital mode on the channel's frequency. Refused while
+// transmitting or a hotspot (the bench asks again)
+static void bench_enter(radio_sm_t *sm, uint32_t now_ms)
+{
+	static const subtone_t none = { TONE_NONE, 0 };
+	bool keyed = false;
+#if CONFIG_DMR
+	keyed = sm->dmr_keyed;
+#endif
+	if (sm->air_bench || sm->hotspot || sm->ptt || sm->view.state == RS_TX || keyed) {
+		return;
+	}
+#if CONFIG_SFR_CWID
+	cw_cancel(sm);
+#endif
+	scan_stop(sm, false, now_ms);
+	end_reception(sm, now_ms);
+#if CONFIG_BCAST_FM
+	bcast_power(sm, false);
+	sm->view.bcast = sm->view.bcast_fault = false;
+#endif
+	if (sm->board_mode == RADIO_MODE_DMR) {
+		dmr_end(sm);	// the call stack and P25 let go of the modem
+	}
+	if (sm->board_mode != RADIO_MODE_DMR) {
+		sm->board_mode = RADIO_MODE_DMR;
+		board.radio->set_mode(RADIO_MODE_DMR);
+	}
+	if (sm->view.ch.rx_hz != 0 && board_in_band(sm->view.ch.rx_hz, false)) {
+		board.radio->rx(sm->view.ch.rx_hz, RADIO_BW_12K5, &none);
+	}
+	sm->air_bench = true;
+	sm->view.state = RS_IDLE;
+	outputs(sm);
+	changed(sm);
+}
+
+static void bench_leave(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (!sm->air_bench) {
+		return;
+	}
+	bench_unkey(sm);
+	sm->air_bench = false;
+	tune(sm, now_ms);	// the channel again: DMR or P25 take the modem back
+}
+
+// The core's transmit checks, the transmitter on the channel's TX frequency at its power, then the provider's
+// tx_begin (the bench queued its first chunk). Off again after max_ms at most, or at the channel's time-out
+static void bench_key(radio_sm_t *sm, uint16_t max_ms, uint32_t now_ms)
+{
+	static const subtone_t none = { TONE_NONE, 0 };
+	if (!sm->air_bench || sm->bench_keyed || board.air == NULL || max_ms == 0 || tx_check(sm) != TXDENY_NONE) {
+		return;
+	}
+	if (!key_tx(sm->view.ch.tx_hz, RADIO_BW_12K5, sm->view.power, &none)) {
+		return;
+	}
+	if (!board.air->tx_begin()) {
+		board.radio->tx_off();
+		return;
+	}
+	sm->bench_keyed = true;
+	sm->bench_max_ms = max_ms;
+	sm->bench_key_ms = now_ms;
+	sm->view.state = RS_TX;
+	sm->view.tx_auto = true;
+	sm->view.last_tx_ms = now_ms != 0 ? now_ms : 1;
+	sm->view.tx_elapsed_ms = 0;
+	sm->tx_start_ms = now_ms;
+	outputs(sm);
+	changed(sm);
+}
+
+// The hard cap: the provider stops at once (its AIR_EV_TX_DONE still reaches the bench) and the transmitter goes off
+static void bench_tick(radio_sm_t *sm, uint32_t now_ms)
+{
+	uint32_t cap = sm->bench_max_ms;
+	if (sm->view.tot_s != 0 && (uint32_t)sm->view.tot_s * 1000u < cap) {
+		cap = (uint32_t)sm->view.tot_s * 1000u;
+	}
+	sm->view.tx_elapsed_ms = now_ms - sm->bench_key_ms;
+	if (sm->view.tx_elapsed_ms >= cap) {
+		board.air->tx_abort();
+		bench_unkey(sm);
+	}
 }
 #endif
 
@@ -4606,6 +4921,12 @@ static void restore_vfo(radio_sm_t *sm, const settings_t *st, uint8_t idx)
 	sm->vfo_seeded = true;
 }
 
+// The saved VFO has FM and DMR only: P25 is kept as DMR (FM without the DMR VFO) until the settings carry it
+static uint8_t vfo_saved_mode(uint8_t mode)
+{
+	return mode != RADIO_MODE_P25 ? mode : CONFIG_VFO_DMR ? RADIO_MODE_DMR : RADIO_MODE_FM;
+}
+
 // The VFO in use (vfo_ch and its target) into VFO idx's settings fields
 static void persist_vfo(const radio_sm_t *sm, settings_t *st, uint8_t idx)
 {
@@ -4616,7 +4937,7 @@ static void persist_vfo(const radio_sm_t *sm, settings_t *st, uint8_t idx)
 		if (sm->vfo_seeded) {
 			st->vfo2_rx_hz = v->rx_hz;
 			st->vfo2_tx_hz = v->tx_hz;
-			st->vfo2_mode = v->mode;
+			st->vfo2_mode = vfo_saved_mode(v->mode);
 			st->vfo2_bw = v->bw;
 			st->vfo2_power = power;
 			st->vfo2_cc = v->color_code;
@@ -4637,7 +4958,7 @@ static void persist_vfo(const radio_sm_t *sm, settings_t *st, uint8_t idx)
 	if (sm->vfo_seeded) {
 		st->vfo_rx_hz = v->rx_hz;
 		st->vfo_tx_hz = v->tx_hz;
-		settings_set_vfo_mode_bw(st, v->mode, v->bw);
+		settings_set_vfo_mode_bw(st, vfo_saved_mode(v->mode), v->bw);
 		st->vfo_power = power;
 		settings_set_vfo_cc_ts(st, v->color_code, v->timeslot);
 		st->vfo_rx_tone_type = v->rx_tone.type;
@@ -5092,7 +5413,7 @@ static void host_audio_watch(radio_sm_t *sm, uint32_t now_ms)
 }
 
 #endif
-#if CONFIG_BEEP || CONFIG_DMR   // its only users; without either, it would be unused (a warning)
+#if CONFIG_BEEP || CONFIG_DMR || CONFIG_P25   // its only users; without them, it would be unused (a warning)
 // The PCM stream the radio's own users (beeps, DMR voice) take: the board's, shared with a host audio session
 static const hal_audio_t *pcm_audio(void)
 {
@@ -5185,6 +5506,12 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 #endif
 #if CONFIG_DMR_DATA_CORE
 	data_init(sm);
+#endif
+#endif
+#if CONFIG_P25
+	radio_p25_init(pcm_audio());
+#if CONFIG_IMBE && CONFIG_BEEP
+	p25VoiceSetMixer(beep_mix);
 #endif
 #endif
 
@@ -5301,6 +5628,9 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		aprs_rf_abort(sm, now_ms);	// the user does something: an APRS transmission gives way
 	}
 	bool busy = sm->view.state == RS_TX || sm->hotspot;	// no retuning while transmitting or a hotspot
+#if CONFIG_AIR_RAW
+	busy = busy || sm->air_bench;				// ... or while the air interface bench has the modem
+#endif
 	int dir = req->arg > 0 ? 1 : -1;
 	// (RREQ_DUAL packs a channel into arg, RADIO_DUAL_VFO in bit 31: INT32_MIN can't be negated, and isn't a step)
 	int steps = req->arg > 0 ? req->arg : req->arg != INT32_MIN ? -req->arg : INT32_MAX;
@@ -5676,10 +6006,12 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	}
 #endif
 	case RREQ_MODE:
-		if (busy || (req->arg != RADIO_MODE_FM && req->arg != RADIO_MODE_DMR) || req->arg == sm->view.ch.mode ||
+		if (busy || (req->arg != RADIO_MODE_FM && req->arg != RADIO_MODE_DMR && req->arg != RADIO_MODE_P25) ||
+				req->arg == sm->view.ch.mode ||
 				(req->arg == RADIO_MODE_FM && !(sm->view.vfo ? CONFIG_VFO_FM : CONFIG_FM)) ||
 				(req->arg == RADIO_MODE_DMR && (radio_listen_band(sm->view.ch.rx_hz) ||
-								(sm->view.vfo && !CONFIG_VFO_DMR)))) {
+								(sm->view.vfo && !CONFIG_VFO_DMR))) ||
+				(req->arg == RADIO_MODE_P25 && (!CONFIG_P25 || radio_listen_band(sm->view.ch.rx_hz)))) {
 			break;
 		}
 		sm->view.ch.mode = (uint8_t)req->arg;
@@ -5842,6 +6174,37 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 #if CONFIG_DTMF
 	case RREQ_DTMF:
 		dtmf_key(sm, (char)(req->arg & 0xFF), (req->arg & 0x100) != 0, now_ms);
+		break;
+#endif
+#if CONFIG_P25
+	case RREQ_P25_SET:
+		// radio_task.c copied the settings in: the engine takes them now, or at the next tune if it transmits
+		if (radio_p25_running()) {
+			radio_p25_apply(&sm->view.ch, p25_own_id(sm));
+		}
+		changed(sm);
+		break;
+#endif
+#if CONFIG_AIR_RAW
+	case RREQ_AIR_BENCH:
+		if ((req->arg & 0xFF) != 0) {
+			bench_enter(sm, now_ms);
+		} else {
+			bench_leave(sm, now_ms);
+		}
+		if ((req->arg >> 8) != 0) {
+			sm->bench_seq = (uint8_t)(req->arg >> 8);
+		}
+		break;
+	case RREQ_AIR_TX:
+		if ((req->arg & 0xFF) != 0) {
+			bench_key(sm, (uint16_t)(req->arg2 > 0xFFFFu ? 0xFFFFu : req->arg2), now_ms);
+		} else {
+			bench_unkey(sm);
+		}
+		if ((req->arg >> 8) != 0) {
+			sm->bench_seq = (uint8_t)(req->arg >> 8);
+		}
 		break;
 #endif
 	default:
@@ -6176,17 +6539,14 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	}
 	// codeplug_serial() before zone_edit_busy(): a zone write that moved indexes has its log entry by then
 	if ((sm->reload_pending || codeplug_serial() != sm->codeplug_serial || ZONES_MOVED(sm)) && !ZONE_WRITE_BUSY() &&
-	    !sm->hotspot && !sm->ptt && sm->view.state != RS_TX) {
+	    !sm->hotspot && !BENCH_HELD(sm) && !sm->ptt && sm->view.state != RS_TX) {
 		reload(sm, now_ms);
 		persist(sm, now_ms);
 	}
 	follow_volume(sm);
 	battery_poll(sm, now_ms);
 #if CONFIG_BEEP
-	bool shared = false;
-#if CONFIG_DMR
-	shared = ambeVoiceStreaming();
-#endif
+	bool shared = voice_streaming();
 	if (sm->beep_due != BEEP_NONE && (int32_t)(now_ms - sm->beep_due_ms) >= 0) {
 		uint8_t b = sm->beep_due;
 		sm->beep_due = BEEP_NONE;
@@ -6213,7 +6573,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_APRS_AFSK
 		aprs = sm->aprs_phase != APRS_RF_OFF;
 #endif
-		if (sm->view.state == RS_TX || sm->hotspot) {
+		if (sm->view.state == RS_TX || sm->hotspot || BENCH_HELD(sm)) {
 			sm->retune_due = false;
 			sm->retune_pending = true;
 		} else if (!aprs) {
@@ -6232,6 +6592,12 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	own_rx = sm->aprs_phase == APRS_RF_OFF;
 #endif
 	(void)own_rx;
+#if CONFIG_AIR_RAW
+	if (sm->air_bench) {
+		outputs(sm);
+		return;		// the bench has the modem: no squelch, scan or time-out here (bench_tick caps a keying)
+	}
+#endif
 #if CONFIG_BCAST_FM
 	if (sm->view.bcast && own_rx)
 		bcast_status(sm, &st);
@@ -6311,6 +6677,13 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		return;		// the state follows the repeater (sfr_rpt_tick)
 	}
 #endif
+#endif
+#if CONFIG_P25
+	if (radio_p25_running() || sm->view.ch.mode == RADIO_MODE_P25) {
+		p25_poll_tx(sm, now_ms);
+		outputs(sm);
+		return;		// the state follows the engine (p25_tick)
+	}
 #endif
 
 	if (sm->view.state == RS_TX) {
@@ -6475,6 +6848,16 @@ void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_DMR_EMERGENCY
 	emergency_tick(sm, now_ms);
 #endif
+#endif
+#if CONFIG_P25
+	if (radio_p25_running()) {
+		p25_tick(sm, now_ms);
+	}
+#endif
+#if CONFIG_AIR_RAW
+	if (sm->bench_keyed) {
+		bench_tick(sm, now_ms);
+	}
 #endif
 	if (sm->led_timed || sm->deny_led) {
 		outputs(sm);	// a blink or the deny flash runs on time, not only when the state changes

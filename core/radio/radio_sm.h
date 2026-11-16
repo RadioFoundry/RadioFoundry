@@ -166,6 +166,9 @@ typedef enum {
 	RREQ_WAKE,		// radio_task.c: tick now (a DMR transmission ended: dmr_call_set_wake); never radio_sm_request
 	RREQ_VOLUME_HOLD,	// arg: 1 hold the level and ignore the knob (keys locked), 0 follow it again
 	RREQ_VFO_SFR,		// the VFO's SFR role (CONFIG_SFR): arg = byte A, as a channel's (sfr.h); VFO only
+	RREQ_P25_SET,		// radio_task.c: the pending P25 settings were copied (radio_p25_set_settings); applied here
+	RREQ_AIR_BENCH,		// the air interface bench (CONFIG_AIR_RAW): arg 1 take the modem, 0 give it back
+	RREQ_AIR_TX,		// ... arg 1 key (arg2: the longest time in ms), 0 unkey
 } radio_req_type_t;
 
 // RREQ_TONE's argument: which (RADIO_TONE_*) in bits 25:24, the tone type in 23:16, the value in 15:0
@@ -296,6 +299,17 @@ typedef struct {
 	uint8_t wake_seen;		// dmr_call_view_t.wake_sent last seen
 	bool led_timed;			// a timed signal was showing at the last outputs(): the tick keeps calling it
 	bool hotspot;			// hotspot mode: the host link owns the modem
+#if CONFIG_P25
+	bool p25_tx;			// a P25 transmission runs in the engine (from prepare until it is done and cleared)
+	bool p25_keyed;			// board.radio->tx() keyed for it (until tx_off)
+#endif
+#if CONFIG_AIR_RAW
+	bool air_bench;			// the debug link's air interface bench has the modem (RREQ_AIR_BENCH)
+	bool bench_keyed;		// ... and the transmitter keyed for it (RREQ_AIR_TX)
+	uint16_t bench_max_ms;		// its cap
+	uint32_t bench_key_ms;		// when it keyed
+	uint8_t bench_seq;		// the latest bench request handled (radio_task.c waits for it)
+#endif
 
 	radio_settings_t set;		// the settings in effect
 	uint32_t activity_ms;		// last request, reception or transmission (battery save)
