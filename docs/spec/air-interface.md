@@ -9,8 +9,9 @@ every layer below works from that profile. Built with the modes on it: `CONFIG_P
 [build-config.md](../build-config.md); `CONFIG_AIR` is derived from them). Which
 radios have a provider: [feature-matrix.md](../feature-matrix.md).
 
-State: host tested. No provider has been checked on air yet; every provider answers a fit with `AIR_FIT_UNTESTED`
-until it has.
+State: host tested. The HR_C6000 provider is also checked on air both ways with C4FM
+([modem-hrc6000.md](modem-hrc6000.md) 10.5). A provider answers a fit with `AIR_FIT_UNTESTED` until its board says
+it has been checked.
 
 ## 1. Layers
 

@@ -874,9 +874,12 @@ receive set-up's slot clock runs on; about 28.7 ms after a stop with 0x40 = 0x03
   from 2 to 29 ms after the write, and after transmissions of an odd and an even number of slots. A chunk written to the other half goes out in the slot then starting,
   its first 32 bits those of the chunk two slots before. 0x42 does not tell the halves apart: it reads 0xA0 at
   every interrupt of a transmission after the first.
-- In this mode the RF TX interrupt comes once per key-up, anywhere in the slot. The PA is keyed there (both halves
-  hold idle until the first chunk), or at the first chunk's set-up if it has not come, and held for the whole
-  transmission. The chip sends TX RAM whenever the PA is up.
+- The modulator sends TX RAM only in a transmit slot. In any other slot it rests about 3 kHz below the channel: a PA
+  keyed in slot 1 sent that as a bare carrier, and the step onto the channel fell under the first chunk's symbols
+  (a C4FM receiver then lost the first unit). So interrupt 1 sets slot 2 up with idle, the PA is keyed at interrupt
+  2 as that slot starts, and the first chunk goes out in slot 3. The PA is held for the whole transmission.
+- In this mode the RF TX interrupt comes once per key-up, anywhere in the slot. It keys nothing before slot 2
+  starts; after that it only tries again a key the board could not do.
 - A slot boundary to that slot on air: 2.2 ms. `AIR_EV_TX_STARTED` gives the first chunk's first symbol by that.
 - Each chunk taken from the queue gives `AIR_EV_TX_SPACE` (events in a row are one), so the core refills the queue
   before it runs dry.
@@ -906,7 +909,9 @@ Register facts above were measured with bench scripts on the chip. The driver's 
 C4FM calls at 1800 Hz: the record placement, the erasures and the level scale of 10.2. A sender whose symbol clock is
 28 ppm off is followed, at 0.4 % symbol errors against 0.1 % with a matching clock. A sync that comes off the record grid (a header 396
 symbols before the first voice unit) is not detected; the re-arm K records later brings the receiver back on the
-next one. On air still to check: the receive
+next one. The transmit side is checked off air with a C4FM voice call into a bench receiver: the header first,
+every unit decoded, no voice bit corrected, voice units 180 ms apart, the outer deviation 7 % over 1800 Hz with the
+calibrated pair. On air still to check: the receive
 set-up straight after the DMR one and after a transmission (one entry straight from a layer 2 restart gave no
 interrupts until a set-up with 0x41 = 0x40 had run once); the receive delay for t_us; the TX_STARTED time; the PA key
 and drop against the chunks.

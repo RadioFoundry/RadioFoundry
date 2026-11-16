@@ -652,31 +652,41 @@ static void test_transmit(void)
 	CHECK(!hrc6000_air_tx_begin(AIR));	// already
 	half_writes[0] = half_writes[1] = 0;
 
-	// The RF TX interrupt keys once
+	// The RF TX interrupt comes anywhere in slot 1, which is not a transmit slot: no key there
 	hrc6000_air_isr_rftx(AIR);
-	CHECK(rf_on == 1);
-	hrc6000_air_isr_rftx(AIR);
-	CHECK(rf_on == 1);
+	CHECK(rf_on == 0);
 
-	// Interrupt 1 sets up slot 2: one half only, the one slot 2 reads
+	// Interrupt 1 sets up slot 2 as an idle transmit slot: one half only, the one slot 2 reads; no chunk, no key
 	nx = 0;
 	tick();
 	CHECK(half_writes[half_of_slot(1)] == 1 && half_writes[!half_of_slot(1)] == 0);
-	CHECK(half_is(half_of_slot(1), 0x11) && half_is(!half_of_slot(1), 0x5F));
+	CHECK(half_is(0, 0x5F) && half_is(1, 0x5F));
+	CHECK(last_write(4, 0x41) == 0x80);
+	CHECK(rf_on == 0 && got.n_started == 0 && got.n_space == 0);
+	CHECK(hrc6000_air_tx_space(AIR) == HRC6000_AIR_TXQ - 2);
+	hrc6000_air_isr_rftx(AIR);
+	CHECK(rf_on == 0);
+	// Interrupt 2: slot 2 starts and the PA is keyed, once; chunk 1 goes to the half slot 3 reads
+	tick();
+	CHECK(rf_on == 1);
+	hrc6000_air_isr_rftx(AIR);
+	CHECK(rf_on == 1);
+	CHECK(half_writes[0] == 1 && half_writes[1] == 1);
+	CHECK(half_is(half_of_slot(2), 0x11) && half_is(half_of_slot(1), 0x5F));
 	CHECK(last_write(4, 0x41) == 0x80);
 	CHECK(got.n_started == 1 && got.t_started == t_us + 30000 + 2200 + 104);
 	CHECK(got.n_space == 1);	// a chunk left the queue: the core may fill it again
-	// Interrupt 2: the other half gets chunk 2; the half on air now (chunk 1) is not touched
+	// Interrupt 3: the other half gets chunk 2; the half on air now (chunk 1) is not touched
 	CHECK(hrc6000_air_tx_queue(AIR, &c3));
 	tick();
-	CHECK(half_writes[0] == 1 && half_writes[1] == 1);
-	CHECK(half_is(half_of_slot(2), 0x22) && half_is(half_of_slot(1), 0x11));
+	CHECK(half_writes[half_of_slot(3)] == 2 && half_writes[half_of_slot(2)] == 1);
+	CHECK(half_is(half_of_slot(3), 0x22) && half_is(half_of_slot(2), 0x11));
 	tick();
-	CHECK(half_is(half_of_slot(3), 0x33) && half_is(half_of_slot(2), 0x22));
+	CHECK(half_is(half_of_slot(4), 0x33) && half_is(half_of_slot(3), 0x22));
 	// Underrun: idle, one event however many slots
 	tick();
 	tick();
-	CHECK(half_is(half_of_slot(4), 0x5F) && half_is(half_of_slot(5), 0x5F));
+	CHECK(half_is(half_of_slot(5), 0x5F) && half_is(half_of_slot(6), 0x5F));
 	CHECK(got.n_underrun == 1 && AIR->st.tx_underruns == 2);
 	CHECK(got.n_space == 3);	// one per chunk taken, none for an idle slot
 	// More comes, then a short last chunk: padded with idle from its last symbol (100 = 25 bytes exactly; 101 cuts one)
@@ -686,10 +696,10 @@ static void test_transmit(void)
 	CHECK(hrc6000_air_tx_space(AIR) == 0);
 	air_tx_chunk_t late = chunk(0x55, 144, 0);
 	CHECK(!hrc6000_air_tx_queue(AIR, &late));	// after the last
-	tick();	// 6: c4
-	CHECK(half_is(half_of_slot(6), 0x44));
-	tick();	// 7: c5, the last
-	int h = half_of_slot(7);
+	tick();	// 7: c4
+	CHECK(half_is(half_of_slot(7), 0x44));
+	tick();	// 8: c5, the last
+	int h = half_of_slot(8);
 	for (int i = 0; i < 25; i++) {
 		CHECK(tx_ram[h * 0x24 + i] == 0xAA);
 	}
@@ -698,9 +708,9 @@ static void test_transmit(void)
 		CHECK(tx_ram[h * 0x24 + i] == 0x5F);
 	}
 	CHECK(got.n_underrun == 1);
-	// The last chunk on air (8), one idle slot after it (9), the PA drop at 10
+	// The last chunk on air (9), one idle slot after it (10), the PA drop at 11
 	tick();
-	CHECK(half_is(half_of_slot(8), 0x5F) && half_is(h, 0xAA) == false && rf_off == 0);
+	CHECK(half_is(half_of_slot(9), 0x5F) && half_is(h, 0xAA) == false && rf_off == 0);
 	tick();
 	CHECK(rf_off == 0 && got.n_done == 0);
 	nx = 0;
@@ -724,13 +734,15 @@ static void test_transmit(void)
 	got.n_done = 0;
 	CHECK(hrc6000_air_tx_queue(AIR, &c1));
 	CHECK(hrc6000_air_tx_begin(AIR));
-	tick();	// 1: c1 for slot 2
-	CHECK(rf_on == 2);	// no RF TX interrupt: keyed at the set-up
+	tick();	// 1: idle for slot 2
+	CHECK(rf_on == 1);
+	tick();	// 2: c1 for slot 3
+	CHECK(rf_on == 2);	// no RF TX interrupt: keyed as the idle slot starts
 	hrc6000_air_tx_end(AIR);
-	tick();	// 2: empty, ended: idle (c1 on air)
-	tick();	// 3: idle
+	tick();	// 3: empty, ended: idle (c1 on air)
+	tick();	// 4: idle
 	CHECK(got.n_done == 0);
-	tick();	// 4: drop
+	tick();	// 5: drop
 	CHECK(got.n_done == 1 && rf_off == 2);
 	CHECK(got.n_underrun == 1);
 
@@ -739,6 +751,8 @@ static void test_transmit(void)
 	AIR->st.tx_underruns = 0;
 	CHECK(hrc6000_air_tx_queue(AIR, &c1) && hrc6000_air_tx_queue(AIR, &c2));
 	CHECK(hrc6000_air_tx_begin(AIR));
+	tick();	// the idle slot's set-up takes no chunk
+	CHECK(got.n_space == 0);
 	for (int i = 0, seen = 0; i < 40; i++) {
 		tick();
 		CHECK(got.n_space == seen + 1);
@@ -760,6 +774,7 @@ static void test_abort_stall_suspend(void)
 	CHECK(hrc6000_air_tx_queue(AIR, &c) && hrc6000_air_tx_queue(AIR, &c));
 	CHECK(hrc6000_air_tx_begin(AIR));
 	tick();
+	tick();
 	CHECK(rf_on == 1);
 	hrc6000_air_tx_abort(AIR);
 	hrc6000_air_poll(AIR);
@@ -770,7 +785,8 @@ static void test_abort_stall_suspend(void)
 	// No slot clock for 200 ms: dropped by the watchdog
 	CHECK(hrc6000_air_tx_queue(AIR, &c));
 	CHECK(hrc6000_air_tx_begin(AIR));
-	hrc6000_air_isr_rftx(AIR);
+	tick();
+	tick();
 	t_us += 150000;
 	hrc6000_air_poll(AIR);
 	CHECK(got.n_done == 1);
@@ -781,6 +797,7 @@ static void test_abort_stall_suspend(void)
 	// The chip leaves DMR under the session: the transmission ends, no chip writes, receive waits
 	CHECK(hrc6000_air_tx_queue(AIR, &c));
 	CHECK(hrc6000_air_tx_begin(AIR));
+	tick();
 	tick();
 	nx = 0;
 	hrc6000_air_suspend(AIR);
@@ -799,6 +816,8 @@ static void test_abort_stall_suspend(void)
 	CHECK(hrc6000_air_tx_queue(AIR, &c) && hrc6000_air_tx_queue(AIR, &c));
 	CHECK(hrc6000_air_tx_begin(AIR));
 	int on = rf_on;
+	tick();
+	CHECK(rf_on == on);
 	tick();
 	CHECK(rf_on == on + 1 && AIR->st.rf_fail == 1);
 	rf_ok = true;
@@ -820,7 +839,8 @@ static void test_open_close(void)
 	air_tx_chunk_t c = chunk(0x11, 144, 0);
 	CHECK(hrc6000_air_tx_queue(AIR, &c));
 	CHECK(hrc6000_air_tx_begin(AIR));
-	hrc6000_air_isr_rftx(AIR);
+	tick();
+	tick();
 	nx = 0;
 	hrc6000_air_close(AIR, true);
 	CHECK(rf_off == 1);

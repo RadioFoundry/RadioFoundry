@@ -398,6 +398,14 @@ static void tx_slot(hrc6000_air_t *a, uint32_t t)
 		a->tail = 0;
 		return;
 	}
+	if (a->tx == HRC6000_AIR_START && a->tx_n == 1u) {
+		// The modulator runs only in a transmit slot. Slot 2 sends idle and the PA is keyed as it starts; the first
+		// chunk follows in slot 3. Keyed in slot 1, the carrier sat about 3 kHz off the channel, unmodulated, and
+		// stepped onto it under the first chunk's symbols
+		write_half(a, addr, NULL);
+		w(a, R_SLOT_CTL, CTL_TX);
+		return;
+	}
 	if (txq_count(a) > 0) {
 		air_tx_chunk_t *c = &a->buf->txq[a->txq_tail % HRC6000_AIR_TXQ];
 		bool last = (c->flags & AIR_TX_LAST) != 0;
@@ -425,7 +433,7 @@ static void tx_slot(hrc6000_air_t *a, uint32_t t)
 	}
 	w(a, R_SLOT_CTL, CTL_TX);
 	if (!a->pa) {
-		key(a);		// no RF TX interrupt yet (or a key the board could not do): the next chunk is a slot away
+		key(a);		// the idle slot starts (or a key the board could not do): the first chunk is a slot away
 	}
 }
 
@@ -556,8 +564,9 @@ void hrc6000_air_isr_sys(hrc6000_air_t *a)
 
 void hrc6000_air_isr_rftx(hrc6000_air_t *a)
 {
-	// Once per key-up, anywhere in the slot. Both halves hold idle until the first chunk: keying early sends idle
-	if (a->open && a->tx != HRC6000_AIR_RX && !a->pa) {
+	// Once per key-up, anywhere in the slot. No key before the idle slot starts (tx_slot): this only tries again a
+	// key the board could not do there
+	if (a->open && a->tx != HRC6000_AIR_RX && !a->pa && a->tx_n >= 2u) {
 		key(a);
 	}
 }
