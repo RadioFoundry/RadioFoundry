@@ -1,0 +1,183 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+"""NXDN conventional on the radio (docs/spec/nxdn.md 6).
+
+test_nxdn_mode_switch: the channel on view becomes NXDN by a temporary mode change (the debug link's mode request,
+debuglink.md 3.8 op 31); the nxdn view section must show the engine running (`nxdn.on=1`, no new `begin_fails`).
+Undoing the change brings the channel's own mode back with the engine stopped. Nothing is sent.
+
+test_nxdn_settings: the NXDN settings (op 40, RAM only) round trip through the nxdn view and are put back.
+
+test_nxdn_tx_off_air[9600|4800] (opt-in: --allow-rf --allow-service-stop --nxdn-mhz MHz; the radio transmits, the bench
+only receives): the VFO on --nxdn-mhz in NXDN at the lowest power, at that rate, RAN TEST_RAN, unit TEST_UNIT calling
+group TEST_GROUP, keys for PTT_S through the debug link while the bench's 4FSK receiver (the rx op, mode fsk4: 2400 or
+4800 baud, root raised cosine, the FSW CDF59 as its 10-symbol sync) slices it. tools/bench/nxdntool.py (the firmware's
+own framer and call layer, built for the host) decodes the symbols. Pass criteria:
+- one call, RAN TEST_RAN, from TEST_UNIT to group TEST_GROUP;
+- at least as many frames as the over's length gives, less MISSING_FRAMES (80 ms a frame at both rates);
+- voice frames handed on; at most MAX_CRC_FAIL SACCH and FACCH1 CRC failures;
+- on the radio: nxdn.tx_calls one more, no nxdn.tx_underruns.
+Skipped where the radio's air interface can't transmit the rate (`nxdn.fit4800` / `nxdn.fit9600` without TX).
+"""
+import json
+import os
+import tempfile
+import time
+
+import pytest
+
+from rfoundry_hil import as_int, skip
+from hil_config import rig
+
+AIR_FIT_TX = 0x2
+PTT_S = 3.0
+FRAME_MS = 80.0
+MISSING_FRAMES = 4      # the bench receiver's sync takes a frame or two to find the carrier, the release frame ends it
+MAX_CRC_FAIL = 1
+TEST_RAN = 5
+TEST_UNIT = 1234
+TEST_GROUP = 77
+NXDN_SYNC = "CDF59"     # the FSW, ten symbols (TS 1-A 4.3)
+SYNC_LEN = 10
+RATES = {"9600": (4800, 2400), "4800": (2400, 1050)}    # bit/s -> (symbols/s, outer deviation Hz, TS 1-A table 3.3-1)
+
+
+def nxdn_view(radio):
+    radio.go_home()
+    if radio.core().get("hotspot") == "1":
+        skip("state", "the radio is in hotspot mode")
+    v = radio.view(["nxdn"])
+    if v.get("nxdn.built") != "1":
+        skip("not_built", "built without CONFIG_NXDN")
+    if ((as_int(v.get("nxdn.fit4800")) or 0) | (as_int(v.get("nxdn.fit9600")) or 0)) & 0x3 == 0:
+        skip("no_hw", "the radio's air interface carries no NXDN rate")
+    return v
+
+
+def settings_of(v):
+    return {"rate9600": v.get("nxdn.rate") == "9600", "rx_ran": int(v["nxdn.rx_ran"]), "tx_ran": int(v["nxdn.tx_ran"]),
+            "rx_gid": int(v["nxdn.rx_gid"]), "unit_call": v.get("nxdn.unit_call") == "1",
+            "tx_dst": int(v["nxdn.tx_dst"]), "unit_id": int(v["nxdn.unit_id"]),
+            "emergency": v.get("nxdn.tx_emergency") == "1"}
+
+
+@pytest.mark.feature("nxdn")
+def test_nxdn_mode_switch(radio):
+    v = nxdn_view(radio)
+    snap = radio.snapshot()
+    mode0 = radio.core().get("mode")
+    if mode0 == "nxdn":
+        skip("state", "the channel is NXDN already")
+    fails0 = as_int(v.get("nxdn.begin_fails")) or 0
+    try:
+        radio.link.dmr_fields(mode="nxdn")
+        try:
+            v = radio.wait_for(lambda x: x.get("mode") == "nxdn" and x.get("nxdn.on") == "1", 3.0,
+                               sections=("core", "nxdn"), what="NXDN running on the channel")
+        except AssertionError:
+            v = radio.view(["core", "nxdn"])
+            if v.get("mode") != "nxdn":
+                skip("state", f"the radio kept mode {v.get('mode')} (a listen-only band, or the VFO without "
+                              "both modes)")
+            raise
+        assert (as_int(v.get("nxdn.begin_fails")) or 0) == fails0, "the engine did not start (begin_fails)"
+        print(f"\nnxdn: rate {v.get('nxdn.rate')} RAN {v.get('nxdn.rx_ran')}/{v.get('nxdn.tx_ran')} "
+              f"fit {v.get('nxdn.fit')} state {v.get('state')}")
+        assert radio.core().get("state") in ("idle", "rx")
+    finally:
+        radio.restore(snap)
+    radio.wait_for(lambda x: x.get("mode") == mode0 and x.get("nxdn.on") == "0", 3.0, sections=("core", "nxdn"),
+                   what=f"mode {mode0} back, NXDN stopped")
+    if mode0 == "dmr" and "DMR" in radio.features():
+        radio.wait_for(lambda x: x.get("dmr.active") == "1", 3.0, sections=("dmr",), what="the DMR stack back")
+
+
+@pytest.mark.feature("nxdn")
+def test_nxdn_settings(radio):
+    old = settings_of(nxdn_view(radio))
+    try:
+        radio.link.nxdn_settings_update(rx_ran=9, rx_gid=4321, unit_call=True, tx_dst=555)
+        v = radio.wait_for(lambda x: x.get("nxdn.rx_gid") == "4321", 2.0, sections=("nxdn",), what="settings taken")
+        assert v.get("nxdn.rx_ran") == "9" and v.get("nxdn.unit_call") == "1" and v.get("nxdn.tx_dst") == "555"
+        assert v.get("nxdn.tx_ran") == str(old["tx_ran"]), "a field not given changed"
+    finally:
+        radio.link.nxdn_settings(**old)
+    radio.wait_for(lambda x: x.get("nxdn.rx_gid") == str(old["rx_gid"]), 2.0, sections=("nxdn",),
+                   what="settings put back")
+
+
+def nxdn_decode(job, rate):
+    """nxdntool's JSON lines for an fsk4 rx job's records"""
+    import nxdntool
+    recs = [r for r in job.records if any(isinstance(r.get(k), str) for k in ("dibits", "syms", "symbols"))]
+    if not recs:
+        skip("bench", "the bench board sent no symbols (the fsk4 rx op's records)")
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "rx.jsonl")
+        with open(path, "w") as f:
+            for r in job.records:
+                f.write(json.dumps({"rec": r}) + "\n")
+        try:
+            syms = nxdntool.records_to_syms(path, tmp)
+            return nxdntool.run(["decode", syms, "--unpacked"] + (["--9600"] if rate == "9600" else []))
+        except SystemExit as e:
+            pytest.fail(f"nxdntool: {e}")
+
+
+@pytest.mark.feature("nxdn")
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+@pytest.mark.sdr_rx
+@pytest.mark.parametrize("rate", list(RATES))
+def test_nxdn_tx_off_air(radio, sdr_bench, pytestconfig, rate):
+    import nxdntool
+    mhz = rig(pytestconfig, "nxdn-mhz")
+    hz = round(mhz * 1e6)
+    v = nxdn_view(radio)
+    if (as_int(v.get(f"nxdn.fit{rate}")) or 0) & AIR_FIT_TX == 0:
+        skip("no_hw", f"the radio's air interface can't transmit NXDN at {rate} bit/s")
+    if not sdr_bench.can_fsk4_rx():
+        skip("bench", f"the bench board {sdr_bench.api_rx} has no 4FSK receive")
+    baud, dev = RATES[rate]
+    old = settings_of(v)
+    with radio.vfo_session():
+        L = radio.link
+        try:
+            L.vfo_set(hz)
+            radio.wait_for(lambda x: x.get("rx_hz") == str(hz), what="VFO tuned")
+            L.nxdn_settings(rate9600=rate == "9600", rx_ran=0, tx_ran=TEST_RAN, rx_gid=0, unit_call=False,
+                            tx_dst=TEST_GROUP, unit_id=TEST_UNIT)
+            if radio.core().get("mode") != "nxdn":
+                L.dmr_fields(mode="nxdn")
+            v = radio.wait_for(lambda x: x.get("mode") == "nxdn" and x.get("nxdn.on") == "1" and
+                               x.get("nxdn.rate") == rate, 3.0, sections=("core", "nxdn"),
+                               what=f"NXDN at {rate} bit/s on the VFO")
+            assert v.get("tx_hz") == str(hz), f"the VFO transmits on {v.get('tx_hz')}, not {hz}"
+            radio.lowest_power()
+            calls0, under0 = (as_int(v.get(f"nxdn.{k}")) or 0 for k in ("tx_calls", "tx_underruns"))
+            with sdr_bench.lease():
+                job = sdr_bench.fsk4_rx_start(mhz, PTT_S + 4, baud=baud, shape="rrc", sync=NXDN_SYNC,
+                                              sync_len=SYNC_LEN, nominal_dev_hz=dev)
+                time.sleep(0.5)
+                radio.ptt_for(PTT_S)
+                radio.wait_for(lambda x: x.get("state") != "tx", timeout=3, what="TX ended")
+                job.wait(PTT_S + 20)
+            v = radio.view(["nxdn"])
+        finally:
+            L.nxdn_settings(**old)
+    lines = nxdn_decode(job, rate)
+    m = nxdntool.summary(lines)
+    syncs = [r for r in job.records if "sync" in r or "offset_hz" in r]
+    print(f"\nnxdn off air at {rate} bit/s: {nxdntool.summary_text(m)}; bench syncs {len(syncs)}")
+    if syncs:
+        print(f"first sync record (not judged): {syncs[0]}")
+    assert m["calls"] == 1, f"{m['calls']} calls"
+    assert m["ran"] == TEST_RAN, f"RAN {m['ran']}, the radio's {TEST_RAN}"
+    assert m["src"] == TEST_UNIT and m["dst"] == TEST_GROUP and m["type"] == "group", \
+        f"call {m['type']} {m['src']} -> {m['dst']}, the radio's group {TEST_UNIT} -> {TEST_GROUP}"
+    want = PTT_S * 1000 / FRAME_MS
+    assert m["frames"] >= want - MISSING_FRAMES, f"{m['frames']} frames in a {PTT_S} s over (about {want:.0f})"
+    assert m["voice"] > 0, "no voice frames handed on"
+    assert m["crc_fail"] <= MAX_CRC_FAIL, f"{m['crc_fail']} SACCH / FACCH1 CRC failures"
+    assert (as_int(v.get("nxdn.tx_calls")) or 0) == calls0 + 1, "the radio counted no NXDN call"
+    assert (as_int(v.get("nxdn.tx_underruns")) or 0) == under0, "the air ran dry during the call"

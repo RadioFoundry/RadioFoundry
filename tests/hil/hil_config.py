@@ -35,6 +35,7 @@ RIG = {
                              "(test_p25_trunk_tx)", True),
     "p25-voice-mhz": (float, "MHz: where the radio transmits on the voice channel the bench's control channel grants "
                              "(its inbound side; test_p25_trunk_tx)", True),
+    "nxdn-mhz": (float, "MHz: the NXDN test frequency (the radio's VFO; test_nxdn_tx_off_air)", True),
     "noaa-mhz": (float, "MHz: a NOAA weather radio station heard at the rig (test_fm; receive only)", False),
     "vhf-fm-mhz": (float, "MHz: a VHF FM frequency the bench transmits on (test_fm: receive in the VHF band)", True),
     "aprs-test-mhz": (float, "MHz: test_aprs's AFSK frequency, an amateur simplex frequency that is not an APRS "
@@ -56,7 +57,7 @@ RIG = {
 # the transmit frequencies among the other options (None when not given)
 TX_OPTIONS = ("dmr-freq", "fm-mhz", "p25-mhz", "aprs-test-mhz", "sfr-freq", "roam-rx", "roam-tx", "split-out-mhz",
               "split-tx-mhz", "outbound-mhz", "am-mhz", "vhf-fm-mhz", "repeater-in-mhz", "p25-cc-mhz", "p25-cc-in-mhz",
-              "p25-voice-mhz")
+              "p25-voice-mhz", "nxdn-mhz")
 
 
 def add_options(g):
