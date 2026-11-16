@@ -9,6 +9,9 @@
 #include "codeplug/codeplug.h"
 #include "codeplug/zone_import.h"
 #include "codeplug/zone_edit.h"
+#include "codeplug/codeplug_kv.h"
+#include "codeplug/codeplug_tag.h"
+#include "codeplug/codeplug_records.h"
 #include "storage/storage.h"
 #include "sim/sim_flash.h"
 
@@ -666,6 +669,171 @@ static void test_export(void)
 	CHECK(zone_import_channel(copy, len, 0, &r) == ZI_BAD_RECORD);
 }
 
+// --- Channels of a kind (zone-share.md 4.2, 5.5) ---
+
+// System n: type, flags, sharing level, the identity's length, then the type's block
+static void put_system(uint8_t n, uint8_t type, uint8_t flags, uint8_t level, const char *name, const uint8_t *block,
+		       uint8_t id_len, uint8_t len)
+{
+	uint8_t v[CODEPLUG_SYS_HDR + 32];
+
+	memset(v, 0, sizeof(v));
+	v[0] = type;
+	v[1] = flags;
+	v[2] = level;
+	v[3] = id_len;
+	v[4] = 0x44;		// an own ID, never shared
+	v[8] = 2;		// a fallback channel, never shared
+	strncpy((char *)&v[12], name, CODEPLUG_NAME_LEN);
+	memcpy(&v[CODEPLUG_SYS_HDR], block, len);
+	CHECK(codeplug_kv_set((uint16_t)(CODEPLUG_KEY_SYSTEM + n), v, (uint16_t)(CODEPLUG_SYS_HDR + len)));
+}
+
+// Channel number of kind on system (CODEPLUG_SYSTEM_NONE: none), its stand-in record DMR and receive only
+static void put_kind(uint16_t number, const char *name, uint32_t rx, uint8_t kind, uint8_t system, uint8_t flags)
+{
+	static const uint8_t params[] = { 0x7B, 0x01, 0x00 };
+	channel_t ch = make(name, rx, rx, true);
+	codeplug_tag_t t;
+
+	ch.rx_only = true;
+	CHECK(codeplug_set_channel(number, &ch));
+	memset(&t, 0, sizeof(t));
+	t.kind = kind;
+	t.system = system;
+	t.flags = flags;
+	CHECK(codeplug_tag_write(number, name, &t, params, sizeof(params)));
+}
+
+static const uint8_t p25_block[] = { 0xBE, 0xE0, 0x01, 0xA2, 0x00, 0x09 }, t3_block[] = { 0x05, 0x00, 0x01 };
+
+// A zone of four: a plain FM channel, one on a whole system (with entries and a secret), one on a system sent as its
+// identity, one on a system whose sharing is off
+static void modes_zone(void)
+{
+	static const uint8_t e1[] = { 0, 1, 0, 0, 0x34, 0x12 }, e2[] = { 0, 0, 0xFF, 1, 0x10, 0x08, 0x2A }, key[] = { 9, 9 };
+	zone_t z;
+
+	fresh();
+	channel_t fm = make("Plain", 146520000, 146520000, false);
+	CHECK(codeplug_set_channel(1, &fm));
+	put_system(0, 3, CODEPLUG_SYS_TX, CODEPLUG_SHARE_WHOLE, "County", p25_block, 5, sizeof(p25_block));
+	put_system(1, 1, CODEPLUG_SYS_TX, CODEPLUG_SHARE_IDENTITY, "Site net", t3_block, 3, sizeof(t3_block));
+	put_system(2, 1, 0, CODEPLUG_SHARE_OFF, "Private", t3_block, 2, sizeof(t3_block));
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_SYS_CHAN + 0, e1, sizeof(e1)));
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_SYS_CHAN + 1, e2, sizeof(e2)));
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_SYS_KEY + 0, key, sizeof(key)));
+	put_kind(2, "Trunk", 453012500, 3, 0, CODEPLUG_TAG_TX | 0x10);
+	put_kind(3, "T3 ops", 451000000, 1, 1, CODEPLUG_TAG_TX);
+	put_kind(4, "Hidden", 452000000, 1, 2, CODEPLUG_TAG_TX);
+	memset(&z, 0, sizeof(z));
+	strcpy(z.name, "Mixed");
+	z.count = 4;
+	for (uint16_t i = 0; i < 4; i++) {
+		z.channels[i] = (uint16_t)(i + 1);
+	}
+	CHECK(codeplug_set_zone(0, &z));
+}
+
+static void test_modes(void)
+{
+	uint8_t included = 0;
+	zone_import_result_t res;
+	zsRecord_t rec;
+
+	modes_zone();
+	int len = zone_export_zone(0, recbuf, sizeof(recbuf), &included);
+#if CONFIG_ZONE_SHARE_MODES
+	static uint8_t sent[ZS_RECORD_MAX];
+	zsSystem_t s;
+	zsEntry_t e;
+	zsTag_t t;
+
+	CHECK(len > 0 && included == 4 && zsParse(recbuf, len, &rec) && (rec.flags & ZS_FLAG_MODES));
+	CHECK(rec.systems == 2 && rec.tags == 3);
+	CHECK(zsSystemAt(&rec, 0, &s) && s.type == 3 && s.level == ZS_LEVEL_WHOLE && s.blockLen == sizeof(p25_block) &&
+	      s.entries == 2 && s.secretLen == 0 && strcmp(s.name, "County") == 0);	// keys never sent from a radio
+	CHECK(zsEntryAt(&rec, &s, 1, &e) && e.group == 0xFF && e.flags == 1 && e.len == 3 && e.body[2] == 0x2A);
+	CHECK(zsSystemAt(&rec, 1, &s) && s.type == 1 && s.level == ZS_LEVEL_IDENTITY && s.blockLen == 3 && s.entries == 0);
+	CHECK(zsTagAt(&rec, 0, &t) && t.channel == 2 && t.kind == 3 && t.system == 1 && t.flags == (CODEPLUG_TAG_TX | 0x10) &&
+	      t.len == 3 && t.params[0] == 0x7B);
+	CHECK(zsTagAt(&rec, 1, &t) && t.channel == 3 && t.system == 2);
+	CHECK(zsTagAt(&rec, 2, &t) && t.channel == 4 && t.system == ZS_SYSTEM_WITHHELD);
+	memcpy(sent, recbuf, (size_t)len);
+
+	// A radio with none of the systems: the whole one added, the other two channels in receive only, unavailable
+	fresh();
+	with_zones();
+	CHECK(zone_import_zone(sent, len, 77, imports, &res) == ZI_OK && res.channels == 4 && res.systems_added == 1 &&
+	      res.unavailable == 2);
+	codeplug_system_t sys;
+	uint8_t block[64];
+	CHECK(codeplug_system(0, &sys, block, sizeof(block)) == (int)sizeof(p25_block) && sys.type == 3 &&
+	      sys.flags == CODEPLUG_SYS_TX && sys.own_id == 0 && sys.fb_chan == 0 && strcmp(sys.name, "County") == 0 &&
+	      block[5] == 0x09);
+	CHECK(codeplug_system(1, &sys, block, sizeof(block)) < 0);
+	CHECK(codeplug_system_secret(0, block, sizeof(block)) < 0);
+	int at = -1, entries = 0;
+	codeplug_sys_entry_t ent;
+	for (uint8_t cls = 0; cls <= 1; cls++) {
+		for (at = -1; codeplug_sys_entry_next(&at, 0, cls, &ent, block, sizeof(block)) >= 0;) {
+			entries++;
+		}
+	}
+	CHECK(entries == 2);
+	zone_t z;
+	channel_t ch;
+	CHECK(codeplug_zone(res.zone, &z) && z.count == 4);
+	CHECK(codeplug_channel(z.channels[0], &ch) && ch.kind == 0 && ch.rx_only);
+	CHECK(codeplug_channel(z.channels[1], &ch) && ch.kind == 3 && ch.system == 0 && !ch.rx_only);
+	uint8_t params[16];
+	CHECK(codeplug_tag_params(z.channels[1], &ch, params, 8) == 3 && params[0] == 0x7B);
+	CHECK(codeplug_channel(z.channels[2], &ch) && ch.kind == 1 && ch.system == CODEPLUG_SYSTEM_NONE && ch.rx_only);
+	CHECK(codeplug_channel(z.channels[3], &ch) && ch.kind == 1 && ch.system == CODEPLUG_SYSTEM_NONE && ch.rx_only);
+
+	// A radio that has the identity-only system (its own, listen only, kept as it is) and the whole one: nothing added
+	fresh();
+	with_zones();
+	put_system(4, 1, 0, CODEPLUG_SHARE_OFF, "Mine", t3_block, 3, sizeof(t3_block));
+	put_system(5, 3, 0, CODEPLUG_SHARE_OFF, "Mine too", p25_block, 5, 5);
+	CHECK(zone_import_zone(sent, len, 77, imports, &res) == ZI_OK && res.systems_added == 0 && res.unavailable == 1);
+	CHECK(codeplug_zone(res.zone, &z) && z.count == 4);
+	CHECK(codeplug_channel(z.channels[1], &ch) && ch.kind == 3 && ch.system == 5 && !ch.rx_only);
+	CHECK(codeplug_channel(z.channels[2], &ch) && ch.kind == 1 && ch.system == 4 && !ch.rx_only);
+	CHECK(codeplug_system(4, &sys, block, sizeof(block)) == 3 && sys.flags == 0 && strcmp(sys.name, "Mine") == 0);
+
+	// A whole system none of the imported channels uses (its one channel out of this radio's bands) isn't added
+	fresh();
+	with_zones();
+	uint32_t hi = bands[1].hi_hz;
+	bands[1].hi_hz = 453000000;
+	CHECK(zone_import_zone(sent, len, 77, imports, &res) == ZI_OK && res.channels == 3 && res.out_of_band == 1 &&
+	      res.systems_added == 0 && res.unavailable == 2);
+	bands[1].hi_hz = hi;
+	CHECK(codeplug_system(0, &sys, block, sizeof(block)) < 0);
+	at = -1;
+	CHECK(codeplug_sys_entry_next(&at, 0, 0, &ent, block, sizeof(block)) < 0);
+
+	// The undo takes the added system with the channels: a codeplug with no room for the last channel
+	fresh();
+	with_zones();
+	for (uint16_t n = 2; n <= CODEPLUG_CHANNELS_MAX - 3; n++) {
+		channel_t fill = make("Fill", 146000000, 146000000, false);
+		CHECK(codeplug_set_channel(n, &fill));
+	}
+	CHECK(zone_import_zone(sent, len, 77, imports, &res) == ZI_NO_CHANNELS);
+	CHECK(codeplug_system(0, &sys, block, sizeof(block)) < 0);
+	at = -1;
+	CHECK(codeplug_sys_entry_next(&at, 0, 1, &ent, block, sizeof(block)) < 0);
+	at = -1;
+	CHECK(codeplug_sys_entry_next(&at, 0, 0, &ent, block, sizeof(block)) < 0);
+#else
+	// Without the modes part only the plain channel goes: a stand-in record isn't a channel to the receiver
+	CHECK(len > 0 && included == 1 && zsParse(recbuf, len, &rec) && rec.channels == 1 && !(rec.flags & 0x02));
+	(void)res;
+#endif
+}
+
 int main(void)
 {
 	test_import();
@@ -678,6 +846,7 @@ int main(void)
 	test_virtual_zone();
 	test_lands_ahead();
 	test_export();
+	test_modes();
 	printf("zoneImportTest: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

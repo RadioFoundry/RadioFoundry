@@ -46,6 +46,8 @@ typedef struct
 	uint8_t  out_of_band;				// left out
 	uint8_t  contacts_added;
 	uint8_t  contacts_matched;			// already there (names kept)
+	uint8_t  systems_added;				// systems of channels of a kind the radio didn't have (zone-share.md 5.5)
+	uint8_t  unavailable;				// channels of a kind whose system the radio doesn't have: receive only, parked
 	bool     updated;					// replaced an earlier import of this zone
 	uint16_t zone;						// the zone's index
 	char     name[CODEPLUG_NAME_LEN + 1];	// the zone's name here

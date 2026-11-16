@@ -11,6 +11,7 @@
 #include "settings/settings.h"
 #include "config.h"
 #include "hal_dtmf.h"
+#include "codeplug/codeplug_modes.h"	// channel kinds (docs/spec/channel-modes.md): parked channels, in every build
 #if CONFIG_ZONE_WRITE
 #include "codeplug/zone_edit.h"
 #define ZONE_WRITE_BUSY()	zone_edit_busy()
@@ -445,13 +446,20 @@ static void deny_led_start(radio_sm_t *sm)
 	sm->deny_led_ms = sm->led_now;
 }
 
+// A channel of a kind this build doesn't run (docs/spec/channel-modes.md 6): tuned to its frequency but silent, never
+// scanned and never keyed, whatever its record says. A mode module that runs its kind hooks in here
+static bool parked(const channel_t *ch)
+{
+	return ch->kind != CODEPLUG_KIND_NONE && !codeplug_kind_built(ch->kind);
+}
+
 // Speaker and LEDs follow the state; only changes go to the board
 // FM: the board's speaker path follows the squelch (or the monitor). DMR voice goes out as PCM from the vocoder
 // (core/dmr/ambe routes the speaker itself); the green LED shows a call being played
 static void outputs(radio_sm_t *sm)
 {
 	bool tx = sm->view.state == RS_TX;
-	bool fm = sm->view.ch.mode == RADIO_MODE_FM && !sm->hotspot;
+	bool fm = sm->view.ch.mode == RADIO_MODE_FM && !sm->hotspot && !parked(&sm->view.ch);
 	bool open = !tx && fm && (sm->view.monitor || sm->view.state == RS_RX || (sm->view.state == RS_TX_DENIED && sm->deny_rx));
 	bool green = open;
 #if CONFIG_DMR
@@ -597,7 +605,8 @@ static void tune(radio_sm_t *sm, uint32_t now_ms)
 	sm->save_on = sm->save_asleep = false;	// rx() below wakes the receiver
 	sm->view.rx_sleeping = false;
 #endif
-	radio_mode_t mode = (CONFIG_DMR && sm->view.ch.mode == RADIO_MODE_DMR) ? RADIO_MODE_DMR : RADIO_MODE_FM;
+	radio_mode_t mode = (CONFIG_DMR && sm->view.ch.mode == RADIO_MODE_DMR && !parked(&sm->view.ch)) ?
+		RADIO_MODE_DMR : RADIO_MODE_FM;
 	// No sub-audio squelch in DMR, whatever tone the channel or the VFO still holds from its FM settings
 	static const subtone_t no_tone = { TONE_NONE, 0 };
 	if (sm->board_mode == RADIO_MODE_DMR && mode != RADIO_MODE_DMR) {
@@ -760,8 +769,8 @@ radio_vfo_copy_t radio_vfo_copy_check(const channel_t *ch, bool in_vfo)
 	if (in_vfo) {
 		return VFO_COPY_ALREADY;
 	}
-	if (ch->mode == RADIO_MODE_DMR ? !CONFIG_VFO_DMR : !CONFIG_VFO_FM) {
-		return VFO_COPY_NO_MODE;
+	if (ch->kind != CODEPLUG_KIND_NONE || (ch->mode == RADIO_MODE_DMR ? !CONFIG_VFO_DMR : !CONFIG_VFO_FM)) {
+		return VFO_COPY_NO_MODE;	// the VFO holds plain FM and DMR only
 	}
 	if (!board_in_band(ch->rx_hz, false) || (ch->tx_hz != 0 && !board_in_band(ch->tx_hz, false))) {
 		return VFO_COPY_OUT_OF_BAND;
@@ -938,6 +947,9 @@ static uint8_t tx_check(const radio_sm_t *sm)
 		return TXDENY_BCAST;	// so is the broadcast band
 	}
 #endif
+	if (parked(ch)) {
+		return TXDENY_MODE;	// before receive only: the record underneath says so, the mode is the reason
+	}
 	if (ch->tx_hz == 0) {
 		return TXDENY_NO_FREQ;
 	}
@@ -2314,7 +2326,7 @@ static bool scan_usable(uint16_t pos, void *ctx)
 {
 	const radio_sm_t *sm = ctx;
 	channel_t ch;
-	return pos < sm->zone.count && codeplug_channel(sm->zone.channels[pos], &ch) && !ch.scan_skip;
+	return pos < sm->zone.count && codeplug_channel(sm->zone.channels[pos], &ch) && !ch.scan_skip && !parked(&ch);
 }
 
 // Dual watch (SCAN_DUAL): the receiver alternates between two channels, dual[0] and dual[1], skip flags ignored. With
@@ -2376,7 +2388,7 @@ static const zone_t *dual_read(const radio_sm_t *sm, const radio_dual_ref_t *r, 
 #else
 	(void)buf;
 #endif
-	return z != NULL && r->pos < z->count && codeplug_channel(z->channels[r->pos], ch) ? z : NULL;
+	return z != NULL && r->pos < z->count && codeplug_channel(z->channels[r->pos], ch) && !parked(ch) ? z : NULL;
 }
 
 static bool dual_ok(const radio_sm_t *sm, const radio_dual_ref_t *r)
@@ -3179,7 +3191,7 @@ static void roam_talk_of(const channel_t *ch, uint32_t *id, bool *priv)
 // A DMR repeater channel the radio could roam to (docs/spec/dmr-roaming.md 2)
 static bool roam_repeater(const channel_t *ch)
 {
-	return ch->mode == RADIO_MODE_DMR && !ch->rx_only && ch->tx_hz != 0 && ch->tx_hz != ch->rx_hz && !ch->dmo &&
+	return ch->mode == RADIO_MODE_DMR && !parked(ch) && !ch->rx_only && ch->tx_hz != 0 && ch->tx_hz != ch->rx_hz && !ch->dmo &&
 		board_in_band(ch->rx_hz, false);
 }
 
@@ -6373,7 +6385,8 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	uint8_t sq = sm->view.squelch;
 	uint8_t open_below = radio_sm_squelch_open_below(sq);
 	bool listening = bcast_listening(sm);
-	bool opens = (listening || (sm->view.tone_ok && (sq == 0 || st.noise < open_below))) && !dual_peeking(sm);
+	bool opens = (listening || (sm->view.tone_ok && (sq == 0 || st.noise < open_below))) && !dual_peeking(sm) &&
+		     !parked(&sm->view.ch);
 	bool holds = listening || (sm->view.tone_ok && (sq == 0 || st.noise < open_below + RADIO_SQL_HYST_DB));
 
 	if (sm->view.state == RS_IDLE) {

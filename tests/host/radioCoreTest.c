@@ -6,6 +6,7 @@
 #include <string.h>
 #include "board.h"
 #include "radio/radio_sm.h"
+#include "codeplug/codeplug_modes.h"
 #if CONFIG_APRS
 #include "aprs/aprs_beacon.h"	// APRS_WHY_*
 #endif
@@ -628,6 +629,47 @@ static void test_channel_step(void)
 	CHECK(sm.view.channel_number == 6);
 	req(RREQ_ZONE, 7);			// no such zone
 	CHECK(sm.view.zone_index == 1);
+}
+
+// A channel of a kind this build doesn't run (docs/spec/channel-modes.md 6): tuned in FM with the modem off, the squelch
+// never opens, PTT refused for the mode (before receive only), never a VFO copy, the next channel works as before
+static void test_parked_kind(void)
+{
+	setup_codeplug();
+	chans[6].mode = RADIO_MODE_DMR;
+	chans[6].kind = CODEPLUG_KIND_DMR_TRUNK;	// not built on main
+	chans[6].rx_only = false;			// its tag allows TX: the build still refuses
+	start();
+	req(RREQ_ZONE, 1);
+	CHECK(sm.view.channel_number == 6 && sm.view.ch.kind == CODEPLUG_KIND_DMR_TRUNK);
+	CHECK(sm.board_mode == RADIO_MODE_FM && hw_mode == RADIO_MODE_FM && !sim.started && hw.rx_hz == 145500000);
+	rx_signal(10, true);
+	poll_for(200);
+	CHECK(sm.view.state == RS_IDLE && !hw.audio);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_MODE && hw.tx_calls == 0);
+	req(RREQ_PTT, 0);
+	CHECK(radio_vfo_copy_check(&sm.view.ch, false) != VFO_COPY_OK);
+	// P25 conventional and trunked (the radio core runs neither: parked with CONFIG_P25 on or off), unknown ids the same
+	static const uint8_t kinds[] = { CODEPLUG_KIND_P25, CODEPLUG_KIND_P25_TRUNK };
+	for (unsigned i = 0; i < sizeof kinds; i++) {
+		chans[6].kind = kinds[i];
+		req(RREQ_ZONE, 0);
+		req(RREQ_ZONE, 1);
+		CHECK(sm.view.ch.kind == kinds[i] && sm.board_mode == RADIO_MODE_FM && !sim.started);
+		req(RREQ_PTT, 1);
+		CHECK(sm.view.tx_deny == TXDENY_MODE && hw.tx_calls == 0);
+		req(RREQ_PTT, 0);
+	}
+	chans[6].kind = 0x99;
+	req(RREQ_ZONE, 0);
+	req(RREQ_ZONE, 1);
+	CHECK(sm.view.ch.kind == 0x99 && sm.board_mode == RADIO_MODE_FM);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_MODE && hw.tx_calls == 0);
+	req(RREQ_PTT, 0);
+	rx_signal(120, true);
+	setup_codeplug();
 }
 
 static void test_squelch(void)
@@ -5626,6 +5668,7 @@ int main(void)
 	test_channel_step();
 	test_vfo_step_auto();
 	test_squelch();
+	test_parked_kind();
 	test_tx();
 	test_deny_flash_then_tx();
 	test_timeout();
