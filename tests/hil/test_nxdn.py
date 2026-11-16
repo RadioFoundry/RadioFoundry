@@ -162,17 +162,18 @@ def test_nxdn_stored_channel(radio, backup_dir):
         skip("not_built", "NXDN isn't in the radio's feature list")
     import cps_client
     from test_cps import codeplug_edited, pick_channel, read_backup
-    probe, _ = read_backup(radio, backup_dir, "nxdnprobe")
+    regions = cps_client.REGIONS["radio"]      # with the settings area, where the tag goes
+    probe, _ = read_backup(radio, backup_dir, "nxdnprobe", regions)
     lo, hi = cps_client.SETTINGS_AREA
-    if cps_client.area_state(probe[lo:hi]) not in ("valid", "empty"):
-        skip("state", "the codeplug settings area is neither valid nor erased: not ours to write")
+    if cps_client.area_state(probe[lo:hi]) != "valid":
+        skip("state", "the codeplug settings area isn't valid: the restore couldn't take the tag back")
     core = radio.core()
     number = pick_channel(radio, probe)
     if core.get("vfo") == "1" or number != as_int(core.get("channel_number"), 0):
         skip("state", "the radio isn't on a stored channel")
     if core.get("am") == "1" or core.get("bcast") == "1":
         skip("state", "the channel is in a listen-only band: no NXDN there")
-    with codeplug_edited(radio, backup_dir, lambda img: make_nxdn(img, number), "nxdn"):
+    with codeplug_edited(radio, backup_dir, lambda img: make_nxdn(img, number), "nxdn", regions):
         v = radio.wait_for(lambda x: x.get("ch.kind") == str(KIND_NXDN) and x.get("nxdn.on") == "1", 5.0,
                            sections=("core", "channel", "nxdn"), what="the stored NXDN channel running")
         assert v.get("mode") == "nxdn", v
