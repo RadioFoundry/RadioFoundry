@@ -16,6 +16,10 @@
 #include "radio/radio.h"
 #include "codeplug/zone_edit.h"
 
+// The UI services' one radio view copy (the UI task's only; too big for its stack). A service fetches it with
+// radio_get_view and reads it before returning: nothing may hold it across a call into another service
+extern radio_view_t ui_svc_view;
+
 // --- What is available (screens gray out what isn't, and say why on SELECT) ---
 #define UI_FEAT_TALK_TARGET	(1u << 0)	// ui_svc_talk_to / ui_svc_focus_target (dmr-voice)
 #define UI_FEAT_TIMESLOT	(1u << 1)	// ui_svc_dmr_timeslot (dmr-voice / radio core)
