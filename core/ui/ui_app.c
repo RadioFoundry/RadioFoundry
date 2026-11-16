@@ -24,6 +24,7 @@
 #include "input/input.h"
 #include "radio/tones.h"
 #include "config.h"
+#include "codeplug/codeplug_modes.h"	// CODEPLUG_KIND_NONE
 #if CONFIG_HOTSPOT || (CONFIG_USB_NETWORK && CONFIG_HOSTLINK)
 #include "hostlink/hostlink.h"
 #endif
@@ -2405,7 +2406,8 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	// "DMR modem off" only once it's been off a while: a channel or mode change (APRS on FM and back, a retune)
 	// turns the modem off for a moment, and a warning that flashes up for a few frames only worries
 	static uint32_t dmr_off_since;
-	if (v->ch.mode == RADIO_MODE_DMR && !v->dmr.active && !v->dmr.sfr_rpt) {	// an SFR repeater has the modem
+	// an SFR repeater has the modem; a channel of another kind never starts it
+	if (v->ch.mode == RADIO_MODE_DMR && v->ch.kind == CODEPLUG_KIND_NONE && !v->dmr.active && !v->dmr.sfr_rpt) {
 		if (dmr_off_since == 0)
 			dmr_off_since = now != 0 ? now : 1;
 	} else {
