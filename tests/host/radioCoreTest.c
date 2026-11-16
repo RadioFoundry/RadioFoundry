@@ -10,6 +10,7 @@
 #include "aprs/aprs_beacon.h"	// APRS_WHY_*
 #endif
 #include "radio/radio_sfr.h"
+#include "radio/radio_bands.h"
 #include "radio/tones.h"
 #include "dmr/call/dmr_call.h"
 #include "dmr/call/dmr_lc.h"
@@ -53,6 +54,7 @@ static struct {
 	uint32_t tx_hz;
 	uint8_t tx_power;
 	int tx_off_calls;
+	bool keyed;		// between tx() and tx_off()
 	bool audio;
 	bool led[2];
 	radio_status_t st;
@@ -81,9 +83,10 @@ static bool r_tx(uint32_t hz, radio_bw_t bw, uint8_t p, const subtone_t *t)
 	hw.tx_bw = bw;
 	hw.tx_tone = *t;
 	hw.tx_power = p;
+	hw.keyed = true;
 	return true;
 }
-static void r_tx_off(void) { hw.tx_off_calls++; }
+static void r_tx_off(void) { hw.tx_off_calls++; hw.keyed = false; }
 static void r_status(radio_status_t *st) { *st = hw.st; }
 static void r_audio(bool on) { hw.audio = on; }
 // FM TX tone and its Morse keying (the hotspot's CW ID): every change logged with the time
@@ -147,8 +150,22 @@ static void v_encode(const int16_t *pcm, uint8_t *bits) { (void)pcm; memset(bits
 static void v_decode(const uint8_t *bits, int16_t *pcm) { (void)bits; memset(pcm, 0, VOCODER_FRAME_SAMPLES * 2); }
 static uint32_t v_options(void) { return VOCODER_OPT_NOISE_REDUCTION | VOCODER_OPT_TONE_FRAMES | VOCODER_OPT_AGC; }
 static void v_set_options(uint32_t opts) { (void)opts; }
+#ifdef HAL_VOCODER_LEND_BYTES
+// As the HR_C7000 platform's: the codec's memory lent while no DMR voice runs (P25 runs in it)
+static uint64_t lend_mem[HAL_VOCODER_LEND_BYTES / 8];
+static bool lend_refuse;		// a vocoder with nothing to lend
+static uint32_t lends;
+static void *v_lend(size_t *len)
+{
+	lends++;
+	*len = sizeof(lend_mem);
+	return lend_refuse ? NULL : lend_mem;
+}
+#else
+#define v_lend NULL
+#endif
 static const hal_vocoder_t fake_vocoder = { v_present, v_reset, v_encode, v_decode, NULL, v_options, v_set_options,
-					    NULL, NULL };
+					    NULL, v_lend };
 static const char *codec_profile;
 static const char *v_profile(void) { return codec_profile; }
 static uint8_t p_mic(void) { return 0; }
@@ -194,6 +211,138 @@ static const hal_hwopt_t fake_hwopts[] = {
 	{ "Revision", 2, fake_hwopt_choices, fake_hwopt_get, fake_hwopt_set, true, fake_hwopt_state },
 };
 
+#if CONFIG_AIR
+// ---- fake air interface: board.air (0) and a far radio's provider (1), each the other's far end. A chunk every 30
+// ms (run), as a modem chip's records come ----
+#include "air/air_syms.h"
+#include "p25/p25_engine.h"
+#define AIR_CHUNK	144
+#define AIR_DEPTH	4
+typedef struct {
+	air_event_cb_t cb;
+	void *ctx;
+	bool open, on, started;
+	air_tx_chunk_t q[AIR_DEPTH];
+	uint8_t qn;
+	uint32_t now_us, opens, closes, begins, aborts, underruns, sent;
+	uint32_t keyed_violations;	// board.air modulated with the transmitter off (hal_air.h rule 3)
+} fake_air_t;
+static fake_air_t fair[2];
+static bool air_nofit;			// board.air can't carry P25
+static uint32_t air_rng = 0x1234567;
+
+static void air_ev(fake_air_t *p, uint8_t kind, const air_chunk_t *c)
+{
+	air_event_t e = { .kind = kind, .t_us = p->now_us, .chunk = c };
+	if (p->cb != NULL) {
+		p->cb(&e, p->ctx);
+	}
+}
+
+static void air_deliver(fake_air_t *to, const uint8_t *syms, uint16_t n)
+{
+	int8_t soft[AIR_CHUNK];
+	air_chunk_t c = { .t_us = to->now_us, .nsyms = n, .sync_at = -1, .hard = syms, .soft = soft };
+	for (uint16_t i = 0; i < n; i++) {
+		soft[i] = (int8_t)(32 * air_sym_level(air_sym_get(syms, i)));
+	}
+	if (to->open && !to->on) {
+		air_ev(to, AIR_EV_RX, &c);
+	}
+}
+
+// One chunk period at provider i
+static void air_step1(uint8_t i)
+{
+	fake_air_t *p = &fair[i], *far = &fair[i ^ 1];
+	p->now_us += 30000;
+	if (!p->on) {
+		if (!far->on) {		// nobody sends: the receiver hands on noise
+			uint8_t noise[AIR_CHUNK / 4];
+			for (uint8_t k = 0; k < sizeof(noise); k++) {
+				air_rng ^= air_rng << 13;
+				air_rng ^= air_rng >> 17;
+				air_rng ^= air_rng << 5;
+				noise[k] = (uint8_t)air_rng;
+			}
+			air_deliver(p, noise, AIR_CHUNK);
+		}
+		return;
+	}
+	if (i == 0 && !hw.keyed) {
+		p->keyed_violations++;
+	}
+	if (!p->started) {
+		p->started = true;
+		air_ev(p, AIR_EV_TX_STARTED, NULL);
+	}
+	if (p->qn == 0) {
+		uint8_t idle[AIR_CHUNK / 4];
+		memset(idle, 0x5F, sizeof(idle));
+		p->underruns++;
+		air_deliver(far, idle, AIR_CHUNK);
+		air_ev(p, AIR_EV_TX_UNDERRUN, NULL);
+		return;
+	}
+	air_tx_chunk_t c = p->q[0];
+	memmove(p->q, p->q + 1, (size_t)(--p->qn) * sizeof(c));
+	p->sent += c.nsyms;
+	air_deliver(far, c.syms, c.nsyms);
+	if (c.flags & AIR_TX_LAST) {
+		p->on = false;
+		air_ev(p, AIR_EV_TX_DONE, NULL);
+	} else {
+		air_ev(p, AIR_EV_TX_SPACE, NULL);
+	}
+}
+
+static uint32_t air_fit(const air_profile_t *pr)
+{
+	return !air_nofit && pr->sym_rate == 4800 ? AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT : 0;
+}
+static bool air_open(uint8_t i, air_event_cb_t cb, void *ctx)
+{
+	fake_air_t *p = &fair[i];
+	uint32_t opens = p->opens, closes = p->closes;
+	memset(p, 0, sizeof(*p));
+	p->opens = opens + 1;
+	p->closes = closes;
+	p->cb = cb;
+	p->ctx = ctx;
+	p->open = true;
+	return true;
+}
+static void air_close(uint8_t i) { fair[i].open = fair[i].on = false; fair[i].cb = NULL; fair[i].qn = 0; fair[i].closes++; }
+static bool air_begin(uint8_t i) { if (fair[i].qn == 0 || !fair[i].open) return false; fair[i].on = true; fair[i].started = false; fair[i].begins++; return true; }
+static bool air_queue(uint8_t i, const air_tx_chunk_t *c)
+{
+	if (fair[i].qn == AIR_DEPTH) {
+		return false;
+	}
+	fair[i].q[fair[i].qn++] = *c;
+	return true;
+}
+static void air_end(uint8_t i) { if (fair[i].qn != 0) fair[i].q[fair[i].qn - 1].flags |= AIR_TX_LAST; }
+static void air_abort(uint8_t i) { fair[i].qn = 0; fair[i].on = false; fair[i].aborts++; air_ev(&fair[i], AIR_EV_TX_DONE, NULL); }
+
+#define FAKE_AIR(i) \
+	static bool air_open##i(const air_profile_t *pr, air_event_cb_t cb, void *ctx) { (void)pr; return air_open(i, cb, ctx); } \
+	static void air_close##i(void) { air_close(i); } \
+	static void air_restart##i(void) { } \
+	static bool air_begin##i(void) { return air_begin(i); } \
+	static bool air_queue##i(const air_tx_chunk_t *c) { return air_queue(i, c); } \
+	static uint8_t air_space##i(void) { return (uint8_t)(AIR_DEPTH - fair[i].qn); } \
+	static void air_end##i(void) { air_end(i); } \
+	static void air_abort##i(void) { air_abort(i); } \
+	static uint32_t air_now##i(void) { return fair[i].now_us; } \
+	static const hal_air_t fake_air##i = { air_fit, air_open##i, air_close##i, air_restart##i, air_begin##i, air_queue##i, \
+					       air_space##i, air_end##i, air_abort##i, air_now##i, NULL, NULL, NULL, AIR_CHUNK, \
+					       AIR_DEPTH, 60, 100 };
+FAKE_AIR(0)
+FAKE_AIR(1)
+static void air_step(void);	// with the far radio's engine, below
+#endif
+
 const board_t board = {
 	.name = "fake",
 	.hwopts = fake_hwopts,
@@ -219,6 +368,9 @@ const board_t board = {
 	.dmr = &sim_modem,
 	.audio = &fake_audio,
 	.vocoder = &fake_vocoder,
+#if CONFIG_AIR
+	.air = &fake_air0,
+#endif
 	.flash = &sim_flash,		// no map until test_factory_reset: RAM only, as on a radio without one
 };
 
@@ -1177,6 +1329,9 @@ static void run(uint32_t ms)
 		}
 		if (now % 30 == 0) {
 			sim_slot();
+#if CONFIG_AIR
+			air_step();
+#endif
 		}
 		if (aud.feed && aud.started && aud.cb != NULL && now % 20 == 0) {
 			static const int16_t mic[AUDIO_BLOCK_SAMPLES];
@@ -1631,6 +1786,11 @@ static void test_vfo_dmr(void)
 	// P25 (2) in a build without it: unavailable; past P25: a bad argument
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 2, 0xFF, 0 }, 3) ==
 	      (CONFIG_P25 ? DL_ST_OK : DL_ST_UNAVAILABLE));
+#if CONFIG_P25
+	CHECK(sm.view.ch.mode == RADIO_MODE_P25);
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 1, 0xFF, 0 }, 3) == DL_ST_OK);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && sim.started);
+#endif
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 3, 0xFF, 0 }, 3) == DL_ST_BAD_ARG);
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0xFF, 16, 0 }, 3) == DL_ST_BAD_ARG);
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0xFF, 0xFF, 3 }, 3) == DL_ST_BAD_ARG);
@@ -3191,6 +3351,10 @@ void radio_req_dmr_timeslot(uint8_t ts) { req(RREQ_DMR_TS, ts); }
 void radio_req_dmr_color_code(uint8_t cc) { req(RREQ_DMR_CC, cc); }
 void radio_req_vfo_sfr(uint8_t a) { req(RREQ_VFO_SFR, a); }
 void radio_req_mode(uint8_t mode) { req(RREQ_MODE, mode); }
+#if CONFIG_P25
+// As radio_task.c: the settings copied in, then the request
+void radio_req_p25_settings(const radio_p25_settings_t *s) { radio_p25_set_settings(s); req(RREQ_P25_SET, 0); }
+#endif
 void radio_req_vfo_copy(void) { req(RREQ_VFO_COPY, 0); }
 radio_vfo_copy_t radio_req_vfo_copy_checked(void)
 {
@@ -5621,6 +5785,578 @@ static void test_volume_step_of(void)
 	}
 }
 
+#if CONFIG_P25
+// ---- P25 conventional in the radio core (docs/spec/p25.md 7): the far radio is a P25 engine on the other fake
+// provider; it transmits calls the radio under test hears, and hears what the radio sends ----
+#include "p25/p25Voice.h"
+
+static p25_engine_t far_eng;
+static bool far_running, far_tx;
+static struct {
+	uint8_t starts, ends;
+	p25_call_t call;
+	uint16_t voice;
+} far_heard;
+static void far_start(const p25_call_t *c, void *ctx) { (void)ctx; far_heard.starts++; far_heard.call = *c; }
+static void far_update(const p25_call_t *c, void *ctx) { (void)ctx; far_heard.call = *c; }
+static void far_voice(const uint8_t imbe[P25_IMBE_BYTES], uint8_t errs, void *ctx) { (void)imbe; (void)errs; (void)ctx; far_heard.voice++; }
+static void far_end(void *ctx) { (void)ctx; far_heard.ends++; }
+static const p25_engine_hooks_t far_hooks = { far_start, far_update, far_voice, far_end, NULL };
+
+static void air_step(void)
+{
+	air_step1(0);
+	air_step1(1);
+	if (far_tx && p25_engine_tx_state(&far_eng) == AIR_TX_DONE) {
+		p25_engine_tx_clear(&far_eng);
+		far_tx = false;
+	}
+}
+
+// The far radio on the channel: it sends on nac, as unit, to a talk group or a unit (dst); it hears every NAC
+static void far_begin(uint16_t nac, uint32_t unit, bool unit_call, uint32_t dst)
+{
+	p25_engine_cfg_t c = { .rx_nac = P25_NAC_ANY, .tx_nac = nac, .unit_id = unit, .silence = imbe_silence,
+			       .talkaround = true };
+	if (unit_call) {
+		c.tx_lc.lcf = P25_LCF_UNIT;
+		c.tx_lc.dst = dst;
+	} else {
+		c.tx_lc.lcf = P25_LCF_GROUP;
+		c.tx_lc.tgid = (uint16_t)dst;
+	}
+	if (far_running) {
+		p25_engine_end(&far_eng);
+	}
+	memset(&far_heard, 0, sizeof(far_heard));
+	far_tx = false;
+	far_running = p25_engine_begin(&far_eng, &fake_air1, &c, &far_hooks, NULL);
+	CHECK(far_running);
+}
+
+static void far_stop(void)
+{
+	if (far_running) {
+		p25_engine_end(&far_eng);
+		far_running = far_tx = false;
+	}
+}
+
+// The far radio keys, holds for ms, lets go and runs until its terminator is out
+static void far_call(uint32_t ms)
+{
+	CHECK(p25_engine_tx_prepare(&far_eng));
+	CHECK(p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	run(ms);
+	p25_engine_tx_stop(&far_eng);
+	for (int i = 0; i < 100 && far_tx; i++) {
+		run(10);
+	}
+	CHECK(!far_tx);
+}
+
+static void p25_view_text(char *buf, size_t cap)
+{
+	dl_text_t t;
+	dl_text_init(&t, buf, cap);
+	debuglink_view_p25(&sm.view, &t);
+}
+
+static void setup_codeplug_p25(void)
+{
+	setup_codeplug();
+	add(3, "P25 simp", 446100000, RADIO_MODE_P25, false, 2);	// zone Local, position 2
+	radio_p25_reset_stats();
+	p25VoiceResetStats();
+	air_nofit = false;
+	lend_refuse = false;
+	memset(fair, 0, sizeof(fair));
+}
+
+// The radio's settings back to the defaults (they are RAM only and outlive radio_sm_init here)
+static void p25_defaults(void)
+{
+	radio_p25_settings_t s = { .rx_nac = P25_NAC_DEFAULT, .tx_nac = P25_NAC_DEFAULT, .talkaround = RADIO_P25_TA_AUTO,
+				   .tx_dst = 1 };
+	radio_req_p25_settings(&s);
+}
+
+static void test_p25_rx(void)
+{
+	static char buf[4096];
+	radio_p25_stats_t st;
+	p25_voice_stats_t vs;
+	const radio_p25_view_t *v = &sm.view.p25;
+
+	setup_codeplug_p25();
+	start();
+	p25_defaults();
+	aud.feed = true;
+	uint32_t lends0 = lends;
+	req(RREQ_ZONE_POS, 2);
+	CHECK(sm.view.ch.mode == RADIO_MODE_P25 && sm.view.channel_number == 3);
+	// The board in its digital mode at 12.5 kHz without a tone, the DMR stack stopped, the engine on board.air in
+	// the memory the vocoder lends
+	CHECK(hw_mode == RADIO_MODE_DMR && hw.rx_hz == 446100000 && hw.rx_bw == RADIO_BW_12K5 && hw.rx_tone.type == TONE_NONE);
+	CHECK(!sm.dmr_running && !sim.started);
+	CHECK(radio_p25_running() && fair[0].open && lends == lends0 + 1);
+	CHECK(v->flags == RADIO_P25_ON && v->tx == AIR_TX_IDLE);
+	radio_p25_stats(&st);
+	CHECK(st.begins == 1 && st.begin_fails == 0 && st.mem_lent == 1);
+	p25_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25.built=1\np25.on=1\np25.rx=0\n") != NULL && strstr(buf, "p25.rx_nac=659\n") != NULL);
+	run(300);				// noise: no call
+	CHECK(sm.view.state == RS_IDLE && !hw.led[LED_GREEN] && !aud.started);
+
+	// A group call on our NAC: received and played (rx_tgid 0: every call of the NAC)
+	far_begin(P25_NAC_DEFAULT, 1001, false, 77);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	run(600);
+	CHECK(sm.view.state == RS_RX && (v->flags & (RADIO_P25_RX | RADIO_P25_PLAYED)) == (RADIO_P25_RX | RADIO_P25_PLAYED));
+	CHECK(!(v->flags & (RADIO_P25_ENC | RADIO_P25_UNIT | RADIO_P25_LATE)));
+	CHECK(v->nac == P25_NAC_DEFAULT && v->src == 1001 && v->dst == 77);
+	CHECK(hw.led[LED_GREEN] && !hw.audio && radio_view_wakes(&sm.view));	// voice is PCM, not the FM speaker path
+	CHECK(aud.started);			// the voice stream plays it
+	p25_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25.rx=1\np25.played=1\n") != NULL && strstr(buf, "p25.src=1001\np25.dst=77\n") != NULL);
+	p25_engine_tx_stop(&far_eng);
+	run(600);
+	CHECK(!far_tx && sm.view.state == RS_IDLE && !hw.led[LED_GREEN]);
+	CHECK(v->flags == RADIO_P25_ON && v->src == 1001 && v->dst == 77);	// the last call heard stays
+	CHECK(sm.view.last_rx_ms != 0);
+	radio_p25_stats(&st);
+	p25VoiceGetStats(&vs);
+	CHECK(st.rx_calls == 1 && st.voice >= 9 && st.voice_bad == 0 && st.rx_chunks > 0);
+	CHECK(vs.rx_in == st.voice && vs.rx_frames > 0 && vs.rx_calls == 1);
+
+	// Another NAC: another system on the channel, nothing heard
+	far_begin(0x123, 1002, false, 77);
+	far_call(400);
+	CHECK(sm.view.state == RS_IDLE && v->src == 1001);
+	radio_p25_stats(&st);
+	CHECK(st.rx_calls == 1);
+	// ... unless the receiver takes every NAC
+	radio_p25_settings_t s;
+	radio_p25_settings(&s);
+	s.rx_nac = P25_NAC_ANY;
+	radio_req_p25_settings(&s);
+	far_begin(0x123, 1002, false, 77);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	run(600);
+	CHECK(sm.view.state == RS_RX && v->nac == 0x123 && v->src == 1002);
+	p25_engine_tx_stop(&far_eng);
+	run(600);
+	CHECK(sm.view.state == RS_IDLE);
+
+	// The selective squelch: only talk group 5 and calls to us. A call to 77 is shown, not played
+	s.rx_nac = P25_NAC_DEFAULT;
+	s.rx_tgid = 5;
+	radio_req_p25_settings(&s);
+	far_begin(P25_NAC_DEFAULT, 1003, false, 77);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	run(600);
+	CHECK(sm.view.state == RS_RX && (v->flags & RADIO_P25_RX) && !(v->flags & RADIO_P25_PLAYED) && v->dst == 77);
+	CHECK(!hw.led[LED_GREEN] && !radio_view_wakes(&sm.view));
+	p25_engine_tx_stop(&far_eng);
+	run(600);
+	// Talk group 5: played
+	far_begin(P25_NAC_DEFAULT, 1003, false, 5);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	run(600);
+	CHECK((v->flags & RADIO_P25_PLAYED) && v->dst == 5 && hw.led[LED_GREEN]);
+	p25_engine_tx_stop(&far_eng);
+	run(600);
+	// A unit call to us (unit_id 0: the radio's DMR ID): played, shown as a unit call
+	far_begin(P25_NAC_DEFAULT, 1004, true, own_dmr_id);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	run(600);
+	CHECK((v->flags & (RADIO_P25_PLAYED | RADIO_P25_UNIT)) == (RADIO_P25_PLAYED | RADIO_P25_UNIT));
+	CHECK(v->dst == own_dmr_id && v->src == 1004);
+	p25_engine_tx_stop(&far_eng);
+	run(600);
+	// ... and to someone else: not played
+	far_begin(P25_NAC_DEFAULT, 1004, true, 4242);
+	far_call(600);
+	CHECK(v->dst == 4242 && sm.view.state == RS_IDLE);
+	radio_p25_stats(&st);
+	CHECK(st.rx_calls == 6);
+
+	// The counter reset clears the engine's and the voice path's counters
+	debuglink_p25_reset();
+	radio_p25_stats(&st);
+	p25VoiceGetStats(&vs);
+	CHECK(st.rx_calls == 0 && st.begins == 0 && vs.rx_in == 0);
+	p25_defaults();
+	far_stop();
+	aud.feed = false;
+}
+
+static void test_p25_tx(void)
+{
+	radio_p25_stats_t st;
+	const radio_p25_view_t *v = &sm.view.p25;
+
+	setup_codeplug_p25();
+	start();
+	p25_defaults();
+	req(RREQ_ZONE_POS, 2);
+	far_begin(P25_NAC_DEFAULT, 1001, false, 1);
+	run(100);
+
+	// PTT: keyed on the channel's TX frequency at 12.5 kHz, its power, no tone; the provider starts inside the key
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_calls == 1 && hw.keyed && fair[0].on && fair[0].begins == 1);
+	CHECK(hw.tx_hz == 446100000 && hw.tx_bw == RADIO_BW_12K5 && hw.tx_tone.type == TONE_NONE && hw.tx_power == 2);
+	CHECK(hw.led[LED_RED] && !hw.led[LED_GREEN] && !sm.view.tx_auto && v->tx != AIR_TX_IDLE);
+	req(RREQ_CH_STEP, 1);			// no retuning while transmitting
+	CHECK(sm.view.channel_number == 3);
+	run(1000);
+	CHECK(sm.view.state == RS_TX && sm.view.tx_elapsed_ms >= 975 && fair[0].underruns == 0);
+	// The far radio hears the call: our NAC, our unit ID (the DMR ID), talk group tx_dst
+	CHECK(far_heard.starts == 1 && far_heard.ends == 0);
+	CHECK(far_heard.call.nac == P25_NAC_DEFAULT && far_heard.call.lc.src == own_dmr_id && far_heard.call.lc.tgid == 1);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_TX && hw.keyed);	// the LDU on air is finished first
+	run(500);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed && hw.tx_off_calls == 1 && !hw.led[LED_RED]);
+	CHECK(v->tx == AIR_TX_IDLE && far_heard.ends == 1 && far_heard.voice % 9 == 0 && far_heard.voice >= 45);
+	CHECK(fair[0].keyed_violations == 0 && fair[0].underruns == 0);
+	radio_p25_stats(&st);
+	CHECK(st.tx_calls == 1 && st.tx_underruns == 0 && st.tx_syms > 0);
+
+	// Pressed again while the last one ends: keyed again once it is done
+	req(RREQ_PTT, 1);
+	run(400);
+	req(RREQ_PTT, 0);
+	req(RREQ_PTT, 1);
+	CHECK(hw.tx_calls == 2);
+	run(500);
+	CHECK(sm.view.state == RS_TX && hw.tx_calls == 3 && hw.tx_off_calls == 2 && hw.keyed);
+	req(RREQ_PTT, 0);
+	run(500);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed && hw.tx_off_calls == 3 && far_heard.starts == 3 && far_heard.ends == 3);
+
+	// Settings sent while transmitting: in force for the next transmission
+	req(RREQ_PTT, 1);
+	run(100);
+	radio_p25_settings_t s;
+	radio_p25_settings(&s);
+	s.unit_call = true;
+	s.tx_dst = 4321;
+	s.unit_id = 777;
+	s.tx_nac = 0x2A0;
+	radio_req_p25_settings(&s);
+	run(300);
+	CHECK(far_heard.call.lc.src == own_dmr_id);	// this one goes on as it began
+	req(RREQ_PTT, 0);
+	run(500);
+	req(RREQ_PTT, 1);
+	run(400);
+	CHECK(far_heard.call.nac == 0x2A0 && far_heard.call.lc.lcf == P25_LCF_UNIT && far_heard.call.lc.dst == 4321 &&
+	      far_heard.call.lc.src == 777);
+	req(RREQ_PTT, 0);
+	run(500);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
+	p25_defaults();
+
+	// The time-out: cut at once, the transmitter off, denied until PTT is released
+	uint32_t offs = (uint32_t)hw.tx_off_calls;
+	req(RREQ_PTT, 1);
+	run(179000);
+	CHECK(sm.view.state == RS_TX && hw.keyed);
+	run(1100);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TIMEOUT && !hw.keyed && hw.tx_off_calls == (int)offs + 1);
+	CHECK(v->tx == AIR_TX_IDLE && fair[0].keyed_violations == 0);
+	run(2000);
+	CHECK(sm.view.state == RS_TX_DENIED && !hw.keyed);
+	req(RREQ_PTT, 0);
+	run(100);
+	CHECK(sm.view.state == RS_IDLE);
+	req(RREQ_PTT, 1);			// a fresh press transmits again
+	run(100);
+	CHECK(sm.view.state == RS_TX && hw.keyed);
+	req(RREQ_PTT, 0);
+	run(500);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
+	far_stop();
+}
+
+static void test_p25_denied(void)
+{
+	radio_p25_stats_t st;
+
+	// The board refuses to key: denied, the engine's transmission dropped, nothing on air
+	setup_codeplug_p25();
+	start();
+	p25_defaults();
+	req(RREQ_ZONE_POS, 2);
+	tx_fail = true;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_REFUSED && !hw.keyed && !fair[0].on);
+	run(100);
+	CHECK(sm.view.p25.tx == AIR_TX_IDLE && fair[0].qn == 0);
+	req(RREQ_PTT, 0);
+	tx_fail = false;
+	run(50);
+	CHECK(sm.view.state == RS_IDLE);
+	req(RREQ_PTT, 1);			// and then keys normally
+	CHECK(sm.view.state == RS_TX && hw.keyed);
+	req(RREQ_PTT, 0);
+	run(500);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed && fair[0].keyed_violations == 0);
+
+	// Transmit inhibit
+	sm.set.tx_inhibit = true;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_INHIBIT && !hw.keyed);
+	req(RREQ_PTT, 0);
+	sm.set.tx_inhibit = false;
+
+	// Receive only
+	chans[3].rx_only = true;
+	req(RREQ_RELOAD, 0);
+	run(50);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_RX_ONLY && !hw.keyed);
+	req(RREQ_PTT, 0);
+	chans[3].rx_only = false;
+
+	// No engine: the provider can't carry P25. Nothing received, PTT refused
+	air_nofit = true;
+	req(RREQ_CH_STEP, 1);
+	req(RREQ_CH_STEP, -1);
+	CHECK(sm.view.channel_number == 3 && !radio_p25_running() && !fair[0].open);
+	CHECK(sm.view.p25.flags == 0);
+	radio_p25_stats(&st);
+	CHECK(st.begin_fails >= 1);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_REFUSED && !hw.keyed);
+	req(RREQ_PTT, 0);
+	air_nofit = false;
+	// ... or the vocoder lends nothing
+	lend_refuse = true;
+	req(RREQ_ZONE_POS, 1);
+	req(RREQ_ZONE_POS, 2);
+	CHECK(!radio_p25_running());
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_REFUSED && !hw.keyed);
+	req(RREQ_PTT, 0);
+	lend_refuse = false;
+	req(RREQ_ZONE_POS, 1);
+	req(RREQ_ZONE_POS, 2);
+	CHECK(radio_p25_running());
+
+	// In a listen band (the air band with CONFIG_AM_RX) P25 is refused as a mode, as DMR is
+	req(RREQ_ZONE_POS, 4);			// "Air", 121.5 MHz
+	req(RREQ_MODE, RADIO_MODE_P25);
+	CHECK(sm.view.ch.mode == (radio_listen_band(121500000) ? RADIO_MODE_FM : RADIO_MODE_P25));
+	req(RREQ_CLEAR_TEMP, 0);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && !radio_p25_running());
+}
+
+// Leaving P25 for FM and DMR, and back: P25 stops, the provider closes, the other mode starts on the modem
+static void test_p25_leave(void)
+{
+	setup_codeplug_p25();
+	start();
+	p25_defaults();
+	req(RREQ_ZONE_POS, 2);
+	CHECK(radio_p25_running() && fair[0].open);
+
+	// Temporary mode change on the channel (the debug link's DMR_FIELDS mode): FM
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ RADIO_MODE_FM, 0xFF, 0 }, 3) == DL_ST_OK);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && hw_mode == RADIO_MODE_FM && !radio_p25_running() && !fair[0].open);
+	CHECK(fair[0].closes == 1 && sm.view.p25.flags == 0 && (sm.view.temp & RADIO_TEMP_MODE));
+	// ... P25 again
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ RADIO_MODE_P25, 0xFF, 0 }, 3) == DL_ST_OK);
+	CHECK(sm.view.ch.mode == RADIO_MODE_P25 && hw_mode == RADIO_MODE_DMR && radio_p25_running() && fair[0].open);
+	CHECK(hw.rx_bw == RADIO_BW_12K5 && hw.rx_tone.type == TONE_NONE);
+	// ... DMR: the engine stops before the DMR stack starts (the vocoder's lent memory comes back first)
+	req(RREQ_MODE, RADIO_MODE_DMR);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && !radio_p25_running() && !fair[0].open && sm.dmr_running && sim.started);
+	CHECK(sm.view.p25.flags == 0);
+	run(100);
+	CHECK(!radio_p25_running() && sm.dmr_running);
+	// ... and from DMR to P25: the DMR stack stops
+	req(RREQ_MODE, RADIO_MODE_P25);
+	CHECK(radio_p25_running() && fair[0].open && !sm.dmr_running);
+	// A transmission running when the mode changes is refused (no retune while transmitting)
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX);
+	req(RREQ_MODE, RADIO_MODE_FM);
+	CHECK(sm.view.ch.mode == RADIO_MODE_P25 && radio_p25_running());
+	req(RREQ_PTT, 0);
+	run(500);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
+	// The channel's own mode back (clear temporary)
+	req(RREQ_CLEAR_TEMP, 0);
+	CHECK(sm.view.ch.mode == RADIO_MODE_P25 && radio_p25_running());
+
+	// To an FM channel and a DMR channel by channel step
+	req(RREQ_ZONE_POS, 1);			// Weather, FM
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && !radio_p25_running() && hw_mode == RADIO_MODE_FM);
+	req(RREQ_ZONE_POS, 2);
+	CHECK(radio_p25_running());
+	req(RREQ_ZONE_POS, 3);			// DMR rptr
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && !radio_p25_running() && sm.dmr_running && !fair[0].open);
+	req(RREQ_ZONE_POS, 2);
+	CHECK(radio_p25_running() && !sm.dmr_running);
+	// DMR and FM receive work after P25
+	req(RREQ_ZONE_POS, 3);
+	CHECK(sm.dmr_running && sim.started && hw_mode == RADIO_MODE_DMR);
+	req(RREQ_ZONE_POS, 0);
+	rx_signal(10, true);
+	poll_for(50);
+	CHECK(sm.view.state == RS_RX && hw.audio);
+	rx_signal(120, true);
+	poll_for(500);
+	CHECK(sm.view.state == RS_IDLE);
+
+	// The settings request with P25 off: taken, in force at the next P25 start
+	radio_p25_settings_t s;
+	radio_p25_settings(&s);
+	s.rx_tgid = 9;
+	radio_req_p25_settings(&s);
+	radio_p25_settings(&s);
+	CHECK(s.rx_tgid == 9);
+	// Out of range values are clipped or refused
+	s.rx_nac = 0xFFFF;
+	s.talkaround = 7;
+	radio_p25_set_settings(&s);
+	radio_p25_settings(&s);
+	CHECK(s.rx_nac == 0xFFF && s.talkaround == RADIO_P25_TA_AUTO);
+	static const uint8_t bad_ta[16] = { 0x93, 0x02, 0x93, 0x02, 0, 0, 3 };
+	CHECK(debuglink_radio_feature_op(DL_OP_P25, bad_ta, 16) == DL_ST_BAD_ARG);
+	static const uint8_t bad_nac[16] = { 0x00, 0x10, 0x93, 0x02 };
+	CHECK(debuglink_radio_feature_op(DL_OP_P25, bad_nac, 16) == DL_ST_BAD_ARG);
+	CHECK(debuglink_radio_feature_op(DL_OP_P25, bad_nac, 15) == DL_ST_BAD_ARG);
+	static const uint8_t ok[16] = { 0x93, 0x02, 0x94, 0x02, 5, 0, 1, 1, 0x39, 0x30, 0, 0, 0x10, 0x27, 0, 0 };
+	CHECK(debuglink_radio_feature_op(DL_OP_P25, ok, 16) == DL_ST_OK);
+	radio_p25_settings(&s);
+	CHECK(s.rx_nac == 0x293 && s.tx_nac == 0x294 && s.rx_tgid == 5 && s.talkaround == RADIO_P25_TA_ON && s.unit_call &&
+	      s.tx_dst == 12345 && s.unit_id == 10000);
+	p25_defaults();
+}
+
+// The VFO in P25: its own mode, every retune starts the engine over, saved as DMR (the saved VFO has no P25)
+static void test_p25_vfo(void)
+{
+	radio_p25_stats_t st;
+	settings_t set;
+
+	setup_codeplug_p25();
+	start();
+	p25_defaults();
+	req(RREQ_VFO, 1);
+	CHECK(sm.view.vfo);
+	req(RREQ_VFO_SET, 446100000);
+	req(RREQ_MODE, RADIO_MODE_P25);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_P25 && radio_p25_running() && hw_mode == RADIO_MODE_DMR);
+	CHECK(!(sm.view.temp & RADIO_TEMP_MODE));	// the VFO's own mode, not a temporary change
+	radio_p25_stats(&st);
+	uint32_t begins = st.begins;
+	req(RREQ_VFO_STEP, 1);
+	CHECK(hw.rx_hz == sm.view.ch.rx_hz && radio_p25_running());
+	radio_p25_stats(&st);
+	CHECK(st.begins == begins + 1);
+	// PTT in the VFO keys on its TX frequency
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == sm.view.ch.tx_hz && hw.tx_bw == RADIO_BW_12K5);
+	req(RREQ_PTT, 0);
+	run(500);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
+	// Saved: DMR (or FM without the DMR VFO)
+	run(5000);
+	settings_read(&set);
+	CHECK(settings_vfo_mode(&set) == (CONFIG_VFO_DMR ? RADIO_MODE_DMR : RADIO_MODE_FM));
+	CHECK(sm.view.ch.mode == RADIO_MODE_P25);	// in use it stays P25
+	// Out to a channel and back: the VFO is P25 still (RAM), the engine restarts
+	req(RREQ_VFO, 0);
+	CHECK(!sm.view.vfo && !radio_p25_running());
+	req(RREQ_VFO, 1);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_P25 && radio_p25_running());
+	// After a restart the saved VFO comes back
+	boot();
+	CHECK(!radio_p25_running() || sm.view.ch.mode == RADIO_MODE_P25);
+	if (sm.view.vfo) {
+		CHECK(sm.view.ch.mode == (CONFIG_VFO_DMR ? RADIO_MODE_DMR : RADIO_MODE_FM));
+	}
+	req(RREQ_VFO, 0);
+}
+
+// The air interface bench (CONFIG_AIR_RAW): it holds the modem and keys through the core's checks
+static void test_air_bench(void)
+{
+	setup_codeplug_p25();
+	start();
+	req(RREQ_ZONE_POS, 3);			// DMR rptr, power 2
+	CHECK(sm.dmr_running);
+	radio_req_t r = { RREQ_AIR_BENCH, 1 | (5 << 8), 0 };
+	radio_sm_request(&sm, &r, now);
+	CHECK(sm.air_bench && sm.bench_seq == 5 && !sm.dmr_running && hw_mode == RADIO_MODE_DMR && hw.rx_bw == RADIO_BW_12K5);
+	req(RREQ_PTT, 1);			// PTT gives way to the bench
+	CHECK(sm.view.state == RS_TX_DENIED && !hw.keyed);
+	req(RREQ_PTT, 0);
+	req(RREQ_CH_STEP, 1);			// no retuning
+	CHECK(sm.view.channel_number == 4);
+	// The bench opened the provider and queued its first chunk; the core keys
+	CHECK(fake_air0.open(NULL, NULL, NULL));
+	air_tx_chunk_t c = { .nsyms = AIR_CHUNK };
+	for (int i = 0; i < AIR_DEPTH; i++) {
+		CHECK(fake_air0.tx_queue(&c));
+	}
+	r = (radio_req_t){ RREQ_AIR_TX, 1 | (6 << 8), 200 };
+	radio_sm_request(&sm, &r, now);
+	CHECK(sm.bench_keyed && hw.keyed && fair[0].on && sm.view.state == RS_TX && sm.view.tx_auto);
+	CHECK(hw.tx_hz == 438500000 && hw.tx_bw == RADIO_BW_12K5 && hw.tx_tone.type == TONE_NONE);
+	run(300);				// the cap (200 ms) unkeys it
+	CHECK(!sm.bench_keyed && !hw.keyed && !fair[0].on && fair[0].aborts == 1 && sm.view.state == RS_IDLE);
+	// Refused: inhibit
+	sm.set.tx_inhibit = true;
+	fake_air0.tx_queue(&c);
+	radio_sm_request(&sm, &r, now);
+	CHECK(!sm.bench_keyed && !hw.keyed);
+	sm.set.tx_inhibit = false;
+	fake_air0.close();
+	// Leave: the channel again, DMR takes the modem back
+	r = (radio_req_t){ RREQ_AIR_BENCH, 0, 0 };
+	radio_sm_request(&sm, &r, now);
+	CHECK(!sm.air_bench && sm.dmr_running);
+	// From a P25 channel: the engine stops for the bench and comes back after
+	req(RREQ_ZONE_POS, 2);
+	CHECK(radio_p25_running());
+	r = (radio_req_t){ RREQ_AIR_BENCH, 1, 0 };
+	radio_sm_request(&sm, &r, now);
+	CHECK(sm.air_bench && !radio_p25_running());
+	r = (radio_req_t){ RREQ_AIR_BENCH, 0, 0 };
+	radio_sm_request(&sm, &r, now);
+	CHECK(!sm.air_bench && radio_p25_running());
+}
+
+static void test_p25(void)
+{
+	test_p25_rx();
+	test_p25_tx();
+	test_p25_denied();
+	test_p25_leave();
+	test_p25_vfo();
+	test_air_bench();
+	// Off P25 for the tests after: an FM channel, nothing of P25 left running
+	setup_codeplug();
+	req(RREQ_RELOAD, 0);
+	run(50);
+	if (radio_p25_running()) {
+		radio_p25_end();
+	}
+}
+#endif
+
 int main(void)
 {
 	test_tx_limit_op();
@@ -5693,6 +6429,9 @@ int main(void)
 	test_power_off_ars();
 #if CONFIG_VFO_DMR
 	test_vfo_dmr_data();
+#endif
+#if CONFIG_P25
+	test_p25();
 #endif
 	test_dmr_data_glue();	// (last: the data service's state carries over)
 	test_factory_reset();

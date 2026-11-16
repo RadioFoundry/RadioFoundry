@@ -648,6 +648,11 @@ static void tune(radio_sm_t *sm, uint32_t now_ms)
 	if (sm->board_mode == RADIO_MODE_DMR && mode != RADIO_MODE_DMR) {
 		dmr_end(sm);		// the call stack (or P25) lets go of the modem before the chip leaves DMR
 	}
+#if CONFIG_P25
+	if (!p25 && radio_p25_running()) {
+		p25_stop(sm);		// P25 to DMR: the engine closes and the vocoder's memory is back before DMR starts
+	}
+#endif
 	radio_mode_t board_mode = mode == RADIO_MODE_P25 ? RADIO_MODE_DMR : mode;
 	if (board_mode != sm->board_mode) {
 		sm->board_mode = board_mode;
@@ -4163,6 +4168,7 @@ static void p25_key(radio_sm_t *sm, uint32_t now_ms)
 		deny(sm, TXDENY_REFUSED);	// AIR_TX_DONE already: the tick switches off
 		return;
 	}
+	radio_p25_poll(&sm->view.p25);	// the engine's transmit state in the view now, not at the next tick
 	changed(sm);
 }
 
@@ -4179,6 +4185,7 @@ static void p25_tick(radio_sm_t *sm, uint32_t now_ms)
 		}
 		radio_p25_tx_clear();
 		sm->p25_tx = false;
+		radio_p25_apply(&sm->view.ch, p25_own_id(sm));	// settings sent while it transmitted (RREQ_P25_SET)
 		if (sm->view.state == RS_TX) {
 			fm_tx_end(sm, true, now_ms);	// (the transmitter is off already)
 			if (sm->ptt) {
@@ -6178,7 +6185,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 #endif
 #if CONFIG_P25
 	case RREQ_P25_SET:
-		// radio_task.c copied the settings in: the engine takes them now, or at the next tune if it transmits
+		// radio_task.c copied the settings in: the engine takes them now, or when its transmission is done (p25_tick)
 		if (radio_p25_running()) {
 			radio_p25_apply(&sm->view.ch, p25_own_id(sm));
 		}
