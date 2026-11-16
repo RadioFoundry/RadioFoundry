@@ -7,7 +7,8 @@ built for the host from tools/bench/nxdn: `make -C tools/bench/nxdn`, done here 
 than its sources).
 
     nxdntool.py gen OUT.dibits --expect EXP.json [--9600] [--ran 1] [--group N | --unit N] [--src N]
-               [--voice-frames 48] [--voice HEX18 | --random-voice SEED] [--emergency] [--lead N] [--tail N]
+               [--voice-frames 48] [--voice HEX18 | --random-voice SEED | --voice-file FILE] [--emergency]
+               [--lead N] [--tail N]
                [--ber P --seed S] [--unpacked]
     nxdntool.py decode IN.dibits [--9600] [--expect EXP.json] [--ran N] [--unpacked | --records | --air-jsonl]
     nxdntool.py disc IN.raw --rate HZ [--9600] [--full HZ | --counts-per-khz N] [--invert] [--expect EXP.json] [--ran N]
@@ -17,7 +18,8 @@ than its sources).
 
 gen writes a transmission as the firmware's transmit path builds it (nxdn_call_tx): idle symbols as a lead, the
 preamble, the header frame, superframes of voice, the release frame, a tail. Voice frames are made-up 72-bit patterns
-(--voice, or random with --random-voice), never speech: the VCH is opaque to this tool. The dibit file is the air
+(--voice, or random with --random-voice), or the 72-bit frames of a file as they came off the air (--voice-file, 9
+bytes each; its last one repeats): the VCH is opaque to this tool either way. The dibit file is the air
 interface's packing (four a byte, the first in bits 7-6; 01 +3, 00 +1, 10 -1, 11 -3). --ber flips bits after the
 expect file was written. The expect file (JSON) lists every frame with its LICH, symbols, position and VCH.
 
@@ -228,6 +230,7 @@ def pass_opts(a, names):
 
 
 GEN_OPTS = ["--9600", "--ran", "--group", "--unit", "--src", "--voice-frames", "--voice", "--random-voice",
+            "--voice-file",
             "--emergency", "--lead", "--tail", "--ber", "--seed", "--unpacked"]
 MOD_OPTS = ["--9600", "--rate", "--full", "--dev-scale", "--offset", "--noise", "--invert", "--carrier-gap", "--seed",
             "--unpacked"]
@@ -349,6 +352,7 @@ def main(argv=None):
     for n in ("--ran", "--group", "--unit", "--src", "--voice-frames", "--random-voice", "--lead", "--tail", "--seed"):
         s.add_argument(n, type=int)
     s.add_argument("--voice")
+    s.add_argument("--voice-file")
     s.add_argument("--ber", type=float)
     s.add_argument("--emergency", action="store_true")
     s.add_argument("--unpacked", action="store_true")

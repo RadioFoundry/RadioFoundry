@@ -244,7 +244,7 @@ static int cmd_gen(const char *out_path, const char *exp_path, const opts_t *o)
 	uint8_t *syms = malloc(GEN_MAX_SYMS);
 	size_t n = 0, frame_at = 0;
 	long given = 0, nflip = 0, nframes = 0;
-	FILE *e = fopen(exp_path, "w");
+	FILE *e = fopen(exp_path, "w"), *vf = NULL;
 	int ended = 0;
 
 	if (!syms || !e)
@@ -264,6 +264,12 @@ static int cmd_gen(const char *out_path, const char *exp_path, const opts_t *o)
 		parse_hex(opt(o, "--voice"), fixed, sizeof fixed, "--voice");
 	if (seed_voice >= 0)
 		rng_seed((uint64_t)seed_voice);
+	// --voice-file: 72-bit frames as on air, 9 bytes each, in order (still opaque here); the last one repeats
+	if (opt(o, "--voice-file")) {
+		vf = fopen(opt(o, "--voice-file"), "rb");
+		if (!vf)
+			die("can't read", opt(o, "--voice-file"));
+	}
 
 	fprintf(e, "{\"format\":\"nxdn-expect/1\",\"rate\":%u,\"ran\":%ld,\"vcall\":", r9600 ? 9600 : 4800, ran);
 	vcall_json(e, &v);
@@ -310,6 +316,8 @@ static int cmd_gen(const char *out_path, const char *exp_path, const opts_t *o)
 			if (seed_voice >= 0)
 				for (int i = 0; i < NXDN_EHR_BYTES; i++)
 					frame[i] = (uint8_t)rng();
+			else if (vf && fread(frame, 1, sizeof frame, vf) == sizeof frame)
+				memcpy(fixed, frame, sizeof fixed);
 			else
 				memcpy(frame, fixed, sizeof frame);
 			nxdn_call_tx_voice(&t, frame);
