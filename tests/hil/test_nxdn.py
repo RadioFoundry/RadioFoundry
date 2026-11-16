@@ -367,7 +367,7 @@ def test_nxdn_rx_from_bench(radio, sdr_bench, pytestconfig, rate):
             with tempfile.TemporaryDirectory() as tmp, sdr_bench.lease():
                 path, exp = os.path.join(tmp, "call.dibits"), os.path.join(tmp, "call.json")
                 try:
-                    nxdntool.run(["gen", path, "--expect", exp, "--ran", TEST_RAN, "--group", TEST_GROUP, "--src",
+                    nxdntool.run(["gen", path, exp, "--ran", TEST_RAN, "--group", TEST_GROUP, "--src",
                                   TEST_UNIT, "--voice-frames", RX_VOICE_FRAMES, "--lead", baud // 4]
                                  + (["--9600"] if rate == "9600" else []))
                 except SystemExit as e:
