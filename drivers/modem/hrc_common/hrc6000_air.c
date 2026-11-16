@@ -58,8 +58,10 @@
 #define FILL_MAX	192	// symbols: a re-arm's hole (about 124 with a sync every 6 records) or a record lost
 
 // The half slot n reads: counted from the own timing write (first timeslot interrupt = 1, so the first slot set up is
-// 2). One parity held across two bench sessions; tying it to that count is inferred (modem-hrc6000.md 10.3)
-#define HALF0_PARITY	1u
+// 2 and reads 0x00). The same in every key-up checked off air, wherever in the slot the first interrupt came and
+// whatever the transmission before sent (modem-hrc6000.md 10.3). The other half is the one on air: a chunk written
+// there goes out with its first 32 bits two slots old
+#define HALF0_PARITY	0u
 
 // Profiles the chip takes (modem-hrc6000.md 10.4)
 #define CAL_DEV_HZ	1944u	// the DMR outer deviation the calibrated pair gives
@@ -744,7 +746,7 @@ bool hrc6000_air_tx_begin(hrc6000_air_t *a)
 		a->underrun = false;
 		a->pa = false;
 		a->tx = HRC6000_AIR_START;
-		w(a, R_L2_CTL, L2_ACTIVE);	// own timing: the first timeslot interrupt comes 22-30 ms after
+		w(a, R_L2_CTL, L2_ACTIVE);	// own timing: the first timeslot interrupt comes up to 30 ms after
 	}
 	unlock(a);
 	return ok;

@@ -601,9 +601,10 @@ static air_tx_chunk_t chunk(uint8_t fill, uint16_t n, uint8_t flags)
 	return c;
 }
 
-static int half_of_slot(uint32_t n)	// slot n + 1 is set up at interrupt n
+// The chip's rule (modem-hrc6000.md 10.3): slot n + 1 is set up at interrupt n, and the first slot set up reads 0x00
+static int half_of_slot(uint32_t n)
 {
-	return ((n + 1) & 1) == 1 ? 0 : 1;
+	return (n & 1) == 1 ? 0 : 1;
 }
 
 static bool half_is(int h, uint8_t fill)

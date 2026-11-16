@@ -863,14 +863,17 @@ records). 0x36 = 0 for the whole session, so nothing of the receiver reaches the
 ### 10.3 Transmit
 
 Set-up at `tx_begin`: 0x41 = 0x00, 0x10 = 0x66, 0x20 = 0x00, 0x21 = 0x02 (impolite), 0x22 = 0x86, the profile's idle
-in both TX RAM halves, then 0x40 = 0xE3 (own timing). The first timeslot interrupt comes 22-30 ms later, then every
-30 ms.
+in both TX RAM halves, then 0x40 = 0xE3 (own timing). The first timeslot interrupt comes up to 30 ms later (the
+receive set-up's slot clock runs on; about 28.7 ms after a stop with 0x40 = 0x03), then every 30 ms.
 
 - The chip sends TX RAM page 2 0x00-0x23 and 0x24-0x47 in alternate slots, 288 bits each, first bit 7 of the first
   byte, and reads a half while it sends it: a half written at the timeslot interrupt that starts its slot loses about
   its first 32 bits. So each interrupt writes only the half the next slot reads, and 0x41 = 0x80. Counting the
   timeslot interrupts from the 0xE3 write (the first is 1), slot n + 1 is set up at interrupt n and reads 0x00 when
-  n + 1 is odd. The parity held over two sessions; tying it to the count is not checked.
+  n is odd: the first slot set up reads 0x00. Off air this held in every key-up, with the first interrupt anywhere
+  from 2 to 29 ms after the write, and after transmissions of an odd and an even number of slots. A chunk written to the other half goes out in the slot then starting,
+  its first 32 bits those of the chunk two slots before. 0x42 does not tell the halves apart: it reads 0xA0 at
+  every interrupt of a transmission after the first.
 - In this mode the RF TX interrupt comes once per key-up, anywhere in the slot. The PA is keyed there (both halves
   hold idle until the first chunk), or at the first chunk's set-up if it has not come, and held for the whole
   transmission. The chip sends TX RAM whenever the PA is up.
@@ -903,7 +906,7 @@ Register facts above were measured with bench scripts on the chip. The driver's 
 C4FM calls at 1800 Hz: the record placement, the erasures and the level scale of 10.2. A sender whose symbol clock is
 28 ppm off is followed, at 0.4 % symbol errors against 0.1 % with a matching clock. A sync that comes off the record grid (a header 396
 symbols before the first voice unit) is not detected; the re-arm K records later brings the receiver back on the
-next one. On air still to check: the TX RAM half parity against the count; the receive
+next one. On air still to check: the receive
 set-up straight after the DMR one and after a transmission (one entry straight from a layer 2 restart gave no
 interrupts until a set-up with 0x41 = 0x40 had run once); the receive delay for t_us; the TX_STARTED time; the PA key
 and drop against the chunks.
