@@ -13,11 +13,43 @@
 #if CONFIG_IMBE
 #include "p25/p25Voice.h"
 #endif
+#if CONFIG_P25_TRUNK
+#include "hal_time.h"
+#include "p25/p25_follow.h"
 
-// What runs while P25 is on: the engine and, with the decoder, the voice path's queue and decoder memory
+// A trunked channel's follower (docs/spec/p25-trunking.md 6) and what it runs on. The provider's task hands it units
+// and calls, the radio task ticks it and carries out its retunes; the two never run it at once (enter_* below)
+typedef struct {
+	p25_follow_t f;
+	p25_follow_cfg_t cfg;
+	p25_follow_cc_t cc[P25_CP_CTL_MAX];
+	p25_follow_iden_t iden[P25_FOLLOW_IDENS];
+	// The last retune the follower asked (its tune hook, from either task): want moves past done until the radio
+	// task has carried it out
+	volatile uint8_t want, done;
+	uint8_t what;
+	uint32_t hz, id;
+	bool owed;			// the receiver is on the new frequency, the follower not told yet
+	volatile uint8_t in_prov, in_radio;	// which task is inside the follower
+} p25_trunk_t;
+_Static_assert(P25_CP_IDEN_MAX == P25_FOLLOW_IDENS, "one identifier plan size");
+_Static_assert(RADIO_P25_TRUNK_HUNT == P25_FOLLOW_HUNT && RADIO_P25_TRUNK_CONTROL == P25_FOLLOW_CONTROL &&
+	       RADIO_P25_TRUNK_VOICE == P25_FOLLOW_VOICE, "the view's trunking states are the follower's");
+#endif
+
+// What runs while P25 is on: the engine and, with the decoder, the voice path's queue and decoder memory. On a
+// trunked channel the follower too, and its set-up as the codeplug gives it, read before the voice path starts
 typedef struct {
 	p25_engine_t eng;
+#if CONFIG_P25_TRUNK
+	p25_trunk_t trunk;
+	union {
 #if CONFIG_IMBE
+		p25_voice_mem_t voice;
+#endif
+		p25_trunk_cfg_t load;
+	};
+#elif CONFIG_IMBE
 	p25_voice_mem_t voice;
 #endif
 } p25_mem_t;
@@ -47,6 +79,10 @@ static radio_p25_stats_t stats;
 static p25_call_stats_t call_base;	// the call layer's counters when the engine started (they restart with it)
 static air_session_stats_t air_base;
 static uint32_t rx_calls_base, tx_calls_base, filler_base;
+#if CONFIG_P25_TRUNK
+static bool trunk;			// the engine runs a trunked channel
+static radio_p25_trunk_view_t tview;	// the radio task's copy, for any task
+#endif
 
 void radio_p25_init(const hal_audio_t *audio)
 {
@@ -141,7 +177,11 @@ bool radio_p25_fits(void)
 
 bool radio_p25_take(channel_t *ch)
 {
-	if (ch->kind != CODEPLUG_KIND_P25 || !radio_p25_fits() || radio_listen_band(ch->rx_hz))
+	bool kind = ch->kind == CODEPLUG_KIND_P25;
+#if CONFIG_P25_TRUNK
+	kind = kind || ch->kind == CODEPLUG_KIND_P25_TRUNK;
+#endif
+	if (!kind || !radio_p25_fits() || radio_listen_band(ch->rx_hz))
 		return false;
 	ch->mode = RADIO_MODE_P25;
 	ch->bw = RADIO_BW_12K5;
@@ -163,6 +203,168 @@ static p25_mem_t *mem_get(void)
 #endif
 }
 
+#if CONFIG_P25_TRUNK
+// One task at a time inside the follower, without a lock: each says it is in, then looks for the other. The task that
+// finds the other in leaves again: the provider's drops that unit (the follower takes the next), the radio task's tick
+// waits for its next. On one core, whichever runs second sees the other's flag
+static bool enter(volatile uint8_t *mine, const volatile uint8_t *other)
+{
+	*mine = 1;
+	__atomic_signal_fence(__ATOMIC_SEQ_CST);
+	if (*other) {
+		*mine = 0;
+		return false;
+	}
+	return true;
+}
+
+static void leave(volatile uint8_t *mine)
+{
+	__atomic_signal_fence(__ATOMIC_SEQ_CST);
+	*mine = 0;
+}
+
+// Engine hooks (provider's task): every unit and every call's fields to the follower
+static void trunk_unit(const p25_rx_unit_t *u, void *ctx)
+{
+	p25_mem_t *m = mem;
+
+	(void)ctx;
+	if (m == NULL || !enter(&m->trunk.in_prov, &m->trunk.in_radio)) {
+		stats.trunk_skips++;
+		return;
+	}
+	p25_follow_unit(&m->trunk.f, u, hal_millis());
+	leave(&m->trunk.in_prov);
+}
+
+static void trunk_call(const p25_call_t *c, void *ctx)
+{
+	p25_mem_t *m = mem;
+
+	(void)ctx;
+	if (m == NULL || !enter(&m->trunk.in_prov, &m->trunk.in_radio)) {
+		stats.trunk_skips++;
+		return;
+	}
+	p25_follow_call(&m->trunk.f, c, hal_millis());
+	leave(&m->trunk.in_prov);
+}
+
+// The follower's tune hook (inside it, from either task): the request for the radio task, the frequency first
+static void trunk_tune(uint32_t hz, uint8_t what, uint32_t id, void *ctx)
+{
+	p25_trunk_t *t = ctx;
+
+	t->hz = hz;
+	t->what = what;
+	t->id = id;
+	__atomic_signal_fence(__ATOMIC_SEQ_CST);
+	t->want++;
+}
+
+static const p25_follow_hooks_t follow_hooks = { trunk_tune, NULL };	// no fallback yet (p25-trunking.md 5)
+
+// The follower's configuration from the codeplug's (p25-trunking.md 5), and the engine's: the system's NAC, our unit
+// ID, trunking signaling on. Nothing here transmits; the talk group PTT would call is the channel's, for the view
+static void trunk_params(p25_trunk_t *t, const p25_trunk_cfg_t *l, p25_engine_cfg_t *cfg)
+{
+	p25_follow_cfg_t *c = &t->cfg;
+
+	memset(c, 0, sizeof(*c));
+	c->wacn = l->sys.wacn;		// the codeplug's "any" values are the follower's
+	c->sysid = l->sys.sysid;
+	c->nac = l->sys.cc_nac;
+	if (l->sys.options & P25_TSYS_SKIP_ENC)
+		c->flags |= P25_FOLLOW_SKIP_ENC;
+	if (l->sys.options & P25_TSYS_PLAN_ONLY)
+		c->flags |= P25_FOLLOW_PLAN_ONLY;
+	if (l->follow_all)
+		c->flags |= P25_FOLLOW_ALL_GROUPS;
+	c->unit_id = (set.unit_id != 0 ? set.unit_id : l->unit_id) & 0xFFFFFFu;
+	c->talk_group = l->talk_group;
+	c->ncc = l->ctl_count;
+	for (uint8_t i = 0; i < l->ctl_count; i++)
+		t->cc[i] = (p25_follow_cc_t){ .hz = l->ctl[i].rx_hz, .chan = l->ctl[i].chan, .site = l->ctl_site[i] };
+	c->cc = t->cc;
+	c->iden_set = l->iden_set;
+	for (uint8_t i = 0; i < P25_FOLLOW_IDENS; i++)
+		t->iden[i] = (p25_follow_iden_t){ .base_hz = l->iden[i].base_hz, .spacing_hz = l->iden[i].spacing_hz,
+						  .slots = l->iden[i].slots, .tdma = l->iden[i].type == P25_IDEN_TDMA };
+	c->iden = t->iden;
+	c->hold_ms = (uint32_t)l->sys.hold_s * 1000u;	// 0: no hold
+
+	memset(cfg, 0, sizeof(*cfg));
+	cfg->silence = SILENCE;
+	cfg->rx_nac = cfg->tx_nac = l->sys.cc_nac;
+	cfg->unit_id = c->unit_id;
+	talk_lc(&cfg->tx_lc, false, l->talk_group);
+	cfg->trunk = true;
+}
+
+// Radio task: a retune the follower asked is carried out (the receiver, the engine's squelch for a group call, the
+// engine told), then the follower is told and ticked. From begin and every tick
+static void trunk_service(p25_mem_t *m)
+{
+	static const subtone_t no_tone = { TONE_NONE, 0 };
+	p25_trunk_t *t = &m->trunk;
+	uint32_t now = hal_millis();
+
+	if (t->done != t->want) {
+		uint8_t want = t->want;
+
+		__atomic_signal_fence(__ATOMIC_SEQ_CST);
+		uint32_t hz = t->hz;
+		p25_engine_cfg_t c = m->eng.cfg;
+
+		c.rx_tgid = t->what == P25_FOLLOW_TUNE_GROUP ? (uint16_t)t->id : 0u;
+		t->done = want;
+		// A frequency the radio can't receive stays untuned: the follower hears nothing there and moves on
+		if (hz != 0 && board_in_band(hz, false) && !radio_listen_band(hz)) {
+			board.radio->rx(hz, RADIO_BW_12K5, &no_tone);
+		} else {
+			stats.trunk_untuned++;
+		}
+		stats.trunk_retunes++;
+		p25_engine_set(&m->eng, &c);
+		p25_engine_retuned(&m->eng);
+		t->owed = true;
+	}
+	if (!enter(&t->in_radio, &t->in_prov))
+		return;
+	if (t->owed) {
+		t->owed = false;
+		p25_follow_retuned(&t->f, now);
+	}
+	p25_follow_tick(&t->f, now);
+	leave(&t->in_radio);
+	// The copy other tasks read (radio_p25_trunk_view); the provider's task may be writing the follower's view, which
+	// p25_follow_view waits out
+	tview.seq++;
+	__atomic_signal_fence(__ATOMIC_SEQ_CST);
+	p25_follow_view(&t->f, &tview.v);
+	__atomic_signal_fence(__ATOMIC_SEQ_CST);
+	tview.seq++;
+}
+
+void radio_p25_trunk_view(radio_p25_trunk_view_t *out)
+{
+	uint8_t seq;
+
+	do {
+		seq = tview.seq;
+		__atomic_signal_fence(__ATOMIC_SEQ_CST);
+		out->v = tview.v;
+		__atomic_signal_fence(__ATOMIC_SEQ_CST);
+	} while ((seq & 1u) || seq != tview.seq);
+	out->seq = seq;
+	out->on = trunk;
+	out->retunes = stats.trunk_retunes;
+	out->untuned = stats.trunk_untuned;
+	out->skips = stats.trunk_skips;
+}
+#endif
+
 bool radio_p25_begin(const channel_t *ch, uint16_t number, uint32_t own_id)
 {
 	p25_engine_cfg_t cfg;
@@ -177,12 +379,49 @@ bool radio_p25_begin(const channel_t *ch, uint16_t number, uint32_t own_id)
 		stats.begin_fails++;
 		return false;
 	}
-	radio_p25_params(ch, number, own_id, &cfg);
+#if CONFIG_P25_TRUNK
+	p25_engine_hooks_t th;
+
+	trunk = ch->kind == CODEPLUG_KIND_P25_TRUNK;
+	if (trunk) {
+		// The codeplug's set-up goes where the voice path's memory will be: read and turned into the follower's
+		// before that starts
+		if (!p25_trunk_load(number, ch, &mem->load)) {
+			trunk = false;
+			mem = NULL;
+			stats.begin_fails++;
+			return false;
+		}
+		trunk_params(&mem->trunk, &mem->load, &cfg);
+	} else
+#endif
+		radio_p25_params(ch, number, own_id, &cfg);
 #if CONFIG_IMBE
 	p25VoiceBegin(&mem->voice);
 	hooks = p25VoiceHooks();
 #endif
+#if CONFIG_P25_TRUNK
+	if (trunk) {
+		p25_trunk_t *t = &mem->trunk;
+
+		th = *hooks;
+		th.rx_unit = trunk_unit;
+		th.rx_call = trunk_call;
+		hooks = &th;
+		t->want = t->done = 0;
+		t->owed = false;
+		t->in_prov = t->in_radio = 0;
+		memset(&tview, 0, sizeof(tview));
+		// Before the engine: its first unit may come at once. Its first tune is carried out below
+		p25_follow_begin(&t->f, &t->cfg, &follow_hooks, t, hal_millis());
+	}
+#endif
 	if (!p25_engine_begin(&mem->eng, board.air, &cfg, hooks, NULL)) {
+#if CONFIG_P25_TRUNK
+		if (trunk)
+			p25_follow_end(&mem->trunk.f);
+		trunk = false;
+#endif
 #if CONFIG_IMBE
 		p25VoiceEnd();
 #endif
@@ -190,6 +429,10 @@ bool radio_p25_begin(const channel_t *ch, uint16_t number, uint32_t own_id)
 		stats.begin_fails++;
 		return false;
 	}
+#if CONFIG_P25_TRUNK
+	if (trunk)
+		trunk_service(mem);
+#endif
 	memset(&call_base, 0, sizeof(call_base));
 	memset(&air_base, 0, sizeof(air_base));
 	rx_calls_base = tx_calls_base = filler_base = 0;
@@ -232,6 +475,15 @@ void radio_p25_end(void)
 	p25_engine_end(&mem->eng);	// the provider calls nothing after its close
 	p25_engine_view(&mem->eng, &ev);
 	count(&ev);
+#if CONFIG_P25_TRUNK
+	if (trunk) {
+		p25_follow_end(&mem->trunk.f);
+		trunk = false;
+		tview.seq++;
+		tview.v.state = P25_FOLLOW_OFF;
+		tview.seq++;
+	}
+#endif
 #if CONFIG_IMBE
 	p25VoiceEnd();
 #endif
@@ -254,8 +506,8 @@ void radio_p25_apply(const channel_t *ch, uint16_t number, uint32_t own_id)
 {
 	p25_engine_cfg_t cfg;
 
-	if (mem == NULL || p25_engine_tx_state(&mem->eng) != AIR_TX_IDLE) {
-		return;
+	if (mem == NULL || p25_engine_tx_state(&mem->eng) != AIR_TX_IDLE || radio_p25_trunked()) {
+		return;		// (a trunked channel's parameters are its system's, and the follower sets the squelch)
 	}
 	radio_p25_params(ch, number, own_id, &cfg);
 	p25_engine_set(&mem->eng, &cfg);
@@ -284,11 +536,16 @@ bool radio_p25_poll(radio_p25_view_t *v)
 		n = *v;		// the last call heard stays
 		n.flags = 0;
 		n.tx = AIR_TX_IDLE;
+		n.trunk = RADIO_P25_TRUNK_OFF;
 		settings_view(&n);
 		bool changed = memcmp(&n, v, sizeof(n)) != 0;
 		*v = n;
 		return changed;
 	}
+#if CONFIG_P25_TRUNK
+	if (trunk)
+		trunk_service(mem);
+#endif
 #if CONFIG_IMBE
 	p25VoicePoll();
 #endif
@@ -312,6 +569,17 @@ bool radio_p25_poll(radio_p25_view_t *v)
 	n.nac = ev.rx.nac;
 	n.src = ev.rx.have_lc ? ev.rx.lc.src : 0;
 	n.dst = unit ? ev.rx.lc.dst : ev.rx.lc.tgid;
+#if CONFIG_P25_TRUNK
+	if (trunk) {
+		n.trunk = tview.v.state;
+		// On the voice channel before the call's fields are in: the grant's
+		if (n.trunk == RADIO_P25_TRUNK_VOICE && !ev.rx_active) {
+			n.dst = tview.v.unit_call ? tview.v.dst : tview.v.tg;
+			if (tview.v.unit_call)
+				n.flags |= RADIO_P25_UNIT;
+		}
+	}
+#endif
 	settings_view(&n);
 	bool changed = memcmp(&n, v, sizeof(n)) != 0;
 	*v = n;
@@ -328,9 +596,19 @@ static void voice_tx(bool on)
 #endif
 }
 
+bool radio_p25_trunked(void)
+{
+#if CONFIG_P25_TRUNK
+	return mem != NULL && trunk;
+#else
+	return false;
+#endif
+}
+
 bool radio_p25_tx_prepare(void)
 {
-	if (mem == NULL || !p25_engine_tx_prepare(&mem->eng)) {
+	// Never on a trunked channel: a listener sends nothing (radio_sm.c refuses PTT there before this)
+	if (mem == NULL || radio_p25_trunked() || !p25_engine_tx_prepare(&mem->eng)) {
 		return false;
 	}
 	voice_tx(true);

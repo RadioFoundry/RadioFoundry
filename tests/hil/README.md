@@ -79,6 +79,7 @@ skips (kind `opt_in`) and names the three ways to give it. `tests/hil/hil_config
 | `--dmr-freq` / `--dmr-cc` / `--dmr-tg` | the DMR test channel: MHz (simplex, a channel in the radio's codeplug), color code, the talkgroup the bench calls |
 | `--fm-mhz` | the FM test frequency (the radio's VFO) |
 | `--p25-mhz` | the P25 test frequency (the radio's VFO; `test_p25_tx_off_air`) |
+| `--p25-trunk-channel` | the name of a stored P25 trunked channel whose system's control channel is heard at the rig (`test_p25_trunk_follow`, receive only) |
 | `--noaa-mhz` | a NOAA weather radio station heard at the rig (`test_fm`, receive only; optional tests) |
 | `--vhf-fm-mhz` | a VHF FM frequency the bench transmits on (`test_fm`: receive in the VHF band) |
 | `--aprs-test-mhz` | `test_aprs`'s AFSK frequency: an amateur simplex frequency that is not an APRS one |

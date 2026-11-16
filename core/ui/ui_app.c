@@ -50,7 +50,7 @@ void ui_crit_exit(void);
 ui_state_t ui_st;
 ui_target_t ui_target;
 static const radio_view_t *view;
-static radio_view_t view_none;		// until the first tick
+static const radio_view_t view_none;	// until the first tick (const: flash, not RAM)
 static ui_frame_t stack[UI_STACK_MAX];
 static uint8_t sp;			// stack[sp] is on screen; stack[0] is Home
 static uint32_t toast_until, entry_last, last_refresh, now;

@@ -1000,6 +1000,21 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 	if (v->ch.mode == RADIO_MODE_DMR) {
 		sb_str(&b, TR(WHY_DMR_NOT_IN_BUILD, "DMR: not in this build"));
 		c = ui_col.warn;
+#if CONFIG_P25_TRUNK
+	} else if (v->ch.mode == RADIO_MODE_P25 && v->ch.kind == CODEPLUG_KIND_P25_TRUNK &&
+		   v->p25.trunk != RADIO_P25_TRUNK_OFF) {
+		// A trunked channel is receive only: what the follower does instead of what PTT calls
+		if (v->p25.trunk == RADIO_P25_TRUNK_HUNT) {
+			sb_str(&b, TR(HOME_STATE_P25T_HUNT, "Finding system"));
+			c = ui_col.dim;
+		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL) {
+			sb_str(&b, TR(HOME_STATE_P25T_CONTROL, "Control channel"));
+		} else {
+			sb_str(&b, TR(HOME_STATE_P25T_FOLLOW, "Following"));
+			sb_str(&b, (v->p25.flags & RADIO_P25_UNIT) != 0 ? " ID " : " TG ");
+			sb_u32(&b, v->p25.dst, 1);
+		}
+#endif
 	} else if (v->ch.rx_only) {
 		sb_str(&b, TR(WORD_RX_ONLY, "RX only"));
 		c = ui_col.warn;

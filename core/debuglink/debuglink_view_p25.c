@@ -77,6 +77,37 @@ void debuglink_view_p25(const radio_view_t *v, dl_text_t *t)
 #endif
 }
 
+// noinline: its copy of the view would otherwise sit in the section dispatcher's frame, under every section's path
+__attribute__((noinline)) void debuglink_view_p25_trunk(dl_text_t *t)
+{
+#if CONFIG_P25_TRUNK
+	radio_p25_trunk_view_t tv;
+	const p25_follow_view_t *f = &tv.v;
+
+	// The follower as the radio task last saw it (p25-trunking.md 4): on=0 when no trunked channel runs, the rest
+	// then the last one's. wacn, sysid, rfss, site all ones until heard; cc 255 none
+	radio_p25_trunk_view(&tv);
+	dl_text(t, "p25t.built=1\np25t.on=%u\np25t.state=%u\np25t.cc=%u\np25t.cc_hz=%u\np25t.voice_hz=%u\n", tv.on,
+		f->state, f->cc, (unsigned)f->cc_hz, (unsigned)f->voice_hz);
+	dl_text(t, "p25t.nac=%u\np25t.wacn=%u\np25t.sysid=%u\np25t.rfss=%u\np25t.site=%u\n", f->nac,
+		(unsigned)f->wacn, f->sysid, f->rfss, f->site);
+	dl_text(t, "p25t.tg=%u\np25t.src=%u\np25t.dst=%u\np25t.unit_call=%u\np25t.enc=%u\n", f->tg,
+		(unsigned)f->src, (unsigned)f->dst, f->unit_call, f->enc);
+	dl_text(t, "p25t.idens=%u\np25t.learned=%u\np25t.refused=%u\np25t.refused_tg=%u\np25t.fallback=%u\n",
+		f->idens, f->learned, f->refused, f->refused_tg, f->fallback);
+	dl_text(t, "p25t.blocks=%u\np25t.crc_fail=%u\np25t.mfr=%u\np25t.mbt=%u\np25t.mbt_op=%u\np25t.pdu_other=%u\n",
+		(unsigned)f->blocks, (unsigned)f->crc_fail, f->mfr, f->mbt, f->mbt_op, f->pdu_other);
+	dl_text(t, "p25t.grants=%u\np25t.follows=%u\np25t.enc_skip=%u\np25t.tdma=%u\np25t.no_iden=%u\n", f->grants,
+		f->follows, f->enc_skip, f->tdma, f->no_iden);
+	dl_text(t, "p25t.wrong_sys=%u\np25t.hunts=%u\np25t.cc_lost=%u\np25t.voice_lost=%u\np25t.wrong_call=%u\n",
+		f->wrong_sys, f->hunts, f->cc_lost, f->voice_lost, f->wrong_call);
+	dl_text(t, "p25t.retunes=%u\np25t.untuned=%u\np25t.skips=%u\n", (unsigned)tv.retunes, (unsigned)tv.untuned,
+		(unsigned)tv.skips);
+#else
+	dl_text(t, "p25t.built=0\n");
+#endif
+}
+
 void debuglink_p25_reset(void)
 {
 #if CONFIG_P25
