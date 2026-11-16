@@ -5,10 +5,11 @@
 //   TR(ZONE_TITLE, "Zone")      the text now, in the language the user picked (the English when there is none)
 //   TRN(ZONE_TITLE, "Zone")     a tr_id_t for a static table's entry or a struct field; call tr() in order to show it
 //   TRX(CHAN_LABEL_RX, "RX")    a tr_id_t representation, like TRN, but for non-localizable text (never translated)
-//   TRF(&b, MSG_BANNER_FROM, "Message from %1$s", name)
-//                               a sentence with values, appended to an sbuf_t (fmt.h: sb_fmt and its %1$s %1$K %1$d
-//                               %1$u). A translation may move the values. The compiler checks the values against the
-//                               English: tools/i18n.py writes a prototype for the key into tr_keys.h
+//   TRF(&b, MSG_BANNER_FROM, "Message from %s", name)
+//                               text with values, appended to an sbuf_t (fmt.h: sb_fmt and its %s %K %d %u, numbered
+//                               %1$s %2$u when there are several). A translation may move the values. The compiler
+//                               checks the values against the English: tools/i18n.py writes a prototype for the key
+//                               into tr_keys.h
 // The English at the mark is the source of truth: tools/i18n.py reads it from there. One key always has the same
 // English; the same English may have more than one key.
 // A tr_id_t is opaque: pass it to tr() or tr_en(), compare it with TR_NONE (the zero value: a memset or an omitted

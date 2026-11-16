@@ -28,7 +28,7 @@ English:
 | `TR(KEY, "Text")` | In code | Returns the text in the language in use |
 | `TRN(KEY, "Text")` | Where the text is stored now and shown later: an initializer of a `static const` array or struct, a field, an event | A `tr_id_t` for the text (a name for it, not the text); the code that shows it calls `tr()` on it |
 | `TRX(KEY, "Text")` | In the same places, for text never translated (`"RX"`, `"12.5 kHz"`) that sits beside translated text | A `tr_id_t` like `TRN`; no catalog has it |
-| `TRF(&b, KEY, "Text %1$s", name)` | Where a sentence holds a name, a number or other values | Appends the sentence in the language in use to an `sbuf_t`, the values where the translation puts them ([Sentences with values](#sentences-with-values)) |
+| `TRF(&b, KEY, "Text %s", name)` | Where text holds a name, a number or other values | Appends the text in the language in use to an `sbuf_t`, the values where the translation puts them ([Text containing dynamic values](#text-containing-dynamic-values)) |
 | `tr(id)` | Where a table entry is shown | The text in the language in use; the English when there is no translation |
 | `tr_en(id)` | Where the English is needed too (Find matches both) | The English |
 
@@ -80,7 +80,7 @@ going stale, and a translator who reads the key in a catalog knows what kind of 
 | `PART` | A piece joined to other text, with no role of its own |
 | `WORD` | A term used as title, label and value alike (`VFO`, `Scan`) |
 
-A sentence with values (`"Message from %1$s"`) is named for the sentence. A number in a name is the number in the
+A sentence with values (`"Message from %s"`) is named for the sentence. A number in a name is the number in the
 text (`VALUE_10_MIN`, `HINT_1_5_PICK_BACK`), never a counter: two texts that would get the same name differ in
 meaning, so say how.
 
@@ -138,7 +138,7 @@ msgstr "Retroiluminación"
 |---|---|
 | Keep it short. Most screens are 128 or 160 pixels wide: about 21 characters in the small font, 16 in the list font | A row too long is cut with an ellipsis; a toast or hint is cut |
 | Keep leading and trailing spaces, and the colon at the end | The code may put other text beside it |
-| Keep every value (`%1$s`, `%2$u`) with its number and letter; move it where your language wants it | The radio puts a name or a number there. `"Site %1$u of %2$u: %3$s"` may become `"%3$s: sitio %1$u de %2$u"`. A value may be used twice, never left out; `--check` rejects a missing or changed one |
+| Keep every value (`%s`, `%2$u`) with its letter; move it where your language wants it | The radio puts a name or a number there. `"Site %1$u of %2$u: %3$s"` may become `"%3$s: sitio %1$u de %2$u"`. A value may be used twice, never left out; `--check` rejects a missing or changed one. One value is written without a number (`%s`); to use it twice, or when there are several, number every value (`%1$s`) |
 | Keep `{a\|b}` groups as groups, with the same number of choices | A text alternate: the radio shows the first choice that fits, longest first. Write each choice shorter than the one before |
 | Use only ASCII and Latin-1 letters (á é í ó ú ñ ü ç ß ...) and `… · → ° ⤒ ⤓` | The radio draws one byte a character; `--check` rejects anything else. A CJK catalog is the exception, and says so ([below](#chinese-and-other-cjk-languages)) |
 | Start every hint group that names the Back key with exactly your translation of `"Back"` | Hints keep the Back group at the right edge by matching that word: change it and every Back group must change with it |
@@ -146,7 +146,7 @@ msgstr "Retroiluminación"
 | Don't translate the standard abbreviations the source leaves unmarked (TG, TS, CC, RX, TX, VFO, DMR, FM) | Radio operators know them; they aren't in the catalog |
 
 A few strings are still joined in a fixed order to text beside them: a word in a row of chips (`" late"`), a line
-that continues another (`", from %1$s"`). They start or end with a space or punctuation; keep it.
+that continues another (`", from %s"`). They start or end with a space or punctuation; keep it.
 
 To see where a string goes, search for its key (the `msgctxt` line) in the file its `#:` line names: `grep -n
 'BACKLIGHT,' core/ui/ui_menus.c`. The comments next to a `TR()` often say more.
@@ -232,7 +232,7 @@ untranslated, `python3 tools/i18n.py --check --allow-pending` skips them; CI doe
 | A word or sentence the user reads | `TR(KEY, "...")`, or `TRN(KEY, "...")` in a table and `tr()` where it is shown |
 | A screen's title, hint, empty text, a menu row | `TRN()` in the table: `list_draw` and the menus translate them |
 | A hint built when the screen is drawn | `SF_HINT_FN` and `hint_fn` in the screen's definition, returning text already in the language in use |
-| A sentence with a name, a number or another value in it | `TRF(&b, KEY, "... %1$s ...", value)`: one string, never pieces glued around the value ([below](#sentences-with-values)) |
+| Text with a name, a number or another value in it | `TRF(&b, KEY, "... %s ...", value)`: one string, never pieces glued around the value ([below](#text-containing-dynamic-values)) |
 | Names, numbers, units, standard abbreviations | Not marked; in a table of `tr_id_t` beside marked text, `TRX(KEY, "...")` |
 | Debug link names and values, protocol text sent off the radio, log text | Not marked: tools and tests read them |
 | Canned text messages | Marked: the radio sends them in the language in use, so keep them short and plain |
@@ -263,32 +263,39 @@ cd tests/host && UI_LANG=fr ./uiSim --gallery /tmp/gallery-fr    # contact sheet
 
 Commit only the English gallery.
 
-#### Sentences with values
+#### Text containing dynamic values
 
-`TRF` appends a sentence to an `sbuf_t` and puts the values into it. The translator sees the whole sentence and
-places the values where the language needs them:
+`TRF` appends text to an `sbuf_t` and puts the values into it. The translator sees the whole text and places the
+values where the language needs them:
 
 ```c
+TRF(&b, MSG_BANNER_FROM, "Message from %s", name);
 TRF(&b, ROAM_BODY_SITE, "Site %1$u of %2$u: %3$s", site + 1u, sites, ch.name);
 ```
 
 | Value | Takes | Shows |
 |---|---|---|
-| `%1$s` | `const char *` | Text that isn't ours: a name from the codeplug, a callsign, a received text. A byte below 0x20 is shown as `?`, since the text layer reads those bytes as markers (text alternates) |
-| `%1$K` | `const char *` | Text kept as it is: our own, which may carry text alternates (a translated word, the result of `sb_age`) |
-| `%1$d` | `int` | A signed number |
-| `%1$u` | `unsigned` | An unsigned number; `%1$02u` with at least 2 digits, zero padded (1 to 9) |
+| `%s` | `const char *` | Text that isn't ours: a name from the codeplug, a callsign, a received text. A byte below 0x20 is shown as `?`, since the text layer reads those bytes as markers (text alternates) |
+| `%K` | `const char *` | Text kept as it is: our own, which may carry text alternates (a translated word, the result of `sb_age`) |
+| `%d` | `int` | A signed number |
+| `%u` | `unsigned` | An unsigned number |
+| `%3u`, `%3d` | | At least 3 characters, space padded (widths 1 to 9) |
+| `%03u`, `%03d` | | At least 3 digits, zero padded, after the sign |
 
-- Values are numbered from 1 in the order they are passed, at most 4, none left out. A value may be used more than
-  once (`TEXT_ALT_OPEN "%1$s to you" TEXT_ALT_NEXT "%1$s" TEXT_ALT_CLOSE`).
-- Every other `%` is text: `"Battery %1$u%: charge soon"`.
+- **Numbering.** Text with one value writes it without a number: `"Message from %s"`. Text with more than one
+  value, or one value used twice, numbers every value from 1 in the order the code passes them: `%1$u`, `%2$03u`.
+  If you add a number to one value, number all of them; `--check` rejects a mix, and a number on a lone value. The
+  English and every translation are numbered alike, though only a translation that changes the order needs it.
+- At most 4 values, none left out. A value may be used more than once
+  (`TEXT_ALT_OPEN "%1$s to you" TEXT_ALT_NEXT "%1$s" TEXT_ALT_CLOSE`).
+- Every other `%` is text: `"Battery %u%: charge soon"`.
 - The compiler checks the values against the English: the tool writes a prototype for each format key into
   `tr_keys.h`, and a value of the wrong type, in the wrong order, missing or extra fails the build. No code is made
   for the check.
 - A value a helper makes (a frequency, a time, a coordinate) is built in a buffer of its own and passed as `%K`:
-  `SB_LOCAL(f, 12); sb_freq(&f, hz); TRF(&b, FIND_ROW_TUNE_VFO_TO, "Tune VFO to %1$K", f_text);`
-- A plural is two keys (`"%1$u channel"`, `"%1$u channels"`), chosen in code.
-- Two sentences that differ are two `TRF` calls under an `if`, not one call with a chosen key: the key is part of
+  `SB_LOCAL(f, 12); sb_freq(&f, hz); TRF(&b, FIND_ROW_TUNE_VFO_TO, "Tune VFO to %K", f_text);`
+- A plural is two keys (`"%u channel"`, `"%u channels"`), chosen in code.
+- Two texts that differ are two `TRF` calls under an `if`, not one call with a chosen key: the key is part of
   the mark.
 - A key is a format everywhere or nowhere: `TR` and `TRN` reject text with a value in it.
 

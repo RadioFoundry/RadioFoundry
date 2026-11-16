@@ -671,8 +671,9 @@ int main(void)
 	sb_init(&b, age, sizeof age); sb_age_long(&b, 30000u);
 	CHECK(strcmp(age, "30s ago") == 0);
 
-	// Formats (sb_fmt): values by number, in any order and more than once; %s shows a marker byte as '?' and %K
-	// keeps it; a number's least digits; a '%' that isn't a value is text; the text is cut at the buffer's end
+	// Formats (sb_fmt): values by number, in any order and more than once, or in order without numbers; %s shows a
+	// marker byte as '?' and %K keeps it; a number's least width, space or zero padded; a '%' that isn't a value is
+	// text; the text is cut at the buffer's end
 	char f[48];
 	sb_init(&b, f, sizeof f); sb_fmt(&b, "%2$u of %1$s: %2$u%", "Bob", 7u);
 	CHECK(strcmp(f, "7 of Bob: 7%") == 0);
@@ -682,8 +683,13 @@ int main(void)
 	sb_init(&b, f, sizeof f); sb_fmt(&b, "%1$d %2$02u:%3$02u %4$d", -5, 3u, 12u, 2147483647);
 	CHECK(strcmp(f, "-5 03:12 2147483647") == 0);
 	CHECK(sb_fmt_name == NULL);
-	sb_init(&b, f, sizeof f); sb_fmt(&b, "100% %5$s %1$x %1$");
-	CHECK(strcmp(f, "100% %5$s %1$x %1$") == 0);
+	sb_init(&b, f, sizeof f); sb_fmt(&b, "[%3d|%03d|%2u|%1u]", -5, -5, 123u, 0u);
+	CHECK(strcmp(f, "[ -5|-05|123|0]") == 0);
+	sb_init(&b, f, sizeof f); sb_fmt(&b, "From %s, %u", "Bob", 4u);
+	CHECK(strcmp(f, "From Bob, 4") == 0);
+	CHECK(sb_fmt_name == f + 5);
+	sb_init(&b, f, sizeof f); sb_fmt(&b, "100% %5$s %1$x %1$ %x");
+	CHECK(strcmp(f, "100% %5$s %1$x %1$ %x") == 0);
 	sb_init(&b, f, 8); sb_fmt(&b, "%1$s and %2$s", "Alpha", "Beta");
 	CHECK(strcmp(f, "Alpha a") == 0);
 	sb_init(&b, f, sizeof f); sb_fmt(&b, "%1$s%2$K.", (const char *)NULL, "");

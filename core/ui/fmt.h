@@ -20,14 +20,16 @@ void sb_init(sbuf_t *b, char *buf, size_t len);
 void str_copy(char *dst, size_t cap, const char *src);
 void sb_str(sbuf_t *b, const char *s);
 void sb_chr(sbuf_t *b, char c);
-// A sentence with its values (i18n.h's TRF calls this with the format in the language in use). A value is written
-// %<number>$<kind>, numbered from 1 in the order the values are passed, so a translation can move them:
-//   %1$s   text that isn't ours (a name, a received text): a byte below 0x20 is shown as '?', since the text layer
-//          reads those as markers (font.h)
-//   %1$K   text kept as it is: our own, which may carry text alternates (a translated word, sb_age's result)
-//   %1$d   an int        %1$u   an unsigned        %1$02u   at least 2 digits, zero padded (1 to 9)
-// Every other '%' is text. A value a helper below makes (a frequency, a time) is built in a buffer of its own and
-// passed as %K. At most SB_FMT_VALUES values
+// A sentence with its values (i18n.h's TRF calls this with the format in the language in use). A value is %<kind>,
+// the values taken in the order they are passed:
+//   %s   text that isn't ours (a name, a received text): a byte below 0x20 is shown as '?', since the text layer reads
+//        those as markers (font.h)
+//   %K   text kept as it is: our own, which may carry text alternates (a translated word, sb_age's result)
+//   %d   an int        %u   an unsigned
+//   %3u  at least 3 characters, space padded        %03u   at least 3 digits, zero padded (widths 1 to 9)
+// A format with more than one value numbers them all from 1 in the order they are passed (%1$s, %2$03u), so a
+// translation can move or repeat them. Every other '%' is text. A value a helper below makes (a frequency, a time) is
+// built in a buffer of its own and passed as %K. At most SB_FMT_VALUES values
 #define SB_FMT_VALUES	4
 void sb_fmt(sbuf_t *b, const char *fmt, ...);
 // A buffer of its own for a value a helper makes: SB_LOCAL(f, 12); sb_freq(&f, hz); then f_text is the value

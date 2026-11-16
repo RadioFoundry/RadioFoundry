@@ -1043,7 +1043,7 @@ static void draw_place(const radio_view_t *v, const ui_state_t *s)
 				if (step.p[-1] == '0') { step.p[-1] = 0; step.p--; }
 			}
 			sb_chr(&step, 'k');
-			TRF(&b, HOME_LABEL_STEP, "Step %1$K", step_text);
+			TRF(&b, HOME_LABEL_STEP, "Step %K", step_text);
 		} else if (v->zone_size) {
 			sb_u32(&b, v->zone_pos + 1u, 1);
 			sb_chr(&b, '/');
@@ -1335,7 +1335,7 @@ static void hwopt_needed(sbuf_t *b)
 		sb_str(b, TR(HW_BODY_RESTART_TO_APPLY, "Restart to apply"));
 		return;
 	}
-	TRF(b, HW_BODY_SET, "Set: %1$K", o->name);
+	TRF(b, HW_BODY_SET, "Set: %K", o->name);
 }
 
 static const char *hwopt_action(void)
@@ -1372,7 +1372,7 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 	case TXDENY_BAND: {
 		char bands[32];
 		ui_bands_text(bands, sizeof bands, true);
-		TRF(&b, DENY_WHY_BANDS, "Bands %1$K", bands);
+		TRF(&b, DENY_WHY_BANDS, "Bands %K", bands);
 		break;
 	}
 	case TXDENY_TIMEOUT: sb_str(&b, TR(DENY_WHY_TIMEOUT, "TX time-out reached")); break;
@@ -1645,7 +1645,7 @@ static void sb_call_dst(sbuf_t *b, const radio_dmr_call_t *c)
 	} else {
 		SB_LOCAL(id, 12);
 		sb_u32(&id, c->dst, 1);
-		TRF(b, CALL_VALUE_PRIVATE_TO, "Private to %1$s", c->dst_name[0] != '\0' ? c->dst_name : id_text);
+		TRF(b, CALL_VALUE_PRIVATE_TO, "Private to %s", c->dst_name[0] != '\0' ? c->dst_name : id_text);
 	}
 }
 
@@ -1976,7 +1976,7 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 	sb_init(&b, title, sizeof title);
 	if (v->state == RS_TX && d->target_private && d->target_id != 0xFFFFFFu) {
 		// A private call says so where a group call has its "TG": "Private 9991234", else "Private"
-		TRF(&b, CALL_BODY_PRIVATE_ID, TEXT_ALT_OPEN "Private %1$u" TEXT_ALT_NEXT "Private" TEXT_ALT_CLOSE,
+		TRF(&b, CALL_BODY_PRIVATE_ID, TEXT_ALT_OPEN "Private %u" TEXT_ALT_NEXT "Private" TEXT_ALT_CLOSE,
 			d->target_id);
 	} else if (v->state == RS_TX) {
 		sb_target(&b, d->target_id, d->target_private, "");
@@ -2173,7 +2173,7 @@ static void air_call_line(const air_call_t *c, const font_t *f, int y)
 			sb_str(&b, " " GLYPH_ARROW " ");
 		}
 		if (c->unit) {
-			TRF(&b, CALL_VALUE_PRIVATE_TO_ID, "Private to %1$u", c->dst);
+			TRF(&b, CALL_VALUE_PRIVATE_TO_ID, "Private to %u", c->dst);
 		} else {
 			sb_str(&b, "TG ");
 			sb_u32(&b, c->dst, 1);
@@ -2303,7 +2303,7 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 		if (v->last_rx_ms) {
 			SB_LOCAL(age, 40);	// two alternates, and room for a translation
 			sb_age(&age, s->now_ms - v->last_rx_ms);
-			TRF(&b, ACTIVITY_BODY_LAST, "Last activity %1$K", age_text);
+			TRF(&b, ACTIVITY_BODY_LAST, "Last activity %K", age_text);
 		} else {
 			sb_str(&b, TR(ACTIVITY_EMPTY, "No activity yet"));
 		}
@@ -2872,9 +2872,9 @@ static void dual_activity(const radio_view_t *v, const ui_state_t *s, int y, int
 		else {
 			const char *pane = d->sel ? "B" : "A";
 			if (sending_data(v))
-				TRF(&b, DUAL_STATE_SENDING_ON, "SENDING on %1$K", pane);
+				TRF(&b, DUAL_STATE_SENDING_ON, "SENDING on %K", pane);
 			else
-				TRF(&b, DUAL_STATE_TALKING_ON, "TALKING on %1$K", pane);
+				TRF(&b, DUAL_STATE_TALKING_ON, "TALKING on %K", pane);
 		}
 		gfx_text(sm, 0, y, buf, ui_col.tx);
 		if (!v->aprs_tx) {
@@ -2898,9 +2898,9 @@ static void dual_activity(const radio_view_t *v, const ui_state_t *s, int y, int
 			sb_init(&b, buf, sizeof buf);
 			const char *pane = i ? "B" : "A";
 			if (k)
-				TRF(&b, DUAL_STATE_RECEIVING_MUTED, "Receiving on %1$K, muted", pane);
+				TRF(&b, DUAL_STATE_RECEIVING_MUTED, "Receiving on %K, muted", pane);
 			else
-				TRF(&b, DUAL_STATE_RECEIVING_ON, "Receiving on %1$K", pane);
+				TRF(&b, DUAL_STATE_RECEIVING_ON, "Receiving on %K", pane);
 			int x = gfx_text(sm, 0, y, buf, ui_col.rx) + sm->w;
 			if (w - x >= 4 * sm->w)
 				draw_meter(x, y + sm->h / 4, w - x, sm->h / 2, d->pane[i].rssi_dbm);
@@ -3800,7 +3800,7 @@ static const char *quick_split_hint(const radio_view_t *v, const ui_state_t *s, 
 			sb_chr(&typed, '.');
 		sb_chr(&typed, i < s->entry_len ? s->entry_digits[i] : '_');
 	}
-	TRF(&b, QUICK_HINT_OK_SETS, "TX %1$K  OK sets", typed_text);
+	TRF(&b, QUICK_HINT_OK_SETS, "TX %K  OK sets", typed_text);
 	return buf;
 }
 

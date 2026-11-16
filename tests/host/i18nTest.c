@@ -90,7 +90,7 @@ int main(void)
 	char line[48];
 	sbuf_t sb;
 	sb_init(&sb, line, sizeof line);
-	TRF(&sb, MSG_BANNER_FROM, "Message from %1$s", "Bob");
+	TRF(&sb, MSG_BANNER_FROM, "Message from %s", "Bob");
 	CHECK(strcmp(line, "Mensaje de Bob") == 0);
 	sb_init(&sb, line, sizeof line);
 	TRF(&sb, ZONE_TOAST_POSITION, "Position %1$u of %2$u", 2u, 9u);
@@ -98,7 +98,7 @@ int main(void)
 	CHECK(lang_set(LANG_ENGLISH) && strcmp(TR(TITLE_SETTINGS, "Settings"), "Settings") == 0);
 	CHECK(tr(settings) == tr_en(settings));
 	sb_init(&sb, line, sizeof line);
-	TRF(&sb, MSG_BANNER_FROM, "Message from %1$s", "Bob");
+	TRF(&sb, MSG_BANNER_FROM, "Message from %s", "Bob");
 	CHECK(strcmp(line, "Message from Bob") == 0);
 #else
 	CHECK(!lang_built(es) && !lang_set(es) && lang_current() == LANG_ENGLISH);
