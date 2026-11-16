@@ -297,7 +297,7 @@ static bool kv_held;	// a CPS session holds the flash, or another firmware's cod
 static struct {
 	uint16_t key;
 	uint8_t len;
-	uint8_t v[64];
+	uint8_t v[96];		// a system record is CODEPLUG_SYS_HDR + its block
 } kv_t3[KV_T3_MAX];
 static uint8_t kv_t3_n;
 static void kv_t3_set(uint16_t key, const void *v, uint8_t len)
@@ -306,6 +306,7 @@ static void kv_t3_set(uint16_t key, const void *v, uint8_t len)
 	while (i < kv_t3_n && kv_t3[i].key < key) {
 		i++;
 	}
+	CHECK(len <= sizeof(kv_t3[0].v) && kv_t3_n < KV_T3_MAX);
 	if (i == kv_t3_n || kv_t3[i].key != key) {
 		memmove(&kv_t3[i + 1], &kv_t3[i], (kv_t3_n - i) * sizeof(kv_t3[0]));
 		kv_t3_n++;
@@ -6511,6 +6512,69 @@ static void t3_cp_done(void)
 	setup_codeplug();
 }
 
+// The cancel of an emergency alarm goes to the system that took it (another system's IDs are another network's): the
+// emergency ended on another system, the cancel waits until the radio is back on the alarm's
+static void test_t3_emergency_other_system(void)
+{
+	t3_cp_zone(T3_OPT_PRIVATE, 0, 0, NULL);
+	t3_cp_system(1, T3_OPT_PRIVATE, 0, 0, NULL);
+	t3_cp_tag(8, 1);			// "Ops B" on system 1
+	req(RREQ_ZONE, 0);
+	run(100);
+	dmr_emergency_settings_t es;
+	dmr_emergency_settings_default(&es);
+	es.mode = DMR_EMERGENCY_MODE_ALARM;
+	es.alarm_tries = 3;
+	dmr_emergency_set_settings(&es);
+	req(RREQ_ZONE, 2);			// "Ops A", system 0, talking to TG 201
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED && radio_t3v.sys == 1);
+	unsigned from = sim.air_count;
+	CHECK(dmr_emergency_start());
+	t3_csbk_t q;
+	for (int i = 0; i < 20 && !t3_rand_since(from, T3_SK_STATUS, &q); i++) {
+		t3_site_run(60);
+	}
+	CHECK(t3_rand_since(from, T3_SK_STATUS, &q) && t3_rand_status(&q) == T3_STATUS_EMERGENCY && q.u.rand.dst == 201);
+	t3_csbk_t a = { .lb = true, .op = T3_OP_C_ACKD };
+	a.u.ack.reason = T3_RC_MESSAGE_ACCEPTED;
+	a.u.ack.dst = own_dmr_id;
+	a.u.ack.src = 201;
+	t3_csbk_rx(&a, 1);
+	from = sim.air_count;
+	t3_site_run(1200);
+	CHECK(!t3_rand_since(from, T3_SK_STATUS, &q));	// acknowledged: no repeats
+
+	req(RREQ_ZONE_POS, 1);			// system 1
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED && radio_t3v.sys == 2);
+	from = sim.air_count;
+	dmr_emergency_cancel();
+	t3_site_run(600);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_IDLE && !t3_rand_since(from, T3_SK_STATUS, &q));
+	req(RREQ_ZONE_POS, 0);			// back on system 0: the cancel goes
+	t3_site_run(1200);
+	CHECK(t3_rand_since(from, T3_SK_STATUS, &q) && t3_rand_status(&q) == T3_STATUS_EMERGENCY_CANCEL &&
+	      q.u.rand.dst == 201);
+	t3_csbk_rx(&a, 1);
+	run(100);
+	t3_cp_done();
+}
+
+// No ID to register with (the system's record has none, nor the radio): the channel shows as unavailable, the engine
+// never starts and nothing is sent
+static void test_t3_no_id(void)
+{
+	own_dmr_id = 0;
+	t3_cp_zone(T3_OPT_PRIVATE, 0, 0, NULL);
+	unsigned air = sim.air_count;
+	req(RREQ_ZONE, 2);
+	t3_site_run(600);
+	CHECK(radio_t3v.sys == 1 && radio_t3v.unavail && !radio_t3v.on && sm.view.ch.rx_only && sim.air_count == air);
+	own_dmr_id = 9996543;
+	t3_cp_done();
+}
+
 // Selecting trunked channels: the first starts its system and camps; another of the same system keeps the TSCC; an
 // untagged channel leaves; a renamed channel (its name check no longer matches) is conventional; one whose system
 // authenticates without a key is unavailable and refuses PTT; zone scan passes trunked channels by
@@ -6528,6 +6592,28 @@ static void test_t3_channels(void)
 	CHECK(sm.view.channel_number == 8 && radio_t3v.on && radio_t3v.state == T3_CAMPED);
 	CHECK(radio_t3v.hunts == hunts);
 	CHECK(strcmp(sm.view.ch.name, "Ops B") == 0);
+
+	// Following a call on a payload slot, another channel of the system (the same talkgroup): the radio stays on the
+	// call's slot, not the record's control channel
+	chans[8].contact = 1;
+	req(RREQ_ZONE_POS, 0);
+	t3_site_run(120);
+	t3_csbk_t g = { .lb = true, .op = T3_OP_TV_GRANT };
+	g.u.grant.lpcn = 1;
+	g.u.grant.slot = 2;
+	g.u.grant.dst = 201;
+	g.u.grant.src = 1000001u;
+	t3_csbk_rx(&g, 1);
+	run(300);
+	CHECK(radio_t3v.state == T3_FOLLOW && sm.view.ch.timeslot == 2);
+	req(RREQ_ZONE_POS, 1);
+	run(20);
+	CHECK(sm.view.channel_number == 8 && radio_t3v.state == T3_FOLLOW && sm.view.ch.timeslot == 2);
+	CHECK(hw.rx_hz == T3_RX_HZ);
+	chans[8].contact = 3;
+	req(RREQ_ZONE_POS, 0);
+	t3_site_run(3000);
+	CHECK(radio_t3v.state == T3_CAMPED);
 
 	// A zone scan visits only the conventional channel; cancelled, the radio is back on its system
 	zones[2].channels[2] = 6;
@@ -7242,6 +7328,9 @@ int main(void)
 #endif
 	test_t3_pdata();
 	test_t3_emergency();
+#if CONFIG_DMR_EMERGENCY
+	test_t3_emergency_other_system();
+#endif
 	test_t3_broadcast();
 	test_t3_als();
 	test_t3_stun();
@@ -7255,6 +7344,7 @@ int main(void)
 	test_t3_power_save();
 	test_t3_channels();
 	test_t3_never_keys();
+	test_t3_no_id();
 	test_t3_fallback();
 #endif
 	test_dmr_stalled();

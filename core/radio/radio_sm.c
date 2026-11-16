@@ -673,7 +673,7 @@ static void set_zone(radio_sm_t *sm, uint16_t index, const zone_t *z)
 }
 
 #if CONFIG_DMR_TRUNK
-static void t3_channel(radio_sm_t *sm, uint16_t number, const channel_t *ch);
+static bool t3_channel(radio_sm_t *sm, uint16_t number, const channel_t *ch);
 static void t3_off(radio_sm_t *sm);
 #endif
 
@@ -699,13 +699,25 @@ static void load_channel(radio_sm_t *sm, const channel_t *ch)
 static void set_channel(radio_sm_t *sm, uint16_t pos, const channel_t *ch)
 {
 #if CONFIG_DMR_TRUNK
-	t3_channel(sm, sm->zone.channels[pos], ch);	// a trunked channel starts its system; any other leaves it
+	// A trunked channel starts its system; any other leaves it. Another channel of the system running keeps the
+	// engine where it is (a payload channel, another TSCC), not on the record's frequencies
+	bool kept = t3_channel(sm, sm->zone.channels[pos], ch);
+	uint32_t rx_hz = sm->view.ch.rx_hz, tx_hz = sm->view.ch.tx_hz;
+	uint8_t cc = sm->view.ch.color_code, ts = sm->view.ch.timeslot;
 #endif
 	sm->view.vfo = false;
 	sm->view.zone_pos = pos;
 	sm->view.channel_number = sm->zone.channels[pos];
 	load_channel(sm, ch);
 #if CONFIG_DMR_TRUNK
+	if (kept) {
+		sm->view.ch.rx_hz = rx_hz;	// as t3_retune left them
+		sm->view.ch.tx_hz = tx_hz;
+		sm->view.ch.mode = RADIO_MODE_DMR;
+		sm->view.ch.dmo = false;
+		sm->view.ch.color_code = cc;
+		sm->view.ch.timeslot = ts;
+	}
 	if (sm->t3_tagged && radio_t3v.unavail) {
 		sm->view.ch.rx_only = true;	// a system that can't be used: the tag's transmit bit keys nothing on the
 						// record's frequencies
@@ -2033,10 +2045,11 @@ static void dmr_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 
 #if CONFIG_DMR_TRUNK_TX && CONFIG_DMR_EMERGENCY
 // Emergency on a Tier III system (docs/spec/dmr-trunking.md 7.8): the alarm acknowledged, so its cancel is due when
-// the emergency ends; the last status heard that was looked at
+// the emergency ends, on the system that took the alarm; the last status heard that was looked at
 static struct {
 	bool alarm_sent;
 	bool alarm_group;
+	uint8_t alarm_sys;	// radio_t3_setup_t.sys: another system's IDs are another network's
 	uint32_t alarm_dst;
 	uint32_t status_seen;
 } t3_em;
@@ -2286,6 +2299,7 @@ static void data_t3_tick(radio_sm_t *sm, uint32_t now_ms)
 		if (ok) {
 			t3_em.alarm_dst = data_tx.t3_dst;
 			t3_em.alarm_group = data_tx.t3_group;
+			t3_em.alarm_sys = t3s.sys;
 			t3_em.alarm_sent = true;
 		}
 		dmrDataServiceTxDone(ok ? DMR_TX_OK : DMR_TX_ERR_NO_REPEATER);
@@ -3179,12 +3193,15 @@ static void t3_begin(radio_sm_t *sm, uint32_t now_ms)
 {
 	if (sm->t3_on) {
 		t3_ms_stop(&t3m);
+		sm->t3_on = false;
 	}
 	if (t3s.cfg.own_id == 0) {
 		t3s.cfg.own_id = sm->own_id;
 	}
 	if (t3s.cfg.nctrl == 0 || t3s.cfg.own_id == 0) {
-		return;		// nothing to hunt on, or no ID
+		radio_t3v.unavail = true;	// nothing to hunt on, or no ID: shown, not silently idle
+		t3_publish(sm);
+		return;
 	}
 	if (t3s.cfg.leave_dbm == 0) {
 		t3s.cfg.leave_dbm = sm->set.roam_rssi_dbm;	// the roaming threshold: weak below it (6.3.2.3)
@@ -3283,6 +3300,7 @@ static void t3_leave(radio_sm_t *sm)
 	if (data_tx.t3_wait) {
 		data_t3_fail(DMR_TX_ERR_REJECTED);	// the system went before its channel came
 	}
+	data_tx.t3_sent = false;	// its data call went with the engine: not the next engine's to end
 #endif
 	sm->t3_both = false;
 	sm->t3_ptt_wait = false;
@@ -3308,12 +3326,13 @@ static void t3_off(radio_sm_t *sm)
 }
 
 // A channel selected (docs/spec/dmr-trunking-codeplug.md 4): a trunked one starts its system, or on the system running
-// takes the channel's talk target and talkgroups; an unavailable one leaves any; a conventional one leaves it
-static void t3_channel(radio_sm_t *sm, uint16_t number, const channel_t *ch)
+// takes the channel's talk target and talkgroups; an unavailable one leaves any; a conventional one leaves it. True:
+// the system running kept its engine and channel
+static bool t3_channel(radio_sm_t *sm, uint16_t number, const channel_t *ch)
 {
 	if (number == 0 || ch->kind != CODEPLUG_KIND_DMR_TRUNK) {
 		t3_off(sm);
-		return;
+		return false;
 	}
 	sm->t3_fb = 0;
 	radio_t3v.fallback = 0;
@@ -3329,7 +3348,7 @@ static void t3_channel(radio_sm_t *sm, uint16_t number, const channel_t *ch)
 		if (ntg != t3s.cfg.ntg || memcmp(tg, t3s.cfg.tg, ntg * sizeof(tg[0])) != 0) {
 			t3_ms_groups_changed(&t3m, sm->t3_now);
 		}
-		return;
+		return true;
 	}
 	t3_leave(sm);
 	sm->t3_pending = false;
@@ -3338,7 +3357,12 @@ static void t3_channel(radio_sm_t *sm, uint16_t number, const channel_t *ch)
 	if (!radio_t3_load(ch->system, &t3s)) {
 		radio_t3v.unavail = true;	// no such system, no control channel, or no key where the system needs one
 		sm->t3_fb_number = 0;
-		return;
+		return false;
+	}
+	if (t3s.cfg.own_id == 0 && sm->own_id == 0) {
+		radio_t3v.unavail = true;	// no ID to register with: the system's record nor the radio's
+		sm->t3_fb_number = 0;
+		return false;
 	}
 	sm->t3_kv = codeplug_kv_serial();
 	sm->t3_ch_rx = ch->rx_only;
@@ -3349,6 +3373,7 @@ static void t3_channel(radio_sm_t *sm, uint16_t number, const channel_t *ch)
 	radio_t3_talk(ch, &t3s);
 	sm->t3_fb_number = radio_t3_fallback(number, &t3s, &sm->t3_fb_ch);
 	sm->t3_pending = true;		// started by t3_tick, which has the clock
+	return false;
 }
 
 // To the fallback channel (12.5): the engine stops, the radio works the channel as any conventional one
@@ -3553,8 +3578,8 @@ static void t3_emergency_tick(uint32_t now_ms)
 					    now_ms);
 		}
 	}
-	if (t3_em.alarm_sent && !dmr_emergency_in_progress() && m->state == T3_CAMPED && m->ax.state == T3_AX_IDLE &&
-	    !data_tx.t3_wait && t3_ms_status(&t3m, now_ms, t3_em.alarm_dst, t3_em.alarm_group, T3_STATUS_EMERGENCY_CANCEL)) {
+	if (t3_em.alarm_sent && !dmr_emergency_in_progress() && t3s.sys == t3_em.alarm_sys && m->state == T3_CAMPED &&
+	    m->ax.state == T3_AX_IDLE && !data_tx.t3_wait && t3_ms_status(&t3m, now_ms, t3_em.alarm_dst, t3_em.alarm_group, T3_STATUS_EMERGENCY_CANCEL)) {
 		t3_em.alarm_sent = false;
 	}
 }
