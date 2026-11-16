@@ -1615,7 +1615,9 @@ static bool find_one(uint16_t index, const contact_t *c, void *ctx)
 	if (c == NULL || c->id != f->id || (c->type == CONTACT_PRIVATE) == f->group) {
 		return true;
 	}
-	*f->out = *c;
+	if (f->out != NULL) {
+		*f->out = *c;
+	}
 	f->index = index;
 	return false;
 }

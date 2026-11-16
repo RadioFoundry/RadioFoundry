@@ -323,6 +323,20 @@ A build with P25 ([build options](../build-config.md)) on a radio whose feature 
 - The code, talkgroup and talkaround can be changed only from a computer for now (`rfoundry_debug.py radio p25`), and the
   change lasts until the radio is switched off.
 
+### P25 channels
+
+A P25 channel comes from a codeplug written on a computer, a zone shared by another radio, or the VFO: in P25, open
+**Channels**, **New channel from current settings** and save it. The channel keeps the network access codes, the
+talkgroup (when a contact has that talkgroup; else talkgroup 1) and talkaround. On a radio without P25 the channel shows
+as P25 and stays silent.
+
+- Home shows it as in the VFO. It hears its talkgroup, calls to everyone and calls to your ID, unless the codeplug
+  says to hear every call.
+- The channel's settings show "P25 NAC 293" as the mode and only the settings P25 uses. Talkaround is On or Auto (on
+  when RX and TX are the same frequency).
+- **OK** on Mode makes it a plain FM channel when you save.
+- Scan and dual watch skip P25 channels.
+
 ### Leaving the VFO
 
 Press **OK**, **4**, then **OK** on the VFO row again ("Back to channels"). Or pick a zone or channel. A **VFO/MR** key

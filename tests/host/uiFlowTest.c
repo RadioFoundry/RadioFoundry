@@ -64,6 +64,17 @@ static const flow_t flows[] = {
 	  false },
 	{ "P25 home: another talk group", "dlmode:p25", "p25rx:3101234,7,o", "shows=Other_TG:_not_played", 0, false },
 	{ "P25 home: the call ends", "dlmode:p25 p25rx:3101234,7", "p25rxend", "screen=home hides=ID_3101234", 0, false },
+#if CONFIG_CHANNEL_EDIT
+	// A channel saved from P25 (New from current): P25 and its NAC, no FM or DMR-only rows, talkaround automatic
+	{ "P25 new from current: its rows", "dlmode:p25", "ok 5 up up up ok", "screen=channel shows=P25_NAC_293", 6, false },
+	{ "P25 new from current: talkaround", "dlmode:p25 ok 5 up up up ok", "down down down down down down down down down",
+	  "focus=Talkaround shows=Auto hides=Bandwidth hides=Color_code hides=Timeslot", 9, false },
+	{ "P25 new from current, saved", "dlmode:p25", "ok 5 up up up ok long:ok", "writes=1 toast=Saved_as_channel_41",
+	  7, true },
+	// Mode on a P25 channel makes it a plain FM one
+	{ "P25 channel's mode to FM", "dlmode:p25 ok 5 up up up ok down down", "ok", "shows=FM hides=P25_NAC_293", 1,
+	  false },
+#endif
 #endif
 	// The status strip's USB word (#58): IP as a network adapter, with the link arrows once the computer has it up,
 	// none on serial

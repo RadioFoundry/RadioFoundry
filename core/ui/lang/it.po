@@ -2133,6 +2133,11 @@ msgid "Save as new channel"
 msgstr "Salva come nuovo canale"
 
 #: core/ui/ui_menus.c
+msgctxt "CHAN_LABEL_TALKAROUND"
+msgid "Talkaround"
+msgstr "Diretto"
+
+#: core/ui/ui_menus.c
 msgctxt "VALUE_YES"
 msgid "Yes"
 msgstr "Sì"

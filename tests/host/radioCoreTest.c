@@ -542,7 +542,8 @@ uint16_t codeplug_contact_find_index(uint32_t id, bool group, contact_t *out)
 {
 	for (unsigned i = 0; i < sizeof(contacts) / sizeof(contacts[0]); i++) {
 		if (contacts[i].id == id && (contacts[i].type != CONTACT_PRIVATE) == group) {
-			*out = contacts[i];
+			if (out != NULL)
+				*out = contacts[i];
 			return (uint16_t)(i + 1u);
 		}
 	}
@@ -3466,6 +3467,16 @@ bool codeplug_set_channel(uint16_t n, const channel_t *ch)
 	return true;
 }
 
+// A copy of a channel of a kind takes its source's tag (codeplug_tag.c): which copy was asked for
+static uint16_t tag_copy_from, tag_copy_to;
+bool codeplug_tag_copy(uint16_t from, uint16_t to, const channel_t *ch)
+{
+	(void)ch;
+	tag_copy_from = from;
+	tag_copy_to = to;
+	return true;
+}
+
 bool codeplug_delete_channel(uint16_t n)
 {
 	if (n < 1 || n > NCH) {
@@ -3794,14 +3805,14 @@ static void test_ui_glue(void)
 	// progress refuses the next, the channel in use drops its temporary changes. So does a write of another channel:
 	// any codeplug write reloads the channel in use (ui.md 2.1)
 	channel_t ed = chans[4];
-	CHECK(!ui_svc_write_channel(0, &ed) && !ui_svc_write_channel(CODEPLUG_CHANNELS_MAX + 1, &ed));
+	CHECK(!ui_svc_write_channel(0, &ed, 0) && !ui_svc_write_channel(CODEPLUG_CHANNELS_MAX + 1, &ed, 0));
 	CHECK(ui_svc_dmr_color_code(9));
 	run(20);
 	CHECK(sm.view.temporary);
 	ed.timeslot = 2;
 	ed.color_code = 5;
 	w = cp_writes;
-	CHECK(ui_svc_write_channel(4, &ed) && cp_writes == w && !ui_svc_write_channel(6, &ed));
+	CHECK(ui_svc_write_channel(4, &ed, 0) && cp_writes == w && !ui_svc_write_channel(6, &ed, 0));
 	storage_job_poll();
 	CHECK(cp_writes == w + 1 && chans[4].timeslot == 2 && chans[4].color_code == 5);
 	run(100);
@@ -3810,7 +3821,7 @@ static void test_ui_glue(void)
 	run(20);
 	ed = chans[6];
 	ed.color_code = 7;
-	CHECK(ui_svc_write_channel(6, &ed));
+	CHECK(ui_svc_write_channel(6, &ed, 0));
 	storage_job_poll();
 	run(100);
 	CHECK(chans[6].color_code == 7 && !sm.view.temporary && d->cc == 5);
@@ -3819,7 +3830,7 @@ static void test_ui_glue(void)
 	run(20);
 	cp_write_fails = true;
 	n_ev = 0;
-	CHECK(ui_svc_write_channel(6, &ed));
+	CHECK(ui_svc_write_channel(6, &ed, 0));
 	storage_job_poll();
 	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && sm.view.temporary);
 	cp_write_fails = false;
@@ -3858,8 +3869,8 @@ static void test_ui_glue(void)
 	ed.color_code = 3;
 	w = cp_writes;
 	n_ev = 0;
-	CHECK(ui_svc_write_channel(6, &ed) && n_ev == 1 && last_ev.kind == UI_EV_CODEPLUG_FOREIGN);
-	CHECK(!ui_svc_write_channel(6, &ed) && !ui_svc_save_channel() && n_ev == 1);	// one question at a time
+	CHECK(ui_svc_write_channel(6, &ed, 0) && n_ev == 1 && last_ev.kind == UI_EV_CODEPLUG_FOREIGN);
+	CHECK(!ui_svc_write_channel(6, &ed, 0) && !ui_svc_save_channel() && n_ev == 1);	// one question at a time
 	storage_job_poll();
 	CHECK(cp_writes == w && !storage_job_busy());
 	// Cancel: nothing written, nothing cleared
@@ -3867,18 +3878,18 @@ static void test_ui_glue(void)
 	storage_job_poll();
 	CHECK(cp_writes == w && cp_new == 0 && !cp_accepted && chans[6].color_code != 3);
 	// Use anyway: accepted and shown, the write made on the built-in set dropped, nothing cleared
-	CHECK(ui_svc_write_channel(6, &ed) && n_ev == 2);
+	CHECK(ui_svc_write_channel(6, &ed, 0) && n_ev == 2);
 	int reloads = cp_reloads;
 	CHECK(ui_svc_codeplug_answer(UI_CP_USE) && storage_job_busy());
 	storage_job_poll();
 	CHECK(cp_writes == w && cp_new == 0 && cp_accepted && cp_reloads == reloads + 1 && !codeplug_foreign());
-	CHECK(ui_svc_write_channel(6, &ed) && n_ev == 2);	// ours now: written at once
+	CHECK(ui_svc_write_channel(6, &ed, 0) && n_ev == 2);	// ours now: written at once
 	storage_job_poll();
 	CHECK(cp_writes == w + 1 && chans[6].color_code == 3);
 	// Start new: the old one cleared, then the write
 	cp_accepted = false;
 	ed.color_code = 4;
-	CHECK(ui_svc_write_channel(6, &ed) && n_ev == 3 && ui_svc_codeplug_answer(UI_CP_NEW));
+	CHECK(ui_svc_write_channel(6, &ed, 0) && n_ev == 3 && ui_svc_codeplug_answer(UI_CP_NEW));
 	storage_job_poll();
 	CHECK(cp_new == 1 && cp_writes == w + 2 && chans[6].color_code == 4 && !codeplug_foreign());
 	// A keyed setting isn't a codeplug write that asks (docs/spec/codeplug-settings.md 5): with another firmware's
@@ -6410,6 +6421,15 @@ bool p25_conv_load(uint16_t number, const channel_t *ch, p25_conv_cfg_t *out)
 	return true;
 }
 uint32_t p25_radio_unit_id(uint32_t dmr_id) { return p25_radio_id != 0 ? p25_radio_id : dmr_id; }
+// A plain channel in P25 saved as a stored one: the record and block it was given
+static struct { uint16_t number; channel_t ch; p25_conv_t conv; } p25_saved;
+bool p25_conv_save(uint16_t number, const channel_t *ch, const p25_conv_t *conv)
+{
+	p25_saved.number = number;
+	p25_saved.ch = *ch;
+	p25_saved.conv = *conv;
+	return codeplug_set_channel(number, ch);
+}
 
 // A P25 conventional channel in the codeplug (kind 2, docs/spec/p25-codeplug.md 2): the radio runs it on its own
 // parameters, the debug link's unit ID overrides for a session, and it is parked where the board can't carry P25
@@ -6540,6 +6560,46 @@ static void test_p25_stored(void)
 	p25_view_text(buf, sizeof buf);
 	CHECK(sm.view.vfo && strstr(buf, "p25.run.rx_nac=659\n") != NULL && strstr(buf, "p25.run.unit_id=5555\n") != NULL);
 	p25_radio_id = 0;
+
+	// Saved as a channel (the editor's New from current): a stored P25 channel from the P25 settings, its contact
+	// the stored one of the talk target, talkaround on kept
+	radio_p25_settings(&s);
+	s.rx_nac = 0x2B0;
+	s.tx_nac = 0x2B1;
+	s.rx_tgid = 9;
+	s.tx_dst = 9;
+	s.unit_call = false;
+	s.talkaround = RADIO_P25_TA_ON;
+	radio_req_p25_settings(&s);
+	run(20);
+	memset(&p25_saved, 0, sizeof p25_saved);
+	channel_t ed = sm.view.ch;
+	CHECK(ed.mode == RADIO_MODE_P25 && ed.kind == CODEPLUG_KIND_NONE);
+	CHECK(ui_svc_write_channel(6, &ed, 0));
+	storage_job_poll();
+	CHECK(p25_saved.number == 6 && p25_saved.conv.rx_nac == 0x2B0 && p25_saved.conv.tx_nac == 0x2B1);
+	CHECK(p25_saved.conv.squelch == P25_SQUELCH_SELECTIVE && p25_saved.ch.contact == 3 && p25_saved.ch.dmo);
+	// No stored contact for the talk group: none (talk group 1); automatic talkaround, normal squelch
+	s.tx_dst = 4242;
+	s.rx_tgid = 0;
+	s.talkaround = RADIO_P25_TA_AUTO;
+	radio_req_p25_settings(&s);
+	run(20);
+	CHECK(ui_svc_write_channel(6, &ed, 0));
+	storage_job_poll();
+	CHECK(p25_saved.ch.contact == 0 && !p25_saved.ch.dmo && p25_saved.conv.squelch == P25_SQUELCH_NORMAL);
+	p25_defaults();
+	// A copy of the stored P25 channel at another number takes its tag; edited in place, the tag follows by itself
+	ed = chans[3];
+	tag_copy_from = tag_copy_to = 0;
+	p25_saved.number = 0;
+	CHECK(ui_svc_write_channel(7, &ed, 3));
+	storage_job_poll();
+	CHECK(tag_copy_from == 3 && tag_copy_to == 7 && chans[7].kind == CODEPLUG_KIND_P25 && p25_saved.number == 0);
+	tag_copy_from = 0;
+	CHECK(ui_svc_write_channel(3, &ed, 3));
+	storage_job_poll();
+	CHECK(tag_copy_from == 0 && p25_saved.number == 0);
 	req(RREQ_MODE, RADIO_MODE_FM);
 	req(RREQ_VFO, 0);
 	far_stop();

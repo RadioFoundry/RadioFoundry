@@ -1066,8 +1066,7 @@ static void draw_chips(const radio_view_t *v, const ui_state_t *s)
 #if CONFIG_P25
 		sb_init(&b, buf, sizeof buf);
 		sb_str(&b, "NAC ");
-		for (int sh = 8; sh >= 0; sh -= 4)
-			sb_chr(&b, "0123456789ABCDEF"[(v->p25.rx_nac >> sh) & 0xFu]);
+		sb_hex(&b, v->p25.rx_nac, 3);
 		if (x + gfx_text_width(f, buf) <= w)
 			gfx_text(f, x, y, buf, ui_col.fg);
 #endif
