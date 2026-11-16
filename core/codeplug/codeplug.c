@@ -276,14 +276,15 @@ static void copy_name(char *dst, const uint8_t *src, unsigned len)
 	dst[n] = '\0';
 }
 
-// A name field: the text, then 0xFF padding
+// A name field: the text, then 0xFF padding. A 0xFF byte in the text would end the field there, so it is written as '?',
+// the byte the CPS writes for a character a name can't hold (U+00FF): the name is never cut where it stood
 static void put_name(uint8_t *dst, const char *src, unsigned len)
 {
 	unsigned n = 0;
 	memset(dst, 0xFF, len);
 	while (n < len && src[n] != '\0') {
-		dst[n] = (uint8_t)src[n];
-		n++;
+		uint8_t c = (uint8_t)src[n];
+		dst[n++] = c == 0xFFu ? '?' : c;
 	}
 }
 

@@ -456,7 +456,7 @@ static void test_cjk_text(void)
 {
 	const font_t *f = &font_6x12;
 	char buf[24];
-	// 信 is E4 BF A1, 道 is E9 81 93
+	// E4 BF A1 and E9 81 93: two 3-byte UTF-8 characters
 	CHECK(gfx_text_width(f, "A") == f->w);
 	CHECK(gfx_text_width(f, "\xE4\xBF\xA1\xE9\x81\x93") == 2 * CJK_FONT_W);
 	CHECK(gfx_text_width(f, "A\xE4\xBF\xA1") == f->w + CJK_FONT_W);
@@ -521,17 +521,17 @@ static void test_text_cells(void)
 	sbuf_t b;
 	// a CJK character is two cells, ASCII and a Latin-1 glyph byte are one
 	CHECK(ui_text_cells("AB") == 2);
-	CHECK(ui_text_cells("中") == 2);
-	CHECK(ui_text_cells("A中B") == 4);
+	CHECK(ui_text_cells("\xE4\xB8\xAD") == 2);		// a 3-byte UTF-8 character
+	CHECK(ui_text_cells("A\xE4\xB8\xAD" "B") == 4);
 	CHECK(ui_text_cells("\xB7") == 1);		// a Latin-1 middot: one byte, one cell (a UTF-8 · is two bytes)
-	// a cut leaves a Chinese character whole: room for 3 cells fits "A中" but not "A中B"
+	// a cut leaves a CJK character whole: room for 3 cells fits "A" and the character, but not the "B" after it
 	sb_init(&b, out, sizeof out);
-	sb_cut_text(&b, "A中B", 3);
-	CHECK(strcmp(out, "A中") == 0);
-	// a shorter cut drops a Chinese character whole rather than splitting it
+	sb_cut_text(&b, "A\xE4\xB8\xAD" "B", 3);
+	CHECK(strcmp(out, "A\xE4\xB8\xAD") == 0);
+	// a shorter cut drops a CJK character whole rather than splitting it
 	sb_init(&b, out, sizeof out);
-	sb_cut_text(&b, "中道", 3);
-	CHECK(strcmp(out, "中") == 0);
+	sb_cut_text(&b, "\xE4\xB8\xAD\xE9\x81\x93", 3);
+	CHECK(strcmp(out, "\xE4\xB8\xAD") == 0);
 	// no cut when there is room
 	sb_init(&b, out, sizeof out);
 	sb_cut_text(&b, "AB", 4);
@@ -539,15 +539,42 @@ static void test_text_cells(void)
 }
 #endif
 
+// A round trip of the text layer's two halves: a name cut to the cells it measures comes back whole, whatever scripts it
+// mixes. A narrower cut leaves a prefix of it and never half a character, so the cells it reports are the characters kept
+static void test_text_cut_round_trip(void)
+{
+	char out[64];
+	sbuf_t b;
+	static const char *const names[] = {
+		"AB", "A\xF1" "B", "Se\xF1" "al",			// ASCII and Latin-1, one cell a letter
+		"\xE4\xB8\xAD\xE9\x81\x93", "A\xE4\xB8\xAD" "B",		// two 3-byte UTF-8 characters, then one among ASCII
+		"Caf\xE9\xE4\xB8\xAD" "\x81", "A\xFF" "B",		// a Latin-1 letter, a 3-byte character, a glyph byte; 0xFF too
+	};
+	for (size_t i = 0; i < sizeof names / sizeof names[0]; i++) {
+		size_t cells = ui_text_cells(names[i]);
+		sb_init(&b, out, sizeof out);
+		sb_cut_text(&b, names[i], cells);
+		CHECK(strcmp(out, names[i]) == 0);
+		for (size_t room = 0; room < cells; room++) {
+			sb_init(&b, out, sizeof out);
+			sb_cut_text(&b, names[i], room);
+			CHECK(strncmp(out, names[i], strlen(out)) == 0);	// a prefix, never half a character
+			CHECK(ui_text_cells(out) <= room);		// and never over the room it was given
+			CHECK(room - ui_text_cells(out) < (size_t)(1 + CONFIG_LANG_ZH));	// the dropped character's own width
+		}
+	}
+}
+
 int main(void)
 {
 	mkdir("out", 0755);
 #if CONFIG_LANG_ZH
 	test_text_cells();
 #else
-	// without a CJK catalog the text layer draws each UTF-8 byte as one Latin-1 character: "中" is three cells
-	CHECK(ui_text_cells("中") == 3);
+	// without a CJK catalog the text layer draws each UTF-8 byte as one Latin-1 character: a 3-byte one is three cells
+	CHECK(ui_text_cells("\xE4\xB8\xAD") == 3);
 #endif
+	test_text_cut_round_trip();
 
 	char buf[32];
 	sbuf_t b;
