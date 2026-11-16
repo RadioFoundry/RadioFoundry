@@ -490,7 +490,7 @@ def test_pa_keyup_op(radio):
     if "pa_keyup" not in core:
         with pytest.raises(DebugLinkError):
             radio.link.pa_keyup()               # a radio without the view key doesn't key this way
-        skip("not_built", "no DMR PA key-up on this radio (docs/spec/pa-keyup.md)")
+        skip("other_board", "no DMR PA key-up on this radio (docs/spec/pa-keyup.md)")
     board = [int(x) for x in core["pa_keyup"].split("/")]
     assert len(board) == 8, core
     dead, knee, slope_us, boost, hold, boost_us, pa_us, drive_us = board

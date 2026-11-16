@@ -519,7 +519,7 @@ def _link_answers(radio, aprs_air, send):
 @pytest.mark.feature("dmr_lrrp")
 @pytest.mark.feature("aprs", optional=True)
 @pytest.mark.feature("aprs_dmr")
-@pytest.mark.needs_switch("APRS_DMR")
+@pytest.mark.needs_switch("APRS_DMR", "DMR_LRRP")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
@@ -643,6 +643,7 @@ def test_aprs_rx_on_air(radio, sdr_bench, pytestconfig):
 @pytest.mark.feature("aprs_rx")
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.needs_switch("VFO_FM")
 def test_aprs_rx_third_party_message(radio, sdr_bench, pytestconfig):
     """A message to the radio wrapped as an iGate puts APRS-IS traffic on RF ("}SRC>DST,TCPIP,IGATE*:info", sent by
     --callsign-7 or -11 as the iGate, from --callsign-12 inside), from the bench board's FM transmitter on --fm-mhz:

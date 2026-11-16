@@ -234,6 +234,7 @@ def burst_tone(r, want_s):
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.sdr_rx
+@pytest.mark.needs_switch("VFO_FM")
 def test_fm_tx_tone_burst_key(fm_vfo, sdr_bench, pytestconfig):
     radio = fm_vfo
     for feature in ("FM_TX_TONES", "KEY_ASSIGN", "UI_SETTINGS"):
@@ -510,6 +511,7 @@ def _power_levels_wattmeter(radio, pytestconfig):
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.sdr_rx
+@pytest.mark.needs_switch("VFO_FM")
 def test_fm_tx_power_levels(fm_vfo, sdr_bench, pytestconfig):
     set_fm(fm_vfo, False, "none", 0)
     if pytestconfig.getoption("--manual"):
