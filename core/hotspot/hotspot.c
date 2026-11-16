@@ -89,8 +89,6 @@ static hotspot_view_t view;
 static hotspot_stats_t stats;
 
 static const hotspot_alt_t *alt;	// another mode on the modem (the SFR), when built in
-static void (*direct_hook)(bool on);	// told when the SFR mode starts or stops repeating (hotspot_set_direct_key_hook)
-static volatile bool sfr_direct;	// the SFR mode repeats: written here (host link task), read by the radio task
 
 #if CONFIG_HOTSPOT_SPLIT
 static const hotspot_alt_t *alt_prio;	// ... and one ahead of it (the split duplex roles)
@@ -281,32 +279,21 @@ static void send_voice(const uint8_t *voice, uint8_t index, int16_t rssi_dbm, bo
 	send_voice_cmd(MMDVM_DMR_DATA2, voice, index, hotspotUplinkLc(&up), rssi_dbm, heard);
 }
 
-// The SFR mode (alt, not a split role) repeats: tell the hook at once, so the board keys its bursts direct from the
-// first one and stops with the last (hal_radio_t.dmr_direct_key)
-static void direct_update(void)
-{
-	bool on = running && (alt != NULL) && alt->active();
-#if CONFIG_HOTSPOT_SPLIT
-	if ((alt_prio != NULL) && alt_prio->active()) {
-		on = false;	// a split role has the modem: no inbound slot to protect
-	}
-#endif
-	if (on != sfr_direct) {
-		sfr_direct = on;
-		if (direct_hook != NULL) {
-			direct_hook(on);
-		}
-	}
-}
-
-void hotspot_set_direct_key_hook(void (*fn)(bool on))
-{
-	direct_hook = fn;
-}
-
+// The SFR mode (alt, not a split role, which has no inbound slot to protect) repeats right now. Read from the state
+// itself (single flags), so it's safe from the RF TX interrupt that asks it (hal_radio_t.dmr_direct_query)
 bool hotspot_sfr_repeating(void)
 {
-	return sfr_direct;
+	const hotspot_alt_t *a = alt;
+	if (!running || (a == NULL) || !a->active()) {
+		return false;
+	}
+#if CONFIG_HOTSPOT_SPLIT
+	const hotspot_alt_t *p = alt_prio;
+	if ((p != NULL) && p->active()) {
+		return false;
+	}
+#endif
+	return true;
 }
 
 // ---- For another mode on the modem (hotspot_alt_t) ----
@@ -522,7 +509,6 @@ bool hotspot_start(uint32_t now_ms)
 	if (radio->set_power != NULL) {
 		radio->set_power(LEVEL(rf_level));
 	}
-	sfr_direct = false;	// a new session: its SFR mode tells the board again when it starts (a stale flag hid that)
 	running = true;
 	view.running = true;
 	stats.starts++;
@@ -550,7 +536,6 @@ void hotspot_stop(void)
 	}
 	modem->stop();
 	running = false;
-	direct_update();
 	stats.stops++;
 	reset_all();
 	view.running = false;
@@ -591,7 +576,6 @@ bool hotspot_set_freq(uint32_t rx, uint32_t tx, uint8_t level)
 		if (alt != NULL) {
 			alt->stopped();		// the other mode is chosen again after the ACK (config_changed)
 		}
-		direct_update();
 		if (tx_state != TX_IDLE) {
 			modem->tx_abort();
 		}
@@ -1132,7 +1116,6 @@ void hotspot_poll(uint32_t now_ms)
 			if ((alt != NULL) && alt->active()) {
 				alt->stopped();		// a split role keeps the SFR off (split-duplex.md 4.1)
 			}
-			direct_update();
 			view.transmitting = hotspot_transmitting();
 			view.receiving = hotspot_carrier();
 			return;
@@ -1141,7 +1124,6 @@ void hotspot_poll(uint32_t now_ms)
 #endif
 	if (alt != NULL) {
 		alt->poll(now_ms);
-		direct_update();	// the SFR mode turns on in its poll, and off when it stops
 		if (alt_on()) {
 			view.transmitting = hotspot_transmitting();
 			view.receiving = hotspot_carrier();

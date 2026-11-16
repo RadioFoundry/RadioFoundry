@@ -745,7 +745,7 @@ Ordering:
     the band, reg 0x30 RX on. Going straight back to RX after a burst entered from idle leaves the receiver about 3 kHz
     off.
   - Direct, only while an SFR repeats (a channel's or the VFO's role, or the hotspot's SFR mode;
-    `hal_radio_t.dmr_direct_key`, one flag per source), on a simplex UHF channel whose receive frequency the
+    the board asks at each burst: `hal_radio_t.dmr_direct_query`), on a simplex UHF channel whose receive frequency the
     synthesizer already holds: reg 0x30 straight from RX to DMR TX, HR_C6000 4:0x04 (MOD1 offset) =
     calibrated value + 42, plus the DMR receive offset in MOD1 steps (5.13), both RX supplies off, then the PA. Back to
     RX: the PA enables low, 4:0x04 = calibrated value, the RX supply, reg 0x30 RX on. RX straight to TX puts the

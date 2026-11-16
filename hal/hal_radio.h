@@ -12,10 +12,6 @@ typedef enum { RADIO_MODE_FM, RADIO_MODE_DMR } radio_mode_t;
 typedef enum { RADIO_BW_12K5, RADIO_BW_25K } radio_bw_t;
 
 typedef enum { TONE_NONE, TONE_CTCSS, TONE_DCS, TONE_DCS_INV } tone_type_t;
-// hal_radio_t.dmr_direct_key sources
-#define HAL_DMR_DIRECT_ROLE	0u	// a channel's or the VFO's SFR repeater role
-#define HAL_DMR_DIRECT_HOTSPOT	1u	// the hotspot's SFR mode
-
 // hal_radio_t.dmr_keying
 typedef struct {
 	bool last_direct;	// the last DMR burst was keyed straight from RX
@@ -98,14 +94,15 @@ typedef struct {
 	// level's again. False: over the board's hardware limit. Any task may call it
 	uint16_t (*tx_drive_level)(uint32_t hz, uint8_t level);
 	bool (*tx_drive)(uint16_t drive);
-	// Optional: an SFR repeats (on) or stopped (off), per source: HAL_DMR_DIRECT_ROLE, a channel's or the VFO's repeater
-	// role (radio task), or HAL_DMR_DIRECT_HOTSPOT, the hotspot's SFR mode (host link task). While either source is on
-	// a board may key DMR bursts straight from RX, keeping the synthesizer locked for the inbound slot, at the cost of a
-	// carrier error it corrects only roughly; otherwise it keys every burst its normal way. Each source owns its own
-	// flag, so neither can undo or hide the other's. NULL = no such mode
-	void (*dmr_direct_key)(uint8_t source, bool on);
+	// Optional: the radio core gives the board, once at start, a question to ask as it keys each DMR burst: does an SFR
+	// repeat right now (a channel's or the VFO's repeater role, or the hotspot's SFR mode)? While it does, the board may
+	// key straight from RX, keeping the synthesizer locked for the inbound slot, at the cost of a carrier error it
+	// corrects only roughly; otherwise it keys every burst its normal way. The answer is read from the state itself at
+	// that moment, nothing is copied to the board, so it can't go stale. The question is a few reads of single flags,
+	// safe from an interrupt. NULL = no such mode
+	void (*dmr_direct_query)(bool (*sfr_repeats)(void));
 	// Optional: how the board keyed DMR bursts, for the debug link's view and HIL tests: the last one straight from RX
-	// (dmr_direct_key), and the bursts keyed each way since boot
+	// (dmr_direct_query), and the bursts keyed each way since boot
 	void (*dmr_keying)(hal_dmr_keying_t *k);
 } hal_radio_t;
 
