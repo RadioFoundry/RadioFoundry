@@ -304,6 +304,15 @@
 #ifndef CONFIG_MBE
 #define CONFIG_MBE			CONFIG_IMBE
 #endif
+// P25_TRUNK: the codec of P25 trunked systems and channels (docs/spec/p25-codeplug.md 3)
+#ifndef CONFIG_P25_TRUNK
+#define CONFIG_P25_TRUNK		0
+#endif
+// Derived: zone sharing carries channels of a kind and their systems (docs/spec/zone-share.md 4.2) in a build with a
+// mode's codec. Without it a share leaves channels of a kind out and refuses a record that has them
+#ifndef CONFIG_ZONE_SHARE_MODES
+#define CONFIG_ZONE_SHARE_MODES		(CONFIG_ZONE_SHARE && CONFIG_P25)
+#endif
 // The GPS status screen: the satellites (NMEA GSV / GSA) on a sky plot and signal bars, the fix's quality, the grid
 // locator (core/position/nmea_sky.c, core/ui/ui_gps.c). Needs GPS
 #ifndef CONFIG_GPS_SKY
@@ -473,6 +482,9 @@
 #endif
 #if CONFIG_GPS_SKY && !CONFIG_GPS
 #error "CONFIG_GPS_SKY needs CONFIG_GPS"
+#endif
+#if CONFIG_P25_TRUNK && !CONFIG_P25
+#error "CONFIG_P25_TRUNK needs CONFIG_P25"
 #endif
 #if (CONFIG_APRS_RX && !CONFIG_APRS_AFSK) || (CONFIG_APRS_IGATE && !(CONFIG_APRS_RX && CONFIG_HOSTLINK))
 #error "an APRS sub-feature is on without its parent (APRS_RX needs APRS_AFSK; APRS_IGATE needs APRS_RX and HOSTLINK)"

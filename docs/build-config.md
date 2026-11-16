@@ -103,6 +103,8 @@ below are for an STM32F4 radio.
 | `CONFIG_APRS_RX` | = APRS_AFSK (n where no receive audio is written) | APRS receive: the AFSK demodulator on the board's received audio, station list, messages to us with acks, the digipeater. Useful only where the board can sample received audio: its own AFSK receive path, or FM receive audio on the PCM stream (`docs/spec/aprs.md` 5.3). About 6 KB RAM more |
 | `CONFIG_GPS_SKY` | = GPS | the GPS screen under Tools > Position: satellites on a sky plot and signal bars, fix quality, grid locator (`core/position/nmea_sky.c`, `core/ui/ui_gps.c`; `docs/spec/ui.md` 2.3). Off, that page is text |
 | `CONFIG_APRS_IGATE` | = APRS_RX and HOSTLINK (n where flash is short) | the iGate rules, RF to APRS-IS and messages back, with the host helper `tools/aprs_gate.py` holding the APRS-IS connection |
+| `CONFIG_P25` | n | P25: the codec of P25 channels in the codeplug (`core/p25/p25_codeplug.c`, `docs/spec/p25-codeplug.md`). No P25 engine yet: a P25 channel is shown as a mode not in this build either way |
+| `CONFIG_P25_TRUNK` | n | P25 trunked: the codec of P25 trunked systems, sites, control channels and identifier plans (needs P25). No engine follows a system yet |
 | `CONFIG_DMR` | y | DMR voice: modem driver, call stack, AMBE FEC, vocoder hosting, PCM audio |
 | `CONFIG_DMR_PRIVACY` | = DMR | basic privacy (Motorola / Anytone BP) on the voice path, `core/dmr/dmrPrivacy.c` (`docs/spec/dmr-voice.md` 5) |
 | `CONFIG_DMR_TALKER_ALIAS` | = DMR | talker alias decode and our own alias TX (`docs/spec/dmr-voice.md` 3) |
@@ -188,7 +190,8 @@ below are for an STM32F4 radio.
 
 Derived (not set by hand): `CONFIG_DMR_DATA_CORE`, the shared packet data / CSBK code, on when any data feature is;
 `CONFIG_DMR_AIR_QUEUE`, the data service's TX queue (`docs/spec/dmr-data.md` 12.6), on with `CONFIG_DMR_IP_GATEWAY` or
-`CONFIG_ZONE_SHARE`. `CONFIG_LANG_ANY` (`core/config.h`): on when any `CONFIG_LANG_*` is, the translation lookup and the
+`CONFIG_ZONE_SHARE`. `CONFIG_ZONE_SHARE_MODES`: zone sharing carries channels of a kind and their systems
+(`docs/spec/zone-share.md` 4.2), on with `CONFIG_ZONE_SHARE` and `CONFIG_P25`. `CONFIG_LANG_ANY` (`core/config.h`): on when any `CONFIG_LANG_*` is, the translation lookup and the
 fonts' Latin-1 glyphs.
 
 ## Values
