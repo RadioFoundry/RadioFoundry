@@ -1207,3 +1207,19 @@ Feature switches that differ from the platform's defaults (`config.mk`; the two 
 | `NET_PPP` (maximal build too: `MAXIMAL_SKIP`) | the radio has the USB network adapter; PPP is for radios with only a UART |
 | `LANG_ES` and what follows it | English only |
 | `UI_COLOR`, `FONT_XL`, `FONT_AA`, `FONT_BIG`, `AM_RX`, `BCAST_FM`, `VIBRATE`, `NAND_STORAGE`, `FAULT_TRACE` (maximal build too: `BOARD_UNSUPPORTED`) | a 128x64 monochrome screen; no air band or broadcast receiver; no vibration motor; NOR data flash; no UART for a fault trace |
+
+### 19.11 Air interface (`CONFIG_P25`, `CONFIG_NXDN`)
+
+`board.air` is the HR_C6000's physical layer mode ([modem-hrc6000.md](modem-hrc6000.md) 10). The board doesn't set
+the FM copy tap (10.6 there), so it receives only what the chip's correlator takes: P25, not NXDN. Both switches are
+off by default. Checked on a V1-V3 radio, UHF, against the SDR bench:
+
+| What | Result |
+|---|---|
+| P25 conventional receive (`test_p25_rx_from_bench`) | 72 of 72 voice frames, none bad, 43 bits corrected, played |
+| A stored P25 channel written over CPS (`test_p25_stored_channel`) | runs P25 on its own parameters, plain again after the restore |
+| Zone scan and dual watch onto a stored P25 channel (`test_p25_scan_from_bench`) | each holds on the channel during a call from the bench |
+| The P25 or NXDN mode in the VFO, a stored NXDN channel | set and dropped; the radio idles in the mode |
+
+Not checked: P25 and NXDN transmit (the provider reports both as untested), sensitivity, trunking, and whether the
+chip's FM copy works from the 450 kHz IF (4.2), which NXDN receive needs.
