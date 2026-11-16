@@ -822,6 +822,56 @@ static void test_modes(void)
 #endif
 }
 
+#if CONFIG_ZONE_SHARE_MODES
+// A P25 conventional channel (kind 2, no system; p25-codeplug.md 2): shared and taken with its block (NAC 2A0 both
+// ways, selective) byte for byte, receive only until the user allows transmit
+static void test_modes_p25_conv(void)
+{
+	static const uint8_t blk[] = { 0xA0, 0x82, 0xA0, 0x82, 0x01 };
+	uint8_t included = 0;
+	zone_import_result_t res;
+	zsRecord_t rec;
+	zsTag_t t;
+	zone_t z;
+	channel_t ch;
+	codeplug_tag_t tag;
+
+	fresh();
+	ch = make("P25 ops", 451500000, 456500000, true);
+	ch.rx_only = true;	// the safe stand-in: the tag carries transmit allowed
+	CHECK(codeplug_set_channel(1, &ch));
+	memset(&tag, 0, sizeof(tag));
+	tag.kind = CODEPLUG_KIND_P25;
+	tag.system = CODEPLUG_SYSTEM_NONE;
+	tag.flags = CODEPLUG_TAG_TX;
+	CHECK(codeplug_tag_write(1, "P25 ops", &tag, blk, sizeof(blk)));
+	memset(&z, 0, sizeof(z));
+	strcpy(z.name, "P25");
+	z.count = 1;
+	z.channels[0] = 1;
+	CHECK(codeplug_set_zone(0, &z));
+	int len = zone_export_zone(0, recbuf, sizeof(recbuf), &included);
+	CHECK(len > 0 && included == 1 && zsParse(recbuf, len, &rec) && rec.systems == 0 && rec.tags == 1);
+	CHECK(zsTagAt(&rec, 0, &t) && t.kind == CODEPLUG_KIND_P25 && t.system == 0 && t.len == sizeof(blk));
+	static uint8_t sent[ZS_RECORD_MAX];
+	memcpy(sent, recbuf, (size_t)len);
+
+	fresh();
+	with_zones();
+	CHECK(zone_import_zone(sent, len, 77, imports, &res) == ZI_OK && res.channels == 1 && res.unavailable == 0);
+	CHECK(codeplug_zone(res.zone, &z) && z.count == 1);
+	CHECK(codeplug_channel(z.channels[0], &ch) && ch.kind == CODEPLUG_KIND_P25 && ch.system == CODEPLUG_SYSTEM_NONE &&
+	      ch.rx_only && ch.mode == RADIO_MODE_DMR && ch.tx_hz == 456500000);
+	uint8_t params[16];
+	CHECK(codeplug_tag_params(z.channels[0], &ch, params, 8) == (int)sizeof(blk) && memcmp(params, blk, sizeof(blk)) == 0);
+	// Receive only as every imported channel with no system (5.3); the user turns transmit on and the tag follows
+	ch.rx_only = false;
+	CHECK(codeplug_set_channel(z.channels[0], &ch));
+	CHECK(codeplug_channel(z.channels[0], &ch) && ch.kind == CODEPLUG_KIND_P25 && !ch.rx_only);
+	CHECK(codeplug_tag_params(z.channels[0], &ch, params, 8) == (int)sizeof(blk) && memcmp(params, blk, sizeof(blk)) == 0);
+}
+#endif
+
 int main(void)
 {
 	test_import();
@@ -835,6 +885,9 @@ int main(void)
 	test_lands_ahead();
 	test_export();
 	test_modes();
+#if CONFIG_ZONE_SHARE_MODES
+	test_modes_p25_conv();
+#endif
 	printf("zoneImportTest: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }
