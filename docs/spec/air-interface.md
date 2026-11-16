@@ -5,8 +5,8 @@
 
 The air interface carries channel symbols with time stamps between a radio's modem hardware and the core. It knows
 no mode. A digital mode the core frames itself (P25, [p25.md](p25.md)) describes what it needs as a profile, and
-every layer below works from that profile. Built with the modes on it: `CONFIG_P25` ([build-config.md](../build-config.md); `CONFIG_AIR` is
-derived from it). Which
+every layer below works from that profile. Built with the modes on it: `CONFIG_P25`, `CONFIG_NXDN` ([nxdn.md](nxdn.md),
+[build-config.md](../build-config.md); `CONFIG_AIR` is derived from them). Which
 radios have a provider: [feature-matrix.md](../feature-matrix.md).
 
 State: host tested. No provider has been checked on air yet; every provider answers a fit with `AIR_FIT_UNTESTED`
@@ -16,7 +16,7 @@ until it has.
 
 | Layer | File | What it does |
 |---|---|---|
-| Mode | `core/p25/` | units, FEC, calls; an `air_mode_t` (profile, frame geometry, hooks) |
+| Mode | `core/p25/`, `core/nxdn/` | units, FEC, calls; an `air_mode_t` (profile, frame geometry, hooks) |
 | Session | `core/air/air_session.c` | one mode on one provider: open, close, receive to the framer, a transmission from the first symbol to its end (section 7) |
 | Framer | `core/air/air_framer.c` | sync search, levels, frames cut from the symbol stream, coasting; symbols packed into transmit chunks (section 5) |
 | Provider | `board_t.air` (`hal/hal_air.h`) | symbols in air order with time stamps (section 3). A modem chip in its physical layer mode, or the soft modem on sample taps |
@@ -27,7 +27,8 @@ Both `board_t.air` and `board_t.baseband` are optional and independent: a board 
 taps, both or neither. The core uses `board_t.air`; a board whose chip has no symbol pipe for a direction builds its
 provider from the taps and the soft modem.
 
-FEC shared by the modes is in `core/fec/` (Reed-Solomon over GF(64), Golay, Hamming, BCH(63,16), the trellis codes).
+FEC shared by the modes is in `core/fec/` (Reed-Solomon over GF(64), Golay, Hamming, BCH(63,16), the trellis codes, the
+rate 1/2 convolutional codes of constraint length 5 with a Viterbi decoder).
 
 ## 2. Symbols and profiles
 
@@ -46,6 +47,7 @@ byte, `AIR_SOFT_OUTER` (96) for a +3 symbol at the profile's deviation.
 | `bw` | channel bandwidth the mode wants |
 | `sync[]` | the fixed patterns the mode puts on air, most useful first: symbols, length (8 to 24), errors tolerated, where the frame starts relative to the pattern, whether it is only at the start of a transmission |
 | `sync_every_syms` | the longest run of symbols between two 24-symbol patterns inside a transmission; 0 when none recurs |
+| `sync_any_syms` | the longest run between two patterns of any length (a mode whose recurring sync is shorter than 24 symbols); 0 = `sync_every_syms`. The soft modem holds its timing this long |
 | `idle` | four dibits a provider sends when a continuous transmission runs dry |
 
 ## 3. The provider (`hal_air_t`)
@@ -189,7 +191,7 @@ Transmit states: idle, priming, on, ending (the last symbol is queued), done.
 | User | State |
 |---|---|
 | P25 Phase 1 conventional voice | written, host tested ([p25.md](p25.md)) |
-| Other continuous 4-level modes (NXDN) | not written. The profile carries them; they need their own units and FEC |
+| NXDN conventional voice, 4800 and 9600 bit/s | written, host tested ([nxdn.md](nxdn.md)); no radio core runs it yet |
 | A DMR engine on symbols | not written. The interface carries TDMA (slot length, slot events, the slot clock, per-slot transmit chunks, syncs inside the burst); today's DMR runs on the modem chip's own layer 2 |
 | 2-level modes | carried (the dibit map, the soft modem's fit) |
 | AFSK (APRS) | not a symbol mode: its tones ride the audio band. The sample taps can feed a demodulator for it; nothing uses them for that yet |
@@ -209,3 +211,4 @@ Transmit states: idle, priming, on, ending (the last symbol is queued), done.
 | `tests/host/airSoftmodemTest.c` | the soft modem on a modeled tap: every tap phase, 8 to 48 kHz, scale and offset errors, noise, other pulse shapes, a P25 call end to end; the same output with the gate and with every sample fitted |
 | `tests/host/fxpTest.c` | the shared fixed-point kernels against wide arithmetic |
 | `tests/host/p25EngineTest.c` | the session under two P25 engines on made-up providers |
+| `tests/host/nxdnEngineTest.c` | the session under two NXDN engines; an NXDN call through the soft modem at 2400 symbols/s |

@@ -1,0 +1,235 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
+
+# NXDN
+
+NXDN conventional voice (the NXDN Technical Specifications: TS 1-A Common Air Interface, TS 1-B Basic Operation), on
+the air interface ([air-interface.md](air-interface.md)). Switch: `CONFIG_NXDN`, which also builds the air interface
+([build-config.md](../build-config.md)). Which radios could carry it: [feature-matrix.md](../feature-matrix.md).
+Clause numbers below are TS 1-A's unless they say TS 1-B.
+
+State:
+
+| Part | State |
+|---|---|
+| Frame codec: FSW, LICH, scrambler, SACCH, FACCH1, the four VCH (1, 2) | written, host tested |
+| Receive, the call layer, the engine (3, 4, 7) | written, host tested; 4800 bit/s, and 9600 bit/s with half-rate voice |
+| Voice (5) | the 72-bit VCH go to and come from the vocoder the board hosts for DMR (`hal_vocoder_t`); not connected yet |
+| The radio core, codeplug, UI | not written (6, 10) |
+| On air | untested |
+| 9600 bit/s full-rate voice (EFR), data, trunking, encryption | not written (10). Encrypted calls are recognized and not played |
+
+## 1. On air
+
+| Item | 4800 bit/s | 9600 bit/s | Clause |
+|---|---|---|---|
+| Channel | 6.25 kHz | 12.5 kHz | table 2.3-1 |
+| Symbol rate | 2400 symbols/s | 4800 symbols/s | table 2.3-1 |
+| Deviation of the outer symbols (+3, -3) | 1050 Hz | 2400 Hz | table 3.3-1 |
+| Transmit filter | root raised cosine, roll-off 0.2, times the shaper sin(πfT)/(πfT) | same | 3.4 |
+| Receive filter | root raised cosine times the inverse shaper | same | 3.5 |
+
+The dibit map is the air interface's (`01` +3, `00` +1, `10` -1, `11` -3; 3.3).
+
+A frame is 192 symbols (80 ms at 4800 bit/s, 40 ms at 9600):
+
+| Symbols | Field | Bits |
+|---|---|---|
+| 0-9 | Frame sync word (FSW), `CDF59` | 20 |
+| 10-17 | LICH | 16 |
+| 18-47 | SACCH | 60 |
+| 48-191 | four VCH of 72 bits, or a FACCH1 in VCH 1-2 and/or 3-4 | 288 |
+
+A transmission opens with a preamble: the reference deviation pattern (`5F` three times, 3.6), then `5775FD` (4.4.3),
+24 symbols. Every frame but the FSW is scrambled (4.6: X⁹ + X⁴ + 1, starting at `0 1 1 1 0 0 1 0 0`, one bit per
+dibit's high bit).
+
+The LICH (4.5.1, figure 4.5-7): seven bits (RF channel type 2, functional channel 2, steal option 2, direction 1) and
+even parity over the first four, each bit sent as an outer symbol (0 as `01`, 1 as `11`). A conventional voice
+channel's frames are RDCH (`10`).
+
+| Functional channel (USC) | Meaning |
+|---|---|
+| `00` | SACCH non-superframe: a call's first and last frames |
+| `10` | SACCH superframe: a call's voice frames; four make a superframe |
+| `11` | SACCH superframe whose FACCH1 frame is idle (9600 bit/s, TS 1-B 4.1.2.1) |
+| `01` | UDCH (data): refused |
+
+| Steal option | VCH 1-2 | VCH 3-4 |
+|---|---|---|
+| `00` | FACCH1 | FACCH1 |
+| `01` | FACCH1 | voice |
+| `10` | voice | FACCH1 |
+| `11` | voice | voice |
+
+## 2. Fields and FEC (`core/nxdn/nxdn_frame.c`, `core/fec/conv.c`)
+
+| Field | Content | Code | Clause |
+|---|---|---|---|
+| SACCH | SR (structure 2 bits, RAN 6), 18 bits of message | CRC6 (x⁶+x⁵+x²+x+1), 4 tail bits, rate 1/2 K=5, punctured to 60 bits (`111111 / 110110`), interleaved in rows of 12 | 4.5.3 |
+| FACCH1 | one 80-bit layer 3 message | CRC12 (x¹²+x¹¹+x³+x²+x+1), 4 tail bits, rate 1/2 K=5, punctured to 144 bits (`11 / 01`), interleaved in rows of 16 | 4.5.4 |
+| VCH | 72 bits of voice with the voice frame's own FEC | none on the frame level (5) | 4.5.2, 7.2 |
+
+The convolutional code is G1 = 1 + D³ + D⁴, G2 = 1 + D + D² + D⁴ (4.5.3). The CRCs start with all ones and are sent
+highest register bit first (figures 4.5-10, 4.5-11).
+
+The Viterbi decoder is shared (`core/fec/conv.c`): any rate 1/2 code of constraint length 5, soft or hard, punctured
+bits as erasures. Its memory is the caller's: one `uint16_t` of decisions per input bit (192 bytes for a FACCH1),
+plus 64 bytes of path metrics and 32 of branch outputs on the stack (160 bytes of stack on Cortex-M4 at `-Os`). About
+160 operations per input bit:
+
+| Decode | Input bits | Operations |
+|---|---|---|
+| SACCH | 36 | about 5,800 |
+| FACCH1 | 96 | about 15,400 |
+| A voice frame (SACCH) | | about 5,800 per frame: 72,000/s at 4800 bit/s |
+| A header or FACCH1 frame (SACCH, two FACCH1) | | about 36,500 |
+
+Soft values come from the frame's soft symbols: a dibit's high bit by the sign, its low bit by the distance from the
+inner level. The free distance after puncturing is 5 (SACCH) and 4 (FACCH1).
+
+## 3. Receive (`core/nxdn/nxdn_rx.c`)
+
+The framer looks for two patterns:
+
+| Pattern | Symbols | Errors | Where |
+|---|---|---|---|
+| FSW | 10 | 2 bits | every frame (5.3.1.2, N5) |
+| Preamble tail and FSW | 19 | 3 bits | a transmission's start only (N6 = 1) |
+
+A 10-symbol pattern turns up in noise and in payload, so the head hook decides whether a frame is there:
+
+| Case | Result |
+|---|---|
+| LICH parity holds, RDCH, not UDCH, at most one LICH symbol inner | the frame is taken; the SACCH is decoded |
+| SACCH CRC holds and its RAN is not ours (unless ours is 0) | refused, counted (`ran_rejects`): another system on the channel |
+| LICH lost inside a call's superframes | up to two frames in a row are placed by the call's order |
+| Five frames without a sync (N7) | the signal is lost |
+
+The profile: 4-level, root raised cosine 0.2, the deviations of 1, `bw` 12.5 kHz (the narrowest a radio sets; 6.25
+kHz is open, 9), and `sync_any_syms` = 192: a sync opens every frame, though none is 24 symbols long
+([air-interface.md](air-interface.md) 2).
+
+## 4. The call layer (`core/nxdn/nxdn_call.c`)
+
+Messages (TS 1-B 6.4): VCALL `01` and TX_REL `08` carry the same octets (type, control option, call type and voice
+option, source ID, destination ID, cipher and key ID in VCALL only). VCALL_IV `03` carries an encrypted call's
+initialization vector. IDs are 16 bits; `FFFF` is all.
+
+Receive:
+
+| Frame | Effect |
+|---|---|
+| Header (non-superframe, two FACCH1 VCALL) | a call starts with its fields |
+| A superframe frame without a call | a call starts as a late entry; its fields come once the four SACCH parts (structures 1/4 to 4/4) are in, in order (TS 1-B 4.1.6) |
+| VCALL_IV in either FACCH1 | the call is encrypted |
+| Header VCALL with other fields during a call | the old call ended unseen: a new one starts |
+| TX_REL, or the signal lost | the call ends |
+
+Voice is handed on only once the VCALL is in, the cipher is none, no VCALL_IV was seen and the voice option is half
+rate (4800 or 9600 EHR). Everything else is counted (`voice_held`), not played.
+
+Transmit (TS 1-B 4.1.3): preamble, a header frame (SACCH IDLE, VCALL in both FACCH1), superframe frames (SACCH VCALL
+part 1/4 to 4/4, four VCH), and a release frame (SACCH IDLE, TX_REL in both FACCH1). Frames go out symbol by symbol:
+a voice frame's FSW, LICH, SACCH and first VCH leave with its first voice frame, each later voice frame releases the
+next 36 symbols. At 9600 bit/s every second frame is a FACCH1 frame (TS 1-B 4.1.2.1). When the key is let go, the
+frame in hand is filled with silence; a frame with nothing on air yet is dropped and the release frame follows the
+one before. The direction bit is inbound (table 5.2-2).
+
+## 5. Voice
+
+A VCH is one 20 ms voice frame of the half-rate vocoder (3600 bit/s with FEC, 2450 without; 7.2), 72 bits. NXDN
+carries it scrambled with the frame (2) and otherwise as the vocoder gives it: its FEC is the vocoder's. The
+standard's two FEC test frames (7.2.1) give the same 72 bits through the DMR side's frame FEC (`nxdnTest`), so the
+frame is the one the board's DMR vocoder takes.
+
+The voice path is that hosted vocoder, through `hal_vocoder_t`: the engine's `rx_voice` hook hands each 72-bit frame
+on, `tx_voice` takes one. Nothing in the tree encodes or decodes NXDN speech: the engine, the call layer, the tests
+and `nxdntool` move made-up 72-bit patterns.
+
+| Open | What |
+|---|---|
+| Bit order | the order of the 72 bits the vocoder's interface expects against the NXDN VCH order (7.2): to check on the first board that connects it |
+| Silence | the engine's `silence` frame comes from the vocoder; none is defined yet |
+| 9600 bit/s full rate (EFR, 144-bit VCH, 7200 bit/s) | out of scope: such calls are held, not played |
+
+## 6. Settings a channel will need
+
+Not written: the codeplug and the radio core carry none of this yet.
+
+| Setting | Values | Notes |
+|---|---|---|
+| Rate | 4800 bit/s (6.25 kHz), 9600 bit/s (12.5 kHz) | the engine's `rate9600`; a rate change is a new session |
+| RAN, receive | 0 to 63 | 0 takes every RAN (TS 1-B 4.1.7.1) |
+| RAN, transmit | 1 to 63 | |
+| Unit ID | 1 to 65519 (9) | the source of what the radio sends |
+| Call | group or individual, ID | `tx_call_type`, `tx_dst` |
+| Group squelch | 0 (RAN only) or a group ID | `rx_gid`: group calls to it or to all, individual calls to the unit (TS 1-B 4.1.7) |
+| Talk-around | on, off | direct or through a repeater; the frames are inbound either way (table 5.2-2) |
+| Emergency | on, off | the control option's bit |
+| Bandwidth | 6.25 kHz at 4800 bit/s | radios set 12.5 kHz today (9) |
+
+## 7. The engine (`core/nxdn/nxdn_engine.c`)
+
+`nxdn_engine` is NXDN on a channel: the call layer on an air interface session, as `p25_engine` is P25's
+([p25.md](p25.md) 6). The settings are those of 6 plus `silence`, the hooks `rx_start`, `rx_update`, `rx_voice`,
+`rx_end` and `tx_voice`. A call that is not played is still tracked: the view says a call is on the channel, from
+whom, to whom, encrypted or not. `nxdn_engine_set` changes the RAN and squelch while running; the call in hand is
+judged again at its next voice frame.
+
+Transmit follows p25.md 6: prepare (preamble and header queued), the radio core keys, go, voice pulled as the queue
+drains (a frame not ready is waited for while the queue holds more than the provider's lead plus a chunk, then
+silence goes), stop (the frame on air finished, the release frame), `AIR_TX_DONE`, clear.
+
+Memory on Cortex-M4 (`-Os`):
+
+| Item | Bytes |
+|---|---|
+| `nxdn_engine_t` (session, call layer both ways, frame buffers) | 1104 |
+| of it `nxdn_call_rx_t` / `nxdn_rx_t` / the decoders' memory | 488 / 416 / 384 |
+| `nxdn_call_tx_t` | 82 |
+| Code: frame codec, receive, call layer, engine, Viterbi | 1658 + 615 + 1659 + 1054 + 712 |
+| Deepest receive stack below the framer | about 310 (call layer 80, field decoder 72, Viterbi 160) |
+
+The radio core needs from a board: a provider (`board_t.air`) whose fit takes 2400 or 4800 symbols/s with a 10- and a
+19-symbol sync, and its vocoder (`hal_vocoder_t`) for the 72-bit frames.
+
+## 8. Tests
+
+| Test | Covers |
+|---|---|
+| `tests/host/fecTest.c` (`test_conv`) | the Viterbi decoder: clean, punctured, soft against hard in noise |
+| `tests/host/nxdnTest.c` | the scrambler against its register, the syncs, the LICH and its parity, SACCH and FACCH1 round trips through errors and CRC checks, VCH places, the 7.2.1 FEC frames, messages; calls through the framer: clear, RAN squelch, RAN 0, late entry, LICH coasting, symbol errors, a header sync with an error, encrypted, 9600 bit/s |
+| `tests/host/nxdnEngineTest.c` | two engines on made-up providers at both rates: a call heard with its fields and voice in order, an encoder stall covered by silence, no underruns, late entry, group and individual squelch, a squelch change mid-call, an abort, another RAN, RAN 0, an encrypted call; a call through a modeled discriminator tap and the soft modem at 2400 symbols/s, eight calls per noise level |
+| `tools/bench/nxdntool.py selftest` | the bench tool (below) both ways at both rates, with bit errors and through the soft modem |
+
+The soft modem test (8 kHz tap, 2000 counts per kHz, so the outer level is 2100 counts and the step between levels
+1400): every call whole up to 300 counts of noise; at 400 and 500 one call in eight misses its header and is joined
+late; at 600 three in eight are whole; every call is still found up to 700. The voice bits there are raw channel
+bits: their own FEC is the vocoder's.
+
+`tools/bench/nxdntool.py` (built from `tools/bench/nxdn/`) runs the firmware's code on the host: `gen` writes a call as
+symbols with an expect file, `mod` turns symbols into discriminator samples, `decode` and `disc` read them back
+through the framer (and the soft modem) and compare. Voice is made-up patterns.
+
+## 9. Unconfirmed
+
+Facts the documents leave open, and what the code assumes. The documents have no frame-level test vectors (no CRC or
+scrambler examples), so the codec checks against itself and the clauses only.
+
+| Item | Assumed | Where |
+|---|---|---|
+| Scrambler: is the first output bit the register's state before or after the first shift | before: the sequence starts `0 1 1 1 0 0 1 0 0` | 4.6 |
+| CRC register form (the bit order of the remainder on air) | highest register bit first, as figure 4.5-10 draws it | 4.5.3, 4.5.4 |
+| Encoder start state | zero | 4.5.3 |
+| What a 9600 bit/s call's FACCH1 frames carry | the VCALL again | TS 1-B 4.1.2.1 |
+| The transmit shaper | the soft modem and `nxdntool mod` use root raised cosine alone on receive; the sinc shaper is in the model only | 3.4, 3.5 |
+| A 6.25 kHz channel | radios set 12.5 kHz; whether a board's filter can do 6.25 is per board | table 2.3-1 |
+| A short sync | one wrong symbol in a header's FSW makes the framer miss the header (10 symbols, the fit's limit); the call is joined late at the next superframe | 5.3.1.2 |
+| Unit ID range | 1 to 65519 (the top IDs are special) | TS 1-B |
+
+## 10. Not written
+
+The radio core's NXDN channel mode, the codeplug and site editor settings (6), UI, scan, the vocoder connection (5),
+9600 bit/s full rate, data (UDCH, short data), trunking (RCCH), status and other supplementary messages,
+encryption, a transmit filter in a provider.
