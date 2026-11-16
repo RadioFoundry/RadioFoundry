@@ -746,6 +746,18 @@ slot: TXRX_CTRL = 0 (or 0x40 to listen for a response). Sequence for a packet: d
 (0x70/0x80/0xA0), optional terminator. CSBK signaling: optional preamble CSBKs then the function CSBK, all 0x30
 (datasheet appendices B, C). Open RX afterwards to catch the response.
 
+**Rate 3/4 blocks don't decode.** The chip's trellis encoder doesn't start each rate 3/4 block in state 0
+(TS 102 361-1 B.2.2). A block re-encodes bit for bit from the CPU's 18 octets with start state 4 or 7, varying
+between blocks and tries, and sometimes one more info bit differs in the second constellation point. A receiver that
+starts its decoder in state 0, as the standard has it, takes the wrong path through the first tribits: octets 0-1 (a
+confirmed block's DBSN and CRC-9) come out wrong. A receiver that checks each block's CRC-9 (the SDR bench's decoder)
+drops the blocks; the commercial portable of [dmr-data.md](dmr-data.md) 12.9 takes the packets anyway, and doesn't
+take confirmed rate 1/2 at all. Which rate HR_C7000 radios should send is open. Rate 1/2 blocks, headers and CSBKs are
+sent exactly. SEND_TYPE b8 makes no difference, and the register map has no encoder reset. The glue sets
+`hal_dmr_modem_t.tx_rate34_bad`, so the core sends no rate 3/4 of its own: confirmed IP goes at rate 1/2
+([dmr-data.md](dmr-data.md) 12.9). Rate 3/4 blocks the radio relays (hotspot, repeater) keep their rate and
+have the same fault.
+
 ### 6.5 BS activation (repeater wake)
 
 No layer-3 BS activation: LAYER2_BS_MODE, BS_* registers and WORK_MODE values 0x73/0x76/0x77 are not used. What they do when written is in 2.9 (measured).

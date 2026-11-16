@@ -2208,7 +2208,8 @@ static bool data_own_position(lrrpPosition_t *position, uint32_t now_ms, void *c
 static void data_init(radio_sm_t *sm)
 {
 	dmrDataEnv_t env = { .txStart = data_tx_start, .channelClear = data_channel_clear,
-			     .inRxGroup = data_in_rx_group, .ctx = sm };
+			     .inRxGroup = data_in_rx_group, .ctx = sm,
+			     .noRate34 = board.dmr != NULL && board.dmr->tx_rate34_bad };
 #if CONFIG_DMR_AIR_QUEUE
 	airqInit();
 #endif

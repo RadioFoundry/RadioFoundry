@@ -324,6 +324,16 @@ size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, si
 		}
 		dmrDataServiceSetTxSpacing((uint16_t)(a[0] | (a[1] << 8)), a[2] != 0);
 		break;
+	case DL_DATA_OP_IP_CONFIRMED_RATE: {
+		static const uint8_t rate[3] = { DMR_TYPE_RATE_3_4, DMR_TYPE_RATE_1_2, DMR_TYPE_RATE_1 };
+
+		if (n < 1 || a[0] > 2) {
+			st = DL_ST_BAD_ARG;
+			break;
+		}
+		dmrDataServiceSetIpConfirmedRate(rate[a[0]]);
+		break;
+	}
 	case DL_DATA_OP_IP_SEND: {
 #if CONFIG_DMR_IP_GATEWAY
 		uint8_t l4[8 + DL_REQ_MAX];

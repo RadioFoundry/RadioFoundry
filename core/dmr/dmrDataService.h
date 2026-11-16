@@ -131,6 +131,9 @@ typedef struct
 	// Our position for LRRP (docs/spec/position.md): false for none, and NULL for none ever. Only asked when the
 	// settings say hasGps
 	bool (*ownPosition)(lrrpPosition_t *position, uint32_t nowMs, void *ctx);
+	// The modem can't send rate 3/4 blocks a receiver decodes (hal_dmr_modem_t.tx_rate34_bad): confirmed IP packets
+	// go at rate 1/2
+	bool noRate34;
 	void *ctx;
 } dmrDataEnv_t;
 
@@ -235,6 +238,9 @@ void dmrDataServicePostEvent(uint8_t kind, uint32_t id);
 void dmrDataServiceSetTxSpacing(uint16_t guardMs, bool chain);
 uint16_t dmrDataServiceTxGuardMs(void);
 bool dmrDataServiceTxChain(void);
+// The block rate of confirmed IP packets (DMR_TYPE_RATE_3_4 by default, DMR_TYPE_RATE_1_2 or DMR_TYPE_RATE_1); not stored
+void dmrDataServiceSetIpConfirmedRate(uint8_t dataType);
+uint8_t dmrDataServiceIpConfirmedRate(void);
 // Every 10-25 ms with the time and the channel
 void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *channel);
 // A data / control burst heard on our slot (dmr_call_set_data_rx)
