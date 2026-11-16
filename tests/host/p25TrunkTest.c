@@ -1065,7 +1065,7 @@ static void e_voice(const uint8_t imbe[P25_IMBE_BYTES], uint8_t errs, void *ctx)
 	(void)imbe;
 	(void)ctx;
 	rig.frames++;
-	if (errs >= P25_VOICE_ERRS_BAD)
+	if (P25_VOICE_ERRS_BAD(errs))
 		rig.bad_frames++;
 }
 static void e_end(void *ctx) { (void)ctx; rig.ends++; }
