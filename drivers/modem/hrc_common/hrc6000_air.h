@@ -15,6 +15,12 @@
 // (page 2 0x00 and 0x24, 36 bytes each) in alternate slots and reads a half while it sends it, so each timeslot
 // interrupt writes only the half the next slot reads. The PA is keyed once, held, and dropped after the last chunk.
 // Deviation: the two-point pair (0x45, 0x46) read at tx_begin is scaled to the profile and put back after.
+//
+// Receive through the FM copy (10.6), for a profile the correlator can't take, on a board whose RF chip gives the
+// HR_C6000 the flat discriminator in its DMR set-up: the chip in FM with its audio filters and the feed-through off,
+// each 256-sample half of the FM receive RAM (8 kHz) copied into a ring at its interrupt (0x82 bit 1). A session runs
+// the soft modem (core/air/air_softmodem.h) on the ring at task level; the same ring is the board's receive tap
+// (hal_baseband.h) when no session is open.
 #ifndef HRC6000_AIR_H
 #define HRC6000_AIR_H
 
@@ -24,6 +30,8 @@
 #include "hrc.h"
 #include "hrc6000_dmr.h"
 #include "hal_air.h"
+#include "hal_baseband.h"
+#include "air/air_softmodem.h"
 
 #define HRC6000_AIR_SYMS	144	// one record or one TX RAM half: 30 ms at 4800 symbols/s
 #define HRC6000_AIR_RAW_BYTES	288	// a record: two bytes per symbol
@@ -34,6 +42,12 @@
 #define HRC6000_AIR_TX_LEAD_MS	60	// a chunk is taken a slot before it is on air; one more slot of margin
 #define HRC6000_AIR_TIME_US	3000	// t_us accuracy: the receive delay through the chip is not measured
 #define HRC6000_AIR_SYNC_AT	66	// where a detected sync sits in a record in air order
+#define HRC6000_AIR_COPY_HALF	256	// samples per FM receive RAM half: 32 ms at 8 kHz
+#define HRC6000_AIR_RING	512	// copy samples: two halves (a power of two)
+#define HRC6000_AIR_COPY_HZ	8000u
+#define HRC6000_AIR_COPY_LO_HZ	0u	// the copy's band with the filters off, on a flat discriminator (10.6)
+#define HRC6000_AIR_COPY_HI_HZ	3400u
+#define HRC6000_AIR_COPY_COUNTS_PER_KHZ 0u	// not known: the soft modem fits the level on each sync
 
 typedef struct {
 	uint32_t t_us;
@@ -48,15 +62,20 @@ typedef struct {
 // The large buffers. The board hands over memory the DMR slot engine leaves unused while a session holds the chip (its
 // event queue), so a session costs no RAM of its own: hence may_alias
 typedef struct {
-	uint8_t raw[HRC6000_AIR_RAW_BYTES];
-	hrc6000_air_rec_t rec[HRC6000_AIR_RXQ];
+	union {
+		struct {	// receive through the correlator: a record as read, then unpacked
+			uint8_t raw[HRC6000_AIR_RAW_BYTES];
+			hrc6000_air_rec_t rec[HRC6000_AIR_RXQ];
+		};
+		int16_t ring[HRC6000_AIR_RING];	// ... or through the FM copy
+	};
 	air_tx_chunk_t txq[HRC6000_AIR_TXQ];
 } __attribute__((may_alias)) hrc6000_air_buf_t;
 
 typedef struct {
 	uint8_t kind;		// air_event_kind_t
+	uint8_t arg;		// AIR_EV_RX: the record's place in the queue (the others carry none)
 	uint32_t t_us;
-	uint32_t arg;
 } hrc6000_air_ev_t;
 
 typedef struct {
@@ -73,6 +92,12 @@ typedef struct {
 	uint32_t tx_done;
 	uint32_t rf_fail;	// PA switches the board could not do
 	uint32_t stalls;	// no timeslot interrupt for 200 ms while transmitting: dropped
+	uint32_t halves;	// FM copy halves taken
+	uint32_t overruns;	// ... dropped: the ring was full (the task was behind)
+	uint32_t half_fixes;	// ... where the RAM showed the other half complete than the one expected
+	uint32_t chunks;	// soft modem chunks handed out
+	uint32_t modem_us;	// time in the soft modem ...
+	uint32_t modem_span_us;	// ... for this much signal
 } hrc6000_air_stats_t;
 
 // Receive is the rest state; the transmit states follow the slots: START (set up, the first slot not yet taken), RUN,
@@ -84,13 +109,29 @@ typedef struct hrc6000_air {
 	hrc_t *dev;
 	const hrc6000_dmr_ops_t *ops;
 	hrc6000_air_buf_t *buf;
+	air_softmodem_t *sm;	// the soft modem's state (memory the board lends), NULL: no FM copy receive
+	const hal_baseband_t *tap_desc;	// the FM copy's band on this board, NULL: none
 	bool open;
 	const air_profile_t *p;
 	air_event_cb_t cb;
 	void *cb_ctx;
 	uint32_t fit;
 
-	// Receive
+	// Receive through the FM copy (a tap or a session's soft modem)
+	bool tap;		// the hal_baseband_t tap is open (no session)
+	bool rx_copy;		// the session receives through the copy
+	volatile bool copy;	// the chip is in the copy set-up and the system interrupt takes halves
+	bool copy_saved;
+	uint8_t saved_34, saved_81;	// FM audio filters and the interrupt mask before the copy set-up
+	uint8_t ram_half;	// the RAM half the next copy interrupt completes
+	bool last_any;
+	uint16_t last_word[2];	// each RAM half's last sample at the last copy interrupt
+	volatile uint32_t rhead, rtail;	// ring samples, free running: the interrupt moves rhead, the task rtail
+	uint32_t t_half[2];	// the time of each ring half's first sample
+	bool cgap;		// the next half taken does not follow the ring's last
+	bool gap_half[2];	// ... per ring half as taken: the soft modem starts over there
+
+	// Receive through the correlator
 	bool rx_on;		// the profile can be received (AIR_FIT_RX)
 	uint8_t sync_id;	// the pattern in the correlator
 	uint8_t rearm_k;	// records without a sync detection that re-arm it
@@ -135,6 +176,9 @@ typedef struct hrc6000_air {
 
 // Pure: what the chip can do with a profile (hal_air_t.fit, without AIR_FIT_UNTESTED: the board adds that)
 uint32_t hrc6000_air_fit(const air_profile_t *p);
+// Pure: the same with the FM copy's receive (the soft modem's fit on tap) where the correlator gives none; tap NULL:
+// the board has no copy
+uint32_t hrc6000_air_fit_tap(const air_profile_t *p, const hal_baseband_t *tap);
 // Pure: the two-point pair for a transmit deviation, from the pair calibrated for DMR (1944 Hz outer)
 void hrc6000_air_mod_pair(const air_profile_t *p, uint8_t cal2, uint8_t cal1, uint8_t *mod2, uint8_t *mod1);
 // Pure: one record (2 bytes per symbol, chip order) to air order without its first skip symbols, soft scaled to
@@ -145,7 +189,9 @@ int16_t hrc6000_air_unpack(const uint8_t *raw, bool synced, uint8_t skip, int16_
 // pattern's +3 and -3 symbols (syms: the correlator's pattern, outer symbols only). 0 when the pattern has one sign
 int16_t hrc6000_air_sync_outer16(const uint8_t *raw, const uint8_t *syms);
 
-void hrc6000_air_init(hrc6000_air_t *a, hrc_t *dev, const hrc6000_dmr_ops_t *ops, hrc6000_air_buf_t *buf);
+// sm and tap: the soft modem's memory and the FM copy's band, both NULL on a board without the copy
+void hrc6000_air_init(hrc6000_air_t *a, hrc_t *dev, const hrc6000_dmr_ops_t *ops, hrc6000_air_buf_t *buf,
+		      air_softmodem_t *sm, const hal_baseband_t *tap);
 // The chip in DMR and the slot engine halted (task level). Receiving when the profile fits for it
 bool hrc6000_air_open(hrc6000_air_t *a, const air_profile_t *p, air_event_cb_t cb, void *ctx);
 // PA off, the deviation pair back, the chip back in the DMR receive set-up (when chip, else left as it is: the board
@@ -161,6 +207,13 @@ void hrc6000_air_isr_sys(hrc6000_air_t *a);
 void hrc6000_air_isr_rftx(hrc6000_air_t *a);
 // The board's modem task: events to the callback, the re-arm's second write, the transmit watchdog
 void hrc6000_air_poll(hrc6000_air_t *a);
+
+// The tap (hal_baseband_t receive): the chip in DMR with the slot engine halted, no session (task level)
+bool hrc6000_air_tap_start(hrc6000_air_t *a);
+uint16_t hrc6000_air_tap_read(hrc6000_air_t *a, int16_t *buf, uint16_t max);
+uint32_t hrc6000_air_tap_time(const hrc6000_air_t *a);	// the next sample tap_read gives
+// The chip back in the DMR receive set-up (chip; else left as it is: the board has it in another mode)
+void hrc6000_air_tap_stop(hrc6000_air_t *a, bool chip);
 
 bool hrc6000_air_tx_begin(hrc6000_air_t *a);
 bool hrc6000_air_tx_queue(hrc6000_air_t *a, const air_tx_chunk_t *c);

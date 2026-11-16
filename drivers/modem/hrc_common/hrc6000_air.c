@@ -12,6 +12,7 @@
 #define R_ACCESS0	0x20
 #define R_ACCESS1	0x21
 #define R_CODEC_CTL	0x22
+#define R_FM_FILT	0x34	// FM audio filters: bit 7 band-pass, 6 expander, 5 de-emphasis, 2 receive low-pass
 #define R_FM_AUDIO	0x36	// the FM feed-through to the codec's line out
 #define R_L2_CTL	0x40
 #define R_SLOT_CTL	0x41
@@ -19,6 +20,8 @@
 #define R_MOD1		0x46
 #define R_RX_TYPE	0x51
 #define R_SYNC_TYPE	0x5F
+#define R_FM_TX		0x60
+#define R_INT_MASK	0x81
 #define R_INT_FLAGS	0x82
 #define R_INT_CLEAR	0x83
 // Page 1: the correlator's pattern (write only), page 2: the receive record and the two TX RAM halves
@@ -41,6 +44,15 @@
 #define CODEC_ENC	0x86
 #define INT_PHY		0x01	// 0x82 bit 0: a physical layer record is ready
 #define CLASS_SYNC	2	// 0x51 bits 1-0 on a record with a sync detection
+#define MODE_FM		0x80
+#define FILT_COPY	0x00	// 0x34 in the copy set-up: every receive filter off (bits 4-3 are transmit only)
+#define INT_FM_RX	0x02	// 0x82 bit 1 in FM: a receive RAM half is full
+#define COPY_RAM	0x030u	// page 2: the two FM receive halves, 512 bytes each, big endian samples
+#define COPY_HALF_BYTES	(2u * HRC6000_AIR_COPY_HALF)
+#define SAMPLE_US	125u	// 8 kHz
+#define HALF		HRC6000_AIR_COPY_HALF
+// The copy's sign against the carrier: positive = above it, as hal_baseband.h has it (10.6)
+#define COPY_SIGN	1
 
 #define SLOT_US		30000u
 #define HALF_SYM_US	104u	// half a symbol at 4800 symbols/s: t_us is a symbol's center
@@ -105,6 +117,8 @@ static void notify(hrc6000_air_t *a)
 	}
 }
 
+_Static_assert(HRC6000_AIR_RING == 2 * HRC6000_AIR_COPY_HALF, "the ring is two copy halves");
+
 // --- Pure: fit, deviation, record layout ---
 
 static bool outer_only(const air_sync_t *s)
@@ -160,6 +174,17 @@ uint32_t hrc6000_air_fit(const air_profile_t *p)
 	uint32_t t = tx_target_hz(p);
 	if (t * 10u < TX_DEV_MIN * 9u || t * 10u > TX_DEV_MAX * 11u) {
 		f |= AIR_FIT_DEV_APPROX;	// outside the pair's checked range
+	}
+	return f;
+}
+
+uint32_t hrc6000_air_fit_tap(const air_profile_t *p, const hal_baseband_t *tap)
+{
+	uint32_t f = hrc6000_air_fit(p);
+
+	// The copy receives what the correlator can't; transmit stays the chip's, so a profile it can't send gets nothing
+	if (f != 0 && (f & AIR_FIT_RX) == 0 && tap != NULL) {
+		f |= air_softmodem_rx_fit(p, tap);
 	}
 	return f;
 }
@@ -256,7 +281,7 @@ static const int8_t ERASED_SOFT[HRC6000_AIR_SYMS];
 
 // TX_SPACE events in a row are one (the count is tx_space's), and the last place is kept for TX_DONE: the core's TX
 // off waits on it
-static void ev_push(hrc6000_air_t *a, uint8_t kind, uint32_t t, uint32_t arg)
+static void ev_push(hrc6000_air_t *a, uint8_t kind, uint32_t t, uint8_t arg)
 {
 	uint8_t used = (uint8_t)(a->ev_head - a->ev_tail);
 
@@ -293,9 +318,116 @@ static void write_pattern(hrc6000_air_t *a, const uint8_t *syms)
 	(void)hrc_write_burst(a->dev, HRC_PAGE_AUX, AUX_PATTERN, syms, AIR_SYNC_SYMS_MAX / 4);
 }
 
+// --- The FM copy (10.6) ---
+
+// The time of ring sample i: the halves are whole in the ring, each stamped when its interrupt came
+static uint32_t sample_time(const hrc6000_air_t *a, uint32_t i)
+{
+	return a->t_half[(i / HALF) % 2u] + (i % HALF) * SAMPLE_US;
+}
+
+// The chip from DMR (or the physical layer) to the copy set-up: FM receive with every audio filter off, nothing to
+// the line out, the FM receive RAM's interrupt on
+static void copy_on(hrc6000_air_t *a)
+{
+	if (!a->copy_saved) {
+		uint8_t f = 0, m = 0;
+		a->copy_saved = hrc_read(a->dev, HRC_PAGE_SYS, R_FM_FILT, &f) && hrc_read(a->dev, HRC_PAGE_SYS, R_INT_MASK, &m);
+		a->saved_34 = f;
+		a->saved_81 = m;
+	}
+	w(a, R_SLOT_CTL, CTL_NONE);
+	w(a, R_FM_AUDIO, 0x00);		// rule 1 (hal_air.h) before the mode changes: FM receive never to the line out
+	w(a, R_FM_TX, 0x00);
+	w(a, R_FM_FILT, FILT_COPY);
+	w(a, R_MODE, MODE_FM);
+	w(a, R_INT_MASK, (uint8_t)((a->copy_saved ? a->saved_81 : 0x19u) | INT_FM_RX));
+	w(a, R_INT_CLEAR, 0xFF);
+	a->last_any = false;	// which half fills next is found again (take_half)
+	a->cgap = true;
+	a->rx_paused = false;
+	__atomic_thread_fence(__ATOMIC_RELEASE);
+	a->copy = true;
+}
+
+// The registers copy_on changed back (chip: the chip is still in DMR, else the board's mode entry wrote its own)
+static void copy_restore(hrc6000_air_t *a, bool chip)
+{
+	a->copy = false;
+	if (chip && a->copy_saved) {
+		w(a, R_INT_MASK, a->saved_81);
+		w(a, R_FM_FILT, a->saved_34);
+		w(a, R_INT_CLEAR, 0xFF);
+	}
+	a->copy_saved = false;
+}
+
+// Back to the DMR receive set-up; the board restarts the slot engine (5.1) after
+static void dmr_setup(hrc6000_air_t *a)
+{
+	w(a, R_SLOT_CTL, CTL_NONE);
+	w(a, R_MODE, a->dev->chip->dmr_mode(false));
+	write_pattern(a, hrc_ms_data_sync);
+	w(a, R_L2_CTL, L2_PASSIVE);
+}
+
+// A RAM half is full (0x82 bit 1): into the ring, or dropped when the task has not made room. Which half: the one
+// whose last sample changed since the last interrupt (the other one's last sample is 32 ms older than its first);
+// when both or neither did (a steady input), the other half than the last one
+static void take_half(hrc6000_air_t *a, uint32_t t)
+{
+	uint16_t last[2];
+
+	for (uint8_t i = 0; i < 2; i++) {
+		uint8_t b[2] = { 0, 0 };
+		(void)hrc_ram(a->dev, HRC_PAGE_DATA, (uint16_t)(COPY_RAM + i * COPY_HALF_BYTES + COPY_HALF_BYTES - 2u), b, 2,
+			      false);
+		last[i] = (uint16_t)(b[0] << 8 | b[1]);
+	}
+	bool first = !a->last_any;
+	uint8_t h = a->ram_half;
+	if (!first && (last[0] != a->last_word[0]) != (last[1] != a->last_word[1])) {
+		uint8_t seen = last[1] != a->last_word[1] ? 1u : 0u;
+		if (seen != h) {
+			a->st.half_fixes++;
+			h = seen;
+		}
+	}
+	a->last_word[0] = last[0];
+	a->last_word[1] = last[1];
+	a->last_any = true;
+	a->ram_half = (uint8_t)(h ^ 1u);
+	if (first) {
+		return;		// the half is not known yet: the next one is
+	}
+	uint32_t hd = a->rhead;
+	if (hd - a->rtail > HRC6000_AIR_RING - HALF) {
+		a->st.overruns++;
+		a->cgap = true;		// the samples after the ring's are not the next ones
+		return;
+	}
+	int16_t *dst = &a->buf->ring[hd % HRC6000_AIR_RING];
+	(void)hrc_ram(a->dev, HRC_PAGE_DATA, (uint16_t)(COPY_RAM + h * COPY_HALF_BYTES), (uint8_t *)(void *)dst,
+		      COPY_HALF_BYTES, false);
+	for (uint16_t i = 0; i < HALF; i++) {
+		const uint8_t *b = (const uint8_t *)(const void *)&dst[i];
+		dst[i] = (int16_t)(COPY_SIGN * (int16_t)(uint16_t)(b[0] << 8 | b[1]));
+	}
+	a->t_half[(hd / HALF) % 2u] = t - (HALF - 1u) * SAMPLE_US;
+	a->gap_half[(hd / HALF) % 2u] = a->cgap;
+	a->cgap = false;
+	__atomic_thread_fence(__ATOMIC_RELEASE);
+	a->rhead = hd + HALF;
+	a->st.halves++;
+}
+
 // Receive (10.2). The timing starts again: the next chunk is a gap, FREE_RUN until a sync
 static void rx_setup(hrc6000_air_t *a)
 {
+	if (a->rx_copy) {
+		copy_on(a);	// receive through the FM copy (10.6); the soft modem starts over at its gap
+		return;
+	}
 	w(a, R_SLOT_CTL, CTL_NONE);
 	w(a, R_MODE, MODE_PHY_RX);
 	if (a->rx_on) {
@@ -554,6 +686,13 @@ void hrc6000_air_isr_sys(hrc6000_air_t *a)
 	if (flags != 0) {
 		w(a, R_INT_CLEAR, flags);	// else the line stays low and no later record interrupts
 	}
+	if (a->copy) {
+		if ((flags & INT_FM_RX) != 0) {
+			take_half(a, t);
+			notify(a);
+		}
+		return;
+	}
 	if (!a->open || !a->rx_on || a->rx_paused || a->rearm_hold || a->tx != HRC6000_AIR_RX
 	    || (flags & INT_PHY) == 0) {
 		return;
@@ -573,27 +712,123 @@ void hrc6000_air_isr_rftx(hrc6000_air_t *a)
 
 // --- Task side ---
 
-void hrc6000_air_init(hrc6000_air_t *a, hrc_t *dev, const hrc6000_dmr_ops_t *ops, hrc6000_air_buf_t *buf)
+void hrc6000_air_init(hrc6000_air_t *a, hrc_t *dev, const hrc6000_dmr_ops_t *ops, hrc6000_air_buf_t *buf,
+		      air_softmodem_t *sm, const hal_baseband_t *tap)
 {
 	memset(a, 0, sizeof(*a));
 	a->dev = dev;
 	a->ops = ops;
 	a->buf = buf;
+	a->sm = sm;
+	a->tap_desc = sm != NULL ? tap : NULL;
+}
+
+bool hrc6000_air_tap_start(hrc6000_air_t *a)
+{
+	if (a->open || a->tap || a->tap_desc == NULL) {
+		return false;
+	}
+	lock(a);
+	a->tap = true;
+	a->rhead = a->rtail = 0;
+	a->copy_saved = false;
+	memset(&a->st, 0, sizeof(a->st));
+	copy_on(a);
+	unlock(a);
+	return true;
+}
+
+uint16_t hrc6000_air_tap_read(hrc6000_air_t *a, int16_t *buf, uint16_t max)
+{
+	if (!a->tap) {
+		return 0;
+	}
+	uint32_t t = a->rtail, n = a->rhead - t;
+	__atomic_thread_fence(__ATOMIC_ACQUIRE);
+	if (n > max) {
+		n = max;
+	}
+	for (uint32_t i = 0; i < n; i++) {
+		buf[i] = a->buf->ring[(t + i) % HRC6000_AIR_RING];
+	}
+	__atomic_thread_fence(__ATOMIC_RELEASE);
+	a->rtail = t + n;
+	return (uint16_t)n;
+}
+
+uint32_t hrc6000_air_tap_time(const hrc6000_air_t *a)
+{
+	return sample_time(a, a->rtail);
+}
+
+void hrc6000_air_tap_stop(hrc6000_air_t *a, bool chip)
+{
+	lock(a);
+	if (a->tap) {
+		copy_restore(a, chip);
+		if (chip) {
+			dmr_setup(a);
+		}
+		a->tap = false;
+	}
+	unlock(a);
+}
+
+// The soft modem's chunks to the session's callback (task level, inside hrc6000_air_poll)
+static void sm_out(const air_chunk_t *c, void *ctx)
+{
+	hrc6000_air_t *a = ctx;
+	air_event_cb_t cb = a->cb;
+
+	a->st.chunks++;
+	if (cb != NULL) {
+		air_event_t ev = { .kind = AIR_EV_RX, .t_us = c->t_us, .arg = 0, .chunk = c };
+		cb(&ev, a->cb_ctx);
+	}
+}
+
+// Copy samples the interrupt put in the ring, through the soft modem a half at a time (each has its own time stamp
+// and gap flag)
+static void rx_samples(hrc6000_air_t *a)
+{
+	for (;;) {
+		uint32_t h = a->rhead, t = a->rtail;
+		__atomic_thread_fence(__ATOMIC_ACQUIRE);
+		if (t == h || !a->open) {
+			return;
+		}
+		if (a->gap_half[(t / HALF) % 2u]) {
+			air_softmodem_rx_reset(a->sm);	// lost samples or a new set-up before this half: timing starts over
+		}
+		uint32_t t0 = now(a);
+		air_softmodem_rx(a->sm, &a->buf->ring[t % HRC6000_AIR_RING], HALF, sample_time(a, t));
+		a->st.modem_us += now(a) - t0;
+		a->st.modem_span_us += HALF * SAMPLE_US;
+		__atomic_thread_fence(__ATOMIC_RELEASE);
+		a->rtail = t + HALF;
+	}
 }
 
 bool hrc6000_air_open(hrc6000_air_t *a, const air_profile_t *p, air_event_cb_t cb, void *ctx)
 {
-	uint32_t f = hrc6000_air_fit(p);
+	uint32_t f = hrc6000_air_fit_tap(p, a->tap_desc);
 
-	if (f == 0 || cb == NULL || a->open) {
+	if (f == 0 || cb == NULL || a->open || a->tap) {
+		return false;
+	}
+	bool copy = (hrc6000_air_fit(p) & AIR_FIT_RX) == 0 && (f & AIR_FIT_RX) != 0;
+	if (copy && !air_softmodem_rx_open(a->sm, p, HRC6000_AIR_COPY_HZ, a->tap_desc->rx_counts_per_khz, sm_out, a)) {
 		return false;
 	}
 	lock(a);
+	a->rx_copy = copy;
+	a->rhead = a->rtail = 0;
+	a->copy_saved = false;
 	a->p = p;
 	a->cb = cb;
 	a->cb_ctx = ctx;
 	a->fit = f;
-	a->rx_on = (f & AIR_FIT_RX) != 0;
+	a->rx_on = (f & AIR_FIT_RX) != 0 && !copy;
 	int s = rx_sync(p);
 	a->sync_id = (uint8_t)(s < 0 ? 0 : s);
 	uint32_t per = (p->sync_every_syms + HRC6000_AIR_SYMS - 1u) / HRC6000_AIR_SYMS;
@@ -625,12 +860,9 @@ void hrc6000_air_close(hrc6000_air_t *a, bool chip)
 		if (a->tx != HRC6000_AIR_RX) {
 			tx_stop(a, now(a), chip);	// its TX_DONE goes nowhere: the session ends
 		}
+		copy_restore(a, chip);
 		if (chip) {
-			// Back to the DMR receive set-up; the board restarts the slot engine (5.1) after
-			w(a, R_SLOT_CTL, CTL_NONE);
-			w(a, R_MODE, a->dev->chip->dmr_mode(false));
-			write_pattern(a, hrc_ms_data_sync);
-			w(a, R_L2_CTL, L2_PASSIVE);
+			dmr_setup(a);
 		}
 		a->open = false;
 		a->cb = NULL;
@@ -660,6 +892,8 @@ void hrc6000_air_suspend(hrc6000_air_t *a)
 		if (a->tx != HRC6000_AIR_RX) {
 			tx_stop(a, now(a), false);
 		}
+		a->copy = false;	// the board's mode entry rewrote what copy_on changed; rx_restart sets it up again
+		a->copy_saved = false;
 		a->rx_paused = true;
 	}
 	unlock(a);
@@ -682,6 +916,9 @@ void hrc6000_air_poll(hrc6000_air_t *a)
 		}
 	}
 	unlock(a);
+	if (a->open && a->rx_copy && !a->rx_paused && a->tx == HRC6000_AIR_RX) {
+		rx_samples(a);
+	}
 	while (a->open && a->ev_tail != a->ev_head) {
 		__atomic_thread_fence(__ATOMIC_ACQUIRE);
 		hrc6000_air_ev_t e = a->evq[a->ev_tail % HRC6000_AIR_EVQ];
@@ -740,6 +977,7 @@ bool hrc6000_air_tx_begin(hrc6000_air_t *a)
 			(void)hrc_set_mod_gain(a->dev, a->tx_mod2, a->tx_mod1);
 		}
 		uint8_t half[HRC6000_AIR_HALF_BYTES];
+		a->copy = false;	// the chip leaves FM: no copy halves while it sends
 		w(a, R_SLOT_CTL, CTL_NONE);
 		w(a, R_MODE, MODE_PHY_TX);
 		w(a, R_ACCESS0, 0x00);

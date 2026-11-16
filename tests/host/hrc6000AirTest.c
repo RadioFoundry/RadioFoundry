@@ -3,8 +3,10 @@
 // HR_C6000 physical layer pipe (drivers/modem/hrc_common/hrc6000_air.c): fit, the two record layouts against golden
 // vectors and across chunk boundaries, soft scaling, the sync flag, gaps and the correlator re-arm, transmit halves per
 // slot interrupt with no stale half, underrun idle, last-chunk padding, the deviation pair set and put back, open /
-// close / open, the slot engine starting again on the memory the session used, and a cheap fuzz. Against a chip
-// simulator: a register file, the receive record RAM, the two TX RAM halves and a fake microsecond clock
+// close / open, the slot engine starting again on the memory the session used, a cheap fuzz, and the FM copy: its fit,
+// set-up, halves in order with their times, a missed interrupt, an overrun, the tap, and the registers put back.
+// Against a chip simulator: a register file, the receive record RAM, the FM receive RAM, the two TX RAM halves and a
+// fake microsecond clock; the soft modem is a stub that keeps the samples it is given
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,6 +35,8 @@ static uint8_t regs[8][256];		// what a read returns
 static uint8_t wr[8][256];		// the last value written
 static uint8_t record[HRC6000_AIR_RAW_BYTES];
 static uint8_t tx_ram[0x48];		// page 2 0x00-0x47: the two halves
+static uint8_t copy_ram[4 * HRC6000_AIR_COPY_HALF];	// page 2 from 0x30 in FM: the two receive halves
+static bool fm_ram;			// page 2 0x30 reads give the FM receive RAM, not a record
 static int half_writes[2];
 
 static bool fake_transfer(void *ctx, const uint8_t *hdr, uint8_t hdr_len, const uint8_t *tx, uint8_t *rx, uint16_t len)
@@ -55,7 +59,10 @@ static bool fake_transfer(void *ctx, const uint8_t *hdr, uint8_t hdr_len, const 
 		}
 	}
 	if (read) {
-		if (page == 2 && addr == 0x30) {
+		if (page == 2 && fm_ram) {
+			CHECK(addr >= 0x30 && addr - 0x30u + len <= sizeof(copy_ram));
+			memcpy(rx, &copy_ram[addr - 0x30u], len);
+		} else if (page == 2 && addr == 0x30) {
 			CHECK(len == HRC6000_AIR_RAW_BYTES);
 			memcpy(rx, record, len);
 		} else {
@@ -114,6 +121,61 @@ typedef struct __attribute__((may_alias)) {
 } air_mem_t;
 #define AIR	(&((air_mem_t *)(void *)eng.evq)->a)
 #define BUF	(&((air_mem_t *)(void *)eng.evq)->b)
+
+// --- The stub soft modem: the samples it is given, each call's time, where it was reset ---
+
+#define SM_MAX	8192
+static air_softmodem_t sm_mem;
+static struct {
+	int16_t s[SM_MAX];
+	int n, calls, opens, resets;
+	uint32_t t[64];
+	int reset_at[16];
+	bool refuse;
+} smg;
+
+uint32_t air_softmodem_rx_fit(const air_profile_t *p, const hal_baseband_t *bb)
+{
+	return p->sym_rate * 5u <= bb->rx_rate_hz * 3u ? AIR_FIT_RX | AIR_FIT_SOFT : 0;
+}
+
+bool air_softmodem_rx_open(air_softmodem_t *m, const air_profile_t *p, uint32_t rate_hz, uint16_t counts_per_khz,
+			   air_softmodem_out_t out, void *ctx)
+{
+	(void)counts_per_khz;
+	memset(m, 0, sizeof(*m));
+	m->p = p;
+	m->out = out;
+	m->ctx = ctx;
+	smg.opens++;
+	return !smg.refuse && rate_hz == HRC6000_AIR_COPY_HZ;
+}
+
+void air_softmodem_rx_reset(air_softmodem_t *m)
+{
+	(void)m;
+	if (smg.resets < 16) {
+		smg.reset_at[smg.resets] = smg.n;
+	}
+	smg.resets++;
+}
+
+// One chunk out per call, so the path to the session's callback is checked too
+void air_softmodem_rx(air_softmodem_t *m, const int16_t *samples, uint16_t n, uint32_t at_us)
+{
+	CHECK(n == HRC6000_AIR_COPY_HALF);
+	if (smg.calls < 64) {
+		smg.t[smg.calls] = at_us;
+	}
+	smg.calls++;
+	for (uint16_t i = 0; i < n && smg.n < SM_MAX; i++) {
+		smg.s[smg.n++] = samples[i];
+	}
+	static const uint8_t hard[1] = { 0 };
+	static const int8_t soft[1] = { 0 };
+	air_chunk_t c = { .t_us = at_us, .nsyms = 1, .sync_at = -1, .hard = hard, .soft = soft };
+	m->out(&c, m->ctx);
+}
 
 // --- Events ---
 
@@ -193,6 +255,8 @@ static void fresh(void)
 	memset(wr, 0, sizeof(wr));
 	memset(&got, 0, sizeof(got));
 	memset(tx_ram, 0, sizeof(tx_ram));
+	memset(copy_ram, 0, sizeof(copy_ram));
+	fm_ram = false;
 	half_writes[0] = half_writes[1] = 0;
 	regs[4][0x45] = 0x2A;	// a DMR calibration pair (1944 Hz outer)
 	regs[4][0x46] = 0x52;
@@ -410,7 +474,7 @@ static void test_receive(void)
 {
 	fresh();
 	air_profile_t p = p25();
-	hrc6000_air_init(AIR, &dev, &ops, BUF);
+	hrc6000_air_init(AIR, &dev, &ops, BUF, NULL, NULL);
 	nx = 0;
 	CHECK(hrc6000_air_open(AIR, &p, on_event, NULL));
 	CHECK(lock_depth == 0);
@@ -505,7 +569,7 @@ static void test_reassembly(void)
 	fresh();
 	hrc6000_dmr_halt(&eng);
 	air_profile_t p = p25();
-	hrc6000_air_init(AIR, &dev, &ops, BUF);
+	hrc6000_air_init(AIR, &dev, &ops, BUF, NULL, NULL);
 	CHECK(hrc6000_air_open(AIR, &p, on_event, NULL));
 	rand_stream(11);
 	// A new signal: the record after the first sync's comes 128 symbols later and repeats 16
@@ -554,7 +618,7 @@ static void test_reassembly(void)
 	// Levels: a receiver with 1.4 times the counts. The first sync's record is scaled by its own sync
 	fresh();
 	hrc6000_dmr_halt(&eng);
-	hrc6000_air_init(AIR, &dev, &ops, BUF);
+	hrc6000_air_init(AIR, &dev, &ops, BUF, NULL, NULL);
 	CHECK(hrc6000_air_open(AIR, &p, on_event, NULL));
 	CHECK(AIR->outer16 == 316);	// 1800 Hz at 11 counts per kHz
 	rand_stream(12);
@@ -621,7 +685,7 @@ static void open_p25(air_profile_t *p)
 {
 	fresh();
 	*p = p25();
-	hrc6000_air_init(AIR, &dev, &ops, BUF);
+	hrc6000_air_init(AIR, &dev, &ops, BUF, NULL, NULL);
 	CHECK(hrc6000_air_open(AIR, p, on_event, NULL));
 	nx = 0;
 }
@@ -874,7 +938,7 @@ static void test_open_close(void)
 	// And a session again on top of it
 	hrc6000_dmr_halt(&eng);
 	eng.evq_tail = eng.evq_head;
-	hrc6000_air_init(AIR, &dev, &ops, BUF);
+	hrc6000_air_init(AIR, &dev, &ops, BUF, NULL, NULL);
 	memset(&got, 0, sizeof(got));
 	CHECK(hrc6000_air_open(AIR, &p, on_event, NULL));
 	rand_stream(3);
@@ -886,6 +950,165 @@ static void test_open_close(void)
 	hrc6000_air_close(AIR, false);
 	CHECK(nx == 0);
 	CHECK(lock_depth == 0);
+}
+
+// The copy RAM half h filled with the next 256 samples of a count (big endian), then its interrupt 32 ms after the
+// last one, then the task when poll
+static int copy_next;
+static void copy_half(int h, bool poll)
+{
+	for (int i = 0; i < HRC6000_AIR_COPY_HALF; i++) {
+		int16_t v = (int16_t)(copy_next++ - 3000);
+		copy_ram[h * 2 * HRC6000_AIR_COPY_HALF + 2 * i] = (uint8_t)((uint16_t)v >> 8);
+		copy_ram[h * 2 * HRC6000_AIR_COPY_HALF + 2 * i + 1] = (uint8_t)v;
+	}
+	regs[4][0x82] = 0x02;
+	t_us += 32000;
+	hrc6000_air_isr_sys(AIR);
+	if (poll) {
+		hrc6000_air_poll(AIR);
+	}
+}
+
+static void test_copy(void)
+{
+	static const hal_baseband_t tap = { .rx_rate_hz = HRC6000_AIR_COPY_HZ, .rx_hi_hz = HRC6000_AIR_COPY_HI_HZ };
+	air_profile_t p = p25();
+	air_profile_t q = p;
+	q.sync[1].flags = AIR_SYNC_START_ONLY;	// a sync the correlator can't hold: transmit only by the chip alone
+
+	// Fit: the copy adds receive where the correlator has none, and only there
+	CHECK(hrc6000_air_fit_tap(&q, NULL) == hrc6000_air_fit(&q));
+	CHECK(hrc6000_air_fit_tap(&q, &tap) == (hrc6000_air_fit(&q) | AIR_FIT_RX | AIR_FIT_SOFT));
+	CHECK(hrc6000_air_fit_tap(&p, &tap) == hrc6000_air_fit(&p));
+	air_profile_t z = q;
+	z.sym_rate = 1200;
+	CHECK(hrc6000_air_fit_tap(&z, &tap) == 0);	// nothing to send it with: no session
+
+	// A board without the copy: the profile opens for transmit only, the chip in the physical layer
+	fresh();
+	memset(&smg, 0, sizeof(smg));
+	hrc6000_air_init(AIR, &dev, &ops, BUF, NULL, NULL);
+	CHECK(hrc6000_air_open(AIR, &q, on_event, NULL));
+	CHECK(smg.opens == 0 && !AIR->rx_copy && last_write(4, 0x10) != 0x80);
+	hrc6000_air_close(AIR, true);
+
+	// With it: FM receive, every audio filter off, nothing to the line out, the receive RAM's interrupt on
+	fresh();
+	fm_ram = true;
+	copy_next = 0;
+	regs[4][0x34] = 0xE4;
+	regs[4][0x81] = 0x19;
+	hrc6000_air_init(AIR, &dev, &ops, BUF, &sm_mem, &tap);
+	CHECK(hrc6000_air_open(AIR, &q, on_event, NULL));
+	CHECK(smg.opens == 1 && AIR->rx_copy && AIR->copy);
+	CHECK(last_write(4, 0x10) == 0x80 && last_write(4, 0x34) == 0x00 && last_write(4, 0x36) == 0x00);
+	CHECK(last_write(4, 0x60) == 0x00 && last_write(4, 0x81) == 0x1B && last_write(4, 0x41) == 0x00);
+	CHECK(lock_depth == 0);
+
+	// The first interrupt only shows which half is filling; from the second on, halves in order, each sample once
+	copy_half(0, true);
+	CHECK(smg.calls == 0 && AIR->st.halves == 0);
+	CHECK(last_write(4, 0x83) == 0x02);	// the flag cleared, or no later half interrupts
+	uint32_t t1 = t_us + 32000;
+	for (int k = 1; k <= 6; k++) {
+		copy_half(k % 2, true);
+	}
+	CHECK(smg.calls == 6 && smg.n == 6 * HRC6000_AIR_COPY_HALF && AIR->st.halves == 6 && got.n_rx == 6);
+	int bad = 0;
+	for (int i = 0; i < smg.n; i++) {
+		bad += smg.s[i] != (int16_t)(HRC6000_AIR_COPY_HALF + i - 3000);
+	}
+	CHECK(bad == 0);
+	// A half's first sample is 255 samples before its interrupt
+	CHECK(smg.t[0] == t1 - 255u * 125u && smg.t[1] - smg.t[0] == 32000 && smg.t[5] - smg.t[0] == 5 * 32000);
+	CHECK(smg.resets == 1 && smg.reset_at[0] == 0);	// the set-up is a gap: timing starts at the first half
+	CHECK(AIR->st.half_fixes <= 1 && AIR->st.overruns == 0);
+
+	// A missed interrupt: the half whose last sample moved is the one taken (no half twice), and no reset
+	// (the ring holds what came; the soft modem rides a 32 ms hole as a fade)
+	int fixes = (int)AIR->st.half_fixes;
+	copy_next += HRC6000_AIR_COPY_HALF;	// half 1 filled unseen ...
+	int at = smg.n;
+	copy_half(0, true);			// ... and half 0 after it
+	CHECK(smg.n == at + HRC6000_AIR_COPY_HALF && smg.s[at] == (int16_t)(copy_next - HRC6000_AIR_COPY_HALF - 3000));
+	CHECK((int)AIR->st.half_fixes == fixes + 1);
+	copy_half(1, true);
+	CHECK(smg.s[smg.n - 1] == (int16_t)(copy_next - 1 - 3000));
+
+	// The task away: two halves wait in the ring, the third is dropped and what follows is marked a gap
+	int resets = smg.resets;
+	at = smg.n;
+	copy_half(0, false);
+	copy_half(1, false);
+	CHECK(AIR->st.overruns == 0);
+	copy_half(0, false);
+	CHECK(AIR->st.overruns == 1);
+	hrc6000_air_poll(AIR);
+	CHECK(smg.n == at + 2 * HRC6000_AIR_COPY_HALF && smg.resets == resets);
+	copy_half(1, true);
+	CHECK(smg.n == at + 3 * HRC6000_AIR_COPY_HALF && smg.resets == resets + 1 && smg.reset_at[resets] == at + 2 * HRC6000_AIR_COPY_HALF);
+
+	// An interrupt of another kind takes nothing
+	uint32_t halves = AIR->st.halves;
+	regs[4][0x82] = 0x01;
+	hrc6000_air_isr_sys(AIR);
+	CHECK(AIR->st.halves == halves);
+
+	// The board's mode entry rewrote the chip: the copy set up again, and a gap
+	nx = 0;
+	resets = smg.resets;
+	hrc6000_air_rx_restart(AIR);
+	CHECK(last_write(4, 0x10) == 0x80 && last_write(4, 0x34) == 0x00 && AIR->copy);
+	copy_half(0, true);
+	copy_half(1, true);
+	CHECK(smg.resets == resets + 1);
+
+	// Close: the filters and the interrupt mask as they were, the chip in DMR
+	nx = 0;
+	hrc6000_air_close(AIR, true);
+	CHECK(!AIR->copy && last_write(4, 0x34) == 0xE4 && last_write(4, 0x81) == 0x19);
+	CHECK(last_write(4, 0x10) == dev.chip->dmr_mode(false) && last_write(4, 0x40) == 0xC3);
+	regs[4][0x82] = 0x02;
+	halves = AIR->st.halves;
+	hrc6000_air_isr_sys(AIR);
+	CHECK(AIR->st.halves == halves);	// a late interrupt after the close
+	CHECK(lock_depth == 0);
+
+	// A soft modem that refuses the profile: no session
+	smg.refuse = true;
+	CHECK(!hrc6000_air_open(AIR, &q, on_event, NULL));
+	smg.refuse = false;
+
+	// The tap: the same halves to a reader, with the time of the next sample; no session beside it
+	fresh();
+	fm_ram = true;
+	copy_next = 0;
+	regs[4][0x34] = 0xE4;
+	regs[4][0x81] = 0x19;
+	hrc6000_air_init(AIR, &dev, &ops, BUF, &sm_mem, &tap);
+	int16_t rd[300];
+	CHECK(hrc6000_air_tap_read(AIR, rd, 300) == 0);
+	CHECK(hrc6000_air_tap_start(AIR));
+	CHECK(!hrc6000_air_tap_start(AIR) && !hrc6000_air_open(AIR, &p, on_event, NULL));
+	CHECK(last_write(4, 0x10) == 0x80);
+	copy_half(0, false);
+	copy_half(1, false);
+	CHECK(hrc6000_air_tap_time(AIR) == t_us - 255u * 125u);
+	CHECK(hrc6000_air_tap_read(AIR, rd, 100) == 100 && rd[0] == (int16_t)(256 - 3000) && rd[99] == (int16_t)(355 - 3000));
+	CHECK(hrc6000_air_tap_time(AIR) == t_us - 155u * 125u);
+	CHECK(hrc6000_air_tap_read(AIR, rd, 300) == 156 && rd[155] == (int16_t)(511 - 3000));
+	CHECK(hrc6000_air_tap_read(AIR, rd, 300) == 0);
+	nx = 0;
+	hrc6000_air_tap_stop(AIR, true);
+	CHECK(last_write(4, 0x34) == 0xE4 && last_write(4, 0x81) == 0x19 && last_write(4, 0x10) == dev.chip->dmr_mode(false));
+	nx = 0;
+	hrc6000_air_tap_stop(AIR, true);
+	CHECK(nx == 0);
+	// No tap on a board without the copy
+	hrc6000_air_init(AIR, &dev, &ops, BUF, NULL, NULL);
+	CHECK(!hrc6000_air_tap_start(AIR));
+	fm_ram = false;
 }
 
 static void test_fuzz(void)
@@ -952,6 +1175,7 @@ int main(void)
 	test_transmit();
 	test_abort_stall_suspend();
 	test_open_close();
+	test_copy();
 	test_fuzz();
 	printf("hrc6000AirTest: %d checks, %d failures\n", checks, failures);
 	return failures != 0;

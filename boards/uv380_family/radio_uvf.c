@@ -522,6 +522,11 @@ static const stm32_hrc_dmr_board_t dmr_board = {
 	.ts_service = uvf_rf_dmr_service,
 	.rf_counters = uvf_rf_dmr_counters,
 	.tx_end = dmr_tx_end,
+#if CONFIG_AIR
+	// The AT1846S's DMR set-up gives the HR_C6000 the low-frequency baseband with its audio filters off
+	// (hardware-dm1701.md, Air interface)
+	.air_tap = true,
+#endif
 };
 
 // Stop per-burst keying (task level): disarm, drop a transmission still running, PA off
