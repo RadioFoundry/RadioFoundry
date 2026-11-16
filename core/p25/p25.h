@@ -88,6 +88,7 @@ uint16_t p25_ldu_voice_sym(uint8_t n);
 // Link control words of conventional voice (5.5): a group call (LCF 0x00) and a unit to unit call (LCF 0x03)
 #define P25_LCF_GROUP		0x00
 #define P25_LCF_UNIT		0x03
+#define P25_TGID_EVERYONE	0xFFFFu	// the talk group every radio takes
 typedef struct {
 	uint8_t lcf;
 	uint8_t mfid;

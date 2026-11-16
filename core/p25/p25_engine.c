@@ -14,7 +14,7 @@ uint32_t p25_engine_fit(const hal_air_t *air)
 static void view_begin(p25_engine_t *e) { e->seq++; }
 static void view_end(p25_engine_t *e) { e->seq++; }
 
-// The squelch on top of the NAC: every call, or only the ones to our talk group or to us
+// The squelch on top of the NAC: every call, or only the ones to our talk group, to everyone or to us
 static bool wanted(const p25_engine_t *e, const p25_call_t *c)
 {
 	if (!e->cfg.rx_tgid)
@@ -24,7 +24,7 @@ static bool wanted(const p25_engine_t *e, const p25_call_t *c)
 	// Before the link control is in, the header's talk group decides; a late entry waits for its first LDU1
 	if (!c->have_lc && c->late)
 		return false;
-	return c->lc.tgid == e->cfg.rx_tgid;
+	return c->lc.tgid == e->cfg.rx_tgid || c->lc.tgid == P25_TGID_EVERYONE;
 }
 
 static void rx_fields(p25_engine_t *e, const p25_call_t *c, bool start)
