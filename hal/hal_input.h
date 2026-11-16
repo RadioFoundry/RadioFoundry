@@ -90,6 +90,8 @@ typedef struct {
 	int8_t (*encoder)(void);
 	// The decoder's counts (NULL: none)
 	void (*encoder_stats)(hal_encoder_stats_t *st);
+	// The channel knob turns between end stops (a 16-position switch), not endlessly: false for a quadrature encoder
+	bool encoder_limited;
 } hal_input_t;
 
 #endif
