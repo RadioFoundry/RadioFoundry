@@ -1712,6 +1712,7 @@
  "editor.p25.any_help": "留空：任意。",
  "editor.p25.skip_enc": "跳过加密呼叫",
  "editor.p25.plan_only": "只使用此处的信道规划",
+ "editor.p25.no_reg": "不注册（不注册直接发射）",
  "editor.p25.hold": "呼叫后保持（秒，0 = 电台的）",
  "editor.p25.roam_dbm": "低于此值时换站（dBm，0 = 电台的）",
  "editor.p25.site_no": "站点",

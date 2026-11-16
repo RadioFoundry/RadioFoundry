@@ -69,6 +69,7 @@ bool p25_conv_save(uint16_t number, const channel_t *ch, const p25_conv_t *conv)
 #define P25_CP_SYSID_ANY	0xFFFFu
 #define P25_TSYS_SKIP_ENC	0x01u	// options: skip encrypted calls
 #define P25_TSYS_PLAN_ONLY	0x02u	// options: use only the programmed identifier plan
+#define P25_TSYS_NO_REG		0x04u	// options: ask for voice channels without registering or affiliating
 typedef struct {
 	uint32_t wacn;		// P25_CP_WACN_ANY: any
 	uint16_t sysid;		// P25_CP_SYSID_ANY: any

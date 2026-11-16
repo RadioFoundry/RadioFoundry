@@ -55,7 +55,7 @@ test("vectors: P25 trunked system block and identifier plan rows", () => {
 		assert.equal(s.wacn ?? 0xFFFFFF, wacn, l);
 		assert.equal(s.sysid ?? 0xFFFF, sysid, l);
 		assert.equal(s.ccNac ?? NAC_ANY, nac, l);
-		assert.equal((s.skipEnc ? 1 : 0) | (s.planOnly ? 2 : 0), opts, l);
+		assert.equal((s.skipEnc ? 1 : 0) | (s.planOnly ? 2 : 0) | (s.noReg ? 4 : 0), opts, l);
 		assert.equal(s.holdS, hold, l);
 		assert.equal(s.roamDbm & 0xFF, roam, l);
 	}

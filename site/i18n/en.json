@@ -1712,6 +1712,7 @@
  "editor.p25.any_help": "Blank: any.",
  "editor.p25.skip_enc": "Skip encrypted calls",
  "editor.p25.plan_only": "Use only the channel plan here",
+ "editor.p25.no_reg": "Don't register (transmit without registering)",
  "editor.p25.hold": "Hold after a call (s, 0 = the radio's)",
  "editor.p25.roam_dbm": "Change site below (dBm, 0 = the radio's)",
  "editor.p25.site_no": "Site",

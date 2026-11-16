@@ -154,7 +154,7 @@ void p25_tsys_decode(const uint8_t *b, int len, p25_tsys_t *out)
 	uint16_t s = rd16(b, len, 3);
 	out->sysid = s == P25_CP_SYSID_ANY ? s : (uint16_t)(s & 0x0FFFu);
 	out->cc_nac = nac_field(rd16(b, len, 5), P25_NAC_ANY);
-	out->options = len >= 8 ? (uint8_t)(b[7] & (P25_TSYS_SKIP_ENC | P25_TSYS_PLAN_ONLY)) : 0u;
+	out->options = len >= 8 ? (uint8_t)(b[7] & (P25_TSYS_SKIP_ENC | P25_TSYS_PLAN_ONLY | P25_TSYS_NO_REG)) : 0u;
 	out->hold_s = len >= 9 ? b[8] : 0u;
 	out->roam_dbm = len >= 10 ? (int8_t)b[9] : 0;
 }

@@ -1712,6 +1712,7 @@
  "editor.p25.any_help": "Vuoto: qualsiasi.",
  "editor.p25.skip_enc": "Salta le chiamate cifrate",
  "editor.p25.plan_only": "Usa solo il piano dei canali qui",
+ "editor.p25.no_reg": "Non registrarsi (trasmettere senza registrazione)",
  "editor.p25.hold": "Attesa dopo una chiamata (s, 0 = quella della radio)",
  "editor.p25.roam_dbm": "Cambia sito sotto (dBm, 0 = quello della radio)",
  "editor.p25.site_no": "Sito",
