@@ -165,8 +165,7 @@ static void left(uint8_t from)
 void ui_push(uint8_t scr, uint16_t arg)
 {
 	if (sp + 1 >= UI_STACK_MAX) {
-		sp = UI_STACK_MAX - 1;
-		left(sp);
+		left(UI_STACK_MAX - 1);
 		sp = UI_STACK_MAX - 2;	// never deeper than the stack: the oldest levels stay, the newest is replaced
 	}
 	sp++;

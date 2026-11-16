@@ -97,7 +97,7 @@ Read the on-time page 1 shows for each value and look across the rates:
 A line fit of on-time against period over the slower rates gives the delay (its intercept) and a duty term (its
 slope). At a rate whose period is close to the delay, most of the duty range gives no light.
 
-**Example: AT-D878UV** (2026-11-15, variant 1 panel):
+**Example: AT-D878UV** (variant 1 panel):
 
 | Rate | Glow CV | Duty | On-time |
 |---|---|---|---|
