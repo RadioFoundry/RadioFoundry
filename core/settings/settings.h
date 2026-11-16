@@ -146,8 +146,10 @@ typedef struct {
 					// bits 3-5 the SFR repeater's CW ID interval (radio_settings_t.sfr_cwid; 0 off)
 	uint8_t aprs_power;		// APRS RF power: 0 = the radio's current level, n = level n - 1 (was reserved6[0]; taken
 					// with the aprs_ fields below)
-	uint8_t aprs_cp_path;		// the codeplug APRS record's path last taken into aprs_path, aprs_path_t + 1 (0 = none
-					// yet; was reserved6[1]). A different path in the codeplug replaces aprs_path (aprs.md 11)
+	uint8_t aprs_cp_path;		// what was last taken from the codeplug APRS record (aprs.md 11; was reserved6[1]):
+					// bits 0-2 the path into aprs_path, aprs_path_t + 1, bits 3-7 the SSID into
+					// aprs_ssid, + 1; 0 = none yet. A different one in the codeplug replaces ours.
+					// Through settings_aprs_cp_path / _ssid
 	uint8_t volume;			// speaker volume on radios without a knob: 0 = the default, else 0x80 | (step + 1)
 					// (step 0..RADIO_VOLUME_MAX, 0 = mute); 1..11 = a step 0..10 of the first version
 					// (was reserved6, radio.h RADIO_VOLUME_*, radio_volume_step)
@@ -294,6 +296,19 @@ static inline void settings_set_vfo_talk(settings_t *s, uint32_t id, bool privat
 	s->vfo_bw = (uint8_t)((s->vfo_bw & 0x0Fu) | (((id >> 12) & 0x0Fu) << 4));
 	s->vfo_cc = (uint8_t)((s->vfo_cc & 0x0Fu) | (((id >> 16) & 0x0Fu) << 4));
 	s->vfo_ts = (uint8_t)((s->vfo_ts & 0x03u) | (((id >> 20) & 0x0Fu) << 2) | (private_call ? 0x80u : 0));
+}
+
+// settings_t.aprs_cp_path: the codeplug APRS record's path (bits 0-2) and SSID (bits 3-7) last taken, each + 1 so 0
+// is "none yet", as an older record reads the SSID
+static inline uint8_t settings_aprs_cp_path(const settings_t *s) { return s->aprs_cp_path & 0x07u; }
+static inline uint8_t settings_aprs_cp_ssid(const settings_t *s) { return s->aprs_cp_path >> 3; }
+static inline void settings_set_aprs_cp_path(settings_t *s, uint8_t path_plus_1)
+{
+	s->aprs_cp_path = (uint8_t)((s->aprs_cp_path & 0xF8u) | (path_plus_1 & 0x07u));
+}
+static inline void settings_set_aprs_cp_ssid(settings_t *s, uint8_t ssid_plus_1)
+{
+	s->aprs_cp_path = (uint8_t)((s->aprs_cp_path & 0x07u) | ((ssid_plus_1 & 0x1Fu) << 3));
 }
 
 // settings_t.accent: bits 0-2 the highlight color (0 the theme's own, 1 red, 2 orange, 3 yellow, 4 teal, 5 light blue,
