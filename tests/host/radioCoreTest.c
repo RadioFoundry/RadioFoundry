@@ -148,7 +148,7 @@ static void v_decode(const uint8_t *bits, int16_t *pcm) { (void)bits; memset(pcm
 static uint32_t v_options(void) { return VOCODER_OPT_NOISE_REDUCTION | VOCODER_OPT_TONE_FRAMES | VOCODER_OPT_AGC; }
 static void v_set_options(uint32_t opts) { (void)opts; }
 static const hal_vocoder_t fake_vocoder = { v_present, v_reset, v_encode, v_decode, NULL, v_options, v_set_options,
-					    NULL };
+					    NULL, NULL };
 static const char *codec_profile;
 static const char *v_profile(void) { return codec_profile; }
 static uint8_t p_mic(void) { return 0; }
@@ -1628,7 +1628,10 @@ static void test_vfo_dmr(void)
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 1, 7, 2 }, 3) == DL_ST_OK);
 	run(50);
 	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && sim.started && d->cc == 7 && d->ts == 2);
-	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 2, 0xFF, 0 }, 3) == DL_ST_BAD_ARG);
+	// P25 (2) in a build without it: unavailable; past P25: a bad argument
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 2, 0xFF, 0 }, 3) ==
+	      (CONFIG_P25 ? DL_ST_OK : DL_ST_UNAVAILABLE));
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 3, 0xFF, 0 }, 3) == DL_ST_BAD_ARG);
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0xFF, 16, 0 }, 3) == DL_ST_BAD_ARG);
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0xFF, 0xFF, 3 }, 3) == DL_ST_BAD_ARG);
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0xFF, 0xFF }, 2) == DL_ST_BAD_ARG);
@@ -4494,7 +4497,7 @@ static void test_soft_volume(void)
 	CHECK(debuglink_is_feature_op(DL_OP_VOLUME));	// the dispatcher routes it here
 	// VERSION's codec=: a codec stopped for a stub upload (present() false) still reports its profile from flash
 	{
-		const hal_vocoder_t pv = { v_present, v_reset, v_encode, v_decode, v_profile, NULL, NULL, NULL };
+		const hal_vocoder_t pv = { v_present, v_reset, v_encode, v_decode, v_profile, NULL, NULL, NULL, NULL };
 		bool was = codec_present;
 		CHECK(strcmp(debuglink_codec_id(NULL), "none") == 0);
 		codec_present = false;

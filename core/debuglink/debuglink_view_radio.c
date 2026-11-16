@@ -321,23 +321,55 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 	case DL_OP_DMR_FIELDS:
 		// mode (0xFF = keep, else radio_mode_t), color code (0xFF = keep), timeslot (0 = keep): on a channel they are
 		// temporary changes, in the VFO the VFO's own settings. The radio core refuses what it can't do
-		if (len < 3 || (a[0] != 0xFF && a[0] > RADIO_MODE_DMR) || (a[1] != 0xFF && a[1] > 15) || a[2] > 2) {
+		if (len < 3 || (a[0] != 0xFF && a[0] > RADIO_MODE_P25) || (a[1] != 0xFF && a[1] > 15) || a[2] > 2) {
 			return DL_ST_BAD_ARG;
 		}
-#if CONFIG_DMR
+#if CONFIG_DMR || CONFIG_P25
+		if ((a[0] == RADIO_MODE_DMR && !CONFIG_DMR) || (a[0] == RADIO_MODE_P25 && !CONFIG_P25) ||
+		    ((a[1] != 0xFF || a[2] != 0) && !CONFIG_DMR)) {
+			return DL_ST_UNAVAILABLE;
+		}
 		if (a[0] != 0xFF) {
 			radio_req_mode(a[0]);
 		}
+#if CONFIG_DMR
 		if (a[1] != 0xFF) {
 			radio_req_dmr_color_code(a[1]);
 		}
 		if (a[2] != 0) {
 			radio_req_dmr_timeslot(a[2]);
 		}
+#endif
 		return DL_ST_OK;
 #else
 		return DL_ST_UNAVAILABLE;
 #endif
+	case DL_OP_P25: {
+		// The P25 settings (radio_p25_settings_t, RAM only; docs/spec/debuglink.md 3.8): u16 rx_nac, u16 tx_nac,
+		// u16 rx_tgid, u8 talkaround (0 auto, 1 on, 2 off), u8 flags (bit 0: PTT calls a unit), u32 tx_dst,
+		// u32 unit_id (0: the radio's DMR ID), little-endian. The engine takes them when not transmitting
+		if (len < 16 || a[6] > RADIO_P25_TA_OFF || (a[7] & 0xFEu) != 0) {
+			return DL_ST_BAD_ARG;
+		}
+#if CONFIG_P25
+		radio_p25_settings_t p;
+		p.rx_nac = (uint16_t)(a[0] | a[1] << 8);
+		p.tx_nac = (uint16_t)(a[2] | a[3] << 8);
+		p.rx_tgid = (uint16_t)(a[4] | a[5] << 8);
+		p.talkaround = a[6];
+		p.unit_call = (a[7] & 1u) != 0;
+		p.tx_dst = (uint32_t)a[8] | (uint32_t)a[9] << 8 | (uint32_t)a[10] << 16 | (uint32_t)a[11] << 24;
+		p.unit_id = (uint32_t)a[12] | (uint32_t)a[13] << 8 | (uint32_t)a[14] << 16 | (uint32_t)a[15] << 24;
+		if (p.rx_nac > 0xFFFu || p.tx_nac > 0xFFFu || p.unit_id > 0xFFFFFFu ||
+		    p.tx_dst > (p.unit_call ? 0xFFFFFFu : 0xFFFFu)) {
+			return DL_ST_BAD_ARG;
+		}
+		radio_req_p25_settings(&p);
+		return DL_ST_OK;
+#else
+		return DL_ST_UNAVAILABLE;
+#endif
+	}
 	case DL_OP_VFO_SFR:
 		// u8: the VFO's SFR role as a channel's SFR byte A (sfr.h; role bits 0 = none). The radio core refuses it
 		// outside the VFO; dmr.sfr_role shows what it took

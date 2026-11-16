@@ -126,8 +126,8 @@ static bool summary_line(uint8_t i, char *buf, uint8_t len)
 	const char *pw = board_power_name(view.power, view.ch.tx_hz);
 	switch (i) {
 	case 0:
-		dl_fmt(buf, len, "radio %s %s ch %u '%s' %u.%05u %s%s", view.ch.mode == RADIO_MODE_DMR ? "DMR" : "FM",
-		       view.vfo ? "VFO" : "MEM", view.channel_number, view.ch.name, (unsigned)(view.ch.rx_hz / 1000000u),
+		dl_fmt(buf, len, "radio %s %s ch %u '%s' %u.%05u %s%s",
+		       view.ch.mode == RADIO_MODE_P25 ? "P25" : view.ch.mode == RADIO_MODE_DMR ? "DMR" : "FM", view.vfo ? "VFO" : "MEM", view.channel_number, view.ch.name, (unsigned)(view.ch.rx_hz / 1000000u),
 		       (unsigned)((view.ch.rx_hz % 1000000u) / 10u), state_name((uint8_t)view.state),
 		       view.hotspot ? " HOTSPOT" : "");
 		return true;
@@ -205,6 +205,7 @@ static size_t cmd_reset(uint8_t *out)
 	beep_reset_stats();
 #endif
 	debuglink_dmr_data_reset();
+	debuglink_p25_reset();
 	uint32_t now = hal_millis();
 	dlog("debuglink: counters reset");
 	out[0] = DL_ST_OK;
