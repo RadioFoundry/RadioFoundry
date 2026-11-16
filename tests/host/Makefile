@@ -1199,7 +1199,7 @@ run-irqstack: hrc7000IrqStackTest
 # radio's own services are mdnsTest's and tftpTest's)
 HLNET   := hostlinkNetTest.c $(CORE)/hostlink/hostlink_net.c $(CORE)/hostlink/hostlink_net_air.c $(CORE)/dmr/ipGateway.c \
            $(CORE)/dmr/dmrAirQueue.c \
-           $(CORE)/net/net.c $(CORE)/net/tcp.c $(CORE)/debuglink/dl_fmt.c $(DATA) $(FRAME)
+           $(CORE)/net/net.c $(CORE)/hostlink/hostlink_view.c $(CORE)/net/tcp.c $(CORE)/debuglink/dl_fmt.c $(DATA) $(FRAME)
 HLNET_OFF := -DCONFIG_NET_KISS=0 -DCONFIG_NET_HTTP=0 -DCONFIG_NET_RIGCTL=0 -DCONFIG_NET_APRSIS=0 -DCONFIG_MDNS=0 -DCONFIG_TFTP=0 \
              -DCONFIG_NET_USRP=0
 TESTS   += hostlinkNetTest
@@ -1479,7 +1479,7 @@ usrpTest: $(UAUDIO) $(wildcard $(CORE)/usbaudio/*.h)
 
 # The shared PCM stream and USRP on the network address (core/usbaudio/audio_mux.c, usrp_net.c) against fake
 # gateway, radio core and board
-UNET    := usrpNetTest.c $(CORE)/usbaudio/usrp_net.c $(CORE)/usbaudio/usrp.c $(CORE)/usbaudio/pcm_slip.c \
+UNET    := usrpNetTest.c $(CORE)/usbaudio/usrp_net.c $(CORE)/hostlink/hostlink_view.c $(CORE)/usbaudio/usrp.c $(CORE)/usbaudio/pcm_slip.c \
            $(CORE)/usbaudio/audio_mux.c $(CORE)/debuglink/dl_fmt.c
 TESTS   += usrpNetTest
 
@@ -1510,7 +1510,7 @@ endif
 
 # The TCP services (core/net) through the real gateway and TCP, against a scripted TCP peer and fakes of the APRS
 # engine and the radio core; tshark checks netSvcTest.pcap
-NETSVC  := netSvcTest.c netSvcCases.c $(CORE)/net/net.c $(CORE)/net/tcp.c $(CORE)/net/kiss_tcp.c $(CORE)/aprs/kiss.c \
+NETSVC  := netSvcTest.c netSvcCases.c $(CORE)/net/net.c $(CORE)/hostlink/hostlink_view.c $(CORE)/net/tcp.c $(CORE)/net/kiss_tcp.c $(CORE)/aprs/kiss.c \
            $(CORE)/net/http.c $(CORE)/net/rigctld.c $(CORE)/net/aprsis.c $(CORE)/net/webctl.c $(CORE)/net/ws.c \
            $(CORE)/dmr/ipGateway.c $(CORE)/debuglink/dl_fmt.c $(DATA)
 TESTS   += netSvcTest
@@ -1553,9 +1553,9 @@ snmpPeer: snmpPeer.c $(SNMPLIB) $(wildcard $(CORE)/snmp/*.h)
 # The agent's firmware glue (snmp_agent.c: the USB and RF request paths, the RF mailbox and limits, settings, traps)
 # on fakes of the radio, the settings and the gateway
 TESTS   += snmpAgentTest
-snmpAgentTest: snmpAgentTest.c fuzz.h $(CORE)/snmp/snmp_agent.c $(SNMPLIB) $(DATA) $(wildcard $(CORE)/snmp/*.h)
+snmpAgentTest: snmpAgentTest.c fuzz.h $(CORE)/snmp/snmp_agent.c $(CORE)/hostlink/hostlink_view.c $(SNMPLIB) $(DATA) $(wildcard $(CORE)/snmp/*.h)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_SNMP=1 -DCONFIG_DMR_IP_GATEWAY=1 -DCONFIG_HOTSPOT=0 -o $@ \
-		snmpAgentTest.c $(CORE)/snmp/snmp_agent.c $(SNMPLIB) $(DATA)
+		snmpAgentTest.c $(CORE)/snmp/snmp_agent.c $(CORE)/hostlink/hostlink_view.c $(SNMPLIB) $(DATA)
 
 run: run-snmp
 run-snmp: snmpTest snmpPeer snmpAgentTest

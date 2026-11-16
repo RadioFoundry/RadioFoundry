@@ -16,6 +16,7 @@
 #include "debuglink/dlog.h"
 #include "hostlink/build_info.h"
 #include "hostlink/hostlink.h"
+#include "hostlink/hostlink_view.h"
 #include "stubentry/stub_entry.h"
 #if CONFIG_HOTSPOT
 #include "hotspot/hotspot.h"
@@ -63,7 +64,6 @@ enum {
 
 static dl_parser_t parser;
 static uint8_t reply[DL_HDR + DL_REPLY_MAX + 2u];
-static radio_view_t view;	// static: too large for the host link task's stack
 static uint32_t last_radio_op_ms;
 static bool radio_op_done;
 static bool reboot_pending;
@@ -123,17 +123,18 @@ static const char *state_name(uint8_t s)
 
 static bool summary_line(uint8_t i, char *buf, uint8_t len)
 {
-	const char *pw = board_power_name(view.power, view.ch.tx_hz);
+	const radio_view_t *v = &hostlink_view;
+	const char *pw = board_power_name(v->power, v->ch.tx_hz);
 	switch (i) {
 	case 0:
 		dl_fmt(buf, len, "radio %s %s ch %u '%s' %u.%05u %s%s",
-		       view.ch.mode == RADIO_MODE_NXDN ? "NXDN" : view.ch.mode == RADIO_MODE_P25 ? "P25" : view.ch.mode == RADIO_MODE_DMR ? "DMR" : "FM", view.vfo ? "VFO" : "MEM", view.channel_number, view.ch.name, (unsigned)(view.ch.rx_hz / 1000000u),
-		       (unsigned)((view.ch.rx_hz % 1000000u) / 10u), state_name((uint8_t)view.state),
-		       view.hotspot ? " HOTSPOT" : "");
+		       v->ch.mode == RADIO_MODE_NXDN ? "NXDN" : v->ch.mode == RADIO_MODE_P25 ? "P25" : v->ch.mode == RADIO_MODE_DMR ? "DMR" : "FM", v->vfo ? "VFO" : "MEM", v->channel_number, v->ch.name, (unsigned)(v->ch.rx_hz / 1000000u),
+		       (unsigned)((v->ch.rx_hz % 1000000u) / 10u), state_name((uint8_t)v->state),
+		       v->hotspot ? " HOTSPOT" : "");
 		return true;
 	case 1:
-		dl_fmt(buf, len, "radio rssi %d nz %u sq %u%s pw %s tx %ums", view.rssi_dbm, view.noise, view.squelch,
-		       view.monitor ? " mon" : "", pw, (unsigned)view.tx_elapsed_ms);
+		dl_fmt(buf, len, "radio rssi %d nz %u sq %u%s pw %s tx %ums", v->rssi_dbm, v->noise, v->squelch,
+		       v->monitor ? " mon" : "", pw, (unsigned)v->tx_elapsed_ms);
 		return true;
 	default:
 		return false;
@@ -172,7 +173,7 @@ static size_t cmd_get_diag(const uint8_t *req, uint16_t len, uint8_t *out, size_
 	char line[64];
 	uint8_t i = first;
 
-	radio_get_view(&view);
+	radio_get_view(&hostlink_view);
 	out[0] = DL_ST_OK;
 	put32(out + 1, hal_millis());
 	dl_text_init(&t, (char *)out + 6, cap - 6);
@@ -422,12 +423,12 @@ static size_t cmd_get_view(const uint8_t *req, uint16_t len, uint8_t *out, size_
 	if (section >= DL_VIEW_COUNT) {
 		return status_only(out, DL_ST_BAD_ARG);
 	}
-	radio_get_view(&view);
+	radio_get_view(&hostlink_view);
 	out[0] = DL_ST_OK;
 	put32(out + 1, hal_millis());
 	out[5] = (uint8_t)(section + 1u < DL_VIEW_COUNT ? section + 1u : 0xFFu);
 	dl_text_init(&t, (char *)out + 6, cap - 6 - 16);	// room kept for the truncation mark
-	debuglink_view_section(section, &view, &t);
+	debuglink_view_section(section, &hostlink_view, &t);
 	if (t.full) {
 		t.cap += 16;
 		t.full = false;
@@ -655,8 +656,8 @@ static size_t cmd_read_mem(const uint8_t *req, uint16_t len, uint8_t *out, size_
 
 bool debuglink_transmitting(void)
 {
-	radio_get_view(&view);
-	if (view.state == RS_TX) {
+	radio_get_view(&hostlink_view);
+	if (hostlink_view.state == RS_TX) {
 		return true;
 	}
 #if CONFIG_HOTSPOT
