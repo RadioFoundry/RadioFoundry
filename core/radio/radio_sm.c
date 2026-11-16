@@ -4281,7 +4281,7 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 	}
 #if CONFIG_AIR_RAW
 	if (sm->air_bench) {
-		deny(sm, TXDENY_HOTSPOT);	// the same for the air interface bench
+		deny(sm, TXDENY_BENCH);	// the air interface bench transmits; PTT does nothing until it ends
 		return;
 	}
 #endif

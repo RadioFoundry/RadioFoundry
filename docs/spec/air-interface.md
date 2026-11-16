@@ -196,7 +196,8 @@ Transmit states: idle, priming, on, ending (the last symbol is queued), done.
 ## 9. Bench access
 
 `CONFIG_AIR_RAW` adds debug link commands that open a session and move raw symbols and tap samples, for bench tests
-([debuglink.md](debuglink.md)). Off by default.
+([debuglink.md](debuglink.md)). Off by default. While the bench holds the modem, PTT is refused with
+`tx_deny=bench` ("Air bench: PTT off").
 
 ## 10. Tests
 
