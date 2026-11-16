@@ -18,7 +18,7 @@ State:
 | The radio core: mode, settings, PTT, debug link, home screen (6) | written, host tested |
 | Codeplug channels, the site's Codeplug Editor ([nxdn-codeplug.md](nxdn-codeplug.md)) | written, host tested |
 | Channel editor on the radio, scan | not written (10) |
-| On air | transmit checked off air on a radio at both rates (`test_nxdn_tx_off_air`); receive on no radio yet: the HR_C6000 provider has no receive fit for NXDN (6), and the board whose provider is the soft modem has no RAM left for the engine ([feature-matrix.md](../feature-matrix.md)) |
+| On air | transmit checked off air on a radio at both rates (`test_nxdn_tx_off_air`); receive not yet: the one provider tried has no receive fit for NXDN (6) |
 | 9600 bit/s full-rate voice (EFR), data, trunking, encryption | not written (10). Encrypted calls are recognized and not played |
 
 ## 1. On air
@@ -283,5 +283,5 @@ scrambler examples), so the codec checks against itself and the clauses only.
 
 ## 10. Not written
 
-Editing an NXDN channel's settings on the radio (a settings screen), scan and dual watch in NXDN, the RAM for the engine on the HR_C7000 board with an air interface provider (about 4.3 KB with the air interface, 72 bytes more than it has left), 9600 bit/s full rate, data (UDCH, short data), trunking (RCCH), status and other supplementary messages,
+Editing an NXDN channel's settings on the radio (a settings screen), scan and dual watch in NXDN, 9600 bit/s full rate, data (UDCH, short data), trunking (RCCH), status and other supplementary messages,
 encryption, a transmit filter in a provider.

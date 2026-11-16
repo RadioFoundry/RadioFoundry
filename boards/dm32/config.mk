@@ -3,8 +3,8 @@
 # DM-32UV feature defaults (config/features.mk lists them all). 880 KB of code space before the codec slot, so RAM is
 # the limit: 211,456 B below the codec's RAM window (boards/dm32/memory.ld, docs/spec/hardware-dm32.md 17.1), the
 # RTOS heap's 33 KB among them (freertos_board.h). Every feature the radio has hardware and glue for is on, and the
-# image keeps about 0.5 KB of it free: a feature that needs more RAM cuts some first, or shrinks the heap if
-# tasks.heap_min_free shows room (tests/hil/test_task_stacks.py)
+# image keeps about 6 KB of it free, about 1.4 KB with P25, P25_TRUNK and NXDN on too: a feature that needs more RAM
+# cuts some first, or shrinks the heap if tasks.heap_min_free shows room (tests/hil/test_task_stacks.py)
 # The host link runs on the programming cable's UART0; USB, PPP and TCP_CONNS follow the platform
 # (platform/hrc7000/config.mk)
 # The 240x320 panel at full resolution in 16 colors (display_dm32.c, board.mk). The 16x32 font is the large class's
@@ -23,10 +23,9 @@ CONFIG_DISPLAY_INSET_BOTTOM ?= 5
 CONFIG_VOX ?= n
 # The platform's three TCP connections; a fourth costs about 1.4 KB of main RAM. ci's maximal configuration has
 # every switch but USB and USB_NETWORK (platform/hrc7000/config.mk), and NAND_STORAGE (below), and also keeps about
-# 0.5 KB free
+# 1.4 KB free
 BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is SPI NOR, GD25Q128 class (docs/spec/hardware-dm32.md 10)
 # What the hardware can do but this radio's driver or glue doesn't yet (docs/build-config.md, "Unsupported, not
 # written, unconfirmed"): off by default, and off in ci's maximal configuration too
 BOARD_NOT_WRITTEN += VOX	# no hal_power_t.mic_level hook yet
 BOARD_NOT_WRITTEN += AUDIO_PROBE	# no board.audio_tap yet
-BOARD_NOT_WRITTEN += NXDN	# no RAM for it yet: about 4.3 KB (its engine, the air interface), 72 B more than is left; beside P25 0.9 KB more

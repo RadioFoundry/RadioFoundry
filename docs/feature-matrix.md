@@ -51,7 +51,7 @@ is `tools/bringup.py list --radio <id>`.
 | `rx_ext` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not written |
 | `p25` | off | off | off | off | off | off | off |
 | `p25_trunk` | off | off | off | off | off | off | off |
-| `nxdn` | not written | off | off | off | off | off | off |
+| `nxdn` | off | off | off | off | off | off | off |
 | `dmr_voice` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | partial, needs re-run |
 | `dmr_privacy` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `dmr_talker_alias` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
@@ -124,7 +124,7 @@ is `tools/bringup.py list --radio <id>`.
 | `tftp_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `iddb_compact` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
-| `snmp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
+| `snmp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `net_ppp` | not recorded | off | pass (seed) | pass (seed) | off | off | off |
 | `ui_navigation` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `key_lock` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
@@ -273,7 +273,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `VOLUME_BAR` | ● | ● | ● | ● | ● | ● | ● |
 | `P25` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `P25_TRUNK` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
-| `NXDN` | … | ○ | ○ | ○ | ○ | ○ | ○ |
+| `NXDN` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `AIR_RAW` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | Voltage reading (board, no switch) | Battery | Battery | Battery | None | Battery | Battery | Supply |
 | Clock kept through power-off (board, no switch) | Yes | ? | Yes | ? | ? | ? | ? |
@@ -295,7 +295,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Receive past the rated bands, Settings > Advanced | `RX_EXT` | 484 | — | Receive only, FM, off by default; ranges from each receiver chip's documents. MD-380: no receiver range in its chip documents |
 | DMR Tier II voice (modem, call stack, AMBE FEC, vocoder) | `DMR` | 175,856 | 134,308 | Includes every DMR feature and everything on IP over DMR |
 | P25 Phase 1 conventional: the air interface (framer, soft modem, shared FEC), the engine, the P25 channel mode and the full-rate voice decoder on the MBE core | `P25` | 26,904* | 24,640* | Needs a board with an air interface provider (`board.air`); without one (MD-380) nothing runs ([air-interface.md](spec/air-interface.md)). Receive and transmit checked on air against the SDR bench on the DM-32UV and the DM-1701; the VFO's mode tile, the debug link or a stored P25 channel sets it ([p25.md](spec/p25.md)). RAM: 5,192 B on the DM-1701, 424 B on the MD-380 |
-| NXDN conventional voice, 4800 and 9600 bit/s: the frame codec, receive, the call layer, the engine and the NXDN mode in the radio core | `NXDN` | 17,668* | — | Needs `DMR` (its voice goes through the DMR vocoder path) and a board with an air interface provider (`board.air`); where the provider only receives a rate, PTT is refused at that rate. The VFO's mode tile, the debug link or a stored NXDN channel sets it ([nxdn.md](spec/nxdn.md) 6, [nxdn-codeplug.md](spec/nxdn-codeplug.md)). On the DM-1701 transmit is checked off air at both rates and nothing is received: its DMR chip has no receive fit for NXDN ([modem-hrc6000.md](spec/modem-hrc6000.md) 10.5). Not on the DM-32UV yet: no RAM left for it. RAM: 1,400 B on the DM-1701; with `P25` also on it shares P25's engine memory (8,840 B flash, 320 B RAM on top of P25) |
+| NXDN conventional voice, 4800 and 9600 bit/s: the frame codec, receive, the call layer, the engine and the NXDN mode in the radio core | `NXDN` | 17,668* | — | Needs `DMR` (its voice goes through the DMR vocoder path) and a board with an air interface provider (`board.air`); where the provider only receives a rate, PTT is refused at that rate. The VFO's mode tile, the debug link or a stored NXDN channel sets it ([nxdn.md](spec/nxdn.md) 6, [nxdn-codeplug.md](spec/nxdn-codeplug.md)). On the DM-1701 transmit is checked off air at both rates and nothing is received: its DMR chip has no receive fit for NXDN ([modem-hrc6000.md](spec/modem-hrc6000.md) 10.5). RAM: 1,400 B on the DM-1701; with `P25` also on it shares P25's engine memory (8,840 B flash, 320 B RAM on top of P25) |
 | Basic privacy (Motorola / Anytone BP) | `DMR_PRIVACY` | 1,936 | 1,992 |  |
 | Talker alias receive and send | `DMR_TALKER_ALIAS` | 984 | 1,300 |  |
 | ETSI GPS Info in the embedded LC | `DMR_GPS` | 2,208 | 2,152 |  |
