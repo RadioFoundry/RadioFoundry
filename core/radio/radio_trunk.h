@@ -67,6 +67,7 @@ typedef struct {
 #endif
 	uint8_t poll_blocks;	// polling an MS from the menus: the prearranged size, 1-4 blocks (0: 4)
 	bool ip_gw;		// off-net IP goes through the system's IP gateway (IPI, dmr-trunking.md 7.7)
+	bool allcall;		// the system's record follows all-calls (a channel's RX list may add it, radio_t3_talk)
 } radio_t3_setup_t;
 
 enum { RADIO_T3_DIV_CLEAR, RADIO_T3_DIV_SET, RADIO_T3_DIV_CLEAR_IN };

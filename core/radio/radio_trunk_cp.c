@@ -10,6 +10,8 @@
 #include "codeplug/codeplug_tag.h"
 
 #if CONFIG_DMR_TRUNK
+_Static_assert(RADIO_T3_SYSTEMS == CODEPLUG_SYSTEMS_RUN, "an imported system lands where the radio runs it");
+
 // The options a codeplug may set: the rest are the debug link's (monitor, learning the system code). Listen only is
 // the system header's transmit flag, never an option bit
 #define CP_OPTS		(T3_OPT_ALLCALL | T3_OPT_EMERGENCY_ANY | T3_OPT_PRIVATE | T3_OPT_REG_TG | T3_OPT_ALS | T3_OPT_KILL | \
@@ -83,6 +85,7 @@ bool radio_t3_load(uint8_t n, radio_t3_setup_t *s)
 	// The transmit side is the header's flag: a record without it (a zeroed one too) never registers or transmits
 	c->opts = (uint16_t)((opts & CP_OPTS) | ((h.flags & CODEPLUG_SYS_TX) != 0 ? 0u : T3_OPT_LISTEN_ONLY));
 	s->ip_gw = (opts & OPT_IP_GW) != 0;
+	s->allcall = (opts & T3_OPT_ALLCALL) != 0;
 	c->own_id = h.own_id <= CODEPLUG_DMR_ID_MAX ? h.own_id : 0;
 	s->fb_hold_s = v[7];
 	s->fb_chan = h.fb_chan;
@@ -140,9 +143,9 @@ bool radio_t3_load(uint8_t n, radio_t3_setup_t *s)
 	return c->nctrl > 0 && (keyed || (h.flags & CODEPLUG_SYS_NEEDS_KEY) == 0);
 }
 
-bool radio_t3_usable(uint8_t n)
+// The checks of radio_t3_load without its buffer: the record, the key if one is needed, a control channel
+static bool usable(uint8_t n)
 {
-	// The checks of radio_t3_load without its buffer: the record, the key if one is needed, a control channel
 	uint8_t v[CODEPLUG_SYS_HDR], k[KEY_LEN];
 	codeplug_system_t h;
 	if (sys_read(n, &h, v, 0) < (int)BLOCK_MIN) {
@@ -151,14 +154,40 @@ bool radio_t3_usable(uint8_t n)
 	if ((h.flags & CODEPLUG_SYS_NEEDS_KEY) != 0 && codeplug_system_secret(n, k, sizeof k) < (int)KEY_LEN) {
 		return false;
 	}
+	// Among the channels radio_t3_load takes: a control channel past them is never hunted on
 	codeplug_sys_entry_t e;
 	int at = -1;
-	while (codeplug_sys_entry_next(&at, n, CODEPLUG_ENTRY_CHANNEL, &e, k, 0) >= 0) {
-		if (e.len >= CHAN_BODY && (e.flags & CODEPLUG_ENTRY_CONTROL) != 0) {
+	uint8_t chans = 0;
+	while (chans < RADIO_T3_CHANS && codeplug_sys_entry_next(&at, n, CODEPLUG_ENTRY_CHANNEL, &e, k, 0) >= 0) {
+		if (e.len < CHAN_BODY) {
+			continue;
+		}
+		if ((e.flags & CODEPLUG_ENTRY_CONTROL) != 0) {
 			return true;
 		}
+		chans++;
 	}
 	return false;
+}
+
+bool radio_t3_usable(uint8_t n)
+{
+	// Asked for each trunked row of a list drawn and each channel stepped past, on the UI and radio tasks: kept per
+	// system until the codeplug changes. One word (serial << 24, set << 16, systems known << 8, usable), stored
+	// whole: a store another task loses only costs that task a check again
+	static volatile uint32_t cache;
+	if (n >= RADIO_T3_SYSTEMS) {
+		return false;
+	}
+	uint32_t serial = codeplug_kv_serial(), c = cache, bit = 1u << n;
+	if ((c >> 24) != serial || (c & 0x10000u) == 0u) {
+		c = (serial << 24) | 0x10000u;	// set: a serial of 0 doesn't match a zeroed word
+	}
+	if ((c & (bit << 8)) == 0u) {
+		c |= (bit << 8) | (usable(n) ? bit : 0u);
+		cache = c;
+	}
+	return (c & bit) != 0u;
 }
 
 static t3_tg_t *tg_add(t3_cfg_t *c, uint32_t id, uint8_t flags)
@@ -183,6 +212,7 @@ void radio_t3_talk(const channel_t *ch, radio_t3_setup_t *s)
 	c->ntg = 0;
 	s->talk_id = 0;
 	s->talk_private = false;
+	c->opts = (uint16_t)((c->opts & ~T3_OPT_ALLCALL) | (s->allcall ? T3_OPT_ALLCALL : 0u));	// the last channel's goes
 	// The RX group list's groups are followed (an all-call contact there follows all-calls); the contact is what PTT
 	// calls, else the first group
 	listen_list_t l;
@@ -201,7 +231,10 @@ void radio_t3_talk(const channel_t *ch, radio_t3_setup_t *s)
 	}
 	if (ch->contact != 0 && codeplug_contact(ch->contact, &ct)) {
 		if (ct.type == CONTACT_GROUP) {
-			(void)tg_add(c, ct.id, T3_TG_TALK | T3_TG_LISTEN);
+			if (tg_add(c, ct.id, T3_TG_TALK | T3_TG_LISTEN) == NULL) {
+				// A full table: the talkgroup PTT calls takes the RX list's last place
+				c->tg[T3_TG_MAX - 1u] = (t3_tg_t){ .id = ct.id, .flags = T3_TG_TALK | T3_TG_LISTEN };
+			}
 		} else {
 			s->talk_id = ct.id;	// an individual call, or the all-call ID
 			s->talk_private = ct.type == CONTACT_PRIVATE;

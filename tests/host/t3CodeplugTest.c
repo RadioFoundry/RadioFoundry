@@ -277,6 +277,54 @@ static void test_talk(void)
 	ch.listen_list = 7;
 	radio_t3_talk(&ch, &s);
 	CHECK(s.cfg.ntg == 0 && s.talk_id == 0);
+
+	// All-call from a channel's RX list goes with the channel; the system record's own stays
+	ch.contact = 1;
+	ch.listen_list = 1;
+	radio_t3_talk(&ch, &s);
+	CHECK((s.cfg.opts & T3_OPT_ALLCALL) != 0);
+	ch.listen_list = 0;
+	radio_t3_talk(&ch, &s);
+	CHECK((s.cfg.opts & T3_OPT_ALLCALL) == 0);
+	s.allcall = true;
+	radio_t3_talk(&ch, &s);
+	CHECK((s.cfg.opts & T3_OPT_ALLCALL) != 0);
+	s.allcall = false;
+
+	// A full RX list: the talkgroup PTT calls still goes in, and talks
+	listen_list_t l;
+	memset(&l, 0, sizeof l);
+	strcpy(l.name, "Full");
+	l.count = CODEPLUG_LIST_LEN;
+	for (uint16_t i = 0; i < CODEPLUG_LIST_LEN; i++) {
+		contact((uint16_t)(10 + i), "G", 1000u + i, CONTACT_GROUP);
+		l.contacts[i] = (uint16_t)(10 + i);
+	}
+	CHECK(codeplug_set_listen_list(2, &l));
+	contact(10 + CODEPLUG_LIST_LEN, "Talk", 5000, CONTACT_GROUP);
+	ch.contact = 10 + CODEPLUG_LIST_LEN;
+	ch.listen_list = 2;
+	radio_t3_talk(&ch, &s);
+	CHECK(s.cfg.ntg == T3_TG_MAX && s.cfg.tg[T3_TG_MAX - 1].id == 5000 &&
+	      (s.cfg.tg[T3_TG_MAX - 1].flags & T3_TG_TALK) != 0 && (s.cfg.tg[0].flags & T3_TG_TALK) == 0);
+}
+
+// A control channel past the channels the radio takes (RADIO_T3_CHANS) is never hunted on: not usable, as the load
+static void test_chan_limit(void)
+{
+	radio_t3_setup_t s;
+	uint8_t v[SYS_LEN];
+
+	fresh();
+	sys_rec(v, "Many", TX, 0, 0, 0);
+	CHECK(codeplug_kv_set(SYS(0), v, sizeof v));
+	for (uint16_t i = 0; i < RADIO_T3_CHANS; i++) {
+		chan(ENTRY(i), 0, false, (uint16_t)(10 + i), 461000000 + i, 462000000 + i);
+	}
+	chan(ENTRY(RADIO_T3_CHANS), 0, true, 1, 461462500, 461087500);
+	CHECK(!radio_t3_usable(0) && !radio_t3_load(0, &s));
+	chan(ENTRY(0), 0, true, 10, 461000000, 462000000);	// one among them
+	CHECK(radio_t3_usable(0) && radio_t3_load(0, &s));
 }
 
 // The key (3) and when a system is usable: a control channel, and a key when its header says it needs one
@@ -471,6 +519,7 @@ int main(void)
 #endif
 	test_poll_long();
 	test_talk();
+	test_chan_limit();
 	test_key();
 	test_tag();
 	test_fallback();

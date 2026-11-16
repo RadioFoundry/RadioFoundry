@@ -53,7 +53,8 @@ codeplug may not set (the debug link's, and the reserved ones) are read as 0.
 Generic entries ([channel-modes.md](channel-modes.md) 7.2) of class 0, group 0xFF. Flag bit 0 marks a control
 channel, hunted in entry order. Body: LCN (2), MS receive Hz (4), MS transmit Hz (4), then one octet: the color code,
 0xFF = the system's. An entry shorter than this body is skipped. A system takes its first `T3_CTRL_MAX` control
-channels and its first `RADIO_T3_CHANS` channels in entry order; the rest are skipped.
+channels among its first `RADIO_T3_CHANS` (8) channels in entry order; the rest are skipped. A system whose only control
+channels come after them has none: it is not usable.
 
 ## 3. Key
 
@@ -71,11 +72,14 @@ kind bit 4: no fallback on this channel. No parameter block.
 | Transmit allowed, on a usable system with its transmit side | registers, affiliates and transmits as the site grants |
 | Transmit flag clear (a zeroed tag too) | follows the system and its calls; never registers, affiliates or transmits, and PTT is refused |
 | On a listen-only system (1) | the same, whatever the tag says |
-| No system (0xFF), a system that is absent, of another type, not usable or past the systems the radio runs | **unavailable**: nothing starts, the channel is receive only on its record's frequency and PTT is refused |
+| No system (0xFF), a system that is absent, of another type, not usable or past the systems the radio runs, or no ID to register with (the record's own ID and the radio's DMR ID both 0) | **unavailable**: nothing starts, the channel is receive only on its record's frequency and PTT is refused |
 
 The base record carries the talk target (contact: a talkgroup, a private contact or the all-call contact) and the RX
 group list (the talkgroups followed), the name, power, TX time-out and talker alias. Its frequencies are the system's
-first control channel's.
+first control channel's. An all-call contact in the RX group list follows all-calls on that channel only; the system's
+option (1) follows them on all its channels. The talk target's talkgroup is always followed: when the RX group list
+fills the radio's 32 talkgroups, it takes the last place. Another channel of the system running takes its talk target
+and talkgroups without leaving the call or control channel the radio is on.
 
 ## 5. Short data poll and supplementary data
 
