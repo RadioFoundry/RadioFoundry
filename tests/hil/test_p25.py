@@ -199,7 +199,7 @@ def make_p25(img, number):
     img[a + 0x18] = 1                   # DMR
     img[a + 0x33] |= 0x04               # receive only
     tag = bytes([KIND_P25, 0xFF]) + name_check(img[a:a + 16]).to_bytes(2, "little") + bytes([0])   # no TX flag
-    block = (0x8000 | STORED_NAC).to_bytes(2, "little") * 2 + bytes([0])    # RX and TX NAC, normal squelch
+    block = bytes([0]) + (0x8000 | STORED_NAC).to_bytes(2, "little") * 2    # normal squelch, RX and TX NAC
     lo, hi = cps_client.SETTINGS_AREA
     img[lo:hi] = area_with(img[lo:hi], KEY_CH_TAG + number - 1, tag + block)
 
