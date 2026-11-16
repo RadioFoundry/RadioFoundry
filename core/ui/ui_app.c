@@ -1343,6 +1343,7 @@ static void quick_unavailable(uint8_t kind)
 	case QT_BANDWIDTH:
 		ui_toast(view->ch.mode == RADIO_MODE_DMR ?
 			TR(QUICK_WHY_FM_ONLY_DMR_CHANNEL, "FM only: this is a DMR channel") :
+			view->ch.mode == RADIO_MODE_P25 ? TR(QUICK_WHY_FM_ONLY_P25_CHANNEL, "FM only: this is a P25 channel") :
 			TR(WHY_NOT_IN_BUILD, "Not in this build"));
 		break;
 	case QT_PRIVACY: ui_toast(TR(WHY_PRIVACY_NOT_IN_BUILD, "Privacy: not in this build")); break;

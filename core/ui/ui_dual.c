@@ -1320,7 +1320,8 @@ static void pick_item(uint16_t i, ui_item_t *it)
 	// "146.940 FM", else "146.940": the channel's name gives way last
 	sb_str(&b, TEXT_ALT_OPEN);
 	sb_freq(&b, ch.rx_hz);
-	sb_str(&b, ch.mode == RADIO_MODE_DMR ? " DMR" : " FM");
+	sb_chr(&b, ' ');
+	sb_str(&b, ui_mode_name(ch.mode));
 	sb_str(&b, TEXT_ALT_NEXT);
 	sb_freq(&b, ch.rx_hz);
 	sb_str(&b, TEXT_ALT_CLOSE);

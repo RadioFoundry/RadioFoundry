@@ -387,6 +387,11 @@ msgctxt "QUICK_WHY_FM_ONLY_DMR_CHANNEL"
 msgid "FM only: this is a DMR channel"
 msgstr "Solo FM: questo è un canale DMR"
 
+#: core/ui/ui_app.c
+msgctxt "QUICK_WHY_FM_ONLY_P25_CHANNEL"
+msgid "FM only: this is a P25 channel"
+msgstr "Solo FM: questo è un canale P25"
+
 #: core/ui/ui_app.c core/ui/ui_menus.c
 msgctxt "WHY_NOT_IN_BUILD"
 msgid "Not in this build"

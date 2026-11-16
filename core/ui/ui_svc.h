@@ -66,6 +66,11 @@ bool ui_svc_dmr_color_code(uint8_t cc);
 // The VFO's SFR role (CONFIG_SFR, sfr.md 4): a as a channel's SFR byte A; false: not in this build
 bool ui_svc_vfo_sfr(uint8_t a);
 bool ui_svc_mode(uint8_t mode);			// radio_mode_t: the VFO's mode (a channel's goes through Copy to VFO)
+// A channel mode's name as the screens show it (radio_mode_t). A name, never translated
+static inline const char *ui_mode_name(uint8_t mode)
+{
+	return mode == RADIO_MODE_DMR ? "DMR" : mode == RADIO_MODE_P25 ? "P25" : "FM";
+}
 // Copy to VFO: the channel on view into the VFO, which opens (CONFIG_VFO). Returns a radio_vfo_copy_t: VFO_COPY_OK
 // when the request went to the radio core, else why nothing changed
 uint8_t ui_svc_vfo_copy(const radio_view_t *v);

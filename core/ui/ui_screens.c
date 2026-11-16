@@ -254,7 +254,7 @@ static uint8_t rssi_bars(int16_t dbm)
 // The mode word: AM where an FM channel or the VFO is received in AM (the air band)
 static const char *mode_word(const radio_view_t *v)
 {
-	return v->ch.mode == RADIO_MODE_DMR ? "DMR" : v->am ? "AM" : "FM";
+	return v->ch.mode == RADIO_MODE_FM && v->am ? "AM" : ui_mode_name(v->ch.mode);
 }
 
 // Status strip (P2): state pill, mode, monitor, lock, unread messages, signal, battery.
@@ -403,7 +403,7 @@ static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t
 	const char *mw = mode_word(v);
 #if CONFIG_DUAL_WATCH
 	if (s->dual.on && !v->aprs_tx)
-		mw = s->dual.pane[s->dual.sel].mode == RADIO_MODE_DMR ? "DMR" : "FM";
+		mw = ui_mode_name(s->dual.pane[s->dual.sel].mode);
 #endif
 	if (v->aprs_tx)
 		mw = "FM";
@@ -1045,6 +1045,14 @@ static void draw_chips(const radio_view_t *v, const ui_state_t *s)
 		}
 		return;
 	}
+	bool pw_temp = v->power != channel_power(v);
+	if (v->ch.mode == RADIO_MODE_P25) {
+		// No sub-audio tone, always 12.5 kHz, no FM squelch: the power alone
+		if (pw_temp)
+			x = gfx_text(f, x, y, GLYPH_DOT, ui_col.warn);
+		gfx_text(f, x, y, ui_power_name(v->power, v->ch.tx_hz), pw_temp ? ui_col.warn : ui_col.fg);
+		return;
+	}
 	sb_init(&b, buf, sizeof buf);
 	bool tone_temp = (v->temp & (RADIO_TEMP_TX_TONE | RADIO_TEMP_RX_TONE)) != 0;
 	if (tone_temp)
@@ -1070,7 +1078,6 @@ static void draw_chips(const radio_view_t *v, const ui_state_t *s)
 	if (bw_temp)
 		x = gfx_text(f, x, y, GLYPH_DOT, ui_col.warn);
 	x = gfx_text(f, x, y, v->ch.bw == RADIO_BW_25K ? "25k" : "12.5k", bw_temp ? ui_col.warn : ui_col.fg) + f->w;
-	bool pw_temp = v->power != channel_power(v);
 	if (pw_temp)
 		x = gfx_text(f, x, y, GLYPH_DOT, ui_col.warn);
 	x = gfx_text(f, x, y, ui_power_name(v->power, v->ch.tx_hz), pw_temp ? ui_col.warn : ui_col.fg) + f->w;

@@ -1286,7 +1286,7 @@ static void sb_channel_row(sbuf_t *b, const channel_t *ch)
 	} else
 #endif
 	{
-		sb_str(&wb, ch->mode == RADIO_MODE_DMR ? "DMR" : radio_am_channel(ch) ? "AM" : "FM");
+		sb_str(&wb, ch->mode == RADIO_MODE_FM && radio_am_channel(ch) ? "AM" : ui_mode_name(ch->mode));
 	}
 	sb_str(b, TEXT_ALT_OPEN);
 	sb_freq(b, ch->rx_hz);
