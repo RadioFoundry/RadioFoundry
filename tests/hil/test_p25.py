@@ -75,6 +75,18 @@ After each call the radio is back on the control channel with the request idle (
 CONFIG_P25_TRUNK, where the bench board has no fsk4 transmitter or no FM receiver, where the settings area isn't ours to
 write or holds a system already, and where the radio has no unit ID or talk group to ask with (p25t.tx=0).
 
+test_p25_trunk_rx (opt-in: --allow-rf --allow-service-stop --allow-codeplug-write --p25-cc-mhz MHz
+--p25-voice-out-mhz MHz --bench-api-2 HOST; two bench boards transmit, the radio only receives): the channel on view
+is made a stored P25 trunked channel the same way, but with transmit off on a listen-only system, so the radio never
+keys (p25t.tx=0). For PLAY_S the first board plays a control channel that grants the channel's talk group
+(p25.run.tx_dst) a voice channel at --p25-voice-out-mhz to another unit, RX_SRC, in every third unit, while the second
+board (--bench-api-2) plays that unit's call there, over and over: the two boards key seconds after their requests
+and not together, so neither the grant nor the call has one moment. The radio must hold the control channel, follow
+a grant (p25t.follows) to the voice channel's frequency (p25t.voice_hz), receive the call (p25.rx_calls, at least one
+LDU pair's voice frames, its unit and talk group from the link control, frames played) and be back on the control
+channel while that still plays. The backup is written back afterwards. Skipped as test_p25_trunk_tx is, and without a
+second transmitter.
+
 Skipped without CONFIG_P25, on a channel in a listen-only band, and in hotspot mode."""
 import json
 import os
@@ -617,10 +629,10 @@ def bcd_hz(hz):
     return out
 
 
-def make_p25_trunk(img, number, plan, cc_hz, in_hz):
-    """Channel number of img made a stored P25 trunked channel with transmit on: the stand-in record on the control
-    channel pair (the frequencies the views show before the follower runs), system 0 with its control channel and
-    one identifier, then the channel's tag"""
+def make_p25_trunk(img, number, plan, cc_hz, in_hz, tx=True):
+    """Channel number of img made a stored P25 trunked channel: the stand-in record on the control channel pair (the
+    frequencies the views show before the follower runs), system 0 with its control channel and one identifier, then
+    the channel's tag. tx: transmit on in the system and the tag (off: a listen-only system, the radio never keys)"""
     import cps_client
     base, off, cc, _ = plan
     _, a = cps_client.channel_addr(number)
@@ -631,8 +643,9 @@ def make_p25_trunk(img, number, plan, cc_hz, in_hz):
     lo, hi = cps_client.SETTINGS_AREA
     area = bytes(img[lo:hi])
     # channel-modes.md 7.1: type 3 (P25 trunked), flags, the name, WACN, system ID, NAC
-    system = bytes([3, 0x02, 0, 5]) + bytes(8) + b"HIL P25T".ljust(16, b"\0") + int(SITE_WACN, 16).to_bytes(3, "little") \
-        + int(SITE_SYSID, 16).to_bytes(2, "little") + (0x8000 | int(SITE_NAC, 16)).to_bytes(2, "little") + bytes(3)
+    system = bytes([3, 0x02 if tx else 0, 0, 5]) + bytes(8) + b"HIL P25T".ljust(16, b"\0") \
+        + int(SITE_WACN, 16).to_bytes(3, "little") + int(SITE_SYSID, 16).to_bytes(2, "little") \
+        + (0x8000 | int(SITE_NAC, 16)).to_bytes(2, "little") + bytes(3)
     area = area_with(area, KEY_SYSTEM, system)
     # 7.2: system 0's control channel (class 0), then its identifier 0 (class 2)
     area = area_with(area, KEY_SYS_ENTRY, bytes([0, 0, 0, 0x01]) + cc.to_bytes(2, "little")
@@ -640,7 +653,7 @@ def make_p25_trunk(img, number, plan, cc_hz, in_hz):
     area = area_with(area, KEY_SYS_ENTRY + 1, bytes([0, 2, 1, 0]) + base.to_bytes(4, "little")
                      + SPACING_HZ.to_bytes(4, "little") + off.to_bytes(4, "little", signed=True)
                      + (12500).to_bytes(4, "little") + bytes(2))
-    tag = bytes([KIND_P25_TRUNK, 0]) + name_check(img[a:a + 16]).to_bytes(2, "little") + bytes([0x01, 0])  # TX on
+    tag = bytes([KIND_P25_TRUNK, 0]) + name_check(img[a:a + 16]).to_bytes(2, "little") + bytes([0x01 if tx else 0, 0])
     img[lo:hi] = area_with(area, KEY_CH_TAG + number - 1, tag)
 
 
@@ -666,6 +679,27 @@ def play_cc(sdr_bench, mhz, path, nsyms, seconds):
         data = f.read()
     return sdr_bench.tx_start("fsk4", mhz, None, max_s=seconds + 1, symbols=nsyms, hex=data.hex(), shape="c4fm",
                               clip_hz=4064, repeat=max(1, int(seconds * 4800 / nsyms)))
+
+
+def trunk_slot(radio, backup_dir):
+    """Where a test writes its trunked channel: (the stored channel on view, the CPS regions with the settings area,
+    where the system and the tag go). Skip where the area isn't valid, the radio isn't on a stored channel, or the
+    codeplug holds system 0 or the channel's tag already"""
+    import cps_client
+    from test_cps import pick_channel, read_backup
+    regions = cps_client.REGIONS["radio"]
+    probe, _ = read_backup(radio, backup_dir, "p25tprobe", regions)
+    lo, hi = cps_client.SETTINGS_AREA
+    if cps_client.area_state(probe[lo:hi]) != "valid":
+        skip("state", "the codeplug settings area isn't valid: the restore couldn't take the system back")
+    core = radio.core()
+    number = pick_channel(radio, probe)
+    if core.get("vfo") == "1" or number != as_int(core.get("channel_number"), 0):
+        skip("state", "the radio isn't on a stored channel")
+    used = {KEY_SYSTEM, KEY_SYS_ENTRY, KEY_SYS_ENTRY + 1, KEY_CH_TAG + number - 1} & set(area_keys(probe[lo:hi]))
+    if used:
+        skip("state", f"the codeplug holds a system or this channel's tag already (keys {sorted(used)})")
+    return number, regions
 
 
 def trunk_call(radio, sdr_bench, cc_mhz, cc, rx_mhz, need_ready):
@@ -728,22 +762,10 @@ def test_p25_trunk_tx(radio, sdr_bench, backup_dir, pytestconfig):
     p25_ready(radio)
     if not sdr_bench.can_fm_rx():
         skip("bench", f"the bench board {sdr_bench.api_rx} has no FM receive")
-    import cps_client
-    from test_cps import codeplug_edited, pick_channel, read_backup
+    from test_cps import codeplug_edited
     cc_hz, in_hz, voice_in_hz = (round(m * 1e6) for m in (cc_mhz, in_mhz, voice_mhz))
     plan = site_plan(cc_hz, in_hz, voice_in_hz)
-    regions = cps_client.REGIONS["radio"]      # with the settings area, where the system and the tag go
-    probe, _ = read_backup(radio, backup_dir, "p25tprobe", regions)
-    lo, hi = cps_client.SETTINGS_AREA
-    if cps_client.area_state(probe[lo:hi]) != "valid":
-        skip("state", "the codeplug settings area isn't valid: the restore couldn't take the system back")
-    core = radio.core()
-    number = pick_channel(radio, probe)
-    if core.get("vfo") == "1" or number != as_int(core.get("channel_number"), 0):
-        skip("state", "the radio isn't on a stored channel")
-    used = {KEY_SYSTEM, KEY_SYS_ENTRY, KEY_SYS_ENTRY + 1, KEY_CH_TAG + number - 1} & set(area_keys(probe[lo:hi]))
-    if used:
-        skip("state", f"the codeplug holds a system or this channel's tag already (keys {sorted(used)})")
+    number, regions = trunk_slot(radio, backup_dir)
     with codeplug_edited(radio, backup_dir, lambda img: make_p25_trunk(img, number, plan, cc_hz, in_hz), "p25t",
                          regions):
         v = radio.wait_for(lambda x: x.get("ch.kind") == str(KIND_P25_TRUNK) and x.get("p25t.on") == "1", 6.0,
@@ -793,3 +815,111 @@ def test_p25_trunk_tx(radio, sdr_bench, backup_dir, pytestconfig):
     assert lcs, "no LDU1 on the voice channel"
     for lc in lcs:
         assert lc.get("src") == unit and lc.get("tgid") == tg, f"LDU1 link control {lc}"
+
+
+# --- A trunked call received (p25-trunking.md 4): a control channel and a voice channel, two bench transmitters ---
+
+P25T_CONTROL, P25T_VOICE = "2", "3"     # p25t.state: on the control channel, on a voice channel
+
+
+def start_together(*starts):
+    """Each start (a bench board's tx_start: it returns once its board keyed, seconds after the request) in a thread
+    of its own: [(what it returned, when)], in order. An exception of one (a skip too) is raised here"""
+    import threading
+    out = [None] * len(starts)
+
+    def run(i, start):
+        try:
+            out[i] = (start(), time.monotonic(), None)
+        except BaseException as e:      # a skip is one
+            out[i] = (None, time.monotonic(), e)
+
+    threads = [threading.Thread(target=run, args=(i, s), daemon=True) for i, s in enumerate(starts)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    for _, _, e in out:
+        if e is not None:
+            raise e
+    return [(r, at) for r, at, _ in out]
+
+
+@pytest.mark.feature("p25_trunk")
+@pytest.mark.rf
+@pytest.mark.codeplug_write
+@pytest.mark.bench_service
+@pytest.mark.bench_modem
+def test_p25_trunk_rx(radio, sdr_bench, sdr_bench_2, backup_dir, pytestconfig):
+    import p25tool
+    cc_mhz, voice_mhz = rig(pytestconfig, "p25-cc-mhz"), rig(pytestconfig, "p25-voice-out-mhz")
+    if "P25_TRUNK" not in radio.features():
+        skip("not_built", "built without CONFIG_P25_TRUNK")
+    p25_ready(radio)
+    from test_cps import codeplug_edited
+    cc_hz, voice_hz = round(cc_mhz * 1e6), round(voice_mhz * 1e6)
+    plan = site_plan(cc_hz, cc_hz, voice_hz)        # no offset: nothing is sent inbound
+    number, regions = trunk_slot(radio, backup_dir)
+    with codeplug_edited(radio, backup_dir, lambda img: make_p25_trunk(img, number, plan, cc_hz, cc_hz, tx=False),
+                         "p25trx", regions):
+        v = radio.wait_for(lambda x: x.get("ch.kind") == str(KIND_P25_TRUNK) and x.get("p25t.on") == "1", 6.0,
+                           sections=("core", "channel", "p25", "p25_trunk"), what="the trunked channel running")
+        if v.get("mode") != "p25":
+            skip("no_hw", "the channel is parked: the board's air interface can't carry P25")
+        assert v.get("p25t.tx") == "0", "the follower's transmit side is on, on a listen-only system"
+        assert v.get("p25t.cc_hz") == str(cc_hz), f"the follower's control channel {v.get('p25t.cc_hz')}"
+        tg = as_int(v.get("p25.run.tx_dst")) or 0
+        if not tg:
+            skip("state", "the channel has no talk group to grant")
+        with tempfile.TemporaryDirectory() as tmp, sdr_bench.lease(), sdr_bench_2.lease():
+            # the grant in every third unit: the broadcasts keep their blocks (a unit holds three)
+            cc = cc_file(tmp, plan, "--grant", f"{tg}:{plan[3]:x}:{RX_SRC}", "--grant-at", "2:0:3")
+            path, exp = os.path.join(tmp, "call.dibits"), os.path.join(tmp, "call.json")
+            p25tool.run(["gen", path, exp, "--nac", SITE_NAC, "--tg", tg, "--src", RX_SRC, "--pairs", RX_PAIRS,
+                         "--lead", 96, "--tail", 48])
+            with open(exp) as f:
+                n = json.load(f)["total_syms"]
+            assert n <= FSK4_HEX_MAX, f"the call holds {n} symbols, past {FSK4_HEX_MAX}"
+            v0 = radio.view(["core", "p25", "p25_trunk"])
+            (tx, cc_at), (vt, voice_at) = start_together(
+                lambda: play_cc(sdr_bench, cc_mhz, cc[0], cc[1], PLAY_S),
+                lambda: play_cc(sdr_bench_2, voice_mhz, path, n, PLAY_S))
+            held, tuned, back = False, set(), None
+            try:
+                while time.monotonic() < cc_at + PLAY_S - 0.3:
+                    x = radio.view(["core", "p25", "p25_trunk"])
+                    st = x.get("p25t.state")
+                    if st == P25T_VOICE:
+                        tuned.add(x.get("p25t.voice_hz"))
+                    elif st == P25T_CONTROL:
+                        held = True
+                        if tuned:
+                            back = x        # on the control channel again after a call
+                    time.sleep(0.05)
+            finally:
+                tx.wait(PLAY_S + 20)
+                vt.wait(PLAY_S + 20)
+            v1 = radio.wait_for(lambda x: x.get("p25.rx") != "1", 3.0, sections=("core", "p25", "p25_trunk"),
+                                what="the reception ended")
+    radio.wait_for(lambda x: x.get("ch.kind") == "0" and x.get("p25t.on") != "1", 6.0,
+                   sections=("core", "channel", "p25_trunk"), what="the channel back as it was, the follower stopped")
+
+    def grew(key):
+        return (as_int(v1.get(key)) or 0) - (as_int(v0.get(key)) or 0)
+
+    print(f"\ntalk group {tg}; the voice board keyed {voice_at - cc_at:+.1f} s against the control channel's; "
+          f"blocks {grew('p25t.blocks')} ({grew('p25t.crc_fail')} CRC failures), grants {grew('p25t.grants')}, "
+          f"follows {grew('p25t.follows')} to {sorted(tuned) or 'nowhere'}, voice lost {grew('p25t.voice_lost')}; "
+          f"calls {grew('p25.rx_calls')}, voice frames {grew('p25.voice')} ({grew('p25.voice_bad')} bad), played "
+          f"{grew('p25v.frames') if 'p25v.frames' in v1 else 'n/a'}, from {v1.get('p25.src')} to {v1.get('p25.dst')}")
+    assert held, "the control channel never held: " + ", ".join(f"{k[5:]} {v1.get(k)}" for k in TRUNK_KEYS)
+    assert grew("p25t.follows") >= 1, f"no grant followed ({grew('p25t.grants')} heard)"
+    assert tuned == {str(voice_hz)}, f"followed to {sorted(tuned)}, the voice channel is {voice_hz} Hz"
+    assert grew("p25.rx_calls") >= 1, "no reception counted on the voice channel"
+    assert grew("p25.voice") >= 18, f"{grew('p25.voice')} voice frames: less than one LDU pair's"
+    assert v1.get("p25.src") == str(RX_SRC) and v1.get("p25.dst") == str(tg), \
+        f"the call {v1.get('p25.src')} -> {v1.get('p25.dst')}, sent {RX_SRC} -> {tg}"
+    assert back is not None, "never back on the control channel after a call while it still played"
+    assert grew("p25.tx_calls") == 0 and grew("p25t.bursts") == 0, "the radio sent something"
+    if "p25v.frames" in v1 and v1.get("p25v.built") == "1":
+        assert grew("p25v.frames") > 0, "no voice frame played"

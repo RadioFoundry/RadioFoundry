@@ -17,7 +17,7 @@ State:
 |---|---|---|---|
 | Trunking signaling units (TSDU) and the header of a multi-block trunking packet: receive, FEC, CRC | yes | yes | the bench's control channel (8): 152 blocks with 1 CRC failure while only listening; one or two blocks lost around each of its own bursts |
 | Outbound messages a listener needs (2) | yes | yes | the bench's: network and RFSS status, the identifier, grants |
-| The follower: hunt, hold, follow, return (4) | yes | yes, also through the soft modem with noise | a grant to another unit's call followed to a second bench transmitter, its voice played, back on the control channel after the terminator (by hand: `test_p25_trunk_tx` has one transmitter) |
+| The follower: hunt, hold, follow, return (4) | yes | yes, also through the soft modem with noise | `test_p25_trunk_rx`: a grant to another unit's call followed to a second bench transmitter, its voice received and played, back on the control channel after the terminator |
 | The radio core: a trunked channel, its retunes, the UI (7) | yes | yes | yes, a channel written over CPS |
 | Inbound requests and their answers (2.1) | yes | yes | the three requests decoded off air by `p25tool.py`; the bench's answers taken |
 | Registration, affiliation, voice request, transmit on the grant, return (5) | yes | yes (`radioCoreTestP25T`, a fake site) | `test_p25_trunk_tx` |
@@ -309,8 +309,11 @@ and hunts again on return. With transmit on, the fake site reads the radio's inb
 and affiliation, PTT refused before them, a request granted (the radio keys on the voice channel's inbound frequency
 with its unit and group, then comes back), a denied and a queued request, no answer (three sends, then a timeout), a
 grant to a channel outside the bands. `p25TrunkTest` checks the inbound layouts and the follower's access timers.
-`tests/hil/test_p25.py`: `test_p25_trunk_follow` (opt-in, receive only) on a live system, and `test_p25_trunk_tx`
-(opt-in, the bench and the radio transmit) against a control channel the bench plays (8). The second has run on a radio; the first needs a live system.
+`tests/hil/test_p25.py`: `test_p25_trunk_follow` (opt-in, receive only) on a live system; `test_p25_trunk_tx` (opt-in,
+the bench and the radio transmit) against a control channel the bench plays (8); and `test_p25_trunk_rx` (opt-in, two
+bench transmitters, the radio only receives on a listen-only system): the control channel grants another unit's call
+while a second transmitter plays that call on the voice channel. The last two have run on a radio; the first needs a
+live system.
 
 ## 8. Bench tools
 
