@@ -19,7 +19,7 @@ State:
 | Trunking signaling units (TSDU) and the header of a multi-block trunking packet: receive, FEC, CRC | written, host tested |
 | Messages a listener needs (2) | written, host tested |
 | The follower: hunt, hold, follow, return (4) | written, host tested, also through the soft modem with noise |
-| The radio core: a trunked channel, its retunes, the UI | not written (6) |
+| The radio core: a trunked channel, its retunes, the UI | written, host tested (6) |
 | On air | not run on a radio |
 | Transmit, registration, affiliation; TDMA (Phase 2) voice channels; roaming by signal level; multi-block message bodies | not written |
 
@@ -160,27 +160,54 @@ follows, refusals by reason, wrong system, hunts, control channel losses, voice 
 |---|---|
 | `wacn`, `sysid`, `nac` | `sys.wacn`, `sys.sysid`, `sys.cc_nac` (their "any" values are any here too) |
 | `flags`: `SKIP_ENC`, `PLAN_ONLY`, `ALL_GROUPS` | `sys.options`, `follow_all` |
-| `unit_id`, `talk_group` | `unit_id`, `talk_group` |
+| `unit_id`, `talk_group` | `unit_id` (the P25 settings' `unit_id` first, as on a conventional channel), `talk_group` |
 | `cc[]`: `hz`, `chan`, `site` | `ctl[]`: `rx_hz`, `chan`; `ctl_site[]` |
 | `iden_set`, `iden[]`: base, spacing, slots, TDMA | `iden_set`, `iden[]` (bandwidth and transmit offset are not needed to listen) |
-| `hold_ms` | `sys.hold_s` x 1000 |
-| `fallback_ms` | none yet: the radio's own |
+| `hold_ms` | `sys.hold_s` x 1000 (0: no hold) |
+| `fallback_ms` | none yet: 0, never (the fallback channel is read, not used) |
 | `groups[]`, `voice_lost_ms`, `call_max_ms`, `P25_FOLLOW_NO_UNIT` | none yet |
 
 Not used by a listener: `sys.roam_dbm`, `listen_only` (it is always), the control channels' transmit frequencies.
 
-## 6. A radio core running it
+## 6. The radio core
 
-What a radio core does to run the follower on a trunked channel (none of it is written yet):
+`core/radio/radio_p25.c` runs the follower on a P25 trunked channel (kind 3, [channel-modes.md](channel-modes.md) 4)
+where the board's air interface receives P25. It is the conventional channel's path ([p25.md](p25.md) 7) with these
+differences:
 
-1. Open the P25 engine (`p25_engine_begin`) with `cfg.trunk` set and `rx_nac` the system's NAC (or any), hooks
-   `rx_unit` and `rx_call` handing units and calls to `p25_follow_unit` and `p25_follow_call`; tick the follower from
-   the same task (the provider's) at least every 100 ms.
-2. The `tune` hook asks the core's task to retune: the receiver to `hz`, the engine's selective squelch (`rx_tgid`)
-   to the group for a group call, 0 otherwise (`p25_engine_set`), then `p25_engine_retuned` (which ends the call in
-   hand on a trunked channel) and `p25_follow_retuned`. Units that arrive before that are ignored.
-3. PTT on a trunked channel is refused. Nothing in this path keys the transmitter.
-4. The follower's state sits with the engine in the memory the board places for it.
+| Step | What happens |
+|---|---|
+| Read | `radio_p25_take` makes the channel P25; the radio core tunes it as any P25 channel (the record's receive frequency, 12.5 kHz, the DMR stack stopped) |
+| Begin | `radio_p25_begin` reads the system (`p25_trunk_load`) into the part of the P25 memory the voice path takes next, and makes the follower's configuration (5) and the engine's: `cfg.trunk` set, both NACs the control channel's (or any), our unit ID, the channel's talk group. Then the voice path, the follower (its first tune), the engine. A system that doesn't load: no engine (`p25.begin_fails`) |
+| Units | The engine's `rx_unit` and `rx_call` hooks hand every unit and every call's fields to the follower, in the provider's task |
+| Timers | The radio task ticks the follower at its own tick (10 ms), so its timers run whether the provider delivers or not (a provider that receives only at a sync delivers nothing on a dead channel) |
+| Retune | The `tune` hook only records the request. The radio task carries it out at its next tick: the receiver to the frequency (12.5 kHz, no tone), the engine's selective squelch (`rx_tgid`) to the group for a group call and 0 otherwise (`p25_engine_set`), `p25_engine_retuned`, then `p25_follow_retuned`. A frequency outside the board's receive bands, or in a listen-only band, is not tuned (`p25t.untuned`): the follower hears nothing there and goes back |
+| PTT | Refused with "RX only" whatever the record says (`TXDENY_RX_ONLY`); `radio_p25_tx_prepare` refuses as well. Nothing in this path keys the transmitter |
+| Leave | Another channel, the scan, the bench or anything else that takes the modem ends the engine, then the follower |
+
+One task at a time runs the follower, without a lock: each task sets its own flag, then looks at the other's. The task
+that finds the other's flag set clears its own and leaves. On one core the task that runs second always sees the
+first one's flag, so the two are never inside together. The provider's task then drops that unit or call
+(`p25t.skips`; the control channel repeats itself), the radio task tries again at its next tick.
+
+Memory: the follower, its configuration and its control channel and identifier tables sit beside the engine in the
+memory the board places for P25 (the vocoder's, where it lends it); the system read from the codeplug shares the voice
+path's part, which it needs only until the voice path starts. The radio task keeps a copy of the follower's view for
+other tasks (about 150 bytes).
+
+What the user sees: `p25.trunk` in the radio view (`RADIO_P25_TRUNK_*`: finding the system, on the control channel,
+following a call). Home's talk line says "Finding system", "Control channel" or "Following TG 201" (the grant's group
+until the call's own fields are in) instead of what PTT calls. The debug link's `p25_trunk` section has the follower's
+view and the retune counters ([debuglink.md](debuglink.md) 3.7).
+
+Not used yet: the fallback channel, an RX group list (`groups`), the system's `roam_dbm`.
+
+Tests: `radioCoreTestP25T` (host) runs the radio core against a trunked site on the fake air interface: it finds the
+system on the primary control channel, refuses PTT, follows a grant for its talk group to the voice channel and plays
+the call there, comes back, leaves another group's grant and an encrypted one (skip on), does not tune a channel
+outside the radio's bands, finds the system on a second control channel programmed by number, stops with the channel
+and hunts again on return. `tests/hil/test_p25.py`, `test_p25_trunk_follow` (opt-in, receive only): a stored trunked
+channel on a live system; not yet run on a radio.
 
 ## 7. Not confirmed
 
