@@ -55,6 +55,11 @@ is `tools/bringup.py list --radio <id>`.
 | `dmr_gps` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `dmr_emergency` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass |
 | `dmr_roaming` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
+| `dmr_trunk` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `dmr_trunk_tx` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `dmr_trunk_supl` | off | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `dmr_trunk_gw` | off | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `voice_capture` | off | off | off | off | off | off | off |
 | `dmr_signaling` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `vfo` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `vfo_fm` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial, needs re-run |
@@ -113,7 +118,7 @@ is `tools/bringup.py list --radio <id>`.
 | `net_http` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `net_http_gzip` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `net_webctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `net_rigctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
+| `net_rigctl` | off | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `net_usrp` | not recorded | not recorded | not recorded | not written | not recorded | not recorded | pass, needs re-run |
 | `net_aprsis` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `mdns` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
@@ -121,7 +126,7 @@ is `tools/bringup.py list --radio <id>`.
 | `tftp_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `iddb_compact` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
-| `snmp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
+| `snmp` | off | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `net_ppp` | not recorded | off | pass (seed) | pass (seed) | off | off | off |
 | `ui_navigation` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `key_lock` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
@@ -188,6 +193,11 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `DMR_SIGNALING` | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_EMERGENCY` | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_ROAMING` | ● | ● | ● | ● | ● | ● | ● |
+| `DMR_TRUNK` | ● | ● | ● | ● | ● | ● | ● |
+| `DMR_TRUNK_TX` | ● | ● | ● | ● | ● | ● | ● |
+| `DMR_TRUNK_SUPL` | ○ | ● | ● | ● | ● | ● | ● |
+| `DMR_TRUNK_GW` | ○ | ● | ● | ● | ● | ● | ● |
+| `VOICE_CAPTURE` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `DMR_IP_GATEWAY` | ● | ● | ● | ● | ● | ● | ● |
 | `ZONE_SHARE` | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_UDP_COMPRESS` | ● | ● | ● | ● | ● | ● | ● |
@@ -196,7 +206,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `NET_HTTP` | ● | ● | ● | ● | ● | ● | ● |
 | `NET_HTTP_GZIP` | ● | ● | ● | ● | ● | ● | ● |
 | `NET_WEBCTL` | ● | ● | ● | ● | ● | ● | ● |
-| `NET_RIGCTL` | ● | ● | ● | ● | ● | ● | ● |
+| `NET_RIGCTL` | ○ | ● | ● | ● | ● | ● | ● |
 | `NET_APRSIS` | ● | ● | ● | ● | ● | ● | ● |
 | `NET_USRP` | ● | ● | ● | … | ● | ● | ● |
 | `MDNS` | ● | ● | ● | ● | ● | ● | ● |
@@ -204,7 +214,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `TFTP_IDDB` | ● | ● | ● | ● | ● | ● | ● |
 | `IDDB_COMPACT` | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_CONTROL_STATION` | ● | ● | ● | ● | ● | ● | ● |
-| `SNMP` | ● | ● | ● | ● | ● | ● | ● |
+| `SNMP` | ○ | ● | ● | ● | ● | ● | ● |
 | `SFR` | ● | ● | ● | ● | ✕ | ● | ● |
 | `SFR_DUALPATH_RX` | ● | ● | ● | ● | ✕ | ● | ● |
 | `SFR_CWID` | ● | ● | ● | ● | ✕ | ● | ● |
@@ -292,6 +302,10 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | DMR emergency (alarm, emergency call, hot mic) | `DMR_EMERGENCY` | 3,296 | 3,188 |  |
 | Repeater roaming | `DMR_ROAMING` | 11,952 | 12,380 |  |
 | CSBK signaling: call alert, radio check | `DMR_SIGNALING` | 592 | 752 |  |
+| Tier III trunked systems: control channel, registration, following calls | `DMR_TRUNK` | 37,540 | 38,176 | Includes its children. Off, a trunked channel is shown as a mode not in this build ([dmr-trunking](spec/dmr-trunking.md)). The four trunking figures are from the default builds they were added to |
+| Trunked calls and services: voice, status, short data, packet data, authentication | `DMR_TRUNK_TX` | 11,548 | 11,876 | Needs `DMR_TRUNK`. Includes its children. Off, the radio follows a system and never transmits there |
+| Trunked supplementary data and the short data poll | `DMR_TRUNK_SUPL` | 724 | 684 | Needs `DMR_TRUNK_TX` |
+| Trunked calls through a system's telephone, line and dispatcher gateways: dialed digits sent with the call | `DMR_TRUNK_GW` | 1,552 | 1,732 | Needs `DMR_TRUNK_TX` |
 | P25 channels in the codeplug: the conventional codec | `P25` | 56 | — | Off by default. The codec only: a P25 channel is shown as a mode not in this build ([p25-codeplug.md](spec/p25-codeplug.md)). With `P25_TRUNK`, DM-1701; nothing calls the codec yet, so the build keeps little of it |
 | P25 trunked systems in the codeplug: the codec | `P25_TRUNK` | — | — | Needs `P25`. Off by default; no firmware follows a P25 system yet |
 | VFO (hand-tuned frequency) | `VFO` | 656 | 516 | Includes the DMR VFO; `VFO` and `VFO_DMR` re-measured 2026-10-17 (DM-1701 plain build, MD-380 with LTO). Copy to VFO ([dmr-voice.md](spec/dmr-voice.md) 2.2) is on top of that figure, behind the same switch: about 630 B on the DM-1701 and 730 B on the MD-380 (default builds, LTO as each has it), 750 B on the C-SKY radios |
@@ -400,6 +414,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Feature | Switch | Bytes DM-1701 | Bytes MD-380 | Notes |
 |---|---|---:|---:|---|
 | Audio path probe (debug link 0x10) | `AUDIO_PROBE` | 1,176* | — | Bench only, never in a release |
+| Voice capture for receive tests: the next 32 voice frames received, read over the debug link | `VOICE_CAPTURE` | 256* | 344* | Bench only, never in a release ([debuglink](spec/debuglink.md)) |
 
 ## Whole images
 
