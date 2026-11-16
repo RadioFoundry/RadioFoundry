@@ -1860,7 +1860,7 @@ against the SDR bench, at the lowest power:
 |---|---|
 | P25 conventional transmit ([p25.md](p25.md) 9, `test_p25_tx_off_air`) | 19 units, 153 voice frames, none bad, no voice bit corrected; outer deviation 1924 Hz, carrier 75 Hz low |
 | P25 conventional receive (`test_p25_rx_from_bench`) | at -117 dBm: 72 of 72 voice frames, 1 bad, played |
-| A stored P25 or NXDN channel written over CPS | runs the mode on its own parameters, plain again after the restore; receive only, its transmit not keyed |
+| A stored P25 or NXDN channel written over CPS | runs the mode on its own parameters, plain again after the restore. One that transmits, keyed: P25 with the channel's NAC, 153 voice frames, none bad; NXDN at 4800 bit/s with the channel's RAN, unit and group, 40 frames, no CRC failure |
 | P25 trunked ([p25-trunking.md](p25-trunking.md), `test_p25_trunk_tx`) | the bench's control channel held; registration, affiliation and voice requests heard off air; two calls keyed on the granted channel, each a header, 5 pairs of voice units and a terminator; back on the control channel after. A call granted to another unit followed to a second transmitter and played (by hand) |
 | NXDN transmit ([nxdn.md](nxdn.md), `test_nxdn_tx_off_air`) | 9600 bit/s: 78 frames, outer deviation 2399 Hz; 4800 bit/s: 40 frames, 1012 Hz; no CRC failure |
 | NXDN receive | none: the chip gives no receive fit for NXDN (modem-hrc6000.md 10.5) |

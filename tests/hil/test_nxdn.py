@@ -17,6 +17,11 @@ parameters, not the settings' (`nxdn.run.*`: the rate, both RANs, the unit ID th
 1, `rx_gid` 1), and drop it again once the backup is written back. Skipped where the settings area is neither valid
 nor erased.
 
+test_nxdn_stored_channel_tx (opt-in: --allow-rf --allow-service-stop --allow-codeplug-write --nxdn-mhz MHz; the radio
+transmits): the same channel made one that transmits, simplex on --nxdn-mhz, keyed once at the lowest power and
+decoded off air as in test_nxdn_tx_off_air: one group call at 4800 bit/s with RAN STORED_TX_RAN from STORED_UNIT to
+group 1, the channel's parameters and not the settings'.
+
 test_nxdn_tx_off_air[9600|4800] (opt-in: --allow-rf --allow-service-stop --nxdn-mhz MHz; the radio transmits, the bench
 only receives): the VFO on --nxdn-mhz in NXDN at the lowest power, at that rate, RAN TEST_RAN, unit TEST_UNIT calling
 group TEST_GROUP, keys for PTT_S through the debug link while the bench's 4FSK receiver (the rx op, mode fsk4: 2400 or
@@ -143,17 +148,21 @@ def new_area(size):
     return head + b"\xff" * (size - len(head))
 
 
-def make_nxdn(img, number):
-    """Channel number of img made a receive-only stored NXDN channel: the stand-in record, then its tag"""
+def make_nxdn(img, number, tx_hz=None):
+    """Channel number of img made a stored NXDN channel: the stand-in record, then its tag. Receive only on the
+    record's frequencies, or with tx_hz a simplex channel there that transmits"""
     import cps_client
-    from test_p25 import area_with, name_check
+    from test_p25 import area_with, bcd_hz, name_check
     _, a = cps_client.channel_addr(number)
     img[a + 0x18] = 1                   # DMR
-    img[a + 0x33] |= 0x04               # receive only
+    img[a + 0x33] |= 0x04               # receive only: the stand-in, whatever the tag allows
+    if tx_hz is not None:
+        img[a + 0x10:a + 0x14] = img[a + 0x14:a + 0x18] = bcd_hz(tx_hz)
     img[a + CH_CONTACT:a + CH_CONTACT + 2] = bytes(2)                  # no contact: group 1
     img[a + CH_LFLAG1] |= LFLAG1_ID
     img[a + CH_DMR_ID:a + CH_DMR_ID + 3] = STORED_UNIT.to_bytes(3, "big")
-    tag = bytes([KIND_NXDN, 0xFF]) + name_check(img[a:a + 16]).to_bytes(2, "little") + bytes([0])   # no TX flag
+    tag = bytes([KIND_NXDN, 0xFF]) + name_check(img[a:a + 16]).to_bytes(2, "little") \
+        + bytes([0x01 if tx_hz is not None else 0])     # flag bit 0: transmit allowed
     block = bytes([0x05, STORED_RAN, 0x80 | STORED_TX_RAN])            # 4800 bit/s, selective, RX and TX RAN
     lo, hi = cps_client.SETTINGS_AREA
     area = img[lo:hi]
@@ -222,7 +231,6 @@ def nxdn_decode(job, rate, done=None):
 @pytest.mark.sdr_rx
 @pytest.mark.parametrize("rate", list(RATES))
 def test_nxdn_tx_off_air(radio, sdr_bench, pytestconfig, rate):
-    import nxdntool
     mhz = rig(pytestconfig, "nxdn-mhz")
     hz = round(mhz * 1e6)
     v = nxdn_view(radio)
@@ -230,7 +238,6 @@ def test_nxdn_tx_off_air(radio, sdr_bench, pytestconfig, rate):
         skip("no_hw", f"the radio's air interface can't transmit NXDN at {rate} bit/s")
     if not sdr_bench.can_fsk4_rx():
         skip("bench", f"the bench board {sdr_bench.api_rx} has no 4FSK receive")
-    baud, dev = RATES[rate]
     old = settings_of(v)
     with radio.vfo_session():
         L = radio.link
@@ -246,19 +253,34 @@ def test_nxdn_tx_off_air(radio, sdr_bench, pytestconfig, rate):
                                what=f"NXDN at {rate} bit/s on the VFO")
             assert v.get("tx_hz") == str(hz), f"the VFO transmits on {v.get('tx_hz')}, not {hz}"
             radio.lowest_power()
-            calls0, under0 = (as_int(v.get(f"nxdn.{k}")) or 0 for k in ("tx_calls", "tx_underruns"))
-            with sdr_bench.lease():
-                job = sdr_bench.fsk4_rx_start(mhz, PTT_S + 4, baud=baud, shape="rrc", sync=NXDN_SYNC,
-                                              sync_len=SYNC_LEN, nominal_dev_hz=dev)
-                time.sleep(0.5)
-                radio.ptt_for(PTT_S)
-                radio.wait_for(lambda x: x.get("state") != "tx", timeout=3, what="TX ended")
-                done = job.wait(PTT_S + 20)
-            v = radio.view(["nxdn"])
-            print(f"\nnxdn tx: calls {calls0}->{v.get('nxdn.tx_calls')}, underruns {under0}->"
-                  f"{v.get('nxdn.tx_underruns')}; bench {done.get('summary')}")
+            over = key_over(radio, sdr_bench, mhz, rate, v)
         finally:
             L.nxdn_settings(**old)
+    check_over(over, rate, TEST_RAN, TEST_UNIT, TEST_GROUP)
+
+
+def key_over(radio, sdr_bench, mhz, rate, v0):
+    """One over of PTT_S at rate, sliced by the bench's 4FSK receiver on mhz. Returns (the job, its last record, how
+    much the radio's nxdn.tx_calls and nxdn.tx_underruns grew since the view v0)"""
+    baud, dev = RATES[rate]
+    with sdr_bench.lease():
+        job = sdr_bench.fsk4_rx_start(mhz, PTT_S + 4, baud=baud, shape="rrc", sync=NXDN_SYNC,
+                                      sync_len=SYNC_LEN, nominal_dev_hz=dev)
+        time.sleep(0.5)
+        radio.ptt_for(PTT_S)
+        radio.wait_for(lambda x: x.get("state") != "tx", timeout=3, what="TX ended")
+        done = job.wait(PTT_S + 20)
+    v = radio.view(["nxdn"])
+    grew = tuple((as_int(v.get(f"nxdn.{k}")) or 0) - (as_int(v0.get(f"nxdn.{k}")) or 0)
+                 for k in ("tx_calls", "tx_underruns"))
+    print(f"\nnxdn tx: calls +{grew[0]}, underruns +{grew[1]}; bench {done.get('summary')}")
+    return job, done, grew
+
+
+def check_over(over, rate, ran, src, dst):
+    """The pass criteria of an over decoded off air: one group call from src to dst with ran"""
+    import nxdntool
+    job, done, grew = over
     lines = nxdn_decode(job, rate, done)
     m = nxdntool.summary(lines)
     syncs = [r for r in job.records if "sync" in r or "offset_hz" in r]
@@ -266,15 +288,54 @@ def test_nxdn_tx_off_air(radio, sdr_bench, pytestconfig, rate):
     if syncs:
         print(f"first sync record (not judged): {syncs[0]}")
     assert m["calls"] == 1, f"{m['calls']} calls"
-    assert m["ran"] == TEST_RAN, f"RAN {m['ran']}, the radio's {TEST_RAN}"
-    assert m["src"] == TEST_UNIT and m["dst"] == TEST_GROUP and m["type"] == "group", \
-        f"call {m['type']} {m['src']} -> {m['dst']}, the radio's group {TEST_UNIT} -> {TEST_GROUP}"
+    assert m["ran"] == ran, f"RAN {m['ran']}, the radio's {ran}"
+    assert m["src"] == src and m["dst"] == dst and m["type"] == "group", \
+        f"call {m['type']} {m['src']} -> {m['dst']}, the radio's group {src} -> {dst}"
     want = PTT_S * 1000 / FRAME_MS
     assert m["frames"] >= want - MISSING_FRAMES, f"{m['frames']} frames in a {PTT_S} s over (about {want:.0f})"
     assert m["voice"] > 0, "no voice frames handed on"
     assert m["crc_fail"] <= MAX_CRC_FAIL, f"{m['crc_fail']} SACCH / FACCH1 CRC failures"
-    assert (as_int(v.get("nxdn.tx_calls")) or 0) == calls0 + 1, "the radio counted no NXDN call"
-    assert (as_int(v.get("nxdn.tx_underruns")) or 0) == under0, "the air ran dry during the call"
+    assert grew[0] == 1, f"the radio counted {grew[0]} NXDN calls"
+    assert grew[1] == 0, "the air ran dry during the call"
+
+
+@pytest.mark.feature("nxdn")
+@pytest.mark.radio_tx
+@pytest.mark.codeplug_write
+@pytest.mark.bench_service
+@pytest.mark.sdr_rx
+def test_nxdn_stored_channel_tx(radio, sdr_bench, backup_dir, pytestconfig):
+    mhz = rig(pytestconfig, "nxdn-mhz")
+    hz = round(mhz * 1e6)
+    v = nxdn_view(radio)
+    if "NXDN" not in radio.features():
+        skip("not_built", "NXDN isn't in the radio's feature list")
+    if (as_int(v.get("nxdn.fit4800")) or 0) & AIR_FIT_TX == 0:
+        skip("no_hw", "the radio's air interface can't transmit NXDN at 4800 bit/s (the stored channel's rate)")
+    if not sdr_bench.can_fsk4_rx():
+        skip("bench", f"the bench board {sdr_bench.api_rx} has no 4FSK receive")
+    import cps_client
+    from test_cps import codeplug_edited, pick_channel, read_backup
+    regions = cps_client.REGIONS["radio"]      # with the settings area, where the tag goes
+    probe, _ = read_backup(radio, backup_dir, "nxdntxprobe", regions)
+    lo, hi = cps_client.SETTINGS_AREA
+    if cps_client.area_state(probe[lo:hi]) != "valid":
+        skip("state", "the codeplug settings area isn't valid: the restore couldn't take the tag back")
+    core = radio.core()
+    number = pick_channel(radio, probe)
+    if core.get("vfo") == "1" or number != as_int(core.get("channel_number"), 0):
+        skip("state", "the radio isn't on a stored channel")
+    with codeplug_edited(radio, backup_dir, lambda img: make_nxdn(img, number, hz), "nxdntx", regions):
+        v = radio.wait_for(lambda x: x.get("ch.kind") == str(KIND_NXDN) and x.get("nxdn.on") == "1", 5.0,
+                           sections=("core", "channel", "nxdn"), what="the stored NXDN channel running")
+        assert v.get("mode") == "nxdn" and v.get("nxdn.run.rate") == "4800", v
+        assert v.get("rx_hz") == str(hz) and v.get("tx_hz") == str(hz), \
+            f"the channel is on {v.get('rx_hz')} / {v.get('tx_hz')}, not {hz}"
+        radio.lowest_power()
+        over = key_over(radio, sdr_bench, mhz, "4800", v)
+    radio.wait_for(lambda x: x.get("ch.kind") == "0" and x.get("nxdn.on") != "1", 5.0,
+                   sections=("core", "channel", "nxdn"), what="the channel back as it was, NXDN stopped")
+    check_over(over, "4800", STORED_TX_RAN, STORED_UNIT, 1)
 
 
 @pytest.mark.feature("nxdn")

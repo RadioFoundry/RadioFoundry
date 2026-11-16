@@ -18,6 +18,11 @@ settings' (`p25.run.rx_nac`, `p25.run.tx_nac`, `p25.run.rx_tgid=0`, `p25.run.tal
 channel, else 2), and drop it again once the backup is written back. Skipped where the settings area isn't ours to write (not
 valid in the backup) and where the radio can't carry P25 (no P25 in its feature list).
 
+test_p25_stored_channel_tx (opt-in: --allow-rf --allow-service-stop --allow-codeplug-write --p25-mhz MHz; the radio
+transmits): the channel on view is made a stored P25 channel that transmits, simplex on --p25-mhz with NAC STORED_NAC,
+keyed once at the lowest power and decoded off air as in test_p25_tx_off_air: the call must carry the channel's NAC,
+talk target and unit ID (`p25.run.*`), not the settings'.
+
 test_p25_tx_off_air (opt-in: --allow-rf --allow-service-stop --p25-mhz MHz; the radio transmits, the bench only
 receives): the VFO on --p25-mhz in P25 at the lowest power keys for PTT_S through the debug link while the bench's
 receive board records its FM discriminator (the rx op's disc stream). tools/bench/p25tool.py (the firmware's own
@@ -203,13 +208,17 @@ def area_with(area, key, value):
     return out + b"\xff" * (len(b) - len(out))
 
 
-def make_p25(img, number):
-    """Channel number of img made a receive-only stored P25 channel: the stand-in record, then its tag"""
+def make_p25(img, number, tx_hz=None):
+    """Channel number of img made a stored P25 channel: the stand-in record, then its tag. Receive only on the
+    record's frequencies, or with tx_hz a simplex channel there that transmits"""
     import cps_client
     _, a = cps_client.channel_addr(number)
     img[a + 0x18] = 1                   # DMR
-    img[a + 0x33] |= 0x04               # receive only
-    tag = bytes([KIND_P25, 0xFF]) + name_check(img[a:a + 16]).to_bytes(2, "little") + bytes([0])   # no TX flag
+    img[a + 0x33] |= 0x04               # receive only: the stand-in, whatever the tag allows
+    if tx_hz is not None:
+        img[a + 0x10:a + 0x14] = img[a + 0x14:a + 0x18] = bcd_hz(tx_hz)
+    tag = bytes([KIND_P25, 0xFF]) + name_check(img[a:a + 16]).to_bytes(2, "little") \
+        + bytes([0x01 if tx_hz is not None else 0])     # flag bit 0: transmit allowed
     block = bytes([0]) + (0x8000 | STORED_NAC).to_bytes(2, "little") * 2    # normal squelch, RX and TX NAC
     lo, hi = cps_client.SETTINGS_AREA
     img[lo:hi] = area_with(img[lo:hi], KEY_CH_TAG + number - 1, tag + block)
@@ -300,18 +309,29 @@ def test_p25_tx_off_air(radio, sdr_bench, pytestconfig):
         if src == 0:        # no P25 unit ID set: the radio's DMR ID
             src = as_int(radio.view(["dmr"]).get("dmr.own_id")) or 0
         group = v.get("p25.unit_call") != "1"
-        calls0, under0 = (as_int(v.get(f"p25.{k}")) or 0 for k in ("tx_calls", "tx_underruns"))
-        with sdr_bench.lease():
-            job = sdr_bench.fm_rx_start(mhz, PTT_S + 4, bw=16000, streams="disc")
-            time.sleep(0.5)
-            radio.ptt_for(PTT_S)
-            radio.wait_for(lambda x: x.get("state") != "tx", timeout=3, what="TX ended")
-            done = job.wait(PTT_S + 20)
-        if done.get("gap_samples"):
-            skip("bench", f"the bench board lost samples (gap_samples {done['gap_samples']})")
-        v = radio.view(["p25"])
-    lines = p25_decode(job)
+        job, grew = key_over(radio, sdr_bench, mhz, v)
+    check_over(p25_decode(job), nac, tg, src, group, grew)
 
+
+def key_over(radio, sdr_bench, mhz, v0):
+    """One over of PTT_S recorded by the bench on mhz. Returns (the capture's job, how much the radio's p25.tx_calls
+    and p25.tx_underruns grew since the view v0)"""
+    with sdr_bench.lease():
+        job = sdr_bench.fm_rx_start(mhz, PTT_S + 4, bw=16000, streams="disc")
+        time.sleep(0.5)
+        radio.ptt_for(PTT_S)
+        radio.wait_for(lambda x: x.get("state") != "tx", timeout=3, what="TX ended")
+        done = job.wait(PTT_S + 20)
+    if done.get("gap_samples"):
+        skip("bench", f"the bench board lost samples (gap_samples {done['gap_samples']})")
+    v = radio.view(["p25"])
+    return job, tuple((as_int(v.get(f"p25.{k}")) or 0) - (as_int(v0.get(f"p25.{k}")) or 0)
+                      for k in ("tx_calls", "tx_underruns"))
+
+
+def check_over(lines, nac, tg, src, group, grew):
+    """The pass criteria of an over decoded off air (p25tool's lines): one call from src with nac, to talk group tg
+    (group) or unit tg"""
     units = [d for d in lines if d["ev"] == "unit"]
     stats = next(d for d in lines if d["ev"] == "stats")
     syncs = [d for d in lines if d["ev"] == "sync" and "outer_hz" in d]
@@ -357,8 +377,47 @@ def test_p25_tx_off_air(radio, sdr_bench, pytestconfig):
     offset = statistics.median(d["offset_hz"] for d in syncs)
     print(f"outer deviation {outer:.0f} Hz ({outer / 18:.1f} % of 1800), carrier offset {offset:+.0f} Hz (not judged)")
     assert DEV_PCT[0] <= outer / 18 <= DEV_PCT[1], f"outer deviation {outer:.0f} Hz"
-    assert (as_int(v.get("p25.tx_calls")) or 0) == calls0 + 1, "the radio counted no P25 call"
-    assert (as_int(v.get("p25.tx_underruns")) or 0) == under0, "the air ran dry during the call"
+    assert grew[0] == 1, f"the radio counted {grew[0]} P25 calls"
+    assert grew[1] == 0, "the air ran dry during the call"
+
+
+@pytest.mark.feature("p25")
+@pytest.mark.radio_tx
+@pytest.mark.codeplug_write
+@pytest.mark.bench_service
+@pytest.mark.sdr_rx
+def test_p25_stored_channel_tx(radio, sdr_bench, backup_dir, pytestconfig):
+    mhz = rig(pytestconfig, "p25-mhz")
+    hz = round(mhz * 1e6)
+    p25_ready(radio)
+    if not sdr_bench.can_fm_rx():
+        skip("bench", f"the bench board {sdr_bench.api_rx} has no FM receive")
+    import cps_client
+    from test_cps import codeplug_edited, pick_channel, read_backup
+    regions = cps_client.REGIONS["radio"]      # with the settings area, where the tag goes
+    probe, _ = read_backup(radio, backup_dir, "p25txprobe", regions)
+    lo, hi = cps_client.SETTINGS_AREA
+    if cps_client.area_state(probe[lo:hi]) != "valid":
+        skip("state", "the codeplug settings area isn't valid: the restore couldn't take the tag back")
+    core = radio.core()
+    number = pick_channel(radio, probe)
+    if core.get("vfo") == "1" or number != as_int(core.get("channel_number"), 0):
+        skip("state", "the radio isn't on a stored channel")
+    with codeplug_edited(radio, backup_dir, lambda img: make_p25(img, number, hz), "p25tx", regions):
+        v = radio.wait_for(lambda x: x.get("ch.kind") == str(KIND_P25) and x.get("p25.on") == "1", 5.0,
+                           sections=("core", "channel", "p25"), what="the stored P25 channel running")
+        assert v.get("mode") == "p25", v
+        assert v.get("rx_hz") == str(hz) and v.get("tx_hz") == str(hz), \
+            f"the channel is on {v.get('rx_hz')} / {v.get('tx_hz')}, not {hz}"
+        assert v.get("p25.run.tx_nac") == str(STORED_NAC), v
+        radio.lowest_power()
+        tg, src = (as_int(v.get(f"p25.run.{k}")) or 0 for k in ("tx_dst", "unit_id"))
+        if src == 0:        # no P25 unit ID set: the radio's DMR ID
+            src = as_int(radio.view(["dmr"]).get("dmr.own_id")) or 0
+        job, grew = key_over(radio, sdr_bench, mhz, v)
+    radio.wait_for(lambda x: x.get("ch.kind") == "0" and x.get("p25.on") != "1", 5.0,
+                   sections=("core", "channel", "p25"), what="the channel back as it was, P25 stopped")
+    check_over(p25_decode(job), STORED_NAC, tg, src, v.get("p25.run.unit_call") != "1", grew)
 
 
 # --- Receive: a call the bench plays ---
