@@ -3331,6 +3331,8 @@ def main(argv=None, raise_errors=False):
     except ImportError:
         print("pyserial is missing: pip install pyserial", file=sys.stderr)
         return 1
+    # A stand-in serial module (tests, wrappers) may lack it; an except clause that fails would hide the real error.
+    write_stalled = getattr(serial, "SerialTimeoutException", ())
     port = None
     try:
         stub = open(a.stub, "rb").read() if a.stub else None
@@ -3497,7 +3499,7 @@ def main(argv=None, raise_errors=False):
             else:
                 raise DumpError("--boot wants reset or jump:ADDR")
         return 0
-    except serial.SerialTimeoutException:
+    except write_stalled:
         if raise_errors:
             raise
         print("\nstubtool: %s" % stalled_text(unsent_bytes(port)), file=sys.stderr)
