@@ -109,16 +109,21 @@ bool nxdn_conv_save(uint16_t number, const channel_t *ch, const nxdn_conv_t *con
 {
 	channel_t c = *ch;
 	uint8_t blk[NXDN_CP_CONV_LEN];
-	codeplug_tag_t t = { .kind = CODEPLUG_KIND_NXDN, .system = CODEPLUG_SYSTEM_NONE,
-			     .flags = ch->rx_only ? 0u : CODEPLUG_TAG_TX };
+	// A channel of the kind already keeps the system it names
+	uint8_t system = ch->kind == CODEPLUG_KIND_NXDN ? ch->system : CODEPLUG_SYSTEM_NONE;
+	codeplug_tag_t t = { .kind = CODEPLUG_KIND_NXDN, .system = system, .flags = ch->rx_only ? 0u : CODEPLUG_TAG_TX };
 
-	// The safe stand-in whatever tag was there before: DMR, receive only (the tag carries transmit allowed)
+	// The safe stand-in: DMR, receive only (the tag carries transmit allowed). Under a tag that says the base record
+	// is a channel of its own, codeplug_set_channel keeps that channel's mode instead
 	c.kind = CODEPLUG_KIND_NXDN;
-	c.system = CODEPLUG_SYSTEM_NONE;
+	c.system = system;
 	c.mode = RADIO_MODE_DMR;
 	c.rx_only = true;
 	nxdn_conv_encode(conv, blk);
-	return codeplug_set_channel(number, &c) && codeplug_tag_write(number, c.name, &t, blk, sizeof blk);
+	// A tag of the kind that followed the record keeps its fallback, its other flags and what it stores after this
+	// block (an editor's or a later firmware's); else a new one
+	return codeplug_set_channel(number, &c) && (codeplug_tag_rewrite(number, c.name, &t, blk, sizeof blk) ||
+						     codeplug_tag_write(number, c.name, &t, blk, sizeof blk));
 }
 
 #endif	// CONFIG_NXDN

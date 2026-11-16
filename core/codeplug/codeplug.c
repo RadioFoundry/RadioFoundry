@@ -1038,10 +1038,17 @@ bool codeplug_set_channel(uint16_t number, const channel_t *ch)
 		if (!is_used(number)) {
 			blank_channel(r);	// a free slot's bytes aren't ours to keep (another firmware's, or deleted)
 		}
+		uint8_t base_mode = r[CH_MODE], base_flag4 = r[CH_FLAG4];
 		codeplug_openfw_encode(ch, r);
 		if (safe) {
 			r[CH_MODE] = 1;
 			r[CH_FLAG4] |= FLAG4_RX_ONLY;
+		} else if (ch->kind != CODEPLUG_KIND_NONE) {
+			// The tag that follows says the base record is a channel of its own (flag bit 1). Its mode, receive-only
+			// bit and bandwidth are that channel's: ch has the kind's in their place, so they stay as stored
+			const uint8_t own = FLAG4_RX_ONLY | FLAG4_25K;
+			r[CH_MODE] = base_mode;
+			r[CH_FLAG4] = (uint8_t)((r[CH_FLAG4] & ~own) | (base_flag4 & own));
 		}
 		ok = flash_write(channel_addr(number), r, sizeof(r));
 	}

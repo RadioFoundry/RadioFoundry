@@ -106,6 +106,14 @@ follows it (a copy to another number is a receive-only DMR channel). A copy made
 Save as new, Copy here) then takes the source's tag: the copy's name check, system and flag bit 0, the fallback and
 the parameter block byte for byte (`codeplug_tag_copy`). Deleting a channel removes its tag.
 
+Where the tag that follows has flag bit 1, the base record is a channel of its own and the radio shows the kind's
+mode, receive-only bit and bandwidth in place of the record's: a write from the radio keeps those three as stored.
+
+A kind's module that changes a channel's block on the radio writes the record, lets the tag follow, then sets the
+front of the block in place (`codeplug_tag_rewrite`): the system and flag bit 0 from the writer; the fallback, the
+other flags and the block's bytes after the ones written stay as stored. With no tag of the kind there, it writes a
+new one.
+
 ## 3. Key families
 
 All are record lists ([codeplug-settings.md](codeplug-settings.md) 3), reserved as whole ranges here so a later mode

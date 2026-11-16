@@ -210,10 +210,10 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
   are reached), with none typed they step the whole NAC; BACK takes a digit back. RAN: a spinner 0-63 that also takes
   digits, as Color code. OK sets both ways, except F7E (every NAC) and RAN 0 (every RAN), which set the received one
   only; F7F (a repeater's) is refused ("F7F is for repeaters"). Rate: OK toggles 9600 and 4800 bit/s. A changed NAC, RAN
-  or rate is saved with the channel (`ui_svc_write_channel_air`): the record and a new tag with the block
-  (`p25_conv_save`, `nxdn_conv_save`), or for a plain channel in that mode the block given with the talk target and
-  talkaround from the radio's settings. Copy here shows no NAC, RAN or Rate row: the copy takes its source's tag, and
-  they are changed on the copy afterwards.
+  or rate is saved with the channel (`ui_svc_write_channel_air`): the record, then the block over its tag's, the rest
+  of the tag kept (`p25_conv_save`, `nxdn_conv_save`), or for a plain channel in that mode the block given with the
+  talk target and talkaround from the radio's settings. Copy here shows no NAC, RAN or Rate row: the copy takes its
+  source's tag, and they are changed on the copy afterwards.
 
 Text entry supports both keypad conventions radios use: more presses of the same key (2: A B C 2 a b c) and `#` for
 the input mode, with BACK to delete (and to leave once the field is empty). In ABC and abc, keys 2-9 cycle their

@@ -241,6 +241,33 @@ static void test_conv_save(void)
 	// Receive only from the radio: the tag says so
 	c.rx_only = true;
 	CHECK(nxdn_conv_save(32, &c, &nc) && codeplug_channel(32, &r) && r.kind == CODEPLUG_KIND_NXDN && r.rx_only);
+	// The block edited on a channel that is NXDN already (the channel editor's RAN and rate): the tag keeps its
+	// system, its fallback, its other flags and what its block holds after this firmware's
+	{
+		uint8_t longer[NXDN_CP_CONV_LEN + 3];
+		uint8_t raw[sizeof longer + CODEPLUG_TAG_HEAD_MAX];
+		codeplug_tag_t kt = { .kind = CODEPLUG_KIND_NXDN, .system = 2, .fb_chan = 30, .fb_check = 0x1234,
+				      .flags = CODEPLUG_TAG_FALLBACK | 0x40u };
+		nxdn_conv_t ed = { .rate9600 = false, .rx_ran = 21, .tx_ran = 22, .squelch = NXDN_SQUELCH_RAN };
+		channel_t base = make("Keep", 453100000, 458100000);
+
+		nxdn_conv_encode(&nc, longer);
+		memcpy(&longer[NXDN_CP_CONV_LEN], "\xA1\xA2\xA3", 3);
+		CHECK(codeplug_set_channel(33, &base) && codeplug_tag_write(33, "Keep", &kt, longer, sizeof longer));
+		CHECK(codeplug_channel(33, &r) && r.kind == CODEPLUG_KIND_NXDN && r.system == 2 && r.rx_only);
+		strcpy(r.name, "Kept");
+		r.rx_only = false;
+		r.mode = RADIO_MODE_NXDN;
+		CHECK(nxdn_conv_save(33, &r, &ed));
+		CHECK(codeplug_channel(33, &r) && r.kind == CODEPLUG_KIND_NXDN && r.system == 2 && !r.rx_only &&
+		      r.mode == RADIO_MODE_DMR && strcmp(r.name, "Kept") == 0);
+		CHECK(codeplug_tag_read(33, &rt) && rt.flags == (CODEPLUG_TAG_FALLBACK | CODEPLUG_TAG_TX | 0x40u) &&
+		      rt.fb_chan == 30 && rt.fb_check == 0x1234 && rt.len == CODEPLUG_TAG_HEAD_MAX + sizeof longer);
+		CHECK(nxdn_conv_load(33, &r, &back) && !back.conv.rate9600 && back.conv.rx_ran == 21 &&
+		      back.conv.tx_ran == 22 && back.conv.squelch == NXDN_SQUELCH_RAN);
+		CHECK(codeplug_tag_params(33, &r, raw, sizeof longer) == (int)sizeof longer &&
+		      memcmp(&raw[NXDN_CP_CONV_LEN], "\xA1\xA2\xA3", 3) == 0);
+	}
 }
 
 int main(void)

@@ -46,10 +46,11 @@ typedef struct {
 // Channel number's set-up from its tag, the radio-wide record and its record ch (read by codeplug_channel); false when
 // it isn't a live NXDN channel
 bool nxdn_conv_load(uint16_t number, const channel_t *ch, nxdn_conv_cfg_t *out);
-// Write ch at number as an NXDN channel (channel-modes.md 2.4): the base record in its safe stand-in shape, then a new
-// tag with conv's block, transmit allowed unless ch->rx_only. Where an NXDN channel is made from the radio's own
-// settings (the VFO, a mode changed for now); a channel that is NXDN already is written with codeplug_set_channel, so
-// its tag follows it
+// Write ch at number as an NXDN channel (channel-modes.md 2.4): the base record in its safe stand-in shape,
+// then the tag with conv's block, transmit allowed unless ch->rx_only. A channel that is NXDN already keeps its tag's
+// system, fallback, other flags and what its block holds after conv's (codeplug_tag_rewrite), and under a base-own
+// tag its record's own mode; else the tag is new.
+// Where an NXDN channel is made from the radio's own settings (the VFO, a mode changed for now) or its block edited
 bool nxdn_conv_save(uint16_t number, const channel_t *ch, const nxdn_conv_t *conv);
 
 #endif

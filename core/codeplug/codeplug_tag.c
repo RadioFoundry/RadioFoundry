@@ -96,6 +96,26 @@ bool codeplug_tag_write(uint16_t number, const char *name, const codeplug_tag_t 
 	return codeplug_kv_set(tag_key(number), v, (uint16_t)(at + len));
 }
 
+bool codeplug_tag_rewrite(uint16_t number, const char *name, const codeplug_tag_t *t, const uint8_t *params, uint16_t len)
+{
+	uint8_t v[CODEPLUG_TAG_HEAD_MAX + TAG_PARAMS_MAX];
+	codeplug_tag_t old;
+	if (!number_ok(number) || len > TAG_PARAMS_MAX ||
+	    !parse(v, codeplug_kv_get(tag_key(number), v, CODEPLUG_TAG_HEAD_MAX), &old) || old.kind != t->kind ||
+	    old.check != codeplug_name_check(name)) {
+		return false;
+	}
+	uint16_t at = codeplug_tag_params_at(&old);
+	v[1] = t->system;
+	v[4] = (uint8_t)((old.flags & ~CODEPLUG_TAG_TX) | (t->flags & CODEPLUG_TAG_TX));
+	if (len != 0) {
+		memcpy(&v[at], params, len);
+	}
+	// From the front: a block longer than this firmware writes keeps its later bytes
+	codeplug_kv_op_t op = { tag_key(number), (uint16_t)((at + len) | CODEPLUG_KV_HEAD), v };
+	return codeplug_kv_write(&op, 1);
+}
+
 bool codeplug_tag_copy(uint16_t from, uint16_t to, const channel_t *ch)
 {
 	uint8_t v[CODEPLUG_TAG_HEAD_MAX + TAG_PARAMS_MAX];

@@ -57,9 +57,10 @@ bool p25_conv_load(uint16_t number, const channel_t *ch, p25_conv_cfg_t *out);
 // The parameter block alone, without the contact and the unit ID (a list row, channel info): false as p25_conv_load
 bool p25_conv_params(uint16_t number, const channel_t *ch, p25_conv_t *out);
 // Write ch at number as a P25 conventional channel (channel-modes.md 2.4): the base record in its safe stand-in shape,
-// then a new tag with conv's block, transmit allowed unless ch->rx_only. Where a P25 channel is made from the radio's
-// own settings (the VFO, a mode changed for now); a channel that is P25 already is written with codeplug_set_channel,
-// so its tag follows it
+// then the tag with conv's block, transmit allowed unless ch->rx_only. A channel that is P25 already keeps its tag's
+// system, fallback, other flags and what its block holds after conv's (codeplug_tag_rewrite), and under a base-own
+// tag its record's own mode; else the tag is new.
+// Where a P25 channel is made from the radio's own settings (the VFO, a mode changed for now) or its block edited
 bool p25_conv_save(uint16_t number, const channel_t *ch, const p25_conv_t *conv);
 
 #if CONFIG_P25_TRUNK

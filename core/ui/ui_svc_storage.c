@@ -1090,27 +1090,32 @@ bool ui_svc_save_channel(void)
 
 #if CONFIG_P25 || CONFIG_NXDN
 // The channel editor's P25 or NXDN channel with its block: a plain one in that mode becomes a stored one as in
-// air_save_now; one of the kind is written again whole, record and tag, wherever it was copied from. False in *ok's
-// place when ch is neither: the caller writes it as usual
-static bool air_conv_save(uint16_t number, const channel_t *ch, const ui_air_conv_t *conv, bool *ok)
+// air_save_now; one of the kind is written with the block over its tag's, the rest of the tag kept. A copy (from: the
+// source, another number) takes the source's tag first, so it keeps the same; where that fails its tag is new. False
+// in *ok's place when ch is neither: the caller writes it as usual
+static bool air_conv_save(uint16_t number, uint16_t from, const channel_t *ch, const ui_air_conv_t *conv, bool *ok)
 {
 	bool plain = ch->kind == CODEPLUG_KIND_NONE;
+	bool p25 = false, nxdn = false;
 #if CONFIG_P25
-	if (plain ? ch->mode == RADIO_MODE_P25 : ch->kind == CODEPLUG_KIND_P25) {
-		*ok = plain ? p25_save_now(number, ch, &conv->p25) : p25_conv_save(number, ch, &conv->p25);
-		return true;
-	}
+	p25 = plain ? ch->mode == RADIO_MODE_P25 : ch->kind == CODEPLUG_KIND_P25;
 #endif
 #if CONFIG_NXDN
-	if (plain ? ch->mode == RADIO_MODE_NXDN : ch->kind == CODEPLUG_KIND_NXDN) {
-		*ok = plain ? nxdn_save_now(number, ch, &conv->nxdn) : nxdn_conv_save(number, ch, &conv->nxdn);
-		return true;
-	}
+	nxdn = plain ? ch->mode == RADIO_MODE_NXDN : ch->kind == CODEPLUG_KIND_NXDN;
 #endif
-	(void)number;
-	(void)conv;
-	(void)ok;
-	return false;
+	if (!p25 && !nxdn)
+		return false;
+	if (!plain && from != 0 && from != number && codeplug_set_channel(number, ch))
+		(void)codeplug_tag_copy(from, number, ch);
+#if CONFIG_P25
+	if (p25)
+		*ok = plain ? p25_save_now(number, ch, &conv->p25) : p25_conv_save(number, ch, &conv->p25);
+#endif
+#if CONFIG_NXDN
+	if (nxdn)
+		*ok = plain ? nxdn_save_now(number, ch, &conv->nxdn) : nxdn_conv_save(number, ch, &conv->nxdn);
+#endif
+	return true;
 }
 #endif
 
@@ -1126,7 +1131,7 @@ static void write_channel_job(void *ctx)
 	uint16_t from = (uint16_t)job.id;
 	bool done = false;
 #if CONFIG_P25 || CONFIG_NXDN
-	done = job.air_set && air_conv_save(job.channel, &job.now, &job.air, &ok);
+	done = job.air_set && air_conv_save(job.channel, from, &job.now, &job.air, &ok);
 #endif
 	if (!done && !air_save_now(job.channel, &job.now, &ok))
 		ok = codeplug_set_channel(job.channel, &job.now) &&

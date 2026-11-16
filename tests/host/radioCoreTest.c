@@ -6894,8 +6894,9 @@ static void test_p25_stored(void)
 	CHECK(ui_svc_write_channel(3, &ed, 3));
 	storage_job_poll();
 	CHECK(tag_copy_from == 0 && p25_saved.number == 0);
-	// The channel editor's NAC (ui_svc_write_channel_air): the stored channel written again whole with its block, in
-	// place or as a copy; a plain channel in P25 takes the block given and the rest from the P25 settings
+	// The channel editor's NAC (ui_svc_write_channel_air): the stored channel written again with its block, in place
+	// or as a copy, which takes the source's tag first; a plain channel in P25 takes the block given and the rest
+	// from the P25 settings
 	ui_air_conv_t air = { .p25 = { 0x1A5, 0x1A6, P25_SQUELCH_SELECTIVE } };
 	CHECK(ui_svc_write_channel_air(3, &ed, 3, &air));
 	storage_job_poll();
@@ -6904,7 +6905,7 @@ static void test_p25_stored(void)
 	p25_saved.number = 0;
 	CHECK(ui_svc_write_channel_air(8, &ed, 3, &air));
 	storage_job_poll();
-	CHECK(p25_saved.number == 8 && p25_saved.conv.rx_nac == 0x1A5 && tag_copy_from == 0);
+	CHECK(p25_saved.number == 8 && p25_saved.conv.rx_nac == 0x1A5 && tag_copy_from == 3 && tag_copy_to == 8);
 	s.tx_dst = 9;
 	radio_req_p25_settings(&s);
 	run(20);
@@ -8179,6 +8180,12 @@ static void test_nxdn_stored(void)
 	CHECK(ui_svc_write_channel_air(3, &ed, 3, &air));
 	storage_job_poll();
 	CHECK(nxdn_saved.number == 3 && nxdn_saved.conv.rx_ran == 17 && !nxdn_saved.conv.rate9600 && tag_copy_from == 0);
+	// As a copy: the source's tag first, then the block
+	nxdn_saved.number = 0;
+	CHECK(ui_svc_write_channel_air(8, &ed, 3, &air));
+	storage_job_poll();
+	CHECK(nxdn_saved.number == 8 && nxdn_saved.conv.rx_ran == 17 && tag_copy_from == 3 && tag_copy_to == 8);
+	tag_copy_from = 0;
 	nxdn_saved.number = 0;
 	CHECK(ui_svc_write_channel(3, &ed, 3));
 	storage_job_poll();

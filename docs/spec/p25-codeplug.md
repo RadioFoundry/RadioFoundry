@@ -81,9 +81,11 @@ where the settings name a talk group to hear, else normal. Its contact is the st
 any (else none: talk group 1). Talkaround on sets the direct-mode bit; automatic and off leave it clear (automatic, 2.2).
 A session unit ID is not stored. Editing a channel that is P25 already rewrites its record and lets the tag follow,
 the block kept byte for byte; a copy at another number takes the source's tag ([channel-modes.md](channel-modes.md)
-2.4). When the channel editor changed the NAC ([ui.md](ui.md) 2.1), the channel is written as above with the edited
-NACs and its squelch as read: a new tag, so a fallback or base-record flag of the old one is not kept. A plain channel
-in P25 takes the edited NACs in place of the settings'.
+2.4). When the channel editor changed the NAC ([ui.md](ui.md) 2.1), the record is written as the safe stand-in and
+the tag follows it, then the edited NACs and the squelch as read are written over the front of its block
+([channel-modes.md](channel-modes.md) 2.4): the system, the fallback, the other flags and any later bytes of the block
+stay, and under a tag with the base-record flag the record keeps its own mode. A copy takes its source's tag first. A plain channel in P25 takes the
+edited NACs in place of the settings'.
 
 ## 3. Trunked system (type 3)
 

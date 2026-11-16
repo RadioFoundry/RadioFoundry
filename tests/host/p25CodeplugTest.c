@@ -231,6 +231,31 @@ static void test_conv_save(void)
 	// Receive only from the radio: the tag says so
 	c.rx_only = true;
 	CHECK(p25_conv_save(31, &c, &pc) && codeplug_channel(31, &r) && r.kind == CODEPLUG_KIND_P25 && r.rx_only);
+	// The block edited on a channel that is P25 already (the channel editor's NAC): the tag keeps its system, its
+	// fallback, its other flags and what its block holds after this firmware's; transmit allowed from the channel
+	uint8_t longer[P25_CP_CONV_LEN + 3];
+	uint8_t raw[sizeof longer + CODEPLUG_TAG_HEAD_MAX];
+	p25_conv_encode(&pc, longer);
+	memcpy(&longer[P25_CP_CONV_LEN], "\xA1\xA2\xA3", 3);
+	channel_t base = make("Keep", 453100000, 458100000);
+	CHECK(codeplug_set_channel(33, &base));
+	codeplug_tag_t kt = { .kind = CODEPLUG_KIND_P25, .system = 2, .fb_chan = 30, .fb_check = 0x1234,
+			      .flags = CODEPLUG_TAG_FALLBACK | 0x40u };
+	CHECK(codeplug_tag_write(33, "Keep", &kt, longer, sizeof longer));
+	CHECK(codeplug_channel(33, &r) && r.kind == CODEPLUG_KIND_P25 && r.system == 2 && r.rx_only);
+	strcpy(r.name, "Kept");
+	r.rx_only = false;
+	r.mode = RADIO_MODE_P25;
+	p25_conv_t ed = { 0x123, 0x124, P25_SQUELCH_NORMAL };
+	CHECK(p25_conv_save(33, &r, &ed));
+	CHECK(codeplug_channel(33, &r) && r.kind == CODEPLUG_KIND_P25 && r.system == 2 && !r.rx_only &&
+	      r.mode == RADIO_MODE_DMR && strcmp(r.name, "Kept") == 0);
+	CHECK(codeplug_tag_read(33, &rt) && rt.flags == (CODEPLUG_TAG_FALLBACK | CODEPLUG_TAG_TX | 0x40u) &&
+	      rt.fb_chan == 30 && rt.fb_check == 0x1234 && rt.len == CODEPLUG_TAG_HEAD_MAX + sizeof longer);
+	CHECK(p25_conv_params(33, &r, &back) && back.rx_nac == 0x123 && back.tx_nac == 0x124 &&
+	      back.squelch == P25_SQUELCH_NORMAL);
+	CHECK(codeplug_tag_params(33, &r, raw, sizeof longer) == (int)sizeof longer &&
+	      memcmp(&raw[P25_CP_CONV_LEN], "\xA1\xA2\xA3", 3) == 0);
 }
 
 #if CONFIG_P25_TRUNK
