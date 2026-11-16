@@ -6349,7 +6349,7 @@ static void test_air_bench(void)
 	radio_sm_request(&sm, &r, now);
 	CHECK(sm.air_bench && sm.bench_seq == 5 && !sm.dmr_running && hw_mode == RADIO_MODE_DMR && hw.rx_bw == RADIO_BW_12K5);
 	req(RREQ_PTT, 1);			// PTT gives way to the bench
-	CHECK(sm.view.state == RS_TX_DENIED && !hw.keyed);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BENCH && !hw.keyed);
 	req(RREQ_PTT, 0);
 	req(RREQ_CH_STEP, 1);			// no retuning
 	CHECK(sm.view.channel_number == 4);

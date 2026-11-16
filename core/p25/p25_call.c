@@ -152,8 +152,10 @@ static void tx_unit(p25_call_tx_t *t, uint8_t state)
 	} else if (state == TX_LDU1 || state == TX_LDU2) {
 		static const uint8_t lsd[2] = { 0, 0 };
 
+		// Nothing of an LDU goes out before its first voice frame: an end that comes first sends the terminator
+		// right after the LDU before (8.2.2), not an LDU of silence
 		t->nsyms = P25_LDU_SYMS;
-		t->ready = p25_ldu_voice_sym(0);
+		t->ready = 0;
 		p25_unit_begin(t->unit, t->nsyms, t->nac, state == TX_LDU1 ? P25_DUID_LDU1 : P25_DUID_LDU2, t->ss);
 		if (state == TX_LDU1) {
 			p25_ldu_lc_put(t->unit, t->lc);
@@ -227,8 +229,8 @@ void p25_call_tx_voice(p25_call_tx_t *t, const uint8_t imbe[P25_IMBE_BYTES])
 void p25_call_tx_end(p25_call_tx_t *t, const uint8_t silence[P25_IMBE_BYTES])
 {
 	t->ending = true;
-	// An LDU with nothing of it on air yet is not sent at all
-	if ((t->state == TX_LDU1 || t->state == TX_LDU2) && t->sent == 0 && t->nvoice == 0) {
+	// An LDU without a voice frame yet has nothing of it on air: not sent at all
+	if ((t->state == TX_LDU1 || t->state == TX_LDU2) && t->nvoice == 0) {
 		tx_unit(t, TX_TERM);
 		return;
 	}

@@ -1181,6 +1181,7 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 	case TXDENY_SFR_RPT: sb_str(&b, TR(DENY_WHY_REPEATER_CHANNEL, "Repeater channel: PTT off")); break;
 	case TXDENY_HWOPT: hwopt_needed(&b); break;
 	case TXDENY_REFUSED: sb_str(&b, TR(DENY_WHY_RADIO_REFUSED, "Radio refused to send")); break;
+	case TXDENY_BENCH: sb_str(&b, TR(DENY_WHY_AIR_BENCH, "Air bench: PTT off")); break;
 	default: sb_str(&b, TR(DENY_WHY_NOT_ALLOWED, "Not allowed here")); break;
 	}
 	return buf;
@@ -1205,6 +1206,7 @@ static const char *deny_action(const radio_view_t *v)
 	case TXDENY_SFR_RPT: return TR(DENY_FIX_PICK_USER_CHANNEL, "Pick a user channel to talk");
 	case TXDENY_HWOPT: return hwopt_action();
 	case TXDENY_REFUSED: return TR(DENY_FIX_RELEASE_AND_RETRY, "Release PTT, try again");
+	case TXDENY_BENCH: return TR(DENY_FIX_END_BENCH_ON_PC, "End the bench on the PC");
 	default: return TR(DENY_FIX_PICK_ANOTHER_CHANNEL, "Pick another channel");
 	}
 }

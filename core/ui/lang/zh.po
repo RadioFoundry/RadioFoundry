@@ -4325,6 +4325,11 @@ msgid "Radio refused to send"
 msgstr "电台拒绝发射"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_WHY_AIR_BENCH"
+msgid "Air bench: PTT off"
+msgstr "空口测试台：PTT 关闭"
+
+#: core/ui/ui_screens.c
 msgctxt "DENY_WHY_NOT_ALLOWED"
 msgid "Not allowed here"
 msgstr "此处不允许"
@@ -4383,6 +4388,11 @@ msgstr "请调离该频段"
 msgctxt "DENY_FIX_PICK_USER_CHANNEL"
 msgid "Pick a user channel to talk"
 msgstr "请选用户信道通话"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_FIX_END_BENCH_ON_PC"
+msgid "End the bench on the PC"
+msgstr "在电脑上结束测试台"
 
 #: core/ui/ui_screens.c
 msgctxt "CALL_VALUE_PRIVATE_TO_YOU"
