@@ -2293,9 +2293,19 @@ msgid "No, keep editing"
 msgstr "No, continua"
 
 #: core/ui/ui_menus.c
+msgctxt "DISCARD_ROW_SAVE"
+msgid "Yes, save"
+msgstr "Sì, salva"
+
+#: core/ui/ui_menus.c
 msgctxt "DISCARD_ROW_DISCARD"
 msgid "Yes, discard"
 msgstr "Sì, scarta"
+
+#: core/ui/ui_menus.c
+msgctxt "DISCARD_ASK_KIND"
+msgid " settings will be removed"
+msgstr " - impostazioni rimosse"
 
 #: core/ui/ui_menus.c
 msgctxt "DISCARD_ASK_NEW_CONTACT"

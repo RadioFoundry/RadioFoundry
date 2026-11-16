@@ -29,6 +29,7 @@
 //   fmrx / fmrxend      an FM signal opens / closes the squelch
 //   p25rx:<src>,<dst>[,u|e|o]   a P25 call (CONFIG_P25 builds): u a unit call, e encrypted, o another talk group
 //                       (both not played); p25rxend ends it
+//   chkind:<n>,p25|nxdn stored channel n is a P25 or NXDN channel (CONFIG_P25 / CONFIG_NXDN builds)
 //   p25t:<state>[,<tg>] the channel on view is a trunked P25 one (CONFIG_P25_TRUNK builds), its follower in state
 //                       1 finding the system, 2 on the control channel, 3 following talk group tg
 //   rx:<src>,<dst>,g|p[,name]   a DMR call starts (g = group, p = private to us); rxend ends it
@@ -2929,6 +2930,25 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(100);
 		return true;
 	}
+#if CONFIG_P25 || CONFIG_NXDN
+	if (strcmp(t, "chkind") == 0) {		// stored channel n is a P25 or NXDN channel: its tag, over a stand-in record
+		unsigned n = 0;
+		char k[8] = "";
+		channel_t c;
+		if (arg == NULL || sscanf(arg, "%u,%7s", &n, k) != 2 || !codeplug_channel((uint16_t)n, &c)) {
+			snprintf(err, len, "bad %s", t);
+			return false;
+		}
+		c.kind = strcmp(k, "nxdn") == 0 ? CODEPLUG_KIND_NXDN : CODEPLUG_KIND_P25;
+		c.mode = RADIO_MODE_DMR;
+		if (sim_write((uint16_t)n, &c) < 0) {
+			snprintf(err, len, "no room for %s", t);
+			return false;
+		}
+		sim_rec.codeplug_writes--;	// the codeplug as found, not a write of the UI's
+		return true;
+	}
+#endif
 #if CONFIG_P25
 	if (strcmp(t, "p25rx") == 0) {		// a P25 call: src,dst[,u|e|o] (unit call, encrypted, other talk group)
 		unsigned src = 0, dst = 0;

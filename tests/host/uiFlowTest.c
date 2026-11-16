@@ -110,6 +110,26 @@ static const flow_t flows[] = {
 	// Mode on a P25 channel makes it a plain FM one
 	{ "P25 channel's mode to FM", "dlmode:p25 ok 5 up up up ok down down", "ok", "shows=FM hides=NAC", 1,
 	  false },
+	// A slip on Mode is taken back by stepping on: FM, DMR, then P25 again with its NAC
+	{ "P25 channel's mode: back to P25", "dlmode:p25 ok 5 up up up ok down down", "ok ok ok",
+	  "focus=Mode shows=P25 shows=NAC shows=293", 3, false },
+	// A stored P25 channel: the same steps leave nothing to save
+	{ "stored P25 channel: Mode steps back to P25", "chkind:3,p25 ok 5 ok down down", "ok ok ok long:ok",
+	  "focus=Mode shows=P25 shows=NAC toast=No_changes_to_save", 4, false },
+	{ "stored P25 channel made DMR: a change", "chkind:3,p25 ok 5 ok down down ok ok", "back",
+	  "screen=discard shows=Discard_the_changes", 1, false },
+	// Saving it as FM takes its P25 settings away: asked first, keep editing the default
+	{ "stored P25 channel as FM: Save asks", "chkind:3,p25 ok 5 ok down down ok", "long:ok",
+	  "screen=discard shows=P25_settings_will_be shows=removed shows=Yes,_save focus=No,_keep_editing writes=0", 1, false },
+	{ "stored P25 channel as FM: keep editing", "chkind:3,p25 ok 5 ok down down ok long:ok", "ok",
+	  "screen=channel focus=Mode shows=FM", 1, false },
+	{ "stored P25 channel as FM: Back keeps editing", "chkind:3,p25 ok 5 ok down down ok long:ok", "back",
+	  "screen=channel focus=Mode shows=FM", 1, false },
+	{ "stored P25 channel as FM: yes saves", "chkind:3,p25 ok 5 ok down down ok long:ok", "down ok",
+	  "screen=channel writes=1 toast=Saved_channel_3 shows=FM hides=NAC", 2, true },
+	// Save as new channel takes nothing from the stored one: not asked
+	{ "stored P25 channel as FM: a new channel isn't asked", "chkind:3,p25 ok 5 ok down down ok", "up up up ok",
+	  "screen=channel writes=1 toast=Saved_as_channel_41", 4, true },
 #if CONFIG_NXDN
 	// The same from NXDN: its RAN and rate, no color code or timeslot; an ID past NXDN's range is refused
 	{ "NXDN new from current: RAN", "dlmode:nxdn", "ok 5 up up up ok down down down",
@@ -121,6 +141,10 @@ static const flow_t flows[] = {
 	  "ok 7 0 0 0 0 ok", "toast=NXDN_IDs_go_up_to_65519", 7, false },
 	{ "NXDN RAN: saved with the channel", "dlmode:nxdn ok 5 up up up ok down down down ok 1 7 ok", "long:ok",
 	  "writes=1 toast=Saved_as_channel_41", 1, true },
+	{ "NXDN channel's mode: back to NXDN", "dlmode:nxdn ok 5 up up up ok down down", "ok ok ok",
+	  "focus=Mode shows=NXDN shows=RAN", 3, false },
+	{ "stored NXDN channel as FM: Save asks", "chkind:3,nxdn ok 5 ok down down ok", "long:ok",
+	  "screen=discard shows=NXDN_settings_will_be shows=removed writes=0", 1, false },
 #endif
 #endif
 #endif

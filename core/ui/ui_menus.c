@@ -1283,6 +1283,14 @@ static bool ced_is_nxdn(const channel_t *ch)
 {
 	return CONFIG_NXDN && (ch->kind == CODEPLUG_KIND_NXDN || (ch->kind == CODEPLUG_KIND_NONE && ch->mode == RADIO_MODE_NXDN));
 }
+
+#if CONFIG_CHANNEL_EDIT
+// A mode of its own, which the Mode row's FM / DMR toggle can't reach: a channel of a kind, or P25 or NXDN for now
+static bool ced_own_mode(const channel_t *ch)
+{
+	return ch->kind != CODEPLUG_KIND_NONE || ced_is_p25(ch) || ced_is_nxdn(ch);
+}
+#endif
 #endif
 
 // A channel row's value: its RX frequency and what it talks to, the talkgroup on DMR ("TG3113", "ID9991234" for a
@@ -2512,6 +2520,9 @@ static bool ced_changed(uint8_t r)
 		return ced_air_changed(r);
 #endif
 	const uint8_t *a = (const uint8_t *)&ced_ch + ced_fields[r].off, *b = (const uint8_t *)&ced_orig + ced_fields[r].off;
+	// The Mode row shows the kind: a kind's channel made plain is a change also where the record's mode is the same
+	if (r == CE_MODE && (ced_ch.kind != ced_orig.kind || ced_ch.system != ced_orig.system))
+		return true;
 	if (r == CE_NAME)
 		return strcmp((const char *)a, (const char *)b) != 0;	// the bytes past the end may differ
 	if (r == CE_RX_TONE || r == CE_TX_TONE)
@@ -3008,6 +3019,8 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 #if CONFIG_CHANNEL_EDIT
 static void ui_text_open(char *target, uint8_t max);
 static bool discard_contact;	// Unsaved Changes asks about the contact editor's new contact (else a channel)
+static bool discard_kind;	// ... or before a save that takes a stored channel's own mode away (its tag)
+static bool ced_drop_ok;	// the answer was yes
 
 // The first problem that keeps the copy from being saved, as a toast; NULL when it can be saved
 static const char *ced_problem(void)
@@ -3068,6 +3081,14 @@ static void ced_save(bool as_new)
 	uint16_t num = as_new ? codeplug_free_channel() : ced_num;
 	if (num == 0) {
 		ui_toast(TR(TOAST_NO_FREE_CHANNEL, "No free channel"));
+		return;
+	}
+	// Writing a stored channel of a kind as a plain one removes its tag: the system it names, its NAC or RAN, its
+	// fallback. Never without asking (a new channel takes nothing away)
+	if (!as_new && !ced_new && ced_orig.kind != CODEPLUG_KIND_NONE && ced_ch.kind == CODEPLUG_KIND_NONE && !ced_drop_ok) {
+		discard_contact = false;
+		discard_kind = true;
+		ui_push(SCR_DISCARD, 0);
 		return;
 	}
 	if (!ced_write(num, as_new)) {
@@ -3315,6 +3336,7 @@ static bool chinfo_key(const input_event_t *ev)
 		if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS && ced_num != 0 &&
 				(ced_new || ced_changed(CE_COUNT))) {
 			discard_contact = false;
+			discard_kind = false;
 			ui_push(SCR_DISCARD, 0);
 			return true;
 		}
@@ -3382,8 +3404,10 @@ static void chinfo_select(uint16_t i, bool hold)
 	case CE_NAME: ui_text_open(c->name, CODEPLUG_NAME_LEN); break;
 	case CE_MODE:
 		// No DMR in a listen band: AM in the air band, FM on the broadcast receiver. A channel of a kind (P25, any
-		// other mode) becomes a plain FM one: its tag goes when it is saved (channel-modes.md 2.4)
-		if (c->kind != CODEPLUG_KIND_NONE || ced_is_p25(c)) {
+		// other mode) becomes a plain FM one: its tag goes when it is saved (channel-modes.md 2.4), after Save
+		// asks. A slip must not cost the channel its mode: the step after the last plain mode is the mode it was
+		// opened with, its system and its NAC or RAN as they were
+		if (c->kind != CODEPLUG_KIND_NONE || ced_is_p25(c) || ced_is_nxdn(c)) {
 			c->kind = CODEPLUG_KIND_NONE;
 			c->system = CODEPLUG_SYSTEM_NONE;
 			c->mode = RADIO_MODE_FM;
@@ -3391,6 +3415,10 @@ static void chinfo_select(uint16_t i, bool hold)
 			c->mode = RADIO_MODE_FM;
 			ui_toast(radio_am_tx_refused(c->rx_hz) ? TR(WHY_AIR_BAND_RX_ONLY, "Air band: receive only") :
 				TR(WHY_BROADCAST_RX_ONLY, "Broadcast: receive only"));
+		} else if (ced_own_mode(&ced_orig) && c->mode == (CONFIG_DMR ? RADIO_MODE_DMR : RADIO_MODE_FM)) {
+			c->kind = ced_orig.kind;
+			c->system = ced_orig.system;
+			c->mode = ced_orig.mode;
 		} else
 			c->mode = c->mode == RADIO_MODE_DMR ? RADIO_MODE_FM : RADIO_MODE_DMR;
 		break;
@@ -3501,7 +3529,7 @@ static uint16_t discard_count(void) { return 2; }
 static void discard_item(uint16_t i, ui_item_t *it)
 {
 	str_copy(it->label, sizeof it->label, i == 0 ? TR(DISCARD_ROW_KEEP_EDITING, "No, keep editing") :
-		TR(DISCARD_ROW_DISCARD, "Yes, discard"));
+		discard_kind ? TR(DISCARD_ROW_SAVE, "Yes, save") : TR(DISCARD_ROW_DISCARD, "Yes, discard"));
 	if (i == 1)
 		it->flags |= UI_ITEM_WARN;
 }
@@ -3510,12 +3538,29 @@ static void discard_select(uint16_t i, bool hold)
 {
 	(void)hold;
 	ui_pop();		// this question
+	if (discard_kind) {
+		if (i == 1) {	// the save it asked about, on the channel's screen again
+			ced_drop_ok = true;
+			ced_save(false);
+			ced_drop_ok = false;
+		}
+		return;
+	}
 	if (i == 1)
 		ui_pop();	// and the channel
 }
 
 static const char *discard_body(void)
 {
+	if (discard_kind) {
+		// What goes, by its name on the Mode row: "P25 settings will be removed"
+		static char ask[40];	// a kind's short name and the longest translation (27 bytes); cut to fit
+		sbuf_t b;
+		sb_init(&b, ask, sizeof ask);
+		sb_str(&b, codeplug_kind_name(ced_orig.kind));
+		sb_str(&b, TR(DISCARD_ASK_KIND, " settings will be removed"));
+		return ask;
+	}
 	return discard_contact ? TR(DISCARD_ASK_NEW_CONTACT, "Discard this new contact?") :
 		TR(DISCARD_ASK_CHANNEL_CHANGES, "Discard the changes to this channel?");
 }
@@ -3716,6 +3761,7 @@ static bool ct_key(const input_event_t *ev)
 	if (ct_edit == CT_NONE) {
 		if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS) {
 			discard_contact = true;
+			discard_kind = false;
 			ui_push(SCR_DISCARD, 0);
 			return true;
 		}
