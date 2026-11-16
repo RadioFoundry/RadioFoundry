@@ -1646,7 +1646,7 @@ msgstr "Code couleur"
 
 #: core/ui/ui_menus.c
 msgid "Timeslot"
-msgstr "Timeslot (TS)"
+msgstr "Timeslot"
 
 #: core/ui/ui_menus.c
 msgid "TX contact"
@@ -3010,7 +3010,7 @@ msgstr "Répondre aux alertes"
 
 #: core/ui/ui_menus.c
 msgid "TFTP codeplug write"
-msgstr "Écriture codeplug TFTP"
+msgstr "Écriture CPS TFTP"
 
 #: core/ui/ui_menus.c
 msgid "Message format"
@@ -3274,7 +3274,7 @@ msgstr "{PTT 1x OK val mtnOK|OK val mtnOK}"
 
 #: core/ui/ui_menus.c
 msgid "Skip channel for now"
-msgstr "Ignorer temporairement"
+msgstr "Ignorer canal mnt."
 
 #: core/ui/ui_menus.c
 msgid "Stay here"
@@ -3410,7 +3410,7 @@ msgstr "Délai max d'émis. TOT"
 
 #: core/ui/ui_screens.c
 msgid "No TX frequency set"
-msgstr "Pas de fréq TX définie"
+msgstr "Freq TX non déf."
 
 #: core/ui/ui_screens.c
 msgid "Mode: not in this build"
@@ -3902,7 +3902,7 @@ msgstr "Déjà à la fin"
 
 #: core/ui/ui_svc_storage.c
 msgid "That zone is gone"
-msgstr "Cette zone n'existe plus"
+msgstr "Zone inexistante"
 
 #: core/ui/ui_svc_storage.c
 msgid "That channel is gone"
