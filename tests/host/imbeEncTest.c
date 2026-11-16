@@ -349,6 +349,40 @@ static void test_quiet(void)
 	free(r);
 }
 
+// noise with a weak periodic part under it (a fan, hum): now and then the autocorrelation reaches the mark that keeps
+// a pitch speech had, never the one that starts a pitch. No frame gets a voiced band (29 of 100 did with one mark)
+static void test_no_voicing_from_hum(void)
+{
+	rig_t *r = malloc(sizeof *r);
+	static int16_t in[100 * MBE_FRAME_LEN];
+	int voiced = 0;
+
+	rig_init(r);
+	for (int n = 0; n < 100 * MBE_FRAME_LEN; n++) {
+		double v = 1000 * gauss();
+
+		for (int l = 1; l <= 6; l++)
+			v += 210 * cos(2 * M_PI * 150 * l * n / 8000.0 + l * 1.1);
+		in[n] = (int16_t)lrint(v);
+	}
+	for (int f = 0; f < 100; f++) {
+		uint8_t bits[IMBE_BYTES];
+		mbe_params_t p;
+		imbe_state_t tmp = r->ds;
+		int any = 0;
+
+		imbe_enc_frame(&r->m, in + f * MBE_FRAME_LEN, bits);
+		imbe_unpack(&tmp, bits, &p);
+		r->ds = tmp;
+		for (int l = 0; l < p.L; l++)
+			any |= p.v[l];
+		voiced += any;
+	}
+	printf("# hum under noise: %d of 100 frames with a voiced band\n", voiced);
+	CHECK(voiced == 0, "%d of 100 frames of hum under noise got a voiced band", voiced);
+	free(r);
+}
+
 int main(void)
 {
 	test_bits_round_trip();
@@ -357,6 +391,7 @@ int main(void)
 	test_noise();
 	test_period_not_doubled();
 	test_quiet();
+	test_no_voicing_from_hum();
 	printf("%s: %d checks, %d failures\n", failures ? "imbeEncTest FAILED" : "# imbeEncTest PASSED", checks, failures);
 	return failures != 0;
 }

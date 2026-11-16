@@ -177,7 +177,10 @@ void imbe_pack(imbe_state_t *s, int b0, mbe_params_t *p, uint8_t out[IMBE_BYTES]
 #define B0_SEARCH	3	// pitch codes tried to each side of the time-domain estimate (1.5 samples of period)
 #define B0_STAY		150	// mismatch (Q15) a code must gain for each step away from that estimate: at long periods the
 				// spectrum hardly tells neighbors apart and the time-domain estimate is the better one
-#define PERIODIC_MIN	(-2700)	// log2 Q11 (0.4): a normalized autocorrelation under this is no pitch
+#define PERIODIC_MIN	(-2700)	// log2 Q11 (0.4): a normalized autocorrelation under this is no pitch ...
+#define PERIODIC_START	(-1300)	// ... and (0.64) under this none begins: after a frame with no voiced band, noise and
+				// hum now and then reach the lower mark, and a voiced band there is a buzz in a pause.
+				// Speech is above it from its first frame (99.6 % of voiced frames on the test talkers)
 
 #define OCTAVE_GAIN	500	// mismatch (Q15) half the period may be worse by and still win
 
@@ -224,7 +227,7 @@ void imbe_enc_frame(const imbe_enc_mem_t *m, const int16_t pcm[MBE_FRAME_LEN], u
 		m->est->vprev = 0;
 		return;
 	}
-	if (e.period4 && e.periodic >= PERIODIC_MIN) {
+	if (e.period4 && e.periodic >= (m->est->vprev ? PERIODIC_MIN : PERIODIC_START)) {
 		int mis = near_code(m->buf, e.period4, &b0);
 
 		// half the period, when the spectrum fits it as well. The search above works on whole samples at 4 kHz,
