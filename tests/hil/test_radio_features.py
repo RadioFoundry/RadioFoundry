@@ -478,7 +478,7 @@ def test_tx_drive_op(radio):
         radio.link.tx_drive(0)
 
 
-@pytest.mark.feature("debuglink")
+@pytest.mark.feature("debuglink", optional=True)    # a board opts in to the key-up (pa-keyup.md): no switch to excuse it
 def test_pa_keyup_op(radio):
     """The DMR PA key-up constants (RADIO op 37, docs/spec/pa-keyup.md) without keying: the core view shows the board's,
     the op takes a valid set and shows it, refuses one out of range or out of order and keeps the set before, and no
@@ -489,17 +489,20 @@ def test_pa_keyup_op(radio):
             radio.link.pa_keyup()               # a radio without the view key doesn't key this way
         skip("not_built", "no DMR PA key-up on this radio (docs/spec/pa-keyup.md)")
     board = [int(x) for x in core["pa_keyup"].split("/")]
-    assert len(board) == 8, core
-    dead, knee, slope_us, boost, hold, boost_us, pa_us, drive_us = board
-    assert 50 <= boost <= 120 and hold <= 100, board
-    assert boost_us == 0 or (boost_us >= pa_us and boost_us >= drive_us), board
-    assert len(core["pa_keyup.last"].split("/")) == 4, core
-    mine = [dead, max(knee - 50, 0), slope_us, 100, hold, boost_us, pa_us, drive_us]
+    assert len(board) == 7, core
+    dead_pm, knee_us, slope_us, window_us, settle_us, pa_us, ease_pm = board
+    ahead, max_drive = [int(x) for x in core["pa_keyup.limits"].split("/")]
+    assert window_us <= ahead and (settle_us < window_us or window_us == 0) and max_drive > 0, (board, core)
+    assert len(core["pa_keyup.last"].split("/")) == 7, core
+    window = max(window_us, 2)
+    mine = [dead_pm, knee_us + 50, slope_us, window, window // 2, pa_us, ease_pm + 1]
     try:
         radio.link.pa_keyup(*mine)
         assert [int(x) for x in radio.core()["pa_keyup"].split("/")] == mine
-        for bad in (mine[:3] + [121] + mine[4:], mine[:4] + [101] + mine[5:], mine[:6] + [boost_us + 1, drive_us],
-                    mine[:7] + [boost_us + 1], mine[:5] + [60000, pa_us, drive_us]):
+        # a window ahead of the board's earliest point, a boost that ends before it starts
+        for bad in (mine[:3] + [ahead + 1] + mine[4:], mine[:4] + [window, pa_us, 1], mine[:4] + [window + 1, pa_us, 1]):
+            if bad[3] > 0xFFFF:
+                continue
             with pytest.raises(DebugLinkError) as e:
                 radio.link.pa_keyup(*bad)
             assert e.value.status == 2, (bad, e.value)     # bad argument

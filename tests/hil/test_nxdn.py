@@ -6,7 +6,7 @@ test_nxdn_mode_switch: the channel on view becomes NXDN by a temporary mode chan
 debuglink.md 3.8 op 31); the nxdn view section must show the engine running (`nxdn.on=1`, no new `begin_fails`).
 Undoing the change brings the channel's own mode back with the engine stopped. Nothing is sent.
 
-test_nxdn_settings: the NXDN settings (op 40, RAM only) round trip through the nxdn view and are put back.
+test_nxdn_settings: the NXDN settings (op 42, RAM only) round trip through the nxdn view and are put back.
 
 test_nxdn_stored_channel (opt-in: --allow-codeplug-write; nothing is sent): the channel on view is made a stored NXDN
 channel over CPS (nxdn-codeplug.md 2): its record the safe stand-in (DMR, receive only, no contact, its own unit ID
