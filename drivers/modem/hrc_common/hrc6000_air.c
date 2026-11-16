@@ -252,9 +252,16 @@ static const int8_t ERASED_SOFT[HRC6000_AIR_SYMS];
 
 // --- Queues (free-running indexes: a power of two) ---
 
+// TX_SPACE events in a row are one (the count is tx_space's), and the last place is kept for TX_DONE: the core's TX
+// off waits on it
 static void ev_push(hrc6000_air_t *a, uint8_t kind, uint32_t t, uint32_t arg)
 {
-	if ((uint8_t)(a->ev_head - a->ev_tail) >= HRC6000_AIR_EVQ) {
+	uint8_t used = (uint8_t)(a->ev_head - a->ev_tail);
+
+	if (kind == AIR_EV_TX_SPACE && used > 0 && a->evq[(uint8_t)(a->ev_head - 1u) % HRC6000_AIR_EVQ].kind == kind) {
+		return;
+	}
+	if (used >= HRC6000_AIR_EVQ - (kind == AIR_EV_TX_DONE ? 0u : 1u)) {
 		a->st.ev_overflow++;
 		return;
 	}
@@ -400,6 +407,8 @@ static void tx_slot(hrc6000_air_t *a, uint32_t t)
 			ev_push(a, AIR_EV_TX_STARTED, t + SLOT_US + TX_AIR_DELAY_US + HALF_SYM_US, 0);
 		}
 		a->tx = last ? HRC6000_AIR_LAST : HRC6000_AIR_RUN;
+		// The queue has room again: without this the core refills only after the queue ran dry
+		ev_push(a, AIR_EV_TX_SPACE, t, 0);
 	} else if (a->end_req) {
 		write_half(a, addr, NULL);	// the last chunk went out in the slot now starting
 		a->tx = HRC6000_AIR_TAIL;

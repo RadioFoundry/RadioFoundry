@@ -119,7 +119,7 @@ typedef struct __attribute__((may_alias)) {
 
 #define MAXSYMS 8192
 static struct {
-	int n_rx, n_started, n_underrun, n_done;
+	int n_rx, n_started, n_underrun, n_done, n_space;
 	uint32_t t_started, t_done;
 	uint8_t flags[64];
 	int16_t sync_at[64];
@@ -155,6 +155,7 @@ static void on_event(const air_event_t *ev, void *ctx)
 	}
 	case AIR_EV_TX_STARTED: got.n_started++; got.t_started = ev->t_us; break;
 	case AIR_EV_TX_UNDERRUN: got.n_underrun++; break;
+	case AIR_EV_TX_SPACE: got.n_space++; break;
 	case AIR_EV_TX_DONE: got.n_done++; got.t_done = ev->t_us; break;
 	default: break;
 	}
@@ -663,6 +664,7 @@ static void test_transmit(void)
 	CHECK(half_is(half_of_slot(1), 0x11) && half_is(!half_of_slot(1), 0x5F));
 	CHECK(last_write(4, 0x41) == 0x80);
 	CHECK(got.n_started == 1 && got.t_started == t_us + 30000 + 2200 + 104);
+	CHECK(got.n_space == 1);	// a chunk left the queue: the core may fill it again
 	// Interrupt 2: the other half gets chunk 2; the half on air now (chunk 1) is not touched
 	CHECK(hrc6000_air_tx_queue(AIR, &c3));
 	tick();
@@ -675,6 +677,7 @@ static void test_transmit(void)
 	tick();
 	CHECK(half_is(half_of_slot(4), 0x5F) && half_is(half_of_slot(5), 0x5F));
 	CHECK(got.n_underrun == 1 && AIR->st.tx_underruns == 2);
+	CHECK(got.n_space == 3);	// one per chunk taken, none for an idle slot
 	// More comes, then a short last chunk: padded with idle from its last symbol (100 = 25 bytes exactly; 101 cuts one)
 	air_tx_chunk_t c4 = chunk(0x44, 144, 0), c5 = chunk(0xAA, 101, 0);
 	CHECK(hrc6000_air_tx_queue(AIR, &c4) && hrc6000_air_tx_queue(AIR, &c5));
@@ -729,6 +732,21 @@ static void test_transmit(void)
 	tick();	// 4: drop
 	CHECK(got.n_done == 1 && rf_off == 2);
 	CHECK(got.n_underrun == 1);
+
+	// A core that queues one chunk for every space event never runs the queue dry
+	got.n_space = got.n_underrun = 0;
+	AIR->st.tx_underruns = 0;
+	CHECK(hrc6000_air_tx_queue(AIR, &c1) && hrc6000_air_tx_queue(AIR, &c2));
+	CHECK(hrc6000_air_tx_begin(AIR));
+	for (int i = 0, seen = 0; i < 40; i++) {
+		tick();
+		CHECK(got.n_space == seen + 1);
+		seen = got.n_space;
+		CHECK(hrc6000_air_tx_queue(AIR, &c3));
+	}
+	CHECK(got.n_underrun == 0 && AIR->st.tx_underruns == 0 && AIR->st.ev_overflow == 0);
+	hrc6000_air_tx_abort(AIR);
+	tick();
 }
 
 static void test_abort_stall_suspend(void)

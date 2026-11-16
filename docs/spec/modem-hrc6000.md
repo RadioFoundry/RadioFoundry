@@ -875,6 +875,8 @@ in both TX RAM halves, then 0x40 = 0xE3 (own timing). The first timeslot interru
   hold idle until the first chunk), or at the first chunk's set-up if it has not come, and held for the whole
   transmission. The chip sends TX RAM whenever the PA is up.
 - A slot boundary to that slot on air: 2.2 ms. `AIR_EV_TX_STARTED` gives the first chunk's first symbol by that.
+- Each chunk taken from the queue gives `AIR_EV_TX_SPACE` (events in a row are one), so the core refills the queue
+  before it runs dry.
 - An empty queue mid-transmission sends idle and gives one `AIR_EV_TX_UNDERRUN`. The last chunk is padded with idle,
   one idle slot follows it, and the PA drops at the next timeslot interrupt, so about 28 ms of idle follow the last
   symbol. Then `AIR_EV_TX_DONE`, the deviation pair back and the receive set-up. With no timeslot interrupt for
