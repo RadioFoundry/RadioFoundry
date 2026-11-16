@@ -89,6 +89,11 @@ void p25_engine_tx_stop(p25_engine_t *e);
 void p25_engine_tx_abort(p25_engine_t *e);
 air_tx_state_t p25_engine_tx_state(const p25_engine_t *e);
 void p25_engine_tx_clear(p25_engine_t *e);
+#if CONFIG_P25_TRUNK
+// An inbound trunking block (p25_tsbk.h, sealed) as a one-block TSDU on the tx NAC, in place of a call: prepare as
+// p25_engine_tx_prepare, then the same hal_radio_t.tx(), go, state and clear
+bool p25_engine_tx_burst(p25_engine_t *e, const uint8_t blk[12]);
+#endif
 
 // A copy of the state for the radio core's task
 void p25_engine_view(const p25_engine_t *e, p25_engine_view_t *out);

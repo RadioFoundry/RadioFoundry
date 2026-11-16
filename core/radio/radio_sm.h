@@ -302,6 +302,10 @@ typedef struct {
 #if CONFIG_P25
 	bool p25_tx;			// a P25 transmission runs in the engine (from prepare until it is done and cleared)
 	bool p25_keyed;			// board.radio->tx() keyed for it (until tx_off)
+#if CONFIG_P25_TRUNK
+	bool p25_req;			// PTT on a trunked channel: a voice request waits for its grant
+	bool p25_talk;			// the transmission runs on the voice channel granted to us
+#endif
 #endif
 #if CONFIG_AIR_RAW
 	bool air_bench;			// the debug link's air interface bench has the modem (RREQ_AIR_BENCH)

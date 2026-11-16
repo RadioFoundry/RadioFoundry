@@ -31,6 +31,13 @@ typedef struct {
 	uint32_t hz, id;
 	bool owed;			// the receiver is on the new frequency, the follower not told yet
 	volatile uint8_t in_prov, in_radio;	// which task is inside the follower
+	// The inbound burst the follower asked last (its send hook, from either task), as want / done above
+	volatile uint8_t burst_want, burst_done;
+	uint32_t burst_hz;
+	uint8_t burst[P25_TSBK_BYTES];
+	// PTT and the end of our transmission, for the follower at the radio task's next turn inside it
+	bool ptt, talk_end;
+	uint8_t ptt_seq, ptt_done;
 } p25_trunk_t;
 _Static_assert(P25_CP_IDEN_MAX == P25_FOLLOW_IDENS, "one identifier plan size");
 _Static_assert(RADIO_P25_TRUNK_HUNT == P25_FOLLOW_HUNT && RADIO_P25_TRUNK_CONTROL == P25_FOLLOW_CONTROL &&
@@ -82,6 +89,8 @@ static uint32_t rx_calls_base, tx_calls_base, filler_base;
 #if CONFIG_P25_TRUNK
 static bool trunk;			// the engine runs a trunked channel
 static radio_p25_trunk_view_t tview;	// the radio task's copy, for any task
+static uint8_t twhy;			// RADIO_P25T_WHY_* of the last PTT refused or request failed
+static bool ttx;			// the follower's transmit side is on
 #endif
 
 void radio_p25_init(const hal_audio_t *audio)
@@ -263,11 +272,25 @@ static void trunk_tune(uint32_t hz, uint8_t what, uint32_t id, void *ctx)
 	t->want++;
 }
 
-static const p25_follow_hooks_t follow_hooks = { trunk_tune, NULL };	// no fallback yet (p25-trunking.md 5)
+// The follower's send hook (inside it, from either task): the burst for the radio task, the block first. A burst not
+// yet sent is replaced (the follower sends one block at a time)
+static bool trunk_send(uint32_t hz, const uint8_t blk[P25_TSBK_BYTES], void *ctx)
+{
+	p25_trunk_t *t = ctx;
 
-// The follower's configuration from the codeplug's (p25-trunking.md 5), and the engine's: the system's NAC, our unit
-// ID, trunking signaling on. Nothing here transmits; the talk group PTT would call is the channel's, for the view
-static void trunk_params(p25_trunk_t *t, const p25_trunk_cfg_t *l, p25_engine_cfg_t *cfg)
+	memcpy(t->burst, blk, P25_TSBK_BYTES);
+	t->burst_hz = hz;
+	__atomic_signal_fence(__ATOMIC_SEQ_CST);
+	t->burst_want++;
+	return true;
+}
+
+static const p25_follow_hooks_t follow_hooks = { trunk_tune, NULL, trunk_send };	// no fallback yet (p25-trunking.md 7)
+
+// The follower's configuration from the codeplug's (p25-trunking.md 7), and the engine's: the system's NAC, our unit
+// ID, trunking signaling on, what PTT calls. tx: the channel allows transmitting (its tag); the system's listen only
+// and a missing unit ID or talk group keep the transmit side off
+static void trunk_params(p25_trunk_t *t, const p25_trunk_cfg_t *l, bool tx, p25_engine_cfg_t *cfg)
 {
 	p25_follow_cfg_t *c = &t->cfg;
 
@@ -283,14 +306,20 @@ static void trunk_params(p25_trunk_t *t, const p25_trunk_cfg_t *l, p25_engine_cf
 		c->flags |= P25_FOLLOW_ALL_GROUPS;
 	c->unit_id = (set.unit_id != 0 ? set.unit_id : l->unit_id) & 0xFFFFFFu;
 	c->talk_group = l->talk_group;
+	if (tx && !l->listen_only && c->unit_id != 0 && c->talk_group != 0)
+		c->flags |= P25_FOLLOW_TX;
+	if (l->sys.options & P25_TSYS_NO_REG)
+		c->flags |= P25_FOLLOW_NO_REG;
 	c->ncc = l->ctl_count;
 	for (uint8_t i = 0; i < l->ctl_count; i++)
-		t->cc[i] = (p25_follow_cc_t){ .hz = l->ctl[i].rx_hz, .chan = l->ctl[i].chan, .site = l->ctl_site[i] };
+		t->cc[i] = (p25_follow_cc_t){ .hz = l->ctl[i].rx_hz, .tx_hz = l->ctl[i].tx_hz, .chan = l->ctl[i].chan,
+					      .site = l->ctl_site[i] };
 	c->cc = t->cc;
 	c->iden_set = l->iden_set;
 	for (uint8_t i = 0; i < P25_FOLLOW_IDENS; i++)
 		t->iden[i] = (p25_follow_iden_t){ .base_hz = l->iden[i].base_hz, .spacing_hz = l->iden[i].spacing_hz,
-						  .slots = l->iden[i].slots, .tdma = l->iden[i].type == P25_IDEN_TDMA };
+						  .tx_off_hz = l->iden[i].tx_offset_hz, .slots = l->iden[i].slots,
+						  .tdma = l->iden[i].type == P25_IDEN_TDMA };
 	c->iden = t->iden;
 	c->hold_ms = (uint32_t)l->sys.hold_s * 1000u;	// 0: no hold
 
@@ -317,7 +346,7 @@ static void trunk_service(p25_mem_t *m)
 		uint32_t hz = t->hz;
 		p25_engine_cfg_t c = m->eng.cfg;
 
-		c.rx_tgid = t->what == P25_FOLLOW_TUNE_GROUP ? (uint16_t)t->id : 0u;
+		c.rx_tgid = t->what == P25_FOLLOW_TUNE_GROUP || t->what == P25_FOLLOW_TUNE_TALK ? (uint16_t)t->id : 0u;
 		t->done = want;
 		// A frequency the radio can't receive stays untuned: the follower hears nothing there and moves on
 		if (hz != 0 && board_in_band(hz, false) && !radio_listen_band(hz)) {
@@ -335,6 +364,14 @@ static void trunk_service(p25_mem_t *m)
 	if (t->owed) {
 		t->owed = false;
 		p25_follow_retuned(&t->f, now);
+	}
+	if (t->talk_end) {
+		t->talk_end = false;
+		p25_follow_talk_end(&t->f, now);
+	}
+	if (t->ptt_done != t->ptt_seq) {
+		t->ptt_done = t->ptt_seq;
+		p25_follow_ptt(&t->f, t->ptt, now);
 	}
 	p25_follow_tick(&t->f, now);
 	leave(&t->in_radio);
@@ -362,6 +399,125 @@ void radio_p25_trunk_view(radio_p25_trunk_view_t *out)
 	out->retunes = stats.trunk_retunes;
 	out->untuned = stats.trunk_untuned;
 	out->skips = stats.trunk_skips;
+	out->tx = trunk && ttx;
+	out->bursts = stats.trunk_bursts;
+	out->burst_refused = stats.trunk_burst_refused;
+}
+
+bool radio_p25_trunk_tx(void)
+{
+	return radio_p25_trunked() && ttx;
+}
+
+uint8_t radio_p25_trunk_ptt(bool down)
+{
+	static const uint8_t WHY[] = { RADIO_P25T_WHY_NONE, RADIO_P25T_WHY_OFF, RADIO_P25T_WHY_NO_CC, RADIO_P25T_WHY_NOT_REG };
+	p25_trunk_t *t;
+	uint8_t why = RADIO_P25T_WHY_OFF;
+
+	if (!radio_p25_trunked())
+		return why;
+	t = &mem->trunk;
+	if (down) {
+		why = WHY[p25_follow_can_talk(&tview.v, t->cfg.flags)];
+		twhy = why;
+		if (why != RADIO_P25T_WHY_NONE)
+			return why;
+	}
+	// The follower takes it at the radio task's next turn inside it (trunk_service)
+	t->ptt = down;
+	t->ptt_seq++;
+	return RADIO_P25T_WHY_NONE;
+}
+
+uint8_t radio_p25_trunk_talk(uint32_t *hz)
+{
+	p25_trunk_t *t;
+
+	if (!radio_p25_trunked())
+		return RADIO_P25T_FAIL;
+	t = &mem->trunk;
+	if (t->ptt_done != t->ptt_seq)
+		return RADIO_P25T_WAIT;		// PTT not yet with the follower
+	switch (tview.v.req) {
+	case P25_REQ_WAIT:
+	case P25_REQ_QUEUED:
+		return RADIO_P25T_WAIT;
+	case P25_REQ_TALK:
+		if (t->done != t->want || t->owed)
+			return RADIO_P25T_WAIT;	// the receiver not yet on the voice channel
+		*hz = tview.v.talk_hz;
+		return RADIO_P25T_GO;
+	case P25_REQ_DENIED:
+		twhy = RADIO_P25T_WHY_DENIED;
+		break;
+	case P25_REQ_NO_CHAN:
+		twhy = RADIO_P25T_WHY_NO_CHAN;
+		break;
+	case P25_REQ_TIMEOUT:
+		twhy = RADIO_P25T_WHY_NO_ANSWER;
+		break;
+	default:
+		// Not taken (the follower lost the control channel or the registration meanwhile)
+		twhy = tview.v.state == P25_FOLLOW_HUNT ? RADIO_P25T_WHY_NO_CC : RADIO_P25T_WHY_NOT_REG;
+		break;
+	}
+	return RADIO_P25T_FAIL;
+}
+
+void radio_p25_trunk_talk_end(void)
+{
+	if (radio_p25_trunked())
+		mem->trunk.talk_end = true;
+}
+
+uint32_t radio_p25_trunk_burst_hz(void)
+{
+	p25_trunk_t *t;
+
+	if (!radio_p25_trunked())
+		return 0;
+	t = &mem->trunk;
+	return t->burst_done != t->burst_want ? t->burst_hz : 0;
+}
+
+// The NAC we send: the system's, or the one the control channel was heard on where the system's is any
+static void trunk_tx_nac(p25_mem_t *m)
+{
+	if (m->eng.cfg.tx_nac == P25_NAC_ANY && tview.v.nac != 0 && tview.v.nac != P25_NAC_ANY) {
+		p25_engine_cfg_t c = m->eng.cfg;
+
+		c.tx_nac = tview.v.nac;
+		p25_engine_set(&m->eng, &c);
+	}
+}
+
+bool radio_p25_trunk_burst_start(void)
+{
+	p25_trunk_t *t;
+	uint8_t want;
+
+	if (!radio_p25_trunked())
+		return false;
+	t = &mem->trunk;
+	want = t->burst_want;
+	__atomic_signal_fence(__ATOMIC_SEQ_CST);
+	trunk_tx_nac(mem);
+	bool ok = p25_engine_tx_burst(&mem->eng, t->burst);
+	t->burst_done = want;
+	if (ok)
+		stats.trunk_bursts++;
+	else
+		stats.trunk_burst_refused++;
+	return ok;
+}
+
+void radio_p25_trunk_burst_drop(void)
+{
+	if (radio_p25_trunked()) {
+		mem->trunk.burst_done = mem->trunk.burst_want;
+		stats.trunk_burst_refused++;
+	}
 }
 #endif
 
@@ -392,7 +548,8 @@ bool radio_p25_begin(const channel_t *ch, uint16_t number, uint32_t own_id)
 			stats.begin_fails++;
 			return false;
 		}
-		trunk_params(&mem->trunk, &mem->load, &cfg);
+		trunk_params(&mem->trunk, &mem->load, !ch->rx_only, &cfg);
+		ttx = (mem->trunk.cfg.flags & P25_FOLLOW_TX) != 0;
 	} else
 #endif
 		radio_p25_params(ch, number, own_id, &cfg);
@@ -409,6 +566,10 @@ bool radio_p25_begin(const channel_t *ch, uint16_t number, uint32_t own_id)
 		th.rx_call = trunk_call;
 		hooks = &th;
 		t->want = t->done = 0;
+		t->burst_want = t->burst_done = 0;
+		t->ptt = t->talk_end = false;
+		t->ptt_seq = t->ptt_done = 0;
+		twhy = RADIO_P25T_WHY_NONE;
 		t->owed = false;
 		t->in_prov = t->in_radio = 0;
 		memset(&tview, 0, sizeof(tview));
@@ -572,6 +733,11 @@ bool radio_p25_poll(radio_p25_view_t *v)
 #if CONFIG_P25_TRUNK
 	if (trunk) {
 		n.trunk = tview.v.state;
+		if (ttx)
+			n.flags |= RADIO_P25_TRUNK_TX;
+		n.treg = tview.v.reg;
+		n.treq = tview.v.req;
+		n.twhy = twhy;
 		// On the voice channel before the call's fields are in: the grant's
 		if (n.trunk == RADIO_P25_TRUNK_VOICE && !ev.rx_active) {
 			n.dst = tview.v.unit_call ? tview.v.dst : tview.v.tg;
@@ -607,8 +773,19 @@ bool radio_p25_trunked(void)
 
 bool radio_p25_tx_prepare(void)
 {
-	// Never on a trunked channel: a listener sends nothing (radio_sm.c refuses PTT there before this)
-	if (mem == NULL || radio_p25_trunked() || !p25_engine_tx_prepare(&mem->eng)) {
+	if (mem == NULL) {
+		return false;
+	}
+#if CONFIG_P25_TRUNK
+	// On a trunked channel only on the voice channel granted to us
+	if (trunk) {
+		if (tview.v.req != P25_REQ_TALK) {
+			return false;
+		}
+		trunk_tx_nac(mem);
+	}
+#endif
+	if (!p25_engine_tx_prepare(&mem->eng)) {
 		return false;
 	}
 	voice_tx(true);

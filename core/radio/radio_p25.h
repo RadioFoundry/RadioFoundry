@@ -37,12 +37,24 @@ typedef struct {
 #define RADIO_P25_UNIT		0x10u	// ... is a unit to unit call (dst is a unit, else a talk group)
 #define RADIO_P25_LATE		0x20u	// ... was entered without its header
 #define RADIO_P25_TALK_UNIT	0x40u	// PTT calls unit talk, else talk group talk (the settings' unit_call)
+#define RADIO_P25_TRUNK_TX	0x80u	// a trunked channel whose transmit side is on (registration, PTT)
 
 // On a trunked channel (CONFIG_P25_TRUNK, docs/spec/p25-trunking.md 6): what the follower does
 #define RADIO_P25_TRUNK_OFF	0	// not a trunked channel, or not running
 #define RADIO_P25_TRUNK_HUNT	1	// looking for the system's control channel
 #define RADIO_P25_TRUNK_CONTROL	2	// on the control channel, waiting for a call it follows
-#define RADIO_P25_TRUNK_VOICE	3	// on a voice channel, following a call
+#define RADIO_P25_TRUNK_VOICE	3	// on a voice channel, following a call (or talking on the one granted to us)
+
+// Why PTT on a trunked channel did not get a voice channel (radio_p25_view_t.twhy, TXDENY_TRUNK)
+enum {
+	RADIO_P25T_WHY_NONE,
+	RADIO_P25T_WHY_OFF,		// the transmit side is off (listen only, receive only, no unit ID or talk group)
+	RADIO_P25T_WHY_NO_CC,		// no control channel held
+	RADIO_P25T_WHY_NOT_REG,		// not registered and affiliated (yet, or denied)
+	RADIO_P25T_WHY_DENIED,		// the system denied the request
+	RADIO_P25T_WHY_NO_ANSWER,	// no grant came
+	RADIO_P25T_WHY_NO_CHAN,		// granted on a channel this radio can't transmit on
+};
 
 // The radio view's part (radio_view_t.p25): the call heard now, or the last one
 typedef struct {
@@ -51,6 +63,8 @@ typedef struct {
 	uint16_t nac;
 	uint16_t rx_nac;	// the NAC received (the settings' rx_nac; 0xF7E: any)
 	uint8_t trunk;		// RADIO_P25_TRUNK_*
+	uint8_t treg, treq;	// a trunked channel's registration and voice request (P25_REG_*, P25_REQ_* of p25_follow.h)
+	uint8_t twhy;		// RADIO_P25T_WHY_* of the last PTT refused or request failed
 	uint32_t src;		// the caller's unit ID, 0 not known yet
 	uint32_t dst;		// the talk group or the unit called
 	uint32_t talk;		// what PTT calls (the settings' tx_dst): a talk group, or a unit with RADIO_P25_TALK_UNIT
@@ -66,6 +80,8 @@ typedef struct {
 	// A trunked channel's: retunes the follower asked, the ones to a frequency the radio can't receive, units and
 	// calls the follower missed because the radio task was inside it
 	uint32_t trunk_retunes, trunk_untuned, trunk_skips;
+	// Inbound bursts the follower asked: sent, and refused by the radio's transmit checks
+	uint32_t trunk_bursts, trunk_burst_refused;
 } radio_p25_stats_t;
 
 #if CONFIG_P25
@@ -77,10 +93,27 @@ typedef struct {
 typedef struct {
 	uint8_t seq;		// odd while it is written
 	bool on;		// a trunked channel runs
-	uint32_t retunes, untuned, skips;	// radio_p25_stats_t's trunk_*
+	bool tx;		// ... with the transmit side on
+	uint32_t retunes, untuned, skips, bursts, burst_refused;	// radio_p25_stats_t's trunk_*
 	p25_follow_view_t v;
 } radio_p25_trunk_view_t;
 void radio_p25_trunk_view(radio_p25_trunk_view_t *out);
+
+// Transmitting on a trunked channel (radio task; docs/spec/p25-trunking.md 6). The follower's transmit side is on
+bool radio_p25_trunk_tx(void);
+// PTT pressed or released: pressed, RADIO_P25T_WHY_NONE when a voice request goes out, else why not
+uint8_t radio_p25_trunk_ptt(bool down);
+// After PTT: RADIO_P25T_WAIT while the request waits, GO when the grant is in and the receiver on the voice channel
+// (*hz: where to transmit), FAIL when it won't come (the view's twhy says why)
+enum { RADIO_P25T_WAIT, RADIO_P25T_GO, RADIO_P25T_FAIL };
+uint8_t radio_p25_trunk_talk(uint32_t *hz);
+// Our transmission on the granted channel is over (or never started): back to the control channel
+void radio_p25_trunk_talk_end(void);
+// An inbound burst the follower asked: its frequency, 0 none. start: the engine primes it (then key, go, as for a
+// call); drop: the radio's transmit checks refused it
+uint32_t radio_p25_trunk_burst_hz(void);
+bool radio_p25_trunk_burst_start(void);
+void radio_p25_trunk_burst_drop(void);
 #endif
 
 void radio_p25_init(const hal_audio_t *audio);	// the PCM stream the voice plays on
@@ -105,7 +138,7 @@ bool radio_p25_in_force(radio_p25_settings_t *out);
 bool radio_p25_begin(const channel_t *ch, uint16_t number, uint32_t own_id);
 void radio_p25_end(void);
 bool radio_p25_running(void);
-// The engine runs a trunked channel (P25T, CONFIG_P25_TRUNK): receive only, the follower tunes
+// The engine runs a trunked channel (P25T, CONFIG_P25_TRUNK): the follower tunes
 bool radio_p25_trunked(void);
 void radio_p25_retuned(void);
 // The settings or the channel's parameters changed: the engine takes them (not while transmitting)

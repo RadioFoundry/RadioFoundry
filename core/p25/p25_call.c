@@ -246,3 +246,15 @@ bool p25_call_tx_done(const p25_call_tx_t *t)
 {
 	return t->state == TX_DONE;
 }
+
+#if CONFIG_P25_TRUNK
+void p25_call_tx_single(p25_call_tx_t *t, uint16_t nsyms)
+{
+	// As a terminator: the unit goes out whole, then the transmission is done
+	t->state = TX_TERM;
+	t->ending = true;
+	t->nvoice = 0;
+	t->nsyms = t->ready = nsyms;
+	t->sent = 0;
+}
+#endif

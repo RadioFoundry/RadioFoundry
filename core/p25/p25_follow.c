@@ -261,9 +261,10 @@ static bool consider(p25_follow_t *f, uint8_t op, bool unit, uint16_t ch, uint16
 	} else if (!group_wanted(f, tg, now)) {
 		return false;
 	}
-	// The call just left on its terminator: its updates go on a little while. An encrypted call skipped: its grants
-	// repeated and its updates (which carry no service options) are skipped for as long as they come
-	if ((update || f->left_enc) && ch == f->left_ch && tg == f->left_tg && !elapsed(now, f->t_left, P25_FOLLOW_REJOIN_MS)) {
+	// The call just left on its terminator: its updates go on a little while, and so do the grants of our own call
+	// (we talked, the site repeats them). An encrypted call skipped: its grants repeated and its updates (which carry
+	// no service options) are skipped for as long as they come
+	if ((update || f->left_enc || (src && src == c->unit_id)) && ch == f->left_ch && tg == f->left_tg && !elapsed(now, f->t_left, P25_FOLLOW_REJOIN_MS)) {
 		if (f->left_enc)
 			f->t_left = now;
 		return false;

@@ -5,6 +5,10 @@
 
 #include <string.h>
 
+#if CONFIG_P25_TRUNK
+#include "p25_tsbk.h"
+#endif
+
 uint32_t p25_engine_fit(const hal_air_t *air)
 {
 	return air_session_fit(air, &p25_air_mode);
@@ -217,11 +221,24 @@ bool p25_engine_tx_prepare(p25_engine_t *e)
 	return air_session_tx_prime(&e->session);
 }
 
+#if CONFIG_P25_TRUNK
+bool p25_engine_tx_burst(p25_engine_t *e, const uint8_t blk[P25_TSBK_BYTES])
+{
+	if (!air_session_is_open(&e->session) || !(e->session.fit & AIR_FIT_TX) ||
+	    air_session_tx_state(&e->session) != AIR_TX_IDLE)
+		return false;
+	e->tx_stop = e->tx_ended = true;	// one unit: nothing to end
+	p25_call_tx_single(&e->tx, p25_isp_unit(e->tx.unit, e->cfg.tx_nac, blk));
+	return air_session_tx_prime(&e->session);
+}
+#endif
+
 bool p25_engine_tx_go(p25_engine_t *e)
 {
 	if (!air_session_tx_go(&e->session))
 		return false;
-	e->view.tx_calls++;
+	if (!e->tx_ended)	// (a trunking burst is not a call)
+		e->view.tx_calls++;
 	return true;
 }
 

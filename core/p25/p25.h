@@ -209,5 +209,9 @@ void p25_call_tx_voice(p25_call_tx_t *t, const uint8_t imbe[P25_IMBE_BYTES]);
 void p25_call_tx_end(p25_call_tx_t *t, const uint8_t silence[P25_IMBE_BYTES]);
 // True once the terminator's last symbol went out
 bool p25_call_tx_done(const p25_call_tx_t *t);
+#if CONFIG_P25_TRUNK
+// A unit the caller made in t->unit (nsyms symbols, an inbound trunking block): sent alone, then done
+void p25_call_tx_single(p25_call_tx_t *t, uint16_t nsyms);
+#endif
 
 #endif
