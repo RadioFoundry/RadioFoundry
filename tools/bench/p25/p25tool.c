@@ -256,7 +256,11 @@ static int cmd_gen(const char *out_path, const char *exp_path, const opts_t *o)
 	size_t n = 0;
 	long frames_left, frames_total, nflip = 0;
 	FILE *e = fopen(exp_path, "w");
-	int first_unit = 1, nvoice_in_unit = 0, ended = 0;
+	// Voice frames go in ahead of their LDU's head (the transmit path asks for them early): they wait here and go
+	// in the expect file with the LDU that carries them, P25_VOICE_FRAMES each
+	static uint8_t vq[4 * P25_VOICE_FRAMES][P25_IMBE_BYTES];
+	unsigned vq_head = 0, vq_n = 0;
+	int first_unit = 1, ended = 0;
 	uint8_t unit_duid = 0xFF;
 	size_t unit_at = 0;
 
@@ -317,9 +321,6 @@ static int cmd_gen(const char *out_path, const char *exp_path, const opts_t *o)
 				fprintf(e, "%s{\"duid\":%u,\"name\":\"%s\",\"at\":%zu,\"nsyms\":%u", first_unit ? "" : ",",
 					unit_duid, duid_name(unit_duid), unit_at, t.nsyms);
 				first_unit = 0;
-				if (unit_duid == P25_DUID_LDU1 || unit_duid == P25_DUID_LDU2)
-					fputs(",\"voice\":[", e);
-				nvoice_in_unit = 0;
 			}
 			if (n + k > GEN_MAX_SYMS)
 				die("too long", NULL);
@@ -327,8 +328,15 @@ static int cmd_gen(const char *out_path, const char *exp_path, const opts_t *o)
 				syms[n++] = air_sym_get(t.unit, (uint16_t)(first + i));
 			if (t.sent + k == t.nsyms) {
 				// The unit is whole: its symbols for the checker
-				if (unit_duid == P25_DUID_LDU1 || unit_duid == P25_DUID_LDU2)
+				if (unit_duid == P25_DUID_LDU1 || unit_duid == P25_DUID_LDU2) {
+					fputs(",\"voice\":[", e);
+					for (unsigned v = 0; v < P25_VOICE_FRAMES && vq_n > 0; v++, vq_n--) {
+						fprintf(e, "%s", v ? "," : "");
+						put_hex(e, vq[vq_head], P25_IMBE_BYTES);
+						vq_head = (vq_head + 1) % (sizeof vq / sizeof vq[0]);
+					}
 					fputc(']', e);
+				}
 				fputs(",\"syms\":", e);
 				put_hex(e, t.unit, (size_t)(t.nsyms + 3) / 4);
 				fputc('}', e);
@@ -342,9 +350,9 @@ static int cmd_gen(const char *out_path, const char *exp_path, const opts_t *o)
 					frame[i] = (uint8_t)rng();
 			else
 				memcpy(frame, fixed, sizeof frame);
-			fprintf(e, "%s", nvoice_in_unit ? "," : "");
-			put_hex(e, frame, sizeof frame);
-			nvoice_in_unit++;
+			if (vq_n == sizeof vq / sizeof vq[0])
+				die("voice frames queued past their LDUs", NULL);
+			memcpy(vq[(vq_head + vq_n++) % (sizeof vq / sizeof vq[0])], frame, sizeof frame);
 			p25_call_tx_voice(&t, frame);
 			frames_left--;
 		} else if (!ended) {
