@@ -93,7 +93,8 @@ never sees it as newest: page 0 is always written last.
 `settings_end(now)` releases it. If anything changed, it notes the time. No flash operation happens inside, so the
 radio task may change settings. The housekeeping task calls `settings_poll()` every 100 ms. It saves once the
 changes have rested `SETTINGS_SAVE_DELAY_MS` (2 s), so turning the knob through 20 channels writes one record.
-`settings_flush()` saves at once: at power-off and on the CPS's "save" (`C 6 0` and `C 6 2`).
+`settings_flush()` saves at once: at power-off, on the CPS's "save" (`C 6 0` and `C 6 2`), and before a debug link
+restart or boot stub entry (a change still in its save delay would otherwise be lost).
 
 **Who writes what**:
 
