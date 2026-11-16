@@ -28,8 +28,6 @@ RIG = {
     "p25-mhz": (float, "MHz: the P25 test frequency (the radio's VFO; test_p25_tx_off_air)", True),
     "p25-trunk-channel": (str, "the name of a stored P25 trunked channel (kind 3) whose system's control channel is "
                                "heard at the rig (test_p25_trunk_follow; receive only)", False),
-    "p25-trunk-tx-channel": (str, "the name of a stored P25 trunked channel (kind 3) with transmit on, whose system's "
-                                  "control channel is p25-cc-mhz (test_p25_trunk_tx)", False),
     "p25-cc-mhz": (float, "MHz: where the bench plays a P25 control channel for test_p25_trunk_tx", True),
     "p25-cc-in-mhz": (float, "MHz: that control channel's inbound frequency, where the radio sends its requests "
                              "(test_p25_trunk_tx)", True),

@@ -27,6 +27,13 @@ own framer and call layer, built for the host) decodes the symbols. Pass criteri
 - voice frames handed on; at most MAX_CRC_FAIL SACCH and FACCH1 CRC failures;
 - on the radio: nxdn.tx_calls one more, no nxdn.tx_underruns.
 Skipped where the radio's air interface can't transmit the rate (`nxdn.fit4800` / `nxdn.fit9600` without TX).
+
+test_nxdn_rx_from_bench[9600|4800] (opt-in: --allow-rf --allow-service-stop --nxdn-mhz MHz; the bench transmits, the
+radio only receives; not yet run on a radio whose air interface receives NXDN): the VFO on --nxdn-mhz in NXDN at that rate, any
+RAN and group, while the bench's fsk4 transmitter plays a call nxdntool.py gen writes (RAN TEST_RAN, TEST_UNIT to group
+TEST_GROUP, RX_VOICE_FRAMES voice frames). On the radio: one reception more (nxdn.rx_calls) from that unit to that
+group (nxdn.src, nxdn.dst) with that RAN. Skipped where the radio's air interface can't receive the rate (the fit
+without RX: a provider whose receiver needs a 24-symbol sync has none for NXDN's 10-symbol FSW).
 """
 import json
 import os
@@ -38,7 +45,9 @@ import pytest
 from rfoundry_hil import as_int, skip
 from hil_config import rig
 
-AIR_FIT_TX = 0x2
+AIR_FIT_RX, AIR_FIT_TX = 0x1, 0x2
+RX_VOICE_FRAMES = 40
+FSK4_HEX_MAX = 8192     # symbols the bench takes in the request itself (fsk4_bench.py)
 PTT_S = 3.0
 FRAME_MS = 80.0
 MISSING_FRAMES = 4      # the bench receiver's sync takes a frame or two to find the carrier, the release frame ends it
@@ -266,3 +275,59 @@ def test_nxdn_tx_off_air(radio, sdr_bench, pytestconfig, rate):
     assert m["crc_fail"] <= MAX_CRC_FAIL, f"{m['crc_fail']} SACCH / FACCH1 CRC failures"
     assert (as_int(v.get("nxdn.tx_calls")) or 0) == calls0 + 1, "the radio counted no NXDN call"
     assert (as_int(v.get("nxdn.tx_underruns")) or 0) == under0, "the air ran dry during the call"
+
+
+@pytest.mark.feature("nxdn")
+@pytest.mark.rf
+@pytest.mark.bench_service
+@pytest.mark.bench_modem
+@pytest.mark.parametrize("rate", list(RATES))
+def test_nxdn_rx_from_bench(radio, sdr_bench, pytestconfig, rate):
+    import nxdntool
+    mhz = rig(pytestconfig, "nxdn-mhz")
+    hz = round(mhz * 1e6)
+    v = nxdn_view(radio)
+    if (as_int(v.get(f"nxdn.fit{rate}")) or 0) & AIR_FIT_RX == 0:
+        skip("no_hw", f"the radio's air interface can't receive NXDN at {rate} bit/s")
+    baud, dev = RATES[rate]
+    old = settings_of(v)
+    with radio.vfo_session():
+        L = radio.link
+        try:
+            L.vfo_set(hz)
+            radio.wait_for(lambda x: x.get("rx_hz") == str(hz), what="VFO tuned")
+            L.nxdn_settings(rate9600=rate == "9600", rx_ran=0, tx_ran=TEST_RAN, rx_gid=0, unit_call=False,
+                            tx_dst=TEST_GROUP, unit_id=TEST_UNIT + 1)
+            if radio.core().get("mode") != "nxdn":
+                L.dmr_fields(mode="nxdn")
+            v0 = radio.wait_for(lambda x: x.get("mode") == "nxdn" and x.get("nxdn.on") == "1" and
+                                x.get("nxdn.rate") == rate, 3.0, sections=("core", "nxdn"),
+                                what=f"NXDN at {rate} bit/s on the VFO")
+            with tempfile.TemporaryDirectory() as tmp, sdr_bench.lease():
+                path, exp = os.path.join(tmp, "call.dibits"), os.path.join(tmp, "call.json")
+                try:
+                    nxdntool.run(["gen", path, "--expect", exp, "--ran", TEST_RAN, "--group", TEST_GROUP, "--src",
+                                  TEST_UNIT, "--voice-frames", RX_VOICE_FRAMES, "--lead", baud // 4]
+                                 + (["--9600"] if rate == "9600" else []))
+                except SystemExit as e:
+                    pytest.fail(f"nxdntool: {e}")
+                with open(path, "rb") as f:
+                    data = f.read()
+                n = len(data) * 4
+                assert n <= FSK4_HEX_MAX, f"the call holds {n} symbols, past {FSK4_HEX_MAX}"
+                tx = sdr_bench.tx_start("fsk4", mhz, None, max_s=n / baud + 2, symbols=n, hex=data.hex(), shape="rrc",
+                                        baud=baud, dev_hz=dev)
+                tx.wait(n / baud + 30)
+            time.sleep(0.6)
+            v1 = radio.view(["core", "nxdn"])
+        finally:
+            L.nxdn_settings(**old)
+    keys = ("rx_calls", "frames", "voice", "played", "voice_held", "sacch_fail", "facch_fail", "lich_fail", "fec_bits",
+            "ran_rejects", "rx_chunks")
+    print(f"\nnxdn from the bench at {rate} bit/s: "
+          + ", ".join(f"{k} {v0.get('nxdn.' + k)}->{v1.get('nxdn.' + k)}" for k in keys
+                      if v0.get("nxdn." + k) != v1.get("nxdn." + k)))
+    assert (as_int(v1.get("nxdn.rx_calls")) or 0) == (as_int(v0.get("nxdn.rx_calls")) or 0) + 1, "no call received"
+    assert v1.get("nxdn.src") == str(TEST_UNIT) and v1.get("nxdn.dst") == str(TEST_GROUP), \
+        f"the call {v1.get('nxdn.src')} -> {v1.get('nxdn.dst')}, sent {TEST_UNIT} -> {TEST_GROUP}"
+    assert v1.get("nxdn.ran") == str(TEST_RAN), f"RAN {v1.get('nxdn.ran')}, sent {TEST_RAN}"
