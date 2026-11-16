@@ -643,12 +643,12 @@ UIDEPS  := $(UIAPP) $(ABOUT_H) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fo
 TESTS   += uiFlowTest uiFlowTestNoColor uiSim
 
 uiFlowTest: uiFlowTest.c $(UIDEPS)
-	$(CC) $(UIFLAGS) -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -o $@ uiFlowTest.c $(UIAPP) -lz
+	$(CC) $(UIFLAGS) -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -DCONFIG_NXDN=1 -o $@ uiFlowTest.c $(UIAPP) -lz
 
 # The same flows built as a radio with only a monochrome screen builds them (CONFIG_UI_COLOR=n): no color rows;
 # without a translation (CONFIG_LANG_ES=n): the Language screen dims Spanish; and with the backlight tests
 # (CONFIG_BACKLIGHT_TEST=y, off in uiFlowTest): their screen, and the Advanced rows below it one further down.
-# uiFlowTest has P25 (CONFIG_P25) and this one not: the P25 home screen's flows run in the first
+# uiFlowTest has P25 and NXDN (CONFIG_P25, CONFIG_NXDN) and this one not: their home screen flows run in the first
 uiFlowTestNoColor: uiFlowTest.c $(UIDEPS)
 	$(CC) $(UIFLAGS) -DCONFIG_UI_COLOR=0 -DCONFIG_LANG_ES=0 -DCONFIG_BACKLIGHT_TEST=1 -o $@ uiFlowTest.c $(UIAPP) -lz
 

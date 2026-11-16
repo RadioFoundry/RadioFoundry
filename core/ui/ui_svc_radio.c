@@ -26,6 +26,9 @@
 #if CONFIG_DMR
 #include "dmr/ambe/ambeVoice.h"
 #endif
+#if CONFIG_NXDN
+#include "radio/radio_nxdn.h"
+#endif
 #if CONFIG_P25
 #include "radio/radio_p25.h"
 #endif
@@ -153,7 +156,8 @@ bool ui_svc_vfo_sfr(uint8_t a)
 #if CONFIG_FM
 bool ui_svc_mode(uint8_t mode)
 {
-	if (mode != RADIO_MODE_FM && mode != RADIO_MODE_DMR && !(mode == RADIO_MODE_P25 && CONFIG_P25)) {
+	if (mode != RADIO_MODE_FM && mode != RADIO_MODE_DMR && !(mode == RADIO_MODE_P25 && CONFIG_P25) &&
+	    !(mode == RADIO_MODE_NXDN && CONFIG_NXDN)) {
 		return false;
 	}
 	radio_req_mode(mode);
@@ -216,6 +220,9 @@ uint32_t ui_svc_feat_radio(void)
 	       (ref_trim_available() ? UI_FEAT_REF_TRIM : 0) |
 #if CONFIG_P25
 	       (radio_p25_fits() ? UI_FEAT_P25 : 0) |
+#endif
+#if CONFIG_NXDN
+	       (radio_nxdn_fits() ? UI_FEAT_NXDN : 0) |
 #endif
 	       0;
 }

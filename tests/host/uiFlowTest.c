@@ -64,6 +64,11 @@ static const flow_t flows[] = {
 	{ "1 channel 12 by number", "", "1 2 ok", "pos=12 screen=home", 3, false },
 	// A P25 channel (the debug link's mode): named P25 in the strip; FM's tiles say why they are off
 	{ "P25 channel shows its mode", "dlmode:p25", "", "mode=p25 screen=home shows=P25 hides=No_tone hides=12.5k hides=25k hides=SQ5", 0, false },
+#if CONFIG_NXDN
+	// NXDN the same way: the power, the RAN sent and the rate in the chips, the group PTT calls on the talk line
+	{ "NXDN channel shows its mode", "dlmode:nxdn", "", "mode=nxdn screen=home shows=NXDN shows=RAN_1_9600 shows=TG_1 hides=No_tone hides=SQ5", 0, false },
+	{ "NXDN channel: bandwidth is FM only", "dlmode:nxdn", "quick 8", "mode=nxdn toast=FM_only:_this_is_NXDN", 2, false },
+#endif
 	{ "P25 channel: bandwidth is FM only", "dlmode:p25", "quick 8", "mode=p25 toast=FM_only:_this_is_a_P25_channel",
 	  2, false },
 #if CONFIG_P25
@@ -667,6 +672,13 @@ static const flow_t flows[] = {
 	  2, false },
 	{ "S VFO mode: P25 back to FM", "p25 ok 4 up ok quick 4 back quick 4 back", "quick 4",
 	  "toast=VFO:_FM mode=fm temporary=0", 2, false },
+	// NXDN: after DMR where the radio has no P25, after P25 where it has both; then FM
+	{ "S VFO mode: DMR to NXDN", "nxdn ok 4 up ok quick 4 back", "quick 4", "toast=VFO:_NXDN mode=nxdn temporary=0 vfo=1",
+	  2, false },
+	{ "S VFO mode: P25 to NXDN", "p25 nxdn ok 4 up ok quick 4 back quick 4 back", "quick 4", "toast=VFO:_NXDN mode=nxdn",
+	  2, false },
+	{ "S VFO mode: NXDN back to FM", "nxdn ok 4 up ok quick 4 back quick 4 back", "quick 4", "toast=VFO:_FM mode=fm", 2,
+	  false },
 	{ "S VFO mode: P25 shows on the strip", "p25 ok 4 up ok quick 4 back quick 4 back", "", "mode=p25 screen=home shows=P25",
 	  0, false },
 	{ "S VFO DMR: color code 7", "ok 4 up ok quick 4 back", "quick 3 7 ok", "cc=7 temporary=0", 4, false },

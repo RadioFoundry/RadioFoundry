@@ -44,6 +44,7 @@ extern radio_view_t ui_svc_view;
 #define UI_FEAT_VOLUME_KNOB	(1u << 21)	// the MCU reads a volume knob (radio_volume_knob): Settings > Key lock > Knob when locked
 #define UI_FEAT_REF_TRIM	(1u << 20)	// a reference trim (hal_radio_t.ref_trim, radio/ref_trim.h): Freq trim setting
 #define UI_FEAT_P25		(1u << 22)	// P25 on this board (CONFIG_P25, radio_p25_fits): the VFO's mode tile offers it
+#define UI_FEAT_NXDN		(1u << 23)	// NXDN on this board (CONFIG_NXDN, radio_nxdn_fits): the same
 uint32_t ui_svc_features(void);
 // The parts of it each package reports (ui_svc_features ORs them): dmr-voice / radio core, dmr-data, storage-cps,
 // radio-features
@@ -75,7 +76,7 @@ bool ui_svc_mode(uint8_t mode);			// radio_mode_t: the VFO's mode (a channel's g
 // A channel mode's name as the screens show it (radio_mode_t). A name, never translated
 static inline const char *ui_mode_name(uint8_t mode)
 {
-	return mode == RADIO_MODE_DMR ? "DMR" : mode == RADIO_MODE_P25 ? "P25" : "FM";
+	return mode == RADIO_MODE_DMR ? "DMR" : mode == RADIO_MODE_P25 ? "P25" : mode == RADIO_MODE_NXDN ? "NXDN" : "FM";
 }
 // Copy to VFO: the channel on view into the VFO, which opens (CONFIG_VFO). Returns a radio_vfo_copy_t: VFO_COPY_OK
 // when the request went to the radio core, else why nothing changed
