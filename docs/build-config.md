@@ -153,6 +153,7 @@ below are for an STM32F4 radio.
 | `CONFIG_VFO_FM` | = VFO and FM | analog VFO |
 | `CONFIG_VFO_DMR` | = VFO and DMR | digital VFO: the VFO can be a DMR channel with its own color code, slot and talk target, and the Mode tile switches it FM / DMR (needs both VFO kinds; `docs/spec/dmr-voice.md` 2.1). About 140 B flash. Off, the VFO is analog and nothing about it changes |
 | `CONFIG_DIAG` | y | the diagnostics page |
+| `CONFIG_BACKLIGHT_TEST` | n | backlight test pages for bench work ([backlight-curve.md](testing/backlight-curve.md)). About 1.5 KB |
 | `CONFIG_CRASH_LOG` | y | the crash log: a CPU fault, a task stack overflow, running out of heap or a failed assertion keeps a record (registers, fault status, task, stack words) where a reset doesn't clear it and restarts the radio; the next start takes it up, the debug link and (with `CONFIG_CRASH_SCREEN`) **Settings > Advanced > Crash log** show it (`core/crash`, `docs/spec/crash-log.md`). Needs no other feature. About 1.6 KB flash and 1.4 KB RAM (mostly the fault path's own stack), and 32 bytes more idle task stack. Off: a crash stops the radio until a power cycle |
 | `CONFIG_CRASH_SCREEN` | = `CRASH_LOG` | **Settings > Advanced > Crash log**: the record's summary and Clear, and the controls of the crash report (`docs/spec/crash-log.md` 5.2). Needs `CONFIG_CRASH_LOG`. About 1 KB flash. Off, the debug link still shows the record |
 | `CONFIG_CRASH_REPORT` | = `CRASH_SCREEN` with DMR | sends the crash log's packed record as one UDP datagram (port 4090) over DMR to a codeplug contact, from the Crash log screen or after the restart (Off, Ask, Auto) (`docs/spec/crash-log.md` 5). Needs `CONFIG_CRASH_SCREEN` and `CONFIG_DMR`; brings in the DMR data core. About 1.4 KB flash |
@@ -183,7 +184,8 @@ below are for an STM32F4 radio.
 
 Derived (not set by hand): `CONFIG_DMR_DATA_CORE`, the shared packet data / CSBK code, on when any data feature is;
 `CONFIG_DMR_AIR_QUEUE`, the data service's TX queue (`docs/spec/dmr-data.md` 12.6), on with `CONFIG_DMR_IP_GATEWAY` or
-`CONFIG_ZONE_SHARE`. `CONFIG_LANG_ANY` (`core/config.h`): on when any `CONFIG_LANG_*` is, the translation lookup and the
+`CONFIG_ZONE_SHARE`. `CONFIG_ZONE_SHARE_MODES`: zone sharing carries channels of a kind and their systems
+(`docs/spec/zone-share.md` 4.2), on with `CONFIG_ZONE_SHARE` and `CONFIG_P25`. `CONFIG_LANG_ANY` (`core/config.h`): on when any `CONFIG_LANG_*` is, the translation lookup and the
 fonts' Latin-1 glyphs.
 
 ## Values

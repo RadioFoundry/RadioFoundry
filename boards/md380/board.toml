@@ -87,12 +87,11 @@ id = 2
 tested = false
 spi = { bus = 1, mode = 0, hz = 4500000 }
 
-# The codec where the merge puts it (docs/spec/codec-placement.md). From D002.032: the main table window at its stock
-# address in sector 8, the small ones in sectors 10 and 11, the code moved to the start of sector 11. From a 35.14
-# build: the main table window at its stock address in sector 9, the code right after it, the small ones in sector 11.
-# Then the descriptor. The application has sectors 3-7, so an update leaves the codec sectors alone. D002.032 keeps
-# the code in sectors 6 and 7, so it can't stay in place and rfoundry merges it from the stock file. stock lists the SHA-256
-# of each stock file rfoundry merges the codec from (tools/rfoundry/rfoundry/stockfw.py PROFILES)
+# The codec where the merge puts it (docs/spec/codec-placement.md): the whole codec in sector 11, its code, its table
+# windows (each moved as one block) and the descriptor, from whichever stock file it came. The application has sectors
+# 3-10, so an update leaves sector 11 alone. Releases before this layout kept the codec in sectors 8-11; the flashing
+# tools read it back from there and move it (stockfw.py "former"). stock lists the SHA-256 of each stock file rfoundry
+# merges the codec from (tools/rfoundry/rfoundry/stockfw.py PROFILES)
 [codec]
 tool = "codec_extract"
 stock = [

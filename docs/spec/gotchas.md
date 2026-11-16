@@ -79,7 +79,9 @@ the second F (13 of 36 bursts played instead of 18-19; HIL 2026-10-10 on c8c9b23
 driver reads page 2 at F's first report (the EMB one) and page 2 still held the old LC then. Rule: until a reception
 has its LC, look at page 2 again at the next burst A (and at F's repeated report and the post-access interrupt); the
 driver logs every look (`dle` lines, `lt` diagnostics line) so the next HIL run shows exactly when the LC appeared.
-Radios: HR_C6000.
+An unchanged page 2 at that A, after a whole superframe of this reception with a good F, is this call's LC: the same
+talker again (HIL 2026-11-14 on the HR_C5000: held back to the second F, 8 bursts played instead of 12; traced `Av`).
+Radios: HR_C6000, HR_C5000.
 
 **1.4b Page 2 isn't per slot.**
 Symptom: with a call on each slot, the wanted call went quiet with the other call's source shown (23 of 78 bursts
@@ -830,3 +832,11 @@ stayed at its idle 65-103 during a call at -41 dBm, where the signal strength ro
 only on the noise reading, so it never saw a carrier within the dwell. Rule: on a DMR channel the scan also counts the
 signal strength, past the settle, against its own squelch scale (`RADIO_DMR_SQL_L1_DBM`, 3 dB a level: -100 dBm at the
 default level), so a stop probes whichever reading shows the signal (`test_scan_dmr_noise_deaf`).
+
+**17.4 A strength reading above the DMR scale with no signal.**
+Symptom: on one radio (2026-11-14) the zone scan never reached the DMR test channel during a 7 s call. Its strength
+reading isn't calibrated and read -89 to -93 dBm on every empty channel, above the 17.3 scale (-100 dBm at the default
+level), so every stop counted a carrier and probed for 700 ms instead of the 150 ms dwell: a sweep of its 14 channels
+took about 12 s. Rule: the scale also sits above the floor the scan reads, the lowest strength past the settle on the
+last 8 stops, by 6 dB plus 3 dB a level (`scan_floor`, `RADIO_DMR_SQL_L1_FLOOR_DB`). A call 20 dB over that floor
+still holds the scan, by the noise reading or by the strength alone (`test_scan_dmr_high_floor`).

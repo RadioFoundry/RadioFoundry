@@ -7,6 +7,12 @@
 #include "codeplug/zone_import.h"
 #include "codeplug/zone_edit.h"
 #include "board.h"
+#include "codeplug/codeplug_modes.h"	// CODEPLUG_KIND_NONE: a share leaves channels of a kind out without the modes part
+#if CONFIG_ZONE_SHARE_MODES
+#include "codeplug/codeplug_kv.h"
+#include "codeplug/codeplug_tag.h"
+#include "codeplug/codeplug_records.h"
+#endif
 
 // The import's working state: static, as the housekeeping task's stack is small. One import or export at a time (the
 // storage job queue runs one job at a time)
@@ -17,6 +23,16 @@ static uint16_t contact_index[ZS_CONTACTS_MAX];		// the record's contacts here (
 static uint16_t added_ct[ZS_CONTACTS_MAX];			// contacts this import added
 static uint8_t added_ct_count;
 static zsRecord_t rec;
+#if CONFIG_ZONE_SHARE_MODES
+// The modes part (zone-share.md 4.2): systems and entries this import added (keys, for the undo), the record's systems
+// here, and a value read from the settings area
+#define ADDED_KEYS_MAX	(2 * ZS_SYSTEMS_MAX + ZS_ENTRIES_MAX)
+static uint16_t added_key[ADDED_KEYS_MAX];
+static uint8_t added_key_count;
+static uint8_t sys_here[ZS_SYSTEMS_MAX];				// CODEPLUG_SYSTEM_NONE: not here
+static uint8_t kv_buf[CODEPLUG_SYS_HDR + ZS_BLOCK_MAX];
+static uint8_t used_bits[32];						// a key family's records in use, one bit each
+#endif
 
 // prefix, then v in decimal, into a buffer of cap bytes: cut to fit and terminated. Returns the length written.
 // Not snprintf: these names would be the image's only use of the C library's printf, and of the allocator behind it
@@ -79,6 +95,11 @@ static void undo(void)
 	while (added_ct_count > 0) {
 		codeplug_delete_contact(added_ct[--added_ct_count]);
 	}
+#if CONFIG_ZONE_SHARE_MODES
+	while (added_key_count > 0) {
+		codeplug_kv_remove(added_key[--added_key_count]);
+	}
+#endif
 }
 
 // --- Contacts ---
@@ -245,12 +266,192 @@ static void channel_here(const zsChannel_t *z, int position, channel_t *ch)
 	ch->contact = (z->dmr && z->contact != 0) ? contact_index[z->contact - 1] : 0;
 }
 
+#if CONFIG_ZONE_SHARE_MODES
+// --- Channels of a kind and their systems (zone-share.md 5.5) ---
+
+// Which records of family base (256 keys) are in use, in used_bits
+static void mark_used(uint16_t base)
+{
+	codeplug_kv_cursor_t c;
+	uint16_t key;
+
+	memset(used_bits, 0, sizeof(used_bits));
+	codeplug_kv_begin(&c, base, (uint16_t)(base + 0xFFu));
+	while (codeplug_kv_next(&c, &key, NULL, 0) >= 0) {
+		used_bits[(key - base) >> 3] |= (uint8_t)(1u << ((key - base) & 7u));
+	}
+}
+
+// The lowest free record of the family mark_used marked, now marked used; -1 when none (0xFF is "none" in a reference)
+static int take_free(void)
+{
+	for (int n = 0; n < 0xFF; n++) {
+		if (!(used_bits[n >> 3] & (1u << (n & 7)))) {
+			used_bits[n >> 3] |= (uint8_t)(1u << (n & 7));
+			return n;
+		}
+	}
+	return -1;
+}
+
+static bool add_key(uint16_t key, const void *value, uint16_t len)
+{
+	if (added_key_count >= ADDED_KEYS_MAX || !codeplug_kv_set(key, value, len)) {
+		return false;
+	}
+	added_key[added_key_count++] = key;
+	return true;
+}
+
+// The system here of the same type and identity as s (channel-modes.md 7.1): its number, CODEPLUG_SYSTEM_NONE if none
+static uint8_t find_system(const zsSystem_t *s)
+{
+	codeplug_kv_cursor_t c;
+	uint16_t key;
+	int len;
+
+	codeplug_kv_begin(&c, CODEPLUG_KEY_SYSTEM, CODEPLUG_KEY_SYSTEM + 0xFEu);
+	while ((len = codeplug_kv_next(&c, &key, kv_buf, sizeof(kv_buf))) >= 0) {
+		if (len >= (int)CODEPLUG_SYS_HDR + s->idLen && kv_buf[0] == s->type && kv_buf[3] == s->idLen &&
+		    memcmp(&kv_buf[CODEPLUG_SYS_HDR], s->block, s->idLen) == 0) {
+			return (uint8_t)(key - CODEPLUG_KEY_SYSTEM);
+		}
+	}
+	return CODEPLUG_SYSTEM_NONE;
+}
+
+// A whole system the radio doesn't have, added: its record (own ID 0, no fallback), its secret, its entries. All or
+// nothing: CODEPLUG_SYSTEM_NONE when the area has no room
+static uint8_t add_system(const zsSystem_t *s)
+{
+	uint8_t first = added_key_count;
+
+	mark_used(CODEPLUG_KEY_SYSTEM);
+	int n = take_free();
+
+	if (n < 0) {
+		return CODEPLUG_SYSTEM_NONE;
+	}
+	memset(kv_buf, 0, CODEPLUG_SYS_HDR);
+	kv_buf[0] = s->type;
+	kv_buf[1] = s->flags;		// listen only as the sender set it: a receiver never forces it (channel-modes.md 7.1)
+	kv_buf[2] = s->level;		// the sharing level it came with
+	kv_buf[3] = s->idLen;
+	strncpy((char *)&kv_buf[12], s->name, CODEPLUG_NAME_LEN);
+	memcpy(&kv_buf[CODEPLUG_SYS_HDR], s->block, s->blockLen);
+	bool ok = add_key((uint16_t)(CODEPLUG_KEY_SYSTEM + n), kv_buf, (uint16_t)(CODEPLUG_SYS_HDR + s->blockLen));
+
+	if (ok && s->secretLen > 0) {
+		ok = add_key((uint16_t)(CODEPLUG_KEY_SYS_KEY + n), s->secret, s->secretLen);
+	}
+	mark_used(CODEPLUG_KEY_SYS_CHAN);
+	for (int k = 0; ok && k < s->entries; k++) {
+		zsEntry_t e;
+		int at = take_free();
+
+		ok = at >= 0 && zsEntryAt(&rec, s, k, &e);
+		if (ok) {
+			kv_buf[0] = (uint8_t)n;
+			kv_buf[1] = e.cls;
+			kv_buf[2] = e.group;
+			kv_buf[3] = e.flags;
+			if (e.len > 0) {
+				memcpy(&kv_buf[CODEPLUG_SYS_ENTRY_HDR], e.body, e.len);
+			}
+			ok = add_key((uint16_t)(CODEPLUG_KEY_SYS_CHAN + at), kv_buf, (uint16_t)(CODEPLUG_SYS_ENTRY_HDR + e.len));
+		}
+	}
+	if (!ok) {
+		while (added_key_count > first) {
+			codeplug_kv_remove(added_key[--added_key_count]);
+		}
+		return CODEPLUG_SYSTEM_NONE;
+	}
+	return (uint8_t)n;
+}
+
+// Whether a channel the import takes (in band) is on the record's system i: a system none of them uses isn't added
+static bool system_used(int i)
+{
+	zsTag_t t;
+	zsChannel_t z;
+
+	for (int k = 0; k < rec.tags; k++) {
+		if (zsTagAt(&rec, k, &t) && t.system == i + 1 && zsChannelAt(&rec, t.channel - 1, &z) &&
+		    zone_import_in_band(&z)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// The record's systems here: the radio's own of that identity (never changed), else a whole one an imported channel is
+// on, added. One sent as its identity alone that the radio doesn't have stays missing: its channels come in unavailable
+static void place_systems(zone_import_result_t *res)
+{
+	for (int i = 0; i < rec.systems; i++) {
+		zsSystem_t s;
+
+		sys_here[i] = CODEPLUG_SYSTEM_NONE;
+		if (!zsSystemAt(&rec, i, &s)) {
+			continue;
+		}
+		sys_here[i] = find_system(&s);
+		if (sys_here[i] == CODEPLUG_SYSTEM_NONE && s.level == ZS_LEVEL_WHOLE && system_used(i)) {
+			sys_here[i] = add_system(&s);
+			res->systems_added += sys_here[i] != CODEPLUG_SYSTEM_NONE;
+		}
+	}
+}
+
+// Record channel i's tag, if it has one, for channel n here named name. Transmit stays allowed only on a system the
+// radio has, whose listen-only flag then rules; every other channel comes in receive only (5.3)
+// Tags are in channel order (zsParse checked it): write_tag goes on from the first one not yet passed
+static int tag_next;
+
+static bool write_tag(int i, uint16_t n, const char *name, zone_import_result_t *res)
+{
+	zsTag_t t;
+
+	for (; tag_next < rec.tags; tag_next++) {
+		if (!zsTagAt(&rec, tag_next, &t)) {
+			return false;
+		}
+		if (t.channel < i + 1) {
+			continue;
+		}
+		if (t.channel > i + 1) {
+			return true;	// channel i has none
+		}
+		tag_next++;
+		codeplug_tag_t tag;
+
+		memset(&tag, 0, sizeof(tag));
+		tag.kind = t.kind;
+		tag.system = (t.system >= 1 && t.system <= rec.systems) ? sys_here[t.system - 1] : CODEPLUG_SYSTEM_NONE;
+		tag.flags = t.flags;
+		if (tag.system == CODEPLUG_SYSTEM_NONE) {
+			tag.flags &= (uint8_t)~CODEPLUG_TAG_TX;
+			res->unavailable += t.system != 0;
+		}
+		return codeplug_tag_write(n, name, &tag, t.params, t.len);
+	}
+	return true;
+}
+#endif
+
 // The record's channels the radio can receive, written to free channel numbers and listed in new_zone
 static zone_import_status_t write_channels(zone_import_result_t *res)
 {
 	zsChannel_t z;
 	channel_t ch;
 
+#if CONFIG_ZONE_SHARE_MODES
+	tag_next = 0;
+	if (rec.flags & ZS_FLAG_MODES) {
+		place_systems(res);
+	}
+#endif
 	for (int i = 0; i < rec.channels; i++) {
 		if (!zsChannelAt(&rec, i, &z)) {
 			return ZI_BAD_RECORD;
@@ -272,6 +473,11 @@ static zone_import_status_t write_channels(zone_import_result_t *res)
 			return ZI_FLASH;
 		}
 		added_ch[added_ch_count++] = n;
+#if CONFIG_ZONE_SHARE_MODES
+		if ((rec.flags & ZS_FLAG_MODES) && !write_tag(i, n, ch.name, res)) {
+			return ZI_FLASH;
+		}
+#endif
 		new_zone.channels[new_zone.count++] = n;
 		res->channels++;
 	}
@@ -464,6 +670,9 @@ static void begin(zone_import_result_t *res)
 	memset(res, 0, sizeof(*res));
 	added_ch_count = 0;
 	added_ct_count = 0;
+#if CONFIG_ZONE_SHARE_MODES
+	added_key_count = 0;
+#endif
 	memset(&new_zone, 0, sizeof(new_zone));
 }
 
@@ -663,6 +872,157 @@ static uint32_t zone_id_of(const char *name, uint8_t flags)
 	return (h != 0) ? h : 1;
 }
 
+#if CONFIG_ZONE_SHARE_MODES
+// The export's own buffers: it runs on the UI task, maybe while an import job holds the import's
+static uint8_t ex_buf[CODEPLUG_SYS_HDR + ZS_BLOCK_MAX];
+static uint8_t ex_body[CODEPLUG_SYS_ENTRY_HDR + ZS_BODY_MAX];
+static uint8_t ex_params[CODEPLUG_TAG_HEAD_MAX + ZS_BODY_MAX];
+static uint8_t ex_sys[ZS_SYSTEMS_MAX];		// the record's systems: numbers here
+static uint8_t ex_nsys;
+static int ex_entries;						// entries the record's systems carry so far
+
+// System n as the record carries it, at its sharing level (channel-modes.md 7.1): false when it isn't shared (off, or
+// no such system). A whole system whose block or entries don't fit the record's limits goes as its identity. Never
+// carried: the own ID, the fallback channel, the secret (no build has the sender's switch for keys yet). *size: the
+// octets it takes with its entries
+static bool system_on_air(uint8_t n, zsSystem_t *s, int *size)
+{
+	int len = codeplug_kv_get((uint16_t)(CODEPLUG_KEY_SYSTEM + n), ex_buf, sizeof(ex_buf));
+
+	memset(s, 0, sizeof(*s));
+	if (len < (int)CODEPLUG_SYS_HDR || ex_buf[2] == CODEPLUG_SHARE_OFF || ex_buf[3] > ZS_BLOCK_MAX ||
+	    ex_buf[3] > len - (int)CODEPLUG_SYS_HDR) {
+		return false;
+	}
+	s->type = ex_buf[0];
+	s->flags = ex_buf[1] & ZS_SYSTEM_FLAGS;
+	s->idLen = ex_buf[3];
+	s->block = &ex_buf[CODEPLUG_SYS_HDR];
+	for (int i = 0; i < CODEPLUG_NAME_LEN && ex_buf[12 + i] != 0 && ex_buf[12 + i] != 0xFF; i++) {
+		s->name[i] = (char)ex_buf[12 + i];
+	}
+	bool whole = ex_buf[2] >= CODEPLUG_SHARE_WHOLE && len - (int)CODEPLUG_SYS_HDR <= ZS_BLOCK_MAX;
+	int body = 0, count = 0, k;
+	codeplug_kv_cursor_t c;
+	uint16_t key;
+
+	codeplug_kv_begin(&c, CODEPLUG_KEY_SYS_CHAN, CODEPLUG_KEY_SYS_CHAN + 0xFFu);
+	while (whole && (k = codeplug_kv_next(&c, &key, ex_body, sizeof(ex_body))) >= 0) {
+		if (k >= (int)CODEPLUG_SYS_ENTRY_HDR && ex_body[0] == n) {
+			whole = k <= (int)sizeof(ex_body);
+			body += 4 + k - (int)CODEPLUG_SYS_ENTRY_HDR;
+			count++;
+		}
+	}
+	whole = whole && ex_entries + count <= ZS_ENTRIES_MAX;
+	s->level = whole ? ZS_LEVEL_WHOLE : ZS_LEVEL_IDENTITY;
+	s->blockLen = whole ? (uint8_t)(len - (int)CODEPLUG_SYS_HDR) : s->idLen;
+	s->entries = whole ? (uint8_t)count : 0;
+	*size = zsSystemSize(s) + (whole ? body : 0);
+	return true;
+}
+
+// System n for the record: *size the octets carrying it adds (0 when it is in already, or isn't carried: sharing off,
+// no such system, the record's systems full) and in *entries the entries it carries, for system_add
+static void system_index(uint8_t n, int *size, uint8_t *entries)
+{
+	zsSystem_t s;
+
+	*size = 0;
+	*entries = 0;
+	for (uint8_t k = 0; k < ex_nsys; k++) {
+		if (ex_sys[k] == n) {
+			return;
+		}
+	}
+	if (n == CODEPLUG_SYSTEM_NONE || ex_nsys >= ZS_SYSTEMS_MAX || !system_on_air(n, &s, size)) {
+		*size = 0;
+		return;
+	}
+	*entries = s.entries;
+}
+
+// System n, which system_index sized, goes in
+static void system_add(uint8_t n, uint8_t entries)
+{
+	ex_entries += entries;
+	ex_sys[ex_nsys++] = n;
+}
+
+// Channel number's tag as the record carries it (ch read by codeplug_channel, ch->kind set); false when its parameter
+// block doesn't fit
+static bool tag_on_air(uint16_t number, const channel_t *ch, zsTag_t *t)
+{
+	codeplug_tag_t raw;
+	int len = codeplug_tag_params(number, ch, ex_params, ZS_BODY_MAX);
+
+	if (len < 0 || len > ZS_BODY_MAX || !codeplug_tag_read(number, &raw)) {
+		return false;
+	}
+	memset(t, 0, sizeof(*t));
+	t->kind = ch->kind;
+	t->flags = raw.flags & ZS_TAG_FLAGS;		// the fallback is a channel number here: not carried
+	t->len = (uint8_t)len;
+	t->params = ex_params;
+	return true;
+}
+
+// The modes part after the channels (export_list chose them): each system, then each channel's tag
+static void write_modes(zsWriter_t *w, const uint16_t *num, uint8_t channels, uint8_t tags)
+{
+	channel_t ch;
+	zsSystem_t s;
+	zsTag_t t;
+	int size;
+
+	zsWriterModes(w, ex_nsys);
+	ex_entries = 0;
+	for (uint8_t k = 0; k < ex_nsys; k++) {
+		if (!system_on_air(ex_sys[k], &s, &size)) {
+			w->failed = true;
+			return;
+		}
+		ex_entries += s.entries;
+		zsWriterSystem(w, &s);
+		codeplug_kv_cursor_t c;
+		uint16_t key;
+		int len;
+
+		codeplug_kv_begin(&c, CODEPLUG_KEY_SYS_CHAN, CODEPLUG_KEY_SYS_CHAN + 0xFFu);
+		for (int e = 0; e < s.entries && (len = codeplug_kv_next(&c, &key, ex_body, sizeof(ex_body))) >= 0;) {
+			if (len >= (int)CODEPLUG_SYS_ENTRY_HDR && ex_body[0] == ex_sys[k]) {
+				zsEntry_t en = { ex_body[1], ex_body[2], ex_body[3], (uint8_t)(len - (int)CODEPLUG_SYS_ENTRY_HDR),
+						 &ex_body[CODEPLUG_SYS_ENTRY_HDR] };
+				zsWriterEntry(w, &en);
+				e++;
+			}
+		}
+	}
+	zsWriterTags(w, tags);
+	for (uint8_t i = 0; i < channels; i++) {
+		if (!codeplug_channel(num[i], &ch)) {
+			w->failed = true;
+			return;
+		}
+		if (ch.kind == CODEPLUG_KIND_NONE) {
+			continue;
+		}
+		if (!tag_on_air(num[i], &ch, &t)) {
+			w->failed = true;
+			return;
+		}
+		t.channel = (uint8_t)(i + 1);
+		t.system = (ch.system == CODEPLUG_SYSTEM_NONE) ? 0 : ZS_SYSTEM_WITHHELD;
+		for (uint8_t k = 0; k < ex_nsys; k++) {
+			if (ex_sys[k] == ch.system) {
+				t.system = (uint8_t)(k + 1);
+			}
+		}
+		zsWriterTag(w, &t);
+	}
+}
+#endif
+
 // Channels list[0..n) as a record: contacts first, then channels in order while they fit. Returns the length
 static int export_list(const char *name, uint8_t flags, const uint16_t *list, uint16_t n, uint8_t *out, int size,
 		       uint8_t *included)
@@ -671,19 +1031,46 @@ static int export_list(const char *name, uint8_t flags, const uint16_t *list, ui
 	static uint8_t ch_ct[CODEPLUG_ZONE_MAX];	// each included channel's record contact (1-based), 0 none
 	static uint16_t ch_num[CODEPLUG_ZONE_MAX];
 	uint8_t contacts = 0, channels = 0;
+#if CONFIG_ZONE_SHARE_MODES
+	uint8_t tags = 0;
+#endif
 	int budget = (size < ZS_RECORD_MAX) ? size : ZS_RECORD_MAX;
 	int used = zsHeaderSize(name);
 	channel_t ch;
 	zsChannel_t z;
 	zsContact_t c;
 
+#if CONFIG_ZONE_SHARE_MODES
+	ex_nsys = 0;
+	ex_entries = 0;
+#endif
 	// Choose: each channel in order with its contact, while the whole fits
 	for (uint16_t i = 0; i < n && channels < ZS_CHANNELS_MAX; i++) {
 		if (!codeplug_channel(list[i], &ch)) {
 			continue;
 		}
-		channel_on_air(&ch, &z);
 		int need = 0;
+		bool add_sys = false;
+		uint8_t sys_entries = 0;
+
+		if (ch.kind != CODEPLUG_KIND_NONE) {
+#if CONFIG_ZONE_SHARE_MODES
+			// A channel of a kind: its tag, its system the first time (zone-share.md 4.2)
+			zsTag_t t;
+			int sys_size;
+
+			if (!tag_on_air(list[i], &ch, &t)) {
+				continue;
+			}
+			need += zsTagSize(&t) + ((tags == 0) ? 2 : 0);
+			system_index(ch.system, &sys_size, &sys_entries);
+			need += sys_size;
+			add_sys = sys_size > 0;
+#else
+			continue;	// its base record is a stand-in: without the modes part the receiver would take it for a channel
+#endif
+		}
+		channel_on_air(&ch, &z);
 		uint8_t ref = 0;
 		uint16_t idx = 0;
 
@@ -710,6 +1097,17 @@ static int export_list(const char *name, uint8_t flags, const uint16_t *list, ui
 		if (ref == contacts + 1) {
 			ct_src[contacts++] = idx;
 		}
+#if CONFIG_ZONE_SHARE_MODES
+		if (ch.kind != CODEPLUG_KIND_NONE) {
+			tags++;
+			if (add_sys) {
+				system_add(ch.system, sys_entries);
+			}
+		}
+#else
+		(void)add_sys;
+		(void)sys_entries;
+#endif
 		ch_ct[channels] = z.dmr ? ref : 0;
 		ch_num[channels++] = list[i];
 	}
@@ -742,6 +1140,11 @@ static int export_list(const char *name, uint8_t flags, const uint16_t *list, ui
 		z.contact = ch_ct[i];
 		zsWriterChannel(&w, &z);
 	}
+#if CONFIG_ZONE_SHARE_MODES
+	if (tags > 0) {
+		write_modes(&w, ch_num, channels, tags);
+	}
+#endif
 	return zsWriterEnd(&w);
 }
 

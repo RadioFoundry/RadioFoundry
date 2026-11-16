@@ -21,8 +21,10 @@ are keyed at offsets from the last release, inside the hang, just before and jus
 | past the hang | wake the repeater, then key |
 
 Each key-up is judged on what was on the air: refused (call.tx_denied), not on the air (under 5 voice bursts from the
-radio on the input), not repeated (under 5 voice bursts on the output), or ok. Every key-up must be ok. The radio's
-phases while keyed and the wake-ups sent are printed for each."""
+radio on the input), not repeated (under 5 voice bursts on the output), or ok. Every key-up must be ok. A radio that
+listens while it sends (call.rx_bs_in_tx) must also not take the repeater as dropped (call.tx_rpt_drops) where it
+can't have: keyed 1 s into the hang, or well past it after a wake-up (issue 538: woken a second time, its voice
+came 0.7 s late). The radio's phases while keyed and the wake-ups sent are printed for each."""
 import collections
 import time
 
@@ -35,6 +37,9 @@ from test_dmr_audio_smoke import find_dmr_channel
 KEY_S = 1.5             # each key-up's length
 HANG_MAX_S = 20.0       # a repeater that holds its output longer is never down between key-ups here
 OFFSETS = (-0.4, -0.15, 0.05, 0.25, 0.6, None, 3.0)    # s from the hang's end; None: 1 s after the release
+# Far enough from the hang's end that the repeater can't drop under the key-up. Not 0.4 s before it: a repeater takes
+# about that long to repeat us, and its hang can run out first
+CLEAR = (0.6, None, 3.0)
 LATE_S = 0.1            # a key-up this late against its offset is printed as such (the bench's results came late)
 
 
@@ -111,7 +116,8 @@ def test_dmr_repeater_keyup(radio, sdr_bench, pytestconfig, backup_dir):
         return {"verdict": verdict, "phases": phases, "errors": errs, "wakeups": sum(r.get("kind") == "CSBK"
                 for r in rows_in), "voice_in": len(v_in), "voice_out": len(v_out),
                 "hang": None if last_out is None else round(last_out - released_utc, 2),
-                "denied": dl.get("call.tx_denied", 0)}
+                "denied": dl.get("call.tx_denied", 0), "drops": dl.get("call.tx_rpt_drops", 0),
+                "listened": dl.get("call.rx_bs_in_tx", 0)}
 
     def key_and_release(at):
         """PTT for KEY_S at time.monotonic() `at` (at once when past). (key-up time, release time, the release's
@@ -172,4 +178,6 @@ def test_dmr_repeater_keyup(radio, sdr_bench, pytestconfig, backup_dir):
     by = collections.Counter(r["verdict"] for r in results)
     print(f"{dict(by)}")
     bad = [f"{r['gap']} s: {r['verdict']} {r['errors']}" for r in results if r["verdict"] != "ok"]
+    bad += [f"{r['gap']} s: taken as dropped ({r['drops']}), keyed {r['offset']} s from the hang's end"
+            for r in results if r["offset"] in CLEAR and r["listened"] and r["drops"]]
     assert not bad, f"{len(bad)} of {len(results)} key-ups failed (hang {hang:.2f} s): {bad}"

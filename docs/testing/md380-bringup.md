@@ -58,10 +58,10 @@ The web installer's channel step ([web-flasher.md](../dev/web-flasher.md), "Chan
    tools/stm32_dfu.py --model md380 --key ~/keys/md380.key build/md380/rfoundry_md380.bin
    ```
 
-   The plain image fills flash sectors 3-7 only and leaves the codec sectors (8, 10, 11) alone. Coming from stock
+   The plain image fills flash sectors 3-10 only and leaves the codec sector (11) alone. Coming from stock
    firmware there is no codec there yet, so the first flash for DMR voice is the merged image: with
-   `MD-380-D2.32(AD).bin` in `codecs/`, the build also writes `build/md380/rfoundry_md380_codec.bin`, which moves the codec
-   code to sector 11 (no key file needed; [codec-md380.md](../spec/codec-md380.md)). After that the plain image is
+   `MD-380-D2.32(AD).bin` in `codecs/`, the build also writes `build/md380/rfoundry_md380_codec.bin`, which moves every codec
+   window into sector 11 (no key file needed; [codec-md380.md](../spec/codec-md380.md)). After that the plain image is
    enough for an update.
 4. Antenna on, **no PTT** until stage 6, and then only into a dummy load.
 5. The SWD pins become the bandwidth switch and microphone supply once the radio starts (hardware-md380.md 2.6). For a
@@ -169,7 +169,7 @@ it the radio is FM only; the slot engine can still be checked without voice:
 | The caller's ID and talk group show | the embedded LC (`hrc6000_voice_lcss`), the 0x5F stand-in for DMO / RMO |
 | With a codec profile: clean voice, "aud blk" climbing, no "ov" | I2S directions and format in `audio_md380.c`. Unknown 17. The receive audio route is open: start from [hardware-md380.md](../spec/hardware-md380.md) 4.10, which lists what was tried, so it isn't repeated |
 | No codec profile with the merged image flashed | the boot check in `vocoder_md380.c` failed: descriptor, placement or a CRC of the moved codec (codec-md380.md, Hosting) |
-| After an update with the plain image (keep mode): still `codec=md380-d2032-s11` and clean voice RX and TX | the update reached a codec sector (8, 10 or 11), or the image passed 0x08080000 |
+| After an update with the plain image (keep mode): still `codec=md380-d2032-s11v2` and clean voice RX and TX | the update reached the codec sector (11), or the image passed 0x080E0000 |
 
 ## 8. DMR transmit (dummy load, then a hotspot or repeater)
 

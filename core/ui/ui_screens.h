@@ -229,12 +229,15 @@ typedef struct {
 } ui_list_t;
 
 void ui_draw_list(const radio_view_t *v, const ui_state_t *s, const ui_list_t *l);
-// A page of text (About) in the smallest font, word-wrapped, never shortened: lines from *first on (clamped so the
-// last page is full). The status strip only while the radio isn't idle. Returns the largest *first (0: all fits)
+// A page of text (About, a message) in the smallest font, word-wrapped, never shortened: lines from *first on (clamped
+// so the last page is full). labels: a line's "Label:" is dim (not in a message, whose sender wrote the colons). The
+// status strip only while the radio isn't idle. Returns the largest *first (0: all fits)
 int ui_draw_text_page(const radio_view_t *v, const ui_state_t *s, const char *title, const char *text,
-	uint16_t *first);
+	uint16_t *first, bool labels);
 // Rows that fit below the title (and header) on this display, for paging
 int ui_list_rows(const ui_list_t *l);
+// The list's body fits above its rows as ui_draw_list draws it, without being shortened
+bool ui_list_body_fits(const ui_state_t *s, const ui_list_t *l);
 
 // The boot screen: the mark, the name, the owner's two boot text lines (empty: left out), board and version
 void ui_draw_splash(const char *board_name, const char *version, const char *line1, const char *line2);

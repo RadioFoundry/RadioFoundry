@@ -41,6 +41,9 @@ typedef struct {
 	// as tx_off() does, but leave the RF receiving as it is when it is on the last rx() settings; else set receive up
 	// again as tx_off() does. NULL: the glue leaves it to tx_off()
 	void (*tx_end)(void);
+	// The RF side retunes to the receive frequency between our bursts when the transmission listens, on a split
+	// channel too (stm32_hrc_dmr_tx_listening; the modem's tx_listen_split)
+	bool listen_split;
 } stm32_hrc_dmr_board_t;
 
 typedef struct {
