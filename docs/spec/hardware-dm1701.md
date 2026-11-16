@@ -861,9 +861,10 @@ A wider window (2000-2400 us) put the lowest level early with 5 dB of overshoot;
 reaches the levels that overshoot.
 
 On a cable into the SDR bench (57 dB) the same set is cleaner than over the air: levels 1-3 come up 0.32-0.49 ms
-ahead with 0.3-0.7 dB of overshoot at both 445 and 461.4625 MHz, so the 2-3 dB above came from the path. The lowest
-level is 123 mW at 445 MHz and 33 mW at 461.4625 MHz (the radio's calibration tables): early with 1.5 dB of overshoot
-at the first, 1.6 dB short at the first symbol at the second. The top level is 1.6-2.5 dB short at the first symbol
+ahead with 0.3-0.7 dB of overshoot at 445 MHz and at a second frequency with other calibration rows, so the 2-3 dB
+above came from the path. The lowest level is 123 mW at 445 MHz and 33 mW at the second frequency (the radio's
+calibration tables): early with 1.5 dB of overshoot at the first, 1.6 dB short at the first symbol at the second.
+The top level is 1.6-2.5 dB short at the first symbol
 and settles after it: its PA point can't move earlier (SFR, below). A refit on the cable came out worse at every
 round.
 
