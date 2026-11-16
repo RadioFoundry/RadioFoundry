@@ -804,6 +804,11 @@ static void testAccessEarlyAnswers(void)
 	CHECK(nsends == 2 && last_isp().opcode == P25_ISP_GRP_AFF_REQ, "the affiliation goes out: %u", nsends);
 	answer_aff(&f, P25_RV_ACCEPT, 100);
 	CHECK(view(&f).reg == P25_REG_READY, "ready");
+	// A group call granted to our own unit while we ask for nothing: not followed (not a call to listen to)
+	n = ntunes;
+	mk_grant(b, P25_OP_GRP_V_GRANT, 0, 0x100A, 100, OUR_UNIT);
+	p25_follow_tsbk(&f, b, NAC, now_ms);
+	CHECK(ntunes == n && view(&f).state == P25_FOLLOW_CONTROL && view(&f).follows == 0, "our own unit's grant: not followed");
 	// A grant that names us before our request went out is not its answer: no voice channel, nothing keyed
 	p25_follow_ptt(&f, true, now_ms);
 	hold_request(&f);

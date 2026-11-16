@@ -173,6 +173,7 @@ to or from `unit_id`, unless `P25_FOLLOW_NO_UNIT`):
 | Service options say protected, and `P25_FOLLOW_SKIP_ENC` | not followed (view: refused ENC). Its repeated grants and its updates are skipped while they keep coming (1.5 s apart at most) |
 | Its identifier unknown | not followed (view: refused NO_IDEN); followed once the identifier arrives |
 | A TDMA identifier other than single-slot full rate | not followed (view: refused TDMA): the voice path plays Phase 1 only |
+| A group grant whose source is our own unit | not followed: not a call to listen to. As the answer to our voice request it is taken by the transmit side (5) |
 | A call left on its terminator | its updates are not followed for 1.5 s; a new grant is |
 | `hold_ms` after a followed group call | only that group is followed |
 | Otherwise | `tune(hz, GROUP or UNIT, group or target)`, state VOICE |

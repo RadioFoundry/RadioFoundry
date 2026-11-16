@@ -260,6 +260,10 @@ static bool consider(p25_follow_t *f, uint8_t op, bool unit, uint16_t ch, uint16
 			return false;
 	} else if (!group_wanted(f, tg, now)) {
 		return false;
+	} else if (src && src == c->unit_id) {
+		// A group call that names us as its talker is not one to listen to: the site repeating the grant of a call
+		// we don't hold (its answer to our request is acc_grant's), or another unit with our identity
+		return false;
 	}
 	// The call just left on its terminator: its updates go on a little while, and so do the grants of our own call
 	// (we talked, the site repeats them). An encrypted call skipped: its grants repeated and its updates (which carry
