@@ -110,6 +110,10 @@ bool codeplug_zone(uint16_t index, zone_t *out);
 // The name alone, false as codeplug_channel / codeplug_zone: a search by name reads 16 bytes a record, not all of it
 bool codeplug_channel_name(uint16_t number, char out[CODEPLUG_NAME_LEN + 1]);
 bool codeplug_zone_name(uint16_t index, char out[CODEPLUG_NAME_LEN + 1]);
+// Channel to's record takes channel from's mode, receive-only bit and bandwidth, the rest of it kept: a copy of a
+// channel whose tag says the record is a channel of its own (codeplug_tag_copy, docs/spec/channel-modes.md 2.4).
+// False when either number holds no channel or the write fails
+bool codeplug_base_copy(uint16_t from, uint16_t to);
 // Whether a channel number holds a channel, from the in-use bitmap: no flash read
 bool codeplug_channel_used(uint16_t number);
 // Every channel 1..codeplug_channel_count() in order with its name, NULL for an empty number, a few records per flash

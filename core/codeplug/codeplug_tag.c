@@ -129,6 +129,12 @@ bool codeplug_tag_copy(uint16_t from, uint16_t to, const channel_t *ch)
 	if (len > (int)sizeof v || !parse(v, len, &t) || t.kind != ch->kind || t.check != codeplug_name_check(name)) {
 		return false;
 	}
+	// A source whose record is a channel of its own: the copy was written as a stand-in (no tag followed it), so it
+	// takes that record's mode, receive-only bit and bandwidth before the tag says so. Where that fails the copy's
+	// tag says what its record is, a stand-in
+	if ((t.flags & CODEPLUG_TAG_BASE_OWN) != 0 && !codeplug_base_copy(from, to)) {
+		t.flags &= (uint8_t)~CODEPLUG_TAG_BASE_OWN;
+	}
 	v[1] = ch->system;
 	wr16(&v[2], codeplug_name_check(ch->name));
 	v[4] = (uint8_t)((t.flags & ~CODEPLUG_TAG_TX) | (ch->rx_only ? 0u : CODEPLUG_TAG_TX));

@@ -268,6 +268,32 @@ static void test_conv_save(void)
 		CHECK(codeplug_tag_params(33, &r, raw, sizeof longer) == (int)sizeof longer &&
 		      memcmp(&raw[NXDN_CP_CONV_LEN], "\xA1\xA2\xA3", 3) == 0);
 	}
+	// A mixed channel: its record is an FM channel of its own (wide, transmitting), its tag the NXDN side (receive
+	// only). The RAN edited on the radio, which holds the channel as it runs (NXDN, narrow, the tag's receive only):
+	// the FM side stays as stored, and so does the tag's flag that says the record is its own
+	{
+		uint8_t blk[NXDN_CP_CONV_LEN];
+		codeplug_tag_t mt = { .kind = CODEPLUG_KIND_NXDN, .flags = CODEPLUG_TAG_BASE_OWN };
+		nxdn_conv_t ed = { .rate9600 = false, .rx_ran = 21, .tx_ran = 22, .squelch = NXDN_SQUELCH_RAN };
+		channel_t fm = make("Mixed", 453200000, 458200000);
+
+		fm.mode = RADIO_MODE_FM;
+		fm.bw = RADIO_BW_25K;
+		fm.rx_only = false;
+		nxdn_conv_encode(&nc, blk);
+		CHECK(codeplug_set_channel(34, &fm) && codeplug_tag_write(34, "Mixed", &mt, blk, sizeof blk));
+		CHECK(codeplug_channel(34, &r) && r.kind == CODEPLUG_KIND_NXDN && r.rx_only && r.mode == RADIO_MODE_FM &&
+		      r.bw == RADIO_BW_25K);
+		r.mode = RADIO_MODE_NXDN;
+		r.bw = RADIO_BW_12K5;
+		CHECK(nxdn_conv_save(34, &r, &ed));
+		CHECK(codeplug_channel(34, &r) && r.kind == CODEPLUG_KIND_NXDN && r.rx_only && r.mode == RADIO_MODE_FM &&
+		      r.bw == RADIO_BW_25K && r.tx_hz == 458200000);
+		CHECK(codeplug_tag_read(34, &rt) && rt.flags == CODEPLUG_TAG_BASE_OWN);
+		CHECK(nxdn_conv_load(34, &r, &back) && back.conv.rx_ran == 21 && back.conv.tx_ran == 22);
+		CHECK(codeplug_tag_remove(34) && codeplug_channel(34, &r) && r.kind == CODEPLUG_KIND_NONE && !r.rx_only &&
+		      r.mode == RADIO_MODE_FM && r.bw == RADIO_BW_25K);
+	}
 }
 
 int main(void)

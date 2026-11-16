@@ -1068,6 +1068,29 @@ bool codeplug_set_channel(uint16_t number, const channel_t *ch)
 	return ok && codeplug_tag_after_write(number, ch, action, &tag);
 }
 
+bool codeplug_base_copy(uint16_t from, uint16_t to)
+{
+	uint8_t r[CH_SIZE];
+	uint8_t mode, flag4;
+	if (source != CODEPLUG_OPENFW || from < 1 || from > CH_MAX || to < 1 || to > CH_MAX || from == to) {
+		return false;
+	}
+	const uint8_t own = FLAG4_RX_ONLY | FLAG4_25K;
+	storage_lock();
+	bool ok = is_used(from) && is_used(to) && flash_read(channel_addr(from) + CH_MODE, &mode, 1) &&
+		  flash_read(channel_addr(from) + CH_FLAG4, &flag4, 1) && flash_read(channel_addr(to), r, sizeof(r));
+	if (ok) {
+		r[CH_MODE] = mode;
+		r[CH_FLAG4] = (uint8_t)((r[CH_FLAG4] & ~own) | (flag4 & own));
+		ok = flash_write(channel_addr(to), r, sizeof(r));
+	}
+	if (ok) {
+		serial++;
+	}
+	storage_unlock();
+	return ok;
+}
+
 bool codeplug_delete_channel(uint16_t number)
 {
 	if (number < 1 || number > CH_MAX) {

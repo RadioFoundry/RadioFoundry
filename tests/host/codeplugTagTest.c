@@ -217,6 +217,30 @@ static void test_write_follows(void)
 	c = get(12);
 	CHECK(c.kind == TEST_KIND && c.system == 7 && c.rx_only && strcmp(c.name, "T Ops 2") == 0);
 	CHECK(get(10).kind == TEST_KIND && !get(10).rx_only);	// the source is untouched
+	// A mixed channel (its record a channel of its own: FM, wide, transmitting) copied on the radio: the copy is
+	// written as the kind runs and so in the stand-in shape, then takes the source's tag and its record's own mode,
+	// receive-only bit and bandwidth. Both halves arrive; the source keeps both
+	channel_t fm = make("T Mixed", RADIO_MODE_FM, false);
+	fm.bw = RADIO_BW_25K;
+	CHECK(codeplug_set_channel(14, &fm));
+	codeplug_tag_t own = { .kind = TEST_KIND, .system = 2, .flags = CODEPLUG_TAG_BASE_OWN | CODEPLUG_TAG_TX };
+	CHECK(codeplug_tag_write(14, "T Mixed", &own, blk, sizeof blk));
+	c = get(14);
+	strcpy(c.name, "T Mixed 2");
+	c.mode = RADIO_MODE_DMR;
+	c.bw = RADIO_BW_12K5;
+	CHECK(codeplug_set_channel(15, &c));
+	CHECK(get(15).kind == CODEPLUG_KIND_NONE && get(15).rx_only && get(15).mode == RADIO_MODE_DMR);	// the stand-in
+	CHECK(codeplug_tag_copy(14, 15, &c));
+	CHECK(tag_bytes(15, v, sizeof v) == 8 && v[4] == (CODEPLUG_TAG_BASE_OWN | CODEPLUG_TAG_TX) && v[5] == 1 && v[7] == 3);
+	c = get(15);
+	CHECK(c.kind == TEST_KIND && !c.rx_only && c.mode == RADIO_MODE_FM && c.bw == RADIO_BW_25K &&
+	      strcmp(c.name, "T Mixed 2") == 0);
+	CHECK(codeplug_tag_remove(15));
+	c = get(15);
+	CHECK(c.kind == CODEPLUG_KIND_NONE && !c.rx_only && c.mode == RADIO_MODE_FM && c.bw == RADIO_BW_25K);
+	CHECK(codeplug_tag_remove(14) && get(14).mode == RADIO_MODE_FM && get(14).bw == RADIO_BW_25K && !get(14).rx_only);
+	CHECK(codeplug_delete_channel(14) && codeplug_delete_channel(15));
 	// No copy from a plain channel, a stale tag, to itself, or for a plain channel
 	CHECK(!codeplug_tag_copy(10, 10, &c) && !codeplug_tag_copy(13, 12, &c));
 	channel_t plain = make("T Ops", RADIO_MODE_DMR, true);

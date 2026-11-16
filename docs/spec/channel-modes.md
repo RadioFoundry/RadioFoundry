@@ -104,7 +104,10 @@ at a number is written, the tag there:
 A channel of a kind is always written in its safe stand-in shape unless its tag has flag bit 1, also where no tag
 follows it (a copy to another number is a receive-only DMR channel). A copy made on the radio (the channel editor's
 Save as new, Copy here) then takes the source's tag: the copy's name check, system and flag bit 0, the fallback and
-the parameter block byte for byte (`codeplug_tag_copy`). Deleting a channel removes its tag.
+the parameter block byte for byte (`codeplug_tag_copy`). Where the source's tag has flag bit 1, the copy's record
+first takes the source record's mode, receive-only bit and bandwidth (`codeplug_base_copy`), so the copy is the same
+channel on both sides; if that write fails, the copy's tag gets flag bit 1 clear, which is what its record then is.
+Deleting a channel removes its tag.
 
 Where the tag that follows has flag bit 1, the base record is a channel of its own and the radio shows the kind's
 mode, receive-only bit and bandwidth in place of the record's: a write from the radio keeps those three as stored.

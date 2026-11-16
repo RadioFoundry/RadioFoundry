@@ -62,7 +62,9 @@ bool codeplug_tag_write(uint16_t number, const char *name, const codeplug_tag_t 
 // (the caller writes a new one) or the area can't be written
 bool codeplug_tag_rewrite(uint16_t number, const char *name, const codeplug_tag_t *t, const uint8_t *params, uint16_t len);
 // A copy of a channel of a kind written at to (codeplug_set_channel: no tag follows it there, 2.4) takes from's tag:
-// the check of ch's name, ch's system and transmit allowed, the rest byte for byte. False when from has no tag of
+// the check of ch's name, ch's system and transmit allowed, the rest byte for byte. Under a tag whose base record is
+// a channel of its own (CODEPLUG_TAG_BASE_OWN) the copy's record takes the source's mode, receive-only bit and
+// bandwidth too (codeplug_base_copy), so both halves of the channel are copied. False when from has no tag of
 // ch's kind live under its name, its value is longer than this firmware writes, or the area can't be written
 bool codeplug_tag_copy(uint16_t from, uint16_t to, const channel_t *ch);
 // Remove channel number's tag; true when none is left
