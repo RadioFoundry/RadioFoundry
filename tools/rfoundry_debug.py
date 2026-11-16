@@ -295,11 +295,48 @@ def find_ports():
     return sorted(p.device for p in list_ports.comports() if p.vid == VID and p.pid == PID)
 
 
-def pick_port(port=None):
+# The USB-serial bridges of radios' programming cables (FTDI, Prolific, WCH, Silicon Labs): a radio on one of them has
+# no USB ID of its own, so find_ports() can't see it
+CABLE_VIDS = (0x0403, 0x067B, 0x1A86, 0x10C4)
+
+
+def find_cables():
+    if list_ports is None:
+        return []
+    return sorted(p.device for p in list_ports.comports() if p.vid in CABLE_VIDS)
+
+
+# Commands (and their ops) that only read: everything else restarts the radio or changes it
+READ_ONLY = {"hwopt": None, "reg": None, "ping": None, "version": None, "diag": None, "view": None, "screenshot": None, "log": None, "chip": None,
+             "dump": None, "peek": None, "iddb": None, "crash": ("show",), "watchdog": ("show",), "rx2": ("info",),
+             "air": ("status", "tap", "rx"), "storage": ("info", "dump"), "split": ("view",),
+             "aprobe": ("status", "reg", "samples", "ram", "watch")}
+
+
+def changes_radio(a):
+    """The parsed command restarts the radio or writes to it (settings, registers, keys, PTT, the radio's state)"""
+    if a.cmd not in READ_ONLY:
+        return True
+    ops = READ_ONLY[a.cmd]
+    if a.cmd == "hwopt":
+        return a.choice is not None
+    if a.cmd == "reg":
+        return a.value is not None
+    return ops is not None and getattr(a, "op", None) not in ops
+
+
+def pick_port(port=None, changes=False):
+    """The radio's port: port, $RFOUNDRY_PORT, else the one radio found. changes: the command restarts or writes to the
+    radio, so a serial cable that may carry another radio counts too: never guess which one"""
     port = port or os.environ.get("RFOUNDRY_PORT")
     if port:
         return port
     ports = find_ports() or find_network_radios()	# no serial port: a radio in USB network mode, over UDP
+    if changes:
+        cables = [c for c in find_cables() if c not in ports]
+        if len(ports) + len(cables) > 1:
+            raise DebugLinkError(f"this command restarts or writes to the radio, and more than one may be attached "
+                                 f"(radios {ports}, serial cables {cables}): give --port")
     if len(ports) == 1:
         return ports[0]
     if not ports:
@@ -2416,6 +2453,40 @@ def self_test():
           not mem_allowed(0x14030000, 4, CHIP_HRC7000) and not mem_allowed(0x00010000, 4, CHIP_STM32F4) and
           mem_allowed(0xE000ED00, 4, CHIP_STM32F4) and not mem_allowed(0xE000ED02, 2, CHIP_STM32F4),
           "READ_MEM windows by family")
+    # Restart and write commands never guess between radios: a serial cable may carry one too
+    saved = (find_ports, find_cables, find_network_radios, os.environ.pop("RFOUNDRY_PORT", None))
+    g = globals()
+    try:
+        g["find_network_radios"] = lambda: []
+        g["find_ports"], g["find_cables"] = (lambda: ["/dev/usbmodem1"]), (lambda: ["/dev/usbserial1"])
+        ap_ = argparse.Namespace
+        reboot, view = ap_(cmd="reboot"), ap_(cmd="view")
+        check(changes_radio(reboot) and not changes_radio(view) and changes_radio(ap_(cmd="ptt")) and
+              changes_radio(ap_(cmd="crash", op="test")) and not changes_radio(ap_(cmd="crash", op="show")) and
+              changes_radio(ap_(cmd="hwopt", option="x", choice="V4")) and not changes_radio(ap_(cmd="hwopt", option=None, choice=None)) and
+              changes_radio(ap_(cmd="reg", chip=1, reg=2, value=3)) and not changes_radio(ap_(cmd="reg", chip=1, reg=2, value=None)),
+              "restart and write commands told from reads")
+        try:
+            pick_port(None, True)
+            refused = False
+        except DebugLinkError as e:
+            refused = "give --port" in str(e)
+        check(refused, "a restart with a native radio and a serial cable attached and no --port: refused")
+        check(pick_port(None, False) == "/dev/usbmodem1", "a read picks the one native radio")
+        check(pick_port("/dev/usbserial1", True) == "/dev/usbserial1", "a restart with --port: that port")
+        g["find_cables"] = lambda: []
+        check(pick_port(None, True) == "/dev/usbmodem1", "a restart with one radio and no cable: that radio")
+        g["find_ports"] = lambda: ["/dev/usbmodem1", "/dev/usbmodem2"]
+        try:
+            pick_port(None, False)
+            refused = False
+        except DebugLinkError:
+            refused = True
+        check(refused, "two native radios, no --port: refused")
+    finally:
+        g["find_ports"], g["find_cables"], g["find_network_radios"] = saved[:3]
+        if saved[3] is not None:
+            os.environ["RFOUNDRY_PORT"] = saved[3]
     print("rfoundry_debug self-test:", "ok" if ok else "FAILED")
     return 0 if ok else 1
 
@@ -2549,7 +2620,8 @@ def main(argv=None):
     if a.cmd == "ptt" and not 0 < a.seconds <= INJECT_MAX_S:
         ap.error(f"--seconds must be > 0 and <= {INJECT_MAX_S:g}")
     try:
-        with DebugLink(a.port, a.timeout) as link:
+        port = a.port if a.port else pick_port(None, changes_radio(a))
+        with DebugLink(port, a.timeout) as link:
             if a.cmd == "ping":
                 print(f"{link.port}: pong in {link.ping() * 1000:.1f} ms")
             elif a.cmd == "version":
