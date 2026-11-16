@@ -75,6 +75,11 @@
 #include "hotspot/hotspot.h"
 #include "stubentry/stub_entry.h"
 #include "ui/ui_svc_aprs.h"
+#include "codeplug/codeplug_tag.h"
+#if CONFIG_P25
+#include "p25/p25_codeplug.h"
+#include "radio/radio_p25.h"
+#endif
 
 #define TICK_MS		50
 #define PRESS_MS	150
@@ -685,8 +690,9 @@ static const channel_t *sim_edit(uint16_t number)
 	return NULL;
 }
 
-bool ui_svc_write_channel(uint16_t number, const channel_t *ch)
+bool ui_svc_write_channel(uint16_t number, const channel_t *ch, uint16_t from)
 {
+	(void)from;
 	if (sim_hold())
 		return sim_held;
 	uint8_t i = 0;
@@ -763,6 +769,30 @@ bool codeplug_channel(uint16_t number, channel_t *out)
 	out->rx_only = number == 25 || number == 26;	// NOAA
 	return true;
 }
+
+// Channel tags (codeplug_tag.c): no tag area here; a copy keeps its kind in sim_edits already
+bool codeplug_tag_copy(uint16_t from, uint16_t to, const channel_t *ch)
+{
+	(void)from;
+	(void)to;
+	(void)ch;
+	return true;
+}
+
+#if CONFIG_P25
+static bool p25_radio;		// below: the "p25" token
+// A stored P25 channel's block (p25_codeplug.c): the defaults (NAC 293, normal squelch)
+bool p25_conv_params(uint16_t number, const channel_t *ch, p25_conv_t *out)
+{
+	(void)number;
+	if (ch->kind != CODEPLUG_KIND_P25)
+		return false;
+	out->rx_nac = out->tx_nac = P25_NAC_DEFAULT;
+	out->squelch = P25_SQUELCH_NORMAL;
+	return true;
+}
+bool radio_p25_fits(void) { return p25_radio; }
+#endif
 
 // Zones the zone editor wrote (ui_svc_zone_edit, the real zone_edit.c on these fakes): once one is written, every
 // zone is a copy here, which the editor changes
@@ -860,7 +890,7 @@ bool codeplug_delete_zone(uint16_t index)
 	return true;
 }
 
-bool codeplug_set_channel(uint16_t number, const channel_t *ch) { return ui_svc_write_channel(number, ch); }
+bool codeplug_set_channel(uint16_t number, const channel_t *ch) { return ui_svc_write_channel(number, ch, 0); }
 // Only a channel the editor wrote (Copy here's rollback when its zone write fails)
 bool codeplug_delete_channel(uint16_t number)
 {

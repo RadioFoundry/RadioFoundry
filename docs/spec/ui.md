@@ -196,6 +196,14 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
 - New from current (the first row in Channels: New channel from current settings) fills a copy from what the radio uses now: the channel in use
   with its temporary changes, or the VFO. It opens as an unsaved channel at the lowest free number, named after the
   source with a number appended (or the frequency, from the VFO).
+- A channel of a kind ([channel-modes.md](channel-modes.md)) shows its kind as the Mode. OK on Mode makes the copy a
+  plain FM channel; saving it removes the tag. Save as new channel and Copy here pass the source's number
+  (`ui_svc_write_channel`'s `from`, `zone_op_t.from`), so the copy takes the source's tag (channel-modes.md 2.4).
+- A P25 channel (a stored one, or New from current on a channel or VFO in P25) shows Mode as "P25 NAC 293" (just "P25"
+  where the row is too narrow) and only the rows P25 uses: Name, Number, Mode, RX, TX, Power, RX only, TX contact (the
+  talk target), Own ID (the unit ID), Talkaround (On or Auto, the record's direct-mode bit), the TX time-out, Scan,
+  Battery saver. Saving a plain channel in P25 writes a stored P25 channel from the radio's P25 settings
+  ([p25-codeplug.md](p25-codeplug.md) 2.3).
 
 Text entry supports both keypad conventions radios use: more presses of the same key (2: A B C 2 a b c) and `#` for
 the input mode, with BACK to delete (and to leave once the field is empty). In ABC and abc, keys 2-9 cycle their

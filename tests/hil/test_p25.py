@@ -10,6 +10,14 @@ stack running again.
 
 test_p25_settings: the P25 settings (op 39, RAM only) round trip through the p25 view and are put back.
 
+test_p25_stored_channel (opt-in: --allow-codeplug-write; nothing is sent): the channel on view is made a stored P25
+channel over CPS (p25-codeplug.md 2): its record the safe stand-in, DMR and receive only, and a tag of kind 2 with no
+system, receive only, NAC STORED_NAC both ways and normal squelch in the codeplug settings area. The radio must read it
+back as that kind (`ch.kind=2`), run P25 on it (`mode=p25`, `p25.on=1`) with the channel's parameters, not the
+settings' (`p25.run.rx_nac`, `p25.run.tx_nac`, `p25.run.rx_tgid=0`, `p25.run.talkaround` 1 on a simplex or direct-mode
+channel, else 2), and drop it again once the backup is written back. Skipped where the settings area isn't ours to write (not
+valid in the backup) and where the radio can't carry P25 (no P25 in its feature list).
+
 test_p25_tx_off_air (opt-in: --allow-rf --allow-service-stop --p25-mhz MHz; the radio transmits, the bench only
 receives): the VFO on --p25-mhz in P25 at the lowest power keys for PTT_S through the debug link while the bench's
 receive board records its FM discriminator (the rx op's disc stream). tools/bench/p25tool.py (the firmware's own
@@ -29,6 +37,7 @@ import os
 import statistics
 import tempfile
 import time
+import zlib
 
 import pytest
 
@@ -117,6 +126,84 @@ def test_p25_settings(radio):
         radio.link.p25_settings(**old)
     radio.wait_for(lambda x: x.get("p25.rx_tgid") == str(old["rx_tgid"]), 2.0, sections=("p25",),
                    what="settings put back")
+
+# --- A stored P25 channel (p25-codeplug.md 2, channel-modes.md 2) ---
+
+STORED_NAC = 0x2A5
+KIND_P25 = 2
+KEY_CH_TAG = 0x0400     # codeplug-settings.md 3: channel tags, 0x0400 + channel - 1
+
+
+def name_check(name):
+    """The tag's check of a record's 16-octet name (channel-modes.md 2.2): FNV-1a 32, NUL-padded, halves XORed"""
+    h, end = 2166136261, False
+    for c in bytes(name[:16]).ljust(16, b"\0"):
+        c = 0 if end or c == 0xFF else c
+        end = end or c == 0
+        h = ((h ^ c) * 16777619) & 0xFFFFFFFF
+    return (h ^ (h >> 16)) & 0xFFFF
+
+
+def area_with(area, key, value):
+    """A valid settings area (codeplug-settings.md 2) with key set to value, the other entries and header as found"""
+    b = bytes(area)
+    hdr, n = b[5], int.from_bytes(b[6:8], "little")
+    keep, at = [], 0
+    while at < n:
+        ln = int.from_bytes(b[hdr + at + 2:hdr + at + 4], "little")
+        if int.from_bytes(b[hdr + at:hdr + at + 2], "little") != key:
+            keep.append(b[hdr + at:hdr + at + 4 + ln])
+        at += 4 + ln
+    keep.append(key.to_bytes(2, "little") + len(value).to_bytes(2, "little") + value)
+    data = b"".join(keep)
+    head = bytearray(b[:hdr])
+    head[6:8] = len(data).to_bytes(2, "little")
+    head[8:12] = zlib.crc32(data).to_bytes(4, "little")
+    out = bytes(head) + data
+    assert len(out) <= len(b), "the settings area is full"
+    return out + b"\xff" * (len(b) - len(out))
+
+
+def make_p25(img, number):
+    """Channel number of img made a receive-only stored P25 channel: the stand-in record, then its tag"""
+    import cps_client
+    _, a = cps_client.channel_addr(number)
+    img[a + 0x18] = 1                   # DMR
+    img[a + 0x33] |= 0x04               # receive only
+    tag = bytes([KIND_P25, 0xFF]) + name_check(img[a:a + 16]).to_bytes(2, "little") + bytes([0])   # no TX flag
+    block = (0x8000 | STORED_NAC).to_bytes(2, "little") * 2 + bytes([0])    # RX and TX NAC, normal squelch
+    lo, hi = cps_client.SETTINGS_AREA
+    img[lo:hi] = area_with(img[lo:hi], KEY_CH_TAG + number - 1, tag + block)
+
+
+@pytest.mark.feature("p25")
+@pytest.mark.codeplug_write
+def test_p25_stored_channel(radio, backup_dir):
+    p25_ready(radio)
+    import cps_client
+    from test_cps import codeplug_edited, pick_channel, read_backup
+    probe, _ = read_backup(radio, backup_dir, "p25probe")
+    lo, hi = cps_client.SETTINGS_AREA
+    if cps_client.area_state(probe[lo:hi]) != "valid":
+        skip("state", "the codeplug settings area isn't valid: the restore couldn't take the tag back")
+    core = radio.core()
+    number = pick_channel(radio, probe)
+    if core.get("vfo") == "1" or number != as_int(core.get("channel_number"), 0):
+        skip("state", "the radio isn't on a stored channel")
+    if core.get("am") == "1" or core.get("bcast") == "1":
+        skip("state", "the channel is in a listen-only band: no P25 there")
+    ch = cps_client.decode_channel(probe, number)
+    _, a = cps_client.channel_addr(number)
+    talkaround = ch["rx_hz"] == ch["tx_hz"] or bool(probe[a + 0x26] & 0x04)    # automatic, or direct mode set
+    with codeplug_edited(radio, backup_dir, lambda img: make_p25(img, number), "p25"):
+        v = radio.wait_for(lambda x: x.get("ch.kind") == str(KIND_P25) and x.get("p25.on") == "1", 5.0,
+                           sections=("core", "channel", "p25"), what="the stored P25 channel running")
+        assert v.get("mode") == "p25", v
+        assert v.get("p25.run.rx_nac") == str(STORED_NAC) and v.get("p25.run.tx_nac") == str(STORED_NAC), v
+        assert v.get("p25.run.rx_tgid") == "0", v
+        assert v.get("p25.run.talkaround") == ("1" if talkaround else "2"), v
+    radio.wait_for(lambda x: x.get("ch.kind") == "0" and x.get("p25.on") != "1", 5.0,
+                   sections=("core", "channel", "p25"), what="the channel back as it was, P25 stopped")
 
 
 PTT_S = 3.0

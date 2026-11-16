@@ -26,7 +26,7 @@ typedef struct {
 	uint16_t rx_nac;	// P25_NAC_ANY: every system's calls
 	uint16_t tx_nac;
 	// Which calls of our NAC are played: 0 every one (the normal squelch of a conventional channel), or only calls
-	// to this talk group and unit to unit calls to unit_id (selective squelch)
+	// to this talk group, to everyone (P25_TGID_EVERYONE) and unit to unit calls to unit_id (selective squelch)
 	uint16_t rx_tgid;
 	uint32_t unit_id;	// ours: the source of what we send
 	p25_lc_t tx_lc;		// what we call: a talk group or a unit (src is set from unit_id)

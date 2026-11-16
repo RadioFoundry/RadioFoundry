@@ -354,12 +354,18 @@ static void testSquelch(void)
 	p25_engine_set(&r[0].e, &cfg);
 	over(20, 0, 0);
 	CHECK(r[1].starts == 0, "unit call to another unit: starts %u", r[1].starts);
+	// A group call to everyone passes it too
+	cfg.tx_lc = (p25_lc_t){ .lcf = P25_LCF_GROUP, .tgid = P25_TGID_EVERYONE };
+	p25_engine_set(&r[0].e, &cfg);
+	over(20, 0, 0);
+	CHECK(r[1].starts == 1 && r[1].call.lc.tgid == P25_TGID_EVERYONE, "everyone: starts %u", r[1].starts);
+	r[1].starts = 0;
 	// Another system's NAC: not even seen
 	cfg.tx_nac = 0x555;
 	p25_engine_set(&r[0].e, &cfg);
 	over(20, 0, 0);
 	p25_engine_view(&r[1].e, &v);
-	CHECK(r[1].starts == 0 && v.rx_calls == 3, "another NAC: calls seen %u", v.rx_calls);
+	CHECK(r[1].starts == 0 && v.rx_calls == 4, "another NAC: calls seen %u", v.rx_calls);
 	// A closed engine refuses
 	p25_engine_end(&r[0].e);
 	CHECK(!p25_engine_tx_prepare(&r[0].e), "closed: no transmit");

@@ -7,6 +7,9 @@
 #include <string.h>
 #include "board.h"
 #include "radio/radio_p25.h"
+#include "p25/p25_codeplug.h"
+#include "codeplug/codeplug_modes.h"
+#include "radio/radio_bands.h"
 #if CONFIG_IMBE
 #include "p25/p25Voice.h"
 #endif
@@ -72,26 +75,77 @@ void radio_p25_set_settings(const radio_p25_settings_t *s)
 		set.talkaround = RADIO_P25_TA_AUTO;
 }
 
-void radio_p25_params(const channel_t *ch, uint32_t own_id, p25_engine_cfg_t *cfg)
+// What PTT calls: talk group or unit dst
+static void talk_lc(p25_lc_t *lc, bool unit, uint32_t dst)
 {
+	lc->lcf = unit ? P25_LCF_UNIT : P25_LCF_GROUP;
+	if (unit)
+		lc->dst = dst & 0xFFFFFFu;
+	else
+		lc->tgid = (uint16_t)dst;
+}
+
+void radio_p25_params(const channel_t *ch, uint16_t number, uint32_t own_id, p25_engine_cfg_t *cfg)
+{
+	p25_conv_cfg_t cc;
+
 	memset(cfg, 0, sizeof(*cfg));
+	cfg->silence = SILENCE;
+	if (number != 0 && p25_conv_load(number, ch, &cc)) {
+		// A stored P25 channel (docs/spec/p25-codeplug.md 2). Selective: its talk group, everyone and unit calls to
+		// us; a channel that calls a unit or everyone keeps only the last two
+		cfg->rx_nac = cc.conv.rx_nac;
+		cfg->tx_nac = cc.conv.tx_nac;
+		if (cc.conv.squelch == P25_SQUELCH_SELECTIVE)
+			cfg->rx_tgid = cc.target_unit ? (uint16_t)P25_TGID_EVERYONE : (uint16_t)cc.target;
+		cfg->unit_id = (set.unit_id != 0 ? set.unit_id : cc.unit_id) & 0xFFFFFFu;
+		talk_lc(&cfg->tx_lc, cc.target_unit, cc.target);
+		cfg->talkaround = cc.talkaround;
+		return;
+	}
 	cfg->rx_nac = set.rx_nac;
 	cfg->tx_nac = set.tx_nac;
 	cfg->rx_tgid = set.rx_tgid;
-	cfg->unit_id = (set.unit_id != 0 ? set.unit_id : own_id) & 0xFFFFFFu;
-	cfg->tx_lc.lcf = set.unit_call ? P25_LCF_UNIT : P25_LCF_GROUP;
-	if (set.unit_call)
-		cfg->tx_lc.dst = set.tx_dst;
-	else
-		cfg->tx_lc.tgid = (uint16_t)set.tx_dst;
+	cfg->unit_id = (set.unit_id != 0 ? set.unit_id : p25_radio_unit_id(own_id)) & 0xFFFFFFu;
+	talk_lc(&cfg->tx_lc, set.unit_call, set.tx_dst);
 	cfg->talkaround = set.talkaround == RADIO_P25_TA_ON ||
 			  (set.talkaround == RADIO_P25_TA_AUTO && (ch->tx_hz == ch->rx_hz || ch->tx_hz == 0));
-	cfg->silence = SILENCE;
+}
+
+// The engine's configuration as settings: what the screen, the view and the debug link show
+static void cfg_settings(const p25_engine_cfg_t *c, radio_p25_settings_t *out)
+{
+	out->rx_nac = c->rx_nac;
+	out->tx_nac = c->tx_nac;
+	out->rx_tgid = c->rx_tgid;
+	out->talkaround = c->talkaround ? RADIO_P25_TA_ON : RADIO_P25_TA_OFF;
+	out->unit_call = c->tx_lc.lcf == P25_LCF_UNIT;
+	out->tx_dst = out->unit_call ? c->tx_lc.dst : c->tx_lc.tgid;
+	out->unit_id = c->unit_id;
+}
+
+bool radio_p25_in_force(radio_p25_settings_t *out)
+{
+	p25_mem_t *m = mem;
+
+	if (m == NULL)
+		return false;
+	cfg_settings(&m->eng.cfg, out);
+	return true;
 }
 
 bool radio_p25_fits(void)
 {
 	return board.air != NULL && (p25_engine_fit(board.air) & AIR_FIT_RX) != 0;
+}
+
+bool radio_p25_take(channel_t *ch)
+{
+	if (ch->kind != CODEPLUG_KIND_P25 || !radio_p25_fits() || radio_listen_band(ch->rx_hz))
+		return false;
+	ch->mode = RADIO_MODE_P25;
+	ch->bw = RADIO_BW_12K5;
+	return true;
 }
 
 static p25_mem_t *mem_get(void)
@@ -109,7 +163,7 @@ static p25_mem_t *mem_get(void)
 #endif
 }
 
-bool radio_p25_begin(const channel_t *ch, uint32_t own_id)
+bool radio_p25_begin(const channel_t *ch, uint16_t number, uint32_t own_id)
 {
 	p25_engine_cfg_t cfg;
 	static const p25_engine_hooks_t no_voice;
@@ -123,7 +177,7 @@ bool radio_p25_begin(const channel_t *ch, uint32_t own_id)
 		stats.begin_fails++;
 		return false;
 	}
-	radio_p25_params(ch, own_id, &cfg);
+	radio_p25_params(ch, number, own_id, &cfg);
 #if CONFIG_IMBE
 	p25VoiceBegin(&mem->voice);
 	hooks = p25VoiceHooks();
@@ -196,23 +250,28 @@ void radio_p25_retuned(void)
 	}
 }
 
-void radio_p25_apply(const channel_t *ch, uint32_t own_id)
+void radio_p25_apply(const channel_t *ch, uint16_t number, uint32_t own_id)
 {
 	p25_engine_cfg_t cfg;
 
 	if (mem == NULL || p25_engine_tx_state(&mem->eng) != AIR_TX_IDLE) {
 		return;
 	}
-	radio_p25_params(ch, own_id, &cfg);
+	radio_p25_params(ch, number, own_id, &cfg);
 	p25_engine_set(&mem->eng, &cfg);
 }
 
-// What the screen shows of the settings: the NAC heard and what PTT calls
+// What the screen shows of the parameters: the NAC heard and what PTT calls. Those in force while the engine runs (a
+// stored channel's own), else the settings
 static void settings_view(radio_p25_view_t *n)
 {
-	n->rx_nac = set.rx_nac;
-	n->talk = set.tx_dst;
-	if (set.unit_call)
+	radio_p25_settings_t s = set;
+
+	if (mem != NULL)
+		cfg_settings(&mem->eng.cfg, &s);
+	n->rx_nac = s.rx_nac;
+	n->talk = s.tx_dst;
+	if (s.unit_call)
 		n->flags |= RADIO_P25_TALK_UNIT;
 }
 

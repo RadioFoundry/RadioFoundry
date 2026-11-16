@@ -13,6 +13,11 @@
 #include "font.h"
 #include "fmt.h"
 #include "codeplug/codeplug.h"
+#include "codeplug/codeplug_modes.h"
+#include "codeplug/codeplug_tag.h"
+#if CONFIG_P25
+#include "p25/p25_codeplug.h"
+#endif
 #include "dmr/dmrDataService.h"
 #include "config.h"
 #include "hal_time.h"
@@ -1266,37 +1271,55 @@ static const ui_scr_def_t channels_screen = {
 	.filter = &(const ui_filter_def_t){ .raw_count = chans_raw_count, .raw_label = chans_raw_label },
 };
 
+// Whether ch runs P25: a stored P25 channel, or a plain one in P25 for now (the VFO)
+static bool ced_is_p25(const channel_t *ch)
+{
+	return CONFIG_P25 && (ch->kind == CODEPLUG_KIND_P25 || (ch->kind == CODEPLUG_KIND_NONE && ch->mode == RADIO_MODE_P25));
+}
+
 // A channel row's value: its RX frequency and what it talks to, the talkgroup on DMR ("TG3113", "ID9991234" for a
-// private contact) or "FM". The whole name comes first; where both don't fit beside it, the frequency and the bare
-// number, then the talkgroup alone (text alternates)
+// private contact), on P25 its name and talkgroup ("P25 TG201"), or "FM". The whole name comes first; where both don't
+// fit beside it, the frequency and the bare number (P25: the frequency and "P25"), then the talkgroup alone (text
+// alternates)
 static void sb_channel_row(sbuf_t *b, const channel_t *ch)
 {
 	char what[16];
-	uint8_t prefix = 0;	// "TG" / "ID": left out in the middle form
+	uint8_t mid = 0;	// the middle form: what from here ("TG" left out), or for P25 its kind's name alone
 	sbuf_t wb;
 	sb_init(&wb, what, sizeof what);
+	bool p25 = ced_is_p25(ch);
 #if CONFIG_DMR
-	if (ch->mode == RADIO_MODE_DMR) {
+	if (p25 || ch->mode == RADIO_MODE_DMR) {
+		// DMR: TG 9 when the contact can't be read; P25: TG 1 with no contact (p25-codeplug.md 2)
 		static contact_t c;
-		uint16_t talk = codeplug_channel_talk_contact(ch);
+		uint16_t talk = p25 ? ch->contact : codeplug_channel_talk_contact(ch);
 		bool known = talk != 0 && codeplug_contact(talk, &c);
+		if (p25)
+			sb_str(&wb, "P25 ");
 		sb_str(&wb, known && c.type == CONTACT_PRIVATE ? "ID" : "TG");
-		prefix = 2;
-		sb_u32(&wb, known ? c.id : 9u, 1);
+		mid = 2;
+		sb_u32(&wb, known ? c.id : p25 ? 1u : 9u, 1);
 	} else
 #endif
-	{
+	if (p25) {
+		sb_str(&wb, "P25");
+	} else if (ch->kind != CODEPLUG_KIND_NONE) {
+		sb_str(&wb, codeplug_kind_name(ch->kind));	// another kind (docs/spec/channel-modes.md): its short name
+	} else {
 		sb_str(&wb, ch->mode == RADIO_MODE_FM && radio_am_channel(ch) ? "AM" : ui_mode_name(ch->mode));
 	}
 	sb_str(b, TEXT_ALT_OPEN);
 	sb_freq(b, ch->rx_hz);
 	sb_chr(b, ' ');
 	sb_str(b, what);
-	if (prefix) {
+	if (mid) {
 		sb_str(b, TEXT_ALT_NEXT);
 		sb_freq(b, ch->rx_hz);
 		sb_chr(b, ' ');
-		sb_str(b, what + prefix);
+		if (p25)
+			sb_str(b, "P25");
+		else
+			sb_str(b, what + mid);
 	}
 	sb_str(b, TEXT_ALT_NEXT);
 	sb_str(b, what);
@@ -2386,6 +2409,12 @@ enum { CE_NAME, CE_NUMBER, CE_MODE, CE_RX, CE_TX, CE_POWER, CE_RX_ONLY, CE_BW, C
 
 static channel_t ced_ch;		// what the screen shows (the working copy when editing)
 static uint16_t ced_num;		// its number, 0 = no such channel
+#if CONFIG_CHANNEL_EDIT
+static uint16_t ced_src;		// the stored channel it was read from (a copy's source), 0 = none (the VFO)
+#endif
+#if CONFIG_P25
+static uint16_t ced_nac;		// a P25 channel's RX NAC, read once on entry (the list redraws often)
+#endif
 static uint8_t ced_rows[CE_COUNT];
 static uint8_t ced_n;
 
@@ -2481,10 +2510,27 @@ static void ced_from_view(void)
 }
 #endif
 
+// ced_nac for ch, read at number (before a copy's rename: the tag is the source's name's) or from the radio's view
+static void ced_p25_nac(uint16_t number, const channel_t *ch)
+{
+#if CONFIG_P25
+	p25_conv_t conv;
+	const radio_view_t *v = ui_view();
+	if (v->ch.mode == RADIO_MODE_P25 && (v->vfo ? number == 0 : v->channel_number == number))
+		ced_nac = v->p25.rx_nac;
+	else
+		ced_nac = p25_conv_params(number, ch, &conv) ? conv.rx_nac : P25_NAC_DEFAULT;
+#else
+	(void)number;
+	(void)ch;
+#endif
+}
+
 static void ced_build(void)
 {
 	bool listen = radio_listen_band(ced_ch.rx_hz);
-	bool dmr = CONFIG_DMR && ced_ch.mode == RADIO_MODE_DMR && !listen;
+	bool p25 = ced_is_p25(&ced_ch);
+	bool dmr = CONFIG_DMR && ced_ch.mode == RADIO_MODE_DMR && !listen && !p25;
 	bool edit = CONFIG_CHANNEL_EDIT;
 	bool fresh = false, changed = false;
 #if CONFIG_CHANNEL_EDIT
@@ -2496,7 +2542,11 @@ static void ced_build(void)
 		bool fm_only = r == CE_BW || r == CE_RX_TONE || r == CE_TX_TONE || r == CE_VOX || r == CE_BURST;
 		bool dmr_only = r >= CE_CC && r <= CE_ALIAS2;
 		bool tone = r == CE_RX_TONE || r == CE_TX_TONE;
-		if ((fm_only && dmr) || (tone && listen) || (dmr_only && !dmr) || (r == CE_MODE && !CONFIG_DMR))
+		// P25: no sub-audio tones or width; of the digital rows its talk target, unit ID and talkaround
+		bool p25_row = p25 && ((r == CE_CONTACT && CONFIG_DMR) || r == CE_ID || r == CE_DMO);
+		if (p25 && (fm_only || (dmr_only && !p25_row)))
+			continue;
+		if (!p25_row && ((fm_only && dmr) || (tone && listen) || (dmr_only && !dmr) || (r == CE_MODE && !CONFIG_DMR)))
 			continue;
 		// The radio core skips the burst on a board with no TX tone, so no row for it there (a host board
 		// without a radio keeps the row)
@@ -2529,6 +2579,8 @@ static void chinfo_enter(void)
 		ced_new = true;
 		if (!codeplug_channel(src, &ced_ch))
 			ced_num = 0;
+		ced_src = src;
+		ced_p25_nac(src, &ced_ch);
 		ced_ch.roam = false;
 		char name[CODEPLUG_NAME_LEN + 1];
 		zone_copy_name(name, ced_ch.name);
@@ -2539,13 +2591,18 @@ static void chinfo_enter(void)
 	ced_new = ced_new || ced_into;
 #endif
 	if (ced_new) {
+		const radio_view_t *cv = ui_view();
+		ced_src = cv->vfo ? 0 : cv->channel_number;
 		ced_from_view();
+		ced_p25_nac(ced_src, &cv->ch);
 		ced_orig = ced_ch;
 		return;
 	}
+	ced_src = ced_num;
 #endif
 	if (!codeplug_channel(ced_num, &ced_ch))
 		ced_num = 0;
+	ced_p25_nac(ced_num, &ced_ch);
 #if CONFIG_CHANNEL_EDIT
 	ced_orig = ced_ch;
 #endif
@@ -2664,7 +2721,8 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 	if (ced_changed(r))
 		it->flags |= UI_ITEM_TEMP;
 #endif
-	str_copy(it->label, sizeof it->label, tr(labels[r]));
+	str_copy(it->label, sizeof it->label, r == CE_DMO && ced_is_p25(ch) ? TR(CHAN_LABEL_TALKAROUND, "Talkaround") :
+		tr(labels[r]));
 #if CONFIG_ZONE_SHARE
 	if (r == CE_SHARE && !(feats() & UI_FEAT_ZONE_SHARE))
 		it->flags |= UI_ITEM_DIM;
@@ -2691,8 +2749,16 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 		sb_u32(&b, ced_num, 1);
 		break;
 	case CE_MODE:
-		// What the radio does with it: a listen band is AM or FM whatever the channel says
-		if (radio_am_tx_refused(ch->rx_hz))
+		// What the radio does with it: a listen band is AM or FM whatever the channel says. P25 adds its NAC
+		if (ced_is_p25(ch)) {
+			sb_str(&b, TEXT_ALT_OPEN "P25 NAC ");
+#if CONFIG_P25
+			sb_hex(&b, ced_nac, 3);
+#endif
+			sb_str(&b, TEXT_ALT_NEXT "P25" TEXT_ALT_CLOSE);
+		} else if (ch->kind != CODEPLUG_KIND_NONE)
+			sb_str(&b, codeplug_kind_name(ch->kind));
+		else if (radio_am_tx_refused(ch->rx_hz))
 			sb_str(&b, "AM");
 		else
 			sb_str(&b, ch->mode == RADIO_MODE_DMR && !radio_listen_band(ch->rx_hz) ? "DMR" : "FM");
@@ -2783,7 +2849,11 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 			sb_str(&b, TR(CHAN_VALUE_RADIO_DEFAULT, "Radio's"));
 		break;
 	case CE_DMO:
-		sb_onoff(&b, ch->dmo);
+		// P25 talkaround: on, or automatic (on where RX = TX; p25-codeplug.md 2.2)
+		if (ced_is_p25(ch) && !ch->dmo)
+			sb_str(&b, TR(VALUE_AUTO, "Auto"));
+		else
+			sb_onoff(&b, ch->dmo);
 		break;
 	case CE_BEEP:
 		sb_onoff(&b, !ch->no_beep);
@@ -2840,6 +2910,7 @@ static bool ced_write(uint16_t num, bool as_new)
 	if (ced_into && ced_new && !as_new) {
 		ze_op_new(ZONE_OP_ADD_NEW, ced_into_pos)->channel = num;
 		ze_op.ch = ced_ch;
+		ze_op.from = ced_src;
 		if (!ui_svc_zone_edit(&ze_op))
 			return false;
 		ced_into = false;
@@ -2848,7 +2919,7 @@ static bool ced_write(uint16_t num, bool as_new)
 	}
 #endif
 	(void)as_new;
-	return ui_svc_write_channel(num, &ced_ch);
+	return ui_svc_write_channel(num, &ced_ch, ced_src);
 }
 
 static void ced_save(bool as_new)
@@ -2873,6 +2944,7 @@ static void ced_save(bool as_new)
 		return;
 	}
 	ced_num = num;
+	ced_src = num;
 	ui_frame()->arg = num;
 	ced_orig = ced_ch;
 	sbuf_t b;
@@ -3107,8 +3179,13 @@ static void chinfo_select(uint16_t i, bool hold)
 	switch (r) {
 	case CE_NAME: ui_text_open(c->name, CODEPLUG_NAME_LEN); break;
 	case CE_MODE:
-		// No DMR in a listen band: AM in the air band, FM on the broadcast receiver
-		if (radio_listen_band(c->rx_hz)) {
+		// No DMR in a listen band: AM in the air band, FM on the broadcast receiver. A channel of a kind (P25, any
+		// other mode) becomes a plain FM one: its tag goes when it is saved (channel-modes.md 2.4)
+		if (c->kind != CODEPLUG_KIND_NONE || ced_is_p25(c)) {
+			c->kind = CODEPLUG_KIND_NONE;
+			c->system = CODEPLUG_SYSTEM_NONE;
+			c->mode = RADIO_MODE_FM;
+		} else if (radio_listen_band(c->rx_hz)) {
 			c->mode = RADIO_MODE_FM;
 			ui_toast(radio_am_tx_refused(c->rx_hz) ? TR(WHY_AIR_BAND_RX_ONLY, "Air band: receive only") :
 				TR(WHY_BROADCAST_RX_ONLY, "Broadcast: receive only"));

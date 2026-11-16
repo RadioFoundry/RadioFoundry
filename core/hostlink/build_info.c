@@ -3,6 +3,9 @@
 // What this build is, for VERSION in either listener (see build_info.h)
 #include "config.h"
 #include "hostlink/build_info.h"
+#if CONFIG_P25
+#include "radio/radio_p25.h"
+#endif
 
 #ifndef RFOUNDRY_PRESET
 #define RFOUNDRY_PRESET "unknown"
@@ -14,7 +17,11 @@
 const char build_preset[] = RFOUNDRY_PRESET;
 const char build_off[] = RFOUNDRY_FEATURES_OFF;
 
-const char build_features[] =
+// P25 first: build_features_now leaves it out on a board that can't run it
+static const char features[] =
+#if CONFIG_P25
+	"P25,"
+#endif
 #if CONFIG_FM
 	"FM,"
 #endif
@@ -187,3 +194,13 @@ const char build_features[] =
 	"DEBUGLINK,"
 #endif
 	"HOSTLINK";	// both listeners run on the host link (USB CDC or a UART)
+
+const char *build_features_now(void)
+{
+#if CONFIG_P25
+	// P25 runs where the board's air interface carries it: the Codeplug Editor offers P25 channels only there
+	if (!radio_p25_fits())
+		return features + sizeof("P25,") - 1u;
+#endif
+	return features;
+}

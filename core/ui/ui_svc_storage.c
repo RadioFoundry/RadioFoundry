@@ -44,6 +44,11 @@
 #if CONFIG_POSITION
 #include "position/position.h"
 #endif
+#include "codeplug/codeplug_tag.h"
+#if CONFIG_P25
+#include "p25/p25_codeplug.h"
+#include "radio/radio_p25.h"
+#endif
 #if CONFIG_KEY_ASSIGN
 #include "input/input.h"
 #include "input/input_engine.h"
@@ -947,6 +952,28 @@ static bool tone_post(uint16_t key, bool on)
 
 static channel_t job_ch;	// the job's working copy of the stored channel
 
+#if CONFIG_P25
+// A plain channel in P25 (the VFO, a mode changed for now) made a stored P25 channel from the radio's P25 settings
+// (p25-codeplug.md 2.3): its NACs, the squelch, the talk target's stored contact (none: talk group 1), talkaround
+// on or automatic. Uses job_ch
+static bool p25_save_now(uint16_t number, const channel_t *ch)
+{
+	radio_p25_settings_t s;
+	radio_p25_settings(&s);
+	p25_conv_t conv = { .rx_nac = s.rx_nac, .tx_nac = s.tx_nac,
+			    .squelch = s.rx_tgid != 0 ? P25_SQUELCH_SELECTIVE : P25_SQUELCH_NORMAL };
+	if (ch != &job_ch)
+		job_ch = *ch;
+#if CONFIG_DMR
+	job_ch.contact = codeplug_contact_find_index(s.tx_dst, !s.unit_call, NULL);
+#else
+	job_ch.contact = 0;
+#endif
+	job_ch.dmo = s.talkaround == RADIO_P25_TA_ON;
+	return p25_conv_save(number, &job_ch, &conv);
+}
+#endif
+
 // Power, bandwidth, tones, mode, color code and timeslot go into the channel; the squelch is radio-wide (the default
 // squelch preference). The radio core re-reads the channel (codeplug_serial), and the clear makes the remaining
 // flags follow the new values
@@ -971,7 +998,14 @@ static void save_channel_job(void *ctx)
 		job_ch.color_code = job.now.color_code;
 	if (job.temp & RADIO_TEMP_TS)
 		job_ch.timeslot = job.now.timeslot;
-	if (!codeplug_set_channel(job.channel, &job_ch)) {
+	bool ok;
+#if CONFIG_P25
+	if (job_ch.kind == CODEPLUG_KIND_NONE && job_ch.mode == RADIO_MODE_P25)
+		ok = p25_save_now(job.channel, &job_ch);
+	else
+#endif
+		ok = codeplug_set_channel(job.channel, &job_ch);
+	if (!ok) {
 		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
 		return;
 	}
@@ -1008,11 +1042,22 @@ bool ui_svc_save_channel(void)
 
 // The channel editor's whole channel (ui.md 2.1). Writing the channel in use drops its temporary changes: the radio
 // core re-reads it (codeplug_serial), and the edited values are what the user wants now. Whether it is the channel in
-// use is decided here on the UI task: the job runs on the housekeeping task, which must not touch v
+// use is decided here on the UI task: the job runs on the housekeeping task, which must not touch v. A copy of a
+// channel of a kind takes its source's tag (job.id: the source); a plain channel in P25 becomes a stored P25 one
 static void write_channel_job(void *ctx)
 {
 	(void)ctx;
-	if (!codeplug_set_channel(job.channel, &job.now)) {
+	bool ok;
+	uint16_t from = (uint16_t)job.id;
+#if CONFIG_P25
+	if (job.now.kind == CODEPLUG_KIND_NONE && job.now.mode == RADIO_MODE_P25)
+		ok = p25_save_now(job.channel, &job.now);
+	else
+#endif
+		ok = codeplug_set_channel(job.channel, &job.now) &&
+		     (job.now.kind == CODEPLUG_KIND_NONE || from == 0 || from == job.channel ||
+		      codeplug_tag_copy(from, job.channel, &job.now));
+	if (!ok) {
 		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
 		return;
 	}
@@ -1021,7 +1066,7 @@ static void write_channel_job(void *ctx)
 	}
 }
 
-bool ui_svc_write_channel(uint16_t number, const channel_t *ch)
+bool ui_svc_write_channel(uint16_t number, const channel_t *ch, uint16_t from)
 {
 	if (number == 0 || number > CODEPLUG_CHANNELS_MAX || job_busy()) {
 		return false;
@@ -1030,6 +1075,7 @@ bool ui_svc_write_channel(uint16_t number, const channel_t *ch)
 	job.channel = number;
 	job.temp = !v.vfo && v.channel_number == number && v.temporary;	// here: drop the temporary changes after it
 	job.now = *ch;
+	job.id = from;
 	return cp_post(write_channel_job);
 }
 

@@ -211,7 +211,7 @@ void stub_entry_start(void)
 	ident.git = RFOUNDRY_GIT;
 	ident.git_time = RFOUNDRY_GIT_TIME;
 	ident.release = RFOUNDRY_RELEASE;
-	ident.features = build_features;
+	ident.features = build_features_now();
 	ident.preset = build_preset;
 	ident.off = build_off;
 	ident.codec = codec_id;

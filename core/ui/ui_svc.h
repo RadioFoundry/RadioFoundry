@@ -82,8 +82,10 @@ bool ui_svc_vox(bool on);
 // Make temporary channel changes permanent (storage-cps): false when busy, off a stored channel, or unavailable
 bool ui_svc_save_channel(void);
 // Store a whole channel (the channel editor, ui.md 2.1) at number 1..CODEPLUG_CHANNELS_MAX, as a storage job like
-// ui_svc_save_channel. false: a write is still going on, or no codeplug storage in this build
-bool ui_svc_write_channel(uint16_t number, const channel_t *ch);
+// ui_svc_save_channel. from: the stored channel ch is a copy of (number itself when edited in place), 0 = none; a
+// copy of a channel of a kind takes its mode with it (channel-modes.md 2.4). false: a write is still going on, or no
+// codeplug storage in this build
+bool ui_svc_write_channel(uint16_t number, const channel_t *ch, uint16_t from);
 #if CONFIG_CONTACT_EDIT
 // Store a contact (the contact editor, ui.md 2.4) at index 1..CODEPLUG_CONTACTS_MAX, as a storage job. false: a write
 // is still going on, or no codeplug storage in this build

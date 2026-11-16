@@ -37,6 +37,13 @@ void debuglink_view_p25(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "p25.rx_nac=%u\np25.tx_nac=%u\np25.rx_tgid=%u\np25.talkaround=%u\np25.unit_call=%u\n", s.rx_nac,
 		s.tx_nac, s.rx_tgid, s.talkaround, s.unit_call);
 	dl_text(t, "p25.tx_dst=%u\np25.unit_id=%u\n", (unsigned)s.tx_dst, (unsigned)s.unit_id);
+	if (radio_p25_in_force(&s)) {
+		// What the engine runs on: a stored P25 channel's own, else the settings above (talkaround 1 on, 2 off)
+		dl_text(t, "p25.run.rx_nac=%u\np25.run.tx_nac=%u\np25.run.rx_tgid=%u\np25.run.talkaround=%u\n", s.rx_nac,
+			s.tx_nac, s.rx_tgid, s.talkaround);
+		dl_text(t, "p25.run.unit_call=%u\np25.run.tx_dst=%u\np25.run.unit_id=%u\n", s.unit_call,
+			(unsigned)s.tx_dst, (unsigned)s.unit_id);
+	}
 	radio_p25_stats(&c);
 	dl_text(t, "p25.begins=%u\np25.begin_fails=%u\np25.mem_lent=%u\np25.rx_calls=%u\np25.tx_calls=%u\n",
 		(unsigned)c.begins, (unsigned)c.begin_fails, (unsigned)c.mem_lent, (unsigned)c.rx_calls,

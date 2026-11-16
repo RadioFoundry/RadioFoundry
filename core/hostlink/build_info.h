@@ -5,8 +5,9 @@
 #ifndef BUILD_INFO_H
 #define BUILD_INFO_H
 
-// features=: a comma list of the switches the tools look for (not every switch), no newline
-extern const char build_features[];
+// features=: a comma list of the switches the tools look for (not every switch), no newline. P25 only where the board
+// runs it (radio_p25_fits), so the list can differ between boards of one build
+const char *build_features_now(void);
 // preset=: the release variant (full, amateur, commercial), or custom; set by the Makefile
 extern const char build_preset[];
 // off=: every switch this radio could have that the build left off, comma separated; may be empty

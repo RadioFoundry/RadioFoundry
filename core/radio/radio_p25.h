@@ -4,8 +4,8 @@
 // the voice path (core/p25/p25Voice.h) on the memory they run in, the channel's P25 parameters, and a compact view
 // for the radio view. radio_sm.c decides when P25 runs and keys the transmitter; nothing here keys it.
 //
-// The parameters come from radio_p25_params alone. Its only source for now is a RAM setting the debug link changes
-// (radio_req_p25_settings); a codeplug reader takes its place once the codeplug carries P25 channels.
+// The parameters come from radio_p25_params alone: a stored P25 channel's own (core/p25/p25_codeplug.h), else the RAM
+// settings the debug link changes (radio_req_p25_settings), which the VFO and a mode changed for now run on.
 #ifndef RADIO_P25_H
 #define RADIO_P25_H
 
@@ -15,7 +15,7 @@
 #include "codeplug/codeplug.h"
 #include "hal_audio.h"
 
-// The P25 settings (RAM only, reset at start-up)
+// The P25 settings (RAM only, reset at start-up). On a stored P25 channel only unit_id counts (a session override)
 #define RADIO_P25_TA_AUTO	0	// talkaround: on a simplex channel (TX = RX), else off (a repeater)
 #define RADIO_P25_TA_ON		1
 #define RADIO_P25_TA_OFF	2
@@ -64,19 +64,27 @@ typedef struct {
 void radio_p25_init(const hal_audio_t *audio);	// the PCM stream the voice plays on
 // The board's air interface can receive P25 (any task): what the UI offers P25 on
 bool radio_p25_fits(void);
+// A channel read from the codeplug, as the radio runs it: a live P25 conventional channel (kind 2) becomes
+// RADIO_MODE_P25 where the board runs P25 and its frequency allows a digital mode. False: left as read (parked)
+bool radio_p25_take(channel_t *ch);
 void radio_p25_settings(radio_p25_settings_t *out);	// any task
 void radio_p25_set_settings(const radio_p25_settings_t *s);	// radio task (RREQ_P25_SET)
-// The engine's configuration for a channel: the one place P25 parameters come from
-void radio_p25_params(const channel_t *ch, uint32_t own_id, p25_engine_cfg_t *cfg);
+// The engine's configuration for channel ch, stored at number (0: the VFO, or none): the one place P25 parameters come
+// from. A live P25 channel's tag and record give them, else the settings. own_id: the radio's DMR ID, the last resort
+// for our unit ID (after the settings' and the channel's, then the radio-wide P25 one)
+void radio_p25_params(const channel_t *ch, uint16_t number, uint32_t own_id, p25_engine_cfg_t *cfg);
+// The parameters in force, as settings (talkaround on or off): false when the engine isn't running. Any task: a read
+// that crosses a change of channel may mix the two (diagnostics only)
+bool radio_p25_in_force(radio_p25_settings_t *out);
 
 // Radio task. begin: the board tuned in its digital mode, its DMR stack stopped. False: no memory, no provider or
 // no fit (P25 then receives nothing and refuses PTT)
-bool radio_p25_begin(const channel_t *ch, uint32_t own_id);
+bool radio_p25_begin(const channel_t *ch, uint16_t number, uint32_t own_id);
 void radio_p25_end(void);
 bool radio_p25_running(void);
 void radio_p25_retuned(void);
 // The settings or the channel's parameters changed: the engine takes them (not while transmitting)
-void radio_p25_apply(const channel_t *ch, uint32_t own_id);
+void radio_p25_apply(const channel_t *ch, uint16_t number, uint32_t own_id);
 // Every tick: the voice stream, the view and the counters. True when the view changed
 bool radio_p25_poll(radio_p25_view_t *v);
 
