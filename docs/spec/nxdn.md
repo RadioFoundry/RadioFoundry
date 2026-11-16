@@ -16,7 +16,8 @@ State:
 | Receive, the call layer, the engine (3, 4, 7) | written, host tested; 4800 bit/s, and 9600 bit/s with half-rate voice |
 | Voice (5) | through the DMR side's voice path to the vocoder the board hosts (`hal_vocoder_t`); host tested |
 | The radio core: mode, settings, PTT, debug link, home screen (6) | written, host tested |
-| Codeplug, channel editor, scan | not written (10) |
+| Codeplug channels, the site's Codeplug Editor ([nxdn-codeplug.md](nxdn-codeplug.md)) | written, host tested |
+| Channel editor on the radio, scan | not written (10) |
 | On air | untested |
 | 9600 bit/s full-rate voice (EFR), data, trunking, encryption | not written (10). Encrypted calls are recognized and not played |
 
@@ -178,15 +179,17 @@ Settings sent while transmitting take effect when the transmission ends; a rate 
 | Where | How |
 |---|---|
 | VFO | the mode tile: FM, DMR, P25, NXDN in turn, each where the board runs it (`radio_nxdn_fits`); saved with the VFO |
-| A channel | a temporary mode change (debug link op 31, mode 3); the codeplug stores FM and DMR only, so Save to channel stores FM |
+| A channel | a channel of kind 4 ([nxdn-codeplug.md](nxdn-codeplug.md)), or a temporary mode change (debug link op 31, mode 3), which Save to channel stores as one |
 | Debug link | `rfoundry_debug.py radio mode nxdn` ([debuglink.md](debuglink.md) 3.8) |
 
 Refused in the listen-only bands, and where the board's air interface carries neither rate.
 
 ### 6.2 Settings
 
-RAM only, one set for every channel and the VFO (`radio_req_nxdn_settings`, debug link op 40, `rfoundry_debug.py radio
-nxdn`). The codeplug carries none of this yet (10).
+RAM only, one set for the VFO and for channels in NXDN for now (`radio_req_nxdn_settings`, debug link op 40,
+`rfoundry_debug.py radio nxdn`). A stored NXDN channel runs on its own: the rate, both RANs, the squelch and the talk
+target from its record, the unit ID from it or the radio-wide record ([nxdn-codeplug.md](nxdn-codeplug.md)); these
+settings don't reach it. The debug link view shows what is in force (`nxdn.run.*`).
 
 | Setting | Values | Default | Notes |
 |---|---|---|---|
@@ -279,6 +282,5 @@ scrambler examples), so the codec checks against itself and the clauses only.
 
 ## 10. Not written
 
-A stored NXDN channel (the codeplug and site editor settings of 6.2), settings per channel, a settings screen on the
-radio, scan and dual watch in NXDN, 9600 bit/s full rate, data (UDCH, short data), trunking (RCCH), status and other supplementary messages,
+Editing an NXDN channel's settings on the radio (a settings screen), scan and dual watch in NXDN, 9600 bit/s full rate, data (UDCH, short data), trunking (RCCH), status and other supplementary messages,
 encryption, a transmit filter in a provider.

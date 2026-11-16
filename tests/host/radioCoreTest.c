@@ -887,12 +887,12 @@ static void test_parked_kind(void)
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_MODE && hw.tx_calls == 0);
 	req(RREQ_PTT, 0);
 	CHECK(radio_vfo_copy_check(&sm.view.ch, false) != VFO_COPY_OK);
-	// P25 conventional where the board can't carry P25 (with CONFIG_P25 on or off) and P25 trunked (not run yet) are
-	// parked, unknown ids the same. A board that carries P25 runs kind 2: test_p25_stored
-#if CONFIG_P25
+	// P25 conventional where the board can't carry P25 (with CONFIG_P25 on or off), P25 trunked and NXDN the same,
+	// unknown ids too. A board that carries the mode runs it: test_p25_stored, test_nxdn_stored
+#if CONFIG_AIR
 	air_nofit = true;
 #endif
-	static const uint8_t kinds[] = { CODEPLUG_KIND_P25, CODEPLUG_KIND_P25_TRUNK };
+	static const uint8_t kinds[] = { CODEPLUG_KIND_P25, CODEPLUG_KIND_P25_TRUNK, CODEPLUG_KIND_NXDN };
 	for (unsigned i = 0; i < sizeof kinds; i++) {
 		chans[6].kind = kinds[i];
 		req(RREQ_ZONE, 0);
@@ -910,7 +910,7 @@ static void test_parked_kind(void)
 	CHECK(sm.view.tx_deny == TXDENY_MODE && hw.tx_calls == 0);
 	req(RREQ_PTT, 0);
 	rx_signal(120, true);
-#if CONFIG_P25
+#if CONFIG_AIR
 	air_nofit = false;
 #endif
 	setup_codeplug();
@@ -6648,7 +6648,7 @@ static void test_p25_stored(void)
 	req(RREQ_PTT, 0);
 	chans[3].rx_only = false;
 	// The editor's feature list says P25 here
-	CHECK(strncmp(build_features_now(), "P25,", 4) == 0);
+	CHECK(strncmp(build_modes_now(), "P25,", 4) == 0);
 
 	// A board that can't carry P25: parked (DMR modem off, never keyed), and no P25 in the feature list
 	air_nofit = true;
@@ -6658,7 +6658,7 @@ static void test_p25_stored(void)
 	req(RREQ_PTT, 1);
 	CHECK(sm.view.tx_deny == TXDENY_MODE && hw.tx_calls == keyed);
 	req(RREQ_PTT, 0);
-	CHECK(strstr(build_features_now(), "P25,") == NULL && build_features_now()[0] != '\0');
+	CHECK(strstr(build_modes_now(), "P25,") == NULL && build_features_now()[0] != '\0');
 	air_nofit = false;
 
 	// The VFO takes the radio-wide unit ID, then the DMR ID
@@ -6922,7 +6922,7 @@ static void test_p25_trunk(void)
 	start();
 	p25_defaults();
 	aud.feed = true;
-	CHECK(strstr(build_features_now(), "P25,P25_TRUNK,") == build_features_now());
+	CHECK(strncmp(build_modes_now(), "P25,P25_TRUNK,", 14) == 0);
 
 	// The channel runs P25, receive only; the follower finds the system on the primary
 	req(RREQ_ZONE_POS, 2);
@@ -7223,6 +7223,7 @@ static void test_p25(void)
 // ---- NXDN conventional in the radio core (docs/spec/nxdn.md 6): the far radio is an NXDN engine on the other fake
 // provider. Voice is made-up 72-bit frames through the fake vocoder: nothing here encodes or decodes speech ----
 #include "nxdn/nxdn_engine.h"
+#include "nxdn/nxdn_codeplug.h"
 #include "dmr/ambe/ambeFec.h"
 
 static nxdn_engine_t nfar;
@@ -7619,11 +7620,228 @@ static void test_nxdn_mode(void)
 	CHECK(sm.view.ch.mode == RADIO_MODE_FM && !radio_nxdn_running());
 }
 
+// The codec's side (core/nxdn/nxdn_codeplug.c, tested in nxdnCodeplugTest): a stored channel's set-up, by number
+static nxdn_conv_cfg_t stored_nxdn[NCH + 1];
+bool nxdn_conv_load(uint16_t number, const channel_t *ch, nxdn_conv_cfg_t *out)
+{
+	if (ch->kind != CODEPLUG_KIND_NXDN || number < 1 || number > NCH)
+		return false;
+	*out = stored_nxdn[number];
+	return true;
+}
+// A plain channel in NXDN saved as a stored one: the record and block it was given
+static struct { uint16_t number; channel_t ch; nxdn_conv_t conv; } nxdn_saved;
+bool nxdn_conv_save(uint16_t number, const channel_t *ch, const nxdn_conv_t *conv)
+{
+	nxdn_saved.number = number;
+	nxdn_saved.ch = *ch;
+	nxdn_saved.conv = *conv;
+	return codeplug_set_channel(number, ch);
+}
+
+// An NXDN conventional channel in the codeplug (kind 4, docs/spec/nxdn-codeplug.md 2): the radio runs it on its own
+// parameters, not the settings; saved from the VFO it becomes one; parked where the board can't carry NXDN
+static void test_nxdn_stored(void)
+{
+	static char buf[4096];
+	const radio_nxdn_view_t *v = &sm.view.nxdn;
+	radio_nxdn_settings_t s = nxdn_default_set;
+	radio_nxdn_stats_t st;
+
+	setup_codeplug_nxdn();
+	// The safe stand-in as the codeplug reads it: DMR, the tag's kind and transmit allowed
+	add(3, "NXDN rptr", 446100000, RADIO_MODE_DMR, false, 2);
+	chans[3].tx_hz = 451100000;
+	chans[3].kind = CODEPLUG_KIND_NXDN;
+	chans[3].system = 0xFF;
+	stored_nxdn[3] = (nxdn_conv_cfg_t){ .conv = { .rate9600 = true, .rx_ran = 7, .tx_ran = 8,
+						      .squelch = NXDN_SQUELCH_SELECTIVE },
+					    .unit_id = 4321, .target = 20, .target_unit = false };
+	start();
+	nxdn_defaults();
+	aud.feed = true;
+	req(RREQ_ZONE_POS, 2);
+	CHECK(sm.view.channel_number == 3 && sm.view.ch.mode == RADIO_MODE_NXDN && sm.view.ch.kind == CODEPLUG_KIND_NXDN);
+	CHECK(hw_mode == RADIO_MODE_DMR && hw.rx_bw == RADIO_BW_12K5 && radio_nxdn_running() && !sm.dmr_running);
+	CHECK(v->rx_ran == 7 && v->tx_ran == 8 && v->talk == 20 && !(v->flags & RADIO_NXDN_TALK_UNIT) &&
+	      (v->flags & RADIO_NXDN_9600));
+	nxdn_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "nxdn.rx_ran=0\n") != NULL);	// the settings are not what runs
+	CHECK(strstr(buf, "nxdn.run.rate=9600\nnxdn.run.rx_ran=7\nnxdn.run.tx_ran=8\nnxdn.run.rx_gid=20\n") != NULL);
+	CHECK(strstr(buf, "nxdn.run.unit_id=4321\nnxdn.run.unit_call=0\nnxdn.run.tx_dst=20\n") != NULL);
+
+	// RAN squelch first: another RAN is not taken
+	nfar_begin(true, 9, 2001, false, 20);
+	nfar_call(600);
+	CHECK(sm.view.state == RS_IDLE);
+	radio_nxdn_stats(&st);
+	CHECK(st.rx_calls == 0 && st.ran_rejects > 0);
+	// Selective on RAN 7: the channel's group plays, another group shows and does not, all and a unit call to us play
+	nfar_begin(true, 7, 2001, false, 20);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	run(800);
+	CHECK(sm.view.state == RS_RX && (v->flags & RADIO_NXDN_PLAYED) && v->dst == 20 && v->ran == 7);
+	nxdn_engine_tx_stop(&nfar);
+	run(500);
+	nfar_begin(true, 7, 2001, false, 21);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	run(800);
+	CHECK((v->flags & RADIO_NXDN_RX) && !(v->flags & RADIO_NXDN_PLAYED) && v->dst == 21 && !hw.led[LED_GREEN]);
+	nxdn_engine_tx_stop(&nfar);
+	run(500);
+	nfar_begin(true, 7, 2001, false, NXDN_ID_ALL);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	run(800);
+	CHECK((v->flags & RADIO_NXDN_PLAYED) && v->dst == NXDN_ID_ALL);
+	nxdn_engine_tx_stop(&nfar);
+	run(500);
+	nfar_begin(true, 7, 2001, true, 4321);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	run(800);
+	CHECK((v->flags & (RADIO_NXDN_PLAYED | RADIO_NXDN_UNIT)) == (RADIO_NXDN_PLAYED | RADIO_NXDN_UNIT));
+	nxdn_engine_tx_stop(&nfar);
+	run(500);
+	CHECK(sm.view.state == RS_IDLE);
+
+	// PTT: the channel's TX RAN, our unit ID and its group, on its TX frequency at 12.5 kHz
+	nfar_begin(true, 8, 2001, false, 1);
+	run(100);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == 451100000 && hw.tx_bw == RADIO_BW_12K5);
+	run(1000);
+	CHECK(nfar_heard.starts == 1 && nfar_heard.call.ran == 8 && nfar_heard.call.vcall.src == 4321 &&
+	      nfar_heard.call.vcall.dst == 20 && nfar_heard.call.vcall.call_type == NXDN_CALL_GROUP);
+	req(RREQ_PTT, 0);
+	run(600);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
+
+	// The debug link's settings don't reach a stored channel
+	s.rx_ran = 33;
+	s.tx_ran = 34;
+	s.unit_id = 777;
+	s.rate9600 = false;
+	radio_req_nxdn_settings(&s);
+	nxdn_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "nxdn.rx_ran=33\n") != NULL && strstr(buf, "nxdn.run.rx_ran=7\n") != NULL &&
+	      strstr(buf, "nxdn.run.unit_id=4321\n") != NULL && strstr(buf, "nxdn.run.rate=9600\n") != NULL);
+	nxdn_defaults();
+
+	// 4800 bit/s, a unit target, RAN squelch: read again when the channel is
+	stored_nxdn[3].conv.rate9600 = false;
+	stored_nxdn[3].conv.squelch = NXDN_SQUELCH_RAN;
+	stored_nxdn[3].target = 2001;
+	stored_nxdn[3].target_unit = true;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	nxdn_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "nxdn.run.rate=4800\nnxdn.run.rx_ran=7\nnxdn.run.tx_ran=8\nnxdn.run.rx_gid=0\n") != NULL);
+	CHECK(strstr(buf, "nxdn.run.unit_call=1\nnxdn.run.tx_dst=2001\n") != NULL);
+	CHECK(v->talk == 2001 && (v->flags & RADIO_NXDN_TALK_UNIT) && !(v->flags & RADIO_NXDN_9600));
+	// Selective with a unit target: all and unit calls to us only
+	stored_nxdn[3].conv.squelch = NXDN_SQUELCH_SELECTIVE;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	nxdn_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "nxdn.run.rx_gid=65535\n") != NULL);
+
+	// No mode change for now on a channel of a kind: its mode is the kind's
+	req(RREQ_MODE, RADIO_MODE_FM);
+	CHECK(sm.view.ch.mode == RADIO_MODE_NXDN && radio_nxdn_running() && !(sm.view.temp & RADIO_TEMP_MODE));
+	// Receive only from the tag: PTT refused as on any channel
+	chans[3].rx_only = true;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	int keyed = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_RX_ONLY && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	chans[3].rx_only = false;
+	// The editor's feature list says NXDN here
+	CHECK(strstr(build_modes_now(), "NXDN,") != NULL);
+
+	// A board that can't carry NXDN: parked (DMR modem off, never keyed), and no NXDN in the feature list
+	air_nofit = true;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && !radio_nxdn_running() && !sm.dmr_running && hw_mode == RADIO_MODE_FM);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_MODE && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	CHECK(strstr(build_modes_now(), "NXDN,") == NULL && build_features_now()[0] != '\0');
+	air_nofit = false;
+
+	// The VFO keeps the settings
+	req(RREQ_VFO, 1);
+	req(RREQ_VFO_SET, 446100000);
+	req(RREQ_MODE, RADIO_MODE_NXDN);
+	nxdn_view_text(buf, sizeof buf);
+	CHECK(sm.view.vfo && strstr(buf, "nxdn.run.rx_ran=0\n") != NULL && strstr(buf, "nxdn.run.unit_id=1\n") != NULL);
+
+	// Saved as a channel (the editor's New from current): a stored NXDN channel from the NXDN settings, its contact
+	// the stored one of the talk target
+	s = nxdn_default_set;
+	s.rate9600 = false;
+	s.rx_ran = 12;
+	s.tx_ran = 13;
+	s.rx_gid = 9;
+	s.tx_dst = 9;
+	radio_req_nxdn_settings(&s);
+	run(20);
+	memset(&nxdn_saved, 0, sizeof nxdn_saved);
+	channel_t ed = sm.view.ch;
+	CHECK(ed.mode == RADIO_MODE_NXDN && ed.kind == CODEPLUG_KIND_NONE);
+	CHECK(ui_svc_write_channel(6, &ed, 0));
+	storage_job_poll();
+	CHECK(nxdn_saved.number == 6 && !nxdn_saved.conv.rate9600 && nxdn_saved.conv.rx_ran == 12 &&
+	      nxdn_saved.conv.tx_ran == 13);
+	CHECK(nxdn_saved.conv.squelch == NXDN_SQUELCH_SELECTIVE && nxdn_saved.ch.contact == 3);
+	// No stored contact for the group: none (group 1); RAN squelch
+	s.tx_dst = 4242;
+	s.rx_gid = 0;
+	radio_req_nxdn_settings(&s);
+	run(20);
+	CHECK(ui_svc_write_channel(6, &ed, 0));
+	storage_job_poll();
+	CHECK(nxdn_saved.ch.contact == 0 && nxdn_saved.conv.squelch == NXDN_SQUELCH_RAN);
+	nxdn_defaults();
+	// A copy of the stored NXDN channel at another number takes its tag; edited in place, the tag follows by itself
+	ed = chans[3];
+	tag_copy_from = tag_copy_to = 0;
+	nxdn_saved.number = 0;
+	CHECK(ui_svc_write_channel(7, &ed, 3));
+	storage_job_poll();
+	CHECK(tag_copy_from == 3 && tag_copy_to == 7 && chans[7].kind == CODEPLUG_KIND_NXDN && nxdn_saved.number == 0);
+	tag_copy_from = 0;
+	CHECK(ui_svc_write_channel(3, &ed, 3));
+	storage_job_poll();
+	CHECK(tag_copy_from == 0 && nxdn_saved.number == 0);
+	// A channel in NXDN for now, saved: a stored NXDN channel too
+	req(RREQ_MODE, RADIO_MODE_FM);
+	req(RREQ_VFO, 0);
+	req(RREQ_ZONE_POS, 0);
+	CHECK(sm.view.ch.kind == CODEPLUG_KIND_NONE && sm.view.channel_number != 0);
+	uint16_t plain = sm.view.channel_number;
+	req(RREQ_MODE, RADIO_MODE_NXDN);
+	CHECK(sm.view.ch.mode == RADIO_MODE_NXDN && (sm.view.temp & RADIO_TEMP_MODE));
+	nxdn_saved.number = 0;
+	CHECK(ui_svc_save_channel());
+	storage_job_poll();
+	CHECK(nxdn_saved.number == plain);
+	req(RREQ_MODE, RADIO_MODE_FM);
+	nfar_stop();
+	memset(stored_nxdn, 0, sizeof(stored_nxdn));
+}
+
 static void test_nxdn(void)
 {
 	test_nxdn_rx();
 	test_nxdn_tx();
 	test_nxdn_mode();
+	test_nxdn_stored();
 	setup_codeplug();
 	req(RREQ_RELOAD, 0);
 	run(50);

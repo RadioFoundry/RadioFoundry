@@ -232,7 +232,7 @@ static size_t cmd_version(uint8_t *out, size_t cap)
 		dl_text_kv_str(&t, "release", RFOUNDRY_RELEASE);
 	}
 	dl_text_kv_str(&t, "board", board.name);
-	dl_text(&t, "features=%s\n", build_features_now());
+	dl_text(&t, "features=%s%s\n", build_modes_now(), build_features_now());
 	dl_text_kv_str(&t, "codec", debuglink_codec_id(board.vocoder));
 	if (d != NULL) {
 		dl_text(&t, "display=%ux%ux%u\ninset=%u,%u,%u,%u\n", d->width, d->height, d->bpp, d->inset_top,

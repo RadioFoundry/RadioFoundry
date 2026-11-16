@@ -6,6 +6,9 @@
 #if CONFIG_P25
 #include "radio/radio_p25.h"
 #endif
+#if CONFIG_NXDN
+#include "radio/radio_nxdn.h"
+#endif
 
 #ifndef RFOUNDRY_PRESET
 #define RFOUNDRY_PRESET "unknown"
@@ -17,16 +20,17 @@
 const char build_preset[] = RFOUNDRY_PRESET;
 const char build_off[] = RFOUNDRY_FEATURES_OFF;
 
-// P25 first: build_features_now leaves it out on a board that can't run it
+// The air-framed modes, each only where the board runs it (build_modes_now)
 #if CONFIG_P25_TRUNK
 #define P25_FEATURES	"P25,P25_TRUNK,"
 #elif CONFIG_P25
 #define P25_FEATURES	"P25,"
 #endif
-static const char features[] =
-#if CONFIG_P25
-	P25_FEATURES
+#if CONFIG_P25 && CONFIG_NXDN
+static const char modes_both[] = P25_FEATURES "NXDN,";
 #endif
+
+static const char features[] =
 #if CONFIG_FM
 	"FM,"
 #endif
@@ -197,12 +201,23 @@ static const char features[] =
 #endif
 	"HOSTLINK";	// both listeners run on the host link (USB CDC or a UART)
 
+// P25 and NXDN run where the board's air interface carries them: the Codeplug Editor offers their channels only there
+const char *build_modes_now(void)
+{
+#if CONFIG_P25 && CONFIG_NXDN
+	bool p25 = radio_p25_fits(), nxdn = radio_nxdn_fits();
+
+	return p25 && nxdn ? modes_both : p25 ? P25_FEATURES : nxdn ? "NXDN," : "";
+#elif CONFIG_P25
+	return radio_p25_fits() ? P25_FEATURES : "";
+#elif CONFIG_NXDN
+	return radio_nxdn_fits() ? "NXDN," : "";
+#else
+	return "";
+#endif
+}
+
 const char *build_features_now(void)
 {
-#if CONFIG_P25
-	// P25 runs where the board's air interface carries it: the Codeplug Editor offers P25 channels only there
-	if (!radio_p25_fits())
-		return features + sizeof(P25_FEATURES) - 1u;
-#endif
 	return features;
 }

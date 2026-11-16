@@ -49,6 +49,10 @@
 #include "p25/p25_codeplug.h"
 #include "radio/radio_p25.h"
 #endif
+#if CONFIG_NXDN
+#include "nxdn/nxdn_codeplug.h"
+#include "radio/radio_nxdn.h"
+#endif
 #if CONFIG_KEY_ASSIGN
 #include "input/input.h"
 #include "input/input_engine.h"
@@ -974,6 +978,45 @@ static bool p25_save_now(uint16_t number, const channel_t *ch)
 }
 #endif
 
+#if CONFIG_NXDN
+// A plain channel in NXDN (the VFO, a mode changed for now) made a stored NXDN channel from the radio's NXDN settings
+// (nxdn-codeplug.md 2.2): the rate, the RANs, the squelch, the talk target's stored contact (none: group 1). Uses job_ch
+static bool nxdn_save_now(uint16_t number, const channel_t *ch)
+{
+	radio_nxdn_settings_t s;
+	radio_nxdn_settings(&s);
+	nxdn_conv_t conv = { .rate9600 = s.rate9600, .rx_ran = s.rx_ran, .tx_ran = s.tx_ran,
+			     .squelch = s.rx_gid != 0 ? NXDN_SQUELCH_SELECTIVE : NXDN_SQUELCH_RAN };
+	if (ch != &job_ch)
+		job_ch = *ch;
+	job_ch.contact = codeplug_contact_find_index(s.tx_dst, !s.unit_call, NULL);	// CONFIG_NXDN needs CONFIG_DMR
+	return nxdn_conv_save(number, &job_ch, &conv);
+}
+#endif
+
+// A plain channel in an air mode written as a stored channel of its kind (the VFO, a mode changed for now); false in
+// *ok's place when it isn't one: the caller writes it as a plain channel
+static bool air_save_now(uint16_t number, const channel_t *ch, bool *ok)
+{
+	if (ch->kind != CODEPLUG_KIND_NONE)
+		return false;
+#if CONFIG_P25
+	if (ch->mode == RADIO_MODE_P25) {
+		*ok = p25_save_now(number, ch);
+		return true;
+	}
+#endif
+#if CONFIG_NXDN
+	if (ch->mode == RADIO_MODE_NXDN) {
+		*ok = nxdn_save_now(number, ch);
+		return true;
+	}
+#endif
+	(void)number;
+	(void)ok;
+	return false;
+}
+
 // Power, bandwidth, tones, mode, color code and timeslot go into the channel; the squelch is radio-wide (the default
 // squelch preference). The radio core re-reads the channel (codeplug_serial), and the clear makes the remaining
 // flags follow the new values
@@ -999,11 +1042,7 @@ static void save_channel_job(void *ctx)
 	if (job.temp & RADIO_TEMP_TS)
 		job_ch.timeslot = job.now.timeslot;
 	bool ok;
-#if CONFIG_P25
-	if (job_ch.kind == CODEPLUG_KIND_NONE && job_ch.mode == RADIO_MODE_P25)
-		ok = p25_save_now(job.channel, &job_ch);
-	else
-#endif
+	if (!air_save_now(job.channel, &job_ch, &ok))
 		ok = codeplug_set_channel(job.channel, &job_ch);
 	if (!ok) {
 		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
@@ -1043,17 +1082,14 @@ bool ui_svc_save_channel(void)
 // The channel editor's whole channel (ui.md 2.1). Writing the channel in use drops its temporary changes: the radio
 // core re-reads it (codeplug_serial), and the edited values are what the user wants now. Whether it is the channel in
 // use is decided here on the UI task: the job runs on the housekeeping task, which must not touch v-> A copy of a
-// channel of a kind takes its source's tag (job.id: the source); a plain channel in P25 becomes a stored P25 one
+// channel of a kind takes its source's tag (job.id: the source); a plain channel in P25 or NXDN becomes a stored one
+// of that kind
 static void write_channel_job(void *ctx)
 {
 	(void)ctx;
 	bool ok;
 	uint16_t from = (uint16_t)job.id;
-#if CONFIG_P25
-	if (job.now.kind == CODEPLUG_KIND_NONE && job.now.mode == RADIO_MODE_P25)
-		ok = p25_save_now(job.channel, &job.now);
-	else
-#endif
+	if (!air_save_now(job.channel, &job.now, &ok))
 		ok = codeplug_set_channel(job.channel, &job.now) &&
 		     (job.now.kind == CODEPLUG_KIND_NONE || from == 0 || from == job.channel ||
 		      codeplug_tag_copy(from, job.channel, &job.now));

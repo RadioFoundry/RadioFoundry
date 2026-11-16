@@ -7,7 +7,10 @@
 #include <string.h>
 #include "board.h"
 #include "radio/radio_nxdn.h"
+#include "radio/radio_bands.h"
 #include "nxdn/nxdn_engine.h"
+#include "nxdn/nxdn_codeplug.h"
+#include "codeplug/codeplug_modes.h"
 #include "dmr/ambe/ambeVoice.h"
 #include "dmr/call/dmr_call.h"
 #if CONFIG_P25 && !defined(HAL_VOCODER_LEND_BYTES)
@@ -69,10 +72,36 @@ bool radio_nxdn_fits(void)
 	return ((radio_nxdn_fit(false) | radio_nxdn_fit(true)) & (AIR_FIT_RX | AIR_FIT_TX)) != 0;
 }
 
-// The engine's configuration: the one place NXDN parameters come from
-static void params(nxdn_engine_cfg_t *c)
+bool radio_nxdn_take(channel_t *ch)
 {
+	if (ch->kind != CODEPLUG_KIND_NXDN || !radio_nxdn_fits() || radio_listen_band(ch->rx_hz))
+		return false;
+	ch->mode = RADIO_MODE_NXDN;
+	ch->bw = RADIO_BW_12K5;
+	return true;
+}
+
+// The engine's configuration for channel ch at number (0: the VFO): the one place NXDN parameters come from. A live
+// stored NXDN channel's tag and record give them (docs/spec/nxdn-codeplug.md 2), else the settings
+static void params(const channel_t *ch, uint16_t number, nxdn_engine_cfg_t *c)
+{
+	nxdn_conv_cfg_t cc;
+
 	memset(c, 0, sizeof(*c));
+	c->silence = dmr_ambe_silence;
+	if (number != 0 && nxdn_conv_load(number, ch, &cc)) {
+		// Selective: the channel's group, all and unit calls to us; a channel that calls a unit or all keeps the
+		// last two
+		c->rate9600 = cc.conv.rate9600;
+		c->rx_ran = cc.conv.rx_ran;
+		c->tx_ran = cc.conv.tx_ran;
+		if (cc.conv.squelch == NXDN_SQUELCH_SELECTIVE)
+			c->rx_gid = cc.target_unit ? (uint16_t)NXDN_ID_ALL : cc.target;
+		c->unit_id = cc.unit_id;
+		c->tx_call_type = cc.target_unit ? NXDN_CALL_INDIVIDUAL : NXDN_CALL_GROUP;
+		c->tx_dst = cc.target;
+		return;
+	}
 	c->rate9600 = set.rate9600;
 	c->rx_ran = set.rx_ran;
 	c->tx_ran = set.tx_ran;
@@ -81,7 +110,6 @@ static void params(nxdn_engine_cfg_t *c)
 	c->tx_call_type = set.unit_call ? NXDN_CALL_INDIVIDUAL : NXDN_CALL_GROUP;
 	c->tx_dst = set.tx_dst;
 	c->emergency = set.emergency;
-	c->silence = dmr_ambe_silence;
 }
 
 // ── Voice: the DMR side's voice path (ambeVoice.h), its sink on receive and its source on transmit. The hooks run in
@@ -147,14 +175,13 @@ static nxdn_engine_t *mem_get(void)
 #endif
 }
 
-bool radio_nxdn_begin(const channel_t *ch)
+bool radio_nxdn_begin(const channel_t *ch, uint16_t number)
 {
 	nxdn_engine_cfg_t cfg;
 
-	(void)ch;
 	radio_nxdn_end();
 	stats.begins++;
-	params(&cfg);
+	params(ch, number, &cfg);
 	eng = mem_get();
 	if (eng == NULL || board.air == NULL || nxdn_engine_fit(board.air, cfg.rate9600) == 0) {
 		eng = NULL;
@@ -194,15 +221,15 @@ void radio_nxdn_retuned(void)
 		nxdn_engine_retuned(eng);
 }
 
-void radio_nxdn_apply(const channel_t *ch)
+void radio_nxdn_apply(const channel_t *ch, uint16_t number)
 {
 	nxdn_engine_cfg_t cfg;
 
 	if (eng == NULL || nxdn_engine_tx_state(eng) != AIR_TX_IDLE)
 		return;
-	params(&cfg);
+	params(ch, number, &cfg);
 	if (cfg.rate9600 != eng->cfg.rate9600) {
-		radio_nxdn_begin(ch);	// the mode is the session's: a new rate is a new session
+		radio_nxdn_begin(ch, number);	// the mode is the session's: a new rate is a new session
 		return;
 	}
 	nxdn_engine_set(eng, &cfg);
@@ -236,16 +263,44 @@ static void count(const nxdn_engine_view_t *ev)
 	air_base = *a;
 }
 
-// What the screen shows of the settings: the RANs, the rate and what PTT calls
+// The engine's configuration as settings: what the screen, the view and the debug link show
+static void cfg_settings(const nxdn_engine_cfg_t *c, radio_nxdn_settings_t *out)
+{
+	out->rate9600 = c->rate9600;
+	out->rx_ran = c->rx_ran;
+	out->tx_ran = c->tx_ran;
+	out->rx_gid = c->rx_gid;
+	out->unit_id = c->unit_id;
+	out->unit_call = c->tx_call_type == NXDN_CALL_INDIVIDUAL;
+	out->tx_dst = c->tx_dst;
+	out->emergency = c->emergency;
+}
+
+bool radio_nxdn_in_force(radio_nxdn_settings_t *out)
+{
+	nxdn_engine_t *e = eng;
+
+	if (e == NULL)
+		return false;
+	cfg_settings(&e->cfg, out);
+	return true;
+}
+
+// What the screen shows of the parameters: the RANs, the rate and what PTT calls. Those in force while the engine runs
+// (a stored channel's own), else the settings
 static void settings_view(radio_nxdn_view_t *n)
 {
-	n->rx_ran = set.rx_ran;
-	n->tx_ran = set.tx_ran;
-	n->talk = set.tx_dst;
-	n->fit = (uint16_t)radio_nxdn_fit(eng != NULL ? eng->cfg.rate9600 : set.rate9600);
-	if (set.unit_call)
+	radio_nxdn_settings_t s = set;
+
+	if (eng != NULL)
+		cfg_settings(&eng->cfg, &s);
+	n->rx_ran = s.rx_ran;
+	n->tx_ran = s.tx_ran;
+	n->talk = s.tx_dst;
+	n->fit = (uint16_t)radio_nxdn_fit(s.rate9600);
+	if (s.unit_call)
 		n->flags |= RADIO_NXDN_TALK_UNIT;
-	if (eng != NULL ? eng->cfg.rate9600 : set.rate9600)
+	if (s.rate9600)
 		n->flags |= RADIO_NXDN_9600;
 }
 
