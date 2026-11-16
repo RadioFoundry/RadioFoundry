@@ -282,10 +282,11 @@ static void mark_used(uint16_t base)
 	}
 }
 
-// The lowest free record of the family mark_used marked, now marked used; -1 when none (0xFF is "none" in a reference)
-static int take_free(void)
+// The lowest free record below limit of the family mark_used marked, now marked used; -1 when none (0xFF is "none" in
+// a reference)
+static int take_free(int limit)
 {
-	for (int n = 0; n < 0xFF; n++) {
+	for (int n = 0; n < limit; n++) {
 		if (!(used_bits[n >> 3] & (1u << (n & 7)))) {
 			used_bits[n >> 3] |= (uint8_t)(1u << (n & 7));
 			return n;
@@ -331,7 +332,7 @@ static uint8_t add_system(const zsSystem_t *s)
 	uint8_t first = added_key_count;
 
 	mark_used(CODEPLUG_KEY_SYSTEM);
-	int n = take_free();
+	int n = take_free((int)CODEPLUG_SYSTEMS_RUN);	// a number past them would never run
 
 	if (n < 0) {
 		return CODEPLUG_SYSTEM_NONE;
@@ -351,7 +352,7 @@ static uint8_t add_system(const zsSystem_t *s)
 	mark_used(CODEPLUG_KEY_SYS_CHAN);
 	for (int k = 0; ok && k < s->entries; k++) {
 		zsEntry_t e;
-		int at = take_free();
+		int at = take_free(0xFF);
 
 		ok = at >= 0 && zsEntryAt(&rec, s, k, &e);
 		if (ok) {
@@ -463,7 +464,19 @@ bool zone_import_unavailable(const zsRecord_t *r, int i)
 		if (t.system > r->systems || !zsSystemAt(r, t.system - 1, &s)) {
 			return true;
 		}
-		return s.level != ZS_LEVEL_WHOLE && find_system(&s, buf, sizeof(buf)) == CODEPLUG_SYSTEM_NONE;
+		if (find_system(&s, buf, sizeof(buf)) != CODEPLUG_SYSTEM_NONE) {
+			return false;
+		}
+		if (s.level != ZS_LEVEL_WHOLE) {
+			return true;
+		}
+		// A whole system is added at a free number the radio runs (add_system)
+		for (uint8_t n = 0; n < CODEPLUG_SYSTEMS_RUN; n++) {
+			if (codeplug_kv_get((uint16_t)(CODEPLUG_KEY_SYSTEM + n), buf, 0) < 0) {
+				return false;
+			}
+		}
+		return true;
 	}
 #else
 	(void)r;

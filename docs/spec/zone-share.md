@@ -203,7 +203,7 @@ With a modes part (4.2), after the import's channels are chosen:
 
 | Rule | Behavior |
 |---|---|
-| Systems | matched by type and identity against the radio's own. A match is used as it is: nothing of the radio's system is changed. A whole system the radio doesn't have is added when an imported channel is on it (its own ID 0, no fallback), with its entries and its secret if the record has one. Listen only comes as the sender set it: the receiver never forces it |
+| Systems | matched by type and identity against the radio's own. A match is used as it is: nothing of the radio's system is changed. A whole system the radio doesn't have is added when an imported channel is on it (its own ID 0, no fallback), with its entries and its secret if the record has one. It takes the lowest free system number among those a radio runs (0 to 7); with none free it is missing. Listen only comes as the sender set it: the receiver never forces it |
 | Missing | a system sent as its identity that the radio doesn't have, one the sender withholds, or one with no room left: its channels come in with no system, receive only, and the import counts them as unavailable. The Codeplug Editor flags them |
 | Tags | written for each imported channel: kind, flags and parameter block as sent |
 | Transmit | kept only on a channel whose system the radio has; the system's listen-only flag then rules. Every other channel is receive only (5.3) |
