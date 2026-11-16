@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The registry of channel kinds and system types (docs/spec/channel-modes.md 4): the one list C reads. Each row is
-// X(id, token, short name, built), where built is the build condition of the code that runs it (a CONFIG_ expression,
-// 0 while that code is not in the tree). Ids are only appended and never reused; 0 and 0xFF are never ids. The editor's
-// list (site/static/js/codeplug/modes.js) and the spec's tables hold the same rows: tools/check_modes.py checks them.
-// The generic layer (codeplug_tag.c, codeplug_records.c) takes any id: a row only gives the name shown and whether the
-// build runs it
+// X(id, token, short name, built), where built is the condition of the code that runs it (a CONFIG_ expression, or one
+// that also asks the board; 0 while that code is not in the tree). Ids are only appended and never reused; 0 and 0xFF
+// are never ids. The editor's list (site/static/js/codeplug/modes.js) and the spec's tables hold the same rows:
+// tools/check_modes.py checks them. The generic layer (codeplug_tag.c, codeplug_records.c) takes any id: a row only
+// gives the name shown and whether the radio runs it
 #ifndef RFOUNDRY_CODEPLUG_MODES_H
 #define RFOUNDRY_CODEPLUG_MODES_H
 
@@ -13,10 +13,19 @@
 #include <stdint.h>
 #include "config.h"
 
+// What runs P25 conventional: the build (CONFIG_P25) and a board whose air interface can receive it
+// (core/radio/radio_p25.c; it asks the board's provider, no state)
+#if CONFIG_P25
+bool radio_p25_fits(void);
+#define CODEPLUG_RUNS_P25	radio_p25_fits()
+#else
+#define CODEPLUG_RUNS_P25	0
+#endif
+
 // Channel kinds: the first byte of a channel tag
 #define CODEPLUG_KINDS(X) \
 	X(1, DMR_TRUNK, "T3", 0)	/* DMR Tier III trunked: the trunking engine is not in this tree yet */ \
-	X(2, P25, "P25", 0)		/* P25 conventional: CONFIG_P25 once the radio core runs the engine */ \
+	X(2, P25, "P25", CODEPLUG_RUNS_P25)	/* P25 conventional: the radio core runs it (core/radio/radio_p25.c) */ \
 	X(3, P25_TRUNK, "P25T", 0)	/* P25 trunked: CONFIG_P25_TRUNK once an engine follows it */
 
 // System types: the first byte of a system record

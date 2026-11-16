@@ -4,8 +4,10 @@
 # P25 in the codeplug
 
 The stored records of P25 channels and systems, on the generic layer of [channel-modes.md](channel-modes.md). Little
-endian throughout. The firmware's codec is `core/p25/p25_codeplug.c` (`CONFIG_P25`, `CONFIG_P25_TRUNK`); the radio core
-does not run P25 yet, so a P25 channel is shown as a mode not in this build in every build ([channel-modes.md](channel-modes.md) 6).
+endian throughout. The firmware's codec is `core/p25/p25_codeplug.c` (`CONFIG_P25`, `CONFIG_P25_TRUNK`). The radio core
+runs a conventional channel (kind 2) where the build has `CONFIG_P25` and the board's air interface receives P25
+([p25.md](p25.md) 7.1); elsewhere it is parked ([channel-modes.md](channel-modes.md) 6). No firmware runs a trunked
+channel yet.
 
 | Id | Kind | System type |
 |---|---|---|
@@ -20,7 +22,8 @@ Key 0x0A00 + 2 ([channel-modes.md](channel-modes.md) 5.5), read by both kinds:
 |---|---|---|
 | 0 | 4 | Unit ID, 1 to 0xFFFFFE; 0, absent or out of range = the radio's DMR ID |
 
-A channel's own unit ID is the record's per-channel DMR ID; a trunked system's is the system's own ID (7.1).
+A channel's own unit ID is the record's per-channel DMR ID; a trunked system's is the system's own ID (7.1). The
+narrowest one set counts. The radio-wide one is also the VFO's.
 
 ## 2. Conventional channel (kind 2)
 
@@ -28,7 +31,7 @@ The tag ([channel-modes.md](channel-modes.md) 2): no system, flag bit 0 transmit
 
 | Offset | Size | Field |
 |---|---|---|
-| 0 | 1 | Bits 0-1 squelch: 0 normal (every call of the RX NAC), 1 selective (the talk group's calls and unit calls to this radio); 2 and 3 read as normal. Bits 2-7: 0 |
+| 0 | 1 | Bits 0-1 squelch: 0 normal (every call of the RX NAC), 1 selective (2.1); 2 and 3 read as normal. Bits 2-7: 0 |
 | 1 | 2 | RX NAC: bit 15 set = bits 11-0 hold the NAC, 0xF7E = any NAC; clear = 0x293. Bits 12-14: 0 |
 | 3 | 2 | TX NAC: the same encoding; clear = the RX NAC, 0x293 when the RX NAC is any |
 
@@ -44,8 +47,38 @@ The base record carries:
 | Contact | The talk target: a group contact = talk group (1-65535), a private contact = a unit call, the all-call contact = talk group 65535, none = talk group 1 |
 | RX group list | Kept; for several receive talk groups later |
 | Per-channel DMR ID | This radio's unit ID on the channel; unset = the radio-wide one (1) |
-| Direct mode | Talkaround on a channel whose RX and TX differ |
+| Direct mode | Talkaround (2.2) |
 | Mode, receive only | DMR, receive only, always (the safe stand-in) |
+
+### 2.1 Selective squelch
+
+Selective plays, of the calls on the RX NAC:
+
+| Call | Played |
+|---|---|
+| A group call to the channel's talk group | yes |
+| A group call to talk group 65535 (everyone) | yes |
+| A unit call to this radio's unit ID | yes |
+| Anything else | no: tracked and shown as another talk group, not played |
+
+On a channel whose contact is a private one (a unit call) or the all-call contact, selective plays the everyone talk
+group and unit calls to this radio. Normal squelch plays every call of the NAC. The record's RX group list is to widen
+selective later: its group contacts' talk groups are played too, the talk group first. Until then it is kept and not
+read.
+
+### 2.2 Talkaround
+
+Two values: on, or automatic. The record's direct mode set is on (status symbols say the call is direct, as to
+another radio). Clear is automatic: on where RX and TX are the same frequency, off otherwise (as to a repeater). There
+is no stored "off" for a simplex frequency: a zeroed record is automatic, which is right for both kinds of channel.
+
+### 2.3 Writing from the radio
+
+A P25 channel the radio saves (a VFO in P25 stored as a channel, a mode changed for now made permanent) is written as
+[channel-modes.md](channel-modes.md) 2.4 gives: the base record as the safe stand-in, then a new tag of kind 2 with no
+system, transmit allowed from the channel and a full parameter block. Its contact is the stored contact of the talk
+target, if any (else none: talk group 1). Editing a channel that is P25 already rewrites its record and lets the tag
+follow, the block kept byte for byte.
 
 ## 3. Trunked system (type 3)
 

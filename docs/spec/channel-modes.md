@@ -134,7 +134,7 @@ Ids are only appended and never reused. A kind and a system type that belong tog
 | Kind | Name | Short | Built when | Spec |
 |---|---|---|---|---|
 | 1 | DMR Tier III trunked | T3 | not yet (the trunking engine is not in this tree) | [dmr-trunking-codeplug.md](dmr-trunking-codeplug.md) |
-| 2 | P25 conventional | P25 | not yet (no P25 engine in this tree; the codec is `CONFIG_P25`) | [p25-codeplug.md](p25-codeplug.md) |
+| 2 | P25 conventional | P25 | `CONFIG_P25` and a board whose air interface receives P25 (`radio_p25_fits`) | [p25-codeplug.md](p25-codeplug.md) |
 | 3 | P25 trunked | P25T | not yet (the codec is `CONFIG_P25_TRUNK`) | [p25-codeplug.md](p25-codeplug.md) |
 
 | System type | Name | Short | Built when | Spec |
@@ -217,7 +217,8 @@ writer keeps one it finds.
 
 ## 6. Radio behavior
 
-A channel of a kind the build doesn't run (any kind not built, including ids it doesn't know) is **parked**: the radio
+A channel of a kind the radio doesn't run (any kind not built, a built one the board can't carry, and ids it doesn't
+know) is **parked**: the radio
 tunes its receive frequency with the DMR modem off, the squelch never opens, PTT is refused as a mode not in this
 build, scan and dual watch skip it, roaming doesn't take it as a repeater and it can't be copied to the VFO (the VFO
 holds plain FM and DMR only). Its mode word is the kind's short name (`?` for an unknown id), and Home says the mode
