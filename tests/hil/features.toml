@@ -75,6 +75,17 @@ switch = "RX_EXT"
 hardware = "a receiver chip whose documents give a range past the rated bands"
 spec = "docs/spec/radio-features.md"
 
+# Other digital modes: here only the codeplug codec of each (docs/spec/channel-modes.md)
+[feature.p25]
+switch = "P25"
+spec = "docs/spec/p25-codeplug.md"
+source = ["core/p25"]
+
+[feature.p25_trunk]
+switch = "P25_TRUNK"
+spec = "docs/spec/p25-codeplug.md"
+source = ["core/p25"]
+
 [feature.dmr_voice]
 switch = "DMR"
 spec = "docs/spec/dmr-voice.md"
