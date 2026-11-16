@@ -207,7 +207,9 @@ support for additional radios and to make the project's ambitious scope possible
 RadioFoundry is MIT licensed ([LICENSE](LICENSE)) and a clean-room project: code is written from prose specs, datasheets and
 public standards, independent of earlier radio firmwares. No GPL code, no non-commercial code, no vendor SDKs. The
 rules and checks: [docs/CLEANROOM.md](docs/CLEANROOM.md). Third-party code in `third_party/` (FreeRTOS, TinyUSB, ST's
-HAL and CMSIS) keeps its own permissive license ([LICENSES/](LICENSES/)). To build on RadioFoundry in
+HAL and CMSIS) keeps its own permissive license ([LICENSES/](LICENSES/)). So do the few files in the tree ported from
+permissively licensed code, each under its original notice: the full-rate voice decoder's dequantizer and tables come
+from mbelib (ISC). To build on RadioFoundry in
 another project: [using RadioFoundry in your project](FORKING.md).
 
 ## Acknowledgements
@@ -224,6 +226,8 @@ the reverse engineering and documentation behind it made this project possible. 
 - Jonathan Naylor G4KLX and the MMDVM and MMDVMHost contributors, for open hotspots and repeaters.
 - Cort Buffington N0MJS and the HBlink contributors, for open DMR networking.
 - Hannes Matuschek DM3MAT and the qdmr contributors, for qdmr, which RadioFoundry radios work with.
+
+And to the author of mbelib, whose ISC-licensed decoder the full-rate voice decoder's dequantizer is ported from.
 
 ## Contributing
 

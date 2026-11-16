@@ -29,9 +29,9 @@ typedef struct mbe_est_state {
 // what mbe_est_frame found; the spectrum it belongs to is in the scratch until that is used for something else
 typedef struct {
 	int16_t exp;			// the stored spectrum is the true one times 2^exp
-	int16_t period4;		// pitch period by the time-domain search, quarter samples; 0: the frame is all zero
+	int16_t period4;		// pitch period by the time-domain search, quarter samples; 0: none found
 	int16_t periodic;		// log2 of the normalized autocorrelation at that period, Q11: 0 periodic, lower less so
-	int16_t pad;
+	int16_t zero;			// 1: the frame is nothing but zeros (no spectrum either)
 } mbe_est_t;
 
 void mbe_est_init(mbe_est_state_t *s);

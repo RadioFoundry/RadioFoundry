@@ -142,10 +142,11 @@ void mbe_est_frame(mbe_est_state_t *s, const int16_t pcm[MBE_FRAME_LEN], int32_t
 	int x1 = s->hp_x, sh, s2;
 	uint32_t ph = 0;
 
-	// high-pass: y[n] = x[n] - x[n-1] + 0.99 y[n-1]
+	// high-pass: y[n] = x[n] - x[n-1] + 0.99 y[n-1]. What is taken off y is rounded away from zero, so that y runs
+	// out to zero after the input does (rounded down, a small positive y stays for good: a DC level of a few units)
 	memcpy(comb, s->hist, sizeof s->hist);
 	for (int i = 0; i < MBE_FRAME_LEN; i++) {
-		y = (pcm[i] - x1) * 16 + y - ((y * 328) >> 15);
+		y = (pcm[i] - x1) * 16 + y - ((y * 328 + (y > 0 ? 32767 : 0)) >> 15);
 		x1 = pcm[i];
 		comb[MBE_EST_HIST + i] = fxp_sat16(y >> 4);
 	}
@@ -165,6 +166,7 @@ void mbe_est_frame(mbe_est_state_t *s, const int16_t pcm[MBE_FRAME_LEN], int32_t
 	}
 	pitch(s, (i16a *)(buf + NL_AT), e);
 	e->exp = 0;
+	e->zero = 0;
 
 	// the window, the samples scaled up to 14 bits first
 	for (int i = 0; i < MBE_EST_WIN; i++) {
@@ -176,6 +178,7 @@ void mbe_est_frame(mbe_est_state_t *s, const int16_t pcm[MBE_FRAME_LEN], int32_t
 	if (!m) {
 		memset(buf, 0, MBE_BUF_WORDS * sizeof buf[0]);
 		e->period4 = 0;
+		e->zero = 1;
 		return;
 	}
 	sh = 14 - bits_of((uint32_t)m);
