@@ -20,6 +20,12 @@ typedef struct {
 	// Transmit, from the provider's task: the next encoded voice frame, false when none is ready. NULL: every
 	// frame is `silence`
 	bool (*tx_voice)(uint8_t imbe[P25_IMBE_BYTES], void *ctx);
+#if CONFIG_P25_TRUNK
+	// A trunked channel (cfg.trunk), from the provider's task: every unit taken, trunking signaling included, and
+	// every call's fields as they come in, played or not (a trunking follower, p25_follow.h, takes both)
+	void (*rx_unit)(const p25_rx_unit_t *u, void *ctx);
+	void (*rx_call)(const p25_call_t *c, void *ctx);
+#endif
 } p25_engine_hooks_t;
 
 typedef struct {
@@ -32,6 +38,9 @@ typedef struct {
 	p25_lc_t tx_lc;		// what we call: a talk group or a unit (src is set from unit_id)
 	bool talkaround;	// status symbols say direct (P25_SS_TALKAROUND); else unknown, as to a repeater
 	const uint8_t *silence;	// a voice frame of silence (P25_IMBE_BYTES), from the vocoder
+#if CONFIG_P25_TRUNK
+	bool trunk;		// trunking signaling is received too (a control channel, or a voice channel it granted)
+#endif
 } p25_engine_cfg_t;
 
 typedef struct {
@@ -65,6 +74,7 @@ uint32_t p25_engine_fit(const hal_air_t *air);
 bool p25_engine_begin(p25_engine_t *e, const hal_air_t *air, const p25_engine_cfg_t *cfg, const p25_engine_hooks_t *hooks,
 		      void *ctx);
 void p25_engine_end(p25_engine_t *e);
+// The receiver is on a new frequency: what it held is dropped (on a trunked channel, the call in hand ends)
 void p25_engine_retuned(p25_engine_t *e);
 // Change what is received and sent while running (a talk group or NAC change that needs no retune). Not while
 // transmitting

@@ -31,6 +31,10 @@ static void rx_fields(p25_engine_t *e, const p25_call_t *c, bool start)
 {
 	bool play = wanted(e, c) && c->algid == P25_ALGID_CLEAR;
 
+#if CONFIG_P25_TRUNK
+	if (e->hooks.rx_call)
+		e->hooks.rx_call(c, e->ctx);
+#endif
 	view_begin(e);
 	e->view.rx = *c;
 	e->view.rx_active = true;
@@ -92,7 +96,19 @@ static void on_end(void *ctx)
 	e->played = false;
 }
 
+#if CONFIG_P25_TRUNK
+static void on_unit(const p25_rx_unit_t *u, void *ctx)
+{
+	p25_engine_t *e = ctx;
+
+	if (e->hooks.rx_unit)
+		e->hooks.rx_unit(u, e->ctx);
+}
+
+static const p25_call_sink_t sink = { on_start, on_update, on_voice, on_end, on_unit };
+#else
 static const p25_call_sink_t sink = { on_start, on_update, on_voice, on_end };
+#endif
 
 // ── Transmit ──
 // Symbols to the session while its queue has room. A voice frame the encoder has not made yet is waited for as
@@ -153,6 +169,9 @@ bool p25_engine_begin(p25_engine_t *e, const hal_air_t *air, const p25_engine_cf
 	e->hooks = *hooks;
 	e->ctx = ctx;
 	p25_call_rx_init(&e->rx, cfg->rx_nac, &sink, e);
+#if CONFIG_P25_TRUNK
+	e->rx.rx.trunk = cfg->trunk;
+#endif
 	return air_session_open(&e->session, air, &p25_air_mode, &e->rx.rx, e->frame, NULL, P25_UNIT_SYMS_MAX, &ops, e);
 }
 
@@ -164,12 +183,23 @@ void p25_engine_end(p25_engine_t *e)
 void p25_engine_retuned(p25_engine_t *e)
 {
 	air_session_retuned(&e->session);
+#if CONFIG_P25_TRUNK
+	// A trunked receiver moves between a voice channel and its control channel: the call in hand was on the old
+	// frequency and ends here, as a lost signal does (from the task that retunes, as the framer's reset above)
+	if (e->cfg.trunk) {
+		e->rx.rx.last_duid = 0xFF;
+		e->rx.rx.lost(e->rx.rx.ctx);
+	}
+#endif
 }
 
 void p25_engine_set(p25_engine_t *e, const p25_engine_cfg_t *cfg)
 {
 	e->cfg = *cfg;
 	e->rx.rx.nac = cfg->rx_nac;
+#if CONFIG_P25_TRUNK
+	e->rx.rx.trunk = cfg->trunk;
+#endif
 	e->recheck = true;
 }
 

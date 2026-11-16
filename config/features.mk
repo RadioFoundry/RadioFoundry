@@ -286,7 +286,8 @@ CONFIG_MBE := $(CONFIG_IMBE)
 # diagnostics: debug link commands that open an air interface session and move raw symbols, for bench tests (needs an
 # air-framed mode such as P25, and DEBUGLINK; docs/spec/debuglink.md)
 CONFIG_AIR_RAW ?= n
-# P25 trunked: the codec of its systems and channels (docs/spec/p25-codeplug.md 3; needs P25)
+# P25 trunked: the codec of its systems and channels (docs/spec/p25-codeplug.md 3) and, receive only, a control channel
+# decoded and voice channel grants followed (core/p25/p25_follow.c, docs/spec/p25-trunking.md). Needs P25
 CONFIG_P25_TRUNK ?= n
 # the GPS status screen: satellites on a sky plot and signal bars, fix quality, grid locator (core/position/nmea_sky.c,
 # core/ui/ui_gps.c, docs/spec/position.md 3). Needs GPS; off, Tools > Position is a page of text
@@ -355,6 +356,7 @@ ifneq ($(call feature_on,HOTSPOT_SPLIT),)
   endif
 endif
 $(if $(and $(call feature_on,AIR_RAW),$(if $(call feature_on,AIR),,x)),$(error CONFIG_AIR_RAW=y needs CONFIG_P25=y (an air-framed mode)))
+$(if $(and $(call feature_on,P25_TRUNK),$(if $(call feature_on,P25),,x)),$(error CONFIG_P25_TRUNK=y needs CONFIG_P25=y))
 $(if $(and $(call feature_on,AIR_RAW),$(if $(call feature_on,DEBUGLINK),,x)),$(error CONFIG_AIR_RAW=y needs CONFIG_DEBUGLINK=y))
 ifneq ($(call feature_on,DEBUGLINK),)
   ifeq ($(call feature_on,HOSTLINK),)
@@ -482,7 +484,6 @@ ifneq ($(call feature_on,GPS_SKY),)
     $(error CONFIG_GPS_SKY=y needs CONFIG_GPS=y)
   endif
 endif
-$(if $(and $(call feature_on,P25_TRUNK),$(if $(call feature_on,P25),,x)),$(error CONFIG_P25_TRUNK=y needs CONFIG_P25=y))
 ifeq ($(call feature_on,FM)$(call feature_on,DMR),)
   $(error at least one of CONFIG_FM and CONFIG_DMR must be y)
 endif

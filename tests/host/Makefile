@@ -125,6 +125,12 @@ mbeTest: mbeTest.c $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
 TESTS   += imbeEncTest
 imbeEncTest: imbeEncTest.c $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ imbeEncTest.c $(MBE) -lm
+# The receive-only P25 trunking follower (CONFIG_P25_TRUNK): its signaling, and whole systems through the soft modem
+TESTS   += p25TrunkTest
+P25TRUNK := $(CORE)/p25/p25_tsbk.c $(CORE)/p25/p25_follow.c $(CORE)/p25/p25_engine.c $(CORE)/air/air_session.c \
+            $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(P25) $(FEC)
+p25TrunkTest: p25TrunkTest.c $(P25TRUNK) $(wildcard $(CORE)/p25/*.h) $(wildcard $(CORE)/air/*.h) $(ROOT)/hal/hal_air.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_AIR=1 -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -o $@ p25TrunkTest.c $(P25TRUNK) -lm
 
 # The P25 voice path: engine frames through the full-rate decoder to PCM blocks (core/p25/p25Voice.c)
 TESTS   += p25VoiceTest
@@ -206,6 +212,7 @@ run: $(TESTS)
 	./imbeEncTest | tail -1
 	./airSoftmodemTest | tail -1
 	./p25EngineTest
+	./p25TrunkTest
 	./p25VoiceTest
 	./hrc6000AirTest
 	./radioKeysTest

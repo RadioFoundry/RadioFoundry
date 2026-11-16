@@ -11,6 +11,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "../config.h"
 #include "../air/air_framer.h"
 
 // Data unit IDs (table 8-4)
@@ -124,6 +125,9 @@ typedef struct {
 	int8_t cur_errs;
 	uint8_t last_duid;	// of the unit before, 0xFF none: an LDU with a lost NID is placed after its twin
 	uint8_t coasted;	// units in a row placed that way
+#if CONFIG_P25_TRUNK
+	bool trunk;		// trunking signaling (TSDU) and multi-block trunking packets are taken too (p25_tsbk.h)
+#endif
 } p25_rx_t;
 
 // The mode's table for the framer. Its context is a p25_rx_t; its frame buffer holds P25_UNIT_SYMS_MAX symbols
@@ -150,6 +154,10 @@ typedef struct {
 	// corrected (P25_VOICE_ERRS_BAD or more: not to be trusted)
 	void (*voice)(const uint8_t imbe[P25_IMBE_BYTES], uint8_t errs, void *ctx);
 	void (*end)(void *ctx);				// a terminator, or the signal is gone
+#if CONFIG_P25_TRUNK
+	// Every unit taken, before the call layer reads it (NULL: none). Trunking signaling goes only here
+	void (*unit)(const p25_rx_unit_t *u, void *ctx);
+#endif
 } p25_call_sink_t;
 #define P25_VOICE_ERRS_BAD	9
 

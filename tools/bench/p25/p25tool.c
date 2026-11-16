@@ -8,7 +8,9 @@
 //   p25tool decode IN.dibits [options]			symbols through the framer and the call layer
 //   p25tool disc   IN.raw [options]			discriminator samples through the soft modem, then as decode
 //   p25tool mod    IN.dibits OUT.raw [options]		a C4FM model: symbols to discriminator samples (for tests)
+//   p25tool cc     OUT.dibits EXPECT.json [options]	a trunked system's control channel: signaling blocks (TSDU)
 //
+// decode and disc --trunk also take trunking signaling and multi-block trunking packets, and print their blocks.
 // Dibit files: four symbols to a byte, the first in bits 7-6; 01 = +3, 00 = +1, 10 = -1, 11 = -3 (hal/hal_air.h).
 // --unpacked: one symbol a byte, in its low two bits.
 #include <math.h>
@@ -19,6 +21,7 @@
 #include "air/air_softmodem.h"
 #include "air/air_syms.h"
 #include "p25/p25.h"
+#include "p25/p25_tsbk.h"
 
 #define SYM_RATE	4800
 
@@ -98,6 +101,7 @@ static const char *duid_name(uint8_t duid)
 	case P25_DUID_LDU1: return "LDU1";
 	case P25_DUID_LDU2: return "LDU2";
 	case P25_DUID_PDU: return "PDU";
+	case P25_DUID_TSDU: return "TSDU";
 	case P25_DUID_TDULC: return "TDULC";
 	default: return "?";
 	}
@@ -371,6 +375,112 @@ static int cmd_gen(const char *out_path, const char *exp_path, const opts_t *o)
 	return 0;
 }
 
+// ── cc: a control channel. Its broadcasts in turn (network and RFSS status, the channel identifier, an adjacent
+// site, a secondary control channel), one to three blocks a unit, units back to back; with --grant, a group voice
+// grant in every unit from --grant-at on. For the bench and the tests: a radio sends none of this ──
+static void tsbk_json(FILE *f, const uint8_t blk[P25_TSBK_BYTES]);
+
+static int cmd_cc(const char *out_path, const char *exp_path, const opts_t *o)
+{
+	static uint8_t unit[P25_UNIT_BYTES_MAX];
+	uint16_t nac = (uint16_t)opt_long(o, "--nac", P25_NAC_DEFAULT, 16);
+	uint32_t wacn = (uint32_t)opt_long(o, "--wacn", 0xBEE00, 16);
+	uint16_t sysid = (uint16_t)opt_long(o, "--sysid", 0x2F3, 16);
+	uint8_t rfss = (uint8_t)opt_long(o, "--rfss", 1, 10), site = (uint8_t)opt_long(o, "--site", 1, 10);
+	long units = opt_long(o, "--units", 40, 10), grant_at = opt_long(o, "--grant-at", 10, 10);
+	long base = opt_long(o, "--base", 851006250, 10), spacing = opt_long(o, "--spacing", 6250, 10);
+	uint16_t ch = (uint16_t)opt_long(o, "--ch", 0x1004, 16);
+	long g_tg = -1, g_ch = 0, g_src = 1, g_svc = 0;
+	uint8_t *syms;
+	size_t n = 0;
+	FILE *e = fopen(exp_path, "w");
+
+	if (opt(o, "--grant") && sscanf(opt(o, "--grant"), "%ld:%lx:%ld:%li", &g_tg, &g_ch, &g_src, &g_svc) < 2)
+		die("--grant TG:CH[:SRC[:SVC]] (CH in hex)", opt(o, "--grant"));
+	if (!e || nac > 0xFFF || wacn > 0xFFFFF || sysid > 0xFFF || units < 1 || units > 100000 || base <= 0 ||
+	    base / 5 > 0xFFFFFFFFl || spacing <= 0 || spacing % 125 || spacing / 125 > 1023)
+		die("an option is out of range", NULL);
+	syms = malloc((size_t)units * p25_blocks_syms(3));
+	if (!syms)
+		die("out of memory", NULL);
+	fprintf(e, "{\"format\":\"p25-cc-expect/1\",\"nac\":%u,\"wacn\":%u,\"sysid\":%u,\"units\":[", nac, wacn, sysid);
+	for (long u = 0, rot = 0; u < units; u++) {
+		uint8_t b[3][P25_TSBK_BYTES];
+		p25_tsbk_t m;
+		unsigned k = 0, nb = 1 + (unsigned)(u % 3);
+
+		if (g_tg >= 0 && u >= grant_at) {
+			memset(&m, 0, sizeof m);
+			m.kind = P25_TSBK_GRANT;
+			m.opcode = P25_OP_GRP_V_GRANT;
+			m.u.grant.svc = (uint8_t)g_svc;
+			m.u.grant.ch = (uint16_t)g_ch;
+			m.u.grant.tg = (uint16_t)g_tg;
+			m.u.grant.src = (uint32_t)g_src;
+			p25_tsbk_make(&m, b[k++]);
+		}
+		while (k < nb) {
+			uint8_t which = (uint8_t)(rot++ % 5);
+
+			memset(&m, 0, sizeof m);
+			switch (which) {
+			case 0:
+				m.kind = P25_TSBK_NET;
+				m.u.net.lra = 1;
+				m.u.net.wacn = wacn;
+				m.u.net.sysid = sysid;
+				m.u.net.ch = ch;
+				m.u.net.ssc = 0x70;
+				break;
+			case 1:
+			case 3:
+				m.kind = which == 1 ? P25_TSBK_RFSS : P25_TSBK_ADJ;
+				m.u.site.lra = 1;
+				m.u.site.sysid = sysid;
+				m.u.site.rfss = rfss;
+				m.u.site.site = (uint8_t)(m.kind == P25_TSBK_RFSS ? site : site + 1);
+				m.u.site.ch = (uint16_t)(m.kind == P25_TSBK_RFSS ? ch : ch + 2);
+				m.u.site.ssc = 0x70;
+				break;
+			case 2:
+				m.kind = P25_TSBK_IDEN;
+				m.u.iden.id = (uint8_t)(ch >> 12);
+				m.u.iden.form = P25_OP_IDEN_UP;
+				m.u.iden.base = (uint32_t)(base / 5);
+				m.u.iden.spacing = (uint16_t)(spacing / 125);
+				m.u.iden.bw_khz8 = 100;
+				break;
+			default:
+				m.kind = P25_TSBK_SCCB;
+				m.u.sccb.rfss = rfss;
+				m.u.sccb.site = site;
+				m.u.sccb.ch[0] = (uint16_t)(ch + 1);
+				break;
+			}
+			p25_tsbk_make(&m, b[k++]);
+		}
+		p25_unit_begin(unit, p25_blocks_syms((uint8_t)nb), nac, P25_DUID_TSDU, P25_SS_IDLE);
+		fprintf(e, "%s{\"at\":%zu,\"nsyms\":%u,\"blocks\":[", u ? "," : "", n, p25_blocks_syms((uint8_t)nb));
+		for (k = 0; k < nb; k++) {
+			b[k][0] = (uint8_t)((b[k][0] & 0x7F) | (k == nb - 1 ? P25_TSBK_LB : 0));
+			p25_tsbk_seal(b[k]);
+			p25_block_put(unit, (uint8_t)k, b[k]);
+			if (k)
+				fputc(',', e);
+			tsbk_json(e, b[k]);
+		}
+		fputs("]}", e);
+		for (uint16_t i = 0; i < p25_blocks_syms((uint8_t)nb); i++)
+			syms[n++] = air_sym_get(unit, i);
+	}
+	fprintf(e, "],\"total_syms\":%zu}\n", n);
+	fclose(e);
+	write_syms(out_path, syms, n, flag(o, "--unpacked"), p25_air_mode.profile.idle);
+	printf("{\"ev\":\"cc\",\"syms\":%zu,\"units\":%ld}\n", n, units);
+	free(syms);
+	return 0;
+}
+
 // ── decode and disc: units out through the framer and the call layer ──
 static p25_call_rx_t g_call;
 static air_framer_t g_fr;
@@ -385,6 +495,80 @@ static void frame_hook(const air_frame_t *f, void *ctx)
 	g_frame_soft = f->soft;
 	p25_air_mode.rx_frame(f, ctx);
 	g_frame_soft = NULL;
+}
+
+static const char *const KIND[] = { "other", "mfr", "grant", "iden", "net", "rfss", "adj", "sccb", "sys_srv" };
+
+static void tsbk_json(FILE *f, const uint8_t blk[P25_TSBK_BYTES])
+{
+	p25_tsbk_t m;
+	bool known = p25_tsbk_parse(blk, &m);
+
+	fprintf(f, "{\"raw\":");
+	put_hex(f, blk, P25_TSBK_BYTES);
+	fprintf(f, ",\"opcode\":%u,\"mfid\":%u,\"last\":%s,\"prot\":%s,\"kind\":\"%s\"", m.opcode, m.mfid,
+		m.last ? "true" : "false", m.prot ? "true" : "false", m.prot ? "protected" : KIND[m.kind]);
+	if (!known) {
+		fputc('}', f);
+		return;
+	}
+	switch (m.kind) {
+	case P25_TSBK_GRANT:
+		fprintf(f, ",\"unit\":%s,\"ch\":%u,\"tg\":%u,\"ch2\":%u,\"tg2\":%u,\"dst\":%u,\"src\":%u",
+			m.u.grant.unit ? "true" : "false", m.u.grant.ch, m.u.grant.tg, m.u.grant.ch2, m.u.grant.tg2,
+			m.u.grant.dst, m.u.grant.src);
+		if (m.u.grant.has_svc)
+			fprintf(f, ",\"svc\":%u", m.u.grant.svc);
+		break;
+	case P25_TSBK_IDEN:
+		fprintf(f, ",\"id\":%u,\"base_hz\":%llu,\"spacing_hz\":%u,\"tx_off\":%d,\"bw_hz\":%u,\"tdma\":%s,"
+			"\"slots\":%u", m.u.iden.id, (unsigned long long)m.u.iden.base * 5, m.u.iden.spacing * 125u,
+			m.u.iden.tx_off, m.u.iden.bw_khz8 * 125u, m.u.iden.tdma ? "true" : "false", m.u.iden.slots);
+		break;
+	case P25_TSBK_NET:
+		fprintf(f, ",\"wacn\":%u,\"sysid\":%u,\"ch\":%u,\"ssc\":%u", m.u.net.wacn, m.u.net.sysid, m.u.net.ch,
+			m.u.net.ssc);
+		break;
+	case P25_TSBK_RFSS:
+	case P25_TSBK_ADJ:
+		fprintf(f, ",\"sysid\":%u,\"rfss\":%u,\"site\":%u,\"ch\":%u,\"ssc\":%u", m.u.site.sysid,
+			m.u.site.rfss, m.u.site.site, m.u.site.ch, m.u.site.ssc);
+		break;
+	case P25_TSBK_SCCB:
+		fprintf(f, ",\"rfss\":%u,\"site\":%u,\"ch\":[%u,%u]", m.u.sccb.rfss, m.u.sccb.site, m.u.sccb.ch[0],
+			m.u.sccb.ch[1]);
+		break;
+	default:
+		break;
+	}
+	fputc('}', f);
+}
+
+// A unit of trunking blocks: each block's corrected bits (-1: its CRC failed) and its message
+static void blocks_json(const p25_rx_unit_t *u)
+{
+	uint8_t blk[P25_TSBK_BYTES];
+	uint8_t n = u->duid == P25_DUID_PDU ? 1 : u->nsyms <= p25_blocks_syms(1) ? 1 : u->nsyms <= p25_blocks_syms(2) ? 2 : 3;
+
+	printf(",\"blocks\":[");
+	for (uint8_t k = 0; k < n; k++) {
+		int r = p25_block_get(u->air, k, blk);
+
+		printf("%s{\"errs\":%d,\"msg\":", k ? "," : "", r);
+		if (u->duid == P25_DUID_PDU) {
+			p25_mbt_t h;
+
+			if (r >= 0 && p25_mbt_parse(blk, &h))
+				printf("{\"mbt\":true,\"format\":%u,\"sap\":%u,\"mfid\":%u,\"blocks\":%u,\"opcode\":%u}",
+				       h.format, h.sap, h.mfid, h.blocks, h.opcode);
+			else
+				printf("{\"mbt\":false}");
+		} else {
+			tsbk_json(stdout, blk);
+		}
+		printf("}");
+	}
+	printf("]");
 }
 
 static void unit_hook(const p25_rx_unit_t *u, void *ctx)
@@ -432,6 +616,8 @@ static void unit_hook(const p25_rx_unit_t *u, void *ctx)
 			printf(",\"algid\":%u,\"kid\":%u}", buf[9], buf[10] << 8 | buf[11]);
 		}
 	}
+	if (u->duid == P25_DUID_TSDU || u->duid == P25_DUID_PDU)
+		blocks_json(u);
 	if (u->duid == P25_DUID_LDU1 || u->duid == P25_DUID_LDU2) {
 		r = p25_ldu_lsd_get(u->air, buf);
 		printf(",\"lsd_errs\":%d,\"lsd\":", r);
@@ -476,7 +662,7 @@ static void on_voice(const uint8_t imbe[P25_IMBE_BYTES], uint8_t errs, void *ctx
 }
 static void on_end(void *ctx) { (void)ctx; printf("{\"ev\":\"call_end\"}\n"); }
 
-static const p25_call_sink_t sink = { on_start, on_update, on_voice, on_end };
+static const p25_call_sink_t sink = { on_start, on_update, on_voice, on_end, NULL };
 
 static void rx_setup(const opts_t *o)
 {
@@ -489,6 +675,7 @@ static void rx_setup(const opts_t *o)
 	p25_call_rx_init(&g_call, nac, &sink, NULL);
 	g_call_unit = g_call.rx.unit;
 	g_call.rx.unit = unit_hook;
+	g_call.rx.trunk = flag(o, "--trunk");
 	air_framer_init(&g_fr, &g_mode, &g_call.rx, hard, soft, P25_UNIT_SYMS_MAX);
 }
 
@@ -756,13 +943,19 @@ int main(int argc, char **argv)
 	opts_t o;
 
 	if (argc < 3) {
-		fprintf(stderr, "usage: p25tool gen OUT EXPECT | decode IN | disc IN | mod IN OUT [options]  (tools/bench/p25tool.py)\n");
+		fprintf(stderr, "usage: p25tool gen OUT EXPECT | cc OUT EXPECT | decode IN | disc IN | mod IN OUT [options]  "
+			"(tools/bench/p25tool.py)\n");
 		return 2;
 	}
 	if (!strcmp(argv[1], "gen") && argc >= 4) {
 		o.argc = argc - 4;
 		o.argv = argv + 4;
 		return cmd_gen(argv[2], argv[3], &o);
+	}
+	if (!strcmp(argv[1], "cc") && argc >= 4) {
+		o.argc = argc - 4;
+		o.argv = argv + 4;
+		return cmd_cc(argv[2], argv[3], &o);
 	}
 	if (!strcmp(argv[1], "mod") && argc >= 4) {
 		o.argc = argc - 4;

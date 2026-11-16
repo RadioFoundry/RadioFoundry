@@ -295,6 +295,11 @@
 #ifndef CONFIG_AIR
 #define CONFIG_AIR			CONFIG_P25
 #endif
+// P25 trunked: the codec of its systems and channels (docs/spec/p25-codeplug.md 3) and, receive only, the control
+// channel decoded and voice channel grants followed (core/p25/p25_follow.c)
+#ifndef CONFIG_P25_TRUNK
+#define CONFIG_P25_TRUNK		0
+#endif
 #ifndef CONFIG_AIR_RAW
 #define CONFIG_AIR_RAW			0
 #endif
@@ -303,10 +308,6 @@
 #endif
 #ifndef CONFIG_MBE
 #define CONFIG_MBE			CONFIG_IMBE
-#endif
-// P25_TRUNK: the codec of P25 trunked systems and channels (docs/spec/p25-codeplug.md 3)
-#ifndef CONFIG_P25_TRUNK
-#define CONFIG_P25_TRUNK		0
 #endif
 // Derived: zone sharing carries channels of a kind and their systems (docs/spec/zone-share.md 4.2) in a build with a
 // mode's codec. Without it a share leaves channels of a kind out and refuses a record that has them

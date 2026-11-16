@@ -113,7 +113,8 @@ static bool tx_voice(uint8_t imbe[P25_IMBE_BYTES], void *ctx)
 	return true;
 }
 
-static const p25_engine_hooks_t hooks = { rx_start, rx_update, rx_voice, rx_end, tx_voice };
+static const p25_engine_hooks_t hooks = { .rx_start = rx_start, .rx_update = rx_update, .rx_voice = rx_voice,
+					   .rx_end = rx_end, .tx_voice = tx_voice };
 
 // --- audio callback (audio task) ---
 

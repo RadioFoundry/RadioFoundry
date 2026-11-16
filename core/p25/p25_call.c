@@ -36,6 +36,10 @@ static void on_unit(const p25_rx_unit_t *u, void *ctx)
 	bool fresh = false, changed = false;
 
 	c->stats.units++;
+#if CONFIG_P25_TRUNK
+	if (c->sink->unit)
+		c->sink->unit(u, c->ctx);
+#endif
 	switch (u->duid) {
 	case P25_DUID_HDU:
 		// A header opens a call, also on top of one whose terminator was missed
