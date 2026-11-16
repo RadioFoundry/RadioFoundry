@@ -348,12 +348,12 @@ int p25_ldu_voice_get(const uint8_t *unit, uint8_t n, uint8_t imbe[P25_IMBE_BYTE
 {
 	uint32_t c[8] = { 0 }, m[8];
 	uint16_t u[8], at = VOICE_AT[n], o = 0;
-	int errs;
+	int errs, e0, e4 = 0;
 
 	for (uint8_t i = 0; i < 144; i++)
 		c[VOICE_MAP[i] >> 5] |= p25_bits_get(unit, (uint16_t)(at + i), 1) << (VOICE_MAP[i] & 31);
 	// u_0 first: the masks of the other words come from it
-	errs = fec_golay23_decode(c[0], &u[0]);
+	errs = e0 = fec_golay23_decode(c[0], &u[0]);
 	voice_masks(u[0], m);
 	for (uint8_t k = 1; k < 4; k++)
 		errs += fec_golay23_decode(c[k] ^ m[k], &u[k]);
@@ -362,6 +362,8 @@ int p25_ldu_voice_get(const uint8_t *unit, uint8_t n, uint8_t imbe[P25_IMBE_BYTE
 
 		fec_hamming15_correct(&cw);
 		errs += cw != was;
+		if (k == 4)
+			e4 = cw != was;
 		u[k] = cw >> 4;
 	}
 	u[7] = (uint16_t)c[7];
@@ -372,7 +374,7 @@ int p25_ldu_voice_get(const uint8_t *unit, uint8_t n, uint8_t imbe[P25_IMBE_BYTE
 		for (uint8_t b = 0; b < len; b++)
 			air_bit_put(imbe, o++, (uint8_t)((u[k] >> (len - 1 - b)) & 1));
 	}
-	return errs;
+	return P25_VOICE_ERRS(errs, e0, e4);
 }
 
 void p25_ldu_voice_put(uint8_t *unit, uint8_t n, const uint8_t imbe[P25_IMBE_BYTES])

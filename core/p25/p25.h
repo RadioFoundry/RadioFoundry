@@ -77,7 +77,14 @@ int p25_tdulc_get(const uint8_t *unit, uint8_t lc[P25_LC_BYTES]);
 void p25_tdulc_put(uint8_t *unit, const uint8_t lc[P25_LC_BYTES]);
 
 // Voice frame n (0..8) of an LDU: the 144-bit voice code word to and from the 88 IMBE bits (5.3). The getter
-// returns the bits corrected (the codes never refuse: a count of 9 or more means the frame is not to be trusted)
+// returns what the codes corrected, packed (P25_VOICE_ERRS_*): they never refuse, and P25_VOICE_ERRS_BAD says when
+// the frame is not to be trusted
+#define P25_VOICE_ERRS(total, c0, c4)	((total) | (c0) << 4 | (c4) << 6)
+#define P25_VOICE_ERRS_TOTAL(e)	((e) & 15)		// bits corrected in all seven code words
+#define P25_VOICE_ERRS_C0(e)	(((e) >> 4) & 3)	// in the first (the others are descrambled with its word)
+#define P25_VOICE_ERRS_C4(e)	(((e) >> 6) & 1)	// in the fifth
+// The first word had two or more and the frame eleven or more: the descrambling was most likely wrong
+#define P25_VOICE_ERRS_BAD(e)	(P25_VOICE_ERRS_C0(e) >= 2 && P25_VOICE_ERRS_TOTAL(e) >= 11)
 int p25_ldu_voice_get(const uint8_t *unit, uint8_t n, uint8_t imbe[P25_IMBE_BYTES]);
 void p25_ldu_voice_put(uint8_t *unit, uint8_t n, const uint8_t imbe[P25_IMBE_BYTES]);
 
@@ -146,11 +153,10 @@ typedef struct {
 	void (*start)(const p25_call_t *c, void *ctx);
 	void (*update)(const p25_call_t *c, void *ctx);	// a field came in or changed
 	// A voice frame, in air order: nine per LDU, handed over together when the LDU is in. errs: the bits its codes
-	// corrected (P25_VOICE_ERRS_BAD or more: not to be trusted)
+	// corrected, packed (P25_VOICE_ERRS_*)
 	void (*voice)(const uint8_t imbe[P25_IMBE_BYTES], uint8_t errs, void *ctx);
 	void (*end)(void *ctx);				// a terminator, or the signal is gone
 } p25_call_sink_t;
-#define P25_VOICE_ERRS_BAD	9
 
 typedef struct {
 	uint32_t units, voice, voice_bad, voice_bits, lc_fail, es_fail, calls;

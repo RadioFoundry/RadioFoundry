@@ -338,7 +338,7 @@ static const uint16_t LVL_B_RMS[] = {
 
 // the decoder and everything it needs, in one place
 typedef struct {
-	imbe_state_t st;
+	imbe_dec_state_t st;
 	mbe_params_t pr;
 	mbe_state_t ms;
 	mbe_frame_t prev, cur;
@@ -415,10 +415,10 @@ static void test_dequantizer(void)
 	int frame = 0, worst = 0;
 
 	for (int sq = 0; sq < (int)sizeof GOLD_SEQ; sq++) {
-		imbe_state_reset(&r->st);
+		imbe_state_reset(&r->st.q);
 		for (; frame < GOLD_FRAMES && (sq + 1 == (int)sizeof GOLD_SEQ || frame < GOLD_SEQ[sq + 1]); frame++) {
 			mbe_params_t p;
-			int st = imbe_unpack(&r->st, GOLD_BITS[frame], &p), err = 0, vm = 0;
+			int st = imbe_unpack(&r->st.q, GOLD_BITS[frame], &p), err = 0, vm = 0;
 			double wrel;
 
 			CHECK(st == IMBE_FRAME_OK, "frame %d: unpack gave %d", frame, st);
@@ -457,9 +457,9 @@ static void test_pitch_codes(void)
 		int st, L;
 		double w0;
 
-		imbe_state_reset(&r->st);
+		imbe_state_reset(&r->st.q);
 		frame_b0(f, b0, 1);
-		st = imbe_unpack(&r->st, f, &p);
+		st = imbe_unpack(&r->st.q, f, &p);
 		if (b0 >= 216 && b0 <= 219) {
 			CHECK(st == IMBE_FRAME_SILENCE, "b0 %d: %d, expected silence", b0, st);
 		} else if (b0 > 207) {
@@ -472,7 +472,7 @@ static void test_pitch_codes(void)
 			CHECK(fabs(p.w0 - w0 / (2 * M_PI) * 4294967296.0) < 64, "b0 %d: w0 %u", b0, p.w0);
 		}
 		if (st != IMBE_FRAME_OK)
-			CHECK(r->st.L == 30, "b0 %d: the state moved", b0);
+			CHECK(r->st.q.L == 30, "b0 %d: the state moved", b0);
 	}
 	free(r);
 }
@@ -625,7 +625,7 @@ static void test_conceal(void)
 {
 	rig_t *r = malloc(sizeof *r);
 	int16_t pcm[MBE_FRAME_LEN];
-	double good = 0, d[6];
+	double good = 0, d[MBE_REPEAT_MAX + 3];
 	uint8_t bad_pitch[IMBE_BYTES];
 
 	rig_init(r);
@@ -634,9 +634,9 @@ static void test_conceal(void)
 		good = rms_of(pcm, MBE_FRAME_LEN);
 	}
 	CHECK(good > 300, "no signal before the loss: %.0f", good);
-	// FEC found too many errors: the frame is not used, whatever its bits are
-	for (int i = 0; i < 6; i++) {
-		int run = imbe_dec_frame(&r->m, LVL_A_BITS[i], IMBE_ERRS_MAX + 1, pcm);
+	// the first code word had two errors and the frame eleven: the frame is not used, whatever its bits are
+	for (int i = 0; i < MBE_REPEAT_MAX + 3; i++) {
+		int run = imbe_dec_frame(&r->m, LVL_A_BITS[i], IMBE_ERRS(11, 2, 0), pcm);
 
 		CHECK(run == (i < MBE_REPEAT_MAX + 1 ? i + 1 : MBE_REPEAT_MAX + 1), "bad frame %d: run %d", i, run);
 		d[i] = rms_of(pcm, MBE_FRAME_LEN);
@@ -644,17 +644,22 @@ static void test_conceal(void)
 	for (int i = 0; i < MBE_REPEAT_MAX; i++)
 		CHECK(fabs(db(d[i], good)) < 1.5, "repeat %d: %.0f against %.0f", i + 1, d[i], good);
 	CHECK(d[MBE_REPEAT_MAX] < 0.8 * good, "the frame after the repeats does not fade: %.0f", d[MBE_REPEAT_MAX]);
-	CHECK(d[4] < 2 && d[5] < 2, "not muted: %.1f %.1f", d[4], d[5]);
-	CHECK(r->st.L == 30 && r->st.lg[1] == 0, "the prediction was not reset by the mute");
+	CHECK(d[MBE_REPEAT_MAX + 1] < 2 && d[MBE_REPEAT_MAX + 2] < 2, "not muted: %.1f %.1f", d[MBE_REPEAT_MAX + 1],
+	      d[MBE_REPEAT_MAX + 2]);
+	CHECK(r->st.q.L == 30 && r->st.q.lg[1] == 0, "the prediction was not reset by the mute");
 	// a good frame after the mute decodes as the first of a call and plays
 	imbe_dec_frame(&r->m, LVL_A_BITS[0], 0, pcm);
 	imbe_dec_frame(&r->m, LVL_A_BITS[1], 0, pcm);
 	CHECK(rms_of(pcm, MBE_FRAME_LEN) > 100, "no sound after the mute");
 
-	// an errors count of IMBE_ERRS_MAX is still a good frame
+	// many corrected bits with the first word sound, or two errors there in a frame with few: still good frames
 	rig_init(r);
-	CHECK(imbe_dec_frame(&r->m, LVL_A_BITS[0], IMBE_ERRS_MAX, pcm) == 0, "5 errors counted bad");
+	CHECK(imbe_dec_frame(&r->m, LVL_A_BITS[0], IMBE_ERRS(12, 1, 1), pcm) == 0, "12 errors, 1 in the first word, counted bad");
+	CHECK(imbe_dec_frame(&r->m, LVL_A_BITS[1], IMBE_ERRS(10, 3, 0), pcm) == 0, "10 errors counted bad");
+	CHECK(imbe_dec_frame(&r->m, LVL_A_BITS[2], IMBE_ERRS(11, 2, 0), pcm) == 1, "11 errors, 2 in the first word, counted good");
 	// a pitch code that is not used is a bad frame
+	rig_init(r);
+	imbe_dec_frame(&r->m, LVL_A_BITS[0], 0, pcm);
 	frame_b0(bad_pitch, 210, 1);
 	CHECK(imbe_dec_frame(&r->m, bad_pitch, 0, pcm) == 1, "invalid pitch not counted bad");
 	// a loss before any good frame: nothing to repeat
@@ -667,14 +672,78 @@ static void test_conceal(void)
 		imbe_dec_frame(&r->m, LVL_A_BITS[i], 0, pcm);
 	frame_b0(bad_pitch, 217, 1);
 	CHECK(imbe_dec_frame(&r->m, bad_pitch, 0, pcm) == 0, "silence frame counted bad");
-	CHECK(r->st.L == 30, "silence frame did not reset the prediction");
+	CHECK(r->st.q.L == 30, "silence frame did not reset the prediction");
 	imbe_dec_frame(&r->m, bad_pitch, 0, pcm);
 	CHECK(rms_of(pcm, MBE_FRAME_LEN) < 2, "silence frame is not silent");
 	// the named silence frame is one
-	CHECK(imbe_unpack(&r->st, imbe_silence, &r->pr) == IMBE_FRAME_SILENCE, "imbe_silence is not a silence frame");
+	CHECK(imbe_unpack(&r->st.q, imbe_silence, &r->pr) == IMBE_FRAME_SILENCE, "imbe_silence is not a silence frame");
 	CHECK(imbe_dec_frame(&r->m, imbe_silence, 0, pcm) == 0 && rms_of(pcm, MBE_FRAME_LEN) < 2,
 	      "imbe_silence does not decode as silence");
 	free(r);
+}
+
+// a channel with errors: nothing changes while it is clean, the output is muted while the rate of corrected bits is
+// over 8.5 % and comes back when it falls, and a frame's amplitudes are held under errors
+static void test_channel_errors(void)
+{
+	rig_t *a = malloc(sizeof *a), *b = malloc(sizeof *b);
+	int16_t pa[MBE_FRAME_LEN], pb[MBE_FRAME_LEN];
+	uint8_t loud[IMBE_BYTES];
+	int same = 1, muted_at = -1, back_at = -1;
+	double clean = 0, held = 0;
+
+	// up to four corrected bits a frame now and then: the same samples as with none
+	rig_init(a);
+	rig_init(b);
+	for (int i = 0; i < LVL_FRAMES; i++) {
+		imbe_dec_frame(&a->m, LVL_A_BITS[i], 0, pa);
+		imbe_dec_frame(&b->m, LVL_A_BITS[i], i % 8 ? 0 : IMBE_ERRS(4, 1, 1), pb);
+		same &= !memcmp(pa, pb, sizeof pa);
+	}
+	CHECK(same, "a clean channel's frames changed with a few corrected bits");
+	CHECK(b->st.err_rate > 0 && b->st.err_rate <= 83886, "error rate %u", (unsigned)b->st.err_rate);
+	// 8 bits in every frame settles at 5.7 %: smoothed, still playing
+	rig_init(b);
+	for (int i = 0; i < 200; i++)
+		CHECK(imbe_dec_frame(&b->m, LVL_A_BITS[i % LVL_FRAMES], IMBE_ERRS(8, 1, 0), pb) == 0, "8 bits a frame muted, frame %d", i);
+	CHECK(rms_of(pb, MBE_FRAME_LEN) > 100, "8 bits a frame: no sound");
+	// 13 bits in every frame settles at 9.3 %: muted, and counted as bad frames
+	rig_init(b);
+	for (int i = 0; i < 200; i++) {
+		int run = imbe_dec_frame(&b->m, LVL_A_BITS[i % LVL_FRAMES], IMBE_ERRS(13, 1, 0), pb);
+
+		if (run && muted_at < 0)
+			muted_at = i;
+		CHECK(muted_at < 0 || run, "frame %d played after the mute at %d", i, muted_at);
+	}
+	CHECK(muted_at > 20 && muted_at < 80, "muted at frame %d", muted_at);
+	CHECK(rms_of(pb, MBE_FRAME_LEN) < 2, "not silent over the limit: %.1f", rms_of(pb, MBE_FRAME_LEN));
+	// clean frames again: the rate falls, the speech comes back within a few frames
+	for (int i = 0; i < 40; i++)
+		if (imbe_dec_frame(&b->m, LVL_A_BITS[i], 0, pb) == 0 && back_at < 0)
+			back_at = i;
+	CHECK(back_at >= 1 && back_at < 6, "back at frame %d", back_at);
+	CHECK(rms_of(pb, MBE_FRAME_LEN) > 100, "no sound after the mute");
+	// frames that never came do not count against the channel
+	rig_init(b);
+	for (int i = 0; i < 50; i++)
+		imbe_dec_frame(&b->m, LVL_A_BITS[0], IMBE_ERRS_LOST, pb);
+	CHECK(b->st.err_rate == 0, "lost frames raised the error rate: %u", (unsigned)b->st.err_rate);
+	// the largest amplitudes a frame can carry: under errors their sum is held, so the frame is quieter
+	rig_init(a);
+	rig_init(b);
+	memset(loud, 0xFF, sizeof loud);
+	frame_b0(loud, 60, 0);
+	memset(loud + 1, 0xFF, 3);
+	for (int i = 0; i < 12; i++) {
+		imbe_dec_frame(&a->m, loud, 0, pa);
+		imbe_dec_frame(&b->m, loud, IMBE_ERRS(9, 1, 1), pb);
+		clean += rms_of(pa, MBE_FRAME_LEN);
+		held += rms_of(pb, MBE_FRAME_LEN);
+	}
+	CHECK(held <= clean, "amplitudes under errors %.0f, clean %.0f", held / 12, clean / 12);
+	free(a);
+	free(b);
 }
 
 // the largest amplitudes: the output saturates, nothing wraps, nothing overflows (the sanitizers watch)
@@ -739,7 +808,7 @@ static void test_extremes(void)
 
 		for (int k = 0; k < IMBE_BYTES; k++)
 			f[k] = (uint8_t)rng();
-		imbe_dec_frame(&r->m, f, (uint8_t)(rng() % 8), pcm);
+		imbe_dec_frame(&r->m, f, (uint8_t)rng(), pcm);
 	}
 	free(r);
 }
@@ -762,7 +831,7 @@ static void test_determinism(void)
 	}
 	CHECK(same, "two decoders gave different output");
 	printf("memory: kept %zu + %zu + %zu B (core state, previous frame, prediction), scratch %zu + %zu + %zu B (frame, FFT, params)\n",
-	       sizeof(mbe_state_t), sizeof(mbe_frame_t), sizeof(imbe_state_t), sizeof(mbe_frame_t),
+	       sizeof(mbe_state_t), sizeof(mbe_frame_t), sizeof(imbe_dec_state_t), sizeof(mbe_frame_t),
 	       sizeof(int32_t) * MBE_BUF_WORDS, sizeof(mbe_params_t));
 	free(a);
 	free(b);
@@ -777,6 +846,7 @@ int main(void)
 	test_silence();
 	test_level();
 	test_conceal();
+	test_channel_errors();
 	test_extremes();
 	test_determinism();
 	printf("mbeTest: %d checks, %d failed\n", checks, failures);

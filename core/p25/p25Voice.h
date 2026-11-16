@@ -37,7 +37,7 @@
 
 typedef struct {
 	uint8_t seq;		// the call it belongs to
-	uint8_t errs;		// bits the FEC corrected (more than IMBE_ERRS_MAX: bad)
+	uint8_t errs;		// what the FEC corrected, packed (IMBE_ERRS)
 	uint8_t imbe[P25_IMBE_BYTES];
 } p25_voice_entry_t;
 
@@ -53,7 +53,7 @@ typedef struct {
 	p25_voice_entry_t q[P25_VOICE_QUEUE];
 	p25_voice_tx_entry_t tq[P25_VOICE_TX_QUEUE];
 	mbe_est_state_t est;
-	imbe_state_t st;
+	imbe_dec_state_t st;
 	mbe_params_t pr;
 	mbe_state_t ms;
 	mbe_frame_t prev, cur;

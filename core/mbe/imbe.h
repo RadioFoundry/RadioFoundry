@@ -11,27 +11,47 @@
 #include "mbe.h"
 
 #define IMBE_BYTES	11	// the 88 information bits, first bit first: u0..u3 12 bits each, u4..u6 11 each, u7 7
-#define IMBE_ERRS_MAX	5	// bits the frame's FEC corrected, above which the frame is not used (it is repeated)
+// What the frame's codes corrected, in one byte, as the decoder's rules need it: the bits corrected in all seven code
+// words (0..15), those in the first (u0's Golay word, 0..3: the other words are descrambled with it) and that in the
+// fifth (u4's Hamming word, 0 or 1)
+#define IMBE_ERRS(total, c0, c4)	((uint8_t)((total) | (c0) << 4 | (c4) << 6))
+#define IMBE_ERRS_TOTAL(e)	((e) & 15)
+#define IMBE_ERRS_C0(e)		(((e) >> 4) & 3)
+#define IMBE_ERRS_C4(e)		(((e) >> 6) & 1)
+#define IMBE_ERRS_LOST		0xFF	// no frame at all
+// A frame is not used, and the last one repeated, when its first word had two or more errors and the frame eleven or
+// more: the descrambling was then most likely wrong, and the other words' "corrections" are what that looks like
+#define IMBE_ERRS_REPEAT(e)	(IMBE_ERRS_C0(e) >= 2 && IMBE_ERRS_TOTAL(e) >= 11)
 
 // the pitch codes 208..215 and 220..255 are not used; 216..219 mark a silence frame
 enum { IMBE_FRAME_INVALID = -1, IMBE_FRAME_OK = 0, IMBE_FRAME_SILENCE = 1 };
 
-// what the dequantizer predicts the next frame's amplitudes from: 120 B
+// what the quantizer predicts the next frame's amplitudes from: 120 B
 typedef struct {
 	int16_t L;
 	int16_t lg[MBE_MAXL + 2];	// log2 of the last frame's harmonic amplitudes, Q11, [0] = 0
 } imbe_state_t;
 
+// the decoder's: that, and its view of the channel: 132 B
 typedef struct {
-	imbe_state_t *s;		// kept
+	imbe_state_t q;
+	uint32_t err_rate;		// the running rate of corrected bits, Q24
+	uint32_t energy;		// the running energy of the frames (sum of the squared model amplitudes)
+	int32_t amp_max;		// what the sum of a frame's amplitudes may be
+} imbe_dec_state_t;
+
+typedef struct {
+	imbe_dec_state_t *s;		// kept
 	mbe_params_t *p;		// scratch: the frame's parameters
 	mbe_mem_t mbe;			// the synthesis core's memory
 } imbe_mem_t;
 
 void imbe_dec_init(const imbe_mem_t *m);
-// One frame. imbe: the 88 bits after the frame's FEC and descrambling. errs: the bits that FEC corrected (more than
-// IMBE_ERRS_MAX, or a pitch code that is not used: the last good frame is repeated up to MBE_REPEAT_MAX times, then the
-// output is silent). Returns the number of bad frames in a row, 0 for a good one.
+// One frame. imbe: the 88 bits after the frame's FEC and descrambling. errs: what that FEC corrected (IMBE_ERRS). A frame
+// that is not used (IMBE_ERRS_REPEAT, or a pitch code that is not used) repeats the last good one, up to
+// MBE_REPEAT_MAX times, then the output is silent; it is silent too while the rate of corrected bits is over 8.5 %.
+// Under errors the frame's voicing and amplitudes are smoothed. Returns the number of bad frames in a row, 0 for a
+// good one.
 int imbe_dec_frame(const imbe_mem_t *m, const uint8_t imbe[IMBE_BYTES], uint8_t errs, int16_t pcm[MBE_FRAME_LEN]);
 // A frame of silence (pitch code 216): what a transmitter sends when it has no speech, and what decodes as silence
 extern const uint8_t imbe_silence[IMBE_BYTES];

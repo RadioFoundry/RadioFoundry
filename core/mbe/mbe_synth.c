@@ -31,7 +31,7 @@ _Static_assert(N % SEG == 0, "segments");
 // Spectral amplitude enhancement in the log domain:
 // W_l = sqrt(M_l) (0.96 pi (R0^2 + R1^2 - 2 R0 R1 cos(w0 l)) / (w0 R0 (R0^2 - R1^2)))^0.25, limited, 1 for the lowest
 // harmonics; then the energy is restored.
-static void enhance(int16_t *out, const int16_t *a, int L, uint32_t w0)
+void mbe_enhance(int16_t *out, const int16_t *a, int L, uint32_t w0)
 {
 	int32_t amax = -32768, R0 = 0, R1 = 0;	// R0, R1 under 56 * 2^24
 	int64_t R00, D2, r0r1, s2, R0p = 0;
@@ -333,7 +333,7 @@ int mbe_synth_frame(const mbe_mem_t *m, const mbe_params_t *in, int bad, int16_t
 		if (src->flags & MBE_NO_ENHANCE)
 			memcpy(f->a, src->a, (size_t)L * sizeof f->a[0]);
 		else
-			enhance(f->a, src->a, L, f->w0);
+			mbe_enhance(f->a, src->a, L, f->w0);
 		memcpy(f->v, src->v, (size_t)L);
 		set_phases(f, s->rng ^ 0x5BD1E995u);
 	}

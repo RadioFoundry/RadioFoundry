@@ -439,7 +439,7 @@ static void unit_hook(const p25_rx_unit_t *u, void *ctx)
 		printf(",\"voice\":[");
 		for (uint8_t v = 0; v < P25_VOICE_FRAMES; v++) {
 			uint8_t imbe[P25_IMBE_BYTES];
-			int errs = p25_ldu_voice_get(u->air, v, imbe);
+			int errs = P25_VOICE_ERRS_TOTAL(p25_ldu_voice_get(u->air, v, imbe));
 
 			printf("%s{\"imbe\":", v ? "," : "");
 			put_hex(stdout, imbe, sizeof imbe);

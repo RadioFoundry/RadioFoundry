@@ -132,7 +132,7 @@ static void testBadAndOverflow(void)
 
 	begin();
 	hk->rx_start(NULL, NULL);
-	ldu(IMBE_ERRS_MAX + 1);	// FEC gave up on every frame
+	ldu(IMBE_ERRS(11, 2, 0));	// frames the decoder does not trust
 	for (int i = 0; i < P25_VOICE_LEAD + P25_VOICE_FRAMES; i++)
 		CHECK(!block(), "a bad frame with nothing to repeat sounded");
 	p25VoiceGetStats(&s);
