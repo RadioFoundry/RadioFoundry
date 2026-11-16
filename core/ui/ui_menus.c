@@ -1271,40 +1271,55 @@ static const ui_scr_def_t channels_screen = {
 	.filter = &(const ui_filter_def_t){ .raw_count = chans_raw_count, .raw_label = chans_raw_label },
 };
 
+// Whether ch runs P25: a stored P25 channel, or a plain one in P25 for now (the VFO)
+static bool ced_is_p25(const channel_t *ch)
+{
+	return CONFIG_P25 && (ch->kind == CODEPLUG_KIND_P25 || (ch->kind == CODEPLUG_KIND_NONE && ch->mode == RADIO_MODE_P25));
+}
+
 // A channel row's value: its RX frequency and what it talks to, the talkgroup on DMR ("TG3113", "ID9991234" for a
-// private contact) or "FM". The whole name comes first; where both don't fit beside it, the frequency and the bare
-// number, then the talkgroup alone (text alternates)
+// private contact), on P25 its name and talkgroup ("P25 TG201"), or "FM". The whole name comes first; where both don't
+// fit beside it, the frequency and the bare number (P25: the frequency and "P25"), then the talkgroup alone (text
+// alternates)
 static void sb_channel_row(sbuf_t *b, const channel_t *ch)
 {
 	char what[16];
-	uint8_t prefix = 0;	// "TG" / "ID": left out in the middle form
+	uint8_t mid = 0;	// the middle form: what from here ("TG" left out), or for P25 its kind's name alone
 	sbuf_t wb;
 	sb_init(&wb, what, sizeof what);
-	if (ch->kind != CODEPLUG_KIND_NONE) {
-		sb_str(&wb, codeplug_kind_name(ch->kind));	// another kind (docs/spec/channel-modes.md): its short name
-	} else
+	bool p25 = ced_is_p25(ch);
 #if CONFIG_DMR
-	if (ch->mode == RADIO_MODE_DMR) {
+	if (p25 || ch->mode == RADIO_MODE_DMR) {
+		// DMR: TG 9 when the contact can't be read; P25: TG 1 with no contact (p25-codeplug.md 2)
 		static contact_t c;
-		uint16_t talk = codeplug_channel_talk_contact(ch);
+		uint16_t talk = p25 ? ch->contact : codeplug_channel_talk_contact(ch);
 		bool known = talk != 0 && codeplug_contact(talk, &c);
+		if (p25)
+			sb_str(&wb, "P25 ");
 		sb_str(&wb, known && c.type == CONTACT_PRIVATE ? "ID" : "TG");
-		prefix = 2;
-		sb_u32(&wb, known ? c.id : 9u, 1);
+		mid = 2;
+		sb_u32(&wb, known ? c.id : p25 ? 1u : 9u, 1);
 	} else
 #endif
-	{
+	if (p25) {
+		sb_str(&wb, "P25");
+	} else if (ch->kind != CODEPLUG_KIND_NONE) {
+		sb_str(&wb, codeplug_kind_name(ch->kind));	// another kind (docs/spec/channel-modes.md): its short name
+	} else {
 		sb_str(&wb, ch->mode == RADIO_MODE_FM && radio_am_channel(ch) ? "AM" : ui_mode_name(ch->mode));
 	}
 	sb_str(b, TEXT_ALT_OPEN);
 	sb_freq(b, ch->rx_hz);
 	sb_chr(b, ' ');
 	sb_str(b, what);
-	if (prefix) {
+	if (mid) {
 		sb_str(b, TEXT_ALT_NEXT);
 		sb_freq(b, ch->rx_hz);
 		sb_chr(b, ' ');
-		sb_str(b, what + prefix);
+		if (p25)
+			sb_str(b, "P25");
+		else
+			sb_str(b, what + mid);
 	}
 	sb_str(b, TEXT_ALT_NEXT);
 	sb_str(b, what);
@@ -2494,12 +2509,6 @@ static void ced_from_view(void)
 	ced_rx_band(&ced_ch);
 }
 #endif
-
-// Whether ch runs P25: a stored P25 channel, or a plain one in P25 for now (the VFO)
-static bool ced_is_p25(const channel_t *ch)
-{
-	return CONFIG_P25 && (ch->kind == CODEPLUG_KIND_P25 || (ch->kind == CODEPLUG_KIND_NONE && ch->mode == RADIO_MODE_P25));
-}
 
 // ced_nac for ch, read at number (before a copy's rename: the tag is the source's name's) or from the radio's view
 static void ced_p25_nac(uint16_t number, const channel_t *ch)
