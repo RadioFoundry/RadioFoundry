@@ -10,6 +10,7 @@
 #include "codeplug/codeplug.h"
 #include "config.h"
 #include "radio/radio_p25.h"
+#include "radio/radio_nxdn.h"
 
 typedef enum {
 	RS_IDLE,	// receiving, squelch closed
@@ -26,12 +27,13 @@ typedef enum {
 // only, the radio never transmits there. BCAST: the same for the broadcast band (CONFIG_BCAST_FM). The board refused to
 // key in band: HWOPT while a hardware option still needs a person's answer (board_hwopt_pending, hal_hwopt.h),
 // otherwise REFUSED. BENCH: the debug link's air interface bench holds the modem (CONFIG_AIR_RAW). TRUNK: a trunked P25
-// channel gave no voice channel (radio_p25_view_t.twhy says why)
+// channel gave no voice channel (radio_p25_view_t.twhy says why). AIR_NO_TX: the board's air interface receives this
+// mode's profile but can't transmit it (NXDN at a rate the provider only receives)
 typedef enum {
 	TXDENY_NONE, TXDENY_RX_ONLY, TXDENY_BAND, TXDENY_TIMEOUT, TXDENY_NO_FREQ, TXDENY_MODE,
 	TXDENY_NO_CODEC, TXDENY_NO_DMR, TXDENY_BUSY, TXDENY_NO_REPEATER, TXDENY_REJECTED, TXDENY_HOTSPOT, TXDENY_NO_ID,
 	TXDENY_INHIBIT, TXDENY_BATTERY, TXDENY_AM, TXDENY_BCAST, TXDENY_SFR_RPT, TXDENY_HWOPT, TXDENY_REFUSED,
-	TXDENY_BENCH, TXDENY_TRUNK,
+	TXDENY_BENCH, TXDENY_TRUNK, TXDENY_AIR_NO_TX,
 } tx_deny_t;
 
 // Busy channel lockout (FM): CARRIER refuses PTT while anything is heard on the channel; WRONG_TONE only while a
@@ -318,6 +320,9 @@ typedef struct {
 #if CONFIG_P25
 	radio_p25_view_t p25;	// P25 conventional (docs/spec/p25.md 7): the call heard, the engine's transmit state
 #endif
+#if CONFIG_NXDN
+	radio_nxdn_view_t nxdn;	// NXDN conventional (docs/spec/nxdn.md 6): the same
+#endif
 } radio_view_t;
 
 // view.temp bits
@@ -328,7 +333,7 @@ typedef struct {
 #define RADIO_TEMP_RX_TONE	0x10u
 #define RADIO_TEMP_TS		0x20u	// DMR timeslot (radio_req_dmr_timeslot)
 #define RADIO_TEMP_CC		0x40u	// DMR color code (radio_req_dmr_color_code)
-#define RADIO_TEMP_MODE		0x80u	// FM <-> DMR <-> P25 (radio_req_mode)
+#define RADIO_TEMP_MODE		0x80u	// FM <-> DMR <-> P25 <-> NXDN (radio_req_mode)
 
 // Which tone radio_req_tone sets
 #define RADIO_TONE_TX		0x01u
@@ -388,15 +393,20 @@ void radio_req_reload(void);			// the settings' preferences changed (squelch, ma
 // Refused on DMR channels, while transmitting, and for tones tones_valid() rejects
 void radio_req_bandwidth(radio_bw_t bw);
 void radio_req_tone(uint8_t which, subtone_t tone);	// which: RADIO_TONE_TX, RADIO_TONE_RX or RADIO_TONE_BOTH
-#if CONFIG_DMR || CONFIG_P25
-// The current channel's or the VFO's mode (radio_mode_t): FM, DMR or P25 (CONFIG_P25). On a channel a temporary
-// change; in the VFO its own, kept with it (P25 is kept as DMR, or FM without the DMR VFO: the saved VFO has no P25).
-// Refused while transmitting, in hotspot mode, in a listen band, and for a mode the build or the VFO doesn't have
+#if CONFIG_DMR || CONFIG_P25 || CONFIG_NXDN
+// The current channel's or the VFO's mode (radio_mode_t): FM, DMR, P25 (CONFIG_P25) or NXDN (CONFIG_NXDN). On a
+// channel a temporary change; in the VFO its own, kept with it (a saved P25 or NXDN VFO comes back in its default
+// mode where the build or the board doesn't run that mode). Refused while transmitting, in hotspot mode, in a listen
+// band, and for a mode the build, the board or the VFO doesn't have
 void radio_req_mode(uint8_t mode);
 #endif
 #if CONFIG_P25
 // The P25 settings (RAM only, radio_p25.h): copied now, in force from the radio task's next turn
 void radio_req_p25_settings(const radio_p25_settings_t *s);
+#endif
+#if CONFIG_NXDN
+// The NXDN settings (RAM only, radio_nxdn.h): the same
+void radio_req_nxdn_settings(const radio_nxdn_settings_t *s);
 #endif
 #if CONFIG_DMR
 void radio_req_reply_cancel(void);		// BACK on Home: end the DMR reply window

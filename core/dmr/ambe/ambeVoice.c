@@ -521,6 +521,11 @@ void ambeVoiceStop(void)
 	streaming = false;
 }
 
+void ambeVoiceStart(void)
+{
+	ensure_streaming();
+}
+
 bool ambeVoiceStreaming(void)
 {
 	return streaming;

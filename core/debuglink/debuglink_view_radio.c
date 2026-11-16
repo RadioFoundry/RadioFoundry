@@ -321,11 +321,12 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 	case DL_OP_DMR_FIELDS:
 		// mode (0xFF = keep, else radio_mode_t), color code (0xFF = keep), timeslot (0 = keep): on a channel they are
 		// temporary changes, in the VFO the VFO's own settings. The radio core refuses what it can't do
-		if (len < 3 || (a[0] != 0xFF && a[0] > RADIO_MODE_P25) || (a[1] != 0xFF && a[1] > 15) || a[2] > 2) {
+		if (len < 3 || (a[0] != 0xFF && a[0] > RADIO_MODE_NXDN) || (a[1] != 0xFF && a[1] > 15) || a[2] > 2) {
 			return DL_ST_BAD_ARG;
 		}
 #if CONFIG_DMR || CONFIG_P25
 		if ((a[0] == RADIO_MODE_DMR && !CONFIG_DMR) || (a[0] == RADIO_MODE_P25 && !CONFIG_P25) ||
+		    (a[0] == RADIO_MODE_NXDN && !CONFIG_NXDN) ||
 		    ((a[1] != 0xFF || a[2] != 0) && !CONFIG_DMR)) {
 			return DL_ST_UNAVAILABLE;
 		}
@@ -365,6 +366,33 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 			return DL_ST_BAD_ARG;
 		}
 		radio_req_p25_settings(&p);
+		return DL_ST_OK;
+#else
+		return DL_ST_UNAVAILABLE;
+#endif
+	}
+	case DL_OP_NXDN: {
+		// The NXDN settings (radio_nxdn_settings_t, RAM only; docs/spec/debuglink.md 3.8): u8 flags (bit 0: 9600
+		// bit/s, else 4800; bit 1: PTT calls a unit; bit 2: emergency), u8 rx_ran (0 any), u8 tx_ran, u16 rx_gid (0: the
+		// RAN squelch), u16 unit_id (1..65519), u16 tx_dst, little-endian. The engine takes them when not transmitting;
+		// a new rate starts it over
+		if (len < 9 || (a[0] & 0xF8u) != 0 || a[1] > 63 || a[2] > 63) {
+			return DL_ST_BAD_ARG;
+		}
+#if CONFIG_NXDN
+		radio_nxdn_settings_t n;
+		n.rate9600 = (a[0] & 1u) != 0;
+		n.unit_call = (a[0] & 2u) != 0;
+		n.emergency = (a[0] & 4u) != 0;
+		n.rx_ran = a[1];
+		n.tx_ran = a[2];
+		n.rx_gid = (uint16_t)(a[3] | a[4] << 8);
+		n.unit_id = (uint16_t)(a[5] | a[6] << 8);
+		n.tx_dst = (uint16_t)(a[7] | a[8] << 8);
+		if (n.unit_id == 0 || n.unit_id > RADIO_NXDN_UNIT_MAX) {
+			return DL_ST_BAD_ARG;
+		}
+		radio_req_nxdn_settings(&n);
 		return DL_ST_OK;
 #else
 		return DL_ST_UNAVAILABLE;

@@ -304,6 +304,25 @@ radioCoreTestP25T: $(RCP25T) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dm
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
 		-DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -DCONFIG_AIR_RAW=1 -DHAL_VOCODER_LEND_BYTES=0x4000 -o $@ $(RCP25T) -lm
 
+# The same with NXDN conventional (CONFIG_NXDN): the far end is an NXDN engine on the fake board.air; the voice goes
+# through the DMR side's vocoder path. No vocoder lends memory (as on the STM32 platform)
+TESTS   += radioCoreTestNxdn radioCoreTestP25Nxdn
+RCNXDN  := $(RCORE) $(CORE)/radio/radio_nxdn.c $(CORE)/nxdn/nxdn_engine.c $(NXDN) $(CORE)/air/air_session.c \
+           $(CORE)/air/air_framer.c $(FEC) $(CORE)/debuglink/debuglink_view_nxdn.c $(CORE)/hostlink/build_info.c
+radioCoreTestNxdn: $(RCNXDN) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
+                   $(CORE)/ui/ui_svc.h $(wildcard $(CORE)/nxdn/*.h) $(wildcard $(CORE)/air/*.h) $(wildcard $(CORE)/dmr/ambe/*.h)
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
+		-DCONFIG_NXDN=1 -DCONFIG_AIR_RAW=1 -o $@ $(RCNXDN) -lm
+
+# P25 and NXDN together, no lending vocoder: one engine at a time, NXDN in the memory P25 keeps for itself
+RCP25NX := $(RCNXDN) $(CORE)/radio/radio_p25.c $(CORE)/p25/p25_engine.c $(P25) $(CORE)/p25/p25Voice.c $(MBE) \
+           $(CORE)/debuglink/debuglink_view_p25.c
+radioCoreTestP25Nxdn: $(RCP25NX) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
+                      $(CORE)/ui/ui_svc.h $(wildcard $(CORE)/nxdn/*.h) $(wildcard $(CORE)/p25/*.h) $(wildcard $(CORE)/air/*.h) \
+                      $(wildcard $(CORE)/dmr/ambe/*.h)
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
+		-DCONFIG_P25=1 -DCONFIG_NXDN=1 -DCONFIG_AIR_RAW=1 -o $@ $(RCP25NX) -lm
+
 # The same with APRS: what the data service hears goes into the station list (a DMR APRS position, docs/spec/aprs.md 8.2)
 TESTS   += radioCoreTestAprs
 RCAPRS  := $(RCORE) $(CORE)/aprs/aprs.c $(CORE)/aprs/aprs_ax25.c $(CORE)/aprs/aprs_dmr.c $(CORE)/aprs/aprs_host.c $(APRSLIB) \
@@ -422,12 +441,14 @@ boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ boardBandTest.c
 
 run: run-core
-run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestP25 radioCoreTestP25T radioCoreTestAprs radioCoreTestAprsDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
+run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestP25 radioCoreTestP25T radioCoreTestNxdn radioCoreTestP25Nxdn radioCoreTestAprs radioCoreTestAprsDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
           rx2LinkTest keyassignTest powerSwitchTest powerKeyTest boardBandTest batteryTest
 	./aprsRadioTest
 	./radioCoreTest
 	./radioCoreTestNoVfoDmr
 	./radioCoreTestP25
+	./radioCoreTestNxdn
+	./radioCoreTestP25Nxdn
 	./radioCoreTestP25T
 	./radioCoreTestAprs
 	./radioCoreTestAprsDmr
@@ -622,12 +643,12 @@ UIDEPS  := $(UIAPP) $(ABOUT_H) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fo
 TESTS   += uiFlowTest uiFlowTestNoColor uiSim
 
 uiFlowTest: uiFlowTest.c $(UIDEPS)
-	$(CC) $(UIFLAGS) -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -o $@ uiFlowTest.c $(UIAPP) -lz
+	$(CC) $(UIFLAGS) -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -DCONFIG_NXDN=1 -o $@ uiFlowTest.c $(UIAPP) -lz
 
 # The same flows built as a radio with only a monochrome screen builds them (CONFIG_UI_COLOR=n): no color rows;
 # without a translation (CONFIG_LANG_ES=n): the Language screen dims Spanish; and with the backlight tests
 # (CONFIG_BACKLIGHT_TEST=y, off in uiFlowTest): their screen, and the Advanced rows below it one further down.
-# uiFlowTest has P25 (CONFIG_P25) and this one not: the P25 home screen's flows run in the first
+# uiFlowTest has P25 and NXDN (CONFIG_P25, CONFIG_NXDN) and this one not: their home screen flows run in the first
 uiFlowTestNoColor: uiFlowTest.c $(UIDEPS)
 	$(CC) $(UIFLAGS) -DCONFIG_UI_COLOR=0 -DCONFIG_LANG_ES=0 -DCONFIG_BACKLIGHT_TEST=1 -o $@ uiFlowTest.c $(UIAPP) -lz
 

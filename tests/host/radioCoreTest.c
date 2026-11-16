@@ -148,14 +148,25 @@ static bool codec_present;
 static bool v_present(void) { return codec_present; }
 static void v_reset(void) {}
 static void v_encode(const int16_t *pcm, uint8_t *bits) { (void)pcm; memset(bits, 0, VOCODER_BITS); }
-static void v_decode(const uint8_t *bits, int16_t *pcm) { (void)bits; memset(pcm, 0, VOCODER_FRAME_SAMPLES * 2); }
+// Each frame the decoder is given, to a test that looks (the NXDN voice path's check)
+static void (*v_decode_hook)(const uint8_t *bits);
+static void v_decode(const uint8_t *bits, int16_t *pcm)
+{
+	if (v_decode_hook != NULL) {
+		v_decode_hook(bits);
+	}
+	memset(pcm, 0, VOCODER_FRAME_SAMPLES * 2);
+}
 static uint32_t v_options(void) { return VOCODER_OPT_NOISE_REDUCTION | VOCODER_OPT_TONE_FRAMES | VOCODER_OPT_AGC; }
 static void v_set_options(uint32_t opts) { (void)opts; }
-#ifdef HAL_VOCODER_LEND_BYTES
-// As the HR_C7000 platform's: the codec's memory lent while no DMR voice runs (P25 runs in it)
-static uint64_t lend_mem[HAL_VOCODER_LEND_BYTES / 8];
+#if CONFIG_P25 || defined(HAL_VOCODER_LEND_BYTES)
 static bool lend_refuse;		// a vocoder with nothing to lend
 static uint32_t lends;
+#endif
+#ifdef HAL_VOCODER_LEND_BYTES
+// As the HR_C7000 platform's: the codec's memory lent while no DMR voice runs (P25 runs in it)
+#define LENDS	1u		// what a P25 start borrows
+static uint64_t lend_mem[HAL_VOCODER_LEND_BYTES / 8];
 static void *v_lend(size_t *len)
 {
 	lends++;
@@ -163,6 +174,8 @@ static void *v_lend(size_t *len)
 	return lend_refuse ? NULL : lend_mem;
 }
 #else
+// P25 runs in its own memory, which NXDN shares
+#define LENDS	0u
 #define v_lend NULL
 #endif
 static const hal_vocoder_t fake_vocoder = { v_present, v_reset, v_encode, v_decode, NULL, v_options, v_set_options,
@@ -360,9 +373,15 @@ static void air_step1(uint8_t i)
 	}
 }
 
-static uint32_t air_fit(const air_profile_t *pr)
+// 4800 symbols/s (P25, NXDN at 9600 bit/s): everything. 2400 symbols/s (NXDN at 4800 bit/s): what air_fit2400 says
+// for each provider (a provider that transmits a profile only, or receives it only)
+static uint32_t air_fit2400[2] = { AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT, AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT };
+static uint32_t air_fit(uint8_t i, const air_profile_t *pr)
 {
-	return !air_nofit && pr->sym_rate == 4800 ? AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT : 0;
+	if (air_nofit) {
+		return 0;
+	}
+	return pr->sym_rate == 4800 ? AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT : pr->sym_rate == 2400 ? air_fit2400[i] : 0;
 }
 static bool air_open(uint8_t i, air_event_cb_t cb, void *ctx)
 {
@@ -390,6 +409,7 @@ static void air_end(uint8_t i) { if (fair[i].qn != 0) fair[i].q[fair[i].qn - 1].
 static void air_abort(uint8_t i) { fair[i].qn = 0; fair[i].on = false; fair[i].aborts++; air_ev(&fair[i], AIR_EV_TX_DONE, NULL); }
 
 #define FAKE_AIR(i) \
+	static uint32_t air_fit##i(const air_profile_t *pr) { return air_fit(i, pr); } \
 	static bool air_open##i(const air_profile_t *pr, air_event_cb_t cb, void *ctx) { (void)pr; return air_open(i, cb, ctx); } \
 	static void air_close##i(void) { air_close(i); } \
 	static void air_restart##i(void) { } \
@@ -400,7 +420,7 @@ static void air_abort(uint8_t i) { fair[i].qn = 0; fair[i].on = false; fair[i].a
 	static void air_abort##i(void) { air_abort(i); } \
 	static uint32_t air_now##i(void) { return fair[i].now_us; } \
 	static void air_load##i(uint32_t *w, uint32_t *s) { *w = 1000u + i; *s = 20000u; } \
-	static const hal_air_t fake_air##i = { air_fit, air_open##i, air_close##i, air_restart##i, air_begin##i, air_queue##i, \
+	static const hal_air_t fake_air##i = { air_fit##i, air_open##i, air_close##i, air_restart##i, air_begin##i, air_queue##i, \
 					       air_space##i, air_end##i, air_abort##i, air_now##i, NULL, NULL, air_load##i, AIR_CHUNK, \
 					       AIR_DEPTH, 60, 100 };
 FAKE_AIR(0)
@@ -1905,7 +1925,15 @@ static void test_vfo_dmr(void)
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 1, 0xFF, 0 }, 3) == DL_ST_OK);
 	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && sim.started);
 #endif
-	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 3, 0xFF, 0 }, 3) == DL_ST_BAD_ARG);
+	// NXDN (3) the same; past NXDN: a bad argument
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 3, 0xFF, 0 }, 3) ==
+	      (CONFIG_NXDN ? DL_ST_OK : DL_ST_UNAVAILABLE));
+#if CONFIG_NXDN
+	CHECK(sm.view.ch.mode == RADIO_MODE_NXDN && radio_nxdn_running() && !sim.started);
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 1, 0xFF, 0 }, 3) == DL_ST_OK);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && sim.started && !radio_nxdn_running());
+#endif
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 4, 0xFF, 0 }, 3) == DL_ST_BAD_ARG);
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0xFF, 16, 0 }, 3) == DL_ST_BAD_ARG);
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0xFF, 0xFF, 3 }, 3) == DL_ST_BAD_ARG);
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0xFF, 0xFF }, 2) == DL_ST_BAD_ARG);
@@ -3415,6 +3443,14 @@ void radio_req_volume_override(int8_t step) { req(RREQ_VOLUME_OVERRIDE, step); }
 void radio_req_volume_hold(bool hold) { req(RREQ_VOLUME_HOLD, hold); }
 void radio_req_clear_temporary(void) { req(RREQ_CLEAR_TEMP, 0); }
 void radio_req_retune(void) { req(RREQ_RETUNE, 0); }
+#if CONFIG_NXDN
+// As radio_task.c does it: the settings to the module, the request to the state machine
+void radio_req_nxdn_settings(const radio_nxdn_settings_t *s)
+{
+	radio_nxdn_set_settings(s);
+	req(RREQ_NXDN_SET, 0);
+}
+#endif
 // Not under test here: debuglink_view_radio.c, linked for the volume operation, refers to them
 void radio_req_scan_dual(uint16_t pos) { (void)pos; }
 void radio_req_zone_pos(uint16_t pos) { req(RREQ_ZONE_POS, pos); }
@@ -5928,10 +5964,8 @@ static void far_end(void *ctx) { (void)ctx; far_heard.ends++; }
 static const p25_engine_hooks_t far_hooks = { .rx_start = far_start, .rx_update = far_update, .rx_voice = far_voice,
 						.rx_end = far_end };
 
-static void air_step(void)
+static void far_step(void)
 {
-	air_step1(0);
-	air_step1(1);
 	if (far_tx && p25_engine_tx_state(&far_eng) == AIR_TX_DONE) {
 		p25_engine_tx_clear(&far_eng);
 		far_tx = false;
@@ -6025,10 +6059,10 @@ static void test_p25_rx(void)
 	// the memory the vocoder lends
 	CHECK(hw_mode == RADIO_MODE_DMR && hw.rx_hz == 446100000 && hw.rx_bw == RADIO_BW_12K5 && hw.rx_tone.type == TONE_NONE);
 	CHECK(!sm.dmr_running && !sim.started);
-	CHECK(radio_p25_running() && fair[0].open && lends == lends0 + 1);
+	CHECK(radio_p25_running() && fair[0].open && lends == lends0 + LENDS);
 	CHECK(v->flags == RADIO_P25_ON && v->tx == AIR_TX_IDLE);
 	radio_p25_stats(&st);
-	CHECK(st.begins == 1 && st.begin_fails == 0 && st.mem_lent == 1);
+	CHECK(st.begins == 1 && st.begin_fails == 0 && st.mem_lent == LENDS);
 	p25_view_text(buf, sizeof buf);
 	CHECK(strstr(buf, "p25.built=1\np25.on=1\np25.rx=0\n") != NULL && strstr(buf, "p25.rx_nac=659\n") != NULL);
 	CHECK(strstr(buf, "p25.tx=0\np25.rx_work_us=1000\np25.rx_span_us=20000\n") != NULL);	// the provider's load
@@ -6265,6 +6299,7 @@ static void test_p25_denied(void)
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_REFUSED && !hw.keyed);
 	req(RREQ_PTT, 0);
 	air_nofit = false;
+#ifdef HAL_VOCODER_LEND_BYTES
 	// ... or the vocoder lends nothing
 	lend_refuse = true;
 	req(RREQ_ZONE_POS, 1);
@@ -6277,6 +6312,7 @@ static void test_p25_denied(void)
 	req(RREQ_ZONE_POS, 1);
 	req(RREQ_ZONE_POS, 2);
 	CHECK(radio_p25_running());
+#endif
 
 	// In a listen band (the air band with CONFIG_AM_RX) P25 is refused as a mode, as DMR is
 	req(RREQ_ZONE_POS, 4);			// "Air", 121.5 MHz
@@ -7183,6 +7219,434 @@ static void test_p25(void)
 }
 #endif
 
+#if CONFIG_NXDN
+// ---- NXDN conventional in the radio core (docs/spec/nxdn.md 6): the far radio is an NXDN engine on the other fake
+// provider. Voice is made-up 72-bit frames through the fake vocoder: nothing here encodes or decodes speech ----
+#include "nxdn/nxdn_engine.h"
+#include "dmr/ambe/ambeFec.h"
+
+static nxdn_engine_t nfar;
+static bool nfar_running, nfar_tx;
+static struct {
+	uint8_t starts, ends;
+	nxdn_call_t call;
+	uint16_t voice;		// voice frames heard
+	uint16_t enc;		// ... that are what the radio's encoder made (the fake encoder's all-zero bits)
+} nfar_heard;
+static uint8_t nfar_next;	// the far radio's next made-up frame
+static uint8_t zero_frame[NXDN_EHR_BYTES];	// the fake encoder's frame with its FEC
+
+// Frame k of a made-up sequence: 49 bits from k (not speech), and with the voice frame's FEC
+static void made_up_bits(uint8_t k, uint8_t bits[VOCODER_BITS])
+{
+	for (uint8_t i = 0; i < VOCODER_BITS; i++) {
+		bits[i] = (uint8_t)((((uint32_t)k * 2654435761u) >> (i % 29)) & 1u);
+	}
+	bits[0] = (uint8_t)(k & 1u);
+}
+
+static void nf_start(const nxdn_call_t *c, void *ctx) { (void)ctx; nfar_heard.starts++; nfar_heard.call = *c; }
+static void nf_update(const nxdn_call_t *c, void *ctx) { (void)ctx; nfar_heard.call = *c; }
+static void nf_voice(const uint8_t ehr[NXDN_EHR_BYTES], void *ctx)
+{
+	(void)ctx;
+	nfar_heard.voice++;
+	if (!memcmp(ehr, zero_frame, NXDN_EHR_BYTES)) {
+		nfar_heard.enc++;
+	}
+}
+static void nf_end(void *ctx) { (void)ctx; nfar_heard.ends++; }
+static bool nf_tx(uint8_t ehr[NXDN_EHR_BYTES], void *ctx)
+{
+	uint8_t bits[VOCODER_BITS];
+
+	(void)ctx;
+	made_up_bits(nfar_next++, bits);
+	ambeFecEncode(bits, ehr);
+	return true;
+}
+static const nxdn_engine_hooks_t nfar_hooks = { nf_start, nf_update, nf_voice, nf_end, nf_tx };
+
+// The decoder's frames: how many came in the far radio's order (a repeat to conceal a gap is not counted)
+static uint8_t dec_next;
+static uint32_t dec_in_order;
+static void dec_hook(const uint8_t *bits)
+{
+	uint8_t want[VOCODER_BITS];
+
+	for (uint8_t k = 0; k < 8; k++) {
+		made_up_bits((uint8_t)(dec_next + k), want);
+		if (!memcmp(bits, want, VOCODER_BITS)) {
+			dec_in_order += k == 0;
+			dec_next = (uint8_t)(dec_next + k + 1);
+			return;
+		}
+	}
+}
+
+static void nfar_step(void)
+{
+	if (nfar_tx && nxdn_engine_tx_state(&nfar) == AIR_TX_DONE) {
+		nxdn_engine_tx_clear(&nfar);
+		nfar_tx = false;
+	}
+}
+
+// The far radio on the channel: it sends at the rate on ran, as unit, to a group or a unit (dst); it hears every RAN
+static void nfar_begin(bool rate9600, uint8_t ran, uint16_t unit, bool unit_call, uint16_t dst)
+{
+	nxdn_engine_cfg_t c = { .rate9600 = rate9600, .rx_ran = NXDN_RAN_ANY, .tx_ran = ran, .unit_id = unit,
+				.tx_call_type = unit_call ? NXDN_CALL_INDIVIDUAL : NXDN_CALL_GROUP, .tx_dst = dst,
+				.silence = dmr_ambe_silence };
+	uint8_t zero[VOCODER_BITS] = { 0 };
+
+	ambeFecEncode(zero, zero_frame);
+	if (nfar_running) {
+		nxdn_engine_end(&nfar);
+	}
+	memset(&nfar_heard, 0, sizeof(nfar_heard));
+	nfar_tx = false;
+	nfar_running = nxdn_engine_begin(&nfar, &fake_air1, &c, &nfar_hooks, NULL);
+	CHECK(nfar_running);
+}
+
+static void nfar_stop(void)
+{
+	if (nfar_running) {
+		nxdn_engine_end(&nfar);
+		nfar_running = nfar_tx = false;
+	}
+}
+
+// The far radio keys, holds for ms, lets go and runs until its release frame is out
+static void nfar_call(uint32_t ms)
+{
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	run(ms);
+	nxdn_engine_tx_stop(&nfar);
+	for (int i = 0; i < 100 && nfar_tx; i++) {
+		run(10);
+	}
+	CHECK(!nfar_tx);
+}
+
+static void nxdn_view_text(char *buf, size_t cap)
+{
+	dl_text_t t;
+	dl_text_init(&t, buf, cap);
+	debuglink_view_nxdn(&sm.view, &t);
+}
+
+static void setup_codeplug_nxdn(void)
+{
+	setup_codeplug();
+	add(3, "NXDN", 446100000, RADIO_MODE_NXDN, false, 2);	// zone Local, position 2
+	radio_nxdn_reset_stats();
+	air_nofit = false;
+	air_fit2400[0] = air_fit2400[1] = AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT;
+	memset(fair, 0, sizeof(fair));
+	v_decode_hook = NULL;
+}
+
+static const radio_nxdn_settings_t nxdn_default_set = { .rate9600 = true, .rx_ran = 0, .tx_ran = 1, .unit_id = 1,
+							 .tx_dst = 1 };
+static void nxdn_defaults(void)
+{
+	radio_req_nxdn_settings(&nxdn_default_set);
+}
+
+static void test_nxdn_rx(void)
+{
+	static char buf[4096];
+	radio_nxdn_stats_t st;
+	const radio_nxdn_view_t *v = &sm.view.nxdn;
+	radio_nxdn_settings_t s = nxdn_default_set;
+
+	setup_codeplug_nxdn();
+	start();
+	nxdn_defaults();
+	aud.feed = true;
+	req(RREQ_ZONE_POS, 2);
+	CHECK(sm.view.ch.mode == RADIO_MODE_NXDN && sm.view.channel_number == 3);
+	// The board in its digital mode at 12.5 kHz without a tone, the DMR stack stopped, the engine on board.air, the
+	// DMR side's audio stream running for its voice
+	CHECK(hw_mode == RADIO_MODE_DMR && hw.rx_hz == 446100000 && hw.rx_bw == RADIO_BW_12K5 && hw.rx_tone.type == TONE_NONE);
+	CHECK(!sm.dmr_running && !sim.started && aud.started);
+	CHECK(radio_nxdn_running() && fair[0].open);
+	CHECK(v->flags == (RADIO_NXDN_ON | RADIO_NXDN_9600) && v->tx == AIR_TX_IDLE);
+	CHECK(v->fit == (AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT) && v->rx_ran == 0 && v->tx_ran == 1 && v->talk == 1);
+	radio_nxdn_stats(&st);
+	CHECK(st.begins == 1 && st.begin_fails == 0);
+	nxdn_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "nxdn.built=1\nnxdn.on=1\nnxdn.rx=0\n") != NULL && strstr(buf, "nxdn.rate=9600\n") != NULL);
+	CHECK(strstr(buf, "nxdn.fit=7\n") != NULL && strstr(buf, "nxdn.unit_id=1\n") != NULL);
+	run(300);				// noise: no call
+	CHECK(sm.view.state == RS_IDLE && !hw.led[LED_GREEN]);
+
+	// A group call on RAN 1: received (rx_ran 0 takes every RAN) and played; its voice frames reach the decoder in
+	// order through the DMR side's voice path
+	dec_next = 0;
+	dec_in_order = 0;
+	v_decode_hook = dec_hook;
+	nfar_next = 0;
+	nfar_begin(true, 1, 2001, false, 20);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	run(1000);
+	CHECK(sm.view.state == RS_RX && hw.led[LED_GREEN]);
+	CHECK((v->flags & (RADIO_NXDN_RX | RADIO_NXDN_PLAYED)) == (RADIO_NXDN_RX | RADIO_NXDN_PLAYED));
+	CHECK(v->src == 2001 && v->dst == 20 && v->ran == 1 && !(v->flags & (RADIO_NXDN_UNIT | RADIO_NXDN_ENC)));
+	CHECK(dec_in_order >= 30);
+	nxdn_engine_tx_stop(&nfar);
+	run(500);
+	CHECK(sm.view.state == RS_IDLE && !(v->flags & RADIO_NXDN_RX) && v->src == 2001);	// the last call stays
+	radio_nxdn_stats(&st);
+	CHECK(st.rx_calls == 1 && st.voice >= 40 && st.sacch_fail == 0 && st.facch_fail == 0 && st.voice_held == 0);
+	v_decode_hook = NULL;
+	nxdn_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "nxdn.src=2001\nnxdn.dst=20\n") != NULL && strstr(buf, "nxdn.rx_calls=1\n") != NULL);
+
+	// Another RAN: not taken, counted
+	s.rx_ran = 5;
+	radio_req_nxdn_settings(&s);
+	CHECK(v->rx_ran == 5);
+	nfar_call(600);
+	CHECK(sm.view.state == RS_IDLE);
+	radio_nxdn_stats(&st);
+	CHECK(st.rx_calls == 1 && st.ran_rejects > 0);
+
+	// Group squelch: a call to another group shows (RS_RX), its voice does not play
+	s.rx_ran = 1;
+	s.rx_gid = 30;
+	radio_req_nxdn_settings(&s);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	run(600);
+	CHECK(sm.view.state == RS_RX && (v->flags & RADIO_NXDN_RX) && !(v->flags & RADIO_NXDN_PLAYED) && !hw.led[LED_GREEN]);
+	nxdn_engine_tx_stop(&nfar);
+	run(500);
+	// ... and one to our group plays
+	nfar_begin(true, 1, 2002, false, 30);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	run(600);
+	CHECK((v->flags & RADIO_NXDN_PLAYED) && v->src == 2002 && v->dst == 30);
+	nxdn_engine_tx_stop(&nfar);
+	run(500);
+	nfar_stop();
+	nxdn_defaults();
+}
+
+static void test_nxdn_tx(void)
+{
+	radio_nxdn_stats_t st;
+	const radio_nxdn_view_t *v = &sm.view.nxdn;
+	radio_nxdn_settings_t s = nxdn_default_set;
+
+	setup_codeplug_nxdn();
+	start();
+	nxdn_defaults();
+	aud.feed = true;
+	req(RREQ_ZONE_POS, 2);
+	nfar_begin(true, 1, 2001, false, 1);
+	run(100);
+
+	// PTT: keyed on the channel's TX frequency at 12.5 kHz, its power, no tone; the provider starts inside the key
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_calls == 1 && hw.keyed && fair[0].on && fair[0].begins == 1);
+	CHECK(hw.tx_hz == 446100000 && hw.tx_bw == RADIO_BW_12K5 && hw.tx_tone.type == TONE_NONE && hw.tx_power == 2);
+	CHECK(hw.led[LED_RED] && v->tx != AIR_TX_IDLE);
+	run(1000);
+	CHECK(sm.view.state == RS_TX && fair[0].underruns == 0);
+	// The far radio hears the call: RAN 1, unit 1, group 1; its voice is the encoder's frames
+	CHECK(nfar_heard.starts == 1 && nfar_heard.ends == 0 && nfar_heard.call.ran == 1);
+	CHECK(nfar_heard.call.vcall.src == 1 && nfar_heard.call.vcall.dst == 1 &&
+	      nfar_heard.call.vcall.call_type == NXDN_CALL_GROUP && !(nfar_heard.call.vcall.cc_opt & NXDN_CC_EMERGENCY));
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_TX && hw.keyed);	// the frame on air is finished first
+	run(500);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed && hw.tx_off_calls == 1 && !hw.led[LED_RED]);
+	CHECK(v->tx == AIR_TX_IDLE && nfar_heard.ends == 1 && nfar_heard.voice >= 40 && nfar_heard.enc >= 30);
+	CHECK(fair[0].keyed_violations == 0 && fair[0].underruns == 0);
+	radio_nxdn_stats(&st);
+	CHECK(st.tx_calls == 1 && st.tx_underruns == 0 && st.tx_syms > 0);
+
+	// Settings sent while transmitting: in force for the next transmission
+	req(RREQ_PTT, 1);
+	run(100);
+	s.unit_call = true;
+	s.tx_dst = 4321;
+	s.unit_id = 777;
+	s.tx_ran = 9;
+	s.emergency = true;
+	radio_req_nxdn_settings(&s);
+	run(300);
+	CHECK(nfar_heard.call.vcall.src == 1);	// this one goes on as it began
+	req(RREQ_PTT, 0);
+	run(500);
+	req(RREQ_PTT, 1);
+	run(400);
+	CHECK(nfar_heard.call.ran == 9 && nfar_heard.call.vcall.call_type == NXDN_CALL_INDIVIDUAL &&
+	      nfar_heard.call.vcall.dst == 4321 && nfar_heard.call.vcall.src == 777 &&
+	      (nfar_heard.call.vcall.cc_opt & NXDN_CC_EMERGENCY));
+	CHECK(v->flags & RADIO_NXDN_TALK_UNIT);
+	req(RREQ_PTT, 0);
+	run(500);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
+
+	// 4800 bit/s: a new session at 2400 symbols/s
+	radio_nxdn_stats(&st);
+	uint32_t begins = st.begins;
+	s = nxdn_default_set;
+	s.rate9600 = false;
+	radio_req_nxdn_settings(&s);
+	radio_nxdn_stats(&st);
+	CHECK(radio_nxdn_running() && st.begins == begins + 1 && !(v->flags & RADIO_NXDN_9600));
+	nfar_begin(false, 1, 2001, false, 1);
+	req(RREQ_PTT, 1);
+	run(600);
+	req(RREQ_PTT, 0);
+	run(800);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed && nfar_heard.starts == 1 && nfar_heard.ends == 1);
+
+	// A provider that transmits the rate only (no receive): the engine runs, PTT keys, the far radio hears it
+	air_fit2400[0] = AIR_FIT_TX;
+	req(RREQ_ZONE_POS, 1);
+	req(RREQ_ZONE_POS, 2);
+	CHECK(radio_nxdn_running() && v->fit == AIR_FIT_TX);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.keyed);
+	run(600);
+	req(RREQ_PTT, 0);
+	run(800);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed && nfar_heard.starts == 2 && nfar_heard.ends == 2);
+
+	// One that receives it only: PTT refused before anything is queued
+	air_fit2400[0] = AIR_FIT_RX | AIR_FIT_SOFT;
+	req(RREQ_ZONE_POS, 1);
+	req(RREQ_ZONE_POS, 2);
+	uint32_t keyed = (uint32_t)hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_AIR_NO_TX && !hw.keyed &&
+	      hw.tx_calls == (int)keyed && fair[0].qn == 0);
+	req(RREQ_PTT, 0);
+	run(50);
+	// ... and one that gives the rate nothing: no engine, refused
+	air_fit2400[0] = 0;
+	req(RREQ_ZONE_POS, 1);
+	req(RREQ_ZONE_POS, 2);
+	CHECK(!radio_nxdn_running() && v->fit == 0);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_REFUSED && !hw.keyed);
+	req(RREQ_PTT, 0);
+	run(50);
+	// Back to 9600 bit/s, which the board carries: the engine starts again
+	nxdn_defaults();
+	CHECK(radio_nxdn_running() && (v->flags & RADIO_NXDN_9600));
+	air_fit2400[0] = AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT;
+
+	// The time-out: cut at once, the transmitter off, denied until PTT is released
+	nfar_begin(true, 1, 2001, false, 1);
+	uint32_t offs = (uint32_t)hw.tx_off_calls;
+	req(RREQ_PTT, 1);
+	run(181000);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TIMEOUT && !hw.keyed && hw.tx_off_calls == (int)offs + 1);
+	req(RREQ_PTT, 0);
+	run(100);
+	CHECK(sm.view.state == RS_IDLE && v->tx == AIR_TX_IDLE && fair[0].keyed_violations == 0);
+	nfar_stop();
+}
+
+static void test_nxdn_mode(void)
+{
+	settings_t set;
+	radio_nxdn_settings_t s;
+
+	setup_codeplug_nxdn();
+	start();
+	nxdn_defaults();
+	// The VFO in NXDN through the mode request: its own mode, the engine running
+	req(RREQ_VFO, 1);
+	req(RREQ_VFO_SET, 446100000);
+	req(RREQ_MODE, RADIO_MODE_NXDN);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_NXDN && radio_nxdn_running() && hw_mode == RADIO_MODE_DMR);
+	CHECK(!(sm.view.temp & RADIO_TEMP_MODE));
+	// The settings from the debug link: 4800 bit/s, RAN 7 both ways, unit 1234 calls group 55
+	static const uint8_t op[] = { 0x00, 7, 7, 0, 0, 0xD2, 0x04, 55, 0 };
+	CHECK(debuglink_radio_feature_op(DL_OP_NXDN, op, sizeof op) == DL_ST_OK);
+	radio_nxdn_settings(&s);
+	CHECK(!s.rate9600 && s.rx_ran == 7 && s.tx_ran == 7 && s.unit_id == 1234 && s.tx_dst == 55 && !s.unit_call);
+	CHECK(radio_nxdn_running() && !(sm.view.nxdn.flags & RADIO_NXDN_9600) && sm.view.nxdn.rx_ran == 7);
+	static const uint8_t bad_ran[] = { 0x01, 64, 1, 0, 0, 1, 0, 1, 0 }, bad_unit[] = { 0x01, 1, 1, 0, 0, 0, 0, 1, 0 },
+			     bad_flag[] = { 0x08, 1, 1, 0, 0, 1, 0, 1, 0 };
+	CHECK(debuglink_radio_feature_op(DL_OP_NXDN, bad_ran, sizeof bad_ran) == DL_ST_BAD_ARG);
+	CHECK(debuglink_radio_feature_op(DL_OP_NXDN, bad_unit, sizeof bad_unit) == DL_ST_BAD_ARG);
+	CHECK(debuglink_radio_feature_op(DL_OP_NXDN, bad_flag, sizeof bad_flag) == DL_ST_BAD_ARG);
+	CHECK(debuglink_radio_feature_op(DL_OP_NXDN, op, 8) == DL_ST_BAD_ARG);
+	CHECK(debuglink_is_feature_op(DL_OP_NXDN));
+	nxdn_defaults();
+	// Saved with the VFO, back after a restart
+	run(5000);
+	settings_read(&set);
+	CHECK(settings_vfo_mode(&set) == RADIO_MODE_NXDN);
+	boot();
+	if (!sm.view.vfo)
+		req(RREQ_VFO, 1);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_NXDN && radio_nxdn_running() && sm.view.vfo_drop == 0);
+#if CONFIG_P25
+	// To P25 and back: one engine at a time, in the same memory where P25 has its own
+	req(RREQ_MODE, RADIO_MODE_P25);
+	CHECK(sm.view.ch.mode == RADIO_MODE_P25 && radio_p25_running() && !radio_nxdn_running());
+	req(RREQ_MODE, RADIO_MODE_NXDN);
+	CHECK(sm.view.ch.mode == RADIO_MODE_NXDN && radio_nxdn_running() && !radio_p25_running());
+#endif
+	// To FM: the engine closes, the audio stream stops
+	req(RREQ_MODE, RADIO_MODE_FM);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && !radio_nxdn_running() && hw_mode == RADIO_MODE_FM && !aud.started);
+	CHECK(!(sm.view.nxdn.flags & RADIO_NXDN_ON));
+	// A board whose air interface carries no NXDN: the mode is refused
+	air_nofit = true;
+	req(RREQ_MODE, RADIO_MODE_NXDN);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && !radio_nxdn_running());
+	air_nofit = false;
+	// On a channel: a temporary change
+	req(RREQ_VFO, 0);
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_MODE, RADIO_MODE_NXDN);
+	CHECK(!sm.view.vfo && sm.view.ch.mode == RADIO_MODE_NXDN && (sm.view.temp & RADIO_TEMP_MODE) && radio_nxdn_running());
+	req(RREQ_CLEAR_TEMP, 0);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && !radio_nxdn_running());
+}
+
+static void test_nxdn(void)
+{
+	test_nxdn_rx();
+	test_nxdn_tx();
+	test_nxdn_mode();
+	setup_codeplug();
+	req(RREQ_RELOAD, 0);
+	run(50);
+	if (radio_nxdn_running()) {
+		radio_nxdn_end();
+	}
+}
+#endif
+
+#if CONFIG_AIR
+static void air_step(void)
+{
+	air_step1(0);
+	air_step1(1);
+#if CONFIG_P25
+	far_step();
+#endif
+#if CONFIG_NXDN
+	nfar_step();
+#endif
+}
+#endif
+
 int main(void)
 {
 	test_tx_limit_op();
@@ -7259,6 +7723,9 @@ int main(void)
 #endif
 #if CONFIG_P25
 	test_p25();
+#endif
+#if CONFIG_NXDN
+	test_nxdn();
 #endif
 	test_dmr_data_glue();	// (last: the data service's state carries over)
 	test_factory_reset();

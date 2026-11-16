@@ -9,7 +9,7 @@ than its sources).
     nxdntool.py gen OUT.dibits --expect EXP.json [--9600] [--ran 1] [--group N | --unit N] [--src N]
                [--voice-frames 48] [--voice HEX18 | --random-voice SEED] [--emergency] [--lead N] [--tail N]
                [--ber P --seed S] [--unpacked]
-    nxdntool.py decode IN.dibits [--9600] [--expect EXP.json] [--ran N] [--unpacked]
+    nxdntool.py decode IN.dibits [--9600] [--expect EXP.json] [--ran N] [--unpacked | --records | --air-jsonl]
     nxdntool.py disc IN.raw --rate HZ [--9600] [--full HZ | --counts-per-khz N] [--invert] [--expect EXP.json] [--ran N]
     nxdntool.py mod IN.dibits OUT.raw [--9600] [--rate HZ] [--full HZ] [--dev-scale PCT] [--offset HZ] [--noise HZ]
                [--invert] [--carrier-gap S] [--seed S]
@@ -22,8 +22,13 @@ interface's packing (four a byte, the first in bits 7-6; 01 +3, 00 +1, 10 -1, 11
 expect file was written. The expect file (JSON) lists every frame with its LICH, symbols, position and VCH.
 
 decode reads symbols through the framer and the call layer and prints every frame (LICH, SACCH, FACCH1 messages, the
-four VCH as on air) and the call's start, updates and end. --ran: the receiver's RAN (0, the default, takes all).
-With --expect: frames missed, channel bit errors per frame (before FEC), VCH handed on that differ from the ones sent.
+four VCH as on air) and the call's start, updates and end. The input is what p25tool.py decode reads: a dibit file
+(as `fsk4_bench.py rx --out` writes it), one symbol a byte with --unpacked, the bench receiver's records
+(`fsk4_bench.py rx --records`, their sliced symbols in order) with --records, or `rfoundry_debug.py air rx` records with
+--air-jsonl. --ran: the receiver's RAN (0, the default, takes all). With --expect: frames missed, channel bit errors
+per frame (before FEC), VCH handed on that differ from the ones sent. The last line sums it up: RAN, source,
+destination, call type, frames, voice frames, CRC failures. Exit code 0 when a call was heard (and, with --expect, its
+fields match), else 1.
 
 disc reads discriminator samples (int16 LE) through the soft modem first: 8 kHz up to ten samples a symbol (24 kHz at
 4800 bit/s, 48 kHz at 9600). --full is the deviation at full scale in Hz, --counts-per-khz the tap's scale.
@@ -112,6 +117,61 @@ def show(lines, as_json):
             print("wrote %d symbols as samples at %d Hz, deviation %.0f Hz" % (x["syms"], x["rate"], x["dev_hz"]))
 
 
+def summary(lines):
+    """One line for an off-air check: the last call's RAN, source, destination and type, frames, voice frames handed
+    on, CRC failures (SACCH and FACCH1) and LICH losses"""
+    calls = [x for x in lines if x["ev"] in ("call_start", "call_update")]
+    vc = next((x["vcall"] for x in reversed(calls) if x["have_vcall"]), None)
+    st = next((x for x in lines if x["ev"] == "stats"), None)
+    c = st["call"] if st else {}
+    return {"calls": sum(1 for x in lines if x["ev"] == "call_start"),
+            "ran": calls[-1]["ran"] if calls else None,
+            "src": vc["src"] if vc else None, "dst": vc["dst"] if vc else None,
+            "type": vcall_text(vc).split(" ")[0] if vc else None,
+            "emergency": bool(vc["cc_opt"] & 0x80) if vc else None,
+            "frames": c.get("frames", 0), "voice": c.get("voice", 0), "voice_held": c.get("voice_held", 0),
+            "crc_fail": c.get("sacch_fail", 0) + c.get("facch_fail", 0), "lich_fail": c.get("lich_fail", 0),
+            "fec_bits": c.get("fec_bits", 0), "other_ran": st["ran_rejects"] if st else 0}
+
+
+def summary_text(m):
+    if not m["calls"]:
+        return "no call: frames %d, other RAN %d" % (m["frames"], m["other_ran"])
+    return ("RAN %s, src %s, dst %s, %s%s; frames %d, voice frames %d (held %d), CRC failures %d, LICH lost %d"
+            % (m["ran"], m["src"], m["dst"], m["type"], " emergency" if m["emergency"] else "", m["frames"],
+               m["voice"], m["voice_held"], m["crc_fail"], m["lich_fail"]))
+
+
+def records_to_syms(path, tmp):
+    """Records (JSON lines) to one symbol a byte: `rfoundry_debug.py air rx` chunks ("hard", "nsyms") or the bench
+    receiver's records (a "rec" with its sliced symbols as hex in "dibits", "syms" or "symbols", and "n"). Packed four
+    a byte, the first in bits 7-6"""
+    out, gaps = bytearray(), 0
+    with open(path) as f:
+        for line in f:
+            if not line.strip():
+                continue
+            d = json.loads(line)
+            if isinstance(d.get("hard"), str):
+                h, n = d["hard"], d["nsyms"]
+                gaps += 1 if "GAP" in (d.get("flags") or []) else 0
+            else:
+                r = d.get("rec") or {}
+                key = next((k for k in ("dibits", "syms", "symbols") if isinstance(r.get(k), str)), None)
+                if key is None:
+                    continue
+                h = r[key]
+                n = r.get("n") or r.get("nsyms") or 4 * (len(h) // 2)
+            b = bytes.fromhex(h)
+            out += bytes((b[i >> 2] >> (6 - 2 * (i & 3))) & 3 for i in range(n))
+    sp = os.path.join(tmp, "rec.syms")
+    with open(sp, "wb") as f:
+        f.write(out)
+    if gaps > 1:
+        print("note: %d chunks say symbols were lost before them; the symbols are joined" % gaps, file=sys.stderr)
+    return sp
+
+
 def compare(lines, exp):
     """What came out against what went in: frames, their channel bits (decode only), the voice in order"""
     frames = [x for x in lines if x["ev"] == "frame"]
@@ -170,12 +230,15 @@ MOD_OPTS = ["--9600", "--rate", "--full", "--dev-scale", "--offset", "--noise", 
 
 def report(lines, a):
     show(lines, a.json)
+    ok = True
     if a.expect:
         with open(a.expect) as f:
             r = compare(lines, json.load(f))
         print(json.dumps({"ev": "compare", **r}) if a.json else compare_text(r))
-        return r
-    return None
+        ok = r["vcall_ok"]
+    m = summary(lines)
+    print(json.dumps({"ev": "summary", **m}) if a.json else summary_text(m))
+    return 0 if ok and m["calls"] else 1
 
 
 def cmd_gen(a):
@@ -183,11 +246,15 @@ def cmd_gen(a):
 
 
 def cmd_decode(a):
-    report(run(["decode", a.input] + pass_opts(a, ["--9600", "--ran", "--unpacked"])), a)
+    if a.records or a.air_jsonl:
+        with tempfile.TemporaryDirectory() as tmp:
+            sp = records_to_syms(a.input, tmp)
+            return report(run(["decode", sp, "--unpacked"] + pass_opts(a, ["--9600", "--ran"])), a)
+    return report(run(["decode", a.input] + pass_opts(a, ["--9600", "--ran", "--unpacked"])), a)
 
 
 def cmd_disc(a):
-    report(run(["disc", a.input] + pass_opts(a, ["--9600", "--ran", "--rate", "--full", "--counts-per-khz", "--invert"])), a)
+    return report(run(["disc", a.input] + pass_opts(a, ["--9600", "--ran", "--rate", "--full", "--counts-per-khz", "--invert"])), a)
 
 
 def cmd_mod(a):
@@ -236,6 +303,25 @@ def cmd_selftest(a):
             r = cmp("clean%d" % rate, run(["disc", p("clean%d.raw" % rate), "--rate", srate, "--full", "5000"] + extra))
             check("%d through the soft modem at %d Hz, noise %d Hz" % (rate, srate, noise), r["voice_wrong"] == 0 and
                   r["voice_heard"] == r["voice_sent"] and r["vcall_ok"] and r["ended"], r)
+        # The same call as the bench receiver's records, cut into chunks that end inside a byte
+        with open(p("clean4800.dibits"), "rb") as f:
+            packed = f.read()
+        syms = [(packed[i >> 2] >> (6 - 2 * (i & 3))) & 3 for i in range(4 * len(packed))]
+        with open(p("rec.jsonl"), "w") as f:
+            for i in range(0, len(syms), 999):
+                part = syms[i:i + 999]
+                b = bytearray((len(part) + 3) // 4)
+                for j, d in enumerate(part):
+                    b[j >> 2] |= d << (6 - 2 * (j & 3))
+                f.write(json.dumps({"rec": {"dibits": b.hex(), "n": len(part)}}) + "\n")
+            f.write(json.dumps({"rec": {"sync": 1}}) + "\n")
+        with tempfile.TemporaryDirectory() as t2:
+            r = cmp("clean4800", run(["decode", records_to_syms(p("rec.jsonl"), t2), "--unpacked", "--ran", "7"]))
+        check("4800 from bench records", r["voice_wrong"] == 0 and r["voice_heard"] == r["voice_sent"] and r["vcall_ok"],
+              r)
+        m = summary(run(["decode", p("clean4800.dibits")]))
+        check("summary", m["calls"] == 1 and m["ran"] == 7 and m["src"] == 1001 and m["dst"] == 77 and
+              m["type"] == "group" and m["crc_fail"] == 0 and m["voice"] > 0, summary_text(m))
         e = gen("unit", "--unit", "2002", "--src", "1001", "--emergency", "--voice-frames", "8")
         r = cmp("unit", run(["decode", p("unit.dibits")]))
         check("unit call, emergency", r["vcall_ok"] and e["vcall"]["call_type"] == 4 and e["vcall"]["cc_opt"] & 0x80, r)
@@ -267,7 +353,10 @@ def main(argv=None):
     s.add_argument("input")
     s.add_argument("--expect")
     s.add_argument("--ran", type=int)
-    s.add_argument("--unpacked", action="store_true")
+    g = s.add_mutually_exclusive_group()
+    g.add_argument("--unpacked", action="store_true", help="one symbol a byte")
+    g.add_argument("--records", action="store_true", help="fsk4_bench.py rx --records")
+    g.add_argument("--air-jsonl", action="store_true", help="rfoundry_debug.py air rx records")
     common(s)
     s.set_defaults(fn=cmd_decode)
 

@@ -90,7 +90,8 @@ source = ["core/p25/p25_follow.c", "core/p25/p25_tsbk.c", "core/radio/radio_p25.
 [feature.nxdn]
 switch = "NXDN"
 spec = "docs/spec/nxdn.md"
-source = ["core/nxdn", "core/air", "core/fec"]
+source = ["core/nxdn", "core/air", "core/fec", "core/radio/radio_nxdn.c", "core/radio/radio_nxdn.h",
+          "core/radio/radio_air.h", "core/debuglink/debuglink_view_nxdn.c"]
 
 [feature.dmr_voice]
 switch = "DMR"

@@ -1050,6 +1050,13 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 			sb_str(&b, "TG ");
 		sb_u32(&b, v->p25.talk, 1);
 #endif
+#if CONFIG_NXDN
+	} else if (v->ch.mode == RADIO_MODE_NXDN) {
+		// The same for NXDN: the group, or the unit's ID
+		if ((v->nxdn.flags & RADIO_NXDN_TALK_UNIT) == 0)
+			sb_str(&b, "TG ");
+		sb_u32(&b, v->nxdn.talk, 1);
+#endif
 	} else {
 		// " MHz" goes before the frequency is cut (font.h alternates)
 		sb_str(&b, TEXT_ALT_OPEN);
@@ -1104,6 +1111,21 @@ static void draw_chips(const radio_view_t *v, const ui_state_t *s)
 		sb_init(&b, buf, sizeof buf);
 		sb_str(&b, "NAC ");
 		sb_hex(&b, v->p25.rx_nac, 3);
+		if (x + gfx_text_width(f, buf) <= w)
+			gfx_text(f, x, y, buf, ui_col.fg);
+#endif
+		return;
+	}
+	if (v->ch.mode == RADIO_MODE_NXDN) {
+		// The same for NXDN: the power, the RAN sent and the rate
+		if (pw_temp)
+			x = gfx_text(f, x, y, GLYPH_DOT, ui_col.warn);
+		x = gfx_text(f, x, y, ui_power_name(v->power, v->ch.tx_hz), pw_temp ? ui_col.warn : ui_col.fg) + f->w;
+#if CONFIG_NXDN
+		sb_init(&b, buf, sizeof buf);
+		sb_str(&b, "RAN ");
+		sb_u32(&b, v->nxdn.tx_ran, 1);
+		sb_str(&b, (v->nxdn.flags & RADIO_NXDN_9600) != 0 ? " 9600" : " 4800");
 		if (x + gfx_text_width(f, buf) <= w)
 			gfx_text(f, x, y, buf, ui_col.fg);
 #endif
@@ -1218,6 +1240,7 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 	case TXDENY_HWOPT: hwopt_needed(&b); break;
 	case TXDENY_REFUSED: sb_str(&b, TR(DENY_WHY_RADIO_REFUSED, "Radio refused to send")); break;
 	case TXDENY_BENCH: sb_str(&b, TR(DENY_WHY_AIR_BENCH, "Air bench: PTT off")); break;
+	case TXDENY_AIR_NO_TX: sb_str(&b, TR(DENY_WHY_AIR_NO_TX, "This mode: receive only")); break;
 #if CONFIG_P25_TRUNK
 	case TXDENY_TRUNK:
 		switch (v->p25.twhy) {
@@ -1752,35 +1775,69 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 }
 #endif
 
-#if CONFIG_P25
-// A P25 call coming in: why it isn't played, else who calls and where ("ID 1234 > TG 1", "ID 1234 > Private to 5678";
-// the ID is missing until the call's link control is read)
-static void p25_call_line(const radio_view_t *v, const font_t *f, int y)
+#if CONFIG_AIR
+// A P25 or NXDN call coming in (air_call): whether one is heard now, and its fields
+typedef struct {
+	bool played, enc, unit;
+	uint32_t src, dst;
+} air_call_t;
+
+static bool air_call(const radio_view_t *v, air_call_t *c)
 {
-	const radio_p25_view_t *p = &v->p25;
+#if CONFIG_P25
+	if (v->ch.mode == RADIO_MODE_P25 && (v->p25.flags & RADIO_P25_RX) != 0) {
+		const radio_p25_view_t *p = &v->p25;
+		c->played = (p->flags & RADIO_P25_PLAYED) != 0;
+		c->enc = (p->flags & RADIO_P25_ENC) != 0;
+		c->unit = (p->flags & RADIO_P25_UNIT) != 0;
+		c->src = p->src;
+		c->dst = p->dst;
+		return true;
+	}
+#endif
+#if CONFIG_NXDN
+	if (v->ch.mode == RADIO_MODE_NXDN && (v->nxdn.flags & RADIO_NXDN_RX) != 0) {
+		const radio_nxdn_view_t *n = &v->nxdn;
+		c->played = (n->flags & RADIO_NXDN_PLAYED) != 0;
+		c->enc = (n->flags & RADIO_NXDN_ENC) != 0;
+		c->unit = (n->flags & RADIO_NXDN_UNIT) != 0;
+		c->src = n->src;
+		c->dst = n->dst;
+		return true;
+	}
+#endif
+	(void)v;
+	(void)c;
+	return false;
+}
+
+// Why the call isn't played, else who calls and where ("ID 1234 > TG 1", "ID 1234 > Private to 5678"; the ID is
+// missing until the call's link control is read)
+static void air_call_line(const air_call_t *c, const font_t *f, int y)
+{
 	char buf[64], fit[48];
 	sbuf_t b;
 
-	if ((p->flags & (RADIO_P25_ENC | RADIO_P25_PLAYED)) != RADIO_P25_PLAYED) {
-		gfx_text_fit(f, (p->flags & RADIO_P25_ENC) != 0 ? TR(CALL_WHY_ENCRYPTED, "Encrypted: not played") :
+	if (c->enc || !c->played) {
+		gfx_text_fit(f, c->enc ? TR(CALL_WHY_ENCRYPTED, "Encrypted: not played") :
 			TR(CALL_WHY_OTHER_TG, "Other TG: not played"), gfx_width(), fit, sizeof fit);
 		gfx_text(f, 0, y, fit, ui_col.warn);
 		return;
 	}
 	// Too wide: the caller's ID goes first, then the target is cut
-	for (int with_id = p->src != 0; with_id >= 0; with_id--) {
+	for (int with_id = c->src != 0; with_id >= 0; with_id--) {
 		sb_init(&b, buf, sizeof buf);
 		if (with_id) {
 			sb_str(&b, "ID ");
-			sb_u32(&b, p->src, 1);
+			sb_u32(&b, c->src, 1);
 			sb_str(&b, " " GLYPH_ARROW " ");
 		}
-		if ((p->flags & RADIO_P25_UNIT) != 0) {
+		if (c->unit) {
 			sb_str(&b, TR(CALL_VALUE_PRIVATE_TO, "Private to "));
 		} else {
 			sb_str(&b, "TG ");
 		}
-		sb_u32(&b, p->dst, 1);
+		sb_u32(&b, c->dst, 1);
 		if (gfx_text_width(f, buf) <= gfx_width())
 			break;
 	}
@@ -1807,9 +1864,11 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 	bool meter = v->state == RS_RX || (v->state == RS_IDLE && v->monitor && v->ch.mode != RADIO_MODE_DMR);
 	switch (meter ? RS_RX : v->state) {
 	case RS_RX: {
-#if CONFIG_P25
-		if (!two && v->ch.mode == RADIO_MODE_P25 && (v->p25.flags & RADIO_P25_RX) != 0) {
-			p25_call_line(v, sm, y);	// one line: who calls says more than the meter
+#if CONFIG_AIR
+		air_call_t ac;
+		bool air_rx = air_call(v, &ac);
+		if (!two && air_rx) {
+			air_call_line(&ac, sm, y);	// one line: who calls says more than the meter
 			break;
 		}
 #endif
@@ -1820,9 +1879,9 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 		draw_meter(0, y + big->h / 4, w - tw - big->w, big->h / 2, v->rssi_dbm);
 		if (!two)
 			break;
-#if CONFIG_P25
-		if (v->ch.mode == RADIO_MODE_P25 && (v->p25.flags & RADIO_P25_RX) != 0) {
-			p25_call_line(v, sm, y2);
+#if CONFIG_AIR
+		if (air_rx) {
+			air_call_line(&ac, sm, y2);
 			break;
 		}
 #endif

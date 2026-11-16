@@ -392,6 +392,11 @@ msgctxt "QUICK_WHY_FM_ONLY_P25_CHANNEL"
 msgid "FM only: this is a P25 channel"
 msgstr "Solo FM: es un canal P25"
 
+#: core/ui/ui_app.c
+msgctxt "QUICK_WHY_FM_ONLY_NXDN_CHANNEL"
+msgid "FM only: this is NXDN"
+msgstr "Solo FM: es NXDN"
+
 #: core/ui/ui_app.c core/ui/ui_menus.c
 msgctxt "WHY_NOT_IN_BUILD"
 msgid "Not in this build"
@@ -4371,6 +4376,11 @@ msgstr "La radio no quiso transmitir"
 msgctxt "DENY_WHY_AIR_BENCH"
 msgid "Air bench: PTT off"
 msgstr "Banco de aire: sin PTT"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_AIR_NO_TX"
+msgid "This mode: receive only"
+msgstr "Este modo: solo recibe"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_P25T_NO_CC"

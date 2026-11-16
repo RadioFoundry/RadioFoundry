@@ -56,11 +56,19 @@ static const char *state_key(uint8_t s)
 	return s < 4 ? names[s] : "?";
 }
 
+// The channel's mode (radio_mode_t) as the view names it
+static const char *mode_key(uint8_t m)
+{
+	static const char *const names[] = { "fm", "dmr", "p25", "nxdn" };
+	return m < sizeof(names) / sizeof(names[0]) ? names[m] : "?";
+}
+
 static const char *deny_key(uint8_t d)
 {
 	static const char *const names[] = { "none", "rx_only", "band", "timeout", "no_freq", "mode", "no_codec",
 					     "no_dmr", "busy", "no_repeater", "rejected", "hotspot", "no_id", "inhibit",
-					     "battery", "am", "bcast", "sfr_rpt", "hwopt", "refused", "bench", "trunk" };
+					     "battery", "am", "bcast", "sfr_rpt", "hwopt", "refused", "bench", "trunk",
+					     "air_no_tx" };
 	return d < sizeof(names) / sizeof(names[0]) ? names[d] : "?";
 }
 
@@ -85,7 +93,7 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 		dl_text(t, "txlim=%s\ntxlim.n=%u\ntxlim.refused=%u\ntxlim.last_hz=%u\n",
 			l.block ? "block" : l.n != 0 ? "list" : "off", l.n, (unsigned)l.refused, (unsigned)l.last_hz);
 	}
-	dl_text(t, "mode=%s\n", v->ch.mode == RADIO_MODE_P25 ? "p25" : v->ch.mode == RADIO_MODE_DMR ? "dmr" : "fm");
+	dl_text(t, "mode=%s\n", mode_key(v->ch.mode));
 	dl_text(t, "am=%u\nbcast=%u\nbcast_fault=%u\nbcast_khz=%u\n", v->am, v->bcast, v->bcast_fault, (unsigned)v->bcast_khz);
 	dl_text(t, "vfo=%u\nvfo_index=%u\n", v->vfo, v->vfo_index);
 	dl_text(t, "zone_index=%u\nzone_pos=%u\nzone_size=%u\nzone_count=%u\n", v->zone_index, v->zone_pos, v->zone_size,
@@ -151,7 +159,7 @@ static void channel_section(const radio_view_t *v, dl_text_t *t)
 
 	dl_text_kv_str(t, "ch.name", c->name);
 	dl_text(t, "ch.rx_hz=%u\nch.tx_hz=%u\n", (unsigned)c->rx_hz, (unsigned)c->tx_hz);
-	dl_text(t, "ch.mode=%s\n", c->mode == RADIO_MODE_P25 ? "p25" : c->mode == RADIO_MODE_DMR ? "dmr" : "fm");
+	dl_text(t, "ch.mode=%s\n", mode_key(c->mode));
 	dl_text(t, "ch.kind=%u\n", c->kind);	// channel-modes.md 4: 0 a plain channel
 	dl_text(t, "ch.bw=%s\n", c->bw == RADIO_BW_25K ? "25k" : "12k5");
 	tone(t, "ch.rx_tone", &c->rx_tone);
@@ -544,7 +552,7 @@ static const char *const section_names[DL_VIEW_COUNT] = { "core", "channel", "dm
 						  "link", "features", "dmr_data", "storage", "dmr_ext",
 						  "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
 						  "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc",
-						  "net_link", "cps", "board", "audio", "p25", "p25_trunk" };
+						  "net_link", "cps", "board", "audio", "p25", "p25_trunk", "nxdn" };
 
 const char *debuglink_view_name(uint8_t section)
 {
@@ -660,6 +668,9 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_P25_TRUNK:
 		debuglink_view_p25_trunk(t);
+		break;
+	case DL_VIEW_NXDN:
+		debuglink_view_nxdn(v, t);
 		break;
 	case DL_VIEW_USRP:
 #if CONFIG_NET_USRP

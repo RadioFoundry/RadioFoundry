@@ -394,6 +394,11 @@ msgctxt "QUICK_WHY_FM_ONLY_P25_CHANNEL"
 msgid "FM only: this is a P25 channel"
 msgstr "仅 FM：这是 P25 信道"
 
+#: core/ui/ui_app.c
+msgctxt "QUICK_WHY_FM_ONLY_NXDN_CHANNEL"
+msgid "FM only: this is NXDN"
+msgstr "仅 FM：这是 NXDN"
+
 #: core/ui/ui_app.c core/ui/ui_menus.c
 msgctxt "WHY_NOT_IN_BUILD"
 msgid "Not in this build"
@@ -4373,6 +4378,11 @@ msgstr "电台拒绝发射"
 msgctxt "DENY_WHY_AIR_BENCH"
 msgid "Air bench: PTT off"
 msgstr "空口测试台：PTT 关闭"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_AIR_NO_TX"
+msgid "This mode: receive only"
+msgstr "此模式：仅接收"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_P25T_NO_CC"
