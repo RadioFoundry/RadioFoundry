@@ -650,6 +650,10 @@ The lowest level's drive is 56.5 % of the 1 W row's, 0 to 3 counts over the dead
 (2 on the radio measured, its 1 W row 972). At 0 it takes the edge's boost ([pa-keyup.md](pa-keyup.md) 2), within a
 count of the others'.
 
+The VHF image doesn't use these constants: its PA is not measured, and constants that key the UHF PA just in time
+could key a slower one late. It keys every level at its own drive at the key timer's first step, 30 µs after the RF
+TX interrupt (`PA_KEYUP_FIXED`), as the radio keyed before the rule.
+
 The window used to be 1530 µs: the second level's lead was then just past it, so it was boosted and ran 3.6-4.7 dB
 past its power, though written alone at the window's start its own drive is up 0.18 ms before the first symbol,
 0.7 dB over. An approach drive (`ease_pm` 304) capped that boost but kept the levels from 1 W up at the approach

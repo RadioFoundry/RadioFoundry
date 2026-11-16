@@ -77,9 +77,16 @@
 // 1.53 ms it was boosted and ran 3.6-4.7 dB past its power, from 1.65 ms it is 0.7 dB over. No approach (ease_pm): it
 // kept the levels from 1 W up on a lower drive from 2.2 ms ahead, a step 6-9 dB down in the guard and the slot before.
 // The PA goes on with the first drive
+#if RFOUNDRY_BAND_VHF
+// The VHF radio's PA is not measured, and a band's PA can be several times slower than another's: constants that key
+// the UHF PA just in time could key this one late at every level. So every level at its own drive from the timer's
+// first step after the interrupt, as before the rule, until a VHF radio is measured
+static const pa_keyup_cfg_t keyup_cfg = PA_KEYUP_FIXED(KEYUP_MAX_AHEAD_US);
+#else
 static const pa_keyup_cfg_t keyup_cfg = { .dead_pm = 563, .knee_us = 91, .slope_us = 1003,
 					  .window_us = DMR_KEY_INT_AHEAD_US - 880u, .settle_us = 506,
 					  .pa_us = KEYUP_MAX_AHEAD_US, .ease_pm = 0 };
+#endif
 
 // Receive the repeater's outbound between our bursts (the modem's tx_listen_split): after each burst the synthesizer goes to the receive LO and the receiver on; RF_TX_INTER comes LISTEN_LEAD_STEPS earlier, and
 // there the synthesizer goes back to the carrier, lock detect is waited for, and the PA keys at the slot as before
