@@ -1536,7 +1536,11 @@ export function restoreView() {
 			await sleep(1200);
 			await c.stub.resetChip();
 			await dropC7();
-			fill(status, notice(t("flash.c7.restore.done", { written: res.written, same: res.same }), "ok"),
+			// what was written and what was not, in words: a square left "unchanged" on the map alone reads as skipped
+			const slotKept = slotState.same > 0 && !slotState.todo && pm.subarray(slot0, slot1).some((b) => b !== 0xFF);
+			fill(status, h("div", { class: "notice ok" }, h("p", {}, t("flash.c7.restore.done")),
+					h("p", { class: "small" }, t("flash.c7.restore.counts", { written: res.written, same: res.same })),
+					slotKept ? h("p", { class: "small" }, t("flash.c7.restore.slot_same")) : null),
 				S().bundle.parts.get("c7000-data") ? notice(t("flash.c7.restore.data_note"), "info") : null);
 		} catch (e) {
 			ctx.flashFinished(started, e);
@@ -1582,9 +1586,13 @@ register({
 		// the factory update mode: a reinstall that needs nothing to answer on the cable but the radio's own loader. stuck:
 		// a radio without a complete application stays in it (white screen, red LED), a symptom of its own
 		extra: (radio, fb) => {
+			// the codec's space, which a restore right after an install finds as the backup has it: the result says so
+			const [slot0, slot1] = C().boards[boardId()].slot;
+			const slotState = { todo: 0, same: 0 };
 			const route = factoryRoute(radio, fb);
 			return route ? [{ id: "updatemode", title: "flash.help.fix.iap", stuck: route.stuck,
 				text: route.stuck ? "flash.help.fix.iap_text" : `flash.help.fix.factory_text_${route.needs}`, prepare: () => { session().forceIap = true; } }] : [];
+				if (a >= slot0 && a < slot1 && st in slotState) slotState[st]++;
 		} },
 	ownsBundle: hasC7Backup,
 	vendorRestore: (radio, file, fb) => vendorBundle(radio, file, fb.c7000),

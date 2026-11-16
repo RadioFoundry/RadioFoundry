@@ -1296,6 +1296,8 @@
  "flash.c7.restore.lead_rom": "将备份的固件和编解码器原样写回，然后写入启动区域的第一个扇区，该扇区告诉电台固件从何处开始。只写入有差异的部分。启动区域的其余部分绝不写入。",
  "flash.c7.restore.go": "恢复",
  "flash.c7.restore.done": "恢复完成并通过校验。电台正以恢复的固件重启。",
+ "flash.c7.restore.counts": "已写入的部分：{written}。已与备份一致、未再写入的部分：{same}。",
+ "flash.c7.restore.slot_same": "电台中的编解码器已与备份一致，因此未写入编解码器空间。",
  "flash.c7.restore.other_radio": "此备份来自其他电台型号。",
  "flash.c7.restore.no_rom_flag": "此备份的开头不是电台的启动标志，因此它不是此电台完整的程序存储备份。未写入任何内容。",
  "flash.c7.restore.boot_differs": "电台的启动区域与备份中的不同，而电台编程工具不会写入该区域。未写入任何内容。请从本页面发送问题报告。",

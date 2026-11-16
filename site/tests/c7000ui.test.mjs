@@ -331,6 +331,8 @@ test("restore: the write logs its range and that the bootloader is unchanged, as
 	const forwards = [];
 	const pm = new Uint8Array(C.progmem_size).fill(0xFF);
 	pm.fill(0x11, C.app_start, C.app_start + 8192);
+	const slot0 = C.boards[radio.flash.board].slot[0];
+	pm.fill(0x22, slot0, slot0 + 3 * C.sector);
 	const state = { radio, task: "restore", forward: (b) => forwards.push(b), data: { fb },
 		bundle: { meta: { radio: { name: radio.name }, firmware_now: { kind: "stock" } },
 			parts: new Map([["c7000-progmem", { what: "c7000-progmem", file: "program-memory.bin", complete: true, addr: 0, data: pm }]]) } };
@@ -341,12 +343,20 @@ test("restore: the write logs its range and that the bootloader is unchanged, as
 	const boot = new Uint8Array(C.app_start).fill(0xA5);
 	state.c7 = { log: { add() {}, el: new El("div") }, stream: null,
 		stub: { dump: async () => boot.slice(), ledSequence: async () => {}, resetChip: async () => {},
-			writeProgram: async (data, start, { onSector }) => { onSector(C.app_start, "todo"); onSector(C.app_start, "written"); return { written: 1, same: 0 }; } } };
+			writeProgram: async (data, start, { onSector }) => {
+				onSector(C.app_start, "todo");
+				onSector(C.app_start, "written");
+				for (let a = slot0; a < slot0 + 3 * C.sector; a += C.sector) onSector(a, "same");
+				return { written: 1, same: 3 };
+			} } };
 	state.fakeC7 = {};
 	const box = c7ui.restoreView();
 	forwards.at(-1).click();
 	for (let i = 0; i < 300 && !/Restore complete/.test(box.textContent); i++) await sleep(10);
 	assert.match(box.textContent, /Restore complete/);
+	// what was not written is said in words: a codec the radio already had as the backup has it looked skipped
+	assert.match(box.textContent, /Parts written: 1\. Parts that already matched the backup and were not written again: 3\./);
+	assert.match(box.textContent, /codec in the radio already matched the backup/);
 	const tr = diag.trail(50).join("\n");
 	assert.match(tr, /restore bundle \{"progmem":true/);
 	assert.match(tr, /write range \{"sectors":1,.*"bootloader":"unchanged"/);

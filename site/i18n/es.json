@@ -1296,6 +1296,8 @@
  "flash.c7.restore.lead_rom": "Vuelve a escribir exactamente el firmware y el códec de la copia de seguridad y después el primer sector del área de arranque, que indica a la radio dónde empieza su firmware. Solo se escriben las partes que difieren. El resto del área de arranque nunca se escribe.",
  "flash.c7.restore.go": "Restaurar",
  "flash.c7.restore.done": "Restauración completada y verificada. La radio se está reiniciando con el firmware restaurado.",
+ "flash.c7.restore.counts": "Partes escritas: {written}. Partes que ya coincidían con la copia de seguridad y no se volvieron a escribir: {same}.",
+ "flash.c7.restore.slot_same": "El códec de la radio ya coincidía con la copia de seguridad, así que el espacio del códec no se escribió.",
  "flash.c7.restore.other_radio": "Esta copia de seguridad es de otro modelo de radio.",
  "flash.c7.restore.no_rom_flag": "Esta copia de seguridad no empieza con la marca de arranque de la radio, así que no es una copia completa de la memoria de programa de esta radio. No se ha escrito nada.",
  "flash.c7.restore.boot_differs": "El área de arranque de la radio difiere de la de la copia de seguridad, y la utilidad de programación de radios no la escribe. No se ha escrito nada. Envía un informe de problema desde esta página.",

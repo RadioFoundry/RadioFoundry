@@ -1296,6 +1296,8 @@
  "flash.c7.restore.lead_rom": "Riscrive esattamente il firmware e il codec del backup, poi il primo settore dell'area di avvio, che indica alla radio dove inizia il firmware. Vengono scritte solo le parti diverse. Il resto dell'area di avvio non viene mai scritto.",
  "flash.c7.restore.go": "Ripristina",
  "flash.c7.restore.done": "Ripristino completato e verificato. La radio si sta riavviando con il firmware ripristinato.",
+ "flash.c7.restore.counts": "Parti scritte: {written}. Parti che corrispondevano già al backup e non sono state riscritte: {same}.",
+ "flash.c7.restore.slot_same": "Il codec nella radio corrispondeva già al backup, quindi lo spazio del codec non è stato scritto.",
  "flash.c7.restore.other_radio": "Questo backup è di un altro modello di radio.",
  "flash.c7.restore.no_rom_flag": "Questo backup non inizia con il contrassegno di avvio della radio, quindi non è un backup completo della memoria di programma di questa radio. Non è stato scritto nulla.",
  "flash.c7.restore.boot_differs": "L'area di avvio della radio è diversa da quella del backup, e l'utility di programmazione non la scrive. Non è stato scritto nulla. Invia una segnalazione di problema da questa pagina.",

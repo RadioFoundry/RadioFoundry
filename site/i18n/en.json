@@ -1296,6 +1296,8 @@
  "flash.c7.restore.lead_rom": "Writes the backup's firmware and codec back exactly, then the first sector of the start-up area, which tells the radio where its firmware starts. Only the parts that differ are written. The rest of the start-up area is never written.",
  "flash.c7.restore.go": "Restore",
  "flash.c7.restore.done": "Restore complete and verified. The radio is restarting with the restored firmware.",
+ "flash.c7.restore.counts": "Parts written: {written}. Parts that already matched the backup and were not written again: {same}.",
+ "flash.c7.restore.slot_same": "The codec in the radio already matched the backup, so the codec space was not written.",
  "flash.c7.restore.other_radio": "This backup is from another radio model.",
  "flash.c7.restore.no_rom_flag": "This backup does not start with the radio's start-up flag, so it is not a whole program memory backup of this radio. Nothing was written.",
  "flash.c7.restore.boot_differs": "The radio's start-up area differs from the backup's, and the radio programming utility does not write it. Nothing was written. Send a problem report from this page.",

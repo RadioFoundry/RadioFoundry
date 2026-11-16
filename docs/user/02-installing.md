@@ -383,4 +383,8 @@ Factory Update Mode"), and Restore uses it too.
    upgrade tool and load the stock file.
 3. Write your codeplug backup with the manufacturer's CPS. The stock firmware can't read the codeplug RadioFoundry used.
 
+On a radio installed over its programming cable, a restore writes only the parts of the radio's memory that differ
+from the backup. When it finishes, it says how many parts it wrote and how many already matched. A codec the radio
+still holds as the backup has it is one of those: the installer says that the codec space was not written.
+
 Your radio's section in the [Radio reference](23-radios.md) says which way applies.
