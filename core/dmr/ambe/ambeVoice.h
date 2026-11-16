@@ -72,6 +72,9 @@ const dmr_voice_sink_t *ambeVoiceSink(void);
 const dmr_voice_source_t *ambeVoiceSource(void);
 // Stop the audio stream (leaving DMR mode); the next begin restarts it
 void ambeVoiceStop(void);
+// Start the audio stream now, for a voice path whose frames come from a task that must not start it (NXDN's
+// provider task, radio/radio_nxdn.c): the sink's begin then finds it running. The task that calls ambeVoiceStop
+void ambeVoiceStart(void);
 // Whether the voice stream runs (its callback owns hal_audio_t). Call task only
 bool ambeVoiceStreaming(void);
 // Something else to hear while the voice stream runs (beeps): called at the end of each audio block with the speaker

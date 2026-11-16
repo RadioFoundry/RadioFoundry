@@ -169,6 +169,7 @@ typedef enum {
 	RREQ_P25_SET,		// radio_task.c: the pending P25 settings were copied (radio_p25_set_settings); applied here
 	RREQ_AIR_BENCH,		// the air interface bench (CONFIG_AIR_RAW): arg 1 take the modem, 0 give it back
 	RREQ_AIR_TX,		// ... arg 1 key (arg2: the longest time in ms), 0 unkey
+	RREQ_NXDN_SET,		// radio_task.c: the pending NXDN settings were copied (radio_nxdn_set_settings); applied here
 } radio_req_type_t;
 
 // RREQ_TONE's argument: which (RADIO_TONE_*) in bits 25:24, the tone type in 23:16, the value in 15:0
@@ -299,9 +300,12 @@ typedef struct {
 	uint8_t wake_seen;		// dmr_call_view_t.wake_sent last seen
 	bool led_timed;			// a timed signal was showing at the last outputs(): the tick keeps calling it
 	bool hotspot;			// hotspot mode: the host link owns the modem
+#if CONFIG_AIR
+	// An air-framed mode (P25, NXDN; radio_air.h)
+	bool air_tx;			// a transmission runs in the engine (from prepare until it is done and cleared)
+	bool air_keyed;			// board.radio->tx() keyed for it (until tx_off)
+#endif
 #if CONFIG_P25
-	bool p25_tx;			// a P25 transmission runs in the engine (from prepare until it is done and cleared)
-	bool p25_keyed;			// board.radio->tx() keyed for it (until tx_off)
 #if CONFIG_P25_TRUNK
 	bool p25_req;			// PTT on a trunked channel: a voice request waits for its grant
 	bool p25_talk;			// the transmission runs on the voice channel granted to us

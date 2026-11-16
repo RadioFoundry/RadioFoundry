@@ -826,6 +826,19 @@ void radio_p25_tx_clear(void)
 	}
 }
 
+const radio_air_ops_t radio_p25_air = {
+	radio_p25_running, NULL, radio_p25_tx_prepare, radio_p25_tx_go, radio_p25_tx_stop, radio_p25_tx_abort,
+	radio_p25_tx_state, radio_p25_tx_clear,
+};
+
+#ifndef HAL_VOCODER_LEND_BYTES
+void *radio_p25_idle_mem(size_t *len)
+{
+	*len = sizeof(own_mem);
+	return mem == NULL ? &own_mem : NULL;
+}
+#endif
+
 void radio_p25_stats(radio_p25_stats_t *out)
 {
 	*out = stats;
