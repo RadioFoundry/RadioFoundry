@@ -373,6 +373,7 @@ generate false PTT events when their bias is removed, so keep PA13 high during r
 | Write | address+W, register, data high byte, data low byte |
 | Read | address+W, register, then repeated transaction address+R, 2 bytes (high first). A stop between the two works |
 | Retries | the bus occasionally NAKs; retry up to 3 times with 1 ms between |
+| Bus clear | a transfer cut short in a read leaves the chip holding SDA low; the peripheral then reports busy and its reset doesn't help. After the third failed try: SCL clocked by hand until SDA is released (9 pulses at most), a stop, then the peripheral set up again. Diagnostics line 4 counts them (`clr`) |
 | Reference | 26 MHz assumed (reg 0x04 bit0 = 0 and reg 0x30 bit14 = 1 select 25.6/26 MHz and 26/13 MHz, i.e. 26 MHz). Unverified on the board |
 | Paging | reg 0x7F selects the register page (0 or 1); page 1 holds the AGC table |
 

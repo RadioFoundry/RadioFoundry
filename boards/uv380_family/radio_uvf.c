@@ -62,6 +62,7 @@ static struct {
 	radio_bw_t rx_bw;
 	subtone_t rx_tone;
 	uint32_t bus_errors;	// I2C failures and failed chip operations since start (debug)
+	uint32_t bus_clears;	// times the AT1846S held SDA and was clocked free (i2c_bus_clear)
 	uvf_radio_diag_t diag;
 	radio_status_t last_status;	// returned without bus traffic while DMR transmits
 	uint16_t tone_hz;		// FM TX tone in place of the microphone (tx_tone), 0 = none
@@ -121,12 +122,44 @@ static void i2c_setup(void)
 	HAL_I2C_Init(&i2c3);
 }
 
+// A transfer cut short in the middle of a read leaves the chip driving SDA low until it gets the rest of its clocks.
+// The peripheral then sees a busy bus for good, and resetting it changes nothing: every transfer after it fails.
+// Clock SCL by hand until the chip lets SDA go (nine pulses end any byte), then a stop (I2C-bus specification, bus
+// clear). The lines are released through the pull-ups, never driven high
+static void i2c_line(GPIO_TypeDef *port, uint16_t pin, bool high)
+{
+	if (high) {
+		stm32_pin_in(port, pin, GPIO_PULLUP);
+	} else {
+		stm32_pin_out(port, pin, false, true);
+	}
+	hal_delay_us(10);
+}
+
+static void i2c_bus_clear(void)
+{
+	i2c_line(PIN_PORT(PIN_I2C3_SDA), PIN_MASK(PIN_I2C3_SDA), true);
+	i2c_line(PIN_PORT(PIN_I2C3_SCL), PIN_MASK(PIN_I2C3_SCL), true);
+	if (PIN_READ(PIN_I2C3_SDA)) {
+		return;		// nothing holds it: the peripheral reset is enough
+	}
+	r.bus_clears++;
+	for (int i = 0; i < 9 && !PIN_READ(PIN_I2C3_SDA); i++) {
+		i2c_line(PIN_PORT(PIN_I2C3_SCL), PIN_MASK(PIN_I2C3_SCL), false);
+		i2c_line(PIN_PORT(PIN_I2C3_SCL), PIN_MASK(PIN_I2C3_SCL), true);
+	}
+	i2c_line(PIN_PORT(PIN_I2C3_SCL), PIN_MASK(PIN_I2C3_SCL), false);	// a stop: SDA rises while SCL is high
+	i2c_line(PIN_PORT(PIN_I2C3_SDA), PIN_MASK(PIN_I2C3_SDA), false);
+	i2c_line(PIN_PORT(PIN_I2C3_SCL), PIN_MASK(PIN_I2C3_SCL), true);
+	i2c_line(PIN_PORT(PIN_I2C3_SDA), PIN_MASK(PIN_I2C3_SDA), true);
+}
+
 // Task-level transfers from more than one task (the radio task's driver, the debug link's CHIP_REG): one at a time,
 // so a retry's peripheral reset never lands in another task's transfer. ISR writes (rf_isr_write) don't take it
 static SemaphoreHandle_t i2c_lock;
 
 // One register transfer, the lock held in task context (i2c_xfer). Task context: up to 3 tries 1 ms apart, then the
-// peripheral is reset. ISR context: one try, and none at all while a task transfer owns the bus (skip, never wait)
+// bus is cleared and the peripheral reset. ISR context: one try, and none at all while a task transfer owns the bus (skip, never wait)
 static bool i2c_xfer_once(uint8_t reg, uint8_t *buf, bool write, bool isr)
 {
 	int tries = isr ? 1 : I2C_TRIES;
@@ -147,6 +180,7 @@ static bool i2c_xfer_once(uint8_t reg, uint8_t *buf, bool write, bool isr)
 	r.bus_errors++;
 	if (!isr) {
 		HAL_I2C_DeInit(&i2c3);
+		i2c_bus_clear();
 		i2c_setup();
 	}
 	return false;
@@ -1129,6 +1163,7 @@ void uvf_radio_diag(uvf_radio_diag_t *d)
 {
 	*d = r.diag;
 	d->bus_errors = r.bus_errors;
+	d->bus_clears = r.bus_clears;
 }
 
 // The debug link's CHIP_REG (board.chip_reg, hardware-dm1701.md 5.12): chip 0 is the AT1846S, page 0, registers
