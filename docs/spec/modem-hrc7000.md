@@ -15,7 +15,7 @@ boards); the stack-side contract is in `dmr-modem.md`; the HR_C6000 equivalent i
 | 6, 7 | Transmit sequences, CRC and FEC |
 | 8 | FM mode: registers, tones, DTMF, prompt FIFO, receive audio |
 | 9 | Driver requirements |
-| 10 | Air interface provider and receive tap (`CONFIG_AIR`) |
+| 10 | Air interface provider and receive tap (`CONFIG_AIR`, derived from `CONFIG_P25`) |
 | 11 | Open questions |
 
 Sources: the HR_C7000 chip user guide v2.7 (2016; "the datasheet" below) and measurements on a radio or the SDR bench

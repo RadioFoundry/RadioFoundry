@@ -138,17 +138,8 @@ const char build_features[] =
 #if CONFIG_AM_RX
 	"AM_RX,"
 #endif
-#if CONFIG_AIR
-	"AIR,"
-#endif
 #if CONFIG_P25
 	"P25,"
-#endif
-#if CONFIG_IMBE
-	"IMBE,"
-#endif
-#if CONFIG_MBE
-	"MBE,"
 #endif
 #if CONFIG_AIR_RAW
 	"AIR_RAW,"

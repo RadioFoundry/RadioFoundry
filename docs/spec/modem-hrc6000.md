@@ -793,7 +793,7 @@ at the slot start. Earlier runs also found every fourth TS2 burst sent as a zero
 
 ## 10. Physical layer pipe
 
-`drivers/modem/hrc_common/hrc6000_air.c` (`CONFIG_AIR`) is the board's air interface provider (`hal_air.h`): symbols
+`drivers/modem/hrc_common/hrc6000_air.c` (`CONFIG_AIR`, derived from `CONFIG_P25`) is the board's air interface provider (`hal_air.h`): symbols
 in air order, with soft values and time stamps, for modes the core frames itself. The chip runs in its physical layer
 mode (0x10 bits 4-3 = 00) and only modulates and slices. A session halts the slot engine and takes its three
 interrupt lines and its task; its state lives in the halted engine's event queue, so a session costs no RAM of its

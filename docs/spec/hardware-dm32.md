@@ -1521,7 +1521,7 @@ and jumps: the three guards (magic, length, CRC-32) are what keep a stray or tru
 the bootloader identical to earlier dumps, a write test on the data flash, and the restart. Not yet run with the
 universal build: the boot ROM load at power-on.
 
-### 17.3 Air interface (`CONFIG_AIR`)
+### 17.3 Air interface (`CONFIG_P25`)
 
 `board.air` and `board.baseband` are the HR_C7000's provider and receive tap ([modem-hrc7000.md](modem-hrc7000.md) 10),
 under `CONFIG_DMR`. A session runs in DMR: the FD6818 keeps its DMR set-up, the speaker source (GPIO 0x2F) stays on

@@ -5,7 +5,8 @@
 
 The air interface carries channel symbols with time stamps between a radio's modem hardware and the core. It knows
 no mode. A digital mode the core frames itself (P25, [p25.md](p25.md)) describes what it needs as a profile, and
-every layer below works from that profile. Switch: `CONFIG_AIR` ([build-config.md](../build-config.md)). Which
+every layer below works from that profile. Built with the modes on it: `CONFIG_P25` ([build-config.md](../build-config.md); `CONFIG_AIR` is
+derived from it). Which
 radios have a provider: [feature-matrix.md](../feature-matrix.md).
 
 State: host tested. No provider has been checked on air yet; every provider answers a fit with `AIR_FIT_UNTESTED`

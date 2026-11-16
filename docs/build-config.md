@@ -131,11 +131,8 @@ below are for an STM32F4 radio.
 | `CONFIG_IDDB_COMPACT` | = DMR | the compact DMR ID database (format C, `docs/spec/iddb-compact.md`) read beside format N, listed as `IDDB_COMPACT` in the debug link features so the editor writes it only to radios that read it |
 | `CONFIG_DMR_CONTROL_STATION` | = DMR_IP_GATEWAY | control station mode for PC dispatch software: passthrough (the PC is the endpoint of the radio's own IP data while the link is up; the link layer stays on the radio) and the fixed link pair 192.168.10.1 / .2 instead of the address by DMR ID (`docs/spec/usb-network.md` 5). The power-on network setting belongs to `CONFIG_USB_NETWORK` |
 | `CONFIG_SNMP` | = DMR_IP_GATEWAY | the SNMPv2c agent on UDP 161 over the USB network and over the air, the RadioFoundry MIB, notifications to the host and an RF manager (`core/snmp`, `docs/spec/snmp.md`). Management over the air read-only and RF notifications off by default. About 3.2 KB RAM |
-| `CONFIG_AIR` | n | the air interface: symbols with time stamps between a board's modem hardware and the core, the framer, the soft modem and the shared FEC (`docs/spec/air-interface.md`). For digital modes the core frames itself; needs a board with `board_t.air` |
-| `CONFIG_P25` | = AIR | P25 Phase 1 conventional voice on the air interface: the engine and the P25 channel mode in the radio core, which runs it in memory the DMR vocoder lends where the platform has it (`docs/spec/p25.md`) |
-| `CONFIG_IMBE` | = P25 | the full-rate voice decoder for P25 Phase 1 voice, in integers (`core/mbe`): about 7.7 KB of flash, 0.9 KB of RAM kept and 2.5 KB of scratch, both placed by the caller. Decode only |
-| `CONFIG_MBE` | = IMBE | the MBE synthesis core the decoder sits on (harmonic oscillators, band noise, enhancement, concealment), shared by any front end that gives it model parameters |
-| `CONFIG_AIR_RAW` | n | diagnostics: debug link commands that open an air interface session and move raw symbols and tap samples, for bench tests (`docs/spec/debuglink.md`). Needs AIR and DEBUGLINK |
+| `CONFIG_P25` | n | P25 Phase 1 conventional voice (`docs/spec/p25.md`), the one switch for all of it: the air interface (symbols with time stamps between a board's modem hardware and the core, the framer, the soft modem, the shared FEC; `docs/spec/air-interface.md`), the engine and the P25 channel mode in the radio core, which runs it in memory the DMR vocoder lends where the platform has it, and the full-rate voice decoder in integers on the MBE synthesis core (`core/mbe`). Needs a board with `board_t.air` to run |
+| `CONFIG_AIR_RAW` | n | diagnostics: debug link commands that open an air interface session and move raw symbols and tap samples, for bench tests (`docs/spec/debuglink.md`). Needs P25 (an air-framed mode) and DEBUGLINK |
 | `CONFIG_SFR` | = DMR (n where the modem can't) | single frequency repeater: MMDVM SFR (the hotspot, duplex with RX = TX) and Standalone SFR (the repeater and user roles of a channel, `docs/spec/sfr.md`) |
 | `CONFIG_SFR_CWID` | = SFR | the standalone SFR repeater's periodic CW ID: the callsign from the radio name in Morse, in FM on the channel (`sfr.md` 4). Off: the setting isn't offered |
 | `CONFIG_SFR_DUALPATH_RX` | = SFR | the SFR user receive mode "Dual-path RX": a voice frame whose FEC failed is taken from the other copy of the call. Off: the mode isn't offered |
@@ -188,7 +185,8 @@ below are for an STM32F4 radio.
 
 Derived (not set by hand): `CONFIG_DMR_DATA_CORE`, the shared packet data / CSBK code, on when any data feature is;
 `CONFIG_DMR_AIR_QUEUE`, the data service's TX queue (`docs/spec/dmr-data.md` 12.6), on with `CONFIG_DMR_IP_GATEWAY` or
-`CONFIG_ZONE_SHARE`. `CONFIG_LANG_ANY` (`core/config.h`): on when any `CONFIG_LANG_*` is, the translation lookup and the
+`CONFIG_ZONE_SHARE`. `CONFIG_AIR`, `CONFIG_IMBE` and `CONFIG_MBE` (the air interface, the full-rate voice decoder, the MBE
+core) follow `CONFIG_P25`; a command line or a board's `config.mk` that sets one stops the build. `CONFIG_LANG_ANY` (`core/config.h`): on when any `CONFIG_LANG_*` is, the translation lookup and the
 fonts' Latin-1 glyphs.
 
 ## Values

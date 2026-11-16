@@ -75,25 +75,12 @@ switch = "RX_EXT"
 hardware = "a receiver chip whose documents give a range past the rated bands"
 spec = "docs/spec/radio-features.md"
 
-[feature.air]
-switch = "AIR"
-spec = "docs/spec/air-interface.md"
-source = ["core/air", "core/fec", "hal/hal_air.h", "hal/hal_baseband.h"]
-
+# P25 brings the air interface, the full-rate voice decoder and the MBE core (derived switches AIR, IMBE, MBE)
 [feature.p25]
 switch = "P25"
 spec = "docs/spec/p25.md"
-source = ["core/p25", "core/radio/radio_p25.c", "core/radio/radio_p25.h"]
-
-[feature.imbe]
-switch = "IMBE"
-spec = "docs/spec/p25.md"
-source = ["core/mbe/imbe.h", "core/mbe/imbe_dec.c", "core/mbe/imbe_tab.c", "core/mbe/imbe_tab.h", "core/p25/p25Voice.c"]
-
-[feature.mbe]
-switch = "MBE"
-spec = "docs/spec/p25.md"
-source = ["core/mbe"]
+source = ["core/p25", "core/radio/radio_p25.c", "core/radio/radio_p25.h", "core/air", "core/fec", "core/mbe",
+          "hal/hal_air.h", "hal/hal_baseband.h"]
 
 [feature.dmr_voice]
 switch = "DMR"

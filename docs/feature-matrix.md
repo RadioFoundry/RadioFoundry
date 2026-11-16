@@ -49,10 +49,7 @@ is `tools/bringup.py list --radio <id>`.
 | `am_rx` | not recorded | ✕ | not recorded | ✕ | ✕ | ✕ | ✕ |
 | `bcast_fm` | not recorded | ✕ | not recorded | not written | ✕ | ✕ | ✕ |
 | `rx_ext` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not written |
-| `air` | off | off | off | off | off | off | off |
 | `p25` | off | off | off | off | off | off | off |
-| `imbe` | off | off | off | off | off | off | off |
-| `mbe` | off | off | off | off | off | off | off |
 | `dmr_voice` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | partial, needs re-run |
 | `dmr_privacy` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `dmr_talker_alias` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
@@ -270,10 +267,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `ZONE_EDIT` | ● | ● | ● | ● | ● | ● | ● |
 | `CONTACT_EDIT` | ● | ● | ● | ● | ● | ● | ● |
 | `VOLUME_BAR` | ● | ● | ● | ● | ● | ● | ● |
-| `AIR` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `P25` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
-| `IMBE` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
-| `MBE` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `AIR_RAW` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | Voltage reading (board, no switch) | Battery | Battery | Battery | None | Battery | Battery | Supply |
 | Clock kept through power-off (board, no switch) | Yes | ? | Yes | ? | ? | ? | ? |
@@ -294,9 +288,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Broadcast FM receiver | `BCAST_FM` | ~0* | — | Needs a second receiver chip (DM-32's RDA5807M); glue not written yet |
 | Receive past the rated bands, Settings > Advanced | `RX_EXT` | 484 | — | Receive only, FM, off by default; ranges from each receiver chip's documents. MD-380: no receiver range in its chip documents |
 | DMR Tier II voice (modem, call stack, AMBE FEC, vocoder) | `DMR` | 175,856 | 134,308 | Includes every DMR feature and everything on IP over DMR |
-| Air interface: symbols between the modem and the core, the framer, the soft modem, the shared FEC | `AIR` | 4,964* | 2,464* | Needs a board with an air interface provider (`board.air`); without one (MD-380) nothing runs ([air-interface.md](spec/air-interface.md)) |
-| P25 Phase 1 conventional: the engine and the P25 channel mode | `P25` | 12,876* | 13,372* | Receive checked on air on the DM-32UV, transmit untested; the VFO's mode tile or the debug link sets it ([p25.md](spec/p25.md)). RAM: 1,144 B on the DM-1701 |
-| P25 voice: the full-rate decoder on the MBE core | `IMBE`, `MBE` | 8,936* | 8,904* | RAM: 3,968 B on the DM-1701 (the voice path's own block; a platform whose vocoder lends its memory needs none) |
+| P25 Phase 1 conventional: the air interface (framer, soft modem, shared FEC), the engine, the P25 channel mode and the full-rate voice decoder on the MBE core | `P25` | 26,904* | 24,640* | Needs a board with an air interface provider (`board.air`); without one (MD-380) nothing runs ([air-interface.md](spec/air-interface.md)). Receive and transmit checked on air on the DM-32UV (transmit carries silence frames: no voice encoder yet); the VFO's mode tile or the debug link sets it ([p25.md](spec/p25.md)). RAM: 5,192 B on the DM-1701, 424 B on the MD-380 |
 | Basic privacy (Motorola / Anytone BP) | `DMR_PRIVACY` | 1,936 | 1,992 |  |
 | Talker alias receive and send | `DMR_TALKER_ALIAS` | 984 | 1,300 |  |
 | ETSI GPS Info in the embedded LC | `DMR_GPS` | 2,208 | 2,152 |  |
