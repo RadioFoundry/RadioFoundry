@@ -306,7 +306,10 @@ The web flasher shows the same frame (`frame_image`) beside every update mode st
 (`flasher/radiotop.js`): the bootloader entry steps as the picture alone, the HR_C7000 steps with what the screen shows
 laid over it at `frame_geometry` and an LED swatch that blinks as the real LED does, with a caption in words. Nothing
 in the flasher names a radio: a new board's picture appears with no flasher change. `site/tests/radio_images_test.py`
-(run by `site/tests/run.sh`) renders every board's picture and fails a board without a usable one.
+(run by `site/tests/run.sh`) renders every board's picture and fails a board without a usable one. The picture is at
+most 300 px high (`--rt-h` of `.rt-pic` in `site.css`), so a tall portable leaves the step's buttons on the screen; its
+width follows from the drawing's shape (`frame_geometry.aspect`, which `radiotop.js` hands the stylesheet as
+`--rt-aspect`).
 
 On the bootloader entry steps (the STM32 radios' and the HR_C7000 update mode's), the flasher rings the keys to hold
 on the picture and names them under it ("Hold PTT and SK1"). The keys are `[flash.bootloader] hold` in board.toml,

@@ -13,6 +13,10 @@ import { h, svg, t, ROOT } from "./dom.js";
 // The picture's address in the site, or null when the data has none
 export const pictureSrc = (radio) => radio?.frame_image || null;
 
+// The picture's shape for the stylesheet (width / height, frame_geometry.aspect), which keeps a tall radio's picture
+// from pushing the step's buttons off the screen (site.css .rt-pic); "" when the data has none
+export const shapeStyle = (radio) => (radio?.frame_geometry?.aspect > 0 ? `--rt-aspect:${radio.frame_geometry.aspect}` : "");
+
 // The keys held to enter update mode, by key name (board.toml [flash.bootloader] hold): [] when the data has none
 export const holdKeys = (radio) => radio?.flash?.bootloader_hold || [];
 
@@ -48,7 +52,7 @@ export function radioPicture(radio, { keys = [] } = {}) {
 		"data-key": m.name, style: `left:${m.left}%;top:${m.top}%;width:${m.width}%;height:${m.height}%` }));
 	const caption = keys.length ? h("figcaption", { class: "rt-caption" }, h("span", {}, holdCaption(keys))) : null;
 	return h("figure", { class: "radio-top radio-pic" },
-		h("div", { class: "rt-pic" }, h("img", { src: ROOT + src, alt: radio.name || "", class: "rt-img" }), ...marks), caption);
+		h("div", { class: "rt-pic", style: shapeStyle(radio) }, h("img", { src: ROOT + src, alt: radio.name || "", class: "rt-img" }), ...marks), caption);
 }
 
 // What RadioFoundry's own screens look like on this radio: the UI gallery's picture of a screen for the radio's display
@@ -72,7 +76,7 @@ export function radioTop(radio, initial = {}) {
 	const shot = h("img", { alt: "", class: "rt-shot", hidden: true });
 	// what the screen shows, laid over the picture's screen where the data says it is
 	const screen = src && pct ? h("div", { class: "rt-screen", style: `left:${pct.left}%;top:${pct.top}%;width:${pct.width}%;height:${pct.height}%` }, shot) : null;
-	const pic = h("div", { class: "rt-pic", role: "img" }, src ? h("img", { src: ROOT + src, alt: "", class: "rt-img" }) : null, screen);
+	const pic = h("div", { class: "rt-pic", role: "img", style: shapeStyle(radio) }, src ? h("img", { src: ROOT + src, alt: "", class: "rt-img" }) : null, screen);
 	const led = svg("circle", { cx: 12, cy: 12, r: 5, class: "rt-led" });
 	const glow = svg("circle", { cx: 12, cy: 12, r: 11, class: "rt-glow" });
 	const label = h("strong", {});

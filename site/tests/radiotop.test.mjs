@@ -51,6 +51,16 @@ test("every update mode step list marks the keys to hold", () => {
 
 // A radio without a display (board.toml display = "none"): the caption has no screen line, no shot goes over the
 // picture, and the connect step doesn't describe a screen
+test("the picture's shape goes to the stylesheet, which limits its height; none without the data", async () => {
+	const { shapeStyle } = await import("../static/js/flasher/radiotop.js");
+	assert.equal(shapeStyle({ frame_geometry: { aspect: 0.37795 } }), "--rt-aspect:0.37795");
+	assert.equal(shapeStyle({ frame_geometry: {} }), "");
+	assert.equal(shapeStyle(null), "");
+	// site.css: the height limit and the width that follows from the shape, with the px max-width the build reads
+	const css = (await import("node:fs")).readFileSync(new URL("../static/css/site.css", import.meta.url), "utf8");
+	assert.match(css, /\.rt-pic \{ --rt-h: \d+px;[^}]*width: calc\(var\(--rt-h\) \* var\(--rt-aspect, 1\)\); max-width: \d+px;/);
+});
+
 test("a radio without a display gets no screen line", () => {
 	const top = readFileSync(new URL("../static/js/flasher/radiotop.js", import.meta.url), "utf8");
 	assert.match(top, /const noScreen = radio\?\.display === "none";/);
