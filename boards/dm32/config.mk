@@ -29,3 +29,4 @@ BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is SPI NOR, GD25Q128 class (d
 # written, unconfirmed"): off by default, and off in ci's maximal configuration too
 BOARD_NOT_WRITTEN += VOX	# no hal_power_t.mic_level hook yet
 BOARD_NOT_WRITTEN += AUDIO_PROBE	# no board.audio_tap yet
+BOARD_NOT_WRITTEN += NXDN	# no RAM for it yet: about 4.3 KB (its engine, the air interface), 72 B more than is left; beside P25 0.9 KB more
