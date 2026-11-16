@@ -6278,22 +6278,21 @@ static void test_p25_vfo(void)
 	req(RREQ_PTT, 0);
 	run(500);
 	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
-	// Saved: DMR (or FM without the DMR VFO)
+	// Saved as P25
 	run(5000);
 	settings_read(&set);
-	CHECK(settings_vfo_mode(&set) == (CONFIG_VFO_DMR ? RADIO_MODE_DMR : RADIO_MODE_FM));
-	CHECK(sm.view.ch.mode == RADIO_MODE_P25);	// in use it stays P25
+	CHECK(settings_vfo_mode(&set) == RADIO_MODE_P25);
+	CHECK(sm.view.ch.mode == RADIO_MODE_P25);
 	// Out to a channel and back: the VFO is P25 still (RAM), the engine restarts
 	req(RREQ_VFO, 0);
 	CHECK(!sm.view.vfo && !radio_p25_running());
 	req(RREQ_VFO, 1);
 	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_P25 && radio_p25_running());
-	// After a restart the saved VFO comes back
+	// After a restart the saved VFO comes back in P25, the engine running
 	boot();
-	CHECK(!radio_p25_running() || sm.view.ch.mode == RADIO_MODE_P25);
-	if (sm.view.vfo) {
-		CHECK(sm.view.ch.mode == (CONFIG_VFO_DMR ? RADIO_MODE_DMR : RADIO_MODE_FM));
-	}
+	if (!sm.view.vfo)
+		req(RREQ_VFO, 1);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_P25 && radio_p25_running());
 	req(RREQ_VFO, 0);
 }
 

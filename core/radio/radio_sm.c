@@ -94,6 +94,16 @@ static void cw_cancel(radio_sm_t *sm);
 #define VFO_AVAILABLE	(CONFIG_VFO_FM || CONFIG_VFO_DMR)
 // The mode a VFO starts in
 #define VFO_MODE_DEFAULT	(CONFIG_VFO_FM ? RADIO_MODE_FM : RADIO_MODE_DMR)
+
+// P25 on this board: built, and the air interface can receive it
+static inline bool p25_ok(void)
+{
+#if CONFIG_P25
+	return radio_p25_fits();
+#else
+	return false;
+#endif
+}
 #if CONFIG_AIR_RAW
 #define BENCH_HELD(sm)		((sm)->air_bench)	// the debug link's air interface bench has the modem
 #else
@@ -4914,9 +4924,10 @@ static void restore_vfo(radio_sm_t *sm, const settings_t *st, uint8_t idx)
 	}
 	sm->vfo_ch.rx_hz = v.rx_hz;
 	sm->vfo_ch.tx_hz = v.tx_hz != 0 ? v.tx_hz : v.rx_hz;
-	// The saved mode if this build has that VFO; an older record holds FM
+	// The saved mode if this build has that VFO (P25: and the board runs it); an older record holds FM
 	sm->vfo_ch.mode = v.mode == RADIO_MODE_DMR && CONFIG_VFO_DMR ? RADIO_MODE_DMR :
-		v.mode == RADIO_MODE_FM && CONFIG_VFO_FM ? RADIO_MODE_FM : VFO_MODE_DEFAULT;
+		v.mode == RADIO_MODE_FM && CONFIG_VFO_FM ? RADIO_MODE_FM :
+		v.mode == RADIO_MODE_P25 && p25_ok() ? RADIO_MODE_P25 : VFO_MODE_DEFAULT;
 	sm->vfo_ch.bw = v.bw == RADIO_BW_25K ? RADIO_BW_25K : RADIO_BW_12K5;
 	sm->vfo_ch.power = v.power < board.power_count ? v.power : CODEPLUG_POWER_DEFAULT;
 	sm->vfo_ch.color_code = v.cc <= 15 ? v.cc : 1;
@@ -4926,12 +4937,6 @@ static void restore_vfo(radio_sm_t *sm, const settings_t *st, uint8_t idx)
 	sm->vfo_ch.tx_tone = tones_valid(&tx) ? tx : (subtone_t){ TONE_NONE, 0 };
 	vfo_sfr_set(&sm->vfo_ch, v.sfr_a);
 	sm->vfo_seeded = true;
-}
-
-// The saved VFO has FM and DMR only: P25 is kept as DMR (FM without the DMR VFO) until the settings carry it
-static uint8_t vfo_saved_mode(uint8_t mode)
-{
-	return mode != RADIO_MODE_P25 ? mode : CONFIG_VFO_DMR ? RADIO_MODE_DMR : RADIO_MODE_FM;
 }
 
 // The VFO in use (vfo_ch and its target) into VFO idx's settings fields
@@ -4944,7 +4949,7 @@ static void persist_vfo(const radio_sm_t *sm, settings_t *st, uint8_t idx)
 		if (sm->vfo_seeded) {
 			st->vfo2_rx_hz = v->rx_hz;
 			st->vfo2_tx_hz = v->tx_hz;
-			st->vfo2_mode = vfo_saved_mode(v->mode);
+			st->vfo2_mode = v->mode;	// P25 too: a build without it reads its default
 			st->vfo2_bw = v->bw;
 			st->vfo2_power = power;
 			st->vfo2_cc = v->color_code;
@@ -4965,7 +4970,7 @@ static void persist_vfo(const radio_sm_t *sm, settings_t *st, uint8_t idx)
 	if (sm->vfo_seeded) {
 		st->vfo_rx_hz = v->rx_hz;
 		st->vfo_tx_hz = v->tx_hz;
-		settings_set_vfo_mode_bw(st, vfo_saved_mode(v->mode), v->bw);
+		settings_set_vfo_mode_bw(st, v->mode, v->bw);
 		st->vfo_power = power;
 		settings_set_vfo_cc_ts(st, v->color_code, v->timeslot);
 		st->vfo_rx_tone_type = v->rx_tone.type;
@@ -6018,7 +6023,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 				(req->arg == RADIO_MODE_FM && !(sm->view.vfo ? CONFIG_VFO_FM : CONFIG_FM)) ||
 				(req->arg == RADIO_MODE_DMR && (radio_listen_band(sm->view.ch.rx_hz) ||
 								(sm->view.vfo && !CONFIG_VFO_DMR))) ||
-				(req->arg == RADIO_MODE_P25 && (!CONFIG_P25 || radio_listen_band(sm->view.ch.rx_hz)))) {
+				(req->arg == RADIO_MODE_P25 && (!p25_ok() || radio_listen_band(sm->view.ch.rx_hz)))) {
 			break;
 		}
 		sm->view.ch.mode = (uint8_t)req->arg;
