@@ -21,7 +21,7 @@
 #include "radio/mic_gain.h"
 #include "radio/ref_trim.h"
 #include "radio/radio_am.h"
-#include "radio/radio_bcast.h"
+#include "radio/radio_bands.h"
 #include "input/keyassign.h"
 #if CONFIG_HOTSPOT || CONFIG_USB_NETWORK
 #include "hostlink/hostlink.h"
@@ -2343,21 +2343,15 @@ static bool ced_changed(uint8_t r)
 }
 
 // RX in a receive-only band (the air band, broadcast FM: docs/spec/airband-and-broadcast.md 2): the copy becomes RX
-// only and FM (AM there), which is all the radio does there
+// only, and FM (AM there) in a listen band, which is all the radio does there
 static void ced_rx_band(channel_t *c)
 {
 	if (!board_in_band(c->rx_hz, false) || board_in_band(c->rx_hz, true))
 		return;
 	c->rx_only = true;
 	c->tx_hz = c->rx_hz;
-	c->mode = RADIO_MODE_FM;
-}
-
-// The radio receives this RX in AM or on the broadcast receiver whatever the channel's mode, never in DMR, and ignores
-// sub-audio there (radio_sm.c listen_band)
-static bool ced_listen_band(const channel_t *c)
-{
-	return radio_am_tx_refused(c->rx_hz) || radio_bcast_band(c->rx_hz);
+	if (radio_listen_band(c->rx_hz))
+		c->mode = RADIO_MODE_FM;
 }
 
 // A copy of what the radio uses now (temporary changes included), named after it: "Name 2", or the frequency
@@ -2383,7 +2377,7 @@ static void ced_from_view(void)
 
 static void ced_build(void)
 {
-	bool listen = ced_listen_band(&ced_ch);
+	bool listen = radio_listen_band(ced_ch.rx_hz);
 	bool dmr = CONFIG_DMR && ced_ch.mode == RADIO_MODE_DMR && !listen;
 	bool edit = CONFIG_CHANNEL_EDIT;
 	bool fresh = false, changed = false;
@@ -2588,7 +2582,7 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 		if (radio_am_tx_refused(ch->rx_hz))
 			sb_str(&b, "AM");
 		else
-			sb_str(&b, ch->mode == RADIO_MODE_DMR && !ced_listen_band(ch) ? "DMR" : "FM");
+			sb_str(&b, ch->mode == RADIO_MODE_DMR && !radio_listen_band(ch->rx_hz) ? "DMR" : "FM");
 		break;
 	case CE_RX:
 		sb_freq(&b, ch->rx_hz);
@@ -2718,9 +2712,10 @@ static const char *ced_problem(void)
 		return TR("RX is outside the radio's bands");
 	if (!c->rx_only && !board_in_band(c->tx_hz, true))
 		return TR("TX can't transmit there: set RX only");
-	if (CONFIG_DMR && c->mode == RADIO_MODE_DMR && !board_in_band(c->rx_hz, true))
+	if (CONFIG_DMR && c->mode == RADIO_MODE_DMR && radio_listen_band(c->rx_hz))
 		return TR("Receive only band: set FM");
-	if (CONFIG_DMR && c->mode == RADIO_MODE_DMR && c->contact == 0)
+	// The contact is whom PTT calls, so a channel that never transmits needs none
+	if (CONFIG_DMR && c->mode == RADIO_MODE_DMR && !c->rx_only && c->contact == 0)
 		return TR("Pick a TX contact first");
 	return NULL;
 }
@@ -2997,7 +2992,7 @@ static void chinfo_select(uint16_t i, bool hold)
 	case CE_NAME: ui_text_open(c->name, CODEPLUG_NAME_LEN); break;
 	case CE_MODE:
 		// No DMR in a listen band: AM in the air band, FM on the broadcast receiver
-		if (ced_listen_band(c)) {
+		if (radio_listen_band(c->rx_hz)) {
 			c->mode = RADIO_MODE_FM;
 			ui_toast(radio_am_tx_refused(c->rx_hz) ? TR("Air band: receive only") : TR("Broadcast: receive only"));
 		} else
@@ -4664,21 +4659,23 @@ static const ui_scr_def_t trim_screen = {
 #endif
 
 // ======================= About (Settings > Advanced) =======================
-// A text page, every word shown (nothing shortened), no status strip while idle: the release and the commit, RadioFoundry's license, the
-// authors, the third-party code and fonts in this image and the codec. From AUTHORS and platform/<platform>/THIRD_PARTY,
-// through the header make generates (tools/gen_about.py)
+// A text page, every word shown (nothing shortened), no status strip while idle: the release and the commit,
+// RadioFoundry's license, the maintainers, where the contributors are listed, the third-party code and fonts in this
+// image and the codec. From AUTHORS and platform/<platform>/THIRD_PARTY, through the header make generates
+// (tools/gen_about.py)
 
 static const char *const about_authors[] = RFOUNDRY_ABOUT_AUTHORS;
 static const char *const about_third[][2] = RFOUNDRY_ABOUT_THIRD_PARTY;
 static uint16_t about_first;	// first line shown
 static uint16_t about_max;	// the largest first line (from the last draw)
 
+// The text's bytes: the two lists make generated, this build's font lines, and 296 for the rest (the version lines,
+// the labels, and 35 for a translation's longer ones). A fixed size cut the last lines off where the lists are long
+#define ABOUT_TEXT_MAX (296u + RFOUNDRY_ABOUT_LIST_BYTES + (CONFIG_FONT_AA ? 32u : 0u) + (CONFIG_LANG_ZH ? 48u : 0u))
+
 static const char *about_text(void)
 {
-	// sb_str drops what doesn't fit, whole characters and all: the longest version and radio name, a Chinese build's
-	// UTF-8 labels and the authors and licenses from AUTHORS and THIRD_PARTY come to about 440 bytes. 400 cut the last
-	// line short, and the About page shows every line (docs/user/17-settings.md)
-	static char t[512];
+	static char t[ABOUT_TEXT_MAX];
 	sbuf_t b;
 	sb_init(&b, t, sizeof t);
 	// every line "Label: value" (ui_draw_text_page shows labels dim), each on its own line: "RadioFoundry v26.11" was
@@ -4706,12 +4703,17 @@ static const char *about_text(void)
 	sb_chr(&b, '\n');
 	sb_str(&b, TR("License: "));
 	sb_str(&b, "MIT, (c) 2026 The RadioFoundry Authors\n");
-	// one author per line, in AUTHORS order: a comma-joined list wraps mid-name on every display
-	sb_str(&b, RFOUNDRY_ABOUT_AUTHOR_COUNT > 1 ? TR("Authors:") : TR("Author:"));
+	// The authors (the copyright line above) are everyone who has contributed: too many to list here, so the page
+	// names the maintainers (AUTHORS) and says where the contributors are listed. One maintainer per line, in AUTHORS
+	// order: a comma-joined list wraps mid-name on every display
+	sb_str(&b, RFOUNDRY_ABOUT_AUTHOR_COUNT > 1 ? TR("Maintainers:") : TR("Maintainer:"));
 	for (unsigned i = 0; i < RFOUNDRY_ABOUT_AUTHOR_COUNT; i++) {
 		sb_chr(&b, RFOUNDRY_ABOUT_AUTHOR_COUNT > 1 ? '\n' : ' ');
 		sb_str(&b, about_authors[i]);
 	}
+	sb_chr(&b, '\n');
+	sb_str(&b, TR("Contributors:"));
+	sb_str(&b, "\ngithub.com/radiofoundry");	// on its own line, as a maintainer is: it never wraps after the label
 	for (unsigned i = 0; i < RFOUNDRY_ABOUT_THIRD_PARTY_COUNT; i++) {
 		sb_chr(&b, '\n');
 		sb_str(&b, about_third[i][0]);
@@ -5616,6 +5618,12 @@ static const set_item_t s_sound[] = {
 	TOGGLE(TRN("Key tones"), "beep", UI_SET_KEY_TONES),
 	NUMBER(TRN("Tone volume"), NULL, UI_SET_TONE_VOLUME, 0, 10, 1, NULL),
 	TOGGLE(TRN("Talk permit tone"), NULL, UI_SET_TALK_PERMIT),
+	TOGGLE(TRN("Call end tone"), NULL, UI_SET_CALL_END_TONE),
+	TOGGLE(TRN("TOT warning tone"), "time-out", UI_SET_TOT_WARN_TONE),
+	TOGGLE(TRN("Battery tone"), "low battery", UI_SET_BATTERY_TONE),
+	TOGGLE(TRN("TX denied tone"), "refused", UI_SET_TX_DENY_TONE),
+	TOGGLE(TRN("Scan stop tone"), NULL, UI_SET_SCAN_TONE),
+	TOGGLE(TRN("Emergency tone"), "alarm", UI_SET_EMERGENCY_TONE),
 	TOGGLE(TRN("Voice prompts"), "speech", UI_SET_VOICE_PROMPTS),
 	TOGGLE(TRN("Message tone"), NULL, UI_SET_MESSAGE_TONE),
 #if CONFIG_VIBRATE
@@ -5972,6 +5980,17 @@ static const char *set_why_not(const set_item_t *s)
 		return TR("Voice prompts: not in this build");
 	case UI_SET_TALK_PERMIT:
 		return CONFIG_DMR && CONFIG_BEEP ? NULL : TR("Talk permit tone: not in this build");
+	case UI_SET_CALL_END_TONE:
+		return CONFIG_DMR && CONFIG_BEEP ? NULL : CONFIG_BEEP ? TR("DMR: not in this build") : TR("Tones: not in this build");
+	case UI_SET_TOT_WARN_TONE:
+	case UI_SET_BATTERY_TONE:
+	case UI_SET_TX_DENY_TONE:
+		return CONFIG_BEEP ? NULL : TR("Tones: not in this build");
+	case UI_SET_SCAN_TONE:
+		return !CONFIG_BEEP ? TR("Tones: not in this build") : feats() & UI_FEAT_SCAN ? NULL : TR("Scan: not in this build");
+	case UI_SET_EMERGENCY_TONE:
+		return !CONFIG_BEEP ? TR("Tones: not in this build") :
+			feats() & UI_FEAT_EMERGENCY ? NULL : TR("Emergency: not in this build");
 	case UI_SET_MESSAGE_TONE:
 		return (feats() & UI_FEAT_SMS) || CONFIG_APRS_AFSK ? NULL : TR("Messages: not in this build");
 	case UI_SET_VIBRATE:

@@ -43,11 +43,18 @@ typedef struct {
 	uint16_t burst_tx_n;
 	uint16_t bw_fm_25k, bw_fm_12k5, bw_dmr;	// 0x43 values
 	uint32_t park_10hz;			// where post_init leaves the synthesizer, 0 if it doesn't tune
+	// fd6818_rx_sleep's 0x37 words: asleep in FM, asleep in DMR, awake. 0 = the default's (0x1D11, 0x1D00, then
+	// 0x1F1F and 0x1F0F)
+	uint16_t sleep_fm, sleep_dmr, sleep_wake;
 	// Band words for a frequency in 10 Hz units: *r1a == 0 leaves 0x1A alone; false writes neither
 	bool (*band_words)(uint32_t freq_10hz, uint16_t *r1a, uint16_t *r40);
 } fd6818_variant_t;
 
 extern const fd6818_variant_t fd6818_variant_default;
+// Set-up B (fd6818_setup_b.c), for the parts whose synthesizer doesn't lock on the default, with two sets of DMR
+// receive words
+extern const fd6818_variant_t fd6818_variant_b;
+extern const fd6818_variant_t fd6818_variant_b_dmr6943;
 
 // The AM receiver's gain loop (fd6818_am_status): an index into the 0x13 gain table, the hold before the gain goes up
 // again, and the last 0x67 reading
@@ -74,7 +81,8 @@ typedef struct {
 // Registers with a known meaning
 #define FD6818_REG_CTCSS_FREQ	0x07
 #define FD6818_REG_DCS_CODE	0x08	// DCS word, low then high 12 bits (bit 15 marks the high half)
-#define FD6818_REG_CSS_STATUS	0x0C	// b10 CTCSS, b14 DCS normal, b15 DCS inverted detected
+#define FD6818_REG_CSS_STATUS	0x0C	// b10 CTCSS, b14 DCS normal, b15 DCS inverted detected; b9 synthesizer locked
+#define FD6818_CSS_PLL_LOCK	0x0200u
 #define FD6818_REG_BAND_A	0x1A
 #define FD6818_REG_STATE	0x30
 #define FD6818_REG_GAIN		0x13	// receiver gain: FM and DMR the variant's word; in AM the gain loop's table (fd6818_am_status)
@@ -171,6 +179,17 @@ void fd6818_set_mode(fd6818_t *dev, fd6818_mode_t mode);
 void fd6818_set_freq(fd6818_t *dev, uint32_t hz);
 void fd6818_set_bandwidth(fd6818_t *dev, uint16_t bw_reg);
 void fd6818_set_state(fd6818_t *dev, uint16_t state);
+// Polls 0x0C bit 9 for up to timeout_ms after a tune; true once the synthesizer is locked (FD6818_LOCK_READS reads
+// in a row, 1 ms apart)
+#define FD6818_LOCK_READS	3u
+bool fd6818_pll_locked(fd6818_t *dev, uint32_t timeout_ms);
+// Which of n set-ups (variants) the RF section takes: each attached in turn, tuned to hz in RX, the first whose
+// synthesizer locks within timeout_ms. A later one can also lock a section an earlier one is right for, so when one
+// after the first locks, the earlier ones are tried again with FD6818_DETECT_RETRY times the wait. Returns the index,
+// the chip left on that set-up in RX; n when none locks, the chip left on v[0] in FM receive
+#define FD6818_DETECT_RETRY	3u
+uint8_t fd6818_detect(fd6818_t *dev, rfbus_t *bus, const fd6818_variant_t *const *v, uint8_t n, uint32_t hz,
+		      uint32_t timeout_ms);
 // Analog TX preparation writes (0x3F, 0x40, 0x37) before switching to TX (8.3, FM only)
 void fd6818_fm_tx_prepare(fd6818_t *dev);
 // TX CTCSS from the FD6818 (hz_x10 = 0: sub-audio off)

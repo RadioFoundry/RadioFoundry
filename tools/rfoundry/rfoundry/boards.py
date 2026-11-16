@@ -8,6 +8,7 @@ on any Python 3 and inside the rfoundry executable, where there is no repository
 """
 import json
 import os
+import re
 
 from . import names
 
@@ -107,6 +108,17 @@ class Board:
     def sectors_for(self, lo, hi):
         """Sectors overlapping [lo, hi)."""
         return [s for s in self.sectors if s.overlaps(lo, hi)]
+
+    def codec_present(self, reported):
+        """Whether the codec id a running RadioFoundry reports (VERSION codec=) is a codec this board can use. A board
+        with a stock-file placement (STM32) has the one id of its profile. A board with a codec slot (codec_tool
+        hrc7000_codec) reports "<board>-<tag>", the tag being the build number of the stock file the slot was made from
+        (<board>-049, <board>-050): every build's slot holds a working codec, so any tag counts, and
+        "<board>-unknown" (no valid slot) does not."""
+        if reported == self.codec.id:
+            return True
+        return bool(self.codec_tool == "hrc7000_codec" and isinstance(reported, str)
+                    and re.fullmatch(re.escape(self.id) + r"-\d{3,5}", reported))
 
     def codec_sectors(self):
         """Sectors that hold any byte of a codec window (never erased when the codec is kept)."""

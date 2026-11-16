@@ -32,7 +32,7 @@ import { Link, LinkError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, whyNo
 import { readRadio, makeBundle, openBundle, bundleFolder, notBundle, bundleName, describeFirmware, CODEPLUG_SPAN } from "./backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug, codeplugLayout } from "./restore.js";
 import { Selection } from "./select.js";
-import { decideCodec, DecisionError } from "./decide.js";
+import { codecPresent, decideCodec, DecisionError } from "./decide.js";
 import { tooBig } from "./buildfit.js";
 import { suggestPack, packCode, startCode, startLanguages, startLanguage, setStartLanguage } from "./langsuggest.js";
 import { readBootKey } from "./bootkey.js";
@@ -56,7 +56,7 @@ import * as adapter from "./adapter.js";
 import * as crumbs from "./trail.js";
 import { missingApi, kitPanel, kitLine } from "./manual.js";
 import { showBetaNotice } from "./beta.js";
-import { currentBuild, planUpdate } from "./update.js";
+import { DROP_OK, currentBuild, planUpdate } from "./update.js";
 import { readDfuInfo, choiceFor, hwoptAction, pendingHwopt, majorsFor, runsOriginal, BOOTLOADER } from "./origversion.js";
 import { readOriginal, deviceKind, spiSeconds, Guard } from "./origbackup.js";
 import { toSerial, CLICK_WAIT_MS } from "./netmode.js";
@@ -417,7 +417,7 @@ const f4Board = () => fb().f4stub?.boards[S.board?.id];
 // A chip whose flash size register reads less than the firmware's flash: the loader would refuse the top sectors
 const shortRegister = () => !!(f4Board() && S.now?.kind === "rfoundry" && registerShort(S.now.flashKb, f4Board().owned));
 const stubRoute = () => !!((S.task === "install" || S.task === "update") && f4Board() && S.now?.kind === "rfoundry" && S.now.stubOffer && !S.requested
-	&& S.now.probe?.codec === S.board.codec.id && !S.firmware?.manifest.codec?.included && !shortRegister());
+	&& codecPresent(S.board, S.now.probe?.codec) && !S.firmware?.manifest.codec?.included && !shortRegister());
 // The loader hand-over RadioFoundry offers now: the one probed before the install, or after a first install (doneView)
 // the one the build just written offers, while S.now still says what ran before it
 const loaderOffer = () => (!f4Board() ? null : S.now?.kind === "rfoundry" ? S.now.stubOffer : S.now?.afterOffer || null);
@@ -673,7 +673,7 @@ async function keyFromRadio(link) {
 // keep it (a radio back on stock firmware, an interrupted install, a radio in its bootloader). Quiet when it can't:
 // the stock file still works.
 async function codecFromRadio(link, probe, status) {
-	if (probe?.codec !== S.board.codec.id || S.savedCodec?.from === "radio") return;
+	if (!codecPresent(S.board, probe?.codec) || S.savedCodec?.from === "radio") return;
 	if (S.board.keep_codec_supported && !S.sim && (await loadCodec(S.board, fb()))) return;
 	status?.replaceChildren(h("p", { class: "muted" }, t("flash.now.reading_codec")));
 	const got = await readCodec(link, S.board, fb());
@@ -942,7 +942,8 @@ function updateView() {
 		}
 		const p = S.now.probe, cur = S.current;
 		// the radio's own build, unless the build step has the selection (edits kept when the user comes back)
-		const plan = S.editBuild ? { preset: S.selection.matches(startCode), added: [], ask: [], ready: true } : planUpdate(cur, S.selection, S.decided);
+		const plan = S.editBuild ? { preset: S.selection.matches(startCode), added: [], needed: [], dropped: [], ask: [], ready: true }
+			: planUpdate(cur, S.selection, S.decided);
 		// an image built for another selection no longer applies
 		if (S.firmware?.selection && S.firmware.selection !== selectionKey(S.selection)) S.firmware = null;
 		const vtitle = (id) => (t(`variant.${id}.title`) !== `variant.${id}.title` ? t(`variant.${id}.title`) : S.data.variants.find((v) => v.id === id)?.title || id);
@@ -952,14 +953,45 @@ function updateView() {
 			S.editBuild = !S.editBuild;
 			render();	// off again: the radio's own build (planUpdate in the redraw)
 		}, { quiet: true });
-		const asks = plan.ask.length ? h("div", { class: "notice action" },
+		const asks = plan.ask.length ? h("div", { class: "notice action update-note" },
 			h("p", {}, h("b", {}, t("flash.update.new_title")), " ", t("flash.update.new_custom")),
-			...plan.ask.map((n) => h("div", { class: "update-new" },
+			// one a feature answered On needs is on with it: shown On, not a choice (it's in the turned-on list)
+			...plan.ask.map((n) => [n, S.decided[n] !== true && plan.needed.includes(n)]).map(([n, forced]) => h("div", { class: "update-new" },
 				h("span", {}, h("b", {}, title(n)), h("span", { class: "why" }, plainHelp(S.selection.byName[n]?.help || ""))),
 				h("span", { class: "update-pick" }, ...[true, false].map((on) => h("label", {},
-					h("input", { type: "radio", name: `new-${n}`, checked: S.decided[n] === on, onchange: () => { S.decided[n] = on; draw(); } }),
+					h("input", { type: "radio", name: `new-${n}`, checked: forced ? on : S.decided[n] === on, disabled: forced,
+						onchange: () => { S.decided[n] = on; draw(); } }),
 					" ", t(on ? "flash.update.turn_on" : "flash.update.leave_off"))))))) : null;
-		const added = plan.added.length ? notice(t("flash.update.new_preset", { names: plan.added.map(title).join(", ") }), "info") : null;
+		// a preset's added are the variant's new features; a custom build's are new switches its features need, listed
+		// with the ones it had off and needs now, each with what needs it
+		const added = plan.preset && plan.added.length ? notice(t("flash.update.new_preset", { names: plan.added.map(title).join(", ") }), "info update-note") : null;
+		const needList = plan.preset ? plan.needed : [...plan.added, ...plan.needed];
+		const neededBy = (n) => S.selection.features.filter((f) => S.selection.on.has(f.name)
+			&& [...(f.needs?.all || []), ...(f.needs?.any || [])].includes(n)).map((f) => f.title || f.name);
+		const needed = !needList.length ? null : h("div", { class: "notice info update-note" },
+			h("p", {}, h("b", {}, t("flash.update.needed_title")), " ", t("flash.update.needed_text")),
+			h("ul", {}, needList.map((n) => {
+				const by = neededBy(n);
+				return h("li", {}, h("b", {}, title(n)),
+					by.length ? [" ", h("span", { class: "muted" }, t("flash.update.needed_for", { names: by.join(", ") }))] : null);
+			})));
+		// features the radio's build had on that this release can't build on it: say which and why; the user agrees to
+		// leave them off or edits the build
+		const dropOk = S.decided[DROP_OK] === true;
+		const dropped = !plan.dropped.length ? null : h("div", { class: `notice action update-note${dropOk ? " info" : ""}` },
+			h("p", {}, h("b", {}, t("flash.update.dropped_title")), " ",
+				t(dropOk ? "flash.update.dropped_ok" : "flash.update.dropped_text", { radio: S.radio.name })),
+			h("ul", {}, plan.dropped.map((d) => h("li", {}, h("b", {}, title(d.name)),
+				d.blockers.length ? [" ", h("span", { class: "muted" }, t("flash.update.dropped_needs", { names: d.blockers.map(title).join(", ") }))] : null))),
+			dropOk ? null : h("div", { class: "actions" },
+				button(t("flash.update.drop"), () => { S.decided[DROP_OK] = true; draw(); }),
+				// straight to the build step (the Edit Build beside the build only switches this page to it), unless the
+				// backup asked for first isn't made yet: then Next waits for it as usual
+				button(t("flash.update.edit_build"), () => {
+					S.editBuild = true;
+					if (S.updateBackup && backupPanel) render();
+					else next();
+				})));
 		const building = S.build && S.build.selection === selectionKey(S.selection);
 		const image = S.firmware ? notice(t("flash.build.image_ready", { what: S.firmware.source }), "ok")
 			: building && S.build.error ? buildErrorNotice(S.build.error)
@@ -975,7 +1007,7 @@ function updateView() {
 				h("dt", {}, t("flash.update.version")), h("dd", {}, t("flash.update.from_to", { from: firmwareName(p.version), to: updateVersion() })),
 				h("dt", {}, t("flash.update.build")), h("dd", {}, buildText, " ", cur.kind === "unknown" ? null : edit)),
 			cur.kind === "unknown" ? notice(t("flash.update.unknown_text", { variant: vtitle(cur.guess) }), "info") : null,
-			S.editBuild ? null : asks, S.editBuild ? null : added, backup, backupPanel, image, status));
+			S.editBuild ? null : dropped, S.editBuild ? null : asks, S.editBuild ? null : added, S.editBuild ? null : needed, backup, backupPanel, image, status));
 		const busy = building && !S.build.error;
 		const go = async () => {
 			if (S.editBuild) return next();
@@ -985,7 +1017,7 @@ function updateView() {
 		};
 		S.forward(button(busy ? [spinner(), t("flash.nav.building")] : t(S.editBuild ? "flash.update.to_build" : "flash.update.go"), go,
 			{ primary: true, disabled: busy || (!S.editBuild && !plan.ready) || (S.updateBackup && !!backupPanel) }),
-			!S.editBuild && !plan.ready ? t("flash.update.decide_first") : null);
+			S.editBuild || plan.ready ? null : t(plan.dropped.length && !S.decided[DROP_OK] ? "flash.update.drop_first" : "flash.update.decide_first"));
 	};
 	draw();
 	return out;
@@ -1243,8 +1275,15 @@ let tipEscape = () => {};
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") tipEscape(); });
 
 // Why a feature can't be chosen: the radio's code isn't written for it yet, or its hardware can't
-const naNote = (name) => t(S.selection.notWritten(name) ? "flash.build.not_written" : "flash.build.unsupported",
-	{ radio: S.radio.name });
+// a switch the radio could have but for a need it can't: that need, the same reason the update gives
+const naNote = (name) => {
+	const sel = S.selection;
+	if (sel.allowed(name)) {
+		const by = sel.blockers(name);
+		if (by.length) return t("flash.build.unsupported_needs", { names: by.map((n) => sel.byName[n]?.title || n).join(", "), radio: S.radio.name });
+	}
+	return t(sel.notWritten(name) ? "flash.build.not_written" : "flash.build.unsupported", { radio: S.radio.name });
+};
 
 // The ⓘ bubble: what a feature does, what it needs, its flash cost on this radio
 function featureTip(f, id) {
@@ -1675,7 +1714,7 @@ async function hwoptPrompt(link) {
 }
 
 // What the radio's codec report means to a user
-const codecText = (c) => (c === S.board.codec.id ? t("flash.now.codec_ok") : !c || c === "absent" ? t("flash.now.codec_none") : c);
+const codecText = (c) => (codecPresent(S.board, c) ? t("flash.now.codec_ok") : !c || c === "absent" ? t("flash.now.codec_none") : c);
 
 // The backup panel used on a RadioFoundry radio (before an update, the backup task, after a first install)
 // actions(run): where the "save a backup" button goes (the nav bar); without it, in the panel
@@ -2350,7 +2389,7 @@ function doneView() {
 			const p = await probe(link);
 			if (!p) throw await noAnswer(link, { written: S.firmware?.manifest });
 			// the loader route never touches the codec, so it is there afterwards as it was before
-			const good = !(S.decision ? S.decision.expectCodec : true) || p.codec === S.board.codec.id;
+			const good = !(S.decision ? S.decision.expectCodec : true) || codecPresent(S.board, p.codec);
 			diag.note(...crumbs.verify(p, good));
 			flashMark(S.lastStarted, "verify", { ok: good, reason: good ? "" : `codec ${p.codec || "none"}` });
 			S.reportResult = good ? "problem" : "failed";

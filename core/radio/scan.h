@@ -23,6 +23,7 @@ typedef enum { SCAN_ACT_NONE, SCAN_ACT_NEXT, SCAN_ACT_STOP } scan_act_t;
 #define SCAN_SETTLE_MS		50	// readings right after a retune belong to the last stop
 #define SCAN_PRIORITY_EVERY	2	// with priority on: the start channel again after this many others
 #define SCAN_VFO_NUISANCE_MAX	8	// frequencies a VFO scan can skip
+#define SCAN_FLOOR_STOPS	8	// the signal strength floor: the lowest reading of the last this many stops
 
 typedef struct {
 	uint16_t dwell_ms;	// listen time per stop with nothing heard (from the retune)
@@ -58,6 +59,11 @@ typedef struct {
 	uint8_t skipped;
 	// VFO range (inclusive)
 	uint32_t lo_hz, hi_hz;
+	// The signal strength floor (scan_level): each stop's lowest reading past the settle, for the last stops
+	int16_t stop_min_dbm;
+	bool stop_min_ok;
+	int16_t floor_dbm[SCAN_FLOOR_STOPS];
+	uint8_t floor_n, floor_at;
 	// Statistics for the debug link
 	uint32_t steps;
 	uint32_t holds;
@@ -78,6 +84,11 @@ void scan_tuned(scan_t *s, uint32_t now_ms);
 // the right tone; DMR: a call that passes the filters is playing). carrier: something on the frequency. sync: a
 // signal of the channel's own kind (DMR: bursts with its color code; it counts as a carrier too)
 scan_act_t scan_poll(scan_t *s, uint32_t now_ms, bool active, bool carrier, bool sync);
+// A signal strength reading on this stop (every poll): past the settle, it counts toward the floor
+void scan_level(scan_t *s, uint32_t now_ms, int16_t dbm);
+// The lowest reading of the last SCAN_FLOOR_STOPS stops before this one (what the receiver reads on an empty
+// channel, give or take a signal on every one of them). False before a stop has been read
+bool scan_floor(const scan_t *s, int16_t *dbm);
 // Monitor held, or anything else that stops the stepping for a while; resume restarts the current stop's listen
 void scan_pause(scan_t *s, bool paused, uint32_t now_ms);
 // Our own transmission on this stop (dual watch keeps going through PTT): every poll while it lasts. After it, the

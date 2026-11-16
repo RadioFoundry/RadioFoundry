@@ -317,7 +317,7 @@ def test_vfo_toggle_key(home):
     feats = r.features()
     if "VFO_FM" not in feats and "VFO_DMR" not in feats:
         skip("not_built", "built without a VFO")
-    chan = r.core()
+    chan = r.leave_vfo()    # a session that found the radio in the VFO puts it back there before each test
     try:
         r.press("vfo_toggle")
         r.wait_for(lambda x: x.get("vfo") == "1", what="the VFO")
