@@ -160,6 +160,8 @@ def test_p25_channel_switch(radio):
             assert share <= MAX_IDLE_LOAD, f"receive takes {share:.1%} of the CPU at idle"
         assert radio.core().get("state") in ("idle", "rx")
     finally:
+        if snap["vfo"] == "1":      # the VFO's mode is its own: restore() only drops a channel's mode for now
+            radio.link.dmr_fields(mode=mode0)
         radio.restore(snap)
     v = radio.wait_for(lambda x: x.get("mode") == mode0 and x.get("p25.on") == "0", 3.0,
                        sections=("core", "p25"), what=f"mode {mode0} back, P25 stopped")

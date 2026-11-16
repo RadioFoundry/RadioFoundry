@@ -125,6 +125,8 @@ def test_nxdn_mode_switch(radio):
               f"fit {v.get('nxdn.fit')} state {v.get('state')}")
         assert radio.core().get("state") in ("idle", "rx")
     finally:
+        if snap["vfo"] == "1":      # the VFO's mode is its own: restore() only drops a channel's mode for now
+            radio.link.dmr_fields(mode=mode0)
         radio.restore(snap)
     radio.wait_for(lambda x: x.get("mode") == mode0 and x.get("nxdn.on") == "0", 3.0, sections=("core", "nxdn"),
                    what=f"mode {mode0} back, NXDN stopped")
