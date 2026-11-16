@@ -11,9 +11,9 @@
 #include "settings/settings.h"
 #include "config.h"
 #include "hal_dtmf.h"
+#include "codeplug/codeplug_modes.h"	// channel kinds (docs/spec/channel-modes.md): parked channels, in every build
 #if CONFIG_ZONE_WRITE
 #include "codeplug/zone_edit.h"
-#include "codeplug/codeplug_modes.h"	// channel kinds (docs/spec/channel-modes.md)
 #define ZONE_WRITE_BUSY()	zone_edit_busy()
 #define ZONES_MOVED(sm)		(zone_edit_shifts() != (sm)->zone_shifts)
 #else

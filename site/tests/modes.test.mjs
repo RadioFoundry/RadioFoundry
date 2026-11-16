@@ -183,6 +183,11 @@ test("tags: follow a rename, go when the channel is made plain or deleted, a sta
 	e = area(encode(d4));
 	assert.equal(getValue(e, MODE_KEY.tag + c4.number - 1), null);
 	assert.equal(c4.rxOnly, false, "transmit allowed comes back as the record's");
+	// a kind whose record holds its system's frequencies: made plain, receive only
+	const t3p = d4.channels.find((c) => c.name === "T3 Ops");
+	t3p.tagTx = true;
+	setKind(d4, t3p, 0, "dmr");
+	assert.equal(t3p.rxOnly, true, "never transmit on a system's control channel");
 	// deleted: the tag goes, and a fallback naming it is none
 	const d5 = round(m);
 	remove(d5, "channels", [d5.channels.find((c) => c.name === "Plain FM")]);
