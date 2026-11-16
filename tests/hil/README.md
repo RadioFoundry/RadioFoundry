@@ -80,6 +80,10 @@ skips (kind `opt_in`) and names the three ways to give it. `tests/hil/hil_config
 | `--fm-mhz` | the FM test frequency (the radio's VFO) |
 | `--p25-mhz` | the P25 test frequency (the radio's VFO; `test_p25_tx_off_air`) |
 | `--p25-trunk-channel` | the name of a stored P25 trunked channel whose system's control channel is heard at the rig (`test_p25_trunk_follow`, receive only) |
+| `--p25-trunk-tx-channel` | the name of a stored P25 trunked channel with transmit on, whose system's control channel is `--p25-cc-mhz` (`test_p25_trunk_tx`) |
+| `--p25-cc-mhz` | where the bench plays a P25 control channel (`test_p25_trunk_tx`; the bench transmits) |
+| `--p25-cc-in-mhz` | that control channel's inbound frequency, where the radio sends its requests (`test_p25_trunk_tx`) |
+| `--p25-voice-mhz` | where the radio transmits on the voice channel the bench's control channel grants (`test_p25_trunk_tx`) |
 | `--noaa-mhz` | a NOAA weather radio station heard at the rig (`test_fm`, receive only; optional tests) |
 | `--vhf-fm-mhz` | a VHF FM frequency the bench transmits on (`test_fm`: receive in the VHF band) |
 | `--aprs-test-mhz` | `test_aprs`'s AFSK frequency: an amateur simplex frequency that is not an APRS one |
@@ -92,7 +96,7 @@ skips (kind `opt_in`) and names the three ways to give it. `tests/hil/hil_config
 
 With `--allow-rf`, every transmit frequency the run is given (`--dmr-freq`, `--fm-mhz`, `--p25-mhz`, `--aprs-test-mhz`,
 `--sfr-freq`, `--roam-rx` / `--roam-tx`, `--split-out-mhz`, `--split-tx-mhz`, `--outbound-mhz`, `--am-mhz`,
-`--vhf-fm-mhz`) must be in `tx_mhz`, or the run
+`--vhf-fm-mhz`, `--p25-cc-mhz`, `--p25-cc-in-mhz`, `--p25-voice-mhz`) must be in `tx_mhz`, or the run
 stops before the first test. The bench client refuses to key anywhere else. Example file (placeholder values: use
 your license's and your site's):
 

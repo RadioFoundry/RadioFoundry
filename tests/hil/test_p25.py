@@ -41,7 +41,26 @@ that isn't "any"; printed). For FOLLOW_WAIT_S it watches for a call it follows: 
 failed: traffic is the system's. Leaving the channel stops the follower (`p25t.on=0`). Skipped without
 CONFIG_P25_TRUNK, and where the board can't carry P25 (the channel stays parked).
 
+test_p25_trunk_tx (opt-in: --allow-rf --allow-service-stop --p25-trunk-tx-channel NAME --p25-cc-mhz MHz
+--p25-cc-in-mhz MHz --p25-voice-mhz MHz; the bench and the radio transmit; written, not yet run on a radio): the stored
+P25 trunked channel NAME, transmit on, its system's control channel at --p25-cc-mhz with its inbound frequency at
+--p25-cc-in-mhz (the offset a multiple of 250 kHz) and a system that takes WACN SITE_WACN, system SITE_SYSID, NAC
+SITE_NAC. The bench plays a control channel that p25tool.py cc writes (p25-trunking.md 6) and captures what the radio
+sends with its FM discriminator. Three steps:
+1. Broadcasts only, the inbound frequency captured: the radio must send a registration request (p25tool.py decode
+   --inbound) with the site's WACN and system ID; its unit ID is taken from it.
+2. The site accepts the registration in every unit: the radio must send an affiliation request for its talk group
+   (taken from it) and reach p25t.reg=4 (registered and affiliated).
+3. The site also accepts the affiliation and grants that unit and group a voice channel whose inbound side is
+   --p25-voice-mhz; PTT for PTT_S with --p25-voice-mhz captured. The radio must ask (p25t.req_tx), go to the grant
+   (p25t.req=3, p25t.talk_hz the voice channel), and transmit a conventional call there: a header, LDUs with its unit
+   and talk group, a terminator. After release it is back on the control channel (p25t.state=2) with the request
+   idle (p25t.req=0).
+Skipped without CONFIG_P25_TRUNK, where the bench board has no fsk4 transmitter or no FM receiver, and where the
+radio's channel isn't trunked with transmit on (p25t.tx=0).
+
 Skipped without CONFIG_P25, on a channel in a listen-only band, and in hotspot mode."""
+import json
 import os
 import statistics
 import tempfile
@@ -222,8 +241,8 @@ DEV_PCT = (80, 115)     # the outer deviation, % of 1800 Hz: the bench board's d
 LDU_MS = 180.0
 
 
-def p25_decode(job):
-    """p25tool's JSON lines for an rx job's disc stream"""
+def p25_decode(job, *extra):
+    """p25tool's JSON lines for an rx job's disc stream (extra: more decode options, as --inbound)"""
     import p25tool
     pcm = job.pcm.get("disc")
     if not pcm:
@@ -239,7 +258,7 @@ def p25_decode(job):
         with open(raw, "wb") as f:
             f.write(pcm)
         try:
-            return p25tool.run(["disc", raw, "--rate", int(round(float(rate))), "--full", full])
+            return p25tool.run(["disc", raw, "--rate", int(round(float(rate))), "--full", full] + list(extra))
         except SystemExit as e:
             pytest.fail(f"p25tool: {e}")
 
@@ -406,3 +425,145 @@ def test_p25_trunk_follow(radio, pytestconfig):
         radio.restore(snap)
     if radio.view(["channel"]).get("ch.kind") != str(KIND_P25_TRUNK):
         radio.wait_for(lambda x: x.get("p25t.on") == "0", 3.0, sections=("p25_trunk",), what="the follower stopped")
+
+
+# --- A trunked channel with transmit on, against a control channel the bench plays (p25-trunking.md 6) ---
+
+SITE_NAC, SITE_WACN, SITE_SYSID = "293", "BEE00", "2F3"
+FSK4_HEX_MAX = 8192         # symbols the bench takes in the request itself (fsk4_bench.py)
+SPACING_HZ = 6250
+STEP_S = 12.0               # each step's capture: the radio registers within a few seconds of holding the channel
+P25T_REG_READY, P25T_REQ_IDLE, P25T_REQ_TALK = 4, 0, 3
+
+
+def site_plan(cc_hz, in_hz, voice_in_hz):
+    """The identifier and channel numbers for the bench's control channel: (base Hz, offset Hz, cc ch, voice ch), or
+    skip when the frequencies don't fit one identifier"""
+    off = in_hz - cc_hz
+    voice_hz = voice_in_hz - off
+    base = min(cc_hz, voice_hz) // SPACING_HZ * SPACING_HZ
+    n_cc, n_voice = (cc_hz - base) / SPACING_HZ, (voice_hz - base) / SPACING_HZ
+    if off % 250000 or abs(off) // 250000 > 8191 or not n_cc.is_integer() or not n_voice.is_integer() \
+            or max(n_cc, n_voice) > 0xFFF or n_cc == n_voice:
+        skip("state", f"control channel {cc_hz} Hz (inbound {in_hz}), voice inbound {voice_in_hz}: not one "
+                      f"identifier's channels ({SPACING_HZ} Hz steps, the offset a multiple of 250 kHz)")
+    return base, off, 0x1000 | int(n_cc), 0x1000 | int(n_voice)
+
+
+def cc_file(tmp, plan, *answers):
+    """p25tool.py cc: the bench's control channel, answers (cc options) in every unit; at most FSK4_HEX_MAX symbols.
+    Returns (path, symbols)"""
+    import p25tool
+    base, off, cc, _ = plan
+    path, exp = os.path.join(tmp, "cc.dibits"), os.path.join(tmp, "cc.json")
+    for units in (27, 24, 20, 16):
+        p25tool.run(["cc", path, exp, "--units", units, "--nac", SITE_NAC, "--wacn", SITE_WACN, "--sysid", SITE_SYSID,
+                     "--ch", f"{cc:x}", "--base", base, "--spacing", SPACING_HZ, "--tx-offset", off] + list(answers))
+        with open(exp) as f:
+            n = json.load(f)["total_syms"]
+        if n <= FSK4_HEX_MAX:
+            return path, n
+    raise AssertionError(f"the control channel file holds {n} symbols, past {FSK4_HEX_MAX}")
+
+
+def play_cc(sdr_bench, mhz, path, nsyms, seconds):
+    """The bench's fsk4 transmitter on mhz, the file repeated for about seconds (fsk4_bench.py tx's request). The
+    request's fields as fsk4_bench.py sends them: not yet run through SdrBench"""
+    with open(path, "rb") as f:
+        data = f.read()
+    return sdr_bench.tx_start("fsk4", mhz, None, max_s=seconds + 10, symbols=nsyms, hex=data.hex(), shape="c4fm",
+                              repeat=max(1, int(seconds * 4800 / nsyms) + 1))
+
+
+def capture(sdr_bench, mhz, seconds):
+    job = sdr_bench.fm_rx_start(mhz, seconds, bw=16000, streams="disc")
+    done = job.wait(seconds + 20)
+    if done.get("gap_samples"):
+        skip("bench", f"the bench board lost samples (gap_samples {done['gap_samples']})")
+    return job
+
+
+def inbound_blocks(job, kind):
+    lines = p25_decode(job, "--inbound")
+    return [b["msg"] for d in lines if d["ev"] == "unit" for b in d.get("blocks", [])
+            if b["errs"] >= 0 and b["msg"].get("kind") == kind]
+
+
+@pytest.mark.feature("p25_trunk")
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+@pytest.mark.bench_modem
+@pytest.mark.sdr_rx
+def test_p25_trunk_tx(radio, sdr_bench, pytestconfig):
+    name = rig(pytestconfig, "p25-trunk-tx-channel")
+    cc_mhz, in_mhz, voice_mhz = (rig(pytestconfig, k) for k in ("p25-cc-mhz", "p25-cc-in-mhz", "p25-voice-mhz"))
+    if "P25_TRUNK" not in radio.features():
+        skip("not_built", "built without CONFIG_P25_TRUNK")
+    p25_ready(radio)
+    if not sdr_bench.can_fm_rx():
+        skip("bench", f"the bench board {sdr_bench.api_rx} has no FM receive")
+    plan = site_plan(round(cc_mhz * 1e6), round(in_mhz * 1e6), round(voice_mhz * 1e6))
+    voice_rx_hz = round(voice_mhz * 1e6) - plan[1]
+    snap = radio.snapshot()
+    try:
+        select_named(radio, name)
+        ch = radio.view(["core", "channel"])
+        if ch.get("ch.kind") != str(KIND_P25_TRUNK):
+            skip("state", f"channel {name!r} is kind {ch.get('ch.kind')}, not a P25 trunked one")
+        if ch.get("mode") != "p25":
+            skip("no_hw", "the channel is parked: the board's air interface can't carry P25")
+        if trunk_view(radio).get("p25t.tx") != "1":
+            skip("state", f"channel {name!r}: transmit is off (listen only, no unit ID or no talk group)")
+        radio.lowest_power()
+        with tempfile.TemporaryDirectory() as tmp, sdr_bench.lease():
+            # 1. Broadcasts only: the registration request
+            path, n = cc_file(tmp, plan)
+            tx = play_cc(sdr_bench, cc_mhz, path, n, STEP_S + 4)
+            radio.wait_for(lambda x: x.get("p25t.state") == "2", CC_WAIT_S, sections=("p25_trunk",),
+                           what="the follower on the bench's control channel")
+            reg = inbound_blocks(capture(sdr_bench, in_mhz, STEP_S), "u_reg_req")
+            tx.wait(STEP_S + 30)
+            print(f"\nstep 1: {len(reg)} registration requests {reg[:1]}")
+            assert reg, "no registration request on the inbound frequency"
+            unit = reg[0]["src"]
+            assert reg[0]["wacn"] == int(SITE_WACN, 16) and reg[0]["sysid"] == int(SITE_SYSID, 16), reg[0]
+            # 2. Registration accepted: the affiliation request
+            path, n = cc_file(tmp, plan, "--reg", unit, "--reg-at", 0)
+            tx = play_cc(sdr_bench, cc_mhz, path, n, STEP_S + 4)
+            aff = inbound_blocks(capture(sdr_bench, in_mhz, STEP_S), "grp_aff_req")
+            tx.wait(STEP_S + 30)
+            print(f"step 2: {len(aff)} affiliation requests {aff[:1]}")
+            assert aff and all(a["src"] == unit for a in aff), f"affiliation requests {aff}"
+            tg = aff[0]["tg"]
+            # 3. Affiliation accepted and the grant: PTT, the voice channel captured
+            path, n = cc_file(tmp, plan, "--reg", unit, "--reg-at", 0, "--aff", f"{unit}:{tg}", "--aff-at", 0,
+                              "--grant", f"{tg}:{plan[3]:x}:{unit}", "--grant-at", 0)
+            tx = play_cc(sdr_bench, cc_mhz, path, n, PTT_S + STEP_S)
+            v = radio.wait_for(lambda x: x.get("p25t.reg") == str(P25T_REG_READY), STEP_S,
+                               sections=("p25_trunk",), what="registered and affiliated")
+            req0 = as_int(v.get("p25t.req_tx")) or 0
+            calls0 = as_int(radio.view(["p25"]).get("p25.tx_calls")) or 0
+            job = sdr_bench.fm_rx_start(voice_mhz, PTT_S + 4, bw=16000, streams="disc")
+            time.sleep(0.5)
+            radio.ptt_for(PTT_S)
+            done = job.wait(PTT_S + 20)
+            v = radio.wait_for(lambda x: x.get("p25t.state") == "2" and x.get("p25t.req") == str(P25T_REQ_IDLE),
+                               10.0, sections=("p25", "p25_trunk"), what="back on the control channel")
+            tx.wait(PTT_S + STEP_S + 30)
+    finally:
+        radio.restore(snap)
+    if done.get("gap_samples"):
+        skip("bench", f"the bench board lost samples (gap_samples {done['gap_samples']})")
+    print(f"step 3: req_tx {v.get('p25t.req_tx')}, grants {v.get('p25t.req_grant')}, talk {v.get('p25t.talk_hz')}")
+    assert (as_int(v.get("p25t.req_tx")) or 0) > req0, "no voice request sent"
+    assert v.get("p25t.talk_hz") == str(voice_rx_hz), f"talked on {v.get('p25t.talk_hz')}, not {voice_rx_hz}"
+    assert (as_int(v.get("p25.tx_calls")) or 0) == calls0 + 1, "the radio counted no P25 call"
+    lines = p25_decode(job)
+    units = [d for d in lines if d["ev"] == "unit"]
+    names = [u["name"] for u in units]
+    print(f"voice channel: {' '.join(names)}")
+    assert names and names[0] == "HDU" and names[-1] in ("TDU", "TDULC"), f"the call: {names}"
+    for u in units:
+        if u["name"] == "LDU1":
+            lc = u.get("lc") or {}
+            assert lc.get("src") == unit and lc.get("tgid") == tg, f"LDU1 link control {lc}"
