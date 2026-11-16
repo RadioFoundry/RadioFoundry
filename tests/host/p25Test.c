@@ -491,11 +491,12 @@ static void testCallLayer(void)
 	CHECK(c.stats.units == 5 && c.stats.voice == 27 && c.stats.calls == 1 && !c.active, "stats: units %u voice %u", c.stats.units, c.stats.voice);
 
 	// Late entry: the receiver comes on the channel inside the first LDU. The call starts with the LDU2, the link
-	// control arrives with the next LDU1. (The voice ends on an LDU's last frame here: the next LDU's head is
-	// already going out when the end is known, so it is sent whole, silent)
+	// control arrives with the next LDU1. The voice ends on an LDU's last frame: the terminator follows it, no LDU of
+	// silence
 	air_n = 0;
 	transmit(&t, &lc, 36);
 	air_noise(200);
+	CHECK(tx_units == 6 && air_n == P25_HDU_SYMS + 4 * P25_LDU_SYMS + P25_TDU_SYMS + 200, "36 frames: %u units, %u symbols", tx_units, air_n);
 	memset(&cs, 0, sizeof(cs));
 	p25_call_rx_init(&c, 0x293, &cs_sink, &c);
 	air_framer_init(&fr, &p25_air_mode, &c.rx, fbuf, NULL, P25_UNIT_SYMS_MAX);
@@ -503,7 +504,7 @@ static void testCallLayer(void)
 	air_n -= tx_at[1] + 200;
 	run(&fr, 100, 0, 0);
 	CHECK(cs.starts == 1 && cs.ends == 1 && cs.call.late && cs.call.have_lc && cs.call.lc.src == 7654321, "late entry: starts %u ends %u late %d lc %d", cs.starts, cs.ends, cs.call.late, cs.call.have_lc);
-	CHECK(cs.nvoice == 36 && !memcmp(cs.voice[0], tx_voice[9], P25_IMBE_BYTES) && !memcmp(cs.voice[27], silence, P25_IMBE_BYTES), "late entry: %u voice frames", cs.nvoice);
+	CHECK(cs.nvoice == 27 && !memcmp(cs.voice[0], tx_voice[9], P25_IMBE_BYTES) && !memcmp(cs.voice[26], tx_voice[35], P25_IMBE_BYTES), "late entry: %u voice frames", cs.nvoice);
 
 	// PTT let go during the header: no LDU is sent
 	air_n = 0;
