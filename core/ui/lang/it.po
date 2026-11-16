@@ -4223,6 +4223,21 @@ msgid "Step "
 msgstr "Passo "
 
 #: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_HUNT"
+msgid "Finding system"
+msgstr "Ricerca sistema"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_CONTROL"
+msgid "Control channel"
+msgstr "Canale di controllo"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_FOLLOW"
+msgid "Following"
+msgstr "Ascolto"
+
+#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_NO_TX_FREQ"
 msgid "No TX frequency"
 msgstr "Nessuna frequenza TX"

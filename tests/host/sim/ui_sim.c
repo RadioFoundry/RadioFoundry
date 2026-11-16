@@ -29,6 +29,8 @@
 //   fmrx / fmrxend      an FM signal opens / closes the squelch
 //   p25rx:<src>,<dst>[,u|e|o]   a P25 call (CONFIG_P25 builds): u a unit call, e encrypted, o another talk group
 //                       (both not played); p25rxend ends it
+//   p25t:<state>[,<tg>] the channel on view is a trunked P25 one (CONFIG_P25_TRUNK builds), its follower in state
+//                       1 finding the system, 2 on the control channel, 3 following talk group tg
 //   rx:<src>,<dst>,g|p[,name]   a DMR call starts (g = group, p = private to us); rxend ends it
 //   call:<src>,<dst>,g|p        a 2 s call, then 1 s of quiet
 //   msg:<src>,<text>    a text message arrives (_ = space); alert:<src>; emergency:<src>; privcall:<src>
@@ -2864,6 +2866,24 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(300);
 		return true;
 	}
+#if CONFIG_P25_TRUNK
+	if (strcmp(t, "p25t") == 0) {
+		unsigned st = 0, tg = 0;
+		if (arg == NULL || sscanf(arg, "%u,%u", &st, &tg) < 1 || st > RADIO_P25_TRUNK_VOICE) {
+			snprintf(err, len, "bad %s", t);
+			return false;
+		}
+		view.ch.mode = RADIO_MODE_P25;
+		view.ch.kind = CODEPLUG_KIND_P25_TRUNK;
+		view.ch.rx_only = true;
+		view.p25.flags = RADIO_P25_ON;
+		view.p25.trunk = (uint8_t)st;
+		view.p25.dst = tg;
+		changed();
+		advance(100);
+		return true;
+	}
+#endif
 	if (strcmp(t, "p25rxend") == 0) {
 		view.p25.flags &= (uint8_t)~(RADIO_P25_RX | RADIO_P25_PLAYED | RADIO_P25_ENC);
 		view.state = RS_IDLE;
