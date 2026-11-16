@@ -12,6 +12,8 @@ than its sources).
     p25tool.py decode IN.dibits [--expect EXP.json] [--unpacked | --air-jsonl] [--soft FILE] [--nac 293]
     p25tool.py disc IN.raw --rate HZ [--full HZ | --counts-per-khz N] [--invert] [--bits 8 --shift S] [--skip S]
                [--meta IN.json] [--expect EXP.json]
+    p25tool.py cc OUT.dibits --expect EXP.json [--nac 293] [--wacn BEE00] [--sysid 2F3] [--rfss N] [--site N]
+               [--units N] [--ch 1004] [--base HZ] [--spacing HZ] [--grant TG:CH[:SRC[:SVC]] [--grant-at UNIT]]
     p25tool.py mod IN.dibits OUT.raw [--rate HZ] [--full HZ] [--dev-scale PCT] [--offset HZ] [--noise HZ] [--ppm P]
                [--invert] [--carrier-gap S] [--carrier-lead S] [--seed S]
     p25tool.py selftest
@@ -34,6 +36,11 @@ deviation at full scale in Hz (the bench's disc stream gives it as `full`), --co
 debug link reports it; without either the soft modem follows the level itself. --invert for a discriminator of the
 other sense. It adds the soft modem's syncs (time, outer deviation, carrier offset) and, with --expect, the soft
 values' error against the ideal levels (an EVM in percent of the outer level).
+
+cc writes a trunked system's control channel for receive tests: units of one to three trunking signaling blocks back
+to back (network and RFSS status, the channel identifier, an adjacent site, a secondary control channel), with
+--grant a group voice grant in every unit from --grant-at on (CH in hex: identifier in the top four bits). decode and
+disc with --trunk take trunking units too and print each block's message; with a cc expect file they compare blocks.
 
 mod models a C4FM transmitter and a discriminator (for tests): samples a disc capture would hold.
 
@@ -115,7 +122,45 @@ def unit_text(u, disc):
         s += f"  ES RS {u['es_rs']}" + (f" ALG {e['algid']:02X} KID {e['kid']} MI {e['mi']}" if e else " FAILED")
     if "voice" in u:
         s += f"  LSD {u['lsd']} ({u['lsd_errs']})  voice errs " + ",".join(str(v["errs"]) for v in u["voice"])
+    for b in u.get("blocks", []):
+        s += "\n" + " " * 16 + (f"block CRC FAILED" if b["errs"] < 0 else f"block ({b['errs']}) {msg_text(b['msg'])}")
     return s
+
+
+def msg_text(m):
+    """A trunking block's message, or a packet's header."""
+    if "mbt" in m:
+        return (f"multi-block trunking header: opcode 0x{m['opcode']:02X}, {m['blocks']} blocks, SAP {m['sap']}"
+                if m["mbt"] else "packet header (not trunking)")
+    k, s = m["kind"], f"0x{m['opcode']:02X}"
+    if k == "grant":
+        s += (f" unit to unit: ch {m['ch']:04X} to {m['dst']} from {m['src']}" if m["unit"] else
+              f" group grant: ch {m['ch']:04X} TG {m['tg']}" + (f", ch {m['ch2']:04X} TG {m['tg2']}" if m["ch2"] else "")
+              + (f" from {m['src']}" if m["src"] else ""))
+        if "svc" in m:
+            s += f" svc {m['svc']:02X}"
+    elif k == "iden":
+        s += (f" identifier {m['id']}: base {m['base_hz'] / 1e6:.5f} MHz, spacing {m['spacing_hz'] / 1e3:g} kHz"
+              + (f", TDMA {m['slots']} slots" if m["tdma"] else ""))
+    elif k == "net":
+        s += f" network status: WACN {m['wacn']:05X} system {m['sysid']:03X} ch {m['ch']:04X}"
+    elif k in ("rfss", "adj"):
+        s += (f" {'RFSS' if k == 'rfss' else 'adjacent site'} status: system {m['sysid']:03X} RFSS {m['rfss']} "
+              f"site {m['site']} ch {m['ch']:04X}")
+    elif k == "sccb":
+        s += f" secondary control channels: " + ", ".join(f"{c:04X}" for c in m["ch"] if c)
+    else:
+        s += f" {k}" + (f" (MFID {m['mfid']:02X})" if k == "mfr" else "")
+    return s
+
+
+def compare_cc(lines, e):
+    """Blocks of a cc expect file found in the output (by content), and blocks whose CRC failed."""
+    want = [b["raw"] for u in e["units"] for b in u["blocks"]]
+    got = [b["msg"]["raw"] for d in lines if d["ev"] == "unit" for b in d.get("blocks", []) if b["errs"] >= 0]
+    failed = sum(1 for d in lines if d["ev"] == "unit" for b in d.get("blocks", []) if b["errs"] < 0)
+    have = set(got)
+    return {"blocks_expected": len(want), "blocks_found": sum(1 for w in want if w in have), "crc_failed": failed}
 
 
 def show(lines, disc, as_json):
@@ -298,7 +343,13 @@ def report(lines, a, disc):
     show(lines, disc, a.json)
     if a.expect:
         with open(a.expect) as f:
-            r = compare(lines, json.load(f))
+            e = json.load(f)
+        if e.get("format") == "p25-cc-expect/1":
+            r = compare_cc(lines, e)
+            print(json.dumps({"ev": "compare", **r}) if a.json else
+                  f"blocks found {r['blocks_found']} of {r['blocks_expected']}, CRC failed {r['crc_failed']}")
+            return 0 if r["blocks_found"] == r["blocks_expected"] else 1
+        r = compare(lines, e)
         print(json.dumps({"ev": "compare", **r}) if a.json else compare_text(r))
         return 0 if r["units_matched"] else 1
     return 0 if any(d["ev"] == "unit" for d in lines) else 1
@@ -312,7 +363,7 @@ def cmd_decode(a):
             args = ["decode", sp, "--unpacked", "--soft", fp]
         else:
             args += pass_opts(a, ["unpacked", "soft"])
-        lines = run(args + pass_opts(a, ["nac"]))
+        lines = run(args + pass_opts(a, ["nac", "trunk"]))
     return report(lines, a, False)
 
 
@@ -333,8 +384,15 @@ def cmd_disc(a):
         args = ["disc", inp, "--rate", int(round(float(rate)))]
         if full:
             args += ["--full", full]
-        lines = run(args + pass_opts(a, ["counts-per-khz", "invert", "bits", "shift", "skip", "nac"]))
+        lines = run(args + pass_opts(a, ["counts-per-khz", "invert", "bits", "shift", "skip", "nac", "trunk"]))
     return report(lines, a, True)
+
+
+def cmd_cc(a):
+    d = run(["cc", a.out, a.expect] + pass_opts(a, ["nac", "wacn", "sysid", "rfss", "site", "units", "ch", "base",
+                                                    "spacing", "grant", "grant-at", "unpacked"]))[-1]
+    print(f"{a.out}: {d['syms']} symbols ({d['syms'] / 4800:.3f} s at 4800/s), {d['units']} units; expect: {a.expect}")
+    return 0
 
 
 def cmd_mod(a):
@@ -410,6 +468,27 @@ def cmd_selftest(a):
                 note = f"; soft modem: {len(syncs)} syncs (scale unknown: no level in Hz)"
             print(f"     {what}{note}")
             check(what, r["units_matched"] >= n_units - slack and r["voice_frames_wrong_fec"] <= 5 * slack, r)
+        # A control channel: every block back, as symbols and through the C4FM model; none without --trunk
+        run(["cc", p("cc.dibits"), p("cc.json"), "--units", 60, "--grant", "100:100a:1001", "--grant-at", 20])
+        with open(p("cc.json")) as f:
+            ec = json.load(f)
+        for what, lines in (("cc decode", run(["decode", p("cc.dibits"), "--trunk"])),
+                            ("cc disc 8 kHz, noise 300 Hz", (run(["mod", p("cc.dibits"), p("cc.raw"), "--rate", 8000,
+                                                                   "--full", 5000, "--noise", 300]),
+                                                              run(["disc", p("cc.raw"), "--rate", 8000, "--full", 5000,
+                                                                   "--trunk"]))[1])):
+            r = compare_cc(lines, ec)
+            ok = r["blocks_found"] == r["blocks_expected"] and r["crc_failed"] == 0
+            grants = sum(1 for d in lines if d["ev"] == "unit" for b in d.get("blocks", [])
+                         if b["msg"].get("kind") == "grant" and b["msg"].get("tg") == 100)
+            print(f"{'ok  ' if ok and grants == 40 else 'FAIL'} {what}: blocks {r['blocks_found']} of "
+                  f"{r['blocks_expected']}, CRC failed {r['crc_failed']}, grants {grants}")
+            if not ok or grants != 40:
+                fails.append(what)
+        r = compare_cc(run(["decode", p("cc.dibits")]), ec)
+        print(f"{'ok  ' if r['blocks_found'] == 0 else 'FAIL'} cc without --trunk: no blocks taken")
+        if r["blocks_found"]:
+            fails.append("cc without --trunk")
     print(f"selftest: {'all passed' if not fails else str(len(fails)) + ' failed: ' + ', '.join(fails)}")
     return 1 if fails else 0
 
@@ -442,6 +521,7 @@ def main(argv=None):
         s.add_argument("--expect", default=None, help="a gen expect file to compare with")
         s.add_argument("--nac", default=None, help="hex: take only this NAC (F7E: any, the default)")
         s.add_argument("--json", action="store_true", help="the JSON lines as they are")
+        s.add_argument("--trunk", action="store_true", help="take trunking signaling and packets too, and print them")
 
     d = sub.add_parser("decode", help="symbols through the framer and the call layer")
     d.add_argument("input")
@@ -463,6 +543,23 @@ def main(argv=None):
     s.add_argument("--meta", default=None, help="a JSON sidecar with rate, full, invert (fsk4_bench.py disc writes it)")
     rx_common(s)
     s.set_defaults(fn=cmd_disc)
+
+    c = sub.add_parser("cc", help="a trunked system's control channel as dibits, and its expect file")
+    c.add_argument("out")
+    c.add_argument("--expect", required=True)
+    c.add_argument("--nac", default=None, help="hex (293)")
+    c.add_argument("--wacn", default=None, help="hex (BEE00)")
+    c.add_argument("--sysid", default=None, help="hex (2F3)")
+    c.add_argument("--rfss", type=int, default=None)
+    c.add_argument("--site", type=int, default=None)
+    c.add_argument("--units", type=int, default=None, help="trunking signaling units (40)")
+    c.add_argument("--ch", default=None, help="hex: the control channel's own number (1004)")
+    c.add_argument("--base", type=int, default=None, help="its identifier's base, Hz (851006250)")
+    c.add_argument("--spacing", type=int, default=None, help="its identifier's spacing, Hz (6250)")
+    c.add_argument("--grant", default=None, metavar="TG:CH[:SRC[:SVC]]", help="a group voice grant (CH in hex; SVC a number, 0x40 encrypted)")
+    c.add_argument("--grant-at", type=int, default=None, metavar="UNIT", help="the first unit with the grant (10)")
+    c.add_argument("--unpacked", action="store_true", help="one symbol a byte")
+    c.set_defaults(fn=cmd_cc)
 
     m = sub.add_parser("mod", help="a C4FM model: dibits to discriminator samples (int16 LE)")
     m.add_argument("input")
