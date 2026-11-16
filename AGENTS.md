@@ -98,7 +98,7 @@ The source tree is in [README.md, Layout](README.md#layout). The layers and the 
 - Keep RTOS calls and blocking waits out of protocol engines and UI behavior code, so the host tests can run them.
 - **Languages.** The radio and the site are translated ([docs/dev/translating.md](docs/dev/translating.md)). Mark text
   a user reads with a key and its English, `TR(KEY, "English")` (`TRN(KEY, ...)` in a static table or struct field,
-  `tr()` where it is shown; `TRX(KEY, ...)` for untranslated text in such a table; `TRF(&b, KEY, "... %1$s ...", name)`
+  `tr()` where it is shown; `TRX(KEY, ...)` for untranslated text in such a table; `TRF(&b, KEY, "... %s ...", name)`
   for a sentence with a name or number in it, never pieces glued around the value), never debug link or protocol text,
   and run `python3 tools/i18n.py --sync`. Name the key `AREA_ROLE_MEANING` ([Key
   names](docs/dev/translating.md#key-names)); rename one only with `tools/i18n.py --rename`. One key, one English. A

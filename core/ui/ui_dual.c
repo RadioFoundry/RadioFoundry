@@ -768,9 +768,9 @@ static void zone_to(uint16_t zi, int dir)
 		sbuf_t b;
 		sb_init(&b, msg, sizeof msg);
 		if (d->sel)
-			TRF(&b, DUAL_TOAST_B_ZONE, "B zone: %1$s", z.name);
+			TRF(&b, DUAL_TOAST_B_ZONE, "B zone: %s", z.name);
 		else
-			TRF(&b, DUAL_TOAST_A_ZONE, "A zone: %1$s", z.name);
+			TRF(&b, DUAL_TOAST_A_ZONE, "A zone: %s", z.name);
 		ui_toast(msg);
 		return;
 	}
@@ -887,7 +887,7 @@ static void watch_lost(ui_dual_t *d, const radio_view_t *v)
 	SB_LOCAL(f, 12);
 	if (v->vfo)
 		sb_freq(&f, v->ch.rx_hz);
-	TRF(&b, DUAL_TOAST_OFF_ON, "Dual watch off: on %1$s", v->vfo ? f_text : v->ch.name);
+	TRF(&b, DUAL_TOAST_OFF_ON, "Dual watch off: on %s", v->vfo ? f_text : v->ch.name);
 	ui_toast(msg);
 }
 

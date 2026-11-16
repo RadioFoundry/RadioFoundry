@@ -104,7 +104,7 @@ static void hub_item(uint16_t i, ui_item_t *it)
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
 	if (e == HUB_MESSAGES && ui_st.unread) {
-		TRF(&b, HUB_VALUE_NEW, "%1$u new", ui_st.unread);
+		TRF(&b, HUB_VALUE_NEW, "%u new", ui_st.unread);
 		it->flags |= UI_ITEM_WARN;
 	} else if (e == HUB_ZONES) {
 		// The zone (or VFO), left out where it doesn't fit beside the label (an empty last alternate)
@@ -216,7 +216,7 @@ static void act_item(uint16_t i, ui_item_t *it)
 		if (t.group)
 			t.name[0] = 0;	// "Talk to TG 91": the name is in the title
 		ui_sb_target(name, sizeof name, &t);
-		TRF(&b, ACT_ROW_TALK_TO, "Talk to %1$s", name);
+		TRF(&b, ACT_ROW_TALK_TO, "Talk to %s", name);
 		if (!(feats() & UI_FEAT_TALK_TARGET))
 			it->flags |= UI_ITEM_DIM;
 		break;
@@ -305,7 +305,7 @@ static void act_select(uint16_t i, bool hold)
 		break;
 	case A_CHECK:
 		if (ui_svc_radio_check(ui_target.id)) {
-			TRF(&b, ACT_TOAST_CHECKING, "Checking %1$s...", name);
+			TRF(&b, ACT_TOAST_CHECKING, "Checking %s...", name);
 			ui_go_home();
 			ui_toast(msg);
 		} else {
@@ -314,7 +314,7 @@ static void act_select(uint16_t i, bool hold)
 		break;
 	case A_ALERT:
 		if (ui_svc_call_alert(ui_target.id)) {
-			TRF(&b, ACT_TOAST_CALL_ALERT_TO, "Call alert to %1$s", name);
+			TRF(&b, ACT_TOAST_CALL_ALERT_TO, "Call alert to %s", name);
 			ui_go_home();
 			ui_toast(msg);
 		} else {
@@ -455,7 +455,7 @@ static void send_text(const char *text, bool aprs, int reply_index)
 	}
 	sbuf_t b;
 	sb_init(&b, msg, sizeof msg);
-	TRF(&b, MSG_TOAST_SENDING_TO, "Sending to %1$s", name);
+	TRF(&b, MSG_TOAST_SENDING_TO, "Sending to %s", name);
 	ui_go_home();
 	ui_toast(msg);
 }
@@ -1258,7 +1258,7 @@ static void chans_select(uint16_t i, bool hold)
 	if (codeplug_zone(zi, &z)) {
 		sbuf_t b;
 		sb_init(&b, msg, sizeof msg);
-		TRF(&b, ZONE_TOAST_ZONE, "Zone: %1$s", z.name);
+		TRF(&b, ZONE_TOAST_ZONE, "Zone: %s", z.name);
 		ui_toast(msg);
 	}
 }
@@ -1748,7 +1748,7 @@ static void share_to_item(uint16_t i, ui_item_t *it)
 	if (t.group)
 		sb_fmt(&b, "TG %1$u", (unsigned)t.id);
 	else
-		TRF(&b, SHARE_ROW_PRIVATE_ID, "Private ID %1$u", t.id);
+		TRF(&b, SHARE_ROW_PRIVATE_ID, "Private ID %u", t.id);
 	str_copy(it->value, sizeof it->value,
 		TR(CHIP_NOT_SAVED, TEXT_ALT_OPEN "Not saved" TEXT_ALT_NEXT TEXT_ALT_CLOSE));
 }
@@ -1885,7 +1885,7 @@ static const char *offer_body(void)
 	if (!offer_get())
 		return NULL;
 	if (offer.channel)
-		TRF(&b, SHARE_BODY_CHANNEL, "Channel %1$s", offer.name);
+		TRF(&b, SHARE_BODY_CHANNEL, "Channel %s", offer.name);
 	else if (offer.channels == 1)
 		TRF(&b, SHARE_BODY_ZONE_CHANNEL, "Zone %1$s, %2$u channel", offer.name, offer.channels);
 	else
@@ -1897,10 +1897,10 @@ static const char *offer_body(void)
 		sb_chr(&from, ' ');
 	}
 	sb_u32(&from, offer.src, 1);
-	TRF(&b, SHARE_BODY_FROM, ", from %1$s", from_text);
+	TRF(&b, SHARE_BODY_FROM, ", from %s", from_text);
 	if (offer.in_band < offer.channels) {
 		// Left out by the import (the result banner says the rest come in receive only)
-		TRF(&b, SHARE_BODY_NOT_IN_BAND, ". %1$u not in band", (unsigned)(offer.channels - offer.in_band));
+		TRF(&b, SHARE_BODY_NOT_IN_BAND, ". %u not in band", (unsigned)(offer.channels - offer.in_band));
 	}
 	if (offer.unavailable != 0) {
 		// Trunked channels whose system neither this radio nor the share has (zone-share.md 5.2)
@@ -2984,9 +2984,9 @@ static void sb_chinfo_zones(sbuf_t *b, uint16_t num)
 	}
 	sb_str(b, TEXT_ALT_NEXT);
 	if (found == 1)
-		TRF(b, CHAN_VALUE_ZONE, "%1$u zone", found);
+		TRF(b, CHAN_VALUE_ZONE, "%u zone", found);
 	else
-		TRF(b, CHAN_VALUE_ZONES, "%1$u zones", found);
+		TRF(b, CHAN_VALUE_ZONES, "%u zones", found);
 	sb_str(b, TEXT_ALT_CLOSE);
 }
 
@@ -3350,9 +3350,9 @@ static void ced_save(bool as_new)
 	sbuf_t b;
 	sb_init(&b, msg, sizeof msg);
 	if (as_new || ced_new)
-		TRF(&b, CHAN_TOAST_SAVED_AS, "Saved as channel %1$u", num);
+		TRF(&b, CHAN_TOAST_SAVED_AS, "Saved as channel %u", num);
 	else
-		TRF(&b, CHAN_TOAST_SAVED, "Saved channel %1$u", num);
+		TRF(&b, CHAN_TOAST_SAVED, "Saved channel %u", num);
 	ced_new = false;
 	ui_toast(msg);
 }
@@ -3938,7 +3938,7 @@ static const char *ct_problem(uint16_t *slot)
 	if (sc.dup_found) {
 		sbuf_t b;
 		sb_init(&b, toast_msg, sizeof toast_msg);
-		TRF(&b, CONTACT_WHY_ALREADY_EXISTS, "Already a contact: %1$s", c.name);
+		TRF(&b, CONTACT_WHY_ALREADY_EXISTS, "Already a contact: %s", c.name);
 		return toast_msg;
 	}
 	if (!read)
@@ -3961,7 +3961,7 @@ static void ct_save(void)
 	}
 	sbuf_t b;
 	sb_init(&b, toast_msg, sizeof toast_msg);
-	TRF(&b, CONTACT_TOAST_SAVED, "Saved contact %1$s", ct.name);
+	TRF(&b, CONTACT_TOAST_SAVED, "Saved contact %s", ct.name);
 	ui_pop();
 	if (ui_frame()->scr == SCR_ACTIONS && ui_target.id == ct.id && ui_target.group == (ct.type != CONTACT_PRIVATE)) {
 		ui_target.saved = true;		// the actions it came from: In contacts, under its new name
@@ -4166,7 +4166,7 @@ static void zchan_select(uint16_t i, bool hold)
 			ui_pop();
 			sbuf_t b;
 			sb_init(&b, ze_msg, sizeof ze_msg);
-			TRF(&b, ZONE_TOAST_REMOVED_FROM, "Removed from %1$s", ze_z.name);
+			TRF(&b, ZONE_TOAST_REMOVED_FROM, "Removed from %s", ze_z.name);
 			ui_toast(ze_msg);
 		}
 	}
@@ -4241,7 +4241,7 @@ static void zpick_select(uint16_t i, bool hold)
 	ui_menus_resume();
 	sbuf_t b;
 	sb_init(&b, ze_msg, sizeof ze_msg);
-	TRF(&b, ZONE_TOAST_ADDED_TO, "Added to %1$s", ze_z.name);
+	TRF(&b, ZONE_TOAST_ADDED_TO, "Added to %s", ze_z.name);
 	ui_toast(ze_msg);
 }
 
@@ -4293,9 +4293,9 @@ static void chz_select(uint16_t i, bool hold)
 	sbuf_t b;
 	sb_init(&b, ze_msg, sizeof ze_msg);
 	if (at >= 0)
-		TRF(&b, ZONE_TOAST_REMOVED_FROM, "Removed from %1$s", chz_z.name);
+		TRF(&b, ZONE_TOAST_REMOVED_FROM, "Removed from %s", chz_z.name);
 	else
-		TRF(&b, ZONE_TOAST_ADDED_TO, "Added to %1$s", chz_z.name);
+		TRF(&b, ZONE_TOAST_ADDED_TO, "Added to %s", chz_z.name);
 	ui_toast(ze_msg);
 }
 
@@ -4360,7 +4360,7 @@ static void zones_new_named(void)
 	zones_new_pending = true;
 	sbuf_t b;
 	sb_init(&b, ze_msg, sizeof ze_msg);
-	TRF(&b, ZONE_TOAST_ADDED, "Added %1$s", ze_name);
+	TRF(&b, ZONE_TOAST_ADDED, "Added %s", ze_name);
 	ui_toast(ze_msg);
 }
 
@@ -4397,7 +4397,7 @@ static void zopt_select(uint16_t i, bool hold)
 		zone_copy_name(name, ze_z.name);
 		sbuf_t b;
 		sb_init(&b, ze_msg, sizeof ze_msg);
-		TRF(&b, ZONE_TOAST_COPIED_AS, "Copied as %1$s", name);
+		TRF(&b, ZONE_TOAST_COPIED_AS, "Copied as %s", name);
 		ui_toast(ze_msg);
 #if CONFIG_ZONE_SHARE
 	} else if (i == ZO_SEND) {
@@ -4444,7 +4444,7 @@ static void zdel_select(uint16_t i, bool hold)
 	ui_pop();		// and the zone's list: back to Zones
 	sbuf_t b;
 	sb_init(&b, ze_msg, sizeof ze_msg);
-	TRF(&b, ZONE_TOAST_DELETED, "Deleted %1$s", ze_z.name);
+	TRF(&b, ZONE_TOAST_DELETED, "Deleted %s", ze_z.name);
 	ui_toast(ze_msg);
 }
 
@@ -4473,7 +4473,7 @@ static const char *zdel_body(void)
 {
 	sbuf_t b;
 	sb_init(&b, ze_msg, sizeof ze_msg);
-	TRF(&b, ZONE_ASK_DELETE, "Delete %1$s? Channels stay.", ze_z.name);
+	TRF(&b, ZONE_ASK_DELETE, "Delete %s? Channels stay.", ze_z.name);
 	return ze_msg;
 }
 
@@ -4623,14 +4623,14 @@ static const char *info_body(void)
 			// GGA counts only satellites a fix uses
 			sb_str(&b, TR(POS_BODY_NO_FIX_GO_OUTSIDE, "No fix yet. Go outside, away from buildings."));
 		} else {
-			TRF(&b, POS_BODY_FIX, "Fix, %1$u satellites", p.sats);
+			TRF(&b, POS_BODY_FIX, "Fix, %u satellites", p.sats);
 			sb_chr(&b, '\n');
 			sb_coord(&b, p.lat_e7, 'N', 'S');
 			sb_chr(&b, ' ');
 			sb_coord(&b, p.lon_e7, 'E', 'W');
 			if (p.alt_ok) {
 				sb_chr(&b, '\n');
-				TRF(&b, POS_BODY_ALTITUDE, "Altitude %1$d m", p.alt_m);
+				TRF(&b, POS_BODY_ALTITUDE, "Altitude %d m", p.alt_m);
 			}
 		}
 		break;
@@ -4655,9 +4655,9 @@ static const char *info_body(void)
 			sb_str(&b, TR(CPLUG_BODY_OTHER_FIRMWARE, "Other firmware's codeplug: ignored"));
 			sb_chr(&b, '\n');
 		}
-		TRF(&b, CPLUG_BODY_ZONES, "Zones: %1$u", codeplug_zone_count());
+		TRF(&b, CPLUG_BODY_ZONES, "Zones: %u", codeplug_zone_count());
 		sb_chr(&b, '\n');
-		TRF(&b, CPLUG_BODY_CHANNELS_UP_TO, "Channels: up to %1$u", codeplug_channel_count());
+		TRF(&b, CPLUG_BODY_CHANNELS_UP_TO, "Channels: up to %u", codeplug_channel_count());
 		break;
 	}
 	case INFO_USB_NET:
@@ -4896,7 +4896,7 @@ static const char *dmr_id_body(void)
 	sb_init(&b, id_body, sizeof id_body);
 	sb_str(&b, TR(BODY_SAVED_IN_CODEPLUG, "Saved in the codeplug"));
 	sb_chr(&b, '\n');
-	TRF(&b, BODY_RADIO, "Radio: %1$K", board.name);	// as the info page it replaces
+	TRF(&b, BODY_RADIO, "Radio: %K", board.name);	// as the info page it replaces
 	return id_body;
 }
 
@@ -5105,7 +5105,7 @@ static const char *ds_body(void)
 		[UI_ARS_NO_ANSWER] = TRN(DATA_STATE_NO_ANSWER, "No answer") };
 	uint8_t s = ui_svc_ars_state();
 	sb_chr(&b, '\n');
-	TRF(&b, DATA_BODY_ARS, "ARS: %1$K", tr(states[s <= UI_ARS_NO_ANSWER ? s : UI_ARS_OFF]));
+	TRF(&b, DATA_BODY_ARS, "ARS: %K", tr(states[s <= UI_ARS_NO_ANSWER ? s : UI_ARS_OFF]));
 #endif
 	return id_body;
 }
@@ -5302,7 +5302,7 @@ static void trim_draw(void)
 		// "At 440 MHz" wherever it fits beside the widest value (-4400 Hz), "@ 440 MHz" where it doesn't
 		char label[20];	// "At 440 MHz", room for a longer translation
 		sb_init(&b, label, sizeof label);
-		TRF(&b, TRIM_BODY_AT, "At %1$u MHz", mhz[i]);
+		TRF(&b, TRIM_BODY_AT, "At %u MHz", mhz[i]);
 		if (gfx_text_width(f, label) + gfx_text_width(f, " -4400 Hz") + 4 > w) {
 			sb_init(&b, label, sizeof label);
 			sb_fmt(&b, "@ %1$u MHz", (unsigned)mhz[i]);
@@ -5432,7 +5432,7 @@ bool ui_about_busy(void)
 // chip
 static void about_support(sbuf_t *b)
 {
-	TRF(b, ABOUT_LABEL_SOURCE, "Source: %1$K", tr(support_source_text(support_source())));
+	TRF(b, ABOUT_LABEL_SOURCE, "Source: %K", tr(support_source_text(support_source())));
 	sb_chr(b, '\n');
 	uint8_t d[SHA256_LEN];
 	uint32_t addr, len;
@@ -5450,7 +5450,7 @@ static void about_support(sbuf_t *b)
 			v = TR(ABOUT_VALUE_IMAGE_CHECKING, "checking");
 			about_hashing = true;
 		}
-		TRF(b, ABOUT_LABEL_IMAGE, "Image: %1$K", v);
+		TRF(b, ABOUT_LABEL_IMAGE, "Image: %K", v);
 		sb_chr(b, '\n');
 	}
 	support_line_t l;
@@ -5471,26 +5471,26 @@ static const char *about_text(void)
 	// every line "Label: value" (ui_draw_text_page shows labels dim), each on its own line: "RadioFoundry v26.11" was
 	// wider than the display and the release wrapped without its label. A release: its name, then the commit it was
 	// built from; any other build: the commit alone
-	TRF(&b, ABOUT_BODY_FIRMWARE, "Firmware: %1$K", "RadioFoundry");
+	TRF(&b, ABOUT_BODY_FIRMWARE, "Firmware: %K", "RadioFoundry");
 	sb_chr(&b, '\n');
 	if (RFOUNDRY_RELEASE[0] != '\0') {
-		TRF(&b, ABOUT_BODY_RELEASE, "Release: %1$K", RFOUNDRY_RELEASE);
+		TRF(&b, ABOUT_BODY_RELEASE, "Release: %K", RFOUNDRY_RELEASE);
 		sb_chr(&b, '\n');
 	}
-	TRF(&b, ABOUT_BODY_BUILD, "Build: %1$K", RFOUNDRY_GIT);
+	TRF(&b, ABOUT_BODY_BUILD, "Build: %K", RFOUNDRY_GIT);
 	// the commit's date (UTC; a dirty build's: the build's), which the web editor's update notice compares with a
 	// release's
 	if (RFOUNDRY_GIT_DATE[0] != '\0') {
 		sb_chr(&b, '\n');
-		TRF(&b, ABOUT_BODY_DATE, "Date: %1$K", RFOUNDRY_GIT_DATE);
+		TRF(&b, ABOUT_BODY_DATE, "Date: %K", RFOUNDRY_GIT_DATE);
 	}
 	sb_chr(&b, '\n');
-	TRF(&b, BODY_RADIO, "Radio: %1$K", board.name);
+	TRF(&b, BODY_RADIO, "Radio: %K", board.name);
 	sb_chr(&b, '\n');
 #if CONFIG_SUPPORT_INFO
 	about_support(&b);
 #endif
-	TRF(&b, ABOUT_BODY_LICENSE, "License: %1$K", "MIT, (c) 2026 The RadioFoundry Authors");
+	TRF(&b, ABOUT_BODY_LICENSE, "License: %K", "MIT, (c) 2026 The RadioFoundry Authors");
 	sb_chr(&b, '\n');
 	// The authors (the copyright line above) are everyone who has contributed: too many to list here, so the page
 	// names the maintainers (AUTHORS) and says where the contributors are listed. One maintainer per line, in AUTHORS
@@ -5882,9 +5882,9 @@ static const char *roam_body(void)
 	if (v->roam.rssi_dbm != 0) {
 		sb_chr(&b, '\n');
 		if (v->roam.weak)
-			TRF(&b, ROAM_BODY_SIGNAL_WEAK, "Signal %1$d dBm, weak", v->roam.rssi_dbm);
+			TRF(&b, ROAM_BODY_SIGNAL_WEAK, "Signal %d dBm, weak", v->roam.rssi_dbm);
 		else
-			TRF(&b, ROAM_BODY_SIGNAL, "Signal %1$d dBm", v->roam.rssi_dbm);
+			TRF(&b, ROAM_BODY_SIGNAL, "Signal %d dBm", v->roam.rssi_dbm);
 	}
 	if (v->roam.state == RROAM_STATE_LOCKED) {
 		sb_chr(&b, '\n');
@@ -5982,7 +5982,7 @@ static void roam_select(uint16_t i, bool hold)
 		bool on = !v->roam.zone_on;
 		ui_svc_roam(RROAM_ZONE_TOGGLE);
 		if (on) {
-			TRF(&b, ROAM_TOAST_ON_FOR, "Roaming on for %1$s", v->zone_name);
+			TRF(&b, ROAM_TOAST_ON_FOR, "Roaming on for %s", v->zone_name);
 			ui_toast(msg);
 		} else {
 			ui_toast(TR(ROAM_TOAST_OFF, "Roaming off"));
@@ -6006,7 +6006,7 @@ static void roam_select(uint16_t i, bool hold)
 		bool lock = v->roam.state != RROAM_STATE_LOCKED;
 		ui_svc_roam(lock ? RROAM_LOCK : RROAM_UNLOCK);
 		if (lock) {
-			TRF(&b, ROAM_TOAST_LOCKED_TO, "Locked to %1$s", v->ch.name);
+			TRF(&b, ROAM_TOAST_LOCKED_TO, "Locked to %s", v->ch.name);
 			ui_toast(msg);
 		} else {
 			ui_toast(TR(ROAM_TOAST_ROAMING_AGAIN, "Roaming again"));
@@ -6093,7 +6093,7 @@ static const char *crash_body(void)
 		// The question only: it has to fit above the two rows on the smallest screens
 		char to[CODEPLUG_NAME_LEN + 4];
 		crash_target(to, sizeof to);
-		TRF(&b, CRASH_BODY_RESTARTED_SEND_TO, "Restarted after a crash. Send the report to %1$s?", to);
+		TRF(&b, CRASH_BODY_RESTARTED_SEND_TO, "Restarted after a crash. Send the report to %s?", to);
 		return t;
 	}
 	sb_str(&b, c.summary);
@@ -6103,7 +6103,7 @@ static const char *crash_body(void)
 	}
 	if (c.count > 1) {
 		sb_str(&b, "\n");
-		TRF(&b, CRASH_BODY_IN_A_ROW, "%1$u crashes in a row", c.count);
+		TRF(&b, CRASH_BODY_IN_A_ROW, "%u crashes in a row", c.count);
 	}
 	sb_chr(&b, '\n');
 	SB_LOCAL(ran, 12);
@@ -6114,7 +6114,7 @@ static const char *crash_body(void)
 			sb_chr(&build, "0123456789abcdef"[(c.build >> k) & 0xFu]);
 		TRF(&b, CRASH_BODY_RAN_FOR_BUILD, "Ran for %1$K, build %2$K", ran_text, build_text);
 	} else {
-		TRF(&b, CRASH_BODY_RAN_FOR, "Ran for %1$K", ran_text);
+		TRF(&b, CRASH_BODY_RAN_FOR, "Ran for %K", ran_text);
 	}
 	return t;
 }
@@ -6236,7 +6236,7 @@ static void crash_to_select(uint16_t i, bool hold)
 	static char msg[24 + CODEPLUG_NAME_LEN];	// the toast keeps the pointer
 	sbuf_t b;
 	sb_init(&b, msg, sizeof msg);
-	TRF(&b, CRASH_TOAST_REPORTS_TO, "Crash reports to %1$s",
+	TRF(&b, CRASH_TOAST_REPORTS_TO, "Crash reports to %s",
 		t.name[0] ? t.name : TR(CRASH_TOAST_THIS_CONTACT, "this contact"));
 	ui_pop();
 	ui_toast(msg);
@@ -6343,7 +6343,7 @@ static const char *tools_hint(void)
 	sbuf_t b;
 	sb_init(&b, hint, sizeof hint);
 	// "1-9": the zone offer's 0 isn't named
-	TRF(&b, TOOLS_HINT_OPEN_BACK, "1-%1$u open  Back", last < 9 ? last : 9u);
+	TRF(&b, TOOLS_HINT_OPEN_BACK, "1-%u open  Back", last < 9 ? last : 9u);
 	return hint;
 }
 
@@ -6871,11 +6871,11 @@ static void key_labels(void)
 				   r < board.side_key_count + board.home_key_count) {
 				sb_str(&key, board.home_key_names[r - board.side_key_count]);
 			} else {
-				TRF(&key, SET_LABEL_KEY_N, "Key %1$d", r + 1);
+				TRF(&key, SET_LABEL_KEY_N, "Key %d", r + 1);
 			}
 			sb_init(&b, key_label[2 * r + h], sizeof key_label[0]);
 			if (h)
-				TRF(&b, SET_LABEL_KEY_HOLD, "%1$K hold", key_text);
+				TRF(&b, SET_LABEL_KEY_HOLD, "%K hold", key_text);
 			else
 				sb_str(&b, key_text);
 		}
@@ -7103,7 +7103,7 @@ static void sc_item(uint16_t i, ui_item_t *it)
 	sbuf_t b;
 	uint8_t ev = sc_event();
 	sb_init(&b, it->label, sizeof it->label);
-	TRF(&b, SIG_LABEL_STEP_N, "Step %1$u", i + 1u);
+	TRF(&b, SIG_LABEL_STEP_N, "Step %u", i + 1u);
 	sb_init(&b, it->value, sizeof it->value);
 	int32_t hz = sc_get(ev, (uint8_t)i, false), ms = sc_get(ev, (uint8_t)i, true);
 	if (sc_row == i) {

@@ -91,23 +91,30 @@ class Marks(unittest.TestCase):
     def test_format_mark(self):
         # TRF(buffer, KEY, "English", values...): the buffer and the values are skipped, whatever they hold
         found = scan('TRF(sb(&b, 1), FROM, "Message from %1$s, "\n\t"%2$02u", station(ev, id), n);\n'
-                     'x = TR(PCT, "50% of 100%");\n')
+                     'x = TR(PCT, "50% of 100%");\nTRF(&b, AT, "At %3u", n);\n')
         self.assertEqual([(m.kind, m.key, m.text) for m in found],
-                         [("TRF", "FROM", "Message from %1$s, %2$02u"), ("TR", "PCT", "50% of 100%")])
+                         [("TRF", "FROM", "Message from %1$s, %2$02u"), ("TR", "PCT", "50% of 100%"),
+                          ("TRF", "AT", "At %3u")])
         self.assertEqual(i18n.format_values(found[0].text, ""), {1: "s", 2: "u"})
+        self.assertEqual(i18n.format_values(found[2].text, ""), {1: "u"})
+        self.assertEqual(i18n.format_values("%1$u, %1$u", ""), {1: "u"})
         for src, why in (('x = TR(FROM, "From %1$s");', "only TRF"),
-                         ('TRF(&b, FROM, "From %2$s", a);', "numbered from 1"),
+                         ('x = TR(FROM, "From %s");', "only TRF"),
+                         ('TRF(&b, FROM, "From %2$s and %3$s", a);', "numbered from 1"),
                          ('TRF(&b, FROM, "From", a);', "numbered from 1"),
+                         ('TRF(&b, FROM, "From %1$s", a);', "without a number"),
+                         ('TRF(&b, FROM, "From %s to %2$s", a, b);', "numbers them all"),
                          ('TRF(&b, FROM, "%1$s and %1$u", a);', "in one place"),
-                         ('TRF(&b, FROM, "%1$02s", a);', "only a number takes digits"),
+                         ('TRF(&b, FROM, "%02s", a);', "only a number takes a width"),
                          ('TRF(&b, FROM, "%1$s %5$s", a);', "is not a value"),
                          ('TRF(&b, FROM, "%1$s %2$x", a, b);', "is not a value"),
+                         ('TRF(&b, FROM, "%s %x", a, b);', "is not a value"),
                          ('TRF(&b, "From %1$s", a);', "takes a buffer, a key")):
             with self.assertRaisesRegex(i18n.I18nError, why, msg=src):
                 scan(src + "\n")
         with self.assertRaisesRegex(i18n.I18nError, "TRF format in one place"):
-            i18n.check_keys([i18n.Mark("TRF", "FROM", "From %1$s", "x.c", 1, 0),
-                             i18n.Mark("TR", "FROM", "From %1$s", "x.c", 2, 0)])
+            i18n.check_keys([i18n.Mark("TRF", "FROM", "From %s", "x.c", 1, 0),
+                             i18n.Mark("TR", "FROM", "From %s", "x.c", 2, 0)])
 
     def test_format_translation(self):
         en = "Site %1$u of %2$u: %3$s"
@@ -115,7 +122,12 @@ class Marks(unittest.TestCase):
         for tr in ("Sitio %1$u de %2$u", "Sitio %1$u de %2$u: %3$K", "Sitio %1$u de %2$d: %3$s",
                    "Sitio %1$u de %2$u: %3$s %4$s", "Sitio %1$u de %2$u: %3$s %1$s"):
             self.assertTrue(i18n.check_translation(en, tr, "x"), tr)
-        self.assertTrue(i18n.check_translation("Done", "Hecho %1$s", "x"))
+        self.assertTrue(i18n.check_translation("Done", "Hecho %s", "x"))
+        # One value: no number, unless the translation uses it twice
+        self.assertEqual(i18n.check_translation("From %s", "De %s", "x"), [])
+        self.assertEqual(i18n.check_translation("From %s", "%1$s, de %1$s", "x"), [])
+        self.assertTrue(i18n.check_translation("From %s", "De %1$s", "x"))
+        self.assertTrue(i18n.check_translation("From %s", "De %u", "x"))
 
     def test_format_prototypes(self):
         with tempfile.TemporaryDirectory() as d:
@@ -290,7 +302,7 @@ class Rename(unittest.TestCase):
         self.test = os.path.join(self.dir.name, "tests", "t.c")
         self.po = os.path.join(i18n.LANG_DIR, "xx.po")
         with open(self.src, "w", encoding="utf-8") as f:
-            f.write(SRC + "int TR_TX;\n" + 'void g(void) { TRF(sb(&b), /* key */ SITE, "Site %1$u", 1); }\n')
+            f.write(SRC + "int TR_TX;\n" + 'void g(void) { TRF(sb(&b), /* key */ SITE, "Site %u", 1); }\n')
         with open(self.test, "w", encoding="utf-8") as f:
             f.write('CHECK(strcmp(TR( DONE, "Done"), "Hecho") == 0);\n')
         with open(self.po, "w", encoding="utf-8") as f:
@@ -308,7 +320,7 @@ class Rename(unittest.TestCase):
             src = f.read()
         self.assertIn('TRN(FUZZY, "Done"), TRN(UNTRANSLATED, "Untranslated"), TRX(LABEL_RX, "RX")', src)
         self.assertIn('show(TR(DONE, "Fuzzy"), TR(VOLUME, "Volume "), TR(BAD, "Bad"), TR(FUZZY, "Done"));', src)
-        self.assertIn('TRF(sb(&b), /* key */ ROAM_SITE, "Site %1$u", 1);', src)
+        self.assertIn('TRF(sb(&b), /* key */ ROAM_SITE, "Site %u", 1);', src)
         with open(self.test, encoding="utf-8") as f:
             self.assertIn('TR( FUZZY, "Done")', f.read())
         by_key = {k: (en, tr) for k, en, tr, _ in i18n.read_po(self.po)[1]}

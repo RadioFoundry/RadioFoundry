@@ -136,10 +136,10 @@ static const char *aprs_body(void)
 		sb_chr(&b, '\n');
 		SB_LOCAL(next, 12);
 		sb_mmss(&next, v.next_s);
-		TRF(&b, APRS_BODY_NEXT_IN, "Next in %1$K", next_text);
+		TRF(&b, APRS_BODY_NEXT_IN, "Next in %K", next_text);
 	}
 	if (v.rf_sent + v.dmr_sent != 0) {
-		TRF(&b, APRS_BODY_SENT, "  Sent %1$u", v.rf_sent + v.dmr_sent);
+		TRF(&b, APRS_BODY_SENT, "  Sent %u", v.rf_sent + v.dmr_sent);
 	}
 	return t;
 }

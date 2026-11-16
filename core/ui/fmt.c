@@ -54,29 +54,41 @@ void sb_str(sbuf_t *b, const char *s)
 	put(b, s, NULL, false);
 }
 
-// One value of a format: which (from 0), its kind (s K d u), and for a number its least digits
+// One value of a format: which (from 0), its kind (s K d u), and for a number its least width and its padding
 typedef struct {
 	uint8_t n;
-	uint8_t digits;
+	uint8_t width;
+	char pad;
 	char kind;
 } fmt_value_t;
 
 // The next value at or after f. *at is its '%', or the end of the text when there is none; the return is the text
-// after the value, NULL when there is none. A '%' that doesn't start a value is text
-static const char *fmt_next(const char *f, const char **at, fmt_value_t *v)
+// after the value, NULL when there is none. A '%' that doesn't start a value is text. *next counts the values written
+// without a number: each is the one after the last
+static const char *fmt_next(const char *f, const char **at, fmt_value_t *v, uint8_t *next)
 {
 	for (; *f; f++) {
-		if (f[0] != '%' || f[1] < '1' || f[1] > '0' + SB_FMT_VALUES || f[2] != '$')
+		if (*f != '%')
 			continue;
-		const char *k = f + 3;
-		v->n = (uint8_t)(f[1] - '1');
-		v->digits = 1;
-		if (k[0] == '0' && k[1] >= '1' && k[1] <= '9') {
-			v->digits = (uint8_t)(k[1] - '0');
+		const char *k = f + 1;
+		bool numbered = k[0] >= '1' && k[0] <= '0' + SB_FMT_VALUES && k[1] == '$';
+		v->n = numbered ? (uint8_t)(k[0] - '1') : *next;
+		if (numbered)
 			k += 2;
+		else if (*next >= SB_FMT_VALUES)
+			continue;
+		v->pad = ' ';
+		v->width = 0;
+		if (*k == '0') {
+			v->pad = '0';
+			k++;
 		}
+		if (*k >= '1' && *k <= '9')
+			v->width = (uint8_t)(*k++ - '0');
 		if (*k != 's' && *k != 'K' && *k != 'd' && *k != 'u')
 			continue;
+		if (!numbered)
+			(*next)++;
 		v->kind = *k;
 		*at = f;
 		return k + 1;
@@ -95,8 +107,9 @@ void sb_fmt(sbuf_t *b, const char *fmt, ...)
 	fmt_value_t v;
 	const char *at;
 	unsigned count = 0, text = 0;
+	uint8_t next = 0;
 	sb_fmt_name = NULL;
-	for (const char *f = fmt; (f = fmt_next(f, &at, &v)) != NULL;) {
+	for (const char *f = fmt; (f = fmt_next(f, &at, &v, &next)) != NULL;) {
 		if (v.n >= count)
 			count = v.n + 1u;
 		if (v.kind == 's' || v.kind == 'K')
@@ -111,8 +124,9 @@ void sb_fmt(sbuf_t *b, const char *fmt, ...)
 			value[i] = (uintptr_t)va_arg(ap, unsigned);
 	}
 	va_end(ap);
+	next = 0;
 	for (;;) {
-		const char *rest = fmt_next(fmt, &at, &v);
+		const char *rest = fmt_next(fmt, &at, &v, &next);
 		put(b, fmt, at, false);
 		if (rest == NULL)
 			return;
@@ -126,15 +140,20 @@ void sb_fmt(sbuf_t *b, const char *fmt, ...)
 			if (a != 0)
 				put(b, (const char *)a, NULL, v.kind == 's');
 			break;
-		case 'd':
-			if ((int32_t)a < 0) {
-				sb_chr(b, '-');
-				a = (uintptr_t)(0u - (uint32_t)a);
+		default: {
+			// The sign and the digits, zero padded after the sign; then spaces before them up to the width
+			SB_LOCAL(n, 12);
+			uint32_t u = (uint32_t)a;
+			if (v.kind == 'd' && (int32_t)u < 0) {
+				sb_chr(&n, '-');
+				u = 0u - u;
 			}
-			// fallthrough
-		default:
-			sb_u32(b, (uint32_t)a, v.digits);
+			sb_u32(&n, u, v.pad == '0' ? v.width - (int)(n.p - n_text) : 1);
+			for (int len = (int)(n.p - n_text); len < v.width; len++)
+				sb_chr(b, ' ');
+			sb_str(b, n_text);
 			break;
+		}
 		}
 	}
 }

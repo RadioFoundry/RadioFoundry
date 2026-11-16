@@ -511,9 +511,9 @@ void ui_talk(const ui_target_t *t, bool permanent)
 	sbuf_t b;
 	sb_init(&b, msg, sizeof msg);
 	if (permanent)
-		TRF(&b, TALK_TOAST_DEFAULT_NOW, "Default now: %1$s", name);
+		TRF(&b, TALK_TOAST_DEFAULT_NOW, "Default now: %s", name);
 	else
-		TRF(&b, TALK_TOAST_TALKING_TO, "Talking to %1$s", name);
+		TRF(&b, TALK_TOAST_TALKING_TO, "Talking to %s", name);
 	ui_toast(msg);
 }
 
@@ -643,7 +643,7 @@ static void handle_event(const ui_event_t *ev)
 	const char *who = station(ev, id, ev->kind == UI_EV_ZONE_SENT && ev->index);
 	switch (ev->kind) {
 	case UI_EV_MESSAGE:
-		TRF(&b, MSG_BANNER_FROM, "Message from %1$s", who);
+		TRF(&b, MSG_BANNER_FROM, "Message from %s", who);
 		{
 			// The banner shows two lines of the message: more than the event carries, from the inbox
 			ui_msg_t m;
@@ -658,23 +658,23 @@ static void handle_event(const ui_event_t *ev)
 	case UI_EV_MESSAGE_SENT:
 		if (ev->ok) {
 			if (ev->index == 1)
-				TRF(&b, BANNER_SENT_TO, "Sent to %1$s", who);
+				TRF(&b, BANNER_SENT_TO, "Sent to %s", who);
 			else
-				TRF(&b, MSG_BANNER_DELIVERED_TO, "Delivered to %1$s", who);
+				TRF(&b, MSG_BANNER_DELIVERED_TO, "Delivered to %s", who);
 			banner(UI_BANNER_RESULT, false, ev->id, title, NULL);
 		} else {
-			TRF(&b, BANNER_NO_ANSWER_FROM, "No answer from %1$s", who);
+			TRF(&b, BANNER_NO_ANSWER_FROM, "No answer from %s", who);
 			banner(UI_BANNER_RESULT, true, ev->id, title,
 				TR(MSG_BANNER_NOT_DELIVERED, "Not delivered: send again"));
 		}
 		break;
 	case UI_EV_CALL_ALERT:
-		TRF(&b, ALERT_BANNER_FROM, "Call alert from %1$s", who);
+		TRF(&b, ALERT_BANNER_FROM, "Call alert from %s", who);
 		banner(UI_BANNER_CALL_ALERT, false, ev->id, title, TR(HINT_PTT_REPLIES, "PTT replies"));
 		vibrate(UI_VIBE_CALL);
 		break;
 	case UI_EV_PRIVATE_CALL:
-		TRF(&b, CALL_BANNER_PRIVATE_FROM, "Private call from %1$s", who);
+		TRF(&b, CALL_BANNER_PRIVATE_FROM, "Private call from %s", who);
 		banner(UI_BANNER_PRIVATE, false, ev->id, title, TR(HINT_PTT_REPLIES, "PTT replies"));
 		vibrate(UI_VIBE_CALL);
 		break;
@@ -688,7 +688,7 @@ static void handle_event(const ui_event_t *ev)
 			banner(UI_BANNER_RESULT, false, ev->id, title, t);
 		} else {
 			sb_init(&b, title, sizeof title);
-			TRF(&b, BANNER_NO_ANSWER_FROM, "No answer from %1$s", who);
+			TRF(&b, BANNER_NO_ANSWER_FROM, "No answer from %s", who);
 			banner(UI_BANNER_RESULT, true, ev->id, title,
 				TR(BANNER_OFF_OR_OUT_OF_RANGE, "Off or out of range: try later"));
 		}
@@ -718,10 +718,10 @@ static void handle_event(const ui_event_t *ev)
 		break;
 	case UI_EV_CALL_ALERT_RESULT:
 		if (ev->ok) {
-			TRF(&b, ALERT_BANNER_ANSWERED, "%1$s answered the alert", who);
+			TRF(&b, ALERT_BANNER_ANSWERED, "%s answered the alert", who);
 			banner(UI_BANNER_RESULT, false, ev->id, title, NULL);
 		} else {
-			TRF(&b, BANNER_NO_ANSWER_FROM, "No answer from %1$s", who);
+			TRF(&b, BANNER_NO_ANSWER_FROM, "No answer from %s", who);
 			banner(UI_BANNER_RESULT, true, ev->id, title,
 				TR(BANNER_OFF_OR_OUT_OF_RANGE, "Off or out of range: try later"));
 		}
@@ -738,9 +738,9 @@ static void handle_event(const ui_event_t *ev)
 		break;
 	case UI_EV_ZONE_OFFER:
 		if (ev->index)
-			TRF(&b, SHARE_BANNER_CHANNEL_FROM, GLYPH_DOWNLOAD " Channel from %1$s", who);
+			TRF(&b, SHARE_BANNER_CHANNEL_FROM, GLYPH_DOWNLOAD " Channel from %s", who);
 		else
-			TRF(&b, SHARE_BANNER_ZONE_FROM, GLYPH_DOWNLOAD " Zone from %1$s", who);
+			TRF(&b, SHARE_BANNER_ZONE_FROM, GLYPH_DOWNLOAD " Zone from %s", who);
 		banner(UI_BANNER_ZONE_OFFER, false, ev->id, title, ev->text);
 		if (ui_st.message_tone)
 			ui_svc_beep(UI_BEEP_MESSAGE);
@@ -748,9 +748,9 @@ static void handle_event(const ui_event_t *ev)
 		break;
 	case UI_EV_ZONE_SENT:
 		if (ev->ok)
-			TRF(&b, BANNER_SENT_TO, "Sent to %1$s", who);
+			TRF(&b, BANNER_SENT_TO, "Sent to %s", who);
 		else
-			TRF(&b, SHARE_BANNER_NOT_SENT_TO, "Not sent to %1$s", who);
+			TRF(&b, SHARE_BANNER_NOT_SENT_TO, "Not sent to %s", who);
 		banner(UI_BANNER_RESULT, !ev->ok, ev->id, title, ev->ok ? NULL :
 			TR(SHARE_BANNER_TRY_ON_DMR, "Try again on a DMR channel"));
 		break;
@@ -760,16 +760,16 @@ static void handle_event(const ui_event_t *ev)
 			sbuf_t tb;
 			sb_init(&tb, text, sizeof text);
 			if (ev->id)
-				TRF(&b, SHARE_BANNER_UPDATED, "Updated %1$s", ev->name);
+				TRF(&b, SHARE_BANNER_UPDATED, "Updated %s", ev->name);
 			else
-				TRF(&b, SHARE_BANNER_IMPORTED, "Imported %1$s", ev->name);
+				TRF(&b, SHARE_BANNER_IMPORTED, "Imported %s", ev->name);
 			if (ev->ms != 0)
 				// Channels whose system isn't set up came in locked out (zone-share.md 5.5)
-				TRF(&tb, SHARE_BANNER_SYSTEM_MISSING, "%1$u trunked: system not set up", ev->ms);
+				TRF(&tb, SHARE_BANNER_SYSTEM_MISSING, "%u trunked: system not set up", ev->ms);
 			else if (ev->index == 1)
-				TRF(&tb, SHARE_BANNER_CHANNEL_RX_ONLY, "%1$u channel, receive only", ev->index);
+				TRF(&tb, SHARE_BANNER_CHANNEL_RX_ONLY, "%u channel, receive only", ev->index);
 			else
-				TRF(&tb, SHARE_BANNER_CHANNELS_RX_ONLY, "%1$u channels, receive only", ev->index);
+				TRF(&tb, SHARE_BANNER_CHANNELS_RX_ONLY, "%u channels, receive only", ev->index);
 			banner(UI_BANNER_RESULT, ev->ms != 0, 0, title, text);
 		} else {
 			banner(UI_BANNER_RESULT, true, 0, TR(SHARE_BANNER_NOT_IMPORTED, "Zone not imported"),
@@ -836,7 +836,7 @@ bool ui_freq_entry_digit(char *digits, uint8_t *len, char d)
 	ui_bands_text(bands, sizeof bands, false);
 	sbuf_t b;
 	sb_init(&b, hint, sizeof hint);
-	TRF(&b, FREQ_TOAST_BANDS, "Bands: %1$K", bands);
+	TRF(&b, FREQ_TOAST_BANDS, "Bands: %K", bands);
 	ui_toast(hint);
 	return false;
 }
@@ -989,9 +989,9 @@ static void zone_go(uint16_t zi, bool home)
 	if (!codeplug_zone(zi, &z))
 		z.name[0] = 0;
 	if (home)
-		TRF(&b, ZONE_TOAST_HOME_ZONE, "Home zone: %1$s", z.name);
+		TRF(&b, ZONE_TOAST_HOME_ZONE, "Home zone: %s", z.name);
 	else
-		TRF(&b, ZONE_TOAST_ZONE, "Zone: %1$s", z.name);
+		TRF(&b, ZONE_TOAST_ZONE, "Zone: %s", z.name);
 	ui_toast(msg);
 }
 
@@ -1108,9 +1108,9 @@ static bool talk_step(int dir)
 	sb_init(&b, msg, sizeof msg);
 	// the channel's own talkgroup again, or a listen list one
 	if (next == 0)
-		TRF(&b, TALK_TOAST_DEFAULT, "Default: %1$s", name);
+		TRF(&b, TALK_TOAST_DEFAULT, "Default: %s", name);
 	else
-		TRF(&b, TALK_TOAST_TALKING_TO, "Talking to %1$s", name);
+		TRF(&b, TALK_TOAST_TALKING_TO, "Talking to %s", name);
 	ui_toast(msg);
 	return true;
 }
@@ -1150,7 +1150,7 @@ bool ui_home_key(const input_event_t *ev)
 		static char msg[48];
 		sbuf_t b;
 		sb_init(&b, msg, sizeof msg);
-		TRF(&b, DIAL_TOAST_IS_EMPTY, "Speed dial %1$d is empty: set it in qdmr", d);
+		TRF(&b, DIAL_TOAST_IS_EMPTY, "Speed dial %d is empty: set it in qdmr", d);
 		ui_toast(msg);
 		return true;
 	}
@@ -1513,7 +1513,7 @@ static void quick_activate(int tile)
 		static char msg[16];
 		sbuf_t b;
 		sb_init(&b, msg, sizeof msg);
-		TRF(&b, QUICK_TOAST_POWER, "Power %1$K", ui_power_name(next, view->ch.tx_hz));
+		TRF(&b, QUICK_TOAST_POWER, "Power %K", ui_power_name(next, view->ch.tx_hz));
 		ui_toast(msg);
 		break;
 	}
@@ -1873,7 +1873,7 @@ static void list_draw(const ui_scr_def_t *d)
 	if ((d->flags & SF_FILTER) && filter_keys[0]) {
 		sbuf_t b;
 		sb_init(&b, header, sizeof header);
-		TRF(&b, LIST_TITLE_FIND, "Find: %1$s_", filter_keys);
+		TRF(&b, LIST_TITLE_FIND, "Find: %s_", filter_keys);
 		l.header = header;
 		if (l.count == 0)
 			l.empty = TR(LIST_EMPTY_NO_MATCH, "No match: Back deletes a key");
@@ -1881,7 +1881,7 @@ static void list_draw(const ui_scr_def_t *d)
 	if (d->flags & SF_FIND) {
 		sbuf_t b;
 		sb_init(&b, header, sizeof header);
-		TRF(&b, LIST_TITLE_FIND, "Find: %1$s_", ui_find_query());
+		TRF(&b, LIST_TITLE_FIND, "Find: %s_", ui_find_query());
 		l.header = header;
 	}
 	ui_draw_list(view, &ui_st, &l);
@@ -2346,7 +2346,7 @@ static void battery_tick(const radio_view_t *v)
 	batt_warned_ms = now;
 	sbuf_t b;
 	sb_init(&b, text, sizeof text);
-	TRF(&b, BATT_BANNER_CHARGE_SOON, "Battery %1$u%: charge soon", pct);
+	TRF(&b, BATT_BANNER_CHARGE_SOON, "Battery %u%: charge soon", pct);
 	banner(UI_BANNER_INFO, true, 0, text, NULL);
 	if (v->battery == RADIO_BATT_OK)
 		ui_svc_beep(UI_BEEP_BATTERY_LOW);
@@ -2620,7 +2620,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 		static char moved[12 + CODEPLUG_NAME_LEN];
 		sbuf_t b;
 		sb_init(&b, moved, sizeof moved);
-		TRF(&b, ROAM_TOAST_MOVED_TO, "Moved to %1$s", v->ch.name);
+		TRF(&b, ROAM_TOAST_MOVED_TO, "Moved to %s", v->ch.name);
 		ui_toast(moved);
 	}
 	roams_seen = v->roam.roams;
