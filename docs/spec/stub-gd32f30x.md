@@ -191,7 +191,7 @@ this platform yet.
 
 | Item | Why it matters |
 |---|---|
-| The vendor bootloader with an erased application | the interlock assumes a bootloader that finds the first application word erased stays in update mode. Not yet confirmed on these bootloaders; until it is, an install cut short may leave a radio that needs the bootloader's own update entry |
+| The vendor bootloader with an erased application | seen on a radio of this platform: its bootloader doesn't stay in its update mode when it finds the first application word erased. It starts nothing, shows nothing and doesn't come up on USB until the update-mode keys (that radio's bring-up page). An install cut short is finished by the same write again before any reset or power cycle; `--boot reset` refuses an uncommitted application (`--force` resets anyway) |
 | Hardware | nothing has run on a radio: the adopt and cold USB starts, the FMC erase and program, the entry itself |
 | A flasher route | the web flasher's update backends for these radios use the vendor update mode only |
 

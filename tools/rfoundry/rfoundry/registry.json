@@ -1930,8 +1930,8 @@
    "loader_keys": null,
    "loader_sign": "",
    "bootloader_steps": [
-    "Turn the radio off and connect the USB programming cable.",
-    "Hold MENU and EXIT and turn the radio on.",
+    "Disconnect the radio's power cable and connect the USB programming cable.",
+    "Hold MENU and EXIT and connect the power cable again, still holding the keys (turn the radio on if it doesn't come on by itself).",
     "Release the keys when the update screen shows."
    ],
    "stock_download": null,
@@ -4552,8 +4552,8 @@
    "loader_keys": null,
    "loader_sign": "",
    "bootloader_steps": [
-    "Turn the radio off and connect the USB programming cable.",
-    "Hold MENU and EXIT and turn the radio on.",
+    "Disconnect the radio's power cable and connect the USB programming cable.",
+    "Hold MENU and EXIT and connect the power cable again, still holding the keys (turn the radio on if it doesn't come on by itself).",
     "Release the keys when the update screen shows."
    ],
    "stock_download": null,

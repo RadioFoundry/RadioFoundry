@@ -41,6 +41,7 @@ and go to the stub as a CONFIG record (config_record) right after HELLO; the stu
 the tool checks its echo in the next HELLO. The board comes from the running RadioFoundry's VERSION reply, or from
 --board.
 """
+import argparse
 import base64
 import hashlib
 import os
@@ -642,6 +643,7 @@ class F4Radio(stubtool.Radio):
     def __init__(self, port, log=print, retries=3, reopen=None, target=None):
         super().__init__(port, log=log, retries=retries)
         self.reopen = reopen
+        self.install_started = False    # write_image erased the commit sector: the application is uncommitted until it ends
         self.target = target
         self.flash_kb = 0
         self.rdp = 0
@@ -756,7 +758,8 @@ class F4Radio(stubtool.Radio):
                 except (stubtool.DumpError, OSError):
                     if time.monotonic() > end:
                         raise F4Error("the stub's USB port did not come back within %d s: power-cycle the radio "
-                                      "(RadioFoundry starts again) and check the cable" % PORT_WAIT_S)
+                                      "(RadioFoundry starts again, unless an install was cut short: then the radio "
+                                      "needs its bootloader's update mode) and check the cable" % PORT_WAIT_S)
                     time.sleep(0.3)
         self.log("%s stub v%d: %d KB flash, security byte 0x%02X, %s, USB %s" % (
             self.t.label, self.version, self.flash_kb, self.rdp,
@@ -767,6 +770,11 @@ class F4Radio(stubtool.Radio):
 
     def peek(self, addr, n):
         return self.request(OP_PEEK, addr.to_bytes(4, "big") + n.to_bytes(2, "big"))
+
+    def committed(self, board_id):
+        """Whether the application's first word (the commit, programmed last) is there: an install cut short leaves
+        it erased, and the bootloader doesn't start the application"""
+        return int.from_bytes(self.peek(BOARDS[board_id]["boot_end"], 4), "little") != 0xFFFFFFFF
 
     @staticmethod
     def mem_byte(mem):
@@ -951,6 +959,7 @@ class F4Radio(stubtool.Radio):
                 self.log("sector %d's current content saved to %s (it holds codec bytes)" % (idx, path))
         order = [first] + [i for i in changed if i != first]
         steps = len(order)
+        self.install_started = True
         self.erase(first)
         for n, idx in enumerate(order[1:], 1):
             if progress:
@@ -1284,8 +1293,16 @@ def run(a, port, reopen, log=print):
             raise F4Error("which radio? pass --board (%s)" % ", ".join(sorted(BOARDS)))
         segs = load_segments(a.write_app, board)
         t0 = time.monotonic()
-        nw, nk = radio.write_image(board, segs, backup_dir=a.backup_dir or os.path.expanduser("~"),
-                                   progress=lambda i, n: log("sector step %d of %d" % (i, n)))
+        try:
+            nw, nk = radio.write_image(board, segs, backup_dir=a.backup_dir or os.path.expanduser("~"),
+                                       progress=lambda i, n: log("sector step %d of %d" % (i, n)))
+        except (OSError, stubtool.DumpError) as e:
+            if not radio.install_started:
+                raise
+            raise F4Error("%s\nThe install stopped part way: the application is not committed, and the bootloader won't "
+                          "start it (some then start nothing until their update-mode keys). Don't reset the radio "
+                          "or switch it off: reconnect the port if it dropped, then run the same write again with "
+                          "--attach --board %s --write-app %s" % (e, board, a.write_app))
         log("%s: %s, %d sector(s) written, %d unchanged, verified by CRC, %.0f s" % (
             a.write_app, " + ".join("%d bytes at 0x%08X" % (len(d), ad) for ad, d in segs), nw, nk, time.monotonic() - t0))
     if a.peek:
@@ -1370,8 +1387,13 @@ def run(a, port, reopen, log=print):
     if a.boot:
         if a.boot != "reset":
             raise F4Error("with these stubs --boot takes only reset")
+        if board in BOARDS and not radio.committed(board) and not a.force:
+            raise F4Error("the application at 0x%08X is not committed (an install was cut short): after a reset the "
+                          "bootloader won't start it, and some start nothing until their update-mode keys. Finish "
+                          "the install first: --attach --board %s --write-app IMAGE (--force resets anyway)"
+                          % (BOARDS[board]["boot_end"], board))
         radio.reset_chip()
-        log("reset sent: the bootloader starts the application (or stays in its update mode if none is committed)")
+        log("reset sent: the bootloader starts the application")
     else:
         log(stubtool.restart_hint(board))
     return 0
@@ -2170,6 +2192,24 @@ def self_test():
             except (OSError, F4Error, stubtool.DumpError):
                 pass
             check(gf.w(base) == 0xFFFFFFFF, "%s: interrupted: the application is not committed" % gb)
+            gf.fail_after = None            # the cable back in
+            check(r.install_started and not r.committed(gb), "%s: interrupted: committed() says so" % gb)
+            ns = lambda **kw: argparse.Namespace(**dict(dict(
+                board=gb, retries=0, rfoundry_enter=False, write_app=None, peek=None, verify_progmem=None,
+                progmem=None, q128=None, verify_q128=None, write_q128=None, secreg=None, write_secreg=None,
+                boot="reset", force=False, backup_dir=tmp), **kw))
+            try:
+                run(ns(), gf, None, log=quiet)
+                check(False, "%s: --boot reset refused while the application is not committed" % gb)
+            except F4Error as e:
+                check(gf.resets == 0 and "not committed" in str(e),
+                      "%s: --boot reset refused while the application is not committed" % gb)
+            run(ns(force=True), gf, None, log=quiet)
+            check(gf.resets == 1, "%s: --force resets anyway" % gb)
+            r.write_image(gb, [(base, app(200000, 9))], backup_dir=tmp)
+            check(r.committed(gb), "%s: a second run commits the application" % gb)
+            run(ns(), gf, None, log=quiet)
+            check(gf.resets == 2, "%s: --boot reset once committed" % gb)
             # the bootloader's sectors: the protect list refuses them before the stub sees the request
             gf = FakeF4(gstock(), target=gt.key)
             r = F4Radio(gf, log=quiet)

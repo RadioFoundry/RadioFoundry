@@ -688,7 +688,9 @@ the other variant's image.
 
 The radio's own update mode takes the image over its USB cable, so the original firmware's loader stays and the original firmware
 can go back the same way ([installing](02-installing.md#radios-installed-through-the-manufacturers-update-mode)). To
-start it, turn the radio on while holding **MENU** and **EXIT**, then connect the cable. The original
+start it, disconnect the radio's power cable, hold **MENU** and **EXIT**, and connect the power cable again while
+still holding them; then connect the USB cable. Switching the radio off and on with its power key while holding the
+keys often doesn't start it. The original
 firmware's other power-on screens, such as its own **UPDATE MODE**, are for fonts and icons, not the firmware: don't
 install from them.
 
