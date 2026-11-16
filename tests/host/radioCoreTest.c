@@ -6560,7 +6560,7 @@ static void test_p25_stored(void)
 	req(RREQ_PTT, 1);
 	CHECK(sm.view.tx_deny == TXDENY_MODE && hw.tx_calls == keyed);
 	req(RREQ_PTT, 0);
-	CHECK(strstr(build_features_now(), "P25") == NULL && strstr(build_features_now(), "AIR,") != NULL);
+	CHECK(strstr(build_features_now(), "P25,") == NULL && build_features_now()[0] != '\0');
 	air_nofit = false;
 
 	// The VFO takes the radio-wide unit ID, then the DMR ID

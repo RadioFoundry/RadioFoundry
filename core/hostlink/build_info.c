@@ -145,9 +145,6 @@ static const char features[] =
 #if CONFIG_AM_RX
 	"AM_RX,"
 #endif
-#if CONFIG_P25
-	"P25,"
-#endif
 #if CONFIG_AIR_RAW
 	"AIR_RAW,"
 #endif
