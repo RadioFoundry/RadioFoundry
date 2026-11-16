@@ -22,11 +22,21 @@ bool radio_p25_fits(void);
 #define CODEPLUG_RUNS_P25	0
 #endif
 
+// What runs NXDN conventional: the build (CONFIG_NXDN) and a board whose air interface carries it at either rate
+// (core/radio/radio_nxdn.c)
+#if CONFIG_NXDN
+bool radio_nxdn_fits(void);
+#define CODEPLUG_RUNS_NXDN	radio_nxdn_fits()
+#else
+#define CODEPLUG_RUNS_NXDN	0
+#endif
+
 // Channel kinds: the first byte of a channel tag
 #define CODEPLUG_KINDS(X) \
 	X(1, DMR_TRUNK, "T3", 0)	/* DMR Tier III trunked: the trunking engine is not in this tree yet */ \
 	X(2, P25, "P25", CODEPLUG_RUNS_P25)	/* P25 conventional: the radio core runs it (core/radio/radio_p25.c) */ \
-	X(3, P25_TRUNK, "P25T", CONFIG_P25_TRUNK && CODEPLUG_RUNS_P25)	/* P25 trunked, receive only (radio_p25.c) */
+	X(3, P25_TRUNK, "P25T", CONFIG_P25_TRUNK && CODEPLUG_RUNS_P25)	/* P25 trunked, receive only (radio_p25.c) */ \
+	X(4, NXDN, "NXDN", CODEPLUG_RUNS_NXDN)	/* NXDN conventional: the radio core runs it (core/radio/radio_nxdn.c) */
 
 // System types: the first byte of a system record
 #define CODEPLUG_SYSTEM_TYPES(X) \
@@ -42,9 +52,9 @@ bool radio_p25_fits(void);
 #endif
 
 // Whether this build reads the mode-scoped record families (codeplug_records.h): the OR of the build conditions of the
-// modes that use them: P25 reads its radio-wide record. A test defines it 1
+// modes that use them: P25 and NXDN read their radio-wide records. A test defines it 1
 #ifndef CODEPLUG_MODE_RECORDS
-#define CODEPLUG_MODE_RECORDS	(CONFIG_P25)
+#define CODEPLUG_MODE_RECORDS	(CONFIG_P25 || CONFIG_NXDN)
 #endif
 
 #define CODEPLUG_KIND_ENUM(id, token, name, built)	CODEPLUG_KIND_##token = id,

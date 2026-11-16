@@ -1362,6 +1362,18 @@ run-p25cp: p25CodeplugTest p25CodeplugConvTest
 	./p25CodeplugConvTest
 .PHONY: run-p25cp
 
+# NXDN in the codeplug (core/nxdn/nxdn_codeplug.c): the shared vectors, a channel's set-up, a channel saved from the radio
+TESTS   += nxdnCodeplugTest
+NXDNCP  := $(CPTAG) $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug_records.c $(CORE)/nxdn/nxdn_codeplug.c
+
+nxdnCodeplugTest: nxdnCodeplugTest.c $(NXDNCP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/nxdn/*.h) ../vectors/channel-modes.txt
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_NXDN=1 -o $@ nxdnCodeplugTest.c $(NXDNCP)
+
+run: run-nxdncp
+run-nxdncp: nxdnCodeplugTest
+	./nxdnCodeplugTest
+.PHONY: run-nxdncp
+
 # Zone editing (core/codeplug/zone_edit.c) on the real codeplug over a simulated flash: add, move, remove, copy,
 # rename, delete, a new channel added in one step, the limits
 ZEDIT   := $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c $(CORE)/codeplug/zone_settle.c $(CPEDIT) \
@@ -1388,10 +1400,16 @@ TESTS   += zoneImportModesTest
 zoneImportModesTest: zoneImportTest.c $(ZIMPORT) $(CORE)/codeplug/codeplug_records.c $(CORE)/codeplug/zone_import.h $(CORE)/dmr/zoneShare.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_P25=1 -o $@ zoneImportTest.c $(ZIMPORT) $(CORE)/codeplug/codeplug_records.c
 
+# The modes part with NXDN alone on (CONFIG_ZONE_SHARE_MODES follows either mode)
+TESTS   += zoneImportNxdnTest
+zoneImportNxdnTest: zoneImportTest.c $(ZIMPORT) $(CORE)/codeplug/codeplug_records.c $(CORE)/codeplug/zone_import.h $(CORE)/dmr/zoneShare.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_NXDN=1 -o $@ zoneImportTest.c $(ZIMPORT) $(CORE)/codeplug/codeplug_records.c
+
 run: run-zimport
-run-zimport: zoneImportTest zoneImportModesTest
+run-zimport: zoneImportTest zoneImportModesTest zoneImportNxdnTest
 	./zoneImportTest
 	./zoneImportModesTest
+	./zoneImportNxdnTest
 .PHONY: run-zimport
 
 # The open-firmware CPS shim against a simulated flash, driven like qdmr's UV380 driver (core/cps)
