@@ -368,10 +368,12 @@ says what to do about it.
 |---|---|
 | The cable keeps delivering data that nothing asked for | The line never goes quiet, so the radio can't be heard. **Continue Anyway** goes on with the same cable |
 | The cable disconnected from the computer | The cable left the computer's USB while the page used it |
-| The cable stopped taking data from the computer | The cable's adapter or its driver stopped responding |
+| The cable stopped taking data from the computer | The cable's adapter or its driver stopped sending. The page checks this each time it opens the cable. Some adapters stay that way until they are unplugged |
+| The radio received none of this page's answers | The radio's greeting came through when it was turned on, but nothing the page sent reached the radio, and it started normally. The cable carries data from the radio only. Such a cable can also hold the radio's PTT line: unplug it from the radio |
 
 For each: unplug the cable from the computer, wait a few seconds, plug it back in (not through a hub), push the plug
-fully into the radio and select **Try Again**. If it returns, use another cable.
+fully into the radio and select **Try Again**. If it returns, replace the cable with a better one, preferably one with
+an FTDI chip.
 
 While the installer waits for the radio to turn on, it shows how much the cable has carried (bytes and line errors).
 A count that stays at zero while you turn the radio off and on means the plug isn't making contact or the cable is

@@ -699,6 +699,8 @@ radio refuses to transmit.
 
 The cable line is stuck low. The radio won't transmit until the line is released: switch the radio off and on again. Holding PTT for more than 2 s while the radio starts shows the same flash until the key is let go.
 
+A programming cable can hold the line low by itself. Then the flash starts whenever that cable is in and stops when it is pulled out, and the radio receives nothing from the computer: use another cable ([Installing](02-installing.md#if-something-goes-wrong)).
+
 ### What the RT10 lacks today
 
 - The network over the programming cable (PPP) and the services on it. The cable's line latches when the computer

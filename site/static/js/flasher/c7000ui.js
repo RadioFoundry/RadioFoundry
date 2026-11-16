@@ -267,6 +267,9 @@ function connectPanel(onReady, { onUpdateMode = null, restart = false } = {}) {
 			await openCable(any);
 		} catch (e) {
 			if (e?.name === "NotFoundError") return cableStep();
+			// the send check found an adapter that takes no data (link.js sendsData), or the port never opened: the
+			// cable's own fault, with what to do and Try Again
+			if (e instanceof CableError) return cableFaulty({ code: e.code });
 			return cableStep(ctx.errorText(e));
 		}
 		// Troubleshooting asked for update mode: nothing else is tried
@@ -284,7 +287,8 @@ function connectPanel(onReady, { onUpdateMode = null, restart = false } = {}) {
 
 	// What is wrong with the cable itself, where a step found nothing or failed: it left the computer's USB, its
 	// adapter stopped taking data, or (stub: the loader object that listened) data keeps coming that nothing asked
-	// for. Null for a cable that is only silent, as one on a radio that is off is
+	// for. Null for a cable that is only silent, as one on a radio that is off is. A fourth fault shows only in the
+	// boot ROM wait (listen): "oneway", the radio is heard and hears nothing
 	const cableTrouble = (stub = null) => {
 		const s = c.stream;
 		if (s?.lost) return { code: "dropped" };
@@ -475,6 +479,9 @@ function connectPanel(onReady, { onUpdateMode = null, restart = false } = {}) {
 			if (ac.signal.aborted && e.message === "stopped") return;
 			const got = heard();
 			diag.note("boot ROM wait ended", { why: e?.code || String(e?.message || e).slice(0, 80), ...(got || {}) });
+			// the ROM's greeting came through and it took none of the answers already on their way: no other try over
+			// this cable can go better
+			if (e?.code === "rom-deaf" && !cableTrouble()) return cableFaulty({ code: "oneway" });
 			failed(() => romFailed(got, notice(t(e?.code === "rom-booted" ? "flash.c7.connect.rom_booted" : "flash.c7.connect.no_rom"), "bad"), reportLine()));
 		}
 	};

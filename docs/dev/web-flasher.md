@@ -49,7 +49,8 @@ through the loader hand-over). `#sim` alone is the first radio on stock firmware
 (`fakeC7000Options()` and `c7000Simulation()` in `fakec7000.js`, `simulation()` in `fake.js`): a radio with a stock
 console gets one, with its first stock version. `#sim=<radio>-romfail` is an HR_C7000 radio on stock firmware whose boot
 ROM refuses the load, to practice the factory update mode; `#sim=<radio>-slowcable` one on a cable too slow for the
-boot ROM's 48 ms window, to check that the page's answer sent ahead gets through; a radio with the Baofeng updater enters it when switched on
+boot ROM's 48 ms window, to check that the page's answer sent ahead gets through; `#sim=<radio>-deafcable` one on a
+cable that carries the radio's data and none of the page's; a radio with the Baofeng updater enters it when switched on
 with "Hold the Keys and Turn On".
 
 ## The beta notice
@@ -557,9 +558,24 @@ some of these cables fail the backup or the install. The boot ROM load drops an 
 cables loop TX back to RX). A frame not acknowledged logs the first 16 bytes received, and the error names the cable's
 chip.
 
+A USB-serial cable (FTDI, CH340, CP210x or PL2303 vendor id; not the WebUSB stand-in) is checked as it opens
+(`SerialStream.open()`, `sendsData()` in `link.js`): the port is opened with a 256-byte buffer and takes 8 KB of 0xFF,
+which must leave within their time on the line plus `limits.sendCheck` (0.7 s + 1.5 s at 115200). An adapter whose
+sending side stopped takes about 1 KB and then nothing, and fails as `CableError("stalled")`: the connect step shows
+the cable fault, with Try Again ([gotchas.md](../spec/gotchas.md) 16.6). The pending write is aborted, never
+drained: a drain on such an adapter froze the browser. `knownRadioPort()` throws that fault when no other granted port
+answers. A cable that passes waits for the burst to leave before the port is closed and opened again with the 64 KB
+buffer, and `SerialStream.close()` waits for whatever was written (`outUntil`, at most 3 s): a port closed with data
+still going out stopped one adapter for good, until it was unplugged.
+
 The boot ROM waits about 48 ms for the answer to its greeting (measured; the radio pages have the timing), and
 the greeting in and the answer out both cross the cable and the browser's read loop. When the load fails, the ROM says
-it stopped waiting (`00 10 00 03`, error code `rom-late`, or `rom-booted` when no greeting was seen). Answering only
+it stopped waiting (error code `rom-late`, or `rom-booted` when no greeting was seen). What it sends then is the
+address it starts, little endian: `00 10 00 03` with a loader at the start of the flash, `00 c0 00 03` on a board
+whose flash names the application (`rom_entry`). `romSignOffs()` in `stub.js` takes any 256-byte-aligned program
+flash address, and doesn't count the ones in an echo of the frame just sent (the stub image holds such words).
+The greeting, answers already on their way and then the sign-off is `rom-deaf`: nothing the cable sends reaches
+the radio, and the connect step shows it as the cable fault `oneway` instead of offering another try. Answering only
 after the greeting arrived failed often on the first try, so every wait for the ROM uses the **slow cable mode**
 (`powerCycle()` in `c7000ui.js`; it was once a choice offered after a failure, and a collapsed note on these panels
 says where it went): `waitForRom({ repeat: ROM_REPEAT })` sends the answer every 30 ms, and on for 150 ms after the

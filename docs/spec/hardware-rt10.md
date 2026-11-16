@@ -41,6 +41,8 @@ programming cable; measured), then reads the flag at flash 0 and jumps to the ad
   ([web-flasher.md](../dev/web-flasher.md#a-board-the-boot-rom-starts-directly)).
 - The web flasher installs as stubtool does: the flag sector last, after the application is verified.
 - The boot ROM's window is the recovery path: with the radio off, `stubtool PORT --write-app IMAGE`, then switch it on.
+- When no answer to its greeting reaches it, the ROM sends the address it starts, little endian, and starts it:
+  `00 c0 00 03` with RadioFoundry's flag, seen 79 ms after the greeting (one power-on, through a PL2303 cable).
 
 Start-up state: the boot ROM leaves the SoC on the 24 MHz oscillator and the XIP controller in single-bit mode. The
 platform's clock set-up (platform/hrc7000/clock.c) starts the PLL at 168 MHz CPU and 84 MHz APB.
@@ -101,6 +103,18 @@ RadioFoundry: a host port write waits for 2 ms with no received character first 
 `boards/rt10/board.mk`), and PPP is off (`boards/rt10/config.mk`). The MMDVM hotspot and KISS hosts also send at
 any time; unchecked. A latched line doesn't count as PTT, and the LEDs flash red and green fast to ask for a power cycle
 ([gotchas.md](gotchas.md) 16.5). Checked, with TX inhibited, on a radio latched with debug link requests sent without waiting for the answers: the link died within a second, the LEDs alternated red and green, the PTT key did nothing, and a power cycle restored the link.
+
+A cable whose adapter stopped sending ([gotchas.md](gotchas.md) 16.6), measured with one K-type PL2303 cable on macOS:
+
+| Check | Result |
+| --- | --- |
+| Radio to host | works: the boot ROM's greeting arrives intact at 115200 baud |
+| Host to radio | nothing: the ROM takes no answer and starts the firmware; RadioFoundry answers no debug link request |
+| The host's port | takes about 1 KB and sends none of it, also with the cable pulled out of the radio |
+| Break, DTR and RTS, flow control, baud rates, the port reopened | no change |
+| The cable's USB end unplugged and plugged back in | sends again, until a port is closed with data still going out |
+| The LEDs, that cable in | flash red and green fast from 2 s after the start; they stop when the cable is pulled out of the radio (no latch) |
+| A power cycle without the cable | no flash |
 
 ## 4. Data flash (2 MB, SPI0)
 

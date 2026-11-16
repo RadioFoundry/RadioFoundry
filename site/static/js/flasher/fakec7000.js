@@ -321,9 +321,10 @@ export class FakeC7000 {
 		// romEcho: the cable sends every byte the host writes to the boot ROM back to it, ahead of the ROM's answer;
 		// romNak: the boot ROM answers the load's frames with something other than its acknowledgement; slowCable: ms the
 		// cable takes to carry what the host writes (longer than romWindow: the answer to the greeting comes too late);
+		// deafCable: nothing the host writes reaches the radio, while the radio is heard (a cable that holds the line);
 		// badWrite: how many of the next WRITEs (op 0x0E) leave a bit wrong in their sector; writeStatus: the status every
 		// WRITE answers instead (0x0F write protected, 0x0C flash busy too long), 0 = none
-		this.faults = { flip: 0, misplace: [], silentAfterReset: false, romEcho: false, romNak: false, slowCable: 0, badWrite: 0,
+		this.faults = { flip: 0, misplace: [], silentAfterReset: false, romEcho: false, romNak: false, slowCable: 0, deafCable: false, badWrite: 0,
 			writeStatus: 0, nandEcc: [], ...faults };
 		this.rand = rng(11);
 		this.state = "off";		// off | rom | booting | firmware | stub | bfloader
@@ -363,6 +364,7 @@ export class FakeC7000 {
 			take(n) { const o = s.buf.slice(0, n); s.buf = s.buf.slice(n); return o; },
 			async write(data) {
 				const d = data.slice();
+				if (radio.faults.deafCable) return;
 				if (radio.faults.slowCable) setTimeout(() => radio.receive(d), radio.faults.slowCable);
 				else radio.receive(d);
 			},
@@ -414,7 +416,8 @@ export class FakeC7000 {
 		setTimeout(() => {
 			if (this.gen !== gen || this.state !== "rom") return;
 			if (this.keysHeld && this.loaderId && !this.softReset) return this.updateMode();
-			this.send(new Uint8Array([0x00, 0x10, 0x00, 0x03]));	// no answer came: the ROM stops waiting
+			// no answer came: the ROM stops waiting, and says what it starts (the address its flash names, or the loader)
+			this.send(this.romEntry !== null && hasRomFlag(this.progmem) ? this.progmem.slice(4, 8) : new Uint8Array([0x00, 0x10, 0x00, 0x03]));
 			this.state = "booting";
 			setTimeout(() => {
 				if (this.gen !== gen || this.state !== "booting") return;

@@ -835,6 +835,21 @@ send (`drivers/input/sharedptt`). The start-up key guard can't catch it: the fir
 20 ms hold. A line that stays low that way for 2 s flashes the LEDs red and green fast until a power cycle. Don't
 reproduce it more than needed: a latch-up draws current. Radios: one confirmed.
 
+**16.6 A programming cable whose adapter stopped sending.**
+Symptom: through one K-type PL2303 cable on macOS a radio never took the boot ROM load and answered no debug link
+request, while everything the radio sent arrived. Cause: the adapter's sending side had stopped. A fresh open took
+about 1 KB into the system's queue and sent none of it, with the cable pulled out of the radio too; break, DTR, RTS,
+flow control, a baud change, a flush and reopening changed nothing. Unplugging the cable's USB end and plugging it
+back in made it send again. What stops it: closing the port while data is still going out (one close with the queue
+full did it; 20 s of sending at full rate and baud changes with data queued did not). Both tools did that: the boot
+ROM wait keeps answers going out, and the user leaves it or the tool exits. Two traps on the way to seeing it: the web
+flasher's port has a 64 KB buffer, so every write it makes is taken at once and none ever stalls; and Chromium's
+writer `close()` drains on the browser's main thread, which on such an adapter froze the whole browser. Rules: close a
+port only after what was written has had its time on the line (`SerialStream.close()`, `stubtool` `settle()`);
+check a USB-serial cable as it opens with a write larger than all the queues (`sendsData()` in `link.js`: 8 KB of
+0xFF through a 256-byte buffer); never drain to find out. With that cable in, the radio also flashed its stuck-line
+pattern (16.5) and stopped when it was pulled out; whether a cable that sends does that too is not measured.
+
 ## 17. Scan
 
 **17.1 Scanning DMR direct mode: the carrier is on air every other slot.**

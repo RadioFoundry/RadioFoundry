@@ -11,7 +11,7 @@ import { join } from "node:path";
 
 import { crc32, equal, sha256 } from "../static/js/flasher/bytes.js";
 import { decodeBlock, encodeBlock } from "../static/js/flasher/lz4.js";
-import { Stub, stubImages, StubError, DONE_LED, univFits, univLayout } from "../static/js/flasher/stub.js";
+import { Stub, stubImages, StubError, DONE_LED, univFits, univLayout, romSignOffs } from "../static/js/flasher/stub.js";
 import { Link, probe } from "../static/js/flasher/link.js";
 import * as c7 from "../static/js/flasher/c7000.js";
 import { FakeC7000, c7000Simulation, fakeC7000Options } from "../static/js/flasher/fakec7000.js";
@@ -248,6 +248,55 @@ test("boot ROM wait: the ROM giving up with no greeting seen ends the wait at on
 	const t0 = Date.now();
 	await assert.rejects(s.waitForRom(5000), (e) => e.code === "rom-booted" && /started its firmware/.test(e.message));
 	assert.ok(Date.now() - t0 < 1000);
+});
+
+// Field: a radio whose flash names the application signed off with 00 c0 00 03, which the page didn't know, so it
+// went on to load the stub into a radio that had started its firmware
+test("boot ROM sign-off: any 256-byte-aligned program flash address, never one of the ROM's own frames", () => {
+	for (const b of [[0, 0x10, 0, 3], [0, 0xC0, 0, 3], [0, 0x80, 0x0E, 3], [0, 0, 0x10, 3]]) assert.equal(romSignOffs(Uint8Array.from(b)), 1, b.join(" "));
+	for (const b of [[2, 0x24, 0, 3], [2, 5, 0, 3], [2, 0x0A, 0, 3], [2, 0x14, 0, 3], [0, 0, 0, 3], [0, 0x10, 0, 2], [4, 0x10, 0, 3]])
+		assert.equal(romSignOffs(Uint8Array.from(b)), 0, b.join(" "));
+	// greeting, NAKs and acknowledgements in a row hold none
+	assert.equal(romSignOffs(Uint8Array.from([0, 2, 0x24, 0, 3, 2, 0x0A, 0, 3, 2, 5, 0, 3, 2, 0x0A, 0, 3])), 0);
+});
+
+const bareStream = () => ({ buf: new Uint8Array(0), sent: 0, clear() { this.buf = new Uint8Array(0); },
+	take(n) { const b = this.buf.slice(0, n); this.buf = this.buf.slice(n); return b; }, async write() { this.sent++; },
+	say(...b) { this.buf = Uint8Array.of(...this.buf, ...b); } });
+
+test("boot ROM wait: the greeting, answers already on their way and a sign-off: the radio hears nothing (rom-deaf)", async () => {
+	const stream = bareStream();
+	const lines = [];
+	const s = new Stub(stream, { log: (l) => lines.push(l) });
+	setTimeout(() => stream.say(0x00, 0x02, 0x24, 0x00, 0x03), 60);
+	setTimeout(() => stream.say(0x00, 0xC0, 0x00, 0x03), 140);
+	await assert.rejects(s.waitForRom(5000, { repeat: 30 }), (e) => e.code === "rom-deaf" && /does not receive what the cable sends/.test(e.message));
+	assert.ok(stream.sent >= 2, "answers went out ahead");
+	assert.ok(lines.some((l) => /00 c0 00 03/.test(l)), "the log has what came after the greeting");
+});
+
+test("boot ROM wait: stray bytes at power-on that look like a sign-off don't end the wait while more follows", async () => {
+	const stream = bareStream();
+	const s = new Stub(stream, { log: quiet });
+	setTimeout(() => stream.say(0x00, 0x40, 0x00, 0x03), 20);
+	setTimeout(() => stream.say(0xFF, 0x00), 35);
+	setTimeout(() => stream.say(0x02, 0x24, 0x00, 0x03), 120);
+	assert.deepEqual(await s.waitForRom(3000), { answered: false });
+});
+
+test("simulated boot ROM: a board it starts directly signs off with the address its flash names; a deaf cable is told", async (t) => {
+	const direct = Object.keys(C.boards).find((b) => (C.boards[b].rom_entry ?? null) !== null);
+	if (!direct) return t.skip("no board the boot ROM starts directly");
+	const sim = await c7000Simulation(C, direct);
+	const entry = C.boards[direct].rom_entry;
+	const progmem = sim.progmem.slice();
+	progmem.set([entry & 0xFF, (entry >> 8) & 0xFF, (entry >> 16) & 0xFF, entry >>> 24], 4);	// RadioFoundry's flag
+	const r = new FakeC7000({ progmem, dataSize: 0x200000, speed: 200, romWindow: 60, bootTime: 200, romEntry: entry, faults: { deafCable: true } });
+	t.after(() => r.stop());
+	const s = new Stub(r.stream, { log: quiet });
+	setTimeout(() => r.powerOn(), 50);
+	await assert.rejects(s.waitForRom(5000, { repeat: 30 }), (e) => e.code === "rom-deaf");
+	assert.equal(r.state === "booting" || r.state === "firmware", true, "the radio started its firmware");
 });
 
 test("simulated boot ROM: unanswered, it says it stops waiting; a second answer is NAKed", async (t) => {

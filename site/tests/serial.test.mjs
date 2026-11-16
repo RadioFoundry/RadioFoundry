@@ -179,6 +179,94 @@ test("a write the adapter never takes ends as a cable fault, and so does every w
 	assert.deepEqual(sent, [7]);
 });
 
+// A USB-serial cable (PL2303) whose writer takes `takes` chunks and then never another, as a Prolific adapter whose
+// sending side hung did on a Mac: receiving still worked, so the radio's greeting came in and no answer went out
+class FakeCable extends FakePort {
+	constructor(takes = Infinity) {
+		super();
+		this.takes = takes;
+		this.taken = 0;
+		this.buffers = [];
+		this.aborted = 0;
+		this.drained = 0;
+	}
+
+	getInfo() { return { usbVendorId: 0x067B, usbProductId: 0x2303 }; }
+
+	async open(opts) {
+		await super.open(opts);
+		this.buffers.push(opts.bufferSize);
+		this.writable = { getWriter: () => ({
+			write: (d) => (this.taken < this.takes ? (this.taken++, Promise.resolve()) : new Promise(() => {})),
+			abort: async () => { this.aborted++; },
+			close: () => { this.drained++; return new Promise(() => {}); },
+			releaseLock() {},
+		}) };
+	}
+}
+
+test("a cable whose adapter sends nothing fails as it opens, as a cable fault; one that sends opens as before", async (t) => {
+	const was = { ...limits };
+	Object.assign(limits, { sendCheck: 50 });
+	t.after(() => Object.assign(limits, was));
+	const dead = new FakeCable(3);
+	const t0 = Date.now();
+	await assert.rejects(SerialStream.open(dead), (e) => e instanceof CableError && e.code === "stalled" && /768 of 8192/.test(e.message));
+	assert.ok(Date.now() - t0 < 3000, "the check ends on its own");
+	assert.deepEqual(dead.buffers, [256], "checked through a small buffer, and not opened for use");
+	assert.equal(dead.aborted, 1, "the write left pending is dropped");
+	assert.equal(dead.drained, 0, "never drained: a drain on such an adapter froze the browser");
+	assert.equal(dead.isOpen, false, "the port is closed again, so Try Again can open it");
+	assert.ok(diag.report().log.some((e) => /send check failed/.test(e.text)));
+
+	const good = new FakeCable();
+	const s = await SerialStream.open(good);
+	assert.deepEqual(good.buffers, [256, 65536], "checked, then opened for use with the large buffer");
+	assert.equal(good.taken, 32, "8 KB went out");
+	assert.equal(good.aborted, 0);
+	await s.close();
+	// the radio's own USB port and ports without USB ids are not checked
+	const own = new FakeCable(0);
+	own.getInfo = () => ({ usbVendorId: 0x1FC9, usbProductId: 0x0094 });
+	await (await SerialStream.open(own)).close();
+	assert.deepEqual(own.buffers, [65536]);
+});
+
+// Field: a Prolific adapter on macOS whose port was closed with data still going out sent nothing more, through every
+// later open, until it was unplugged. The boot ROM wait keeps answers going out, so leaving it did exactly that
+test("a port closes only after what was written had its time on the line; a stalled one closes at once", async () => {
+	const port = new FakePort();
+	const s = await SerialStream.open(port);
+	port.writable = { getWriter: () => ({ write: async () => {}, releaseLock() {} }) };
+	await s.write(new Uint8Array(4608));	// 400 ms at 115200
+	const t0 = Date.now();
+	await s.close();
+	const waited = Date.now() - t0;
+	assert.ok(waited >= 400 && waited < 1500, `waited ${waited} ms`);
+	assert.equal(port.isOpen, false);
+	const quiet = await SerialStream.open(new FakePort());
+	const t1 = Date.now();
+	await quiet.close();
+	assert.ok(Date.now() - t1 < 300, "nothing written: no wait");
+	const stalled = await SerialStream.open(new FakePort());
+	stalled.outUntil = Date.now() + 10000;
+	stalled.fault = new CableError("stalled", "x");
+	const t2 = Date.now();
+	await stalled.close();
+	assert.ok(Date.now() - t2 < 300, "a cable that sends nothing is not waited for");
+});
+
+test("a cable picked before that sends nothing is reported, not passed over as a busy port", async (t) => {
+	const was = { ...limits };
+	Object.assign(limits, { sendCheck: 50 });
+	const nav = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+	t.after(() => { Object.assign(limits, was); Object.defineProperty(globalThis, "navigator", nav); });
+	const dead = new FakeCable(3);
+	Object.defineProperty(globalThis, "navigator", { value: { serial: { getPorts: async () => [dead] } }, configurable: true });
+	await assert.rejects(knownRadioPort([{ usbVendorId: 0x067B }]), (e) => e instanceof CableError && e.code === "stalled");
+	assert.equal(dead.opens, 1, "checked once");
+});
+
 test("a port that never opens ends as a cable fault", async (t) => {
 	const was = { ...limits };
 	Object.assign(limits, { open: 60 });
@@ -235,7 +323,7 @@ test("the ports granted before are tried as the chooser would list them; a silen
 	const filters = [{ usbVendorId: 0x0403 }];
 	assert.deepEqual(await grantedPorts(filters), [cable]);
 	assert.equal(await knownRadioPort(filters), null, "nothing answered: the chooser opens");
-	assert.equal(cable.opens, 1);
+	assert.equal(cable.opens, 2, "the send check, then the probe");
 	assert.equal(cable.isOpen, false, "closed again for the chooser to hand out");
 	assert.equal(other.opens, 0);
 });
