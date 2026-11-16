@@ -1,127 +1,17 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The debug link's printf subset (see dl_fmt.h)
+// The debug link's text: the shared formatter (ui/textfmt.h) into its buffers
 #include "debuglink/dl_fmt.h"
-
-typedef struct {
-	char *p;
-	char *end;	// the last byte, kept for the NUL
-} out_t;
-
-static void put_c(out_t *o, char c)
-{
-	if (o->p < o->end) {
-		*o->p++ = c;
-	}
-}
-
-static void put_num(out_t *o, uint32_t v, bool neg, unsigned base, bool upper, char pad, int width)
-{
-	const char *digits = upper ? "0123456789ABCDEF" : "0123456789abcdef";
-	char t[12];
-	int n = 0;
-
-	do {
-		t[n++] = digits[v % base];
-		v /= base;
-	} while (v != 0 && n < (int)sizeof(t));
-	int len = n + (neg ? 1 : 0);
-	if (neg && pad == '0') {
-		put_c(o, '-');
-	}
-	for (; width > len; width--) {
-		put_c(o, pad);
-	}
-	if (neg && pad != '0') {
-		put_c(o, '-');
-	}
-	while (n > 0) {
-		put_c(o, t[--n]);
-	}
-}
+#include "ui/textfmt.h"
 
 size_t dl_vfmt(char *buf, size_t cap, const char *fmt, va_list ap)
 {
-	if (cap == 0) {
+	if (cap == 0)
 		return 0;
-	}
-	out_t o = { buf, buf + cap - 1 };
-
-	for (const char *f = fmt; *f != '\0'; f++) {
-		if (*f != '%') {
-			put_c(&o, *f);
-			continue;
-		}
-		f++;
-		char pad = ' ';
-		int width = 0;
-		bool is_long = false;
-
-		if (*f == '0') {
-			pad = '0';
-			f++;
-		}
-		while (*f >= '0' && *f <= '9') {
-			width = width * 10 + (*f - '0');
-			f++;
-		}
-		if (width > 20) {
-			width = 20;
-		}
-		while (*f == 'l') {
-			is_long = true;
-			f++;
-		}
-		switch (*f) {
-		case 'd':
-		case 'i': {
-			long v = is_long ? va_arg(ap, long) : va_arg(ap, int);
-			bool neg = v < 0;
-			uint32_t u = neg ? (uint32_t)(-(v + 1)) + 1u : (uint32_t)v;
-			put_num(&o, u, neg, 10, false, pad, width);
-			break;
-		}
-		case 'u':
-		case 'x':
-		case 'X': {
-			uint32_t v = is_long ? (uint32_t)va_arg(ap, unsigned long) : va_arg(ap, unsigned int);
-			put_num(&o, v, false, *f == 'u' ? 10u : 16u, *f == 'X', pad, width);
-			break;
-		}
-		case 'c':
-			put_c(&o, (char)va_arg(ap, int));
-			break;
-		case 's': {
-			const char *s = va_arg(ap, const char *);
-			if (s == NULL) {
-				s = "(null)";
-			}
-			int n = 0;
-			for (const char *q = s; *q != '\0'; q++) {
-				n++;
-			}
-			for (; width > n; width--) {
-				put_c(&o, ' ');
-			}
-			while (*s != '\0') {
-				put_c(&o, *s++);
-			}
-			break;
-		}
-		case '%':
-			put_c(&o, '%');
-			break;
-		case '\0':
-			f--;	// a lone '%' at the end
-			break;
-		default:	// unknown conversion: shown as is
-			put_c(&o, '%');
-			put_c(&o, *f);
-			break;
-		}
-	}
-	*o.p = '\0';
-	return (size_t)(o.p - buf);
+	sbuf_t b;
+	sb_init(&b, buf, cap);
+	sb_vfmt(&b, fmt, false, ap);
+	return (size_t)(b.p - buf);
 }
 
 size_t dl_fmt(char *buf, size_t cap, const char *fmt, ...)

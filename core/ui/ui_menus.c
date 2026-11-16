@@ -990,7 +990,7 @@ static const char *msg_title(void)
 	while (msg_row(row, &aprs, &index) &&
 	       (aprs != message_aprs() || index != message_index()))
 		row++;
-	TRF(&b, VALUE_N_OF_M, "%1$u of %2$u", row + 1u, (unsigned)(ui_svc_msg_count() + ui_svc_aprs_msg_count()));
+	TRF(&b, VALUE_N_OF_M, "%u of %u", row + 1u, (unsigned)(ui_svc_msg_count() + ui_svc_aprs_msg_count()));
 	return t;
 }
 
@@ -1004,7 +1004,7 @@ static const char *msg_body(void)
 		sb_init(&b, message_buffer, sizeof message_buffer);
 		SB_LOCAL(age, 24);
 		sb_age_long(&age, ui_st.now_ms - m.ms);
-		TRF(&b, MSG_BODY_FROM, "From %1$s, %2$K", m.from, age_text);
+		TRF(&b, MSG_BODY_FROM, "From %s, %K", m.from, age_text);
 		sb_chr(&b, '\n');
 		sb_str(&b, m.text);
 		return message_buffer;
@@ -1021,9 +1021,9 @@ static const char *msg_body(void)
 	SB_LOCAL(age, 24);
 	sb_age_long(&age, m.age_ms);
 	if (m.sent)
-		TRF(&b, MSG_BODY_TO, "To %1$s, %2$K", who, age_text);
+		TRF(&b, MSG_BODY_TO, "To %s, %K", who, age_text);
 	else
-		TRF(&b, MSG_BODY_FROM, "From %1$s, %2$K", who, age_text);
+		TRF(&b, MSG_BODY_FROM, "From %s, %K", who, age_text);
 	sb_chr(&b, '\n');
 	sb_str(&b, m.text);
 	return message_buffer;
@@ -1746,7 +1746,7 @@ static void share_to_item(uint16_t i, ui_item_t *it)
 	sbuf_t b;
 	sb_init(&b, it->label, sizeof it->label);
 	if (t.group)
-		sb_fmt(&b, "TG %1$u", (unsigned)t.id);
+		sb_fmt(&b, "TG %u", (unsigned)t.id);
 	else
 		TRF(&b, SHARE_ROW_PRIVATE_ID, "Private ID %u", t.id);
 	str_copy(it->value, sizeof it->value,
@@ -1887,9 +1887,9 @@ static const char *offer_body(void)
 	if (offer.channel)
 		TRF(&b, SHARE_BODY_CHANNEL, "Channel %s", offer.name);
 	else if (offer.channels == 1)
-		TRF(&b, SHARE_BODY_ZONE_CHANNEL, "Zone %1$s, %2$u channel", offer.name, offer.channels);
+		TRF(&b, SHARE_BODY_ZONE_CHANNEL, "Zone %s, %u channel", offer.name, offer.channels);
 	else
-		TRF(&b, SHARE_BODY_ZONE_CHANNELS, "Zone %1$s, %2$u channels", offer.name, offer.channels);
+		TRF(&b, SHARE_BODY_ZONE_CHANNELS, "Zone %s, %u channels", offer.name, offer.channels);
 	// "Jodi Ruiz 3112345", or the ID alone
 	SB_LOCAL(from, 32);
 	if (offer.from[0]) {
@@ -4139,7 +4139,7 @@ static void zchan_select(uint16_t i, bool hold)
 		zone_focus_num = num;
 		sbuf_t b;
 		sb_init(&b, ze_msg, sizeof ze_msg);
-		TRF(&b, ZONE_TOAST_POSITION, "Position %1$u of %2$u", pos + 1u, ze_z.count);
+		TRF(&b, ZONE_TOAST_POSITION, "Position %u of %u", pos + 1u, ze_z.count);
 		ui_toast(ze_msg);
 	} else if (i == ZC_COPY) {
 		uint16_t free = codeplug_free_channel();
@@ -5305,7 +5305,7 @@ static void trim_draw(void)
 		TRF(&b, TRIM_BODY_AT, "At %u MHz", mhz[i]);
 		if (gfx_text_width(f, label) + gfx_text_width(f, " -4400 Hz") + 4 > w) {
 			sb_init(&b, label, sizeof label);
-			sb_fmt(&b, "@ %1$u MHz", (unsigned)mhz[i]);
+			sb_fmt(&b, "@ %u MHz", (unsigned)mhz[i]);
 		}
 		trim_line(f, y, label, buf);
 		y += f->h;
@@ -5457,7 +5457,7 @@ static void about_support(sbuf_t *b)
 	for (uint8_t i = 0; support_hw_line(i, &l); i++) {
 		// one line format for every label, so a translation sets the punctuation; a hardware option's name is the
 		// board's own and is not translated
-		TRF(b, ABOUT_BODY_HW_LINE, "%1$K: %2$K", l.label != TR_NONE ? tr(l.label) : l.label_text, l.value);
+		TRF(b, ABOUT_BODY_HW_LINE, "%K: %K", l.label != TR_NONE ? tr(l.label) : l.label_text, l.value);
 		sb_chr(b, '\n');
 	}
 }
@@ -5878,7 +5878,7 @@ static const char *roam_body(void)
 		sb_str(&b, TR(ROAM_BODY_SEARCHING, "Searching sites..."));
 		return t;
 	}
-	TRF(&b, ROAM_BODY_SITE, "Site %1$u of %2$u: %3$s", v->roam.site + 1u, v->roam.sites, v->ch.name);
+	TRF(&b, ROAM_BODY_SITE, "Site %u of %u: %s", v->roam.site + 1u, v->roam.sites, v->ch.name);
 	if (v->roam.rssi_dbm != 0) {
 		sb_chr(&b, '\n');
 		if (v->roam.weak)
@@ -6112,7 +6112,7 @@ static const char *crash_body(void)
 		SB_LOCAL(build, 9);
 		for (int k = 28; k >= 0; k -= 4)
 			sb_chr(&build, "0123456789abcdef"[(c.build >> k) & 0xFu]);
-		TRF(&b, CRASH_BODY_RAN_FOR_BUILD, "Ran for %1$K, build %2$K", ran_text, build_text);
+		TRF(&b, CRASH_BODY_RAN_FOR_BUILD, "Ran for %K, build %K", ran_text, build_text);
 	} else {
 		TRF(&b, CRASH_BODY_RAN_FOR, "Ran for %K", ran_text);
 	}
@@ -7182,7 +7182,7 @@ static void sc_select(uint16_t i, bool hold)
 		static char msg[40];
 		sbuf_t b;
 		sb_init(&b, msg, sizeof msg);
-		TRF(&b, SET_TOAST_NOT_CHANGED_STEPS, "Not changed: %1$d to %2$d, steps of %3$d", 0, hi, (int)SIG_MS_UNIT);
+		TRF(&b, SET_TOAST_NOT_CHANGED_STEPS, "Not changed: %d to %d, steps of %d", 0, hi, (int)SIG_MS_UNIT);
 		ui_toast(msg);
 		sc_row = SIG_STEPS;
 		return;
@@ -7619,9 +7619,9 @@ static bool group_key(const input_event_t *ev)
 			sbuf_t b;
 			sb_init(&b, msg, sizeof msg);
 			if (s->step > 1)
-				TRF(&b, SET_TOAST_NOT_CHANGED_STEPS, "Not changed: %1$d to %2$d, steps of %3$d", lo, hi, s->step);
+				TRF(&b, SET_TOAST_NOT_CHANGED_STEPS, "Not changed: %d to %d, steps of %d", lo, hi, s->step);
 			else
-				TRF(&b, SET_TOAST_NOT_CHANGED, "Not changed: %1$d to %2$d", lo, hi);
+				TRF(&b, SET_TOAST_NOT_CHANGED, "Not changed: %d to %d", lo, hi);
 			ui_toast(msg);
 		} else {
 			set_store(s, set_value);

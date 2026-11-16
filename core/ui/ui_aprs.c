@@ -113,9 +113,9 @@ static const char *aprs_body(void)
 		SB_LOCAL(f, 12);
 		sb_freq(&f, v.freq_hz);
 		if (v.rf_active)
-			TRF(&b, APRS_BODY_ON_SENDING, "%1$s on %2$K (sending)", call, f_text);
+			TRF(&b, APRS_BODY_ON_SENDING, "%s on %K (sending)", call, f_text);
 		else
-			TRF(&b, APRS_BODY_ON, "%1$s on %2$K", call, f_text);
+			TRF(&b, APRS_BODY_ON, "%s on %K", call, f_text);
 		const char *why = why_text(v.block);
 		if (why != NULL) {
 			sb_chr(&b, '\n');

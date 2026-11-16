@@ -99,7 +99,7 @@ msgstr "No"
 
 #: core/ui/fmt.c
 msgctxt "VALUE_AGE_LONG"
-msgid "%1$u%2$K ago"
+msgid "%u%K ago"
 msgstr "%1$u%2$K atrás"
 
 #: core/ui/fmt.c
@@ -194,7 +194,7 @@ msgstr "Llamada privada de %s"
 
 #: core/ui/ui_app.c
 msgctxt "CHECK_BANNER_ANSWERED"
-msgid "answered (%1$u.%2$u s)"
+msgid "answered (%u.%u s)"
 msgstr "respondió (%1$u.%2$u s)"
 
 #: core/ui/ui_app.c
@@ -859,12 +859,12 @@ msgstr "Sin indicativo"
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_BODY_ON_SENDING"
-msgid "%1$s on %2$K (sending)"
+msgid "%s on %K (sending)"
 msgstr "%1$s en %2$K (enviando)"
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_BODY_ON"
-msgid "%1$s on %2$K"
+msgid "%s on %K"
 msgstr "%1$s en %2$K"
 
 #: core/ui/ui_aprs.c
@@ -1404,17 +1404,17 @@ msgstr "Cuadrícula"
 
 #: core/ui/ui_gps.c
 msgctxt "GPS_VALUE_GOOD"
-msgid "%1$u.%2$u good"
+msgid "%u.%u good"
 msgstr "%1$u.%2$u buena"
 
 #: core/ui/ui_gps.c
 msgctxt "GPS_VALUE_FAIR"
-msgid "%1$u.%2$u fair"
+msgid "%u.%u fair"
 msgstr "%1$u.%2$u regular"
 
 #: core/ui/ui_gps.c
 msgctxt "GPS_VALUE_POOR"
-msgid "%1$u.%2$u poor"
+msgid "%u.%u poor"
 msgstr "%1$u.%2$u mala"
 
 #: core/ui/ui_gps.c
@@ -1444,7 +1444,7 @@ msgstr "Sin señal"
 
 #: core/ui/ui_gps.c
 msgctxt "GPS_BODY_USED_SEEN"
-msgid "%1$u used, %2$u seen"
+msgid "%u used, %u seen"
 msgstr "%1$u usados, %2$u vistos"
 
 #: core/ui/ui_gps.c
@@ -1479,7 +1479,7 @@ msgstr "Aún sin satélites"
 
 #: core/ui/ui_gps.c
 msgctxt "GPS_BODY_IN_THE_FIX"
-msgid "%1$u of %2$u in the fix"
+msgid "%u of %u in the fix"
 msgstr "%1$u de %2$u en la fijación"
 
 #: core/ui/ui_gps.c
@@ -1789,17 +1789,17 @@ msgstr "No se pudo borrar: reintenta"
 
 #: core/ui/ui_menus.c
 msgctxt "VALUE_N_OF_M"
-msgid "%1$u of %2$u"
+msgid "%u of %u"
 msgstr "%1$u de %2$u"
 
 #: core/ui/ui_menus.c
 msgctxt "MSG_BODY_FROM"
-msgid "From %1$s, %2$K"
+msgid "From %s, %K"
 msgstr "De %1$s, %2$K"
 
 #: core/ui/ui_menus.c
 msgctxt "MSG_BODY_TO"
-msgid "To %1$s, %2$K"
+msgid "To %s, %K"
 msgstr "A %1$s, %2$K"
 
 #: core/ui/ui_menus.c
@@ -1989,12 +1989,12 @@ msgstr "Canal %s"
 
 #: core/ui/ui_menus.c core/ui/ui_svc_zone.c
 msgctxt "SHARE_BODY_ZONE_CHANNEL"
-msgid "Zone %1$s, %2$u channel"
+msgid "Zone %s, %u channel"
 msgstr "Zona %1$s, %2$u canal"
 
 #: core/ui/ui_menus.c core/ui/ui_svc_zone.c
 msgctxt "SHARE_BODY_ZONE_CHANNELS"
-msgid "Zone %1$s, %2$u channels"
+msgid "Zone %s, %u channels"
 msgstr "Zona %1$s, %2$u canales"
 
 #: core/ui/ui_menus.c
@@ -2589,7 +2589,7 @@ msgstr "Ya es el último"
 
 #: core/ui/ui_menus.c
 msgctxt "ZONE_TOAST_POSITION"
-msgid "Position %1$u of %2$u"
+msgid "Position %u of %u"
 msgstr "Posición %1$u de %2$u"
 
 #: core/ui/ui_menus.c
@@ -3134,7 +3134,7 @@ msgstr "Imagen: %K"
 
 #: core/ui/ui_menus.c
 msgctxt "ABOUT_BODY_HW_LINE"
-msgid "%1$K: %2$K"
+msgid "%K: %K"
 msgstr "%1$K: %2$K"
 
 #: core/ui/ui_menus.c
@@ -3234,7 +3234,7 @@ msgstr "Buscando sitios..."
 
 #: core/ui/ui_menus.c
 msgctxt "ROAM_BODY_SITE"
-msgid "Site %1$u of %2$u: %3$s"
+msgid "Site %u of %u: %s"
 msgstr "Sitio %1$u de %2$u: %3$s"
 
 #: core/ui/ui_menus.c
@@ -3394,7 +3394,7 @@ msgstr "%u fallos seguidos"
 
 #: core/ui/ui_menus.c
 msgctxt "CRASH_BODY_RAN_FOR_BUILD"
-msgid "Ran for %1$K, build %2$K"
+msgid "Ran for %K, build %K"
 msgstr "Activo por %1$K, versión %2$K"
 
 #: core/ui/ui_menus.c
@@ -4239,7 +4239,7 @@ msgstr "Tono Libre"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_TOAST_NOT_CHANGED_STEPS"
-msgid "Not changed: %1$d to %2$d, steps of %3$d"
+msgid "Not changed: %d to %d, steps of %d"
 msgstr "Sin cambio: %1$d a %2$d, pasos de %3$d"
 
 #: core/ui/ui_menus.c
@@ -4359,7 +4359,7 @@ msgstr "Los ajustes se guardan al cambiarlos"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_TOAST_NOT_CHANGED"
-msgid "Not changed: %1$d to %2$d"
+msgid "Not changed: %d to %d"
 msgstr "Sin cambio: %1$d a %2$d"
 
 #: core/ui/ui_menus.c core/ui/ui_position.c
@@ -5194,7 +5194,7 @@ msgstr " Grupo"
 
 #: core/ui/ui_screens.c
 msgctxt "CALL_BODY_TIME_OF"
-msgid "%1$K of %2$K"
+msgid "%K of %K"
 msgstr "%1$K de %2$K"
 
 #: core/ui/ui_screens.c
@@ -5254,7 +5254,7 @@ msgstr "ENVIANDO"
 
 #: core/ui/ui_screens.c
 msgctxt "ACTIVITY_BODY_LEFT_OF"
-msgid "%1$K left of %2$K"
+msgid "%K left of %K"
 msgstr "%1$K de %2$K"
 
 #: core/ui/ui_screens.c

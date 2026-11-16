@@ -602,14 +602,14 @@ int main(void)
 	sb_init(&b, f, sizeof f); sb_fmt(&b, "From %s, %u", "Bob", 4u);
 	CHECK(strcmp(f, "From Bob, 4") == 0);
 	CHECK(sb_fmt_name == f + 5);
-	sb_init(&b, f, sizeof f); sb_fmt(&b, "100% %5$s %1$x %1$ %x");
-	CHECK(strcmp(f, "100% %5$s %1$x %1$ %x") == 0);
+	sb_init(&b, f, sizeof f); sb_fmt(&b, "100% %5$s %1$ %q %%|%");
+	CHECK(strcmp(f, "100% %5$s %1$ %q %|%") == 0);
 	sb_init(&b, f, 8); sb_fmt(&b, "%1$s and %2$s", "Alpha", "Beta");
 	CHECK(strcmp(f, "Alpha a") == 0);
 	sb_init(&b, f, sizeof f); sb_fmt(&b, "%1$s%2$K.", (const char *)NULL, "");
 	CHECK(strcmp(f, ".") == 0);
 	// TRF: the same through a key (English here), the values checked against the key's prototype
-	sb_init(&b, f, sizeof f); TRF(&b, ROAM_BODY_SITE, "Site %1$u of %2$u: %3$s", 2u, 5u, "North");
+	sb_init(&b, f, sizeof f); TRF(&b, ROAM_BODY_SITE, "Site %u of %u: %s", 2u, 5u, "North");
 	CHECK(strcmp(f, "Site 2 of 5: North") == 0);
 
 	// Ranges (sb_range, Stations heard and DMR GPS Info), BVA at each unit and rounding step and the compass's edges.

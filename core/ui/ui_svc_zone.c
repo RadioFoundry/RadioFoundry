@@ -250,9 +250,9 @@ bool ui_svc_zone_event(uint8_t kind, uint32_t id, ui_event_t *ev)
 	if (o.channel)
 		TRF(&b, SHARE_BODY_CHANNEL, "Channel %s", name);
 	else if (o.channels == 1)
-		TRF(&b, SHARE_BODY_ZONE_CHANNEL, "Zone %1$s, %2$u channel", name, o.channels);
+		TRF(&b, SHARE_BODY_ZONE_CHANNEL, "Zone %s, %u channel", name, o.channels);
 	else
-		TRF(&b, SHARE_BODY_ZONE_CHANNELS, "Zone %1$s, %2$u channels", name, o.channels);
+		TRF(&b, SHARE_BODY_ZONE_CHANNELS, "Zone %s, %u channels", name, o.channels);
 	return true;
 }
 #endif

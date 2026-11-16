@@ -211,9 +211,11 @@ def taken_keys():
     return taken_cache
 
 
-# A value in a TRF format (core/ui/fmt.h, sb_fmt): %<kind>, or %<number>$<kind> with the number from 1 when the
-# format has more than one value; a number may ask for its least width, space padded (%3u) or zero padded (%03u).
-# Every other '%' is text. FORMAT_LIKE is what was probably meant as a value and isn't one
+# A value in a TRF format (core/ui/textfmt.h, sb_fmt): %<kind>, or %<number>$<kind> with the number from 1; a
+# number may ask for its least width, space padded (%3u) or zero padded (%03u). Every other '%' is text. FORMAT_LIKE
+# is what was probably meant as a value and isn't one. Numbering (format_numbering): the English writes its values in
+# order without numbers ("Site %u of %u: %s") unless it uses one twice; a translation of more than one value numbers
+# every value ("%3$s: sitio %1$u de %2$u")
 FORMAT_VALUES = 4
 FORMAT_VALUE = re.compile(r"%(?:([1-" + str(FORMAT_VALUES) + r"])\$)?(0?[1-9])?([sKdu])")
 FORMAT_LIKE = re.compile(r"%[0-9]*\$[0-9]*.?|%[-+#0-9.]*l*[sdiuxXcK]")
@@ -222,28 +224,42 @@ FORMAT_C_TYPE = {"s": "const char *", "K": "const char *", "d": "int", "u": "uns
 
 def format_values(text, where):
     """{number: kind} of a format's values, numbered from 1. A value is a text (s, K) or a number (d, u) everywhere it
-    is used, and what looks like a value must be one. A format that writes one value writes it without a number (%s);
-    one that writes more numbers them all (%1$s %2$u), so that a translation can move them"""
+    is used, and what looks like a value must be one"""
     kinds = {}
     for m in FORMAT_LIKE.finditer(FORMAT_VALUE.sub("", text)):
         raise I18nError("%s: %r: %r is not a value: write %%s, %%K, %%d, %%u, %%3u or %%03u, numbered %%1$s to %%%d$s "
-                        "when there is more than one" % (where, text, m.group(0), FORMAT_VALUES))
-    found = list(FORMAT_VALUE.finditer(text))
-    for i, m in enumerate(found):
+                        "in a translation" % (where, text, m.group(0), FORMAT_VALUES))
+    unnumbered = 0
+    for m in FORMAT_VALUE.finditer(text):
         n, width, kind = m.group(1), m.group(2), m.group(3)
-        if len(found) == 1 and n:
-            raise I18nError("%s: %r: %s: a format with one value writes it without a number (%%%s)"
-                            % (where, text, m.group(0), m.group(0).split("$")[1]))
-        if len(found) > 1 and not n:
-            raise I18nError("%s: %r: %s: a format with more than one value numbers them all (%%1$%s)"
-                            % (where, text, m.group(0), m.group(0)[1:]))
-        n = int(n) if n else i + 1
+        if not n:
+            unnumbered += 1
+        # Without a number a value is the one after the last value written without one (sb_fmt)
+        n = int(n) if n else unnumbered
         if width and kind in "sK":
             raise I18nError("%s: %r: %s: only a number takes a width" % (where, text, m.group(0)))
         if kinds.setdefault(n, kind) != kind:
             raise I18nError("%s: %r: value %d is %%%s in one place and %%%s in another"
                             % (where, text, n, kinds[n], kind))
     return kinds
+
+
+def format_numbering(text, where, english=None):
+    """Problems with how a format numbers its values (a list of strings): the English's (english None) or a
+    translation's of the English with the values english"""
+    found = list(FORMAT_VALUE.finditer(text))
+    numbered = [m for m in found if m.group(1)]
+    twice = len({m.group(1) for m in numbered}) < len(numbered)
+    if len(found) == 1 and numbered:
+        return ["%s: %r: one value is written without a number (%%%s)" % (where, text, found[0].group(0).split("$")[1])]
+    if english is None:
+        if numbered and (len(numbered) < len(found) or not twice):
+            return ["%s: %r: the English writes its values in order without numbers (\"%%u of %%u: %%s\"), unless it "
+                    "uses one twice: then it numbers them all" % (where, text)]
+    elif (len(english) > 1 or twice) and len(numbered) < len(found):
+        return ["%s: %r: a translation of more than one value, or of one used twice, numbers every value (%%1$s %%2$u)"
+                % (where, text)]
+    return []
 
 
 class Mark:
@@ -324,6 +340,8 @@ def scan(rel, src, old_ok=False):
             if key is None:
                 raise I18nError("%s: TRF() takes a buffer, a key, the English and its values" % where)
             kinds = format_values(text, where)
+            for e in format_numbering(text, where):
+                raise I18nError(e)
             if sorted(kinds) != list(range(1, len(kinds) + 1)) or not kinds:
                 raise I18nError("%s: %r: a format's values are numbered from 1 with none left out (a text without "
                                 "values is TR)" % (where, text))
@@ -718,6 +736,7 @@ def check_translation(en, tr, where, wide=False):
     except ValueError as e:
         errs.append("%s: %r: %s" % (where, tr, e))
     try:
+        errs += format_numbering(tr, where, format_values(en, where))
         if format_values(tr, where) != format_values(en, where):
             errs.append("%s: %r must use the values of %r, each with the same kind; it may move them"
                         % (where, tr, en))

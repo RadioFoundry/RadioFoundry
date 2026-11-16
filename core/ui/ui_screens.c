@@ -2022,7 +2022,7 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 			SB_LOCAL(tot, 12);
 			sb_mmss(&el, v->tx_elapsed_ms / 1000u);
 			sb_mmss(&tot, v->tot_s);
-			TRF(&b, CALL_BODY_TIME_OF, "%1$K of %2$K", el_text, tot_text);	// the time-out
+			TRF(&b, CALL_BODY_TIME_OF, "%K of %K", el_text, tot_text);	// the time-out
 		} else {
 			sb_mmss(&b, v->tx_elapsed_ms / 1000u);
 		}
@@ -2248,7 +2248,7 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 				SB_LOCAL(tot, 12);
 				sb_mmss(&left, el < v->tot_s ? v->tot_s - el : 0);
 				sb_mmss(&tot, v->tot_s);
-				TRF(&b, ACTIVITY_BODY_LEFT_OF, "%1$K left of %2$K", left_text, tot_text);	// the time-out
+				TRF(&b, ACTIVITY_BODY_LEFT_OF, "%K left of %K", left_text, tot_text);	// the time-out
 			} else {
 				sb_str(&b, TR(ACTIVITY_BODY_NO_TIME_LIMIT, "No time limit"));
 			}

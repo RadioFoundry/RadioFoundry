@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// A tiny printf subset for the debug link's text replies and dlog(): no libc printf (flash, stack, reentrancy).
+// The debug link's text replies and dlog(): a printf subset, formatted by the UI's formatter (ui/textfmt.h, sb_vfmt)
 //
-//   %d %i %u %x %X %s %c %%   with an optional '0' flag, a width (1..20) and an ignored 'l' modifier (32-bit values;
-//                             int and long are the same size on every target and on the host tests' ILP32/LP64 the
-//                             'l' forms read a long). No floats, no precision.
+//   %d %i %u %x %X %s %c %%   with an optional '0' flag, a width (1..20) and an 'l' modifier (32-bit values; int and
+//                             long are the same size on every target and on the host tests' ILP32/LP64 the 'l' forms
+//                             read a long). No floats, no precision.
 //
 // No RTOS and no board globals: the host tests build it.
 #ifndef DL_FMT_H

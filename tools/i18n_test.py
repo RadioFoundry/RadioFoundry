@@ -90,20 +90,26 @@ class Marks(unittest.TestCase):
 
     def test_format_mark(self):
         # TRF(buffer, KEY, "English", values...): the buffer and the values are skipped, whatever they hold
-        found = scan('TRF(sb(&b, 1), FROM, "Message from %1$s, "\n\t"%2$02u", station(ev, id), n);\n'
-                     'x = TR(PCT, "50% of 100%");\nTRF(&b, AT, "At %3u", n);\n')
+        found = scan('TRF(sb(&b, 1), FROM, "Message from %s, "\n\t"%02u", station(ev, id), n);\n'
+                     'x = TR(PCT, "50% of 100%");\nTRF(&b, AT, "At %3u", n);\n'
+                     'TRF(&b, AGE, TEXT_ALT_OPEN "%1$u%2$K ago" TEXT_ALT_NEXT "%1$u%2$K" TEXT_ALT_CLOSE, n, u);\n')
         self.assertEqual([(m.kind, m.key, m.text) for m in found],
-                         [("TRF", "FROM", "Message from %1$s, %2$02u"), ("TR", "PCT", "50% of 100%"),
-                          ("TRF", "AT", "At %3u")])
+                         [("TRF", "FROM", "Message from %s, %02u"), ("TR", "PCT", "50% of 100%"),
+                          ("TRF", "AT", "At %3u"), ("TRF", "AGE", "{%1$u%2$K ago|%1$u%2$K}")])
         self.assertEqual(i18n.format_values(found[0].text, ""), {1: "s", 2: "u"})
         self.assertEqual(i18n.format_values(found[2].text, ""), {1: "u"})
         self.assertEqual(i18n.format_values("%1$u, %1$u", ""), {1: "u"})
+        self.assertEqual(i18n.format_values("%s to %2$u", ""), {1: "s", 2: "u"})
+        self.assertEqual(i18n.format_values("%2$u", ""), {2: "u"})
+        self.assertEqual(i18n.format_values("{%1$u%2$K ago|%1$u%2$K}", ""), {1: "u", 2: "K"})
         for src, why in (('x = TR(FROM, "From %1$s");', "only TRF"),
                          ('x = TR(FROM, "From %s");', "only TRF"),
-                         ('TRF(&b, FROM, "From %2$s and %3$s", a);', "numbered from 1"),
+                         ('TRF(&b, FROM, "From %2$s and %3$s or %3$s", a);', "numbered from 1"),
                          ('TRF(&b, FROM, "From", a);', "numbered from 1"),
                          ('TRF(&b, FROM, "From %1$s", a);', "without a number"),
-                         ('TRF(&b, FROM, "From %s to %2$s", a, b);', "numbers them all"),
+                         ('TRF(&b, FROM, "From %1$s to %2$s", a, b);', "in order without numbers"),
+                         ('TRF(&b, FROM, "From %s to %2$s or %2$s", a, b);', "in order without numbers"),
+                         ('TRF(&b, FROM, "To %2$s from %1$s", a, b);', "in order without numbers"),
                          ('TRF(&b, FROM, "%1$s and %1$u", a);', "in one place"),
                          ('TRF(&b, FROM, "%02s", a);', "only a number takes a width"),
                          ('TRF(&b, FROM, "%1$s %5$s", a);', "is not a value"),
@@ -117,8 +123,12 @@ class Marks(unittest.TestCase):
                              i18n.Mark("TR", "FROM", "From %s", "x.c", 2, 0)])
 
     def test_format_translation(self):
-        en = "Site %1$u of %2$u: %3$s"
+        en = "Site %u of %u: %s"
         self.assertEqual(i18n.check_translation(en, "%3$s: sitio %1$u de %2$u", "x"), [])
+        self.assertEqual(i18n.check_translation(en, "Sitio %1$u de %2$u: %3$s", "x"), [])
+        # More than one value: the translation numbers every one, even in the English's order
+        self.assertTrue(i18n.check_translation(en, "Sitio %u de %u: %s", "x"))
+        self.assertTrue(i18n.check_translation(en, "Sitio %u de %2$u: %3$s", "x"))
         for tr in ("Sitio %1$u de %2$u", "Sitio %1$u de %2$u: %3$K", "Sitio %1$u de %2$d: %3$s",
                    "Sitio %1$u de %2$u: %3$s %4$s", "Sitio %1$u de %2$u: %3$s %1$s"):
             self.assertTrue(i18n.check_translation(en, tr, "x"), tr)
@@ -133,7 +143,7 @@ class Marks(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             saved, i18n.LANG_DIR = i18n.LANG_DIR, d
             try:
-                found = scan('TRF(&b, SITE, "Site %1$u of %2$d: %3$s %4$K", a, b, c, d);\nx = TR(DONE, "Done");\n')
+                found = scan('TRF(&b, SITE, "Site %u of %d: %s %K", a, b, c, d);\nx = TR(DONE, "Done");\n')
                 i18n.generate(os.path.join(d, "t.h"), found)
             finally:
                 i18n.LANG_DIR = saved

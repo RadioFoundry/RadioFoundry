@@ -101,7 +101,7 @@ msgstr "关"
 
 #: core/ui/fmt.c
 msgctxt "VALUE_AGE_LONG"
-msgid "%1$u%2$K ago"
+msgid "%u%K ago"
 msgstr "%1$u%2$K 前"
 
 #: core/ui/fmt.c
@@ -196,7 +196,7 @@ msgstr "个呼来自 %s"
 
 #: core/ui/ui_app.c
 msgctxt "CHECK_BANNER_ANSWERED"
-msgid "answered (%1$u.%2$u s)"
+msgid "answered (%u.%u s)"
 msgstr "已接听（%1$u.%2$u s)"
 
 #: core/ui/ui_app.c
@@ -861,12 +861,12 @@ msgstr "无呼号"
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_BODY_ON_SENDING"
-msgid "%1$s on %2$K (sending)"
+msgid "%s on %K (sending)"
 msgstr "%1$s 于 %2$K （发送中）"
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_BODY_ON"
-msgid "%1$s on %2$K"
+msgid "%s on %K"
 msgstr "%1$s 于 %2$K"
 
 #: core/ui/ui_aprs.c
@@ -1406,17 +1406,17 @@ msgstr "网格"
 
 #: core/ui/ui_gps.c
 msgctxt "GPS_VALUE_GOOD"
-msgid "%1$u.%2$u good"
+msgid "%u.%u good"
 msgstr "%1$u.%2$u 良好"
 
 #: core/ui/ui_gps.c
 msgctxt "GPS_VALUE_FAIR"
-msgid "%1$u.%2$u fair"
+msgid "%u.%u fair"
 msgstr "%1$u.%2$u 一般"
 
 #: core/ui/ui_gps.c
 msgctxt "GPS_VALUE_POOR"
-msgid "%1$u.%2$u poor"
+msgid "%u.%u poor"
 msgstr "%1$u.%2$u 较差"
 
 #: core/ui/ui_gps.c
@@ -1446,7 +1446,7 @@ msgstr "无信号"
 
 #: core/ui/ui_gps.c
 msgctxt "GPS_BODY_USED_SEEN"
-msgid "%1$u used, %2$u seen"
+msgid "%u used, %u seen"
 msgstr "%1$u 已用， %2$u 可见"
 
 #: core/ui/ui_gps.c
@@ -1481,7 +1481,7 @@ msgstr "暂无卫星"
 
 #: core/ui/ui_gps.c
 msgctxt "GPS_BODY_IN_THE_FIX"
-msgid "%1$u of %2$u in the fix"
+msgid "%u of %u in the fix"
 msgstr "%1$u / %2$u 参与定位"
 
 #: core/ui/ui_gps.c
@@ -1791,17 +1791,17 @@ msgstr "删除失败：请重试"
 
 #: core/ui/ui_menus.c
 msgctxt "VALUE_N_OF_M"
-msgid "%1$u of %2$u"
+msgid "%u of %u"
 msgstr "%1$u / %2$u"
 
 #: core/ui/ui_menus.c
 msgctxt "MSG_BODY_FROM"
-msgid "From %1$s, %2$K"
+msgid "From %s, %K"
 msgstr "来自 %1$s, %2$K"
 
 #: core/ui/ui_menus.c
 msgctxt "MSG_BODY_TO"
-msgid "To %1$s, %2$K"
+msgid "To %s, %K"
 msgstr "至 %1$s, %2$K"
 
 #: core/ui/ui_menus.c
@@ -1991,12 +1991,12 @@ msgstr "信道 %s"
 
 #: core/ui/ui_menus.c core/ui/ui_svc_zone.c
 msgctxt "SHARE_BODY_ZONE_CHANNEL"
-msgid "Zone %1$s, %2$u channel"
+msgid "Zone %s, %u channel"
 msgstr "区域 %1$s, %2$u 个信道"
 
 #: core/ui/ui_menus.c core/ui/ui_svc_zone.c
 msgctxt "SHARE_BODY_ZONE_CHANNELS"
-msgid "Zone %1$s, %2$u channels"
+msgid "Zone %s, %u channels"
 msgstr "区域 %1$s, %2$u 个信道"
 
 #: core/ui/ui_menus.c
@@ -2591,7 +2591,7 @@ msgstr "已是最后"
 
 #: core/ui/ui_menus.c
 msgctxt "ZONE_TOAST_POSITION"
-msgid "Position %1$u of %2$u"
+msgid "Position %u of %u"
 msgstr "位置 %1$u / %2$u"
 
 #: core/ui/ui_menus.c
@@ -3136,7 +3136,7 @@ msgstr "固件标识：%K"
 
 #: core/ui/ui_menus.c
 msgctxt "ABOUT_BODY_HW_LINE"
-msgid "%1$K: %2$K"
+msgid "%K: %K"
 msgstr "%1$K：%2$K"
 
 #: core/ui/ui_menus.c
@@ -3236,7 +3236,7 @@ msgstr "正在搜索站点……"
 
 #: core/ui/ui_menus.c
 msgctxt "ROAM_BODY_SITE"
-msgid "Site %1$u of %2$u: %3$s"
+msgid "Site %u of %u: %s"
 msgstr "站点 %1$u / %2$u: %3$s"
 
 #: core/ui/ui_menus.c
@@ -3396,7 +3396,7 @@ msgstr "%u 次连续崩溃"
 
 #: core/ui/ui_menus.c
 msgctxt "CRASH_BODY_RAN_FOR_BUILD"
-msgid "Ran for %1$K, build %2$K"
+msgid "Ran for %K, build %K"
 msgstr "运行了 %1$K，构建 %2$K"
 
 #: core/ui/ui_menus.c
@@ -4241,7 +4241,7 @@ msgstr "空闲音"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_TOAST_NOT_CHANGED_STEPS"
-msgid "Not changed: %1$d to %2$d, steps of %3$d"
+msgid "Not changed: %d to %d, steps of %d"
 msgstr "未改： %1$d 到 %2$d，步进 %3$d"
 
 #: core/ui/ui_menus.c
@@ -4361,7 +4361,7 @@ msgstr "设置更改即保存"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_TOAST_NOT_CHANGED"
-msgid "Not changed: %1$d to %2$d"
+msgid "Not changed: %d to %d"
 msgstr "未改： %1$d 到 %2$d"
 
 #: core/ui/ui_menus.c core/ui/ui_position.c
@@ -5196,7 +5196,7 @@ msgstr " 组呼"
 
 #: core/ui/ui_screens.c
 msgctxt "CALL_BODY_TIME_OF"
-msgid "%1$K of %2$K"
+msgid "%K of %K"
 msgstr "%1$K / %2$K"
 
 #: core/ui/ui_screens.c
@@ -5256,7 +5256,7 @@ msgstr "发送中"
 
 #: core/ui/ui_screens.c
 msgctxt "ACTIVITY_BODY_LEFT_OF"
-msgid "%1$K left of %2$K"
+msgid "%K left of %K"
 msgstr "%1$K / %2$K"
 
 #: core/ui/ui_screens.c

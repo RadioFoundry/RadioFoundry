@@ -316,7 +316,7 @@ RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplug_ke
            $(CORE)/hotspot/hotspotSfr.c $(CORE)/dmr/sfrRunner.c $(CORE)/dmr/sfr.c \
            $(CORE)/ui/ui_svc_radio.c $(CORE)/ui/ui_svc_storage.c $(CORE)/ui/ui_svc_data.c \
            $(CORE)/ui/ui_svc_emergency.c $(CORE)/input/keyassign.c sim/sim_flash.c \
-           $(CORE)/debuglink/debuglink_view_radio.c $(CORE)/debuglink/dl_fmt.c $(CORE)/codeplug/zone_edit.c \
+           $(CORE)/debuglink/debuglink_view_radio.c $(CORE)/debuglink/dl_fmt.c $(CORE)/ui/textfmt.c $(CORE)/codeplug/zone_edit.c \
            $(CORE)/radio/pa_sweep.c $(CORE)/radio/pa_keyrun.c \
            $(POSLIB) $(CORE)/ui/ui_svc_position.c $(CORE)/ui/i18n.c
 
@@ -657,7 +657,7 @@ ifneq ($(filter i18n-failed,$(shell python3 $(ROOT)/tools/i18n.py --gen $(LANG_H
 $(error tools/i18n.py --gen failed (above))
 endif
 # UI drawing: text helpers, changed-row flushing, Home and quick settings at each display class (out/*.ppm to look at)
-UI      := $(CORE)/ui/gfx.c $(CORE)/ui/fonts.c $(CORE)/ui/fmt.c $(CORE)/ui/i18n.c $(CORE)/ui/ui_screens.c $(CORE)/ui/ui_svc_stub.c \
+UI      := $(CORE)/ui/gfx.c $(CORE)/ui/fonts.c $(CORE)/ui/fmt.c $(CORE)/ui/textfmt.c $(CORE)/ui/i18n.c $(CORE)/ui/ui_screens.c $(CORE)/ui/ui_svc_stub.c \
            $(CORE)/dmr/trunk/t3_sys.c
 TESTS   += gfxTest
 
@@ -674,7 +674,7 @@ gfxTestZh: gfxTest.c $(UI) $(CJK) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui
 # The language lookup and the fonts' Latin-1 glyphs, with Spanish, without, and with Spanish the default (core/ui/i18n.c,
 # docs/spec/ui.md 2.5)
 TESTS   += i18nTest i18nTestNoLang i18nTestDefault
-I18N    := $(CORE)/ui/i18n.c $(CORE)/ui/fonts.c $(CORE)/ui/fmt.c
+I18N    := $(CORE)/ui/i18n.c $(CORE)/ui/fonts.c $(CORE)/ui/fmt.c $(CORE)/ui/textfmt.c
 i18nTest: i18nTest.c $(I18N) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Iout/gen -Wshadow -DCONFIG_FONT_XL=1 -DFONT_BOTH -o $@ i18nTest.c $(I18N)
 i18nTestNoLang: i18nTest.c $(I18N) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
@@ -790,9 +790,9 @@ micGainTest: micGainTest.c $(CORE)/radio/mic_gain.c $(CORE)/radio/mic_gain.h $(R
 
 # The debug link's Tier III view sections (core/debuglink/debuglink_t3.c): each fits a reply at its widest
 TESTS   += t3ViewTest
-t3ViewTest: t3ViewTest.c $(CORE)/debuglink/debuglink_t3.c $(CORE)/debuglink/dl_fmt.c $(wildcard $(CORE)/debuglink/*.h) \
+t3ViewTest: t3ViewTest.c $(CORE)/debuglink/debuglink_t3.c $(CORE)/debuglink/dl_fmt.c $(CORE)/ui/textfmt.c $(wildcard $(CORE)/debuglink/*.h) \
 	    $(CORE)/radio/radio.h $(CORE)/radio/radio_trunk.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ t3ViewTest.c $(CORE)/debuglink/debuglink_t3.c $(CORE)/debuglink/dl_fmt.c
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ t3ViewTest.c $(CORE)/debuglink/debuglink_t3.c $(CORE)/debuglink/dl_fmt.c $(CORE)/ui/textfmt.c
 
 run: run-t3view
 run-t3view: t3ViewTest
@@ -801,7 +801,7 @@ run-t3view: t3ViewTest
 
 # The debug link's hardware options command (core/debuglink/debuglink_hwopt.c), with options and without
 TESTS   += hwoptTest hwoptTestNone
-HWOPTT  := hwoptTest.c $(CORE)/debuglink/debuglink_hwopt.c $(CORE)/debuglink/dl_fmt.c
+HWOPTT  := hwoptTest.c $(CORE)/debuglink/debuglink_hwopt.c $(CORE)/debuglink/dl_fmt.c $(CORE)/ui/textfmt.c
 HWOPTT_H := $(ROOT)/hal/hal_hwopt.h $(ROOT)/hal/board.h $(CORE)/debuglink/debuglink.h $(CORE)/debuglink/debuglink_proto.h
 hwoptTest: $(HWOPTT) $(HWOPTT_H)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ $(HWOPTT)
@@ -817,7 +817,7 @@ run-hwopt: hwoptTest hwoptTestNone
 # link's SUPPORT command, English only (no catalogs linked)
 TESTS   += supportInfoTest
 SUPPORTT := supportInfoTest.c $(CORE)/support/sha256.c $(CORE)/support/image_hash.c $(CORE)/support/support_info.c \
-            $(CORE)/debuglink/debuglink_support.c $(CORE)/debuglink/dl_fmt.c $(CORE)/ui/fmt.c
+            $(CORE)/debuglink/debuglink_support.c $(CORE)/debuglink/dl_fmt.c $(CORE)/ui/textfmt.c $(CORE)/ui/fmt.c
 supportInfoTest: $(SUPPORTT) $(wildcard $(CORE)/support/*.h) $(ROOT)/hal/board.h $(ROOT)/hal/hal_system.h $(ROOT)/hal/hal_flash.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_LANG_ES=0 -DCONFIG_LANG_IT=0 -DCONFIG_LANG_FR=0 -DCONFIG_LANG_ZH=0 \
 		-o $@ $(SUPPORTT)
@@ -834,7 +834,7 @@ refTrimTest: refTrimTest.c $(CORE)/radio/ref_trim.c $(CORE)/radio/ref_trim.h $(R
 # of it with the report (core/ui/ui_svc_crash.c), the debug link's (core/debuglink/debuglink_crash.c)
 TESTS   += crashTest
 CRASHT  := crashTest.c $(CORE)/crash/crash.c $(CORE)/crash/crash_trace.c $(CORE)/ui/ui_svc_crash.c $(CORE)/debuglink/debuglink_crash.c \
-	   $(CORE)/debuglink/dl_fmt.c
+	   $(CORE)/debuglink/dl_fmt.c $(CORE)/ui/textfmt.c
 crashTest: $(CRASHT) $(CORE)/crash/crash.h $(ROOT)/hal/hal_crash.h $(CORE)/ui/ui_svc.h $(CORE)/debuglink/debuglink.h \
 	   $(CORE)/debuglink/debuglink_proto.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ $(CRASHT)
@@ -842,7 +842,7 @@ crashTest: $(CRASHT) $(CORE)/crash/crash.h $(ROOT)/hal/hal_crash.h $(CORE)/ui/ui
 # The crash capture (core/crash/crash_capture.c) on a stand-in RTOS (stubs/crash_rtos/): the transmitter off first, with
 # interrupts off, on every way in, before the store and the restart (docs/spec/crash-log.md 8); the task snapshot
 TESTS   += crashCaptureTest
-CRASHC  := crashCaptureTest.c $(CORE)/crash/crash_capture.c $(CORE)/crash/crash.c $(CORE)/debuglink/dl_fmt.c
+CRASHC  := crashCaptureTest.c $(CORE)/crash/crash_capture.c $(CORE)/crash/crash.c $(CORE)/debuglink/dl_fmt.c $(CORE)/ui/textfmt.c
 crashCaptureTest: $(CRASHC) $(CORE)/crash/crash.h $(ROOT)/hal/hal_crash.h $(ROOT)/hal/board.h $(wildcard stubs/crash_rtos/*.h)
 	$(CC) $(CFLAGS) -Istubs/crash_rtos -I$(ROOT)/hal -DCONFIG_TASK_STACKS=1 -Wshadow -o $@ $(CRASHC)
 
@@ -986,7 +986,7 @@ SPLITF  := -DCONFIG_HOTSPOT_SPLIT=1
 SPLIT   := $(CORE)/hotspot/hotspotSplit.c $(CORE)/dmr/bsOutbound.c $(CORE)/dmr/slotEpoch.c $(CORE)/dmr/fec/dmrCach.c
 SPLITT  := splitDuplexTest.c $(SPLIT) sim/split_sim_modem.c $(CORE)/hotspot/mmdvm.c $(CORE)/hotspot/hotspot.c \
            $(CORE)/hotspot/hotspotUplink.c $(CORE)/hotspot/hotspotData.c $(FRAME) $(CORE)/dmr/call/dmr_lc.c \
-           $(CORE)/debuglink/debuglink_split.c $(CORE)/debuglink/dl_fmt.c
+           $(CORE)/debuglink/debuglink_split.c $(CORE)/debuglink/dl_fmt.c $(CORE)/ui/textfmt.c
 TESTS   += splitDuplexTest mmdvmTestSplit hotspotSfrTestSplit hrc6000BsTest hrc6000DmrTestSplit
 SPLITH  := $(wildcard $(CORE)/hotspot/*.h $(CORE)/dmr/bsOutbound.h $(CORE)/dmr/slotEpoch.h $(CORE)/dmr/fec/*.h sim/*.h) \
            $(ROOT)/hal/hal_dmr_modem.h
@@ -1030,7 +1030,7 @@ run-split: splitDuplexTest mmdvmTestSplit hotspotSfrTestSplit hrc6000BsTest hrc6
 
 # The debug link's portable parts: printf subset, CRC, frame parser / dispatcher, dlog ring, packed screenshots
 # (core/debuglink)
-DLINK   := debuglinkTest.c $(CORE)/debuglink/dl_frame.c $(CORE)/debuglink/dl_fmt.c $(CORE)/debuglink/dlog.c \
+DLINK   := debuglinkTest.c $(CORE)/debuglink/dl_frame.c $(CORE)/debuglink/dl_fmt.c $(CORE)/ui/textfmt.c $(CORE)/debuglink/dlog.c \
 	$(CORE)/debuglink/dl_chip.c $(CORE)/debuglink/dl_shot.c $(CORE)/cps/cps_lz4.c
 TESTS   += debuglinkTest
 
@@ -1068,7 +1068,7 @@ run-stubLink: stubLinkTest
 
 # The debug link's tasks view section: each task's least free stack (core/debuglink/debuglink_view_tasks.c; the
 # kernel's task table is faked)
-TSTACK  := taskStackTest.c $(CORE)/debuglink/debuglink_view_tasks.c $(CORE)/debuglink/dl_fmt.c
+TSTACK  := taskStackTest.c $(CORE)/debuglink/debuglink_view_tasks.c $(CORE)/debuglink/dl_fmt.c $(CORE)/ui/textfmt.c
 TESTS   += taskStackTest
 taskStackTest: $(TSTACK) $(CORE)/debuglink/debuglink.h $(CORE)/app/task_stack.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_TASK_STACKS=1 -o $@ $(TSTACK)
@@ -1081,7 +1081,7 @@ run-taskStack: taskStackTest
 # The hardware watchdog's portable side: the idle task's feed, the longest idle gap, the bench starve (core/app/
 # watchdog.c), the debug link's watchdog section and DL_CMD_WATCHDOG (core/debuglink/debuglink_watchdog.c). The
 # platform, the clock, the radio's view and the log are faked; watchdog_stub/ holds the stand-in FreeRTOS headers
-WDOG    := watchdogTest.c $(CORE)/app/watchdog.c $(CORE)/debuglink/debuglink_watchdog.c $(CORE)/debuglink/dl_fmt.c
+WDOG    := watchdogTest.c $(CORE)/app/watchdog.c $(CORE)/debuglink/debuglink_watchdog.c $(CORE)/debuglink/dl_fmt.c $(CORE)/ui/textfmt.c
 TESTS   += watchdogTest
 watchdogTest: $(WDOG) $(CORE)/app/watchdog.h $(ROOT)/hal/hal_watchdog.h $(CORE)/debuglink/debuglink.h \
               $(CORE)/debuglink/debuglink_proto.h $(wildcard watchdog_stub/*.h)
@@ -1118,7 +1118,7 @@ run-debuglinkChipReg: debuglinkChipRegTest
 .PHONY: run-debuglinkChipReg
 
 # DL_CMD_DMR_DATA's IP operations (core/debuglink/debuglink_dmr_data.c): the settings' gateway ID and IP_SEND's parsing
-DLDATA  := debuglinkDmrDataTest.c $(CORE)/debuglink/debuglink_dmr_data.c $(CORE)/codeplug/codeplug_keys.c $(CORE)/debuglink/dl_fmt.c $(DATA)
+DLDATA  := debuglinkDmrDataTest.c $(CORE)/debuglink/debuglink_dmr_data.c $(CORE)/codeplug/codeplug_keys.c $(CORE)/debuglink/dl_fmt.c $(CORE)/ui/textfmt.c $(DATA)
 TESTS   += debuglinkDmrDataTest
 debuglinkDmrDataTest: $(DLDATA) $(CORE)/debuglink/debuglink.h $(CORE)/debuglink/debuglink_proto.h $(CORE)/dmr/ipGateway.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_DMR_IP_GATEWAY=1 -DCONFIG_DMR_EMERGENCY=0 -o $@ $(DLDATA)
@@ -1342,7 +1342,7 @@ run-irqstack: hrc7000IrqStackTest
 # radio's own services are mdnsTest's and tftpTest's)
 HLNET   := hostlinkNetTest.c $(CORE)/hostlink/hostlink_net.c $(CORE)/hostlink/hostlink_net_air.c $(CORE)/dmr/ipGateway.c \
            $(CORE)/dmr/dmrAirQueue.c \
-           $(CORE)/net/net.c $(CORE)/hostlink/hostlink_view.c $(CORE)/net/tcp.c $(CORE)/debuglink/dl_fmt.c $(DATA) $(FRAME)
+           $(CORE)/net/net.c $(CORE)/hostlink/hostlink_view.c $(CORE)/net/tcp.c $(CORE)/debuglink/dl_fmt.c $(CORE)/ui/textfmt.c $(DATA) $(FRAME)
 HLNET_OFF := -DCONFIG_NET_KISS=0 -DCONFIG_NET_HTTP=0 -DCONFIG_NET_RIGCTL=0 -DCONFIG_NET_APRSIS=0 -DCONFIG_MDNS=0 -DCONFIG_TFTP=0 \
              -DCONFIG_NET_USRP=0 -DCONFIG_NET_RADIO_UDP=0
 TESTS   += hostlinkNetTest
@@ -1702,7 +1702,7 @@ usrpTest: $(UAUDIO) $(wildcard $(CORE)/usbaudio/*.h)
 # The shared PCM stream and USRP on the network address (core/usbaudio/audio_mux.c, usrp_net.c) against fake
 # gateway, radio core and board
 UNET    := usrpNetTest.c $(CORE)/usbaudio/usrp_net.c $(CORE)/hostlink/hostlink_view.c $(CORE)/usbaudio/usrp.c $(CORE)/usbaudio/pcm_slip.c \
-           $(CORE)/usbaudio/audio_mux.c $(CORE)/debuglink/dl_fmt.c
+           $(CORE)/usbaudio/audio_mux.c $(CORE)/debuglink/dl_fmt.c $(CORE)/ui/textfmt.c
 TESTS   += usrpNetTest
 
 usrpNetTest: $(UNET) $(wildcard $(CORE)/usbaudio/*.h)
@@ -1734,7 +1734,7 @@ endif
 # engine and the radio core; tshark checks netSvcTest.pcap
 NETSVC  := netSvcTest.c netSvcCases.c $(CORE)/net/net.c $(CORE)/hostlink/hostlink_view.c $(CORE)/net/tcp.c $(CORE)/net/kiss_tcp.c $(CORE)/aprs/kiss.c \
            $(CORE)/net/http.c $(CORE)/net/radio_udp.c $(CORE)/net/rigctld.c $(CORE)/net/aprsis.c $(CORE)/net/webctl.c $(CORE)/net/ws.c \
-           $(CORE)/dmr/ipGateway.c $(CORE)/debuglink/dl_fmt.c $(DATA)
+           $(CORE)/dmr/ipGateway.c $(CORE)/debuglink/dl_fmt.c $(CORE)/ui/textfmt.c $(DATA)
 TESTS   += netSvcTest
 
 netSvcTest: $(NETSVC) netSvcFakes.h $(wildcard $(CORE)/net/*.h) $(CORE)/dmr/ipGateway.h gen/gz/http_assets_gen.h
