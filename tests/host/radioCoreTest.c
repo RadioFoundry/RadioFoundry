@@ -6890,6 +6890,32 @@ static void test_p25_stored(void)
 	CHECK(ui_svc_write_channel(3, &ed, 3));
 	storage_job_poll();
 	CHECK(tag_copy_from == 0 && p25_saved.number == 0);
+	// The channel editor's NAC (ui_svc_write_channel_air): the stored channel written again whole with its block, in
+	// place or as a copy; a plain channel in P25 takes the block given and the rest from the P25 settings
+	ui_air_conv_t air = { .p25 = { 0x1A5, 0x1A6, P25_SQUELCH_SELECTIVE } };
+	CHECK(ui_svc_write_channel_air(3, &ed, 3, &air));
+	storage_job_poll();
+	CHECK(p25_saved.number == 3 && p25_saved.conv.rx_nac == 0x1A5 && p25_saved.conv.tx_nac == 0x1A6 &&
+	      p25_saved.ch.kind == CODEPLUG_KIND_P25 && tag_copy_from == 0);
+	p25_saved.number = 0;
+	CHECK(ui_svc_write_channel_air(8, &ed, 3, &air));
+	storage_job_poll();
+	CHECK(p25_saved.number == 8 && p25_saved.conv.rx_nac == 0x1A5 && tag_copy_from == 0);
+	s.tx_dst = 9;
+	radio_req_p25_settings(&s);
+	run(20);
+	air.p25.rx_nac = air.p25.tx_nac = 0x3C3;
+	ed = sm.view.ch;
+	CHECK(ui_svc_write_channel_air(6, &ed, 0, &air));
+	storage_job_poll();
+	CHECK(p25_saved.number == 6 && p25_saved.conv.rx_nac == 0x3C3 && p25_saved.ch.contact == 3);
+	// A write that is no P25 channel takes no block
+	ed = chans[1];
+	p25_saved.number = 0;
+	CHECK(ui_svc_write_channel_air(1, &ed, 1, &air));
+	storage_job_poll();
+	CHECK(p25_saved.number == 0);
+	p25_defaults();
 	req(RREQ_MODE, RADIO_MODE_FM);
 	req(RREQ_VFO, 0);
 	far_stop();
@@ -8143,7 +8169,13 @@ static void test_nxdn_stored(void)
 	CHECK(ui_svc_write_channel(7, &ed, 3));
 	storage_job_poll();
 	CHECK(tag_copy_from == 3 && tag_copy_to == 7 && chans[7].kind == CODEPLUG_KIND_NXDN && nxdn_saved.number == 0);
+	// The channel editor's RAN and rate (ui_svc_write_channel_air): the stored channel written again with its block
+	ui_air_conv_t air = { .nxdn = { .rate9600 = false, .rx_ran = 17, .tx_ran = 17, .squelch = NXDN_SQUELCH_RAN } };
 	tag_copy_from = 0;
+	CHECK(ui_svc_write_channel_air(3, &ed, 3, &air));
+	storage_job_poll();
+	CHECK(nxdn_saved.number == 3 && nxdn_saved.conv.rx_ran == 17 && !nxdn_saved.conv.rate9600 && tag_copy_from == 0);
+	nxdn_saved.number = 0;
 	CHECK(ui_svc_write_channel(3, &ed, 3));
 	storage_job_poll();
 	CHECK(tag_copy_from == 0 && nxdn_saved.number == 0);

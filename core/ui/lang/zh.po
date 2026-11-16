@@ -2039,6 +2039,11 @@ msgctxt "LABEL_MODE"
 msgid "Mode"
 msgstr "模式"
 
+#: core/ui/ui_menus.c
+msgctxt "CHAN_LABEL_RATE"
+msgid "Rate"
+msgstr "速率"
+
 #: core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "WORD_RX_ONLY"
 msgid "RX only"
@@ -2213,6 +2218,16 @@ msgstr "ID 最大 16776415"
 msgctxt "CHAN_TOAST_DCS_DIGITS"
 msgid "DCS codes use digits 0-7"
 msgstr "DCS 码仅用 0-7"
+
+#: core/ui/ui_menus.c
+msgctxt "CHAN_TOAST_NAC_REPEATER"
+msgid "F7F is for repeaters"
+msgstr "F7F 仅用于中继台"
+
+#: core/ui/ui_menus.c
+msgctxt "CHAN_TOAST_NXDN_ID_MAX"
+msgid "NXDN IDs go up to 65519"
+msgstr "NXDN ID 最大 65519"
 
 #: core/ui/ui_menus.c
 msgctxt "CHAN_TOAST_TIMEOUT_RANGE"

@@ -19,7 +19,7 @@ State:
 | Codeplug channels, the site's Codeplug Editor ([nxdn-codeplug.md](nxdn-codeplug.md)) | written, host tested |
 | Scan (6.4) | written, host tested; not checked on a radio |
 | Dual watch | written, host tested: a stored NXDN channel on either side, the receiver alternating onto it ([radio-features.md](radio-features.md) 2.1); not checked on a radio |
-| Channel editor on the radio | not written (10) |
+| Channel editor on the radio | written, host tested: RAN, rate, group, unit ID ([ui.md](ui.md) 2.1) |
 | On air | transmit checked off air on a radio at both rates (`test_nxdn_tx_off_air`); receive not yet: the one provider tried has no receive fit for NXDN (6) |
 | 9600 bit/s full-rate voice (EFR), data, trunking, encryption | not written (10). Encrypted calls are recognized and not played |
 
@@ -294,5 +294,5 @@ scrambler examples), so the codec checks against itself and the clauses only.
 
 ## 10. Not written
 
-Editing an NXDN channel's settings on the radio (a settings screen), 9600 bit/s full rate, data (UDCH, short data), trunking (RCCH), status and other supplementary messages,
+Changing an NXDN channel's squelch on the radio, 9600 bit/s full rate, data (UDCH, short data), trunking (RCCH), status and other supplementary messages,
 encryption, a transmit filter in a provider.

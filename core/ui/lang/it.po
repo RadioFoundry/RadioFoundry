@@ -2037,6 +2037,11 @@ msgctxt "LABEL_MODE"
 msgid "Mode"
 msgstr "Modo"
 
+#: core/ui/ui_menus.c
+msgctxt "CHAN_LABEL_RATE"
+msgid "Rate"
+msgstr "Velocità"
+
 #: core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "WORD_RX_ONLY"
 msgid "RX only"
@@ -2211,6 +2216,16 @@ msgstr "Gli ID arrivano a 16776415"
 msgctxt "CHAN_TOAST_DCS_DIGITS"
 msgid "DCS codes use digits 0-7"
 msgstr "Codici DCS: cifre 0-7"
+
+#: core/ui/ui_menus.c
+msgctxt "CHAN_TOAST_NAC_REPEATER"
+msgid "F7F is for repeaters"
+msgstr "F7F è per i ripetitori"
+
+#: core/ui/ui_menus.c
+msgctxt "CHAN_TOAST_NXDN_ID_MAX"
+msgid "NXDN IDs go up to 65519"
+msgstr "Gli ID NXDN arrivano a 65519"
 
 #: core/ui/ui_menus.c
 msgctxt "CHAN_TOAST_TIMEOUT_RANGE"

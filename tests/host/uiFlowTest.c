@@ -93,14 +93,35 @@ static const flow_t flows[] = {
 #endif
 #if CONFIG_CHANNEL_EDIT
 	// A channel saved from P25 (New from current): P25 and its NAC, no FM or DMR-only rows, talkaround automatic
-	{ "P25 new from current: its rows", "dlmode:p25", "ok 5 up up up ok", "screen=channel shows=P25_NAC_293", 6, false },
-	{ "P25 new from current: talkaround", "dlmode:p25 ok 5 up up up ok", "down down down down down down down down down",
-	  "focus=Talkaround shows=Auto hides=Bandwidth hides=Color_code hides=Timeslot", 9, false },
+	{ "P25 new from current: its rows", "dlmode:p25", "ok 5 up up up ok down down down",
+	  "screen=channel shows=P25 focus=NAC shows=293", 9, false },
+	{ "P25 new from current: talkaround", "dlmode:p25 ok 5 up up up ok",
+	  "down down down down down down down down down down",
+	  "focus=Talkaround shows=Auto hides=Bandwidth hides=Color_code hides=Timeslot", 10, false },
+	// The NAC typed in hex: digits, and Up steps the last one past 9
+	{ "P25 NAC: typed, A by Up", "dlmode:p25 ok 5 up up up ok down down down", "ok 1 9 up 5",
+	  "focus=NAC shows=1A5", 5, false },
+	{ "P25 NAC: set", "dlmode:p25 ok 5 up up up ok down down down", "ok 1 9 up 5 ok", "focus=NAC shows=1A5", 6,
+	  false },
+	{ "P25 NAC: saved with the channel", "dlmode:p25 ok 5 up up up ok down down down ok 1 9 up 5 ok", "long:ok",
+	  "writes=1 toast=Saved_as_channel_41", 1, true },
 	{ "P25 new from current, saved", "dlmode:p25", "ok 5 up up up ok long:ok", "writes=1 toast=Saved_as_channel_41",
 	  7, true },
 	// Mode on a P25 channel makes it a plain FM one
-	{ "P25 channel's mode to FM", "dlmode:p25 ok 5 up up up ok down down", "ok", "shows=FM hides=P25_NAC_293", 1,
+	{ "P25 channel's mode to FM", "dlmode:p25 ok 5 up up up ok down down", "ok", "shows=FM hides=NAC", 1,
 	  false },
+#if CONFIG_NXDN
+	// The same from NXDN: its RAN and rate, no color code or timeslot; an ID past NXDN's range is refused
+	{ "NXDN new from current: RAN", "dlmode:nxdn", "ok 5 up up up ok down down down",
+	  "screen=channel shows=NXDN focus=RAN hides=Color_code hides=Timeslot", 9, false },
+	{ "NXDN RAN: typed", "dlmode:nxdn ok 5 up up up ok down down down", "ok 1 7 ok", "focus=RAN shows=17", 4, false },
+	{ "NXDN rate: 4800", "dlmode:nxdn ok 5 up up up ok down down down down", "ok", "focus=Rate shows=4800_bit/s", 1,
+	  false },
+	{ "NXDN ID: past 65519 refused", "dlmode:nxdn ok 5 up up up ok down down down down down down down down down down",
+	  "ok 7 0 0 0 0 ok", "toast=NXDN_IDs_go_up_to_65519", 7, false },
+	{ "NXDN RAN: saved with the channel", "dlmode:nxdn ok 5 up up up ok down down down ok 1 7 ok", "long:ok",
+	  "writes=1 toast=Saved_as_channel_41", 1, true },
+#endif
 #endif
 #endif
 	// The status strip's USB word (#58): IP as a network adapter, with the link arrows once the computer has it up,

@@ -72,7 +72,9 @@ kind 4 with no system, transmit allowed from the channel and a full parameter bl
 the RX and TX RAN, and the squelch selective where the settings name a group to hear, else RAN. Its contact is the
 stored contact of the talk target, if any (else none: group 1). The settings' unit ID and emergency bit are not
 stored. Editing a channel that is NXDN already rewrites its record and lets the tag follow, the block kept byte for
-byte; a copy at another number takes the source's tag.
+byte; a copy at another number takes the source's tag. When the channel editor changed the RAN or the rate
+([ui.md](ui.md) 2.1), the channel is written as above with the edited block (its squelch as read), a new tag; a plain
+channel in NXDN takes the edited block in place of the settings'.
 
 ## 3. Sharing
 

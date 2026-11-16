@@ -14,6 +14,12 @@
 #include "i18n.h"
 #include "radio/radio.h"
 #include "codeplug/zone_edit.h"
+#if CONFIG_P25
+#include "p25/p25_codeplug.h"
+#endif
+#if CONFIG_NXDN
+#include "nxdn/nxdn_codeplug.h"
+#endif
 
 // The svc calls' one copy of the radio's view (ui_svc_radio.c), filled with radio_get_view by the call that reads it
 // and done with when it returns: no call holds it across another. Too big for the UI task's stack, and one copy for
@@ -92,6 +98,21 @@ bool ui_svc_save_channel(void);
 // copy of a channel of a kind takes its mode with it (channel-modes.md 2.4). false: a write is still going on, or no
 // codeplug storage in this build
 bool ui_svc_write_channel(uint16_t number, const channel_t *ch, uint16_t from);
+#if CONFIG_P25 || CONFIG_NXDN
+// A P25 or NXDN channel's own settings, its tag's parameter block (p25-codeplug.md 2, nxdn-codeplug.md 2)
+typedef union {
+#if CONFIG_P25
+	p25_conv_t p25;
+#endif
+#if CONFIG_NXDN
+	nxdn_conv_t nxdn;
+#endif
+} ui_air_conv_t;
+// ui_svc_write_channel for a P25 or NXDN channel (ch's kind, or a plain one in that mode) with conv as its block: the
+// channel editor's NAC, RAN and rate. A plain channel takes its talk target and talkaround from the radio's settings
+// as it does without conv
+bool ui_svc_write_channel_air(uint16_t number, const channel_t *ch, uint16_t from, const ui_air_conv_t *conv);
+#endif
 #if CONFIG_CONTACT_EDIT
 // Store a contact (the contact editor, ui.md 2.4) at index 1..CODEPLUG_CONTACTS_MAX, as a storage job. false: a write
 // is still going on, or no codeplug storage in this build

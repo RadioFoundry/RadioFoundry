@@ -689,7 +689,14 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 
 // Channels the channel editor saved (ui_svc_write_channel): they shadow the built-in ones and fill numbers past 40
 #define SIM_EDITS	8
-static struct { uint16_t number; channel_t ch; } sim_edits[SIM_EDITS];
+static struct {
+	uint16_t number;
+	channel_t ch;
+#if CONFIG_P25 || CONFIG_NXDN
+	bool air_set;		// saved with a block (ui_svc_write_channel_air)
+	ui_air_conv_t air;
+#endif
+} sim_edits[SIM_EDITS];
 static uint8_t n_edits;
 
 static const channel_t *sim_edit(uint16_t number)
@@ -700,23 +707,61 @@ static const channel_t *sim_edit(uint16_t number)
 	return NULL;
 }
 
+static int sim_write(uint16_t number, const channel_t *ch)
+{
+	uint8_t i = 0;
+	while (i < n_edits && sim_edits[i].number != number)
+		i++;
+	if (i == SIM_EDITS)
+		return -1;
+	if (i == n_edits)
+		n_edits++;
+	sim_edits[i].number = number;
+	sim_edits[i].ch = *ch;
+#if CONFIG_P25 || CONFIG_NXDN
+	sim_edits[i].air_set = false;
+#endif
+	sim_rec.codeplug_writes++;
+	return i;
+}
+
 bool ui_svc_write_channel(uint16_t number, const channel_t *ch, uint16_t from)
 {
 	(void)from;
 	if (sim_hold())
 		return sim_held;
-	uint8_t i = 0;
-	while (i < n_edits && sim_edits[i].number != number)
-		i++;
-	if (i == SIM_EDITS)
+	return sim_write(number, ch) >= 0;
+}
+
+#if CONFIG_P25 || CONFIG_NXDN
+// The block goes with the channel: a plain channel in P25 or NXDN becomes one of the kind, as the storage job makes it
+bool ui_svc_write_channel_air(uint16_t number, const channel_t *ch, uint16_t from, const ui_air_conv_t *conv)
+{
+	(void)from;
+	if (sim_hold())
+		return sim_held;
+	channel_t c = *ch;
+	if (c.kind == CODEPLUG_KIND_NONE) {
+		c.kind = c.mode == RADIO_MODE_P25 ? CODEPLUG_KIND_P25 : CODEPLUG_KIND_NXDN;
+		c.mode = RADIO_MODE_DMR;	// the stand-in record
+	}
+	int i = sim_write(number, &c);
+	if (i < 0)
 		return false;
-	if (i == n_edits)
-		n_edits++;
-	sim_edits[i].number = number;
-	sim_edits[i].ch = *ch;
-	sim_rec.codeplug_writes++;
+	sim_edits[i].air_set = true;
+	sim_edits[i].air = *conv;
 	return true;
 }
+
+// The block saved with channel number, NULL: none
+static const ui_air_conv_t *sim_air(uint16_t number)
+{
+	for (uint8_t i = 0; i < n_edits; i++)
+		if (sim_edits[i].number == number && sim_edits[i].air_set)
+			return &sim_edits[i].air;
+	return NULL;
+}
+#endif
 
 uint16_t codeplug_free_channel(void)
 {
@@ -794,11 +839,12 @@ static bool p25_radio;		// below: the "p25" token
 // A stored P25 channel's block (p25_codeplug.c): the defaults (NAC 293, normal squelch)
 bool p25_conv_params(uint16_t number, const channel_t *ch, p25_conv_t *out)
 {
-	(void)number;
 	if (ch->kind != CODEPLUG_KIND_P25)
 		return false;
 	out->rx_nac = out->tx_nac = P25_NAC_DEFAULT;
 	out->squelch = P25_SQUELCH_NORMAL;
+	if (sim_air(number) != NULL)
+		*out = sim_air(number)->p25;	// as the editor saved it
 	return true;
 }
 bool radio_p25_fits(void) { return p25_radio; }
@@ -806,6 +852,19 @@ bool radio_p25_fits(void) { return p25_radio; }
 #if CONFIG_NXDN
 static bool nxdn_radio;		// below: the "nxdn" token
 bool radio_nxdn_fits(void) { return nxdn_radio; }
+// A stored NXDN channel's set-up (nxdn_codeplug.c): 9600 bit/s, RAN 1, unless the editor saved a block
+bool nxdn_conv_load(uint16_t number, const channel_t *ch, nxdn_conv_cfg_t *out)
+{
+	if (ch->kind != CODEPLUG_KIND_NXDN)
+		return false;
+	memset(out, 0, sizeof *out);
+	out->conv = (nxdn_conv_t){ .rate9600 = true, .rx_ran = 1, .tx_ran = 1, .squelch = NXDN_SQUELCH_RAN };
+	if (sim_air(number) != NULL)
+		out->conv = sim_air(number)->nxdn;
+	out->unit_id = 1;
+	out->target = 1;
+	return true;
+}
 #endif
 
 // Zones the zone editor wrote (ui_svc_zone_edit, the real zone_edit.c on these fakes): once one is written, every

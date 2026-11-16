@@ -333,8 +333,11 @@ silent.
 
 - Home shows it as in the VFO. It hears its talkgroup, calls to everyone and calls to your ID, unless the codeplug
   says to hear every call.
-- The channel's settings show "P25 NAC 293" as the mode and only the settings P25 uses. Talkaround is On or Auto (on
+- The channel's settings show "P25" as the mode and only the settings P25 uses. Talkaround is On or Auto (on
   when RX and TX are the same frequency).
+- **NAC** sets the network access code both ways. Type its hex digits; **Up** and **Down** step the last digit
+  through 0-9 and A-F, so for 1A5 type 1, 9, **Up**, 5. F7E receives every NAC. The talk group is **TX contact**, your
+  unit ID **Own ID**.
 - **OK** on Mode makes it a plain FM channel when you save.
 - Scan stops on P25 channels and holds on a call you would hear there. Dual watch takes one as A or B.
 
@@ -382,7 +385,8 @@ open **Channels**, **New channel from current settings** and save it. The channe
 squelch and the group (when a contact has that group; else group 1).
 
 - Home shows it as in the VFO. The channel's settings show "NXDN" as the mode.
-- The rate, the RANs and the squelch can't be changed on the radio yet, only from a computer.
+- **RAN** (0-63) and **Rate** (9600 or 4800 bit/s) are in the channel's settings, with the group (**TX contact**) and
+  your unit ID (**Own ID**, up to 65519). RAN 0 receives every RAN. The squelch can be changed only from a computer.
 - Scan stops on NXDN channels and holds on a call you would hear there, at a rate the radio can receive. Dual watch
   takes one as A or B.
 

@@ -199,11 +199,21 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
 - A channel of a kind ([channel-modes.md](channel-modes.md)) shows its kind as the Mode. OK on Mode makes the copy a
   plain FM channel; saving it removes the tag. Save as new channel and Copy here pass the source's number
   (`ui_svc_write_channel`'s `from`, `zone_op_t.from`), so the copy takes the source's tag (channel-modes.md 2.4).
-- A P25 channel (a stored one, or New from current on a channel or VFO in P25) shows Mode as "P25 NAC 293" (just "P25"
-  where the row is too narrow) and only the rows P25 uses: Name, Number, Mode, RX, TX, Power, RX only, TX contact (the
-  talk target), Own ID (the unit ID), Talkaround (On or Auto, the record's direct-mode bit), the TX time-out, Scan,
-  Battery saver. Saving a plain channel in P25 writes a stored P25 channel from the radio's P25 settings
-  ([p25-codeplug.md](p25-codeplug.md) 2.3).
+- A P25 channel (a stored one, or New from current on a channel or VFO in P25) shows Mode as "P25" and only the rows
+  P25 uses: Name, Number, Mode, NAC, RX, TX, Power, RX only, TX contact (the talk target), Own ID (the unit ID),
+  Talkaround (On or Auto, the record's direct-mode bit), the TX time-out, Scan, Battery saver. Saving a plain channel in
+  P25 writes a stored P25 channel from the radio's P25 settings ([p25-codeplug.md](p25-codeplug.md) 2.3).
+- An NXDN channel the same way: Mode "NXDN", then RAN and Rate in place of NAC, no Talkaround. Own ID over 65519 is
+  refused ("NXDN IDs go up to 65519").
+- NAC shows the received NAC in hex, then the sent one where they differ ("F7E/293"); RAN the same in decimal. OK opens
+  it. NAC: digits type hex digits (up to 3; a fourth starts over), Up and Down step the last one through 0-F (so A-F
+  are reached), with none typed they step the whole NAC; BACK takes a digit back. RAN: a spinner 0-63 that also takes
+  digits, as Color code. OK sets both ways, except F7E (every NAC) and RAN 0 (every RAN), which set the received one
+  only; F7F (a repeater's) is refused ("F7F is for repeaters"). Rate: OK toggles 9600 and 4800 bit/s. A changed NAC, RAN
+  or rate is saved with the channel (`ui_svc_write_channel_air`): the record and a new tag with the block
+  (`p25_conv_save`, `nxdn_conv_save`), or for a plain channel in that mode the block given with the talk target and
+  talkaround from the radio's settings. Copy here shows no NAC, RAN or Rate row: the copy takes its source's tag, and
+  they are changed on the copy afterwards.
 
 Text entry supports both keypad conventions radios use: more presses of the same key (2: A B C 2 a b c) and `#` for
 the input mode, with BACK to delete (and to leave once the field is empty). In ABC and abc, keys 2-9 cycle their
