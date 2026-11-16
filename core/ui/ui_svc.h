@@ -15,6 +15,11 @@
 #include "radio/radio.h"
 #include "codeplug/zone_edit.h"
 
+// The svc calls' one copy of the radio's view (ui_svc_radio.c), filled with radio_get_view by the call that reads it
+// and done with when it returns: no call holds it across another. Too big for the UI task's stack, and one copy for
+// all of them saves main RAM. Not for the screens (ui_view)
+extern radio_view_t ui_svc_view;
+
 // --- What is available (screens gray out what isn't, and say why on SELECT) ---
 #define UI_FEAT_TALK_TARGET	(1u << 0)	// ui_svc_talk_to / ui_svc_focus_target (dmr-voice)
 #define UI_FEAT_TIMESLOT	(1u << 1)	// ui_svc_dmr_timeslot (dmr-voice / radio core)

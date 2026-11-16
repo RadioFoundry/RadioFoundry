@@ -87,7 +87,7 @@ static uint8_t ui_flag(uint8_t id)
 	}
 }
 
-static radio_view_t v;		// the radio's view (static: too big for the UI task's stack)
+static radio_view_t *const v = &ui_svc_view;	// the radio's view, the UI task's scratch copy (ui_svc.h)
 
 #if CONFIG_DMR_PRIVACY
 // Privacy key slot 1 (settings-store.md 3.1), typed in on the radio. While privacy is on, the radio core holds the
@@ -108,8 +108,8 @@ static void privacy_store(uint8_t type, uint32_t key)
 		st->privacy_active = 0;
 	}
 	settings_end(hal_millis());
-	radio_get_view(&v);
-	if (v.dmr.privacy) {
+	radio_get_view(v);
+	if (v->dmr.privacy) {
 		radio_req_dmr_privacy(type, (uint16_t)key);
 	}
 }
@@ -1023,15 +1023,15 @@ static bool take_channel(void)
 	if (job_busy()) {
 		return false;	// the last write is still going on
 	}
-	radio_get_view(&v);
-	if (v.vfo || v.channel_number == 0 || v.hotspot) {
+	radio_get_view(v);
+	if (v->vfo || v->channel_number == 0 || v->hotspot) {
 		return false;
 	}
-	job.channel = v.channel_number;
-	job.temp = v.temp;
-	job.power = v.power;
-	job.squelch = v.squelch;
-	job.now = v.ch;
+	job.channel = v->channel_number;
+	job.temp = v->temp;
+	job.power = v->power;
+	job.squelch = v->squelch;
+	job.now = v->ch;
 	return true;
 }
 
@@ -1042,7 +1042,7 @@ bool ui_svc_save_channel(void)
 
 // The channel editor's whole channel (ui.md 2.1). Writing the channel in use drops its temporary changes: the radio
 // core re-reads it (codeplug_serial), and the edited values are what the user wants now. Whether it is the channel in
-// use is decided here on the UI task: the job runs on the housekeeping task, which must not touch v. A copy of a
+// use is decided here on the UI task: the job runs on the housekeeping task, which must not touch v-> A copy of a
 // channel of a kind takes its source's tag (job.id: the source); a plain channel in P25 becomes a stored P25 one
 static void write_channel_job(void *ctx)
 {
@@ -1071,9 +1071,9 @@ bool ui_svc_write_channel(uint16_t number, const channel_t *ch, uint16_t from)
 	if (number == 0 || number > CODEPLUG_CHANNELS_MAX || job_busy()) {
 		return false;
 	}
-	radio_get_view(&v);
+	radio_get_view(v);
 	job.channel = number;
-	job.temp = !v.vfo && v.channel_number == number && v.temporary;	// here: drop the temporary changes after it
+	job.temp = !v->vfo && v->channel_number == number && v->temporary;	// here: drop the temporary changes after it
 	job.now = *ch;
 	job.id = from;
 	return cp_post(write_channel_job);
@@ -1204,9 +1204,9 @@ bool ui_svc_save_talk_target(uint32_t id, bool private_call)
 {
 	if (id == 0)
 		return false;
-	radio_get_view(&v);
-	if (v.vfo) {
-		if (!CONFIG_VFO_DMR || v.hotspot)
+	radio_get_view(v);
+	if (v->vfo) {
+		if (!CONFIG_VFO_DMR || v->hotspot)
 			return false;
 		radio_req_dmr_target(id, private_call);	// the VFO's own target: kept with its settings, nothing to write
 		return true;
