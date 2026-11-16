@@ -9,6 +9,7 @@
 #include "imbe_q.h"
 #include "imbe_tab.h"
 #include "mbe_dsp.h"
+#include "mbe_est.h"
 #include "../dsp/fxp.h"
 
 static int32_t cos_turn(uint32_t unit, int num) { return mbe_cos_i(unit * (uint32_t)num); }
@@ -122,4 +123,60 @@ void imbe_pack(imbe_state_t *s, int b0, mbe_params_t *p, uint8_t out[IMBE_BYTES]
 	out[10] |= (uint8_t)((((b0 >> 1) & 1) << 2) | ((b0 & 1) << 1));
 	// advance the state as the receiver's dequantizer will, and hand back what it reconstructs
 	(void)imbe_unpack(s, out, p);
+}
+
+// --- speech to frames ---
+
+#define B0_UNVOICED	100	// the pitch code of a frame with no pitch: 32 harmonics, a band every 94 Hz
+#define B0_SEARCH	3	// pitch codes tried to each side of the time-domain estimate (1.5 samples of period)
+#define B0_STAY		150	// mismatch (Q15) a code must gain for each step away from that estimate: at long periods the
+				// spectrum hardly tells neighbors apart and the time-domain estimate is the better one
+#define PERIODIC_MIN	(-2700)	// log2 Q11 (0.4): a normalized autocorrelation under this is no pitch
+
+void imbe_enc_init(const imbe_enc_mem_t *m)
+{
+	imbe_state_reset(m->s);
+	mbe_est_init(m->est);
+}
+
+void imbe_enc_frame(const imbe_enc_mem_t *m, const int16_t pcm[MBE_FRAME_LEN], uint8_t out[IMBE_BYTES])
+{
+	mbe_params_t *p = m->p;
+	mbe_est_t e;
+	int b0 = B0_UNVOICED, K;
+
+	mbe_est_frame(m->est, pcm, m->buf, &e);
+	if (!e.period4 && e.periodic <= -32768 && !e.exp) {
+		// nothing but zeros: a silence frame, and nothing is predicted from what was before it
+		memcpy(out, imbe_silence, IMBE_BYTES);
+		imbe_state_reset(m->s);
+		m->est->vprev = 0;
+		return;
+	}
+	if (e.period4 && e.periodic >= PERIODIC_MIN) {
+		// the pitch code nearest the estimate (period = (b0 + 39.5) / 2 samples), then the best of its neighbors
+		int c = (e.period4 - 79 + 1) >> 1, best = 0x7FFFFFFF;
+
+		for (int t = c - B0_SEARCH; t <= c + B0_SEARCH; t++) {
+			int mis;
+
+			if (t < 0 || t >= IMBE_W0_STEPS)
+				continue;
+			mis = mbe_est_mismatch(m->buf, imbe_q_w0(t)) + B0_STAY * (t > c ? t - c : c - t);
+			if (mis < best) {
+				best = mis;
+				b0 = t;
+			}
+		}
+	} else {
+		e.period4 = 0;
+	}
+	memset(p, 0, sizeof *p);
+	p->w0 = imbe_q_w0(b0);
+	p->L = (int16_t)imbe_pitch_harmonics(b0);
+	K = p->L < 37 ? (p->L + 2) / 3 : 12;
+	mbe_est_params(m->est, m->buf, &e, p, 3, K);
+	for (int l = 0; l < p->L; l++)		// PCM units to the model's
+		p->a[l] = (int16_t)fxp_clamp(p->a[l] - IMBE_OUT_GAIN, -8 * 2048, 32767);
+	imbe_pack(m->s, b0, p, out);
 }

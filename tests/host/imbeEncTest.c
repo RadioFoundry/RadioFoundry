@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../../core/mbe/imbe.h"
+#include "../../core/mbe/mbe_est.h"
 
 static int failures, checks;
 #define CHECK(c, ...) do { checks++; if (!(c)) { failures++; printf("FAIL %s:%d: ", __FILE__, __LINE__); printf(__VA_ARGS__); printf("\n"); } } while (0)
@@ -119,10 +120,157 @@ static void test_envelope(void)
 	CHECK(sum_settled / n < 1.5, "mean settled error %.2f dB", sum_settled / n);
 }
 
+// --- the estimator and the whole encoder, on signals whose parameters are known ---
+
+typedef struct {
+	imbe_state_t qs;
+	mbe_est_state_t est;
+	mbe_params_t p;
+	int32_t buf[MBE_BUF_WORDS];
+	imbe_enc_mem_t m;
+	// a decoder beside it
+	imbe_state_t ds;
+	mbe_params_t dp;
+	mbe_state_t ms;
+	mbe_frame_t prev, cur;
+	int32_t dbuf[MBE_BUF_WORDS];
+	imbe_mem_t d;
+} rig_t;
+
+static void rig_init(rig_t *r)
+{
+	memset(r, 0, sizeof *r);
+	r->m = (imbe_enc_mem_t){ &r->qs, &r->est, &r->p, r->buf };
+	imbe_enc_init(&r->m);
+	r->d = (imbe_mem_t){ &r->ds, &r->dp, { &r->ms, &r->prev, &r->cur, r->dbuf } };
+	imbe_dec_init(&r->d);
+}
+
+static double gauss(void)
+{
+	double u = ((rnd() >> 8) + 1.0) / 16777217.0, v = (rnd() >> 8) / 16777216.0;
+
+	return sqrt(-2 * log(u)) * cos(2 * M_PI * v);
+}
+
+static int frame_b0(const uint8_t f[IMBE_BYTES]) { return (f[0] & 0xFC) | ((f[10] >> 1) & 3); }
+static double rms_of(const int16_t *x, int n)
+{
+	double s = 0;
+
+	for (int i = 0; i < n; i++)
+		s += (double)x[i] * x[i];
+	return sqrt(s / n);
+}
+
+// harmonics of a pitch at every tenth code, falling 6 dB per octave: the pitch found, every band below 3.6 kHz voiced,
+// the amplitudes before the quantizer, and the level out of a decoder
+static void test_harmonic(void)
+{
+	rig_t *r = malloc(sizeof *r);
+	static int16_t in[40 * MBE_FRAME_LEN], out[40 * MBE_FRAME_LEN];
+	double worst_amp = 0, worst_lvl = 0;
+	int worst_b0 = 0, unv = 0;
+
+	for (int b0 = 2; b0 < 208; b0 += 10) {
+		double period = (b0 + 39.5) / 2, w = 2 * M_PI / period;
+		int L = imbe_pitch_harmonics(b0), got = 0;
+
+		rig_init(r);
+		for (int n = 0; n < 40 * MBE_FRAME_LEN; n++) {
+			double v = 0;
+
+			for (int l = 1; l <= L; l++)
+				v += 3000.0 / l * cos(w * l * n + l * l * 0.37);
+			in[n] = (int16_t)lrint(v);
+		}
+		for (int f = 0; f < 40; f++) {
+			uint8_t bits[IMBE_BYTES];
+
+			if (f == 20) {		// the estimator alone on one settled frame
+				mbe_est_t e;
+				mbe_params_t p;
+
+				mbe_est_state_t save = r->est;
+				mbe_est_frame(&r->est, in + f * MBE_FRAME_LEN, r->buf, &e);
+				memset(&p, 0, sizeof p);
+				p.L = (int16_t)L;
+				p.w0 = (uint32_t)(4294967296.0 / period);
+				mbe_est_params(&r->est, r->buf, &e, &p, 3, L < 37 ? (L + 2) / 3 : 12);
+				for (int l = 1; l <= L; l++) {
+					double d = fabs(p.a[l - 1] / 2048.0 - log2(3000.0 / l)) * 6.0206;
+
+					if (l * 4000.0 / (period / 2 * L) > 3600)	// near the top the band is cut off
+						continue;
+					// a period over 85 samples has little more than two periods under the window: its harmonics run into each
+					// other, and the estimate ripples by up to 2.5 dB
+					CHECK(d < (period > 85 ? 2.5 : 0.5), "b0 %d harmonic %d: amplitude off by %.2f dB", b0, l, d);
+					if (d > worst_amp)
+						worst_amp = d;
+					unv += !p.v[l - 1];
+				}
+				CHECK(abs(e.period4 - (int)lrint(4 * period)) <= 6, "b0 %d: time-domain period %.2f, true %.2f", b0,
+				      e.period4 / 4.0, period);
+				r->est = save;
+			}
+			imbe_enc_frame(&r->m, in + f * MBE_FRAME_LEN, bits);
+			imbe_dec_frame(&r->d, bits, 0, out + f * MBE_FRAME_LEN);
+			if (f >= 10 && abs(frame_b0(bits) - b0) > got)
+				got = abs(frame_b0(bits) - b0);
+		}
+		if (got > worst_b0)
+			worst_b0 = got;
+		CHECK(got <= 1, "b0 %d: the encoder's pitch code is off by %d", b0, got);
+		{
+			double lvl = fabs(20 * log10(rms_of(out + 15 * MBE_FRAME_LEN, 20 * MBE_FRAME_LEN)
+						       / rms_of(in + 15 * MBE_FRAME_LEN, 20 * MBE_FRAME_LEN)));
+
+			if (lvl > worst_lvl)
+				worst_lvl = lvl;
+			CHECK(lvl < 1.5, "b0 %d: level through encoder and decoder off by %.2f dB", b0, lvl);
+		}
+	}
+	printf("# harmonic: pitch code off by at most %d; amplitudes within %.2f dB; level within %.2f dB; %d unvoiced\n",
+	       worst_b0, worst_amp, worst_lvl, unv);
+	CHECK(unv == 0, "%d harmonics of a periodic signal unvoiced", unv);
+	free(r);
+}
+
+// white noise: no band voiced, and the level out of a decoder is the level in
+static void test_noise(void)
+{
+	rig_t *r = malloc(sizeof *r);
+	static int16_t in[60 * MBE_FRAME_LEN], out[60 * MBE_FRAME_LEN];
+	int voiced = 0, total = 0;
+	double lvl;
+
+	rig_init(r);
+	for (int n = 0; n < 60 * MBE_FRAME_LEN; n++)
+		in[n] = (int16_t)lrint(1500 * gauss());
+	for (int f = 0; f < 60; f++) {
+		uint8_t bits[IMBE_BYTES];
+		mbe_params_t p;
+		imbe_state_t tmp = r->ds;
+
+		imbe_enc_frame(&r->m, in + f * MBE_FRAME_LEN, bits);
+		imbe_unpack(&tmp, bits, &p);
+		for (int l = 0; l < p.L; l++, total++)
+			voiced += p.v[l];
+		imbe_dec_frame(&r->d, bits, 0, out + f * MBE_FRAME_LEN);
+	}
+	lvl = 20 * log10(rms_of(out + 10 * MBE_FRAME_LEN, 50 * MBE_FRAME_LEN) / rms_of(in + 10 * MBE_FRAME_LEN, 50 * MBE_FRAME_LEN));
+	printf("# noise: %d of %d harmonics voiced; level through encoder and decoder %+.2f dB\n", voiced, total, lvl);
+	CHECK(voiced * 50 < total, "%d of %d harmonics of noise voiced", voiced, total);
+	CHECK(fabs(lvl) < 1.5, "noise level off by %.2f dB", lvl);
+	free(r);
+}
+
 int main(void)
 {
 	test_bits_round_trip();
 	test_envelope();
+	test_harmonic();
+	test_noise();
 	printf("%s: %d checks, %d failures\n", failures ? "imbeEncTest FAILED" : "# imbeEncTest PASSED", checks, failures);
 	return failures != 0;
 }
