@@ -296,6 +296,11 @@
 #ifndef CONFIG_P25_TRUNK
 #define CONFIG_P25_TRUNK		0
 #endif
+// Derived: zone sharing carries channels of a kind and their systems (docs/spec/zone-share.md 4.2) in a build of the
+// air interface. Without it a share leaves channels of a kind out and refuses a record that has them
+#ifndef CONFIG_ZONE_SHARE_MODES
+#define CONFIG_ZONE_SHARE_MODES		(CONFIG_ZONE_SHARE && CONFIG_AIR)
+#endif
 // The GPS status screen: the satellites (NMEA GSV / GSA) on a sky plot and signal bars, the fix's quality, the grid
 // locator (core/position/nmea_sky.c, core/ui/ui_gps.c). Needs GPS
 #ifndef CONFIG_GPS_SKY

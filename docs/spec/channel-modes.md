@@ -177,9 +177,9 @@ addresses uses.
 **Editor.** The contact picker of a channel asks the kind's module which list it offers: contacts, its targets, or
 both. A target's address is edited by the kind's module; the name and call type are generic fields.
 
-**Sharing.** A shared channel carries every target its parameter block refers to ([zone-share.md](zone-share.md)): name, kind,
-flags and address. The receiver uses a target of the same kind and address it has, else adds one, and rewrites the
-reference. Targets are never secret.
+**Sharing.** Zone sharing does not carry targets yet: no kind in this tree refers to one. When one does, a shared
+channel is to carry every target its parameter block refers to: name, kind, flags and address; the receiver uses a
+target of the same kind and address it has, else adds one, and rewrites the reference. Targets are never secret.
 
 ### 5.3 Target lists
 
@@ -239,7 +239,7 @@ Key 0x0100 + n, n = 0-254 (0xFF is "none" in a tag).
 |---|---|---|
 | 0 | 1 | System type (4). 0 and 0xFF: no system |
 | 1 | 1 | Flags (below) |
-| 2 | 1 | Sharing: 0 off, 1 identity only, 2 whole system (8) |
+| 2 | 1 | Sharing: 0 off, 1 identity only, 2 whole system with key (8) |
 | 3 | 1 | Identity length L: the first L octets of the type's block say which system this is (a network and system ID). Two records of one type and the same identity are the same system |
 | 4 | 4 | This radio's ID on the system, little endian; 0 = the kind's radio-wide one (5.5). Never shared |
 | 8 | 2 | Fallback channel, 0 = none |
