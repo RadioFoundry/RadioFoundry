@@ -196,7 +196,7 @@ def test_sfr_repeater_quality(radio, sdr_bench, pytestconfig, tx_allowed):
     assert frames >= 60, f"the runner decoded only {frames} of the call's 72 frames"
     assert lost <= 3, f"{lost} inbound frames lost"
     assert bits < 4 * frames, f"{bits} bit errors in {frames} frames"
-    # The repeater keys straight from RX for the inbound slot (hal_radio_t.dmr_keyed_direct, where the board reports it;
+    # The repeater keys straight from RX for the inbound slot (hal_radio_t.dmr_keying, where the board reports it;
     # UHF only on the UV380 family: at VHF the correction is out of range and it keys through idle)
     keyed = radio.view(["dmr"]).get("dmr.keyed_direct")
     if freq > 300:

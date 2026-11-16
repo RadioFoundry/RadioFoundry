@@ -923,28 +923,24 @@ static bool bcl_busy(const radio_sm_t *sm)
 }
 
 #if CONFIG_SFR
-// An SFR repeats while our role has the modem or the hotspot's SFR mode repeats (not a split role: it has no inbound slot
-// to protect): the board may then key DMR bursts straight from RX for the inbound slot (hal_radio_t.dmr_direct_key);
-// told on a change. The hotspot also tells the board itself, from the host link task, the moment its mode starts or
-// stops (hotspot_set_direct_key_hook), so no burst waits for this task's next poll
+// Our repeater role has the modem: the board may key DMR bursts straight from RX for the inbound slot
+// (hal_radio_t.dmr_direct_key, source ROLE); told on a change. The hotspot's SFR mode owns the HOTSPOT source and
+// tells the board itself from the host link task (hs_direct_key), so this task never writes or mirrors its state
 static void direct_key_sync(radio_sm_t *sm)
 {
-	for (;;) {
-		bool on = sm->sfr_rpt;
-#if CONFIG_HOTSPOT
-		on = on || (sm->hotspot && hotspot_sfr_repeating());
-#endif
-		if (on == sm->direct_key) {
-			return;
-		}
-		if (board.radio->dmr_direct_key != NULL) {
-			board.radio->dmr_direct_key(on);
-		}
-		sm->direct_key = on;
-		// Read again: the hotspot may have told the board otherwise between our read and our write, and ours must
-		// not be the stale last word
+	bool on = sm->sfr_rpt;
+	if (on != sm->direct_key && board.radio->dmr_direct_key != NULL) {
+		board.radio->dmr_direct_key(HAL_DMR_DIRECT_ROLE, on);
 	}
+	sm->direct_key = on;
 }
+
+#if CONFIG_HOTSPOT
+static void hs_direct_key(bool on)
+{
+	board.radio->dmr_direct_key(HAL_DMR_DIRECT_HOTSPOT, on);
+}
+#endif
 #else
 static inline void direct_key_sync(radio_sm_t *sm)
 {
@@ -4463,7 +4459,11 @@ static void hotspot_leave(radio_sm_t *sm, uint32_t now_ms)
 	sm->hotspot = false;
 	sm->view.hotspot = false;
 	sm->hs_carrier = false;
-	direct_key_sync(sm);	// now, not at the next poll: an ordinary burst must not key direct
+#if CONFIG_SFR
+	if (board.radio->dmr_direct_key != NULL) {	// the hotspot left: none of its bursts any more, whatever its mode says
+		board.radio->dmr_direct_key(HAL_DMR_DIRECT_HOTSPOT, false);
+	}
+#endif
 	tune(sm, now_ms);	// the channel again; on a DMR channel the call stack takes the modem back
 }
 #endif
@@ -5091,7 +5091,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 
 	memset(sm, 0, sizeof(*sm));
 #if CONFIG_SFR && CONFIG_HOTSPOT
-	hotspot_set_direct_key_hook(board.radio->dmr_direct_key);	// the hotspot's SFR mode tells the board itself
+	hotspot_set_direct_key_hook(board.radio->dmr_direct_key != NULL ? hs_direct_key : NULL);	// the hotspot's own source
 #endif
 	sm->audio_out = -1;
 	sm->green_out = -1;
@@ -6143,7 +6143,6 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 {
 	radio_status_t st;
 	sm->led_now = now_ms;
-	direct_key_sync(sm);	// keeps the mirror in step with the hotspot's flag (it told the board already)
 	if (sm->led_timed || sm->deny_led) {
 		outputs(sm);	// as in radio_sm_tick: some paths below return before their outputs()
 	}

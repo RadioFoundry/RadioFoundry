@@ -522,6 +522,7 @@ bool hotspot_start(uint32_t now_ms)
 	if (radio->set_power != NULL) {
 		radio->set_power(LEVEL(rf_level));
 	}
+	sfr_direct = false;	// a new session: its SFR mode tells the board again when it starts (a stale flag hid that)
 	running = true;
 	view.running = true;
 	stats.starts++;

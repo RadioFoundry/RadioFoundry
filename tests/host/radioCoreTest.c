@@ -119,8 +119,9 @@ static char dtmf_on;		// tx_dtmf: the digit sounding
 static bool r_tx_dtmf(char digit) { dtmf_on = digit; return true; }
 static int16_t ref_trim_ppb = 1;	// ref_trim: the last trim (1: never called)
 static bool r_ref_trim(int16_t ppb) { ref_trim_ppb = ppb; return true; }
-static int direct_key = -1;	// dmr_direct_key: the last value (-1: never called)
-static void r_dmr_direct_key(bool on) { direct_key = on; }
+static int direct_key = -1;	// dmr_direct_key, source ROLE: the last value (-1: never called)
+static int hs_direct = -1;	// dmr_direct_key, source HOTSPOT
+static void r_dmr_direct_key(uint8_t src, bool on) { if (src == HAL_DMR_DIRECT_ROLE) direct_key = on; else hs_direct = on; }
 static hal_radio_t fake_radio = { .init = r_init, .set_mode = r_set_mode, .rx = r_rx, .tx = r_tx, .tx_off = r_tx_off,
 					.status = r_status, .audio = r_audio, .tx_tone = r_tx_tone,
 					.tx_tone_key = r_tx_tone_key, .tx_dtmf = r_tx_dtmf, .ref_trim = r_ref_trim,
@@ -2215,35 +2216,40 @@ static void test_hotspot_session(void)
 	}
 	CHECK(mm_naks == 0 && hotspot_running() && sm.hs_tx_hz == 453625000 && sm.dmr_keyed);
 	hs_run(500);
-	CHECK(!sm.direct_key);	// a simplex hotspot keys the board's normal way
-	direct_key = -1;	// only what this session tells the board below
-	// The hotspot's SFR mode (hotspotSfr.c, not linked here: an alternative engine that says it's active) lets the
-	// board key straight from RX while it runs, and normal keying again when it stops
+	CHECK(!sm.direct_key && hs_direct != 1);	// a simplex hotspot keys the board's normal way
+	hs_direct = -1;	// only what this session tells the board below
+	// The hotspot's SFR mode (hotspotSfr.c, not linked here: an alternative engine that says it's active) tells the
+	// board itself, on its own source, from the host link task: straight from RX while it runs, normal when it stops
 	hotspot_set_alt(&fake_alt);
 	fake_alt_on = true;
 	hs_run(100);
-	CHECK(hotspot_alt_active() && direct_key == 1);
+	CHECK(hotspot_alt_active() && hs_direct == 1);
 	fake_alt_on = false;
 	hs_run(100);
-	CHECK(direct_key == 0);
-	// The hotspot tells the board itself, from the host link task, the moment its SFR mode starts or stops: no radio
-	// task poll in between (the first and last bursts key the right way)
-	fake_alt_on = true;
+	CHECK(hs_direct == 0);
+	// Hook on, the radio task never polls, hook off, then an ordinary burst (#540 review): the board ends with both
+	// sources off, and the radio task never touched the hotspot's source
 	direct_key = -1;
+	fake_alt_on = true;
 	mmdvm_poll(now);
-	CHECK(direct_key == 1 && hotspot_sfr_repeating());
+	CHECK(hs_direct == 1 && hotspot_sfr_repeating());
 	fake_alt_on = false;
 	mmdvm_poll(now);
-	CHECK(direct_key == 0 && !hotspot_sfr_repeating());
-	// The session ends while the SFR mode repeats: the board keys its normal way at once, before any radio poll
+	CHECK(hs_direct == 0 && !hotspot_sfr_repeating());
+	hs_run(100);
+	CHECK(hs_direct == 0 && direct_key == -1);
+	// The radio leaves the hotspot (an orphan watch, a menu) while its SFR mode still says it repeats: the hotspot's
+	// source off at once, whatever the hotspot's flag says
 	fake_alt_on = true;
 	hs_run(100);
-	CHECK(direct_key == 1 && sm.direct_key);
+	CHECK(hs_direct == 1 && sm.hotspot);
+	req(RREQ_HS_LEAVE, 0);
+	run(50);
+	CHECK(!sm.hotspot && hs_direct == 0);
 	mmdvm_end();
-	CHECK(direct_key == 0 && !hotspot_sfr_repeating());
-	hotspot_set_alt(NULL);
+	CHECK(hs_direct == 0 && !hotspot_sfr_repeating());
 	hs_run(100);
-	CHECK(!sm.hotspot && !sm.dmr_keyed && sm.view.dmr.active && !sm.direct_key);
+	CHECK(!sm.hotspot && !sm.dmr_keyed && sm.view.dmr.active && direct_key == -1);
 	mm_cmd(MMDVM_GET_VERSION, NULL, 0);
 	hs_run(100);
 	hotspot_get_stats(&st);
@@ -5344,6 +5350,21 @@ static void test_sfr_vfo(void)
 	settings_read(&st);
 	CHECK(st.vfo_sfr == SFR_ROLE_RPT_STANDARD);
 
+	CHECK(direct_key == 1);
+	// The role back to none, as the HIL test leaves it (#540 review): normal keying at once, and still after the mode
+	// goes FM and back to DMR and an ordinary call keys
+	req(RREQ_VFO_SFR, SFR_ROLE_OFF);
+	run(50);
+	CHECK(!sm.sfr_rpt && direct_key == 0);
+	req(RREQ_PTT, 1);
+	run(100);
+	CHECK(direct_key == 0);
+	req(RREQ_PTT, 0);
+	run(3000);
+	CHECK(direct_key == 0 && !sm.dmr_keyed);
+	req(RREQ_VFO_SFR, SFR_ROLE_RPT_STANDARD);
+	run(50);
+	CHECK(sm.sfr_rpt && direct_key == 1);
 	// A new color code: the repeater takes it
 	req(RREQ_DMR_CC, 5);
 	run(50);
