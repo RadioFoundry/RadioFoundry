@@ -796,8 +796,8 @@ at the slot start. Earlier runs also found every fourth TS2 burst sent as a zero
 `drivers/modem/hrc_common/hrc6000_air.c` (`CONFIG_AIR`, derived from `CONFIG_P25`) is the board's air interface provider (`hal_air.h`): symbols
 in air order, with soft values and time stamps, for modes the core frames itself. The chip runs in its physical layer
 mode (0x10 bits 4-3 = 00) and only modulates and slices. A session halts the slot engine and takes its three
-interrupt lines and its task; its state lives in the halted engine's event queue, so a session costs no RAM of its
-own. Close puts the DMR receive set-up back (0x10 = 0x6E, the MS pattern in the correlator, 0x40 = 0xC3) and the slot
+interrupt lines and its task; its state lives in the halted engine's event queue (and the soft modem of 10.6 in its
+transmit queue), so a session costs no RAM of its own. Close puts the DMR receive set-up back (0x10 = 0x6E, the MS pattern in the correlator, 0x40 = 0xC3) and the slot
 engine restarts the receiver (5.1). Host test: `tests/host/hrc6000AirTest.c`.
 
 ### 10.1 What a profile gets
@@ -807,6 +807,7 @@ engine restarts the receiver (5.1). Host test: `tests/host/hrc6000AirTest.c`.
 | 4800 symbols/s, continuous, 2 or 4 levels | TX |
 | ... with a 24-symbol sync of outer symbols only, on air all through a transmission (not `AIR_SYNC_START_ONLY`), recurring every 1728 symbols or less, outer deviation 1700-2900 Hz | also RX, SOFT, NEEDS_SYNC |
 | 2400 symbols/s | TX, RATE_DOUBLED (receive at half rate never synced reliably) |
+| a profile with TX and no RX above, on a board with the FM copy (10.6) | also the soft modem's receive fit on the copy's band (`air_softmodem_rx_fit`) |
 | any shape but RRC 0.2 | SHAPE_APPROX: the pulse is the chip's own |
 | transmit deviation outside 1050-2400 Hz (C4FM: of the target below) by more than a tenth | DEV_APPROX |
 | TDMA, 1200 symbols/s, 3 levels | none |
@@ -898,7 +899,7 @@ receive set-up's slot clock runs on; about 28.7 ms after a stop with 0x40 = 0x03
 
 | Rule (`hal_air.h`) | How |
 |---|---|
-| 1. Raw receive never to the speaker | open needs the chip in DMR, where the speaker carries the codec's PCM only, and writes 0x36 = 0. The board turns the FM feed-through on again only for its audio(true), which the core keeps off for the session |
+| 1. Raw receive never to the speaker | open needs the chip in DMR, where the speaker carries the codec's PCM only, and writes 0x36 = 0. The copy set-up (10.6) puts the chip in FM with 0x36 = 0 written first. The board turns the FM feed-through on again only for its audio(true), which the core keeps off for the session |
 | 2. Microphone, tones, beeps never to the modulator | in the physical layer mode the modulator is fed from TX RAM only |
 | 3. Never keys | the PA goes up only through the board's DMR keying, which refuses unless the core's tx() armed it |
 | 4. close restores FM and DMR | the DMR receive set-up and the slot engine again; leaving DMR under a session ends any transmission, and entering again gives the receive set-up back |
@@ -914,12 +915,48 @@ every unit decoded, no voice bit corrected, voice units 180 ms apart, the outer 
 calibrated pair. A trunked call runs on it: the control channel held, the three requests sent as single bursts and
 heard off air, the retune to the granted channel inside the grant's wait ([p25-trunking.md](p25-trunking.md)).
 NXDN ([nxdn.md](nxdn.md)) transmits at both rates, checked off air: 2400 symbols/s with an outer deviation of 1012 Hz,
-4800 symbols/s with 2399 Hz, no CRC failure in either. It is not received: the chip's correlator needs a sync of 24
-outer symbols that comes again within `RX_SPACING_MAX` (10.2), and NXDN has a 10-symbol frame sync word, so the fit
-gives NXDN transmit only. On air still to check: the receive
+4800 symbols/s with 2399 Hz, no CRC failure in either. The correlator does not receive it: it needs a sync of 24
+outer symbols that comes again within `RX_SPACING_MAX` (10.2), and NXDN has a 10-symbol frame sync word. A board with
+the FM copy receives it through that (10.6); another board's fit gives NXDN transmit only. On air still to check: the receive
 set-up straight after the DMR one and after a transmission (one entry straight from a layer 2 restart gave no
 interrupts until a set-up with 0x41 = 0x40 had run once); the receive delay for t_us; the TX_STARTED time; the PA key
 and drop against the chunks.
+
+### 10.6 Receive through the FM copy
+
+For a profile the correlator can't take, on a board whose RF chip gives the chip the unfiltered discriminator in its
+DMR set-up (`stm32_hrc_dmr_board_t.air_tap`). The chip's FM receive RAM is a copy of what its FM demodulator hears;
+the driver feeds the core's soft modem (`core/air/air_softmodem.c`, [air-interface.md](air-interface.md)) from it.
+Transmit stays 10.3, so a profile the chip can't send gets no fit at all.
+
+Set-up (`copy_on`): 0x41 = 0x00, 0x36 = 0x00, 0x60 = 0x00, 0x34 = 0x00 (every receive audio filter off), 0x10 = 0x80
+(FM), 0x81 with bit 1 set (the FM receive RAM's interrupt), 0x83 = 0xFF. 0x34 and 0x81 are read first and written
+back at close.
+
+- The RAM is page 2 0x030: two halves of 256 samples, 16 bits big endian, 8 kHz. 0x82 bit 1 comes when a half is
+  full, every 32 ms. With 0x10 back at its DMR value the RAM stops filling, so the chip stays in FM for the whole
+  session.
+- The interrupt does not say which half. The driver reads each half's last sample at every interrupt: the half whose
+  last sample changed is the full one. When both or neither changed (a steady input) it is the other half than the
+  last one (`half_fixes` counts the times the RAM disagreed with that order).
+- The interrupt copies the full half into a ring of two halves, stamped with its time (the last sample is the
+  interrupt's, the first 255 samples earlier). A half that finds the ring full is dropped (`overruns`), and the half
+  after it starts the soft modem over, as does the first half after open, `rx_restart` or a transmission.
+- The task runs the soft modem on each half. Its state lies in the halted slot engine's transmit queue, at the first
+  address aligned for it (the queue is bytes; an unaligned state faults).
+- The band is 0 to 3400 Hz. The counts per kHz are not known (`rx_counts_per_khz` 0): the soft modem takes the level
+  from each sync. Positive is above the carrier.
+- For a transmission the chip leaves FM for the set-up of 10.3, and `rx_setup` after it is `copy_on` again.
+- The same ring is the board's `hal_baseband_t` receive tap while no session is open (`stm32_hrc_baseband`).
+- `rx_load` counts the soft modem's time for a session that receives this way and reports false for one the
+  correlator serves.
+
+The codec's PCM stream to the MCU runs on in this set-up (a beep's blocks come at the same rate as in DMR), and decoded
+voice goes to the codec's DAC as in DMR. Checked on air: NXDN calls at 4800 and 9600 bit/s from a bench transmitter,
+every frame decoded and every voice frame of a speech recording decoded by the vocoder, none counted bad
+(`test_nxdn_rx_from_bench`, `test_nxdn_rx_speech`); a DMR call received right after sessions of both kinds. Not
+checked: the level at the speaker by ear or by measurement (decoded voice is judged by its PCM peak), the
+sensitivity, the receive delay for t_us.
 
 ---
 

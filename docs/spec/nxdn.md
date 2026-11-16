@@ -20,7 +20,7 @@ State:
 | Scan (6.4) | written, host tested; not checked on a radio |
 | Dual watch | written, host tested: a stored NXDN channel on either side, the receiver alternating onto it ([radio-features.md](radio-features.md) 2.1); not checked on a radio |
 | Channel editor on the radio | written, host tested: RAN, rate, group, unit ID ([ui.md](ui.md) 2.1) |
-| On air | transmit checked off air on a radio at both rates (`test_nxdn_tx_off_air`); receive not yet: the one provider tried has no receive fit for NXDN (6) |
+| On air | transmit checked off air on a radio at both rates (`test_nxdn_tx_off_air`); receive checked at both rates with a bench transmitter, speech frames through the vocoder included (`test_nxdn_rx_from_bench`, `test_nxdn_rx_speech`); the sound at the speaker is not checked (8) |
 | 9600 bit/s full-rate voice (EFR), data, trunking, encryption | not written (10). Encrypted calls are recognized and not played |
 
 ## 1. On air
@@ -256,7 +256,7 @@ The radio core needs from a board: a provider (`board_t.air`) whose fit takes 24
 | `tests/host/nxdnEngineTest.c` | two engines on made-up providers at both rates: a call heard with its fields and voice in order, an encoder stall covered by silence, no underruns, late entry, group and individual squelch, a squelch change mid-call, an abort, another RAN, RAN 0, an encrypted call; a call through a modeled discriminator tap and the soft modem at 2400 symbols/s, eight calls per noise level |
 | `tests/host/radioCoreTest.c` (`radioCoreTestNxdn`, `radioCoreTestP25Nxdn`) | the radio core against an NXDN engine on a fake provider: a call heard, its voice in order to the vocoder, another RAN, group squelch; PTT heard by the far engine with the settings, settings sent mid-transmission, 4800 bit/s, a TX-only and an RX-only fit, no fit, the time-out; the mode by request, the debug link and the VFO saved; P25 and NXDN in turn in the same memory; a zone scan over a stored NXDN channel: a stop with nothing on air, held on a late entry to its group, not on another group or RAN, never a stop at a rate the provider can't receive (`test_nxdn_scan`); dual watch with it as B: a hold on its group's call, not on another group, refused at such a rate, and with P25 on A one engine at a time (`test_nxdn_dual`) |
 | `tests/host/uiFlowTest.c` | the mode tile's order, the home screen in NXDN, the FM-only tiles |
-| `tests/hil/test_nxdn.py` | on the radio: the mode switch, the settings, a stored channel written over CPS; opt-in, an over decoded off air by the SDR bench's 4FSK receiver and `nxdntool` (one HR_C6000 radio: 9600 bit/s 78 frames, outer deviation 2399 Hz; 4800 bit/s 40 frames, 1012 Hz; no CRC failure), a stored channel that transmits keyed and decoded the same way with the channel's RAN, unit and group (`test_nxdn_stored_channel_tx`), and a call the bench plays received (`test_nxdn_rx_from_bench`, skipped where the fit has no RX) |
+| `tests/hil/test_nxdn.py` | on the radio: the mode switch, the settings, a stored channel written over CPS; opt-in, an over decoded off air by the SDR bench's 4FSK receiver and `nxdntool` (one HR_C6000 radio: 9600 bit/s 78 frames, outer deviation 2399 Hz; 4800 bit/s 40 frames, 1012 Hz; no CRC failure), a stored channel that transmits keyed and decoded the same way with the channel's RAN, unit and group (`test_nxdn_stored_channel_tx`), a call the bench plays received (`test_nxdn_rx_from_bench`), and one whose voice frames are a speech recording's, decoded by the vocoder: every frame into the voice path, none silent, bad or lost, the decoded PCM peaking as speech does (`test_nxdn_rx_speech`, with `--ambe FILE`). Both skip where the fit has no RX. Nothing measures the sound at the speaker |
 | `tools/bench/nxdntool.py selftest` | the bench tool (below) both ways at both rates, with bit errors and through the soft modem, from bench receiver records, the summary line |
 
 The soft modem test (8 kHz tap, 2000 counts per kHz, so the outer level is 2100 counts and the step between levels
@@ -268,7 +268,9 @@ bits: their own FEC is the vocoder's.
 symbols with an expect file, `mod` turns symbols into discriminator samples, `decode` and `disc` read them back
 through the framer (and the soft modem) and compare. `decode` reads what `p25tool.py decode` reads: a dibit file, the
 bench receiver's records (`--records`) or `rfoundry_debug.py air rx` records (`--air-jsonl`), and ends with a summary:
-RAN, source, destination, call type, frames, voice frames, CRC failures. Voice is made-up patterns.
+RAN, source, destination, call type, frames, voice frames, CRC failures. Voice is made-up patterns, or with
+`gen --voice-file FILE` the 72-bit frames of a recording as they came off the air (9 bytes each): the tool never looks
+inside a voice frame.
 
 An over checked off air: the radio in NXDN on a test frequency, the SDR bench's 4FSK receiver on it (2400 baud at
 4800 bit/s, 4800 baud at 9600 bit/s, root raised cosine, the FSW `CDF59` as a 10-symbol sync), its symbols through
