@@ -237,6 +237,10 @@ typedef struct {
 	// task stacks, and the steps would cost every copy 60 bytes
 	uint8_t sig_dmr[3];
 	uint8_t sig_fm[3];
+	// The board's power level count the stored levels count against (vfo_power, vfo2_power, master_power, aprs_power;
+	// was reserved9: 0 in an older record). A record whose count isn't the board's has those levels reset at load
+	// (settings-store.md 3): a level index names another power when a board's levels change
+	uint8_t power_levels;
 } settings_t;
 
 // Pages: settings_t is stored as records of SETTINGS_PAGE_BYTES each (settings-store.md 2.1). Only the pages its size
