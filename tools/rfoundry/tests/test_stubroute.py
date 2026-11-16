@@ -7,9 +7,11 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import home  # noqa: E402,F401 (the settings folder in a temporary folder)
 from rfoundry import cli, stubroute  # noqa: E402
 import random  # noqa: E402
 
@@ -18,7 +20,7 @@ class FakeStubtool:
     def __init__(self):
         self.calls = []
 
-    def main(self, argv):
+    def main(self, argv, raise_errors=False):
         path = argv[argv.index("--write-app") + 1]
         with open(path, "rb") as f:
             self.calls.append((argv, f.read()))
@@ -59,6 +61,45 @@ class Route(unittest.TestCase):
             self.assertEqual(len(data), 30000)
             self.assertIn("reset", argv)
 
+    def test_a_stub_left_running_is_attached(self):
+        # an earlier run stopped with the stub running: RadioFoundry's debug link doesn't answer, the stub does
+        class DumpError(Exception):
+            pass
+
+        class NoAnswer(DumpError):
+            pass
+        calls, real = self.fake.calls, self.fake.main
+
+        def main(argv, raise_errors=False):
+            if "--rfoundry-enter" in argv:
+                calls.append((argv, None))
+                raise NoAnswer("no answer from RadioFoundry's debug link")
+            return real(argv)
+        self.fake.main = main
+        bid = stubroute.BOARDS[0]
+        rc, log = run_cli(["flash", self.image(), "--board", bid, "--route", "stub", "--port", "/dev/x", "--yes"])
+        self.assertEqual(rc, 0, log)
+        self.assertEqual([c[0][1] for c in calls], ["--rfoundry-enter", "--attach"])
+        self.assertEqual(len(calls[1][1]), 30000)
+        self.assertIn("left running", log)
+
+    def test_other_errors_are_not_retried(self):
+        # RadioFoundry answered and the stub refused (or failed): attaching would only repeat it on a stub that is gone
+        class DumpError(Exception):
+            pass
+        calls = []
+
+        def main(argv, raise_errors=False):
+            calls.append(argv)
+            raise DumpError("sector(s) 8 hold the radio's codec")
+        self.fake.main = main
+        rc, log = run_cli(["flash", self.image(), "--board", stubroute.BOARDS[0], "--route", "stub", "--port", "/dev/x",
+                           "--yes", "--no-probe"])
+        self.assertEqual(rc, 1, log)
+        self.assertEqual(len(calls), 1)
+        self.assertIn("hold the radio's codec", log)
+        self.assertNotIn("left running", log)
+
     def test_refusals(self):
         rc, log = run_cli(["flash", self.image(), "--board", stubroute.BOARDS[0], "--route", "stub", "--simulate", "blank"])
         self.assertNotEqual(rc, 0)
@@ -67,6 +108,73 @@ class Route(unittest.TestCase):
         self.assertEqual(rc, 0, log)
         self.assertIn("dry run", log)
         self.assertEqual(self.fake.calls, [])
+
+
+class RealStubtool(unittest.TestCase):
+    """stub/stubtool.py itself, loaded as rfoundry loads it (serialflash.tool), on a port where nothing answers: the
+    error it raises reaches stubroute as NoAnswer, so a stub left running is tried"""
+
+    def test_no_answer_is_told_apart(self):
+        from rfoundry import serialflash
+        stub_dir = os.path.join(serialflash._ROOT, "stub")
+        if stub_dir not in sys.path:
+            sys.path.insert(0, stub_dir)		# as stubroute.run does
+        stubtool = serialflash.tool("stubtool")
+        import f4stub
+        self.assertIs(f4stub.stubtool, stubtool)	# one copy: f4stub's errors are the classes stubtool catches
+
+        class Silent:
+            timeout = 0.1
+
+            def write(self, b):
+                return len(b)
+
+            def read(self, n=1):
+                return b""
+
+            def reset_input_buffer(self):
+                pass
+
+            def flush(self):
+                pass
+
+            def close(self):
+                pass
+
+        class Clock:		# dl_request waits by the clock: a fast one, so the test doesn't
+            t = 0.0
+
+            def monotonic(self):
+                self.t += 0.25
+                return self.t
+
+            def sleep(self, s):
+                self.t += s
+
+            def __getattr__(self, name):
+                import time
+                return getattr(time, name)
+        fake_serial = type(sys)("serial")
+        fake_serial.serial_for_url = lambda *a, **k: Silent()
+        attached = []
+
+        def attach(radio):
+            attached.append(radio)
+            raise f4stub.F4Error("the stub does not answer on this port")
+        logs = []
+        tmp = tempfile.mkdtemp()
+        img = os.path.join(tmp, "x.bin")
+        with mock.patch.dict(sys.modules, {"serial": fake_serial}), \
+                mock.patch.object(stubtool, "time", Clock()), mock.patch.object(f4stub, "time", Clock()), \
+                mock.patch.object(f4stub.F4Radio, "attach", attach), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            rc = stubroute.run(cli.boards.get(stubroute.BOARDS[0]), b"\x00" * 1024, "/dev/x", log=logs.append,
+                               stubtool=stubtool)
+        self.assertEqual(rc, 1)
+        self.assertTrue(any("left running" in m for m in logs), logs)
+        self.assertEqual(len(attached), 1, logs)
+        self.assertTrue(any("no stub finished the write" in m for m in logs), logs)
+        os.rmdir(tmp)
 
 
 if __name__ == "__main__":

@@ -343,10 +343,11 @@ The bootloader lives in a part of the flash the installer never erases, so you c
 its bootloader and install again. If the radio stays dark after flashing, that's what to do. The web installer's help
 page walks through the update mode. See also [Troubleshooting](20-troubleshooting.md#installing).
 
-**Report a Problem** sits under every failure and on the Verify step. It sends what the installer decided and its last
-steps. You can add a message, an email address for a reply and the files it lists (the stock firmware file, a backup,
-the firmware read from the radio). A backup holds your channels, contacts and the radio's calibration: uncheck it to
-leave it out. Attached files and your email address are deleted within 90 days.
+**Report a Problem** sits under every failure, in the bar of buttons under every step and on the Verify step. Use it
+when the page seems stuck with no error, before reloading: a reload loses its log. It sends what the installer decided
+and its last steps. You can add a message, an email address for a reply and the files it lists (the stock firmware
+file, a backup, the firmware read from the radio). A backup holds your channels, contacts and the radio's calibration:
+uncheck it to leave it out. Attached files and your email address are deleted within 90 days.
 
 **A radio left in update mode:** a backup or install interrupted by a cable pull, or a page closed in the middle, can leave
 a radio in its loader (update mode), where the power switch may do nothing. Choose **Radio Stuck in Update Mode** on the

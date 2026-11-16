@@ -29,6 +29,20 @@ typedef struct {
 } flow_t;
 
 #define CALLER	"call:9991234,91,g wait:11000 "
+// 143 characters (UI_MSG_TEXT_MAX), the last word LAST
+#define LONG_TEXT	"Your_Special_Configuration_is:_Active_SMS:_LONG_SMS_Delay:_2.5_s_Retries:_3_Language:_English_" \
+	"Time_zone:_UTC_Units:_metric_Echo:_off_End_LAST"
+// A text the message screen shortens: Full message first, a page that scrolls to its end. For the displays that
+// shorten it (240x320 shows all 143 characters, and so no Full message)
+#define LONG_MESSAGE_FLOWS \
+	{ "7 long message offers Full message", "msg:9991234," LONG_TEXT " wait:9000 ok 2 ok", "", \
+	  "screen=message focus=Full_message", 0, false }, \
+	{ "7 Full message scrolls to the end", "msg:9991234," LONG_TEXT " wait:9000 ok 2 ok", \
+	  "ok down down down down down down down down down down", "screen=message-read shows=LAST", 11, false }, \
+	{ "7 Full message goes back to the replies", "msg:9991234," LONG_TEXT " wait:9000 ok 2 ok ok", "back", \
+	  "screen=message focus=Full_message", 1, false }, \
+	{ "7 PTT in Full message calls the sender", "msg:9991234," LONG_TEXT " wait:9000 ok 2 ok ok", "ptt", \
+	  "txid=9991234 txpriv=1", 1, false },
 #define TALK_BACK	"ok 7 3 down down down down down down down down down ok long:back quick 7 ctx 3 5 ok "	// on, and A 3 / B 5
 
 static const flow_t flows[] = {
@@ -69,6 +83,8 @@ static const flow_t flows[] = {
 #endif
 	{ "7 read message, banner up", "msg:9991234,Meet_at_the_north_lot", "ctx", "screen=message", 1, false },
 	{ "7 read message later", "msg:9991234,Meet_at_the_north_lot wait:9000", "ok 2 ok", "screen=message", 3, false },
+	{ "7 short message has no Full message", "msg:9991234,Meet_at_the_north_lot wait:9000 ok 2 ok", "",
+	  "focus=Reply hides=Full_message", 0, false },
 #if CONFIG_ZONE_SHARE
 	// An offer's banner has no timer: it waits for #, BACK or the offer's end (zone-share.md 5.2)
 	{ "zone offer banner still up a minute later", "zoneoffer:9991234", "wait:60000", "shows=Zone_from", 0, false },
@@ -846,6 +862,7 @@ static const flow_t flows[] = {
 
 // GD-77 key map on its 128x64 monochrome screen only (it has the Left / Right arrow keys)
 static const flow_t flows_mono[] = {
+	LONG_MESSAGE_FLOWS
 	{ "2 Right steps to the next zone on Home", "", "right", "zone=1 screen=home", 1, false },
 	{ "2 Left steps back a zone", "right", "left", "zone=0 screen=home", 1, false },
 	// The talk line on the smallest display (#336): an icon, not "PTT->" or "Reply->", so the label keeps its room
@@ -870,6 +887,7 @@ static const flow_t flows_mono[] = {
 
 // DM-1701 key map only: the top side key, long waits
 static const flow_t flows_k[] = {
+	LONG_MESSAGE_FLOWS
 	// Dual watch on the side keys: SK2 is A/B pressed, Dual watch held; P1 / P2 (zones) and the knob act on the
 	// selected channel
 	{ "11 dual watch: SK2 pressed is A/B", "quick 7 ctx 3 5 ok", "sk2", "dual=1 sel=B", 1, false },

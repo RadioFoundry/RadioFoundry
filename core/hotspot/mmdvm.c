@@ -85,6 +85,8 @@ static const mmdvm_ext_t *sfr_ext(void)
 #define EXT	ext
 #endif
 static uint32_t last_frame_ms;
+static bool trial;		// mmdvm_trial_begin: no modem until a second host-like frame
+static bool trial_heard;	// the trial's first host-like frame came (answered, modem not taken)
 static uint8_t state = MMDVM_MODE_IDLE;
 static uint8_t modes = MMDVM_MODE_BIT_DMR;
 static bool simplex = true;
@@ -152,6 +154,8 @@ void mmdvm_end(void)
 #endif
 	hotspot_stop();
 	last_frame_ms = 0;
+	trial = false;
+	trial_heard = false;
 	state = MMDVM_MODE_IDLE;
 	modes = MMDVM_MODE_BIT_DMR;
 	simplex = true;
@@ -159,6 +163,39 @@ void mmdvm_end(void)
 	tx_hz = 0;
 	if ((EXT != NULL) && (EXT->config_changed != NULL)) {
 		EXT->config_changed(simplex, rx_hz, tx_hz);	// a new session starts without the extension's mode
+	}
+}
+
+void mmdvm_trial_begin(void)
+{
+	trial = true;
+	trial_heard = false;
+}
+
+bool mmdvm_in_trial(void)
+{
+	return trial;
+}
+
+// A frame a host could send first, with the payload length its command takes (spec 2, 3.1)
+static bool host_like(uint8_t command, const uint8_t *p, uint8_t plen)
+{
+	switch (command) {
+	case MMDVM_GET_VERSION:
+	case MMDVM_GET_STATUS:
+		return plen == 0;
+	case MMDVM_SET_MODE:
+		return (plen == 1) && ((p[0] == MMDVM_MODE_IDLE) || (p[0] == MMDVM_MODE_DMR) || (p[0] == MMDVM_MODE_POCSAG));
+	case MMDVM_SET_FREQ:
+		return plen >= 9;
+	case MMDVM_SET_CONFIG:
+		return plen >= 7;
+#if CONFIG_HOTSPOT_SPLIT
+	case MMDVM_RFOUNDRY_SPLIT:
+		return plen >= 1;	// its subcommand
+#endif
+	default:
+		return false;
 	}
 }
 
@@ -373,22 +410,34 @@ static void dmr_data(uint8_t command, const uint8_t *p, uint8_t len, uint32_t no
 	}
 }
 
-void mmdvm_frame(const uint8_t *frame, uint16_t len, uint32_t now_ms)
+bool mmdvm_frame(const uint8_t *frame, uint16_t len, uint32_t now_ms)
 {
 	if ((len < 3) || (frame[0] != MMDVM_FRAME_START) || (frame[1] != len)) {
-		return;
+		return true;
 	}
 	uint8_t command = frame[2];
 	const uint8_t *p = frame + 3;
 	uint8_t plen = (uint8_t)(len - 3);
+	bool hold = false;		// answer, but don't take the modem yet
 
+	if (trial) {
+		if (!host_like(command, p, plen)) {
+			return false;	// noise that framed by chance: no reply, no modem
+		}
+		if (!trial_heard) {
+			trial_heard = true;
+			hold = true;	// a host waits for this reply (GET_VERSION) before its next command
+		} else {
+			trial = false;	// two in a row: a host
+		}
+	}
 	last_frame_ms = (now_ms != 0) ? now_ms : 1;
 #if CONFIG_HOTSPOT_SPLIT
 	if ((ext_prio != NULL) && (ext_prio->frame != NULL) && ext_prio->frame(command, p, plen, now_ms)) {
-		if (!hotspot_running()) {
+		if (!hold && !hotspot_running()) {
 			hotspot_start(now_ms);
 		}
-		return;		// command 0xD6, or a standard command a split role answers (split-duplex.md 3, 4)
+		return true;	// command 0xD6, or a standard command a split role answers (split-duplex.md 3, 4)
 	}
 #endif
 
@@ -462,14 +511,15 @@ void mmdvm_frame(const uint8_t *frame, uint16_t len, uint32_t now_ms)
 		break;
 	}
 
-	if (!hotspot_running()) {
+	if (!hold && !hotspot_running()) {
 		hotspot_start(now_ms);	// the first frame takes the modem; retried at most every HOTSPOT_ENTER_RETRY_MS
 	}
+	return true;
 }
 
 void mmdvm_poll(uint32_t now_ms)
 {
-	if ((last_frame_ms != 0) && !hotspot_running()) {
+	if ((last_frame_ms != 0) && !trial && !hotspot_running()) {
 		hotspot_start(now_ms);	// still refused: try again while the host is there (rate limited)
 	}
 	hotspot_poll(now_ms);

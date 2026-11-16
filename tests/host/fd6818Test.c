@@ -384,19 +384,39 @@ static void test_am(void)
 	CHECK(chip.protocol_errors == 0);
 }
 
-// The AM gain loop: full gain on noise, down at once on a strong signal, up one step at a time after the hold
+// The AM gain loop: a reading 1-9 dB over the target steps the gain down one entry, 10 dB or more cuts at once by the
+// excess less 8 dB, 6 dB or more under raises one entry per reading after the hold. A steady station settles just under
+// the target (hardware-dm32.md 8.7: over it the AM demodulator is overdriven)
+static int agc_settle(int full_gain_reading)	// the reading a steady station settles at; 2 counts per dB of gain cut
+{
+	fd6818_agc_t a;
+	fd6818_agc_reset(&a);
+	int r = 0;
+	for (int k = 0; k < 400; k++) {
+		r = full_gain_reading - 2 * fd6818_agc_atten_db(&a);
+		(void)fd6818_agc_step(&a, (uint16_t)(r < 0 ? 0 : r));
+	}
+	return r;
+}
+
 static void test_am_agc(void)
 {
 	fd6818_agc_t a;
 	fd6818_agc_reset(&a);
 	CHECK(fd6818_agc_word(&a) == 0x03FF && fd6818_agc_atten_db(&a) == 0);
-	// Noise and weak signals (under 142 + 20): nothing changes
-	for (int k = 0; k < 100; k++) {
+	// Boundary: 143 is 0.5 dB over, read as 0: nothing changes; full gain can't rise
+	for (int k = 0; k < 20; k++) {
+		CHECK(!fd6818_agc_step(&a, 143));
 		CHECK(!fd6818_agc_step(&a, 60));
-		CHECK(!fd6818_agc_step(&a, 160));
 	}
 	CHECK(fd6818_agc_word(&a) == 0x03FF);
-	// 0x67 = 222: 40 dB over the target, the gain goes down by 32 dB: -32 dB is 0x0BF
+	// 144 is 1 dB over: one entry down per reading (-2 dB, then -4 dB)
+	fd6818_agc_reset(&a);
+	CHECK(fd6818_agc_step(&a, 144));
+	CHECK(fd6818_agc_word(&a) == 0x3DF && fd6818_agc_atten_db(&a) == 2);
+	CHECK(fd6818_agc_step(&a, 144));
+	CHECK(fd6818_agc_word(&a) == 0x3BF && fd6818_agc_atten_db(&a) == 4);
+	// 0x67 = 222: 40 dB over the target, the gain goes down at once by 32 dB: -32 dB is 0x0BF
 	fd6818_agc_reset(&a);
 	CHECK(fd6818_agc_step(&a, 222));
 	CHECK(fd6818_agc_word(&a) == 0x0BF && fd6818_agc_atten_db(&a) == 32);
@@ -407,10 +427,10 @@ static void test_am_agc(void)
 	for (int k = 0; k < 50; k++) {
 		CHECK(!fd6818_agc_step(&a, 142));
 	}
-	// The signal goes: 0x67 = 100 is 21 dB under. The gain waits out the hold (30 readings), then rises one step each
-	// hold and a reading
+	// The signal goes: 0x67 = 100 is 21 dB under. The hold runs out after 30 readings (the first one counts it down),
+	// then the gain rises one entry per reading to full gain
 	int steps = 0, first = -1;
-	for (int k = 0; k < 200; k++) {
+	for (int k = 0; k < 60; k++) {
 		if (fd6818_agc_step(&a, 100)) {
 			steps++;
 			if (first < 0) {
@@ -418,8 +438,13 @@ static void test_am_agc(void)
 			}
 		}
 	}
-	CHECK(first == 30);
-	CHECK(steps == 6 && fd6818_agc_atten_db(&a) == 30);
+	CHECK(first == 29);
+	CHECK(steps == 20 && fd6818_agc_atten_db(&a) == 0);
+	// Steady stations settle just under the target (129-143), not over it, from just over to 58 dB over at full gain
+	for (int full = 146; full <= 258; full += 7) {
+		int r = agc_settle(full);
+		CHECK(r >= 129 && r <= 143);
+	}
 	// The top of the table: never above full gain, never below the lowest entry
 	fd6818_agc_reset(&a);
 	for (int k = 0; k < 5; k++) {
