@@ -133,7 +133,8 @@ below are for an STM32F4 radio.
 | `CONFIG_SNMP` | = DMR_IP_GATEWAY | the SNMPv2c agent on UDP 161 over the USB network and over the air, the RadioFoundry MIB, notifications to the host and an RF manager (`core/snmp`, `docs/spec/snmp.md`). Management over the air read-only and RF notifications off by default. About 3.2 KB RAM |
 | `CONFIG_P25` | n | P25 Phase 1 conventional voice (`docs/spec/p25.md`), the one switch for all of it: the air interface (symbols with time stamps between a board's modem hardware and the core, the framer, the soft modem, the shared FEC; `docs/spec/air-interface.md`), the engine and the P25 channel mode in the radio core, which runs it in memory the DMR vocoder lends where the platform has it, the full-rate voice decoder and encoder in integers on the MBE core (`core/mbe`), and the codec of P25 channels in the codeplug (`core/p25/p25_codeplug.c`, `docs/spec/p25-codeplug.md`). Needs a board with `board_t.air` to run |
 | `CONFIG_P25_TRUNK` | n | P25 trunked: the codec of its systems and channels (`docs/spec/p25-codeplug.md` 3), and receive only: the control channel's signaling decoded, its control channel hunted and held, voice channel grants for the chosen talk groups followed (`docs/spec/p25-trunking.md`). The radio core runs it on a trunked channel, receive only (PTT refused). Host tested, not yet run on a radio. Needs P25 |
-| `CONFIG_AIR_RAW` | n | diagnostics: debug link commands that open an air interface session and move raw symbols and tap samples, for bench tests (`docs/spec/debuglink.md`). Needs P25 (an air-framed mode) and DEBUGLINK |
+| `CONFIG_NXDN` | n | NXDN conventional voice at 4800 and 9600 bit/s (`docs/spec/nxdn.md`): the frame codec, receive, the call layer and its engine, and the air interface under them. Voice frames go to and from the vocoder the board hosts for DMR. Host tested only: no radio core runs it yet, so a firmware build links none of the NXDN code; with P25 off it brings in the air interface parts a board builds with it |
+| `CONFIG_AIR_RAW` | n | diagnostics: debug link commands that open an air interface session and move raw symbols and tap samples, for bench tests (`docs/spec/debuglink.md`). Needs P25 or NXDN (an air-framed mode) and DEBUGLINK |
 | `CONFIG_SFR` | = DMR (n where the modem can't) | single frequency repeater: MMDVM SFR (the hotspot, duplex with RX = TX) and Standalone SFR (the repeater and user roles of a channel, `docs/spec/sfr.md`) |
 | `CONFIG_SFR_CWID` | = SFR | the standalone SFR repeater's periodic CW ID: the callsign from the radio name in Morse, in FM on the channel (`sfr.md` 4). Off: the setting isn't offered |
 | `CONFIG_SFR_DUALPATH_RX` | = SFR | the SFR user receive mode "Dual-path RX": a voice frame whose FEC failed is taken from the other copy of the call. Off: the mode isn't offered |
@@ -186,8 +187,8 @@ below are for an STM32F4 radio.
 
 Derived (not set by hand): `CONFIG_DMR_DATA_CORE`, the shared packet data / CSBK code, on when any data feature is;
 `CONFIG_DMR_AIR_QUEUE`, the data service's TX queue (`docs/spec/dmr-data.md` 12.6), on with `CONFIG_DMR_IP_GATEWAY` or
-`CONFIG_ZONE_SHARE`. `CONFIG_AIR`, `CONFIG_IMBE` and `CONFIG_MBE` (the air interface, the full-rate voice decoder, the MBE
-core) follow `CONFIG_P25`; a command line or a board's `config.mk` that sets one stops the build. `CONFIG_ZONE_SHARE_MODES`: zone sharing carries channels of a kind and their systems
+`CONFIG_ZONE_SHARE`. `CONFIG_AIR` (the air interface) is on with `CONFIG_P25` or `CONFIG_NXDN`; `CONFIG_IMBE` and `CONFIG_MBE`
+(the full-rate voice decoder, the MBE core) follow `CONFIG_P25`; a command line or a board's `config.mk` that sets one stops the build. `CONFIG_ZONE_SHARE_MODES`: zone sharing carries channels of a kind and their systems
 (`docs/spec/zone-share.md` 4.2), on with `CONFIG_ZONE_SHARE` and `CONFIG_P25`. `CONFIG_LANG_ANY` (`core/config.h`): on when any `CONFIG_LANG_*` is, the translation lookup and the
 fonts' Latin-1 glyphs.
 

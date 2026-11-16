@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 
 // Host test for the P25 FEC library in core/fec: GF(64), RS(63,k) shortened codes, Golay,
-// Hamming, BCH(63,16,23) and the data trellis. The reference matrices below are the numeric
+// Hamming, BCH(63,16,23), the data trellis and the K=5 convolutional code with its Viterbi decoder. The reference matrices below are the numeric
 // code definitions of TIA-102.BAAA-A (clauses 5.7-5.9, 7, 8.5); the codecs are checked
 // against them and against brute-force or exhaustive references.
 
@@ -17,6 +17,7 @@
 #include "fec/hamming.h"
 #include "fec/bch63.h"
 #include "fec/trellis.h"
+#include "fec/conv.h"
 
 static int g_checks;
 static int g_fail;
@@ -928,6 +929,128 @@ static void test_trellis(void)
 	}
 }
 
+// ── K=5 rate 1/2 convolutional code (conv.h), with NXDN's polynomials (TS 1-A 4.5.1: G1 = 1 + D3 + D4,
+// G2 = 1 + D + D2 + D4) ──
+static uint32_t conv_rng = 12345;
+static uint32_t conv_rand(void)
+{
+	conv_rng ^= conv_rng << 13;
+	conv_rng ^= conv_rng >> 17;
+	conv_rng ^= conv_rng << 5;
+	return conv_rng;
+}
+
+static uint8_t cbit(const uint8_t *p, unsigned i) { return (uint8_t)((p[i >> 3] >> (7 - (i & 7))) & 1); }
+
+static void test_conv(void)
+{
+	static const fec_conv_code_t code = { 0x19, 0x17 };
+	uint8_t in[32], enc[64], out[32];
+	int8_t soft[512];
+	uint16_t dec[256];
+	unsigned bad_hard = 0, bad_soft = 0, bits = 0;
+
+	// The encoder against the polynomials written out, and a clean decode, blocks with four tail bits
+	for (unsigned rep = 0; rep < 200; rep++) {
+		unsigned n = 36 + rep % 61;		// 36 (SACCH) .. 96 (FACCH1) input bits
+		uint8_t u[256] = { 0 };
+
+		memset(in, 0, sizeof in);
+		for (unsigned i = 0; i + 4 < n; i++) {
+			u[i + 4] = (uint8_t)(conv_rand() & 1);
+			in[i >> 3] |= (uint8_t)(u[i + 4] << (7 - (i & 7)));
+		}
+		fec_conv_encode(&code, in, (uint16_t)n, enc);
+		for (unsigned i = 0; i < n; i++) {
+			// u[i + 4] is input bit i; u[i + 4 - k] is D^k
+			uint8_t g1 = u[i + 4] ^ u[i + 1] ^ u[i], g2 = u[i + 4] ^ u[i + 3] ^ u[i + 2] ^ u[i];
+
+			CHECK(cbit(enc, 2 * i) == g1);
+			CHECK(cbit(enc, 2 * i + 1) == g2);
+		}
+		fec_conv_soft_from_bits(enc, (uint16_t)(2 * n), soft);
+		memset(out, 0, sizeof out);
+		CHECK(fec_conv_decode(&code, soft, (uint16_t)n, dec, out) == 0);
+		CHECK(memcmp(out, in, (n + 7) / 8 - 1) == 0);
+		// Three hard errors anywhere: corrected (the code's free distance is 7)
+		for (unsigned k = 0; k < 3; k++) {
+			unsigned at = conv_rand() % (2 * n);
+
+			if (soft[at] == (int8_t)(cbit(enc, at) ? 1 : -1))
+				soft[at] = (int8_t)-soft[at];
+			else
+				k--;
+		}
+		memset(out, 0, sizeof out);
+		CHECK(fec_conv_decode(&code, soft, (uint16_t)n, dec, out) == 3);
+		for (unsigned i = 0; i < n; i++)
+			CHECK(cbit(out, i) == cbit(in, i));
+	}
+	// Erasures (soft 0, as a puncture leaves): a third of the G2 bits gone and one error, still corrected
+	for (unsigned rep = 0; rep < 200; rep++) {
+		unsigned n = 40;
+
+		for (unsigned i = 0; i < 5; i++)
+			in[i] = (uint8_t)conv_rand();
+		in[4] &= 0xF0;
+		fec_conv_encode(&code, in, (uint16_t)n, enc);
+		for (unsigned i = 0; i < 2 * n; i++)
+			soft[i] = (int8_t)(cbit(enc, i) ? 40 : -40);
+		for (unsigned i = 0; i < n; i += 3)
+			soft[2 * i + 1] = 0;
+		soft[conv_rand() % (2 * n) & ~1u] *= -1;
+		memset(out, 0, sizeof out);
+		CHECK(fec_conv_decode(&code, soft, (uint16_t)n, dec, out) == 1);
+		CHECK(memcmp(out, in, 5) == 0);
+	}
+	// Long blocks at full scale: the metrics renormalize and stay right
+	for (unsigned rep = 0; rep < 4; rep++) {
+		unsigned n = 256;
+
+		for (unsigned i = 0; i < 32; i++)
+			in[i] = (uint8_t)conv_rand();
+		in[31] &= 0xF0;	// (the tail: bits 252-255)
+		fec_conv_encode(&code, in, (uint16_t)n, enc);
+		for (unsigned i = 0; i < 2 * n; i++)
+			soft[i] = (int8_t)(cbit(enc, i) ? 127 : -127);
+		soft[100] = (int8_t)-soft[100];
+		soft[401] = (int8_t)-soft[401];
+		memset(out, 0, sizeof out);
+		CHECK(fec_conv_decode(&code, soft, (uint16_t)n, dec, out) == 2);
+		CHECK(memcmp(out, in, 32) == 0);
+	}
+	// Soft decisions beat hard ones on Gaussian noise (Eb/N0 about 3 dB: sigma 0.7 of the level, +-64 soft)
+	for (unsigned rep = 0; rep < 300; rep++) {
+		unsigned n = 96;
+		int8_t hard[192];
+		uint8_t o2[12];
+
+		for (unsigned i = 0; i < 12; i++)
+			in[i] = (uint8_t)conv_rand();
+		in[11] &= 0xF0;
+		fec_conv_encode(&code, in, (uint16_t)n, enc);
+		for (unsigned i = 0; i < 2 * n; i++) {
+			int v = 0;
+
+			for (unsigned k = 0; k < 12; k++)
+				v += (int)(conv_rand() & 0xFF);
+			v = (v - 1530) * 448 / 2560;	// about N(0, 0.7 x 64): 12 uniforms of SD 74
+			v += cbit(enc, i) ? 64 : -64;
+			soft[i] = (int8_t)(v > 127 ? 127 : v < -127 ? -127 : v);
+			hard[i] = (int8_t)(soft[i] > 0 ? 1 : -1);
+		}
+		fec_conv_decode(&code, soft, (uint16_t)n, dec, out);
+		fec_conv_decode(&code, hard, (uint16_t)n, dec, o2);
+		for (unsigned i = 0; i < n - 4; i++) {
+			bad_soft += cbit(out, i) != cbit(in, i);
+			bad_hard += cbit(o2, i) != cbit(in, i);
+			bits++;
+		}
+	}
+	printf("  conv K=5: noise sigma 0.7, bit errors soft %u, hard %u of %u\n", bad_soft, bad_hard, bits);
+	CHECK(bad_soft * 2 < bad_hard);
+}
+
 int main(void)
 {
 	test_gf();
@@ -936,6 +1059,7 @@ int main(void)
 	test_hamming();
 	test_bch();
 	test_trellis();
+	test_conv();
 	printf("fecTest: %d checks, %d failed\n", g_checks, g_fail);
 	return g_fail ? 1 : 0;
 }

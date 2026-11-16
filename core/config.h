@@ -292,8 +292,12 @@
 #ifndef CONFIG_P25
 #define CONFIG_P25			0
 #endif
+// NXDN conventional voice (core/nxdn, docs/spec/nxdn.md). AIR is on with any air-framed mode
+#ifndef CONFIG_NXDN
+#define CONFIG_NXDN			0
+#endif
 #ifndef CONFIG_AIR
-#define CONFIG_AIR			CONFIG_P25
+#define CONFIG_AIR			(CONFIG_P25 || CONFIG_NXDN)
 #endif
 // P25 trunked: the codec of its systems and channels (docs/spec/p25-codeplug.md 3) and, receive only, the control
 // channel decoded and voice channel grants followed (core/p25/p25_follow.c)
@@ -416,7 +420,7 @@
 #error "CONFIG_NET_PPP needs CONFIG_HOSTLINK and CONFIG_DMR_IP_GATEWAY"
 #endif
 #if CONFIG_AIR_RAW && !CONFIG_AIR
-#error "CONFIG_AIR_RAW needs CONFIG_P25 (an air-framed mode)"
+#error "CONFIG_AIR_RAW needs CONFIG_P25 or CONFIG_NXDN (an air-framed mode)"
 #endif
 #if CONFIG_AIR_RAW && !CONFIG_DEBUGLINK
 #error "CONFIG_AIR_RAW needs CONFIG_DEBUGLINK"

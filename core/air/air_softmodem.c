@@ -71,6 +71,12 @@ static uint32_t gcd32(uint32_t a, uint32_t b)
 	return a;
 }
 
+// The longest run between two syncs the profile sends, any length (0: none recurs)
+static uint16_t sync_spacing(const air_profile_t *p)
+{
+	return p->sync_any_syms ? p->sync_any_syms : p->sync_every_syms;
+}
+
 static bool rate_ok(const air_profile_t *p, uint32_t rate_hz, uint16_t *step, uint16_t *den)
 {
 	uint32_t out = (uint32_t)p->sym_rate * SPS, g;
@@ -257,7 +263,7 @@ static void emit(air_softmodem_t *m, uint32_t t_us)
 		m->flags = m->gap ? AIR_CHUNK_GAP : 0;
 		// Past the profile's sync spacing with none seen (or none ever): the timing is the last one's, or none.
 		// (since_sync starts when a sync is found, two sync lengths before its symbols are all out)
-		if (m->since_sync > (uint32_t)m->p->sync_every_syms + 2 * AIR_SYNC_SYMS_MAX)
+		if (m->since_sync > (uint32_t)sync_spacing(m->p) + 2 * AIR_SYNC_SYMS_MAX)
 			m->flags |= AIR_CHUNK_FREE_RUN;
 		m->gap = false;
 		m->sync_at = -1;
@@ -468,7 +474,7 @@ static void filtered(air_softmodem_t *m, int32_t v, uint32_t t_us)
 		m->due = (uint8_t)(m->due - SPS);
 	}
 	// A lock ends when the syncs stop coming: the averages follow the input again
-	if (m->locked && m->since_sync > (m->p->sync_every_syms ? 2u * m->p->sync_every_syms : 4800u) + 2 * AIR_SYNC_SYMS_MAX)
+	if (m->locked && m->since_sync > (sync_spacing(m->p) ? 2u * sync_spacing(m->p) : 4800u) + 2 * AIR_SYNC_SYMS_MAX)
 		m->locked = false;
 }
 

@@ -50,6 +50,9 @@ typedef struct {
 	// START_ONLY ones, or shorter syncs). A provider that receives only while it sees such patterns compares this
 	// with what it can coast
 	uint16_t sync_every_syms;
+	// The longest run of symbols between two syncs of any length inside a transmission (a mode whose recurring
+	// sync is shorter than 24 symbols); 0 = sync_every_syms. The soft modem holds its timing this long
+	uint16_t sync_any_syms;
 	uint8_t idle;			// four dibits a provider sends when a continuous transmission runs dry
 	uint8_t nsyncs;
 	air_sync_t sync[AIR_SYNCS_MAX];
@@ -71,7 +74,7 @@ enum {
 
 // air_chunk_t.flags
 #define AIR_CHUNK_GAP		0x01	// symbols were lost between the chunk before and this one
-#define AIR_CHUNK_FREE_RUN	0x02	// more than sync_every_syms symbols since the provider saw a sync: its timing coasts
+#define AIR_CHUNK_FREE_RUN	0x02	// longer than the profile's sync spacing since the provider saw a sync: its timing coasts
 #define AIR_CHUNK_SLOT		0x04	// TDMA: symbol 0 opens a slot
 #define AIR_CHUNK_NO_SIGNAL	0x08	// the provider knows nothing is on air (squelched): symbols are noise
 
