@@ -272,6 +272,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `VOLUME_BAR` | ● | ● | ● | ● | ● | ● | ● |
 | `AIR` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `P25` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
+| `P25_TRUNK` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `IMBE` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `MBE` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `AIR_RAW` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |

@@ -277,6 +277,9 @@ CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFI
 CONFIG_AIR ?= n
 # P25 Phase 1 conventional (core/p25, docs/spec/p25.md; needs AIR)
 CONFIG_P25 ?= $(CONFIG_AIR)
+# P25 trunked, receive only: a control channel decoded, voice channel grants followed (core/p25/p25_follow.c,
+# docs/spec/p25-trunking.md; needs P25)
+CONFIG_P25_TRUNK ?= n
 # the full-rate voice decoder (P25 Phase 1 voice) on the shared MBE synthesis core (core/mbe): about 7.7 KB of flash,
 # 0.9 KB of RAM kept and 2.5 KB of scratch, both placed by the caller. MBE alone is the core for another front end
 CONFIG_IMBE ?= $(CONFIG_P25)
@@ -291,7 +294,7 @@ CONFIG_GPS_SKY ?= $(CONFIG_GPS)
 
 FEATURES := USB_SERIAL_REQUEST FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB IDDB_COMPACT DMR_CONTROL_STATION SNMP SFR SFR_DUALPATH_RX SFR_CWID TASK_STACKS \
 	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW CPS_FAST VFO VFO_FM VFO_DMR DIAG FONT_XL FONT_AA FONT_BIG LANG_ES LANG_IT LANG_ZH LANG_DEFAULT_ES LANG_DEFAULT_IT LANG_DEFAULT_ZH UI_COLOR UI_SETTINGS SCAN DUAL_WATCH BEEP FM_TX_TONES DTMF \
-	RX_EXT VOX REF_TRIM BATTERY_SAVE VIBRATE GPS AUDIO_PROBE STUB_ENTRY NAND_STORAGE CRASH_LOG CRASH_SCREEN CRASH_REPORT WATCHDOG FAULT_TRACE AM_RX BCAST_FM APRS APRS_AFSK APRS_DMR APRS_RX APRS_IGATE GPS_SKY KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT ZONE_EDIT CONTACT_EDIT VOLUME_BAR AIR P25 IMBE MBE AIR_RAW
+	RX_EXT VOX REF_TRIM BATTERY_SAVE VIBRATE GPS AUDIO_PROBE STUB_ENTRY NAND_STORAGE CRASH_LOG CRASH_SCREEN CRASH_REPORT WATCHDOG FAULT_TRACE AM_RX BCAST_FM APRS APRS_AFSK APRS_DMR APRS_RX APRS_IGATE GPS_SKY KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT ZONE_EDIT CONTACT_EDIT VOLUME_BAR AIR P25 P25_TRUNK IMBE MBE AIR_RAW
 
 # The panel's width in pixels: the display class the board's board.toml names (hardware.gallery = "160x128", the width
 # first). Empty when it names none, which counts as a narrow panel
@@ -350,6 +353,7 @@ ifneq ($(call feature_on,HOTSPOT_SPLIT),)
     $(error CONFIG_HOTSPOT_SPLIT=y needs CONFIG_HOTSPOT=y)
   endif
 endif
+$(if $(and $(call feature_on,P25_TRUNK),$(if $(call feature_on,P25),,x)),$(error CONFIG_P25_TRUNK=y needs CONFIG_P25=y))
 $(foreach f,P25 AIR_RAW,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,AIR),,x)),$(error CONFIG_$(f)=y needs CONFIG_AIR=y)))
 $(if $(and $(call feature_on,AIR_RAW),$(if $(call feature_on,DEBUGLINK),,x)),$(error CONFIG_AIR_RAW=y needs CONFIG_DEBUGLINK=y))
 $(if $(and $(call feature_on,IMBE),$(if $(call feature_on,MBE),,x)),$(error CONFIG_IMBE=y needs CONFIG_MBE=y))

@@ -294,6 +294,10 @@
 #ifndef CONFIG_P25
 #define CONFIG_P25			CONFIG_AIR
 #endif
+// P25 trunked, receive only: the control channel decoded and voice channel grants followed (core/p25/p25_follow.c)
+#ifndef CONFIG_P25_TRUNK
+#define CONFIG_P25_TRUNK		0
+#endif
 #ifndef CONFIG_AIR_RAW
 #define CONFIG_AIR_RAW			0
 #endif
@@ -407,6 +411,9 @@
 #endif
 #if (CONFIG_P25 || CONFIG_AIR_RAW) && !CONFIG_AIR
 #error "CONFIG_P25 and CONFIG_AIR_RAW need CONFIG_AIR"
+#endif
+#if CONFIG_P25_TRUNK && !CONFIG_P25
+#error "CONFIG_P25_TRUNK needs CONFIG_P25"
 #endif
 #if CONFIG_IMBE && !CONFIG_MBE
 #error "CONFIG_IMBE needs CONFIG_MBE"
