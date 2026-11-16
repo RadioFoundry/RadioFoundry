@@ -87,6 +87,11 @@ switch = "P25_TRUNK"
 spec = "docs/spec/p25-trunking.md"
 source = ["core/p25/p25_follow.c", "core/p25/p25_tsbk.c", "core/radio/radio_p25.c"]
 
+[feature.nxdn]
+switch = "NXDN"
+spec = "docs/spec/nxdn.md"
+source = ["core/nxdn", "core/air", "core/fec"]
+
 [feature.dmr_voice]
 switch = "DMR"
 spec = "docs/spec/dmr-voice.md"

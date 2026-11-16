@@ -800,6 +800,10 @@ function render() {
 	// the shared steps, then the ones the radio's backend draws; a bundle's own backend restores it
 	const step = steps[S.step];
 	diag.note(`step ${S.task || "start"}/${step}`);
+	// what a step found ("problem" from a verify) speaks for that step only: Back from it, then a report, isn't about it
+	const here = `${S.task}/${S.step}`;
+	if (S.reportStep !== here) S.reportResult = null;
+	S.reportStep = here;
 	// a step this browser can't run (no WebUSB or Web Serial): the manual install kit in its place
 	const missing = S.radio && !S.sim && missingApi(S.radio, S.task, step, { usb: usbSupported(), serial: serialSupported(), stub: stubRoute() });
 	const view = (missing && (() => kitView(missing))) || (step === "restore" && bundleBackend(S.bundle)?.views.restore) || (S.radio && backend().views[step])
@@ -808,7 +812,10 @@ function render() {
 	app.append(h("div", { class: "nav-bar" },
 		h("div", { class: "nav-back" },
 			S.step > 0 ? button("← " + t("flash.back"), () => { S.step--; render(); }) : null,
-			h("button", { class: "btn btn-quiet", type: "button", onclick: () => reset() }, t("flash.start_over"))),
+			h("button", { class: "btn btn-quiet", type: "button", onclick: () => reset() }, t("flash.start_over")),
+			// on every step: a page stuck waiting on the radio shows no error, so no error's report button either
+			// (#446). The done step has its own; the stylesheet hides this one while the step shows another
+			step === "done" ? null : h("span", { class: "nav-report" }, reportButton())),
 		info, fwd));
 }
 
@@ -2949,7 +2956,8 @@ function reportMeta() {
 	return {
 		tool: "web", tool_version: S.data?.site?.version || S.data?.site?.git || "", board: S.board?.id || S.radio?.id || "", task: S.task || "",
 		step: String(stepsFor()?.[S.step] ?? S.step ?? ""), flash_id: S.lastFlashId || undefined, adapter: S.adapter || undefined,
-		result: S.reportResult || "failed", error: last ? `${last.stage}: ${last.message}` : undefined,
+		// no step's verdict and no error: the user reports on their own, e.g. a page that stopped answering
+		result: S.reportResult || (last ? "failed" : "problem"), error: last ? `${last.stage}: ${last.message}` : undefined,
 		decisions: { codec_mode: S.decision?.mode || "", codec_source: S.decision ? S.decision.source || "stock" : "", key_source: S.keySource || "",
 			plan: (S.planText || "").slice(0, 300), files },
 	};
