@@ -239,8 +239,9 @@ sound** (the permit beep at the start, the call end beep at the end and when idl
 - The tone is sent as a tone frame of the voice codec. A steady tone passes well; fast sequences may sound rough, and
   other makes of radio may play them differently. Try it with a second radio before you rely on it.
 - An end tone on air counts in the transmit time-out.
-- On a radio that cannot beep while it transmits, the DMR start tone on the speaker plays just before the radio keys,
-  and there is no FM start tone on the speaker.
+- On a radio that cannot beep while it transmits, the DMR start tone on the speaker plays just before the radio keys.
+  The FM start tone on the speaker comes from the radio's own tone sidetone where it has one: you hear the tone that
+  goes on air, as it goes. Without that, such a radio has no FM start tone on the speaker.
 - Output Default always plays the radio's own tone, whatever the chain says: pick Speaker, On air or both to use it.
 
 ## Factory reset
