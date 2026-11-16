@@ -1003,12 +1003,34 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 #if CONFIG_P25_TRUNK
 	} else if (v->ch.mode == RADIO_MODE_P25 && v->ch.kind == CODEPLUG_KIND_P25_TRUNK &&
 		   v->p25.trunk != RADIO_P25_TRUNK_OFF) {
-		// A trunked channel is receive only: what the follower does instead of what PTT calls
+		// What the follower does, and with the transmit side on, how far it is from talking: registering, the
+		// talk group once PTT can ask for it, a request's state
+		bool txs = (v->p25.flags & RADIO_P25_TRUNK_TX) != 0;
 		if (v->p25.trunk == RADIO_P25_TRUNK_HUNT) {
 			sb_str(&b, TR(HOME_STATE_P25T_HUNT, "Finding system"));
 			c = ui_col.dim;
+		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treq == P25_REQ_WAIT) {
+			sb_str(&b, TR(HOME_STATE_P25T_WAIT, "Wait"));
+		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treq == P25_REQ_QUEUED) {
+			sb_str(&b, TR(HOME_STATE_P25T_QUEUED, "Queued"));
+		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treq == P25_REQ_DENIED) {
+			sb_str(&b, TR(HOME_STATE_P25T_DENIED, "Denied"));
+			c = ui_col.warn;
+		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treg == P25_REG_DENIED) {
+			sb_str(&b, TR(HOME_STATE_P25T_REG_DENIED, "Reg. denied"));
+			c = ui_col.warn;
+		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treg != P25_REG_READY &&
+			   v->p25.treg != P25_REG_OFF && v->p25.treg != P25_REG_NO_TX) {
+			sb_str(&b, TR(HOME_STATE_P25T_REG, "Registering"));
+			c = ui_col.dim;
+		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treg != P25_REG_NO_TX) {
+			sb_str(&b, "TG ");
+			sb_u32(&b, v->p25.talk, 1);
 		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL) {
 			sb_str(&b, TR(HOME_STATE_P25T_CONTROL, "Control channel"));
+		} else if (v->p25.treq == P25_REQ_TALK) {
+			sb_str(&b, "TG ");
+			sb_u32(&b, v->p25.talk, 1);
 		} else {
 			sb_str(&b, TR(HOME_STATE_P25T_FOLLOW, "Following"));
 			sb_str(&b, (v->p25.flags & RADIO_P25_UNIT) != 0 ? " ID " : " TG ");
@@ -1196,6 +1218,18 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 	case TXDENY_HWOPT: hwopt_needed(&b); break;
 	case TXDENY_REFUSED: sb_str(&b, TR(DENY_WHY_RADIO_REFUSED, "Radio refused to send")); break;
 	case TXDENY_BENCH: sb_str(&b, TR(DENY_WHY_AIR_BENCH, "Air bench: PTT off")); break;
+#if CONFIG_P25_TRUNK
+	case TXDENY_TRUNK:
+		switch (v->p25.twhy) {
+		case RADIO_P25T_WHY_NO_CC: sb_str(&b, TR(DENY_WHY_P25T_NO_CC, "No control channel")); break;
+		case RADIO_P25T_WHY_NOT_REG: sb_str(&b, TR(DENY_WHY_P25T_NOT_REG, "Not registered yet")); break;
+		case RADIO_P25T_WHY_DENIED: sb_str(&b, TR(DENY_WHY_P25T_DENIED, "System denied the call")); break;
+		case RADIO_P25T_WHY_NO_ANSWER: sb_str(&b, TR(DENY_WHY_P25T_NO_ANSWER, "No answer from system")); break;
+		case RADIO_P25T_WHY_NO_CHAN: sb_str(&b, TR(DENY_WHY_P25T_NO_CHAN, "Voice channel unusable")); break;
+		default: sb_str(&b, TR(DENY_WHY_RX_ONLY, "This channel is RX only")); break;
+		}
+		break;
+#endif
 	default: sb_str(&b, TR(DENY_WHY_NOT_ALLOWED, "Not allowed here")); break;
 	}
 	return buf;
@@ -1221,6 +1255,7 @@ static const char *deny_action(const radio_view_t *v)
 	case TXDENY_HWOPT: return hwopt_action();
 	case TXDENY_REFUSED: return TR(DENY_FIX_RELEASE_AND_RETRY, "Release PTT, try again");
 	case TXDENY_BENCH: return TR(DENY_FIX_END_BENCH_ON_PC, "End the bench on the PC");
+	case TXDENY_TRUNK: return TR(DENY_FIX_RELEASE_AND_RETRY, "Release PTT, try again");
 	default: return TR(DENY_FIX_PICK_ANOTHER_CHANNEL, "Pick another channel");
 	}
 }
