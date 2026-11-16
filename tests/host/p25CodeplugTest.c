@@ -147,7 +147,7 @@ static channel_t make(const char *name, uint32_t rx, uint32_t tx)
 static void test_conv_load(void)
 {
 	fresh();
-	CHECK(codeplug_set_dmr_id(3101276));
+	CHECK(codeplug_set_dmr_id(1234567));
 	channel_t c = make("P25 Ops", 453100000, 458100000);
 	CHECK(codeplug_set_channel(10, &c));
 	p25_conv_t pc = { 0x34, 0x293, P25_SQUELCH_SELECTIVE };
@@ -162,7 +162,7 @@ static void test_conv_load(void)
 	p25_conv_cfg_t cfg;
 	CHECK(p25_conv_load(10, &c, &cfg));
 	CHECK(cfg.conv.rx_nac == 0x34 && cfg.conv.tx_nac == 0x293 && cfg.conv.squelch == P25_SQUELCH_SELECTIVE);
-	CHECK(cfg.unit_id == 3101276 && cfg.target == P25_CP_TG_DEFAULT && !cfg.target_unit && !cfg.talkaround);
+	CHECK(cfg.unit_id == 1234567 && cfg.target == P25_CP_TG_DEFAULT && !cfg.target_unit && !cfg.talkaround);
 	// The radio-wide unit ID, then the channel's own
 	uint8_t u[4] = { 0x40, 0xE2, 0x01, 0x00 };	// 123456
 	CHECK(codeplug_kv_set((uint16_t)(CODEPLUG_KEY_MODE_SET + CODEPLUG_KIND_P25), u, 4));
@@ -206,7 +206,7 @@ static void put_ctl(uint8_t n, uint8_t site, uint32_t rx)
 static void test_trunk_load(void)
 {
 	fresh();
-	CHECK(codeplug_set_dmr_id(3101276));
+	CHECK(codeplug_set_dmr_id(1234567));
 	// System 2: listen only (flag bit 1 clear), its own unit ID, a fallback
 	uint8_t hd[CODEPLUG_SYS_HDR];
 	memset(hd, 0, sizeof hd);
@@ -282,7 +282,7 @@ static void test_trunk_load(void)
 	hd[4] = hd[5] = 0;
 	put(CODEPLUG_KEY_SYSTEM + 2, hd, sizeof hd, blk, 0);
 	CHECK(p25_trunk_load(21, &c, &cfg) && cfg.sys.wacn == 0 && cfg.sys.cc_nac == P25_NAC_ANY && !cfg.listen_only);
-	CHECK(cfg.unit_id == 3101276);
+	CHECK(cfg.unit_id == 1234567);
 	// No system: no set-up
 	CHECK(codeplug_kv_remove(CODEPLUG_KEY_SYSTEM + 2));
 	CHECK(!p25_trunk_load(21, &c, &cfg));
