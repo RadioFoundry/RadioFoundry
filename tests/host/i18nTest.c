@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "ui/i18n.h"
+#include "ui/fmt.h"
 #include "ui/font.h"
 
 static int fails;
@@ -85,8 +86,20 @@ int main(void)
 		CHECK(tr_en(id) != NULL && tr_en(id)[0] != 0);
 		CHECK(tr(id) != NULL && tr(id)[0] != 0);
 	}
+	// A format: the translation's text around the values, the English when there is none
+	char line[48];
+	sbuf_t sb;
+	sb_init(&sb, line, sizeof line);
+	TRF(&sb, MSG_BANNER_FROM, "Message from %1$s", "Bob");
+	CHECK(strcmp(line, "Mensaje de Bob") == 0);
+	sb_init(&sb, line, sizeof line);
+	TRF(&sb, ZONE_TOAST_POSITION, "Position %1$u of %2$u", 2u, 9u);
+	CHECK(strcmp(line, "Posici\xF3n 2 de 9") == 0);
 	CHECK(lang_set(LANG_ENGLISH) && strcmp(TR(TITLE_SETTINGS, "Settings"), "Settings") == 0);
 	CHECK(tr(settings) == tr_en(settings));
+	sb_init(&sb, line, sizeof line);
+	TRF(&sb, MSG_BANNER_FROM, "Message from %1$s", "Bob");
+	CHECK(strcmp(line, "Message from Bob") == 0);
 #else
 	CHECK(!lang_built(es) && !lang_set(es) && lang_current() == LANG_ENGLISH);
 	// Without a translation built a mark is its English itself: no table, no lookup

@@ -109,12 +109,13 @@ static const char *aprs_body(void)
 		return t;
 	}
 	if (CONFIG_APRS_AFSK) {		// who and where on RF: the AX.25 backend's
-		sb_str(&b, v.call[0] != '\0' ? v.call : TR(APRS_BODY_NO_CALLSIGN, "No callsign"));
-		sb_str(&b, TR(APRS_BODY_ON, " on "));
-		sb_freq(&b, v.freq_hz);
-		if (v.rf_active) {
-			sb_str(&b, TR(APRS_BODY_SENDING, " (sending)"));
-		}
+		const char *call = v.call[0] != '\0' ? v.call : TR(APRS_BODY_NO_CALLSIGN, "No callsign");
+		SB_LOCAL(f, 12);
+		sb_freq(&f, v.freq_hz);
+		if (v.rf_active)
+			TRF(&b, APRS_BODY_ON_SENDING, "%1$s on %2$K (sending)", call, f_text);
+		else
+			TRF(&b, APRS_BODY_ON, "%1$s on %2$K", call, f_text);
 		const char *why = why_text(v.block);
 		if (why != NULL) {
 			sb_chr(&b, '\n');
@@ -133,12 +134,12 @@ static const char *aprs_body(void)
 	}
 	if (v.next_s != 0xFFFFu) {
 		sb_chr(&b, '\n');
-		sb_str(&b, TR(APRS_BODY_NEXT_IN, "Next in "));
-		sb_mmss(&b, v.next_s);
+		SB_LOCAL(next, 12);
+		sb_mmss(&next, v.next_s);
+		TRF(&b, APRS_BODY_NEXT_IN, "Next in %1$K", next_text);
 	}
 	if (v.rf_sent + v.dmr_sent != 0) {
-		sb_str(&b, TR(APRS_BODY_SENT, "  Sent "));
-		sb_u32(&b, v.rf_sent + v.dmr_sent, 1);
+		TRF(&b, APRS_BODY_SENT, "  Sent %1$u", v.rf_sent + v.dmr_sent);
 	}
 	return t;
 }

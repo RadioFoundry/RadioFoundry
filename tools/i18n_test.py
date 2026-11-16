@@ -88,6 +88,48 @@ class Marks(unittest.TestCase):
         with self.assertRaisesRegex(i18n.I18nError, "takes a key"):
             scan('a = TR(GLYPH_DOT, "x");\n')     # a glyph macro is text, never a key
 
+    def test_format_mark(self):
+        # TRF(buffer, KEY, "English", values...): the buffer and the values are skipped, whatever they hold
+        found = scan('TRF(sb(&b, 1), FROM, "Message from %1$s, "\n\t"%2$02u", station(ev, id), n);\n'
+                     'x = TR(PCT, "50% of 100%");\n')
+        self.assertEqual([(m.kind, m.key, m.text) for m in found],
+                         [("TRF", "FROM", "Message from %1$s, %2$02u"), ("TR", "PCT", "50% of 100%")])
+        self.assertEqual(i18n.format_values(found[0].text, ""), {1: "s", 2: "u"})
+        for src, why in (('x = TR(FROM, "From %1$s");', "only TRF"),
+                         ('TRF(&b, FROM, "From %2$s", a);', "numbered from 1"),
+                         ('TRF(&b, FROM, "From", a);', "numbered from 1"),
+                         ('TRF(&b, FROM, "%1$s and %1$u", a);', "in one place"),
+                         ('TRF(&b, FROM, "%1$02s", a);', "only a number takes digits"),
+                         ('TRF(&b, FROM, "%1$s %5$s", a);', "is not a value"),
+                         ('TRF(&b, FROM, "%1$s %2$x", a, b);', "is not a value"),
+                         ('TRF(&b, "From %1$s", a);', "takes a buffer, a key")):
+            with self.assertRaisesRegex(i18n.I18nError, why, msg=src):
+                scan(src + "\n")
+        with self.assertRaisesRegex(i18n.I18nError, "TRF format in one place"):
+            i18n.check_keys([i18n.Mark("TRF", "FROM", "From %1$s", "x.c", 1, 0),
+                             i18n.Mark("TR", "FROM", "From %1$s", "x.c", 2, 0)])
+
+    def test_format_translation(self):
+        en = "Site %1$u of %2$u: %3$s"
+        self.assertEqual(i18n.check_translation(en, "%3$s: sitio %1$u de %2$u", "x"), [])
+        for tr in ("Sitio %1$u de %2$u", "Sitio %1$u de %2$u: %3$K", "Sitio %1$u de %2$d: %3$s",
+                   "Sitio %1$u de %2$u: %3$s %4$s", "Sitio %1$u de %2$u: %3$s %1$s"):
+            self.assertTrue(i18n.check_translation(en, tr, "x"), tr)
+        self.assertTrue(i18n.check_translation("Done", "Hecho %1$s", "x"))
+
+    def test_format_prototypes(self):
+        with tempfile.TemporaryDirectory() as d:
+            saved, i18n.LANG_DIR = i18n.LANG_DIR, d
+            try:
+                found = scan('TRF(&b, SITE, "Site %1$u of %2$d: %3$s %4$K", a, b, c, d);\nx = TR(DONE, "Done");\n')
+                i18n.generate(os.path.join(d, "t.h"), found)
+            finally:
+                i18n.LANG_DIR = saved
+            with open(os.path.join(d, i18n.KEYS_HEADER), encoding="utf-8") as f:
+                keys = f.read()
+        self.assertIn("int tr_args_SITE(unsigned, int, const char *, const char *);", keys)
+        self.assertNotIn("tr_args_DONE", keys)
+
     def test_key_from_text(self):
         self.assertEqual(i18n.key_from_text("Couldn't save: try again"), "COULDNT_SAVE_TRY_AGAIN")
         self.assertEqual(i18n.key_from_text("{Power|Pwr}"), "POWER")
@@ -248,7 +290,7 @@ class Rename(unittest.TestCase):
         self.test = os.path.join(self.dir.name, "tests", "t.c")
         self.po = os.path.join(i18n.LANG_DIR, "xx.po")
         with open(self.src, "w", encoding="utf-8") as f:
-            f.write(SRC + "int TR_TX;\n")
+            f.write(SRC + "int TR_TX;\n" + 'void g(void) { TRF(sb(&b), /* key */ SITE, "Site %1$u", 1); }\n')
         with open(self.test, "w", encoding="utf-8") as f:
             f.write('CHECK(strcmp(TR( DONE, "Done"), "Hecho") == 0);\n')
         with open(self.po, "w", encoding="utf-8") as f:
@@ -260,11 +302,13 @@ class Rename(unittest.TestCase):
 
     def test_rename_keeps_the_translations(self):
         # DONE and FUZZY swap names, RX (never translated) gets a new one: marks, the tests and the catalog follow
-        self.assertEqual(i18n.rename([("DONE", "FUZZY"), ("FUZZY", "DONE"), ("RX", "LABEL_RX")]), (5, 2))
+        self.assertEqual(i18n.rename([("DONE", "FUZZY"), ("FUZZY", "DONE"), ("RX", "LABEL_RX"),
+                                      ("SITE", "ROAM_SITE")]), (6, 2))
         with open(self.src, encoding="utf-8") as f:
             src = f.read()
         self.assertIn('TRN(FUZZY, "Done"), TRN(UNTRANSLATED, "Untranslated"), TRX(LABEL_RX, "RX")', src)
         self.assertIn('show(TR(DONE, "Fuzzy"), TR(VOLUME, "Volume "), TR(BAD, "Bad"), TR(FUZZY, "Done"));', src)
+        self.assertIn('TRF(sb(&b), /* key */ ROAM_SITE, "Site %1$u", 1);', src)
         with open(self.test, encoding="utf-8") as f:
             self.assertIn('TR( FUZZY, "Done")', f.read())
         by_key = {k: (en, tr) for k, en, tr, _ in i18n.read_po(self.po)[1]}
