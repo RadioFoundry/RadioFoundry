@@ -336,7 +336,7 @@ silent.
 - The channel's settings show "P25 NAC 293" as the mode and only the settings P25 uses. Talkaround is On or Auto (on
   when RX and TX are the same frequency).
 - **OK** on Mode makes it a plain FM channel when you save.
-- Scan and dual watch skip P25 channels.
+- Scan stops on P25 channels and holds on a call you would hear there. Dual watch skips them.
 
 ### P25 trunked channels
 
@@ -358,7 +358,7 @@ on a computer. The channel's settings show "P25T" as the mode.
   says "RX only".
 - Calls to other talkgroups are not followed.
 - Calls to one unit, emergency and Phase 2 (TDMA) voice channels are not there yet.
-- Scan and dual watch skip these channels.
+- Scan and dual watch skip these channels: a trunked channel follows its system instead.
 - This has run against a test control channel only, not yet on a working system.
 
 ### NXDN in the VFO
@@ -383,7 +383,8 @@ squelch and the group (when a contact has that group; else group 1).
 
 - Home shows it as in the VFO. The channel's settings show "NXDN" as the mode.
 - The rate, the RANs and the squelch can't be changed on the radio yet, only from a computer.
-- Scan and dual watch skip NXDN channels.
+- Scan stops on NXDN channels and holds on a call you would hear there, at a rate the radio can receive. Dual watch
+  skips them.
 
 ### Leaving the VFO
 

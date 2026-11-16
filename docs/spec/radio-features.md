@@ -57,8 +57,9 @@ Requests: `radio_req_scan(cmd)` with stop, zone, VFO, dual, cancel, nuisance or 
 tuned channel or frequency is the core view's as usual.
 
 - **Zone scan** visits the current zone's channels in order, from the one it started on, skipping empty positions and
-  channels marked "zone skip" in the codeplug. FM and DMR channels mix freely: each stop tunes the channel as a
-  channel change would.
+  channels marked "zone skip" in the codeplug. FM, DMR, P25 and NXDN channels mix freely: each stop tunes the
+  channel as a channel change would (P25, NXDN: the engine starts there). Left out: parked channels, P25 trunked
+  channels, and NXDN channels at a rate the board can't receive ([p25.md](p25.md) 7.1, [nxdn.md](nxdn.md) 6.4).
 - **VFO scan** steps the VFO frequency by its step from `lo` to `hi` and wraps. Without a range it sweeps the board
   band the VFO frequency is in. Both ends must be in one band, at least one step apart.
 - **Dual watch** alternates between two channels, skip flags ignored (2.1). `radio_req_scan_dual(pos)` (the debug
@@ -80,7 +81,9 @@ its LC included) the probe lasts up to 1.5 s: a call already in progress is take
 next complete superframe at best and the one after it when the modem's sticky LC equals this call's (about 1.1 s from
 the retune). Each DMR stop on a new frequency restarts the modem's receiver, so it searches from the retune and not on the
 last transmitter's slot timing ([gotchas](gotchas.md) 17.2). A call known not to be for us (another talkgroup) ends
-the probe. Digital monitor on when a zone or VFO scan starts (the hear-all latch, [dmr-voice.md](dmr-voice.md) 1) stays on
+the probe. P25 and NXDN stops read a carrier as DMR does, probe up to 700 ms for a call of the channel's NAC or RAN,
+up to 1.5 s while its squelch waits for a field (a late entry's talk group or group), hold on a call that plays and
+move on from one that doesn't ([p25.md](p25.md) 7.1). Digital monitor on when a zone or VFO scan starts (the hear-all latch, [dmr-voice.md](dmr-voice.md) 1) stays on
 at every stop (`hear_all_latch` in the view), so a call to any talkgroup is played and holds the scan; the channel the
 scan ends on, by STOP, CANCEL or PTT, keeps it latched. Toggling it during the scan turns it on or off for the rest of
 the scan. Dual watch doesn't carry it. Empty channels still move on after the dwell.

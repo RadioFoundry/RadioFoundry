@@ -17,7 +17,8 @@ State:
 | Voice (5) | through the DMR side's voice path to the vocoder the board hosts (`hal_vocoder_t`); host tested |
 | The radio core: mode, settings, PTT, debug link, home screen (6) | written, host tested |
 | Codeplug channels, the site's Codeplug Editor ([nxdn-codeplug.md](nxdn-codeplug.md)) | written, host tested |
-| Channel editor on the radio, scan | not written (10) |
+| Scan (6.4) | written, host tested; not checked on a radio |
+| Channel editor on the radio, dual watch | not written (10) |
 | On air | transmit checked off air on a radio at both rates (`test_nxdn_tx_off_air`); receive not yet: the one provider tried has no receive fit for NXDN (6) |
 | 9600 bit/s full-rate voice (EFR), data, trunking, encryption | not written (10). Encrypted calls are recognized and not played |
 
@@ -211,6 +212,15 @@ settings don't reach it. The debug link view shows what is in force (`nxdn.run.*
 | Home screen | the mode name, the group or unit PTT calls on the talk line, the power, transmit RAN and rate in the chips; a call heard: who calls whom, or why it isn't played (encrypted, another group) |
 | Debug link | the `nxdn` view section ([debuglink.md](debuglink.md) 3.7): the call, the settings, the provider's fit at each rate, counters |
 
+### 6.4 Scan
+
+A zone scan (or a VFO scan in NXDN) stops on a stored NXDN channel as on any other: the tune starts the engine at the
+channel's rate. As P25's ([p25.md](p25.md) 7.1): nothing heard moves on after the dwell; a carrier (the noise reading or
+the signal strength) probes up to 700 ms for a call of the channel's RAN; such a call probes up to 1.5 s while its
+squelch waits for the VCALL (late entry: from the SACCH superframe); a call that plays holds; one that doesn't (another
+group, encrypted) moves on. A channel at a rate the board's provider can't receive (`radio_nxdn_receives`: a transmit
+only fit) is never a stop.
+
 ## 7. The engine (`core/nxdn/nxdn_engine.c`)
 
 `nxdn_engine` is NXDN on a channel: the call layer on an air interface session, as `p25_engine` is P25's
@@ -243,7 +253,7 @@ The radio core needs from a board: a provider (`board_t.air`) whose fit takes 24
 | `tests/host/fecTest.c` (`test_conv`) | the Viterbi decoder: clean, punctured, soft against hard in noise |
 | `tests/host/nxdnTest.c` | the scrambler against its register, the syncs, the LICH and its parity, SACCH and FACCH1 round trips through errors and CRC checks, VCH places, the 7.2.1 FEC frames, messages; calls through the framer: clear, RAN squelch, RAN 0, late entry, LICH coasting, symbol errors, a header sync with an error, encrypted, 9600 bit/s |
 | `tests/host/nxdnEngineTest.c` | two engines on made-up providers at both rates: a call heard with its fields and voice in order, an encoder stall covered by silence, no underruns, late entry, group and individual squelch, a squelch change mid-call, an abort, another RAN, RAN 0, an encrypted call; a call through a modeled discriminator tap and the soft modem at 2400 symbols/s, eight calls per noise level |
-| `tests/host/radioCoreTest.c` (`radioCoreTestNxdn`, `radioCoreTestP25Nxdn`) | the radio core against an NXDN engine on a fake provider: a call heard, its voice in order to the vocoder, another RAN, group squelch; PTT heard by the far engine with the settings, settings sent mid-transmission, 4800 bit/s, a TX-only and an RX-only fit, no fit, the time-out; the mode by request, the debug link and the VFO saved; P25 and NXDN in turn in the same memory |
+| `tests/host/radioCoreTest.c` (`radioCoreTestNxdn`, `radioCoreTestP25Nxdn`) | the radio core against an NXDN engine on a fake provider: a call heard, its voice in order to the vocoder, another RAN, group squelch; PTT heard by the far engine with the settings, settings sent mid-transmission, 4800 bit/s, a TX-only and an RX-only fit, no fit, the time-out; the mode by request, the debug link and the VFO saved; P25 and NXDN in turn in the same memory; a zone scan over a stored NXDN channel: a stop with nothing on air, held on a late entry to its group, not on another group or RAN, never a stop at a rate the provider can't receive (`test_nxdn_scan`) |
 | `tests/host/uiFlowTest.c` | the mode tile's order, the home screen in NXDN, the FM-only tiles |
 | `tests/hil/test_nxdn.py` | on the radio: the mode switch, the settings, a stored channel written over CPS; opt-in, an over decoded off air by the SDR bench's 4FSK receiver and `nxdntool` (one HR_C6000 radio: 9600 bit/s 78 frames, outer deviation 2399 Hz; 4800 bit/s 40 frames, 1012 Hz; no CRC failure), a stored channel that transmits keyed and decoded the same way with the channel's RAN, unit and group (`test_nxdn_stored_channel_tx`), and a call the bench plays received (`test_nxdn_rx_from_bench`, skipped where the fit has no RX) |
 | `tools/bench/nxdntool.py selftest` | the bench tool (below) both ways at both rates, with bit errors and through the soft modem, from bench receiver records, the summary line |
@@ -283,5 +293,5 @@ scrambler examples), so the codec checks against itself and the clauses only.
 
 ## 10. Not written
 
-Editing an NXDN channel's settings on the radio (a settings screen), scan and dual watch in NXDN, 9600 bit/s full rate, data (UDCH, short data), trunking (RCCH), status and other supplementary messages,
+Editing an NXDN channel's settings on the radio (a settings screen), dual watch in NXDN, 9600 bit/s full rate, data (UDCH, short data), trunking (RCCH), status and other supplementary messages,
 encryption, a transmit filter in a provider.

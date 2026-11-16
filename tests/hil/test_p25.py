@@ -499,6 +499,69 @@ def test_p25_rx_from_bench(radio, sdr_bench, pytestconfig):
         assert grew("p25v.frames") > 0, "no voice frame played"
 
 
+SCAN_CALLS = 4          # calls the bench sends while the scan comes round to the P25 channel
+
+
+@pytest.mark.feature("p25")
+@pytest.mark.feature("scan")
+@pytest.mark.rf
+@pytest.mark.codeplug_write
+@pytest.mark.bench_service
+@pytest.mark.bench_modem
+def test_p25_scan_from_bench(radio, sdr_bench, backup_dir, pytestconfig):
+    """Zone scan stops on a stored P25 channel when the bench sends a call there (p25.md 7.1): the current channel
+    made a P25 channel on p25-mhz, the scan started, the bench's calls to RX_TG until the scan holds there"""
+    import p25tool
+    import cps_client
+    from test_cps import codeplug_edited, pick_channel, read_backup
+    mhz = rig(pytestconfig, "p25-mhz")
+    p25_ready(radio)
+    if as_int(radio.link.view(["features"]).get("scan.built"), 0) != 1:
+        skip("not_built", "built without CONFIG_SCAN")
+    regions = cps_client.REGIONS["radio"]
+    probe, _ = read_backup(radio, backup_dir, "p25scan", regions)
+    lo, hi = cps_client.SETTINGS_AREA
+    if cps_client.area_state(probe[lo:hi]) != "valid":
+        skip("state", "the codeplug settings area isn't valid: the restore couldn't take the tag back")
+    core = radio.core()
+    number = pick_channel(radio, probe)
+    if core.get("vfo") == "1" or number != as_int(core.get("channel_number"), 0):
+        skip("state", "the radio isn't on a stored channel")
+    if as_int(core.get("zone_size"), 0) < 2:
+        skip("state", "the current zone needs two channels or more to scan")
+    with codeplug_edited(radio, backup_dir, lambda img: make_p25(img, number, round(mhz * 1e6)), "p25scan", regions):
+        radio.wait_for(lambda x: x.get("ch.kind") == str(KIND_P25) and x.get("p25.on") == "1", 5.0,
+                       sections=("core", "channel", "p25"), what="the stored P25 channel running")
+        radio.link.scan("zone")
+        held = None
+        try:
+            radio.wait_for(lambda x: x.get("scan") == "zone", 1.0, sections=("features",), what="scan=zone")
+            with tempfile.TemporaryDirectory() as tmp, sdr_bench.lease():
+                path, exp = os.path.join(tmp, "call.dibits"), os.path.join(tmp, "call.json")
+                p25tool.run(["gen", path, exp, "--nac", f"{STORED_NAC:x}", "--tg", RX_TG, "--src", RX_SRC,
+                             "--pairs", RX_PAIRS, "--lead", 96, "--tail", 48])
+                with open(exp) as f:
+                    n = json.load(f)["total_syms"]
+                with open(path, "rb") as f:
+                    data = f.read()
+                for _ in range(SCAN_CALLS):
+                    tx = sdr_bench.tx_start("fsk4", mhz, None, max_s=n / 4800 + 2, symbols=n, hex=data.hex(),
+                                            shape="c4fm", clip_hz=4064)
+                    while held is None and not tx.req.done.is_set():
+                        v = radio.link.view(["core", "features", "p25"])
+                        if v.get("scan_phase") == "hold" and v.get("channel_number") == str(number):
+                            held = v
+                    tx.wait(n / 4800 + 30)
+                    if held is not None:
+                        break
+        finally:
+            radio.link.scan("cancel")
+            radio.wait_for(lambda x: x.get("scan") == "off", 3.0, sections=("features",), what="scan off")
+    assert held is not None, f"the scan never held on channel {number} in {SCAN_CALLS} calls"
+    print(f"\nscan held on channel {number}: {held.get('p25.src')} -> {held.get('p25.dst')}")
+    assert held.get("p25.dst") in (str(RX_TG), "0"), held     # 0: held before the link control was read
+
+
 # --- A trunked channel (p25-trunking.md 7): receive only ---
 
 KIND_P25_TRUNK = 3

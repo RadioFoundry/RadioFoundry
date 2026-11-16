@@ -76,6 +76,9 @@ uint32_t radio_nxdn_fit(bool rate9600);
 // A channel read from the codeplug, as the radio runs it: a live NXDN channel (kind 4) becomes RADIO_MODE_NXDN where
 // the board carries NXDN and its frequency allows a digital mode. False: left as read (parked)
 bool radio_nxdn_take(channel_t *ch);
+// The board's provider receives channel ch at number (0: the VFO) at its rate (a stored channel's own, else the
+// settings'): what scan and dual watch visit
+bool radio_nxdn_receives(const channel_t *ch, uint16_t number);
 void radio_nxdn_settings(radio_nxdn_settings_t *out);		// any task
 void radio_nxdn_set_settings(const radio_nxdn_settings_t *s);	// radio task (RREQ_NXDN_SET)
 

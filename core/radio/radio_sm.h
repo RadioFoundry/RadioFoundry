@@ -83,6 +83,10 @@
 					// LC from the second complete superframe at worst: about 1.1 s from the retune)
 #define RADIO_SCAN_DMR_CARRIER_MS 150	// DMR: a carrier this recent still counts (direct mode: 30 ms on air in 60)
 #define RADIO_SCAN_DMR_SYNC_AGE_MS 400	// DMR: bursts this recent are sync (a superframe and a slot)
+#define RADIO_SCAN_AIR_PROBE_MS	700	// P25, NXDN: a carrier, waiting for a call of the channel's NAC or RAN (the engine
+					// starts at the retune; a P25 voice frame and its NID come every 180 ms)
+#define RADIO_SCAN_AIR_SYNC_MS	1500	// P25, NXDN: such a call heard, waiting for the field its squelch needs (a P25
+					// late entry's link control comes every 360 ms, an NXDN VCALL in each SACCH superframe)
 // Dual watch with a second receiver (board.rx2): how often its settings go again (the link drops repeats), how long
 // it may take to say it is on them, and how long after a failure to try it again (meanwhile the main receiver alternates)
 #define RADIO_RX2_REFRESH_MS	2000

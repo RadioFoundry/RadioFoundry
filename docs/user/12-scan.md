@@ -21,9 +21,10 @@ If dual watch is running, starting a scan stops it. The radio stays on the selec
 ## How the scan moves
 
 - The scan visits the zone's channels in order, from the one it started on. It skips empty positions and channels
-  the codeplug marks to skip. FM and DMR channels can be mixed.
+  the codeplug marks to skip. FM, DMR, P25 and NXDN channels can be mixed. P25 trunked channels are skipped.
 - On each channel it listens for 150 ms. An FM channel stops the scan when the squelch opens (with the channel's tone,
-  if it needs one). A DMR channel stops it when the radio plays a call.
+  if it needs one). A DMR, P25 or NXDN channel stops it when the radio plays a call. On a signal it listens up to
+  1.5 s for a call it would play.
 - Turn on [digital monitor](09-dmr.md) before you start the scan to stop on a call to any talkgroup, not only
   the channel's talkgroup and RX group list. It stays on at every channel and on the one the scan ends on. Pressing
   **Monitor** on a DMR channel during the scan turns it off or on for the rest of the scan.

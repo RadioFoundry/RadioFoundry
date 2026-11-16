@@ -88,7 +88,19 @@ static bool r_tx(uint32_t hz, radio_bw_t bw, uint8_t p, const subtone_t *t)
 	return true;
 }
 static void r_tx_off(void) { hw.tx_off_calls++; hw.keyed = false; }
-static void r_status(radio_status_t *st) { *st = hw.st; }
+// The scan and dual watch tests: the far radio (fake air 1) is heard only on far_hz, a carrier there while it sends
+// (0: on every frequency, no carrier of its own)
+static uint32_t far_hz;
+static bool far_on_air(void);
+static void r_status(radio_status_t *st)
+{
+	*st = hw.st;
+	if (far_hz != 0) {
+		bool here = hw.rx_hz == far_hz && far_on_air();
+		st->noise = here ? 20 : 120;
+		st->rssi_dbm = here ? -80 : -125;
+	}
+}
 static void r_audio(bool on) { hw.audio = on; }
 // FM TX tone and its Morse keying (the hotspot's CW ID): every change logged with the time
 static struct {
@@ -286,8 +298,13 @@ static void site_chunk(uint8_t *syms);
 static void site_inbound(const uint8_t *syms, uint16_t n, bool last);
 #endif
 
+static bool far_on_air(void) { return fair[1].on; }
+
 static void air_deliver(fake_air_t *to, const uint8_t *syms, uint16_t n)
 {
+	if (far_hz != 0 && to == &fair[0] && hw.rx_hz != far_hz) {
+		return;		// the far radio sends on far_hz; the radio is tuned elsewhere
+	}
 #if CONFIG_P25_TRUNK
 	if (site.on && to == &fair[0] && hw.rx_hz != site.voice_hz) {
 		return;		// the far radio sends on the voice channel; the radio is tuned elsewhere
@@ -426,6 +443,8 @@ static void air_abort(uint8_t i) { fair[i].qn = 0; fair[i].on = false; fair[i].a
 FAKE_AIR(0)
 FAKE_AIR(1)
 static void air_step(void);	// with the far radio's engine, below
+#else
+static bool far_on_air(void) { return false; }
 #endif
 
 const board_t board = {
@@ -5945,6 +5964,28 @@ static void test_volume_step_of(void)
 	}
 }
 
+#if CONFIG_AIR && CONFIG_SCAN
+// Run the scan (or dual watch) for up to ms: the stops it makes on channel number (visits), and whether it holds there.
+// Returns at the hold
+static bool scan_holds_on(uint16_t number, uint32_t ms, uint16_t *visits)
+{
+	bool was = false;
+	*visits = 0;
+	for (uint32_t t = 0; t < ms; t += RADIO_POLL_MS) {
+		run(RADIO_POLL_MS);
+		bool here = !sm.view.vfo && sm.view.channel_number == number;
+		if (here && !was) {
+			(*visits)++;
+		}
+		was = here;
+		if (here && sm.view.scan_phase == SCAN_PH_HOLD) {
+			return true;
+		}
+	}
+	return false;
+}
+#endif
+
 #if CONFIG_P25
 // ---- P25 conventional in the radio core (docs/spec/p25.md 7): the far radio is a P25 engine on the other fake
 // provider; it transmits calls the radio under test hears, and hears what the radio sends ----
@@ -6539,6 +6580,83 @@ bool p25_conv_save(uint16_t number, const channel_t *ch, const p25_conv_t *conv)
 	p25_saved.conv = *conv;
 	return codeplug_set_channel(number, ch);
 }
+
+#if CONFIG_SCAN
+// A zone scan over a stored P25 channel (docs/spec/p25.md 7.1): it stops there, starts the engine, holds on a call
+// that plays and moves on from one that doesn't; a board that can't receive P25 and a trunked channel are left out
+static void test_p25_scan(void)
+{
+	const radio_p25_view_t *v = &sm.view.p25;
+	uint16_t visits;
+
+	setup_codeplug_p25();
+	add(3, "P25 rptr", 446100000, RADIO_MODE_DMR, false, 2);	// zone Local, position 2
+	chans[3].kind = CODEPLUG_KIND_P25;
+	chans[3].system = 0xFF;
+	stored_p25[3] = (p25_conv_cfg_t){ .conv = { 0x2A0, 0x2A0, P25_SQUELCH_SELECTIVE }, .unit_id = 1234567,
+					  .target = 201, .target_unit = false, .talkaround = true };
+	start();
+	p25_defaults();
+	far_hz = 446100000;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	CHECK(sm.view.scan == SCAN_ZONE);
+	// Nothing on the air: the scan stops on the P25 channel (the engine runs there) and goes on after the dwell
+	radio_p25_stats_t st;
+	radio_p25_stats(&st);
+	uint32_t begins0 = st.begins;
+	CHECK(!scan_holds_on(3, 3000, &visits) && visits >= 2 && sm.view.scan == SCAN_ZONE);
+	radio_p25_stats(&st);
+	CHECK(st.begins >= begins0 + 2);
+	// The channel's talk group, a call already on when the scan comes round (a late entry, its talk group from the
+	// link control): it holds there, the call playing, for as long as the call lasts
+	far_begin(0x2A0, 1001, false, 201);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	CHECK(scan_holds_on(3, 4000, &visits));
+	CHECK(radio_p25_running() && (v->flags & RADIO_P25_PLAYED) && v->dst == 201 && v->src == 1001);
+	run(2000);
+	CHECK(sm.view.channel_number == 3 && sm.view.scan_phase == SCAN_PH_HOLD && hw.led[LED_GREEN]);
+	// The call ends: the resume delay, then the scan moves on
+	p25_engine_tx_stop(&far_eng);
+	run(600);
+	CHECK(!far_tx && sm.view.channel_number == 3 && sm.view.scan_phase == SCAN_PH_RESUME);
+	run(RADIO_SCAN_DELAY_MS + 600);
+	CHECK(sm.view.channel_number != 3 && sm.view.scan == SCAN_ZONE);
+	// Another talk group of the NAC (the channel's selective squelch): heard, not played, and the scan goes on
+	far_begin(0x2A0, 1002, false, 7);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	CHECK(!scan_holds_on(3, 4000, &visits) && visits >= 1 && sm.view.scan == SCAN_ZONE);
+	// Another NAC: a carrier, probed and left
+	uint16_t probes = sm.view.scan_probes;
+	far_begin(0x123, 1003, false, 201);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	CHECK(!scan_holds_on(3, 4000, &visits) && visits >= 1 && sm.view.scan_probes > probes);
+	p25_engine_tx_stop(&far_eng);
+	run(600);
+	req(RREQ_SCAN, RSCAN_STOP);
+	CHECK(sm.view.scan == SCAN_OFF);
+
+	// A board whose air interface can't receive P25: the channel is parked and never a stop
+	air_nofit = true;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	CHECK(sm.view.scan == SCAN_ZONE && !scan_holds_on(3, 3000, &visits) && visits == 0);
+	req(RREQ_SCAN, RSCAN_STOP);
+	air_nofit = false;
+	// A trunked channel: left out (it follows its system's control channel)
+	chans[3].kind = CODEPLUG_KIND_P25_TRUNK;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	CHECK(sm.view.scan == SCAN_ZONE && !scan_holds_on(3, 3000, &visits) && visits == 0);
+	req(RREQ_SCAN, RSCAN_STOP);
+	far_hz = 0;
+	far_stop();
+	p25_defaults();
+}
+#endif
 
 // A P25 conventional channel in the codeplug (kind 2, docs/spec/p25-codeplug.md 2): the radio runs it on its own
 // parameters, the debug link's unit ID overrides for a session, and it is parked where the board can't carry P25
@@ -7204,6 +7322,9 @@ static void test_p25(void)
 #endif
 	test_p25_rx();
 	test_p25_stored();
+#if CONFIG_SCAN
+	test_p25_scan();
+#endif
 	test_p25_tx();
 	test_p25_denied();
 	test_p25_leave();
@@ -7639,6 +7760,74 @@ bool nxdn_conv_save(uint16_t number, const channel_t *ch, const nxdn_conv_t *con
 	return codeplug_set_channel(number, ch);
 }
 
+#if CONFIG_SCAN
+// A zone scan over a stored NXDN channel (docs/spec/nxdn.md 6.4): it stops there, holds on a call that plays (once its
+// VCALL says so) and moves on from one that doesn't; a channel at a rate the board can't receive is left out
+static void test_nxdn_scan(void)
+{
+	const radio_nxdn_view_t *v = &sm.view.nxdn;
+	uint16_t visits;
+
+	setup_codeplug_nxdn();
+	add(3, "NXDN rptr", 446100000, RADIO_MODE_DMR, false, 2);	// zone Local, position 2
+	chans[3].kind = CODEPLUG_KIND_NXDN;
+	chans[3].system = 0xFF;
+	stored_nxdn[3] = (nxdn_conv_cfg_t){ .conv = { .rate9600 = true, .rx_ran = 7, .tx_ran = 7,
+						      .squelch = NXDN_SQUELCH_SELECTIVE },
+					    .unit_id = 4321, .target = 20, .target_unit = false };
+	start();
+	nxdn_defaults();
+	far_hz = 446100000;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	CHECK(sm.view.scan == SCAN_ZONE);
+	// Nothing on the air: a stop on the NXDN channel (the engine runs there), then on
+	CHECK(!scan_holds_on(3, 3000, &visits) && visits >= 2 && sm.view.scan == SCAN_ZONE);
+	// The channel's group on its RAN, a call already on: held, playing, while it lasts
+	nfar_begin(true, 7, 2001, false, 20);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	CHECK(scan_holds_on(3, 4000, &visits));
+	CHECK(radio_nxdn_running() && (v->flags & RADIO_NXDN_PLAYED) && v->dst == 20 && v->src == 2001);
+	run(1500);
+	CHECK(sm.view.channel_number == 3 && sm.view.scan_phase == SCAN_PH_HOLD);
+	nxdn_engine_tx_stop(&nfar);
+	run(600);
+	CHECK(!nfar_tx && sm.view.channel_number == 3 && sm.view.scan_phase == SCAN_PH_RESUME);
+	run(RADIO_SCAN_DELAY_MS + 600);
+	CHECK(sm.view.channel_number != 3 && sm.view.scan == SCAN_ZONE);
+	// Another group on the RAN (selective squelch), and the channel's group on another RAN: not held
+	nfar_begin(true, 7, 2002, false, 21);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	CHECK(!scan_holds_on(3, 4000, &visits) && visits >= 1 && sm.view.scan == SCAN_ZONE);
+	nfar_begin(true, 9, 2003, false, 20);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	CHECK(!scan_holds_on(3, 4000, &visits) && visits >= 1 && sm.view.scan == SCAN_ZONE);
+	nxdn_engine_tx_stop(&nfar);
+	run(600);
+	req(RREQ_SCAN, RSCAN_STOP);
+
+	// A 4800 bit/s channel on a board that only transmits 2400 symbols/s: never a stop. At 9600 it is one again
+	stored_nxdn[3].conv.rate9600 = false;
+	air_fit2400[0] = AIR_FIT_TX;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	CHECK(sm.view.scan == SCAN_ZONE && !scan_holds_on(3, 3000, &visits) && visits == 0);
+	req(RREQ_SCAN, RSCAN_STOP);
+	stored_nxdn[3].conv.rate9600 = true;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	CHECK(!scan_holds_on(3, 3000, &visits) && visits >= 1);
+	req(RREQ_SCAN, RSCAN_STOP);
+	air_fit2400[0] = AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT;
+	far_hz = 0;
+	nfar_stop();
+	nxdn_defaults();
+}
+#endif
+
 // An NXDN conventional channel in the codeplug (kind 4, docs/spec/nxdn-codeplug.md 2): the radio runs it on its own
 // parameters, not the settings; saved from the VFO it becomes one; parked where the board can't carry NXDN
 static void test_nxdn_stored(void)
@@ -7842,6 +8031,9 @@ static void test_nxdn(void)
 	test_nxdn_tx();
 	test_nxdn_mode();
 	test_nxdn_stored();
+#if CONFIG_SCAN
+	test_nxdn_scan();
+#endif
 	setup_codeplug();
 	req(RREQ_RELOAD, 0);
 	run(50);

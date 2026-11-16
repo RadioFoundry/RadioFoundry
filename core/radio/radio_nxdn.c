@@ -81,6 +81,16 @@ bool radio_nxdn_take(channel_t *ch)
 	return true;
 }
 
+bool radio_nxdn_receives(const channel_t *ch, uint16_t number)
+{
+	uint32_t slow = radio_nxdn_fit(false) & AIR_FIT_RX, fast = radio_nxdn_fit(true) & AIR_FIT_RX;
+	nxdn_conv_cfg_t cc;
+
+	if (slow == fast)
+		return slow != 0;	// the rate doesn't matter: no channel record to read
+	return (number != 0 && nxdn_conv_load(number, ch, &cc) ? cc.conv.rate9600 : set.rate9600) ? fast != 0 : slow != 0;
+}
+
 // The engine's configuration for channel ch at number (0: the VFO): the one place NXDN parameters come from. A live
 // stored NXDN channel's tag and record give them (docs/spec/nxdn-codeplug.md 2), else the settings
 static void params(const channel_t *ch, uint16_t number, nxdn_engine_cfg_t *c)
