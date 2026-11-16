@@ -521,6 +521,13 @@ static void acc_tick(p25_follow_t *f, uint32_t now)
 	acc_send(f, now);
 }
 
+// The request in hand is this one and went out at least once. An answer heard before that is not ours: a site that
+// repeats its answers to a unit, or to one with our identity, must not register us without a word on the air
+static bool acc_asked(const p25_follow_t *f, uint8_t op)
+{
+	return f->acc.pend == op && (f->acc.sent || f->acc.tries != 0);
+}
+
 // Answers addressed to us
 static void acc_block(p25_follow_t *f, const p25_tsbk_t *m, uint32_t now)
 {
@@ -529,7 +536,7 @@ static void acc_block(p25_follow_t *f, const p25_tsbk_t *m, uint32_t now)
 
 	switch (m->kind) {
 	case P25_TSBK_REG_RSP:
-		if (m->u.reg.id != c->unit_id || f->view.reg != P25_REG_WAIT)
+		if (m->u.reg.id != c->unit_id || f->view.reg != P25_REG_WAIT || !acc_asked(f, P25_ISP_U_REG_REQ))
 			return;
 		if (m->u.reg.rv == P25_RV_ACCEPT) {
 			count8(&f->view.reg_ok);
@@ -546,7 +553,8 @@ static void acc_block(p25_follow_t *f, const p25_tsbk_t *m, uint32_t now)
 		}
 		break;
 	case P25_TSBK_AFF_RSP:
-		if (m->u.aff.dst != c->unit_id || f->view.reg != P25_REG_AFF || m->u.aff.tg != c->talk_group)
+		if (m->u.aff.dst != c->unit_id || f->view.reg != P25_REG_AFF || m->u.aff.tg != c->talk_group ||
+		    !acc_asked(f, P25_ISP_GRP_AFF_REQ))
 			return;
 		acc_drop(f);
 		if (m->u.aff.gav == P25_RV_ACCEPT) {
@@ -564,7 +572,7 @@ static void acc_block(p25_follow_t *f, const p25_tsbk_t *m, uint32_t now)
 	case P25_TSBK_DENY:
 	case P25_TSBK_QUEUED:
 		// The answer names the request by its opcode
-		if (m->u.rsp.dst != c->unit_id || a->pend == NO_OP || m->u.rsp.svc != a->pend)
+		if (m->u.rsp.dst != c->unit_id || a->pend == NO_OP || !acc_asked(f, m->u.rsp.svc))
 			return;
 		if (m->kind == P25_TSBK_QUEUED) {
 			if (a->pend == P25_ISP_GRP_V_REQ) {
@@ -594,7 +602,7 @@ static bool acc_grant(p25_follow_t *f, uint8_t op, const p25_grant_t *g, uint32_
 	uint32_t rx, tx;
 
 	if ((f->view.req != P25_REQ_WAIT && f->view.req != P25_REQ_QUEUED) || op != P25_OP_GRP_V_GRANT ||
-	    g->src != c->unit_id || g->tg != c->talk_group)
+	    g->src != c->unit_id || g->tg != c->talk_group || !acc_asked(f, P25_ISP_GRP_V_REQ))
 		return false;
 	acc_drop(f);
 	count8(&f->view.req_grant);

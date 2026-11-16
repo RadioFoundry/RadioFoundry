@@ -215,6 +215,8 @@ Sending (`acc_tick`): a block goes out only after a block of the control channel
 status symbols are known; while the last status symbol of the last unit said the inbound channel is busy, it waits
 20 ms plus up to 60 ms at random and looks again (`view.inb_busy`). An unanswered block is sent again after 1 s plus
 100-400 ms at random, three sends in all. A deny or queued response must name the request's opcode and our unit.
+An answer counts only for a request that went out at least once: a registration or affiliation response, a deny, a
+queued response or a grant heard while the request still waits for its turn is not ours and changes nothing.
 
 PTT (`p25_follow_ptt`, `view.req`, `P25_REQ_*`):
 

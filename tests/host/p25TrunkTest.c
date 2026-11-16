@@ -760,6 +760,68 @@ static void cc_unit_ss(p25_follow_t *f, uint8_t ss)
 #define HZ_CC1_IN	(HZ_CC1 - 45000000u)
 #define HZ_VA_IN	(HZ_VA - 45000000u)
 
+// An answer heard while the request still waits for its turn is not ours: nothing is taken before it went out
+static void hold_request(p25_follow_t *f)
+{
+	while (f->acc.pend == 0xFF)	// (NO_OP)
+		run_ms(f, 1);
+	f->acc.t_next = now_ms + 150;
+}
+
+static void testAccessEarlyAnswers(void)
+{
+	static const p25_follow_cc_t cc[] = { { .hz = HZ_CC1, .chan = 0x1004, .site = 3 } };
+	static const p25_follow_iden_t iden[P25_FOLLOW_IDENS] = {
+		[1] = { .base_hz = 851006250u, .spacing_hz = 6250, .tx_off_hz = -45000000 } };
+	static p25_follow_t f;
+	p25_follow_cfg_t cfg = { .wacn = WACN, .sysid = SYSID, .nac = NAC, .flags = P25_FOLLOW_TX, .unit_id = OUR_UNIT,
+				 .talk_group = 100, .ncc = 1, .cc = cc, .iden_set = 1u << 1, .iden = iden };
+	uint8_t b[P25_TSBK_BYTES];
+	p25_follow_view_t v;
+	unsigned n;
+
+	ntunes = nsends = 0;
+	now_ms = 9000;
+	cc_alive = true;
+	p25_follow_begin(&f, &cfg, &ahooks, NULL, now_ms);
+	retune(&f);
+	site_ident(&f, 3);
+	hold_request(&f);
+	CHECK(nsends == 0 && view(&f).reg == P25_REG_WAIT, "registration queued, not sent: %u", nsends);
+	answer_reg(&f, P25_RV_ACCEPT);
+	answer_rsp(&f, P25_TSBK_DENY, P25_ISP_U_REG_REQ, 0x10);
+	v = view(&f);
+	CHECK(v.reg == P25_REG_WAIT && v.reg_ok == 0 && v.denials == 0, "answers before the request: not ours (%u)", v.reg);
+	run_ms(&f, 200);
+	CHECK(nsends == 1 && last_isp().opcode == P25_ISP_U_REG_REQ, "the request goes out: %u", nsends);
+	answer_reg(&f, P25_RV_ACCEPT);
+	hold_request(&f);
+	CHECK(nsends == 1 && view(&f).reg == P25_REG_AFF, "affiliation queued, not sent: %u", nsends);
+	answer_aff(&f, P25_RV_ACCEPT, 100);
+	v = view(&f);
+	CHECK(v.reg == P25_REG_AFF && v.aff_ok == 0, "an affiliation answer before the request: not ours");
+	run_ms(&f, 200);
+	CHECK(nsends == 2 && last_isp().opcode == P25_ISP_GRP_AFF_REQ, "the affiliation goes out: %u", nsends);
+	answer_aff(&f, P25_RV_ACCEPT, 100);
+	CHECK(view(&f).reg == P25_REG_READY, "ready");
+	// A grant that names us before our request went out is not its answer: no voice channel, nothing keyed
+	p25_follow_ptt(&f, true, now_ms);
+	hold_request(&f);
+	n = ntunes;
+	mk_grant(b, P25_OP_GRP_V_GRANT, 0, 0x100A, 100, OUR_UNIT);
+	p25_follow_tsbk(&f, b, NAC, now_ms);
+	answer_rsp(&f, P25_TSBK_QUEUED, P25_ISP_GRP_V_REQ, 0x2F);
+	v = view(&f);
+	CHECK(nsends == 2 && ntunes == n && v.req == P25_REQ_WAIT && v.req_grant == 0 && v.queued == 0 &&
+	      v.state == P25_FOLLOW_CONTROL, "a grant before the request: not ours (%u)", v.req);
+	run_ms(&f, 200);
+	CHECK(nsends == 3 && last_isp().opcode == P25_ISP_GRP_V_REQ, "the voice request goes out: %u", nsends);
+	p25_follow_tsbk(&f, b, NAC, now_ms);
+	v = view(&f);
+	CHECK(v.req == P25_REQ_TALK && v.req_grant == 1 && ntunes == n + 1, "the grant after it: ours");
+	p25_follow_end(&f);
+}
+
 static void testAccess(void)
 {
 	static const p25_follow_cc_t cc[] = { { .hz = HZ_CC1, .chan = 0x1004, .site = 3 } };
@@ -1696,6 +1758,7 @@ int main(void)
 	testFollowHand();
 	testFollowOptions();
 	testAccess();
+	testAccessEarlyAnswers();
 	testFuzz();
 	testAirSystem();
 	testAirLoss();
