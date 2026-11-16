@@ -142,8 +142,9 @@ link. The run takes the radio lock, counts unexcused skips as failures and write
 
 ## Text the radio or the site shows
 
-The radio and the site are translated ([Translating](translating.md)). Text a user reads is marked (`TR()`, `TRN()`
-on the radio; a catalog key on the site), and the code works when its translation is missing: the English shows.
+The radio and the site are translated ([Translating](translating.md)). Text a user reads is marked (`TR(KEY, "...")`,
+`TRN(KEY, "...")` on the radio, the key named by [Key names](translating.md#key-names); a catalog key on the site),
+and the code works when its translation is missing: the English shows.
 
 - Mark new text, run `python3 tools/i18n.py --sync`, and commit the catalogs with the code.
 - Translate new and rewritten strings into every language when you can (radio `core/ui/lang/*.po`, site

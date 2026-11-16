@@ -129,6 +129,8 @@ pre code { background: none; padding: 0; }
 /* the flasher's one row of buttons under a step: back and start over on the left, the way forward on the right */
 .nav-bar { position: sticky; bottom: 0; z-index: 2; display: flex; gap: var(--space-3) var(--space-4); align-items: center; flex-wrap: wrap; margin-top: var(--space-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-2) var(--space-3); box-shadow: var(--shadow); }
 .nav-back { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+/* the bar's Report a Problem gives way to one the step already shows (an error's, an offer's) */
+#flasher:has(.report-line, .report-reported, .report-offer) .nav-report { display: none; }
 .nav-info { flex: 1; min-width: 12rem; }
 .nav-info:empty { min-width: 0; }
 .nav-forward { margin-left: auto; display: flex; gap: var(--space-2); flex-wrap: wrap; justify-content: flex-end; }

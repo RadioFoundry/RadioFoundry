@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-# MD-380 feature defaults (config/features.mk lists them all). 464 KB for code and read-only data: flash sectors 3-7;
-# the codec sectors 8-11 are never linked into (boards/md380/memory.ld, docs/spec/codec-placement.md).
+# MD-380 feature defaults (config/features.mk lists them all). 848 KB for code and read-only data: flash sectors 3-10;
+# the codec sector 11 is never linked into (boards/md380/memory.ld, docs/spec/codec-placement.md).
 # 160x128 display. The case edge crowds the top row and the two left columns (seen on the radio, 2026-10-16);
 # right and bottom are close but usable (hardware-md380.md 7). The fault trace, the large font and LTO follow the
 # platform (platform/stm32f4/config.mk)
@@ -31,6 +31,7 @@ BOARD_UNSUPPORTED += SFR	# the HR_C5000 lacks CRC_MCU_Control for the idle burst
 BOARD_UNSUPPORTED += SFR_DUALPATH_RX	# needs SFR
 BOARD_UNSUPPORTED += SFR_CWID	# needs SFR
 BOARD_UNSUPPORTED += FONT_XL	# the 160x128 panel is too small for the large font (it is for 240 px and wider)
+BOARD_UNSUPPORTED += FONT_BIG	# the 9x18 font is drawn only on panels 220 px and wider; this one is 160x128
 CONFIG_AM_RX ?= n
 BOARD_UNSUPPORTED += AM_RX	# no air band receiver (docs/spec/airband-and-broadcast.md)
 CONFIG_BCAST_FM ?= n

@@ -272,6 +272,18 @@
     "DMR_SMS"
    ]
   },
+  "message_long": {
+   "group": "messages",
+   "needs": [
+    "DMR_SMS"
+   ]
+  },
+  "message_read": {
+   "group": "messages",
+   "needs": [
+    "DMR_SMS"
+   ]
+  },
   "compose": {
    "group": "messages",
    "needs": [

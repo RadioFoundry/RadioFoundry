@@ -21,15 +21,34 @@ class StubRouteError(Exception):
     pass
 
 
-def argv(board_id, image_path, port, backup_dir=None):
-    out = [port, "--rfoundry-enter", "--board", board_id, "--write-app", image_path, "--boot", "reset"]
+def argv(board_id, image_path, port, backup_dir=None, attach=False):
+    out = [port, "--attach" if attach else "--rfoundry-enter", "--board", board_id, "--write-app", image_path, "--boot",
+           "reset"]
     if backup_dir:
         out += ["--backup-dir", backup_dir]
     return out
 
 
+def _is(e, name):
+    """Whether e is a stubtool error of that class: by name, as stubtool may be loaded more than once (a checkout loads
+    it by path, f4stub imports it by name)"""
+    return any(c.__name__ == name for c in type(e).__mro__)
+
+
+def _call(stubtool, args):
+    """(exit code, None) from stubtool.main, or (1, the error) for a stubtool error, which main raises here rather than
+    print, so the caller knows which it was"""
+    try:
+        return stubtool.main(args, raise_errors=True), None
+    except Exception as e:
+        if _is(e, "DumpError") or isinstance(e, OSError):
+            return 1, e
+        raise
+
+
 def run(board, image, port=None, backup_dir=None, log=print, stubtool=None):
-    """Write `image` (bytes from the board's application base) through the stub. Returns stubtool's exit code."""
+    """Write `image` (bytes from the board's application base) through the stub. Returns stubtool's exit code; an error
+    is logged."""
     if board.id not in BOARDS:
         raise StubRouteError("the %s has no stub" % board.name)
     if port is None:
@@ -49,4 +68,14 @@ def run(board, image, port=None, backup_dir=None, log=print, stubtool=None):
         with open(path, "wb") as f:
             f.write(image)
         log("stub     %s via %s: %d bytes from 0x%X" % (board.name, port, len(image), board.app_base))
-        return stubtool.main(argv(board.id, path, port, backup_dir))
+        rc, err = _call(stubtool, argv(board.id, path, port, backup_dir))
+        if err is not None and _is(err, "NoAnswer"):
+            # RadioFoundry didn't answer at all: an earlier run that stopped (the tool killed, the cable pulled) can
+            # leave the stub running, which keeps the radio until it is reset. Attach to it and finish the write
+            log("stub     RadioFoundry doesn't answer (%s); trying a stub left running by an earlier run" % err)
+            rc, err2 = _call(stubtool, argv(board.id, path, port, backup_dir, attach=True))
+            if err2 is not None:
+                log("stub     no stub finished the write either: %s" % err2)
+        elif err is not None:
+            log("stub     %s" % err)
+        return rc

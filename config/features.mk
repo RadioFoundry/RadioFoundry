@@ -138,6 +138,9 @@ CONFIG_CPS_OPENFW ?= $(CONFIG_HOSTLINK)
 CONFIG_CPS_FAST ?= $(if $(filter y,$(CONFIG_CPS_OPENFW)),$(if $(filter y,$(CONFIG_DEBUGLINK) $(CONFIG_STUB_ENTRY)),y,n),n)
 # the diagnostics page
 CONFIG_DIAG ?= y
+# Settings > Advanced > Backlight tests: a bench tool that sets the backlight's PWM compare value, brightness and rate
+# by hand, to measure a radio's backlight drive (docs/testing/backlight-curve.md). Untranslated; off in every release
+CONFIG_BACKLIGHT_TEST ?= n
 # 16x32 font, only useful on 240 px and wider displays
 CONFIG_FONT_XL ?= n
 # anti-aliased fonts from 6x12 up (JetBrains Mono Bold, 2 bits a pixel) instead of the bitmap ones: smooth text on color

@@ -528,6 +528,7 @@ static void test_bcast_channel(void)
 	bc.rssi = 65;
 	run(100);
 	CHECK(sm.view.state == RS_RX && bc.audio && !hw.audio);
+	CHECK((sm.view.leds & RADIO_LED_GREEN) == 0);	// a station playing isn't a call: no RX LED
 	CHECK(sm.view.noise == 32 && sm.view.rssi_dbm == 65 + RADIO_BCAST_DBUV_DBM);
 	bc.rssi = 35;	// an empty frequency's level: still RX, still playing
 	run(100);
@@ -621,11 +622,13 @@ static void test_bcast_vfo(void)
 	s.bcast_step = RADIO_BCAST_STEP_200_ODD;
 	radio_sm_set_settings(&sm, &s, now);
 	CHECK(sm.view.vfo_step_hz == 200000);
-	// An explicit VFO step is used as set, here too
-	req(RREQ_VFO_STEP_SIZE, RADIO_AM_STEP_25K);
+	// A fixed VFO step (12.5 kHz for the other bands) doesn't change the broadcast step here
+	req(RREQ_VFO_STEP_SIZE, 12500);
+	run(30);
+	CHECK(sm.view.vfo_step_hz == 200000 && !sm.view.vfo_step_auto);
 	req(RREQ_VFO_STEP, 1);
 	run(30);
-	CHECK(sm.view.ch.rx_hz == 90025000);
+	CHECK(sm.view.ch.rx_hz == 90100000);
 	req(RREQ_VFO_STEP_SIZE, 0);
 	// Down out of the broadcast band into the air band: AM there, the broadcast receiver off
 	req(RREQ_VFO_SET, 108000000);

@@ -28,6 +28,7 @@ Messages.
 
    | Row | Does |
    |---|---|
+   | Full message | Shows the whole text on its own page. **Up** and **Down** scroll it, **Back** returns. Only when the text is too long for the screen, which ends it with "…" |
    | Reply "OK" | Sends "OK" to the sender |
    | Reply "On my way" | Sends "On my way" to the sender |
    | Call | Makes the sender the talk target for now |
@@ -39,6 +40,8 @@ to that callsign.
 
 <img src="../ux/screens/160x120i5/messages.png" width="200" alt="Messages">
 <img src="../ux/screens/160x120i5/message_view.png" width="200" alt="A message">
+<img src="../ux/screens/160x120i5/message_long.png" width="200" alt="A long message: the Full message row, and its whole text">
+<img src="../ux/screens/160x120i5/message_read.png" width="200" alt="">
 
 The radio keeps DMR and APRS messages in memory. They are lost when the radio turns off.
 

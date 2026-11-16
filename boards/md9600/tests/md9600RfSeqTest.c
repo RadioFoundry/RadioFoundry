@@ -1037,12 +1037,37 @@ static void test_cal(void)
 	CHECK(md9600_cal_apc_floor(2) == 0);
 	CHECK(md9600_cal_squelch(400000000u, &l1, &l9) && l1 == 140 * 16 && l9 == 60 * 16);
 
-	// A PA row that doesn't rise with the level: transmit has no calibration
-	// A top row that puts the top level past the drive limit, or rows so low that 25 W falls under 5 W's fixed drive:
-	// no level transmits
-	cal_put(0x10, 125, 9);
+	// A radio whose PA needs more drive at the top than the bench radio: every level still transmits, the top one past
+	// its top row by the same step. Mid-band only (430-470 MHz, the points between the band's ends) as radios in the
+	// field have it, where a fixed drive limit once refused the whole frequency
+	cal_put(0x10 + 3, 125, 5);
 	md9600_cal_load();
-	CHECK(md9600_cal_pa_row(400000000u, 3, &dac) && !md9600_cal_apc(400000000u, 0, &dac));
+	for (uint8_t l = 0; l < 5; l++) {
+		CHECK(md9600_cal_apc(434050000u, l, &dac));
+	}
+	uint16_t top_row;
+	CHECK(md9600_cal_pa_row(434050000u, 3, &top_row) && md9600_cal_apc(434050000u, 4, &dac) && dac == top_row + 337);
+	CHECK(md9600_cal_pa_row(440000000u, 3, &dac) && dac == 126 * 16);
+	CHECK(md9600_cal_apc(440000000u, 4, &dac) && dac == 126 * 16 + 337);
+	// A top row near the DAC's full scale: the top level clamps at the most drive and still transmits, 25 W still
+	// between the rows around it. Just under the bound: the full step
+	cal_put(0x10, 197, 3);
+	md9600_cal_load();
+	CHECK(md9600_cal_apc(400000000u, 4, &dac) && dac == 197 * 16 + 337 && dac < MD9600_APC_MAX);
+	cal_put(0x10, 250, 3);
+	md9600_cal_load();
+	CHECK(md9600_cal_apc(400000000u, 4, &dac) && dac == MD9600_APC_MAX);
+	CHECK(md9600_cal_apc(400000000u, 3, &dac) && dac == 1232 + (4000 - 1232) * 8 / 152);
+	// An erased top row (0xFF) is no value: no level transmits
+	cal_put(0x10, 0xFF, 3);
+	md9600_cal_load();
+	CHECK(!(md9600_cal_rf_rows(MD9600_UHF) & MD9600_CALOK_PA) && !md9600_cal_apc(400000000u, 0, &dac));
+
+	// A PA row that doesn't rise with the level, or rows so low that 25 W falls under 5 W's fixed drive: no level
+	// transmits
+	cal_put(0x10, 30, 9);
+	md9600_cal_load();
+	CHECK(!(md9600_cal_rf_rows(MD9600_UHF) & MD9600_CALOK_PA) && !md9600_cal_apc(400000000u, 0, &dac));
 	cal_put(0x10, 110, 9);
 	cal_put(0x1A0, 30, 9);
 	cal_put(0x190, 35, 9);

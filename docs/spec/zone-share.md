@@ -5,7 +5,8 @@
 
 One radio sends a zone, or one channel, to another radio or to a talkgroup over DMR data. The receiver shows it as an
 offer and imports it only when the user says so. Status: built and host-tested (`zoneShareTest`, `zoneShareSvcTest`,
-`zoneImportTest`, the UI flow tests). On a radio, sending one channel has been checked against the SDR bench; sending
+`zoneImportTest`, the UI flow tests; the modes part in `zoneShareModesTest` and `zoneImportModesTest`, untested on a
+radio). On a radio, sending one channel has been checked against the SDR bench; sending
 a zone, offers and the import are untested there. The opt-in HIL test is `tests/hil/test_zone_share.py` (feature
 `zone_share`).
 
@@ -82,7 +83,8 @@ Every message starts with the version (1) and the type. Multi-octet fields are b
 | Channel | 6 to 15 + name | flags, RX Hz (4), then as the flags say: TX offset (4, signed, not 0), DMR (2), RX tone (2), TX tone (2); name |
 
 - A name is a length (0 to 16) and that many printable ASCII octets. The sender writes `?` for anything else.
-- Record flags: bit 0, one channel (the count must be 1). The other bits are reserved and must be 0.
+- Record flags: bit 0, one channel (the count must be 1); bit 1, a modes part follows the channels (4.2). The other
+  bits are reserved and must be 0. A build without the modes part refuses a record with bit 1 set.
 - Channel flags: bit 0 DMR, 1 25 kHz, 2 TX offset present, 3 RX tone present, 4 TX tone present, 5 receive only on
   the sender, bits 7-6 power (0 the default, 1 low, 2 mid, 3 high).
 - DMR octets: the color code (bits 3-0), slot 2 (bit 4), direct mode (bit 5), bits 7-6 reserved; then the contact, a
@@ -100,6 +102,35 @@ Every message starts with the version (1) and the type. Multi-octet fields are b
 The sender takes the zone's channels in order, each with its contact, while the record fits 1024 octets and 80
 channels. The rest are left out, and the UI says how many go ("Sending 40 of 60 channels"). Nothing else of the
 codeplug is sent: no scan lists, no RX group lists, no privacy keys.
+
+### 4.2 The modes part
+
+Channels of a kind ([channel-modes.md](channel-modes.md)) go with their tags and the systems they are on. Builds with
+a mode's codec carry them (`CONFIG_ZONE_SHARE_MODES`, on with `CONFIG_P25` and `CONFIG_ZONE_SHARE`). A record holds
+the part only when it has such a channel, so a share of plain channels is the same as before. Every length is one
+octet. Kinds' and system types' bytes are opaque here: their mode modules read them.
+
+| Part | Octets | Fields |
+|---|---|---|
+| Systems | 1 | count, 0-8 |
+| System | 5 + block + name, a whole one 2 + secret more | type (not 0 or 0xFF), flags (the system record's, bits 2-3 0), level (1 identity, 2 whole), identity length (at most the block's), block length and block (at most 200; level 1: the identity alone), name; level 2 only: secret length and secret (at most 64), entry count |
+| Entry | 4 + body | class, group, flags, body length and body (at most 64): a level 2 system's entries follow it. At most 64 in a record |
+| Tags | 1 | count, 1 up to the channel count |
+| Tag | 5 + params | channel (1-based, each after the one before), kind (not 0 or 0xFF), system (0 none, 1 up to the systems count, 0xFF on a system the sender doesn't share), flags (the tag's, bits 2-3 0: the fallback channel is never carried), parameter block length and block (at most 64) |
+
+What a sender carries of a system follows its sharing level ([channel-modes.md](channel-modes.md) 7.1):
+
+| Level | Carried |
+|---|---|
+| Off | nothing: its channels' tags say 0xFF |
+| Identity only | type, flags, name and the identity |
+| Whole system with key | the block and every entry too, and the secret only when the sender turns keys on for that share. A radio has no such switch yet and never sends a secret. A system whose block or entries pass the limits goes as its identity |
+
+Never carried: the radio's own ID on a system, a system's or a channel's fallback channel. Targets
+([channel-modes.md](channel-modes.md) 5.2) are not carried yet: no kind in this tree refers to them.
+
+A channel whose tag's parameter block passes 64 octets is left out. Without the modes part a sender leaves every
+channel of a kind out: its record is a stand-in that a receiver would take for a plain channel.
 
 ## 5. Receiving
 
@@ -135,7 +166,7 @@ A one-channel offer asks which zone to add the channel to.
 | Rule | Behavior |
 |---|---|
 | Band limits | only channels whose RX frequency is in this radio's bands are imported (`board_in_band`). The rest are counted and left out. None in band: nothing is imported |
-| Receive only | every imported channel is receive only, whatever the sender had. The user turns transmit on per channel |
+| Receive only | every imported channel is receive only, whatever the sender had. The user turns transmit on per channel. The one exception: a channel of a kind on a system the radio has (5.5) |
 | Power | the power class maps to this radio's levels: low the lowest, mid the middle, high the highest, default the codeplug's default |
 | Contacts | matched by ID and type against the user's contacts; a match keeps the user's name. Only contacts that imported channels use are added, in the lowest free slots. The same contact twice in a record becomes one |
 | New zone | added through the zone editor's write layer, as a new zone there is ([ui.md 2.2](ui.md#22-zone-editor)): it takes the lowest free slot, which can be ahead of other zones, and whoever holds a zone index follows the move. An update rewrites its zone in place. A name already in use gets " 2" to " 99", shortened to fit 16 characters |
@@ -164,6 +195,20 @@ A zone sent again by the same sender with the same zone ID updates the earlier i
   | Otherwise (the user changed, moved in or removed a channel among them) | only channels identical to one the new copy brings. An earlier channel the sender has since changed or dropped stays; the user deletes it |
 
 - Replaced channels that no zone lists any more are deleted. Contacts are never deleted.
+
+### 5.5 Channels of a kind
+
+With a modes part (4.2), after the import's channels are chosen:
+
+| Rule | Behavior |
+|---|---|
+| Systems | matched by type and identity against the radio's own. A match is used as it is: nothing of the radio's system is changed. A whole system the radio doesn't have is added when an imported channel is on it (its own ID 0, no fallback), with its entries and its secret if the record has one. Listen only comes as the sender set it: the receiver never forces it |
+| Missing | a system sent as its identity that the radio doesn't have, one the sender withholds, or one with no room left: its channels come in with no system, receive only, and the import counts them as unavailable. The Codeplug Editor flags them |
+| Tags | written for each imported channel: kind, flags and parameter block as sent |
+| Transmit | kept only on a channel whose system the radio has; the system's listen-only flag then rules. Every other channel is receive only (5.3) |
+| Undo | a failed import removes the systems, entries and secrets it added with its channels |
+
+The banner does not yet say how many came in unavailable.
 
 ## 6. Directory requests
 

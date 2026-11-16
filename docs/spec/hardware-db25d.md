@@ -255,7 +255,7 @@ TX on f (the order the radio's firmware uses; RadioFoundry differs where noted):
 | 3 | 50 us |
 | 4 | Main chip: 38 / 39 = f / 10 Hz (truncated), 37:1D0F, 30:0200, 30:C3FE (RadioFoundry writes the idle word before the frequency, not after). Then the LO chip 30:0000 only. 0x36 stays 0xBF |
 | 5 | The page's TX-on delay for f (1 us UHF, 1000 us VHF on the first unit). There is no other wait. RadioFoundry adds 3 ms (`TX_SETTLE_MS`) for the VCO calibration: no measurement says it can go, and a PA that comes up before the PLL has settled puts a carrier off frequency |
-| 6 | DAC B powered up at 0 (RadioFoundry only; the vendor firmware leaves it on), PA select of the band (UHF PTA26 high, PTB3 low; VHF PTB3 high, PTA26 low), PTA23 low, 200 us, the band's single TX supply (UHF PTA27 high, PTB2 low; VHF PTB2 high, PTA27 low) |
+| 6 | DAC B powered up at 0 (powered only for a transmission), PA select of the band (UHF PTA26 high, PTB3 low; VHF PTB3 high, PTA26 low), PTA23 low, 200 us, the band's single TX supply (UHF PTA27 high, PTB2 low; VHF PTB2 high, PTA27 low). DMR bursts: PTA23 low 200 us before the first drive, the PA select 30 us before it, the TX supply with it (4.5) |
 | 7 | DAC B ramps from 0 to the drive in 180 steps of 4 us |
 
 TX end: the main chip to its RX state on the TX frequency (47:6042, 50:3B18, 70:0, 37:1D0F, 30:0200, 30:BFF1), the page's
@@ -267,6 +267,11 @@ are (0x40 only matters in TX, unverified).
 The ramp is a 180-entry table in the radio's firmware; RadioFoundry uses a smoothstep over the same 180
 steps. `DB25D_TX_DRIVE_PCT` defaults to 100 (the page's value, the PA measured working); the high and low power levels are table
 0x045 and 0x056.
+
+Five power levels: 2 ("L") is table 0x056 and 4 ("H") table 0x045. Levels 0 and 1 are 75 % and 87 % of the low
+table's drive, level 3 is halfway between the tables. Drafts, to be set with a wattmeter
+([power-calibration.md](../testing/power-calibration.md)). On the SDR bench at 445 MHz (DMR bursts, relative to "L",
+drive 999): drive 750 gave -12.9 dB and 600 gave -21.9 dB. Level 1 and level 3 are not measured.
 
 **FM TX tone** (`tx_tone` / `tx_tone_key`: the 1750 Hz burst, roger beep, CW ID, a test tone). Single tone, in TX
 with the main chip at 0xC3FE:
@@ -443,6 +448,35 @@ ramp stays under 1.5 ms. The VHF page's key-up ramp is about half as long (0.77 
 UHF only: on 2 m it split each of these calls in two, lost the terminator and corrected 72-142 AMBE bits, while the
 SDR's own decode of the same transmissions found every frame clean, so `test_dmr_tx_off_air`'s bench modem checks fail
 there and its waveform checks are the ones to read.
+
+**Key-up constants** (`radio/pa_keyup.h`, [pa-keyup.md](pa-keyup.md); `tools/bench/pa_cal.py` into a dummy load at
+each band's center, every level):
+
+| Band | dead_pm | knee_us | slope_us | window_us | settle_us | pa_us |
+|---|---|---|---|---|---|---|
+| VHF | 0 | 205 | 261 | 1250 | 300 | with the drive |
+| UHF | 196 | 333 | 117 | 1250 | 0 | with the drive |
+
+No level is boosted on either band: each comes up on its own drive, written 0.4 ms (the top level) to 0.85 ms (the
+lowest) before the first symbol. Measured, every level: the −3 dB point 0.25 to 0.29 ms before the first symbol, no
+overshoot, on the air (within 20 dB) 0.35 to 0.62 ms before it, so nothing before the slot's start.
+
+**PA select per burst.** Selected, the PA passes the carrier before any drive: 15 dB under the lowest UHF level, 31
+dB under the top one, whether the TX supply is on or not. With the select at the TX on sequence's end, 0.4-0.6 ms
+ahead of the drive, every level rose in two steps (a flat step at that level, then the drive's rise) and the lowest
+level was on the air at -15 dB from 0.15 ms before the slot's start. So a DMR burst selects the PA 30 us before its
+first drive and turns the TX supply on with it; PTA23 still goes low 200 us before the supply. Measured into the
+dummy load, every level then rises once from under -57 dB: at 146 MHz its -3 dB point 0.25-0.33 ms before the first
+symbol with 0.2 dB of overshoot, at 445 MHz 0.24-0.29 ms (the lowest level by its edge, below). The carrier is down
+0.40-0.73 ms after the last symbol on both bands.
+
+UHF, the lowest level: the output is within 6 dB 0.4 ms after the drive is written, then gains its last 3 dB over
+milliseconds. More lead buys about 0.15 dB per 0.1 ms at the first symbol (3.6 dB under the settled level with 0.8 ms
+of lead, 2.5 dB with 1.5 ms), and a boost before the level's drive buys nothing: with boosts of 4 to 30 % held for 0.3
+to 1.2 ms the output was back at 3 dB under 0.5 ms after the boost's end. So this level is timed by its edge (6 dB
+under 0.43 ms before the first symbol) and its first symbol is 3.3 to 3.7 dB under the settled level. The two levels
+above it creep the same way by less (2.3 and 1.2 dB under at the first symbol). An earlier set keyed the lowest level
+from a 1.5 ms window with a boost: it was 10 dB under its level at the slot's start, 0.25 ms into the slot before.
 
 Tried and dropped (no change in the inbound counts): keeping the LO chip running through TX, a ramp down 0.45 ms before
 the last symbol (16 bits fewer per 72 frames, our last symbols at reduced power), and shorter waits in the TX on

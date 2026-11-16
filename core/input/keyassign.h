@@ -17,6 +17,7 @@
 #define KEYASSIGN_MARKER	0x4B02u	// "K", layout 2
 #define KEYASSIGN_MARKER_V1	0x4B01u	// "K", layout 1
 #define KEYASSIGN_ROLES		9	// a slot each after the marker
+#define KEYASSIGN_HOME_KEYS	4	// board.home_keys at most: ACT_HOME_KEY_1 .. 4
 
 // A role's function. Stored: append only, never renumbered (gotchas 9.11), and below 256 (a byte in layout 2)
 typedef enum {
@@ -45,6 +46,11 @@ typedef enum {
 
 // fn may go in a press (hold false) or long press slot
 bool keyassign_allowed(uint8_t fn, bool hold);
+// The same for a home key (board.home_keys): its arrow sends a press and a long press, never raw edges, so the
+// functions held for as long as the key is (Monitor, Tone burst) can't go there
+bool keyassign_home_allowed(uint8_t fn, bool hold);
+// The input action a function sends (ACT_NONE for Default and Nothing)
+uint8_t keyassign_action(uint8_t fn);
 // The function in role's press or long press slot: KEYFN_DEFAULT without the marker or for a value not allowed there
 uint8_t keyassign_get(const uint16_t slots[KEYASSIGN_SLOTS], uint8_t role, bool hold);
 // Set it (KEYFN_DEFAULT for a value not allowed there). Slots without a marker are another firmware's: they are
@@ -54,5 +60,15 @@ void keyassign_set(uint16_t slots[KEYASSIGN_SLOTS], uint8_t role, bool hold, uin
 // holds base_len entries
 void keyassign_build(const keymap_entry_t *base, uint8_t base_len, const uint8_t *side_keys, uint8_t side_key_count,
 		     const uint16_t slots[KEYASSIGN_SLOTS], keymap_entry_t *out);
-
+// Then the home keys (home_keys, home_count of them, roles from first_role): one with a function in either slot sends
+// ACT_HOME_KEY_1 + i on a press and a long press (repeat kept), for the UI to turn into the function on Home or the
+// key's own action elsewhere (keyassign_home_event). out holds base_len entries
+void keyassign_build_home(keymap_entry_t *out, uint8_t base_len, const uint8_t *home_keys, uint8_t home_count,
+			  uint8_t first_role, const uint16_t slots[KEYASSIGN_SLOTS]);
+// What a home key's event (ACT_HOME_KEY_1 + i) does: on Home its role's function (Default: the key's own action,
+// Nothing: none; a long press's repeats send nothing when it has a function), elsewhere the key's own action in base.
+// The action, ACT_NONE for nothing
+uint8_t keyassign_home_event(uint8_t action, uint8_t gesture, bool home, const keymap_entry_t *base, uint8_t base_len,
+			     const uint8_t *home_keys, uint8_t home_count, uint8_t first_role,
+			     const uint16_t slots[KEYASSIGN_SLOTS]);
 #endif

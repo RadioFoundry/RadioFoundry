@@ -10,11 +10,17 @@ references are ETSI TS 102 361-1 and -2.
 ## 1. Who we hear
 
 A voice call on our timeslot and color code starts from a voice LC header or by late entry (section 4). It is played
-when it passes the filters, and shown either way:
+when it passes the filters, and shown either way. Digital monitor (hear all, below) also takes calls on any color code
+and either timeslot (`dmr_listen_filter_t.any_cc`, `.both_ts`; the modem gets no color code filter and, through a
+repeater, no slot lock). The first call heard keeps the voice until it ends: bursts on the other slot meanwhile are
+dropped. Turning it on or off changes only the modem's filters: the call being heard and the reply window stay, and
+a call heard as not ours plays at once. The view gives the call's color code and slot (`rx_cc`, `rx_ts`; the slot 0
+when unknown, the code from the first burst that carries one, never burst A) beside the channel's (`cc`, `ts`), which
+PTT always uses.
 
 | Call | Played when |
 |---|---|
-| Group (FLCO 0) | its talkgroup is the talk target's, all call (0xFFFFFF), in the channel's RX group list (listen list), the reply target's during the reply window, or hear all, "digital monitor" in the UI (the hear-all latch: the MONITOR key's press toggles it on a DMR channel, its release does nothing (#19); Quick 5; `radio_req_dmr_hear_all`; until the channel changes, DMR stops (a mode change), or BACK on Home; the end of a call doesn't end it) |
+| Group (FLCO 0) | its talkgroup is the talk target's, all call (0xFFFFFF), in the channel's RX group list (listen list), the reply target's during the reply window, or hear all, "digital monitor" in the UI (the hear-all latch: the MONITOR key's press toggles it on a DMR channel, its release does nothing (#19); Quick 5; `radio_req_dmr_hear_all`; until the channel changes, DMR stops (a mode change), or BACK on Home; the end of a call doesn't end it. A zone or VFO scan started with it on keeps it on at every stop and latches it on the channel the scan ends on; turning it off during the scan ends it for the scan, [radio-features.md](radio-features.md) 2) |
 | Private (FLCO 3) | addressed to our ID (the channel's DMR ID override, else the radio's), or all call, or hear all |
 | Our own ID as source | not while we transmit or for `DMR_CALL_OWN_ECHO_MS` (700 ms) after our call ended or was cut short (the repeater's echo of it); later it is judged as any other call, so a parrot's playback of our call plays (#294). A terminator from our ID ends only the call with its LC, never another station's |
 | Encrypted | only with a privacy key, and never after a PI header (section 5) |

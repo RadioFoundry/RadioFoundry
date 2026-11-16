@@ -36,7 +36,7 @@ The manual names keys by the job they do. Each radio puts those jobs on its own 
 | **Talk target** | Talk target picker | Hold **#** | Hold **#** | Hold **#** | Hold **#** | Hold **P2** | Hold **#** |
 | **A/B** | Dual watch: the other channel / dual watch on or off | SK2 | SK2 | SK2 | SK2 | TONE/T.SEL | A/B key, SK2 |
 | **Power level** | Next power level / emergency (held 1.5 s) | SK3 | None | None | None | None | None |
-| **Previous zone**, **Next zone** | Step the zone on Home | P1, P2 | None | None | Left, Right | None | Left, Right |
+| **Previous zone**, **Next zone** | Step the zone on Home | P1, P2 | None | None | P1, P2 | None | Left, Right |
 | **VFO** | Between the channel and the VFO / copy the channel to the VFO | None | None | None | None | None | VFO/MR key |
 | **Volume** | Open the volume editor. Radios without a volume knob only | None: the knob | None: the knob | None: the knob | None: the knob | VOL/SQL | None: the knob |
 | **PTT** | Transmit | PTT | PTT | PTT | PTT | PTT on the microphone | PTT |
@@ -50,11 +50,12 @@ These are the defaults. **Settings > Keys** can give other jobs to every key the
 | DM-1701 | SK1, SK2, SK3, P1, P2 |
 | MD-380 | SK1, SK2 |
 | MD-UV380 | SK1, SK2 |
-| DM-32UV | SK1, SK2 |
+| DM-32UV | SK1, SK2, and P1, P2 on Home |
 | DB25-D PRO | P3, TONE/T.SEL, the microphone's P4 and P5 |
 | DM-1801 Pro | SK1, SK2, SOS, A/B, VFO/MR |
 
-OK, Back, the arrows, the number keys, **\***, **#**, PTT and the volume stay as they are. On the DB25-D PRO that
+OK, Back, the arrows, the number keys, **\***, **#**, PTT and the volume stay as they are. Where the arrows are
+printed P1 and P2 (DM-32UV), what you set for them works on Home only: in the menus they stay left and right. On the DB25-D PRO that
 includes P1, P2 and the microphone's P6 and P7, which are **\*** and **#** there.
 
 The hints at the bottom of the screen use these names. A radio that knows its own name for a key shows that instead
@@ -180,14 +181,14 @@ The side keys are, top to bottom, SK1, **PTT**, SK2 and SK3.
 
 ### DM-1701 power levels
 
-Nine levels: 50 mW, 250 mW, 500 mW, 750 mW, 1 W, 2 W, 3 W, 4 W, 5 W. The values are nominal and use the radio's
-factory calibration.
+Five levels: 100 mW, 500 mW, 1 W, 2.5 W, 5 W. The values are nominal and use the radio's factory calibration. They
+haven't been measured with a wattmeter.
 
 | Way to change it | Levels |
 |---|---|
 | A channel without a power in the codeplug | 1 W |
-| **\***, **1** | 50 mW, 1 W, 5 W |
-| SK3 on Home | All nine, one per press |
+| **\***, **1** | 100 mW, 1 W, 5 W |
+| SK3 on Home | All five, one per press |
 
 ### DM-1701 battery
 
@@ -290,8 +291,9 @@ bootloader starts when you hold **PTT** and the side key just above it at power-
 One band per radio: UHF (400-480 MHz) or VHF (136-174 MHz). There is one image for each band, and an image refuses
 the other band.
 
-Two power levels, 1 W and 5 W. A channel without a power in the codeplug uses 1 W. **\***, **1** switches between the
-two. The radio refuses to transmit without a valid factory calibration.
+Five power levels: 100 mW, 500 mW, 1 W, 2.5 W, 5 W. 1 W and 5 W are the factory calibration's; the others are set from
+them and haven't been measured with a wattmeter. A channel without a power in the codeplug uses 1 W. **\***, **1**
+steps through 100 mW, 1 W and 5 W. The radio refuses to transmit without a valid factory calibration.
 
 ### MD-380 battery
 
@@ -359,8 +361,8 @@ No **P1**, **P2**, **SK3** or top key, so no **Power level** or zone keys and no
 
 ### MD-UV380 power levels
 
-Nine levels as on the DM-1701, 50 mW to 5 W. On the MD-UV390 Plus 10 W image the top four are 2, 3, 5 and 10 W. A
-channel without a power in the codeplug uses 1 W. The radio refuses to transmit without a valid factory calibration.
+Nine levels: 50 mW, 250 mW, 500 mW, 750 mW, 1 W, 2 W, 3 W, 4 W, 5 W. On the MD-UV390 Plus 10 W image the top four are
+2, 3, 5 and 10 W. A channel without a power in the codeplug uses 1 W. The radio refuses to transmit without a valid factory calibration.
 
 ### MD-UV380 battery
 
@@ -409,18 +411,18 @@ Follow [Installing](02-installing.md) with these values. To keep the stock codep
 | Green Menu / OK key | **OK** |
 | Red Back key | **Back** |
 | Up, Down | **Up**, **Down** |
-| Left, Right | Press or hold: **Previous zone**, **Next zone**. The key labels are unchecked |
+| P1, P2 (left and right on the 4-way key) | On Home, press or hold: **Previous zone**, **Next zone**, or what Settings > Keys sets for them. Left and right in the menus |
 | SK1 (the side key below **PTT**) | **Monitor**. Held with **PTT** at power-on, it starts the bootloader |
 | SK2 | **A/B** |
 | **PTT** | **PTT** |
 | Channel knob | Channel knob |
 
-No **Power level** key and no emergency key: the radio's third programmable side key hasn't been located yet. Change
-the power with **\***, **1**.
+No **Power level** key and no emergency key by default. Give them to P1 or P2 in Settings > Keys (emergency on a
+hold), or change the power with **\***, **1**.
 
 ### DM-32UV power levels
 
-Nine levels, L-, L, L+, L++, M, M+, M++, H-, H, from the radio's factory calibration. The radio is rated 5 W (VHF) and
+Five levels, L-, L, M, M+, H, from the radio's factory calibration. The radio is rated 5 W (VHF) and
 4 W (UHF) at high power. The levels haven't been measured. A channel without a power in the codeplug uses L.
 **\***, **1** steps through L-, L and H.
 
@@ -539,7 +541,9 @@ timeout Off until it is switched off. Switch the radio off before unplugging the
 
 ### DB25-D PRO power and supply
 
-Two levels, L and H (nominal 20 W). The radio refuses to transmit until RadioFoundry can read its power calibration.
+Five levels: L--, L-, L, M, H. L and H (nominal 20 W) are the factory calibration's; the others are set from them and
+haven't been measured. A channel without a power in the codeplug uses L. The radio refuses to transmit until
+RadioFoundry can read its power calibration.
 
 The radio runs from a 13.8 V supply and has no battery. The status line shows no battery icon or percentage, Tools has
 no Battery page, and Settings > Power saving has no Battery saver or Low battery warning. RadioFoundry doesn't read the supply
@@ -644,8 +648,9 @@ installation) or from a codec the browser kept. Untested on a DM-1801 Pro from t
 
 ### DM-1801 Pro power and display
 
-Three power levels, L, M and H, Low, Middle and High. The radio refuses to transmit until RadioFoundry can
-read its factory calibration. The battery
+Five power levels: L--, L-, L, M, H. L, M and H are the factory calibration's Low, Middle and High; the two under L are
+set from L and haven't been measured. A channel without a power in the codeplug uses L. The radio refuses to transmit
+until RadioFoundry can read its factory calibration. The battery
 reading is scaled from a measurement on one radio. The screen is monochrome; the backlight is on or off.
 The radio vibrates for messages, call alerts and emergencies (**Settings > Sound > Vibrate**).
 

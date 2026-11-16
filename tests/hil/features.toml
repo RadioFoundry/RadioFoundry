@@ -421,6 +421,10 @@ spec = "docs/spec/ui.md"
 switch = "DIAG"
 spec = "docs/spec/ui.md"
 
+[feature.backlight_test]
+switch = "BACKLIGHT_TEST"
+spec = "docs/testing/backlight-curve.md"
+
 [feature.ui_color]
 switch = "UI_COLOR"
 hardware = "a color display"

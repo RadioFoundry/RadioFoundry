@@ -293,6 +293,12 @@ The MMDVM protocol itself is public and is specified separately. The switch work
   the radio to hotspot mode, if a hotspot type is configured (MMDVM or BlueDV) and DMR isn't disabled. There is no
   CPS reply. The request is queued as the first MMDVM frame. The radio also stops GPS NMEA output, so MMDVMHost
   doesn't see stray text.
+- **Trial.** Line noise on a UART (a loose cable) is full of 0xE0 bytes, so the switch starts a trial first. The radio
+  shows nothing and keeps the modem until two host-like frames arrive in a row: a command a host starts with
+  (GET_VERSION, GET_STATUS, SET_MODE, SET_FREQ, SET_CONFIG) at the payload length that command takes. The first is
+  answered at once, since a host waits for the GET_VERSION reply. Anything else ends the trial without a reply: a
+  frame that isn't host-like, a byte the framer throws away, or 500 ms without the second frame. The debug link counts
+  failed trials (`hostlink.noise`).
 - **USB (STM32, MK22).** From then on, every USB packet starting with 0xE0 and at least 3 bytes long is taken as one
   MMDVM frame. The radio does not parse the MMDVM length byte. A packet that doesn't fit in the frame ring is dropped
   and counted.

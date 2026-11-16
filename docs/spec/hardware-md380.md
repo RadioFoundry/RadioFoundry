@@ -36,12 +36,14 @@ needed bypass) before staying on HSI. LSE: a 32.768 kHz crystal is assumed (unve
 | Sectors | Addresses | Use |
 |---|---|---|
 | 0-2 (3 x 16 KB) | 0x08000000-0x0800BFFF | TYT bootloader, never written (unverified) |
-| 3-7 | 0x0800C000-0x0807FFFF | RadioFoundry application, 464 KB in one piece (`boards/md380/memory.ld`) |
-| 8-11 | see [codec-md380.md](codec-md380.md) | The codec as the merge places it. From D002.032: the table windows at their original addresses (sectors 8, 10, 11), the code moved to 0x080E0000 (sector 11). From D35.14 / S35.14: the main table window at its original address (from sector 9 into sector 10), the code right after it, the small ones in sector 11. Then the descriptor at 0x080FFF80 |
+| 3-10 | 0x0800C000-0x080DFFFF | RadioFoundry application, 848 KB in one piece (`boards/md380/memory.ld`) |
+| 11 | 0x080E0000-0x080FFFFF | The codec as the merge places it: every window moved into this sector, the code first, then the tables ([codec-md380.md](codec-md380.md)). Then the descriptor at 0x080FFF80 |
 
 The application starts at 0x0800C000 with its vector table there (VECT_TAB_OFFSET 0xC000) (unverified).
 
-`boards/md380/memory.ld` asserts that the image ends before 0x08080000. The default UHF image takes 320,236 bytes with link time
+`boards/md380/memory.ld` asserts that the image ends before 0x080E0000. Earlier releases gave the application sectors
+3-7 and kept the codec tables at their original addresses in sectors 8-11; the flashing tools move such a radio's codec
+on the first install ([codec-placement.md](codec-placement.md), "Moving to a new layout"). Image sizes with link time
 optimization, on by default here: [feature-matrix.md](../feature-matrix.md#dm-1701-and-md-380). The manufacturer's firmware keeps
 the codec code at 0x08050C44 (sectors 6 and 7), so the merge moves it.
 
@@ -613,11 +615,64 @@ Roaming reads this RSSI (the IF chain's level on an ADC) as the site signal ([dm
 
 ### 5.6 PA and power control
 
-DAC1 is the APC reference, scaled from the calibration's power rows (11.2). Two levels, 1 W and 5 W. TX is refused
+DAC1 is the APC reference, scaled from the calibration's power rows (11.2), 1 W and 5 W. TX is refused
 without an accepted calibration table (no safe uncalibrated drive is known).
 
-DMR: the PA follows the bursts. The RF TX interrupt keys it (APC_EN); a TIM7 one-shot drops it 30 ms later
- 3.4, and the slot engine's PA-off at the next timeslot interrupt stays as the fallback.
+Five power levels. The values are drafts, to be set with a wattmeter
+([power-calibration.md](../testing/power-calibration.md)); the debug link's `radio tx-drive` keys any drive.
+
+| Level | Name | Drive |
+|---|---|---|
+| 0 | 100 mW | 56.5 % of the 1 W row |
+| 1 | 500 mW | 80.7 % of the 1 W row |
+| 2 | 1 W | the 1 W row |
+| 3 | 2.5 W | 45 % of the way from the 1 W row to the 5 W row (not measured) |
+| 4 | 5 W | the 5 W row |
+
+Levels 0 and 1 come from a drive sweep on the SDR bench (UHF radio, 432 MHz, DMR bursts, relative to the 1 W row's
+drive 1115; the 5 W row is 2119):
+
+| Drive | 300 | 400 | 500 | 600 | 700 | 800 | 950 |
+|---|---|---|---|---|---|---|---|
+| dB | -42.8 | -32.2 | -18.7 | -12.4 | -8.2 | -4.8 | -2.1 |
+
+DMR: the PA follows the bursts, keyed by the key-up rule ([pa-keyup.md](pa-keyup.md)) with constants measured by
+`tools/bench/pa_cal.py` on a UHF radio up to its 2.5 W level and judged by the ramp's shape
+(`tools/bench/pa_shape.py`): dead zone 56.3 % of the anchor, knee 91 µs, slope 1003 µs, window 1650 µs, settle
+506 µs, no approach (`ease_pm` 0). Only the lowest level gets a boost. Over the air on the SDR bench every level
+reaches -3 dB 0.19-0.34 ms before the first symbol and is within 0.4 dB of its power over the first 10 symbols
+(mean), nothing over the floor in the slot before. Overshoot: 0.7-1.1 dB, and 1.7-1.8 dB at drive 972, which that
+drive gives written alone too (the power loop's). The lowest level leaves the floor about 1 ms ahead and stays near
+-28 dB for about 0.1 ms before it rises (the PA just over its turn-on edge, at any boost tried). The 5 W level is not
+measured.
+
+The lowest level's drive is 56.5 % of the 1 W row's, 0 to 3 counts over the dead zone's edge depending on the row
+(2 on the radio measured, its 1 W row 972). At 0 it takes the edge's boost ([pa-keyup.md](pa-keyup.md) 2), within a
+count of the others'.
+
+The VHF image doesn't use these constants: its PA is not measured, and constants that key the UHF PA just in time
+could key a slower one late. It keys every level at its own drive at the key timer's first step, 30 µs after the RF
+TX interrupt (`PA_KEYUP_FIXED`), as the radio keyed before the rule.
+
+The window used to be 1530 µs: the second level's lead was then just past it, so it was boosted and ran 3.6-4.7 dB
+past its power, though written alone at the window's start its own drive is up 0.18 ms before the first symbol,
+0.7 dB over. An approach drive (`ease_pm` 304) capped that boost but kept the levels from 1 W up at the approach
+drive from 2.2 ms ahead: a step 6-9 dB down through the guard, on the air 1.1-1.2 ms before the first symbol. An
+earlier fixed boost for every level overshot the low levels by 7 dB and more. Keyed at the RF TX interrupt, the PA
+was up 1.1-1.6 ms before the first symbol (the interrupt taken as 2.53 ms before the first symbol), and the PA goes
+on with the first drive. On the SDR bench (UHF radio, 432 MHz), every level at its own drive from 1 ms after the
+interrupt, before the rule:
+
+| Level | -3 dB point before the first symbol | First symbol against the settled level | Overshoot |
+|---|---|---|---|
+| 100 mW | 0.13 ms | -0.2 dB | 0.6 dB |
+| 500 mW | 0.47 ms | +0.4 dB | 1.3 dB |
+| 1 W | 0.59 ms | 0.0 dB | 0.5 dB |
+
+The lowest level sets the point: a higher drive comes up sooner. The levels above 1 W are not measured.
+
+A TIM7 timer runs the points from the RF TX interrupt and drops the PA 30 ms after it
+([gotchas.md](gotchas.md) 3.4), and the slot engine's PA-off at the next timeslot interrupt stays as the fallback.
 
 The radio has one synthesizer, so it can't receive while it is set up to transmit. The switch to TX (receiver off,
 the HR_C5000's transmit set, the TX VCO locked, TX_5V up) happens before the first burst, never at it: done in the RF TX
@@ -963,7 +1018,7 @@ Entered by holding PTT and the upper side key while switching on (unverified). U
 non-standard commands; the same erase-by-sector and block-write protocol as the DM-1701's loader (unverified). Flash a RadioFoundry
 image with `tools/stm32_dfu.py --model md380 --key KEY rfoundry_md380.bin`. The image is plain, starts at 0x0800C000, and the
 tool encrypts it for the loader. rfoundry knows the board (`boards/md380/board.toml`: release `stable`, an update writes
-sectors 3-7 and keeps the codec).
+sectors 3-10 and keeps the codec).
 
 Switched on normally, the original firmware is also a DFU device with the same IDs. The flashers tell it from the
 bootloader by alt 0's layout and refuse it ([hardware-dm1701.md](hardware-dm1701.md) 15.1). The MD-380's bootloader,
@@ -993,9 +1048,10 @@ and S35.14 (MD-390) files work too: they carry the MD-UV380 family's codec, plac
 10 (untested on the radio). Entry points,
 calling convention, state sizes, the placement and the extraction recipe are in [codec-md380.md](codec-md380.md).
 `stockfw.PROFILES` has the profiles, the codec maps (`rfoundry/codec_maps/md380/`, one per build) the rewrites,
-`boards/md380/memory.ld` keeps the application out of sectors 8-11, `vocoder_md380.c` checks and hosts the codec, and
+`boards/md380/memory.ld` keeps the application out of sector 11, `vocoder_md380.c` checks and hosts the codec, and
 `make BOARD=md380` merges it when the firmware file is in `codecs/`. The debug link reports the codec as
-`md380-d2032-s11`; a build from before the move reports `md380-d2032`. Without the codec merged the radio is FM only.
+`md380-d2032-s11v2`; a release with the codec in sectors 8-11 reports `md380-d2032-s11`, and a build from before
+the first move `md380-d2032`. Without the codec merged the radio is FM only.
 
 ---
 
@@ -1062,8 +1118,7 @@ configuration registers, audio routing), and [gotchas.md](gotchas.md) 2.6, 3.3, 
 ## 19. Sizes
 
 Flash: the table in [feature-matrix.md](../feature-matrix.md#dm-1701-and-md-380) and the per-feature figures in
-[feature-matrix.md](../feature-matrix.md). Measured 2026-10-19 with LTO: default UHF image 320,236 B of 475,136 B
-(464 KB), 107,120 B of 131,068 B SRAM, 59,640 B of 64 KB CCM; maximal 327,064 B flash.
+[feature-matrix.md](../feature-matrix.md). With LTO: default UHF image 472,036 B of 868,352 B (848 KB), maximal 500,956 B.
 
 `CONFIG_NET_WEBCTL` follows `CONFIG_NET_HTTP_GZIP` on this radio (`boards/md380/config.mk`): web control's files,
 stored uncompressed, need more flash than the default image leaves free. With gzip off the radio serves the plain
@@ -1086,6 +1141,6 @@ status page.
   tone path yet, so AFSK TX is not written (`boards/md380/config.mk`). Without a calibration the board refuses to
   transmit.
 - Release: `[status] release = "stable"`, both band images (`rfoundry-md380-<version>.bin` UHF, `rfoundry-md380-vhf-<version>.bin`).
-  Application sectors 3-7 (464 KB), codec sectors 8-11 (D002.032: 8, 10, 11; 35.14: 9-11), so an update keeps the
-  codec. Profile `md380-d2032-s11` (a build from before the move reports `md380-d2032`). `tools/md380_migrate.py` flashes it and keeps
+  Application sectors 3-10 (848 KB), codec sector 11, so an update keeps the codec. Profile `md380-d2032-s11v2`
+  (`md380-d2032-s11` from releases with the codec in sectors 8-11, `md380-d2032` from a build before the first move). `tools/md380_migrate.py` flashes it and keeps
   the codeplug.
