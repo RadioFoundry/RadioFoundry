@@ -267,7 +267,7 @@ radioCoreTestNoVfoDmr: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)
 # end is a second P25 engine, and a vocoder that lends its memory as the HR_C7000 platform's does
 TESTS   += radioCoreTestP25
 RCP25   := $(RCORE) $(CORE)/radio/radio_p25.c $(CORE)/p25/p25_engine.c $(CORE)/air/air_session.c $(CORE)/air/air_framer.c \
-           $(P25) $(FEC) $(CORE)/p25/p25Voice.c $(MBE) $(CORE)/debuglink/debuglink_view_p25.c
+           $(P25) $(FEC) $(CORE)/p25/p25Voice.c $(MBE) $(CORE)/debuglink/debuglink_view_p25.c $(CORE)/hostlink/build_info.c
 radioCoreTestP25: $(RCP25) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                   $(CORE)/ui/ui_svc.h $(wildcard $(CORE)/p25/*.h) $(wildcard $(CORE)/air/*.h)
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \

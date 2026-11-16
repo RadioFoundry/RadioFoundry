@@ -483,11 +483,24 @@ static void deny_led_start(radio_sm_t *sm)
 	sm->deny_led_ms = sm->led_now;
 }
 
-// A channel of a kind this build doesn't run (docs/spec/channel-modes.md 6): tuned to its frequency but silent, never
-// scanned and never keyed, whatever its record says. A mode module that runs its kind hooks in here
+// A channel of a kind the radio doesn't run (docs/spec/channel-modes.md 6): tuned to its frequency but silent, never
+// scanned and never keyed, whatever its record says. A built kind's mode module took its channel when it was read
+// (channel_read), which gave it the mode's own: P25, the only one so far
 static bool parked(const channel_t *ch)
 {
-	return ch->kind != CODEPLUG_KIND_NONE && !codeplug_kind_built(ch->kind);
+	return ch->kind != CODEPLUG_KIND_NONE && !(codeplug_kind_built(ch->kind) && ch->mode == RADIO_MODE_P25);
+}
+
+// Channel number from the codeplug as the radio runs it: the mode module of its kind takes it
+static bool channel_read(uint16_t number, channel_t *ch)
+{
+	if (!codeplug_channel(number, ch)) {
+		return false;
+	}
+#if CONFIG_P25
+	radio_p25_take(ch);
+#endif
+	return true;
 }
 
 // Speaker and LEDs follow the state; only changes go to the board
@@ -706,7 +719,7 @@ static bool find_channel(const zone_t *z, int start, int dir, uint16_t *pos, cha
 	int n = z->count;
 	for (int i = 0; i < n; i++) {
 		int p = ((start + dir * i) % n + n) % n;
-		if (codeplug_channel(z->channels[p], ch)) {
+		if (channel_read(z->channels[p], ch)) {
 			*pos = (uint16_t)p;
 			return true;
 		}
@@ -2399,7 +2412,9 @@ static bool scan_usable(uint16_t pos, void *ctx)
 {
 	const radio_sm_t *sm = ctx;
 	channel_t ch;
-	return pos < sm->zone.count && codeplug_channel(sm->zone.channels[pos], &ch) && !ch.scan_skip && !parked(&ch);
+	// P25 channels too: the scan's stop on activity knows FM and DMR only (docs/spec/p25.md 7.1)
+	return pos < sm->zone.count && channel_read(sm->zone.channels[pos], &ch) && !ch.scan_skip && !parked(&ch) &&
+	       ch.mode != RADIO_MODE_P25;
 }
 
 // Dual watch (SCAN_DUAL): the receiver alternates between two channels, dual[0] and dual[1], skip flags ignored. With
@@ -2461,7 +2476,8 @@ static const zone_t *dual_read(const radio_sm_t *sm, const radio_dual_ref_t *r, 
 #else
 	(void)buf;
 #endif
-	return z != NULL && r->pos < z->count && codeplug_channel(z->channels[r->pos], ch) && !parked(ch) ? z : NULL;
+	return z != NULL && r->pos < z->count && channel_read(z->channels[r->pos], ch) && !parked(ch) &&
+	       ch->mode != RADIO_MODE_P25 ? z : NULL;
 }
 
 static bool dual_ok(const radio_sm_t *sm, const radio_dual_ref_t *r)
@@ -2765,7 +2781,7 @@ static void scan_stop(radio_sm_t *sm, bool cancel, uint32_t now_ms)
 			}
 		} else if (sm->view.zone_pos != sc->origin_pos) {
 			channel_t ch;
-			if (codeplug_channel(sm->zone.channels[sc->origin_pos], &ch)) {
+			if (channel_read(sm->zone.channels[sc->origin_pos], &ch)) {
 				set_channel(sm, sc->origin_pos, &ch);
 				tune(sm, now_ms);
 			}
@@ -2802,7 +2818,7 @@ static bool scan_step(radio_sm_t *sm, uint32_t now_ms)
 	} else {
 		int pos = scan_next_pos(sc, sm->zone.count, scan_usable, sm);
 		channel_t ch;
-		if (pos < 0 || !codeplug_channel(sm->zone.channels[pos], &ch)) {
+		if (pos < 0 || !channel_read(sm->zone.channels[pos], &ch)) {
 			scan_stop(sm, false, now_ms);
 			return false;
 		}
@@ -3340,7 +3356,7 @@ static void roam_rebuild(radio_sm_t *sm, uint32_t now_ms, bool user)
 	sm->roam_zone = sm->view.zone_index;
 	sm->roam_channel = sm->view.vfo ? 0 : sm->view.channel_number;
 	if (sm->view.vfo || !sm->have_channels || !roam_zone_flag(sm, sm->view.zone_index) ||
-	    !codeplug_channel(sm->view.channel_number, &here) || !roam_repeater(&here)) {
+	    !channel_read(sm->view.channel_number, &here) || !roam_repeater(&here)) {
 		roam_set_sites(&sm->roam, sites, 0, -1, -1, now_ms);
 		roam_publish(sm, now_ms);
 		return;
@@ -3351,7 +3367,7 @@ static void roam_rebuild(radio_sm_t *sm, uint32_t now_ms, bool user)
 	for (uint16_t p = 0; p < sm->zone.count; p++) {
 		uint32_t id;
 		bool priv;
-		if (!codeplug_channel(sm->zone.channels[p], &ch)) {
+		if (!channel_read(sm->zone.channels[p], &ch)) {
 			continue;
 		}
 		any_flag |= ch.roam;
@@ -3430,7 +3446,7 @@ static bool roam_tune(radio_sm_t *sm, uint8_t idx, bool force, uint32_t now_ms)
 	const roam_site_t *s = &sm->roam.site[idx];
 	channel_t ch;
 	if (idx >= sm->roam.count || s->pos >= sm->zone.count || sm->zone.channels[s->pos] != s->number ||
-	    !codeplug_channel(s->number, &ch)) {
+	    !channel_read(s->number, &ch)) {
 		return false;
 	}
 	sm->roam_channel = s->number;
@@ -4133,10 +4149,16 @@ static uint32_t p25_own_id(const radio_sm_t *sm)
 #endif
 }
 
+// The stored channel P25 runs on, 0 in the VFO: its tag gives the parameters (radio_p25_params)
+static uint16_t p25_number(const radio_sm_t *sm)
+{
+	return sm->view.vfo ? 0u : sm->view.channel_number;
+}
+
 // On a P25 channel, the board in its digital mode and tuned: the engine starts (dmr_end stopped any before)
 static void p25_begin(radio_sm_t *sm)
 {
-	radio_p25_begin(&sm->view.ch, p25_own_id(sm));
+	radio_p25_begin(&sm->view.ch, p25_number(sm), p25_own_id(sm));
 	radio_p25_poll(&sm->view.p25);
 }
 
@@ -4207,7 +4229,7 @@ static void p25_tick(radio_sm_t *sm, uint32_t now_ms)
 		}
 		radio_p25_tx_clear();
 		sm->p25_tx = false;
-		radio_p25_apply(&sm->view.ch, p25_own_id(sm));	// settings sent while it transmitted (RREQ_P25_SET)
+		radio_p25_apply(&sm->view.ch, p25_number(sm), p25_own_id(sm));	// settings sent while it transmitted (RREQ_P25_SET)
 		if (sm->view.state == RS_TX) {
 			fm_tx_end(sm, true, now_ms);	// (the transmitter is off already)
 			if (sm->ptt) {
@@ -5017,7 +5039,7 @@ static bool select_in_zone(radio_sm_t *sm, uint16_t zi, uint16_t number, uint16_
 		return false;
 	}
 	int at = zone_find(&z, number);
-	if (at >= 0 && codeplug_channel(number, &ch)) {
+	if (at >= 0 && channel_read(number, &ch)) {
 		p = (uint16_t)at;
 	} else if (!find_channel(&z, pos < z.count ? pos : 0, 1, &p, &ch)) {
 		return false;
@@ -5716,7 +5738,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 			break;
 		}
 		pos = (uint16_t)req->arg;
-		if (codeplug_channel(sm->zone.channels[pos], &ch)) {
+		if (channel_read(sm->zone.channels[pos], &ch)) {
 			set_channel(sm, pos, &ch);
 			tune(sm, now_ms);
 		}
@@ -6030,7 +6052,9 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	}
 #endif
 	case RREQ_MODE:
-		if (busy || (req->arg != RADIO_MODE_FM && req->arg != RADIO_MODE_DMR && req->arg != RADIO_MODE_P25) ||
+		// Not on a channel of a kind: its mode is the kind's (channel-modes.md 6)
+		if (busy || sm->view.ch.kind != CODEPLUG_KIND_NONE ||
+				(req->arg != RADIO_MODE_FM && req->arg != RADIO_MODE_DMR && req->arg != RADIO_MODE_P25) ||
 				req->arg == sm->view.ch.mode ||
 				(req->arg == RADIO_MODE_FM && !(sm->view.vfo ? CONFIG_VFO_FM : CONFIG_FM)) ||
 				(req->arg == RADIO_MODE_DMR && (radio_listen_band(sm->view.ch.rx_hz) ||
@@ -6204,7 +6228,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	case RREQ_P25_SET:
 		// radio_task.c copied the settings in: the engine takes them now, or when its transmission is done (p25_tick)
 		if (radio_p25_running()) {
-			radio_p25_apply(&sm->view.ch, p25_own_id(sm));
+			radio_p25_apply(&sm->view.ch, p25_number(sm), p25_own_id(sm));
 		}
 		changed(sm);
 		break;

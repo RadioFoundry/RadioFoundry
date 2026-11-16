@@ -217,6 +217,8 @@ static const hal_hwopt_t fake_hwopts[] = {
 // ms (run), as a modem chip's records come ----
 #include "air/air_syms.h"
 #include "p25/p25_engine.h"
+#include "p25/p25_codeplug.h"
+#include "hostlink/build_info.h"
 #define AIR_CHUNK	144
 #define AIR_DEPTH	4
 typedef struct {
@@ -803,7 +805,11 @@ static void test_parked_kind(void)
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_MODE && hw.tx_calls == 0);
 	req(RREQ_PTT, 0);
 	CHECK(radio_vfo_copy_check(&sm.view.ch, false) != VFO_COPY_OK);
-	// P25 conventional and trunked (the radio core runs neither: parked with CONFIG_P25 on or off), unknown ids the same
+	// P25 conventional where the board can't carry P25 (with CONFIG_P25 on or off) and P25 trunked (not run yet) are
+	// parked, unknown ids the same. A board that carries P25 runs kind 2: test_p25_stored
+#if CONFIG_P25
+	air_nofit = true;
+#endif
 	static const uint8_t kinds[] = { CODEPLUG_KIND_P25, CODEPLUG_KIND_P25_TRUNK };
 	for (unsigned i = 0; i < sizeof kinds; i++) {
 		chans[6].kind = kinds[i];
@@ -822,6 +828,9 @@ static void test_parked_kind(void)
 	CHECK(sm.view.tx_deny == TXDENY_MODE && hw.tx_calls == 0);
 	req(RREQ_PTT, 0);
 	rx_signal(120, true);
+#if CONFIG_P25
+	air_nofit = false;
+#endif
 	setup_codeplug();
 }
 
@@ -6388,9 +6397,159 @@ static void test_air_bench(void)
 	CHECK(!sm.air_bench && radio_p25_running());
 }
 
+// The codec's side (core/p25/p25_codeplug.c, tested in p25CodeplugTest): a stored channel's set-up, by number, and
+// the radio-wide unit ID
+static p25_conv_cfg_t stored_p25[NCH + 1];
+static uint32_t p25_radio_id;		// the kind's radio-wide record, 0 = none
+bool p25_conv_load(uint16_t number, const channel_t *ch, p25_conv_cfg_t *out)
+{
+	if (ch->kind != CODEPLUG_KIND_P25 || number < 1 || number > NCH) {
+		return false;
+	}
+	*out = stored_p25[number];
+	return true;
+}
+uint32_t p25_radio_unit_id(uint32_t dmr_id) { return p25_radio_id != 0 ? p25_radio_id : dmr_id; }
+
+// A P25 conventional channel in the codeplug (kind 2, docs/spec/p25-codeplug.md 2): the radio runs it on its own
+// parameters, the debug link's unit ID overrides for a session, and it is parked where the board can't carry P25
+static void test_p25_stored(void)
+{
+	static char buf[4096];
+	const radio_p25_view_t *v = &sm.view.p25;
+
+	setup_codeplug_p25();
+	// The safe stand-in as the codeplug reads it: DMR, the tag's kind and transmit allowed
+	add(3, "P25 rptr", 446100000, RADIO_MODE_DMR, false, 2);
+	chans[3].tx_hz = 451100000;
+	chans[3].kind = CODEPLUG_KIND_P25;
+	chans[3].system = 0xFF;	// no system
+	stored_p25[3] = (p25_conv_cfg_t){ .conv = { 0x2A0, 0x2A1, P25_SQUELCH_SELECTIVE }, .unit_id = 1234567,
+					  .target = 201, .target_unit = false, .talkaround = false };
+	start();
+	p25_defaults();
+	req(RREQ_ZONE_POS, 2);
+	CHECK(sm.view.channel_number == 3 && sm.view.ch.mode == RADIO_MODE_P25 && sm.view.ch.kind == CODEPLUG_KIND_P25);
+	CHECK(hw_mode == RADIO_MODE_DMR && hw.rx_bw == RADIO_BW_12K5 && radio_p25_running() && !sm.dmr_running);
+	CHECK(v->rx_nac == 0x2A0 && v->talk == 201 && !(v->flags & RADIO_P25_TALK_UNIT));
+	p25_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25.rx_nac=659\n") != NULL);	// the settings are not what runs
+	CHECK(strstr(buf, "p25.run.rx_nac=672\np25.run.tx_nac=673\np25.run.rx_tgid=201\np25.run.talkaround=2\n") != NULL);
+	CHECK(strstr(buf, "p25.run.unit_call=0\np25.run.tx_dst=201\np25.run.unit_id=1234567\n") != NULL);
+
+	// Selective: the channel's talk group plays, another is shown and not, everyone and a unit call to us play
+	far_begin(0x2A0, 1001, false, 201);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	run(600);
+	CHECK(sm.view.state == RS_RX && (v->flags & RADIO_P25_PLAYED) && v->dst == 201);
+	p25_engine_tx_stop(&far_eng);
+	run(600);
+	far_begin(0x2A0, 1001, false, 7);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	run(600);
+	CHECK((v->flags & RADIO_P25_RX) && !(v->flags & RADIO_P25_PLAYED) && v->dst == 7 && !hw.led[LED_GREEN]);
+	p25_engine_tx_stop(&far_eng);
+	run(600);
+	far_begin(0x2A0, 1001, false, P25_TGID_EVERYONE);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	run(600);
+	CHECK((v->flags & RADIO_P25_PLAYED) && v->dst == P25_TGID_EVERYONE);
+	p25_engine_tx_stop(&far_eng);
+	run(600);
+	far_begin(0x2A0, 1001, true, 1234567);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	run(600);
+	CHECK((v->flags & (RADIO_P25_PLAYED | RADIO_P25_UNIT)) == (RADIO_P25_PLAYED | RADIO_P25_UNIT));
+	p25_engine_tx_stop(&far_eng);
+	run(600);
+	CHECK(sm.view.state == RS_IDLE);
+
+	// PTT: the channel's TX NAC, our unit ID and its talk group, on its TX frequency (a repeater: no talkaround)
+	far_begin(0x2A1, 1001, false, 1);
+	run(100);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == 451100000 && hw.tx_bw == RADIO_BW_12K5);
+	run(1000);
+	CHECK(far_heard.starts == 1 && far_heard.call.nac == 0x2A1 && far_heard.call.lc.src == 1234567 &&
+	      far_heard.call.lc.tgid == 201);
+	req(RREQ_PTT, 0);
+	run(600);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
+
+	// The debug link's settings: only the unit ID reaches a stored channel, for this session
+	radio_p25_settings_t s;
+	radio_p25_settings(&s);
+	s.rx_nac = 0x555;
+	s.unit_id = 7777;
+	radio_req_p25_settings(&s);
+	p25_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25.run.rx_nac=672\n") != NULL && strstr(buf, "p25.run.unit_id=7777\n") != NULL);
+	p25_defaults();
+
+	// A private contact: PTT calls the unit; selective keeps everyone and calls to us. Direct mode: talkaround
+	stored_p25[3].target = 9991234;
+	stored_p25[3].target_unit = true;
+	stored_p25[3].talkaround = true;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	p25_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25.run.rx_tgid=65535\np25.run.talkaround=1\np25.run.unit_call=1\np25.run.tx_dst=9991234\n"));
+	CHECK(v->talk == 9991234 && (v->flags & RADIO_P25_TALK_UNIT));
+	// Normal squelch: every call of the NAC
+	stored_p25[3].conv.squelch = P25_SQUELCH_NORMAL;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	p25_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25.run.rx_tgid=0\n") != NULL);
+
+	// No mode change for now on a channel of a kind: its mode is the kind's
+	req(RREQ_MODE, RADIO_MODE_FM);
+	CHECK(sm.view.ch.mode == RADIO_MODE_P25 && radio_p25_running() && !(sm.view.temp & RADIO_TEMP_MODE));
+	// Receive only from the tag: PTT refused as on any channel
+	chans[3].rx_only = true;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	int keyed = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_RX_ONLY && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	chans[3].rx_only = false;
+	// The editor's feature list says P25 here
+	CHECK(strncmp(build_features_now(), "P25,", 4) == 0);
+
+	// A board that can't carry P25: parked (DMR modem off, never keyed), and no P25 in the feature list
+	air_nofit = true;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && !radio_p25_running() && !sm.dmr_running && hw_mode == RADIO_MODE_FM);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_MODE && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	CHECK(strstr(build_features_now(), "P25") == NULL && strstr(build_features_now(), "AIR,") != NULL);
+	air_nofit = false;
+
+	// The VFO takes the radio-wide unit ID, then the DMR ID
+	p25_radio_id = 5555;
+	req(RREQ_VFO, 1);
+	req(RREQ_VFO_SET, 446100000);
+	req(RREQ_MODE, RADIO_MODE_P25);
+	p25_view_text(buf, sizeof buf);
+	CHECK(sm.view.vfo && strstr(buf, "p25.run.rx_nac=659\n") != NULL && strstr(buf, "p25.run.unit_id=5555\n") != NULL);
+	p25_radio_id = 0;
+	req(RREQ_MODE, RADIO_MODE_FM);
+	req(RREQ_VFO, 0);
+	far_stop();
+	memset(stored_p25, 0, sizeof(stored_p25));
+}
+
 static void test_p25(void)
 {
 	test_p25_rx();
+	test_p25_stored();
 	test_p25_tx();
 	test_p25_denied();
 	test_p25_leave();

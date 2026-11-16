@@ -152,6 +152,7 @@ static void channel_section(const radio_view_t *v, dl_text_t *t)
 	dl_text_kv_str(t, "ch.name", c->name);
 	dl_text(t, "ch.rx_hz=%u\nch.tx_hz=%u\n", (unsigned)c->rx_hz, (unsigned)c->tx_hz);
 	dl_text(t, "ch.mode=%s\n", c->mode == RADIO_MODE_P25 ? "p25" : c->mode == RADIO_MODE_DMR ? "dmr" : "fm");
+	dl_text(t, "ch.kind=%u\n", c->kind);	// channel-modes.md 4: 0 a plain channel
 	dl_text(t, "ch.bw=%s\n", c->bw == RADIO_BW_25K ? "25k" : "12k5");
 	tone(t, "ch.rx_tone", &c->rx_tone);
 	tone(t, "ch.tx_tone", &c->tx_tone);
