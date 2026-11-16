@@ -142,6 +142,9 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 				(unsigned)c.rx_end_sync, (unsigned)c.rx_end_fade);
 			dl_text(t, "call.rx_ts_dropped=%u\ncall.rx_cc_dropped=%u\n", (unsigned)c.rx_ts_dropped,
 				(unsigned)c.rx_cc_dropped);
+			// The reverse channel heard while sending: here, as dmr_stats fills a reply
+			dl_text(t, "call.rc_good=%u\ncall.rc_bad=%u\ncall.rc_ceased=%u\ncall.rc_last=%u\n", (unsigned)c.rc_good,
+				(unsigned)c.rc_bad, (unsigned)c.rc_ceased, (unsigned)c.rc_last);
 		}
 		dl_text(t, "last.ms=%u\n", (unsigned)d->last_ms);
 		break;
@@ -170,8 +173,6 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		dl_text(t, "call.rx_gps=%u\ncall.tx_gps_lcs=%u\n", (unsigned)c.rx_gps, (unsigned)c.tx_gps_lcs);
 		dl_text(t, "call.rx_in_tx=%u\ncall.rx_bs_in_tx=%u\ncall.tx_rpt_drops=%u\ncall.tx_wake_lost=%u\n",
 			(unsigned)c.rx_in_tx, (unsigned)c.rx_bs_in_tx, (unsigned)c.tx_rpt_drops, (unsigned)c.tx_wake_lost);
-		dl_text(t, "call.rc_good=%u\ncall.rc_bad=%u\ncall.rc_ceased=%u\ncall.rc_last=%u\n", (unsigned)c.rc_good,
-			(unsigned)c.rc_bad, (unsigned)c.rc_ceased, (unsigned)c.rc_last);
 		dl_text(t, "voice.rx_in=%u\nvoice.rx_frames=%u\nvoice.rx_concealed=%u\nvoice.rx_silence=%u\n",
 			(unsigned)a.rx_in, (unsigned)a.rx_frames, (unsigned)a.rx_concealed, (unsigned)a.rx_silence);
 		dl_text(t, "voice.rx_calls=%u\nvoice.rx_queue_max=%u\nvoice.rx_bad=%u\nvoice.rx_lost=%u\n",

@@ -393,12 +393,18 @@ class Radio:
 
     def counters(self):
         """(firmware ms, flat dict of every counter): the diagnostics lines (modem.*, call.*, voice.*, audio.*), the
-        dmr_stats view with full names (call.rx_calls, voice.rx_frames, ...) and the hotspot counters (hs.*)"""
+        dmr_stats view with full names (call.rx_calls, voice.rx_frames, ...), the reverse channel counters (call.rc_*)
+        and the hotspot counters (hs.*)"""
         ms, lines = self.link.diag()
         out = parse_counters(lines)
         for k, v in self.link.view(["dmr_stats", "hotspot"]).items():
             n = as_int(v)
             if n is not None and k != "ms":
+                out[k] = n
+        # The reverse channel counters sit in dmr_call (dmr_stats fills a reply)
+        for k, v in self.link.view(["dmr_call"]).items():
+            n = as_int(v)
+            if n is not None and k.startswith("call.rc_"):
                 out[k] = n
         return ms, out
 

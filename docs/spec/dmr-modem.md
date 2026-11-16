@@ -289,7 +289,7 @@ The CC fields are defined by TS 102 361-1 9.1.2 (EMB), 9.1.3 (slot type) and 9.3
   time-out: `tx_error` ceased, PTT released before the next over. Twice, because burst F's null fragment passes the
   CRC one time in 128, and the BS repeats an RC every 360 ms. A request is always accepted. Power commands (0000-0011)
   are only counted: the power stays as set. `call.rc_good`, `call.rc_bad`, `call.rc_ceased`, `call.rc_last` in the
-  diagnostics. The HR_C6000 engine reads the RC info from 0x53 / 0x54 at a class 3 report, or a burst F report with
+  diagnostics and the `dmr_call` view section. The HR_C6000 engine reads the RC info from 0x53 / 0x54 at a class 3 report, or a burst F report with
   LCSS 00 ([hrc6000-registers.md](hrc6000-registers.md) 2.2). A dedicated RC burst has no sync, and the chips report
   nothing for it. After each listen slot the engine reads the chip's receive tap instead (the HR_C5000 and HR_C6000:
   `hrc_chip_t` `tap_addr`, `tap_field`; the HR_C7000: [modem-hrc7000.md](modem-hrc7000.md) 5.4): the burst received,
