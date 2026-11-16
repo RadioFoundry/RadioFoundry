@@ -2323,6 +2323,16 @@ msgid "Unsaved Changes"
 msgstr "Cambios sin guardar"
 
 #: core/ui/ui_menus.c
+msgctxt "DISCARD_TITLE_DMR"
+msgid "Save as DMR?"
+msgstr "¿Guardar como DMR?"
+
+#: core/ui/ui_menus.c
+msgctxt "DISCARD_TITLE_FM"
+msgid "Save as FM?"
+msgstr "¿Guardar como FM?"
+
+#: core/ui/ui_menus.c
 msgctxt "DISCARD_HINT"
 msgid "{OK choose  Back keep editing|OK choose  Back}"
 msgstr "{OK elegir  Atrás seguir editando|OK elegir  Atrás}"

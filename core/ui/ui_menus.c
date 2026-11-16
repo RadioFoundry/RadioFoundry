@@ -3565,8 +3565,17 @@ static const char *discard_body(void)
 		TR(DISCARD_ASK_CHANNEL_CHANGES, "Discard the changes to this channel?");
 }
 
+// The save question says what the channel becomes; its body says what goes
+static const char *discard_title(void)
+{
+	if (!discard_kind)
+		return TR(DISCARD_TITLE, "Unsaved Changes");
+	return ced_ch.mode == RADIO_MODE_DMR ? TR(DISCARD_TITLE_DMR, "Save as DMR?") :
+		TR(DISCARD_TITLE_FM, "Save as FM?");
+}
+
 static const ui_scr_def_t discard_screen = {
-	.name = "discard", .flags = SF_LIST, .prefix = TRN(DISCARD_TITLE, "Unsaved Changes"),
+	.name = "discard", .flags = SF_LIST, .prefix = TR_NONE, .title = discard_title,
 	.hint = TRN(DISCARD_HINT, TEXT_ALT_OPEN "OK choose  Back keep editing"
 		TEXT_ALT_NEXT "OK choose  Back" TEXT_ALT_CLOSE),
 	.count = discard_count, .item = discard_item, .select = discard_select, .body = discard_body,

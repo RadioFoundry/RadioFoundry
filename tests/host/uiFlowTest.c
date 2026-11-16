@@ -120,7 +120,7 @@ static const flow_t flows[] = {
 	  "screen=discard shows=Discard_the_changes", 1, false },
 	// Saving it as FM takes its P25 settings away: asked first, keep editing the default
 	{ "stored P25 channel as FM: Save asks", "chkind:3,p25 ok 5 ok down down ok", "long:ok",
-	  "screen=discard shows=P25_settings_will_be shows=removed shows=Yes,_save focus=No,_keep_editing writes=0", 1, false },
+	  "screen=discard shows=Save_as_FM? shows=P25_settings_will_be shows=removed shows=Yes,_save focus=No,_keep_editing writes=0", 1, false },
 	{ "stored P25 channel as FM: keep editing", "chkind:3,p25 ok 5 ok down down ok long:ok", "ok",
 	  "screen=channel focus=Mode shows=FM", 1, false },
 	{ "stored P25 channel as FM: Back keeps editing", "chkind:3,p25 ok 5 ok down down ok long:ok", "back",
@@ -144,7 +144,7 @@ static const flow_t flows[] = {
 	{ "NXDN channel's mode: back to NXDN", "dlmode:nxdn ok 5 up up up ok down down", "ok ok ok",
 	  "focus=Mode shows=NXDN shows=RAN", 3, false },
 	{ "stored NXDN channel as FM: Save asks", "chkind:3,nxdn ok 5 ok down down ok", "long:ok",
-	  "screen=discard shows=NXDN_settings_will_be shows=removed writes=0", 1, false },
+	  "screen=discard shows=Save_as_FM? shows=NXDN_settings_will_be shows=removed writes=0", 1, false },
 #endif
 #endif
 #endif

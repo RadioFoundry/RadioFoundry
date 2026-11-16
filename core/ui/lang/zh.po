@@ -2325,6 +2325,16 @@ msgid "Unsaved Changes"
 msgstr "未保存的更改"
 
 #: core/ui/ui_menus.c
+msgctxt "DISCARD_TITLE_DMR"
+msgid "Save as DMR?"
+msgstr "存为DMR？"
+
+#: core/ui/ui_menus.c
+msgctxt "DISCARD_TITLE_FM"
+msgid "Save as FM?"
+msgstr "存为FM？"
+
+#: core/ui/ui_menus.c
 msgctxt "DISCARD_HINT"
 msgid "{OK choose  Back keep editing|OK choose  Back}"
 msgstr "{OK 选  返回继续编辑|OK 选  返回}"
