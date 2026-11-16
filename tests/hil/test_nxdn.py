@@ -376,8 +376,9 @@ def test_nxdn_rx_from_bench(radio, sdr_bench, pytestconfig, rate):
                     data = f.read()
                 n = len(data) * 4
                 assert n <= FSK4_HEX_MAX, f"the call holds {n} symbols, past {FSK4_HEX_MAX}"
+                # clip_hz: a bench board's deviation limit, which the 9600 bit/s shape's overshoot passes
                 tx = sdr_bench.tx_start("fsk4", mhz, None, max_s=n / baud + 2, symbols=n, hex=data.hex(), shape="rrc",
-                                        baud=baud, dev_hz=dev)
+                                        baud=baud, dev_hz=dev, clip_hz=4064)
                 tx.wait(n / baud + 30)
             time.sleep(0.6)
             v1 = radio.view(["core", "nxdn"])
