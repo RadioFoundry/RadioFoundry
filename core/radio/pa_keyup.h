@@ -26,7 +26,9 @@
 // stops at a as well
 //
 // So a level that is fast by itself leaves its time to the receiver, a slow one gets only the boost it needs (a
-// short high boost overshoots with the timer's jitter), and no level starts earlier than the window.
+// short high boost overshoots with the timer's jitter), and no level starts earlier than the window. A level at or
+// under the dead zone's edge gets the edge's boost (the law at d = dead), never none: the edge is a part of ref, and
+// a lowest level a few counts over it on one radio or frequency is under it on the next.
 //
 // The constants hold no drive counts: they are times, and dead as a part of ref, a drive the radio's own power
 // calibration gives at the transmit frequency (its lowest level's drive, or the drive where its table says the

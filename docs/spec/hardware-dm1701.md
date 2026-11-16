@@ -868,6 +868,11 @@ The top level is 1.6-2.5 dB short at the first symbol
 and settles after it: its PA point can't move earlier (SFR, below). A refit on the cable came out worse at every
 round.
 
+The lowest UHF level's drive (339) lies close over the dead zone's edge, 34.9 % of the low row's drive: 38 counts over
+at 445 MHz (low row 864) and 2 at the second frequency (low row 967). Where the low row is 972 or more it is under
+the edge, and takes the edge's boost ([pa-keyup.md](pa-keyup.md) 2), a count or two under its boost at the second
+frequency. Not measured there.
+
 VHF is measured the same way, on a cable into the SDR bench through 57 dB of attenuation. The lowest level's own
 drive, written 2.5 ms ahead, brings the output up 0.8 ms after the first symbol, so every level is boosted. With the
 board's earliest point and settle time fixed, the boost over the level is (knee x top + slope x drive) / ((window -

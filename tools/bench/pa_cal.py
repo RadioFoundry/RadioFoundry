@@ -93,7 +93,7 @@ def plan(c, d, top, ref, max_drive, ahead=0):
     over = d - dead if d > dead else 0
     span = top - dead if top > dead else 0
     q = c["knee_us"] * span + c["slope_us"] * over
-    lead = q // over if over else c["window_us"]
+    lead = q // over if over else 0xFFFFFFFF if q else c["window_us"]     # at the dead zone's edge: the edge's boost
     b = d
     ease = ref * c.get("ease_pm", 0) // 1000
     if ease and over > ease:

@@ -287,9 +287,37 @@ int main(void)
 	c.pa_us = 200;		// the PA after the boost's end: the drive back to d with it at the latest
 	k = pa_keyup_drives(&c, 700, 1448, 760, 4095);
 	CHECK(k.boost == 764 && k.pa_us == 200 && k.drive_us == 200);
-	// A drive in the dead zone has nothing to time: keyed at the window, no boost. No constants: no boost, pa_us 0
+	// A drive at or under the dead zone's edge (684) takes the edge's boost from the window: the law at d = dead,
+	// one count under the boost of a level one count over the edge. A lowest level that sits a few counts over the
+	// edge on one radio is under it on another (dead is a part of ref), and must not lose its boost there
+	k = pa_keyup_drives(&dflt, 685, 1448, 760, 4095);
+	CHECK(k.boost == 761 && k.boost_us == 1500 && k.drive_us == 300);
+	k = pa_keyup_drives(&dflt, 684, 1448, 760, 4095);
+	CHECK(k.boost == 761 && k.boost_us == 1500 && k.pa_us == 1500 && k.drive_us == 300 && k.drive == 684);
 	k = pa_keyup_drives(&dflt, 600, 1448, 760, 4095);
-	CHECK(k.boost == 0 && k.pa_us == 1500 && k.drive == 600);
+	CHECK(k.boost == 761 && k.boost_us == 1500 && k.pa_us == 1500 && k.drive_us == 300 && k.drive == 600);
+	// Each radio's lowest level across the anchors its calibration can give: a boost at every one. The anchor moves
+	// the edge a count at a time, and a level that is a fixed drive, or a part of the anchor just over dead_pm,
+	// crosses it
+	{
+		static const pa_keyup_cfg_t fixed_low = { .dead_pm = 349, .knee_us = 247, .slope_us = 1248,
+							  .window_us = 1530, .settle_us = 800, .pa_us = 1530 };
+		static const pa_keyup_cfg_t part_low = { .dead_pm = 563, .knee_us = 91, .slope_us = 1003,
+							 .window_us = 1650, .settle_us = 506, .pa_us = 2500 };
+		uint16_t prev = 0;
+		for (uint16_t ref = 800; ref <= 1200; ref++) {	// a fixed drive of 339: under the edge from ref 972 on
+			k = pa_keyup_drives(&fixed_low, 339, 2126, ref, 4095);
+			CHECK(k.boost > 339 && k.boost_us == 1530 && k.drive_us == 800);
+			CHECK(prev == 0 || (k.boost + 2 >= prev && k.boost <= prev + 2));	// no step at the edge
+			prev = k.boost;
+		}
+		for (uint16_t ref = 100; ref <= 1300; ref++) {	// 565/1000 of the anchor: 0 to 3 counts over the edge
+			uint16_t low = (uint16_t)((uint32_t)ref * 565u / 1000u);
+			k = pa_keyup_drives(&part_low, low, (uint16_t)(2u * ref), ref, 4095);
+			CHECK(k.boost > low && k.boost_us == 1650 && k.drive_us == 506);
+		}
+	}
+	// No constants: no boost, pa_us 0
 	k = pa_keyup_drives(NULL, 955, 2615, 0, 4095);
 	CHECK(k.boost == 0 && k.drive == 955 && k.pa_us == 0);
 	// A board keyed at one fixed time: every level there, with or without an anchor

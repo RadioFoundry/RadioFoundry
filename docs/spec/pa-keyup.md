@@ -75,6 +75,12 @@ reaches zero (0: no dead zone). `top` and `d` come from the same table. So one s
 a design: what differs from radio to radio is in its calibration table, and nothing is stored per step or per
 frequency.
 
+A step at or under the dead zone's edge gets the edge's boost, the law at d = `dead`: b = `dead` + `knee_us` ×
+(`top` − `dead`) / (`window_us` − `settle_us`), from the window. The edge is a part of `ref`, so it moves with the
+frequency and from radio to radio, and the lowest step often sits a few counts over it: a fixed drive, or a part of
+`ref` just over `dead_pm`. Such a step's boost must not end where the edge passes it. Without a knee there is nothing
+to time, and the step is keyed at the window.
+
 A board that keys its PA with the drive at one fixed time uses `PA_KEYUP_FIXED(us)`: no knee, every step `us` ahead.
 
 Integer math, 32-bit, one or two divides per key-up:
@@ -82,7 +88,7 @@ Integer math, 32-bit, one or two divides per key-up:
 ```
 dead = ref * dead_pm / 1000
 q    = knee_us * (top - dead) + slope_us * (d - dead)
-lead = q / (d - dead)                              // d in the dead zone: window_us
+lead = q / (d - dead)                              // d at or under dead: boosted (below)
 b    = dead + ceil(q / (window_us - settle_us))    // only when lead > window_us
 ease = ref * ease_pm / 1000                        // d - dead > ease: the eased key-up
 s    = slope_us * (d - dead - ease) / (d - dead)

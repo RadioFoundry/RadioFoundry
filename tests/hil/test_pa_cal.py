@@ -26,8 +26,10 @@ def test_plan_is_the_firmwares():
     assert (k["boost"], k["pa_us"]) == (0, 370)
     k = pa_cal.plan(dict(DFLT, pa_us=200), 700, 1448, 760, 4095)
     assert (k["boost"], k["pa_us"], k["drive_us"]) == (764, 200, 200)
-    k = pa_cal.plan(DFLT, 600, 1448, 760, 4095)                         # in the dead zone
-    assert (k["boost"], k["pa_us"]) == (0, 1500)
+    k = pa_cal.plan(DFLT, 600, 1448, 760, 4095)                         # under the dead zone's edge: the edge's boost
+    assert (k["boost"], k["boost_us"], k["pa_us"], k["drive_us"]) == (761, 1500, 1500, 300)
+    assert pa_cal.plan(DFLT, 684, 1448, 760, 4095)["boost"] == 761      # at the edge
+    assert pa_cal.plan(DFLT, 685, 1448, 760, 4095)["boost"] == 761      # one count over it: no step
     # the fastest approach: a level over it up on drive 836, then its own; the levels under it as before
     e = dict(DFLT, ease_pm=200)
     assert pa_cal.plan(e, 767, 1448, 760, 4095) == pa_cal.plan(DFLT, 767, 1448, 760, 4095)

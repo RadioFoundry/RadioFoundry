@@ -16,7 +16,11 @@ pa_keyup_t pa_keyup_drives(const pa_keyup_cfg_t *c, uint16_t d, uint16_t top, ui
 	uint32_t over = d > dead ? (uint32_t)d - dead : 0u;
 	uint32_t span = top > dead ? (uint32_t)top - dead : 0u;
 	uint32_t q = (uint32_t)c->knee_us * span + (uint32_t)c->slope_us * over;	// us x counts
-	uint32_t lead = over != 0u ? q / over : c->window_us;	// a drive in the dead zone: nothing to time, the earliest
+	// A drive at or under the dead zone's edge has no time of its own. With a knee it takes the edge's boost (the
+	// law's limit as d comes down to it), from the window: dead is a part of ref, so the edge moves with the
+	// frequency and from radio to radio, by more than the few counts a lowest level can sit over it. Without a knee
+	// (a board keyed at one fixed time) nothing to time: the window
+	uint32_t lead = over != 0u ? q / over : q != 0u ? UINT32_MAX : c->window_us;
 	uint32_t b = d;
 	uint32_t ease = (uint32_t)ref * c->ease_pm / 1000u;
 	if (ease != 0u && over > ease) {
