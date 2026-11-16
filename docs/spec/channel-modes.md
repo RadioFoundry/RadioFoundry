@@ -145,7 +145,7 @@ Ids are only appended and never reused. A kind and a system type that belong tog
 
 A mode claims an id by adding a row to all three in one change, with its spec: the parameter block, the type's
 system block and channel tail, its targets' address format, its traffic keys' algorithm ids and its radio-wide
-record. A walk-through for adding a mode is to come.
+record. The order of work is in [Adding a mode](../dev/adding-a-mode.md).
 
 ## 5. Mode-scoped records
 
