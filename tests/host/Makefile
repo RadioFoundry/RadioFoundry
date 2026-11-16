@@ -1335,7 +1335,7 @@ zoneImportModesTest: zoneImportTest.c $(ZIMPORT) $(CORE)/codeplug/codeplug_recor
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_P25=1 -o $@ zoneImportTest.c $(ZIMPORT) $(CORE)/codeplug/codeplug_records.c
 
 run: run-zimport
-run-zimport: zoneImportTest
+run-zimport: zoneImportTest zoneImportModesTest
 	./zoneImportTest
 	./zoneImportModesTest
 .PHONY: run-zimport
