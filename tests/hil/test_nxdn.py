@@ -34,11 +34,18 @@ own framer and call layer, built for the host) decodes the symbols. Pass criteri
 Skipped where the radio's air interface can't transmit the rate (`nxdn.fit4800` / `nxdn.fit9600` without TX).
 
 test_nxdn_rx_from_bench[9600|4800] (opt-in: --allow-rf --allow-service-stop --nxdn-mhz MHz; the bench transmits, the
-radio only receives; not yet run on a radio whose air interface receives NXDN): the VFO on --nxdn-mhz in NXDN at that rate, any
+radio only receives): the VFO on --nxdn-mhz in NXDN at that rate, any
 RAN and group, while the bench's fsk4 transmitter plays a call nxdntool.py gen writes (RAN TEST_RAN, TEST_UNIT to group
 TEST_GROUP, RX_VOICE_FRAMES voice frames). On the radio: one reception more (nxdn.rx_calls) from that unit to that
 group (nxdn.src, nxdn.dst) with that RAN. Skipped where the radio's air interface can't receive the rate (the fit
 without RX: a provider whose receiver needs a 24-symbol sync has none for NXDN's 10-symbol FSW).
+
+test_nxdn_rx_speech[9600|4800] (the same opt-ins and --ambe FILE, a speech recording as 9-byte frames; the bench
+transmits, the radio only receives): the same call with the recording's first SPEECH_FRAMES frames as its voice
+frames, which the bench tool carries without looking inside. On the radio: one reception more; at least all but
+SPEECH_LATE of the frames into the voice path (voice.rx_in), none counted silent, bad, lost or overflowed, and the
+decoded PCM peaking at PEAK_MIN or more (voice.rx_peak): the radio's vocoder decoded speech, not noise. What the
+speaker plays is not measured. Skipped without a vocoder in the firmware (dmr.codec=0).
 """
 import json
 import os
@@ -47,13 +54,16 @@ import time
 
 import pytest
 
-from rfoundry_hil import as_int, skip
+from rfoundry_hil import as_int, counter_deltas, skip
 from hil_config import rig
 
 AIR_FIT_RX, AIR_FIT_TX = 0x1, 0x2
 RX_VOICE_FRAMES = 40
 FSK4_HEX_MAX = 8192     # symbols the bench takes in the request itself (fsk4_bench.py)
 PTT_S = 3.0
+SPEECH_FRAMES = {"9600": 64, "4800": 136}   # voice frames of the recording that fit FSK4_HEX_MAX symbols with the lead
+SPEECH_LATE = 8         # voice frames of a call's start a receiver may miss before its VCALL is in
+PEAK_MIN = 1000         # decoded speech peaks at thousands (test_dmr_voice.py)
 FRAME_MS = 80.0
 MISSING_FRAMES = 4      # the bench receiver's sync takes a frame or two to find the carrier, the release frame ends it
 MAX_CRC_FAIL = 1
@@ -338,12 +348,10 @@ def test_nxdn_stored_channel_tx(radio, sdr_bench, backup_dir, pytestconfig):
     check_over(over, "4800", STORED_TX_RAN, STORED_UNIT, 1)
 
 
-@pytest.mark.feature("nxdn")
-@pytest.mark.rf
-@pytest.mark.bench_service
-@pytest.mark.bench_modem
-@pytest.mark.parametrize("rate", list(RATES))
-def test_nxdn_rx_from_bench(radio, sdr_bench, pytestconfig, rate):
+def rx_call(radio, sdr_bench, pytestconfig, rate, frames, extra=(), before=None):
+    """The VFO on --nxdn-mhz in NXDN at rate while the bench plays one call nxdntool.py gen writes (frames voice
+    frames, extra its other options). before(), when given, runs once the radio is in NXDN, ahead of the call.
+    Returns the view's core and nxdn sections before and after."""
     import nxdntool
     mhz = rig(pytestconfig, "nxdn-mhz")
     hz = round(mhz * 1e6)
@@ -364,12 +372,15 @@ def test_nxdn_rx_from_bench(radio, sdr_bench, pytestconfig, rate):
             v0 = radio.wait_for(lambda x: x.get("mode") == "nxdn" and x.get("nxdn.on") == "1" and
                                 x.get("nxdn.rate") == rate, 3.0, sections=("core", "nxdn"),
                                 what=f"NXDN at {rate} bit/s on the VFO")
+            if before is not None:
+                before()
+                v0 = radio.view(["core", "nxdn"])    # before() may reset the counters
             with tempfile.TemporaryDirectory() as tmp, sdr_bench.lease():
                 path, exp = os.path.join(tmp, "call.dibits"), os.path.join(tmp, "call.json")
                 try:
                     nxdntool.run(["gen", path, exp, "--ran", TEST_RAN, "--group", TEST_GROUP, "--src",
-                                  TEST_UNIT, "--voice-frames", RX_VOICE_FRAMES, "--lead", baud // 4]
-                                 + (["--9600"] if rate == "9600" else []))
+                                  TEST_UNIT, "--voice-frames", frames, "--lead", baud // 4]
+                                 + (["--9600"] if rate == "9600" else []) + list(extra))
                 except SystemExit as e:
                     pytest.fail(f"nxdntool: {e}")
                 with open(path, "rb") as f:
@@ -384,6 +395,16 @@ def test_nxdn_rx_from_bench(radio, sdr_bench, pytestconfig, rate):
             v1 = radio.view(["core", "nxdn"])
         finally:
             L.nxdn_settings(**old)
+    return v0, v1
+
+
+@pytest.mark.feature("nxdn")
+@pytest.mark.rf
+@pytest.mark.bench_service
+@pytest.mark.bench_modem
+@pytest.mark.parametrize("rate", list(RATES))
+def test_nxdn_rx_from_bench(radio, sdr_bench, pytestconfig, rate):
+    v0, v1 = rx_call(radio, sdr_bench, pytestconfig, rate, RX_VOICE_FRAMES)
     keys = ("rx_calls", "frames", "voice", "played", "voice_held", "sacch_fail", "facch_fail", "lich_fail", "fec_bits",
             "ran_rejects", "rx_chunks")
     print(f"\nnxdn from the bench at {rate} bit/s: "
@@ -393,3 +414,43 @@ def test_nxdn_rx_from_bench(radio, sdr_bench, pytestconfig, rate):
     assert v1.get("nxdn.src") == str(TEST_UNIT) and v1.get("nxdn.dst") == str(TEST_GROUP), \
         f"the call {v1.get('nxdn.src')} -> {v1.get('nxdn.dst')}, sent {TEST_UNIT} -> {TEST_GROUP}"
     assert v1.get("nxdn.ran") == str(TEST_RAN), f"RAN {v1.get('nxdn.ran')}, sent {TEST_RAN}"
+
+
+@pytest.mark.feature("nxdn")
+@pytest.mark.rf
+@pytest.mark.bench_service
+@pytest.mark.bench_modem
+@pytest.mark.parametrize("rate", list(RATES))
+def test_nxdn_rx_speech(radio, sdr_bench, pytestconfig, rate):
+    ambe = pytestconfig.getoption("--ambe")
+    if not ambe:
+        skip("opt_in", "give --ambe FILE (or $RFOUNDRY_HIL_AMBE): a 9-byte-frame .ambe speech recording")
+    if not os.path.isfile(ambe) or os.path.getsize(ambe) % 9:
+        pytest.fail(f"{ambe}: not a 9-byte-frame .ambe file")
+    if radio.view(["dmr"]).get("dmr.codec") != "1":
+        skip("not_built", "no vocoder merged in this firmware (dmr.codec=0): voice can't play")
+    frames = min(SPEECH_FRAMES[rate], os.path.getsize(ambe) // 9)
+    keys = ["voice.rx_in", "voice.rx_frames", "voice.rx_concealed", "voice.rx_silence", "voice.rx_lost",
+            "voice.rx_overflows", "voice.rx_bad", "voice.rx_underruns"]
+    got = {}
+
+    def before():
+        radio.reset_counters()
+        got["before"] = radio.counters()[1]
+
+    v0, v1 = rx_call(radio, sdr_bench, pytestconfig, rate, frames, ["--voice-file", ambe], before)
+    time.sleep(1.5)                     # playback drains
+    d = counter_deltas(got["before"], radio.counters()[1], keys)
+    stats = radio.view(["dmr_stats"])
+    print(f"\nnxdn speech at {rate} bit/s: sent {frames} voice frames; nxdn voice "
+          f"{v0.get('nxdn.voice')}->{v1.get('nxdn.voice')}, played {v0.get('nxdn.played')}->{v1.get('nxdn.played')}; "
+          f"voice path: {d}; peak {stats.get('voice.rx_peak')}, bit errors {stats.get('voice.rx_bit_errors')}")
+    assert (as_int(v1.get("nxdn.rx_calls")) or 0) == (as_int(v0.get("nxdn.rx_calls")) or 0) + 1, "no call received"
+    assert frames - SPEECH_LATE <= d["voice.rx_in"] <= frames, \
+        f"frames into the voice layer {d['voice.rx_in']} of {frames}: {d}"
+    assert d["voice.rx_frames"] >= d["voice.rx_in"] - 3, f"frames played {d['voice.rx_frames']}: {d}"
+    for k in ("voice.rx_silence", "voice.rx_bad", "voice.rx_lost", "voice.rx_overflows"):
+        assert d[k] == 0, f"{k} = {d[k]}: {d}"
+    peak = stats.get("voice.rx_peak")
+    assert peak is not None and int(peak) >= PEAK_MIN, \
+        f"decoded speech peaks at {peak} (silent output: wrong bits into the decoder?): {d}"
