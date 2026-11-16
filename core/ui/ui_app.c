@@ -1389,16 +1389,25 @@ static void quick_activate(int tile)
 		ui_st.quick_edit = true;	// the hint row says what Up / Down and the digits do
 		break;
 	case QT_MODE: {
-		bool to_dmr = view->ch.mode != RADIO_MODE_DMR;	// the view may change at once (the host simulator)
-		if (to_dmr && (view->am || view->bcast)) {
+		// FM, DMR, P25 in turn: P25 where the board runs it (the view may change at once: the host simulator)
+		bool p25 = (ui_svc_features() & UI_FEAT_P25) != 0;
+		uint8_t to = view->ch.mode == RADIO_MODE_FM ? RADIO_MODE_DMR :
+			view->ch.mode == RADIO_MODE_DMR && p25 ? RADIO_MODE_P25 : RADIO_MODE_FM;
+		static char msg[12];	// the toast keeps the pointer
+		sbuf_t b;
+		if (to != RADIO_MODE_FM && (view->am || view->bcast)) {
 			ui_toast(view->am ? TR(QUICK_WHY_AM_ONLY_AIR_BAND, "AM only in the air band") :
 				TR(QUICK_WHY_FM_ONLY_BROADCAST, "FM only in the broadcast band"));
 			break;
 		}
-		if (ui_svc_mode(to_dmr ? RADIO_MODE_DMR : RADIO_MODE_FM))
-			ui_toast(to_dmr ? "VFO: DMR" : "VFO: FM");	// the VFO keeps its mode
-		else
+		if (!ui_svc_mode(to)) {
 			quick_unavailable(kind);
+			break;
+		}
+		sb_init(&b, msg, sizeof msg);
+		sb_str(&b, "VFO: ");	// the VFO keeps its mode; a mode's name is never translated
+		sb_str(&b, ui_mode_name(to));
+		ui_toast(msg);
 		break;
 	}
 	case QT_MONITOR:

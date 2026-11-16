@@ -89,6 +89,11 @@ void radio_p25_params(const channel_t *ch, uint32_t own_id, p25_engine_cfg_t *cf
 	cfg->silence = SILENCE;
 }
 
+bool radio_p25_fits(void)
+{
+	return board.air != NULL && (p25_engine_fit(board.air) & AIR_FIT_RX) != 0;
+}
+
 static p25_mem_t *mem_get(void)
 {
 #ifdef HAL_VOCODER_LEND_BYTES

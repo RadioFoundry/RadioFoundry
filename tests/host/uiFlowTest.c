@@ -610,6 +610,13 @@ static const flow_t flows[] = {
 	// Quick settings in the FM VFO: tile 8 is Width, as on a channel
 	{ "Q FM VFO: Width on 8", "vfokey", "quick 8", "toast=Bandwidth", 2, false },
 	{ "S VFO mode back to FM", "ok 4 up ok quick 4 back", "quick 4", "toast=VFO:_FM mode=fm temporary=0", 2, false },
+	// A radio that runs P25: the mode tile goes FM, DMR, P25, FM
+	{ "S VFO mode: DMR to P25", "p25 ok 4 up ok quick 4 back", "quick 4", "toast=VFO:_P25 mode=p25 temporary=0 vfo=1",
+	  2, false },
+	{ "S VFO mode: P25 back to FM", "p25 ok 4 up ok quick 4 back quick 4 back", "quick 4",
+	  "toast=VFO:_FM mode=fm temporary=0", 2, false },
+	{ "S VFO mode: P25 shows on the strip", "p25 ok 4 up ok quick 4 back quick 4 back", "", "mode=p25 screen=home shows=P25",
+	  0, false },
 	{ "S VFO DMR: color code 7", "ok 4 up ok quick 4 back", "quick 3 7 ok", "cc=7 temporary=0", 4, false },
 	{ "S VFO DMR: timeslot 2", "ok 4 up ok quick 4 back", "quick 2 back", "ts=2 temporary=0", 3, false },
 	{ "S VFO DMR: talk to a typed TG", "ok 4 up ok quick 4 back", "quick 8 down ok 3 1 0 0 ok", "talk=3100 temporary=0",

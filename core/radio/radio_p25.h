@@ -59,6 +59,8 @@ typedef struct {
 #include "p25/p25_engine.h"
 
 void radio_p25_init(const hal_audio_t *audio);	// the PCM stream the voice plays on
+// The board's air interface can receive P25 (any task): what the UI offers P25 on
+bool radio_p25_fits(void);
 void radio_p25_settings(radio_p25_settings_t *out);	// any task
 void radio_p25_set_settings(const radio_p25_settings_t *s);	// radio task (RREQ_P25_SET)
 // The engine's configuration for a channel: the one place P25 parameters come from

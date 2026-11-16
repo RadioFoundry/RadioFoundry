@@ -288,8 +288,8 @@ In the VFO, **\***, **5** (**\***, **6** in the DMR VFO) is **TX freq** (the spl
 
 ### DMR in the VFO
 
-**\***, **4** in the VFO switches it between FM and DMR on the same frequency ("VFO: DMR"). In DMR the quick settings are the
-DMR ones:
+**\***, **4** in the VFO switches it between FM and DMR on the same frequency ("VFO: DMR"), and to P25 after DMR on a
+radio that runs P25 ([P25 in the VFO](#p25-in-the-vfo)). In DMR the quick settings are the DMR ones:
 
 | Key | Tile | What it does in the DMR VFO |
 |---|---|---|
@@ -308,6 +308,18 @@ DMR ones:
 - The DMR VFO sends data messages and can start an emergency, as a DMR channel does. It sends no talker alias.
 
 <img src="../ux/screens/160x120i5/home_vfo_dmr.png" width="200" alt="Home in the DMR VFO">
+
+### P25 in the VFO
+
+A build with P25 ([build options](../build-config.md)) on a radio whose feature list has it
+([Radio reference](23-radios.md)) adds P25 to the VFO's modes: **\***, **4** goes FM, DMR, P25, then FM again
+("VFO: P25"). The VFO keeps the mode when the radio is switched off.
+
+- It hears clear P25 voice calls on network access code 293, to every talkgroup. Encrypted calls stay silent.
+- PTT sends a P25 call to talkgroup 1 with no voice yet: the radio has no P25 voice encoder.
+- Home shows "P25". FM's tone and width tiles say "FM only: this is a P25 channel".
+- The code, talkgroup and talkaround can be changed only from a computer for now (`rfoundry_debug.py radio p25`), and the
+  change lasts until the radio is switched off.
 
 ### Leaving the VFO
 
