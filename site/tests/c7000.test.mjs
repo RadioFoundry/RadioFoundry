@@ -275,6 +275,30 @@ test("boot ROM wait: the greeting, answers already on their way and a sign-off: 
 	assert.ok(lines.some((l) => /00 c0 00 03/.test(l)), "the log has what came after the greeting");
 });
 
+// Field: a PL2303 adapter in a bad state read the line at about 307200 baud whatever the page set, so the greeting came
+// in as 70 80 70 00 7c and the sign-off as 00 00 00 7c, and the page listened on for its full 3 minutes
+test("boot ROM wait: the greeting and sign-off read at the wrong rate end the wait as a cable that reads badly (rom-garbled)", async () => {
+	const stream = bareStream();
+	const lines = [];
+	const s = new Stub(stream, { log: (l) => lines.push(l) });
+	setTimeout(() => stream.say(0x70, 0x80, 0x70, 0x00, 0x7C), 60);
+	setTimeout(() => stream.say(0x00, 0x00, 0x00, 0x7C), 115);
+	const t0 = Date.now();
+	await assert.rejects(s.waitForRom(5000, { repeat: 30 }), (e) => e.code === "rom-garbled" && /wrong rate/.test(e.message));
+	assert.ok(Date.now() - t0 < 1500, "told within a second of the radio starting");
+	assert.ok(lines.some((l) => /70 80 70 00 7c 00 00 00 7c/.test(l)), "the log has the bytes");
+});
+
+test("boot ROM wait: a burst of noise, or stray single bytes, then the greeting later: still the greeting", async () => {
+	const stream = bareStream();
+	const s = new Stub(stream, { log: quiet });
+	setTimeout(() => stream.say(0x40), 20);	// the power switch
+	setTimeout(() => stream.say(0xFF), 80);
+	setTimeout(() => stream.say(0x13, 0x37, 0x00), 450);	// one burst alone
+	setTimeout(() => stream.say(0x02, 0x24, 0x00, 0x03), 1000);
+	assert.deepEqual(await s.waitForRom(3000), { answered: false });
+});
+
 test("boot ROM wait: stray bytes at power-on that look like a sign-off don't end the wait while more follows", async () => {
 	const stream = bareStream();
 	const s = new Stub(stream, { log: quiet });

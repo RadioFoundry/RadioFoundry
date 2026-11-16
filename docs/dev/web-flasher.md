@@ -575,7 +575,10 @@ address it starts, little endian: `00 10 00 03` with a loader at the start of th
 whose flash names the application (`rom_entry`). `romSignOffs()` in `stub.js` takes any 256-byte-aligned program
 flash address, and doesn't count the ones in an echo of the frame just sent (the stub image holds such words).
 The greeting, answers already on their way and then the sign-off is `rom-deaf`: nothing the cable sends reaches
-the radio, and the connect step shows it as the cable fault `oneway` instead of offering another try. Answering only
+the radio, and the connect step shows it as the cable fault `oneway` instead of offering another try. Two bursts of
+a few bytes 25 to 300 ms apart, then a quiet line, with no greeting in them, is `rom-garbled`: the ROM's two frames
+read at the wrong rate (a cable adapter in a bad state, [gotchas](../spec/gotchas.md) 16.6), shown at once as the cable
+fault `rom_garbled`. Stray bytes from the power switch come one at a time and don't count. Answering only
 after the greeting arrived failed often on the first try, so every wait for the ROM uses the **slow cable mode**
 (`powerCycle()` in `c7000ui.js`; it was once a choice offered after a failure, and a collapsed note on these panels
 says where it went): `waitForRom({ repeat: ROM_REPEAT })` sends the answer every 30 ms, and on for 150 ms after the

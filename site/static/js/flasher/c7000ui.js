@@ -482,6 +482,9 @@ function connectPanel(onReady, { onUpdateMode = null, restart = false } = {}) {
 			// the ROM's greeting came through and it took none of the answers already on their way: no other try over
 			// this cable can go better
 			if (e?.code === "rom-deaf" && !cableTrouble()) return cableFaulty({ code: "oneway" });
+			// its greeting and sign-off came in as other bytes: the cable reads the line wrong, and so a try again
+			// with the cable as it is can't go better either
+			if (e?.code === "rom-garbled" && !cableTrouble()) return cableFaulty({ code: "rom_garbled", bytes: got?.bytes ?? 0, errors: got?.errors ?? 0 });
 			failed(() => romFailed(got, notice(t(e?.code === "rom-booted" ? "flash.c7.connect.rom_booted" : "flash.c7.connect.no_rom"), "bad"), reportLine()));
 		}
 	};

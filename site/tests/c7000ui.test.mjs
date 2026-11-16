@@ -663,3 +663,36 @@ test("connect step: a radio that is heard and hears nothing is said as a cable t
 	assert.equal(state.c7.stream, null, "the session forgot the cable");
 	assert.equal([forwards.at(-1)].flat().filter(Boolean).at(-1).textContent, "Try Again");
 });
+
+// Field: a PL2303 adapter in a bad state read the line at another rate; the page listened on for its full 3 minutes
+test("connect step: the radio's greeting read at the wrong rate is said as a cable fault at once, with Try Again", async () => {
+	const stream = { buf: new Uint8Array(0), received: 0, lineErrors: 0, clear() { this.buf = new Uint8Array(0); },
+		take(n) { const o = this.buf.slice(0, n); this.buf = this.buf.slice(n); return o; },
+		async write() {}, async close() {} };
+	const say = (...b) => { stream.buf = Uint8Array.of(...stream.buf, ...b); stream.received += b.length; };
+	const forwards = [];
+	const state = { radio, task: "backup", forward: (b) => forwards.push(b), data: { fb }, board: fb.boards[radio.flash.board] };
+	c7ui.init({ S: state, fb: () => fb, helpLink: () => null, reset() {}, render() {}, errorText: (e) => e.message });
+	deadCable(state, stream);
+	const box = c7ui.connectView();
+	box.isConnected = true;
+	const press = async (label) => {
+		for (let i = 0; i < 500; i++) {
+			const b = [forwards.at(-1)].flat().find((x) => x?.textContent === label);
+			if (b) return b.click();
+			await sleep(20);
+		}
+		assert.fail(`no ${label} button: ${box.textContent.slice(0, 200)}`);
+	};
+	await press("Radio Is Off");
+	await sleep(100);
+	say(0x70, 0x80, 0x70, 0x00, 0x7C);
+	await sleep(55);
+	say(0x00, 0x00, 0x00, 0x7C);
+	for (let i = 0; i < 100 && !/Cable Problem Detected/.test(box.textContent); i++) await sleep(20);
+	assert.match(box.textContent, /never the radio's greeting/);
+	assert.match(box.textContent, /9 bytes, 0 line errors/);
+	assert.match(box.textContent, /FTDI chip/);
+	assert.equal(state.c7.stream, null, "the session forgot the cable");
+	assert.equal([forwards.at(-1)].flat().filter(Boolean).at(-1).textContent, "Try Again");
+});

@@ -67,6 +67,12 @@ const gaveUp = (b, sent = null) => romSignOffs(b) > (sent ? romSignOffs(sent) : 
 // Before the greeting, switching the radio on puts stray bytes on the line: there a sign-off counts only as the last
 // thing received, with the line quiet after it for this long (ms)
 const SIGN_OFF_QUIET = 30;
+// The boot ROM's greeting and sign-off seen through a cable that reads the line at another rate: a PL2303 adapter in a
+// bad state keeps the rate it had before and ignores the page's (gotchas 16.6), so 02 24 00 03 comes in as 70 80 70 00 7c.
+// Its shape still shows: two bursts of a few bytes, the second 25 to 300 ms after the first (the ROM's ~48 ms plus
+// the USB's delays), then a quiet line, with no greeting in them. Bursts are bytes less than BURST_GAP ms apart; a
+// group ends after GROUP_QUIET ms of quiet. Stray bytes from the power switch come one at a time
+const BURST_GAP = 15, GROUP_QUIET = 300, GARBLED_MIN = 2, GARBLED_APART = [25, 300];
 // Slow cable mode: the greeting reply goes out this often while the radio is switched on, and on for ROM_REPEAT_AFTER
 // ms once the greeting is seen: the ROM drops what reaches it before its greeting, so only the answers sent after that
 // count, and the ROM's 48 ms must be covered however late the greeting shows here (hardware-dm32.md 13.3)
@@ -201,13 +207,15 @@ export class Stub {
 	// greeting and ROM_REPEAT_AFTER ms of answers after it without the ROM giving up).
 	//
 	// The ROM giving up ends the wait with a code: rom-deaf when its greeting was seen and answers were on their way
-	// (nothing the cable sends reaches the radio: no slower sending helps), rom-booted otherwise
+	// (nothing the cable sends reaches the radio: no slower sending helps), rom-booted otherwise. rom-garbled: the
+	// ROM's two frames came in a shape that can only be them, but not as their bytes (the cable reads the line wrong)
 	async waitForRom(timeout, { signal, repeat = 0 } = {}) {
 		const until = Date.now() + timeout;
 		this.s.clear();
 		// the answers go out in the background: a write that fails (the cable pulled) ends the wait with its error, and
 		// is never left as an unhandled rejection
 		let sending = Promise.resolve(), next = 0, heard = 0, failed = null, tail = null;
+		let had = 0, bursts = [], seen = [];
 		try {
 			while (Date.now() < until) {
 				if (signal?.aborted) throw new StubError("stopped");
@@ -217,6 +225,26 @@ export class Stub {
 				}
 				if (failed) throw failed;
 				const b = this.s.buf;
+				const now = Date.now();
+				if (b.length > had) {
+					const last = bursts[bursts.length - 1];
+					if (last && now - last.end < BURST_GAP) { last.n += b.length - had; last.end = now; }
+					else bursts.push({ at: now, end: now, n: b.length - had });
+					seen.push(...b.subarray(had));
+				}
+				had = b.length;
+				if (!heard && bursts.length && now - bursts[bursts.length - 1].end >= GROUP_QUIET) {
+					const [one, two] = bursts;
+					if (bursts.length === 2 && one.n >= GARBLED_MIN && two.n >= GARBLED_MIN
+						&& two.at - one.at >= GARBLED_APART[0] && two.at - one.at <= GARBLED_APART[1]) {
+						this.log(`two frames that are not the boot ROM's greeting: ${hexBytes(Uint8Array.from(seen.slice(0, 16)))}`);
+						this.s.take(b.length);
+						throw new StubError("the radio's boot ROM greeted, but the bytes came through the cable wrong: "
+							+ "the cable reads the radio's line at the wrong rate or badly", "rom-garbled");
+					}
+					bursts = [];
+					seen = [];
+				}
 				const at = find(b, ROM_HELLO);
 				if (at >= 0) {
 					this.s.take(at + ROM_HELLO.length);
@@ -245,6 +273,7 @@ export class Stub {
 					tail = null;
 				}
 				if (b.length > 64 && !tail) this.s.take(b.length - 3);
+				had = this.s.buf.length;
 				await sleep(1);
 			}
 		} finally {

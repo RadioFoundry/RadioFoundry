@@ -850,7 +850,12 @@ check a USB-serial cable as it opens with a write larger than all the queues (`s
 0xFF through a 256-byte buffer); never drain to find out. The wait is not enough in the browser: through Chromium the
 same adapter still stopped after two to four open and close cycles with nothing left to send (pyserial: eight cycles,
 no fault), so the check as it opens is what the page relies on, and its message says to replug the cable and to
-replace a cable that keeps doing it. With that cable in, the radio also flashed its stuck-line
+replace a cable that keeps doing it. A cable can also pass the check and stop afterwards (the check's own close can
+do it). In that state the adapter also kept an earlier baud rate and ignored the page's 115200: the boot ROM's
+greeting `02 24 00 03` came in as `70 80 70 00 7c` and its sign-off `00 c0 00 03` as `00 00 00 7c` (115200 read at
+about 307200), so neither was recognized and the page listened for its full 3 minutes. Rule: the boot ROM wait also
+knows the two frames by their shape, two bursts of a few bytes 25 to 300 ms apart and then a quiet line with no
+greeting in them (`rom-garbled` in `stub.js`), and the page shows the cable fault at once. With that cable in, the radio also flashed its stuck-line
 pattern (16.5) and stopped when it was pulled out; whether a cable that sends does that too is not measured.
 
 ## 17. Scan
