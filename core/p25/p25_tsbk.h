@@ -42,6 +42,10 @@ void p25_tsbk_seal(uint8_t blk[P25_TSBK_BYTES]);
 #define P25_OP_GRP_V_UPDT_EXP	0x03
 #define P25_OP_UU_V_GRANT	0x04
 #define P25_OP_UU_V_UPDT	0x06
+#define P25_OP_QUE_RSP		0x21
+#define P25_OP_DENY_RSP		0x27
+#define P25_OP_GRP_AFF_RSP	0x28
+#define P25_OP_U_REG_RSP	0x2C
 #define P25_OP_SCCB_EXP		0x29
 #define P25_OP_IDEN_UP_TDMA	0x33
 #define P25_OP_IDEN_UP_VU	0x34
@@ -68,7 +72,14 @@ enum {
 	P25_TSBK_ADJ,		// an adjacent site: site
 	P25_TSBK_SCCB,		// secondary control channels: sccb
 	P25_TSBK_SYS_SRV,	// system services: svc
+	P25_TSBK_REG_RSP,	// unit registration response: reg
+	P25_TSBK_AFF_RSP,	// group affiliation response: aff
+	P25_TSBK_DENY,		// deny response: rsp
+	P25_TSBK_QUEUED,	// queued response: rsp
 };
+
+// The answer values of a registration and an affiliation response
+enum { P25_RV_ACCEPT, P25_RV_FAIL, P25_RV_DENY, P25_RV_REFUSED };
 
 // A voice grant, any of its forms. Group: tg; unit to unit: dst. src 0 where the form has none. The update form names
 // two grants: ch2 / tg2 (ch2 0: none)
@@ -123,14 +134,52 @@ typedef struct {
 			uint32_t avail, supp;
 			uint8_t prio;
 		} svc;
+		struct {
+			uint8_t rv;		// P25_RV_*
+			uint16_t sysid;
+			uint32_t id, addr;	// the unit that asked, and the address the system gives it
+		} reg;
+		struct {
+			bool global;
+			uint8_t gav;		// P25_RV_*
+			uint16_t ann, tg;	// the announcement group, the group affiliated
+			uint32_t dst;
+		} aff;
+		struct {
+			bool aiv, ex;		// additional information valid, extended addressing
+			uint8_t svc;		// the opcode of the request answered
+			uint8_t reason;
+			uint32_t info, dst;
+		} rsp;
 	} u;
 } p25_tsbk_t;
 
 // A block's 10 message octets into m; false for a message not decoded here (m->kind says what it is)
 bool p25_tsbk_parse(const uint8_t blk[P25_TSBK_BYTES], p25_tsbk_t *m);
-// m to a sealed block (the bench tool and the tests; never on a radio, which sends nothing). kind picks the form: a
-// grant by m->opcode (one of the four grant opcodes), an identifier by m->u.iden.form
+// m to a sealed block (the bench tool and the tests: the radio sends only inbound blocks). kind picks the form: a grant
+// by m->opcode (one of the four grant opcodes), an identifier by m->u.iden.form
 void p25_tsbk_make(const p25_tsbk_t *m, uint8_t blk[P25_TSBK_BYTES]);
+
+// ── Inbound signaling: the radio's blocks on the control channel's inbound frequency ──
+// Inbound opcodes share numbers with outbound ones of another meaning: they have their own parse
+#define P25_ISP_GRP_V_REQ	0x00	// group voice service request
+#define P25_ISP_GRP_AFF_REQ	0x28	// group affiliation request
+#define P25_ISP_U_REG_REQ	0x2C	// unit registration request
+typedef struct {
+	uint8_t opcode, mfid;
+	bool known;		// a layout decoded here (the three above, MFID 0)
+	uint8_t svc;		// voice request: service options
+	bool emergency;		// affiliation request
+	uint32_t wacn;		// registration request
+	uint16_t sysid;		// registration and affiliation requests
+	uint16_t tg;		// voice and affiliation requests
+	uint32_t src;
+} p25_isp_t;
+// m to a sealed last block; a block back to m (false: not one of the three, or another MFID)
+void p25_isp_make(const p25_isp_t *m, uint8_t blk[P25_TSBK_BYTES]);
+bool p25_isp_parse(const uint8_t blk[P25_TSBK_BYTES], p25_isp_t *m);
+// The one-block inbound TSDU of blk in unit (status symbols "unknown", as a subscriber sends): its length in symbols
+uint16_t p25_isp_unit(uint8_t *unit, uint16_t nac, const uint8_t blk[P25_TSBK_BYTES]);
 
 // The header block of a multi-block trunking packet (a PDU of the alternate or unconfirmed trunking format). False:
 // another packet. The data blocks are not decoded
