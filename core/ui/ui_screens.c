@@ -1210,6 +1210,22 @@ static bool sending_data(const radio_view_t *v)
 #endif
 }
 
+// Outside the DMR block: the event banners call it in every build
+bool ui_sb_gw_caller(sbuf_t *b, uint32_t src)
+{
+#if CONFIG_DMR_TRUNK_GW
+	char num[24];
+	if (ui_svc_t3_cli(src, num, sizeof num)) {
+		sb_str(b, num[0] != '\0' ? num : TR(TRUNK_WORD_PHONE_LINE, "Phone line"));
+		return true;
+	}
+#else
+	(void)b;
+	(void)src;
+#endif
+	return false;
+}
+
 // --- DMR (docs/ux/wireframes: Home DMR, Receiving, Transmitting) ---
 #if CONFIG_DMR
 // "TG 123 Main Ops", "Joe 9991234", "All call"; a private call without a name shows the ID only
@@ -1355,21 +1371,6 @@ static void sb_talk_alts(sbuf_t *b, uint32_t id, bool private_call, const char *
 }
 
 // The caller as the big line: the contact name, else the ID
-bool ui_sb_gw_caller(sbuf_t *b, uint32_t src)
-{
-#if CONFIG_DMR_TRUNK_GW
-	char num[24];
-	if (ui_svc_t3_cli(src, num, sizeof num)) {
-		sb_str(b, num[0] != '\0' ? num : TR(TRUNK_WORD_PHONE_LINE, "Phone line"));
-		return true;
-	}
-#else
-	(void)b;
-	(void)src;
-#endif
-	return false;
-}
-
 static void sb_caller(sbuf_t *b, const radio_dmr_call_t *c)
 {
 	if (c->src_name[0] == '\0' && ui_sb_gw_caller(b, c->src))
