@@ -15,6 +15,9 @@
     rfoundry_debug.py wake                           backlight on without a key event
     rfoundry_debug.py ptt --seconds S                key PTT for S seconds (at most 10; the firmware also times out)
     rfoundry_debug.py radio OP [ARG...]              channel +1, pos 3, zone 0, vfo on, freq MHZ, power lowest|LEVEL|+1, copy-vfo, ...
+    rfoundry_debug.py radio mode fm|dmr|p25          the channel's mode for now (the VFO's own in the VFO)
+    rfoundry_debug.py radio p25 [nac=N] [tg=N|unit=N] [rx_tgid=N] [talkaround=auto|on|off] [unit_id=N]
+                                                the P25 settings (CONFIG_P25; RAM only, view section p25)
     rfoundry_debug.py volume [N|knob]                print the speaker volume; N (0 mutes, 0..16) sets it, knob gives the knob back
     rfoundry_debug.py log [--follow]                 the firmware's dlog() ring
     rfoundry_debug.py chip                           chip ID, flash size, UID, option bytes (RDP, write protection)
@@ -176,7 +179,8 @@ PRESS, LONG, REPEAT, DOWN, UP = range(5)
 
 VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features", "dmr_data",
                  "storage", "dmr_ext", "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
-                 "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc", "net_link", "cps", "board", "audio"]
+                 "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc", "net_link", "cps", "board", "audio",
+                 "p25"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
     OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_DMR_TARGET, OP_DMR_CONTACT, \
@@ -198,6 +202,9 @@ OP_TX_LIMIT = 35
 OP_TX_DRIVE = 36
 OP_PA_KEYUP = 37
 OP_VFO_SFR = 38
+OP_P25 = 39
+P25_TALKAROUND = {"auto": 0, "on": 1, "off": 2}
+CHANNEL_MODES = {"fm": 0, "dmr": 1, "p25": 2}
 # The VFO's SFR role names (sfrRole_t, docs/spec/sfr.md 4): off, user, user of an ERDM repeater, repeater, ERDM style
 SFR_ROLES = {"off": 0, "user": 1, "user-erdm": 2, "rpt": 3, "rpt-erdm": 4}
 TX_LIMIT_MAX = 10       # frequencies in the test TX limit's list (core/radio/tx_limit.h)
@@ -1059,10 +1066,36 @@ class DebugLink:
         self.radio(OP_VOLUME, bytes([VOLUME_KNOB if step == "knob" else int(step)]))
 
     def dmr_fields(self, mode=None, cc=None, ts=None):
-        """Mode ("fm" / "dmr"), color code 0..15 and timeslot 1 / 2, each None to keep it. On a channel these are
-        temporary changes, in the VFO the VFO's own settings (RADIO op 31)."""
-        m = 0xFF if mode is None else {"fm": 0, "dmr": 1}[mode]
+        """Mode ("fm" / "dmr" / "p25"), color code 0..15 and timeslot 1 / 2, each None to keep it. On a channel these
+        are temporary changes, in the VFO the VFO's own settings (RADIO op 31). A mode the build lacks raises
+        DebugLinkError "unavailable"."""
+        m = 0xFF if mode is None else CHANNEL_MODES[mode]
         self.radio(OP_DMR_FIELDS, bytes([m, 0xFF if cc is None else int(cc), 0 if ts is None else int(ts)]))
+
+    def p25_settings(self, rx_nac=0x293, tx_nac=0x293, rx_tgid=0, talkaround="auto", unit_call=False, tx_dst=1,
+                     unit_id=0):
+        """The P25 settings (RADIO op 39; debuglink.md 3.8; RAM only, the p25 view section shows them): the NAC
+        received (0xF7E: any) and sent, rx_tgid 0 every call of the NAC or only this talk group and calls to us,
+        talkaround auto|on|off (or 0..2), PTT calls the unit tx_dst (unit_call) or the talk group tx_dst, our unit ID
+        (0: the radio's DMR ID). The engine takes them when it isn't transmitting."""
+        ta = P25_TALKAROUND[talkaround] if isinstance(talkaround, str) else int(talkaround)
+        if not (0 <= rx_nac <= 0xFFF and 0 <= tx_nac <= 0xFFF and 0 <= rx_tgid <= 0xFFFF and 0 <= ta <= 2 and
+                0 <= unit_id <= 0xFFFFFF and 0 <= tx_dst <= (0xFFFFFF if unit_call else 0xFFFF)):
+            raise ValueError("p25_settings: NACs 0..0xFFF, rx_tgid 0..65535, talkaround auto|on|off, unit_id and "
+                             "a unit tx_dst 24 bits, a talk group tx_dst 16 bits")
+        self.radio(OP_P25, struct.pack("<HHHBBII", rx_nac, tx_nac, rx_tgid, ta, 1 if unit_call else 0, tx_dst,
+                                       unit_id))
+
+    def p25_settings_update(self, **kw):
+        """p25_settings with the settings in force (the p25 view section) changed only where kw says."""
+        v = self.view(["p25"])
+        if v.get("p25.built") != "1":
+            raise DebugLinkError("unavailable")
+        cur = {"rx_nac": int(v["p25.rx_nac"]), "tx_nac": int(v["p25.tx_nac"]), "rx_tgid": int(v["p25.rx_tgid"]),
+               "talkaround": int(v["p25.talkaround"]), "unit_call": v["p25.unit_call"] == "1",
+               "tx_dst": int(v["p25.tx_dst"]), "unit_id": int(v["p25.unit_id"])}
+        cur.update(kw)
+        self.p25_settings(**cur)
 
     def vfo_sfr(self, role, inbound_ts=1, framing=0, hang=0):
         """The VFO's SFR role (RADIO op 38; sfr.md 4), saved with the VFO: role a SFR_ROLES name or 0..4, the inbound
@@ -1561,8 +1594,27 @@ def cmd_radio(link, a):
         link.vibrate(args[0] if args else "message")
     elif op == "copy-vfo":            # the channel's settings into the VFO, and open it
         link.vfo_copy()
-    elif op == "mode":                # mode fm|dmr (the VFO's own in the VFO, else temporary)
+    elif op == "mode":                # mode fm|dmr|p25 (the VFO's own in the VFO, else temporary)
+        if not args or args[0] not in CHANNEL_MODES:
+            raise SystemExit("mode " + "|".join(CHANNEL_MODES))
         link.dmr_fields(mode=args[0])
+    elif op == "p25":                 # p25 [rx_nac=N] [tx_nac=N] [nac=N] [rx_tgid=N] [talkaround=auto|on|off] [tg=N|unit=N] [unit_id=N]
+        kw = {}
+        for a in args:
+            k, _, val = a.partition("=")
+            if k == "nac":
+                kw["rx_nac"] = kw["tx_nac"] = int(val, 0)
+            elif k in ("rx_nac", "tx_nac", "rx_tgid", "unit_id"):
+                kw[k] = int(val, 0)
+            elif k == "talkaround" and val in P25_TALKAROUND:
+                kw[k] = val
+            elif k in ("tg", "unit"):
+                kw["unit_call"] = k == "unit"
+                kw["tx_dst"] = int(val, 0)
+            else:
+                raise SystemExit("p25 [nac=N] [rx_nac=N] [tx_nac=N] [rx_tgid=N] [talkaround=auto|on|off] "
+                                 "[tg=N|unit=N] [unit_id=N]")
+        link.p25_settings_update(**kw)
     elif op == "cc":                  # cc 0..15
         link.dmr_fields(cc=num(0))
     elif op == "ts":                  # ts 1|2
@@ -2420,7 +2472,7 @@ def main(argv=None):
                                   "monitor", "clear", "reply-cancel", "hotspot-exit", "target", "contact", "call-back",
                                   "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set", "usb",
                                   "usb-settings", "ppp", "vibrate", "mode", "cc", "ts", "sfr", "copy-vfo", "voice-test", "dtmf",
-                                  "tx-limit", "tx-drive", "pa-keyup"])
+                                  "tx-limit", "tx-drive", "pa-keyup", "p25"])
     p.add_argument("args", nargs="*")
     p = sub.add_parser("data", help="DMR data: sms, call alert, radio check, settings, inbox")
     p.add_argument("op", choices=["sms", "alert", "check", "settings", "inbox", "read", "emergency", "em-settings",
