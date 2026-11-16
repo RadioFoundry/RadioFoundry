@@ -52,6 +52,10 @@
 #define REARM_HOLD_US	40000u
 #define STALL_US	200000u
 #define REARM_FIRST	1u	// spare records past the sync spacing before a re-arm
+#define SYNC_CHIP_AT	22u	// a detected sync in the record as the chip stores it
+#define TRIM_MIN	2	// symbols: a smaller step of the record clock is within the interrupt's own jitter
+#define TRIM_MAX	48
+#define FILL_MAX	192	// symbols: a re-arm's hole (about 124 with a sync every 6 records) or a record lost
 
 // The half slot n reads: counted from the own timing write (first timeslot interrupt = 1, so the first slot set up is
 // 2). One parity held across two bench sessions; tying it to that count is inferred (modem-hrc6000.md 10.3)
@@ -191,8 +195,8 @@ static uint8_t slice(int8_t s, uint8_t levels)
 	return s >= t ? 1u : s >= 0 ? 0u : s >= -t ? 2u : 3u;
 }
 
-int16_t hrc6000_air_unpack(const uint8_t *raw, bool synced, int16_t dc16, int16_t outer16, uint8_t levels,
-			   uint8_t *hard, int8_t *soft)
+int16_t hrc6000_air_unpack(const uint8_t *raw, bool synced, uint8_t skip, int16_t dc16, int16_t outer16,
+			   uint8_t levels, uint8_t *hard, int8_t *soft)
 {
 	const uint8_t (*seg)[2] = synced ? LAYOUT_SYNC : LAYOUT_PLAIN;
 	uint8_t nseg = synced ? (uint8_t)(sizeof(LAYOUT_SYNC) / sizeof(LAYOUT_SYNC[0]))
@@ -210,14 +214,41 @@ int16_t hrc6000_air_unpack(const uint8_t *raw, bool synced, int16_t dc16, int16_
 			int32_t lv = raw[2 * i] & 0x3Fu;
 			lv -= (lv & 0x20) != 0 ? 64 : 0;
 			sum += lv;
-			int8_t s = clamp8((lv * 16 - dc16) * AIR_SOFT_OUTER / outer16);
-			soft[j] = s;
-			hard[j / 4] |= (uint8_t)(slice(s, levels) << (6 - 2 * (j % 4)));
+			if (j >= skip) {
+				uint16_t o = (uint16_t)(j - skip);
+				int8_t s = clamp8((lv * 16 - dc16) * AIR_SOFT_OUTER / outer16);
+				soft[o] = s;
+				hard[o / 4] |= (uint8_t)(slice(s, levels) << (6 - 2 * (o % 4)));
+			}
 			j++;
 		}
 	}
 	return (int16_t)(sum * 16 / HRC6000_AIR_SYMS);
 }
+
+int16_t hrc6000_air_sync_outer16(const uint8_t *raw, const uint8_t *syms)
+{
+	int32_t pos = 0, neg = 0;
+	int32_t npos = 0;
+
+	for (uint8_t i = 0; i < AIR_SYNC_SYMS_MAX; i++) {
+		int32_t lv = raw[2 * (SYNC_CHIP_AT + i)] & 0x3Fu;
+		lv -= (lv & 0x20) != 0 ? 64 : 0;
+		if (((syms[i / 4] >> (6 - 2 * (i % 4))) & 3u) == 1u) {
+			pos += lv;
+			npos++;
+		} else {
+			neg += lv;
+		}
+	}
+	if (npos == 0 || npos == AIR_SYNC_SYMS_MAX) {
+		return 0;
+	}
+	return (int16_t)((pos * 16 / npos - neg * 16 / (AIR_SYNC_SYMS_MAX - npos)) / 2);
+}
+
+static const uint8_t ERASED_HARD[HRC6000_AIR_SYMS / 4];
+static const int8_t ERASED_SOFT[HRC6000_AIR_SYMS];
 
 // --- Queues (free-running indexes: a power of two) ---
 
@@ -268,6 +299,7 @@ static void rx_setup(hrc6000_air_t *a)
 	a->since_sync = (uint8_t)(a->sync_per + 1u);
 	a->rearm_hold = false;
 	a->rec_any = false;
+	a->next_any = false;
 	a->gap = true;
 	a->rx_paused = false;
 }
@@ -415,7 +447,39 @@ static void rx_record(hrc6000_air_t *a, uint32_t t)
 	}
 	a->rec_any = true;
 	a->t_rec = t;
+	// The chip moves its record clock by whole symbols at a sync (10.2), and a record is always the 144 symbols
+	// before its boundary: one that starts before the last one ended repeats that one's end, a later one lost some
+	uint8_t skip = 0, fill = 0;
+	if (a->next_any) {
+		int32_t over = (int32_t)(a->t_next - t0);
+		int32_t n = over > 100000 ? 1000 : over < -100000 ? -1000
+			    : (over * 3 + (over >= 0 ? 312 : -312)) / 625;	// in symbols of 208.33 us
+
+		if (n <= -TRIM_MIN && n >= -FILL_MAX) {
+			// Lost, but how many is known (the clock step at a sync, a re-arm's hole, one record missed):
+			// erasures in their place keep a framer's count, so it loses those symbols and not its frame
+			fill = (uint8_t)-n;
+			a->gap = false;
+			a->st.fills++;
+		} else if (a->gap) {
+			// already a hole of unknown size
+		} else if (n >= TRIM_MIN && n <= TRIM_MAX) {
+			skip = (uint8_t)n;
+			a->st.trims++;
+		} else if (n >= TRIM_MIN || n <= -TRIM_MIN) {
+			a->gap = true;
+		}
+	}
+	a->next_any = true;
+	a->t_next = t0 + SLOT_US;
 	if (synced) {
+		// The level scale from the sync's own symbols: the counts per kHz are the board's receiver's, and
+		// the sender's deviation is not exact either. At once on a new signal, slowly while in step
+		int16_t o = hrc6000_air_sync_outer16(a->buf->raw, a->p->sync[a->sync_id].syms);
+
+		if (o >= a->outer_nom16 / 2 && o <= a->outer_nom16 * 2) {
+			a->outer16 = (int16_t)(a->since_sync > a->sync_per ? o : a->outer16 + (o - a->outer16) / 4);
+		}
 		a->st.synced++;
 		a->unsynced = 0;
 		a->since_sync = 0;
@@ -432,16 +496,18 @@ static void rx_record(hrc6000_air_t *a, uint32_t t)
 	} else {
 		uint8_t i = (uint8_t)(a->rec_head % HRC6000_AIR_RXQ);
 		hrc6000_air_rec_t *r = &a->buf->rec[i];
-		int16_t mean = hrc6000_air_unpack(a->buf->raw, synced, a->dc16, a->outer16, a->p->levels, r->hard,
-						  r->soft);
-		r->t_us = t0;
-		r->sync_at = synced ? HRC6000_AIR_SYNC_AT : -1;
+		int16_t mean = hrc6000_air_unpack(a->buf->raw, synced, skip, a->dc16, a->outer16, a->p->levels,
+						  r->hard, r->soft);
+		r->t_us = t0 + (uint32_t)skip * 625u / 3u;
+		r->nsyms = (uint8_t)(HRC6000_AIR_SYMS - skip);
+		r->fill = fill;
+		r->sync_at = synced ? (int16_t)(HRC6000_AIR_SYNC_AT - skip) : -1;
 		r->flags = (uint8_t)((a->gap ? AIR_CHUNK_GAP : 0) | (in_step ? 0 : AIR_CHUNK_FREE_RUN));
 		a->st.gaps += a->gap;
 		a->gap = false;
 		__atomic_thread_fence(__ATOMIC_RELEASE);
 		a->rec_head++;
-		ev_push(a, AIR_EV_RX, t0, i);
+		ev_push(a, AIR_EV_RX, r->t_us, i);
 		if (in_step) {
 			// The receive offset (a carrier off frequency) from the records of a signal, slowly
 			int32_t dc = a->dc16 + (mean - a->dc16) / 16;
@@ -513,7 +579,8 @@ bool hrc6000_air_open(hrc6000_air_t *a, const air_profile_t *p, air_event_cb_t c
 	uint32_t per = (p->sync_every_syms + HRC6000_AIR_SYMS - 1u) / HRC6000_AIR_SYMS;
 	a->sync_per = (uint8_t)(per < 1u ? 1u : per > 200u ? 200u : per);
 	a->rearm_k = (uint8_t)(a->sync_per + REARM_FIRST);
-	a->outer16 = (int16_t)((uint32_t)p->dev_outer_hz * SOFT_PER_KHZ * 16u / 1000u);
+	a->outer_nom16 = (int16_t)((uint32_t)p->dev_outer_hz * SOFT_PER_KHZ * 16u / 1000u);
+	a->outer16 = a->outer_nom16;
 	a->dc16 = 0;
 	a->rec_head = a->rec_tail = 0;
 	a->ev_head = a->ev_tail = 0;
@@ -603,8 +670,19 @@ void hrc6000_air_poll(hrc6000_air_t *a)
 		air_chunk_t c;
 		if (e.kind == AIR_EV_RX) {
 			const hrc6000_air_rec_t *r = &a->buf->rec[e.arg % HRC6000_AIR_RXQ];
+			// The symbols lost before the record, as erasures (soft 0)
+			for (uint16_t left = r->fill; left > 0 && a->cb != NULL;) {
+				uint16_t n = left > HRC6000_AIR_SYMS ? HRC6000_AIR_SYMS : left;
+				air_chunk_t f = { .t_us = r->t_us - (uint32_t)left * 625u / 3u, .nsyms = n, .sync_at = -1,
+						  .sync_id = a->p->sync[a->sync_id].id,
+						  .flags = (uint8_t)(r->flags & AIR_CHUNK_FREE_RUN), .rssi_dbm = 0,
+						  .hard = ERASED_HARD, .soft = ERASED_SOFT };
+				air_event_t fe = { .kind = AIR_EV_RX, .t_us = f.t_us, .arg = 0, .chunk = &f };
+				a->cb(&fe, a->cb_ctx);
+				left = (uint16_t)(left - n);
+			}
 			c.t_us = r->t_us;
-			c.nsyms = HRC6000_AIR_SYMS;
+			c.nsyms = r->nsyms;
 			c.sync_at = r->sync_at;
 			c.sync_id = a->p->sync[a->sync_id].id;
 			c.flags = r->flags;

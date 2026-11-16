@@ -125,6 +125,7 @@ static struct {
 	int16_t sync_at[64];
 	uint8_t sync_id[64];
 	uint32_t t[64];
+	uint16_t n[64];
 	uint8_t dibit[MAXSYMS];
 	int8_t soft[MAXSYMS];
 	int nsym;
@@ -136,8 +137,9 @@ static void on_event(const air_event_t *ev, void *ctx)
 	switch (ev->kind) {
 	case AIR_EV_RX: {
 		const air_chunk_t *c = ev->chunk;
-		CHECK(c != NULL && c->nsyms == HRC6000_AIR_SYMS && c->soft != NULL && ev->t_us == c->t_us);
+		CHECK(c != NULL && c->nsyms >= 1 && c->nsyms <= HRC6000_AIR_SYMS && c->soft != NULL && ev->t_us == c->t_us);
 		if (got.n_rx < 64) {
+			got.n[got.n_rx] = c->nsyms;
 			got.flags[got.n_rx] = c->flags;
 			got.sync_at[got.n_rx] = c->sync_at;
 			got.sync_id[got.n_rx] = c->sync_id;
@@ -227,19 +229,25 @@ static int count_writes(uint8_t page, uint16_t addr, int val)
 
 static uint8_t air[MAXSYMS];		// dibits in air order
 static const int8_t LEVEL[4] = { 7, 20, -7, -20 };	// soft counts per dibit (+1, +3, -1, -3) at 1800 Hz
+static const int8_t LEVEL_HOT[4] = { 9, 28, -9, -28 };	// a receiver with more counts per kHz
+static const int8_t *level = LEVEL;
 static const int8_t DC = -3;
 
-// Chip order for record r (air symbols r*144 ..): the inverse of the layout
-static void make_record(int r, bool synced, int8_t dc)
+// Chip order for the record that starts at air symbol off: the inverse of the layout. One with a sync detection has
+// the correlator's pattern where the chip puts it
+static void make_record_at(int off, bool synced, int8_t dc)
 {
 	static const uint8_t LS[][2] = { { 0, 12 }, { 46, 49 }, { 12, 5 }, { 22, 24 }, { 17, 5 }, { 95, 49 } };
 	static const uint8_t LP[][2] = { { 0, 12 }, { 36, 54 }, { 12, 24 }, { 90, 54 } };
 	const uint8_t (*seg)[2] = synced ? LS : LP;
 	int nseg = synced ? 6 : 4, j = 0;
 
+	for (int i = 0; synced && i < 24; i++) {
+		air[off + HRC6000_AIR_SYNC_AT + i] = (uint8_t)((P25_SYNC[i / 4] >> (6 - 2 * (i % 4))) & 3u);
+	}
 	for (int k = 0; k < nseg; k++) {
 		for (int i = seg[k][0]; i < seg[k][0] + seg[k][1]; i++) {
-			int v = LEVEL[air[r * 144 + j]] + dc;
+			int v = level[air[off + j]] + dc;
 			record[2 * i] = (uint8_t)((v & 0x3F) | 0x80);	// bits 7-6 aren't part of the value
 			record[2 * i + 1] = (uint8_t)((v > 14 || v < -14) ? 0x20 : 0x00);
 			j++;
@@ -247,18 +255,28 @@ static void make_record(int r, bool synced, int8_t dc)
 	}
 }
 
-// One record: the timeslot interrupt that ends it, the system interrupt 2.42 ms later, the task
-static void deliver(int r, bool synced, uint32_t gap_us)
+static void make_record(int r, bool synced, int8_t dc)
 {
-	t_us += 30000 + gap_us;
+	make_record_at(r * 144, synced, dc);
+}
+
+// One record: the timeslot interrupt that ends it (dt_us after the last), the system interrupt 2.42 ms later, the task
+static void deliver_at(int off, bool synced, uint32_t dt_us)
+{
+	t_us += dt_us;
 	hrc6000_air_isr_timeslot(AIR);
-	make_record(r, synced, DC);
+	make_record_at(off, synced, DC);
 	regs[4][0x82] = 0x01;
 	regs[4][0x51] = synced ? 0x02 : 0x00;
 	t_us += 2420;
 	hrc6000_air_isr_sys(AIR);
 	hrc6000_air_poll(AIR);
 	t_us -= 2420;	// the clock stays monotonic: the next boundary is 30 ms after this one
+}
+
+static void deliver(int r, bool synced, uint32_t gap_us)
+{
+	deliver_at(r * 144, synced, 30000 + gap_us);
 }
 
 static void rand_stream(uint32_t seed)
@@ -337,7 +355,7 @@ static void test_golden(void)
 		raw[2 * i + 1] = 0xFF;
 	}
 	int16_t outer16 = 16 * 30;	// 30 counts = AIR_SOFT_OUTER: soft = level * 96 / 30
-	hrc6000_air_unpack(raw, true, 0, outer16, 4, hard, soft);
+	hrc6000_air_unpack(raw, true, 0, 0, outer16, 4, hard, soft);
 	// With a sync: chip 0-11, 46-94, 12-16, 22-45 (the sync, at air 66), 17-21, 95-143
 	static const int sync_map[][2] = { { 0, 0 }, { 11, 11 }, { 12, 46 }, { 60, 94 }, { 61, 12 }, { 65, 16 },
 					   { 66, 22 }, { 89, 45 }, { 90, 17 }, { 94, 21 }, { 95, 95 }, { 143, 143 } };
@@ -347,7 +365,7 @@ static void test_golden(void)
 	}
 	static const int plain_map[][2] = { { 0, 0 }, { 11, 11 }, { 12, 36 }, { 65, 89 }, { 66, 12 }, { 89, 35 },
 					    { 90, 90 }, { 143, 143 } };
-	hrc6000_air_unpack(raw, false, 0, outer16, 4, hard, soft);
+	hrc6000_air_unpack(raw, false, 0, 0, outer16, 4, hard, soft);
 	for (unsigned k = 0; k < sizeof(plain_map) / sizeof(plain_map[0]); k++) {
 		int lv = (plain_map[k][1] % 60) - 30;
 		CHECK(soft[plain_map[k][0]] == lv * 96 / 30);
@@ -356,15 +374,35 @@ static void test_golden(void)
 	for (int i = 0; i < 144; i++) {
 		raw[2 * i] = (uint8_t)((i % 4 == 0 ? 30 : i % 4 == 1 ? 9 : i % 4 == 2 ? -9 : -30) & 0x3F);
 	}
-	int16_t mean = hrc6000_air_unpack(raw, false, 0, outer16, 4, hard, soft);
+	int16_t mean = hrc6000_air_unpack(raw, false, 0, 0, outer16, 4, hard, soft);
 	CHECK(mean == 0);
 	CHECK(hard[0] == 0x4B);	// 01 00 10 11
 	CHECK(soft[0] == 96 && soft[1] == 28 && soft[2] == -28 && soft[3] == -96);
-	hrc6000_air_unpack(raw, false, 0, outer16, 2, hard, soft);
+	hrc6000_air_unpack(raw, false, 0, 0, outer16, 2, hard, soft);
 	CHECK(hard[0] == 0x5F);	// 01 01 11 11
 	// The offset comes off before the scaling
-	hrc6000_air_unpack(raw, false, 16 * 10, outer16, 4, hard, soft);
+	hrc6000_air_unpack(raw, false, 0, 16 * 10, outer16, 4, hard, soft);
 	CHECK(soft[0] == 64 && soft[3] == -127);
+	// Without its first symbols: the rest moves up, and the mean is still the whole record's
+	int8_t all[144];
+	uint8_t hard_all[36];
+	for (int i = 0; i < 144; i++) {
+		raw[2 * i] = (uint8_t)(((i * 7) % 41 - 20) & 0x3F);
+	}
+	int16_t m_all = hrc6000_air_unpack(raw, true, 0, 0, outer16, 4, hard_all, all);
+	CHECK(hrc6000_air_unpack(raw, true, 17, 0, outer16, 4, hard, soft) == m_all);
+	CHECK(memcmp(soft, all + 17, 144 - 17) == 0);
+	for (int i = 0; i < 144 - 17; i++) {
+		CHECK(((hard[i / 4] >> (6 - 2 * (i % 4))) & 3) == ((hard_all[(i + 17) / 4] >> (6 - 2 * ((i + 17) % 4))) & 3));
+	}
+	// The outer level from a sync: chip symbols 22-45 hold the pattern; +3 at 25, -3 at -21 counts
+	for (int i = 0; i < 24; i++) {
+		bool plus = ((P25_SYNC[i / 4] >> (6 - 2 * (i % 4))) & 3) == 1;
+		raw[2 * (22 + i)] = (uint8_t)((plus ? 25 : -21) & 0x3F);
+	}
+	CHECK(hrc6000_air_sync_outer16(raw, P25_SYNC) == 16 * 23);
+	static const uint8_t one_sign[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+	CHECK(hrc6000_air_sync_outer16(raw, one_sign) == 0);
 }
 
 static void test_receive(void)
@@ -399,37 +437,45 @@ static void test_receive(void)
 	CHECK(got.t[1] - got.t[0] == 30000);
 	CHECK(got.t[0] == 1000000 + 30000 - 30000 + 104);	// the record before its boundary, symbol centers
 
-	// A record lost: the next one is a gap
-	deliver(12, true, 30000);
-	CHECK(got.flags[12] & AIR_CHUNK_GAP);
-	CHECK(AIR->st.gaps == 2);
+	// A record lost: 144 erasures stand in for it, so the count of symbols holds and nothing is flagged
+	deliver(13, true, 30000);
+	CHECK(got.n_rx == 14 && got.n[12] == 144 && got.flags[12] == 0 && got.sync_at[12] == -1);
+	CHECK(got.t[12] - got.t[11] == 30000 && got.t[13] - got.t[12] == 30000);
+	CHECK(got.flags[13] == 0 && got.sync_at[13] == 66);
+	int erased = 0;
+	for (int i = 12 * 144; i < 13 * 144; i++) {
+		erased += got.soft[i] == 0 && got.dibit[i] == 0;
+	}
+	CHECK(erased == 144 && memcmp(got.dibit + 13 * 144, air + 13 * 144, 144) == 0);
+	CHECK(AIR->st.gaps == 1 && AIR->st.fills == 1);
 
 	// The signal steps: no sync for K = 7 records -> re-arm (0x41 = 0x60), FREE_RUN past the spacing
 	nx = 0;
-	for (int r = 13; r < 20; r++) {
+	for (int r = 14; r < 21; r++) {
 		deliver(r, false, 0);
 	}
-	CHECK(got.n_rx == 20);
-	CHECK((got.flags[18] & AIR_CHUNK_FREE_RUN) == 0 && (got.flags[19] & AIR_CHUNK_FREE_RUN) != 0);
+	CHECK(got.n_rx == 21);
+	CHECK((got.flags[19] & AIR_CHUNK_FREE_RUN) == 0 && (got.flags[20] & AIR_CHUNK_FREE_RUN) != 0);
 	CHECK(count_writes(4, 0x41, 0x60) == 1 && AIR->st.rearms == 1);
 	// Held 40 ms: records meanwhile are dropped, the poll releases it
-	deliver(20, false, 0);
-	CHECK(got.n_rx == 20 && count_writes(4, 0x41, 0x40) == 0);
+	deliver(21, false, 0);
+	CHECK(got.n_rx == 21 && count_writes(4, 0x41, 0x40) == 0);
 	t_us += 15000;
 	hrc6000_air_poll(AIR);
 	CHECK(count_writes(4, 0x41, 0x40) == 1);
-	deliver(21, true, 0);
-	CHECK(got.n_rx == 21 && (got.flags[20] & AIR_CHUNK_GAP) && (got.flags[20] & AIR_CHUNK_FREE_RUN) == 0);
+	// The next sync's record is too far on for erasures: a gap
+	deliver(22, true, 0);
+	CHECK(got.n_rx == 22 && (got.flags[21] & AIR_CHUNK_GAP) && (got.flags[21] & AIR_CHUNK_FREE_RUN) == 0);
 
 	// rx_restart: the set-up again, the next chunk a gap
 	nx = 0;
 	hrc6000_air_rx_restart(AIR);
 	CHECK(count_writes(4, 0x10, 0x02) == 1 && count_writes(4, 0x41, 0x40) == 1);
-	deliver(22, true, 0);
-	CHECK(got.flags[21] & AIR_CHUNK_GAP);
+	deliver(23, true, 0);
+	CHECK(got.flags[22] & AIR_CHUNK_GAP);
 
 	// The task behind: records beyond the queue are dropped and the next delivered one is a gap
-	for (int r = 23; r < 23 + HRC6000_AIR_RXQ + 2; r++) {
+	for (int r = 24; r < 24 + HRC6000_AIR_RXQ + 2; r++) {
 		t_us += 30000;
 		hrc6000_air_isr_timeslot(AIR);
 		make_record(r, true, DC);
@@ -441,7 +487,7 @@ static void test_receive(void)
 	int before = got.n_rx;
 	hrc6000_air_poll(AIR);
 	CHECK(got.n_rx == before + HRC6000_AIR_RXQ);
-	deliver(23 + HRC6000_AIR_RXQ + 2, true, 0);
+	deliver(24 + HRC6000_AIR_RXQ + 2, true, 0);
 	CHECK(got.flags[got.n_rx - 1] & AIR_CHUNK_GAP);
 
 	// A system interrupt with no record flag reads nothing more; its flags are cleared
@@ -449,6 +495,98 @@ static void test_receive(void)
 	regs[4][0x82] = 0x08;
 	hrc6000_air_isr_sys(AIR);
 	CHECK(count_writes(4, 0x83, 0x08) == 1 && nx == 2);
+	CHECK(lock_depth == 0);
+}
+
+// The chip's record clock steps at a sync (10.2), and the receiver's level scale is the board's
+static void test_reassembly(void)
+{
+	fresh();
+	hrc6000_dmr_halt(&eng);
+	air_profile_t p = p25();
+	hrc6000_air_init(AIR, &dev, &ops, BUF);
+	CHECK(hrc6000_air_open(AIR, &p, on_event, NULL));
+	rand_stream(11);
+	// A new signal: the record after the first sync's comes 128 symbols later and repeats 16
+	deliver_at(0, true, 30000);
+	deliver_at(128, false, 26667);
+	CHECK(got.n_rx == 2 && got.n[0] == 144 && got.n[1] == 128 && got.flags[1] == 0);
+	CHECK(got.t[1] - got.t[0] == 30000);	// the chunk starts where the last one ended
+	CHECK(AIR->st.trims == 1);
+	for (int r = 2; r < 6; r++) {
+		deliver_at(128 + (r - 1) * 144, false, 30000);
+	}
+	CHECK(got.nsym == 848 && memcmp(got.dibit, air, 848) == 0);
+	// The next sync's record comes 160 symbols later: 16 are lost, and 16 erasures stand in for them
+	deliver_at(864, true, 33333);
+	CHECK(got.n_rx == 8 && got.n[6] == 16 && got.flags[6] == 0 && got.sync_at[6] == -1);
+	CHECK(got.t[6] - got.t[5] == 30000 && got.t[7] - got.t[6] == 3333);
+	CHECK(got.n[7] == 144 && got.flags[7] == 0 && got.sync_at[7] == 66);
+	CHECK(got.soft[848] == 0 && got.soft[863] == 0 && memcmp(got.dibit + 864, air + 864, 144) == 0);
+	CHECK(AIR->st.fills == 1 && AIR->st.gaps == 1);
+	// In step from here. A boundary a symbol late or early is the interrupt's jitter: nothing is cut or flagged
+	deliver_at(1008, false, 30000);
+	deliver_at(1152, false, 30180);
+	deliver_at(1296, false, 29820);
+	deliver_at(1440, false, 30000);
+	CHECK(got.n_rx == 12 && got.nsym == 1584 && AIR->st.trims == 1 && AIR->st.gaps == 1 && AIR->st.fills == 1);
+	CHECK(memcmp(got.dibit + 864, air + 864, 5 * 144) == 0);
+	// A sync record that repeats symbols keeps its sync where it now is
+	deliver_at(1584 - 16, true, 26667);
+	CHECK(got.n[12] == 128 && got.sync_at[12] == 50 && got.flags[12] == 0);
+	CHECK(memcmp(got.dibit + 1584, air + 1584, 128) == 0);
+	// A re-arm's hole: the sync's record 268 symbols after the last. 124 erasures, in one chunk
+	deliver_at(1568 + 268, true, 55833);
+	CHECK(got.n_rx == 15 && got.n[13] == 124 && got.n[14] == 144 && got.flags[14] == 0);
+	CHECK(got.nsym == 1980 && memcmp(got.dibit + 1836, air + 1836, 144) == 0);
+	// More than a chunk holds: two chunks of erasures
+	deliver_at(1980 + 190, false, 30000 + 39583);
+	CHECK(got.n_rx == 18 && got.n[15] == 144 && got.n[16] == 46 && got.n[17] == 144);
+	CHECK(got.t[16] - got.t[15] == 30000 && got.nsym == 2314 && memcmp(got.dibit + 2170, air + 2170, 144) == 0);
+	// Too far early to be a step, or lost past what erasures stand in for: a gap, nothing cut
+	deliver_at(3000, false, 15000);
+	CHECK(got.n[18] == 144 && (got.flags[18] & AIR_CHUNK_GAP));
+	deliver_at(3400, false, 30000 + 41667);
+	CHECK(got.n_rx == 20 && got.n[19] == 144 && (got.flags[19] & AIR_CHUNK_GAP));
+	hrc6000_air_close(AIR, true);
+
+	// Levels: a receiver with 1.4 times the counts. The first sync's record is scaled by its own sync
+	fresh();
+	hrc6000_dmr_halt(&eng);
+	hrc6000_air_init(AIR, &dev, &ops, BUF);
+	CHECK(hrc6000_air_open(AIR, &p, on_event, NULL));
+	CHECK(AIR->outer16 == 316);	// 1800 Hz at 11 counts per kHz
+	rand_stream(12);
+	level = LEVEL_HOT;
+	deliver(0, true, 0);
+	CHECK(AIR->outer16 == 28 * 16);
+	deliver(1, false, 0);
+	int bad = 0;
+	for (int i = 0; i < 288; i++) {
+		int want = air[i] == 1 ? 96 : air[i] == 0 ? 31 : air[i] == 2 ? -31 : -96;
+		bad += got.dibit[i] != air[i] || abs(got.soft[i] - want) > 12;
+	}
+	CHECK(bad == 0);
+	// In step the scale follows a quarter of the way per sync
+	level = LEVEL;
+	for (int r = 2; r < 6; r++) {
+		deliver(r, false, 0);
+	}
+	deliver(6, true, 0);
+	CHECK(AIR->outer16 == 28 * 16 + (20 * 16 - 28 * 16) / 4);
+	// A detection whose symbols are not the pattern's levels (noise) leaves it
+	int16_t before = AIR->outer16;
+	t_us += 30000;
+	hrc6000_air_isr_timeslot(AIR);
+	memset(record, 0x80, sizeof(record));	// every level 0
+	regs[4][0x82] = 0x01;
+	regs[4][0x51] = 0x02;
+	t_us += 2420;
+	hrc6000_air_isr_sys(AIR);
+	hrc6000_air_poll(AIR);
+	t_us -= 2420;
+	CHECK(AIR->outer16 == before);
+	hrc6000_air_close(AIR, true);
 	CHECK(lock_depth == 0);
 }
 
@@ -771,6 +909,7 @@ int main(void)
 	test_fit();
 	test_golden();
 	test_receive();
+	test_reassembly();
 	test_transmit();
 	test_abort_stall_suspend();
 	test_open_close();

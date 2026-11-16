@@ -835,8 +835,20 @@ records). 0x36 = 0 for the whole session, so nothing of the receiver reaches the
 | 0 | 0-11, 36-89, 12-35, 90-143 |
 
 - Levels are about 11 counts per kHz of deviation (outer about ±22 at 1944 Hz), with an offset of a few counts that
-  follows the carrier's. The driver removes a slow average of it and scales the outer level of the profile's
-  deviation to `AIR_SOFT_OUTER`; hard symbols are sliced at 0 and two thirds of it.
+  follows the carrier's. The counts per kHz are the board's receiver's: one board gave 1.4 times as many, which put
+  the inner symbols at the slicer's threshold (5 % symbol errors). So the driver takes the outer level from each
+  detected sync, as half the distance between the means of its +3 and -3 symbols: at once on a new signal, a quarter
+  of the way per sync while in step. 11 counts per kHz is the start value, and a sync that reads under half or over
+  twice of it is ignored. The driver removes a slow average of the offset and scales the outer level to
+  `AIR_SOFT_OUTER`; hard symbols are sliced at 0 and two thirds of it. With that the symbol error rate on a clean
+  C4FM signal is under 0.1 %.
+- A record is always the 144 symbols before its boundary, and the chip moves the boundary by whole symbols at a
+  sync. After a signal's first sync the next record comes 128 symbols later and repeats 16; the first sync found in
+  step comes 160 symbols after the record before it, and 16 are lost. The first 4 to 12 symbols of both records are
+  not the signal's. The driver places every record by its boundary's time. Repeated symbols are dropped (a chunk
+  shorter than 144). Up to 192 lost symbols are delivered as chunks of erasures (soft 0, `sync_at` -1), so a framer
+  loses those symbols and not its frame: that covers the 16, a re-arm's hole (124 symbols with a sync every 6
+  records) and one record lost. A step of one symbol is within the interrupt's jitter and is left alone.
 - Nothing is delivered before the first sync. After one, records keep coming for 0.7-0.9 s, and about 2 s after a
   signal ends. With the pattern every 288, 864 or 1728 symbols nothing was lost.
 - The chip's timing takes a step of 0.5 ms and not one of 1 ms: after that it delivers records on its own timing and
@@ -844,8 +856,8 @@ records). 0x36 = 0 for the whole session, so nothing of the receiver reaches the
   + 1): 0x41 = 0x60, then 0x40 40 ms later. It is back about 0.24 s later, and a re-arm with no signal is harmless.
 - t_us of symbol 0 = the timeslot interrupt before the record - 30 ms + half a symbol. The delay from the air to that
   clock is not measured (`time_accuracy_us` 3000).
-- Chunk flags: GAP on the first chunk after open, a re-arm, `rx_restart` or a transmission, and when a record is more
-  than 45 ms after the one before or was dropped; FREE_RUN when more records than the sync spacing passed without a
+- Chunk flags: GAP on the first chunk after open, `rx_restart` or a transmission, when more symbols were lost than
+  erasures stand in for, and when the task was behind and a record was dropped; FREE_RUN when more records than the sync spacing passed without a
   sync. `rssi_dbm` is 0.
 
 ### 10.3 Transmit
@@ -885,8 +897,11 @@ in both TX RAM halves, then 0x40 = 0xE3 (own timing). The first timeslot interru
 
 ### 10.5 Checked on air and not
 
-Register facts above were measured with bench scripts on the chip, not with this driver. The driver's own behavior
-is checked by the host test only. On air still to check: the TX RAM half parity against the count; the receive
+Register facts above were measured with bench scripts on the chip. The driver's receive side is checked on air with
+C4FM calls at 1800 Hz: the record placement, the erasures and the level scale of 10.2. A sender whose symbol clock is
+28 ppm off is followed, at 0.4 % symbol errors against 0.1 % with a matching clock. A sync that comes off the record grid (a header 396
+symbols before the first voice unit) is not detected; the re-arm K records later brings the receiver back on the
+next one. On air still to check: the TX RAM half parity against the count; the receive
 set-up straight after the DMR one and after a transmission (one entry straight from a layer 2 restart gave no
 interrupts until a set-up with 0x41 = 0x40 had run once); the receive delay for t_us; the TX_STARTED time; the PA key
 and drop against the chunks.

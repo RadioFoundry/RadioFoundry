@@ -39,6 +39,8 @@ typedef struct {
 	uint32_t t_us;
 	int16_t sync_at;
 	uint8_t flags;
+	uint8_t nsyms;		// fewer than a record's when it repeated the end of the one before
+	uint8_t fill;		// symbols lost before it, their number known: delivered as erasures
 	uint8_t hard[HRC6000_AIR_SYMS / 4];
 	int8_t soft[HRC6000_AIR_SYMS];
 } hrc6000_air_rec_t;
@@ -62,6 +64,8 @@ typedef struct {
 	uint32_t synced;	// ... with a sync detection
 	uint32_t rearms;	// the correlator re-armed (K records without a sync)
 	uint32_t gaps;		// chunks flagged AIR_CHUNK_GAP
+	uint32_t trims;		// records that repeated symbols of the one before: those were dropped
+	uint32_t fills;		// holes of a known size delivered as erasures
 	uint32_t rx_overflow;	// records dropped: the task was behind
 	uint32_t ev_overflow;	// events dropped
 	uint32_t tx_slots;	// TX RAM halves written
@@ -101,7 +105,10 @@ typedef struct hrc6000_air {
 	bool tick_any;
 	uint32_t t_tick;	// the last timeslot interrupt
 	int16_t dc16;		// receive offset, soft counts x 16
-	int16_t outer16;	// soft counts x 16 of an outer symbol at the profile's deviation
+	int16_t outer16;	// soft counts x 16 of an outer symbol: from the profile's deviation, then the syncs received
+	int16_t outer_nom16;	// ... from the profile's deviation alone
+	bool next_any;
+	uint32_t t_next;	// when the symbol after the last record's is due
 	volatile uint8_t rec_head, rec_tail;
 	hrc6000_air_ev_t evq[HRC6000_AIR_EVQ];
 	volatile uint8_t ev_head, ev_tail;
@@ -130,10 +137,13 @@ typedef struct hrc6000_air {
 uint32_t hrc6000_air_fit(const air_profile_t *p);
 // Pure: the two-point pair for a transmit deviation, from the pair calibrated for DMR (1944 Hz outer)
 void hrc6000_air_mod_pair(const air_profile_t *p, uint8_t cal2, uint8_t cal1, uint8_t *mod2, uint8_t *mod1);
-// Pure: one record (2 bytes per symbol, chip order) to air order, soft scaled to AIR_SOFT_OUTER and sliced again.
-// Returns the record's mean level x 16 (the offset tracker's input)
-int16_t hrc6000_air_unpack(const uint8_t *raw, bool synced, int16_t dc16, int16_t outer16, uint8_t levels,
-			   uint8_t *hard, int8_t *soft);
+// Pure: one record (2 bytes per symbol, chip order) to air order without its first skip symbols, soft scaled to
+// AIR_SOFT_OUTER and sliced again. Returns the whole record's mean level x 16 (the offset tracker's input)
+int16_t hrc6000_air_unpack(const uint8_t *raw, bool synced, uint8_t skip, int16_t dc16, int16_t outer16,
+			   uint8_t levels, uint8_t *hard, int8_t *soft);
+// Pure: the outer level x 16 a record with a sync detection shows: half the distance between the means of the
+// pattern's +3 and -3 symbols (syms: the correlator's pattern, outer symbols only). 0 when the pattern has one sign
+int16_t hrc6000_air_sync_outer16(const uint8_t *raw, const uint8_t *syms);
 
 void hrc6000_air_init(hrc6000_air_t *a, hrc_t *dev, const hrc6000_dmr_ops_t *ops, hrc6000_air_buf_t *buf);
 // The chip in DMR and the slot engine halted (task level). Receiving when the profile fits for it
