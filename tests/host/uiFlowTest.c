@@ -560,6 +560,9 @@ static const flow_t flows[] = {
 	// OK, the length, OK; a value off the 10 steps or past the range is refused with what fits
 	{ "S signaling tones group opens", "", "ok 7 up up ok down down down down down down",
 	  "screen=group shows=Start_steps", 11, false },
+	// An action row's id is a number of its own: with Mic AGC on, "Idle steps" (id 13) must not show Mic gain's "AGC"
+	{ "S signaling tones with Mic AGC on: no AGC on the steps rows", "ok 7 3 down down down down down ok back back back back",
+	  "ok 7 up up ok down down down down down down down down", "screen=group shows=Idle_steps hides=AGC", 14, false },
 	{ "S signaling tones: a chain's steps open", "ok 7 up up ok down down down down down down", "ok",
 	  "screen=sig-chain shows=Step_1", 1, false },
 	{ "S signaling tones: a step typed and saved", "ok 7 up up ok down down down down down down ok down",

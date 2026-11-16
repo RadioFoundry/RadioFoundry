@@ -6865,7 +6865,7 @@ static void group_item(uint16_t i, ui_item_t *it)
 #endif
 	if (s->id == UI_SET_PRIVACY_KEY && s->type == ST_NUMBER && !edit && ui_svc_setting_get(UI_SET_PRIVACY_TYPE) == 0)
 		strcpy(it->value, "-");
-	if (s->id == UI_SET_MIC_GAIN && !edit && mic_agc_on())
+	if (s->type == ST_NUMBER && s->id == UI_SET_MIC_GAIN && !edit && mic_agc_on())
 		strcpy(it->value, "AGC");
 	if (edit)
 		it->flags |= UI_ITEM_EDIT;
