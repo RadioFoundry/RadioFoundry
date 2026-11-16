@@ -31,6 +31,7 @@ BOARD_UNSUPPORTED += SFR	# the HR_C5000 lacks CRC_MCU_Control for the idle burst
 BOARD_UNSUPPORTED += SFR_DUALPATH_RX	# needs SFR
 BOARD_UNSUPPORTED += SFR_CWID	# needs SFR
 BOARD_UNSUPPORTED += FONT_XL	# the 160x128 panel is too small for the large font (it is for 240 px and wider)
+BOARD_UNSUPPORTED += FONT_BIG	# the 9x18 font is drawn only on panels 220 px and wider; this one is 160x128
 CONFIG_AM_RX ?= n
 BOARD_UNSUPPORTED += AM_RX	# no air band receiver (docs/spec/airband-and-broadcast.md)
 CONFIG_BCAST_FM ?= n

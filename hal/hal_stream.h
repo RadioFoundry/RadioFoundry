@@ -22,6 +22,9 @@ typedef struct {
 	// Queue len bytes and send them; blocks briefly while the transmit buffer is full. Returns the bytes taken
 	// (fewer than len when the host stopped reading or went away)
 	size_t (*write)(const uint8_t *buf, size_t len);
+	// Optional (NULL: none): leave the bus and come back, so the host sees an unplug and finds the port again (USB).
+	// For a host whose USB port gave up on the radio during its own transmission
+	void (*reattach)(void);
 } hal_stream_t;
 
 #endif

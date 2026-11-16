@@ -88,6 +88,15 @@ typedef struct {
 	// level's again. False: over the board's hardware limit. Any task may call it
 	uint16_t (*tx_drive_level)(uint32_t hz, uint8_t level);
 	bool (*tx_drive)(uint16_t drive);
+	// Optional, for the PA drive sweep (radio/pa_sweep.h; needs tx_drive_level). tx_drive_top: during an FM
+	// transmission, the drive of the board's highest power level at its frequency (the sweep's ceiling counts from it);
+	// 0 otherwise, which refuses the sweep. tx_drive_now: during an FM transmission, the PA drive at once (0: the PA
+	// off, the exciter on); false otherwise or over the board's hardware limit. tx_mark: a small step of the carrier's
+	// frequency, -1, 0 (none) or +1, the sweep's timing marker; NULL: the sweep runs without one. Called from the
+	// debug link's task while the radio task keeps the transmission
+	uint16_t (*tx_drive_top)(void);
+	bool (*tx_drive_now)(uint16_t drive);
+	bool (*tx_mark)(int8_t step);
 } hal_radio_t;
 
 #endif
