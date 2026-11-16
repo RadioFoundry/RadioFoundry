@@ -787,6 +787,7 @@ on its voice, and never camps on another system or on a control channel that isn
 | Duplex calls (voice, packet data) | not planned: the radios are simplex |
 | Power save: the receiver off while asleep on boards without `rx_sleep_dmr` | each board's `rx_sleep` on a DMR channel |
 | The interrupted talker's side on radios that can't receive between their bursts on a split channel (6.4.15.2) | the modem's `tx_listen_split` on those boards |
+| A P_CLEAR sent while the radio is still talking on the payload channel is missed; on a slot whose carrier stays keyed (idle bursts count for TV_Inactive) the radio stays until the call ceiling | a rule for leaving a slot that carries only idle bursts after the radio's own over |
 
 ## 11. On the radio
 
