@@ -76,9 +76,12 @@ is no stored "off" for a simplex frequency: a zeroed record is automatic, which 
 
 A P25 channel the radio saves (a VFO in P25 stored as a channel, a mode changed for now made permanent) is written as
 [channel-modes.md](channel-modes.md) 2.4 gives: the base record as the safe stand-in, then a new tag of kind 2 with no
-system, transmit allowed from the channel and a full parameter block. Its contact is the stored contact of the talk
-target, if any (else none: talk group 1). Editing a channel that is P25 already rewrites its record and lets the tag
-follow, the block kept byte for byte.
+system, transmit allowed from the channel and a full parameter block: the RX and TX NAC, and the squelch selective
+where the settings name a talk group to hear, else normal. Its contact is the stored contact of the talk target, if
+any (else none: talk group 1). Talkaround on sets the direct-mode bit; automatic and off leave it clear (automatic, 2.2).
+A session unit ID is not stored. Editing a channel that is P25 already rewrites its record and lets the tag follow,
+the block kept byte for byte; a copy at another number takes the source's tag ([channel-modes.md](channel-modes.md)
+2.4).
 
 ## 3. Trunked system (type 3)
 
