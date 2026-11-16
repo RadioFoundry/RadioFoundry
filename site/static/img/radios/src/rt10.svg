@@ -30,9 +30,8 @@
 <rect x="40" y="262" width="400" height="104" rx="30" fill="url(#band)"/>
 <!-- the front panel, its slots and the microphone hole -->
 <rect x="55" y="386" width="370" height="666" rx="34" fill="url(#face)" stroke="#0a0b0c" stroke-width="3"/>
-<rect x="88" y="422" width="304" height="26" rx="13" fill="url(#slot)"/>
-<rect x="88" y="518" width="304" height="26" rx="13" fill="url(#slot)"/>
-<rect x="88" y="614" width="304" height="26" rx="13" fill="url(#slot)"/>
-<path d="M 100 447 H 380 M 100 543 H 380 M 100 639 H 380" stroke="#3653c9" stroke-width="3" stroke-linecap="round"/>
+<rect x="88" y="422" width="304" height="26" rx="13" fill="url(#slot)" stroke="#3653c9" stroke-width="3"/>
+<rect x="88" y="518" width="304" height="26" rx="13" fill="url(#slot)" stroke="#3653c9" stroke-width="3"/>
+<rect x="88" y="614" width="304" height="26" rx="13" fill="url(#slot)" stroke="#3653c9" stroke-width="3"/>
 <circle cx="322" cy="694" r="6" fill="#050506"/>
 </svg>
