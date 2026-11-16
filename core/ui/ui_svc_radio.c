@@ -13,6 +13,7 @@
 #include "radio/ref_trim.h"
 #include "radio/radio_cwid.h"
 #include "radio/radio_bcast.h"
+#include "codeplug/codeplug_modes.h"	// channel kinds: a trunked one is never watched
 #include "input/input.h"
 #include "settings/settings.h"
 #include <string.h>
@@ -283,8 +284,8 @@ bool ui_svc_dual(const ui_dual_ref_t ref[2], uint8_t sel)
 			if (!(CONFIG_VFO_FM || CONFIG_VFO_DMR))
 				return false;
 		} else if (r[i].pos >= CODEPLUG_ZONE_MAX || !codeplug_zone(r[i].zone, &z) || r[i].pos >= z.count ||
-			   !codeplug_channel(z.channels[r[i].pos], &ch)) {
-			return false;
+			   !codeplug_channel(z.channels[r[i].pos], &ch) || ch.kind == CODEPLUG_KIND_P25_TRUNK) {
+			return false;	// a trunked channel follows its system: not one to watch
 		}
 	}
 	if (sel > 1 || (r[0].vfo == r[1].vfo && r[0].zone == r[1].zone && r[0].pos == r[1].pos))

@@ -80,6 +80,8 @@ static const flow_t flows[] = {
 	  false },
 	{ "P25 home: another talk group", "dlmode:p25", "p25rx:3101234,7,o", "shows=Other_TG:_not_played", 0, false },
 	{ "P25 home: the call ends", "dlmode:p25 p25rx:3101234,7", "p25rxend", "screen=home hides=ID_3101234", 0, false },
+	// Dual watch with A on P25: the pane names the mode, no tone or bandwidth for it
+	{ "P25 dual watch: A in P25", "dlmode:p25", "quick 7", "dual=1 sel=A shows=P25 hides=No_tone hides=12.5k", 2, false },
 #if CONFIG_P25_TRUNK
 	// A trunked channel: the talk line says what the follower does, never what PTT calls (it is receive only)
 	{ "P25 trunked home: finding the system", "dlmode:p25", "p25t:1", "screen=home shows=Finding_system hides=TG_1",

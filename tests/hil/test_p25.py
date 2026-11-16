@@ -508,9 +508,11 @@ SCAN_CALLS = 4          # calls the bench sends while the scan comes round to th
 @pytest.mark.codeplug_write
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
-def test_p25_scan_from_bench(radio, sdr_bench, backup_dir, pytestconfig):
-    """Zone scan stops on a stored P25 channel when the bench sends a call there (p25.md 7.1): the current channel
-    made a P25 channel on p25-mhz, the scan started, the bench's calls to RX_TG until the scan holds there"""
+@pytest.mark.parametrize("kind", ["zone", "dual"])
+def test_p25_scan_from_bench(radio, sdr_bench, backup_dir, pytestconfig, kind):
+    """A zone scan, or dual watch with the zone's next channel, holds on a stored P25 channel when the bench sends a
+    call there (p25.md 7.1, radio-features.md 2.1): the current channel made a P25 channel on p25-mhz, the scan
+    started, the bench's calls to RX_TG until it holds there"""
     import p25tool
     import cps_client
     from test_cps import codeplug_edited, pick_channel, read_backup
@@ -532,10 +534,13 @@ def test_p25_scan_from_bench(radio, sdr_bench, backup_dir, pytestconfig):
     with codeplug_edited(radio, backup_dir, lambda img: make_p25(img, number, round(mhz * 1e6)), "p25scan", regions):
         radio.wait_for(lambda x: x.get("ch.kind") == str(KIND_P25) and x.get("p25.on") == "1", 5.0,
                        sections=("core", "channel", "p25"), what="the stored P25 channel running")
-        radio.link.scan("zone")
+        if kind == "dual":
+            radio.link.scan("dual", (as_int(core.get("zone_pos"), 0) + 1) % as_int(core.get("zone_size"), 1))
+        else:
+            radio.link.scan("zone")
         held = None
         try:
-            radio.wait_for(lambda x: x.get("scan") == "zone", 1.0, sections=("features",), what="scan=zone")
+            radio.wait_for(lambda x: x.get("scan") == kind, 1.0, sections=("features",), what=f"scan={kind}")
             with tempfile.TemporaryDirectory() as tmp, sdr_bench.lease():
                 path, exp = os.path.join(tmp, "call.dibits"), os.path.join(tmp, "call.json")
                 p25tool.run(["gen", path, exp, "--nac", f"{STORED_NAC:x}", "--tg", RX_TG, "--src", RX_SRC,
@@ -557,8 +562,8 @@ def test_p25_scan_from_bench(radio, sdr_bench, backup_dir, pytestconfig):
         finally:
             radio.link.scan("cancel")
             radio.wait_for(lambda x: x.get("scan") == "off", 3.0, sections=("features",), what="scan off")
-    assert held is not None, f"the scan never held on channel {number} in {SCAN_CALLS} calls"
-    print(f"\nscan held on channel {number}: {held.get('p25.src')} -> {held.get('p25.dst')}")
+    assert held is not None, f"the {kind} scan never held on channel {number} in {SCAN_CALLS} calls"
+    print(f"\n{kind} scan held on channel {number}: {held.get('p25.src')} -> {held.get('p25.dst')}")
     assert held.get("p25.dst") in (str(RX_TG), "0"), held     # 0: held before the link control was read
 
 

@@ -65,6 +65,8 @@ VFO. It is two frequencies, not the two timeslots of one DMR frequency.
 - The radio has one receiver, so it alternates between A and B. A call on one can be missed while the radio is on the
   other. A radio with two receivers would hear both and show a call on each channel at once. No radio has that yet
   ([Radio reference](23-radios.md#dual-watch-on-each-radio)).
+- A or B can be a P25 or NXDN channel, but not a trunked P25 channel. On a radio with two receivers, the second one
+  doesn't take P25 or NXDN: the radio alternates when the channel not selected is one.
 
 ### Start it
 

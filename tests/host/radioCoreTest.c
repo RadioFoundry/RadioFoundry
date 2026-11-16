@@ -6656,6 +6656,69 @@ static void test_p25_scan(void)
 	far_stop();
 	p25_defaults();
 }
+#if CONFIG_DUAL_WATCH
+// Dual watch with a stored P25 channel on one side (docs/spec/radio-features.md 2.1): the receiver alternates onto it
+// and the engine runs there for each look; a call that plays holds the watch there until it ends and the delay
+// passes. A trunked channel and one the board can't receive are refused
+static void test_p25_dual(void)
+{
+	const radio_p25_view_t *v = &sm.view.p25;
+	uint16_t visits;
+
+	setup_codeplug_p25();
+	add(3, "P25 rptr", 446100000, RADIO_MODE_DMR, false, 2);	// zone Local, position 2
+	chans[3].kind = CODEPLUG_KIND_P25;
+	chans[3].system = 0xFF;
+	stored_p25[3] = (p25_conv_cfg_t){ .conv = { 0x2A0, 0x2A0, P25_SQUELCH_SELECTIVE }, .unit_id = 1234567,
+					  .target = 201, .target_unit = false, .talkaround = true };
+	start();
+	p25_defaults();
+	far_hz = 446100000;
+	const ui_dual_ref_t a = { false, 0, 0 }, b = { false, 0, 2 }, pair[2] = { a, b };
+	CHECK(ui_svc_dual(pair, 0) && sm.view.scan == SCAN_DUAL);
+	// Nothing on the air: it goes back and forth, the engine starting at each look at B
+	radio_p25_stats_t st;
+	radio_p25_stats(&st);
+	uint32_t begins0 = st.begins;
+	CHECK(!scan_holds_on(3, 3000, &visits) && visits >= 2 && sm.view.scan == SCAN_DUAL);
+	radio_p25_stats(&st);
+	CHECK(st.begins >= begins0 + 2);
+	// A call to the channel's talk group: the watch holds on B while it lasts
+	far_begin(0x2A0, 1001, false, 201);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	CHECK(scan_holds_on(3, 4000, &visits));
+	CHECK(radio_p25_running() && (v->flags & RADIO_P25_PLAYED) && v->dst == 201);
+	run(2000);
+	CHECK(sm.view.channel_number == 3 && sm.view.scan_phase == SCAN_PH_HOLD);
+	p25_engine_tx_stop(&far_eng);
+	run(600 + RADIO_DUAL_DELAY_MS + 600);
+	CHECK(sm.view.scan == SCAN_DUAL && sm.view.channel_number == 1);	// back on A
+	// Another talk group: heard, not played, and the watch goes on
+	far_begin(0x2A0, 1002, false, 7);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	CHECK(!scan_holds_on(3, 4000, &visits) && visits >= 1 && sm.view.scan == SCAN_DUAL);
+	p25_engine_tx_stop(&far_eng);
+	run(600);
+	CHECK(ui_svc_dual(NULL, 0) && sm.view.scan == SCAN_OFF && sm.view.channel_number == 1);
+	// B selected: the watch stops there, P25 running
+	CHECK(ui_svc_dual(pair, 1) && sm.view.scan == SCAN_DUAL);
+	run(500);
+	CHECK(ui_svc_dual(NULL, 0) && sm.view.channel_number == 3 && radio_p25_running());
+	req(RREQ_ZONE_POS, 0);
+	// Refused: no fit on the board (by the radio core), a trunked channel
+	air_nofit = true;
+	ui_svc_dual(pair, 0);
+	CHECK(sm.view.scan == SCAN_OFF);
+	air_nofit = false;
+	chans[3].kind = CODEPLUG_KIND_P25_TRUNK;
+	CHECK(!ui_svc_dual(pair, 0) && sm.view.scan == SCAN_OFF);	// refused at once
+	far_hz = 0;
+	far_stop();
+	p25_defaults();
+}
+#endif
 #endif
 
 // A P25 conventional channel in the codeplug (kind 2, docs/spec/p25-codeplug.md 2): the radio runs it on its own
@@ -7324,6 +7387,9 @@ static void test_p25(void)
 	test_p25_stored();
 #if CONFIG_SCAN
 	test_p25_scan();
+#if CONFIG_DUAL_WATCH
+	test_p25_dual();
+#endif
 #endif
 	test_p25_tx();
 	test_p25_denied();
@@ -7826,6 +7892,79 @@ static void test_nxdn_scan(void)
 	nfar_stop();
 	nxdn_defaults();
 }
+#if CONFIG_DUAL_WATCH
+// Dual watch with a stored NXDN channel on one side: the receiver alternates onto it and a call that plays holds the
+// watch there. With P25 built too, a P25 channel on the other side: one engine at a time, each started at its look
+static void test_nxdn_dual(void)
+{
+	const radio_nxdn_view_t *v = &sm.view.nxdn;
+	uint16_t visits;
+
+	setup_codeplug_nxdn();
+	add(3, "NXDN rptr", 446100000, RADIO_MODE_DMR, false, 2);	// zone Local, position 2
+	chans[3].kind = CODEPLUG_KIND_NXDN;
+	chans[3].system = 0xFF;
+	stored_nxdn[3] = (nxdn_conv_cfg_t){ .conv = { .rate9600 = true, .rx_ran = 7, .tx_ran = 7,
+						      .squelch = NXDN_SQUELCH_SELECTIVE },
+					    .unit_id = 4321, .target = 20, .target_unit = false };
+	start();
+	nxdn_defaults();
+	far_hz = 446100000;
+	const ui_dual_ref_t a = { false, 0, 0 }, b = { false, 0, 2 }, pair[2] = { a, b };
+	CHECK(ui_svc_dual(pair, 0) && sm.view.scan == SCAN_DUAL);
+	CHECK(!scan_holds_on(3, 3000, &visits) && visits >= 2 && sm.view.scan == SCAN_DUAL);
+	nfar_begin(true, 7, 2001, false, 20);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	CHECK(scan_holds_on(3, 4000, &visits));
+	CHECK(radio_nxdn_running() && (v->flags & RADIO_NXDN_PLAYED) && v->dst == 20);
+	run(1500);
+	CHECK(sm.view.channel_number == 3 && sm.view.scan_phase == SCAN_PH_HOLD);
+	nxdn_engine_tx_stop(&nfar);
+	run(600 + RADIO_DUAL_DELAY_MS + 600);
+	CHECK(sm.view.scan == SCAN_DUAL && sm.view.channel_number == 1);
+	// Another group: not held
+	nfar_begin(true, 7, 2002, false, 21);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	CHECK(!scan_holds_on(3, 4000, &visits) && visits >= 1 && sm.view.scan == SCAN_DUAL);
+	nxdn_engine_tx_stop(&nfar);
+	run(600);
+	CHECK(ui_svc_dual(NULL, 0) && sm.view.scan == SCAN_OFF);
+	// A rate the board can't receive: refused by the radio core
+	stored_nxdn[3].conv.rate9600 = false;
+	air_fit2400[0] = AIR_FIT_TX;
+	req(RREQ_ZONE_POS, 0);
+	ui_svc_dual(pair, 0);
+	CHECK(sm.view.scan == SCAN_OFF);
+	stored_nxdn[3].conv.rate9600 = true;
+	air_fit2400[0] = AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT;
+#if CONFIG_P25
+	// P25 on A, NXDN on B: each look starts its own engine, the other stopped first
+	add(1, "P25 simp", 446200000, RADIO_MODE_P25, false, 2);
+	start();
+	radio_p25_stats_t p0, p1;
+	radio_nxdn_stats_t n0, n1;
+	radio_p25_stats(&p0);
+	radio_nxdn_stats(&n0);
+	CHECK(ui_svc_dual(pair, 0) && sm.view.scan == SCAN_DUAL);
+	bool p25_seen = false;
+	for (int i = 0; i < 3000 / RADIO_POLL_MS; i++) {
+		run(RADIO_POLL_MS);
+		CHECK(!(radio_p25_running() && radio_nxdn_running()));
+		p25_seen = p25_seen || (sm.view.channel_number == 1 && radio_p25_running());
+	}
+	radio_p25_stats(&p1);
+	radio_nxdn_stats(&n1);
+	CHECK(p25_seen && p1.begins >= p0.begins + 2 && n1.begins >= n0.begins + 2);
+	CHECK(ui_svc_dual(NULL, 0) && sm.view.scan == SCAN_OFF);
+	setup_codeplug_nxdn();
+#endif
+	far_hz = 0;
+	nfar_stop();
+	nxdn_defaults();
+}
+#endif
 #endif
 
 // An NXDN conventional channel in the codeplug (kind 4, docs/spec/nxdn-codeplug.md 2): the radio runs it on its own
@@ -8033,6 +8172,9 @@ static void test_nxdn(void)
 	test_nxdn_stored();
 #if CONFIG_SCAN
 	test_nxdn_scan();
+#if CONFIG_DUAL_WATCH
+	test_nxdn_dual();
+#endif
 #endif
 	setup_codeplug();
 	req(RREQ_RELOAD, 0);

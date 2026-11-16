@@ -135,11 +135,19 @@ VFO during the watch copies into a VFO the other channel isn't on: the one last 
 dual.sel dual.at`, [debuglink.md 3.7](debuglink.md#37-get_view)); the view's `dual_busy` is `dual.busy`. `radio_get_vfo(index)` returns a VFO's settings while something else is tuned (a VFO pane). Built without `CONFIG_DUAL_WATCH`
 only the debug link's dual watch is left: two channels of the current zone, and PTT ends it as it ends any scan.
 
+A P25 or NXDN channel (a stored one, or the VFO in that mode) can be either side. The scan's rules apply to it (2): it
+is one only where the board receives that mode at the channel's rate, never as a trunked channel, and a look there
+starts its engine, probes a carrier for up to 700 ms and holds for a call that plays. The air interface runs one engine
+at a time, so with P25 on one side and NXDN on the other each hop stops one engine and starts the other. The UI
+refuses a trunked channel at once; a mode the board can't receive is refused by the radio core, and the watch doesn't
+start. The panes name the mode and show no tone or bandwidth for it, and don't show the caller of a P25 or NXDN call.
+
 ### 2.2 A second receiver
 
 A board with a second receiver sets `board.rx2` (`hal/hal_rx2.h`; the GD-88's second SoC, over the link in
 [rx2-link.md](rx2-link.md)). In dual watch the main receiver then stays on the selected channel and the second one gets
-the other. Nothing alternates, and the scan's hold and resume timing aren't used. The view's `rx2` is 1 while this is
+the other. Nothing alternates, and the scan's hold and resume timing aren't used. It takes FM and DMR only: when the
+channel not selected is P25 or NXDN, the main receiver alternates as in 2.1. The view's `rx2` is 1 while this is
 so (the debug link's `dual.both`).
 
 | Event | What happens |
