@@ -17,8 +17,10 @@
 #endif
 #if CONFIG_DMR_ROAMING
 #include "radio/roam.h"
-#include "radio/radio_trunk.h"
 #include "settings/settings.h"	// SETTINGS_ROAM_ZONE_BYTES
+#endif
+#if CONFIG_DMR_TRUNK
+#include "radio/radio_trunk.h"	// not under roaming: trunking builds without it
 #endif
 
 #define RADIO_SM_CW		(CONFIG_HOTSPOT || CONFIG_SFR_CWID)	// the CW keyer (radio_sm.c)
