@@ -18,7 +18,7 @@ The flasher is plain ES modules. The logic ports rfoundry, and the tests check t
 | `plan.js` | Sector plans: keep, merge, and restore (a whole image put back exactly) | `rfoundry/plan.py` |
 | `manifest.js` | Release manifest checks | `rfoundry/manifest.py` |
 | `decide.js` | Keep or merge the codec | `rfoundry/cli.py` `decide_codec` |
-| `dfu.js` | The AnyRoad DFU bootloader over WebUSB. `WebUsbTransport.open` refuses the radio switched on normally (`normalMode`: the board's `dfu_layout`, else a layout of only the bootloader's sectors) before it claims the interface. `run` erases and writes in the board's sector order; for a codec move (`plan.js` `vectorLast`) the application's first sector is erased first and written last | `rfoundry/dfu.py` |
+| `dfu.js` | The AnyRoad DFU bootloader over WebUSB. `WebUsbTransport.open` refuses the radio switched on normally (`normalMode`: the board's `dfu_layout`, else a layout of only the bootloader's sectors) before it claims the interface. `run` erases and writes in the board's sector order; for a codec move (`plan.js` `vectorLast`) the application's first sector is erased first and written last. Every USB call fails after 10 s with no reply (`USB_TIMEOUT_MS`, a lost connection to the user), so a radio that stops answering can't hold the page | `rfoundry/dfu.py` |
 | `codecsave.js` | The codec read back from a radio that runs RadioFoundry (where stock keeps it, where the merge placed it, or where an earlier release's layout placed it: `codecSegments()` moves that copy to the current layout), checked against the profile's hashes, and a copy kept in IndexedDB, one per radio by its chip UID (a move reads the codec again and falls back only to that radio's copy): before every update that erases it, elsewhere once, so an install that can't keep or check the codec (a radio back on stock firmware, in its bootloader, or after an interrupted install) needs no stock file | `rfoundry/codecsave.py` |
 | `bootkey.js` | The bootloader key from a radio that runs RadioFoundry: the bootloader read over READ_MEM, the block with the key's SHA-256 | `rfoundry/bootkey.py` |
 | `origbackup.js` | The backup before the install through the original firmware's or the bootloader's DFU device, behind an allowlist (below) | |
@@ -252,7 +252,11 @@ the address are deleted within 90 days. It works with `?reporting=0`, since the 
 locally (`practiceFetch`) and sends nothing.
 
 Where it is offered: the button under every failure notice (`errorNotice()`, `problemNotice()`), the failed checks of
-the install, cable radio and loader routes, and the quiet "Something wrong? Report a Problem" link on Verify.
+the install, cable radio and loader routes, the quiet "Something wrong? Report a Problem" link on Verify, and the nav
+bar under every other step (`render()`), so a page stuck waiting on the radio, with no error shown, can still send its
+trail. It gives way to another Report a Problem the step shows (the stylesheet hides `.nav-report`). A report's
+`result` is the step's verdict (`problem` from a verify), else `failed` after an error, else `problem`. The verdict is
+dropped when the user leaves its step.
 
 Every failure says what to do next: the message itself, or `errorNotice(text, { next })` beside it. Where the step can
 run again in place, `{ retry }` puts Try Again in the notice. Pressing it removes the notice first, so a second
