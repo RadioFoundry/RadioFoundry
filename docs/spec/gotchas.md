@@ -847,7 +847,10 @@ flasher's port has a 64 KB buffer, so every write it makes is taken at once and 
 writer `close()` drains on the browser's main thread, which on such an adapter froze the whole browser. Rules: close a
 port only after what was written has had its time on the line (`SerialStream.close()`, `stubtool` `settle()`);
 check a USB-serial cable as it opens with a write larger than all the queues (`sendsData()` in `link.js`: 8 KB of
-0xFF through a 256-byte buffer); never drain to find out. With that cable in, the radio also flashed its stuck-line
+0xFF through a 256-byte buffer); never drain to find out. The wait is not enough in the browser: through Chromium the
+same adapter still stopped after two to four open and close cycles with nothing left to send (pyserial: eight cycles,
+no fault), so the check as it opens is what the page relies on, and its message says to replug the cable and to
+replace a cable that keeps doing it. With that cable in, the radio also flashed its stuck-line
 pattern (16.5) and stopped when it was pulled out; whether a cable that sends does that too is not measured.
 
 ## 17. Scan
