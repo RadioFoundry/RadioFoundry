@@ -55,6 +55,12 @@ int main(void)
 
 	// Every field at its widest: counters and IDs all ones, the lists and the data full, every age shown
 	memset(&wide, 0xFF, sizeof wide);
+	// A bool holding 0xFF is undefined (UBSan stops on the load): every flag true instead
+	wide.on = wide.unavail = wide.ip_gw = wide.ip_advised = wide.confirmed = true;
+	wide.call_group = wide.call_ours = wide.ptt_wait = wide.can_talk = wide.vote_on = wide.hunt_strict = true;
+	wide.call_data = wide.pd_wait = wide.stunned = wide.auth_key = wide.asleep = wide.csc_valid = true;
+	wide.rx_off = wide.divert_group = wide.call_als = wide.killed = wide.st_group = wide.sd_group = true;
+	wide.cli_group = wide.call_cli = wide.supl_group = true;
 	wide.nra = sizeof wide.ra / sizeof wide.ra[0];
 	wide.ndgna = RADIO_T3_DGNA;
 	wide.sd_len = sizeof wide.sd_data;
