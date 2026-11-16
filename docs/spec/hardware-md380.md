@@ -735,6 +735,12 @@ RadioFoundry doesn't use.
 Our tests (2026-10-19, not authoritative) found the HR_C5000's codec output reaching the speaker with FM_SW and
 FM_MUTE low; DMR voice through it doesn't work yet (4.10).
 
+Beeps go out as PCM on the same I2S stream as DMR voice, and the board sets `CAP_BEEP_NOT_ON_AIR`: the radio core plays
+the talk permit in a short receive-only hold before the first burst (`radio-features.md` 4), so none of it is mixed into
+the voice while transmitting. The I2S driver reports speaker audio still in its DMA halves (`spk_pending`), so the hold
+lasts until the tone has played out. On the radio: each key-up played one beep on the beep stream's own path
+(`beep.shared` stays 0) and keyed after it (`dmr.phase` `tx_permit` before `tx_voice`).
+
 The volume knob sets the level in the analog path; the MCU only sees its position on PA0. The board therefore has no
 `CAP_VOLUME_POT` and `hal_power_t.volume()` returns -1. There is no `hal_radio_t.volume` either: the MCU has no way to set
 the speaker level (the HR_C5000's feed-through gain isn't used for it, and the knob acts after it), so the debug link's

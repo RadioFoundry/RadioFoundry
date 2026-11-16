@@ -35,7 +35,8 @@ test_dmr_tx_permit_before_key: a 3 s over plays the talk permit (beep.played gre
 three voice LC headers from us that decode, each within 1.5 dB of the over's median burst level, with no burst 2 dB or
 more under it. On a board that holds its beeps off the air (the HR_C7000 TX gate, its "pg" diagnostics line) the
 permit plays before the key-up, and the gate closed (g + 1) and never found the beep still sounding (l) or ring play
-on (ra). Other boards play it once the voice is on air (radio-features.md 4), so the over must be whole around it.
+on (ra). A board without the gate plays it with the voice on air (radio-features.md 4), so the over must be whole around it.
+test_dmr_tx_permit_hold checks the same hold on the radio alone.
 
 test_dmr_privacy_tx: Motorola basic privacy key 1 loaded (RADIO op 19), a 3 s over: every voice LC header and
 terminator from us that the SDR or the bench modem decoded carries the privacy service option (so & 0x40), every
@@ -340,7 +341,8 @@ def test_dmr_tx_permit_before_key(radio, sdr_bench, pytestconfig):
     that decode, each at the over's level (within PERMIT_LEVEL_DB of the median burst), and no burst more than 2 dB
     below it. A board that holds its beeps off the air (CAP_BEEP_NOT_ON_AIR, the HR_C7000 TX gate) plays it before it
     keys (docs/spec/dmr-modem.md): the gate closes once and never finds the beep still sounding or ring play on. A
-    board without the gate (no "pg" line) plays it with the voice on air."""
+    board without the gate (no "pg" line) plays it with the voice on air; test_dmr_tx_permit_hold covers its hold
+    without the bench."""
     gate = _gate(radio)
     freq, cc, _, d = _dmr_tx_setup(radio, pytestconfig)
     own = int(d["dmr.own_id"])
@@ -378,6 +380,50 @@ def test_dmr_tx_permit_before_key(radio, sdr_bench, pytestconfig):
         assert abs(b["level_dbfs"] - med) <= PERMIT_LEVEL_DB, \
             f"a header at {b['level_dbfs']:.1f} dBFS, the over's median {med:.1f}"
     assert min(levels) >= med - 2.0, f"a burst at {min(levels):.1f} dBFS, 2 dB or more under the median {med:.1f}"
+
+
+@pytest.mark.feature("beep")
+@pytest.mark.radio_tx
+def test_dmr_tx_permit_hold(radio, pytestconfig):
+    """Radio only. A board with CAP_BEEP_NOT_ON_AIR plays the talk permit before it keys: each key-up passes through
+    dmr.phase tx_permit (the call holds, still receiving, while the beep plays), plays one beep (beep.played + 1) and
+    then reaches tx_voice with state tx. The hold lasts about 0.1 s, so the polling can miss it once: it must catch
+    it in at least 3 of 4 key-ups. beep.shared is printed, not judged: it says whether the voice stream already ran
+    when the beep started, on air or not."""
+    freq, _, _, _ = _dmr_tx_setup(radio, pytestconfig)
+    assert int(radio.core()["tx_hz"]) == round(freq * 1e6), "the channel does not transmit on the test frequency"
+    if int(radio.view(["features"]).get("beep.built", 0)) == 0:
+        skip("not_built", "built without CONFIG_BEEP")
+    link = radio.link
+    seen_permit = 0
+    for n in range(4):
+        before = radio.view(["audio", "features"])
+        link.ptt(True)
+        permit_seen = False
+        mid = {}
+        try:
+            end = time.monotonic() + 3
+            while time.monotonic() < end:
+                mid = link.view(["core", "dmr"])
+                permit_seen |= mid.get("dmr.phase") == "tx_permit"
+                if mid.get("dmr.phase") == "tx_voice":
+                    break
+            time.sleep(0.3)
+            mid = link.view(["core", "dmr"])
+        finally:
+            link.ptt(False)
+        radio.wait_for(lambda x: x.get("state") != "tx", timeout=3, what="TX ended")
+        seen_permit += permit_seen
+        after = radio.view(["audio", "features"])
+        played = int(after["beep.played"]) - int(before["beep.played"])
+        shared = int(after["beep.shared"]) - int(before["beep.shared"])
+        print(f"key-up {n}: dmr.phase mid-over {mid.get('dmr.phase')}, state {mid.get('state')}, "
+              f"permit seen {permit_seen}, beep.played +{played}, beep.shared +{shared}")
+        assert mid.get("state") == "tx", f"not transmitting mid-over: {mid.get('state')}"
+        assert played == 1, f"{played} beeps for one key-up (talk permit off on the channel?)"
+        time.sleep(1.0)
+    print(f"tx_permit seen while polling in {seen_permit} of 4 key-ups")
+    assert seen_permit >= 3, f"dmr.phase tx_permit seen in only {seen_permit} of 4 key-ups: no talk permit hold"
 
 
 BEACON_PHASE_S = 6.0     # the bench repeater's beacon (its answer) this long after it started

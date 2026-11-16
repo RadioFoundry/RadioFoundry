@@ -81,7 +81,7 @@ static bool start(audio_block_cb_t cb, void *ctx)
 }
 
 const hal_audio_t uvf_audio = { .start = start, .stop = stm32_i2s_pcm_stop, .speaker_pcm = speaker_pcm,
-				.stream_stats = stm32_i2s_pcm_stream_stats };
+				.stream_stats = stm32_i2s_pcm_stream_stats, .spk_pending = stm32_i2s_pcm_spk_pending };
 
 #if CONFIG_NET_USRP
 // --- FM transmit audio: PWM on PC8 into the HR_C6000's microphone input (hardware-dm1701.md 21.3.1, "PWM audio") ---

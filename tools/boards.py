@@ -435,6 +435,20 @@ def source_volts(board_dir):
     return "supply" if any(re.search(r"\.supply_mv\s*=", t) for t in texts) else "none"
 
 
+def beep_gate_problems(root, bid, mk):
+    """A DMR board with an HR_C5000, HR_C6000 or HR_C7000 mixes the beeps into the audio path that modulates the
+    transmitter, so its board_t .caps must have CAP_BEEP_NOT_ON_AIR with CAP_DMR: the talk permit then plays before
+    keying, not on air (docs/spec/radio-features.md 4)."""
+    if not any(d.startswith("drivers/modem/hrc") for d in mk.get("BOARD_DIRS", "").split()):
+        return []
+    for _, text in _c_sources([os.path.join(root, "boards", bid)] + shared_board_dirs(root, bid, mk)):
+        if re.search(r"\.caps\s*=[^;]*\bCAP_DMR\b", text):
+            if not re.search(r"\.caps\s*=[^;]*\bCAP_BEEP_NOT_ON_AIR\b", text):
+                return ["boards/%s: an HR_C-series DMR board must set CAP_BEEP_NOT_ON_AIR with CAP_DMR (the talk "
+                        "permit would be mixed into the voice on air)" % bid]
+    return []
+
+
 def board_t_names(board_dir):
     """What board_t .name is set to in a board's sources: [(literal or None, macro or None)], one per board_t
     definition. The one parser of it (bringup.py uses it too): any whitespace, comments ignored; a macro is returned by
@@ -1112,6 +1126,7 @@ def check(root=ROOT):
                 problems.append("boards/%s/config.mk: BOARD_UNSUPPORTED %s has no reason: one switch a line, "
                                 "BOARD_UNSUPPORTED += %s  # <reason>" % (bid, s, s))
         problems += not_written_problems(bid, b)
+        problems += beep_gate_problems(root, bid, b.mk)
         if hw:
             try:
                 built = {s: v for s, v in ((k[len("CONFIG_"):], v) for k, v in
@@ -1786,6 +1801,21 @@ def self_test():
 
     validate({"hil": {"limits": {"dmr_tx_ramp_ms": {"value": 1.75, "reason": "x"}}}}, {"hil": BOARD_SCHEMA["hil"]}, "t")
     ok(True, "validate takes a [hil.limits] override with a value and a reason")
+
+    # the beep gate on an HR_C-series DMR board
+    tmpg = tempfile.mkdtemp(prefix="rfoundry-boards-beep-")
+    try:
+        os.makedirs(os.path.join(tmpg, "boards", "x"))
+
+        def beep_of(caps):
+            with open(os.path.join(tmpg, "boards", "x", "board.c"), "w", encoding="utf-8") as f:
+                f.write("const board_t board = { .caps = %s, .bands = b };" % caps)
+            return beep_gate_problems(tmpg, "x", {"BOARD_DIRS": "boards/x drivers/modem/hrc5000"})
+        ok(beep_of("CAP_KEYPAD | (CONFIG_DMR ? CAP_DMR : 0)") != [], "beep gate: DMR without the cap is a problem")
+        ok(beep_of("CAP_KEYPAD | (CONFIG_DMR ? CAP_DMR | CAP_BEEP_NOT_ON_AIR : 0)") == [], "beep gate: with the cap")
+        ok(beep_gate_problems(tmpg, "x", {"BOARD_DIRS": "boards/x"}) == [], "beep gate: no HR_C modem, no rule")
+    finally:
+        shutil.rmtree(tmpg)
 
     # the voltage a board measures, from its sources
     tmpv = tempfile.mkdtemp(prefix="rfoundry-boards-volts-")

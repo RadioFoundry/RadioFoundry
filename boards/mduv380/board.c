@@ -153,7 +153,7 @@ static const hal_cps_t cps = {
 const board_t board = {
 	.name = BOARD_NAME,
 	// CAP_GPS: the G models; gps_present says whether this one has the module (hardware-mduv380.md 9)
-	.caps = CAP_KEYPAD | CAP_ENCODER | CAP_VOLUME_POT | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0),
+	.caps = CAP_KEYPAD | CAP_ENCODER | CAP_VOLUME_POT | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR | CAP_BEEP_NOT_ON_AIR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 #if CONFIG_RX_EXT
