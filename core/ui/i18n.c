@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The language tables (built by tools/i18n.py from core/ui/lang/*.po into the build's gen directory) and the lookup:
-// one sorted array of the FNV-1a hashes of the English any catalog translates (lang_hash), shared by the languages;
-// each built language keeps its translations in that order, "" for none, and where every LANG_STRIDE-th one starts. A
-// lookup hashes the English, searches, and steps over at most LANG_STRIDE - 1 strings; anything not found, or without
-// a translation, is shown as it is
+// The language tables (built by tools/i18n.py from the marks in core/ and core/ui/lang/*.po into the build's gen
+// directory) and the lookup. A tr_id_t is a key's number (tr_keys.h): the keys the catalogs translate first, then the
+// ones they never do (TRX). Each table keeps its strings in key order, NUL-terminated, "" for none, and where every
+// LANG_STRIDE-th one starts: a lookup steps over at most LANG_STRIDE - 1 strings. The English table has every key; a
+// language's only the translated ones, and one without a translation shows the English
 #include <stddef.h>
 #include <string.h>
 #include "i18n.h"
@@ -18,6 +18,7 @@ typedef struct {
 	const char *code;
 	const char *name;
 	bool built;
+	bool wide;			// its catalog is UTF-8 with a CJK face: a line of it needs 16 px
 	const lang_table_t *table;	// NULL: English, or not built
 } lang_info_t;
 
@@ -27,31 +28,32 @@ static const lang_info_t langs[LANG_KNOWN] = LANG_LIST;
 static uint8_t cur = LANG_DEFAULT;	// until the settings are applied
 
 #if CONFIG_LANG_ANY
-const char *tr(const char *en)
+static const char *lookup(const lang_table_t *t, tr_id_t id)
+{
+	const char *s = t->text + t->off[id / LANG_STRIDE];
+	for (uint16_t i = (uint16_t)(id % LANG_STRIDE); i > 0; i--)
+		s += strlen(s) + 1u;
+	return s;
+}
+
+const char *tr_en(tr_id_t id)
+{
+	if (id == TR_NONE)
+		return NULL;
+	if (id >= TR_KEYS)
+		return "";	// not a key of this build: never made by a mark
+	return lookup(&lang_en_table, id);
+}
+
+const char *tr(tr_id_t id)
 {
 	const lang_table_t *t = langs[cur].table;
-	if (t == NULL || en == NULL || en[0] == 0)
-		return en;
-#ifdef LANG_STRINGS
-	uint32_t h = 2166136261u;
-	for (const char *p = en; *p; p++)
-		h = (h ^ (uint8_t)*p) * 16777619u;
-	uint16_t lo = 0, hi = LANG_STRINGS;
-	while (lo < hi) {
-		uint16_t mid = (uint16_t)((lo + hi) / 2u);
-		if (lang_hash[mid] == h) {
-			const char *s = t->text + t->off[mid / LANG_STRIDE];
-			for (uint16_t i = mid % LANG_STRIDE; i > 0; i--)
-				s += strlen(s) + 1u;
-			return s[0] ? s : en;
-		}
-		if (lang_hash[mid] < h)
-			lo = (uint16_t)(mid + 1u);
-		else
-			hi = mid;
+	if (t != NULL && id != TR_NONE && id < TR_TRANSLATED) {
+		const char *s = lookup(t, id);
+		if (s[0])
+			return s;
 	}
-#endif
-	return en;
+	return tr_en(id);
 }
 #endif
 
@@ -59,6 +61,7 @@ uint8_t lang_count(void) { return LANG_KNOWN; }
 const char *lang_code(uint8_t i) { return i < LANG_KNOWN ? langs[i].code : ""; }
 const char *lang_name(uint8_t i) { return i < LANG_KNOWN ? langs[i].name : ""; }
 bool lang_built(uint8_t i) { return i < LANG_KNOWN && langs[i].built; }
+bool lang_wide(uint8_t i) { return i < LANG_KNOWN && langs[i].wide; }
 uint8_t lang_current(void) { return cur; }
 
 bool lang_set(uint8_t i)

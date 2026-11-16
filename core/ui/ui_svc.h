@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "config.h"
+#include "i18n.h"
 #include "radio/radio.h"
 #include "codeplug/zone_edit.h"
 
@@ -161,6 +162,9 @@ bool ui_svc_msg_delete(uint16_t i);
 bool ui_svc_msg_send(uint32_t dst, bool group, const char *text);
 bool ui_svc_radio_check(uint32_t id);
 bool ui_svc_call_alert(uint32_t id);
+// ARS registration with the presence server (Settings > Connections > Data services), as dmrArsState_t
+enum { UI_ARS_OFF, UI_ARS_REGISTERING, UI_ARS_REGISTERED, UI_ARS_REFUSED, UI_ARS_NO_ANSWER };
+uint8_t ui_svc_ars_state(void);
 
 // --- Location ---
 typedef struct {
@@ -324,8 +328,8 @@ typedef enum {
 	UI_SET_MIC_AGC,		// the vocoder's mic AGC on DMR TX (accent bits 6-7); while on, mic gain is step 5 and dimmed
 	UI_SET_SFR_RX,		// what an SFR user channel hears, dmr_sfr_rx_t (Settings > Talk, CONFIG_SFR; radio_settings_t.sfr_rx)
 	UI_SET_SFR_CWID,	// the SFR repeater's CW ID interval code 0..4 (Settings > Talk, CONFIG_SFR_CWID; radio_settings_t.sfr_cwid)
-	// The VFO's automatic step in the broadcast band (Settings > Talk, CONFIG_BCAST_FM; radio_settings_t.bcast_step) in
-	// kHz: 200 (the odd tenths) or 100
+	// The VFO's step in the broadcast band, whatever the VFO step (Settings > Talk, CONFIG_BCAST_FM;
+	// radio_settings_t.bcast_step) in kHz: 200 (the odd tenths) or 100
 	UI_SET_BCAST_STEP,
 	UI_SET_ZONE_OFFERS,	// accept zone shares from other radios: 1 on (the default), 0 off (settings_t.zs_offers)
 	UI_SET_DMR_ID,		// the radio's own DMR ID in the codeplug, 1..CODEPLUG_DMR_ID_MAX (a set is a codeplug write job)
@@ -333,8 +337,30 @@ typedef enum {
 	UI_SET_LANGUAGE,	// the UI's language, i18n.h lang_value: "en" English, 0 never picked (Settings > Display; settings_t.lang)
 	UI_SET_RX_EXT,		// receive past the band table (Settings > Advanced; settings_t.cp_flags, CONFIG_RX_EXT)
 	// Knob when locked: 1 the volume knob works while the keys are locked (the default), 0 it does nothing
-	// (UI_FEAT_VOLUME_KNOB; settings_t.knob_flags bit SETTINGS_KNOB_LOCK, stored inverted)
+	// (UI_FEAT_VOLUME_KNOB; settings_t.sound_flags bit SETTINGS_KNOB_LOCK, stored inverted)
 	UI_SET_KNOB_WHEN_LOCKED,
+	// The position service's settings (Settings > Location, CONFIG_POSITION; core/position/position.h): where our
+	// position comes from (position_pref_t), the fixed position in 1e-7 degree (both 0 = not set), our position
+	// sent in DMR voice calls 0 / 1 (ETSI GPS Info, CONFIG_DMR_GPS)
+	UI_SET_POS_SOURCE, UI_SET_POS_FIXED_LAT, UI_SET_POS_FIXED_LON, UI_SET_POS_DMR_CALLS,
+	UI_SET_RAM_COUNT,	// the ids up to here have a slot in ui_svc_ram_get/set's table; those after live elsewhere only
+	// Home's talk line: the talkgroup's name first, 1 on (Settings > Display; updown_home bit 7, ui_svc_storage.c)
+	UI_SET_LABEL_FIRST = UI_SET_RAM_COUNT,
+	// The ARS server's and the off-net IP gateway's DMR IDs, 0 = off (Settings > Connections > Data services,
+	// CONFIG_DMR_ARS / CONFIG_DMR_IP_GATEWAY): the setting in force; a set is a codeplug write job (the settings area,
+	// docs/spec/codeplug-settings.md), which the radio core takes when codeplug_kv_serial() moves on
+	UI_SET_ARS_SERVER,
+	UI_SET_IP_GATEWAY,
+	// Settings > Sound, 1 on (the default), 0 off. Tones kept as keys of the settings area over the radio core's
+	// radio_settings_t.tones_off (radio_keys.h radio_tone_rows), set as above
+	UI_SET_CALL_END_TONE,	// DMR: a call heard has ended
+	UI_SET_TOT_WARN_TONE,	// the TX time-out is near
+	UI_SET_BATTERY_TONE,	// low and critical battery
+	UI_SET_TX_DENY_TONE,	// PTT refused, or a transmission cut by the time-out
+	// ... and two kept where they already were: the scan stop tone (radio_settings_t.scan_beep, off by default) and
+	// the emergency tone for an alert heard (dmr_emergency_settings_t.rx_tone, CONFIG_DMR_EMERGENCY)
+	UI_SET_SCAN_TONE,
+	UI_SET_EMERGENCY_TONE,
 	UI_SET_COUNT
 } ui_setting_t;
 
@@ -366,12 +392,12 @@ typedef enum {
 	UI_EV_HOTSPOT_STARTED,	// the host started hotspot mode
 	UI_EV_SCAN_STOPPED,	// the scan stopped on a channel
 	UI_EV_CALL_ALERT_RESULT,	// our call alert: ok = the radio answered, else no answer after the retries
-	UI_EV_SAVE_FAILED,	// a save to the codeplug the UI asked for failed later (text: what failed)
+	UI_EV_SAVE_FAILED,	// a save to the codeplug the UI asked for failed later (why: what failed)
 	UI_EV_POWER_OFF_FAILED,	// auto power off dropped the power latch but the radio is still on (the knob holds it)
 	UI_EV_ZONE_OFFER,	// another radio (id, name) offers a zone or channel (index 1): text "Zone Club, 24 channels"
 	UI_EV_ZONE_SENT,	// our zone to id (index 1: a talkgroup): ok = it went out whole
 	UI_EV_ZONE_IMPORTED,	// the import ended: ok with name (the zone here), index (channels), id 1 for an update; else
-				// text says why
+				// why says why
 	UI_EV_CODEPLUG_FOREIGN,	// a codeplug write is held: ask what to do with another firmware's codeplug
 } ui_event_kind_t;
 
@@ -382,7 +408,10 @@ typedef struct {
 	uint32_t id;
 	uint32_t ms;
 	char name[17];
-	char text[40];
+	union {
+		char text[40];
+		tr_id_t why;	// UI_EV_SAVE_FAILED, UI_EV_ZONE_IMPORTED: what failed, a key (TR_NONE: none)
+	};
 } ui_event_t;
 // The owner's two boot screen lines from the codeplug (storage-cps); empty strings when there are none
 void ui_svc_boot_text(char line1[17], char line2[17]);
@@ -402,5 +431,10 @@ void ui_svc_poll(void);
 // Every UI pass: the side key assignment follows a codeplug a CPS wrote, and a change made in Settings goes to the
 // codeplug (CONFIG_KEY_ASSIGN)
 void ui_svc_keys_poll(void);
+// A home key's event (ACT_HOME_KEY_n, board.home_keys): the action it does now, its function on Home (home true) or
+// the key's own action elsewhere; ACT_NONE for nothing. Any other action comes back as it is (CONFIG_KEY_ASSIGN)
+uint8_t ui_svc_home_key(uint8_t action, uint8_t gesture, bool home);
+// Settings > Keys: value may go in the setting id's slot (a home key's role can't hold Monitor or Tone burst)
+bool ui_svc_key_offered(uint8_t id, int32_t value);
 
 #endif

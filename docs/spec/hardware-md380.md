@@ -36,12 +36,14 @@ needed bypass) before staying on HSI. LSE: a 32.768 kHz crystal is assumed (unve
 | Sectors | Addresses | Use |
 |---|---|---|
 | 0-2 (3 x 16 KB) | 0x08000000-0x0800BFFF | TYT bootloader, never written (unverified) |
-| 3-7 | 0x0800C000-0x0807FFFF | RadioFoundry application, 464 KB in one piece (`boards/md380/memory.ld`) |
-| 8-11 | see [codec-md380.md](codec-md380.md) | The codec as the merge places it. From D002.032: the table windows at their original addresses (sectors 8, 10, 11), the code moved to 0x080E0000 (sector 11). From D35.14 / S35.14: the main table window at its original address (from sector 9 into sector 10), the code right after it, the small ones in sector 11. Then the descriptor at 0x080FFF80 |
+| 3-10 | 0x0800C000-0x080DFFFF | RadioFoundry application, 848 KB in one piece (`boards/md380/memory.ld`) |
+| 11 | 0x080E0000-0x080FFFFF | The codec as the merge places it: every window moved into this sector, the code first, then the tables ([codec-md380.md](codec-md380.md)). Then the descriptor at 0x080FFF80 |
 
 The application starts at 0x0800C000 with its vector table there (VECT_TAB_OFFSET 0xC000) (unverified).
 
-`boards/md380/memory.ld` asserts that the image ends before 0x08080000. The default UHF image takes 320,236 bytes with link time
+`boards/md380/memory.ld` asserts that the image ends before 0x080E0000. Earlier releases gave the application sectors
+3-7 and kept the codec tables at their original addresses in sectors 8-11; the flashing tools move such a radio's codec
+on the first install ([codec-placement.md](codec-placement.md), "Moving to a new layout"). Image sizes with link time
 optimization, on by default here: [feature-matrix.md](../feature-matrix.md#dm-1701-and-md-380). The manufacturer's firmware keeps
 the codec code at 0x08050C44 (sectors 6 and 7), so the merge moves it.
 
@@ -421,6 +423,20 @@ On air with this (2026-10-18): calls are taken with the caller and talk group, a
 but the speaker plays only a faint buzz (4.8). Leads, not checked: 0x0E (HPoutEn, bit 7; RadioFoundry writes 0x44, which
 leaves it off), 0x37 (DAC gain), the I2S data line directions and sample rate (unknown 17).
 
+### 4.9.1 Receiving between our bursts
+
+Through a repeater, a voice over hears the repeater's outbound between its own bursts (the modem's
+`tx_listen_split`, [dmr-modem.md 2.8](dmr-modem.md)). One synthesizer serves receive and transmit, so the board
+retunes per burst (`radio_md380.c`):
+
+| When | What |
+|---|---|
+| After each burst (the engine's `rf(false)`, PA off) | The synthesizer to the receive LO, the HR_C5000's receiver input on (4:0x26), the receive tune DAC, the receive path on. No lock wait |
+| RF_TX_INTER, 2.5 ms early | 4:0x12 bits 5-0 = 25 (100 us steps) while the transmission listens, restored at its end (only when it was read: a slot where it can't be read or set isn't listened to). Receiver input off, the synthesizer to the transmit VCO, lock detect waited for (at most 2 ms), then the PA at the slot as without the lead |
+
+The chip receives the other slot as it does when idle, and its bursts go to the stack as heard while sending. On the
+SDR bench, 45 key-ups of 45 got through a repeater whose hang ended around the key-up, against 13 of 15 without it.
+
 ### 4.10 Codec and audio routing
 
 DMR receive audio plays with the LINEOUT values below (on air, 2026-10-19: our test, not authoritative). This section
@@ -586,6 +602,10 @@ Measured on RadioFoundry (UHF, 446.000 MHz, raw ADC, a second radio nearby; 2026
 |---|---|---|
 | no signal | 690-760 | 1340-1620 |
 | FM carrier, shown as -71 dBm | 2720-2732 | 39-81 |
+
+On a UHF MD-380 on 2026-11-14 (440-468 MHz, no signal) RSSI read 1736 (shown as -92 dBm), with BUSY at 1478; a DMR
+signal read -71 dBm. The no-signal level isn't stable from one session to the next, so nothing should take this
+reading as an absolute level: the DMR scan counts it from the floor it measures ([gotchas](gotchas.md) 17.4).
 
 BUSY falls with a signal (larger = more noise). With the USB programming cable in the accessory jack the receiver
 doesn't detect a signal at all (RSSI stays near the no-signal level): read these values with the cable out (a log
@@ -885,7 +905,10 @@ size.
 
 On a 16 MB part RadioFoundry uses the DM-1701's map (settings 0x011000, journal 0x019000, open-firmware codeplug 0x000000 and
 0x020000-0xE00000, native area 0xE00000, TFTP staging 0xF00000), so the open-firmware CPS works the same. The TYT codeplug at 0 is overwritten
-by the first open-firmware write: read it out with the manufacturer's CPS first if it matters ([md380-migration.md](md380-migration.md) does that, converts it with qdmr and writes it back). There is no calibration window in the
+by the first open-firmware write, and writing the TYT codeplug again (stock firmware, its CPS) replaces the open-firmware
+radio ID, zones and first channels while the rest stays, a mixed codeplug ([codeplug-port.md](codeplug-port.md) 5.2;
+measured in a backup, 2026-10-21). `board.toml` `[stock_codeplug]` gives the TYT codeplug's span, 0x2000-0x3FFFF, decoded
+with qdmr's md380 driver. Read it out with the manufacturer's CPS first if it matters ([md380-migration.md](md380-migration.md) does that, converts it with qdmr and writes it back). There is no calibration window in the
 main array (11.1). On a smaller part the core gets no areas: settings live in RAM and nothing is written. The CPS still
 reads the chip (area 1, up to its end) and the radio info gives its size, so a backup saves all of it; the Codeplug
 Editor and the flasher's channel step say that the radio stores no codeplug.
@@ -904,7 +927,7 @@ The same board ships with and without the module, and PD8 (the module's power sw
 second flash chip select on others 13.7. So nothing drives PD8 until the module has been heard:
 `gps_md380.c` enables USART3 RX on PD9 at start-up and listens for 5 s. One checksum-valid sentence (any talker, up to
 82 characters plus CR LF; `drivers/gps/nmea_line`) makes the module present: PD8 is then held at the level it already
-had, and every sentence goes to the APRS position source (`aprs_nmea`, CONFIG_APRS). Nothing heard: the UART is
+had, and every sentence goes to the position service (`position_nmea`, CONFIG_GPS). Nothing heard: the UART is
 switched off and `board.gps_present()` stays false, so `board_has_gps()` hides the GPS features. UART errors are
 counted and cleared in the interrupt, so one framing error never stops reception ( 13.7).
 
@@ -942,7 +965,7 @@ Entered by holding PTT and the upper side key while switching on (unverified). U
 non-standard commands; the same erase-by-sector and block-write protocol as the DM-1701's loader (unverified). Flash a RadioFoundry
 image with `tools/stm32_dfu.py --model md380 --key KEY rfoundry_md380.bin`. The image is plain, starts at 0x0800C000, and the
 tool encrypts it for the loader. rfoundry knows the board (`boards/md380/board.toml`: release `stable`, an update writes
-sectors 3-7 and keeps the codec).
+sectors 3-10 and keeps the codec).
 
 Switched on normally, the original firmware is also a DFU device with the same IDs. The flashers tell it from the
 bootloader by alt 0's layout and refuse it ([hardware-dm1701.md](hardware-dm1701.md) 15.1). The MD-380's bootloader,
@@ -972,9 +995,10 @@ and S35.14 (MD-390) files work too: they carry the MD-UV380 family's codec, plac
 10 (untested on the radio). Entry points,
 calling convention, state sizes, the placement and the extraction recipe are in [codec-md380.md](codec-md380.md).
 `stockfw.PROFILES` has the profiles, the codec maps (`rfoundry/codec_maps/md380/`, one per build) the rewrites,
-`boards/md380/memory.ld` keeps the application out of sectors 8-11, `vocoder_md380.c` checks and hosts the codec, and
+`boards/md380/memory.ld` keeps the application out of sector 11, `vocoder_md380.c` checks and hosts the codec, and
 `make BOARD=md380` merges it when the firmware file is in `codecs/`. The debug link reports the codec as
-`md380-d2032-s11`; a build from before the move reports `md380-d2032`. Without the codec merged the radio is FM only.
+`md380-d2032-s11v2`; a release with the codec in sectors 8-11 reports `md380-d2032-s11`, and a build from before
+the first move `md380-d2032`. Without the codec merged the radio is FM only.
 
 ---
 
@@ -1041,8 +1065,7 @@ configuration registers, audio routing), and [gotchas.md](gotchas.md) 2.6, 3.3, 
 ## 19. Sizes
 
 Flash: the table in [feature-matrix.md](../feature-matrix.md#dm-1701-and-md-380) and the per-feature figures in
-[feature-matrix.md](../feature-matrix.md). Measured 2026-10-19 with LTO: default UHF image 320,236 B of 475,136 B
-(464 KB), 107,120 B of 131,068 B SRAM, 59,640 B of 64 KB CCM; maximal 327,064 B flash.
+[feature-matrix.md](../feature-matrix.md). With LTO: default UHF image 472,036 B of 868,352 B (848 KB), maximal 500,956 B.
 
 `CONFIG_NET_WEBCTL` follows `CONFIG_NET_HTTP_GZIP` on this radio (`boards/md380/config.mk`): web control's files,
 stored uncompressed, need more flash than the default image leaves free. With gzip off the radio serves the plain
@@ -1065,6 +1088,6 @@ status page.
   tone path yet, so AFSK TX is not written (`boards/md380/config.mk`). Without a calibration the board refuses to
   transmit.
 - Release: `[status] release = "stable"`, both band images (`rfoundry-md380-<version>.bin` UHF, `rfoundry-md380-vhf-<version>.bin`).
-  Application sectors 3-7 (464 KB), codec sectors 8-11 (D002.032: 8, 10, 11; 35.14: 9-11), so an update keeps the
-  codec. Profile `md380-d2032-s11` (a build from before the move reports `md380-d2032`). `tools/md380_migrate.py` flashes it and keeps
+  Application sectors 3-10 (848 KB), codec sector 11, so an update keeps the codec. Profile `md380-d2032-s11v2`
+  (`md380-d2032-s11` from releases with the codec in sectors 8-11, `md380-d2032` from a build before the first move). `tools/md380_migrate.py` flashes it and keeps
   the codeplug.

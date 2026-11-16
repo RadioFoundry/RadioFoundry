@@ -12,8 +12,8 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
     default build uses link time optimization: 330,824 B (13,240 free). The per-feature figures stay the plain ones.
   - MD-380: link time optimization on (`LTO=1 LTO_3P=1`, its default), default image 279,444 B of 281,668 B, the
     region it had then. With LTO a switch also changes what gets inlined elsewhere, so small MD-380 figures are
-    approximate. Since the codec moved (2026-10-19) the region is 464 KB and the switches that were off for flash are
-    on; the per-feature figures stay the 2026-10-11 ones.
+    approximate. Since the codec moved the region is 464 KB, and since every codec window moved into sector 11
+    848 KB; the switches that were off for flash are on. The per-feature figures stay the 2026-10-11 ones.
   - `*` = off by default; measured by turning it on in the DM-1701 build (main c0022b4).
 - **Radios:** which switches each radio builds by default is in
   [Built by default on each radio](#built-by-default-on-each-radio), generated from the build. A — in a bytes column
@@ -71,6 +71,7 @@ is `tools/bringup.py list --radio <id>`.
 | `beep` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial, needs re-run | partial, needs re-run |
 | `vibrate` | off | ✕ | not recorded | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `gps` | pass (seed) | not recorded | ✕ | not recorded | not recorded | not recorded | not recorded | ✕ |
+| `position` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_data_rx` | not recorded | pass (seed) | pass (seed) | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run |
 | `dmr_sms` | not recorded | pass (seed) | pass (seed) | not recorded | pass (seed) | not recorded | pass, needs re-run | ✕ |
 | `dmr_tms` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | ✕ |
@@ -82,6 +83,8 @@ is `tools/bringup.py list --radio <id>`.
 | `sfr_dualpath_rx` | not recorded | not recorded | not recorded | not recorded | ✕ | not recorded | not recorded | not recorded |
 | `sfr_cwid` | not recorded | not recorded | not recorded | not recorded | ✕ | not recorded | pass, needs re-run | pass, needs re-run |
 | `aprs` | pass (seed) | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | partial, needs re-run |
+| `aprs_afsk` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `aprs_dmr` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `aprs_rx` | pass (seed) | not recorded | not recorded | not written | not written | not recorded | pass, needs re-run | partial, needs re-run |
 | `aprs_igate` | not recorded | off | not recorded | not written | not written | off | pass, needs re-run | partial, needs re-run |
 | `gps_sky` | not recorded | not recorded | ✕ | not recorded | not recorded | not recorded | not recorded | ✕ |
@@ -100,6 +103,7 @@ is `tools/bringup.py list --radio <id>`.
 | `watchdog` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run |
 | `fault_trace` | not recorded | ✕ | not recorded | not recorded | ✕ | ✕ | ✕ | not recorded |
 | `usb_network` | ✕ | pass (seed) | ✕ | ✕ | not recorded | not recorded | pass, needs re-run | ✕ |
+| `usb_serial_request` | off | not recorded | off | off | not recorded | not recorded | not recorded | off |
 | `dmr_ip_gateway` | not recorded | not recorded | pass (seed) | not recorded | not recorded | not recorded | pass, needs re-run | off |
 | `dmr_tx_spacing` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | partial, needs re-run |
 | `zone_share` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial, needs re-run | ✕ |
@@ -124,14 +128,17 @@ is `tools/bringup.py list --radio <id>`.
 | `channel_knob` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run |
 | `ui_settings` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial, needs re-run | ✕ |
 | `diag` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | ✕ |
+| `backlight_test` | off | off | off | off | off | off | off | off |
 | `ui_color` | not recorded | not recorded | ✕ | not recorded | not recorded | not recorded | ✕ | ✕ |
 | `font_xl` | not recorded | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `font_aa` | not recorded | off | off | off | off | off | ✕ | ✕ |
 | `font_big` | not recorded | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `lang_es` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off | ✕ |
 | `lang_it` | off | off | off | off | off | off | off | ✕ |
+| `lang_zh` | off | ✕ | ✕ | ✕ | ✕ | ✕ | off | off |
 | `lang_default_es` | off | off | off | off | off | off | off | ✕ |
 | `lang_default_it` | off | off | off | off | off | off | off | ✕ |
+| `lang_default_zh` | off | ✕ | ✕ | ✕ | ✕ | ✕ | off | off |
 | `radio_controls` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass, needs re-run | partial, needs re-run |
 | `settings_store` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass, needs re-run | pass, needs re-run |
 | `codeplug_foreign` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run |
@@ -167,6 +174,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 <!-- generated: tools/boards.py docs feature-defaults; edit config/features.mk and boards/*/config.mk -->
 | Feature switch | DM-32UV | DM-1701 | DM-1801 Pro | DB25-D PRO | MD-380 | MD-UV380 | MD-9600 | RT10 |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| `USB_SERIAL_REQUEST` | ○ | ● | ○ | ○ | ● | ● | ● | ○ |
 | `FM` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `SUBTONE` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `DMR` | ● | ● | ● | ● | ● | ● | ● | ● |
@@ -214,13 +222,16 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `VFO_FM` | ● | ● | ● | ● | ● | ● | ● | ✕ |
 | `VFO_DMR` | ● | ● | ● | ● | ● | ● | ● | ✕ |
 | `DIAG` | ● | ● | ● | ● | ● | ● | ● | ✕ |
+| `BACKLIGHT_TEST` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `FONT_XL` | ● | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `FONT_AA` | ● | ○ | ○ | ○ | ○ | ○ | ✕ | ✕ |
 | `FONT_BIG` | ● | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `LANG_ES` | ● | ● | ● | ● | ● | ● | ○ | ✕ |
 | `LANG_IT` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ✕ |
+| `LANG_ZH` | ○ | ✕ | ✕ | ✕ | ✕ | ✕ | ○ | ○ |
 | `LANG_DEFAULT_ES` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ✕ |
 | `LANG_DEFAULT_IT` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ✕ |
+| `LANG_DEFAULT_ZH` | ○ | ✕ | ✕ | ✕ | ✕ | ✕ | ○ | ○ |
 | `UI_COLOR` | ● | ● | ✕ | ● | ● | ● | ✕ | ✕ |
 | `UI_SETTINGS` | ● | ● | ● | ● | ● | ● | ● | ✕ |
 | `SCAN` | ● | ● | ● | ● | ● | ● | ● | ● |
@@ -245,6 +256,8 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `AM_RX` | ● | ✕ | ● | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `BCAST_FM` | ● | ✕ | ● | … | ✕ | ✕ | ✕ | ✕ |
 | `APRS` | ● | ● | ● | ● | ● | ● | ● | ● |
+| `APRS_AFSK` | ● | ● | ● | ● | ● | ● | ● | ● |
+| `APRS_DMR` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `APRS_RX` | ● | ● | ● | … | … | ● | ● | ● |
 | `APRS_IGATE` | ● | ○ | ● | … | … | ○ | ● | ● |
 | `GPS_SKY` | ● | ● | ✕ | ● | ● | ● | ● | ✕ |
@@ -279,6 +292,8 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | DMR emergency (alarm, emergency call, hot mic) | `DMR_EMERGENCY` | 3,296 | 3,188 |  |
 | Repeater roaming | `DMR_ROAMING` | 11,952 | 12,380 |  |
 | CSBK signaling: call alert, radio check | `DMR_SIGNALING` | 592 | 752 |  |
+| P25 channels in the codeplug: the conventional codec | `P25` | 56 | — | Off by default. The codec only: a P25 channel is shown as a mode not in this build ([p25-codeplug.md](spec/p25-codeplug.md)). With `P25_TRUNK`, DM-1701; nothing calls the codec yet, so the build keeps little of it |
+| P25 trunked systems in the codeplug: the codec | `P25_TRUNK` | — | — | Needs `P25`. Off by default; no firmware follows a P25 system yet |
 | VFO (hand-tuned frequency) | `VFO` | 656 | 516 | Includes the DMR VFO; `VFO` and `VFO_DMR` re-measured 2026-10-17 (DM-1701 plain build, MD-380 with LTO). Copy to VFO ([dmr-voice.md](spec/dmr-voice.md) 2.2) is on top of that figure, behind the same switch: about 630 B on the DM-1701 and 730 B on the MD-380 (default builds, LTO as each has it), 750 B on the C-SKY radios |
 | FM VFO | `VFO_FM` | 504 | 452 |  |
 | DMR VFO (color code, slot, talk target typed in; mode change FM / DMR) | `VFO_DMR` | 144 | 104 | The VFO's mode, color code, slot and talk target are settings of the VFO, kept across power cycles ([dmr-voice.md](spec/dmr-voice.md) 2.1) |
@@ -292,7 +307,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Dual watch: A and B in any zone or the VFO, PTT on the selected one, its screens, talk back | `DUAL_WATCH` | 10,864 | 11,456 | Needs `SCAN`. Without it, only the debug link's dual watch (two channels of one zone). Measured 2026-10-21 on the dual watch branch, default builds |
 | Beeps and alert tones | `BEEP` | 1,552 | 1,800 |  |
 | Vibration alerts (Settings > Sound > Vibrate) | `VIBRATE` | 520* | — | Needs a vibration motor (`hal_power_t.vibrate`): none of these radios has one RadioFoundry drives. On for the DM-1801 Pro. Measured 2026-10-16 with `CONFIG_SNMP=n`; 236 B with LTO |
-| GPS receiver: the module driver and its NMEA input (Settings > Location > GPS) | `GPS` | — | 1,196 | Needs a GPS receiver. Off, DMR GPS, LRRP and APRS keep the fixed position and report no fix. MD-380 measured 2026-10-22 (LTO, 58f2cebe). The DM-1701 has none from the factory but listens for an owner-fitted one (1,308 B, LTO) |
+| GPS receiver: the module driver and its NMEA input (Settings > Location > GPS) | `GPS` | — | 1,196 | Needs a GPS receiver. Off, DMR GPS Info, LRRP and APRS send the fixed position when one is set ([position](spec/position.md)). MD-380 measured 2026-10-22 (LTO, 58f2cebe). The DM-1701 has none from the factory but listens for an owner-fitted one (1,308 B, LTO) |
 
 ## DMR data
 
@@ -308,8 +323,10 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Experimental: SFR user receive "dual-path RX": a voice frame whose FEC failed comes from the other copy | `SFR_DUALPATH_RX` | 696 | — | Needs `SFR`. DM-1701 figure with LTO (2026-10-22) |
 | Experimental: standalone SFR repeater's periodic CW ID (callsign in Morse, FM) | `SFR_CWID` | 900 | — | Needs `SFR`. DM-1701 figure with LTO (2026-10-22) |
 | APRS: AFSK positions, status, messages; DMR positions; KISS TNC | `APRS` | 26,568 | 26,628 | Includes APRS receive, KISS over TCP and APRS-IS where built. MD-380: AFSK TX needs the tone path (not written), DMR positions work |
+| APRS on FM: AX.25 / AFSK packets, messages, KISS TNC | `APRS_AFSK` | 21,876 | 11,872 | Needs APRS and FM. Includes APRS receive, KISS over TCP and APRS-IS where built. Off, APRS sends positions over DMR only. Measured with LTO |
+| APRS over DMR: LRRP or UDT positions to a gateway ID | `APRS_DMR` | 692 | 1,380 | Needs APRS and DMR. Off, APRS is FM only. Measured with LTO |
 | APRS receive: demodulator, station list, digipeater | `APRS_RX` | 8,892 | — | DM-1701: FM receive audio on the I2S stream, squelch gated ([aprs](spec/aprs.md) 5.3). MD-380: not written |
-| GPS screen: sky plot, signal bars, grid locator (Tools > Position) | `GPS_SKY` | — | 5,244 | Needs GPS and APRS. 176 B of RAM. MD-380 measured 2026-10-29 (LTO) |
+| GPS screen: sky plot, signal bars, grid locator (Tools > Position) | `GPS_SKY` | — | 5,244 | Needs GPS. 176 B of RAM. MD-380 measured 2026-10-29 (LTO) |
 | APRS iGate rules (with tools/aprs_gate.py) | `APRS_IGATE` | 1,820* | — | Needs APRS receive. DM-1701: off by default |
 
 ## Host link and USB
@@ -336,6 +353,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Feature | Switch | Bytes DM-1701 | Bytes MD-380 | Notes |
 |---|---|---:|---:|---|
 | USB network adapter (CDC-NCM) | `USB_NETWORK` | 48,344 | 47,468 | Includes everything below |
+| Leave network mode from a web page | `USB_SERIAL_REQUEST` | 644 | 696 | The web flasher and editor take a radio in USB network mode back to serial mode, with no key press on the radio (endpoint 0 request, `/api/usb`, TCP at 12.255.255.254). Follows `USB_NETWORK` |
 | IP over DMR gateway | `DMR_IP_GATEWAY` | 44,128 | 43,220 | Includes the radio's own services below |
 | Control station mode (boot as network, PC answers data, fixed link) | `DMR_CONTROL_STATION` | 288 | 484 |  |
 | Minimal TCP | `NET_TCP` | 16,240 | 15,656 | Includes KISS, HTTP, rigctld, APRS-IS. About 4.5 KB RAM |
@@ -359,14 +377,17 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 |---|---|---:|---:|---|
 | Settings menu on the radio | `UI_SETTINGS` | 5,304 | 5,640 |  |
 | Diagnostics page | `DIAG` | 3,752 | 3,532 |  |
+| Backlight test pages | `BACKLIGHT_TEST` | 1,536 | 1,552 | Off by default; bench work ([backlight-curve.md](testing/backlight-curve.md)) |
 | Color screen settings (theme, highlight color, filled status bar) | `UI_COLOR` | 672 | 608 | Off on the DM-1801 Pro (monochrome screen; 628 B there). Measured 2026-10-17; DM-1701 with LTO 612 B |
 | 16x32 font | `FONT_XL` | 6,352* | — | Only useful at 240 px and wider (MD-380 is 160 px). Anti-aliased on the DM-32 (7.4 KB of glyphs) |
 | Anti-aliased fonts | `FONT_AA` | 3,004* | — | Smooth text on color panels (measured 2026-10-17); the DM-32's image grew 9.5 KB with it and `FONT_XL` |
 | Larger text | `FONT_BIG` | — | — | 9x18 lists and labels on 240 px color panels (needs `FONT_AA`); 3,588 B on the DM-32 (measured 2026-10-17) |
 | Spanish on the radio | `LANG_ES` | 28,456 | 28,348 | The first language brings the lookup and the accented letters of every font (about 7.5 KB); the rest is its text. Measured 2026-10-31 |
-| Italian on the radio | `LANG_IT` | 17,304 | 17,304 | Off by default; measured with Spanish on (its text, and the hashes of strings Spanish leaves untranslated). Alone it costs about as much as Spanish |
+| Italian on the radio | `LANG_IT` | 17,304 | 17,304 | Off by default; measured with Spanish on (its text and its offsets). Alone it costs about as much as Spanish |
+| Chinese on the radio | `LANG_ZH` | 32,856 | 32,856 | Off by default. Not the text alone: 15,360 B of 16x16 glyphs (480 characters, `core/ui/cjk_font_data.c`) and about 17 KB of UTF-8 text, with the text layer's decoder. Needs a 16 px line height: a 240 px color radio draws its words in 8x16 and shows Chinese on every screen, while a layout whose words use the 5x8 or 6x12 font (128x64, 160x128) has no room for it and must not build it. Measured with Spanish on, 2026-11-04 |
 | Start in Spanish | `LANG_DEFAULT_ES` | 0 | 0 | The language the radio starts in until the user picks one (needs `LANG_ES`); the web flasher sets it from its Radio language choice |
 | Start in Italian | `LANG_DEFAULT_IT` | 0 | 0 | As `LANG_DEFAULT_ES` (needs `LANG_IT`) |
+| Start in Chinese | `LANG_DEFAULT_ZH` | 0 | 0 | As `LANG_DEFAULT_ES` (needs `LANG_ZH`) |
 
 ## Storage
 
@@ -393,17 +414,16 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 Link time optimization is on by default on both radios. The DM-1701 has run with it since 2026-10-13 (the HIL suite
 passed); `LTO_3P=1` would take another 3 KB or so off by optimizing the third-party code too.
 
-The MD-380's app region is sectors 3-7, 0x0800C000..0x0807FFFF, 475,136 bytes (464 KB). The codec runs in place in
-sectors 8, 10 and 11 ([codec-md380.md](spec/codec-md380.md)). Measured 2026-10-19 with link time optimization, its
-default:
+The MD-380's app region is sectors 3-10, 0x0800C000..0x080DFFFF, 868,352 bytes (848 KB). The codec runs in place in
+sector 11 ([codec-md380.md](spec/codec-md380.md)). With link time optimization, its default:
 
-| MD-380 build | Flash | Free | RAM | CCM |
-|---|---:|---:|---:|---:|
-| Default (UHF) | 320,236 | 154,900 | 107,120 of 131,068 | 59,640 of 65,536 |
-| Maximal | 327,064 | 148,072 | | |
+| MD-380 build | Flash | Free |
+|---|---:|---:|
+| Default (UHF) | 472,036 | 396,316 |
+| Maximal (every switch it supports, PPP and Italian included) | 500,956 | 367,396 |
 
-Until the codec moved, the region was 281,668 bytes and the default image fit only with link time optimization and
-the hotspot off.
+Until the codec first moved, the region was 281,668 bytes and the default image fit only with link time optimization
+and the hotspot off. Until every codec window moved into sector 11 it was 475,136 bytes (sectors 3-7).
 
 ### DM-32UV
 

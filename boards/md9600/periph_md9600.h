@@ -8,7 +8,7 @@
 
 #include "platform.h"
 
-// A write-only three-wire bus bit-banged on GPIO, the transport behind drivers/bus/wire3.h: pass a stm32_wire3_t as
+// A three-wire bus bit-banged on GPIO, the transport behind drivers/bus/wire3.h: pass a stm32_wire3_t as
 // the bus context. The pins must already be outputs at their idle levels (chip selects high)
 typedef struct {
 	GPIO_TypeDef *clk_port, *data_port;
@@ -19,6 +19,12 @@ typedef struct {
 	uint16_t half_period_ns;	// clock high and low time
 } stm32_wire3_t;
 bool stm32_wire3_write(void *ctx, uint8_t cs, uint32_t word, uint8_t bits);
+// A read frame for a chip whose data line turns around (the AK2365A): head_bits of head out, MSB first, each taken on
+// a rising edge; then the data line becomes an input with its pull up (true) or down and settles for settle_us before
+// the clock goes on; then n samples (at most 32) into *out, MSB first, one after each falling edge from the one that
+// ends the last head bit. The data line is an output again, low, when it returns
+bool stm32_wire3_read(void *ctx, uint8_t cs, uint32_t head, uint8_t head_bits, bool pull_up, uint32_t settle_us,
+		      uint8_t n, uint32_t *out);
 
 // ADC1 continuous scan of n channels (rank order) into buffer, n_scans scans deep, through DMA2 Stream0. buffer must
 // be in main SRAM (DMA). False when it isn't, or n is 0 or over 16

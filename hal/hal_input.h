@@ -25,6 +25,10 @@ typedef enum {
 	ACT_DUAL_WATCH,		// dual watch on / off (docs/ux/dual-watch.md)
 	ACT_AB,			// dual watch: the other channel (A / B); starts dual watch when it is off
 	ACT_TONE_BURST,		// FM repeater access: raw down / up edges
+	ACT_TALK_LABEL,		// Home's talk line: the talkgroup's name or its number first (a side key function)
+	// A home key with a function set (board.home_keys, keyassign.h): the UI turns it into that function on Home and
+	// back into the key's own action elsewhere. The gesture says press or long press
+	ACT_HOME_KEY_1, ACT_HOME_KEY_2, ACT_HOME_KEY_3, ACT_HOME_KEY_4,
 	ACT_COUNT
 } input_action_t;
 
@@ -86,6 +90,8 @@ typedef struct {
 	int8_t (*encoder)(void);
 	// The decoder's counts (NULL: none)
 	void (*encoder_stats)(hal_encoder_stats_t *st);
+	// The channel knob turns between end stops (a 16-position switch), not endlessly: false for a quadrature encoder
+	bool encoder_limited;
 	// A channel switch read as an absolute position (drivers/input/chswitch), on a radio whose knob picks the zone's
 	// channel by where it points: 0-based, -1 while it hasn't settled. The core selects that position in the zone
 	// (docs/spec/ui.md 3). NULL: the knob, if any, steps through the channels (encoder)

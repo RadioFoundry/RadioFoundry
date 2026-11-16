@@ -37,19 +37,20 @@ out over a read (`cps-protocol.md` 2.7 has the same open question for the CPS's 
 
 **Format: the flat image `tools/cps_client.py` reads and writes**, 716,384 bytes (0xAEE60): file offset = the
 open-firmware CPS's STM32 wire address. Bytes 0x00000-0x0FFFF are the EEPROM image, 0x20000 on the flash image
-(`open-firmware-cps.md` 7.1). On a read, the regions qdmr transfers hold the stored bytes and everything else is
-0xFF:
+(`open-firmware-cps.md` 7.1). On a read, the regions qdmr transfers and the codeplug settings area hold the stored
+bytes and everything else is 0xFF:
 
 | File range | Content |
 |---|---|
 | 0x00080-0x0605F | EEPROM image part 1: device info, general settings (call sign, DMR ID), APRS, DTMF, channels 1-128 |
 | 0x07500-0x0AFFF | EEPROM image part 2: boot screen, quick-key slots (the side keys), VFOs, zones |
+| 0x0E000-0x0EFFF | the codeplug settings area ([codeplug-settings.md](codeplug-settings.md)): the radio keeps its own when it is valid and the file's isn't, or when it is newer (section 6 there) |
 | 0x20000-0x2119F | custom data |
 | 0x9B000-0xAEE5F | flash codeplug: channels 129-1024, contacts, RX group lists |
 
 Why this one:
 
-- It is what the CPS path already exposes. A TFTP read is byte for byte what `cps_client.py read` (default `qdmr`
+- It is what the CPS path already exposes. A TFTP read is byte for byte what `cps_client.py read` (default `radio`
   regions) writes to its file, apart from VFO A: the CPS read overlays the live VFO there, TFTP gives the stored
   record. So `cps_client.py write`, `verify` and the HIL tests' backups take a TFTP image and the other way round, and
   the record decoders in `cps_client.py` (`decode_channel`, `set_channel_name`) work on it.
@@ -74,7 +75,7 @@ while the flash region is foreign (`settings-store.md` 5), or without a staging 
 | WRQ | `tsize`, when given, must be from 716,384 up to the end of the open-firmware space (else error 3). A commit record left by an earlier failed commit is finished first |
 | DATA | The bytes inside the regions go to the staging area (`hal_flash_map_t.staging_addr`, `staging_size`, set by the board; some boards have none), back to back from its second sector, erased as the data reaches it; a CRC-32 runs over them. Bytes outside the regions are ignored. Nothing of the stored codeplug changes |
 | Last DATA | The size must be in the same range. An ID database the file carries is finished first (5.2). The staged bytes are read back and checked against the CRC. Then the image check: the general settings' DMR ID is 8 BCD digits, and at least one channel marked used (any bank) decodes (`codeplug_openfw_decode`). The open-firmware layout has no header or version to check, so this is what tells a codeplug from a wrong file |
-| Commit | The commit record (magic 0x5452444F, version 1, length, the staged CRC, its own CRC) goes in the staging area's first sector. Then each 4 KB sector of the codeplug that a region touches is rebuilt (the stored sector, the staged bytes over it) and written through the sector journal (`settings-store.md` 4), one sector per tick so the host link keeps running; unchanged sectors are skipped. The quick-key slots (EEPROM 0x7524-0x7537, the side key assignment, `ui.md` 3.1) are written like the rest, as with the CPS. Then the record is erased, the codeplug re-read (`codeplug_reload`), and the last ACK sent |
+| Commit | The commit record (magic 0x5452444F, version 1, length, the staged CRC, its own CRC) goes in the staging area's first sector. Then each 4 KB sector of the codeplug that a region touches is rebuilt (the stored sector, the staged bytes over it) and written through the sector journal (`settings-store.md` 4), one sector per tick so the host link keeps running; unchanged sectors are skipped. The quick-key slots (EEPROM 0x7524-0x7537, the side key assignment, `ui.md` 3.1) are written like the rest, as with the CPS. The settings area's sector follows its transfer rule: the stored one stays when it is valid and the staged one isn't, or when it is of a newer version (`codeplug-settings.md` 6), so a file from before the area, 0xFF there, leaves the radio's keys. Then the record is erased, the codeplug re-read (`codeplug_reload`), and the last ACK sent |
 | Failure | Any check failing: error 0 with the reason, the stored codeplug untouched. A transfer that stops, an error from the client, a timeout: the staged bytes are left and never used (no record) |
 
 Power cuts: before the commit record exists the old codeplug is intact. After it, `tftp_codeplug_resume()`, called

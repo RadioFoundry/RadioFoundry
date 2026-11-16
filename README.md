@@ -48,7 +48,7 @@ by the UI simulator (`make -C tests/host ui-gallery`).</sub>
 | [Radioddity DB25-D PRO](docs/spec/hardware-db25d.md), Kydera CDR-300UV (mobile) | ● | ● | ● | FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings storage work on the radio. The older FD6818 batches run the same image, untested on a radio. Open: the Retevis RT73. |
 | [TYT MD-380](docs/testing/md380-bringup.md), MD-390, Retevis RT3 | ● | ● | ● | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
 | [TYT MD-UV380](docs/testing/mduv380-bringup.md), MD-UV390, Retevis RT3S, MD-UV390 Plus 10 W | ● | ● | ○ | Built on the UV380 family code with the MD-UV380's keys, display, power tables and GPS; nothing has run on a radio yet. Open: every function on air. |
-| [TYT MD-9600](docs/spec/hardware-md9600.md), Retevis RT90 (mobile) | ● | ● | ● | One image serves every board revision. On a V1-V3 radio, FM and DMR on both bands, DMR voice and data, text messages, roaming, scan, dual watch, APRS, the hotspot, each split duplex half and the USB network services work on air, with every power level checked on a wattmeter on both bands. Transmit is armed per power cycle. Open: V4 and V4A/V5 boards have not run on a radio, and SFR loses inbound voice frames. |
+| [TYT MD-9600](docs/spec/hardware-md9600.md), Retevis RT90 (mobile) | ● | ● | ● | One image serves every board revision. On a V1-V3 radio, FM and DMR on both bands, DMR voice and data, text messages, roaming, scan, dual watch, APRS, the hotspot, each split duplex half and the USB network services work on air, with every power level checked on a wattmeter on both bands. V4A/V5 boards are detected; on older boards the radio asks for the revision once. Open: V4 and V4A/V5 boards have not run on a radio, and SFR loses inbound voice frames. |
 | [Retevis RT10](docs/spec/hardware-rt10.md) | ● | ● | ● | Boots from the boot ROM with the host link, stub entry, the watchdog and the crash log. FM receive with CTCSS/DCS decode, FM transmit, DMR transmit and receive with the radio's own codec, and APRS transmit work on the radio. |
 | Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | ◐ | ◐ | ◐ | In progress ([#111](https://github.com/radiofoundry/radiofoundry/pull/111)). A new platform: a different MCU (NXP MK22FN512), the same HR_C6000 and AT1846S, a 128x64 mono LCD. A DM-1801 bought new today is not v1, and the look-alike DR-1801 is unrelated. |
 | Radioddity GD-88 | ◐ | ◐ | ○ | In progress ([#132](https://github.com/radiofoundry/radiofoundry/pull/132)). Dual receiver on the HR_C7000 platform (chip count not confirmed yet); should reuse much of the DM-32UV port. |
@@ -188,6 +188,14 @@ Any way you can:
 - **Donate or lend a radio.** This helps the most, especially older models that are hard to find now, because every
   port needs the hardware on the bench.
 
+**Can I use RadioFoundry in my own project?**
+
+Yes, including commercial and closed-source products. The license has one condition: keep our copyright and
+license notices in the code you copy and with the firmware you ship. We also ask that you give your project its
+own name. If you're adding a feature, we'd be glad to have it here, credited to you, on every radio whose
+hardware can run it: start a [discussion](https://github.com/radiofoundry/radiofoundry/discussions) or send a pull
+request. Details: [using RadioFoundry in your project](FORKING.md).
+
 **Was this project AI-generated?**
 
 No. This project is the result of thousands of hours of combined human effort from several contributors, spent on
@@ -199,7 +207,8 @@ support for additional radios and to make the project's ambitious scope possible
 RadioFoundry is MIT licensed ([LICENSE](LICENSE)) and a clean-room project: code is written from prose specs, datasheets and
 public standards, independent of earlier radio firmwares. No GPL code, no non-commercial code, no vendor SDKs. The
 rules and checks: [docs/CLEANROOM.md](docs/CLEANROOM.md). Third-party code in `third_party/` (FreeRTOS, TinyUSB, ST's
-HAL and CMSIS) keeps its own permissive license ([LICENSES/](LICENSES/)).
+HAL and CMSIS) keeps its own permissive license ([LICENSES/](LICENSES/)). To build on RadioFoundry in
+another project: [using RadioFoundry in your project](FORKING.md).
 
 ## Acknowledgements
 
@@ -220,7 +229,8 @@ the reverse engineering and documentation behind it made this project possible. 
 
 Issues and pull requests are welcome. Read [docs/CLEANROOM.md](docs/CLEANROOM.md) first, keep radio-specific code out
 of `core/`, put anything that costs flash behind a `CONFIG_` switch, and make sure `tools/ci.sh` passes. Details:
-[contributing](docs/dev/contributing.md).
+[contributing](docs/dev/contributing.md). Building something on RadioFoundry in your own project? Read
+[FORKING.md](FORKING.md): what the license asks, and why we'd rather have your feature here.
 
 ## Layout
 

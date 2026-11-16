@@ -141,6 +141,7 @@ const board_t board = {
 	.radio = &uvf_radio,
 	.power = &uvf_power,
 	.flash = &stm32_spi_flash,
+	.chip_reg = uvf_chip_reg,
 #if CONFIG_DIAG
 	.diag_line = uvf_diag_line,
 	.diag_reset = uvf_diag_reset,
@@ -172,7 +173,7 @@ const board_t board = {
 #if CONFIG_CPS_OPENFW
 	.cps = &cps,
 #endif
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	.afsk = &uvf_afsk,
 #endif
 };

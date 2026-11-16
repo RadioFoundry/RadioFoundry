@@ -19,7 +19,8 @@ SANITIZERS := address,undefined
 SANFLAGS := $(if $(filter 1,$(SANITIZE)),-fsanitize=$(SANITIZERS) -fno-sanitize-recover=undefined -fno-omit-frame-pointer)
 export ASAN_OPTIONS ?= abort_on_error=0:detect_stack_use_after_return=1:strict_string_checks=1
 export UBSAN_OPTIONS ?= print_stacktrace=1:halt_on_error=1
-CFLAGS  := -std=gnu99 -Wall -Wextra -Wno-unused-parameter -g $(COVFLAGS) $(SANFLAGS) -I$(CORE) -I$(ROOT)/drivers '-D__attribute__(x)='  # the firmware's linker section attributes are ARM ELF only
+CFLAGS  := -std=gnu99 -Wall -Wextra -Wno-unused-parameter -g $(COVFLAGS) $(SANFLAGS) -I$(CORE) -I$(ROOT)/drivers -Iout/gen '-D__attribute__(x)='  # the firmware's linker section attributes are ARM ELF only;
+# out/gen: the language tables and the text keys i18n.h includes (below)
 
 DATA    := $(CORE)/dmr/dmrData.c
 FRAME   := $(CORE)/hotspot/dmrDataFrame.c $(CORE)/dmr/fec/dmrFec.c
@@ -73,7 +74,7 @@ ipGatewayTestAir440: $(IPGW) $(CORE)/dmr/ipGateway.h
 
 # The data service (replies, signaling, our SMS, ARS, LRRP, the API mailbox) on a fake host
 SVC     := dmrDataServiceTest.c $(DATA) $(FRAME) $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmr_emergency.c $(CORE)/dmr/call/dmr_lc.c \
-           $(CORE)/aprs/aprs_nmea.c
+           $(CORE)/position/nmea.c
 
 dmrDataServiceTest: $(SVC) $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrDataService.h $(CORE)/dmr/dmr_data_api.h
 	$(CC) $(CFLAGS) -o $@ $(SVC) -lm
@@ -85,13 +86,20 @@ dmrDataServiceTestNoTms: $(SVC) $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrData
 
 # LRRP on its own: request decoding (malformed and mutated too), the answers' bounds, the distance
 TESTS   += lrrpTest
-lrrpTest: lrrpTest.c fuzz.h $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmrLrrp.h
-	$(CC) $(CFLAGS) -Wshadow -o $@ lrrpTest.c $(CORE)/dmr/dmrLrrp.c -lm
+lrrpTest: lrrpTest.c fuzz.h $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmrLrrp.h $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c
+	$(CC) $(CFLAGS) -Wshadow -o $@ lrrpTest.c $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c -lm
 
 # The air queue on a fake data service (docs/spec/dmr-data.md 12): byte ring, order, wrap, refusals, timing
 TESTS   += airQueueTest
 airQueueTest: airQueueTest.c fuzz.h $(CORE)/dmr/dmrAirQueue.c $(CORE)/dmr/dmrAirQueue.h $(DATA) $(FRAME)
 	$(CC) $(CFLAGS) -Wshadow -o $@ airQueueTest.c $(CORE)/dmr/dmrAirQueue.c $(DATA) $(FRAME)
+
+# Tables of settings-area keys (core/codeplug/codeplug_keys.c) and the radio core's (core/radio/radio_keys.h): lookup,
+# the types and ranges, apply, write-back
+TESTS   += radioKeysTest
+radioKeysTest: radioKeysTest.c $(CORE)/codeplug/codeplug_keys.c $(CORE)/codeplug/codeplug_keys.h $(CORE)/radio/radio_keys.h \
+               $(CORE)/codeplug/codeplug_kv.h $(CORE)/dmr/dmrDataService.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ radioKeysTest.c $(CORE)/codeplug/codeplug_keys.c
 
 # The zone share record and messages (docs/spec/zone-share.md): round trip, malformed input, fragments, fuzzing
 TESTS   += zoneShareSvcTest
@@ -100,9 +108,12 @@ zoneShareSvcTest: zoneShareSvcTest.c $(CORE)/dmr/zoneShareSvc.c $(CORE)/dmr/zone
 	$(CC) $(CFLAGS) -Wshadow -o $@ zoneShareSvcTest.c $(CORE)/dmr/zoneShareSvc.c $(CORE)/dmr/zoneShare.c \
 		$(CORE)/dmr/dmrAirQueue.c $(DATA) $(FRAME)
 
-TESTS   += zoneShareTest
+TESTS   += zoneShareTest zoneShareModesTest
 zoneShareTest: zoneShareTest.c fuzz.h $(CORE)/dmr/zoneShare.c $(CORE)/dmr/zoneShare.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ zoneShareTest.c $(CORE)/dmr/zoneShare.c
+# The same with the modes part (CONFIG_ZONE_SHARE_MODES: channels of a kind and their systems)
+zoneShareModesTest: zoneShareTest.c fuzz.h $(CORE)/dmr/zoneShare.c $(CORE)/dmr/zoneShare.h
+	$(CC) $(CFLAGS) -Wshadow -DCONFIG_P25=1 -o $@ zoneShareTest.c $(CORE)/dmr/zoneShare.c
 
 dmrPrivacyTest: dmrPrivacyTest.c $(CORE)/dmr/dmrPrivacy.c $(CORE)/dmr/dmrPrivacy.h $(CORE)/dmr/ambe/ambeFec.c
 	$(CC) $(CFLAGS) -o $@ dmrPrivacyTest.c $(CORE)/dmr/dmrPrivacy.c $(CORE)/dmr/ambe/ambeFec.c
@@ -115,11 +126,13 @@ sfrTest: $(SFRSRC) $(CORE)/dmr/sfr.h
 
 # APRS protocol layers (AX.25, HDLC, AFSK, KISS, formats, NMEA and its satellites, beacon triggers, iGate rules)
 TESTS   += aprsTest
+NMEALIB := $(CORE)/position/nmea.c $(CORE)/position/nmea_sky.c
+POSLIB  := $(CORE)/position/position.c $(NMEALIB)
 APRSLIB := $(CORE)/aprs/ax25.c $(CORE)/aprs/hdlc.c $(CORE)/aprs/afsk.c $(CORE)/aprs/kiss.c $(CORE)/aprs/aprs_fmt.c \
-           $(CORE)/aprs/aprs_nmea.c $(CORE)/aprs/nmea_sky.c $(CORE)/aprs/aprs_beacon.c $(CORE)/aprs/aprs_igate.c
+           $(CORE)/aprs/aprs_beacon.c $(CORE)/aprs/aprs_igate.c
 
-aprsTest: aprsTest.c $(APRSLIB) $(wildcard $(CORE)/aprs/*.h)
-	$(CC) $(CFLAGS) -o $@ aprsTest.c $(APRSLIB) -lm
+aprsTest: aprsTest.c $(APRSLIB) $(NMEALIB) $(wildcard $(CORE)/aprs/*.h)
+	$(CC) $(CFLAGS) -o $@ aprsTest.c $(APRSLIB) $(NMEALIB) -lm
 
 run: $(TESTS)
 	./dmrFecTest
@@ -131,7 +144,9 @@ run: $(TESTS)
 	./dmrPrivacyTest
 	./lrrpTest
 	./airQueueTest
+	./radioKeysTest
 	./zoneShareTest
+	./zoneShareModesTest
 	./zoneShareSvcTest
 	./ipGatewayTest
 	./ipGatewayTest16
@@ -149,7 +164,7 @@ endif
 
 clean:
 	rm -f mdnsTest.pcap tftpTest.pcap netTest.expert hrc7000_test_slot.bin codec_desc_test.bin codec_desc_md380.bin \
-		codec_desc_md9600.bin
+		codec_desc_md9600.bin codec_desc_md9600own.bin
 	rm -rf gen
 	rm -f $(TESTS) dmrDataTest.out ipGatewayTest.pcap ipGatewayTest16.pcap ipGatewayTest31.pcap ipGatewayTestShared.pcap ipGatewayTestAir440.pcap \
 		ipGatewayTest.expert
@@ -167,7 +182,7 @@ RFEAT   := $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/battery.c $(C
            $(CORE)/radio/vibe.c $(CORE)/radio/mic_gain.c $(CORE)/radio/ref_trim.c $(CORE)/radio/pa_keyup.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_shift.c \
            $(CORE)/codeplug/zone_settle.c \
            $(CORE)/radio/radio_sfr.c $(CORE)/radio/radio_cwid.c $(CORE)/radio/tx_limit.c
-RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(RFEAT) $(CORE)/dmr/call/dmr_call.c \
+RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplug_keys.c $(CORE)/radio/tones.c $(RFEAT) $(CORE)/dmr/call/dmr_call.c \
            $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeFec.c \
            $(CORE)/dmr/dmrPrivacy.c sim/dmr_sim_modem.c $(CORE)/dmr/dmrData.c $(CORE)/dmr/dmrDataService.c \
            $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmr_emergency.c $(CORE)/radio/morse.c $(CORE)/dmr/zoneShare.c $(CORE)/dmr/zoneShareSvc.c $(CORE)/dmr/dmrAirQueue.c \
@@ -177,7 +192,8 @@ RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(RFEA
            $(CORE)/hotspot/hotspotSfr.c $(CORE)/dmr/sfrRunner.c $(CORE)/dmr/sfr.c \
            $(CORE)/ui/ui_svc_radio.c $(CORE)/ui/ui_svc_storage.c $(CORE)/ui/ui_svc_data.c \
            $(CORE)/ui/ui_svc_emergency.c $(CORE)/input/keyassign.c sim/sim_flash.c \
-           $(CORE)/debuglink/debuglink_view_radio.c $(CORE)/debuglink/dl_fmt.c $(CORE)/codeplug/zone_edit.c
+           $(CORE)/debuglink/debuglink_view_radio.c $(CORE)/debuglink/dl_fmt.c $(CORE)/codeplug/zone_edit.c \
+           $(POSLIB) $(CORE)/ui/ui_svc_position.c $(CORE)/ui/i18n.c
 
 radioCoreTest: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                $(CORE)/ui/ui_svc.h
@@ -191,20 +207,28 @@ radioCoreTestNoVfoDmr: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)
 
 # The same with APRS: what the data service hears goes into the station list (a DMR APRS position, docs/spec/aprs.md 8.2)
 TESTS   += radioCoreTestAprs
-RCAPRS  := $(RCORE) $(CORE)/aprs/aprs.c $(CORE)/aprs/aprs_dmr.c $(CORE)/aprs/aprs_host.c $(APRSLIB) \
+RCAPRS  := $(RCORE) $(CORE)/aprs/aprs.c $(CORE)/aprs/aprs_ax25.c $(CORE)/aprs/aprs_dmr.c $(CORE)/aprs/aprs_host.c $(APRSLIB) \
            $(CORE)/usbaudio/audio_mux.c $(CORE)/usbaudio/pcm_slip.c
 radioCoreTestAprs: $(RCAPRS) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                    $(CORE)/ui/ui_svc.h $(wildcard $(CORE)/aprs/*.h)
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -o $@ $(RCAPRS) -lm
 
+# The same with APRS over DMR only (CONFIG_APRS_AFSK=0): the engine and the DMR backend, nothing of AX.25 compiled
+TESTS   += radioCoreTestAprsDmr
+RCAPRSD := $(RCORE) $(CORE)/aprs/aprs.c $(CORE)/aprs/aprs_dmr.c $(CORE)/aprs/aprs_host.c $(CORE)/aprs/aprs_fmt.c \
+           $(CORE)/aprs/aprs_beacon.c
+radioCoreTestAprsDmr: $(RCAPRSD) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
+                      $(CORE)/ui/ui_svc.h $(wildcard $(CORE)/aprs/*.h)
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS_AFSK=0 -o $@ $(RCAPRSD) -lm
+
 # The everyday features (scan, beeps, battery, TOT warning, BCL, roger beep, 1750 Hz burst, VOX, battery saving)
 TESTS   += radioFeaturesTest
-RFTEST  := radioFeaturesTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(RFEAT) $(CORE)/dmr/call/dmr_call.c \
+RFTEST  := radioFeaturesTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplug_keys.c $(CORE)/radio/tones.c $(RFEAT) $(CORE)/dmr/call/dmr_call.c \
            $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeFec.c \
            $(CORE)/dmr/dmrPrivacy.c sim/dmr_sim_modem.c $(CORE)/dmr/dmrData.c $(CORE)/dmr/dmrDataService.c \
            $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmr_emergency.c $(CORE)/radio/morse.c $(CORE)/dmr/zoneShare.c $(CORE)/dmr/zoneShareSvc.c $(CORE)/dmr/dmrAirQueue.c \
            $(CORE)/settings/settings.c $(CORE)/storage/storage.c $(CORE)/usbaudio/audio_mux.c \
-           $(CORE)/usbaudio/pcm_slip.c $(CORE)/dmr/sfrRunner.c $(CORE)/dmr/sfr.c
+           $(CORE)/usbaudio/pcm_slip.c $(CORE)/dmr/sfrRunner.c $(CORE)/dmr/sfr.c $(POSLIB)
 
 # CONFIG_NET_USRP without the gateway: only the radio core's half (host audio PTT, the shared stream) is tested here;
 # the network half is usrpNetTest
@@ -240,11 +264,12 @@ roamTest: $(ROAMT) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h
 TESTS   += aprsRadioTest
 FMONLY  := -DCONFIG_DMR=0 -DCONFIG_DMR_PRIVACY=0 -DCONFIG_DMR_TALKER_ALIAS=0 -DCONFIG_DMR_SMS=0 -DCONFIG_DMR_ARS=0 \
            -DCONFIG_DMR_LRRP=0 -DCONFIG_DMR_SIGNALING=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=0 -DCONFIG_HOTSPOT=0
-APRSRT  := aprsRadioTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(CORE)/radio/tx_limit.c $(CORE)/radio/scan.c $(CORE)/radio/beep.c \
+APRSRT  := aprsRadioTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplug_keys.c $(CORE)/radio/tones.c $(CORE)/radio/tx_limit.c $(CORE)/radio/scan.c $(CORE)/radio/beep.c \
            $(CORE)/radio/vibe.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_shift.c $(CORE)/codeplug/zone_settle.c \
            $(CORE)/radio/battery.c $(CORE)/radio/morse.c $(CORE)/settings/settings.c $(CORE)/storage/storage.c \
-           $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c $(CORE)/aprs/aprs.c $(CORE)/aprs/aprs_dmr.c $(CORE)/aprs/aprs_host.c $(APRSLIB) \
-           $(CORE)/usbaudio/audio_mux.c $(CORE)/usbaudio/pcm_slip.c $(CORE)/ui/ui_svc_aprs.c
+           $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c $(CORE)/aprs/aprs.c $(CORE)/aprs/aprs_ax25.c $(CORE)/aprs/aprs_dmr.c $(CORE)/aprs/aprs_host.c $(APRSLIB) \
+           $(CORE)/usbaudio/audio_mux.c $(CORE)/usbaudio/pcm_slip.c $(CORE)/ui/ui_svc_aprs.c \
+           $(POSLIB) $(CORE)/ui/ui_svc_position.c
 
 aprsRadioTest: $(APRSRT) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/aprs/*.h)
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. $(FMONLY) -o $@ $(APRSRT) -lm
@@ -302,12 +327,13 @@ boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ boardBandTest.c
 
 run: run-core
-run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestAprs radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest switchFollowTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
+run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestAprs radioCoreTestAprsDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest switchFollowTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
           rx2LinkTest keyassignTest powerSwitchTest powerKeyTest boardBandTest batteryTest
 	./aprsRadioTest
 	./radioCoreTest
 	./radioCoreTestNoVfoDmr
 	./radioCoreTestAprs
+	./radioCoreTestAprsDmr
 	./radioFeaturesTest
 	./radioFeaturesTestNoDual
 	./roamTest
@@ -330,20 +356,20 @@ run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestAprs radioFeaturesTes
 FLASH_HAL := -I$(ROOT)/hal -Wshadow
 TESTS   += codeplugTest
 
-codeplugTest: codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug.h $(CORE)/codeplug/dmr_iddb.c $(CORE)/codeplug/dmr_iddb.h $(CORE)/storage/storage.c
-	$(CC) $(CFLAGS) $(FLASH_HAL) -o $@ codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c -lm
+codeplugTest: codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug.h $(CORE)/codeplug/dmr_iddb.c $(CORE)/codeplug/dmr_iddb.h $(CORE)/storage/storage.c
+	$(CC) $(CFLAGS) $(FLASH_HAL) -o $@ codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c -lm
 
 # The same without format C (CONFIG_IDDB_COMPACT=0): a format C database is no database (iddb-compact.md 3.1)
 TESTS   += codeplugNoCompactTest
 
-codeplugNoCompactTest: codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug.h $(CORE)/codeplug/dmr_iddb.c $(CORE)/codeplug/dmr_iddb.h $(CORE)/storage/storage.c
-	$(CC) $(CFLAGS) $(FLASH_HAL) -DCONFIG_IDDB_COMPACT=0 -o $@ codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c -lm
+codeplugNoCompactTest: codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug.h $(CORE)/codeplug/dmr_iddb.c $(CORE)/codeplug/dmr_iddb.h $(CORE)/storage/storage.c
+	$(CC) $(CFLAGS) $(FLASH_HAL) -DCONFIG_IDDB_COMPACT=0 -o $@ codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c -lm
 
 # The power byte on 2-, 3- and 9-level radios
 TESTS   += codeplugPower2Test codeplugPower3Test codeplugPower9Test
 
-codeplugPower%Test: codeplugPowerTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug.h $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c
-	$(CC) $(CFLAGS) $(FLASH_HAL) -DPOWER_COUNT=$* -o $@ codeplugPowerTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c
+codeplugPower%Test: codeplugPowerTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug.h $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c
+	$(CC) $(CFLAGS) $(FLASH_HAL) -DPOWER_COUNT=$* -o $@ codeplugPowerTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c
 
 # The calibration curve every board's reader shares
 TESTS   += calCurveTest
@@ -434,7 +460,8 @@ run-chips: sky72310Test hrc5000Test nmeaLineTest gpsRxTest gpsBaudTest adckeysTe
 	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_md380.bin --board md380
 	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_md9600.bin --board dm1701 \
 		--test-profile de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532
-	./codecDescTest codec_desc_test.bin codec_desc_md380.bin codec_desc_md9600.bin
+	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_md9600own.bin --board md9600
+	./codecDescTest codec_desc_test.bin codec_desc_md380.bin codec_desc_md9600.bin codec_desc_md9600own.bin
 .PHONY: run-chips
 
 # Sub-audio: the DCS Golay word, and the software CTCSS / DCS detector and tone generators for radios without a sub-audio chip
@@ -451,7 +478,7 @@ run-subaudio: subaudioTest subaudioDspTest
 	./subaudioDspTest
 .PHONY: run-subaudio
 
-# The language tables, as the firmware build makes them (tools/i18n.py)
+# The language tables and the text keys (tr_keys.h), as the firmware build makes them (tools/i18n.py)
 LANG_H := out/gen/lang_tables.h
 ifneq ($(filter i18n-failed,$(shell python3 $(ROOT)/tools/i18n.py --gen $(LANG_H) || echo i18n-failed)),)
 $(error tools/i18n.py --gen failed (above))
@@ -462,6 +489,13 @@ TESTS   += gfxTest
 
 gfxTest: gfxTest.c $(UI) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Iout/gen -Wshadow -DGFX_INDEXED=1 -DCONFIG_NET_WEBCTL=1 -o $@ gfxTest.c $(UI)
+
+# The same with a CJK catalog (CONFIG_LANG_ZH): text is UTF-8, a character of it is a 16 px glyph of the CJK face, widths
+# add up in pixels, and a cut keeps whole characters (core/ui/cjk_font.h, docs/spec/ui.md 2.5)
+CJK     := $(CORE)/ui/cjk_font.c $(CORE)/ui/cjk_font_data.c
+TESTS   += gfxTestZh
+gfxTestZh: gfxTest.c $(UI) $(CJK) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Iout/gen -Wshadow -DGFX_INDEXED=1 -DCONFIG_NET_WEBCTL=1 -DCONFIG_LANG_ZH=1 -o $@ gfxTest.c $(UI) $(CJK)
 
 # The language lookup and the fonts' Latin-1 glyphs, with Spanish, without, and with Spanish the default (core/ui/i18n.c,
 # docs/spec/ui.md 2.5)
@@ -480,7 +514,7 @@ i18nTestDefault: i18nTest.c $(I18N) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/
 # the long-press rules; uiSim renders screens to PNG (make ui-gallery: docs/ux/screens/, contact sheets in
 # docs/ux/screens/sheets/). Built without the __attribute__ override above so the weak service stubs
 # (ui_svc_stub.c) give way to the simulator's.
-UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/ui/ui_gps.c $(CORE)/ui/ui_dual.c $(CORE)/radio/tones.c \
+UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/ui/ui_position.c $(CORE)/ui/ui_gps.c $(CORE)/ui/ui_dual.c $(CORE)/radio/tones.c \
            $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c $(CORE)/radio/radio_am.c \
            $(CORE)/radio/radio_bcast.c sim/ui_sim.c sim/ui_png.c
 # The About page's data header, as the firmware build makes it (tools/gen_about.py; the STM32F4 list stands in)
@@ -494,10 +528,11 @@ TESTS   += uiFlowTest uiFlowTestNoColor uiSim
 uiFlowTest: uiFlowTest.c $(UIDEPS)
 	$(CC) $(UIFLAGS) -o $@ uiFlowTest.c $(UIAPP) -lz
 
-# The same flows built as a radio with only a monochrome screen builds them (CONFIG_UI_COLOR=n): no color rows; and
-# without a translation (CONFIG_LANG_ES=n): the Language screen dims Spanish
+# The same flows built as a radio with only a monochrome screen builds them (CONFIG_UI_COLOR=n): no color rows;
+# without a translation (CONFIG_LANG_ES=n): the Language screen dims Spanish; and with the backlight tests
+# (CONFIG_BACKLIGHT_TEST=y, off in uiFlowTest): their screen, and the Advanced rows below it one further down
 uiFlowTestNoColor: uiFlowTest.c $(UIDEPS)
-	$(CC) $(UIFLAGS) -DCONFIG_UI_COLOR=0 -DCONFIG_LANG_ES=0 -o $@ uiFlowTest.c $(UIAPP) -lz
+	$(CC) $(UIFLAGS) -DCONFIG_UI_COLOR=0 -DCONFIG_LANG_ES=0 -DCONFIG_BACKLIGHT_TEST=1 -o $@ uiFlowTest.c $(UIAPP) -lz
 
 uiSim: uiSim.c $(UIDEPS)
 	$(CC) $(UIFLAGS) -o $@ uiSim.c $(UIAPP) -lz
@@ -536,8 +571,9 @@ ui-sheets: uiSim
 	UI_GALLERY_COLORS="$(UI_GALLERY_COLORS)" ./uiSim --sheets out/sheets $(GEOM)
 
 run: run-ui
-run-ui: gfxTest i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoColor uiSim beepReel
+run-ui: gfxTest gfxTestZh i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoColor uiSim beepReel
 	./gfxTest
+	./gfxTestZh
 	./i18nTest
 	./i18nTestNoLang
 	./i18nTestDefault
@@ -847,7 +883,7 @@ run-debuglinkChipReg: debuglinkChipRegTest
 .PHONY: run-debuglinkChipReg
 
 # DL_CMD_DMR_DATA's IP operations (core/debuglink/debuglink_dmr_data.c): the settings' gateway ID and IP_SEND's parsing
-DLDATA  := debuglinkDmrDataTest.c $(CORE)/debuglink/debuglink_dmr_data.c $(CORE)/debuglink/dl_fmt.c $(DATA)
+DLDATA  := debuglinkDmrDataTest.c $(CORE)/debuglink/debuglink_dmr_data.c $(CORE)/codeplug/codeplug_keys.c $(CORE)/debuglink/dl_fmt.c $(DATA)
 TESTS   += debuglinkDmrDataTest
 debuglinkDmrDataTest: $(DLDATA) $(CORE)/debuglink/debuglink.h $(CORE)/debuglink/debuglink_proto.h $(CORE)/dmr/ipGateway.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_DMR_IP_GATEWAY=1 -DCONFIG_DMR_EMERGENCY=0 -o $@ $(DLDATA)
@@ -882,8 +918,8 @@ run-f4stub: f4stubTest f4stubSim
 HRC7    := $(ROOT)/drivers/modem/hrc7000
 TESTS   += fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest plugPttTest hrc7000DmrTest baofengCalTest chswitchTest
 
-fd6818Test: fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(RFBUS) $(ROOT)/boards/dm1801pro/rf_tables_dm1801pro.c $(ROOT)/drivers/rf/fd6818/fd6818.h $(SUBAUDIO)
-	$(CC) $(CFLAGS) -Wshadow -o $@ fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(RFBUS) $(ROOT)/boards/dm1801pro/rf_tables_dm1801pro.c $(SUBAUDIO)
+fd6818Test: fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(RFBUS) $(ROOT)/drivers/rf/fd6818/fd6818_setup_b.c $(ROOT)/drivers/rf/fd6818/fd6818.h $(SUBAUDIO)
+	$(CC) $(CFLAGS) -Wshadow -o $@ fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(RFBUS) $(ROOT)/drivers/rf/fd6818/fd6818_setup_b.c $(SUBAUDIO)
 
 st7567Test: st7567Test.c $(ROOT)/drivers/display/st7567/st7567.c $(ROOT)/drivers/display/st7567/st7567.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ st7567Test.c $(ROOT)/drivers/display/st7567/st7567.c
@@ -1096,7 +1132,8 @@ run-ppp: pppTest pppPeer
 # TFTP server with codeplug.bin on a simulated flash. Their frames go to pcaps that tshark checks when it's there
 MDNST   := mdnsTest.c $(CORE)/net/mdns.c $(CORE)/dmr/ipGateway.c $(DATA)
 TFTPT   := tftpTest.c $(CORE)/net/tftp.c $(CORE)/net/tftp_codeplug.c $(CORE)/net/tftp_iddb.c $(CORE)/dmr/ipGateway.c $(DATA) \
-           $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c sim/sim_flash.c
+           $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c \
+           sim/sim_flash.c
 TESTS   += mdnsTest tftpTest
 
 mdnsTest: $(MDNST) $(CORE)/net/mdns.h $(CORE)/dmr/ipGateway.h
@@ -1157,7 +1194,7 @@ spiNandTest: spiNandTest.c $(ROOT)/drivers/flash/spi_nand/spi_nand.c $(ROOT)/dri
 # of several kinds), then core/storage and core/settings on top across reboots and cuts
 # and the open-firmware CPS writing a whole codeplug through the DB25-D's sector replace, with cuts
 NSECT   := $(ROOT)/drivers/flash/nand_sectors/nand_sectors.c $(CORE)/storage/storage.c $(CORE)/settings/settings.c \
-           $(CORE)/cps/cps_openfw.c $(CORE)/codeplug/codeplug.c
+           $(CORE)/cps/cps_openfw.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c $(CORE)/codeplug/codeplug_tag.c
 TESTS   += nandSectorsTest
 
 nandSectorsTest: nandSectorsTest.c $(NSECT) $(ROOT)/drivers/flash/nand_sectors/nand_sectors.h \
@@ -1166,7 +1203,7 @@ nandSectorsTest: nandSectorsTest.c $(NSECT) $(ROOT)/drivers/flash/nand_sectors/n
 
 # Codeplug editing: the open-firmware record encoder, the built-in set made a stored codeplug, zones / contacts / lists,
 # the round trip read -> write -> read, power cuts during an edit
-CPEDIT  := $(CORE)/codeplug/codeplug.c $(CORE)/storage/storage.c sim/sim_flash.c
+CPEDIT  := $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/storage/storage.c sim/sim_flash.c
 TESTS   += codeplugEditTest
 
 codeplugEditTest: codeplugEditTest.c $(CPEDIT) $(wildcard $(CORE)/codeplug/*.h $(CORE)/storage/*.h sim/sim_flash.h)
@@ -1176,6 +1213,48 @@ run: run-cpedit
 run-cpedit: codeplugEditTest
 	./codeplugEditTest
 .PHONY: run-cpedit
+
+# The codeplug settings area: keyed values, unknown keys kept, invalid and newer areas, power cuts during a write
+TESTS   += codeplugKvTest
+
+codeplugKvTest: codeplugKvTest.c $(CPEDIT) $(wildcard $(CORE)/codeplug/*.h $(CORE)/storage/*.h sim/sim_flash.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ codeplugKvTest.c $(CPEDIT)
+
+run: run-cpkv
+run-cpkv: codeplugKvTest
+	./codeplugKvTest
+.PHONY: run-cpkv
+
+# The generic channel-mode layer (core/codeplug/codeplug_tag.c, codeplug_records.c) with a synthetic kind: tags, the
+# live rule, writes that rename, make plain or meet a stale tag, unknown kinds, a full area, the mode record families
+TESTS   += codeplugTagTest
+CPTAG   := $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c $(CORE)/storage/storage.c sim/sim_flash.c
+
+codeplugTagTest: codeplugTagTest.c $(CPTAG) $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug_records.c \
+                 $(wildcard $(CORE)/codeplug/*.h $(CORE)/storage/*.h sim/sim_flash.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ codeplugTagTest.c $(CPTAG)
+
+run: run-cptag
+run-cptag: codeplugTagTest
+	./codeplugTagTest
+.PHONY: run-cptag
+
+# P25 in the codeplug (core/p25/p25_codeplug.c): the shared vectors, conventional and trunked set-ups; built with the
+# trunked part off as well
+TESTS   += p25CodeplugTest p25CodeplugConvTest
+P25CP   := $(CPTAG) $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug_records.c $(CORE)/p25/p25_codeplug.c
+
+p25CodeplugTest: p25CodeplugTest.c $(P25CP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/p25/*.h) ../vectors/channel-modes.txt
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -o $@ p25CodeplugTest.c $(P25CP)
+
+p25CodeplugConvTest: p25CodeplugTest.c $(P25CP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/p25/*.h) ../vectors/channel-modes.txt
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=0 -o $@ p25CodeplugTest.c $(P25CP)
+
+run: run-p25cp
+run-p25cp: p25CodeplugTest p25CodeplugConvTest
+	./p25CodeplugTest
+	./p25CodeplugConvTest
+.PHONY: run-p25cp
 
 # Zone editing (core/codeplug/zone_edit.c) on the real codeplug over a simulated flash: add, move, remove, copy,
 # rename, delete, a new channel added in one step, the limits
@@ -1198,15 +1277,20 @@ TESTS   += zoneImportTest
 
 zoneImportTest: zoneImportTest.c $(ZIMPORT) $(CORE)/codeplug/zone_import.h $(CORE)/dmr/zoneShare.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ zoneImportTest.c $(ZIMPORT)
+# The same with the modes part: channels of a kind and their systems sent and taken (CONFIG_ZONE_SHARE_MODES)
+TESTS   += zoneImportModesTest
+zoneImportModesTest: zoneImportTest.c $(ZIMPORT) $(CORE)/codeplug/codeplug_records.c $(CORE)/codeplug/zone_import.h $(CORE)/dmr/zoneShare.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_P25=1 -o $@ zoneImportTest.c $(ZIMPORT) $(CORE)/codeplug/codeplug_records.c
 
 run: run-zimport
-run-zimport: zoneImportTest
+run-zimport: zoneImportTest zoneImportModesTest
 	./zoneImportTest
+	./zoneImportModesTest
 .PHONY: run-zimport
 
 # The open-firmware CPS shim against a simulated flash, driven like qdmr's UV380 driver (core/cps)
-CPS     := $(CORE)/cps/cps_openfw.c $(CORE)/codeplug/codeplug.c $(CORE)/settings/settings.c $(CORE)/storage/storage.c \
-           sim/sim_flash.c
+CPS     := $(CORE)/cps/cps_openfw.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/settings/settings.c \
+           $(CORE)/storage/storage.c sim/sim_flash.c
 TESTS   += cpsTest
 
 cpsTest: cpsTest.c $(CPS) $(wildcard $(CORE)/cps/*.h $(CORE)/codeplug/*.h $(CORE)/settings/*.h $(CORE)/storage/*.h)

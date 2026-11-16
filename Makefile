@@ -65,6 +65,9 @@ $(foreach o,$(BUILD_OPTIONS),$(if $(filter $($(o)),$($(o)_VALUES)),,$(error $(o)
 OPTION_SUFFIX := $(subst $() ,,$(foreach o,$(BUILD_OPTIONS),$(if $(filter-out $(firstword $($(o)_VALUES)),$($(o))),-$($(o)))))
 OPTION_DEFS := $(foreach o,$(BUILD_OPTIONS),$(foreach x,$($(o)_VALUES),-DRFOUNDRY_$(call upper,$(o)_$(x))=$(if $(filter $(x),$($(o))),1,0)))
 MCU_DEFS += $(OPTION_DEFS)
+# Hardware options (hal/hal_hwopt.h): a board that has some says BOARD_HWOPTS := y in its board.mk. The others build
+# none of the code that lists, asks for and stores them
+MCU_DEFS += -DRFOUNDRY_HWOPTS=$(if $(filter y,$(BOARD_HWOPTS)),1,0)
 
 BUILD := build/$(BOARD)$(if $(VARIANT),-$(VARIANT))$(OPTION_SUFFIX)
 TARGET := $(BUILD)/rfoundry_$(BOARD)$(OPTION_SUFFIX)
@@ -93,6 +96,12 @@ CORE_DIRS += core/stubentry
 endif
 ifeq ($(CONFIG_APRS),y)
 CORE_DIRS += core/aprs
+endif
+ifeq ($(CONFIG_P25),y)
+CORE_DIRS += core/p25
+endif
+ifeq ($(CONFIG_POSITION),y)
+CORE_DIRS += core/position
 endif
 ifeq ($(CONFIG_SNMP),y)
 CORE_DIRS += core/snmp
@@ -315,8 +324,9 @@ $(shell echo '$(RFOUNDRY_PRESET) $(RFOUNDRY_OFF)' | cmp -s - $(BUILD)/build_info
 ABOUT_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -l rfoundry_about.h $(APP_SRC) 2>/dev/null))
 $(shell python3 tools/gen_about.py AUTHORS platform/$(PLATFORM)/THIRD_PARTY $(BUILD)/gen/rfoundry_about.h | grep -q changed \
 	&& rm -f $(ABOUT_OBJ))
-# The language tables (tools/i18n.py, core/ui/lang/*.po); i18n.o is rebuilt when they changed. A failure stops the
-# build: the old tables would link without a word
+# The language tables (tools/i18n.py, core/ui/lang/*.po) and the text keys every file that includes i18n.h needs
+# (tr_keys.h, rewritten only when a key changed: the dependency files rebuild those); i18n.o is rebuilt when the tables
+# changed. A failure stops the build: the old tables would link without a word
 I18N_GEN := $(shell python3 tools/i18n.py --gen $(BUILD)/gen/lang_tables.h || echo i18n-failed)
 ifneq ($(filter i18n-failed,$(I18N_GEN)),)
 $(error tools/i18n.py --gen failed (above))

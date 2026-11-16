@@ -18,8 +18,8 @@
 #include "aprs/afsk.h"
 #include "aprs/kiss.h"
 #include "aprs/aprs_fmt.h"
-#include "aprs/aprs_nmea.h"
-#include "aprs/nmea_sky.h"
+#include "position/nmea.h"
+#include "position/nmea_sky.h"
 #include "aprs/aprs_beacon.h"
 #include "aprs/aprs_igate.h"
 #include "fuzz.h"
@@ -966,7 +966,7 @@ static void test_nmea_sky(void)
 	// a full table keeps what it has
 	nmea_sky_init(&k);
 	for (int m = 1; m <= 8; m++) {
-		char b[80];
+		char b[128];	// room for any int in each field: GCC 15's -Wformat-truncation can't bound m
 		snprintf(b, sizeof b, "BDGSV,8,%d,32,%02d,10,010,20,%02d,10,010,20,%02d,10,010,20,%02d,10,010,20", m,
 			 m * 4 - 3, m * 4 - 2, m * 4 - 1, m * 4);
 		sky_feed(&k, b);

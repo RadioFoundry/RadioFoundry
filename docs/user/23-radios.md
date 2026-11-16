@@ -15,7 +15,7 @@ and what has been checked on it.
 | [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings storage work on the radio. The older FD6818 batches run the same image, untested on a radio. Open: the Retevis RT73. |
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
 | [TYT MD-UV380](#tyt-md-uv380) | TYT MD-UV390, Retevis RT3S, TYT MD-UV390 Plus 10 W | Built on the UV380 family code with the MD-UV380's keys, display, power tables and GPS; nothing has run on a radio yet. Open: every function on air. |
-| [TYT MD-9600](#tyt-md-9600) | Retevis RT90 | One image serves every board revision. On a V1-V3 radio, FM and DMR on both bands, DMR voice and data, text messages, roaming, scan, dual watch, APRS, the hotspot, each split duplex half and the USB network services work on air, with every power level checked on a wattmeter on both bands. Transmit is armed per power cycle. Open: V4 and V4A/V5 boards have not run on a radio, and SFR loses inbound voice frames. |
+| [TYT MD-9600](#tyt-md-9600) | Retevis RT90 | One image serves every board revision. On a V1-V3 radio, FM and DMR on both bands, DMR voice and data, text messages, roaming, scan, dual watch, APRS, the hotspot, each split duplex half and the USB network services work on air, with every power level checked on a wattmeter on both bands. V4A/V5 boards are detected; on older boards the radio asks for the revision once. Open: V4 and V4A/V5 boards have not run on a radio, and SFR loses inbound voice frames. |
 | [Retevis RT10](#retevis-rt10) |  | Boots from the boot ROM with the host link, stub entry, the watchdog and the crash log. FM receive with CTCSS/DCS decode, FM transmit, DMR transmit and receive with the radio's own codec, and APRS transmit work on the radio. |
 <!-- end generated -->
 
@@ -37,7 +37,7 @@ The manual names keys by the job they do. Each radio puts those jobs on its own 
 | **Talk target** | Talk target picker | Hold **#** | Hold **#** | Hold **#** | Hold **#** | Hold **P2** | Hold **#** |
 | **A/B** | Dual watch: the other channel / dual watch on or off | SK2 | SK2 | SK2 | SK2 | TONE/T.SEL | A/B key, SK2 |
 | **Power level** | Next power level / emergency (held 1.5 s) | SK3 | None | None | None | None | None |
-| **Previous zone**, **Next zone** | Step the zone on Home | P1, P2 | None | None | Left, Right | None | Left, Right |
+| **Previous zone**, **Next zone** | Step the zone on Home | P1, P2 | None | None | P1, P2 | None | Left, Right |
 | **VFO** | Between the channel and the VFO / copy the channel to the VFO | None | None | None | None | None | VFO/MR key |
 | **Volume** | Open the volume editor. Radios without a volume knob only | None: the knob | None: the knob | None: the knob | None: the knob | VOL/SQL | None: the knob |
 | **PTT** | Transmit | PTT | PTT | PTT | PTT | PTT on the microphone | PTT |
@@ -51,11 +51,12 @@ These are the defaults. **Settings > Keys** can give other jobs to every key the
 | DM-1701 | SK1, SK2, SK3, P1, P2 |
 | MD-380 | SK1, SK2 |
 | MD-UV380 | SK1, SK2 |
-| DM-32UV | SK1, SK2 |
+| DM-32UV | SK1, SK2, and P1, P2 on Home |
 | DB25-D PRO | P3, TONE/T.SEL, the microphone's P4 and P5 |
 | DM-1801 Pro | SK1, SK2, SOS, A/B, VFO/MR |
 
-OK, Back, the arrows, the number keys, **\***, **#**, PTT and the volume stay as they are. On the DB25-D PRO that
+OK, Back, the arrows, the number keys, **\***, **#**, PTT and the volume stay as they are. Where the arrows are
+printed P1 and P2 (DM-32UV), what you set for them works on Home only: in the menus they stay left and right. On the DB25-D PRO that
 includes P1, P2 and the microphone's P6 and P7, which are **\*** and **#** there.
 
 The hints at the bottom of the screen use these names. A radio that knows its own name for a key shows that instead
@@ -142,6 +143,7 @@ The Codeplug Editor converts these when you open them ([Files](04-programming.md
 |---|---|---|
 | DM-1701, RT84 | The web installer's backup, a dump of the radio's data flash | The manufacturer's MD-UV380 family CPS file (`.rdt`): `dmrconf decode --manufacturer --radio dm1701 FILE.rdt FILE.yaml`, then open the YAML |
 | MD-380, MD-390, RT3 | The web installer's backup, a dump of the radio's data flash, the manufacturer's CPS file (`.rdt`) | |
+| DM-32UV | The web installer's backup taken on the stock firmware, its `data-memory.bin` or `original-channels.bin` (the first 84 channels) | Past 84 channels, or offline: `tools/backup_codeplug.py BACKUP.zip -o DIR`, then open `DIR/<name>-ported.yaml` ([From a web installer backup](19-moving-from-stock-dm32.md#from-a-web-installer-backup)) |
 
 ## Baofeng DM-1701
 
@@ -409,14 +411,14 @@ Follow [Installing](02-installing.md) with these values. To keep the stock codep
 | Green Menu / OK key | **OK** |
 | Red Back key | **Back** |
 | Up, Down | **Up**, **Down** |
-| Left, Right | Press or hold: **Previous zone**, **Next zone**. The key labels are unchecked |
+| P1, P2 (left and right on the 4-way key) | On Home, press or hold: **Previous zone**, **Next zone**, or what Settings > Keys sets for them. Left and right in the menus |
 | SK1 (the side key below **PTT**) | **Monitor**. Held with **PTT** at power-on, it starts the bootloader |
 | SK2 | **A/B** |
 | **PTT** | **PTT** |
 | Channel knob | Channel knob |
 
-No **Power level** key and no emergency key: the radio's third programmable side key hasn't been located yet. Change
-the power with **\***, **1**.
+No **Power level** key and no emergency key by default. Give them to P1 or P2 in Settings > Keys (emergency on a
+hold), or change the power with **\***, **1**.
 
 ### DM-32UV power levels
 
@@ -440,6 +442,7 @@ A 240 x 320 color screen. RadioFoundry uses its full resolution, with smooth (an
 
 ### What the DM-32UV lacks
 
+- On the newer RF section (the diagnostics line ends in `rf B`), no air band AM receive yet: an AM channel plays as FM.
 - Split duplex repeater: each half passes on air with one radio (the transmit half's outbound with its CACH, a
   host-fed voice call, 5 minutes keyed within 60 Hz; the receive half's slot labels). As the receive half of a pair
   with a DM-1801 Pro transmitting, it labeled a subscriber's calls with the right slot in 29 of 31 sessions; the other
@@ -709,9 +712,12 @@ Covers the TYT MD-9600 and the Retevis RT90, a mobile radio. **In testing.** One
 (original firmware V06.xx) have been tested on a radio: FM and DMR receive and transmit on both bands. V4 (V16.xx) and
 V4A/V5 (V26.xx) boards have not, so receive or transmit may not work on them. SFR is not supported yet.
 
-The installers read the original firmware's version and store the board revision (Settings > Advanced > Hardware >
-Board revision). Transmit is off at every start until you turn it on under Settings > Advanced > Hardware > Transmit,
-and it needs a stored revision. Only install this if you can go back to the original firmware. The hardware facts are in [hardware-md9600.md](../spec/hardware-md9600.md).
+The radio detects a V4A/V5 board by itself. It can't tell a V1-V3 board from a V4, so on those it asks once: the home
+screen says "Set: Board revision" and the radio won't transmit until you set it under Settings > Advanced > Hardware >
+Board revision. Receiving works meanwhile. The installers do it for you when they can read the original firmware's
+version (V06.xx is V1-V3, V16.xx is V4), and otherwise ask for it right after the installation. Not sure? Pick V1-V3:
+if the radio then hears nothing on a channel it should hear, pick V4. A revision other than the one the radio runs
+applies from the next start ("Restart to apply"). Only install this if you can go back to the original firmware. The hardware facts are in [hardware-md9600.md](../spec/hardware-md9600.md).
 
 ### MD-9600 voice codec
 

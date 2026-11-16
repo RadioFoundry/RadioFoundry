@@ -88,7 +88,7 @@ typedef void (*dmr_event_cb_t)(const dmr_event_t *ev, void *ctx);
 
 typedef struct {
 	uint32_t own_id;
-	int8_t cc;		// -1 = any
+	int8_t cc;		// channel's TX code and initial RX filter; -1 = follow RX (no channel configured)
 	dmr_access_t access;
 	bool repeater;		// RMO framing (BS sync expected) vs DMO
 } dmr_config_t;
@@ -151,11 +151,17 @@ typedef struct {
 	void (*tx_end)(void);		// send what is queued, then DMR_EV_TX_DONE
 	void (*tx_abort)(void);
 	void (*set_embedded_lc)(const uint8_t lc[9]);	// spread over B-E from the next superframe
+	// The receive filter: -1 = any, else the configured code (the call layer passes nothing else, so a driver that
+	// writes it to the chip's one CC register leaves the TX code as configured). configure() keeps any-CC listening:
+	// callers set the filter after start() and configure()
 	void (*set_cc_filter)(int8_t cc);
 	bool (*is_transmitting)(void);	// slot state, never the PA
 	// Optional (NULL: the driver can't). For the transmission begun last: receive in the slots between our bursts and
 	// report what is heard there, with the RF switched back to receive per burst (an SFR's inbound slot, sfr.md 3)
 	void (*tx_listen)(void);
+	// Optional (NULL: can't): tx_listen on a split channel too, the RF retuned to the receive frequency between our
+	// bursts (a duplex repeater's outbound heard during our over). False when this radio's RF can't: not listening
+	bool (*tx_listen_split)(void);
 	// Optional: b takes the place of the oldest DMR_BURST_EMPTY still queued (not yet set up). Returns how many queued
 	// entries come after it, -1 when none is left (an SFR's repeat then goes out 90 ms after the inbound burst instead
 	// of behind the placeholders queued for the gap)

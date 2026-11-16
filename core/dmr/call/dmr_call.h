@@ -31,6 +31,12 @@
 #define DMR_AMBE_FRAMES_PER_BURST	3
 
 // Timing (milliseconds unless noted)
+// Through a repeater, receive its outbound between our bursts where the modem can (its tx_listen_split)
+#ifndef DMR_CALL_TX_LISTEN
+#define DMR_CALL_TX_LISTEN		1
+#endif
+#define DMR_CALL_TX_DROP_MS		240	// listening, no repeater burst this long during our over: it dropped
+#define DMR_CALL_TX_START_DROP_MS	540	// the same before our first burst: the modem's search for the slot gets two tries
 #define DMR_CALL_TX_HEADERS		3	// voice LC headers before burst A
 #define DMR_CALL_TX_TERMINATORS		1
 #define DMR_CALL_FADE_MS		390	// no voice burst on the call for this long ends it (13 slots)
@@ -56,6 +62,7 @@ typedef enum {
 #define DMR_CALL_TX_DONE_GUARD_MS	1500	// tx_done overdue after the last burst: force receive
 #define DMR_CALL_TX_MAX_INFLIGHT	4	// bursts queued ahead of the air at most
 #define DMR_CALL_TX_STALL_MS		1500	// a voice transmission the modem takes no burst of for this long is cut
+#define DMR_CALL_TX_ALIGN_GRACE_MS	300	// more for an aligned start through a repeater: the modem's own refusal comes first
 #define DMR_CALL_REPLY_WINDOW_S		10
 #define DMR_CALL_DATA_TIMEOUT_MS	10000	// a burst list on air takes at most this plus 60 ms per burst (gotcha 3.9)
 #define DMR_CALL_DATA_ALIGN_MS		300	// DMO data: aligned to a station heard this recently (the modem's slot memory)
@@ -76,6 +83,7 @@ typedef struct {
 typedef struct {
 	bool hear_all;		// every talkgroup (and private calls between others) on our timeslot
 	bool any_cc;		// monitor: any color code too
+	bool both_ts;		// monitor: either timeslot, the first call heard until it ends
 	const uint32_t *groups;	// the channel's listen list (RX group list), owned by the caller, may be NULL
 	uint16_t group_count;
 	bool (*group_ok)(uint32_t tg, void *ctx);	// optional lookup instead of / besides the table
@@ -190,8 +198,10 @@ typedef struct {
 	uint8_t state;			// dmr_call_state_t
 	uint8_t phase;			// dmr_call_phase_t
 	uint8_t tx_error;		// dmr_tx_error_t of the last PTT
-	uint8_t cc;			// the channel's (or the call's, with any_cc)
+	uint8_t cc;			// the channel's
 	uint8_t ts;
+	uint8_t rx_cc;			// the current / last call's color code (any_cc: may differ from cc)
+	uint8_t rx_ts;			// its timeslot, 0 = unknown (simplex without TDMA direct mode sync)
 	bool rmo;
 	bool repeater_up;		// RMO: outbound heard recently
 	int16_t rssi_dbm;		// last burst of the current / last call, 0 = unknown
@@ -224,6 +234,9 @@ bool dmr_call_start(void);
 void dmr_call_stop(void);
 
 void dmr_call_ptt(bool down);
+// Through a repeater, receive its outbound between our bursts (the modem's tx_listen_split) and wake it again when it drops
+// under our over (DMR_CALL_TX_DROP_MS). Default DMR_CALL_TX_LISTEN
+void dmr_call_set_tx_listen(bool on);
 // Our position for the next transmissions (NULL: none). Taken when a transmission starts: one GPS Info LC in the
 // rotation of the alias superframes (docs/spec/dmr-voice.md). CONFIG_DMR_GPS builds; ignored without
 void dmr_call_set_tx_gps(const dmr_gps_t *gps);
@@ -252,6 +265,10 @@ typedef struct {
 	uint32_t tx_calls;		// transmissions started
 	uint32_t tx_denied;		// PTT refused (any dmr_tx_error_t)
 	uint32_t tx_underruns;		// voice frames sent as silence
+	uint32_t rx_in_tx;		// bursts the modem reported while we transmitted (tx_listen)
+	uint32_t rx_bs_in_tx;		// of them, the repeater's (BS sync, our color code)
+	uint32_t tx_rpt_drops;		// overs the repeater dropped under, or before their first burst, woken again
+	uint32_t tx_wake_lost;		// wake-up CSBKs whose transmission ended without going on air (tried again at once)
 	uint32_t evq_overflows;		// modem events dropped
 	uint32_t rx_cc_dropped;		// bursts dropped for another color code (never voice A: it has no CC on air)
 	uint32_t rx_ts_dropped;		// bursts of another slot than our call's / the channel's

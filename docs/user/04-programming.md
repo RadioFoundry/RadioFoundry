@@ -71,12 +71,13 @@ TFTP ([USB network](15-usb-network.md#programming-over-the-network)).
 
 | Tab | Holds |
 |---|---|
-| Radio | DMR ID, radio name (callsign), boot text, group and private call hang times |
+| Radio | DMR ID, radio name (callsign), boot text, group and private call hang times, ARS server, IP gateway |
 | Channels | Every channel. The pencil button opens the full form: FM, DMR, scan and power, location, single frequency repeater |
 | Zones | Zones and their channels |
 | Contacts | Talkgroups and private-call contacts |
 | RX Group Lists | The talkgroups each channel listens to |
 | DTMF Contacts, APRS | DTMF contacts and APRS configurations |
+| Systems | Trunked systems and the identity of other digital modes: sites, control channels, channel plans and keys. Shown when the radio reports such a mode, or the codeplug has one ([below](#digital-modes-and-systems)) |
 | DMR ID Database | Names for DMR IDs that aren't contacts, built from RadioID.net ([below](#dmr-id-database-and-contacts-from-radioidnet)) |
 | Problems | Errors and warnings, each with a link to the record |
 
@@ -85,8 +86,38 @@ filter to narrow the rows. Check rows and choose **Bulk Edit** to set one field 
 edited in their own dialog). **Undo** and **Redo**
 cover every change, including an import.
 
+**ARS server** is the DMR ID of the presence server the radio registers with
+([ARS](10-messages-and-signaling.md#registration-ars-and-location-lrrp)). **IP gateway** is the DMR ID of the radio
+that takes the computer's packets to other networks ([USB network](15-usb-network.md#other-networks-through-a-gateway-radio)).
+Leave a field empty and the radio keeps its own setting; enter 0 to turn it off. qdmr doesn't have these settings and
+leaves them as they are on the radio. Other programming software that writes the radio's whole memory can't erase them
+either: the radio keeps its own unless the software writes them in RadioFoundry's format.
+
 The page keeps the working codeplug in the browser, so closing or reloading the page doesn't lose edits. **New** starts
 over.
+
+### Digital modes and systems
+
+Besides FM and DMR, a channel can be of another digital mode, such as a trunked system. The channel form's **Mode**
+lists the modes the connected radio's firmware reports, and any mode the codeplug already holds. A channel of such a
+mode shows that mode's fields under **Mode settings**; a trunked channel takes its frequencies from its system. A radio
+whose firmware doesn't run a channel's mode shows the mode's short name, receives nothing on it and doesn't transmit.
+The [feature matrix](../feature-matrix.md) lists which builds run which mode.
+
+The **Systems** tab adds a system of a type, edits its fields, its sites, control channels and channel plan
+(**Channels and sites**) and its key (**Key**). Per system:
+
+| Field | Meaning |
+|---|---|
+| Listen only | The radio never registers or transmits on the system, whatever a channel says |
+| Needs its key | The system can't be used without its key |
+| Sharing | What zone sharing sends of it: off, its identity only (the receiver must have the system), or the whole system |
+| Radio ID on this system | Your ID there; blank uses the mode's own. Never shared |
+
+A key is shown only on request. When the codeplug holds keys, **Save** as a codeplug file asks whether to include them;
+they are left out unless you tick **Include the keys in this file**. Anyone with a file that holds them can read them.
+CSV and qdmr files hold neither systems nor channel modes: a channel of another mode goes into them as a receive-only
+DMR channel, and comes back from one as that. Keep a codeplug file for them.
 
 ### Files
 
@@ -108,7 +139,9 @@ Check the result before writing it to the radio. The radio's codeplug stays as i
 the editor can't open yet can be converted with qdmr first (`dmrconf decode`), then opened as YAML.
 
 **Save** writes a codeplug file, a qdmr codeplug (`.yaml`), the open table as CSV, every table as a `.zip` of CSV files,
-or `codeplug.bin` for USB network mode.
+or `codeplug.bin` for USB network mode. Every save but `codeplug.bin` is named after the codeplug with the date and time
+added, such as `codeplug-2026-11-10-2215.yaml`, so saves never overwrite each other. Opening a dated file and
+saving it again replaces the date and time.
 
 CSV files have a header row with the column names, and refer to other records by name (a channel's TX contact, a
 zone's channels). Save a table first to see the columns. An import matches rows to existing records by number, then by
@@ -116,7 +149,7 @@ name. A file can hold only some columns; the others keep their values. Records m
 Values the editor can't take are listed by row and column after the import.
 
 A qdmr file replaces the channels, zones, contacts, DTMF contacts, RX group lists, APRS configurations and the Radio
-tab's settings in one change, so one **Undo** reverses it. The VFOs and the DMR ID database stay as they were.
+tab's settings other than the ARS server and IP gateway in one change, so one **Undo** reverses it. The VFOs and the DMR ID database stay as they were.
 Afterwards the editor lists what it changed or left out, such as scan lists, encryption keys and names that were
 shortened. Saving as qdmr YAML lists what qdmr's format can't hold: SFR settings, power levels qdmr has no name for,
 and locations, which are rounded to 6-character grid locators (about 5 km). The Tools page converts between qdmr YAML
@@ -164,8 +197,8 @@ TFTP (USB network mode) and other CPS programs use the older format.
 
 | Item | Fields RadioFoundry uses |
 |---|---|
-| General settings | Your DMR ID. The callsign (radio name, 8 characters, sent as talker alias). The group and private call hang times (the reply window) |
-| Channels (up to 1024) | Name, receive and transmit frequency, mode (FM or DMR), bandwidth, receive and transmit tones, power, receive only, color code, timeslot, talk target contact, RX group list (listen list), a per-channel DMR ID, force direct mode, transmit timeout (Radio Default: the radio's own, [TX timeout](08-fm.md#transmit-timeout)), talker alias, zone scan skip, VOX allowed, no beep, no battery saving |
+| General settings | Your DMR ID. The callsign (radio name, 8 characters, sent as talker alias). The group and private call hang times (the reply window). The ARS server and IP gateway, when set |
+| Channels (up to 1024) | Name, receive and transmit frequency, mode (FM or DMR), bandwidth, receive and transmit tones, power, receive only, color code, timeslot, talk target contact, RX group list (listen list), a per-channel DMR ID, force direct mode, transmit timeout (Radio Default: the radio's own, [TX timeout](08-fm.md#transmit-timeout)), talker alias, zone scan skip, VOX allowed, 1750 Hz tone burst, no beep, no battery saving |
 | Zones | Name and channel list. Without zones, the radio shows one zone with all channels |
 | Contacts (up to 1024) | Name, DMR ID or talkgroup, private or group, timeslot override |
 | RX group lists | The talkgroups each channel listens to |
@@ -184,7 +217,7 @@ The codeplug can't set these yet:
 - Privacy keys ([DMR](09-dmr.md#privacy)).
 - RadioFoundry's own settings ([Settings](17-settings.md)): they are kept separately from the codeplug. The codeplug's
   quick key assignments are ignored.
-- Emergency, ARS and text message format.
+- Emergency and text message format.
 - SFR settings, in qdmr. The Codeplug Editor sets them on each channel.
 
 ## Programming with qdmr
@@ -206,6 +239,12 @@ that has no USB port, needs another route. The [Radio reference](23-radios.md#pr
 Read the codeplug and save it before you change it: **Save > Codeplug File (.bin)** in the editor, or a save in qdmr.
 A raw backup works too: `tools/cps_client.py read backup.bin` and `tools/cps_client.py write backup.bin` over the
 serial port, or TFTP in USB network mode ([USB network](15-usb-network.md#programming-over-the-network)).
+
+To get the codeplugs out of a web installer backup (the `.zip`) as qdmr YAML, run
+`tools/backup_codeplug.py BACKUP.zip -o DIR`. It writes RadioFoundry's codeplug and, where the backup holds it, the
+original (stock) one, each as a `.yaml` and a `.dfu`. Open the `.yaml` in the Codeplug Editor or in qdmr. It needs
+Python 3.11 or newer and qdmr's `dmrconf` (0.15 or newer), and it never touches the radio. This is how a stock
+codeplug the Codeplug Editor can't read, or only part of, gets into it ([Radio reference](23-radios.md#codeplug-files-from-the-original-firmware) says which radios).
 
 To carry a stock codeplug over while you install, see [Moving from the stock firmware](README.md#moving-from-the-stock-firmware).
 

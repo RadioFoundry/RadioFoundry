@@ -96,6 +96,9 @@ The export writes one radio ID for the radio (`id1`) and one more for each disti
 codeplug image doesn't hold in the editor's model; the import ignores them and the export leaves them out, so qdmr
 uses its defaults.
 
+qdmr has no field for the ARS server and IP gateway (the settings area, [codeplug-settings.md](codeplug-settings.md)).
+The import leaves them as the open codeplug has them, absent in a new one, and the export leaves them out.
+
 ### 3.2 Contacts
 
 `openGD77` is the name qdmr gives its block of per-contact and per-channel extension keys for the open-firmware radios.
@@ -131,7 +134,7 @@ Both types:
 | `openGD77.beep` | Not "no beep" | |
 | `openGD77.powerSave` | Not "no economy" | |
 | `openGD77.location` | Use location, latitude, longitude | Locator to the center of its square. The export writes a 6-character locator, about 5 km |
-| `openGD77.talkerAliasTS1`, `TS2`: `None`, `APRS`, `Text`, `Both` | Talker alias TX on TS1, TS2: 0-3 | |
+| `openGD77.talkerAliasTS1`, `TS2`: `None`, `APRS`, `Text`, `Both` | Talker alias TX on TS1, TS2: 0-3 | `APRS` and `Both` send our position in the channel's calls (`dmr-voice.md` 3.1) |
 | `aprs` | APRS configuration | Only an APRS system the file defines |
 | `scanList` | Dropped | |
 | `admit` | Dropped | Written as `Always` |

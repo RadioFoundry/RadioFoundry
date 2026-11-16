@@ -13,7 +13,19 @@
 #include "sim/ui_sim.h"
 #include "ui/ui_app.h"
 #include "ui/ui_screens.h"
+#include "ui/i18n.h"
 #include "config.h"
+
+// Settings > Advanced: Backlight tests (CONFIG_BACKLIGHT_TEST) sits under Diagnostics and moves the rows below it
+// (Factory reset, Crash log) down one, so the flows that reach them press Down once more. Not ideal: hardcoded row
+// positions should go once flows can find a row by its name
+#if CONFIG_BACKLIGHT_TEST
+#define ADV_BELOW_DIAG		"down "
+#define ADV_BELOW_DIAG_N	1
+#else
+#define ADV_BELOW_DIAG		""
+#define ADV_BELOW_DIAG_N	0
+#endif
 
 static int fails, flows_run;
 
@@ -27,6 +39,20 @@ typedef struct {
 } flow_t;
 
 #define CALLER	"call:9991234,91,g wait:11000 "
+// 143 characters (UI_MSG_TEXT_MAX), the last word LAST
+#define LONG_TEXT	"Your_Special_Configuration_is:_Active_SMS:_LONG_SMS_Delay:_2.5_s_Retries:_3_Language:_English_" \
+	"Time_zone:_UTC_Units:_metric_Echo:_off_End_LAST"
+// A text the message screen shortens: Full message first, a page that scrolls to its end. For the displays that
+// shorten it (240x320 shows all 143 characters, and so no Full message)
+#define LONG_MESSAGE_FLOWS \
+	{ "7 long message offers Full message", "msg:9991234," LONG_TEXT " wait:9000 ok 2 ok", "", \
+	  "screen=message focus=Full_message", 0, false }, \
+	{ "7 Full message scrolls to the end", "msg:9991234," LONG_TEXT " wait:9000 ok 2 ok", \
+	  "ok down down down down down down down down down down", "screen=message-read shows=LAST", 11, false }, \
+	{ "7 Full message goes back to the replies", "msg:9991234," LONG_TEXT " wait:9000 ok 2 ok ok", "back", \
+	  "screen=message focus=Full_message", 1, false }, \
+	{ "7 PTT in Full message calls the sender", "msg:9991234," LONG_TEXT " wait:9000 ok 2 ok ok", "ptt", \
+	  "txid=9991234 txpriv=1", 1, false },
 #define TALK_BACK	"ok 7 3 down down down down down down down down down ok long:back quick 7 ctx 3 5 ok "	// on, and A 3 / B 5
 
 static const flow_t flows[] = {
@@ -67,6 +93,8 @@ static const flow_t flows[] = {
 #endif
 	{ "7 read message, banner up", "msg:9991234,Meet_at_the_north_lot", "ctx", "screen=message", 1, false },
 	{ "7 read message later", "msg:9991234,Meet_at_the_north_lot wait:9000", "ok 2 ok", "screen=message", 3, false },
+	{ "7 short message has no Full message", "msg:9991234,Meet_at_the_north_lot wait:9000 ok 2 ok", "",
+	  "focus=Reply hides=Full_message", 0, false },
 #if CONFIG_ZONE_SHARE
 	// An offer's banner has no timer: it waits for #, BACK or the offer's end (zone-share.md 5.2)
 	{ "zone offer banner still up a minute later", "zoneoffer:9991234", "wait:60000", "shows=Zone_from", 0, false },
@@ -120,6 +148,10 @@ static const flow_t flows[] = {
 	{ "S hardware option stepped, not stored", "hwopt ok 7 up ok up ok", "ok ok", "shows=V2*", 2, false },
 	{ "S hardware option stored on hold", "hwopt ok 7 up ok up ok", "ok long:ok", "toast=Stored:_restart hides=V1*", 2, false },
 	{ "S stepping another row drops the first", "hwopt ok 7 up ok up ok ok", "down ok", "shows=Not_set shows=On*", 2, false },
+	// An option the radio still needs (board_hwopt_pending): the home screen says what and where, until it is stored
+	{ "S unset hardware option on the home screen", "hwopt", "wait:1000", "screen=home shows=Set:_Board_revision", 0, false },
+	{ "S stored hardware option leaves the home screen", "hwopt ok 7 up ok up ok ok long:ok", "long:back",
+	  "screen=home hides=Set:_Board_revision", 1, false },
 	{ "S freq trim opens its page", "trim", "ok 7 up ok up ok", "screen=freq-trim shows=440_MHz shows=144_MHz", 9, false },
 	{ "S freq trim: Down steps 0.1 ppm at once", "trim ok 7 up ok up ok", "down down",
 	  "set77=-200 shows=-0.2 shows=-88_Hz", 2, false },
@@ -130,6 +162,17 @@ static const flow_t flows[] = {
 	{ "S freq trim: past 10.0 ppm is refused", "trim ok 7 up ok up ok 1 0", "1", "toast=Up_to_10.0", 1, false },
 	{ "S freq trim: OK leaves", "trim ok 7 up ok up ok", "ok", "screen=group shows=Freq_trim", 1, false },
 	{ "S no freq trim without the hook", "", "ok 7 up ok", "hides=Freq_trim", 4, false },
+#if CONFIG_BACKLIGHT_TEST
+	// Settings > Advanced > Backlight tests, under Diagnostics. The sim's display has the raw hooks (4096 counts, three
+	// rates, 7324 Hz standard), so the compare value page comes first
+	{ "S backlight tests", "", "ok 7 up ok down down down ok", "screen=bltest shows=CV", 8, false },
+	{ "S backlight tests: digits set the value", "ok 7 up ok down down down ok", "2 1 3 7", "shows=CV_2137", 4, false },
+	{ "S backlight tests: # applies fewer digits", "ok 7 up ok down down down ok", "5 0 ctx", "shows=CV_50", 3, false },
+	{ "S backlight tests: Up steps 50", "ok 7 up ok down down down ok 2 1 3 7", "up", "shows=CV_2187", 1, false },
+	{ "S backlight tests: OK to brightness", "ok 7 up ok down down down ok", "ok", "shows=Brightness", 1, false },
+	{ "S backlight tests: OK to the rate", "ok 7 up ok down down down ok", "ok ok", "shows=PWM_rate", 2, false },
+	{ "S backlight tests: BACK leaves", "ok 7 up ok down down down ok", "back", "screen=group", 1, false },
+#endif
 	// Settings > Display > Language, the last row (i18n.h; set78 = UI_SET_LANGUAGE, 'e' << 8 | 's' = 25971 Spanish,
 	// 'e' << 8 | 'n' = 25966 English picked; 0 never picked)
 	{ "S language list", "", "ok 7 2 up ok", "screen=language shows=English", 5, false },
@@ -314,8 +357,16 @@ static const flow_t flows[] = {
 	  "writes=1", 9, true },
 	{ "E RX in a receive-only band: RX only and FM before the save", "ok 5 up up ok down down down", "ok 1 2 1 5 0 0 ok down down down",
 	  "shows=FM shows=RX_only shows=Yes", 11, false },
-	{ "E a DMR channel's RX in a receive-only band: FM", "ok 5 ok down down down", "ok 1 2 1 5 0 0 ok",
-	  "shows=121.500 shows=FM hides=Color_code", 8, false },
+	// DMR goes wherever FM goes but a listen band (ui.md 2.1). Without AM receive the air band is a receive-only band
+	// like any other: a DMR channel there stays DMR, RX only. With AM it is a listen band: AM, never DMR
+	{ "E a DMR channel's RX in a receive-only band: DMR, RX only, saved", "ok 5 ok down down down",
+	  "ok 1 2 1 5 0 0 ok long:ok", "shows=121.500 hides=FM toast=Saved_channel_3 writes=1", 9, true },
+	{ "E on a radio with AM: a DMR channel's air band RX makes it AM", "am ok 5 ok down down down", "ok 1 2 1 5 0 0 ok",
+	  "shows=121.500 shows=AM hides=Color_code", 8, false },
+	{ "E on a radio with AM: an air band RX makes the Mode AM", "am ok 5 up up ok down down down", "ok 1 2 1 5 0 0 ok",
+	  "shows=121.500 shows=AM hides=FM", 8, false },
+	{ "E on a radio with AM: OK on the Mode row keeps it AM", "am ok 5 up up ok down down down ok 1 2 1 5 0 0 ok up",
+	  "ok", "toast=Air_band:_receive_only shows=AM hides=FM hides=Color_code hides=RX_CTCSS", 1, false },
 	{ "E RX refuses a digit no band starts with", "ok 5 up up ok down down down", "ok 2", "toast=Bands:", 2, false },
 	{ "E RX needs the MHz digits", "ok 5 up up ok down down down", "ok 1 4 ok", "toast=Type_at_least screen=channel",
 	  4, false },
@@ -351,6 +402,19 @@ static const flow_t flows[] = {
 #endif
 	{ "E DMR needs a TX contact to save", "ok 5 ok down down down down down down down down down", "ok up ok long:ok",
 	  "toast=Pick_a_TX writes=0", 4, false },
+	// The contact is whom PTT calls: an RX only channel saves without one (row 6 is RX only, the contact row stays 9)
+	{ "E DMR RX only saves without a TX contact", "ok 5 ok down down down down down down", "ok down down down ok up ok long:ok",
+	  "toast=Saved_channel_3 writes=1", 8, true },
+	// A radio with no transmit band ("rxonly") keeps a DMR channel that is RX only, as any radio does in a receive-only
+	// band. Channel 3 is DMR on 453.625, its RX only row is 6
+	{ "E no transmit band: DMR needs RX only", "rxonly ok 5 ok", "long:ok down down down down down down",
+	  "toast=TX_can't_transmit writes=0 focus=RX_only", 7, false },
+	{ "E no transmit band: DMR RX only, saved", "rxonly ok 5 ok down down down down down down", "ok long:ok",
+	  "toast=Saved_channel_3 writes=1", 2, true },
+	{ "E no transmit band: new RX keeps DMR, RX only", "rxonly ok 5 ok down down down", "ok 4 4 6 0 0 0 ok long:ok",
+	  "toast=Saved_channel_3 writes=1 hides=FM shows=446.000", 9, true },
+	{ "E no transmit band: DMR after the new RX", "rxonly ok 5 ok down down ok down", "ok 1 4 6 5 2 0 ok up ok long:ok",
+	  "toast=Saved_channel_3 writes=1 hides=FM shows=146.520", 11, true },
 	{ "E a name to save", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "ok long:ok",
 	  "toast=Give_it_a_name writes=0", 2, false },
 	{ "E nothing changed to save", "ok 5 ok", "long:ok", "toast=No_changes writes=0", 1, false },
@@ -506,6 +570,18 @@ static const flow_t flows[] = {
 	{ "S DMR ID: past the last is refused", "ok 7 0 ok", "1 6 7 7 6 4 1 6", "toast=IDs_go_up", 8, false },
 	{ "S DMR ID: the refused digit isn't kept", "ok 7 0 ok", "1 6 7 7 6 4 1 6 ok", "set76=1677641", 9, false },
 	{ "S DMR ID 0 is refused", "ok 7 0 ok 3 1 ok", "0 ok", "set76=31 toast=IDs_start screen=dmr-id", 2, false },
+	// Data services (Settings > Connections, the last row; set86 ARS server, set87 IP gateway, the codeplug's settings
+	// area): typed as the DMR ID, 0 turns the service off
+	{ "S data services opens", "", "ok 7 6 up ok", "screen=data-services shows=ARS_server shows=IP_gateway shows=Off", 5,
+	  false },
+	{ "S ARS server typed and saved", "ok 7 6 up ok", "3 1 0 0 9 9 9 ok", "set86=3100999 toast=Saved shows=3100999", 8,
+	  false },
+	{ "S IP gateway typed and saved", "ok 7 6 up ok", "down 3 1 0 0 5 0 0 ok", "set87=3100500 set86=0 toast=Saved", 9,
+	  false },
+	{ "S ARS server 0 turns it off", "ok 7 6 up ok 3 1 ok", "0 ok", "set86=0 shows=Off", 2, false },
+	{ "S ARS server: BACK with none typed leaves it", "ok 7 6 up ok 3 1 ok", "3 back back", "set86=31 screen=data-services",
+	  3, false },
+	{ "S ARS server: past the last ID is refused", "ok 7 6 up ok", "1 6 7 7 6 4 1 6", "toast=IDs_go_up", 8, false },
 	// My radio's names (the codeplug's radio name and boot lines): OK types the row's text, OK saves it
 	{ "S radio name opens text entry", "ok 7 0 ok", "down ok", "screen=text", 2, false },
 	{ "S radio name typed and saved", "ok 7 0 ok down ok", "2 ok", "screen=dmr-id toast=Saved writes=1 shows=Q0TESTA", 2, true },
@@ -518,7 +594,7 @@ static const flow_t flows[] = {
 	{ "S vibrate on a call alert", "", "alert:91", "vibes=1 vibe=1", 0, false },
 	{ "S vibrate on a private call", "", "privcall:91", "vibes=1 vibe=1", 0, false },
 	{ "S vibrate on an emergency", "", "emergency:91", "vibes=1 vibe=2", 0, false },
-	{ "S vibrate off", "ok 7 1 down down down down down ok long:back", "msg:9991234,Hi", "vibes=0 beep=2", 0,
+	{ "S vibrate off", "ok 7 1 down down down down down down down down down down down ok long:back", "msg:9991234,Hi", "vibes=0 beep=2", 0,
 	  false },
 	{ "S low battery warning", "", "battery:14", "banner=Battery_14%", 0, false },
 	// What reaches the user lights the screen; the radio's own traffic doesn't (radio_view_wakes covers the radio side)
@@ -530,7 +606,7 @@ static const flow_t flows[] = {
 	{ "S privacy key out of range", "ok 7 4 ok down", "ok 3 0 0 ok", "toast=Not_changed set32=0", 5, false },
 	{ "S privacy key needs a type", "ok 7 4 down", "ok", "toast=Pick_a_key", 1, false },
 	{ "S number typed", "", "ok 7 3 down down ok 3 ok", "sq=5 set12=3", 8, false },
-	{ "S voice prompts not built", "ok 7 1 down down down", "ok", "toast=Voice_prompts", 1, false },
+	{ "S voice prompts not built", "ok 7 1 down down down down down down down down down", "ok", "toast=Voice_prompts", 1, false },
 	{ "S mode tile in the VFO", "ok 4 up ok", "quick 4", "toast=VFO:_DMR mode=dmr temporary=0 vfo=1", 2, false },
 	{ "S Copy to VFO key", "", "copykey", "vfo=1 screen=home toast=Copied_to_VFO", 1, false },
 	{ "S Copy to VFO key, long press", "", "long:copykey", "vfo=1 toast=Copied_to_VFO", 1, false },
@@ -565,6 +641,10 @@ static const flow_t flows[] = {
 	{ "S message failed text", "", "", "screen=home", 0, false },
 	// APRS (docs/spec/aprs.md 10): Tools 9, one row each
 	{ "A APRS page", "", "ok 6 8", "screen=aprs", 3, false },
+	{ "A APRS RF keeps Home with a TX APRS pill", "", "aprstx",
+	  "screen=home shows=TX_APRS shows=SENDING hides=144.390 hides=0:00 hides=left_of", 0, false },
+	{ "A APRS RF returns to the channel", "aprstx", "aprsend",
+	  "screen=home hides=TX_APRS hides=SENDING", 0, false },
 	{ "A send position now", "", "ok 6 8 1", "aprs_sent=1 toast=Sending_position", 4, false },
 	{ "A send without a callsign", "aprs:nocall", "ok 6 8 1", "aprs_sent=0 toast=Set_your_callsign", 4, false },
 	{ "A beacons on", "", "ok 6 8 2", "aprs_auto=1 toast=Beacons_on", 4, false },
@@ -581,21 +661,24 @@ static const flow_t flows[] = {
 	{ "A interval", "", "ok 6 8 6", "aprs_interval=60", 4, false },
 	{ "A SmartBeaconing", "", "ok 6 8 7", "aprs_smart=1", 4, false },
 	{ "A send via DMR", "", "ok 6 8 8", "aprs_via=1", 4, false },
-	{ "A position page", "", "ok 6 8 9", "screen=aprs-pos", 4, false },
-	{ "A position source", "ok 6 8 9", "1", "aprs_pos=1", 1, false },
-	{ "A no fixed position yet", "", "ok 6 8 9", "shows=Not_set", 4, false },
-	{ "A position page found by latitude", "", "5 2 8 4 8 8 3 3", "shows=APRS_position", 8, false },
-	{ "A latitude while typed", "ok 6 8 9", "2 3 3 7 4", "shows=33.74 aprs_lat=0", 5, false },
-	{ "A fixed latitude", "ok 6 8 9", "2 3 3 7 4 9 0 ok", "aprs_lat=337490000", 8, false },
-	{ "A fixed longitude west", "ok 6 8 9", "3 0 8 4 3 8 8 0 down ok", "aprs_lon=-843880000", 10, false },
-	{ "A longitude's leading zero by itself", "ok 6 8 9", "3 8 4 3 8 8 0 down ok", "aprs_lon=-843880000", 9, false },
-	{ "A longitude of 100 or more", "ok 6 8 9", "3 1 2 2 5 ok", "aprs_lon=1225000000", 6, false },
-	{ "A latitude digits not typed are zeros", "ok 6 8 9", "2 4 5 ok", "aprs_lat=450000000", 4, false },
-	{ "A latitude past 90 refused", "ok 6 8 9", "2 9 5", "toast=Up_to_90", 3, false },
-	{ "A latitude after a refused digit", "ok 6 8 9", "2 9 5 ok", "aprs_lat=900000000", 4, false },
-	{ "A latitude BACK takes a digit back", "ok 6 8 9", "2 3 9 back 3 ok", "aprs_lat=330000000", 6, false },
-	{ "A latitude BACK leaves unchanged", "ok 6 8 9", "2 1 back back", "aprs_lat=0 screen=aprs-pos", 4, false },
-	{ "A position in DMR calls", "", "ok 6 8 0", "aprs_dmrgps=1 toast=Position_goes_out", 4, false },
+	// Settings > Location: what every position report sends (the position service; ui_position.c). The page opens on
+	// Answer GPS requests (no GPS here: the rows above are dimmed); the position rows follow it
+	{ "L position source", "ok 7 5 down", "ok", "pos_source=1 shows=GPS", 1, false },
+	{ "L position source wraps to auto", "ok 7 5 down ok ok ok", "ok", "pos_source=0 shows=Auto", 1, false },
+	{ "L position in DMR calls", "ok 7 5 down down down", "ok", "pos_dmrgps=1 focus=Send_in_DMR_calls", 1, false },
+	{ "L fixed position page", "ok 7 5 down down", "ok", "screen=fixed-pos", 1, false },
+	{ "L no fixed position yet", "ok 7 5 down down", "ok", "shows=Not_set", 1, false },
+	{ "L fixed position found by latitude", "", "5 2 8 4 8 8 3 3", "shows=Fixed_position", 8, false },
+	{ "L latitude while typed", "ok 7 5 down down ok", "1 3 3 7 4", "shows=33.74 pos_lat=0", 5, false },
+	{ "L fixed latitude", "ok 7 5 down down ok", "1 3 3 7 4 9 0 ok", "pos_lat=337490000", 8, false },
+	{ "L fixed longitude west", "ok 7 5 down down ok", "2 0 8 4 3 8 8 0 down ok", "pos_lon=-843880000", 10, false },
+	{ "L longitude's leading zero by itself", "ok 7 5 down down ok", "2 8 4 3 8 8 0 down ok", "pos_lon=-843880000", 9, false },
+	{ "L longitude of 100 or more", "ok 7 5 down down ok", "2 1 2 2 5 ok", "pos_lon=1225000000", 6, false },
+	{ "L latitude digits not typed are zeros", "ok 7 5 down down ok", "1 4 5 ok", "pos_lat=450000000", 4, false },
+	{ "L latitude past 90 refused", "ok 7 5 down down ok", "1 9 5", "toast=Up_to_90", 3, false },
+	{ "L latitude after a refused digit", "ok 7 5 down down ok", "1 9 5 ok", "pos_lat=900000000", 4, false },
+	{ "L latitude BACK takes a digit back", "ok 7 5 down down ok", "1 3 9 back 3 ok", "pos_lat=330000000", 6, false },
+	{ "L latitude BACK leaves unchanged", "ok 7 5 down down ok", "1 1 back back", "pos_lat=0 screen=fixed-pos", 4, false },
 	// Tools > Position's pages (CONFIG_GPS_SKY, ui_gps.c): Up / Down or the digits turn them
 	{ "G GPS status page", "", "ok 6 2", "shows=3D_Fix", 3, false },
 	{ "G GPS sky page", "ok 6 2", "down", "screen=gps shows=Sky", 1, false },
@@ -604,6 +687,8 @@ static const flow_t flows[] = {
 	{ "G GPS pages wrap", "ok 6 2", "up down", "shows=Status", 2, false },
 	{ "A KISS on USB", "ok 6 8", "up up ok", "aprs_kiss=1", 3, false },
 	{ "A stations heard", "", "ok 6 8 up ok", "screen=aprs-heard count=2", 5, false },
+	{ "A station message survives a newer packet", "ok 6 8 up ok ok aprs:reorder", "ok",
+	  "screen=compose shows=Q4WABC-15", 1, false },
 	{ "A station opens its Message action", "ok 6 8 up ok", "ok", "screen=aprs-station shows=Message", 1, false },
 	{ "A station Message fills its callsign", "ok 6 8 up ok ok", "ok", "screen=compose shows=Q4WABC-15", 1, false },
 	{ "A new APRS message appears independently of DMR format", "", "ok 2", "shows=New_APRS_message", 2, false },
@@ -623,8 +708,8 @@ static const flow_t flows[] = {
 	  "sent=1 aprs_to=Q4WAB-9 text=OK", 1, false },
 	{ "A not in this build", "aprs:off", "ok 6 8 2", "toast=APRS:_not aprs_auto=0", 4, false },
 	// The crash log and its report (docs/spec/crash-log.md): Settings > Advanced > Crash log, after the restart
-	{ "C crash log from Advanced", "crash:on", "ok 7 up ok down down down down ok", "screen=crash shows=Fault_3 shows=Crash_Log crash_seen=1",
-	  9, false },
+	{ "C crash log from Advanced", "crash:on", "ok 7 up ok down down down " ADV_BELOW_DIAG "down ok", "screen=crash shows=Fault_3 shows=Crash_Log crash_seen=1",
+	  9 + ADV_BELOW_DIAG_N, false },
 	{ "C crash: Off neither asks nor sends", "crash:on wait:2500", "", "screen=home crash_sends=0 crash_seen=0", 0, false },
 	{ "C crash: Ask prompts after the restart", "crash:ask wait:2500", "", "screen=crash shows=USA?",
 	  0, false },
@@ -633,18 +718,18 @@ static const flow_t flows[] = {
 	  false },
 	{ "C crash: Auto sends without a prompt", "crash:auto wait:2500", "", "screen=home crash_sends=1 crash_seen=1", 0,
 	  false },
-	{ "C crash: send needs a target", "crash:on ok 7 up ok down down down down ok", "1", "crash_sends=0 toast=Pick_Send_to",
+	{ "C crash: send needs a target", "crash:on ok 7 up ok down down down " ADV_BELOW_DIAG "down ok", "1", "crash_sends=0 toast=Pick_Send_to",
 	  1, false },
-	{ "C crash: Send to picks a contact", "crash:on ok 7 up ok down down down down ok", "2 ok", "screen=crash shows=USA", 2,
+	{ "C crash: Send to picks a contact", "crash:on ok 7 up ok down down down " ADV_BELOW_DIAG "down ok", "2 ok", "screen=crash shows=USA", 2,
 	  false },
-	{ "C crash: send from the menu", "crash:on ok 7 up ok down down down down ok 2 ok", "1", "crash_sends=1", 1, false },
-	{ "C crash: After a crash cycles", "crash:on ok 7 up ok down down down down ok", "3", "shows=Ask", 1, false },
-	{ "C crash: cleared", "crash:on ok 7 up ok down down down down ok", "4", "crash_have=0 shows=No_crash_recorded", 1, false },
-	{ "C crash: nothing to clear", "ok 7 up ok down down down down ok", "4", "toast=none shows=No_crash_recorded", 1, false },
-	{ "C crash: nothing to send", "ok 7 up ok down down down down ok", "1", "toast=No_crash crash_sends=0", 1, false },
-	{ "C crash: a send that can't start says so", "crash:on crashtx:refuse ok 7 up ok down down down down ok 2 ok", "1",
+	{ "C crash: send from the menu", "crash:on ok 7 up ok down down down " ADV_BELOW_DIAG "down ok 2 ok", "1", "crash_sends=1", 1, false },
+	{ "C crash: After a crash cycles", "crash:on ok 7 up ok down down down " ADV_BELOW_DIAG "down ok", "3", "shows=Ask", 1, false },
+	{ "C crash: cleared", "crash:on ok 7 up ok down down down " ADV_BELOW_DIAG "down ok", "4", "crash_have=0 shows=No_crash_recorded", 1, false },
+	{ "C crash: nothing to clear", "ok 7 up ok down down down " ADV_BELOW_DIAG "down ok", "4", "toast=none shows=No_crash_recorded", 1, false },
+	{ "C crash: nothing to send", "ok 7 up ok down down down " ADV_BELOW_DIAG "down ok", "1", "toast=No_crash crash_sends=0", 1, false },
+	{ "C crash: a send that can't start says so", "crash:on crashtx:refuse ok 7 up ok down down down " ADV_BELOW_DIAG "down ok 2 ok", "1",
 	  "toast=Can't_send crash_sends=0", 1, false },
-	{ "C crash: Ask without a target asks for one", "crash:on ok 7 up ok down down down down ok", "3",
+	{ "C crash: Ask without a target asks for one", "crash:on ok 7 up ok down down down " ADV_BELOW_DIAG "down ok", "3",
 	  "shows=Ask toast=Pick_Send_to_as_well", 1, false },
 	{ "C crash: Auto says when the report is out", "crash:auto wait:2500", "", "toast=Crash_report_sent", 0, false },
 	{ "C crash: Auto says when the report failed", "crash:auto crashtx:fail wait:2500", "",
@@ -654,7 +739,7 @@ static const flow_t flows[] = {
 	{ "C crash: no prompt off Home", "crash:ask ok wait:2500", "", "screen=hub crash_seen=0", 0, false },
 	{ "C crash: the prompt once back on Home", "crash:ask ok wait:2500 back wait:100", "", "screen=crash shows=USA?", 0,
 	  false },
-	{ "C crash: a seen record isn't asked about", "crash:ask ok 7 up ok down down down down ok long:back wait:2500", "",
+	{ "C crash: a seen record isn't asked about", "crash:ask ok 7 up ok down down down " ADV_BELOW_DIAG "down ok long:back wait:2500", "",
 	  "screen=home crash_sends=0", 0, false },
 	// Digit keys while transmitting (#37)
 	{ "T FM transmitting: a digit does nothing (#37)", "down pttdown", "5", "screen=home toast=none", 1, false },
@@ -798,8 +883,18 @@ static const flow_t flows[] = {
 
 // GD-77 key map on its 128x64 monochrome screen only (it has the Left / Right arrow keys)
 static const flow_t flows_mono[] = {
+	LONG_MESSAGE_FLOWS
 	{ "2 Right steps to the next zone on Home", "", "right", "zone=1 screen=home", 1, false },
 	{ "2 Left steps back a zone", "right", "left", "zone=0 screen=home", 1, false },
+	// The talk line on the smallest display (#336): an icon, not "PTT->" or "Reply->", so the label keeps its room
+	{ "2 the talk line: an arrow, no PTT word", "", "", "screen=home shows=TG_3100_USA hides=PTT", 0, false },
+	{ "4 reply window: a long label is cut, not dropped", "call:3101234,201,g", "", "shows=TG_201_Main_O hides=Reply", 0, false },
+	// The side key's TG name / number (Settings > Display > Talkgroup name first): the name leads. The choice is saved,
+	// so the next flow starts with it and turns it back off
+	{ "4 a side key puts the TG name first", "call:3101234,201,g", "labelkey",
+	  "shows=Main_Ops hides=TG_201_Main toast=Talkgroup_name_first", 1, false },
+	{ "4 kept, and pressed again: the number first", "call:3101234,201,g", "labelkey",
+	  "shows=TG_201_Main toast=Talkgroup_number_first", 1, false },
 #if CONFIG_UI_COLOR
 	{ "S theme on a monochrome screen: dimmed", "", "ok 7 2 down down ok", "toast=Colors_are_for set7=0", 6, false },
 	{ "S highlight color on a monochrome screen: dimmed", "", "ok 7 2 down down down ok",
@@ -813,6 +908,7 @@ static const flow_t flows_mono[] = {
 
 // DM-1701 key map only: the top side key, long waits
 static const flow_t flows_k[] = {
+	LONG_MESSAGE_FLOWS
 	// Dual watch on the side keys: SK2 is A/B pressed, Dual watch held; P1 / P2 (zones) and the knob act on the
 	// selected channel
 	{ "11 dual watch: SK2 pressed is A/B", "quick 7 ctx 3 5 ok", "sk2", "dual=1 sel=B", 1, false },
@@ -857,8 +953,10 @@ static const flow_t flows_k[] = {
 	  "set47=17 shows=VFO/Channel", 1, false },
 	{ "K top key hold: call back last", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=12 shows=Call_back",
 	  1, false },
-	{ "K top key hold wraps to default", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=0", 1,
+	{ "K top key hold wraps to default", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=0", 1,
 	  false },
+	{ "K top key hold: TG name / number after call back", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok", "ok",
+	  "set47=19 shows=TG_name", 1, false },
 	{ "K a key set to power", "", "powerkey", "power=5", 1, false },
 	{ "K a key set to power, long", "", "long:powerkey", "power=5", 1, false },
 	{ "K a key set to the next zone", "", "zone+", "zone=1", 1, false },
@@ -1253,6 +1351,28 @@ static void about_checks(void)
 			fails++;
 		}
 		sim_run("pttup", err, sizeof err);
+		// In every language built, the whole text fits its buffer: scrolling a line at a time passes where the
+		// contributors are listed and ends on the last line (the codec's)
+		for (uint8_t l = 0; l < lang_count(); l++) {
+			if (!lang_built(l))
+				continue;
+			bool where = false, last = false;
+			sim_reset(&sim_geoms[g], SIM_MAP_K);
+			lang_set(l);
+			if (sim_run("ok 7 up ok ok wait:200", err, sizeof err)) {
+				for (int i = 0; i < 40 && !last; i++) {
+					where = where || sim_run("expect:shows=github.com/radiofoundry", err, sizeof err);
+					last = sim_run("expect:shows=DVSI", err, sizeof err);
+					sim_run("down", err, sizeof err);
+				}
+			}
+			if (!where || !last) {
+				printf("FAIL about [%s %s]: %s not shown\n", gn, lang_code(l), !where ? "the contributors line" :
+					"the last line");
+				fails++;
+			}
+		}
+		lang_set(LANG_ENGLISH);
 	}
 }
 
@@ -1331,6 +1451,51 @@ static void heard_checks(void)
 	if (!sim_run("ok 6 8 up ok expect:screen=aprs-heard expect:shows=Q4WABC-15 expect:hides=km", err, sizeof err)) {
 		printf("FAIL stations heard narrow [96x64m]: %s\n", err);
 		fails++;
+	}
+}
+
+// Detail rows remain reachable on the smallest panel; only Message opens another screen.
+static void station_checks(void)
+{
+	static const struct { const char *name, *script; } cases[] = {
+		{ "position", "wait:600000 ok 6 8 up ok ok expect:screen=aprs-station expect:count=10 "
+		  "down expect:shows=14.5_km_NE down expect:shows=1m down expect:shows=Direct "
+		  "down expect:shows=10m down expect:shows=19_km/h down expect:shows=40 "
+		  "down expect:shows=/> down expect:shows=On_the_road down expect:focus=Packets expect:shows=3 "
+		  "ok expect:screen=aprs-station" },
+		{ "no local position", "aprs:nopos ok 6 8 up ok ok expect:count=8 down expect:shows=Heard" },
+		{ "no speed", "aprs:nospeed ok 6 8 up ok ok expect:count=7 down down down down expect:shows=/>" },
+		{ "no station position", "ok 6 8 up ok down ok expect:count=5 down down "
+		  "expect:shows=Via_digipeater down expect:shows=At_home down expect:shows=Packets" },
+		{ "speed unknown", "aprs:speedunknown ok 6 8 up ok ok expect:count=8 "
+		  "down down down down expect:focus=Course expect:shows=40 expect:hides=Speed" },
+		{ "course unknown", "aprs:courseunknown ok 6 8 up ok ok expect:count=8 "
+		  "down down down down expect:focus=Speed expect:shows=19_km/h down expect:focus=Symbol" },
+		{ "known zero motion", "aprs:zero ok 6 8 up ok ok expect:count=9 "
+		  "down down down down expect:focus=Speed expect:shows=0_km/h down expect:focus=Course expect:shows=0" },
+		{ "equal ages", "wait:600000 aprs:sameage ok 6 8 up ok ok expect:count=9 "
+		  "down down expect:focus=Heard expect:shows=1m down expect:focus=Direct down expect:focus=Speed" },
+		{ "position lost while open", "wait:600000 ok 6 8 up ok ok aprs:stationnopos down "
+		  "expect:count=6 expect:shows=Q4WABC-15 expect:focus=Heard expect:hides=km "
+		  "down expect:focus=Direct down expect:focus=Symbol" },
+		{ "empty text and symbol", "aprs:emptytext ok 6 8 up ok ok expect:count=7 "
+		  "up expect:focus=Packets up expect:focus=Course" },
+		{ "retained text", "aprs:longtext ok 6 8 up ok ok up up "
+		  "expect:focus=12345678901234567890123" },
+		{ "reordered detail", "ok 6 8 up ok ok aprs:reorder down expect:count=9 "
+		  "expect:shows=Q4WABC-15 expect:shows=14.5_km_NE up ok expect:screen=compose expect:shows=Q4WABC-15" },
+		{ "evicted", "ok 6 8 up ok ok aprs:evict down expect:count=2 expect:shows=No_longer_in_list "
+		  "up ok expect:screen=compose expect:shows=Q4WABC-15" },
+	};
+	char err[300];
+	for (int g = 0; g < sim_geom_count; g++) {
+		for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+			sim_reset(&sim_geoms[g], SIM_MAP_K);
+			if (!sim_run(cases[i].script, err, sizeof err)) {
+				printf("FAIL station detail %s [%s]: %s\n", cases[i].name, sim_geoms[g].name, err);
+				fails++;
+			}
+		}
 	}
 }
 
@@ -1567,6 +1732,7 @@ int main(void)
 	about_checks();
 	call_screen_checks();
 	heard_checks();
+	station_checks();
 	vfo_split_dmr_checks();
 	no_battery_checks();
 #if CONFIG_VOLUME_BAR

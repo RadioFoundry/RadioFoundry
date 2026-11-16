@@ -353,12 +353,19 @@ The host knows which flash the firmware owns (`f4stub.BOARDS`, from the board re
 | Radio | Owned | Sectors touched by an update | Codec |
 |---|---|---|---|
 | HR_C6000 boards | 0x0800C000-0x080BFFFF (sectors 3-9) | those of 3-9 the image covers | sectors 10 and 11: written only from an image merged with the codec, otherwise never erased, so the installed codec stays (rfoundry's keep mode) |
-| HR_C5000 boards | 0x0800C000-0x0807FFFF (sectors 3-7) | those of 3-7 the image covers | sectors 8-11: written only from an image merged with the codec, otherwise never erased |
+| HR_C5000 boards | 0x0800C000-0x080DFFFF (sectors 3-10) | those of 3-10 the image covers | sector 11: written only from an image merged with the codec, otherwise never erased |
 
 Inside an owned range, bytes past the image end become 0xFF, so an older, longer build leaves nothing behind. An image
 merged with the codec (`rfoundry_<board>_codec.bin`) runs to the end of flash; the tool splits it into the application and
 the codec sectors and writes both whole ([codec-placement.md](codec-placement.md), "STM32 radios"). Any other image
 that reaches outside the owned range (the wrong board) is refused before anything is erased.
+
+When a board's owned range grows into sectors an earlier layout gave the codec, a plain image would erase the codec.
+Before it erases anything for an image without the codec, the tool reads the descriptor at the end of flash: if a
+window it names lies in a sector the plan erases, it refuses and writes nothing. Since nothing was erased, the tool
+then resets the radio out of the stub (it starts its firmware as before) and prints the command that leaves the stub
+by hand, `stubtool.py PORT --attach --board <id> --boot reset`, for a reset that did not get through; the web
+flasher restarts the radio the same way. The image merged with the codec in the new layout is what moves it ([codec-placement.md](codec-placement.md), "Moving to a new layout").
 
 No radio shares a sector between the firmware and the codec. The rule for one that would stays in the code: a sector
 that is rewritten and holds bytes the firmware doesn't own is read back and written again with those bytes unchanged.
@@ -385,7 +392,7 @@ never committed.
 | Stub image | 8,072 bytes (limit 8 KB, RadioFoundry's staging buffer, asserted by `f4stub.ld`). Built with link-time optimization (`-flto`): without it, protocol 5 is about 8,500 bytes |
 | Stub RAM after the jump | 28.6 KB of SRAM (image, engine buffers, 8 KB receive ring), then the stack: at least 4 KB is left for it (asserted by `f4stub.ld`); the deepest call chain needs under 1 KB (`-fstack-usage`) |
 | RadioFoundry with `CONFIG_STUB_ENTRY=y`, HR_C6000 board | the STUB state machine, the entry and the banner text, all in sectors 3-9 (720 KB); +8 KB of SRAM (the staging buffer): RAM 95.4 % used, the default build |
-| RadioFoundry with `CONFIG_STUB_ENTRY=y`, HR_C5000 board | the same code, in an application area of 464 KB (the default image is 320,236 bytes), RAM 78.8 %. The switch fits with no other switch off |
+| RadioFoundry with `CONFIG_STUB_ENTRY=y`, HR_C5000 board | the same code, in an application area of 848 KB (the default image is 465,912 bytes). The switch fits with no other switch off |
 | RadioFoundry with the switch off | no change: the same image, byte for byte in size |
 
 The switch is on by default. The command hands the whole SoC to whatever image the host sends, guarded by the magic,
@@ -417,7 +424,7 @@ Then, with RadioFoundry running (PORT is its USB serial port, `/dev/cu.usbmodem�
 | 8 | `python3 stub/stubtool.py PORT --attach --board <id> --boot reset` | RadioFoundry starts; `rfoundry_debug.py version` shows the new `git=` |
 | 9 | `python3 stub/stubtool.py PORT --rfoundry-enter --write-app ...` with yet another build, USB unplugged during the write, then a power cycle | the radio comes up in the bootloader with no keys held; rfoundry restores it |
 | 10 | `rfoundry_debug.py radio usb network`, then `python3 stub/stubtool.py udp:RADIO_IP --rfoundry-enter --peek 0x08000000:64` | the hand-over goes over UDP; the stub comes up as a serial port (`--stub-port`, default the one 1FC9:0094 port) and answers |
-| 11 | `python3 stub/stubtool.py PORT --rfoundry-enter --q128 ~/spi.bin`, then `--attach --verify-q128 ~/spi.bin` | "SPI flash 16384 KB (JEDEC …)" in the "configured" line; 16 MB read, identical |
+| 11 | `python3 stub/stubtool.py PORT --rfoundry-enter --q128 ~/spi.bin`, then `--attach --board <id> --verify-q128 ~/spi.bin` | "SPI flash 16384 KB (JEDEC …)" in the "configured" line; 16 MB read, identical |
 | 12 | write a pattern to a blank 4 KB sector with `--write-q128 pat.bin --q128-range ADDR:ADDR+0x1000`, read it back, write 0xFF back the same way, then `--verify-q128 ~/spi.bin` | 1 sector written each time; the pattern reads back; the whole chip matches the first read; RadioFoundry starts with its codeplug |
 
 Steps 4 and 5 write the dump outside the repository. Step 9 needs rfoundry and the stock firmware file at hand. The HIL suite

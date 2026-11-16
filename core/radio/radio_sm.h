@@ -51,6 +51,9 @@
 // RADIO_DMR_SQL_L1_DBM, RADIO_SQL_DB_PER_STEP more a level (5, the default, above -100 dBm). Some receivers' noise
 // reading doesn't follow a DMR signal (gotchas 17.3)
 #define RADIO_DMR_SQL_L1_DBM	(-112)
+// ... and level 1 at least this far above the floor the scan measured on the stops before (scan_floor): an uncalibrated
+// strength reading can sit above the scale with no signal at all (gotchas 17.4)
+#define RADIO_DMR_SQL_L1_FLOOR_DB	6
 // While APRS receive listens (aprs.md 5.3): a packet's tones at full deviation push the noise reading over the line
 // for a poll or two, and on a radio whose modem gates it, a closed squelch zeroes the receive audio, so a packet came apart (on air,
 // 2026-10-13). On the APRS frequency the squelch holds this many polls (300 ms) instead
@@ -243,6 +246,7 @@ typedef struct {
 	uint8_t base_squelch;		// squelch without the temporary change
 	bool temp_power;
 	bool temp_squelch;
+	bool squelch_save;		// a squelch set in the VFO: the radio's default, written by persist()
 	uint8_t base_bw;		// the channel's own bandwidth and tones, for undoing temporary changes
 	subtone_t base_rx_tone;
 	subtone_t base_tx_tone;
@@ -287,6 +291,7 @@ typedef struct {
 	uint32_t led_now;
 	uint32_t deny_led_ms;		// a TX deny: red, green, red, green, red, green from here
 	bool deny_led;
+	bool deny_rx;			// FM: PTT refused as busy over a reception, which plays on while PTT is held
 	uint32_t wake_led_ms;		// a repeater wake-up burst went out here: red for RADIO_LED_WAKE_MS
 	bool wake_led;
 	uint8_t wake_seen;		// dmr_call_view_t.wake_sent last seen
@@ -391,6 +396,7 @@ typedef struct {
 	bool hear_all_latch;
 	uint16_t latch_ch;
 	bool latch_vfo;
+	bool scan_hear_all;	// ... and carried by a scan (not dual watch) started with it on: on at every stop
 	// The focused row's target (RREQ_DMR_FOCUS) and the one-shot target PTT took from it: the talk target until
 	// one_shot_until (0 = while the call goes on), on channel one_shot_ch
 	uint32_t focus_id;
@@ -440,12 +446,14 @@ typedef struct {
 	uint32_t em_cfg_serial;		// dmr_emergency_config_serial() the call stack was configured with
 #endif
 #if CONFIG_APRS
-	// APRS transmissions (core/aprs, docs/spec/aprs.md 6): the radio leaves the channel for the APRS frequency
+	bool aprs_was_tx;		// our own transmission (not APRS) at the last poll: the "after PTT" trigger
+#endif
+#if CONFIG_APRS_AFSK
+	// APRS transmissions on FM (core/aprs, docs/spec/aprs.md 6): the radio leaves the channel for the APRS frequency
 	uint8_t aprs_phase;		// APRS_RF_* in radio_sm.c, 0 = not on the APRS frequency
 	uint32_t aprs_ms;		// start of the current phase (LISTEN: of the current slot)
 	uint32_t aprs_listen_ms;	// start of the wait for a clear channel
 	uint32_t aprs_rand;		// p-persistence
-	bool aprs_was_tx;		// our own transmission (not APRS) at the last poll: the "after PTT" trigger
 	aprs_rf_job_t aprs_job;
 #endif
 	bool tx_no_ptt;		// on the air without PTT (a DMR data burst list): not the user's transmission, no "after PTT"

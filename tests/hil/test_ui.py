@@ -325,7 +325,7 @@ def test_vfo_toggle_key(home):
     feats = r.features()
     if "VFO_FM" not in feats and "VFO_DMR" not in feats:
         skip("not_built", "built without a VFO")
-    chan = r.core()
+    chan = r.leave_vfo()    # a session that found the radio in the VFO puts it back there before each test
     try:
         r.press("vfo_toggle")
         r.wait_for(lambda x: x.get("vfo") == "1", what="the VFO")
@@ -722,7 +722,7 @@ def test_zone_editor_moves_a_channel(home):
 
 @pytest.mark.feature("dmr_sms")
 def test_delete_message(home, request, pytestconfig):
-    """Hub 2 (Messages), OK on the newest, Delete (the fourth action): the inbox has one message less. Only a message
+    """Hub 2 (Messages), OK on the newest, Delete (the last action): the inbox has one message less. Only a message
     a HIL test sent (its text starting HIL_SMS_PREFIX) is deleted without asking: when the newest isn't one, the bench
     sends one first (with --allow-rf; the radio only receives). To delete one of the owner's instead set
     RFOUNDRY_HIL_DELETE_MESSAGE=1."""
@@ -744,12 +744,15 @@ def test_delete_message(home, request, pytestconfig):
     r.press("2")
     wait_screen(r, "messages")
     r.press("ok")
-    wait_screen(r, "message")
-    for _ in range(3):
+    s = wait_screen(r, "message")
+    last = as_int(s.get("ui.count")) - 1     # Delete is the last row: a long message has Full message first
+    for _ in range(last):
         r.press("down")
+    r.wait_for(lambda v: as_int(v.get("ui.focus")) == last, sections=("link",), what="Delete (the last row)")
     r.press("ok")
     r.wait_for(lambda x: as_int(x.get("data.inbox_count")) == n - 1, sections=("dmr_data",), what="one message less")
-    assert "deleted" in ui(r).get("ui.toast", "")
+    # The toast shows a UI tick after the inbox changes
+    r.wait_for(lambda v: "deleted" in v.get("ui.toast", ""), sections=("link",), what="the Message deleted toast")
 
 
 @pytest.mark.feature("ui_settings")

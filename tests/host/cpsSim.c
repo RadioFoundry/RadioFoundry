@@ -188,8 +188,9 @@ static void detail(const uint32_t *ids, unsigned id_count)
 		print_tone("rxtone", &c.rx_tone);
 		print_tone("txtone", &c.tx_tone);
 		printf(" cc %u ts %u contact %u list %u id %u dmo %u rxonly %u skip %u vox %u nobeep %u noeco %u roam %u"
-		       " alias %u\n", c.color_code, c.timeslot, (unsigned)c.contact, (unsigned)c.listen_list,
-		       (unsigned)c.dmr_id, c.dmo, c.rx_only, c.scan_skip, c.vox, c.no_beep, c.no_eco, c.roam, c.alias_tx);
+		       " burst %u alias %u\n", c.color_code, c.timeslot, (unsigned)c.contact, (unsigned)c.listen_list,
+		       (unsigned)c.dmr_id, c.dmo, c.rx_only, c.scan_skip, c.vox, c.no_beep, c.no_eco, c.roam, c.tone_burst,
+		       c.alias_tx);
 	}
 	for (uint16_t z = 0; z < codeplug_zone_count(); z++) {
 		zone_t zn;

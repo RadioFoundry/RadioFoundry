@@ -62,10 +62,24 @@ static const pa_keyup_cfg_t keyup_cfg = {
 #define FM_TX_LIMIT_25K		0x0Fu
 #define FD_REG_NOISE		0x65u
 #define FD_REG_RSSI		0x67u
+// Two RF sections (hardware-dm32.md 8.10): the newer one's FD6818 doesn't lock on the default set-up and takes set-up B,
+// with these writes on top. Which one the radio has is found at start-up (rf_detect)
+#define RF_PROBE_HZ		145000000u	// in band on both sections
+#define RF_LOCK_MS		20u		// the probe's wait for the lock bit after the tune
+#define FD_REG_TX_AUX		0x50u		// set-up B: around each switch to TX
+#define FD_TX_AUX_FM_PRE	0xBB20u		// FM, before the switch
+#define FD_TX_AUX_FM		0x3B20u		// FM, after
+#define FD_TX_AUX_DMR		0x3B18u		// DMR burst, after
+#define FD_REG_CSS_A		0x2Eu		// set-up B: two words by the receive sub-audio type
+#define FD_REG_CSS_B		0x2Fu
+#define FD_REG40_BASE		0x3480u		// set-up B, FM transmit: 0x40 = this + the calibration byte
+#define C7_RF_MODE_RX_INVERT	(1u << 15)	// HR_C7000 RF_MODE: RX IQ invert, off on the newer section
 
 static fd6818_t fd;
 static rfbus_3w_t fd_bus;
 static hrc7000_t modem;
+static bool rf_b;		// the newer RF section: FD6818 set-up B (rf_detect)
+static bool rf_unlocked;	// neither set-up locked the synthesizer: no transmitting
 
 static radio_mode_t mode = RADIO_MODE_FM;
 static uint32_t rx_hz;
@@ -145,7 +159,7 @@ static void pa_key(void)
 
 static uint16_t fm_bw_reg(radio_bw_t bw)
 {
-	return bw == RADIO_BW_25K ? FD6818_BW_FM_25K : FD6818_BW_FM_12K5;
+	return bw == RADIO_BW_25K ? fd.variant->bw_fm_25k : fd.variant->bw_fm_12k5;
 }
 
 static hrc7000_tone_t c7_tone(uint8_t type)
@@ -198,7 +212,10 @@ static bool ref_trim(int16_t ppb)
 static void burst_switch(void)
 {
 	lna(tx_hz, false);
-	fd6818_dmr_burst_at(&fd, true, FD6818_BW_DMR, synth_hz(tx_hz));
+	fd6818_dmr_burst_at(&fd, true, fd.variant->bw_dmr, synth_hz(tx_hz));
+	if (rf_b) {
+		fd6818_write(&fd, FD_REG_TX_AUX, FD_TX_AUX_DMR);
+	}
 }
 
 // One burst's TX on, from the RF task (dmr_rfburst.h): the key-up's points in time order (the boost, the PA on, the
@@ -263,7 +280,7 @@ static void burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 static void burst_off(void)
 {
 	pa_off();
-	fd6818_dmr_burst_at(&fd, false, FD6818_BW_DMR, synth_hz(rx_hz));
+	fd6818_dmr_burst_at(&fd, false, fd.variant->bw_dmr, synth_hz(rx_hz));
 	lna(rx_hz, true);
 }
 
@@ -284,7 +301,7 @@ static void dmr_disarm(void)
 #endif
 }
 
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 static bool afsk_tx_route(bool on);
 static void aprs_listen_route(bool on);
 
@@ -296,6 +313,21 @@ static const hrc_afsk_board_t afsk_board = {
 #endif
 
 // ---- hal_radio_t ----
+
+// Which RF section the radio has (hardware-dm32.md 8.10): the default set-up, tuned, locks the classic section's
+// synthesizer and never the newer one's; set-up B locks both, so the default goes first (fd6818_detect). Neither
+// locking leaves the default and blocks transmitting: on the wrong set-up the newer section transmitted 74 MHz off
+static void rf_detect(void)
+{
+	static const fd6818_variant_t *const v[] = { &fd6818_variant_default, &fd6818_variant_b_dmr6943 };
+	uint8_t i = fd6818_detect(&fd, &fd_bus.bus, v, 2, RF_PROBE_HZ, RF_LOCK_MS);
+	rf_b = i == 1;
+	rf_unlocked = i == 2;
+	fd6818_set_state(&fd, FD6818_STATE_IDLE);
+	if (rf_b) {
+		hrc7000_wr(&modem, C7_RF_MODE, hrc7000_rd(&modem, C7_RF_MODE) & ~C7_RF_MODE_RX_INVERT);
+	}
+}
 
 static void init(void)
 {
@@ -315,15 +347,13 @@ static void init(void)
 	hrc_pin_out(PIN_FD_CS, true);
 	hrc_pin_out(PIN_FD_CLK, false);
 	rfbus_3w_attach(&fd_bus, &fd_bus_pins);
-	fd6818_attach(&fd, &fd_bus.bus);
-	fd6818_init(&fd);
-	fd6818_set_mode(&fd, FD6818_MODE_FM);
+	rf_detect();
 	mode = RADIO_MODE_FM;
 
 	hrc_dmr_board_init(&modem, &dmr_board);
 	hrc_audio_pcm_attach(&modem, dm32_speaker_pcm);
 	hrc_fm_rx_attach(&modem);
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	hrc_afsk_attach(&modem, &afsk_board);
 #endif
 }
@@ -364,7 +394,7 @@ static void set_mode(radio_mode_t m)
 // transmission, dmr_tx_end): the burst switch already put the FD6818 in RX; on the same channel it stays as it is
 static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am, bool keep)
 {
-	if (!board_in_band(hz, false) || (am && mode != RADIO_MODE_FM)) {
+	if (!board_in_band(hz, false) || (am && (mode != RADIO_MODE_FM || rf_b))) {	// AM: not worked out on set-up B
 		return false;
 	}
 	dmr_disarm();	// a retune ends DMR TX (the hotspot's rx() disarms too)
@@ -376,7 +406,7 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am, 
 		// receiving already
 	} else if (mode == RADIO_MODE_DMR) {
 		fd6818_set_freq(&fd, synth_hz(hz));
-		fd6818_set_bandwidth(&fd, FD6818_BW_DMR);
+		fd6818_set_bandwidth(&fd, fd.variant->bw_dmr);
 		fd6818_set_state(&fd, FD6818_STATE_RX);
 	} else {
 		fd6818_set_freq(&fd, synth_hz(hz));
@@ -393,6 +423,12 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am, 
 		// The FD6818 detects the tone on its own demodulated audio: the C7000's detector gets no audio while the
 		// FD6818 plays FM to the speaker (hardware-dm32.md 8.4)
 		fd6818_set_rx_tone(&fd, fd_tone(tone != NULL ? tone->type : TONE_NONE), tone != NULL ? tone->value : 0);
+		if (rf_b) {
+			// CTCSS one pair, DCS and no tone the other
+			bool ctcss = tone != NULL && tone->type == TONE_CTCSS;
+			fd6818_write(&fd, FD_REG_CSS_A, ctcss ? 0x8608u : 0x9608u);
+			fd6818_write(&fd, FD_REG_CSS_B, ctcss ? 0x1890u : 0x9890u);
+		}
 #if CONFIG_AM_RX
 		fd6818_set_am(&fd, am);	// every AM tune: full gain again for the new channel; FM: AM off
 #endif
@@ -445,7 +481,7 @@ static void keyup_plan(uint32_t hz)
 
 static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 {
-	if (!board_in_band(hz, true)) {
+	if (!board_in_band(hz, true) || rf_unlocked) {
 		return false;
 	}
 	wake();
@@ -462,13 +498,14 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	// synthesizer on the TX frequency here left the radio deaf to the repeater's downlink
 	fd6818_set_freq(&fd, synth_hz(mode == RADIO_MODE_DMR && have_rx ? rx_hz : hz));
 	hrc_dac_b_power(true);
+	transmitting = true;
 	if (mode == RADIO_MODE_DMR) {
 		// 8.5 "Enter DMR TX": the PA select and drive wait for each burst's sequence. Between bursts the radio
 		// receives: the FD6818 in RX and the LNA on until the RF task switches to the first burst (burst_on). In TX
 		// here, the hotspot, which keys to listen, heard nothing until its first burst
 		hrc_pin_write(PIN_MIC_PATH, false);
 		lna(have_rx ? rx_hz : hz, true);
-		fd6818_set_bandwidth(&fd, FD6818_BW_DMR);
+		fd6818_set_bandwidth(&fd, fd.variant->bw_dmr);
 		fd6818_set_state(&fd, FD6818_STATE_RX);
 		dmr_keyed = true;
 #if CONFIG_DMR
@@ -478,16 +515,27 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		lna(hz, false);
 		fd6818_set_rx_tone(&fd, FD6818_TONE_NONE, 0);	// 0x51's enable would add the FD6818's tone to the C7000's
 		fd6818_fm_tx_prepare(&fd);
+		if (rf_b && bf_cal_valid()) {
+			// The band's calibration byte; without calibration the power-on word stays. The next rx() puts the
+			// band word back (fd6818_set_freq)
+			fd6818_write(&fd, FD6818_REG_BAND_B, (uint16_t)(FD_REG40_BASE + bf_cal_tx_byte(hz, BF_ROW_REG40)));
+		}
 		tx_wide = bw == RADIO_BW_25K;
 		hrc7000_set_subtone(&modem, true, c7_tone(tone != NULL ? tone->type : TONE_NONE),
 			tone != NULL ? tone->value : 0);	// before FM_PTT: the modem takes the DCS code then
 		hrc7000_fm_tx(&modem, tx_wide);
 		hrc_pin_write(PIN_MIC_PATH, true);
 		fd6818_set_bandwidth(&fd, fm_bw_reg(bw));
+		if (rf_b) {
+			fd6818_write(&fd, FD_REG_TX_AUX, FD_TX_AUX_FM_PRE);
+		}
 		fd6818_set_state(&fd, FD6818_STATE_TX);
+		if (rf_b) {
+			fd6818_write(&fd, FD_REG_TX_AUX, FD_TX_AUX_FM);
+			hal_delay_ms(1);
+		}
 		pa_key();
 	}
-	transmitting = true;
 	ring_play();
 	return true;
 }
@@ -496,7 +544,7 @@ static void tx_end(bool keep)
 {
 	dmr_disarm();
 	pa_off();
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	if (afsk_tx) {
 		hrc_afsk.tx_stop();	// the core stops the tones first; this is the safety net
 	}
@@ -602,7 +650,7 @@ static void speaker_source(void)
 	}
 }
 
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 // APRS listens (hrc_afsk.c): the FD6818's audio stays on the HR_C7000's input, which also plays it to the speaker
 static void aprs_listen_route(bool on)
 {
@@ -672,7 +720,7 @@ void dm32_speaker_pcm(bool on)
 	hrc_irq_restore(s);
 }
 
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 // APRS AFSK (hrc_afsk.c): during an FM transmission the prompt FIFO's audio goes to the modulator (the path that put
 // beeps on DMR bursts, modem-hrc7000.md 8.4), so the tones go there with the microphone muted. False when the radio
 // isn't transmitting FM
@@ -703,6 +751,7 @@ void dm32_radio_diag(dm32_radio_diag_t *d)
 	d->noise_raw = last_noise_raw;
 	d->fm_noise = hrc7000_fm_noise(&modem);
 	d->fd_writes = fd_bus.bus.writes;
+	d->rf_setup = rf_unlocked ? '-' : rf_b ? 'B' : 'A';
 }
 
 // Receiver battery saving (FM receive only, the radio's own sequence: hardware-dm32.md 8.8): FD6818 idle with its

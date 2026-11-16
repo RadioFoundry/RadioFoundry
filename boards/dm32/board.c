@@ -70,6 +70,9 @@ static const keymap_entry_t keymap[] = {
 // Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h): the side keys top to bottom
 static const uint8_t side_keys[] = { KEY_SK1, KEY_SK2 };
 static const char *const side_key_names[] = { "SK1", "SK2" };
+// The arrows left and right of the 4-way key are printed P1 and P2: programmable on Home, arrows in the menus
+static const uint8_t home_keys[] = { KEY_LEFT, KEY_RIGHT };
+static const char *const home_key_names[] = { "P1", "P2" };
 
 const board_t board = {
 	.name = "DM-32UV",
@@ -91,6 +94,9 @@ const board_t board = {
 	.side_keys = side_keys,
 	.side_key_names = side_key_names,
 	.side_key_count = sizeof(side_keys),
+	.home_keys = home_keys,
+	.home_key_names = home_key_names,
+	.home_key_count = sizeof(home_keys),
 	.radio = &dm32_radio,
 	.power = &dm32_power,
 	.flash = &hrc_flash_spi0,
@@ -103,7 +109,7 @@ const board_t board = {
 	.audio = &hrc_audio_pcm,
 	.vocoder = &hrc_vocoder,
 #endif
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	.afsk = &hrc_afsk,
 #endif
 #if CONFIG_HOSTLINK
@@ -227,6 +233,7 @@ static const hrc_flash_cfg_t flash_cfg = {
 	.map = &flash_map,
 };
 
+#if CONFIG_GPS
 // The ATGM336H on UART1; PTA9 is UART1's RXD from io_init
 static const hrc_gps_cfg_t gps_cfg = {
 	.uart_base = UART1_BASE,
@@ -234,6 +241,7 @@ static const hrc_gps_cfg_t gps_cfg = {
 	.power_pin = PIN_GPS_POWER,
 	.power_on_level = GPS_POWER_ON_LEVEL,
 };
+#endif
 
 #if CONFIG_BCAST_FM
 // The RDA5807M on PTA25 / PTA26 (hardware-dm32.md 8.7): no enable line is known; its audio is assumed to reach the

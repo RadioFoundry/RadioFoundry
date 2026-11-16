@@ -527,12 +527,13 @@ pressed), drive it high again; restore IO_DIPLEX2. Rows idle high.
 | Row \ Column | col 1 (0x31) | col 2 (0x32) | col 3 (0x33) | col 4 (0x34) |
 |---|---|---|---|---|
 | row 0 (0x47) | green (menu / OK) | 3 | 2 | 1 |
-| row 1 (0x48) | left arrow | 6 | 5 | 4 |
-| row 2 (0x49) | right arrow | 9 | 8 | 7 |
+| row 1 (0x48) | left arrow, printed P1 | 6 | 5 | 4 |
+| row 2 (0x49) | right arrow, printed P2 | 9 | 8 | 7 |
 | row 3 (0x4A) | red (back) | # | 0 | * |
 | row 4 (0x4B) | up | down | — | — |
 
-The physical labels of the row 1 / row 2 column 1 keys and the up/down pair are named by position; check against the keypad.
+The left and right sides of the 4-way key are printed P1 and P2 (checked on a radio: P1 is scan bit 14, P2 bit 15).
+They are `board.home_keys` (programmable on Home, arrows in the menus; [ui.md](ui.md#31-key-assignment)).
 
 ### 6.2 Side keys and PTT
 
@@ -543,7 +544,7 @@ The physical labels of the row 1 / row 2 column 1 keys and the up/down pair are 
 | SK2 | column 4 (0x34) low with no row driven |
 
 Because SK1/SK2 pull a column low on their own, a matrix scan must ignore columns that are already low before any row
-is driven. The radio's third programmable key (P1/P2, orange/top) has not been located.
+is driven. The radio has no other programmable key: the keys are the keypad, SK1, SK2 and PTT.
 
 **PTT shares the cable's serial line (measured).** The PTT pin (0x2B) is also the K1 jack's line that carries the host's
 serial data to UART0, so every 0 bit the host sends pulls the pin low. Measured on a radio, 3 s per case, key scan
@@ -1009,14 +1010,15 @@ From the radio's firmware (code read, not measured):
 
 | Item | Value |
 |---|---|
-| When | the RX frequency is in 108.000 to 136.000 MHz (exclusive). AM is chosen by the frequency alone; no channel field |
+| When | the RX frequency is in 108.000 MHz (inclusive) to 136.000 MHz (exclusive). AM is chosen by the frequency alone; no channel field |
 | 0x43 | 0x0048: receive filter 14:12 = 0 (about 1.7 kHz), weak-signal bandwidth 0, narrow |
 | 0x47 | 0x6740 (AF type 7), written at the set-up and again when the audio is unmuted |
 | 0x13 | 0x03FF, then a gain loop rewrites it (below) |
 | 0x4A | 0x5450, written only here and never restored |
-| Not written | 0x04 (the AM demodulator enable bit: AM is 0x47 type 7 alone), 0x7E, 0x2B, 0x48, sub-audio |
+| 0x48 | 0x31E0 with a stored setting s (1-15) ORed into bits 3:0, at each air band tune (s = 13, 0x31ED, when out of range). The FM and DMR set-ups leave 0xBBBF |
+| Not written | 0x04 (the AM demodulator enable bit: AM is 0x47 type 7 alone), 0x7E, 0x2B, 0x49, 0x10-0x12, 0x14, sub-audio |
 | Leaving AM | 0x13 = 0x037E, then the FM or DMR set-up |
-| Gain loop | each tick: the 0x67 reading (bits 8:0) averaged with the one before; dB = (average - 142) / 2. 10 dB or more: down at once to the table entry about (dB - 8) below the current one. Under -6 dB and 30 ticks since the last change: up one entry. Any change, or -6 dB and over, starts the 30 ticks again. The table holds 42 0x13 words from 0x000 (-93 dB) to 0x03FF (0 dB). The RSSI isn't corrected for the gain |
+| Gain loop | a tick every 10 ms in AM (empty channel included) and one at the end of each tune: the 0x67 reading (bits 8:0) averaged with the raw reading before (0 after a tune); dB = (average - 142) / 2, truncated toward 0. 1 to 9 dB over (average 144-161): down one entry every tick. 10 dB or more: down at once to the entry at or under (current dB - (dB - 8)). Any cut, and any tick at -6 dB and over, sets a 30-tick hold; under -6 dB with the hold at 0: up one entry each tick (a raise doesn't restart the hold). So it holds the average at 129-143. 0x13 is written every tick. The index is kept across tunes (0x13 = 0x03FF at the set-up lasts only until the tune's tick). The table holds 42 0x13 words from 0x000 (-93 dB) to 0x03FF (0 dB), plus a power-on start entry 0x03BE (-7 dB). The RSSI isn't corrected for the gain |
 | Squelch | 0x78 = n << 8 \| (n - 1) on the raw 0x67 scale, n from the factory page's air band rows (11.2: 0x80 level 9, 0x85 level 1, at five points over 108-136 MHz), interpolated by level and frequency. One radio's rows: 61 (level 9) and 71 (level 1), about 30-40 below its FM rows |
 
 On the bench (radio on a dummy load, an AM carrier from the SDR bench, a desk with a raised noise floor):
@@ -1033,11 +1035,26 @@ decides; the factory rows can't be compared with 0x67 as it reads here.
 What RadioFoundry does: `rx_am` in `boards/dm32/radio_dm32.c` is the FM receive path (VHF LNA, speaker source to the
 FD6818, A2) with that set-up: 0x43 = 0x0048, 0x47 = 0x6740, 0x13 = 0x03FF and its gain loop at every status poll, 0x4A
 = 0x5450, each AM tune (`fd6818_set_am`, `fd6818_am_status`). Leaving AM writes 0x13 = 0x037E, 0x47 = 0x0140 and 0x4A as
-it read before. The squelch works on noise_sq plus 17 (`fd6818_am_noise`): level 1 opens under 47, as the chip's own
+it read before. The gain loop (`fd6818_agc_step`) runs at each status poll, so its hold counts polls; it starts from
+full gain at each AM tune and writes 0x13 only when the gain changes. The squelch works on noise_sq plus 17 (`fd6818_am_noise`): level 1 opens under 47, as the chip's own
 squelch does, and each level is 3 dB tighter; the factory rows are not read. The RSSI shown adds the gain the loop took
 off back. The RDA5807M runs through the shared HR_C7000 glue (`platform/hrc7000/bcast_hrc.c`)
 on PTA25 / PTA26 with no enable pin; its audio path turns the amplifier on and leaves the speaker source alone (B4).
 The air band is an RX-only band of 108-136 MHz and the broadcast range 65-108 MHz in `boards/dm32/board.c`.
+
+**Where the gain loop settles.** Measured on a DM-32UV (rf A): a steady AM carrier from the SDR bench at four levels
+10 dB apart (30 dB in all) (on a 2 m frequency, which a bench build received as AM: same set-up and VHF path), 0x67 read over the
+debug link once the loop had settled:
+
+| Signal | 0x67 median (10-90 %) | 0x13 |
+|---|---|---|
+| weakest | 137 (135-139) | 0x05E |
+| +10 dB | 142 (140-143) | 0x01F |
+| +20 dB | 140 (140-141) | 0x00D |
+| +30 dB | 142 (141-142) | 0x003 |
+
+Without the one-entry cuts at 1-9 dB over, the loop settled the same carriers at 148-158 (3-8 dB over the target),
+where #545 reports AM audio distorted.
 
 ---
 
@@ -1061,6 +1078,42 @@ the call sign at 20 wpm, 800 Hz, about 1.8 kHz deviation; the next one 5 min lat
 repeat of a call sat 90.2 ms after the original on every voice burst (72 of 72). 212 of 216 repeated voice frames needed
 Golay corrections and 4 were uncorrectable, where the direct copy was clean: the receiver takes bit errors while it
 switches per burst. As a user it reports both copies of a call (gotchas 14.15).
+
+### 8.10 Two RF sections
+
+Newer DM-32UV radios have an RF section whose FD6818 needs another set-up. They ship with
+`DM32.NRFB.01.050`; the older builds (046 to 049) leave their receiver dead. On the classic set-up above, the newer
+part's synthesizer never locks: no receive anywhere, and transmit far off frequency (146.520 MHz set, 220.100 MHz out).
+RadioFoundry checks which part is fitted at start-up.
+
+Set-up B rows marked "user" were checked on one user's radio with the newer section; none are yet checked on a
+RadioFoundry test radio.
+
+| | Classic section (set-up A, 8.2-8.8) | Newer section (set-up B) |
+|---|---|---|
+| FD6818 tables | 8.2 | the DM-1801 Pro's (`hardware-dm1801pro.md` 5), `fd6818_variant_b_dmr6943` |
+| 0x37 | 0x1D0F / 0x1D1F / 0x1F0F / 0x1F1F | 0x9D1F (bit 15 set) |
+| 0x30 into RX / TX | idle, then 0xBFF1 / 0xC1FE | idle, 0x0200, then 0xBFF1 / 0xC1FE |
+| 0x1A, 0x40 | band words (8.3) | 0x1A not written; 0x40 = 0x34F0, on FM transmit 0x3480 + the calibration byte |
+| DMR 0x47 / 0x48 | 0x0140 / 0xBBBF | 0x6943 / 0xB2FD; the DM-1801 Pro's 0x0140 / 0xB2F5 gave no DMR sync (user) |
+| 0x50 around each switch to TX | not written | FM: 0xBB20 before, 0x3B20 after (user: after only); DMR burst: 0x3B18 after (user: 0x3B20) |
+| 0x2E / 0x2F at each receive tune | not written | 0x8608 / 0x1890 with CTCSS, 0x9608 / 0x9890 with DCS or none |
+| HR_C7000 RF_MODE bit 15 (RX IQ invert) | set | clear (user; set: DMR syncs but decodes nothing usable) |
+| Receiver sleep (8.8) | 0x37 = 0x1D11 / 0x1D00, wake 0x1F1F, 0x1F0F | 0x37 = 0x9D17 (FM) / 0x9D00 (DMR), wake 0x9D1F (user: idle only) |
+| 0x0C bit 9 (synthesizer locked) on set-up A | set at every frequency tried, 136-520 MHz | never set (user) |
+| 0x0C bit 9 on set-up B | set | set |
+| 0x3D | reads 0x2AAB | reads 0 (user) |
+
+The data flash can't tell the sections apart: a Puya part (JEDEC 852018) is fitted with both.
+
+Start-up check (`radio_dm32.c` `rf_detect`, `fd6818_detect`): set-up A, tuned to 145 MHz in RX, waits up to 20 ms
+for 0x0C bit 9 to read set three times in a row, 1 ms apart (the bit can read set once while the synthesizer
+settles). No lock: set-up B the same way. Set-up B locks on both sections, so A goes first, and when B locks A is tried
+once more with 60 ms, so a slow lock on the classic section isn't taken for the newer one. Neither locking leaves
+set-up A and refuses every transmission. The diagnostics line `flash ... cal ... rf X` names the result: `A`, `B`, or `-` for
+neither. Set-up B has no AM receive yet (8.7 is set-up A's).
+
+With no receive tone RadioFoundry writes the DCS 0x2E / 0x2F pair, which is also the power-on 0x2F.
 
 ## 9. Audio path
 
@@ -1224,7 +1277,7 @@ line framing `drivers/gps/nmea_line`:
 |---|---|
 | Start-up | GPIO 0x2C low (module on), UART1 at 9600 8N1 (`hrc_uart_setup`, divisor 547, 0.02 % off), receive interrupt on |
 | Listen | 5 s for one checksum-valid sentence. The module sends a sentence a second from about 1 s after power-up, with or without a fix |
-| Heard | The module is present (`board.gps_present`). Every valid sentence goes to the APRS position source (`aprs_nmea`, CONFIG_APRS). The module stays powered while Settings > Location > GPS is on; with it off, `hrc_gps_enable(false)` (`board_t.gps_enable`) powers it down and stops the UART within one 20 ms poll, and turning it on powers it up again. The setting is applied at start-up (the probe runs first, whatever it says) and on each change |
+| Heard | The module is present (`board.gps_present`). Every valid sentence goes to the position service (`position_nmea`, CONFIG_GPS). The module stays powered while Settings > Location > GPS is on; with it off, `hrc_gps_enable(false)` (`board_t.gps_enable`) powers it down and stops the UART within one 20 ms poll, and turning it on powers it up again. The setting is applied at start-up (the probe runs first, whatever it says) and on each change |
 | Nothing heard | GPIO 0x2C high (module off), UART1 interrupt off. The radio reports no GPS and the Location settings are dimmed |
 | Diagnostics | The line `gps yes` (or `gps no`) `GOOD/BAD bBYTES on|off`: valid sentences, bad ones (checksum, length, UART errors, ring overflow), bytes received, and whether the module is powered now (Settings > Location > GPS) |
 | Switching on again | The UART is set up once, before the module is first powered. While the module is off its line is held low, a break the UART is still receiving, and the UART ignores a line control write while busy, so switching on only clears the RX FIFO and status and enables the interrupt (`hrc_uart_rx_clear`). Setting the baud rate again there left the UART deaf on the DB25-D (2026-10-17) |
@@ -1391,7 +1444,7 @@ Runs on a radio: `docs/testing/dm32-bringup.md` is the bring-up checklist and li
 | Image | linked at 0x0300C000, crt0 (`Reset_Handler`) is the first byte; wrapped with `tools/serial_loader.py --wrap` for the Baofeng updater | `boards/dm32/memory.ld`, `platform/hrc7000/crt0.S` |
 | Program flash | app 0x0300C000..0x030E8000 (880 KB); codec slot 0x030E8000..0x03100000, filled only on the user's machine by `tools/hrc7000_codec.py` | `boards/dm32/memory.ld` |
 | SRAM | one region, 0x10000..0x43A00 (211,456 B): vector table (VBR = 0x10000), RAM code (interrupt entry, clock set-up, the DMR slot engine and the board's DMR glue), `.ram_lo` (the state the core marks `RFOUNDRY_CPU_RAM`, the zeroed state of the radio task, APRS, hotspot rings and DMR data buffers, and the interrupt stack), data, bss (RTOS heap inside, the network buffers) and the start-up stack. 0x43A00..0x58000 (83,456 B) is the codec window and is not linked. See 17.1 | `boards/dm32/memory.ld`, `platform/hrc7000/common.ld` |
-| Modem SRAM | 0x18000000..0x1800013F PCM buffers; 0x18000E48..0x18003E28 the codec's tables (copied at first use) | `platform/hrc7000/audio_pcm.c`, `platform/hrc7000/vocoder.c` |
+| Modem SRAM | 0x18000000..0x1800013F PCM buffers; 0x18000E48..0x18003E38 the codec's tables (copied at first use) | `platform/hrc7000/audio_pcm.c`, `platform/hrc7000/vocoder.c` |
 | Clocks | XIP quad mode and divider (1.1 steps 2-3) always; the rest of 1.1 only when the bootloader left the system clock on the oscillator; watchdog off (then `main()` starts it, [watchdog.md](watchdog.md)); cache as 1.3 | `platform/hrc7000/clock.c` |
 | Interrupts | PIC sources 0-63 as vectors 32-95 (assumed vectored), level mode, one level, never nested; EOI by writing 0x04 to 0x17000010 in the common entry | `platform/hrc7000/irq.c`, `freertos/portasm.S` |
 | Timers | 1: RTOS tick (1 kHz); 2: free-running cycle clock (microseconds, `hal_millis`); 3: DMR PA one-shot; 4: APRS AFSK, tops up the prompt FIFO every 2 ms while sending | `platform/hrc7000/time.c`, `platform/hrc7000/dmr_glue.c`, `platform/hrc7000/hrc_afsk.c` |

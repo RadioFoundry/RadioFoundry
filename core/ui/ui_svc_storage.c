@@ -6,7 +6,8 @@
 //     core saves and restores itself (ui_svc_apply sends changes there); the preferences in settings_t (brightness,
 //     default squelch, hotspot allowed) directly; the DMR data service's answers (radio check, call alert, LRRP) from
 //     its settings, which the radio core saves; the UI's own (reply window, mic gain, auto lock, key timing, GPS
-//     options) from their settings_t fields. Settings nobody stores yet stay in the stub's RAM table.
+//     options) from their settings_t fields; the position settings from the position service, which saves them.
+//     Settings nobody stores yet stay in the stub's RAM table.
 //   - save to channel, the permanent talk target and the factory reset: the UI task only takes a copy of what to
 //     write and hands a job to the housekeeping task (storage_job_post), so the UI never waits for a flash erase. The
 //     channel is written with codeplug_set_channel; the radio core re-reads it when codeplug_serial() changes. A job
@@ -20,6 +21,9 @@
 #include "radio/ref_trim.h"
 #include "storage/storage.h"
 #include "codeplug/codeplug.h"
+#include "codeplug/codeplug_kv.h"
+#include "radio/radio_keys.h"
+#include "dmr/dmr_emergency.h"	// the emergency tone (Settings > Sound); stubs without CONFIG_DMR_EMERGENCY
 #include "hal_time.h"
 #include "config.h"
 #if CONFIG_HOSTLINK
@@ -36,6 +40,9 @@
 #endif
 #if CONFIG_DMR_PRIVACY
 #include "dmr/dmrPrivacy.h"
+#endif
+#if CONFIG_POSITION
+#include "position/position.h"
 #endif
 #if CONFIG_KEY_ASSIGN
 #include "input/input.h"
@@ -111,6 +118,21 @@ static bool key_set(uint8_t id, int32_t value);
 #if CONFIG_DMR
 static bool dmr_id_post(uint32_t id);	// a job: the codeplug write is the housekeeping task's
 #endif
+// The settings area's key of a Settings > Sound tone row (radio_keys.h radio_tone_rows)
+static uint16_t tone_row_key(uint8_t id)
+{
+	return id == UI_SET_CALL_END_TONE ? CODEPLUG_KEY_CALL_END_TONE : id == UI_SET_TOT_WARN_TONE ? CODEPLUG_KEY_TOT_WARN_TONE :
+		id == UI_SET_BATTERY_TONE ? CODEPLUG_KEY_BATTERY_TONE : CODEPLUG_KEY_TX_DENY_TONE;
+}
+static bool tone_post(uint16_t key, bool on);
+#if CONFIG_DMR_DATA_CORE
+// The menu row of a setting kept as a key of the settings area (radio_keys.h), else 0
+static uint16_t data_row_key(uint8_t id)
+{
+	return id == UI_SET_ARS_SERVER ? CODEPLUG_KEY_ARS_SERVER : id == UI_SET_IP_GATEWAY ? CODEPLUG_KEY_IP_GATEWAY : 0;
+}
+static bool data_id_post(uint16_t key, uint32_t id);	// a job too: the key's write is the housekeeping task's
+#endif
 
 int32_t ui_svc_setting_get(uint8_t id)
 {
@@ -143,7 +165,7 @@ int32_t ui_svc_setting_get(uint8_t id)
 		return radio_volume_step(st.volume);
 	case UI_SET_KNOB_WHEN_LOCKED:
 		settings_read(&st);
-		return (st.knob_flags & SETTINGS_KNOB_LOCK) == 0;	// stored as the lock, shown as the knob working
+		return (st.sound_flags & SETTINGS_KNOB_LOCK) == 0;	// stored as the lock, shown as the knob working
 	case UI_SET_BRIGHTNESS:
 		settings_read(&st);
 		return st.brightness >= 10 && st.brightness <= 100 ? st.brightness : 100;
@@ -246,6 +268,9 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_UPDOWN_HOME:
 		settings_read(&st);
 		return settings_updown_home(&st);
+	case UI_SET_LABEL_FIRST:
+		settings_read(&st);
+		return (st.updown_home & SETTINGS_HOME_LABEL_FIRST) != 0;
 	case UI_SET_LOW_BATTERY:
 		settings_read(&st);
 		return st.low_batt_pct;
@@ -253,8 +278,24 @@ int32_t ui_svc_setting_get(uint8_t id)
 		settings_read(&st);
 		return st.auto_off_min;
 	case UI_SET_TALK_PERMIT:
+	case UI_SET_SCAN_TONE:
 		radio_get_settings(&rs);
-		return rs.talk_permit;
+		return id == UI_SET_TALK_PERMIT ? rs.talk_permit : rs.scan_beep;
+	case UI_SET_CALL_END_TONE:
+	case UI_SET_TOT_WARN_TONE:
+	case UI_SET_BATTERY_TONE:
+	case UI_SET_TX_DENY_TONE: {
+		// The keys' bits come from the radio core (no flash read here, which sat on the radio and UI tasks' deepest
+		// paths)
+		radio_get_settings(&rs);
+		int row = radio_tone_row(tone_row_key(id));
+		return row < 0 || (rs.tones_off >> row & 1u) == 0;
+	}
+	case UI_SET_EMERGENCY_TONE: {
+		dmr_emergency_settings_t es;
+		dmr_emergency_get_settings(&es);
+		return es.rx_tone;
+	}
 	case UI_SET_TFTP_WRITE:
 		settings_read(&st);
 		return (st.net_flags & SETTINGS_NET_TFTP_NO_WRITE) == 0;
@@ -293,9 +334,15 @@ int32_t ui_svc_setting_get(uint8_t id)
 #if CONFIG_DMR_DATA_CORE
 	case UI_SET_CHECK_REPLY:
 	case UI_SET_ALERT_ANSWER:
-	case UI_SET_POS_REPLY: {
+	case UI_SET_POS_REPLY:
+	case UI_SET_ARS_SERVER:
+	case UI_SET_IP_GATEWAY: {
 		dmrDataSettings_t ds;
 		dmr_data_get_settings(&ds);
+		if (data_row_key(id) != 0) {
+			const codeplug_key_row_t *k = codeplug_keys_find(radio_keys, RADIO_KEYS_N, data_row_key(id));
+			return k != NULL ? (int32_t)codeplug_keys_field(k, &ds) : 0;
+		}
 		return id == UI_SET_CHECK_REPLY ? ds.radioCheckReply : id == UI_SET_ALERT_ANSWER ? ds.callAlertAck :
 			ds.lrrpReply;
 	}
@@ -329,6 +376,17 @@ int32_t ui_svc_setting_get(uint8_t id)
 		settings_read(&st);
 		return (st.net_flags & SETTINGS_NET_FIXED_LINK) != 0;
 #endif
+#if CONFIG_POSITION
+	case UI_SET_POS_SOURCE:
+	case UI_SET_POS_FIXED_LAT:
+	case UI_SET_POS_FIXED_LON:
+	case UI_SET_POS_DMR_CALLS: {
+		position_cfg_t pc;
+		position_get_cfg(&pc);
+		return id == UI_SET_POS_SOURCE ? pc.pref : id == UI_SET_POS_FIXED_LAT ? pc.fix_lat :
+		       id == UI_SET_POS_FIXED_LON ? pc.fix_lon : pc.dmr_gps;
+	}
+#endif
 	default:
 		return ui_svc_ram_get(id);
 	}
@@ -350,6 +408,7 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 	case UI_SET_BATTERY_SAVER:
 	case UI_SET_REPLY_S:
 	case UI_SET_TALK_PERMIT:
+	case UI_SET_SCAN_TONE:
 #if CONFIG_SFR
 	case UI_SET_SFR_RX:
 #endif
@@ -380,6 +439,12 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 #endif
 		st = settings_begin();
 		st->ui_flags = (uint8_t)(value != 0 ? st->ui_flags | ui_flag(id) : st->ui_flags & ~ui_flag(id));
+		settings_end(hal_millis());
+		return true;
+	case UI_SET_LABEL_FIRST:
+		st = settings_begin();
+		st->updown_home = (uint8_t)(value != 0 ? st->updown_home | SETTINGS_HOME_LABEL_FIRST :
+					    st->updown_home & ~SETTINGS_HOME_LABEL_FIRST);
 		settings_end(hal_millis());
 		return true;
 	case UI_SET_VIBRATE:
@@ -471,8 +536,8 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		return true;
 	case UI_SET_KNOB_WHEN_LOCKED:
 		st = settings_begin();
-		st->knob_flags = (uint8_t)(value == 0 ? st->knob_flags | SETTINGS_KNOB_LOCK :
-							st->knob_flags & ~SETTINGS_KNOB_LOCK);
+		st->sound_flags = (uint8_t)(value == 0 ? st->sound_flags | SETTINGS_KNOB_LOCK :
+							st->sound_flags & ~SETTINGS_KNOB_LOCK);
 		settings_end(hal_millis());
 		return true;
 	case UI_SET_VOLUME:
@@ -557,7 +622,22 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		dmr_data_set_settings(&ds);	// the radio core saves the data service's settings when they change
 		return true;
 	}
+	case UI_SET_ARS_SERVER:
+	case UI_SET_IP_GATEWAY:
+		return data_id_post(data_row_key(id), (uint32_t)value);
 #endif
+	case UI_SET_CALL_END_TONE:
+	case UI_SET_TOT_WARN_TONE:
+	case UI_SET_BATTERY_TONE:
+	case UI_SET_TX_DENY_TONE:
+		return tone_post(tone_row_key(id), value != 0);
+	case UI_SET_EMERGENCY_TONE: {
+		dmr_emergency_settings_t es;
+		dmr_emergency_get_settings(&es);
+		es.rx_tone = value != 0;
+		dmr_emergency_set_settings(&es);	// the radio core saves them when they change (em_flags)
+		return CONFIG_DMR_EMERGENCY;
+	}
 	case UI_SET_MSG_FORMAT:
 #if CONFIG_DMR_SMS
 		if ((value != DMR_SMS_FORMAT_ETSI_IP) && (value != DMR_SMS_FORMAT_ETSI) &&
@@ -599,6 +679,32 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		settings_end(hal_millis());
 		return true;
 #endif
+#if CONFIG_POSITION
+	case UI_SET_POS_SOURCE:
+	case UI_SET_POS_FIXED_LAT:
+	case UI_SET_POS_FIXED_LON:
+	case UI_SET_POS_DMR_CALLS: {
+		position_cfg_t pc;
+		position_get_cfg(&pc);
+		if (id == UI_SET_POS_SOURCE) {
+			if (value < 0 || value >= POSITION_PREF_COUNT)
+				return false;
+			pc.pref = (uint8_t)value;
+		} else if (id == UI_SET_POS_FIXED_LAT) {
+			if (value < -900000000 || value > 900000000)
+				return false;
+			pc.fix_lat = value;
+		} else if (id == UI_SET_POS_FIXED_LON) {
+			if (value < -1800000000 || value > 1800000000)
+				return false;
+			pc.fix_lon = value;
+		} else {
+			pc.dmr_gps = value != 0;
+		}
+		position_set_cfg(&pc, hal_millis());	// in use at once, and saved
+		return true;
+	}
+#endif
 	default:
 		return ui_svc_ram_set(id, value);
 	}
@@ -606,21 +712,15 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 
 // --- Codeplug writes, on the housekeeping task (storage_job_post) ---
 
-// text: English, marked TRN. The UI translates it when it shows it (tr), so a translation longer than the event's 40
-// bytes isn't cut, and this task needs no language. The English must fit: a cut text never matches its translation
-static void save_failed_text(const char *text)
+// why: a key (TRN). The UI shows it in the language in use (tr), so this task needs no language
+static void save_failed(tr_id_t why)
 {
 	ui_event_t ev;
 	memset(&ev, 0, sizeof ev);
 	ev.kind = UI_EV_SAVE_FAILED;
-	strncpy(ev.text, text, sizeof ev.text - 1);
+	ev.why = why;
 	ui_notify(&ev);
 }
-
-#define save_failed(s)	do { \
-	_Static_assert(sizeof(s) <= sizeof((ui_event_t){0}.text), "the text fits ui_event_t.text"); \
-	save_failed_text(s); \
-} while (0)
 
 // What the job writes: a copy of the radio's view taken when the UI asked (the job runs up to 100 ms later), and the
 // talk target for a permanent one. Only the UI task fills it, and only while no job is pending
@@ -744,7 +844,7 @@ static void cp_answer_job(void *ctx)
 		fn(NULL);
 	} else {
 		cp_drop();
-		save_failed(TRN("Couldn't write the codeplug: not saved"));
+		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
 	}
 }
 
@@ -767,7 +867,7 @@ static void dmr_id_job(void *ctx)
 {
 	(void)ctx;
 	if (!codeplug_set_dmr_id(job.id))
-		save_failed(TRN("Couldn't write the codeplug: not saved"));
+		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
 }
 
 static bool dmr_id_post(uint32_t id)
@@ -779,6 +879,72 @@ static bool dmr_id_post(uint32_t id)
 }
 #endif
 
+#if CONFIG_DMR_DATA_CORE
+// The ARS server or the IP gateway (Settings > Connections > Data services), set as every keyed setting is
+// (docs/spec/codeplug-settings.md 5): the key is written when the settings area can be, so a CPS read shows it, and
+// the data service takes the setting, which the radio core saves as the radio's own. Not a codeplug write that asks
+// about another firmware's codeplug: there the area can't be written and holds no key, so the setting is only the
+// radio's own. Refused only when the codeplug has the key and it couldn't be updated (a CPS session holds the
+// flash), since the key would put the old value back. The key in job.channel, the ID in job.id
+static void data_id_job(void *ctx)
+{
+	(void)ctx;
+	const codeplug_key_row_t *row = codeplug_keys_find(radio_keys, RADIO_KEYS_N, job.channel);
+	dmrDataSettings_t was, set;
+	dmr_data_get_settings(&set);
+	was = set;
+	codeplug_keys_set_field(row, &set, job.id);
+	if (!codeplug_keys_store(radio_keys, RADIO_KEYS_N, &was, &set))
+		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
+	else
+		dmr_data_set_settings(&set);
+}
+
+static bool data_id_post(uint16_t key, uint32_t id)
+{
+	const codeplug_key_row_t *row = codeplug_keys_find(radio_keys, RADIO_KEYS_N, key);
+	if (row == NULL || !codeplug_keys_valid(row, id) || job_busy())
+		return false;
+	job.channel = key;
+	job.id = id;
+	return storage_job_post(data_id_job, NULL);
+}
+#endif
+
+// A Settings > Sound tone on or off, set as every keyed setting is (docs/spec/codeplug-settings.md 5.2, data_id_job):
+// the key is written when the settings area can be, and the radio core takes the tone into its settings, which it
+// saves as the radio's own. Refused only when the codeplug has the key and it couldn't be updated. The key in
+// job.channel, on or off in job.temp
+static void tone_job(void *ctx)
+{
+	(void)ctx;
+	radio_settings_t rs;
+	radio_get_settings(&rs);
+	radio_tones_t was, now;
+	radio_tones_unpack(rs.tones_off, &was);
+	now = was;
+	codeplug_keys_set_field(codeplug_keys_find(radio_tone_rows, RADIO_TONE_ROWS_N, job.channel), &now, job.temp);
+	if (!codeplug_keys_store(radio_tone_rows, RADIO_TONE_ROWS_N, &was, &now)) {
+		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
+		return;
+	}
+	// Read again after the write (a flash write can take a while): a setting the UI or the debug link changed
+	// meanwhile stays, only this tone's bit changes
+	uint8_t bit = (uint8_t)(1u << radio_tone_row(job.channel));
+	radio_get_settings(&rs);
+	rs.tones_off = (uint8_t)(job.temp != 0 ? rs.tones_off & ~bit : rs.tones_off | bit);
+	radio_set_settings(&rs);
+}
+
+static bool tone_post(uint16_t key, bool on)
+{
+	if (codeplug_keys_find(radio_tone_rows, RADIO_TONE_ROWS_N, key) == NULL || job_busy())
+		return false;
+	job.channel = key;
+	job.temp = on ? 1u : 0u;
+	return storage_job_post(tone_job, NULL);
+}
+
 static channel_t job_ch;	// the job's working copy of the stored channel
 
 // Power, bandwidth, tones, mode, color code and timeslot go into the channel; the squelch is radio-wide (the default
@@ -788,7 +954,7 @@ static void save_channel_job(void *ctx)
 {
 	(void)ctx;
 	if (!codeplug_channel(job.channel, &job_ch)) {
-		save_failed(TRN("Couldn't read the channel: not saved"));
+		save_failed(TRN(STORE_ERR_CHANNEL_READ, "Couldn't read the channel: not saved"));
 		return;
 	}
 	if (job.temp & RADIO_TEMP_POWER)
@@ -806,7 +972,7 @@ static void save_channel_job(void *ctx)
 	if (job.temp & RADIO_TEMP_TS)
 		job_ch.timeslot = job.now.timeslot;
 	if (!codeplug_set_channel(job.channel, &job_ch)) {
-		save_failed(TRN("Couldn't write the codeplug: not saved"));
+		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
 		return;
 	}
 	if (job.temp & RADIO_TEMP_SQUELCH) {
@@ -847,7 +1013,7 @@ static void write_channel_job(void *ctx)
 {
 	(void)ctx;
 	if (!codeplug_set_channel(job.channel, &job.now)) {
-		save_failed(TRN("Couldn't write the codeplug: not saved"));
+		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
 		return;
 	}
 	if (job.temp != 0) {
@@ -874,7 +1040,7 @@ static void write_contact_job(void *ctx)
 {
 	(void)ctx;
 	if (!codeplug_set_contact(job.channel, &job.contact)) {
-		save_failed(TRN("Couldn't write the codeplug: not saved"));
+		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
 	}
 }
 
@@ -898,18 +1064,18 @@ bool ui_svc_write_contact(uint16_t index, const contact_t *c)
 static zone_op_t zq[ZONE_QUEUE];
 static volatile uint8_t zq_head, zq_tail;
 
-static const char *zone_edit_text(zone_edit_result_t r)
+static tr_id_t zone_edit_text(zone_edit_result_t r)
 {
 	switch (r) {
-	case ZONE_EDIT_FULL: return TRN("Zone full: not saved");
-	case ZONE_EDIT_ZONES_FULL: return TRN("No room for another zone");
-	case ZONE_EDIT_IN_ZONE: return TRN("Already in this zone");
-	case ZONE_EDIT_NO_FREE: return TRN("No free channel");
-	case ZONE_EDIT_NO_NAME: return TRN("Give it a name first");
-	case ZONE_EDIT_EDGE: return TRN("Already at the end");
-	case ZONE_EDIT_NO_ZONE: return TRN("That zone is gone");
-	case ZONE_EDIT_NO_CHANNEL: return TRN("That channel is gone");
-	default: return TRN("Couldn't write the codeplug: not saved");
+	case ZONE_EDIT_FULL: return TRN(STORE_ERR_ZONE_FULL, "Zone full: not saved");
+	case ZONE_EDIT_ZONES_FULL: return TRN(ZONE_ERR_NO_ROOM, "No room for another zone");
+	case ZONE_EDIT_IN_ZONE: return TRN(STORE_ERR_ALREADY_IN_ZONE, "Already in this zone");
+	case ZONE_EDIT_NO_FREE: return TRN(TOAST_NO_FREE_CHANNEL, "No free channel");
+	case ZONE_EDIT_NO_NAME: return TRN(TOAST_NAME_FIRST, "Give it a name first");
+	case ZONE_EDIT_EDGE: return TRN(STORE_ERR_ALREADY_AT_END, "Already at the end");
+	case ZONE_EDIT_NO_ZONE: return TRN(STORE_ERR_ZONE_GONE, "That zone is gone");
+	case ZONE_EDIT_NO_CHANNEL: return TRN(STORE_ERR_CHANNEL_GONE, "That channel is gone");
+	default: return TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved");
 	}
 }
 
@@ -971,18 +1137,18 @@ static void save_target_job(void *ctx)
 {
 	(void)ctx;
 	if (!codeplug_channel(job.channel, &job_ch)) {
-		save_failed(TRN("Couldn't read the channel: for now only"));
+		save_failed(TRN(STORE_ERR_TARGET_CHANNEL_READ, "Couldn't read the channel: for now only"));
 		return;
 	}
 	// A contact record that couldn't be read counts as not stored: nothing is written then
 	uint16_t found = codeplug_contact_find_index(job.id, !job.private_call, &job.target);
 	if (found == 0) {
-		save_failed(TRN("Not a stored contact: for now only"));
+		save_failed(TRN(STORE_ERR_TARGET_NOT_STORED, "Not a stored contact: for now only"));
 		return;
 	}
 	job_ch.contact = found;
 	if (!codeplug_set_channel(job.channel, &job_ch)) {
-		save_failed(TRN("Codeplug not written: for now only"));
+		save_failed(TRN(STORE_ERR_TARGET_NOT_WRITTEN, "Codeplug not written: for now only"));
 		return;
 	}
 	radio_req_dmr_target_clear();	// the channel's own target is this one now
@@ -1025,11 +1191,11 @@ static void factory_reset_job(void *ctx)
 	bool saved = settings_flush();
 	storage_native_t n = storage_native_erase();
 	if (!saved && storage_ready()) {
-		save_failed(TRN("Reset: the settings couldn't be saved"));
+		save_failed(TRN(STORE_ERR_RESET_SETTINGS, "Reset: the settings couldn't be saved"));
 		return;
 	}
 	if (n == STORAGE_NATIVE_FAILED && storage_ready()) {
-		save_failed(TRN("Reset: native area couldn't be erased"));
+		save_failed(TRN(STORE_ERR_RESET_ERASE, "Reset: native area couldn't be erased"));
 		return;
 	}
 	if (board.system != NULL && board.system->reboot != NULL) {
@@ -1075,7 +1241,7 @@ static void name_job(void *ctx)
 					    job.channel == UI_NAME_BOOT2 ? job.name : l2);
 	}
 	if (!ok)
-		save_failed("Couldn't write the codeplug: not saved");
+		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
 }
 
 bool ui_svc_name_set(uint8_t which, const char *text)
@@ -1104,6 +1270,7 @@ static void key_apply(void)
 	keymap_entry_t map[INPUT_KEYS_MAX];
 	uint8_t n = board.keymap_len > INPUT_KEYS_MAX ? INPUT_KEYS_MAX : board.keymap_len;
 	keyassign_build(board.keymap, n, board.side_keys, board.side_key_count, key_slots, map);
+	keyassign_build_home(map, n, board.home_keys, board.home_key_count, board.side_key_count, key_slots);
 	input_set_keymap(map);
 }
 
@@ -1125,7 +1292,7 @@ static void key_write_job(void *ctx)
 {
 	(void)ctx;
 	if (!codeplug_set_quick_keys(key_job_slots)) {
-		save_failed(TRN("Couldn't save the keys: for now only"));
+		save_failed(TRN(STORE_ERR_KEYS_NOT_SAVED, "Couldn't save the keys: for now only"));
 	}
 }
 
@@ -1155,15 +1322,46 @@ static int32_t key_get(uint8_t id)
 		key_load();
 	}
 	uint8_t k = (uint8_t)(id - UI_SET_KEY_FIRST);
-	return keyassign_get(key_slots, k / 2u, (k & 1u) != 0);
+	uint8_t fn = keyassign_get(key_slots, k / 2u, (k & 1u) != 0);
+	// A home key's slot holding what it can't do (Monitor, Tone burst from a CPS) reads as Default, as it acts
+	if (k / 2u >= board.side_key_count && !keyassign_home_allowed(fn, (k & 1u) != 0)) {
+		return KEYFN_DEFAULT;
+	}
+	return fn;
+}
+
+uint8_t ui_svc_home_key(uint8_t action, uint8_t gesture, bool home)
+{
+	if (action < ACT_HOME_KEY_1) {
+		return action;
+	}
+	if (!key_loaded) {
+		key_load();
+	}
+	uint8_t n = board.keymap_len > INPUT_KEYS_MAX ? INPUT_KEYS_MAX : board.keymap_len;
+	return keyassign_home_event(action, gesture, home, board.keymap, n, board.home_keys, board.home_key_count,
+				    board.side_key_count, key_slots);
+}
+
+bool ui_svc_key_offered(uint8_t id, int32_t value)
+{
+	uint8_t k = (uint8_t)(id - UI_SET_KEY_FIRST);
+	if (id < UI_SET_KEY_FIRST || id > UI_SET_KEY_LAST || value < 0 || value >= KEYFN_COUNT) {
+		return false;
+	}
+	if (k / 2u < board.side_key_count) {
+		return keyassign_allowed((uint8_t)value, (k & 1u) != 0);
+	}
+	return k / 2u < board.side_key_count + board.home_key_count &&
+	       keyassign_home_allowed((uint8_t)value, (k & 1u) != 0);
 }
 
 static bool key_set(uint8_t id, int32_t value)
 {
-	uint8_t k = (uint8_t)(id - UI_SET_KEY_FIRST);
-	if (k / 2u >= board.side_key_count || value < 0 || value >= KEYFN_COUNT) {
+	if (!ui_svc_key_offered(id, value)) {
 		return false;
 	}
+	uint8_t k = (uint8_t)(id - UI_SET_KEY_FIRST);
 	if (!key_loaded) {
 		key_load();
 	}

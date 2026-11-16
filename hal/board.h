@@ -86,6 +86,12 @@ typedef struct {
 	const uint8_t *side_keys;
 	const char *const *side_key_names;
 	uint8_t side_key_count;
+	// Keys the menus need that are also programmable on Home (arrows printed P1, P2): their press and long press do
+	// the user's function on Home and stay the key map's elsewhere. Roles after the side keys (side_key_count + i),
+	// up to KEYASSIGN_HOME_KEYS, and side + home keys up to KEYASSIGN_ROLES. home_key_names as printed on the radio
+	const uint8_t *home_keys;
+	const char *const *home_key_names;
+	uint8_t home_key_count;
 	// Optional: what the screen hints call the keys that send QUICK and CONTEXT on a radio without * and # keys
 	// ("P1", "P2"; docs/spec/ui.md 1); NULL: "*" and "#"
 	const char *quick_label;
@@ -137,9 +143,12 @@ typedef struct {
 	bool (*chip_reg)(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write);
 
 	// Optional: hardware options a person states because software can't read them (hal_hwopt.h): Settings >
-	// Advanced > Hardware and the debug link's HWOPT. NULL / 0 = none
+	// Advanced > Hardware and the debug link's HWOPT. NULL / 0 = none. Only in a build whose board.mk says
+	// BOARD_HWOPTS := y (RFOUNDRY_HWOPTS, hal_hwopt.h)
+#if RFOUNDRY_HWOPTS
 	const hal_hwopt_t *hwopts;
 	uint8_t hwopt_count;
+#endif
 } board_t;
 
 extern const board_t board;
@@ -181,6 +190,39 @@ static inline bool board_in_band(uint32_t hz, bool need_tx)
 		}
 	}
 	return false;
+}
+
+// The board's hardware options: how many (0 on a board without, a constant 0 in a build without: the code that walks
+// them folds away), and option i < board_hwopt_count()
+static inline uint8_t board_hwopt_count(void)
+{
+#if RFOUNDRY_HWOPTS
+	return board.hwopts != NULL ? board.hwopt_count : 0u;
+#else
+	return 0u;
+#endif
+}
+
+static inline const hal_hwopt_t *board_hwopt(uint8_t i)
+{
+#if RFOUNDRY_HWOPTS
+	return &board.hwopts[i];
+#else
+	(void)i;
+	return NULL;
+#endif
+}
+
+// The first hardware option a person still has to act on (HWOPT_ST_ASK or HWOPT_ST_RESTART, hal_hwopt.h), or NULL
+static inline const hal_hwopt_t *board_hwopt_pending(void)
+{
+	for (uint8_t i = 0; i < board_hwopt_count(); i++) {
+		uint8_t st = hwopt_state(board_hwopt(i));
+		if (st == HWOPT_ST_ASK || st == HWOPT_ST_RESTART) {
+			return board_hwopt(i);
+		}
+	}
+	return NULL;
 }
 
 // Some band may transmit: false on a radio whose transmitter isn't written yet

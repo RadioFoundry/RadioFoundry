@@ -20,6 +20,7 @@
 #include "cps/cps_lz4.h"
 #include "cps/cps_openfw.h"
 #include "codeplug/codeplug.h"
+#include "codeplug/codeplug_kv.h"
 #include "storage/storage.h"
 #include "debuglink/debuglink_proto.h"
 #if CONFIG_TFTP
@@ -246,7 +247,7 @@ static bool copy_slot(uint32_t k, uint32_t blk, uint8_t *buf, bool vfo, uint32_t
 	if (vfo) {
 		cps_openfw_vfo_written(p, buf, now_ms);
 	}
-	return storage_sector_write(p, buf);
+	return codeplug_kv_commit(p, buf);	// the settings area's rule (codeplug-settings.md 6)
 }
 
 // --- replies ---
@@ -544,7 +545,7 @@ static size_t op_end(uint16_t len, uint8_t *out, uint32_t now_ms)
 		ok = stage_block(s.addr / CPSF_BLOCK);
 	} else {
 		cps_openfw_vfo_written(phys(s.addr), s.buf, now_ms);
-		ok = storage_sector_write(phys(s.addr), s.buf);
+		ok = codeplug_kv_commit(phys(s.addr), s.buf);
 		s.written = s.written || ok;
 	}
 	drop_block();

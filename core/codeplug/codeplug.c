@@ -6,6 +6,8 @@
 // Edits rewrite records through the sector journal (core/storage) and keep every byte the model doesn't own.
 #include <string.h>
 #include "codeplug.h"
+#include "codeplug_kv.h"	// CODEPLUG_KV_ADDR: Start new clears the settings area
+#include "codeplug_tag.h"
 #include "board.h"
 #include "storage/storage.h"
 
@@ -52,7 +54,8 @@ static uint32_t fl_base = DEFAULT_FLASH_BASE;
 #define CH_SFR_A	0x25u	// SFR byte A (ours, open-firmware-cps.md 7.3.3)
 #define CH_LFLAG1	0x26u
 #define CH_DMR_ID	0x27u
-#define CH_SFR_B	0x2Au	// SFR byte B (ours)
+#define CH_SFR_B	0x2Au	// SFR byte B (ours); bit 6 the FM tone burst, read without the SFR flag
+#define SFRB_TONE_BURST	0x40u
 #define CH_RX_GROUP	0x2Bu
 #define CH_CC		0x2Cu
 #define CH_CONTACT	0x2Eu
@@ -666,13 +669,16 @@ bool codeplug_openfw_decode(const uint8_t *r, channel_t *out)
 	out->no_beep = (r[CH_LFLAG1] & LFLAG1_NO_BEEP) != 0;
 	out->no_eco = (r[CH_LFLAG1] & LFLAG1_NO_ECO) != 0;
 	out->roam = (r[CH_LFLAG1] & LFLAG1_ROAM) != 0;
+	out->tone_burst = r[CH_SFR_B] != 0xFFu && (r[CH_SFR_B] & SFRB_TONE_BURST) != 0;	// 0xFF: a writer that fills unknown bytes
 	if (r[CH_LFLAG1] & LFLAG1_SFR) {
 		out->sfr_flag1 = LFLAG1_SFR;
 		out->sfr_a = r[CH_SFR_A];
 		out->sfr_b = r[CH_SFR_B];
 	}
 	out->alias_tx = (uint8_t)(((r[CH_FLAG1] & 0x02u) ? CODEPLUG_ALIAS_TS1_TEXT : 0u) |
-				  ((r[CH_FLAG1] & 0x08u) ? CODEPLUG_ALIAS_TS2_TEXT : 0u));
+				  ((r[CH_FLAG1] & 0x08u) ? CODEPLUG_ALIAS_TS2_TEXT : 0u) |
+				  ((r[CH_FLAG1] & 0x01u) ? CODEPLUG_ALIAS_TS1_GPS : 0u) |
+				  ((r[CH_FLAG1] & 0x04u) ? CODEPLUG_ALIAS_TS2_GPS : 0u));
 	return true;
 }
 
@@ -709,11 +715,19 @@ void codeplug_openfw_encode(const channel_t *ch, uint8_t *r)
 	r[CH_LFLAG1] = (uint8_t)((r[CH_LFLAG1] & ~(LFLAG1_ID | LFLAG1_NO_BEEP | LFLAG1_NO_ECO | LFLAG1_DMO)) |
 				 (ch->dmr_id != 0 ? LFLAG1_ID : 0) | (ch->no_beep ? LFLAG1_NO_BEEP : 0) |
 				 (ch->no_eco ? LFLAG1_NO_ECO : 0) | (ch->dmo ? LFLAG1_DMO : 0));
+	// The rest of SFR byte B is kept as read (the SFR fields are read only here). Never 0xFF, which reads as "not
+	// set": with the burst on over a byte a writer filled, the unused bits 5-4 are cleared
+	r[CH_SFR_B] = (uint8_t)((r[CH_SFR_B] & ~SFRB_TONE_BURST) | (ch->tone_burst ? SFRB_TONE_BURST : 0));
+	if (r[CH_SFR_B] == 0xFFu) {
+		r[CH_SFR_B] = 0xCFu;
+	}
 	uint32_t tot = (ch->tot_s + 14u) / 15u;
 	r[CH_TOT] = (uint8_t)(tot > 255u ? 255u : tot);
-	// The text bit of each timeslot's talker alias field; the APRS bit is kept
-	r[CH_FLAG1] = (uint8_t)((r[CH_FLAG1] & ~0x0Au) | ((ch->alias_tx & CODEPLUG_ALIAS_TS1_TEXT) ? 0x02u : 0u) |
-				((ch->alias_tx & CODEPLUG_ALIAS_TS2_TEXT) ? 0x08u : 0u));
+	// Each timeslot's talker alias field: its text bit and its position (APRS) bit
+	r[CH_FLAG1] = (uint8_t)((r[CH_FLAG1] & ~0x0Fu) | ((ch->alias_tx & CODEPLUG_ALIAS_TS1_TEXT) ? 0x02u : 0u) |
+				((ch->alias_tx & CODEPLUG_ALIAS_TS2_TEXT) ? 0x08u : 0u) |
+				((ch->alias_tx & CODEPLUG_ALIAS_TS1_GPS) ? 0x01u : 0u) |
+				((ch->alias_tx & CODEPLUG_ALIAS_TS2_GPS) ? 0x04u : 0u));
 	if (ch->dmr_id != 0) {
 		r[CH_DMR_ID] = (uint8_t)(ch->dmr_id >> 16);
 		r[CH_DMR_ID + 1] = (uint8_t)(ch->dmr_id >> 8);
@@ -752,6 +766,9 @@ bool codeplug_channel(uint16_t number, channel_t *out)
 	switch (source) {
 	case CODEPLUG_OPENFW:
 		ok = openfw_channel(number, out);
+		if (ok) {
+			codeplug_tag_apply(number, out);	// so no caller takes a tagged channel for a plain one
+		}
 		break;
 	case CODEPLUG_BUILTIN:
 		ok = builtin_channel(number, out);
@@ -970,7 +987,10 @@ bool codeplug_start_new(void)
 	if (!ok && storage_ready()) {
 		ok = flash_write(GEN_BASE, NULL, GEN_CLEAR) && flash_write(BOOT_TEXT, NULL, 2u * CODEPLUG_NAME_LEN) &&
 		     flash_write(QUICK_KEYS, zero, CODEPLUG_QUICK_KEYS * 2u) &&
-		     flash_write(CONTACT_BASE, NULL, CONTACT_COUNT * CONTACT_SIZE);
+		     flash_write(CONTACT_BASE, NULL, CONTACT_COUNT * CONTACT_SIZE) &&
+		     // The settings area: keys from before the other firmware (it never wrote there) would come back to
+		     // life in a codeplug meant to be clean (docs/spec/codeplug-settings.md 5)
+		     flash_write(EE(CODEPLUG_KV_ADDR), NULL, STORAGE_SECTOR);
 		ev_bad = 0;	// cleared: ours from now on (a failure re-reads it, materialize)
 		banks_unread = 0;	// the owner chose to clear it: materialize writes every bitmap
 		ok = ok && materialize();
@@ -1005,15 +1025,24 @@ bool codeplug_set_channel(uint16_t number, const channel_t *ch)
 	    ch->tx_hz >= 1000000000u) {
 		return false;
 	}
+	codeplug_tag_t tag;
+	uint8_t action = CODEPLUG_TAG_W_NONE;
 	storage_lock();
 	// A channel shown may be rewritten in an unknown bank: its in-use bit is set already, the bitmap isn't written
 	bool ok = materialize() && (is_used(number) || bank_known(number)) &&
 		  flash_read(channel_addr(number), r, sizeof(r));
 	if (ok) {
+		// The channel's tag follows it, or goes (docs/spec/channel-modes.md 2.4); a tagged kind keeps its safe base
+		bool safe;
+		action = codeplug_tag_before_write(number, ch, is_used(number), (const char *)&r[CH_NAME], &tag, &safe);
 		if (!is_used(number)) {
 			blank_channel(r);	// a free slot's bytes aren't ours to keep (another firmware's, or deleted)
 		}
 		codeplug_openfw_encode(ch, r);
+		if (safe) {
+			r[CH_MODE] = 1;
+			r[CH_FLAG4] |= FLAG4_RX_ONLY;
+		}
 		ok = flash_write(channel_addr(number), r, sizeof(r));
 	}
 	if (ok && !is_used(number)) {
@@ -1028,7 +1057,8 @@ bool codeplug_set_channel(uint16_t number, const channel_t *ch)
 		serial++;
 	}
 	storage_unlock();
-	return ok;
+	// The record first: a cut between the two leaves a harmless record
+	return ok && codeplug_tag_after_write(number, ch, action, &tag);
 }
 
 bool codeplug_delete_channel(uint16_t number)
@@ -1050,7 +1080,8 @@ bool codeplug_delete_channel(uint16_t number)
 		serial++;
 	}
 	storage_unlock();
-	return ok;
+	// Its tag goes too: a channel written at this number later is a new one. Nothing is written when there is none
+	return ok && codeplug_tag_remove(number);
 }
 
 static bool write_zone_bitmap(uint8_t slot, bool on)
@@ -1227,8 +1258,8 @@ void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_N
 	storage_unlock();
 }
 
-#if CONFIG_APRS
-// APRS configuration records (open-firmware-cps.md 7.3.8)
+#if CONFIG_APRS_AFSK
+// APRS configuration records (the AX.25 half reads them) (open-firmware-cps.md 7.3.8)
 #define APRS_BASE	EE(0x1588u)
 #define APRS_SIZE	0x40u
 #define APRS_MAGIC	0x4153u	// 0x4152: the older layout, ambiguity one bit lower

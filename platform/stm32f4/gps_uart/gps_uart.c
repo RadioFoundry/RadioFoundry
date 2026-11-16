@@ -9,11 +9,11 @@
 #include "gps/gps_rx/gps_baud.h"
 #include "FreeRTOS.h"
 #include "task.h"
-#if CONFIG_APRS
-#include "aprs/aprs.h"
+#if CONFIG_GPS
+#include "position/position.h"
 #endif
 
-#define GPS_TASK_STACK		384	// words: the APRS NMEA parser runs on it
+#define GPS_TASK_STACK		384	// words: the position service's NMEA parser runs on it
 #define GPS_TASK_PRIORITY	1
 #define GPS_POLL_MS		20
 #define GPS_IRQ_PRIORITY	7	// numerically >= 4: may call FreeRTOS, doesn't need to
@@ -100,9 +100,9 @@ static uint32_t activity(void)
 
 static void sentence(const char *s, uint8_t len, uint32_t now_ms)
 {
-#if CONFIG_APRS
+#if CONFIG_GPS
 	if (enabled) {
-		aprs_nmea(s, len, true, now_ms);
+		position_nmea(s, len, true, now_ms);
 	}
 #else
 	(void)s;

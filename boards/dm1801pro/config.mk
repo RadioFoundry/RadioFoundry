@@ -23,3 +23,8 @@ BOARD_UNSUPPORTED += GPS_SKY	# needs the GPS receiver (above)
 # What the hardware can do but this radio's driver or glue doesn't yet, the same way: off by default, and off in ci's
 # maximal configuration too
 BOARD_NOT_WRITTEN += AUDIO_PROBE	# the probe's audio tap (board.audio_tap) isn't written for this radio
+
+# A Chinese character is 16 px tall (core/ui/cjk_font.h) and these layouts draw their words in the 5x8 font:
+# there is no room for a 16 px line, and the CJK face must not be built in (docs/build-config.md)
+BOARD_UNSUPPORTED += LANG_ZH	# a Chinese line needs 16 px; this layout draws its words in a smaller font
+BOARD_UNSUPPORTED += LANG_DEFAULT_ZH	# needs LANG_ZH

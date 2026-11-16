@@ -166,10 +166,11 @@ typedef struct {
 	uint16_t aprs_distance_m;	// beacon after moving this far, 0 = off
 	char aprs_symbol[2];		// symbol table and code
 	uint8_t aprs_path;		// aprs_path_t
-	uint8_t aprs_pos_src;		// aprs_pos_src_t
+	uint8_t aprs_pos_src;		// position_pref_t
 	uint8_t aprs_level;		// AFSK level, 0-100
 	uint8_t aprs_txdelay;		// preamble in 10 ms units
-	uint8_t aprs_misc;		// bits 0-1 aprs_via_t, 2-3 digipeater mode, 4-6 position ambiguity
+	uint8_t aprs_misc;		// bits 0-1 aprs_via_t, 2-3 digipeater mode, 4-6 position ambiguity, 7
+					// SETTINGS_APRS_MISC_POSITION
 	uint8_t aprs_stored;		// 1 = the aprs_ fields are set
 	uint16_t snmp_rf_gap_s;		// SNMP: at most one RF notification per this many seconds, 0 = 60 (was reserved7)
 	// The data service's confirmed IP rules (dmrDataSettings_t.ipConfirmedRule, docs/spec/dmr-data.md 12; appended
@@ -223,9 +224,9 @@ typedef struct {
 	// Zone share: the zones imported last, so the same zone sent again updates its import instead of adding a copy
 	// (docs/spec/zone-share.md 5.4); key 0 = unused, the oldest replaced first
 	settings_zs_import_t zs_import[SETTINGS_ZS_IMPORTS];
-	// The volume knob's options (Settings > Sound on a radio whose MCU reads the knob; appended): SETTINGS_KNOB_*,
-	// 0 = all off, as an older record reads
-	uint8_t knob_flags;
+	// Sound options (appended; was knob_flags, bit 0 only): SETTINGS_KNOB_LOCK, then the Settings > Sound tones off
+	// in bits 4..7 (settings_tones_off). 0 = the knob works and every tone is on, as an older record reads
+	uint8_t sound_flags;
 	// The VFOs' SFR role (docs/spec/sfr.md 4): byte A of a codeplug channel's SFR bytes (core/dmr/sfr.h), role bits 0 =
 	// none (was reserved9[0..1]: an older record reads none). The VFO's outbound color code is its own (no byte B)
 	uint8_t vfo_sfr;		// the first VFO
@@ -298,8 +299,10 @@ static inline void settings_set_vfo_talk(settings_t *s, uint32_t id, bool privat
 #define SETTINGS_ACCENT_COLOR	0x07u
 #define SETTINGS_ACCENT_PLAIN	0x08u
 
-// theme and updown_home hold 0..2 in bits 0-1; their upper bits hold the crash report's target (below)
+// theme and updown_home hold 0..2 in bits 0-1; their upper bits hold the crash report's target (below), and
+// updown_home bit 7 Home's talk line order (0, older records: talkgroup number first, 1: its name first)
 #define SETTINGS_SMALL_MASK	0x03u
+#define SETTINGS_HOME_LABEL_FIRST	0x80u
 static inline uint8_t settings_theme(const settings_t *s) { return (s->theme & 3u) <= 2u ? s->theme & 3u : 0; }
 static inline uint8_t settings_updown_home(const settings_t *s)
 {
@@ -326,8 +329,22 @@ static inline void settings_set_crash_contact(settings_t *s, uint16_t num)
 	s->updown_home = (uint8_t)((s->updown_home & 0x83u) | (((num >> 6) & 0x1Fu) << 2));
 }
 
-// settings_t.knob_flags
+// settings_t.sound_flags (bits 1..3 reserved, 0)
 #define SETTINGS_KNOB_LOCK		0x01u	// the volume knob does nothing while the keys are locked (Settings > Key lock > Knob when locked Off)
+#define SETTINGS_TONES_OFF_SHIFT	4	// radio_settings_t.tones_off, the radio's own copy of the codeplug's tone keys
+#define SETTINGS_TONES_OFF_MASK		0xF0u
+
+// The tones off bits (bit n = radio_tone_rows[n] off). Firmware from before them only tests and changes bit 0, so
+// they survive it.
+static inline uint8_t settings_tones_off(const settings_t *s)
+{
+	return (uint8_t)((s->sound_flags & SETTINGS_TONES_OFF_MASK) >> SETTINGS_TONES_OFF_SHIFT);
+}
+static inline void settings_set_tones_off(settings_t *s, uint8_t off)
+{
+	s->sound_flags = (uint8_t)((s->sound_flags & ~SETTINGS_TONES_OFF_MASK) |
+				   ((off << SETTINGS_TONES_OFF_SHIFT) & SETTINGS_TONES_OFF_MASK));
+}
 
 // settings_t.ui_flags (defaults: hints, message tone, talker alias, PTT when locked and vibrate on)
 #define SETTINGS_UI_LARGE_TEXT		0x01u
@@ -401,6 +418,9 @@ static inline void settings_set_crash_contact(settings_t *s, uint16_t num)
 #define SETTINGS_APRS2_DMR_UDT		0x08u	// digital APRS as an ETSI UDT location (else Motorola LRRP)
 #define SETTINGS_APRS2_TO_IS		0x10u	// our own beacons to APRS-IS through the host helper
 #define SETTINGS_APRS2_DMR_GPS		0x20u	// our position in DMR voice calls (ETSI GPS Info LC, CONFIG_DMR_GPS)
+// aprs_misc bit 7: the position service's settings are set (core/position: aprs_lat, aprs_lon, aprs_alt_m,
+// aprs_pos_src, the ambiguity and SETTINGS_APRS2_DMR_GPS). They are also taken when aprs_stored is 1
+#define SETTINGS_APRS_MISC_POSITION	0x80u
 
 typedef enum {
 	SETTINGS_RAM,		// no flash: defaults, nothing saved

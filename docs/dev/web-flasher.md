@@ -18,8 +18,8 @@ The flasher is plain ES modules. The logic ports rfoundry, and the tests check t
 | `plan.js` | Sector plans: keep, merge, and restore (a whole image put back exactly) | `rfoundry/plan.py` |
 | `manifest.js` | Release manifest checks | `rfoundry/manifest.py` |
 | `decide.js` | Keep or merge the codec | `rfoundry/cli.py` `decide_codec` |
-| `dfu.js` | The AnyRoad DFU bootloader over WebUSB. `WebUsbTransport.open` refuses the radio switched on normally (`normalMode`: the board's `dfu_layout`, else a layout of only the bootloader's sectors) before it claims the interface | `rfoundry/dfu.py` |
-| `codecsave.js` | The codec read back from a radio that runs RadioFoundry (where stock keeps it, or where the merge placed it), checked against the profile's hashes, and a copy kept in IndexedDB: before every update that erases it, elsewhere once, so an install that can't keep or check the codec (a radio back on stock firmware, in its bootloader, or after an interrupted install) needs no stock file | `rfoundry/codecsave.py` |
+| `dfu.js` | The AnyRoad DFU bootloader over WebUSB. `WebUsbTransport.open` refuses the radio switched on normally (`normalMode`: the board's `dfu_layout`, else a layout of only the bootloader's sectors) before it claims the interface. `run` erases and writes in the board's sector order; for a codec move (`plan.js` `vectorLast`) the application's first sector is erased first and written last. Every USB call fails after 10 s with no reply (`USB_TIMEOUT_MS`, a lost connection to the user), so a radio that stops answering can't hold the page | `rfoundry/dfu.py` |
+| `codecsave.js` | The codec read back from a radio that runs RadioFoundry (where stock keeps it, where the merge placed it, or where an earlier release's layout placed it: `codecSegments()` moves that copy to the current layout), checked against the profile's hashes, and a copy kept in IndexedDB, one per radio by its chip UID (a move reads the codec again and falls back only to that radio's copy): before every update that erases it, elsewhere once, so an install that can't keep or check the codec (a radio back on stock firmware, in its bootloader, or after an interrupted install) needs no stock file | `rfoundry/codecsave.py` |
 | `bootkey.js` | The bootloader key from a radio that runs RadioFoundry: the bootloader read over READ_MEM, the block with the key's SHA-256 | `rfoundry/bootkey.py` |
 | `origbackup.js` | The backup before the install through the original firmware's or the bootloader's DFU device, behind an allowlist (below) | |
 | `origversion.js` | The original firmware's version read before an install, and the hardware option it settles (below) | `rfoundry/origversion.py` |
@@ -252,7 +252,11 @@ the address are deleted within 90 days. It works with `?reporting=0`, since the 
 locally (`practiceFetch`) and sends nothing.
 
 Where it is offered: the button under every failure notice (`errorNotice()`, `problemNotice()`), the failed checks of
-the install, cable radio and loader routes, and the quiet "Something wrong? Report a Problem" link on Verify.
+the install, cable radio and loader routes, the quiet "Something wrong? Report a Problem" link on Verify, and the nav
+bar under every other step (`render()`), so a page stuck waiting on the radio, with no error shown, can still send its
+trail. It gives way to another Report a Problem the step shows (the stylesheet hides `.nav-report`). A report's
+`result` is the step's verdict (`problem` from a verify), else `failed` after an error, else `problem`. The verdict is
+dropped when the user leaves its step.
 
 Every failure says what to do next: the message itself, or `errorNotice(text, { next })` beside it. Where the step can
 run again in place, `{ retry }` puts Try Again in the notice. Pressing it removes the notice first, so a second
@@ -276,7 +280,7 @@ Which build runs (`update.js` `currentBuild`), from VERSION ([debuglink.md](../s
 |---|---|---|
 | `preset=` a variant, `off=` | that variant | the same variant; features it gained since are listed |
 | `preset=custom`, `off=` equal to a variant's | that variant | as above |
-| `preset=custom`, `off=` | custom | every switch as it was; each feature added since is asked, On or Off, before Update |
+| `preset=custom`, `off=` | custom | every switch as it was; each feature added since is asked, On or Off, before Update. A switch a kept feature now needs comes on with it and is listed. A feature it had on that now needs what the radio can't have is listed with that need (`Selection.blockers`); the user disables them or edits the build |
 | neither (older firmware) | its `features=` against the variants of its release, by the names `features=` can carry (`features.json` `reported`) | one exact match: that variant; else the build step, from the closest |
 
 The release a radio's build came from is the one with its commit, else the newest one older than its `git_time`. What
@@ -298,7 +302,8 @@ the write and stores it after the first start, so nobody picks it. The web flash
 | 1. Read | Current firmware step, under **Original firmware** and **Other / Not sure**: **Read Firmware Version** opens the WebUSB chooser on the bootloader's USB IDs; a device showing `interface` gets the read, any other (the bootloader) gets nothing. Optional | Before it asks for the bootloader, when no RadioFoundry answered the probe: reads a device with the bootloader's IDs that is connected and shows `interface`, or asks to connect the radio switched on normally (`--yes`: only one already there). `--no-version-read` skips it |
 | 2. Map | `major` gives the choice. The bootloader (by its strings, or its 0x54 answer) is told as "in update mode already"; a version not listed or no answer (a stall) is unknown. None of them settles anything, and none is an alarm | The same, as a `version` line |
 | 3. Bootloader | **Connect** refuses a device showing `interface` (and the very WebUSB device that answered): the original firmware has the bootloader's USB IDs | `check_bootloader` refuses a device showing `interface`; `wait_for_dfu` passes over the device that answered (its bus and address) and waits for the bootloader |
-| 4. Store | After the install, once the check reads the radio: HWOPT LIST, then SET when no choice is stored. A stored choice that differs is shown and kept: a person set it | The same, after `verify_after`'s probe. `--no-verify` (or no debug link) prints how to set it on the radio instead |
+| 4. Store | After the install, once the check reads the radio: HWOPT LIST, then SET when no choice is stored. A stored choice that differs is shown and kept: a person set it. The notice says "applies the next time the radio is switched on" only when the radio reports `restart` after the store | The same, after `verify_after`'s probe. `--no-verify` (or no debug link) prints how to set it on the radio instead |
+| 5. Ask | Then any option the radio still reports as `ask` (HWOPT `state`, [debuglink.md](../spec/debuglink.md#325-hwopt)): the board can't detect it and nothing above settled it (another open firmware ran before, a version not listed, no read). A warning panel first in the check's result: the radio won't transmit until it is set, a button per choice, and the original firmware versions behind each choice from `major`. A refused choice (the board found it can't be right) says so and stays on offer; `restart` after the store says to switch the radio off and on. On the **Another open firmware** path the current-firmware step says ahead that this may come (`flash.hwopt.ahead`) | `hwopt_prompt`: the same on a terminal (numbered choices; Enter or no terminal says where to set it on the radio) |
 
 Only the requests of the read are sent: GETSTATUS, CLRSTATUS or ABORT to reach dfuIDLE, DNLOAD block 0 `A2 02`, two
 GETSTATUS, ABORT, UPLOAD block 0 of 1024 bytes. The fakes (`fake.js` with `originalVersion`, rfoundry's
@@ -465,6 +470,20 @@ writes there. So the step needs no backup and loses nothing:
 | 4. Check | The radio's codeplug read again and counted. A mismatch is reported as a problem |
 The HR_C7000 backend has no conversion: its stock codeplug stays in the data flash and in the backup
 (`original-channels.bin`), and `tools/backup_codeplug.py` ports it.
+
+A bundle can hold both codeplugs, the stock one and RadioFoundry's:
+
+| Codeplug | Where the page reads it |
+|---|---|
+| RadioFoundry's | The Tools page's `backup-to-image` (`codeplug.js`) and the Codeplug Editor's open (`editor/files.js`): the `spi-flash` part, from address 0 |
+| A stock TYT-family codeplug | The same, converted by `codeplug/stock_tyt.js` ([codeplug-stock-tyt.md](../spec/codeplug-stock-tyt.md)) |
+| A stock Baofeng codeplug with a spec in `docs/spec/` | The same, converted by `codeplug/stock_baofeng.js` (the first 84 channels) |
+| Any other stock codeplug | Nowhere: no spec in `docs/spec/` describes its records, and only `dmrconf` (GPL, never in the page) decodes it |
+
+`tools/backup_codeplug.py` extracts both offline, from any data flash part, at the board's `openfw_eeprom` and through
+the board's `[stock_codeplug]` page layout, and decodes them with `dmrconf` ([codeplug-port.md](../spec/codeplug-port.md)
+5). The Codeplug Editor opens the YAML it writes. For a stock layout with no spec yet, that is the only way; doing it in
+the page needs a clean-room spec of the layout first (issue #228).
 
 ## Another open firmware (`openfw.js`)
 
@@ -703,10 +722,10 @@ loader route is used when all of these hold:
 | Condition | Why |
 |---|---|
 | RadioFoundry offers stub entry (`CONFIG_STUB_ENTRY`) | the hand-over needs it |
-| RadioFoundry reports the radio's codec | the loader writes only the firmware's own flash, so the codec must already be in place |
+| RadioFoundry reports the radio's codec, or one where an earlier release kept it (`board.codec.former`) | the loader writes only the firmware's own flash, so the codec is either in place or moves with the install: from the copy kept in IndexedDB, else from the stock file the write step asks for (`stubSegments`; a copy only in the page is never used for a move, `decide.js` `savedKept`) |
 | the image has no codec in it, and no mode was forced under Advanced | a merge or a forced mode goes through the bootloader |
 
-The codec step then needs no stock file or key. The write step sends the embedded stub (`data/f4-stub.json`, from
+There is no codec step; only a codec move without a kept copy asks for the stock file (which also gives the key), on the write step. The write step sends the embedded stub (`data/f4-stub.json`, from
 `stub/f4stub.py`), finds it on the same port or, if it enumerated again, on the granted port with the same serial
 number (one click picks it when the browser didn't keep the grant), and sends it the radio's board record
 ([stub-stm32f4.md](../spec/stub-stm32f4.md) 5.2: SPI flash bus, mode and pins, chip select, chip selects held high,
@@ -715,13 +734,16 @@ configured flag is set and the application base is 0x0800C000. Then it installs 
 [stub-stm32f4.md](../spec/stub-stm32f4.md) 7: sector 3 erased first and its first word written last. A sector that
 also holds bytes the firmware doesn't own (no radio has one since the codec moved) is downloaded as a file before
 anything is erased, and those bytes are written back unchanged. The bootloader route stays on the same step, folded,
-and opens by itself when the loader can't finish. An install cut short leaves the radio in its bootloader at the next
-power-on, which that route finishes.
+and opens by itself when the loader can't finish. For a codec move the codec segments are built before the radio is
+handed to the loader (`stubSegments`): with no source the install is refused and the radio is not touched. An install
+cut short leaves the radio in its bootloader at the next power-on, which that route finishes.
 
 | Loader answer | What the page does |
 |---|---|
 | HELLO before CONFIG: application base 0, no SPI flash, configured flag clear | Expected for protocol 4: it sends CONFIG |
 | CONFIG refused (status `0D`) | Stops, nothing written; the bootloader route opens |
+| The codec guard refuses a plain image over a codec window (`f4stub.js` `guardCodec`, `codecGuard` set) | Nothing written: restarts the radio out of the loader into its firmware (or says to turn it off and on) and opens the bootloader route |
+| Any other failure once the loader runs | Restarts the radio from the loader (`resetChip`): before sector 3 was erased (`F4Stub.erased`) it runs its firmware as before, after it it starts in update mode, and the page says which and opens the bootloader route. Only a loader that doesn't answer gets Try Again |
 | HELLO after CONFIG echoes other bytes, or another application base | Stops, nothing written |
 | A write answered `11` (not configured) | Stops; the page checks the echo before every write, so this means the loader lost its record |
 | Protocol 2 (an older loader still running from an earlier session) | No CONFIG: accepted only for a board whose record matches the wiring built into it (`v2_wiring`) |

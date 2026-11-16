@@ -85,6 +85,7 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		dl_text(t, "dmr.phase=%s\n", phase_key(cv->phase));
 		dl_text(t, "dmr.tx_error=%s\n", tx_error_key(cv->tx_error));
 		dl_text(t, "dmr.own_id=%u\ndmr.cc=%u\ndmr.ts=%u\n", (unsigned)d->own_id, d->cc, d->ts);
+		dl_text(t, "dmr.rx_cc=%u\ndmr.rx_ts=%u\n", d->rx_cc, d->rx_ts);
 		char alias[DMR_TA_TEXT_MAX + 1];
 		dmr_call_tx_alias(alias);
 		dl_text(t, "dmr.tx_alias=%s\n", alias);
@@ -101,8 +102,8 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		dl_text(t, "dmr.hear_all=%u\ndmr.hear_all_latch=%u\n", d->hear_all, d->hear_all_latch);
 		dl_text(t, "dmr.focus_id=%u\ndmr.focus_private=%u\ndmr.one_shot=%u\n", (unsigned)d->focus_id,
 			d->focus_private, d->one_shot);
-		dl_text(t, "dmr.target_manual=%u\ndmr.privacy=%u\ndmr.alias_tx=%u\n", d->target_manual, d->privacy,
-			d->alias_tx);
+		dl_text(t, "dmr.target_manual=%u\ndmr.privacy=%u\ndmr.alias_tx=%u\ndmr.gps_tx_channel=%u\n",
+			d->target_manual, d->privacy, d->alias_tx, d->gps_tx_channel);
 		dl_text(t, "dmr.underruns=%u\n", (unsigned)d->underruns);
 		if (board.dmr != NULL && board.dmr->health != NULL) {
 			// Modem interrupts the driver found lost and recovered from; the first one's controller words
@@ -158,6 +159,8 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		dl_text(t, "call.rx_pi_headers=%u\ncall.rx_alias_complete=%u\ncall.tx_alias_lcs=%u\n",
 			(unsigned)c.rx_pi_headers, (unsigned)c.rx_alias_complete, (unsigned)c.tx_alias_lcs);
 		dl_text(t, "call.rx_gps=%u\ncall.tx_gps_lcs=%u\n", (unsigned)c.rx_gps, (unsigned)c.tx_gps_lcs);
+		dl_text(t, "call.rx_in_tx=%u\ncall.rx_bs_in_tx=%u\ncall.tx_rpt_drops=%u\ncall.tx_wake_lost=%u\n",
+			(unsigned)c.rx_in_tx, (unsigned)c.rx_bs_in_tx, (unsigned)c.tx_rpt_drops, (unsigned)c.tx_wake_lost);
 		dl_text(t, "voice.rx_in=%u\nvoice.rx_frames=%u\nvoice.rx_concealed=%u\nvoice.rx_silence=%u\n",
 			(unsigned)a.rx_in, (unsigned)a.rx_frames, (unsigned)a.rx_concealed, (unsigned)a.rx_silence);
 		dl_text(t, "voice.rx_calls=%u\nvoice.rx_queue_max=%u\nvoice.rx_bad=%u\nvoice.rx_lost=%u\n",

@@ -659,6 +659,25 @@ static void test_crash_bits(void)
 	CHECK(settings_theme(&s) == 0);
 }
 
+// The Settings > Sound tones share sound_flags with the knob lock: each keeps its bits, and firmware from before the
+// tones (which only sets and clears SETTINGS_KNOB_LOCK) leaves them as they are
+static void test_sound_flags(void)
+{
+	settings_t s;
+	memset(&s, 0, sizeof s);
+	CHECK(settings_tones_off(&s) == 0);		// an older record: every tone on
+	s.sound_flags = SETTINGS_KNOB_LOCK;
+	settings_set_tones_off(&s, 0x0A);
+	CHECK(settings_tones_off(&s) == 0x0A && (s.sound_flags & SETTINGS_KNOB_LOCK));
+	settings_set_tones_off(&s, 0xFF);		// only four bits are kept
+	CHECK(settings_tones_off(&s) == 0x0F && (s.sound_flags & 0x0Eu) == 0);
+	s.sound_flags &= (uint8_t)~SETTINGS_KNOB_LOCK;	// an older firmware's knob change
+	CHECK(settings_tones_off(&s) == 0x0F);
+	s.sound_flags |= SETTINGS_KNOB_LOCK;
+	settings_set_tones_off(&s, 0);
+	CHECK(settings_tones_off(&s) == 0 && s.sound_flags == SETTINGS_KNOB_LOCK);
+}
+
 // The last dual watch B in beeps bits 1-7 and mic_gain bits 4-7: every code reads back, beeps and the mic gain stay
 // Two pages: both load; a save of page 0 alone (an older firmware's) keeps page 1 from before; a page 1 newer than
 // page 0 (its save cut before page 0) isn't the set's; a set without page 1 loads page 1's defaults
@@ -1121,6 +1140,7 @@ int main(void)
 	test_native_and_jobs();
 	test_settings_layout();
 	test_crash_bits();
+	test_sound_flags();
 	test_map_end();
 	test_settings_pages();
 	test_settings_gateway_upgrade();

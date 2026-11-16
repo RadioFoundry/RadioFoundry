@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-# MD-380 feature defaults (config/features.mk lists them all). 464 KB for code and read-only data: flash sectors 3-7;
-# the codec sectors 8-11 are never linked into (boards/md380/memory.ld, docs/spec/codec-placement.md).
+# MD-380 feature defaults (config/features.mk lists them all). 848 KB for code and read-only data: flash sectors 3-10;
+# the codec sector 11 is never linked into (boards/md380/memory.ld, docs/spec/codec-placement.md).
 # 160x128 display. The case edge crowds the top row and the two left columns (seen on the radio, 2026-10-16);
 # right and bottom are close but usable (hardware-md380.md 7). The fault trace, the large font and LTO follow the
 # platform (platform/stm32f4/config.mk)
@@ -46,9 +46,15 @@ BOARD_NOT_WRITTEN += APRS_RX	# no APRS receive audio path yet (the HR_C5000's I2
 BOARD_NOT_WRITTEN += APRS_IGATE	# needs APRS receive (above)
 BOARD_NOT_WRITTEN += HOTSPOT_SPLIT	# the split duplex glue is HR_C6000 and HR_C7000 only (docs/spec/split-duplex.md)
 BOARD_NOT_WRITTEN += AUDIO_PROBE	# no board.audio_tap yet
-# Supported, but the maximal configuration leaves these off too: PPP stands in for the USB network adapter on UART-only
-# radios (docs/spec/ppp.md), and this one has the adapter. Every switch on doesn't fit the 464 KB of flash with two
-# translations: maximal keeps Spanish, as the default build does (Italian builds on the other boards)
-MAXIMAL_SKIP := NET_PPP LANG_IT LANG_DEFAULT_IT
+# When the default build runs out of room, the IP services go first, the weakest here first: APRS-IS (NET_APRSIS, about
+# 2.7 KB: with no APRS receive it only gates RF positions out), then KISS over TCP (NET_KISS, about 0.75 KB, transmit
+# only for the same reason), then USRP or SNMP. Each serves its own kind of user over the same USB network link, so
+# dropping one costs the others nothing. USB_SERIAL_REQUEST stays while USB_NETWORK does: without it a radio in network
+# mode can't be reached by the web pages
 CONFIG_RX_EXT ?= n
 BOARD_NOT_WRITTEN += RX_EXT	# no receive range in its chip documents (a PLL and an IF chain, no single receiver chip)
+
+# A Chinese character is 16 px tall (core/ui/cjk_font.h) and these layouts draw their words in the 6x12 font:
+# there is no room for a 16 px line, and the CJK face must not be built in (docs/build-config.md)
+BOARD_UNSUPPORTED += LANG_ZH	# a Chinese line needs 16 px; this layout draws its words in a smaller font
+BOARD_UNSUPPORTED += LANG_DEFAULT_ZH	# needs LANG_ZH

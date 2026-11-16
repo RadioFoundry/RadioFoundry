@@ -139,6 +139,7 @@ static const hrc_chip_t chip = {
 	.mcu_crc = true,
 	.sync_reg = true,
 	.mode_per_channel = false,
+	.cc_any_rx = true,
 	.tx_begin = tx_begin,
 	.dmr_mode = dmr_mode,
 	.crc_len = crc_len,

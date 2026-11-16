@@ -3,7 +3,7 @@
 // A GPS module's NMEA output on a receive-only STM32F4 USART, shared by the radios with an optional module: the
 // receive interrupt, the task that drains it through drivers/gps/gps_rx, run-time detection and the
 // rate hunt (gps_baud.h). The same image runs with and without a module: one checksum-valid sentence makes it
-// present and every sentence then goes to the APRS position source (CONFIG_APRS); a silent line, or no valid sentence
+// present and every sentence then goes to the position service (core/position); a silent line, or no valid sentence
 // at any rate of the board's list, switches the USART off again and ends the task. A board adds platform/stm32f4/gps_uart,
 // drivers/gps/nmea_line and drivers/gps/gps_rx to BOARD_DIRS and calls stm32_gps_irq() from its USART's handler.
 #ifndef STM32_GPS_UART_H

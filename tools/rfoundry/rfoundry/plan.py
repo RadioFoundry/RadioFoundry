@@ -9,6 +9,13 @@ Codec modes (docs/dev/release.md "Codec handling"):
           the codec at its stock addresses (0xFF around it). Refused unless every codec window is covered. The image
           may share a sector with a codec window (never the window itself); that sector is written with both.
 
+Every sector of the plan is erased before any is written, then the sectors are written, both in the board's sector
+order (the bootloader's, board.toml). A plan that
+moves the codec out of a layout an earlier release used (vector_last, docs/spec/codec-placement.md "Moving to a new
+layout") erases the application's first sector (the vector table) first and writes it last instead (Plan.erase_order,
+Plan.write_order): a move stopped anywhere before that sector leaves it blank, so the bootloader stays in its update
+mode and the same install runs again, with no half application started in between.
+
 A written sector is always erased first and written from its start through its last data block (0xFF filling the
 gaps), as one run of 1024-byte blocks numbered from 2: the AnyRoad bootloader's region form (hardware-dm1701.md 15.2).
 
@@ -45,10 +52,11 @@ class Step:
 
 
 class Plan:
-    def __init__(self, board, mode, steps):
+    def __init__(self, board, mode, steps, vector_last=False):
         self.board = board
         self.mode = mode
         self.steps = steps
+        self.vector_last = vector_last
 
     @property
     def erase(self):
@@ -57,6 +65,24 @@ class Plan:
     @property
     def writes(self):
         return [s for s in self.steps if s.action == "write"]
+
+    @property
+    def erase_order(self):
+        """The erases in the order they run: the board's sector order, or with vector_last the sector with the application's
+        start (its vector table) first, so an erase stopped anywhere leaves no application the bootloader would
+        start."""
+        if not self.vector_last:
+            return list(self.erase)
+        return sorted(self.erase, key=lambda s: s.addr != self.board.app_base)
+
+    @property
+    def write_order(self):
+        """The writes in the order they run: the board's sector order, or with vector_last the sector with the application's
+        start last. Until it is written the bootloader finds no application and stays in its update mode, so a move
+        stopped anywhere is finished by running the same install again."""
+        if not self.vector_last:
+            return list(self.writes)
+        return sorted(self.writes, key=lambda st: st.sector.addr == self.board.app_base)
 
     @property
     def kept(self):
@@ -81,6 +107,11 @@ class Plan:
             else:
                 lines.append(head + "not touched" + (" (%s)" % st.note if st.note else ""))
         lines.append("erase %d sector(s): %s" % (len(self.erase), ", ".join("%d" % s.index for s in self.erase)))
+        if self.vector_last and self.writes:
+            first = next((s.index for s in self.erase if s.addr == self.board.app_base), None)
+            if first is not None:
+                lines.append("order: sector %d erased first and written last (a codec move: a cut leaves the radio "
+                             "in its bootloader)" % first)
         lines.append("write %d blocks (%d bytes)" % (self.total_blocks, self.total_blocks * BLOCK))
         if self.kept:
             lines.append("never erased or written: codec sector(s) %s" % ", ".join("%d" % s.index for s in self.kept))
@@ -111,11 +142,11 @@ def _check_segments(board, segments):
         raise PlanError("the image must start at the application base 0x%08X (the vector table)" % board.app_base)
 
 
-def make_plan(board, segments, mode, codec_segments=(), codec_windows=None):
+def make_plan(board, segments, mode, codec_segments=(), codec_windows=None, vector_last=False):
     """segments: the firmware image as [(addr, bytes)]; codec_segments: the codec as [(addr, bytes)] (merge mode);
     codec_windows: the windows that codec fills, [(addr, length)] (board.merge_windows(profile)). A board with several
     stock files has several layouts, so the board's own windows (their union) are what the image must avoid, and the
-    merged file's are what the codec must cover. Default: the board's windows."""
+    merged file's are what the codec must cover. Default: the board's windows. vector_last: a codec move (Plan)."""
     if mode not in MODES:
         raise PlanError("unknown codec mode %r" % mode)
     codec_secs = board.codec_sectors()
@@ -179,7 +210,7 @@ def make_plan(board, segments, mode, codec_segments=(), codec_windows=None):
         blocks = [(FIRST_BLOCK + i, bytes(buf[i * BLOCK:(i + 1) * BLOCK])) for i in range(nblocks)]
         content = "+".join(k for k in ("app", "codec") if k in kinds)
         steps.append(Step(s, "write", blocks, content))
-    plan = Plan(board, mode, steps)
+    plan = Plan(board, mode, steps, vector_last)
     for s in plan.erase:
         try:
             protect.check_absolute(board, board.rom_base, s.addr, s.end, "erase")

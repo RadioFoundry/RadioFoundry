@@ -525,7 +525,7 @@
    ],
    "codec_tables": [
     402656840,
-    402669096
+    402669112
    ],
    "loader_id": "BFUV32-V2",
    "loader_keys": "PTT and SK1 (the side key just below PTT)",
@@ -593,7 +593,7 @@
    "flash_end": 135266304,
    "app_region": [
     134266880,
-    134742016
+    135135232
    ],
    "sectors": [
     [
@@ -782,7 +782,7 @@
    "flash_end": 135266304,
    "app_region": [
     134266880,
-    134873088
+    135004160
    ],
    "sectors": [
     [

@@ -10,7 +10,7 @@ stub/USER-GUIDE.md in the RadioFoundry repository.
     stubtool.py PORT --verify-q128 q128.bin                      compare flash with a file by CRC, no data transferred
     stubtool.py PORT --rfoundry-enter --progmem p.bin --q128 q.bin     the same from a radio running RadioFoundry (built with CONFIG_STUB_ENTRY=y)
     stubtool.py PORT --rfoundry-enter --write-app rfoundry_dm1801pro.bin   program an RadioFoundry build into the program flash (changed sectors only)
-    stubtool.py PORT --attach --boot reset                      restart the radio into its firmware, no power cycle
+    stubtool.py PORT --attach --board dm1801pro --boot reset    restart the radio into its firmware, no power cycle
     stubtool.py PORT --probe                                    chip IDs and a few registers, no files
     stubtool.py PORT --peek 0x14020000:16                       read radio memory (registers, SRAM, flash window)
     stubtool.py PORT out.bin --mem q128                         the old form: one memory into out.bin
@@ -449,6 +449,11 @@ class FrameError(DumpError):
     """A damaged, short or missing frame, or a sector that failed its CRC: worth asking again."""
 
 
+class NoAnswer(DumpError):
+    """RadioFoundry's debug link did not answer a request at all (no radio running it on the port). A caller that
+    retries with --attach (a stub an earlier run left running) tells it from other errors by this class's name."""
+
+
 class StatusError(DumpError):
     """The stub answered a request with a status other than OK."""
 
@@ -720,6 +725,10 @@ def rom_cmd(op, payload=b""):
     return bytes([0x02, op, sum8(payload), 0x03]) + payload
 
 
+def restart_hint(board):
+    return "to start the firmware: stubtool.py PORT --attach --board %s --boot reset" % (board or "<id>")
+
+
 class Radio:
     """port: write(bytes), read(n) (what arrived within its timeout), reset_input_buffer(), a timeout attribute."""
 
@@ -853,7 +862,7 @@ class Radio:
             except DumpError:
                 continue
         if info is None:
-            raise DumpError("no stub answers: power-cycle the radio and run without --attach")
+            raise DumpError("no stub answers: name the radio with --board <id>, or switch it off and on and run without --attach")
         self.log("attached to stub v%d (max payload %d, SSI burst %d / %d bytes)"
                  % (info[0], info[1], self.info >> 8 & 0xFF, self.info & 0xFF))
 
@@ -1110,7 +1119,7 @@ class Radio:
                 if f[1] == seq and f[0] == (cmd | 0x80):
                     return f[4:]
                 buf = buf[k + 8 + n:]
-        raise DumpError("no answer from RadioFoundry's debug link to command 0x%02X (is RadioFoundry running with CONFIG_STUB_ENTRY=y and "
+        raise NoAnswer("no answer from RadioFoundry's debug link to command 0x%02X (is RadioFoundry running with CONFIG_STUB_ENTRY=y and "
                         "the programming cable on UART0 at 115200?)" % cmd)
 
     def rfoundry_enter(self, image=None, entry=None, board=None, force=False):
@@ -2341,6 +2350,7 @@ def self_test():
             print("FAIL: " + what)
 
     quiet = lambda *a: None
+    check("--attach --board dm32 --boot reset" in restart_hint("dm32"), "the restart hint names the board")
     try:
         import serial
     except ImportError:
@@ -3002,6 +3012,22 @@ def version_board(radio):
     return None
 
 
+def find_running_radio():
+    """The one radio running RadioFoundry: its serial port (1FC9:0094), else udp:ADDR of the one in USB network mode.
+    None when there isn't exactly one."""
+    try:
+        from serial.tools import list_ports
+        ports = [p.device for p in list_ports.comports() if (p.vid, p.pid) == (0x1FC9, 0x0094)]
+    except ImportError:
+        ports = []
+    if not ports:
+        from rfoundry import debuglink
+        ports = debuglink.find_network_radios()
+        if len(ports) == 1:
+            print("the radio is in USB network mode: %s" % ports[0])
+    return ports[0] if len(ports) == 1 else None
+
+
 def find_rfoundry_port():
     """The one serial port with RadioFoundry's USB identity (1FC9:0094), which the STM32 stub also uses"""
     from serial.tools import list_ports
@@ -3011,10 +3037,13 @@ def find_rfoundry_port():
     return ports[0]
 
 
-def main(argv=None):
+def main(argv=None, raise_errors=False):
+    """The command line. Returns the exit code; an error is printed and gives 1. raise_errors: raise it instead
+    (DumpError, OSError), for a caller that acts on which error it was (rfoundry's stub route, stubroute.py)."""
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
     ap.add_argument("port", nargs="?", help="serial port or pyserial URL (rfc2217://HOST:PORT), or udp:ADDR[:PORT] for an "
-                    "STM32 radio in USB network mode")
+                    "STM32 radio in USB network mode (then a write ends with --boot reset). With --rfoundry-enter and "
+                    "no PORT: the one radio running RadioFoundry, on serial or in network mode")
     ap.add_argument("--stub-port", metavar="PORT", help="with a udp: port: the serial port the stub comes up on "
                     "(default: the one USB device 1FC9:0094)")
     ap.add_argument("out", nargs="?", help="old form: output file for the memory chosen with --mem")
@@ -3099,8 +3128,12 @@ def main(argv=None):
     if a.self_test:
         import f4stub
         return self_test() | f4stub.self_test()
+    if not a.port and a.rfoundry_enter:
+        a.port = find_running_radio()
     if not a.port:
         ap.error("give PORT")
+    if a.port.startswith("udp:") and (a.write_app or a.write_q128) and not a.boot:
+        a.boot = "reset"	# the radio sits in the stub until reset, and comes back in network mode by itself
     jobs = []                                   # (mem, file, start, end, twice)
     if a.out:
         size = MEM[a.mem][3]
@@ -3218,7 +3251,7 @@ def main(argv=None):
             print("\n%s: %d bytes, %d sectors written, %d unchanged, verified by CRC, %.0f s" % (a.write_app, len(image), nw, nk, time.monotonic() - t0))
             print("sha256", fingerprint(a.write_app))
             if not a.boot:
-                print("run again with --attach --boot reset (or power-cycle) to start the new firmware")
+                print(restart_hint(a.board))
         if a.write_test:
             regions = {}
             for mem in (("progmem", "q128") if a.write_test == "both" else (a.write_test,)):
@@ -3293,6 +3326,8 @@ def main(argv=None):
                 raise DumpError("--boot wants reset or jump:ADDR")
         return 0
     except (DumpError, OSError) as e:
+        if raise_errors:
+            raise
         print("\nstubtool: %s" % e, file=sys.stderr)
         return 1
     except KeyboardInterrupt:

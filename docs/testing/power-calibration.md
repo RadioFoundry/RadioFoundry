@@ -7,7 +7,7 @@ once per radio model; each further radio of that model gets the short check. The
 page and into its board power table.
 
 The procedure uses the debug link's PA drive override (RADIO op 36, and the `core` view's `tx_drive` for each level's
-drive), the run-time transmit arm and the test TX limit ([debuglink.md](../spec/debuglink.md)). `tools/power_cal.py` does
+drive) and the test TX limit ([debuglink.md](../spec/debuglink.md)). `tools/power_cal.py` does
 the keying: it puts the radio in the VFO on the frequency (FM, no sub-audio tone, the TX limit on that frequency alone),
 keys each step and asks for the reading.
 
@@ -43,7 +43,7 @@ These facts set the procedure. Check them again only on a new model.
 | Wattmeter | In line between the radio and the load, averaging (not peak), resolution 0.01 W below 1 W |
 | Supply | The radio's top-power current with margin (about 12 A for a 50 W radio at 13.8 V) |
 | Frequencies | Per band: one near the middle (A) and one at least 5 MHz away (B, model runs only). Both must be in the test TX limit |
-| Radio | Transmit armed; FM, no sub-audio tone (an unmodulated carrier reads steadiest) |
+| Radio | Ready to transmit (no hardware option pending); FM, no sub-audio tone (an unmodulated carrier reads steadiest) |
 
 Each key-up lasts 2 s and is read at its end; 3 s between key-ups. 5 s key-ups only for the warm-up.
 

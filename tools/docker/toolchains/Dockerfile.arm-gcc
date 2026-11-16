@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+# Arm GNU Toolchain (arm-none-eabi) image: Arm's prebuilt release for the image's architecture in /opt/toolchain, and
+# what `make BOARD=<radio>` needs besides the compiler (make, python3, git). build-arm-gcc.sh passes the archive's URL
+# and SHA-256; the archive is fetched and checked here, so the build context is only toolchain-info.txt. gdb (it
+# needs a host Python) and the documentation are left out.
+FROM debian:trixie-slim
+ARG URL
+ARG SHA256
+RUN apt-get update \
+	&& DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends make python3 git ca-certificates \
+		curl xz-utils \
+	&& curl -fsSL -o /tmp/tc.tar.xz "$URL" \
+	&& echo "$SHA256  /tmp/tc.tar.xz" | sha256sum -c - \
+	&& mkdir /opt/toolchain \
+	&& tar xf /tmp/tc.tar.xz -C /opt/toolchain --strip-components=1 --exclude='*/share/doc' --exclude='*/share/info' \
+		--exclude='*/share/man' --exclude='*/bin/arm-none-eabi-gdb*' \
+	&& rm /tmp/tc.tar.xz \
+	&& apt-get purge -y curl xz-utils && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+COPY toolchain-info.txt /toolchain-info.txt
+ENV PATH=/opt/toolchain/bin:$PATH ARM_GCC_DIR=/opt/toolchain/bin/
+WORKDIR /work

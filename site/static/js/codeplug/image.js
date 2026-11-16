@@ -17,6 +17,10 @@ export const REGIONS = [
 	[FL + 0x00000, FL + 0x011A0],
 	[FL + 0x7B000, FL + 0x8EE60],
 ];
+// The codeplug settings area (docs/spec/codeplug-settings.md, kv.js): one sector qdmr leaves alone
+export const SETTINGS_AREA = [EE + 0x0E000, EE + 0x0F000];
+// What the Codeplug Editor reads from and writes to a radio: qdmr's ranges and the settings area, in address order
+export const EDITOR_REGIONS = [...REGIONS, SETTINGS_AREA].sort((x, y) => x[0] - y[0]);
 // The DMR ID database header (7.5; format C's is 32 bytes, iddb-compact.md 3.1): enough to tell whether one is there,
 // its format and how big it is
 export const IDDB_HEADER = [FL + 0x30000, FL + 0x30020];

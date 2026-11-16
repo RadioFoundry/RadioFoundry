@@ -6,6 +6,10 @@
 #include <string.h>
 #include "board.h"
 #include "radio/radio_sm.h"
+#include "codeplug/codeplug_modes.h"
+#if CONFIG_APRS
+#include "aprs/aprs_beacon.h"	// APRS_WHY_*
+#endif
 #include "radio/radio_sfr.h"
 #include "radio/tones.h"
 #include "dmr/call/dmr_call.h"
@@ -20,6 +24,7 @@
 #include "dmr/dmr_emergency.h"
 #include "ui/ui_svc.h"
 #include "storage/storage.h"
+#include "codeplug/codeplug_kv.h"
 #include "dmr/dmrPrivacy.h"
 #include "dmr/dmrData.h"
 #include "sim/sim_flash.h"
@@ -30,6 +35,7 @@
 #include "radio/tx_limit.h"
 #include "radio/battery.h"
 #include "fuzz.h"
+#include "position/position.h"
 
 static int failures;
 static int checks;
@@ -163,25 +169,43 @@ static const band_t bands[] = {
 };
 static bool rx_ext_on;
 static const char *const power_names[] = { "L", "M", "H" };
-// Keys: only what the side key glue (ui_svc_storage.c) needs, two side keys
+// Keys: only what the side key glue (ui_svc_storage.c) needs, two side keys and an arrow programmable on Home
 static const keymap_entry_t keymap[] = {
 	{ 0, ACT_SELECT, ACT_SELECT, false, false, 0 },
 	{ 1, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
 	{ 2, ACT_TALK_TARGET, ACT_USER_2, false, false, 0 },
+	{ 3, ACT_NAV_LEFT, ACT_USER_1, false, true, 0 },
 };
 static const uint8_t side_keys[] = { 1, 2 };
+static const uint8_t home_keys[] = { 3 };
 
 static int gps_enable_calls;
 static bool gps_enabled;
+static bool gps_here;	// the module answered (board_has_gps): only test_position has one
+static bool fake_gps_present(void) { return gps_here; }
 static void fake_gps_enable(bool on)
 {
 	gps_enable_calls++;
 	gps_enabled = on;
 }
 
+// A hardware option (hal_hwopt.h) whose state the tests set; hidden (detected) unless a test says otherwise
+static uint8_t fake_hwopt_st = HWOPT_ST_HIDDEN;
+static const char *const fake_hwopt_choices[] = { "A", "B" };
+static int8_t fake_hwopt_get(void) { return 0; }
+static bool fake_hwopt_set(uint8_t c) { (void)c; return true; }
+static uint8_t fake_hwopt_state(void) { return fake_hwopt_st; }
+static const hal_hwopt_t fake_hwopts[] = {
+	{ "Revision", 2, fake_hwopt_choices, fake_hwopt_get, fake_hwopt_set, true, fake_hwopt_state },
+};
+
 const board_t board = {
 	.name = "fake",
+	.hwopts = fake_hwopts,
+	.hwopt_count = 1,
+	.caps = CAP_GPS,
 	.gps_enable = fake_gps_enable,
+	.gps_present = fake_gps_present,
 	.bands = bands,
 	.band_count = 4,
 	.rx_ext_count = 1,
@@ -190,9 +214,11 @@ const board_t board = {
 	.power_names = power_names,
 	.power_default = 1,
 	.keymap = keymap,
-	.keymap_len = 3,
+	.keymap_len = 4,
 	.side_keys = side_keys,
 	.side_key_count = 2,
+	.home_keys = home_keys,
+	.home_key_count = 1,
 	.radio = &fake_radio,
 	.power = &fake_power,
 	.input = &fake_input,
@@ -252,6 +278,78 @@ static const contact_t contacts[] = {
 	{ "Local", 9, CONTACT_GROUP, 0 },
 };
 uint32_t codeplug_dmr_id(void) { return own_dmr_id; }
+
+// The codeplug's settings area: the ARS server key (the gateway's is built out, CONFIG_DMR_IP_GATEWAY=0) and the
+// Settings > Sound tone keys, one-byte bools (kv_tone: -1 absent)
+static bool kv_ars_present;
+static uint8_t kv_serial;
+static uint32_t kv_ars;
+static int16_t kv_tone[CODEPLUG_KEY_TX_DENY_TONE - CODEPLUG_KEY_CALL_END_TONE + 1] = { -1, -1, -1, -1 };
+static bool kv_held;	// a CPS session holds the flash, or another firmware's codeplug: no key can be written
+static bool kv_is_tone(uint16_t key) { return key >= CODEPLUG_KEY_CALL_END_TONE && key <= CODEPLUG_KEY_TX_DENY_TONE; }
+int codeplug_kv_get(uint16_t key, void *buf, uint16_t max)
+{
+	if (kv_is_tone(key)) {
+		if (kv_tone[key - CODEPLUG_KEY_CALL_END_TONE] < 0) {
+			return -1;
+		}
+		if (max > 0) {
+			*(uint8_t *)buf = (uint8_t)kv_tone[key - CODEPLUG_KEY_CALL_END_TONE];
+		}
+		return 1;
+	}
+	if (key != CODEPLUG_KEY_ARS_SERVER || !kv_ars_present) {
+		return -1;
+	}
+	memcpy(buf, &kv_ars, max < 4 ? max : 4);
+	return 4;
+}
+// One set: the ARS server as a u32, a tone as one byte
+static bool kv_set(uint16_t key, const uint8_t *v, uint16_t len)
+{
+	if (kv_is_tone(key) && len == 1) {
+		kv_tone[key - CODEPLUG_KEY_CALL_END_TONE] = v[0];
+	} else if (key == CODEPLUG_KEY_ARS_SERVER && len == 4) {
+		kv_ars_present = true;
+		kv_ars = v[0] | (uint32_t)v[1] << 8 | (uint32_t)v[2] << 16 | (uint32_t)v[3] << 24;
+	} else {
+		return false;
+	}
+	kv_serial++;	// as codeplug_kv_write: the area's serial, no codeplug reload
+	return true;
+}
+uint8_t codeplug_kv_serial(void) { return kv_serial; }
+// The walk: c->at the next key to try, up to CODEPLUG_KEY_TX_DENY_TONE
+void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi)
+{
+	c->hi = hi;
+	c->at = lo;
+	c->done = 0;
+}
+int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max)
+{
+	for (; !c->done && c->at <= c->hi && c->at <= CODEPLUG_KEY_TX_DENY_TONE; c->at++) {
+		int n = codeplug_kv_get(c->at, buf, max);
+		if (n >= 0) {
+			*key = c->at++;
+			return n;
+		}
+	}
+	c->done = 1;
+	return -1;
+}
+bool codeplug_kv_write(const codeplug_kv_op_t *ops, uint8_t n)
+{
+	if (kv_held) {
+		return false;
+	}
+	for (uint8_t i = 0; i < n; i++) {
+		if (!kv_set(ops[i].key, ops[i].value, ops[i].len)) {
+			return false;
+		}
+	}
+	return true;
+}
 bool codeplug_set_dmr_id(uint32_t id)
 {
 	own_dmr_id = id;
@@ -260,10 +358,13 @@ bool codeplug_set_dmr_id(uint32_t id)
 }
 void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_NAME_LEN + 1]) { line1[0] = line2[0] = 0; }
 void codeplug_radio_name(char out[CODEPLUG_NAME_LEN + 1]) { out[0] = 0; }
-#if CONFIG_APRS
-// APRS (radioCoreTestAprs): no APRS channel in the codeplug, no host link
+#if CONFIG_APRS_AFSK
+// APRS (radioCoreTestAprs): no APRS channel in the codeplug
 bool codeplug_aprs(uint8_t n, codeplug_aprs_t *out) { memset(out, 0, sizeof(*out)); return false; }
 bool codeplug_set_aprs_path(uint8_t n, const char *path1, const char *path2) { return false; }
+#endif
+#if CONFIG_APRS
+// ... and no host link
 #include "hostlink/hostlink.h"
 void hostlink_set_tnc(const hostlink_tnc_t *tnc) { (void)tnc; }
 #endif
@@ -533,6 +634,47 @@ static void test_channel_step(void)
 	CHECK(sm.view.channel_number == 6);
 	req(RREQ_ZONE, 7);			// no such zone
 	CHECK(sm.view.zone_index == 1);
+}
+
+// A channel of a kind this build doesn't run (docs/spec/channel-modes.md 6): tuned in FM with the modem off, the squelch
+// never opens, PTT refused for the mode (before receive only), never a VFO copy, the next channel works as before
+static void test_parked_kind(void)
+{
+	setup_codeplug();
+	chans[6].mode = RADIO_MODE_DMR;
+	chans[6].kind = CODEPLUG_KIND_DMR_TRUNK;	// not built on main
+	chans[6].rx_only = false;			// its tag allows TX: the build still refuses
+	start();
+	req(RREQ_ZONE, 1);
+	CHECK(sm.view.channel_number == 6 && sm.view.ch.kind == CODEPLUG_KIND_DMR_TRUNK);
+	CHECK(sm.board_mode == RADIO_MODE_FM && hw_mode == RADIO_MODE_FM && !sim.started && hw.rx_hz == 145500000);
+	rx_signal(10, true);
+	poll_for(200);
+	CHECK(sm.view.state == RS_IDLE && !hw.audio);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_MODE && hw.tx_calls == 0);
+	req(RREQ_PTT, 0);
+	CHECK(radio_vfo_copy_check(&sm.view.ch, false) != VFO_COPY_OK);
+	// P25 conventional and trunked (the radio core runs neither: parked with CONFIG_P25 on or off), unknown ids the same
+	static const uint8_t kinds[] = { CODEPLUG_KIND_P25, CODEPLUG_KIND_P25_TRUNK };
+	for (unsigned i = 0; i < sizeof kinds; i++) {
+		chans[6].kind = kinds[i];
+		req(RREQ_ZONE, 0);
+		req(RREQ_ZONE, 1);
+		CHECK(sm.view.ch.kind == kinds[i] && sm.board_mode == RADIO_MODE_FM && !sim.started);
+		req(RREQ_PTT, 1);
+		CHECK(sm.view.tx_deny == TXDENY_MODE && hw.tx_calls == 0);
+		req(RREQ_PTT, 0);
+	}
+	chans[6].kind = 0x99;
+	req(RREQ_ZONE, 0);
+	req(RREQ_ZONE, 1);
+	CHECK(sm.view.ch.kind == 0x99 && sm.board_mode == RADIO_MODE_FM);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_MODE && hw.tx_calls == 0);
+	req(RREQ_PTT, 0);
+	rx_signal(120, true);
+	setup_codeplug();
 }
 
 static void test_squelch(void)
@@ -1219,6 +1361,7 @@ static void test_dmr_rx(void)
 	CHECK(!d->hear_all_latch && !sm.view.monitor);
 	req(RREQ_MONITOR, 0);
 	CHECK(d->hear_all && d->hear_all_latch && !sm.view.monitor && !hw.audio);
+	CHECK(sim.cc_filter == -1 && sim.locked_ts == 0);	// any color code, either slot
 	hear_call(true, 3100, 9997777, 2, 1, true);
 	CHECK(d->last.dst == 3100);
 	// Released after its hold function ran: no toggle
@@ -1227,7 +1370,7 @@ static void test_dmr_rx(void)
 	CHECK(d->hear_all_latch);
 	req(RREQ_MONITOR, 1);
 	req(RREQ_MONITOR, 0);
-	CHECK(!d->hear_all && !d->hear_all_latch);
+	CHECK(!d->hear_all && !d->hear_all_latch && sim.cc_filter == 2);
 	// Another color code: ignored
 	hear_call(true, 201, 9991234, 5, 1, false);
 	CHECK(sm.view.state == RS_IDLE);
@@ -1245,6 +1388,31 @@ static void test_dmr_rx(void)
 	CHECK(sm.view.ch.mode == RADIO_MODE_FM && !sim.started && !d->active && aud.stops > 0 && !aud.started);
 	req(RREQ_CH_STEP, -1);
 	CHECK(sim.started && d->active);
+}
+
+static void reload_channel(void);
+
+// A channel change publishes the new channel's color code, timeslot and repeater mode with it, in one update: a
+// reader between the change and the call stack's next tick (dual watch's snapshot of the pane, at every hop) never
+// sees the new channel with the old one's timeslot
+static void test_dmr_channel_change_view(void)
+{
+	dmr_start(false);
+	const radio_dmr_view_t *d = &sm.view.dmr;
+	chans[1].mode = RADIO_MODE_DMR;
+	chans[1].rx_hz = 438600000;
+	chans[1].tx_hz = 433600000;
+	chans[1].color_code = 5;
+	chans[1].timeslot = 2;
+	reload_channel();
+	run(50);
+	CHECK(sm.view.channel_number == 4 && d->ts == 1 && d->cc == 2 && !d->rmo);
+	req(RREQ_ZONE_POS, 0);			// no poll: what a reader sees right after the change
+	CHECK(sm.view.channel_number == 1 && d->ts == 2 && d->cc == 5 && d->rmo);
+	req(RREQ_ZONE_POS, 3);
+	CHECK(sm.view.channel_number == 4 && d->ts == 1 && d->cc == 2 && !d->rmo);
+	run(50);
+	CHECK(d->ts == 1 && d->cc == 2 && !d->rmo);
 }
 
 static void test_dmr_tx(void)
@@ -1382,6 +1550,39 @@ static void test_dmr_list_talk_target(void)
 	CHECK(sm.view.state == RS_TX && sm.view.dmr.call.dst == 201 && sm.view.dmr.call.group);
 	req(RREQ_PTT, 0);
 	run(1000);
+	setup_codeplug();
+}
+
+// The VFO keeps quick-settings changes (#486, #525): power is the VFO's own, squelch the radio's default (as a
+// channel save writes it); neither is left temporary, so Home offers no save and leaving the VFO doesn't undo them
+static void test_vfo_quick_settings_kept(void)
+{
+	setup_codeplug();
+	start();
+	req(RREQ_VFO, 1);
+	CHECK(sm.view.vfo && !sm.view.temporary);
+	uint8_t p = sm.view.power, sq = sm.view.squelch;
+	req(RREQ_POWER, 1);
+	CHECK(sm.view.power != p && !sm.view.temporary && !(sm.view.temp & RADIO_TEMP_POWER));
+	CHECK(sm.vfo_ch.power == sm.view.power);
+	p = sm.view.power;
+	req(RREQ_SQUELCH, sq < RADIO_SQUELCH_MAX ? 1 : -1);
+	uint8_t sq2 = sm.view.squelch;
+	CHECK(sq2 != sq && !sm.view.temporary && !(sm.view.temp & RADIO_TEMP_SQUELCH) && sm.base_squelch == sq2);
+	run(50);
+	settings_t *st = settings_begin();
+	CHECK(st->squelch == sq2 && st->vfo_power == p);
+	settings_end(now);
+	req(RREQ_VFO, 0);			// a channel: squelch is radio-wide, so the new default applies there too
+	CHECK(!sm.view.vfo && sm.view.squelch == sq2 && !sm.view.temporary);
+	req(RREQ_VFO, 1);			// back in the VFO: both kept
+	CHECK(sm.view.vfo && sm.view.power == p && sm.view.squelch == sq2 && !sm.view.temporary);
+	boot();					// and across a restart
+	run(50);
+	CHECK(sm.view.vfo && sm.view.power == p && sm.view.squelch == sq2);
+	req(RREQ_VFO, 0);
+	settings_defaults(settings_begin());
+	settings_end(now);
 	setup_codeplug();
 }
 
@@ -2286,6 +2487,67 @@ static void test_persist(void)
 	dmrDataServiceGetSettings(&ds);
 	CHECK(ds.arsServer == 0 && ds.radioCheckReply && ds.callAlertAck && ds.smsFormat == DMR_SMS_FORMAT_ETSI_IP);
 
+	// The codeplug's settings area (docs/spec/codeplug-settings.md 5): a key that is present sets the ARS server, at
+	// start and when the codeplug changes, and the radio's own copy follows it
+	ds.arsServer = 3100999;
+	dmr_data_set_settings(&ds);
+	run(50);
+	kv_ars_present = true;
+	kv_ars = 3100777;
+	cp_serial++;			// as a CPS commit or a TFTP write
+	run(100);
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 3100777);
+	settings_read(&cur);
+	CHECK(cur.ds_ars_server == 3100777);
+	// A change that isn't a codeplug write doesn't hold against the key
+	ds.arsServer = 5;
+	dmr_data_set_settings(&ds);
+	run(50);
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 3100777);
+	// The menu writes the key (a codeplug job), 0 turns ARS off, and a reboot reads it back
+	CHECK(ui_svc_setting_get(UI_SET_ARS_SERVER) == 3100777);
+	CHECK(ui_svc_setting_set(UI_SET_ARS_SERVER, 0) && storage_job_busy());
+	CHECK(!ui_svc_setting_set(UI_SET_ARS_SERVER, 1));	// one job at a time
+	uint32_t cp_was = cp_serial;
+	storage_job_poll();
+	CHECK(kv_ars_present && kv_ars == 0 && !storage_job_busy());
+	run(100);
+	CHECK(ui_svc_setting_get(UI_SET_ARS_SERVER) == 0);
+	CHECK(cp_serial == cp_was);	// the key's value taken without a codeplug reload
+	boot();
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 0);
+	CHECK(!ui_svc_setting_set(UI_SET_ARS_SERVER, CODEPLUG_DMR_ID_MAX + 1));
+	// Absent (a codeplug from a tool that doesn't carry the area): the radio keeps what it has, and a change holds
+	kv_ars_present = false;
+	cp_serial++;
+	run(100);
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 0);
+	ds.arsServer = 3100888;
+	dmr_data_set_settings(&ds);
+	run(50);
+	boot();
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 3100888);
+	// A key present at start that the radio's own copy doesn't hold (a factory reset leaves the codeplug, a power
+	// cut before the copy was saved): the copy follows it, so the radio keeps the key's value once the key is gone
+	kv_ars_present = true;
+	kv_ars = 3100555;
+	boot();
+	run(100);
+	settings_read(&cur);
+	CHECK(cur.ds_ars_server == 3100555);
+	kv_ars_present = false;
+	boot();
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 3100555);
+	settings_begin()->ds_stored = 0;
+	settings_end(now);
+	boot();
+
 	// Power off: nothing to deregister, so the radio core is done at once
 	req(RREQ_POWER_OFF, 0);
 	run(50);
@@ -2489,6 +2751,65 @@ static void test_dmr_contact_added(void)
 	CHECK(d->target_id == 9996001 && d->target_private && strcmp(d->target_name, "Charlie Harper") == 0);
 	memset(&added_contact, 0, sizeof(added_contact));
 }
+
+#if CONFIG_APRS_DMR
+// APRS over DMR (docs/spec/aprs.md 8): a beacon goes to the data service as a position report, from a build with
+// the AX.25 backend and from one without it (radioCoreTestAprsDmr: no callsign, no APRS frequency, nothing of FM
+// APRS in the way). Where there is no choice the stored "Send via" is not asked
+static void test_aprs_dmr_beacon(void)
+{
+	aprs_view_t v0, v1;
+	aprs_cfg_t c;
+
+	boot();
+	dmr_start(true);
+	CHECK(ui_svc_setting_set(UI_SET_POS_FIXED_LAT, 337490000) && ui_svc_setting_set(UI_SET_POS_FIXED_LON, -843880000));
+	aprs_get_cfg(&c);
+	c.via = CONFIG_APRS_AFSK ? APRS_VIA_DMR : APRS_VIA_RF;	// DMR only: "radio" stored by another build still goes out
+	c.dmr_dst = 310999;
+	c.dmr_udt = false;
+	aprs_set_cfg(&c, now);
+	run(50);
+	aprs_get_view(&v0);
+	CHECK(v0.pos_valid && v0.lat == 337490000);
+	CHECK(aprs_send_now());
+	run(3000);
+	aprs_get_view(&v1);
+	CHECK(v1.dmr_sent == v0.dmr_sent + 1 && v1.dmr_failed == v0.dmr_failed && v1.rf_sent == v0.rf_sent);
+	CHECK(v1.last_why == APRS_WHY_MANUAL);
+	// The short UDT form too
+	c.dmr_udt = true;
+	aprs_set_cfg(&c, now);
+	CHECK(aprs_send_now());
+	run(3000);
+	aprs_get_view(&v0);
+	CHECK(v0.dmr_sent == v1.dmr_sent + 1 && v0.dmr_failed == v1.dmr_failed);
+	// Automatic beacons: the interval sends without anyone asking
+	c.tx_on = true;
+	c.smart = false;
+	c.interval_s = 60;
+	aprs_set_cfg(&c, now);
+	run(130000);
+	aprs_get_view(&v1);
+	CHECK(v1.dmr_sent >= v0.dmr_sent + 2 && v1.rf_sent == v0.rf_sent);
+	c.tx_on = false;
+	aprs_set_cfg(&c, now);
+	// Off a DMR channel there is nowhere to send it: counted as failed, nothing keyed
+	req(RREQ_ZONE_POS, 0);
+	run(200);
+	aprs_get_view(&v0);
+	if (!CONFIG_APRS_AFSK) {
+		CHECK(aprs_send_now());
+		run(1000);
+		aprs_get_view(&v1);
+		CHECK(v1.dmr_sent == v0.dmr_sent && v1.dmr_failed == v0.dmr_failed + 1);
+	}
+	position_cfg_t pc;
+	position_get_cfg(&pc);
+	pc.fix_lat = pc.fix_lon = 0;
+	position_set_cfg(&pc, now);
+}
+#endif
 
 #if CONFIG_APRS_RX
 // One NMEA sentence from src to dst (a private call) on UDP 10110 (SAP 3), as the data service hears it
@@ -2957,7 +3278,7 @@ static bool ptt_blocked;
 void input_set_ptt_block(bool b) { ptt_blocked = b; }
 static bool dtmf_blocked;
 void input_set_dtmf_block(bool b) { dtmf_blocked = b; }
-static keymap_entry_t got_keymap[3];
+static keymap_entry_t got_keymap[4];
 static int keymap_sets;
 void input_set_keymap(const keymap_entry_t *map) { memcpy(got_keymap, map, sizeof(got_keymap)); keymap_sets++; }
 void hostlink_set_hotspot_allowed(bool on) { (void)on; }
@@ -3135,6 +3456,150 @@ static void test_dual_two_vfos(void)
 }
 #endif
 
+// The board GPS for everything that reports a position (#466): the Position screen, LRRP's answer and DMR GPS Info
+// read the position service, and the stored position settings apply. radioCoreTest builds it without APRS,
+// radioCoreTestAprs with
+static void test_position(void)
+{
+	static const char gga[] = "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47";
+	static const char rmc[] = "$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A";
+	lrrpPosition_t lp;
+	ui_position_t up;
+	int32_t lat, lon;
+	uint32_t err;
+	bool send = true;
+
+	CHECK(CONFIG_POSITION);
+	gps_here = false;
+	dmr_start(true);
+	CHECK(!(ui_svc_feat_radio() & UI_FEAT_GPS) && !ui_svc_position(&up));
+	CHECK(!dmrDataServiceOwnPosition(&lp));
+	gps_here = true;
+	CHECK(ui_svc_feat_radio() & UI_FEAT_GPS);
+	CHECK(!ui_svc_position(&up));		// nothing heard yet
+	position_nmea(gga, strlen(gga), true, now);
+	position_nmea(rmc, strlen(rmc), true, now);
+	CHECK(ui_svc_position(&up) && up.fix && up.sats == 8 && up.lat_e7 == 481173000 && up.lon_e7 == 115166666);
+	CHECK(up.alt_ok && up.alt_m == 545 && up.course == 84);
+	run(10);
+	CHECK(dmrDataServiceOwnPosition(&lp) && lp.location.fixValid && lp.location.north && lp.location.east);
+	CHECK(lp.location.latDegrees == 48 && lp.location.latMinutes10000 == 70380 && lp.location.lonDegrees == 11 &&
+	      lp.location.lonMinutes10000 == 310000);
+	CHECK(lp.location.speedKnots == 22 && lp.hasCourse && lp.courseDegrees == 84 && lp.utcYear == 2094 &&
+	      lp.utcMonth == 3 && lp.utcDay == 23 && lp.location.utcHours == 12 && lp.location.utcMinutes == 35);
+	dmrDataSettings_t ds;
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.hasGps);			// LRRP takes triggered requests: a GPS is there
+
+	// DMR GPS Info: off until Settings > Location > Send in DMR calls says so, then our position goes out in the
+	// call. The setting is the position service's own: saved without APRS, back after a restart
+	CHECK(position_now(&lat, &lon, &err, &send, now) && !send && lat == 481173000 && err == 20);
+	CHECK(ui_svc_setting_get(UI_SET_POS_DMR_CALLS) == 0 && ui_svc_setting_set(UI_SET_POS_DMR_CALLS, 1));
+	position_cfg_t pc;
+	position_get_cfg(&pc);
+	pc.ambiguity = 2;			// whole minutes
+	position_set_cfg(&pc, now);
+	settings_t sr;
+	settings_read(&sr);
+	CHECK(sr.aprs_stored != 1 && (sr.aprs_misc & SETTINGS_APRS_MISC_POSITION));	// its own marker, not APRS's
+	boot();
+	CHECK(ui_svc_setting_get(UI_SET_POS_DMR_CALLS) == 1);
+	position_nmea(rmc, strlen(rmc), true, now);
+	CHECK(position_now(&lat, &lon, &err, &send, now) && send && err == 1852);
+	CHECK(lat == 481250002);		// 48 07.038 -> the middle of its minute, 48 07.5
+	position_get_cfg(&pc);
+	pc.ambiguity = 0;
+	position_set_cfg(&pc, now);
+	req(RREQ_ZONE_POS, 3);			// the DMR channel again (dmr_start would start from new settings)
+	run(50);
+	position_nmea(rmc, strlen(rmc), true, now);
+	dmr_call_stats_t cs0, cs1;
+	dmr_call_get_stats(&cs0);
+	req(RREQ_PTT, 1);
+	run(360 * 4);
+	req(RREQ_PTT, 0);
+	run(1000);
+	dmr_call_get_stats(&cs1);
+	CHECK(cs1.tx_gps_lcs - cs0.tx_gps_lcs >= 1);
+	// ... and with the setting off again, none
+	CHECK(ui_svc_setting_set(UI_SET_POS_DMR_CALLS, 0));
+	req(RREQ_PTT, 1);
+	run(360 * 4);
+	req(RREQ_PTT, 0);
+	run(1000);
+	dmr_call_get_stats(&cs0);
+	CHECK(cs0.tx_gps_lcs == cs1.tx_gps_lcs);
+	// The codeplug can ask for it per channel and timeslot (what a CPS sets): sent with the radio's setting off
+	chans[4].alias_tx = CODEPLUG_ALIAS_TS2_GPS;	// a TS1 channel: not on this one
+	reload_channel();
+	CHECK(!sm.view.dmr.gps_tx_channel);
+	chans[4].alias_tx = CODEPLUG_ALIAS_TS1_GPS;
+	reload_channel();
+	CHECK(sm.view.dmr.gps_tx_channel);
+	position_nmea(rmc, strlen(rmc), true, now);
+	req(RREQ_PTT, 1);
+	run(360 * 4);
+	req(RREQ_PTT, 0);
+	run(1000);
+	dmr_call_get_stats(&cs1);
+	CHECK(cs1.tx_gps_lcs - cs0.tx_gps_lcs >= 1);
+	chans[4].alias_tx = 0;
+	reload_channel();
+	CHECK(ui_svc_setting_set(UI_SET_POS_DMR_CALLS, 1));
+
+	// Settings > Location > GPS off: the fix goes at once
+	position_gps_enable(false);
+	CHECK(!ui_svc_position(&up) && !dmrDataServiceOwnPosition(&lp));
+	position_gps_enable(true);
+
+	// A radio without a GPS: the fixed position typed in Settings > Location is what LRRP answers with and what
+	// goes out in calls, after a restart too
+	gps_here = false;
+	CHECK(!dmrDataServiceOwnPosition(&lp));
+	CHECK(ui_svc_setting_set(UI_SET_POS_FIXED_LAT, 337490000) && ui_svc_setting_set(UI_SET_POS_FIXED_LON, -843880000));
+	CHECK(!ui_svc_setting_set(UI_SET_POS_FIXED_LAT, 900000001) && !ui_svc_setting_set(UI_SET_POS_SOURCE, 9));
+	boot();
+	req(RREQ_ZONE_POS, 3);
+	run(50);
+	CHECK(ui_svc_setting_get(UI_SET_POS_FIXED_LAT) == 337490000 && ui_svc_setting_get(UI_SET_POS_FIXED_LON) == -843880000);
+	CHECK(dmrDataServiceOwnPosition(&lp) && lp.location.fixValid && lp.location.north && !lp.location.east);
+	CHECK(lp.location.latDegrees == 33 && lp.location.latMinutes10000 == 449400 && lp.location.lonDegrees == 84 &&
+	      lp.location.lonMinutes10000 == 232800 && lp.utcYear == 0 && !lp.hasCourse);
+	CHECK(position_now(&lat, &lon, &err, &send, now) && send && lat == 337490000 && lon == -843880000 && err == 200);
+	dmr_call_get_stats(&cs0);
+	req(RREQ_PTT, 1);
+	run(360 * 4);
+	req(RREQ_PTT, 0);
+	run(1000);
+	dmr_call_get_stats(&cs1);
+	CHECK(cs1.tx_gps_lcs - cs0.tx_gps_lcs >= 1);
+	// The source set to GPS only: the fixed position doesn't count
+	CHECK(ui_svc_setting_set(UI_SET_POS_SOURCE, POSITION_GPS) && ui_svc_setting_get(UI_SET_POS_SOURCE) == POSITION_GPS);
+	CHECK(!dmrDataServiceOwnPosition(&lp) && !position_now(&lat, &lon, &err, &send, now));
+	CHECK(ui_svc_setting_set(UI_SET_POS_SOURCE, POSITION_FIXED) && dmrDataServiceOwnPosition(&lp));
+#if !CONFIG_POSITION_HOST
+	// "Computer" left by a build that takes a computer's NMEA: here it counts as Auto, not as no position
+	CHECK(ui_svc_setting_set(UI_SET_POS_SOURCE, POSITION_HOST) && dmrDataServiceOwnPosition(&lp));
+	CHECK(ui_svc_setting_set(UI_SET_POS_SOURCE, POSITION_FIXED));
+#endif
+	// A record APRS stored before the position service had its own marker still counts
+	settings_t *st = settings_begin();
+	st->aprs_misc &= (uint8_t)~SETTINGS_APRS_MISC_POSITION;
+	st->aprs_stored = 1;
+	settings_end(now);
+	boot();
+	CHECK(ui_svc_setting_get(UI_SET_POS_FIXED_LAT) == 337490000 && ui_svc_setting_get(UI_SET_POS_DMR_CALLS) == 1);
+	// ... and with neither, the defaults
+	st = settings_begin();
+	st->aprs_stored = 0;
+	settings_end(now);
+	boot();
+	CHECK(ui_svc_setting_get(UI_SET_POS_FIXED_LAT) == 0 && ui_svc_setting_get(UI_SET_POS_DMR_CALLS) == 0 &&
+	      ui_svc_setting_get(UI_SET_POS_SOURCE) == POSITION_AUTO);
+	settings_init();
+	boot();
+}
+
 static void test_ui_glue(void)
 {
 	const radio_dmr_view_t *d = &sm.view.dmr;
@@ -3216,7 +3681,7 @@ static void test_ui_glue(void)
 	n_ev = 0;
 	CHECK(ui_svc_save_channel());
 	storage_job_poll();
-	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "not saved") != NULL);
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(tr_en(last_ev.why), "not saved") != NULL);
 	CHECK(sm.view.temporary);
 	cp_write_fails = false;
 	req(RREQ_CLEAR_TEMP, 0);
@@ -3232,7 +3697,7 @@ static void test_ui_glue(void)
 	CHECK(ui_svc_talk_to(9999999, true, UI_TALK_PERMANENT));	// not a stored contact: stays for now
 	storage_job_poll();
 	run(20);
-	CHECK(n_ev == 1 && strstr(last_ev.text, "for now only") != NULL && d->target_manual && d->target_id == 9999999);
+	CHECK(n_ev == 1 && strstr(tr_en(last_ev.why), "for now only") != NULL && d->target_manual && d->target_id == 9999999);
 	chans[4].contact = 1;
 	reload_channel();
 	// Another firmware's codeplug: the write is held and the UI asked; nothing written until the answer
@@ -3264,6 +3729,32 @@ static void test_ui_glue(void)
 	CHECK(ui_svc_write_channel(6, &ed) && n_ev == 3 && ui_svc_codeplug_answer(UI_CP_NEW));
 	storage_job_poll();
 	CHECK(cp_new == 1 && cp_writes == w + 2 && chans[6].color_code == 4 && !codeplug_foreign());
+	// A keyed setting isn't a codeplug write that asks (docs/spec/codeplug-settings.md 5): with another firmware's
+	// codeplug the area can't be written and holds no key, so the setting is saved as the radio's own, no question
+	cp_foreign = true;
+	kv_ars_present = false;
+	kv_held = true;
+	CHECK(ui_svc_setting_set(UI_SET_ARS_SERVER, 3100123) && n_ev == 3);
+	storage_job_poll();
+	run(100);
+	CHECK(!kv_ars_present && cp_new == 1 && n_ev == 3);
+	CHECK(ui_svc_setting_get(UI_SET_ARS_SERVER) == 3100123);
+	{
+		settings_t own;
+		settings_read(&own);
+		CHECK(own.ds_ars_server == 3100123);
+	}
+	cp_foreign = false;
+	// A key that is present and can't be updated (a CPS session holds the flash) refuses the change: it would put
+	// the old value back
+	kv_ars_present = true;
+	kv_ars = 3100123;
+	CHECK(ui_svc_setting_set(UI_SET_ARS_SERVER, 3100124));
+	storage_job_poll();
+	run(100);
+	CHECK(kv_ars == 3100123 && ui_svc_setting_get(UI_SET_ARS_SERVER) == 3100123 && last_ev.kind == UI_EV_SAVE_FAILED);
+	kv_held = false;
+	kv_ars_present = false;
 	n_ev = 0;
 	run(100);
 	req(RREQ_CLEAR_TEMP, 0);
@@ -3302,7 +3793,7 @@ static void test_ui_glue(void)
 		storage_job_poll();
 		run(100);
 		CHECK(zone_writes == zw + 2 && zones[0].channels[pos] == num && !ui_svc_zone_pending());
-		CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "Already") != NULL);
+		CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(tr_en(last_ev.why), "Already") != NULL);
 		uint32_t applied;
 		uint8_t last;
 		zone_edit_stats(&applied, &last);
@@ -3565,6 +4056,98 @@ static void test_ui_glue(void)
 	ui_svc_apply(UI_SET_TALK_PERMIT, 1);
 	run(20);
 	CHECK(sm.set.talk_permit);
+	// Settings > Sound tones. The four keyed ones (docs/spec/codeplug-settings.md 5.2): on while absent; a set writes
+	// a one-byte bool key with no codeplug reload, and the radio core saves the tone as the radio's own
+	static const uint8_t tone_ids[] = { UI_SET_CALL_END_TONE, UI_SET_TOT_WARN_TONE, UI_SET_BATTERY_TONE,
+					    UI_SET_TX_DENY_TONE };
+	for (size_t i = 0; i < sizeof(tone_ids); i++) {
+		uint32_t cp_was = cp_serial;
+		CHECK(ui_svc_setting_get(tone_ids[i]) == 1);
+		CHECK(ui_svc_setting_set(tone_ids[i], 0) && storage_job_busy());
+		storage_job_poll();
+		CHECK(kv_tone[i] == 0);
+		run(20);
+		CHECK(sm.set.tones_off == (1u << i) && cp_serial == cp_was && ui_svc_setting_get(tone_ids[i]) == 0);
+		settings_read(&sv);
+		CHECK(settings_tones_off(&sv) == (1u << i));
+		// A settings change sent by the UI (its copy of the bits may be older) doesn't undo the key
+		ui_svc_apply(UI_SET_KEY_TONES, 0);
+		run(20);
+		CHECK(sm.set.tones_off == (1u << i));
+		ui_svc_apply(UI_SET_KEY_TONES, 1);
+		CHECK(ui_svc_setting_set(tone_ids[i], 1));
+		storage_job_poll();
+		run(20);
+		CHECK(kv_tone[i] == 1 && ui_svc_setting_get(tone_ids[i]) == 1 && sm.set.tones_off == 0);
+		kv_tone[i] = -1;
+	}
+	// A key written by a CPS holds over the radio's own copy, which follows it; once the key is gone the radio keeps
+	// the key's last value
+	kv_tone[1] = 0;
+	kv_serial++;
+	run(20);
+	settings_read(&sv);
+	CHECK(sm.set.tones_off == 0x02u && settings_tones_off(&sv) == 0x02u && ui_svc_setting_get(UI_SET_TOT_WARN_TONE) == 0);
+	kv_tone[1] = -1;
+	kv_serial++;
+	run(20);
+	CHECK(sm.set.tones_off == 0x02u);
+	// With another firmware's codeplug the area can't be written and holds no key: the tone is saved as the radio's
+	// own, with no "Old codeplug" question
+	cp_foreign = true;
+	kv_held = true;
+	n_ev = 0;
+	CHECK(ui_svc_setting_set(UI_SET_TOT_WARN_TONE, 1));
+	storage_job_poll();
+	run(20);
+	settings_read(&sv);
+	CHECK(n_ev == 0 && kv_tone[1] == -1 && sm.set.tones_off == 0 && settings_tones_off(&sv) == 0);
+	cp_foreign = false;
+	// A key that is present and can't be updated (a CPS session holds the flash) refuses the change
+	kv_tone[2] = 1;
+	CHECK(ui_svc_setting_set(UI_SET_BATTERY_TONE, 0));
+	storage_job_poll();
+	run(20);
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && kv_tone[2] == 1 && sm.set.tones_off == 0);
+	// The debug link's SETTING 36 stores as the menu does: with the call end tone's key present, the key is written
+	// too (else the key would put the radio's copy back); a present key that can't be updated is busy
+	kv_tone[2] = -1;
+	kv_tone[0] = 1;
+	kv_serial++;
+	run(20);
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 36, 1, 0 }, 3) == DL_ST_BUSY);
+	run(20);
+	CHECK(kv_tone[0] == 1 && sm.set.tones_off == 0);
+	kv_held = false;
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 36, 1, 0 }, 3) == DL_ST_OK);
+	run(20);
+	CHECK(kv_tone[0] == 0 && sm.set.tones_off == 0x01u);
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 36, 0, 0 }, 3) == DL_ST_OK);
+	run(20);
+	CHECK(kv_tone[0] == 1 && sm.set.tones_off == 0);
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 36, 0x10, 0 }, 3) == DL_ST_BAD_ARG);
+	kv_tone[0] = -1;
+	n_ev = 0;
+	// The scan stop tone is the radio core's (rs_flags), the emergency tone the emergency service's (em_flags)
+	CHECK(ui_svc_setting_get(UI_SET_SCAN_TONE) == 0);
+	CHECK(ui_svc_setting_set(UI_SET_SCAN_TONE, 1));
+	ui_svc_apply(UI_SET_SCAN_TONE, 1);
+	run(20);
+	CHECK(sm.set.scan_beep && ui_svc_setting_get(UI_SET_SCAN_TONE) == 1);
+	settings_read(&sv);
+	CHECK(sv.rs_flags & SETTINGS_RS_SCAN_BEEP);
+	ui_svc_apply(UI_SET_SCAN_TONE, 0);
+	run(20);
+	CHECK(!sm.set.scan_beep);
+	CHECK(ui_svc_setting_get(UI_SET_EMERGENCY_TONE) == 1);
+	CHECK(ui_svc_setting_set(UI_SET_EMERGENCY_TONE, 0));
+	run(20);
+	CHECK(ui_svc_setting_get(UI_SET_EMERGENCY_TONE) == 0);
+	settings_read(&sv);
+	CHECK(sv.em_flags & SETTINGS_EM_NO_TONE);
+	CHECK(ui_svc_setting_set(UI_SET_EMERGENCY_TONE, 1));
+	run(20);
+	CHECK(ui_svc_setting_get(UI_SET_EMERGENCY_TONE) == 1);
 	// Reply window: the value shown at start-up for "the codeplug's" keeps it; another value is the radio's own
 	CHECK(ui_svc_setting_get(UI_SET_REPLY_S) == 10);
 	ui_svc_apply(UI_SET_REPLY_S, 10);
@@ -3821,17 +4404,17 @@ static void test_ui_settings(void)
 	n_ev = 0;
 	CHECK(ui_svc_save_channel());
 	storage_job_poll();
-	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "read the channel") != NULL);
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(tr_en(last_ev.why), "read the channel") != NULL);
 	n_ev = 0;
 	CHECK(ui_svc_save_talk_target(9, false));
 	storage_job_poll();
-	CHECK(n_ev == 1 && strstr(last_ev.text, "for now only") != NULL);
+	CHECK(n_ev == 1 && strstr(tr_en(last_ev.why), "for now only") != NULL);
 	used[4] = true;
 	cp_write_fails = true;			// the contact found, the write fails
 	n_ev = 0;
 	CHECK(ui_svc_save_talk_target(9, false));
 	storage_job_poll();
-	CHECK(n_ev == 1 && strcmp(last_ev.text, "Codeplug not written: for now only") == 0);	// whole: tr() finds it
+	CHECK(n_ev == 1 && strcmp(tr_en(last_ev.why), "Codeplug not written: for now only") == 0);
 	cp_write_fails = false;
 	CHECK(cp_writes == w);
 	// The squelch saved with the channel goes to the default squelch preference
@@ -4062,7 +4645,18 @@ static void test_side_keys(void)
 	CHECK(keymap_sets == 2 && got_keymap[1].short_action == ACT_POWER && !got_keymap[1].raw_edges);
 	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_POWER);
 	CHECK(cp_quick[0] == 0);		// not yet: the job does it
-	CHECK(!ui_svc_setting_set(UI_SET_KEY_FIRST + 4, KEYFN_SCAN));	// this radio has two side keys
+	CHECK(!ui_svc_setting_set(UI_SET_KEY_FIRST + 6, KEYFN_SCAN));	// two side keys and one home key
+	// The home key (role 2): not Monitor; a function makes it send ACT_HOME_KEY_1, the UI's to turn back
+	CHECK(!ui_svc_key_offered(UI_SET_KEY_FIRST + 4, KEYFN_MONITOR) && ui_svc_key_offered(UI_SET_KEY_FIRST + 2, KEYFN_MONITOR));
+	CHECK(!ui_svc_setting_set(UI_SET_KEY_FIRST + 4, KEYFN_MONITOR));
+	CHECK(ui_svc_home_key(ACT_NAV_LEFT, GESTURE_PRESS, true) == ACT_NAV_LEFT);
+	CHECK(ui_svc_setting_set(UI_SET_KEY_FIRST + 4, KEYFN_POWER));
+	CHECK(got_keymap[3].short_action == ACT_HOME_KEY_1 && got_keymap[3].long_action == ACT_HOME_KEY_1);
+	CHECK(ui_svc_home_key(ACT_HOME_KEY_1, GESTURE_PRESS, true) == ACT_POWER);
+	CHECK(ui_svc_home_key(ACT_HOME_KEY_1, GESTURE_PRESS, false) == ACT_NAV_LEFT);
+	CHECK(ui_svc_home_key(ACT_HOME_KEY_1, GESTURE_LONG, true) == ACT_USER_1);
+	CHECK(ui_svc_setting_set(UI_SET_KEY_FIRST + 4, KEYFN_DEFAULT));
+	CHECK(got_keymap[3].short_action == ACT_NAV_LEFT);
 	CHECK(!ui_svc_setting_set(UI_SET_KEY_FIRST + 2, KEYFN_COUNT));
 	uint32_t ser = cp_serial;
 	ui_svc_keys_poll();
@@ -4083,7 +4677,7 @@ static void test_side_keys(void)
 	CHECK(ui_svc_setting_set(UI_SET_KEY_FIRST + 3, KEYFN_ZONE_DOWN));
 	ui_svc_keys_poll();
 	storage_job_poll();
-	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "save the keys") != NULL);
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(tr_en(last_ev.why), "save the keys") != NULL);
 	CHECK(got_keymap[2].long_action == ACT_ZONE_DOWN && cp_quick[2] == KEYFN_ZONE_UP << 8);
 	cp_quick_fail = false;
 	// Layout 1 (three roles, a slot per gesture), as an older build wrote it: read as it is
@@ -4095,6 +4689,13 @@ static void test_side_keys(void)
 	ui_svc_keys_poll();
 	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_SCAN && ui_svc_setting_get(UI_SET_KEY_FIRST + 3) == KEYFN_ZONE_UP);
 	CHECK(got_keymap[2].long_action == ACT_ZONE_UP);
+	// A CPS put Monitor on the home key (role 2): it acts as Default, and Settings says so
+	memset(cp_quick, 0, sizeof(cp_quick));
+	cp_quick[0] = KEYASSIGN_MARKER;
+	cp_quick[3] = KEYFN_MONITOR;
+	cp_serial++;
+	ui_svc_keys_poll();
+	CHECK(got_keymap[3].short_action == ACT_NAV_LEFT && ui_svc_setting_get(UI_SET_KEY_FIRST + 4) == KEYFN_DEFAULT);
 	memset(cp_quick, 0, sizeof(cp_quick));	// leave the board's key map for what follows
 	cp_serial++;
 	ui_svc_keys_poll();
@@ -4445,10 +5046,27 @@ static void test_error_paths(void)
 	run(20);
 	tx_fail = true;
 	req(RREQ_PTT, 1);
-	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BAND);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_REFUSED);
 	run(RADIO_LED_DENY_STEPS * RADIO_LED_DENY_STEP_MS);
 	CHECK(!hw.led[LED_RED]);	// after the deny flash: dark, nothing on air
 	req(RREQ_PTT, 0);
+	// A hardware option still unset or not applied: the refusal names it, never the band
+	for (uint8_t st = HWOPT_ST_ASK; st <= HWOPT_ST_RESTART; st++) {
+		fake_hwopt_st = st;
+		req(RREQ_PTT, 1);
+		CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_HWOPT);
+		req(RREQ_PTT, 0);
+	}
+	// The core refuses it itself, even where the board would key (a restart due, the old choice still confirmed)
+	tx_fail = false;
+	for (uint8_t st = HWOPT_ST_ASK; st <= HWOPT_ST_RESTART; st++) {
+		fake_hwopt_st = st;
+		int calls = hw.tx_calls;
+		req(RREQ_PTT, 1);
+		CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_HWOPT && hw.tx_calls == calls);
+		req(RREQ_PTT, 0);
+	}
+	fake_hwopt_st = HWOPT_ST_HIDDEN;
 	tx_fail = false;
 
 	// No retuning while transmitting: channel, zone, VFO and scan requests wait for the release
@@ -4489,10 +5107,19 @@ static void test_error_paths(void)
 	tx_fail = true;
 	req(RREQ_PTT, 1);
 	run(100);
-	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BAND && sim.tx_begins == 0);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_REFUSED && sim.tx_begins == 0);
 	req(RREQ_PTT, 0);
 	run(100);
-	tx_fail = false;
+	tx_fail = false;	// the core refuses a pending option even where the board would key
+	for (uint8_t st = HWOPT_ST_ASK; st <= HWOPT_ST_RESTART; st++) {
+		fake_hwopt_st = st;
+		req(RREQ_PTT, 1);
+		run(100);
+		CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_HWOPT && sim.tx_begins == 0);
+		req(RREQ_PTT, 0);
+		run(100);
+	}
+	fake_hwopt_st = HWOPT_ST_HIDDEN;
 	sim.reject_next = true;
 	req(RREQ_PTT, 1);
 	run(300);
@@ -4581,7 +5208,7 @@ static void test_factory_reset(void)
 	sim_flash_bad_range(reset_map.settings_addr, reset_map.settings_size);
 	CHECK(ui_svc_factory_reset());
 	storage_job_poll();
-	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "settings") != NULL);
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(tr_en(last_ev.why), "settings") != NULL);
 	sim_flash_bad_range(0, 0);
 	// The native area won't erase (ours, then the flash cut out under it)
 	CHECK(sim_flash.write(reset_map.native_addr, magic, 4));
@@ -4594,7 +5221,7 @@ static void test_factory_reset(void)
 	sim_flash_cut_after(436);	// the settings records (page 1: 176 + 4 bytes, page 0: 252 + 4) go in, the native erase fails
 	storage_job_poll();
 	sim_flash_power_on();
-	CHECK(n_ev == 1 && strstr(last_ev.text, "native") != NULL);
+	CHECK(n_ev == 1 && strstr(tr_en(last_ev.why), "native") != NULL);
 	sim_flash.map = NULL;
 	storage_init();			// back to no flash for anything after
 	settings_init();
@@ -5066,17 +5693,20 @@ int main(void)
 	test_channel_step();
 	test_vfo_step_auto();
 	test_squelch();
+	test_parked_kind();
 	test_tx();
 	test_deny_flash_then_tx();
 	test_timeout();
 	test_power();
 	test_vfo();
+	test_vfo_quick_settings_kept();
 	test_no_codeplug();
 	test_codeplug_tones();
 	test_tone_squelch();
 	test_temp_bw_tone();
 	test_tone_lists();
 	test_dmr_rx();
+	test_dmr_channel_change_view();
 	test_dmr_rssi_hold();
 	test_fm_rssi_raw();
 	test_dmr_tx();
@@ -5096,6 +5726,7 @@ int main(void)
 	test_dmr_contact_added();
 	test_ui_requests();
 	test_ui_glue();
+	test_position();
 #if CONFIG_DUAL_WATCH
 	test_ui_dual();
 	test_dual_two_vfos();
@@ -5119,6 +5750,9 @@ int main(void)
 	test_sfr_cwid();
 #endif
 	test_dmr_emergency();
+#if CONFIG_APRS_DMR
+	test_aprs_dmr_beacon();
+#endif
 #if CONFIG_APRS_RX
 	test_dmr_aprs_position();
 #endif
