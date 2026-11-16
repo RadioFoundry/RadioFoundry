@@ -25,9 +25,11 @@ CONFIG_SNMP ?= n	# RAM for trunking for now; back on once the RAM is shared out 
 CONFIG_DMR_TRUNK_SUPL ?= n	# RAM, as SNMP
 CONFIG_DMR_TRUNK_GW ?= n	# RAM, as SNMP
 CONFIG_NET_RIGCTL ?= n	# RAM, as SNMP
+# With the rest on they don't fit the RAM (about 1.2 KB over), so ci's maximal configuration leaves them off too;
+# other boards build them
+MAXIMAL_SKIP := SNMP DMR_TRUNK_SUPL DMR_TRUNK_GW NET_RIGCTL
 # The platform's three TCP connections; a fourth costs about 1.4 KB of main RAM. ci's maximal configuration has
-# every switch but USB and USB_NETWORK (platform/hrc7000/config.mk), and NAND_STORAGE (below), and also keeps about
-# 0.5 KB free
+# every switch but USB and USB_NETWORK (platform/hrc7000/config.mk), NAND_STORAGE (below) and the four above
 BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is SPI NOR, GD25Q128 class (docs/spec/hardware-dm32.md 10)
 # What the hardware can do but this radio's driver or glue doesn't yet (docs/build-config.md, "Unsupported, not
 # written, unconfirmed"): off by default, and off in ci's maximal configuration too
