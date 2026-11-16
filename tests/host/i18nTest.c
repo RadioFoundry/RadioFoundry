@@ -93,7 +93,7 @@ int main(void)
 	TRF(&sb, MSG_BANNER_FROM, "Message from %s", "Bob");
 	CHECK(strcmp(line, "Mensaje de Bob") == 0);
 	sb_init(&sb, line, sizeof line);
-	TRF(&sb, ZONE_TOAST_POSITION, "Position %1$u of %2$u", 2u, 9u);
+	TRF(&sb, ZONE_TOAST_POSITION, "Position %u of %u", 2u, 9u);
 	CHECK(strcmp(line, "Posici\xF3n 2 de 9") == 0);
 	CHECK(lang_set(LANG_ENGLISH) && strcmp(TR(TITLE_SETTINGS, "Settings"), "Settings") == 0);
 	CHECK(tr(settings) == tr_en(settings));

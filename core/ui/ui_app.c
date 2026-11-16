@@ -684,7 +684,7 @@ static void handle_event(const ui_event_t *ev)
 			char t[24];
 			sbuf_t tb;
 			sb_init(&tb, t, sizeof t);
-			TRF(&tb, CHECK_BANNER_ANSWERED, "answered (%1$u.%2$u s)", ev->ms / 1000u, (ev->ms % 1000u) / 100u);
+			TRF(&tb, CHECK_BANNER_ANSWERED, "answered (%u.%u s)", ev->ms / 1000u, (ev->ms % 1000u) / 100u);
 			banner(UI_BANNER_RESULT, false, ev->id, title, t);
 		} else {
 			sb_init(&b, title, sizeof title);

@@ -131,11 +131,11 @@ static void sb_dop(sbuf_t *b, uint16_t d10)
 {
 	unsigned whole = d10 / 10u, tenth = d10 % 10u;
 	if (d10 <= 20u)
-		TRF(b, GPS_VALUE_GOOD, "%1$u.%2$u good", whole, tenth);
+		TRF(b, GPS_VALUE_GOOD, "%u.%u good", whole, tenth);
 	else if (d10 <= 50u)
-		TRF(b, GPS_VALUE_FAIR, "%1$u.%2$u fair", whole, tenth);
+		TRF(b, GPS_VALUE_FAIR, "%u.%u fair", whole, tenth);
 	else
-		TRF(b, GPS_VALUE_POOR, "%1$u.%2$u poor", whole, tenth);
+		TRF(b, GPS_VALUE_POOR, "%u.%u poor", whole, tenth);
 }
 
 static const char *fix_word(const ui_position_t *p)
@@ -186,7 +186,7 @@ static void draw_status(const ui_position_t *p, int y)
 	}
 	y += big->h + 1;
 	sb_init(&b, buf, sizeof buf);
-	TRF(&b, GPS_BODY_USED_SEEN, "%1$u used, %2$u seen", p->sats, p->in_view);
+	TRF(&b, GPS_BODY_USED_SEEN, "%u used, %u seen", p->sats, p->in_view);
 	if (!row(&y, TR(GPS_LABEL_SATS, "Sats"), buf, ui_col.fg))
 		return;
 	if (p->fix) {
@@ -385,7 +385,7 @@ static void draw_signal(const ui_position_t *p, int y)
 	char buf[40];	// room for a translation longer than "12 of 14 in the fix"
 	sbuf_t b;
 	sb_init(&b, buf, sizeof buf);
-	TRF(&b, GPS_BODY_IN_THE_FIX, "%1$u of %2$u in the fix", p->sats, p->in_view);
+	TRF(&b, GPS_BODY_IN_THE_FIX, "%u of %u in the fix", p->sats, p->in_view);
 	gfx_text(ui_layout.small, 0, y, buf, ui_col.fg);
 	y += ui_layout.small->h + 2;
 	ui_gps_sat_t s;

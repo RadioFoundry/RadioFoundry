@@ -1,47 +1,20 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Small text builders for the UI (no printf: less flash and stack)
+// Small text builders for the UI: the values a sentence shows (frequencies, times, places). The buffer and the
+// formatter are textfmt.h
 #ifndef UI_FMT_H
 #define UI_FMT_H
 
 #include <stdint.h>
 #include <stddef.h>
 #include "hal_radio.h"
+#include "textfmt.h"
 
-// Appends to a fixed buffer, always terminated, silently truncated
-typedef struct {
-	char *p;
-	char *end;	// last usable byte (for the terminator)
-} sbuf_t;
-
-void sb_init(sbuf_t *b, char *buf, size_t len);
-// Copies src into a buffer of cap bytes, truncated and always terminated: for text that may be a translation
-// (i18n.h), whose length isn't known when the code is written
-void str_copy(char *dst, size_t cap, const char *src);
-void sb_str(sbuf_t *b, const char *s);
-void sb_chr(sbuf_t *b, char c);
-// A sentence with its values (i18n.h's TRF calls this with the format in the language in use). A value is %<kind>,
-// the values taken in the order they are passed:
-//   %s   text that isn't ours (a name, a received text): a byte below 0x20 is shown as '?', since the text layer reads
-//        those as markers (font.h)
-//   %K   text kept as it is: our own, which may carry text alternates (a translated word, sb_age's result)
-//   %d   an int        %u   an unsigned
-//   %3u  at least 3 characters, space padded        %03u   at least 3 digits, zero padded (widths 1 to 9)
-// A format with more than one value numbers them all from 1 in the order they are passed (%1$s, %2$03u), so a
-// translation can move or repeat them. Every other '%' is text. A value a helper below makes (a frequency, a time) is
-// built in a buffer of its own and passed as %K. At most SB_FMT_VALUES values
-#define SB_FMT_VALUES	4
-void sb_fmt(sbuf_t *b, const char *fmt, ...);
 // A buffer of its own for a value a helper makes: SB_LOCAL(f, 12); sb_freq(&f, hz); then f_text is the value
 #define SB_LOCAL(name, size) \
 	char name##_text[size]; \
 	sbuf_t name; \
 	sb_init(&name, name##_text, sizeof name##_text)
-// Where the last sb_fmt put its %s value, NULL when it had none (a banner's title breaks its line there)
-extern const char *sb_fmt_name;
-// Unsigned decimal with at least min_digits digits (zero padded)
-void sb_u32(sbuf_t *b, uint32_t v, int min_digits);
-void sb_i32(sbuf_t *b, int32_t v);
 // Upper-case hex, exactly digits digits (a P25 NAC: 293, F7E)
 void sb_hex(sbuf_t *b, uint32_t v, int digits);
 // MHz with 3 decimals, more (up to 5) when the frequency needs them: 146.520, 446.00625

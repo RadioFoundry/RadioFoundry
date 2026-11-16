@@ -125,6 +125,8 @@ static void test_fmt(void)
 	CHECK(n == 5 && strcmp(b, "trunc") == 0, "fmt truncation: %zu %s", n, b);
 	dl_fmt(b, sizeof(b), "%s", (const char *)NULL);
 	CHECK(strcmp(b, "(null)") == 0, "fmt null string");
+	dl_fmt(b, sizeof(b), "%s|%5s", "a\x1d", "b\x1f");	// the UI's formatter, but a marker byte is kept as it is
+	CHECK(strcmp(b, "a\x1d|   b\x1f") == 0, "fmt keeps control bytes: %s", b);
 
 	dl_text_t t;
 	char tb[16];

@@ -138,7 +138,7 @@ msgstr "Retroiluminación"
 |---|---|
 | Keep it short. Most screens are 128 or 160 pixels wide: about 21 characters in the small font, 16 in the list font | A row too long is cut with an ellipsis; a toast or hint is cut |
 | Keep leading and trailing spaces, and the colon at the end | The code may put other text beside it |
-| Keep every value (`%s`, `%2$u`) with its letter; move it where your language wants it | The radio puts a name or a number there. `"Site %1$u of %2$u: %3$s"` may become `"%3$s: sitio %1$u de %2$u"`. A value may be used twice, never left out; `--check` rejects a missing or changed one. One value is written without a number (`%s`); to use it twice, or when there are several, number every value (`%1$s`) |
+| Keep every value (`%s`, `%u`) with its letter; move it where your language wants it | The radio puts a name or a number there. With more than one value, number every one in the order of the English: `"Site %u of %u: %s"` becomes `"%3$s: sitio %1$u de %2$u"`. A lone value stays `%s`. A value may be used twice, never left out; `--check` rejects a missing or changed one |
 | Keep `{a\|b}` groups as groups, with the same number of choices | A text alternate: the radio shows the first choice that fits, longest first. Write each choice shorter than the one before |
 | Use only ASCII and Latin-1 letters (á é í ó ú ñ ü ç ß ...) and `… · → ° ⤒ ⤓` | The radio draws one byte a character; `--check` rejects anything else. A CJK catalog is the exception, and says so ([below](#chinese-and-other-cjk-languages)) |
 | Start every hint group that names the Back key with exactly your translation of `"Back"` | Hints keep the Back group at the right edge by matching that word: change it and every Back group must change with it |
@@ -270,7 +270,7 @@ values where the language needs them:
 
 ```c
 TRF(&b, MSG_BANNER_FROM, "Message from %s", name);
-TRF(&b, ROAM_BODY_SITE, "Site %1$u of %2$u: %3$s", site + 1u, sites, ch.name);
+TRF(&b, ROAM_BODY_SITE, "Site %u of %u: %s", site + 1u, sites, ch.name);
 ```
 
 | Value | Takes | Shows |
@@ -282,13 +282,13 @@ TRF(&b, ROAM_BODY_SITE, "Site %1$u of %2$u: %3$s", site + 1u, sites, ch.name);
 | `%3u`, `%3d` | | At least 3 characters, space padded (widths 1 to 9) |
 | `%03u`, `%03d` | | At least 3 digits, zero padded, after the sign |
 
-- **Numbering.** Text with one value writes it without a number: `"Message from %s"`. Text with more than one
-  value, or one value used twice, numbers every value from 1 in the order the code passes them: `%1$u`, `%2$03u`.
-  If you add a number to one value, number all of them; `--check` rejects a mix, and a number on a lone value. The
-  English and every translation are numbered alike, though only a translation that changes the order needs it.
+- **Numbering.** The English writes its values in the order the code passes them, without numbers:
+  `"Site %u of %u: %s"`. A translation of more than one value numbers every value from 1 in that order, whether or
+  not it moves them: `"%3$s: sitio %1$u de %2$u"`, `%2$03u`. A lone value is never numbered (`"De %s"`), and
+  `--check` rejects `%1$s` used alone. Text that uses a value twice numbers every value, the English too.
 - At most 4 values, none left out. A value may be used more than once
   (`TEXT_ALT_OPEN "%1$s to you" TEXT_ALT_NEXT "%1$s" TEXT_ALT_CLOSE`).
-- Every other `%` is text: `"Battery %u%: charge soon"`.
+- `%%` is a `%`; any other `%` that is not a value is text: `"Battery %u%: charge soon"`.
 - The compiler checks the values against the English: the tool writes a prototype for each format key into
   `tr_keys.h`, and a value of the wrong type, in the wrong order, missing or extra fails the build. No code is made
   for the check.
