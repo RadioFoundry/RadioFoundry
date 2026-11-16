@@ -671,6 +671,27 @@ int main(void)
 	sb_init(&b, age, sizeof age); sb_age_long(&b, 30000u);
 	CHECK(strcmp(age, "30s ago") == 0);
 
+	// Formats (sb_fmt): values by number, in any order and more than once; %s shows a marker byte as '?' and %K
+	// keeps it; a number's least digits; a '%' that isn't a value is text; the text is cut at the buffer's end
+	char f[48];
+	sb_init(&b, f, sizeof f); sb_fmt(&b, "%2$u of %1$s: %2$u%", "Bob", 7u);
+	CHECK(strcmp(f, "7 of Bob: 7%") == 0);
+	CHECK(sb_fmt_name == f + 5);
+	sb_init(&b, f, sizeof f); sb_fmt(&b, "%1$s|%2$K", "a\x1d" "b\x1f", "c\x1d" "d");
+	CHECK(strcmp(f, "a?b?|c\x1d" "d") == 0);
+	sb_init(&b, f, sizeof f); sb_fmt(&b, "%1$d %2$02u:%3$02u %4$d", -5, 3u, 12u, 2147483647);
+	CHECK(strcmp(f, "-5 03:12 2147483647") == 0);
+	CHECK(sb_fmt_name == NULL);
+	sb_init(&b, f, sizeof f); sb_fmt(&b, "100% %5$s %1$x %1$");
+	CHECK(strcmp(f, "100% %5$s %1$x %1$") == 0);
+	sb_init(&b, f, 8); sb_fmt(&b, "%1$s and %2$s", "Alpha", "Beta");
+	CHECK(strcmp(f, "Alpha a") == 0);
+	sb_init(&b, f, sizeof f); sb_fmt(&b, "%1$s%2$K.", (const char *)NULL, "");
+	CHECK(strcmp(f, ".") == 0);
+	// TRF: the same through a key (English here), the values checked against the key's prototype
+	sb_init(&b, f, sizeof f); TRF(&b, ROAM_BODY_SITE, "Site %1$u of %2$u: %3$s", 2u, 5u, "North");
+	CHECK(strcmp(f, "Site 2 of 5: North") == 0);
+
 	// Ranges (sb_range, Stations heard and DMR GPS Info), BVA at each unit and rounding step and the compass's edges.
 	// 99950 m and up print 100.0 km: the 0.1 km rounding runs past the step to whole km (as before)
 	static const struct { uint32_t m; uint16_t deg; const char *want; } ranges[] = {

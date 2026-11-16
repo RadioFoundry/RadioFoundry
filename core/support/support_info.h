@@ -30,7 +30,7 @@ const char *support_repo(void);				// "owner/repo", "" when not known
 
 typedef struct {
 	const char *key;		// the debug link's key: "mcu", "flash", "display", "dmr", "rf", "board", "hwopt"
-	tr_id_t label;			// About's label, "Flash: " (TR_NONE: label_text)
+	tr_id_t label;			// About's label, "Flash" (TR_NONE: label_text)
 	const char *label_text;		// a hardware option's name, as the board gives it
 	char value[SUPPORT_VALUE_MAX];
 } support_line_t;

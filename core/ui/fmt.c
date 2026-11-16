@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // Small text builders for the UI
+#include <stdarg.h>
 #include "fmt.h"
 #include "font.h"
 #include "i18n.h"
@@ -29,23 +30,114 @@ void sb_chr(sbuf_t *b, char c)
 	}
 }
 
-void sb_str(sbuf_t *b, const char *s)
+// Copies s up to end (its NUL when end is NULL). With safe set a byte below 0x20 becomes '?': the text is a name or
+// a received text, and those bytes are the markers the text layer reads (font.h)
+static void put(sbuf_t *b, const char *s, const char *end, bool safe)
 {
+	while (s != end && *s) {
 #if CONFIG_LANG_ZH
-	// A CJK catalog's text is UTF-8 (tools/i18n.py): when the buffer has no room for a whole character, drop it whole
-	// rather than leave half of it for the text layer to draw as a box
-	while (*s) {
+		// A CJK catalog's text is UTF-8 (tools/i18n.py): when the buffer has no room for a whole character, drop it
+		// whole rather than leave half of it for the text layer to draw as a box
 		const uint8_t *p = (const uint8_t *)s;
 		int seq = ((p[0] & 0xF0) == 0xE0 && (p[1] & 0xC0) == 0x80 && (p[2] & 0xC0) == 0x80) ? 3 : 1;
 		if ((size_t)(b->end - b->p) < (size_t)seq)
 			return;
-		while (seq--)
+		while (--seq)
 			sb_chr(b, *s++);
-	}
-#else
-	while (*s)
-		sb_chr(b, *s++);
 #endif
+		char c = *s++;
+		sb_chr(b, safe && (uint8_t)c < 0x20 ? '?' : c);
+	}
+}
+
+void sb_str(sbuf_t *b, const char *s)
+{
+	put(b, s, NULL, false);
+}
+
+// One value of a format: which (from 0), its kind (s K d u), and for a number its least digits
+typedef struct {
+	uint8_t n;
+	uint8_t digits;
+	char kind;
+} fmt_value_t;
+
+// The next value at or after f. *at is its '%', or the end of the text when there is none; the return is the text
+// after the value, NULL when there is none. A '%' that doesn't start a value is text
+static const char *fmt_next(const char *f, const char **at, fmt_value_t *v)
+{
+	for (; *f; f++) {
+		if (f[0] != '%' || f[1] < '1' || f[1] > '0' + SB_FMT_VALUES || f[2] != '$')
+			continue;
+		const char *k = f + 3;
+		v->n = (uint8_t)(f[1] - '1');
+		v->digits = 1;
+		if (k[0] == '0' && k[1] >= '1' && k[1] <= '9') {
+			v->digits = (uint8_t)(k[1] - '0');
+			k += 2;
+		}
+		if (*k != 's' && *k != 'K' && *k != 'd' && *k != 'u')
+			continue;
+		v->kind = *k;
+		*at = f;
+		return k + 1;
+	}
+	*at = f;
+	return NULL;
+}
+
+const char *sb_fmt_name;
+
+void sb_fmt(sbuf_t *b, const char *fmt, ...)
+{
+	// A value is used by its number, and a va_list gives them only in order: fetch them all first. A text and a number
+	// are fetched as different types, so the first pass finds which is which
+	uintptr_t value[SB_FMT_VALUES];
+	fmt_value_t v;
+	const char *at;
+	unsigned count = 0, text = 0;
+	sb_fmt_name = NULL;
+	for (const char *f = fmt; (f = fmt_next(f, &at, &v)) != NULL;) {
+		if (v.n >= count)
+			count = v.n + 1u;
+		if (v.kind == 's' || v.kind == 'K')
+			text |= 1u << v.n;
+	}
+	va_list ap;
+	va_start(ap, fmt);
+	for (unsigned i = 0; i < count; i++) {
+		if (text & (1u << i))
+			value[i] = (uintptr_t)va_arg(ap, const char *);
+		else
+			value[i] = (uintptr_t)va_arg(ap, unsigned);
+	}
+	va_end(ap);
+	for (;;) {
+		const char *rest = fmt_next(fmt, &at, &v);
+		put(b, fmt, at, false);
+		if (rest == NULL)
+			return;
+		fmt = rest;
+		uintptr_t a = value[v.n];
+		switch (v.kind) {
+		case 's':
+			sb_fmt_name = b->p;
+			// fallthrough
+		case 'K':
+			if (a != 0)
+				put(b, (const char *)a, NULL, v.kind == 's');
+			break;
+		case 'd':
+			if ((int32_t)a < 0) {
+				sb_chr(b, '-');
+				a = (uintptr_t)(0u - (uint32_t)a);
+			}
+			// fallthrough
+		default:
+			sb_u32(b, (uint32_t)a, v.digits);
+			break;
+		}
+	}
 }
 
 void sb_u32(sbuf_t *b, uint32_t v, int min_digits)
@@ -144,6 +236,7 @@ void sb_mmss(sbuf_t *b, uint32_t seconds)
 }
 
 // The age's number and unit letter: 45 's', 14 'm', 3 'h', 2 'd'
+// The unit goes to unit[0]: the caller's is a string of one letter
 static uint32_t age_unit(uint32_t ms, char *unit)
 {
 	uint32_t s = ms / 1000u;
@@ -165,26 +258,18 @@ static uint32_t age_unit(uint32_t ms, char *unit)
 
 void sb_age_long(sbuf_t *b, uint32_t ms)
 {
-	char unit;
-	sb_u32(b, age_unit(ms, &unit), 1);
-	sb_chr(b, unit);
-	sb_str(b, TR(PART_AGO, " ago"));
+	char unit[2] = "";
+	uint32_t v = age_unit(ms, unit);
+	TRF(b, VALUE_AGE_LONG, "%1$u%2$K ago", v, unit);
 }
 
 // "14m ago", "14m" as text alternates: the drawing keeps the longest that fits (font.h). One unit style everywhere,
 // so two ages on one screen always read alike
 void sb_age(sbuf_t *b, uint32_t ms)
 {
-	char unit;
-	uint32_t v = age_unit(ms, &unit);
-	sb_str(b, TEXT_ALT_OPEN);
-	sb_u32(b, v, 1);
-	sb_chr(b, unit);
-	sb_str(b, TR(PART_AGO, " ago"));
-	sb_str(b, TEXT_ALT_NEXT);
-	sb_u32(b, v, 1);
-	sb_chr(b, unit);
-	sb_str(b, TEXT_ALT_CLOSE);
+	char unit[2] = "";
+	uint32_t v = age_unit(ms, unit);
+	TRF(b, VALUE_AGE, TEXT_ALT_OPEN "%1$u%2$K ago" TEXT_ALT_NEXT "%1$u%2$K" TEXT_ALT_CLOSE, v, unit);
 }
 
 void sb_degrees(sbuf_t *b, int32_t e7)

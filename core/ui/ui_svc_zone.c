@@ -247,13 +247,12 @@ bool ui_svc_zone_event(uint8_t kind, uint32_t id, ui_event_t *ev)
 	name[sizeof name - 1] = 0;
 	sbuf_t b;
 	sb_init(&b, ev->text, sizeof ev->text);
-	sb_str(&b, o.channel ? TR(SHARE_BODY_CHANNEL, "Channel ") : TR(SHARE_BODY_ZONE, "Zone "));
-	sb_str(&b, name);
-	if (!o.channel) {
-		sb_str(&b, ", ");
-		sb_u32(&b, o.channels, 1);
-		sb_str(&b, o.channels == 1 ? TR(UNIT_CHANNEL, " channel") : TR(UNIT_CHANNELS, " channels"));
-	}
+	if (o.channel)
+		TRF(&b, SHARE_BODY_CHANNEL, "Channel %1$s", name);
+	else if (o.channels == 1)
+		TRF(&b, SHARE_BODY_ZONE_CHANNEL, "Zone %1$s, %2$u channel", name, o.channels);
+	else
+		TRF(&b, SHARE_BODY_ZONE_CHANNELS, "Zone %1$s, %2$u channels", name, o.channels);
 	return true;
 }
 #endif

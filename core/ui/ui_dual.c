@@ -767,8 +767,10 @@ static void zone_to(uint16_t zi, int dir)
 			return;
 		sbuf_t b;
 		sb_init(&b, msg, sizeof msg);
-		sb_str(&b, d->sel ? TR(DUAL_TOAST_B_ZONE, "B zone: ") : TR(DUAL_TOAST_A_ZONE, "A zone: "));
-		sb_str(&b, z.name);
+		if (d->sel)
+			TRF(&b, DUAL_TOAST_B_ZONE, "B zone: %1$s", z.name);
+		else
+			TRF(&b, DUAL_TOAST_A_ZONE, "A zone: %1$s", z.name);
 		ui_toast(msg);
 		return;
 	}
@@ -843,23 +845,15 @@ static void caller_text(char *out, size_t len, const ui_dual_pane_t *p, bool dmr
 		sb_str(&b, signal_word(p, dmr));
 		return;
 	}
-	sb_str(&b, TEXT_ALT_OPEN);
-	for (int alt = 0; alt < 2; alt++) {
-		if (name[0])
-			sb_str(&b, name);
-		else
-			sb_u32(&b, src, 1);
-		if (alt == 0) {
-			if (group) {
-				sb_str(&b, " TG ");
-				sb_u32(&b, dst, 1);
-			} else {
-				sb_str(&b, TR(DUAL_VALUE_TO_YOU, " to you"));
-			}
-			sb_str(&b, TEXT_ALT_NEXT);
-		}
+	SB_LOCAL(id, 12);
+	if (!name[0]) {
+		sb_u32(&id, src, 1);
+		name = id_text;
 	}
-	sb_str(&b, TEXT_ALT_CLOSE);
+	if (group)
+		sb_fmt(&b, TEXT_ALT_OPEN "%1$s TG %2$u" TEXT_ALT_NEXT "%1$s" TEXT_ALT_CLOSE, name, (unsigned)dst);
+	else
+		TRF(&b, DUAL_VALUE_TO_YOU, TEXT_ALT_OPEN "%1$s to you" TEXT_ALT_NEXT "%1$s" TEXT_ALT_CLOSE, name);
 }
 
 // A call that ended on pane i goes to the top of the list
@@ -890,11 +884,10 @@ static void watch_lost(ui_dual_t *d, const radio_view_t *v)
 	state_save();
 	sbuf_t b;
 	sb_init(&b, msg, sizeof msg);
-	sb_str(&b, TR(DUAL_TOAST_OFF_ON, "Dual watch off: on "));
+	SB_LOCAL(f, 12);
 	if (v->vfo)
-		sb_freq(&b, v->ch.rx_hz);
-	else
-		sb_str(&b, v->ch.name);
+		sb_freq(&f, v->ch.rx_hz);
+	TRF(&b, DUAL_TOAST_OFF_ON, "Dual watch off: on %1$s", v->vfo ? f_text : v->ch.name);
 	ui_toast(msg);
 }
 

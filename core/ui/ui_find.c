@@ -342,8 +342,7 @@ static void find_item(uint16_t i, ui_item_t *it)
 	switch (r->kind) {
 	case FR_CHANNEL: {
 		const radio_view_t *v = ui_view();
-		sb_str(&b, TR(FIND_ROW_CH, "Ch "));
-		sb_u32(&b, r->ref + 1u, 1);
+		TRF(&b, FIND_ROW_CH, "Ch %1$u", r->ref + 1u);
 		if (codeplug_zone(v->zone_index, &zone) && r->ref < zone.count &&
 		    codeplug_channel_name(zone.channels[r->ref], rec_name)) {
 			sb_chr(&b, ' ');
@@ -372,26 +371,25 @@ static void find_item(uint16_t i, ui_item_t *it)
 		}
 		break;
 	case FR_TG:
-		sb_str(&b, TR(FIND_ROW_TALK_TO_TG, "Talk to TG "));
-		sb_u32(&b, r->ref, 1);
+		TRF(&b, FIND_ROW_TALK_TO_TG, "Talk to TG %1$u", r->ref);
 		sb_str(&vb, TR(CHIP_NOT_SAVED, TEXT_ALT_OPEN "Not saved" TEXT_ALT_NEXT TEXT_ALT_CLOSE));
 		break;
 	case FR_PRIVATE:
-		sb_str(&b, TR(FIND_ROW_PRIVATE_CALL, "Private call "));
-		sb_u32(&b, r->ref, 1);
+		TRF(&b, FIND_ROW_PRIVATE_CALL, "Private call %1$u", r->ref);
 		if (find_target(i, &t) && t.name[0]) {
 			sb_chr(&b, ' ');
 			sb_str(&b, t.name);
 		}
 		break;
-	case FR_FREQ:
-		sb_str(&b, TR(FIND_ROW_TUNE_VFO_TO, "Tune VFO to "));
-		sb_freq(&b, r->ref);
+	case FR_FREQ: {
+		SB_LOCAL(f, 12);
+		sb_freq(&f, r->ref);
+		TRF(&b, FIND_ROW_TUNE_VFO_TO, "Tune VFO to %1$K", f_text);
 		sb_str(&vb, TEXT_ALT_OPEN "VFO" TEXT_ALT_NEXT TEXT_ALT_CLOSE);
 		break;
+	}
 	case FR_NEW_CONTACT:
-		sb_str(&b, TR(FIND_ROW_CREATE_CONTACT, "Create contact "));
-		sb_u32(&b, r->ref, 1);
+		TRF(&b, FIND_ROW_CREATE_CONTACT, "Create contact %1$u", r->ref);
 		break;
 	case FR_PHONE:
 		sb_str(&b, TR(TRUNK_ROW_PHONE_CALL, "Phone call "));
