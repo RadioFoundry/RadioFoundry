@@ -18,9 +18,14 @@ const char build_preset[] = RFOUNDRY_PRESET;
 const char build_off[] = RFOUNDRY_FEATURES_OFF;
 
 // P25 first: build_features_now leaves it out on a board that can't run it
+#if CONFIG_P25_TRUNK
+#define P25_FEATURES	"P25,P25_TRUNK,"
+#elif CONFIG_P25
+#define P25_FEATURES	"P25,"
+#endif
 static const char features[] =
 #if CONFIG_P25
-	"P25,"
+	P25_FEATURES
 #endif
 #if CONFIG_FM
 	"FM,"
@@ -197,7 +202,7 @@ const char *build_features_now(void)
 #if CONFIG_P25
 	// P25 runs where the board's air interface carries it: the Codeplug Editor offers P25 channels only there
 	if (!radio_p25_fits())
-		return features + sizeof("P25,") - 1u;
+		return features + sizeof(P25_FEATURES) - 1u;
 #endif
 	return features;
 }

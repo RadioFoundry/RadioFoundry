@@ -38,12 +38,19 @@ typedef struct {
 #define RADIO_P25_LATE		0x20u	// ... was entered without its header
 #define RADIO_P25_TALK_UNIT	0x40u	// PTT calls unit talk, else talk group talk (the settings' unit_call)
 
+// On a trunked channel (CONFIG_P25_TRUNK, docs/spec/p25-trunking.md 6): what the follower does
+#define RADIO_P25_TRUNK_OFF	0	// not a trunked channel, or not running
+#define RADIO_P25_TRUNK_HUNT	1	// looking for the system's control channel
+#define RADIO_P25_TRUNK_CONTROL	2	// on the control channel, waiting for a call it follows
+#define RADIO_P25_TRUNK_VOICE	3	// on a voice channel, following a call
+
 // The radio view's part (radio_view_t.p25): the call heard now, or the last one
 typedef struct {
 	uint8_t flags;		// RADIO_P25_*
 	uint8_t tx;		// air_tx_state_t of the engine
 	uint16_t nac;
 	uint16_t rx_nac;	// the NAC received (the settings' rx_nac; 0xF7E: any)
+	uint8_t trunk;		// RADIO_P25_TRUNK_*
 	uint32_t src;		// the caller's unit ID, 0 not known yet
 	uint32_t dst;		// the talk group or the unit called
 	uint32_t talk;		// what PTT calls (the settings' tx_dst): a talk group, or a unit with RADIO_P25_TALK_UNIT
@@ -56,16 +63,32 @@ typedef struct {
 	uint32_t rx_chunks, tx_underruns, tx_syms;			// the session's
 	uint32_t begins, begin_fails;	// engine starts, and the ones the provider refused (no provider, no fit)
 	uint32_t mem_lent;		// starts that ran in memory lent by the vocoder
+	// A trunked channel's: retunes the follower asked, the ones to a frequency the radio can't receive, units and
+	// calls the follower missed because the radio task was inside it
+	uint32_t trunk_retunes, trunk_untuned, trunk_skips;
 } radio_p25_stats_t;
 
 #if CONFIG_P25
 #include "p25/p25_engine.h"
+#if CONFIG_P25_TRUNK
+#include "p25/p25_follow.h"
+
+// The follower's view as the radio task last copied it (any task reads it)
+typedef struct {
+	uint8_t seq;		// odd while it is written
+	bool on;		// a trunked channel runs
+	uint32_t retunes, untuned, skips;	// radio_p25_stats_t's trunk_*
+	p25_follow_view_t v;
+} radio_p25_trunk_view_t;
+void radio_p25_trunk_view(radio_p25_trunk_view_t *out);
+#endif
 
 void radio_p25_init(const hal_audio_t *audio);	// the PCM stream the voice plays on
 // The board's air interface can receive P25 (any task): what the UI offers P25 on
 bool radio_p25_fits(void);
-// A channel read from the codeplug, as the radio runs it: a live P25 conventional channel (kind 2) becomes
-// RADIO_MODE_P25 where the board runs P25 and its frequency allows a digital mode. False: left as read (parked)
+// A channel read from the codeplug, as the radio runs it: a live P25 conventional channel (kind 2), and with
+// CONFIG_P25_TRUNK a trunked one (kind 3), becomes RADIO_MODE_P25 where the board runs P25 and its frequency allows a
+// digital mode. False: left as read (parked)
 bool radio_p25_take(channel_t *ch);
 void radio_p25_settings(radio_p25_settings_t *out);	// any task
 void radio_p25_set_settings(const radio_p25_settings_t *s);	// radio task (RREQ_P25_SET)
@@ -82,6 +105,8 @@ bool radio_p25_in_force(radio_p25_settings_t *out);
 bool radio_p25_begin(const channel_t *ch, uint16_t number, uint32_t own_id);
 void radio_p25_end(void);
 bool radio_p25_running(void);
+// The engine runs a trunked channel (P25T, CONFIG_P25_TRUNK): receive only, the follower tunes
+bool radio_p25_trunked(void);
 void radio_p25_retuned(void);
 // The settings or the channel's parameters changed: the engine takes them (not while transmitting)
 void radio_p25_apply(const channel_t *ch, uint16_t number, uint32_t own_id);

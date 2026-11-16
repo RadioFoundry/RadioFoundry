@@ -1029,6 +1029,9 @@ static uint8_t tx_check(const radio_sm_t *sm)
 	if (parked(ch)) {
 		return TXDENY_MODE;	// before receive only: the record underneath says so, the mode is the reason
 	}
+	if (ch->kind == CODEPLUG_KIND_P25_TRUNK) {
+		return TXDENY_RX_ONLY;	// a trunked P25 channel is listened to, never keyed (docs/spec/p25-trunking.md 6)
+	}
 	if (ch->tx_hz == 0) {
 		return TXDENY_NO_FREQ;
 	}
@@ -4174,6 +4177,7 @@ static void p25_stop(radio_sm_t *sm)
 	sm->p25_tx = false;
 	sm->view.p25.flags = 0;
 	sm->view.p25.tx = AIR_TX_IDLE;
+	sm->view.p25.trunk = RADIO_P25_TRUNK_OFF;
 }
 
 // PTT on a P25 channel, tx_check passed: the header queued, the transmitter keyed at the channel's power, the

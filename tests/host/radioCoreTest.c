@@ -219,6 +219,9 @@ static const hal_hwopt_t fake_hwopts[] = {
 #include "p25/p25_engine.h"
 #include "p25/p25_codeplug.h"
 #include "hostlink/build_info.h"
+#if CONFIG_P25_TRUNK
+#include "p25/p25_tsbk.h"
+#endif
 #define AIR_CHUNK	144
 #define AIR_DEPTH	4
 typedef struct {
@@ -242,8 +245,29 @@ static void air_ev(fake_air_t *p, uint8_t kind, const air_chunk_t *c)
 	}
 }
 
+#if CONFIG_P25_TRUNK
+// A P25 trunked site around the radio (test_p25_trunk): its control channel on cc_hz, and the far radio's voice
+// heard only on voice_hz. On any other frequency the receiver hears noise
+static struct {
+	bool on;
+	uint32_t cc_hz, voice_hz;
+	uint16_t grant_tg, grant_ch;	// a group voice grant sent, 0: none
+	bool grant_enc;
+	bool iden2;			// identifier 2 (out of the radio's bands) sent too
+	uint32_t units, rot;
+	uint8_t unit[P25_UNIT_BYTES_MAX];
+	uint16_t unit_syms, unit_at;
+} site;
+static void site_chunk(uint8_t *syms);
+#endif
+
 static void air_deliver(fake_air_t *to, const uint8_t *syms, uint16_t n)
 {
+#if CONFIG_P25_TRUNK
+	if (site.on && to == &fair[0] && hw.rx_hz != site.voice_hz) {
+		return;		// the far radio sends on the voice channel; the radio is tuned elsewhere
+	}
+#endif
 	int8_t soft[AIR_CHUNK];
 	air_chunk_t c = { .t_us = to->now_us, .nsyms = n, .sync_at = -1, .hard = syms, .soft = soft };
 	for (uint16_t i = 0; i < n; i++) {
@@ -259,6 +283,26 @@ static void air_step1(uint8_t i)
 {
 	fake_air_t *p = &fair[i], *far = &fair[i ^ 1];
 	p->now_us += 30000;
+#if CONFIG_P25_TRUNK
+	if (i == 0 && !p->on && site.on && (hw.rx_hz == site.cc_hz || hw.rx_hz != site.voice_hz || !far->on)) {
+		uint8_t syms[AIR_CHUNK / 4];
+		if (hw.rx_hz == site.cc_hz) {
+			site_chunk(syms);
+		} else {
+			for (uint8_t k = 0; k < sizeof(syms); k++) {
+				air_rng ^= air_rng << 13;
+				air_rng ^= air_rng >> 17;
+				air_rng ^= air_rng << 5;
+				syms[k] = (uint8_t)air_rng;
+			}
+		}
+		bool was = site.on;
+		site.on = false;	// (past air_deliver's filter)
+		air_deliver(p, syms, AIR_CHUNK);
+		site.on = was;
+		return;
+	}
+#endif
 	if (!p->on) {
 		if (!far->on) {		// nobody sends: the receiver hands on noise
 			uint8_t noise[AIR_CHUNK / 4];
@@ -5864,7 +5908,8 @@ static void far_start(const p25_call_t *c, void *ctx) { (void)ctx; far_heard.sta
 static void far_update(const p25_call_t *c, void *ctx) { (void)ctx; far_heard.call = *c; }
 static void far_voice(const uint8_t imbe[P25_IMBE_BYTES], uint8_t errs, void *ctx) { (void)imbe; (void)errs; (void)ctx; far_heard.voice++; }
 static void far_end(void *ctx) { (void)ctx; far_heard.ends++; }
-static const p25_engine_hooks_t far_hooks = { far_start, far_update, far_voice, far_end, NULL };
+static const p25_engine_hooks_t far_hooks = { .rx_start = far_start, .rx_update = far_update, .rx_voice = far_voice,
+						.rx_end = far_end };
 
 static void air_step(void)
 {
@@ -6617,8 +6662,276 @@ static void test_p25_stored(void)
 	memset(stored_p25, 0, sizeof(stored_p25));
 }
 
+#if CONFIG_P25_TRUNK
+// ---- P25 trunked (docs/spec/p25-trunking.md 6): a site on the fake air (site above), the far radio its voice ----
+#define TS_WACN		0xBEE00u
+#define TS_SYSID	0x2F3u
+#define TS_NAC		0x293u
+#define TS_BASE		451000000u	// identifier 1: 12.5 kHz channels from here
+#define TS_CC1		451012500u	// channel 0x1001, the primary control channel
+#define TS_CC2		451025000u	// channel 0x1002, programmed by number only
+#define TS_VOICE	451125000u	// channel 0x100A
+#define TS_FAR_VOICE	851068750u	// identifier 2 (off air), channel 0x200A: outside the radio's bands
+
+static void site_unit(void)
+{
+	uint8_t b[3][P25_TSBK_BYTES];
+	unsigned n = 0;
+
+	site.units++;
+	if (site.grant_tg != 0) {
+		p25_tsbk_t m = { .kind = P25_TSBK_GRANT, .opcode = P25_OP_GRP_V_GRANT };
+		m.u.grant.svc = site.grant_enc ? P25_SVC_PROTECTED : 0;
+		m.u.grant.ch = site.grant_ch;
+		m.u.grant.tg = site.grant_tg;
+		m.u.grant.src = 1001;
+		p25_tsbk_make(&m, b[n++]);
+	}
+	while (n < 2) {
+		p25_tsbk_t m = { 0 };
+		switch (site.rot++ % 4) {
+		case 0:
+			m.kind = P25_TSBK_NET;
+			m.u.net.lra = 1;
+			m.u.net.wacn = TS_WACN;
+			m.u.net.sysid = TS_SYSID;
+			m.u.net.ch = 0x1001;
+			break;
+		case 1:
+			m.kind = P25_TSBK_RFSS;
+			m.u.site.lra = 1;
+			m.u.site.sysid = TS_SYSID;
+			m.u.site.rfss = 1;
+			m.u.site.site = 7;
+			m.u.site.ch = 0x1001;
+			break;
+		case 2:
+			if (!site.iden2) {
+				continue;
+			}
+			m.kind = P25_TSBK_IDEN;
+			m.u.iden.id = 2;
+			m.u.iden.form = P25_OP_IDEN_UP;
+			m.u.iden.base = 851006250u / 5;
+			m.u.iden.spacing = 50;
+			m.u.iden.bw_khz8 = 100;
+			break;
+		default:
+			m.kind = P25_TSBK_SYS_SRV;
+			m.u.svc.avail = m.u.svc.supp = 0x1F;
+			break;
+		}
+		p25_tsbk_make(&m, b[n++]);
+	}
+	for (unsigned k = 0; k < n; k++) {
+		b[k][0] = (uint8_t)((b[k][0] & 0x7F) | (k == n - 1 ? P25_TSBK_LB : 0));
+		p25_tsbk_seal(b[k]);
+	}
+	site.unit_syms = p25_blocks_syms((uint8_t)n);
+	p25_unit_begin(site.unit, site.unit_syms, TS_NAC, P25_DUID_TSDU, P25_SS_IDLE);
+	for (unsigned k = 0; k < n; k++) {
+		p25_block_put(site.unit, (uint8_t)k, b[k]);
+	}
+	site.unit_at = 0;
+}
+
+// One chunk of the control channel: its units back to back
+static void site_chunk(uint8_t *syms)
+{
+	for (uint16_t i = 0; i < AIR_CHUNK; i++) {
+		if (site.unit_at >= site.unit_syms) {
+			site_unit();
+		}
+		air_sym_put(syms, i, air_sym_get(site.unit, site.unit_at++));
+	}
+}
+
+// The codec's side (p25_codeplug.c, tested in p25CodeplugTest): channel 3's system
+static p25_trunk_cfg_t stored_trunk;
+static int trunk_loads;
+static bool trunk_load_fails;
+bool p25_trunk_load(uint16_t number, const channel_t *ch, p25_trunk_cfg_t *out)
+{
+	if (ch->kind != CODEPLUG_KIND_P25_TRUNK || number != 3 || trunk_load_fails) {
+		return false;
+	}
+	trunk_loads++;
+	*out = stored_trunk;
+	return true;
+}
+
+static void p25t_view_text(char *buf, size_t cap)
+{
+	dl_text_t t;
+	dl_text_init(&t, buf, cap);
+	debuglink_view_p25_trunk(&t);
+}
+
+static void test_p25_trunk(void)
+{
+	static char buf[2048];
+	const radio_p25_view_t *v = &sm.view.p25;
+	radio_p25_stats_t st;
+	p25_voice_stats_t vs;
+
+	setup_codeplug_p25();
+	// The record as the codeplug reads it: the safe stand-in (DMR, receive only) on the primary control channel
+	add(3, "P25T sys", TS_CC1, RADIO_MODE_DMR, true, 2);
+	chans[3].kind = CODEPLUG_KIND_P25_TRUNK;
+	chans[3].system = 0;
+	memset(&stored_trunk, 0, sizeof stored_trunk);
+	stored_trunk.sys = (p25_tsys_t){ .wacn = TS_WACN, .sysid = TS_SYSID, .cc_nac = TS_NAC };
+	stored_trunk.unit_id = 4321;
+	stored_trunk.ctl_count = 2;
+	stored_trunk.ctl[0] = (p25_ctl_t){ .chan = 0x1001, .rx_hz = TS_CC1 };
+	stored_trunk.ctl[1] = (p25_ctl_t){ .chan = 0x1002 };
+	stored_trunk.ctl_site[0] = stored_trunk.ctl_site[1] = 7;
+	stored_trunk.iden_set = 1u << 1;
+	stored_trunk.iden[1] = (p25_iden_t){ .base_hz = TS_BASE, .spacing_hz = 12500, .type = P25_IDEN_FDMA };
+	stored_trunk.talk_group = 201;
+	memset(&site, 0, sizeof site);
+	site.cc_hz = TS_CC1;
+	site.voice_hz = TS_VOICE;
+	site.on = true;
+	start();
+	p25_defaults();
+	aud.feed = true;
+	CHECK(strstr(build_features_now(), "P25,P25_TRUNK,") == build_features_now());
+
+	// The channel runs P25, receive only; the follower finds the system on the primary
+	req(RREQ_ZONE_POS, 2);
+	CHECK(sm.view.channel_number == 3 && sm.view.ch.mode == RADIO_MODE_P25 && trunk_loads == 1);
+	CHECK(radio_p25_running() && radio_p25_trunked() && !sm.dmr_running && hw_mode == RADIO_MODE_DMR);
+	CHECK(hw.rx_hz == TS_CC1 && hw.rx_bw == RADIO_BW_12K5);
+	run(1500);
+	CHECK(v->trunk == RADIO_P25_TRUNK_CONTROL && hw.rx_hz == TS_CC1 && sm.view.state == RS_IDLE);
+	p25t_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25t.built=1\np25t.on=1\np25t.state=2\np25t.cc=0\n") != NULL);
+	CHECK(strstr(buf, "p25t.nac=659\np25t.wacn=781824\np25t.sysid=755\np25t.rfss=1\np25t.site=7\n") != NULL);
+	CHECK(strstr(buf, "p25t.blocks=0\n") == NULL && strstr(buf, "p25t.crc_fail=0\n") != NULL);
+	p25_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25.run.rx_nac=659\n") != NULL && strstr(buf, "p25.run.unit_id=4321\n") != NULL);
+
+	// PTT on a trunked channel: refused, nothing keyed
+	int keyed = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_RX_ONLY && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	run(100);
+	CHECK(!radio_p25_tx_prepare() && !fair[0].on);
+	// The same with the record's receive only cleared: a trunked channel is never keyed
+	chans[3].rx_only = false;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_RX_ONLY && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	run(1500);
+	CHECK(v->trunk == RADIO_P25_TRUNK_CONTROL);
+
+	// A grant for our talk group: the receiver goes to the voice channel, the call plays, then back
+	radio_p25_reset_stats();
+	p25VoiceResetStats();
+	far_begin(TS_NAC, 1001, false, 201);
+	site.grant_tg = 201;
+	site.grant_ch = 0x100A;
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	run(800);
+	CHECK(hw.rx_hz == TS_VOICE && v->trunk == RADIO_P25_TRUNK_VOICE && sm.view.state == RS_RX);
+	CHECK((v->flags & RADIO_P25_PLAYED) && v->dst == 201 && v->src == 1001 && hw.led[LED_GREEN]);
+	run(600);
+	p25_engine_tx_stop(&far_eng);
+	site.grant_tg = 0;
+	run(600);
+	CHECK(!far_tx && hw.rx_hz == TS_CC1 && v->trunk == RADIO_P25_TRUNK_CONTROL && sm.view.state == RS_IDLE);
+	p25VoiceGetStats(&vs);
+	radio_p25_stats(&st);
+	CHECK(vs.rx_calls == 1 && vs.rx_in > 0 && st.trunk_retunes >= 2 && st.trunk_untuned == 0 && st.tx_calls == 0);
+	p25t_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25t.tg=201\np25t.src=1001\n") != NULL && strstr(buf, "p25t.follows=1\n") != NULL);
+	CHECK(fair[0].begins == 0 && fair[0].keyed_violations == 0);
+
+	// Another talk group's grant: heard on the control channel, not followed
+	site.grant_tg = 300;
+	run(600);
+	CHECK(hw.rx_hz == TS_CC1 && v->trunk == RADIO_P25_TRUNK_CONTROL);
+	p25t_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25t.follows=1\n") != NULL);
+	// An encrypted grant with the system's skip on: refused
+	site.grant_tg = 201;
+	site.grant_enc = true;
+	stored_trunk.sys.options = P25_TSYS_SKIP_ENC;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	run(1500);
+	CHECK(hw.rx_hz == TS_CC1 && v->trunk == RADIO_P25_TRUNK_CONTROL);
+	p25t_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25t.refused=1\np25t.refused_tg=201\n") != NULL && strstr(buf, "p25t.follows=0\n") != NULL);
+	site.grant_enc = false;
+	stored_trunk.sys.options = 0;
+
+	// A grant on a channel the radio can't receive: not tuned; with no voice there the follower comes back
+	site.iden2 = true;
+	site.grant_ch = 0x200A;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	radio_p25_reset_stats();
+	run(3000);
+	radio_p25_stats(&st);
+	CHECK(st.trunk_untuned >= 1 && hw.rx_hz == TS_CC1);
+	p25t_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25t.voice_lost=0\n") == NULL);
+	site.grant_tg = 0;
+	site.iden2 = false;
+	run(1500);
+	CHECK(v->trunk == RADIO_P25_TRUNK_CONTROL);
+
+	// The primary goes quiet and the site moves to its other control channel (programmed by number): found
+	site.cc_hz = TS_CC2;
+	run(5000);
+	CHECK(hw.rx_hz == TS_CC2 && v->trunk == RADIO_P25_TRUNK_CONTROL);
+	p25t_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25t.cc=1\n") != NULL && strstr(buf, "p25t.cc_lost=0\n") == NULL);
+
+	// Leave for an FM channel: the follower stops with the engine; back, it hunts from the start
+	req(RREQ_ZONE_POS, 0);
+	CHECK(!radio_p25_running() && !radio_p25_trunked() && v->trunk == RADIO_P25_TRUNK_OFF);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && hw.rx_hz == chans[1].rx_hz);
+	p25t_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25t.on=0\np25t.state=0\n") != NULL);
+	req(RREQ_ZONE_POS, 2);
+	run(3000);
+	CHECK(radio_p25_trunked() && hw.rx_hz == TS_CC2 && v->trunk == RADIO_P25_TRUNK_CONTROL);
+
+	// No control channel programmed: the follower hunts and finds none
+	stored_trunk.ctl_count = 0;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	run(1000);
+	CHECK(radio_p25_trunked() && v->trunk == RADIO_P25_TRUNK_HUNT && hw.rx_hz == TS_CC1);
+	// The system missing (the codeplug can't load it): no engine, PTT still refused
+	trunk_load_fails = true;
+	radio_p25_reset_stats();
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	radio_p25_stats(&st);
+	CHECK(!radio_p25_running() && st.begin_fails == 1 && sm.view.ch.mode == RADIO_MODE_P25);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_RX_ONLY && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	trunk_load_fails = false;
+	req(RREQ_ZONE_POS, 0);
+	far_stop();
+	site.on = false;
+}
+#endif
+
 static void test_p25(void)
 {
+#if CONFIG_P25_TRUNK
+	test_p25_trunk();
+#endif
 	test_p25_rx();
 	test_p25_stored();
 	test_p25_tx();
