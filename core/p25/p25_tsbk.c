@@ -379,7 +379,7 @@ void p25_tsbk_make(const p25_tsbk_t *m, uint8_t blk[P25_TSBK_BYTES])
 	p25_tsbk_seal(blk);
 }
 
-// ── Inbound signaling (layouts in docs/spec/p25-trunking.md 2.2; their argument places are unconfirmed) ──
+// ── Inbound signaling (layouts in docs/spec/p25-trunking.md 2.1; their argument places are unconfirmed) ──
 void p25_isp_make(const p25_isp_t *m, uint8_t blk[P25_TSBK_BYTES])
 {
 	memset(blk, 0, P25_TSBK_BYTES);

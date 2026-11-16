@@ -302,8 +302,8 @@
 #ifndef CONFIG_AIR
 #define CONFIG_AIR			(CONFIG_P25 || CONFIG_NXDN)
 #endif
-// P25 trunked: the codec of its systems and channels (docs/spec/p25-codeplug.md 3) and, receive only, the control
-// channel decoded and voice channel grants followed (core/p25/p25_follow.c)
+// P25 trunked: the codec of its systems and channels (docs/spec/p25-codeplug.md 3), the control channel decoded, voice
+// channel grants followed and, where the system allows it, registration and transmit on a grant (core/p25/p25_follow.c)
 #ifndef CONFIG_P25_TRUNK
 #define CONFIG_P25_TRUNK		0
 #endif

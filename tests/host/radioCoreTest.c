@@ -6680,7 +6680,7 @@ static void test_p25_stored(void)
 }
 
 #if CONFIG_P25_TRUNK
-// ---- P25 trunked (docs/spec/p25-trunking.md 6): a site on the fake air (site above), the far radio its voice ----
+// ---- P25 trunked (docs/spec/p25-trunking.md 7): a site on the fake air (site above), the far radio its voice ----
 #define TS_WACN		0xBEE00u
 #define TS_SYSID	0x2F3u
 #define TS_NAC		0x293u
@@ -7019,7 +7019,7 @@ static void test_p25_trunk(void)
 #endif
 
 #if CONFIG_P25_TRUNK
-// The transmit side on a trunked channel (docs/spec/p25-trunking.md 5, 6): registration and affiliation through the
+// The transmit side on a trunked channel (docs/spec/p25-trunking.md 5, 7): registration and affiliation through the
 // site's inbound receiver, PTT's request, the grant, the call on the voice channel heard by the far radio, the return;
 // queued, denied and unanswered requests
 #define TS_OFFSET	5000000		// identifier 1's transmit offset

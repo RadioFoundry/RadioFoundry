@@ -1032,7 +1032,7 @@ static uint8_t tx_check(const radio_sm_t *sm)
 		return TXDENY_MODE;	// before receive only: the record underneath says so, the mode is the reason
 	}
 	if (trunk) {
-		// Its tag's receive only, the system's listen only, or no follower with a transmit side (p25-trunking.md 6)
+		// Its tag's receive only, the system's listen only, or no follower with a transmit side (p25-trunking.md 7)
 #if CONFIG_P25_TRUNK
 		if (ch->rx_only || !radio_p25_trunk_tx()) {
 			return TXDENY_RX_ONLY;
@@ -4230,7 +4230,7 @@ static void p25_key(radio_sm_t *sm, uint32_t now_ms, uint32_t hz)
 }
 
 #if CONFIG_P25_TRUNK
-// --- P25 trunked (docs/spec/p25-trunking.md 6): PTT asks the follower for a voice channel; it keys there on the grant.
+// --- P25 trunked (docs/spec/p25-trunking.md 7): PTT asks the follower for a voice channel; it keys there on the grant.
 // Between calls the follower's inbound bursts (registration, affiliation, requests) go out on the control channel's
 // inbound frequency through the same engine and checks ---
 

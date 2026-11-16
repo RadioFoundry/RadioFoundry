@@ -94,7 +94,7 @@ static void iden_learn(p25_follow_t *f, const p25_iden_air_t *a)
 	i->spacing5 = (uint16_t)spacing5;
 	i->slots = a->slots ? a->slots : 1;
 	// The transmit offset: the general form's unit is 250 kHz, the VHF/UHF and TDMA forms' the channel spacing
-	// (unconfirmed, docs/spec/p25-trunking.md 8)
+	// (unconfirmed, docs/spec/p25-trunking.md 9)
 	i->tx_off = a->tx_off;
 	i->flags = (uint8_t)(IDEN_VALID | IDEN_OFF | (a->form == P25_OP_IDEN_UP ? 0 : IDEN_OFF_STEP) |
 			     (a->tdma ? IDEN_TDMA : 0));

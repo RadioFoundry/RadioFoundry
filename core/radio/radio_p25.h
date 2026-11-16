@@ -39,7 +39,7 @@ typedef struct {
 #define RADIO_P25_TALK_UNIT	0x40u	// PTT calls unit talk, else talk group talk (the settings' unit_call)
 #define RADIO_P25_TRUNK_TX	0x80u	// a trunked channel whose transmit side is on (registration, PTT)
 
-// On a trunked channel (CONFIG_P25_TRUNK, docs/spec/p25-trunking.md 6): what the follower does
+// On a trunked channel (CONFIG_P25_TRUNK, docs/spec/p25-trunking.md 7): what the follower does
 #define RADIO_P25_TRUNK_OFF	0	// not a trunked channel, or not running
 #define RADIO_P25_TRUNK_HUNT	1	// looking for the system's control channel
 #define RADIO_P25_TRUNK_CONTROL	2	// on the control channel, waiting for a call it follows
@@ -99,7 +99,7 @@ typedef struct {
 } radio_p25_trunk_view_t;
 void radio_p25_trunk_view(radio_p25_trunk_view_t *out);
 
-// Transmitting on a trunked channel (radio task; docs/spec/p25-trunking.md 6). The follower's transmit side is on
+// Transmitting on a trunked channel (radio task; docs/spec/p25-trunking.md 7). The follower's transmit side is on
 bool radio_p25_trunk_tx(void);
 // PTT pressed or released: pressed, RADIO_P25T_WHY_NONE when a voice request goes out, else why not
 uint8_t radio_p25_trunk_ptt(bool down);

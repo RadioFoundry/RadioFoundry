@@ -17,7 +17,7 @@
 #include "hal_time.h"
 #include "p25/p25_follow.h"
 
-// A trunked channel's follower (docs/spec/p25-trunking.md 6) and what it runs on. The provider's task hands it units
+// A trunked channel's follower (docs/spec/p25-trunking.md 7) and what it runs on. The provider's task hands it units
 // and calls, the radio task ticks it and carries out its retunes; the two never run it at once (enter_* below)
 typedef struct {
 	p25_follow_t f;
@@ -287,7 +287,7 @@ static bool trunk_send(uint32_t hz, const uint8_t blk[P25_TSBK_BYTES], void *ctx
 
 static const p25_follow_hooks_t follow_hooks = { trunk_tune, NULL, trunk_send };	// no fallback yet (p25-trunking.md 7)
 
-// The follower's configuration from the codeplug's (p25-trunking.md 7), and the engine's: the system's NAC, our unit
+// The follower's configuration from the codeplug's (p25-trunking.md 6), and the engine's: the system's NAC, our unit
 // ID, trunking signaling on, what PTT calls. tx: the channel allows transmitting (its tag); the system's listen only
 // and a missing unit ID or talk group keep the transmit side off
 static void trunk_params(p25_trunk_t *t, const p25_trunk_cfg_t *l, bool tx, p25_engine_cfg_t *cfg)

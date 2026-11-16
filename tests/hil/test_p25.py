@@ -33,7 +33,7 @@ framer and call layer, built for the host) decodes it. Pass criteria:
 The carrier offset the soft modem measures is printed, not judged: it includes the bench board's own error.
 
 test_p25_trunk_follow (opt-in: --p25-trunk-channel NAME; nothing is sent, PTT is not pressed): the stored P25 trunked
-channel of that name, its system's control channel heard at the rig (p25-trunking.md 6). The radio must run P25 on it
+channel of that name, its system's control channel heard at the rig (p25-trunking.md 7). The radio must run P25 on it
 (`mode=p25`, `ch.kind=3`), the follower must hold a control channel (`p25t.state=2`) within CC_WAIT_S with most blocks
 decoded (CRC failures at most MAX_CRC_FAIL of them), and the system it names must be the one the codeplug gives (when
 that isn't "any"; printed). For FOLLOW_WAIT_S it watches for a call it follows: one followed counts a reception
@@ -45,7 +45,7 @@ test_p25_trunk_tx (opt-in: --allow-rf --allow-service-stop --p25-trunk-tx-channe
 --p25-cc-in-mhz MHz --p25-voice-mhz MHz; the bench and the radio transmit; written, not yet run on a radio): the stored
 P25 trunked channel NAME, transmit on, its system's control channel at --p25-cc-mhz with its inbound frequency at
 --p25-cc-in-mhz (the offset a multiple of 250 kHz) and a system that takes WACN SITE_WACN, system SITE_SYSID, NAC
-SITE_NAC. The bench plays a control channel that p25tool.py cc writes (p25-trunking.md 6) and captures what the radio
+SITE_NAC. The bench plays a control channel that p25tool.py cc writes (p25-trunking.md 8) and captures what the radio
 sends with its FM discriminator. Three steps:
 1. Broadcasts only, the inbound frequency captured: the radio must send a registration request (p25tool.py decode
    --inbound) with the site's WACN and system ID; its unit ID is taken from it.
@@ -348,7 +348,7 @@ def test_p25_tx_off_air(radio, sdr_bench, pytestconfig):
     assert (as_int(v.get("p25.tx_underruns")) or 0) == under0, "the air ran dry during the call"
 
 
-# --- A trunked channel (p25-trunking.md 6): receive only ---
+# --- A trunked channel (p25-trunking.md 7): receive only ---
 
 KIND_P25_TRUNK = 3
 CC_WAIT_S = 30.0            # a hunt over every programmed control channel, with its backoff
@@ -427,7 +427,7 @@ def test_p25_trunk_follow(radio, pytestconfig):
         radio.wait_for(lambda x: x.get("p25t.on") == "0", 3.0, sections=("p25_trunk",), what="the follower stopped")
 
 
-# --- A trunked channel with transmit on, against a control channel the bench plays (p25-trunking.md 6) ---
+# --- A trunked channel with transmit on, against a control channel the bench plays (p25-trunking.md 5, 8) ---
 
 SITE_NAC, SITE_WACN, SITE_SYSID = "293", "BEE00", "2F3"
 FSK4_HEX_MAX = 8192         # symbols the bench takes in the request itself (fsk4_bench.py)
