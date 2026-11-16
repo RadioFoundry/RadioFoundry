@@ -20,7 +20,7 @@
 #define MBE_MAXL		56	// most harmonics in a frame
 #define MBE_FRAME_LEN		160	// samples per frame (20 ms at 8 kHz)
 #define MBE_BUF_WORDS		512	// scratch words: the noise FFT and the output sum
-#define MBE_REPEAT_MAX		3	// bad frames in a row that repeat the last good one; the next one mutes
+#define MBE_REPEAT_MAX		4	// bad frames in a row that repeat the last good one; the next one mutes
 
 // A harmonic's amplitude: log2 in Q11 of its level in PCM units (a harmonic of 15 * 2048 is a full-scale sinusoid; an
 // unvoiced one gets the same level as noise power in its band). MBE_A_SILENT marks a harmonic that is not there.
@@ -64,6 +64,9 @@ typedef struct {
 } mbe_mem_t;
 
 void mbe_synth_init(const mbe_mem_t *m);
+// The spectral amplitude enhancement alone, for a front end that has more to do between it and the synthesis (it
+// then sets MBE_NO_ENHANCE). a, out: log2 Q11, L values; out may be a. The frame's energy is kept
+void mbe_enhance(int16_t *out, const int16_t *a, int L, uint32_t w0);
 // One frame. in: the parameters (NULL when bad). bad != 0: the front end could not use the frame; the last good one is
 // repeated for up to MBE_REPEAT_MAX frames in a row, then the output fades to silence. Returns the number of bad frames
 // in a row (0 for a good one): above MBE_REPEAT_MAX the front end drops what it predicts from.

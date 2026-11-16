@@ -114,11 +114,11 @@ static void on_unit(const p25_rx_unit_t *u, void *ctx)
 		int errs = p25_ldu_voice_get(u->air, n, imbe);
 
 		c->stats.voice++;
-		c->stats.voice_bits += (uint32_t)errs;
-		if (errs >= P25_VOICE_ERRS_BAD)
+		c->stats.voice_bits += (uint32_t)P25_VOICE_ERRS_TOTAL(errs);
+		if (P25_VOICE_ERRS_BAD(errs))
 			c->stats.voice_bad++;
 		if (c->sink->voice)
-			c->sink->voice(imbe, (uint8_t)(errs > 255 ? 255 : errs), c->ctx);
+			c->sink->voice(imbe, (uint8_t)errs, c->ctx);
 	}
 }
 

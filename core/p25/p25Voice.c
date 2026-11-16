@@ -8,6 +8,10 @@
 #include <stddef.h>
 #include <string.h>
 
+// the call layer packs what a frame's codes corrected as the decoder reads it
+_Static_assert(P25_VOICE_ERRS(11, 2, 1) == IMBE_ERRS(11, 2, 1) && P25_VOICE_ERRS(15, 3, 1) != IMBE_ERRS_LOST,
+	       "the voice error byte's layouts differ");
+
 #if (P25_VOICE_QUEUE & (P25_VOICE_QUEUE - 1)) != 0 || P25_VOICE_QUEUE > 128 || P25_VOICE_QUEUE < 2 * P25_VOICE_FRAMES
 #error "P25_VOICE_QUEUE must be a power of two up to 128 holding two LDUs"
 #endif
@@ -67,10 +71,10 @@ static void rx_voice(const uint8_t imbe[P25_IMBE_BYTES], uint8_t errs, void *ctx
 		rx_start(NULL, NULL);	// frames with no call open: a new call
 	}
 	stats.rx_in++;
-	if (errs > IMBE_ERRS_MAX) {
+	if (IMBE_ERRS_REPEAT(errs)) {
 		stats.rx_bad++;
 	} else {
-		stats.rx_bit_errors += errs;
+		stats.rx_bit_errors += IMBE_ERRS_TOTAL(errs);
 	}
 	uint8_t h = rx_head, used = (uint8_t)(h - LOAD(rx_tail));
 	if (used >= P25_VOICE_QUEUE) {
@@ -188,7 +192,7 @@ static void rx_block(int16_t *spk)
 		stats.rx_underruns++;
 		stats.rx_underrun_at = cb_call_frames;
 		stats.rx_concealed++;
-		imbe_dec_frame(&dec, imbe_silence, 0xFF, spk);
+		imbe_dec_frame(&dec, imbe_silence, IMBE_ERRS_LOST, spk);
 		return;
 	}
 	const p25_voice_entry_t *e = &mem->q[t & (P25_VOICE_QUEUE - 1)];
@@ -306,7 +310,7 @@ void p25VoiceBegin(p25_voice_mem_t *m)
 	dec.mbe.cur = &m->cur;
 	dec.mbe.buf = m->buf;
 	imbe_dec_init(&dec);
-	enc.s = &m->st;
+	enc.s = &m->st.q;
 	enc.est = &m->est;
 	enc.p = &m->pr;
 	enc.buf = m->buf;

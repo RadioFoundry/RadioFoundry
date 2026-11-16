@@ -205,7 +205,7 @@ static void testVoice(void)
 				b = (uint16_t)(rng() % 144);
 			while (b == 106 || b == 113 || b == 118 || b == 125 || b == 130 || b == 137 || b == 142);
 			p25_bits_put(unit, (uint16_t)(at[n] + b), 1, p25_bits_get(unit, (uint16_t)(at[n] + b), 1) ^ 1);
-			CHECK(p25_ldu_voice_get(unit, n, out) == 1 && !memcmp(in[n], out, P25_IMBE_BYTES), "voice %u, bit %u wrong", n, b);
+			CHECK(P25_VOICE_ERRS_TOTAL(p25_ldu_voice_get(unit, n, out)) == 1 && !memcmp(in[n], out, P25_IMBE_BYTES), "voice %u, bit %u wrong", n, b);
 		}
 	}
 	// The whole LDU is used exactly once: voice, the 24 words, low speed data

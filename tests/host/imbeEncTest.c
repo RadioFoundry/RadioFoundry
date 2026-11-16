@@ -129,7 +129,7 @@ typedef struct {
 	int32_t buf[MBE_BUF_WORDS];
 	imbe_enc_mem_t m;
 	// a decoder beside it
-	imbe_state_t ds;
+	imbe_dec_state_t ds;
 	mbe_params_t dp;
 	mbe_state_t ms;
 	mbe_frame_t prev, cur;
@@ -250,10 +250,10 @@ static void test_noise(void)
 	for (int f = 0; f < 60; f++) {
 		uint8_t bits[IMBE_BYTES];
 		mbe_params_t p;
-		imbe_state_t tmp = r->ds;
+		imbe_dec_state_t tmp = r->ds;
 
 		imbe_enc_frame(&r->m, in + f * MBE_FRAME_LEN, bits);
-		imbe_unpack(&tmp, bits, &p);
+		imbe_unpack(&tmp.q, bits, &p);
 		for (int l = 0; l < p.L; l++, total++)
 			voiced += p.v[l];
 		imbe_dec_frame(&r->d, bits, 0, out + f * MBE_FRAME_LEN);
@@ -368,11 +368,11 @@ static void test_no_voicing_from_hum(void)
 	for (int f = 0; f < 100; f++) {
 		uint8_t bits[IMBE_BYTES];
 		mbe_params_t p;
-		imbe_state_t tmp = r->ds;
+		imbe_dec_state_t tmp = r->ds;
 		int any = 0;
 
 		imbe_enc_frame(&r->m, in + f * MBE_FRAME_LEN, bits);
-		imbe_unpack(&tmp, bits, &p);
+		imbe_unpack(&tmp.q, bits, &p);
 		r->ds = tmp;
 		for (int l = 0; l < p.L; l++)
 			any |= p.v[l];
