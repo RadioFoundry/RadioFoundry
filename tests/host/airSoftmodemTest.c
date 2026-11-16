@@ -550,10 +550,13 @@ static void testCall(void)
 {
 	static uint8_t fbuf[P25_UNIT_BYTES_MAX];
 	static int8_t fsoft[P25_UNIT_SYMS_MAX];
-	static const struct { double cpk, off, sigma; uint16_t told; uint8_t units_min; const char *what; } t[] = {
-		{ 2000, 0, 0, 2000, 6, "clean" },
-		{ 1700, 800, 250, 2000, 6, "low, offset, noise" },
-		{ 2000, -500, 350, 0, 5, "unknown scale, noise" },	// the header can go while the level settles
+	// quiet: samples of unmodulated carrier between the noise and the call, as many transmitters key up
+	static const struct { double cpk, off, sigma; uint16_t told, quiet; uint8_t units_min; const char *what; } t[] = {
+		{ 2000, 0, 0, 2000, 0, 6, "clean" },
+		{ 1700, 800, 250, 2000, 0, 6, "low, offset, noise" },
+		{ 2000, -500, 350, 0, 0, 5, "unknown scale, noise" },	// the header can go while the level settles
+		// The discriminator goes quiet before the call: the level the modem follows must not lag it
+		{ 2000, -500, 100, 0, 4000, 6, "unknown scale, quiet carrier first" },
 	};
 	uint8_t unit[P25_UNIT_BYTES_MAX], hdr[P25_HDR_BYTES], lcraw[P25_LC_BYTES], es[P25_ES_BYTES], out[16];
 	uint8_t voice[4][P25_VOICE_FRAMES][P25_IMBE_BYTES];
@@ -609,6 +612,8 @@ static void testCall(void)
 		last = (uint32_t)((sym_at(&p, call_to - 1) - phase - LPF_HALF) / 30);
 		for (uint32_t j = 0; j < lead; j++)
 			all[n++] = (int16_t)lround(t[i].off + 2.5 * t[i].cpk * gauss());
+		for (uint32_t j = 0; j < t[i].quiet; j++)
+			all[n++] = (int16_t)lround(t[i].off + t[i].sigma * gauss());
 		for (uint32_t j = first; j <= last; j++)
 			all[n++] = tap[j];
 		for (uint32_t j = 0; j < 4000; j++)
@@ -630,8 +635,9 @@ static void testCall(void)
 		for (uint8_t g = 0; g < ngot; g++) {
 			const p25_rx_unit_t *u = &got[g];
 			uint8_t k = (uint8_t)(g + k0);
-			// The unit's first symbol on the tap's clock: the lead of noise, then the call from sample `first`
-			double want = (lead - (double)first) * 125 + model_us(phase, sym_at(&p, at[k]));
+			// The unit's first symbol on the tap's clock: the lead of noise and the quiet carrier, then the call
+			// from sample `first`
+			double want = (lead + t[i].quiet - (double)first) * 125 + model_us(phase, sym_at(&p, at[k]));
 			double d = (double)(uint32_t)(u->t_us - T0) - want;
 
 			CHECK(fabs(d) < 30, "%s unit %u: time off %.0f us", t[i].what, k, d);

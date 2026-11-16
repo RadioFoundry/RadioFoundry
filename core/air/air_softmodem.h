@@ -37,6 +37,7 @@ typedef struct {
 	// Input: offset, level, the interpolator
 	int32_t dc;				// slow average of the input, x 1024: the tap's own offset
 	int32_t env;				// slow average of its magnitude, x 1024 (a tap of unknown scale only)
+	int32_t env_fast;			// the same over 2^TRACK_SHIFT_MIN samples: a step in the level
 	uint32_t gain;				// summed input counts to line units, x 65536 (GAIN_MAX at most)
 	uint16_t track_n;			// samples until the averages slow down a step
 	uint8_t track_shift;			// their time constant: 2^shift samples

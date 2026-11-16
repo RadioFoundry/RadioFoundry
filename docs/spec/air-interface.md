@@ -142,7 +142,7 @@ down to a hundredth of it).
 | Sync fit | the newest symbol-spaced samples are fitted to each pattern (level and offset, least squares). Where the error passes through a minimum under the limit, that sample is a symbol center; a parabola through the neighbors places it between samples |
 | Gate | the fit runs only where a pattern can be: per sample phase the modem keeps one bit per symbol (this sample was above the one a symbol before), and a pattern is fitted when the steps of four levels or more among its last 17 symbols are all there but one. Two missing steps put a fit over the limit whatever the rest does, so the gate changes no output; it removes the fit from all but a few percent of the samples of noise or data |
 | Output | symbols leave from the far end of a delay line 26 symbols long, sampled on the latest sync's timing and scaled by its level and offset, so a sync is sampled on the timing it gave |
-| Level | a tap of known scale starts at the profile's deviation. A tap of unknown scale follows the input's average magnitude until the first sync gives the level |
+| Level | a tap of known scale starts at the profile's deviation. A tap of unknown scale follows the input's average magnitude until the first sync gives the level. The averages start fast and slow down; when a 16-sample average of the magnitude is off the slow one by half or double (a signal after an unmodulated carrier, which leaves the discriminator quiet), both start fast again |
 
 Between syncs the timing, level and offset hold. Two crystal clocks do not move a fifth of a symbol in a second, so
 a mode whose syncs recur gets every frame on fresh timing. Chunks say `AIR_CHUNK_FREE_RUN` when no sync was seen

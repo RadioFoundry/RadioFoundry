@@ -163,7 +163,7 @@ bool air_softmodem_rx_open(air_softmodem_t *m, const air_profile_t *p, uint32_t 
 		m->gain = outer > GAIN_MAX ? GAIN_MAX : (uint32_t)outer;
 	} else {
 		m->gain = 65536u / m->box;
-		m->env = 3 * LINE_LVL * 1024;
+		m->env = m->env_fast = 3 * LINE_LVL * 1024;
 	}
 	for (uint8_t i = 0; i < p->nsyncs && i < AIR_SYNCS_MAX; i++) {
 		const air_sync_t *s = &p->sync[i];
@@ -293,6 +293,7 @@ static void commit(air_softmodem_t *m, uint8_t back, uint16_t q_next)
 		if (m->gain > GAIN_MAX)
 			m->gain = GAIN_MAX;
 		m->env = (m->env / f) * 256 + ((m->env % f) * 256) / f;
+		m->env_fast = (m->env_fast / f) * 256 + ((m->env_fast % f) * 256) / f;
 		off = (off * f) / 256;
 		lvl = LVL_NOM;
 	}
@@ -501,8 +502,17 @@ void air_softmodem_rx(air_softmodem_t *m, const int16_t *samples, uint16_t n, ui
 				int32_t mag = v < 0 ? -v : v;
 
 				m->env += (mag * 1024 - m->env) >> m->track_shift;
+				m->env_fast += (mag * 1024 - m->env_fast) >> TRACK_SHIFT_MIN;
 				if (m->env < 1024)
 					m->env = 1024;
+				// The level stepped by half or double (a signal after a quiet carrier, or the other way): the
+				// slow averages would take hundreds of ms to follow, the gain clipping or starving every symbol
+				// meanwhile. They start over at their fastest
+				if (m->env_fast > 2 * m->env || 2 * m->env_fast < m->env) {
+					m->env = m->env_fast < 1024 ? 1024 : m->env_fast;
+					m->track_shift = TRACK_SHIFT_MIN;
+					m->track_n = 1u << TRACK_SHIFT_MIN;
+				}
 				m->gain = (((uint32_t)target << 26) / (uint32_t)m->env) / box;
 			}
 			if (m->track_shift < TRACK_SHIFT_MAX && --m->track_n == 0) {

@@ -13,7 +13,7 @@ than its sources).
     p25tool.py disc IN.raw --rate HZ [--full HZ | --counts-per-khz N] [--invert] [--bits 8 --shift S] [--skip S]
                [--meta IN.json] [--expect EXP.json]
     p25tool.py mod IN.dibits OUT.raw [--rate HZ] [--full HZ] [--dev-scale PCT] [--offset HZ] [--noise HZ] [--ppm P]
-               [--invert] [--carrier-gap S] [--seed S]
+               [--invert] [--carrier-gap S] [--carrier-lead S] [--seed S]
     p25tool.py selftest
 
 gen writes a transmission as the firmware's transmit path builds it (p25_call_tx): the profile's idle symbols as a
@@ -339,7 +339,7 @@ def cmd_disc(a):
 
 def cmd_mod(a):
     for d in run(["mod", a.input, a.out] + pass_opts(a, ["rate", "full", "dev-scale", "offset", "noise", "ppm",
-                                                         "invert", "carrier-gap", "seed", "lpf", "unpacked"])):
+                                                         "invert", "carrier-gap", "carrier-lead", "seed", "lpf", "unpacked"])):
         print(json.dumps(d))
     return 0
 
@@ -475,6 +475,8 @@ def main(argv=None):
     m.add_argument("--ppm", type=float, default=None, help="symbol clock error")
     m.add_argument("--invert", action="store_true")
     m.add_argument("--carrier-gap", type=float, default=None, help="s of noise (no carrier) before and after (0.2)")
+    m.add_argument("--carrier-lead", type=float, default=None, help="s of unmodulated carrier before the first "
+                   "symbol (0)")
     m.add_argument("--lpf", type=float, default=None, help="the discriminator's low-pass, Hz")
     m.add_argument("--seed", type=int, default=None)
     m.add_argument("--unpacked", action="store_true")

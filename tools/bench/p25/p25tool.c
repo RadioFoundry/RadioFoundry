@@ -692,7 +692,8 @@ static int cmd_mod(const char *in, const char *out_path, const opts_t *o)
 	double off = opt_double(o, "--offset", 0), noise = opt_double(o, "--noise", 0), ppm = opt_double(o, "--ppm", 0);
 	double gap = opt_double(o, "--carrier-gap", 0.2), hi = opt_double(o, "--lpf", 0);
 	int osr = FS / SYM_RATE, inv = flag(o, "--invert");
-	size_t lead = (size_t)(gap * FS), wn, dec;
+	// An unmodulated carrier before the first symbol, as many transmitters key up: the discriminator goes quiet
+	size_t lead = (size_t)(gap * FS), quiet = (size_t)(opt_double(o, "--carrier-lead", 0) * FS), wn, dec;
 	double *w, h[2 * SPAN * (FS / SYM_RATE) + 1], lpf[241], lsum = 0;
 	FILE *f;
 
@@ -702,13 +703,13 @@ static int cmd_mod(const char *in, const char *out_path, const opts_t *o)
 	if (hi <= 0)
 		hi = rate * 0.45 < 6000 ? rate * 0.45 : 6000;
 	rng_seed((uint64_t)opt_long(o, "--seed", 7, 10));
-	wn = lead + (size_t)((double)n * osr / (1 + ppm * 1e-6)) + lead + 2 * 120;
+	wn = lead + quiet + (size_t)((double)n * osr / (1 + ppm * 1e-6)) + lead + 2 * 120;
 	w = calloc(wn, sizeof *w);
 	if (!w)
 		die("out of memory", NULL);
 	c4fm_pulse(h, osr);
 	for (size_t k = 0; k < n; k++) {
-		long at = (long)lead + 120 + lround((double)k * osr / (1 + ppm * 1e-6)) - SPAN * osr;
+		long at = (long)(lead + quiet) + 120 + lround((double)k * osr / (1 + ppm * 1e-6)) - SPAN * osr;
 		double lv = air_sym_level(s[k]) * dev / 3.0;
 
 		for (int i = 0; i <= 2 * SPAN * osr; i++)
