@@ -317,7 +317,9 @@ A build with P25 ([build options](../build-config.md)) on a radio whose feature 
 
 - It hears clear P25 voice calls on network access code 293, to every talkgroup. Encrypted calls stay silent.
 - PTT sends a P25 call to talkgroup 1 with no voice yet: the radio has no P25 voice encoder.
-- Home shows "P25". FM's tone and width tiles say "FM only: this is a P25 channel".
+- Home shows "P25", what PTT calls ("TG 1") and the network access code ("NAC 293"). During a call it shows who calls
+  and where ("ID 3101234 > TG 7"), or why the call isn't played ("Encrypted: not played", "Other TG: not played").
+  FM's tone and width tiles say "FM only: this is a P25 channel".
 - The code, talkgroup and talkaround can be changed only from a computer for now (`rfoundry_debug.py radio p25`), and the
   change lasts until the radio is switched off.
 

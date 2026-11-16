@@ -1001,6 +1001,13 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 	} else if (v->ch.tx_hz == 0) {
 		sb_str(&b, TR(HOME_STATE_NO_TX_FREQ, "No TX frequency"));
 		c = ui_col.warn;
+#if CONFIG_P25
+	} else if (v->ch.mode == RADIO_MODE_P25) {
+		// What PTT calls, as on DMR's talk line: "TG 1", or the unit's ID
+		if ((v->p25.flags & RADIO_P25_TALK_UNIT) == 0)
+			sb_str(&b, "TG ");
+		sb_u32(&b, v->p25.talk, 1);
+#endif
 	} else {
 		// " MHz" goes before the frequency is cut (font.h alternates)
 		sb_str(&b, TEXT_ALT_OPEN);
@@ -1047,10 +1054,18 @@ static void draw_chips(const radio_view_t *v, const ui_state_t *s)
 	}
 	bool pw_temp = v->power != channel_power(v);
 	if (v->ch.mode == RADIO_MODE_P25) {
-		// No sub-audio tone, always 12.5 kHz, no FM squelch: the power alone
+		// No sub-audio tone, always 12.5 kHz, no FM squelch: the power, then the NAC heard (F7E: any)
 		if (pw_temp)
 			x = gfx_text(f, x, y, GLYPH_DOT, ui_col.warn);
-		gfx_text(f, x, y, ui_power_name(v->power, v->ch.tx_hz), pw_temp ? ui_col.warn : ui_col.fg);
+		x = gfx_text(f, x, y, ui_power_name(v->power, v->ch.tx_hz), pw_temp ? ui_col.warn : ui_col.fg) + f->w;
+#if CONFIG_P25
+		sb_init(&b, buf, sizeof buf);
+		sb_str(&b, "NAC ");
+		for (int sh = 8; sh >= 0; sh -= 4)
+			sb_chr(&b, "0123456789ABCDEF"[(v->p25.rx_nac >> sh) & 0xFu]);
+		if (x + gfx_text_width(f, buf) <= w)
+			gfx_text(f, x, y, buf, ui_col.fg);
+#endif
 		return;
 	}
 	sb_init(&b, buf, sizeof buf);
@@ -1677,6 +1692,43 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 }
 #endif
 
+#if CONFIG_P25
+// A P25 call coming in: why it isn't played, else who calls and where ("ID 1234 > TG 1", "ID 1234 > Private to 5678";
+// the ID is missing until the call's link control is read)
+static void p25_call_line(const radio_view_t *v, const font_t *f, int y)
+{
+	const radio_p25_view_t *p = &v->p25;
+	char buf[64], fit[48];
+	sbuf_t b;
+
+	if ((p->flags & (RADIO_P25_ENC | RADIO_P25_PLAYED)) != RADIO_P25_PLAYED) {
+		gfx_text_fit(f, (p->flags & RADIO_P25_ENC) != 0 ? TR(CALL_WHY_ENCRYPTED, "Encrypted: not played") :
+			TR(CALL_WHY_OTHER_TG, "Other TG: not played"), gfx_width(), fit, sizeof fit);
+		gfx_text(f, 0, y, fit, ui_col.warn);
+		return;
+	}
+	// Too wide: the caller's ID goes first, then the target is cut
+	for (int with_id = p->src != 0; with_id >= 0; with_id--) {
+		sb_init(&b, buf, sizeof buf);
+		if (with_id) {
+			sb_str(&b, "ID ");
+			sb_u32(&b, p->src, 1);
+			sb_str(&b, " " GLYPH_ARROW " ");
+		}
+		if ((p->flags & RADIO_P25_UNIT) != 0) {
+			sb_str(&b, TR(CALL_VALUE_PRIVATE_TO, "Private to "));
+		} else {
+			sb_str(&b, "TG ");
+		}
+		sb_u32(&b, p->dst, 1);
+		if (gfx_text_width(f, buf) <= gfx_width())
+			break;
+	}
+	gfx_text_fit(f, buf, gfx_width(), fit, sizeof fit);
+	gfx_text(f, 0, y, fit, ui_col.rx);
+}
+#endif
+
 static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 {
 	const ui_layout_t *L = &ui_layout;
@@ -1695,14 +1747,27 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 	bool meter = v->state == RS_RX || (v->state == RS_IDLE && v->monitor && v->ch.mode != RADIO_MODE_DMR);
 	switch (meter ? RS_RX : v->state) {
 	case RS_RX: {
+#if CONFIG_P25
+		if (!two && v->ch.mode == RADIO_MODE_P25 && (v->p25.flags & RADIO_P25_RX) != 0) {
+			p25_call_line(v, sm, y);	// one line: who calls says more than the meter
+			break;
+		}
+#endif
 		sb_i32(&b, v->rssi_dbm);
 		sb_str(&b, " dBm");
 		int tw = gfx_text_width(big, buf);
 		gfx_text(big, w - tw, y, buf, ui_col.fg);
 		draw_meter(0, y + big->h / 4, w - tw - big->w, big->h / 2, v->rssi_dbm);
-		if (two)
-			gfx_text(sm, 0, y2, v->monitor ? TR(ACTIVITY_STATE_SQUELCH_OPEN, "Squelch open") :
-				TR(STATE_RECEIVING, "Receiving"), ui_col.rx);
+		if (!two)
+			break;
+#if CONFIG_P25
+		if (v->ch.mode == RADIO_MODE_P25 && (v->p25.flags & RADIO_P25_RX) != 0) {
+			p25_call_line(v, sm, y2);
+			break;
+		}
+#endif
+		gfx_text(sm, 0, y2, v->monitor ? TR(ACTIVITY_STATE_SQUELCH_OPEN, "Squelch open") :
+			TR(STATE_RECEIVING, "Receiving"), ui_col.rx);
 		break;
 	}
 	case RS_TX: {

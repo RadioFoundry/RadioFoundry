@@ -36,14 +36,17 @@ typedef struct {
 #define RADIO_P25_ENC		0x08u	// ... and is encrypted (not played)
 #define RADIO_P25_UNIT		0x10u	// ... is a unit to unit call (dst is a unit, else a talk group)
 #define RADIO_P25_LATE		0x20u	// ... was entered without its header
+#define RADIO_P25_TALK_UNIT	0x40u	// PTT calls unit talk, else talk group talk (the settings' unit_call)
 
 // The radio view's part (radio_view_t.p25): the call heard now, or the last one
 typedef struct {
 	uint8_t flags;		// RADIO_P25_*
 	uint8_t tx;		// air_tx_state_t of the engine
 	uint16_t nac;
+	uint16_t rx_nac;	// the NAC received (the settings' rx_nac; 0xF7E: any)
 	uint32_t src;		// the caller's unit ID, 0 not known yet
 	uint32_t dst;		// the talk group or the unit called
+	uint32_t talk;		// what PTT calls (the settings' tx_dst): a talk group, or a unit with RADIO_P25_TALK_UNIT
 } radio_p25_view_t;
 
 // Counters for the debug link (any task reads them; the radio task writes them while P25 runs)

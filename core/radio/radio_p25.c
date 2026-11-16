@@ -207,6 +207,15 @@ void radio_p25_apply(const channel_t *ch, uint32_t own_id)
 	p25_engine_set(&mem->eng, &cfg);
 }
 
+// What the screen shows of the settings: the NAC heard and what PTT calls
+static void settings_view(radio_p25_view_t *n)
+{
+	n->rx_nac = set.rx_nac;
+	n->talk = set.tx_dst;
+	if (set.unit_call)
+		n->flags |= RADIO_P25_TALK_UNIT;
+}
+
 bool radio_p25_poll(radio_p25_view_t *v)
 {
 	p25_engine_view_t ev;
@@ -216,6 +225,7 @@ bool radio_p25_poll(radio_p25_view_t *v)
 		n = *v;		// the last call heard stays
 		n.flags = 0;
 		n.tx = AIR_TX_IDLE;
+		settings_view(&n);
 		bool changed = memcmp(&n, v, sizeof(n)) != 0;
 		*v = n;
 		return changed;
@@ -243,6 +253,7 @@ bool radio_p25_poll(radio_p25_view_t *v)
 	n.nac = ev.rx.nac;
 	n.src = ev.rx.have_lc ? ev.rx.lc.src : 0;
 	n.dst = unit ? ev.rx.lc.dst : ev.rx.lc.tgid;
+	settings_view(&n);
 	bool changed = memcmp(&n, v, sizeof(n)) != 0;
 	*v = n;
 	return changed;

@@ -27,6 +27,8 @@
 //                       zone z cut to n channels
 //   zonejob:<z>         another task (an import) deletes zone z (0-based) through the zone storage job
 //   fmrx / fmrxend      an FM signal opens / closes the squelch
+//   p25rx:<src>,<dst>[,u|e|o]   a P25 call (CONFIG_P25 builds): u a unit call, e encrypted, o another talk group
+//                       (both not played); p25rxend ends it
 //   rx:<src>,<dst>,g|p[,name]   a DMR call starts (g = group, p = private to us); rxend ends it
 //   call:<src>,<dst>,g|p        a 2 s call, then 1 s of quiet
 //   msg:<src>,<text>    a text message arrives (_ = space); alert:<src>; emergency:<src>; privcall:<src>
@@ -2209,6 +2211,11 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	view.volume_src = RVOL_KNOB;
 	bcast_rx = false;
 	p25_radio = false;
+#if CONFIG_P25
+	memset(&view.p25, 0, sizeof view.p25);
+	view.p25.rx_nac = 0x293;	// the P25 settings' defaults (radio_p25.c): NAC 293, talk group 1
+	view.p25.talk = 1;
+#endif
 	board.radio = NULL;
 	ref_trim = false;
 	knob_radio = false;
@@ -2808,6 +2815,34 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(100);
 		return true;
 	}
+#if CONFIG_P25
+	if (strcmp(t, "p25rx") == 0) {		// a P25 call: src,dst[,u|e|o] (unit call, encrypted, other talk group)
+		unsigned src = 0, dst = 0;
+		char kind = 'g';
+		if (arg == NULL || sscanf(arg, "%u,%u,%c", &src, &dst, &kind) < 2) {
+			snprintf(err, len, "bad %s", t);
+			return false;
+		}
+		view.p25.flags = (uint8_t)((view.p25.flags & RADIO_P25_TALK_UNIT) | RADIO_P25_ON | RADIO_P25_RX |
+			(kind == 'u' ? RADIO_P25_UNIT : 0) | (kind == 'e' ? RADIO_P25_ENC : 0) |
+			(kind == 'e' || kind == 'o' ? 0 : RADIO_P25_PLAYED));
+		view.p25.src = src;
+		view.p25.dst = dst;
+		view.state = RS_RX;
+		view.rssi_dbm = -84;
+		changed();
+		advance(300);
+		return true;
+	}
+	if (strcmp(t, "p25rxend") == 0) {
+		view.p25.flags &= (uint8_t)~(RADIO_P25_RX | RADIO_P25_PLAYED | RADIO_P25_ENC);
+		view.state = RS_IDLE;
+		view.last_rx_ms = now_ms;
+		changed();
+		advance(200);
+		return true;
+	}
+#endif
 	if (strcmp(t, "fmrx") == 0) {		// an FM signal opens the squelch; fmrxend closes it
 		view.state = RS_RX;
 		view.rssi_dbm = -84;
