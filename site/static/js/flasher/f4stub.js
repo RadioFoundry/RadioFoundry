@@ -92,6 +92,7 @@ export class F4Stub extends Stub {
 		this.reopen = reopen;
 		this.board = board;
 		this.configured = false;	// the stub confirmed this.board's record (or, protocol 2, has its wiring built in)
+		this.erased = false;		// writeImage erased sector 3: a restart now starts the bootloader
 	}
 
 	async enterFromRFoundry(image, progress = () => {}, opts = {}) {
@@ -380,6 +381,7 @@ export class F4Stub extends Stub {
 		for (const i of p.changed) if (by.get(i).kept) await onKept(by.get(i));
 		const order = [3, ...p.changed.filter((i) => i !== 3)];
 		const s3 = by.get(3);
+		this.erased = true;	// from here a restart starts the bootloader (sector 3 blank) until the commit word
 		await this.erase(3);
 		for (const [n, i] of order.slice(1).entries()) {
 			progress(n + 1, order.length, i);

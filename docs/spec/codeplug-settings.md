@@ -100,12 +100,17 @@ continuation keeps the reserved bytes and the header length as it found them.
 | 0x0004 | TOT warning tone | bool | Off silences the tone before the transmit time-out | `sound_flags` bit 5 | Tones in the build (`CONFIG_BEEP`) |
 | 0x0005 | Battery tone | bool | Off silences the low and critical battery tones | `sound_flags` bit 6 | Tones in the build (`CONFIG_BEEP`) |
 | 0x0006 | TX denied tone | bool | Off silences the tone when PTT is refused or the time-out cuts a transmission | `sound_flags` bit 7 | Tones in the build (`CONFIG_BEEP`) |
-| 0x0100 | Trunked systems | record list | Keys 0x0100-0x0107, one per DMR Tier III system, n = key - 0x0100 ([dmr-trunking.md](dmr-trunking.md) 12) | none (a list) | Tier III trunking in the build (`CONFIG_DMR_TRUNK`) |
-| 0x0200 | System channels | record list | Keys 0x0200-0x02FF, one per programmed frequency of a trunked system ([dmr-trunking.md](dmr-trunking.md) 12.2) ([dmr-trunking.md](dmr-trunking.md) 12) | none (a list) | Tier III trunking in the build (`CONFIG_DMR_TRUNK`) |
-| 0x0300 | System keys | record list | Keys 0x0300-0x0307: system n's authentication key (16 octets) and optional PSN (3 octets), n = key - 0x0300 ([dmr-trunking.md](dmr-trunking.md) 12.3). Left out of CSV and other exports | none (a list) | Tier III trunking in the build (`CONFIG_DMR_TRUNK`) |
-| 0x0400 | Trunked channels | record list | Keys 0x0400-0x07FF: channel c's tag (key 0x0400 + c - 1): its system, flags, the name check and its fallback ([dmr-trunking.md](dmr-trunking.md) 12.4) | none (a list) | Tier III trunking in the build (`CONFIG_DMR_TRUNK`) |
-| 0x0800 | Short data poll | record list | Keys 0x0800-0x0807: system n's short data poll format, size and the radio's reply, n = key - 0x0800 ([dmr-trunking.md](dmr-trunking.md) 12.7) | none (a list): ISO 8 bit, 4 blocks, no reply | Tier III trunking in the build (`CONFIG_DMR_TRUNK`) |
-| 0x0900 | Supplementary data | record list | Keys 0x0900-0x0907: the supplementary user data format and octets the radio offers with each call on system n, n = key - 0x0900 ([dmr-trunking.md](dmr-trunking.md) 12.8) | none (a list): no data offered | Tier III supplementary data in the build (`CONFIG_DMR_TRUNK_SUPL`) |
+| 0x0100 | Systems | record list | 0x0100-0x01FF: system n's record ([channel-modes.md](channel-modes.md) 7.1) | none (codeplug data) | the system's type built |
+| 0x0200 | System entries | record list | 0x0200-0x02FF: a system's sites, channels and plan rows ([channel-modes.md](channel-modes.md) 7.2) | none | the system's type built |
+| 0x0300 | System secrets | record list | 0x0300-0x03FF: system n's own secret ([channel-modes.md](channel-modes.md) 7.4) | none | the system's type built |
+| 0x0400 | Channel tags | record list | 0x0400-0x07FF: channel n + 1's kind and parameters ([channel-modes.md](channel-modes.md) 2) | none | read in every build |
+| 0x0800 | Short data poll | record list | 0x0800-0x08FF: DMR Tier III system n's short data poll format, size and the radio's reply ([dmr-trunking-codeplug.md](dmr-trunking-codeplug.md) 5) | none: ISO 8 bit, 4 blocks, no reply | Tier III trunking in the build (`CONFIG_DMR_TRUNK`) |
+| 0x0900 | Supplementary data | record list | 0x0900-0x09FF: the supplementary user data format and octets the radio offers with each call on DMR Tier III system n ([dmr-trunking-codeplug.md](dmr-trunking-codeplug.md) 5) | none: no data offered | Tier III supplementary data in the build (`CONFIG_DMR_TRUNK_SUPL`) |
+| 0x0A00 | Mode settings | record list | 0x0A00-0x0AFF: kind n's radio-wide record ([channel-modes.md](channel-modes.md) 5.5) | none | the kind built |
+| 0x1000 | Targets | record list | 0x1000-0x17FF: call targets the contact record can't hold ([channel-modes.md](channel-modes.md) 5.2) | none | a kind that uses them built |
+| 0x1800 | Target lists | record list | 0x1800-0x18FF: receive lists of targets ([channel-modes.md](channel-modes.md) 5.3) | none | a kind that uses them built |
+| 0x1900 | Traffic keys | record list | 0x1900-0x1CFF: keys that encrypt traffic, each a system's ([channel-modes.md](channel-modes.md) 5.4) | none | a type that uses them built |
+| 0x1D00 | Zone tags | record list | 0x1D00-0x1DFF: reserved for per-zone mode records ([channel-modes.md](channel-modes.md) 5.6) | none | none yet |
 
 **Radio's own copy** is the setting's field in the settings store ([settings-store.md](settings-store.md) 3). Every
 scalar key has one (3.2).

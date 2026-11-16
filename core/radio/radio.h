@@ -145,7 +145,8 @@ typedef struct {
 	bool codec;		// the vocoder is merged: voice plays and PTT works
 	uint8_t state;		// radio_dmr_state_t
 	uint32_t own_id;
-	uint8_t cc, ts;
+	uint8_t cc, ts;		// the channel's
+	uint8_t rx_cc, rx_ts;	// the call heard (digital monitor: any color code, either slot); rx_ts 0 = unknown
 	bool rmo;		// through a repeater
 	bool repeater_up;
 	// Where PTT goes now (the reply target during the reply window)
@@ -392,7 +393,8 @@ typedef struct {
 	uint32_t last_tx_ms;	// hal_millis() when the last transmission began, 0 = none yet
 	uint16_t tot_s;		// TX time-out, 0 = none
 	uint32_t last_rx_ms;	// hal_millis() at the end of the last reception, 0 = none yet
-	uint32_t vfo_step_hz;	// the VFO's step in use: as set, or with vfo_step_auto the width's (12.5 or 25 kHz)
+	uint32_t vfo_step_hz;	// the VFO's step in use: as set, or with vfo_step_auto the width's (12.5 or 25 kHz); in
+				// the broadcast band always the broadcast step
 	bool vfo_step_auto;
 	codeplug_source_t source;
 	bool hotspot;		// the radio is an MMDVM hotspot: the host link drives the modem, channel keys are off

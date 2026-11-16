@@ -377,9 +377,17 @@ static void d_flush_indexed(const void *fb, const uint16_t *pal, uint16_t y0, ui
 	(void)fb; (void)pal; (void)y0; (void)y1;
 }
 static void d_backlight(uint8_t p) { (void)p; }
+// The backlight tests' raw hooks (CONFIG_BACKLIGHT_TEST): a 4096-count period at 7324 Hz, three rates
+static uint16_t bl_raw;
+static void d_backlight_raw(uint16_t v) { bl_raw = v; }
+static uint16_t d_backlight_raw_get(void) { return bl_raw; }
+static uint32_t d_backlight_rate(uint8_t i) { return 29296u >> (i < 3 ? i * 2 : 2); }
 static hal_display_t disp = { .width = 160, .height = 120, .bpp = 16, .init = d_init, .flush = d_flush,
 			      .flush_indexed = d_flush_indexed,
-			      .set_backlight = d_backlight };
+			      .set_backlight = d_backlight,
+			      .backlight_raw_max = 4096, .set_backlight_raw = d_backlight_raw,
+			      .backlight_raw = d_backlight_raw_get, .backlight_rates = 3, .backlight_rate_std = 1,
+			      .set_backlight_rate = d_backlight_rate };
 static uint8_t battery = 84;
 static uint8_t p_battery(void) { return battery; }
 static uint16_t p_supply(void) { return 13800; }	// the sim's view carries the reading (supply:<mv>)
@@ -1230,7 +1238,7 @@ static void load_channel(void)
 #endif
 	view.dmr.active = view.ch.mode == RADIO_MODE_DMR;
 	view.dmr.codec = true;
-	view.dmr.cc = view.ch.color_code;
+	view.dmr.cc = view.dmr.rx_cc = view.ch.color_code;
 	view.dmr.ts = view.ch.timeslot;
 	view.dmr.reply_active = false;
 	reply_until = 0;
@@ -1290,7 +1298,7 @@ static void sim_vfo(bool on)
 		view.ch.color_code = vfo_cc;
 		view.ch.timeslot = vfo_ts;
 		view.dmr.active = vfo_mode == RADIO_MODE_DMR;
-		view.dmr.cc = vfo_cc;
+		view.dmr.cc = view.dmr.rx_cc = vfo_cc;
 		view.dmr.ts = vfo_ts;
 		view.channel_number = 0;
 		view.temp = 0;		// the VFO has no temporary changes
@@ -1419,7 +1427,7 @@ void radio_req_clear_temporary(void)
 	view.temp = 0;
 	view.temporary = false;
 	view.dmr.active = view.ch.mode == RADIO_MODE_DMR;
-	view.dmr.cc = view.ch.color_code;
+	view.dmr.cc = view.dmr.rx_cc = view.ch.color_code;
 	view.dmr.ts = view.ch.timeslot;
 	temp_target = 0;
 	default_target();
@@ -1735,7 +1743,7 @@ bool ui_svc_dmr_timeslot(uint8_t ts)
 bool ui_svc_dmr_color_code(uint8_t cc)
 {
 	retune();
-	view.dmr.cc = view.ch.color_code = cc;
+	view.dmr.cc = view.dmr.rx_cc = view.ch.color_code = cc;
 	if (view.vfo) {
 		vfo_cc = cc;
 		changed();
@@ -3047,7 +3055,7 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "splash") == 0) {		// the boot screen (last in a script: nothing redraws over it)
 		if (arg != NULL && strcmp(arg, "loader") == 0) {	// the stub entry's (stub_entry.c show_banner)
-			ui_draw_splash(board.name, "a1b2c3d4", STUB_ENTRY_LINE1, STUB_ENTRY_LINE2);
+			ui_draw_splash(board.name, "a1b2c3d4", tr(STUB_ENTRY_LINE1), tr(STUB_ENTRY_LINE2));
 			return true;
 		}
 		char l1[17], l2[17];

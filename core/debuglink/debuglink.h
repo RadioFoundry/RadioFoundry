@@ -52,7 +52,7 @@ enum {
 	DL_VIEW_T3,		// a Tier III trunked system: engine state, call, access, counters (debuglink_t3.c)
 	DL_VIEW_T3_SVC,		// its services: polls, stun, power save, DGNA (its own section: t3 fills a reply)
 	DL_VIEW_T3_ROAM,	// its roaming: level, adjacent sites, Vote Now
-	DL_VIEW_VOICE_CAP,	// the voice frames captured (RADIO op 39)
+	DL_VIEW_VOICE_CAP,	// the voice frames captured (RADIO op 41)
 	DL_VIEW_T3_MSG,		// Tier III: the last status, short data, caller number, supplementary data heard
 	DL_VIEW_T3_RA,		// Tier III: random access bursts and their answers, the TX to RX turnaround
 	DL_VIEW_COUNT
@@ -89,16 +89,20 @@ enum {
 	DL_OP_TX_DRIVE = 36,
 	DL_OP_PA_KEYUP = 37,
 	DL_OP_VFO_SFR = 38,
-	DL_OP_VOICE_CAPTURE = 39,
+	DL_OP_PA_SWEEP = 39,
+	DL_OP_PA_KEYRUN = 40,
+	DL_OP_VOICE_CAPTURE = 41,
 };
 uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *args, uint16_t len);
+// After a reply: the host port's reattach a PA key run asked for (PA_KEYRUN_FLAG_REATTACH); else a no-op
+void debuglink_keyrun_service(void);
 // RADIO ops the dispatcher hands to debuglink_radio_feature_op: a new DL_OP_* goes here too
 static inline bool debuglink_is_feature_op(uint8_t op)
 {
 	return (op >= DL_OP_SCAN && op <= DL_OP_SETTING) || op == DL_OP_ROAM || op == DL_OP_VIBRATE || op == DL_OP_VOLUME ||
 	       op == DL_OP_DMR_FIELDS || op == DL_OP_VFO_COPY || op == DL_OP_VOICE_TEST || op == DL_OP_DTMF ||
 	       op == DL_OP_TX_LIMIT || op == DL_OP_TX_DRIVE || op == DL_OP_PA_KEYUP || op == DL_OP_VFO_SFR ||
-	       op == DL_OP_VOICE_CAPTURE;
+	       op == DL_OP_PA_SWEEP || op == DL_OP_PA_KEYRUN || op == DL_OP_VOICE_CAPTURE;
 }
 // VERSION's codec= (hal_vocoder_id; the name the host tests use)
 static inline const char *debuglink_codec_id(const hal_vocoder_t *v)

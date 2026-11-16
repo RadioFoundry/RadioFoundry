@@ -31,14 +31,6 @@ static bool parse(const uint8_t *p, int n, zsRecord_t *r)
 		zsChannel_t ch;
 		ok = zsChannelAt(r, i, &ch);
 	}
-#if CONFIG_DMR_TRUNK
-	for (int i = 0; ok && (i < r->systems); i++)
-	{
-		zsSystem_t sys;
-		zsSysChan_t sc;
-		ok = zsSystemAt(r, i, &sys) && (sys.chans == 0 || zsSysChanAt(r, i, sys.chans - 1, &sc));
-	}
-#endif
 	free(q);
 	r->data = NULL;
 	return ok;
@@ -430,168 +422,18 @@ static void test_messages(void)
 	CHECK(zsAssemble(&a, 1, &m, 0) == ZS_ASM_BAD);
 }
 
-#if CONFIG_DMR_TRUNK
-// Trunked systems (zone-share.md 4.2): a whole one with its key, one by identity, channels of each and a fallback
-static zsSystem_t fullSystem(void)
-{
-	zsSystem_t s = { .level = ZS_SYS_FULL, .name = "County", .model = 1, .net = 5, .category = 1, .cc = 2,
-					 .opts = 0x0060, .holdS = 20, .fallback = 3, .planBaseHz = 450000000, .planFirst = 1, .planSep = 2,
-					 .planFlags = 1, .planSplitHz = 5000000, .leaveDbm = -110, .psRq = 2, .sites = 2,
-					 .site = { 1, 3 }, .chans = 2, .hasKey = true, .hasPsn = true, .psn = 0x123456 };
-	for (int i = 0; i < ZS_SYS_KEY_LEN; i++)
-	{
-		s.key[i] = (uint8_t)(0xA0 + i);
-	}
-	return s;
-}
-
-static const zsSysChan_t chans2[2] = {
-	{ .ctrl = true, .lcn = 1, .rxHz = 451000000, .txHz = 456000000, .cc = 0xFF },
-	{ .lcn = 2, .rxHz = 451100000, .txHz = 456100000, .cc = 3 },
-};
-
-static int trunkZone(uint8_t *out, int size, const zsSystem_t *a, const zsSystem_t *b)
-{
-	zsWriter_t w;
-	zsContact_t tg = { .type = ZS_CONTACT_GROUP, .id = 1, .name = "Fire" };
-	zsChannel_t t1 = dmrChannel("County Fire", 451000000, 5000000, 2, 1, 1);
-	zsChannel_t t2 = dmrChannel("Metro", 452000000, 5000000, 1, 1, 1);
-	zsChannel_t fm = { .rxHz = 462000000, .name = "Talkaround" };
-
-	t1.system = 1;
-	t2.system = 2;
-	zsWriterBegin(&w, out, size, 0x5151, ZS_FLAG_SYSTEMS, "Trunk");
-	zsWriterContact(&w, &tg);
-	zsWriterSystem(&w, a, chans2);
-	zsWriterSystem(&w, b, NULL);
-	zsWriterChannel(&w, &t1);
-	zsWriterChannel(&w, &t2);
-	zsWriterChannel(&w, &fm);
-	int n = zsWriterEnd(&w);
-	CHECK(n == zsHeaderSize("Trunk") + zsContactSize(&tg) + 1 + zsSystemSize(a) + zsSystemSize(b) + zsChannelSize(&t1) +
-		  zsChannelSize(&t2) + zsChannelSize(&fm));
-	return n;
-}
-
-static void test_systems(void)
-{
-	static zsSystem_t a, b, got;
-	uint8_t out[ZS_RECORD_MAX];
-	zsRecord_t r;
-	zsChannel_t ch;
-
-	a = fullSystem();
-	b = (zsSystem_t){ .level = ZS_SYS_IDENTITY, .name = "Metro", .model = 2, .net = 300, .category = 2, .cc = 1,
-					  .opts = 0x0800 };
-	int n = trunkZone(out, sizeof(out), &a, &b);
-	CHECK(n > 0);
-	CHECK(parse(out, n, &r) && r.systems == 2 && r.channels == 3);
-	CHECK(zsParse(out, n, &r) && zsSystemAt(&r, 0, &got));
-	CHECK(memcmp(&got, &a, sizeof(a)) == 0);	// every field back, padding included (both zeroed)
-	zsSysChan_t sc;
-	CHECK(zsSysChanAt(&r, 0, 0, &sc) && sc.ctrl && sc.lcn == 1 && sc.rxHz == 451000000 && sc.txHz == 456000000 &&
-		  sc.cc == 0xFF);
-	CHECK(zsSysChanAt(&r, 0, 1, &sc) && !sc.ctrl && sc.lcn == 2 && sc.cc == 3);
-	CHECK(!zsSysChanAt(&r, 0, 2, &sc) && !zsSysChanAt(&r, 1, 0, &sc));
-	CHECK(zsSystemAt(&r, 1, &got) && got.level == ZS_SYS_IDENTITY && strcmp(got.name, "Metro") == 0 && got.net == 300 &&
-		  got.category == 2 && got.opts == 0x0800 && got.chans == 0 && !got.hasKey);
-	CHECK(zsChannelAt(&r, 0, &ch) && ch.system == 1 && ch.contact == 1);
-	CHECK(zsChannelAt(&r, 1, &ch) && ch.system == 2);
-	CHECK(zsChannelAt(&r, 2, &ch) && ch.system == 0 && !ch.dmr);
-
-	// A key without its PSN; and no key
-	a.hasPsn = false;
-	a.psn = 0;
-	n = trunkZone(out, sizeof(out), &a, &b);
-	CHECK(zsParse(out, n, &r) && zsSystemAt(&r, 0, &got) && got.hasKey && !got.hasPsn && got.key[15] == 0xAF);
-	a.hasKey = false;
-	memset(a.key, 0, sizeof(a.key));
-	n = trunkZone(out, sizeof(out), &a, &b);
-	CHECK(zsParse(out, n, &r) && zsSystemAt(&r, 0, &got) && !got.hasKey && got.chans == 2);
-
-	// The writer refuses what the reader would
-	zsWriter_t w;
-	zsSystem_t bad = fullSystem();
-	bad.chans = 0;
-	zsWriterBegin(&w, out, sizeof(out), 1, ZS_FLAG_SYSTEMS, "x");
-	CHECK(!zsWriterSystem(&w, &bad, chans2));
-	bad = fullSystem();
-	bad.category = 3;
-	zsWriterBegin(&w, out, sizeof(out), 1, ZS_FLAG_SYSTEMS, "x");
-	CHECK(!zsWriterSystem(&w, &bad, chans2));
-	bad = fullSystem();
-	bad.opts = 0x1000;
-	zsWriterBegin(&w, out, sizeof(out), 1, ZS_FLAG_SYSTEMS, "x");
-	CHECK(!zsWriterSystem(&w, &bad, chans2));
-	// A system without the flag, the flag without a system, a channel naming a system the record hasn't
-	zsChannel_t t = dmrChannel("T", 451000000, 0, 1, 1, 0);
-	zsWriterBegin(&w, out, sizeof(out), 1, 0, "x");
-	CHECK(!zsWriterSystem(&w, &b, NULL));
-	zsWriterBegin(&w, out, sizeof(out), 1, ZS_FLAG_SYSTEMS, "x");
-	zsWriterChannel(&w, &t);
-	CHECK(zsWriterEnd(&w) == 0);
-	t.system = 2;
-	zsWriterBegin(&w, out, sizeof(out), 1, ZS_FLAG_SYSTEMS, "x");
-	zsWriterSystem(&w, &b, NULL);
-	CHECK(!zsWriterChannel(&w, &t));
-
-	// Malformed on air: each refused whole
-	a = fullSystem();
-	n = trunkZone(out, sizeof(out), &a, &b);
-	CHECK(zsParse(out, n, &r));
-	int sys0 = r.systemAt[0], sys1 = r.systemAt[1], ch0 = r.channelAt[0];
-	uint8_t m[ZS_RECORD_MAX];
-	struct { int at; uint8_t v; const char *what; } cases[] = {
-		{ 7, 0x00, "systems without the flag" },
-		{ sys0 - 1, 0, "no systems" },
-		{ sys0 - 1, ZS_SYSTEMS_MAX + 1, "too many systems" },
-		{ sys0, 0x00, "level 0" },
-		{ sys0, 0x03, "level 3" },
-		{ sys0, 0x1E, "a reserved bit" },
-		{ sys1, ZS_SYS_IDENTITY | 0x04, "a key by identity" },
-		{ ch0 + 9, 0x80 | 0x40 | 2, "a reserved DMR bit" },
-		{ ch0 + 11, 0, "system 0 on a trunked channel" },
-		{ ch0 + 11, 3, "a system the record hasn't" },
-	};
-	for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++)
-	{
-		memcpy(m, out, (size_t)n);
-		m[cases[i].at] = cases[i].v;
-		bool ok = parse(m, n, &r);
-		if (ok)
-		{
-			printf("# took: %s\n", cases[i].what);
-		}
-		CHECK(!ok);
-	}
-	// The fallback past the record's channels: at sys0 + 1 + name (7) + 7 fields + hold
-	memcpy(m, out, (size_t)n);
-	m[sys0 + 1 + 7 + 7 + 1] = 4;
-	CHECK(!parse(m, n, &r));
-	m[sys0 + 1 + 7 + 7 + 1] = 3;
-	CHECK(parse(m, n, &r));
-}
-#endif
-
 static void test_fuzz(void)
 {
-	uint8_t seed[ZS_RECORD_MAX], seed2[ZS_RECORD_MAX], buf[ZS_RECORD_MAX + 64];
-	int n = sampleZone(seed, sizeof(seed), 12), n2 = 0;
-#if CONFIG_DMR_TRUNK
-	static zsSystem_t sa, sb;
-	sa = fullSystem();
-	sb = (zsSystem_t){ .level = ZS_SYS_IDENTITY, .name = "Metro", .model = 2, .net = 300, .category = 2 };
-	n2 = trunkZone(seed2, sizeof(seed2), &sa, &sb);	// half the runs mutate a record with systems
-#endif
+	uint8_t seed[ZS_RECORD_MAX], buf[ZS_RECORD_MAX + 64];
+	int n = sampleZone(seed, sizeof(seed), 12);
 	fuzz_t f;
 	long iters = fuzz_iters(20000), parsed = 0, bad = 0;
 
 	fuzz_init(&f, 0x2054A);
 	for (long i = 0; i < iters; i++)
 	{
-		bool two = (n2 > 0) && (i & 2);
-		memcpy(buf, two ? seed2 : seed, (size_t)(two ? n2 : n));
-		int len = fuzz_mutate(&f, buf, two ? n2 : n, ZS_RECORD_MAX);
+		memcpy(buf, seed, (size_t)n);
+		int len = fuzz_mutate(&f, buf, n, ZS_RECORD_MAX);
 		// Keep the length field right half the time, so the mutations reach past the header
 		if ((i & 1) && (len >= 3))
 		{
@@ -615,21 +457,6 @@ static void test_fuzz(void)
 				zsContact_t c;
 				bad += !(zsContactAt(&r, k, &c) && (c.id != 0) && (c.id <= 0xFFFFFF) && (strlen(c.name) <= ZS_NAME_MAX));
 			}
-#if CONFIG_DMR_TRUNK
-			for (int k = 0; k < r.systems; k++)
-			{
-				zsSystem_t sys;
-				zsSysChan_t sc;
-				bad += !(zsSystemAt(&r, k, &sys) && (sys.chans <= ZS_SYS_CHANS_MAX) && (sys.sites <= ZS_SYS_SITES_MAX) &&
-						 (sys.fallback <= r.channels) && (strlen(sys.name) <= ZS_NAME_MAX));
-				bad += (sys.chans > 0) && !(zsSysChanAt(&r, k, sys.chans - 1, &sc) && (sc.rxHz != 0));
-			}
-			for (int k = 0; k < r.channels; k++)
-			{
-				zsChannel_t ch;
-				bad += zsChannelAt(&r, k, &ch) && (ch.system > r.systems);
-			}
-#endif
 		}
 		free(p);
 
@@ -650,16 +477,160 @@ static void test_fuzz(void)
 	printf("# zone share fuzz: %ld records, %ld parsed\n", iters, parsed);
 }
 
+#if CONFIG_ZONE_SHARE_MODES
+// A zone with a modes part (zone-share.md 4.2): channels 2 and 3 of a kind, one on a whole system with two entries
+// and a secret, one on a system sent as its identity, and a third tag on a system the sender withholds
+static int sampleModes(uint8_t *out, int size)
+{
+	static const uint8_t block[] = { 0x12, 0x34, 0x56, 0x01, 0x02, 0x03 }, body[] = { 1, 2, 3, 4, 5 };
+	static const uint8_t key[] = { 0xAA, 0xBB }, params[] = { 0x9A, 0x00 };
+	zsWriter_t w;
+	zsSystem_t whole = { .type = 3, .flags = 0x02, .level = ZS_LEVEL_WHOLE, .idLen = 3, .blockLen = sizeof(block),
+						 .block = block, .name = "County", .entries = 2, .secretLen = sizeof(key), .secret = key };
+	zsSystem_t ident = { .type = 1, .flags = 0x01, .level = ZS_LEVEL_IDENTITY, .idLen = 2, .blockLen = 2, .block = block,
+						 .name = "Site" };
+	zsEntry_t e1 = { 0, 1, 1, sizeof(body), body }, e2 = { 2, 0xFF, 0, 0, NULL };
+	zsTag_t t2 = { 2, 3, 1, 0x01, sizeof(params), params }, t3 = { 3, 1, 2, 0x01, 0, NULL };
+	zsTag_t t4 = { 4, 2, ZS_SYSTEM_WITHHELD, 0x10, 0, NULL };
+
+	zsWriterBegin(&w, out, size, 0x55, 0, "Modes");
+	for (int i = 0; i < 4; i++)
+	{
+		zsChannel_t ch = dmrChannel("Ch", 851000000 + 12500 * (uint32_t)i, 0, 1, 1, 0);
+		zsWriterChannel(&w, &ch);
+	}
+	zsWriterModes(&w, 2);
+	zsWriterSystem(&w, &whole);
+	zsWriterEntry(&w, &e1);
+	zsWriterEntry(&w, &e2);
+	zsWriterSystem(&w, &ident);
+	zsWriterTags(&w, 3);
+	zsWriterTag(&w, &t2);
+	zsWriterTag(&w, &t3);
+	zsWriterTag(&w, &t4);
+	int n = zsWriterEnd(&w);
+	int want = zsHeaderSize("Modes") + 4 * zsChannelSize(&(zsChannel_t){ .dmr = true, .name = "Ch" }) + 1 +
+			zsSystemSize(&whole) + zsEntrySize(&e1) + zsEntrySize(&e2) + zsSystemSize(&ident) + 1 + zsTagSize(&t2) +
+			zsTagSize(&t3) + zsTagSize(&t4);
+	CHECK(n == want);
+	return n;
+}
+#endif
+
+static void test_modes(void)
+{
+	zsRecord_t r;
+
+#if CONFIG_ZONE_SHARE_MODES
+	uint8_t buf[ZS_RECORD_MAX];
+	int n = sampleModes(buf, sizeof(buf));
+	zsSystem_t s;
+	zsEntry_t e;
+	zsTag_t t;
+
+	CHECK(n > 0 && zsParse(buf, n, &r) && (r.flags & ZS_FLAG_MODES) && r.systems == 2 && r.tags == 3);
+	CHECK(zsSystemAt(&r, 0, &s) && s.type == 3 && s.flags == 0x02 && s.level == ZS_LEVEL_WHOLE && s.idLen == 3 &&
+		  s.blockLen == 6 && s.block[5] == 0x03 && strcmp(s.name, "County") == 0 && s.entries == 2 && s.secretLen == 2 &&
+		  s.secret[1] == 0xBB);
+	CHECK(zsEntryAt(&r, &s, 0, &e) && e.cls == 0 && e.group == 1 && e.flags == 1 && e.len == 5 && e.body[4] == 5);
+	CHECK(zsEntryAt(&r, &s, 1, &e) && e.cls == 2 && e.group == 0xFF && e.len == 0);
+	CHECK(!zsEntryAt(&r, &s, 2, &e));
+	CHECK(zsSystemAt(&r, 1, &s) && s.type == 1 && s.level == ZS_LEVEL_IDENTITY && s.blockLen == 2 && s.entries == 0 &&
+		  strcmp(s.name, "Site") == 0);
+	CHECK(!zsSystemAt(&r, 2, &s));
+	CHECK(zsTagAt(&r, 0, &t) && t.channel == 2 && t.kind == 3 && t.system == 1 && t.flags == 0x01 && t.len == 2 &&
+		  t.params[0] == 0x9A);
+	CHECK(zsTagAt(&r, 2, &t) && t.channel == 4 && t.system == ZS_SYSTEM_WITHHELD && t.flags == 0x10);
+	CHECK(!zsTagAt(&r, 3, &t));
+
+	// Refused: each octet that breaks a rule. Offsets from the end: the last tag is channel, kind, system, flags, len
+	struct { int at; uint8_t v; } bad[] = {
+		{ n - 5, 3 },				// a tag's channel not after the one before
+		{ n - 5, 5 },				// a channel the record doesn't have
+		{ n - 4, 0 },				// kind 0
+		{ n - 4, 0xFF },			// kind 0xFF
+		{ n - 3, 3 },				// a system the record doesn't have
+		{ n - 2, 0x04 },			// a reserved flag (a fallback is never carried)
+		{ n - 1, 1 },				// a parameter block past the end
+	};
+	for (unsigned i = 0; i < sizeof(bad) / sizeof(bad[0]); i++)
+	{
+		uint8_t copy[ZS_RECORD_MAX];
+		memcpy(copy, buf, (size_t)n);
+		copy[bad[i].at] = bad[i].v;
+		CHECK(!parse(copy, n, &r));
+	}
+	// A modes part with no tag, and systems past the limit
+	zsWriter_t w;
+	zsChannel_t ch = dmrChannel("Ch", 851000000, 0, 1, 1, 0);
+	zsWriterBegin(&w, buf, sizeof(buf), 0x55, 0, "Z");
+	zsWriterChannel(&w, &ch);
+	zsWriterModes(&w, 0);
+	CHECK(zsWriterEnd(&w) == 0);
+	zsWriterBegin(&w, buf, sizeof(buf), 0x55, 0, "Z");
+	zsWriterChannel(&w, &ch);
+	zsWriterModes(&w, ZS_SYSTEMS_MAX + 1);
+	CHECK(zsWriterEnd(&w) == 0);
+
+	// Fuzz the modes part: whatever parses reads back within bounds
+	fuzz_t f;
+	long parsed = 0, wrong = 0;
+	n = sampleModes(buf, sizeof(buf));
+	fuzz_init(&f, 0x4D0D);
+	for (long i = 0; i < fuzz_iters(20000); i++)
+	{
+		uint8_t m[ZS_RECORD_MAX + 64];
+		memcpy(m, buf, (size_t)n);
+		int len = fuzz_mutate(&f, m, n, ZS_RECORD_MAX);
+		if (len >= 3)
+		{
+			m[1] = (uint8_t)(len >> 8);
+			m[2] = (uint8_t)len;
+		}
+		uint8_t *p = fuzz_exact(m, len);
+		if (zsParse(p, len, &r) && (r.flags & ZS_FLAG_MODES))
+		{
+			parsed++;
+			for (int k = 0; k < r.systems; k++)
+			{
+				wrong += !zsSystemAt(&r, k, &s) || s.blockLen > ZS_BLOCK_MAX || s.idLen > s.blockLen;
+				for (int j = 0; j < s.entries; j++)
+				{
+					wrong += !zsEntryAt(&r, &s, j, &e) || e.len > ZS_BODY_MAX;
+				}
+			}
+			for (int k = 0; k < r.tags; k++)
+			{
+				wrong += !zsTagAt(&r, k, &t) || t.channel == 0 || t.channel > r.channels || t.kind == 0 || t.len > ZS_BODY_MAX ||
+						(t.system > r.systems && t.system != ZS_SYSTEM_WITHHELD);
+			}
+		}
+		free(p);
+	}
+	CHECK(wrong == 0 && parsed > 0);
+	printf("# modes part fuzz: %ld parsed\n", parsed);
+#else
+	// A record with the modes flag is refused whole by a build without the modes part
+	uint8_t one[ZS_RECORD_MAX];
+	zsWriter_t w;
+	zsChannel_t ch = dmrChannel("Ch", 851000000, 0, 1, 1, 0);
+	zsWriterBegin(&w, one, sizeof(one), 0x55, 0, "Z");
+	zsWriterChannel(&w, &ch);
+	int n = zsWriterEnd(&w);
+	CHECK(parse(one, n, &r));
+	one[7] |= ZS_FLAG_MODES;
+	CHECK(!parse(one, n, &r));
+#endif
+}
+
 int main(void)
 {
 	test_roundtrip();
 	test_writer_limits();
 	test_malformed();
 	test_messages();
-#if CONFIG_DMR_TRUNK
-	test_systems();
-#endif
 	test_fuzz();
+	test_modes();
 	printf("zoneShareTest: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

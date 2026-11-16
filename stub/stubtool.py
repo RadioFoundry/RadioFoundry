@@ -446,6 +446,11 @@ class FrameError(DumpError):
     """A damaged, short or missing frame, or a sector that failed its CRC: worth asking again."""
 
 
+class NoAnswer(DumpError):
+    """RadioFoundry's debug link did not answer a request at all (no radio running it on the port). A caller that
+    retries with --attach (a stub an earlier run left running) tells it from other errors by this class's name."""
+
+
 class StatusError(DumpError):
     """The stub answered a request with a status other than OK."""
 
@@ -1088,7 +1093,7 @@ class Radio:
                 if f[1] == seq and f[0] == (cmd | 0x80):
                     return f[4:]
                 buf = buf[k + 8 + n:]
-        raise DumpError("no answer from RadioFoundry's debug link to command 0x%02X (is RadioFoundry running with CONFIG_STUB_ENTRY=y and "
+        raise NoAnswer("no answer from RadioFoundry's debug link to command 0x%02X (is RadioFoundry running with CONFIG_STUB_ENTRY=y and "
                         "the programming cable on UART0 at 115200?)" % cmd)
 
     def rfoundry_enter(self, image=None, entry=None, board=None, force=False):
@@ -2970,7 +2975,9 @@ def find_rfoundry_port():
     return ports[0]
 
 
-def main(argv=None):
+def main(argv=None, raise_errors=False):
+    """The command line. Returns the exit code; an error is printed and gives 1. raise_errors: raise it instead
+    (DumpError, OSError), for a caller that acts on which error it was (rfoundry's stub route, stubroute.py)."""
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
     ap.add_argument("port", nargs="?", help="serial port or pyserial URL (rfc2217://HOST:PORT), or udp:ADDR[:PORT] for an "
                     "STM32 radio in USB network mode (then a write ends with --boot reset). With --rfoundry-enter and "
@@ -3255,6 +3262,8 @@ def main(argv=None):
                 raise DumpError("--boot wants reset or jump:ADDR")
         return 0
     except (DumpError, OSError) as e:
+        if raise_errors:
+            raise
         print("\nstubtool: %s" % e, file=sys.stderr)
         return 1
     except KeyboardInterrupt:

@@ -115,7 +115,7 @@ below are for an STM32F4 radio.
 | `CONFIG_DMR_EMERGENCY` | = DMR | DMR emergency: the alarm CSBK, the emergency call with hot mic, the alert heard (`spec/dmr-emergency.md`) |
 | `CONFIG_DMR_ROAMING` | = DMR | DMR repeater roaming: per-zone roaming between repeater sites with the same talkgroup, chosen by base station sync with our color code and signal, passive (an optional wake probe sends a standard BS_Dwn_Act); Tools > Roaming, the Home chip (`docs/spec/dmr-roaming.md`). About 1 KB RAM |
 | `CONFIG_DMR_TRUNK` | = DMR | DMR Tier III trunking, the mobile station side (`docs/spec/dmr-trunking.md`). Work in progress: the PDU layer and the engine are built, nothing in the radio uses them yet, so the image doesn't change |
-| `CONFIG_VOICE_CAPTURE` | n | Voice capture for receive tests: the next 32 voice frames received, raw as on air, read over the debug link (RADIO op 39, the `voice_cap` view; [debuglink.md](spec/debuglink.md)). About 330 B RAM. Needs DMR |
+| `CONFIG_VOICE_CAPTURE` | n | Voice capture for receive tests: the next 32 voice frames received, raw as on air, read over the debug link (RADIO op 41, the `voice_cap` view; [debuglink.md](spec/debuglink.md)). About 330 B RAM. Needs DMR |
 | `CONFIG_DMR_TRUNK_TX` | = DMR_TRUNK | Tier III access: registration, call requests, answers to the control channel and ending a call (`dmr-trunking.md`). Off: trunking only listens. Not used by the radio yet |
 | `CONFIG_DMR_TRUNK_GW` | = DMR_TRUNK_TX | Tier III calls through the PSTN, PABX, line and dispatcher gateways: the dialled digits go up with a voice, short data or packet data request, and the caller's number a gateway sends is kept (`dmr-trunking.md` 7.6). Off: a call to one of them is refused, and a caller's number is dropped |
 | `CONFIG_DMR_TRUNK_SUPL` | = DMR_TRUNK_TX | Tier III supplementary user data: data offered with a call request, and the last heard from the system, staged and read over the debug link (`dmr-trunking.md` 7.6). About 300 B RAM. Off: none is offered, and what the system sends is dropped unanswered |
@@ -158,6 +158,7 @@ below are for an STM32F4 radio.
 | `CONFIG_VFO_FM` | = VFO and FM | analog VFO |
 | `CONFIG_VFO_DMR` | = VFO and DMR | digital VFO: the VFO can be a DMR channel with its own color code, slot and talk target, and the Mode tile switches it FM / DMR (needs both VFO kinds; `docs/spec/dmr-voice.md` 2.1). About 140 B flash. Off, the VFO is analog and nothing about it changes |
 | `CONFIG_DIAG` | y | the diagnostics page |
+| `CONFIG_BACKLIGHT_TEST` | n | backlight test pages for bench work ([backlight-curve.md](testing/backlight-curve.md)). About 1.5 KB |
 | `CONFIG_CRASH_LOG` | y | the crash log: a CPU fault, a task stack overflow, running out of heap or a failed assertion keeps a record (registers, fault status, task, stack words) where a reset doesn't clear it and restarts the radio; the next start takes it up, the debug link and (with `CONFIG_CRASH_SCREEN`) **Settings > Advanced > Crash log** show it (`core/crash`, `docs/spec/crash-log.md`). Needs no other feature. About 1.6 KB flash and 1.4 KB RAM (mostly the fault path's own stack), and 32 bytes more idle task stack. Off: a crash stops the radio until a power cycle |
 | `CONFIG_CRASH_SCREEN` | = `CRASH_LOG` | **Settings > Advanced > Crash log**: the record's summary and Clear, and the controls of the crash report (`docs/spec/crash-log.md` 5.2). Needs `CONFIG_CRASH_LOG`. About 1 KB flash. Off, the debug link still shows the record |
 | `CONFIG_CRASH_REPORT` | = `CRASH_SCREEN` with DMR | sends the crash log's packed record as one UDP datagram (port 4090) over DMR to a codeplug contact, from the Crash log screen or after the restart (Off, Ask, Auto) (`docs/spec/crash-log.md` 5). Needs `CONFIG_CRASH_SCREEN` and `CONFIG_DMR`; brings in the DMR data core. About 1.4 KB flash |
@@ -188,7 +189,8 @@ below are for an STM32F4 radio.
 
 Derived (not set by hand): `CONFIG_DMR_DATA_CORE`, the shared packet data / CSBK code, on when any data feature is;
 `CONFIG_DMR_AIR_QUEUE`, the data service's TX queue (`docs/spec/dmr-data.md` 12.6), on with `CONFIG_DMR_IP_GATEWAY` or
-`CONFIG_ZONE_SHARE`. `CONFIG_LANG_ANY` (`core/config.h`): on when any `CONFIG_LANG_*` is, the translation lookup and the
+`CONFIG_ZONE_SHARE`. `CONFIG_ZONE_SHARE_MODES`: zone sharing carries channels of a kind and their systems
+(`docs/spec/zone-share.md` 4.2), on with `CONFIG_ZONE_SHARE` and `CONFIG_P25`. `CONFIG_LANG_ANY` (`core/config.h`): on when any `CONFIG_LANG_*` is, the translation lookup and the
 fonts' Latin-1 glyphs.
 
 ## Values

@@ -180,6 +180,18 @@ def load_maps(directory=MAPS_DIR):
     return out
 
 
+_shipped = None
+
+
+def shipped():
+    """load_maps() of the maps that ship with rfoundry, read once: every check of a codec's form (stockfw.code_map)
+    asks for them, and they don't change while it runs. Shared: callers don't change them."""
+    global _shipped
+    if _shipped is None:
+        _shipped = load_maps()
+    return _shipped
+
+
 def by_code_sha(maps, sha):
     """The maps whose carved code has this SHA-256"""
     return [m for m in maps.values() if m["code"].get("sha256") == sha]

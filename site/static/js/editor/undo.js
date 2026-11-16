@@ -6,7 +6,7 @@
 // under the model (base, which holds the DMR ID database) is kept by reference: a change to it puts a new image in
 // place, never edits the old one.
 
-const TABLES = ["channels", "zones", "contacts", "rxLists", "dtmfContacts", "aprs", "trunkSystems", "trunkChannels"];
+const TABLES = ["channels", "zones", "contacts", "rxLists", "dtmfContacts", "aprs", "systems"];
 const LIMIT = 100;
 
 function snapshot(m) {
@@ -17,7 +17,7 @@ function snapshot(m) {
 		for (const r of tables[t]) objects.set(r, copy(r));
 	}
 	for (const v of m.vfo) if (v) objects.set(v, copy(v));
-	return { tables, objects, general: { ...m.general }, base: m.base, iddb: m.iddb };
+	return { tables, objects, general: { ...m.general }, modeSettings: { ...m.modeSettings }, base: m.base, iddb: m.iddb };
 }
 
 function copy(r) {
@@ -33,6 +33,7 @@ function restore(m, s) {
 		Object.assign(obj, copy(c));
 	}
 	m.general = { ...s.general };
+	m.modeSettings = { ...s.modeSettings };
 	m.base = s.base;
 	m.iddb = s.iddb;
 }

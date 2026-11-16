@@ -72,6 +72,7 @@ CONFIG_FONT_XL ?= n
 # docs/build-config.md, "Unsupported, not written, unconfirmed"): ci's maximal configuration leaves these off. USB
 # and USB_NETWORK are in the platform's list.
 BOARD_UNSUPPORTED += FONT_XL	# the 160x128 panel is too small for the large font (it is for 240 px and wider)
+BOARD_UNSUPPORTED += FONT_BIG	# the 9x18 font is drawn only on panels 220 px and wider; this one is 160x128
 BOARD_UNSUPPORTED += VIBRATE	# no vibration motor (owner, 2026-10-22)
 BOARD_UNSUPPORTED += AM_RX	# no air band receive (owner, 2026-10-22)
 # What the hardware can do but this radio's driver or glue doesn't yet, the same way: off by default, and off in ci's

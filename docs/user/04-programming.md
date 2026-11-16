@@ -39,7 +39,9 @@ server: files, the codeplug and your RadioID API key stay on your computer.
 After a read, the editor says when a newer RadioFoundry release is out for the radio, and what it adds to reading and
 writing (faster transfers, the compact ID database). **Update Firmware** opens the [web installer's Update](02-installing.md#updating-radiofoundry)
 in a new tab and lets go of the radio's port, so the installer can connect. The codeplug and settings stay on the radio
-through the update.
+through the update. If the update changes the radio's power levels, the power picked in Settings, for the VFOs and for
+APRS goes back to the radio's default: check it before you transmit. A channel's power in the codeplug maps to the
+nearest new level.
 
 ### Programming several radios
 
@@ -77,7 +79,7 @@ TFTP ([USB network](15-usb-network.md#programming-over-the-network)).
 | Contacts | Talkgroups and private-call contacts |
 | RX Group Lists | The talkgroups each channel listens to |
 | DTMF Contacts, APRS | DTMF contacts and APRS configurations |
-| Trunked Systems | DMR Tier III trunked systems, up to 8 ([below](#trunked-systems)) |
+| Systems | Trunked systems and the identity of other digital modes: sites, control channels, channel plans and keys. Shown when the radio reports such a mode, or the codeplug has one ([below](#digital-modes-and-systems)) |
 | DMR ID Database | Names for DMR IDs that aren't contacts, built from RadioID.net ([below](#dmr-id-database-and-contacts-from-radioidnet)) |
 | Problems | Errors and warnings, each with a link to the record |
 
@@ -96,33 +98,28 @@ either: the radio keeps its own unless the software writes them in RadioFoundry'
 The page keeps the working codeplug in the browser, so closing or reloading the page doesn't lose edits. **New** starts
 over.
 
-### Trunked systems
+### Digital modes and systems
 
-The **Trunked Systems** tab holds up to 8 DMR Tier III systems. **Add System** opens a system's form:
+Besides FM and DMR, a channel can be of another digital mode, such as a trunked system. The channel form's **Mode**
+lists the modes the connected radio's firmware reports, and any mode the codeplug already holds. A channel of such a
+mode shows that mode's fields under **Mode settings**; a trunked channel takes its frequencies from its system. A radio
+whose firmware doesn't run a channel's mode shows the mode's short name, receives nothing on it and doesn't transmit.
+The [feature matrix](../feature-matrix.md) lists which builds run which mode.
 
-| Part | Holds |
+The **Systems** tab adds a system of a type, edits its fields, its sites, control channels and channel plan
+(**Channels and sites**) and its key (**Key**). Per system:
+
+| Field | Meaning |
 |---|---|
-| Basic | Name, network model, NET and category, color code, the system's channels (LCN, RX and TX frequency, color code; mark the control channels), whether the system authenticates, its key (32 hex digits) and PSN, sharing, fallback channel and hold time |
-| Advanced | Call options (all calls, emergency on any talkgroup, private calls, registration, ambient listening, kill, stun, no roaming, listen only), the radio's DMR ID on the system, allowed sites, a fixed channel plan, roaming level, power saving, IP data through the system's IP gateway, the short data poll (format, blocks to ask for, this radio's reply), supplementary data offered with each call (format, the data) |
+| Listen only | The radio never registers or transmits on the system, whatever a channel says |
+| Needs its key | The system can't be used without its key |
+| Sharing | What zone sharing sends of it: off, its identity only (the receiver must have the system), or the whole system |
+| Radio ID on this system | Your ID there; blank uses the mode's own. Never shared |
 
-The radio hunts the first 4 control channels and keeps the first 8 channels of a system. A system that authenticates
-and has no key, or that has no control channel, shows **System not set up** in the tab and in **Problems**; its
-channels are not usable on the radio. Accepting a stun is off by default.
-
-To put a system in a zone, set a channel's mode to **DMR Trunked** and pick the system. The channel's contact and RX
-group list set its talkgroups. The frequencies, color code and slot come from the system. A trunked channel can name
-its own fallback channel (a conventional one) or have none. Deleting a system makes its channels conventional DMR,
-receive only.
-
-**Sharing** sets what a zone shared from the radio carries for the system:
-
-| Setting | A zone share carries |
-|---|---|
-| Off | Not the system's trunked channels |
-| Channels with the system ID | The trunked channels, with the system's name and identity. A radio without the system set up shows them as **System not set up** |
-| Full system including keys | The whole system, key included. The key goes out over the air in the share: any radio that hears it can read it and use the system |
-
-The radio's own DMR ID on the system is never shared. The key is left out of CSV and other exports.
+A key is shown only on request. When the codeplug holds keys, **Save** as a codeplug file asks whether to include them;
+they are left out unless you tick **Include the keys in this file**. Anyone with a file that holds them can read them.
+CSV and qdmr files hold neither systems nor channel modes: a channel of another mode goes into them as a receive-only
+DMR channel, and comes back from one as that. Keep a codeplug file for them.
 
 ### Files
 

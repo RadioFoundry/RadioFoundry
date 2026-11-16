@@ -47,7 +47,7 @@ static const band_t bands[] = {
 #endif
 
 // The stock radio has two power levels, about 1 W and 5 W (hardware-md380.md 5.6)
-static const char *const power_names[] = { "1W", "5W" };
+static const char *const power_names[] = { "100mW", "500mW", "1W", "2.5W", "5W" };
 
 // docs/ux/information-architecture.md 7.1 on a radio without function or top keys (a few-key map): the
 // zone and power are reached from the menus. Matrix positions are unconfirmed (hardware-md380.md 9.1)
@@ -102,7 +102,7 @@ const board_t board = {
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
 	.power_names = power_names,
-	.power_default = 0,
+	.power_default = 2,	// 1 W
 	.display = &md380_display,
 	.input = &md380_input,
 	.keymap = keymap,

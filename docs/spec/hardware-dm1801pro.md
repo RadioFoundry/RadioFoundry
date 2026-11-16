@@ -256,7 +256,11 @@ The modem is the HR_C7000's, so the slot engine, the interrupt glue and the PCM 
   5 us bus about 1.07 and 0.40 ms). The DMR mode set ends with 0x3F = 0000, the radio's DMR receive value.
 - **RF switch 0.6 ms ahead of the lead point**: the RF TX interrupt comes 1.1 ms ahead (`hrc7000_t.rf_tx_lead` =
   11, RF_CONTROL b13:8) and the task waits 0.5 ms, so its wake (up to 0.42 ms) doesn't make the switch late. The
-  drive is keyed 0.5 ms before the first symbol and dropped with the last. The sweep below moved the interrupt with
+  drive is keyed 1.0 ms before the first symbol (the key-up rule's PA point, [pa-keyup.md](pa-keyup.md), no boost)
+  and dropped with the last. The output follows the drive about 0.65 ms later at every drive from 300 to the low
+  level's, on both bands, so a boost gains nothing here. On the SDR bench, low level and below: keyed 0.5 ms before,
+  the -3 dB point came 0.15 ms after the first symbol and the first symbol 5-18 dB low; 0.8 ms before, 0.15 ms before
+  it and within 1 dB; 1.0 ms and 1.2 ms before, 0.3 ms before it. The mid and high levels key the same on both bands (-3 dB point 0.25-0.33 ms before, overshoot under 0.5 dB). The sweep below moved the interrupt with
   the switch in it. The
   inbound burst's payload ends about 2.5 ms before ours starts (the guard times of both slots), so with 3.1 ms the
   switch cut off the end of the inbound burst before each of ours (unverified). In SFR mode a header clipped that way failed its
@@ -517,6 +521,18 @@ bench.
 The power level is one value for the three arrays: 0 = low (0x40 / 0xD0), 1 = middle (0x45 / 0xD5), 2 = high
 (0x4A / 0xDA, also used for 3). The radio's menu shows the setting as High / Low / Middle and stores 2 / 0 / 1, and the
 drive bytes rise with the level in every segment. RadioFoundry's L / M / H use the same arrays and the same lookup.
+
+RadioFoundry has five power levels: 2, 3 and 4 are L, M and H. Levels 0 and 1 are 37 % and 65 % of the low array's
+drive: drafts, to be set with a wattmeter ([power-calibration.md](../testing/power-calibration.md)). On the SDR bench
+at 445 MHz (DMR bursts, relative to L, drive 1616):
+
+| Drive | 300 | 450 | 600 | 750 | 900 | 1050 | 1200 | 1400 |
+|---|---|---|---|---|---|---|---|---|
+| dB | -22.6 | -13.9 | -10.3 | -7.7 | -6.2 | -4.7 | -3.7 | -1.7 |
+
+At 146 MHz the curve is flatter and not monotonic below drive 450.
+
+M and H gave 3.1 and 3.7 dB over L at 445 MHz, and 3.8 and 5.5 dB over L at 146 MHz.
 
 **L / M / H on air.** At the test frequency (between the 452.5 and 470 MHz points) the radio examined gets a middle drive 1.40
 times the low drive and a high drive 1.46 times the middle, in DAC counts. The bench run used RadioFoundry's older lookup,

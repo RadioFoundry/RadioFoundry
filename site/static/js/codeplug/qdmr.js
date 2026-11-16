@@ -347,8 +347,6 @@ export function importQdmr(m, yamlText) {
 	Object.assign(m, tables);
 	// the VFOs keep their frequencies; references into the old tables can't stay
 	for (const v of m.vfo) if (v) Object.assign(v, { contact: null, rxList: null, aprs: null });
-	// a trunked system's fallback channel was one of the old channels (qdmr has no trunked systems: they stay)
-	for (const s of m.trunkSystems ?? []) s.fallback = null;
 	const g = m.general;
 	if (defId) {
 		g.dmrId = defId.number;

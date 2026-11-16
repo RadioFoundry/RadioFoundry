@@ -31,6 +31,7 @@ BOARD_UNSUPPORTED += SFR	# the HR_C5000 lacks CRC_MCU_Control for the idle burst
 BOARD_UNSUPPORTED += SFR_DUALPATH_RX	# needs SFR
 BOARD_UNSUPPORTED += SFR_CWID	# needs SFR
 BOARD_UNSUPPORTED += FONT_XL	# the 160x128 panel is too small for the large font (it is for 240 px and wider)
+BOARD_UNSUPPORTED += FONT_BIG	# the 9x18 font is drawn only on panels 220 px and wider; this one is 160x128
 CONFIG_AM_RX ?= n
 BOARD_UNSUPPORTED += AM_RX	# no air band receiver (docs/spec/airband-and-broadcast.md)
 CONFIG_BCAST_FM ?= n
@@ -46,14 +47,6 @@ BOARD_NOT_WRITTEN += APRS_RX	# no APRS receive audio path yet (the HR_C5000's I2
 BOARD_NOT_WRITTEN += APRS_IGATE	# needs APRS receive (above)
 BOARD_NOT_WRITTEN += HOTSPOT_SPLIT	# the split duplex glue is HR_C6000 and HR_C7000 only (docs/spec/split-duplex.md)
 BOARD_NOT_WRITTEN += AUDIO_PROBE	# no board.audio_tap yet
-# Supported, but the maximal configuration leaves these off too: PPP stands in for the USB network adapter on UART-only
-# radios (docs/spec/ppp.md), and this one has the adapter. Every switch on didn't fit the 464 KB the application had
-# before the codec moved into sector 11, with two translations: maximal keeps Spanish, as the default build does (Italian builds on the other boards)
-# APRS-IS (about 2.7 KB) is left out of maximal too, which then had 156 bytes left: with no APRS receive here it only gates
-# RF positions out, so it is the first IP service to go. The default build keeps it. It defaults on, so it is set off,
-# not only skipped
-MAXIMAL_SKIP := NET_PPP LANG_IT LANG_DEFAULT_IT NET_APRSIS
-MAXIMAL_VARS := CONFIG_NET_APRSIS=n
 # When the default build runs out of room, the IP services go first, the weakest here first: APRS-IS (NET_APRSIS, about
 # 2.7 KB: with no APRS receive it only gates RF positions out), then KISS over TCP (NET_KISS, about 0.75 KB, transmit
 # only for the same reason), then USRP or SNMP. Each serves its own kind of user over the same USB network link, so

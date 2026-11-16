@@ -101,7 +101,7 @@ void ambeVoiceResetStats(void);
 // The audio block callback (exposed for tests): one 20 ms block in, one out
 // Voice capture (CONFIG_VOICE_CAPTURE): the next n (up to AMBE_VOICE_CAP) frames received, raw as on air, each frame or
 // a lost one in order. Arm clears what was captured; 0 stops. For receive tests that compare the bits with what was
-// sent (debug link RADIO op 39, the voice_cap view)
+// sent (debug link RADIO op 41, the voice_cap view)
 #define AMBE_VOICE_CAP	32u
 typedef struct {
 	uint8_t lost;			// 1: a frame the call stack lost (frame all zero)

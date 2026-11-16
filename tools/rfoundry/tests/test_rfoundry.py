@@ -24,6 +24,8 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
+sys.path.insert(0, HERE)
+import home  # noqa: E402,F401 (the settings folder in a temporary folder)
 from rfoundry import boards, bootkey, cli, codecmap, codecsave, debuglink, fakedfu, manifest as mf, plan, state, stockfw  # noqa: E402
 from rfoundry import dfu as dfumod  # noqa: E402
 
@@ -381,6 +383,22 @@ class Planning(unittest.TestCase):
             plan.make_plan(DM1701, [(0x0800C400, b"\0" * 2048)], plan.KEEP)	# not at the vector table
         with self.assertRaises(plan.PlanError):
             plan.make_plan(DM1701, [], plan.KEEP)
+
+    def test_sector_order(self):
+        """An install runs in the board's sector order, as before; only a codec move (vector_last) erases the vector
+        table's sector first and writes it last"""
+        for bid in ("dm1701", "mduv380", "md380", "md9600"):
+            b = boards.get(bid)
+            p = plan.make_plan(b, [(b.app_base, app_image(0x30000))], plan.KEEP)
+            self.assertEqual(p.erase_order, p.erase, bid)
+            self.assertEqual(p.write_order, p.writes, bid)
+            self.assertNotIn("order:", "\n".join(p.describe()))
+            m = plan.make_plan(b, [(b.app_base, app_image(0x30000))], plan.KEEP, vector_last=True)
+            self.assertEqual(m.erase_order[0].addr, b.app_base, bid)
+            self.assertEqual(m.write_order[-1].sector.addr, b.app_base, bid)
+            self.assertEqual(sorted(s.addr for s in m.erase_order), sorted(s.addr for s in p.erase))
+            self.assertIn("written last", "\n".join(m.describe()))
+            self.assertEqual(cli.Decision(plan.MERGE, "x").moves, False)
 
     def test_describe_names_every_sector(self):
         p = plan.make_plan(DM1701, [(DM1701.app_base, app_image(30000))], plan.KEEP)
@@ -2079,7 +2097,6 @@ class CodecRelayout(unittest.TestCase):
                 got = codecsave.read_codec(radio, b)
                 self.assertIsNotNone(got)
                 self.assertEqual(got[0], prof)
-                self.assertTrue(codecsave.needs_move(*got))
                 self.assertEqual(codecsave.segments(*got), segs)
                 # saved under the id the old release reported (a copy from before this release), found by load
                 p = codecsave.path(b, self.tmp, b.codec_former[0])
@@ -2088,6 +2105,17 @@ class CodecRelayout(unittest.TestCase):
                     f.write(b"".join(d for _, d in got[1]))
                 self.assertEqual(codecsave.load(b, self.tmp), got)
                 os.remove(p)
+                # one copy per radio: a copy saved from radio A is never what radio B is moved from
+                pa = codecsave.save(b, got[1], self.tmp, uid="00aa11bb22cc33dd44ee55ff")
+                self.assertTrue(pa.endswith("-00aa11bb22cc33dd44ee55ff.bin"), pa)
+                self.assertEqual(codecsave.find(b, self.tmp, uid="00AA11BB22CC33DD44EE55FF").path, pa)
+                self.assertIsNone(codecsave.find(b, self.tmp, uid="99aa11bb22cc33dd44ee55ff", strict=True))
+                self.assertIsNone(codecsave.find(b, self.tmp, uid="99aa11bb22cc33dd44ee55ff"))
+                self.assertEqual(codecsave.find(b, self.tmp).path, pa)		# no UID known: the newest copy
+                with open(os.path.join(os.path.dirname(pa), "notes.bin"), "wb") as f:
+                    f.write(b"".join(d for _, d in got[1]))		# not a copy's name: never picked up
+                self.assertEqual([c.path for c in codecsave.copies(b, self.tmp)], [pa])
+                os.remove(pa)
                 # a damaged byte anywhere in the old windows: nothing comes back, so nothing is written from it
                 for a, d in got[1]:
                     bad = bytearray(flash)
@@ -2114,21 +2142,132 @@ class CodecRelayout(unittest.TestCase):
             self.assertEqual(dc("auto", False, dict(old, codec=b.codec.id), None, None).mode, plan.KEEP)
 
     def test_read_back_before_anything_else(self):
-        """A probe naming the former layout reads the codec back and saves it, even where an update keeps the codec"""
+        """A probe naming the former layout reads the codec back and saves it, even where an update keeps the codec,
+        and even with a copy saved earlier: the radio's own codec, now, is what the move writes"""
         for bid, _ in self.BOARDS:
             b = boards.get(bid)
             args = collections.namedtuple("A", "no_probe port")(False, None)
             got = ("prof", [])
-            with mock.patch.object(codecsave, "load", return_value=None), \
-                    mock.patch.object(codecsave, "from_radio", return_value=got) as rd, \
-                    mock.patch.object(codecsave, "save", return_value="x") as sv, contextlib.redirect_stdout(io.StringIO()):
-                self.assertEqual(cli.get_saved_codec(args, b, {"codec": b.codec_former[0]}), got)
-                self.assertEqual((rd.call_count, sv.call_count), (1, 1))
-            with mock.patch.object(codecsave, "load", return_value=None), \
+            old = codecsave.Copy("old.bin", None, "old prof", [])
+            for have in (None, old):
+                back = codecsave.Copy("x", "00aa11bb22cc33dd44ee55ff", *got)	# the copy as saved, read again
+                with mock.patch.object(codecsave, "find", side_effect=[have, back]), \
+                        mock.patch.object(codecsave, "from_radio", return_value=got) as rd, \
+                        mock.patch.object(codecsave, "save", return_value="x") as sv, \
+                        contextlib.redirect_stdout(io.StringIO()):
+                    r = cli.get_saved_codec(args, b, {"codec": b.codec_former[0], "uid": "00aa11bb22cc33dd44ee55ff"})
+                    self.assertEqual((r, r.origin, r.path), (got, "radio", "x"))
+                    self.assertEqual((rd.call_count, sv.call_count), (1, 1))
+                    self.assertEqual(rd.call_args.kwargs["uid"], "00aa11bb22cc33dd44ee55ff")	# only that radio is read
+                    self.assertEqual(sv.call_args.kwargs["uid"], "00aa11bb22cc33dd44ee55ff")
+            # the copy didn't land on disk intact: a move cut short couldn't be finished from it, so nothing is written
+            for fail in ([None, None], [None, codecsave.Copy("x", None, "prof", [(1, b"x")])]):
+                with mock.patch.object(codecsave, "find", side_effect=fail), \
+                        mock.patch.object(codecsave, "from_radio", return_value=got), \
+                        mock.patch.object(codecsave, "save", return_value="x"), contextlib.redirect_stdout(io.StringIO()):
+                    with self.assertRaises(cli.UsageError) as e:
+                        cli.get_saved_codec(args, b, {"codec": b.codec_former[0], "uid": "00aa11bb22cc33dd44ee55ff"})
+                    self.assertIn("nothing was written", str(e.exception))
+            with mock.patch.object(codecsave, "find", return_value=None), \
+                    mock.patch.object(codecsave, "from_radio", return_value=got), \
+                    mock.patch.object(codecsave, "save", side_effect=OSError("disk full")), \
+                    contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(cli.UsageError):
+                    cli.get_saved_codec(args, b, {"codec": b.codec_former[0], "uid": "00aa11bb22cc33dd44ee55ff"})
+            # a probe remembered from before the radio went into its bootloader: the copy saved from it
+            with mock.patch.object(codecsave, "find", return_value=old) as fd, \
+                    mock.patch.object(codecsave, "from_radio") as rd, contextlib.redirect_stdout(io.StringIO()) as out:
+                r = cli.get_saved_codec(args, b, {"codec": b.codec_former[0], "age_s": 60})
+                self.assertEqual((r, r.origin, r.path), (("old prof", []), "saved", "old.bin"))
+                self.assertEqual(rd.call_count, 0)
+                self.assertTrue(fd.call_args.kwargs["strict"])
+                self.assertIn("old.bin", out.getvalue())
+            with mock.patch.object(codecsave, "find", return_value=None), \
                     mock.patch.object(codecsave, "from_radio", return_value=None), \
                     contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as err:
                 self.assertIsNone(cli.get_saved_codec(args, b, {"codec": b.codec_former[0]}))
                 self.assertIn("could not be read back", err.getvalue())
+            # copies from other radios only: none is used, and the user is told why
+            with mock.patch.object(codecsave, "find", return_value=None), \
+                    mock.patch.object(codecsave, "copies", return_value=[old]), \
+                    mock.patch.object(codecsave, "from_radio", return_value=None), \
+                    contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as err:
+                self.assertIsNone(cli.get_saved_codec(args, b, {"codec": b.codec_former[0], "uid": "00aa11bb"}))
+                self.assertIn("from another radio", err.getvalue())
+
+    def stub_install(self, b, extra=(), probe=None, read=None, descriptor=None, rc=0):
+        """rfoundry flash --route stub, the radio's probe, read-back and descriptor given: (exit code, log, the image
+        handed to the stub or None)"""
+        img = os.path.join(self.tmp, "app.bin")
+        with open(img, "wb") as f:
+            f.write(app_image(30000, 3))
+        handed = []
+
+        def run(board, image, port=None, log=None):
+            handed.append(image)
+            return rc
+        out = io.StringIO()
+        with mock.patch.object(cli, "get_probe", return_value=probe), \
+                mock.patch.object(codecsave, "from_radio", return_value=read), \
+                mock.patch.object(codecsave, "descriptor_windows", return_value=descriptor), \
+                mock.patch.object(cli.stubroute, "run", run), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+            try:
+                code = cli.main(["flash", img, "--board", b.id, "--route", "stub", "--port", "/dev/x", "--yes"]
+                                + list(extra))
+            except SystemExit as e:
+                code = e.code
+        return code, out.getvalue(), handed[0] if handed else None
+
+    def test_stub_route_moves_the_codec(self):
+        """The stub route reads the codec back first and hands the stub one image with the codec where it goes now;
+        everything that can't work is refused before the radio is handed to the stub"""
+        for bid, sha in self.BOARDS:
+            with self.subTest(bid):
+                b, prof, flash, segs = self.radio_with_former(bid, sha)
+                got = codecsave.read_codec(BootKeyFromRadio.Radio(bytes(flash)), b)
+                uid = "00aa11bb22cc33dd44ee55ff"
+                probe = {"board": b.debuglink_names[0], "codec": b.codec_former[0], "port": "/dev/x", "uid": uid}
+                rc, log, image = self.stub_install(b, probe=probe, read=got)
+                self.assertEqual(rc, 0, log)
+                app, p2, s2 = stockfw.split_merged(image)
+                self.assertEqual((app, p2, s2), (app_image(30000, 3), prof, segs))
+                saved = codecsave.find(b, uid=uid, strict=True)
+                self.assertIsNotNone(saved, log)
+                # cut: the note names the copy that finishes it
+                rc, log, _ = self.stub_install(b, probe=probe, read=got, rc=1)
+                self.assertEqual(rc, 1)
+                self.assertIn(saved.path, log)
+                # --codec keep can't keep a codec in the application's flash: refused, the stub never entered
+                rc, log, image = self.stub_install(b, ["--codec", "keep"], probe=probe, read=got)
+                self.assertNotEqual(rc, 0)
+                self.assertIsNone(image)
+                self.assertIn("can't keep it", log)
+                # nothing to write it from: the radio can't be read and no copy of this radio's codec is saved
+                os.remove(saved.path)
+                codecsave.save(b, got[1], uid="99aa11bb22cc33dd44ee55ff")		# another radio's
+                rc, log, image = self.stub_install(b, probe=probe, read=None)
+                self.assertNotEqual(rc, 0)
+                self.assertIsNone(image)
+                self.assertIn("nothing was written", log)
+                # the probe reports no codec, but the descriptor in flash names a window in the application's
+                # flash (a move that stopped halfway): moved too, from the copy read back
+                lost = dict(probe, codec="absent")
+                win = [(b.app_region[1] - 0x1000, 0x800)]
+                rc, log, image = self.stub_install(b, probe=lost, read=got, descriptor=win)
+                self.assertEqual(rc, 0, log)
+                self.assertEqual(stockfw.split_merged(image)[2], segs)
+                # windows outside it: nothing to move; the image goes as it is
+                rc, log, image = self.stub_install(b, probe=lost, read=got, descriptor=[(b.app_region[1], 0x800)])
+                self.assertEqual((rc, image), (0, app_image(30000, 3)), log)
+                for c in codecsave.copies(b):
+                    os.remove(c.path)
+
+    def test_stub_move_notes_name_the_source(self):
+        s = cli.Saved("prof", [], "radio", "/x/md380-codec-00aa.bin", "00aa")
+        self.assertIn("/x/md380-codec-00aa.bin", cli.stub_move_note(s))
+        self.assertIn("--stock", cli.stub_move_note("stock"))
+        self.assertIn("same image", cli.stub_move_note("image"))
 
     class CutDevice(fakedfu.FakeAnyRoad):
         """The bootloader's device losing power after `left` more DNLOAD requests (erases, writes, the exit)"""
@@ -2162,7 +2301,7 @@ class CodecRelayout(unittest.TestCase):
         prof, parts = saved
         segs = codecsave.segments(prof, parts)
         img = app_image(b.app_region[1] - b.app_base - 0x100, 9)		# the new release fills its region
-        p = plan.make_plan(b, [(b.app_base, img)], d.mode, segs, b.merge_windows(prof))
+        p = plan.make_plan(b, [(b.app_base, img)], d.mode, segs, b.merge_windows(prof), vector_last=d.moves)
         dev.vendor, dev.state, dev.busy = [], dfumod.ST_IDLE, 0	# the radio back in its bootloader
         dfumod.Dfu(dev, 0, log=lambda *a: None, sleep=lambda s: None).run(p, KEY)
         return img, segs
@@ -2267,12 +2406,12 @@ class CodecCopyEverywhere(unittest.TestCase):
         args = collections.namedtuple("A", "no_probe port")(False, None)
         got = (self.prof, [])
         probe = {"board": "DM-1701", "codec": self.board.codec.id}
-        with mock.patch.object(codecsave, "load", return_value=None), \
+        with mock.patch.object(codecsave, "find", return_value=None), \
                 mock.patch.object(codecsave, "from_radio", return_value=got) as rd, \
                 mock.patch.object(codecsave, "save", return_value="x"):
             self.assertEqual(cli.get_saved_codec(args, self.board, probe), got)
             self.assertEqual(rd.call_count, 1)
-        with mock.patch.object(codecsave, "load", return_value=got), \
+        with mock.patch.object(codecsave, "find", return_value=codecsave.Copy("x", None, *got)), \
                 mock.patch.object(codecsave, "from_radio") as rd:
             self.assertEqual(cli.get_saved_codec(args, self.board, probe), got)
             self.assertEqual(rd.call_count, 0)	# a copy already: not read again
@@ -2314,6 +2453,50 @@ class FlashLog(unittest.TestCase):
         self.assertIsNone(cli.flash_started(self.args(), DM1701, {}))
         cli.flash_finished(None)
         self.assertEqual(self.sent, [])
+
+
+class AfterFlash(unittest.TestCase):
+    """What rfoundry says about the radio after a flash and in probe, with more than one radio on USB"""
+
+    def run_verify(self, answer):
+        out = io.StringIO()
+        args = mock.Mock(port=None)
+        d = cli.Decision(plan.MERGE, "test")
+        with mock.patch.object(debuglink, "find_ports", return_value=["/dev/x"]), \
+                mock.patch.object(debuglink, "probe", return_value=answer), \
+                mock.patch.object(cli, "hwopt_prompt") as hw, mock.patch.object(state, "remember_probe") as rem, \
+                mock.patch.object(cli.time, "sleep"), contextlib.redirect_stdout(out):
+            rc = cli.verify_after(args, boards.get("md380"), {}, d)
+        return rc, out.getvalue(), hw, rem
+
+    def test_another_radio_answering_is_not_checked(self):
+        """An MD-9600 on the same computer answered after an MD-380 was flashed through its bootloader: rfoundry
+        reported the MD-9600's codec as the MD-380's, failed, and remembered and prompted on the wrong radio"""
+        rc, out, hw, rem = self.run_verify({"board": "MD-9600", "port": "/dev/ttyACM1", "git": "abc", "codec": "md9600-s11"})
+        self.assertEqual(rc, 0)
+        self.assertIn("not checked", out)
+        self.assertNotIn("no usable codec", out)
+        hw.assert_not_called()
+        rem.assert_not_called()
+
+    def test_the_flashed_radio_is_checked(self):
+        b = boards.get("md380")
+        rc, out, hw, rem = self.run_verify({"board": "MD-380", "port": "/dev/ttyACM0", "git": "abc", "codec": b.codec.id})
+        self.assertEqual(rc, 0)
+        self.assertIn("DMR voice is ready", out)
+        hw.assert_called_once()
+        rem.assert_called_once()
+
+    def test_probe_of_a_former_layout_says_it_moves(self):
+        b = boards.get("md380")
+        self.assertTrue(b.codec_former)
+        out = io.StringIO()
+        p = {"board": "MD-380", "port": "/dev/ttyACM0", "git": "abc", "codec": b.codec_former[0]}
+        with mock.patch.object(debuglink, "probe", return_value=p), mock.patch.object(state, "remember_probe"), \
+                contextlib.redirect_stdout(out):
+            cli.cmd_probe(mock.Mock(port=None))
+        self.assertIn("moves it", out.getvalue())
+        self.assertNotIn("no codec to keep", out.getvalue())
 
 
 if __name__ == "__main__":

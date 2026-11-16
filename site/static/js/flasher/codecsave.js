@@ -65,9 +65,6 @@ function formOfCopy(prof, parts) {
 	return f[0];
 }
 
-// True when a copy is not in the current placement: writing it moves the codec (from a former layout or stock's)
-export const needsMove = (prof, parts) => !!prof.placement && !formOfCopy(prof, parts)?.current;
-
 // A copy (readCodec, loadCodec) as the merge writes it now: in the current placement with its descriptor. A copy in
 // the stock windows or a former placement is moved there (stockfw.fromForm)
 export async function codecSegments(prof, segments, fb) {
@@ -77,10 +74,14 @@ export async function codecSegments(prof, segments, fb) {
 	return out;
 }
 
-// --- the copy in this browser: one record per board and codec, the windows concatenated in profile order
+// --- the copy in this browser: one record per board, codec and radio (its chip UID, link.js chip), the windows
+// concatenated in profile order. A move only ever takes the copy from the radio being moved (loadCodec strict), so a
+// browser that serves two radios never writes one's codec into the other. A record without a UID is an earlier page's;
+// "<board>-last" names the radio whose copy was saved last, for a radio that can't say which it is (in its bootloader)
 
 const DB = "rfoundry-flasher", STORE = "codecs";
-const recordId = (board, id = board.codec.id) => `${board.id}-${id}`;
+const recordId = (board, id = board.codec.id, uid = null) => `${board.id}-${id}${uid ? `-${uid.toLowerCase()}` : ""}`;
+const lastId = (board) => `${board.id}-last`;
 
 function open() {
 	return new Promise((resolve, reject) => {
@@ -125,8 +126,9 @@ export async function getBlob(id) {
 	}
 }
 
-// true when saved; false where the browser keeps nothing (private window, storage off)
-export async function saveCodec(board, segments) {
+// true when saved; false where the browser keeps nothing (private window, storage off). uid: the chip UID of the radio
+// it was read from, null when unknown
+export async function saveCodec(board, segments, uid = null) {
 	const blob = new Uint8Array(segments.reduce((n, [, d]) => n + d.length, 0));
 	let off = 0;
 	for (const [, d] of segments) {
@@ -134,20 +136,42 @@ export async function saveCodec(board, segments) {
 		off += d.length;
 	}
 	try {
-		await tx("readwrite", (s) => s.put(blob, recordId(board)));
+		await tx("readwrite", (s) => {
+			if (uid) s.put(uid.toLowerCase(), lastId(board));
+			return s.put(blob, recordId(board, board.codec.id, uid));
+		});
 		return true;
 	} catch (e) {
 		return false;
 	}
 }
 
-// {profile, segments} from the saved copy, checked against the profile, or null. A copy saved under an id an earlier
-// release reported (board.codec.former) is found too: the codec is the same, only where it was read
-export async function loadCodec(board, fb) {
+// {profile, segments, uid} from a saved copy, checked against the profile, or null. uid: the radio's chip UID, when
+// known: its own copy, else (not strict) one an earlier page saved without a UID. No UID: the copy saved last. A copy
+// saved under an id an earlier release reported (board.codec.former) is found too: the codec is the same, only where
+// it was read (the same rules as rfoundry's codecsave.find)
+export async function loadCodec(board, fb, { uid = null, strict = false } = {}) {
+	let want = uid ? [uid.toLowerCase(), ...(strict ? [] : [null])] : [null];
+	if (!uid) {
+		try {
+			const last = await tx("readonly", (s) => s.get(lastId(board)));
+			if (typeof last === "string") want = [last, null];
+		} catch (e) {
+			return null;
+		}
+	}
+	for (const who of want) {
+		const got = await loadRecord(board, fb, who);
+		if (got) return got;
+	}
+	return null;
+}
+
+async function loadRecord(board, fb, uid) {
 	for (const id of [board.codec.id, ...(board.codec.former || [])]) {
 		let blob;
 		try {
-			blob = await tx("readonly", (s) => s.get(recordId(board, id)));
+			blob = await tx("readonly", (s) => s.get(recordId(board, id, uid)));
 		} catch (e) {
 			return null;
 		}
@@ -160,7 +184,7 @@ export async function loadCodec(board, fb) {
 					parts.push([addr, blob.subarray(off, off + length)]);
 					off += length;
 				}
-				if (off === blob.length && (await checkForm(prof, form, parts, fb))) return { profile: prof, segments: parts };
+				if (off === blob.length && (await checkForm(prof, form, parts, fb))) return { profile: prof, segments: parts, uid };
 			}
 		}
 	}

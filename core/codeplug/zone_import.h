@@ -16,10 +16,7 @@
  *   - the same zone from the same sender again (same zone ID) replaces the earlier import: its zone is rewritten in
  *     place and the channels it no longer uses are deleted, unless another zone holds them
  *   - a new zone whose name is taken gets " 2", " 3" ... (shortened to fit 16 characters)
- *   - a trunked channel (zone-share.md 4.2) joins the system here with its system code; a system the radio hasn't is
- *     added from the record, by identity only when that is all the sender shares, and its channels are then locked
- *     out until the user sets it up
- *   - anything that fails part way is undone: channels, contacts and systems added by this import are deleted again
+ *   - anything that fails part way is undone: channels and contacts added by this import are deleted again
  */
 
 #ifndef RFOUNDRY_ZONE_IMPORT_H
@@ -40,7 +37,6 @@ typedef enum
 	ZI_ZONE_FULL,						// a channel record: the chosen zone has CODEPLUG_ZONE_MAX channels
 	ZI_NO_CHANNELS,						// not enough free channel numbers
 	ZI_NO_CONTACTS,						// not enough free contacts
-	ZI_NO_SYSTEMS,						// every channel in band is trunked on a system with no free slot
 	ZI_FLASH,							// a codeplug write failed (what this import wrote was undone)
 } zone_import_status_t;
 
@@ -50,9 +46,8 @@ typedef struct
 	uint8_t  out_of_band;				// left out
 	uint8_t  contacts_added;
 	uint8_t  contacts_matched;			// already there (names kept)
-	uint8_t  systems_added;				// trunked systems this radio didn't have
-	uint8_t  t3_unavailable;			// trunked channels whose system isn't set up here: locked out until it is
-	uint8_t  t3_left_out;				// trunked channels whose system found no free slot: left out
+	uint8_t  systems_added;				// systems of channels of a kind the radio didn't have (zone-share.md 5.5)
+	uint8_t  unavailable;				// channels of a kind whose system the radio doesn't have: receive only, parked
 	bool     updated;					// replaced an earlier import of this zone
 	uint16_t zone;						// the zone's index
 	char     name[CODEPLUG_NAME_LEN + 1];	// the zone's name here
@@ -62,9 +57,6 @@ typedef struct
 uint32_t zone_import_key(uint32_t sender, uint32_t zone_id);
 // A receive frequency the radio can tune (board_in_band without transmit)
 bool zone_import_in_band(const zsChannel_t *ch);
-// The record's channel i is a trunked one that would come in locked out: neither the radio nor the record has its
-// system set up (zone-share.md 5.2). For the offer screen: the UI task only
-bool zone_import_t3_locked(const zsRecord_t *r, int i);
 
 // A zone record into the codeplug. imports: settings_t.zs_import (SETTINGS_ZS_IMPORTS entries), updated on success:
 // the caller saves it

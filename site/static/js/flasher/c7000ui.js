@@ -1294,7 +1294,7 @@ function untriedOffer(c) {
 	if (!c.stockUntried || !c.progmem) return null;
 	const v = c.stockUntried.version || stockVersion(c.progmem) || "unknown";
 	S().stockRead = { name: `program-memory-${S().radio.id}-${v.replace(/[^\w.-]/g, "_")}.bin`, data: c.progmem };
-	return h("div", { class: "notice" }, h("strong", {}, t("flash.variant.send_title")), h("p", {}, t("flash.variant.send", { version: v })),
+	return h("div", { class: "notice report-offer" }, h("strong", {}, t("flash.variant.send_title")), h("p", {}, t("flash.variant.send", { version: v })),
 		reportButton({ quiet: false }));
 }
 

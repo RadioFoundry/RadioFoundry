@@ -286,7 +286,7 @@ static void test_rx(void)
 	CHECK(eng.running);
 	uint32_t t = 2000000;
 	ts_at(t);
-	CHECK(last_write(4, 0x41) == 0x50);	// receive the next slot
+	CHECK(last_write(4, 0x41) == 0x58);	// receive the next slot, any color code (filter off)
 	drain();
 	CHECK(count_ev(DMR_EV_SLOT_TICK) == 1);
 
@@ -611,7 +611,7 @@ static void test_tx_listen(void)
 		prev_rx = false;
 		if (r41 == 0x80) {
 			bursts_set++;
-		} else if (r41 == 0x50 && bursts_set > 0 && bursts_set < 6) {
+		} else if ((r41 & ~0x08) == 0x50 && bursts_set > 0 && bursts_set < 6) {
 			rx_slots++;
 			prev_rx = true;
 		} else if (r41 == 0x00 && bursts_set > 0 && bursts_set < 6) {
@@ -705,7 +705,7 @@ static void test_tx_empty_slot(void)
 	for (int k = 0; k < 30 && hrc6000_dmr_is_transmitting(&eng); k++) {
 		int r50, r41;
 		tx_tick(t, &r50, &r41);
-		if (n < 15 && (r41 == 0x80 || (r41 == 0x50 && n > 0))) {
+		if (n < 15 && (r41 == 0x80 || ((r41 & ~0x08) == 0x50 && n > 0))) {
 			seq[n++] = r41 == 0x80 ? 'T' : 'r';
 		}
 		drain();
@@ -862,6 +862,27 @@ static void test_tx_end_hold(void)
 			CHECK(eng.st.rx_restarts == rs + 1);	// once
 		}
 	}
+	// A color code change during the transmission: the receiver restarts on the new code as it ends, not the hold
+	// (the hold would drop the restart, and the receiver would keep the old code's sync)
+	{
+		fresh_engine();
+		pending_burst = false;
+		hrc6000_dmr_set_cc_filter(&eng, 1);
+		CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+		dmr_tx_burst_t hdr = mk(DMR_BURST_DATA_HEADER, 0, true);
+		hrc6000_dmr_tx_queue(&eng, &hdr);
+		hrc6000_dmr_tx_end(&eng);
+		uint32_t t = 7000000;
+		int r50, r41;
+		tx_tick(t += 30000, &r50, &r41);
+		hrc6000_dmr_set_cc_filter(&eng, 3);
+		uint32_t rs = eng.st.rx_restarts;
+		for (int k = 0; k < 8 && hrc6000_dmr_is_transmitting(&eng); k++) {
+			tx_tick(t += 30000, &r50, &r41);
+		}
+		CHECK(!hrc6000_dmr_is_transmitting(&eng));
+		CHECK(eng.st.rx_holds == 0 && eng.st.rx_restarts == rs + 1 && last_write(4, 0x1F) == 0x30);
+	}
 	// No tick after the end (the chip's timing stopped): the restart after HOLD_NO_TICK_US
 	fresh_engine();
 	pending_burst = false;
@@ -894,6 +915,7 @@ static void test_tx_aligned_rmo(void)
 	pending_burst = false;
 	dmr_config_t cfg = { .own_id = 9990001, .cc = 1, .access = DMR_ACCESS_POLITE_CC, .repeater = true };
 	hrc6000_dmr_configure(&eng, &cfg);
+	hrc6000_dmr_set_cc_filter(&eng, cfg.cc);
 	CHECK(last_write(4, 0x14) == (9990001 >> 16) && last_write(4, 0x16) == (9990001 & 0xFF));
 	CHECK(last_write(4, 0x1F) == 0x10);
 	// The repeater's CACH: the slot starting at tick k is TS1 on odd ticks, TS2 on even ones; 0x52 bit 2 at the
@@ -1122,11 +1144,43 @@ static void test_rx_stall(void)
 	CHECK(eng.st.stalls == 1 && eng.st.tx_stalls == 0 && count_ev(DMR_EV_SYNC_LOST) == 1);
 }
 
+// A chip that deframes any color code (the HR_C6000): a new code is only noted, the call goes on unbroken
+static void test_cc_any_rx(void)
+{
+	fresh_engine();
+	uint32_t t = 9400000;
+	uint32_t restarts = eng.st.rx_restarts;
+	for (int k = 0; k < 12; k++) {	// CC 2, then CC 7: past both the follow and the old hold counts
+		ts_at(t += 30000);
+		CHECK((last_write(4, 0x41) & 0x08) != 0);
+		report_at(t + 4000, 0x32, k < 9 ? 0x20 : 0x70, 0x00);
+	}
+	ts_at(t += 30000);
+	CHECK(last_write(4, 0x1F) == -1 && eng.st.rx_restarts == restarts);
+	CHECK(eng.cc_cur == 7 && !eng.cc_held);
+	// Our next transmission uses the code last heard
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	ts_at(t += 30000);
+	CHECK(last_write(4, 0x1F) == 0x70);
+	hrc6000_dmr_tx_abort(&eng);
+	// A fixed filter: the chip deframes only that code again
+	hrc6000_dmr_set_cc_filter(&eng, 5);
+	for (int k = 0; k < 4; k++)
+		ts_at(t += 30000);
+	CHECK(last_write(4, 0x1F) == 0x50 && last_write(4, 0x41) == 0x50);
+}
+
+// A chip that deframes only the code in 0x1F (the HR_C5000): follow it by rewriting 0x1F (modem-hrc6000.md 5.4)
 static void test_cc_follow(void)
 {
 	fresh_engine();
+	hrc_chip_t c5 = *dev.chip;
+	c5.cc_any_rx = false;
+	const hrc_chip_t *c6 = dev.chip;
+	dev.chip = &c5;
 	uint32_t t = 9500000;
 	ts_at(t);
+	CHECK(last_write(4, 0x41) == 0x50);
 	report_at(t + 4000, 0x32, 0x20, 0x00);	// CC 2 heard twice within 200 ms
 	t += 30000;
 	ts_at(t);
@@ -1135,6 +1189,27 @@ static void test_cc_follow(void)
 	uint32_t restarts = eng.st.rx_restarts;
 	ts_at(t += 30000);			// the receiver restarts at the next tick, no busy wait in the ISR
 	CHECK(eng.st.rx_restarts == restarts + 1);
+
+	const dmr_config_t cfg = { .cc = 5 };
+	hrc6000_dmr_configure(&eng, &cfg);
+	CHECK(eng.cc_filter == -1 && eng.cc_cur == 2);
+	CHECK(last_write(4, 0x1F) == 0x20);
+	hrc6000_dmr_set_cc_filter(&eng, 2);
+	hrc6000_dmr_set_cc_filter(&eng, -1);
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	ts_at(t += 30000);
+	CHECK(last_write(4, 0x1F) == 0x50);
+	hrc6000_dmr_set_cc_filter(&eng, 7);
+	CHECK(last_write(4, 0x1F) == 0x50);
+	// A reconfigure during TX leaves 0x1F to the transmission too; the receiver restarts on the new code after it
+	const dmr_config_t cfg9 = { .cc = 9 };
+	hrc6000_dmr_configure(&eng, &cfg9);
+	CHECK(last_write(4, 0x1F) == 0x50 && eng.cc_cur == 9);
+	restarts = eng.st.rx_restarts;
+	hrc6000_dmr_tx_abort(&eng);
+	for (int i = 0; i < 4; i++)
+		ts_at(t += 30000);
+	CHECK(last_write(4, 0x1F) == 0x90 && eng.st.rx_restarts > restarts);
 
 	// A fixed filter: written at once, never followed
 	hrc6000_dmr_set_cc_filter(&eng, 5);
@@ -1156,6 +1231,7 @@ static void test_cc_follow(void)
 	hrc6000_dmr_set_cc_filter(&eng, 6);
 	ts_at(t += 30000);
 	CHECK(last_write(4, 0x1F) == 0x60 && eng.st.rx_restarts == restarts + 1);
+	dev.chip = c6;
 }
 
 // Bench 2026-10-09: each voice burst was reported twice, in step, at two consecutive ticks (V twice the bursts sent)
@@ -1442,6 +1518,7 @@ int main(void)
 	test_tc_locked_one_in_two();
 	test_tx_rejected_and_stall();
 	test_rx_stall();
+	test_cc_any_rx();
 	test_cc_follow();
 	test_rx_repeat_report();
 	test_rx_bs_idles();

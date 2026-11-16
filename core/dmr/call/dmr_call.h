@@ -84,6 +84,7 @@ typedef struct {
 typedef struct {
 	bool hear_all;		// every talkgroup (and private calls between others) on our timeslot
 	bool any_cc;		// monitor: any color code too
+	bool both_ts;		// monitor: either timeslot, the first call heard until it ends
 	const uint32_t *groups;	// the channel's listen list (RX group list), owned by the caller, may be NULL
 	uint16_t group_count;
 	bool (*group_ok)(uint32_t tg, void *ctx);	// optional lookup instead of / besides the table
@@ -202,8 +203,10 @@ typedef struct {
 	uint8_t state;			// dmr_call_state_t
 	uint8_t phase;			// dmr_call_phase_t
 	uint8_t tx_error;		// dmr_tx_error_t of the last PTT
-	uint8_t cc;			// the channel's (or the call's, with any_cc)
+	uint8_t cc;			// the channel's
 	uint8_t ts;
+	uint8_t rx_cc;			// the current / last call's color code (any_cc: may differ from cc)
+	uint8_t rx_ts;			// its timeslot, 0 = unknown (simplex without TDMA direct mode sync)
 	bool rmo;
 	bool repeater_up;		// RMO: outbound heard recently
 	int16_t rssi_dbm;		// last burst of the current / last call, 0 = unknown

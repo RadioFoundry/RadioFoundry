@@ -5,7 +5,8 @@
 
 One radio sends a zone, or one channel, to another radio or to a talkgroup over DMR data. The receiver shows it as an
 offer and imports it only when the user says so. Status: built and host-tested (`zoneShareTest`, `zoneShareSvcTest`,
-`zoneImportTest`, the UI flow tests). On a radio, sending one channel has been checked against the SDR bench; sending
+`zoneImportTest`, the UI flow tests; the modes part in `zoneShareModesTest` and `zoneImportModesTest`, untested on a
+radio). On a radio, sending one channel has been checked against the SDR bench; sending
 a zone, offers and the import are untested there. The opt-in HIL test is `tests/hil/test_zone_share.py` (feature
 `zone_share`).
 
@@ -79,21 +80,18 @@ Every message starts with the version (1) and the type. Multi-octet fields are b
 |---|---|---|
 | Header | 10 + name | version (1), length (2, the whole record), zone ID (4, not 0), flags, channel count (1-80), contact count (0-32), name |
 | Contact | 4 + name | type (bits 1-0: 0 group, 1 private, 2 all call) and slot (bits 3-2: 0 the channel's, 1, 2), ID (3, not 0), name |
-| Channel | 6 to 16 + name | flags, RX Hz (4), then as the flags say: TX offset (4, signed, not 0), DMR (2 or 3), RX tone (2), TX tone (2); name |
-| Systems | 1 + each | count (1-4), then each trunked system (4.2). Only with record flag bit 1 |
+| Channel | 6 to 15 + name | flags, RX Hz (4), then as the flags say: TX offset (4, signed, not 0), DMR (2), RX tone (2), TX tone (2); name |
 
 - A name is a length (0 to 16) and that many printable ASCII octets. The sender writes `?` for anything else.
-- Record flags: bit 0, one channel (the count must be 1); bit 1, the record carries trunked systems (4.2). The other
-  bits are reserved and must be 0. A decoder without trunking refuses a record with bit 1.
+- Record flags: bit 0, one channel (the count must be 1); bit 1, a modes part follows the channels (4.2). The other
+  bits are reserved and must be 0. A build without the modes part refuses a record with bit 1 set.
 - Channel flags: bit 0 DMR, 1 25 kHz, 2 TX offset present, 3 RX tone present, 4 TX tone present, 5 receive only on
   the sender, bits 7-6 power (0 the default, 1 low, 2 mid, 3 high).
-- DMR octets: the color code (bits 3-0), slot 2 (bit 4), direct mode (bit 5), trunked (bit 6), bit 7 reserved; then
-  the contact, a 1-based index into the record's contacts or 0; then, for a trunked channel only, its system, a
-  1-based index into the record's systems. A DMR channel carries no tones.
+- DMR octets: the color code (bits 3-0), slot 2 (bit 4), direct mode (bit 5), bits 7-6 reserved; then the contact, a
+  1-based index into the record's contacts or 0. A DMR channel carries no tones.
 - A tone: the type in bits 15-14 (1 CTCSS, 2 DCS, 3 DCS inverted), the value in bits 13-0. CTCSS is Hz x 10 (600 to
   2600). DCS is the code as an octal number (023 is 19), at most 0777.
-- Contacts come first, then systems, then channels. The record must end exactly where its length says. Bit 1 is set
-  exactly when a systems part is there.
+- Contacts come first, then channels. The record must end exactly where its length says.
 - The decoder checks every length, count, reference and value before use. A record that fails one check is refused
   whole.
 - Zone ID: the sender's choice, the same each time it sends the same zone. Ours is an FNV-1a hash of the zone name and
@@ -101,38 +99,38 @@ Every message starts with the version (1) and the type. Multi-octet fields are b
 
 ### 4.1 What a send holds
 
-The sender takes the zone's channels in order, each with its contact and, for a trunked channel, its system, while the
-record fits 1024 octets and 80 channels. The rest are left out, and the UI says how many go ("Sending 40 of 60
-channels"). A trunked channel whose system's sharing is off is left out too ([dmr-trunking.md
-12.6](dmr-trunking.md#126-sharing)). Nothing else of the codeplug is sent: no scan lists, no RX group lists, no
-privacy keys.
+The sender takes the zone's channels in order, each with its contact, while the record fits 1024 octets and 80
+channels. The rest are left out, and the UI says how many go ("Sending 40 of 60 channels"). Nothing else of the
+codeplug is sent: no scan lists, no RX group lists, no privacy keys.
 
-### 4.2 Trunked systems
+### 4.2 The modes part
 
-A system as its sharing setting allows: 1 the identity, 2 the whole system. Multi-octet fields are big-endian.
+Channels of a kind ([channel-modes.md](channel-modes.md)) go with their tags and the systems they are on. Builds with
+a mode's codec carry them (`CONFIG_ZONE_SHARE_MODES`, on with `CONFIG_P25` and `CONFIG_ZONE_SHARE`). A record holds
+the part only when it has such a channel, so a share of plain channels is the same as before. Every length is one
+octet. Kinds' and system types' bytes are opaque here: their mode modules read them.
 
-| Field | Octets | Value |
+| Part | Octets | Fields |
 |---|---|---|
-| Level | 1 | bits 1-0: 1 identity, 2 whole; bit 2 key present, bit 3 PSN present (whole only); the rest 0 |
-| Name | 1 + name | as any name |
-| Model | 1 | 0 tiny, 1 small, 2 large, 3 huge |
-| NET | 2 | in the model's range |
-| Category | 1 | 1 A, 2 B |
-| Color code | 1 | 0-15 |
-| Options | 2 | the system record's options (dmr-trunking.md 12.1), only the bits in mask `0x0FE7` |
-| *Whole only:* | | |
-| Fallback hold | 1 | seconds |
-| Fallback | 1 | a 1-based index into the record's channels, or 0. It must name a conventional channel of the record |
-| Plan | 12 | the system record's fixed plan: base Hz (4), first LCN (2), separation code (1), flags (1, bits 1-0 only), split Hz (4) |
-| Leave level | 1 | dBm, signed |
-| Random access | 1 | 0-7 |
-| Sites | 1 + 2 each | count (0-8), then each site's number |
-| Channels | 1 + 12 each | count (1-8), then each: flags (bit 0 control), logical channel (2), RX Hz (4), TX Hz (4), color code (1, 0-15, or 0xFF the system's) |
-| Key | 16 | when bit 2 |
-| PSN | 3 | when bit 3 |
+| Systems | 1 | count, 0-8 |
+| System | 5 + block + name, a whole one 2 + secret more | type (not 0 or 0xFF), flags (the system record's, bits 2-3 0), level (1 identity, 2 whole), identity length (at most the block's), block length and block (at most 200; level 1: the identity alone), name; level 2 only: secret length and secret (at most 64), entry count |
+| Entry | 4 + body | class, group, flags, body length and body (at most 64): a level 2 system's entries follow it. At most 64 in a record |
+| Tags | 1 | count, 1 up to the channel count |
+| Tag | 5 + params | channel (1-based, each after the one before), kind (not 0 or 0xFF), system (0 none, 1 up to the systems count, 0xFF on a system the sender doesn't share), flags (the tag's, bits 2-3 0: the fallback channel is never carried), parameter block length and block (at most 64) |
 
-Never sent: the radio's own ID and its ID on the system, kill or stun state, registration. A whole system has at least
-one control channel. A system no channel of the record names is refused.
+What a sender carries of a system follows its sharing level ([channel-modes.md](channel-modes.md) 7.1):
+
+| Level | Carried |
+|---|---|
+| Off | nothing: its channels' tags say 0xFF |
+| Identity only | type, flags, name and the identity |
+| Whole system with key | the block and every entry too, and the secret only when the sender turns keys on for that share. A radio has no such switch yet and never sends a secret. A system whose block or entries pass the limits goes as its identity |
+
+Never carried: the radio's own ID on a system, a system's or a channel's fallback channel. Targets
+([channel-modes.md](channel-modes.md) 5.2) are not carried yet: no kind in this tree refers to them.
+
+A channel whose tag's parameter block passes 64 octets is left out. Without the modes part a sender leaves every
+channel of a kind out: its record is a stand-in that a receiver would take for a plain channel.
 
 ## 5. Receiving
 
@@ -155,12 +153,10 @@ nothing reaches the user. The setting is `zs_offers` in the settings record: 0 (
 The offer shows as a banner, "Zone from <name or ID>" with "Zone <name>, <n> channels". **#** opens it. The banner
 has no timer: it stays until **#** opens it, **Back** hides it (on any screen), or the offer ends (it expires, or is answered from
 Tools, which also hides it). Another banner can take its place. While it waits it is also under **Tools > Zones/Chs Received**. The offer screen (Zone Share Received, or Channel Share Received) reads "Zone <name>, <n> channels, from <ID>" and
-how many are not in this radio's bands, and how many are trunked on a system this radio can't use: "2 trunked channels
-unavailable: system not set up" (dmr-trunking.md 12.6). Three choices:
+how many are not in this radio's bands, with three choices:
 
 - **Import** imports it (5.3).
-- **Preview** lists the channels: name, frequency, mode, "Not in band" for those that can't be received and "System
-  not set up" for trunked ones that would come in unavailable.
+- **Preview** lists the channels: name, frequency, mode, and "Not in band" for those that can't be received.
 - **Reject** drops it.
 
 A one-channel offer asks which zone to add the channel to.
@@ -170,19 +166,16 @@ A one-channel offer asks which zone to add the channel to.
 | Rule | Behavior |
 |---|---|
 | Band limits | only channels whose RX frequency is in this radio's bands are imported (`board_in_band`). The rest are counted and left out. None in band: nothing is imported |
-| Receive only | every imported conventional channel is receive only, whatever the sender had. The user turns transmit on per channel. A trunked channel transmits when its system is usable: the site grants every transmission |
-| Trunked systems | matched by model, NET and category against the radio's systems; a match is used as it is. With none, a shared system is added in the lowest free system slot, with sharing off and no ID of its own. One that came by identity, or that authenticates and came without its key, leaves its channels unavailable: locked out, "System not set up" (dmr-trunking.md 12.4). With no free slot its channels are left out and counted, and so are their contacts. Each trunked channel gets its tag |
+| Receive only | every imported channel is receive only, whatever the sender had. The user turns transmit on per channel. The one exception: a channel of a kind on a system the radio has (5.5) |
 | Power | the power class maps to this radio's levels: low the lowest, mid the middle, high the highest, default the codeplug's default |
 | Contacts | matched by ID and type against the user's contacts; a match keeps the user's name. Only contacts that imported channels use are added, in the lowest free slots. The same contact twice in a record becomes one |
 | New zone | added through the zone editor's write layer, as a new zone there is ([ui.md 2.2](ui.md#22-zone-editor)): it takes the lowest free slot, which can be ahead of other zones, and whoever holds a zone index follows the move. An update rewrites its zone in place. A name already in use gets " 2" to " 99", shortened to fit 16 characters |
 | No stored zones | the radio's "All channels" zone is stored as zone 0 first, so the user keeps it |
 | One channel | added to the end of the zone the user picked (`zone_edit_insert`) |
-| Fallback | a system the import added falls back to the channel its share named, as written here |
-| Failure | anything written is undone, the systems it added too: no full zone list, no free channel or contact, a flash write error. Only trunked channels in band, and no room for their system: nothing is imported |
+| Failure | anything written is undone: no full zone list, no free channel or contact, a flash write error |
 
 The import runs as a storage job, not on the UI task. The banner after it reads "Imported <zone>" or "Updated
-<zone>" with "<n> channels, receive only", or "<n> trunked: system not set up" when trunked channels came in
-unavailable or were left out.
+<zone>" with "<n> channels, receive only".
 
 ### 5.4 Updates
 
@@ -201,8 +194,21 @@ A zone sent again by the same sender with the same zone ID updates the earlier i
   | The zone still starts with the channels the import wrote, unchanged (the first `count` match the signature) | those; everything after them is the user's |
   | Otherwise (the user changed, moved in or removed a channel among them) | only channels identical to one the new copy brings. An earlier channel the sender has since changed or dropped stays; the user deletes it |
 
-- Replaced channels that no zone lists any more are deleted, with their trunked tag. Contacts and systems are never
-  deleted.
+- Replaced channels that no zone lists any more are deleted. Contacts are never deleted.
+
+### 5.5 Channels of a kind
+
+With a modes part (4.2), after the import's channels are chosen:
+
+| Rule | Behavior |
+|---|---|
+| Systems | matched by type and identity against the radio's own. A match is used as it is: nothing of the radio's system is changed. A whole system the radio doesn't have is added when an imported channel is on it (its own ID 0, no fallback), with its entries and its secret if the record has one. Listen only comes as the sender set it: the receiver never forces it |
+| Missing | a system sent as its identity that the radio doesn't have, one the sender withholds, or one with no room left: its channels come in with no system, receive only, and the import counts them as unavailable. The Codeplug Editor flags them |
+| Tags | written for each imported channel: kind, flags and parameter block as sent |
+| Transmit | kept only on a channel whose system the radio has; the system's listen-only flag then rules. Every other channel is receive only (5.3) |
+| Undo | a failed import removes the systems, entries and secrets it added with its channels |
+
+The banner does not yet say how many came in unavailable.
 
 ## 6. Directory requests
 
@@ -226,7 +232,7 @@ The banner says "Sent to <name>" or "Not sent to <name>". One send at a time.
 
 | Limit | Value |
 |---|---|
-| Record | 1024 octets, 80 channels, 32 contacts, 4 trunked systems of up to 8 channels and 8 sites each |
+| Record | 1024 octets, 80 channels, 32 contacts |
 | Names | 16 printable ASCII characters |
 | Fragments | sent: up to 4 of 322 octets; taken: up to 8, chunks of 128 to 562 octets |
 | RAM | about 4 KB on one board's build; the record being sent comes from the RTOS heap while it is made ([feature-matrix.md](../feature-matrix.md)) |

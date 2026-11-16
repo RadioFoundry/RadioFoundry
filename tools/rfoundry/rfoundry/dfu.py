@@ -106,8 +106,9 @@ class Dfu:
         self.wait_dnload_done(what)
 
     def run(self, plan, key, progress=None):
-        """Erase the plan's sectors, write each, exit (the radio resets). The application's first sector is erased first
-        and written last (plan.Plan.write_order): a run cut short leaves no application to start."""
+        """Erase the plan's sectors (in the bootloader's order), write each, exit (the radio resets). A codec move erases
+        the application's first sector first and writes it last (plan.Plan.write_order): a move cut short leaves no
+        application to start."""
         base = plan.board.app_base
         for s in plan.erase:		# make_plan refuses these; a plan built another way is checked again before any erase
             protect.check_absolute(plan.board, plan.board.rom_base, s.addr, s.end, "erase")

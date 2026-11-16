@@ -14,9 +14,15 @@ can't come out of this. A copy in a stock or former layout is moved to the curre
 The copy is never deleted: it is what lets an install that stopped halfway, at any step, be run again (docs/spec/
 codec-placement.md, "Moving to a new layout").
 
+There is one copy per radio: its file name carries the radio's chip UID (debuglink.probe "uid"), and a move only ever
+uses the copy saved from the radio being moved (find, strict), so a computer that serves two radios never writes one's
+codec into the other. A copy saved by an earlier rfoundry, without a UID, is used only where no UID is known or for a
+radio that has no copy of its own outside a move.
+
 The saved file is the user's own codec, from their own radio: it stays on this computer (state.config_dir()).
 """
 import os
+import re
 import struct
 
 from . import debuglink, state, stockfw
@@ -50,6 +56,28 @@ def _described(link):
     if w[0] != stockfw.DESC_MAGIC or not 0 < w[6] <= stockfw.DESC_WINDOWS:
         return None
     return w[2], [w[3]] + [w[7 + 3 * i] for i in range(w[6])]
+
+
+def descriptor_windows(port):
+    """[(addr, length)] of every window the descriptor in the flash of the radio on this debug link port names, [] when
+    there is none, None when the radio can't be read. The stub refuses to erase a sector they lie in for an image
+    without the codec (stub/f4stub.py guard_codec); this lets rfoundry tell before the radio is handed to the stub."""
+    try:
+        link = debuglink.Link(port)
+    except Exception:
+        return None
+    try:
+        d = bytes(link.read_mem(stockfw.DESC_ADDR, stockfw.DESC_LEN))
+    except (debuglink.LinkError, OSError):
+        return None
+    finally:
+        link.close()
+    if len(d) != stockfw.DESC_LEN:
+        return None
+    w = struct.unpack("<%dI" % (stockfw.DESC_LEN // 4), d)
+    if w[0] != stockfw.DESC_MAGIC or w[1] != stockfw.DESC_VERSION or not 0 < w[6] <= stockfw.DESC_WINDOWS:
+        return []
+    return [(w[3], w[4])] + [(w[7 + 3 * i], w[8 + 3 * i]) for i in range(w[6])]
 
 
 def read_codec(link, board, progress=None):
@@ -96,19 +124,19 @@ def segments(prof, parts):
     return out
 
 
-def needs_move(prof, parts):
-    """True when a copy is not in the current placement: writing it moves the codec (a former layout or stock's)"""
-    form = form_of(prof, parts)
-    return bool(prof.get("placement")) and not (form and form.get("current"))
+def path(board, root=None, codec_id=None, uid=None):
+    """Where a copy is saved: one file per board, codec id and radio (its chip UID, when known)"""
+    name = "%s-%s" % (board.id, codec_id or board.codec.id)
+    if uid:
+        name += "-" + uid.lower()
+    return os.path.join(root or state.config_dir(), "codecs", name + ".bin")
 
 
-def path(board, root=None, codec_id=None):
-    return os.path.join(root or state.config_dir(), "codecs", "%s-%s.bin" % (board.id, codec_id or board.codec.id))
-
-
-def save(board, segments, root=None):
-    """The windows concatenated in profile order; their addresses and lengths come from the profile."""
-    p = path(board, root)
+def save(board, segments, root=None, uid=None):
+    """The windows concatenated in profile order; their addresses and lengths come from the profile. uid: the chip UID
+    of the radio it was read from (debuglink.probe), kept in the file name, so a copy is only ever matched to its own
+    radio (find)."""
+    p = path(board, root, uid=uid)
     os.makedirs(os.path.dirname(p), exist_ok=True)
     with open(p + ".tmp", "wb") as f:
         f.write(b"".join(d for _, d in segments))
@@ -116,29 +144,82 @@ def save(board, segments, root=None):
     return p
 
 
-def load(board, root=None):
-    """(profile, segments) from the saved copy, checked against the profile, or None. A copy saved under an id an
-    earlier release reported (board.codec_former) is found too: the codec is the same, only where it was read."""
-    for cid in [board.codec.id] + list(getattr(board, "codec_former", ())):
-        try:
-            with open(path(board, root, cid), "rb") as f:
-                blob = f.read()
-        except OSError:
-            continue
-        for prof in profiles_for(board):
-            for form, wins in _forms(prof):
-                parts, off = [], 0
-                for a, n, _ in wins:
-                    parts.append((a, blob[off:off + n]))
-                    off += n
-                if off == len(blob) and _check(prof, form, parts):
-                    return prof, parts
+class Copy:
+    """A checked copy on this computer: path, uid (None for a copy saved without one, by an earlier rfoundry), profile
+    and segments [(addr, bytes)]."""
+
+    def __init__(self, path, uid, prof, parts):
+        self.path, self.uid, self.prof, self.parts = path, uid, prof, parts
+
+
+def _check_blob(board, blob):
+    for prof in profiles_for(board):
+        for form, wins in _forms(prof):
+            parts, off = [], 0
+            for a, n, _ in wins:
+                parts.append((a, blob[off:off + n]))
+                off += n
+            if off == len(blob) and _check(prof, form, parts):
+                return prof, parts
     return None
 
 
-def from_radio(board, port=None, log=None, progress=None):
+def copies(board, root=None):
+    """Every copy of this board's codec saved on this computer that checks against a profile, newest first. A copy
+    saved under an id an earlier release reported (board.codec_former) is found too: the codec is the same, only where
+    it was read."""
+    d = os.path.join(root or state.config_dir(), "codecs")
+    try:
+        names = os.listdir(d)
+    except OSError:
+        return []
+    found = []
+    for cid in [board.codec.id] + list(getattr(board, "codec_former", ())):
+        stem = "%s-%s" % (board.id, cid)
+        for name in names:
+            if not name.endswith(".bin") or not name.startswith(stem):
+                continue
+            rest = name[len(stem):-4]
+            if rest and not re.fullmatch(r"-[0-9a-f]{8,32}", rest):
+                continue
+            p = os.path.join(d, name)
+            try:
+                with open(p, "rb") as f:
+                    blob = f.read()
+                mtime = os.path.getmtime(p)
+            except OSError:
+                continue
+            got = _check_blob(board, blob)
+            if got:
+                found.append((mtime, Copy(p, rest[1:] or None, *got)))
+    found.sort(key=lambda x: -x[0])
+    return [c for _, c in found]
+
+
+def find(board, root=None, uid=None, strict=False):
+    """The copy to use for a radio: with its chip UID known, the newest copy saved from that radio, else (not strict) the
+    newest copy saved without a UID; with no UID known, the newest copy of any. None when there is none."""
+    cs = copies(board, root)
+    if uid is None:
+        return cs[0] if cs else None
+    mine = [c for c in cs if c.uid == uid.lower()]
+    if mine:
+        return mine[0]
+    if strict:
+        return None
+    return next((c for c in cs if c.uid is None), None)
+
+
+def load(board, root=None, uid=None):
+    """(profile, segments) from the saved copy find() picks, checked against the profile, or None."""
+    c = find(board, root, uid)
+    return (c.prof, c.parts) if c else None
+
+
+def from_radio(board, port=None, log=None, progress=None, uid=None):
     """Find the radio running RadioFoundry (or use port) and read its codec; None when there's no such radio or no codec.
-    progress is read_codec's."""
+    uid: read only the radio with this chip UID (the one probed), so a second radio on the computer is never read in
+    its place. progress is read_codec's."""
     if not profiles_for(board):
         return None
     for p in [port] if port else (debuglink.find_ports() or []):
@@ -149,6 +230,8 @@ def from_radio(board, port=None, log=None, progress=None):
                 log("could not open %s: %s" % (p, e))
             continue
         try:
+            if uid is not None and (link.chip_uid() or "").lower() != uid.lower():
+                continue
             got = read_codec(link, board, progress)
         finally:
             link.close()

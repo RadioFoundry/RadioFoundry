@@ -9,12 +9,11 @@
 #include "codeplug/codeplug.h"
 #include "codeplug/zone_import.h"
 #include "codeplug/zone_edit.h"
+#include "codeplug/codeplug_kv.h"
+#include "codeplug/codeplug_tag.h"
+#include "codeplug/codeplug_records.h"
 #include "storage/storage.h"
 #include "sim/sim_flash.h"
-#if CONFIG_DMR_TRUNK
-#include "codeplug/codeplug_kv.h"
-#include "radio/radio_trunk.h"
-#endif
 
 static int failures, checks;
 
@@ -670,305 +669,170 @@ static void test_export(void)
 	CHECK(zone_import_channel(copy, len, 0, &r) == ZI_BAD_RECORD);
 }
 
-#if CONFIG_DMR_TRUNK
-// Trunked channels in shares (zone-share.md 4.2, dmr-trunking.md 12.6)
-static void put16(uint8_t *p, uint32_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); }
-static void put32(uint8_t *p, uint32_t v) { put16(p, v); put16(p + 2, v >> 16); }
+// --- Channels of a kind (zone-share.md 4.2, 5.5) ---
 
-#define OWN_ID		3100777u
-
-// System n: its code (model, NET, category), options, sharing, the radio's own ID on it, a fallback channel
-static void t3_system(uint8_t n, const char *name, uint8_t model, uint16_t net, uint8_t cat, uint16_t opts,
-		      uint8_t sharing, uint16_t fb, const char *fb_name)
+// System n: type, flags, sharing level, the identity's length, then the type's block
+static void put_system(uint8_t n, uint8_t type, uint8_t flags, uint8_t level, const char *name, const uint8_t *block,
+		       uint8_t id_len, uint8_t len)
 {
-	uint8_t v[64];
+	uint8_t v[CODEPLUG_SYS_HDR + 32];
 
 	memset(v, 0, sizeof(v));
-	strncpy((char *)v, name, 16);
-	v[16] = model;
-	put16(&v[17], net);
-	v[19] = cat;
-	v[20] = 2;
-	put16(&v[21], opts);
-	put32(&v[23], OWN_ID);
-	v[27] = sharing;
-	v[28] = 40;
-	put16(&v[29], fb);
-	put32(&v[31], 450000000);
-	put16(&v[35], 1);
-	v[37] = 2;
-	put32(&v[39], 5000000);
-	v[45] = 1;
-	put16(&v[46], 7);
-	put16(&v[62], fb != 0 ? radio_t3_name_check(fb_name) : 0);
-	CHECK(codeplug_kv_set((uint16_t)(CODEPLUG_KEY_T3_SYSTEM + n), v, sizeof(v)));
+	v[0] = type;
+	v[1] = flags;
+	v[2] = level;
+	v[3] = id_len;
+	v[4] = 0x44;		// an own ID, never shared
+	v[8] = 2;		// a fallback channel, never shared
+	strncpy((char *)&v[12], name, CODEPLUG_NAME_LEN);
+	memcpy(&v[CODEPLUG_SYS_HDR], block, len);
+	CHECK(codeplug_kv_set((uint16_t)(CODEPLUG_KEY_SYSTEM + n), v, (uint16_t)(CODEPLUG_SYS_HDR + len)));
 }
 
-static void t3_chan(uint16_t key, uint8_t n, bool ctrl, uint16_t lcn, uint32_t rx, uint32_t tx)
+// Channel number of kind on system (CODEPLUG_SYSTEM_NONE: none), its stand-in record DMR and receive only
+static void put_kind(uint16_t number, const char *name, uint32_t rx, uint8_t kind, uint8_t system, uint8_t flags)
 {
-	uint8_t r[13] = { n, ctrl ? 1 : 0 };
+	static const uint8_t params[] = { 0x7B, 0x01, 0x00 };
+	channel_t ch = make(name, rx, rx, true);
+	codeplug_tag_t t;
 
-	put16(&r[2], lcn);
-	put32(&r[4], rx);
-	put32(&r[8], tx);
-	r[12] = 0xFF;
-	CHECK(codeplug_kv_set((uint16_t)(CODEPLUG_KEY_T3_CHAN + key), r, sizeof(r)));
+	ch.rx_only = true;
+	CHECK(codeplug_set_channel(number, &ch));
+	memset(&t, 0, sizeof(t));
+	t.kind = kind;
+	t.system = system;
+	t.flags = flags;
+	CHECK(codeplug_tag_write(number, name, &t, params, sizeof(params)));
 }
 
-static void t3_key(uint8_t n)
+static const uint8_t p25_block[] = { 0xBE, 0xE0, 0x01, 0xA2, 0x00, 0x09 }, t3_block[] = { 0x05, 0x00, 0x01 };
+
+// A zone of four: a plain FM channel, one on a whole system (with entries and a secret), one on a system sent as its
+// identity, one on a system whose sharing is off
+static void modes_zone(void)
 {
-	uint8_t k[19];
-
-	for (int i = 0; i < 19; i++) {
-		k[i] = (uint8_t)(0x40 + i);
-	}
-	CHECK(codeplug_kv_set((uint16_t)(CODEPLUG_KEY_T3_KEY + n), k, sizeof(k)));
-}
-
-static uint16_t find_channel(const char *name)
-{
-	channel_t ch;
-
-	for (uint16_t i = 1; i <= CODEPLUG_CHANNELS_MAX; i++) {
-		if (codeplug_channel(i, &ch) && strcmp(ch.name, name) == 0) {
-			return i;
-		}
-	}
-	return 0;
-}
-
-// The sender: "County" shared whole (it authenticates: its key goes too), "Metro" by identity, "Private" not shared.
-// Zone "Trunk": a channel of each, and the conventional channel County falls back to
-static int sender_record(uint8_t *out, uint8_t *included)
-{
+	static const uint8_t e1[] = { 0, 1, 0, 0, 0x34, 0x12 }, e2[] = { 0, 0, 0xFF, 1, 0x10, 0x08, 0x2A }, key[] = { 9, 9 };
 	zone_t z;
-	contact_t tg = contact("Fire", 1, CONTACT_GROUP);
 
 	fresh();
-	CHECK(codeplug_set_contact(1, &tg));
-	channel_t c1 = make("County Fire", 451000000, 456000000, true);
-	channel_t c2 = make("Metro Ops", 452000000, 457000000, true);
-	channel_t c3 = make("Talkaround", 453000000, 453000000, false);
-	channel_t c4 = make("Private", 454000000, 459000000, true);
-
-	c1.contact = c2.contact = c4.contact = 1;
-	CHECK(codeplug_set_channel(1, &c1) && codeplug_set_channel(2, &c2) && codeplug_set_channel(3, &c3) &&
-	      codeplug_set_channel(4, &c4));
-	t3_system(0, "County", 1, 5, 1, 0x0840, 2, 3, "Talkaround");
-	t3_chan(0, 0, true, 1, 451000000, 456000000);
-	t3_chan(1, 0, false, 2, 451100000, 456100000);
-	t3_key(0);
-	t3_system(1, "Metro", 2, 300, 2, 0x0040, 1, 0, "");
-	t3_chan(2, 1, true, 1, 452000000, 457000000);
-	t3_system(2, "Private", 1, 9, 1, 0, 0, 0, "");
-	t3_chan(3, 2, true, 1, 454000000, 459000000);
-	CHECK(radio_t3_tag_set(1, 0, "County Fire") && radio_t3_tag_set(2, 1, "Metro Ops") &&
-	      radio_t3_tag_set(4, 2, "Private"));
+	channel_t fm = make("Plain", 146520000, 146520000, false);
+	CHECK(codeplug_set_channel(1, &fm));
+	put_system(0, 3, CODEPLUG_SYS_TX, CODEPLUG_SHARE_WHOLE, "County", p25_block, 5, sizeof(p25_block));
+	put_system(1, 1, CODEPLUG_SYS_TX, CODEPLUG_SHARE_IDENTITY, "Site net", t3_block, 3, sizeof(t3_block));
+	put_system(2, 1, 0, CODEPLUG_SHARE_OFF, "Private", t3_block, 2, sizeof(t3_block));
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_SYS_CHAN + 0, e1, sizeof(e1)));
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_SYS_CHAN + 1, e2, sizeof(e2)));
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_SYS_KEY + 0, key, sizeof(key)));
+	put_kind(2, "Trunk", 453012500, 3, 0, CODEPLUG_TAG_TX | 0x10);
+	put_kind(3, "T3 ops", 451000000, 1, 1, CODEPLUG_TAG_TX);
+	put_kind(4, "Hidden", 452000000, 1, 2, CODEPLUG_TAG_TX);
 	memset(&z, 0, sizeof(z));
-	strcpy(z.name, "Trunk");
+	strcpy(z.name, "Mixed");
 	z.count = 4;
-	for (int i = 0; i < 4; i++) {
+	for (uint16_t i = 0; i < 4; i++) {
 		z.channels[i] = (uint16_t)(i + 1);
 	}
 	CHECK(codeplug_set_zone(0, &z));
-	return zone_export_zone(0, out, ZS_RECORD_MAX, included);
 }
 
-static void test_trunked_export(void)
+static void test_modes(void)
 {
-	static uint8_t out[ZS_RECORD_MAX];
-	zsRecord_t r;
-	zsSystem_t s;
-	zsSysChan_t c;
-	zsChannel_t ch;
 	uint8_t included = 0;
-	int n = sender_record(out, &included);
-
-	CHECK(n > 0 && included == 3);	// "Private" isn't shared: left out
-	CHECK(zsParse(out, n, &r) && (r.flags & ZS_FLAG_SYSTEMS) && r.systems == 2 && r.channels == 3);
-	CHECK(zsSystemAt(&r, 0, &s) && s.level == ZS_SYS_FULL && strcmp(s.name, "County") == 0 && s.net == 5 &&
-	      s.opts == 0x0840 && s.chans == 2 && s.hasKey && s.hasPsn && s.key[0] == 0x40 && s.psn == 0x505152 &&
-	      s.holdS == 40 && s.planBaseHz == 450000000 && s.sites == 1 && s.site[0] == 7);
-	CHECK(s.fallback == 3);	// Talkaround, the record's third channel
-	CHECK(zsSysChanAt(&r, 0, 0, &c) && c.ctrl && c.rxHz == 451000000 && zsSysChanAt(&r, 0, 1, &c) && !c.ctrl);
-	CHECK(zsSystemAt(&r, 1, &s) && s.level == ZS_SYS_IDENTITY && strcmp(s.name, "Metro") == 0 && s.net == 300 &&
-	      s.category == 2 && s.chans == 0 && !s.hasKey);
-	CHECK(zsChannelAt(&r, 0, &ch) && ch.system == 1 && zsChannelAt(&r, 1, &ch) && ch.system == 2 &&
-	      zsChannelAt(&r, 2, &ch) && ch.system == 0);
-	// The radio's own ID on a system is never sent
-	uint8_t id[3] = { (uint8_t)(OWN_ID >> 16), (uint8_t)(OWN_ID >> 8), (uint8_t)OWN_ID };
-	bool found = false;
-	for (int i = 0; i + 3 <= n; i++) {
-		found = found || memcmp(&out[i], id, 3) == 0;
-	}
-	CHECK(!found);
-
-	// A zone with no trunked channel stays a record without systems, and keeps its zone ID either way
-	zone_t z;
-	CHECK(codeplug_zone(0, &z));
-	z.count = 1;
-	z.channels[0] = 3;
-	CHECK(codeplug_set_zone(0, &z));
-	uint32_t id_with = r.zoneId;
-	n = zone_export_zone(0, out, ZS_RECORD_MAX, &included);
-	CHECK(zsParse(out, n, &r) && r.flags == 0 && r.systems == 0 && r.zoneId == id_with);
-	// Only an unshared system's channel: nothing to send
-	z.channels[0] = 4;
-	CHECK(codeplug_set_zone(0, &z));
-	CHECK(zone_export_zone(0, out, ZS_RECORD_MAX, &included) == 0 && included == 0);
-}
-
-static void test_trunked_import(void)
-{
-	static uint8_t rec_buf[ZS_RECORD_MAX];
 	zone_import_result_t res;
-	radio_t3_tag_t tag;
-	uint8_t v[64];
-	uint8_t included;
-	int n = sender_record(rec_buf, &included);
+	zsRecord_t rec;
 
-	// A radio without either system: County comes in whole and usable, Metro by identity and locked out
+	modes_zone();
+	int len = zone_export_zone(0, recbuf, sizeof(recbuf), &included);
+#if CONFIG_ZONE_SHARE_MODES
+	static uint8_t sent[ZS_RECORD_MAX];
+	zsSystem_t s;
+	zsEntry_t e;
+	zsTag_t t;
+
+	CHECK(len > 0 && included == 4 && zsParse(recbuf, len, &rec) && (rec.flags & ZS_FLAG_MODES));
+	CHECK(rec.systems == 2 && rec.tags == 3);
+	CHECK(zsSystemAt(&rec, 0, &s) && s.type == 3 && s.level == ZS_LEVEL_WHOLE && s.blockLen == sizeof(p25_block) &&
+	      s.entries == 2 && s.secretLen == 0 && strcmp(s.name, "County") == 0);	// keys never sent from a radio
+	CHECK(zsEntryAt(&rec, &s, 1, &e) && e.group == 0xFF && e.flags == 1 && e.len == 3 && e.body[2] == 0x2A);
+	CHECK(zsSystemAt(&rec, 1, &s) && s.type == 1 && s.level == ZS_LEVEL_IDENTITY && s.blockLen == 3 && s.entries == 0);
+	CHECK(zsTagAt(&rec, 0, &t) && t.channel == 2 && t.kind == 3 && t.system == 1 && t.flags == (CODEPLUG_TAG_TX | 0x10) &&
+	      t.len == 3 && t.params[0] == 0x7B);
+	CHECK(zsTagAt(&rec, 1, &t) && t.channel == 3 && t.system == 2);
+	CHECK(zsTagAt(&rec, 2, &t) && t.channel == 4 && t.system == ZS_SYSTEM_WITHHELD);
+	memcpy(sent, recbuf, (size_t)len);
+
+	// A radio with none of the systems: the whole one added, the other two channels in receive only, unavailable
 	fresh();
 	with_zones();
-	CHECK(zone_import_zone(rec_buf, n, 3100001, imports, &res) == ZI_OK);
-	CHECK(res.channels == 3 && res.systems_added == 2 && res.t3_unavailable == 1);
-	int county = radio_t3_find(1, 5, 1), metro = radio_t3_find(2, 300, 2);
-	CHECK(county >= 0 && metro >= 0 && county != metro);
-	CHECK(radio_t3_usable((uint8_t)county) && !radio_t3_usable((uint8_t)metro));
-	uint16_t fire = find_channel("County Fire"), ops = find_channel("Metro Ops"), talk = find_channel("Talkaround");
-	CHECK(fire != 0 && ops != 0 && talk != 0);
-	CHECK(radio_t3_tag(fire, "County Fire", &tag) && tag.sys == county);
-	CHECK(radio_t3_tag(ops, "Metro Ops", &tag) && tag.sys == metro);
-	CHECK(!radio_t3_tag(talk, "Talkaround", &tag));
-	CHECK(codeplug_kv_get((uint16_t)(CODEPLUG_KEY_T3_SYSTEM + county), v, sizeof(v)) == 64);
-	CHECK(v[23] == 0 && v[24] == 0 && v[25] == 0 && v[26] == 0);	// own ID: the receiver's
-	CHECK(v[27] == 0);	// sharing off: the receiver chooses
-	CHECK(v[29] == (uint8_t)talk && v[30] == (uint8_t)(talk >> 8));	// its fallback, here
-	CHECK(v[62] == (uint8_t)radio_t3_name_check("Talkaround"));
-	uint8_t k[19];
-	CHECK(codeplug_kv_get((uint16_t)(CODEPLUG_KEY_T3_KEY + county), k, sizeof(k)) == 19 && k[0] == 0x40);
-	CHECK(codeplug_kv_get((uint16_t)(CODEPLUG_KEY_T3_KEY + metro), k, sizeof(k)) < 0);
-	radio_t3_setup_t *su = radio_t3_staged();
-	CHECK(radio_t3_load((uint8_t)county, su) && su->nchans == 2 && su->cfg.nctrl == 1 && su->fb_chan == talk);
-
-	// Sent again: an update, no system added twice
-	CHECK(zone_import_zone(rec_buf, n, 3100001, imports, &res) == ZI_OK && res.updated && res.systems_added == 0 &&
-	      res.t3_unavailable == 1);
-
-	// A radio with County already (its own set-up, by another name): the channel joins it, nothing of it is written
-	fresh();
-	with_zones();
-	t3_system(0, "Our county", 1, 5, 1, 0x0040, 0, 0, "");
-	t3_chan(0, 0, true, 1, 451000000, 456000000);
-	CHECK(zone_import_zone(rec_buf, n, 3100001, imports, &res) == ZI_OK && res.systems_added == 1 &&
-	      res.t3_unavailable == 1);
-	CHECK(radio_t3_find(1, 5, 1) == 0 && radio_t3_name(0, (char *)v) && strcmp((char *)v, "Our county") == 0);
-	fire = find_channel("County Fire");
-	CHECK(radio_t3_tag(fire, "County Fire", &tag) && tag.sys == 0);
-	CHECK(codeplug_kv_get(CODEPLUG_KEY_T3_KEY, k, sizeof(k)) < 0);	// its key isn't taken over
-
-	// No free system slot: the trunked channels are left out and counted, the rest come in
-	fresh();
-	with_zones();
-	for (uint8_t i = 0; i < 8; i++) {
-		t3_system(i, "Other", 0, (uint16_t)(100 + i), 1, 0, 0, 0, "");
+	CHECK(zone_import_zone(sent, len, 77, imports, &res) == ZI_OK && res.channels == 4 && res.systems_added == 1 &&
+	      res.unavailable == 2);
+	codeplug_system_t sys;
+	uint8_t block[64];
+	CHECK(codeplug_system(0, &sys, block, sizeof(block)) == (int)sizeof(p25_block) && sys.type == 3 &&
+	      sys.flags == CODEPLUG_SYS_TX && sys.own_id == 0 && sys.fb_chan == 0 && strcmp(sys.name, "County") == 0 &&
+	      block[5] == 0x09);
+	CHECK(codeplug_system(1, &sys, block, sizeof(block)) < 0);
+	CHECK(codeplug_system_secret(0, block, sizeof(block)) < 0);
+	int at = -1, entries = 0;
+	codeplug_sys_entry_t ent;
+	for (uint8_t cls = 0; cls <= 1; cls++) {
+		for (at = -1; codeplug_sys_entry_next(&at, 0, cls, &ent, block, sizeof(block)) >= 0;) {
+			entries++;
+		}
 	}
-	int before = used_channels();
-	CHECK(zone_import_zone(rec_buf, n, 3100001, imports, &res) == ZI_OK);
-	CHECK(res.channels == 1 && res.t3_left_out == 2 && res.systems_added == 0 && used_channels() == before + 1);
-	CHECK(find_channel("Talkaround") != 0 && find_channel("County Fire") == 0 && radio_t3_find(1, 5, 1) < 0);
-	CHECK(used_contacts() == 0);	// the left-out channels' talkgroup isn't added
+	CHECK(entries == 2);
+	zone_t z;
+	channel_t ch;
+	CHECK(codeplug_zone(res.zone, &z) && z.count == 4);
+	CHECK(codeplug_channel(z.channels[0], &ch) && ch.kind == 0 && ch.rx_only);
+	CHECK(codeplug_channel(z.channels[1], &ch) && ch.kind == 3 && ch.system == 0 && !ch.rx_only);
+	uint8_t params[16];
+	CHECK(codeplug_tag_params(z.channels[1], &ch, params, 8) == 3 && params[0] == 0x7B);
+	CHECK(codeplug_channel(z.channels[2], &ch) && ch.kind == 1 && ch.system == CODEPLUG_SYSTEM_NONE && ch.rx_only);
+	CHECK(codeplug_channel(z.channels[3], &ch) && ch.kind == 1 && ch.system == CODEPLUG_SYSTEM_NONE && ch.rx_only);
 
-	// Only trunked channels, and no room for their system: nothing to import
-	uint8_t one[ZS_RECORD_MAX];
-	fresh();
-	t3_system(0, "County", 1, 5, 1, 0x0040, 2, 0, "");
-	t3_chan(0, 0, true, 1, 451000000, 456000000);
-	channel_t solo = make("County Fire", 451000000, 456000000, true);
-	CHECK(codeplug_set_channel(1, &solo) && radio_t3_tag_set(1, 0, "County Fire"));
-	int m = zone_export_channel(1, one, sizeof(one));
-	CHECK(m > 0);
+	// A radio that has the identity-only system (its own, listen only, kept as it is) and the whole one: nothing added
 	fresh();
 	with_zones();
-	for (uint8_t i = 0; i < 8; i++) {
-		t3_system(i, "Other", 0, (uint16_t)(100 + i), 1, 0, 0, 0, "");
-	}
-	before = used_channels();
-	CHECK(zone_import_channel(one, m, 0, &res) == ZI_NO_SYSTEMS && used_channels() == before);
+	put_system(4, 1, 0, CODEPLUG_SHARE_OFF, "Mine", t3_block, 3, sizeof(t3_block));
+	put_system(5, 3, 0, CODEPLUG_SHARE_OFF, "Mine too", p25_block, 5, 5);
+	CHECK(zone_import_zone(sent, len, 77, imports, &res) == ZI_OK && res.systems_added == 0 && res.unavailable == 1);
+	CHECK(codeplug_zone(res.zone, &z) && z.count == 4);
+	CHECK(codeplug_channel(z.channels[1], &ch) && ch.kind == 3 && ch.system == 5 && !ch.rx_only);
+	CHECK(codeplug_channel(z.channels[2], &ch) && ch.kind == 1 && ch.system == 4 && !ch.rx_only);
+	CHECK(codeplug_system(4, &sys, block, sizeof(block)) == 3 && sys.flags == 0 && strcmp(sys.name, "Mine") == 0);
 
-	// A failure after the systems were added takes them out again: no channel numbers left
+	// A whole system none of the imported channels uses (its one channel out of this radio's bands) isn't added
 	fresh();
 	with_zones();
-	channel_t filler = make("Filler", 146000000, 146000000, false);
-	for (uint16_t i = 2; i <= CODEPLUG_CHANNELS_MAX; i++) {
-		codeplug_set_channel(i, &filler);
+	uint32_t hi = bands[1].hi_hz;
+	bands[1].hi_hz = 453000000;
+	CHECK(zone_import_zone(sent, len, 77, imports, &res) == ZI_OK && res.channels == 3 && res.out_of_band == 1 &&
+	      res.systems_added == 0 && res.unavailable == 2);
+	bands[1].hi_hz = hi;
+	CHECK(codeplug_system(0, &sys, block, sizeof(block)) < 0);
+	at = -1;
+	CHECK(codeplug_sys_entry_next(&at, 0, 0, &ent, block, sizeof(block)) < 0);
+
+	// The undo takes the added system with the channels: a codeplug with no room for the last channel
+	fresh();
+	with_zones();
+	for (uint16_t n = 2; n <= CODEPLUG_CHANNELS_MAX - 3; n++) {
+		channel_t fill = make("Fill", 146000000, 146000000, false);
+		CHECK(codeplug_set_channel(n, &fill));
 	}
-	CHECK(zone_import_zone(rec_buf, n, 3100001, imports, &res) == ZI_NO_CHANNELS);
-	CHECK(radio_t3_find(1, 5, 1) < 0 && radio_t3_find(2, 300, 2) < 0);
-	CHECK(codeplug_kv_get(CODEPLUG_KEY_T3_KEY, k, sizeof(k)) < 0);
-	uint8_t probe[13];
-	codeplug_kv_cursor_t cur;
-	uint16_t key;
-	codeplug_kv_begin(&cur, CODEPLUG_KEY_T3_CHAN, CODEPLUG_KEY_T3_CHAN + 0xFFu);
-	CHECK(codeplug_kv_next(&cur, &key, probe, sizeof(probe)) < 0);	// none of its channels left behind
-}
-
-// The offer's preview (zone_import_t3_locked): which trunked channels of a share would come in unavailable on this
-// radio, before anything is written. Channels in the share: County Fire (County, whole, with its key), Metro Ops
-// (Metro, identity only), Talkaround (conventional)
-static void test_trunked_locked(void)
-{
-	static uint8_t rec_buf[ZS_RECORD_MAX];
-	zsRecord_t r;
-	uint8_t included;
-	int n = sender_record(rec_buf, &included);
-
-	// A radio with neither system: County comes in usable, Metro by identity does not
-	fresh();
-	CHECK(zsParse(rec_buf, n, &r) && r.channels == 3);
-	CHECK(!zone_import_t3_locked(&r, 0) && zone_import_t3_locked(&r, 1) && !zone_import_t3_locked(&r, 2));
-	CHECK(!zone_import_t3_locked(&r, 3));	// past the last channel
-
-	// The radio's own set-up decides: County that authenticates with no key here is locked, whatever the share
-	// carries; Metro set up here with a control channel is not
-	fresh();
-	t3_system(0, "Our county", 1, 5, 1, 0x0840, 0, 0, "");
-	t3_chan(0, 0, true, 1, 451000000, 456000000);
-	t3_system(1, "Our metro", 2, 300, 2, 0x0040, 0, 0, "");
-	t3_chan(1, 1, true, 1, 452000000, 457000000);
-	CHECK(zone_import_t3_locked(&r, 0) && !zone_import_t3_locked(&r, 1));
-	t3_key(0);
-	CHECK(!zone_import_t3_locked(&r, 0));
-
-	// The whole system, but it authenticates and its key didn't come: locked
-	n = sender_record(rec_buf, &included);
-	CHECK(codeplug_kv_remove(CODEPLUG_KEY_T3_KEY));
-	n = zone_export_zone(0, rec_buf, ZS_RECORD_MAX, &included);
-	fresh();
-	CHECK(n > 0 && zsParse(rec_buf, n, &r) && zone_import_t3_locked(&r, 0));
-
-	// The whole system with no control channel among its channels: nothing to find it on
-	n = sender_record(rec_buf, &included);
-	t3_chan(0, 0, false, 1, 451000000, 456000000);	// its one control channel, now a traffic channel
-	n = zone_export_zone(0, rec_buf, ZS_RECORD_MAX, &included);
-	fresh();
-	CHECK(n > 0 && zsParse(rec_buf, n, &r) && zone_import_t3_locked(&r, 0));
-}
-
-// A deleted channel takes its tag with it: a channel written at its number later isn't trunked
-static void test_trunked_delete(void)
-{
-	radio_t3_tag_t tag;
-	channel_t ch = make("County Fire", 451000000, 456000000, true);
-
-	fresh();
-	CHECK(codeplug_set_channel(5, &ch));
-	CHECK(radio_t3_tag_set(5, 0, "County Fire") && radio_t3_tag(5, "County Fire", &tag));
-	CHECK(codeplug_delete_channel(5));
-	CHECK(codeplug_set_channel(5, &ch));
-	CHECK(!radio_t3_tag(5, "County Fire", &tag));
-}
+	CHECK(zone_import_zone(sent, len, 77, imports, &res) == ZI_NO_CHANNELS);
+	CHECK(codeplug_system(0, &sys, block, sizeof(block)) < 0);
+	at = -1;
+	CHECK(codeplug_sys_entry_next(&at, 0, 1, &ent, block, sizeof(block)) < 0);
+	at = -1;
+	CHECK(codeplug_sys_entry_next(&at, 0, 0, &ent, block, sizeof(block)) < 0);
+#else
+	// Without the modes part only the plain channel goes: a stand-in record isn't a channel to the receiver
+	CHECK(len > 0 && included == 1 && zsParse(recbuf, len, &rec) && rec.channels == 1 && !(rec.flags & 0x02));
+	(void)res;
 #endif
+}
 
 int main(void)
 {
@@ -982,12 +846,7 @@ int main(void)
 	test_virtual_zone();
 	test_lands_ahead();
 	test_export();
-#if CONFIG_DMR_TRUNK
-	test_trunked_export();
-	test_trunked_import();
-	test_trunked_locked();
-	test_trunked_delete();
-#endif
+	test_modes();
 	printf("zoneImportTest: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

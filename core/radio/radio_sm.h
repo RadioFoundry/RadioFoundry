@@ -249,6 +249,7 @@ typedef struct {
 	uint8_t base_squelch;		// squelch without the temporary change
 	bool temp_power;
 	bool temp_squelch;
+	bool squelch_save;		// a squelch set in the VFO: the radio's default, written by persist()
 	uint8_t base_bw;		// the channel's own bandwidth and tones, for undoing temporary changes
 	subtone_t base_rx_tone;
 	subtone_t base_tx_tone;
@@ -293,6 +294,7 @@ typedef struct {
 	uint32_t led_now;
 	uint32_t deny_led_ms;		// a TX deny: red, green, red, green, red, green from here
 	bool deny_led;
+	bool deny_rx;			// FM: PTT refused as busy over a reception, which plays on while PTT is held
 	uint32_t wake_led_ms;		// a repeater wake-up burst went out here: red for RADIO_LED_WAKE_MS
 	bool wake_led;
 	uint8_t wake_seen;		// dmr_call_view_t.wake_sent last seen
@@ -398,6 +400,7 @@ typedef struct {
 	bool hear_all_latch;
 	uint16_t latch_ch;
 	bool latch_vfo;
+	bool scan_hear_all;	// ... and carried by a scan (not dual watch) started with it on: on at every stop
 	// The focused row's target (RREQ_DMR_FOCUS) and the one-shot target PTT took from it: the talk target until
 	// one_shot_until (0 = while the call goes on), on channel one_shot_ch
 	uint32_t focus_id;
