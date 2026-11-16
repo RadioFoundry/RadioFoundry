@@ -203,6 +203,26 @@ static void test_write_follows(void)
 	CHECK(tag_bytes(12, v, sizeof v) < 0);
 	c = get(12);
 	CHECK(c.kind == CODEPLUG_KIND_NONE && c.mode == RADIO_MODE_DMR && c.rx_only);
+
+	// ... until the copy takes the tag: the new name's check, its system and transmit flag, the block as it was
+	const uint8_t blk[3] = { 1, 2, 3 };
+	tagged(10, "T Ops", CODEPLUG_TAG_TX, blk, sizeof blk);
+	c = get(10);
+	strcpy(c.name, "T Ops 2");
+	c.system = 7;
+	c.rx_only = true;
+	CHECK(codeplug_set_channel(12, &c) && codeplug_tag_copy(10, 12, &c));
+	CHECK(tag_bytes(12, v, sizeof v) == 8 && v[1] == 7 && v[2] == (codeplug_name_check("T Ops 2") & 0xFF));
+	CHECK((v[4] & CODEPLUG_TAG_TX) == 0 && v[5] == 1 && v[7] == 3);
+	c = get(12);
+	CHECK(c.kind == TEST_KIND && c.system == 7 && c.rx_only && strcmp(c.name, "T Ops 2") == 0);
+	CHECK(get(10).kind == TEST_KIND && !get(10).rx_only);	// the source is untouched
+	// No copy from a plain channel, a stale tag, to itself, or for a plain channel
+	CHECK(!codeplug_tag_copy(10, 10, &c) && !codeplug_tag_copy(13, 12, &c));
+	channel_t plain = make("T Ops", RADIO_MODE_DMR, true);
+	CHECK(!codeplug_tag_copy(10, 12, &plain));
+	codeplug_tag_t st = { .kind = TEST_KIND, .flags = CODEPLUG_TAG_TX };
+	CHECK(codeplug_tag_write(10, "Gone", &st, NULL, 0) && !codeplug_tag_copy(10, 12, &c));
 }
 
 static void test_stale_and_delete(void)

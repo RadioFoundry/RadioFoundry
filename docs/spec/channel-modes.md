@@ -102,7 +102,9 @@ at a number is written, the tag there:
 | Otherwise | Kept as found (stale) |
 
 A channel of a kind is always written in its safe stand-in shape unless its tag has flag bit 1, also where no tag
-follows it (a copy to another number is a receive-only DMR channel). Deleting a channel removes its tag.
+follows it (a copy to another number is a receive-only DMR channel). A copy made on the radio (the channel editor's
+Save as new, Copy here) then takes the source's tag: the copy's name check, system and flag bit 0, the fallback and
+the parameter block byte for byte (`codeplug_tag_copy`). Deleting a channel removes its tag.
 
 ## 3. Key families
 

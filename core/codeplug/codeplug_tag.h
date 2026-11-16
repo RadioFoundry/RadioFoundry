@@ -56,6 +56,10 @@ int codeplug_tag_params(uint16_t number, const channel_t *ch, uint8_t *buf, uint
 // Write channel number's tag: t's kind, system, flags and fallback, the check of name, then len bytes of params. The
 // record is the caller's to write first (the base record rule, 2.3). False when the area can't be written
 bool codeplug_tag_write(uint16_t number, const char *name, const codeplug_tag_t *t, const uint8_t *params, uint16_t len);
+// A copy of a channel of a kind written at to (codeplug_set_channel: no tag follows it there, 2.4) takes from's tag:
+// the check of ch's name, ch's system and transmit allowed, the rest byte for byte. False when from has no tag of
+// ch's kind live under its name, its value is longer than this firmware writes, or the area can't be written
+bool codeplug_tag_copy(uint16_t from, uint16_t to, const channel_t *ch);
 // Remove channel number's tag; true when none is left
 bool codeplug_tag_remove(uint16_t number);
 

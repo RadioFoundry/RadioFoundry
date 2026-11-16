@@ -96,6 +96,25 @@ bool codeplug_tag_write(uint16_t number, const char *name, const codeplug_tag_t 
 	return codeplug_kv_set(tag_key(number), v, (uint16_t)(at + len));
 }
 
+bool codeplug_tag_copy(uint16_t from, uint16_t to, const channel_t *ch)
+{
+	uint8_t v[CODEPLUG_TAG_HEAD_MAX + TAG_PARAMS_MAX];
+	char name[CODEPLUG_NAME_LEN + 1];
+	codeplug_tag_t t;
+	if (ch->kind == CODEPLUG_KIND_NONE || !number_ok(from) || !number_ok(to) || from == to ||
+	    !codeplug_channel_name(from, name)) {
+		return false;
+	}
+	int len = codeplug_kv_get(tag_key(from), v, sizeof v);
+	if (len > (int)sizeof v || !parse(v, len, &t) || t.kind != ch->kind || t.check != codeplug_name_check(name)) {
+		return false;
+	}
+	v[1] = ch->system;
+	wr16(&v[2], codeplug_name_check(ch->name));
+	v[4] = (uint8_t)((t.flags & ~CODEPLUG_TAG_TX) | (ch->rx_only ? 0u : CODEPLUG_TAG_TX));
+	return codeplug_kv_set(tag_key(to), v, (uint16_t)len);
+}
+
 bool codeplug_tag_remove(uint16_t number)
 {
 	return !number_ok(number) || codeplug_kv_remove(tag_key(number));
