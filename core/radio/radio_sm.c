@@ -4768,7 +4768,7 @@ static void bench_leave(radio_sm_t *sm, uint32_t now_ms)
 	tune(sm, now_ms);	// the channel again: DMR or P25 take the modem back
 }
 
-// The core's transmit checks, the transmitter on the channel's TX frequency at its power, then the provider's
+// The core's transmit checks, the transmitter on the channel's TX frequency at the lowest power, then the provider's
 // tx_begin (the bench queued its first chunk). Off again after max_ms at most, or at the channel's time-out
 static void bench_key(radio_sm_t *sm, uint16_t max_ms, uint32_t now_ms)
 {
@@ -4776,7 +4776,7 @@ static void bench_key(radio_sm_t *sm, uint16_t max_ms, uint32_t now_ms)
 	if (!sm->air_bench || sm->bench_keyed || board.air == NULL || max_ms == 0 || tx_check(sm) != TXDENY_NONE) {
 		return;
 	}
-	if (!key_tx(sm->view.ch.tx_hz, RADIO_BW_12K5, sm->view.power, &none)) {
+	if (!key_tx(sm->view.ch.tx_hz, RADIO_BW_12K5, 0, &none)) {	// level 0: the board's lowest (bench signals)
 		return;
 	}
 	if (!board.air->tx_begin()) {

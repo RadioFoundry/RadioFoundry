@@ -6290,7 +6290,7 @@ static void test_p25_vfo(void)
 	req(RREQ_VFO, 0);
 }
 
-// The air interface bench (CONFIG_AIR_RAW): it holds the modem and keys through the core's checks
+// The air interface bench (CONFIG_AIR_RAW): it holds the modem and keys at the lowest power (debuglink.md 3.26)
 static void test_air_bench(void)
 {
 	setup_codeplug_p25();
@@ -6315,6 +6315,7 @@ static void test_air_bench(void)
 	radio_sm_request(&sm, &r, now);
 	CHECK(sm.bench_keyed && hw.keyed && fair[0].on && sm.view.state == RS_TX && sm.view.tx_auto);
 	CHECK(hw.tx_hz == 438500000 && hw.tx_bw == RADIO_BW_12K5 && hw.tx_tone.type == TONE_NONE);
+	CHECK(hw.tx_power == 0);		// the lowest power, whatever the channel's
 	run(300);				// the cap (200 ms) unkeys it
 	CHECK(!sm.bench_keyed && !hw.keyed && !fair[0].on && fair[0].aborts == 1 && sm.view.state == RS_IDLE);
 	// Refused: inhibit

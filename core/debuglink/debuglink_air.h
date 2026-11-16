@@ -22,7 +22,7 @@ typedef struct {
 	// Back to normal operation (after close)
 	void (*leave)(void);
 	// on: the core's transmit checks (inhibit, test TX limit, band, battery), the transmitter keyed on the channel's TX
-	// frequency at the channel's power, then board.air->tx_begin; tx_off after max_ms at most, and at the core's
+	// frequency at the lowest power level, then board.air->tx_begin; tx_off after max_ms at most, and at the core's
 	// time-out. False when refused. off: tx_off (at AIR_EV_TX_DONE, or to end it early)
 	bool (*tx)(bool on, uint16_t max_ms);
 } debuglink_air_core_t;
