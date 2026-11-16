@@ -474,7 +474,9 @@ static size_t cpkv(uint8_t op, uint16_t key, uint16_t off, const void *data, uin
 	req[0] = op;
 	put16(&req[1], key);
 	put16(&req[3], off);
-	memcpy(&req[5], data, n);
+	if (n != 0) {
+		memcpy(&req[5], data, n);	// data may be NULL with n 0 (a read)
+	}
 	return debuglink_cmd_cpkv(req, (uint16_t)(5u + n), out, 256);
 }
 
