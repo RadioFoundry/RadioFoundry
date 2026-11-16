@@ -37,7 +37,7 @@ static void fake_decode(const uint8_t bits[VOCODER_BITS], int16_t pcm[VOCODER_FR
 		pcm[i] = bits[i];
 	pcm[159] = 1000;
 }
-static const hal_vocoder_t vocoder = { fake_present, fake_reset, fake_encode, fake_decode, NULL, NULL, NULL, NULL };
+static const hal_vocoder_t vocoder = { fake_present, fake_reset, fake_encode, fake_decode, NULL, NULL, NULL, NULL, NULL };
 
 // A vocoder with encode options, built as the AMBE+2 hosts are: set_options keeps the flags word, and each frame is
 // two codec calls (two halves) that both pass it. Every call's flags are recorded

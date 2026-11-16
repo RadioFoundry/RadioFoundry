@@ -40,6 +40,11 @@ typedef struct {
 	// Optional: the codec's own word for the options in force, for the debug link only (its meaning is per codec,
 	// docs/spec/codec-*.md)
 	uint32_t (*encode_flags)(void);
+	// Optional: the codec's working memory, lent while no DMR voice runs (another voice path, P25's decoder, uses it
+	// then). Returns it (8-byte aligned) and its size in *len; the codec's next call rebuilds its own state, so the
+	// borrower must be done with it before DMR voice starts again. A platform that lends defines
+	// HAL_VOCODER_LEND_BYTES (the size it always lends) for every core file, so the borrower links no copy of its own
+	void *(*lend)(size_t *len);
 } hal_vocoder_t;
 
 // The codec in flash as VERSION reports it (codec=, docs/spec/debuglink.md 3.1): the profile the board recognized,

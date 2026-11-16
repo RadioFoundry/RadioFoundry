@@ -271,9 +271,21 @@ static uint32_t encode_flags(void)
 	return enc_flags;
 }
 
+// The encoder's state block, lent while no DMR voice runs (hal_vocoder_t.lend): the next call starts with reset_run,
+// which rebuilds it. The radio core asks only with the DMR stack and its audio stopped, so no codec call is running
+#if HAL_VOCODER_LEND_BYTES != ENC_STATE_BYTES
+#error "platform.mk's HAL_VOCODER_LEND_BYTES must be ENC_STATE_BYTES"
+#endif
+static void *lend(size_t *len)
+{
+	ready = false;
+	*len = sizeof enc_state;
+	return enc_state;
+}
+
 const hal_vocoder_t hrc_vocoder = {
 	.present = present, .reset = reset, .encode = encode, .decode = decode, .profile = profile,
-	.options = options, .set_options = set_options, .encode_flags = encode_flags,
+	.options = options, .set_options = set_options, .encode_flags = encode_flags, .lend = lend,
 };
 
 uint16_t hrc_vocoder_tag(void)
