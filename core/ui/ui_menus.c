@@ -13,6 +13,7 @@
 #include "font.h"
 #include "fmt.h"
 #include "codeplug/codeplug.h"
+#include "codeplug/codeplug_modes.h"
 #include "dmr/dmrDataService.h"
 #include "config.h"
 #include "hal_time.h"
@@ -1275,6 +1276,9 @@ static void sb_channel_row(sbuf_t *b, const channel_t *ch)
 	uint8_t prefix = 0;	// "TG" / "ID": left out in the middle form
 	sbuf_t wb;
 	sb_init(&wb, what, sizeof what);
+	if (ch->kind != CODEPLUG_KIND_NONE) {
+		sb_str(&wb, codeplug_kind_name(ch->kind));	// another kind (docs/spec/channel-modes.md): its short name
+	} else
 #if CONFIG_DMR
 	if (ch->mode == RADIO_MODE_DMR) {
 		static contact_t c;
@@ -2692,7 +2696,9 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 		break;
 	case CE_MODE:
 		// What the radio does with it: a listen band is AM or FM whatever the channel says
-		if (radio_am_tx_refused(ch->rx_hz))
+		if (ch->kind != CODEPLUG_KIND_NONE)
+			sb_str(&b, codeplug_kind_name(ch->kind));
+		else if (radio_am_tx_refused(ch->rx_hz))
 			sb_str(&b, "AM");
 		else
 			sb_str(&b, ch->mode == RADIO_MODE_DMR && !radio_listen_band(ch->rx_hz) ? "DMR" : "FM");

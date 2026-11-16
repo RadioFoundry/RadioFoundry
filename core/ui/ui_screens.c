@@ -10,6 +10,7 @@
 #include "ui_svc.h"
 #include "cjk_font.h"	// CJK_FONT_H: the line height a CJK language needs (CONFIG_LANG_ZH)
 #include "config.h"
+#include "codeplug/codeplug_modes.h"	// channel kinds: the mode word
 
 ui_layout_t ui_layout;
 static const font_t *font_largest;	// the large text setting's font (large_font)
@@ -251,9 +252,13 @@ static uint8_t rssi_bars(int16_t dbm)
 	return 0;
 }
 
-// The mode word: AM where an FM channel or the VFO is received in AM (the air band)
+// The mode word: AM where an FM channel or the VFO is received in AM (the air band); a channel of another kind
+// (docs/spec/channel-modes.md) its kind's short name
 static const char *mode_word(const radio_view_t *v)
 {
+	if (v->ch.kind != CODEPLUG_KIND_NONE) {
+		return codeplug_kind_name(v->ch.kind);
+	}
 	return v->ch.mode == RADIO_MODE_DMR ? "DMR" : v->am ? "AM" : "FM";
 }
 
@@ -1392,7 +1397,11 @@ static void draw_talk_dmr(const radio_view_t *v, bool label_first)
 		: gfx_text(f, 0, L->talk_y, GLYPH_ARROW, ui_col.dim);
 	size_t room = x < w ? (size_t)((w - x) / f->w) : 0;
 	sb_init(&b, buf, sizeof buf);
-	if (v->ch.rx_only) {
+	if (v->ch.kind != CODEPLUG_KIND_NONE && !codeplug_kind_built(v->ch.kind)) {
+		// a mode this build doesn't run: its record's DMR fields are only a safe stand-in
+		sb_str(&b, TR(WHY_MODE_NOT_IN_BUILD, "Mode: not in this build"));
+		c = ui_col.warn;
+	} else if (v->ch.rx_only) {
 		sb_str(&b, TR(WORD_RX_ONLY, "RX only"));
 		c = ui_col.warn;
 	} else if (d->sfr_rpt) {
