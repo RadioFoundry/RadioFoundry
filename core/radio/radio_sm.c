@@ -4427,8 +4427,10 @@ static void p25t_burst(radio_sm_t *sm, uint32_t hz)
 	radio_p25_tx_go();			// (false: AIR_TX_DONE already)
 }
 
-// Every tick on a trunked channel: a request's grant keys the transmitter, its failure denies; bursts between calls
-static void p25t_tick(radio_sm_t *sm, uint32_t now_ms)
+// Every tick on a trunked channel: a request's grant keys the transmitter, its failure denies; bursts between calls.
+// noinline: inlined, its locals (the keying's) land in the tick's frame and, with link time optimization, in the radio
+// task's own, which is under the task's deepest path
+static void __attribute__((noinline)) p25t_tick(radio_sm_t *sm, uint32_t now_ms)
 {
 	if (sm->p25_req && !sm->air_tx) {
 		uint32_t hz = 0;
