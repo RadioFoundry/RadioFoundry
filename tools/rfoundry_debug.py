@@ -507,6 +507,7 @@ class DebugLink:
         flags, blocks = r[0], struct.unpack_from("<I", r, 1)[0]
         lp, lr, lm, rp, rr, rm = struct.unpack_from("<6H", r, 5)
         return {"ours": bool(flags & 1), "running": bool(flags & 2), "no_pcm": bool(flags & 4), "blocks": blocks,
+                "voice": "dmr" if flags & 8 else "p25" if flags & 16 else None,
                 "left": {"peak": lp, "rms": lr, "peak_max": lm}, "right": {"peak": rp, "rms": rr, "peak_max": rm}}
 
     def probe_reg(self, page, reg, value=None):
@@ -2085,8 +2086,8 @@ def cmd_aprobe(link, a):
     num = lambda v: int(v, 0)
     if a.op == "status":
         st = link.probe_status()
-        print(f"stream {'running' if st['running'] else 'stopped'}{' (probe)' if st['ours'] else ''}, "
-              f"blocks {st['blocks']}")
+        owner = " (probe)" if st["ours"] else f" ({st['voice'].upper()} voice)" if st.get("voice") else ""
+        print(f"stream {'running' if st['running'] else 'stopped'}{owner}, blocks {st['blocks']}")
         for ch in ("left", "right"):
             c = st[ch]
             print(f"{ch:<6} peak {c['peak']:5d}  rms {c['rms']:5d}  peak since start {c['peak_max']:5d}")
