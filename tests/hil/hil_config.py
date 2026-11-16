@@ -25,6 +25,7 @@ RIG = {
     "dmr-cc": (int, "the DMR test channel's color code", False),
     "dmr-tg": (int, "the talkgroup the bench transmitter calls (in the radio channel's RX group list)", False),
     "fm-mhz": (float, "MHz: the FM test frequency (the radio's VFO)", True),
+    "p25-mhz": (float, "MHz: the P25 test frequency (the radio's VFO; test_p25_tx_off_air)", True),
     "noaa-mhz": (float, "MHz: a NOAA weather radio station heard at the rig (test_fm; receive only)", False),
     "vhf-fm-mhz": (float, "MHz: a VHF FM frequency the bench transmits on (test_fm: receive in the VHF band)", True),
     "aprs-test-mhz": (float, "MHz: test_aprs's AFSK frequency, an amateur simplex frequency that is not an APRS "
@@ -44,7 +45,7 @@ RIG = {
                     "--allow-rf needs it", False),
 }
 # the transmit frequencies among the other options (None when not given)
-TX_OPTIONS = ("dmr-freq", "fm-mhz", "aprs-test-mhz", "sfr-freq", "roam-rx", "roam-tx", "split-out-mhz",
+TX_OPTIONS = ("dmr-freq", "fm-mhz", "p25-mhz", "aprs-test-mhz", "sfr-freq", "roam-rx", "roam-tx", "split-out-mhz",
               "split-tx-mhz", "outbound-mhz", "am-mhz", "vhf-fm-mhz", "repeater-in-mhz")
 
 
