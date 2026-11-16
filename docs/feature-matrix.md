@@ -265,7 +265,6 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `ZONE_EDIT` | ● | ● | ● | ● | ● | ● | ● |
 | `CONTACT_EDIT` | ● | ● | ● | ● | ● | ● | ● |
 | `VOLUME_BAR` | ● | ● | ● | ● | ● | ● | ● |
-| `AIR` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `P25` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `P25_TRUNK` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | Voltage reading (board, no switch) | Battery | Battery | Battery | None | Battery | Battery | Supply |
@@ -293,8 +292,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | DMR emergency (alarm, emergency call, hot mic) | `DMR_EMERGENCY` | 3,296 | 3,188 |  |
 | Repeater roaming | `DMR_ROAMING` | 11,952 | 12,380 |  |
 | CSBK signaling: call alert, radio check | `DMR_SIGNALING` | 592 | 752 |  |
-| Air interfaces beyond FM and DMR (the parent of `P25`) | `AIR` | — | — | Off by default; no radio core for one yet ([channel-modes.md](spec/channel-modes.md)) |
-| P25 channels in the codeplug: the conventional codec | `P25` | 56 | — | Needs `AIR`. The codec only: a P25 channel is shown as a mode not in this build ([p25-codeplug.md](spec/p25-codeplug.md)). With `P25_TRUNK`, DM-1701; nothing calls the codec yet, so the build keeps little of it |
+| P25 channels in the codeplug: the conventional codec | `P25` | 56 | — | Off by default. The codec only: a P25 channel is shown as a mode not in this build ([p25-codeplug.md](spec/p25-codeplug.md)). With `P25_TRUNK`, DM-1701; nothing calls the codec yet, so the build keeps little of it |
 | P25 trunked systems in the codeplug: the codec | `P25_TRUNK` | — | — | Needs `P25`. Off by default; no firmware follows a P25 system yet |
 | VFO (hand-tuned frequency) | `VFO` | 656 | 516 | Includes the DMR VFO; `VFO` and `VFO_DMR` re-measured 2026-10-17 (DM-1701 plain build, MD-380 with LTO). Copy to VFO ([dmr-voice.md](spec/dmr-voice.md) 2.2) is on top of that figure, behind the same switch: about 630 B on the DM-1701 and 730 B on the MD-380 (default builds, LTO as each has it), 750 B on the C-SKY radios |
 | FM VFO | `VFO_FM` | 504 | 452 |  |

@@ -113,7 +113,7 @@ zoneShareTest: zoneShareTest.c fuzz.h $(CORE)/dmr/zoneShare.c $(CORE)/dmr/zoneSh
 	$(CC) $(CFLAGS) -Wshadow -o $@ zoneShareTest.c $(CORE)/dmr/zoneShare.c
 # The same with the modes part (CONFIG_ZONE_SHARE_MODES: channels of a kind and their systems)
 zoneShareModesTest: zoneShareTest.c fuzz.h $(CORE)/dmr/zoneShare.c $(CORE)/dmr/zoneShare.h
-	$(CC) $(CFLAGS) -Wshadow -DCONFIG_AIR=1 -o $@ zoneShareTest.c $(CORE)/dmr/zoneShare.c
+	$(CC) $(CFLAGS) -Wshadow -DCONFIG_P25=1 -o $@ zoneShareTest.c $(CORE)/dmr/zoneShare.c
 
 dmrPrivacyTest: dmrPrivacyTest.c $(CORE)/dmr/dmrPrivacy.c $(CORE)/dmr/dmrPrivacy.h $(CORE)/dmr/ambe/ambeFec.c
 	$(CC) $(CFLAGS) -o $@ dmrPrivacyTest.c $(CORE)/dmr/dmrPrivacy.c $(CORE)/dmr/ambe/ambeFec.c
@@ -1220,10 +1220,10 @@ TESTS   += p25CodeplugTest p25CodeplugConvTest
 P25CP   := $(CPTAG) $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug_records.c $(CORE)/p25/p25_codeplug.c
 
 p25CodeplugTest: p25CodeplugTest.c $(P25CP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/p25/*.h) ../vectors/channel-modes.txt
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_P25_TRUNK=1 -o $@ p25CodeplugTest.c $(P25CP)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -o $@ p25CodeplugTest.c $(P25CP)
 
 p25CodeplugConvTest: p25CodeplugTest.c $(P25CP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/p25/*.h) ../vectors/channel-modes.txt
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_P25_TRUNK=0 -o $@ p25CodeplugTest.c $(P25CP)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=0 -o $@ p25CodeplugTest.c $(P25CP)
 
 run: run-p25cp
 run-p25cp: p25CodeplugTest p25CodeplugConvTest
@@ -1255,7 +1255,7 @@ zoneImportTest: zoneImportTest.c $(ZIMPORT) $(CORE)/codeplug/zone_import.h $(COR
 # The same with the modes part: channels of a kind and their systems sent and taken (CONFIG_ZONE_SHARE_MODES)
 TESTS   += zoneImportModesTest
 zoneImportModesTest: zoneImportTest.c $(ZIMPORT) $(CORE)/codeplug/codeplug_records.c $(CORE)/codeplug/zone_import.h $(CORE)/dmr/zoneShare.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -o $@ zoneImportTest.c $(ZIMPORT) $(CORE)/codeplug/codeplug_records.c
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_P25=1 -o $@ zoneImportTest.c $(ZIMPORT) $(CORE)/codeplug/codeplug_records.c
 
 run: run-zimport
 run-zimport: zoneImportTest

@@ -106,7 +106,7 @@ codeplug is sent: no scan lists, no RX group lists, no privacy keys.
 ### 4.2 The modes part
 
 Channels of a kind ([channel-modes.md](channel-modes.md)) go with their tags and the systems they are on. Builds with
-the air interface carry them (`CONFIG_ZONE_SHARE_MODES`, on with `CONFIG_AIR` and `CONFIG_ZONE_SHARE`). A record holds
+a mode's codec carry them (`CONFIG_ZONE_SHARE_MODES`, on with `CONFIG_P25` and `CONFIG_ZONE_SHARE`). A record holds
 the part only when it has such a channel, so a share of plain channels is the same as before. Every length is one
 octet. Kinds' and system types' bytes are opaque here: their mode modules read them.
 
