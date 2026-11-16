@@ -145,6 +145,9 @@
 #ifndef CONFIG_DIAG
 #define CONFIG_DIAG			1
 #endif
+#ifndef CONFIG_BACKLIGHT_TEST
+#define CONFIG_BACKLIGHT_TEST		0
+#endif
 #ifndef CONFIG_FONT_XL
 #define CONFIG_FONT_XL			1
 #endif
@@ -284,6 +287,11 @@
 #endif
 #ifndef CONFIG_APRS_IGATE
 #define CONFIG_APRS_IGATE		(CONFIG_APRS_RX && CONFIG_HOSTLINK)
+#endif
+// Derived: zone sharing carries channels of a kind and their systems (docs/spec/zone-share.md 4.2) in a build with a
+// mode's codec. Without it a share leaves channels of a kind out and refuses a record that has them
+#ifndef CONFIG_ZONE_SHARE_MODES
+#define CONFIG_ZONE_SHARE_MODES		(CONFIG_ZONE_SHARE && CONFIG_P25)
 #endif
 // The GPS status screen: the satellites (NMEA GSV / GSA) on a sky plot and signal bars, the fix's quality, the grid
 // locator (core/position/nmea_sky.c, core/ui/ui_gps.c). Needs GPS

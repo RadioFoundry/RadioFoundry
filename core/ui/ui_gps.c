@@ -13,7 +13,8 @@
 #include "i18n.h"
 
 enum { PG_STATUS, PG_SKY, PG_SIGNAL, PG_GRID, PG_COUNT };
-static const char *const page_names[PG_COUNT] = { TRN("Status"), TRN("Sky"), TRN("Signal"), TRN("Grid") };
+static const tr_id_t page_names[PG_COUNT] = { TRN(GPS_TITLE_STATUS, "Status"), TRN(GPS_TITLE_SKY, "Sky"),
+	TRN(GPS_TITLE_SIGNAL, "Signal"), TRN(WORD_GRID, "Grid") };
 static const char sys_letter[UI_GNSS_COUNT] = { 'G', 'R', 'E', 'C', 'J' };
 static const char *const sys_names[UI_GNSS_COUNT] = { "GPS", "GLONASS", "Galileo", "BeiDou", "QZSS" };
 static const char *const sys_short[UI_GNSS_COUNT] = { "GPS", "GLO", "GAL", "BDS", "QZS" };
@@ -130,14 +131,16 @@ static void sb_dop(sbuf_t *b, uint16_t d10)
 	sb_u32(b, d10 / 10u, 1);
 	sb_chr(b, '.');
 	sb_u32(b, d10 % 10u, 1);
-	sb_str(b, d10 <= 20u ? TR(" good") : d10 <= 50u ? TR(" fair") : TR(" poor"));
+	sb_str(b, d10 <= 20u ? TR(GPS_VALUE_GOOD, " good") : d10 <= 50u ? TR(GPS_VALUE_FAIR, " fair") :
+		TR(GPS_VALUE_POOR, " poor"));
 }
 
 static const char *fix_word(const ui_position_t *p)
 {
 	if (p->fix)	// mode 0: no GSA heard, so the receiver didn't say which
-		return p->mode == 3 ? TR("3D Fix") : p->mode == 2 ? TR("2D Fix") : TR("Fix");
-	return p->in_view > 0 ? TR("Searching") : TR("No signal");
+		return p->mode == 3 ? TR(GPS_STATE_3D_FIX, "3D Fix") : p->mode == 2 ? TR(GPS_STATE_2D_FIX, "2D Fix") :
+			TR(GPS_STATE_FIX, "Fix");
+	return p->in_view > 0 ? TR(GPS_STATE_SEARCHING, "Searching") : TR(GPS_STATE_NO_SIGNAL, "No signal");
 }
 
 // Satellites the fix uses and those tracked (a signal), per system: the legend's numbers
@@ -181,15 +184,15 @@ static void draw_status(const ui_position_t *p, int y)
 	y += big->h + 1;
 	sb_init(&b, buf, sizeof buf);
 	sb_u32(&b, p->sats, 1);
-	sb_str(&b, TR(" used, "));
+	sb_str(&b, TR(GPS_BODY_USED, " used, "));
 	sb_u32(&b, p->in_view, 1);
-	sb_str(&b, TR(" seen"));
-	if (!row(&y, TR("Sats"), buf, ui_col.fg))
+	sb_str(&b, TR(GPS_BODY_SEEN, " seen"));
+	if (!row(&y, TR(GPS_LABEL_SATS, "Sats"), buf, ui_col.fg))
 		return;
 	if (p->fix) {
 		sb_init(&b, buf, sizeof buf);
 		sb_coord(&b, p->lat_e7, 'N', 'S');
-		if (!row(&y, TR("Lat"), buf, ui_col.fg))
+		if (!row(&y, TR(GPS_LABEL_LAT, "Lat"), buf, ui_col.fg))
 			return;
 		if (grid) {
 			sb_init(&b, buf, sizeof buf);
@@ -199,7 +202,7 @@ static void draw_status(const ui_position_t *p, int y)
 		}
 		sb_init(&b, buf, sizeof buf);
 		sb_coord(&b, p->lon_e7, 'E', 'W');
-		if (!row(&y, TR("Lon"), buf, ui_col.fg))
+		if (!row(&y, TR(GPS_LABEL_LON, "Lon"), buf, ui_col.fg))
 			return;
 		if (grid) {
 			sb_init(&b, buf, sizeof buf);
@@ -211,7 +214,7 @@ static void draw_status(const ui_position_t *p, int y)
 			sb_init(&b, buf, sizeof buf);
 			sb_i32(&b, p->alt_m);
 			sb_str(&b, " m");
-			if (!row(&y, TR("Alt"), buf, ui_col.fg))
+			if (!row(&y, TR(GPS_LABEL_ALT, "Alt"), buf, ui_col.fg))
 				return;
 		}
 		if (p->speed_kmh != 0xFFFFu) {
@@ -222,7 +225,7 @@ static void draw_status(const ui_position_t *p, int y)
 				sb_chr(&b, ' ');
 				sb_compass(&b, p->course);
 			}
-			if (!row(&y, TR("Speed"), buf, ui_col.fg))
+			if (!row(&y, TR(LABEL_SPEED, "Speed"), buf, ui_col.fg))
 				return;
 		}
 	}
@@ -366,7 +369,8 @@ static void draw_sky(const ui_position_t *p, int y)
 		drawn++;
 	}
 	if (drawn == 0)
-		gfx_text(ui_layout.small, 0, y, p->in_view ? TR("No positions yet") : TR("No satellites yet"),
+		gfx_text(ui_layout.small, 0, y, p->in_view ? TR(GPS_EMPTY_NO_POSITIONS, "No positions yet") :
+			TR(GPS_EMPTY_NO_SATELLITES, "No satellites yet"),
 			 ui_col.dim);
 	if (below)
 		legend(0, cy + r + 3, 2, w / 2, used, seen);
@@ -382,9 +386,9 @@ static void draw_signal(const ui_position_t *p, int y)
 	sbuf_t b;
 	sb_init(&b, buf, sizeof buf);
 	sb_u32(&b, p->sats, 1);
-	sb_str(&b, TR(" of "));
+	sb_str(&b, TR(PART_OF, " of "));
 	sb_u32(&b, p->in_view, 1);
-	sb_str(&b, TR(" in the fix"));
+	sb_str(&b, TR(GPS_BODY_IN_THE_FIX, " in the fix"));
 	gfx_text(ui_layout.small, 0, y, buf, ui_col.fg);
 	y += ui_layout.small->h + 2;
 	ui_gps_sat_t s;
@@ -436,7 +440,7 @@ static void draw_grid(const ui_position_t *p, int y)
 	char buf[24];
 	sbuf_t b;
 	if (!p->fix) {
-		gfx_text(ui_layout.small, 0, y, TR("No fix yet"), ui_col.warn);
+		gfx_text(ui_layout.small, 0, y, TR(GPS_EMPTY_NO_FIX, "No fix yet"), ui_col.warn);
 		return;
 	}
 	char loc[7];
@@ -467,8 +471,9 @@ static void gps_draw(void)
 	gfx_clear(ui_col.bg);
 	int y = ui_draw_top(ui_view(), &ui_st, "GPS", tr(page_names[page])) + 2;
 	if (!ui_svc_position(&p)) {
-		gfx_text(ui_layout.small, 0, y, TR("No GPS, or it is off"), ui_col.warn);
-		gfx_text(ui_layout.small, 0, y + ui_layout.small->h + 2, TR("Settings > Location"), ui_col.dim);
+		gfx_text(ui_layout.small, 0, y, TR(GPS_WHY_NO_GPS_OR_OFF, "No GPS, or it is off"), ui_col.warn);
+		gfx_text(ui_layout.small, 0, y + ui_layout.small->h + 2,
+			TR(GPS_FIX_SETTINGS_LOCATION, "Settings > Location"), ui_col.dim);
 	} else {
 		switch (page) {
 		case PG_SKY: draw_sky(&p, y); break;
@@ -477,7 +482,7 @@ static void gps_draw(void)
 		default: draw_status(&p, y); break;
 		}
 	}
-	ui_draw_bottom(&ui_st, TR("Up Down page  Back"));
+	ui_draw_bottom(&ui_st, TR(GPS_HINT, "Up Down page  Back"));
 	ui_draw_banner(&ui_st);
 }
 

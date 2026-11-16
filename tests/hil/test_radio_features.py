@@ -665,6 +665,69 @@ def test_scan_stops_on_dmr_call(radio, sdr_bench, pytestconfig):
     assert str(hz) in held, f"the scan never held on {freq} MHz: {sorted(set(held))}"
 
 
+
+SCAN_DMON_OTHER_TG = 999901	# a talkgroup no test channel's contact or RX group list has
+
+
+@pytest.mark.feature("scan")
+@pytest.mark.rf
+@pytest.mark.bench_service
+@pytest.mark.bench_modem
+@pytest.mark.needs_switch("DMR")
+def test_scan_digital_monitor_any_talkgroup(radio, sdr_bench, pytestconfig):
+    """#595: digital monitor on when a zone scan starts stays on at every stop. A call to a talkgroup the channel
+    doesn't listen to holds the scan, and the channel the scan ends on keeps digital monitor."""
+    need_scan(radio)
+    if "DMR" not in radio.features():
+        skip("not_built", "built without DMR")
+    freq, cc = (pytestconfig.getoption(o) for o in ("--dmr-freq", "--dmr-cc"))
+    hz = round(freq * 1e6)
+    radio.go_home()
+    radio.find_channel(hz, "dmr")
+    if as_int(radio.core().get("zone_size"), 0) < 2:
+        skip("state", "the DMR test channel's zone has one channel")
+    if radio.link.view(["dmr"]).get("dmr.hear_all_latch") != "1":	# Monitor by default may have it on already
+        radio.press("quick")	# find_channel left the radio on it
+        radio.wait_for(lambda v: v.get("ui.screen") == "quick", sections=("link",), what="quick screen")
+        radio.press("5")
+        radio.wait_for(lambda v: v.get("dmr.hear_all_latch") == "1", sections=("dmr",), what="digital monitor on")
+        if radio.screen() == "quick":
+            radio.press("back")
+    held, latched, done = [], set(), threading.Event()
+
+    def watch():
+        while not done.is_set():
+            v = radio.link.view(["core", "features", "dmr"])
+            if v.get("scan_phase") == "hold":
+                held.append(v.get("rx_hz"))
+            if v.get("scan") == "zone" and v.get("mode") == "dmr":	# an FM stop has no DMR latch to show
+                latched.add(v.get("dmr.hear_all_latch"))
+            time.sleep(0.05)
+
+    try:
+        with settings(radio, scan_resume=1):
+            radio.link.scan("zone")
+            t = threading.Thread(target=watch, daemon=True)
+            try:
+                wait_features(radio, lambda v: v.get("scan") == "zone", 1.0, "scan=zone")
+                t.start()
+                with sdr_bench.lease():
+                    # Two calls: the scan starts on the test channel, so it comes back only after a lap of the zone
+                    sdr_bench.voice_call(freq, cc, SCAN_DMON_OTHER_TG, superframes=20, calls=2)
+            finally:
+                done.set()
+                t.join(2)
+                scan_off(radio)
+        print(f"held on {sorted(set(held))}; dmr.hear_all_latch while scanning {sorted(latched)}")
+        assert str(hz) in held, f"the scan never held on {freq} MHz for TG {SCAN_DMON_OTHER_TG}"
+        assert latched == {"1"}, "digital monitor dropped during the scan"
+        radio.wait_for(lambda v: v.get("dmr.hear_all_latch") == "1", sections=("dmr",),
+                       what="digital monitor kept after the scan")
+    finally:
+        radio.go_home()
+        if radio.link.view(["dmr"]).get("dmr.hear_all_latch") == "1":
+            radio.press("back")	# BACK on Home drops digital monitor
+
 # ── scans and battery save against a signal from the SDR bench ───────────
 
 BENCH_FM_CALL_S = 6.0      # the FM signal's length, as long as the DMR call and under the 10 s key limit

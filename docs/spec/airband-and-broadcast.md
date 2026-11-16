@@ -76,7 +76,7 @@ On an FD6818 (`fd6818_set_am`, `fd6818_am_status`, `fd6818_am_noise`):
 |---|---|---|
 | 0x43 receive filter | `FD6818_BW_AM` = 0x0048, the narrowest (about 1.7 kHz) | 0x3028 / 0x4008 or the board's |
 | 0x47 AF output | 0x6740, type 7 (AM) | 0x0140, type 1 (FM) |
-| 0x13 receiver gain | a gain loop: 0x03FF (full gain) at each tune, then stepped through a 42-entry table to keep a signal's 0x67 reading near 142 (down at once when 10 dB or more over, by the excess less 8 dB; up one step after 30 readings 6 dB or more under) | the board's FM word, written back when AM ends |
+| 0x13 receiver gain | a gain loop: 0x03FF (full gain) at each tune, then stepped through a 42-entry table to keep a signal's 0x67 reading just under 142 (down one step at 1-9 dB over, down at once by the excess less 8 dB at 10 dB or more; up one step per reading after 30 readings without a cut or a reading within 6 dB) | the board's FM word, written back when AM ends |
 | 0x4A | 0x5450 | its value before AM, written back |
 | Squelch value | 0x65 bits 7:0 (noise_sq, 1 dB/step) + an offset that puts level 1 at the chip's own noise_sq_th_in, 0x4F bits 6:0 as the board's tables set it (`fd6818_am_noise_offset`: 64 - th_in; 17 with 0x4F = 0x302F); each level 3 dB lower | 0x65 bits 7:0 + 25 |
 
@@ -122,10 +122,10 @@ push-pull SCL, no clock stretching).
 | When | `CONFIG_BCAST_FM`, the board has `CAP_BCAST_FM` and `board.bcast`, and the channel's or the VFO's RX frequency is in the receiver's range, whatever its stored mode (3.1). `view.bcast` says the broadcast receiver plays |
 | Tuning | the receiver is powered and tuned to the nearest point of its grid (`radio_bcast_khz`). Leaving the range powers it off. If the chip doesn't answer, `view.bcast_fault` is set and the radio stays idle |
 | Transmit | refused with `TXDENY_BCAST` whenever `view.bcast`, and for any TX frequency in the range on a radio with the receiver (split channels, DMR channels, the VFO, the hotspot's frequencies) |
-| Squelch | on the receiver's RSSI (about dBuV): noise = 97 - RSSI on the FM noise scale, so level 5 opens above 45 dBuV, 1 above 33, 9 above 57. Set from a receiver without an antenna (2026-10-22): empty frequencies read 22 to 37, stations 50 and up. The signal meter shows RSSI - 107 dBm. Only a scan uses it (to stop on stations): otherwise the state stays RX, the LED stays on, the screen shows the level and the audio plays whatever the signal (`bcast_listening()`) |
+| Squelch | on the receiver's RSSI (about dBuV): noise = 97 - RSSI on the FM noise scale, so level 5 opens above 45 dBuV, 1 above 33, 9 above 57. Set from a receiver without an antenna (2026-10-22): empty frequencies read 22 to 37, stations 50 and up. The signal meter shows RSSI - 107 dBm. Only a scan uses it (to stop on stations): otherwise the state stays RX, the LED stays off (a station isn't a call), the screen shows the level and the audio plays whatever the signal (`bcast_listening()`) |
 | Sub-audio | ignored (`tone_needed()` is false) |
 | Volume | the radio's own volume where it has one (`radio_volume_soft`), mapped onto the receiver's 0-15; a fixed 12 where a knob after the amplifier sets the level |
-| Steps | the VFO's automatic step is the broadcast step setting (4.4). An explicit VFO step (Settings › Talk › VFO step) is used as set |
+| Steps | the VFO's step is always the broadcast step setting (4.4), whatever Settings › Talk › VFO step says: a fixed step for the other bands doesn't apply here |
 | Power | battery save is off while the receiver plays; hotspot mode powers it off |
 | Saving, mode tile | as the air band (3.2): the board lists the range as an RX-only band; the mode tile says "FM only in the broadcast band" |
 | Screen | Home's chips are "Broadcast FM" alone (no tone, width, power or squelch level). The mode word stays "FM". PTT shows "Broadcast: receive only" |

@@ -796,7 +796,7 @@ static uint16_t tx_drive_level(uint32_t hz, uint8_t level)
 
 static bool tx_drive(uint16_t drive)
 {
-	if (drive > MD9600_APC_MAX) {
+	if (drive > MD9600_APC_DAC_MAX) {
 		return false;
 	}
 	drive_override = drive;

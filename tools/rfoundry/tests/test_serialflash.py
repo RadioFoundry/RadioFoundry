@@ -22,6 +22,8 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
+sys.path.insert(0, HERE)
+import home  # noqa: E402,F401 (the settings folder in a temporary folder)
 from rfoundry import boards, cli, manifest as mf, serialflash as sf  # noqa: E402
 
 B = boards.get("dm1801pro")
@@ -64,7 +66,9 @@ class Tools(unittest.TestCase):
         self.assertEqual(B.codec.windows[0][0] - B.app_base, sf.tool("stubtool").APP_END - FLASH_OFF - 0x18000)
 
     def test_missing_tool_is_explained(self):
-        with mock.patch.object(sf, "_ROOT", "/nonexistent"), mock.patch.dict(sf._loaded, {}, clear=True):
+        with mock.patch.object(sf, "_ROOT", "/nonexistent"), mock.patch.dict(sf._loaded, {}, clear=True), \
+                mock.patch.dict(sys.modules):
+            sys.modules.pop("stubtool", None)
             with self.assertRaises(sf.SerialError) as e:
                 sf.tool("stubtool")
         self.assertIn("stub/stubtool.py", str(e.exception))

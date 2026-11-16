@@ -55,6 +55,13 @@ void ui_crit_exit(void) { taskEXIT_CRITICAL(); }
 
 static void set_backlight(uint8_t pct)
 {
+#if CONFIG_BACKLIGHT_TEST
+	int16_t hold = ui_app_backlight_hold();
+	if (hold >= 0)
+		pct = (uint8_t)hold;	// the backlight tests have it
+	if (ui_app_take_backlight_reapply())
+		backlight_now = 0xFF;
+#endif
 	if (pct != backlight_now) {
 		backlight_now = pct;
 		board.display->set_backlight(pct);
@@ -145,6 +152,9 @@ static void ui_task(void *arg)
 		}
 		if (got) {
 			bool was_off = backlight_now == 0;
+#if CONFIG_BACKLIGHT_TEST
+			was_off = was_off && ui_app_backlight_hold() < 0;	// a key wakes the light, but not in the tests
+#endif
 			set_backlight(ui_app_brightness());
 			if (!was_off || ev.action == ACT_PTT || ev.action == ACT_MONITOR)
 				ui_app_key(&ev);
