@@ -107,9 +107,14 @@ T3_DIV = {"voice": 8, "pdata": 4, "sdata": 2, "status": 1}  # call diversion ser
 T3_PAR = {"a": 1, "b": 2}
 CPKV = 0x23                         # a key of the codeplug settings area (docs/spec/debuglink.md 3.27)
 CPKV_GET, CPKV_SET, CPKV_REMOVE = 1, 2, 3
-# Tier III key families (docs/spec/dmr-trunking.md 12): systems, their channels, keys, trunked channel tags
-CPKV_T3_SYSTEM, CPKV_T3_CHAN, CPKV_T3_KEY, CPKV_T3_TAG = 0x0100, 0x0200, 0x0300, 0x0400
-T3_SYS_STUN, T3_SYS_AUTH = 0x0400, 0x0800    # system options: accept a stun, the system authenticates
+# Codeplug settings-area keys of the mode records (docs/spec/channel-modes.md): system n, a system entry, system n's
+# secret, channel c's tag (+ c - 1); a system record's flags; a tag's flags; the Tier III kind and system type
+CPKV_SYSTEM, CPKV_SYS_CHAN, CPKV_SYS_KEY, CPKV_CH_TAG = 0x0100, 0x0200, 0x0300, 0x0400
+SYS_NEEDS_KEY, SYS_TX = 0x01, 0x02
+TAG_TX, TAG_BASE_OWN, TAG_FALLBACK = 0x01, 0x02, 0x04
+KIND_DMR_TRUNK = SYSTYPE_DMR_TRUNK = 1
+T3_TAG_NO_FALLBACK = 0x10                   # a trunked channel's tag: never fall back
+T3_SYS_STUN = 0x0400                        # a Tier III system's option: accept a stun
 CHIP_SOC = 0xFF                     # CHIP_REG's chip number for the SoC's own registers
 SNMP = 0x19                         # the SNMP agent (CONFIG_SNMP; docs/spec/debuglink.md 3.17, docs/spec/snmp.md)
 SNMP_OP_SET, SNMP_OP_COMMUNITY, SNMP_OP_TEST_TRAP = range(3)
@@ -746,7 +751,7 @@ class DebugLink:
         self.t3_op(T3_SDATA, struct.pack("<IBB", dst, int(group), f) + bytes(data))
 
     def t3_load(self, n):
-        """Stage system n of the codeplug (docs/spec/dmr-trunking.md 12) without starting it; BAD_ARG when it is absent
+        """Stage system n of the codeplug (docs/spec/dmr-trunking-codeplug.md) without starting it; BAD_ARG when it is absent
         or has no control channel"""
         self.t3_op(T3_LOAD, bytes([n]))
 
@@ -777,40 +782,60 @@ class DebugLink:
         self.request(CPKV, struct.pack("<BH", CPKV_REMOVE, key))
 
     @staticmethod
-    def t3_name_check(name):
-        """A channel's name check (docs/spec/dmr-trunking.md 12.4): FNV-1a 32 of the 16-byte NUL-padded name, folded"""
+    def name_check(name):
+        """A channel's name check (docs/spec/channel-modes.md 3): FNV-1a 32 of the 16-byte NUL-padded name, folded"""
         h = 0x811C9DC5
         for b in name.encode("latin-1")[:16].ljust(16, b"\0"):
             h = ((h ^ b) * 0x01000193) & 0xFFFFFFFF
         return (h ^ (h >> 16)) & 0xFFFF
 
     @staticmethod
-    def t3_system_record(name, model, net, par="a", cc=1, opts=0x20, own_id=0, sharing=0, fb_hold_s=0, fb_chan=0,
-                         fb_name="", plan=None, plan_flags=0, leave_dbm=0, ps_rq=0, sites=()):
-        """A codeplug system record, 64 bytes (docs/spec/dmr-trunking.md 12.1); plan: (base Hz, first LCN, separation
-        code, split Hz) or None; plan_flags bit 0 MS TX low, bit 1 don't learn channels; fb_chan the fallback channel
-        number (0 none) and fb_name its name, for the check"""
-        base, first, sep, split = plan or (0, 0, 0, 0)
-        sites = list(sites)[:8]
-        check = DebugLink.t3_name_check(fb_name) if fb_chan else 0
-        rec = (name.encode("latin-1")[:16].ljust(16, b"\0") +
-               struct.pack("<BHBBHIBBHIHBBIbBB", model, net, T3_PAR.get(par, par), cc, opts, own_id, sharing,
-                           fb_hold_s, fb_chan, base, first, sep, plan_flags, split, leave_dbm, ps_rq, len(sites)) +
-               struct.pack("<8H", *(sites + [0] * (8 - len(sites)))) + struct.pack("<H", check))
-        assert len(rec) == 64
-        return rec
+    def system_record(systype, name, block, identity_len=0, flags=SYS_TX, sharing=0, own_id=0, fb_chan=0, fb_name=""):
+        """A codeplug system record (docs/spec/channel-modes.md 7.1), key CPKV_SYSTEM + n: the header, then the type's
+        block (its first identity_len octets the identity). flags: SYS_TX (without it the radio only listens there),
+        SYS_NEEDS_KEY; fb_chan the fallback channel number (0 none) and fb_name its name, for the check"""
+        check = DebugLink.name_check(fb_name) if fb_chan else 0
+        return (struct.pack("<BBBBIHH", systype, flags, sharing, identity_len, own_id, fb_chan, check) +
+                name.encode("latin-1")[:16].ljust(16, b"\0") + bytes(block))
 
     @staticmethod
-    def t3_tag_record(system, name, no_fallback=False, fb_chan=0, fb_name=""):
-        """A trunked channel's tag (docs/spec/dmr-trunking.md 12.4), key CPKV_T3_TAG + channel - 1: its system n, the
-        channel's own name (for the check) and an optional fallback channel of its own"""
-        return struct.pack("<BBHHH", system, 1 if no_fallback else 0, DebugLink.t3_name_check(name), fb_chan,
-                           DebugLink.t3_name_check(fb_name) if fb_chan else 0)
+    def tag_record(kind, system, name, flags=TAG_TX, fb_chan=None, fb_name="", params=b""):
+        """A channel's tag (docs/spec/channel-modes.md 3), key CPKV_CH_TAG + channel - 1: its kind and system, the
+        channel's own name (for the check), the flags (TAG_TX: without it the channel is receive only; TAG_BASE_OWN:
+        the channel record stands as it is) and, when fb_chan is given, a fallback channel of its own (0: none)"""
+        head = struct.pack("<BBHB", kind, system, DebugLink.name_check(name),
+                           flags | (TAG_FALLBACK if fb_chan is not None else 0))
+        if fb_chan is not None:
+            head += struct.pack("<HH", fb_chan, DebugLink.name_check(fb_name) if fb_chan else 0)
+        return head + bytes(params)
+
+    @staticmethod
+    def t3_system_record(name, model, net, par="a", cc=1, opts=0x20, own_id=0, sharing=0, fb_hold_s=0, fb_chan=0,
+                         fb_name="", plan=None, plan_flags=0, leave_dbm=0, ps_rq=0, sites=(), tx=True,
+                         needs_key=False):
+        """A Tier III system record (docs/spec/dmr-trunking-codeplug.md 1); plan: (base Hz, first LCN, separation
+        code, split Hz) or None; plan_flags bit 0 MS TX low, bit 1 don't learn channels; tx False: listen only;
+        needs_key: unusable without its key (CPKV_SYS_KEY + n)"""
+        base, first, sep, split = plan or (0, 0, 0, 0)
+        sites = list(sites)[:8]
+        block = (struct.pack("<BHBBHBIHBBIbBB", model, net, T3_PAR.get(par, par), cc, opts, fb_hold_s, base, first, sep,
+                             plan_flags, split, leave_dbm, ps_rq, len(sites)) + struct.pack(f"<{len(sites)}H", *sites))
+        return DebugLink.system_record(SYSTYPE_DMR_TRUNK, name, block, identity_len=4,
+                                       flags=(SYS_TX if tx else 0) | (SYS_NEEDS_KEY if needs_key else 0),
+                                       sharing=sharing, own_id=own_id, fb_chan=fb_chan, fb_name=fb_name)
+
+    @staticmethod
+    def t3_tag_record(system, name, tx=True, base_own=False, no_fallback=False, fb_chan=None, fb_name=""):
+        """A trunked channel's tag (docs/spec/dmr-trunking-codeplug.md 4). The channel record under it is a DMR
+        receive-only one, or any channel with base_own"""
+        flags = (TAG_TX if tx else 0) | (TAG_BASE_OWN if base_own else 0) | (T3_TAG_NO_FALLBACK if no_fallback else 0)
+        return DebugLink.tag_record(KIND_DMR_TRUNK, system, name, flags, fb_chan, fb_name)
 
     @staticmethod
     def t3_chan_record(system, lcn, rx_hz, tx_hz, ctrl=False, cc=0xFF):
-        """A codeplug channel record of a trunked system (docs/spec/dmr-trunking.md 12)"""
-        return struct.pack("<BBHIIB", system, 1 if ctrl else 0, lcn, rx_hz, tx_hz, cc)
+        """A Tier III system's channel (docs/spec/dmr-trunking-codeplug.md 2): a system entry, key CPKV_SYS_CHAN + any
+        free number; the entries are read in key order"""
+        return struct.pack("<BBBBHIIB", system, 0, 0xFF, 1 if ctrl else 0, lcn, rx_hz, tx_hz, cc)
 
     def t3(self, cmd):
         """start | stop | dereg | end"""

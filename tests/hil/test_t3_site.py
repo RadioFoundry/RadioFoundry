@@ -66,12 +66,12 @@ Pass criteria:
   sending (call.rc_ceased +1, call.rc_good >= 2: a cease is acted on only when heard twice) though PTT is still held,
   and it doesn't key again while PTT stays held (CEASE_HOLD_S). After the release it is back on the control channel
   within CALL_S (the site may give the channel to the radio that interrupted first).
-- test_t3_cp_channel (rf, radio_tx): the system from the codeplug instead (dmr-trunking.md 12): a system record in
+- test_t3_cp_channel (rf, radio_tx): the system from the codeplug instead (dmr-trunking-codeplug.md): a system record in
   slot CP_SYS with --t3-system's identity, its control channel and a tag on the channel in use. Selecting the channel
   starts the system (t3.sys CP_SYS + 1): within CAMP_S + REG_S it camps on --t3-rx-mhz and registers (t3.reg ok).
   Another channel of the zone stops it (t3.sys 0, t3.on 0) within DEREG_S. The channel's talkgroup is its contact's,
   so the channel in use must be a DMR channel whose contact the site serves.
-- test_t3_cp_unavailable (rf, radio_tx): the same system marked as authenticating, with no key: the channel is
+- test_t3_cp_unavailable (rf, radio_tx): the same system marked as needing its key, with no key: the channel is
   unavailable (t3.unavail 1, t3.on 0) and PTT is refused: nothing is sent (t3.sent 0) and the radio never transmits
   (core state never tx).
 
@@ -86,7 +86,7 @@ import time
 
 import pytest
 
-from rfoundry_debug import VIEW_SECTIONS, as_int, DebugLink, CPKV_T3_SYSTEM, CPKV_T3_CHAN, CPKV_T3_TAG, T3_SYS_AUTH
+from rfoundry_debug import VIEW_SECTIONS, as_int, DebugLink, CPKV_SYSTEM, CPKV_SYS_CHAN, CPKV_CH_TAG
 from rfoundry_hil import counter_deltas, skip
 from hil_config import rig, tx_allowed
 
@@ -133,7 +133,7 @@ PEAK_MIN = 1000     # as test_dmr_voice: decoded speech peaks at thousands
 CEASE_S = 4.0       # the command, the site's RC (every 360 ms), two heard, the over ended after its burst F
 CEASE_HOLD_S = 1.5  # PTT held on after the cease: no new over
 CP_SYS = 7          # the codeplug system slot the cp tests write (the last: the user's come first)
-CP_CHAN = 0xF0      # the system channel record they write (CPKV_T3_CHAN + it)
+CP_CHAN = 0xF0      # the system entry they write (CPKV_SYS_CHAN + it)
 
 
 def site(config):
@@ -496,7 +496,7 @@ def test_t3_reg_list(trunk_tx, pytestconfig):
 @pytest.fixture
 def cp_system(trunk_tx, pytestconfig):
     """A system in codeplug slot CP_SYS for the rig's site, and a tag making the channel in use one of its channels.
-    Yields write(opts): (re)writes the system with those options and selects the channel again. Everything written
+    Yields write(opts, needs_key): (re)writes the system with those options and selects the channel again. Everything written
     is removed after and the channel selected again"""
     radio, L = trunk_tx, trunk_tx.link
     s = site(pytestconfig)
@@ -516,7 +516,7 @@ def cp_system(trunk_tx, pytestconfig):
             break
     else:
         skip("state", "no DMR channel in the zone in use: select a zone that has one")
-    keys = (CPKV_T3_SYSTEM + CP_SYS, CPKV_T3_CHAN + CP_CHAN, CPKV_T3_TAG + c - 1)
+    keys = (CPKV_SYSTEM + CP_SYS, CPKV_SYS_CHAN + CP_CHAN, CPKV_CH_TAG + c - 1)
     for k in keys:
         if L.cpkv_get(k) is not None:
             skip("state", f"codeplug key {k:#06x} is in use: the test won't write over the user's set-up")
@@ -527,11 +527,13 @@ def cp_system(trunk_tx, pytestconfig):
         time.sleep(0.5)
         L.zone_pos(pos)
 
-    def write(opts):
+    def write(opts, needs_key=False):
         L.cpkv_set(keys[0], DebugLink.t3_system_record("HIL site", s["model"], s["net"], par="a", cc=s["cc"],
-                                                       opts=opts, own_id=s["own_id"], sites=(s["site"],)))
+                                                       opts=opts, own_id=s["own_id"], sites=(s["site"],),
+                                                       needs_key=needs_key))
         L.cpkv_set(keys[1], DebugLink.t3_chan_record(CP_SYS, s["lcn"], s["rx"], s["tx"], ctrl=True))
-        L.cpkv_set(keys[2], DebugLink.t3_tag_record(CP_SYS, ch.get("ch.name", "")))
+        # base_own: the tag goes on the user's channel as it is, so removing the tag leaves it as it was
+        L.cpkv_set(keys[2], DebugLink.t3_tag_record(CP_SYS, ch.get("ch.name", ""), base_own=True))
         select()
         return s, other
 
@@ -567,7 +569,7 @@ def test_t3_cp_channel(trunk_tx, cp_system):
 @pytest.mark.rf
 @pytest.mark.radio_tx
 def test_t3_cp_unavailable(trunk_tx, cp_system):
-    cp_system(OPT_PRIVATE | T3_SYS_AUTH)
+    cp_system(OPT_PRIVATE, needs_key=True)
     L = trunk_tx.link
     try:
         v = wait_t3(trunk_tx, lambda x: x.get("t3.sys") == str(CP_SYS + 1), 3.0, "the channel's system")
@@ -656,7 +658,7 @@ def test_t3_cease(trunk_tx, pytestconfig):
         except AssertionError:
             _, now = trunk_tx.counters()
             if counter_deltas(before, now, ["call.rx_bs_in_tx"])["call.rx_bs_in_tx"] == 0:
-                skip("hw_unsupported", "nothing heard between the radio's bursts (call.rx_bs_in_tx 0): the board "
+                skip("no_hw", "nothing heard between the radio's bursts (call.rx_bs_in_tx 0): the board "
                      "doesn't listen while sending, so it can't hear a reverse channel")
             raise
         took = time.monotonic() - asked
