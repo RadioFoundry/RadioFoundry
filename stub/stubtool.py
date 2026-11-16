@@ -454,6 +454,11 @@ class LineNoise(DumpError):
     or a device that talks by itself). No request can be told from it, so nothing is tried over it."""
 
 
+class DeafRadio(DumpError):
+    """The boot ROM's greeting arrived, the answers were already on their way (--slow-cable), and the ROM still started
+    the firmware: nothing the cable sends reaches the radio. Slower sending can't help; another cable can."""
+
+
 class NoAnswer(DumpError):
     """RadioFoundry's debug link did not answer a request at all (no radio running it on the port). A caller that
     retries with --attach (a stub an earlier run left running) tells it from other errors by this class's name."""
@@ -720,6 +725,27 @@ ROM_HELLO, ROM_REPLY = b"\x02\x24\x00\x03", b"\x02\x14\x00\x03"
 # The boot ROM stops waiting (about 48 ms after its greeting when no answer came) and starts the firmware; its NAK is
 # also how it answers a repeated greeting reply once it took the first one (docs/spec/hardware-dm32.md 13.3)
 ROM_GAVE_UP, ROM_NAK = b"\x00\x10\x00\x03", b"\x02\x0a\x00\x03"
+
+
+def rom_sign_off(b):
+    """b (4 bytes) is the boot ROM saying it stopped waiting. What it sends then is the address it starts, little
+    endian: 00 10 00 03 (0x03001000) on a radio with a loader at the start of its flash, 00 c0 00 03 (0x0300C000) on
+    one whose flash names the application (a board with rom_entry). So: any address in the program flash (0x03......)
+    on a 256-byte boundary past the first. The ROM's own frames all start with 02 and never match."""
+    return len(b) == 4 and b[0] == 0x00 and b[3] == 0x03 and (b[1] or b[2]) != 0
+
+
+def rom_sign_offs(buf):
+    buf = bytes(buf)
+    return sum(rom_sign_off(buf[i:i + 4]) for i in range(len(buf) - 3))
+
+
+def rom_gave_up(buf, sent=b""):
+    """The boot ROM said it stopped waiting. sent: the frame just written, which a cable that echoes sends back (the
+    stub image holds such addresses, so the ones in an echo don't count)."""
+    return rom_sign_offs(buf) > rom_sign_offs(sent)
+
+
 # --slow-cable: the greeting reply goes out this often while the radio is switched on, and on for ROM_REPEAT_AFTER once
 # the greeting is seen: the ROM drops what reaches it before its greeting, so only the answers sent after that count
 ROM_REPEAT, ROM_REPEAT_AFTER = 0.03, 0.15
@@ -799,7 +825,7 @@ class Radio:
             if not echo and buf[-4:] == ROM_ACK:
                 self.log("before the boot ROM's acknowledgement: %s" % buf[:-4][:16].hex(" "))
                 return True, b""
-            if not echo and (buf[-4:] == ROM_NAK or ROM_GAVE_UP in buf):
+            if not echo and (buf[-4:] == ROM_NAK or rom_gave_up(buf, sent)):
                 return False, buf[:16]
             if time.monotonic() >= end:
                 return False, buf[:16]
@@ -807,6 +833,8 @@ class Radio:
             buf += self.read_exact(max(1, want), max(0.0, min(0.05, end - time.monotonic())))
 
     def rom_error(self, what, got):
+        if unsent_bytes(self.port):         # the frames never left the computer: not the radio, not the plug
+            return DumpError("%s: %s" % (what, stalled_text(unsent_bytes(self.port))))
         bytes_ = "received %s" % got.hex(" ") if got else "nothing received"
         cable = "the %s programming cable" % self.cable if self.cable else "the programming cable"
         return DumpError("%s (%s%s). The radio's boot ROM did not take the loader over %s. Try a cable with an FTDI, "
@@ -846,7 +874,16 @@ class Radio:
                 heard = time.monotonic()
             elif slow and last == ROM_NAK:
                 return True
-            if last == ROM_GAVE_UP:
+            if rom_sign_off(last):
+                if heard and unsent_bytes(self.port):
+                    raise DeafRadio("the radio's boot ROM greeted, but the answers never left the computer: "
+                                    + stalled_text(unsent_bytes(self.port)))
+                if heard:
+                    raise DeafRadio("the radio's boot ROM greeted, but none of the answers sent ahead reached it and it started "
+                                    "the firmware: the radio does not receive what %s sends. Push the plug all the way into "
+                                    "the radio, then use another cable. Unplug this one from the radio: a cable that holds "
+                                    "the radio's line low can also hold its PTT"
+                                    % ("the %s programming cable" % self.cable if self.cable else "this cable"))
                 raise DumpError("the radio started its firmware%s" % (" without taking the loader, even with --slow-cable" if slow
                                 else ": its boot ROM's greeting did not come through. Run again with --slow-cable"))
         raise DumpError("the radio did not start its serial boot ROM within %d s: radio off and cable in before the "
@@ -893,7 +930,7 @@ class Radio:
         # still on their way come in too: they must be gone before block 0. The ROM has no timeout once it took the answer
         time.sleep(0.2 if answered else 0.05)
         reply = self.read_exact(256, 0.02)
-        if ROM_GAVE_UP in reply:
+        if rom_gave_up(reply):
             raise self.rom_late(reply)
         if ROM_REPLY in reply:
             self.echo = True
@@ -912,7 +949,7 @@ class Radio:
                 ok, got = self.rom_ack(frame, 1.0)
                 if ok:
                     break
-                if ROM_GAVE_UP in got:
+                if rom_gave_up(got, frame):
                     raise self.rom_late(got)
                 self.log("stub block %d not acknowledged (%s), sending it again"
                          % (i, "received %s" % got.hex(" ") if got else "nothing received"))
@@ -1963,7 +2000,7 @@ def lz4_encode(src):
 
 class FakeRadio:
     def __init__(self, images, drop=None, flip=(), silent=(), swap=(), misplace=(), stub_len=1536, load=LOAD_ADDR,
-                 rom_echo=False, rom_nak=False, rom_late=False, ecc=()):
+                 rom_echo=False, rom_nak=False, rom_late=False, ecc=(), sign_off=ROM_GAVE_UP):
         self.images = images                # {"progmem": bytes, "q128": bytes}
         self.data_code = 0x18               # the data flash's JEDEC capacity code: 16 MB
         self.id_reads = 0                   # JEDEC ID requests answered
@@ -1980,7 +2017,7 @@ class FakeRadio:
         self.sectors_sent = 0
         self.pokes = []
         self.led = self.led_seq = None
-        self.out = bytearray(b"\x02\x24\x00\x03" + (ROM_GAVE_UP if rom_late else b""))
+        self.out = bytearray(b"\x02\x24\x00\x03" + (sign_off if rom_late else b""))
         self.inb = bytearray()
         self.loaded = bytearray()
         self.running = False
@@ -2354,9 +2391,48 @@ def low_latency(port):
     return port
 
 
+WRITE_LIMIT = 5.0    # s for one write to leave the computer: the longest frame takes under 0.5 s at 115200 baud
+
+
 def open_port(serial, path):
-    """A device or a pyserial URL: rfc2217://HOST:PORT reaches a radio on a networked serial server."""
-    return low_latency(serial.serial_for_url(path, 115200, timeout=0.1))
+    """A device or a pyserial URL: rfc2217://HOST:PORT reaches a radio on a networked serial server. A write the
+    adapter never takes ends after WRITE_LIMIT (stalled_text) instead of holding the tool for good."""
+    return low_latency(serial.serial_for_url(path, 115200, timeout=0.1, write_timeout=WRITE_LIMIT))
+
+
+def stalled_text(unsent=0):
+    """A write timed out: the adapter (or its driver) stopped sending. Seen on a PL2303 cable whose port took about
+    1 KB into the computer's buffers and sent none of it, while everything the radio sent still arrived."""
+    return ("the programming cable stopped taking data from the computer%s: its USB adapter or the adapter's driver does "
+            "not send. Unplug the cable from the computer, wait a few seconds and plug it back in, directly into the "
+            "computer rather than a hub. If it happens again, use another cable"
+            % (" (%d bytes are waiting to be sent)" % unsent if unsent else ""))
+
+
+SETTLE_LIMIT = 2.0   # s the tool waits on exit for what it wrote to leave
+
+
+def settle(port, limit=SETTLE_LIMIT):
+    """Before the port closes (the tool's exit closes it), what was written leaves: a Prolific adapter on macOS whose
+    port was closed with data still going out took no data at all from then on, through every later open, until it was
+    unplugged. Waits on the system's count, never on a drain, which never returns on an adapter that stopped sending."""
+    if port is None:
+        return
+    end = time.monotonic() + limit
+    try:
+        while unsent_bytes(port) and time.monotonic() < end:
+            time.sleep(0.01)
+        time.sleep(0.05)                # the adapter's own FIFO
+    except KeyboardInterrupt:
+        pass
+
+
+def unsent_bytes(port):
+    """Bytes the computer still holds for the port, where the system tells (0 elsewhere, and on fakes)."""
+    try:
+        return int(port.out_waiting)
+    except (AttributeError, NotImplementedError, OSError, ValueError, TypeError):
+        return 0
 
 
 def self_test():
@@ -2378,6 +2454,7 @@ def self_test():
         p = open_port(serial, "loop://")
         p.write(b"\x5a")
         check(p.read(1) == b"\x5a", "a pyserial URL opens as the port")
+        check(p.write_timeout == WRITE_LIMIT, "a write that the adapter never takes ends: the port has a write limit")
         p.close()
     def image(seed, blank_from):
         d = bytearray(bytes((i * seed + (i >> 8) * 13 + 1) & 0xFF for i in range(64 * SECTOR)))
@@ -2426,6 +2503,55 @@ def self_test():
         check(False, "a boot ROM that stopped waiting fails the load")
     except DumpError as e:
         check("stopped waiting" in str(e) and "--slow-cable" in str(e), "a late answer is reported as one: %s" % e)
+    # a board the ROM starts directly signs off with its application's address: the same report
+    radio = FakeRadio(images, stub_len=len(stub), rom_late=True, sign_off=b"\x00\xc0\x00\x03")
+    try:
+        Radio(radio, log=quiet).start(wait=2, stub=stub)
+        check(False, "a boot ROM that signed off with the application's address fails the load")
+    except DumpError as e:
+        check("stopped waiting" in str(e) and "00 c0 00 03" in str(e), "the application's address is a sign-off too: %s" % e)
+    # with the answers sent ahead and the greeting seen, a sign-off means the radio hears nothing from this cable
+    radio = FakeRadio(images, stub_len=len(stub), rom_late=True, sign_off=b"\x00\xc0\x00\x03")
+    try:
+        Radio(radio, log=quiet, cable="PL2303").start(wait=2, stub=stub, slow=True)
+        check(False, "a radio that hears nothing fails the load")
+    except DeafRadio as e:
+        check("does not receive" in str(e) and "PL2303" in str(e) and "another cable" in str(e), "a deaf radio is named: %s" % e)
+    except DumpError as e:
+        check(False, "a deaf radio is reported as one, not as: %s" % e)
+    # the same with bytes still waiting in the computer: the adapter is what doesn't send, and the report says so
+    radio = FakeRadio(images, stub_len=len(stub), rom_late=True, sign_off=b"\x00\xc0\x00\x03")
+    radio.out_waiting = 259
+    try:
+        Radio(radio, log=quiet, cable="PL2303").start(wait=2, stub=stub, slow=True)
+        check(False, "an adapter that doesn't send fails the load")
+    except DeafRadio as e:
+        check("never left the computer" in str(e) and "259 bytes are waiting" in str(e) and "plug it back in" in str(e),
+              "an adapter that doesn't send is named: %s" % e)
+    check(unsent_bytes(io.BytesIO()) == 0 and "waiting" not in stalled_text(), "a port that can't tell holds nothing back")
+
+    class Leaving:                      # out_waiting falls as the bytes leave; a stuck one never does
+        def __init__(self, n, step):
+            self.n, self.step = n, step
+
+        @property
+        def out_waiting(self):
+            self.n = max(0, self.n - self.step)
+            return self.n
+    leaving = Leaving(300, 100)
+    settle(leaving)
+    check(leaving.n == 0, "on exit the tool waits for what it wrote to leave")
+    t0 = time.monotonic()
+    settle(Leaving(300, 0), limit=0.2)
+    check(time.monotonic() - t0 < 1.0, "a cable that sends nothing doesn't hold the exit")
+    settle(None)
+    # an echo that holds such an address (the stub image does) is not the ROM signing off
+    check(not rom_gave_up(b"\x02\x18\x00\xc0\x00\x03", b"\x02\x18\x00\xc0\x00\x03") and rom_gave_up(b"\x00\xc0\x00\x03")
+          and rom_gave_up(b"\x02\x18\x00\xc0\x00\x03\x00\xc0\x00\x03", b"\x02\x18\x00\xc0\x00\x03"),
+          "a start address inside an echoed frame is not a sign-off")
+    check(all(rom_sign_off(bytes(b)) for b in ([0, 0x10, 0, 3], [0, 0xC0, 0, 3], [0, 0x80, 0x0E, 3], [0, 0, 0x10, 3]))
+          and not any(rom_sign_off(bytes(b)) for b in (ROM_HELLO, ROM_ACK, ROM_NAK, ROM_REPLY, [0, 0, 0, 3], [0, 0x10, 0, 2], [4, 0x10, 0, 3])),
+          "a sign-off is any 256-byte-aligned program flash address, never one of the ROM's frames")
     # --slow-cable: the answer goes out before the greeting is seen; the load goes on, the NAKs of the extra answers dropped
     radio = FakeRadio(images, stub_len=len(stub))
     sent = []
@@ -3205,6 +3331,7 @@ def main(argv=None, raise_errors=False):
     except ImportError:
         print("pyserial is missing: pip install pyserial", file=sys.stderr)
         return 1
+    port = None
     try:
         stub = open(a.stub, "rb").read() if a.stub else None
         if a.port.startswith("udp:"):
@@ -3370,6 +3497,11 @@ def main(argv=None, raise_errors=False):
             else:
                 raise DumpError("--boot wants reset or jump:ADDR")
         return 0
+    except serial.SerialTimeoutException:
+        if raise_errors:
+            raise
+        print("\nstubtool: %s" % stalled_text(unsent_bytes(port)), file=sys.stderr)
+        return 1
     except (DumpError, OSError) as e:
         if raise_errors:
             raise
@@ -3378,6 +3510,8 @@ def main(argv=None, raise_errors=False):
     except KeyboardInterrupt:
         print("\nstubtool: stopped", file=sys.stderr)
         return 1
+    finally:
+        settle(port)
 
 
 if __name__ == "__main__":
