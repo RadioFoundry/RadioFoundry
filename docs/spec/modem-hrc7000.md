@@ -915,7 +915,10 @@ empty at every block edge. It ran dry there: the queue emptied with the FIFO tak
 of beeps, and every tone broke up at 20 ms intervals, its pitch jumping and its level dipping by up to 40 dB at the
 microphone (measured). `audio_pcm.c` therefore pushes nothing after the queue is emptied (route on, gate edges) until
 two blocks are queued, so the queue stays a block ahead of the FIFO for one block (20 ms) of latency. With that hold
-the queue never ran out in the same beeps, and the FIFO was topped up at least every 4 ms (measured). The `un` field
+the queue never ran out in the same beeps. A dedicated 2 ms timer refills the FIFO independently of the audio task:
+a voice decoder can occupy that task longer than the FIFO's 8 ms capacity. Three queue entries can be published,
+with a fourth reserved for the producer: variable decode time can finish a third block before either primed entry
+has drained. The occupancy check occurs after decoding, so space freed during decoding can be used. The `un` field
 of the `pg` diagnostics line (below) counts run-outs and stays 0.
 
 The FIFO is two halves of one push (32 samples, 4 ms) each. b31 clears exactly every 4.00 ms, as the modem moves on to
@@ -946,8 +949,8 @@ transmitting, all three headers decoded in five runs (measured). Keep b7 clear d
 
 `audio_pcm.c` keeps it clear for every board on the platform with one gate. The DMR glue closes it as the engine starts
 to transmit (`tx_begin`, and the hotspot's `bs_key`); while it is closed, b7 stays clear and nothing is pushed to the
-FIFO. It opens at least 50 ms later, once `hrc_dmr_tx_active()` is false: checked by the audio task (every 2 ms with
-the speaker stream routed, every 10 ms without), on each speaker route change and on each `hrc_audio_pcm_ring()` call
+FIFO. It opens at least 50 ms later, once `hrc_dmr_tx_active()` is false: checked by the audio task (at each PCM block,
+or every 10 ms while gated), on each speaker route change and on each `hrc_audio_pcm_ring()` call
 (the audio task only exists once a stream has run, and APRS sets b7 without one). On both edges the speaker queue is
 emptied, a block the audio task was filling at that moment included, so a beep queued during the transmission is
 dropped, not played late. Boards set b7 only through `hrc_audio_pcm_ring()`, which applies the gate. The last of the

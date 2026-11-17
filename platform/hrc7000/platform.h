@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Open25-DM32 Authors
 // HR_C7000 (Dahua DH4570) SoC with a C-SKY CK803S core: register map and platform services for boards built on it
 // (docs/spec/hardware-dm32.md 1-4). The modem / baseband registers are the driver's (drivers/modem/hrc7000).
 #ifndef PLATFORM_HRC7000_H
@@ -84,6 +85,7 @@
 #define TIMER_CLOCK		2
 #define TIMER_PA		3
 #define TIMER_AFSK		4	// APRS AFSK transmit: tops up the prompt FIFO (hrc_afsk.c)
+#define TIMER_PCM		6	// speaker FIFO refill, independent of blocking voice decoders
 #define TIMER_BOARD		5	// a board's one-shot (e.g. the waits of a board's own DMR burst sequence)
 
 // --- PIC: source s is CPU vector s + 32 (hardware-dm32.md 4) ---

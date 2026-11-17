@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
+# Copyright (c) 2026 Open25-DM32 Authors
 ## Host unit tests for the hardware independent parts of the firmware
 ##
 ##   make -C tests/host
@@ -1753,3 +1754,12 @@ run-webctlassets: httpAssetsTestWebctl
 	./httpAssetsTestWebctl out/http_webctl
 	python3 -I $(ROOT)/tools/gen_http_assets.py --check out/http_webctl $(WEBCTL_ASSETS)
 .PHONY: run-webctlassets
+
+TESTS += hrc7000PcmTest
+# The harness supplies the RTOS calls; existing empty headers keep it independent of target submodules.
+hrc7000PcmTest: hrc7000PcmTest.c $(ROOT)/platform/hrc7000/audio_pcm.c $(ROOT)/platform/hrc7000/prompt_fifo.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Iwatchdog_stub -DCONFIG_VOX=0 -o $@ $<
+run: run-hrc-pcm
+run-hrc-pcm: hrc7000PcmTest
+	./hrc7000PcmTest
+.PHONY: run-hrc-pcm

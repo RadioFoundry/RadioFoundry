@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Open25-DM32 Authors
 // HR_C7000 PCM audio (audio_pcm.h): mic samples from the modem's PCM buffer, speaker samples to its prompt FIFO
 // (docs/spec/hardware-dm32.md 9; modem-hrc7000.md 3, 8.1, 8.4).
 //
 // With AUDIO_CONTROL b4 set the modem fills 80 mic samples at 0x18000000 every 10 ms and raises PCM_wr (PIC 28). The
 // mic interrupt paces everything: two halves make a 20 ms block, the task runs the block callback (never in the ISR)
 // and queues the speaker block it returned. While the speaker is routed (AUDIO_CONTROL b7, set by the board's hook)
-// the task pushes the queue to the prompt FIFO, 32 samples at a time while b31 says there is room, as stock does. The
+// a 2 ms timer pushes the queue to the prompt FIFO, 32 samples at a time while b31 says there is room. The
 // CPU-fed speaker buffer (b5, 0x180000A0) sounded rough and choppy on the bench with every sample layout tried.
 //
 // The FIFO takes only two of those chunks (8 ms), less than a block, and the blocks come at the rate it plays them.
@@ -44,7 +45,7 @@
 #define AUDIO_TASK_PRIORITY	5	// above the radio task: a late block is an audible gap
 #define AUDIO_TASK_STACK	1536	// words: the vocoder in the callback
 #define HALF			C7_PCM_SAMPLES	// 80
-#define SPK_BLOCKS		3
+#define SPK_BLOCKS		4	// two primed blocks, a third for decode jitter, one reserved for the producer
 #define SPK_PRIME_BLOCKS	2	// queued before the first push after the queue was emptied (spk_drop)
 
 static int16_t mic_blk[2][AUDIO_BLOCK_SAMPLES];	// double buffered: the ISR fills one while the task reads the other
@@ -60,11 +61,11 @@ static TaskHandle_t task;
 static audio_block_cb_t block_cb;
 static void *block_ctx;
 static volatile bool running;
-static bool spk_routed;		// the last speaker_pcm() state
+static volatile bool spk_routed;		// the last speaker_pcm() state
 static volatile bool fifo_held;	// another user (the board's AFSK) owns the FIFO: speaker PCM waits
 // underruns: pushes that emptied the queue while loud audio played and the FIFO still had room (it ran dry next)
 static volatile uint32_t blocks, overruns, underruns;
-static bool spk_primed;		// SPK_PRIME_BLOCKS were queued since the last spk_drop: the pushes go on
+static volatile bool spk_primed;		// SPK_PRIME_BLOCKS were queued since the last spk_drop: the pushes go on
 static bool spk_loud[SPK_BLOCKS];	// the queued block has a sample other than 0 (a beep, voice)
 static volatile uint32_t loud_pushed;	// hrc_micros() when the last chunk of a loud block went to the FIFO
 static volatile bool loud_recent;	// loud_pushed is set and less than FIFO_PLAY_MS old when last looked at
@@ -125,8 +126,8 @@ static void isr_pcm_wr(void)
 
 static void gate_check(void);
 
-// Push 32-sample chunks while the FIFO has room (AUDIO_CONTROL b31 clear). Task context: the task tops it up every
-// 2 ms while the speaker is routed, faster than a chunk (4 ms) plays
+// Timer context: refill every 2 ms even while a voice decoder occupies the audio task. The FIFO holds only 8 ms,
+// less than a worst-case decode; servicing it from that task made every digital mode vulnerable to gaps.
 static void fifo_feed(void)
 {
 	if (!spk_routed || fifo_held || tx_gated) {
@@ -164,6 +165,12 @@ static void fifo_feed(void)
 	}
 }
 
+static void fifo_tick(void)
+{
+	hrc_timer_ack(TIMER_PCM);
+	fifo_feed();
+}
+
 static void audio_task(void *arg)
 {
 	(void)arg;
@@ -171,9 +178,8 @@ static void audio_task(void *arg)
 	for (;;) {
 		// Gated without the speaker stream only the gate's opening is waited for: 10 ms late is fine for the beep
 		// after TX, and a hotspot keeps the gate closed for hours
-		ulTaskNotifyTake(pdTRUE, spk_routed ? pdMS_TO_TICKS(2) : tx_gated ? pdMS_TO_TICKS(10) : portMAX_DELAY);
+		ulTaskNotifyTake(pdTRUE, tx_gated ? pdMS_TO_TICKS(10) : portMAX_DELAY);
 		gate_check();
-		fifo_feed();
 		uint32_t s = hrc_irq_save();
 		int8_t idx = mic_ready;
 		if (idx >= 0) {
@@ -186,27 +192,22 @@ static void audio_task(void *arg)
 			continue;
 		}
 		uint8_t next = (uint8_t)((spk_head + 1u) % SPK_BLOCKS);
-		if (next == spk_tail) {
-			static int16_t discard[AUDIO_BLOCK_SAMPLES];
-			cb(mic, discard, block_ctx);	// the speaker side is full (PCM not routed): keep the mic side going
-		} else {
-			int16_t *q = spk_q[spk_head];
-			uint8_t gen = spk_gen;
-			cb(mic, q, block_ctx);
-			bool loud = false;
-			for (uint32_t i = 0; i < AUDIO_BLOCK_SAMPLES && !loud; i++) {
-				loud = q[i] != 0;
-			}
-			// A gate edge emptied the queue during cb() (another task): this block is as stale as the rest
-			s = hrc_irq_save();
-			if (gen == spk_gen) {
-				spk_loud[spk_head] = loud;
-				spk_head = next;
-			}
-			hrc_irq_restore(s);
+		// head is the reserved empty slot, even when the queue is full. The timer can free space during cb().
+		int16_t *q = spk_q[spk_head];
+		uint8_t gen = spk_gen;
+		cb(mic, q, block_ctx);
+		bool loud = false;
+		for (uint32_t i = 0; i < AUDIO_BLOCK_SAMPLES && !loud; i++) {
+			loud = q[i] != 0;
 		}
+		// A gate edge emptied the queue during cb(): this block is stale. Otherwise publish if space is ready now.
+		s = hrc_irq_save();
+		if (gen == spk_gen && next != spk_tail) {
+			spk_loud[spk_head] = loud;
+			spk_head = next;
+		}
+		hrc_irq_restore(s);
 		blocks++;
-		fifo_feed();
 	}
 }
 
@@ -336,6 +337,8 @@ static void isr_register(void)
 	uint32_t s = hrc_irq_save();	// the stream (audio users' task) and the meter (radio task) can both get here first
 	if (!isr_registered) {
 		hrc_irq_register(IRQ_PCM_WR, isr_pcm_wr);
+		hrc_irq_register(IRQ_TIMER6, fifo_tick);
+		hrc_irq_enable(IRQ_TIMER6, true);
 		isr_registered = true;
 	}
 	hrc_irq_restore(s);
@@ -350,6 +353,7 @@ bool hrc_audio_pcm_start(audio_block_cb_t cb, void *ctx)
 			return false;
 		}
 	}
+	uint32_t irq = hrc_irq_save();
 	block_ctx = ctx;
 	block_cb = cb;
 	mic_fill = 0;
@@ -361,6 +365,8 @@ bool hrc_audio_pcm_start(audio_block_cb_t cb, void *ctx)
 	hrc7000_wr(modem, C7_INTERP_CLEAR, C7_INT_PCM_WR);
 	hrc_irq_enable(IRQ_PCM_WR, true);
 	hrc7000_audio_bits(modem, C7_AUDIO_PCM_MIC, 0);	// under the lock set at attach
+	hrc_timer_periodic(TIMER_PCM, 2000u);
+	hrc_irq_restore(irq);
 	return true;
 }
 
@@ -368,6 +374,7 @@ void hrc_audio_pcm_stop(void)
 {
 	uint32_t s = hrc_irq_save();	// the meter's interrupt decides on the same state
 	running = false;
+	hrc_timer_stop(TIMER_PCM);
 	block_cb = NULL;
 #if CONFIG_VOX
 	bool keep = meter_on;
@@ -386,10 +393,12 @@ void hrc_audio_pcm_stop(void)
 // the route turns on: emptying it on every call threw away the block being queued and the one playing (choppy beeps)
 void hrc_audio_pcm_speaker(bool on)
 {
+	uint32_t irq = hrc_irq_save();
 	if (on != spk_routed) {
 		spk_drop();
 	}
 	spk_routed = on;
+	hrc_irq_restore(irq);
 	if (speaker_pcm_cb != NULL) {
 		speaker_pcm_cb(on);
 	}

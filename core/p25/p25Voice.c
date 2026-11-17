@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Open25-DM32 Authors
 // P25 voice: engine frames <-> full-rate decoder <-> PCM blocks (p25Voice.h)
 #include "config.h"
 #if CONFIG_P25 && CONFIG_IMBE	// the whole file
@@ -137,6 +138,9 @@ static void silence(int16_t *spk)
 	memset(spk, 0, AUDIO_BLOCK_SAMPLES * sizeof(int16_t));
 }
 
+// -10 dB of playback headroom before synthesis, not after PCM has already clipped.
+#define PLAYBACK_GAIN_Q11 (-3402)
+
 static void rx_block(int16_t *spk)
 {
 	uint8_t seq = LOAD(rx_seq);
@@ -192,11 +196,11 @@ static void rx_block(int16_t *spk)
 		stats.rx_underruns++;
 		stats.rx_underrun_at = cb_call_frames;
 		stats.rx_concealed++;
-		imbe_dec_frame(&dec, imbe_silence, IMBE_ERRS_LOST, spk);
+		imbe_dec_frame_gain(&dec, imbe_silence, IMBE_ERRS_LOST, spk, PLAYBACK_GAIN_Q11);
 		return;
 	}
 	const p25_voice_entry_t *e = &mem->q[t & (P25_VOICE_QUEUE - 1)];
-	int run = imbe_dec_frame(&dec, e->imbe, e->errs, spk);
+	int run = imbe_dec_frame_gain(&dec, e->imbe, e->errs, spk, PLAYBACK_GAIN_Q11);
 	STORE(rx_tail, (uint8_t)(t + 1));
 	if (run != 0) {
 		stats.rx_concealed++;

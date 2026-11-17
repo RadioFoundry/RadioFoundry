@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Open25-DM32 Authors
 // Full-rate vocoder decoder (7200 x 4400 bit/s, as P25 Phase 1 voice carries it): the 88 information bits of a frame to
 // 160 samples of speech. The front end of the MBE core (mbe.h): it dequantizes the frame into mbe_params_t and keeps the
 // inter-frame prediction; the core does the synthesis and the concealment.
@@ -53,6 +54,10 @@ void imbe_dec_init(const imbe_mem_t *m);
 // Under errors the frame's voicing and amplitudes are smoothed. Returns the number of bad frames in a row, 0 for a
 // good one.
 int imbe_dec_frame(const imbe_mem_t *m, const uint8_t imbe[IMBE_BYTES], uint8_t errs, int16_t pcm[MBE_FRAME_LEN]);
+// The same decoder with a log2 Q11 playback gain, applied before synthesis/saturation (0: native PCM).
+// Quantizer prediction, channel-error smoothing and transmitted parameter meanings are unchanged.
+int imbe_dec_frame_gain(const imbe_mem_t *m, const uint8_t imbe[IMBE_BYTES], uint8_t errs,
+		       int16_t pcm[MBE_FRAME_LEN], int16_t gain_q11);
 // A frame of silence (pitch code 216): what a transmitter sends when it has no speech, and what decodes as silence
 extern const uint8_t imbe_silence[IMBE_BYTES];
 
