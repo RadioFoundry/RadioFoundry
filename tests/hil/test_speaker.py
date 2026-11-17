@@ -337,11 +337,13 @@ RX2_ROUTE_MS = 60
 @pytest.mark.feature("dual_watch")
 @pytest.mark.rf
 @pytest.mark.bench_service
-def test_fm_rx_speaker_second_receiver(radio, sdr_bench, microphone, pytestconfig):
+def test_fm_rx_speaker_second_receiver(radio, sdr_bench, microphone, pytestconfig, backup_dir):
     """test_fm_rx_speaker through a second receiver (hal_rx2.h): dual watch puts it on a stored FM channel on --fm-mhz
     while the main receiver stays on another channel of the zone. Silent before the carrier (its squelch shut), the
-    tones whole, and a tail no longer than the core's squelch close time plus RX2_ROUTE_MS."""
-    from test_radio_features import features, need_scan, scan_off, settings, wait_features
+    tones whole, and a tail no longer than the core's squelch close time plus RX2_ROUTE_MS. Without such a channel,
+    and with --allow-codeplug-write, an FM channel of the current zone is moved to --fm-mhz for the test (backed up
+    and restored, test_cps.codeplug_edited)."""
+    from test_radio_features import features, need_scan
     need_scan(radio)
     if features(radio).get("dual.receivers") != "2":
         skip("other_board", "no second receiver (board.rx2)")
@@ -350,10 +352,48 @@ def test_fm_rx_speaker_second_receiver(radio, sdr_bench, microphone, pytestconfi
         skip("state", "the radio is in hotspot mode")
     mhz = rig(pytestconfig, "fm-mhz")
     hz = round(mhz * 1e6)
+    radio.leave_vfo()           # test_fm_rx_speaker leaves it in the VFO
+    start = radio.core()        # find_channel leaves the radio in another zone when it finds none
     try:
         pos = radio.find_channel(hz, "fm")
     except AssertionError as e:
-        skip("state", f"dual watch needs a stored FM channel on --fm-mhz: {e}")
+        if not pytestconfig.getoption("--allow-codeplug-write"):
+            skip("opt_in", f"no stored FM channel on --fm-mhz ({e}); --allow-codeplug-write moves one there")
+        _rx2_on_moved_channel(radio, sdr_bench, microphone, mhz, hz, backup_dir, start)
+        return
+    _rx2_speaker(radio, sdr_bench, microphone, mhz, hz, pos)
+
+
+def _rx2_on_moved_channel(radio, sdr_bench, microphone, mhz, hz, backup_dir, core):
+    """An FM channel of the zone the radio was on (core: its view then), moved to hz (RX and TX) for the test, then the
+    codeplug restored"""
+    import cps_client
+    from test_cps import codeplug_edited, read_backup
+    image, _ = read_backup(radio, backup_dir, "rx2probe")
+    here = rfoundry_hil.as_int(core.get("channel_number"), 0)
+    if core.get("vfo") == "1" or here == 0:
+        skip("state", "the radio isn't on a stored channel: no zone to put the FM channel in")
+    zone = next((m for _, _, m in cps_client.zones(image) if here in m), None)
+    if zone is None:
+        skip("state", f"channel {here} is in no zone")
+    fm = [n for n in zone if n != here and cps_client.decode_channel(image, n) and
+          not cps_client.channel_dmr(image, n)[0]]
+    if not fm:
+        skip("state", "the zone has no other FM channel to move to --fm-mhz")
+    number = fm[0]
+
+    def edit(img):
+        cps_client.set_channel_rx(img, number, hz)
+        cps_client.set_channel_tx(img, number, hz)
+    with codeplug_edited(radio, backup_dir, edit, "rx2fm"):
+        radio.go_home()
+        pos = radio.find_channel(hz, "fm")
+        print(f"channel {number} moved to {mhz} MHz for the test")
+        _rx2_speaker(radio, sdr_bench, microphone, mhz, hz, pos)
+
+
+def _rx2_speaker(radio, sdr_bench, microphone, mhz, hz, pos):
+    from test_radio_features import scan_off, settings, wait_features
     other = None
     for p in range(rfoundry_hil.as_int(radio.core().get("zone_size"), 0)):
         if p == pos:
