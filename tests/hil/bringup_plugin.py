@@ -126,6 +126,7 @@ def sanitize(text, secrets=()):
     text = re.sub(r"/dev/\S+", "<port>", text)
     text = re.sub(r"(?i)\b(?:COM\d+|usbmodem\w*|serial[=: ]+\S+)", "<port>", text)
     text = re.sub(r"\b[\w-]+\.local\b", "<host>", text)
+    text = re.sub(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", "<host>", text)    # an IPv4 address (a bench board)
     return text[:400]
 
 

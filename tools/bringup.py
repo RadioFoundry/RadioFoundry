@@ -680,7 +680,7 @@ def check(feats, boards, records, found, all_switches):
             for f in r.get("features", []):
                 if f not in by_id:
                     notes.append(f"{where}: feature {f} is no longer in the checklist")
-            if re.search(r"/dev/|usbmodem|://|\bserial[=:]", json.dumps(r)):
+            if re.search(r"/dev/|usbmodem|://|\bserial[=:]|\b\d{1,3}(?:\.\d{1,3}){3}\b", json.dumps(r)):
                 errs.append(f"{where}: names a port, host or serial number")
     errs += reported_feature_errors()
     # TODO(commit 9): the claim blocks in the docs (feature matrix, README, 23-radios.md) are generated from the
@@ -719,7 +719,7 @@ def check_seed(r, b, by_id):
             continue
         if row.get("source") and not os.path.exists(os.path.join(ROOT, row["source"])):
             errs.append(f"{where}: {f}: source {row['source']} does not exist")
-    if re.search(r"/dev/|usbmodem|://|\bserial[=:]", json.dumps(r)):
+    if re.search(r"/dev/|usbmodem|://|\bserial[=:]|\b\d{1,3}(?:\.\d{1,3}){3}\b", json.dumps(r)):
         errs.append(f"{where}: names a port, host or serial number")
     return errs
 
