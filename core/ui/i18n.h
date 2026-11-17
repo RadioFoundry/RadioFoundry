@@ -6,10 +6,9 @@
 //   TRN(ZONE_TITLE, "Zone")     a tr_id_t for a static table's entry or a struct field; call tr() in order to show it
 //   TRX(CHAN_LABEL_RX, "RX")    a tr_id_t representation, like TRN, but for non-localizable text (never translated)
 //   TRF(&b, MSG_BANNER_FROM, "Message from %s", name)
-//                               text with values, appended to an sbuf_t (fmt.h: sb_fmt and its %s %K %d %u, numbered
-//                               %1$s %2$u when there are several). A translation may move the values. The compiler
-//                               checks the values against the English: tools/i18n.py writes a prototype for the key
-//                               into tr_keys.h
+//                               text with placeholders (%s %K %d %u), each replaced by its argument, appended to an
+//                               sbuf_t (text/format.h). A translation may move the placeholders. The compiler checks
+//                               the arguments against the English's placeholders (TR_CHECK_* below)
 // The English at the mark is the source of truth: tools/i18n.py reads it from there. One key always has the same
 // English; the same English may have more than one key.
 // A tr_id_t is opaque: pass it to tr() or tr_en(), compare it with TR_NONE (the zero value: a memset or an omitted

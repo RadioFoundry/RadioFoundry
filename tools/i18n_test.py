@@ -102,7 +102,7 @@ class Marks(unittest.TestCase):
         self.assertEqual(i18n.format_values("%s to %2$u", ""), {1: "s", 2: "u"})
         self.assertEqual(i18n.format_values("%2$u", ""), {2: "u"})
         self.assertEqual(i18n.format_values("{%1$u%2$K ago|%1$u%2$K}", ""), {1: "u", 2: "K"})
-        # "%%" is a '%', read first: the '%' after it never starts a value
+        # "%%" is a '%', read first: the '%' after it never starts a placeholder
         self.assertEqual(i18n.format_values("50%%s", ""), {})
         self.assertEqual(i18n.format_values("%u%%: used", ""), {1: "u"})
         self.assertEqual(i18n.check_translation("%u%% used", "%u%%usado", "x"), [])
@@ -110,21 +110,27 @@ class Marks(unittest.TestCase):
                          ('x = TR(FROM, "From %s");', "only TRF"),
                          ('TRF(&b, FROM, "From %2$s and %3$s or %3$s", a);', "numbered from 1"),
                          ('TRF(&b, FROM, "From", a);', "numbered from 1"),
-                         ('TRF(&b, FROM, "From %1$s", a);', "without a number"),
-                         ('TRF(&b, FROM, "From %1$s to %2$s", a, b);', "in order without numbers"),
-                         ('TRF(&b, FROM, "From %s to %2$s or %2$s", a, b);', "in order without numbers"),
-                         ('TRF(&b, FROM, "To %2$s from %1$s", a, b);', "in order without numbers"),
+                         ('TRF(&b, FROM, "From %1$s", a);', "takes no number"),
+                         ('TRF(&b, FROM, "From %1$s to %2$s", a, b);', "the numbers add nothing"),
+                         ('TRF(&b, FROM, "From %s to %2$s or %2$s", a, b);', "every placeholder or none"),
+                         ('TRF(&b, FROM, "Battery %u%: low", n);', "starts no placeholder"),
+                         ('TRF(&b, FROM, "100% %s", a);', "starts no placeholder"),
                          ('TRF(&b, FROM, TEXT_ALT_OPEN "Here, %u ch" TEXT_ALT_NEXT "Here" TEXT_ALT_CLOSE, n);',
                           "inside a text alternate"),
                          ('TRF(&b, FROM, "%1$s and %1$u", a);', "in one place"),
-                         ('TRF(&b, FROM, "%02s", a);', "only a number takes a width"),
-                         ('TRF(&b, FROM, "%1$s %5$s", a);', "is not a value"),
-                         ('TRF(&b, FROM, "%1$s %2$x", a, b);', "is not a value"),
-                         ('TRF(&b, FROM, "%s %x", a, b);', "is not a value"),
-                         ('TRF(&b, FROM, "%s %3u", a, b);', "is not a value"),
+                         ('TRF(&b, FROM, "%02s", a);', "only %d and %u take a width"),
+                         ('TRF(&b, FROM, "%1$s %5$s", a);', "is not a placeholder"),
+                         ('TRF(&b, FROM, "%1$s %2$x", a, b);', "is not a placeholder"),
+                         ('TRF(&b, FROM, "%s %x", a, b);', "is not a placeholder"),
+                         ('TRF(&b, FROM, "%s %3u", a, b);', "is not a placeholder"),
                          ('TRF(&b, "From %1$s", a);', "takes a buffer, a key")):
             with self.assertRaisesRegex(i18n.I18nError, why, msg=src):
                 scan(src + "\n")
+        # The English numbers its placeholders when the order alone can't say which argument each takes
+        self.assertEqual([m.text for m in scan('TRF(&b, TO, "To %2$s from %1$s", a, b);\n')], ["To %2$s from %1$s"])
+        # A '%' in plain text (TR) is text
+        self.assertEqual([m.text for m in scan('x = TR(PCT2, "100% done");\n')], ["100% done"])
+        self.assertTrue(i18n.check_translation("%u%% used", "%u% usado", "x"))
         with self.assertRaisesRegex(i18n.I18nError, "TRF format in one place"):
             i18n.check_keys([i18n.Mark("TRF", "FROM", "From %s", "x.c", 1, 0),
                              i18n.Mark("TR", "FROM", "From %s", "x.c", 2, 0)])
