@@ -403,7 +403,9 @@ WDT_KEY = 0x5ADA7200
 CRASH_SOFT_MARK = 0x18007EF4        # RadioFoundry's restart-cause words (crash-log.md 1.3): HRC_CRASH_BOOT + 4, crash_boot_t.soft
 CRASH_BOOT_SOFT = 0x54464F53        # "SOFT": the reset was asked for, so RadioFoundry's next start doesn't take it for the watchdog
 TIMER2_VALUE = 0x14000018           # timer 2 current value (counts down; the stub runs it free)
-LED_RED, LED_GREEN = 33, 32         # PTB1 = red, PTB0 = green on the DM-1801 Pro and the DM-32UV (both checked on the radio)
+# The universal stub's own LED pins until CONFIG: PTB1 = red, PTB0 = green on the DM-1801 Pro and the DM-32UV (both
+# checked on the radio). A board profile names its own (pins.h): on another radio these pins may be anything
+LED_RED, LED_GREEN = 33, 32
 OK, BADSUM, BADOP, SPITIMEOUT, TOOLONG, NOWEL = 0x05, 0x0A, 0x0B, 0x0C, 0x0E, 0x0F
 # A NAND sector read or checksum (NAND_FLAG): a page of it has more bit errors than the chip's ECC corrects. It reads the
 # same every time, so it is never asked for again: nand_raw takes the pages as the chip holds them instead
@@ -436,6 +438,7 @@ PAGE = 256
 # The application area of the program flash: an RadioFoundry image is linked for 0x0300C000, which is flash offset 0xC000. The
 # bootloader below it (0..0xC000) is never written, so the radio can always be put in update mode by hand.
 APP_START, APP_END = 0xC000, 0x100000
+ROM_FLAG = b"thd\x0c"                    # the boot ROM's flag at flash 0, followed by the entry address (hardware-rt10.md 2)
 # The first word of RadioFoundry's first stage (boot/README.md), at APP_START on a radio that has one (the DB25-D, the GD-88). Its
 # application is linked for 0x0300D000, so the image written at APP_START is the install image, which starts with it
 STAGE_MAGIC = bytes.fromhex("2c1101c0")
@@ -447,6 +450,16 @@ class DumpError(Exception):
 
 class FrameError(DumpError):
     """A damaged, short or missing frame, or a sector that failed its CRC: worth asking again."""
+
+
+class LineNoise(DumpError):
+    """The line never goes quiet: data keeps coming that nothing asked for (a faulty cable or adapter, a plug half in,
+    or a device that talks by itself). No request can be told from it, so nothing is tried over it."""
+
+
+class DeafRadio(DumpError):
+    """The boot ROM's greeting arrived, the answers were already on their way (--slow-cable), and the ROM still started
+    the firmware: nothing the cable sends reaches the radio. Slower sending can't help; another cable can."""
 
 
 class NoAnswer(DumpError):
@@ -540,6 +553,28 @@ def univ_layout(image):
     return int.from_bytes(image[0xB8:0xBC], "little"), int.from_bytes(image[0xBC:0xC0], "little")
 
 
+UCFG_LED = 0xA8                         # the parameter block's led_red and led_green (u32 little endian each)
+UCFG_UART, UCFG_LATCH, UCFG_KEY = 0x8C, 0x9C, 0xA0   # its UART before CONFIG, power latch and key (u32 each)
+
+
+def univ_for_board(image, prof):
+    """The universal stub with the board's LED pins in its parameter block (the host may patch it before the image is
+    sent): the stub drives its LED pins from its first instruction, before CONFIG, so on a radio whose LEDs are elsewhere
+    the built-in ones (PTB1, PTB0) would be driven although they do something else there. A SoC of a radio with two
+    (pair) also gets the UART it listens on, its power latch and key, for the part of the run before CONFIG. No profile:
+    the generic one, no LEDs, since the radio is not known. A position-dependent stub: the image as it is."""
+    if univ_layout(image) is None:
+        return image
+    prof = prof or GENERIC
+    words = [(UCFG_LED, prof["led"]["red"]), (UCFG_LED + 4, prof["led"]["green"])]
+    if prof.get("pair"):
+        words += [(UCFG_UART, prof.get("uart", 0)), (UCFG_LATCH, prof["latch"]), (UCFG_KEY, prof["key"])]
+    b = bytearray(image)
+    for off, v in words:
+        b[off:off + 4] = v.to_bytes(4, "little")
+    return bytes(b)
+
+
 def check_univ_load(image, load, window=None):
     """Refuse a load of the universal stub that could go wrong, before anything is sent: its run area [run, end) must be
     inside SRAM; the image must land 4-byte aligned inside SRAM (and inside `window` = (base, size) when the firmware
@@ -564,40 +599,29 @@ def check_univ_load(image, load, window=None):
 
 # Board profiles for the universal stub (CONFIG, op 0x0D), from each board's [flash.stub] (boards/<id>/board.toml):
 # board id echoed by HELLO, power latch / power key pins (255 = none), whether the data memory is the SPI NAND, the
-# program flash size; where the board gives them, the LED pins (red, green), the UART the stub answers on before CONFIG
-# and, for a second SoC (part_of), how the main SoC's stub reaches it (bridge: PASS's UART and pin mux); its protected
-# regions. VERSION's board= names them on the
-# RadioFoundry route; --board at power-on. Unknown radio: GENERIC (no pins, nothing echoed but 0).
-C7_BOARDS = {b.id: dict({"id": b.stub["id"], "name": b.model, "names": tuple(b.debuglink_names),
-                         "latch": b.stub["latch"], "key": b.stub["key"], "nand": b.stub["nand"],
-                         "progmem": b.stub["progmem"], "protect": b.protect,
-                         "write_test": b.stub.get("write_test"), "part_of": getattr(b, "part_of", None)},
-                        **{k: tuple(v) if k == "leds" else v for k, v in b.stub.items() if k in ("leds", "uart", "bridge")})
+# program flash size, the status LED pins; where the board gives them, the UART the stub answers on before CONFIG and,
+# for a second SoC (part_of), how the main SoC's stub reaches it (bridge: PASS's UART and pin mux); pair: a SoC of a
+# radio with two, whose UART, latch and key go into the image too. VERSION's board= names them on the RadioFoundry
+# route; --board at power-on. Unknown radio: GENERIC (no pins, nothing echoed but 0).
+_PAIRED = {getattr(b, "part_of", None) for b in rfoundryboards.BOARDS.values()} - {None}
+C7_BOARDS = {b.id: dict({"id": b.stub["id"], "name": b.model, "names": tuple(b.debuglink_names), "latch": b.stub["latch"],
+                         "key": b.stub["key"], "nand": b.stub["nand"], "progmem": b.stub["progmem"],
+                         "rom_entry": b.stub.get("rom_entry"), "led": b.stub.get("led") or {"red": LED_RED, "green": LED_GREEN},
+                         "protect": b.protect, "write_test": b.stub.get("write_test"), "part_of": getattr(b, "part_of", None),
+                         "pair": getattr(b, "part_of", None) is not None or b.id in _PAIRED},
+                        **{k: v for k, v in b.stub.items() if k in ("uart", "bridge")})
              for b in rfoundryboards.BOARDS.values() if b.stub and b.stub["tool"] == "stubtool"}
 GENERIC = {"id": 0, "name": "HR_C7000 radio", "names": (), "latch": 255, "key": 255, "nand": False, "progmem": 0x100000,
-           "protect": [], "write_test": None}
+           "rom_entry": None, "led": {"red": 255, "green": 255}, "protect": [], "write_test": None}   # an unknown radio: no pin driven as an LED
+# The tool installs at one application start, which every board must use: a radio whose bootloader ends elsewhere has to
+# give this tool and the web flasher a per-board start first, or an install would overwrite the end of that bootloader
+for _b in rfoundryboards.BOARDS.values():
+    if _b.stub and _b.stub["tool"] == "stubtool" and _b.app_base - _b.rom_base != APP_START:
+        raise ImportError("stubtool: the %s's image starts at flash offset 0x%X, the tools know 0x%X only"
+                          % (_b.id, _b.app_base - _b.rom_base, APP_START))
 # This tool's memory names as board.toml [[flash.protect]] names them
 PROTECT_MEM = {"progmem": "progmem", "q128": "data", "nand": "nand"}
 CFG_UART_THIS = 3                        # CONFIG uart field: answer only on the UART the CONFIG came in on
-
-
-def board_leds(prof):
-    """(red, green) LED pins of a board profile; 255 = none."""
-    return prof.get("leds", (LED_RED, LED_GREEN))
-
-
-def patch_univ(image, prof):
-    """The universal stub image with the board's pins in its parameter block, for the part of the run before CONFIG:
-    the UART it listens on, the power latch and key, and the LED pins (a GD-88 must never see the default LEDs, which
-    are its RF chain's clock and data). Only boards that need it (an LED or UART entry in the profile) get a patched
-    image; a position-dependent image is returned as it is."""
-    if prof is None or not ("leds" in prof or "uart" in prof) or not univ_layout(image):
-        return image
-    b = bytearray(image)
-    for off, v in ((0x8C, prof.get("uart", 0)), (0x9C, prof["latch"]), (0xA0, prof["key"]),
-                   (0xA8, board_leds(prof)[0]), (0xAC, board_leds(prof)[1])):
-        b[off:off + 4] = v.to_bytes(4, "little")
-    return bytes(b)
 
 
 def jedec_size(id_):
@@ -732,6 +756,27 @@ ROM_HELLO, ROM_REPLY = b"\x02\x24\x00\x03", b"\x02\x14\x00\x03"
 # The boot ROM stops waiting (about 48 ms after its greeting when no answer came) and starts the firmware; its NAK is
 # also how it answers a repeated greeting reply once it took the first one (docs/spec/hardware-dm32.md 13.3)
 ROM_GAVE_UP, ROM_NAK = b"\x00\x10\x00\x03", b"\x02\x0a\x00\x03"
+
+
+def rom_sign_off(b):
+    """b (4 bytes) is the boot ROM saying it stopped waiting. What it sends then is the address it starts, little
+    endian: 00 10 00 03 (0x03001000) on a radio with a loader at the start of its flash, 00 c0 00 03 (0x0300C000) on
+    one whose flash names the application (a board with rom_entry). So: any address in the program flash (0x03......)
+    on a 256-byte boundary past the first. The ROM's own frames all start with 02 and never match."""
+    return len(b) == 4 and b[0] == 0x00 and b[3] == 0x03 and (b[1] or b[2]) != 0
+
+
+def rom_sign_offs(buf):
+    buf = bytes(buf)
+    return sum(rom_sign_off(buf[i:i + 4]) for i in range(len(buf) - 3))
+
+
+def rom_gave_up(buf, sent=b""):
+    """The boot ROM said it stopped waiting. sent: the frame just written, which a cable that echoes sends back (the
+    stub image holds such addresses, so the ones in an echo don't count)."""
+    return rom_sign_offs(buf) > rom_sign_offs(sent)
+
+
 # --slow-cable: the greeting reply goes out this often while the radio is switched on, and on for ROM_REPEAT_AFTER once
 # the greeting is seen: the ROM drops what reaches it before its greeting, so only the answers sent after that count
 ROM_REPEAT, ROM_REPEAT_AFTER = 0.03, 0.15
@@ -812,7 +857,7 @@ class Radio:
             if not echo and buf[-4:] == ROM_ACK:
                 self.log("before the boot ROM's acknowledgement: %s" % buf[:-4][:16].hex(" "))
                 return True, b""
-            if not echo and (buf[-4:] == ROM_NAK or ROM_GAVE_UP in buf):
+            if not echo and (buf[-4:] == ROM_NAK or rom_gave_up(buf, sent)):
                 return False, buf[:16]
             if time.monotonic() >= end:
                 return False, buf[:16]
@@ -820,6 +865,8 @@ class Radio:
             buf += self.read_exact(max(1, want), max(0.0, min(0.05, end - time.monotonic())))
 
     def rom_error(self, what, got):
+        if unsent_bytes(self.port):         # the frames never left the computer: not the radio, not the plug
+            return DumpError("%s: %s" % (what, stalled_text(unsent_bytes(self.port))))
         bytes_ = "received %s" % got.hex(" ") if got else "nothing received"
         cable = "the %s programming cable" % self.cable if self.cable else "the programming cable"
         return DumpError("%s (%s%s). The radio's boot ROM did not take the loader over %s. Try a cable with an FTDI, "
@@ -859,7 +906,16 @@ class Radio:
                 heard = time.monotonic()
             elif slow and last == ROM_NAK:
                 return True
-            if last == ROM_GAVE_UP:
+            if rom_sign_off(last):
+                if heard and unsent_bytes(self.port):
+                    raise DeafRadio("the radio's boot ROM greeted, but the answers never left the computer: "
+                                    + stalled_text(unsent_bytes(self.port)))
+                if heard:
+                    raise DeafRadio("the radio's boot ROM greeted, but none of the answers sent ahead reached it and it started "
+                                    "the firmware: the radio does not receive what %s sends. Push the plug all the way into "
+                                    "the radio, then use another cable. Unplug this one from the radio: a cable that holds "
+                                    "the radio's line low can also hold its PTT"
+                                    % ("the %s programming cable" % self.cable if self.cable else "this cable"))
                 raise DumpError("the radio started its firmware%s" % (" without taking the loader, even with --slow-cable" if slow
                                 else ": its boot ROM's greeting did not come through. Run again with --slow-cable"))
         raise DumpError("the radio did not start its serial boot ROM within %d s: radio off and cable in before the "
@@ -877,6 +933,8 @@ class Radio:
                 self.drain(0.3)
                 info = self.hello()
                 break
+            except LineNoise:
+                raise
             except DumpError:
                 continue
         if info is None:
@@ -884,12 +942,11 @@ class Radio:
         self.log("attached to stub v%d (max payload %d, SSI burst %d / %d bytes)"
                  % (info[0], info[1], self.info >> 8 & 0xFF, self.info & 0xFF))
 
-    def start(self, wait=120, stub=None, load=LOAD_ADDR, board=None, slow=False):
+    def start(self, wait=120, stub=None, load=LOAD_ADDR, slow=False, board=None):
         """Boot a stub through the serial boot ROM at power-on, written to and started at load (the DB25-D's first
         stage answers the same way). Default: the universal stub at 0x10000, which copies itself to its run address;
         a position-dependent stub (--legacy-stub, --stub FILE) must be linked for `load` (--load-base)."""
-        stub = stub_univ_image() if stub is None else stub
-        stub = patch_univ(stub, C7_BOARDS.get(board))
+        stub = univ_for_board(stub_univ_image(), C7_BOARDS.get(board)) if stub is None else stub
         if univ_layout(stub):
             check_univ_load(stub, load)
             self.stub_head = stub[:0x80]            # the entry code: the same at the load address and the run address
@@ -905,7 +962,7 @@ class Radio:
         # still on their way come in too: they must be gone before block 0. The ROM has no timeout once it took the answer
         time.sleep(0.2 if answered else 0.05)
         reply = self.read_exact(256, 0.02)
-        if ROM_GAVE_UP in reply:
+        if rom_gave_up(reply):
             raise self.rom_late(reply)
         if ROM_REPLY in reply:
             self.echo = True
@@ -924,7 +981,7 @@ class Radio:
                 ok, got = self.rom_ack(frame, 1.0)
                 if ok:
                     break
-                if ROM_GAVE_UP in got:
+                if rom_gave_up(got, frame):
                     raise self.rom_late(got)
                 self.log("stub block %d not acknowledged (%s), sending it again"
                          % (i, "received %s" % got.hex(" ") if got else "nothing received"))
@@ -1073,8 +1130,8 @@ class Radio:
         hz = int(round(hz / 1e6) * 1e6)         # every APB clock here is whole MHz: rates then come out the same each time
         self.uart_hz = hz
         payload = (hz.to_bytes(4, "big") + hz.to_bytes(4, "big")
-                   + bytes([prof["latch"], prof["key"]]) + bytes(board_leds(prof))
-                   + bytes([prof["id"], 1 if prof["nand"] else 0, CFG_UART_THIS, 0]))
+                   + bytes([prof["latch"], prof["key"], prof["led"]["red"], prof["led"]["green"], prof["id"], 1 if prof["nand"] else 0,
+                            CFG_UART_THIS, 0]))
         self.request(0x0D, payload)
         self.hello(self.retries)                # a damaged reply here is asked for again
         want = (prof["id"], 1 if prof["nand"] else 0)
@@ -1170,8 +1227,7 @@ class Radio:
             self.log("the firmware's stub span 0x%X: using the legacy stub for %s" % (load, known[load][0]))
             image = known[load][1]
         elif image is None:
-            image = stub_univ_image()
-        image = patch_univ(image, C7_BOARDS.get(board))
+            image = univ_for_board(stub_univ_image(), C7_BOARDS.get(board))
         self.check_stub(image, load, size)
         if len(image) > size:
             raise DumpError("stub image (%d bytes) does not fit RadioFoundry's free RAM (%d bytes)" % (len(image), size))
@@ -1238,7 +1294,7 @@ class Radio:
                     return True
                 except DumpError:
                     pass
-        self.start(wait, stub, load, board)
+        self.start(wait, stub, load, board=board)
         return False
 
     def bridge_exit(self):
@@ -1282,7 +1338,7 @@ class Radio:
                 return True
             except DumpError:
                 pass
-        self.start(wait, stub, load, board)
+        self.start(wait, stub, load, board=board)
         return False
 
     def pass_exit(self):
@@ -1412,7 +1468,7 @@ class Radio:
         except protect.ProtectedError as e:
             raise DumpError(str(e))
 
-    def check_write_range(self, mem, start, end, app=False):
+    def check_write_range(self, mem, start, end, app=False, rom_flag=False):
         """Refuse a write or erase of [start, end) before anything is sent: whole sectors, never the NAND, only the
         allowed regions, and never a protected region of the board the stub is configured for (board.toml
         [[flash.protect]], rfoundry/protect.py)."""
@@ -1425,6 +1481,7 @@ class Radio:
         if mem == "nand":
             raise DumpError("the NAND is read only here")
         ok = self.write_ok(mem) + ([(APP_START, APP_END)] if app and mem == "progmem" else [])
+        ok += [(0, SECTOR)] if rom_flag and mem == "progmem" else []
         if not any(a <= start and end <= b for a, b in ok):
             raise DumpError("%s 0x%X-0x%X is outside the allowed write regions: %s" %
                             (MEM[mem][4], start, end, ", ".join("0x%X-0x%X" % r for r in self.write_ok(mem))
@@ -1518,7 +1575,28 @@ class Radio:
         bad = self.verify(mem, padded, APP_START) if todo else []
         if bad:
             raise DumpError("verify after write: sectors differ at %s" % ", ".join("0x%X" % x for x in bad))
-        return len(todo), (end - APP_START) // SECTOR - len(todo)
+        flag = self.write_rom_flag()
+        return len(todo) + flag, (end - APP_START) // SECTOR - len(todo)
+
+    def write_rom_flag(self):
+        """On a board the boot ROM starts directly (profile rom_entry), make the flag sector at flash 0 name the
+        application's entry. Written after the application, so the flag never names a half-written one;
+        an interrupted install still leaves the application area changed (recover through the boot ROM). The rest of the sector is kept; a sector without the flag gets the flag, the entry and 0xFF.
+        Returns 1 if the sector was written, else 0."""
+        entry = (self.profile or {}).get("rom_entry")
+        if entry is None:
+            return 0
+        mem = "progmem"
+        cur = b"".join(bytes(self.read_flash(mem, a, CHUNK)) for a in range(0, SECTOR, CHUNK))
+        want = ROM_FLAG + entry.to_bytes(4, "little") + (cur[8:] if cur[:4] == ROM_FLAG else b"\xff" * (SECTOR - 8))
+        if cur == want:
+            return 0
+        self.check_write_range(mem, 0, SECTOR, rom_flag=True)
+        self.write_sectors(mem, want, 0, [0])
+        if self.verify(mem, want, 0):
+            raise DumpError("verify after write: the boot ROM flag sector differs")
+        self.log("boot ROM flag at 0 now names 0x%08X" % entry)
+        return 1
 
     def write_flash(self, mem, start, data):
         """Erase and program whole sectors at `start`, then check by CRC against the radio's own read of them."""
@@ -1727,13 +1805,25 @@ class Radio:
             raise FrameError("frame checksum")
         return hdr[1], body
 
-    def drain(self, quiet=0.4):
-        """Read and drop what the stub is still streaming, until the line has been quiet for `quiet` seconds."""
+    DRAIN_LIMIT = 8.0   # s: the longest thing a stub still sends is the rest of one read, under 6 s at 115200 baud
+
+    def drain(self, quiet=0.4, limit=None):
+        """Read and drop what the stub is still streaming, until the line has been quiet for `quiet` seconds. A line
+        still not quiet after `limit` seconds (DRAIN_LIMIT) carries data nothing asked for: LineNoise, where the wait
+        once never ended."""
+        limit = self.DRAIN_LIMIT if limit is None else limit
         self.set_timeout(0.05)
-        last = time.monotonic()
+        start = last = time.monotonic()
+        got = 0
         while time.monotonic() - last < quiet:
-            if self.port.read(4096):
+            n = len(self.port.read(4096))
+            if n:
+                got += n
                 last = time.monotonic()
+                if last - start >= limit:
+                    raise LineNoise("the line never goes quiet: %d bytes in %.0f s that nothing asked for. The programming "
+                                    "cable or its adapter is at fault: unplug it from the computer, plug it back in, push "
+                                    "the plug fully into the radio, or use another cable" % (got, last - start))
         self.port.reset_input_buffer()
 
     def sectors(self, mem, addr, count, compress=True):
@@ -2063,7 +2153,7 @@ def lz4_encode(src):
 
 class FakeRadio:
     def __init__(self, images, drop=None, flip=(), silent=(), swap=(), misplace=(), stub_len=1536, load=LOAD_ADDR,
-                 rom_echo=False, rom_nak=False, rom_late=False, ecc=()):
+                 rom_echo=False, rom_nak=False, rom_late=False, ecc=(), sign_off=ROM_GAVE_UP):
         self.images = images                # {"progmem": bytes, "q128": bytes}
         self.data_code = 0x18               # the data flash's JEDEC capacity code: 16 MB
         self.id_reads = 0                   # JEDEC ID requests answered
@@ -2080,7 +2170,7 @@ class FakeRadio:
         self.sectors_sent = 0
         self.pokes = []
         self.led = self.led_seq = None
-        self.out = bytearray(b"\x02\x24\x00\x03" + (ROM_GAVE_UP if rom_late else b""))
+        self.out = bytearray(b"\x02\x24\x00\x03" + (sign_off if rom_late else b""))
         self.inb = bytearray()
         self.loaded = bytearray()
         self.running = False
@@ -2567,9 +2657,48 @@ def low_latency(port):
     return port
 
 
+WRITE_LIMIT = 5.0    # s for one write to leave the computer: the longest frame takes under 0.5 s at 115200 baud
+
+
 def open_port(serial, path):
-    """A device or a pyserial URL: rfc2217://HOST:PORT reaches a radio on a networked serial server."""
-    return low_latency(serial.serial_for_url(path, 115200, timeout=0.1))
+    """A device or a pyserial URL: rfc2217://HOST:PORT reaches a radio on a networked serial server. A write the
+    adapter never takes ends after WRITE_LIMIT (stalled_text) instead of holding the tool for good."""
+    return low_latency(serial.serial_for_url(path, 115200, timeout=0.1, write_timeout=WRITE_LIMIT))
+
+
+def stalled_text(unsent=0):
+    """A write timed out: the adapter (or its driver) stopped sending. Seen on a PL2303 cable whose port took about
+    1 KB into the computer's buffers and sent none of it, while everything the radio sent still arrived."""
+    return ("the programming cable stopped taking data from the computer%s: its USB adapter or the adapter's driver does "
+            "not send. Unplug the cable from the computer, wait a few seconds and plug it back in, directly into the "
+            "computer rather than a hub. If it happens again, use another cable"
+            % (" (%d bytes are waiting to be sent)" % unsent if unsent else ""))
+
+
+SETTLE_LIMIT = 2.0   # s the tool waits on exit for what it wrote to leave
+
+
+def settle(port, limit=SETTLE_LIMIT):
+    """Before the port closes (the tool's exit closes it), what was written leaves: a Prolific adapter on macOS whose
+    port was closed with data still going out took no data at all from then on, through every later open, until it was
+    unplugged. Waits on the system's count, never on a drain, which never returns on an adapter that stopped sending."""
+    if port is None:
+        return
+    end = time.monotonic() + limit
+    try:
+        while unsent_bytes(port) and time.monotonic() < end:
+            time.sleep(0.01)
+        time.sleep(0.05)                # the adapter's own FIFO
+    except KeyboardInterrupt:
+        pass
+
+
+def unsent_bytes(port):
+    """Bytes the computer still holds for the port, where the system tells (0 elsewhere, and on fakes)."""
+    try:
+        return int(port.out_waiting)
+    except (AttributeError, NotImplementedError, OSError, ValueError, TypeError):
+        return 0
 
 
 def self_test():
@@ -2591,6 +2720,7 @@ def self_test():
         p = open_port(serial, "loop://")
         p.write(b"\x5a")
         check(p.read(1) == b"\x5a", "a pyserial URL opens as the port")
+        check(p.write_timeout == WRITE_LIMIT, "a write that the adapter never takes ends: the port has a write limit")
         p.close()
     def image(seed, blank_from):
         d = bytearray(bytes((i * seed + (i >> 8) * 13 + 1) & 0xFF for i in range(64 * SECTOR)))
@@ -2639,6 +2769,55 @@ def self_test():
         check(False, "a boot ROM that stopped waiting fails the load")
     except DumpError as e:
         check("stopped waiting" in str(e) and "--slow-cable" in str(e), "a late answer is reported as one: %s" % e)
+    # a board the ROM starts directly signs off with its application's address: the same report
+    radio = FakeRadio(images, stub_len=len(stub), rom_late=True, sign_off=b"\x00\xc0\x00\x03")
+    try:
+        Radio(radio, log=quiet).start(wait=2, stub=stub)
+        check(False, "a boot ROM that signed off with the application's address fails the load")
+    except DumpError as e:
+        check("stopped waiting" in str(e) and "00 c0 00 03" in str(e), "the application's address is a sign-off too: %s" % e)
+    # with the answers sent ahead and the greeting seen, a sign-off means the radio hears nothing from this cable
+    radio = FakeRadio(images, stub_len=len(stub), rom_late=True, sign_off=b"\x00\xc0\x00\x03")
+    try:
+        Radio(radio, log=quiet, cable="PL2303").start(wait=2, stub=stub, slow=True)
+        check(False, "a radio that hears nothing fails the load")
+    except DeafRadio as e:
+        check("does not receive" in str(e) and "PL2303" in str(e) and "another cable" in str(e), "a deaf radio is named: %s" % e)
+    except DumpError as e:
+        check(False, "a deaf radio is reported as one, not as: %s" % e)
+    # the same with bytes still waiting in the computer: the adapter is what doesn't send, and the report says so
+    radio = FakeRadio(images, stub_len=len(stub), rom_late=True, sign_off=b"\x00\xc0\x00\x03")
+    radio.out_waiting = 259
+    try:
+        Radio(radio, log=quiet, cable="PL2303").start(wait=2, stub=stub, slow=True)
+        check(False, "an adapter that doesn't send fails the load")
+    except DeafRadio as e:
+        check("never left the computer" in str(e) and "259 bytes are waiting" in str(e) and "plug it back in" in str(e),
+              "an adapter that doesn't send is named: %s" % e)
+    check(unsent_bytes(io.BytesIO()) == 0 and "waiting" not in stalled_text(), "a port that can't tell holds nothing back")
+
+    class Leaving:                      # out_waiting falls as the bytes leave; a stuck one never does
+        def __init__(self, n, step):
+            self.n, self.step = n, step
+
+        @property
+        def out_waiting(self):
+            self.n = max(0, self.n - self.step)
+            return self.n
+    leaving = Leaving(300, 100)
+    settle(leaving)
+    check(leaving.n == 0, "on exit the tool waits for what it wrote to leave")
+    t0 = time.monotonic()
+    settle(Leaving(300, 0), limit=0.2)
+    check(time.monotonic() - t0 < 1.0, "a cable that sends nothing doesn't hold the exit")
+    settle(None)
+    # an echo that holds such an address (the stub image does) is not the ROM signing off
+    check(not rom_gave_up(b"\x02\x18\x00\xc0\x00\x03", b"\x02\x18\x00\xc0\x00\x03") and rom_gave_up(b"\x00\xc0\x00\x03")
+          and rom_gave_up(b"\x02\x18\x00\xc0\x00\x03\x00\xc0\x00\x03", b"\x02\x18\x00\xc0\x00\x03"),
+          "a start address inside an echoed frame is not a sign-off")
+    check(all(rom_sign_off(bytes(b)) for b in ([0, 0x10, 0, 3], [0, 0xC0, 0, 3], [0, 0x80, 0x0E, 3], [0, 0, 0x10, 3]))
+          and not any(rom_sign_off(bytes(b)) for b in (ROM_HELLO, ROM_ACK, ROM_NAK, ROM_REPLY, [0, 0, 0, 3], [0, 0x10, 0, 2], [4, 0x10, 0, 3])),
+          "a sign-off is any 256-byte-aligned program flash address, never one of the ROM's frames")
     # --slow-cable: the answer goes out before the greeting is seen; the load goes on, the NAKs of the extra answers dropped
     radio = FakeRadio(images, stub_len=len(stub))
     sent = []
@@ -2972,10 +3151,16 @@ def self_test():
         radio.univ = {"run": 0x30000, "end": lay[1], "board": 0, "flags": 0, "honor": True}
         r = Radio(radio, log=quiet)
         r.start(wait=2, board=board)
-        want = patch_univ(univ, C7_BOARDS.get(board))
-        check(radio.running and not radio.errors and bytes(radio.loaded[:len(univ)]) == want,
+        prof = C7_BOARDS[board] if board else GENERIC
+        led = prof["led"]["red"].to_bytes(4, "little") + prof["led"]["green"].to_bytes(4, "little")
+        got = bytes(radio.loaded[:len(univ)])
+        check(radio.running and not radio.errors and got == univ_for_board(univ, prof),
               "the universal stub is the default power-on image, at 0x10000 (%s)" % radio.errors)
-        check((want == univ) == (board not in ("gd88", "gd88b")), "only the GD-88 SoCs' images are patched (%s)" % board)
+        check(got[UCFG_LED:UCFG_LED + 8] == led,
+              "the stub sent names the %s's LED pins %d / %d from its first instruction"
+              % (prof["name"], prof["led"]["red"], prof["led"]["green"]))
+        check(prof.get("pair") or (got[:UCFG_LED] == univ[:UCFG_LED] and got[UCFG_LED + 8:] == univ[UCFG_LED + 8:]),
+              "only the LED pins differ in the %s's image" % prof["name"])
         check(r.v6 is not None and r.v6["run"] == 0x30000 and r.v6["load"] == 0x10000, "HELLO v6 parsed")
         try:
             r.write_image(images["progmem"][APP_START:APP_START + 4 * SECTOR])
@@ -2983,15 +3168,21 @@ def self_test():
         except DumpError as e:
             check("configuration" in str(e), "write before CONFIG refused: %s" % e)
         r.configure(board)
-        prof = C7_BOARDS[board] if board else GENERIC
         cfg = radio.configs[-1]
         check(cfg[8:10] == bytes([prof["latch"], prof["key"]]) and cfg[12] == prof["id"] and cfg[14] == CFG_UART_THIS,
               "CONFIG carries the %s profile" % prof["name"])
+        check(cfg[10:12] == bytes([prof["led"]["red"], prof["led"]["green"]]),
+              "CONFIG carries the %s's LED pins" % prof["name"])
         check(23e6 < int.from_bytes(cfg[:4], "big") < 25e6, "CONFIG carries the measured clock")
-        check(cfg[10:12] == (bytes(prof["leds"]) if "leds" in prof else bytes([LED_RED, LED_GREEN])),
-              "CONFIG's LED pins for %s" % prof["name"])
         check(r.configured is prof, "the %s profile is confirmed by the HELLO echo" % prof["name"])
         nw, nk = r.write_image(images["progmem"][APP_START:APP_START + 4 * SECTOR])
+        if prof["rom_entry"] is not None:	# the boot ROM's flag sector at 0 is made to name the entry, once
+            pm = radio.images["progmem"]
+            check(nw == 1 and nk == 4 and pm[:8] == ROM_FLAG + prof["rom_entry"].to_bytes(4, "little"),
+                  "the flag sector names 0x%X after the first write" % prof["rom_entry"])
+            check(pm[8:SECTOR] == images["progmem"][8:SECTOR] or images["progmem"][:4] != ROM_FLAG,
+                  "the rest of a flag sector is kept")
+            nw, nk = r.write_image(images["progmem"][APP_START:APP_START + 4 * SECTOR])
         check(nw == 0 and nk == 4, "writing the same image after CONFIG changes nothing")
         if b and b.first_stage:		# a first stage in the radio: only an image that starts with one goes over it
             pm = bytearray(radio.images["progmem"])
@@ -3031,10 +3222,10 @@ def self_test():
             except DumpError:
                 pass
     # GD-88 B: the image pinned to UART3 with no latch, key or LEDs; through A's bridge; refusals
-    pb = patch_univ(univ, C7_BOARDS["gd88b"])
+    pb = univ_for_board(univ, C7_BOARDS["gd88b"])
     words = [int.from_bytes(pb[o:o + 4], "little") for o in (0x8C, 0x9C, 0xA0, 0xA8, 0xAC)]
     check(words == [0x14090000, 255, 255, 16, 49], "gd88b image: UART3, no latch or key, its LEDs (%s)" % words)
-    pa = patch_univ(univ, C7_BOARDS["gd88"])
+    pa = univ_for_board(univ, C7_BOARDS["gd88"])
     words = [int.from_bytes(pa[o:o + 4], "little") for o in (0x8C, 0x9C, 0xA0, 0xA8, 0xAC)]
     check(words == [0, 45, 44, 255, 255], "gd88 image: both UARTs, latch and key, no LEDs (%s)" % words)
     check(univ_layout(pb) == univ_layout(univ) and pb[:0x80] == univ[:0x80] and pb[0xC0:] == univ[0xC0:],
@@ -3237,6 +3428,32 @@ def self_test():
             check(False, "an old stub: a protected region still refused")
         except DumpError as e:
             check("protected region" in str(e), "an old stub: a protected region still refused (%s)" % e)
+    # a line that never goes quiet (a faulty cable): the wait for quiet ends, and attach says why instead of trying on
+    class NoisyPort:
+        timeout = 0.05
+        baudrate = 115200
+
+        def read(self, n):
+            time.sleep(0.002)
+            return b"\x55"
+
+        def write(self, b):
+            return len(b)
+
+        def reset_input_buffer(self):
+            pass
+
+    noisy = Radio(NoisyPort(), log=quiet)
+    noisy.DRAIN_LIMIT = 0.2
+    t0 = time.monotonic()
+    try:
+        noisy.attach()
+        check(False, "a line that never goes quiet ends the attach")
+    except LineNoise as e:
+        check("never goes quiet" in str(e) and "cable" in str(e), "a noisy line is named with what to do (%s)" % e)
+    except DumpError as e:
+        check(False, "a noisy line is LineNoise, not %r" % e)
+    check(time.monotonic() - t0 < 2, "the wait for a quiet line ends")
     print("stubtool self-test %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),
                                                     "" if len(fails) == 1 else "s"))
     return 0 if not fails else 1
@@ -3369,8 +3586,8 @@ def main(argv=None, raise_errors=False):
     ap.add_argument("--slow-cable", action="store_true", help="boot ROM: send the answer to its greeting every 30 ms "
                     "from the start, for a cable or USB hub too slow for the ROM's 48 ms window. Radio OFF before the "
                     "tool starts: a running firmware would get the answers too")
-    ap.add_argument("--led-red", type=int, default=LED_RED, help="GPIO pin index of the red LED (default %d, 255 = none)" % LED_RED)
-    ap.add_argument("--led-green", type=int, default=LED_GREEN, help="GPIO pin index of the green LED (default %d, 255 = none)" % LED_GREEN)
+    ap.add_argument("--led-red", type=int, help="GPIO pin index of the red LED (default the board's, none without --board; 255 = none)")
+    ap.add_argument("--led-green", type=int, help="GPIO pin index of the green LED (default the board's, none without --board; 255 = none)")
     ap.add_argument("--led-status", choices=("red", "green", "both", "off"), default="both",
                     help="which LED blinks while the stub is up: 500 ms phases waiting, 125 ms while data moves")
     ap.add_argument("--led-seq", metavar="SPEC", help="play an LED sequence now, e.g. 255:0:300,0:255:300 (RED:GREEN:MS "
@@ -3461,6 +3678,9 @@ def main(argv=None, raise_errors=False):
     bridge_on = False                           # the cable goes through A's bridge: end it when done (or on an error)
     pass_on = False                             # the cable goes through A's stub (PASS): end it when done
     radio = None
+    # A stand-in serial module (tests, wrappers) may lack it; an except clause that fails would hide the real error.
+    write_stalled = getattr(serial, "SerialTimeoutException", ())
+    port = None
     try:
         stub = open(a.stub, "rb").read() if a.stub else None
         if a.port.startswith("udp:"):
@@ -3534,7 +3754,7 @@ def main(argv=None, raise_errors=False):
                 else:
                     raise DumpError("no legacy stub is linked for 0x%X: give --stub" % load)
             print("radio OFF? switch it on now (waiting up to %d s)" % a.wait)
-            radio.start(a.wait, stub, load, a.board, slow=a.slow_cable)
+            radio.start(a.wait, stub, load, slow=a.slow_cable, board=a.board)
             radio.configure(a.board)
         jobs = [(mem, f) + parse_range(rng, radio.mem_size(mem)) for mem, f, rng in jobs]
         if a.baud == "off" or bridged:
@@ -3549,9 +3769,9 @@ def main(argv=None, raise_errors=False):
                     break
         elif a.baud:
             radio.set_baud(int(a.baud))
-        if radio.profile is not None and "leds" in radio.profile:     # a board with its own LED pins (or none): never the defaults
-            a.led_red, a.led_green = board_leds(radio.profile)
-        radio.setup_led(a.led_red, a.led_green, a.led_status)
+        led = (radio.profile or GENERIC)["led"]
+        radio.setup_led(led["red"] if a.led_red is None else a.led_red, led["green"] if a.led_green is None else a.led_green,
+                        a.led_status)
         if a.led_test:
             for what, steps in (("red only", [(255, 0, 1500)]), ("green only", [(0, 255, 1500)]),
                                 ("both full", [(255, 255, 1500)]), ("red 255 + green 40", [(255, 40, 1500)]),
@@ -3660,6 +3880,11 @@ def main(argv=None, raise_errors=False):
             else:
                 raise DumpError("--boot wants reset or jump:ADDR")
         return 0
+    except write_stalled:
+        if raise_errors:
+            raise
+        print("\nstubtool: %s" % stalled_text(unsent_bytes(port)), file=sys.stderr)
+        return 1
     except (DumpError, OSError) as e:
         if raise_errors:
             raise
@@ -3680,6 +3905,7 @@ def main(argv=None, raise_errors=False):
                 radio.bridge_exit()
             except OSError as e:
                 print("stubtool: could not end the bridge (%s): A restarts 10 s after the last byte" % e, file=sys.stderr)
+        settle(port)
 
 
 if __name__ == "__main__":

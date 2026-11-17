@@ -766,6 +766,8 @@ class Radio:
         test leaves it DMR, and a tone left on it (a run cut short in a tone test, or set by hand) keeps the squelch
         shut on every untoned bench signal."""
         L = self.link
+        if "VFO" not in self.features():
+            skip("not_built", "built without the VFO")     # a radio with no keypad or display (BOARD_UNSUPPORTED)
         if self.core().get("vfo") != "1":
             self._req_until(lambda: L.vfo(True), lambda v: v.get("vfo") == "1", "VFO on")
         hz = int(self.core()["rx_hz"])

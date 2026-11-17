@@ -5,7 +5,7 @@
 
 The radios differ only in where things are (BOARDS: the slot and the windows its linker script reserves; PROFILES: where
 a stock file keeps the codec). The recipe, for the DM-32UV from docs/spec/codec-dm32.md ("Where the codec is",
-"Recommended hosting") and for the DB25-D from docs/spec/hardware-db25d.md 8:
+"Recommended hosting"), for the DB25-D from docs/spec/hardware-db25d.md 8 and for the RT10 from docs/spec/hardware-rt10.md 8:
   1. check the stock file by SHA-256 (DM-32UV: Baofeng DM32.01.01.049.bin or DM32.00.01.046HRVocoder.bin, "BFUV32-V2"
      header; DB25-D PRO: a plain 909E.D6x.EARSAB.018 image of 2024-05-09 or later);
   2. carve the codec code window and the codec table window (file offset = address - 0x0300C000 + the file's header);
@@ -331,10 +331,28 @@ PROFILES.update({
         "entries": _GD88_ENTRIES,
     },
 })
+# Retevis RT10 V1.1.2: no vendor file, only a program flash read. 020's compile with one function inside the window
+# 20 bytes shorter, so the codec code after it and fec_init sit 20 bytes lower; it runs from RAM at 0x16DD8 (the
+# RAM block is at 0x10400). The tables are byte for byte 018's, at 0x1800420C (hardware-rt10.md 8)
+PROFILES.update({
+    "3f3b8740df14c81b44f53f984e4e570a609ec467233341729157f5c176cc3c15": {
+        "name": "Retevis RT10 V1.1.2 (program flash read)", "board": "rt10", "kind": "progmem", "tag": 112,
+        "size": 0x100000,
+        "code": (0x0305E438, 0x12FFC, 0x00016DD8),
+        "tables": (0x0303C76C, 0x2D50, 0x1800420C),
+        "code_sha256": "3f3b8740df14c81b44f53f984e4e570a609ec467233341729157f5c176cc3c15",
+        "tables_sha256": "e1e435822471894c437048396f2ea96bea5803acc08446b8f1073714978e219e",
+        "entries": {"decode": 0x0, "encode": 0x294, "dec_init": 0xE8, "dec_set": 0xA4, "enc_init": 0x400,
+                    "enc_set": 0x32C, "fec_init": 0x1CD0},
+    },
+})
 # CRC-32 of the first 64 bytes of every table window above: a cheap first test when locate() looks for the tables in a
 # program flash dump, before the SHA-256. Not a codec byte, only a fingerprint
 TABLES_HEAD_CRC = 0x11475389
 PROGMEM_SIZE = 0x100000
+# A read of a whole 2 MB program flash (the RT10's backup) is searched in its first 1 MB, as the web flasher does
+# (c7000.js lowPart): every profile's addresses lie there
+PROGMEM_SIZES = {PROGMEM_SIZE} | {b["progmem_size"] for b in BOARDS.values()}
 
 EPILOG = """\
 examples:
@@ -396,15 +414,14 @@ def carve(stock, prof):
 
 
 def locate(dump, profiles=None, board=None):
-    """A known codec anywhere in a program flash dump (1 MB from 0x03000000). Each stock version links the codec to its
-    own flash addresses (DM-32 047 and 049 hold the same code, 0x3C bytes apart), so it is found by content: the code
-    starts with the signature words and the tables by TABLES_HEAD_CRC, both 4-byte aligned, and each window must match
-    a profile's SHA-256. A read of a larger program flash (the GD-88's 2 MB) is searched in its first 1 MB, where the
-    application lies, as the web flasher does (c7000.js lowPart). Returns the profile with the addresses found (kind
-    "progmem"), else None."""
+    """A known codec anywhere in a program flash dump (1 MB from 0x03000000, or a board's whole 2 MB, searched in its
+    first 1 MB, where the application lies, as the web flasher does: c7000.js lowPart). Each firmware version links the
+    codec to its own flash addresses (DM-32 047 and 049 hold the same code, 0x3C bytes apart), so it is found by
+    content: the code starts with the signature words and the tables by TABLES_HEAD_CRC, both 4-byte aligned, and each
+    window must match a profile's SHA-256. Returns the profile with the addresses found (kind "progmem"), else None."""
     profiles = PROFILES if profiles is None else profiles
     profiles = [p for p in profiles.values() if serves(p, board) and "code_sha256" in p]
-    if len(dump) not in {PROGMEM_SIZE} | {b["progmem_size"] for b in BOARDS.values()} or not profiles:
+    if len(dump) not in PROGMEM_SIZES or not profiles:
         return None
     dump = dump[:PROGMEM_SIZE]
     sig = struct.pack("<2I", *CODEC_SIG)
@@ -761,6 +778,29 @@ def self_test():
         too_low = dict(pa, tables=(ta, tla, BOARDS["gd88b"]["tables"][0] - 4))
         expect_error(lambda: slot_bytes(too_low, gac, gat, amaps), "tables below the window refused")
 
+    # The RT10: a program flash read only, the board's whole 2 MB (the codec in its first 1 MB)
+    pr = next(p for p in PROFILES.values() if p["board"] == "rt10")
+    (c0, cl, cr), (t0, tl, tr) = pr["code"], pr["tables"]
+    code10 = bytearray(os.urandom(cl))
+    struct.pack_into("<2I", code10, 0, *CODEC_SIG)
+    struct.pack_into("<I", code10, 0x32CC, cr + 0xE9CC)		# a word that holds an address in the code
+    code10 = bytes(code10)
+    dump = bytearray(b"\xFF" * BOARDS["rt10"]["progmem_size"])
+    dump[c0 - PROGMEM_BASE:c0 - PROGMEM_BASE + cl] = code10
+    dump[t0 - PROGMEM_BASE:t0 - PROGMEM_BASE + tl] = tables25
+    syn10 = {sha256(code10): dict(pr, code_sha256=sha256(code10), tables_sha256=sha256(tables25),
+                                  tables_head_crc=zlib.crc32(tables25[:64]))}
+    q10, k10, u10 = extract(bytes(dump), syn10, board="rt10")
+    check(q10["tag"] == 112 and k10 == code10 and u10 == tables25, "RT10 codec found in a 2 MB program flash read")
+    check(identify(bytes(dump[:PROGMEM_SIZE]), syn10, board="rt10") is not None, "RT10: its first 1 MB alone will do")
+    out10 = merge(b"\x33" * 4096, q10, k10, u10, synthetic_map(q10, k10, ((0x32CC, cr + 0xE9CC),)))
+    ps10 = parse_slot(out10[BOARDS["rt10"]["slot"][0] - APP_BASE:])
+    check(ps10 and ps10["run"] == 0x16DD8 and ps10["tables_ram"] == 0x1800420C and ps10["tag"] == 112
+          and ps10["relocations"] == [0x32CC], "RT10: slot header from its stock addresses")
+    f10 = struct.unpack_from("<8I7I2I", out10, BOARDS["rt10"]["slot"][0] - APP_BASE)
+    check(f10[8:15] == (0, 0x294, 0xE8, 0xA4, 0x400, 0x32C, 0x1CD0), "RT10 entry points")
+    check((BOARDS["rt10"]["run"][0] - cr) % 4 == 0, "RT10 window keeps the code's word alignment")
+
     # A build with a codec map runs at the window's start with its listed words moved
     slot2, windows, moved_crc, _ = test_slot()
     ps2 = parse_slot(slot2)
@@ -810,7 +850,8 @@ def main():
                     "section's 050 a program flash read, stub/stubtool.py --progmem; DM-1801 Pro: a program "
                     "flash dump, stub/stubtool.py --progmem; DB25-D PRO: 018, 2024-05-09 or later, or a program flash read of a "
                     "radio with 020; GD-88: the package's A file, or a program flash read of SoC A, for both gd88 and "
-                    "gd88b, which run A's codec; a B file still works for gd88b)")
+                    "gd88b, which run A's codec; a B file still works for gd88b; Retevis RT10: a program flash read of "
+                    "the radio with V1.1.2)")
     ap.add_argument("--image", help="the built raw application image (default: build/<board>/rfoundry_<board>.bin)")
     ap.add_argument("-o", "--output", help="merged image (default: <image>_codec.bin)")
     ap.add_argument("--self-test", action="store_true", help="run the built-in checks on synthetic data")

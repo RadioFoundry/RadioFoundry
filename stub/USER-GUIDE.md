@@ -151,7 +151,8 @@ The radio restarts into its normal firmware. If neither works, remove and refit 
 | Three green flashes | Finished. The slow yellow blink comes back after. |
 | Nothing, screen dark, tool says "waiting" | The radio is not in loader mode yet: switch it off, make sure the tool is waiting, then switch it on. |
 
-Yellow is the red and the green LED both full on, so it looks the same on every model (red = PTB1, green = PTB0, active high, the same pins on the DM-1801 Pro and the DM-32UV).
+Yellow is the red and the green LED both full on, so it looks the same on every model. The tool drives each radio's own LED pins (its `pins.h`); `--led-red` and
+`--led-green` override them. Without `--board` on the boot ROM route the radio is not known, so no LED blinks.
 
 On the GD-88 the LED isn't a guide yet: what it shows during an installation is still changing. Follow the tool's
 messages and the screen.
@@ -183,6 +184,12 @@ are normal, and 230400 or 921600 are not offered as such. On the cables tested s
   ROM waits only about 48 ms for the tool's answer, and the cable or a USB hub was too slow. Switch the radio off, run
   the tool again with `--slow-cable`, then switch the radio on. The tool then keeps sending its answer while the radio
   starts. Run it only with the radio off: a running firmware would receive those answers too.
+- **"the radio does not receive what the programming cable sends"**: with `--slow-cable` the answers were on their way
+  when the boot ROM greeted, and it still started the firmware. The cable carries data from the radio only: its USB
+  adapter stopped sending, or the plug is not all the way in. Unplug the cable from the computer and plug it back in,
+  push the plug all the way into the radio, and run the tool again; if it happens again, use a better cable,
+  preferably one with an FTDI chip. A cable that holds the radio's line low can also hold its PTT, so
+  unplug it from the radio.
 - **A message about retries**: the tool checks every block and asks again when a block arrives damaged. A few retries are
   normal. If it gives up, switch the radio off and on and run it again.
 - **"flash does not answer"**: the radio is not in loader mode, or the cable is wrong. Switch off and on and try again.

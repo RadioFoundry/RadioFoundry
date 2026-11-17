@@ -249,6 +249,7 @@ def nxdn_decode(job, rate, done=None):
 @pytest.mark.bench_service
 @pytest.mark.sdr_rx
 @pytest.mark.parametrize("rate", list(RATES))
+@pytest.mark.needs_switch("VFO")
 def test_nxdn_tx_off_air(radio, sdr_bench, pytestconfig, rate):
     mhz = rig(pytestconfig, "nxdn-mhz")
     hz = round(mhz * 1e6)
@@ -412,6 +413,7 @@ def rx_call(radio, sdr_bench, pytestconfig, rate, frames, extra=(), before=None)
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 @pytest.mark.parametrize("rate", list(RATES))
+@pytest.mark.needs_switch("VFO")
 def test_nxdn_rx_from_bench(radio, sdr_bench, pytestconfig, rate):
     v0, v1 = rx_call(radio, sdr_bench, pytestconfig, rate, RX_VOICE_FRAMES)
     keys = ("rx_calls", "frames", "voice", "played", "voice_held", "sacch_fail", "facch_fail", "lich_fail", "fec_bits",
@@ -430,6 +432,7 @@ def test_nxdn_rx_from_bench(radio, sdr_bench, pytestconfig, rate):
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 @pytest.mark.parametrize("rate", list(RATES))
+@pytest.mark.needs_switch("VFO")
 def test_nxdn_rx_speech(radio, sdr_bench, pytestconfig, rate):
     ambe = pytestconfig.getoption("--ambe")
     if not ambe:

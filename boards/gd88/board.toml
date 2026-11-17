@@ -83,18 +83,17 @@ steps = [
 ]
 
 # The universal HR_C7000 stub's board profile (CONFIG, stub/stubtool.py): the stub holds the power latch (pins.h:
-# PTB13 latch, PTB12 power key, hardware-gd88.md 9.1); 2 MB of program flash. No LEDs: the default LED pins (PTB0,
-# PTB1) are the serial chain's clock and data on this radio, and its status LEDs are on SoC B.
+# PTB13 latch, PTB12 power key, hardware-gd88.md 9.1); 2 MB of program flash. No LEDs (no PIN_LED_* in pins.h): the
+# default LED pins (PTB0, PTB1) are the serial chain's clock and data on this radio, and its status LEDs are on SoC B.
 # stock_console: the stock firmware answers the debug console (USMART) the web flasher loads the stub through before
 # RadioFoundry is installed (stock_versions: the builds it knows). calibration: the factory calibration's two copies,
 # the program flash's and the NAND page at its logical address (hardware-gd88.md 7)
 [flash.stub]
-id = 4
+id = 5
 hold_power = true
 progmem = 0x200000
 tested = false
 stock_console = "usmart"
-leds = []
 calibration = { progmem = 0x1FE000, nand = 0x280000, magic = "TUNE" }
 
 # The codec slot and windows come from boards/gd88/memory.ld (__codec_*, the script CONFIG_DMR selects)

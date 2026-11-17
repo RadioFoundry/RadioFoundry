@@ -70,16 +70,15 @@ steps = [
 	"If the top line shows IAP_A, hold SK1 until it shows IAP_B.",
 ]
 
-# The universal stub's board profile: no power latch (A holds the power), its status LEDs (pins.h PIN_LED1, PIN_LED2),
+# The universal stub's board profile: no power latch (A holds the power), its status LEDs (pins.h PIN_LED_RED, PIN_LED_GREEN),
 # UART 0x14090000 before CONFIG (the link to A). bridge: A's stub passes the cable to its UART3 (0x14090000), whose
 # pins PTA13 / PTA14 are IO_DIPLEX0 (0x11000034) bits 13 / 14 (rx2_gd88.c). B has its own SPI NAND, which holds its
 # own calibration page; calibration: its two copies (hardware-gd88.md 7, 10)
 [flash.stub]
-id = 5
+id = 6
 hold_power = false
 progmem = 0x200000
 tested = false
-leds = ["PIN_LED1", "PIN_LED2"]
 uart = 0x14090000
 bridge = { uart = 0x14090000, mux = [0x11000034, 0x6000] }
 calibration = { progmem = 0x1FE000, nand = 0x280000, magic = "TUNE" }

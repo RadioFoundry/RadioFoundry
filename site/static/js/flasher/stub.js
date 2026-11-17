@@ -12,7 +12,7 @@
 // program flash's application area, 0xC000 up; the bootloader below it is never written, and the boot ROM is in the
 // chip, so a radio can always be loaded again whatever is in its flash.
 
-import { be32, concat, crc32, le32, sleep, u32le } from "./bytes.js";
+import { be32, concat, crc32, equal, le32, sleep, u32le } from "./bytes.js";
 import { decodeBlock } from "./lz4.js";
 import { Link, LinkError, crc16 } from "./link.js";
 import * as protect from "./protect.js";
@@ -65,11 +65,35 @@ export function rx2Frame(type, seq, payload) {
 const ROM_HELLO = [0x02, 0x24, 0x00, 0x03], ROM_ACK = [0x02, 0x05, 0x00, 0x03], ROM_REPLY = [0x02, 0x14, 0x00, 0x03];
 // The boot ROM's two other frames: it stops waiting (about 48 ms after its greeting when no answer came) and starts the
 // firmware; and its NAK (BADSUM), which is also how it answers a repeated greeting reply once it took the first one
-const ROM_GAVE_UP = [0x00, 0x10, 0x00, 0x03], ROM_NAK = [0x02, 0x0A, 0x00, 0x03];
+const ROM_NAK = [0x02, 0x0A, 0x00, 0x03];
+// What the ROM sends when it stops waiting is the address it starts, little endian: 00 10 00 03 (0x03001000) on a
+// radio with a loader at the start of its flash, 00 c0 00 03 (0x0300C000) on one whose flash names the application (a
+// board with rom_entry). So a sign-off is any address in the program flash (0x03......) on a 256-byte boundary past
+// the first; the ROM's own frames all start with 02 and never match
+const signOffAt = (b, i) => b[i] === 0x00 && b[i + 3] === 0x03 && (b[i + 1] | b[i + 2]) !== 0;
+export const romSignOffs = (b) => {
+	let n = 0;
+	for (let i = 0; i + 4 <= b.length; i++) n += signOffAt(b, i) ? 1 : 0;
+	return n;
+};
+// The ROM said it stopped waiting. sent: the frame just written, which a cable that echoes sends back (the stub image
+// holds such addresses, so the ones in an echo don't count)
+const gaveUp = (b, sent = null) => romSignOffs(b) > (sent ? romSignOffs(sent) : 0);
+// Before the greeting, switching the radio on puts stray bytes on the line: there a sign-off counts only as the last
+// thing received, with the line quiet after it for this long (ms)
+const SIGN_OFF_QUIET = 30;
+// The boot ROM's greeting and sign-off seen through a cable that reads the line at another rate: a PL2303 adapter in a
+// bad state keeps the rate it had before and ignores the page's (gotchas 16.6), so 02 24 00 03 comes in as 70 80 70 00 7c.
+// Its shape still shows: two bursts of a few bytes, the second 25 to 300 ms after the first (the ROM's ~48 ms plus
+// the USB's delays), then a quiet line, with no greeting in them. Bursts are bytes less than BURST_GAP ms apart; a
+// group ends after GROUP_QUIET ms of quiet. Stray bytes from the power switch come one at a time
+const BURST_GAP = 15, GROUP_QUIET = 300, GARBLED_MIN = 2, GARBLED_APART = [25, 300];
 // Slow cable mode: the greeting reply goes out this often while the radio is switched on, and on for ROM_REPEAT_AFTER
 // ms once the greeting is seen: the ROM drops what reaches it before its greeting, so only the answers sent after that
 // count, and the ROM's 48 ms must be covered however late the greeting shows here (hardware-dm32.md 13.3)
 export const ROM_REPEAT = 30, ROM_REPEAT_AFTER = 150;
+// How long a wait for a quiet line lasts at most, in ms (Stub.drain)
+export const limits = { drain: 8000 };
 // memory: SSI base, the GPIO chip select (the data flash's is PTA18), size. A radio's data memory is either the SPI NOR
 // flash (q128) or an SPI NAND on the same bus and chip select (nand): the universal stub reads the NAND's 2 KB pages
 // without their spare bytes, two to a 4 KB sector, when a read or checksum request carries NAND_FLAG and the stub was
@@ -112,29 +136,44 @@ export function stubImages(json) {
 	return { image, sha: json.univ.sha256, load: json.univ.load, run: json.univ.run, end: json.univ.end };
 }
 
-// The universal stub with the board's pins in its parameter block (stubtool's patch_univ), for the part of the run
-// before CONFIG: the UART it listens on, the power latch and key, the LED pins. Only a board that needs it (LEDs or a
-// UART in its profile: the GD-88, whose default LED pins are its RF chain's clock and data) gets a patched copy
-export function patchUniv(image, board) {
-	if (!board || !(board.leds || board.uart) || !univLayout(image)) return image;
-	const out = image.slice();
-	const leds = board.leds || [33, 32];
-	for (const [off, v] of [[0x8C, board.uart || 0], [0x9C, board.latch], [0xA0, board.key], [0xA8, leds[0]], [0xAC, leds[1]]])
-		for (let k = 0; k < 4; k++) out[off + k] = (v >>> (8 * k)) & 0xFF;
-	return out;
-}
-
-// The LED pins the stub drives on a board: its own (255 = none), else the HR_C7000 radios' usual PTB1 / PTB0
-export const boardLed = (C, id) => {
-	const l = C.boards[id]?.stub_board?.leds;
-	return l ? { red: l[0], green: l[1] } : C.led;
-};
-
 // [run, end) from a universal stub's parameter block ('UCFG' at 0x80, layout 2 or later), or null
 export function univLayout(image) {
 	if (image.length < 0xC0 || String.fromCharCode(...image.subarray(0x80, 0x84)) !== "UCFG") return null;
 	if ((image[0x84] | (image[0x85] << 8)) < 2) return null;
 	return [u32le(image, 0xB8), u32le(image, 0xBC)];
+}
+
+// The boot ROM's flag at program flash 0 on a radio it starts directly, followed by the entry address (little endian)
+export const ROM_FLAG = Uint8Array.of(0x74, 0x68, 0x64, 0x0C);	// "thd\x0c"
+export const hasRomFlag = (sector) => sector.length >= 8 && ROM_FLAG.every((b, i) => sector[i] === b);
+
+// The flag sector that names entry (stubtool.py write_rom_flag): the flag, the entry, then the rest of the current
+// sector when it holds the flag already, else 0xFF
+export function romFlagSector(cur, entry) {
+	const out = hasRomFlag(cur) ? cur.slice(0, SECTOR) : new Uint8Array(SECTOR).fill(0xFF);
+	out.set(ROM_FLAG, 0);
+	out.set(le32(entry), 4);
+	return out;
+}
+
+// The universal stub's own LED pins until CONFIG (PTB1 red, PTB0 green), and where its parameter block holds them
+// (led_red, led_green: u32 little endian each)
+export const DEFAULT_LED = { red: 33, green: 32 }, UCFG_LED = 0xA8;
+// its UART before CONFIG, power latch and key (u32 each)
+export const UCFG_UART = 0x8C, UCFG_LATCH = 0x9C, UCFG_KEY = 0xA0;
+
+// The universal stub with the board's LED pins in its parameter block (stubtool.py univ_for_board): the stub drives its
+// LED pins from its first instruction, before CONFIG, and on some radios its own pins do something else. A SoC of a
+// radio with two (board, its stub_board: pair) also gets the UART it listens on, its power latch and key. A copy; the
+// image as it is without led or a parameter block
+export function univForBoard(image, led, board = null) {
+	if (!led || !univLayout(image)) return image;
+	const out = image.slice();
+	out.set(le32(led.red), UCFG_LED);
+	out.set(le32(led.green), UCFG_LED + 4);
+	if (board?.pair)
+		for (const [off, v] of [[UCFG_UART, board.uart || 0], [UCFG_LATCH, board.latch], [UCFG_KEY, board.key]]) out.set(le32(v), off);
+	return out;
 }
 
 // The checks stubtool's check_univ_load makes before the stub is sent: its run area inside SRAM, the image 4-byte
@@ -168,6 +207,7 @@ export class Stub {
 		// the board's protected regions (c7000.boards[id].protect, board.toml [[flash.protect]]), from the profile
 		// configure() gets: every erase and program checks them before it is sent
 		this.protect = [];
+		this.noise = null;	// {bytes, ms} once a wait for a quiet line gave up (drain)
 	}
 
 	async readExact(n, timeout) {
@@ -184,13 +224,18 @@ export class Stub {
 	// greeting in and the answer out. repeat (ms, slow cable mode): send the answer that often all along, so one is on
 	// its way when the greeting goes out; only with the radio off at the start, since the firmware of a radio left on
 	// would get it too. Resolves {answered}: true when the ROM took one of those (a NAK of a later one shows it, or the
-	// greeting and ROM_REPEAT_AFTER ms of answers after it without the ROM giving up)
+	// greeting and ROM_REPEAT_AFTER ms of answers after it without the ROM giving up).
+	//
+	// The ROM giving up ends the wait with a code: rom-deaf when its greeting was seen and answers were on their way
+	// (nothing the cable sends reaches the radio: no slower sending helps), rom-booted otherwise. rom-garbled: the
+	// ROM's two frames came in a shape that can only be them, but not as their bytes (the cable reads the line wrong)
 	async waitForRom(timeout, { signal, repeat = 0 } = {}) {
 		const until = Date.now() + timeout;
 		this.s.clear();
 		// the answers go out in the background: a write that fails (the cable pulled) ends the wait with its error, and
 		// is never left as an unhandled rejection
-		let sending = Promise.resolve(), next = 0, heard = 0, failed = null;
+		let sending = Promise.resolve(), next = 0, heard = 0, failed = null, tail = null;
+		let had = 0, bursts = [], seen = [];
 		try {
 			while (Date.now() < until) {
 				if (signal?.aborted) throw new StubError("stopped");
@@ -200,6 +245,26 @@ export class Stub {
 				}
 				if (failed) throw failed;
 				const b = this.s.buf;
+				const now = Date.now();
+				if (b.length > had) {
+					const last = bursts[bursts.length - 1];
+					if (last && now - last.end < BURST_GAP) { last.n += b.length - had; last.end = now; }
+					else bursts.push({ at: now, end: now, n: b.length - had });
+					seen.push(...b.subarray(had));
+				}
+				had = b.length;
+				if (!heard && bursts.length && now - bursts[bursts.length - 1].end >= GROUP_QUIET) {
+					const [one, two] = bursts;
+					if (bursts.length === 2 && one.n >= GARBLED_MIN && two.n >= GARBLED_MIN
+						&& two.at - one.at >= GARBLED_APART[0] && two.at - one.at <= GARBLED_APART[1]) {
+						this.log(`two frames that are not the boot ROM's greeting: ${hexBytes(Uint8Array.from(seen.slice(0, 16)))}`);
+						this.s.take(b.length);
+						throw new StubError("the radio's boot ROM greeted, but the bytes came through the cable wrong: "
+							+ "the cable reads the radio's line at the wrong rate or badly", "rom-garbled");
+					}
+					bursts = [];
+					seen = [];
+				}
 				const at = find(b, ROM_HELLO);
 				if (at >= 0) {
 					this.s.take(at + ROM_HELLO.length);
@@ -207,16 +272,28 @@ export class Stub {
 					heard = Date.now();
 					continue;
 				}
-				if (repeat && (find(b, ROM_NAK) >= 0 || (heard && find(b, ROM_GAVE_UP) < 0 && Date.now() - heard >= ROM_REPEAT_AFTER))) {
+				if (repeat && (find(b, ROM_NAK) >= 0 || (heard && !gaveUp(b) && Date.now() - heard >= ROM_REPEAT_AFTER))) {
 					this.s.take(b.length);
 					return { answered: true };
 				}
-				if (find(b, ROM_GAVE_UP) >= 0) {
+				if (heard && gaveUp(b)) {
+					this.log(`after the boot ROM greeting: ${hexBytes(b.subarray(0, 16))}`);
 					this.s.take(b.length);
-					throw new StubError(repeat ? "the radio started its firmware without taking the loader, even with the answer sent ahead"
-						: "the radio started its firmware: its boot ROM's greeting did not come through", "rom-booted");
+					throw new StubError("the radio's boot ROM greeted, but none of the answers sent ahead reached it and it started the firmware: "
+						+ "the radio does not receive what the cable sends", "rom-deaf");
 				}
-				if (b.length > 64) this.s.take(b.length - 3);
+				if (b.length >= 4 && signOffAt(b, b.length - 4)) {
+					if (tail?.n !== b.length) tail = { n: b.length, at: Date.now() };
+					else if (Date.now() - tail.at >= SIGN_OFF_QUIET) {
+						this.s.take(b.length);
+						throw new StubError(repeat ? "the radio started its firmware without taking the loader, even with the answer sent ahead"
+							: "the radio started its firmware: its boot ROM's greeting did not come through", "rom-booted");
+					}
+				} else {
+					tail = null;
+				}
+				if (b.length > 64 && !tail) this.s.take(b.length - 3);
+				had = this.s.buf.length;
 				await sleep(1);
 			}
 		} finally {
@@ -228,8 +305,8 @@ export class Stub {
 	// The boot ROM's acknowledgement of `sent`, within timeout. A cable that echoes (some USB-serial cables loop TX back
 	// to RX) puts an exact copy of the frame first: it is dropped and the reading goes on. Other bytes ahead of the ack
 	// (a damaged echo, seen on a CH340 cable) are passed over: the ack is the last thing the ROM sends, so it counts
-	// when the bytes end with it. A NAK or the ROM giving up ends the wait. {ok, got}: got is what came instead, for
-	// the log and the error
+	// when the bytes end with it. A NAK or the ROM giving up ends the wait. {ok, got, late}: got is what came instead,
+	// for the log and the error; late: the ROM gave up
 	async romAck(sent, timeout) {
 		const until = Date.now() + timeout;
 		for (;;) {
@@ -249,7 +326,8 @@ export class Stub {
 				this.s.take(b.length);
 				return { ok: true, got: null };
 			}
-			if (!echo && (ends(ROM_NAK) || find(b, ROM_GAVE_UP) >= 0)) return { ok: false, got: this.s.take(Math.min(16, b.length)) };
+			if (!echo && gaveUp(b, sent)) return { ok: false, late: true, got: this.s.take(Math.min(16, b.length)) };
+			if (!echo && ends(ROM_NAK)) return { ok: false, got: this.s.take(Math.min(16, b.length)) };
 			if (Date.now() >= until) return { ok: false, got: this.s.take(Math.min(16, b.length)) };
 			await sleep(1);
 		}
@@ -268,7 +346,7 @@ export class Stub {
 			+ (this.repeated ? "or install through the radio's factory update mode instead, which needs no load over the cable" : "or try the slow cable mode"));
 	}
 
-	// The ROM said it stopped waiting (ROM_GAVE_UP) before the answer to its greeting reached it
+	// The ROM said it stopped waiting (its sign-off) before the answer to its greeting reached it
 	romLate(got) {
 		return new StubError(`the radio's boot ROM stopped waiting before the page's answer reached it (received ${hexBytes(got.subarray(0, 16))}). `
 			+ (this.repeated ? "It did so even with the answer sent ahead" : "The cable or a USB hub carries it too slowly: try the slow cable mode"), "rom-late");
@@ -293,7 +371,7 @@ export class Stub {
 				quiet = -10;
 			}
 		}
-		if (find(reply, ROM_GAVE_UP) >= 0) {
+		if (gaveUp(reply)) {
 			this.log(`after the boot ROM greeting: ${hexBytes(reply.subarray(0, 16))}`);
 			throw this.romLate(reply);
 		}
@@ -316,7 +394,7 @@ export class Stub {
 				const r = await this.romAck(frame, 1000);
 				ok = r.ok;
 				got = r.got;
-				if (!ok && got && find(got, ROM_GAVE_UP) >= 0) throw this.romLate(got);
+				if (!ok && r.late) throw this.romLate(got);
 				if (!ok) this.log(`stub block ${i} not acknowledged (${got?.length ? `received ${hexBytes(got)}` : "nothing received"}), sending it again`);
 			}
 			if (!ok) throw this.romError(`stub block ${i} was not acknowledged`, got);
@@ -497,8 +575,8 @@ export class Stub {
 	// Send the board's profile to the universal stub (CONFIG, op 0x0D: clock, power latch and key pins, LEDs, board id,
 	// flags, the UART this request came in on) and check the echo in the next HELLO. Writes wait for this. The clock is
 	// the APB clock, measured (24 MHz under the boot ROM, 36 MHz on the DB25-D, 84 MHz under RadioFoundry on the DM-32UV and
-	// DM-1801 Pro). An older stub has no CONFIG.
-	async configure(profile, led = { red: 33, green: 32 }) {
+	// DM-1801 Pro). An older stub has no CONFIG. The LED pins: the profile's, else the stub's own.
+	async configure(profile, led = profile?.led || DEFAULT_LED) {
 		if (profile?.protect) this.protect = profile.protect;
 		if (!this.v6) return;
 		if (this.v6.board && this.v6.board === profile.id && this.v6.flags === (profile.nand ? 1 : 0)) {
@@ -540,12 +618,24 @@ export class Stub {
 		}
 	}
 
-	// Drop what the stub still streams until the line has been quiet for `quiet` ms
-	async drain(quiet = 400) {
+	// Drop what the stub still streams until the line has been quiet for `quiet` ms: true once it is. The longest
+	// thing a stub still sends is the rest of one read (WINDOW sectors, under 6 s at 115200 baud), so a line that is
+	// not quiet after limits.drain carries data nothing asked for: a faulty cable or adapter, a plug half in, or a
+	// device that talks by itself. The wait ends there (false) with what came in this.noise, where it once never ended
+	async drain(quiet = 400, limit = limits.drain) {
+		const t0 = Date.now();
+		let bytes = 0;
 		for (;;) {
 			this.s.clear();
 			await sleep(quiet);
-			if (!this.s.buf.length) return;
+			if (!this.s.buf.length) return true;
+			bytes += this.s.buf.length;
+			const ms = Date.now() - t0;
+			if (ms >= limit) {
+				this.noise = { bytes, ms };
+				this.log(`the line never went quiet: ${bytes} bytes in ${(ms / 1000).toFixed(1)} s that nothing asked for`);
+				return false;
+			}
 		}
 	}
 
@@ -827,6 +917,33 @@ export class Stub {
 		const bad = todo.length ? (await this.verify("progmem", data, start)).filter((a) => !kept(a)) : [];
 		if (bad.length) throw new StubError(`verify after write: sectors differ at ${bad.map((x) => "0x" + x.toString(16)).join(", ")}`);
 		return { written: todo.length, same: data.length / SECTOR - todo.length };
+	}
+
+	// The boot ROM's flag sector at program flash 0, on a board the boot ROM starts directly (stubtool.py
+	// write_rom_flag): made to name entry, or, with sector, made that sector (a restore: the backup's own flag sector,
+	// which must start with the flag). The caller writes it after the application is written and verified, so it never
+	// names a half-written application; an interrupted install still leaves the application area changed. Only that one sector is written; a protected
+	// region over it refuses it. Resolves true when it was written, false when it already held that.
+	async writeRomFlag(entry, { sector = null } = {}) {
+		if (sector ? sector.length !== SECTOR || !hasRomFlag(sector) : !Number.isInteger(entry)) throw new StubError("not a boot ROM flag sector");
+		try {
+			protect.check(this.protect, "progmem", 0, SECTOR);
+		} catch (e) {
+			throw new StubError(e.message);
+		}
+		if (this.v6 && !this.configured) throw new StubError("the loader's radio configuration is not confirmed: refusing to write");
+		const cur = await this.dump("progmem", 0, SECTOR);
+		const want = sector || romFlagSector(cur, entry);
+		if (equal(cur, want)) return false;
+		for (let attempt = 1; ; attempt++) {
+			const crc = (await this.writeSector(0, want)) ?? (await this.sums("progmem", 0, 1))[0].crc;
+			if (crc === crc32(want)) break;
+			this.log(`0x0: read back differs, writing it again (${attempt} of 3)`);
+			if (attempt === 3) throw new StubError("0x0: the boot ROM flag sector reads back wrong after 3 writes");
+		}
+		if ((await this.verify("progmem", want, 0)).length) throw new StubError("verify after write: the boot ROM flag sector differs");
+		this.log(`boot ROM flag at 0 now names 0x${u32le(want, 4).toString(16)}`);
+		return true;
 	}
 
 	// ---- the LED on top of the radio, and leaving the loader

@@ -2056,6 +2056,10 @@ void hrc6000_dmr_run(hrc6000_dmr_t *e)
 	memset(e->vs, 0, sizeof(e->vs));
 	memset(e->held, 0, sizeof(e->held));
 	slot_lc_forget(e);	// their ticks are from before the tick restarted
+	if (e->dev->chip->mode_per_channel) {
+		// The channel's 0x10 again: whoever held the chip while the engine was halted (an air session) left its own
+		w(e->dev, R_MODE, e->dev->chip->dmr_mode(e->cfg.repeater));
+	}
 	hrc6000_dmr_set_sync(e->dev, DMR_SYNC_MS);
 	if (e->cc_filter >= 0) {
 		e->cc_cur = (uint8_t)e->cc_filter;

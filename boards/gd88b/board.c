@@ -63,8 +63,8 @@ void board_early_init(void)
 	hrc_pin_out(GD88_PIN_RF_SEN_LO, true);
 	hrc_pin_out(GD88_PIN_RF_CLK, false);
 	hrc_pin_in(GD88_PIN_RF_DATA);
-	hrc_pin_out(PIN_LED1, false);
-	hrc_pin_out(PIN_LED2, false);
+	hrc_pin_out(PIN_LED_RED, false);
+	hrc_pin_out(PIN_LED_GREEN, false);
 }
 
 void board_init(void)
@@ -88,8 +88,8 @@ void gd88b_leds(uint8_t leds)
 		blink_phase = false;
 		blink_ms = 0;		// the first poll starts it
 	}
-	hrc_pin_write(PIN_LED1, (leds & 1u) != 0);
-	hrc_pin_write(PIN_LED2, (leds & 2u) != 0);
+	hrc_pin_write(PIN_LED_RED, (leds & 1u) != 0);
+	hrc_pin_write(PIN_LED_GREEN, (leds & 2u) != 0);
 }
 
 // A is in its flash stub (RX2_LED_STUB): the two LEDs take turns, 2 Hz each
@@ -100,6 +100,6 @@ void gd88b_leds_poll(uint32_t now_ms)
 	}
 	blink_ms = now_ms;
 	blink_phase = !blink_phase;
-	hrc_pin_write(PIN_LED1, !blink_phase);
-	hrc_pin_write(PIN_LED2, blink_phase);
+	hrc_pin_write(PIN_LED_RED, !blink_phase);
+	hrc_pin_write(PIN_LED_GREEN, blink_phase);
 }

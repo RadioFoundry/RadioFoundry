@@ -153,6 +153,10 @@ static hal_radio_t fake_radio = { .init = r_init, .set_mode = r_set_mode, .rx = 
 // (fake_radio.volume is set by test_soft_volume only)
 static void p_led(uint8_t which, bool on) { hw.led[which] = on; }
 
+static bool ptt_stuck;
+static bool p_ptt_stuck(void) { return ptt_stuck; }
+static const hal_input_t fake_input = { .ptt_line_stuck = p_ptt_stuck };
+
 // ---- fake PCM audio and vocoder (core/dmr/ambe runs on them) ----
 static struct {
 	bool started;
@@ -450,7 +454,7 @@ static void air_abort(uint8_t i) { fair[i].qn = 0; fair[i].on = false; fair[i].a
 	static uint32_t air_now##i(void) { return fair[i].now_us; } \
 	static bool air_load##i(uint32_t *w, uint32_t *s) { *w = 1000u + i; *s = 20000u; return true; } \
 	static const hal_air_t fake_air##i = { air_fit##i, air_open##i, air_close##i, air_restart##i, air_begin##i, air_queue##i, \
-					       air_space##i, air_end##i, air_abort##i, air_now##i, NULL, NULL, air_load##i, AIR_CHUNK, \
+					       air_space##i, air_end##i, air_abort##i, air_now##i, NULL, NULL, air_load##i, NULL, AIR_CHUNK, \
 					       AIR_DEPTH, 60, 100 };
 FAKE_AIR(0)
 FAKE_AIR(1)
@@ -480,6 +484,7 @@ const board_t board = {
 	.home_key_count = 1,
 	.radio = &fake_radio,
 	.power = &fake_power,
+	.input = &fake_input,
 	.dmr = &sim_modem,
 	.audio = &fake_audio,
 	.vocoder = &fake_vocoder,
@@ -2424,6 +2429,26 @@ static void test_dmr_wake_leds(void)
 	req(RREQ_PTT, 0);
 	chans[4].tx_hz = chans[4].rx_hz;
 	setup_codeplug();
+}
+
+// A PTT line stuck low: red and green in turn, one at a time, until it isn't (the power cycle)
+static void test_ptt_line_stuck(void)
+{
+	bool red = hw.led[LED_RED], green = hw.led[LED_GREEN];
+	ptt_stuck = true;
+	run(10);
+	uint32_t turns = 0;
+	bool was = hw.led[LED_RED];
+	for (uint32_t t = 0; t < 1000u; t += 5) {
+		CHECK(hw.led[LED_RED] != hw.led[LED_GREEN]);
+		turns += hw.led[LED_RED] != was;
+		was = hw.led[LED_RED];
+		run(5);
+	}
+	CHECK(turns >= 1000u / RADIO_LED_STUCK_STEP_MS - 1u && turns <= 1000u / RADIO_LED_STUCK_STEP_MS + 1u);
+	ptt_stuck = false;
+	run(20);
+	CHECK(hw.led[LED_RED] == red && hw.led[LED_GREEN] == green);
 }
 
 static void test_hotspot(void)
@@ -9976,6 +10001,7 @@ int main(void)
 	test_side_keys();
 	test_rx_ext();
 	test_error_paths();
+	test_ptt_line_stuck();
 	test_hotspot();
 	test_hotspot_session();
 	test_hotspot_cwid();

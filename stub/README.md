@@ -91,10 +91,10 @@ the modem writes only its own SRAM, so after the stub masks every interrupt noth
 | Region | Address | Size |
 |---|---|---|
 | Entry and copy loop (position independent, no stack) | load address | 0x80 |
-| Image (text, parameter block at +0x80, data) | 0x30000-0x31E68 after the copy | 7,784 B |
-| .bss (receive buffer, sector buffers) | to 0x36C90 | 20,008 B |
-| Stack (4 KB, painted) | 0x36C90-0x37C90 | 4,096 B |
-| Whole footprint | 0x30000-0x37C90 | 31,888 B (32 KB budget, checked by the linker) |
+| Image (text, parameter block at +0x80, data) | 0x30000-0x31FA8 after the copy | 8,104 B |
+| .bss (receive buffer, sector buffers) | to 0x36DD0 | 20,008 B |
+| Stack (4 KB, painted) | 0x36DD0-0x37DD0 | 4,096 B |
+| Whole footprint | 0x30000-0x37DD0 | 32,208 B (32 KB budget, checked by the linker) |
 
 Measured stack use: 168 bytes on the DM-32UV and DM-1801 Pro, 252 bytes on the DB25-D (NAND reads included); 200 bytes on
 the DM-32UV after two 126-sector WRITE installs (protocol 7, 7,796-byte build).
@@ -138,8 +138,9 @@ B still in a stub from an earlier run.
 A restarts by itself after the exit sequence. That route takes no `--rfoundry-enter` and no `--baud`.
 
 The radio's two LEDs are on B (PTA16, PTB17), and on A the default LED pins (PTB0 / PTB1) clock and feed its serial
-output chain. So the tool patches the image's parameter block before it sends it: no LEDs and the latch and key on A;
-B's own LEDs and UART3 only on B, from each board's `[flash.stub]` `leds` and `uart` in `board.toml`. The DB25-D, DM-32UV and DM-1801 Pro get the image unchanged.
+output chain. So the tool patches the image's parameter block before it sends it, as for every board's LED pins
+(`PIN_LED_RED`, `PIN_LED_GREEN` in `pins.h`, none on A). The two SoCs of this radio also get their pins for the part
+before CONFIG: the latch and key on A; UART3 on B (`[flash.stub]` `uart` in `board.toml`).
 
 ```sh
 stubtool.py PORT --board gd88 --write-app build/gd88/rfoundry_gd88_install.bin --boot reset     # A at power-on

@@ -346,13 +346,17 @@ def c7000_flash():
 			       # codec_boards: a second SoC that runs the first SoC's codec, then its own)
 			       "codec_boards": list(lay.get("codec_boards", (bid,))),
 			       "calibration": lay.get("calibration"),
-			       # (CONFIG), with its LED pins, UART and bridge where the board has them (a second SoC)
+			       # (with its status LED pins, which also go into the stub's parameter block before it is sent, and
+			       # for a SoC of a radio with two (pair) its UART, and the bridge that reaches a second SoC)
 			       "stub_board": {k: (list(v) if isinstance(v, tuple) else v) for k, v in st.C7_BOARDS[bid].items()
-					      if k in ("id", "latch", "key", "nand", "leds", "uart", "bridge")} if bid in st.C7_BOARDS
-			       else {k: st.GENERIC[k] for k in ("id", "latch", "key", "nand")},
+					      if k in ("id", "latch", "key", "nand", "led", "uart", "bridge") or (k == "pair" and v)} if bid in st.C7_BOARDS
+			       else {k: st.GENERIC[k] for k in ("id", "latch", "key", "nand", "led")},
 			       # the board's [[flash.protect]] (progmem offsets are the stub's: from the program flash's base),
 			       # which every write and restore here checks first (protect.js)
-			       "protect": st.C7_BOARDS[bid]["protect"] if bid in st.C7_BOARDS else []}
+			       "protect": st.C7_BOARDS[bid]["protect"] if bid in st.C7_BOARDS else [],
+			       # a board the boot ROM starts directly: the entry its flag sector at flash 0 must name after an
+			       # install (stubtool write_rom_flag), else None
+			       "rom_entry": st.C7_BOARDS[bid]["rom_entry"] if bid in st.C7_BOARDS else None}
 	profiles = []
 	for p in dc.PROFILES.values():
 		# a stock file known only by its whole-file hash (e.g. a 2024-05-09 build) has no codec hashes: it can be
@@ -368,7 +372,7 @@ def c7000_flash():
 				 "stock_file": None if p.get("kind") == "progmem" else {"sha256": next(h for h, q in dc.PROFILES.items() if q is p),
 										"size": p["size"], "code": p["code"][0], "tables": p["tables"][0]}})
 	return {"progmem_base": dc.PROGMEM_BASE, "progmem_size": dc.PROGMEM_SIZE, "data_size": st.MEM["q128"][3],
-		"app_start": st.APP_START, "app_end": st.APP_END, "sector": st.SECTOR,
+		"app_start": st.APP_START, "app_end": st.APP_END, "sector": st.SECTOR, "rom_flag": st.ROM_FLAG.hex(),
 		"app_base": dc.APP_BASE, "stock_header": dc.STOCK_HEADER, "stock_magic": dc.MAGIC.decode(),
 		"led": {"red": st.LED_RED, "green": st.LED_GREEN},
 		"slot_magic": dc.SLOT_MAGIC, "slot_version": dc.SLOT_VERSION,

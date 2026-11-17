@@ -548,7 +548,7 @@ void TIM7_IRQHandler(void)
 		}
 		r.key_i = ++i;
 		if (i >= r.key_ns) {
-			if (!r.key_timed) {	// a BS outbound keys once for all its slots: its end drops the PA
+			if (!r.key_timed) {	// keyed once for the whole transmission: its end drops the PA
 				key_timer_stop();
 				return;
 			}
@@ -582,7 +582,8 @@ bool uvf_rf_dmr_switch(bool tx)
 	}
 	uint16_t first = r.key_st[0].us;	// no earlier than DMR_KEY_MIN_US after the interrupt
 	uint32_t until;
-	r.key_timed = !stm32_hrc_dmr_bs_boundary_us(&until);
+	// a BS outbound or the air interface's continuous transmission keys once: its end drops the PA
+	r.key_timed = !stm32_hrc_dmr_bs_boundary_us(&until) && !stm32_hrc_dmr_tx_continuous();
 	TIM7->CR1 = 0;
 	TIM7->CNT = 0;
 	TIM7->ARR = (uint32_t)(DMR_KEY_INT_AHEAD_US - first) - 1u;

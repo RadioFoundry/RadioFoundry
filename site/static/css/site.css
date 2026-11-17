@@ -417,8 +417,10 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 .c7-grid, .radio-grid { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: var(--space-5); align-items: start; }
 @media (max-width: 760px) { .c7-grid, .radio-grid { grid-template-columns: 1fr; } .c7-grid .radio-top, .radio-grid .radio-top { order: -1; max-width: 240px; margin: 0 auto; } .rt-pic, .radio-pic .rt-img { max-width: 170px; } }
 .radio-top { margin: 0; text-align: center; }
-.rt-pic { position: relative; max-width: 220px; margin: 0 auto; }
-.rt-img { width: 100%; max-width: 220px; height: auto; display: block; margin: 0 auto; }
+/* the picture is at most --rt-h high, so a tall portable leaves the step's buttons on the screen: its width follows
+   from the drawing's shape (--rt-aspect, width / height, set by radiotop.js); a wide mobile radio is held by max-width */
+.rt-pic { --rt-h: 300px; position: relative; width: calc(var(--rt-h) * var(--rt-aspect, 1)); max-width: 220px; margin: 0 auto; }
+.rt-img { width: 100%; height: auto; display: block; margin: 0 auto; }
 .rt-screen { position: absolute; display: grid; place-content: stretch; overflow: hidden; }
 /* the radio's own screen from the UI gallery, its pixels kept sharp */
 .rt-shot { width: 100%; height: 100%; object-fit: contain; background: #000; }

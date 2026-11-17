@@ -53,7 +53,7 @@
 #define PIN_SPK_OPEN		0x29	// PTB9
 // The status LEDs, high = on. A's status LEDs: A switches them over the link (RX2_LED). One top LED, two colors
 // (settled on the radio): LED 1 red, lit while A transmits; LED 2 green, while it receives
-#define PIN_LED1		0x10	// PTA16
-#define PIN_LED2		0x31	// PTB17
+#define PIN_LED_RED		0x10	// PTA16
+#define PIN_LED_GREEN		0x31	// PTB17
 
 #endif

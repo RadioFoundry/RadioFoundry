@@ -431,7 +431,9 @@ that time and check the file.
 ### Pass criteria and tolerances
 
 `test_dmr_rx`: voice bursts exactly 120; voice LC headers 14 to 16 (the first header of a call can fall in the
-receiver's acquisition); terminators 5 to 6; CRC errors 0; the call stack saw exactly 2 calls.
+receiver's acquisition); terminators 5 to 6; CRC errors 0; the call stack saw exactly 2 calls. A build without
+the board's diagnostics lines (`CONFIG_DIAG` off) has no modem counters: the call stack's voice bursts are 120 with no
+frame lost.
 
 `test_dmr_audio_smoke`: RX: the call played (`call.rx_calls_played` +1); frames into the voice layer at least 90 % of
 the frames sent; `voice.rx_peak` at least 1000; `voice.rx_repeats` at most the recording's own repeats + the superframe padding

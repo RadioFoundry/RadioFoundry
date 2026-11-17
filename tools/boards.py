@@ -67,6 +67,8 @@ FAMILIES = {
     # combination, speaking its own file format (tools/serial_loader.py)
     "serial-iap": {"link": "serial-cable", "needs": (), "web": "c7000-stub", "update_mode": "iap"},	# a vendor IAP
     # loader on the cable, through the RAM stub
+    "boot-rom": {"link": "serial-cable", "needs": (), "web": "c7000-stub", "update_mode": None},	# no vendor loader:
+    # the SoC's boot ROM serial window on the cable at every power-on, through the RAM stub
 }
 # [flash.stub] stock_console: the debug console a stock firmware answers on the cable, by protocol (the web flasher
 # loads the stub through it before RadioFoundry is installed: site/static/js/flasher/usmart.js)
@@ -97,7 +99,7 @@ STUB_WRITE_TEST = 0x4000	# [flash.stub] write_test: the data flash bytes stubtoo
 NO_PIN = 255			# the universal stub's "no pin"
 # board.mk values the registry reads, through make (conditionals and config.mk included)
 MAKE_VARS = ("PLATFORM", "APP_BASE", "LDSCRIPT", "BOOT_STAGE", "BOOT_SIZE", "BOOT_SIGNATURE", "BOARD_DIRS",
-             "BUILD_OPTIONS", "BOARD_UNSUPPORTED", "BOARD_NOT_WRITTEN", "HSE_VALUE", "MCU_DEFS")
+             "BUILD_OPTIONS", "BOARD_UNSUPPORTED", "BOARD_NOT_WRITTEN", "BOARD_DEFAULT_OFF", "HSE_VALUE", "MCU_DEFS")
 # The frame buffer core/ui/gfx.h builds when a board's MCU_DEFS don't size it (RGB565, 160x128, at most 160 rows)
 GFX_DEFAULTS = {"GFX_FB_BYTES": 160 * 128 * 2, "GFX_MAX_ROWS": 160, "GFX_INDEXED": 0}
 # The [flash.stub] id every stub keeps for its tools' test profiles (stub/f4stub.py test_board()), so a test record
@@ -226,12 +228,15 @@ BOARD_SCHEMA = {
         # platform lists in board_stub.keys, nothing another platform's stub takes
         "stub": _opt({"id": _req(int), "tested": _req(bool),
                       "hold_power": _opt(bool), "progmem": _opt(int),	# the HR_C7000 universal stub
+                      # HR_C7000 without a vendor loader: the boot ROM starts the image its flag sector at flash 0
+                      # names, so stubtool --write-app keeps that sector naming this entry
+                      "rom_entry": _opt(int),
                       "stock_console": _opt(STOCK_CONSOLES), "read_rate": _opt(int),
-                      # the universal stub's LED pins (pins.h names, red then green; [] for none, where the default
-                      # LED pins are wired to something else), the UART it answers on before CONFIG, and, for a
-                      # part_of board's second SoC, how the main SoC's stub reaches it (PASS, op 0F): the main SoC's
-                      # UART to pass the cable to, and the pin mux bits that give it its pins (address, bits to set)
-                      "leds": _opt(STR_LIST), "uart": _opt(int),
+                      # the UART the universal stub answers on before CONFIG, and, for a part_of board's second
+                      # SoC, how the main SoC's stub reaches it (PASS, op 0F): the main SoC's UART to pass the cable
+                      # to, and the pin mux bits that give it its pins (address, bits to set). Its LED pins are
+                      # pins.h PIN_LED_RED and PIN_LED_GREEN
+                      "uart": _opt(int),
                       "bridge": _opt({"uart": _req(int), "mux": _req(("list", int))}),
                       # the data memory is SPI NAND though the build has no NAND driver (a second SoC that keeps
                       # nothing on its own NAND); otherwise it follows BOARD_DIRS
@@ -243,7 +248,8 @@ BOARD_SCHEMA = {
                       # codeplug area [0, area) whose last byte is page_id; on a radio whose data memory is a NAND,
                       # the 4 KB sectors of the program flash (progmem) and the NAND (nand) that each hold a copy
                       # starting with magic
-                      "calibration": _opt({"area": _opt(int), "page_id": _opt(int),
+                      # or, data: the data flash sector (4 KB) at a fixed address that holds it
+                      "calibration": _opt({"area": _opt(int), "page_id": _opt(int), "data": _opt(int),
                                            "progmem": _opt(int), "nand": _opt(int), "magic": _opt(str)}),
                       # the STM32F4 stub: the SPI flash's bus (SPIn), mode and fastest clock; the pins come from pins.h
                       # (F4_SPI_PINS), and idle_cs names other chip selects on that bus to hold high
@@ -544,16 +550,29 @@ def unsupported_reasons(config_mk):
 NOT_WRITTEN_RE = re.compile(r"^\s*BOARD_NOT_WRITTEN\s*[:+]?=([^#]*)(?:#(.*))?$")
 
 
+DEFAULT_OFF_RE = re.compile(r"^\s*BOARD_DEFAULT_OFF\s*[:+]?=([^#]*)(?:#(.*))?$")
+
+
 def not_written_reasons(config_mk):
     """{switch: reason} from config.mk's BOARD_NOT_WRITTEN lines, in BOARD_UNSUPPORTED's form: the switches the
     radio's hardware can do but whose driver or glue isn't written yet (docs/build-config.md)."""
+    return _listed_reasons(config_mk, NOT_WRITTEN_RE)
+
+
+def default_off_reasons(config_mk):
+    """{switch: reason} from config.mk's BOARD_DEFAULT_OFF lines, in the same form: switches that work but carry a
+    risk on this radio, left for a custom build to turn on. The reason is shown to users by the switch."""
+    return _listed_reasons(config_mk, DEFAULT_OFF_RE)
+
+
+def _listed_reasons(config_mk, line_re):
     out = {}
     try:
         lines = open(config_mk, encoding="utf-8").read().splitlines()
     except OSError:
         return out
     for line in lines:
-        m = NOT_WRITTEN_RE.match(line)
+        m = line_re.match(line)
         if m:
             sws = m.group(1).split()
             for s in sws:
@@ -572,6 +591,23 @@ def not_written_problems(bid, b):
         if s in b.unsupported:
             out.append("boards/%s: %s is in both BOARD_UNSUPPORTED and BOARD_NOT_WRITTEN: UNSUPPORTED only when the "
                        "hardware can't do it (docs/build-config.md)" % (bid, s))
+    return out
+
+
+def default_off_problems(bid, b, built):
+    """config.mk's BOARD_DEFAULT_OFF of a board (built: switch -> "y"/"n"): each switch has the reason users read, is
+    off by default and can be chosen, so it is in neither list of what can't be."""
+    out = []
+    for s, why in b.default_off.items():
+        if not why:
+            out.append("boards/%s/config.mk: BOARD_DEFAULT_OFF %s has no reason: one switch a line, "
+                       "BOARD_DEFAULT_OFF += %s  # <the reason users read>" % (bid, s, s))
+        if s in b.unsupported or s in b.not_written:
+            out.append("boards/%s: %s is in BOARD_DEFAULT_OFF and in BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN: "
+                       "a default-off switch can be chosen (docs/build-config.md)" % (bid, s))
+        if built.get(s) != "n":
+            out.append("boards/%s: %s is in BOARD_DEFAULT_OFF but built by default: add CONFIG_%s ?= n to its config.mk"
+                       % (bid, s, s))
     return out
 
 
@@ -622,6 +658,8 @@ class Board:
         self.unsupported = {s: reasons.get(s, "") for s in mk.get("BOARD_UNSUPPORTED", "").split()}
         # config.mk BOARD_NOT_WRITTEN, the same way (load() fills it)
         self.not_written = {}
+        # config.mk BOARD_DEFAULT_OFF, the same way (load() fills it)
+        self.default_off = {}
         boot = mk.get("BOOT_STAGE")
         self.first_stage = None
         if boot:
@@ -700,7 +738,7 @@ class Board:
     def stub(self):
         """The board's profile for its platform's stub (platform.toml board_stub.tool), with what other files say.
         stubtool (the HR_C7000 universal stub): the power latch and key from pins.h when the stub must hold the radio
-        on (a soft power key), else none. f4stub: the board record's facts, the SPI flash pins from pins.h, the crystal
+        on (a soft power key), else none; the status LEDs from pins.h (PIN_LED_RED, PIN_LED_GREEN), else none. f4stub: the board record's facts, the SPI flash pins from pins.h, the crystal
         from HSE_VALUE and the bootloader's end from APP_BASE. None without a profile."""
         s = self.data["flash"].get("stub")
         bs = self.platform.data.get("board_stub")
@@ -718,14 +756,13 @@ class Board:
             hold = s["hold_power"]
             out.update(latch=self.pins.get("PIN_POWER_LATCH", NO_PIN) if hold else NO_PIN,
                        key=self.pins.get("PIN_POWER_KEY", NO_PIN) if hold else NO_PIN, nand=s.get("nand", self.nand),
-                       progmem=s["progmem"], stock_console=s.get("stock_console"))
+                       progmem=s["progmem"], stock_console=s.get("stock_console"), rom_entry=s.get("rom_entry"),
+                       # the status LEDs the stub blinks: a pin the radio uses for something else must never be driven
+                       led={"red": self.pins.get("PIN_LED_RED", NO_PIN), "green": self.pins.get("PIN_LED_GREEN", NO_PIN)})
             if "calibration" in s:
                 out["calibration"] = s["calibration"]
             if "write_test" in s:		# start and end: the length is the registry's alone
                 out["write_test"] = [s["write_test"], s["write_test"] + STUB_WRITE_TEST]
-        if "leds" in s:
-            leds = [self.pins.get(n, NO_PIN) for n in s["leds"]]
-            out["leds"] = leds if leds else [NO_PIN, NO_PIN]
         for k in ("uart", "bridge"):
             if k in s:
                 out[k] = s[k]
@@ -919,6 +956,9 @@ def load(root=ROOT, only=None):
         nw = {**not_written_reasons(os.path.join(root, "platform", plat.id, "config.mk")),
               **not_written_reasons(os.path.join(bdir, "config.mk"))}
         out[bid].not_written = {s: nw.get(s, "") for s in mk.get("BOARD_NOT_WRITTEN", "").split()}
+        off = {**default_off_reasons(os.path.join(root, "platform", plat.id, "config.mk")),
+               **default_off_reasons(os.path.join(bdir, "config.mk"))}
+        out[bid].default_off = {s: off.get(s, "") for s in mk.get("BOARD_DEFAULT_OFF", "").split()}
     return out
 
 
@@ -1162,6 +1202,12 @@ def check(root=ROOT):
                 problems.append("boards/%s/config.mk: BOARD_UNSUPPORTED %s has no reason: one switch a line, "
                                 "BOARD_UNSUPPORTED += %s  # <reason>" % (bid, s, s))
         problems += not_written_problems(bid, b)
+        if b.default_off:
+            try:
+                problems += default_off_problems(bid, b, {k[len("CONFIG_"):]: v for k, v in make_vars(
+                    root, bid, ["CONFIG_" + s for s in b.default_off]).items()})
+            except RegistryError as e:
+                problems.append(str(e))
         if hw:
             try:
                 built = {s: v for s, v in ((k[len("CONFIG_"):], v) for k, v in
@@ -1323,8 +1369,8 @@ def check(root=ROOT):
                                                    [p for p in b.protect if p["mem"] == "data"], b.write_floor):
                         bad("flash.stub write_test 0x%X: %s" % (wt, why))
                 cal = stub.get("calibration")
-                if cal is not None and set(cal) not in ({"area", "page_id"}, {"progmem", "nand", "magic"}):
-                    bad("flash.stub calibration is either {area, page_id} (a data flash) or {progmem, nand, magic} (a NAND)")
+                if cal is not None and set(cal) not in ({"area", "page_id"}, {"data"}, {"progmem", "nand", "magic"}):
+                    bad("flash.stub calibration is {area, page_id} or {data} (a data flash) or {progmem, nand, magic} (a NAND)")
                 if cal is not None and ("nand" in cal) != b.nand:
                     bad("flash.stub calibration names %s, but the data memory is %s" % ("the NAND" if "nand" in cal else "a data flash",
                         "a NAND" if b.nand else "a data flash"))
@@ -1335,9 +1381,6 @@ def check(root=ROOT):
                     bad("flash.stub id %d is also the %s's" % (stub["id"], stub_ids[(bs["tool"], stub["id"])]))
                 else:
                     stub_ids[(bs["tool"], stub["id"])] = bid
-            if "leds" in stub and (len(stub["leds"]) not in (0, 2)
-                                   or any(not isinstance(b.pins.get(n), int) for n in stub["leds"])):
-                bad("flash.stub leds names two pins in boards/%s/pins.h (red, green), or none" % bid)
             if "nand" in stub and (not stub["nand"] or b.nand):
                 bad("flash.stub nand is only for a board with SPI NAND and no %s in BOARD_DIRS (else it follows "
                     "BOARD_DIRS)" % NAND_DRIVER)
@@ -1585,7 +1628,8 @@ def site_view(boards, root=ROOT):
             "cpu": b.cpu, "display": hw["display"], "gallery": hw["gallery"], "docs": dict(d["docs"]), "flash": flash,
             "backup": dict(fl["backup"]), "frame": json.loads(json.dumps(d["frame"])), "codeplug": b.codeplug(),
             "looks": json.loads(json.dumps(d.get("looks", []))),
-            "unsupported": dict(b.unsupported), "not_written": dict(b.not_written), "volts": b.volts,
+            "unsupported": dict(b.unsupported), "not_written": dict(b.not_written),
+            "default_off": dict(b.default_off), "volts": b.volts,
             "clock": hw["clock"]["rtc"],
             # the hardware variants and how the flasher reads them ([hardware] variants)
             "variants": json.loads(json.dumps(hw.get("variants", []))), "variant_pattern": hw.get("variant_pattern"),
@@ -1857,6 +1901,15 @@ def self_test():
     ok(not_written_reasons(os.path.join(tmpm, "config.mk")) == {"DTMF": "no tone path yet"}
        and unsupported_reasons(os.path.join(tmpm, "config.mk")) == {"USB": "no USB port"},
        "not_written_reasons: BOARD_NOT_WRITTEN lines only, and BOARD_UNSUPPORTED's reader skips them")
+    with open(os.path.join(tmpm, "config.mk"), "w", encoding="utf-8") as f:
+        f.write("BOARD_NOT_WRITTEN += DTMF\t# no tone path yet\nBOARD_DEFAULT_OFF += PPP\t# may lock up the line\n")
+    ok(default_off_reasons(os.path.join(tmpm, "config.mk")) == {"PPP": "may lock up the line"},
+       "default_off_reasons: BOARD_DEFAULT_OFF lines only")
+    fake = type("B", (), {"default_off": {"A": "why", "B": "", "C": "why", "D": "why"}, "unsupported": {"C": "x"},
+                          "not_written": {}})
+    probs = default_off_problems("t", fake, {"A": "n", "B": "n", "C": "n", "D": "y"})
+    ok(len(probs) == 3 and "B has no reason" in probs[0] and "C is in" in probs[1] and "D is in" in probs[2],
+       "default_off_problems: a reason, choosable, off by default")
     shutil.rmtree(tmpm)
     for bad, what in (({"hil": {"battery_mv": "5V"}}, "a [hil] value of the wrong type"),
                       ({"hil": {"no_such": 1}}, "an unknown [hil] key"),
@@ -2046,19 +2099,14 @@ def self_test():
                "the test profiles' stub id", "reserved for the stub tools' test profiles")
         broken(re.sub(r"(?m)^(hold_power = .*)$", r"\1\nspi = { bus = 1, mode = 0, hz = 1000000 }", good),
                "a key of another platform's stub", "not a key of the stubtool stub")
-        broken(re.sub(r"(?m)^(hold_power = .*)$", r'\1\nleds = ["PIN_NOT_THERE", "PIN_POWER_KEY"]', good),
-               "stub LEDs that aren't pins.h pins", "leds names two pins")
         broken(re.sub(r"(?m)^(hold_power = .*)$", r"\1\nbridge = { uart = 0x14090000, mux = [0x11000034, 0x6000] }", good),
                "a bridged stub on a board that isn't part of another", "bridge is for a board that is part_of")
         if "hold_power = true" in good:
             with open(path, "w", encoding="utf-8") as f:
-                f.write(re.sub(r"(?m)^(hold_power = .*)$", r'\1\nleds = ["PIN_POWER_LATCH", "PIN_POWER_KEY"]\nuart = 7',
-                               good))
+                f.write(re.sub(r"(?m)^(hold_power = .*)$", r'\1\nuart = 7', good))
             b = load(tmp)[one]
             prof = b.stub()
-            ok(not [p for p in check(tmp) if "flash.stub" in p] and prof["uart"] == 7 and
-               prof["leds"] == [b.pins["PIN_POWER_LATCH"], b.pins["PIN_POWER_KEY"]],
-               "stub: LED pins from pins.h names and the UART %r" % {k: prof.get(k) for k in ("leds", "uart")})
+            ok(not [p for p in check(tmp) if "flash.stub" in p] and prof["uart"] == 7, "stub: the UART %r" % prof.get("uart"))
             with open(path, "w", encoding="utf-8") as f:
                 f.write(good)
         broken(re.sub(r"(?m)^(\[flash\.bootloader\]\n)", r'\1hold = ["ptt", "no_such_key"]\n',

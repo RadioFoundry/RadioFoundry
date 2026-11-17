@@ -710,6 +710,7 @@ static void test_transmit(void)
 	CHECK(hrc6000_air_tx_begin(AIR));
 	CHECK(lock_depth == 0);
 	CHECK(last_write(4, 0x10) == 0x66 && last_write(4, 0x40) == 0xE3 && last_write(4, 0x21) == 0x02);
+	CHECK(last_write(4, 0x20) == 0x00 && last_write(4, 0x22) == 0x86);	// the chip's own transmission start
 	CHECK(last_write(4, 0x46) == 0x54 && last_write(4, 0x45) == 0x2B);	// scaled from 0x52 / 0x2A
 	CHECK(half_is(0, 0x5F) && half_is(1, 0x5F));	// both idle until the first chunk's slot
 	CHECK(rf_on == 0 && hrc6000_air_tx_active(AIR));
@@ -952,6 +953,52 @@ static void test_open_close(void)
 	CHECK(lock_depth == 0);
 }
 
+// A chip description like the HR_C5000's: no 0x5F, no transmission start of its own (its vocoder runs on the MCU), a
+// 0x10 that differs by channel. Its configuration page stays the simulator's 4: the page mapping is hrc.c's
+static uint8_t c5_mode(bool repeater)
+{
+	return repeater ? 0x4F : 0x6B;
+}
+
+static const hrc_chip_t chip_c5 = {
+	.cfg_page = 4, .id_low_first = true, .sync_reg = false, .mode_per_channel = true, .tc_last_rx = true,
+	.dmr_mode = c5_mode,
+};
+
+static void test_chip_description(void)
+{
+	fresh();
+	hrc_attach(&dev, &bus, &chip_c5);
+	hrc6000_dmr_init(&eng, &dev, &ops);
+	air_profile_t p = p25();
+	hrc6000_air_init(AIR, &dev, &ops, BUF, NULL, NULL);
+	nx = 0;
+	CHECK(hrc6000_air_open(AIR, &p, on_event, NULL));
+	CHECK(last_write(4, 0x10) == 0x02 && last_write(4, 0x40) == 0x40 && last_write(4, 0x41) == 0x40);
+	CHECK(count_writes(4, 0x5F, -1) == 0);	// a register the chip doesn't have
+	CHECK(memcmp(&wr[1][0x47], P25_SYNC, 6) == 0);
+
+	air_tx_chunk_t c = chunk(0x11, 144, 0);
+	CHECK(hrc6000_air_tx_queue(AIR, &c));
+	nx = 0;
+	CHECK(hrc6000_air_tx_begin(AIR));
+	CHECK(last_write(4, 0x10) == 0x66 && last_write(4, 0x40) == 0xE3);
+	CHECK(last_write(4, 0x20) == 0x00 && last_write(4, 0x21) == 0x02);	// the access policy alone
+	CHECK(count_writes(4, 0x22, -1) == 0);					// no encoder start
+	CHECK(last_write(4, 0x46) == 0x54 && last_write(4, 0x45) == 0x2B);
+
+	// Close: the chip's own DMR 0x10, and the engine puts the channel's back when it runs (a repeater channel here)
+	nx = 0;
+	hrc6000_air_close(AIR, true);
+	CHECK(last_write(4, 0x10) == 0x6B && count_writes(4, 0x5F, -1) == 0);
+	eng.cfg.repeater = true;
+	nx = 0;
+	hrc6000_dmr_run(&eng);
+	CHECK(last_write(4, 0x10) == 0x4F);
+	hrc6000_dmr_halt(&eng);
+	CHECK(lock_depth == 0);
+}
+
 // The copy RAM half h filled with the next 256 samples of a count (big endian), then its interrupt 32 ms after the
 // last one, then the task when poll
 static int copy_next;
@@ -1176,6 +1223,7 @@ int main(void)
 	test_abort_stall_suspend();
 	test_open_close();
 	test_copy();
+	test_chip_description();
 	test_fuzz();
 	printf("hrc6000AirTest: %d checks, %d failures\n", checks, failures);
 	return failures != 0;

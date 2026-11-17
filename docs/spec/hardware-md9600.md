@@ -1210,16 +1210,21 @@ Feature switches that differ from the platform's defaults (`config.mk`; the two 
 
 ### 19.11 Air interface (`CONFIG_P25`, `CONFIG_NXDN`)
 
-`board.air` is the HR_C6000's physical layer mode ([modem-hrc6000.md](modem-hrc6000.md) 10). The board doesn't set
-the FM copy tap (10.6 there), so it receives only what the chip's correlator takes: P25, not NXDN. Both switches are
-off by default. Checked on a V1-V3 radio, UHF, against the SDR bench:
+`board.air` is the HR_C6000's physical layer mode ([modem-hrc6000.md](modem-hrc6000.md) 10). The chip demodulates
+the 450 kHz IF itself (4.2), so its FM copy (10.6 there) is the discriminator: the board sets `air_tap` and gives
+`board.baseband`, and the soft modem receives what the correlator can't, NXDN among it. Both switches are on by
+default. A transmission in the physical layer mode keys the PA once and holds it to the end
+(`stm32_hrc_dmr_tx_continuous`), where a DMR burst's key-up drops it after `KEY_HOLD_US`. Checked on a V1-V3 radio,
+UHF, against the SDR bench:
 
 | What | Result |
 |---|---|
-| P25 conventional receive (`test_p25_rx_from_bench`) | 72 of 72 voice frames, none bad, 43 bits corrected, played |
+| P25 conventional receive (`test_p25_rx_from_bench`) | 72 of 72 voice frames, none bad, 32-43 bits corrected, played |
+| NXDN receive at 4800 and 9600 bit/s through the FM copy (`test_nxdn_rx_from_bench`) | each call decoded, 40 voice frames per call |
+| NXDN zone scan and dual watch onto a stored channel (`test_nxdn_scan_from_bench`) | each holds on the channel during a call from the bench |
 | A stored P25 channel written over CPS (`test_p25_stored_channel`) | runs P25 on its own parameters, plain again after the restore |
 | Zone scan and dual watch onto a stored P25 channel (`test_p25_scan_from_bench`) | each holds on the channel during a call from the bench |
 | The P25 or NXDN mode in the VFO, a stored NXDN channel | set and dropped; the radio idles in the mode |
 
-Not checked: P25 and NXDN transmit (the provider reports both as untested), sensitivity, trunking, and whether the
-chip's FM copy works from the 450 kHz IF (4.2), which NXDN receive needs.
+Not checked: P25 and NXDN transmit (the provider reports both as untested), sensitivity on the FM copy, VHF (the
+receive I/Q swap there inverts the copy's spectrum), and trunking.

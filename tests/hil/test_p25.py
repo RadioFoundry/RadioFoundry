@@ -303,6 +303,7 @@ def p25_decode(job, *extra):
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.sdr_rx
+@pytest.mark.needs_switch("VFO")
 def test_p25_tx_off_air(radio, sdr_bench, pytestconfig):
     mhz = rig(pytestconfig, "p25-mhz")
     hz = round(mhz * 1e6)
@@ -446,6 +447,7 @@ NAC_DEFAULT = 0x293
 @pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
+@pytest.mark.needs_switch("VFO")
 def test_p25_rx_from_bench(radio, sdr_bench, pytestconfig):
     import p25tool
     mhz = rig(pytestconfig, "p25-mhz")

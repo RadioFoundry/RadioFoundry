@@ -274,7 +274,8 @@ photos (the photos stay outside the repository: product photos are not ours to p
   and its body fills the card;
 - exactly one `<rect id="screen" x y width height/>`, black, transform-free and not covered by anything, on the
   display's visible area, with the aspect ratio of the radio's gallery (5:4 for 160x128 and 160x120i5, 22:31 for
-  240x320i10x5, 4:3 for 320x240);
+  240x320i10x5, 4:3 for 320x240). A radio without a display (`board.toml` `display = "none"`) has none: its drawing is
+  the radio as it is, and the site shows no screenshots for it;
 - for the radio's web control page (`docs/spec/tcp-services.md` 5.1): each key it shows carries `id="key-<name>"`, the
   name being the board's `KEY_*` in lower case without `KEY_` (`key-fn_left`); the channel knob `id="encoder"` and a
   drawn LED `id="led"`. Keys whose shape doesn't match a key (a d-pad drawn as one piece) get transparent hit rects
@@ -298,8 +299,8 @@ with the same keys. The build writes its frame and boot-screen files like the bo
 missing.
 
 The build writes `static/img/radios/<radio>-frame.svg` (screen black), `<radio>.svg` (with the boot screen) and the
-screen's position in `data/radios.json` (`frame_geometry`: viewBox units and percentages), so any screenshot can be
-laid over the frame; the radio pages do that when a screenshot is clicked. `frame_geometry.keys` has each tagged key's
+screen's position in `data/radios.json` (`frame_geometry`: viewBox units and percentages, `null` without a display),
+so any screenshot can be laid over the frame; the radio pages do that when a screenshot is clicked. `frame_geometry.keys` has each tagged key's
 box, as percentages of the picture. A radio without an illustration gets a generic drawing from board.toml `[frame]`;
 its handheld shapes tag their side PTT, and the caption names any other key.
 
@@ -307,7 +308,10 @@ The web flasher shows the same frame (`frame_image`) beside every update mode st
 (`flasher/radiotop.js`): the bootloader entry steps as the picture alone, the HR_C7000 steps with what the screen shows
 laid over it at `frame_geometry` and an LED swatch that blinks as the real LED does, with a caption in words. Nothing
 in the flasher names a radio: a new board's picture appears with no flasher change. `site/tests/radio_images_test.py`
-(run by `site/tests/run.sh`) renders every board's picture and fails a board without a usable one.
+(run by `site/tests/run.sh`) renders every board's picture and fails a board without a usable one. The picture is at
+most 300 px high (`--rt-h` of `.rt-pic` in `site.css`), so a tall portable leaves the step's buttons on the screen; its
+width follows from the drawing's shape (`frame_geometry.aspect`, which `radiotop.js` hands the stylesheet as
+`--rt-aspect`).
 
 On the bootloader entry steps (the STM32 radios' and the HR_C7000 update mode's), the flasher rings the keys to hold
 on the picture and names them under it ("Hold PTT and SK1"). The keys are `[flash.bootloader] hold` in board.toml,

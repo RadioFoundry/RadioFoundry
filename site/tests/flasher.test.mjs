@@ -604,6 +604,19 @@ test("codec decision follows rfoundry's rules", () => {
 	assert.throws(() => decideCodec(fb.boards.md380, m, {}), DecisionError);
 });
 
+test("a switch a board leaves off by default can be chosen, with the board's reason", () => {
+	const radios = json("radios.json").radios;
+	const features = json("features.json").features, variants = json("variants.json").variants;
+	const rt10 = new Selection(radios.find((r) => r.id === "rt10"), features, variants);
+	assert.ok(rt10.supported("NET_PPP") && rt10.supported("HOTSPOT"));
+	assert.ok(!rt10.on.has("NET_PPP") && !rt10.on.has("HOTSPOT"));
+	assert.match(rt10.defaultOffWhy("NET_PPP"), /switched off and on/);
+	assert.equal(rt10.defaultOffWhy("DMR"), null);
+	rt10.set("NET_PPP", true);
+	assert.ok(rt10.on.has("NET_PPP") && rt10.on.has("DMR_IP_GATEWAY"), "turning it on brings what it needs");
+	assert.equal(new Selection(radios.find((r) => r.id === "dm1701"), features, variants).defaultOffWhy("NET_PPP"), null);
+});
+
 // A codec slot's board reports the stock build its slot came from (rfoundry Board.codec_present): any build counts, an
 // unknown slot or another board's codec doesn't; a stock-file board has only its profile's id
 test("a reported codec counts for the board", () => {
