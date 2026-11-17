@@ -41,8 +41,9 @@ must be as clean as on a simplex channel. A radio that listens to the outbound b
 tx_listen_split) retunes its synthesizer twice a burst, and a burst keyed before the carrier settled carries bit errors
 a repeater or hotspot passes on (issue 609: 4-5 % BER on a duplex hotspot against 0.2 % before). With the board's
 idle outbound up all along, a 6 s call: the receive board decodes the radio's inbound bursts, and the AMBE bits its FEC
-corrected must be at most INBOUND_FEC_MAX of those sent, with no frame lost. A radio that doesn't retune reads 0 here;
-the MD-380 listening read 0.13-0.24 % (worse with a wider split; the board's receiver forgives more than a hotspot's).
+corrected must be at most INBOUND_FEC_MAX of those sent, with no frame past correction. A radio that doesn't retune
+reads 0 here; a radio that listens read 0.13-0.24 % (worse with a wider split; the board's receiver forgives more than
+a hotspot's).
 Use a split like a real repeater's (several MHz) when the receive board can be tuned there: the synthesizer's step is
 part of what is tested.
 """
@@ -62,7 +63,8 @@ from hil_config import rig
 VOICE_PER_S = 1 / 0.060         # one voice burst per 60 ms frame on our slot
 OFFSET_MAX_MS = 0.25            # the inbound burst against the outbound + 30 ms (test_dmr_repeater_burst_offset)
 AMBE_BITS_PER_BURST = 3 * 72   # three AMBE+2 frames in a voice burst
-INBOUND_FEC_MAX = 0.0005       # AMBE bits corrected in the radio's inbound voice (test_dmr_repeater_inbound_fec)
+INBOUND_FEC_MAX = 0.0005       # AMBE bits corrected in the radio's inbound voice (test_dmr_repeater_inbound_fec),
+                               # of all bits sent: only the protected ones show a correction, so the true BER is higher
 
 
 def _voice_by_slot(rpt, t0, t1):
@@ -378,7 +380,7 @@ def test_dmr_repeater_inbound_fec(radio, sdr_bench, pytestconfig, backup_dir):
         by_kind = collections.defaultdict(int)
         for b, e in zip(voice, errs):
             by_kind[b["kind"][-1]] += e[0]
-        cfo = sorted(b["cfo_hz"] for b in voice)
+        cfo = sorted(b["cfo_hz"] for b in voice if "cfo_hz" in b)
         listened = after.get("call.rx_in_tx", 0) - before.get("call.rx_in_tx", 0)
         print(f"{len(voice)} voice bursts on {s.split} MHz: {corrected} AMBE bits corrected ({rate:.2%}), {bad} frames "
               f"past correction; by burst A-F {dict(sorted(by_kind.items()))}; carrier offset median "
@@ -387,7 +389,7 @@ def test_dmr_repeater_inbound_fec(radio, sdr_bench, pytestconfig, backup_dir):
         print(f"per burst: {[e[0] for e in errs]}")
         assert len(voice) >= 60, f"only {len(voice)} voice bursts from us on {s.split} MHz (6 s is about 100)"
         assert rate <= INBOUND_FEC_MAX and bad == 0, \
-            f"{rate:.2%} of the AMBE bits corrected and {bad} frames lost through the repeater (at most " \
-            f"{INBOUND_FEC_MAX:.2%}, none lost)"
+            f"{rate:.2%} of the AMBE bits corrected and {bad} frames past correction through the repeater (at most " \
+            f"{INBOUND_FEC_MAX:.2%}, none past correction)"
     _session(radio, sdr_bench, pytestconfig, backup_dir, body)
 
