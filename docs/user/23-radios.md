@@ -679,7 +679,7 @@ The radio has no bootloader of its own: the chip's boot window on the programmin
 
 | Item | RT10 |
 |---|---|
-| Cable | the radio's programming cable on the accessory jack |
+| Cable | the radio's programming cable on the accessory jack, with an FTDI chip. A CH340 cable that works with other radios got no answer from the RT10 ([cables tried](../spec/hardware-rt10.md#31-the-cable-line)) |
 | Keys | none: turn the radio on when the tool asks |
 | Backup | installing replaces the whole original image. Only a full program flash backup taken first puts it back |
 | Board name | `rt10` |

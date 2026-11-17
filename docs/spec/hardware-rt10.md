@@ -104,6 +104,16 @@ RadioFoundry: a host port write waits for 2 ms with no received character first 
 any time; unchecked. A latched line doesn't count as PTT, and the LEDs flash red and green fast to ask for a power cycle
 ([gotchas.md](gotchas.md) 16.5). Checked, with TX inhibited, on a radio latched with debug link requests sent without waiting for the answers: the link died within a second, the LEDs alternated red and green, the PTT key did nothing, and a power cycle restored the link.
 
+Cables by USB-serial chip, one cable each:
+
+| Chip | RT10 |
+| --- | --- |
+| FTDI (K-type) | works: boot ROM load, stub, debug link, every HIL run |
+| CH340 (K-type, Linux) | no answer to the debug link and no byte received, also after a replug and a power cycle; the same cable works with a DM-32UV |
+| PL2303 (K-type, macOS) | the adapter stops sending (below); a PL2303 in a good state is not checked |
+
+The RT10 needs an FTDI cable until another chip is shown to work.
+
 A cable whose adapter stopped sending ([gotchas.md](gotchas.md) 16.6), measured with one K-type PL2303 cable on macOS:
 
 | Check | Result |
