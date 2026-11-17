@@ -1,7 +1,7 @@
 # RadioFoundry
 
-**Free, MIT-licensed firmware for affordable DMR radios.** One shared core runs the DMR stack, the UI, the codeplug and
-the host tools; each radio adds a thin board layer. It brings the FM and DMR features low-cost stock firmware leaves
+**Free, MIT-licensed multi-mode firmware for affordable digital radios: DMR, P25, NXDN and FM.** One shared core runs the digital voice stacks, the UI, the codeplug and
+the host tools; each radio adds a thin board layer. It brings the features low-cost stock firmware leaves
 out, with a UI designed from first principles. Anyone can use it for anything, commercial products included.
 
 ### 🌐 [radiofoundry.org](https://radiofoundry.org)
@@ -47,17 +47,18 @@ by the UI simulator (`make -C tests/host ui-gallery`).</sub>
 | [Baofeng DM-1801 Pro](docs/testing/dm1801pro-bringup.md), DM-1801 | ● | ● | ● | FM with CTCSS/DCS, DMR voice with the radio's own codec, DMR data and text, the hotspot, single frequency repeating, the PPP network services and each split duplex half work on air. Open: VHF transmit and VOX. |
 | [Radioddity DB25-D PRO](docs/spec/hardware-db25d.md), Kydera CDR-300UV (mobile) | ● | ● | ● | FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings storage work on the radio. The older FD6818 batches run the same image, untested on a radio. Open: the Retevis RT73. |
 | [TYT MD-380](docs/testing/md380-bringup.md), MD-390, Retevis RT3 | ● | ● | ● | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
-| [TYT MD-UV380](docs/testing/mduv380-bringup.md), MD-UV390, Retevis RT3S, MD-UV390 Plus 10 W | ● | ● | ○ | Built on the UV380 family code with the MD-UV380's keys, display, power tables and GPS; nothing has run on a radio yet. Open: every function on air. |
+| [TYT MD-UV380](docs/testing/mduv380-bringup.md), MD-UV390, Retevis RT3S, MD-UV390 Plus 10 W | ● | ● | ● | Built on the UV380 family code, with the MD-UV380's keys, display, power tables and GPS. Run on radios by community testers. |
 | [TYT MD-9600](docs/spec/hardware-md9600.md), Retevis RT90 (mobile) | ● | ● | ● | One image serves every board revision. On a V1-V3 radio, FM and DMR on both bands, DMR voice and data, text messages, roaming, scan, dual watch, APRS, the hotspot, each split duplex half and the USB network services work on air, with every power level checked on a wattmeter on both bands. V4A/V5 boards are detected; on older boards the radio asks for the revision once. Open: V4 and V4A/V5 boards have not run on a radio, and SFR loses inbound voice frames. |
+| [Retevis RT10](docs/spec/hardware-rt10.md) | ● | ● | ● | Boots from the boot ROM with the host link, stub entry, the watchdog and the crash log. FM receive with CTCSS/DCS decode, FM transmit, DMR transmit and receive with the radio's own codec, P25 (conventional, and trunked transmit) and NXDN at 4800 bit/s on stored channels, and APRS transmit work on the radio. |
+| Anytone AT-D868UV / AT-D878UV / AT-D878UVII Plus, BTECH DMR-6X2, Alinco DJ-MD5, Radioddity GD-AT10G | ○ | ○ | ○ | In progress ([#291](https://github.com/radiofoundry/radiofoundry/pull/291)). A new platform (GD32F30x) and a new DMR chip (SCT3258, which runs the vocoder itself), so it starts the Anytone family ([hardware-anytone.md](docs/spec/hardware-anytone.md)). |
 | Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | ◐ | ◐ | ◐ | In progress ([#111](https://github.com/radiofoundry/radiofoundry/pull/111)). A new platform: a different MCU (NXP MK22FN512), the same HR_C6000 and AT1846S, a 128x64 mono LCD. A DM-1801 bought new today is not v1, and the look-alike DR-1801 is unrelated. |
 | Radioddity GD-88 | ◐ | ◐ | ○ | In progress ([#132](https://github.com/radiofoundry/radiofoundry/pull/132)). Dual receiver on the HR_C7000 platform (chip count not confirmed yet); should reuse much of the DM-32UV port. |
-| Anytone AT-D868UV / AT-D878UV / AT-D878UVII Plus, BTECH DMR-6X2, Alinco DJ-MD5, Radioddity GD-AT10G | ○ | ○ | ○ | Planned. A new platform (GD32F30x) and a new DMR chip (SCT3258, which runs the vocoder itself), so it starts the Anytone family ([hardware-anytone.md](docs/spec/hardware-anytone.md)). |
+| Baofeng DM-36 | ○ | ○ | ○ | In progress ([#607](https://github.com/radiofoundry/radiofoundry/pull/607)). Built on the DM-32UV's platform: FM, the display, keys and programming run; DMR voice on air and power levels open. |
+| Anytone AT-D578UV (mobile) | ○ | ○ | ○ | In progress ([#291](https://github.com/radiofoundry/radiofoundry/pull/291)). The 878's chips in a mobile, with a mid-run MCU change: two platforms ([hardware-anytone.md](docs/spec/hardware-anytone.md)). |
 | Radioddity DB40-D, Kydera CDR-700UV (mobile) | ○ | ○ | ○ | Planned. Hardware needed. Two HR_C7000-class processors (A and B), like the GD-88, so it follows the GD-88 port. |
 | TYT MD-2017 / Retevis RT82 | ○ | ○ | ○ | Planned. The DM-1701's STM32 and HR_C6000 pair with two receivers, so it should reuse the STM32F4 platform. The hardware can receive two channels at once. |
 | BTECH DMR-6X2 PRO | ○ | ○ | ○ | Planned. Built on the AT-D878UVII Plus, so it should follow the Anytone port. |
-| Anytone AT-D578UV (mobile) | ○ | ○ | ○ | Planned. The 878's chips in a mobile, with a mid-run MCU change: two platforms ([hardware-anytone.md](docs/spec/hardware-anytone.md)). |
 | BridgeCom Maverick | ○ | ○ | ○ | Planned. Sold as an upgraded AT-D878UV, so it likely follows the Anytone port. |
-| Retevis RT10 (902-928 MHz) | ○ | ○ | ○ | Planned. A DMR and FM handheld for 902-928 MHz, a band no other radio here covers; the chips aren't known yet. |
 <!-- end generated -->
 
 ● done&nbsp;&nbsp; ◐ partly, or only in the linked pull request so far&nbsp;&nbsp; ○ not yet
@@ -188,6 +189,14 @@ Any way you can:
 - **Donate or lend a radio.** This helps the most, especially older models that are hard to find now, because every
   port needs the hardware on the bench.
 
+**Can I use RadioFoundry in my own project?**
+
+Yes, including commercial and closed-source products. The license has one condition: keep our copyright and
+license notices in the code you copy and with the firmware you ship. We also ask that you give your project its
+own name. If you're adding a feature, we'd be glad to have it here, credited to you, on every radio whose
+hardware can run it: start a [discussion](https://github.com/radiofoundry/radiofoundry/discussions) or send a pull
+request. Details: [using RadioFoundry in your project](FORKING.md).
+
 **Was this project AI-generated?**
 
 No. This project is the result of thousands of hours of combined human effort from several contributors, spent on
@@ -199,7 +208,10 @@ support for additional radios and to make the project's ambitious scope possible
 RadioFoundry is MIT licensed ([LICENSE](LICENSE)) and a clean-room project: code is written from prose specs, datasheets and
 public standards, independent of earlier radio firmwares. No GPL code, no non-commercial code, no vendor SDKs. The
 rules and checks: [docs/CLEANROOM.md](docs/CLEANROOM.md). Third-party code in `third_party/` (FreeRTOS, TinyUSB, ST's
-HAL and CMSIS) keeps its own permissive license ([LICENSES/](LICENSES/)).
+HAL and CMSIS) keeps its own permissive license ([LICENSES/](LICENSES/)). So do the few files in the tree ported from
+permissively licensed code, each under its original notice: the full-rate voice decoder's dequantizer and tables come
+from mbelib (ISC). To build on RadioFoundry in
+another project: [using RadioFoundry in your project](FORKING.md).
 
 ## Acknowledgements
 
@@ -216,11 +228,14 @@ the reverse engineering and documentation behind it made this project possible. 
 - Cort Buffington N0MJS and the HBlink contributors, for open DMR networking.
 - Hannes Matuschek DM3MAT and the qdmr contributors, for qdmr, which RadioFoundry radios work with.
 
+And to the author of mbelib, whose ISC-licensed decoder the full-rate voice decoder's dequantizer is ported from.
+
 ## Contributing
 
 Issues and pull requests are welcome. Read [docs/CLEANROOM.md](docs/CLEANROOM.md) first, keep radio-specific code out
 of `core/`, put anything that costs flash behind a `CONFIG_` switch, and make sure `tools/ci.sh` passes. Details:
-[contributing](docs/dev/contributing.md).
+[contributing](docs/dev/contributing.md). Building something on RadioFoundry in your own project? Read
+[FORKING.md](FORKING.md): what the license asks, and why we'd rather have your feature here.
 
 ## Layout
 

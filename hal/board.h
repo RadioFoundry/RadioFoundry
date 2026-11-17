@@ -21,7 +21,10 @@
 #include "hal_cps.h"
 #include "hal_netif.h"
 #include "hal_bcast.h"
+#include "hal_gps.h"
 #include "hal_afsk.h"
+#include "hal_air.h"
+#include "hal_baseband.h"
 #include "hal_rx2.h"
 #include "hal_hwopt.h"
 
@@ -86,6 +89,12 @@ typedef struct {
 	const uint8_t *side_keys;
 	const char *const *side_key_names;
 	uint8_t side_key_count;
+	// Keys the menus need that are also programmable on Home (arrows printed P1, P2): their press and long press do
+	// the user's function on Home and stay the key map's elsewhere. Roles after the side keys (side_key_count + i),
+	// up to KEYASSIGN_HOME_KEYS, and side + home keys up to KEYASSIGN_ROLES. home_key_names as printed on the radio
+	const uint8_t *home_keys;
+	const char *const *home_key_names;
+	uint8_t home_key_count;
 	// Optional: what the screen hints call the keys that send QUICK and CONTEXT on a radio without * and # keys
 	// ("P1", "P2"; docs/spec/ui.md 1); NULL: "*" and "#"
 	const char *quick_label;
@@ -121,13 +130,13 @@ typedef struct {
 	// Optional: APRS AFSK through the FM transmitter, and received audio for the demodulator (hal_afsk.h); NULL when
 	// not built or the radio can't
 	const hal_afsk_t *afsk;
-	// Optional, with CAP_GPS: whether the GPS module is there, for radios sold with and without one on the same board
-	// (a G model beside the plain one): true once the module has been heard. NULL = CAP_GPS alone says
-	bool (*gps_present)(void);
-	// Optional, with CAP_GPS: Settings > Location > GPS. Power the module and its receive path on or off now. Called
-	// with the stored value at start-up and on each change; the module is still probed at start-up whatever the
-	// setting says, so board_has_gps() is known. NULL = the module is always on
-	void (*gps_enable)(bool on);
+	// Optional: the air interface of the board's modem chip, for digital modes the core frames itself (hal_air.h);
+	// NULL when not built or the chip has no such mode
+	const hal_air_t *air;
+	// Optional: sample taps on the discriminator and the modulator (hal_baseband.h); NULL when the board has none
+	const hal_baseband_t *baseband;
+	// Optional, with CAP_GPS: the GPS receiver (hal_gps.h); NULL when not built
+	const hal_gps_t *gps;
 	// Optional: a second receiver, so dual watch hears both channels at once (hal_rx2.h); NULL on one-receiver radios
 	const hal_rx2_t *rx2;
 	// Optional: bench access to the radio's RF chip registers (the debug link's CHIP_REG, docs/spec/debuglink.md
@@ -278,15 +287,41 @@ static inline board_volts_t board_volts(void)
 // Settings > Location > GPS took effect (a board without the hook has nothing to switch)
 static inline void board_gps_enable(bool on)
 {
-	if (board.gps_enable != NULL) {
-		board.gps_enable(on);
+	if (board.gps != NULL && board.gps->enable != NULL) {
+		board.gps->enable(on);
 	}
 }
 
-// The radio has a GPS receiver now: CAP_GPS and, where the board detects the module at run time, its answer
+// The radio has a GPS receiver now: CAP_GPS with the driver built and, where the board detects the module at run time,
+// its answer
 static inline bool board_has_gps(void)
 {
-	return (board.caps & CAP_GPS) != 0 && (board.gps_present == NULL || board.gps_present());
+	return (board.caps & CAP_GPS) != 0 && board.gps != NULL &&
+	       (board.gps->present == NULL || board.gps->present());
+}
+
+// The GPS module is powered and listened to now (a board that doesn't say: whenever it has one)
+static inline bool board_gps_running(void)
+{
+	if (!board_has_gps()) {
+		return false;
+	}
+	return board.gps->running == NULL || board.gps->running();
+}
+
+// The GPS receive counters (zero when the board doesn't count) and the rate listened at (0: unknown or given up)
+static inline void board_gps_counts(uint32_t *good, uint32_t *bad, uint32_t *bytes, uint32_t *baud)
+{
+	*good = *bad = *bytes = *baud = 0;
+	if (board.gps == NULL) {
+		return;
+	}
+	if (board.gps->counts != NULL) {
+		board.gps->counts(good, bad, bytes);
+	}
+	if (board.gps->baud != NULL) {
+		*baud = board.gps->baud();
+	}
 }
 
 // Clocks, pins, anything that must happen before the RTOS starts. Called from the platform's main()

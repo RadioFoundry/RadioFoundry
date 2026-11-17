@@ -127,6 +127,11 @@
     "nand": true,
     "progmem": 2097152,
     "stock_console": "usmart",
+    "rom_entry": null,
+    "led": {
+     "red": 33,
+     "green": 32
+    },
     "calibration": {
      "progmem": 2088960,
      "nand": 2621440,
@@ -420,6 +425,11 @@
     "nand": false,
     "progmem": 1048576,
     "stock_console": null,
+    "rom_entry": null,
+    "led": {
+     "red": 33,
+     "green": 32
+    },
     "calibration": {
      "area": 823296,
      "page_id": 2
@@ -544,6 +554,11 @@
     "nand": false,
     "progmem": 1048576,
     "stock_console": null,
+    "rom_entry": null,
+    "led": {
+     "red": 33,
+     "green": 32
+    },
     "calibration": {
      "area": 823296,
      "page_id": 2
@@ -578,7 +593,7 @@
    "flash_end": 135266304,
    "app_region": [
     134266880,
-    134742016
+    135135232
    ],
    "sectors": [
     [
@@ -653,6 +668,7 @@
     "b92052ea958b15687992cbf796f00a3dbcb33113426def550c32c7dd4e20cd95",
     "c0053729cfe3155ae19089dd1accaa3a63e2382d6c8d8a50304c548c9dc2a311",
     "e0a65ef4ba358abd66ce7041b571df5a1b3047b9f113d3cad6f8ab99b6e972be",
+    "59c077246473d4d4a43cea6dba68c55989e4323a84b5001590a33a5015bb3be5",
     "18d0080b41cde2871a4801ea0de1876cb3320c2498f3ea04f89d647b7d722e74",
     "5d0e5671a2e2ee8d2163325b442448e5494b93bd1a3e48e978ddbee6bcfd5bc5",
     "348f6a6bcddfe80327b5da29a4074fc036bace344891dcf8b7b2b76e7f20b60f",
@@ -767,7 +783,7 @@
    "flash_end": 135266304,
    "app_region": [
     134266880,
-    134873088
+    135004160
    ],
    "sectors": [
     [
@@ -858,7 +874,8 @@
     "1536ea3093394859c29ec6a522464c1b3f87a516e1a73b2cbf4f7be254b2dec4@md9600",
     "8acfedbc60fe8dec2d88ed1f00a1444d6f8f243590d967a1a59b121f5d6dfef4@md9600",
     "267dac314c1aa217ab259a6f9709f2e19342ff3a79aa18a2bf8b501939347e49@md9600",
-    "a10bad809048c8bbd9602c7b50ca4c824a6dbdee34b2167b872ec86c0affbbe1@md9600"
+    "a10bad809048c8bbd9602c7b50ca4c824a6dbdee34b2167b872ec86c0affbbe1@md9600",
+    "86af65c40c66307f10262995a8037740df8433e67ce0af87137c809fa1ba9578@md9600"
    ],
    "codec": {
     "id": null,
@@ -953,7 +970,7 @@
    ],
    "family": "usb-dfu",
    "link": "usb",
-   "release": "testing",
+   "release": "stable",
    "debuglink_names": [
     "MD-UV380",
     "MD-UV380 10W",
@@ -1054,6 +1071,7 @@
     "657cd4e6c86aa63428f1bc081ce0614b35db0607d34ba6b6065357a58a045c89",
     "9c58aca48de3d42b897852e424b0da1392f6e983d51ca69b1425b72a0a836ca1",
     "a2f38eaf4b98379fee6dfc00cae916bbc550e26ba0dd04c5fb56199a9e62b7f8",
+    "8f580928ad418bce413bba9973809a71708094a917c943b7beb8fb5b24c4eab3",
     "1e6a74b8cc62ffabd06dd83912f1bf0a7a7ef12d4bda63b961544c7e1393655a",
     "d3996d672d6878ca823880320e240883ea64208f121923cd2bb6fe51d2e50784",
     "14e5634eeffa5f99f85fd762df4dc141432762d75b933031000d1f398fc4d2e4",
@@ -1062,8 +1080,13 @@
     "2768ece93ddd4f1fd4ffc4e58ee073bd145b865f4ea6d256315f6e0019e93995",
     "ebc5e34f4a00679a9200df8233c4b42b89dbd440a7487bbac2796223b796b392",
     "b0345e8c9e28b353954f3b6aa66599b5ac682c2037e212052af16e2c888572cd",
+    "16c168ba18fccf3b05f810251f8a5e73b7b3bed0ca03ebd79294a97fd484e044",
+    "11a1195b14f586239d8532b74545bd67b1ab977fef6ee89bfc3eb08fd15d0ec8",
     "447ed4e09482c45661cd6e4c83d1e9f777463993ab7dd48b0e0597bb14f519ee",
     "a7b277137c32ac3583083d8a650488415f62360b7f38a6d903fc732b858dd502",
+    "6825fc129cc4720a1f493dae388cc4a50b5f40b876e02235044a5e28df6fcdb9",
+    "13e2fd862a0ca5dd505c9bbedee17393afb676e11923bacec487be6bbe0b4a0f",
+    "bae53921628926460c6225c9d48074de9b81f3078f5df413650f2d3cd61c7c1f",
     "a8a5265d29f8f69ee050a0a47052a8925a3c403ac270d8e5fda324a4a697b220",
     "3d1b9ed4a2293981d0915d0655172e7a4d9bc702fe493328be37901427d51108",
     "70a44a4a77d6ffb4b0b6b9b4a8f26afb9607d65875d2ba1094baf6c8e6a46c9a",
@@ -1146,6 +1169,121 @@
    "cps_radio_types": [
     6
    ]
+  },
+  "rt10": {
+   "id": "rt10",
+   "name": "Retevis RT10",
+   "model": "RT10",
+   "part_of": null,
+   "platform": "hrc7000",
+   "platform_stubs": [],
+   "family": "boot-rom",
+   "link": "serial-cable",
+   "release": "stable",
+   "debuglink_names": [
+    "RT10",
+    "rt10"
+   ],
+   "rom_base": 50331648,
+   "app_base": 50380800,
+   "flash_end": 51380224,
+   "app_region": [
+    50380800,
+    51281920
+   ],
+   "sectors": [
+    [
+     0,
+     50380800,
+     901120
+    ],
+    [
+     1,
+     51281920,
+     98304
+    ]
+   ],
+   "protected": [
+    [
+     50331648,
+     50380800
+    ]
+   ],
+   "protect": [
+    {
+     "mem": "data",
+     "start": 2088960,
+     "end": 2097152,
+     "what": "the activation block (0x1FE000) and the factory calibration (0x1FF000) (hardware-rt10.md 4)"
+    }
+   ],
+   "keep_codec_supported": true,
+   "first_stage": null,
+   "codec_tool": "hrc7000_codec",
+   "codec_stock": [],
+   "codec": {
+    "id": "rt10-112",
+    "windows": [
+     [
+      51281920,
+      98304
+     ]
+    ],
+    "installed": [],
+    "sources": [
+     "a program flash read of the radio"
+    ]
+   },
+   "codec_code": 51281920,
+   "codec_slot": [
+    51281920,
+    51380224
+   ],
+   "codec_run": [
+    276992,
+    360448
+   ],
+   "codec_tables": [
+    402670092,
+    402682244
+   ],
+   "loader_id": null,
+   "loader_keys": null,
+   "loader_sign": "",
+   "bootloader_steps": [
+    "Turn the radio off and connect the programming cable.",
+    "Start the tool and wait until it asks you to switch the radio on.",
+    "Turn the radio on. No keys are needed."
+   ],
+   "stock_download": null,
+   "key_sha256": null,
+   "key_prefix": null,
+   "dfu_ids": null,
+   "dfu_string1": null,
+   "dfu_product": null,
+   "dfu_layout": null,
+   "original_version": null,
+   "original_backup": null,
+   "stub": {
+    "tool": "stubtool",
+    "id": 4,
+    "tested": false,
+    "latch": 255,
+    "key": 255,
+    "nand": false,
+    "progmem": 2097152,
+    "stock_console": null,
+    "rom_entry": 50380800,
+    "led": {
+     "red": 39,
+     "green": 37
+    },
+    "calibration": {
+     "data": 2093056
+    }
+   },
+   "build_options": [],
+   "cps_radio_types": []
   }
  }
 }

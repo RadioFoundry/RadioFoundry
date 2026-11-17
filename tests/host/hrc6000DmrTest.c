@@ -6,6 +6,7 @@
 #include <string.h>
 #include "modem/hrc_common/hrc6000_dmr.h"
 #include "modem/hrc6000/hrc6000.h"
+#include "dmr/fec/dmrFec.h"
 
 static int failures;
 
@@ -285,7 +286,7 @@ static void test_rx(void)
 	CHECK(eng.running);
 	uint32_t t = 2000000;
 	ts_at(t);
-	CHECK(last_write(4, 0x41) == 0x50);	// receive the next slot
+	CHECK(last_write(4, 0x41) == 0x58);	// receive the next slot, any color code (filter off)
 	drain();
 	CHECK(count_ev(DMR_EV_SLOT_TICK) == 1);
 
@@ -380,29 +381,59 @@ static void test_rx(void)
 	CHECK(eng.st.rx_restarts == restarts + 1);
 }
 
-static void test_rx_stale_lc(void)
+// One late entry on a chip still holding old_lc in page 2: 12 voice bursts (two superframes) from burst A, page 2
+// becoming new_lc (NULL: never) after `after` bursts. bad_f: the F of the first superframe flags a CRC error. Returns
+// the voice index and number (1-based) of the first burst whose LC is valid, -1 if none
+static int stale_lc_entry(const uint8_t *old_lc, const uint8_t *new_lc, int after, bool bad_f, int *at)
 {
 	fresh_engine();
-	static const uint8_t old_lc[9] = { 0, 0, 0, 0, 0, 9, 0, 0, 1 };
-	memcpy(&rd[2][0], old_lc, 9);	// a late entry: the chip still holds the last call's LC
+	memcpy(&rd[2][0], old_lc, 9);
 	uint32_t t = 3000000;
-	bool f_valid[2] = { true, true };
-	int sf = 0;
+	int first = -1, voices = 0;
+	*at = -1;
 	for (int n = 0; n < 12; n++) {
+		if (new_lc != NULL && n == after) {
+			memcpy(&rd[2][0], new_lc, 9);
+		}
 		ts_at(t);
 		t += 30000;
 		ts_at(t);
-		report_at(t + 4000, (uint8_t)(((0x8 | (n % 6 + 1)) << 4) | (n % 6 == 0 ? 1 : 0)), 0x20, 0x00);
+		uint8_t r51 = (uint8_t)(((0x8 | (n % 6 + 1)) << 4) | (n % 6 == 0 ? 1 : 0));
+		if (bad_f && n == 5) {
+			r51 |= 0x04;
+		}
+		report_at(t + 4000, r51, 0x20, 0x00);
 		t += 30000;
 		drain();
-		const dmr_burst_t *b = last_burst();
-		if (b != NULL && b->voice_index == 5) {
-			f_valid[sf++] = b->lc_valid;
+		for (int i = 0; i < nev; i++) {
+			if (evs[i].kind == DMR_EV_BURST_RX && bursts[i].kind == DMR_BURST_VOICE) {
+				voices++;
+				if (bursts[i].lc_valid && first < 0) {
+					first = bursts[i].voice_index;
+					*at = voices;
+				}
+			}
 		}
+		nev = 0;
 	}
-	CHECK(sf == 2);
-	CHECK(!f_valid[0]);	// unchanged LC at the first F: not trusted
-	CHECK(f_valid[1]);	// after more than a superframe it is
+	return first;
+}
+
+static void test_rx_stale_lc(void)
+{
+	static const uint8_t old_lc[9] = { 0, 0, 0, 0, 0, 9, 0, 0, 1 };
+	static const uint8_t new_lc[9] = { 0, 0, 0, 0, 0, 9, 0, 0, 2 };
+	int at;
+	// The same talker again: page 2 never changes. Not at the first F (page 2 may not hold this call's LC yet), but at
+	// the A after it, a whole superframe of this reception having closed with a good F (HIL 2026-11-14: held back to
+	// the second F, a late entry played 8 bursts instead of 12)
+	CHECK(stale_lc_entry(old_lc, NULL, 0, false, &at) == 0 && at == 7);
+	// The F before it flagged a CRC error: not at that A; the next F, after more than a superframe
+	CHECK(stale_lc_entry(old_lc, NULL, 0, true, &at) == 5 && at == 12);
+	// A new talker whose LC reaches page 2 only after the first F was read: taken at the A, as new
+	CHECK(stale_lc_entry(old_lc, new_lc, 6, false, &at) == 0 && at == 7 && memcmp(&rd[2][0], new_lc, 9) == 0);
+	// ... and before the first F: at that F
+	CHECK(stale_lc_entry(old_lc, new_lc, 4, false, &at) == 5 && at == 6);
 }
 
 static void test_out_of_step_resync(void)
@@ -580,7 +611,7 @@ static void test_tx_listen(void)
 		prev_rx = false;
 		if (r41 == 0x80) {
 			bursts_set++;
-		} else if (r41 == 0x50 && bursts_set > 0 && bursts_set < 6) {
+		} else if ((r41 & ~0x08) == 0x50 && bursts_set > 0 && bursts_set < 6) {
 			rx_slots++;
 			prev_rx = true;
 		} else if (r41 == 0x00 && bursts_set > 0 && bursts_set < 6) {
@@ -596,6 +627,62 @@ static void test_tx_listen(void)
 	CHECK(heard == 5 && count_ev(DMR_EV_BURST_RX) == 5);
 	CHECK(rf_on_calls == 6 && rf_off_calls == 6);	// the RF back to receive after each burst
 	CHECK(count_ev(DMR_EV_TX_DONE) == 1 && !eng.tx_listen);	// per transmission
+}
+
+// A BS's outbound RC burst heard while we send (ETSI TS 102 361-1 6.4.2): EMB + RC in place of the sync, so the chip
+// reports nothing. Its receive tap (CACH, then the burst's 48-bit field) is read before our next burst: one DMR_EV_RC
+// per RC burst, none for an unchanged area, another color code or a burst that isn't an RC, nor for one the chip
+// reported itself (a class 3 report in the same listen slot)
+static void test_tx_listen_rc(void)
+{
+	fresh_engine();
+	pending_burst = false;
+	hrc6000_dmr_set_cc_filter(&eng, 2);
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 2, DMR_ACCESS_IMPOLITE));
+	hrc6000_dmr_tx_listen(&eng);
+	for (int i = 0; i < 8; i++) {
+		dmr_tx_burst_t b = mk(DMR_BURST_IDLE, 0, false);
+		CHECK(hrc6000_dmr_tx_queue(&eng, &b));
+	}
+	hrc6000_dmr_tx_end(&eng);
+	nev = 0;
+
+	uint8_t burst[12];
+	int listened = 0;
+	uint32_t t = 7500000;
+	for (int k = 0; k < 40 && hrc6000_dmr_is_transmitting(&eng); k++) {
+		int r50, r41;
+		tx_tick(t, &r50, &r41);
+		if (r41 == 0x50) {	// a listen slot: what the BS sends in it lands in a raw area
+			listened++;
+			memset(burst, 0x5A, sizeof burst);
+			burst[11] = (uint8_t)listened;	// the voice bits after the field differ per burst
+			if (listened == 1 || listened == 4) {
+				dmrFecRcField(2, DMR_RC_CEASE, burst + 3);	// a cease, area 0, then area 1
+			} else if (listened == 3) {
+				dmrFecRcField(3, DMR_RC_CEASE, burst + 3);	// another color code
+			}
+			if (listened == 5) {	// a cease the chip reports too: one event
+				dmrFecRcField(2, DMR_RC_CEASE, burst + 3);
+				rd[4][0x53] = (uint8_t)(dmrFecRcInfo(DMR_RC_CEASE) >> 3);
+				rd[4][0x54] = (uint8_t)(dmrFecRcInfo(DMR_RC_CEASE) & 7u);
+				report_at(t + 12000, 0x03, 0x20, 0x01);
+			}
+			if (listened != 2) {	// slot 2: nothing new heard, both areas unchanged
+				memcpy(&rd[2][(listened == 4) ? 0x60 : 0x30], burst, sizeof burst);
+			}
+		}
+		drain();
+		t += 30000;
+	}
+	drain();
+	CHECK(listened >= 5);
+	CHECK(count_ev(DMR_EV_RC) == 3 && eng.st.rc_tap == 2 && eng.st.rc_reports == 1);
+	for (int i = 0; i < nev; i++) {
+		if (evs[i].kind == DMR_EV_RC) {
+			CHECK(evs[i].arg == dmrFecRcInfo(DMR_RC_CEASE) && evs[i].flags == 0);
+		}
+	}
 }
 
 // DMR_BURST_EMPTY: our slot left empty and received (an SFR's gap), counted as taken, no PA
@@ -618,7 +705,7 @@ static void test_tx_empty_slot(void)
 	for (int k = 0; k < 30 && hrc6000_dmr_is_transmitting(&eng); k++) {
 		int r50, r41;
 		tx_tick(t, &r50, &r41);
-		if (n < 15 && (r41 == 0x80 || (r41 == 0x50 && n > 0))) {
+		if (n < 15 && (r41 == 0x80 || ((r41 & ~0x08) == 0x50 && n > 0))) {
 			seq[n++] = r41 == 0x80 ? 'T' : 'r';
 		}
 		drain();
@@ -775,6 +862,27 @@ static void test_tx_end_hold(void)
 			CHECK(eng.st.rx_restarts == rs + 1);	// once
 		}
 	}
+	// A color code change during the transmission: the receiver restarts on the new code as it ends, not the hold
+	// (the hold would drop the restart, and the receiver would keep the old code's sync)
+	{
+		fresh_engine();
+		pending_burst = false;
+		hrc6000_dmr_set_cc_filter(&eng, 1);
+		CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+		dmr_tx_burst_t hdr = mk(DMR_BURST_DATA_HEADER, 0, true);
+		hrc6000_dmr_tx_queue(&eng, &hdr);
+		hrc6000_dmr_tx_end(&eng);
+		uint32_t t = 7000000;
+		int r50, r41;
+		tx_tick(t += 30000, &r50, &r41);
+		hrc6000_dmr_set_cc_filter(&eng, 3);
+		uint32_t rs = eng.st.rx_restarts;
+		for (int k = 0; k < 8 && hrc6000_dmr_is_transmitting(&eng); k++) {
+			tx_tick(t += 30000, &r50, &r41);
+		}
+		CHECK(!hrc6000_dmr_is_transmitting(&eng));
+		CHECK(eng.st.rx_holds == 0 && eng.st.rx_restarts == rs + 1 && last_write(4, 0x1F) == 0x30);
+	}
 	// No tick after the end (the chip's timing stopped): the restart after HOLD_NO_TICK_US
 	fresh_engine();
 	pending_burst = false;
@@ -807,6 +915,7 @@ static void test_tx_aligned_rmo(void)
 	pending_burst = false;
 	dmr_config_t cfg = { .own_id = 9990001, .cc = 1, .access = DMR_ACCESS_POLITE_CC, .repeater = true };
 	hrc6000_dmr_configure(&eng, &cfg);
+	hrc6000_dmr_set_cc_filter(&eng, cfg.cc);
 	CHECK(last_write(4, 0x14) == (9990001 >> 16) && last_write(4, 0x16) == (9990001 & 0xFF));
 	CHECK(last_write(4, 0x1F) == 0x10);
 	// The repeater's CACH: the slot starting at tick k is TS1 on odd ticks, TS2 on even ones; 0x52 bit 2 at the
@@ -1035,11 +1144,43 @@ static void test_rx_stall(void)
 	CHECK(eng.st.stalls == 1 && eng.st.tx_stalls == 0 && count_ev(DMR_EV_SYNC_LOST) == 1);
 }
 
+// A chip that deframes any color code (the HR_C6000): a new code is only noted, the call goes on unbroken
+static void test_cc_any_rx(void)
+{
+	fresh_engine();
+	uint32_t t = 9400000;
+	uint32_t restarts = eng.st.rx_restarts;
+	for (int k = 0; k < 12; k++) {	// CC 2, then CC 7: past both the follow and the old hold counts
+		ts_at(t += 30000);
+		CHECK((last_write(4, 0x41) & 0x08) != 0);
+		report_at(t + 4000, 0x32, k < 9 ? 0x20 : 0x70, 0x00);
+	}
+	ts_at(t += 30000);
+	CHECK(last_write(4, 0x1F) == -1 && eng.st.rx_restarts == restarts);
+	CHECK(eng.cc_cur == 7 && !eng.cc_held);
+	// Our next transmission uses the code last heard
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	ts_at(t += 30000);
+	CHECK(last_write(4, 0x1F) == 0x70);
+	hrc6000_dmr_tx_abort(&eng);
+	// A fixed filter: the chip deframes only that code again
+	hrc6000_dmr_set_cc_filter(&eng, 5);
+	for (int k = 0; k < 4; k++)
+		ts_at(t += 30000);
+	CHECK(last_write(4, 0x1F) == 0x50 && last_write(4, 0x41) == 0x50);
+}
+
+// A chip that deframes only the code in 0x1F (the HR_C5000): follow it by rewriting 0x1F (modem-hrc6000.md 5.4)
 static void test_cc_follow(void)
 {
 	fresh_engine();
+	hrc_chip_t c5 = *dev.chip;
+	c5.cc_any_rx = false;
+	const hrc_chip_t *c6 = dev.chip;
+	dev.chip = &c5;
 	uint32_t t = 9500000;
 	ts_at(t);
+	CHECK(last_write(4, 0x41) == 0x50);
 	report_at(t + 4000, 0x32, 0x20, 0x00);	// CC 2 heard twice within 200 ms
 	t += 30000;
 	ts_at(t);
@@ -1049,6 +1190,27 @@ static void test_cc_follow(void)
 	ts_at(t += 30000);			// the receiver restarts at the next tick, no busy wait in the ISR
 	CHECK(eng.st.rx_restarts == restarts + 1);
 
+	const dmr_config_t cfg = { .cc = 5 };
+	hrc6000_dmr_configure(&eng, &cfg);
+	CHECK(eng.cc_filter == -1 && eng.cc_cur == 2);
+	CHECK(last_write(4, 0x1F) == 0x20);
+	hrc6000_dmr_set_cc_filter(&eng, 2);
+	hrc6000_dmr_set_cc_filter(&eng, -1);
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	ts_at(t += 30000);
+	CHECK(last_write(4, 0x1F) == 0x50);
+	hrc6000_dmr_set_cc_filter(&eng, 7);
+	CHECK(last_write(4, 0x1F) == 0x50);
+	// A reconfigure during TX leaves 0x1F to the transmission too; the receiver restarts on the new code after it
+	const dmr_config_t cfg9 = { .cc = 9 };
+	hrc6000_dmr_configure(&eng, &cfg9);
+	CHECK(last_write(4, 0x1F) == 0x50 && eng.cc_cur == 9);
+	restarts = eng.st.rx_restarts;
+	hrc6000_dmr_tx_abort(&eng);
+	for (int i = 0; i < 4; i++)
+		ts_at(t += 30000);
+	CHECK(last_write(4, 0x1F) == 0x90 && eng.st.rx_restarts > restarts);
+
 	// A fixed filter: written at once, never followed
 	hrc6000_dmr_set_cc_filter(&eng, 5);
 	CHECK(last_write(4, 0x1F) == 0x50);
@@ -1056,6 +1218,74 @@ static void test_cc_follow(void)
 	for (int k = 0; k < 4; k++) {
 		ts_at(t += 30000);
 		report_at(t + 4000, 0x32, 0x20, 0x00);
+	}
+	CHECK(last_write(4, 0x1F) == -1);
+
+	// The same filter again: no write, no restart (the call layer sets it on every slot change)
+	restarts = eng.st.rx_restarts;
+	hrc6000_dmr_set_cc_filter(&eng, 5);
+	ts_at(t += 30000);
+	ts_at(t += 30000);
+	CHECK(last_write(4, 0x1F) == -1 && eng.st.rx_restarts == restarts);
+	// Another one still restarts
+	hrc6000_dmr_set_cc_filter(&eng, 6);
+	ts_at(t += 30000);
+	CHECK(last_write(4, 0x1F) == 0x60 && eng.st.rx_restarts == restarts + 1);
+	dev.chip = c6;
+}
+
+// HIL (scan with digital monitor, an HR_C5000 radio): a call in a code other than 0x1F's raised no interrupt at all, so
+// cc_follow never heard it and digital monitor played nothing, parked or scanning. 0x52 read at the ticks held the
+// call's code in its slot and junk in the other: follow that (cc_tick_follow)
+static void test_cc_tick_follow(void)
+{
+	fresh_engine();
+	hrc_chip_t c5 = *dev.chip;
+	c5.cc_any_rx = false;
+	const hrc_chip_t *c6 = dev.chip;
+	dev.chip = &c5;
+	hrc6000_dmr_set_cc_filter(&eng, 14);	// 0x1F = 14, then digital monitor
+	hrc6000_dmr_set_cc_filter(&eng, -1);
+	uint32_t t = 9600000;
+	rd[4][0x52] = 0xE0;		// 0x1F's own code (a steady other one is followed: a deaf receiver, issue 524, restarts)
+	for (int k = 0; k < 8; k++) {	// past CC_TICK_QUIET since the restarts above
+		ts_at(t += 30000);
+	}
+	CHECK(eng.cc_cur == 14);
+	log_reset();
+	uint32_t restarts = eng.st.rs_why[HRC6000_RS_CC], junk = 0x1234567u;
+	int followed_at = -1;
+	for (int k = 0; k < 12 && followed_at < 0; k++) {
+		junk = junk * 1103515245u + 12345u;
+		rd[4][0x52] = (k & 1) ? 0x20 : (uint8_t)((junk >> 16) & 0xF0u);	// CC 2 on odd ticks only
+		ts_at(t += 30000);
+		if (last_write(4, 0x1F) == 0x20) {
+			followed_at = k;
+		}
+	}
+	CHECK(followed_at >= 5 && followed_at <= 7 && eng.cc_cur == 2);
+	ts_at(t += 30000);
+	CHECK(eng.st.rs_why[HRC6000_RS_CC] == restarts + 1);
+
+	// A call in 0x1F's code being taken: a steady other code in its empty slot is not followed
+	log_reset();
+	for (int k = 0; k < 12; k++) {
+		ts_at(t += 30000);
+		rd[4][0x52] = (k & 1) ? 0x20 : 0x90;
+		if (k & 1) {
+			report_at(t + 4000, 0x32, 0x20, 0x00);	// a voice burst of the call, taken
+		}
+	}
+	CHECK(last_write(4, 0x1F) == -1 && eng.cc_cur == 2);
+
+	// A chip that deframes any code never reads it at the ticks
+	dev.chip = c6;
+	fresh_engine();
+	hrc6000_dmr_set_cc_filter(&eng, -1);
+	log_reset();
+	for (int k = 0; k < 12; k++) {
+		rd[4][0x52] = 0x20;
+		ts_at(t += 30000);
 	}
 	CHECK(last_write(4, 0x1F) == -1);
 }
@@ -1094,6 +1324,34 @@ static void test_rx_repeat_report(void)
 	CHECK(eng.st.by_class[0] == 20 && eng.st.by_class[1] == 4 && eng.st.by_class[2] == 16);
 	CHECK(eng.st.by_type[0x9] == 4 && eng.st.by_type[0x1] == 16);
 	CHECK(eng.st.dt_hist[2] == 40);	// all 3 ms after the tick
+}
+
+// A base station carrier idle on both slots: every slot an idle burst with the same bits. Each is delivered (a hang's
+// idles keep a trunked call), while a BS sync CSBK reported again one slot later is still a repeat
+static void test_rx_bs_idles(void)
+{
+	fresh_engine();
+	dmr_config_t cfg = { .own_id = 9990001, .cc = 1, .access = DMR_ACCESS_POLITE_CC, .repeater = true };
+	hrc6000_dmr_configure(&eng, &cfg);
+	uint32_t t = 9800000;
+	uint32_t idle0 = eng.st.rx_idle;
+	for (int k = 0; k < 20; k++) {
+		uint8_t tc = (uint8_t)(((eng.tick + 1u) & 1u) ? 0x04 : 0x00);
+		rd[4][0x52] = tc;
+		ts_at(t);
+		report_at(t + 3000, 0x92, (uint8_t)(0x10 | tc), 0x01);	// idle (type 9, class 2), CC 1, BS sync
+		t += 30000;
+	}
+	CHECK(eng.st.rx_idle == idle0 + 20);
+	uint32_t c0 = eng.st.rx_csbk, d0 = eng.st.rx_dup_repeat;
+	for (int k = 0; k < 2; k++) {
+		uint8_t tc = (uint8_t)(((eng.tick + 1u) & 1u) ? 0x04 : 0x00);
+		rd[4][0x52] = tc;
+		ts_at(t);
+		report_at(t + 3000, 0x32, (uint8_t)(0x10 | tc), 0x01);	// the same CSBK twice
+		t += 30000;
+	}
+	CHECK(eng.st.rx_csbk == c0 + 1 && eng.st.rx_dup_repeat == d0 + 1);
 }
 
 // The quiet-period restart happens once, not every 20 ticks (each one drops the sync)
@@ -1237,9 +1495,13 @@ static void test_rx_missed_burst(void)
 
 // Feeds the reports a frame apart (each burst with its own voice unless same_voice[i]); fills got with the voice
 // numbers delivered and returns how many
-static int feed_numbers(const uint8_t *r51s, const bool *same_voice, int n, uint8_t *got)
+// cc: the receive filter (-1: any color code, as fresh_engine leaves it)
+static int feed_numbers_cc(const uint8_t *r51s, const bool *same_voice, int n, uint8_t *got, int8_t cc)
 {
 	fresh_engine();
+	if (cc >= 0) {
+		hrc6000_dmr_set_cc_filter(&eng, cc);
+	}
 	uint32_t t = 14000000;
 	for (int i = 0; i < n; i++) {
 		ts_at(t);
@@ -1258,6 +1520,11 @@ static int feed_numbers(const uint8_t *r51s, const bool *same_voice, int n, uint
 		}
 	}
 	return k;
+}
+
+static int feed_numbers(const uint8_t *r51s, const bool *same_voice, int n, uint8_t *got)
+{
+	return feed_numbers_cc(r51s, same_voice, n, got, -1);
 }
 
 // A report with another burst's number, no frame missed (bench: A B F C E F and C D F A): numbered by the frames
@@ -1284,6 +1551,27 @@ static void test_rx_wrong_number(void)
 	CHECK(eng.st.rx_stale == 1 && eng.st.rx_seq_jump == 1 && eng.st.rx_seq_fix == 0);
 }
 
+// Late entry on a call in a color code other than 0x1F's, with any color code deframed (0x41 bit 3): the chip keeps
+// the voice number of the last call it decoded in full (here F) in every class 0 report. The report one frame after a
+// lone A is its B whatever its number, and the superframe is numbered by the frames counted. With a filter on, the
+// number must say B: a lone voice sync followed by a stale report is noise
+static void test_rx_late_entry_stale_number(void)
+{
+	static const bool fresh[6] = { false };
+	static const uint8_t stale_f[] = { 0x91, 0xE0, 0xE0, 0xE0, 0xE0, 0xE0 };	// A, then "F" five times
+	uint8_t got[8];
+	int k = feed_numbers(stale_f, fresh, 6, got);
+	CHECK(k == 6 && memcmp(got, (const uint8_t[]){ 0, 1, 2, 3, 4, 5 }, 6) == 0);
+	CHECK(eng.st.rx_lone == 0 && eng.st.rx_no_call == 0);
+
+	k = feed_numbers_cc(stale_f, fresh, 6, got, 2);
+	CHECK(k == 0 && eng.st.rx_lone == 1 && eng.st.rx_no_call == 5);
+	// A stale repeat with A's own voice is no B, any color code or not
+	static const bool repeat[2] = { false, true };
+	k = feed_numbers(stale_f, repeat, 2, got);
+	CHECK(k == 0 && eng.st.rx_no_call == 1);
+}
+
 static void test_halt(void)
 {
 	fresh_engine();
@@ -1306,6 +1594,7 @@ int main(void)
 	test_out_of_step_resync();
 	test_tx_voice_dmo();
 	test_tx_listen();
+	test_tx_listen_rc();
 	test_tx_empty_slot();
 	test_tx_fill();
 	test_tx_crc_and_underrun();
@@ -1315,12 +1604,16 @@ int main(void)
 	test_tc_locked_one_in_two();
 	test_tx_rejected_and_stall();
 	test_rx_stall();
+	test_cc_any_rx();
 	test_cc_follow();
+	test_cc_tick_follow();
 	test_rx_repeat_report();
+	test_rx_bs_idles();
 	test_idle_restart_once();
 	test_rx_bench_call();
 	test_rx_missed_burst();
 	test_rx_wrong_number();
+	test_rx_late_entry_stale_number();
 	test_halt();
 	if (failures) {
 		printf("# hrc6000DmrTest: %d FAILED\n", failures);

@@ -278,7 +278,9 @@ def flash_boards():
 			"id": b.id, "name": b.name, "family": b.family, "app_base": b.app_base, "flash_end": b.flash_end,
 			"sectors": [{"index": s.index, "addr": s.addr, "size": s.size} for s in b.sectors],
 			"codec": {"id": b.codec.id, "windows": [list(w) for w in b.codec.windows],
-				  "installed": list(b.codec.installed), "sources": list(b.codec.sources)},
+				  "installed": list(b.codec.installed), "sources": list(b.codec.sources),
+				  # the ids earlier releases reported for this codec where they put it: the radio's codec moves
+				  "former": list(b.codec_former)},
 			"debuglink_names": list(b.debuglink_names), "releasable": b.releasable,
 			"keep_codec_supported": b.keep_codec_supported, "key_sha256": b.key_sha256,
 			# a codec slot's board reports its codec as "<board>-<build>" (decide.js codecPresent)
@@ -332,11 +334,15 @@ def c7000_flash():
 			       # the read rate are in radios.json flash
 			       "progmem_size": lay.get("progmem_size", dc.PROGMEM_SIZE), "data_flash": lay.get("data_flash", True),
 			       "calibration": lay.get("calibration"),
-			       "stub_board": {k: st.C7_BOARDS[bid][k] for k in ("id", "latch", "key", "nand")} if bid in st.C7_BOARDS
-			       else {k: st.GENERIC[k] for k in ("id", "latch", "key", "nand")},
+			       # (with its status LED pins, which also go into the stub's parameter block before it is sent)
+			       "stub_board": {k: st.C7_BOARDS[bid][k] for k in ("id", "latch", "key", "nand", "led")} if bid in st.C7_BOARDS
+			       else {k: st.GENERIC[k] for k in ("id", "latch", "key", "nand", "led")},
 			       # the board's [[flash.protect]] (progmem offsets are the stub's: from the program flash's base),
 			       # which every write and restore here checks first (protect.js)
-			       "protect": st.C7_BOARDS[bid]["protect"] if bid in st.C7_BOARDS else []}
+			       "protect": st.C7_BOARDS[bid]["protect"] if bid in st.C7_BOARDS else [],
+			       # a board the boot ROM starts directly: the entry its flag sector at flash 0 must name after an
+			       # install (stubtool write_rom_flag), else None
+			       "rom_entry": st.C7_BOARDS[bid]["rom_entry"] if bid in st.C7_BOARDS else None}
 	profiles = []
 	for p in dc.PROFILES.values():
 		# a stock file known only by its whole-file hash (e.g. a 2024-05-09 build) has no codec hashes: it can be
@@ -352,7 +358,7 @@ def c7000_flash():
 				 "stock_file": None if p.get("kind") == "progmem" else {"sha256": next(h for h, q in dc.PROFILES.items() if q is p),
 										"size": p["size"], "code": p["code"][0], "tables": p["tables"][0]}})
 	return {"progmem_base": dc.PROGMEM_BASE, "progmem_size": dc.PROGMEM_SIZE, "data_size": st.MEM["q128"][3],
-		"app_start": st.APP_START, "app_end": st.APP_END, "sector": st.SECTOR,
+		"app_start": st.APP_START, "app_end": st.APP_END, "sector": st.SECTOR, "rom_flag": st.ROM_FLAG.hex(),
 		"app_base": dc.APP_BASE, "stock_header": dc.STOCK_HEADER, "stock_magic": dc.MAGIC.decode(),
 		"led": {"red": st.LED_RED, "green": st.LED_GREEN},
 		"slot_magic": dc.SLOT_MAGIC, "slot_version": dc.SLOT_VERSION,

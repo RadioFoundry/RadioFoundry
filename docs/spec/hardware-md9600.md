@@ -360,7 +360,7 @@ frequency point, labeled 5 W, 10 W, 25 W and 40 W. The labels are wrong: the row
 | 1 | 509 | 1 W | 892 | 1 W |
 | 2 | 680 | 5 W | 947 | 5 W |
 | 3 | rows 2-3 (UHF) or 1-2 (VHF) at 25 W | 25 W | as UHF | 25 W |
-| 4 | top row + 337 | 45 W | top row + 45 | 50 W |
+| 4 | top row + 337 (at most 3500) | 45 W | top row + 45 (at most 3500) | 50 W |
 
 The short check with this table (section 4 of the procedure, FM carrier, watts):
 
@@ -379,9 +379,12 @@ at 144.100 and 0.20 W at 151.5125. One fixed drive can't hold 250 mW from 144 to
 calibrated at 146 MHz, the middle of 2 m, and hold ±2 dB across it. The HIL wattmeter check keys at 445 and 146 MHz
 for that reason.
 
-A radio whose rows give levels that don't rise, or a top level over 2300 counts, transmits on no level. The debug
-link's `tx_drive` view key shows each level's drive, and RADIO op 36 sets one transmission's drive
-([debuglink.md](debuglink.md)). RadioFoundry refuses TX without an accepted table.
+The top level follows each radio's own top row. The factory rows differ between radios, so its bound sits well past any
+row seen: the top level stops at 3500 counts. The output is flat long before that (2250 gave 47.1 W), so a radio clamped
+there still makes its top level. A row byte of 0xFF or 0x00 is no value, and a radio whose rows give levels that don't
+rise transmits on no level. RadioFoundry refuses TX without an accepted table. The debug link's `tx_drive` view key
+shows each level's drive. RADIO op 36 sets one transmission's drive ([debuglink.md](debuglink.md)) to any value the DAC
+can give, up to its full scale (4095), past the top level's bound.
 
 ### 5.7 RSSI, noise, squelch
 
@@ -620,8 +623,9 @@ Optional, JS-M710 (unverified); the "MD-9600-5P GPS" FCC class II change. NMEA o
 
 ### 13.2 Power and detection
 
-PA9 high powers the GPS and the microphone together, so it stays on. No presence pin: detect by listening
-for valid NMEA, as on the MD-380 (ours).
+PA9 high powers the GPS and the microphone together, so it stays on while the radio runs, whatever Settings > Location
+> GPS says (the setting stops USART1 only). It is low from reset, through the standby wait and after "off" (`latch`),
+and driven high in `board_init`. No presence pin: detect by listening for valid NMEA, as on the MD-380 (ours).
 
 ---
 
@@ -854,9 +858,9 @@ the original firmware sounds the same on this radio is not checked); UHF receive
 | Power | no battery (`CAP_NO_BATTERY`). "Off" saves, sets a flag in RTC backup register 18 and resets; at start-up the flag holds the radio until the power key is pressed and released. Supply voltage from ADC1 IN1 |
 | Flash | SPI NOR with the DM-1701's map (settings 0x011000, journal 0x019000, open-firmware codeplug at 0 and 0x020000); the board revision record at 0x01F000, appended. Security registers read only: calibration and option block (19.5) |
 | Receive | FM on both bands, every revision (19.3). Front-end tuning from calibration rows 0x30 / 0x39 (11.2) when they aren't blank, else mid scale |
-| DMR | receive on the shared HR_C6000 glue (configuration port PE2-PE5, voice port SPI1 at 4.5 MHz, interrupts PC0-PC2, I2S3 PCM). Reference offset and DMR modulation pair (11.2 rows 0x130-0x149) rewritten at each retune. The two codec profiles (tags 0x0609 and 0x1645, one id `md9600-s11`) run the stock codec from flash: code at 0x080E0000, tables in sector 9, descriptor at 0x080FFF80 ([codec-md9600.md](codec-md9600.md)) |
+| DMR | receive on the shared HR_C6000 glue (configuration port PE2-PE5, voice port SPI1 at 4.5 MHz, interrupts PC0-PC2, I2S3 PCM). Reference offset and DMR modulation pair (11.2 rows 0x130-0x149) rewritten at each retune. The two codec profiles (tags 0x0609 and 0x1645, one id `md9600-s11v2`) run the codec from flash: code at 0x080E0000, tables at the start of sector 10, descriptor at 0x080FFF80 ([codec-md9600.md](codec-md9600.md)) |
 | Audio | FM from the IF chip (FM_MUTE high), PCM (DMR voice, beeps) from the HR_C6000 line out with FM held back, AF_SW muting otherwise (`boards/md9600/speaker_md9600.h`). A host audio session (`NET_USRP`) hears FM from PC3 and DMR from the stream, and transmits FM as PWM on PC8 into the HR_C6000's microphone input (19.9) |
-| GPS | USART1 RX (PA10), receive interrupt; 9600 baud first, then 4800, 19200, 38400, 57600, 115200, 3 s each. A silent line ends the search after the first window; a module once heard feeds APRS positions. PA9 stays on (it also powers the mic) |
+| GPS | USART1 RX (PA10), receive interrupt; 9600 baud first, then 4800, 19200, 38400, 57600, 115200, 3 s each. A silent line ends the search after the first window; a module once heard feeds APRS positions. Settings > Location > GPS off stops USART1; PA9 stays on (it also powers the mic) |
 | Hand mic | the keypad of 9.3 through `drivers/input/adckeys`, three equal scans per key. Key roles of A-D and A/B are a proposal (unverified). No `CAP_KEYPAD`: a mic may have no keypad |
 | Transmit | FM and DMR on UHF and VHF, checked off air into a dummy load (19.8, 19.9; VHF 19.9.1). On in the build (`CONFIG_MD9600_TX`, `CONFIG_MD9600_DMR_TX`); it still needs a confirmed revision (19.3) and plausible PA rows. Sub-audio: CTCSS and DCS from the PWM generator on PC7, with the DCS turn-off tail |
 | Not yet | Transmit power per level (a power meter), split duplex and the two-PLL burst switching (17 #17), the CPS's own command set, update packaging |
@@ -868,7 +872,7 @@ the original firmware sounds the same on this radio is not checked); UHF receive
 | HSE | 8 MHz crystal; bypass mode tried if it doesn't start; HSI 16 MHz (no USB) as the last resort |
 | PLL | M 4, N 72, P 2, Q 3: SYSCLK 72 MHz, USB 48 MHz |
 | Buses | AHB 72 MHz, APB1 36 MHz (timers 72 MHz), APB2 72 MHz |
-| Flash | 0x0800C000-0x0809FFFF application (sectors 3-8, 592 KB); sectors 9-11 kept free for the codec |
+| Flash | 0x0800C000-0x080BFFFF application (sectors 3-9, 720 KB); sectors 10-11 kept for the codec |
 | RAM | 128 KB main SRAM (DMA buffers), 64 KB CCM (RTOS heap and task stacks, `RFOUNDRY_CPU_RAM`) |
 
 ### 19.3 Board revisions in one image
@@ -950,7 +954,7 @@ board.
 | PC6 | TIM8 CH1 | off | backlight | unverified |
 | PC7 | open drain, TIM8 CH2 when driven | released (high) | sub-audio tone PWM into the reference oscillator's modulation input (19.9). Driven low it pulls the reference: FM still receives, DMR never syncs (first radio, 2026-11-02) | checked |
 | PC8 | out, TIM8 CH3 when driven | low | beep PWM net into the HR_C6000's MIC_P / MIC_N and LINEIN1; host FM transmit audio (19.9) | checked |
-| PA9 | out | high | mic and GPS supply | unverified |
+| PA9 | out | low (high once switched on) | mic and GPS supply | unverified |
 | PB12, PD14, PD13, PD12 | out | high, high, low, low then high | flash CS, LCD CS, A0, reset | unverified |
 | PB13-PB15 | SPI2 AF5 | - | flash and LCD | unverified |
 | PE0, PE1, PD0, PD1 | out, open drain | high | key rows | unverified |
@@ -1025,7 +1029,6 @@ voltage is the generic `supply_mv` key instead (`hal_power_t.supply_mv`; the div
 | `c6000`, `c6000.dmr`, `c6000.errors`, `c6000.tx_refused` | the HR_C6000 answered after set-up (with 4:0x10), in DMR, failed transfers, bursts the RF switch refused |
 | `speaker` | bit 0 amplifier on, bit 1 FM audio through, bit 2 codec line out, bit 3 amplifier held warm (`speaker_hang_s`) |
 | `mic_key` | the hand-mic key decoded on the last scan, 255 for none |
-| `gps`, `gps.baud`, `gps.nmea` | module heard; the rate listened at (0 once given up); valid / bad sentences / bytes |
 | `subtone` | the sub-audio decoder (`CONFIG_SUBTONE`): samples fed / rate; the input's rms and mean over 0.11 s (12-bit counts); the tone kind (0 none, 1 CTCSS, 2 DCS, 3 DCS inverted); match; an ADC or DMA fault |
 
 `tests/hil/test_md9600.py` checks them on a radio: identity, every key present, the transmitter switches low, the
@@ -1070,8 +1073,12 @@ DMR transmit (`CONFIG_MD9600_DMR_TX`): the HR_C6000 glue's prepare hook runs ste
 carrier, receivers off) at the start of a transmission, and the task waits the synthesizer's transmit settle (step 4)
 plus 1 ms. Each burst then, 0.7 ms after the RF TX interrupt (a timer, no waits in an interrupt): the band's
 T5 on, 500 us,
-RF_APC_SW on, the APC reference up in 4 steps of 100 us; at its end (the timeslot interrupt) the same ramp down,
-RF_APC_SW off, T5 off. T5 alone leaks the carrier about 13 dB under full power, and that counts as on air: keyed at the
+RF_APC_SW on, the APC reference up in 4 steps of 100 us; at its end the same ramp down, RF_APC_SW off, T5 off. The
+end is timed too: the key timer starts the ramp down at the last symbol's end (27.5 ms after the first, from the RF TX
+interrupt), and the carrier is off 0.85 ms after it, inside the slot's guard. The modem's timeslot interrupt comes
+1.85 ms after the last symbol: dropped there, the carrier stayed at full power 0.6 ms into the slot after and was off
+2.0 ms after the last symbol (SDR bench, the three lowest levels). The interrupt still ends a burst the timer did not
+(an SFR's, a BS outbound's). T5 alone leaks the carrier about 13 dB under full power, and that counts as on air: keyed at the
 interrupt itself (about 1.3 ms ahead of the slot), every burst was 31.7-31.9 ms long at floor + 10 dB on the SDR bench
 (2026-11-06, 461.4625 MHz, lowest power; the bench allows 27-31.5 ms). Delayed, full power still comes about 0.2 ms
 after the slot boundary, inside the guard ahead of the payload. The split duplex TX half (a BS outbound) keys once and
@@ -1117,6 +1124,26 @@ Measured off air (UHF, 5 W, 2026-11-03): T5 left on between bursts leaks the car
 it, between bursts the carrier is below the measuring receiver's floor (26 dB down). On air at key-up: a 0.5 ms step to
 -13 dB (T5), then full power 0.4 ms later; key-down takes 0.4 ms. On-time 30.7 ms, same-slot spacing 60.0 ms, outer
 symbol deviation 1933 Hz, every burst of a 3 s call decoded (headers, 9 superframes, terminator).
+
+The key-up follows the key-up rule ([pa-keyup.md](pa-keyup.md)): the rule's points run on the key timer. The loop
+closes (RF_APC_SW, the APC reference at the level's drive) 500 us ahead of the rule's PA point, and the PA point is the
+band's T5 supply. Every level comes up a fixed time after T5, whatever its drive (UHF 0.42 ms, VHF 0.62 ms on a
+conducted path): no knee, so the board's constants have no boost, only the PA's point per band (`PA_KEYUP_FIXED`,
+[pa-keyup.md](pa-keyup.md) 2). The debug link's `radio pa-keyup` changes them for tuning.
+
+The order matters. With T5 first and the loop closed at the PA point (the stepped ramp's order), the PA passed the
+carrier at a fixed -5 dBm from the loop's closing until it came up 0.42 ms later: a step 31 dB under the lowest level,
+with a 3-5 dB hook at its start. With the loop closed first nothing comes out until T5, then one rise.
+
+| Band | PA point (T5) before the first symbol | Power | -3 dB before the first symbol | -30 to -3 dB | Overshoot |
+|---|---|---|---|---|---|
+| UHF (445 MHz) | 0.80 ms | 473 mW / 938 mW / 4.1 W / 18.4 W / 28.5 W | 0.24 / 0.23 / 0.22 / 0.22 / 0.21 ms | 76-129 us | 0.3 dB or less |
+| VHF (146 MHz) | 1.24 ms | 368 mW / 600 mW | 0.30 / 0.34 ms | 270-300 us | none: 1.2 dB low over the first 10 symbols |
+
+On VHF the two lowest levels are drives 10 and 22 counts over the band's zero point: the loop barely regulates there,
+and they come up 1.2 dB short and stay short for the first symbols (the same with the earlier order, and with the PA
+point 1.24, 1.44 or 1.64 ms ahead). At 0.94 ms their -3 dB point was at the first symbol. A boost of a few
+counts overshot 15 dB, so the key-up constants don't fix it; the levels above 1 W were not measured with this order.
 
 At power-up, with the revision known: receivers on, then on V1-V4 the AK2365A reset (PE15 low for 10 us), and on V4
 the VHF synthesizer set for 145 MHz receive. On V4A / V5 the LMX2571 reset goes to both chips, then 10 ms; PE15 stays
@@ -1180,3 +1207,24 @@ Feature switches that differ from the platform's defaults (`config.mk`; the two 
 | `NET_PPP` (maximal build too: `MAXIMAL_SKIP`) | the radio has the USB network adapter; PPP is for radios with only a UART |
 | `LANG_ES` and what follows it | English only |
 | `UI_COLOR`, `FONT_XL`, `FONT_AA`, `FONT_BIG`, `AM_RX`, `BCAST_FM`, `VIBRATE`, `NAND_STORAGE`, `FAULT_TRACE` (maximal build too: `BOARD_UNSUPPORTED`) | a 128x64 monochrome screen; no air band or broadcast receiver; no vibration motor; NOR data flash; no UART for a fault trace |
+
+### 19.11 Air interface (`CONFIG_P25`, `CONFIG_NXDN`)
+
+`board.air` is the HR_C6000's physical layer mode ([modem-hrc6000.md](modem-hrc6000.md) 10). The chip demodulates
+the 450 kHz IF itself (4.2), so its FM copy (10.6 there) is the discriminator: the board sets `air_tap` and gives
+`board.baseband`, and the soft modem receives what the correlator can't, NXDN among it. Both switches are on by
+default. A transmission in the physical layer mode keys the PA once and holds it to the end
+(`stm32_hrc_dmr_tx_continuous`), where a DMR burst's key-up drops it after `KEY_HOLD_US`. Checked on a V1-V3 radio,
+UHF, against the SDR bench:
+
+| What | Result |
+|---|---|
+| P25 conventional receive (`test_p25_rx_from_bench`) | 72 of 72 voice frames, none bad, 32-43 bits corrected, played |
+| NXDN receive at 4800 and 9600 bit/s through the FM copy (`test_nxdn_rx_from_bench`) | each call decoded, 40 voice frames per call |
+| NXDN zone scan and dual watch onto a stored channel (`test_nxdn_scan_from_bench`) | each holds on the channel during a call from the bench |
+| A stored P25 channel written over CPS (`test_p25_stored_channel`) | runs P25 on its own parameters, plain again after the restore |
+| Zone scan and dual watch onto a stored P25 channel (`test_p25_scan_from_bench`) | each holds on the channel during a call from the bench |
+| The P25 or NXDN mode in the VFO, a stored NXDN channel | set and dropped; the radio idles in the mode |
+
+Not checked: P25 and NXDN transmit (the provider reports both as untested), sensitivity on the FM copy, VHF (the
+receive I/Q swap there inverts the copy's spectrum), and trunking.

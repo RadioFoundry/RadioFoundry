@@ -36,7 +36,14 @@ WEAK bool ui_svc_privacy(bool on) { (void)on; return false; }
 WEAK bool ui_svc_monitor(bool on) { (void)on; return false; }
 WEAK bool ui_svc_vox(bool on) { (void)on; return false; }
 WEAK bool ui_svc_save_channel(void) { return false; }
-WEAK bool ui_svc_write_channel(uint16_t number, const channel_t *ch) { (void)number; (void)ch; return false; }
+WEAK bool ui_svc_write_channel(uint16_t number, const channel_t *ch, uint16_t from) { (void)number; (void)ch; (void)from; return false; }
+#if CONFIG_P25 || CONFIG_NXDN
+WEAK bool ui_svc_write_channel_air(uint16_t number, const channel_t *ch, uint16_t from, const ui_air_conv_t *conv)
+{
+	(void)conv;
+	return ui_svc_write_channel(number, ch, from);
+}
+#endif
 #if CONFIG_CONTACT_EDIT
 WEAK bool ui_svc_write_contact(uint16_t index, const contact_t *c) { (void)index; (void)c; return false; }
 #endif
@@ -47,6 +54,13 @@ WEAK bool ui_svc_save_talk_target(uint32_t id, bool private_call) { (void)id; (v
 
 WEAK bool ui_svc_scan(bool on) { (void)on; return false; }
 WEAK bool ui_svc_roam(uint8_t cmd) { (void)cmd; return false; }
+#if CONFIG_DMR_TRUNK
+WEAK int ui_svc_t3_channel(uint16_t num, const channel_t *ch, bool *usable) { (void)num; (void)ch; (void)usable; return -1; }
+WEAK bool ui_svc_t3_name(uint8_t n, char *name) { (void)n; name[0] = '\0'; return false; }
+WEAK void ui_svc_t3_poll(uint32_t id) { (void)id; }
+WEAK void ui_svc_t3_dial(const char *digits) { (void)digits; }
+WEAK bool ui_svc_t3_cli(uint32_t gw, char *out, size_t len) { (void)gw; (void)out; (void)len; return false; }
+#endif
 WEAK bool ui_svc_scan_skip(void) { return false; }
 WEAK bool ui_svc_dual(const ui_dual_ref_t ref[2], uint8_t sel) { (void)ref; (void)sel; return false; }
 WEAK bool ui_svc_dual_get(ui_dual_ref_t ref[2], uint8_t *sel) { (void)ref; (void)sel; return false; }
@@ -60,6 +74,9 @@ WEAK void ui_svc_dtmf_block(bool blocked) { (void)blocked; }
 WEAK void ui_svc_volume_hold(bool hold) { (void)hold; }
 WEAK void ui_svc_poll(void) { }
 WEAK void ui_svc_keys_poll(void) { }
+// Without key assignment no home key sends ACT_HOME_KEY_n: every action is the key map's
+WEAK uint8_t ui_svc_home_key(uint8_t action, uint8_t gesture, bool home) { (void)gesture; (void)home; return action; }
+WEAK bool ui_svc_key_offered(uint8_t id, int32_t value) { (void)id; (void)value; return false; }
 WEAK void ui_svc_apply(uint8_t id, int32_t value) { (void)id; (void)value; }
 
 WEAK uint16_t ui_svc_msg_count(void) { return 0; }

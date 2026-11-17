@@ -373,6 +373,7 @@ generate false PTT events when their bias is removed, so keep PA13 high during r
 | Write | address+W, register, data high byte, data low byte |
 | Read | address+W, register, then repeated transaction address+R, 2 bytes (high first). A stop between the two works |
 | Retries | the bus occasionally NAKs; retry up to 3 times with 1 ms between |
+| Bus clear | a transfer cut short in a read leaves the chip holding SDA low; the peripheral then reports busy and its reset doesn't help. After the third failed try: SCL clocked by hand until SDA is released (9 pulses at most), a stop, then the peripheral set up again. Diagnostics line 4 counts them (`clr`) |
 | Reference | 26 MHz assumed (reg 0x04 bit0 = 0 and reg 0x30 bit14 = 1 select 25.6/26 MHz and 26/13 MHz, i.e. 26 MHz). Unverified on the board |
 | Paging | reg 0x7F selects the register page (0 or 1); page 1 holds the AGC table |
 
@@ -657,9 +658,10 @@ set. An earlier build wrote bits 6:4 and keyed a silent carrier (`gotchas.md` 3.
 
 ### 5.11 Receiver sleep
 
-RadioFoundry's `rx_sleep(true)` (receiver battery save, `radio-features.md` 5.4) puts the AT1846S in idle and switches the
-receive supply off. `rx_sleep(false)` retunes.
-
+RadioFoundry's `rx_sleep(true)` (receiver battery save, `radio-features.md` 5.4) puts the AT1846S in idle and switches
+the receive supply off. `rx_sleep(false)` retunes. It does the same on a DMR channel (`rx_sleep_dmr`, a trunked system's
+power save): the HR_C6000 keeps running and the core restarts its receive on waking. On air at 1:4 the receiver is off
+55-60% of the time, the radio stays camped, and traffic for it arrives within one cycle.
 ### 5.12 Bench register access
 
 The debug link's CHIP_REG ([debuglink.md 3.24](debuglink.md#324-chip_reg)) reaches both RF chips (`uvf_chip_reg`,
@@ -760,6 +762,10 @@ Ordering:
   The receiver must work between bursts (an SFR's inbound slot, `sfr.md` 3). Dropping the PA earlier than the next
   timeslot interrupt (28.5-30 ms after the RF TX interrupt) did not reduce the inbound errors. The "transmitting" state of the radio must therefore be taken from the HR_C6000 slot state, not from the PA
   pins: the last burst of a call (the terminator) is still in flight after the PA logic has gone back to RX once.
+
+  Since the receiver is back on the RX frequency after every burst, a voice over through a repeater listens to its
+  outbound between our bursts on a split channel too (the glue's `listen_split`, [dmr-modem.md](dmr-modem.md) 2.8):
+  on a trunked site's split channel the radio hears a reverse channel cease while it talks (`test_t3_cease`).
 - Power-down: PA enables low, both RX supplies low, mic power optionally low, HR_C6000 PWD high, AT1846S reg 0x30 =
   receiver off value.
 
@@ -800,6 +806,152 @@ Interpolation fractions (empirical):
 
 On the 10 W radio levels 5-8 are 2 W, 3 W, 5 W, 10 W: level 5 = low + (mid - low) x f2, level 6 = low + (mid - low) x
 f3, level 7 = mid, level 8 = high. Clamp to 4095.
+
+### 7.1 Five levels (DM-1701)
+
+The DM-1701 uses five levels in place of the nine above ([power-calibration.md](../testing/power-calibration.md)): the
+two low levels are fixed DAC values per band, the next two lie between factory rows, the top level is the high row.
+
+| Level | Name | VHF | UHF |
+|---|---|---|---|
+| 0 | 100 mW | 517 | 339 |
+| 1 | 500 mW | 800 | 620 |
+| 2 | 1 W | very low + (low - very low) x 0.723 | very low + (low - very low) x 0.838 |
+| 3 | 2.5 W | low + (mid - low) x 0.791 | low + (mid - low) x 0.809 |
+| 4 | 5 W | high | high |
+
+These values are a draft: they come from the SDR bench's relative levels at 145.51 and 449.9 MHz with the high row
+taken as 5 W, and came out within 0.2 dB of their spacing there. No wattmeter reading backs them yet, and the zero
+point and cliff of the procedure are not measured.
+
+Relative output against the DAC value, same radio and frequencies (dB below the high row):
+
+| DAC | UHF | DAC | VHF |
+|---|---|---|---|
+| 250 | -21.3 | 350 | -25.2 |
+| 350 | -16.5 | 490 | -18.1 |
+| 500 | -12.3 | 640 | -13.0 |
+| 650 | -9.5 | 830 | -9.5 |
+| 895 | -6.4 | 1081 | -6.9 |
+| 1200 | -3.9 | 1400 | -4.4 |
+| 1669 | -1.2 | 1882 | -1.1 |
+| 2080 | 0 | 2062 | 0 |
+| 2800 | +0.5 | 2800 | +1.7 |
+
+### 7.2 DMR key-up
+
+The PA is keyed by the shared rule ([pa-keyup.md](pa-keyup.md)), with constants per band
+(`boards/dm1701/board.c`). No step's drive starts earlier than the window. At UHF it is 1.0 ms after the RF TX
+interrupt; at VHF it is the board's earliest point, 2.5 ms before the first symbol. The PA is keyed 1.0 ms (UHF) and
+0.8 ms (VHF) after the interrupt:
+
+| Band | dead_pm | knee_us | slope_us | window_us | settle_us | pa_us |
+|---|---|---|---|---|---|---|
+| VHF | 1 | 638 | 2398 | 2500 | 600 | 1730 |
+| UHF | 349 | 247 | 1248 | 1530 | 800 | 1530 |
+
+UHF is measured with `tools/bench/pa_cal.py` ([pa-keyup.md](pa-keyup.md) 6) over the air on the SDR bench and
+judged by the ramp's shape (`pa_shape.py`): every level's -3 dB point 0.14-0.45 ms before the first symbol, the two top
+levels and the lowest with under 1 dB of overshoot, the second and third with 2.0 and 3.3 dB. The rule can't do
+better on those two: the lowest level's boost and the top level's lead fix the knee and the slope, and with them the
+boosts of the two levels between. Against the same keys:
+
+| Set | -3 dB, levels 0-4 (ms) | Overshoot, levels 0-4 (dB) |
+|---|---|---|
+| This one | -0.14 / -0.34 / -0.41 / -0.45 / -0.31 | 0.6 / 2.0 / 3.3 / 0.5 / 0.3 |
+| Knee 255, slope 1180, settle 700 (the one before) | -0.20 / -0.28 / -0.33 / -0.42 / -0.25 | 1.8 / 2.3 / 3.0 / 0.6 / 0.4 |
+| Knee 230, slope 1100, settle 700 | -0.05 / -0.21 / -0.27 / +0.12 / -0.14 | 0.8 / 1.3 / 2.3 / 0.3 / 0.4 |
+| Knee 210, slope 1060, settle 1000 | the lowest level +0.63 | level 2 1.2 |
+
+A wider window (2000-2400 us) put the lowest level early with 5 dB of overshoot; an approach drive (`ease_pm`) never
+reaches the levels that overshoot.
+
+On a cable into the SDR bench (57 dB) the same set is cleaner than over the air: levels 1-3 come up 0.32-0.49 ms
+ahead with 0.3-0.7 dB of overshoot at 445 MHz and at a second frequency with other calibration rows, so the 2-3 dB
+above came from the path. The lowest level is 123 mW at 445 MHz and 33 mW at the second frequency (the radio's
+calibration tables): early with 1.5 dB of overshoot at the first, 1.6 dB short at the first symbol at the second.
+The top level is 1.6-2.5 dB short at the first symbol
+and settles after it: its PA point can't move earlier (SFR, below). A refit on the cable came out worse at every
+round.
+
+Across the 70 cm band, the radio on its antenna over the air, all five levels: the -3 dB point before the first
+symbol, the overshoot, and the first symbol against the settled level.
+
+| Level | 432 MHz | 445 MHz | 449.9 MHz |
+|---|---|---|---|
+| 100 mW | 0.67 ms, 3.2 dB, +2.6 dB | 0.49 ms, 2.2 dB, +1.9 dB | 0.44 ms, 2.1 dB, +1.8 dB |
+| 500 mW | 0.61 ms, 2.0 dB, +1.5 dB | 0.51 ms, 1.3 dB, +1.1 dB | 0.47 ms, 1.2 dB, +0.9 dB |
+| 1 W | 0.60 ms, 1.8 dB, +1.3 dB | 0.53 ms, 1.4 dB, +1.2 dB | 0.50 ms, 1.6 dB, +1.2 dB |
+| 2.5 W | 0.57 ms, 0.8 dB, +0.4 dB | 0.51 ms, 1.2 dB, +0.8 dB | 0.49 ms, 1.7 dB, +1.3 dB |
+| 5 W | 0.32 ms, 0.3 dB, -1.1 dB | 0.16 ms, 0.3 dB, -1.4 dB | 0.13 ms, 0.3 dB, -1.6 dB |
+
+No level is late, and the -3 dB point stays within 50 µs from burst to burst. The four lower levels are early and
+over, the lowest the most; the first 5 symbols are within 1.8 dB of the settled level (mean). The top level's knee is
+slow: -6 dB 0.32-0.52 ms ahead, -1 dB 0.2 ms after the first symbol's start, so its first symbol is 1.1-1.6 dB low,
+as on the cable, and its first 5 symbols 0.6 dB low (mean). Its lead thins toward the top of the band.
+
+Against this set's row in the table above, the lowest level is 0.35 ms earlier here with 1.6 dB more overshoot, and
+the second and third levels overshoot less. The difference is not traced.
+
+The lowest UHF level's drive (339) lies close over the dead zone's edge, 34.9 % of the low row's drive: 38 counts over
+at 445 MHz (low row 864) and 2 at the second frequency (low row 967). Where the low row is 972 or more it is under
+the edge, and takes the edge's boost ([pa-keyup.md](pa-keyup.md) 2), a count or two under its boost at the second
+frequency. Not measured there.
+
+VHF is measured the same way, on a cable into the SDR bench through 57 dB of attenuation. The lowest level's own
+drive, written 2.5 ms ahead, brings the output up 0.8 ms after the first symbol, so every level is boosted. With the
+board's earliest point and settle time fixed, the boost over the level is (knee x top + slope x drive) / ((window -
+settle) x drive): the knee sets how much more the low levels get. A boost 2.6 times the lowest level's drive brings it
+up in time; 2.0 times leaves it 0.7-1.0 ms late, 3.1 times overshoots 4.5 dB. The top level's boost is capped at 1.2
+times its drive and its PA point can't move earlier (SFR, below), so it is 2 dB short at the first symbol in every set.
+Against the same keys:
+
+| Set | -3 dB, levels 0-4 (ms) | Overshoot, levels 0-4 (dB) |
+|---|---|---|
+| This one | -0.10 / -0.14 / -0.17 / -0.15 / -0.01 | 1.1 / 0.9 / 1.0 / 0.4 / 0.2 |
+| Knee 1106, slope 1433 (the one before) | -0.26 / -0.20 / -0.16 / -0.12 / +0.20 (edge) | 4.5 / 1.6 / 0.9 / 0.3 / 0.2 |
+| Knee 496, slope 2583 | +0.13 / -0.07 / -0.14 / -0.15 / -0.02 | 0.1 / 0.6 / 0.9 / 0.4 / 0.2 |
+| Knee 548, slope 2855, settle 400 | -0.07 / -0.11 / -0.16 / -0.15 / -0.05 | 3.2 / 2.5 / 2.3 / 0.9 / 0.2 |
+| Knee 213, slope 2953 | +0.97 / +0.12 / -0.08 / -0.15 / -0.02 | 0.1 / 0.2 / 0.6 / 0.4 / 0.2 |
+
+The fit of `pa_cal.py` doesn't find this set: its open-loop points are each a level's own drive, which never brings the
+lowest level up in time, and its rounds come out 0.4-1.8 ms late.
+
+The radio's USB link drops while it transmits at VHF above 100 mW, and the host then ignores the port until the radio
+restarts or the cable is replugged. VHF is therefore measured with `--key-run restart`
+([pa-keyup.md](pa-keyup.md) 4, 6).
+
+VHF timing can't be read over the air from the radio's antenna on the SDR bench: each burst carries 1.6-2.8 dB of
+ripple there (0.3 dB at UHF), in a pattern that repeats every fifth burst, and the -3 dB point moves by as much as
+3 ms with it. Its source is not found. The -10 dB point holds through it, 0.20-0.48 ms before the first symbol at every
+level at 146 MHz.
+
+Key-down: TIM7 drops the PA 30 ms after the RF TX interrupt, when the burst's last symbol ends
+([gotchas.md](gotchas.md) 3.4); the timeslot interrupt after it puts the receiver back and stays the fallback. The
+carrier is 30 dB down 0.5-0.9 ms after the last symbol's end, inside the 1.25 ms guard time. Dropped at the timeslot
+interrupt alone it fell 1.7-1.8 ms after the last symbol, about 0.5 ms into the next slot. By level at 432, 445 and
+449.9 MHz: 100 mW to 2.5 W reach -3 dB 0.43-0.47 ms after the last symbol's end and are 30 dB down by 0.49-0.58 ms;
+5 W reaches -3 dB at 0.50-0.62 ms and is 30 dB down by 0.73-0.93 ms.
+
+With the earlier form, every level measured on the SDR bench:
+
+| Band | -3 dB point before the first symbol | First symbol against the settled level | Overshoot |
+|---|---|---|---|
+| UHF | 0.16-0.34 ms | within 0.7 dB | under 1 dB |
+| VHF | 0.08-0.14 ms | within 0.6 dB up to 1 W; the two top levels not measured with this set (1.1 and 1.5 dB low with the sets next to it) | under 2 dB |
+
+What set the points, measured with the earlier form (its `late %`: how much later a lower step started; its knee in
+drive counts × ms):
+
+| Setting | Result |
+|---|---|
+| PA 0.6 ms after the interrupt (`pa_us` 1930) | an SFR repeater loses the end of the burst it receives just before: 16-24 corrected bits in the last voice frame of each burst over a 72-frame call, none at 0.8 or 1.0 ms |
+| Every level started at `boost_us` (late 0 %) | the low levels rise early: at UHF the lowest 0.70 ms before the first symbol with the top at 0.34 ms |
+| VHF at late 100 % | the low levels rise 0.1 ms after the first symbol, which is 3.5 dB low |
+| VHF with a longer low-level boost (knee 1800-2055) | the lowest level overshoots 4-6 dB |
+
+Keyed at the level's drive 1 ms after the interrupt, as before the rule, the lowest level's first symbol was 13 dB low
+at UHF and 24 dB low at VHF.
 
 Without a loaded calibration RadioFoundry drives a fixed DAC value of 300 (`DM1701_DAC_UNCALIBRATED` in
 `boards/dm1701/radio_dm1701.c`), a very low drive.
@@ -1409,7 +1561,8 @@ runs from 3.3 V all the time and leaves PA9 unconnected. Nothing goes to the mod
 RadioFoundry builds GPS by default (`CONFIG_GPS`). At start-up it drives PA9 high and listens on PA10 in 5 s windows,
 9600 first. One checksum-valid NMEA sentence marks the module present. Characters without a valid sentence move on to
 the next rate (14400). A window of silence means no module: USART1 goes off, PA9 goes low, and the listening task ends
-and frees its stack. The task runs at low priority in the background, so start-up doesn't wait for it. The code is
+and frees its stack. The task runs at low priority in the background, so start-up doesn't wait for it. Once heard,
+PA9 follows Settings > Location > GPS (`hal_gps_t.enable`): low and USART1 off while the setting is off. The code is
 `boards/uv380_family/gps_uvf.c`, shared with the MD-UV380 G models ([hardware-mduv380.md](hardware-mduv380.md) 9).
 Untested with a module on a DM-1701.
 
@@ -1922,9 +2075,29 @@ is well above the "mic muted, no tone" row.
   (TIM8 CH3, 72 MHz carrier, DMA2 stream 2), used by AUDIO_PROBE PIN_TONE / PIN_PWM at about 37,000 MOD writes a second.
 - Release and flashing: application sectors 3-9 (720 KB), codec sectors 10 and 11 (1.4), keep supported, profile
   `dm1701-v0206-csv-s11`. Releases before the move linked read-only data into sector 9 as a second range, profile
-  `dm1701-v0206-csv`. An interrupted update writes sector 3 (the vector table) last, so a cut before it leaves the
-  bootloader in DFU; a later half application may crash but never bricks. Enter the bootloader by hand (PTT and side
+  `dm1701-v0206-csv`. An update erases first, then writes in sector order, sector 3 (the vector table) first, so a cut
+  before it leaves the bootloader in DFU; a later half application may crash but never bricks. Enter the bootloader by hand (PTT and side
   key 1 at power-on) and flash again.
+
+## Air interface (`CONFIG_P25`, `CONFIG_NXDN`)
+
+`board.air` is the HR_C6000's physical layer mode ([modem-hrc6000.md](modem-hrc6000.md) 10), with receive through
+the chip's FM copy (10.6) for what its correlator can't take: the AT1846S's DMR set-up gives the HR_C6000 the
+discriminator with its audio filters off. Checked on this radio
+against the SDR bench, at the lowest power:
+
+| What | Result |
+|---|---|
+| P25 conventional transmit ([p25.md](p25.md) 9, `test_p25_tx_off_air`) | 19 units, 153 voice frames, none bad, no voice bit corrected; outer deviation 1924 Hz, carrier 75 Hz low |
+| P25 conventional receive (`test_p25_rx_from_bench`) | at -117 dBm: 72 of 72 voice frames, 1 bad, played |
+| A stored P25 or NXDN channel written over CPS | runs the mode on its own parameters, plain again after the restore. One that transmits, keyed: P25 with the channel's NAC, 153 voice frames, none bad; NXDN at 4800 bit/s with the channel's RAN, unit and group, 40 frames, no CRC failure |
+| P25 trunked ([p25-trunking.md](p25-trunking.md), `test_p25_trunk_tx`) | the bench's control channel held; registration, affiliation and voice requests heard off air; two calls keyed on the granted channel, each a header, 5 pairs of voice units and a terminator; back on the control channel after. A call granted to another unit followed to a second transmitter and played (by hand) |
+| NXDN transmit ([nxdn.md](nxdn.md), `test_nxdn_tx_off_air`) | 9600 bit/s: 78 frames, outer deviation 2399 Hz; 4800 bit/s: 40 frames, 1012 Hz; no CRC failure |
+| NXDN receive (`test_nxdn_rx_from_bench`, `test_nxdn_rx_speech`) | through the FM copy, at both rates: a call's frames and its 40 voice frames, no CRC failure; a speech recording's frames, 64 of 64 at 9600 bit/s and 136 of 136 at 4800 bit/s into the vocoder, none bad, decoded PCM peak 15,400 and 16,700. A DMR call right after is received whole |
+
+Not checked: a call with a radio of another make, a live trunked system, how the encoded voice sounds, NXDN
+receive at the speaker (the programming cable mutes it: decoded voice is judged by its PCM, and the PCM stream runs
+at the DMR rate while the copy runs) and its sensitivity.
 
 ## Receive past the rated bands
 

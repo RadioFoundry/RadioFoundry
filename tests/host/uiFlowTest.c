@@ -13,7 +13,19 @@
 #include "sim/ui_sim.h"
 #include "ui/ui_app.h"
 #include "ui/ui_screens.h"
+#include "ui/i18n.h"
 #include "config.h"
+
+// Settings > Advanced: Backlight tests (CONFIG_BACKLIGHT_TEST) sits under Diagnostics and moves the rows below it
+// (Factory reset, Crash log) down one, so the flows that reach them press Down once more. Not ideal: hardcoded row
+// positions should go once flows can find a row by its name
+#if CONFIG_BACKLIGHT_TEST
+#define ADV_BELOW_DIAG		"down "
+#define ADV_BELOW_DIAG_N	1
+#else
+#define ADV_BELOW_DIAG		""
+#define ADV_BELOW_DIAG_N	0
+#endif
 
 static int fails, flows_run;
 
@@ -27,6 +39,20 @@ typedef struct {
 } flow_t;
 
 #define CALLER	"call:9991234,91,g wait:11000 "
+// 143 characters (UI_MSG_TEXT_MAX), the last word LAST
+#define LONG_TEXT	"Your_Special_Configuration_is:_Active_SMS:_LONG_SMS_Delay:_2.5_s_Retries:_3_Language:_English_" \
+	"Time_zone:_UTC_Units:_metric_Echo:_off_End_LAST"
+// A text the message screen shortens: Full message first, a page that scrolls to its end. For the displays that
+// shorten it (240x320 shows all 143 characters, and so no Full message)
+#define LONG_MESSAGE_FLOWS \
+	{ "7 long message offers Full message", "msg:9991234," LONG_TEXT " wait:9000 ok 2 ok", "", \
+	  "screen=message focus=Full_message", 0, false }, \
+	{ "7 Full message scrolls to the end", "msg:9991234," LONG_TEXT " wait:9000 ok 2 ok", \
+	  "ok down down down down down down down down down down", "screen=message-read shows=LAST", 11, false }, \
+	{ "7 Full message goes back to the replies", "msg:9991234," LONG_TEXT " wait:9000 ok 2 ok ok", "back", \
+	  "screen=message focus=Full_message", 1, false }, \
+	{ "7 PTT in Full message calls the sender", "msg:9991234," LONG_TEXT " wait:9000 ok 2 ok ok", "ptt", \
+	  "txid=9991234 txpriv=1", 1, false },
 #define TALK_BACK	"ok 7 3 down down down down down down down down down ok long:back quick 7 ctx 3 5 ok "	// on, and A 3 / B 5
 
 static const flow_t flows[] = {
@@ -36,6 +62,124 @@ static const flow_t flows[] = {
 	{ "menu entry skips unavailable GPS", "", "ok 7 5", "screen=group focus=Answer_GPS_requests", 3, false },
 	{ "1 next channel", "", "up", "pos=4", 1, false },
 	{ "1 channel 12 by number", "", "1 2 ok", "pos=12 screen=home", 3, false },
+	// A P25 channel (the debug link's mode): named P25 in the strip; FM's tiles say why they are off
+	{ "P25 channel shows its mode", "dlmode:p25", "", "mode=p25 screen=home shows=P25 hides=No_tone hides=12.5k hides=25k hides=SQ5", 0, false },
+#if CONFIG_NXDN
+	// NXDN the same way: the power, the RAN sent and the rate in the chips, the group PTT calls on the talk line
+	{ "NXDN channel shows its mode", "dlmode:nxdn", "", "mode=nxdn screen=home shows=NXDN shows=RAN_1_9600 shows=TG_1 hides=No_tone hides=SQ5", 0, false },
+	{ "NXDN channel: bandwidth is FM only", "dlmode:nxdn", "quick 8", "mode=nxdn toast=FM_only:_this_is_NXDN", 2, false },
+#endif
+	{ "P25 channel: bandwidth is FM only", "dlmode:p25", "quick 8", "mode=p25 toast=FM_only:_this_is_a_P25_channel",
+	  2, false },
+#if CONFIG_P25
+	// P25 on Home: what PTT calls on the talk line, the NAC in the chips, the caller while a call comes in
+	{ "P25 home: talk group and NAC", "dlmode:p25", "", "screen=home shows=TG_1 shows=NAC_293", 0, false },
+	{ "P25 home: the caller", "dlmode:p25", "p25rx:3101234,7", "screen=home shows=ID_3101234 shows=TG_7", 0, false },
+	{ "P25 home: a unit call", "dlmode:p25", "p25rx:3101234,3105555,u", "shows=Private_to_3105555", 0, false },
+	{ "P25 home: encrypted", "dlmode:p25", "p25rx:3101234,7,e", "shows=Encrypted:_not_played hides=ID_3101234", 0,
+	  false },
+	{ "P25 home: another talk group", "dlmode:p25", "p25rx:3101234,7,o", "shows=Other_TG:_not_played", 0, false },
+	{ "P25 home: the call ends", "dlmode:p25 p25rx:3101234,7", "p25rxend", "screen=home hides=ID_3101234", 0, false },
+	// Dual watch with A on P25: the pane names the mode, no tone or bandwidth for it
+	{ "P25 dual watch: A in P25", "dlmode:p25", "quick 7", "dual=1 sel=A shows=P25 hides=No_tone hides=12.5k", 2, false },
+#if CONFIG_P25_TRUNK
+	// A trunked channel: the talk line says what the follower does, never what PTT calls (it is receive only)
+	{ "P25 trunked home: finding the system", "dlmode:p25", "p25t:1", "screen=home shows=Finding_system hides=TG_1",
+	  0, false },
+	{ "P25 trunked home: control channel", "dlmode:p25", "p25t:2", "screen=home shows=Control_channel hides=RX_only",
+	  0, false },
+	{ "P25 trunked home: following a call", "dlmode:p25", "p25t:3,201", "screen=home shows=Following_TG_201", 0,
+	  false },
+#endif
+#if CONFIG_CHANNEL_EDIT
+	// A channel saved from P25 (New from current): P25 and its NAC, no FM or DMR-only rows, talkaround automatic
+	{ "P25 new from current: its rows", "dlmode:p25", "ok 5 up up up ok down down down",
+	  "screen=channel shows=P25 focus=NAC shows=293", 9, false },
+	{ "P25 new from current: talkaround", "dlmode:p25 ok 5 up up up ok",
+	  "down down down down down down down down down down",
+	  "focus=Talkaround shows=Auto hides=Bandwidth hides=Color_code hides=Timeslot", 10, false },
+	// The NAC typed in hex: digits, and Up steps the last one past 9
+	{ "P25 NAC: typed, A by Up", "dlmode:p25 ok 5 up up up ok down down down", "ok 1 9 up 5",
+	  "focus=NAC shows=1A5", 5, false },
+	{ "P25 NAC: set", "dlmode:p25 ok 5 up up up ok down down down", "ok 1 9 up 5 ok", "focus=NAC shows=1A5", 6,
+	  false },
+	{ "P25 NAC: saved with the channel", "dlmode:p25 ok 5 up up up ok down down down ok 1 9 up 5 ok", "long:ok",
+	  "writes=1 toast=Saved_as_channel_41", 1, true },
+	{ "P25 new from current, saved", "dlmode:p25", "ok 5 up up up ok long:ok", "writes=1 toast=Saved_as_channel_41",
+	  7, true },
+	// Mode on a P25 channel makes it a plain FM one
+	{ "P25 channel's mode to FM", "dlmode:p25 ok 5 up up up ok down down", "ok", "shows=FM hides=NAC", 1,
+	  false },
+	// A slip on Mode is taken back by stepping on: FM, DMR, then P25 again with its NAC
+	{ "P25 channel's mode: back to P25", "dlmode:p25 ok 5 up up up ok down down", "ok ok ok",
+	  "focus=Mode shows=P25 shows=NAC shows=293", 3, false },
+	// A stored P25 channel: the same steps leave nothing to save
+	{ "stored P25 channel: Mode steps back to P25", "chkind:3,p25 ok 5 ok down down", "ok ok ok long:ok",
+	  "focus=Mode shows=P25 shows=NAC toast=No_changes_to_save", 4, false },
+	{ "stored P25 channel made DMR: a change", "chkind:3,p25 ok 5 ok down down ok ok", "back",
+	  "screen=discard shows=Discard_the_changes", 1, false },
+	// Saving it as FM takes its P25 settings away: asked first, keep editing the default
+	{ "stored P25 channel as FM: Save asks", "chkind:3,p25 ok 5 ok down down ok", "long:ok",
+	  "screen=discard shows=Save_as_FM? shows=P25_settings_will_be shows=removed shows=Yes,_save focus=No,_keep_editing writes=0", 1, false },
+	{ "stored P25 channel as FM: keep editing", "chkind:3,p25 ok 5 ok down down ok long:ok", "ok",
+	  "screen=channel focus=Mode shows=FM", 1, false },
+	{ "stored P25 channel as FM: Back keeps editing", "chkind:3,p25 ok 5 ok down down ok long:ok", "back",
+	  "screen=channel focus=Mode shows=FM", 1, false },
+	{ "stored P25 channel as FM: yes saves", "chkind:3,p25 ok 5 ok down down ok long:ok", "down ok",
+	  "screen=channel writes=1 toast=Saved_channel_3 shows=FM hides=NAC", 2, true },
+	// Save as new channel takes nothing from the stored one: not asked
+	{ "stored P25 channel as FM: a new channel isn't asked", "chkind:3,p25 ok 5 ok down down ok", "up up up ok",
+	  "screen=channel writes=1 toast=Saved_as_channel_41", 4, true },
+#if CONFIG_NXDN
+	// The same from NXDN: its RAN and rate, no color code or timeslot; an ID past NXDN's range is refused
+	{ "NXDN new from current: RAN", "dlmode:nxdn", "ok 5 up up up ok down down down",
+	  "screen=channel shows=NXDN focus=RAN hides=Color_code hides=Timeslot", 9, false },
+	{ "NXDN RAN: typed", "dlmode:nxdn ok 5 up up up ok down down down", "ok 1 7 ok", "focus=RAN shows=17", 4, false },
+	{ "NXDN rate: 4800", "dlmode:nxdn ok 5 up up up ok down down down down", "ok", "focus=Rate shows=4800_bit/s", 1,
+	  false },
+	{ "NXDN ID: past 65519 refused", "dlmode:nxdn ok 5 up up up ok down down down down down down down down down down",
+	  "ok 7 0 0 0 0 ok", "toast=NXDN_IDs_go_up_to_65519", 7, false },
+	{ "NXDN RAN: saved with the channel", "dlmode:nxdn ok 5 up up up ok down down down ok 1 7 ok", "long:ok",
+	  "writes=1 toast=Saved_as_channel_41", 1, true },
+	{ "NXDN channel's mode: back to NXDN", "dlmode:nxdn ok 5 up up up ok down down", "ok ok ok",
+	  "focus=Mode shows=NXDN shows=RAN", 3, false },
+	{ "stored NXDN channel as FM: Save asks", "chkind:3,nxdn ok 5 ok down down ok", "long:ok",
+	  "screen=discard shows=Save_as_FM? shows=NXDN_settings_will_be shows=removed writes=0", 1, false },
+	// Where the radio runs P25 and NXDN, Mode steps through every mode: DMR, P25 with the default NAC, NXDN with
+	// RAN 1 at 9600, FM, and DMR again with nothing to save
+	{ "E Mode: DMR to P25", "p25 nxdn ok 5 ok down down", "ok", "focus=Mode shows=P25 shows=NAC shows=293", 1,
+	  false },
+	{ "E Mode: P25 to NXDN", "p25 nxdn ok 5 ok down down", "ok ok", "focus=Mode shows=NXDN shows=RAN shows=9600",
+	  2, false },
+	{ "E Mode: NXDN to FM", "p25 nxdn ok 5 ok down down", "ok ok ok", "focus=Mode shows=FM hides=RAN hides=NAC", 3,
+	  false },
+	{ "E Mode: round to DMR, nothing to save", "p25 nxdn ok 5 ok down down", "ok ok ok ok long:ok",
+	  "focus=Mode shows=DMR toast=No_changes_to_save writes=0", 5, false },
+	{ "E Mode: no NXDN where the radio doesn't run it", "p25 ok 5 ok down down", "ok ok", "focus=Mode shows=FM", 2,
+	  false },
+	// A channel made P25 or NXDN on the radio is saved as one, its NAC or RAN with it
+	{ "E Mode: DMR channel saved as P25", "p25 nxdn ok 5 ok down down ok", "long:ok",
+	  "screen=channel writes=1 toast=Saved_channel_3 shows=P25 shows=293", 1, true },
+	{ "E Mode: DMR channel saved as NXDN", "p25 nxdn ok 5 ok down down ok ok", "long:ok",
+	  "screen=channel writes=1 toast=Saved_channel_3 shows=NXDN shows=RAN", 1, true },
+	// Opened again it is a stored channel of the kind, the block read back
+	{ "E Mode: the saved P25 channel opens as P25", "p25 nxdn ok 5 ok down down ok long:ok back back back",
+	  "ok 5 ok", "screen=channel shows=P25 shows=NAC shows=293 hides=Color_code", 3, false },
+	{ "E Mode: the saved NXDN channel opens as NXDN", "p25 nxdn ok 5 ok down down ok ok long:ok back back back",
+	  "ok 5 ok", "screen=channel shows=NXDN shows=RAN hides=Color_code", 3, false },
+	// An own ID typed in P25 past NXDN's range is kept when the Mode row makes the channel NXDN: Save refuses it
+	{ "E Mode: NXDN with an ID past 65519 not saved",
+	  "p25 nxdn ok 5 ok down down ok down down down down down down down ok 7 0 0 0 0 ok up up up up up up up ok",
+	  "long:ok", "screen=channel focus=Mode shows=NXDN toast=NXDN_IDs_go_up_to_65519 writes=0", 1, false },
+	// A channel made P25 whose RX goes to the air band: AM there, no P25
+	{ "E Mode: a P25 channel's air band RX makes it AM", "am p25 nxdn ok 5 ok down down ok down down",
+	  "ok 1 2 1 5 0 0 ok", "shows=121.500 shows=AM hides=NAC hides=P25", 8, false },
+	// A stored P25 channel made NXDN loses its P25 tag: asked first
+	{ "stored P25 channel as NXDN: Save asks", "p25 nxdn chkind:3,p25 ok 5 ok down down ok", "long:ok",
+	  "screen=discard shows=Unsaved_Changes shows=P25_settings_will_be writes=0", 1, false },
+#endif
+#endif
+#endif
 	// The status strip's USB word (#58): IP as a network adapter, with the link arrows once the computer has it up,
 	// none on serial
 	{ "1 USB network: IP on the strip, no link arrows", "usbnet:on", "", "shows=IP nomarkafter=IP", 0, false },
@@ -67,6 +211,8 @@ static const flow_t flows[] = {
 #endif
 	{ "7 read message, banner up", "msg:9991234,Meet_at_the_north_lot", "ctx", "screen=message", 1, false },
 	{ "7 read message later", "msg:9991234,Meet_at_the_north_lot wait:9000", "ok 2 ok", "screen=message", 3, false },
+	{ "7 short message has no Full message", "msg:9991234,Meet_at_the_north_lot wait:9000 ok 2 ok", "",
+	  "focus=Reply hides=Full_message", 0, false },
 #if CONFIG_ZONE_SHARE
 	// An offer's banner has no timer: it waits for #, BACK or the offer's end (zone-share.md 5.2)
 	{ "zone offer banner still up a minute later", "zoneoffer:9991234", "wait:60000", "shows=Zone_from", 0, false },
@@ -76,6 +222,10 @@ static const flow_t flows[] = {
 	{ "zone offer banner hidden with Back on a menu", "zoneoffer:9991234 ok", "back", "banner=none screen=hub", 1, false },
 	{ "zone offer banner goes when Tools opens the offer", "zoneoffer:9991234", "ok 6 0", "banner=none shows=Import", 3,
 	  false },
+	// Trunked channels whose system isn't set up here: dimmed in the preview, said after the import (and in the offer's
+	// text, where the screen has room for it)
+	{ "zone offer preview marks a trunked channel", "zoneoffer:9991234 ctx 2", "up", "shows=ystem", 1, false },
+	{ "zone import result names trunked channels", "zoneoffer:9991234 ctx", "1", "shows=trunked", 1, false },
 #endif
 	{ "8 radio check last caller", CALLER, "ctx 4", "checks=1", 2, false },
 	{ "8 radio check by name", "", "5 6 3 ctx 4", "checks=1", 5, false },
@@ -115,6 +265,47 @@ static const flow_t flows[] = {
 	{ "11 dual watch: Tools > Scan, a zone scan instead", "quick 7 ctx 3 5 ok", "ok 6 1", "dual=0 scanning=1", 3, false },
 	{ "11 dual watch: the last B after power off", "quick 7 ctx 3 5 ok back back reboot", "quick 7", "dual=1 sel=A bpos=5",
 	  2, false },
+	// Each pane names its own mode (the strip names the selected one's), every mode the build runs: a VFO pane says
+	// "VFO <mode>", a call without a caller to name says what came in. AM where an FM channel or the VFO is in the
+	// air band on a radio that receives AM there (radio_am_channel), FM where it can't. A starts on the VFO or channel 3
+	{ "11 dual watch modes: FM VFO", "dlvfo:146520000 quick 7", "", "dual=1 sel=A shows=VFO_FM hides=VFO_AM", 0, false },
+	{ "11 dual watch modes: FM VFO in the air band without AM", "dlvfo:129700000 quick 7", "",
+	  "dual=1 sel=A shows=VFO_FM hides=VFO_AM", 0, false },
+	{ "11 dual watch modes: FM signal", "dlvfo:146520000 quick 7 tune:a", "fmrx", "dual=1 shows=FM_signal", 0, false },
+	{ "11 dual watch modes: DMR VFO", "dlvfo:438800000 dlmode:dmr quick 7", "", "dual=1 sel=A shows=DMR hides=VFO_FM",
+	  0, false },
+	{ "11 dual watch modes: DMR call", "dlvfo:438800000 dlmode:dmr quick 7 tune:a", "fmrx",
+	  "dual=1 shows=DMR_call hides=FM_signal", 0, false },
+#if CONFIG_AM_RX
+	{ "11 dual watch modes: AM VFO", "am dlvfo:129700000 quick 7", "", "dual=1 sel=A shows=AM shows=VFO_AM hides=VFO_FM",
+	  0, false },
+	{ "11 dual watch modes: AM VFO, B selected", "am dlvfo:129700000 quick 7 abkey", "",
+	  "dual=1 sel=B shows=VFO_AM hides=VFO_FM", 0, false },
+	{ "11 dual watch modes: AM signal", "am dlvfo:129700000 quick 7 tune:a", "fmrx",
+	  "dual=1 shows=AM_signal hides=FM_signal", 0, false },
+	{ "11 dual watch modes: AM channel", "am chhz:3,122395000 up down quick 7", "",
+	  "dual=1 sel=A shows=AM shows=122.395 hides=FM", 0, false },
+	{ "11 dual watch modes: AM VFO's chip, no tone or width", "am dlvfo:129700000 quick 7", "",
+	  "dual=1 shows=Air_Band_AM hides=No_tone", 0, false },
+	{ "11 dual watch modes: AM channel in the B picker", "am chhz:4,122395000 quick 7", "ctx 3",
+	  "shows=122.395_AM hides=122.395_FM", 2, false },
+	{ "11 dual watch modes: AM channel's signal", "am chhz:3,122395000 up down quick 7 tune:a", "fmrx",
+	  "dual=1 shows=AM_signal hides=FM_signal", 0, false },
+#endif
+#if CONFIG_P25
+	{ "11 dual watch modes: P25 VFO", "dlvfo:438800000 dlmode:p25 quick 7", "",
+	  "dual=1 sel=A shows=VFO_P25 hides=VFO_FM", 0, false },
+	{ "11 dual watch modes: P25 channel", "p25 chkind:3,p25 up down quick 7", "", "dual=1 sel=A shows=P25 hides=FM", 0, false },
+	{ "11 dual watch modes: P25 call", "p25 chkind:3,p25 up down quick 7 tune:a", "fmrx",
+	  "dual=1 shows=P25_call hides=FM_signal hides=DMR_call", 0, false },
+#endif
+#if CONFIG_NXDN
+	{ "11 dual watch modes: NXDN VFO", "dlvfo:438800000 dlmode:nxdn quick 7", "",
+	  "dual=1 sel=A shows=VFO_NXDN hides=VFO_FM", 0, false },
+	{ "11 dual watch modes: NXDN channel", "nxdn chkind:3,nxdn up down quick 7", "", "dual=1 sel=A shows=NXDN hides=FM", 0, false },
+	{ "11 dual watch modes: NXDN call", "nxdn chkind:3,nxdn up down quick 7 tune:a", "fmrx",
+	  "dual=1 shows=NXDN_call hides=FM_signal hides=DMR_call", 0, false },
+#endif
 	// Settings > Advanced > Hardware (last row): OK steps a choice without storing ("*"), holding OK stores it
 	{ "S hardware options open", "hwopt", "ok 7 up ok up ok", "screen=hwopt shows=Not_set", 6, false },
 	{ "S hardware option stepped, not stored", "hwopt ok 7 up ok up ok", "ok ok", "shows=V2*", 2, false },
@@ -134,6 +325,17 @@ static const flow_t flows[] = {
 	{ "S freq trim: past 10.0 ppm is refused", "trim ok 7 up ok up ok 1 0", "1", "toast=Up_to_10.0", 1, false },
 	{ "S freq trim: OK leaves", "trim ok 7 up ok up ok", "ok", "screen=group shows=Freq_trim", 1, false },
 	{ "S no freq trim without the hook", "", "ok 7 up ok", "hides=Freq_trim", 4, false },
+#if CONFIG_BACKLIGHT_TEST
+	// Settings > Advanced > Backlight tests, under Diagnostics. The sim's display has the raw hooks (4096 counts, three
+	// rates, 7324 Hz standard), so the compare value page comes first
+	{ "S backlight tests", "", "ok 7 up ok down down down ok", "screen=bltest shows=CV", 8, false },
+	{ "S backlight tests: digits set the value", "ok 7 up ok down down down ok", "2 1 3 7", "shows=CV_2137", 4, false },
+	{ "S backlight tests: # applies fewer digits", "ok 7 up ok down down down ok", "5 0 ctx", "shows=CV_50", 3, false },
+	{ "S backlight tests: Up steps 50", "ok 7 up ok down down down ok 2 1 3 7", "up", "shows=CV_2187", 1, false },
+	{ "S backlight tests: OK to brightness", "ok 7 up ok down down down ok", "ok", "shows=Brightness", 1, false },
+	{ "S backlight tests: OK to the rate", "ok 7 up ok down down down ok", "ok ok", "shows=PWM_rate", 2, false },
+	{ "S backlight tests: BACK leaves", "ok 7 up ok down down down ok", "back", "screen=group", 1, false },
+#endif
 	// Settings > Display > Language, the last row (i18n.h; set78 = UI_SET_LANGUAGE, 'e' << 8 | 's' = 25971 Spanish,
 	// 'e' << 8 | 'n' = 25966 English picked; 0 never picked)
 	{ "S language list", "", "ok 7 2 up ok", "screen=language shows=English", 5, false },
@@ -318,8 +520,12 @@ static const flow_t flows[] = {
 	  "writes=1", 9, true },
 	{ "E RX in a receive-only band: RX only and FM before the save", "ok 5 up up ok down down down", "ok 1 2 1 5 0 0 ok down down down",
 	  "shows=FM shows=RX_only shows=Yes", 11, false },
-	{ "E a DMR channel's RX in a receive-only band: FM", "ok 5 ok down down down", "ok 1 2 1 5 0 0 ok",
-	  "shows=121.500 shows=FM hides=Color_code", 8, false },
+	// DMR goes wherever FM goes but a listen band (ui.md 2.1). Without AM receive the air band is a receive-only band
+	// like any other: a DMR channel there stays DMR, RX only. With AM it is a listen band: AM, never DMR
+	{ "E a DMR channel's RX in a receive-only band: DMR, RX only, saved", "ok 5 ok down down down",
+	  "ok 1 2 1 5 0 0 ok long:ok", "shows=121.500 hides=FM toast=Saved_channel_3 writes=1", 9, true },
+	{ "E on a radio with AM: a DMR channel's air band RX makes it AM", "am ok 5 ok down down down", "ok 1 2 1 5 0 0 ok",
+	  "shows=121.500 shows=AM hides=Color_code", 8, false },
 	{ "E on a radio with AM: an air band RX makes the Mode AM", "am ok 5 up up ok down down down", "ok 1 2 1 5 0 0 ok",
 	  "shows=121.500 shows=AM hides=FM", 8, false },
 	{ "E on a radio with AM: OK on the Mode row keeps it AM", "am ok 5 up up ok down down down ok 1 2 1 5 0 0 ok up",
@@ -359,6 +565,19 @@ static const flow_t flows[] = {
 #endif
 	{ "E DMR needs a TX contact to save", "ok 5 ok down down down down down down down down down", "ok up ok long:ok",
 	  "toast=Pick_a_TX writes=0", 4, false },
+	// The contact is whom PTT calls: an RX only channel saves without one (row 6 is RX only, the contact row stays 9)
+	{ "E DMR RX only saves without a TX contact", "ok 5 ok down down down down down down", "ok down down down ok up ok long:ok",
+	  "toast=Saved_channel_3 writes=1", 8, true },
+	// A radio with no transmit band ("rxonly") keeps a DMR channel that is RX only, as any radio does in a receive-only
+	// band. Channel 3 is DMR on 453.625, its RX only row is 6
+	{ "E no transmit band: DMR needs RX only", "rxonly ok 5 ok", "long:ok down down down down down down",
+	  "toast=TX_can't_transmit writes=0 focus=RX_only", 7, false },
+	{ "E no transmit band: DMR RX only, saved", "rxonly ok 5 ok down down down down down down", "ok long:ok",
+	  "toast=Saved_channel_3 writes=1", 2, true },
+	{ "E no transmit band: new RX keeps DMR, RX only", "rxonly ok 5 ok down down down", "ok 4 4 6 0 0 0 ok long:ok",
+	  "toast=Saved_channel_3 writes=1 hides=FM shows=446.000", 9, true },
+	{ "E no transmit band: DMR after the new RX", "rxonly ok 5 ok down down ok down", "ok 1 4 6 5 2 0 ok up ok long:ok",
+	  "toast=Saved_channel_3 writes=1 hides=FM shows=146.520", 11, true },
 	{ "E a name to save", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "ok long:ok",
 	  "toast=Give_it_a_name writes=0", 2, false },
 	{ "E nothing changed to save", "ok 5 ok", "long:ok", "toast=No_changes writes=0", 1, false },
@@ -572,6 +791,20 @@ static const flow_t flows[] = {
 	// Quick settings in the FM VFO: tile 8 is Width, as on a channel
 	{ "Q FM VFO: Width on 8", "vfokey", "quick 8", "toast=Bandwidth", 2, false },
 	{ "S VFO mode back to FM", "ok 4 up ok quick 4 back", "quick 4", "toast=VFO:_FM mode=fm temporary=0", 2, false },
+	// A radio that runs P25: the mode tile goes FM, DMR, P25, FM
+	{ "S VFO mode: DMR to P25", "p25 ok 4 up ok quick 4 back", "quick 4", "toast=VFO:_P25 mode=p25 temporary=0 vfo=1",
+	  2, false },
+	{ "S VFO mode: P25 back to FM", "p25 ok 4 up ok quick 4 back quick 4 back", "quick 4",
+	  "toast=VFO:_FM mode=fm temporary=0", 2, false },
+	// NXDN: after DMR where the radio has no P25, after P25 where it has both; then FM
+	{ "S VFO mode: DMR to NXDN", "nxdn ok 4 up ok quick 4 back", "quick 4", "toast=VFO:_NXDN mode=nxdn temporary=0 vfo=1",
+	  2, false },
+	{ "S VFO mode: P25 to NXDN", "p25 nxdn ok 4 up ok quick 4 back quick 4 back", "quick 4", "toast=VFO:_NXDN mode=nxdn",
+	  2, false },
+	{ "S VFO mode: NXDN back to FM", "nxdn ok 4 up ok quick 4 back quick 4 back", "quick 4", "toast=VFO:_FM mode=fm", 2,
+	  false },
+	{ "S VFO mode: P25 shows on the strip", "p25 ok 4 up ok quick 4 back quick 4 back", "", "mode=p25 screen=home shows=P25",
+	  0, false },
 	{ "S VFO DMR: color code 7", "ok 4 up ok quick 4 back", "quick 3 7 ok", "cc=7 temporary=0", 4, false },
 	{ "S VFO DMR: timeslot 2", "ok 4 up ok quick 4 back", "quick 2 back", "ts=2 temporary=0", 3, false },
 	{ "S VFO DMR: talk to a typed TG", "ok 4 up ok quick 4 back", "quick 8 down ok 3 1 0 0 ok", "talk=3100 temporary=0",
@@ -585,6 +818,39 @@ static const flow_t flows[] = {
 	{ "S message failed text", "", "", "screen=home", 0, false },
 	// APRS (docs/spec/aprs.md 10): Tools 9, one row each
 	{ "A APRS page", "", "ok 6 8", "screen=aprs", 3, false },
+#if CONFIG_DMR_TRUNK
+	// Trunked channels (dmr-trunking.md 12.4): "t3" makes channel 3 a channel of "County" and 5 one of "Metro", not set up
+	{ "T a trunked channel names its system in the zone", "t3", "ok 4 ctx", "screen=zone shows=County", 3, false },
+	{ "T a channel without its system is locked out", "t3 ok 4 ctx", "down down ok",
+	  "screen=zone focus=05_Metro_DMR toast=System_not_set_up", 3, false },
+	{ "T Home on a trunked channel: the system and Ready", "t3 dlpos:3", "", "screen=home shows=County shows=Ready hides=CC",
+	  0, false },
+	{ "T Home while hunting", "t3 dlpos:3 t3state:hunt", "", "screen=home shows=Searching", 0, false },
+	{ "T Home on the fallback channel", "t3 dlpos:3 t3state:fallback", "", "screen=home shows=Fallback", 0, false },
+	{ "T back on the system", "t3 dlpos:3 t3state:fallback", "t3state:back", "screen=home toast=Back_on_County", 0, false },
+	{ "T Home on a channel without its system", "t3 dlpos:5", "", "screen=home shows=System_not_set_up", 0, false },
+	// Short data polling (dmr-trunking.md 7.6): an action on a person while on a trunked system, not elsewhere
+	{ "T the actions on a person offer a poll, last", "t3 dlpos:3 9 9 9 1 2 3 4 ctx", "up",
+	  "screen=actions shows=Poll_short_data", 1, false },
+	{ "T no poll on a conventional channel", "9 9 9 1 2 3 4 ctx", "up", "screen=actions hides=Poll_short_data", 1, false },
+	{ "T a poll sent", "t3 dlpos:3 9 9 9 1 2 3 4 ctx", "9", "screen=home toast=Polling_Q1ABC_Joe", 1, false },
+	{ "T a poll with no answer", "t3 dlpos:3", "t3state:pollfail", "toast=Poll:_no_short_data", 0, false },
+#if CONFIG_DMR_TRUNK_GW
+	// Telephone calls through the PSTN gateway (dmr-trunking.md 7.6): a typed number on a trunked system, last in Find
+	{ "T Find offers a phone call on a trunked system", "t3 dlpos:3", "5 5 5 1 2 3 4",
+	  "screen=find shows=Phone_call_5551234 dial=", 7, false },	// typed, not chosen: the dial stays
+	{ "T no phone call on a conventional channel", "", "5 5 5 1 2 3 4", "screen=find hides=Phone_call dial=", 7, false },
+	{ "T PTT on the phone call row calls the gateway", "t3 dlpos:3 5 5 5 1 2 3 4", "up",
+	  "focus=Phone_call focusid=16776896 dial=5551234", 1, false },
+	{ "T OK on it talks to the gateway", "t3 dlpos:3 5 5 5 1 2 3 4", "up ok",
+	  "screen=home talk=16776896 toast=Talking_to_5551234", 2, false },
+	{ "T no actions on a phone call", "t3 dlpos:3 5 5 5 1 2 3 4 up", "ctx", "screen=find toast=No_actions", 1, false },
+	{ "T a gateway call shows the caller's number", "t3 dlpos:3 t3state:follow t3cli:8005551212", "rx:16776896,1,p",
+	  "shows=8005551212 hides=16776896", 0, false },
+	{ "T a gateway call without a number", "t3 dlpos:3 t3state:follow", "rx:16776896,1,p",
+	  "shows=Phone_line hides=16776896", 0, false },
+#endif
+#endif
 	{ "A APRS RF keeps Home with a TX APRS pill", "", "aprstx",
 	  "screen=home shows=TX_APRS shows=SENDING hides=144.390 hides=0:00 hides=left_of", 0, false },
 	{ "A APRS RF returns to the channel", "aprstx", "aprsend",
@@ -629,12 +895,17 @@ static const flow_t flows[] = {
 	{ "G GPS signal page", "ok 6 2", "3", "shows=9_of_14_in_the_fix", 1, false },
 	{ "G GPS grid page", "ok 6 2", "4", "shows=FN42li", 1, false },
 	{ "G GPS pages wrap", "ok 6 2", "up down", "shows=Status", 2, false },
-	{ "A KISS on USB", "ok 6 8", "up up ok", "aprs_kiss=1", 3, false },
-	{ "A stations heard", "", "ok 6 8 up ok", "screen=aprs-heard count=2", 5, false },
-	{ "A station message survives a newer packet", "ok 6 8 up ok ok aprs:reorder", "ok",
+	{ "A KISS on USB", "ok 6 8", "up up up ok", "aprs_kiss=1", 4, false },
+	// SSID: the last row (set once); OK steps up and wraps, a long OK steps back
+	{ "A SSID shows the default", "ok 6 8", "up", "focus=SSID shows=7 aprs_ssid=7", 1, false },
+	{ "A SSID: the next one", "ok 6 8 up", "ok ok", "aprs_ssid=9 shows=9", 2, false },
+	{ "A SSID: long OK steps back", "ok 6 8 up", "long:ok", "aprs_ssid=6", 1, false },
+	{ "A SSID wraps 15 to 0", "ok 6 8 up ok ok ok ok ok ok ok ok", "ok", "aprs_ssid=0", 1, false },
+	{ "A stations heard", "", "ok 6 8 up up ok", "screen=aprs-heard count=2", 6, false },
+	{ "A station message survives a newer packet", "ok 6 8 up up ok ok aprs:reorder", "ok",
 	  "screen=compose shows=Q4WABC-15", 1, false },
-	{ "A station opens its Message action", "ok 6 8 up ok", "ok", "screen=aprs-station shows=Message", 1, false },
-	{ "A station Message fills its callsign", "ok 6 8 up ok ok", "ok", "screen=compose shows=Q4WABC-15", 1, false },
+	{ "A station opens its Message action", "ok 6 8 up up ok", "ok", "screen=aprs-station shows=Message", 1, false },
+	{ "A station Message fills its callsign", "ok 6 8 up up ok ok", "ok", "screen=compose shows=Q4WABC-15", 1, false },
 	{ "A new APRS message appears independently of DMR format", "", "ok 2", "shows=New_APRS_message", 2, false },
 	{ "A new APRS message opens its composer", "ok 2", "ok", "screen=compose shows=To_callsign", 1, false },
 	{ "A new APRS message needs our callsign", "aprs:nocall ok 2", "", "hides=New_APRS_message", 0, false },
@@ -652,8 +923,8 @@ static const flow_t flows[] = {
 	  "sent=1 aprs_to=Q4WAB-9 text=OK", 1, false },
 	{ "A not in this build", "aprs:off", "ok 6 8 2", "toast=APRS:_not aprs_auto=0", 4, false },
 	// The crash log and its report (docs/spec/crash-log.md): Settings > Advanced > Crash log, after the restart
-	{ "C crash log from Advanced", "crash:on", "ok 7 up ok down down down down ok", "screen=crash shows=Fault_3 shows=Crash_Log crash_seen=1",
-	  9, false },
+	{ "C crash log from Advanced", "crash:on", "ok 7 up ok down down down " ADV_BELOW_DIAG "down ok", "screen=crash shows=Fault_3 shows=Crash_Log crash_seen=1",
+	  9 + ADV_BELOW_DIAG_N, false },
 	{ "C crash: Off neither asks nor sends", "crash:on wait:2500", "", "screen=home crash_sends=0 crash_seen=0", 0, false },
 	{ "C crash: Ask prompts after the restart", "crash:ask wait:2500", "", "screen=crash shows=USA?",
 	  0, false },
@@ -662,18 +933,18 @@ static const flow_t flows[] = {
 	  false },
 	{ "C crash: Auto sends without a prompt", "crash:auto wait:2500", "", "screen=home crash_sends=1 crash_seen=1", 0,
 	  false },
-	{ "C crash: send needs a target", "crash:on ok 7 up ok down down down down ok", "1", "crash_sends=0 toast=Pick_Send_to",
+	{ "C crash: send needs a target", "crash:on ok 7 up ok down down down " ADV_BELOW_DIAG "down ok", "1", "crash_sends=0 toast=Pick_Send_to",
 	  1, false },
-	{ "C crash: Send to picks a contact", "crash:on ok 7 up ok down down down down ok", "2 ok", "screen=crash shows=USA", 2,
+	{ "C crash: Send to picks a contact", "crash:on ok 7 up ok down down down " ADV_BELOW_DIAG "down ok", "2 ok", "screen=crash shows=USA", 2,
 	  false },
-	{ "C crash: send from the menu", "crash:on ok 7 up ok down down down down ok 2 ok", "1", "crash_sends=1", 1, false },
-	{ "C crash: After a crash cycles", "crash:on ok 7 up ok down down down down ok", "3", "shows=Ask", 1, false },
-	{ "C crash: cleared", "crash:on ok 7 up ok down down down down ok", "4", "crash_have=0 shows=No_crash_recorded", 1, false },
-	{ "C crash: nothing to clear", "ok 7 up ok down down down down ok", "4", "toast=none shows=No_crash_recorded", 1, false },
-	{ "C crash: nothing to send", "ok 7 up ok down down down down ok", "1", "toast=No_crash crash_sends=0", 1, false },
-	{ "C crash: a send that can't start says so", "crash:on crashtx:refuse ok 7 up ok down down down down ok 2 ok", "1",
+	{ "C crash: send from the menu", "crash:on ok 7 up ok down down down " ADV_BELOW_DIAG "down ok 2 ok", "1", "crash_sends=1", 1, false },
+	{ "C crash: After a crash cycles", "crash:on ok 7 up ok down down down " ADV_BELOW_DIAG "down ok", "3", "shows=Ask", 1, false },
+	{ "C crash: cleared", "crash:on ok 7 up ok down down down " ADV_BELOW_DIAG "down ok", "4", "crash_have=0 shows=No_crash_recorded", 1, false },
+	{ "C crash: nothing to clear", "ok 7 up ok down down down " ADV_BELOW_DIAG "down ok", "4", "toast=none shows=No_crash_recorded", 1, false },
+	{ "C crash: nothing to send", "ok 7 up ok down down down " ADV_BELOW_DIAG "down ok", "1", "toast=No_crash crash_sends=0", 1, false },
+	{ "C crash: a send that can't start says so", "crash:on crashtx:refuse ok 7 up ok down down down " ADV_BELOW_DIAG "down ok 2 ok", "1",
 	  "toast=Can't_send crash_sends=0", 1, false },
-	{ "C crash: Ask without a target asks for one", "crash:on ok 7 up ok down down down down ok", "3",
+	{ "C crash: Ask without a target asks for one", "crash:on ok 7 up ok down down down " ADV_BELOW_DIAG "down ok", "3",
 	  "shows=Ask toast=Pick_Send_to_as_well", 1, false },
 	{ "C crash: Auto says when the report is out", "crash:auto wait:2500", "", "toast=Crash_report_sent", 0, false },
 	{ "C crash: Auto says when the report failed", "crash:auto crashtx:fail wait:2500", "",
@@ -683,7 +954,7 @@ static const flow_t flows[] = {
 	{ "C crash: no prompt off Home", "crash:ask ok wait:2500", "", "screen=hub crash_seen=0", 0, false },
 	{ "C crash: the prompt once back on Home", "crash:ask ok wait:2500 back wait:100", "", "screen=crash shows=USA?", 0,
 	  false },
-	{ "C crash: a seen record isn't asked about", "crash:ask ok 7 up ok down down down down ok long:back wait:2500", "",
+	{ "C crash: a seen record isn't asked about", "crash:ask ok 7 up ok down down down " ADV_BELOW_DIAG "down ok long:back wait:2500", "",
 	  "screen=home crash_sends=0", 0, false },
 	// Digit keys while transmitting (#37)
 	{ "T FM transmitting: a digit does nothing (#37)", "down pttdown", "5", "screen=home toast=none", 1, false },
@@ -827,6 +1098,7 @@ static const flow_t flows[] = {
 
 // GD-77 key map on its 128x64 monochrome screen only (it has the Left / Right arrow keys)
 static const flow_t flows_mono[] = {
+	LONG_MESSAGE_FLOWS
 	{ "2 Right steps to the next zone on Home", "", "right", "zone=1 screen=home", 1, false },
 	{ "2 Left steps back a zone", "right", "left", "zone=0 screen=home", 1, false },
 	// The talk line on the smallest display (#336): an icon, not "PTT->" or "Reply->", so the label keeps its room
@@ -851,6 +1123,7 @@ static const flow_t flows_mono[] = {
 
 // DM-1701 key map only: the top side key, long waits
 static const flow_t flows_k[] = {
+	LONG_MESSAGE_FLOWS
 	// Dual watch on the side keys: SK2 is A/B pressed, Dual watch held; P1 / P2 (zones) and the knob act on the
 	// selected channel
 	{ "11 dual watch: SK2 pressed is A/B", "quick 7 ctx 3 5 ok", "sk2", "dual=1 sel=B", 1, false },
@@ -1293,6 +1566,28 @@ static void about_checks(void)
 			fails++;
 		}
 		sim_run("pttup", err, sizeof err);
+		// In every language built, the whole text fits its buffer: scrolling a line at a time passes where the
+		// contributors are listed and ends on the last line (the codec's)
+		for (uint8_t l = 0; l < lang_count(); l++) {
+			if (!lang_built(l))
+				continue;
+			bool where = false, last = false;
+			sim_reset(&sim_geoms[g], SIM_MAP_K);
+			lang_set(l);
+			if (sim_run("ok 7 up ok ok wait:200", err, sizeof err)) {
+				for (int i = 0; i < 40 && !last; i++) {
+					where = where || sim_run("expect:shows=github.com/radiofoundry", err, sizeof err);
+					last = sim_run("expect:shows=DVSI", err, sizeof err);
+					sim_run("down", err, sizeof err);
+				}
+			}
+			if (!where || !last) {
+				printf("FAIL about [%s %s]: %s not shown\n", gn, lang_code(l), !where ? "the contributors line" :
+					"the last line");
+				fails++;
+			}
+		}
+		lang_set(LANG_ENGLISH);
 	}
 }
 
@@ -1348,7 +1643,7 @@ static void heard_checks(void)
 	for (int g = 0; g < sim_geom_count; g++) {
 		for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
 			sim_reset(&sim_geoms[g], SIM_MAP_K);
-			snprintf(buf, sizeof buf, "%sok 6 8 up ok expect:screen=aprs-heard expect:shows=Q4WABC-15 "
+			snprintf(buf, sizeof buf, "%sok 6 8 up up ok expect:screen=aprs-heard expect:shows=Q4WABC-15 "
 				 "expect:shows=QJ4XYZ expect:%s=14.5_km_NE", cases[i].setup,
 				 cases[i].range ? "shows" : "hides");
 			if (!sim_run(buf, err, sizeof err)) {
@@ -1360,7 +1655,7 @@ static void heard_checks(void)
 	// Packets without a position since the last one: the row's age is the position's (10 min), not the last
 	// packet's (1 min), so it says how old the range is
 	sim_reset(&sim_geoms[0], SIM_MAP_K);
-	if (!sim_run("wait:600000 ok 6 8 up ok expect:shows=14.5_km_NE expect:shows=10m expect:hides=1m", err,
+	if (!sim_run("wait:600000 ok 6 8 up up ok expect:shows=14.5_km_NE expect:shows=10m expect:hides=1m", err,
 		     sizeof err)) {
 		printf("FAIL stations heard position age [%s]: %s\n", sim_geoms[0].name, err);
 		fails++;
@@ -1368,7 +1663,7 @@ static void heard_checks(void)
 	// BVA on the row's width: a display too narrow for the call, the range and the age gives up the range, never
 	// the call (96 px: under 20 cells, the call and the range alone are 20)
 	sim_reset(sim_geom_find("96x64m"), SIM_MAP_K);
-	if (!sim_run("ok 6 8 up ok expect:screen=aprs-heard expect:shows=Q4WABC-15 expect:hides=km", err, sizeof err)) {
+	if (!sim_run("ok 6 8 up up ok expect:screen=aprs-heard expect:shows=Q4WABC-15 expect:hides=km", err, sizeof err)) {
 		printf("FAIL stations heard narrow [96x64m]: %s\n", err);
 		fails++;
 	}
@@ -1378,33 +1673,33 @@ static void heard_checks(void)
 static void station_checks(void)
 {
 	static const struct { const char *name, *script; } cases[] = {
-		{ "position", "wait:600000 ok 6 8 up ok ok expect:screen=aprs-station expect:count=10 "
+		{ "position", "wait:600000 ok 6 8 up up ok ok expect:screen=aprs-station expect:count=10 "
 		  "down expect:shows=14.5_km_NE down expect:shows=1m down expect:shows=Direct "
 		  "down expect:shows=10m down expect:shows=19_km/h down expect:shows=40 "
 		  "down expect:shows=/> down expect:shows=On_the_road down expect:focus=Packets expect:shows=3 "
 		  "ok expect:screen=aprs-station" },
-		{ "no local position", "aprs:nopos ok 6 8 up ok ok expect:count=8 down expect:shows=Heard" },
-		{ "no speed", "aprs:nospeed ok 6 8 up ok ok expect:count=7 down down down down expect:shows=/>" },
-		{ "no station position", "ok 6 8 up ok down ok expect:count=5 down down "
+		{ "no local position", "aprs:nopos ok 6 8 up up ok ok expect:count=8 down expect:shows=Heard" },
+		{ "no speed", "aprs:nospeed ok 6 8 up up ok ok expect:count=7 down down down down expect:shows=/>" },
+		{ "no station position", "ok 6 8 up up ok down ok expect:count=5 down down "
 		  "expect:shows=Via_digipeater down expect:shows=At_home down expect:shows=Packets" },
-		{ "speed unknown", "aprs:speedunknown ok 6 8 up ok ok expect:count=8 "
+		{ "speed unknown", "aprs:speedunknown ok 6 8 up up ok ok expect:count=8 "
 		  "down down down down expect:focus=Course expect:shows=40 expect:hides=Speed" },
-		{ "course unknown", "aprs:courseunknown ok 6 8 up ok ok expect:count=8 "
+		{ "course unknown", "aprs:courseunknown ok 6 8 up up ok ok expect:count=8 "
 		  "down down down down expect:focus=Speed expect:shows=19_km/h down expect:focus=Symbol" },
-		{ "known zero motion", "aprs:zero ok 6 8 up ok ok expect:count=9 "
+		{ "known zero motion", "aprs:zero ok 6 8 up up ok ok expect:count=9 "
 		  "down down down down expect:focus=Speed expect:shows=0_km/h down expect:focus=Course expect:shows=0" },
-		{ "equal ages", "wait:600000 aprs:sameage ok 6 8 up ok ok expect:count=9 "
+		{ "equal ages", "wait:600000 aprs:sameage ok 6 8 up up ok ok expect:count=9 "
 		  "down down expect:focus=Heard expect:shows=1m down expect:focus=Direct down expect:focus=Speed" },
-		{ "position lost while open", "wait:600000 ok 6 8 up ok ok aprs:stationnopos down "
+		{ "position lost while open", "wait:600000 ok 6 8 up up ok ok aprs:stationnopos down "
 		  "expect:count=6 expect:shows=Q4WABC-15 expect:focus=Heard expect:hides=km "
 		  "down expect:focus=Direct down expect:focus=Symbol" },
-		{ "empty text and symbol", "aprs:emptytext ok 6 8 up ok ok expect:count=7 "
+		{ "empty text and symbol", "aprs:emptytext ok 6 8 up up ok ok expect:count=7 "
 		  "up expect:focus=Packets up expect:focus=Course" },
-		{ "retained text", "aprs:longtext ok 6 8 up ok ok up up "
+		{ "retained text", "aprs:longtext ok 6 8 up up ok ok up up "
 		  "expect:focus=12345678901234567890123" },
-		{ "reordered detail", "ok 6 8 up ok ok aprs:reorder down expect:count=9 "
+		{ "reordered detail", "ok 6 8 up up ok ok aprs:reorder down expect:count=9 "
 		  "expect:shows=Q4WABC-15 expect:shows=14.5_km_NE up ok expect:screen=compose expect:shows=Q4WABC-15" },
-		{ "evicted", "ok 6 8 up ok ok aprs:evict down expect:count=2 expect:shows=No_longer_in_list "
+		{ "evicted", "ok 6 8 up up ok ok aprs:evict down expect:count=2 expect:shows=No_longer_in_list "
 		  "up ok expect:screen=compose expect:shows=Q4WABC-15" },
 	};
 	char err[300];

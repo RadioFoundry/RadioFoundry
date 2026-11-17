@@ -67,7 +67,7 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 	switch (part) {
 	case 0:
 		dl_text(t, "dmr.built=1\n");
-		dl_text(t, "dmr.active=%u\ndmr.codec=%u\n", d->active, d->codec);
+		dl_text(t, "dmr.active=%u\ndmr.codec=%u\ndmr.killed=%u\n", d->active, d->codec, d->killed);
 		// The vocoder's TX state: here, as dmr_stats (the counters) fills most of a reply
 		{
 			ambe_voice_stats_t a;
@@ -85,6 +85,7 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		dl_text(t, "dmr.phase=%s\n", phase_key(cv->phase));
 		dl_text(t, "dmr.tx_error=%s\n", tx_error_key(cv->tx_error));
 		dl_text(t, "dmr.own_id=%u\ndmr.cc=%u\ndmr.ts=%u\n", (unsigned)d->own_id, d->cc, d->ts);
+		dl_text(t, "dmr.rx_cc=%u\ndmr.rx_ts=%u\n", d->rx_cc, d->rx_ts);
 		char alias[DMR_TA_TEXT_MAX + 1];
 		dmr_call_tx_alias(alias);
 		dl_text(t, "dmr.tx_alias=%s\n", alias);
@@ -133,6 +134,18 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		dl_text_kv_str(t, "call.alias", d->alias);
 		dl_text(t, "call.rssi_dbm=%d\ncall.ms=%u\n", d->rssi_dbm, (unsigned)d->call_ms);
 		call(t, "last", &d->last);
+		{
+			// Why received calls ended, and what the filters dropped: a call cut short shows here
+			dmr_call_stats_t c;
+			dmr_call_get_stats(&c);
+			dl_text(t, "call.rx_end_term=%u\ncall.rx_end_sync=%u\ncall.rx_end_fade=%u\n", (unsigned)c.rx_end_term,
+				(unsigned)c.rx_end_sync, (unsigned)c.rx_end_fade);
+			dl_text(t, "call.rx_ts_dropped=%u\ncall.rx_cc_dropped=%u\n", (unsigned)c.rx_ts_dropped,
+				(unsigned)c.rx_cc_dropped);
+			// The reverse channel heard while sending: here, as dmr_stats fills a reply
+			dl_text(t, "call.rc_good=%u\ncall.rc_bad=%u\ncall.rc_ceased=%u\ncall.rc_last=%u\n", (unsigned)c.rc_good,
+				(unsigned)c.rc_bad, (unsigned)c.rc_ceased, (unsigned)c.rc_last);
+		}
 		dl_text(t, "last.ms=%u\n", (unsigned)d->last_ms);
 		break;
 	case 2: {
@@ -158,6 +171,8 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		dl_text(t, "call.rx_pi_headers=%u\ncall.rx_alias_complete=%u\ncall.tx_alias_lcs=%u\n",
 			(unsigned)c.rx_pi_headers, (unsigned)c.rx_alias_complete, (unsigned)c.tx_alias_lcs);
 		dl_text(t, "call.rx_gps=%u\ncall.tx_gps_lcs=%u\n", (unsigned)c.rx_gps, (unsigned)c.tx_gps_lcs);
+		dl_text(t, "call.rx_in_tx=%u\ncall.rx_bs_in_tx=%u\ncall.tx_rpt_drops=%u\ncall.tx_wake_lost=%u\n",
+			(unsigned)c.rx_in_tx, (unsigned)c.rx_bs_in_tx, (unsigned)c.tx_rpt_drops, (unsigned)c.tx_wake_lost);
 		dl_text(t, "voice.rx_in=%u\nvoice.rx_frames=%u\nvoice.rx_concealed=%u\nvoice.rx_silence=%u\n",
 			(unsigned)a.rx_in, (unsigned)a.rx_frames, (unsigned)a.rx_concealed, (unsigned)a.rx_silence);
 		dl_text(t, "voice.rx_calls=%u\nvoice.rx_queue_max=%u\nvoice.rx_bad=%u\nvoice.rx_lost=%u\n",

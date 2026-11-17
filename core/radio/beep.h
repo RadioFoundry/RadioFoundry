@@ -32,6 +32,7 @@ typedef enum {
 	BEEP_MESSAGE,		// a text message arrived (the UI, if Settings > Sound > Message tone)
 	BEEP_TX_PERMIT_SHORT,	// DMR: talk now, played before keying (CAP_BEEP_NOT_ON_AIR): one short tone
 	BEEP_SWEEP,		// speaker test (debug link only): a 4 s sweep, BEEP_SWEEP_LO_HZ to BEEP_SWEEP_HI_HZ
+	BEEP_SYSTEM_BACK,	// a trunked system found again, the radio back on it from its fallback channel
 	BEEP_COUNT
 } beep_t;
 
@@ -53,6 +54,7 @@ typedef struct {
 	uint32_t shared;	// patterns mixed into the voice stream (no lead-in of their own)
 	uint32_t leads;		// silent lead-in blocks played on the own stream
 	uint32_t warms;		// times the amplifier was powered up ahead of a sound (hal_audio_t.speaker_warm)
+	uint8_t last;		// the last pattern asked for (beep_t), played or dropped
 } beep_stats_t;
 
 #define BEEP_SEGS_MAX	6

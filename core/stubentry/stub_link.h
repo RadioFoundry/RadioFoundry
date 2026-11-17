@@ -21,9 +21,11 @@ typedef struct {
 	const char *git;	// VERSION git=
 	uint32_t git_time;	// VERSION git_time= (Unix seconds); 0: not sent
 	const char *release;	// VERSION release=; NULL or empty: not sent
+	const char *modes;	// VERSION features= starts with it (build_info.h: build_modes_now); may be NULL
 	const char *features;	// VERSION features= (build_info.h); NULL: not sent
 	const char *preset;	// VERSION preset= and off= (build_info.h); either NULL: neither sent
 	const char *off;
+	const char *start;	// VERSION start= (build_info.h: build_start_now); NULL: not sent
 	const char *(*codec)(void);	// VERSION codec= (hal_vocoder_id), asked at each VERSION; may be NULL
 	// The STUB command (stub_entry_request): reply payload in out, its length returned
 	size_t (*stub)(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);

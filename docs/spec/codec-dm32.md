@@ -118,6 +118,7 @@ is known only from a program flash read, so its profile is keyed by the SHA-256 
 | 01.01.046 | 0x030C65B0 | 0x03072378 | 0x18000EA8 | 01.02.046 |
 | 01.02.046 | 0x030C6590 | 0x03072358 | 0x18000EA8 | 01.01.046 |
 | 01.01.047 | 0x030C68B8 | 0x03072658 | 0x18000EA8 | 049 |
+| 01.01.047, file dated 20250425 | 0x030C673C | 0x030724E8 | 0x18000EA8 | 049 (codec only: 15 words of the window outside the codec differ) |
 | 01.L01.048 | 0x030C4444 | 0x03070468 | 0x18000EA8 | |
 | 01.01.049 | 0x030C687C | 0x03072628 | 0x18000EA8 | 047 |
 | 01.01.049 NRF and fanti builds | 0x030C7914, 0x030C7954 | 0x03072E80, 0x03072EC0 | 0x18000EB0 | each other |
@@ -192,6 +193,11 @@ How RadioFoundry runs it ([codec-placement.md](codec-placement.md), "HR_C7000 ra
    window 0x18000E48..0x18003E38 (the union of the builds' tables) is reserved.
 4. **Versions**: every DM-32UV build with a codec map (eight maps in `tools/rfoundry/rfoundry/codec_maps/dm32/`) runs in the
    same window, since only the 3 words depend on the run address.
+5. **State**: one 0x1C00-byte block in main RAM holds the encoder's state (E) or the decoder's (D), never both. Voice
+   is simplex, and each half of the init sequence above touches only its own block, so the first encode after a
+   decode runs the encoder's steps (its parameters, encoder init, FEC init(E+0x16E0), encoder set) and the first decode after an encode runs
+   the decoder's (decoder init, FEC init(D+0xFD0), the first decode, decoder set). P25 borrows the block while it
+   runs (`hal_vocoder_t.lend`).
 
 ## Open items
 

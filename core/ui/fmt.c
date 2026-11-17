@@ -71,6 +71,12 @@ void sb_i32(sbuf_t *b, int32_t v)
 	}
 }
 
+void sb_hex(sbuf_t *b, uint32_t v, int digits)
+{
+	for (int sh = 4 * (digits - 1); sh >= 0; sh -= 4)
+		sb_chr(b, "0123456789ABCDEF"[(v >> sh) & 0xFu]);
+}
+
 void sb_freq(sbuf_t *b, uint32_t hz)
 {
 	sb_u32(b, hz / 1000000u, 1);
@@ -109,7 +115,7 @@ void sb_tone(sbuf_t *b, const subtone_t *t)
 void sb_split(sbuf_t *b, uint32_t rx_hz, uint32_t tx_hz)
 {
 	if (tx_hz == rx_hz) {
-		sb_str(b, TR("Off"));
+		sb_str(b, TR(VALUE_OFF, "Off"));
 		return;
 	}
 	sb_chr(b, tx_hz > rx_hz ? '+' : '-');
@@ -161,7 +167,7 @@ void sb_age_long(sbuf_t *b, uint32_t ms)
 	char unit;
 	sb_u32(b, age_unit(ms, &unit), 1);
 	sb_chr(b, unit);
-	sb_str(b, TR(" ago"));
+	sb_str(b, TR(PART_AGO, " ago"));
 }
 
 // "14m ago", "14m" as text alternates: the drawing keeps the longest that fits (font.h). One unit style everywhere,
@@ -173,7 +179,7 @@ void sb_age(sbuf_t *b, uint32_t ms)
 	sb_str(b, TEXT_ALT_OPEN);
 	sb_u32(b, v, 1);
 	sb_chr(b, unit);
-	sb_str(b, TR(" ago"));
+	sb_str(b, TR(PART_AGO, " ago"));
 	sb_str(b, TEXT_ALT_NEXT);
 	sb_u32(b, v, 1);
 	sb_chr(b, unit);

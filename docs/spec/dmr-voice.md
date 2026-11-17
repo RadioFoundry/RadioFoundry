@@ -10,11 +10,17 @@ references are ETSI TS 102 361-1 and -2.
 ## 1. Who we hear
 
 A voice call on our timeslot and color code starts from a voice LC header or by late entry (section 4). It is played
-when it passes the filters, and shown either way:
+when it passes the filters, and shown either way. Digital monitor (hear all, below) also takes calls on any color code
+and either timeslot (`dmr_listen_filter_t.any_cc`, `.both_ts`; the modem gets no color code filter and, through a
+repeater, no slot lock). The first call heard keeps the voice until it ends: bursts on the other slot meanwhile are
+dropped. Turning it on or off changes only the modem's filters: the call being heard and the reply window stay, and
+a call heard as not ours plays at once. The view gives the call's color code and slot (`rx_cc`, `rx_ts`; the slot 0
+when unknown, the code from the first burst that carries one, never burst A) beside the channel's (`cc`, `ts`), which
+PTT always uses.
 
 | Call | Played when |
 |---|---|
-| Group (FLCO 0) | its talkgroup is the talk target's, all call (0xFFFFFF), in the channel's RX group list (listen list), the reply target's during the reply window, or hear all, "digital monitor" in the UI (the hear-all latch: the MONITOR key's press toggles it on a DMR channel, its release does nothing (#19); Quick 5; `radio_req_dmr_hear_all`; until the channel changes, DMR stops (a mode change), or BACK on Home; the end of a call doesn't end it) |
+| Group (FLCO 0) | its talkgroup is the talk target's, all call (0xFFFFFF), in the channel's RX group list (listen list), the reply target's during the reply window, or hear all, "digital monitor" in the UI (the hear-all latch: the MONITOR key's press toggles it on a DMR channel, its release does nothing (#19); Quick 5; `radio_req_dmr_hear_all`; until the channel changes, DMR stops (a mode change), or BACK on Home; the end of a call doesn't end it. A zone or VFO scan started with it on keeps it on at every stop and latches it on the channel the scan ends on; turning it off during the scan ends it for the scan, [radio-features.md](radio-features.md) 2) |
 | Private (FLCO 3) | addressed to our ID (the channel's DMR ID override, else the radio's), or all call, or hear all |
 | Our own ID as source | not while we transmit or for `DMR_CALL_OWN_ECHO_MS` (700 ms) after our call ended or was cut short (the repeater's echo of it); later it is judged as any other call, so a parrot's playback of our call plays (#294). A terminator from our ID ends only the call with its LC, never another station's |
 | Encrypted | only with a privacy key, and never after a PI header (section 5) |
@@ -88,7 +94,8 @@ Not in the VFO: talker alias (a channel's setting), roaming, the "hear all by de
 
 These are the VFO's own settings, so they are not temporary changes: no dot on Home, BACK on Home doesn't undo them,
 they stay while the radio is on a channel, and they are kept across power cycles with the VFO's frequency
-(`settings-store.md` 3). The requests are the ones a channel uses and the radio core gives them the VFO meaning:
+(`settings-store.md` 3). Squelch has no VFO value: changed in the VFO it becomes the radio's default squelch at once,
+so it is not temporary either. The requests are the ones a channel uses and the radio core gives them the VFO meaning:
 `radio_req_mode` (needs both `CONFIG_VFO_FM` and `CONFIG_VFO_DMR`; on a channel the mode is no longer a quick menu change, Copy to VFO (2.2) is the way in), `radio_req_dmr_color_code`,
 `radio_req_dmr_timeslot`, and `radio_req_dmr_target` / `radio_req_dmr_contact` for the talk target. A typed or
 chosen target is the VFO's from then on (`dmr.target_manual` stays 0); "call back" is for now as on a channel and
@@ -238,6 +245,10 @@ codec bits.
   `reset()`, so a new transmission starts with the options in force.
 * The options are read at start-up from the settings and on every change (`ui_svc_apply`). With AGC on, the mic gain
   is step 5, the board's levels (FM too on a radio whose board sets the gain), and Mic gain is dimmed, showing "AGC".
+* Voice is simplex: while a transmission runs, nothing is decoded. A call still being heard goes on as silence, and
+  the decoder starts fresh once the transmission ends; a call that begins meanwhile resets nothing until then. A
+  platform may keep the encoder's and the decoder's state in one block (`hal_vocoder_t`): a decode during the
+  transmission would cost it its encoder.
 * Each board's codec mapping is on its `codec-<id>.md` page ("Encode flags"). Boards with an AMBE+2 host share
   `drivers/vocoder/ambe2_flags.h`.
 

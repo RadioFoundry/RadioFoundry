@@ -152,7 +152,7 @@ static const hal_cps_t cps = {
 
 const board_t board = {
 	.name = BOARD_NAME,
-	// CAP_GPS: the G models; gps_present says whether this one has the module (hardware-mduv380.md 9)
+	// CAP_GPS: the G models; board_t.gps says whether this one has the module (hardware-mduv380.md 9)
 	.caps = CAP_KEYPAD | CAP_ENCODER | CAP_VOLUME_POT | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
@@ -180,6 +180,10 @@ const board_t board = {
 #endif
 #if CONFIG_DMR
 	.dmr = &stm32_hrc_dmr,
+#if CONFIG_AIR
+	.air = &stm32_hrc_air,	// the HR_C6000 physical layer mode (hrc6000_air.c)
+	.baseband = &stm32_hrc_baseband,	// its FM copy (hrc6000_air.c), the soft modem's input
+#endif
 	.audio = &uvf_audio,
 	.vocoder = &stm32_vocoder,
 #if CONFIG_AUDIO_PROBE || CONFIG_NET_USRP || CONFIG_APRS_RX
@@ -196,7 +200,7 @@ const board_t board = {
 #endif
 	.system = &stm32_system,
 #if CONFIG_GPS
-	.gps_present = stm32_gps_present,
+	.gps = &stm32_gps,
 #endif
 	// The family's thresholds (hardware-mduv380.md 6): low battery 6.2 V, critical 6.0 V
 	.battery_low_mv = 6200,

@@ -480,6 +480,47 @@ md9600_rf_err_t md9600_rf_pa_step(md9600_rf_t *rf, uint32_t step, uint32_t *next
 	return MD9600_RF_OK;
 }
 
+static md9600_rf_err_t pa_point_check(md9600_rf_t *rf)
+{
+	// confirmed again here: a confirmation dropped (md9600_rf_confirm) while a transmission runs must stop its next key-up
+	if (rf->state != MD9600_RF_TX || !CONFIG_MD9600_TX || !rf->confirmed) {
+		md9600_rf_pa_safe(rf);
+		return fail(rf, rf->state != MD9600_RF_TX ? MD9600_RF_E_STATE
+			       : !CONFIG_MD9600_TX ? MD9600_RF_E_TX_BUILD : MD9600_RF_E_TX_REV);
+	}
+	return MD9600_RF_OK;
+}
+
+md9600_rf_err_t md9600_rf_pa_supply(md9600_rf_t *rf)
+{
+	const md9600_rf_ops_t *o = rf->ops;
+	md9600_rf_err_t e = pa_point_check(rf);
+	if (e == MD9600_RF_OK) {
+		set(o, ln_t5[1u - rf->tx_band], false);
+		set(o, ln_t5[rf->tx_band], true);
+	}
+	return e;
+}
+
+md9600_rf_err_t md9600_rf_pa_loop(md9600_rf_t *rf)
+{
+	md9600_rf_err_t e = pa_point_check(rf);
+	if (e == MD9600_RF_OK) {
+		set(rf->ops, MD9600_LN_APC, true);
+		rf->pa_on = true;
+	}
+	return e;
+}
+
+md9600_rf_err_t md9600_rf_pa_ref(md9600_rf_t *rf, uint16_t dac)
+{
+	md9600_rf_err_t e = pa_point_check(rf);
+	if (e == MD9600_RF_OK) {
+		rf->ops->dac(rf->ops->ctx, MD9600_DAC_APC_TUNE_V, dac < rf->apc_floor ? rf->apc_floor : dac);
+	}
+	return e;
+}
+
 md9600_rf_err_t md9600_rf_burst_rx(md9600_rf_t *rf)
 {
 	const md9600_rf_ops_t *o = rf->ops;

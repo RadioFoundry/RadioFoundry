@@ -24,11 +24,11 @@ import { openVendorFile, describe as describeVendorFile, analysisCandidate, offe
 import { pickProblem, errorProblem, vendorContext, supportedFiles, foldSupported, keepNote, nowFor, nowChoice, OFFER } from "./explain.js";
 import { confirmNoCodec } from "./nocodec.js";
 import { makePlan, KEEP, MERGE } from "./plan.js";
-import { radioPicture, holdKeys } from "./radiotop.js";
+import { radioPicture, holdKeys, hasNoScreen } from "./radiotop.js";
 import { validRef, refShort, defaultRef, firmwareName, betaLink } from "./version.js";
 import { verify, segments, forDevBuild } from "./manifest.js";
 import { Dfu, DfuError, NormalModeError, WebUsbTransport, checkKey, usbSupported } from "./dfu.js";
-import { Link, LinkError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, whyNoAnswer, noAnswerKey, serialSupported, serialApi, browserErrorKey, knownRadioPort } from "./link.js";
+import { Link, LinkError, CableError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, whyNoAnswer, noAnswerKey, serialSupported, serialApi, browserErrorKey, noDeviceChosen, knownRadioPort } from "./link.js";
 import { readRadio, makeBundle, openBundle, bundleFolder, notBundle, bundleName, describeFirmware, CODEPLUG_SPAN } from "./backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug, codeplugLayout } from "./restore.js";
 import { Selection } from "./select.js";
@@ -38,7 +38,8 @@ import { suggestPack, packCode, startCode, startLanguages, startLanguage, setSta
 import { readBootKey } from "./bootkey.js";
 import { codecSegments, loadCodec, readCodec, saveCodec } from "./codecsave.js";
 import { FakeRadio, simulation, randomBytes, rng } from "./fake.js";
-import { t, tOr, num, LANG, ROOT, h, download, filePicker, progressBar, stopBars, logBox, notice, button, spinner, panel, localTime, partNames } from "./dom.js";
+import { t, tOr, num, LANG, ROOT, h, download, filePicker, progressBar, stopBars, logBox, notice, button, spinner, panel, localTime, partNames, barsRunning } from "./dom.js";
+import { stepHistory } from "./stephistory.js";
 import * as c7ui from "./c7000ui.js";
 import { variantWarning, variantVerdict } from "./iapui.js";
 import { groups as variantGroups } from "./variant.js";
@@ -46,7 +47,7 @@ import { FakeC7000, c7000Simulation, fakeC7000Options } from "./fakec7000.js";
 import { APP_ENTRY } from "./iap.js";
 import { slotBytes, locateCodec } from "./c7000.js";
 import { Stub, StubError } from "./stub.js";
-import { F4Stub, f4Image, registerShort } from "./f4stub.js";
+import { F4Stub, f4Image, registerShort, withCodec } from "./f4stub.js";
 import { f4LoaderReader } from "./readers.js";
 import * as openfw from "./openfw.js";
 import { register, backendOf, bundleBackend, allBackends } from "./backends.js";
@@ -56,7 +57,7 @@ import * as adapter from "./adapter.js";
 import * as crumbs from "./trail.js";
 import { missingApi, kitPanel, kitLine } from "./manual.js";
 import { showBetaNotice } from "./beta.js";
-import { DROP_OK, currentBuild, planUpdate } from "./update.js";
+import { DROP_OK, START_KEEP, currentBuild, planUpdate } from "./update.js";
 import { readDfuInfo, choiceFor, hwoptAction, pendingHwopt, majorsFor, runsOriginal, BOOTLOADER } from "./origversion.js";
 import { readOriginal, deviceKind, spiSeconds, Guard } from "./origbackup.js";
 import { toSerial, CLICK_WAIT_MS } from "./netmode.js";
@@ -84,6 +85,8 @@ function errorText(e) {
 	if (e instanceof DecisionError && e.key) return said(e.key, e.args) + (e.hint ? " " + t("flash.codec.why_not.hint") : "");
 	const withRaw = (key) => `${t(key)} (${raw})`;
 	if (e instanceof NetworkModeError) return t("flash.net.found");
+	// the cable's own fault (a port that never opened, an adapter that stopped taking data): what it is, then what to do
+	if (e instanceof CableError) return `${withRaw(`flash.cable.${e.code}`)} ${t("flash.cable.fix")}`;
 	const browser = browserErrorKey(e);
 	if (browser) return ["flash.err.no_device", "flash.err.security", "flash.err.gesture"].includes(browser) ? t(browser) : withRaw(browser);
 	if (e instanceof DfuError && /^USB transfer/.test(raw)) return withRaw("flash.err.connection_lost");
@@ -170,7 +173,7 @@ function dropVersion(redraw = true) {
 	try { sessionStorage.removeItem(VERSION_STORE); } catch (e) { /* nothing kept */ }
 	const u = new URL(location.href);
 	u.searchParams.delete("version");
-	history.replaceState(null, "", u);
+	history.replaceState(history.state, "", u);
 	if (S.firmware?.pinned) S.firmware = null;
 	if (redraw) render();
 	else document.querySelector(".version-banner")?.remove();
@@ -380,6 +383,8 @@ function stepsFor() {
 	return S.task === "update" && S.editBuild ? [s[0], "build", ...s.slice(1)] : s;
 }
 const backend = () => backendOf(S.radio);
+// A radio without a display: what the page tells the user to look at can't be its screen
+const noScreen = () => hasNoScreen(S.radio);
 
 async function loadData() {
 	const get = async (name) => (await fetch(`${ROOT}data/${name}`)).json();
@@ -416,8 +421,20 @@ register({
 const f4Board = () => fb().f4stub?.boards[S.board?.id];
 // A chip whose flash size register reads less than the firmware's flash: the loader would refuse the top sectors
 const shortRegister = () => !!(f4Board() && S.now?.kind === "rfoundry" && registerShort(S.now.flashKb, f4Board().owned));
+// The radio reports a codec where an earlier release kept it (board.codec.former): partly in flash this release's
+// application uses, so the install moves it, from the copy read back from the radio before anything is erased
+const codecMoves = (probe = S.now?.probe) => !!probe?.codec && (S.board?.codec.former || []).includes(probe.codec);
+// The copy read back from the radio is kept in this browser (IndexedDB), not only in this page: a codec move takes it
+// only then (decide.js savedKept). The simulator keeps nothing and stands in for a browser that does
+const savedKept = () => !!S.savedCodec && (!!S.sim || !!S.savedCodec.stored);
+// The picked stock file gives this radio's codec
+const stockGivesCodec = () => !!S.stock && stockfw.profileFor(fb().profiles, S.stock.info?.sha, S.board.id)?.board === S.board.id;
+// A codec that moves takes the loader route whenever the radio offers it: from the copy kept in this browser, else from
+// the stock file the loader step asks for (stubSegments). A move that stops halfway is finished from either through the
+// bootloader route; a copy only in this page is never used for a move
 const stubRoute = () => !!((S.task === "install" || S.task === "update") && f4Board() && S.now?.kind === "rfoundry" && S.now.stubOffer && !S.requested
-	&& codecPresent(S.board, S.now.probe?.codec) && !S.firmware?.manifest.codec?.included && !shortRegister());
+	&& (codecPresent(S.board, S.now.probe?.codec) || codecMoves())
+	&& !S.firmware?.manifest.codec?.included && !shortRegister());
 // The loader hand-over RadioFoundry offers now: the one probed before the install, or after a first install (doneView)
 // the one the build just written offers, while S.now still says what ran before it
 const loaderOffer = () => (!f4Board() ? null : S.now?.kind === "rfoundry" ? S.now.stubOffer : S.now?.afterOffer || null);
@@ -449,13 +466,15 @@ function optionMismatch(p) {
 // What runs on the radio, once it answered as RadioFoundry: on the STM32 radios also whether it offers the loader hand-over
 // flashKb: the chip's flash size register (INFO_CHIP) on a loader board, null when the radio didn't say: the loader is
 // bounded by it, and some chips read less than the board's flash (f4stub.js registerShort). storage: its settings
-// region (link.js storageInfo), "none" on a memory chip too small to store anything
+// region (link.js storageInfo), "none" on a memory chip too small to store anything. uid: the chip UID (INFO_CHIP), which
+// names the radio's codec copy in this browser (codecsave.js), null when the radio didn't say
 async function rfoundryNow(link, p) {
 	const storage = await link.storageInfo().catch(() => null);
 	if (storage?.region === "nomap") diag.note("no storage region", { flash: await link.flashSize() });
-	if (!f4Board()) return { kind: "rfoundry", probe: p, stubOffer: null, storage };
-	const flashKb = (await link.chip().catch(() => null))?.flashKb ?? null;
-	return { kind: "rfoundry", probe: p, stubOffer: await Stub.rfoundryOffer(link), flashKb, storage };
+	const chip = await Promise.resolve().then(() => link.chip()).catch(() => null);
+	const uid = chip?.uid || null;
+	if (!f4Board()) return { kind: "rfoundry", probe: p, stubOffer: null, storage, uid };
+	return { kind: "rfoundry", probe: p, stubOffer: await Stub.rfoundryOffer(link), flashKb: chip?.flashKb ?? null, storage, uid };
 }
 
 const grantedRFoundryPorts = async () => (await serialApi().getPorts()).filter((p) => {
@@ -668,16 +687,24 @@ async function keyFromRadio(link) {
 	if (!S.sim) try { localStorage.setItem(KEY_STORE(S.board.id), toHex(key)); } catch (e) { /* not remembered */ }
 }
 
-// A radio running RadioFoundry with its codec hands it over (codecsave.js), and this browser keeps a copy: where an update
-// erases the codec (keep_codec_supported false) before anything is erased, elsewhere once, for an install that can't
-// keep it (a radio back on stock firmware, an interrupted install, a radio in its bootloader). Quiet when it can't:
-// the stock file still works.
+// A radio running RadioFoundry with its codec hands it over (codecsave.js), and this browser keeps a copy, one per radio
+// (its chip UID): where an update erases the codec (keep_codec_supported false) or moves it (a codec where an earlier
+// release kept it, codecMoves()), read again before anything is erased; elsewhere once, for an install that can't keep
+// it (a radio back on stock firmware, an interrupted install, a radio in its bootloader). A move the radio can't be
+// read for takes only the copy saved from this radio earlier. Quiet when there is none: the stock file still works.
+// The copy is never deleted: an install that stops halfway is finished from it
 async function codecFromRadio(link, probe, status) {
-	if (!codecPresent(S.board, probe?.codec) || S.savedCodec?.from === "radio") return;
-	if (S.board.keep_codec_supported && !S.sim && (await loadCodec(S.board, fb()))) return;
+	const moves = codecMoves(probe);
+	if ((!codecPresent(S.board, probe?.codec) && !moves) || S.savedCodec?.from === "radio") return;
+	const uid = S.now?.uid || null;
+	if (S.board.keep_codec_supported && !S.sim && !moves && (await loadCodec(S.board, fb(), { uid }))) return;
 	status?.replaceChildren(h("p", { class: "muted" }, t("flash.now.reading_codec")));
 	const got = await readCodec(link, S.board, fb());
-	if (got) S.savedCodec = { ...got, from: "radio", stored: S.sim ? false : await saveCodec(S.board, got.segments) };
+	if (got) S.savedCodec = { ...got, uid, from: "radio", stored: S.sim ? false : await saveCodec(S.board, got.segments, uid) };
+	else if (moves && !S.sim) {
+		const saved = await loadCodec(S.board, fb(), { uid, strict: true });
+		if (saved) S.savedCodec = { ...saved, from: "browser", stored: true };
+	}
 }
 
 // A stock file the user picked (a .bin, a readout, or the vendor's zip with updaters and several builds inside),
@@ -749,8 +776,23 @@ async function getKey(board) {
 // ---------------------------------------------------------------------------------------------------------------
 // layout
 
+// The steps that never talk to the radio: everything else may have a transfer running
+const NO_TRANSFER = new Set(["radio", "build", "bundle", "symptom", "recover", "done"]);
+const transferStep = () => !!S.task && !NO_TRANSFER.has(stepsFor()[S.step]);
+const trail = stepHistory(window, {
+	busy: () => barsRunning() && transferStep(),
+	show: (place) => {
+		if (!place) return reset();
+		const [task, step] = place.split("/");
+		S.task = task;
+		S.step = Number(step);
+		render();
+	},
+});
+
 function render() {
 	S.openfwAbort?.abort();	// a backup of another open firmware stops when its step is left (openfwBackupNow)
+	trail.sync(S.task ? `${S.task}/${S.step}` : "");
 	app.replaceChildren();
 	document.querySelector(".page-head")?.classList.toggle("compact", !!S.task);
 	if (!S.task) return app.append(...[versionBanner() || betaNotice(), startView()].filter(Boolean));
@@ -778,15 +820,23 @@ function render() {
 	// the shared steps, then the ones the radio's backend draws; a bundle's own backend restores it
 	const step = steps[S.step];
 	diag.note(`step ${S.task || "start"}/${step}`);
+	// what a step found ("problem" from a verify) speaks for that step only: Back from it, then a report, isn't about it
+	const here = `${S.task}/${S.step}`;
+	if (S.reportStep !== here) S.reportResult = null;
+	S.reportStep = here;
 	// a step this browser can't run (no WebUSB or Web Serial): the manual install kit in its place
 	const missing = S.radio && !S.sim && missingApi(S.radio, S.task, step, { usb: usbSupported(), serial: serialSupported(), stub: stubRoute() });
 	const view = (missing && (() => kitView(missing))) || (step === "restore" && bundleBackend(S.bundle)?.views.restore) || (S.radio && backend().views[step])
 		|| { update: updateView, radio: radioView, build: buildView, bundle: bundleView, symptom: symptomView, recover: recoverView, restart: restartView }[step];
+	if (!missing && transferStep()) app.append(h("p", { class: "notice bad" }, h("strong", {}, t("flash.stay_on_page"))));
 	app.append(view());
 	app.append(h("div", { class: "nav-bar" },
 		h("div", { class: "nav-back" },
 			S.step > 0 ? button("← " + t("flash.back"), () => { S.step--; render(); }) : null,
-			h("button", { class: "btn btn-quiet", type: "button", onclick: () => reset() }, t("flash.start_over"))),
+			h("button", { class: "btn btn-quiet", type: "button", onclick: () => reset() }, t("flash.start_over")),
+			// on every step: a page stuck waiting on the radio shows no error, so no error's report button either
+			// (#446). The done step has its own; the stylesheet hides this one while the step shows another
+			step === "done" ? null : h("span", { class: "nav-report" }, reportButton())),
 		info, fwd));
 }
 
@@ -906,12 +956,33 @@ async function connectForUpdate(status) {
 		await keyFromRadio(S.link);
 		await codecFromRadio(S.link, p, status);
 	}
-	S.current = currentBuild(p, r, S.data.releases.filter((x) => x.board === r.id), S.data.reported);
+	const record = await buildRecord(p, r);
+	S.current = currentBuild(p, r, S.data.releases.filter((x) => x.board === r.id), S.data.reported, record);
 	S.decided = {};
 	planUpdate(S.current, S.selection, S.decided);
 	// a build the radio doesn't say: the build step, starting from the closest variant
 	S.editBuild = S.current.kind === "unknown";
-	diag.note("update: radio", { board: p.board, git: p.git, build: S.current.kind, preset: S.current.preset || S.current.guess || null });
+	diag.note("update: radio", { board: p.board, git: p.git, git_time: p.version?.git_time ?? null, said: p.version?.preset ?? null,
+		start: p.version?.start ?? null, record: record ? (record.from_update ? "update" : "yes") : "no", build: S.current.kind,
+		preset: S.current.preset || S.current.guess || null });
+}
+
+// The build service's record of the build on the radio (GET builds/match: its exact switches, and whether an Update
+// asked for it), for a build the service made (preset=custom: every one before it said its variant). null without one,
+// or when the service doesn't answer in time: the update then goes by off= alone
+async function buildRecord(p, r) {
+	const v = p.version || {};
+	if (S.sim || v.preset !== "custom" || v.off === undefined || !p.git) return null;
+	const q = new URLSearchParams({ board: r.id, git: p.git, off: v.off,
+		options: Object.entries(S.buildOptions || {}).map(([k, x]) => `${k}=${x}`).sort().join(",") });
+	try {
+		const res = await fetch(new URL(`builds/match?${q}`, API), { signal: AbortSignal.timeout(5000) });
+		if (!res.ok) return null;
+		const j = await res.json();
+		return Array.isArray(j.features) ? j : null;
+	} catch {
+		return null;
+	}
 }
 
 function updateView() {
@@ -942,7 +1013,7 @@ function updateView() {
 		}
 		const p = S.now.probe, cur = S.current;
 		// the radio's own build, unless the build step has the selection (edits kept when the user comes back)
-		const plan = S.editBuild ? { preset: S.selection.matches(startCode), added: [], needed: [], dropped: [], ask: [], ready: true }
+		const plan = S.editBuild ? { preset: S.selection.matches(startCode), added: [], needed: [], dropped: [], ask: [], startAsk: [], ready: true }
 			: planUpdate(cur, S.selection, S.decided);
 		// an image built for another selection no longer applies
 		if (S.firmware?.selection && S.firmware.selection !== selectionKey(S.selection)) S.firmware = null;
@@ -992,6 +1063,14 @@ function updateView() {
 					if (S.updateBackup && backupPanel) render();
 					else next();
 				})));
+		// a start language an earlier update may have set by mistake: the user keeps it or goes back to English
+		const askLang = plan.startAsk.map((n) => languageName(startCode(n))).join(", ");
+		const startAsk = !plan.startAsk.length ? null : h("div", { class: `notice ${START_KEEP in S.decided ? "info" : "action"} update-note` },
+			h("p", {}, h("b", {}, t("flash.update.start_title")), " ", t("flash.update.start_text", { language: askLang })),
+			h("div", { class: "update-new" }, h("span", { class: "update-pick" }, ...[false, true].map((keep) => h("label", {},
+				h("input", { type: "radio", name: "start-lang", checked: S.decided[START_KEEP] === keep,
+					onchange: () => { S.decided[START_KEEP] = keep; draw(); } }),
+				" ", keep ? t("flash.update.start_keep", { language: askLang }) : t("flash.update.start_english"))))));
 		const building = S.build && S.build.selection === selectionKey(S.selection);
 		const image = S.firmware ? notice(t("flash.build.image_ready", { what: S.firmware.source }), "ok")
 			: building && S.build.error ? buildErrorNotice(S.build.error)
@@ -1007,7 +1086,7 @@ function updateView() {
 				h("dt", {}, t("flash.update.version")), h("dd", {}, t("flash.update.from_to", { from: firmwareName(p.version), to: updateVersion() })),
 				h("dt", {}, t("flash.update.build")), h("dd", {}, buildText, " ", cur.kind === "unknown" ? null : edit)),
 			cur.kind === "unknown" ? notice(t("flash.update.unknown_text", { variant: vtitle(cur.guess) }), "info") : null,
-			S.editBuild ? null : dropped, S.editBuild ? null : asks, S.editBuild ? null : added, S.editBuild ? null : needed, backup, backupPanel, image, status));
+			S.editBuild ? null : startAsk, S.editBuild ? null : dropped, S.editBuild ? null : asks, S.editBuild ? null : added, S.editBuild ? null : needed, backup, backupPanel, image, status));
 		const busy = building && !S.build.error;
 		const go = async () => {
 			if (S.editBuild) return next();
@@ -1017,7 +1096,8 @@ function updateView() {
 		};
 		S.forward(button(busy ? [spinner(), t("flash.nav.building")] : t(S.editBuild ? "flash.update.to_build" : "flash.update.go"), go,
 			{ primary: true, disabled: busy || (!S.editBuild && !plan.ready) || (S.updateBackup && !!backupPanel) }),
-			S.editBuild || plan.ready ? null : t(plan.dropped.length && !S.decided[DROP_OK] ? "flash.update.drop_first" : "flash.update.decide_first"));
+			S.editBuild || plan.ready ? null : t(plan.dropped.length && !S.decided[DROP_OK] ? "flash.update.drop_first"
+				: plan.startAsk.length && !(START_KEEP in S.decided) ? "flash.update.start_first" : "flash.update.decide_first"));
 	};
 	draw();
 	return out;
@@ -1199,9 +1279,9 @@ function buildView() {
 				const off = S.data.variants.find((v) => v.id === sel.base)?.off.find((o) => o.name === f.name);
 				// a needed feature outside this group that is off: turning this on turns it on too
 				const away = (f.needs?.all || []).filter((n) => !items.some((i) => i.name === n) && sel.supported(n) && !sel.on.has(n));
-				// one line per feature; the help (written for developers) is the tooltip, the build's reason for leaving
-				// a feature out and a needed feature that's off show inline
-				const note = na ? [naNote(f.name)] : [off && !isOn ? off.why : null,
+				// one line per feature; the help (written for developers) is the tooltip, the board's or the build's reason
+				// for leaving a feature out and a needed feature that's off show inline
+				const note = na ? [naNote(f.name)] : [sel.defaultOffWhy(f.name), off && !isOn ? off.why : null,
 					away.length ? t("flash.build.needs", { names: away.map((n) => sel.byName[n]?.title || n).join(", ") }) : null].filter(Boolean);
 				const tipId = `tip-${f.name}`;
 				const tipOpen = S.openTip === f.name;
@@ -1786,7 +1866,7 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 				// the next step talks to RadioFoundry again: it has to be back first
 				prog.set(0, 1, t("flash.backup.restarting"));
 				if (!await waitForRFoundry()) {
-					status.append(notice(t("flash.backup.not_back"), "action"));
+					status.append(notice(t(noScreen() ? "flash.backup.not_back_noscreen" : "flash.backup.not_back"), "action"));
 					return;
 				}
 				prog.el.remove();
@@ -1799,7 +1879,7 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 			if (bulk?.used) await waitForRFoundry();	// readRadio restarted the radio
 			await dropSerial();	// the next try opens the port afresh
 			status.replaceChildren(errorNotice(t("flash.backup.failed", { error: errorText(e) }),
-				{ next: t(pick === "calibration" ? "flash.backup.retry_how_small" : "flash.backup.retry_how"), retry: run }));
+				{ next: t(`flash.backup.${pick === "calibration" ? "retry_how_small" : "retry_how"}${noScreen() ? "_noscreen" : ""}`), retry: run }));
 			box.querySelectorAll("button, input").forEach((b) => { b.disabled = false; });
 			runBtn.disabled = false;
 		}
@@ -2029,13 +2109,14 @@ function codecView() {
 		// the copy an earlier visit read from this radio: an update that stopped halfway leaves none in the radio, and a
 		// radio back on stock firmware or in its bootloader can't say what it holds
 		if (!S.savedCodec && !S.sim) {
-			const got = await loadCodec(S.board, fb());
+			const uid = S.now?.kind === "rfoundry" ? S.now.uid : null;
+			const got = await loadCodec(S.board, fb(), { uid, strict: !!uid && codecMoves() });
 			if (got) S.savedCodec = { ...got, from: "browser", stored: true };
 		}
 		let err = null;
 		try {
 			S.decision = decideCodec(S.board, fw.manifest, {
-				haveStock, haveSaved: !!S.savedCodec, requested: S.requested || null,
+				haveStock, haveSaved: !!S.savedCodec, savedKept: savedKept(), requested: S.requested || null,
 				probe: S.now?.kind === "rfoundry" ? S.now.probe : null,
 				stockInstalled: S.now?.kind === "stock" ? S.now.version : null,
 				runsStock: S.now?.kind === "stock",
@@ -2155,13 +2236,15 @@ function bootloaderPanel(title, makePlanFn, onDone, what, { inline = false } = {
 	const log = logBox();
 	const prog = progressBar();
 	const status = h("div");
-	let plan = null, transport = null, noCodecOk = false;
+	// planKey: the key the plan was made with. A stock file picked again after this (useStock) clears S.key, and a
+	// write with no key would erase the sectors and then stop at the first block, leaving no application
+	let plan = null, planKey = null, transport = null, noCodecOk = false;
 	const place = (btn) => (inline ? slot.replaceChildren(btn) : S.forward(btn));
 	const slot = h("div", { class: "actions" });
 	const draw = async () => {
 		try {
-			const key = await getKey(S.board);
-			plan = await makePlanFn(key);
+			planKey = await getKey(S.board);
+			plan = await makePlanFn(planKey);
 		} catch (e) {
 			// the stock file is what the key and the codec come from: a problem with it is explained, not just quoted
 			box.replaceChildren(h("h2", {}, title), failureNotice(e, S.stock));
@@ -2210,7 +2293,7 @@ function bootloaderPanel(title, makePlanFn, onDone, what, { inline = false } = {
 				await dropSerial();
 				started = flashStarted(what);
 				const programMode = !!loaderProgramMode && loaderProgramMode === (S.fakeRadio || transport.device);
-				await new Dfu(transport, { log: log.add }).run(plan, S.key, (d, total) => {
+				await new Dfu(transport, { log: log.add }).run(plan, planKey, (d, total) => {
 					if (d > 0) flashMark(started, "first_byte");
 					prog.set(d, total, t("flash.write.writing"));
 				}, { programMode });
@@ -2254,15 +2337,17 @@ function writeView() {
 	const what = { task: "install", source: fw.origin || "", radio: S.board.id, firmware: String(fw.manifest.version || ""),
 		variant: fw.variant || fw.manifest.variant || (fw.manifest.dev_build ? "dev" : ""), features: fw.manifest.features || "", build: fw.build || null };
 	const dfu = (opts) => bootloaderPanel(t("flash.write.title"), async () => {
-		// from the cable route the codec step was skipped: decide now, from what the radio reported
-		S.decision ||= decideCodec(S.board, fw.manifest, { haveStock: false, haveSaved: !!S.savedCodec, probe: S.now?.probe || null });
+		// from the cable route the codec step was skipped: decide now, from what the radio reported. A decision made here
+		// is made again after another stock file is picked; one from the codec step is the user's and stays
+		if (!S.decision || (S.decision.inline && S.decision.stock !== S.stock))
+			S.decision = { ...decideCodec(S.board, fw.manifest, { haveStock: stockGivesCodec(), haveSaved: !!S.savedCodec, savedKept: savedKept(), probe: S.now?.probe || null }), inline: true, stock: S.stock };
 		let codec = [], prof = null;
 		if (S.decision.mode === MERGE && S.decision.source === "saved") {
 			prof = S.savedCodec.profile;
 			codec = await codecSegments(prof, S.savedCodec.segments, fb());
 		} else if (S.decision.mode === MERGE) ({ profile: prof, segments: codec } = await stockfw.extract(S.stock.data, S.key, fb(), fb().profiles, S.board.id));
 		const plan = makePlan(S.board, segments(fw.manifest, fw.image), S.decision.mode, codec,
-			prof ? stockfw.layoutWindows(prof, fb()) : S.board.codec.windows);
+			prof ? stockfw.layoutWindows(prof, fb()) : S.board.codec.windows, { vectorLast: !!S.decision.moves });
 		notePlan(plan, prof);
 		return plan;
 	}, next, what, opts);
@@ -2273,18 +2358,40 @@ function writeView() {
 	}
 	// the bootloader route stays one click away: it finishes an install the loader couldn't
 	const fallback = h("details", { class: "panel" }, h("summary", {}, t("flash.f4.bootloader")));
-	fallback.addEventListener("toggle", () => { if (fallback.open && fallback.children.length < 2) fallback.append(dfu({ inline: true })); });
-	return h("div", { class: "flasher" }, stubPanel(fallback, next, what), fallback);
+	const fillFallback = () => fallback.replaceChildren(fallback.firstChild, ...(fallback.open ? [dfu({ inline: true })] : []));
+	fallback.addEventListener("toggle", () => { if (fallback.open && fallback.children.length < 2) fillFallback(); });
+	// a stock file picked in the cable route's panel: the bootloader route's plan was made from the earlier one (or none)
+	const stockPicked = () => { if (fallback.children.length > 1) fillFallback(); };
+	return h("div", { class: "flasher" }, stubPanel(fallback, next, what, stockPicked), fallback);
+}
+
+// The segments the loader writes: the build, and where the radio's codec moves (codecMoves) the codec too, from the copy
+// read back from the radio and kept in this browser, else from the stock file (as rfoundry's stub_codec_move), placed
+// where this build keeps it: the loader writes the codec's sectors whole from it (f4stub.js withCodec). Made before
+// the radio is handed to the loader, so a move with no source is refused with the radio as it was. The loader erases
+// sector 3 first, so a radio that stops halfway starts in its bootloader, and the bootloader route finishes the move
+// from the same copy or file
+async function stubSegments(fw, log) {
+	const segs = segments(fw.manifest, fw.image);
+	if (!codecMoves()) return segs;
+	S.decision = decideCodec(S.board, fw.manifest, { haveSaved: !!S.savedCodec, savedKept: savedKept(), haveStock: stockGivesCodec(), probe: S.now.probe });
+	noteDecision();
+	log.add(said(S.decision.whyKey, S.decision.args));
+	if (S.decision.mode !== MERGE) return segs;	// the loader refuses a plain image over the codec (f4stub.js guardCodec)
+	if (S.decision.source === "saved") return withCodec(segs, await codecSegments(S.savedCodec.profile, S.savedCodec.segments, fb()), f4Board().codec);
+	const { segments: codec } = await stockfw.extract(S.stock.data, await getKey(S.board), fb(), fb().profiles, S.board.id);
+	return withCodec(segs, codec, f4Board().codec);
 }
 
 // Install through the STM32F4 loader on a radio running RadioFoundry (f4stub.js). fallback: the bootloader route's details,
 // opened when the loader can't finish
-function stubPanel(fallback, onDone, what) {
+function stubPanel(fallback, onDone, what, stockPicked = () => {}) {
 	const box = h("section", { class: "panel" });
 	const log = logBox();
 	const prog = progressBar();
 	const status = h("div");
 	let stub = null;
+	let segs = null;	// what the loader writes (stubSegments), made before the hand-over
 	const openFallback = () => { fallback.open = true; };
 	const install = async () => {
 		const fw = S.firmware;
@@ -2293,7 +2400,7 @@ function stubPanel(fallback, onDone, what) {
 			started = flashStarted(what);
 			await stub.configure();	// the radio's board record, its echo checked before any write
 			prog.set(0, 1, t("flash.f4.reading"));
-			const r = await stub.writeImage(f4Board().owned, segments(fw.manifest, fw.image), {
+			const r = await stub.writeImage(f4Board().owned, segs, {
 				// bytes in a rewritten sector that aren't the firmware's (no radio has them since the codec moved): a copy first
 				onKept: async (sec) => {
 					const file = `${S.board.id}_sector${sec.index}_${hex(sec.addr)}.bin`;
@@ -2314,6 +2421,33 @@ function stubPanel(fallback, onDone, what) {
 			onDone();
 		} catch (e) {
 			flashFinished(started, e);
+			if (e.codecGuard) {
+				// refused before any erase: the radio leaves the loader and runs its firmware as before
+				let restarted = true;
+				try { await stub.resetChip(); } catch (err) { restarted = false; }
+				try { await stub.s.close?.(); } catch (err) { /* gone */ }
+				status.replaceChildren(...h("div", {}, errorNotice(t("flash.f4.failed", { error: errorText(e) })),
+					h("p", {}, t(restarted ? "flash.f4.guard_restarted" : "flash.f4.guard_leave")), helpLink()).childNodes);
+				S.forward(null);
+				openFallback();
+				return;
+			}
+			// the radio restarted from the loader: it runs its firmware as before, or, once the loader erased sector 3, it
+			// starts in its bootloader, where the bootloader route finishes the install. Only a loader that doesn't
+			// answer is tried again
+			let restarted = false;
+			try {
+				await stub.resetChip();
+				restarted = true;
+			} catch (err) { /* gone: try again below */ }
+			if (restarted) {
+				try { await stub.s.close?.(); } catch (err) { /* gone */ }
+				status.replaceChildren(...h("div", {}, errorNotice(t("flash.f4.failed", { error: errorText(e) })),
+					h("p", {}, t(stub.erased ? "flash.f4.failed_bootloader" : "flash.f4.guard_restarted")), helpLink()).childNodes);
+				S.forward(null);
+				openFallback();
+				return;
+			}
 			const again = button(t("flash.f4.again"), async () => {
 				again.disabled = true;
 				if (await stub.attach()) {
@@ -2351,6 +2485,16 @@ function stubPanel(fallback, onDone, what) {
 		box.append(prog.el, log.el);
 		status.replaceChildren();
 		try {
+			segs = await stubSegments(S.firmware, log);
+		} catch (e) {
+			// nothing to write the codec from, or the stock file doesn't open: the radio was not touched
+			status.replaceChildren(errorNotice(errorText(e)));
+			go.disabled = false;
+			S.forward(go);
+			openFallback();
+			return;
+		}
+		try {
 			const link = await connectSerial();
 			const json = await f4StubJson();
 			stub = new F4Stub(link.s, { log: log.add, reopen: reopenRFoundryPort, board: f4Board() });
@@ -2367,8 +2511,28 @@ function stubPanel(fallback, onDone, what) {
 		}
 		await install();
 	}, { primary: true });
-	box.append(h("h2", {}, t("flash.f4.title")), h("p", {}, t("flash.f4.codec_text")), h("p", {}, h("b", {}, t("flash.f4.lead"))),
-		h("p", { class: "small muted" }, t("flash.f4.safety")), status);
+	// a move without a copy kept in this browser takes its codec from the stock file: Install waits for one that gives it
+	const needStock = () => codecMoves() && !savedKept() && !stockGivesCodec();
+	const stockBox = h("div");
+	const useStock = async (f) => {
+		S.stock = await pickedStock(f);
+		if (!S.keyFromRadio) S.key = S.keySource = null;
+		drawStock();
+		stockPicked();
+	};
+	const drawStock = () => {
+		go.disabled = needStock();
+		if (!codecMoves() || savedKept()) return stockBox.replaceChildren();
+		const picked = !S.stock ? null : S.stock.problem ? problemNotice(S.stock.problem)
+			: h("p", {}, "✓ ", t("flash.codec.stock_loaded", { name: S.stock.name, what: S.stock.info.known || t("flash.codec.stock_build", { radio: S.board.name }) }));
+		stockBox.replaceChildren(h("div", { class: `notice ${needStock() ? "action" : "ok"}` }, h("strong", {}, t("flash.f4.move_stock_title")),
+			h("p", {}, t(S.savedCodec ? "flash.f4.move_stock" : "flash.f4.move_stock_unread", { files: stockFiles() })),
+			S.sim ? button(t("flash.sim.use_stock"), () => useStock({ name: "simulated-stock.bin", data: S.sim.stock }))
+				: filePicker(t("flash.codec.stock_pick"), ".bin,.zip", useStock), picked));
+	};
+	drawStock();
+	box.append(h("h2", {}, t("flash.f4.title")), h("p", {}, t(codecMoves() ? "flash.f4.move_text" : "flash.f4.codec_text")), stockBox,
+		h("p", {}, h("b", {}, t("flash.f4.lead"))), h("p", { class: "small muted" }, t("flash.f4.safety")), status);
 	S.forward(go);
 	return box;
 }
@@ -2417,6 +2581,13 @@ function doneView() {
 		} catch (e) {
 			await dropSerial();
 			check.disabled = false;
+			// the chooser closed with no port: nothing was checked, so nothing is recorded (the next try still is). After a
+			// bootloader write the radio is a device this browser hasn't been granted, so it asks once, and many close it
+			if (noDeviceChosen(e)) {
+				diag.note("verify: no port chosen");
+				status.replaceChildren(notice(t("flash.done.pick_port", { radio: S.board.name }), "info"), serialHelp());
+				return;
+			}
 			flashMark(S.lastStarted, "verify", { ok: false, reason: String(e?.message || e) });
 			diag.note("verify failed", { kind: e?.params?.kind || null, message: String(e?.message || e).slice(0, 120) });
 			S.reportResult = "failed";
@@ -2424,7 +2595,7 @@ function doneView() {
 		}
 	}, { primary: true });
 	S.forward(check);
-	const intro = h("div", {}, S.stubResult ? notice(S.stubResult, "ok") : null, h("p", {}, t("flash.done.lead")));
+	const intro = h("div", {}, S.stubResult ? notice(S.stubResult, "ok") : null, h("p", {}, t(noScreen() ? "flash.done.lead_noscreen" : "flash.done.lead")));
 	// whatever the check says: the user may know better (a radio that verifies but misbehaves)
 	const quiet = h("p", { class: "small muted" }, t("report.something_wrong"), " ", reportButton());
 	box.append(panel(t("flash.done.title"), intro, status, quiet));
@@ -2520,7 +2691,8 @@ async function bringChannels(status, { finish }) {
 			const sectors = m.migrationSectors(conv.image, radio, S.board?.protect);
 			await prepareStorage(box);	// the radio refuses every codeplug write until its settings area is RadioFoundry's
 			const refused = await writeCodeplug(link, sectors, (d, n) => prog.set(d, n, t("flash.channels.writing")));
-			const back = await link.cpsDump(1, 0, m.readSpan(null), { progress: (d, n) => prog.set(d, n, t("flash.channels.checking")) });
+			// the span the first read took: a memory chip smaller than the codeplug span ends the read early
+			const back = await link.cpsDump(1, 0, radio.length, { progress: (d, n) => prog.set(d, n, t("flash.channels.checking")) });
 			const check = m.checkMigration(sectors, back.data, conv.counts);
 			prog.el.remove();
 			diag.note("channels written", { sectors: sectors.length, refused: refused.length, differ: check.differ.length, have: check.have });
@@ -2625,7 +2797,7 @@ function backupView() {
 
 function restartView() {
 	S.forward(button(t("flash.nav.finish"), () => reset(), { primary: true }));
-	return panel(t("flash.restart.title", { name: S.radio.name }), h("p", {}, t("flash.restart.manual")), notice(t("flash.restart.battery"), "info"));
+	return panel(t("flash.restart.title", { name: S.radio.name }), h("p", {}, t(noScreen() ? "flash.restart.manual_noscreen" : "flash.restart.manual")), notice(t("flash.restart.battery"), "info"));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -2786,6 +2958,7 @@ function afterRestore() {
 // starts update mode (the STM32 radios' bootloader sectors, the HR_C7000's boot ROM and bootloader), so a radio can
 // always be put back, and every step says so: someone whose radio just went dark is scared it's ruined.
 
+const symptomKey = (id) => (id === "dark" && noScreen() ? "dark_noscreen" : id);
 const SYMPTOMS = ["dark", "stuck", "stopped", "novoice", "channels", "revert"];
 // "iap": a white, backlit screen and a solid red LED at every power-on. Only for a radio whose backend has a way back
 // through an update mode the radio stays in when its application is incomplete (recovery.extra, stuck); it is listed
@@ -2851,7 +3024,8 @@ function reportMeta() {
 	return {
 		tool: "web", tool_version: S.data?.site?.version || S.data?.site?.git || "", board: S.board?.id || S.radio?.id || "", task: S.task || "",
 		step: String(stepsFor()?.[S.step] ?? S.step ?? ""), flash_id: S.lastFlashId || undefined, adapter: S.adapter || undefined,
-		result: S.reportResult || "failed", error: last ? `${last.stage}: ${last.message}` : undefined,
+		// no step's verdict and no error: the user reports on their own, e.g. a page that stopped answering
+		result: S.reportResult || (last ? "failed" : "problem"), error: last ? `${last.stage}: ${last.message}` : undefined,
 		decisions: { codec_mode: S.decision?.mode || "", codec_source: S.decision ? S.decision.source || "stock" : "", key_source: S.keySource || "",
 			plan: (S.planText || "").slice(0, 300), files },
 	};
@@ -2902,7 +3076,7 @@ function answers(items, pick, chosen = null) {
 function symptomView() {
 	S.forward(null);
 	return h("div", { class: "flasher" }, reassure(),
-		panel(t("flash.help.symptom_title"), answers(symptoms().map((id) => [id, t(`flash.help.s.${id}`), t(`flash.help.s.${id}_text`)]),
+		panel(t("flash.help.symptom_title"), answers(symptoms().map((id) => [id, t(`flash.help.s.${symptomKey(id)}`), t(`flash.help.s.${symptomKey(id)}_text`)]),
 			(id) => { S.help = { symptom: id, stage: id === "dark" ? "battery" : id === "iap" ? "fix" : ["stuck", "stopped"].includes(id) ? backend().recovery.first : "fix" }; next(); })));
 }
 
@@ -2913,7 +3087,7 @@ function recoverView() {
 	let body;
 	if (st.stage === "battery") {
 		body = panel(t("flash.help.battery_title"), h("p", {}, t("flash.help.battery_text")),
-			answers([["ok", t("flash.help.works_now")], ["no", t("flash.help.still_dark")]], (a) => go(a === "ok" ? "fixed" : backend().recovery.first)));
+			answers([["ok", t("flash.help.works_now")], ["no", t(noScreen() ? "flash.help.still_dark_noscreen" : "flash.help.still_dark")]], (a) => go(a === "ok" ? "fixed" : backend().recovery.first)));
 	} else if (st.stage === "updatemode") body = updateModeCheck(go);
 	else if (st.stage === "nohope") body = noResponse(go);
 	else if (st.stage === "fix") body = fixChooser(st, go);
@@ -2993,7 +3167,7 @@ function fixChooser(st, go) {
 	};
 	S.forward(button(t("flash.help.continue"), start, { primary: true, disabled: !st.pick }));
 	return panel(t(st.fine ? "flash.help.fine_title" : "flash.help.fix_title"),
-		st.symptom === "iap" ? stuckInUpdateMode() : st.fine ? h("p", {}, t("flash.help.fine_text")) : rec.reach ? h("p", {}, t(rec.reach)) : null,
+		st.symptom === "iap" ? stuckInUpdateMode() : st.fine ? h("p", {}, t("flash.help.fine_text")) : rec.reach ? h("p", {}, t(noScreen() && rec.reach === "flash.help.c7_reach" ? "flash.help.c7_reach_noscreen" : rec.reach)) : null,
 		answers(order.map((id) => [id, ...opts[id]]), (id) => go("fix", { pick: id }), st.pick));
 }
 
@@ -3095,12 +3269,13 @@ async function main() {
 	}
 	c7ui.init({ S, next, render, reset, helpLink, manualKitLine, fb, flashStarted, flashFinished, flashMark, noteReadout, errorText, analysisOffer, problemNotice, failureNotice, useAdapter,
 		stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) });
-	// #sim=<board>[-stock|-romfail|-slowcable|-openfw|-openfw-nocodec]: that board, running RadioFoundry, its stock firmware or another
+	// #sim=<board>[-stock|-romfail|-slowcable|-deafcable|-openfw|-openfw-nocodec]: that board, running RadioFoundry, its stock firmware or another
 	// open firmware (a board the page backs up from one: openfw.js; -nocodec: one without the codec, for the stock-file
 	// fallback); -romfail: an HR_C7000 radio on stock firmware whose boot ROM refuses the load, for the factory update
-	// mode; -slowcable: one on a cable too slow for the boot ROM's answer window, which the answer sent ahead gets through; #sim: the first
+	// mode; -slowcable: one on a cable too slow for the boot ROM's answer window, which the answer sent ahead gets through;
+	// -deafcable: one on a cable that carries the radio's data but none of the page's; #sim: the first
 	// radio on stock firmware
-	const simAsk = location.hash.match(/(?:^#|&)sim(?:=(\w+?)(-stock|-romfail|-slowcable|-openfw(?:-nocodec)?)?)?(?:&|$)/);
+	const simAsk = location.hash.match(/(?:^#|&)sim(?:=(\w+?)(-stock|-romfail|-slowcable|-deafcable|-openfw(?:-nocodec)?)?)?(?:&|$)/);
 	const simRadio = simAsk && (simAsk[1] ? S.data.radios.find((r) => r.id === simAsk[1]) : S.data.radios[0]);
 	const simOpen = !!simAsk?.[2]?.startsWith("-openfw") && openfw.supported(S.data.fb.boards[simRadio?.flash.board]);
 	const simStock = !!simAsk && (!simAsk[1] || (!!simAsk[2] && !simOpen));
@@ -3112,7 +3287,7 @@ async function main() {
 		// -slowcable: the radio's own 48 ms window, and a cable that takes 80 ms
 		const slow = simAsk[2] === "-slowcable";
 		S.fakeC7 = new FakeC7000({ progmem: sim.progmem, speed: 8, stubEntry: true, romWindow: slow ? 48 : 600,
-			faults: { silentAfterReset: true, romNak: simAsk[2] === "-romfail", slowCable: slow ? 80 : 0 },
+			faults: { silentAfterReset: true, romNak: simAsk[2] === "-romfail", slowCable: slow ? 80 : 0, deafCable: simAsk[2] === "-deafcable" },
 			...fakeC7000Options(simRadio, S.data.fb) });
 		if (!simStock) {
 			const img = randomBytes(rng(98), 180 * 1024);

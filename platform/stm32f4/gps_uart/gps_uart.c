@@ -7,6 +7,7 @@
 #include "hal_time.h"
 #include "gps/gps_rx/gps_rx.h"
 #include "gps/gps_rx/gps_baud.h"
+#include "gps/gps_rx/gps_power.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #if CONFIG_GPS
@@ -23,7 +24,7 @@ static const stm32_gps_cfg_t *cfg;
 static gps_rx_t rx;
 static gps_baud_t hunt;
 static volatile bool present;
-static volatile bool enabled = true;
+static gps_power_t power;		// the probe, then the setting (gps_enable)
 static volatile uint32_t baud;
 static TaskHandle_t task;
 
@@ -101,9 +102,7 @@ static uint32_t activity(void)
 static void sentence(const char *s, uint8_t len, uint32_t now_ms)
 {
 #if CONFIG_GPS
-	if (enabled) {
-		position_nmea(s, len, true, now_ms);
-	}
+	position_nmea(s, len, true, now_ms);
 #else
 	(void)s;
 	(void)len;
@@ -116,30 +115,45 @@ static void gps_task(void *arg)
 	(void)arg;
 	for (;;) {
 		vTaskDelay(pdMS_TO_TICKS(GPS_POLL_MS));
-		uint32_t now = hal_millis();
-		gps_rx_state_t st = gps_rx_poll(&rx, now, sentence);
-		switch (gps_baud_step(&hunt, st, now, activity())) {
-		case GPS_BAUD_FOUND:
-			if (!present) {
-				present = true;
-				if (cfg->found != NULL) {
-					cfg->found();
+		if (power.on) {
+			uint32_t now = hal_millis();
+			gps_rx_state_t st = gps_rx_poll(&rx, now, sentence);
+			switch (gps_baud_step(&hunt, st, now, activity())) {
+			case GPS_BAUD_FOUND:
+				if (!present) {
+					present = true;
+					gps_power_found(&power);
+					if (cfg->found != NULL) {
+						cfg->found();
+					}
 				}
+				break;
+			case GPS_BAUD_SWITCH:
+				uart_rate(gps_baud_rate(&hunt));
+				break;
+			case GPS_BAUD_ABSENT:
+				uart_on(false);		// no module: nothing more to do
+				gps_power_absent(&power);
+				if (cfg->absent != NULL) {
+					cfg->absent();
+				}
+				task = NULL;
+				vTaskDelete(NULL);
+				break;
+			default:
+				break;
 			}
-			break;
-		case GPS_BAUD_SWITCH:
-			uart_rate(gps_baud_rate(&hunt));
-			break;
-		case GPS_BAUD_ABSENT:
-			uart_on(false);		// no module: nothing more to do
-			if (cfg->absent != NULL) {
-				cfg->absent();
+		}
+		// Settings > Location > GPS, once the module is known: the supply first on the way up, last on the way down,
+		// so the USART never listens to an unpowered line. Back on, it takes the rate the hunt found
+		if (gps_power_step(&power)) {
+			if (power.on && cfg->power != NULL) {
+				cfg->power(true);
 			}
-			task = NULL;
-			vTaskDelete(NULL);
-			break;
-		default:
-			break;
+			uart_on(power.on);
+			if (!power.on && cfg->power != NULL) {
+				cfg->power(false);
+			}
 		}
 	}
 }
@@ -151,28 +165,42 @@ void stm32_gps_init(const stm32_gps_cfg_t *c)
 	gps_rx_init(&rx, now, NO_TIMEOUT);
 	gps_baud_init(&hunt, c->rates, c->n_rates, c->listen_ms, now, 0);
 	present = false;
+	gps_power_init(&power);
 	uart_on(true);
 	if (task == NULL) {
 		xTaskCreate(gps_task, "gps", GPS_TASK_STACK, NULL, GPS_TASK_PRIORITY, &task);
 	}
 }
 
-bool stm32_gps_present(void)
+static bool gps_present(void)
 {
 	return present;
 }
 
-void stm32_gps_enable(bool on)
+static void gps_enable(bool on)
 {
-	enabled = on;
+	gps_power_set(&power, on);
 }
 
-void stm32_gps_counts(uint32_t *good, uint32_t *bad, uint32_t *bytes)
+static bool gps_running(void)
+{
+	return power.on;
+}
+
+static void gps_counts(uint32_t *good, uint32_t *bad, uint32_t *bytes)
 {
 	gps_rx_counts(&rx, good, bad, bytes);
 }
 
-uint32_t stm32_gps_baud(void)
+static uint32_t gps_baud(void)
 {
 	return baud;
 }
+
+const hal_gps_t stm32_gps = {
+	.present = gps_present,
+	.enable = gps_enable,
+	.running = gps_running,
+	.counts = gps_counts,
+	.baud = gps_baud,
+};

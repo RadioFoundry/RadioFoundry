@@ -23,7 +23,7 @@ Where and how it transmits, so that nothing reaches the APRS network:
   settings' default power (1 W on the DM-1701) whatever the radio was set to.
   A fixed APRS power level (`set.aprs_power` not 0) is set to follow the channel for the run and put back after.
 - Callsign: --callsign as the RAM-only test call (never saved) with SSID --aprs-ssid (default 15). Destination
-  APZRDF.
+  APRDF plus the radio's own sixth character (view key aprs.tocall, aprs_set section).
 - Every APRS setting a test changes (transmit, region, custom frequency, SSID, path, send via, position source, fixed
   position, digital destination, UDT) is put back afterwards, after the queued frames and message retries are on
   air (still on the test frequency). If they don't drain, the region stays on the test frequency and the test fails
@@ -48,7 +48,7 @@ location to --aprs-dmr-dst; the bench modem's listener (a bench_tx listen job) h
 the test reassembles and decodes them here.
 
 Pass criteria:
-- test_aprs_on_air_position: one frame with a valid FCS from <call>-<ssid> to APZRDF, no digipeaters, control 0x03,
+- test_aprs_on_air_position: one frame with a valid FCS from <call>-<ssid> to the radio's aprs.tocall, no digipeaters, control 0x03,
   PID 0xF0, a position within 1e-4 degree of 33.7490, -84.3880; aprs.rf_sent +1; afterwards aprs.rf_active=0, the
   radio idle on its channel (ch.rx_hz, rx_hz, mode unchanged). Deviation peak (99.9th percentile of the
   demodulated audio over the transmission) 2.0-4.5 kHz; |twist| (mark / space tone amplitudes) under 6 dB. Printed,
@@ -60,7 +60,7 @@ Pass criteria:
   LRRP: DPF 2 (unconfirmed) carrying IPv4 / UDP to port 4001 with a triggered location report (document 0x0D);
   UDT: DPF 0, format 5 (NMEA location), appended block CRC ok; the position within 2e-5 degree.
 - test_aprs_rx_on_air: aprs.rx_frames +1 with aprs.rx_bad unchanged, and aprs.stations at least 1.
-- test_aprs_igate_on_air: aprs.igated +1, and the line "<src>>APZRDF,qAR,<radio's call>:<info>" arrives once:
+- test_aprs_igate_on_air: aprs.igated +1, and the line "<src>>APZTST,qAR,<radio's call>:<info>" arrives once:
   [aprsis] at the server, after a login as the radio's call with its passcode; [kiss_tcp] on KISS TCP.
 """
 import contextlib
@@ -385,7 +385,9 @@ def send_and_capture(radio, sdr_bench, s, send):
     assert len(ours) == 1, f"expected one frame from {s.call}-{s.ssid} with a valid FCS, got {res['frames']} " \
                            f"(segments {res.get('segments')})"
     f = ours[0]
-    assert f["fcs_ok"] and f["dst"] == "APZRDF" and f["digis"] == [], f
+    tocall = v0.get("aprs.tocall")     # aprs_set, read before keying
+    assert tocall and re.fullmatch(r"APRDF[0-9A-Z]", tocall), f"aprs.tocall {tocall!r}: firmware too old?"
+    assert f["fcs_ok"] and f["dst"] == tocall and f["digis"] == [], f
     assert f["control"] == 0x03 and f["pid"] == 0xF0, f
     return f
 
@@ -414,6 +416,7 @@ def check_tones(f):
 @pytest.mark.bench_service
 @pytest.mark.sdr_rx
 @pytest.mark.parametrize("aprs_air", ["channel", "fm_vfo"], indirect=True)
+@pytest.mark.needs_switch("VFO_FM")
 def test_aprs_on_air_position(radio, sdr_bench, aprs_air):
     """One position at 50 mW on the test frequency, decoded off air; deviation, twist, phase, TX delay printed."""
     f = send_and_capture(radio, sdr_bench, aprs_air, radio.link.aprs_send_now)
@@ -518,7 +521,7 @@ def _link_answers(radio, aprs_air, send):
 @pytest.mark.feature("dmr_lrrp")
 @pytest.mark.feature("aprs", optional=True)
 @pytest.mark.feature("aprs_dmr")
-@pytest.mark.needs_switch("APRS_DMR")
+@pytest.mark.needs_switch("APRS_DMR", "DMR_LRRP")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
@@ -588,7 +591,7 @@ def bench_frame(call, own, info=BENCH_RX_INFO):
     radio's own call (the radio skips its own packets)"""
     import aprs_afsk_check as afsk
     src = next(c for c in (f"{call.upper()}-{n}" for n in BENCH_RX_SSIDS) if c != own)
-    bits = afsk.hdlc_bits([afsk.ax25_frame(src, "APZRDF", [], info)], 40)     # 40 flags: 267 ms TX delay
+    bits = afsk.hdlc_bits([afsk.ax25_frame(src, "APZTST", [], info)], 40)     # 40 flags: 267 ms TX delay
     packed = bits + "0" * (-len(bits) % 8)
     hexs = "".join(f"{int(packed[i:i + 8], 2):02x}" for i in range(0, len(packed), 8))   # MSB first, as sent
     return src, [{"kind": "fsk", "hex": hexs, "bits": len(bits), "nrzi": True, "level": 1.0}]
@@ -597,6 +600,7 @@ def bench_frame(call, own, info=BENCH_RX_INFO):
 @pytest.mark.feature("aprs_rx")
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.needs_switch("VFO_FM")
 def test_aprs_rx_on_air(radio, sdr_bench, pytestconfig):
     """One AX.25 UI frame (a position, from --callsign-7 or -11, not the radio's own call) in Bell 202 AFSK from the bench board's FM transmitter on
     --fm-mhz: the radio, in the FM VFO there with APRS receive on that frequency, decodes it (aprs.rx_frames) with no
@@ -641,6 +645,7 @@ def test_aprs_rx_on_air(radio, sdr_bench, pytestconfig):
 @pytest.mark.feature("aprs_rx")
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.needs_switch("VFO_FM")
 def test_aprs_rx_third_party_message(radio, sdr_bench, pytestconfig):
     """A message to the radio wrapped as an iGate puts APRS-IS traffic on RF ("}SRC>DST,TCPIP,IGATE*:info", sent by
     --callsign-7 or -11 as the iGate, from --callsign-12 inside), from the bench board's FM transmitter on --fm-mhz:
@@ -664,7 +669,7 @@ def test_aprs_rx_third_party_message(radio, sdr_bench, pytestconfig):
         skip("state", f"the radio's own call is {own}, the test's inner sender")
     gate = next(c for c in (f"{call.upper()}-{n}" for n in BENCH_RX_SSIDS) if c != own)
     text = f"RadioFoundry HIL third party {int(time.time()) % 100000}"     # new each run: not the inbox's last one
-    info = f"}}{inner}>APZRDF,TCPIP,{gate}*::{own:<9}:{text}"
+    info = f"}}{inner}>APZTST,TCPIP,{gate}*::{own:<9}:{text}"
     src, program = bench_frame(call, own, info)
     L = radio.link
     with radio.vfo_session(), aprs_session(radio) as s:
@@ -767,7 +772,7 @@ class AprsIsServer:
 @pytest.mark.parametrize("to", ["aprsis", "kiss_tcp"])
 def test_aprs_igate_on_air(radio, sdr_bench, pytestconfig, to):
     """RF to APRS-IS (aprs.md 9.1): the bench's frame, as in test_aprs_rx_on_air, heard by the radio in the USB network
-    personality with the iGate on and the test callsign; the line "<src>>APZRDF,qAR,<radio's call>:<info>" goes out
+    personality with the iGate on and the test callsign; the line "<src>>APZTST,qAR,<radio's call>:<info>" goes out
     once, and aprs.igated counts it.
     aprsis: through the radio's own APRS-IS client (CONFIG_NET_APRSIS) to a server the test runs on the host: the
     client logs in as the radio's call with its passcode, and the line arrives at the server.
@@ -853,7 +858,7 @@ def test_aprs_igate_on_air(radio, sdr_bench, pytestconfig, to):
             raise AssertionError("not gated: " + " ".join(
                 f"{key}={_n(v0, key)}->{_n(v, key)}" for key in ("aprs.rx_frames", "aprs.rx_fcs_errors", "aprs.rx_bad",
                                                                  "aprs.igated", "aprs.host_out", "aprs.rx_peak")))
-        want = f"{src}>APZRDF,qAR,{own}:{info}"
+        want = f"{src}>APZTST,qAR,{own}:{info}"
         end = time.monotonic() + 3
         if to == "aprsis":
             while time.monotonic() < end and want not in srv.lines[n0:]:

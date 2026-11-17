@@ -11,6 +11,7 @@
 #include "font.h"
 #include "gfx.h"
 #include "config.h"
+#include "fmt.h"
 #if CONFIG_HOTSPOT
 #include "hotspot/hotspot.h"
 #endif
@@ -52,6 +53,7 @@ typedef struct {
 	bool vfo;		// the VFO, not a channel
 	uint16_t number;	// codeplug channel number (0: the VFO)
 	uint8_t mode;		// radio_mode_t
+	bool am;		// an FM channel (or the VFO) received in AM: the air band (radio_am_channel)
 	uint32_t rx_hz;
 	char name[CODEPLUG_NAME_LEN + 1];
 	char zone[CODEPLUG_NAME_LEN + 1];	// the zone's name, "VFO" for the VFO
@@ -229,12 +231,15 @@ typedef struct {
 } ui_list_t;
 
 void ui_draw_list(const radio_view_t *v, const ui_state_t *s, const ui_list_t *l);
-// A page of text (About) in the smallest font, word-wrapped, never shortened: lines from *first on (clamped so the
-// last page is full). The status strip only while the radio isn't idle. Returns the largest *first (0: all fits)
+// A page of text (About, a message) in the smallest font, word-wrapped, never shortened: lines from *first on (clamped
+// so the last page is full). labels: a line's "Label:" is dim (not in a message, whose sender wrote the colons). The
+// status strip only while the radio isn't idle. Returns the largest *first (0: all fits)
 int ui_draw_text_page(const radio_view_t *v, const ui_state_t *s, const char *title, const char *text,
-	uint16_t *first);
+	uint16_t *first, bool labels);
 // Rows that fit below the title (and header) on this display, for paging
 int ui_list_rows(const ui_list_t *l);
+// The list's body fits above its rows as ui_draw_list draws it, without being shortened
+bool ui_list_body_fits(const ui_state_t *s, const ui_list_t *l);
 
 // The boot screen: the mark, the name, the owner's two boot text lines (empty: left out), board and version
 void ui_draw_splash(const char *board_name, const char *version, const char *line1, const char *line2);
@@ -279,5 +284,8 @@ uint32_t ui_freq_parse(const char *digits, uint8_t len);
 void ui_bands_text(char *out, size_t len, bool tx);
 // The board's power level name
 const char *ui_power_name(uint8_t level, uint32_t tx_hz);
+// A call from a dialing gateway on the trunked system in use (CONFIG_DMR_TRUNK_GW): the caller's number it gave
+// (dmr-trunking.md 7.6), else "Phone line"; false (nothing written) for any other source
+bool ui_sb_gw_caller(sbuf_t *b, uint32_t src);
 
 #endif

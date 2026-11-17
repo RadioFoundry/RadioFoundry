@@ -50,10 +50,10 @@
 
 #define HOSTLINK_TASK_PRIORITY	3	// with input and USB; above the UI (core/app/app.c task table)
 #if CONFIG_DEBUGLINK
-// words: MMDVM frames on the stack; debug link replies format diagnostics lines. The deepest chain (the web view's
-// debug link section > the DMR data view, with the air queue inlined into the task) reads 2568 bytes with the macOS
-// toolchain; the CI's reads up to 16 deeper, and stack-check.md's overhead and margin come on top, 4 to spare
-#define HOSTLINK_TASK_STACK	731
+// words: MMDVM frames on the stack; debug link replies format diagnostics lines. The deepest chain (a hotspot frame
+// on air > the radio view copied, with the trunked system's view in it) reads 2608 bytes with the macOS toolchain on
+// the deepest board; the CI's reads up to 16 deeper, and stack-check.md's overhead and margin come on top, 4 to spare
+#define HOSTLINK_TASK_STACK	741
 #else
 #define HOSTLINK_TASK_STACK	512	// words: MMDVM frames are built on the stack
 #endif
@@ -91,11 +91,26 @@ static mmdvm_framer_t framer;
 static char description[64];
 static hostlink_session_t session;
 static uint32_t entered_ms;		// when hotspot mode began (idle time before the first whole frame)
+static uint32_t noise_count;		// 0xE0 starts that never opened an MMDVM session (hostlink_hotspot_noise)
 #endif
 
 hostlink_mode_t hostlink_mode(void)
 {
+#if CONFIG_HOTSPOT
+	if ((mode == HOSTLINK_HOTSPOT) && mmdvm_in_trial()) {
+		return HOSTLINK_IDLE;	// a trial (hostlink.h): no screen until a host shows itself
+	}
+#endif
 	return mode;
+}
+
+uint32_t hostlink_hotspot_noise(void)
+{
+#if CONFIG_HOTSPOT
+	return noise_count;
+#else
+	return 0;
+#endif
 }
 
 hostlink_leave_t hostlink_last_leave(void)
@@ -203,6 +218,17 @@ static void leave_hotspot(hostlink_leave_t why)
 	mode = HOSTLINK_IDLE;
 }
 
+// The 0xE0 that began the trial wasn't a host: line noise on a UART (a loose cable). Back to idle without a trace on
+// the screen or in hostlink_last_leave
+static void trial_failed(void)
+{
+	noise_count++;
+	dlog("hostlink: 0xE0 without an MMDVM host (line noise?)");
+	mmdvm_end();
+	mmdvm_framer_reset(&framer);
+	mode = HOSTLINK_IDLE;
+}
+
 static bool framer_idle(void)
 {
 	return (framer.len == 0) && (framer.skip == 0);
@@ -216,10 +242,14 @@ static size_t feed_mmdvm(const uint8_t *buf, size_t len, uint32_t now)
 		if ((i > 0) && (side != NULL) && (buf[i] == side->start) && framer_idle()) {
 			return i;
 		}
+		uint32_t junk = framer.junk + framer.skipped;
 		uint16_t n = mmdvm_framer_byte(&framer, buf[i]);
 
-		if (n > 0) {
-			mmdvm_frame(framer.buf, n, now);
+		bool dropped = (n > 0) && !mmdvm_frame(framer.buf, n, now);
+
+		if (hostlink_trial_failed(!mmdvm_in_trial(), dropped, framer.junk + framer.skipped != junk, now - entered_ms)) {
+			trial_failed();		// a host sends neither junk nor another command first
+			return i + 1;		// the rest goes to the protocols again
 		}
 	}
 	return len;
@@ -270,7 +300,8 @@ static size_t dispatch_main(const uint8_t *buf, size_t len, uint32_t now, bool n
 		mmdvm_framer_reset(&framer);
 		hostlink_session_start(&session, (board.host_port != NULL) && board.host_port->connected());
 		entered_ms = now;
-		dlog("hostlink: entering hotspot mode");
+		mmdvm_trial_begin();
+		dlog("hostlink: 0xE0: hotspot trial");
 	}
 	if (mode == HOSTLINK_HOTSPOT) {
 		return feed_mmdvm(buf, len, now);
@@ -542,6 +573,10 @@ static void hostlink_task(void *arg)
 		switch (mode) {
 		case HOSTLINK_HOTSPOT:
 #if CONFIG_HOTSPOT
+			if (hostlink_trial_failed(!mmdvm_in_trial(), false, false, now - entered_ms)) {
+				trial_failed();
+				break;
+			}
 			mmdvm_poll(now);
 			// Never gated on DTR being set, only on it dropping (hostlink.h). The port can't report USB unmount or
 			// suspend apart from DTR yet (hal_stream_t has no such call), so with DTR never set an unplugged host
@@ -551,7 +586,9 @@ static void hostlink_task(void *arg)
 			hostlink_leave_t why = hostlink_session_check(&session, port->connected(), true, exit_now,
 								      now - last);
 
-			if (why != HOSTLINK_STAY) {
+			if ((why != HOSTLINK_STAY) && mmdvm_in_trial()) {
+				trial_failed();		// DTR dropped or hotspot turned off before a host showed: no trace either
+			} else if (why != HOSTLINK_STAY) {
 				leave_hotspot(why);
 			}
 #else

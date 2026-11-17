@@ -2,7 +2,7 @@
 
 # Channels, Zones and the VFO
 
-A **channel** is a saved frequency with its mode (FM or DMR) and settings. A **zone** is a named list of channels.
+A **channel** is a saved frequency with its mode (FM, DMR, or P25 and NXDN where the radio runs them) and settings. A **zone** is a named list of channels.
 The **VFO** tunes any frequency by hand. Channels and zones come from the codeplug ([Programming the radio](04-programming.md)).
 
 ## Changing the channel
@@ -139,7 +139,8 @@ Focus a row and press **OK**:
 
 | Row | What OK does |
 |---|---|
-| Two choices (mode, timeslot, bandwidth, RX only, scan, VOX, tone burst, direct mode, beeps, talker alias, battery saver) | switches to the other one |
+| Mode | steps to the next mode: FM, DMR, then P25 and NXDN on a radio that runs them. Stepping on comes back to the mode the channel had, with its settings as they were |
+| Two choices (timeslot, bandwidth, RX only, scan, VOX, tone burst, direct mode, beeps, talker alias, battery saver) | switches to the other one |
 | Power, RX CTCSS/DCS, TX CTCSS/DCS, color code, TX time-out | opens a picker: turn the knob (or Up / Down) to the value, **OK** keeps it, **Back** cancels. Color code and time-out also take digits |
 | RX CTCSS/DCS, TX CTCSS/DCS, typed | type a CTCSS tone with its tenths digit: **8 8 5** is 88.5, **1 3 1 8** is 131.8. Under 60 the digits are whole Hz: **6 7** is 67.0, **1 0 0** is 100.0. Start with **0** for a DCS code: **0 2 3** is D023N. **Back** takes the last digit back. For an inverted DCS code, turn the knob one step: each code's I follows its N (D023N, D023I, D025N) |
 | Zones | opens every zone, marked "In" where the channel is. **OK** puts the channel in a zone or takes it out, saved at once. A new channel shows the row once saved |
@@ -155,7 +156,9 @@ discard them; the answer starts on "No, keep editing". Saving any channel drops 
 channel you are on: the radio reloads it from the codeplug.
 
 The radio won't save a channel without a name, with RX outside its bands, with TX where it can't transmit (set RX only
-instead), or a DMR channel without a TX contact. It says which.
+instead), a DMR channel in the broadcast band or in the air band (on a radio that receives AM there), or a DMR channel
+without a TX contact, unless it is RX only. It says which. A DMR channel where the radio receives but can't transmit
+saves when it is RX only.
 
 **Save as new channel** stores the edited copy at the lowest free number and leaves the original as it was.
 **Tune to this ch** tunes the channel and **Share channel to...** sends it to another radio ([Sharing a zone](#sharing-a-zone));
@@ -252,8 +255,8 @@ what you typed as you go.
 ### Stepping
 
 **Up**, **Down** and the channel knob change the VFO frequency by its step. The step is **Settings > Talk > VFO step**. Its
-default, **Auto**, follows the width: 25 kHz at 25K (and in AM), 12.5 kHz at 12.5K, and the FM broadcast step in the
-broadcast band. The step is in the status strip.
+default, **Auto**, follows the width: 25 kHz at 25K (and in AM) and 12.5 kHz at 12.5K. In the broadcast band the step
+is always the FM broadcast step, whatever the VFO step. The step is in the status strip.
 
 ### Split (repeater offset)
 
@@ -286,8 +289,8 @@ In the VFO, **\***, **5** (**\***, **6** in the DMR VFO) is **TX freq** (the spl
 
 ### DMR in the VFO
 
-**\***, **4** in the VFO switches it between FM and DMR on the same frequency ("VFO: DMR"). In DMR the quick settings are the
-DMR ones:
+**\***, **4** in the VFO switches it between FM and DMR on the same frequency ("VFO: DMR"), and to P25 and NXDN after DMR on a
+radio that runs them ([P25 in the VFO](#p25-in-the-vfo), [NXDN in the VFO](#nxdn-in-the-vfo)). In DMR the quick settings are the DMR ones:
 
 | Key | Tile | What it does in the DMR VFO |
 |---|---|---|
@@ -306,6 +309,93 @@ DMR ones:
 - The DMR VFO sends data messages and can start an emergency, as a DMR channel does. It sends no talker alias.
 
 <img src="../ux/screens/160x120i5/home_vfo_dmr.png" width="200" alt="Home in the DMR VFO">
+
+### P25 in the VFO
+
+On a radio that runs P25 ([feature matrix](../feature-matrix.md)), P25 is one of the VFO's modes: **\***, **4** goes FM, DMR, P25, then FM again
+("VFO: P25"). The VFO keeps the mode when the radio is switched off.
+
+- It hears clear P25 voice calls on network access code 293, to every talkgroup. Encrypted calls stay silent.
+- PTT sends a P25 voice call to talkgroup 1 from your P25 unit ID, or your DMR ID when the codeplug has none.
+- Home shows "P25", what PTT calls ("TG 1") and the network access code ("NAC 293"). During a call it shows who calls
+  and where ("ID 3101234 > TG 7"), or why the call isn't played ("Encrypted: not played", "Other TG: not played").
+  FM's tone and width tiles say "FM only: this is a P25 channel".
+- The code, talkgroup and talkaround can be changed only from a computer for now (`rfoundry_debug.py radio p25`), and the
+  change lasts until the radio is switched off.
+
+### P25 channels
+
+A P25 channel comes from a codeplug written on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)), a zone shared by another radio, the VFO (in P25, open
+**Channels**, **New channel from current settings** and save it), or any channel: press **OK** on its Mode until it
+says P25, set the NAC and save. A channel made P25 starts with NAC 293. The channel keeps the network access codes, the
+talkgroup (when a contact has that talkgroup; else talkgroup 1) and talkaround. A shared one comes in receive only, as
+every shared channel does: turn RX only off in its settings. On a radio without P25 the channel shows as P25 and stays
+silent.
+
+- Home shows it as in the VFO. It hears its talkgroup, calls to everyone and calls to your ID, unless the codeplug
+  says to hear every call.
+- The channel's settings show "P25" as the mode and only the settings P25 uses. Talkaround is On or Auto (on
+  when RX and TX are the same frequency).
+- **NAC** sets the network access code both ways. Type its hex digits; **Up** and **Down** step the last digit
+  through 0-9 and A-F, so for 1A5 type 1, 9, **Up**, 5. F7E receives every NAC. The talk group is **TX contact**, your
+  unit ID **Own ID**.
+- **OK** on Mode steps to NXDN (on a radio that runs it), FM, DMR, then back to P25 with its settings as they were, so
+  a slip costs nothing. Saving the channel as another mode removes its P25 settings: the radio asks first ("Save as
+  FM?", "Save as DMR?", or "Unsaved Changes" for NXDN), and "No, keep editing" is the default. **Save as new channel** leaves the P25 channel as it is.
+- Scan stops on P25 channels and holds on a call you would hear there. Dual watch takes one as A or B.
+
+### P25 trunked channels
+
+On a radio that runs P25 trunking, a channel can belong to a P25 trunked system (Phase 1 voice channels). The system
+(its control channels, its identity, your unit ID) and its channels (one talkgroup each) come from a codeplug written
+on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)). A new system is listen only. The channel's settings show "P25T" as the mode.
+
+| Home says | What the radio is doing |
+|---|---|
+| Finding system | Trying the system's control channels in turn |
+| Control channel | On the control channel, waiting for a call to the channel's talkgroup |
+| Following TG 201 | On the voice channel of a call. It goes back to the control channel when the call ends |
+| Registering | Transmit is on: registering with the system and joining the talkgroup |
+| TG 201 | Registered. PTT asks the system for a voice channel |
+| Wait, Queued | PTT is held and the request is with the system. Talk when home shows the transmission |
+| Denied, Reg. denied | The system refused the request or the registration |
+
+- A system set to listen only, a channel set to RX only, or one without a unit ID or talkgroup never transmits: PTT
+  says "RX only".
+- Calls to other talkgroups are followed only when the channel is set to follow every group of the system.
+- Calls to one unit, emergency and Phase 2 (TDMA) voice channels are not there yet.
+- Scan skips these channels and dual watch doesn't take them: a trunked channel follows its system instead.
+- This has run against a test control channel only, not yet on a working system.
+
+### NXDN in the VFO
+
+On a radio that runs NXDN, NXDN is one of the VFO's modes, after P25 ("VFO: NXDN"). It
+is NXDN conventional voice at 9600 bit/s (12.5 kHz) or 4800 bit/s (6.25 kHz), through the radio's DMR voice codec.
+
+- It hears clear voice calls on every radio access number (RAN), to every group. Encrypted calls stay silent.
+- PTT sends a voice call to group 1 with RAN 1 at 9600 bit/s, as unit 1 until a computer sets another ID.
+- Home shows "NXDN", what PTT calls ("TG 1"), the RAN sent and the rate ("RAN 1 9600"). During a call it shows who
+  calls and where, or why the call isn't played. FM's tone and width tiles say "FM only: this is NXDN".
+- The rate, the RANs, the unit ID and the group can be changed only from a computer for now
+  (`rfoundry_debug.py radio nxdn`), and the change lasts until the radio is switched off.
+- Some radios only transmit NXDN or only receive it ([feature matrix](../feature-matrix.md)). One that only receives
+  says "This mode: receive only" on PTT.
+
+### NXDN channels
+
+An NXDN channel comes from a codeplug written on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)), a zone shared by another radio, the VFO (in NXDN,
+open **Channels**, **New channel from current settings** and save it), or any channel: press **OK** on its Mode until
+it says NXDN, set the RAN and rate, and save. A channel made NXDN starts with RAN 1 at 9600 bit/s. The channel keeps the rate, the RANs, the
+squelch and the group (when a contact has that group; else group 1).
+
+- Home shows it as in the VFO. The channel's settings show "NXDN" as the mode.
+- **OK** on Mode steps to FM, DMR, P25 (on a radio that runs it), then back to NXDN with its settings as they were.
+  Saving the channel as another mode removes its NXDN settings: the radio asks first ("Save as FM?", "Save as
+  DMR?", or "Unsaved Changes" for P25).
+- **RAN** (0-63) and **Rate** (9600 or 4800 bit/s) are in the channel's settings, with the group (**TX contact**) and
+  your unit ID (**Own ID**, up to 65519). RAN 0 receives every RAN. The squelch can be changed only from a computer.
+- Scan stops on NXDN channels and holds on a call you would hear there, at a rate the radio can receive. Dual watch
+  takes one as A or B.
 
 ### Leaving the VFO
 
@@ -334,7 +424,7 @@ frequency, its TX frequency follows RX, and its mode shows as "AM (air band)" or
 isn't RX Only or is DMR.
 
 In the air band the squelch works as on any FM channel. A broadcast station plays whatever the squelch level, so a
-fading station isn't cut, and the screen and LED show it is receiving. The squelch only stops a scan on a station:
+fading station isn't cut, and the screen shows it is receiving. The LED stays off: a station isn't a call. The squelch only stops a scan on a station:
 while a scan runs, the broadcast band is quiet between stations.
 
 In the broadcast band the knob and **Up** / **Down** step 200 kHz, landing on the odd tenths (88.1, 88.3 ... 107.9)

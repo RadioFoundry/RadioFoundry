@@ -41,7 +41,7 @@ static void view_settings(dl_text_t *t)
 	aprs_cfg_t c;
 
 	aprs_get_cfg(&c);
-	dl_text(t, "aprs.built=1\n");
+	dl_text(t, "aprs.built=1\naprs.tocall=%s\n", APRS_TOCALL);
 	dl_text(t, "set.aprs_tx=%u\nset.aprs_region=%u\nset.aprs_ssid=%u\nset.aprs_symbol=%c%c\nset.aprs_path=%s\n",
 		c.tx_on, c.region, c.ssid, c.sym_table, c.sym_code, aprs_path_text(c.path));
 	dl_text(t, "set.aprs_interval_s=%u\nset.aprs_smart=%u\nset.aprs_distance_m=%u\nset.aprs_after_ptt=%u\n",

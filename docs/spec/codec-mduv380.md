@@ -33,6 +33,7 @@ file, TYT's and Retevis's, is encrypted with the same key (below).
 | V19.06 CSV | `RT3S(CSV)-V19.06.bin` | 1295872 | `657cd4e6c86aa63428f1bc081ce0614b35db0607d34ba6b6065357a58a045c89` | non-GPS, large contact list, Retevis RT3S file |
 | P19.06 CSV-GPS | `RT3S(CSV-GPS)-P19.06.bin` | 1305088 | `9c58aca48de3d42b897852e424b0da1392f6e983d51ca69b1425b72a0a836ca1` | GPS, large contact list, Retevis RT3S file |
 | P19.33 CSV-GPS | `MD-UV390(CSV-GPS)-P19.33.bin` | 1315328 | `a2f38eaf4b98379fee6dfc00cae916bbc550e26ba0dd04c5fb56199a9e62b7f8` | GPS, user-supplied |
+| D19.62 REC | `MD-UV380(REC)-D19.62.bin` | 1320448 | `8f580928ad418bce413bba9973809a71708094a917c943b7beb8fb5b24c4eab3` | non-GPS, recording build, user-supplied |
 | V19.74 CSV | `MD-UV380(CSV)-V19.74.bin` | 1309184 | `1e6a74b8cc62ffabd06dd83912f1bf0a7a7ef12d4bda63b961544c7e1393655a` | non-GPS, large contact list |
 | D19.74 REC | `MD-UV380(REC)-D19.74.bin` | 1321472 | `d3996d672d6878ca823880320e240883ea64208f121923cd2bb6fe51d2e50784` | non-GPS, recording build |
 | P19.74 CSV-GPS | `MD-UV390(CSV-GPS)-P19.74.bin` | 1319424 | `14e5634eeffa5f99f85fd762df4dc141432762d75b933031000d1f398fc4d2e4` | GPS, large contact list |
@@ -41,8 +42,13 @@ file, TYT's and Retevis's, is encrypted with the same key (below).
 | 10 W D19.74 REC | `MD-UV380-10W(REC)-D19.74.bin` | 1321472 | `2768ece93ddd4f1fd4ffc4e58ee073bd145b865f4ea6d256315f6e0019e93995` | non-GPS, recording build, 10 W |
 | 10 W P19.74 CSV-GPS | `MD-UV390-10W(CSV-GPS)-P19.74.bin` | 1319424 | `ebc5e34f4a00679a9200df8233c4b42b89dbd440a7487bbac2796223b796b392` | GPS, large contact list, 10 W |
 | 10 W S19.74 GPS-REC | `MD-UV390-10W(GPS-REC)-S19.74.bin` | 1331712 | `b0345e8c9e28b353954f3b6aa66599b5ac682c2037e212052af16e2c888572cd` | GPS, recording build, 10 W |
+| V119.33 CSV AES 256 | `MD-UV380-AES(CSV)-V119.33.bin` | 1344000 | `16c168ba18fccf3b05f810251f8a5e73b7b3bed0ca03ebd79294a97fd484e044` | non-GPS, large contact list, AES, 16 groups, user-supplied |
+| 10 W D219.43 REC AES 255 | `MD-UV380-10W-AES256(REC)-D219.43.bin` | 1357312 | `11a1195b14f586239d8532b74545bd67b1ab977fef6ee89bfc3eb08fd15d0ec8` | non-GPS, recording build, 10 W, AES, 255 groups, user-supplied |
 | V219.60 CSV AES 255 | `RT3S-Firmware-AES255(CSV)-V219.60.bin` | 1346048 | `447ed4e09482c45661cd6e4c83d1e9f777463993ab7dd48b0e0597bb14f519ee` | non-GPS, large contact list, AES, 255 groups, Retevis RT3S file |
 | P219.60 CSV-GPS AES 255 | `RT3S-Firmware-AES255(CSV-GPS)-P219.60.bin` | 1356288 | `a7b277137c32ac3583083d8a650488415f62360b7f38a6d903fc732b858dd502` | GPS, large contact list, AES, 255 groups, Retevis RT3S file |
+| 10 W S219.43 GPS-REC AES 255 | `MD-UV390-10W-AES256(GPS-REC)-S219.43.bin` | 1366528 | `6825fc129cc4720a1f493dae388cc4a50b5f40b876e02235044a5e28df6fcdb9` | GPS, recording build, 10 W, AES, 255 groups, user-supplied |
+| S219.62 GPS-REC AES 255 | `MD-UV390-AES255(GPS-REC)-S219.62.bin` | 1368576 | `13e2fd862a0ca5dd505c9bbedee17393afb676e11923bacec487be6bbe0b4a0f` | GPS, recording build, AES, 255 groups, user-supplied |
+| 10 W D219.71 REC AES 255 | `MD-UV390 (10W)-AES255(REC)-D219.71.bin` | 916992 | `bae53921628926460c6225c9d48074de9b81f3078f5df413650f2d3cd61c7c1f` | non-GPS, recording build, 10 W, AES, 255 groups, user-supplied |
 | V219.74 CSV AES 255 | `MD-UV380-AES255(CSV)-V219.74.bin` | 1348096 | `a8a5265d29f8f69ee050a0a47052a8925a3c403ac270d8e5fda324a4a697b220` | non-GPS, large contact list, AES, 255 groups |
 | D219.74 REC AES 255 | `MD-UV380-AES255(REC)-D219.74.bin` | 1360384 | `3d1b9ed4a2293981d0915d0655172e7a4d9bc702fe493328be37901427d51108` | non-GPS, recording build, AES, 255 groups |
 | P219.74 CSV-GPS AES 255 | `MD-UV390-AES255(CSV-GPS)-P219.74.bin` | 1358336 | `70a44a4a77d6ffb4b0b6b9b4a8f26afb9607d65875d2ba1094baf6c8e6a46c9a` | GPS, large contact list, AES, 255 groups |
@@ -110,6 +116,7 @@ Code windows (decrypted):
 | V19.06 CSV | 0x08079E14..0x080894EA | 0xF6D6 | `21a64c6e0b9b99507765e409f3c26ed28cfdaca4499a7d452c241b4fb88efe5f` |
 | P19.06 CSV-GPS | 0x0807C1CC..0x0808B8AA | 0xF6DE | `713e2ba7003f5229c78f0b04707ca4ec597ba8aca6953472a66247ec61905870` |
 | P19.33 CSV-GPS | 0x0807E608..0x0808DAAA | 0xF4A2 | `5f17438d44f7cc0ef4a9a731a7f0d87893fcd96c096258debe87197f4aae18e1` |
+| D19.62 REC | 0x0807F754..0x0808EBEA | 0xF496 | `da7a9d54a4070ab4b1c53fdba7b1d39cea020705e6be32584f40beeee7177958` |
 | V19.74 CSV | 0x0807CEC4..0x0808C36A | 0xF4A6 | `b2ef9546969f9c529ecc5ab06b31a9529a1af78939594e81e255c49f0dcf085d` |
 | D19.74 REC | 0x0807FA70..0x0808EF2A | 0xF4BA | `0d9b2aad9150af6f3a583d123d69d0ee5c1074bf0282be4fc351a87344581256` |
 | P19.74 CSV-GPS | 0x0807F450..0x0808E8EA | 0xF49A | `ea58eb79ee38e1b558bf09cbb6428cbc6d45fd3a3ef1cc62430e010b9c7ab85a` |
@@ -118,8 +125,13 @@ Code windows (decrypted):
 | 10 W D19.74 REC | 0x0807F9B0..0x0808EE6A | 0xF4BA | `20878b67953dbf4a39f9c72f8adb2d58516eebe96bcb2e539c029bb7deeb7ebf` |
 | 10 W P19.74 CSV-GPS | 0x0807F3BC..0x0808E86A | 0xF4AE | `65aa7a28321218eaa127506ae36b87f66fa64a3b193053dc9474562e5ffa0255` |
 | 10 W S19.74 GPS-REC | 0x08081FA8..0x0809146A | 0xF4C2 | `2068803aa297e67aaf39bb17a0f49ddfb55b7c35e66f328923e28f0594ffdc7f` |
+| V119.33 CSV AES 256 | 0x080854AC..0x0809486A | 0xF3BE | `b5a8e88de4f03b7b0aeb87ab45abd0091c4e49f3a59befb209a12fda6595c0a9` |
+| 10 W D219.43 REC AES 255 | 0x0808831C..0x080976AA | 0xF38E | `e5fb80c302356cc8ee5049cf8beaa87facbedcb954a2b8fad9fb63a177244112` |
 | V219.60 CSV AES 255 | 0x08085BAC..0x08094F6A | 0xF3BE | `1b9c8dd355cdc6ab18b8aa4579cfe382ce49ec1f493d6048c8ccf5150cdee286` |
 | P219.60 CSV-GPS AES 255 | 0x08088150..0x080974EA | 0xF39A | `0f374a92964736efd8cc2b4ea7a8cb83a190542b3ae1acd3696fa3d22f1bf375` |
+| 10 W S219.43 GPS-REC AES 255 | 0x0808A8C4..0x08099C6A | 0xF3A6 | `6c4320bd3dbfbf0525112e970d8f30a9c3d287c2448311234868353bd29a142f` |
+| S219.62 GPS-REC AES 255 | 0x0808B09C..0x0809A42A | 0xF38E | `be32fdf3449b194598d44dcf361d247a5a519b14f22d84a0f9acf695aa8a78fd` |
+| 10 W D219.71 REC AES 255 | 0x08088AF0..0x08097EAA | 0xF3BA | `a935bc5abf48c28ee017245645ae1fc405da6f6ba4ded3ff2091ae95a08e4204` |
 | V219.74 CSV AES 255 | 0x080862F8..0x080956AA | 0xF3B2 | `c69b5bdc350aaccf87abf547e02f50ff6e28ac27036290ad297f9ce847fb65b3` |
 | D219.74 REC AES 255 | 0x08088D84..0x0809812A | 0xF3A6 | `ddfb1872e8c3439b95b7b4ddbd476f4cd014b74c67cada6209803a001bbeb98b` |
 | P219.74 CSV-GPS AES 255 | 0x08088878..0x08097C2A | 0xF3B2 | `f5b4998b80deb227262b0a7f5e3dc61c37fdbd64f24819bc8bda0802a00d35cb` |
@@ -129,7 +141,7 @@ Code windows (decrypted):
 | 10 W P219.74 CSV-GPS AES 255 | 0x080887F0..0x08097BAA | 0xF3BA | `a55a811d85a5d23e3d599b312245b32ebdd70b2a75384772be12422025a4ee7e` |
 | 10 W S219.74 GPS-REC AES 255 | 0x0808B2DC..0x0809A66A | 0xF38E | `fc272e75d71dcac08215794f5d153bac86a0787423f7b187c24b08caa3717eaa` |
 
-Table windows (decrypted). Every file's is 0x12850 bytes. The codec's own data ends earlier; the merge cuts to it:
+Table windows (decrypted). Every file's is 0x12850 bytes, except 10 W D219.71 REC AES 255, whose file ends at 0x080EBC00 (0x12024 bytes of window). The codec's own data ends earlier; the merge cuts to it:
 
 | build | flash | codec data ends | data length | sha256 of the window |
 |---|---|---|---|---|
@@ -150,6 +162,7 @@ Table windows (decrypted). Every file's is 0x12850 bytes. The codec's own data e
 | V19.06 CSV | 0x080D70F4..0x080E9944 | 0x080E946A | 0x12376 | `3a77386ecd001053ea661bea94fd6fe6d024f9482a999bcd8f131da8cb818b92` |
 | P19.06 CSV-GPS | 0x080D94B4..0x080EBD04 | 0x080EB8CA | 0x12416 | `c71415bda534d4872c595e8372554c2f9d83f64fbc385cc140e19797f321abfb` |
 | P19.33 CSV-GPS | 0x080DBA54..0x080EE2A4 | 0x080EE17A | 0x12726 | `287764a8693d7a08383e15b7ecbf27150cb822fee8ec767b1b38ad597e7c219a` |
+| D19.62 REC | 0x080DCFF0..0x080EF840 | 0x080EF6D6 | 0x126E6 | `931bf2bc92cbc5d2fdfc507c052c0ce7f26ea5fe80489746df7da0d13bc00ef1` |
 | V19.74 CSV | 0x080DA36C..0x080ECBBC | 0x080ECA9A | 0x1272E | `b05685290b253f9438d2b9ad39c95fae104019b3a59d36290e5e96191defb469` |
 | D19.74 REC | 0x080DD330..0x080EFB80 | 0x080EFA76 | 0x12746 | `41cb1a328ce46105dd61716a26ab935fefd2e1193edcce076eb7ec998c0fe487` |
 | P19.74 CSV-GPS | 0x080DC8EC..0x080EF13C | 0x080EF0BA | 0x127CE | `a93493fd52dde407f0182e0740bfa000604ad0fb061ba671239cd93f16a67fff` |
@@ -158,8 +171,13 @@ Table windows (decrypted). Every file's is 0x12850 bytes. The codec's own data e
 | 10 W D19.74 REC | 0x080DD270..0x080EFAC0 | 0x080EF9B6 | 0x12746 | `2a7118e72744f890430d48b3d5f4a9ae6263c62eecfa8e9dbd89703b51fa75b6` |
 | 10 W P19.74 CSV-GPS | 0x080DC86C..0x080EF0BC | 0x080EF03A | 0x127CE | `15a8f3154fde2f2ca035f563ea9fcc7e447f3b7ad0b2397b72ff3da7fd3f972e` |
 | 10 W S19.74 GPS-REC | 0x080DF870..0x080F20C0 | 0x080F2046 | 0x127D6 | `62d99c50bc1863230892b74b690b43af73822e5951b7879dfcda788923d61f9e` |
+| V119.33 CSV AES 256 | 0x080E2814..0x080F5064 | 0x080F4EC6 | 0x126B2 | `4d095644a33ca7e0b0a6f5528203434978fafc395c9423e6e3efe61b4f58de4b` |
+| 10 W D219.43 REC AES 255 | 0x080E5CE8..0x080F8538 | 0x080F83C2 | 0x126DA | `772fdc4c50be99734e35b7c37db825c7282c33236574b1c57752eba039abd0ba` |
 | V219.60 CSV AES 255 | 0x080E322C..0x080F5A7C | 0x080F5956 | 0x1272A | `8a0201819744a522727826dc91332c156c990e7e56244250ba76df9523ad5985` |
 | P219.60 CSV-GPS AES 255 | 0x080E57AC..0x080F7FFC | 0x080F7F76 | 0x127CA | `c86623e08780f10351696add74e202056d6732435faccdb226ba8b60d059923b` |
+| 10 W S219.43 GPS-REC AES 255 | 0x080E82A8..0x080FAAF8 | 0x080FAA22 | 0x1277A | `c022775d1114ed5fce12bddb3a2de1844197fa6a85868b85114afdbbb9b2c54e` |
+| S219.62 GPS-REC AES 255 | 0x080E8A74..0x080FB2C4 | 0x080FB256 | 0x127E2 | `8d45c17ef3a0474cec17c9ff7210cfba492d78fa9e92fc6e0e8ffcaa01977254` |
+| 10 W D219.71 REC AES 255 | 0x080D9BDC..0x080EBC00 | 0x080EA9A0 | 0x10DC4 | `e30d45045c638924799e2ce7eab6c7f09077d97893b6ce44dab6ca982c0b347e` |
 | V219.74 CSV AES 255 | 0x080E396C..0x080F61BC | 0x080F60F6 | 0x1278A | `6598089807521a5edc15cbe2d9812eed3b0d61b7103aeb4ae4a66645873ab36f` |
 | D219.74 REC AES 255 | 0x080E6774..0x080F8FC4 | 0x080F8F16 | 0x127A2 | `65a1dbe29be0db5cc46b3784c571607aff241110a7470ce312e55dab96817534` |
 | P219.74 CSV-GPS AES 255 | 0x080E5EEC..0x080F873C | 0x080F8716 | 0x1282A | `47e73474789188eaae78dd8ce8d9624e4a108ba53831c0b87aaad183fa23c6fc` |
@@ -234,7 +252,7 @@ pointer into the code and the 12 calls from the code kept in the table window ba
   (0x0800C000..0x080BFFFF), and an update that writes only those keeps the codec ("keep codec" works).
 * One codec id for every build, `mduv380-1926-s11` (named after the first build supported); the descriptor's tag tells
   the builds apart: the build letter and version in BCD, 0x40000000 for a 10 W build, 0x80000000 for the AES 255
-  line. Each build has its own placed addresses, in `boards/mduv380/vocoder_mduv380.c`:
+  line, 0x20000000 for the AES 256 line (119.xx). Each build has its own placed addresses, in `boards/mduv380/vocoder_mduv380.c`:
 
 | build | tag | tables (address, length, CRC-32) | code (address, length, CRC-32) | free |
 |---|---|---|---|---|
@@ -255,6 +273,7 @@ pointer into the code and the 12 calls from the code kept in the table window ba
 | V19.06 CSV | 0x00561906 | 0x080D70F4, 0x12376, 0x22393F1B | 0x080E946C, 0xF6D6, 0x25117C5E | 29758 B below the descriptor |
 | P19.06 CSV-GPS | 0x00501906 | 0x080D94B4, 0x12416, 0x02CB0AB8 | 0x080EB8CC, 0xF6DE, 0xB18F0F57 | 20438 B below the descriptor |
 | P19.33 CSV-GPS | 0x00501933 | 0x080DBA54, 0x12726, 0x7B71694C | 0x080EE17C, 0xF4A2, 0xB2440AD5 | 10594 B below the descriptor |
+| D19.62 REC | 0x00441962 | 0x080DCFF0, 0x126E6, 0x78609264 | 0x080EF6D8, 0xF496, 0xC84F626A | 5138 B below the descriptor |
 | V19.74 CSV | 0x00561974 | 0x080DA36C, 0x1272E, 0x605799E9 | 0x080ECA9C, 0xF4A6, 0x54149419 | 16446 B below the descriptor |
 | D19.74 REC | 0x00441974 | 0x080DD330, 0x12746, 0xAC72D37E | 0x080EFA78, 0xF4BA, 0x1924F763 | 4174 B below the descriptor |
 | P19.74 CSV-GPS | 0x00501974 | 0x080DC8EC, 0x127CE, 0x6E6FD4E0 | 0x080EF0BC, 0xF49A, 0x97C6E76B | 6698 B below the descriptor |
@@ -263,8 +282,13 @@ pointer into the code and the 12 calls from the code kept in the table window ba
 | 10 W D19.74 REC | 0x40441974 | 0x080DD270, 0x12746, 0x3F3E347B | 0x080EF9B8, 0xF4BA, 0xAA99FD17 | 4366 B below the descriptor |
 | 10 W P19.74 CSV-GPS | 0x40501974 | 0x080DC86C, 0x127CE, 0x3CA2A02D | 0x080EF03C, 0xF4AE, 0x1B9C0A2B | 6806 B below the descriptor |
 | 10 W S19.74 GPS-REC | 0x40531974 | 0x080DF870, 0x127D6, 0xC39C3679 | 0x080C0000, 0xF4C2, 0x92924D87 | 66478 B below the tables |
+| V119.33 CSV AES 256 | 0x20561933 | 0x080E2814, 0x126B2, 0xD846D18D | 0x080C0000, 0xF3BE, 0xDF78448F | 78934 B below the tables |
+| 10 W D219.43 REC AES 255 | 0xC0441943 | 0x080E5CE8, 0x126DA, 0xE58708BB | 0x080C0000, 0xF38E, 0xDBEFEBD5 | 92506 B below the tables |
 | V219.60 CSV AES 255 | 0x80561960 | 0x080E322C, 0x1272A, 0xE880FF1B | 0x080C0000, 0xF3BE, 0x620F4AC5 | 81518 B below the tables |
 | P219.60 CSV-GPS AES 255 | 0x80501960 | 0x080E57AC, 0x127CA, 0xC76CFEB9 | 0x080C0000, 0xF39A, 0x307BE6B5 | 91154 B below the tables |
+| 10 W S219.43 GPS-REC AES 255 | 0xC0531943 | 0x080E82A8, 0x1277A, 0xE49417AC | 0x080C0000, 0xF3A6, 0x92171707 | 102146 B below the tables |
+| S219.62 GPS-REC AES 255 | 0x80531962 | 0x080E8A74, 0x127E2, 0x890727F1 | 0x080C0000, 0xF38E, 0x5914E57B | 104166 B below the tables |
+| 10 W D219.71 REC AES 255 | 0xC0441971 | 0x080D9BDC, 0x10DC4, 0x4E11B6BD | 0x080EA9A0, 0xF3BA, 0xBA95EC5F | 25126 B below the descriptor |
 | V219.74 CSV AES 255 | 0x80561974 | 0x080E396C, 0x1278A, 0xEF3C7105 | 0x080C0000, 0xF3B2, 0x254A2827 | 83386 B below the tables |
 | D219.74 REC AES 255 | 0x80441974 | 0x080E6774, 0x127A2, 0xE588E20F | 0x080C0000, 0xF3A6, 0x3E5C5BC2 | 95182 B below the tables |
 | P219.74 CSV-GPS AES 255 | 0x80501974 | 0x080E5EEC, 0x1282A, 0x9418379D | 0x080C0000, 0xF3B2, 0xBA895AC5 | 92986 B below the tables |
@@ -289,7 +313,7 @@ pointer into the code and the 12 calls from the code kept in the table window ba
 
 ## Extraction recipe
 
-1. Check the file's SHA-256 against the table above and the two-segment header.
+1. Check the file's SHA-256 against the table above and the two-segment header (10 W D219.71 REC AES 255 has the application segment only: its file offset is address - 0x0800C000 + 0x100).
 2. Get the key: derive it from the file (above) or a key file checked by its SHA-256.
 3. Decrypt the code and table windows (file offset = address - 0x0800C000 + 0x5D500). Check the first word and both
    SHA-256 values.
@@ -297,6 +321,6 @@ pointer into the code and the 12 calls from the code kept in the table window ba
 
 ## Open items
 
-* 19.03 and 19.06 from TYT, the 119.xx line, and REC / GPS-REC builds of Retevis 19.06 and 219.60: named in release
+* 19.03 and 19.06 from TYT, the other 119.xx builds (only V119.33 CSV has a file), and REC / GPS-REC builds of Retevis 19.06 and 219.60: named in release
   notes or expected, no file found.
 * On a radio: TX and RX voice through the codec as placed.

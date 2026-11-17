@@ -44,6 +44,15 @@
 #if CONFIG_POSITION
 #include "position/position.h"
 #endif
+#include "codeplug/codeplug_tag.h"
+#if CONFIG_P25
+#include "p25/p25_codeplug.h"
+#include "radio/radio_p25.h"
+#endif
+#if CONFIG_NXDN
+#include "nxdn/nxdn_codeplug.h"
+#include "radio/radio_nxdn.h"
+#endif
 #if CONFIG_KEY_ASSIGN
 #include "input/input.h"
 #include "input/input_engine.h"
@@ -82,7 +91,7 @@ static uint8_t ui_flag(uint8_t id)
 	}
 }
 
-static radio_view_t v;		// the radio's view (static: too big for the UI task's stack)
+radio_view_t ui_svc_view;	// ui_svc.h
 
 #if CONFIG_DMR_PRIVACY
 // Privacy key slot 1 (settings-store.md 3.1), typed in on the radio. While privacy is on, the radio core holds the
@@ -103,8 +112,8 @@ static void privacy_store(uint8_t type, uint32_t key)
 		st->privacy_active = 0;
 	}
 	settings_end(hal_millis());
-	radio_get_view(&v);
-	if (v.dmr.privacy) {
+	radio_get_view(&ui_svc_view);
+	if (ui_svc_view.dmr.privacy) {
 		radio_req_dmr_privacy(type, (uint16_t)key);
 	}
 }
@@ -712,21 +721,15 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 
 // --- Codeplug writes, on the housekeeping task (storage_job_post) ---
 
-// text: English, marked TRN. The UI translates it when it shows it (tr), so a translation longer than the event's 40
-// bytes isn't cut, and this task needs no language. The English must fit: a cut text never matches its translation
-static void save_failed_text(const char *text)
+// why: a key (TRN). The UI shows it in the language in use (tr), so this task needs no language
+static void save_failed(tr_id_t why)
 {
 	ui_event_t ev;
 	memset(&ev, 0, sizeof ev);
 	ev.kind = UI_EV_SAVE_FAILED;
-	strncpy(ev.text, text, sizeof ev.text - 1);
+	ev.why = why;
 	ui_notify(&ev);
 }
-
-#define save_failed(s)	do { \
-	_Static_assert(sizeof(s) <= sizeof((ui_event_t){0}.text), "the text fits ui_event_t.text"); \
-	save_failed_text(s); \
-} while (0)
 
 // What the job writes: a copy of the radio's view taken when the UI asked (the job runs up to 100 ms later), and the
 // talk target for a permanent one. Only the UI task fills it, and only while no job is pending
@@ -748,6 +751,10 @@ static struct {
 	};
 	uint32_t id;		// the talk target's, or the radio's own DMR ID
 	bool private_call;
+#if CONFIG_P25 || CONFIG_NXDN
+	bool air_set;		// write_channel_job: air is the channel's block
+	ui_air_conv_t air;
+#endif
 } job;
 
 // Another firmware's codeplug (codeplug_foreign, docs/spec/codeplug-native.md 2): the radio erases nothing of it on
@@ -850,7 +857,7 @@ static void cp_answer_job(void *ctx)
 		fn(NULL);
 	} else {
 		cp_drop();
-		save_failed(TRN("Couldn't write the codeplug: not saved"));
+		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
 	}
 }
 
@@ -873,7 +880,7 @@ static void dmr_id_job(void *ctx)
 {
 	(void)ctx;
 	if (!codeplug_set_dmr_id(job.id))
-		save_failed(TRN("Couldn't write the codeplug: not saved"));
+		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
 }
 
 static bool dmr_id_post(uint32_t id)
@@ -901,7 +908,7 @@ static void data_id_job(void *ctx)
 	was = set;
 	codeplug_keys_set_field(row, &set, job.id);
 	if (!codeplug_keys_store(radio_keys, RADIO_KEYS_N, &was, &set))
-		save_failed(TRN("Couldn't write the codeplug: not saved"));
+		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
 	else
 		dmr_data_set_settings(&set);
 }
@@ -931,7 +938,7 @@ static void tone_job(void *ctx)
 	now = was;
 	codeplug_keys_set_field(codeplug_keys_find(radio_tone_rows, RADIO_TONE_ROWS_N, job.channel), &now, job.temp);
 	if (!codeplug_keys_store(radio_tone_rows, RADIO_TONE_ROWS_N, &was, &now)) {
-		save_failed(TRN("Couldn't write the codeplug: not saved"));
+		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
 		return;
 	}
 	// Read again after the write (a flash write can take a while): a setting the UI or the debug link changed
@@ -953,6 +960,72 @@ static bool tone_post(uint16_t key, bool on)
 
 static channel_t job_ch;	// the job's working copy of the stored channel
 
+#if CONFIG_P25
+// A plain channel in P25 (the VFO, a mode changed for now) made a stored P25 channel from the radio's P25 settings
+// (p25-codeplug.md 2.3): its NACs, the squelch, the talk target's stored contact (none: talk group 1), talkaround
+// on or automatic; the NACs and squelch from conv instead when given (the channel editor's). Uses job_ch
+static bool p25_save_now(uint16_t number, const channel_t *ch, const p25_conv_t *given)
+{
+	radio_p25_settings_t s;
+	radio_p25_settings(&s);
+	p25_conv_t conv = { .rx_nac = s.rx_nac, .tx_nac = s.tx_nac,
+			    .squelch = s.rx_tgid != 0 ? P25_SQUELCH_SELECTIVE : P25_SQUELCH_NORMAL };
+	if (given != NULL)
+		conv = *given;
+	if (ch != &job_ch)
+		job_ch = *ch;
+#if CONFIG_DMR
+	job_ch.contact = codeplug_contact_find_index(s.tx_dst, !s.unit_call, NULL);
+#else
+	job_ch.contact = 0;
+#endif
+	job_ch.dmo = s.talkaround == RADIO_P25_TA_ON;
+	return p25_conv_save(number, &job_ch, &conv);
+}
+#endif
+
+#if CONFIG_NXDN
+// A plain channel in NXDN (the VFO, a mode changed for now) made a stored NXDN channel from the radio's NXDN settings
+// (nxdn-codeplug.md 2.2): the rate, the RANs, the squelch, the talk target's stored contact (none: group 1); the
+// block from conv instead when given (the channel editor's). Uses job_ch
+static bool nxdn_save_now(uint16_t number, const channel_t *ch, const nxdn_conv_t *given)
+{
+	radio_nxdn_settings_t s;
+	radio_nxdn_settings(&s);
+	nxdn_conv_t conv = { .rate9600 = s.rate9600, .rx_ran = s.rx_ran, .tx_ran = s.tx_ran,
+			     .squelch = s.rx_gid != 0 ? NXDN_SQUELCH_SELECTIVE : NXDN_SQUELCH_RAN };
+	if (given != NULL)
+		conv = *given;
+	if (ch != &job_ch)
+		job_ch = *ch;
+	job_ch.contact = codeplug_contact_find_index(s.tx_dst, !s.unit_call, NULL);	// CONFIG_NXDN needs CONFIG_DMR
+	return nxdn_conv_save(number, &job_ch, &conv);
+}
+#endif
+
+// A plain channel in an air mode written as a stored channel of its kind (the VFO, a mode changed for now); false in
+// *ok's place when it isn't one: the caller writes it as a plain channel
+static bool air_save_now(uint16_t number, const channel_t *ch, bool *ok)
+{
+	if (ch->kind != CODEPLUG_KIND_NONE)
+		return false;
+#if CONFIG_P25
+	if (ch->mode == RADIO_MODE_P25) {
+		*ok = p25_save_now(number, ch, NULL);
+		return true;
+	}
+#endif
+#if CONFIG_NXDN
+	if (ch->mode == RADIO_MODE_NXDN) {
+		*ok = nxdn_save_now(number, ch, NULL);
+		return true;
+	}
+#endif
+	(void)number;
+	(void)ok;
+	return false;
+}
+
 // Power, bandwidth, tones, mode, color code and timeslot go into the channel; the squelch is radio-wide (the default
 // squelch preference). The radio core re-reads the channel (codeplug_serial), and the clear makes the remaining
 // flags follow the new values
@@ -960,7 +1033,7 @@ static void save_channel_job(void *ctx)
 {
 	(void)ctx;
 	if (!codeplug_channel(job.channel, &job_ch)) {
-		save_failed(TRN("Couldn't read the channel: not saved"));
+		save_failed(TRN(STORE_ERR_CHANNEL_READ, "Couldn't read the channel: not saved"));
 		return;
 	}
 	if (job.temp & RADIO_TEMP_POWER)
@@ -977,8 +1050,11 @@ static void save_channel_job(void *ctx)
 		job_ch.color_code = job.now.color_code;
 	if (job.temp & RADIO_TEMP_TS)
 		job_ch.timeslot = job.now.timeslot;
-	if (!codeplug_set_channel(job.channel, &job_ch)) {
-		save_failed(TRN("Couldn't write the codeplug: not saved"));
+	bool ok;
+	if (!air_save_now(job.channel, &job_ch, &ok))
+		ok = codeplug_set_channel(job.channel, &job_ch);
+	if (!ok) {
+		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
 		return;
 	}
 	if (job.temp & RADIO_TEMP_SQUELCH) {
@@ -989,21 +1065,21 @@ static void save_channel_job(void *ctx)
 	radio_req_clear_temporary();
 }
 
-// Whether the radio is on a stored channel (its view in v)
+// Whether the radio is on a stored channel (its view in ui_svc_view)
 static bool take_channel(void)
 {
 	if (job_busy()) {
 		return false;	// the last write is still going on
 	}
-	radio_get_view(&v);
-	if (v.vfo || v.channel_number == 0 || v.hotspot) {
+	radio_get_view(&ui_svc_view);
+	if (ui_svc_view.vfo || ui_svc_view.channel_number == 0 || ui_svc_view.hotspot) {
 		return false;
 	}
-	job.channel = v.channel_number;
-	job.temp = v.temp;
-	job.power = v.power;
-	job.squelch = v.squelch;
-	job.now = v.ch;
+	job.channel = ui_svc_view.channel_number;
+	job.temp = ui_svc_view.temp;
+	job.power = ui_svc_view.power;
+	job.squelch = ui_svc_view.squelch;
+	job.now = ui_svc_view.ch;
 	return true;
 }
 
@@ -1012,14 +1088,57 @@ bool ui_svc_save_channel(void)
 	return take_channel() && cp_post(save_channel_job);
 }
 
+#if CONFIG_P25 || CONFIG_NXDN
+// The channel editor's P25 or NXDN channel with its block: a plain one in that mode becomes a stored one as in
+// air_save_now; one of the kind is written with the block over its tag's, the rest of the tag kept. A copy (from: the
+// source, another number) takes the source's tag first, so it keeps the same; where that fails its tag is new. False
+// in *ok's place when ch is neither: the caller writes it as usual
+static bool air_conv_save(uint16_t number, uint16_t from, const channel_t *ch, const ui_air_conv_t *conv, bool *ok)
+{
+	bool plain = ch->kind == CODEPLUG_KIND_NONE;
+	bool p25 = false, nxdn = false;
+#if CONFIG_P25
+	p25 = plain ? ch->mode == RADIO_MODE_P25 : ch->kind == CODEPLUG_KIND_P25;
+#endif
+#if CONFIG_NXDN
+	nxdn = plain ? ch->mode == RADIO_MODE_NXDN : ch->kind == CODEPLUG_KIND_NXDN;
+#endif
+	if (!p25 && !nxdn)
+		return false;
+	if (!plain && from != 0 && from != number && codeplug_set_channel(number, ch))
+		(void)codeplug_tag_copy(from, number, ch);
+#if CONFIG_P25
+	if (p25)
+		*ok = plain ? p25_save_now(number, ch, &conv->p25) : p25_conv_save(number, ch, &conv->p25);
+#endif
+#if CONFIG_NXDN
+	if (nxdn)
+		*ok = plain ? nxdn_save_now(number, ch, &conv->nxdn) : nxdn_conv_save(number, ch, &conv->nxdn);
+#endif
+	return true;
+}
+#endif
+
 // The channel editor's whole channel (ui.md 2.1). Writing the channel in use drops its temporary changes: the radio
 // core re-reads it (codeplug_serial), and the edited values are what the user wants now. Whether it is the channel in
-// use is decided here on the UI task: the job runs on the housekeeping task, which must not touch v
+// use is decided here on the UI task: the job runs on the housekeeping task, which must not touch ui_svc_view. A copy
+// of a channel of a kind takes its source's tag (job.id: the source); a plain channel in P25 or NXDN becomes a stored
+// one of that kind
 static void write_channel_job(void *ctx)
 {
 	(void)ctx;
-	if (!codeplug_set_channel(job.channel, &job.now)) {
-		save_failed(TRN("Couldn't write the codeplug: not saved"));
+	bool ok = false;
+	uint16_t from = (uint16_t)job.id;
+	bool done = false;
+#if CONFIG_P25 || CONFIG_NXDN
+	done = job.air_set && air_conv_save(job.channel, from, &job.now, &job.air, &ok);
+#endif
+	if (!done && !air_save_now(job.channel, &job.now, &ok))
+		ok = codeplug_set_channel(job.channel, &job.now) &&
+		     (job.now.kind == CODEPLUG_KIND_NONE || from == 0 || from == job.channel ||
+		      codeplug_tag_copy(from, job.channel, &job.now));
+	if (!ok) {
+		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
 		return;
 	}
 	if (job.temp != 0) {
@@ -1027,17 +1146,38 @@ static void write_channel_job(void *ctx)
 	}
 }
 
-bool ui_svc_write_channel(uint16_t number, const channel_t *ch)
+// conv: the block of a P25 or NXDN channel (the channel editor's), NULL: none given
+static bool write_channel_post(uint16_t number, const channel_t *ch, uint16_t from, const void *conv)
 {
 	if (number == 0 || number > CODEPLUG_CHANNELS_MAX || job_busy()) {
 		return false;
 	}
-	radio_get_view(&v);
+	radio_get_view(&ui_svc_view);
 	job.channel = number;
-	job.temp = !v.vfo && v.channel_number == number && v.temporary;	// here: drop the temporary changes after it
+	job.temp = !ui_svc_view.vfo && ui_svc_view.channel_number == number && ui_svc_view.temporary;	// here: drop the temporary changes after it
 	job.now = *ch;
+	job.id = from;
+#if CONFIG_P25 || CONFIG_NXDN
+	job.air_set = conv != NULL;	// before the post: the job may run at once on its own task
+	if (conv != NULL)
+		job.air = *(const ui_air_conv_t *)conv;
+#else
+	(void)conv;
+#endif
 	return cp_post(write_channel_job);
 }
+
+bool ui_svc_write_channel(uint16_t number, const channel_t *ch, uint16_t from)
+{
+	return write_channel_post(number, ch, from, NULL);
+}
+
+#if CONFIG_P25 || CONFIG_NXDN
+bool ui_svc_write_channel_air(uint16_t number, const channel_t *ch, uint16_t from, const ui_air_conv_t *conv)
+{
+	return write_channel_post(number, ch, from, conv);
+}
+#endif
 
 #if CONFIG_CONTACT_EDIT
 // The contact editor's contact (ui.md 2.4). The radio core's name cache follows codeplug_serial()
@@ -1046,7 +1186,7 @@ static void write_contact_job(void *ctx)
 {
 	(void)ctx;
 	if (!codeplug_set_contact(job.channel, &job.contact)) {
-		save_failed(TRN("Couldn't write the codeplug: not saved"));
+		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
 	}
 }
 
@@ -1070,18 +1210,18 @@ bool ui_svc_write_contact(uint16_t index, const contact_t *c)
 static zone_op_t zq[ZONE_QUEUE];
 static volatile uint8_t zq_head, zq_tail;
 
-static const char *zone_edit_text(zone_edit_result_t r)
+static tr_id_t zone_edit_text(zone_edit_result_t r)
 {
 	switch (r) {
-	case ZONE_EDIT_FULL: return TRN("Zone full: not saved");
-	case ZONE_EDIT_ZONES_FULL: return TRN("No room for another zone");
-	case ZONE_EDIT_IN_ZONE: return TRN("Already in this zone");
-	case ZONE_EDIT_NO_FREE: return TRN("No free channel");
-	case ZONE_EDIT_NO_NAME: return TRN("Give it a name first");
-	case ZONE_EDIT_EDGE: return TRN("Already at the end");
-	case ZONE_EDIT_NO_ZONE: return TRN("That zone is gone");
-	case ZONE_EDIT_NO_CHANNEL: return TRN("That channel is gone");
-	default: return TRN("Couldn't write the codeplug: not saved");
+	case ZONE_EDIT_FULL: return TRN(STORE_ERR_ZONE_FULL, "Zone full: not saved");
+	case ZONE_EDIT_ZONES_FULL: return TRN(ZONE_ERR_NO_ROOM, "No room for another zone");
+	case ZONE_EDIT_IN_ZONE: return TRN(STORE_ERR_ALREADY_IN_ZONE, "Already in this zone");
+	case ZONE_EDIT_NO_FREE: return TRN(TOAST_NO_FREE_CHANNEL, "No free channel");
+	case ZONE_EDIT_NO_NAME: return TRN(TOAST_NAME_FIRST, "Give it a name first");
+	case ZONE_EDIT_EDGE: return TRN(STORE_ERR_ALREADY_AT_END, "Already at the end");
+	case ZONE_EDIT_NO_ZONE: return TRN(STORE_ERR_ZONE_GONE, "That zone is gone");
+	case ZONE_EDIT_NO_CHANNEL: return TRN(STORE_ERR_CHANNEL_GONE, "That channel is gone");
+	default: return TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved");
 	}
 }
 
@@ -1143,18 +1283,18 @@ static void save_target_job(void *ctx)
 {
 	(void)ctx;
 	if (!codeplug_channel(job.channel, &job_ch)) {
-		save_failed(TRN("Couldn't read the channel: for now only"));
+		save_failed(TRN(STORE_ERR_TARGET_CHANNEL_READ, "Couldn't read the channel: for now only"));
 		return;
 	}
 	// A contact record that couldn't be read counts as not stored: nothing is written then
 	uint16_t found = codeplug_contact_find_index(job.id, !job.private_call, &job.target);
 	if (found == 0) {
-		save_failed(TRN("Not a stored contact: for now only"));
+		save_failed(TRN(STORE_ERR_TARGET_NOT_STORED, "Not a stored contact: for now only"));
 		return;
 	}
 	job_ch.contact = found;
 	if (!codeplug_set_channel(job.channel, &job_ch)) {
-		save_failed(TRN("Codeplug not written: for now only"));
+		save_failed(TRN(STORE_ERR_TARGET_NOT_WRITTEN, "Codeplug not written: for now only"));
 		return;
 	}
 	radio_req_dmr_target_clear();	// the channel's own target is this one now
@@ -1164,9 +1304,9 @@ bool ui_svc_save_talk_target(uint32_t id, bool private_call)
 {
 	if (id == 0)
 		return false;
-	radio_get_view(&v);
-	if (v.vfo) {
-		if (!CONFIG_VFO_DMR || v.hotspot)
+	radio_get_view(&ui_svc_view);
+	if (ui_svc_view.vfo) {
+		if (!CONFIG_VFO_DMR || ui_svc_view.hotspot)
 			return false;
 		radio_req_dmr_target(id, private_call);	// the VFO's own target: kept with its settings, nothing to write
 		return true;
@@ -1197,11 +1337,11 @@ static void factory_reset_job(void *ctx)
 	bool saved = settings_flush();
 	storage_native_t n = storage_native_erase();
 	if (!saved && storage_ready()) {
-		save_failed(TRN("Reset: the settings couldn't be saved"));
+		save_failed(TRN(STORE_ERR_RESET_SETTINGS, "Reset: the settings couldn't be saved"));
 		return;
 	}
 	if (n == STORAGE_NATIVE_FAILED && storage_ready()) {
-		save_failed(TRN("Reset: native area couldn't be erased"));
+		save_failed(TRN(STORE_ERR_RESET_ERASE, "Reset: native area couldn't be erased"));
 		return;
 	}
 	if (board.system != NULL && board.system->reboot != NULL) {
@@ -1247,7 +1387,7 @@ static void name_job(void *ctx)
 					    job.channel == UI_NAME_BOOT2 ? job.name : l2);
 	}
 	if (!ok)
-		save_failed("Couldn't write the codeplug: not saved");
+		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
 }
 
 bool ui_svc_name_set(uint8_t which, const char *text)
@@ -1276,6 +1416,7 @@ static void key_apply(void)
 	keymap_entry_t map[INPUT_KEYS_MAX];
 	uint8_t n = board.keymap_len > INPUT_KEYS_MAX ? INPUT_KEYS_MAX : board.keymap_len;
 	keyassign_build(board.keymap, n, board.side_keys, board.side_key_count, key_slots, map);
+	keyassign_build_home(map, n, board.home_keys, board.home_key_count, board.side_key_count, key_slots);
 	input_set_keymap(map);
 }
 
@@ -1297,7 +1438,7 @@ static void key_write_job(void *ctx)
 {
 	(void)ctx;
 	if (!codeplug_set_quick_keys(key_job_slots)) {
-		save_failed(TRN("Couldn't save the keys: for now only"));
+		save_failed(TRN(STORE_ERR_KEYS_NOT_SAVED, "Couldn't save the keys: for now only"));
 	}
 }
 
@@ -1327,15 +1468,46 @@ static int32_t key_get(uint8_t id)
 		key_load();
 	}
 	uint8_t k = (uint8_t)(id - UI_SET_KEY_FIRST);
-	return keyassign_get(key_slots, k / 2u, (k & 1u) != 0);
+	uint8_t fn = keyassign_get(key_slots, k / 2u, (k & 1u) != 0);
+	// A home key's slot holding what it can't do (Monitor, Tone burst from a CPS) reads as Default, as it acts
+	if (k / 2u >= board.side_key_count && !keyassign_home_allowed(fn, (k & 1u) != 0)) {
+		return KEYFN_DEFAULT;
+	}
+	return fn;
+}
+
+uint8_t ui_svc_home_key(uint8_t action, uint8_t gesture, bool home)
+{
+	if (action < ACT_HOME_KEY_1) {
+		return action;
+	}
+	if (!key_loaded) {
+		key_load();
+	}
+	uint8_t n = board.keymap_len > INPUT_KEYS_MAX ? INPUT_KEYS_MAX : board.keymap_len;
+	return keyassign_home_event(action, gesture, home, board.keymap, n, board.home_keys, board.home_key_count,
+				    board.side_key_count, key_slots);
+}
+
+bool ui_svc_key_offered(uint8_t id, int32_t value)
+{
+	uint8_t k = (uint8_t)(id - UI_SET_KEY_FIRST);
+	if (id < UI_SET_KEY_FIRST || id > UI_SET_KEY_LAST || value < 0 || value >= KEYFN_COUNT) {
+		return false;
+	}
+	if (k / 2u < board.side_key_count) {
+		return keyassign_allowed((uint8_t)value, (k & 1u) != 0);
+	}
+	return k / 2u < board.side_key_count + board.home_key_count &&
+	       keyassign_home_allowed((uint8_t)value, (k & 1u) != 0);
 }
 
 static bool key_set(uint8_t id, int32_t value)
 {
-	uint8_t k = (uint8_t)(id - UI_SET_KEY_FIRST);
-	if (k / 2u >= board.side_key_count || value < 0 || value >= KEYFN_COUNT) {
+	if (!ui_svc_key_offered(id, value)) {
 		return false;
 	}
+	uint8_t k = (uint8_t)(id - UI_SET_KEY_FIRST);
 	if (!key_loaded) {
 		key_load();
 	}

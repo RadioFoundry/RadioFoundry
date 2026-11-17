@@ -57,8 +57,9 @@ Requests: `radio_req_scan(cmd)` with stop, zone, VFO, dual, cancel, nuisance or 
 tuned channel or frequency is the core view's as usual.
 
 - **Zone scan** visits the current zone's channels in order, from the one it started on, skipping empty positions and
-  channels marked "zone skip" in the codeplug. FM and DMR channels mix freely: each stop tunes the channel as a
-  channel change would.
+  channels marked "zone skip" in the codeplug. FM, DMR, P25 and NXDN channels mix freely: each stop tunes the
+  channel as a channel change would (P25, NXDN: the engine starts there). Left out: parked channels, P25 trunked
+  channels, and NXDN channels at a rate the board can't receive ([p25.md](p25.md) 7.1, [nxdn.md](nxdn.md) 6.4).
 - **VFO scan** steps the VFO frequency by its step from `lo` to `hi` and wraps. Without a range it sweeps the board
   band the VFO frequency is in. Both ends must be in one band, at least one step apart.
 - **Dual watch** alternates between two channels, skip flags ignored (2.1). `radio_req_scan_dual(pos)` (the debug
@@ -71,14 +72,29 @@ is "active" when FM squelch opens (with the RX tone if the channel needs one) or
 A carrier that isn't active yet earns a probe: 350 ms on FM channels that need a tone (CTCSS detection takes 100 to
 250 ms), 700 ms on DMR; other FM channels move on at once. On DMR a carrier is the noise reading at the squelch level
 or the signal strength at the DMR scale (level 1 above -112 dBm, 3 dB a level: -100 dBm at the default level; some
-receivers' noise reading doesn't follow a DMR signal, [gotchas](gotchas.md) 17.3). A carrier seen in the last 150 ms still counts (direct
+receivers' noise reading doesn't follow a DMR signal, [gotchas](gotchas.md) 17.3). Level 1 is also at least 6 dB above
+the floor: the lowest strength read past the settle on the last 8 stops (the first stop has none), since a strength
+reading that isn't calibrated can sit above the scale on an empty channel ([gotchas](gotchas.md) 17.4). A carrier seen in the last 150 ms still counts (direct
 mode is on air 30 ms in every 60, and the noise reading drops between bursts), and once the modem delivers bursts with
 the channel's color code since the stop's settle ("sync", from `dmr_call_last_activity`, a late entry still waiting for
 its LC included) the probe lasts up to 1.5 s: a call already in progress is taken from its embedded LC, which needs the
 next complete superframe at best and the one after it when the modem's sticky LC equals this call's (about 1.1 s from
 the retune). Each DMR stop on a new frequency restarts the modem's receiver, so it searches from the retune and not on the
 last transmitter's slot timing ([gotchas](gotchas.md) 17.2). A call known not to be for us (another talkgroup) ends
-the probe. Empty channels still move on after the dwell.
+the probe. P25 and NXDN stops read a carrier as DMR does, probe up to 700 ms for a call of the channel's NAC or RAN,
+up to 1.5 s while its squelch waits for a field (a late entry's talk group or group), hold on a call that plays and
+move on from one that doesn't ([p25.md](p25.md) 7.1). Digital monitor on when a zone or VFO scan starts (the hear-all latch, [dmr-voice.md](dmr-voice.md) 1) stays on
+at every stop (`hear_all_latch` in the view), so a call to any talkgroup is played and holds the scan; the channel the
+scan ends on, by STOP, CANCEL or PTT, keeps it latched. Toggling it during the scan turns it on or off for the rest of
+the scan. Dual watch doesn't carry it. Empty channels still move on after the dwell.
+
+**A mixed frequency.** A zone may hold an FM channel and digital channels (DMR, P25, NXDN) on one receive frequency.
+A digital signal can open the FM squelch, and a scan that held the FM stop would sit through the call there and never
+reach the channel that plays it. So before an FM stop holds, the scan checks the zone's digital channels on that
+frequency in zone order, each as a stop with its usual probe (`scan_mixed` in `radio_sm.c`). A call there holds it.
+A stop that heard its own mode (a call not for us included) ends the check, and the sweep goes on from where it was.
+When none heard its mode, the signal was FM: the scan goes back to the FM stop, which holds this time. Trunked
+channels are not stops (above), so they are never checked.
 The view counts the stops probed (`scan_probes`) and those with sync (`scan_synced`) for each scan. Active: the scan holds
 (`scan_phase=hold`), then follows `scan_resume`; after the signal ends it waits `scan_delay_ms` (`resume`) and picks
 up again if the signal comes back. MONITOR held pauses the scan (`paused`).
@@ -127,11 +143,19 @@ VFO during the watch copies into a VFO the other channel isn't on: the one last 
 dual.sel dual.at`, [debuglink.md 3.7](debuglink.md#37-get_view)); the view's `dual_busy` is `dual.busy`. `radio_get_vfo(index)` returns a VFO's settings while something else is tuned (a VFO pane). Built without `CONFIG_DUAL_WATCH`
 only the debug link's dual watch is left: two channels of the current zone, and PTT ends it as it ends any scan.
 
+A P25 or NXDN channel (a stored one, or the VFO in that mode) can be either side. The scan's rules apply to it (2): it
+is one only where the board receives that mode at the channel's rate, never as a trunked channel, and a look there
+starts its engine, probes a carrier for up to 700 ms and holds for a call that plays. The air interface runs one engine
+at a time, so with P25 on one side and NXDN on the other each hop stops one engine and starts the other. The UI
+refuses a trunked channel at once; a mode the board can't receive is refused by the radio core, and the watch doesn't
+start. The panes name the mode and show no tone or bandwidth for it, and don't show the caller of a P25 or NXDN call.
+
 ### 2.2 A second receiver
 
 A board with a second receiver sets `board.rx2` (`hal/hal_rx2.h`; the GD-88's second SoC, over the link in
 [rx2-link.md](rx2-link.md)). In dual watch the main receiver then stays on the selected channel and the second one gets
-the other. Nothing alternates, and the scan's hold and resume timing aren't used. The view's `rx2` is 1 while this is
+the other. Nothing alternates, and the scan's hold and resume timing aren't used. It takes FM and DMR only: when the
+channel not selected is P25 or NXDN, the main receiver alternates as in 2.1. The view's `rx2` is 1 while this is
 so (the debug link's `dual.both`).
 
 | Event | What happens |
@@ -152,7 +176,10 @@ second one has its channel: the dual watch screens then show a call on each pane
 
 `tx_check` refuses PTT, before keying: TX inhibit (`inhibit`), a critical battery (`battery`, 5.2), busy channel
 lockout (`busy`; carrier = squelch open or noise below the open threshold; wrong tone = that, while the channel's RX
-tone is not decoded). The deny beep sounds; the state is `tx_denied` until PTT is released.
+tone is not decoded). The deny beep sounds, except for `busy`; the state is `tx_denied` until PTT is released. A
+busy refusal is quiet so the call being received is heard in full: no deny beep (FM and DMR), and on FM a reception
+that was playing plays on while PTT is held (`deny_rx`), until the squelch would have closed. After the release it is
+an ordinary reception again, its RX tone still counted as heard.
 
 The test TX limit (`core/radio/tx_limit.h`, built with `CONFIG_DEBUGLINK`) is a limit a test harness sets over the
 debug link (RADIO op 35, [debuglink.md](debuglink.md) 3.8): block every transmission, or allow only a list of up to 10
@@ -357,7 +384,7 @@ None of them needs a correction in the driver. The HIL test (`test_fm_tx_dtmf`) 
 | error | 400 Hz 150 ms | UI errors |
 | TX permit | 1600 Hz 50 ms twice | DMR: the channel is granted (unless the codeplug channel has "no beep", or `talk_permit` is off: Settings > Sound > Talk permit tone) |
 | TX permit, before keying | 1600 Hz 80 ms | The TX permit on boards with `CAP_BEEP_NOT_ON_AIR`, whose beeps can't sound while DMR transmits: once the call is admitted, the stack holds the key-up (`dmr_call_config_t.permit_hold_ms`, `permit_busy`) while the radio still receives and this tone plays. It keys once the tone and the driver's buffers have played out (`hal_audio_t.spk_pending`): at least 40 ms, at most 400 ms (`DMR_CALL_PERMIT_MAX_MS`). The same conditions as the TX permit |
-| TX deny | 300 Hz 400 ms | any TX refusal, unless Settings > Sound > TX denied tone is off (settings area key 0x0006) |
+| TX deny | 300 Hz 400 ms | any TX refusal but a busy channel (3.1), unless Settings > Sound > TX denied tone is off (settings area key 0x0006) |
 | call end | 1200 Hz 50 ms, 900 Hz 70 ms | DMR: a played call ended (unless "no beep", or Settings > Sound > Call end tone is off: settings area key 0x0003) |
 | TOT warning | 1000 Hz 100 ms twice | 3.2, unless Settings > Sound > TOT warning tone is off (settings area key 0x0004) |
 | battery low | 800 Hz, 600 Hz | entering low, then every 2 min, unless Settings > Sound > Battery tone is off (settings area key 0x0005) |
@@ -365,6 +392,7 @@ None of them needs a correction in the driver. The HIL test (`test_fm_tx_dtmf`) 
 | scan hold | 1400 Hz 40 ms | the scan stops on a signal, if `scan_beep` (Settings > Sound > Scan stop tone, off by default) |
 | emergency | 1500 / 900 Hz warble, 6 x 160 ms | someone's emergency heard (alarm or emergency call), if the emergency setting's tone is on (Settings > Sound > Emergency tone, `dmr-emergency.md`) |
 | message | 1000, 1300, 1700 Hz rising, 60-90 ms each | a text message arrived: the UI asks for it (`radio_req_beep(BEEP_MESSAGE)`) when Settings > Sound > Message tone is on |
+| system back | 1000 Hz, 1400 Hz, 60 ms each | a trunked system found again from its fallback channel ([dmr-trunking.md](dmr-trunking.md) 12.5) |
 | sweep | 400 ms silence, then 150 Hz to 3.8 kHz over 4 s, phase continuous | the speaker test, from the debug link only (op 22, which can delay it); `test_speaker_sweep` measures the speaker's response and whether the audio path plays it whole |
 
 The four tones with a settings area key (`radio_tone_rows` in `core/radio/radio_keys.h`,
@@ -542,7 +570,8 @@ last transmission began, so an unattended one can be placed afterwards (debuglin
 On an idle FM channel after `rx_save_idle_s` without activity (keys, requests, receptions, PTT), the receiver sleeps
 200 / 400 / 800 ms and listens 100 ms (`rx_sleeping` in the view). Any signal in the listen window keeps it awake;
 anything else (a key, a request, MONITOR, scan, VOX, DMR channel, hotspot, a channel with the codeplug "no eco" flag,
-APRS receive listening on the APRS frequency, `aprs.md` 5.3) stops it. The board's `rx_sleep` hook turns the receiver off and back on. On air
+APRS receive listening on the APRS frequency, `aprs.md` 5.3) stops it. The board's `rx_sleep` hook turns the receiver off and back on. A board that sets `rx_sleep_dmr` also lets a
+trunked system's power save use it on a DMR channel (`dmr-trunking.md` 7.13). On air
 on an AT1846S board since 2026-10-10 (`test_battery_save*`: cycles when idle, MONITOR and a call wake it); the setting stays off by default.
 
 ### 5.5 Power switch
@@ -576,13 +605,14 @@ the network or the user sets it, the radio shows "no time", and records keep usi
 ### 5.7 LEDs
 
 The radio core drives the board's red and green LEDs (`board.power->led`); `view.leds` (debug link `leds`) is what it
-drives. Red: transmitting. Green: a reception that plays (FM squelch open, a DMR call played). Two timed signals go
+drives. Red: transmitting. Green: a reception that plays (FM squelch open, a DMR call played), but not a broadcast station. Two timed signals go
 over that (`radio_sm.c` `led_signals`, the times in `radio_sm.h`), for radios without a screen above all:
 
 | Signal | LEDs |
 | --- | --- |
 | Waking a repeater (DMR, PTT through a repeater that isn't up) | red once per wake-up burst sent, `RADIO_LED_WAKE_MS` (100 ms) each, dark while the radio listens for the answer. The call stack counts the bursts (`dmr_call_view_t.wake_sent`) |
-| A TX deny, every reason (`RS_TX_DENIED`), and a repeater that didn't wake after a short press was let go | red, green, red, green, red, green, `RADIO_LED_DENY_STEP_MS` (100 ms) each, once, with the deny tone; then what the state shows. A transmission that starts during it ends it |
+| A TX deny, every reason (`RS_TX_DENIED`), and a repeater that didn't wake after a short press was let go | red, green, red, green, red, green, `RADIO_LED_DENY_STEP_MS` (100 ms) each, once, with the deny tone (none for a busy channel, 3.1); then what the state shows. A transmission that starts during it ends it |
+| The PTT line stuck low, which only a power cycle releases ([gotchas.md](gotchas.md) 16.5) | red and green in turn, 125 ms each, until the power cycle |
 
 Once the repeater answers and the voice goes out, red is solid as for any transmission. The tick and the poll keep
 calling `outputs()` while a signal runs, so it keeps time when nothing else changes.
