@@ -12,7 +12,7 @@ byte-identical: `dm32-049` also covers DM32.01.01.047, `dm32-037` covers 039 and
 program flash read), `dm1701-v0203-csv` covers DM-1701 V02.01 and V02.02 CSV. Builds whose codec code differs get a map
 each: the DM-1701 noCSV files have `dm1701-v0206-nocsv` and `dm1701-v0203-nocsv`.
 
-`md9600/` maps the 32 TYT MD-9600 and Retevis RT90 original firmware files, one per build (03.28 to 26.57, in the CSV,
+`md9600/` maps the 33 TYT MD-9600 and Retevis RT90 original firmware files, one per build (03.28 to 126.61, in the CSV,
 CSV-GPS, REC and GPS-REC variants that exist). The MD-9600 board installs the codec from any of them, and the DM-1701
 takes its codec from the 21 of them it has profiles for, since an open-firmware install leaves that codec on the radio
 ([docs/spec/codec-md9600.md](../../../../docs/spec/codec-md9600.md),

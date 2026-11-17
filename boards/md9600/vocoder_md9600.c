@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 vocoder: the radio's own stock AMBE+2 codec, run from flash (docs/spec/codec-md9600.md). Every TYT and Retevis
 // build of the codec that has a map is accepted (the profiles below, one per original firmware file: 03.28, 03.29,
-// 04.03, 06.03, 06.09, 06.24, 16.24, 16.45, 26.38, 26.41, 26.42, 26.45 and 26.57, each in the CSV, CSV-GPS, REC and
+// 04.03, 06.03, 06.09, 06.24, 16.24, 16.45, 26.38, 26.41, 26.42, 26.45, 26.57 and 126.61, each in the CSV, CSV-GPS, REC and
 // GPS-REC variants it exists in); the codec is board-independent, so any of them serves every revision. The calls are
 // the other STM32F4 hosts', at the same entry offsets (platform/stm32f4/hrc/vocoder.c).
 //
@@ -260,6 +260,12 @@ static const stm32_codec_profile_t m2642s = {
 	.code_crc = 0x16CE0290u, .tables = m2642s_tables, .windows = 1, .at = ENTRIES,
 };
 
+// MD9600-AES-GPS-REC(2571V5)-S126.61.bin (S126.61 GPS-REC AES)
+static const codec_desc_window_t m12661s_tables[1] = { { 0x080C000Cu, 0x110C2u, 0x4AA80D99u } };
+static const stm32_codec_profile_t m12661s = {
+	.tag = 0x132661u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO, .code = CODEC_CODE, .code_len = 0xF21Eu,
+	.code_crc = 0x2FC4B765u, .tables = m12661s_tables, .windows = 1, .at = ENTRIES,
+};
 
 static const stm32_codec_profile_t *const profiles[] = {
 	&v0609, &v1645, &m0609p, &m0609d, &m0609s, &m0624v,
@@ -267,7 +273,8 @@ static const stm32_codec_profile_t *const profiles[] = {
 	&m1624v, &m1624p, &m1624d, &m1624s, &m2645v, &m2645p,
 	&m2645d, &m2645s, &m2657d, &m0603v, &m0603p, &m0603d,
 	&m0603s, &m0328d, &m0329d, &m0403d, &m2641v, &m2641p, &m2638d, &m2642s,
+	&m12661s,
 };
-const stm32_codec_profiles_t stm32_codec_profiles = { profiles, 32 };
+const stm32_codec_profiles_t stm32_codec_profiles = { profiles, 33 };
 
 #endif	// CONFIG_DMR

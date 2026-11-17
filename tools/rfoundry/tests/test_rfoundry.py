@@ -804,7 +804,7 @@ MD9600_STOCK = tuple(k for k, p in stockfw.PROFILES.items() if p["board"] == "md
 MD9600_ONLY = {"MD9600-CSV-V06.03.bin", "MD9600-CSV-GPS-P06.03.bin", "MD9600-REC-D06.03.bin", "MD9600-GPS-REC-S06.03.bin",
                "MD9600-REC-D03.28.bin", "MD9600-REC-D03.29.bin", "MD9600-REC-D04.03.bin",
                "RT90-CSV(2571V5)-V26.41.bin", "RT90-CSV-GPS(2571V5)-P26.41.bin", "RT90-REC(2571V5)-D26.38.bin",
-               "RT90-GPS-REC(2571V5)-S26.42.bin"}
+               "RT90-GPS-REC(2571V5)-S26.42.bin", "MD9600-AES-GPS-REC(2571V5)-S126.61.bin"}
 
 
 class StockLibrary(unittest.TestCase):
@@ -1551,7 +1551,7 @@ class MdUv380(unittest.TestCase):
     def test_board(self):
         b = self.B
         self.assertEqual(b.codec.id, "mduv380-1926-s11")
-        self.assertEqual(len(b.codec_stock), 35)
+        self.assertEqual(len(b.codec_stock), 41)
         self.assertEqual(b.codec_stock[0], self.V1926)		# the first: what the simulations use
         self.assertEqual([s.index for s in b.codec_sectors()], [10, 11])
         self.assertEqual(b.app_region, (0x0800C000, 0x080C0000))
@@ -1596,7 +1596,7 @@ class MdUv380(unittest.TestCase):
             self.assertEqual(tw["min_len"], pl["tables_len"])
             wins = stockfw.layout(prof)
             self.assertEqual(wins[-1][:2], (stockfw.DESC_ADDR, stockfw.DESC_LEN))
-        self.assertEqual(len(tags), 35)
+        self.assertEqual(len(tags), 41)
 
     def synthetic(self):
         return stockfw.build_synthetic_stock(KEY, random.Random(19), self.V1926)
