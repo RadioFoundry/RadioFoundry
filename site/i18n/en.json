@@ -232,7 +232,7 @@
  "screen.banner_call_alert": "Call alert received",
  "screen.banner_message": "New message",
  "screen.banner_zone_offer": "A zone offered by another radio",
- "screen.zone_offer": "A zone shared over the air: import, preview or reject",
+ "screen.zone_offer": "Wireless zone and channel sharing, radio to radio",
  "screen.zone_offer_preview": "The channels of an offered zone",
  "screen.zone_offer_ch": "One channel shared by another radio",
  "screen.tools_zone_offer": "Tools with a shared zone waiting",
