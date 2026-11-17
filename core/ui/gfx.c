@@ -366,6 +366,23 @@ static void icon_glyph(const font_t *f, int x, int y, uint8_t c, color_t fg)
 	}
 	int t = f->w >= 12 ? 2 : 1;			// line width
 	int l = x, r = x + f->w - 1 - (f->w >= 8 ? 1 : 0), tp = y + top, bt = y + top + rows - 1;
+	if (c == 0x87 || c == 0x88) {
+		bool up = c == 0x87;
+		int cx = l + (r - l + 1 - t) / 2;
+		int head = (bt - tp) / 3;
+		if (head > (r - l) / 2)
+			head = (r - l) / 2;
+		if (head < 1)
+			head = 1;
+		int stem_top = up ? tp + head : tp;
+		int stem_bottom = up ? bt : bt - head;
+		gfx_fill(cx, stem_top, t, stem_bottom - stem_top + 1, fg);
+		int tip = up ? tp : bt;
+		int back = up ? tp + head : bt - head;
+		seg(cx - head, back, cx, tip, t, fg);
+		seg(cx + head, back, cx, tip, t, fg);
+		return;
+	}
 	if (c == 0x86) {
 		// Reply: a riser on the right, the bar back along the lower third, the head at its left end
 		int mid = tp + (bt - tp) * 2 / 3;
@@ -423,6 +440,8 @@ static void fallback_glyph(const font_t *f, int x, int y, uint8_t c, color_t fg)
 	case 0x84:
 	case 0x85:
 	case 0x86:
+	case 0x87:
+	case 0x88:
 		icon_glyph(f, x, y, c, fg);
 		break;
 	default:	// not drawable: a box
@@ -494,7 +513,7 @@ uint32_t gfx_utf8_next(const char *s, int *len)
 			return cp;
 		}
 	}
-	*len = 1;			// ASCII, a glyph byte (0x80..0x85), or Latin-1 text
+	*len = 1;			// ASCII, a glyph byte (0x80..0x88), or Latin-1 text
 	return b[0];
 }
 

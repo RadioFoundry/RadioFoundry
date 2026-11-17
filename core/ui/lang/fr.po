@@ -4323,6 +4323,16 @@ msgid "Satellite unavailable"
 msgstr "Satellite indisponible"
 
 #: core/ui/ui_satellite.c
+msgctxt "SATELLITE_LABEL_RISE"
+msgid "↑ in"
+msgstr "↑ dans"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_LABEL_SET"
+msgid "↓ in"
+msgstr "↓ dans"
+
+#: core/ui/ui_satellite.c
 msgctxt "PREDICTING_PASSES_2"
 msgid "Predicting passes"
 msgstr "Calcul des passages"
@@ -4378,11 +4388,6 @@ msgid "Tracking"
 msgstr "Suivi"
 
 #: core/ui/ui_satellite.c
-msgctxt "AOS_IN_2"
-msgid "AOS in"
-msgstr "AOS dans"
-
-#: core/ui/ui_satellite.c
 msgctxt "OTHER_SATELLITE_2"
 msgid "Other satellite"
 msgstr "Autre satellite"
@@ -4403,24 +4408,14 @@ msgid "Visible now"
 msgstr "Visible maintenant"
 
 #: core/ui/ui_satellite.c
-msgctxt "LOS"
-msgid "LOS"
-msgstr "LOS"
-
-#: core/ui/ui_satellite.c
 msgctxt "CALCULATING"
 msgid "Calculating"
 msgstr "Calcul en cours"
 
 #: core/ui/ui_satellite.c
-msgctxt "LOS_BEYOND_FORECAST"
-msgid "LOS beyond forecast"
-msgstr "LOS au-delà des prévisions"
-
-#: core/ui/ui_satellite.c
-msgctxt "LOS_IN"
-msgid "LOS in"
-msgstr "LOS dans"
+msgctxt "SATELLITE_STATE_BEYOND_FORECAST"
+msgid "Beyond forecast"
+msgstr "Hors prévision"
 
 #: core/ui/ui_satellite.c
 msgctxt "UP_DOWN_SATELLITE_OK_TRACK"

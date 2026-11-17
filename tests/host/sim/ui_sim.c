@@ -2190,6 +2190,8 @@ bool ui_svc_position(ui_position_t *out)
 static uint8_t sim_satellite_selected;
 static bool sim_satellite_predicting;
 static bool sim_satellite_path_pending;
+static bool sim_satellite_los_pending;
+static bool sim_satellite_future_pass;
 static const char *const sim_satellite_names[] = { "ISS", "NOAA 19", "SO-50", "AO-91", "AO-123" };
 static const uint32_t sim_satellite_catalog_ids[] = { 25544u, 33591u, 27607u, 43017u, 58421u };
 static const uint16_t sim_satellite_eta_minutes[] = { 14u, 36u, 53u, 71u, 96u };
@@ -2242,14 +2244,17 @@ bool ui_svc_satellite_track(bool enabled, uint8_t index)
 	sim_satellite_selected = index;
 	view.satellite_tracking = enabled;
 	view.satellite_index = index;
-	view.satellite_status = enabled ? (sim_satellite_path_pending ? 2u : 3u) : 0u;
+	view.satellite_status = enabled ? (sim_satellite_path_pending || sim_satellite_future_pass ? 2u : 3u) : 0u;
 	view.satellite_nominal_rx_hz = enabled ? 145000000u : 0u;
 	view.satellite_nominal_tx_hz = enabled ? 435000000u : 0u;
 	view.satellite_rx_offset_hz = enabled ? -1200 : 0;
 	view.satellite_tx_offset_hz = enabled ? 3600 : 0;
 	view.satellite_pass_valid = enabled && !sim_satellite_path_pending;
-	view.satellite_pass_visible_now = enabled && !sim_satellite_path_pending;
-	view.satellite_los_in_s = enabled ? 5500u : 0u;
+	view.satellite_pass_visible_now = enabled && !sim_satellite_path_pending && !sim_satellite_future_pass;
+	view.satellite_los_known = enabled && !sim_satellite_los_pending;
+	view.satellite_aos_in_s = enabled && sim_satellite_future_pass ? 61u : 0u;
+	view.satellite_los_in_s = enabled ? (sim_satellite_future_pass ? 121u :
+		sim_satellite_los_pending ? 0u : 5500u) : 0u;
 	view.satellite_max_elevation_tenths = enabled ? 360u : 0u;
 	view.satellite_elevation_tenths = enabled ? 330 : 0;
 	return true;
@@ -2487,6 +2492,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 #if CONFIG_SATELLITE_TLE
 	sim_satellite_predicting = false;
 	sim_satellite_path_pending = false;
+	sim_satellite_los_pending = false;
+	sim_satellite_future_pass = false;
 #endif
 	vfo_mode = RADIO_MODE_FM;	// a fresh VFO
 	vfo_cc = vfo_ts = 1;
@@ -3529,6 +3536,14 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "satpathpending") == 0) {
 		sim_satellite_path_pending = true;
+		return true;
+	}
+	if (strcmp(t, "satlospending") == 0) {
+		sim_satellite_los_pending = true;
+		return true;
+	}
+	if (strcmp(t, "satfuturepass") == 0) {
+		sim_satellite_future_pass = true;
 		return true;
 	}
 #endif

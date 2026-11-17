@@ -28,8 +28,9 @@ and apply secular J2 rates to the ascending node and argument of perigee. Rotate
 using Greenwich sidereal time, then calculate observer-relative azimuth, elevation, range and range rate. This is an
 approximation, not SGP4/SDP4: it omits periodic perturbations and detailed atmospheric drag, and its pass and Doppler
 estimates can drift from a standards-based ephemeris, particularly as the TLE ages. Tests verify the model's orbital
-invariants and observer geometry rather than SGP4 reference vectors. Do not treat TLE elements as long-term orbital
-constants: expose their epoch and reject or mark stale elements outside the supported age. The radio does not fetch
+invariants and Kepler/J2 reference positions, not SGP4 output. Propagation retains the fractional second of the TLE
+epoch even though the radio clock supplies whole UTC seconds. Do not treat TLE elements as long-term orbital constants:
+expose their epoch and reject or mark stale elements outside the supported age. The radio does not fetch
 orbital data. A firmware build refreshes its built-in TLE cache from CelesTrak no more than once per 24 hours, using
 `build/satellite-tle-cache.json`; set `SATELLITE_TLE_OFFLINE=1` to skip network access. A failed refresh uses the last
 cache or checked-in snapshot.
@@ -111,9 +112,11 @@ Reacquiring valid inputs may resume tracking only while the same satellite and f
 
 Tools > Satellite first predicts passes for every locally installed TLE using one current GPS position and UTC
 snapshot. The list is ordered by AOS, shows time to AOS in hours and minutes (`H:MM`) and maximum elevation, and reports prediction progress. Missing
-position, altitude or valid UTC leaves the list unavailable instead of using stale inputs. Selecting a pass persists
-its record, starts tracking, and opens that satellite's detail screen with visibility, Doppler offsets, pass countdowns
-and the sky path. The detail screen's pass data continues updating in bounded service steps. The nominal RX/TX pair
+position, altitude or valid UTC leaves the list unavailable instead of using stale inputs. Its AOS countdown updates
+as time passes from the scan's UTC snapshot. Selecting a pass persists its record, starts tracking, and opens that satellite's detail
+screen with visibility, Doppler offsets, pass countdowns (`↑ in` to AOS and `↓ in` to LOS) and the sky path. Countdown
+minutes round up while time remains. The detail screen's pass data continues updating in bounded service steps. The
+nominal RX/TX pair
 and optional TX tone come from the selected satellite's persisted catalog profile. An active session keeps those nominal
 values even as Doppler targets
 change. While PTT is held, the detail screen shows the applied TX frequency during on-air transmission and otherwise

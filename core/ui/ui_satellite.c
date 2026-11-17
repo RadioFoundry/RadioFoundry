@@ -72,6 +72,42 @@ static void satellite_eta_minutes(sbuf_t *b, uint32_t minutes)
 	sb_u32(b, minutes % 60u, 2);
 }
 
+static uint32_t satellite_eta_minutes_from_seconds(uint32_t seconds)
+{
+	return seconds / 60u + (seconds % 60u != 0u ? 1u : 0u);
+}
+
+static void satellite_countdown_pair(int *y, const char *rise_value, const char *set_value)
+{
+	const font_t *font = ui_layout.small;
+	const char *rise_label = TR(SATELLITE_LABEL_RISE, GLYPH_UP " in");
+	const char *set_label = TR(SATELLITE_LABEL_SET, GLYPH_DOWN " in");
+	int width = gfx_width();
+	if (width >= 220) {
+		int half = width / 2;
+		int gap = font->w / 2 + 1;
+		int rise_label_width = gfx_text_width(font, rise_label);
+		int set_label_width = gfx_text_width(font, set_label);
+		if (rise_label_width + gap + gfx_text_width(font, rise_value) <= half &&
+		    set_label_width + gap + gfx_text_width(font, set_value) <= width - half) {
+			gfx_text(font, 0, *y, rise_label, ui_col.dim);
+			gfx_text(font, rise_label_width + gap, *y, rise_value, ui_col.fg);
+			gfx_text(font, half, *y, set_label, ui_col.dim);
+			gfx_text(font, half + set_label_width + gap, *y, set_value, ui_col.fg);
+			*y += ui_layout.row_h;
+			return;
+		}
+	}
+	int set_label_width = gfx_text_width(font, set_label);
+	gfx_text(font, 0, *y, rise_label, ui_col.dim);
+	gfx_text(font, width - set_label_width, *y, set_label, ui_col.dim);
+	*y += ui_layout.row_h;
+	int set_value_width = gfx_text_width(font, set_value);
+	gfx_text(font, 0, *y, rise_value, ui_col.fg);
+	gfx_text(font, width - set_value_width, *y, set_value, ui_col.fg);
+	*y += ui_layout.row_h;
+}
+
 static uint32_t satellite_target_hz(uint32_t nominal_hz, int64_t offset_hz)
 {
 	int64_t target_hz = (int64_t)nominal_hz + offset_hz;
@@ -177,6 +213,35 @@ static void path_point_xy(const satellite_path_view_t *path, uint8_t index, int 
 	path_sky_xy(satellite_path_azimuth(point), satellite_path_elevation(point), cx, cy, radius, x, y);
 }
 
+static void path_horizon_pixel(int x, int y, int mark_x, int mark_y, color_t color)
+{
+	int dx = x - mark_x, dy = y - mark_y;
+	if (dx * dx + dy * dy <= 25)
+		gfx_pixel(x, y, color);
+}
+
+static void path_horizon_arc(int cx, int cy, int radius, int mark_x, int mark_y, color_t color)
+{
+	int x = radius, y = 0, error = 1 - radius;
+	while (x >= y) {
+		path_horizon_pixel(cx + x, cy + y, mark_x, mark_y, color);
+		path_horizon_pixel(cx - x, cy + y, mark_x, mark_y, color);
+		path_horizon_pixel(cx + x, cy - y, mark_x, mark_y, color);
+		path_horizon_pixel(cx - x, cy - y, mark_x, mark_y, color);
+		path_horizon_pixel(cx + y, cy + x, mark_x, mark_y, color);
+		path_horizon_pixel(cx - y, cy + x, mark_x, mark_y, color);
+		path_horizon_pixel(cx + y, cy - x, mark_x, mark_y, color);
+		path_horizon_pixel(cx - y, cy - x, mark_x, mark_y, color);
+		y++;
+		if (error < 0) {
+			error += 2 * y + 1;
+		} else {
+			x--;
+			error += 2 * (y - x) + 1;
+		}
+	}
+}
+
 static void draw_path(int y, const radio_view_t *view, const satellite_path_view_t *path, bool compact)
 {
 	int width = gfx_width() - 16;
@@ -217,6 +282,13 @@ static void draw_path(int y, const radio_view_t *view, const satellite_path_view
 			previous_x = point_x;
 			previous_y = point_y;
 		}
+	}
+	if (path->count > 0u) {
+		int start_x, start_y, end_x, end_y;
+		path_sky_xy(satellite_path_azimuth(path->points[0]), 0u, cx, cy, radius, &start_x, &start_y);
+		path_sky_xy(satellite_path_azimuth(path->points[path->count - 1u]), 0u, cx, cy, radius, &end_x, &end_y);
+		path_horizon_arc(cx, cy, radius, start_x, start_y, ui_col.rx);
+		path_horizon_arc(cx, cy, radius, end_x, end_y, ui_col.tx);
 	}
 	if (view->satellite_pass_visible_now) {
 		int elevation = view->satellite_elevation_tenths / 10;
@@ -328,10 +400,10 @@ static void satellite_draw(void)
 			     ui_col.rx : ui_col.warn);
 			satellite_frequency_rows(&y, value, sizeof(value), view);
 			if (view->satellite_pass_valid && !view->satellite_pass_visible_now) {
-				uint32_t minutes = view->satellite_aos_in_s / 60u;
+				uint32_t minutes = satellite_eta_minutes_from_seconds(view->satellite_aos_in_s);
 				sb_init(&b, value, sizeof(value));
 				satellite_eta_minutes(&b, minutes);
-				row(&y, TR(AOS_IN_2, "AOS in"), value, ui_col.fg);
+				row(&y, TR(SATELLITE_LABEL_RISE, GLYPH_UP " in"), value, ui_col.fg);
 			}
 			draw_path(y, view, &path, compact);
 		} else {
@@ -350,24 +422,35 @@ static void satellite_draw(void)
 			     ui_col.rx : ui_col.warn);
 			satellite_frequency_rows(&y, value, sizeof(value), view);
 			if (view->satellite_pass_valid) {
+				if (gfx_width() < 220) {
+					if (view->satellite_pass_visible_now) {
+						row(&y, TR(NEXT_PASS, "Next pass"), TR(VISIBLE_NOW, "Visible now"), ui_col.rx);
+					} else {
+						uint32_t minutes = satellite_eta_minutes_from_seconds(view->satellite_aos_in_s);
+						sb_init(&b, value, sizeof(value));
+						satellite_eta_minutes(&b, minutes);
+						row(&y, TR(NEXT_PASS, "Next pass"), value, ui_col.fg);
+					}
+				}
+				char rise_value[40], set_value[40];
 				if (view->satellite_pass_visible_now) {
-					row(&y, TR(NEXT_PASS, "Next pass"), TR(VISIBLE_NOW, "Visible now"), ui_col.rx);
+					str_copy(rise_value, sizeof(rise_value), TR(NOW, "Now"));
 				} else {
-					uint32_t minutes = view->satellite_aos_in_s / 60u;
-					sb_init(&b, value, sizeof(value));
+					uint32_t minutes = satellite_eta_minutes_from_seconds(view->satellite_aos_in_s);
+					sb_init(&b, rise_value, sizeof(rise_value));
 					satellite_eta_minutes(&b, minutes);
-					row(&y, TR(AOS_IN_2, "AOS in"), value, ui_col.fg);
 				}
-				if (!view->satellite_los_known && !view->satellite_pass_visible_now) {
-					row(&y, TR(LOS, "LOS"), TR(CALCULATING, "Calculating"), ui_col.dim);
+				if (!view->satellite_los_known) {
+					str_copy(set_value, sizeof(set_value), TR(CALCULATING, "Calculating"));
 				} else if (view->satellite_pass_horizon_clipped) {
-					row(&y, "", TR(LOS_BEYOND_FORECAST, "LOS beyond forecast"), ui_col.dim);
+					str_copy(set_value, sizeof(set_value),
+						 TR(SATELLITE_STATE_BEYOND_FORECAST, "Beyond forecast"));
 				} else {
-					uint32_t minutes = view->satellite_los_in_s / 60u;
-					sb_init(&b, value, sizeof(value));
+					uint32_t minutes = satellite_eta_minutes_from_seconds(view->satellite_los_in_s);
+					sb_init(&b, set_value, sizeof(set_value));
 					satellite_eta_minutes(&b, minutes);
-					row(&y, TR(LOS_IN, "LOS in"), value, ui_col.fg);
 				}
+				satellite_countdown_pair(&y, rise_value, set_value);
 			}
 			draw_path(y, view, &path, compact);
 		} else {

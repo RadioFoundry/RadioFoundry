@@ -418,9 +418,14 @@ static void audit_text(const char *s, char *o, size_t len, bool key)
 	size_t n = 0;
 	for (; *s && n + 4 < len; s++) {
 		unsigned char c = (unsigned char)*s;
-		if (c == 0x80 || c == 0x81) {	// GLYPH_ELLIPSIS, GLYPH_DOT
-			memcpy(o + n, c == 0x80 ? "\xe2\x80\xa6" : "\xc2\xb7", c == 0x80 ? 3 : 2);
-			n += c == 0x80 ? 3 : 2;
+		if (c >= 0x80 && c <= 0x88) {
+			const char *glyph = c == 0x80 ? "\xe2\x80\xa6" : c == 0x81 ? "\xc2\xb7" :
+				c == 0x82 ? "\xe2\x86\x92" : c == 0x83 ? "\xc2\xb0" :
+				c == 0x84 ? "\xe2\xa4\x92" : c == 0x85 ? "\xe2\xa4\x93" :
+				c == 0x86 ? "\xe2\x86\xb5" : c == 0x87 ? "\xe2\x86\x91" : "\xe2\x86\x93";
+			size_t bytes = c == 0x81 || c == 0x83 ? 2u : 3u;
+			memcpy(o + n, glyph, bytes);
+			n += bytes;
 		} else {
 			o[n++] = key && c >= '0' && c <= '9' ? '#' : (char)c;
 		}

@@ -17,9 +17,10 @@ typedef struct {
 	uint32_t raan_phase;
 	uint32_t argument_perigee_phase;
 	uint32_t mean_anomaly_phase;
-	int32_t raan_rate_phase_s_q8;
-	int32_t argument_perigee_rate_phase_s_q8;
+	int32_t raan_rate_phase_s_q16;
+	int32_t argument_perigee_rate_phase_s_q16;
 	int64_t epoch_s;
+	uint16_t epoch_fraction_q16;
 	uint32_t catalog_id;
 	bool valid;
 } satellite_orbit_t;

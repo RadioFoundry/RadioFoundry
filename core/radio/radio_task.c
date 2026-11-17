@@ -73,7 +73,9 @@ static uint16_t satellite_channel_zone, satellite_channel_pos, satellite_channel
 static uint32_t satellite_next_work_ms;
 #define SATELLITE_SCAN_MAX_RECORDS 10u
 static uint32_t satellite_scan_results[SATELLITE_SCAN_MAX_RECORDS];
+static int64_t satellite_scan_aos_s[SATELLITE_SCAN_MAX_RECORDS];
 static int64_t satellite_scan_start_utc_s;
+static uint32_t satellite_scan_start_ms;
 static int32_t satellite_scan_latitude_e7, satellite_scan_longitude_e7;
 static int16_t satellite_scan_altitude_m;
 static uint8_t satellite_scan_status, satellite_scan_completed, satellite_scan_total;
@@ -329,6 +331,8 @@ static void satellite_scan_request(bool enabled, uint32_t now_ms)
 #endif
 	xSemaphoreTake(view_lock, portMAX_DELAY);
 	satellite_scan_start_utc_s = utc_s;
+	satellite_scan_start_ms = now_ms;
+	memset(satellite_scan_aos_s, 0, sizeof satellite_scan_aos_s);
 	satellite_scan_latitude_e7 = fix.lat;
 	satellite_scan_longitude_e7 = fix.lon;
 	satellite_scan_altitude_m = fix.alt_m;
@@ -345,16 +349,14 @@ static void satellite_scan_request(bool enabled, uint32_t now_ms)
 
 static void satellite_scan_add_result(uint8_t index, const satellite_pass_t *pass)
 {
-	int64_t delta = pass->aos_s - satellite_scan_start_utc_s;
-	uint32_t eta_minutes = delta <= 0 ? 0u : ((uint32_t)delta + 59u) / 60u;
-	if (eta_minutes > 1440u)
-		eta_minutes = 1440u;
+	uint16_t eta_minutes = satellite_pass_eta_minutes(pass->aos_s, satellite_scan_start_utc_s);
 	uint32_t maximum_elevation = (pass->maximum_elevation_tenths_deg + 5u) / 10u;
 	if (maximum_elevation > 90u)
 		maximum_elevation = 90u;
 	uint32_t packed = satellite_pass_summary_pack(index, (uint16_t)eta_minutes,
 						      (uint8_t)maximum_elevation, pass->visible_now);
 	xSemaphoreTake(view_lock, portMAX_DELAY);
+	satellite_scan_aos_s[index] = pass->aos_s;
 	satellite_pass_summary_insert(satellite_scan_results, &satellite_scan_result_count,
 				      SATELLITE_SCAN_MAX_RECORDS, packed);
 	xSemaphoreGive(view_lock);
@@ -695,8 +697,12 @@ bool radio_get_satellite_pass(uint8_t rank, radio_satellite_pass_t *pass)
 		return false;
 	}
 	uint32_t packed = satellite_scan_results[rank];
+	uint8_t record_index = satellite_pass_summary_index(packed);
+	uint32_t now_ms = hal_millis();
+	int64_t now_utc_s = satellite_scan_start_utc_s +
+		(uint32_t)(now_ms - satellite_scan_start_ms) / 1000u;
 	pass->record_index = satellite_pass_summary_index(packed);
-	pass->aos_minutes = satellite_pass_summary_aos_minutes(packed);
+	pass->aos_minutes = satellite_pass_eta_minutes(satellite_scan_aos_s[record_index], now_utc_s);
 	pass->maximum_elevation_deg = satellite_pass_summary_maximum_elevation(packed);
 	pass->visible_now = satellite_pass_summary_visible_now(packed);
 	xSemaphoreGive(view_lock);

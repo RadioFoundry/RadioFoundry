@@ -98,6 +98,12 @@ static void test_keplerian_propagation(void)
 	satellite_orbit_state_t state, after_one_second;
 	CHECK(satellite_orbit_at(&orbit, orbit.epoch_s, &state));
 	CHECK(satellite_orbit_at(&orbit, orbit.epoch_s + 1, &after_one_second));
+	/* Kepler/J2 reference position at epoch_s + 30 days. */
+	CHECK(satellite_orbit_at(&orbit, orbit.epoch_s + INT64_C(30) * 86400, &state));
+	CHECK(state.position_m[0] >= -1318535 && state.position_m[0] <= -1318335);
+	CHECK(state.position_m[1] >= -8520125 && state.position_m[1] <= -8519925);
+	CHECK(state.position_m[2] >= 447429 && state.position_m[2] <= 447629);
+	CHECK(satellite_orbit_at(&orbit, orbit.epoch_s, &state));
 	uint64_t radius_squared = 0u, speed_squared = 0u;
 	for (uint8_t axis = 0u; axis < 3u; axis++) {
 		int64_t position = state.position_m[axis];
@@ -131,9 +137,9 @@ static void test_keplerian_propagation(void)
 static void test_circular_kepler_orbit(void)
 {
 	satellite_record_t record = record_for(
-		"1 00005U 58002B   00179.78495062  .00000000  00000-0  00000-0 0  4753",
+		"1 00005U 58002B   00179.00000000  .00000000  00000-0  00000-0 0  4753",
 		"2 00005   0.0000   0.0000 0000000   0.0000   0.0000 15.00000000 00000",
-		5u, 962131819u);
+		5u, 962064000u);
 	satellite_orbit_t orbit;
 	CHECK(satellite_orbit_init(&orbit, &record));
 	satellite_orbit_state_t state;
@@ -211,6 +217,10 @@ static void test_pass_summary_order(void)
 	CHECK(satellite_pass_summary_visible_now(summaries[0]));
 	CHECK(satellite_pass_summary_index(summaries[1]) == 1u);
 	CHECK(satellite_pass_summary_index(summaries[2]) == 3u);
+	CHECK(satellite_pass_eta_minutes(3601, 0) == 61u);
+	CHECK(satellite_pass_eta_minutes(3600, 0) == 60u);
+	CHECK(satellite_pass_eta_minutes(0, 1) == 0u);
+	CHECK(satellite_pass_eta_minutes(90000, 0) == 1440u);
 	uint32_t bounded = satellite_pass_summary_pack(17u, UINT16_MAX, 120u, false);
 	CHECK(satellite_pass_summary_index(bounded) == 1u);
 	CHECK(satellite_pass_summary_aos_minutes(bounded) == 2047u);
@@ -245,6 +255,13 @@ static void test_pass_search(void)
 	CHECK(search.status == SATELLITE_PASS_COMPLETE);
 	CHECK(steps < 130u);
 	if (search.pass_valid) {
+		/* Kepler/J2 reference pass at the equator, within one 60-second sample. */
+		CHECK(search.pass.aos_s >= orbit.epoch_s + 4320 &&
+		      search.pass.aos_s <= orbit.epoch_s + 4440);
+		CHECK(search.pass.maximum_elevation_s >= orbit.epoch_s + 5520 &&
+		      search.pass.maximum_elevation_s <= orbit.epoch_s + 5640);
+		CHECK(search.pass.los_s >= orbit.epoch_s + 6256 &&
+		      search.pass.los_s <= orbit.epoch_s + 6376);
 		CHECK(search.pass.aos_s < search.pass.los_s);
 		CHECK(search.pass.maximum_elevation_tenths_deg > 0u);
 		CHECK(search.pass.maximum_elevation_s >= search.pass.aos_s);

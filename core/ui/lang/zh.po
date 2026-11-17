@@ -4325,6 +4325,16 @@ msgid "Satellite unavailable"
 msgstr "卫星不可用"
 
 #: core/ui/ui_satellite.c
+msgctxt "SATELLITE_LABEL_RISE"
+msgid "↑ in"
+msgstr "↑ 后"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_LABEL_SET"
+msgid "↓ in"
+msgstr "↓ 后"
+
+#: core/ui/ui_satellite.c
 msgctxt "PREDICTING_PASSES_2"
 msgid "Predicting passes"
 msgstr "正在预测过境"
@@ -4380,11 +4390,6 @@ msgid "Tracking"
 msgstr "跟踪中"
 
 #: core/ui/ui_satellite.c
-msgctxt "AOS_IN_2"
-msgid "AOS in"
-msgstr "AOS 倒计时"
-
-#: core/ui/ui_satellite.c
 msgctxt "OTHER_SATELLITE_2"
 msgid "Other satellite"
 msgstr "其他卫星"
@@ -4405,24 +4410,14 @@ msgid "Visible now"
 msgstr "当前可见"
 
 #: core/ui/ui_satellite.c
-msgctxt "LOS"
-msgid "LOS"
-msgstr "LOS"
-
-#: core/ui/ui_satellite.c
 msgctxt "CALCULATING"
 msgid "Calculating"
 msgstr "计算中"
 
 #: core/ui/ui_satellite.c
-msgctxt "LOS_BEYOND_FORECAST"
-msgid "LOS beyond forecast"
-msgstr "预测时段外 LOS"
-
-#: core/ui/ui_satellite.c
-msgctxt "LOS_IN"
-msgid "LOS in"
-msgstr "LOS 倒计时"
+msgctxt "SATELLITE_STATE_BEYOND_FORECAST"
+msgid "Beyond forecast"
+msgstr "超出预报"
 
 #: core/ui/ui_satellite.c
 msgctxt "UP_DOWN_SATELLITE_OK_TRACK"

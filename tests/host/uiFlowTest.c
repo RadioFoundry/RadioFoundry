@@ -14,6 +14,7 @@
 #include "ui/ui_app.h"
 #include "ui/ui_screens.h"
 #include "ui/i18n.h"
+#include "ui/gfx.h"
 #include "config.h"
 
 // Settings > Advanced: Backlight tests (CONFIG_BACKLIGHT_TEST) sits under Diagnostics and moves the rows below it
@@ -1044,6 +1045,17 @@ static const flow_t flows[] = {
 #endif
 };
 
+#if CONFIG_SATELLITE_TLE
+static const flow_t satellite_detail_flows[] = {
+	{ "Satellite detail rounds AOS and LOS timers up", "satfuturepass",
+	  "ok 6 down down down down down down down down down ok ok",
+	  "screen=satellite shows=\x87_in shows=0:02 shows=\x88_in shows=0:03", 13, false },
+	{ "Satellite detail shows LOS as calculating until known", "satlospending",
+	  "ok 6 down down down down down down down down down ok ok",
+	  "screen=satellite shows=Calculating", 13, false },
+};
+#endif
+
 // GD-77 key map on its 128x64 monochrome screen only (it has the Left / Right arrow keys)
 static const flow_t flows_mono[] = {
 	LONG_MESSAGE_FLOWS
@@ -1865,10 +1877,44 @@ static int check_name_is_id(void)
 	return bad;
 }
 
+#if CONFIG_SATELLITE_TLE
+static int check_satellite_path_endpoint_colors(void)
+{
+	char err[160];
+	const sim_geom_t *geom = sim_geom_find("240x320");
+	sim_reset(geom, SIM_MAP_K);
+	if (!sim_run("ok 6 down down down down down down down down down ok ok", err, sizeof err)) {
+		printf("FAIL satellite path endpoint colors: %s\n", err);
+		return 1;
+	}
+	int center_x = gfx_width() / 2;
+	bool green_horizon = false, red_horizon = false, green_sky = false;
+	for (int y = 0; y < gfx_height(); y++) {
+		color_t pixel = gfx_get_pixel(center_x, y);
+		green_horizon |= y > gfx_height() * 3 / 4 && pixel == ui_col.rx;
+		red_horizon |= y < gfx_height() * 3 / 4 && pixel == ui_col.tx;
+		if (y > gfx_height() / 2) {
+			for (int x = center_x + 5; x < gfx_width() - 10; x++)
+				green_sky |= gfx_get_pixel(x, y) == ui_col.rx;
+		}
+	}
+	if (!green_horizon || !red_horizon || !green_sky) {
+		printf("FAIL satellite path colors: horizon start=%d end=%d sky=%d\n",
+		       green_horizon, red_horizon, green_sky);
+		return 1;
+	}
+	return 0;
+}
+#endif
+
 int main(void)
 {
 	if (check_name_is_id() != 0)
 		return 1;
+#if CONFIG_SATELLITE_TLE
+	if (check_satellite_path_endpoint_colors() != 0)
+		return 1;
+#endif
 	static const struct { sim_map_t map; const char *name, *geom; } runs[] = {
 		{ SIM_MAP_K, "K DM-1701", "160x120i5" },
 		{ SIM_MAP_M, "M GD-77", "128x64" },
@@ -1880,6 +1926,11 @@ int main(void)
 		for (size_t i = 0; i < sizeof flows / sizeof flows[0]; i++)
 			run_flow(&flows[i], g, runs[r].map, runs[r].name);
 	}
+#if CONFIG_SATELLITE_TLE
+	const sim_geom_t *satellite_geom = sim_geom_find("240x320");
+	for (size_t i = 0; i < sizeof satellite_detail_flows / sizeof satellite_detail_flows[0]; i++)
+		run_flow(&satellite_detail_flows[i], satellite_geom, SIM_MAP_K, "K 240x320");
+#endif
 	for (size_t i = 0; i < sizeof flows_mono / sizeof flows_mono[0]; i++)
 		run_flow(&flows_mono[i], sim_geom_find("128x64"), SIM_MAP_M, "M GD-77");
 	for (size_t i = 0; i < sizeof flows_k / sizeof flows_k[0]; i++)

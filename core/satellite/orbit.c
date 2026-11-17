@@ -265,14 +265,9 @@ static uint32_t degrees_e7_to_phase(int32_t degrees_e7)
 	return (uint32_t)(((int64_t)degrees_e7 * SAT_DEGREES_E7_PHASE_Q24) >> 24);
 }
 
-static int32_t phase_rate_q8_from_rad_q30(int32_t rate_rad_s_q30)
+static int32_t phase_rate_q16_to_rad_q30(int32_t rate_phase_s_q16)
 {
-	return (int32_t)(((int64_t)rate_rad_s_q30 * SAT_PHASE_PER_RAD_Q30) >> 22);
-}
-
-static int32_t phase_rate_q8_to_rad_q30(int32_t rate_phase_s_q8)
-{
-	return (int32_t)(((int64_t)rate_phase_s_q8 * SAT_PI_OVER_2_Q30) >> 38);
+	return (int32_t)(((int64_t)rate_phase_s_q16 * SAT_PI_OVER_2_Q30) >> 46);
 }
 
 static int32_t mean_motion_rad_s_q30(uint32_t mean_motion_rev_day_e8)
@@ -285,30 +280,41 @@ static uint32_t mean_motion_phase_s_q8(uint32_t mean_motion_rev_day_e8)
 	return (uint32_t)(((uint64_t)mean_motion_rev_day_e8 * SAT_MEAN_MOTION_PHASE_Q40) >> 32);
 }
 
-static uint32_t fraction_phase(uint32_t numerator, uint32_t denominator)
+static uint16_t fraction_u32_q16(uint32_t numerator, uint32_t denominator)
 {
 	uint32_t remainder = numerator;
-	uint32_t phase = 0u;
-	for (uint8_t bit = 0u; bit < 32u; bit++) {
+	uint16_t fraction = 0u;
+	for (uint8_t bit = 0u; bit < 16u; bit++) {
 		remainder <<= 1;
-		phase <<= 1;
+		fraction <<= 1;
 		if (remainder >= denominator) {
 			remainder -= denominator;
-			phase |= 1u;
+			fraction |= 1u;
 		}
 	}
-	return phase;
+	return fraction;
 }
 
-static uint32_t remainder_u64_u32(uint64_t numerator, uint32_t denominator)
+static uint64_t divide_u64_u32(uint64_t numerator, uint32_t denominator)
 {
 	uint32_t remainder = 0u;
+	uint64_t quotient = 0u;
 	for (int8_t bit = 63; bit >= 0; bit--) {
 		remainder = (remainder << 1) | (uint32_t)((numerator >> bit) & 1u);
-		if (remainder >= denominator)
+		quotient <<= 1;
+		if (remainder >= denominator) {
 			remainder -= denominator;
+			quotient |= 1u;
+		}
 	}
-	return remainder;
+	return quotient;
+}
+
+static int64_t phase_advance(int32_t rate_phase_s_q, int32_t elapsed_s,
+			     uint16_t epoch_fraction_q16)
+{
+	return (int64_t)rate_phase_s_q * elapsed_s -
+	       (int64_t)rate_phase_s_q * epoch_fraction_q16 / 65536;
 }
 
 static int32_t days_q16(int32_t seconds)
@@ -322,7 +328,7 @@ static bool cube_root_u64(uint64_t value, uint32_t *root)
 {
 	if (root == NULL || value == 0u)
 		return false;
-	uint32_t low = 0u, high = 100001u;
+	uint32_t low = 0u, high = 2000001u;
 	while (high - low > 1u) {
 		uint32_t middle = low + (high - low) / 2u;
 		uint64_t cube = (uint64_t)middle * middle * middle;
@@ -340,15 +346,20 @@ static bool semi_major_axis_m(uint32_t mean_motion_rev_day_e8, uint32_t *axis_m)
 	if (axis_m == NULL || mean_motion_rev_day_e8 == 0u)
 		return false;
 	uint32_t mean_motion_e6 = (mean_motion_rev_day_e8 + 50u) / 100u;
-	uint64_t square = (uint64_t)mean_motion_e6 * mean_motion_e6;
+	if (mean_motion_e6 > UINT32_MAX / 100u)
+		return false;
+	uint32_t scaled_motion = mean_motion_e6 * 100u;
+	uint64_t square = (uint64_t)scaled_motion * scaled_motion;
 	uint32_t root;
 	if (!cube_root_u64(square, &root))
 		return false;
-	uint32_t whole = SAT_WGS72_SEMI_MAJOR_KM_MILLI / root;
-	uint32_t remainder = SAT_WGS72_SEMI_MAJOR_KM_MILLI % root;
-	if (whole > UINT32_MAX / 10000u)
+	uint64_t base = (uint64_t)SAT_WGS72_SEMI_MAJOR_KM_MILLI * 10000u;
+	uint64_t numerator = base * 21u +
+		divide_u64_u32(base * 5443469u, 10000000u);
+	uint64_t axis_wide = divide_u64_u32(numerator, root);
+	if (axis_wide > UINT32_MAX)
 		return false;
-	uint32_t axis = whole * 10000u + remainder * 10000u / root;
+	uint32_t axis = (uint32_t)axis_wide;
 	if (axis == 0u || axis > INT32_MAX / 2)
 		return false;
 	*axis_m = axis;
@@ -390,8 +401,9 @@ static bool parse_elements(satellite_orbit_t *orbit, const satellite_record_t *r
 	int64_t unix_days = days_before_year(year) + (int64_t)day - 1;
 	if (unix_days < 0)
 		return false;
+	uint32_t fractional_numerator = (fraction_digits % 1000000u) * 864u;
 	uint32_t fractional_seconds = fraction_digits / 1000000u * 864u +
-		(fraction_digits % 1000000u) * 864u / 1000000u;
+		fractional_numerator / 1000000u;
 	int64_t epoch_s = unix_days * 86400 + fractional_seconds;
 	if ((uint64_t)epoch_s != record->epoch)
 		return false;
@@ -420,6 +432,8 @@ static bool parse_elements(satellite_orbit_t *orbit, const satellite_record_t *r
 	orbit->argument_perigee_phase = microdegrees_to_phase(argument);
 	orbit->mean_anomaly_phase = microdegrees_to_phase(anomaly);
 	orbit->epoch_s = epoch_s;
+	orbit->epoch_fraction_q16 =
+		fraction_u32_q16(fractional_numerator % 1000000u, 1000000u);
 	if (!semi_major_axis_m(orbit->mean_motion_rev_day_e8, &orbit->semi_major_axis_m))
 		return false;
 	if (((uint64_t)orbit->semi_major_axis_m *
@@ -439,14 +453,14 @@ static bool parse_elements(satellite_orbit_t *orbit, const satellite_record_t *r
 			    &radius_ratio_q30))
 		return false;
 	int32_t ratio_sq_q30 = q30_mul(radius_ratio_q30, radius_ratio_q30);
-	int32_t j2_factor_q30 = q30_mul(q30_mul(mean_motion_rad_s_q30(orbit->mean_motion_rev_day_e8),
-						 SAT_EARTH_J2_1P5_Q30), ratio_sq_q30);
-	int32_t raan_rate_rad_s_q30 = -q30_mul(j2_factor_q30, cosine_inc);
-	int32_t perigee_factor_q30 = (int32_t)(((int64_t)5 *
-		q30_mul(cosine_inc, cosine_inc) - SAT_Q30_ONE) / 2);
-	int32_t perigee_rate_rad_s_q30 = q30_mul(j2_factor_q30, perigee_factor_q30);
-	orbit->raan_rate_phase_s_q8 = phase_rate_q8_from_rad_q30(raan_rate_rad_s_q30);
-	orbit->argument_perigee_rate_phase_s_q8 = phase_rate_q8_from_rad_q30(perigee_rate_rad_s_q30);
+	int32_t j2_factor_q30 = q30_mul(SAT_EARTH_J2_1P5_Q30, ratio_sq_q30);
+	int32_t j2_factor_phase_s_q16 = (int32_t)(((int64_t)mean_motion_phase_s_q8(
+		orbit->mean_motion_rev_day_e8) * j2_factor_q30) >> 22);
+	int64_t perigee_factor_q30 = ((int64_t)5 *
+		q30_mul(cosine_inc, cosine_inc) - SAT_Q30_ONE) / 2;
+	orbit->raan_rate_phase_s_q16 = -q30_mul(j2_factor_phase_s_q16, cosine_inc);
+	orbit->argument_perigee_rate_phase_s_q16 = (int32_t)(
+		(int64_t)j2_factor_phase_s_q16 * perigee_factor_q30 / SAT_Q30_ONE);
 	orbit->catalog_id = record->catalog_id;
 	return true;
 }
@@ -490,15 +504,15 @@ bool satellite_orbit_at(satellite_orbit_t *orbit, int64_t utc_s, satellite_orbit
 		return false;
 
 	uint32_t mean_rate_q8 = mean_motion_phase_s_q8(orbit->mean_motion_rev_day_e8);
-	int64_t mean_advance_q8 = (int64_t)mean_rate_q8 * elapsed_s;
+	int64_t mean_advance_q8 = phase_advance(
+		(int32_t)mean_rate_q8, elapsed_s, orbit->epoch_fraction_q16);
 	uint32_t mean_phase = orbit->mean_anomaly_phase + (uint32_t)(mean_advance_q8 >> 8);
 	int64_t drift_numerator = (int64_t)orbit->mean_motion_dot_half_rev_day2_e8 *
 		elapsed_days_q16 * elapsed_days_q16;
 	bool drift_negative = drift_numerator < 0;
 	uint64_t drift_magnitude = drift_negative ? (uint64_t)(-drift_numerator) :
 		(uint64_t)drift_numerator;
-	uint32_t drift_remainder = remainder_u64_u32(drift_magnitude, 100000000u);
-	uint32_t drift_phase = fraction_phase(drift_remainder, 100000000u);
+	uint32_t drift_phase = (uint32_t)divide_u64_u32(drift_magnitude, 100000000u);
 	if (drift_negative)
 		drift_phase = 0u - drift_phase;
 	mean_phase += drift_phase;
@@ -537,9 +551,11 @@ bool satellite_orbit_at(satellite_orbit_t *orbit, int64_t utc_s, satellite_orbit
 	phase_sincos(eccentric_anomaly, &sine_e, &cosine_e);
 	phase_sincos(orbit->inclination_phase, &sine_inc, &cosine_inc);
 	uint32_t raan_phase = orbit->raan_phase +
-		(uint32_t)(((int64_t)orbit->raan_rate_phase_s_q8 * elapsed_s) >> 8);
+		(uint32_t)(phase_advance(orbit->raan_rate_phase_s_q16, elapsed_s,
+					orbit->epoch_fraction_q16) >> 16);
 	uint32_t argument_phase = orbit->argument_perigee_phase +
-		(uint32_t)(((int64_t)orbit->argument_perigee_rate_phase_s_q8 * elapsed_s) >> 8);
+		(uint32_t)(phase_advance(orbit->argument_perigee_rate_phase_s_q16, elapsed_s,
+					orbit->epoch_fraction_q16) >> 16);
 	phase_sincos(raan_phase, &sine_raan, &cosine_raan);
 	phase_sincos(argument_phase, &sine_arg, &cosine_arg);
 
@@ -576,9 +592,9 @@ bool satellite_orbit_at(satellite_orbit_t *orbit, int64_t utc_s, satellite_orbit
 	int32_t normal_x = q30_mul(sine_raan, sine_inc);
 	int32_t normal_y = -q30_mul(cosine_raan, sine_inc);
 	int32_t normal_z = cosine_inc;
-	int32_t raan_rate_rad_s_q30 = phase_rate_q8_to_rad_q30(orbit->raan_rate_phase_s_q8);
+	int32_t raan_rate_rad_s_q30 = phase_rate_q16_to_rad_q30(orbit->raan_rate_phase_s_q16);
 	int32_t arg_rate_rad_s_q30 =
-		phase_rate_q8_to_rad_q30(orbit->argument_perigee_rate_phase_s_q8);
+		phase_rate_q16_to_rad_q30(orbit->argument_perigee_rate_phase_s_q16);
 	int32_t node_vx_cm_s = -value_mul_q30(state->position_m[1], raan_rate_rad_s_q30) * 100;
 	int32_t node_vy_cm_s = value_mul_q30(state->position_m[0], raan_rate_rad_s_q30) * 100;
 	int32_t perigee_vx_cm_s = value_mul_q30(

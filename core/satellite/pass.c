@@ -50,6 +50,15 @@ bool satellite_pass_summary_visible_now(uint32_t summary)
 	return (summary & SUMMARY_VISIBLE_BIT) != 0u;
 }
 
+uint16_t satellite_pass_eta_minutes(int64_t aos_s, int64_t now_s)
+{
+	int64_t delta = aos_s - now_s;
+	if (delta <= 0)
+		return 0u;
+	int64_t minutes = (delta + SECONDS_PER_MINUTE - 1) / SECONDS_PER_MINUTE;
+	return minutes > 1440 ? 1440u : (uint16_t)minutes;
+}
+
 void satellite_pass_summary_insert(uint32_t *summaries, uint8_t *count, uint8_t capacity, uint32_t summary)
 {
 	if (summaries == NULL || count == NULL || capacity == 0u)

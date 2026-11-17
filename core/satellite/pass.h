@@ -61,6 +61,7 @@ uint16_t satellite_pass_summary_aos_minutes(uint32_t summary);
 uint8_t satellite_pass_summary_maximum_elevation(uint32_t summary);
 bool satellite_pass_summary_visible_now(uint32_t summary);
 void satellite_pass_summary_insert(uint32_t *summaries, uint8_t *count, uint8_t capacity, uint32_t summary);
+uint16_t satellite_pass_eta_minutes(int64_t aos_s, int64_t now_s);
 bool satellite_pass_cache_fresh(bool cache_valid, uint32_t now_ms, uint32_t completed_ms);
 
 bool satellite_pass_search_begin(satellite_pass_search_t *search, const satellite_orbit_t *orbit,
