@@ -395,11 +395,15 @@ bool gd88b_diag_line(uint8_t i, char *buf, uint8_t len)
 	}
 }
 
+// B's noise reading with no signal (**HW**: 63-70 on the channel where A reads 79-81; both read alike on a carrier).
+// Read raw, squelch level 1 (open below 64) stayed open or chattered on noise after a carrier
+#define NOISE_NONE		66u
+
 // FM: the squelch, opening and closing as the radio core's does, and the chip's audio while it is open
 static void fm_poll(void)
 {
 	bool was = sq.open;
-	if (radio_squelch_step(&sq, gd88_radio_squelch_read(cur.squelch), POLL_MS) != was) {
+	if (radio_squelch_step(&sq, gd88_radio_squelch_read(cur.squelch, NOISE_NONE), POLL_MS) != was) {
 		gd88_radio.audio(sq.open);
 	}
 }

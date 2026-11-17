@@ -57,8 +57,10 @@ typedef struct {
 } gd88_radio_diag_t;
 void gd88_radio_diag(gd88_radio_diag_t *d);
 // B's own squelch: the main chip's noise reading and RX tone at level, read by the radio core's rule
-// (radio_squelch.h; 0 = open). Nothing opens or holds while it can't receive (transmitting, not tuned)
-radio_squelch_read_t gd88_radio_squelch_read(uint8_t level);
+// (radio_squelch.h; 0 = open). Nothing opens or holds while it can't receive (transmitting, not tuned). noise_none:
+// this chip's reading with no signal; a lower one than A's is stretched onto A's scale (from the quieted reading
+// up), so a squelch level opens at the same signal on both receivers
+radio_squelch_read_t gd88_radio_squelch_read(uint8_t level, uint8_t noise_none);
 // The core's last volume() in percent (A passes it on to B's audio)
 uint8_t gd88_radio_volume(void);
 // The debug link's CHIP_REG for the main chip and a BK4819 LO (board.chip_reg)

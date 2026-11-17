@@ -877,14 +877,26 @@ static void status(radio_status_t *st)
 	st->tone_ok = bk4819_rx_tone_ok(&rf_main, bk_tone(rx_tone.type));
 }
 
-radio_squelch_read_t gd88_radio_squelch_read(uint8_t level)
+// The noise reading on a fully quieted channel, about the same on both SoCs' chips (**HW**: 9-18 on any bench carrier)
+#define NOISE_QUIET		15u
+// A's reading with no signal (**HW**: 79-81), the scale the squelch levels are judged on for this radio
+#define NOISE_NONE		80u
+
+radio_squelch_read_t gd88_radio_squelch_read(uint8_t level, uint8_t noise_none)
 {
 	if (!supported || !have_rx || transmitting) {
 		return radio_squelch_read(level, 255, false);
 	}
 	radio_status_t st;
 	status(&st);
-	return radio_squelch_read(level, st.noise, st.tone_ok);
+	uint32_t n = st.noise;
+	if (noise_none > NOISE_QUIET && noise_none < NOISE_NONE && n > NOISE_QUIET) {
+		n = NOISE_QUIET + (n - NOISE_QUIET) * (NOISE_NONE - NOISE_QUIET) / (noise_none - NOISE_QUIET);
+		if (n > 0x7Fu) {
+			n = 0x7Fu;
+		}
+	}
+	return radio_squelch_read(level, (uint8_t)n, st.tone_ok);
 }
 
 static void audio(bool on)
