@@ -23,6 +23,8 @@
 #include "hal_bcast.h"
 #include "hal_gps.h"
 #include "hal_afsk.h"
+#include "hal_air.h"
+#include "hal_baseband.h"
 #include "hal_rx2.h"
 #include "hal_hwopt.h"
 
@@ -128,6 +130,11 @@ typedef struct {
 	// Optional: APRS AFSK through the FM transmitter, and received audio for the demodulator (hal_afsk.h); NULL when
 	// not built or the radio can't
 	const hal_afsk_t *afsk;
+	// Optional: the air interface of the board's modem chip, for digital modes the core frames itself (hal_air.h);
+	// NULL when not built or the chip has no such mode
+	const hal_air_t *air;
+	// Optional: sample taps on the discriminator and the modulator (hal_baseband.h); NULL when the board has none
+	const hal_baseband_t *baseband;
 	// Optional, with CAP_GPS: the GPS receiver (hal_gps.h); NULL when not built
 	const hal_gps_t *gps;
 	// Optional: a second receiver, so dual watch hears both channels at once (hal_rx2.h); NULL on one-receiver radios

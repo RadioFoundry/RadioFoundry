@@ -22,13 +22,13 @@ The chapters below name the command line tools as alternatives.
 1. [Introduction](01-introduction.md): what RadioFoundry is, project status, conventions
 2. [Installing](02-installing.md): the web installer first, then the advanced rfoundry command line; updating, backups, going back
 3. [First boot](03-first-boot.md): built-in channels, the first checks
-4. [Programming the radio](04-programming.md): the Codeplug Editor, qdmr, RadioID contacts
+4. [Programming the radio](04-programming.md): the Codeplug Editor (P25 and NXDN channels, trunked systems), qdmr, RadioID contacts
 
 ### Use the radio
 
 5. [Keys and navigation](05-keys-and-navigation.md): the five key rules, Find, temporary changes, key lock
 6. [The Home screen](06-home-screen.md): what each region shows, receiving, transmitting
-7. [Channels, zones and the VFO](07-channels-zones-vfo.md)
+7. [Channels, zones and the VFO](07-channels-zones-vfo.md): P25, P25 trunked and NXDN channels too
 8. [FM](08-fm.md): squelch, monitor, tones, bandwidth, VOX, touch tones
 9. [DMR](09-dmr.md): talk targets, replying, Recent, contacts, timeslot and color code, privacy, roaming, trunked systems
 10. [Messages, call alert and radio check](10-messages-and-signaling.md)

@@ -102,7 +102,20 @@ at a number is written, the tag there:
 | Otherwise | Kept as found (stale) |
 
 A channel of a kind is always written in its safe stand-in shape unless its tag has flag bit 1, also where no tag
-follows it (a copy to another number is a receive-only DMR channel). Deleting a channel removes its tag.
+follows it (a copy to another number is a receive-only DMR channel). A copy made on the radio (the channel editor's
+Save as new, Copy here) then takes the source's tag: the copy's name check, system and flag bit 0, the fallback and
+the parameter block byte for byte (`codeplug_tag_copy`). Where the source's tag has flag bit 1, the copy's record
+first takes the source record's mode, receive-only bit and bandwidth (`codeplug_base_copy`), so the copy is the same
+channel on both sides; if that write fails, the copy's tag gets flag bit 1 clear, which is what its record then is.
+Deleting a channel removes its tag.
+
+Where the tag that follows has flag bit 1, the base record is a channel of its own and the radio shows the kind's
+mode, receive-only bit and bandwidth in place of the record's: a write from the radio keeps those three as stored.
+
+A kind's module that changes a channel's block on the radio writes the record, lets the tag follow, then sets the
+front of the block in place (`codeplug_tag_rewrite`): the system and flag bit 0 from the writer; the fallback, the
+other flags and the block's bytes after the ones written stay as stored. With no tag of the kind there, it writes a
+new one.
 
 ## 3. Key families
 
@@ -134,14 +147,15 @@ Ids are only appended and never reused. A kind and a system type that belong tog
 | Kind | Name | Short | Built when | Spec |
 |---|---|---|---|---|
 | 1 | DMR Tier III trunked | T3 | `CONFIG_DMR_TRUNK` | [dmr-trunking-codeplug.md](dmr-trunking-codeplug.md) |
-| 2 | P25 conventional | P25 | not yet (no P25 engine in this tree; the codec is `CONFIG_P25`) | [p25-codeplug.md](p25-codeplug.md) |
-| 3 | P25 trunked | P25T | not yet (the codec is `CONFIG_P25_TRUNK`) | [p25-codeplug.md](p25-codeplug.md) |
+| 2 | P25 conventional | P25 | `CONFIG_P25` and a board whose air interface receives P25 (`radio_p25_fits`) | [p25-codeplug.md](p25-codeplug.md) |
+| 3 | P25 trunked | P25T | `CONFIG_P25_TRUNK` and a board whose air interface receives P25; receive, and transmit where the system allows it ([p25-trunking.md](p25-trunking.md) 5, 7) | [p25-codeplug.md](p25-codeplug.md) |
+| 4 | NXDN conventional | NXDN | `CONFIG_NXDN` and a board whose air interface carries NXDN (`radio_nxdn_fits`) | [nxdn-codeplug.md](nxdn-codeplug.md) |
 
 | System type | Name | Short | Built when | Spec |
 |---|---|---|---|---|
 | 1 | DMR Tier III system | T3 | `CONFIG_DMR_TRUNK` | [dmr-trunking-codeplug.md](dmr-trunking-codeplug.md) |
 | 2 | Reserved: P25 conventional system (identity and keys) | | | |
-| 3 | P25 trunked system | P25T | not yet | [p25-codeplug.md](p25-codeplug.md) |
+| 3 | P25 trunked system | P25T | `CONFIG_P25_TRUNK` | [p25-codeplug.md](p25-codeplug.md) |
 
 A mode claims an id by adding a row to all three in one change, with its spec: the parameter block, the type's
 system block and channel tail, its targets' address format, its traffic keys' algorithm ids and its radio-wide
@@ -217,7 +231,8 @@ writer keeps one it finds.
 
 ## 6. Radio behavior
 
-A channel of a kind the build doesn't run (any kind not built, including ids it doesn't know) is **parked**: the radio
+A channel of a kind the radio doesn't run (any kind not built, a built one the board can't carry, and ids it doesn't
+know) is **parked**: the radio
 tunes its receive frequency with the DMR modem off, the squelch never opens, PTT is refused as a mode not in this
 build, scan and dual watch skip it, roaming doesn't take it as a repeater and it can't be copied to the VFO (the VFO
 holds plain FM and DMR only). Its mode word is the kind's short name (`?` for an unknown id), and Home says the mode

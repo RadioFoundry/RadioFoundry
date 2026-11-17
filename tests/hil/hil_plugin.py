@@ -153,6 +153,21 @@ def sdr_bench(pytestconfig):
     b.remove_run_dirs()
 
 
+@pytest.fixture(scope="session")
+def sdr_bench_2(pytestconfig):
+    """A second bench transmitter (--bench-api-2), for a test that needs two signals at once"""
+    api = pytestconfig.getoption("--bench-api-2")
+    if not api:
+        skip("bench", "no second bench transmitter: give --bench-api-2 HOST[:PORT]")
+    b = SdrBench(allow_rf=pytestconfig.getoption("--allow-rf"), wait_max=pytestconfig.getoption("--bench-wait-max"),
+                 api=api, api_level=pytestconfig.getoption("--bench-api-level"))
+    if not b.reachable():
+        skip("bench", f"the second bench board {b.api} not answering on the line protocol, with a TX frequency and "
+                      "its receiver running")
+    yield b
+    b.remove_run_dirs()
+
+
 @pytest.fixture
 def shots(pytestconfig, tmp_path):
     d = pytestconfig.getoption("--shots")

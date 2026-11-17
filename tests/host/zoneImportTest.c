@@ -849,6 +849,69 @@ static void test_modes(void)
 #endif
 }
 
+#if CONFIG_ZONE_SHARE_MODES
+// A conventional channel of a kind with no system: shared and taken with its block byte for byte, receive only until
+// the user allows transmit
+static void share_conv(uint8_t kind, const uint8_t *blk, int blk_len)
+{
+	uint8_t included = 0;
+	zone_import_result_t res;
+	zsRecord_t rec;
+	zsTag_t t;
+	zone_t z;
+	channel_t ch;
+	codeplug_tag_t tag;
+
+	fresh();
+	ch = make("Conv ops", 451500000, 456500000, true);
+	ch.rx_only = true;	// the safe stand-in: the tag carries transmit allowed
+	CHECK(codeplug_set_channel(1, &ch));
+	memset(&tag, 0, sizeof(tag));
+	tag.kind = kind;
+	tag.system = CODEPLUG_SYSTEM_NONE;
+	tag.flags = CODEPLUG_TAG_TX;
+	CHECK(codeplug_tag_write(1, "Conv ops", &tag, blk, blk_len));
+	memset(&z, 0, sizeof(z));
+	strcpy(z.name, "Conv");
+	z.count = 1;
+	z.channels[0] = 1;
+	CHECK(codeplug_set_zone(0, &z));
+	int len = zone_export_zone(0, recbuf, sizeof(recbuf), &included);
+	CHECK(len > 0 && included == 1 && zsParse(recbuf, len, &rec) && rec.systems == 0 && rec.tags == 1);
+	CHECK(zsTagAt(&rec, 0, &t) && t.kind == kind && t.system == 0 && t.len == (uint8_t)blk_len);
+	static uint8_t sent[ZS_RECORD_MAX];
+	memcpy(sent, recbuf, (size_t)len);
+
+	fresh();
+	with_zones();
+	CHECK(zone_import_zone(sent, len, 77, imports, &res) == ZI_OK && res.channels == 1 && res.unavailable == 0);
+	CHECK(codeplug_zone(res.zone, &z) && z.count == 1);
+	CHECK(codeplug_channel(z.channels[0], &ch) && ch.kind == kind && ch.system == CODEPLUG_SYSTEM_NONE &&
+	      ch.rx_only && ch.mode == RADIO_MODE_DMR && ch.tx_hz == 456500000);
+	uint8_t params[16];
+	CHECK(codeplug_tag_params(z.channels[0], &ch, params, 8) == blk_len && memcmp(params, blk, (size_t)blk_len) == 0);
+	// Receive only as every imported channel with no system (5.3); the user turns transmit on and the tag follows
+	ch.rx_only = false;
+	CHECK(codeplug_set_channel(z.channels[0], &ch));
+	CHECK(codeplug_channel(z.channels[0], &ch) && ch.kind == kind && !ch.rx_only);
+	CHECK(codeplug_tag_params(z.channels[0], &ch, params, 8) == blk_len && memcmp(params, blk, (size_t)blk_len) == 0);
+}
+
+// P25 conventional (kind 2; p25-codeplug.md 2): NAC 2A0 both ways, selective
+static void test_modes_p25_conv(void)
+{
+	static const uint8_t blk[] = { 0xA0, 0x82, 0xA0, 0x82, 0x01 };
+	share_conv(CODEPLUG_KIND_P25, blk, (int)sizeof(blk));
+}
+
+// NXDN conventional (kind 4; nxdn-codeplug.md 3): 4800 bit/s, selective, RX RAN 9, TX RAN 5
+static void test_modes_nxdn_conv(void)
+{
+	static const uint8_t blk[] = { 0x05, 0x09, 0x85 };
+	share_conv(CODEPLUG_KIND_NXDN, blk, (int)sizeof(blk));
+}
+#endif
+
 int main(void)
 {
 	test_import();
@@ -862,6 +925,10 @@ int main(void)
 	test_lands_ahead();
 	test_export();
 	test_modes();
+#if CONFIG_ZONE_SHARE_MODES
+	test_modes_p25_conv();
+	test_modes_nxdn_conv();
+#endif
 	printf("zoneImportTest: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

@@ -15,6 +15,12 @@
 #include "i18n.h"
 #include "radio/radio.h"
 #include "codeplug/zone_edit.h"
+#if CONFIG_P25
+#include "p25/p25_codeplug.h"
+#endif
+#if CONFIG_NXDN
+#include "nxdn/nxdn_codeplug.h"
+#endif
 
 // The UI services' one radio view copy (the UI task's only; too big for its stack). A service fetches it with
 // radio_get_view and reads it before returning: nothing may hold it across a call into another service
@@ -43,6 +49,8 @@ extern radio_view_t ui_svc_view;
 #define UI_FEAT_ZONE_SHARE	(1u << 19)	// ui_svc_zone_* (zone sharing over DMR data, CONFIG_ZONE_SHARE)
 #define UI_FEAT_VOLUME_KNOB	(1u << 21)	// the MCU reads a volume knob (radio_volume_knob): Settings > Key lock > Knob when locked
 #define UI_FEAT_REF_TRIM	(1u << 20)	// a reference trim (hal_radio_t.ref_trim, radio/ref_trim.h): Freq trim setting
+#define UI_FEAT_P25		(1u << 22)	// P25 on this board (CONFIG_P25, radio_p25_fits): the VFO's mode tile offers it
+#define UI_FEAT_NXDN		(1u << 23)	// NXDN on this board (CONFIG_NXDN, radio_nxdn_fits): the same
 uint32_t ui_svc_features(void);
 // The parts of it each package reports (ui_svc_features ORs them): dmr-voice / radio core, dmr-data, storage-cps,
 // radio-features
@@ -71,6 +79,11 @@ bool ui_svc_dmr_color_code(uint8_t cc);
 // The VFO's SFR role (CONFIG_SFR, sfr.md 4): a as a channel's SFR byte A; false: not in this build
 bool ui_svc_vfo_sfr(uint8_t a);
 bool ui_svc_mode(uint8_t mode);			// radio_mode_t: the VFO's mode (a channel's goes through Copy to VFO)
+// A channel mode's name as the screens show it (radio_mode_t). A name, never translated
+static inline const char *ui_mode_name(uint8_t mode)
+{
+	return mode == RADIO_MODE_DMR ? "DMR" : mode == RADIO_MODE_P25 ? "P25" : mode == RADIO_MODE_NXDN ? "NXDN" : "FM";
+}
 // Copy to VFO: the channel on view into the VFO, which opens (CONFIG_VFO). Returns a radio_vfo_copy_t: VFO_COPY_OK
 // when the request went to the radio core, else why nothing changed
 uint8_t ui_svc_vfo_copy(const radio_view_t *v);
@@ -81,8 +94,25 @@ bool ui_svc_vox(bool on);
 // Make temporary channel changes permanent (storage-cps): false when busy, off a stored channel, or unavailable
 bool ui_svc_save_channel(void);
 // Store a whole channel (the channel editor, ui.md 2.1) at number 1..CODEPLUG_CHANNELS_MAX, as a storage job like
-// ui_svc_save_channel. false: a write is still going on, or no codeplug storage in this build
-bool ui_svc_write_channel(uint16_t number, const channel_t *ch);
+// ui_svc_save_channel. from: the stored channel ch is a copy of (number itself when edited in place), 0 = none; a
+// copy of a channel of a kind takes its mode with it (channel-modes.md 2.4). false: a write is still going on, or no
+// codeplug storage in this build
+bool ui_svc_write_channel(uint16_t number, const channel_t *ch, uint16_t from);
+#if CONFIG_P25 || CONFIG_NXDN
+// A P25 or NXDN channel's own settings, its tag's parameter block (p25-codeplug.md 2, nxdn-codeplug.md 2)
+typedef union {
+#if CONFIG_P25
+	p25_conv_t p25;
+#endif
+#if CONFIG_NXDN
+	nxdn_conv_t nxdn;
+#endif
+} ui_air_conv_t;
+// ui_svc_write_channel for a P25 or NXDN channel (ch's kind, or a plain one in that mode) with conv as its block: the
+// channel editor's NAC, RAN and rate. A plain channel takes its talk target and talkaround from the radio's settings
+// as it does without conv
+bool ui_svc_write_channel_air(uint16_t number, const channel_t *ch, uint16_t from, const ui_air_conv_t *conv);
+#endif
 #if CONFIG_CONTACT_EDIT
 // Store a contact (the contact editor, ui.md 2.4) at index 1..CODEPLUG_CONTACTS_MAX, as a storage job. false: a write
 // is still going on, or no codeplug storage in this build

@@ -394,6 +394,16 @@ msgctxt "QUICK_WHY_FM_ONLY_DMR_CHANNEL"
 msgid "FM only: this is a DMR channel"
 msgstr "仅 FM：这是 DMR 信道"
 
+#: core/ui/ui_app.c
+msgctxt "QUICK_WHY_FM_ONLY_P25_CHANNEL"
+msgid "FM only: this is a P25 channel"
+msgstr "仅 FM：这是 P25 信道"
+
+#: core/ui/ui_app.c
+msgctxt "QUICK_WHY_FM_ONLY_NXDN_CHANNEL"
+msgid "FM only: this is NXDN"
+msgstr "仅 FM：这是 NXDN"
+
 #: core/ui/ui_app.c core/ui/ui_menus.c
 msgctxt "WHY_NOT_IN_BUILD"
 msgid "Not in this build"
@@ -2079,6 +2089,11 @@ msgctxt "LABEL_MODE"
 msgid "Mode"
 msgstr "模式"
 
+#: core/ui/ui_menus.c
+msgctxt "CHAN_LABEL_RATE"
+msgid "Rate"
+msgstr "速率"
+
 #: core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "WORD_RX_ONLY"
 msgid "RX only"
@@ -2180,6 +2195,11 @@ msgid "Save as new channel"
 msgstr "存为新信道"
 
 #: core/ui/ui_menus.c
+msgctxt "CHAN_LABEL_TALKAROUND"
+msgid "Talkaround"
+msgstr "直通"
+
+#: core/ui/ui_menus.c
 msgctxt "VALUE_YES"
 msgid "Yes"
 msgstr "是"
@@ -2250,6 +2270,16 @@ msgid "DCS codes use digits 0-7"
 msgstr "DCS 码仅用 0-7"
 
 #: core/ui/ui_menus.c
+msgctxt "CHAN_TOAST_NAC_REPEATER"
+msgid "F7F is for repeaters"
+msgstr "F7F 仅用于中继台"
+
+#: core/ui/ui_menus.c
+msgctxt "CHAN_TOAST_NXDN_ID_MAX"
+msgid "NXDN IDs go up to 65519"
+msgstr "NXDN ID 最大 65519"
+
+#: core/ui/ui_menus.c
 msgctxt "CHAN_TOAST_TIMEOUT_RANGE"
 msgid "Not changed: 0 to 495, steps of 15"
 msgstr "未改：0 到 495，步进 15"
@@ -2315,9 +2345,19 @@ msgid "No, keep editing"
 msgstr "否，继续编辑"
 
 #: core/ui/ui_menus.c
+msgctxt "DISCARD_ROW_SAVE"
+msgid "Yes, save"
+msgstr "是，保存"
+
+#: core/ui/ui_menus.c
 msgctxt "DISCARD_ROW_DISCARD"
 msgid "Yes, discard"
 msgstr "是，放弃"
+
+#: core/ui/ui_menus.c
+msgctxt "DISCARD_ASK_KIND"
+msgid " settings will be removed"
+msgstr " 设置会删除"
 
 #: core/ui/ui_menus.c
 msgctxt "DISCARD_ASK_NEW_CONTACT"
@@ -2333,6 +2373,16 @@ msgstr "放弃本信道的更改？"
 msgctxt "DISCARD_TITLE"
 msgid "Unsaved Changes"
 msgstr "未保存的更改"
+
+#: core/ui/ui_menus.c
+msgctxt "DISCARD_TITLE_DMR"
+msgid "Save as DMR?"
+msgstr "存为DMR？"
+
+#: core/ui/ui_menus.c
+msgctxt "DISCARD_TITLE_FM"
+msgid "Save as FM?"
+msgstr "存为FM？"
 
 #: core/ui/ui_menus.c
 msgctxt "DISCARD_HINT"
@@ -4265,6 +4315,46 @@ msgid "Step "
 msgstr "步进 "
 
 #: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_HUNT"
+msgid "Finding system"
+msgstr "搜索中"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_WAIT"
+msgid "Wait"
+msgstr "请等待"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_QUEUED"
+msgid "Queued"
+msgstr "等待中"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_DENIED"
+msgid "Denied"
+msgstr "已拒绝"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_REG_DENIED"
+msgid "Reg. denied"
+msgstr "注册已拒绝"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_REG"
+msgid "Registering"
+msgstr "正在注册"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_CONTROL"
+msgid "Control channel"
+msgstr "等待呼叫"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_FOLLOW"
+msgid "Following"
+msgstr "监听"
+
+#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_NO_TX_FREQ"
 msgid "No TX frequency"
 msgstr "无发射频率"
@@ -4375,6 +4465,41 @@ msgid "Radio refused to send"
 msgstr "电台拒绝发射"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_WHY_AIR_BENCH"
+msgid "Air bench: PTT off"
+msgstr "空口测试台：PTT 关闭"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_AIR_NO_TX"
+msgid "This mode: receive only"
+msgstr "此模式：仅接收"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_P25T_NO_CC"
+msgid "No control channel"
+msgstr "未找到网络"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_P25T_NOT_REG"
+msgid "Not registered yet"
+msgstr "尚未注册"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_P25T_DENIED"
+msgid "System denied the call"
+msgstr "网络拒绝呼叫"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_P25T_NO_ANSWER"
+msgid "No answer from system"
+msgstr "网络无应答"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_P25T_NO_CHAN"
+msgid "Voice channel unusable"
+msgstr "话音信道不可用"
+
+#: core/ui/ui_screens.c
 msgctxt "DENY_WHY_NOT_ALLOWED"
 msgid "Not allowed here"
 msgstr "此处不允许"
@@ -4433,6 +4558,11 @@ msgstr "请调离该频段"
 msgctxt "DENY_FIX_PICK_USER_CHANNEL"
 msgid "Pick a user channel to talk"
 msgstr "请选用户信道通话"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_FIX_END_BENCH_ON_PC"
+msgid "End the bench on the PC"
+msgstr "在电脑上结束测试台"
 
 #: core/ui/ui_screens.c
 msgctxt "TRUNK_WORD_PHONE_LINE"

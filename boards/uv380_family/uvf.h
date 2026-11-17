@@ -118,6 +118,7 @@ typedef struct {
 	uint8_t c6000_r10;	// HR_C6000 4:0x10 read back after init (0x80 = FM)
 	bool c6000_ok;		// that read worked
 	uint32_t bus_errors;
+	uint32_t bus_clears;	// the AT1846S bus was held and clocked free
 } uvf_radio_diag_t;
 void uvf_radio_diag(uvf_radio_diag_t *d);
 uint8_t uvf_display_panel_type(void);

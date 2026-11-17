@@ -392,6 +392,16 @@ msgctxt "QUICK_WHY_FM_ONLY_DMR_CHANNEL"
 msgid "FM only: this is a DMR channel"
 msgstr "Solo FM: es un canal DMR"
 
+#: core/ui/ui_app.c
+msgctxt "QUICK_WHY_FM_ONLY_P25_CHANNEL"
+msgid "FM only: this is a P25 channel"
+msgstr "Solo FM: es un canal P25"
+
+#: core/ui/ui_app.c
+msgctxt "QUICK_WHY_FM_ONLY_NXDN_CHANNEL"
+msgid "FM only: this is NXDN"
+msgstr "Solo FM: es NXDN"
+
 #: core/ui/ui_app.c core/ui/ui_menus.c
 msgctxt "WHY_NOT_IN_BUILD"
 msgid "Not in this build"
@@ -2077,6 +2087,11 @@ msgctxt "LABEL_MODE"
 msgid "Mode"
 msgstr "Modo"
 
+#: core/ui/ui_menus.c
+msgctxt "CHAN_LABEL_RATE"
+msgid "Rate"
+msgstr "Velocidad"
+
 #: core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "WORD_RX_ONLY"
 msgid "RX only"
@@ -2178,6 +2193,11 @@ msgid "Save as new channel"
 msgstr "Guardar como nuevo"
 
 #: core/ui/ui_menus.c
+msgctxt "CHAN_LABEL_TALKAROUND"
+msgid "Talkaround"
+msgstr "Directo"
+
+#: core/ui/ui_menus.c
 msgctxt "VALUE_YES"
 msgid "Yes"
 msgstr "Sí"
@@ -2248,6 +2268,16 @@ msgid "DCS codes use digits 0-7"
 msgstr "Códigos DCS: dígitos 0-7"
 
 #: core/ui/ui_menus.c
+msgctxt "CHAN_TOAST_NAC_REPEATER"
+msgid "F7F is for repeaters"
+msgstr "F7F es para repetidores"
+
+#: core/ui/ui_menus.c
+msgctxt "CHAN_TOAST_NXDN_ID_MAX"
+msgid "NXDN IDs go up to 65519"
+msgstr "ID NXDN máximo es 65519"
+
+#: core/ui/ui_menus.c
 msgctxt "CHAN_TOAST_TIMEOUT_RANGE"
 msgid "Not changed: 0 to 495, steps of 15"
 msgstr "Sin cambio: 0 a 495, pasos de 15"
@@ -2313,9 +2343,19 @@ msgid "No, keep editing"
 msgstr "No, seguir editando"
 
 #: core/ui/ui_menus.c
+msgctxt "DISCARD_ROW_SAVE"
+msgid "Yes, save"
+msgstr "Sí, guardar"
+
+#: core/ui/ui_menus.c
 msgctxt "DISCARD_ROW_DISCARD"
 msgid "Yes, discard"
 msgstr "Sí, descartar"
+
+#: core/ui/ui_menus.c
+msgctxt "DISCARD_ASK_KIND"
+msgid " settings will be removed"
+msgstr " - se quitarán sus ajustes"
 
 #: core/ui/ui_menus.c
 msgctxt "DISCARD_ASK_NEW_CONTACT"
@@ -2331,6 +2371,16 @@ msgstr "¿Descartar los cambios de este canal?"
 msgctxt "DISCARD_TITLE"
 msgid "Unsaved Changes"
 msgstr "Cambios sin guardar"
+
+#: core/ui/ui_menus.c
+msgctxt "DISCARD_TITLE_DMR"
+msgid "Save as DMR?"
+msgstr "¿Guardar como DMR?"
+
+#: core/ui/ui_menus.c
+msgctxt "DISCARD_TITLE_FM"
+msgid "Save as FM?"
+msgstr "¿Guardar como FM?"
 
 #: core/ui/ui_menus.c
 msgctxt "DISCARD_HINT"
@@ -4263,6 +4313,46 @@ msgid "Step "
 msgstr "Paso "
 
 #: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_HUNT"
+msgid "Finding system"
+msgstr "Buscando sistema"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_WAIT"
+msgid "Wait"
+msgstr "Espere"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_QUEUED"
+msgid "Queued"
+msgstr "En cola"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_DENIED"
+msgid "Denied"
+msgstr "Denegado"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_REG_DENIED"
+msgid "Reg. denied"
+msgstr "Reg. denegado"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_REG"
+msgid "Registering"
+msgstr "Registrando"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_CONTROL"
+msgid "Control channel"
+msgstr "Canal de control"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_FOLLOW"
+msgid "Following"
+msgstr "Siguiendo"
+
+#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_NO_TX_FREQ"
 msgid "No TX frequency"
 msgstr "Sin frecuencia TX"
@@ -4373,6 +4463,41 @@ msgid "Radio refused to send"
 msgstr "La radio no quiso transmitir"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_WHY_AIR_BENCH"
+msgid "Air bench: PTT off"
+msgstr "Banco de aire: sin PTT"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_AIR_NO_TX"
+msgid "This mode: receive only"
+msgstr "Este modo: solo recibe"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_P25T_NO_CC"
+msgid "No control channel"
+msgstr "Sin canal de control"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_P25T_NOT_REG"
+msgid "Not registered yet"
+msgstr "Aún no registrado"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_P25T_DENIED"
+msgid "System denied the call"
+msgstr "Sistema denegó llamada"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_P25T_NO_ANSWER"
+msgid "No answer from system"
+msgstr "Sistema no responde"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_P25T_NO_CHAN"
+msgid "Voice channel unusable"
+msgstr "Canal de voz inválido"
+
+#: core/ui/ui_screens.c
 msgctxt "DENY_WHY_NOT_ALLOWED"
 msgid "Not allowed here"
 msgstr "No permitido aquí"
@@ -4431,6 +4556,11 @@ msgstr "Sal de la banda"
 msgctxt "DENY_FIX_PICK_USER_CHANNEL"
 msgid "Pick a user channel to talk"
 msgstr "Elige un canal de usuario"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_FIX_END_BENCH_ON_PC"
+msgid "End the bench on the PC"
+msgstr "Termina el banco en el PC"
 
 #: core/ui/ui_screens.c
 msgctxt "TRUNK_WORD_PHONE_LINE"

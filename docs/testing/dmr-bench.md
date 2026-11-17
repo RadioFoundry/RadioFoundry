@@ -19,6 +19,7 @@ the HIL tests don't script yet.
 | Radio under test | A radio with RadioFoundry, on the bench, on USB: driven by the debug link (`tools/rfoundry_debug.py`, the HIL tests) or its keys; the board's diagnostics page |
 | Bench board | A board that serves the bench line protocol (TCP 7373): it builds and sends DMR bursts as jobs, decodes what it receives into burst records, and sends and receives FM. Given as `--bench-api HOST[:PORT]` or `$RFOUNDRY_BENCH_API` |
 | Second bench board (optional) | The receive side (`--bench-api-rx`, `$RFOUNDRY_BENCH_API_RX`). A half-duplex board can't hear while it transmits |
+| Second transmitter (optional) | A board that transmits while the first does (`--bench-api-2`, `$RFOUNDRY_BENCH_API_2`): a test with two signals at once |
 
 The test channel is the rig's (`--dmr-freq` / `--dmr-cc`: tests/hil/README.md, "The rig's configuration"). It must be
 inside the board's transmit list and receive window.

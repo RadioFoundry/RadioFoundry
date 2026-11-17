@@ -40,6 +40,8 @@ void p25_conv_decode(const uint8_t *b, int len, p25_conv_t *out);
 void p25_conv_encode(const p25_conv_t *c, uint8_t out[P25_CP_CONV_LEN]);
 // The radio-wide unit ID from the kind's record (len bytes, -1 = none): the DMR ID when unset or out of range
 uint32_t p25_unit_id_decode(const uint8_t *b, int len, uint32_t dmr_id);
+// The radio-wide unit ID as stored (1): the kind's record, else dmr_id
+uint32_t p25_radio_unit_id(uint32_t dmr_id);
 
 // What a conventional call is set up from: the channel's NACs and squelch, our unit ID and the talk target
 typedef struct {
@@ -52,6 +54,14 @@ typedef struct {
 // Channel number's set-up from its tag, the radio-wide record and its record ch (read by codeplug_channel); false when
 // it isn't a live P25 conventional channel
 bool p25_conv_load(uint16_t number, const channel_t *ch, p25_conv_cfg_t *out);
+// The parameter block alone, without the contact and the unit ID (a list row, channel info): false as p25_conv_load
+bool p25_conv_params(uint16_t number, const channel_t *ch, p25_conv_t *out);
+// Write ch at number as a P25 conventional channel (channel-modes.md 2.4): the base record in its safe stand-in shape,
+// then the tag with conv's block, transmit allowed unless ch->rx_only. A channel that is P25 already keeps its tag's
+// system, fallback, other flags and what its block holds after conv's (codeplug_tag_rewrite), and under a base-own
+// tag its record's own mode; else the tag is new.
+// Where a P25 channel is made from the radio's own settings (the VFO, a mode changed for now) or its block edited
+bool p25_conv_save(uint16_t number, const channel_t *ch, const p25_conv_t *conv);
 
 #if CONFIG_P25_TRUNK
 // A trunked system's block (3), after the generic header
@@ -60,6 +70,7 @@ bool p25_conv_load(uint16_t number, const channel_t *ch, p25_conv_cfg_t *out);
 #define P25_CP_SYSID_ANY	0xFFFFu
 #define P25_TSYS_SKIP_ENC	0x01u	// options: skip encrypted calls
 #define P25_TSYS_PLAN_ONLY	0x02u	// options: use only the programmed identifier plan
+#define P25_TSYS_NO_REG		0x04u	// options: ask for voice channels without registering or affiliating
 typedef struct {
 	uint32_t wacn;		// P25_CP_WACN_ANY: any
 	uint16_t sysid;		// P25_CP_SYSID_ANY: any

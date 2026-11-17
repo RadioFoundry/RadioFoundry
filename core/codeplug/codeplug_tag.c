@@ -96,6 +96,51 @@ bool codeplug_tag_write(uint16_t number, const char *name, const codeplug_tag_t 
 	return codeplug_kv_set(tag_key(number), v, (uint16_t)(at + len));
 }
 
+bool codeplug_tag_rewrite(uint16_t number, const char *name, const codeplug_tag_t *t, const uint8_t *params, uint16_t len)
+{
+	uint8_t v[CODEPLUG_TAG_HEAD_MAX + TAG_PARAMS_MAX];
+	codeplug_tag_t old;
+	if (!number_ok(number) || len > TAG_PARAMS_MAX ||
+	    !parse(v, codeplug_kv_get(tag_key(number), v, CODEPLUG_TAG_HEAD_MAX), &old) || old.kind != t->kind ||
+	    old.check != codeplug_name_check(name)) {
+		return false;
+	}
+	uint16_t at = codeplug_tag_params_at(&old);
+	v[1] = t->system;
+	v[4] = (uint8_t)((old.flags & ~CODEPLUG_TAG_TX) | (t->flags & CODEPLUG_TAG_TX));
+	if (len != 0) {
+		memcpy(&v[at], params, len);
+	}
+	// From the front: a block longer than this firmware writes keeps its later bytes
+	codeplug_kv_op_t op = { tag_key(number), (uint16_t)((at + len) | CODEPLUG_KV_HEAD), v };
+	return codeplug_kv_write(&op, 1);
+}
+
+bool codeplug_tag_copy(uint16_t from, uint16_t to, const channel_t *ch)
+{
+	uint8_t v[CODEPLUG_TAG_HEAD_MAX + TAG_PARAMS_MAX];
+	char name[CODEPLUG_NAME_LEN + 1];
+	codeplug_tag_t t;
+	if (ch->kind == CODEPLUG_KIND_NONE || !number_ok(from) || !number_ok(to) || from == to ||
+	    !codeplug_channel_name(from, name)) {
+		return false;
+	}
+	int len = codeplug_kv_get(tag_key(from), v, sizeof v);
+	if (len > (int)sizeof v || !parse(v, len, &t) || t.kind != ch->kind || t.check != codeplug_name_check(name)) {
+		return false;
+	}
+	// A source whose record is a channel of its own: the copy was written as a stand-in (no tag followed it), so it
+	// takes that record's mode, receive-only bit and bandwidth before the tag says so. Where that fails the copy's
+	// tag says what its record is, a stand-in
+	if ((t.flags & CODEPLUG_TAG_BASE_OWN) != 0 && !codeplug_base_copy(from, to)) {
+		t.flags &= (uint8_t)~CODEPLUG_TAG_BASE_OWN;
+	}
+	v[1] = ch->system;
+	wr16(&v[2], codeplug_name_check(ch->name));
+	v[4] = (uint8_t)((t.flags & ~CODEPLUG_TAG_TX) | (ch->rx_only ? 0u : CODEPLUG_TAG_TX));
+	return codeplug_kv_set(tag_key(to), v, (uint16_t)len);
+}
+
 bool codeplug_tag_remove(uint16_t number)
 {
 	// Nothing stored, nothing to write: a codeplug without tags (or an area a later firmware wrote, never ours to
