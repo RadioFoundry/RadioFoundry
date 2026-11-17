@@ -253,9 +253,10 @@ SWITCH_MODES = [
 @pytest.mark.parametrize("mode", SWITCH_MODES)
 def test_dmr_after_mode(radio, sdr_bench, pytestconfig, mode):
     """DMR, then mode, then DMR again on one VFO frequency (--dmr-freq) without a restart: the second DMR over must
-    decode like the first, on the same carrier (MODE_TOL_PPB), and mode's carrier must match DMR's. A mode that leaves
-    the modulator's deviation pair, the RF chip's set-up or the DMR engine its own way shows here, where a channel
-    change from a P25 or NXDN channel to a DMR one would no longer reach a hotspot or repeater until a power cycle."""
+    decode like the first, on the same carrier (MODE_TOL_PPB). A mode that leaves the modulator's deviation pair, the
+    RF chip's set-up or the DMR engine its own way shows here, where a channel change from a P25 or NXDN channel to a
+    DMR one would no longer reach a hotspot or repeater until a power cycle. The mode's over is keyed, not measured
+    (test_tx_carrier_mode measures it): only DMR's receiver is needed, and one bench board seldom has both."""
     mhz = rig(pytestconfig, "dmr-freq")
     hz = round(mhz * 1e6)
     radio.go_home()
@@ -263,8 +264,7 @@ def test_dmr_after_mode(radio, sdr_bench, pytestconfig, mode):
         skip("state", "the radio is in hotspot mode")
     check_built(radio, "dmr")
     nxdn_old = check_built(radio, mode)
-    for m in ("dmr", mode):
-        need_receiver(sdr_bench, m, mhz)
+    need_receiver(sdr_bench, "dmr", mhz)
     res = []
     with radio.vfo_session():
         L = radio.link
@@ -288,16 +288,23 @@ def test_dmr_after_mode(radio, sdr_bench, pytestconfig, mode):
                     res.append((m, c, n))
                     print(f"\n{m} over {len(res)}: {n} bursts, carrier {c} Hz")
                 else:
-                    c, _, note = over(radio, sdr_bench, mhz, m, v)
-                    res.append((m, c, None))
-                    print(f"\n{m}: carrier {c:+d} Hz, {note}")
+                    with sdr_bench.lease():
+                        t0 = time.monotonic()
+                        L.ptt(True, int(PTT_S * 1000) + 300)    # the firmware releases it if the host is lost
+                        try:
+                            radio.wait_for(lambda x: x.get("state") == "tx", timeout=2, what=f"{m} keyed")
+                            time.sleep(max(0.0, PTT_S - (time.monotonic() - t0)))
+                        finally:
+                            L.ptt(False)
+                        radio.wait_for(lambda x: x.get("state") != "tx", timeout=3, what="TX ended")
+                    res.append((m, None, None))
+                    print(f"\n{m}: keyed {PTT_S} s")
         finally:
             if nxdn_old is not None:
                 L.nxdn_settings(**nxdn_old)
-    (_, c1, n1), (_, cm, _), (_, c2, n2) = res
+    (_, c1, n1), _, (_, c2, n2) = res
     tol = round(MODE_TOL_PPB * mhz / 1000)
     assert n1 > 0 and c1 is not None, "the first DMR over: the bench decoded no burst"
     assert n2 >= SWITCH_BURSTS_MIN * n1, f"DMR after {mode}: {n2} bursts decoded, {n1} before it"
     assert c2 is not None, f"DMR after {mode}: no carrier"
     assert abs(c2 - c1) <= tol, f"DMR after {mode}: carrier {c2 - c1:+d} Hz from before it (limit +-{tol})"
-    assert abs(cm - c1) <= tol, f"{mode}'s carrier is {cm - c1:+d} Hz from DMR's (limit +-{tol})"
