@@ -4,7 +4,7 @@
 // output chain in its power-on state, then offers the boot ROM's handshake on UART1 (the programming cable; boot/hrc7000/stage.c). Without a host it goes
 // on to the application.
 //
-// PTB2 is A's TX / RX line, high while transmitting (docs/spec/hardware-gd88.md). A soft reset can leave it high,
+// PTB2 is A's TX / RX line, high while transmitting. A soft reset can leave it high,
 // mid-transmission, and the stage may wait here for a host, so it goes low first. The 64-bit serial output chain
 // (PTB0 clock, PTB1 data, PTB3 latch: audio routing, the amplifier, the TX route) is shifted to all zero, its
 // power-on state, and PTC20 goes low.

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// GD-88 factory calibration (calibration_gd88.c, docs/spec/hardware-gd88.md 7), shared by both SoCs' builds. The page
+// GD-88 factory calibration (calibration_gd88.c), shared by both SoCs' builds. The page
 // has the layout of hardware-db25d.md 6: two halves (UHF, VHF at +0x400), 8 points a band.
 #ifndef GD88_CAL_H
 #define GD88_CAL_H
@@ -31,7 +31,7 @@ uint8_t gd88_cal_mod(uint32_t hz);			// modcal for hrc7000_mod_bias_dc
 #define GD88_CAL_TX_DELAY_MAX_US	2000u			// the longest delay the page can give
 void gd88_cal_tx_delays(uint32_t hz, uint16_t *on_us, uint16_t *off_us);
 uint8_t gd88_cal_tx_center(void);			// 128 without a page
-// The power levels (docs/spec/hardware-gd88.md 13.1, docs/testing/power-calibration.md), one table per band. The low
+// The power levels (docs/testing/power-calibration.md), one table per band. The low
 // levels are fixed drives: the bottom of the PA's curve follows the absolute drive. The upper levels lie between the
 // page's two rows, which follow the PA across the band. zero is the drive where the output reaches zero, the key-up's
 // anchor for the dead zone (radio/pa_keyup.h)
@@ -64,10 +64,10 @@ uint16_t gd88_apc_level(uint16_t target, uint16_t step);
 // Squelch open threshold for level 0..9, in dB below 0 dBm at the main chip (bk4819_squelch_rssi(-v, 2))
 uint8_t gd88_cal_squelch_db(uint32_t hz, uint8_t level);
 // The page's items at 0x602 (4 bytes), 0x606, 0x607 (1 each), 0x608 and 0x60B (3 each): both bench radios have them
-// unwritten (0xFF) (hardware-gd88.md 7), so they aren't used
+// unwritten (0xFF), so they aren't used
 #define GD88_CAL_OFF_EXTRA	0x602u
 
-// DMR keying (hardware-gd88.md): the shortest lead that has the PA up for the first symbol. From the RF TX interrupt to
+// DMR keying: the shortest lead that has the PA up for the first symbol. From the RF TX interrupt to
 // the PA within 1 dB: A's task wake, B's edge, its 50 us and the page's TX-on delay, PA select, 200 us, supply, the ramp
 #define GD88_DMR_PA_UP_US	2400u
 static inline uint8_t gd88_dmr_rf_tx_lead(uint16_t on_us)
@@ -75,7 +75,7 @@ static inline uint8_t gd88_dmr_rf_tx_lead(uint16_t on_us)
 	return hrc_rfburst_lead(GD88_DMR_PA_UP_US + on_us);
 }
 // A's bursts by the key-up rule (radio/pa_keyup.h): B steps the drive at the rule's points instead of ramping it. The
-// ramp took 0.75-0.85 ms (hardware-gd88.md), so the drive started that long before the PA was up; the rest of the
+// ramp took 0.75-0.85 ms, so the drive started that long before the PA was up; the rest of the
 // 2.4 ms is the sequence before it: A's TX line edge, B's wake on it, its 50 us, PA select, 200 us, supply, with room.
 // The lead for a key-up whose first point is first_us before the first symbol: the same 2.4 ms at GD88_DMR_DRIVE_US
 #define GD88_DMR_DRIVE_US	800u

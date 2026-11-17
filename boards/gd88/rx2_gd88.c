@@ -4,7 +4,7 @@
 // The link's main side is core/rx2/rx2_link.c; this file moves its bytes, runs it from a task of its own, and routes
 // B's audio to the speaker. Text B sends (RX2_LOG) goes to the debug link's log.
 //
-// A's status LEDs are on B too: led() sends them over the link (RX2_LED). So is A's PA (hardware-gd88.md 10):
+// A's status LEDs are on B too: led() sends them over the link (RX2_LED). So is A's PA:
 // gd88_pa_arm() hands B the drive and delays before a transmission (RX2_TX) and waits for B to take them; B then keys
 // the PA on A's TX line.
 //
@@ -75,7 +75,7 @@ static void give(void)
 
 // B's audio into A's amplifier, only while B is heard (its squelch open and the speaker its own). With the speaker
 // B's but nothing received there, B mutes its source: an amplifier left on then plays the noise of an undriven line,
-// for as long as dual watch is on (hardware-gd88.md 9.3)
+// for as long as dual watch is on
 static void route_b(void)
 {
 	rx2_status_t st;

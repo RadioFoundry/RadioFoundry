@@ -159,7 +159,7 @@ BOARD_SCHEMA = {
     # also lists the radios in that body (each one of the board's also too)
     "looks": _opt(("list", {"id": _req(str), "name": _req(str), "also": _opt(STR_LIST)})),
     "debuglink_aliases": _opt(STR_LIST),
-    "docs": _req({"hardware": _req(str), "codec": _opt(str), "install": _opt(str), "bringup": _opt(str)}),
+    "docs": _opt({"hardware": _opt(str), "codec": _opt(str), "install": _opt(str), "bringup": _opt(str)}),
     # unconfirmed: a hardware switch (tests/hil/features.toml hardware) that is neither built nor in
     # BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN because no source says yet whether the radio has the part: switch ->
     # what is missing (docs/build-config.md, "Unsupported, not written, unconfirmed")
@@ -1100,11 +1100,11 @@ def write_test_problems(start, nand, spi_size, areas, protect, floor=0):
     return out
 
 
-def protect_problems(entries, mems, owned=()):
+def protect_problems(entries, mems, owned=(), cite=True):
     """Why a board's [[flash.protect]] entries can't stand: a memory the board lacks, an empty or reversed range, one
     past the memory's end or off its erase boundaries, an overlap with another entry, or with flash the firmware owns
     (owned: [(mem, start, end, what)], the application and the codec slot), which every install would then be refused.
-    mems: Board.memories()."""
+    mems: Board.memories(). cite: the board has a hardware page, so each what cites its section."""
     out = []
     for i, p in enumerate(entries):
         m, lo, hi = p["mem"], p["start"], p["end"]
@@ -1122,7 +1122,9 @@ def protect_problems(entries, mems, owned=()):
         if not (bounds(lo) and bounds(hi)):
             out.append("%s: start and end must be on the %s's erase boundaries (%s)" % (
                 tag, PROTECT_MEMS[m], "0x%X" % step if isinstance(step, int) else "its sectors"))
-        if not p["what"].strip() or not re.search(r"\(.*\d.*\)", p["what"]):
+        if not p["what"].strip():
+            out.append("%s: what names the data" % tag)
+        elif cite and not re.search(r"\(.*\d.*\)", p["what"]):
             out.append("%s: what names the data and cites the spec section, e.g. \"factory calibration "
                        "(hardware-<radio>.md 6.1)\"" % tag)
         for q in entries[:i]:
@@ -1217,7 +1219,7 @@ def check(root=ROOT):
                                               d["hardware"].get("unconfirmed", {}), built, hw)
             except RegistryError as e:
                 problems.append(str(e))
-        for k, p in d["docs"].items():
+        for k, p in d.get("docs", {}).items():
             if not os.path.isfile(os.path.join(root, p)):
                 bad("docs.%s %s doesn't exist" % (k, p))
         variant_problems(bid, d, boards, bad)
@@ -1285,7 +1287,7 @@ def check(root=ROOT):
         owned = [("progmem", b.app_base - base, b.app_region[1] - base, "the application")]
         if b.codec_slot:
             owned.append(("progmem", b.codec_slot[0] - base, b.codec_slot[1] - base, "the codec slot"))
-        for why in protect_problems(b.protect, b.memories(), owned):
+        for why in protect_problems(b.protect, b.memories(), owned, cite="hardware" in d.get("docs", {})):
             bad(why)
         for (_, a0, s0), (_, a1, _) in zip(secs, secs[1:]):
             if a0 + s0 > a1:
@@ -1625,7 +1627,7 @@ def site_view(boards, root=ROOT):
             "id": bid, "name": d["name"], "maker": d["maker"], "model": d["model"], "also": list(d["also"]),
             "kind": d["kind"], "order": d["order"], "level": d["status"]["level"], "release": d["status"]["release"],
             "summary": d["status"]["summary"], "bands": hw["bands"], "power": hw["power"],
-            "cpu": b.cpu, "display": hw["display"], "gallery": hw["gallery"], "docs": dict(d["docs"]), "flash": flash,
+            "cpu": b.cpu, "display": hw["display"], "gallery": hw["gallery"], "docs": dict(d.get("docs", {})), "flash": flash,
             "backup": dict(fl["backup"]), "frame": json.loads(json.dumps(d["frame"])), "codeplug": b.codeplug(),
             "looks": json.loads(json.dumps(d.get("looks", []))),
             "unsupported": dict(b.unsupported), "not_written": dict(b.not_written),
@@ -1886,10 +1888,13 @@ def self_test():
             ([pe("data", 0x1000, 0x3000), pe("data", 0x2000, 0x4000)], mems, "overlaps the entry"),
             ([pe("progmem", 0xE0000, 0xF0000)], mems, "every install writes"),
             ([pe("secreg", 0x80, 0x100)], mems, "erase boundaries"),
-            ([pe("data", 0, 0x1000, "calibration")], mems, "cites the spec")):
+            ([pe("data", 0, 0x1000, "calibration")], mems, "cites the spec"),
+            ([pe("data", 0, 0x1000, " ")], mems, "names the data")):
         got = protect_problems(ents, ms, owned)
         ok(len(got) == 1 and want in got[0], "protect refuses: %s %r" % (want, got))
     ok(protect_problems([pe("progmem", 0x8000, 0x10000)], geo) == [], "protect: on a geometry's sector boundaries")
+    ok(protect_problems([pe("data", 0, 0x1000, "calibration")], mems, owned, cite=False) == [],
+       "protect: no section to cite on a board without a hardware page")
     tmpm = tempfile.mkdtemp(prefix="rfoundry-boards-mk-")
     with open(os.path.join(tmpm, "config.mk"), "w", encoding="utf-8") as f:
         f.write("# BOARD_UNSUPPORTED += NO\nBOARD_UNSUPPORTED += USB\t# no USB port\nBOARD_UNSUPPORTED += AM_RX\n"
@@ -2073,7 +2078,7 @@ def self_test():
         os.makedirs(os.path.dirname(os.path.join(tmp, UI_SIM)))
         shutil.copy(os.path.join(ROOT, UI_SIM), os.path.join(tmp, UI_SIM))
         for b in board_dirs(ROOT):
-            for p in _tomllib().load(open(os.path.join(ROOT, "boards", b, "board.toml"), "rb"))["docs"].values():
+            for p in _tomllib().load(open(os.path.join(ROOT, "boards", b, "board.toml"), "rb")).get("docs", {}).values():
                 os.makedirs(os.path.dirname(os.path.join(tmp, p)), exist_ok=True)
                 open(os.path.join(tmp, p), "w").close()
         ok(check(tmp) == [], "the copied registry is consistent: %s" % check(tmp)[:3])
@@ -2092,6 +2097,14 @@ def self_test():
         broken(good.replace('id = "%s"' % one, 'id = "other"', 1), "an id that isn't the directory", "directory name")
         broken(re.sub(r'(?m)^family = ".*"$', 'family = "usb-dfu"', good), "a family's missing table", "needs flash.dfu")
         broken(good.replace('hardware = "', 'hardware = "missing/', 1), "a missing docs page", "doesn't exist")
+        with open(path, "w", encoding="utf-8") as f:	# hardware notes kept out of the repository: no pages, name unlinked
+            f.write(re.sub(r"(?ms)^\[docs\]\n.*?(?=^\[)", "", good))
+        b = load(tmp)[one]
+        ok(check(tmp) == [] and registry_docs.board_title(b, "").startswith(b.data["name"])
+           and "](" not in registry_docs.board_title(b, ""),
+           "a board without docs pages: %s" % (check(tmp)[:2] or registry_docs.board_title(b, "")))
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(good)
         broken(re.sub(r'(?m)^gallery = ".*"$', 'gallery = "200x100"', good), "a display class the gallery lacks",
                "sim_geoms")
         broken(re.sub(r"(?m)^hold_power = .*$", "", good), "a missing stub key", "needs hold_power")

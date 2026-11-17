@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// GD-88 SoC B: the PA of A's transmitter (docs/spec/hardware-gd88.md 10). A's chip makes the signal, but the PA, its
+// GD-88 SoC B: the PA of A's transmitter. A's chip makes the signal, but the PA, its
 // supplies and its drive (DAC B) are wired to B. A hands B the drive and the page's delays before it transmits (RX2_TX,
 // gd88b_pa_arm) and then raises its TX line, PTB2 on both SoCs. B follows the line from a both-edge interrupt:
 //

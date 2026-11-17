@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// GD-88 factory calibration, the "TUNE" page (docs/spec/hardware-gd88.md 7): PA drive, RX front-end tuning, TX center
+// GD-88 factory calibration, the "TUNE" page: PA drive, RX front-end tuning, TX center
 // and modulation, TX switching delays, squelch thresholds. Each SoC has its own page, in the layout of
 // hardware-db25d.md 6.
 //
@@ -13,7 +13,7 @@
 
 #define OFF_RX_TUNE		0x02Cu
 #define OFF_TX_CENTER		0x43Fu		// VHF half only, used for both bands
-// The factory's two power rows (hardware-gd88.md 13.1): at 445 MHz 0x045 gave about 5.6 W, 0x056 about 2.1 W
+// The factory's two power rows: at 445 MHz 0x045 gave about 5.6 W, 0x056 about 2.1 W
 #define OFF_PA_HIGH		0x045u		// power level 1 of the factory set-up
 #define OFF_PA_LOW		0x056u		// every other level
 #define OFF_MOD			0x067u		// (u8, u8) pairs, the first byte used
@@ -141,7 +141,7 @@ uint16_t gd88_cal_pa(uint32_t hz, bool high)
 	return v > 0 && v <= (int32_t)DAC_MAX ? (uint16_t)v : 0;
 }
 
-// The power levels, [VHF, UHF] (hardware-gd88.md 13.1). Approximate, from the SDR bench (about +-2 dB): change a drive
+// The power levels, [VHF, UHF]. Approximate, from the SDR bench (about +-2 dB): change a drive
 // here when a wattmeter says otherwise. zero: the drive where the output reaches about 20 mW. VHF at 146 MHz: 100 mW
 // 700, 500 mW 929, 1 W 1098; 2.5 W 1471 and 5 W 1988 between the rows 1371 (2.2 W) and 2960. UHF at 445 MHz: 100 mW
 // 426, 500 mW 651, 1 W 846; 2.5 W 1374 and 5 W 2515 between the rows 1177 (2.1 W) and 3024 (5.6 W)

@@ -246,7 +246,7 @@ PROFILES.update({
                     "enc_set": 0x32C, "fec_init": 0x1CE4},
     },
 })
-# GD-88: two HR_C7000 SoCs, each with its own plain image linked at 0x0300C000 (hardware-gd88.md 1, 8). A is the main
+# GD-88: two HR_C7000 SoCs, each with its own plain image linked at 0x0300C000. A is the main
 # SoC (board gd88), B the second transceiver (board gd88b). Each update file carries its own copy of the codec, but
 # RadioFoundry puts A's codec on both: boards/gd88b/board.toml [codec] from = ["gd88"], so an A file (or a program flash
 # read of A) gives B the same slot, byte for byte, as A gets: both boards have the same slot and code window, and B's

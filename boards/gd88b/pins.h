@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// GD-88 SoC B pin map (docs/spec/hardware-gd88.md 10). Pin = port * 32 + bit (PTA 0x00, PTB 0x20, PTC 0x40). The RF
+// GD-88 SoC B pin map. Pin = port * 32 + bit (PTA 0x00, PTB 0x20, PTC 0x40). The RF
 // chips' bus is A's (common/gd88_rf.h). Every pin here is low at start-up except PIN_AUD_VHF and PIN_AUD_UHF's pair
 #ifndef GD88B_PINS_H
 #define GD88B_PINS_H

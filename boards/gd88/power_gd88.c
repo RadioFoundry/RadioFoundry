@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// GD-88 SoC A power key and latch, battery and volume knob on the ADC, status LEDs (docs/spec/hardware-gd88.md 9.1).
+// GD-88 SoC A power key and latch, battery and volume knob on the ADC, status LEDs.
 //
 // PTB12 reads high while the power key is pressed; the latch (PTB13) keeps the radio on. The radio is switched on with
 // the volume knob, so PTB12 is most likely the knob's switch contact; it is handled as a key all the same: once seen
@@ -22,7 +22,7 @@
 #define BAT_FULL_MV		8400u
 #define BAT_EMPTY_MV		6000u
 // The knob: 21 positions (5 % each) over its turn, with a little hysteresis so a knob resting on a boundary doesn't
-// flicker between two. It is an audio taper pot: the readings at its quarters (hardware-gd88.md 9), linear between
+// flicker between two. It is an audio taper pot: the readings at its quarters, linear between
 // them. The ends sit a little inside the stops (0 and 1010 measured), so a knob whose wiper stops a little short still
 // reaches silence and the top
 #define VOL_LEVELS		21u

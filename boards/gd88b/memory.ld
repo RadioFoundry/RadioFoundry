@@ -2,18 +2,18 @@
 /* Copyright (c) 2026 The RadioFoundry Authors */
 /* Radioddity GD-88 SoC B, the second receiver, with DMR (CONFIG_DMR=y; without it config.mk selects
  * boards/gd88/fm_only.ld), HR_C7000 (CK803S), application behind B's IAP loader and RadioFoundry's first stage
- * (docs/spec/hardware-gd88.md 2, 8, 10).
+ *.
  *
  * Program flash (XIP, 2 MB at 0x03000000): the loader below 0x0300C000 (never written), RadioFoundry's first stage
  * 0x0300C000..0x0300D000 (board.mk APP_BASE, BOOT_SIZE), the application from 0x0300D000, the codec slot
- * 0x030E8000..0x03100000 (hardware-gd88.md 8: the codec is merged there on the user's machine; never linked into).
+ * 0x030E8000..0x03100000 (the codec is merged there on the user's machine; never linked into).
  *
- * SRAM (288 KB at 0x10000): RadioFoundry's region from 0x10000, and at the top the codec window 0x44E00..0x58000 (the 2022-10
- * code, the largest of B's builds). B's stub comes through its first stage (boot/gd88b), never
+ * SRAM (288 KB at 0x10000): RadioFoundry's region from 0x10000, and at the top the codec window 0x44E00..0x58000
+ * (the 2022-10 code, the largest of B's builds). B's stub comes through its first stage (boot/gd88b), never
  * through a runtime stub entry. The modem SRAM window the codec tables are copied to is reserved:
  * 0x18000B40..0x18004324, the union of B's builds (0x18000B40..0x18003B10) and A's (0x18001204..0x18004324),
- * because B runs A's codec, packed as on A, with its tables at A's address (board.toml [codec] from,
- * hardware-gd88.md 8). RadioFoundry's only other use of modem SRAM is the crash record at its top (0x18007EF0).
+ * because B runs A's codec, packed as on A, with its tables at A's address (board.toml [codec] from).
+ * RadioFoundry's only other use of modem SRAM is the crash record at its top (0x18007EF0).
  *
  * The layout is the platform's (platform/hrc7000/common.ld). */
 

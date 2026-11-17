@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // GD-88 radio, either SoC: a main BK4819 and an LO chip on one bit-banged 3-wire bus, the superhet's RX paths and
-// analog FM (docs/spec/hardware-gd88.md 11). The same scheme and chip set-up as hardware-db25d.md 4.
+// analog FM. The same scheme and chip set-up as hardware-db25d.md 4.
 //
 // Receive on f: the LO chip synthesizes f + IF (GD88_IF_HZ: 45 MHz on A, 51.55 MHz on B), the main chip receives and
 // demodulates at the IF. The LO chip is a second BK4819 or an AT1141 (ID 0x1100), told apart by its ID; the AT1141 runs low-side, f - IF, from 400 to 440 MHz. On A the LO chip's GPIO4 / GPIO5 also select
 // the band's path (GD88_BAND_LO_GPIO). DAC A isn't used.
 //
 // Analog FM transmit (GD88_TX=1, A only): the main chip is tuned to f and modulates the microphone, the LO chip is
-// off. The PA is B's (hardware-gd88.md 10): A sends B the drive from A's page and the page's delays (RX2_TX, before
+// off. The PA is B's: A sends B the drive from A's page and the page's delays (RX2_TX, before
 // every transmission), then raises its TX line PTB2; B keys the PA on that edge and ramps its DAC B, and drops it on
 // the falling edge. A never writes DAC B. TX is refused without a valid page, outside the bands, with a tone other
 // than CTCSS, or when B doesn't take the drive. DMR transmit runs the same sequence once per burst (gd88_burst_on /
@@ -328,7 +328,7 @@ static void init(void)
 	}
 	bk4819_init_main(&rf_main);
 	bk4819_write(&rf_main, BK4819_REG_PA, BK4819_PA_MAX);	// 0xBF once, never changed
-	// The AT1141 goes off for a transmission and restarts after it (hardware-gd88.md 11.1)
+	// The AT1141 goes off for a transmission and restarts after it
 	if (lo_is_at1141) {
 		at1141_attach(&lo_at, &bus_lo.bus);
 		at1141_init(&lo_at);
@@ -1003,7 +1003,7 @@ void gd88_radio_diag(gd88_radio_diag_t *d)
 
 #if !GD88_TX
 // A transmits through B (pa_gd88b.c key_on): B's main chip's GPIO 1 (0x33 bit 5) passes A's VHF signal to the PA, low
-// on UHF; GPIO 0 (bit 6) stays low, A's chip and not B's (hardware-gd88.md 10). Written only when it changes, and left
+// on UHF; GPIO 0 (bit 6) stays low, A's chip and not B's. Written only when it changes, and left
 // after the transmission. Without it a VHF key had only a leak, some 70 dB down
 #define A_TX_GPIO_VHF		1u
 void gd88_a_tx_band(bool uhf)
@@ -1012,7 +1012,7 @@ void gd88_a_tx_band(bool uhf)
 }
 #endif
 
-// The debug link's CHIP_REG (board.chip_reg, hardware-gd88.md 13): chip 0 is the main BK4819, chip 1 the LO when it
+// The debug link's CHIP_REG (board.chip_reg): chip 0 is the main BK4819, chip 1 the LO when it
 // is a BK4819 (an AT1141 LO isn't offered), page 0 only, registers 0x00-0x7F. Through the driver, so its copies of the
 // enables, AF gain and GPIO words follow a write; its next set-up overwrites the register. A frame is atomic (rfbus.h),
 // so the radio task's frames and this one don't mix

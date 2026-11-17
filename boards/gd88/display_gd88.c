@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // GD-88 display: 320x240 ILI9341-class TFT on the SoC's i8080 LCD controller, backlight PWM0 on PTA15
-// (docs/spec/hardware-gd88.md 9.4). Full resolution in 16 colors, as in hardware-dm32.md: the core's frame buffer
+//. Full resolution in 16 colors, as in hardware-dm32.md: the core's frame buffer
 // holds a palette index per pixel (37.5 KB) and each row goes out as RGB565.
 //
 // Which controller is fitted comes from the panel record in program flash at 0x031FD000: "lcd" and a type. Type 1 is
@@ -26,7 +26,7 @@
 #define PANEL_H			240u
 #define PANEL_RECORD		0x031FD000u
 // The record is four bytes, "lcd" and the type 0..3 (an ASCII digit is taken too); without one
-// variant 3 (hardware-gd88.md 9.4). A panel that answers ID 0xC505 to command 0xD3 is variant 1, but RadioFoundry
+// variant 3. A panel that answers ID 0xC505 to command 0xD3 is variant 1, but RadioFoundry
 // doesn't read the panel's ID, so such a panel needs its record
 #define PANEL_DEFAULT		ILI9341_VARIANT_3
 

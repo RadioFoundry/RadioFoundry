@@ -6,7 +6,7 @@ Status: research, 2026-10-10. This page collects the main chips of every radio R
 close relatives, from public sources only. It also says which RadioFoundry platforms and drivers each radio could reuse and
 suggests an order for the ports. Register-level facts live in the per-radio specs
 ([hardware-dm1701.md](hardware-dm1701.md), [hardware-dm32.md](hardware-dm32.md),
-[hardware-md380.md](hardware-md380.md), [hardware-mduv380.md](hardware-mduv380.md), [hardware-gd88.md](hardware-gd88.md), [hardware-db25d.md](hardware-db25d.md), [hardware-dm1801pro.md](hardware-dm1801pro.md), [hardware-anytone.md](hardware-anytone.md)). This page is the overview.
+[hardware-md380.md](hardware-md380.md), [hardware-mduv380.md](hardware-mduv380.md), [hardware-db25d.md](hardware-db25d.md), [hardware-dm1801pro.md](hardware-dm1801pro.md), [hardware-anytone.md](hardware-anytone.md)). This page is the overview.
 
 Facts are not copyrightable. Claims come from public sources (manufacturer pages, FCC filings, datasheets, retailer
 listings) or from measurements on the radio. A value marked `(unverified)` is reported by a retailer, review or forum
@@ -37,7 +37,7 @@ on the radio`, any of the three. The README marks each ◐ until the board merge
 | TYT MD-9600, Retevis RT90 (mobile) | STM32F405VG | HR_C6000 | 2x SKY72310 (V1-V3), "PLL1590" (V4), LMX2571 (V4A/V5, unverified) PLLs; AK2365A IF x2 on V1-V4 | 128x64 mono, ST7567 | 25Q128FV, 16 MB | optional, JS-M710 (unverified) | USB DFU on the MCU | Supported ([hardware-md9600.md](hardware-md9600.md)) |
 | TYT MD-380 / MD-390, Retevis RT3 | STM32F405VGT6 (unverified) | HR_C5000 (unverified) | SKY72310 PLL + GT3136 receiver (unverified) | 160x128 color, HX8302A (unverified, controller ?) | W25Q128FV 16 MB; some early VHF 1 MB (unverified) | optional "G" models (unverified, module ?) | USB DFU, encrypted images (unverified) | Supported ([md380-bringup.md](../testing/md380-bringup.md)) |
 | Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | NXP MK22FN512 (unverified) | HR_C6000 (unverified) | AT1846S (unverified) | 128x64 mono, UC1701 (unverified) | 25Q80BV 1 MB + AT24C512 64 KB EEPROM (unverified) | none (unverified) | USB HID bootloader, .sgl files (unverified) | In progress, #111, builds, host tests, on the radio. A new platform: a different MCU (NXP MK22FN512), the same HR_C6000 and AT1846S, a 128x64 mono LCD. A DM-1801 bought new today is not v1, and the look-alike DR-1801 is unrelated |
-| Radioddity GD-88 | two HR_C7000 class SoCs, A and B | HR_C7000 on each SoC | an RF pair on each SoC, BK4819 likely | 320x240 color, 8080 bus, four init variants | SPI NAND on each SoC; 2 MB program flash each | yes, on SoC A, module ? | IAP loader over the K-plug cable | Bring-up ([gd88-bringup.md](../testing/gd88-bringup.md)) |
+| Radioddity GD-88 | two HR_C7000 class SoCs, A and B | HR_C7000 on each SoC | an RF pair on each SoC, BK4819 likely | 320x240 color, 8080 bus, four init variants | SPI NAND on each SoC; 2 MB program flash each | yes, on SoC A, module ? | IAP loader over the K-plug cable | Bring-up |
 | Baofeng DM-32UV | HR_C7000 SoC, C-SKY CK803S core (unverified) | HR_C7000 (unverified) | FD6818 (unverified) | 240x320 color, ST7789 class | 16 MB data flash (unverified); program flash size ? | yes, ATGM336H | Baofeng bootloader over UART cable (unverified) | Supported ([dm32-bringup.md](../testing/dm32-bringup.md)) |
 | Baofeng DM-36 | HR_C7000 SoC (photo) | HR_C7000 | FD6818B (photo) | 2.0" 240x320 color, ST7789 class | 16 MB data flash | no | Boot ROM serial stub over the cable | In progress, #607. Built on the DM-32UV's platform: FM, the display, keys and programming run; DMR voice on air and power levels open |
 | Baofeng DM-1801 Pro, DM-1801 (current) | HR_C7000 class SoC (the HR_C7000 from the FCC photo; the MCU part ?) | HR_C7000 (FCC photo) | ? | 1.77", type and controller ? | ? | none | ? | Supported ([dm1801pro-bringup.md](../testing/dm1801pro-bringup.md)) |
@@ -168,12 +168,12 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
 - "2 separate transceivers both usable at same time, even on same band"
   ([Radioddity blog](https://www.radioddity.com/blogs/all/radioddity-gd-88-review)).
 - Uses "the new C7000, DMR and combined CPU chip" (unverified).
-  No public source confirms two HR_C7000 chips ([hardware-gd88.md](hardware-gd88.md)). The RF chip and display controller aren't confirmed; the FCC internal
+  No public source confirms two HR_C7000 chips. The RF chip and display controller aren't confirmed; the FCC internal
   photos are the next thing to read.
 - Shares a CPS with the Retevis RT73 / Kydera CDR-300UV / Radioddity DB25-D and DB40-D, which points to one OEM
   platform (unverified) ([codeplugs.rats.net](https://codeplugs.rats.net/help/cps)).
 - Programming and updates go over a USB-serial cable (FTDI-class chip in the cable) into the K1 jack, to SoC A's
-  UART1 at 115200. The radio has no USB port ([hardware-gd88.md](hardware-gd88.md)).
+  UART1 at 115200. The radio has no USB port.
 - **RadioFoundry:** in development (`make BOARD=gd88`, `boards/gd88`). It reuses `platform/hrc7000` and `drivers/modem/hrc7000`
   from the DM-32UV. New: the RF chip(s), the display, and core support for two simultaneous receivers (SoC B is a real
   second receiver; the link is in [rx2-link.md](rx2-link.md)). Not yet run on a radio.

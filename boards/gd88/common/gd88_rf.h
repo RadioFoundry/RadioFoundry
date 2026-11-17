@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// What both GD-88 SoCs share (docs/spec/hardware-gd88.md 11): each has its own BK4819 pair (receiver / transmitter and
+// What both GD-88 SoCs share: each has its own BK4819 pair (receiver / transmitter and
 // the superhet LO) on the same pins, its own HR_C7000 modem and its own NAND. The radio, DMR and NAND code in
 // boards/gd88/common runs on both. What differs is how the RF and audio switches are reached: the TX / RX line PTB2,
 // the LO chip's GPIOs and the serial chain's audio routing on A (paths_gd88.c), direct GPIO pairs on B (paths_gd88b.c).
@@ -16,7 +16,7 @@
 #include "radio/radio_squelch.h"
 
 // Transmit (config.mk GD88_TX=1, A only; B is built as a receiver). A's main chip makes the signal; its PA, PA
-// supplies and PA drive (DAC B) are B's, keyed by B on A's TX line PTB2 with the drive A sends (hardware-gd88.md 10)
+// supplies and PA drive (DAC B) are B's, keyed by B on A's TX line PTB2 with the drive A sends
 #ifndef GD88_TX
 #define GD88_TX			0
 #endif
@@ -129,7 +129,7 @@ void gd88_burst_off(hrc_rfburst_wait_fn wait);
 // --- SPI NAND (nand_gd88.c) ---
 // RadioFoundry's own block range, the only blocks it programs or erases: 32 blocks (4 MB) from block 1920 of the 2048,
 // far above the factory data (all below 0x420000) and below the spare pool, the top 10 usable blocks
-// (hardware-gd88.md 7)
+//
 #define GD88_NAND_RFOUNDRY_FIRST	1920u
 #define GD88_NAND_RFOUNDRY_BLOCKS	32u
 bool gd88_nand_init(void);

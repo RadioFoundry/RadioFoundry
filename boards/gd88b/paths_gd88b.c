@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// GD-88 SoC B RF and audio paths (common/gd88_rf.h): direct GPIO pairs (pins.h, docs/spec/hardware-gd88.md 10). B's own
+// GD-88 SoC B RF and audio paths (common/gd88_rf.h): direct GPIO pairs (pins.h). B's own
 // chip only receives. The PA is A's transmitter's, keyed by pa_gd88b.c through gd88b_path_pa and gd88b_path_a_tx. Its audio goes to A, which routes it
 // to the speaker; gd88b_path_mute() holds the source pair off while A hasn't given B the speaker.
 //

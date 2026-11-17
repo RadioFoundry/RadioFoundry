@@ -108,15 +108,18 @@ def pr_link(n):
 # ── the board side ──────────────────────────────────────────────────────────
 
 def board_page(b):
-    """The page a board's rows link to: its bring-up checklist when it has one, else its hardware page."""
-    return b.data["docs"].get("bringup") or b.data["docs"]["hardware"]
+    """The page a board's rows link to: its bring-up checklist when it has one, else its hardware page, else None
+    (a radio whose hardware notes are kept out of the repository)."""
+    docs = b.data.get("docs", {})
+    return docs.get("bringup") or docs.get("hardware")
 
 
 def board_title(b, dst_dir):
     """A board's name, linked to its page, then the names it is also sold as (the maker left off where it repeats)
     and "(mobile)" for a mobile radio."""
     d = b.data
-    link = "[%s](%s)" % (d["name"], os.path.relpath(board_page(b), dst_dir or "."))
+    page = board_page(b)
+    link = "[%s](%s)" % (d["name"], os.path.relpath(page, dst_dir or ".")) if page else d["name"]
     return link + "".join(", " + a for a in also_names(b)) + (" (mobile)" if d["kind"] == "mobile" else "")
 
 
@@ -150,8 +153,11 @@ def survey_table(text):
 
 def port_cell(b):
     """The survey's Port cell of a board's row."""
-    return "%s ([%s](%s))" % (LEVEL_WORD[b.data["status"]["level"]], os.path.basename(board_page(b)),
-                              os.path.relpath(board_page(b), os.path.dirname(SURVEY)))
+    page = board_page(b)
+    if page is None:
+        return LEVEL_WORD[b.data["status"]["level"]]
+    return "%s ([%s](%s))" % (LEVEL_WORD[b.data["status"]["level"]], os.path.basename(page),
+                              os.path.relpath(page, os.path.dirname(SURVEY)))
 
 
 def survey(root, boards):

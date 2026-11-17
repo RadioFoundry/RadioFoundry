@@ -14,20 +14,16 @@ kind = "handheld"
 # where the radio appears in the site's lists (the lowest: the home page's radio)
 order = 8
 
-[docs]
-hardware = "docs/spec/hardware-gd88.md"
-bringup = "docs/testing/gd88-bringup.md"
-
-# One-line summaries for the site and the generated tables; the facts are in docs.hardware
+# One-line summaries for the site and the generated tables
 [hardware]
 cpu = "2 × HR_C7000"
 bands = "136-174 / 400-480 MHz"
 power = "2.5 / 7 W"
 display = "color, 320 × 240"
 gallery = "320x240"
-clock = { rtc = "unknown", note = "an RTC on SoC A's internal I2C2 (0x70); whether a backup supply keeps it through power-off is not known (docs/spec/hardware-gd88.md 9)" }
+clock = { rtc = "unknown", note = "an RTC on SoC A's internal I2C2 (0x70); whether a backup supply keeps it through power-off is not known" }
 # hardware switches whose part no source confirms or rules out yet
-unconfirmed = { VIBRATE = "no source names a vibration motor or a pin for one (docs/spec/hardware-gd88.md 9)" }
+unconfirmed = { VIBRATE = "no source names a vibration motor or a pin for one" }
 
 [status]
 level = "bring-up"
@@ -54,25 +50,25 @@ led_hints = false
 mem = "progmem"
 start = 0x1FD000
 end = 0x1FF000
-what = "the display record and the factory calibration's program flash copy (hardware-gd88.md 7)"
+what = "the display record and the factory calibration's program flash copy"
 
 [[flash.protect]]
 mem = "nand"
 start = 0x0
 end = 0x20000
-what = "the factory block map (LUT0) in physical block 0 (hardware-gd88.md 7, spi-nand-lut.md)"
+what = "the factory block map (LUT0) in physical block 0 (spi-nand-lut.md)"
 
 [[flash.protect]]
 mem = "nand"
 start = 0x280000
 end = 0x380000
-what = "factory calibration, the NAND copy (logical 0x280000): physical block 20 plus one block up for each unusable block below it; up to 7 covered, as the web flasher's search (hardware-gd88.md 7: block 21 on the bench's A)"
+what = "factory calibration, the NAND copy (logical 0x280000): physical block 20 plus one block up for each unusable block below it; up to 7 covered, as the web flasher's search (block 21 on the bench's A)"
 
 [[flash.protect]]
 mem = "nand"
 start = 0xF9C0000
 end = 0x10000000
-what = "the spare pool, the top 10 usable blocks: blocks 1998-2047 hold them with up to 40 unusable blocks (hardware-gd88.md 7, spi-nand-lut.md)"
+what = "the spare pool, the top 10 usable blocks: blocks 1998-2047 hold them with up to 40 unusable blocks (spi-nand-lut.md)"
 
 [flash.bootloader]
 hold = ["sk1"]	# while turning the volume knob on
@@ -83,11 +79,11 @@ steps = [
 ]
 
 # The universal HR_C7000 stub's board profile (CONFIG, stub/stubtool.py): the stub holds the power latch (pins.h:
-# PTB13 latch, PTB12 power key, hardware-gd88.md 9.1); 2 MB of program flash. No LEDs (no PIN_LED_* in pins.h): the
+# PTB13 latch, PTB12 power key); 2 MB of program flash. No LEDs (no PIN_LED_* in pins.h): the
 # default LED pins (PTB0, PTB1) are the serial chain's clock and data on this radio, and its status LEDs are on SoC B.
 # stock_console: the stock firmware answers the debug console (USMART) the web flasher loads the stub through before
 # RadioFoundry is installed (stock_versions: the builds it knows). calibration: the factory calibration's two copies,
-# the program flash's and the NAND page at its logical address (hardware-gd88.md 7)
+# the program flash's and the NAND page at its logical address
 [flash.stub]
 id = 5
 hold_power = true

@@ -51,7 +51,7 @@ export const BUILDS = [
 	{ name: "018", date: "2023-07-06", at: 0x03075AAC, ram: 0x18000A74, stub: false, window: [0x55000, 0x3000], hijack: 0x18000840 },
 	{ name: "018", date: "2022-11-23", at: 0x030759EC, ram: 0x18000A64, stub: false, window: [0x56000, 0x2000], hijack: 0x18000840 },
 	{ name: "017", date: "2022-10-21", at: 0x030759E8, ram: 0x18000A60, stub: false, window: [0x56000, 0x2000], hijack: 0x18000840 },
-	// the GD-88's main SoC (hardware-gd88.md): of the B49E series only 021 has the console. Its route is not traced, so
+	// the GD-88's main SoC: of the B49E series only 021 has the console. Its route is not traced, so
 	// no load is tried; the window is that of a build the page doesn't know, and its version's RAM copy is not known
 	{ series: "B49E.D64.EOPSAB", name: "021", date: "2025-01-19", at: 0x0307E66C, stub: false, traced: false, window: [0x56000, 0x2000] },
 ];

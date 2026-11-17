@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// GD-88 SoC A keypad, side keys, PTT and encoder (docs/spec/hardware-gd88.md 9.2).
+// GD-88 SoC A keypad, side keys, PTT and encoder.
 //
 // Six row lines (PTB18-PTB23, idle low) and three sense lines (PTB9-PTB11, low = closed). A scan takes every row
 // high, reads the senses (a key wired from a sense to ground shows up there: the direct positions), then drives one
@@ -21,7 +21,7 @@
 #define ROW_SETTLE_US	5u
 
 // [row][sense], the matrix codes 9,10,11 / 12,13,14 / 15,16,17 / 18,8,19 / 3,2,4 / 5,1,6 (9-17 the digits 1-9, 8 the
-// 0, 18 *, 19 #; 1-6 the six front keys, hardware-gd88.md 9.2). Direct (no row): 22 SK1, 23 SK2, 24 SOS. The sense lines
+// 0, 18 *, 19 #; 1-6 the six front keys). Direct (no row): 22 SK1, 23 SK2, 24 SOS. The sense lines
 // are the digit columns (left, center, right), so the last two rows are the keys under the display: green, down, red,
 // then the soft keys around up: 5 and 6 the soft keys, 1 and 2 the rocker (up, down).
 // Checked on the radio: each front key reads as its name below
@@ -40,8 +40,8 @@ static uint32_t last_raw, stable;
 static uint8_t ptt_low;
 static shared_ptt_t ptt_gate;	// PTA9 is also the host UART's RXD
 
-// Encoder: both lines on both edges into the table decoder, two steps per detent resting where A == B (hardware-gd88.md
-// 9, checked on the radio)
+// Encoder: both lines on both edges into the table decoder, two steps per detent resting where A == B (checked on
+// the radio)
 #define ENC_STEPS	2
 static quad_dec_t enc;
 static int32_t enc_taken;

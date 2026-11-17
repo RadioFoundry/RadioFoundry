@@ -5,7 +5,7 @@
 # which keep the paths they were given
 HERE := $(dir $(lastword $(MAKEFILE_LIST)))
 
-# The factory calibration page, the layout of hardware-db25d.md 6 on each SoC (hardware-gd88.md 7), in the code both
+# The factory calibration page, the layout of hardware-db25d.md 6 on each SoC, in the code both
 # SoCs share
 TESTS   += gd88CalTest
 gd88CalTest: $(HERE)gd88CalTest.c $(HERE)../common/calibration_gd88.c $(HERE)../common/gd88_cal.h $(CORE)/radio/cal_curve.h \

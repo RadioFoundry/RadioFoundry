@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // GD-88 DMR, either SoC: the HR_C7000's modem on the shared glue (platform/hrc7000/dmr_glue.c) with the main BK4819
-// as the RF front end (docs/spec/hardware-gd88.md 11), the scheme of hardware-db25d.md 4.
+// as the RF front end, the scheme of hardware-db25d.md 4.
 //
 // Transmit only with GD88_DMR_TX=1 (gd88_rf.h: A with GD88_TX, B as A's second transmitter); without it tx() refuses
 // in DMR mode and the glue's RF hooks do nothing.
@@ -39,7 +39,7 @@ static const hrc_rfburst_board_t rf_board = {
 };
 #endif
 
-// air_verified: P25 conventional and NXDN at both rates checked both ways (hardware-gd88.md 13.2)
+// air_verified: P25 conventional and NXDN at both rates checked both ways
 static const hrc_dmr_board_t dmr_board = {
 #if GD88_DMR_TX
 	.burst = &rf_board, .tx_end = gd88_dmr_tx_end, .air_verified = true,

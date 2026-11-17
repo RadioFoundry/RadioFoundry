@@ -23,7 +23,7 @@ const superhet_lo_ops_t at1141_superhet_lo = {
 	.tune = tune, .off = off, .resume = resume, .gpio = gpio,
 };
 
-// The off-and-restart variant (docs/spec/hardware-gd88.md 11.1): off for a transmission, then standby, the restart
+// The off-and-restart variant: off for a transmission, then standby, the restart
 // wait and on again; every tune writes the whole tuning
 static void tune_full(void *c, uint32_t hz) { at1141_tune(c, hz); }
 static void off_full(void *c) { at1141_off(c); }

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-"""GD-88 checks no other radio has a use for (docs/spec/hardware-gd88.md 13), read only: no transmit, no bridge to SoC
+"""GD-88 checks no other radio has a use for, read only: no transmit, no bridge to SoC
 B, no restart. SoC B is reached only through A's RX2 FORWARD (docs/spec/rx2-link.md 2.3), one read-only request at a
 time. The display, build features and battery are test_health.py's, from board.toml [hil]. The
 GD-88 has no USB: the debug link runs on the programming cable's UART1 at 115200, so give the cable's port with

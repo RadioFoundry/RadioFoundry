@@ -100,5 +100,5 @@ MCU_DEFS += -DGD88_TX=0 -DGD88_BAND_LO_GPIO=0
 ifeq ($(CONFIG_DMR),y)
 MCU_DEFS += -DGD88_DMR_TX=$(GD88B_DMR_TX)
 endif
-# B's IF (hardware-gd88.md 11): A's is 45 MHz
+# B's IF: A's is 45 MHz
 MCU_DEFS += -DGD88_IF_HZ=51550000u

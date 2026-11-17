@@ -18,9 +18,8 @@ bool gd88_panel_from_record(void);
 extern const hal_input_t gd88_input;
 extern const hal_power_t gd88_power;
 
-// Physical key bits returned by gd88_input.scan(), named by the key as the front panel shows it (docs/spec/hardware-gd88.md
-// 9.2): the two blank soft keys under the display, green and red, the up/down rocker; SK1 and SK2 the left side keys
-// above and below PTT (SK1 the IAP key, P2 in the manual), SOS the orange top key (P3). Which matrix code
+// Physical key bits returned by gd88_input.scan(), named by the key as the front panel shows it: the two blank soft
+// keys under the display, green and red, the up/down rocker; SK1 and SK2 the left side keys above and below PTT (SK1 the IAP key, P2 in the manual), SOS the orange top key (P3). Which matrix code
 // is which front key is input_gd88.c's map
 enum {
 	KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9, KEY_STAR, KEY_HASH,
@@ -68,9 +67,9 @@ extern hal_dmr_modem_t gd88_dmr;
 // Where A's own receiver is (paths_gd88.c): on, and its frequency in *hz. B switches A's front end (RX2_PATH)
 bool gd88_path_wanted(uint32_t *hz);
 // The loudspeaker in use (paths_gd88.c): the switch in its path is on B (RX2_SPEAKER)
+bool gd88_path_speaker_wanted(void);
 // The amplifier's delayed off (paths_gd88.c), every pass of the link task (at most POLL_MS apart)
 void gd88_path_service(uint32_t now);
-bool gd88_path_speaker_wanted(void);
 void gd88_rx2_led(uint8_t which, bool on);	// hal_power_t.led: LED_RED (TX) is B's LED 1, the other LED 2
 void gd88_rx2_stub_entering(void);		// board.stub_entering: B blinks the LEDs (RX2_LED_STUB)
 // For the diagnostics page: the link's state, its last report and the UART's counters

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// GD-88 SoC B: the second receiver's application (docs/spec/rx2-link.md, hardware-gd88.md 10). There is no radio core
+// GD-88 SoC B: the second receiver's application (docs/spec/rx2-link.md). There is no radio core
 // here: app_start (called by platform/hrc7000/main.c) starts one task that runs the link's receiver side (core/rx2) on
 // UART3, the shared radio code (boards/gd88/common) on B's own BK4819 pair, the FM squelch and, on DMR channels, the
 // call stack and codec (core/dmr). The calls rx2_ops_t makes all come from rx2_recv_rx() in this task, the debug link

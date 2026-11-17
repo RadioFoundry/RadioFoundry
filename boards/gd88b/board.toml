@@ -13,17 +13,13 @@ kind = "handheld"
 order = 9
 part_of = "gd88"
 
-[docs]
-hardware = "docs/spec/hardware-gd88.md"
-bringup = "docs/testing/gd88-bringup.md"
-
 [hardware]
 cpu = "HR_C7000"
 bands = "136-174 / 400-480 MHz"
 power = "receive only"
 display = "none (SoC A's)"
 gallery = "320x240"
-clock = { rtc = "none", note = "SoC B keeps no time: the clock is SoC A's (docs/spec/hardware-gd88.md 10)" }
+clock = { rtc = "none", note = "SoC B keeps no time: the clock is SoC A's" }
 
 [status]
 level = "bring-up"
@@ -43,25 +39,25 @@ backup = { stock = "full", rfoundry = "full", spi_size = 0 }
 mem = "progmem"
 start = 0x1FD000
 end = 0x1FF000
-what = "SoC B: the display record and the factory calibration's program flash copy (hardware-gd88.md 7)"
+what = "SoC B: the display record and the factory calibration's program flash copy"
 
 [[flash.protect]]
 mem = "nand"
 start = 0x0
 end = 0x20000
-what = "SoC B: the factory block map (LUT0) in physical block 0 (hardware-gd88.md 7, spi-nand-lut.md)"
+what = "SoC B: the factory block map (LUT0) in physical block 0 (spi-nand-lut.md)"
 
 [[flash.protect]]
 mem = "nand"
 start = 0x280000
 end = 0x380000
-what = "SoC B: factory calibration, the NAND copy (logical 0x280000): physical block 20 plus one block up for each unusable block below it; up to 7 covered, as the web flasher's search (hardware-gd88.md 7: block 21 on the bench's A)"
+what = "SoC B: factory calibration, the NAND copy (logical 0x280000): physical block 20 plus one block up for each unusable block below it; up to 7 covered, as the web flasher's search (block 21 on the bench's A)"
 
 [[flash.protect]]
 mem = "nand"
 start = 0xF9C0000
 end = 0x10000000
-what = "SoC B: the spare pool, the top 10 usable blocks: blocks 1998-2047 hold them with up to 40 unusable blocks (hardware-gd88.md 7, spi-nand-lut.md)"
+what = "SoC B: the spare pool, the top 10 usable blocks: blocks 1998-2047 hold them with up to 40 unusable blocks (spi-nand-lut.md)"
 
 [flash.bootloader]
 steps = [
@@ -73,7 +69,7 @@ steps = [
 # The universal stub's board profile: no power latch (A holds the power), its status LEDs (pins.h PIN_LED_RED, PIN_LED_GREEN),
 # UART 0x14090000 before CONFIG (the link to A). bridge: A's stub passes the cable to its UART3 (0x14090000), whose
 # pins PTA13 / PTA14 are IO_DIPLEX0 (0x11000034) bits 13 / 14 (rx2_gd88.c). B has its own SPI NAND, which holds its
-# own calibration page; calibration: its two copies (hardware-gd88.md 7, 10)
+# own calibration page; calibration: its two copies
 [flash.stub]
 id = 6
 hold_power = false
@@ -84,7 +80,7 @@ bridge = { uart = 0x14090000, mux = [0x11000034, 0x6000] }
 calibration = { progmem = 0x1FE000, nand = 0x280000, magic = "TUNE" }
 
 # The codec slot and windows come from boards/gd88b/memory.ld. B runs A's codec, packed as on A (from): the user gives
-# only A's file, or the web flasher reuses A's slot; B's own files still work (hardware-gd88.md 8)
+# only A's file, or the web flasher reuses A's slot; B's own files still work
 [codec]
 tool = "hrc7000_codec"
 profile = "gd88b-2501"

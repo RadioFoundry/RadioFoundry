@@ -17,7 +17,7 @@
 
 #include "../hrc7000/stage.c"
 
-// B's transmitter pins (docs/spec/hardware-gd88.md): PTB20 / PTB21 TX enables, PTB6 / PTB3 TX tune, PTA17 / PTB10
+// B's transmitter pins: PTB20 / PTB21 TX enables, PTB6 / PTB3 TX tune, PTA17 / PTB10
 // TX band switches; all low is the power-on state, transmitter off
 #define TX_OFF_A	(1u << 17)
 #define TX_OFF_B	((1u << 20) | (1u << 21) | (1u << 6) | (1u << 3) | (1u << 10))

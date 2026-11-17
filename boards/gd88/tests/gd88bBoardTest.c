@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The GD-88's SoC B (boards/gd88b/board.c, docs/spec/hardware-gd88.md 10) is built with GD88_TX=0. Without
+// The GD-88's SoC B (boards/gd88b/board.c) is built with GD88_TX=0. Without
 // GD88_DMR_TX every band of its descriptor is receive only, so the shared radio code's tx() (board_in_band(hz, true),
 // common/radio_gd88.c) refuses every frequency it can tune; with it (A's second DMR transmitter, rx2-link.md 2.4)
 // every band transmits. Its transmitter-off hook drives every TX switch low and powers the PA drive down. Built

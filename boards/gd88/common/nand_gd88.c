@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// GD-88 SPI NAND: a TC58-family chip on SPI0 of each SoC, chip select PTA18 by GPIO (docs/spec/hardware-gd88.md 7).
+// GD-88 SPI NAND: a TC58-family chip on SPI0 of each SoC, chip select PTA18 by GPIO.
 // The factory data (the calibration page) is read through the block map in block 0 (spi-nand-lut.md).
 // The factory calibration copy is read at boot; with CONFIG_NAND_STORAGE the core's storage lives in RadioFoundry's own block
 // range (GD88_NAND_RFOUNDRY_FIRST), the only blocks the driver will program or erase. One recursive mutex serializes every

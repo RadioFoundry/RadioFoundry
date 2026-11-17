@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Radioddity GD-88, SoC A: board descriptor, IO mux and reset-time pin levels, key map (docs/spec/hardware-gd88.md 9).
+// Radioddity GD-88, SoC A: board descriptor, IO mux and reset-time pin levels, key map.
 // A runs the display, keys, GPS, the PC link on UART1 and its own transceiver; SoC B is the second receiver
 // (board.rx2, rx2_gd88.c, boards/gd88b).
 #include "board.h"
@@ -25,7 +25,7 @@ static const band_t bands[] = {
 #endif
 };
 
-// The power levels (common/calibration_gd88.c gd88_tx_levels, hardware-gd88.md 13.1): the low three fixed drives, the
+// The power levels (common/calibration_gd88.c gd88_tx_levels): the low three fixed drives, the
 // upper two between the page's rows. The radio refuses TX until the page can be read (radio_gd88.c), and altogether
 // with GD88_TX=0
 static const char *const power_names[] = { "100mW", "500mW", "1W", "2.5W", "5W" };
@@ -38,7 +38,7 @@ _Static_assert(sizeof(power_names) / sizeof(power_names[0]) == GD88_POWER_LEVELS
 static const keymap_entry_t keymap[] = {
 	{ KEY_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 },
 	{ KEY_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
-	// The soft keys are Ok and Back (hardware-gd88.md 9.2)
+	// The soft keys are Ok and Back
 	{ KEY_SOFT_LEFT, ACT_SELECT, ACT_SELECT, false, false, 0 },
 	{ KEY_SOFT_RIGHT, ACT_BACK, ACT_BACK, false, false, 0 },
 	{ KEY_GREEN, ACT_AB, ACT_DUAL_WATCH, false, false, 0 },
