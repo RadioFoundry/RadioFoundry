@@ -466,11 +466,6 @@ void fd6818sh_set_cfg(fd6818sh_t *dev, const fd6818sh_cfg_t *c)
 	dev->cfg = c;
 }
 
-uint16_t fd6818sh_dev_band_word(const fd6818sh_t *dev, uint32_t hz)
-{
-	return band_word_of(cfg(dev), hz);
-}
-
 void fd6818sh_tune(fd6818sh_t *dev, uint32_t hz)
 {
 	wr(dev, REG_BAND, band_word_of(cfg(dev), hz));

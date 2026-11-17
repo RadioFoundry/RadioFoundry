@@ -61,6 +61,17 @@ int main(void)
 	// ... and back to a longer zone: the knob's position is taken there
 	CHECK(switch_follow_step(&f, 15, 9000 + 5 * R) == SWITCH_CHECK);
 	CHECK(switch_follow_check(&f, 0, 0, 19, true));
+	// A position the radio keeps refusing while it could take it (a channel it can't read): asked a few times, then
+	// given up, so a scan or the battery saver isn't stopped every SWITCH_FOLLOW_RETRY_MS
+	CHECK(switch_follow_step(&f, 7, 12000) == SWITCH_ASK);
+	for (unsigned i = 1; i <= SWITCH_FOLLOW_ASKS; i++) {
+		CHECK(switch_follow_step(&f, 7, 12000 + i * R) == SWITCH_CHECK);
+		CHECK(switch_follow_check(&f, 0, 0, 19, true));
+	}
+	CHECK(switch_follow_step(&f, 7, 12000 + (SWITCH_FOLLOW_ASKS + 1) * R) == SWITCH_CHECK);
+	CHECK(!switch_follow_check(&f, 0, 0, 19, true));
+	CHECK(switch_follow_step(&f, 7, 12000 + (SWITCH_FOLLOW_ASKS + 2) * R) == SWITCH_CHECK);
+	CHECK(!switch_follow_check(&f, 0, 0, 19, true));
 	// Across the clock's wrap
 	CHECK(switch_follow_step(&f, 2, 0xFFFFFF00u) == SWITCH_ASK);
 	CHECK(switch_follow_step(&f, 2, 0xFFFFFF00u + R) == SWITCH_CHECK);

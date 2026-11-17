@@ -116,8 +116,6 @@ uint8_t fd6818sh_7813_section(uint32_t hz);
 void fd6818sh_attach(fd6818sh_t *dev, rfbus_t *bus, fd6818sh_role_t role);
 // The board's set (main transceiver only), after attach and before init
 void fd6818sh_set_cfg(fd6818sh_t *dev, const fd6818sh_cfg_t *cfg);
-// Band word (0x1A) for a frequency with the device's set
-uint16_t fd6818sh_dev_band_word(const fd6818sh_t *dev, uint32_t hz);
 // Power-on table, offset calibration, the GPIO set-up; ends idle. Task level
 void fd6818sh_init_main(fd6818sh_t *dev);
 // The analog mode set (also the end of DMR) and the digital one (DMR receive, the modem drives the modulation).

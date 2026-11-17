@@ -426,9 +426,10 @@ static bool ptt_line_stuck(void)
 	return board.input != NULL && board.input->ptt_line_stuck != NULL && board.input->ptt_line_stuck();
 }
 
-// The LEDs' timed signals over what the state shows (RADIO_LED_*_MS). A stuck PTT line flashes red and green fast. A deny flashes red, green, ... once: a radio
-// without a screen has no other way to say PTT was refused. While the radio waits for a repeater to wake, red shows
-// each wake-up burst going out, not the whole wait, which is mostly listening
+// The LEDs' timed signals over what the state shows (RADIO_LED_*_MS). A stuck PTT line flashes red and green fast.
+// A deny flashes red, green, ... once: a radio without a screen has no other way to say PTT was refused. While the
+// radio waits for a repeater to wake, red shows each wake-up burst going out, not the whole wait, which is mostly
+// listening
 static void led_signals(radio_sm_t *sm, bool *red, bool *green)
 {
 	uint32_t now = sm->led_now;

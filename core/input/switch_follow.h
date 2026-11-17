@@ -4,9 +4,11 @@
 // A new position is asked for at once, and so is the position again when the zone changes (a zone key, the debug
 // link), since a new zone starts on its first channel. The radio may not take it (transmitting, a hotspot, the
 // codeplug not loaded yet), so every SWITCH_FOLLOW_RETRY_MS the task reads the radio's zone and position and asks
-// again when the radio would take it, until the radio is on it or the zone is too short for it. Then it leaves the
-// radio alone until the knob moves or the zone changes (another zone, or the same one with another size after a
-// codeplug write), so a scan stands. Pure, for the host test.
+// again when the radio would take it, until the radio is on it or the zone is too short for it. A position the radio
+// keeps refusing while it could take one (a channel it can't read) is given up after SWITCH_FOLLOW_ASKS asks, since
+// every ask stops a scan and an APRS transmission and resets the battery saver. Then it leaves the radio alone until
+// the knob moves or the zone changes (another zone, or the same one with another size after a codeplug write), so a
+// scan stands. Pure, for the host test.
 #ifndef INPUT_SWITCH_FOLLOW_H
 #define INPUT_SWITCH_FOLLOW_H
 
@@ -14,6 +16,7 @@
 #include <stdint.h>
 
 #define SWITCH_FOLLOW_RETRY_MS	250u
+#define SWITCH_FOLLOW_ASKS	4u	// asks again while the radio could take the position
 
 typedef enum {
 	SWITCH_IDLE,	// nothing to do
@@ -25,6 +28,7 @@ typedef struct {
 	int8_t want;		// the switch's position, -1 none yet
 	bool pending;		// asked for, and the radio not seen on it yet
 	bool zone_known;	// zone and size hold the zone last seen loaded
+	uint8_t asks;		// asked again since pending was set
 	uint16_t zone;
 	uint16_t size;
 	uint32_t checked_ms;
@@ -35,6 +39,7 @@ static inline void switch_follow_init(switch_follow_t *f)
 	f->want = -1;
 	f->pending = false;
 	f->zone_known = false;
+	f->asks = 0;
 	f->zone = 0;
 	f->size = 0;
 	f->checked_ms = 0;
@@ -49,6 +54,7 @@ static inline switch_step_t switch_follow_step(switch_follow_t *f, int8_t pos, u
 	if (pos != f->want) {
 		f->want = pos;
 		f->pending = true;
+		f->asks = 0;
 		f->checked_ms = now_ms;
 		return SWITCH_ASK;
 	}
@@ -69,6 +75,7 @@ static inline bool switch_follow_check(switch_follow_t *f, uint16_t zone, uint16
 	}
 	if (f->zone_known && (zone != f->zone || zone_size != f->size)) {
 		f->pending = true;	// a position given up as past the end may fit now
+		f->asks = 0;
 	}
 	f->zone = zone;
 	f->size = zone_size;
@@ -80,6 +87,11 @@ static inline bool switch_follow_check(switch_follow_t *f, uint16_t zone, uint16
 		f->pending = false;
 		return false;
 	}
+	if (f->asks >= SWITCH_FOLLOW_ASKS) {
+		f->pending = false;	// refused while ready: give up until the knob or the zone moves
+		return false;
+	}
+	f->asks++;
 	return true;
 }
 
