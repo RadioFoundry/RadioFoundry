@@ -133,15 +133,26 @@ export const p25System = {
 	decode: decodeTsys,
 	encode: encodeTsys,
 	identity: (s) => `WACN ${s.wacn == null ? "*" : s.wacn.toString(16).toUpperCase()} · SYS ${s.sysid == null ? "*" : s.sysid.toString(16).toUpperCase()}`,
+	sections: [
+		{ id: "identity", intro: "editor.p25.intro.identity" },
+		{ id: "radio" },
+		{ id: "calls" },
+		{ id: "fallback" },
+		{ id: "roaming", advanced: true },
+		{ id: "sharing" },
+	],
+	// the fallback channel is stored, not used yet (p25-trunking.md)
+	fallbackHelp: "editor.p25.fallback_help",
+	// a third transmit choice in the system form: transmit without registering (the field set while the radio transmits)
+	noRegField: "noReg",
 	fields: () => [
-		{ ...optHex("wacn", "editor.p25.wacn", 0xFFFFF, 5), help: "editor.p25.any_help" },
-		optHex("sysid", "editor.p25.sysid", 0xFFF, 3),
-		optHex("ccNac", "editor.p25.cc_nac", 0xFFF, 3),
-		{ key: "skipEnc", label: "editor.p25.skip_enc", type: "bool" },
-		{ key: "planOnly", label: "editor.p25.plan_only", type: "bool", advanced: true },
-		{ key: "noReg", label: "editor.p25.no_reg", type: "bool", advanced: true },
-		{ key: "holdS", label: "editor.p25.hold", type: "int", min: 0, max: 255, advanced: true },
-		{ key: "roamDbm", label: "editor.p25.roam_dbm", type: "int", min: -128, max: 127, advanced: true },
+		{ ...optHex("wacn", "editor.p25.wacn", 0xFFFFF, 5), help: "editor.p25.wacn_help", section: "identity" },
+		{ ...optHex("sysid", "editor.p25.sysid", 0xFFF, 3), help: "editor.p25.any_help", section: "identity" },
+		{ ...optHex("ccNac", "editor.p25.cc_nac", 0xFFF, 3), help: "editor.p25.any_help", section: "identity" },
+		{ key: "skipEnc", label: "editor.p25.skip_enc", type: "bool", section: "calls", help: "editor.p25.skip_enc_help" },
+		{ key: "holdS", label: "editor.p25.hold", type: "int", min: 0, max: 255, section: "calls", help: "editor.p25.hold_help" },
+		{ key: "planOnly", label: "editor.p25.plan_only", type: "bool", section: "roaming", help: "editor.p25.plan_only_help" },
+		{ key: "roamDbm", label: "editor.p25.roam_dbm", type: "int", min: -128, max: 127, section: "roaming", help: "editor.p25.roam_dbm_help" },
 	],
 	classes: [
 		{
@@ -154,7 +165,7 @@ export const p25System = {
 				v[1] = e.site ?? P25_UNKNOWN;
 				return v;
 			},
-			fields: [byteOrUnknown("rfss", "editor.p25.rfss"), byteOrUnknown("site", "editor.p25.site")],
+			fields: [{ ...byteOrUnknown("rfss", "editor.p25.rfss"), help: "editor.p25.unknown_help" }, { ...byteOrUnknown("site", "editor.p25.site"), help: "editor.p25.unknown_help" }],
 		},
 		{
 			cls: 0, name: "control", group: true, groupLabel: "editor.p25.site_no", groupMax: 254, control: true,
@@ -166,10 +177,10 @@ export const p25System = {
 				return v;
 			},
 			fields: [
-				{ key: "iden", label: "editor.p25.iden", type: "int", min: 0, max: 15 },
-				{ key: "chanNo", label: "editor.p25.chan_no", type: "int", min: 0, max: 4095 },
 				{ key: "rxHz", label: "editor.col.rx", type: "freq" },
 				{ key: "txHz", label: "editor.col.tx", type: "freq", zero: true },
+				{ key: "iden", label: "editor.p25.iden", type: "int", min: 0, max: 15 },
+				{ key: "chanNo", label: "editor.p25.chan_no", type: "int", min: 0, max: 4095 },
 			],
 		},
 		{

@@ -74,6 +74,7 @@ Look at the boards on your platform for a model (`tools/boards.py list --platfor
 | `system`, `diag_line`, `diag_reset` | Optional: chip identity and reboot modes, a diagnostics page |
 | `battery_low_mv`, `battery_critical_mv` | Battery warning levels; 0 for none |
 | `audio_tap`, `bcast`, `afsk` | Optional: audio path taps, a broadcast FM receiver, APRS AFSK transmit and receive audio |
+| `air`, `baseband` | Optional: the modem chip's air interface provider for the modes the core frames itself (P25, NXDN; [air-interface.md](../spec/air-interface.md) 3), and the sample taps the soft modem receives through (section 6). The platform's DMR glue exports both (`stm32_hrc_air` and `stm32_hrc_baseband`, `hrc_air` and `hrc_baseband`); point the board at them. Without `air`, list `P25`, `P25_TRUNK` and `NXDN` in `BOARD_NOT_WRITTEN` |
 | `gps` | With `CAP_GPS`: the GPS receiver ([hal_gps.h](../../hal/hal_gps.h)): whether the module was heard, and its power for Settings > Location > GPS. The platform drivers export one (`stm32_gps`, `hrc_gps`); the board gives them its UART and a power hook |
 
 Optional hooks may be NULL; the core checks them.
@@ -137,8 +138,15 @@ one without a label.
 6. DMR modem and the codec: receive, then transmit, checked on the SDR bench.
    Then the DMR PA key-up on every band with its own PA: `tools/bench/pa_cal.py`
    ([pa-keyup.md](../spec/pa-keyup.md) 6).
-7. CPS, so qdmr can program it.
-8. Flashing from where an owner starts:
+7. The air interface, where the modem chip has a physical layer mode ([air-interface.md](../spec/air-interface.md)):
+   point `air` and `baseband` at the platform glue's provider (above); on a platform whose receive tap is optional, set the glue's `air_tap` once the tap is wired. The glue reports each mode's fit with
+   `AIR_FIT_UNTESTED` until the board sets the glue's `air_verified`, which it does only after P25 and NXDN were
+   checked on air both ways: `tests/hil/test_p25.py` (`test_p25_rx_from_bench`, `test_p25_tx_off_air`) and
+   `tests/hil/test_nxdn.py` (`test_nxdn_rx_speech`, `test_nxdn_tx_off_air`, both rates). Check DMR voice right after
+   each: P25 runs in memory the DMR vocoder lends where the platform has that (`hal_vocoder_t.lend`). A mode the
+   provider can't fit stays in `BOARD_NOT_WRITTEN` with the reason.
+8. CPS, so qdmr can program it.
+9. Flashing from where an owner starts:
    - Find every stock build an owner's radio may run before RadioFoundry: every firmware version the vendor and its
      rebadgers have shipped, for every model the board is sold as (`also`, `looks`). Give each a codec map and a
      `[codec] stock` entry, so the web flasher and rfoundry find the codec in whatever file or readout the
@@ -148,16 +156,16 @@ one without a label.
      - the vendor's download as the owner gets it (a zip or a `.bin`);
      - a readout of the radio;
      - an update of a radio already running RadioFoundry.
-9. The stock codeplug, so the install keeps the owner's channels. Map the vendor layout clean room
-   ([CLEANROOM.md](../CLEANROOM.md)), from data only: compare reads of the radio's memory with `dmrconf decode` of the
-   same codeplug, then confirm each field with reads taken before and after one change in the stock menu. Write it up
-   as the radio's `<id>-stock-codeplug.md` and convert it in `site/static/js/codeplug/`. The Codeplug Editor, the
-   Tools page and the install's channel step share the converter.
-   - If a channel record holds no talkgroup or TX contact, look for a separate table indexed by channel number: a
-     few bytes per channel, in channel order, holding the contact's number in the contact table. One supported radio
-     keeps its TX contacts this way, and dmrconf 0.15 doesn't decode that table, so an empty TX contact in its output
-     doesn't mean the codeplug has none. Change one channel's talkgroup on the radio and diff the reads to find it.
-     Other vendors' radios (AnyTone's among them) likely do the same.
+10. The stock codeplug, so the install keeps the owner's channels. Map the vendor layout clean room
+    ([CLEANROOM.md](../CLEANROOM.md)), from data only: compare reads of the radio's memory with `dmrconf decode` of the
+    same codeplug, then confirm each field with reads taken before and after one change in the stock menu. Write it up
+    as the radio's `<id>-stock-codeplug.md` and convert it in `site/static/js/codeplug/`. The Codeplug Editor, the
+    Tools page and the install's channel step share the converter.
+    - If a channel record holds no talkgroup or TX contact, look for a separate table indexed by channel number: a
+      few bytes per channel, in channel order, holding the contact's number in the contact table. One supported radio
+      keeps its TX contacts this way, and dmrconf 0.15 doesn't decode that table, so an empty TX contact in its output
+      doesn't mean the codeplug has none. Change one channel's talkgroup on the radio and diff the reads to find it.
+      Other vendors' radios (AnyTone's among them) likely do the same.
 
 A bring-up page under [docs/testing/](../testing/README.md) is this list made concrete for one radio.
 

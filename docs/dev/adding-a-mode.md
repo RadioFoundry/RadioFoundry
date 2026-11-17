@@ -38,6 +38,7 @@ system type share the id. `tools/check_modes.py` (in `tools/ci.sh`) fails when t
 |---|---|
 | A switch | `CONFIG_<MODE>` in `config/features.mk` and `core/config.h`, off until the mode runs ([build-config.md](../build-config.md)) |
 | The codec | `core/<mode>/<mode>_codeplug.c`: decodes the parameter block (`codeplug_tag_params`), the type's block and entries (`codeplug_records.h`) into the mode's own structs. Add the switch to `CODEPLUG_MODE_RECORDS` when it reads those families |
+| On air | A mode whose frames the core builds describes its physical layer as an `air_profile_t` (symbol rate, levels, deviation, sync patterns; [air-interface.md](../spec/air-interface.md) 2) and runs its engine on an air session (7). Every board's provider then reports how well it fits (4), with no board change; the mode's radio core checks that fit before it offers the mode. Its RAM comes from memory an idle part lends (as P25 does, [p25.md](../spec/p25.md) 7) where it can |
 | Built | The registry row's `built` column becomes the switch once an engine runs the kind. Until then a channel of the kind is parked (6) on every build |
 | Host test | The codec against the shared vectors (`tests/vectors/channel-modes.txt`), with the switch on and off |
 

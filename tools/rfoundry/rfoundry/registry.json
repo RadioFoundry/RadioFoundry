@@ -968,7 +968,7 @@
    ],
    "family": "usb-dfu",
    "link": "usb",
-   "release": "testing",
+   "release": "stable",
    "debuglink_names": [
     "MD-UV380",
     "MD-UV380 10W",

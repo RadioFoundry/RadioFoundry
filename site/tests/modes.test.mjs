@@ -12,7 +12,7 @@ import { CodeplugImage } from "../static/js/codeplug/image.js";
 import { decodeArea, getValue, setValue, putArea, KV_ADDR, KV_SIZE } from "../static/js/codeplug/kv.js";
 import { decode, encode, empty, newChannel, newContact, remove, validate, numberAll } from "../static/js/codeplug/model.js";
 import { MODE_KEY, decodeTag, encodeTag, newSystem, setKind, syncModes, decodeSystemRecord, identityKey } from "../static/js/codeplug/channelmodes.js";
-import { KINDS, SYSTEM_TYPES, offeredKinds, kindName } from "../static/js/codeplug/modes.js";
+import { KINDS, SYSTEM_TYPES, offeredKinds, offeredTypes, kindName } from "../static/js/codeplug/modes.js";
 import { nameCheck } from "../static/js/codeplug/modebytes.js";
 import { decodeConv, encodeConv, decodeUnit, decodeTsys, p25System, NAC_ANY } from "../static/js/codeplug/mode_p25.js";
 
@@ -274,6 +274,8 @@ test("offered kinds: the radio's features and what the codeplug holds", () => {
 	assert.deepEqual(offeredKinds(m, "FM,DMR,P25").map((k) => k.id), [2]);
 	const { m: s } = sample();
 	assert.deepEqual(offeredKinds(s, "FM,DMR").map((k) => k.id), [1, 2, 3]);
+	assert.deepEqual(offeredKinds(m, null).map((k) => k.id), KINDS.map((k) => k.id), "no radio: every kind");
+	assert.deepEqual(offeredTypes(m, null).map((k) => k.id), SYSTEM_TYPES.map((k) => k.id), "no radio: every type");
 });
 
 test("validation: mode not in the radio, no system, unit ID, a P25 talk group", () => {
@@ -368,12 +370,15 @@ test("channel form: the mode list offers the radio's kinds; picking one makes th
 	assert.equal(work.rxOnly, true);
 });
 
-test("channel table: a channel of a kind shows its short name; the mode and fields of other modes locked", () => {
+test("channel table: a channel of a kind shows its mode, offers every mode, and locks the fields of other modes", () => {
 	const { m, conv, p25t } = sample();
 	const cols = columns("channels", m, t);
 	const col = (k) => cols.find((c) => c.key === k);
 	assert.equal(col("mode").format(conv.mode, conv), "P25");
-	assert.equal(col("mode").readOnly(conv), true);
+	assert.equal(col("mode").readOnly, false, "the kind can be changed in the table too");
+	const offered = col("mode").options(conv).map(([v]) => v);
+	assert.ok(["fm", "dmr", "k2", "k3"].every((v) => offered.includes(v)), "FM, DMR and the kinds, with no radio connected");
+	assert.equal(col("mode").get(conv), "k2");
 	assert.equal(col("timeslot").readOnly(conv), true);
 	assert.equal(col("contact").readOnly(conv), false);
 	assert.equal(col("rxHz").readOnly(conv), false);
