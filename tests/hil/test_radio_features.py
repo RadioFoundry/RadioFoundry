@@ -74,6 +74,7 @@ Pass criteria:
   in), stays open at least 3 s of the 6 s call, and rx_sleeping stays 0 while open.
 """
 import contextlib
+import os
 import re
 import threading
 import time
@@ -736,14 +737,17 @@ def test_scan_digital_monitor_any_talkgroup(radio, sdr_bench, pytestconfig, how)
                 played.append(t)
             if v.get("scan_phase") == "hold":
                 held.append(v.get("rx_hz"))
-            if how == "key_mid_scan" and not pressed and scanning and v.get("mode") == "dmr":
+            # A DMR stop by the dmr section's own dmr.active: the sections are read one request each, and a scan step
+            # between them pairs one stop's mode with another's latch (an FM stop has none)
+            dmr_stop = scanning and v.get("dmr.active") == "1"
+            if how == "key_mid_scan" and not pressed and dmr_stop:
                 # A short press: down then up, as the key sends it (a click gesture doesn't reach the radio task)
                 radio.link.monitor(True)
                 time.sleep(0.1)
                 radio.link.monitor(False)
                 pressed.append(t)
-            elif scanning and v.get("mode") == "dmr":
-                # The latch at every DMR stop (an FM stop has none); after the key, once the press took
+            elif dmr_stop:
+                # The latch at every DMR stop; after the key, once the press took
                 if how != "key_mid_scan" or (pressed and t > pressed[0] + 0.3):
                     latched.add(v.get("dmr.hear_all_latch"))
             time.sleep(0.05)
@@ -780,6 +784,194 @@ def test_scan_digital_monitor_any_talkgroup(radio, sdr_bench, pytestconfig, how)
         radio.go_home()
         if radio.link.view(["dmr"]).get("dmr.hear_all_latch") == "1":
             radio.press("back")	# BACK on Home drops digital monitor
+
+# ── every mode in one zone scan, on one frequency ───────────
+
+MIX_ZONE = "HIL every mode"
+MIX_HOLD_S = 2.0	# the hold on the call's channel at the end of a call: the scan stayed there
+MIX_CALLS = 3		# P25 and NXDN calls the bench sends while the scan comes round
+
+
+def _mixed_zone(img, hz, dmr_number, modes):
+    """img with a zone MIX_ZONE of new channels, all receiving on hz: FM, then a copy of DMR channel dmr_number, then
+    a stored P25 and a stored NXDN channel for those in modes. Returns {mode: channel number}"""
+    import cps_client
+    from test_nxdn import make_nxdn
+    from test_p25 import make_p25
+    free = [n for n in range(1, 8 * cps_client.CHANNELS_PER_BANK + 1) if cps_client.decode_channel(img, n) is None]
+    if len(free) < len(modes):
+        skip("state", f"the codeplug has {len(free)} free channels, the zone needs {len(modes)}")
+    numbers = dict(zip(modes, free))
+    _, dmr_at = cps_client.channel_addr(dmr_number)
+    for mode, n in numbers.items():
+        _, a = cps_client.channel_addr(n)
+        if mode == "dmr":
+            img[a:a + cps_client.CHANNEL_SIZE] = img[dmr_at:dmr_at + cps_client.CHANNEL_SIZE]
+        else:
+            img[a:a + cps_client.CHANNEL_SIZE] = cps_client._channel_record(f"Mix {mode.upper()}", hz, hz, False)
+        cps_client.set_channel_name(img, n, f"Mix {mode.upper()}")
+        bitmap, _ = cps_client.channel_addr(n)
+        i = (n - 1) % cps_client.CHANNELS_PER_BANK
+        img[bitmap + i // 8] |= 1 << (i % 8)
+        if mode == "p25":
+            make_p25(img, n)
+        elif mode == "nxdn":
+            make_nxdn(img, n)
+    per, size = (80, 0xB0) if img[0x806F] <= 4 else (16, 0x30)
+    slot = next((z for z in range(68) if not img[cps_client.ZONE_BITMAP + z // 8] & (1 << (z % 8))), None)
+    if slot is None:
+        skip("state", "the codeplug has no free zone")
+    base = cps_client.ZONE_DATA + slot * size
+    zone = MIX_ZONE.encode("ascii").ljust(16, b"\xff") + b"".join(n.to_bytes(2, "little") for n in numbers.values())
+    img[base:base + size] = zone.ljust(size, b"\0")
+    img[cps_client.ZONE_BITMAP + slot // 8] |= 1 << (slot % 8)
+    return numbers
+
+
+@pytest.mark.feature("scan")
+@pytest.mark.rf
+@pytest.mark.codeplug_write
+@pytest.mark.bench_service
+@pytest.mark.bench_modem
+@pytest.mark.needs_switch("DMR")
+def test_scan_every_mode(radio, sdr_bench, backup_dir, pytestconfig):
+    """A zone scan over FM, DMR, P25 and NXDN channels on one frequency (radio-features.md 2.1, the mixed frequency):
+    the bench sends each mode in turn and the scan holds on that mode's channel only. A digital call opens the FM
+    squelch, so the FM stop (first in the zone) checks the frequency's digital channels before it holds; an FM
+    signal, which none of them hears, holds the FM stop. P25 and NXDN where the radio has them"""
+    import tempfile
+    import cps_client
+    from test_cps import codeplug_edited, read_backup
+    need_scan(radio)
+    if "DMR" not in radio.features():
+        skip("not_built", "built without DMR")
+    freq, cc, tg = (pytestconfig.getoption(o) for o in ("--dmr-freq", "--dmr-cc", "--dmr-tg"))
+    hz = round(freq * 1e6)
+    radio.go_home()
+    radio.find_channel(hz, "dmr")
+    dmr_number = as_int(radio.core().get("channel_number"), 0)
+    modes = ["fm", "dmr"]
+    if "P25" in radio.features():
+        modes.append("p25")
+    if "NXDN" in radio.features():
+        from test_nxdn import AIR_FIT_RX
+        if (as_int(radio.link.view(["nxdn"]).get("nxdn.fit4800")) or 0) & AIR_FIT_RX:
+            modes.append("nxdn")
+    regions = cps_client.REGIONS["radio"]
+    probe, _ = read_backup(radio, backup_dir, "scanmodes", regions)
+    lo, hi = cps_client.SETTINGS_AREA
+    if len(modes) > 2 and cps_client.area_state(probe[lo:hi]) != "valid":
+        skip("state", "the codeplug settings area isn't valid: the restore couldn't take the tags back")
+    numbers = {}
+    # The DMR call goes to the DMR channel's talk target (a group contact), so it plays there; --dmr-tg without one
+    _, _, contact = cps_client.channel_dmr(probe, dmr_number)
+    at = cps_client.CONTACT_BASE + (contact - 1) * 24
+    dmr_dst = [tg]
+    if contact > 0 and probe[at + 20] == 0:     # contact type 0: a group
+        dmr_dst[0] = int(bytes(probe[at + 16:at + 20]).hex())
+
+    def edit(img):
+        numbers.update(_mixed_zone(img, hz, dmr_number, modes))
+
+    def send(mode, tmp):
+        """The bench's signal of mode on freq, started; returns its job"""
+        if mode == "fm":
+            tone = [{"kind": "tone", "hz": 1000, "s": BENCH_FM_CALL_S, "level": 0.6}]
+            return sdr_bench.fm_tx_start(freq, tone, max_s=BENCH_FM_CALL_S + 2)
+        if mode == "dmr":
+            return sdr_bench.voice_call(freq, cc, dmr_dst[0], superframes=20, calls=1, background=True)
+        path, exp = os.path.join(tmp, f"{mode}.dibits"), os.path.join(tmp, f"{mode}.json")
+        if mode == "p25":
+            import p25tool
+            from test_p25 import RX_SRC, RX_TG, STORED_NAC
+            p25tool.run(["gen", path, exp, "--nac", f"{STORED_NAC:x}", "--tg", RX_TG, "--src", RX_SRC,
+                         "--pairs", 16, "--lead", 96, "--tail", 48])
+            with open(path, "rb") as f:
+                data = f.read()
+            n = len(data) * 4
+            return sdr_bench.tx_start("fsk4", freq, None, max_s=n / 4800 + 2, symbols=n, hex=data.hex(),
+                                      shape="c4fm", clip_hz=4064)
+        import nxdntool
+        from test_nxdn import FSK4_HEX_MAX, RATES, SCAN_VOICE_FRAMES, STORED_RAN, TEST_UNIT
+        baud, dev = RATES["4800"]
+        nxdntool.run(["gen", path, exp, "--ran", STORED_RAN, "--group", 1, "--src", TEST_UNIT,
+                      "--voice-frames", SCAN_VOICE_FRAMES, "--lead", baud // 4])
+        with open(path, "rb") as f:
+            data = f.read()
+        n = len(data) * 4
+        assert n <= FSK4_HEX_MAX, f"the NXDN call holds {n} symbols, past {FSK4_HEX_MAX}"
+        return sdr_bench.tx_start("fsk4", freq, None, max_s=n / baud + 2, symbols=n, hex=data.hex(), shape="rrc",
+                                  baud=baud, dev_hz=dev, clip_hz=4064)
+
+    results = {}
+    with codeplug_edited(radio, backup_dir, edit, "scanmodes", regions) as (_, edited):
+        index = next(i for i, z in enumerate(cps_client.zones(edited)) if z[1] == MIX_ZONE)
+        radio.go_home()
+        radio._req_until(lambda: radio.link.zone(index), lambda v: v.get("zone_name") == MIX_ZONE, MIX_ZONE)
+        print(f"\nzone {MIX_ZONE!r} on {freq} MHz: " + ", ".join(f"{m} channel {n}" for m, n in numbers.items())
+              + f"; DMR calls to TG {dmr_dst[0]}")
+        by_number = {str(n): m for m, n in numbers.items()}
+        with tempfile.TemporaryDirectory() as tmp, sdr_bench.lease():
+            for mode in modes:
+                held, last, done, trail = {}, [None, 0.0], threading.Event(), []
+
+                def watch():
+                    prev = None
+                    t0 = t_watch
+                    while not done.is_set():
+                        v = radio.link.view(["core", "features", "dmr"])
+                        now = time.monotonic()
+                        at = by_number.get(v.get("channel_number"), v.get("channel_number"))
+                        # resume: the call that held the stop ended, and the scan waits there before going on
+                        hold = v.get("scan") == "zone" and v.get("scan_phase") in ("hold", "resume")
+                        step = (at, v.get("scan_phase"), v.get("dmr.state"))
+                        if not trail or trail[-1][1:] != step:
+                            trail.append((round(now - t0, 1),) + step)
+                        # A hold counts when two reads in a row see it on one channel: the sections are read one
+                        # request each, and a scan step between them pairs one stop's channel with another's phase
+                        if hold and prev == at:
+                            held[at] = held.get(at, 0) + 1
+                            if last[0] != at:
+                                last[:] = [at, now]
+                        elif not hold:
+                            last[:] = [None, now]
+                        prev = at if hold else None
+                        time.sleep(0.1)
+
+                radio.link.scan("zone")
+                wait_features(radio, lambda v: v.get("scan") == "zone", 1.0, "scan=zone")
+                t_watch, sent = time.monotonic(), []
+                t = threading.Thread(target=watch, daemon=True)
+                t.start()
+                try:
+                    for _ in range(1 if mode in ("fm", "dmr") else MIX_CALLS):
+                        sent.append(round(time.monotonic() - t_watch, 1))
+                        job = send(mode, tmp)
+                        sent.append(round(time.monotonic() - t_watch, 1))
+                        while not job.req.done.is_set():
+                            time.sleep(0.1)
+                            if last[0] == mode and time.monotonic() - last[1] >= MIX_HOLD_S:
+                                break
+                        r = job.wait(60)
+                        if isinstance(r, dict):
+                            sent.append({k: r.get(k) for k in ("on_air_s", "cut") if k in r})
+                        if mode in held:
+                            break
+                finally:
+                    done.set()
+                    t.join(2)
+                    scan_off(radio)
+                results[mode] = dict(held)
+                print(f"  {mode} signal: holds (reads) {held}")
+                if mode not in held or len(held) > 1:
+                    print(f"    the bench (s from the scan's start, keyed, done): {sent}")
+                    print("    the scan's path (s, channel, phase, dmr.state): " + " ".join(map(str, trail[:80])))
+                time.sleep(1.0)
+    for mode in modes:
+        assert mode in results[mode], f"the {mode} signal never held the scan on its channel: holds {results[mode]}"
+        others = {m: k for m, k in results[mode].items() if m != mode}
+        assert not others, f"the {mode} signal held the scan on other channels: {others}"
+
 
 # ── scans and battery save against a signal from the SDR bench ───────────
 
