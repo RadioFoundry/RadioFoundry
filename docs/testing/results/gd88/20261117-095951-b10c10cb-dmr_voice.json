@@ -1,0 +1,423 @@
+{
+ "board": "gd88",
+ "commit": "b10c10cb594cc7f430b7668bc23da3e575cb8f6a",
+ "date": "2026-11-17T09:59:51Z",
+ "dirty": false,
+ "features": [
+  "dmr_voice"
+ ],
+ "firmware": {
+  "board": "GD-88",
+  "codec": "gd88-2501",
+  "display": "320x240x4",
+  "features": "P25,P25_TRUNK,NXDN,FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,GPS,APRS,APRS_AFSK,APRS_DMR,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,DMR_TRUNK,DMR_TRUNK_TX,SFR,HOTSPOT,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,NET_TCP,NET_PPP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,BCAST_FM,DIAG,UI_SETTINGS,CHANNEL_LIST,KEY_ASSIGN,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,DEBUGLINK,HOSTLINK",
+  "git": "62dd5acd",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "radio",
+  "rf"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-rf": true,
+  "allow-service-stop": true,
+  "dmr-cc": 1,
+  "dmr-freq": 446.1,
+  "dmr-tg": 202,
+  "fm-mhz": 446.075
+ },
+ "sources": {
+  "dmr_voice": {
+   "core/dmr/ambe": "12a4bdd0af73e115bbb473724a217685e66d72b8",
+   "core/dmr/call": "f873076b0bf972345e73972cd637b4346fc455cd",
+   "core/dmr/fec": "1f3247de259e7b968cd81a2a4e3b745bb0240262",
+   "docs/spec/dmr-voice.md": "ba74d3d822d5219c94be52a07704e1bac4149a3d",
+   "drivers/modem": "6ad96738109ec2ba330a9ab0f1446a4fe2c03dd2",
+   "hal/hal_dmr_modem.h": "7cd6552f38bf6fc042c2eafca29d0f37b1d7ece0",
+   "hal/hal_vocoder.h": "143d45205e5d1cb56c96093cc495c1615fc90f9f"
+  }
+ },
+ "tests": [
+  {
+   "excused": true,
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_audio_smoke.py::test_dmr_audio_rx_deviation",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] DMR RX DEVIATION NOT CHECKED: the bench board can't scale its deviation (info feature dev_scale)",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "excused": true,
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_audio_smoke.py::test_dmr_audio_rx_offset_wide",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] DMR RX OFFSET WINDOW NOT CHECKED: the bench level doesn't bring the radio near -100 dBm (a board without power_dbm?)",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_call_features.py::test_late_entry",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_call_features.py::test_pi_bit",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_call_features.py::test_private_call_to_other",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_call_features.py::test_private_call_to_us",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_call_features.py::test_talk_target_requests",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_outbound_voice.py::test_outbound_voice_alone[1-1]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_outbound_voice.py::test_outbound_voice_alone[1-2]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_outbound_voice.py::test_outbound_voice_alone[2-1]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_outbound_voice.py::test_outbound_voice_alone[2-2]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_outbound_voice.py::test_outbound_voice_both_slots[1]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_outbound_voice.py::test_outbound_voice_both_slots[2]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_outbound_voice.py::test_outbound_voice_late_entry[0]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_outbound_voice.py::test_outbound_voice_late_entry[3]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_outbound_voice.py::test_outbound_voice_late_entry[5]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_outbound_voice.py::test_outbound_voice_slot2_mid_call[1]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_outbound_voice.py::test_outbound_voice_slot2_mid_call[2]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_outbound_voice.py::test_outbound_voice_wrong_cc",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": false,
+   "features": [],
+   "id": "tests/hil/test_dmr_repeater_keyup.py::test_dmr_repeater_keyup",
+   "optional": [
+    "dmr_voice"
+   ],
+   "outcome": "skipped",
+   "reason": "[opt_in] a duplex DMR repeater that answers a wake-up: --repeater-out-mhz MHz (its output) and --repeater-in-mhz MHz (its input, one you may transmit on)",
+   "required": false,
+   "skip_kind": "opt_in"
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_repeater_slots.py::test_dmr_repeater_burst_offset",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_repeater_slots.py::test_dmr_repeater_slots[boot]",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] the bench board can't do bench_repeater: this bench runs no duplex repeater jobs",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "excused": true,
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_repeater_slots.py::test_dmr_repeater_slots[channel_change]",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] the bench board can't do bench_repeater: this bench runs no duplex repeater jobs",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "excused": true,
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_repeater_slots.py::test_dmr_repeater_slots[long_call]",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] the bench board can't do bench_repeater: this bench runs no duplex repeater jobs",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "excused": true,
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_repeater_slots.py::test_dmr_repeater_slots[long_idle]",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] the bench board can't do bench_repeater: this bench runs no duplex repeater jobs",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "excused": true,
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_repeater_slots.py::test_dmr_repeater_slots[rekey]",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] the bench board can't do bench_repeater: this bench runs no duplex repeater jobs",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "excused": true,
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_repeater_slots.py::test_dmr_repeater_slots[up_ts_changes]",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] the bench board can't do bench_repeater: this bench runs no duplex repeater jobs",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "excused": true,
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_repeater_slots.py::test_dmr_repeater_slots[wake_ts]",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] the bench board can't do bench_repeater: this bench runs no duplex repeater jobs",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_rx.py::test_dmr_rx_counters",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "tests/hil/test_dmr_rx.py:46: AssertionError",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_tx.py::test_dmr_tx_off_air",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] the bench board lost samples while watching bursts ({'overflows': 2809, 'dsp_skipped': 0, 'decode_dropped': 0, 'queue_drops': 0}); it can't judge the radio",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_tx.py::test_host_link_idle_after_tx",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_voice.py::test_dmr_voice_speech",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "tests/hil/test_dmr_voice.py:60: AssertionError",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_modem_interrupts.py::test_no_lost_modem_interrupts",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_speaker_ear.py::test_speaker_dmr_voice",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] needs a person at the radio: run with --manual -s, or --microphone to listen with it",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "features": [],
+   "id": "tests/hil/test_ui.py::test_quick_color_code_for_now",
+   "optional": [
+    "dmr_voice"
+   ],
+   "outcome": "passed",
+   "required": false
+  },
+  {
+   "features": [],
+   "id": "tests/hil/test_ui.py::test_quick_hear_all_latch",
+   "optional": [
+    "dmr_voice"
+   ],
+   "outcome": "passed",
+   "required": false
+  },
+  {
+   "features": [],
+   "id": "tests/hil/test_ui.py::test_quick_timeslot_for_now",
+   "optional": [
+    "dmr_voice"
+   ],
+   "outcome": "passed",
+   "required": false
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}
