@@ -250,6 +250,20 @@ class CodecGuardError(F4Error):
     """guard_codec's refusal: raised before any erase, so the radio's flash is as it was."""
 
 
+class UncommittedError(F4Error):
+    """write_image stopped after it erased sector 3 (a lost link, a failed step, a verify): the application is not
+    committed, so the radio starts in its bootloader (DFU) until an install finishes. The message says how to finish."""
+
+
+def uncommitted_note(board_id, step, steps, cause):
+    return ("the install stopped at step %d of %d (%s). The application is not committed: the radio starts in its "
+            "bootloader (DFU, its screen dark) until an install finishes; the bootloader itself was not touched. "
+            "Finish it: if the stub still runs, stubtool.py PORT --attach --board %s --write-app IMAGE --boot reset; "
+            "else rfoundry flash IMAGE (no --route), which takes the bootloader route (with --stock FILE for the key and "
+            "codec)"
+            % (step, steps, cause, board_id))
+
+
 STUB_USB_ID = (0x1FC9, 0x0094)	# RadioFoundry's and the stub's USB identity (same serial number too)
 PORT_FALLBACK_S = 10.0		# how long the original port name gets before a look-alike is tried
 PORT_WAIT_S = 20.0		# how long attach() waits in all for the stub's port after a fresh enumeration
@@ -671,25 +685,31 @@ class F4Radio(stubtool.Radio):
                 self.log("sector %d's current content saved to %s (it holds codec bytes)" % (idx, path))
         order = [3] + [i for i in changed if i != 3]
         steps = len(order)
-        self.erase(3)
-        for n, idx in enumerate(order[1:], 1):
+        n = 0
+        try:
+            self.erase(3)			# a failure in it leaves sector 3 partly erased: no longer committed either
+            for n, idx in enumerate(order[1:], 1):
+                if progress:
+                    progress(n, steps)
+                a, _ = sec[idx]
+                self.erase(idx)
+                self.program(a, new[idx])
+            n = steps
             if progress:
-                progress(n, steps)
-            a, _ = sec[idx]
-            self.erase(idx)
-            self.program(a, new[idx])
-        if progress:
-            progress(steps, steps)
-        self.program(APP_BASE + 4, new[3][4:])
-        expect = {i: new[i] for i in order}
-        expect[3] = b"\xff\xff\xff\xff" + new[3][4:]
-        bad = [i for i in order if self.differs(sec[i][0], expect[i])]
-        if bad:
-            raise F4Error("verify before the commit: sector(s) %s differ. The application is not committed: the radio "
-                          "starts in its bootloader (DFU) until an install finishes" % bad)
-        self.program(APP_BASE, new[3][:4])
-        if self.differs(APP_BASE, new[3][:BLOCK]):
-            raise F4Error("the commit word did not verify")
+                progress(steps, steps)
+            self.program(APP_BASE + 4, new[3][4:])
+            expect = {i: new[i] for i in order}
+            expect[3] = b"\xff\xff\xff\xff" + new[3][4:]
+            bad = [i for i in order if self.differs(sec[i][0], expect[i])]
+            if bad:
+                raise F4Error("verify before the commit: sector(s) %s differ" % bad)
+            self.program(APP_BASE, new[3][:4])
+            if self.differs(APP_BASE, new[3][:BLOCK]):
+                raise F4Error("the commit word did not verify")
+        except (stubtool.DumpError, OSError) as e:
+            # From the first erase on, any failure leaves the radio in DFU. Said plainly: a bare "cable pulled" or
+            # "no answer" read as harmless, and a script that went on (reset, cleanup) left the owner to find it
+            raise UncommittedError(uncommitted_note(board_id, n or 1, steps, e)) from e
         return len(order), len(new) - len(order)
 
     def differs(self, addr, data):
@@ -1339,8 +1359,9 @@ def self_test():
     try:
         r.write_image("dm1701", segs, backup_dir=tmp)
         check(False, "interrupted write raises")
-    except OSError:
-        pass
+    except UncommittedError as e:
+        check(isinstance(e.__cause__, OSError) and "DFU" in str(e) and "--attach --board dm1701" in str(e)
+              and "rfoundry flash" in str(e), "interrupted: the error says DFU and how to finish (%s)" % e)
     check(fake.w(APP_BASE) == 0xFFFFFFFF, "interrupted: the application is not committed (DFU on the next start)")
     check(bytes(fake.flash[:0xC000]) == boot, "interrupted: bootloader untouched")
     fake.fail_after = None

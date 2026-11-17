@@ -76,6 +76,19 @@ def run(board, image, port=None, backup_dir=None, log=print, stubtool=None):
             rc, err2 = _call(stubtool, argv(board.id, path, port, backup_dir, attach=True))
             if err2 is not None:
                 log("stub     no stub finished the write either: %s" % err2)
+        elif err is not None and _is(err, "UncommittedError"):
+            # The write stopped after the application was erased (a USB drop mid-write, on the bench). The stub may
+            # still run on a link that came back: one try to finish there, else the radio waits in its bootloader
+            log("stub     %s" % err)
+            log("stub     trying to finish the install through the stub, in case it still runs")
+            rc, err2 = _call(stubtool, argv(board.id, path, port, backup_dir, attach=True))
+            if err2 is not None:
+                rc = rc or 1
+                log("stub     NOT INSTALLED: the radio has no committed application and starts in its bootloader (DFU) "
+                    "until an install finishes. Run the same rfoundry flash again without --route: with the radio in DFU "
+                    "it takes the bootloader route (--stock FILE if it asks for the key or the codec)")
+            else:
+                log("stub     the stub finished the install")
         elif err is not None:
             log("stub     %s" % err)
         return rc
