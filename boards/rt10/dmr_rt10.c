@@ -30,7 +30,8 @@ static hrc7000_t *modem;
 // DMR transmit keys the whole RF per burst on the shared RF-burst task (dmr_rfburst.c), which keys the PA too
 static const hrc_rfburst_board_t rf_board = { .on = rt10_burst_on, .off = rt10_burst_off };
 
-static const hrc_dmr_board_t dmr_board = { .burst = &rf_board, .tx_end = rt10_dmr_tx_end };
+// air_verified: P25 and NXDN at 4800 bit/s checked both ways on air (hardware-rt10.md 7.3)
+static const hrc_dmr_board_t dmr_board = { .burst = &rf_board, .tx_end = rt10_dmr_tx_end, .air_verified = true };
 
 // The speaker source for the modem's PCM (audio_pcm.c): the ring (prompt FIFO) on, or off. The modem's FM audio path
 // isn't used on this radio (the FD6818 demodulates FM), so it stays off
