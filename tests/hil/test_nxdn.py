@@ -40,6 +40,10 @@ TEST_GROUP, RX_VOICE_FRAMES voice frames). On the radio: one reception more (nxd
 group (nxdn.src, nxdn.dst) with that RAN. Skipped where the radio's air interface can't receive the rate (the fit
 without RX: a provider whose receiver needs a 24-symbol sync has none for NXDN's 10-symbol FSW).
 
+test_nxdn_rx_offset[RATE--500|RATE-500] (the same opt-ins): test_nxdn_rx_from_bench's call with the bench's carrier
+RX_OFFSET_HZ below and above --nxdn-mhz (the fsk4 transmitter's offset_hz), the same pass criteria. A bench board
+whose done record doesn't give the offset back skips (bench).
+
 test_nxdn_rx_speech[9600|4800] (the same opt-ins and --ambe FILE, a speech recording as 9-byte frames; the bench
 transmits, the radio only receives): the same call with the recording's first SPEECH_FRAMES frames as its voice
 frames, which the bench tool carries without looking inside. On the radio: one reception more; at least all but
@@ -66,6 +70,7 @@ from hil_config import rig
 
 AIR_FIT_RX, AIR_FIT_TX = 0x1, 0x2
 RX_VOICE_FRAMES = 40
+RX_OFFSET_HZ = 500      # the bench's carrier off the channel, as test_dmr_audio_rx_offset's
 FSK4_HEX_MAX = 8192     # symbols the bench takes in the request itself (fsk4_bench.py)
 PTT_S = 3.0
 SPEECH_FRAMES = {"9600": 64, "4800": 136}   # voice frames of the recording that fit FSK4_HEX_MAX symbols with the lead
@@ -358,10 +363,10 @@ def test_nxdn_stored_channel_tx(radio, sdr_bench, backup_dir, pytestconfig):
     check_over(over, "4800", STORED_TX_RAN, STORED_UNIT, 1)
 
 
-def rx_call(radio, sdr_bench, pytestconfig, rate, frames, extra=(), before=None):
+def rx_call(radio, sdr_bench, pytestconfig, rate, frames, extra=(), before=None, offset_hz=0):
     """The VFO on --nxdn-mhz in NXDN at rate while the bench plays one call nxdntool.py gen writes (frames voice
-    frames, extra its other options). before(), when given, runs once the radio is in NXDN, ahead of the call.
-    Returns the view's core and nxdn sections before and after."""
+    frames, extra its other options), its carrier offset_hz from the frequency. before(), when given, runs once the
+    radio is in NXDN, ahead of the call. Returns the view's core and nxdn sections before and after."""
     import nxdntool
     mhz = rig(pytestconfig, "nxdn-mhz")
     hz = round(mhz * 1e6)
@@ -399,8 +404,10 @@ def rx_call(radio, sdr_bench, pytestconfig, rate, frames, extra=(), before=None)
                 assert n <= FSK4_HEX_MAX, f"the call holds {n} symbols, past {FSK4_HEX_MAX}"
                 # clip_hz: a bench board's deviation limit, which the 9600 bit/s shape's overshoot passes
                 tx = sdr_bench.tx_start("fsk4", mhz, None, max_s=n / baud + 2, symbols=n, hex=data.hex(), shape="rrc",
-                                        baud=baud, dev_hz=dev, clip_hz=4064)
-                tx.wait(n / baud + 30)
+                                        baud=baud, dev_hz=dev, clip_hz=4064, offset_hz=offset_hz or None)
+                done = tx.wait(n / baud + 30)
+            if float(done.get("offset_hz") or 0) != offset_hz:
+                skip("bench", f"the bench board sent no carrier offset (its done record: {done})")
             time.sleep(0.6)
             v1 = radio.view(["core", "nxdn"])
         finally:
@@ -415,10 +422,26 @@ def rx_call(radio, sdr_bench, pytestconfig, rate, frames, extra=(), before=None)
 @pytest.mark.parametrize("rate", list(RATES))
 @pytest.mark.needs_switch("VFO")
 def test_nxdn_rx_from_bench(radio, sdr_bench, pytestconfig, rate):
-    v0, v1 = rx_call(radio, sdr_bench, pytestconfig, rate, RX_VOICE_FRAMES)
+    rx_from_bench(radio, sdr_bench, pytestconfig, rate)
+
+
+@pytest.mark.feature("nxdn")
+@pytest.mark.rf
+@pytest.mark.bench_service
+@pytest.mark.bench_modem
+@pytest.mark.parametrize("offset_hz", [-RX_OFFSET_HZ, RX_OFFSET_HZ])
+@pytest.mark.parametrize("rate", list(RATES))
+@pytest.mark.needs_switch("VFO")
+def test_nxdn_rx_offset(radio, sdr_bench, pytestconfig, rate, offset_hz):
+    rx_from_bench(radio, sdr_bench, pytestconfig, rate, offset_hz)
+
+
+def rx_from_bench(radio, sdr_bench, pytestconfig, rate, offset_hz=0):
+    """test_nxdn_rx_from_bench's call and pass criteria, the bench's carrier offset_hz from --nxdn-mhz"""
+    v0, v1 = rx_call(radio, sdr_bench, pytestconfig, rate, RX_VOICE_FRAMES, offset_hz=offset_hz)
     keys = ("rx_calls", "frames", "voice", "played", "voice_held", "sacch_fail", "facch_fail", "lich_fail", "fec_bits",
             "ran_rejects", "rx_chunks")
-    print(f"\nnxdn from the bench at {rate} bit/s: "
+    print(f"\nnxdn from the bench at {rate} bit/s, carrier {offset_hz:+d} Hz: "
           + ", ".join(f"{k} {v0.get('nxdn.' + k)}->{v1.get('nxdn.' + k)}" for k in keys
                       if v0.get("nxdn." + k) != v1.get("nxdn." + k)))
     assert (as_int(v1.get("nxdn.rx_calls")) or 0) == (as_int(v0.get("nxdn.rx_calls")) or 0) + 1, "no call received"
