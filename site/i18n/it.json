@@ -232,7 +232,7 @@
  "screen.banner_call_alert": "Avviso di chiamata ricevuto",
  "screen.banner_message": "Nuovo messaggio",
  "screen.banner_zone_offer": "Una zona offerta da un'altra radio",
- "screen.zone_offer": "Cosa fare con una zona offerta",
+ "screen.zone_offer": "Una zona condivisa via radio: importa, anteprima o rifiuta",
  "screen.zone_offer_preview": "I canali di una zona offerta",
  "screen.zone_offer_ch": "Un canale condiviso da un'altra radio",
  "screen.tools_zone_offer": "Strumenti con una zona condivisa in attesa",

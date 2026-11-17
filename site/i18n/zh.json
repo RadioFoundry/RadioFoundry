@@ -232,7 +232,7 @@
  "screen.banner_call_alert": "收到呼叫提示",
  "screen.banner_message": "新消息",
  "screen.banner_zone_offer": "另一台电台提供的区域",
- "screen.zone_offer": "如何处理收到的区域",
+ "screen.zone_offer": "通过无线电共享的区域：导入、预览或拒绝",
  "screen.zone_offer_preview": "所提供区域中的信道",
  "screen.zone_offer_ch": "另一台电台共享的一个信道",
  "screen.tools_zone_offer": "有待处理共享区域的工具界面",
