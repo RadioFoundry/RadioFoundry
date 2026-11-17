@@ -118,6 +118,7 @@ static void latch(bool on)
 	PIN_WRITE(PIN_T5_V, false);
 	PIN_WRITE(PIN_T5_U, false);
 	PIN_WRITE(PIN_POWER, false);
+	PIN_WRITE(PIN_MIC_GPS_POWER, false);	// the hand mic and GPS rail: off for the standby (board.c keeps it off)
 	backup_write(STANDBY_MAGIC);
 	__disable_irq();
 	NVIC_SystemReset();

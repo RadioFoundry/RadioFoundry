@@ -10,6 +10,7 @@
 
 #if CONFIG_POSITION
 #include "hal_time.h"
+#include "board.h"
 #include "position/position.h"
 
 static void deg(dl_text_t *t, const char *key, int32_t e7)
@@ -45,6 +46,11 @@ void debuglink_view_position(uint8_t part, dl_text_t *t)
 	position_gps_t g;
 	bool heard = position_gps(&g, now_ms);
 	dl_text(t, "pos.gps_heard=%u\npos.gps_fix=%u\npos.gps_sats=%u\n", heard, heard && g.fix, heard ? g.sats : 0u);
+	// The board's receiver (board_t.gps): the module heard, powered and listened to now, its counters and rate
+	uint32_t good, bad, bytes, baud;
+	board_gps_counts(&good, &bad, &bytes, &baud);
+	dl_text(t, "pos.gps_present=%u\npos.gps_on=%u\npos.gps_nmea=%u/%u/%u\npos.gps_baud=%u\n", board_has_gps(),
+		board_gps_running(), (unsigned)good, (unsigned)bad, (unsigned)bytes, (unsigned)baud);
 #endif
 }
 

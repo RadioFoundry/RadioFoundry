@@ -109,7 +109,7 @@ const board_t board = {
 	.name = "MD-9600",
 	// A mobile on a fixed supply: no battery. No CAP_VOLUME_POT: the knob sets the volume in the analog path only.
 	// No CAP_KEYPAD: the keypad is on the hand mic, which may not have one, so text entry keeps the panel's way. The
-	// GPS module is optional: gps_present says
+	// GPS module is optional: board_t.gps says
 	.caps = CAP_ENCODER | CAP_NO_BATTERY | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
@@ -141,8 +141,7 @@ const board_t board = {
 #endif
 #endif
 #if CONFIG_GPS
-	.gps_present = stm32_gps_present,
-	.gps_enable = stm32_gps_enable,
+	.gps = &stm32_gps,
 #endif
 	.power = &md9600_power,
 	.flash = &stm32_spi_flash,
@@ -258,7 +257,7 @@ static void reset_levels(void)
 	stm32_pin_out(PIN_PORT(PIN_TONE_PWM), PIN_MASK(PIN_TONE_PWM), true, true);
 	PIN_OUT(PIN_BEEP_PWM, false);
 	PIN_OUT(PIN_BACKLIGHT, false);
-	PIN_OUT(PIN_MIC_GPS_POWER, true);	// hand mic and GPS powered while the radio runs
+	PIN_OUT(PIN_MIC_GPS_POWER, false);	// hand mic and GPS: off through the standby wait, on in board_init
 
 	PIN_OUT(PIN_FLASH_CS, true);
 	PIN_OUT(PIN_LCD_CS, true);
@@ -304,6 +303,7 @@ void board_early_init(void)
 
 void board_init(void)
 {
+	PIN_WRITE(PIN_MIC_GPS_POWER, true);	// switched on: hand mic and GPS powered while the radio runs (latch drops it)
 	spi2_lock = xSemaphoreCreateMutex();
 	md9600_power.init();
 	md9600_flash_init();

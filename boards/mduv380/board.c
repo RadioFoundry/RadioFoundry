@@ -152,7 +152,7 @@ static const hal_cps_t cps = {
 
 const board_t board = {
 	.name = BOARD_NAME,
-	// CAP_GPS: the G models; gps_present says whether this one has the module (hardware-mduv380.md 9)
+	// CAP_GPS: the G models; board_t.gps says whether this one has the module (hardware-mduv380.md 9)
 	.caps = CAP_KEYPAD | CAP_ENCODER | CAP_VOLUME_POT | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
@@ -196,7 +196,7 @@ const board_t board = {
 #endif
 	.system = &stm32_system,
 #if CONFIG_GPS
-	.gps_present = stm32_gps_present,
+	.gps = &stm32_gps,
 #endif
 	// The family's thresholds (hardware-mduv380.md 6): low battery 6.2 V, critical 6.0 V
 	.battery_low_mv = 6200,

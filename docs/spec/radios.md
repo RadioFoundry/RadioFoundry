@@ -134,7 +134,7 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
   `platform/stm32f4`, `drivers/flash/spi_nor` and `drivers/display/st7735` (HX8302A assumed compatible, ?). The
   HR_C5000 is a variant of `drivers/modem/hrc6000` (a chip flag selects the register differences). New:
   `drivers/rf/sky72310` (shared with the MD-9600 later), `drivers/gps/nmea_line`, run-time GPS detection
-  (`board.gps_present`). DMR voice uses the codec of the vendor D002.032, D35.14 or S35.14 file, merged at build time
+  (`board_t.gps`). DMR voice uses the codec of the vendor D002.032, D35.14 or S35.14 file, merged at build time
   and run in place ([codec-md380.md](codec-md380.md)); untested on a radio.
 
 ### Radioddity GD-77 family
