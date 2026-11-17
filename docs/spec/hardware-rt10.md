@@ -17,7 +17,7 @@ markings.
 | Program flash | GD25Q16C, JEDEC C8 40 15 (measured) | 2 MB, execute in place at 0x03000000 |
 | Data flash | GD25Q16C | 2 MB on SPI0 (section 4) |
 | Audio | NJM2904 dual op amp | analog, no control lines |
-| Clock | SoC RTC, no backup cell | no coin cell or backup capacitor on either side of the board. The original firmware reads the SoC RTC on I2C2 (address 0x70). The long two-pad crystal marked `EAUE` beside the SoC is probably its 32.768 kHz crystal (from the package; not measured). Not measured: whether the RTC stays on the main battery with the radio off. RadioFoundry doesn't use the RTC on this radio |
+| Clock | SoC RTC, no backup cell | no coin cell or backup capacitor on either side of the board. The SoC RTC is on I2C2 (address 0x70). The long two-pad crystal marked `EAUE` beside the SoC is probably its 32.768 kHz crystal (from the package; not measured). Not measured: whether the RTC stays on the main battery with the radio off. RadioFoundry doesn't use the RTC on this radio |
 
 ## 2. Boot and program flash
 
@@ -64,7 +64,7 @@ bits 8:3 cleared, bits 29:27 set).
 | PTB3 | 35 | PA select | high = on |
 | PTB4 | 36 | RX supply | high = on |
 | PTB5, PTB7 | 37, 39 | LEDs: PTB5 green, PTB7 red (measured: red at power-up and in TX, green on MON) | high = on |
-| PTB8 | 40 | speaker amplifier (the original firmware: on for beeps, prompts, DMR voice and an open squelch) | high = on |
+| PTB8 | 40 | speaker amplifier | high = on |
 | PTB9, PTB10 | 41, 42 | side keys | low = pressed (unverified) |
 | PTB11 | 43 | PTT; also the cable's serial line | low = pressed |
 | PTB12 | 44 | power latch | high = stay on |
@@ -164,12 +164,12 @@ written, the carrier measured +0.47 ppm (section 5) and the receiver peaks on th
 | Item | Value |
 | --- | --- |
 | Power latch | PTB12 high from start-up; low lets the radio turn off |
-| Power switch | PTB17, high = off (measured). The original firmware lets go of the latch after it reads "off" for 500 ms; RadioFoundry after five 100 ms polls (`power_rt10.c`) |
+| Power switch | PTB17, high = off (measured). RadioFoundry lets go of the latch after five 100 ms polls read "off" (`power_rt10.c`) |
 | Battery | ADC channel 2; scale ? |
 | PA | DAC B drives the PA's power control; levels per frequency step come from the calibration (section 4.1) |
 | Power levels | L and H: the calibration's low and high sets |
 
-FM key-up, in the original firmware's order. Measured: the chip's TX state and frequency, the pin levels and the
+FM key-up, in order. Measured: the chip's TX state and frequency, the pin levels and the
 signal on air (927.5 MHz at L, the modem's bias written as in section 4.1: the carrier 436 Hz high, +0.47 ppm, on
 the SDR bench, whose own correction is good to about 0.5 ppm).
 
@@ -209,7 +209,7 @@ bit-banged (measured). The register map is the FD6818's (`drivers/rf/fd6818/fd68
 | States (0x03) | receive 0xBFF1 (reads back 0xBFF5), TX 0xC1FE, TX with a tone 0xC1FA; every change through 0 |
 | Band | 902-928 MHz is the chip's band above 600 MHz: 0x1A = 0x1F80, 0x40 = 0x3AD0 (measured: -34 dBm read from a signal the band word 0xBF24 left at the floor) |
 | Bandwidth (0x43) | 0x4048 at 12.5 kHz, 0x3028 at 25 kHz |
-| Receive set | the power-on tables and the analog words in `boards/rt10/radio_rt10.c`, from the original firmware's |
+| Receive set | the power-on tables and the analog words in `boards/rt10/radio_rt10.c` |
 | AF output (0x47) | 0x7140 receive, 0x7040 mute (TX) |
 | GPIO | 0x25-0x27: GPIO0 the sub-audio compare, to PTB27; GPIO6 squelch, to PTB26 (measured) |
 | Noise (0x65) | no signal: 38-44 raw at 904-927.5 MHz (measured), inside the core's squelch range, so the driver adds the FD6818 offset (`fd6818_noise`) |
@@ -222,22 +222,21 @@ sub-audio set again when it finds PTB26 low with PTB27 high. The chip doesn't te
 
 ### 7.1 DMR
 
-The original firmware's scheme: the HR_C7000's 4FSK goes on the TCXO through MOD1 (section 4.1), and each burst
-runs the FM key-up and key-down, started by the modem's RF TX interrupt. RadioFoundry runs the bursts from the shared
-RF-burst task ([modem-hrc7000.md](modem-hrc7000.md) 3.1a) with the sequences in `boards/rt10/radio_rt10.c`. Values
-from the original firmware's code:
+The HR_C7000's 4FSK goes on the TCXO through MOD1 (section 4.1), and each burst runs the FM key-up and key-down,
+started by the modem's RF TX interrupt. RadioFoundry runs the bursts from the shared RF-burst task
+([modem-hrc7000.md](modem-hrc7000.md) 3.1a) with the sequences in `boards/rt10/radio_rt10.c`. The values:
 
 | Item | Value |
 | --- | --- |
-| FD6818 digital set | the stock's DMR entry: 0x04 = 0x0300, 0x48 = 0x6C5C, 0x4B = 0xE442, 0x73 = 0x569A (AFC off), 0x7E = 0x349E (TX DC filter bypassed), 0x23 = 0x8F87 (AF DAC level 7), then 0x43 = 0x7E08 and 0x77 = 0xC0FF (the analog set writes 0x80EF). Without the 0x77 word the speaker hisses through a DMR key-up, with a pulse at the burst rate; with it the speaker is silent (listened to). The FD6818 guide's DMR bypass mode lists the same 0x48, 0x4B, 0x73 and 0x7E words ("cic mode"). Leaving DMR, the analog set writes the power-on words back (0x48 = 0x6C4C) |
+| FD6818 digital set | the DMR entry: 0x04 = 0x0300, 0x48 = 0x6C5C, 0x4B = 0xE442, 0x73 = 0x569A (AFC off), 0x7E = 0x349E (TX DC filter bypassed), 0x23 = 0x8F87 (AF DAC level 7), then 0x43 = 0x7E08 and 0x77 = 0xC0FF (the analog set writes 0x80EF). Without the 0x77 word the speaker hisses through a DMR key-up, with a pulse at the burst rate; with it the speaker is silent (listened to). The FD6818 guide's DMR bypass mode lists the same 0x48, 0x4B, 0x73 and 0x7E words ("cic mode"). Leaving DMR, the analog set writes the power-on words back (0x48 = 0x6C4C) |
 | 0x4B | 0xE442 puts the demodulated 4FSK on the AF output. With the power-on 0x223C the modem's PHASE_OUT range stays within about ±40 counts of its center during a call (a few millivolts at its AF ADC) and the modem never syncs; with 0xE442 it reaches the ±2432 limit (measured) |
 | AF output (0x47) | receive 0x4140 (to the modem; analog 0x7140); at a burst's TX 0x6740, written before the tune |
-| 0x40 | 0x3AD0: the band select in every tune writes it, so a burst transmits with it (the stock's 0x40 = 0 ahead of the tune is overwritten) |
+| 0x40 | 0x3AD0: the band select in every tune writes it, so a burst transmits with it |
 | States (0x03) | receive 0xBFF1, TX 0xC1FE, each through 0 |
 | Modem RF_MODE | 0x034C9860: AF gain 0x4C, TX symbol mapping not inverted (bit 7 clear) |
 | RF TX interrupt lead | RF_CONTROL b13:8 = 0x1A (2.6 ms) |
-| Modem ADC gain (GCR_ADCL) | 23 dB, listened to through a parrot. The stock writes 11 dB at its codec start-up, as the other HR_C7000 radios do. `make RT10_DMR_MIC_DB=N` |
-| DAC C | the modem's AF ADC bias (its N input): each step moves the PHASE_OUT center about 9 counts. The stock keeps 1762; RadioFoundry writes `RT10_DMR_DAC_C` (1850) entering DMR and 1762 leaving it. AMBE bits corrected per frame on a bench voice call (234 frames each, measured): 1762 0.83-0.86, 1800 0.51, 1825 0.45, 1850 0.05, 1875 0.09, 1900 0.16, 1950 0.50, 2050 0.89; at 1680 no sync. `make RT10_DMR_DAC_C=N` |
+| Modem ADC gain (GCR_ADCL) | 23 dB, listened to through a parrot. The other HR_C7000 radios use 11 dB. `make RT10_DMR_MIC_DB=N` |
+| DAC C | the modem's AF ADC bias (its N input): each step moves the PHASE_OUT center about 9 counts. The set-up level is 1762; RadioFoundry writes `RT10_DMR_DAC_C` (1850) entering DMR and 1762 leaving it. AMBE bits corrected per frame on a bench voice call (234 frames each, measured): 1762 0.83-0.86, 1800 0.51, 1825 0.45, 1850 0.05, 1875 0.09, 1900 0.16, 1950 0.50, 2050 0.89; at 1680 no sync. `make RT10_DMR_DAC_C=N` |
 
 Burst TX on, from the RF TX interrupt: the calibration's key-up delay (section 4.1), PTB4 (RX supply) low, the
 FD6818 to the TX frequency in its TX state, PTB3 and PTB0 high, DAC B ramped to the calibration's level. TX off: the
@@ -245,7 +244,7 @@ ramp down, PTB0 and PTB3 low, 100 us, the FD6818 back to the receive frequency (
 The original starts the key-down at its RF RX interrupt plus the calibration's key-down delay; RadioFoundry holds
 the TX until the burst's last symbol instead.
 
-RadioFoundry's lead is not the stock's fixed 2.6 ms: it is the shortest 100 us step that has the PA up for the first
+RadioFoundry's lead is not a fixed 2.6 ms: it is the shortest 100 us step that has the PA up for the first
 symbol, 0.85 ms after the lead (`rt10_dmr_rf_tx_lead`, `boards/rt10/rt10.h`). After the RF TX interrupt plus the
 calibration's key-up delay, the TX on sequence has the PA within 1 dB of the plateau at 2.53-2.66 ms and its ramp done
 at 3.0-3.12 ms; the model takes 2.9 ms, which puts the 1 dB point at least 0.24 ms ahead of the first symbol. With the
@@ -299,11 +298,11 @@ No codec bytes are in the repository or in a release.
 | Item | Value |
 | --- | --- |
 | Code start (the two signature words) | flash 0x0305E438 |
-| Code | 0x12FFC bytes (77,820), sha256 `3f3b8740df14c81b44f53f984e4e570a609ec467233341729157f5c176cc3c15`. The window ends where the stock `memcpy` starts |
+| Code | 0x12FFC bytes (77,820), sha256 `3f3b8740df14c81b44f53f984e4e570a609ec467233341729157f5c176cc3c15`. The window ends where `memcpy` starts |
 | Code run address | 0x16DD8: the start-up code copies flash 0x03057A60 to RAM 0x10400..0x2E324 |
-| Compile | The DB25-D 020 compile, with one stock function inside the window (at +0x614) 20 bytes shorter: the codec code past it sits 20 bytes lower. The same 153 functions are reachable from the entry points |
+| Compile | The DB25-D 020 compile, with one function inside the window (at +0x614) 20 bytes shorter: the codec code past it sits 20 bytes lower. The same 153 functions are reachable from the entry points |
 | Entry points (offsets) | decode 0, encode 0x294, dec_init 0xE8, dec_set 0xA4, enc_init 0x400, enc_set 0x32C, fec_init 0x1CD0 |
-| Init | The stock init routine calls them in the order, with the arguments and the state offsets, that `platform/hrc7000/vocoder.c` uses |
+| Init | The order, arguments and state offsets `platform/hrc7000/vocoder.c` uses |
 | Tables | flash 0x0303C76C, 0x2D50 bytes (11,600), sha256 `e1e435822471894c437048396f2ea96bea5803acc08446b8f1073714978e219e` (the DB25-D's tables). The start-up code copies flash 0x03038D60 to modem SRAM 0x18000800, so they run at 0x1800420C..0x18006F5C |
 | Codec map | `rt10-112` (`tools/rfoundry/rfoundry/codec_maps/rt10/`): 3 self-referencing words (one reachable from the entry points), 69 table words (52 targets), no instruction pairs, no references outside the code and table windows. Measured: the merged codec decodes bench speech and encodes the radio's transmissions (7.1) |
 

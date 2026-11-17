@@ -19,7 +19,7 @@
 
 #define C7_PHASE_OUT		0x128u		// RO: largest / smallest 14-bit AF phase seen (modem-hrc7000.md 2.1)
 
-// The modem's receive mode word, as the original firmware writes it on this radio (hardware-rt10.md 7.1), with the TX
+// The modem's receive mode word on this radio (hardware-rt10.md 7.1), with the TX
 // symbol mapping not inverted (bit 7 clear). make RT10_DMR_RF_MODE=0x... replaces it on the bench
 #ifndef RT10_DMR_RF_MODE
 #define RT10_DMR_RF_MODE	0x034C9860u

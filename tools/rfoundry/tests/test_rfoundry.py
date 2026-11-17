@@ -1385,7 +1385,7 @@ class Dm1701Builds(unittest.TestCase):
 
 class Rt10Map(unittest.TestCase):
     def test_map_is_db25d_020_relinked(self):
-        """The RT10's codec is the DB25-D 020 compile with a stock function inside the window 0x14 bytes shorter
+        """The RT10's codec is the DB25-D 020 compile with one function inside the window 0x14 bytes shorter
         (at +0x614): every site and entry past it 0x14 lower, every table target 0x2BFC higher (the tables at 0x1800420C
         instead of 0x18001610), the same objects. Two maps made independently that disagree anywhere else are wrong."""
         maps = codecmap.load_maps()

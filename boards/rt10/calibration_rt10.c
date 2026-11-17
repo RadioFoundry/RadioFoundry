@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // RT10 factory calibration: the data flash's last sector (docs/spec/hardware-rt10.md 4). Byte tables of 15 entries,
-// one per 10 MHz step from a base the sector names (90: 900-909 MHz is step 0). The original firmware reads them at every
-// channel change; here the entries are copied into RAM once, at start-up, and nothing is ever written back.
+// one per 10 MHz step from a base the sector names (90: 900-909 MHz is step 0). Copied into RAM once,
+// at start-up; nothing is ever written back.
 #include <string.h>
 #include "rt10.h"
 
 #define CAL_SECTOR		0x1FF000u
 #define OFF_TX_CENTER		0x1A9u		// TCXO center byte (the modem's SIG_CENTER)
 #define OFF_BASE		0x470u		// the first step's frequency / 10 MHz
-#define OFF_DAC_HIGH		0x51Du		// PA control level / 16, the original firmware's two power sets
+#define OFF_DAC_HIGH		0x51Du		// PA control level / 16, the two power sets
 #define OFF_DAC_LOW		0x52Cu
 #define OFF_MOD			0x559u		// (u8, u8) pairs, the first byte: the modulation balance
-#define OFF_PA_HIGH		0x5B5u		// FD6818 PA gain; the original firmware caps the high set's at 7
+#define OFF_PA_HIGH		0x5B5u		// FD6818 PA gain; at most 7 in the high set
 #define OFF_PA_LOW		0x5C4u
 #define OFF_ON_HIGH		0x5D3u		// key-up delay / 10 us, RX supply off to TX state
 #define OFF_ON_LOW		0x5F1u

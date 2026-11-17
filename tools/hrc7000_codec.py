@@ -243,9 +243,9 @@ PROFILES.update({
                     "enc_set": 0x32C, "fec_init": 0x1CE4},
     },
 })
-# Retevis RT10 V1.1.2: no vendor file, only a program flash read. 020's compile with one stock function inside the window
+# Retevis RT10 V1.1.2: no vendor file, only a program flash read. 020's compile with one function inside the window
 # 20 bytes shorter, so the codec code after it and fec_init sit 20 bytes lower; it runs from RAM at 0x16DD8 (the
-# stock start-up copies the RAM block to 0x10400). The tables are byte for byte 018's, at 0x1800420C (hardware-rt10.md 8)
+# RAM block is at 0x10400). The tables are byte for byte 018's, at 0x1800420C (hardware-rt10.md 8)
 PROFILES.update({
     "3f3b8740df14c81b44f53f984e4e570a609ec467233341729157f5c176cc3c15": {
         "name": "Retevis RT10 V1.1.2 (program flash read)", "board": "rt10", "kind": "progmem", "tag": 112,
@@ -303,7 +303,7 @@ def carve(stock, prof):
 
 
 def locate(dump, profiles=None, board=None):
-    """A known codec anywhere in a program flash dump (1 MB from 0x03000000, or a board's whole 2 MB). Each stock version links the codec to its
+    """A known codec anywhere in a program flash dump (1 MB from 0x03000000, or a board's whole 2 MB). Each firmware version links the codec to its
     own flash addresses (DM-32 047 and 049 hold the same code, 0x3C bytes apart), so it is found by content: the code
     starts with the signature words and the tables by TABLES_HEAD_CRC, both 4-byte aligned, and each window must match
     a profile's SHA-256. Returns the profile with the addresses found (kind "progmem"), else None."""
