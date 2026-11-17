@@ -1357,6 +1357,28 @@ bool codeplug_set_aprs_path(uint8_t n, const char *path1, const char *path2)
 	storage_unlock();
 	return ok;
 }
+
+bool codeplug_set_aprs_ssid(uint8_t n, uint8_t ssid)
+{
+	uint8_t b[APRS_SIZE];
+	if (n < 1 || n > CODEPLUG_APRS_CONFIGS || ssid > 15) {
+		return false;
+	}
+	uint32_t addr = APRS_BASE + (uint32_t)(n - 1u) * APRS_SIZE;
+	storage_lock();
+	bool ok = source == CODEPLUG_OPENFW && flash_read(addr, b, sizeof(b));
+	uint16_t magic = le16(&b[0x3E]);
+	ok = ok && b[0] != 0xFF && b[0] != 0x00 && (magic == APRS_MAGIC || magic == APRS_MAGIC - 1u);
+	if (ok) {
+		b[0x08] = ssid;
+		ok = flash_write(addr + 0x08u, &b[0x08], 1);
+	}
+	if (ok) {
+		serial++;
+	}
+	storage_unlock();
+	return ok;
+}
 #endif
 
 bool codeplug_set_radio_name(const char *name)
