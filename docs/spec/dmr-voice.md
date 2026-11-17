@@ -245,6 +245,10 @@ codec bits.
   `reset()`, so a new transmission starts with the options in force.
 * The options are read at start-up from the settings and on every change (`ui_svc_apply`). With AGC on, the mic gain
   is step 5, the board's levels (FM too on a radio whose board sets the gain), and Mic gain is dimmed, showing "AGC".
+* Voice is simplex: while a transmission runs, nothing is decoded. A call still being heard goes on as silence, and
+  the decoder starts fresh once the transmission ends; a call that begins meanwhile resets nothing until then. A
+  platform may keep the encoder's and the decoder's state in one block (`hal_vocoder_t`): a decode during the
+  transmission would cost it its encoder.
 * Each board's codec mapping is on its `codec-<id>.md` page ("Encode flags"). Boards with an AMBE+2 host share
   `drivers/vocoder/ambe2_flags.h`.
 

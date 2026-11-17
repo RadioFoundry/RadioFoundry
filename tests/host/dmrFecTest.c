@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 /*
- * Host test for core/dmr/fec: Hamming, BPTC(196,96), Golay(20,8), the slot type and the EMB's QR(16,7,6)
+ * Host test for core/dmr/fec: Hamming, BPTC(196,96), Golay(20,8), the slot type, the EMB's QR(16,7,6) and the
+ * reverse channel
  *
  *   make -C tests/host
  */
@@ -277,6 +278,116 @@ static void testQr1676(void)
 	CHECK(bad == 0, "EMB: %d round trips wrong", bad);
 }
 
+static void testReverseChannel(void)
+{
+	// RC info by hand from B.3.13: x^7 = x^5 + x^2 + x + 1 mod G7, so cease (0100, x^9) has CRC 0111011 (0x3B),
+	// 0x41 masked; cease request (0101, x^9 + x^7) 0011100 (0x1C), 0x66 masked; increase power (0000) 0, 0x7A masked
+	CHECK(dmrFecRcInfo(DMR_RC_CEASE) == 0x241, "RC info cease %03X", dmrFecRcInfo(DMR_RC_CEASE));
+	CHECK(dmrFecRcInfo(DMR_RC_CEASE_REQUEST) == 0x2E6, "RC info cease request %03X", dmrFecRcInfo(DMR_RC_CEASE_REQUEST));
+	CHECK(dmrFecRcInfo(DMR_RC_POWER_UP) == 0x07A, "RC info power up %03X", dmrFecRcInfo(DMR_RC_POWER_UP));
+
+	int bad = 0, accepted = 0;
+
+	for (uint16_t info = 0; info < 2048; info++)
+	{
+		int c = dmrFecRcInfoDecode(info);
+
+		accepted += c >= 0;
+		bad += c >= 0 && dmrFecRcInfo((uint8_t)c) != info;
+	}
+	CHECK(bad == 0 && accepted == 16, "RC info: %d of 2048 accepted, %d wrong", accepted, bad);
+
+	// The field's bit order (tables B.5A, B.5B): TX(31) RC(10), TX(30) PC(7), TX(16) PC(0), TX(11) RC(0), TX(1) H(0),
+	// TX(0) PC(8). PC(15-j) is the complement of the row's bit j, and H(0) the row's even parity
+	for (uint8_t c = 0; c < 16; c++)
+	{
+		uint16_t info = dmrFecRcInfo(c);
+		uint16_t h15 = dmrFecHamming15113Encode(info);
+		uint32_t f = dmrFecRcEncode(c);
+		uint32_t h0 = (uint32_t)popcount((uint32_t)h15) & 1u;
+
+		bad += ((f >> 31) & 1u) != ((info >> 10) & 1u);
+		bad += ((f >> 30) & 1u) != (((info >> 2) & 1u) ^ 1u);	// PC(7): column 8, RC(2)
+		bad += ((f >> 11) & 1u) != (info & 1u);
+		bad += ((f >> 16) & 1u) != (h0 ^ 1u);			// PC(0): column 15, H(0)
+		bad += ((f >> 1) & 1u) != h0;
+		bad += (f & 1u) != (((info >> 3) & 1u) ^ 1u);		// PC(8): column 7, RC(3)
+		bad += popcount(f) != 16;	// each column holds a bit and its complement
+	}
+	CHECK(bad == 0, "RC field order: %d bits wrong", bad);
+
+	// Every command back through up to 3 bit errors; 4 errors are never taken for another command
+	int min = 32;
+
+	bad = 0;
+	for (uint8_t c = 0; c < 16; c++)
+	{
+		uint32_t f = dmrFecRcEncode(c);
+		uint8_t got;
+
+		for (uint8_t o = 0; o < 16; o++)
+		{
+			if (o != c && popcount(f ^ dmrFecRcEncode(o)) < min)
+			{
+				min = popcount(f ^ dmrFecRcEncode(o));
+			}
+		}
+		bad += dmrFecRcDecode(f, &got) != 0 || got != c;
+		for (int a = 0; a < 32; a++)
+		{
+			for (int b = a + 1; b < 32; b++)
+			{
+				for (int d = b + 1; d < 32; d++)
+				{
+					uint32_t e = (1u << a) | (1u << b) | (1u << d);
+
+					bad += dmrFecRcDecode(f ^ (1u << a), &got) != 1 || got != c;
+					bad += dmrFecRcDecode(f ^ e, &got) != 3 || got != c;
+					for (int x = d + 1; x < 32; x += 7)
+					{
+						int r = dmrFecRcDecode(f ^ e ^ (1u << x), &got);
+
+						bad += r >= 0 && got != c;
+					}
+				}
+			}
+		}
+	}
+	CHECK(min == 12, "RC codewords: minimum distance %d", min);
+	CHECK(bad == 0, "RC decode: %d wrong", bad);
+
+	// The embedded field (6.4.2): EMB CC 2, PI 1, LCSS 00 is QR(16,7,6) of 0x14, split around the RC
+	uint8_t field[6], got;
+	uint16_t emb14 = dmrFecQr1676Encode(0x14);
+
+	dmrFecRcField(2, DMR_RC_CEASE, field);
+	CHECK(field[0] == (emb14 >> 8) && field[5] == (emb14 & 0xFF), "RC field: EMB");
+	CHECK(((uint32_t)field[1] << 24 | (uint32_t)field[2] << 16 | (uint32_t)field[3] << 8 | field[4]) ==
+	      dmrFecRcEncode(DMR_RC_CEASE), "RC field: RC");
+	// A BS's cease as sent on air, CC 2
+	static const uint8_t onAir[6] = { 0x28, 0x70, 0xD0, 0x4F, 0x1F, 0x7E };
+	CHECK(memcmp(field, onAir, 6) == 0, "RC field: as on air");
+	CHECK(dmrFecRcFromField(field, 2, &got) == 0 && got == DMR_RC_CEASE, "RC field: decode");
+	field[2] ^= 0x41;	// two RC bit errors and one EMB bit error
+	field[0] ^= 0x02;
+	CHECK(dmrFecRcFromField(field, 2, &got) == 3 && got == DMR_RC_CEASE, "RC field: errors corrected");
+	CHECK(dmrFecRcFromField(field, 3, &got) < 0, "RC field: another color code");
+	// Not an RC: PI 0 (a null fragment or this channel's LC), another LCSS, a BS voice or data sync
+	uint16_t embs[2] = { dmrFecEmbEncode(2, false, 0), dmrFecEmbEncode(2, true, 1) };
+	for (int k = 0; k < 2; k++)
+	{
+		dmrFecRcField(2, DMR_RC_CEASE, field);
+		field[0] = (uint8_t)(embs[k] >> 8);
+		field[5] = (uint8_t)embs[k];
+		CHECK(dmrFecRcFromField(field, 2, &got) < 0, "RC field: EMB %04X taken", embs[k]);
+	}
+	static const uint8_t syncs[2][6] = { { 0x75, 0x5F, 0xD7, 0xDF, 0x75, 0xF7 }, { 0xDF, 0xF5, 0x7D, 0x75, 0xDF, 0x5D } };
+	for (int k = 0; k < 2; k++)
+	{
+		CHECK(dmrFecRcFromField(syncs[k], 2, &got) < 0, "RC field: sync %d taken", k);
+	}
+}
+
 int main(void)
 {
 	testHamming();
@@ -284,6 +395,7 @@ int main(void)
 	testSlotType();
 	testBptc();
 	testQr1676();
+	testReverseChannel();
 
 	printf("# dmrFecTest %s (%d failures)\n", failures ? "FAILED" : "PASSED", failures);
 	return failures ? 1 : 0;

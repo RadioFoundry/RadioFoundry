@@ -10,11 +10,13 @@
 #include "hal_time.h"
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
+#include "debuglink/debuglink_air.h"
 #include "debuglink/dl_chip.h"
 #include "debuglink/dl_shot.h"
 #include "debuglink/dlog.h"
 #include "hostlink/build_info.h"
 #include "hostlink/hostlink.h"
+#include "hostlink/hostlink_view.h"
 #include "stubentry/stub_entry.h"
 #if CONFIG_HOTSPOT
 #include "hotspot/hotspot.h"
@@ -62,7 +64,6 @@ enum {
 
 static dl_parser_t parser;
 static uint8_t reply[DL_HDR + DL_REPLY_MAX + 2u];
-static radio_view_t view;	// static: too large for the host link task's stack
 static uint32_t last_radio_op_ms;
 static bool radio_op_done;
 static bool reboot_pending;
@@ -122,17 +123,18 @@ static const char *state_name(uint8_t s)
 
 static bool summary_line(uint8_t i, char *buf, uint8_t len)
 {
-	const char *pw = board_power_name(view.power, view.ch.tx_hz);
+	const radio_view_t *v = &hostlink_view;
+	const char *pw = board_power_name(v->power, v->ch.tx_hz);
 	switch (i) {
 	case 0:
-		dl_fmt(buf, len, "radio %s %s ch %u '%s' %u.%05u %s%s", view.ch.mode == RADIO_MODE_DMR ? "DMR" : "FM",
-		       view.vfo ? "VFO" : "MEM", view.channel_number, view.ch.name, (unsigned)(view.ch.rx_hz / 1000000u),
-		       (unsigned)((view.ch.rx_hz % 1000000u) / 10u), state_name((uint8_t)view.state),
-		       view.hotspot ? " HOTSPOT" : "");
+		dl_fmt(buf, len, "radio %s %s ch %u '%s' %u.%05u %s%s",
+		       v->ch.mode == RADIO_MODE_NXDN ? "NXDN" : v->ch.mode == RADIO_MODE_P25 ? "P25" : v->ch.mode == RADIO_MODE_DMR ? "DMR" : "FM", v->vfo ? "VFO" : "MEM", v->channel_number, v->ch.name, (unsigned)(v->ch.rx_hz / 1000000u),
+		       (unsigned)((v->ch.rx_hz % 1000000u) / 10u), state_name((uint8_t)v->state),
+		       v->hotspot ? " HOTSPOT" : "");
 		return true;
 	case 1:
-		dl_fmt(buf, len, "radio rssi %d nz %u sq %u%s pw %s tx %ums", view.rssi_dbm, view.noise, view.squelch,
-		       view.monitor ? " mon" : "", pw, (unsigned)view.tx_elapsed_ms);
+		dl_fmt(buf, len, "radio rssi %d nz %u sq %u%s pw %s tx %ums", v->rssi_dbm, v->noise, v->squelch,
+		       v->monitor ? " mon" : "", pw, (unsigned)v->tx_elapsed_ms);
 		return true;
 	default:
 		return false;
@@ -171,7 +173,7 @@ static size_t cmd_get_diag(const uint8_t *req, uint16_t len, uint8_t *out, size_
 	char line[64];
 	uint8_t i = first;
 
-	radio_get_view(&view);
+	radio_get_view(&hostlink_view);
 	out[0] = DL_ST_OK;
 	put32(out + 1, hal_millis());
 	dl_text_init(&t, (char *)out + 6, cap - 6);
@@ -204,6 +206,8 @@ static size_t cmd_reset(uint8_t *out)
 	beep_reset_stats();
 #endif
 	debuglink_dmr_data_reset();
+	debuglink_p25_reset();
+	debuglink_nxdn_reset();
 	uint32_t now = hal_millis();
 	dlog("debuglink: counters reset");
 	out[0] = DL_ST_OK;
@@ -229,7 +233,7 @@ static size_t cmd_version(uint8_t *out, size_t cap)
 		dl_text_kv_str(&t, "release", RFOUNDRY_RELEASE);
 	}
 	dl_text_kv_str(&t, "board", board.name);
-	dl_text(&t, "features=%s\n", build_features);
+	dl_text(&t, "features=%s%s\n", build_modes_now(), build_features_now());
 	dl_text_kv_str(&t, "codec", debuglink_codec_id(board.vocoder));
 	if (d != NULL) {
 		dl_text(&t, "display=%ux%ux%u\ninset=%u,%u,%u,%u\n", d->width, d->height, d->bpp, d->inset_top,
@@ -242,6 +246,7 @@ static size_t cmd_version(uint8_t *out, size_t cap)
 	}
 	// last: a long list that doesn't fit drops only itself (a host then treats the build as unknown). dl_text, not
 	// dl_text_kv_str: that cuts a value at 39 characters, and a cut off= list would read as complete
+	dl_text(&t, "start=%s\n", build_start_now());
 	dl_text(&t, "preset=%s\n", build_preset);
 	dl_text(&t, "off=%s\n", build_off);	// may be empty: present, it says the build is known in full
 	return 1 + t.len;
@@ -419,12 +424,12 @@ static size_t cmd_get_view(const uint8_t *req, uint16_t len, uint8_t *out, size_
 	if (section >= DL_VIEW_COUNT) {
 		return status_only(out, DL_ST_BAD_ARG);
 	}
-	radio_get_view(&view);
+	radio_get_view(&hostlink_view);
 	out[0] = DL_ST_OK;
 	put32(out + 1, hal_millis());
 	out[5] = (uint8_t)(section + 1u < DL_VIEW_COUNT ? section + 1u : 0xFFu);
 	dl_text_init(&t, (char *)out + 6, cap - 6 - 16);	// room kept for the truncation mark
-	debuglink_view_section(section, &view, &t);
+	debuglink_view_section(section, &hostlink_view, &t);
 	if (t.full) {
 		t.cap += 16;
 		t.full = false;
@@ -652,8 +657,8 @@ static size_t cmd_read_mem(const uint8_t *req, uint16_t len, uint8_t *out, size_
 
 bool debuglink_transmitting(void)
 {
-	radio_get_view(&view);
-	if (view.state == RS_TX) {
+	radio_get_view(&hostlink_view);
+	if (hostlink_view.state == RS_TX) {
 		return true;
 	}
 #if CONFIG_HOTSPOT
@@ -710,6 +715,7 @@ static void reboot_now(void)
 		dlog("debuglink: reboot %u aborted (%u)", reboot_mode, why);
 		return;
 	}
+	settings_flush();	// a change still in its save delay (a mode picked just before) survives the restart
 	if (!board.system->reboot(reboot_mode)) {
 		dlog("debuglink: reboot %u failed (%u)", reboot_mode, DL_REBOOT_ARM_FAILED);
 	}
@@ -847,10 +853,18 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		return debuglink_cmd_rx2(req, len, out, cap);
 	case DL_CMD_IDDB:
 		return debuglink_cmd_iddb(req, len, out, cap);
+	case DL_CMD_T3:
+		return debuglink_cmd_t3(req, len, out, cap);
+	case DL_CMD_CPKV:
+		return debuglink_cmd_cpkv(req, len, out, cap);
 	case DL_CMD_CHIP_REG:
 		return debuglink_cmd_chip_reg(req, len, out, cap);
 	case DL_CMD_HWOPT:
 		return debuglink_cmd_hwopt(req, len, out, cap);
+#if CONFIG_AIR_RAW
+	case DL_CMD_AIR:
+		return debuglink_cmd_air(req, len, out, cap);
+#endif
 	case DL_CMD_CODEPLUG:
 #if CONFIG_CPS_FAST
 		return cps_fast_cmd(req, len, out, cap, hal_millis());
@@ -877,6 +891,7 @@ static size_t side_feed(const uint8_t *buf, size_t len, uint32_t now_ms)
 	debuglink_crash_service();	// a crash test asked for (noreturn); else a no-op
 	debuglink_watchdog_service();	// a watchdog test asked for (ends in a reset); else a no-op
 	debuglink_rx2_service();	// the second SoC's update bridge asked for (noreturn); else a no-op
+	debuglink_keyrun_service();	// the host port's reattach a key run asked for; else a no-op
 	return took;
 }
 

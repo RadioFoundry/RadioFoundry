@@ -20,4 +20,15 @@ static inline uint16_t apc_ramp_level(uint16_t target, uint16_t step, uint16_t s
 	return (uint16_t)(((uint32_t)target * s + 16384u) >> 15);
 }
 
+// A ramp to target that starts at from, a drive under which nothing is on air (a PA loop's dead zone): the steps
+// left of a steps-long ramp from 0, so the part on air keeps the full ramp's rate. At least 1; from at or over the
+// target: the full ramp from 0. The level at step i is *base + apc_ramp_level(*span, i, the returned steps)
+static inline uint16_t apc_ramp_from(uint16_t target, uint16_t from, uint16_t steps, uint16_t *base, uint16_t *span)
+{
+	*base = from < target ? from : 0u;
+	*span = (uint16_t)(target - *base);
+	uint16_t n = target != 0u ? (uint16_t)((uint32_t)steps * *span / target) : 0u;
+	return n != 0u ? n : 1u;
+}
+
 #endif

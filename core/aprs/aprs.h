@@ -228,9 +228,9 @@ bool aprs_host_enabled(void);
 // answer "nothing there", so a caller needs no switch of its own ---
 #if CONFIG_APRS_AFSK
 const char *aprs_path_text(uint8_t path);
-// A storage job (it writes flash; not the radio or UI task): our path into the codeplug's APRS record 1, so the CPS
-// reads what the radio uses. False when there is no such record or the write failed
-bool aprs_path_to_codeplug(void);
+// A storage job (it writes flash; not the radio or UI task): our path and SSID into the codeplug's APRS record 1, so
+// the CPS reads what the radio uses. False when there is no such record or the write failed
+bool aprs_to_codeplug(void);
 // The level an RF transmission keys at: APRS's own setting (aprs_cfg_t.power: n = the board's level n - 1, capped at
 // its highest) or, with none (0), the radio's current level
 uint8_t aprs_tx_power(uint8_t current);
@@ -265,7 +265,7 @@ static inline bool aprs_host_frame(const uint8_t *frame, size_t n, uint32_t now_
 static inline void aprs_host_is_line(const char *line, size_t n, uint32_t now_ms) { (void)line; (void)n; (void)now_ms; }
 static inline size_t aprs_host_output(uint8_t *out, size_t max) { (void)out; (void)max; return 0; }
 static inline const char *aprs_path_text(uint8_t path) { (void)path; return ""; }
-static inline bool aprs_path_to_codeplug(void) { return false; }
+static inline bool aprs_to_codeplug(void) { return false; }
 static inline uint8_t aprs_tx_power(uint8_t current) { return current; }
 static inline bool aprs_rf_pending(void) { return false; }
 static inline bool aprs_can_receive(void) { return false; }

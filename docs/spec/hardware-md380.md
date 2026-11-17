@@ -437,6 +437,11 @@ retunes per burst (`radio_md380.c`):
 The chip receives the other slot as it does when idle, and its bursts go to the stack as heard while sending. On the
 SDR bench, 45 key-ups of 45 got through a repeater whose hang ended around the key-up, against 13 of 15 without it.
 
+The HR_C5000's receive tap is one area, page 2 from 0x30, rewritten per burst received: no CACH, and a voice-layout
+burst's 48-bit sync / EMB / RC field at 0x30-0x35, then the voice bits. A BS's dedicated RC burst lands there too,
+though it has no sync and the chip reports nothing for it: that is how the engine hears a reverse channel cease while
+sending ([dmr-modem.md](dmr-modem.md), reverse channel).
+
 ### 4.10 Codec and audio routing
 
 DMR receive audio plays with the LINEOUT values below (on air, 2026-10-19: our test, not authoritative). This section
@@ -481,6 +486,36 @@ On an MD-380 (UHF, D002.032 codec) against an AT-D878UV on a 70 cm test frequenc
 move: received speech plays clear from the speaker and transmit is clear (one 10 s call: 498 frames, 10 bit errors, 3
 concealed, 0 lost). Why both bits are needed together isn't in the manual (unverified). Not yet checked with it: the buzz after
 a call or after our own transmit, the key beep in DMR and FM, and FM receive.
+
+### 4.11 Air interface (`CONFIG_P25`, `CONFIG_NXDN`)
+
+`board.air` is the shared HR_C5000/HR_C6000 provider (`stm32_hrc_air`, `drivers/modem/hrc_common/hrc6000_air.c`): the
+chip's physical layer mode, with this chip's differences from its chip description
+([modem-hrc6000.md](modem-hrc6000.md) 10.7). The HR_C5000 manual documents the mode (0x10 LayerMode bits 4-3 = 00,
+0x82 bit 0, 36 bytes of physical layer data in page 2). Every fit carries `AIR_FIT_UNTESTED` (`air_verified` is not
+set). `CONFIG_P25`, `CONFIG_P25_TRUNK` and `CONFIG_NXDN` are off on this radio (`BOARD_NOT_WRITTEN`) until receive
+works: a mode that transmits but can't receive isn't offered. Build with them on (`CONFIG_P25=y CONFIG_NXDN=y`) to work
+on it.
+
+| Profile | Receive | Transmit |
+|---|---|---|
+| P25 phase 1 (C4FM), trunking | no: the chip gives no physical layer record (below) | TX RAM (10.3): keys on the radio |
+| NXDN | no | TX RAM (10.3): keys on the radio |
+
+- **Receive.** In an open session, 4:0x10 reads 0x02 and 0x82 stays 0: no record interrupt, `airp.records=0` in the
+  debug link's `air` view. No setting of 0x40, 0x41 or 0x81 tried by CHIP_REG started it (modem-hrc6000.md 10.7).
+- **No soft-modem receive.** NXDN's short sync needs the soft modem on a flat discriminator copy. No FM receive RAM is
+  documented on the HR_C5000, so there is no copy to read from the chip (modem-hrc6000.md 10.6). The discriminator
+  audio on PC3 (ADC1 IN13, section 2.3) is not used: the same line on a sister design is voice band with
+  the sub-audio removed, and a 4-level mode needs the band down to 1/100 of the symbol rate. No `board.baseband`.
+- **Keying.** The session's board mode is DMR, so the PA goes up through the DMR RF switch (`md380_rf_dmr_switch`).
+  The key-up points (TIM7) stop at full power while a continuous transmission runs
+  (`stm32_hrc_dmr_tx_continuous`), and the PA drops only at the switch back to receive, not at the 30 ms burst hold.
+- **Deviation.** The provider scales the channel's 0x45 / 0x46 pair from the 1944 Hz calibration; the pair drives
+  MOD1 (VCO) and MOD2 (TCXO through U603), the same two-point path as DMR.
+- **After close** the slot engine writes the channel's 0x10 again (0x6B, or 0x4F on a repeater channel).
+- **CHIP_REG** (`board.chip_reg`, [debuglink.md](debuglink.md) 3.24): chip 1 is the HR_C5000, pages 1 and 4, for register experiments
+  like the ones above.
 
 ## 5. RF
 
@@ -615,11 +650,84 @@ Roaming reads this RSSI (the IF chain's level on an ADC) as the site signal ([dm
 
 ### 5.6 PA and power control
 
-DAC1 is the APC reference, scaled from the calibration's power rows (11.2). Two levels, 1 W and 5 W. TX is refused
+DAC1 is the APC reference, scaled from the calibration's power rows (11.2), 1 W and 5 W. TX is refused
 without an accepted calibration table (no safe uncalibrated drive is known).
 
-DMR: the PA follows the bursts. The RF TX interrupt keys it (APC_EN); a TIM7 one-shot drops it 30 ms later
- 3.4, and the slot engine's PA-off at the next timeslot interrupt stays as the fallback.
+Five power levels. The values are drafts, to be set with a wattmeter
+([power-calibration.md](../testing/power-calibration.md)); the debug link's `radio tx-drive` keys any drive.
+
+| Level | Name | Drive |
+|---|---|---|
+| 0 | 100 mW | 56.5 % of the 1 W row |
+| 1 | 500 mW | 80.7 % of the 1 W row |
+| 2 | 1 W | the 1 W row |
+| 3 | 2.5 W | 45 % of the way from the 1 W row to the 5 W row (not measured) |
+| 4 | 5 W | the 5 W row |
+
+Levels 0 and 1 come from a drive sweep on the SDR bench (UHF radio, 432 MHz, DMR bursts, relative to the 1 W row's
+drive 1115; the 5 W row is 2119):
+
+| Drive | 300 | 400 | 500 | 600 | 700 | 800 | 950 |
+|---|---|---|---|---|---|---|---|
+| dB | -42.8 | -32.2 | -18.7 | -12.4 | -8.2 | -4.8 | -2.1 |
+
+DMR: the PA follows the bursts, keyed by the key-up rule ([pa-keyup.md](pa-keyup.md)) with constants measured by
+`tools/bench/pa_cal.py` on a UHF radio up to its 2.5 W level and judged by the ramp's shape
+(`tools/bench/pa_shape.py`): dead zone 56.3 % of the anchor, knee 91 µs, slope 1003 µs, window 1650 µs, settle
+506 µs, no approach (`ease_pm` 0). Only the lowest level gets a boost. Over the air on the SDR bench every level
+reaches -3 dB 0.19-0.34 ms before the first symbol and is within 0.4 dB of its power over the first 10 symbols
+(mean), nothing over the floor in the slot before. Overshoot: 0.7-1.1 dB, and 1.7-1.8 dB at drive 972, which that
+drive gives written alone too (the power loop's). The lowest level leaves the floor about 1 ms ahead and stays near
+-28 dB for about 0.1 ms before it rises (the PA just over its turn-on edge, at any boost tried).
+
+Across the 70 cm band, the same radio on its antenna, all five levels: the -3 dB point before the first symbol, the
+overshoot, and the first symbol against the settled level.
+
+| Level | 432 MHz | 445 MHz | 449.9 MHz |
+|---|---|---|---|
+| 100 mW | 0.54 ms, 4.7 dB, +1.9 dB | 0.48 ms, 4.3 dB, +2.3 dB | 0.40 ms, 3.6 dB, +2.3 dB |
+| 500 mW | 0.43 ms, 1.2 dB, +0.4 dB | 0.37 ms, 0.9 dB, +0.5 dB | 0.29 ms, 0.8 dB, +0.5 dB |
+| 1 W | 0.35 ms, 1.0 dB, +0.5 dB | 0.31 ms, 1.1 dB, +0.7 dB | 0.26 ms, 1.1 dB, +0.9 dB |
+| 2.5 W | 0.39 ms, 0.5 dB, +0.2 dB | 0.36 ms, 0.8 dB, +0.4 dB | 0.33 ms, 1.4 dB, +0.7 dB |
+| 5 W | 0.43 ms, 0.4 dB, 0.0 dB | 0.40 ms, 0.6 dB, +0.2 dB | 0.38 ms, 1.2 dB, +0.3 dB |
+
+The 100 mW level's boost overshoots at these frequencies: the boost drive by itself settles 4.3 dB over the level
+(445 MHz), and the 506 µs settle time is too short to fall back from it. The first symbol is about 2 dB high and the
+first 5 symbols are within 0.3 dB (mean). A settle time of 1100 µs takes the overshoot away there (0.2-1.1 dB, first
+symbol -0.5 dB), but with the 1 W row at 972 the level then sags after the boost: 3.4 dB under its power at the first
+symbol with 900 µs, 5 dB under and up to 0.12 ms late with 1100 µs. So the constants stay: this level is early and
+over, never late. Its drive by itself is too slow: at 445 MHz it reaches -3 dB as the first symbol starts.
+
+Key-down at 445 MHz, every level: -3 dB 0.39-0.47 ms after the last symbol's end and 30 dB down by 0.46-0.57 ms,
+nothing over the floor in the slot between two bursts. The power of the levels over 1 W is not measured.
+
+The lowest level's drive is 56.5 % of the 1 W row's, 0 to 3 counts over the dead zone's edge depending on the row
+(2 on the radio measured, its 1 W row 972). At 0 it takes the edge's boost ([pa-keyup.md](pa-keyup.md) 2), within a
+count of the others'.
+
+The VHF image doesn't use these constants: its PA is not measured, and constants that key the UHF PA just in time
+could key a slower one late. It keys every level at its own drive at the key timer's first step, 30 µs after the RF
+TX interrupt (`PA_KEYUP_FIXED`), as the radio keyed before the rule.
+
+The window used to be 1530 µs: the second level's lead was then just past it, so it was boosted and ran 3.6-4.7 dB
+past its power, though written alone at the window's start its own drive is up 0.18 ms before the first symbol,
+0.7 dB over. An approach drive (`ease_pm` 304) capped that boost but kept the levels from 1 W up at the approach
+drive from 2.2 ms ahead: a step 6-9 dB down through the guard, on the air 1.1-1.2 ms before the first symbol. An
+earlier fixed boost for every level overshot the low levels by 7 dB and more. Keyed at the RF TX interrupt, the PA
+was up 1.1-1.6 ms before the first symbol (the interrupt taken as 2.53 ms before the first symbol), and the PA goes
+on with the first drive. On the SDR bench (UHF radio, 432 MHz), every level at its own drive from 1 ms after the
+interrupt, before the rule:
+
+| Level | -3 dB point before the first symbol | First symbol against the settled level | Overshoot |
+|---|---|---|---|
+| 100 mW | 0.13 ms | -0.2 dB | 0.6 dB |
+| 500 mW | 0.47 ms | +0.4 dB | 1.3 dB |
+| 1 W | 0.59 ms | 0.0 dB | 0.5 dB |
+
+The lowest level sets the point: a higher drive comes up sooner. The levels above 1 W are not measured.
+
+A TIM7 timer runs the points from the RF TX interrupt and drops the PA 30 ms after it
+([gotchas.md](gotchas.md) 3.4), and the slot engine's PA-off at the next timeslot interrupt stays as the fallback.
 
 The radio has one synthesizer, so it can't receive while it is set up to transmit. The switch to TX (receiver off,
 the HR_C5000's transmit set, the TX VCO locked, TX_5V up) happens before the first burst, never at it: done in the RF TX
@@ -928,8 +1036,12 @@ second flash chip select on others 13.7. So nothing drives PD8 until the module 
 `gps_md380.c` enables USART3 RX on PD9 at start-up and listens for 5 s. One checksum-valid sentence (any talker, up to
 82 characters plus CR LF; `drivers/gps/nmea_line`) makes the module present: PD8 is then held at the level it already
 had, and every sentence goes to the position service (`position_nmea`, CONFIG_GPS). Nothing heard: the UART is
-switched off and `board.gps_present()` stays false, so `board_has_gps()` hides the GPS features. UART errors are
+switched off and `board_t.gps` reports no module, so `board_has_gps()` hides the GPS features. UART errors are
 counted and cleared in the interrupt, so one framing error never stops reception ( 13.7).
+
+Once heard, the module follows Settings > Location > GPS (`board_t.gps` = `stm32_gps`): off stops USART3
+and drives PD8 to the other level from the one it was found at, on drives it back and restarts USART3 at the same
+rate. PD8 switching the module off is assumed from its role (untested on a G model).
 
 ---
 
@@ -1055,6 +1167,7 @@ Each with how to settle it; the stage numbers are [md380-bringup.md](../testing/
 | 20 | GPS UART pin, baud rate, power pin polarity | Stage 9: on a G model "gps yes" with counts rising; on a non-G model "gps no" and no flash errors |
 | 21 | Codec windows in D002.032 | Located and verified on a host (14.4); stage 7 checks voice on the radio |
 | 22 | Whether the bootloader key can be derived from a firmware file | Done (14.2): derived from D2.32 and checked by its hash |
+| 23 | The HR_C5000's physical layer mode (soft records, correlator pattern address, second TX RAM half) | The checks in 4.11 |
 
 ## 18. Datasheets
 

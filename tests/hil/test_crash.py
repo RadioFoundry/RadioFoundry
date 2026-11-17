@@ -29,7 +29,8 @@ def _crash(radio, kind, wait_s=30.0):
     time.sleep(2.0)
     radio.reconnect(wait_s, "the crash")
     up_after = as_int(radio.view(["link"])["uptime_ms"])
-    assert up_after < up_before, f"the radio didn't restart (uptime {up_before} ms, then {up_after})"
+    # Not `< up_before`: straight after another restart the uptime read before is about as small as the one after
+    assert up_after < up_before + 2000, f"the radio didn't restart (uptime {up_before} ms, then {up_after})"
     return radio.view(["crash"])
 
 

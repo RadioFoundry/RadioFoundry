@@ -8,7 +8,8 @@
 #include <stdbool.h>
 
 // Platform (platform/<soc>/usb.c): clocks, pins, the controller's interrupt priority and its handler calling
-// tud_int_handler(0). Called once, before the device stack starts
+// tud_int_handler(0). Called before the device stack starts, and again when the USB task starts it anew
+// (usb_cdc_stream's reattach): it resets the controller each time
 void usb_port_init(void);
 // Platform: drop (true) or restore (false) the D+ pull-up, so the host sees an unplug and enumerates again
 void usb_port_soft_disconnect(bool disconnect);

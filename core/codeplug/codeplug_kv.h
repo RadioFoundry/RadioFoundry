@@ -21,6 +21,9 @@
 #define CODEPLUG_KEY_TOT_WARN_TONE	0x0004u	// bool: the tone before the TX time-out
 #define CODEPLUG_KEY_BATTERY_TONE	0x0005u	// bool: the low and critical battery tones
 #define CODEPLUG_KEY_TX_DENY_TONE	0x0006u	// bool: the tone when PTT is refused or a transmission cut
+// Tier III systems' own records, key = base + system (docs/spec/dmr-trunking-codeplug.md 5)
+#define CODEPLUG_KEY_T3_POLL	0x0800u		// the short data poll setting and reply, 0x0800-0x08FF
+#define CODEPLUG_KEY_T3_SUPL	0x0900u		// the supplementary user data the radio offers, 0x0900-0x09FF
 
 // Key families (record lists): record n is base + n (docs/spec/channel-modes.md 3). Every range is reserved whole,
 // so a later mode never renumbers
@@ -132,7 +135,7 @@ typedef struct {
 #define CODEPLUG_KV_NONE	0xFFFFu
 void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi);
 // The next entry in range: its key in *key, its value's length (at most max bytes copied to buf); -1 at the end, when
-// the area isn't valid or changed since the walk began
+// the area isn't valid or changed since the walk began. max 0 (buf may be NULL) walks the keys only
 int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max);
 
 // One change of a batch (codeplug_kv_write): set key to len bytes at value, or with len CODEPLUG_KV_REMOVE remove it.

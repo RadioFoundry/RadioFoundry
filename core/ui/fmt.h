@@ -23,6 +23,8 @@ void sb_chr(sbuf_t *b, char c);
 // Unsigned decimal with at least min_digits digits (zero padded)
 void sb_u32(sbuf_t *b, uint32_t v, int min_digits);
 void sb_i32(sbuf_t *b, int32_t v);
+// Upper-case hex, exactly digits digits (a P25 NAC: 293, F7E)
+void sb_hex(sbuf_t *b, uint32_t v, int digits);
 // MHz with 3 decimals, more (up to 5) when the frequency needs them: 146.520, 446.00625
 void sb_freq(sbuf_t *b, uint32_t hz);
 // CTCSS 100.0, DCS D023N / D023I, empty for none

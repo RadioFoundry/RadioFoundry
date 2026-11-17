@@ -76,6 +76,10 @@ CORE_DIRS := core/app core/radio core/ui core/input core/codeplug core/settings 
 ifeq ($(CONFIG_DMR),y)
 CORE_DIRS += core/dmr/call core/dmr/ambe core/dmr/fec
 endif
+# DMR Tier III trunking (the mobile station side): PDUs, system rules, channel plans, the engine
+ifeq ($(CONFIG_DMR_TRUNK),y)
+CORE_DIRS += core/dmr/trunk
+endif
 ifeq ($(CONFIG_HOSTLINK),y)
 CORE_DIRS += core/hostlink
 endif
@@ -97,8 +101,17 @@ endif
 ifeq ($(CONFIG_APRS),y)
 CORE_DIRS += core/aprs
 endif
+ifeq ($(CONFIG_AIR),y)
+CORE_DIRS += core/air core/fec
+endif
 ifeq ($(CONFIG_P25),y)
 CORE_DIRS += core/p25
+endif
+ifeq ($(CONFIG_NXDN),y)
+CORE_DIRS += core/nxdn
+endif
+ifeq ($(CONFIG_MBE),y)
+CORE_DIRS += core/mbe
 endif
 ifeq ($(CONFIG_POSITION),y)
 CORE_DIRS += core/position
@@ -303,8 +316,11 @@ RFOUNDRY_EMPTY :=
 RFOUNDRY_OFF := $(subst $(RFOUNDRY_EMPTY) ,$(strip ,),$(sort $(foreach f,$(filter-out $(BOARD_UNSUPPORTED) $(BOARD_NOT_WRITTEN),$(FEATURES)),\
 	$(if $(call feature_on,$(f)),,$(f)))))
 # The build's preset, VERSION preset=: the release variant (VARIANT, full without one), or custom when a
-# switch is set on the command line (a custom build: the build service sets every one)
+# switch is set on the command line. The build service sets every switch, and passes RFOUNDRY_PRESET=<variant> when
+# they are a variant's (the start language aside), so an update keeps the radio on that variant
 RFOUNDRY_PRESET := $(if $(strip $(foreach v,$(filter CONFIG_%,$(.VARIABLES)),$(filter command line,$(origin $(v))))),custom,$(or $(VARIANT),full))
+$(if $(filter $(RFOUNDRY_PRESET),full custom $(basename $(notdir $(wildcard config/variants/*.mk)))),,\
+	$(error unknown RFOUNDRY_PRESET=$(RFOUNDRY_PRESET): full, custom or a variant))
 
 # Rebuild everything when the compile flags change (feature switches and build values), and the objects that carry
 # the version when it changes. Checked while the Makefile is read, before make looks at any object: the stale objects
@@ -322,7 +338,12 @@ $(shell echo '$(RFOUNDRY_PRESET) $(RFOUNDRY_OFF)' | cmp -s - $(BUILD)/build_info
 	rm -f $(BUILD)/core/hostlink/build_info.o; })
 # The About page's authors and third-party list (tools/gen_about.py), and the objects that include it when it changed
 ABOUT_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -l rfoundry_about.h $(APP_SRC) 2>/dev/null))
-$(shell python3 tools/gen_about.py AUTHORS platform/$(PLATFORM)/THIRD_PARTY $(BUILD)/gen/rfoundry_about.h | grep -q changed \
+# A feature built from third-party code adds its own list
+ABOUT_MORE :=
+ifeq ($(CONFIG_IMBE),y)
+ABOUT_MORE += core/mbe/THIRD_PARTY
+endif
+$(shell python3 tools/gen_about.py AUTHORS platform/$(PLATFORM)/THIRD_PARTY $(BUILD)/gen/rfoundry_about.h $(ABOUT_MORE) | grep -q changed \
 	&& rm -f $(ABOUT_OBJ))
 # The language tables (tools/i18n.py, core/ui/lang/*.po) and the text keys every file that includes i18n.h needs
 # (tr_keys.h, rewritten only when a key changed: the dependency files rebuild those); i18n.o is rebuilt when the tables

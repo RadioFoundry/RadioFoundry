@@ -29,6 +29,8 @@ extern const hal_input_t md380_input;
 extern const hal_radio_t md380_radio;
 extern const hal_power_t md380_power;
 extern const hal_audio_t md380_audio;
+// The debug link's CHIP_REG (board_t.chip_reg): chip 1 the HR_C5000, pages 1 and 4
+bool md380_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write);
 
 // ADC readings (power_md380.c): raw 12-bit averages
 enum { MD380_ADC_VOLUME, MD380_ADC_BATTERY, MD380_ADC_MIC, MD380_ADC_RSSI, MD380_ADC_BUSY, MD380_ADC_TEMP,

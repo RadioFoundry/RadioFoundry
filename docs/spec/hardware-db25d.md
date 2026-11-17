@@ -255,7 +255,7 @@ TX on f (the order the radio's firmware uses; RadioFoundry differs where noted):
 | 3 | 50 us |
 | 4 | Main chip: 38 / 39 = f / 10 Hz (truncated), 37:1D0F, 30:0200, 30:C3FE (RadioFoundry writes the idle word before the frequency, not after). Then the LO chip 30:0000 only. 0x36 stays 0xBF |
 | 5 | The page's TX-on delay for f (1 us UHF, 1000 us VHF on the first unit). There is no other wait. RadioFoundry adds 3 ms (`TX_SETTLE_MS`) for the VCO calibration: no measurement says it can go, and a PA that comes up before the PLL has settled puts a carrier off frequency |
-| 6 | DAC B powered up at 0 (RadioFoundry only; the vendor firmware leaves it on), PA select of the band (UHF PTA26 high, PTB3 low; VHF PTB3 high, PTA26 low), PTA23 low, 200 us, the band's single TX supply (UHF PTA27 high, PTB2 low; VHF PTB2 high, PTA27 low) |
+| 6 | DAC B powered up at 0 (powered only for a transmission), PA select of the band (UHF PTA26 high, PTB3 low; VHF PTB3 high, PTA26 low), PTA23 low, 200 us, the band's single TX supply (UHF PTA27 high, PTB2 low; VHF PTB2 high, PTA27 low). DMR bursts: PTA23 low 200 us before the first drive, the PA select 30 us before it, the TX supply with it (4.5) |
 | 7 | DAC B ramps from 0 to the drive in 180 steps of 4 us |
 
 TX end: the main chip to its RX state on the TX frequency (47:6042, 50:3B18, 70:0, 37:1D0F, 30:0200, 30:BFF1), the page's
@@ -267,6 +267,11 @@ are (0x40 only matters in TX, unverified).
 The ramp is a 180-entry table in the radio's firmware; RadioFoundry uses a smoothstep over the same 180
 steps. `DB25D_TX_DRIVE_PCT` defaults to 100 (the page's value, the PA measured working); the high and low power levels are table
 0x045 and 0x056.
+
+Five power levels: 2 ("L") is table 0x056 and 4 ("H") table 0x045. Levels 0 and 1 are 75 % and 87 % of the low
+table's drive, level 3 is halfway between the tables. Drafts, to be set with a wattmeter
+([power-calibration.md](../testing/power-calibration.md)). On the SDR bench at 445 MHz (DMR bursts, relative to "L",
+drive 999): drive 750 gave -12.9 dB and 600 gave -21.9 dB. Level 1 and level 3 are not measured.
 
 **FM TX tone** (`tx_tone` / `tx_tone_key`: the 1750 Hz burst, roger beep, CW ID, a test tone). Single tone, in TX
 with the main chip at 0xC3FE:
@@ -419,7 +424,7 @@ The inbound bursts lie from -32.5 to -2.5 ms and from +30.0 ms on (about 0.2 ms 
 the page's TX-on delay the PA is within 1 dB at 1.7-2.1 ms (the analog ramp varies from burst to burst; 0.94-1.6 ms
 from the first carrier), so the lead is the shortest 100 us step that has the PA up 0.2 ms ahead of the first symbol:
 `db25d_dmr_rf_tx_lead` = (2.3 ms + the page's TX-on delay - 0.85 ms), rounded up (1.5 ms UHF; 2.5 ms with the VHF
-page's 1000 us, which gives the VHF figures in the table below). At 1.3 ms (a 2.1 ms model) one burst in 114 had the 1 dB point only 0.04 ms ahead. The
+page's 1000 us, which gives the VHF figures in the table below). At 1.3 ms (a 2.1 ms model) one burst in 114 had the 1 dB point only 0.04 ms ahead. AMBE errors don't tell the two leads apart: on the SDR bench, 12 key-ups each gave 0 uncorrectable frames in 3024 at both 1.3 and 1.5 ms (0.002 and 0.0003 corrected bits a frame). The
 ramp's 180 steps of 4 us take 0.72 ms plus the level's arithmetic, which is 32-bit (`core/radio/apc_ramp.h`): a 64-bit
 divide per step made the ramp 0.3 ms longer, and the lead was 1.6 ms with it. The page's TX-on delay counts from the
 RF TX interrupt, and a late interrupt (up to 0.12 ms, a few bursts per key-up) is timed from the frame grid
@@ -431,6 +436,7 @@ SFR).
 | SFR repeater, inbound frames lost per 72 | 10-13 (5 calls) | 0 (8 calls) |
 | SFR repeater, inbound AMBE bits corrected per 72 (first / second / third frame of each burst) | 155-200 (97-117 / 24-40 / 34-58) | 170-194 (98-120 / 22-30 / 48-54) |
 | The same call received without transmitting (TX inhibit, plain receive) | 29-37 | - |
+| The 1.5 ms lead with a RadioFoundry radio as the talker (lowest power, 198 frames a call, 10 calls): frames lost / AMBE bits corrected | - | 18-33 / 341-472 |
 | Our idle bursts: symbol error, sync errors, carrier vs the bench | 0.10, 0, +15..20 Hz | 0.05-0.12, 0, +13 Hz |
 | Plain simplex call (`test_dmr_tx_off_air`): burst on-time, ramps up / down | 32.76-33.27 ms, 1.62 / 1.65 ms, carrier after the call | 29.67-30.12 ms, 1.31-1.54 / 1.02-1.15 ms (5 calls, 1.5 ms lead, the 32-bit ramp), none |
 | The same on the VHF page (2 m, lowest power, 2.5 ms lead) | - | 29.58-30.09 ms, 0.77 / 0.73 ms (52 bursts), none |
@@ -443,6 +449,35 @@ ramp stays under 1.5 ms. The VHF page's key-up ramp is about half as long (0.77 
 UHF only: on 2 m it split each of these calls in two, lost the terminator and corrected 72-142 AMBE bits, while the
 SDR's own decode of the same transmissions found every frame clean, so `test_dmr_tx_off_air`'s bench modem checks fail
 there and its waveform checks are the ones to read.
+
+**Key-up constants** (`radio/pa_keyup.h`, [pa-keyup.md](pa-keyup.md); `tools/bench/pa_cal.py` into a dummy load at
+each band's center, every level):
+
+| Band | dead_pm | knee_us | slope_us | window_us | settle_us | pa_us |
+|---|---|---|---|---|---|---|
+| VHF | 0 | 205 | 261 | 1250 | 300 | with the drive |
+| UHF | 196 | 333 | 117 | 1250 | 0 | with the drive |
+
+No level is boosted on either band: each comes up on its own drive, written 0.4 ms (the top level) to 0.85 ms (the
+lowest) before the first symbol. Measured, every level: the −3 dB point 0.25 to 0.29 ms before the first symbol, no
+overshoot, on the air (within 20 dB) 0.35 to 0.62 ms before it, so nothing before the slot's start.
+
+**PA select per burst.** Selected, the PA passes the carrier before any drive: 15 dB under the lowest UHF level, 31
+dB under the top one, whether the TX supply is on or not. With the select at the TX on sequence's end, 0.4-0.6 ms
+ahead of the drive, every level rose in two steps (a flat step at that level, then the drive's rise) and the lowest
+level was on the air at -15 dB from 0.15 ms before the slot's start. So a DMR burst selects the PA 30 us before its
+first drive and turns the TX supply on with it; PTA23 still goes low 200 us before the supply. Measured into the
+dummy load, every level then rises once from under -57 dB: at 146 MHz its -3 dB point 0.25-0.33 ms before the first
+symbol with 0.2 dB of overshoot, at 445 MHz 0.24-0.29 ms (the lowest level by its edge, below). The carrier is down
+0.40-0.73 ms after the last symbol on both bands.
+
+UHF, the lowest level: the output is within 6 dB 0.4 ms after the drive is written, then gains its last 3 dB over
+milliseconds. More lead buys about 0.15 dB per 0.1 ms at the first symbol (3.6 dB under the settled level with 0.8 ms
+of lead, 2.5 dB with 1.5 ms), and a boost before the level's drive buys nothing: with boosts of 4 to 30 % held for 0.3
+to 1.2 ms the output was back at 3 dB under 0.5 ms after the boost's end. So this level is timed by its edge (6 dB
+under 0.43 ms before the first symbol) and its first symbol is 3.3 to 3.7 dB under the settled level. The two levels
+above it creep the same way by less (2.3 and 1.2 dB under at the first symbol). An earlier set keyed the lowest level
+from a 1.5 ms window with a boost: it was 10 dB under its level at the slot's start, 0.25 ms into the slot before.
 
 Tried and dropped (no change in the inbound counts): keeping the LO chip running through TX, a ramp down 0.45 ms before
 the last symbol (16 bits fewer per 72 frames, our last symbols at reduced power), and shorter waits in the TX on
@@ -1015,9 +1050,10 @@ State on a radio:
 | DMR | `CONFIG_DMR=y` (default on): the shared HR_C7000 glue of the DM-32UV with the main BK4819's digital set (4.5). Receive works on the radio: a bench voice call decodes with every AMBE frame, and a bench SMS arrives (4.5). Speaker audio for DMR not yet heard. Transmit (`DB25D_DMR_TX=1`, default on): the per-burst TX sequence from an RF task (4.5), checked on the SDR bench; `DB25D_DMR_TX=0` builds receive only. Builds clean with every DMR feature, the network ones included (the next rows) |
 | Hotspot | `CONFIG_HOTSPOT=y` (default on): the MMDVM host port on UART1, simplex. The core's hotspot drives the same `hal_dmr_modem_t` as a call (`tx_begin`, `tx_queue`, `tx_end`) and keys through `hal_radio_t.tx()` in DMR mode, so it runs on the per-burst TX path of 4.5 (the `dmrrf` RF task) with nothing added to the board: whole calls and data go out as the host sends them, and a retune (`rx()`) disarms the keying until the hotspot arms it again. A split RX / TX frequency pair works as a call's does (each burst tunes to the TX frequency, then back). Not offered: the split-duplex roles (`CONFIG_HOTSPOT_SPLIT=n`: the driver has no continuous BS outbound, so the core would refuse the role). SFR (`CONFIG_SFR`, on) runs on the burst timing of 4.5: `test_hotspot_sfr.py` on the radio (2026-10-25, a UHF test frequency) passes the mode test; the repeat test passed 1 of 4 runs. A passing run sent the call up and repeated it (24 bursts, 0 of 54 frames lost, about 130 bits corrected, the repeat on the received slot grid); two runs failed the SDR's check for the repeat's LC on TS2, and one sent only 7 of 18 voice frames up. Not chased yet. Checked on the radio against the SDR bench modem (the test frequency, color code 2): GET_VERSION, SET_FREQ, SET_CONFIG, SET_MODE and GET_STATUS answer (status DMR, TS2 space 22); all 13 cases pass (`rf_voice8`, `rf_late`, `rf_long`, `rf_lost`, `rf_b2b`, `rf_csbk`, `rf_data_unconf`, `rf_data_conf` for uplink frames; `net_voice`, `net_voice_ctl`, `net_data`, `net_data_conf`, `net_b2b` for calls sent from the host and heard on air). The radio is back on its channel within 25 s of the last frame |
 | DMR VFO | `CONFIG_VFO_DMR=y` follows the default: the core's DMR VFO (`dmr-voice.md` 2.1; the VFO quick menu's Mode tile switches it FM / DMR). On the radio (2026-10-17, debug link): mode, color code, slot and a group or private target set and kept across leaving the VFO and a restart; on the test frequency, CC 2, TS 1 and the test talkgroup a bench call received with every voice burst (120 voice, 8 headers, 3 terminators), and a 4 s key-up decoded by the bench modem as a group call to the test talkgroup (72 voice bursts, 216 AMBE frames). A record written by an older build keeps the color code its FM VFO stored (often 0) until the user sets one |
+| P25 and NXDN | `CONFIG_P25`, `CONFIG_P25_TRUNK` and `CONFIG_NXDN` (default on): `board.air` and `board.baseband` are the HR_C7000's provider and receive tap ([modem-hrc7000.md](modem-hrc7000.md) 10), as on the DM-32UV; a session runs in DMR with the main BK4819's digital set, and the glue keys the transmitter once for the whole transmission. The radio reports fits for both NXDN rates; the mode switch and settings tests pass on the radio. Receive works on the SDR bench: P25 and NXDN at both rates. Transmit keys once and holds for the whole transmission (the RF-burst task's `b` counters); the SDR bench didn't hear it at the lowest power into the dummy load, FM included, so transmit on air is unconfirmed (the fits say untested) |
 | IP link | `CONFIG_NET_PPP=y` (default on): PPP on the host port's UART1 (`board_t.netif` is `hostlink_ppp_netif`, as on the DM-32UV), and with it `CONFIG_DMR_IP_GATEWAY` and the services on it: UDP compression, DMR confirmed data, TCP (3 connections, `TCP_CONNS`), KISS, HTTP (gzip), rigctl, APRS-IS, mDNS, TFTP, SNMP and the control station. USRP is off (`CONFIG_NET_USRP=n`): its 8 kHz 16-bit PCM is 128 kbit/s plus headers, more than the 115200 baud host port carries, and a heard call started the stream. Checked on the radio with pppd and `tools/rfoundry_ppp.sh`: LCP and IPCP come up, ping 30 ms, 5/5; HTTP 200 (also gzip); rigctl `f` answers the channel frequency over TCP 4532; SNMP `sysName.0` answers; the debug link over UDP answers; 48 HTTP requests in six parallel loops all succeed with no PPP errors and no TCP retransmits (six clients against three connection slots: `tcp.no_slot` counted 7 SYNs that found no slot, and curl retried them); `rfoundry_ppp.sh --stop` sends the LCP Terminate and the debug link answers on the serial port again. Found on the radio: with the USRP stream on, a bench DMR call heard while PPP was up wedged the host link task (`send_rx()` in `core/usbaudio/usrp_net.c` never left its loop, because a frame takes 30 ms to clock out of the UART and holds 20 ms of audio); the radio stopped answering LCP and the debug link until a power cycle. `send_rx()` now gives up after 20 ms of sending per poll (host test `usrpNetTest`). Not checked: mDNS, TFTP, APRS-IS, KISS and the control station; a DMR call heard while PPP is up, after the fix |
 | RAM | Main RAM (above the codec window, 165,424 B) was 139,952 B used with DMR alone and is 150,080 B with the network and hotspot, USRP off (15.3 KB free; 155,704 B with USRP, 9.5 KB free); RAM_LO (52,912 B) went from 19,024 B to 28,584 B used (24 KB free). The network's buffers sit in RAM_LO (`.ram_lo`, as `RFOUNDRY_CPU_RAM` marks them). The RTOS heap is 40 KB, the DM-32UV's, and holds the task stacks. Costs from the ci builds: IP gateway and PPP 15.0 KB main + 6.7 KB RAM_LO; TCP 5.0 KB + 3.4 KB; USRP 5.6 KB; SNMP 3.2 KB; HTTP 2.5 KB; hotspot 2.6 KB + 2.8 KB; roaming 2.2 KB + 0.9 KB; the rest under 1 KB each |
-| GPS | `CAP_GPS`, reported once the module is heard. `platform/hrc7000/gps_hrc.c` (shared with the DM-32UV, [hardware-dm32.md](hardware-dm32.md) 12) powers it in `board_init`, listens 5 s on UART2 for one checksum-valid sentence, feeds every sentence to the APRS position source, and powers it off again when nothing is heard. Once heard, the module is powered only while Settings > Location > GPS is on (`board_t.gps_enable` = `hrc_gps_enable`, applied at start-up and on each change). The diagnostics page line `gps yes` (or `gps no`) `GOOD/BAD bBYTES on|off` (after the storage lines) shows valid and bad sentences, bytes received and whether the module is powered now. Run on the radio 2026-10-17: module heard, `gps yes 171/0 b7735` (171 good, 0 bad sentences); the switch turned it off and on again live, and the setting held across a restart. `b0` with the module fitted would mean the RXD mux (PTA11) or the power level is wrong |
+| GPS | `CAP_GPS`, reported once the module is heard. `platform/hrc7000/gps_hrc.c` (shared with the DM-32UV, [hardware-dm32.md](hardware-dm32.md) 12) powers it in `board_init`, listens 5 s on UART2 for one checksum-valid sentence, feeds every sentence to the APRS position source, and powers it off again when nothing is heard. Once heard, the module is powered only while Settings > Location > GPS is on (`board_t.gps` = `hrc_gps`, applied at start-up and on each change). The diagnostics page line `gps yes` (or `gps no`) `GOOD/BAD bBYTES on|off` (after the storage lines) shows valid and bad sentences, bytes received and whether the module is powered now. Run on the radio 2026-10-17: module heard, `gps yes 171/0 b7735` (171 good, 0 bad sentences); the switch turned it off and on again live, and the setting held across a restart. `b0` with the module fitted would mean the RXD mux (PTA11) or the power level is wrong |
 | SFR | `CONFIG_SFR`, `CONFIG_SFR_DUALPATH_RX` and `CONFIG_SFR_CWID` follow the default (on). Standalone SFR on the SDR bench (2026-10-25, a UHF test frequency, CC 2): `test_sfr_standalone.py` repeater quality (0 inbound frames lost per 72, 170-194 bits), TX inhibit, CW ID and user receive modes pass; dual-path RX receive mode not run on air. Burst timing and measurements: 4.5 |
 | Left off | `CONFIG_APRS_RX` and `CONFIG_APRS_IGATE` (no FM receive PCM), USB and USB network (no data port), broadcast FM (not wired), air band AM (no air band receive), `FONT_XL` and `AUDIO_PROBE` |
 | Older batches (FD6818 main) | Driven from the same image (4.8): the chips are identified at start-up and the diagnostics page shows the batch code. Untested on a radio |

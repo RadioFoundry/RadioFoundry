@@ -58,6 +58,12 @@ uint32_t p25_unit_id_decode(const uint8_t *b, int len, uint32_t dmr_id)
 	return id >= 1u && id <= P25_CP_UNIT_MAX ? id : dmr_id;
 }
 
+uint32_t p25_radio_unit_id(uint32_t dmr_id)
+{
+	uint8_t b[8];
+	return p25_unit_id_decode(b, codeplug_mode_settings(CODEPLUG_KIND_P25, b, sizeof b), dmr_id);
+}
+
 // Our unit ID: the channel's (the record's own ID), else own (a system's, 0 = none), else the radio-wide P25 one, else the
 // DMR ID
 static uint32_t unit_id(const channel_t *ch, uint32_t own)
@@ -68,8 +74,7 @@ static uint32_t unit_id(const channel_t *ch, uint32_t own)
 	if (own >= 1u && own <= P25_CP_UNIT_MAX) {
 		return own;
 	}
-	uint8_t b[8];
-	return p25_unit_id_decode(b, codeplug_mode_settings(CODEPLUG_KIND_P25, b, sizeof b), codeplug_dmr_id());
+	return p25_radio_unit_id(codeplug_dmr_id());
 }
 
 // The talk target from the record's contact (2): a group, a unit, all call; none = talk group 1
@@ -96,22 +101,51 @@ static void talk_target(const channel_t *ch, uint32_t *target, bool *unit)
 	}
 }
 
-bool p25_conv_load(uint16_t number, const channel_t *ch, p25_conv_cfg_t *out)
+bool p25_conv_params(uint16_t number, const channel_t *ch, p25_conv_t *out)
 {
 	uint8_t b[P25_CP_CONV_LEN + 8u + CODEPLUG_TAG_HEAD_MAX];
+	const int cap = (int)(sizeof b - CODEPLUG_TAG_HEAD_MAX);
 	if (ch->kind != CODEPLUG_KIND_P25) {
 		return false;
 	}
-	int len = codeplug_tag_params(number, ch, b, (uint16_t)(sizeof b - CODEPLUG_TAG_HEAD_MAX));
+	int len = codeplug_tag_params(number, ch, b, (uint16_t)cap);
 	if (len < 0) {
 		return false;
 	}
-	p25_conv_decode(b, len < (int)(sizeof b - CODEPLUG_TAG_HEAD_MAX) ? len : (int)(sizeof b - CODEPLUG_TAG_HEAD_MAX),
-			&out->conv);
+	p25_conv_decode(b, len < cap ? len : cap, out);
+	return true;
+}
+
+bool p25_conv_load(uint16_t number, const channel_t *ch, p25_conv_cfg_t *out)
+{
+	if (!p25_conv_params(number, ch, &out->conv)) {
+		return false;
+	}
 	out->unit_id = unit_id(ch, 0u);
 	talk_target(ch, &out->target, &out->target_unit);
+	// Talkaround (2): the record's direct mode turns it on; clear, it is on where RX and TX are one frequency
 	out->talkaround = ch->rx_hz == ch->tx_hz || ch->dmo;
 	return true;
+}
+
+bool p25_conv_save(uint16_t number, const channel_t *ch, const p25_conv_t *conv)
+{
+	channel_t c = *ch;
+	uint8_t blk[P25_CP_CONV_LEN];
+	// A channel of the kind already keeps the system it names
+	uint8_t system = ch->kind == CODEPLUG_KIND_P25 ? ch->system : CODEPLUG_SYSTEM_NONE;
+	codeplug_tag_t t = { .kind = CODEPLUG_KIND_P25, .system = system, .flags = ch->rx_only ? 0u : CODEPLUG_TAG_TX };
+	// The safe stand-in: DMR, receive only (the tag carries transmit allowed). Under a tag that says the base record
+	// is a channel of its own, codeplug_set_channel keeps that channel's mode instead
+	c.kind = CODEPLUG_KIND_P25;
+	c.system = system;
+	c.mode = RADIO_MODE_DMR;
+	c.rx_only = true;
+	p25_conv_encode(conv, blk);
+	// A tag of the kind that followed the record keeps its fallback, its other flags and what it stores after this
+	// block (an editor's or a later firmware's); else a new one
+	return codeplug_set_channel(number, &c) && (codeplug_tag_rewrite(number, c.name, &t, blk, sizeof blk) ||
+						     codeplug_tag_write(number, c.name, &t, blk, sizeof blk));
 }
 
 #if CONFIG_P25_TRUNK
@@ -125,7 +159,7 @@ void p25_tsys_decode(const uint8_t *b, int len, p25_tsys_t *out)
 	uint16_t s = rd16(b, len, 3);
 	out->sysid = s == P25_CP_SYSID_ANY ? s : (uint16_t)(s & 0x0FFFu);
 	out->cc_nac = nac_field(rd16(b, len, 5), P25_NAC_ANY);
-	out->options = len >= 8 ? (uint8_t)(b[7] & (P25_TSYS_SKIP_ENC | P25_TSYS_PLAN_ONLY)) : 0u;
+	out->options = len >= 8 ? (uint8_t)(b[7] & (P25_TSYS_SKIP_ENC | P25_TSYS_PLAN_ONLY | P25_TSYS_NO_REG)) : 0u;
 	out->hold_s = len >= 9 ? b[8] : 0u;
 	out->roam_dbm = len >= 10 ? (int8_t)b[9] : 0;
 }
