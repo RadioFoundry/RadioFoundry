@@ -141,9 +141,9 @@ APRS or not:
 | `pos.src` | none, gps, host, fixed |
 | `pos.lat`, `pos.lon`, `pos.err_m`, `pos.age_s` | the position a DMR report would carry now |
 | `pos.gps_heard`, `pos.gps_fix`, `pos.gps_sats` | the board GPS (`CONFIG_GPS`) |
-| `pos.gps_present`, `pos.gps_on` | the module was heard; it is powered and listened to now (`board_t.gps`, `CONFIG_GPS`) |
-| `pos.gps_nmea`, `pos.gps_baud` | valid / bad sentences / bytes received; the rate listened at; 0 while off, once given up, or unknown |
-| `set.aprs_pos_src`, `set.aprs_dmr_gps`, `set.pos_ambiguity`, `set.pos_lat`, `set.pos_lon` | the settings (the settings part of the view) |
+| `set.aprs_pos_src`, `set.aprs_dmr_gps`, `set.pos_ambiguity`, `set.pos_lat`, `set.pos_lon` | the settings (the settings part of the view, `aprs_set`) |
+| `pos.gps_present`, `pos.gps_on` | in `aprs_set`, after the settings (the `aprs` part is full on radios with APRS receive): the module was heard; it is powered and listened to now (`board_t.gps`, `CONFIG_GPS`) |
+| `pos.gps_nmea`, `pos.gps_baud` | in `aprs_set`: valid / bad sentences / bytes received; the rate listened at; 0 while off, once given up, or unknown |
 
 The APRS command's SET fields for the fixed latitude and longitude, the source, "Send in DMR calls" and the
 ambiguity, and its NMEA operation (host half), are answered by the position service, so they work without APRS.

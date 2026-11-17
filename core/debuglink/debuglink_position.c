@@ -30,6 +30,15 @@ void debuglink_view_position(uint8_t part, dl_text_t *t)
 		dl_text(t, "set.aprs_pos_src=%u\nset.aprs_dmr_gps=%u\nset.pos_ambiguity=%u\n", c.pref, c.dmr_gps, c.ambiguity);
 		deg(t, "set.pos_lat", c.fix_lat);
 		deg(t, "set.pos_lon", c.fix_lon);
+#if CONFIG_GPS
+		// The board's receiver (board_t.gps): the module heard, powered and listened to now, its counters and rate.
+		// Here, not with the pos.gps_* fix keys: with them the aprs section outgrew a reply on radios with APRS
+		// receive (truncated=1 before pos.gps_present)
+		uint32_t good, bad, bytes, baud;
+		board_gps_counts(&good, &bad, &bytes, &baud);
+		dl_text(t, "pos.gps_present=%u\npos.gps_on=%u\npos.gps_nmea=%u/%u/%u\npos.gps_baud=%u\n", board_has_gps(),
+			board_gps_running(), (unsigned)good, (unsigned)bad, (unsigned)bytes, (unsigned)baud);
+#endif
 		return;
 	}
 	position_fix_t f;
@@ -46,11 +55,6 @@ void debuglink_view_position(uint8_t part, dl_text_t *t)
 	position_gps_t g;
 	bool heard = position_gps(&g, now_ms);
 	dl_text(t, "pos.gps_heard=%u\npos.gps_fix=%u\npos.gps_sats=%u\n", heard, heard && g.fix, heard ? g.sats : 0u);
-	// The board's receiver (board_t.gps): the module heard, powered and listened to now, its counters and rate
-	uint32_t good, bad, bytes, baud;
-	board_gps_counts(&good, &bad, &bytes, &baud);
-	dl_text(t, "pos.gps_present=%u\npos.gps_on=%u\npos.gps_nmea=%u/%u/%u\npos.gps_baud=%u\n", board_has_gps(),
-		board_gps_running(), (unsigned)good, (unsigned)bad, (unsigned)bytes, (unsigned)baud);
 #endif
 }
 

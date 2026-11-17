@@ -28,7 +28,10 @@ LAT, LON = 33.7490, -84.3880
 
 def _pos(radio):
     v = radio.view(["aprs"])
-    v.update(radio.view(["aprs_set"]))
+    s = radio.view(["aprs_set"])
+    # A section that outgrows a reply drops its last keys: the board GPS keys once went missing that way
+    assert v.get("truncated") != "1" and s.get("truncated") != "1", "aprs or aprs_set outgrew a reply"
+    v.update(s)
     if v.get("pos.built") != "1":
         skip("not_built", "no position service (needs CONFIG_GPS, CONFIG_APRS, CONFIG_DMR_LRRP or CONFIG_DMR_GPS)")
     return v
@@ -139,16 +142,18 @@ def test_gps_power_switch(radio):
     was_on = v["pos.gps_on"] == "1"
     try:
         radio.link.setting("gps", 0)
-        v = radio.wait_for(lambda x: x.get("pos.gps_on") == "0", timeout=2.0, sections=("aprs",), what="GPS off")
+        v = radio.wait_for(lambda x: x.get("pos.gps_on") == "0", timeout=2.0, sections=("aprs", "aprs_set"),
+                           what="GPS off")
         assert v["pos.gps_heard"] == "0", v
         b0 = _nmea(v)[2]
         time.sleep(3)
         assert _nmea(_pos(radio))[2] == b0, "bytes received with the GPS off"
         radio.link.setting("gps", 1)
         v = radio.wait_for(lambda x: x.get("pos.gps_on") == "1" and _nmea(x)[0] > 0 and _nmea(x)[2] > b0,
-                           timeout=10.0, sections=("aprs",), what="sentences again with the GPS on")
+                           timeout=10.0, sections=("aprs", "aprs_set"), what="sentences again with the GPS on")
         good = _nmea(v)[0]
-        radio.wait_for(lambda x: _nmea(x)[0] > good, timeout=5.0, sections=("aprs",), what="new valid sentences")
+        radio.wait_for(lambda x: _nmea(x)[0] > good, timeout=5.0, sections=("aprs", "aprs_set"),
+                       what="new valid sentences")
     finally:
         radio.link.setting("gps", 1 if was_on else 0)
 
