@@ -11,6 +11,9 @@
 #include "cjk_font.h"	// CJK_FONT_H: the line height a CJK language needs (CONFIG_LANG_ZH)
 #include "config.h"
 #include "codeplug/codeplug_modes.h"	// channel kinds: the mode word
+#if CONFIG_DMR_TRUNK
+#include "dmr/trunk/t3_ms.h"	// the engine's states, for the trunked status words
+#endif
 
 ui_layout_t ui_layout;
 static const font_t *font_largest;	// the large text setting's font (large_font)
@@ -1022,6 +1025,10 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 }
 
 // Chips: tone, bandwidth, power, squelch. A dot marks a temporary change
+#if CONFIG_DMR_TRUNK
+static void draw_chips_t3(const radio_view_t *v);
+#endif
+
 static void draw_chips(const radio_view_t *v, const ui_state_t *s)
 {
 	const ui_layout_t *L = &ui_layout;
@@ -1031,6 +1038,12 @@ static void draw_chips(const radio_view_t *v, const ui_state_t *s)
 	sbuf_t b;
 	int x = 0, y = L->chips_y;
 
+#if CONFIG_DMR_TRUNK
+	if (v->t3.sys != 0) {
+		draw_chips_t3(v);
+		return;
+	}
+#endif
 #if CONFIG_DMR
 	if (v->ch.mode == RADIO_MODE_DMR) {
 		draw_chips_dmr(v, s);
@@ -1145,6 +1158,7 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 		break;
 	}
 	case TXDENY_TIMEOUT: sb_str(&b, TR(DENY_WHY_TIMEOUT, "TX time-out reached")); break;
+	case TXDENY_CEASED: sb_str(&b, TR(DENY_WHY_SYSTEM_STOPPED, "System stopped TX")); break;
 	case TXDENY_NO_FREQ: sb_str(&b, TR(DENY_WHY_NO_TX_FREQ, "No TX frequency set")); break;
 	case TXDENY_MODE: sb_str(&b, TR(WHY_MODE_NOT_IN_BUILD, "Mode: not in this build")); break;
 	case TXDENY_NO_CODEC: sb_str(&b, TR(WHY_NO_CODEC, "No codec: voice off")); break;
@@ -1169,7 +1183,8 @@ static const char *deny_action(const radio_view_t *v)
 	switch (v->tx_deny) {
 	case TXDENY_BAND: return v->vfo ? TR(DENY_FIX_TUNE_INTO_BAND, "Tune into a band, then PTT") :
 		TR(DENY_FIX_PICK_ANOTHER_CHANNEL, "Pick another channel");
-	case TXDENY_TIMEOUT: return TR(DENY_FIX_RELEASE_PTT, "Release PTT to talk again");
+	case TXDENY_TIMEOUT:
+	case TXDENY_CEASED: return TR(DENY_FIX_RELEASE_PTT, "Release PTT to talk again");
 	case TXDENY_NO_CODEC: return TR(DENY_FIX_ADD_CODEC, "Add codec with rfoundry");
 	case TXDENY_BUSY: return TR(DENY_FIX_WAIT_FOR_CALL_END, "Wait for the call to end");
 	case TXDENY_NO_REPEATER: return TR(DENY_FIX_CHECK_CC_AND_RANGE, "Check CC and range");
@@ -1196,6 +1211,22 @@ static bool sending_data(const radio_view_t *v)
 	(void)v;
 	return false;
 #endif
+}
+
+// Outside the DMR block: the event banners call it in every build
+bool ui_sb_gw_caller(sbuf_t *b, uint32_t src)
+{
+#if CONFIG_DMR_TRUNK_GW
+	char num[24];
+	if (ui_svc_t3_cli(src, num, sizeof num)) {
+		sb_str(b, num[0] != '\0' ? num : TR(TRUNK_WORD_PHONE_LINE, "Phone line"));
+		return true;
+	}
+#else
+	(void)b;
+	(void)src;
+#endif
+	return false;
 }
 
 // --- DMR (docs/ux/wireframes: Home DMR, Receiving, Transmitting) ---
@@ -1345,6 +1376,8 @@ static void sb_talk_alts(sbuf_t *b, uint32_t id, bool private_call, const char *
 // The caller as the big line: the contact name, else the ID
 static void sb_caller(sbuf_t *b, const radio_dmr_call_t *c)
 {
+	if (c->src_name[0] == '\0' && ui_sb_gw_caller(b, c->src))
+		return;
 	if (c->src_name[0] != '\0')
 		sb_str(b, c->src_name);
 	else
@@ -1429,6 +1462,58 @@ static void draw_talk_dmr(const radio_view_t *v, bool label_first)
 	gfx_text_fit(f, buf, w - x, fit, sizeof fit);
 	gfx_text(f, x, L->talk_y, fit, c);
 }
+
+#if CONFIG_DMR_TRUNK
+// What the radio is doing on the trunked channel's system (dmr-trunking.md 12.4); *warn: something the user should see
+static const char *t3_state_word(const radio_view_t *v, bool *warn)
+{
+	*warn = true;
+	if (v->t3.unavail)
+		return TR(TRUNK_WHY_SYSTEM_NOT_SET_UP, "System not set up");
+	if (v->t3.fallback != 0)	// on the system's fallback channel, or looking for the system from it
+		return TR(TRUNK_STATE_FALLBACK, "Fallback");
+	if (!v->t3.on || v->t3.state == T3_HUNT)
+		return TR(TRUNK_STATE_SEARCHING, "Searching");
+	if (v->t3.state == T3_FOLLOW) {
+		*warn = false;
+		return TR(TRUNK_STATE_IN_CALL, "In call");
+	}
+	if (v->t3.reg == T3_REG_DENIED)
+		return TR(TRUNK_STATE_REFUSED, "Refused");
+	if (v->t3.reg == T3_REG_NEEDED || v->t3.reg == T3_REG_UNKNOWN)
+		return TR(TRUNK_STATE_REGISTERING, "Registering");
+	*warn = false;
+	return TR(TRUNK_STATE_READY, "Ready");
+}
+
+// Chips on a trunked channel: the system's name, what the radio does on it, power. Slot and color code are the
+// site's, not the channel's. On the fallback channel the name and frequency rows are that channel's
+static void draw_chips_t3(const radio_view_t *v)
+{
+	const ui_layout_t *L = &ui_layout;
+	const font_t *f = L->small;
+	static char name[CODEPLUG_NAME_LEN + 1];
+	static uint8_t named;		// the system name holds (n + 1; 0 none): read once, not every frame
+	if (named != v->t3.sys) {
+		named = v->t3.sys;
+		if (!ui_svc_t3_name((uint8_t)(v->t3.sys - 1u), name) || name[0] == '\0')
+			str_copy(name, sizeof name, TR(TRUNK_WORD_SYSTEM, "System"));
+	}
+	bool warn;
+	const char *st = t3_state_word(v, &warn);
+	const char *pw = ui_power_name(v->power, v->ch.tx_hz);
+	int room = gfx_width() - gfx_text_width(f, st) - gfx_text_width(f, pw) - 2 * f->w;
+	char fit[CODEPLUG_NAME_LEN + 4];
+	int x = 0;
+	if (room > 0) {
+		gfx_text_fit(f, name, room, fit, sizeof fit);
+		x = gfx_text(f, x, L->chips_y, fit, ui_col.fg) + f->w;
+	}
+	x = gfx_text(f, x, L->chips_y, st, warn ? ui_col.warn : ui_col.fg) + f->w;
+	if (x + gfx_text_width(f, pw) <= gfx_width())
+		gfx_text(f, x, L->chips_y, pw, ui_col.fg);
+}
+#endif
 
 // Chips: timeslot, color code, repeater / direct, roaming, power, hear all
 static void draw_chips_dmr(const radio_view_t *v, const ui_state_t *s)

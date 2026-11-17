@@ -212,6 +212,12 @@ HRC_FLASHFUNC static void dmr_task(void *arg)
 				cb(&ev, stack_ctx);
 			}
 		}
+		if (hrc7000_dmr_short_lc(&eng, &ev)) {
+			dmr_event_cb_t cb = stack_cb;
+			if (cb != NULL) {
+				cb(&ev, stack_ctx);
+			}
+		}
 	}
 }
 
@@ -328,6 +334,14 @@ static bool tx_begin(dmr_timing_t timing, int8_t ts, dmr_access_t access)
 static bool tx_queue(const dmr_tx_burst_t *b) { return hrc7000_dmr_tx_queue(&eng, b); }
 static uint8_t tx_queue_space(void) { return hrc7000_dmr_tx_queue_space(&eng); }
 static void tx_listen(void) { hrc7000_dmr_tx_listen(&eng); }
+HRC_FLASHFUNC static bool tx_listen_split(void)
+{
+	if (brd == NULL || !brd->listen_split) {
+		return false;
+	}
+	tx_listen();
+	return true;
+}
 static int8_t tx_fill(const dmr_tx_burst_t *b) { return hrc7000_dmr_tx_fill(&eng, b); }
 static void tx_end(void) { hrc7000_dmr_tx_end(&eng); }
 static void tx_abort(void) { hrc7000_dmr_tx_abort(&eng); }
@@ -398,8 +412,11 @@ static bool bs_keyed(void) { return hrc7000_bs_keyed(&eng); }
 const hal_dmr_modem_t hrc_dmr = {
 	.start = start, .stop = stop, .configure = configure, .rx_restart = rx_restart, .rx_lock_slot = rx_lock_slot,
 	.tx_begin = tx_begin, .tx_queue = tx_queue, .tx_queue_space = tx_queue_space, .tx_listen = tx_listen, .tx_end = tx_end,
+	.tx_listen_split = tx_listen_split,
 	.tx_abort = tx_abort, .set_embedded_lc = set_embedded_lc, .set_cc_filter = set_cc_filter,
 	.is_transmitting = is_transmitting, .tx_fill = tx_fill, .health = health,
+	.tx_rate34_bad = true,	// modem-hrc7000.md 6.4
+	.tx_listen_gaps = true,	// modem-hrc7000.md 5.4
 	SPLIT_OPS
 };
 

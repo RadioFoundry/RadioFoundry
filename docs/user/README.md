@@ -30,7 +30,7 @@ The chapters below name the command line tools as alternatives.
 6. [The Home screen](06-home-screen.md): what each region shows, receiving, transmitting
 7. [Channels, zones and the VFO](07-channels-zones-vfo.md)
 8. [FM](08-fm.md): squelch, monitor, tones, bandwidth, VOX, touch tones
-9. [DMR](09-dmr.md): talk targets, replying, Recent, contacts, timeslot and color code, privacy, roaming
+9. [DMR](09-dmr.md): talk targets, replying, Recent, contacts, timeslot and color code, privacy, roaming, trunked systems
 10. [Messages, call alert and radio check](10-messages-and-signaling.md)
 11. [Emergency](11-emergency.md)
 12. [Scan and dual watch](12-scan.md)

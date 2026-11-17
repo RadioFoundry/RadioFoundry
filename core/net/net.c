@@ -24,12 +24,12 @@ static bool was_up;
 #define IP_PROTO_TCP	6
 
 #if CONFIG_NET_HTTP || CONFIG_NET_RIGCTL
-static radio_view_t view;
+#include "hostlink/hostlink_view.h"
 
 const radio_view_t *net_radio_view(void)
 {
-	radio_get_view(&view);
-	return &view;
+	radio_get_view(&hostlink_view);
+	return &hostlink_view;
 }
 #endif
 

@@ -437,6 +437,11 @@ retunes per burst (`radio_md380.c`):
 The chip receives the other slot as it does when idle, and its bursts go to the stack as heard while sending. On the
 SDR bench, 45 key-ups of 45 got through a repeater whose hang ended around the key-up, against 13 of 15 without it.
 
+The HR_C5000's receive tap is one area, page 2 from 0x30, rewritten per burst received: no CACH, and a voice-layout
+burst's 48-bit sync / EMB / RC field at 0x30-0x35, then the voice bits. A BS's dedicated RC burst lands there too,
+though it has no sync and the chip reports nothing for it: that is how the engine hears a reverse channel cease while
+sending ([dmr-modem.md](dmr-modem.md), reverse channel).
+
 ### 4.10 Codec and audio routing
 
 DMR receive audio plays with the LINEOUT values below (on air, 2026-10-19: our test, not authoritative). This section
@@ -1001,8 +1006,12 @@ second flash chip select on others 13.7. So nothing drives PD8 until the module 
 `gps_md380.c` enables USART3 RX on PD9 at start-up and listens for 5 s. One checksum-valid sentence (any talker, up to
 82 characters plus CR LF; `drivers/gps/nmea_line`) makes the module present: PD8 is then held at the level it already
 had, and every sentence goes to the position service (`position_nmea`, CONFIG_GPS). Nothing heard: the UART is
-switched off and `board.gps_present()` stays false, so `board_has_gps()` hides the GPS features. UART errors are
+switched off and `board_t.gps` reports no module, so `board_has_gps()` hides the GPS features. UART errors are
 counted and cleared in the interrupt, so one framing error never stops reception ( 13.7).
+
+Once heard, the module follows Settings > Location > GPS (`board_t.gps` = `stm32_gps`): off stops USART3
+and drives PD8 to the other level from the one it was found at, on drives it back and restarts USART3 at the same
+rate. PD8 switching the module off is assumed from its role (untested on a G model).
 
 ---
 

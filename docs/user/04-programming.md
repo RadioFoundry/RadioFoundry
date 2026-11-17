@@ -204,6 +204,7 @@ TFTP (USB network mode) and other CPS programs use the older format.
 | Zones | Name and channel list. Without zones, the radio shows one zone with all channels |
 | Contacts (up to 1024) | Name, DMR ID or talkgroup, private or group, timeslot override |
 | RX group lists | The talkgroups each channel listens to |
+| Trunked systems (up to 8) | Every field of the **Systems** tab, and which channels are trunked |
 | DMR ID database | Names for DMR IDs that aren't contacts, shown on the receive screen |
 | VFO A | Frequency and settings of the VFO, read after the next restart |
 | Boot text | The two lines on the boot screen |

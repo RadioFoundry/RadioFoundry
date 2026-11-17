@@ -219,8 +219,9 @@ manual are this size.
 ### What the DM-1701 lacks
 
 - No GPS from the factory. LRRP location requests get "no fix". APRS positions come from a computer or a fixed
-  position. If you fit a GPS module yourself, wire its NMEA output to PA10 (STM32 pin 69). The radio finds it at
-  start-up ([hardware-dm1701.md 14.2](../spec/hardware-dm1701.md#142-gps-module)).
+  position. If you fit a GPS module yourself, wire its NMEA output to PA10 (STM32 pin 69) and its power enable, if it
+  has one, to PA9. The radio finds it at start-up ([hardware-dm1701.md 14.2](../spec/hardware-dm1701.md#142-gps-module))
+  and powers it only while **Settings > Location > GPS** is on.
 - APRS receive needs the squelch open: the radio hears packets strong enough to open the squelch, not weaker ones.
 - No APRS iGate (passing heard packets to APRS-IS): it doesn't fit in the flash yet.
 - No vibration motor: **Settings > Sound > Vibrate** isn't in the image.
@@ -321,7 +322,8 @@ A 160 x 128 color screen, every row visible. The controller type is unconfirmed.
 - Audio linking (USRP, [USB network](15-usb-network.md#linking-audio-allstarlink-and-dvswitch)) carries DMR only: the
   FM transmit path from the processor isn't written.
 - GPS only on the "G" models. The radio listens for the GPS module for 5 s at start-up and hides the GPS features if
-  it hears nothing. **Settings > Location > GPS** off only stops APRS using the fix; the module stays powered.
+  it hears nothing. Once heard, the module is powered only while **Settings > Location > GPS** is on, which takes
+  effect at once.
 - No vibration motor: **Settings > Sound > Vibrate** isn't in the image.
 - Some early VHF radios may have a 1 MB memory chip instead of 16 MB (not yet confirmed on a radio). RadioFoundry
   can't store a codeplug on it: settings are lost when the radio is turned off, and the Codeplug Editor and the
@@ -382,7 +384,8 @@ A 160 x 128 color screen, every row visible.
 
 - No vibration motor: **Settings > Sound > Vibrate** isn't in the image.
 - GPS only on the G models. The radio powers the module for 5 s at start-up and hides the GPS features if it hears
-  nothing; then the module is switched off again.
+  nothing; then the module is switched off again. Once heard, the module is powered only while **Settings > Location >
+  GPS** is on, which takes effect at once.
 - Nothing is checked on a radio yet: treat every function as untested.
 
 ## Baofeng DM-32UV

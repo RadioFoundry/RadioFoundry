@@ -50,7 +50,7 @@ void ui_crit_exit(void);
 ui_state_t ui_st;
 ui_target_t ui_target;
 static const radio_view_t *view;
-static radio_view_t view_none;		// until the first tick
+static const radio_view_t view_none;	// until the first tick (const: flash, not RAM)
 static ui_frame_t stack[UI_STACK_MAX];
 static uint8_t sp;			// stack[sp] is on screen; stack[0] is Home
 static uint32_t toast_until, entry_last, last_refresh, now;
@@ -611,7 +611,7 @@ static void station(sbuf_t *b, const ui_event_t *ev)
 	name_mark = b->p;
 	if (ev->name[0])
 		sb_str(b, ev->name);
-	else
+	else if (!ui_sb_gw_caller(b, ev->id))
 		sb_u32(b, ev->id, 1);
 }
 
@@ -753,16 +753,22 @@ static void handle_event(const ui_event_t *ev)
 		break;
 	case UI_EV_ZONE_IMPORTED:
 		if (ev->ok) {
-			char text[32];
+			char text[48];
 			sbuf_t tb;
 			sb_init(&tb, text, sizeof text);
 			sb_str(&b, ev->id ? TR(SHARE_BANNER_UPDATED, "Updated ") :
 				TR(SHARE_BANNER_IMPORTED, "Imported "));
 			sb_str(&b, ev->name);
-			sb_u32(&tb, ev->index, 1);
-			sb_str(&tb, ev->index == 1 ? TR(SHARE_BANNER_CHANNEL_RX_ONLY, " channel, receive only") :
-				TR(SHARE_BANNER_CHANNELS_RX_ONLY, " channels, receive only"));
-			banner(UI_BANNER_RESULT, false, 0, title, text);
+			if (ev->ms != 0) {
+				// Channels whose system isn't set up came in locked out (zone-share.md 5.5)
+				sb_u32(&tb, ev->ms, 1);
+				sb_str(&tb, TR(SHARE_BANNER_SYSTEM_MISSING, " trunked: system not set up"));
+			} else {
+				sb_u32(&tb, ev->index, 1);
+				sb_str(&tb, ev->index == 1 ? TR(SHARE_BANNER_CHANNEL_RX_ONLY, " channel, receive only") :
+					TR(SHARE_BANNER_CHANNELS_RX_ONLY, " channels, receive only"));
+			}
+			banner(UI_BANNER_RESULT, ev->ms != 0, 0, title, text);
 		} else {
 			banner(UI_BANNER_RESULT, true, 0, TR(SHARE_BANNER_NOT_IMPORTED, "Zone not imported"),
 				tr(ev->why));
@@ -2387,6 +2393,30 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 #endif
 #if CONFIG_CRASH_SCREEN
 	ui_crash_tick(now_ms);
+#endif
+#if CONFIG_DMR_TRUNK
+	// Back on the trunked system from its fallback channel (dmr-trunking.md 12.5): the radio beeped, the toast names it
+	static uint32_t backs_seen;
+	if (v->t3.backs != backs_seen) {
+		bool back = v->t3.backs > backs_seen && v->t3.sys != 0;
+		backs_seen = v->t3.backs;
+		char name[CODEPLUG_NAME_LEN + 1];
+		if (back && ui_svc_t3_name((uint8_t)(v->t3.sys - 1u), name)) {
+			static char msg[CODEPLUG_NAME_LEN + 32];	// the toast keeps the pointer
+			sbuf_t b;
+			sb_init(&b, msg, sizeof msg);
+			sb_str(&b, TR(TRUNK_TOAST_BACK_ON, "Back on "));
+			sb_str(&b, name);
+			ui_toast(msg);
+		}
+	}
+	// A short data poll from the menus that got no answer (dmr-trunking.md 7.6); an answer shows as a message
+	static uint16_t poll_fails_seen;
+	if (v->t3.poll_fails != poll_fails_seen) {
+		if ((uint16_t)(v->t3.poll_fails - poll_fails_seen) < 0x8000u)
+			ui_toast(TR(TRUNK_TOAST_POLL_NO_DATA, "Poll: no short data"));
+		poll_fails_seen = v->t3.poll_fails;
+	}
 #endif
 
 #if CONFIG_USB_NETWORK && CONFIG_HOSTLINK

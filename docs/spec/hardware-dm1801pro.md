@@ -140,7 +140,7 @@ Power-on, in order: 0x00=8000, 0x00=0000, 0x37=9D1F, 0x13=03DF, 0x12=03DB, 0x11=
 DM-32UV (006F, 106B, 2067, 3062 ... F09F); then 0x21=06D8, 0x24=8C7E.
 
 Analog FM mode: 0x47=6042, 0x7E=302E, 0x2B=C000 (and 0x32=0244 on the way back to receive). DMR mode: 0x47=0140,
-0x48=B2F5, 0x7E=B03F, 0x2B=0700, 0x28=0A40. Tone signalling: 0x70=00E0, 0x72=3065, 0x58=00C1, 0x5A=85CF, 0x5B=AB45,
+0x48=B2F5, 0x7E=B03F, 0x2B=0700, 0x28=0A40. Tone signaling: 0x70=00E0, 0x72=3065, 0x58=00C1, 0x5A=85CF, 0x5B=AB45,
 0x5C=5665.
 
 On this radio the analog word 0x47=6042 leaves the FD6818's audio output off. RadioFoundry writes 0x47=0140 in FM as well,
@@ -761,7 +761,7 @@ there:
 - the display (upright, readable), every key, the data flash (Puya, JEDEC 852018) and the factory calibration
 - the speaker path (amplifier and source pins), the debug link on the programming cable
 - FM receive audio on a weather station, the squelch and the monitor key
-- the squelch closes without a signal (`fd6818_noise`), CTCSS / DCS muting, and receiver battery save (`rx_sleep`: FD6818 idle and the RX path off)
+- the squelch closes without a signal (`fd6818_noise`), CTCSS / DCS muting, and receiver battery save (`rx_sleep`: FD6818 idle and the RX path off; on DMR channels too, `rx_sleep_dmr`)
 - beeps through the prompt FIFO, clean and without pops
 - the accelerometer answers and reads 1 g lying flat
 
