@@ -6,12 +6,12 @@
 #include "debuglink/debuglink_proto.h"
 #include "debuglink/dl_frame.h"
 
-static bool armed;
-static uint32_t armed_ms;
+// When the key came, plus 1; 0 disarmed (one word: RAM is tight on some radios)
+static uint32_t armed_at;
 
 void dl_mem_disarm(void)
 {
-	armed = false;
+	armed_at = 0;
 }
 
 static uint32_t get32(const uint8_t *p)
@@ -39,10 +39,10 @@ static bool width_ok(uint8_t w, uint32_t addr)
 
 static bool is_armed(uint32_t now_ms)
 {
-	if (armed && now_ms - armed_ms >= DL_MEM_ARM_MS) {
-		armed = false;
+	if (armed_at != 0 && now_ms - (armed_at - 1u) >= DL_MEM_ARM_MS) {
+		armed_at = 0;
 	}
-	return armed;
+	return armed_at != 0;
 }
 
 size_t dl_mem_cmd(const dl_mem_io_t *io, const uint8_t *req, uint16_t len, uint8_t *out, size_t cap, uint32_t now_ms)
@@ -92,14 +92,13 @@ size_t dl_mem_cmd(const dl_mem_io_t *io, const uint8_t *req, uint16_t len, uint8
 	}
 	case DL_MEM_OP_ARM:
 		if (len != 5 || get32(req + 1) != DL_MEM_KEY) {
-			armed = false;
+			armed_at = 0;
 			return status(out, DL_ST_REFUSED);
 		}
-		armed = true;
-		armed_ms = now_ms;
+		armed_at = now_ms + 1u;
 		return status(out, DL_ST_OK);
 	case DL_MEM_OP_DISARM:
-		armed = false;
+		armed_at = 0;
 		return status(out, DL_ST_OK);
 	case DL_MEM_OP_PIN: {
 		if (len != 3 || req[2] > DL_MEM_PIN_HIGH || cap < 2) {

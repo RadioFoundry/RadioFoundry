@@ -86,8 +86,17 @@ static uint32_t (*cps_answered_fn)(void);
 static uint32_t cps_answered_at_entry;
 static uint32_t noise_bytes;
 static hostlink_side_hold_t side_hold;
-static uint32_t last_rx_ms;
-static bool rx_seen;
+// What the port has seen, in one block: separate small statics each cost alignment padding, and the tightest radio's
+// RAM has no room for it
+static struct {
+	uint32_t last_rx_ms;
+	uint32_t probe_ms;		// mmdvm_probe: when the held bytes started
+	uint32_t fend_ms;		// tnc_probe: when the held FEND came
+	uint8_t probe[MMDVM_PROBE_LEN];	// mmdvm_probe: a possible frame's first bytes
+	uint8_t probe_len;
+	bool fend_held;
+	bool rx_seen;
+} sniff;
 static const hostlink_side_t *side;
 static const hostlink_tnc_t *tnc;
 static uint32_t last_byte_ms;
@@ -169,7 +178,7 @@ uint32_t hostlink_noise_bytes(void)
 
 uint32_t hostlink_port_state(uint32_t now_ms)
 {
-	uint32_t s = rx_seen ? ((now_ms - last_rx_ms) / 1000u) : 255u;
+	uint32_t s = sniff.rx_seen ? ((now_ms - sniff.last_rx_ms) / 1000u) : 255u;
 
 	return ((uint32_t)mode << 24) | (((s > 255u) ? 255u : s) << 16);
 }
@@ -338,34 +347,31 @@ static size_t side_take(const uint8_t *buf, size_t len, uint32_t now, bool new_r
 // chunks. Returns the bytes taken, 0 when buf is not part of a possible frame
 static size_t mmdvm_probe(const uint8_t *buf, size_t len, uint32_t now, bool new_request)
 {
-	static uint8_t probe[MMDVM_PROBE_LEN];
-	static uint8_t probe_len;
-	static uint32_t probe_ms;
 	size_t taken = 0;
 
-	if ((probe_len > 0) && ((now - probe_ms) > MMDVM_PROBE_MS)) {
-		noise_bytes += probe_len;
-		probe_len = 0;
+	if ((sniff.probe_len > 0) && ((now - sniff.probe_ms) > MMDVM_PROBE_MS)) {
+		noise_bytes += sniff.probe_len;
+		sniff.probe_len = 0;
 	}
-	if ((probe_len == 0) && (!new_request || (buf[0] != MMDVM_FRAME_START))) {
+	if ((sniff.probe_len == 0) && (!new_request || (buf[0] != MMDVM_FRAME_START))) {
 		return 0;
 	}
-	if (probe_len == 0) {
-		probe_ms = now;
+	if (sniff.probe_len == 0) {
+		sniff.probe_ms = now;
 	}
-	while ((probe_len < MMDVM_PROBE_LEN) && (taken < len)) {
-		if ((probe_len > 0) && (side != NULL) && (buf[taken] == side->start)) {
-			noise_bytes += probe_len;	// a side frame follows: the 0xE0 before it was noise
-			probe_len = 0;
+	while ((sniff.probe_len < MMDVM_PROBE_LEN) && (taken < len)) {
+		if ((sniff.probe_len > 0) && (side != NULL) && (buf[taken] == side->start)) {
+			noise_bytes += sniff.probe_len;	// a side frame follows: the 0xE0 before it was noise
+			sniff.probe_len = 0;
 			return taken;
 		}
-		probe[probe_len++] = buf[taken++];
+		sniff.probe[sniff.probe_len++] = buf[taken++];
 	}
-	if (probe_len < MMDVM_PROBE_LEN) {
+	if (sniff.probe_len < MMDVM_PROBE_LEN) {
 		return taken;
 	}
-	probe_len = 0;
-	if (!hostlink_mmdvm_first_frame(probe[1], probe[2])) {
+	sniff.probe_len = 0;
+	if (!hostlink_mmdvm_first_frame(sniff.probe[1], sniff.probe[2])) {
 		noise_bytes += MMDVM_PROBE_LEN;
 		return taken;
 	}
@@ -375,7 +381,7 @@ static size_t mmdvm_probe(const uint8_t *buf, size_t len, uint32_t now, bool new
 	entered_ms = now;
 	mmdvm_trial_begin();
 	dlog("hostlink: 0xE0: hotspot trial");
-	(void)feed_mmdvm(probe, MMDVM_PROBE_LEN, now);
+	(void)feed_mmdvm(sniff.probe, MMDVM_PROBE_LEN, now);
 	return taken;
 }
 #endif	// CONFIG_HOTSPOT
@@ -384,14 +390,12 @@ static size_t mmdvm_probe(const uint8_t *buf, size_t len, uint32_t now, bool new
 // next byte. Returns the bytes taken, 0 when buf is not for the TNC
 static size_t tnc_probe(const uint8_t *buf, size_t len, uint32_t now, bool new_request)
 {
-	static bool fend_held;
-	static uint32_t fend_ms;
 	const uint8_t fend = KISS_FEND_BYTE;
 
-	if (fend_held) {
-		bool fresh = (now - fend_ms) <= MMDVM_PROBE_MS;
+	if (sniff.fend_held) {
+		bool fresh = (now - sniff.fend_ms) <= MMDVM_PROBE_MS;
 
-		fend_held = false;
+		sniff.fend_held = false;
 		if (!fresh || !hostlink_kiss_second(buf[0])) {
 			noise_bytes++;
 		} else {
@@ -406,8 +410,8 @@ static size_t tnc_probe(const uint8_t *buf, size_t len, uint32_t now, bool new_r
 	}
 	if (buf[0] == KISS_FEND_BYTE) {
 		if (len == 1) {
-			fend_held = true;
-			fend_ms = now;
+			sniff.fend_held = true;
+			sniff.fend_ms = now;
 			return 1;
 		}
 		if (!hostlink_kiss_second(buf[1])) {
@@ -676,8 +680,8 @@ static void hostlink_task(void *arg)
 			if (n == 0) {
 				break;
 			}
-			last_rx_ms = now;
-			rx_seen = true;
+			sniff.last_rx_ms = now;
+			sniff.rx_seen = true;
 #if CONFIG_NET_PPP
 			size_t p = port_ppp(buf, n, now);
 
