@@ -816,20 +816,23 @@ def squelch_at(radio, level):
     own level, where on a channel it is a temporary change, which the scan's next stop drops"""
     from test_fm import _squelch_to
 
-    def to(level):
+    def in_vfo(job):
         vfo = radio.core().get("vfo") == "1"
         if not vfo:
             radio._req_until(lambda: radio.link.vfo(True), lambda v: v.get("vfo") == "1", "VFO")
-        _squelch_to(radio, level)
-        if not vfo:
-            radio._req_until(lambda: radio.link.vfo(False), lambda v: v.get("vfo") == "0", "channel mode")
+        try:
+            return job()
+        finally:
+            if not vfo:
+                radio._req_until(lambda: radio.link.vfo(False), lambda v: v.get("vfo") == "0", "channel mode")
 
-    was = int(radio.core()["squelch"])
-    to(level)
+    # Read in the VFO too: a channel's level may differ, and restoring that would change the radio's own
+    was = in_vfo(lambda: int(radio.core()["squelch"]))
+    in_vfo(lambda: _squelch_to(radio, level))
     try:
         yield
     finally:
-        to(was)
+        in_vfo(lambda: _squelch_to(radio, was))
 
 
 def _mixed_zone(img, hz, dmr_number, modes):
@@ -857,7 +860,7 @@ def _mixed_zone(img, hz, dmr_number, modes):
             make_p25(img, n)
         elif mode == "nxdn":
             make_nxdn(img, n)
-    per, size = (80, 0xB0) if img[0x806F] <= 4 else (16, 0x30)
+    size = 0xB0 if img[0x806F] <= 4 else 0x30	# the 80- or 16-channel layout (cps_client.zones)
     slot = next((z for z in range(68) if not img[cps_client.ZONE_BITMAP + z // 8] & (1 << (z % 8))), None)
     if slot is None:
         skip("state", "the codeplug has no free zone")

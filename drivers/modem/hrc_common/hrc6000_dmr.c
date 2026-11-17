@@ -874,7 +874,7 @@ static void cc_tick_follow(hrc6000_dmr_t *e, uint8_t ph)
 	e->cc_tick_n[0] = e->cc_tick_n[1] = 0;
 	e->cc_cur = cc;
 	hrc6000_dmr_set_cc(e->dev, cc);
-	e->restart_pending = true;	// at the next timeslot interrupt, as cc_follow's
+	e->restart_pending = true;	// later in this timeslot interrupt (the idle branch), after the 0x1F write
 	e->restart_why = HRC6000_RS_CC;
 }
 
