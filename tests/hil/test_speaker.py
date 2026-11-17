@@ -9,7 +9,7 @@ test_speaker_beeps: every beep the debug link can ask for, one recording each, p
 The first beep finds the amplifier as the radio left it; on a radio that keeps it warm (speaker_hang_s), the next
 ones find it warm.
 
-test_speaker_beep_cold: on a radio with an amplifier hang (the beep.warm view key), waits for the hang to run out,
+test_speaker_beep_cold: on a radio with an amplifier hang (beep.hang_s above 0), waits for the hang to run out,
 then the shortest beep (key): the lead-in must cover the amplifier's start.
 
 test_speaker_sweep: the speaker test's sweep, 150 Hz to 3.8 kHz (BEEP_SWEEP): prints the speaker's response along it
@@ -109,6 +109,20 @@ def _beep_ready(radio):
     radio.go_home()
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")
+    _channel_quiet(radio, 15)
+
+
+def _channel_quiet(radio, wait_s=0):
+    """Skip while the radio receives (traffic on its channel, an open squelch): the speaker plays that too, and the
+    recording judges the beep against it. Waits up to wait_s for the channel to go quiet first"""
+    end = time.monotonic() + wait_s
+    while True:
+        state = radio.view(["core"]).get("state")
+        if state != "rx":
+            return
+        if time.monotonic() > end:
+            skip("state", f"the radio is receiving (state {state}): traffic on its channel or an open squelch")
+        time.sleep(1)
 
 
 def _audio(radio):
@@ -141,6 +155,7 @@ def _play(radio, mic, name, segs):
     p, path = mic.start(length + 1.2)
     radio.link.beep(name)
     r = _judge(mic, mic.finish(p, path), segs)
+    _channel_quiet(radio)      # a reception that started during the recording spoils it
     s1 = _stream(radio)
     if s0 is not None and s1 is not None:
         if s1[:2] != s0[:2]:
@@ -180,6 +195,8 @@ def test_speaker_beep_cold(radio, microphone):
     a = _audio(radio)
     if "beep.warm" not in a:
         skip("not_built", "no amplifier hang on this firmware (no beep.warm view key)")
+    if a.get("beep.hang_s") == "0":
+        skip("no_hw", "the board keeps no amplifier hang (beep.hang_s 0): every beep starts it cold")
     if a["beep.warm"] != "0":
         end = time.monotonic() + 90
         print("waiting for the amplifier hang to run out")

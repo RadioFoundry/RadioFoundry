@@ -385,14 +385,16 @@ The waveform and CACH tests skip as `bench` on a board without the feature (`bur
 `test_speaker.py` records the radio's speaker with a microphone placed at it (`--microphone DEVICE`, an ALSA capture
 device for `arecord -D`, or `microphone` in the rig's file) and checks that each sound plays as it was made. Without a
 microphone every test skips `opt_in`. The volume knob and the beep level must leave the tones at least 30 dB over the
-room's noise; a recording too quiet throughout skips `state`.
+room's noise; a recording too quiet throughout skips `state`. The beep tests wait up to 15 s for a receiving radio
+to go quiet and skip `state` if it doesn't, or if a reception starts during a recording.
 
 | Test | Plays | Needs |
 |---|---|---|
 | `test_speaker_beeps` | every beep the debug link can ask for, one recording each; the patterns are read from `core/radio/beep.c` | radio |
-| `test_speaker_beep_cold` | the key click after the amplifier hang ran out (`beep.warm` 0): the lead-in must cover the amplifier's start | a board with a speaker hang |
+| `test_speaker_beep_cold` | the key click after the amplifier hang ran out (`beep.warm` 0): the lead-in must cover the amplifier's start | a board with a speaker hang (`beep.hang_s` above 0, else skips `no_hw`) |
 | `test_speaker_sweep` | the speaker test's sweep (`BEEP_SWEEP`: 150 Hz to 3.8 kHz over 4 s, after 400 ms of silence); prints the speaker's response in third octaves and fails when the sweep breaks up | radio |
 | `test_fm_rx_speaker` | the bench board's FM transmitter on `--fm-mhz`: 0.5 s of carrier, then 1000 Hz 300 ms, 600 Hz 150 ms, 1500 Hz 80 ms and 1000 Hz 500 ms with silences of 200 to 300 ms, the carrier ending with the last tone | `--allow-rf`, a bench board with FM |
+| `test_fm_rx_speaker_second_receiver` | the same on the second receiver: dual watch with the `--fm-mhz` channel as its other channel, so the second receiver hears it and its squelch tail is judged | `--allow-rf`, a bench board with FM, a second receiver, an FM zone channel on `--fm-mhz` |
 
 `audio_check.check_tones` judges each recording. A tone's edges are where its amplitude rises and falls fastest: the
 direct sound's, since a room's echo builds up and dies away slower. Problems:
