@@ -35,21 +35,25 @@ typedef uint32_t __attribute__((may_alias)) fxp_u32a;
 
 // --- Plain versions ---
 
+// One product as unsigned: each fits int32_t (at most 2^30), and the sums wrap in uint32_t as the DSP instructions do,
+// where a wrap in int would be undefined
+#define FXP_P(a, b)	((uint32_t)((int32_t)(a) * (int32_t)(b)))
+
 // The sum of a[i] * b[i] over 8, wrapping at 32 bits (the caller scales so it does not)
 FXP_INLINE int32_t fxp_dot16_8_c(const int16_t *a, const int16_t *b)
 {
-	return a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3] + a[4] * b[4] + a[5] * b[5] + a[6] * b[6]
-	       + a[7] * b[7];
+	return (int32_t)(FXP_P(a[0], b[0]) + FXP_P(a[1], b[1]) + FXP_P(a[2], b[2]) + FXP_P(a[3], b[3]) + FXP_P(a[4], b[4])
+			 + FXP_P(a[5], b[5]) + FXP_P(a[6], b[6]) + FXP_P(a[7], b[7]));
 }
 
 // The sum over n, n even
 FXP_INLINE int32_t fxp_dot16_c(const int16_t *a, const int16_t *b, unsigned n)
 {
-	int32_t y = 0;
+	uint32_t y = 0;
 
 	for (unsigned i = 0; i < n; i += 2)
-		y += a[i] * b[i] + a[i + 1] * b[i + 1];
-	return y;
+		y += FXP_P(a[i], b[i]) + FXP_P(a[i + 1], b[i + 1]);
+	return (int32_t)y;
 }
 
 // (x * g) >> 16 exactly, in 32-bit steps, for g < 2^24 and |x * g| < 2^39 (a result under 2^23)
