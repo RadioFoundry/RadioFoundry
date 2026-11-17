@@ -1560,7 +1560,11 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 				s.cc = vs->cc;
 			}
 		} else if (!live) {
-			if (!(hd->valid && (uint32_t)(e->tick - hd->tick) == 2u && s.voice_index == 1u)) {
+			// B one frame after the lone A. Deframing any color code (rx_ctl), the chip keeps the voice number
+			// of the last call it decoded in full while it receives a call in a code other than 0x1F's: there
+			// the frame alone says B (seq_by_count numbers the rest). A late entry in another code was missed
+			bool stale_numbers = cc_any(e) && e->dev->chip->cc_any_rx;
+			if (!(hd->valid && (uint32_t)(e->tick - hd->tick) == 2u && (s.voice_index == 1u || stale_numbers))) {
 				e->st.rx_no_call++;	// stale status on the empty slot, or after the call: never voice
 				capture_early(e);
 				return cc_real;
@@ -1569,6 +1573,7 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 			hd->valid = false;
 			hd->s.cc = cc_fix ? (uint8_t)e->cc_filter : s.cc;
 			take(e, &hd->s, &hd->nb, hd->tick, hd->in_step, hd->on_time, hd->dms, tx);
+			s.voice_index = 1u;
 			vs->active = true;
 			vs->last = 0;
 			vs->next = 1;
