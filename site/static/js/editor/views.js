@@ -273,7 +273,7 @@ export function channelForm(m, t, { features = null } = {}) {
 	// FM, DMR and the kinds offered (modes.js), the channel's own kind too
 	const kinds = offeredKinds(m, features);
 	const modeOptions = (r) => {
-		const out = [["fm", "FM"], ["dmr", "DMR"], ...kinds.map((k) => [`k${k.id}`, k.short])];
+		const out = [["fm", "FM"], ["dmr", "DMR"], ...kinds.map((k) => [`k${k.id}`, t(`editor.mode_name.${k.token}`)])];
 		if (r.kind && !kinds.some((k) => k.id === r.kind)) out.push([`k${r.kind}`, kindName(r.kind)]);
 		return out;
 	};
@@ -365,11 +365,12 @@ const coord = (t, max) => (r, k, v) => {
 };
 
 // A form in a dialog over a working copy of the record; Save hands the copy back
-export function formDialog(title, fields, record, t, onSave) {
+// opts.list: one field per line, for forms whose fields carry help text
+export function formDialog(title, fields, record, t, onSave, opts = {}) {
 	const work = { ...record };
 	const errs = h("p", { class: "notice bad", hidden: true });
 	const rows = [];
-	const body = h("div", { class: "form-grid" });
+	const body = h("div", { class: opts.list ? "form-grid form-list" : "form-grid" });
 	// One field: its label and input, kept in rows for sync() and save()
 	const field = (f) => {
 		const id = "f-" + f.key;
@@ -392,10 +393,33 @@ export function formDialog(title, fields, record, t, onSave) {
 		rows.push({ f, input, row, label });
 		return row;
 	};
+	// a group with collapsed set is a section the user opens: its rows stay hidden until then
+	let section = null;
 	for (const f of fields) {
+		const n0 = rows.length;
 		if (f.group) {
-			const row = h("h3", { class: "form-group" }, f.group);
+			let row;
+			if (f.collapsed != null) {
+				const sec = { open: !f.collapsed };
+				const btn = h("button", { type: "button", class: "form-toggle", "aria-expanded": String(sec.open) }, f.group);
+				btn.addEventListener("click", () => {
+					sec.open = !sec.open;
+					btn.setAttribute("aria-expanded", String(sec.open));
+					sync();
+				});
+				row = h("h3", { class: "form-group" }, btn);
+				section = sec;
+			} else {
+				row = h("h3", { class: "form-group" }, f.group);
+				section = null;
+			}
 			rows.push({ f: { key: null, type: "group", show: f.show }, input: null, row });
+			body.append(row);
+			continue;
+		} else if (f.type === "custom") {
+			// a part the caller draws (a table of rows): f.render() gives its element, f.parse(work) its errors on save
+			const row = f.render();
+			rows.push({ f, input: null, row });
 			body.append(row);
 		} else if (f.type === "note") {
 			// a line of text from the inputs as they are typed
@@ -419,17 +443,21 @@ export function formDialog(title, fields, record, t, onSave) {
 			rows.push({ f: { key: f.key, type: "pair", disabled: f.disabled, show: f.show }, input: null, row: pair, tools });
 			body.append(pair);
 		} else body.append(field(f));
+		for (const r of rows.slice(n0)) r.section = section;
 	}
 	const byKey = (k) => rows.find((r) => r.f.key === k);
+	// a row inside a closed section is hidden whatever its own show says
+	const shut = (r) => r.section && !r.section.open;
 	const value = (k) => byKey(k).input.value;
 	const sync = () => {
+		for (const r of rows) if (r.section) r.row.hidden = false;
 		for (const { f, input, row, label, tools } of rows) {
 			if (f.type === "pair") {
 				for (const b of tools) b.disabled = !!f.disabled?.(work, value);
 				if (f.show && row) row.hidden = !f.show(work);
 				continue;
 			}
-			if (f.type === "group") {
+			if (f.type === "group" || f.type === "custom") {
 				if (f.show) row.hidden = !f.show(work);
 				continue;
 			}
@@ -455,6 +483,7 @@ export function formDialog(title, fields, record, t, onSave) {
 				if (input.disabled && f.follows) input.value = byKey(f.follows).input.value;
 			}
 		}
+		for (const r of rows) if (shut(r)) r.row.hidden = true;
 	};
 	body.addEventListener("change", sync);
 	body.addEventListener("input", sync);
@@ -463,6 +492,10 @@ export function formDialog(title, fields, record, t, onSave) {
 	const save = () => {
 		const bad = [];
 		for (const { f, input } of rows) {
+			if (f.type === "custom") {
+				if (!f.show || f.show(work)) bad.push(...(f.parse(work) ?? []));
+				continue;
+			}
 			if (f.type === "bool" || f.type === "pair" || f.type === "group" || f.type === "note") continue;
 			if (f.type === "select") {
 				const v = input._opts[input.selectedIndex]?.[0];

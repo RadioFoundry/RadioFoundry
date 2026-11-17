@@ -80,7 +80,12 @@ function encodeSecret(k, prev) {
 export const validKey = (k) => /^[0-9A-Fa-f]{32}$/.test(String(k ?? "").replace(/[\s:-]/g, ""));
 
 const range = (lo, hi) => ({ type: "int", min: lo, max: hi });
-const OPTION_FIELDS = Object.keys(OPTS).map((k) => ({ key: k, label: `editor.t3.opt.${k}`, type: "bool", advanced: true }));
+// Each option's section in the system form, and its help (editor.t3.opt.<key>_help) where it has one
+const OPT_SECTION = { allCalls: "calls", emergencyAny: "calls", privateCalls: "calls", registerTalkgroups: "radio", ipGateway: "radio",
+	acceptAls: "commands", acceptKill: "commands", acceptStun: "commands", noRoaming: "roaming" };
+const OPT_HELP = new Set(["allCalls", "registerTalkgroups", "ipGateway", "acceptAls", "acceptKill", "acceptStun", "noRoaming"]);
+const optionFields = (section) => Object.keys(OPTS).filter((k) => OPT_SECTION[k] === section).map((k) =>
+	({ key: k, label: `editor.t3.opt.${k}`, type: "bool", section, help: OPT_HELP.has(k) ? `editor.t3.opt.${k}_help` : undefined }));
 
 export const t3System = {
 	id: 1,
@@ -92,22 +97,36 @@ export const t3System = {
 	// the header's flag bit 0: the system authenticates
 	needsKeyField: "authenticates",
 	identity: (s) => `${["tiny", "small", "large", "huge"][s.model]} · NET ${s.net} · ${s.category.toUpperCase()}`,
+	// The system form's sections, in order (the editor adds its own fields to identity, radio, fallback and sharing)
+	sections: [
+		{ id: "identity", intro: "editor.t3.intro.identity" },
+		{ id: "radio" },
+		{ id: "calls" },
+		{ id: "fallback" },
+		{ id: "roaming", advanced: true },
+		{ id: "commands", intro: "editor.t3.intro.commands", advanced: true },
+		{ id: "plan", intro: "editor.t3.intro.plan", advanced: true },
+		{ id: "sharing" },
+	],
 	fields: () => [
-		{ key: "model", label: "editor.t3.model", type: "select", options: () => [0, 1, 2, 3].map((n) => [n, `editor.t3.model${n}`]) },
-		{ key: "net", label: "editor.t3.net", type: "int", min: 0, max: (s) => netMax(s.model) },
-		{ key: "category", label: "editor.t3.category", type: "select", options: () => [["a", "A"], ["b", "B"]] },
-		{ key: "colorCode", label: "editor.col.cc", type: "select", options: () => [...Array(16).keys()].map((n) => [n, String(n)]) },
-		...OPTION_FIELDS,
-		{ key: "fallbackHold", label: "editor.t3.fallback_hold", ...range(0, 255), advanced: true },
-		{ key: "planBaseHz", label: "editor.t3.plan_base", type: "freq", zero: true, advanced: true },
-		{ key: "planFirstLcn", label: "editor.t3.plan_first", ...range(0, T3_LCN), advanced: true },
-		{ key: "planSep", label: "editor.t3.plan_sep", type: "select", options: () => [5, 6.25, 10, 12.5, 15, 20, 25, 30].map((k, i) => [i, `${k} kHz`]), advanced: true },
-		{ key: "planSplitHz", label: "editor.t3.plan_split", type: "freq", zero: true, advanced: true },
-		{ key: "planTxLow", label: "editor.t3.plan_tx_low", type: "bool", advanced: true },
-		{ key: "planNoLearn", label: "editor.t3.plan_no_learn", type: "bool", advanced: true },
-		{ key: "leaveDbm", label: "editor.t3.leave_dbm", ...range(-128, 127), advanced: true },
-		{ key: "powerSave", label: "editor.t3.power_save", type: "select", options: () => [...Array(8).keys()].map((n) => [n, n ? `1:${2 ** n}` : "editor.general.off"]), advanced: true },
-		{ key: "sites", label: "editor.t3.sites", type: "list", min: 0, max: (s) => siteMax(s.model), count: T3_SITES, advanced: true },
+		{ key: "model", label: "editor.t3.model", type: "select", options: () => [0, 1, 2, 3].map((n) => [n, `editor.t3.model${n}`]), section: "identity", help: "editor.t3.model_help" },
+		{ key: "net", label: "editor.t3.net", type: "int", min: 0, max: (s) => netMax(s.model), section: "identity", help: "editor.t3.net_help" },
+		{ key: "category", label: "editor.t3.category", type: "select", options: () => [["a", "A"], ["b", "B"]], section: "identity", help: "editor.t3.category_help" },
+		{ key: "colorCode", label: "editor.t3.color_code", type: "select", options: () => [...Array(16).keys()].map((n) => [n, String(n)]), section: "identity", help: "editor.t3.color_code_help" },
+		...optionFields("radio"),
+		{ key: "powerSave", label: "editor.t3.power_save", type: "select", options: () => [...Array(8).keys()].map((n) => [n, n ? `1:${2 ** n}` : "editor.general.off"]), section: "radio", help: "editor.t3.power_save_help" },
+		...optionFields("calls"),
+		{ key: "sites", label: "editor.t3.sites", help: "editor.t3.sites_help", type: "list", min: 0, max: (s) => siteMax(s.model), count: T3_SITES, section: "roaming" },
+		...optionFields("roaming"),
+		{ key: "leaveDbm", label: "editor.t3.leave_dbm", help: "editor.t3.leave_dbm_help", ...range(-128, 127), section: "roaming" },
+		{ key: "fallbackHold", label: "editor.t3.fallback_hold", help: "editor.t3.fallback_hold_help", ...range(0, 255), section: "fallback" },
+		...optionFields("commands"),
+		{ key: "planBaseHz", label: "editor.t3.plan_base", type: "freq", zero: true, section: "plan", help: "editor.t3.plan_base_help" },
+		{ key: "planFirstLcn", label: "editor.t3.plan_first", ...range(0, T3_LCN), section: "plan" },
+		{ key: "planSep", label: "editor.t3.plan_sep", type: "select", options: () => [5, 6.25, 10, 12.5, 15, 20, 25, 30].map((k, i) => [i, `${k} kHz`]), section: "plan" },
+		{ key: "planSplitHz", label: "editor.t3.plan_split", type: "freq", zero: true, section: "plan" },
+		{ key: "planTxLow", label: "editor.t3.plan_tx_low", type: "bool", section: "plan" },
+		{ key: "planNoLearn", label: "editor.t3.plan_no_learn", type: "bool", section: "plan", help: "editor.t3.plan_no_learn_help" },
 	],
 	classes: [
 		{
@@ -132,8 +151,8 @@ export const t3System = {
 		decode: decodeSecret,
 		encode: encodeSecret,
 		fields: [
-			{ key: "key", label: "editor.t3.key", type: "hexbytes", bytes: 16 },
-			{ key: "psn", label: "editor.t3.psn", type: "int", min: 0, max: 0xFFFFFF },
+			{ key: "key", label: "editor.t3.key", type: "hexbytes", bytes: 16, help: "editor.t3.key_help" },
+			{ key: "psn", label: "editor.t3.psn", type: "int", min: 0, max: 0xFFFFFF, help: "editor.t3.psn_help" },
 		],
 		valid: (k) => validKey(k.key) && Number.isInteger(k.psn) && k.psn >= 0 && k.psn <= 0xFFFFFF,
 		empty: () => ({ key: "", psn: 0 }),

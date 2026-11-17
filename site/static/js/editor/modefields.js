@@ -68,6 +68,7 @@ export function specField(spec, t, holder, id) {
 		label: label(t, spec.label),
 		get: (r) => (on(r) ? holder.get(r)?.[spec.key] : undefined),
 		show: (r) => on(r) && (!spec.show || spec.show(holder.get(r) ?? {}, r)),
+		help: spec.help ? t(spec.help) : null,
 	};
 	if (spec.type === "bool") return { ...f, type: "bool", set: (r, v) => on(r) && holder.put(r, spec.key, !!v) };
 	if (spec.type === "select") {
@@ -82,6 +83,5 @@ export function specField(spec, t, holder, id) {
 			if (res.error) return res.error;
 			holder.put(r, spec.key, res.value);
 		},
-		help: spec.help ? t(spec.help) : null,
 	};
 }
