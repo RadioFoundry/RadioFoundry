@@ -66,12 +66,13 @@ that runs RadioFoundry already: [Updating RadioFoundry](#updating-radiofoundry))
    the installer says so, and the installation can go on from there. Keep the file, and keep it private: it holds
    your radio's calibration.
 
-   Some radios come in hardware revisions that RadioFoundry can't tell apart, while the version of their original
+   Some radios come in hardware revisions that RadioFoundry can't always tell apart, while the version of their original
    firmware does. On such a radio, **Original firmware** and **Other / Not sure** offer **Read Firmware Version**:
    connect the radio switched on normally (not in its bootloader) and select it. Reading changes nothing on the radio.
    After the installation the installer stores the revision on the radio, so you don't have to pick it. If the radio
    already holds a different one, the installer shows both and keeps yours (Settings > Advanced > Hardware). The step
-   is optional: without it the radio uses its own choice until you set the revision there.
+   is optional: when the radio can't detect the revision itself, the installer asks for it right after the
+   installation, and the radio reminds you on its home screen until it is set. It won't transmit before that.
 4. **Back up.** The installer saves a backup file (a `.zip`) on your computer: the firmware, the channels and settings
    and the calibration. Keep it. Where the original firmware can't be read first, the installer backs the radio up
    right after the installation, before anything else changes.
@@ -145,7 +146,13 @@ Start the radio normally with RadioFoundry running and choose **Update** in the 
    - **Edit Build** opens the build step, to change features before the update.
    - A preset build lists the features the new release adds to it.
    - A custom build lists the features added since it was made. Choose **On** or **Off** for each before updating.
+     A new feature that one of yours now needs is turned on with it, and listed.
+   - A custom build's feature that the new release can't build for this radio (it now needs something the radio
+     doesn't have) is listed with what it needs. Press **Disable These Features** to update without them, or
+     **Edit Build** to change the build.
    - Firmware too old to report its build gets the build step, starting from the closest match.
+   - The radio keeps the language it starts in. If an earlier update may have changed it by mistake, the installer
+     asks whether to keep that language or start in English.
 3. **Save a backup first** is optional and off. An update keeps the channels, settings, calibration and codec.
 4. Press **Update**. The installer builds the image, writes it and checks the version.
 
@@ -273,7 +280,8 @@ rfoundry checks what the radio reports.
 
 On a radio whose hardware revision only its original firmware's version tells (above), rfoundry first offers to read
 that version: connect the radio switched on normally, before you enter the bootloader. It stores the revision once
-RadioFoundry runs, unless the radio already holds one. `--no-version-read` skips this.
+RadioFoundry runs, unless the radio already holds one. `--no-version-read` skips this. When the radio still can't tell
+its revision after the installation, rfoundry asks for it on the terminal.
 
 ### Keep the codec, or write it
 
@@ -337,10 +345,11 @@ The bootloader lives in a part of the flash the installer never erases, so you c
 its bootloader and install again. If the radio stays dark after flashing, that's what to do. The web installer's help
 page walks through the update mode. See also [Troubleshooting](20-troubleshooting.md#installing).
 
-**Report a Problem** sits under every failure and on the Verify step. It sends what the installer decided and its last
-steps. You can add a message, an email address for a reply and the files it lists (the stock firmware file, a backup,
-the firmware read from the radio). A backup holds your channels, contacts and the radio's calibration: uncheck it to
-leave it out. Attached files and your email address are deleted within 90 days.
+**Report a Problem** sits under every failure, in the bar of buttons under every step and on the Verify step. Use it
+when the page seems stuck with no error, before reloading: a reload loses its log. It sends what the installer decided
+and its last steps. You can add a message, an email address for a reply and the files it lists (the stock firmware
+file, a backup, the firmware read from the radio). A backup holds your channels, contacts and the radio's calibration:
+uncheck it to leave it out. Attached files and your email address are deleted within 90 days.
 
 **A radio left in update mode:** a backup or install interrupted by a cable pull, or a page closed in the middle, can leave
 a radio in its loader (update mode), where the power switch may do nothing. Choose **Radio Stuck in Update Mode** on the
@@ -353,6 +362,25 @@ Finish (and Update when the radio runs RadioFoundry).
 
 **Programming cables:** cables with a CH340 chip can be unreliable for backups and installs. If one fails, try a cable
 with an FTDI, CP210x or PL2303 chip. The installer warns when it sees a CH340 cable.
+
+**Cable problems the installer names:** the connect step tells a faulty cable from a radio that doesn't answer, and
+says what to do about it.
+
+| The installer says | What it found |
+|---|---|
+| The cable keeps delivering data that nothing asked for | The line never goes quiet, so the radio can't be heard. **Continue Anyway** goes on with the same cable |
+| The cable disconnected from the computer | The cable left the computer's USB while the page used it |
+| The cable stopped taking data from the computer | The cable's adapter or its driver stopped sending. The page checks this each time it opens the cable. Some adapters stay that way until they are unplugged |
+| The radio received none of this page's answers | The radio's greeting came through when it was turned on, but nothing the page sent reached the radio, and it started normally. The cable carries data from the radio only. Such a cable can also hold the radio's PTT line: unplug it from the radio |
+
+For each: unplug the cable from the computer, wait a few seconds, plug it back in (not through a hub), push the plug
+fully into the radio and select **Try Again**. If it returns, replace the cable with a better one, preferably one with
+an FTDI chip.
+
+While the installer waits for the radio to turn on, it shows how much the cable has carried (bytes and line errors).
+A count that stays at zero while you turn the radio off and on means the plug isn't making contact or the cable is
+faulty. A count that moves without the radio being found means the cable reads the radio badly: push the plug fully
+in, or use a cable with another chip.
 
 **When the cable can't prepare the radio:** a radio installed over its programming cable first gets a small loader in
 its memory. When the radio turns on, it waits only about 1/20 of a second for the installer's answer, and some cables
@@ -375,5 +403,9 @@ Factory Update Mode"), and Restore uses it too.
    (see your radio's section), load that backup; without one, load the manufacturer's firmware file. Or run the manufacturer's firmware
    upgrade tool and load the stock file.
 3. Write your codeplug backup with the manufacturer's CPS. The stock firmware can't read the codeplug RadioFoundry used.
+
+On a radio installed over its programming cable, a restore writes only the parts of the radio's memory that differ
+from the backup. When it finishes, it says how many parts it wrote and how many already matched. A codec the radio
+still holds as the backup has it is one of those: the installer says that the codec space was not written.
 
 Your radio's section in the [Radio reference](23-radios.md) says which way applies.

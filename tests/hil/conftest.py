@@ -17,7 +17,8 @@ ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 def pytest_addoption(parser):
     g = parser.getgroup("rfoundry-hil", "RadioFoundry hardware-in-the-loop")
     g.addoption("--radio-port", default=os.environ.get("RFOUNDRY_PORT"),
-                help="the radio's serial port (default: the only USB 1FC9:0094 device, or $RFOUNDRY_PORT)")
+                help="the radio's serial port or udp:ADDR (default: $RFOUNDRY_PORT, the only USB 1FC9:0094 device, else the "
+                     "one radio in USB network mode)")
     g.addoption("--allow-rf", action="store_true",
                 help="tests may transmit (the SDR bench's transmitter; the radio only in tests marked radio_tx)")
     g.addoption("--allow-service-stop", action="store_true",
@@ -43,6 +44,9 @@ def pytest_addoption(parser):
     g.addoption("--bench-api-rx", default=os.environ.get("RFOUNDRY_BENCH_API_RX"), metavar="HOST[:PORT]",
                 help="a second bench board for bursts and captures (default: --bench-api's): a half-duplex board "
                      "can't hear while it transmits")
+    g.addoption("--bench-api-2", default=os.environ.get("RFOUNDRY_BENCH_API_2"), metavar="HOST[:PORT]",
+                help="a second bench transmitter, for a test that needs two signals at once (test_p25_trunk_rx: the "
+                     "voice channel, while --bench-api's plays the control channel)")
     g.addoption("--bench-api-level", type=int, default=(int(os.environ["RFOUNDRY_BENCH_API_LEVEL"])
                                                         if os.environ.get("RFOUNDRY_BENCH_API_LEVEL") else None),
                 metavar="0-255", help="the bench board's transmit level for its jobs and FM (default: the board's own)")
@@ -93,6 +97,17 @@ def pytest_addoption(parser):
     g.addoption("--split-tx-mhz", type=float, default=None,
                 help="MHz: test_dmr_tx_split_repeater, the radio's TX frequency on its DMR test channel made split "
                      "(the bench repeater's input; its output is --dmr-freq); no default: one you may transmit on")
+    g.addoption("--repeater-out-mhz", type=float, default=None,
+                help="MHz: test_dmr_repeater_keyup, a real duplex DMR repeater's output, which answers a wake-up "
+                     "(the radio's RX on its DMR test channel made duplex); no default")
+    g.addoption("--repeater-in-mhz", type=float, default=None,
+                help="MHz: test_dmr_repeater_keyup, that repeater's input (the radio's TX); no default: one you may "
+                     "transmit on")
+    g.addoption("--repeater-cc", type=int, default=None,
+                help="test_dmr_repeater_keyup: that repeater's color code (default --dmr-cc)")
+    g.addoption("--repeater-keyups", type=int, default=14,
+                help="test_dmr_repeater_keyup: key-ups timed around the repeater's hang end, after the two that wake "
+                     "it and measure the hang")
     g.addoption("--outbound-mhz", type=float, default=None,
                 help="MHz: test_dmr_outbound_voice, a repeater's output the bench board sends BS bursts on; the radio "
                      "needs a duplex DMR channel receiving it (TX differs from RX); no default: one you may transmit on")

@@ -5,8 +5,10 @@
 //
 // One image serves every board revision. The revision decides the synthesizer (SKY72310 on V1-V3, the 24-bit
 // "PLL1590" part on V4, LMX2571 on V4A / V5), whether the IF receivers are AK2365A chips (V1-V4) or fixed parts behind
-// filter and route lines (V5), and a few switching details. Nothing on the board reports it: a stored record is the
-// authority, a probe of the receiver may suggest one, and the build carries a default.
+// filter and route lines (V5), and a few switching details. Nothing on the board reports it directly, but the AK2365A
+// answers register reads: start-up reads one back (md9600_rf_if_detect), and a board without it is V4A / V5. Which of
+// V1-V3 and V4 a board with it is comes from the stored record; failing that, a probe of the receiver may suggest one,
+// and the build carries a default.
 #ifndef RFPLAN_MD9600_H
 #define RFPLAN_MD9600_H
 
@@ -50,22 +52,47 @@ typedef enum {
 	MD9600_REV_SRC_STORED,		// the stored record
 	MD9600_REV_SRC_PROBE,		// the receiver probe
 	MD9600_REV_SRC_DEFAULT,		// the build's default
+	MD9600_REV_SRC_DETECTED,	// no AK2365A answered: V4A / V5
 } md9600_rev_source_t;
+
+// Whether an AK2365A answered at start-up (md9600_rf_if_detect, md9600_if_verdict)
+typedef enum {
+	MD9600_IF_UNKNOWN,	// no clear answer either way: the stored record or the default decides
+	MD9600_IF_PRESENT,	// an AK2365A read back what was written: V1-V3 or V4
+	MD9600_IF_ABSENT,	// nothing drives the data line (it follows the pin's own pull): V4A / V5
+} md9600_if_t;
+
+// The AK2365A read test: register MD9600_IF_TEST_REG written with each pattern, then read back with the data line's
+// pull up and down. A read frame's samples, MSB first: one after each falling clock edge from the 7th (the address's
+// last bit) to the 16th, MD9600_IF_READ_BITS in all; the data sheet puts D7-D0 in 8 of them after one unstable bit
+#define MD9600_IF_TEST_REG	0x0Bu	// Control Register 4 (AGC 1 gain), read and write; the soft reset restores it
+#define MD9600_IF_READ_BITS	10u
+#define MD9600_IF_PATTERNS	2u
+extern const uint8_t md9600_if_patterns[MD9600_IF_PATTERNS];
+// r[band][pull: 0 down, 1 up][pattern]. PRESENT when either band's chip read back both patterns under both pulls at one
+// alignment; ABSENT when on both bands every sample followed the pull (all 0 pulled down, all 1 pulled up); otherwise
+// UNKNOWN. A board is called V4A / V5 (and may transmit with its words) only on that positive evidence
+md9600_if_t md9600_if_verdict(const uint16_t r[2][2][MD9600_IF_PATTERNS]);
 
 typedef struct {
 	md9600_rev_t rev;
 	uint8_t source;		// md9600_rev_source_t
 	bool usable;		// its driver is built: the receiver may be programmed
-	bool confirmed;		// set by a person (the stored record): only then may the radio transmit
+	bool confirmed;		// stored by a person or the installer, or detected: only then may the radio transmit
+	uint8_t if_chip;	// md9600_if_t from start-up
 } md9600_rev_state_t;
 
-// Which revision to drive. stored and probed are MD9600_REV_UNKNOWN when absent; build_default is the image's default
-md9600_rev_state_t md9600_rev_resolve(md9600_rev_t stored, md9600_rev_t probed, md9600_rev_t build_default);
+// Which revision to drive. stored and probed are MD9600_REV_UNKNOWN when absent; if_chip the start-up read test
+// (md9600_if_t); build_default is the image's default. No AK2365A: V4A / V5, confirmed, whatever is stored. An AK2365A:
+// a stored V1-V3 or V4 (a stored V4A / V5 is wrong and ignored), else the probe's or the first built of V1-V3 and V4,
+// unconfirmed. No verdict: the stored record, else the probe, else the default
+md9600_rev_state_t md9600_rev_resolve(md9600_rev_t stored, uint8_t if_chip, md9600_rev_t probed,
+				      md9600_rev_t build_default);
 
 // The diagnostics page's revision lines, at most MD9600_REV_TEXT_MAX characters (the 128x64 panel's small font):
 // line 0 the revision and its source ("rev V4A/V5 default", "rev V4 unbuilt": not in this image, receiver off), line 1 the prompt to store
-// one until there is ("Set rev: Adv>Hardware"), line 2 the probe ("probe off", "probe V4", "probe none"; probe is
-// -1 when it didn't run). False past the last line. buf takes len bytes, NUL terminated
+// one until there is ("Set rev: Adv>Hardware"), line 2 the read test and the probe ("ak yes probe off", "ak no probe
+// V4", "ak ? probe none"; probe is -1 when it didn't run). False past the last line. buf takes len bytes, NUL terminated
 #define MD9600_REV_TEXT_MAX	25u
 #define MD9600_REV_TEXT_LINES	3u
 bool md9600_rev_text(uint8_t line, md9600_rev_state_t s, int16_t probe, char *buf, uint8_t len);

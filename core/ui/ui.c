@@ -55,6 +55,13 @@ void ui_crit_exit(void) { taskEXIT_CRITICAL(); }
 
 static void set_backlight(uint8_t pct)
 {
+#if CONFIG_BACKLIGHT_TEST
+	int16_t hold = ui_app_backlight_hold();
+	if (hold >= 0)
+		pct = (uint8_t)hold;	// the backlight tests have it
+	if (ui_app_take_backlight_reapply())
+		backlight_now = 0xFF;
+#endif
 	if (pct != backlight_now) {
 		backlight_now = pct;
 		board.display->set_backlight(pct);
@@ -135,16 +142,27 @@ static void ui_task(void *arg)
 		bool got = input_next(&ev, wait);
 		if (rests)
 			rested = hal_millis();
+		// The view before the key: the radio core may have changed while this task waited (the VFO turned off from
+		// the host link, a scan stopping), and a key read against the old view sends the wrong request (a VFO step
+		// the core drops on a channel)
+		uint32_t s = radio_view_serial();
+		if (s != serial) {
+			serial = s;
+			radio_get_view(&view);
+		}
 		if (got) {
 			bool was_off = backlight_now == 0;
+#if CONFIG_BACKLIGHT_TEST
+			was_off = was_off && ui_app_backlight_hold() < 0;	// a key wakes the light, but not in the tests
+#endif
 			set_backlight(ui_app_brightness());
 			if (!was_off || ev.action == ACT_PTT || ev.action == ACT_MONITOR)
 				ui_app_key(&ev);
 			dirty = true;
 		}
 		now = hal_millis();
-		uint32_t s = radio_view_serial();
-		if (s != serial) {
+		s = radio_view_serial();
+		if (s != serial) {	// and after it: what the key changed shows in this pass
 			serial = s;
 			radio_get_view(&view);
 		}

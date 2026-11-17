@@ -31,6 +31,10 @@
 #include "ui/ui_screens.h"
 #include "ui/gfx.h"
 
+// A message as long as a DMR message can be (143 characters): the message screen shortens it
+#define LONG_SMS "Your_Special_Configuration_is:_Active_SMS:_LONG_SMS_Delay:_2.5_s_Retries:_3_Language:_English_" \
+	"Time_zone:_UTC_Units:_metric_Echo:_off_Thanks."
+
 // Screens for the gallery: a name and the script that reaches it from Home (zone 0, channel 3, a DMR channel)
 static const struct { const char *name, *script; } gallery[] = {
 	{ "boot", "splash" },
@@ -52,12 +56,16 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "rx_group", "rx:9991234,91,g,Q1ABC_Joe_-_Boston,_MA" },
 	{ "rx_private", "rx:9995678,0,p" },
 	{ "tx", "pttdown" },
+	{ "tx_aprs", "aprstx" },
 	{ "tx_private", "5 6 3 ok wait:5000 pttdown" },
 	{ "tx_dtmf", "down pttdown dtmf:5551234#" },	// DTMF sent on FM (radio-features.md 3.7)
 	{ "banner_message", "msg:9991234,Meet_at_the_north_lot_in_15_minutes._Bring_the_spare_battery." },
 	{ "banner_call_alert", "alert:9995678" },
 	{ "banner_radio_check", "call:9991234,91,g wait:11000 ctx 4 wait:1000" },
 	{ "message_view", "msg:9991234,Meet_at_the_north_lot_in_15_minutes._Bring_the_spare_battery. ctx" },
+	// a text the message screen shortens: Full message, and the whole text on its own page
+	{ "message_long", "msg:9991234," LONG_SMS " ctx" },
+	{ "message_read", "msg:9991234," LONG_SMS " ctx ok" },
 	{ "quick_dmr", "quick" },
 	{ "quick_fm", "down quick" },
 	{ "quick_fm_squelch", "down quick 2 up" },
@@ -81,6 +89,9 @@ static const struct { const char *name, *script; } gallery[] = {
 #endif
 	{ "caller_actions", "call:9991234,91,g wait:11000 ctx" },
 	{ "compose", "call:9991234,91,g wait:11000 ctx 3" },
+	{ "aprs_station", "wait:600000 aprs:heard ok" },
+	{ "aprs_station_text", "aprs:heard ok up up" },
+	{ "aprs_station_evicted", "aprs:heard ok aprs:evict down" },
 	{ "hub", "ok" },
 	{ "contacts", "ok 1" },
 	{ "contacts_find", "ok 1 5 6" },
@@ -141,6 +152,8 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "diagnostics", "ok 6 7" },
 	{ "roaming", "ok 6 6 1 wait:4000" },
 	{ "settings", "ok 7" },
+	{ "settings_sound", "ok 7 1" },
+	{ "settings_sound_tones", "ok 7 1 down down down down down down" },	// the tones (radio-features.md)
 	{ "settings_display", "ok 7 2" },
 	{ "settings_editor", "ok 7 2 ok up" },
 	{ "settings_freq_trim", "trim ok 7 up ok up" },	// on a radio with a reference trim (radio-features.md 6.1)
@@ -282,9 +295,12 @@ static const struct { const char *name, *script; } worst_screens[] = {
 	{ "w_roaming", "ok 6 6 1 wait:4000" },
 	{ "w_aprs", "ok 6 8" },
 	{ "w_aprs_nocall", "aprs:nocall ok 6 8" },
-	{ "w_aprs_position", "ok 6 8 9 2 3 3 7 4 9 0 ok 3 8 4 3 8 8 0 down ok wait:3000" },
-	{ "w_aprs_position_edit", "ok 6 8 9 2 3 3 7" },
+	{ "w_fixed_position", "ok 7 5 down down ok 1 3 3 7 4 9 0 ok 2 8 4 3 8 8 0 down ok wait:3000" },
+	{ "w_fixed_position_edit", "ok 7 5 down down ok 1 3 3 7" },
 	{ "w_aprs_heard", "ok 6 8 up ok" },
+	{ "w_aprs_station", "wait:600000 ok 6 8 up ok ok" },
+	{ "w_aprs_station_text", "ok 6 8 up ok ok up up" },
+	{ "w_aprs_station_evicted", "ok 6 8 up ok ok aprs:evict down" },
 	{ "w_usb", "ok 6 4" },
 	{ "w_sfr", "ok 6 5" },
 	{ "w_battery", "battery:5 ok 6 9" },

@@ -18,6 +18,8 @@ MCU_DEFS   += -DMD9600_REV_DEFAULT=MD9600_REV_$(shell echo $(MD9600_REV_DEFAULT)
 # The receiver probe at start-up (rev_probe in radio_md9600.c): off until its thresholds are measured on radios
 MD9600_REV_PROBE ?= 0
 MCU_DEFS   += -DMD9600_REV_PROBE=$(MD9600_REV_PROBE)
+# The board revision is a hardware option (hwopt_md9600.c, hal/hal_hwopt.h)
+BOARD_HWOPTS := y
 BOARD_DIRS := boards/md9600 drivers/display/st7567 drivers/flash/spi_nor drivers/input/keymatrix drivers/input/quadrature \
 	drivers/cal/calblock drivers/input/adckeys platform/stm32f4/hrc platform/stm32f4/spi_flash drivers/modem/hrc6000 drivers/modem/hrc_common \
 	drivers/gps/nmea_line drivers/gps/gps_rx platform/stm32f4/gps_uart drivers/rf/subaudio

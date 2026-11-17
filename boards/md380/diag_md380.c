@@ -8,7 +8,7 @@
 #include "dmr_md380.h"
 #include "hrc/i2s_pcm.h"
 #endif
-#include "gps_uart/gps_uart.h"
+#include "board.h"
 
 #if CONFIG_DIAG
 
@@ -138,14 +138,15 @@ bool md380_diag_line(uint8_t i, char *buf, uint8_t len)
 	}
 	case 8: {
 #if CONFIG_GPS
-		uint32_t good, bad, n;
-		stm32_gps_counts(&good, &bad, &n);
-		put(&o, stm32_gps_present() ? "gps yes " : "gps no ");
+		uint32_t good, bad, n, baud;
+		board_gps_counts(&good, &bad, &n, &baud);
+		put(&o, board_has_gps() ? "gps yes " : "gps no ");
 		put_u(&o, good);
 		put(&o, "/");
 		put_u(&o, bad);
 		put(&o, " b");
 		put_u(&o, n);
+		put(&o, board_gps_running() ? " on" : " off");
 #else
 		put(&o, "gps not built");
 #endif

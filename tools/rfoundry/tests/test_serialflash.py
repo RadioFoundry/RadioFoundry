@@ -22,6 +22,8 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
+sys.path.insert(0, HERE)
+import home  # noqa: E402,F401 (the settings folder in a temporary folder)
 from rfoundry import boards, cli, manifest as mf, serialflash as sf  # noqa: E402
 
 B = boards.get("dm1801pro")
@@ -64,7 +66,9 @@ class Tools(unittest.TestCase):
         self.assertEqual(B.codec.windows[0][0] - B.app_base, sf.tool("stubtool").APP_END - FLASH_OFF - 0x18000)
 
     def test_missing_tool_is_explained(self):
-        with mock.patch.object(sf, "_ROOT", "/nonexistent"), mock.patch.dict(sf._loaded, {}, clear=True):
+        with mock.patch.object(sf, "_ROOT", "/nonexistent"), mock.patch.dict(sf._loaded, {}, clear=True), \
+                mock.patch.dict(sys.modules):
+            sys.modules.pop("stubtool", None)
             with self.assertRaises(sf.SerialError) as e:
                 sf.tool("stubtool")
         self.assertIn("stub/stubtool.py", str(e.exception))
@@ -117,6 +121,26 @@ class Images(unittest.TestCase):
         self.assertEqual(name, real["name"])
 
 
+class LowLatency(unittest.TestCase):
+    """open_port asks for the 1 ms FTDI latency timer, and a port that can't take it still opens."""
+    def opened(self, port):
+        serial = mock.MagicMock(Serial=mock.Mock(return_value=port), SerialException=OSError)
+        with mock.patch.dict(sys.modules, {"serial": serial}):
+            return sf.open_port("/dev/ttyUSB0")
+
+    def test_asks_for_it(self):
+        port = mock.Mock()
+        self.assertIs(self.opened(port), port)
+        port.set_low_latency_mode.assert_called_once_with(True)
+
+    def test_a_port_without_it_still_opens(self):
+        for err in (OSError("not a tty"), NotImplementedError(), ValueError("closed")):
+            port = mock.Mock(**{"set_low_latency_mode.side_effect": err})
+            self.assertIs(self.opened(port), port)
+        port = mock.Mock(spec=["read", "write", "close"])     # rfc2217 and the like: no such method
+        self.assertIs(self.opened(port), port)
+
+
 class Decisions(unittest.TestCase):
     def test_route(self):
         self.assertEqual(sf.choose_route("auto", rfoundry(), True)[0], sf.STUB)
@@ -136,6 +160,10 @@ class Decisions(unittest.TestCase):
         mode, _, risk, expect, _ = d(B, sf.STUB, "auto", False, False, rfoundry("absent"))
         self.assertEqual((mode, expect), ("keep", False))
         self.assertIn("codec=absent", risk)
+        # a slot made from another stock build reports that build's number: still a working codec
+        self.assertIsNone(d(B, sf.STUB, "auto", False, False, rfoundry("dm1801pro-048"))[2])
+        self.assertEqual(d(B, sf.STUB, "auto", False, False, rfoundry("dm1801pro-unknown"))[3], False)
+        self.assertEqual(d(B, sf.STUB, "auto", False, False, rfoundry("dm32-049"))[3], False)	# another radio's id
         self.assertEqual(d(B, sf.STUB, "auto", True, False, None)[::4], ("merge", "image"))
         self.assertEqual(d(B, sf.BOOTLOADER, "auto", True, False, None)[::4], ("merge", "image"))
         self.assertEqual(d(B, sf.BOOTLOADER, "auto", False, True, None)[::4], ("merge", "file"))
@@ -408,6 +436,10 @@ class Verify(unittest.TestCase):
         self.assertEqual(self.check(rfoundry(git="00000000"))[0], 1)		# another build answers
         self.assertEqual(self.check(rfoundry("absent"))[0], 1)
         self.assertEqual(self.check(rfoundry("absent"), expect_codec=False)[0], 0)
+        # the slot of another stock build (DM-32UV: 048 from the L01 file, 050 from NRFB) is a working codec too
+        self.assertIn("DMR voice is ready", self.check(rfoundry("dm1801pro-048"))[1])
+        self.assertEqual(self.check(rfoundry("dm1801pro-unknown"))[0], 1)
+        self.assertEqual(self.check(rfoundry("dm32-049"))[0], 1)
         self.assertEqual(self.check(None)[0], 0)				# no answer: told what to look for
 
 

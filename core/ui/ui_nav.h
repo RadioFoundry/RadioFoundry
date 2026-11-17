@@ -12,11 +12,12 @@
 #include "ui_screens.h"
 #include "ui_svc.h"
 #include "i18n.h"
+#include "config.h"	// the switches that shape the types below
 
 typedef enum {
 	SCR_HOME, SCR_QUICK, SCR_HUB, SCR_FIND, SCR_ACTIONS, SCR_CONTACTS, SCR_MESSAGES, SCR_MESSAGE, SCR_COMPOSE,
 	SCR_RECENT, SCR_ZONES, SCR_ZONE, SCR_TOOLS, SCR_SETTINGS, SCR_GROUP, SCR_PICKER, SCR_INFO, SCR_CONFIRM,
-	SCR_DIAG, SCR_EMERGENCY, SCR_SCAN, SCR_ROAM, SCR_APRS, SCR_APRS_HEARD, SCR_APRS_POS, SCR_ABOUT,
+	SCR_DIAG, SCR_EMERGENCY, SCR_SCAN, SCR_ROAM, SCR_APRS, SCR_APRS_HEARD, SCR_FIXED_POS, SCR_ABOUT,
 	SCR_VOLUME,			// the volume editor (VOL key, radios without a knob)
 	SCR_CHANNELS, SCR_CHANNEL,	// every codeplug channel by number; one channel's settings (arg = its number)
 	SCR_CRASH,			// the crash log's record (arg 1: the prompt after the restart; CONFIG_CRASH_SCREEN)
@@ -39,6 +40,11 @@ typedef enum {
 	SCR_APRS_TO,			// destination callsign editor for APRS transmission
 	SCR_APRS_STATION,		// a heard station's actions
 	SCR_MESSAGE_TEXT,		// message body editor
+	SCR_MESSAGE_READ,		// a message's whole text, scrolled (the message screen's Full message row)
+	SCR_DATA_SERVICES,		// Settings > Connections > Data services: ARS server, IP gateway (CONFIG_DMR_ARS / _IP_GATEWAY)
+#if CONFIG_BACKLIGHT_TEST
+	SCR_BL_TEST,			// Settings > Advanced > Backlight tests
+#endif
 	SCR_COUNT
 } ui_scr_t;
 
@@ -49,6 +55,7 @@ typedef enum {
 #define SF_FIELD	0x08u	// "field use": at most 3 levels from Home (P4)
 #define SF_FIND		0x10u	// digits type the query (Find)
 #define SF_NO_STRIP	0x20u	// no status strip while the radio is idle (About: the owner's call); RX / TX bring it back
+#define SF_HINT_FN	0x40u	// the hint is built when drawn (hint_fn), not a marked text (hint)
 
 typedef struct {
 	uint8_t scr;
@@ -68,12 +75,29 @@ typedef struct {
 // A filtered list's raw row and its label (NULL: empty); false stops the pass
 typedef bool (*ui_raw_fn)(uint16_t raw, const char *label, void *ctx);
 
+// A filtered list's rows (SF_FILTER) before filtering, and the text each is matched by. Apart from the screen's
+// definition, which only a few screens need it in. raw_count and raw_label are required
+typedef struct {
+	uint16_t (*raw_count)(void);
+	bool (*raw_label)(uint16_t raw, char *buf, uint8_t len);
+	// Optional: every raw row's label in one pass, in order (NULL for an empty row), until fn returns false. A long
+	// list read a record at a time costs a flash read per row and key: 1024 contacts took 0.2 s a key. labels false:
+	// nothing is typed, only which rows exist counts, and a row's label may be any text
+	void (*raw_each)(ui_raw_fn fn, void *ctx, bool labels);
+	// Optional: whether a raw row exists, without its label. Past the first UI_FILTER_MAX rows of an unfiltered list
+	// the cursor steps row by row, so a list of 1024 channels read a name a row
+	bool (*raw_used)(uint16_t raw);
+} ui_filter_def_t;
+
 typedef struct {
 	const char *name;	// the debug link's / simulator's name for it
 	uint8_t flags;
-	const char *prefix;	// title
-	const char *hint;
-	const char *empty;
+	tr_id_t prefix;		// title (TRN; TR_NONE: none)
+	union {
+		tr_id_t hint;			// TRN; TR_NONE: none
+		const char *(*hint_fn)(void);	// SF_HINT_FN: the hint, built in the language in use
+	};
+	tr_id_t empty;		// shown when count is 0 (TRN; TR_NONE: none)
 	uint16_t (*count)(void);
 	void (*item)(uint16_t i, ui_item_t *it);
 	void (*select)(uint16_t i, bool hold);		// SELECT; hold = long SELECT (save / make permanent)
@@ -84,16 +108,10 @@ typedef struct {
 	bool (*key)(const input_event_t *ev);		// screen keys before the list's own (true: used)
 	void (*draw)(void);				// own drawing instead of the list
 	void (*enter)(void);				// on push
-	// Filtered lists (SF_FILTER): rows before filtering and the text each is matched by
-	uint16_t (*raw_count)(void);
-	bool (*raw_label)(uint16_t raw, char *buf, uint8_t len);
-	// Optional: every raw row's label in one pass, in order (NULL for an empty row), until fn returns false. A long
-	// list read a record at a time costs a flash read per row and key: 1024 contacts took 0.2 s a key. labels false:
-	// nothing is typed, only which rows exist counts, and a row's label may be any text
-	void (*raw_each)(ui_raw_fn fn, void *ctx, bool labels);
-	// Optional: whether a raw row exists, without its label. Past the first UI_FILTER_MAX rows of an unfiltered list
-	// the cursor steps row by row, so a list of 1024 channels read a name a row
-	bool (*raw_used)(uint16_t raw);
+#if CONFIG_BACKLIGHT_TEST
+	void (*leave)(void);				// on leaving the stack (BACK, Home, replaced)
+#endif
+	const ui_filter_def_t *filter;			// SF_FILTER: the rows before filtering (NULL: not a filtered list)
 } ui_scr_def_t;
 
 extern const ui_scr_def_t *const ui_scr[SCR_COUNT];
@@ -105,6 +123,10 @@ ui_frame_t *ui_frame(void);
 uint8_t ui_depth(void);
 void ui_push(uint8_t scr, uint16_t arg);
 void ui_pop(void);
+#if CONFIG_BACKLIGHT_TEST
+// The backlight tests: hold the light at a percent (0-100) against the dim and off times, or -1 to let it go
+void ui_backlight_hold(int16_t percent);
+#endif
 void ui_go_home(void);
 void ui_toast(const char *text);
 // Save temporary channel changes and tell the user why a save cannot start

@@ -28,7 +28,7 @@ static const hal_flash_map_t map = {
 	.calibration_addr = 0x10000u, .calibration_size = 0x200u,
 };
 
-const board_t board = { .name = "test", .flash = &sim_flash };
+const board_t board = { .name = "test", .flash = &sim_flash, .power_count = 5 };
 
 static void boot(void)
 {
@@ -604,6 +604,57 @@ static void test_settings_gateway_upgrade(void)
 	CHECK(st.load == SETTINGS_LOADED && s.ds_ip_gateway == 9996543u && s.vfo2_rx_hz == 446006250u);
 }
 
+// Stored power levels count against the board's level count (power_levels): a record from before it (0), or from a
+// build whose board had another count, loads with the levels back to the defaults, since the same index may name a
+// higher power now; a record of this count keeps them
+static void power_record(uint32_t seq, uint8_t levels)
+{
+	settings_t old;
+	settings_defaults(&old);
+	old.squelch = 3;
+	old.vfo_power = 4;
+	old.master_power = 4;
+	old.aprs_power = 5;
+	old.vfo2_power = 3;
+	old.power_levels = levels;
+	sim_flash_create(FLASH_SIZE, &map);
+	put_record(&map, 0, 0, seq, SETTINGS_LAYOUT | (1u << SETTINGS_PAGE_SHIFT),
+		   (uint16_t)(sizeof(settings_t) - SETTINGS_PAGE_BYTES), (const uint8_t *)&old + SETTINGS_PAGE_BYTES, true,
+		   true);
+	put_record(&map, 0, 1, seq + 1u, SETTINGS_LAYOUT, SETTINGS_PAGE_BYTES, &old, true, true);
+	boot();
+}
+
+static void test_settings_power_levels(void)
+{
+	settings_t s;
+	settings_stats_t st;
+
+	CHECK(board.power_count == 5);
+	settings_defaults(&s);
+	CHECK(s.power_levels == 5);
+	static const uint8_t other[] = { 0, 2, 9 };	// an older record, then other counts
+	for (unsigned i = 0; i < sizeof(other); i++) {
+		power_record(1, other[i]);
+		settings_read(&s);
+		settings_get_stats(&st);
+		CHECK(st.load == SETTINGS_LOADED && s.squelch == 3);
+		CHECK(s.vfo_power == SETTINGS_UNSET8 && s.vfo2_power == SETTINGS_UNSET8 &&
+		      s.master_power == SETTINGS_UNSET8 && s.aprs_power == 0 && s.power_levels == 5);
+	}
+	power_record(1, 5);
+	settings_read(&s);
+	CHECK(s.vfo_power == 4 && s.vfo2_power == 3 && s.master_power == 4 && s.aprs_power == 5 && s.power_levels == 5);
+	// A level chosen after the reset is saved with the count, and kept
+	power_record(1, 0);
+	settings_begin()->master_power = 1;
+	settings_end(1);
+	CHECK(settings_flush());
+	boot();
+	settings_read(&s);
+	CHECK(s.master_power == 1 && s.vfo_power == SETTINGS_UNSET8 && s.power_levels == 5);
+}
+
 // hal_flash_map_end: where a map's highest area ends, so a driver can refuse a map its chip is too small for
 static void test_map_end(void)
 {
@@ -657,6 +708,25 @@ static void test_crash_bits(void)
 	CHECK(!(s.updown_home & 0x80));		// bit 7 stays free
 	s.theme = 3;				// out of range in bits 0-1: the default
 	CHECK(settings_theme(&s) == 0);
+}
+
+// The Settings > Sound tones share sound_flags with the knob lock: each keeps its bits, and firmware from before the
+// tones (which only sets and clears SETTINGS_KNOB_LOCK) leaves them as they are
+static void test_sound_flags(void)
+{
+	settings_t s;
+	memset(&s, 0, sizeof s);
+	CHECK(settings_tones_off(&s) == 0);		// an older record: every tone on
+	s.sound_flags = SETTINGS_KNOB_LOCK;
+	settings_set_tones_off(&s, 0x0A);
+	CHECK(settings_tones_off(&s) == 0x0A && (s.sound_flags & SETTINGS_KNOB_LOCK));
+	settings_set_tones_off(&s, 0xFF);		// only four bits are kept
+	CHECK(settings_tones_off(&s) == 0x0F && (s.sound_flags & 0x0Eu) == 0);
+	s.sound_flags &= (uint8_t)~SETTINGS_KNOB_LOCK;	// an older firmware's knob change
+	CHECK(settings_tones_off(&s) == 0x0F);
+	s.sound_flags |= SETTINGS_KNOB_LOCK;
+	settings_set_tones_off(&s, 0);
+	CHECK(settings_tones_off(&s) == 0 && s.sound_flags == SETTINGS_KNOB_LOCK);
 }
 
 // The last dual watch B in beeps bits 1-7 and mic_gain bits 4-7: every code reads back, beeps and the mic gain stay
@@ -1121,9 +1191,11 @@ int main(void)
 	test_native_and_jobs();
 	test_settings_layout();
 	test_crash_bits();
+	test_sound_flags();
 	test_map_end();
 	test_settings_pages();
 	test_settings_gateway_upgrade();
+	test_settings_power_levels();
 	test_settings_bad_records();
 	test_settings_worn_sector();
 	test_write_across_sectors();

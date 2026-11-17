@@ -30,8 +30,21 @@ void sb_chr(sbuf_t *b, char c)
 
 void sb_str(sbuf_t *b, const char *s)
 {
+#if CONFIG_LANG_ZH
+	// A CJK catalog's text is UTF-8 (tools/i18n.py): when the buffer has no room for a whole character, drop it whole
+	// rather than leave half of it for the text layer to draw as a box
+	while (*s) {
+		const uint8_t *p = (const uint8_t *)s;
+		int seq = ((p[0] & 0xF0) == 0xE0 && (p[1] & 0xC0) == 0x80 && (p[2] & 0xC0) == 0x80) ? 3 : 1;
+		if ((size_t)(b->end - b->p) < (size_t)seq)
+			return;
+		while (seq--)
+			sb_chr(b, *s++);
+	}
+#else
 	while (*s)
 		sb_chr(b, *s++);
+#endif
 }
 
 void sb_u32(sbuf_t *b, uint32_t v, int min_digits)
@@ -56,6 +69,12 @@ void sb_i32(sbuf_t *b, int32_t v)
 	} else {
 		sb_u32(b, (uint32_t)v, 1);
 	}
+}
+
+void sb_hex(sbuf_t *b, uint32_t v, int digits)
+{
+	for (int sh = 4 * (digits - 1); sh >= 0; sh -= 4)
+		sb_chr(b, "0123456789ABCDEF"[(v >> sh) & 0xFu]);
 }
 
 void sb_freq(sbuf_t *b, uint32_t hz)
@@ -96,7 +115,7 @@ void sb_tone(sbuf_t *b, const subtone_t *t)
 void sb_split(sbuf_t *b, uint32_t rx_hz, uint32_t tx_hz)
 {
 	if (tx_hz == rx_hz) {
-		sb_str(b, TR("Off"));
+		sb_str(b, TR(VALUE_OFF, "Off"));
 		return;
 	}
 	sb_chr(b, tx_hz > rx_hz ? '+' : '-');
@@ -148,7 +167,7 @@ void sb_age_long(sbuf_t *b, uint32_t ms)
 	char unit;
 	sb_u32(b, age_unit(ms, &unit), 1);
 	sb_chr(b, unit);
-	sb_str(b, TR(" ago"));
+	sb_str(b, TR(PART_AGO, " ago"));
 }
 
 // "14m ago", "14m" as text alternates: the drawing keeps the longest that fits (font.h). One unit style everywhere,
@@ -160,7 +179,7 @@ void sb_age(sbuf_t *b, uint32_t ms)
 	sb_str(b, TEXT_ALT_OPEN);
 	sb_u32(b, v, 1);
 	sb_chr(b, unit);
-	sb_str(b, TR(" ago"));
+	sb_str(b, TR(PART_AGO, " ago"));
 	sb_str(b, TEXT_ALT_NEXT);
 	sb_u32(b, v, 1);
 	sb_chr(b, unit);

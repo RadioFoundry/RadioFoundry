@@ -20,6 +20,7 @@ bundles (--hidden-import).
 import importlib
 import importlib.util
 import os
+import sys
 import struct
 import time
 
@@ -45,10 +46,21 @@ def tool(name):
     if name in _loaded:
         return _loaded[name]
     path = os.path.join(_ROOT, _PLACES[name], name + ".py")
-    if os.path.isfile(path):
+    have = sys.modules.get(name)
+    if have is not None and os.path.realpath(getattr(have, "__file__", "") or "") == os.path.realpath(path):
+        mod = have		# already imported by its plain name (f4stub imports stubtool) from this checkout
+    elif os.path.isfile(path):
         spec = importlib.util.spec_from_file_location("rfoundry_tool_" + name, path)
         mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
+        # the tools import each other by their plain names (f4stub imports stubtool): one copy of each, as in the
+        # rfoundry executable, so an error class one raises is the class the other catches
+        mine = sys.modules.setdefault(name, mod) is mod
+        try:
+            spec.loader.exec_module(mod)
+        except BaseException:
+            if mine:
+                del sys.modules[name]
+            raise
     else:
         try:
             mod = importlib.import_module(name)
@@ -123,9 +135,14 @@ def open_port(dev):
     except ImportError:
         raise SerialError("pyserial is not installed (pip install pyserial, or use the rfoundry executable)")
     try:
-        return serial.Serial(dev, BAUD, timeout=0.1)
+        s = serial.Serial(dev, BAUD, timeout=0.1)
     except (serial.SerialException, OSError) as e:
         raise SerialError("can't open %s: %s (close the CPS, qdmr and any terminal using it)" % (dev, e))
+    try:    # an FTDI cable passes received bytes on after 1 ms, not 16 (Linux only)
+        s.set_low_latency_mode(True)
+    except (AttributeError, NotImplementedError, OSError, ValueError):
+        pass
+    return s
 
 
 def stub_offered(dev, opener=None):
@@ -179,7 +196,7 @@ def decide_codec(board, route, requested, slot_in_image, have_file, probe_result
                           "codec can't be kept that way; %s, or update a radio that runs RadioFoundry with stub entry "
                           "(--route stub)" % hint)
     codec = (probe_result or {}).get("codec")
-    if codec == board.codec.id:
+    if board.codec_present(codec):
         return "keep", "RadioFoundry on the radio checked its codec (%s); the stub writes only the image's sectors, so the " \
                        "codec slot stays" % codec, None, True, None
     return "keep", "the stub writes only the image's sectors, so the codec slot is left as it is", \

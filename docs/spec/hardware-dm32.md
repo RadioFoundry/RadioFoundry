@@ -527,12 +527,13 @@ pressed), drive it high again; restore IO_DIPLEX2. Rows idle high.
 | Row \ Column | col 1 (0x31) | col 2 (0x32) | col 3 (0x33) | col 4 (0x34) |
 |---|---|---|---|---|
 | row 0 (0x47) | green (menu / OK) | 3 | 2 | 1 |
-| row 1 (0x48) | left arrow | 6 | 5 | 4 |
-| row 2 (0x49) | right arrow | 9 | 8 | 7 |
+| row 1 (0x48) | left arrow, printed P1 | 6 | 5 | 4 |
+| row 2 (0x49) | right arrow, printed P2 | 9 | 8 | 7 |
 | row 3 (0x4A) | red (back) | # | 0 | * |
 | row 4 (0x4B) | up | down | — | — |
 
-The physical labels of the row 1 / row 2 column 1 keys and the up/down pair are named by position; check against the keypad.
+The left and right sides of the 4-way key are printed P1 and P2 (checked on a radio: P1 is scan bit 14, P2 bit 15).
+They are `board.home_keys` (programmable on Home, arrows in the menus; [ui.md](ui.md#31-key-assignment)).
 
 ### 6.2 Side keys and PTT
 
@@ -543,7 +544,7 @@ The physical labels of the row 1 / row 2 column 1 keys and the up/down pair are 
 | SK2 | column 4 (0x34) low with no row driven |
 
 Because SK1/SK2 pull a column low on their own, a matrix scan must ignore columns that are already low before any row
-is driven. The radio's third programmable key (P1/P2, orange/top) has not been located.
+is driven. The radio has no other programmable key: the keys are the keypad, SK1, SK2 and PTT.
 
 **PTT shares the cable's serial line (measured).** The PTT pin (0x2B) is also the K1 jack's line that carries the host's
 serial data to UART0, so every 0 bit the host sends pulls the pin low. Measured on a radio, 3 s per case, key scan
@@ -796,11 +797,179 @@ switch after the burst moves it back (`fd6818_dmr_burst_at`). A simplex channel 
 this (issue 72), `tx` tuned the synthesizer to the TX frequency at key-up and left it there: the radio was deaf to the
 hotspot's downlink, never aligned to it, and its bursts were not taken. The radio's own firmware retunes at every burst end too. The PLL lock time after each retune is not measured yet (HIL check open).
 
-RadioFoundry switches to TX **0.4 ms** before the lead point of each burst, not at the driver's 3.1 ms. The switch
-leaves receive, and earlier it cut off the end of the inbound burst before ours. The sweep below moved the RF TX
-interrupt itself (`hrc7000_t.rf_tx_lead`), with the switch in the interrupt. The switch now runs on the shared
-per-burst RF task ([modem-hrc7000.md](modem-hrc7000.md) 3.1a): the interrupt comes 0.9 ms ahead (`rf_tx_lead` = 9)
-and the task waits until 0.4 ms, so its wake (up to 0.42 ms) doesn't make the switch late. Untested on the radio. The same fault shows on other HR_C7000 boards. An SFR repeat sweep (SDR bench,
+**Burst TX-on timing.** The per-burst RF task ([modem-hrc7000.md](modem-hrc7000.md) 3.1a) runs the TX-on at points
+counted from the RF TX interrupt. The interrupt comes 2.6 ms ahead of the lead point (`rf_tx_lead` = 26), so the first
+symbol is 3.45 ms after it. The PA keys up from the power cal table ([pa-keyup.md](pa-keyup.md)): the dead
+window is 1.5 ms on both bands. UHF is measured with `tools/bench/pa_cal.py` ([pa-keyup.md](pa-keyup.md) 6) over the
+air on the SDR bench and judged by its shape (`tools/bench/pa_shape.py`): dead zone 79.3 % of the low row's drive, knee
+500 µs, slope 1350 µs, the PA at 0.9 ms and a boost's end at 0.4 ms. Every level boosts. The four lower levels: -3 dB
+point 0.03-0.58 ms before the first symbol, under 1 dB over, 10-symbol mean and RMS within 0.5 dB of the level. The top
+level creeps: -3 dB at 0.12-0.16 ms before the first symbol, then its last 2 dB over about 2 ms (10-symbol mean -1.1 to
+-1.2 dB). Its boost is at the 1.2 × top cap, and open-loop drives up to 3000 creep the same way, so the creep is the PA's
+own (the earlier set, knee 574 µs and slope 927 µs, left level 0 2 dB over and the three upper levels creeping).
+The set converted from the earlier form (dead zone 65 %, knee 650 µs, slope 600 µs) keyed the two top levels
+0.27-0.36 ms late. VHF is still that conversion (dead zone 65 %, knee 520 µs, slope 600 µs, the PA at 0.5 ms, a
+boost's end at 0.4 ms; the earlier form: one boost level, 1.2 × top, for a time per step, then a hold at 0.8 × d)
+and is untested on the radio. The measurements below were taken with the earlier form, whose knee was in drive
+counts × ms.
+
+| Point | Before the first symbol | What |
+|---|---|---|
+| FD6818 to TX on a split channel (the synthesizer to the TX frequency first) | 2.95 ms | LNA off, idle, frequency words, TX: 1.1-1.4 ms, so before the boost |
+| Boost, a step too slow for the window | 1.5 ms | DAC B = the lowest drive that brings the step up in the window, at most 1.2 × top |
+| Drive, a step fast enough by itself | knee × (top − dead) / (d − dead) + slope, at most 1.5 ms | DAC B = d |
+| FD6818 to TX on a simplex channel | 1.2 ms | LNA off, idle, TX: two state writes, 0.1 ms; after the inbound burst before ours |
+| PA select high | 0.9 ms | |
+| Drive after a boost | 0.4 ms | DAC B = d |
+
+d is the step's drive (11.3) and top the H step's, at the TX frequency. The earliest point the sequence may take is
+1.58 ms (the split's switch after the task's latest wake, 0.42 ms after the interrupt); RADIO op 37 refuses an earlier
+boost.
+
+**The PA key-up, measured.** A low step's drive alone takes 3-4 ms to full power; the top step about 1 ms. Raw I/Q on
+the SDR bench (2.4 MS/s, a dummy load, about 16 bursts each, the first symbol from each burst's sync). "Low" is a test
+drive under the table's lowest step (955 on UHF, 900 on VHF; RADIO op 36), about 12 dB under the H step. The -3 dB
+point against the first symbol at that drive and at the H step (the two rows with d alone were taken with the receiver
+compressing at the H step, so their H figures may read early):
+
+| Key-up | -3 dB, low | H |
+|---|---|---|
+| PA keyed 0.15 ms ahead, d alone | 4.58 ms | 0.88 ms |
+| PA keyed 0.45 ms ahead, d alone | 4.35 ms | 0.54 ms |
+| A boost of fixed length (1 ms, ending 0.5 ms ahead, its level 55 % of the way from d to 1.11 × top), PA 0.15 ms ahead | 0.30 ms | not measured without receiver compression |
+| The key-up above | -0.23 to -0.33 ms | -0.60 ms |
+
+The key-up per step and channel, with the PA selected at the boost (pa 1.5 ms, knee 1450, the constants before the
+SFR fix below): the -3 dB point against the first symbol (ms) / the overshoot above the settled level (dB) / the first
+symbol against the settled level (dB). The same constants throughout.
+
+| Channel | Low | L- | L3 | H |
+|---|---|---|---|---|
+| UHF | -0.23 / 2.3 / +2.1 | -0.54 / 1.1 / +0.7 | -0.24 / 0.0 / -0.5 | -0.60 / -0.1 / -1.1 |
+| 432.000 | -0.40 / 2.5 / +2.5 | | | -0.13 / 0.4 / -0.1 |
+| 449.900 | -0.28 / 2.0 / +2.0 | | | -0.48 / 0.1 / -1.4 |
+| 145.510 | -0.39 / 2.8 / +2.7 | -0.60 / 0.4 | -0.75 / 0.1 | -0.79 / 0.2 |
+| 146.000 | -0.32 / 2.1 / +2.1 | | | -0.77 / 0.2 |
+
+- Every measured step is up before the first symbol and no more than 3 dB over, on both bands with one set of
+  constants. Empty cells are not measured.
+- The low drive is on an edge: knee 1300 came up 0.4-0.56 ms late with under 1 dB over, 1450 as above, 1550 0.48 ms
+  early with 3.5 dB, 1650 with 5.1 dB. A repeat of 1450 after 25 minutes of keying moved 0.1 ms earlier and 0.2 dB up.
+- The boost of fixed length could not meet both at the low drive: on time took a level that overshot 5-6 dB, and
+  under 3 dB came 0.25 ms late or more. Its memory in the loop (about 1 ms) was still there when the output appeared.
+- A hold at DAC 0 for 0.7 ms with the PA off lost the boost's charge (3 ms late). At 0.8 × d (764 at the low drive) it
+  kept it. Holds of 0, 40 and 80 % of d for 0.2 ms made no difference.
+- The control charges less with the PA selected. At the low drive with no hold, a 0.40 ms boost with the PA selected
+  0.6 ms after its start came up at -0.43 ms with 3.8 dB; a 0.51 ms boost with the PA selected at its start came up at
+  +0.55 ms with 0.7 dB. The knee above goes with the PA selected at the boost.
+- The L- drive sits on the PA's turn-on knee, where 50 DAC counts move the output by about 8 dB.
+- Not measured with the key-up yet: split channels, the first burst of a call, decoding, spurs and receiver desense
+  while the drive is held before the slot.
+
+**The simplex switch and SFR.** With the PA at the boost (1.5 ms), the simplex switch came 1.8 ms before our first
+symbol, and an SFR repeater lost about half of each call: the runner decoded 0-45 of the call's 72 inbound frames and
+repeated 19-23 bursts, with no frame failing its FEC. The inbound bursts it missed were never handed over, so the
+switch cut their end. The RF TX interrupt's lead (2.6 ms) did not matter: the switch's time alone moved the result.
+`test_sfr_repeater_quality`, the radio on a simplex channel, the SDR bench talking at full power, six calls each:
+
+| Simplex switch before the first symbol | Calls passed | Frames decoded | Bit errors in the inbound frame before ours |
+|---|---|---|---|
+| 1.8 ms (PA 1.5 ms) | 0 of 6 | 0-45 | 18-34 |
+| 1.5 ms (PA 1.2 ms) | 5 of 6 | 48-72 | 45-73 |
+| 1.2 ms (PA 0.9 ms) | 5 of 6 | 54-72 | 5-23 |
+
+The PA now selects at 0.9 ms on UHF (0.5 ms on VHF, below), 0.6 ms after the boost, so the switch comes at 1.2 ms; a
+static assert keeps it no earlier on either band. With the PA selected later the boost charges the control more, so the knee went from 1450 to 1250. Raw I/Q on
+UHF (the radio 20 ft from the receiver, so no -30 dB point), the -3 dB point / overshoot:
+
+| Step | L- | L+ | M | M+ | M++ | H |
+|---|---|---|---|---|---|---|
+| PA 1.5 ms, knee 1450 | -0.58 to -0.60 / 1.6-1.9 | -0.22 / 0.0 | | | -0.14 / -0.1 | -0.14 to -0.16 / -0.1 |
+| PA 0.9 ms, knee 1250 | -0.50 / 1.5 | -0.23 to -0.26 / 0.0 | -0.21 / 0.0 | -0.16 / 0.0 | -0.16 / 0.0 | -0.22 / -0.1 |
+
+On VHF, every step, one call each:
+
+| Constants | L- | L | L+ | L++ | M | M+ | M++ | H- | H |
+|---|---|---|---|---|---|---|---|---|---|
+| PA 1.5 ms, knee 1450 | -0.64 / 1.0 | -0.66 / 0.4 | -0.67 / 0.2 | -0.81 / 0.4 | -0.78 / 0.4 | -0.82 / 0.4 | -0.80 / 0.4 | -0.83 / 0.4 | -0.80 / 0.4 |
+| PA 0.9 ms, knee 1250 | -0.72 / 2.8 | -0.71 / 2.0 | -0.71 / 0.4 | -0.64 / 0.3 | -0.72 / 0.4 | -0.75 / 0.4 | -0.79 / 0.4 | -0.79 / 0.5 | -0.80 / 0.4 |
+
+On VHF the low steps overshoot more with the later PA (2.8 dB at L-, inside the 3 dB limit). Not measured with these
+constants on UHF: L, L++ and H-. The other knees at PA 0.9 ms (950, 1100) and PA 1.1 ms (knee 1100, 1250) were also up
+before the first symbol on every step measured, with less overshoot at L-.
+
+**Each band's constants.** The VHF PA comes up about 0.15 ms after it is selected, whatever the boost: with the PA
+at 0.9 ms, knees from 600 to 1250 all put L- at -0.70 to -0.73 ms and H at -0.78 to -0.81 ms, and L- still
+overshot 2.3-3.1 dB. So VHF has its own constants: the PA at 0.5 ms, the drive at 0.4 ms and knee 1000. The UHF set
+stays as above. On both bands the low levels rise later than H, so no level's boost starts late (late 0 %).
+The VHF PA point and knee at L- (PA 0.5 ms):
+
+| Knee | L- | L | H |
+|---|---|---|---|
+| 800 | +0.10 / 0.1, first symbol 2.9 dB low | | -0.53 / 0.2 |
+| 950 | -0.12 to -0.13 / 0.2 | -0.24 / 0.2 | |
+| 1000 | -0.08 to -0.20 / 0.2-0.3 | -0.20 to -0.28 / 0.2-0.4 | -0.52 / 0.3 |
+| 1100 | -0.24 to -0.40 / 1.3-2.9 | -0.33 to -0.35 / 1.0 | -0.48 to -0.53 / 0.2 |
+| 1250 | -0.38 / 2.4 | -0.40 / 1.6 | |
+
+The PA at 0.4 ms put H at -0.42 ms and L- (knee 800) at +0.17 ms. The five power levels with the built-in
+constants, the -3 dB point / overshoot, one or two calls each (raw I/Q from an 8-bit receiver on the SDR bench, the radio into
+a dummy load at full power):
+
+| Channel | L- | L | M | M+ | H |
+|---|---|---|---|---|---|
+| 146.000 | -0.16 / 0.1 | -0.26 / 0.5 | -0.46 / 0.2 | -0.42 / 0.2 | -0.53 / 0.2 |
+| 432.000 | -0.26 / 1.1 | -0.24 / 0.5 | | | -0.17 / 0.5 |
+| 445.000 | -0.15 to -0.23 / 0.3-0.6 | -0.18 to -0.23 / 0.2 | -0.29 to -0.38 / 0.1 | -0.42 to -0.47 / 0.1 | -0.50 to -0.53 / 0.1 |
+| 449.900 | -0.47 / 0.5 | -0.49 / 0.0 | | | -0.53 / 0.0 |
+
+Every level is up before the first symbol, at most 0.53 ms early and 1.1 dB over. The first symbol is within 1.2 dB
+of the settled level. The simplex switch on VHF comes at 0.8 ms, later than UHF's
+1.2 ms. The levels' output against H is not measured: the dummy load's leak to the receiver moved up to 4 dB between
+runs. That needs a wattmeter.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../dev/img/dm32-keyup-sfr-ramp-dark.png">
+  <img alt="The key-up's rise at L-, M and H with the PA at 1.5 ms and at 0.9 ms, against where receive stops" src="../dev/img/dm32-keyup-sfr-ramp-light.png">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../dev/img/dm32-keyup-sfr-timing-dark.png">
+  <img alt="The key-up's points before and after: receive stopping, the boost, the PA, the hold and the drive" src="../dev/img/dm32-keyup-sfr-timing-light.png">
+</picture>
+
+The measurements below were made with the PA keyed 1.5 ms ahead at d, before the key-up.
+
+Measured on the SDR bench (2026-11-09, 446.075 and 448.7 MHz, high power, the radio 35 ft from the receiver, its carrier
+against the symbols from each burst's sync). The BER is a duplex hotspot's, next to the receiver; it moved when the radios
+were moved a few feet (the reference radio then read 0.4-0.7 %), so it compares radios measured together, not builds.
+Now, `check_tx`'s figures (`tools/bench/dmr_bench.py`) pass on both channel kinds: on-time 28.5-29.2 ms, ramps under
+0.9 ms, the bursts on the 60 ms grid, the carrier between bursts 52 dB down:
+
+| | Carrier at -6 dB vs the first symbol | vs the last symbol | Ramp up 10-90 % | Duplex hotspot BER | Bursts with a corrected bit (simplex) |
+|---|---|---|---|---|---|
+| Before (lead 0.9 ms, PA 0.5 ms ahead) | 0.65 ms after | at it | 0.75 ms | 1.7-2.7 % | 25-60 % |
+| Now | 0.75-0.79 ms before | -0.08 ms (split), +0.15 ms (simplex) | 0.6-0.8 ms | 0.2-0.4 % (TS1 and TS2) | 0-17 % |
+| A reference radio on the same channel (another modem chip) | 1.58 ms before | 0.38 ms after | 0.26 ms | 0.3-0.4 % | 0 % |
+
+Keyed 0.5 ms ahead, and late besides (the split's writes overran the PA's point: the PA came up 1.6 ms after the
+interrupt), the first ~5 symbols of every burst went out on a rising carrier. A repeater or hotspot then saw a few
+bad bits in every burst, on simplex too, and the slot timing was right (inbound +0.166 ms against the outbound + 30
+ms, the same as the other radio). The diagnostics' `up` line shows the PA's time after the interrupt (2.0-2.1 ms). Its grid error grew with the lead
+(about 0.02 ms at lead 9, 0.2 ms at 24, 0.4 ms at 26) while the bursts' syncs stayed on the 60 ms grid: the modem
+raises the first burst's RF TX interrupt late (0.42 ms at lead 26: 27.71 ms after the slot tick before it, the later
+bursts 27.29 ms), so that burst's key-up and key-down came 0.42 ms late on every step and both bands, and the second
+burst's interrupt looked early against it. The first burst is now timed from the slot tick
+([modem-hrc7000.md](modem-hrc7000.md) 3.1a); the `up` line's `f` is by how much. The PA
+drops at once, so it is switched off 0.3 ms after the last symbol's point (`off_after_us`): off at the point, the
+carrier was 5 dB down 0.2 ms before the last symbol's end and 10 to 28 dB down at its end, at every level. With
+the delay it holds to within 0.2 dB at the symbol's end and is off the air 0.17 to 0.44 ms after it. The switch moved earlier only
+on a split channel, where no inbound burst is heard on the TX frequency. On a simplex channel it is at 1.2 ms, after
+the inbound burst before ours, as an SFR needs (8.5, the simplex switch and SFR).
+
+Before this, RadioFoundry switched to TX **0.4 ms** before the lead point of each burst, not at the driver's 3.1 ms.
+The switch leaves receive, and earlier it cut off the end of the inbound burst before ours. The sweep below moved the
+RF TX interrupt itself (`hrc7000_t.rf_tx_lead`), with the switch in the interrupt. An SFR repeat sweep (SDR bench,
 2026-10-20, 72 inbound frames per call, the radio in another room from the bench, so with a weak signal):
 
 | Lead | Frames lost per call | Bits corrected per call in the frames before ours |
@@ -821,9 +990,10 @@ outbound through a repeater is not measured on this radio yet ([modem-hrc7000.md
 
 ### 8.6 DMR PA timer
 
-The original firmware's PA timing. RadioFoundry keys the PA from the per-burst RF task instead: PA select and DAC B
-0.5 ms before the burst's first symbol, timed from the RF TX interrupt, and both off with its last symbol (8.5,
-[modem-hrc7000.md](modem-hrc7000.md) 3.1a). Untested on the radio.
+The original firmware's PA timing. RadioFoundry keys the PA from the per-burst RF task instead: the key-up from the
+power cal table (PA select and a boost 1.5 ms before the burst's first symbol, a hold, then DAC B at the step's drive
+0.5 ms before), timed from the RF TX interrupt, and both off 0.3 ms after its last symbol's point (8.5, [pa-keyup.md](pa-keyup.md), [modem-hrc7000.md](modem-hrc7000.md)
+3.1a). At 0.5 ms with the step's drive alone the carrier was still rising for the first symbols (8.5).
 
 | Item | Value |
 |---|---|
@@ -883,14 +1053,15 @@ From the radio's firmware (code read, not measured):
 
 | Item | Value |
 |---|---|
-| When | the RX frequency is in 108.000 to 136.000 MHz (exclusive). AM is chosen by the frequency alone; no channel field |
+| When | the RX frequency is in 108.000 MHz (inclusive) to 136.000 MHz (exclusive). AM is chosen by the frequency alone; no channel field |
 | 0x43 | 0x0048: receive filter 14:12 = 0 (about 1.7 kHz), weak-signal bandwidth 0, narrow |
 | 0x47 | 0x6740 (AF type 7), written at the set-up and again when the audio is unmuted |
 | 0x13 | 0x03FF, then a gain loop rewrites it (below) |
 | 0x4A | 0x5450, written only here and never restored |
-| Not written | 0x04 (the AM demodulator enable bit: AM is 0x47 type 7 alone), 0x7E, 0x2B, 0x48, sub-audio |
+| 0x48 | 0x31E0 with a stored setting s (1-15) ORed into bits 3:0, at each air band tune (s = 13, 0x31ED, when out of range). The FM and DMR set-ups leave 0xBBBF |
+| Not written | 0x04 (the AM demodulator enable bit: AM is 0x47 type 7 alone), 0x7E, 0x2B, 0x49, 0x10-0x12, 0x14, sub-audio |
 | Leaving AM | 0x13 = 0x037E, then the FM or DMR set-up |
-| Gain loop | each tick: the 0x67 reading (bits 8:0) averaged with the one before; dB = (average - 142) / 2. 10 dB or more: down at once to the table entry about (dB - 8) below the current one. Under -6 dB and 30 ticks since the last change: up one entry. Any change, or -6 dB and over, starts the 30 ticks again. The table holds 42 0x13 words from 0x000 (-93 dB) to 0x03FF (0 dB). The RSSI isn't corrected for the gain |
+| Gain loop | a tick every 10 ms in AM (empty channel included) and one at the end of each tune: the 0x67 reading (bits 8:0) averaged with the raw reading before (0 after a tune); dB = (average - 142) / 2, truncated toward 0. 1 to 9 dB over (average 144-161): down one entry every tick. 10 dB or more: down at once to the entry at or under (current dB - (dB - 8)). Any cut, and any tick at -6 dB and over, sets a 30-tick hold; under -6 dB with the hold at 0: up one entry each tick (a raise doesn't restart the hold). So it holds the average at 129-143. 0x13 is written every tick. The index is kept across tunes (0x13 = 0x03FF at the set-up lasts only until the tune's tick). The table holds 42 0x13 words from 0x000 (-93 dB) to 0x03FF (0 dB), plus a power-on start entry 0x03BE (-7 dB). The RSSI isn't corrected for the gain |
 | Squelch | 0x78 = n << 8 \| (n - 1) on the raw 0x67 scale, n from the factory page's air band rows (11.2: 0x80 level 9, 0x85 level 1, at five points over 108-136 MHz), interpolated by level and frequency. One radio's rows: 61 (level 9) and 71 (level 1), about 30-40 below its FM rows |
 
 On the bench (radio on a dummy load, an AM carrier from the SDR bench, a desk with a raised noise floor):
@@ -907,11 +1078,26 @@ decides; the factory rows can't be compared with 0x67 as it reads here.
 What RadioFoundry does: `rx_am` in `boards/dm32/radio_dm32.c` is the FM receive path (VHF LNA, speaker source to the
 FD6818, A2) with that set-up: 0x43 = 0x0048, 0x47 = 0x6740, 0x13 = 0x03FF and its gain loop at every status poll, 0x4A
 = 0x5450, each AM tune (`fd6818_set_am`, `fd6818_am_status`). Leaving AM writes 0x13 = 0x037E, 0x47 = 0x0140 and 0x4A as
-it read before. The squelch works on noise_sq plus 17 (`fd6818_am_noise`): level 1 opens under 47, as the chip's own
+it read before. The gain loop (`fd6818_agc_step`) runs at each status poll, so its hold counts polls; it starts from
+full gain at each AM tune and writes 0x13 only when the gain changes. The squelch works on noise_sq plus 17 (`fd6818_am_noise`): level 1 opens under 47, as the chip's own
 squelch does, and each level is 3 dB tighter; the factory rows are not read. The RSSI shown adds the gain the loop took
 off back. The RDA5807M runs through the shared HR_C7000 glue (`platform/hrc7000/bcast_hrc.c`)
 on PTA25 / PTA26 with no enable pin; its audio path turns the amplifier on and leaves the speaker source alone (B4).
 The air band is an RX-only band of 108-136 MHz and the broadcast range 65-108 MHz in `boards/dm32/board.c`.
+
+**Where the gain loop settles.** Measured on a DM-32UV (rf A): a steady AM carrier from the SDR bench at four levels
+10 dB apart (30 dB in all) (on a 2 m frequency, which a bench build received as AM: same set-up and VHF path), 0x67 read over the
+debug link once the loop had settled:
+
+| Signal | 0x67 median (10-90 %) | 0x13 |
+|---|---|---|
+| weakest | 137 (135-139) | 0x05E |
+| +10 dB | 142 (140-143) | 0x01F |
+| +20 dB | 140 (140-141) | 0x00D |
+| +30 dB | 142 (141-142) | 0x003 |
+
+Without the one-entry cuts at 1-9 dB over, the loop settled the same carriers at 148-158 (3-8 dB over the target),
+where #545 reports AM audio distorted.
 
 ---
 
@@ -935,6 +1121,42 @@ the call sign at 20 wpm, 800 Hz, about 1.8 kHz deviation; the next one 5 min lat
 repeat of a call sat 90.2 ms after the original on every voice burst (72 of 72). 212 of 216 repeated voice frames needed
 Golay corrections and 4 were uncorrectable, where the direct copy was clean: the receiver takes bit errors while it
 switches per burst. As a user it reports both copies of a call (gotchas 14.15).
+
+### 8.10 Two RF sections
+
+Newer DM-32UV radios have an RF section whose FD6818 needs another set-up. They ship with
+`DM32.NRFB.01.050`; the older builds (046 to 049) leave their receiver dead. On the classic set-up above, the newer
+part's synthesizer never locks: no receive anywhere, and transmit far off frequency (146.520 MHz set, 220.100 MHz out).
+RadioFoundry checks which part is fitted at start-up.
+
+Set-up B rows marked "user" were checked on one user's radio with the newer section; none are yet checked on a
+RadioFoundry test radio.
+
+| | Classic section (set-up A, 8.2-8.8) | Newer section (set-up B) |
+|---|---|---|
+| FD6818 tables | 8.2 | the DM-1801 Pro's (`hardware-dm1801pro.md` 5), `fd6818_variant_b_dmr6943` |
+| 0x37 | 0x1D0F / 0x1D1F / 0x1F0F / 0x1F1F | 0x9D1F (bit 15 set) |
+| 0x30 into RX / TX | idle, then 0xBFF1 / 0xC1FE | idle, 0x0200, then 0xBFF1 / 0xC1FE |
+| 0x1A, 0x40 | band words (8.3) | 0x1A not written; 0x40 = 0x34F0, on FM transmit 0x3480 + the calibration byte |
+| DMR 0x47 / 0x48 | 0x0140 / 0xBBBF | 0x6943 / 0xB2FD; the DM-1801 Pro's 0x0140 / 0xB2F5 gave no DMR sync (user) |
+| 0x50 around each switch to TX | not written | FM: 0xBB20 before, 0x3B20 after (user: after only); DMR burst: 0x3B18 after (user: 0x3B20) |
+| 0x2E / 0x2F at each receive tune | not written | 0x8608 / 0x1890 with CTCSS, 0x9608 / 0x9890 with DCS or none |
+| HR_C7000 RF_MODE bit 15 (RX IQ invert) | set | clear (user; set: DMR syncs but decodes nothing usable) |
+| Receiver sleep (8.8) | 0x37 = 0x1D11 / 0x1D00, wake 0x1F1F, 0x1F0F | 0x37 = 0x9D17 (FM) / 0x9D00 (DMR), wake 0x9D1F (user: idle only) |
+| 0x0C bit 9 (synthesizer locked) on set-up A | set at every frequency tried, 136-520 MHz | never set (user) |
+| 0x0C bit 9 on set-up B | set | set |
+| 0x3D | reads 0x2AAB | reads 0 (user) |
+
+The data flash can't tell the sections apart: a Puya part (JEDEC 852018) is fitted with both.
+
+Start-up check (`radio_dm32.c` `rf_detect`, `fd6818_detect`): set-up A, tuned to 145 MHz in RX, waits up to 20 ms
+for 0x0C bit 9 to read set three times in a row, 1 ms apart (the bit can read set once while the synthesizer
+settles). No lock: set-up B the same way. Set-up B locks on both sections, so A goes first, and when B locks A is tried
+once more with 60 ms, so a slow lock on the classic section isn't taken for the newer one. Neither locking leaves
+set-up A and refuses every transmission. The diagnostics line `flash ... cal ... rf X` names the result: `A`, `B`, or `-` for
+neither. Set-up B has no AM receive yet (8.7 is set-up A's).
+
+With no receive tone RadioFoundry writes the DCS 0x2E / 0x2F pair, which is also the power-on 0x2F.
 
 ## 9. Audio path
 
@@ -1098,12 +1320,12 @@ line framing `drivers/gps/nmea_line`:
 |---|---|
 | Start-up | GPIO 0x2C low (module on), UART1 at 9600 8N1 (`hrc_uart_setup`, divisor 547, 0.02 % off), receive interrupt on |
 | Listen | 5 s for one checksum-valid sentence. The module sends a sentence a second from about 1 s after power-up, with or without a fix |
-| Heard | The module is present (`board.gps_present`). Every valid sentence goes to the APRS position source (`aprs_nmea`, CONFIG_APRS). The module stays powered while Settings > Location > GPS is on; with it off, `hrc_gps_enable(false)` (`board_t.gps_enable`) powers it down and stops the UART within one 20 ms poll, and turning it on powers it up again. The setting is applied at start-up (the probe runs first, whatever it says) and on each change |
+| Heard | The module is present (`board_t.gps` = `hrc_gps`, `present`). Every valid sentence goes to the position service (`position_nmea`, CONFIG_GPS). The module stays powered while Settings > Location > GPS is on; with it off, `hal_gps_t.enable(false)` powers it down and stops the UART within one 20 ms poll, and turning it on powers it up again. The setting is applied at start-up (the probe runs first, whatever it says) and on each change |
 | Nothing heard | GPIO 0x2C high (module off), UART1 interrupt off. The radio reports no GPS and the Location settings are dimmed |
 | Diagnostics | The line `gps yes` (or `gps no`) `GOOD/BAD bBYTES on|off`: valid sentences, bad ones (checksum, length, UART errors, ring overflow), bytes received, and whether the module is powered now (Settings > Location > GPS) |
 | Switching on again | The UART is set up once, before the module is first powered. While the module is off its line is held low, a break the UART is still receiving, and the UART ignores a line control write while busy, so switching on only clears the RX FIFO and status and enables the interrupt (`hrc_uart_rx_clear`). Setting the baud rate again there left the UART deaf on the DB25-D (2026-10-17) |
 
-**Settings > Location > GPS** switches the module's power on the HR_C7000 boards (`hal/board.h` `gps_enable`). An STM32 board's driver doesn't implement the hook (its power pin is left as the hardware has it): the setting there only stops APRS using the fix.
+**Settings > Location > GPS** switches the module's power through `hal_gps_t.enable` ([position.md](position.md) 2); the probe-then-setting rule is `drivers/gps/gps_rx/gps_power`.
 
 ---
 
@@ -1265,7 +1487,7 @@ Runs on a radio: `docs/testing/dm32-bringup.md` is the bring-up checklist and li
 | Image | linked at 0x0300C000, crt0 (`Reset_Handler`) is the first byte; wrapped with `tools/serial_loader.py --wrap` for the Baofeng updater | `boards/dm32/memory.ld`, `platform/hrc7000/crt0.S` |
 | Program flash | app 0x0300C000..0x030E8000 (880 KB); codec slot 0x030E8000..0x03100000, filled only on the user's machine by `tools/hrc7000_codec.py` | `boards/dm32/memory.ld` |
 | SRAM | one region, 0x10000..0x43A00 (211,456 B): vector table (VBR = 0x10000), RAM code (interrupt entry, clock set-up, the DMR slot engine and the board's DMR glue), `.ram_lo` (the state the core marks `RFOUNDRY_CPU_RAM`, the zeroed state of the radio task, APRS, hotspot rings and DMR data buffers, and the interrupt stack), data, bss (RTOS heap inside, the network buffers) and the start-up stack. 0x43A00..0x58000 (83,456 B) is the codec window and is not linked. See 17.1 | `boards/dm32/memory.ld`, `platform/hrc7000/common.ld` |
-| Modem SRAM | 0x18000000..0x1800013F PCM buffers; 0x18000E48..0x18003E28 the codec's tables (copied at first use) | `platform/hrc7000/audio_pcm.c`, `platform/hrc7000/vocoder.c` |
+| Modem SRAM | 0x18000000..0x1800013F PCM buffers; 0x18000E48..0x18003E38 the codec's tables (copied at first use) | `platform/hrc7000/audio_pcm.c`, `platform/hrc7000/vocoder.c` |
 | Clocks | XIP quad mode and divider (1.1 steps 2-3) always; the rest of 1.1 only when the bootloader left the system clock on the oscillator; watchdog off (then `main()` starts it, [watchdog.md](watchdog.md)); cache as 1.3 | `platform/hrc7000/clock.c` |
 | Interrupts | PIC sources 0-63 as vectors 32-95 (assumed vectored), level mode, one level, never nested; EOI by writing 0x04 to 0x17000010 in the common entry | `platform/hrc7000/irq.c`, `freertos/portasm.S` |
 | Timers | 1: RTOS tick (1 kHz); 2: free-running cycle clock (microseconds, `hal_millis`); 3: DMR PA one-shot; 4: APRS AFSK, tops up the prompt FIFO every 2 ms while sending | `platform/hrc7000/time.c`, `platform/hrc7000/dmr_glue.c`, `platform/hrc7000/hrc_afsk.c` |
@@ -1341,3 +1563,26 @@ and jumps: the three guards (magic, length, CRC-32) are what keep a stray or tru
 **Bench results.** Entry from RadioFoundry, program flash and data flash reads, `--write-app` and the restart ran on a second HR_C7000 board (2026-10-15). The universal build ran from RadioFoundry on that board and the DM-32UV (2026-10-17): reads of both chips,
 the bootloader identical to earlier dumps, a write test on the data flash, and the restart. Not yet run with the
 universal build: the boot ROM load at power-on.
+
+### 17.3 Air interface (`CONFIG_P25`)
+
+`board.air` and `board.baseband` are the HR_C7000's provider and receive tap ([modem-hrc7000.md](modem-hrc7000.md) 10),
+under `CONFIG_DMR`. A session runs in DMR: the FD6818 keeps its DMR set-up, the speaker source (GPIO 0x2F) stays on
+the codec, and the transmitter is keyed through the DMR RF burst sequences in continuous mode (one key-up for the whole
+transmission). Checked on this radio against the SDR bench, at the lowest power, with every default feature on:
+
+| What | Result |
+|---|---|
+| P25 conventional receive (`test_p25_rx_from_bench`) | at -122 dBm: 72 of 72 voice frames, none bad, played |
+| P25 conventional transmit (`test_p25_tx_off_air`) | 19 units, header to terminator |
+| P25 trunked transmit ([p25-trunking.md](p25-trunking.md), `test_p25_trunk_tx`) | registration, affiliation, a voice request and a call on the grant, twice |
+| P25 trunked receive (`test_p25_trunk_rx`) | 4 grants, 4 followed; 234 voice frames, 7 bad, 198 played |
+| NXDN receive ([nxdn.md](nxdn.md), `test_nxdn_rx_from_bench`) | 9600 and 4800 bit/s: a call each, 21 and 12 frames, 40 voice frames each |
+| NXDN transmit (`test_nxdn_tx_off_air`) | 9600 and 4800 bit/s: 77 and 39 frames, no CRC failure |
+
+Not checked: a call with a radio of another make, a live trunked system, sensitivity, and the receive copy's
+calibration (modem-hrc7000.md 10.4).
+
+## Receive past the rated bands
+
+16-65, 174-400 and 480-740 MHz: the FD6818 band table (8.3). The chip documents give no other range. Receive only, FM, off by default ([radio-features.md](radio-features.md) 6.2). Not measured on the radio.

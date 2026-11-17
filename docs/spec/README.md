@@ -16,6 +16,7 @@ Past bugs, by subsystem: [gotchas.md](gotchas.md). Contributors read [docs/dev](
 | [radio-features.md](radio-features.md) | Scan, the FM transmit extras (tones, burst, roger beep), beeps, battery and power management |
 | [airband-and-broadcast.md](airband-and-broadcast.md) | Air band AM receive and broadcast FM receive, chosen by the frequency |
 | [aprs.md](aprs.md) | APRS on FM and over DMR |
+| [position.md](position.md) | The radio's position: sources, settings, who reads it |
 | [ui.md](ui.md) | The user interface as built: screens, keys, the drawing layer ([docs/ux](../ux/) has the design) |
 
 ## DMR
@@ -27,6 +28,7 @@ Past bugs, by subsystem: [gotchas.md](gotchas.md). Contributors read [docs/dev](
 | [zone-share.md](zone-share.md) | Zone and channel sharing over DMR data: the record, fragments, offers, the import |
 | [dmr-emergency.md](dmr-emergency.md) | DMR emergency |
 | [dmr-roaming.md](dmr-roaming.md) | DMR repeater roaming |
+| [dmr-trunking.md](dmr-trunking.md) | DMR Tier III trunking, mobile station |
 | [sfr.md](sfr.md) | Single frequency repeater |
 | [split-duplex.md](split-duplex.md) | Two radios as one duplex MMDVM modem |
 
@@ -38,6 +40,7 @@ Past bugs, by subsystem: [gotchas.md](gotchas.md). Contributors read [docs/dev](
 | [modem-hrc6000.md](modem-hrc6000.md) | HR_C6000 as a DMR modem (also the HR_C5000's base) |
 | [hrc6000-registers.md](hrc6000-registers.md) | HR_C6000 register reference |
 | [modem-hrc7000.md](modem-hrc7000.md) | HR_C7000 as a DMR modem |
+| [pa-keyup.md](pa-keyup.md) | DMR PA key-up per burst from the power cal table |
 | [rx2-link.md](rx2-link.md) | The link to a second receiver on another SoC: frames, messages, timing |
 
 ## Host link and network
@@ -64,6 +67,11 @@ Past bugs, by subsystem: [gotchas.md](gotchas.md). Contributors read [docs/dev](
 | [open-firmware-cps.md](open-firmware-cps.md) | The open-firmware codeplug format qdmr writes |
 | [qdmr-yaml.md](qdmr-yaml.md) | qdmr's YAML codeplug file and how the Codeplug Editor maps it |
 | [codeplug-native.md](codeplug-native.md) | The editing model and the native codeplug (draft) |
+| [codeplug-settings.md](codeplug-settings.md) | The codeplug settings area: keyed settings the open-firmware layout has no field for (ARS server, IP gateway) |
+| [channel-modes.md](channel-modes.md) | Channel modes: how a channel, system, target or key of any digital mode is stored beside the open-firmware record |
+| [dmr-trunking-codeplug.md](dmr-trunking-codeplug.md) | DMR Tier III systems and trunked channels in the codeplug |
+| [p25-codeplug.md](p25-codeplug.md) | P25 conventional and trunked channels and systems in the codeplug |
+| [nxdn-codeplug.md](nxdn-codeplug.md) | NXDN conventional channels in the codeplug |
 | [settings-store.md](settings-store.md) | Settings store and safe flash writes |
 | [nand-sectors.md](nand-sectors.md) | NOR-like 4 KB sectors over NAND, for the settings store on NAND radios |
 

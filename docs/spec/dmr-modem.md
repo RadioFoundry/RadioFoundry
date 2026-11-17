@@ -200,6 +200,10 @@ transmitting in the slot after the next one, in phase with the bursts being rece
 
 ### 2.5 Transmitting voice
 
+The call stack configures the modem with the channel's transmit color code even when the receive filter accepts
+any CC (any-CC listening, polite-to-all access, or a dual-CC SFR user). `set_cc_filter` changes reception only.
+The CC fields are defined by TS 102 361-1 9.1.2 (EMB), 9.1.3 (slot type) and 9.3.1 (CC).
+
 1. **Channel access** per the policy (1.7). Busy => wait (with timeout) or refuse.
 2. **RMO, repeater not heard**: BS activation (2.7).
 3. **Alignment**: RMO: wait until the slot tracking is stable, then transmit in the slot after the next one that
@@ -230,12 +234,69 @@ transmitting in the slot after the next one, in phase with the bursts being rece
 - Then listen: the repeater is up when its outbound is heard with the slot number toggling correctly more than 3 times
   in a row.
 - No answer within 600 ms: send again, up to the configured number of attempts; then report failure to the user.
+- The CSBK goes on our own timing (`DMR_TIMING_OWN`): no repeater is heard, so there is nothing to align to. On the
+  timing the modem last had, from a repeater that had just dropped, the HR_C6000 sent nothing: its passive timing had
+  no repeater left to follow. A CSBK whose transmission ends without going on air (`DMR_EV_TX_DONE` with no
+  `DMR_EV_TX_SLOT_STARTED`, the modem no longer sending) is sent again at once, as the next attempt
+  (`call.tx_wake_lost`).
+- While a key-up waits for its first slot (the wake-up queued, or the aligned voice start not yet on the air), the
+  modem's slot numbers don't count as the repeater heard: the modem labels slots from the timing it last had, which
+  kept a repeater that had dropped "up". A repeater that dropped as the hang ended then got no wake-up.
+- A voice start through a repeater that the modem gives up before its first burst (`DMR_EV_TX_REJECTED` or
+  `DMR_EV_TX_DONE` with nothing sent: no slot timing to align to) wakes the repeater again instead of being refused:
+  once per key-up, and only while PTT is held, with the whole wake-up's attempts. A second such start is refused. The
+  refused start's own `DMR_EV_TX_DONE` comes after its rejection, so a wake-up waits for its CSBK's
+  `DMR_EV_TX_SLOT_STARTED` before taking a `DMR_EV_TX_DONE` as its own.
+- Where the modem reports the repeater's bursts (received, or heard between ours), only those say it is up; its slot
+  numbers don't. They run on from the timing it last had, so a repeater that had dropped counted as up for a key-up
+  0.6 s later, and a second wake-up counted as answered by them.
+- Our own ID as the source while a key-up lasts is our echo: the repeater replays an over it heard while down once a
+  wake-up starts it. It never makes the channel busy.
+- A start through a repeater that never gets a slot (no timing at all, so the modem's own wait never runs out) is cut
+  by the stall timeout; it wakes the repeater again as above instead of being refused.
 - A short PTT press still runs the whole wake-up (the user only starts the call; other radios do the same). On release the
   stack keeps listening and retrying. If the repeater answers after release, nothing is sent and the call view's
   `wake_admits` counter goes up, so the radio plays its talk permit tone. If no repeater is heard in the last attempt, the
   call ends with `DMR_TX_ERR_NO_REPEATER` and the radio plays its deny tone.
 
 ### 2.8 Hang time and TX hold-off
+
+- The repeater can drop under our over: its hang ended just as we keyed, and it took our voice as nothing. Learning
+  its hang to predict that is not general (hangs differ per repeater and per call type), so the stack reacts instead.
+  Where the radio's RF can receive the repeater's outbound between our bursts on a split channel (the modem's
+  `tx_listen_split`; `DMR_CALL_TX_LISTEN`, `dmr_call_set_tx_listen`), a voice over through a repeater listens there.
+  A repeater burst is BS sync on our color code: a neighbor's on another one (heard where the modem doesn't filter
+  the color code) is not ours. No repeater burst for `DMR_CALL_TX_DROP_MS` (240 ms) once our bursts are on the air
+  means it dropped
+  (`call.tx_rpt_drops`): the over ends with a terminator, not an abort (an abort mid-voice left the next CSBK
+  undecodable on the HR_C5000), the repeater is woken again (2.7, once per key-up) and the voice starts again. After
+  that wake-up only the repeater's own bursts count as its answer. Before our first burst the same holds: an aligned
+  start waits for the repeater's slot, and one that dropped as we keyed (its last bursts taken as up, or as the
+  answer to our wake-up) gives none. With no repeater burst for `DMR_CALL_TX_START_DROP_MS` (540 ms) since the start,
+  the start is aborted and the repeater woken, not left to the modem's own 1.5 s timeout, longer than a short key-up.
+  Longer than under the over: after our wake-up the HR_C5000 at times hears nothing of a repeater that is up until
+  the modem searches again (every 240 ms, [modem-hrc6000.md](modem-hrc6000.md) 5), so the modem gets two searches
+  first. `call.rx_in_tx` and `call.rx_bs_in_tx` count what was heard while sending. A radio whose RF can't (the
+  modem's `tx_listen_split` NULL or false) sends as before and doesn't see the drop. Nor does a modem that hears the
+  repeater in only some of the listen slots, at times none for seconds (`tx_listen_gaps`): it listens for the RC
+  only, and silence there is not a drop.
+
+- Reverse channel (ETSI TS 102 361-1 5.1.5, 6.4.2; TS 102 361-4 6.4.14, 6.4.15.2): a radio that listens between its
+  bursts also hears an RC the BS sends on the other slot, either a dedicated RC burst or one in voice burst F (EMB
+  LCSS 00, PI 1). The modem reports its 11 RC info bits (`DMR_EV_RC`, `DMR_RC_EMBEDDED` for burst F); the stack
+  checks the CRC-7 (`dmrFecRcInfoDecode`). A cease command (0100) or cease request (0101) heard twice within
+  `DMR_CALL_RC_CONFIRM_MS` (1 s) while our voice goes out ends the over after burst F with a terminator, like the TX
+  time-out: `tx_error` ceased, PTT released before the next over. Twice, because burst F's null fragment passes the
+  CRC one time in 128, and the BS repeats an RC every 360 ms. A request is always accepted. Power commands (0000-0011)
+  are only counted: the power stays as set. `call.rc_good`, `call.rc_bad`, `call.rc_ceased`, `call.rc_last` in the
+  diagnostics and the `dmr_call` view section. The HR_C6000 engine reads the RC info from 0x53 / 0x54 at a class 3 report, or a burst F report with
+  LCSS 00 ([hrc6000-registers.md](hrc6000-registers.md) 2.2). A dedicated RC burst has no sync, and the chips report
+  nothing for it. After each listen slot the engine reads the chip's receive tap instead (the HR_C5000 and HR_C6000:
+  `hrc_chip_t` `tap_addr`, `tap_field`; the HR_C7000: [modem-hrc7000.md](modem-hrc7000.md) 5.4): the burst received,
+  a voice-layout burst's 48-bit sync / EMB / RC field first. It decodes the field (`dmrFecRcFromField`) when its EMB
+  has our color code, PI 1 and LCSS 00. Only an area that changed since its last read is decoded, and none the chip
+  reported itself in that listen slot, so one burst counts once. `rct` in the modem diagnostics: RCs found / areas
+  changed.
 
 - Repeater call hang time: the repeater keeps the outbound up after a call; an MS that keys in it does not need BS
   activation and should reply on the same slot (and talkgroup, if group hang applies).
@@ -330,12 +391,13 @@ interrupt.
 | `tx_rejected` | the modem refused to send (channel busy under a polite policy) | |
 | `tx_done` | the last queued burst's slot has ended (terminator included); the driver is back in receive | after the last burst's slot, not before |
 | `sync_lost` | no slot tick for 200 ms while not idle, or the timing was found out of step; the driver has restarted the receiver | |
+| `short_lc` | a BS's CACH short LC (ETSI TS 102 361-1 7.1.4) as the chip assembled it: 28 bits and the CRC-8 received. The stack checks the CRC (`dmr_call_short_lc`). Optional: only while both slots of a BS signal are received (a trunked control channel), from chips whose short LC location is known | when it changes; a new one every 120 ms |
 
 ### 6.3 Commands (stack to driver)
 
 | Command | Effect |
 |---|---|
-| `configure` | own DMR ID, color code (or "any"), sync families to detect, default access policy (impolite / polite to CC / polite to all), DMO / RMO framing |
+| `configure` | own DMR ID, channel's transmit color code and initial receive filter, sync families to detect, default access policy (impolite / polite to CC / polite to all), DMO / RMO framing |
 | `rx_start` / `rx_restart` | receive every slot, passive timing; restart = drop sync and search again. The radio core restarts at every new DMR frequency with the stack running (a scan or channel step): a chip may keep the last transmitter's slot timing otherwise ([gotchas](gotchas.md) 17.2) |
 | `rx_lock_slot(slot or none)` | receive only our slot / both |
 | `tx_begin(timing)` | start a transmission: own timing (DMO), aligned to the received signal on the next slot carrying a given TS (RMO, SFR user), or as soon as possible; with the access policy for this transmission |
@@ -343,7 +405,7 @@ interrupt.
 | `tx_end` | no more bursts: finish the queued ones (a voice call ends at the superframe boundary with its terminator, which the stack has queued), then `tx_done` |
 | `tx_abort` | stop at the next slot (emergency, timeout) |
 | `set_embedded_lc` | the LC (or talker alias / GPS embedded LC) the modem spreads over B-E from the next superframe |
-| `set_cc_filter(cc or any)` | color code deframing |
+| `set_cc_filter(cc or any)` | receive color code deframing; keeps the configured transmit color code |
 | `is_transmitting` | slot-state based (6.1 point 5) |
 | `set_audio_path` | vocoder PCM in / out routing and gains (where the modem owns the codec) |
 | `power(on/off)` | chip power down / up with its init sequence |

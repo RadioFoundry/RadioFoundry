@@ -75,6 +75,17 @@ bool ui_svc_msg_send(uint32_t dst, bool group, const char *text)
 
 static uint32_t check_sent_ms;
 
+_Static_assert((int)UI_ARS_OFF == (int)DMR_ARS_STATE_OFF &&
+	       (int)UI_ARS_REGISTERING == (int)DMR_ARS_STATE_REGISTERING &&
+	       (int)UI_ARS_REGISTERED == (int)DMR_ARS_STATE_REGISTERED &&
+	       (int)UI_ARS_REFUSED == (int)DMR_ARS_STATE_REFUSED &&
+	       (int)UI_ARS_NO_ANSWER == (int)DMR_ARS_STATE_NO_ANSWER, "ui_svc.h UI_ARS_*");
+
+uint8_t ui_svc_ars_state(void)
+{
+	return (uint8_t)dmr_data_ars_state();
+}
+
 bool ui_svc_radio_check(uint32_t id)
 {
 	check_sent_ms = hal_millis();

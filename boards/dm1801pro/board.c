@@ -12,11 +12,15 @@
 #include "bcast/rda5807m/rda5807m_hal.h"
 #include "hrc_bcast.h"
 #endif
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 #include "hrc_afsk.h"
 #endif
 #if CONFIG_NET_PPP
 #include "hostlink/hostlink_ppp.h"
+#endif
+
+#if CONFIG_RX_EXT
+static bool rx_ext_on;
 #endif
 
 static const band_t bands[] = {
@@ -28,10 +32,17 @@ static const band_t bands[] = {
 #if CONFIG_BCAST_FM
 	{ 65000000, 108000000, false },		// the broadcast band, on the tuner (airband-and-broadcast.md 4)
 #endif
+#if CONFIG_RX_EXT
+	// Receive only past the rated bands, while the user turns it on: the FD6818 band table. Keep these last
+	{ 16000000, 65000000, false },
+	{ 174000000, 400000000, false },
+	{ 470000000, 740000000, false },
+#endif
 };
 
-// The factory calibration holds PA drive points for three power levels (hardware-dm1801pro.md 6.4): low, middle, high
-static const char *const power_names[] = { "L", "M", "H" };
+// The factory calibration holds PA drive points for three power levels (hardware-dm1801pro.md 6.4): low, middle, high.
+// Two more under the low one are fractions of its drive (radio_dm1801pro.c)
+static const char *const power_names[] = { "L--", "L-", "L", "M", "H" };
 
 // docs/ux/information-architecture.md 7.6. The key bits are read off the radio (input_dm1801pro.c)
 static const keymap_entry_t keymap[] = {
@@ -75,9 +86,13 @@ const board_t board = {
 		(CONFIG_AM_RX ? CAP_AM_RX : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
+#if CONFIG_RX_EXT
+	.rx_ext_count = 3,
+	.rx_ext_on = &rx_ext_on,
+#endif
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
 	.power_names = power_names,
-	.power_default = 0,	// low
+	.power_default = 2,	// low
 	.display = &dm1801pro_display,
 	.input = &dm1801pro_input,
 	.keymap = keymap,
@@ -96,6 +111,10 @@ const board_t board = {
 	.dmr = &hrc_dmr,
 	.audio = &hrc_audio_pcm,
 	.vocoder = &hrc_vocoder,	// the radio's own codec in the slot (codec-dm1801pro.md 4); without it, no voice
+#if CONFIG_AIR
+	.air = &hrc_air,		// the physical layer and the receive copy (modem-hrc7000.md 10)
+	.baseband = &hrc_baseband,
+#endif
 #endif
 #if CONFIG_HOSTLINK
 	.host_port = &hrc_host_uart_stream,
@@ -107,7 +126,7 @@ const board_t board = {
 #if CONFIG_BCAST_FM
 	.bcast = &rda5807m_hal,
 #endif
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	.afsk = &hrc_afsk,
 #endif
 };

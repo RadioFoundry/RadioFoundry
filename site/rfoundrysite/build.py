@@ -133,7 +133,8 @@ class Site:
 			unknown = [n for n in names if self.screen(n) is None]
 			if unknown:
 				self.warn("screens not in site/data/screens.json: %s" % ", ".join(unknown))
-			b["screens"] = [n for n in names if self.screen(n) is not None]
+			# a radio without a display shows no screens on the site
+			b["screens"] = [n for n in names if self.screen(n) is not None] if device.has_display(b) else []
 			if b["flash"].get("board") and b["flash"]["board"] not in self.flash["boards"]:
 				raise repo.SourceError("boards/%s/board.toml: flash board %s isn't in rfoundry" % (b["id"],
 															 b["flash"]["board"]))
@@ -160,7 +161,7 @@ class Site:
 		for b in self.boards:
 			r = {k: b[k] for k in ("id", "name", "maker", "model", "also", "kind", "order", "status", "bands",
 					       "power", "gallery", "cpu", "display", "docs", "flash", "backup", "unsupported",
-					       "unsupported_reasons", "not_written", "not_written_reasons", "required", "config", "screens", "codeplug", "volts",
+					       "unsupported_reasons", "not_written", "not_written_reasons", "default_off", "required", "config", "screens", "codeplug", "volts",
 					       "clock", "variants", "variant_pattern", "variant_check")}
 			r["support"] = docsmod.plain(b["summary"])
 			r["image"] = "static/img/radios/%s.svg" % b["id"]
@@ -187,9 +188,11 @@ class Site:
 		}
 
 	def firmware_line(self, lang):
-		"""The footer's firmware release (what the flasher installs) and the changelog: the GitHub releases."""
+		"""The footer's firmware release (what the flasher installs) and the changelog: the GitHub releases, or main's
+		commits when no tagged release is installed."""
 		rels = self.repo_url + "/releases"
-		line = '<a href="%s">%s</a>' % (html.escape(rels), html.escape(self.i18n.t(lang, "footer.changelog")))
+		log = rels if self.release else self.repo_url + "/commits/main"
+		line = '<a href="%s">%s</a>' % (html.escape(log), html.escape(self.i18n.t(lang, "footer.changelog")))
 		if self.release:
 			line = '<a href="%s/tag/%s">%s</a> · %s' % (html.escape(rels), html.escape(self.release),
 				html.escape(self.i18n.t(lang, "footer.firmware", version=self.release)), line)
@@ -378,10 +381,12 @@ class Site:
 			self.docs_pages(lang)
 			self.not_found(lang)
 		for b in self.boards:
-			boot = self.shots.scaled(b["gallery"], "boot")
-			self.write("static/img/radios/%s.svg" % b["id"], device.boot(b["render"], boot))
+			# the drawing with the boot screen in its display; a radio without one: the bare frame
+			boot = self.shots.scaled(b["gallery"], "boot") if device.has_display(b) else None
+			drawn = lambda img: device.boot(img, boot) if boot is not None else img["frame"]
+			self.write("static/img/radios/%s.svg" % b["id"], drawn(b["render"]))
 			for look, img in b["look_renders"].items():
-				self.write("static/img/radios/%s-%s.svg" % (b["id"], look), device.boot(img, boot))
+				self.write("static/img/radios/%s-%s.svg" % (b["id"], look), drawn(img))
 		scales = self.shots.write(self.out)
 		self.log("screenshots: " + ", ".join("%s x%d" % gk for gk in scales.items()))
 		self.write(".nojekyll", "")
@@ -397,12 +402,16 @@ class Site:
 	SHOTS_SECTION = re.compile(r'<section class="rshots" id="([^"]+)".*?</section>', re.S)
 
 	def check_screenshots(self):
-		"""The screenshots page has a section for every board in boards/, and each section every gallery screen
-		that board's build has: what the page shows comes from the registry, the gallery and screens.json alone."""
+		"""The screenshots page has a section for every board in boards/ with a display, and each section every gallery
+		screen that board's build has: what the page shows comes from the registry, the gallery and screens.json alone."""
 		with open(os.path.join(self.out, "screenshots", "index.html"), encoding="utf-8") as fh:
 			sections = {m.group(1): m.group(0) for m in self.SHOTS_SECTION.finditer(fh.read())}
 		for b in self.boards:
 			sec = sections.get(b["id"])
+			if not device.has_display(b):
+				if sec is not None:
+					self.warn("screenshots page: a section for %s, which has no display" % b["id"])
+				continue
 			if sec is None:
 				self.warn("screenshots page: no section for %s" % b["id"])
 				continue
@@ -474,17 +483,23 @@ class Site:
 			 if sw not in b["unsupported"]]
 		return " · ".join([b["bands"]] + extra)
 
+	def modes(self, lang, b):
+		"""The voice modes the board's default build runs, "FM·DMR·P25·NXDN": its switches, so a mode the board can't
+		run yet is left out. The names are the same in every language."""
+		on = b["config"]["full"]
+		return "·".join(["FM"] + [m for m in ("DMR", "P25", "NXDN") if m in on])
+
 	def radio_card(self, lang, b):
 		"""The board's card, then one per other body it ships in (board.toml looks), each with its own drawing and the
 		radios in it; the board's card lists the rest."""
-		dmr = "DMR" in b["config"]["full"]
+		modes = self.modes(lang, b)
 		moved = {n for lk in b["looks"] for n in [lk["name"]] + lk.get("also", [])}
 		cards = [(b["id"], b["name"], [n for n in b["also"] if n not in moved])]
 		cards += [("%s-%s" % (b["id"], lk["id"]), lk["name"], lk.get("also", [])) for lk in b["looks"]]
 		return "".join(self.tpl.partial("radio_card", {
 			"id": img, "name": name, "also": ", ".join(also),
 			"badge": self.badge(lang, b["status"]), "bands": self.bands(lang, b),
-			"modes": self.t(lang, "radio.modes_dmr_fm" if dmr else "radio.modes_fm"),
+			"modes": modes,
 			"href": "radios/%s.html" % b["id"]}, lang) for img, name, also in cards)	# under {{home}}
 
 	def request_card(self, lang):
@@ -528,7 +543,9 @@ class Site:
 		self.page(lang, "index.html", self.t(lang, "home.title"), content, "home")
 
 	def drawn(self, b, geometry, frame_w):
-		"""A page shows b's drawing frame_w CSS pixels wide (at most), a screenshot in its display."""
+		"""A page shows b's drawing frame_w CSS pixels wide (at most), a screenshot in its display (if it has one)."""
+		if geometry["screen_pct"] is None:
+			return
 		self.shots.use(b["gallery"], frame_w * geometry["screen_pct"]["width"] / 100)
 
 	def variant_cards(self, lang):
@@ -546,7 +563,8 @@ class Site:
 		# one list: the radios in the tree and the planned ones, in order of how far each is
 		entries = [(BOARD_ORDER[b["status"]], 0, b["name"], self.tpl.partial("radio_row", {
 			"name": '<a href="%s.html">%s</a>' % (b["id"], html.escape(b["name"])), "also": ", ".join(b["also"]),
-			"badge": self.badge(lang, b["status"]), "cpu": b["cpu"], "display": b["display"],
+			"badge": self.badge(lang, b["status"]), "cpu": b["cpu"],
+			"display": b["display"] if device.has_display(b) else self.t(lang, "radio.display_none"),
 			"support": self.board_note(lang, b)}, lang)) for b in self.boards]
 		for n, p in enumerate(self.planned):
 			st = p["status"]
@@ -582,8 +600,10 @@ class Site:
 		na = [f for f in self.features if self.feature_state(b, f["name"]) == "na" and f["group"] not in BENCH_ONLY]
 		# screenshots: six that show the look and the main features, the first featured ones this radio has, in two
 		# rows of three; a click lays one over the drawing's display
+		display = device.has_display(b)
 		sw, sh = shots.size(b["gallery"])
-		self.shots.use(b["gallery"], shots.css_px(".shots", "--shot-col"))
+		if display:
+			self.shots.use(b["gallery"], shots.css_px(".shots", "--shot-col"))
 		self.drawn(b, b["frame_geometry"], shots.css_px(".device-frame", "max-width"))
 		items = []
 		for n in self.screens["featured"]:
@@ -608,17 +628,27 @@ class Site:
 			     or (fl["backend"] == "c7000-stub" and fl["board"] in self.flash["c7000"]["boards"]))
 		g = b["frame_geometry"]
 		pct = g["screen_pct"]
+		# the boot screen over the drawing's display, a note that a click on a shot shows it there, and the shots
+		screen_img = image_note = screens_section = ""
+		if display:
+			screen_img = ('<img class="device-screen" id="device-screen" src="{{root}}%s" alt="" '
+				      'style="left:%g%%;top:%g%%;width:%g%%;height:%g%%">'
+				      % (shots.url(b["gallery"], "boot"), pct["left"], pct["top"], pct["width"], pct["height"]))
+			image_note = '<figcaption class="muted small">%s</figcaption>' % html.escape(self.t(lang, "radio.image_note"))
+			screens_section = ('<section class="wrap section" id="screens">\n\t<h2>%s</h2>\n\t%s\n</section>\n'
+					   % (html.escape(self.t(lang, "radio.screens_title")), "".join(shot_list)))
 		ctx = {"id": b["id"], "name": b["name"], "also": ", ".join(b["also"]) or "—",
 		       "frame_aspect": "%g" % g["aspect"],
-		       "screen_style": "left:%g%%;top:%g%%;width:%g%%;height:%g%%" % (pct["left"], pct["top"], pct["width"], pct["height"]),
+		       "screen_img": screen_img, "image_note": image_note, "screens_section": screens_section,
 		       "badge": self.badge(lang, b["status"]), "support": self.board_note(lang, b),
 		       "bands": self.bands(lang, b), "power": b["power"], "kind": self.t(lang, "radio.kind." + b["kind"]),
-		       "cpu": b["cpu"], "display": b["display"], "volts": self.t(lang, "radio.volts." + b["volts"]),
+		       "cpu": b["cpu"], "display": b["display"] if display else self.t(lang, "radio.display_none"),
+		       "volts": self.t(lang, "radio.volts." + b["volts"]),
 		       "clock": self.t(lang, "radio.clock." + b["clock"]),
 		       "variants": self.variants_html(lang, b),
 		       "variant_head": vhead, "feature_groups": "".join(groups),
 		       "na_list": ", ".join(html.escape(self.ftitle(lang, f)) for f in na) or "—",
-		       "shots": "".join(shot_list), "docs_links": docs_links, "boot_src": shots.url(b["gallery"], "boot"),
+		       "docs_links": docs_links,
 		       "flash_cta": self.tpl.partial("flash_cta" if can_flash else "flash_soon",
 						     {"id": b["id"], "name": b["name"]}, lang),
 		       # the C7000 radios need no keys held: the page meets the chip's boot ROM when the radio is switched on
@@ -635,6 +665,8 @@ class Site:
 		order = list(self.screens["screens"])
 		picks, sections = [], []
 		for b in self.boards:
+			if not device.has_display(b):
+				continue	# nothing to show
 			sw, sh = shots.size(b["gallery"])
 			# a small display at twice its pixels; a QVGA one as it is
 			scale = 2 if sw <= 160 else 1
@@ -734,7 +766,7 @@ class Site:
 			  "tools", scripts=scripts, nav="tools")
 
 	def codeplug_page(self, lang):
-		strings = json.dumps(self.i18n.subset(lang, ("editor.", "flash.part.", "report.")), ensure_ascii=False).replace("</", "<\\/")
+		strings = json.dumps(self.i18n.subset(lang, ("editor.", "flash.part.", "flash.net.", "report.")), ensure_ascii=False).replace("</", "<\\/")
 		scripts = ('<script type="application/json" id="i18n">%s</script>'
 			   '<script type="module" src="{{root}}static/js/editor/app.js?v=%s"></script>' % (strings, self.asset_version))
 		self.page(lang, "codeplug/index.html", self.t(lang, "editor.title"), self.tpl.render("codeplug", {}, lang),
@@ -755,7 +787,7 @@ class Site:
 			pages = self.docs.section_pages(sec)
 			if not pages:
 				continue
-			links = "".join('<li><a href="{{home}}%s">%s</a></li>' % (p["out"], html.escape(p["title"]))
+			links = "".join('<li><a href="{{home}}%s">%s</a></li>' % (p["out"], html.escape(self.docs.title_for(p, lang)))
 					for p in pages)
 			sections.append(self.tpl.partial("docs_section", {
 				"title": self.t(lang, "docs.section." + sec), "blurb": self.t(lang, "docs.blurb." + sec),
@@ -771,7 +803,7 @@ class Site:
 				here = posixpath.dirname(p["out"])
 				side = "".join('<li><a href="%s"%s>%s</a></li>' % (
 					posixpath.relpath(q["out"], here), ' aria-current="page"' if q is p else "",
-					html.escape(q["title"])) for q in pages)
+					html.escape(self.docs.title_for(q, lang))) for q in pages)
 				toc_html = "".join('<li class="l%d"><a href="#%s">%s</a></li>' % (lvl, hid, html.escape(text))
 						   for lvl, hid, text in toc)
 				prev_next = ""
@@ -779,15 +811,16 @@ class Site:
 					prev = pages[i - 1] if i > 0 else None
 					nxt = pages[i + 1] if i + 1 < len(pages) else None
 					prev_next = "".join('<a class="%s" href="%s">%s</a>' % (cls, posixpath.relpath(q["out"], here),
-												 html.escape(q["title"]))
-							    for cls, q in (("prev", prev), ("next", nxt)) if q)
+										 html.escape(self.docs.title_for(q, lang)))
+						    for cls, q in (("prev", prev), ("next", nxt)) if q)
 				ctx = {"body": body, "side": side, "toc": toc_html, "section": self.t(lang, "docs.section." + sec),
 				       "source": "%s/blob/%s/%s" % (self.repo_url, self.ref, p["src"]), "prev_next": prev_next,
 				       "fallback": ('<p class="notice">%s</p>' % html.escape(self.t(lang, "docs.fallback")))
 				       if fallback else ""}
 				if fallback:	# the default language's text on another language's page: say so to browsers and readers
 					ctx["body"] = '<div lang="%s">%s</div>' % (self.i18n.default, body)
-				self.page(lang, p["out"], p["title"], self.tpl.render("doc", ctx, lang), "doc", nav="docs")
+				self.page(lang, p["out"], self.docs.title_for(p, lang), self.tpl.render("doc", ctx, lang), "doc",
+					  nav="docs")
 
 	def not_found(self, lang):
 		"""404.html in each language's tree: Pages serves the one nearest the missing address (/es/x: es/404.html)."""

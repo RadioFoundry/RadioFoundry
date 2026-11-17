@@ -13,12 +13,13 @@
 #include "radio/ref_trim.h"
 #include "radio/radio_cwid.h"
 #include "radio/radio_bcast.h"
+#include "codeplug/codeplug_modes.h"	// channel kinds: a trunked one is never watched
 #include "input/input.h"
 #include "settings/settings.h"
 #include <string.h>
 #include "config.h"
-#if CONFIG_APRS
-#include "aprs/aprs.h"
+#if CONFIG_POSITION
+#include "position/position.h"
 #endif
 #if CONFIG_DMR_PRIVACY
 #include "dmr/dmrPrivacy.h"
@@ -26,6 +27,13 @@
 #if CONFIG_DMR
 #include "dmr/ambe/ambeVoice.h"
 #endif
+#if CONFIG_NXDN
+#include "radio/radio_nxdn.h"
+#endif
+#if CONFIG_P25
+#include "radio/radio_p25.h"
+#endif
+
 
 uint32_t ui_svc_feat_voice(void)
 {
@@ -134,10 +142,22 @@ bool ui_svc_dmr_color_code(uint8_t cc)
 	return true;
 }
 
+bool ui_svc_vfo_sfr(uint8_t a)
+{
+#if CONFIG_SFR
+	radio_req_vfo_sfr(a);
+	return true;
+#else
+	(void)a;
+	return false;
+#endif
+}
+
 #if CONFIG_FM
 bool ui_svc_mode(uint8_t mode)
 {
-	if (mode != RADIO_MODE_FM && mode != RADIO_MODE_DMR) {
+	if (mode != RADIO_MODE_FM && mode != RADIO_MODE_DMR && !(mode == RADIO_MODE_P25 && CONFIG_P25) &&
+	    !(mode == RADIO_MODE_NXDN && CONFIG_NXDN)) {
 		return false;
 	}
 	radio_req_mode(mode);
@@ -196,8 +216,15 @@ uint32_t ui_svc_feat_radio(void)
 	return (CONFIG_SCAN ? UI_FEAT_SCAN : 0) | (CONFIG_DMR_ROAMING ? UI_FEAT_ROAMING : 0) |
 	       (motor ? UI_FEAT_VIBRATE : 0) | (radio_volume_soft() ? UI_FEAT_VOLUME : 0) |
 	       (knob ? UI_FEAT_VOLUME_KNOB : 0) |
-	       (radio_bcast_capable() ? UI_FEAT_BCAST : 0) | (CONFIG_APRS && board_has_gps() ? UI_FEAT_GPS : 0) |
-	       (ref_trim_available() ? UI_FEAT_REF_TRIM : 0);
+	       (radio_bcast_capable() ? UI_FEAT_BCAST : 0) | (CONFIG_POSITION && board_has_gps() ? UI_FEAT_GPS : 0) |
+	       (ref_trim_available() ? UI_FEAT_REF_TRIM : 0) |
+#if CONFIG_P25
+	       (radio_p25_fits() ? UI_FEAT_P25 : 0) |
+#endif
+#if CONFIG_NXDN
+	       (radio_nxdn_fits() ? UI_FEAT_NXDN : 0) |
+#endif
+	       0;
 }
 
 #if CONFIG_DMR
@@ -256,8 +283,8 @@ bool ui_svc_dual(const ui_dual_ref_t ref[2], uint8_t sel)
 			if (!(CONFIG_VFO_FM || CONFIG_VFO_DMR))
 				return false;
 		} else if (r[i].pos >= CODEPLUG_ZONE_MAX || !codeplug_zone(r[i].zone, &z) || r[i].pos >= z.count ||
-			   !codeplug_channel(z.channels[r[i].pos], &ch)) {
-			return false;
+			   !codeplug_channel(z.channels[r[i].pos], &ch) || ch.kind == CODEPLUG_KIND_P25_TRUNK) {
+			return false;	// a trunked channel follows its system: not one to watch
 		}
 	}
 	if (sel > 1 || (r[0].vfo == r[1].vfo && r[0].zone == r[1].zone && r[0].pos == r[1].pos))
@@ -288,28 +315,28 @@ uint8_t ui_svc_receivers(void)
 // receiver doesn't have its channel (down, or not yet): the screens then show the main receiver alone
 bool ui_svc_dual_rx(uint8_t pane, ui_dual_rx_t *out)
 {
-	static radio_view_t v;	// the UI task's only; too big for its stack
+	radio_view_t *const v = &ui_svc_view;
 	radio_dual_ref_t ref[2];
 	uint8_t sel, at;
 	memset(out, 0, sizeof(*out));
 	if (board.rx2 == NULL || pane > 1 || !radio_get_dual(ref, &sel, &at)) {
 		return false;
 	}
-	radio_get_view(&v);
-	if (!v.rx2) {
+	radio_get_view(v);
+	if (!v->rx2) {
 		return false;
 	}
 	if (pane == sel) {
-		out->active = out->heard = v.state == RS_RX;
-		out->rssi_dbm = v.rssi_dbm;
-		out->dmr = v.ch.mode == RADIO_MODE_DMR;
+		out->active = out->heard = v->state == RS_RX;
+		out->rssi_dbm = v->rssi_dbm;
+		out->dmr = v->ch.mode == RADIO_MODE_DMR;
 #if CONFIG_DMR
 		if (out->dmr) {
-			out->active = out->heard = v.state == RS_RX && v.dmr.state == RDMR_RX;
-			out->src = v.dmr.call.src;
-			out->dst = v.dmr.call.dst;
-			out->group = v.dmr.call.group;
-			strncpy(out->src_name, v.dmr.call.src_name, sizeof out->src_name - 1);
+			out->active = out->heard = v->state == RS_RX && v->dmr.state == RDMR_RX;
+			out->src = v->dmr.call.src;
+			out->dst = v->dmr.call.dst;
+			out->group = v->dmr.call.group;
+			strncpy(out->src_name, v->dmr.call.src_name, sizeof out->src_name - 1);
 		}
 #endif
 		return true;
@@ -413,6 +440,9 @@ void ui_svc_apply(uint8_t id, int32_t value)
 	case UI_SET_TALK_PERMIT:
 		rs.talk_permit = value != 0;
 		break;
+	case UI_SET_SCAN_TONE:
+		rs.scan_beep = value != 0;
+		break;
 	case UI_SET_VFO_STEP:		// 10 Hz units; 833 is the exact 8.33 kHz grid
 		radio_req_vfo_step_size(value == 833 ? 8333u : value > 0 && value <= 100000 ? (uint32_t)value * 10u : 0u);
 		return;
@@ -495,8 +525,8 @@ void ui_svc_apply(uint8_t id, int32_t value)
 #endif
 	case UI_SET_GPS:		// the module's power and the position sources, now (not a radio core setting)
 		board_gps_enable(value != 0);
-#if CONFIG_APRS
-		aprs_gps_enable(value != 0);
+#if CONFIG_GPS
+		position_gps_enable(value != 0);
 #endif
 		return;
 	case UI_SET_LONG_PRESS_MS:	// the input layer's gesture timing (not a radio core setting)

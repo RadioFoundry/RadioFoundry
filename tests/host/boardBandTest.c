@@ -16,7 +16,9 @@ static const band_t bands[] = {
 	{ 108000000, 136000000, false },	// receive only
 	{ 400000000, 480000000, false },	// receive only, overlapped by the next
 	{ 430000000, 450000000, true },
+	{ 480000000, 520000000, false },	// the receive-only extension: last, in force only while switched on
 };
+static bool rx_ext_on;
 static const char *const names[] = { "L", "M", "H" };
 static const char *const names_vhf[] = { "250mW", "5W", "50W" };
 static const char *const names_uhf[] = { "50mW", "5W", "45W" };
@@ -24,7 +26,7 @@ static const board_power_band_t power_bands[] = {
 	{ 136000000, 174000000, names_vhf },
 	{ 400000000, 480000000, names_uhf },
 };
-const board_t board = { .bands = bands, .band_count = sizeof bands / sizeof bands[0], .power_count = 3,
+const board_t board = { .bands = bands, .band_count = sizeof bands / sizeof bands[0], .rx_ext_count = 1, .rx_ext_on = &rx_ext_on, .power_count = 3,
 			.power_names = names, .power_bands = power_bands, .power_band_count = 2 };
 
 int main(void)
@@ -41,6 +43,14 @@ int main(void)
 	CHECK(strcmp(board_power_name(0, 136000000), "250mW") == 0 && strcmp(board_power_name(0, 480000000), "50mW") == 0);
 	CHECK(strcmp(board_power_name(1, 300000000), "M") == 0);	// in no band: power_names
 	CHECK(strcmp(board_power_name(3, 446100000), "?") == 0);
+	// The extension: off by default, receive only while on, and the table shortens with it
+	CHECK(board_band_count() == 4 && !board_in_band(500000000, false));
+	board_rx_ext_set(true);
+	CHECK(board_band_count() == 5 && board_in_band(500000000, false) && !board_in_band(500000000, true));
+	CHECK(board_tx_band(500000000) < 0);
+	CHECK(!board_in_band(520000001, false));
+	board_rx_ext_set(false);
+	CHECK(board_band_count() == 4 && !board_in_band(500000000, false));
 	if (failures) {
 		printf("boardBandTest: %d failures\n", failures);
 		return 1;

@@ -5,7 +5,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ftdiDivisor, lineCoding, ftdiPayload, serialLayout, usbFilters, usbSerialNeeded, UsbSerialPort, FTDI } from "../static/js/flasher/usbserial.js";
+import { ftdiDivisor, lineCoding, ftdiPayload, serialLayout, usbFilters, usbSerialNeeded, UsbSerialPort, FTDI, FTDI_LATENCY_MS } from "../static/js/flasher/usbserial.js";
 import { SerialStream, browserErrorKey } from "../static/js/flasher/link.js";
 
 const ep = (endpointNumber, direction, type = "bulk", packetSize = 64) => ({ endpointNumber, direction, type, packetSize });
@@ -108,16 +108,30 @@ test("a CDC-ACM radio through SerialStream: line set up, bytes both ways, closes
 	assert.equal(s.lost, false);
 });
 
-test("an FTDI cable: baud, 8N1, DTR and RTS set; status bytes dropped; reopen after close", async () => {
+test("an FTDI cable: baud, 8N1, DTR and RTS set, the latency timer lowered; status bytes dropped; reopen after close", async () => {
 	const dev = new FakeDevice(FTDI, 0x6001, FTDI_CONFIG, [[0x31, 0x60], [0x31, 0x60, 0xAA, 0x55]]);
 	const port = new UsbSerialPort(dev);
 	const s = await SerialStream.open(port);
 	assert.deepEqual(dev.control.map((c) => [c.requestType, c.request, c.value]),
-		[["vendor", 0, 0], ["vendor", 3, 26], ["vendor", 4, 8], ["vendor", 2, 0], ["vendor", 1, 0x0303]]);
+		[["vendor", 0, 0], ["vendor", 3, 26], ["vendor", 4, 8], ["vendor", 2, 0], ["vendor", 1, 0x0303], ["vendor", 9, FTDI_LATENCY_MS]]);
+	assert.ok(FTDI_LATENCY_MS >= 1 && FTDI_LATENCY_MS < 16);
 	for (let i = 0; i < 50 && s.buf.length < 2; i++) await new Promise((r) => setTimeout(r, 1));
 	assert.deepEqual([...s.buf], [0xAA, 0x55]);
 	await s.close();
 	await assert.doesNotReject(SerialStream.open(port).then((s2) => s2.close()));
+});
+
+test("an FTDI cable that refuses the latency timer still opens and reads", async () => {
+	const dev = new FakeDevice(FTDI, 0x6001, FTDI_CONFIG, [[0x31, 0x60, 0x42]]);
+	const plain = dev.controlTransferOut.bind(dev);
+	dev.controlTransferOut = async (setup, data) => {
+		if (setup.requestType === "vendor" && setup.request === 9) throw new DOMException("refused", "NetworkError");
+		return plain(setup, data);
+	};
+	const s = await SerialStream.open(new UsbSerialPort(dev));
+	for (let i = 0; i < 50 && s.buf.length < 1; i++) await new Promise((r) => setTimeout(r, 1));
+	assert.deepEqual([...s.buf], [0x42]);
+	await s.close();
 });
 
 test("reads stay queued on the device while the page isn't reading, and nothing is lost", async () => {

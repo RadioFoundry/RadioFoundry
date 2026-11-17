@@ -22,6 +22,10 @@ use it too. Both are plain ES modules that also run in Node. The user's view is 
 | `codeplug/qdmr.js` | qdmr YAML to the model and back ([qdmr-yaml.md](../spec/qdmr-yaml.md)), with notes on what each side can't hold |
 | `codeplug/detect.js`, `codeplug/stock_tyt.js` | Telling the open-firmware layout from a vendor codeplug, and converting that to the editing model ([codeplug-stock-tyt.md](../spec/codeplug-stock-tyt.md)) |
 | `codeplug/stock_baofeng.js` | The same for a paged vendor codeplug in an HR_C7000 radio's data flash (spec in the radio's own `<id>-stock-codeplug.md`) |
+| `codeplug/channelmodes.js` | The channel-mode layer ([channel-modes.md](../spec/channel-modes.md)): channel tags, systems and their entries and secrets, radio-wide mode settings, their validation. Knows no mode: records of a kind, type, class or setting it doesn't know are kept byte for byte |
+| `codeplug/modes.js` | The registry of kinds and system types, the same rows as `core/codeplug/codeplug_modes.h` (`tools/check_modes.py`), each with its mode module and the firmware feature that runs it |
+| `codeplug/mode_t3.js`, `mode_p25.js` | Mode modules: a kind's parameter block, a type's block, entry classes and secret, as fields the forms show ([adding-a-mode.md](adding-a-mode.md)) |
+| `codeplug/modebytes.js` | Little-endian helpers and the name check (channel-modes.md 2.2) for mode modules |
 | `codeplug/transport.js` | How the page reaches a radio (below) |
 | `codeplug/fakecps.js` | A simulated RadioFoundry radio: VERSION, CPS reads, sector writes and `C 5`, writes refused outside the codeplug as the radio refuses them |
 | `codeplug/fastlink.js` | The fast codeplug protocol ([cps-fast.md](../spec/cps-fast.md)): block CRCs, LZ4 reads and pipelined writes |
@@ -30,12 +34,13 @@ use it too. Both are plain ES modules that also run in Node. The user's view is 
 | `editor/app.js` | The page: tabs, the file menu, radio read and write, the draft |
 | `editor/grid.js`, `views.js` | The table (in-place edit, sort, filter, selection, keyboard) and each record kind's columns, form and membership editor |
 | `editor/undo.js` | Snapshots of every table's order and every record's fields |
+| `editor/modesview.js`, `modefields.js` | The Systems tab, its dialogs (system, entries, key) and the Radio tab's mode settings; the fields a mode module declares turned into form fields |
 | `editor/files.js` | What an opened file holds (codeplug image, backup bundle, `codeplug.bin`), and the draft in IndexedDB |
 | `editor/extensions.js`, `parts.js` | Optional parts register their Save items, table actions, text file openers and DMR ID Database views. `parts.js` lists them, so a part is added without touching `app.js` |
 | `editor/csvpart.js`, `qdmrpart.js`, `contactspart.js` | The CSV, qdmr YAML and RadioID parts |
 
 Add `#sim` to the page's address to read and write a simulated radio (`fakecps.js`), `#sim-compact` for one that
-reads format C ID databases. Append `&release=vYY.M` for a radio that runs that release, or `&git_time=N` for a build
+reads format C ID databases, `#sim-modes` for one whose features report every channel mode in the registry. Append `&release=vYY.M` for a radio that runs that release, or `&git_time=N` for a build
 of a commit from that time, which brings up the update notice when `releases.json` lists a newer one.
 
 After a read, the radio is offered the newest release for its board from `releases.json` when that is newer

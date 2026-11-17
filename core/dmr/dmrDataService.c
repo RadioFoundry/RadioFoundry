@@ -5,7 +5,6 @@
  * dmr_data_api.h calls at the end, which only touch the mailbox and copies under the lock.
  */
 
-#include <stdio.h>
 #include <string.h>
 #include "config.h"
 #include "dmr/dmrDataService.h"
@@ -110,6 +109,7 @@ static bool txIsReply;
 static uint8_t txKind;
 static uint16_t txGuardMs = DMR_DATA_TX_GUARD_MS;
 static bool txChain = true;
+static uint8_t ipConfirmedRate = IP_CONFIRMED_RATE;	// RAM override for the bench (dmrDataServiceSetIpConfirmedRate)
 static bool txEnded;					// txEndedAt holds when our last list ended (the guard)
 static bool txEndStamp;					// a list just ended: stamped at the next tick, never before the real end
 static bool txGuardCounted;
@@ -141,9 +141,11 @@ static pendingReply_t replyQueue[REPLY_QUEUE_SIZE];
 static uint8_t replyWriteIdx = 0;
 static uint8_t replyReadIdx = 0;
 static bool tmsAckPending = false;
+#if CONFIG_DMR_TMS
 static bool tmsAckAfterResponse;			// our link ACK goes first: TMS_ACK_GAP_MS between them
 static uint32_t tmsAckDst;
 static uint8_t tmsAckSeq;
+#endif
 
 // Call alert ack or radio check answer, sent on its own
 static bool csbkAnswerPending = false;
@@ -628,7 +630,7 @@ static void ipTransmit(void)
 	if (ipx.confirmed)
 	{
 		// One burst kept for the terminator
-		count = dmrDataBuildConfirmed(ipx.sap, ipx.dst, channel.ownId, pdu, n, IP_CONFIRMED_RATE, ipx.ns, ipx.firstTry,
+		count = dmrDataBuildConfirmed(ipx.sap, ipx.dst, channel.ownId, pdu, n, ipConfirmedRate, ipx.ns, ipx.firstTry,
 										(ipx.blocks != 0) ? ipx.blocks : ~0ULL, IP_PREAMBLES, txBursts, DMR_DATA_MAX_BURSTS - 1);
 		if ((count == 0) && (ipx.tries == 0))
 		{
@@ -690,7 +692,7 @@ static void ipTransmit(void)
 	}
 	if (ipx.tries == 0)
 	{
-		dmrDataCountIpTx(ipx.sap, pdu, n, ipx.confirmed ? IP_CONFIRMED_RATE : IP_UNCONFIRMED_RATE, ipx.confirmed);
+		dmrDataCountIpTx(ipx.sap, pdu, n, ipx.confirmed ? ipConfirmedRate : IP_UNCONFIRMED_RATE, ipx.confirmed);
 		stats.ipConfirmed += ipx.confirmed ? 1 : 0;
 	}
 	else
@@ -846,6 +848,16 @@ uint16_t dmrDataServiceTxGuardMs(void)
 	return txGuardMs;
 }
 
+void dmrDataServiceSetIpConfirmedRate(uint8_t dataType)
+{
+	ipConfirmedRate = dataType;
+}
+
+uint8_t dmrDataServiceIpConfirmedRate(void)
+{
+	return ipConfirmedRate;
+}
+
 bool dmrDataServiceTxChain(void)
 {
 	return txChain;
@@ -857,6 +869,11 @@ bool dmrDataServiceSendIP(bool group, uint32_t dst, uint32_t srcIp, uint32_t dst
 	return ipSend(group, dst, srcIp, dstIp, ttl, protocol, l4, length, DMR_IPS_SETTINGS);
 }
 
+uint32_t dmrDataServiceTxIpDst(void)
+{
+	return ((txKind == TXK_IP) && (ipx.state == IPX_SENDING)) ? ipx.dstIp : 0u;
+}
+
 bool dmrDataServiceIpBusy(void)
 {
 	return ipx.state != IPX_IDLE;
@@ -865,6 +882,11 @@ bool dmrDataServiceIpBusy(void)
 uint8_t dmrDataServiceIpResult(void)
 {
 	return ipx.result;
+}
+
+uint32_t dmrDataServiceIpFailures(void)
+{
+	return stats.ipFailed;
 }
 
 static uint8_t ipTries(void)
@@ -1164,7 +1186,8 @@ bool dmrDataServiceSendSMSFormat(bool group, uint32_t dst, const char *text, boo
 	sms.format = format;
 	sms.tries = 0;
 	sms.waiting = false;
-	snprintf(sms.text, sizeof(sms.text), "%s", text);
+	strncpy(sms.text, text, sizeof(sms.text) - 1u);	// no snprintf: it would bring the C library's printf in
+	sms.text[sizeof(sms.text) - 1u] = '\0';
 	sms.state = DMR_REQ_QUEUED;
 	if (!canTransmit())
 	{
@@ -1290,6 +1313,23 @@ bool dmrDataServiceCallAlert(uint32_t dst)
 bool dmrDataServiceRadioCheck(uint32_t dst)
 {
 	return signalStart(DMR_DATA_EV_RADIO_CHECK_OK, dst);
+}
+
+void dmrDataServiceSignalResult(uint32_t dst, bool ok)
+{
+	if (!CONFIG_DMR_SIGNALING || (sig.state != DMR_REQ_SENDING) || (dst != sig.dst))
+	{
+		return;
+	}
+	if (ok && (sig.kind == DMR_DATA_EV_CALL_ALERT_ACKED))
+	{
+		stats.callAlertsAcked++;
+	}
+	else if (ok)
+	{
+		stats.radioChecksAnswered++;
+	}
+	signalFinish(ok);
 }
 
 static void signalTick(void)
@@ -1622,18 +1662,15 @@ typedef struct
 } lrrpTrigger_t;
 static lrrpTrigger_t lrrpTriggers[LRRP_TRIGGERS_MAX];
 
-// The platform's position for LRRP. Weak: none (the host test brings its own)
-#if !defined(DMR_DATA_SERVICE_TEST)
-__attribute__((weak)) bool dmrDataServiceGetPosition(lrrpPosition_t *position)
-{
-	memset(position, 0, sizeof(*position));
-	return false;
-}
-#endif
-
 static bool havePosition(lrrpPosition_t *position)
 {
-	return settings.hasGps && dmrDataServiceGetPosition(position);
+	memset(position, 0, sizeof(*position));
+	return settings.hasGps && (env.ownPosition != NULL) && env.ownPosition(position, now, env.ctx);
+}
+
+bool dmrDataServiceOwnPosition(lrrpPosition_t *position)
+{
+	return havePosition(position);
 }
 
 static void lrrpReceived(uint32_t src, const uint8_t *payload, int length)
@@ -1794,7 +1831,9 @@ static bool lrrpHandleRequest(const lrrpPendingRequest_t *pending)
 	return true;
 }
 
-static void lrrpTick(void)
+// noinline: inlined into the service's tick it puts the position and the report document in the radio task's own
+// frame, under everything that task calls (the stack check's deepest path)
+__attribute__((noinline)) static void lrrpTick(void)
 {
 	if (!CONFIG_DMR_LRRP || passthrough)
 	{
@@ -2044,10 +2083,12 @@ void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *ch)
 
 		if (reply.tms)
 		{
+			tmsAckPending = true;
+#if CONFIG_DMR_TMS
 			tmsAckDst = reply.dst;
 			tmsAckSeq = reply.tmsSeq;
-			tmsAckPending = true;
 			tmsAckAfterResponse = (reply.response != 0);
+#endif
 		}
 		if (reply.response != 0)
 		{
@@ -2252,6 +2293,31 @@ static void rxResult(dmrDataRxResult_t result, bool block)
 		stats.rxNacksSent++;
 	}
 	queueReplyEntry(&reply);
+}
+
+// A received message into the inbox (replacing the oldest when full), announced
+static void inboxStore(uint32_t src, uint32_t dst, bool group, uint8_t seq, uint8_t format, const char *text)
+{
+	lock();
+	uint8_t next = (inboxUsed == 0) ? 0 : ((inboxNewest + 1) % DMR_DATA_INBOX_SIZE);
+	dmrDataMessage_t *message = &inbox[next];
+	message->src = src;
+	message->dst = dst;
+	message->group = group;
+	message->seq = seq;
+	message->receivedAt = now;
+	message->unread = true;
+	message->format = format;
+	strncpy(message->text, text, sizeof(message->text) - 1);
+	message->text[sizeof(message->text) - 1] = '\0';
+	inboxNewest = next;
+	if (inboxUsed < DMR_DATA_INBOX_SIZE)
+	{
+		inboxUsed++;
+	}
+	unlock();
+	stats.smsReceived++;
+	post(DMR_DATA_EV_SMS_RECEIVED, src);
 }
 
 static void handlePacket(const dmrDataPacket_t *packet)
@@ -2474,27 +2540,17 @@ static void handlePacket(const dmrDataPacket_t *packet)
 		}
 	}
 
-	lock();
-	uint8_t next = (inboxUsed == 0) ? 0 : ((inboxNewest + 1) % DMR_DATA_INBOX_SIZE);// replaces the oldest when full
-	dmrDataMessage_t *message = &inbox[next];
-	message->src = packet->src;
-	message->dst = packet->dst;
-	message->group = packet->group;
-	message->seq = tms.seq;
-	message->receivedAt = now;
-	message->unread = true;
-	message->format = format;
-	memcpy(message->text, tms.text, sizeof(message->text));
-	inboxNewest = next;
-	if (inboxUsed < DMR_DATA_INBOX_SIZE)
-	{
-		inboxUsed++;
-	}
-	unlock();
-	stats.smsReceived++;
+	inboxStore(packet->src, packet->dst, packet->group, tms.seq, format, tms.text);
 	stats.etsiSmsReceived += (format == DMR_SMS_FORMAT_ETSI) ? 1 : 0;
 	stats.ipTextReceived += (format == DMR_SMS_FORMAT_ETSI_IP) ? 1 : 0;
-	post(DMR_DATA_EV_SMS_RECEIVED, packet->src);
+}
+
+void dmrDataServiceInboxAdd(uint32_t src, uint32_t dst, bool group, const char *text)
+{
+	if (CONFIG_DMR_SMS && (text[0] != '\0'))
+	{
+		inboxStore(src, dst, group, 0, DMR_SMS_FORMAT_ETSI, text);
+	}
 }
 
 static uint32_t getId(const uint8_t *p)
@@ -2698,6 +2754,7 @@ void dmrDataServiceInit(const dmrDataEnv_t *e)
 	{
 		env = *e;
 	}
+	ipConfirmedRate = env.noRate34 ? DMR_TYPE_RATE_1_2 : IP_CONFIRMED_RATE;
 	txEnded = false;
 	txEndStamp = false;
 	dmrDataRxReset();
@@ -2881,7 +2938,8 @@ bool sms_send(uint32_t dst, bool group, const char *text, bool ack_requested, dm
 		mailbox.smsGroup = group;
 		mailbox.smsAck = ack_requested;
 		mailbox.smsFormat = format;
-		snprintf(mailbox.smsText, sizeof(mailbox.smsText), "%s", text);
+		strncpy(mailbox.smsText, text, sizeof(mailbox.smsText) - 1u);
+		mailbox.smsText[sizeof(mailbox.smsText) - 1u] = '\0';
 		mailbox.smsPending = true;
 		ok = true;
 	}

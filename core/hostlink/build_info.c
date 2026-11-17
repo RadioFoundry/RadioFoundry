@@ -3,6 +3,13 @@
 // What this build is, for VERSION in either listener (see build_info.h)
 #include "config.h"
 #include "hostlink/build_info.h"
+#include "ui/i18n.h"
+#if CONFIG_P25
+#include "radio/radio_p25.h"
+#endif
+#if CONFIG_NXDN
+#include "radio/radio_nxdn.h"
+#endif
 
 #ifndef RFOUNDRY_PRESET
 #define RFOUNDRY_PRESET "unknown"
@@ -14,7 +21,20 @@
 const char build_preset[] = RFOUNDRY_PRESET;
 const char build_off[] = RFOUNDRY_FEATURES_OFF;
 
-const char build_features[] =
+// The language an empty setting means, as the UI picks it (i18n.c lang_find)
+const char *build_start_now(void) { return lang_code(lang_find(0)); }
+
+// The air-framed modes, each only where the board runs it (build_modes_now)
+#if CONFIG_P25_TRUNK
+#define P25_FEATURES	"P25,P25_TRUNK,"
+#elif CONFIG_P25
+#define P25_FEATURES	"P25,"
+#endif
+#if CONFIG_P25 && CONFIG_NXDN
+static const char modes_both[] = P25_FEATURES "NXDN,";
+#endif
+
+static const char features[] =
 #if CONFIG_FM
 	"FM,"
 #endif
@@ -33,8 +53,17 @@ const char build_features[] =
 #if CONFIG_DMR_GPS
 	"DMR_GPS,"
 #endif
+#if CONFIG_GPS
+	"GPS,"
+#endif
 #if CONFIG_APRS
 	"APRS,"
+#endif
+#if CONFIG_APRS_AFSK
+	"APRS_AFSK,"
+#endif
+#if CONFIG_APRS_DMR
+	"APRS_DMR,"
 #endif
 #if CONFIG_APRS_RX
 	"APRS_RX,"
@@ -59,6 +88,12 @@ const char build_features[] =
 #endif
 #if CONFIG_DMR_ROAMING
 	"DMR_ROAMING,"
+#endif
+#if CONFIG_DMR_TRUNK
+	"DMR_TRUNK,"
+#endif
+#if CONFIG_DMR_TRUNK_TX
+	"DMR_TRUNK_TX,"
 #endif
 #if CONFIG_SFR
 	"SFR,"
@@ -129,6 +164,9 @@ const char build_features[] =
 #if CONFIG_AM_RX
 	"AM_RX,"
 #endif
+#if CONFIG_AIR_RAW
+	"AIR_RAW,"
+#endif
 #if CONFIG_BCAST_FM
 	"BCAST_FM,"
 #endif
@@ -172,3 +210,24 @@ const char build_features[] =
 	"DEBUGLINK,"
 #endif
 	"HOSTLINK";	// both listeners run on the host link (USB CDC or a UART)
+
+// P25 and NXDN run where the board's air interface carries them: the Codeplug Editor offers their channels only there
+const char *build_modes_now(void)
+{
+#if CONFIG_P25 && CONFIG_NXDN
+	bool p25 = radio_p25_fits(), nxdn = radio_nxdn_fits();
+
+	return p25 && nxdn ? modes_both : p25 ? P25_FEATURES : nxdn ? "NXDN," : "";
+#elif CONFIG_P25
+	return radio_p25_fits() ? P25_FEATURES : "";
+#elif CONFIG_NXDN
+	return radio_nxdn_fits() ? "NXDN," : "";
+#else
+	return "";
+#endif
+}
+
+const char *build_features_now(void)
+{
+	return features;
+}

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // HR_C7000 DMR transmit where every burst runs a radio's whole RF key-up and key-down (dmr_rfburst.c): the scheme of
-// the radios whose modem modulates the reference oscillator (hardware-db25d.md 4.5). The modem's
+// the radios whose modem modulates the reference oscillator (hardware-db25d.md 4.5, hardware-rt10.md 7). The modem's
 // RF TX interrupt, raised the RF TX lead before our burst, wakes a task that runs the board's TX-on sequence; the end
 // of the burst (the slot engine's tick or the RF RX interrupt after it) wakes it for the TX-off sequence. The
 // sequences take a few milliseconds with waits in them, so they run in a task of their own at the highest priority,
@@ -34,6 +34,9 @@ typedef struct {
 	void (*on)(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait);
 	// The burst's TX off, from the RF task: the PA down and the RF back to receive
 	void (*off)(void);
+	// off this long after the last symbol's point, for a PA that drops at once: one with a ramp of its own is still
+	// up at the symbol's end, and needs none
+	uint16_t off_after_us;
 } hrc_rfburst_board_t;
 
 typedef struct {
@@ -52,14 +55,16 @@ typedef struct {
 	uint32_t up_max_us;
 	uint32_t grid_max_us;
 	uint32_t regridded;	// bursts whose RF TX interrupt came late and were timed from the grid instead
+	uint32_t first_retimed_us;	// how much earlier than its RF TX interrupt the first burst was timed (0: as stamped)
 } hrc_rfburst_stats_t;
 
 #if CONFIG_DMR
 // Once, from hrc_dmr_board_init for a board with burst sequences: the RF task, the board timer and the RF RX interrupt
 void hrc_rfburst_init(hrc7000_t *modem, const hrc_rfburst_board_t *board);
 // From the glue's RF switch (modem interrupts): wakes the RF task for our burst's TX on, or for its TX off. continuous:
-// a base-station outbound (above). The TX on does nothing while disarmed
-void hrc_rfburst_switch(bool tx, bool continuous);
+// a base-station outbound (above); tick_us: hrc_micros() at the slot engine's last tick, the first burst's reference.
+// The TX on does nothing while disarmed
+void hrc_rfburst_switch(bool tx, bool continuous, uint32_t tick_us);
 // Arm once the board's TX plan is set (task level): the bursts' RF TX interrupts then key the RF. Disarm waits until
 // the RF task has finished the burst it is in and left the RF receiving
 void hrc_rfburst_arm(void);

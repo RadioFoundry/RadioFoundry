@@ -21,6 +21,7 @@
 #include "rf/at1846s/at1846s.h"
 #include "modem/hrc6000/hrc6000.h"
 #include "radio/ref_trim.h"
+#include "radio/pa_keyup.h"
 #include "modem/hrc_common/hrc6000_dmr.h"
 #include "hrc/hrc_bus.h"
 #include "dmr_uvf.h"
@@ -34,6 +35,7 @@
 
 // APC DAC value when no calibration is loaded: deliberately very low, never an uncalibrated high drive
 #define UVF_DAC_UNCALIBRATED		300u
+#define UVF_POWER_TOP			0xFFu	// power_to_dac: any level past the last is the top one
 #define DAC_MAX				4095u
 
 #define UHF_MIN_HZ		300000000u
@@ -43,9 +45,18 @@
 #define I2C_TIMEOUT_MS		5
 #define C6000_PWD_WAIT_MS	12	// at least 10 ms after PWD low before the first SPI access
 #define RF_ISR_I2C_TIMEOUT_MS	2	// one reg 0x30 write from a modem ISR takes about 0.1 ms at 400 kHz
-// The RF TX interrupt comes about 1.28 ms before the slot boundary. Keyed at once, the PA cut the end of the inbound
-// burst an SFR receives in the other slot; 0.6-1.2 ms later all measured the same, without a delay frames were lost
-#define DMR_KEY_DELAY_US	1000u
+// The RF TX interrupt comes about 1.28 ms before the slot boundary, 2.53 ms before the burst's first symbol. Keyed at
+// once, the PA cut the end of the inbound burst an SFR receives in the other slot; 0.6-1.2 ms later all measured the
+// same, without a delay frames were lost. So the PA point's default is 1 ms after the interrupt
+#define DMR_KEY_INT_AHEAD_US	2530u
+#define DMR_KEY_MIN_US		30u	// the key timer's shortest step; closer points run together
+// The PA is dropped this long after the RF TX interrupt (gotchas.md 3.4), at the burst's last symbol's end. Left to the
+// timeslot interrupt, the carrier fell 1.7 ms after the last symbol, 0.45 ms into the next slot
+#define PA_HOLD_US		(DMR_KEY_INT_AHEAD_US + 27500u)
+// The earliest key-up point (radio/pa_keyup.h): the timer's first step after the interrupt
+#define KEYUP_MAX_AHEAD_US	(DMR_KEY_INT_AHEAD_US - DMR_KEY_MIN_US)
+// The key-up constants (docs/spec/pa-keyup.md): every level keyed at its drive 1 ms after the interrupt
+static const pa_keyup_cfg_t keyup_cfg = PA_KEYUP_FIXED(DMR_KEY_INT_AHEAD_US - 1000u);
 
 // Voice SPI2 (hardware-dm1701.md 4.3): PB13 SCK, PB14 MISO, PB15 MOSI (AF5), chip select PIN_C6000_VCS
 #define VOICE_SPI_PINS		(GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15)
@@ -62,6 +73,7 @@ static struct {
 	radio_bw_t rx_bw;
 	subtone_t rx_tone;
 	uint32_t bus_errors;	// I2C failures and failed chip operations since start (debug)
+	uint32_t bus_clears;	// times the AT1846S held SDA and was clocked free (i2c_bus_clear)
 	uvf_radio_diag_t diag;
 	radio_status_t last_status;	// returned without bus traffic while DMR transmits
 	uint16_t tone_hz;		// FM TX tone in place of the microphone (tx_tone), 0 = none
@@ -77,12 +89,21 @@ static struct {
 	volatile uint32_t dmr_drive;
 	volatile bool dmr_uhf;
 	volatile uint32_t rf_tuned_hz;	// what the AT1846S synthesizer holds, 0 unknown
+	volatile uint32_t rx_tune_hz;	// the AT1846S receive frequency: rx_hz plus the DMR receive offset (uvf_dmr_rx_offset_hz)
 	volatile bool rf_isr_dirty;	// the ISR wrote the AT1846S behind the task-level driver
 	volatile bool rf_rx_pending;	// a back-to-RX write was skipped: retry at the next timeslot interrupt
 	volatile uint8_t rf_page;	// AT1846S page last written to reg 0x7F, 0xFF unknown
 	volatile int8_t rf_ref;		// calibrated HR_C6000 MOD1 offset (4:0x04) for the RX frequency
 	volatile bool rf_direct;	// this burst was keyed without the idle step: 4:0x04 raised, the receiver not retuned
-	volatile bool rf_key_pending;	// TIM7 keys this burst at its expiry
+	volatile bool rf_key_pending;	// TIM7 runs this burst's key-up points
+	pa_keyup_point_t key_pt[PA_KEYUP_POINTS];	// the transmission's, earliest first, set before it is armed
+	pa_keyup_step_t key_st[PA_KEYUP_POINTS_MAX];	// and as TIM7's steps (pa_keyup_steps)
+	uint8_t key_ns;
+	pa_keyup_t ku;
+	volatile uint8_t key_i;		// the next step
+	volatile uint16_t key_base_us;	// the point the timer last counted from
+	bool key_timed;		// this burst's drop is the timer's
+	volatile uint32_t key_apc;	// the drive now: what the PA point keys with
 	uint32_t rf_skipped, rf_unarmed, rf_rx_retries;
 } r = { .rf_page = 0xFF };
 
@@ -120,11 +141,46 @@ static void i2c_setup(void)
 	HAL_I2C_Init(&i2c3);
 }
 
-// One register transfer. Task context: up to 3 tries 1 ms apart, then the peripheral is reset. ISR context: one
-// try, and none at all while a task transfer owns the bus (skip, never wait)
-static bool i2c_xfer(uint8_t reg, uint8_t *buf, bool write)
+// A transfer cut short in the middle of a read leaves the chip driving SDA low until it gets the rest of its clocks.
+// The peripheral then sees a busy bus for good, and resetting it changes nothing: every transfer after it fails.
+// Clock SCL by hand until the chip lets SDA go (nine pulses end any byte), then a stop (I2C-bus specification, bus
+// clear). The lines are released through the pull-ups, never driven high
+static void i2c_line(GPIO_TypeDef *port, uint16_t pin, bool high)
 {
-	bool isr = in_isr();
+	if (high) {
+		stm32_pin_in(port, pin, GPIO_PULLUP);
+	} else {
+		stm32_pin_out(port, pin, false, true);
+	}
+	hal_delay_us(10);
+}
+
+static void i2c_bus_clear(void)
+{
+	i2c_line(PIN_PORT(PIN_I2C3_SDA), PIN_MASK(PIN_I2C3_SDA), true);
+	i2c_line(PIN_PORT(PIN_I2C3_SCL), PIN_MASK(PIN_I2C3_SCL), true);
+	if (PIN_READ(PIN_I2C3_SDA)) {
+		return;		// nothing holds it: the peripheral reset is enough
+	}
+	r.bus_clears++;
+	for (int i = 0; i < 9 && !PIN_READ(PIN_I2C3_SDA); i++) {
+		i2c_line(PIN_PORT(PIN_I2C3_SCL), PIN_MASK(PIN_I2C3_SCL), false);
+		i2c_line(PIN_PORT(PIN_I2C3_SCL), PIN_MASK(PIN_I2C3_SCL), true);
+	}
+	i2c_line(PIN_PORT(PIN_I2C3_SCL), PIN_MASK(PIN_I2C3_SCL), false);	// a stop: SDA rises while SCL is high
+	i2c_line(PIN_PORT(PIN_I2C3_SDA), PIN_MASK(PIN_I2C3_SDA), false);
+	i2c_line(PIN_PORT(PIN_I2C3_SCL), PIN_MASK(PIN_I2C3_SCL), true);
+	i2c_line(PIN_PORT(PIN_I2C3_SDA), PIN_MASK(PIN_I2C3_SDA), true);
+}
+
+// Task-level transfers from more than one task (the radio task's driver, the debug link's CHIP_REG): one at a time,
+// so a retry's peripheral reset never lands in another task's transfer. ISR writes (rf_isr_write) don't take it
+static SemaphoreHandle_t i2c_lock;
+
+// One register transfer, the lock held in task context (i2c_xfer). Task context: up to 3 tries 1 ms apart, then the
+// bus is cleared and the peripheral reset. ISR context: one try, and none at all while a task transfer owns the bus (skip, never wait)
+static bool i2c_xfer_once(uint8_t reg, uint8_t *buf, bool write, bool isr)
+{
 	int tries = isr ? 1 : I2C_TRIES;
 	for (int i = 0; i < tries; i++) {
 		if (isr && HAL_I2C_GetState(&i2c3) != HAL_I2C_STATE_READY) {
@@ -143,9 +199,24 @@ static bool i2c_xfer(uint8_t reg, uint8_t *buf, bool write)
 	r.bus_errors++;
 	if (!isr) {
 		HAL_I2C_DeInit(&i2c3);
+		i2c_bus_clear();
 		i2c_setup();
 	}
 	return false;
+}
+
+static bool i2c_xfer(uint8_t reg, uint8_t *buf, bool write)
+{
+	bool isr = in_isr();
+	bool lock = !isr && i2c_lock != NULL && xTaskGetSchedulerState() == taskSCHEDULER_RUNNING;
+	if (lock) {
+		xSemaphoreTake(i2c_lock, portMAX_DELAY);
+	}
+	bool ok = i2c_xfer_once(reg, buf, write, isr);
+	if (lock) {
+		xSemaphoreGive(i2c_lock);
+	}
+	return ok;
 }
 
 static bool rf_write(void *ctx, uint8_t reg, uint16_t val)
@@ -243,11 +314,26 @@ static int32_t lerp(int32_t a, int32_t b, uint16_t per_mille)
 }
 
 // Board power level -> DAC value from the four calibrated curves (hardware-dm1701.md 7, the radio's fractions)
+// The PA drive set over the debug link for the next transmission (power calibration; hal_radio_t.tx_drive), 0 = the
+// level's. Any task sets it; tx_off clears it
+static volatile uint16_t drive_override;
+
 static uint32_t power_to_dac(const uvf_cal_point_t *cal, uint8_t level, bool uhf)
 {
 	const uint16_t *f = uvf_variant.frac[uhf ? 1 : 0];
 	int32_t vl = cal->power_dac[0], lo = cal->power_dac[1], mid = cal->power_dac[2], hi = cal->power_dac[3];
 	int32_t v;
+	if (uvf_variant.power5 != NULL) {
+		const uvf_power_band_t *p = &uvf_variant.power5[uhf ? 1 : 0];
+		switch (level) {
+		case 0:
+		case 1: v = p->low[level]; break;
+		case 2: v = lerp(vl, lo, p->frac[0]); break;
+		case 3: v = lerp(lo, mid, p->frac[1]); break;
+		default: v = hi; break;
+		}
+		return (uint32_t)v > DAC_MAX ? DAC_MAX : (uint32_t)v;
+	}
 	switch (level) {
 	case 0: v = vl > 160 ? vl - 160 : 0; break;
 	case 1: v = vl; break;
@@ -269,7 +355,7 @@ static uint32_t power_to_dac(const uvf_cal_point_t *cal, uint8_t level, bool uhf
 
 static const band_t *find_band(uint32_t hz)
 {
-	for (uint8_t i = 0; i < board.band_count; i++) {
+	for (uint8_t i = 0; i < board_band_count(); i++) {
 		if (hz >= board.bands[i].lo_hz && hz <= board.bands[i].hi_hz) {
 			return &board.bands[i];
 		}
@@ -330,12 +416,12 @@ static bool rf_to_rx(void)
 	// bursts lost, HIL 2026-10-12), and the receiver stayed on the TX frequency where RX != TX
 	uint16_t idle = at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_IDLE);
 	bool ok = rf_isr_write(0x30, idle);
-	if (ok && r.rf_tuned_hz != r.rx_hz) {
-		uint32_t word = at1846s_freq_word(r.rx_hz);
+	if (ok && r.rf_tuned_hz != r.rx_tune_hz) {
+		uint32_t word = at1846s_freq_word(r.rx_tune_hz);
 		r.rf_tuned_hz = 0;
 		ok = rf_isr_write(0x29, (uint16_t)((word >> 16) & 0x3FFFu)) && rf_isr_write(0x2A, (uint16_t)(word & 0xFFFFu));
 		if (ok) {
-			r.rf_tuned_hz = r.rx_hz;
+			r.rf_tuned_hz = r.rx_tune_hz;
 		}
 	}
 	rx_supply(true, r.rx_uhf);
@@ -358,7 +444,8 @@ static bool rf_key(void)
 	uint32_t hz = r.dmr_tx_hz;
 	r.rf_isr_dirty = true;
 	int8_t ref;
-	if (!r.rf_rx_pending && r.rf_tuned_hz == hz && uvf_direct_tx_ref(hz, r.rf_ref, &ref)) {
+	if (!r.rf_rx_pending && hz == r.rx_hz && r.rf_tuned_hz == r.rx_tune_hz &&
+	    uvf_direct_tx_ref(hz, r.rf_ref, (int32_t)(r.rx_tune_hz - hz), &ref)) {	// the DMR receive offset
 		// Direct (SFR, simplex): the receiver on the TX frequency goes straight to DMR TX, which puts the carrier
 		// about 3.07 kHz low; the raised MOD1 offset puts it back (uvf_direct_tx_ref)
 		if (!rf_isr_write(0x30, at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_DMR_TX))) {
@@ -387,21 +474,22 @@ static bool rf_key(void)
 pa:
 	r.rf_rx_pending = false;
 	rx_supply(false, false);	// the RX pre-amps off while the PA is up (hardware-dm1701.md 6)
-	apc_set(r.dmr_drive);
+	apc_set(r.key_apc);
 	PIN_WRITE(PIN_PA_EN1, true);
 	PIN_WRITE(PIN_PA_BAND, r.dmr_uhf);
 	PIN_WRITE(PIN_PA_EN2, true);
 	return true;
 }
 
-// TIM7: one-shot at 1 MHz for the key delay, at the modem interrupts' priority (they share I2C3 and never preempt
-// each other)
+// TIM7 at 1 MHz steps through the burst's key-up points, at the modem interrupts' priority (they share I2C3 and never
+// preempt each other). It counts on from each point's update, so a point's own work (the PA point's I2C writes take
+// 0.1-0.35 ms) doesn't delay the ones after it
 static void key_timer_setup(void)
 {
 	__HAL_RCC_TIM7_CLK_ENABLE();
 	TIM7->CR1 = 0;
 	TIM7->PSC = (uint16_t)(2u * HAL_RCC_GetPCLK1Freq() / 1000000u - 1u);
-	TIM7->ARR = DMR_KEY_DELAY_US - 1u;
+	TIM7->ARR = 0xFFFFu;
 	TIM7->EGR = TIM_EGR_UG;		// load the prescaler
 	TIM7->SR = 0;
 	TIM7->DIER = TIM_DIER_UIE;
@@ -416,17 +504,72 @@ static void key_timer_stop(void)
 	r.rf_key_pending = false;
 }
 
+// One key-up point (radio/pa_keyup.h). false: the PA didn't key, the rest of the burst's points are dropped
+static bool key_point(uint8_t kind)
+{
+	switch (kind) {
+	case PA_KEYUP_PT_BOOST:
+		r.key_apc = r.ku.boost;
+		break;
+	case PA_KEYUP_PT_PA:
+		if (!rf_key()) {	// disarmed meanwhile: counted unarmed, nothing keyed
+			apc_set(0);
+			return false;
+		}
+		return true;
+	default:
+		r.key_apc = r.ku.drive;
+		break;
+	}
+	apc_set(r.key_apc);
+	return true;
+}
+
 void TIM7_IRQHandler(void)
 {
+	TIM7->ARR = 0xFFFFu;	// count on from this update while the points run: a short step must not come round again
 	TIM7->SR = 0;
-	if (r.rf_key_pending) {
-		r.rf_key_pending = false;
-		(void)rf_key();	// disarmed meanwhile: counted unarmed, nothing keyed
+	if (!r.rf_key_pending) {
+		TIM7->CR1 = 0;
+		return;
+	}
+	if (r.key_i >= r.key_ns) {	// the burst is over: the PA off; the timeslot interrupt does the rest (rf_to_rx)
+		key_timer_stop();
+		pa_off();
+		return;
+	}
+	for (;;) {
+		uint8_t i = r.key_i;
+		for (uint8_t p = i != 0u ? r.key_st[i - 1u].end : 0u; p < r.key_st[i].end; p++) {
+			if (!key_point(r.key_pt[p].kind)) {
+				key_timer_stop();
+				return;
+			}
+		}
+		r.key_i = ++i;
+		if (i >= r.key_ns) {
+			if (!r.key_timed) {	// keyed once for the whole transmission: its end drops the PA
+				key_timer_stop();
+				return;
+			}
+			// The PA drop, PA_HOLD_US after the interrupt
+			TIM7->ARR = PA_HOLD_US - (DMR_KEY_INT_AHEAD_US - r.key_base_us) - 1u;
+			return;
+		}
+		// From the last update; a step already due goes now
+		uint32_t step = pa_keyup_step_wait(r.key_base_us, r.key_st[i].us, TIM7->CNT, DMR_KEY_MIN_US);
+		if (step != 0u) {
+			TIM7->ARR = step - 1u;
+			r.key_base_us = r.key_st[i].us;
+			return;
+		}
 	}
 }
 
-// The RF TX interrupt arms the key timer (the engine counts the burst as keyed from here: the PA drop at the timeslot
-// interrupt more than 20 ms later is unchanged); the timeslot interrupt drops the PA, a key still pending included
+// The RF TX interrupt starts the burst's key-up points and, after them, the PA drop PA_HOLD_US later (not for a split
+// duplex BS outbound, keyed once for all its slots; the engine
+// counts the burst as keyed from here); the timeslot interrupt more than 20 ms later puts the receiver back, and
+// drops the PA if the timer hasn't (points still pending included)
 bool uvf_rf_dmr_switch(bool tx)
 {
 	if (!tx) {
@@ -437,11 +580,19 @@ bool uvf_rf_dmr_switch(bool tx)
 		r.rf_unarmed++;
 		return false;
 	}
+	uint16_t first = r.key_st[0].us;	// no earlier than DMR_KEY_MIN_US after the interrupt
+	uint32_t until;
+	// a BS outbound or the air interface's continuous transmission keys once: its end drops the PA
+	r.key_timed = !stm32_hrc_dmr_bs_boundary_us(&until) && !stm32_hrc_dmr_tx_continuous();
 	TIM7->CR1 = 0;
 	TIM7->CNT = 0;
+	TIM7->ARR = (uint32_t)(DMR_KEY_INT_AHEAD_US - first) - 1u;
 	TIM7->SR = 0;
+	r.key_i = 0;
+	r.key_base_us = first;
+	r.key_apc = r.dmr_drive;
 	r.rf_key_pending = true;
-	TIM7->CR1 = TIM_CR1_OPM | TIM_CR1_CEN;
+	TIM7->CR1 = TIM_CR1_CEN;
 	return true;
 }
 
@@ -469,6 +620,17 @@ static const stm32_hrc_dmr_board_t dmr_board = {
 	.ts_service = uvf_rf_dmr_service,
 	.rf_counters = uvf_rf_dmr_counters,
 	.tx_end = dmr_tx_end,
+#if CONFIG_AIR
+	// The AT1846S's DMR set-up gives the HR_C6000 the low-frequency baseband with its audio filters off
+	// (hardware-dm1701.md, Air interface)
+	.air_tap = true,
+	// P25 and NXDN checked on air both ways on a radio of the family (hardware-dm1701.md, Air interface): the same
+	// chips and code on every one
+	.air_verified = true,
+#endif
+	// rf_to_rx() puts the AT1846S on the RX frequency after every burst and rf_key() back on TX for the next, so the
+	// slots between hear the repeater's outbound on a split channel too
+	.listen_split = true,
 };
 
 // Stop per-burst keying (task level): disarm, drop a transmission still running, PA off
@@ -495,8 +657,8 @@ static void rf_resync(void)
 		count(hrc_write(&r.modem, 4, 0x04, (uint8_t)r.rf_ref));
 	}
 	if (r.rx_valid) {
-		count(at1846s_set_freq(&r.rf, r.rx_hz));	// forced writes of 0x30 (idle), 0x29, 0x2A
-		r.rf_tuned_hz = r.rx_hz;
+		count(at1846s_set_freq(&r.rf, r.rx_tune_hz));	// forced writes of 0x30 (idle), 0x29, 0x2A
+		r.rf_tuned_hz = r.rx_tune_hz;
 	}
 	count(at1846s_set_state(&r.rf, r.rx_valid ? AT1846S_STATE_RX : AT1846S_STATE_IDLE));	// forced
 }
@@ -590,6 +752,9 @@ static void init(void)
 	if (speaker_lock == NULL) {
 		speaker_lock = xSemaphoreCreateMutex();
 	}
+	if (i2c_lock == NULL) {
+		i2c_lock = xSemaphoreCreateMutex();
+	}
 	PIN_WRITE(PIN_MIC_POWER, true);		// kept on in RX and TX (4.5: some speaker-mics see false PTT without bias)
 	rx_supply(false, false);
 	dac_setup();
@@ -617,25 +782,49 @@ static void init(void)
 	r.diag.c6000_ok = hrc_read(&r.modem, 4, 0x10, &r.diag.c6000_r10);
 	stm32_hrc_dmr_init(&r.modem, &dmr_board);
 	key_timer_setup();
+#if CONFIG_DMR
+	pa_keyup_init(&keyup_cfg, KEYUP_MAX_AHEAD_US, DAC_MAX);
+#endif
+}
+
+// The AT1846S receive frequency for a channel on hz in the current mode: DMR receives below it (5.13)
+static uint32_t rx_tune(uint32_t hz)
+{
+	return (uint32_t)((int32_t)hz + (r.mode == RADIO_MODE_DMR ? uvf_dmr_rx_offset_hz(hz) : 0));
+}
+
+// A receiver still on the other mode's frequency onto rx_tune_hz (set_mode)
+static void rx_retune(void)
+{
+	if (r.rx_valid && !r.tx_on && !r.asleep && r.rf_tuned_hz != r.rx_tune_hz) {
+		count(at1846s_set_freq(&r.rf, r.rx_tune_hz));
+		count(at1846s_set_state(&r.rf, AT1846S_STATE_RX));
+		r.rf_tuned_hz = r.rx_tune_hz;
+	}
 }
 
 static void set_mode(radio_mode_t mode)
 {
 	radio_mode_t prev = r.mode;
 	r.mode = mode;
+	if (r.rx_valid) {
+		r.rx_tune_hz = rx_tune(r.rx_hz);	// the receive offset follows the mode, not only the next rx()
+	}
 	if (mode == RADIO_MODE_DMR) {
 		count(at1846s_set_mode(&r.rf, AT1846S_MODE_DMR));
 		if (prev != RADIO_MODE_DMR) {
 			dmr_enter();
+			rx_retune();
 		}
 	} else {
 		if (prev == RADIO_MODE_DMR) {
 			dmr_disarm();
 			stm32_hrc_dmr_leave();
-			rf_resync();
+			rf_resync();	// retunes only after DMR bursts; rx_retune below otherwise
 			r.tx_on = false;
 		}
 		count(at1846s_set_mode(&r.rf, AT1846S_MODE_FM));
+		rx_retune();
 		if (!r.tx_on) {
 			count(hrc6000_set_mode_fm_rx(&r.modem));
 		}
@@ -729,12 +918,14 @@ static bool rx_set(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone, bool ke
 	if (r.mode == RADIO_MODE_DMR) {
 		dmr_disarm();
 	}
-	bool back = keep && same && r.mode == RADIO_MODE_DMR && r.rf_tuned_hz == hz &&
+	uint32_t tune = rx_tune(hz);
+	bool back = keep && same && r.mode == RADIO_MODE_DMR && r.rf_tuned_hz == tune &&
 		    !r.rf_rx_pending && !r.asleep;
 	r.asleep = false;
 	tone_restore();
 	inject_stop();
 	r.rx_hz = hz;
+	r.rx_tune_hz = tune;
 	r.rx_bw = bw;
 	r.rx_tone = rx_tone != NULL ? *rx_tone : (subtone_t){ TONE_NONE, 0 };
 	r.rx_uhf = uhf;
@@ -745,13 +936,13 @@ static bool rx_set(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone, bool ke
 	count(at1846s_set_bandwidth(&r.rf, rf_bw(bw)));
 	count(at1846s_set_mode(&r.rf, r.mode == RADIO_MODE_DMR ? AT1846S_MODE_DMR : AT1846S_MODE_FM));
 	if (!back) {
-		count(at1846s_set_freq(&r.rf, hz));
+		count(at1846s_set_freq(&r.rf, tune));
 	}
 	apply_rx_tone();
 	if (!back) {
 		count(at1846s_set_state(&r.rf, AT1846S_STATE_RX));
 	}
-	r.rf_tuned_hz = hz;
+	r.rf_tuned_hz = tune;
 	r.rf_isr_dirty = false;
 	r.rf_rx_pending = false;
 
@@ -797,6 +988,9 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	uvf_cal_point_t cal;
 	bool calibrated = uvf_cal_at(hz, &cal) && cal.valid;
 	uint32_t drive = calibrated ? power_to_dac(&cal, power, uhf) : UVF_DAC_UNCALIBRATED;
+	if (drive_override != 0u) {
+		drive = drive_override;
+	}
 
 	if (r.mode == RADIO_MODE_DMR) {
 		// Arm only: the receiver stays on the RX frequency (a repeater's slot timing is followed until our first
@@ -806,6 +1000,19 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		r.dmr_tx_hz = (uint32_t)((int32_t)hz + dmr_offset);
 		r.dmr_drive = drive;
 		r.dmr_uhf = uhf;
+		// The burst's key-up points from the cal table at the TX frequency (radio/pa_keyup.h)
+		uint16_t top = calibrated ? (uint16_t)power_to_dac(&cal, UVF_POWER_TOP, uhf) : (uint16_t)drive;
+		const pa_keyup_cfg_t *kb = uvf_variant.keyup != NULL ? &uvf_variant.keyup[uhf ? 1 : 0] : &keyup_cfg;
+		// The dead zone's anchor: the calibration's low row
+		uint16_t ref = calibrated ? cal.power_dac[1] : (uint16_t)drive;
+#if CONFIG_DMR
+		pa_keyup_select(kb);
+		r.ku = pa_keyup_plan((uint16_t)drive, top, ref);
+#else
+		r.ku = pa_keyup_drives(kb, (uint16_t)drive, top, ref, DAC_MAX);
+#endif
+		r.key_ns = pa_keyup_steps(r.key_pt, pa_keyup_points(&r.ku, r.key_pt), DMR_KEY_INT_AHEAD_US, DMR_KEY_MIN_US,
+					  r.key_st);
 		__DMB();
 		r.dmr_armed = true;
 		r.tx_on = true;
@@ -868,6 +1075,22 @@ static void tx_end(bool keep)
 static void tx_off(void)
 {
 	tx_end(false);
+	drive_override = 0u;
+}
+
+static uint16_t tx_drive_level(uint32_t hz, uint8_t level)
+{
+	uvf_cal_point_t cal;
+	return uvf_cal_at(hz, &cal) && cal.valid ? (uint16_t)power_to_dac(&cal, level, hz >= UHF_MIN_HZ) : 0u;
+}
+
+static bool tx_drive(uint16_t drive)
+{
+	if (drive > DAC_MAX) {
+		return false;
+	}
+	drive_override = drive;
+	return true;
 }
 
 // stm32_hrc_dmr_board_t.tx_end: the burst switch left the AT1846S receiving
@@ -1006,7 +1229,7 @@ static bool tx_tone_key(bool down)
 	return true;
 }
 
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 // APRS AFSK (afsk_uvf.c, docs/spec/aprs.md 5.2): the FM TX tone generator as for tx_tone, at hz with the deviation
 // from level (50 = the tone deviation tx_tone uses), then the TIM6 interrupt retunes tone1 (reg 0x35) every symbol
 // with single I2C3 writes. status() keeps off I2C3 meanwhile. Unverified on the bench, like tx_tone
@@ -1041,10 +1264,11 @@ void uvf_afsk_end(void)
 }
 #endif
 
-// Receiver battery saving (FM receive only): the AT1846S idle and the RX supply off; waking retunes with rx()
+// Receiver power saving (FM battery save, a trunked system's power save on DMR): the AT1846S idle and the RX supply
+// off; waking retunes with rx(). The HR_C6000 keeps running
 static void rx_sleep(bool sleep)
 {
-	if (r.mode != RADIO_MODE_FM || r.tx_on || !r.rx_valid || sleep == r.asleep) {
+	if ((r.mode != RADIO_MODE_FM && r.mode != RADIO_MODE_DMR) || r.tx_on || !r.rx_valid || sleep == r.asleep) {
 		return;
 	}
 	if (sleep) {
@@ -1071,6 +1295,7 @@ const hal_radio_t uvf_radio = {
 	.tx_tone = tx_tone,
 	.tx_tail = tx_tail,
 	.tx_tone_key = tx_tone_key,
+	.rx_sleep_dmr = true,
 #if CONFIG_DTMF
 	.tx_dtmf = tx_dtmf,
 #endif
@@ -1078,12 +1303,38 @@ const hal_radio_t uvf_radio = {
 #if CONFIG_REF_TRIM
 	.ref_trim = ref_trim,
 #endif
+	.tx_drive_level = tx_drive_level,
+	.tx_drive = tx_drive,
 };
 
 void uvf_radio_diag(uvf_radio_diag_t *d)
 {
 	*d = r.diag;
 	d->bus_errors = r.bus_errors;
+	d->bus_clears = r.bus_clears;
+}
+
+// The debug link's CHIP_REG (board.chip_reg, hardware-dm1701.md 5.12): chip 0 is the AT1846S, page 0, registers
+// 0x00-0x7E (0x7F selects the page, which the driver owns); chip 1 is the HR_C6000, pages 1 and 4 (2 and 3 are the
+// data and vocoder FIFOs, which a read would drain). Straight on the bus, as the probe's access: a write goes into the
+// AT1846S driver's cache, so its own cached writes don't skip the register, but its next set-up overwrites it. From
+// the debug link's task: each AT1846S transfer takes the I2C lock (i2c_xfer), and the driver stays on page 0 after
+// init, so the page select is a no-op; each HR_C6000 access is one masked transaction
+bool uvf_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write)
+{
+	if (chip == 0 && page == 0 && reg < 0x7Fu && (!write || *val <= 0xFFFFu)) {
+		uint16_t v = (uint16_t)*val;
+		bool ok = (!write || at1846s_write_force(&r.rf, 0, reg, v)) && at1846s_read(&r.rf, 0, reg, &v);
+		*val = v;
+		return ok;
+	}
+	if (chip == 1 && (page == HRC_PAGE_AUX || page == HRC_PAGE_SYS) && (!write || *val <= 0xFFu)) {
+		uint8_t v = (uint8_t)*val;
+		bool ok = (!write || hrc_write(&r.modem, page, reg, v)) && hrc_read(&r.modem, page, reg, &v);
+		*val = v;
+		return ok;
+	}
+	return false;
 }
 
 #if CONFIG_AUDIO_PROBE

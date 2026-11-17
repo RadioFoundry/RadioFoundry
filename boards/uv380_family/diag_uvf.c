@@ -106,6 +106,8 @@ bool uvf_diag_line(uint8_t i, char *buf, uint8_t len)
 		}
 		put(&o, " errs ");
 		put_u(&o, d.bus_errors);
+		put(&o, " clr ");
+		put_u(&o, d.bus_clears);
 		break;
 	case 5:
 		put(&o, "panel type ");

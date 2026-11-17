@@ -27,7 +27,7 @@ static bool start(const dmr_config_t *cfg, dmr_event_cb_t cb, void *ctx)
 }
 
 static void stop(void) { sim.started = false; sim.cb = NULL; }
-static void configure(const dmr_config_t *cfg) { sim.cfg = *cfg; }
+static void configure(const dmr_config_t *cfg) { sim.cfg = *cfg; sim.configures++; }
 static void rx_restart(void) { sim.rx_restarts++; }
 static void rx_lock_slot(int8_t ts) { sim.locked_ts = ts; }
 
@@ -44,6 +44,9 @@ static bool tx_begin(dmr_timing_t t, int8_t ts, dmr_access_t a)
 		return false;
 	sim.tx_active = true;
 	sim.tx_ending = false;
+	sim.listening = false;
+	sim.align_found = false;
+	sim.align_wait = 0;
 	sim.q_head = sim.q_count = 0;
 	// Repeater ticks label even slots TS1 and odd slots TS2; aligned TX must honor that clock.
 	sim.tx_parity = t == DMR_TIMING_ALIGNED && sim.repeater && (ts == 1 || ts == 2)
@@ -93,8 +96,19 @@ static void set_embedded_lc(const uint8_t lc[9])
 
 static void tx_listen(void)
 {
-	if (sim.tx_active)
+	if (sim.tx_active) {
 		sim.tx_listens++;
+		sim.listening = true;
+	}
+}
+
+static bool tx_listen_split(void)
+{
+	if (sim.no_split_listen || !sim.listen_bursts) {
+		return false;	// a test without listen_bursts models a radio that hears nothing while sending
+	}
+	tx_listen();
+	return sim.tx_active;
 }
 
 static void set_cc_filter(int8_t cc) { sim.cc_filter = cc; }
@@ -104,7 +118,16 @@ const hal_dmr_modem_t sim_modem = {
 	.start = start, .stop = stop, .configure = configure, .rx_restart = rx_restart, .rx_lock_slot = rx_lock_slot,
 	.tx_begin = tx_begin, .tx_queue = tx_queue, .tx_queue_space = tx_queue_space, .tx_end = tx_end,
 	.tx_abort = tx_abort, .set_embedded_lc = set_embedded_lc, .set_cc_filter = set_cc_filter,
-	.is_transmitting = is_transmitting, .tx_listen = tx_listen, .tx_fill = tx_fill,
+	.is_transmitting = is_transmitting, .tx_listen = tx_listen, .tx_listen_split = tx_listen_split, .tx_fill = tx_fill,
+};
+
+// The same, its split listening with gaps (tx_listen_gaps)
+const hal_dmr_modem_t sim_modem_gaps = {
+	.start = start, .stop = stop, .configure = configure, .rx_restart = rx_restart, .rx_lock_slot = rx_lock_slot,
+	.tx_begin = tx_begin, .tx_queue = tx_queue, .tx_queue_space = tx_queue_space, .tx_end = tx_end,
+	.tx_abort = tx_abort, .set_embedded_lc = set_embedded_lc, .set_cc_filter = set_cc_filter,
+	.is_transmitting = is_transmitting, .tx_listen = tx_listen, .tx_listen_split = tx_listen_split, .tx_fill = tx_fill,
+	.tx_listen_gaps = true,
 };
 
 void sim_reset(void)
@@ -120,6 +143,22 @@ void sim_rx(const dmr_burst_t *b)
 void sim_event(uint8_t kind, int8_t ts)
 {
 	emit(kind, ts, 0, NULL);
+}
+
+void sim_short_lc(uint32_t slc, uint8_t crc)
+{
+	dmr_event_t ev = { .kind = DMR_EV_SHORT_LC, .flags = crc, .arg = slc };
+
+	if (sim.cb)
+		sim.cb(&ev, sim.ctx);
+}
+
+void sim_rc(uint16_t info, uint8_t flags)
+{
+	dmr_event_t ev = { .kind = DMR_EV_RC, .ts = -1, .flags = flags, .arg = info };
+
+	if (sim.cb)
+		sim.cb(&ev, sim.ctx);
 }
 
 static void send_one(void)
@@ -147,6 +186,7 @@ static void send_one(void)
 		a->len = b.len;
 		memcpy(a->payload, b.payload, b.len);
 		a->slot = sim.slot;
+		a->ts = sim.last_ts;
 		if (b.kind == DMR_BURST_VOICE) {
 			a->lcss = dmr_emb_lcss(b.voice_index);
 			if (b.voice_index >= 1 && b.voice_index <= 4) {
@@ -167,9 +207,42 @@ void sim_slot(void)
 	if (sim.stalled)
 		return;
 	sim.slot++;
-	int8_t ts = sim.repeater ? (int8_t)(1 + (sim.slot & 1)) : 0;
+	int8_t ts = sim.repeater || sim.free_ticks || (sim.held_slot_numbers && sim.tx_active)
+		? (int8_t)(1 + (sim.slot & 1)) : 0;
 
-	emit(DMR_EV_SLOT_TICK, ts, sim.slot, NULL);
+	dmr_event_t tick = { .kind = DMR_EV_SLOT_TICK, .ts = ts, .arg = sim.slot };
+	if (ts != 0) {
+		tick.flags = (uint8_t)(DMR_TICK_AT_KNOWN | ((sim.at_busy >> (ts - 1)) & 1u ? DMR_TICK_AT_BUSY : 0u));
+	}
+	if (sim.cb)
+		sim.cb(&tick, sim.ctx);
+	if (sim.tx_active && sim.align_needs_repeater && sim.last_timing == DMR_TIMING_ALIGNED && !sim.align_found) {
+		if (sim.repeater && (sim.last_ts == 1 || sim.last_ts == 2)) {
+			sim.align_found = true;
+			sim.tx_parity = (int8_t)(sim.last_ts - 1);
+		} else if (++sim.align_wait > 50) {	// the 51st slot, as the HR_C6000 engine (ALIGN_TIMEOUT_TICKS)
+			sim.align_rejects++;
+			sim.tx_active = false;
+			sim.q_count = 0;
+			emit(DMR_EV_TX_REJECTED, sim.last_ts, 1, NULL);
+			emit(DMR_EV_TX_DONE, 0, sim.slot, NULL);	// as the HR_C6000 and HR_C7000 engines do
+			return;
+		} else {
+			return;
+		}
+	}
+	if (sim.listen_bursts && sim.repeater &&
+	    (!sim.tx_active || ((int8_t)(sim.slot & 1) != sim.tx_parity && sim.listening && !sim.listen_deaf))) {
+		dmr_burst_t b;
+
+		memset(&b, 0, sizeof(b));
+		b.sync = DMR_SYNC_BS;
+		b.kind = DMR_BURST_IDLE;
+		b.cc = (uint8_t)((sim.cfg.cc + (sim.listen_other_cc ? 1 : 0)) & 15);
+		b.ts = ts;
+		b.crc_ok = true;
+		emit(DMR_EV_BURST_RX, ts, sim.slot, &b);
+	}
 	if (!sim.tx_active || (int8_t)(sim.slot & 1) != sim.tx_parity)
 		return;
 	if (sim.reject_next) {
@@ -177,6 +250,16 @@ void sim_slot(void)
 		sim.tx_active = false;
 		sim.q_count = 0;
 		emit(DMR_EV_TX_REJECTED, 0, 0, NULL);
+		return;
+	}
+	if (sim.q_count && sim.q[sim.q_head].kind == DMR_BURST_CSBK &&
+	    (sim.lose_next > 0 || (sim.lose_own_csbk && sim.last_timing != DMR_TIMING_OWN))) {
+		if (sim.lose_next > 0)
+			sim.lose_next--;
+		sim.lost_tx++;
+		sim.tx_active = false;
+		sim.q_count = 0;
+		emit(DMR_EV_TX_DONE, 0, sim.slot, NULL);	// as the HR_C6000 engine: done, never keyed
 		return;
 	}
 	if (sim.q_count) {

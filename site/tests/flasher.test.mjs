@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { fromHex, toHex, sha256, crc32, u32le } from "../static/js/flasher/bytes.js";
+import { fromHex, toHex, sha256, crc32, u32le, equal } from "../static/js/flasher/bytes.js";
 import * as stockfw from "../static/js/flasher/stockfw.js";
 import { makePlan, KEEP, MERGE, RESTORE, PlanError } from "../static/js/flasher/plan.js";
 import { verify, segments, ManifestError } from "../static/js/flasher/manifest.js";
@@ -22,7 +22,7 @@ import { pictureSrc } from "../static/js/flasher/radiotop.js";
 import { readRadio, makeBundle, openBundle, bundleFolder, notBundle, bundleName, CODEPLUG_SPAN } from "../static/js/flasher/backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug } from "../static/js/flasher/restore.js";
 import { Selection } from "../static/js/flasher/select.js";
-import { decideCodec, DecisionError } from "../static/js/flasher/decide.js";
+import { codecPresent, decideCodec, DecisionError } from "../static/js/flasher/decide.js";
 import { findKey, readBootKey } from "../static/js/flasher/bootkey.js";
 import { codecSegments, readCodec } from "../static/js/flasher/codecsave.js";
 import { detect, convertersFor } from "../static/js/flasher/codeplug.js";
@@ -396,6 +396,56 @@ test("the bootloader route's Install asks before an install without a codec", ()
 	assert.match(body.slice(0, ask), /S\.requested = null; S\.step--/);
 });
 
+// app.js needs the DOM, so its source is checked: the bar under every step but the last offers Report a Problem, since
+// a page stuck waiting on the radio shows no error and so no error's button (#446); the done steps have their own
+test("every step's nav bar offers Report a Problem", () => {
+	const src = readFileSync(new URL("../static/js/flasher/app.js", import.meta.url), "utf8");
+	const back = src.slice(src.indexOf('h("div", { class: "nav-back" }'), src.indexOf("info, fwd));"));
+	assert.match(back, /step === "done" \? null : h\("span", \{ class: "nav-report" \}, reportButton\(\)\)/);
+	// hidden while the step shows its own (one button, not two); the selector names every class those carry
+	const css = readFileSync(new URL("../static/css/site.css", import.meta.url), "utf8");
+	assert.match(css, /#flasher:has\(\.report-line, \.report-reported, \.report-offer\) \.nav-report \{ display: none; \}/);
+	const rep = readFileSync(new URL("../static/js/report.js", import.meta.url), "utf8");
+	assert.match(rep, /class: "report-line small"/);
+	assert.match(rep, /class: "report-reported small"/);
+	const done = src.slice(src.indexOf("function doneView("));
+	assert.match(done.slice(0, done.indexOf("\n}\n") + 3), /t\("report\.something_wrong"\), " ", reportButton\(\)/);
+	const c7 = readFileSync(new URL("../static/js/flasher/c7000ui.js", import.meta.url), "utf8");
+	assert.match(c7, /t\("report\.something_wrong"\), " ", reportButton\(\)/);
+	assert.match(c7, /class: "notice report-offer" \}[^\n]*\n[^\n]*reportButton\(\{ quiet: false \}\)/);
+});
+
+// A report with no error and no step verdict is the user's own ("problem", not a failed flash), and a verdict is
+// dropped when the user leaves its step, so Back from a verified install and a report later isn't "problem" for the write
+test("a report says failed only for an error or a step's verdict, and the verdict stays with its step", () => {
+	const src = readFileSync(new URL("../static/js/flasher/app.js", import.meta.url), "utf8");
+	const meta = src.slice(src.indexOf("function reportMeta("), src.indexOf("function reportAttachments("));
+	assert.match(meta, /const last = diag\.lastError\(\);/);
+	assert.match(meta, /result: S\.reportResult \|\| \(last \? "failed" : "problem"\)/);
+	const render = src.slice(src.indexOf("function render("), src.indexOf("const view = "));
+	assert.match(render, /if \(S\.reportStep !== here\) S\.reportResult = null;/);
+});
+
+// A bootloader that never answers a USB request fails after the timeout instead of holding the page forever (#446)
+test("a USB call the bootloader never answers fails with a timeout", async () => {
+	const never = () => new Promise(() => {});
+	const ok = async () => ({ status: "ok", data: new DataView(new ArrayBuffer(6)), bytesWritten: 0 });
+	const dev = (over = {}) => ({ configuration: { interfaces: [{ interfaceNumber: 0, alternates: [{ interfaceClass: 0xFE, interfaceSubclass: 0x01, interfaceName: "x" }] }] },
+		open: async () => {}, close: async () => {}, selectConfiguration: ok, claimInterface: async () => {},
+		controlTransferOut: ok, controlTransferIn: ok, ...over });
+	const opts = { timeoutMs: 20 };
+	await assert.rejects(WebUsbTransport.open(dev({ open: never }), null, opts), /^Error: USB transfer timeout: no reply to open/);
+	await assert.rejects(WebUsbTransport.open(dev({ claimInterface: never }), null, opts), /USB transfer timeout: no reply to claim interface/);
+	const stuckIn = await WebUsbTransport.open(dev({ controlTransferIn: never }), null, opts);
+	await assert.rejects(new Dfu(stuckIn).getStatus(), /USB transfer timeout: no reply to request 3 in 0.02 s/);
+	assert.equal(await stuckIn.stringDescriptor(1), null);	// a string the radio won't give is just missing
+	const stuckOut = await WebUsbTransport.open(dev({ controlTransferOut: never }), null, opts);
+	await assert.rejects(stuckOut.out(1, 0), /USB transfer timeout/);
+	// an answer in time is used as before
+	const fine = await WebUsbTransport.open(dev(), null, opts);
+	assert.equal((await fine.in(3, 6)).length, 6);
+});
+
 // app.js needs the DOM, so what it must keep is checked in its source: whyNoAnswer() is async, so a noAnswer() that
 // isn't awaited throws a Promise and the user reads "[object Promise]"; a radio that answered with the open-firmware
 // CPS gets the next step, not the cable and driver tips; every string it picks exists
@@ -550,6 +600,31 @@ test("codec decision follows rfoundry's rules", () => {
 	assert.equal(decideCodec(board, m, { probe: { board: "DM-1701", codec: "dm1701-v0206-csv" }, haveStock: true }).mode, MERGE);
 	assert.throws(() => decideCodec(board, m, {}), DecisionError);
 	assert.throws(() => decideCodec(fb.boards.md380, m, {}), DecisionError);
+});
+
+test("a switch a board leaves off by default can be chosen, with the board's reason", () => {
+	const radios = json("radios.json").radios;
+	const features = json("features.json").features, variants = json("variants.json").variants;
+	const rt10 = new Selection(radios.find((r) => r.id === "rt10"), features, variants);
+	assert.ok(rt10.supported("NET_PPP") && rt10.supported("HOTSPOT"));
+	assert.ok(!rt10.on.has("NET_PPP") && !rt10.on.has("HOTSPOT"));
+	assert.match(rt10.defaultOffWhy("NET_PPP"), /switched off and on/);
+	assert.equal(rt10.defaultOffWhy("DMR"), null);
+	rt10.set("NET_PPP", true);
+	assert.ok(rt10.on.has("NET_PPP") && rt10.on.has("DMR_IP_GATEWAY"), "turning it on brings what it needs");
+	assert.equal(new Selection(radios.find((r) => r.id === "dm1701"), features, variants).defaultOffWhy("NET_PPP"), null);
+});
+
+// A codec slot's board reports the stock build its slot came from (rfoundry Board.codec_present): any build counts, an
+// unknown slot or another board's codec doesn't; a stock-file board has only its profile's id
+test("a reported codec counts for the board", () => {
+	const dm32 = fb.boards.dm32;
+	assert.equal(dm32.codec_tagged, true);
+	for (const c of [dm32.codec.id, "dm32-048", "dm32-050"]) assert.ok(codecPresent(dm32, c), c);
+	for (const c of ["dm32-unknown", "absent", null, undefined, "dm1801pro-049", "dm32-49"]) assert.ok(!codecPresent(dm32, c), String(c));
+	const keeps = { ...dm32, keep_codec_supported: true };	// an update that leaves the slot alone
+	assert.equal(decideCodec(keeps, fx.manifest, { probe: { board: dm32.debuglink_names[0], codec: "dm32-048" } }).mode, KEEP);
+	assert.ok(codecPresent(board, board.codec.id) && !codecPresent(board, "dm1701-050"));
 });
 
 test("a la carte selection keeps dependencies and finds prebuilt variants", () => {
@@ -717,7 +792,8 @@ test("merge on a radio without a codec, then restore stock from the bundle's sto
 	radio.afterExit = "stock";
 	await new Dfu(radio.dfuTransport(), noWait).run(plan, key);
 	const [, app] = stockfw.stockApplication(sim.stock, key, sim.board, sim.fb);
-	assert.deepEqual(radio.flash.subarray(0xC000, 0xC000 + app.length), app);
+	// Node's diff for mismatched firmware-sized arrays can exhaust memory.
+	assert.ok(equal(radio.flash.subarray(0xC000, 0xC000 + app.length), app), "restored application bytes must match stock");
 	assert.deepEqual(radio.violations, []);
 });
 

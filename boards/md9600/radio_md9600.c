@@ -5,15 +5,16 @@
 //
 // Each band has its own synthesizer, RX and TX VCOs, IF receiver and supplies; the HR_C6000 isn't in the FM receive
 // path (the IF chip's discriminator feeds the audio switches). This file maps the sequencer's lines to pins, its buses
-// to the bit-banged three-wire writer, and picks the revision at start-up: the stored record, the optional receiver
-// probe, the build default (rev_md9600.c). Transmit stays refused unless the build has CONFIG_MD9600_TX, a person
-// armed it for this power cycle and the revision is a stored one (rfseq_md9600.h).
+// to the bit-banged three-wire bus, and picks the revision at start-up: the AK2365A read test, the stored record, the
+// optional receiver probe, the build default (rev_md9600.c). Transmit stays refused unless the build has
+// CONFIG_MD9600_TX and the revision is detected or stored (rfseq_md9600.h).
 //
 // Both synthesizers share one bit-banged bus (chip selects PD8 / PD9), and so do both IF chips (PE11 / PE12). Only the
 // radio task and board_init use them.
 #include <stddef.h>
 #include "md9600.h"
 #include "rfseq_md9600.h"
+#include "radio/pa_keyup.h"
 #include "config.h"
 #include "pins.h"
 #include "periph_md9600.h"
@@ -174,6 +175,25 @@ static uint16_t op_noise(void *ctx, uint8_t band)
 	return md9600_adc_raw(band == MD9600_VHF ? MD9600_ADC_NOISE_V : MD9600_ADC_NOISE_U);
 }
 
+static void op_if_rst_pull(void *ctx, bool up)
+{
+	(void)ctx;
+	stm32_pin_in(PIN_PORT(PIN_IF_RST), PIN_MASK(PIN_IF_RST), up ? GPIO_PULLUP : GPIO_PULLDOWN);
+}
+
+#define IF_READ_SETTLE_US	20u	// the released data line under the pin's pull, with the board's capacitance
+
+static bool op_if_read(void *ctx, uint8_t band, uint8_t addr, bool pull_up, uint16_t *bits)
+{
+	(void)ctx;
+	uint32_t v = 0;
+	// R/W 1 and the 6-bit address: 7 bits (hardware-md9600.md 5.4)
+	bool ok = stm32_wire3_read((void *)&if_wire, band, 0x40u | (addr & 0x3Fu), 7, pull_up, IF_READ_SETTLE_US,
+				   MD9600_IF_READ_BITS, &v);
+	*bits = (uint16_t)v;
+	return ok;
+}
+
 static const md9600_rf_ops_t ops = {
 	.line = op_line,
 	.pll = op_pll,
@@ -185,6 +205,8 @@ static const md9600_rf_ops_t ops = {
 	.apc = op_apc,
 	.apc_floor = op_apc_floor,
 	.noise = op_noise,
+	.if_rst_pull = op_if_rst_pull,
+	.if_read = op_if_read,
 };
 
 // --- State for the diagnostics page and the board option ---
@@ -192,6 +214,17 @@ static const md9600_rf_ops_t ops = {
 md9600_rev_state_t md9600_rev_state(void)
 {
 	return rev;
+}
+
+void md9600_radio_rev_confirm(bool on)
+{
+	if (!on) {
+		rev.confirmed = false;
+		md9600_rf_confirm(&rf, false);
+	} else if (rev.usable) {
+		rev.confirmed = true;
+		md9600_rf_confirm(&rf, true);
+	}
 }
 
 void md9600_radio_diag(md9600_radio_diag_t *d)
@@ -203,19 +236,9 @@ void md9600_radio_diag(md9600_radio_diag_t *d)
 	d->refused = rf.refused;
 	d->errors = rf.errors;
 	d->last_err = rf.last_err;
-	d->tx_armed = rf.tx_armed;
 	d->probe = probe_result;
 	d->apc = rf.apc;
 	d->rx_hz = rf.rx_hz;
-}
-
-bool md9600_radio_tx_arm(bool on)
-{
-	bool ok = md9600_rf_tx_arm(&rf, on);
-#if CONFIG_MD9600_DMR_TX
-	md9600_dmr_tx_allow(on && ok);	// DMR bursts follow the same arm
-#endif
-	return ok;
 }
 
 // --- DMR transmit: the per-burst RF switching (hardware-md9600.md 5.5, 19.8) ---
@@ -254,11 +277,82 @@ static volatile bool key_pending;
 static uint32_t key_step;
 static bool key_timer_ready;
 
+// The burst's key-up by the key-up rule (radio/pa_keyup.h, hardware-md9600.md 19.8): its points, in time order from
+// the same timer. The loop closes at the first drive MD9600_BURST_T5_US ahead of the PA's point, and the PA's point
+// is the band's transmitter supply: the PA comes up 0.42 ms after its supply, one clean rise. The other way round (the
+// supply first, the loop at the PA's point, as the stepped ramp keys) the PA passed the carrier at a fixed -5 dBm for
+// those 0.42 ms, 31 dB under the lowest level: a step and a hook ahead of its rise (SDR bench, UHF). The RF TX interrupt
+// comes KEYUP_INT_AHEAD_US before the burst's first symbol. [VHF, UHF]: neither PA has a knee (every level comes up a
+// fixed time after its supply, whatever the drive, on a conducted path), so no boost: one point per band, each level's
+// -3 dB point about 0.25 ms before the first symbol (hardware-md9600.md 19.8)
+#define KEYUP_INT_AHEAD_US	2550u
+#define KEYUP_MAX_AHEAD_US	(KEYUP_INT_AHEAD_US - MD9600_BURST_T5_US - 50u)	// the loop's point after the interrupt
+static const pa_keyup_cfg_t keyup_cfg[2] = {
+	[MD9600_VHF] = PA_KEYUP_FIXED(1236),
+	[MD9600_UHF] = PA_KEYUP_FIXED(800),
+};
+enum { KEY_PT_LOOP = PA_KEYUP_PT_BOARD };
+static pa_keyup_point_t key_pt[PA_KEYUP_POINTS_MAX];	// the transmission's, set before it is armed
+static pa_keyup_step_t key_st[PA_KEYUP_POINTS_MAX];	// and as TIM5's steps: points at one time together
+static uint8_t key_ns;			// 0: the stepped ramp (no key-up constants)
+static volatile uint8_t key_st_next;	// 1 + the step the timer runs to, 0 none
+static pa_keyup_t ku;
+static uint16_t ku_floor;
+static uint32_t key_delay_us = MD9600_BURST_KEY_DELAY_US;	// the stepped ramp's start after the interrupt
+// The burst's PA drop from the same timer, KEY_HOLD_US after the RF TX interrupt: the ramp down starts at the last
+// symbol's end and the carrier is off inside the slot's guard. The modem's interrupt for the burst's end comes 1.85 ms
+// after the last symbol: dropped there, the carrier was at full power 0.6 ms into the slot after. An SFR keeps the
+// drop at that interrupt (ended earlier, its receiver lost more of the inbound voice: hardware-md9600.md 19.8)
+#define KEY_HOLD_US		(KEYUP_INT_AHEAD_US + 27500u)
+static volatile bool key_drop;		// the timer's next update is the PA drop
+static bool key_timed;			// this burst's drop is the timer's
+static uint32_t key_since_us;		// the timer's waits since the interrupt
+
+// The transmission's key-up from the calibration at its frequency (task level, before it is armed)
+static void keyup_plan(uint32_t hz, uint8_t power)
+{
+	uint16_t d = 0, top = 0;
+	uint8_t band = MD9600_UHF;
+	key_ns = 0;
+	key_delay_us = MD9600_BURST_KEY_DELAY_US;
+	if (pa_keyup_cfg() == NULL || !md9600_band_of(hz, &band)) {
+		return;
+	}
+	pa_keyup_select(&keyup_cfg[band]);
+	if (!op_apc(NULL, hz, power, &d) || !md9600_cal_apc(hz, MD9600_POWER_LEVELS - 1u, &top)) {
+		return;
+	}
+	ku_floor = md9600_cal_apc_floor(band);
+	if (ku_floor >= d) {
+		ku_floor = 0;	// as the RF sequence takes it (md9600_rf_tx_tune)
+	}
+	// The dead zone's anchor: the drive where the band's loop gives no output
+	ku = pa_keyup_plan(d, top, ku_floor);
+	// The loop closed at the first drive T5 ahead of the PA's point, which is the band's supply (key_point)
+	uint8_t n = pa_keyup_insert(key_pt, pa_keyup_points(&ku, key_pt), (uint16_t)(ku.pa_us + MD9600_BURST_T5_US),
+				    KEY_PT_LOOP);
+	key_ns = pa_keyup_steps(key_pt, n, KEYUP_INT_AHEAD_US, 0u, key_st);
+}
+
+// One point (interrupt level). False: refused, the PA left safe
+static bool key_point(uint8_t kind)
+{
+	switch (kind) {
+	case KEY_PT_LOOP:
+		return md9600_rf_pa_ref(&rf, ku.boost != 0u ? ku.boost : ku.drive) == MD9600_RF_OK &&
+		       md9600_rf_pa_loop(&rf) == MD9600_RF_OK;
+	case PA_KEYUP_PT_BOOST: return md9600_rf_pa_ref(&rf, ku.boost) == MD9600_RF_OK;
+	case PA_KEYUP_PT_DRIVE: return md9600_rf_pa_ref(&rf, ku.drive) == MD9600_RF_OK;
+	default: return md9600_rf_pa_supply(&rf) == MD9600_RF_OK;	// the PA's point
+	}
+}
+
 static void key_timer_stop(void)
 {
 	TIM5->CR1 = 0;
 	TIM5->SR = 0;
 	key_pending = false;
+	key_drop = false;
 }
 
 static void key_timer_start(uint32_t us)
@@ -276,6 +370,7 @@ static void key_timer_start(uint32_t us)
 		HAL_NVIC_EnableIRQ(TIM5_IRQn);
 		key_timer_ready = true;
 	}
+	key_since_us += us;
 	TIM5->CR1 = 0;
 	TIM5->ARR = (us > 1u ? us : 2u) - 1u;
 	TIM5->CNT = 0;
@@ -283,10 +378,53 @@ static void key_timer_start(uint32_t us)
 	TIM5->CR1 = TIM_CR1_OPM | TIM_CR1_CEN;
 }
 
+// The key-up is done: the timer on to the PA drop (KEY_HOLD_US), unless the modem's interrupt ends this burst
+static void key_hold(void)
+{
+	bool timed = key_timed && key_since_us < KEY_HOLD_US;
+#if CONFIG_SFR
+	timed = timed && !stm32_hrc_dmr_tx_listening();
+#endif
+	if (timed) {
+		key_drop = true;
+		key_timer_start(KEY_HOLD_US - key_since_us);
+	} else {
+		key_pending = false;
+	}
+}
+
 void TIM5_IRQHandler(void)
 {
 	TIM5->SR = 0;
 	if (!key_pending) {
+		return;
+	}
+	if (key_drop) {
+		key_drop = false;
+		key_pending = false;
+		(void)md9600_rf_pa_burst(&rf, false);
+		return;
+	}
+	if (key_st_next != 0u) {
+		// The rule's step: its points (those at one time), then the wait to the next
+		uint8_t i = (uint8_t)(key_st_next - 1u);
+		bool ok = true;
+		for (uint8_t p = i != 0u ? key_st[i - 1u].end : 0u; ok && p < key_st[i].end; p++) {
+			ok = key_point(key_pt[p].kind);
+		}
+		if (!ok) {
+			dmr_skipped++;
+		} else if (++i < key_ns) {
+			key_st_next = (uint8_t)(i + 1u);
+			key_timer_start((uint32_t)key_st[i - 1u].us - key_st[i].us);
+			return;
+		}
+		key_st_next = 0;
+		if (ok) {
+			key_hold();
+		} else {
+			key_pending = false;
+		}
 		return;
 	}
 	uint32_t us = 0;
@@ -296,7 +434,7 @@ void TIM5_IRQHandler(void)
 	} else if (us != 0) {
 		key_timer_start(us);
 	} else {
-		key_pending = false;
+		key_hold();
 	}
 }
 
@@ -367,8 +505,13 @@ bool md9600_rf_dmr_key(bool tx)
 #endif
 	}
 	key_step = 0;
+	key_st_next = 0;
 	key_pending = true;
+	key_drop = false;
+	key_since_us = 0;
 	uint32_t until;
+	// a BS outbound or the air interface's continuous transmission keys once: no drop per burst
+	key_timed = !stm32_hrc_dmr_bs_boundary_us(&until) && !stm32_hrc_dmr_tx_continuous();
 
 	if (stm32_hrc_dmr_bs_boundary_us(&until)) {
 		// The split duplex BS outbound keys once, and its slot starts with the CACH, not a guard. Its RF TX interrupt
@@ -376,8 +519,13 @@ bool md9600_rf_dmr_key(bool tx)
 		// clipped the first CACH; during the slot's sync, the receiver took that burst with noise for its CACH
 		key_timer_start(until > MD9600_BS_KEY_LEAD_US ? until - MD9600_BS_KEY_LEAD_US
 							      : until + MD9600_SLOT_US - MD9600_BS_KEY_LEAD_US);
+	} else if (key_ns != 0u) {
+		// The reference at the floor until its first point; the points are all after the interrupt (KEYUP_MAX_AHEAD_US)
+		(void)md9600_rf_pa_ref(&rf, ku_floor);
+		key_st_next = 1;
+		key_timer_start(KEYUP_INT_AHEAD_US - key_st[0].us);
 	} else {
-		key_timer_start(MD9600_BURST_KEY_DELAY_US);
+		key_timer_start(key_delay_us);
 	}
 	return true;
 }
@@ -461,13 +609,15 @@ void md9600_radio_early(void)
 
 	md9600_rev_t probed = MD9600_REV_UNKNOWN;
 	md9600_rev_t stored = md9600_flash_rev_load();
+	// Every start: a board without an AK2365A is V4A / V5 whatever is stored, and one with it can't be
+	md9600_if_t if_chip = md9600_rf_if_detect(&ops);
 #if MD9600_REV_PROBE
-	if (stored == MD9600_REV_UNKNOWN) {
+	if (stored == MD9600_REV_UNKNOWN && if_chip != MD9600_IF_ABSENT) {
 		probed = md9600_rf_probe(&ops, MD9600_PROBE_HZ, MD9600_PROBE_THRESHOLD);
 		probe_result = (int16_t)probed;
 	}
 #endif
-	rev = md9600_rev_resolve(stored, probed, MD9600_REV_DEFAULT);
+	rev = md9600_rev_resolve(stored, if_chip, probed, MD9600_REV_DEFAULT);
 	const md9600_rev_desc_t *d = rev.usable ? md9600_rev_desc(rev.rev) : NULL;
 	if (d != NULL && d->if_chip) {
 		PIN_OUT(PIN_IF_RST, true);	// V1-V4: the AK2365A reset; left an input on V5 (use unknown)
@@ -483,6 +633,9 @@ static void init(void)
 {
 	md9600_rf_pa_safe(&rf);
 	md9600_c6000_init();
+#if CONFIG_MD9600_DMR_TX
+	pa_keyup_init(&keyup_cfg[MD9600_UHF], KEYUP_MAX_AHEAD_US, MD9600_APC_MAX);
+#endif
 }
 
 static void set_mode(radio_mode_t mode)
@@ -540,6 +693,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		}
 		dmr_hz = hz;
 		dmr_power = power;
+		keyup_plan(hz, power);
 		dmr_tuned = false;
 		dmr_rx_early = false;
 		__DMB();
@@ -643,7 +797,7 @@ static uint16_t tx_drive_level(uint32_t hz, uint8_t level)
 
 static bool tx_drive(uint16_t drive)
 {
-	if (drive > MD9600_APC_MAX) {
+	if (drive > MD9600_APC_DAC_MAX) {
 		return false;
 	}
 	drive_override = drive;

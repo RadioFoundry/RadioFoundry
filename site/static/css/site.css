@@ -129,6 +129,8 @@ pre code { background: none; padding: 0; }
 /* the flasher's one row of buttons under a step: back and start over on the left, the way forward on the right */
 .nav-bar { position: sticky; bottom: 0; z-index: 2; display: flex; gap: var(--space-3) var(--space-4); align-items: center; flex-wrap: wrap; margin-top: var(--space-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-2) var(--space-3); box-shadow: var(--shadow); }
 .nav-back { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+/* the bar's Report a Problem gives way to one the step already shows (an error's, an offer's) */
+#flasher:has(.report-line, .report-reported, .report-offer) .nav-report { display: none; }
 .nav-info { flex: 1; min-width: 12rem; }
 .nav-info:empty { min-width: 0; }
 .nav-forward { margin-left: auto; display: flex; gap: var(--space-2); flex-wrap: wrap; justify-content: flex-end; }
@@ -365,6 +367,8 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 .toggle input { width: 1.1rem; height: 1.1rem; margin: 0; align-self: start; margin-top: 0.3rem; accent-color: var(--accent); }
 .toggle .why { display: block; color: var(--muted); font-size: var(--text-sm); line-height: 1.35; }
 /* Update task: a new feature of a custom build, its On / Off choice in one column at the right */
+/* the update step's notices one after another: apart, as the rest of the panel */
+.notice + .update-note { margin-top: var(--space-3); }
 .update-new { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-1) var(--space-4); align-items: center; padding: var(--space-1) 0; }
 .update-new .why { display: block; color: var(--muted); font-size: var(--text-sm); line-height: 1.35; }
 .update-pick { display: flex; gap: var(--space-3); }
@@ -413,8 +417,10 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 .c7-grid, .radio-grid { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: var(--space-5); align-items: start; }
 @media (max-width: 760px) { .c7-grid, .radio-grid { grid-template-columns: 1fr; } .c7-grid .radio-top, .radio-grid .radio-top { order: -1; max-width: 240px; margin: 0 auto; } .rt-pic, .radio-pic .rt-img { max-width: 170px; } }
 .radio-top { margin: 0; text-align: center; }
-.rt-pic { position: relative; max-width: 220px; margin: 0 auto; }
-.rt-img { width: 100%; max-width: 220px; height: auto; display: block; margin: 0 auto; }
+/* the picture is at most --rt-h high, so a tall portable leaves the step's buttons on the screen: its width follows
+   from the drawing's shape (--rt-aspect, width / height, set by radiotop.js); a wide mobile radio is held by max-width */
+.rt-pic { --rt-h: 300px; position: relative; width: calc(var(--rt-h) * var(--rt-aspect, 1)); max-width: 220px; margin: 0 auto; }
+.rt-img { width: 100%; height: auto; display: block; margin: 0 auto; }
 .rt-screen { position: absolute; display: grid; place-content: stretch; overflow: hidden; }
 /* the radio's own screen from the UI gallery, its pixels kept sharp */
 .rt-shot { width: 100%; height: 100%; object-fit: contain; background: #000; }
@@ -539,9 +545,9 @@ dialog.beta-notice .confirm-actions { position: sticky; bottom: calc(-1 * var(--
 .ed-menu > summary { list-style: none; }
 .ed-menu > summary::-webkit-details-marker { display: none; }
 .ed-menu > summary::after { content: " ▾"; }
-.ed-menu-list { position: absolute; z-index: 4; top: calc(100% + 4px); left: 0; min-width: 16rem; display: grid; gap: var(--space-1);
+.ed-menu-list { position: absolute; z-index: 4; top: calc(100% + 4px); left: 0; min-width: 16rem; width: max-content; display: grid; gap: var(--space-1);
 	background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--space-2); box-shadow: var(--shadow); }
-.ed-menu-list .btn { text-align: left; border-color: transparent; }
+.ed-menu-list .btn { justify-content: flex-start; text-align: left; white-space: nowrap; border-color: transparent; }
 .ed-tabs { display: flex; flex-wrap: wrap; gap: var(--space-1); border-bottom: 1px solid var(--border); }
 .ed-tabs button { font: inherit; background: none; border: 0; border-bottom: 3px solid transparent; padding: var(--space-2) var(--space-3);
 	color: var(--muted); cursor: pointer; font-weight: 500; }
@@ -568,6 +574,7 @@ table.grid td.editing input, table.grid td.editing select { font: inherit; width
 table.grid td.c-num { font-variant-numeric: tabular-nums; }
 table.grid td.c-bool { text-align: center; }
 table.grid td.c-ro { color: var(--muted); }
+table.grid td.c-na { background: repeating-linear-gradient(45deg, transparent 0 5px, var(--border) 5px 6px), repeating-linear-gradient(-45deg, transparent 0 5px, var(--border) 5px 6px); cursor: not-allowed; }
 table.grid tr.selected td { background: var(--accent-soft); }
 .grid-check { width: 2rem; text-align: center; }
 .grid-open { width: 2rem; }
@@ -601,10 +608,14 @@ table.grid tr.selected td { background: var(--accent-soft); }
 .rid-summary.bad { color: var(--bad); }
 .grid-empty { text-align: center; padding: var(--space-5); }
 .badge-bad { background: var(--bad-soft); color: var(--bad); }
-dialog.editor-dialog { max-width: 52rem; max-height: calc(100vh - 4rem); overflow: auto; }
+dialog.editor-dialog { max-width: 52rem; max-height: calc(100vh - 4rem); overflow: auto; padding: var(--space-4); }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: var(--space-2) var(--space-4); align-items: start; }
 .form-note { grid-column: 1 / -1; margin: 0; }
-.form-grid .form-group { grid-column: 1 / -1; margin: var(--space-3) 0 0; font-size: var(--text-sm); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+/* one field per line: the input at a readable width, its help under it at the text's width */
+.form-list { grid-template-columns: minmax(0, 1fr); gap: var(--space-1); }
+.form-list > .form-row, .form-list > .form-note { max-width: 40rem; }
+.form-list .form-row input[type="text"], .form-list .form-row select { max-width: 22rem; }
+.form-grid .form-group { grid-column: 1 / -1; margin: var(--space-2) 0 0; font-size: var(--text-sm); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
 .form-row { display: grid; gap: var(--space-1); }
 .form-row label { font-size: var(--text-sm); font-weight: 600; }
 .form-row input[type="text"], .form-row select, .rid input[type="text"], .rid input[type="password"], .rid select, .editor-dialog select, .editor-dialog input[type="text"], .editor-dialog input[type="search"] {
@@ -615,6 +626,19 @@ dialog.editor-dialog { max-width: 52rem; max-height: calc(100vh - 4rem); overflo
 @media (max-width: 640px) { .form-pair { grid-column: auto; } }
 .form-check { grid-template-columns: auto 1fr; align-items: center; }
 .form-check label { order: 2; font-weight: 500; }
+.form-toggle { all: unset; cursor: pointer; }
+.form-toggle::before { content: "▸ "; }
+.form-toggle[aria-expanded="true"]::before { content: "▾ "; }
+.form-toggle:focus-visible { outline: 2px solid var(--accent, currentColor); outline-offset: 2px; }
+.form-row input:disabled, .form-row select:disabled { opacity: 0.5; }
+.form-check > .small { order: 3; grid-column: 1 / -1; }	/* a checkbox's help: under the box and its label */
+/* a table inside the form: cells and inputs sized to their numbers, so it fits without scrolling */
+.form-table .table-wrap { margin: 0; }
+.form-table th, .form-table td { padding: 2px var(--space-2); vertical-align: middle; }
+.form-table td input[type="text"] { width: auto; padding: 2px var(--space-1); }
+.form-table .ed-actions { flex-wrap: nowrap; gap: 2px; }
+.form-table .ed-actions .btn { padding: 0 0.45em; min-width: 1.9rem; }
+.form-table > .btn { margin-top: 2px; padding-left: 0; }
 .ed-radio-form { max-width: 60rem; }
 .members { display: grid; grid-template-columns: 1fr auto 1fr; gap: var(--space-3); align-items: start; }
 .members h3 { font-size: var(--text-sm); margin-bottom: var(--space-1); }

@@ -17,6 +17,10 @@
 #include "hostlink/hostlink_ppp.h"
 #endif
 
+#if CONFIG_RX_EXT
+static bool rx_ext_on;
+#endif
+
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
 	{ 400000000, 480000000, true },
@@ -26,11 +30,17 @@ static const band_t bands[] = {
 #if CONFIG_BCAST_FM
 	{ 65000000, 108000000, false },		// the broadcast band, on the RDA5807M (airband-and-broadcast.md 4)
 #endif
+#if CONFIG_RX_EXT
+	// Receive only past the rated bands, while the user turns it on: the FD6818 band table (hardware-dm32.md 8.3). Keep these last
+	{ 16000000, 65000000, false },
+	{ 174000000, 400000000, false },
+	{ 480000000, 740000000, false },
+#endif
 };
 
-// Power levels 0..8 of hardware-dm32.md 11.3 (level 9, the user value, isn't offered). Labels are nominal: the radio
-// is rated 5 W VHF / 4 W UHF at high power; check against a meter at the bring-up
-static const char *const power_names[] = { "L-", "L", "L+", "L++", "M", "M+", "M++", "H-", "H" };
+// Five of the power levels 0..8 of hardware-dm32.md 11.3: very low, low, mid, a step above mid, high (radio_dm32.c).
+// Labels are nominal: the radio is rated 5 W VHF / 4 W UHF at high power; check against a meter at the bring-up
+static const char *const power_names[] = { "L-", "L", "M", "M+", "H" };
 
 // docs/ux/information-architecture.md 7.1 (the DM-32 has no top key; SK1 / SK2 are the side keys below the PTT)
 static const keymap_entry_t keymap[] = {
@@ -60,6 +70,9 @@ static const keymap_entry_t keymap[] = {
 // Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h): the side keys top to bottom
 static const uint8_t side_keys[] = { KEY_SK1, KEY_SK2 };
 static const char *const side_key_names[] = { "SK1", "SK2" };
+// The arrows left and right of the 4-way key are printed P1 and P2: programmable on Home, arrows in the menus
+static const uint8_t home_keys[] = { KEY_LEFT, KEY_RIGHT };
+static const char *const home_key_names[] = { "P1", "P2" };
 
 const board_t board = {
 	.name = "DM-32UV",
@@ -67,6 +80,10 @@ const board_t board = {
 		(CONFIG_AM_RX ? CAP_AM_RX : 0) | (CONFIG_BCAST_FM ? CAP_BCAST_FM : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
+#if CONFIG_RX_EXT
+	.rx_ext_count = 3,
+	.rx_ext_on = &rx_ext_on,
+#endif
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
 	.power_names = power_names,
 	.power_default = 1,	// low
@@ -77,6 +94,9 @@ const board_t board = {
 	.side_keys = side_keys,
 	.side_key_names = side_key_names,
 	.side_key_count = sizeof(side_keys),
+	.home_keys = home_keys,
+	.home_key_names = home_key_names,
+	.home_key_count = sizeof(home_keys),
 	.radio = &dm32_radio,
 	.power = &dm32_power,
 	.flash = &hrc_flash_spi0,
@@ -88,8 +108,12 @@ const board_t board = {
 	.dmr = &hrc_dmr,
 	.audio = &hrc_audio_pcm,
 	.vocoder = &hrc_vocoder,
+#if CONFIG_AIR
+	.air = &hrc_air,		// the physical layer and the receive copy (modem-hrc7000.md 10)
+	.baseband = &hrc_baseband,
 #endif
-#if CONFIG_APRS
+#endif
+#if CONFIG_APRS_AFSK
 	.afsk = &hrc_afsk,
 #endif
 #if CONFIG_HOSTLINK
@@ -99,8 +123,7 @@ const board_t board = {
 	.netif = &hostlink_ppp_netif,	// IPv4 over PPP on the programming cable's UART (docs/spec/ppp.md)
 #endif
 #if CONFIG_GPS
-	.gps_enable = hrc_gps_enable,
-	.gps_present = hrc_gps_present,	// CAP_GPS: the module is fitted, but say so only once it has been heard
+	.gps = &hrc_gps,	// CAP_GPS: the module is fitted, but say so only once it has been heard
 #endif
 	.system = &hrc_system,
 	.chip_reg = dm32_chip_reg,
@@ -213,6 +236,7 @@ static const hrc_flash_cfg_t flash_cfg = {
 	.map = &flash_map,
 };
 
+#if CONFIG_GPS
 // The ATGM336H on UART1; PTA9 is UART1's RXD from io_init
 static const hrc_gps_cfg_t gps_cfg = {
 	.uart_base = UART1_BASE,
@@ -220,6 +244,7 @@ static const hrc_gps_cfg_t gps_cfg = {
 	.power_pin = PIN_GPS_POWER,
 	.power_on_level = GPS_POWER_ON_LEVEL,
 };
+#endif
 
 #if CONFIG_BCAST_FM
 // The RDA5807M on PTA25 / PTA26 (hardware-dm32.md 8.7): no enable line is known; its audio is assumed to reach the

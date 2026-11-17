@@ -12,6 +12,7 @@
 #include <string.h>
 #include "modem/hrc_common/hrc6000_dmr.h"
 #include "modem/hrc6000/hrc6000.h"
+#include "dmr/fec/dmrCach.h"
 #include "dmr/call/dmr_call.h"
 #include "dmr/call/dmr_lc.h"
 
@@ -600,8 +601,9 @@ static void late_run(const char *name, const chip_t *c, result_t *r)
 //     after F's (first) report: page 2 still holds the old LC when F is read, and the new one from the next report on.
 //     The engine looks again at the next burst A while it has no LC: played from burst 19, 18 bursts.
 //   - With page 2 written by F's report (the earlier model): played from F, burst 18.
-//   - The previous call had the same LC: the engine trusts an unchanged LC only after more than one superframe of
-//     voice (the next F, burst 24), 13 bursts
+//   - The previous call had the same LC: held back at F (unchanged), then taken at the next A, a whole superframe of
+//     this reception having closed with a good F (page 2 holds its LC by then): burst 19, as a new LC. It waited for
+//     the second F (burst 24) before HIL 2026-11-14
 //   - The post-access interrupt with the report after F: the LC is kept and handed over with the next voice burst (A)
 static void test_late_entry(void)
 {
@@ -635,9 +637,71 @@ static void test_late_entry(void)
 	c.page2_before = call_lc;
 	c.same_lc_before = true;
 	late_run("same LC", &c, &r);
-	CHECK(sk.first_burst == 24 && r.cs.rx_voice_bursts == 96 - 23);
-	CHECK(eng.st.lc_n == 4 && strcmp(lc_tr(1), "Fs") == 0 && strcmp(lc_tr(2), "As") == 0 &&
-	      strcmp(lc_tr(3), "Fv") == 0);
+	CHECK(sk.first_burst == 19 && r.cs.rx_voice_bursts == 96 - 18);
+	CHECK(eng.st.lc_n == 3 && strcmp(lc_tr(1), "Fs") == 0 && strcmp(lc_tr(2), "Av") == 0);
+}
+
+// The CACH short LC (DMR_EV_SHORT_LC): read from page 2 0x2B-0x2F while both slots of a BS signal are received,
+// reported when it changes, and its CRC checked by the stack
+static void put_slc(uint32_t slc, uint8_t crc)
+{
+	uint64_t v = (((uint64_t)(slc & 0x0FFFFFFFu) << 8) | crc) << 4;
+	for (int i = 0; i < 5; i++) {
+		rd[2][0x2B + i] = (uint8_t)(v >> (8 * (4 - i)));
+	}
+}
+
+static void ticks(unsigned n)
+{
+	for (unsigned i = 0; i < n; i++) {
+		t_us += 30000;
+		hrc6000_dmr_isr_timeslot(&eng);
+		board_task();
+		dmr_call_poll(t_us / 1000u);
+	}
+}
+
+static void test_short_lc(void)
+{
+	memset(rd, 0, sizeof(rd));
+	t_us = 1000000;
+	hrc6000_dmr_init(&eng, &dev, &ops);
+	hrc6000_dmr_run(&eng);
+	dmr_call_init(&modem);
+	dmr_call_set_voice(&sink, NULL);
+	dmr_call_config_t cfg;
+	dmr_call_config_default(&cfg);
+	cfg.own_id = 1234;
+	cfg.cc = 2;
+	cfg.ts = 1;
+	cfg.rmo = true;
+	cfg.both_slots = true;
+	dmr_call_configure(&cfg);
+	CHECK(dmr_call_start());
+	uint32_t slc, bad;
+	uint32_t n0 = dmr_call_short_lc(&slc, &bad), bad0 = bad;
+	const uint32_t parms = 0x2A5C3E1u;	// C_SYS_Parms (SLCO 2), CSC 0x1E1
+	put_slc(parms, dmrShortLcCrc8(parms));
+	ticks(6);
+	CHECK(dmr_call_short_lc(&slc, &bad) == n0 + 1u && slc == parms && bad == bad0);
+	CHECK(eng.st.slc_reads == 1u);	// read every slot, reported once
+	put_slc(parms + 1u, dmrShortLcCrc8(parms));	// a bad CRC: counted, not taken
+	ticks(2);
+	CHECK(dmr_call_short_lc(&slc, &bad) == n0 + 1u && slc == parms && bad == bad0 + 1u);
+	put_slc(parms + 4u, dmrShortLcCrc8(parms + 4u));
+	ticks(2);
+	CHECK(dmr_call_short_lc(&slc, &bad) == n0 + 2u && slc == parms + 4u);
+
+	// One slot only (a conventional repeater channel): the short LC isn't read
+	cfg.both_slots = false;
+	dmr_call_configure(&cfg);
+	ticks(2);
+	uint32_t reads = eng.st.slc_reads;
+	put_slc(parms + 8u, dmrShortLcCrc8(parms + 8u));
+	ticks(6);
+	CHECK(eng.st.slc_reads == reads && dmr_call_short_lc(&slc, &bad) == n0 + 2u);
+	dmr_call_stop();
+	hrc6000_dmr_halt(&eng);
 }
 
 int main(void)
@@ -651,6 +715,7 @@ int main(void)
 	test_voice_lost();
 	test_late_reports();
 	test_late_entry();
+	test_short_lc();
 	if (failures) {
 		printf("# dmrRxChainTest: %d FAILED\n", failures);
 		return 1;

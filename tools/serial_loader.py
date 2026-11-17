@@ -365,6 +365,10 @@ class SerialPort:
                                    write_timeout=5)
         except serial.SerialException as e:
             raise FlashError("can't open %s: %s (close the CPS, qdmr and any terminal using it)" % (device, e))
+        try:    # an FTDI cable passes received bytes on after 1 ms, not 16 (Linux only)
+            self.s.set_low_latency_mode(True)
+        except (AttributeError, NotImplementedError, OSError, ValueError):
+            pass
 
     def write(self, b):
         self.s.write(b)

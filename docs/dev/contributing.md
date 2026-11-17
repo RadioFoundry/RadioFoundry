@@ -4,7 +4,8 @@
 
 Issues and pull requests are welcome. Read this page and [docs/CLEANROOM.md](../CLEANROOM.md) first. New issues use
 the forms in `.github/ISSUE_TEMPLATE/` (bug, feature, new radio), and pull requests open with the checklist in
-`.github/PULL_REQUEST_TEMPLATE.md`.
+`.github/PULL_REQUEST_TEMPLATE.md`. To use RadioFoundry in another project instead, read
+[FORKING.md](../../FORKING.md).
 
 ## Branches and pull requests
 
@@ -64,6 +65,22 @@ subject: `<Area>: <what changed>`, in the present tense, no trailing period.
 - `JOBS=8 tools/ci.sh` ending with "all checks passed".
 - One topic. Split unrelated changes into separate pull requests.
 - The filled-in template (`.github/PULL_REQUEST_TEMPLATE.md`).
+
+## License of contributions
+
+RadioFoundry has no contributor license agreement, and you keep the copyright in what you write. By submitting a
+contribution (a pull request, a patch, or text or code that ends up in the tree), you:
+
+- license it irrevocably under the project's MIT license ([LICENSE](../../LICENSE)), the same terms everyone
+  receives it under;
+- confirm that you wrote it, or otherwise have the right to submit it under that license (with your employer's
+  permission, if your employer owns your work), and that it meets the clean-room rules below;
+- agree that it is credited to "The RadioFoundry Authors". Your name is in the git history at once and in
+  [CONTRIBUTORS](../../CONTRIBUTORS) from the next release. [AUTHORS](../../AUTHORS) lists the maintainers only.
+  To change how your name appears, add a line to `.mailmap`.
+
+Your copyright covers the code you wrote. It doesn't extend to the rest of the project, to other contributors' work
+or to the RadioFoundry name. The maintainers decide what is merged and released.
 
 ## Clean room
 
@@ -125,8 +142,9 @@ link. The run takes the radio lock, counts unexcused skips as failures and write
 
 ## Text the radio or the site shows
 
-The radio and the site are translated ([Translating](translating.md)). Text a user reads is marked (`TR()`, `TRN()`
-on the radio; a catalog key on the site), and the code works when its translation is missing: the English shows.
+The radio and the site are translated ([Translating](translating.md)). Text a user reads is marked (`TR(KEY, "...")`,
+`TRN(KEY, "...")` on the radio, the key named by [Key names](translating.md#key-names); a catalog key on the site),
+and the code works when its translation is missing: the English shows.
 
 - Mark new text, run `python3 tools/i18n.py --sync`, and commit the catalogs with the code.
 - Translate new and rewritten strings into every language when you can (radio `core/ui/lang/*.po`, site
@@ -142,6 +160,8 @@ on the radio; a catalog key on the site), and the code works when its translatio
 - A new feature switch goes into [build-config.md](../build-config.md) and [feature-matrix.md](../feature-matrix.md).
 - Docs use US English, short sentences and tables. Links are relative so they work on GitHub and in the PDF.
 - `python3 tools/check_doc_links.py` checks every relative link, image and anchor in the docs (ci.sh runs it).
+- `python3 tools/check_keys.py` checks that a codeplug settings area key is listed the same way in the spec, the
+  firmware and the Codeplug Editor ([codeplug-settings.md](../spec/codeplug-settings.md) 3; ci.sh runs it).
 
 ## Before you open a pull request
 

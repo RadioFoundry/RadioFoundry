@@ -75,4 +75,9 @@ int lrrpBuildTriggeredStopResponse(const uint8_t *requestId, int requestIdLength
 // Great circle distance in meters (equirectangular, fine for a few km)
 uint32_t lrrpDistanceMeters(const dmrDataLocation_t *a, const dmrDataLocation_t *b);
 
+// A position in 1e-7 degree as LRRP and the UDT location carry it. Unknown: speed and course 0xFFFF, utcHms
+// 0xFFFFFFFF, date (ddmmyy) 0; the date only goes with a time
+void lrrpPositionFromE7(int32_t lat, int32_t lon, uint16_t speedKnots, uint16_t course, uint32_t utcHms, uint32_t date,
+		lrrpPosition_t *out);
+
 #endif

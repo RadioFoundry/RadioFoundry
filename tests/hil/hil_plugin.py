@@ -8,8 +8,8 @@ import os
 import pytest
 
 import bringup_plugin
-from rfoundry_hil import (DebugLinkError, Radio, SdrBench, board_id, find_ports, need_radio_tx, skip, skip_kind,
-                          skip_mark)
+from rfoundry_hil import (DebugLinkError, Radio, SdrBench, board_id, find_network_radios, find_ports, need_radio_tx,
+                          skip, skip_kind, skip_mark)
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 
@@ -56,8 +56,9 @@ def pytest_runtest_makereport(item, call):
 @pytest.fixture(scope="session")
 def radio(pytestconfig):
     port = pytestconfig.getoption("--radio-port")
-    if not port and not find_ports():
-        bringup_plugin.no_radio(pytestconfig, "no radio on USB (1FC9:0094): plug it in or give --radio-port "
+    if not port and not find_ports() and not find_network_radios():
+        bringup_plugin.no_radio(pytestconfig, "no radio on USB (1FC9:0094, or one in USB network mode answering on "
+                                            "UDP): plug it in or give --radio-port "
                                             "(DMR audio not checked either)")
     try:
         r = Radio(port)
@@ -76,7 +77,6 @@ def radio(pytestconfig):
     if lang:
         print(f"rfoundry-hil: the radio's language was {lang}: set back to English (the tests read English text)")
     r.tx_gate(False)        # blocked from the start: module fixtures run before any test's own gate
-    r.hwopt_baseline()
     yield r
     try:
         r.tx_gate_end()
@@ -149,6 +149,21 @@ def sdr_bench(pytestconfig):
     if not b.reachable():
         skip("bench", f"bench board {b.api} (receive {b.api_rx}) not answering on the line protocol, with a TX "
                       "frequency and its receiver running")
+    yield b
+    b.remove_run_dirs()
+
+
+@pytest.fixture(scope="session")
+def sdr_bench_2(pytestconfig):
+    """A second bench transmitter (--bench-api-2), for a test that needs two signals at once"""
+    api = pytestconfig.getoption("--bench-api-2")
+    if not api:
+        skip("bench", "no second bench transmitter: give --bench-api-2 HOST[:PORT]")
+    b = SdrBench(allow_rf=pytestconfig.getoption("--allow-rf"), wait_max=pytestconfig.getoption("--bench-wait-max"),
+                 api=api, api_level=pytestconfig.getoption("--bench-api-level"))
+    if not b.reachable():
+        skip("bench", f"the second bench board {b.api} not answering on the line protocol, with a TX frequency and "
+                      "its receiver running")
     yield b
     b.remove_run_dirs()
 

@@ -17,8 +17,8 @@
 #define RADIO_SFR_EVQ_DEPTH	8
 
 // The channel's SFR role (sfrRole_t, SFR_ROLE_OFF without one) and its run configuration. A role needs a simplex
-// channel (RX = TX, or no TX frequency for a user), else it is off. vfo: the VFO has no SFR settings
-uint8_t radio_sfr_channel(const channel_t *ch, bool vfo, sfrConfig_t *cfg);
+// channel (RX = TX, or no TX frequency for a user), else it is off. The VFO's role is in its channel_t too
+uint8_t radio_sfr_channel(const channel_t *ch, sfrConfig_t *cfg);
 
 // The call stack's SFR user settings from a user role's configuration: the inbound slot (1 or 2), the sync our bursts
 // carry (TS1 / TS2 with TS framing, MS otherwise: an ERDM repeater takes MS sync in), the sync of the repeat (the

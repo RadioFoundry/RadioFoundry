@@ -14,6 +14,7 @@
 #include "dmr/ambe/ambeVoice.h"
 #include "sim/dmr_sim_modem.h"
 #include "settings/settings.h"
+#include "codeplug/codeplug_kv.h"	// the settings area fakes
 
 static int failures;
 static int checks;
@@ -147,7 +148,7 @@ static bool v_present(void) { return true; }
 static void v_reset(void) {}
 static void v_encode(const int16_t *pcm, uint8_t *bits) { (void)pcm; memset(bits, 0, VOCODER_BITS); }
 static void v_decode(const uint8_t *bits, int16_t *pcm) { (void)bits; memset(pcm, 0, VOCODER_FRAME_SAMPLES * 2); }
-static const hal_vocoder_t fake_vocoder = { v_present, v_reset, v_encode, v_decode, NULL, NULL, NULL, NULL };
+static const hal_vocoder_t fake_vocoder = { v_present, v_reset, v_encode, v_decode, NULL, NULL, NULL, NULL, NULL };
 
 // A band table with the air band and the broadcast band: RX-only bands below the VHF transmit band
 static const band_t bands[] = {
@@ -205,6 +206,15 @@ bool codeplug_zone(uint16_t i, zone_t *out)
 	return true;
 }
 uint32_t codeplug_dmr_id(void) { return 9996543; }
+int codeplug_kv_get(uint16_t key, void *buf, uint16_t max) { (void)key; (void)buf; (void)max; return -1; }	// no settings area
+bool codeplug_kv_write(const codeplug_kv_op_t *ops, uint8_t n) { (void)ops; (void)n; return false; }
+void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi) { (void)c; (void)lo; (void)hi; }
+// No settings area to write: the radio core writes no tag
+bool codeplug_kv_set(uint16_t key, const void *value, uint16_t len) { (void)key; (void)value; (void)len; return false; }
+bool codeplug_kv_remove(uint16_t key) { (void)key; return false; }
+int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max)
+	{ (void)c; (void)key; (void)buf; (void)max; return -1; }
+uint8_t codeplug_kv_serial(void) { return 0; }
 bool codeplug_contact(uint16_t index, contact_t *out) { (void)index; (void)out; return false; }
 bool codeplug_listen_list(uint16_t index, listen_list_t *out) { (void)index; (void)out; return false; }
 bool codeplug_contact_find(uint32_t id, bool group, contact_t *out) { (void)id; (void)group; (void)out; return false; }
@@ -521,6 +531,7 @@ static void test_bcast_channel(void)
 	bc.rssi = 65;
 	run(100);
 	CHECK(sm.view.state == RS_RX && bc.audio && !hw.audio);
+	CHECK((sm.view.leds & RADIO_LED_GREEN) == 0);	// a station playing isn't a call: no RX LED
 	CHECK(sm.view.noise == 32 && sm.view.rssi_dbm == 65 + RADIO_BCAST_DBUV_DBM);
 	bc.rssi = 35;	// an empty frequency's level: still RX, still playing
 	run(100);
@@ -614,11 +625,13 @@ static void test_bcast_vfo(void)
 	s.bcast_step = RADIO_BCAST_STEP_200_ODD;
 	radio_sm_set_settings(&sm, &s, now);
 	CHECK(sm.view.vfo_step_hz == 200000);
-	// An explicit VFO step is used as set, here too
-	req(RREQ_VFO_STEP_SIZE, RADIO_AM_STEP_25K);
+	// A fixed VFO step (12.5 kHz for the other bands) doesn't change the broadcast step here
+	req(RREQ_VFO_STEP_SIZE, 12500);
+	run(30);
+	CHECK(sm.view.vfo_step_hz == 200000 && !sm.view.vfo_step_auto);
 	req(RREQ_VFO_STEP, 1);
 	run(30);
-	CHECK(sm.view.ch.rx_hz == 90025000);
+	CHECK(sm.view.ch.rx_hz == 90100000);
 	req(RREQ_VFO_STEP_SIZE, 0);
 	// Down out of the broadcast band into the air band: AM there, the broadcast receiver off
 	req(RREQ_VFO_SET, 108000000);

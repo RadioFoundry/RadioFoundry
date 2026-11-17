@@ -29,7 +29,8 @@ def _crash(radio, kind, wait_s=30.0):
     time.sleep(2.0)
     radio.reconnect(wait_s, "the crash")
     up_after = as_int(radio.view(["link"])["uptime_ms"])
-    assert up_after < up_before, f"the radio didn't restart (uptime {up_before} ms, then {up_after})"
+    # Not `< up_before`: straight after another restart the uptime read before is about as small as the one after
+    assert up_after < up_before + 2000, f"the radio didn't restart (uptime {up_before} ms, then {up_after})"
     return radio.view(["crash"])
 
 
@@ -130,6 +131,6 @@ def test_crash_stall_kept(radio):
         n = as_int(v["crash.tasks"])
         others = dict(v[f"crash.t{k}"].rsplit(",", 1) for k in range(n))
         # The snapshot keeps the first tasks in creation order: on a radio with more, the host task may be past its end
-        if "host" in others or v.get("crash.tasks_more") != "1":
+        if "host" in others or as_int(v.get("crash.tasks_more"), 0) == 0:   # a count: the tasks past the end
             assert "host" in others and int(others["host"], 16) != 0, v
     radio.link.crash_clear()

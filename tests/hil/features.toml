@@ -70,6 +70,29 @@ switch = "BCAST_FM"
 hardware = "a broadcast FM receiver"
 spec = "docs/spec/airband-and-broadcast.md"
 
+[feature.rx_ext]
+switch = "RX_EXT"
+hardware = "a receiver chip whose documents give a range past the rated bands"
+spec = "docs/spec/radio-features.md"
+
+# P25 brings the air interface, the full-rate voice decoder and the MBE core (derived switches AIR, IMBE, MBE)
+[feature.p25]
+switch = "P25"
+spec = "docs/spec/p25.md"
+source = ["core/p25", "core/radio/radio_p25.c", "core/radio/radio_p25.h", "core/air", "core/fec", "core/mbe",
+          "hal/hal_air.h", "hal/hal_baseband.h"]
+
+[feature.p25_trunk]
+switch = "P25_TRUNK"
+spec = "docs/spec/p25-trunking.md"
+source = ["core/p25/p25_follow.c", "core/p25/p25_tsbk.c", "core/radio/radio_p25.c"]
+
+[feature.nxdn]
+switch = "NXDN"
+spec = "docs/spec/nxdn.md"
+source = ["core/nxdn", "core/air", "core/fec", "core/radio/radio_nxdn.c", "core/radio/radio_nxdn.h",
+          "core/radio/radio_air.h", "core/debuglink/debuglink_view_nxdn.c"]
+
 [feature.dmr_voice]
 switch = "DMR"
 spec = "docs/spec/dmr-voice.md"
@@ -94,6 +117,30 @@ spec = "docs/spec/dmr-emergency.md"
 [feature.dmr_roaming]
 switch = "DMR_ROAMING"
 spec = "docs/spec/dmr-roaming.md"
+
+[feature.dmr_trunk]
+switch = "DMR_TRUNK"
+spec = "docs/spec/dmr-trunking.md"
+source = ["core/dmr/trunk", "core/radio/radio_trunk.c", "core/radio/radio_trunk.h", "core/debuglink/debuglink_t3.c"]
+
+[feature.dmr_trunk_tx]
+switch = "DMR_TRUNK_TX"
+spec = "docs/spec/dmr-trunking.md"
+source = ["core/dmr/trunk", "core/radio/radio_trunk.c", "core/radio/radio_trunk.h", "core/debuglink/debuglink_t3.c"]
+
+[feature.dmr_trunk_supl]
+switch = "DMR_TRUNK_SUPL"
+spec = "docs/spec/dmr-trunking.md"
+source = ["core/dmr/trunk", "core/radio/radio_trunk.c", "core/radio/radio_trunk.h", "core/debuglink/debuglink_t3.c"]
+
+[feature.dmr_trunk_gw]
+switch = "DMR_TRUNK_GW"
+spec = "docs/spec/dmr-trunking.md"
+source = ["core/dmr/trunk", "core/radio/radio_trunk.c", "core/radio/radio_trunk.h", "core/debuglink/debuglink_t3.c"]
+
+[feature.voice_capture]
+switch = "VOICE_CAPTURE"
+spec = "docs/spec/debuglink.md"
 
 [feature.dmr_signaling]
 switch = "DMR_SIGNALING"
@@ -158,8 +205,13 @@ spec = "docs/spec/radio-features.md"
 [feature.gps]
 switch = "GPS"
 hardware = "a GPS receiver"
-spec = "docs/spec/aprs.md"
-source = ["drivers/gps", "platform/stm32f4/gps_uart", "platform/hrc7000/gps_hrc.c"]
+spec = "docs/spec/position.md"
+source = ["hal/hal_gps.h", "drivers/gps", "platform/stm32f4/gps_uart", "platform/hrc7000/gps_hrc.c"]
+
+# The position service: built for GPS, APRS, DMR_LRRP or DMR_GPS, so it has no switch of its own
+[feature.position]
+spec = "docs/spec/position.md"
+source = ["core/position", "core/debuglink/debuglink_position.c", "core/ui/ui_position.c"]
 
 # ── DMR data ──
 
@@ -208,6 +260,14 @@ spec = "docs/spec/sfr.md"
 switch = "APRS"
 spec = "docs/spec/aprs.md"
 
+[feature.aprs_afsk]
+switch = "APRS_AFSK"
+spec = "docs/spec/aprs.md"
+
+[feature.aprs_dmr]
+switch = "APRS_DMR"
+spec = "docs/spec/aprs.md"
+
 [feature.aprs_rx]
 switch = "APRS_RX"
 hardware = "FM receive audio sampled by the processor (the AFSK input path)"
@@ -220,8 +280,8 @@ spec = "docs/spec/aprs.md"
 [feature.gps_sky]
 switch = "GPS_SKY"
 hardware = "a GPS receiver"
-spec = "docs/spec/aprs.md"
-source = ["core/aprs/nmea_sky.c", "core/ui/ui_gps.c"]
+spec = "docs/spec/position.md"
+source = ["core/position/nmea_sky.c", "core/ui/ui_gps.c"]
 
 # ── Host link and USB ──
 
@@ -294,6 +354,10 @@ spec = "docs/spec/crash-log.md"
 
 [feature.usb_network]
 switch = "USB_NETWORK"
+spec = "docs/spec/usb-network.md"
+
+[feature.usb_serial_request]
+switch = "USB_SERIAL_REQUEST"
 spec = "docs/spec/usb-network.md"
 
 [feature.dmr_ip_gateway]
@@ -399,6 +463,10 @@ spec = "docs/spec/ui.md"
 switch = "DIAG"
 spec = "docs/spec/ui.md"
 
+[feature.backlight_test]
+switch = "BACKLIGHT_TEST"
+spec = "docs/testing/backlight-curve.md"
+
 [feature.ui_color]
 switch = "UI_COLOR"
 hardware = "a color display"
@@ -424,12 +492,28 @@ spec = "docs/spec/ui.md"
 switch = "LANG_IT"
 spec = "docs/spec/ui.md"
 
+[feature.lang_fr]
+switch = "LANG_FR"
+spec = "docs/spec/ui.md"
+
+[feature.lang_zh]
+switch = "LANG_ZH"
+spec = "docs/spec/ui.md"
+
 [feature.lang_default_es]
 switch = "LANG_DEFAULT_ES"
 spec = "docs/spec/ui.md"
 
 [feature.lang_default_it]
 switch = "LANG_DEFAULT_IT"
+spec = "docs/spec/ui.md"
+
+[feature.lang_default_fr]
+switch = "LANG_DEFAULT_FR"
+spec = "docs/spec/ui.md"
+
+[feature.lang_default_zh]
+switch = "LANG_DEFAULT_ZH"
 spec = "docs/spec/ui.md"
 
 # ── Radio core, storage and codec ──
@@ -456,6 +540,11 @@ spec = "docs/spec/codec-placement.md"
 source = ["tools/rfoundry/rfoundry"]
 
 # ── Bench ──
+
+[feature.air_raw]
+switch = "AIR_RAW"
+spec = "docs/spec/debuglink.md"
+source = ["core/debuglink/debuglink_air.c", "core/debuglink/debuglink_air.h"]
 
 [feature.audio_probe]
 switch = "AUDIO_PROBE"

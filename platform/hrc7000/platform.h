@@ -10,6 +10,7 @@
 #include "hal_system.h"
 #include "hal_flash.h"
 #include "hal_input.h"
+#include "hal_gps.h"
 
 #define REG32(a)		(*(volatile uint32_t *)(uintptr_t)(a))
 
@@ -369,6 +370,8 @@ uint32_t hrc_host_uart_line_errors(void);	// characters the UART flagged (its FI
 // When the last byte without a line error arrived (hal_millis()); false if none has yet. A board whose PTT shares the
 // serial line (drivers/input/sharedptt) reads it to tell host data from a press
 bool hrc_host_uart_last_rx(uint32_t *ms);
+// When the radio last sent on the host port (hal_millis()); false if it hasn't. For the same boards: gotchas.md 16.5
+bool hrc_host_uart_last_tx(uint32_t *ms);
 // Host port traffic for the diagnostics page: when the host link stops answering, these tell a dead receiver (rx
 // stops), a stuck transmitter (tx_stalls) and a stuck host link task (waits stops) apart
 typedef struct {
@@ -389,7 +392,7 @@ uint32_t hrc_uart_rx_isr(uint32_t base, void (*rx)(uint8_t c, bool flagged));
 
 // A GPS module's NMEA output on one of the UARTs, 9600 8N1, receive only (gps_hrc.c; hardware-dm32.md 12, hardware-db25d.md
 // 3.1). The module is powered and listened for for 5 s at start-up; one checksum-valid sentence makes it present (and
-// every sentence then goes to the APRS position source, CONFIG_APRS), nothing heard powers it off and stops the UART
+// every sentence then goes to the position service, core/position), nothing heard powers it off and stops the UART
 typedef struct {
 	uint32_t uart_base;	// UART0_BASE ... UART2_BASE
 	uint8_t irq;		// the UART's interrupt source (IRQ_UARTn)
@@ -398,9 +401,6 @@ typedef struct {
 	uint32_t rxd_mux_clear;	// IO_DIPLEX0 bits cleared to give the RXD pad to the UART; 0 = the board's io init has
 } hrc_gps_cfg_t;
 void hrc_gps_init(const hrc_gps_cfg_t *cfg);
-void hrc_gps_enable(bool on);	// Settings > Location > GPS (board_t.gps_enable): the module's power, once it has been heard
-bool hrc_gps_present(void);	// the module has been heard: board_t.gps_present
-void hrc_gps_counts(uint32_t *good, uint32_t *bad, uint32_t *bytes);	// valid / bad sentences, bytes received
-bool hrc_gps_running(void);	// the module is powered and listened to (diagnostics)
+extern const hal_gps_t hrc_gps;	// board_t.gps: once heard, the module's power follows the setting
 
 #endif

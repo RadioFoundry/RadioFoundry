@@ -55,6 +55,14 @@ class Catalogs:
 		for code in self.codes:
 			with open(os.path.join(directory, code + ".json"), encoding="utf-8") as f:
 				self.cat[code] = {k: v for k, v in json.load(f).items() if not k.startswith("_")}
+			# A language's own translation of text that comes from the repository (feature titles and descriptions,
+			# group names, variant summaries; docs/dev/website.md "Translating"). The default catalog doesn't carry
+			# those keys, so another language falls back to the source and owes nothing: a translation may add them on
+			# its own, in <code>.overrides.json, and it is never a key the catalogs' completeness check asks for.
+			over = os.path.join(directory, code + ".overrides.json")
+			if os.path.isfile(over):
+				with open(over, encoding="utf-8") as f:
+					self.cat[code].update({k: v for k, v in json.load(f).items() if not k.startswith("_")})
 		self.missing = set()
 
 	def t(self, lang, key, **fmt):

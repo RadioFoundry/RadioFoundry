@@ -19,6 +19,7 @@ the HIL tests don't script yet.
 | Radio under test | A radio with RadioFoundry, on the bench, on USB: driven by the debug link (`tools/rfoundry_debug.py`, the HIL tests) or its keys; the board's diagnostics page |
 | Bench board | A board that serves the bench line protocol (TCP 7373): it builds and sends DMR bursts as jobs, decodes what it receives into burst records, and sends and receives FM. Given as `--bench-api HOST[:PORT]` or `$RFOUNDRY_BENCH_API` |
 | Second bench board (optional) | The receive side (`--bench-api-rx`, `$RFOUNDRY_BENCH_API_RX`). A half-duplex board can't hear while it transmits |
+| Second transmitter (optional) | A board that transmits while the first does (`--bench-api-2`, `$RFOUNDRY_BENCH_API_2`): a test with two signals at once |
 
 The test channel is the rig's (`--dmr-freq` / `--dmr-cc`: tests/hil/README.md, "The rig's configuration"). It must be
 inside the board's transmit list and receive window.
@@ -75,6 +76,19 @@ of the mic, and the bench's recording played back to the radio.
 | TX | Distinct, non-silent frames on air, and the played-back recording decodes to audio on the radio |
 
 Missing prerequisites with the radio and bench present fail; they don't skip.
+
+`test_dmr_audio_rx_deviation` checks the receive level window (`docs/spec/dmr-voice.md` 7.1) and needs a bench board
+that scales its deviation (info feature `dev_scale`) and sets its level in dBm (`power_dbm`); it skips on others. To
+tune a board's receive level, `tools/dmr_rx_sweep.py` (its help has the options), for example:
+
+```
+tools/dmr_rx_sweep.py --allow-rf --port PORT --bench-api HOST --freq MHZ --ambe SPEECH.ambe \
+    --reg 0:0x44 --values 0x07FF,0x07EF,0x07DF,0x07CF --dbm=-30,-50 --devs 0.85,1.15 --offsets=-1000,0,1000
+```
+
+For a carrier offset window, `--detune --offsets=-4000:4000:500` tunes the radio away from the bench's carrier instead
+of moving the carrier: any bench board can do it, and it reaches past the bench's own offset limit (2.5 kHz).
+`test_dmr_audio_rx_offset_wide` checks the window from the other side, with the bench's carrier offset.
 
 Decoding AMBE to audio on the test host needs an AMBE+2 vocoder, and this project ships none (README,
 `docs/CLEANROOM.md`). Options: a DVSI hardware vocoder on USB (ThumbDV / DV3000 class, AMBE-3000 chip), or an open

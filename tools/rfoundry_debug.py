@@ -15,6 +15,12 @@
     rfoundry_debug.py wake                           backlight on without a key event
     rfoundry_debug.py ptt --seconds S                key PTT for S seconds (at most 10; the firmware also times out)
     rfoundry_debug.py radio OP [ARG...]              channel +1, pos 3, zone 0, vfo on, freq MHZ, power lowest|LEVEL|+1, copy-vfo, ...
+    rfoundry_debug.py radio mode fm|dmr|p25|nxdn     the channel's mode for now (the VFO's own in the VFO)
+    rfoundry_debug.py radio p25 [nac=N] [tg=N|unit=N] [rx_tgid=N] [talkaround=auto|on|off] [unit_id=N]
+                                                the P25 settings (CONFIG_P25; RAM only, view section p25)
+    rfoundry_debug.py radio nxdn [rate=9600|4800] [ran=N] [rx_ran=N] [tx_ran=N] [rx_gid=N] [tg=N|unit=N]
+                                 [unit_id=N] [emergency=0|1]
+                                                the NXDN settings (CONFIG_NXDN; RAM only, view section nxdn)
     rfoundry_debug.py volume [N|knob]                print the speaker volume; N (0 mutes, 0..16) sets it, knob gives the knob back
     rfoundry_debug.py log [--follow]                 the firmware's dlog() ring
     rfoundry_debug.py chip                           chip ID, flash size, UID, option bytes (RDP, write protection)
@@ -39,6 +45,11 @@
                                                 wram PAGE ADDR HEXBYTES | watch MS MASK [RAMADDR] |
                                                 mod MS HZ STEPS [PAGE REG] |
                                                 music MS HZ AMP [le]
+    rfoundry_debug.py air status|close|restart|abort  the air interface on the bench (CONFIG_AIR_RAW; debuglink.md 3.28)
+    rfoundry_debug.py air tap --seconds S --out F.raw [--bits 8|16]   the receive tap's samples
+    rfoundry_debug.py air open --profile p25 [--dev HZ] [--hard-only]  a session on the board's provider
+    rfoundry_debug.py air rx --seconds S --out F.jsonl                 its receive chunks
+    rfoundry_debug.py air tx --syms F [--max-ms MS]                    send the file's symbols (the radio core keys)
     rfoundry_debug.py split view                     the split duplex view (role, epoch, offset, buffers, underruns, CACH)
     rfoundry_debug.py split variant N [REG=VAL ...]  the BS framing experiment's variant for the next TX half key-up
                                                 (docs/spec/split-duplex.md 10.1; raw page 4 pairs with N = 255)
@@ -46,8 +57,9 @@
 Key names: up down left right select (ok) back (exit) quick (star) context (hash) 0-9 ptt monitor tt (talk target)
 emergency enc user1-user4.
 
-The port is found by its USB ID 1FC9:0094 (the only one present); --port or $RFOUNDRY_PORT picks one. Needs pyserial
-(pip install pyserial). Exit status 0 on success, 1 on a radio error, 2 on a usage or connection problem.
+The port is found by its USB ID 1FC9:0094 (the only one present), else a radio in USB network mode answering over UDP;
+--port or $RFOUNDRY_PORT picks one. A serial port needs pyserial (pip install pyserial). Exit status 0 on success, 1 on
+a radio error, 2 on a usage or connection problem.
 """
 import argparse
 import json
@@ -83,6 +95,21 @@ CRASH = 0x1B                        # the crash log (CONFIG_CRASH_LOG; docs/spec
 CRASH_OP_CLEAR, CRASH_OP_TEST = range(2)
 HWOPT = 0x21                        # the board's hardware options (docs/spec/debuglink.md 3.25)
 HWOPT_OP_LIST, HWOPT_OP_SET = range(2)
+AIR = 0x24                          # the air interface on the bench (CONFIG_AIR_RAW; docs/spec/debuglink.md 3.28)
+AIR_OP_STATUS, AIR_OP_TAP_START, AIR_OP_TAP_READ, AIR_OP_TAP_STOP, AIR_OP_OPEN, AIR_OP_CLOSE, AIR_OP_RX_READ, \
+    AIR_OP_RX_RESTART, AIR_OP_TX_DATA, AIR_OP_TX_KEY, AIR_OP_TX_END, AIR_OP_TX_ABORT = range(12)
+AIR_OPEN_SOFT = 0x01
+AIR_TX_LAST = 0x01
+AIR_FIT = {0x1: "rx", 0x2: "tx", 0x4: "soft", 0x8: "shape_approx", 0x10: "dev_approx", 0x20: "rate_doubled",
+           0x40: "needs_sync", 0x80: "tdma", 0x100: "full_duplex", 0x8000: "untested"}
+AIR_CHUNK_FLAGS = {0x1: "gap", 0x2: "free_run", 0x4: "slot", 0x8: "no_signal"}
+# Profiles by name (hal_air.h air_profile_t). p25: conventional P25 Phase 1 C4FM (core/p25/p25_rx.c)
+AIR_PROFILES = {
+    "p25": {"sym_rate": 4800, "levels": 4, "shape": 1, "shape_param": 20, "dev_outer_hz": 1800, "timing": 0, "bw": 0,
+            "slot_syms": 0, "sync_every_syms": 864, "idle": 0x5F,
+            "syncs": [{"id": 0, "nsyms": 24, "max_errs": 4, "flags": 0, "frame_at": 0,
+                       "syms": bytes([0x55, 0x75, 0xF5, 0xFF, 0x77, 0xFF])}]},
+}
 CRASH_TESTS = {"trap": 1, "assert": 2, "hang": 3, "stall": 4}
 CRASH_TOKEN = 0x48535243            # 'CRSH'
 WATCHDOG = 0x1D                     # the hardware watchdog's bench tests (CONFIG_WATCHDOG; docs/spec/debuglink.md 3.21)
@@ -96,6 +123,24 @@ RX2_TOKEN = 0x47445242              # 'BRDG'
 RX2_FLAGS = {1: "present", 2: "up", 4: "bridge", 8: "restart"}
 IDDB = 0x1F                         # the DMR ID database: format, records, an ID looked up (docs/spec/debuglink.md 3.23)
 CHIP_REG = 0x20                     # an RF chip or SoC register read or written (docs/spec/debuglink.md 3.24)
+T3 = 0x22                           # a Tier III trunked system: stage, select, leave (docs/spec/debuglink.md 3.26)
+T3_RESET, T3_SYSTEM, T3_CTRL, T3_CHAN, T3_TG, T3_SITE, T3_PLAN, T3_START, T3_STOP, T3_DEREG, T3_END, \
+    T3_STATUS, T3_SDATA, T3_AUTH, T3_PS, T3_DIVERT, T3_ALS, T3_INTERRUPT, T3_SDPOLL, T3_POLL_REPLY, T3_LOAD, T3_SUPL, \
+    T3_DIAL = range(1, 24)
+T3_UDTF = {"binary": 0, "address": 1, "bcd": 2, "iso7": 3, "iso8": 4, "nmea": 5, "ip": 6, "utf16": 7}
+T3_TG_LISTEN, T3_TG_TALK, T3_TG_BROADCAST = 1, 2, 4
+T3_DIV = {"voice": 8, "pdata": 4, "sdata": 2, "status": 1}  # call diversion services (T3_DIV_*)
+T3_PAR = {"a": 1, "b": 2}
+CPKV = 0x23                         # a key of the codeplug settings area (docs/spec/debuglink.md 3.27)
+CPKV_GET, CPKV_SET, CPKV_REMOVE = 1, 2, 3
+# Codeplug settings-area keys of the mode records (docs/spec/channel-modes.md): system n, a system entry, system n's
+# secret, channel c's tag (+ c - 1); a system record's flags; a tag's flags; the Tier III kind and system type
+CPKV_SYSTEM, CPKV_SYS_CHAN, CPKV_SYS_KEY, CPKV_CH_TAG = 0x0100, 0x0200, 0x0300, 0x0400
+SYS_NEEDS_KEY, SYS_TX = 0x01, 0x02
+TAG_TX, TAG_BASE_OWN, TAG_FALLBACK = 0x01, 0x02, 0x04
+KIND_DMR_TRUNK = SYSTYPE_DMR_TRUNK = 1
+T3_TAG_NO_FALLBACK = 0x10                   # a trunked channel's tag: never fall back
+T3_SYS_STUN = 0x0400                        # a Tier III system's option: accept a stun
 CHIP_SOC = 0xFF                     # CHIP_REG's chip number for the SoC's own registers
 SNMP = 0x19                         # the SNMP agent (CONFIG_SNMP; docs/spec/debuglink.md 3.17, docs/spec/snmp.md)
 SNMP_OP_SET, SNMP_OP_COMMUNITY, SNMP_OP_TEST_TRAP = range(3)
@@ -107,7 +152,7 @@ SNMP_FLAGS = {"off": 0x01, "rf_off": 0x02, "rf_write": 0x04, "usb_traps_off": 0x
 APRS_FIELDS = {name: i for i, name in enumerate(
     ["tx", "region", "freq_hz", "ssid", "lat", "lon", "pos_src", "interval_s", "smart", "via", "dmr_dst", "level",
      "path", "kiss", "dmr_udt", "after_ptt", "distance_m", "rx", "igate", "igate_tx", "digi", "txdelay",
-     "dmr_gps", "to_is", "power"])}
+     "dmr_gps", "to_is", "power", "ambiguity"])}
 APRS_REGIONS = {"na": 0, "eu": 1, "au": 2, "nz": 3, "jp": 4, "cn": 5, "custom": 6}
 APRS_POS_SRCS = {"auto": 0, "gps": 1, "host": 2, "fixed": 3}
 APRS_VIAS = {"rf": 0, "dmr": 1, "both": 2}
@@ -122,7 +167,7 @@ PROBE_BLOCK = 160
 REGIONS = {0: "none", 1: "ours", 2: "foreign"}
 DATA_OP_SMS, DATA_OP_CALL_ALERT, DATA_OP_RADIO_CHECK, DATA_OP_SETTINGS, DATA_OP_INBOX, DATA_OP_MARK_READ = range(1, 7)
 DATA_OP_EMERGENCY, DATA_OP_EMERGENCY_SETTINGS = 7, 8
-DATA_OP_IP_SETTINGS, DATA_OP_IP_SEND, DATA_OP_TX_SPACING = 9, 10, 11
+DATA_OP_IP_SETTINGS, DATA_OP_IP_SEND, DATA_OP_TX_SPACING, DATA_OP_IP_CONFIRMED_RATE = 9, 10, 11, 12
 IP_COMPRESS = {"off": 0, "auto": 1, "all": 2}
 IP_CONFIRMED = {"off": 0, "rules": 1, "all": 2}
 IP_RULE_PORT = 0x80000000
@@ -155,7 +200,8 @@ PRESS, LONG, REPEAT, DOWN, UP = range(5)
 
 VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features", "dmr_data",
                  "storage", "dmr_ext", "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
-                 "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc", "net_link", "cps", "board", "audio"]
+                 "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc", "net_link", "cps", "board", "audio", "t3",
+                 "t3_svc", "t3_roam", "voice_cap", "t3_msg", "t3_ra", "p25", "p25_trunk", "nxdn"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
     OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_DMR_TARGET, OP_DMR_CONTACT, \
@@ -172,9 +218,21 @@ OP_VOLUME = 30
 OP_DMR_FIELDS = 31
 OP_VFO_COPY = 32
 OP_VOICE_TEST = 33
+OP_VOICE_CAPTURE = 41
 OP_DTMF = 34
 OP_TX_LIMIT = 35
 OP_TX_DRIVE = 36
+OP_PA_KEYUP = 37
+OP_VFO_SFR = 38
+OP_P25 = 42
+OP_NXDN = 43
+P25_TALKAROUND = {"auto": 0, "on": 1, "off": 2}
+CHANNEL_MODES = {"fm": 0, "dmr": 1, "p25": 2, "nxdn": 3}
+# The VFO's SFR role names (sfrRole_t, docs/spec/sfr.md 4): off, user, user of an ERDM repeater, repeater, ERDM style
+SFR_ROLES = {"off": 0, "user": 1, "user-erdm": 2, "rpt": 3, "rpt-erdm": 4}
+OP_PA_SWEEP = 39
+OP_PA_KEYRUN = 40
+PA_KEYRUN_MAX = 21       # keys in one key run with the constants (28 without): a request is 64 bytes
 TX_LIMIT_MAX = 10       # frequencies in the test TX limit's list (core/radio/tx_limit.h)
 DTMF_DIGITS = "0123456789*#ABCD"
 VOLUME_KNOB = 0xFF
@@ -191,7 +249,8 @@ SETTINGS = {"tot_s": 1, "tot_warn_s": 2, "bcl": 3, "roger_beep": 4, "tx_inhibit"
             "battery_off_s": 18, "scan_beep": 19, "reply_s": 20, "roam_rssi_dbm": 21, "roam_hyst_db": 22,
             "roam_probe": 23, "roam_check_s": 24, "roam_beacon_s": 25, "roam_beacon_len_s": 26, "roam_survey": 27,
             "rpt_beacon": 28, "mic_gain": 29, "dual_delay_ms": 30, "enc_options": 31,
-            "zs_offers": 32, "sfr_cwid": 33, "sfr_rx": 34, "ref_trim": 35}
+            "zs_offers": 32, "sfr_cwid": 33, "sfr_rx": 34, "ref_trim": 35,
+            "tones_off": 36, "gps": 37}
 
 
 class DebugLinkError(Exception):
@@ -234,21 +293,81 @@ def as_int(v, default=None):
         return default
 
 
+def find_network_radios():
+    """udp:ADDR of each radio in USB network mode (the rfoundry package's discovery: tools/rfoundry/rfoundry/debuglink.py)"""
+    pkg = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rfoundry")
+    if pkg not in sys.path:
+        sys.path.insert(0, pkg)
+    try:
+        from rfoundry.debuglink import find_network_radios as find
+    except ImportError:
+        return []
+    return find()
+
+
+def low_latency(s):
+    """A USB-serial cable's FTDI chip holds received bytes for its latency timer (16 ms) before passing them on; 1 ms
+    halves a request's round trip on a radio linked by the programming cable. Linux only; elsewhere, and on ports
+    without the setting, nothing changes."""
+    try:
+        s.set_low_latency_mode(True)
+    except (AttributeError, NotImplementedError, OSError, ValueError):
+        pass
+
+
 def find_ports():
     if list_ports is None:
         return []
     return sorted(p.device for p in list_ports.comports() if p.vid == VID and p.pid == PID)
 
 
-def pick_port(port=None):
+# The USB-serial bridges of radios' programming cables (FTDI, Prolific, WCH, Silicon Labs): a radio on one of them has
+# no USB ID of its own, so find_ports() can't see it
+CABLE_VIDS = (0x0403, 0x067B, 0x1A86, 0x10C4)
+
+
+def find_cables():
+    if list_ports is None:
+        return []
+    return sorted(p.device for p in list_ports.comports() if p.vid in CABLE_VIDS)
+
+
+# Commands (and their ops) that only read: everything else restarts the radio or changes it
+READ_ONLY = {"hwopt": None, "reg": None, "ping": None, "version": None, "diag": None, "view": None, "screenshot": None, "log": None, "chip": None,
+             "dump": None, "peek": None, "iddb": None, "crash": ("show",), "watchdog": ("show",), "rx2": ("info",),
+             "air": ("status", "tap", "rx"), "storage": ("info", "dump"), "split": ("view",),
+             "aprobe": ("status", "reg", "samples", "ram", "watch")}
+
+
+def changes_radio(a):
+    """The parsed command restarts the radio or writes to it (settings, registers, keys, PTT, the radio's state)"""
+    if a.cmd not in READ_ONLY:
+        return True
+    ops = READ_ONLY[a.cmd]
+    if a.cmd == "hwopt":
+        return a.choice is not None
+    if a.cmd == "reg":
+        return a.value is not None
+    return ops is not None and getattr(a, "op", None) not in ops
+
+
+def pick_port(port=None, changes=False):
+    """The radio's port: port, $RFOUNDRY_PORT, else the one radio found. changes: the command restarts or writes to the
+    radio, so a serial cable that may carry another radio counts too: never guess which one"""
     port = port or os.environ.get("RFOUNDRY_PORT")
     if port:
         return port
-    ports = find_ports()
+    ports = find_ports() or find_network_radios()	# no serial port: a radio in USB network mode, over UDP
+    if changes:
+        cables = [c for c in find_cables() if c not in ports]
+        if len(ports) + len(cables) > 1:
+            raise DebugLinkError(f"this command restarts or writes to the radio, and more than one may be attached "
+                                 f"(radios {ports}, serial cables {cables}): give --port")
     if len(ports) == 1:
         return ports[0]
     if not ports:
-        raise DebugLinkError("no radio found (USB 1FC9:0094): is it plugged in and powered on? Or give --port")
+        raise DebugLinkError("no radio found (USB 1FC9:0094, or a network adapter radio answering on UDP): is it plugged "
+                             "in and powered on? Or give --port")
     raise DebugLinkError(f"several radios found {ports}: give --port")
 
 
@@ -309,6 +428,7 @@ class DebugLink:
                 self.s = serial.serial_for_url(self.port, 115200, timeout=0.02)	# a device, or a URL such as rfc2217://host:port
             except serial.SerialException as e:
                 raise DebugLinkError(f"can't open {self.port}: {e}")
+            low_latency(self.s)
 
     def close(self):
         self.s.close()
@@ -413,6 +533,7 @@ class DebugLink:
         flags, blocks = r[0], struct.unpack_from("<I", r, 1)[0]
         lp, lr, lm, rp, rr, rm = struct.unpack_from("<6H", r, 5)
         return {"ours": bool(flags & 1), "running": bool(flags & 2), "no_pcm": bool(flags & 4), "blocks": blocks,
+                "voice": "dmr" if flags & 8 else "p25" if flags & 16 else None,
                 "left": {"peak": lp, "rms": lr, "peak_max": lm}, "right": {"peak": rp, "rms": rr, "peak_max": rm}}
 
     def probe_reg(self, page, reg, value=None):
@@ -579,19 +700,299 @@ class DebugLink:
         self.request(RX2, struct.pack("<BI", RX2_OP_RESTART, RX2_TOKEN))
 
     def hwopts(self):
-        """The board's hardware options: [{name, value (-1 = none stored), restart, choices}]"""
+        """The board's hardware options: [{name, value (-1 = none stored), restart, choices, state}]; state ok, ask,
+        restart or hidden (a firmware without the key: ask while nothing is stored, else ok)"""
         kv = parse_kv(self.request(HWOPT, bytes([HWOPT_OP_LIST]))[1].decode("ascii", "replace"))
-        return [{"name": kv.get(f"hwopt.{i}.name", ""), "value": int(kv.get(f"hwopt.{i}.value", "-1")),
-                 "restart": kv.get(f"hwopt.{i}.restart") == "1",
-                 "choices": kv.get(f"hwopt.{i}.choices", "").split("|")} for i in range(int(kv.get("hwopt.count", "0")))]
+        out = []
+        for i in range(int(kv.get("hwopt.count", "0"))):
+            value = int(kv.get(f"hwopt.{i}.value", "-1"))
+            out.append({"name": kv.get(f"hwopt.{i}.name", ""), "value": value,
+                        "restart": kv.get(f"hwopt.{i}.restart") == "1",
+                        "choices": kv.get(f"hwopt.{i}.choices", "").split("|"),
+                        "state": kv.get(f"hwopt.{i}.state") or ("ask" if value < 0 else "ok")})
+        return out
 
     def hwopt_set(self, option, choice):
         """Store a choice; raises DebugLinkError (status 7) when the board refuses it or the radio transmits."""
         self.request(HWOPT, bytes([HWOPT_OP_SET, option, choice]))
 
+    # ── the air interface (CONFIG_AIR_RAW, docs/spec/debuglink.md 3.28) ──
+    def air_status(self):
+        return parse_kv(self.request(AIR, bytes([AIR_OP_STATUS]))[1].decode("ascii", "replace"))
+
+    def air_tap_start(self, bits=16, shift=0):
+        """The board's receive tap on: {rate_hz, lo_hz, hi_hz, counts_per_khz, channels}"""
+        r = self.request(AIR, bytes([AIR_OP_TAP_START, bits, shift]))[1]
+        rate, lo, hi, cpk, ch = struct.unpack_from("<IHHHB", r)
+        return {"rate_hz": rate, "lo_hz": lo, "hi_hz": hi, "counts_per_khz": cpk, "channels": ch}
+
+    def air_tap_read(self, bits=16):
+        """(seq, t_us, gaps, samples as bytes: int16 LE, or int8)"""
+        r = self.request(AIR, bytes([AIR_OP_TAP_READ]))[1]
+        seq, t_us, gaps, n = struct.unpack_from("<IIIH", r)
+        return seq, t_us, gaps, bytes(r[14:14 + n * (2 if bits == 16 else 1)])
+
+    def air_tap_stop(self):
+        self.request(AIR, bytes([AIR_OP_TAP_STOP]))
+
+    def air_open(self, prof, soft=True):
+        """A session on the board's provider: {fit (names), tx_chunk_syms, tx_queue_depth}"""
+        b = struct.pack("<HBBBHBBHHBB", prof["sym_rate"], prof["levels"], prof["shape"], prof["shape_param"],
+                        prof["dev_outer_hz"], prof["timing"], prof["bw"], prof["slot_syms"], prof["sync_every_syms"],
+                        prof["idle"], len(prof["syncs"]))
+        for y in prof["syncs"]:
+            b += struct.pack("<BBBBb", y["id"], y["nsyms"], y["max_errs"], y["flags"], y["frame_at"]) + \
+                y["syms"].ljust(6, b"\0")
+        try:
+            r = self.request(AIR, bytes([AIR_OP_OPEN, AIR_OPEN_SOFT if soft else 0]) + b)[1]
+        except DebugLinkError as e:
+            if e.status == ST_REFUSED and len(e.data) >= 4:
+                fit = struct.unpack_from("<I", e.data)[0]
+                raise DebugLinkError(f"air open refused (fit {self._fit_names(fit) or 'none'})", e.status, e.data)
+            raise
+        fit, chunk, depth = struct.unpack_from("<IHB", r)
+        return {"fit": self._fit_names(fit), "tx_chunk_syms": chunk, "tx_queue_depth": depth}
+
+    @staticmethod
+    def _fit_names(fit):
+        return [n for bit, n in AIR_FIT.items() if fit & bit]
+
+    def air_close(self):
+        self.request(AIR, bytes([AIR_OP_CLOSE]))
+
+    def air_rx_read(self):
+        """(dropped, [records]): {t_us, nsyms, flags, sync_at, sync_id, hard (bytes), soft (list or None)}"""
+        r = self.request(AIR, bytes([AIR_OP_RX_READ]))[1]
+        dropped, count = struct.unpack_from("<IB", r)
+        at, out = 5, []
+        for _ in range(count):
+            t_us, nsyms, flags, sync_at, sync_id = struct.unpack_from("<IHBhB", r, at)
+            at += 10
+            hard = bytes(r[at:at + (nsyms + 3) // 4])
+            at += (nsyms + 3) // 4
+            soft = None
+            if flags & 0x80:
+                soft = list(struct.unpack_from(f"<{nsyms}b", r, at))
+                at += nsyms
+            out.append({"t_us": t_us, "nsyms": nsyms, "flags": flags & 0x7F, "sync_at": sync_at, "sync_id": sync_id,
+                        "hard": hard, "soft": soft})
+        return dropped, out
+
+    def air_rx_restart(self):
+        self.request(AIR, bytes([AIR_OP_RX_RESTART]))
+
+    def air_tx_data(self, syms, nsyms, last=False):
+        """Queue one chunk; the queue's free chunks after it, or None when it was full (try again)"""
+        try:
+            r = self.request(AIR, bytes([AIR_OP_TX_DATA, AIR_TX_LAST if last else 0, nsyms]) + syms, busy_wait=0)[1]
+        except DebugLinkError as e:
+            if e.status == ST_BUSY:
+                return None
+            raise
+        return r[0]
+
+    def air_tx_key(self, max_ms=0):
+        """The radio core keys the transmitter (its checks, the lowest power); refused or unavailable raise"""
+        self.request(AIR, struct.pack("<BH", AIR_OP_TX_KEY, max_ms))
+
+    def air_tx_end(self):
+        self.request(AIR, bytes([AIR_OP_TX_END]))
+
+    def air_tx_abort(self):
+        self.request(AIR, bytes([AIR_OP_TX_ABORT]))
+
     def iddb(self, dmr_id=0):
         """The DMR ID database as the radio sees it, and the text it shows for dmr_id: {format, records, found, text}"""
         return decode_iddb(self.request(IDDB, struct.pack("<I", dmr_id))[1])
+
+    # A Tier III trunked system (docs/spec/debuglink.md 3.26): stage it with t3_reset, t3_system, t3_ctrl, t3_chan,
+    # t3_tg (t3_site, t3_plan), then t3_start. State: the t3 view section
+    def t3_op(self, op, args=b""):
+        self.request(T3, bytes([op]) + bytes(args))
+
+    def t3_reset(self):
+        self.t3_op(T3_RESET)
+
+    def t3_system(self, own_id=0, model=0, net=0, par="a", opts=0x20, cc=1, talk_id=0, talk_private=False, dmrla=0,
+                  leave_dbm=0, vote_ms=0, ip_gw=False):
+        """own_id 0: the radio's; model 0 tiny .. 3 huge; par a|b|1|2; opts T3_OPT_* (core/dmr/trunk/t3_ms.h): 0x01
+        listen only, 0x20 private calls to the radio, 0x40 register with the talkgroup, 0x200 no roaming; dmrla: the
+        SITE bits of a registration area; leave_dbm: a TSCC below it is left (0: the radio's roaming threshold);
+        vote_ms: the Vote Now sample (0: default); ip_gw: IP through the system's gateway (IPI), the radio's address
+        advised at registration"""
+        cat = T3_PAR[par] if isinstance(par, str) else par
+        self.t3_op(T3_SYSTEM, struct.pack("<IBHBHBIBBhHB", own_id, model, net, cat, opts, cc, talk_id, int(talk_private),
+                                          dmrla, leave_dbm, vote_ms, int(ip_gw)))
+
+    def t3_ctrl(self, lcn, rx_hz, tx_hz, cc=0xFF):
+        """A control channel candidate (also a channel of the plan); rx/tx as the radio sees them; cc 0xFF: the
+        system's"""
+        self.t3_op(T3_CTRL, struct.pack("<HIIB", lcn, rx_hz, tx_hz, cc))
+
+    def t3_chan(self, lcn, rx_hz, tx_hz, cc=0xFF):
+        self.t3_op(T3_CHAN, struct.pack("<HIIB", lcn, rx_hz, tx_hz, cc))
+
+    def t3_tg(self, tg, listen=True, talk=False, broadcast=False):
+        self.t3_op(T3_TG, struct.pack("<IB", tg, (T3_TG_LISTEN if listen else 0) | (T3_TG_TALK if talk else 0) |
+                                      (T3_TG_BROADCAST if broadcast else 0)))
+
+    def t3_auth(self, key=None, psn=0):
+        """The staged system's authentication key K (16 bytes) and PSN; None removes it. The radio never shows K."""
+        if key is None:
+            self.t3_op(T3_AUTH, b"")
+            return
+        if len(key) != 16:
+            raise DebugLinkError("t3 auth: K is 16 bytes")
+        self.t3_op(T3_AUTH, bytes(key) + struct.pack("<I", psn & 0xFFFFFF))
+
+    def t3_power_save(self, rq, awake_ms=0):
+        """Power save asked for at registration: PowerSave_RQ 0 (off) to 7 (1:128), T_Awake in ms (0: default)."""
+        self.t3_op(T3_PS, struct.pack("<BH", rq, awake_ms))
+
+    def t3_divert(self, to=0, group=False, services=("voice", "pdata", "sdata", "status"), clear=False,
+                  incoming=False):
+        """Call diversion: services to an MS or talkgroup; clear=True ends the radio's own, incoming=True every one
+        to the radio."""
+        mode = 2 if incoming else (0 if clear else 1)
+        bits = sum(T3_DIV[s] for s in services)
+        self.t3_op(T3_DIVERT, struct.pack("<BBIB", mode, bits, to, int(group)))
+
+    def t3_als(self, to=0, emergency=False, als_s=0, als_e_s=0):
+        """Ambient Listening: ask to listen to MS `to` (0: only set T_ALS / T_ALS_E, in s, 0 = default). The radio
+        answers ALS calls to it only with T3_OPT_ALS (0x80) in t3_system's opts."""
+        self.t3_op(T3_ALS, struct.pack("<IBHH", to, int(emergency), als_s, als_e_s))
+
+    def t3_interrupt(self, end_als=False):
+        """Stop the talker in the call followed: status 125 to it, then back to the call (t3.ax_result done =
+        accepted); end_als: end the ALS call the radio listens to (status 123; the radio stays on the TSCC)"""
+        self.t3_op(T3_INTERRUPT, struct.pack("<B", int(end_als)))
+
+    def t3_sdata_poll(self, dst, fmt="iso8", blocks=1):
+        """Poll MS dst for its short data (fmt a T3_UDTF name or number, 1-4 blocks): the answer shows as the last
+        message heard, t3.ax_result done"""
+        f = T3_UDTF[fmt] if isinstance(fmt, str) else fmt
+        self.t3_op(T3_SDPOLL, struct.pack("<IBB", dst, f, blocks))
+
+    def t3_poll_reply(self, data=b"", fmt="iso8"):
+        """The radio's answer to a short data poll (0-46 octets; none: refused), taken at the next start"""
+        f = T3_UDTF[fmt] if isinstance(fmt, str) else fmt
+        self.t3_op(T3_POLL_REPLY, struct.pack("<B", f) + bytes(data))
+
+    def t3_supl(self, data=b"", fmt="binary"):
+        """Supplementary user data offered with each call (0-46 octets; none: off), taken at the next start"""
+        f = T3_UDTF[fmt] if isinstance(fmt, str) else fmt
+        self.t3_op(T3_SUPL, struct.pack("<B", f) + bytes(data))
+
+    def t3_dial(self, digits=""):
+        """The digits ("0-9*#", 0-44; none: off) a call through a dialing gateway (PSTNI, PABXI, LINEI, DISPATI)
+        sends, taken at the next start"""
+        self.t3_op(T3_DIAL, digits.encode("ascii"))
+
+    def t3_site(self, site):
+        self.t3_op(T3_SITE, struct.pack("<H", site))
+
+    def t3_plan(self, base_hz, first=1, sep=0, tx_low=False, split_hz=0):
+        self.t3_op(T3_PLAN, struct.pack("<IHBBI", base_hz, first, sep, int(tx_low), split_hz))
+
+    def t3_status(self, dst, status, group=False):
+        """Send a status 0-126 to an MS or talkgroup, or poll an MS (127: its answer is t3.ax_info)"""
+        self.t3_op(T3_STATUS, struct.pack("<IBB", dst, int(group), status))
+
+    def t3_sdata(self, dst, data, group=False, fmt="iso8"):
+        """Send UDT short data (1-46 octets) to an MS or talkgroup; fmt a T3_UDTF name or number (UDT_Format)"""
+        f = T3_UDTF[fmt] if isinstance(fmt, str) else fmt
+        self.t3_op(T3_SDATA, struct.pack("<IBB", dst, int(group), f) + bytes(data))
+
+    def t3_load(self, n):
+        """Stage system n of the codeplug (docs/spec/dmr-trunking-codeplug.md) without starting it; BAD_ARG when it is absent
+        or has no control channel"""
+        self.t3_op(T3_LOAD, bytes([n]))
+
+    def cpkv_get(self, key):
+        """A key's value from the codeplug settings area (its first bytes for a long one), None when absent"""
+        out, total = b"", None
+        while total is None or len(out) < min(total, 128):
+            try:
+                r = self.request(CPKV, struct.pack("<BHH", CPKV_GET, key, len(out)))[1]
+            except DebugLinkError as e:
+                if e.status == 4:
+                    return None
+                raise
+            total = struct.unpack_from("<H", r)[0]
+            if len(r) <= 2:
+                break
+            out += r[2:]
+        return out
+
+    def cpkv_set(self, key, value):
+        """Set a key to value (bytes), in pieces a request holds: the first replaces, the rest patch"""
+        value = bytes(value)
+        step = 64 - 5
+        for off in range(0, max(len(value), 1), step):
+            self.request(CPKV, struct.pack("<BHH", CPKV_SET, key, off) + value[off:off + step])
+
+    def cpkv_remove(self, key):
+        self.request(CPKV, struct.pack("<BH", CPKV_REMOVE, key))
+
+    @staticmethod
+    def name_check(name):
+        """A channel's name check (docs/spec/channel-modes.md 3): FNV-1a 32 of the 16-byte NUL-padded name, folded"""
+        h = 0x811C9DC5
+        for b in name.encode("latin-1")[:16].ljust(16, b"\0"):
+            h = ((h ^ b) * 0x01000193) & 0xFFFFFFFF
+        return (h ^ (h >> 16)) & 0xFFFF
+
+    @staticmethod
+    def system_record(systype, name, block, identity_len=0, flags=SYS_TX, sharing=0, own_id=0, fb_chan=0, fb_name=""):
+        """A codeplug system record (docs/spec/channel-modes.md 7.1), key CPKV_SYSTEM + n: the header, then the type's
+        block (its first identity_len octets the identity). flags: SYS_TX (without it the radio only listens there),
+        SYS_NEEDS_KEY; fb_chan the fallback channel number (0 none) and fb_name its name, for the check"""
+        check = DebugLink.name_check(fb_name) if fb_chan else 0
+        return (struct.pack("<BBBBIHH", systype, flags, sharing, identity_len, own_id, fb_chan, check) +
+                name.encode("latin-1")[:16].ljust(16, b"\0") + bytes(block))
+
+    @staticmethod
+    def tag_record(kind, system, name, flags=TAG_TX, fb_chan=None, fb_name="", params=b""):
+        """A channel's tag (docs/spec/channel-modes.md 3), key CPKV_CH_TAG + channel - 1: its kind and system, the
+        channel's own name (for the check), the flags (TAG_TX: without it the channel is receive only; TAG_BASE_OWN:
+        the channel record stands as it is) and, when fb_chan is given, a fallback channel of its own (0: none)"""
+        head = struct.pack("<BBHB", kind, system, DebugLink.name_check(name),
+                           flags | (TAG_FALLBACK if fb_chan is not None else 0))
+        if fb_chan is not None:
+            head += struct.pack("<HH", fb_chan, DebugLink.name_check(fb_name) if fb_chan else 0)
+        return head + bytes(params)
+
+    @staticmethod
+    def t3_system_record(name, model, net, par="a", cc=1, opts=0x20, own_id=0, sharing=0, fb_hold_s=0, fb_chan=0,
+                         fb_name="", plan=None, plan_flags=0, leave_dbm=0, ps_rq=0, sites=(), tx=True,
+                         needs_key=False):
+        """A Tier III system record (docs/spec/dmr-trunking-codeplug.md 1); plan: (base Hz, first LCN, separation
+        code, split Hz) or None; plan_flags bit 0 MS TX low, bit 1 don't learn channels; tx False: listen only;
+        needs_key: unusable without its key (CPKV_SYS_KEY + n)"""
+        base, first, sep, split = plan or (0, 0, 0, 0)
+        sites = list(sites)[:8]
+        block = (struct.pack("<BHBBHBIHBBIbBB", model, net, T3_PAR.get(par, par), cc, opts, fb_hold_s, base, first, sep,
+                             plan_flags, split, leave_dbm, ps_rq, len(sites)) + struct.pack(f"<{len(sites)}H", *sites))
+        return DebugLink.system_record(SYSTYPE_DMR_TRUNK, name, block, identity_len=4,
+                                       flags=(SYS_TX if tx else 0) | (SYS_NEEDS_KEY if needs_key else 0),
+                                       sharing=sharing, own_id=own_id, fb_chan=fb_chan, fb_name=fb_name)
+
+    @staticmethod
+    def t3_tag_record(system, name, tx=True, base_own=False, no_fallback=False, fb_chan=None, fb_name=""):
+        """A trunked channel's tag (docs/spec/dmr-trunking-codeplug.md 4). The channel record under it is a DMR
+        receive-only one, or any channel with base_own"""
+        flags = (TAG_TX if tx else 0) | (TAG_BASE_OWN if base_own else 0) | (T3_TAG_NO_FALLBACK if no_fallback else 0)
+        return DebugLink.tag_record(KIND_DMR_TRUNK, system, name, flags, fb_chan, fb_name)
+
+    @staticmethod
+    def t3_chan_record(system, lcn, rx_hz, tx_hz, ctrl=False, cc=0xFF):
+        """A Tier III system's channel (docs/spec/dmr-trunking-codeplug.md 2): a system entry, key CPKV_SYS_CHAN + any
+        free number; the entries are read in key order"""
+        return struct.pack("<BBBBHIIB", system, 0, 0xFF, 1 if ctrl else 0, lcn, rx_hz, tx_hz, cc)
+
+    def t3(self, cmd):
+        """start | stop | dereg | end"""
+        self.t3_op({"start": T3_START, "stop": T3_STOP, "dereg": T3_DEREG, "end": T3_END}[cmd])
 
     def chip_reg(self, chip, reg, value=None, page=0):
         """An RF chip register (the board's chip and page numbering): writes value when given, returns the read-back"""
@@ -918,10 +1319,74 @@ class DebugLink:
         self.radio(OP_VOLUME, bytes([VOLUME_KNOB if step == "knob" else int(step)]))
 
     def dmr_fields(self, mode=None, cc=None, ts=None):
-        """Mode ("fm" / "dmr"), color code 0..15 and timeslot 1 / 2, each None to keep it. On a channel these are
-        temporary changes, in the VFO the VFO's own settings (RADIO op 31)."""
-        m = 0xFF if mode is None else {"fm": 0, "dmr": 1}[mode]
+        """Mode ("fm" / "dmr" / "p25" / "nxdn"), color code 0..15 and timeslot 1 / 2, each None to keep it. On a channel these
+        are temporary changes, in the VFO the VFO's own settings (RADIO op 31). A mode the build lacks raises
+        DebugLinkError "unavailable"."""
+        m = 0xFF if mode is None else CHANNEL_MODES[mode]
         self.radio(OP_DMR_FIELDS, bytes([m, 0xFF if cc is None else int(cc), 0 if ts is None else int(ts)]))
+
+    def p25_settings(self, rx_nac=0x293, tx_nac=0x293, rx_tgid=0, talkaround="auto", unit_call=False, tx_dst=1,
+                     unit_id=0):
+        """The P25 settings (RADIO op 42; debuglink.md 3.8; RAM only, the p25 view section shows them): the NAC
+        received (0xF7E: any) and sent, rx_tgid 0 every call of the NAC or only this talk group and calls to us,
+        talkaround auto|on|off (or 0..2), PTT calls the unit tx_dst (unit_call) or the talk group tx_dst, our unit ID
+        (0: the radio's DMR ID). The engine takes them when it isn't transmitting."""
+        ta = P25_TALKAROUND[talkaround] if isinstance(talkaround, str) else int(talkaround)
+        if not (0 <= rx_nac <= 0xFFF and 0 <= tx_nac <= 0xFFF and 0 <= rx_tgid <= 0xFFFF and 0 <= ta <= 2 and
+                0 <= unit_id <= 0xFFFFFF and 0 <= tx_dst <= (0xFFFFFF if unit_call else 0xFFFF)):
+            raise ValueError("p25_settings: NACs 0..0xFFF, rx_tgid 0..65535, talkaround auto|on|off, unit_id and "
+                             "a unit tx_dst 24 bits, a talk group tx_dst 16 bits")
+        self.radio(OP_P25, struct.pack("<HHHBBII", rx_nac, tx_nac, rx_tgid, ta, 1 if unit_call else 0, tx_dst,
+                                       unit_id))
+
+    def p25_settings_update(self, **kw):
+        """p25_settings with the settings in force (the p25 view section) changed only where kw says."""
+        v = self.view(["p25"])
+        if v.get("p25.built") != "1":
+            raise DebugLinkError("unavailable")
+        cur = {"rx_nac": int(v["p25.rx_nac"]), "tx_nac": int(v["p25.tx_nac"]), "rx_tgid": int(v["p25.rx_tgid"]),
+               "talkaround": int(v["p25.talkaround"]), "unit_call": v["p25.unit_call"] == "1",
+               "tx_dst": int(v["p25.tx_dst"]), "unit_id": int(v["p25.unit_id"])}
+        cur.update(kw)
+        self.p25_settings(**cur)
+
+    def nxdn_settings(self, rate9600=True, rx_ran=0, tx_ran=1, rx_gid=0, unit_call=False, tx_dst=1, unit_id=1,
+                      emergency=False):
+        """The NXDN settings (RADIO op 43; debuglink.md 3.8; RAM only, the nxdn view section shows them): 9600 or
+        4800 bit/s, the RAN received (0: any) and sent (0..63), rx_gid 0 every call of the RAN or only this group and
+        calls to us, PTT calls the unit tx_dst (unit_call) or the group tx_dst, our unit ID 1..65519, emergency calls.
+        The engine takes them when it isn't transmitting; a new rate starts it over."""
+        if not (0 <= rx_ran <= 63 and 0 <= tx_ran <= 63 and 0 <= rx_gid <= 0xFFFF and 1 <= unit_id <= 65519 and
+                0 <= tx_dst <= 0xFFFF):
+            raise ValueError("nxdn_settings: RANs 0..63, rx_gid and tx_dst 0..65535, unit_id 1..65519")
+        flags = (1 if rate9600 else 0) | (2 if unit_call else 0) | (4 if emergency else 0)
+        self.radio(OP_NXDN, struct.pack("<BBBHHH", flags, rx_ran, tx_ran, rx_gid, unit_id, tx_dst))
+
+    def nxdn_settings_update(self, **kw):
+        """nxdn_settings with the settings in force (the nxdn view section) changed only where kw says."""
+        v = self.view(["nxdn"])
+        if v.get("nxdn.built") != "1":
+            raise DebugLinkError("unavailable")
+        cur = {"rate9600": v["nxdn.rate"] == "9600", "rx_ran": int(v["nxdn.rx_ran"]), "tx_ran": int(v["nxdn.tx_ran"]),
+               "rx_gid": int(v["nxdn.rx_gid"]), "unit_call": v["nxdn.unit_call"] == "1",
+               "tx_dst": int(v["nxdn.tx_dst"]), "unit_id": int(v["nxdn.unit_id"]),
+               "emergency": v["nxdn.tx_emergency"] == "1"}
+        cur.update(kw)
+        self.nxdn_settings(**cur)
+
+    def vfo_sfr(self, role, inbound_ts=1, framing=0, hang=0):
+        """The VFO's SFR role (RADIO op 38; sfr.md 4), saved with the VFO: role a SFR_ROLES name or 0..4, the inbound
+        slot 1 / 2, framing 0..3, hang 0..3: a codeplug channel's SFR byte A. The outbound color code is the VFO's own.
+        The radio core takes it in the VFO only (dmr.sfr_role shows it)."""
+        r = SFR_ROLES[role] if isinstance(role, str) else int(role)
+        if not 0 <= r <= 4 or inbound_ts not in (1, 2) or not 0 <= framing <= 3 or not 0 <= hang <= 3:
+            raise ValueError("vfo_sfr: role 0..4, inbound_ts 1|2, framing 0..3, hang 0..3")
+        a = r | framing << 3 | (0x20 if inbound_ts == 2 else 0) | hang << 6
+        self.vfo_sfr_byte(a)
+
+    def vfo_sfr_byte(self, a):
+        """The VFO's SFR role as byte A itself (RADIO op 38), as the view's ch.sfr shows it first."""
+        self.radio(OP_VFO_SFR, bytes([int(a) & 0xFF]))
 
     def vfo_copy(self):
         """Copy the channel on view to the VFO and open it (RADIO op 32). Raises DebugLinkError "refused" for a channel
@@ -933,6 +1398,20 @@ class DebugLink:
         """The DMR voice test signal (RADIO op 33, RAM only): on, the encoder gets a generated tone that changes pitch
         every 20 ms in place of the mic, so an over carries known, varying audio (the dmr view key voice.tx_test)."""
         self.radio(OP_VOICE_TEST, bytes([1 if on else 0]))
+
+    def voice_capture(self, n=32):
+        """Capture the next n (up to 32) voice frames received, raw as on air (RADIO op 41, CONFIG_VOICE_CAPTURE
+        builds); 0 stops. voice_frames() reads them."""
+        self.radio(OP_VOICE_CAPTURE, bytes([n]))
+
+    def voice_frames(self):
+        """The frames captured: (want, [9-byte frame or None for a lost one, ...])"""
+        v = self.view(["voice_cap"])
+        if v.get("vcap.built") != "1":
+            raise DebugLinkError("unavailable: built without CONFIG_VOICE_CAPTURE")
+        text = v.get("vcap.frames", "")
+        frames = [None if f == "L" else bytes.fromhex(f) for f in text.split(",") if f]
+        return int(v.get("vcap.want", 0)), frames
 
     def dtmf_key(self, digit, down):
         """A DTMF key's down or up during FM TX (RADIO op 34; radio-features.md 3.7). Raises DebugLinkError "refused"
@@ -961,6 +1440,86 @@ class DebugLink:
         its power level's; it lasts until that transmission ends. 0: the level's again. Set it before key-up. The core
         view's tx_drive lists each level's drive. Raises DebugLinkError over the board's limit or without the hook."""
         self.radio(OP_TX_DRIVE, struct.pack("<H", int(drive)))
+
+    def pa_keyup(self, dead_pm=None, knee_us=None, slope_us=None, window_us=None, settle_us=None, pa_us=None,
+                 ease_pm=0):
+        """The DMR PA key-up constants (RADIO op 37; docs/spec/pa-keyup.md), RAM only, from the next key-up: the dead
+        zone (1/1000 of the calibration's anchor drive), the knee and the slope (us), the window (the earliest start
+        before the first symbol), the boost's end before it (settle), the PA's point and the fastest approach (ease_pm,
+        1/1000 of the anchor over the dead zone; 0: no limit, and then not sent: an older firmware takes six). No arguments: the board's
+        again. The core view shows them (pa_keyup), the board's limits (pa_keyup.limits: the earliest point in us and
+        the highest drive) and the last key-up (pa_keyup.last: boost, drive, the boost's, PA's and drive's points in
+        us, then the top drive and the anchor it was planned against). Raises DebugLinkError out of range or on a
+        radio without it."""
+        v = (dead_pm, knee_us, slope_us, window_us, settle_us, pa_us)
+        if all(x is None for x in v):
+            self.radio(OP_PA_KEYUP, b"")
+            return
+        if any(x is None for x in v):
+            raise ValueError("pa_keyup: the six values, or none")
+        v = v + (ease_pm,) if ease_pm else v
+        self.radio(OP_PA_KEYUP, struct.pack(f"<{len(v)}H", *(int(x) for x in v)))
+
+    def pa_sweep(self, start, step, count, on_ms, off_ms, ceiling=100, mark_ms=0):
+        """One PA drive sweep (RADIO op 39; docs/spec/pa-keyup.md 7) on the FM carrier the radio transmits now: the drive
+        at 0 for off_ms, then start + i x step for on_ms, for count points, with the timing marker mark_ms after each
+        write and before each drop (0: none). The firmware caps the drive at ceiling % (at most 115) of the top level's
+        drive, the points over that drive and one sweep's length (1 s): returns (points run, the top level's drive).
+        Raises DebugLinkError when the radio isn't transmitting FM or has no sweep."""
+        args = struct.pack("<HhBBBBB", int(start), int(step), int(count), int(on_ms), int(off_ms), int(ceiling),
+                           int(mark_ms))
+        self.request(RADIO, bytes([OP_PA_SWEEP]) + args, timeout=self.timeout + 1.5)
+        n, top = self.view(["features"]).get("pa_sweep.last", "0/0/0").split("/")[:2]
+        return int(n), int(top)
+
+    def pa_keyrun(self, drives, key_ms, gap_ms, constants=None, reattach=False, restart=False):
+        """One PA key run (RADIO op 40; docs/spec/pa-keyup.md 7): the radio keys DMR on its channel once per drive, for
+        key_ms each with gap_ms between, by itself: the link is quiet until it is done, for a radio whose own RF upsets
+        its USB link. constants: the seven key-up constants set first (as pa_keyup), or None to keep the ones it has.
+        reattach: after the reply the radio's USB port leaves the bus and comes back (what a replug does), for a host
+        that gave up on the port while the radio transmitted; the link is then closed here, and the caller opens it
+        again and reads pa_keyrun.last itself. restart: the radio restarts after the reply instead (a USB controller
+        that only a restart brings back; RAM settings such as the constants and the test TX limit are lost, and so is
+        pa_keyrun.last). Returns the keys run (the view's pa_keyrun.last; None with reattach).
+        Raises DebugLinkError when it is refused or stops short."""
+        drives = [int(d) for d in drives]
+        if not drives or len(drives) > (PA_KEYRUN_MAX if constants is not None else 28):
+            raise ValueError(f"pa_keyrun: 1..{PA_KEYRUN_MAX} drives with the constants, 28 without")
+        flags = (1 if constants is not None else 0) | (2 if reattach else 0) | (4 if restart else 0)
+        args = struct.pack("<HHBB", int(key_ms), int(gap_ms), flags, len(drives))
+        if constants is not None:
+            c = [int(x) for x in constants] + [0] * (7 - len(constants))
+            args += struct.pack("<7H", *c[:7])
+        args += struct.pack(f"<{len(drives)}H", *drives)
+        run_s = len(drives) * (key_ms + gap_ms + 1000) / 1000.0
+        self.request(RADIO, bytes([OP_PA_KEYRUN]) + args, timeout=self.timeout + run_s)
+        if reattach or restart:
+            self.close()
+            return None
+        return int(self.view(["features"]).get("pa_keyrun.last", "0/0").split("/")[0])
+
+    def pa_sweep_grid(self, start, step, count, on_ms, off_ms, ceiling=100, mark_ms=0):
+        """A grid of any length as back-to-back sweeps on one key-up (keyed here, released at the end), about 0.2 s
+        apart: returns [(first drive, points run)] per sweep. Stops early where the firmware's limits end a sweep
+        short. The key-up is at most 10 s, which holds about 9 s of points."""
+        per = (on_ms + off_ms) / 1000.0
+        chunk = max(1, min(int(0.95 / per), 255))
+        sweeps = -(-count // chunk)
+        done, runs = 0, []
+        self.ptt(True, min(int((count * per + sweeps * 0.25) * 1000) + 1500, 10000))
+        try:
+            time.sleep(0.3)
+            while done < count:
+                n = min(chunk, count - done)
+                first = start + done * step
+                got, _ = self.pa_sweep(first, step, n, on_ms, off_ms, ceiling, mark_ms)
+                runs.append((first, got))
+                done += got
+                if got != n:
+                    break
+        finally:
+            self.ptt(False)
+        return runs
 
     def tone_burst(self, on, max_ms=0):
         """The 1750 Hz burst (FM): keys up and sends the tone while on. The firmware ends it by itself after max_ms
@@ -1064,6 +1623,11 @@ class DebugLink:
         our own transmission in ms, and whether unconfirmed IP packets to one destination share a transmission.
         State: data.tx_guard_ms and data.tx_chain in the air view section."""
         self.data_request(DATA_OP_TX_SPACING, struct.pack("<HB", int(guard_ms) & 0xFFFF, 1 if chain else 0))
+
+    def ip_confirmed_rate(self, rate="3/4"):
+        """The block rate of confirmed IP packets, "3/4" (the default), "1/2" or "1"; RAM only.
+        State: data.ip_cnf_rate in the air view section."""
+        self.data_request(DATA_OP_IP_CONFIRMED_RATE, bytes([("3/4", "1/2", "1").index(rate)]))
 
     # APRS (docs/spec/debuglink.md 3.16, docs/spec/aprs.md 13). State: the aprs and aprs_set view sections
     def aprs_request(self, op, args=b""):
@@ -1391,12 +1955,57 @@ def cmd_radio(link, a):
         link.vibrate(args[0] if args else "message")
     elif op == "copy-vfo":            # the channel's settings into the VFO, and open it
         link.vfo_copy()
-    elif op == "mode":                # mode fm|dmr (the VFO's own in the VFO, else temporary)
+    elif op == "mode":                # mode fm|dmr|p25|nxdn (the VFO's own in the VFO, else temporary)
+        if not args or args[0] not in CHANNEL_MODES:
+            raise SystemExit("mode " + "|".join(CHANNEL_MODES))
         link.dmr_fields(mode=args[0])
+    elif op == "p25":                 # p25 [rx_nac=N] [tx_nac=N] [nac=N] [rx_tgid=N] [talkaround=auto|on|off] [tg=N|unit=N] [unit_id=N]
+        kw = {}
+        for a in args:
+            k, _, val = a.partition("=")
+            if k == "nac":
+                kw["rx_nac"] = kw["tx_nac"] = int(val, 0)
+            elif k in ("rx_nac", "tx_nac", "rx_tgid", "unit_id"):
+                kw[k] = int(val, 0)
+            elif k == "talkaround" and val in P25_TALKAROUND:
+                kw[k] = val
+            elif k in ("tg", "unit"):
+                kw["unit_call"] = k == "unit"
+                kw["tx_dst"] = int(val, 0)
+            else:
+                raise SystemExit("p25 [nac=N] [rx_nac=N] [tx_nac=N] [rx_tgid=N] [talkaround=auto|on|off] "
+                                 "[tg=N|unit=N] [unit_id=N]")
+        link.p25_settings_update(**kw)
+    elif op == "nxdn":                # nxdn [rate=9600|4800] [ran=N] [rx_ran=N] [tx_ran=N] [rx_gid=N] [tg=N|unit=N] [unit_id=N] [emergency=0|1]
+        kw = {}
+        usage = ("nxdn [rate=9600|4800] [ran=N] [rx_ran=N] [tx_ran=N] [rx_gid=N] [tg=N|unit=N] [unit_id=N] "
+                 "[emergency=0|1]")
+        for a in args:
+            k, _, val = a.partition("=")
+            if k == "rate" and val in ("9600", "4800"):
+                kw["rate9600"] = val == "9600"
+            elif k == "ran":
+                kw["rx_ran"] = kw["tx_ran"] = int(val, 0)
+            elif k in ("rx_ran", "tx_ran", "rx_gid", "unit_id"):
+                kw[k] = int(val, 0)
+            elif k in ("tg", "unit"):
+                kw["unit_call"] = k == "unit"
+                kw["tx_dst"] = int(val, 0)
+            elif k == "emergency" and val in ("0", "1"):
+                kw["emergency"] = val == "1"
+            else:
+                raise SystemExit(usage)
+        link.nxdn_settings_update(**kw)
     elif op == "cc":                  # cc 0..15
         link.dmr_fields(cc=num(0))
     elif op == "ts":                  # ts 1|2
         link.dmr_fields(ts=num(0))
+    elif op == "sfr":                 # sfr off|user|user-erdm|rpt|rpt-erdm [ts=1|2] [framing=0..3] [hang=0..3]
+        if not args or (args[0] not in SFR_ROLES and not (args[0].isdigit() and int(args[0]) in SFR_ROLES.values())):
+            raise SystemExit("sfr ROLE [ts=1|2] [framing=N] [hang=N]: ROLE " + "|".join(SFR_ROLES))
+        kw = dict(a.split("=", 1) for a in args[1:] if "=" in a)
+        link.vfo_sfr(args[0] if not args[0].isdigit() else int(args[0]), int(kw.get("ts", 1)),
+                     int(kw.get("framing", 0)), int(kw.get("hang", 0)))
     elif op == "dtmf":                # dtmf DIGITS [ms]: key taps during FM TX (PTT held)
         if not args or any(c not in DTMF_DIGITS for c in args[0].upper()):
             raise SystemExit("dtmf DIGITS [ms]: digits from " + DTMF_DIGITS)
@@ -1412,6 +2021,15 @@ def cmd_radio(link, a):
             link.tx_limit(mhz=[float(f) for f in ",".join(args).split(",") if f])
     elif op == "tx-drive":            # tx-drive N|off (the next transmission's PA drive, power calibration)
         link.tx_drive(0 if args[:1] in ([], ["off"]) else num(0))
+    elif op == "pa-keyrun":           # pa-keyrun KEY_MS GAP_MS DRIVE... (keys DMR itself, the board's constants)
+        if len(args) < 3:
+            raise SystemExit("pa-keyrun KEY_MS GAP_MS DRIVE...")
+        print("keys run:", link.pa_keyrun([num(i) for i in range(2, len(args))], num(0), num(1)))
+    elif op == "pa-sweep":            # pa-sweep START STEP COUNT ON_MS OFF_MS [CEILING_PCT] [MARK_MS] (keys FM itself)
+        runs = link.pa_sweep_grid(*[num(i) for i in range(len(args))])
+        print("points", sum(n for _, n in runs), "sweeps", " ".join(f"{d}:{n}" for d, n in runs))
+    elif op == "pa-keyup":            # pa-keyup DEAD_PM KNEE_US SLOPE_US WINDOW_US SETTLE_US PA_US [EASE_PM]|default (RAM only)
+        link.pa_keyup(*([] if args[:1] in ([], ["default"]) else [num(i) for i in range(7 if len(args) > 6 else 6)]))
     elif op == "set":                 # set NAME VALUE
         link.setting(args[0], num(1))
     elif op == "usb":                 # usb network|serial
@@ -1818,8 +2436,8 @@ def cmd_aprobe(link, a):
     num = lambda v: int(v, 0)
     if a.op == "status":
         st = link.probe_status()
-        print(f"stream {'running' if st['running'] else 'stopped'}{' (probe)' if st['ours'] else ''}, "
-              f"blocks {st['blocks']}")
+        owner = " (probe)" if st["ours"] else f" ({st['voice'].upper()} voice)" if st.get("voice") else ""
+        print(f"stream {'running' if st['running'] else 'stopped'}{owner}, blocks {st['blocks']}")
         for ch in ("left", "right"):
             c = st[ch]
             print(f"{ch:<6} peak {c['peak']:5d}  rms {c['rms']:5d}  peak since start {c['peak_max']:5d}")
@@ -1968,13 +2586,124 @@ def cmd_hwopt(link, a):
             print("hwopt: OPTION (number or name) and one of its choices; see `hwopt` for the list", file=sys.stderr)
             return 2
         link.hwopt_set(i, opts[i]["choices"].index(a.choice))
-        print(f"{opts[i]['name']} = {a.choice}" + (" (from the next start-up)" if opts[i]["restart"] else ""))
+        due = link.hwopts()[i]["state"] == "restart"
+        print(f"{opts[i]['name']} = {a.choice}" + (" (from the next start-up)" if due else ""))
         return 0
     for i, o in enumerate(opts):
         v = o["choices"][o["value"]] if 0 <= o["value"] < len(o["choices"]) else "not set"
-        print(f"{i} {o['name']}: {v}  ({' | '.join(o['choices'])}){'  restart' if o['restart'] else ''}")
+        print(f"{i} {o['name']}: {v}  ({' | '.join(o['choices'])})  {o['state']}")
     if not opts:
         print("no hardware options on this radio")
+    return 0
+
+
+def cmd_air(link, a):
+    if a.op == "status":
+        st = link.air_status()
+        for k, v in st.items():
+            print(f"{k}={v}")
+        if int(st.get("air.rx_span_us", "0")):      # what receive costs the radio's CPU (hal_air_t.rx_load)
+            print(f"air.rx_load_pct={100 * int(st['air.rx_work_us']) / int(st['air.rx_span_us']):.1f}")
+    elif a.op == "tap":
+        if not a.out:
+            print("air tap: --out FILE.raw", file=sys.stderr)
+            return 2
+        info = link.air_tap_start(a.bits, a.shift)
+        n, gaps, t0 = 0, 0, None
+        try:
+            with open(a.out, "wb") as f:
+                end = time.monotonic() + a.seconds
+                while time.monotonic() < end:
+                    seq, t_us, gaps, data = link.air_tap_read(a.bits)
+                    t0 = t_us if t0 is None else t0
+                    f.write(data)
+                    n += len(data) // (2 if a.bits == 16 else 1)
+                    if not data:
+                        time.sleep(0.01)
+        finally:
+            link.air_tap_stop()
+        fmt = "int16 LE" if a.bits == 16 else f"int8 (>> {a.shift})"
+        print(f"{n} samples, {fmt}, {info['rate_hz']} Hz, band {info['lo_hz']}-{info['hi_hz']} Hz, "
+              f"counts/kHz {info['counts_per_khz'] or 'unknown'}, {info['channels']} channel(s), {gaps} gap(s) -> {a.out}")
+        return 1 if gaps else 0
+    elif a.op == "open":
+        prof = dict(AIR_PROFILES[a.profile])
+        if a.dev:
+            prof["dev_outer_hz"] = a.dev
+        r = link.air_open(prof, soft=not a.hard_only)
+        print(f"open: fit {' '.join(r['fit'])}; tx chunks of {r['tx_chunk_syms']} symbols, {r['tx_queue_depth']} queued")
+    elif a.op == "close":
+        link.air_close()
+        print("closed")
+    elif a.op == "restart":
+        link.air_rx_restart()
+    elif a.op == "abort":
+        link.air_tx_abort()
+    elif a.op == "rx":
+        if not a.out:
+            print("air rx: --out FILE.jsonl", file=sys.stderr)
+            return 2
+        chunks, dropped = 0, 0
+        with open(a.out, "w") as f:
+            end = time.monotonic() + a.seconds
+            while time.monotonic() < end:
+                dropped, recs = link.air_rx_read()
+                for c in recs:
+                    c["hard"] = c["hard"].hex()
+                    c["flags"] = [n for bit, n in AIR_CHUNK_FLAGS.items() if c["flags"] & bit]
+                    f.write(json.dumps(c) + "\n")
+                chunks += len(recs)
+                if not recs:
+                    time.sleep(0.02)
+        print(f"{chunks} chunks, {dropped} dropped on the radio -> {a.out}")
+        return 1 if dropped else 0
+    elif a.op == "tx":
+        if not a.syms:
+            print("air tx: --syms FILE (dibits packed four to a byte, the first in bits 7-6)", file=sys.stderr)
+            return 2
+        with open(a.syms, "rb") as f:
+            data = f.read()
+        nsyms = a.nsyms or len(data) * 4
+        st = link.air_status()
+        per = int(st.get("air.tx_chunk_syms", "144"))
+        chunks = [(data[i // 4:(i + per) // 4], min(per, nsyms - i)) for i in range(0, nsyms, per)]
+        if not chunks:
+            return 2
+        max_ms = a.max_ms or min(30000, 1000 + nsyms * 1000 // 4800)
+        sent, keyed = 0, False
+        deadline = time.monotonic() + max_ms / 1000 + 2
+        while sent < len(chunks) and time.monotonic() < deadline:
+            syms, n = chunks[sent]
+            space = link.air_tx_data(syms[:(n + 3) // 4], n, last=sent == len(chunks) - 1)
+            if space is None:
+                if not keyed:
+                    break           # the queue full before the key: key now
+                time.sleep(0.005)
+                continue
+            sent += 1
+            if not keyed and (space == 0 or sent == len(chunks)):
+                link.air_tx_key(max_ms)
+                keyed = True
+        if not keyed:
+            link.air_tx_key(max_ms)
+        while sent < len(chunks) and time.monotonic() < deadline:
+            syms, n = chunks[sent]
+            if link.air_tx_data(syms[:(n + 3) // 4], n, last=sent == len(chunks) - 1) is None:
+                time.sleep(0.005)
+            else:
+                sent += 1
+        done0 = int(st.get("air.tx_done", "0"))
+        while time.monotonic() < deadline:
+            st = link.air_status()
+            if int(st.get("air.tx_done", "0")) > done0:
+                break
+            time.sleep(0.05)
+        else:
+            link.air_tx_abort()
+            print(f"air tx: no TX_DONE in time, aborted ({sent} of {len(chunks)} chunks)", file=sys.stderr)
+            return 1
+        print(f"{nsyms} symbols in {len(chunks)} chunks; underruns {st.get('air.tx_underruns')}, "
+              f"on air {(int(st['air.tx_done_us']) - int(st['air.tx_started_us'])) / 1000:.0f} ms")
     return 0
 
 
@@ -2075,6 +2804,40 @@ def self_test():
           not mem_allowed(0x14030000, 4, CHIP_HRC7000) and not mem_allowed(0x00010000, 4, CHIP_STM32F4) and
           mem_allowed(0xE000ED00, 4, CHIP_STM32F4) and not mem_allowed(0xE000ED02, 2, CHIP_STM32F4),
           "READ_MEM windows by family")
+    # Restart and write commands never guess between radios: a serial cable may carry one too
+    saved = (find_ports, find_cables, find_network_radios, os.environ.pop("RFOUNDRY_PORT", None))
+    g = globals()
+    try:
+        g["find_network_radios"] = lambda: []
+        g["find_ports"], g["find_cables"] = (lambda: ["/dev/usbmodem1"]), (lambda: ["/dev/usbserial1"])
+        ap_ = argparse.Namespace
+        reboot, view = ap_(cmd="reboot"), ap_(cmd="view")
+        check(changes_radio(reboot) and not changes_radio(view) and changes_radio(ap_(cmd="ptt")) and
+              changes_radio(ap_(cmd="crash", op="test")) and not changes_radio(ap_(cmd="crash", op="show")) and
+              changes_radio(ap_(cmd="hwopt", option="x", choice="V4")) and not changes_radio(ap_(cmd="hwopt", option=None, choice=None)) and
+              changes_radio(ap_(cmd="reg", chip=1, reg=2, value=3)) and not changes_radio(ap_(cmd="reg", chip=1, reg=2, value=None)),
+              "restart and write commands told from reads")
+        try:
+            pick_port(None, True)
+            refused = False
+        except DebugLinkError as e:
+            refused = "give --port" in str(e)
+        check(refused, "a restart with a native radio and a serial cable attached and no --port: refused")
+        check(pick_port(None, False) == "/dev/usbmodem1", "a read picks the one native radio")
+        check(pick_port("/dev/usbserial1", True) == "/dev/usbserial1", "a restart with --port: that port")
+        g["find_cables"] = lambda: []
+        check(pick_port(None, True) == "/dev/usbmodem1", "a restart with one radio and no cable: that radio")
+        g["find_ports"] = lambda: ["/dev/usbmodem1", "/dev/usbmodem2"]
+        try:
+            pick_port(None, False)
+            refused = False
+        except DebugLinkError:
+            refused = True
+        check(refused, "two native radios, no --port: refused")
+    finally:
+        g["find_ports"], g["find_cables"], g["find_network_radios"] = saved[:3]
+        if saved[3] is not None:
+            os.environ["RFOUNDRY_PORT"] = saved[3]
     print("rfoundry_debug self-test:", "ok" if ok else "FAILED")
     return 0 if ok else 1
 
@@ -2130,8 +2893,8 @@ def main(argv=None):
     p.add_argument("op", choices=["channel", "pos", "zone", "vfo", "freq", "step", "power", "squelch", "bw", "tone",
                                   "monitor", "clear", "reply-cancel", "hotspot-exit", "target", "contact", "call-back",
                                   "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set", "usb",
-                                  "usb-settings", "ppp", "vibrate", "mode", "cc", "ts", "copy-vfo", "voice-test", "dtmf",
-                                  "tx-limit", "tx-drive"])
+                                  "usb-settings", "ppp", "vibrate", "mode", "cc", "ts", "sfr", "copy-vfo", "voice-test", "dtmf",
+                                  "tx-limit", "tx-drive", "pa-keyup", "pa-sweep", "pa-keyrun", "p25", "nxdn"])
     p.add_argument("args", nargs="*")
     p = sub.add_parser("data", help="DMR data: sms, call alert, radio check, settings, inbox")
     p.add_argument("op", choices=["sms", "alert", "check", "settings", "inbox", "read", "emergency", "em-settings",
@@ -2170,6 +2933,49 @@ def main(argv=None):
     p = sub.add_parser("hwopt", help="hardware options: list, or set OPTION CHOICE (docs/spec/debuglink.md 3.25)")
     p.add_argument("option", nargs="?", help="number or name, e.g. 'Board revision'")
     p.add_argument("choice", nargs="?", help="one of the option's choices, e.g. V4A/V5")
+    p = sub.add_parser("air", help="the air interface on the bench (CONFIG_AIR_RAW builds; docs/spec/debuglink.md 3.28)")
+    p.add_argument("op", choices=["status", "tap", "open", "rx", "tx", "restart", "abort", "close"])
+    p.add_argument("--seconds", type=float, default=5.0, help="tap, rx: how long")
+    p.add_argument("--out", help="tap: raw samples; rx: one JSON chunk per line")
+    p.add_argument("--bits", type=int, choices=[8, 16], default=16, help="tap: sample width (8 halves the link load)")
+    p.add_argument("--shift", type=int, default=8, help="tap --bits 8: right shift before the clip")
+    p.add_argument("--profile", choices=sorted(AIR_PROFILES), default="p25", help="open: the mode's profile")
+    p.add_argument("--dev", type=int, help="open: outer deviation in Hz instead of the profile's")
+    p.add_argument("--hard-only", action="store_true", help="open: no soft values in the receive records")
+    p.add_argument("--syms", help="tx: symbol file, dibits packed four to a byte, the first in bits 7-6")
+    p.add_argument("--nsyms", type=int, help="tx: symbols in the file (default: all of it)")
+    p.add_argument("--max-ms", type=int, help="tx: the transmission's cap (default: its length + 1 s, 30 s at most)")
+    p = sub.add_parser("t3", help="a Tier III trunked system (docs/spec/debuglink.md 3.26): show (the t3 view), "
+                       "start, stop, dereg, end, or setup: reset then stage one from the options and start it")
+    p.add_argument("op", nargs="?", default="show",
+                   choices=["show", "setup", "start", "stop", "dereg", "end", "status", "sdata", "interrupt",
+                            "als-end"])
+    p.add_argument("--to", type=int, default=0, help="status: the MS or talkgroup (--group)")
+    p.add_argument("--status", type=int, default=0, help="status: 0-126, or 127 to poll an MS")
+    p.add_argument("--group", action="store_true", help="status, sdata: --to is a talkgroup")
+    p.add_argument("--text", help="sdata: ISO 8-bit text, up to 46 characters")
+    p.add_argument("--hex", help="sdata: binary octets in hex, up to 46")
+    p.add_argument("--own-id", type=int, default=0)
+    p.add_argument("--model", type=int, default=0)
+    p.add_argument("--net", type=int, default=0)
+    p.add_argument("--par", default="a")
+    p.add_argument("--cc", type=int, default=1)
+    p.add_argument("--dmrla", type=int, default=0, help="SITE bits of a registration area")
+    p.add_argument("--leave-dbm", type=int, default=0, help="leave a TSCC below this (0: the radio's roaming threshold)")
+    p.add_argument("--opts", type=lambda x: int(x, 0), default=0x21,
+                   help="T3_OPT_*; default 0x21: listen only (never transmits), private calls")
+    p.add_argument("--ctrl", action="append", default=[], metavar="LCN:RX_MHZ:TX_MHZ[:CC]")
+    p.add_argument("--chan", action="append", default=[], metavar="LCN:RX_MHZ:TX_MHZ[:CC]")
+    p.add_argument("--tg", action="append", default=[], type=int,
+                   help="listen; the first also talks. With --opts 0x40 (register with the talkgroup) and two or more, "
+                   "registration subscribes to the first seven as a list")
+    p.add_argument("--talk", type=int, default=0, help="PTT's target (16777215 = ALLMSID: an all-call)")
+    p.add_argument("--private", action="store_true")
+    p.add_argument("--broadcast", action="append", default=[], type=int,
+                   help="a talkgroup whose calls from the radio are broadcasts (one-way)")
+    p.add_argument("--ip-gw", action="store_true", help="IP through the system's gateway; the address advised at registration")
+    p.add_argument("--ps-rq", type=int, default=0, help="power save asked for at registration: 0 off, 1-7 = 1:2-1:128")
+    p.add_argument("--no-start", action="store_true")
     p = sub.add_parser("iddb", help="the DMR ID database: its format and records, and the text for each ID given "
                        "(docs/spec/debuglink.md 3.23)")
     p.add_argument("ids", nargs="*", type=int)
@@ -2196,7 +3002,8 @@ def main(argv=None):
     if a.cmd == "ptt" and not 0 < a.seconds <= INJECT_MAX_S:
         ap.error(f"--seconds must be > 0 and <= {INJECT_MAX_S:g}")
     try:
-        with DebugLink(a.port, a.timeout) as link:
+        port = a.port if a.port else pick_port(None, changes_radio(a))
+        with DebugLink(port, a.timeout) as link:
             if a.cmd == "ping":
                 print(f"{link.port}: pong in {link.ping() * 1000:.1f} ms")
             elif a.cmd == "version":
@@ -2242,6 +3049,8 @@ def main(argv=None):
                 return cmd_watchdog(link, a)
             elif a.cmd == "hwopt":
                 return cmd_hwopt(link, a)
+            elif a.cmd == "air":
+                return cmd_air(link, a)
             elif a.cmd == "storage":
                 return cmd_storage(link, a)
             elif a.cmd == "rx2":
@@ -2251,6 +3060,38 @@ def main(argv=None):
                 else:
                     flags = link.rx2_info()
                     print("rx2: " + (", ".join(n for n in RX2_FLAGS.values() if n in flags) or "none"))
+            elif a.cmd == "t3":
+                def chan(text):
+                    f = text.split(":")
+                    return (int(f[0]), round(float(f[1]) * 1e6), round(float(f[2]) * 1e6),
+                            int(f[3]) if len(f) > 3 else 0xFF)
+                if a.op == "setup":
+                    link.t3_reset()
+                    link.t3_system(a.own_id, a.model, a.net, a.par, a.opts, a.cc, a.talk, a.private, a.dmrla,
+                                   a.leave_dbm, ip_gw=a.ip_gw)
+                    for c in a.ctrl:
+                        link.t3_ctrl(*chan(c))
+                    for c in a.chan:
+                        link.t3_chan(*chan(c))
+                    for i, tg in enumerate(a.tg):
+                        link.t3_tg(tg, True, i == 0, tg in a.broadcast)
+                    if a.ps_rq:
+                        link.t3_power_save(a.ps_rq)
+                    if not a.no_start:
+                        link.t3("start")
+                elif a.op == "status":
+                    link.t3_status(a.to, a.status, a.group)
+                elif a.op == "sdata":
+                    if a.hex is not None:
+                        link.t3_sdata(a.to, bytes.fromhex(a.hex), a.group, "binary")
+                    else:
+                        link.t3_sdata(a.to, (a.text or "").encode("latin-1"), a.group, "iso8")
+                elif a.op in ("interrupt", "als-end"):
+                    link.t3_interrupt(a.op == "als-end")
+                elif a.op != "show":
+                    link.t3(a.op)
+                for k, v in link.view(sections=["t3", "t3_svc", "t3_roam", "t3_msg", "t3_ra"]).items():
+                    print(f"{k}={v}")
             elif a.cmd == "iddb":
                 d = link.iddb()
                 print(f"format={d['format'] or 'none'} records={d['records']}")

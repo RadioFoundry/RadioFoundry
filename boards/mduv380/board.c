@@ -82,9 +82,19 @@ const uvf_variant_t uvf_variant = {
 	.tx_block = tx_block,
 };
 
+#if CONFIG_RX_EXT
+static bool rx_ext_on;
+#endif
+
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
 	{ 400000000, 480000000, true },
+#if CONFIG_RX_EXT
+	// Receive only past the rated bands, while the user turns it on: the AT1846S data sheet. Keep these last
+	{ 134000000, 136000000, false },
+	{ 200000000, 260000000, false },
+	{ 480000000, 520000000, false },
+#endif
 };
 
 // The UV380 family's nine levels; the Plus 10 W's top four are 2, 3, 5 and 10 W (hardware-mduv380.md 7)
@@ -142,10 +152,14 @@ static const hal_cps_t cps = {
 
 const board_t board = {
 	.name = BOARD_NAME,
-	// CAP_GPS: the G models; gps_present says whether this one has the module (hardware-mduv380.md 9)
+	// CAP_GPS: the G models; board_t.gps says whether this one has the module (hardware-mduv380.md 9)
 	.caps = CAP_KEYPAD | CAP_ENCODER | CAP_VOLUME_POT | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
+#if CONFIG_RX_EXT
+	.rx_ext_count = 3,
+	.rx_ext_on = &rx_ext_on,
+#endif
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
 	.power_names = power_names,
 	.power_default = 4,	// 1 W
@@ -159,12 +173,17 @@ const board_t board = {
 	.radio = &uvf_radio,
 	.power = &uvf_power,
 	.flash = &stm32_spi_flash,
+	.chip_reg = uvf_chip_reg,
 #if CONFIG_DIAG
 	.diag_line = uvf_diag_line,
 	.diag_reset = uvf_diag_reset,
 #endif
 #if CONFIG_DMR
 	.dmr = &stm32_hrc_dmr,
+#if CONFIG_AIR
+	.air = &stm32_hrc_air,	// the HR_C6000 physical layer mode (hrc6000_air.c)
+	.baseband = &stm32_hrc_baseband,	// its FM copy (hrc6000_air.c), the soft modem's input
+#endif
 	.audio = &uvf_audio,
 	.vocoder = &stm32_vocoder,
 #if CONFIG_AUDIO_PROBE || CONFIG_NET_USRP || CONFIG_APRS_RX
@@ -181,7 +200,7 @@ const board_t board = {
 #endif
 	.system = &stm32_system,
 #if CONFIG_GPS
-	.gps_present = stm32_gps_present,
+	.gps = &stm32_gps,
 #endif
 	// The family's thresholds (hardware-mduv380.md 6): low battery 6.2 V, critical 6.0 V
 	.battery_low_mv = 6200,
@@ -189,7 +208,7 @@ const board_t board = {
 #if CONFIG_CPS_OPENFW
 	.cps = &cps,
 #endif
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	.afsk = &uvf_afsk,
 #endif
 };

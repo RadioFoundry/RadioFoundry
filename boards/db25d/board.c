@@ -11,13 +11,24 @@
 #include "hostlink/hostlink_ppp.h"
 #endif
 
+#if CONFIG_RX_EXT
+static bool rx_ext_on;
+#endif
+
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
 	{ 400000000, 480000000, true },
+#if CONFIG_RX_EXT
+	// Receive only past the rated bands, while the user turns it on: what both fitted chips cover, the BK4819 (18-660 MHz) and the FD6818. Keep these last
+	{ 18000000, 136000000, false },
+	{ 174000000, 400000000, false },
+	{ 480000000, 660000000, false },
+#endif
 };
 
 // Nominal 20 W mobile. The radio refuses TX until the PA calibration can be read (radio_db25d.c)
-static const char *const power_names[] = { "L", "H" };
+// Five levels from the calibration's two tables (radio_db25d.c): "L" and "H" are the tables
+static const char *const power_names[] = { "L--", "L-", "L", "M", "H" };
 
 // docs/ux/information-architecture.md 7.4 (mobile: front encoder and a few keys; the encoder push is OK). The hand
 // mic adds the digits, * and # (marked down and up) and P4-P7, which send DTMF A-D while PTT is held on FM (the
@@ -73,9 +84,13 @@ const board_t board = {
 	.caps = CAP_ENCODER | CAP_NO_BATTERY | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR | CAP_BEEP_NOT_ON_AIR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
+#if CONFIG_RX_EXT
+	.rx_ext_count = 3,
+	.rx_ext_on = &rx_ext_on,
+#endif
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
 	.power_names = power_names,
-	.power_default = 0,
+	.power_default = 2,	// "L"
 	.display = &db25d_display,
 	.input = &db25d_input,
 	.keymap = keymap,
@@ -86,8 +101,7 @@ const board_t board = {
 	.radio = &db25d_radio,
 	.power = &db25d_power,
 #if CONFIG_GPS
-	.gps_enable = hrc_gps_enable,
-	.gps_present = hrc_gps_present,	// CAP_GPS: the module is fitted, but say so only once it has been heard
+	.gps = &hrc_gps,	// CAP_GPS: the module is fitted, but say so only once it has been heard
 #endif
 #if CONFIG_DIAG
 	.diag_line = db25d_diag_line,
@@ -97,6 +111,10 @@ const board_t board = {
 	.dmr = &hrc_dmr,
 	.audio = &db25d_audio,
 	.vocoder = &hrc_vocoder,
+#if CONFIG_AIR
+	.air = &hrc_air,		// the physical layer and the receive copy (modem-hrc7000.md 10)
+	.baseband = &hrc_baseband,
+#endif
 #endif
 #if CONFIG_HOSTLINK
 	.host_port = &hrc_host_uart_stream,
@@ -159,6 +177,7 @@ static void io_init(void)
 	hrc_pin_in(PIN_POWER_KEY);
 }
 
+#if CONFIG_GPS
 // The GPS module on UART2 (hardware-db25d.md 3.1). Its RXD pad is PTA11, a GPIO until IO_DIPLEX0 bit 11 is cleared
 // (HR_C7000 user guide 4.4.4.4); the stock firmware's mux for it hasn't been traced
 static const hrc_gps_cfg_t gps_cfg = {
@@ -168,6 +187,7 @@ static const hrc_gps_cfg_t gps_cfg = {
 	.power_on_level = GPS_POWER_ON_LEVEL,
 	.rxd_mux_clear = 1u << 11,
 };
+#endif
 
 // Transmitter off from any context (board.h, docs/spec/crash-log.md 8; hardware-db25d.md 3.2): both TX supplies, both
 // PA selects and the PA drive (DAC B to 0, powered down), with PTA23 (RX_SUPPLY) high as in receive. RAM code, register

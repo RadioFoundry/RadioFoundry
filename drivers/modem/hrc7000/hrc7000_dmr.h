@@ -20,6 +20,10 @@
 // numbers: through a repeater from TC; TDMA direct mode from the sync family; simplex as a label from the chip's slot
 // number (1 or 2, stable while the timing holds).
 //
+// A BS signal's CACH (a repeater, a control channel): once the TC lock holds, each slot tick carries the TS
+// starting there and the AT bit of the last CACH that named it (RX_TYPE_INFO b23, DMR_TICK_AT_*); the short LC the
+// chip assembles (system interrupt bit 4, RX RAM 0x2B-0x2F) is reported when it changes (hrc7000_dmr_short_lc).
+//
 // A received burst's event arg is the tick of the slot after the one it was in, as on the HR_C6000 (hrc6000_dmr.h): the
 // deframe comes near the end of the burst's slot, either side of the next timeslot interrupt, so one that comes in the
 // first half of a slot is counted to the slot before. The split duplex RX half times bursts from it (split-duplex.md 7).
@@ -43,6 +47,7 @@ typedef struct {
 	uint8_t chip_slot;	// current_rx_slot
 	bool pi;
 	bool crc_ok;
+	bool at;		// CACH AT bit (repeater: the inbound slot TC names is busy)
 	uint8_t lcss;
 } hrc7000_rx_status_t;
 
@@ -85,13 +90,15 @@ typedef struct {
 	uint32_t rx_restarts;
 	uint32_t rx_lost, rx_stale;	// receiver restarts: reception over, stale slot timing
 	uint32_t rx_holds;	// direct transmissions ended without the restart, held for an answer (5.2a)
-	uint32_t cc_scan_steps;
 	uint32_t ev_overflow;
 	uint32_t tx_bursts, tx_underrun, tx_rejected, tx_done;
 	uint32_t tx_empty;	// our slots left empty on request (DMR_BURST_EMPTY): received like the other slot
 	uint32_t rx_in_tx[2];	// bursts deframed while we send, by ticks since our last arming (even, odd)
 	uint32_t stalls;
 	uint32_t sys_stuck;	// system requests pending with no handler run, dropped (hrc7000_dmr_poll)
+	uint32_t slc_reads;	// CACH short LCs reported (DMR_EV_SHORT_LC), CRC not checked
+	uint32_t rc_tap;	// RCs decoded from the receive tap after a listen slot (rc_tap_read): DMR_EV_RC
+	uint32_t rc_tap_changed;	// tap areas found changed there (a new burst), RC or not
 	uint32_t last_rx_type_info;
 	uint32_t last_sys_list;
 	uint32_t last_l2_status;
@@ -129,7 +136,7 @@ typedef struct {
 	void (*fm_rx)(void);
 	bool lcss;		// LCSS on voice bursts B-E (user guide); false = 0 on every burst like the 2026 builds
 	dmr_config_t cfg;
-	int8_t cc_filter;	// -1 any (scan)
+	int8_t cc_filter;	// -1 any (LOCAL_CC cc_opt 1)
 	int8_t lock_ts;
 
 	uint32_t tick;
@@ -141,8 +148,10 @@ typedef struct {
 	bool timing;
 	// Receive
 	uint32_t rx_tick;	// tick of the last burst taken
+	uint32_t t_rx;		// wall time of the last burst taken (polite access and receive recovery)
 	bool rx_any;
-	uint32_t resync_tick;	// tick of the last receiver restart for lost or stale timing, or of the post-TX hold
+	uint32_t t_resync;	// wall time of the last receiver restart or post-TX hold
+	bool resync_pending;	// modem activity or a post-TX hold needs quiet-time recovery
 	uint8_t idle_ticks;	// quiet ticks before the stale restart: RX_IDLE_TICKS, POST_TX_HOLD_TICKS after a hold
 	uint8_t rx_chip_slot;	// chip slot of the last burst taken (an aligned start's reference)
 	int8_t voice_chip_slot;	// chip slot of the voice call being received, -1 none
@@ -157,8 +166,14 @@ typedef struct {
 	uint8_t tc_prev;	// TC of the last BS burst, and its tick
 	uint32_t tc_tick;
 	uint8_t tc_est;		// TC estimate of the slot now starting (toggled every tick)
-	uint8_t cc_cur;		// LOCAL_CC now
-	uint32_t cc_tick;	// last CC change or burst heard (scan)
+	// Per TC: the tick the last CACH AT bit naming it was read at and DMR_TICK_AT_* (0 none since the restart)
+	uint32_t at_tick[2];
+	uint8_t at_flags[2];
+	// The short LC: new ones counted by the system interrupt, the count and the bytes last read (hrc7000_dmr_short_lc)
+	volatile uint8_t slc_seq;
+	uint8_t slc_seen;
+	uint8_t slc_last[5];
+	uint8_t cc_cur;		// receive code; LOCAL_CC uses cfg.cc during TX
 	bool emb_pending;	// late entry: an embedded LC waits for the next voice burst
 	uint8_t emb_rx[9];
 	// Transmit
@@ -175,6 +190,7 @@ typedef struct {
 	bool tx_any;
 	bool tx_listen;		// the other slot is received while we send (an SFR's inbound slot)
 	bool listen_voice;	// a voice call was heard on that slot: receive it with the voice-access flag
+	uint32_t tap_sum[2];	// a checksum of each receive tap area at its last read: only a changed one is decoded
 	uint8_t send_sync;	// dmr_sync_family_t in SEND_DATA_SYNC now, DMR_SYNC_NONE = not known
 	dmr_tx_burst_t txq[HRC7000_DMR_TXQ_DEPTH];
 	volatile uint8_t txq_head, txq_tail;
@@ -213,6 +229,10 @@ void hrc7000_dmr_isr_rftx(hrc7000_dmr_t *e);
 // Task side
 bool hrc7000_dmr_pop(hrc7000_dmr_t *e, dmr_event_t *ev, dmr_burst_t *burst);
 void hrc7000_dmr_poll(hrc7000_dmr_t *e);	// every few ms: stall watchdog
+// Task-side, after the events are popped: a new CACH short LC as a DMR_EV_SHORT_LC (arg its 28 bits, flags the
+// CRC-8 received, unchecked), when one came and differs from the last. Kept out of the interrupt and out of SRAM
+// (hrc7000_cach.c): it changes every 120 ms at most
+bool hrc7000_dmr_short_lc(hrc7000_dmr_t *e, dmr_event_t *ev);
 
 // hal_dmr_modem.h commands (task level; each takes the lock)
 void hrc7000_dmr_configure(hrc7000_dmr_t *e, const dmr_config_t *cfg);

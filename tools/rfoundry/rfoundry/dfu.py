@@ -106,7 +106,9 @@ class Dfu:
         self.wait_dnload_done(what)
 
     def run(self, plan, key, progress=None):
-        """Erase the plan's sectors (in the bootloader's order), write each, exit (the radio resets)."""
+        """Erase the plan's sectors (in the bootloader's order), write each, exit (the radio resets). A codec move erases
+        the application's first sector first and writes it last (plan.Plan.write_order): a move cut short leaves no
+        application to start."""
         base = plan.board.app_base
         for s in plan.erase:		# make_plan refuses these; a plan built another way is checked again before any erase
             protect.check_absolute(plan.board, plan.board.rom_base, s.addr, s.end, "erase")
@@ -116,11 +118,11 @@ class Dfu:
         self.wait_idle()
         self.vendor(0x91, 0x01)
         self.vendor(0x91, 0x31)
-        for s in plan.erase:
+        for s in plan.erase_order:
             self.log("erase sector %d at 0x%08X" % (s.index, s.addr))
             self.command(0x41, s.addr, "erase 0x%08X" % s.addr)
         total, done = plan.total_blocks, 0
-        for st in plan.writes:
+        for st in plan.write_order:
             addr = st.sector.addr
             self.command(0x21, addr, "set address 0x%08X" % addr)
             for num, blk in st.blocks:
