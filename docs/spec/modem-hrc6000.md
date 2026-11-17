@@ -1009,6 +1009,7 @@ differs:
 | Transmission start (`tx_begin`) | the chip's own: 0x20 = 0, 0x21 = access, 0x22 = 0x86 (encoder start) | the access policy alone (0x20 = 0, 0x21 = 0x02): the vocoder runs on the MCU | `hrc6000_air_tx_begin` |
 | 0x10 after close (`mode_per_channel`) | 0x6E | the chip's `dmr_mode`; the engine writes the channel's value again when it runs | `hrc6000_air_close`, `hrc6000_dmr_run` |
 | FM copy (10.6) | yes | none documented: no `air_tap`, so the correlator profiles only | the board |
+| Physical layer receive (`air_tx_only`) | yes | none found (below): the fit drops `AIR_FIT_RX`, `AIR_FIT_SOFT` and `AIR_FIT_NEEDS_SYNC`, and an open session doesn't write the correlator pattern | `hrc6000_air_fit_tap`, `hrc6000_air_open` |
 
 On the radio, transmit works: the provider keys P25 and NXDN from the TX RAM halves as on the HR_C6000. Receive
 doesn't: in an open session with the receiver on, 0x82 stays 0 and the chip gives no physical layer record
@@ -1016,7 +1017,9 @@ doesn't: in an open session with the receiver on, 0x82 stays 0 and the chip give
 0x50, 0x60, 0xC0) or 0x81 (0x01, 0x19, 0xFF) by CHIP_REG during the session changed nothing, and 0x81 reads back 0
 after a write. Writing the pattern into the transmit sync field (aux 0x04-0x09) as well didn't help either. Until a
 setting that starts the record clock is found, a radio with this chip transmits the correlator profiles and can't
-receive them.
+receive them. The chip description says so (`air_tx_only`): the provider reports those profiles as transmit only. P25
+needs receive, so the radio doesn't offer it; NXDN stays for transmit, and scan skips a channel the radio can't hear. A board that gives the
+provider an FM copy (`air_tap`) still receives through the soft modem.
 
 Not confirmed on the HR_C5000, because the manual is an early draft and leaves these out:
 
