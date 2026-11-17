@@ -101,6 +101,7 @@ typedef struct {
 	uint8_t lcf;
 	uint8_t mfid;
 	bool emergency;		// group calls
+	bool encrypted;		// service options: group and unit calls
 	uint16_t tgid;		// group calls
 	uint32_t dst;		// unit to unit calls
 	uint32_t src;

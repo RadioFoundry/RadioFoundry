@@ -110,9 +110,11 @@ static uint8_t tdma_slots(uint8_t type)
 	return SLOTS[type & 15];
 }
 
-static int16_t offset(uint32_t sign, uint32_t mag)
+static int16_t offset(uint32_t sign, uint32_t mag, bool *unavailable)
 {
 	// Sign bit set: the subscriber transmits above its receive frequency
+	// Sign-only means no implicit uplink offset, whereas all zero is simplex.
+	*unavailable = sign && !mag;
 	return (int16_t)(sign ? (int32_t)mag : -(int32_t)mag);
 }
 
@@ -175,11 +177,11 @@ bool p25_tsbk_parse(const uint8_t blk[P25_TSBK_BYTES], p25_tsbk_t *m)
 		i->slots = 1;
 		if (m->opcode == P25_OP_IDEN_UP) {
 			i->bw_khz8 = (uint16_t)arg(blk, 4, 9);
-			i->tx_off = offset(arg(blk, 13, 1), arg(blk, 14, 8));
+			i->tx_off = offset(arg(blk, 13, 1), arg(blk, 14, 8), &i->no_tx_offset);
 		} else {
 			uint8_t f = (uint8_t)arg(blk, 4, 4);
 
-			i->tx_off = offset(arg(blk, 8, 1), arg(blk, 9, 13));
+			i->tx_off = offset(arg(blk, 8, 1), arg(blk, 9, 13), &i->no_tx_offset);
 			if (m->opcode == P25_OP_IDEN_UP_VU) {
 				i->bw_khz8 = f == 4 ? 50 : f == 5 ? 100 : 0;
 			} else {
@@ -295,17 +297,18 @@ void p25_tsbk_make(const p25_tsbk_t *m, uint8_t blk[P25_TSBK_BYTES])
 	}
 	case P25_TSBK_IDEN: {
 		const p25_iden_air_t *i = &m->u.iden;
-		uint32_t mag = (uint32_t)(i->tx_off < 0 ? -i->tx_off : i->tx_off);
+		uint32_t mag = i->no_tx_offset ? 0u : (uint32_t)(i->tx_off < 0 ? -i->tx_off : i->tx_off);
+		bool sign = i->no_tx_offset || i->tx_off > 0;
 
 		op = i->form;
 		arg_put(blk, 0, 4, i->id);
 		if (op == P25_OP_IDEN_UP) {
 			arg_put(blk, 4, 9, i->bw_khz8);
-			arg_put(blk, 13, 1, i->tx_off >= 0);
+			arg_put(blk, 13, 1, sign);
 			arg_put(blk, 14, 8, mag);
 		} else {
 			arg_put(blk, 4, 4, op == P25_OP_IDEN_UP_VU ? (i->bw_khz8 == 50 ? 4u : 5u) : i->type);
-			arg_put(blk, 8, 1, i->tx_off >= 0);
+			arg_put(blk, 8, 1, sign);
 			arg_put(blk, 9, 13, mag);
 		}
 		arg_put(blk, 22, 10, i->spacing);
@@ -393,9 +396,9 @@ void p25_isp_make(const p25_isp_t *m, uint8_t blk[P25_TSBK_BYTES])
 		break;
 	case P25_ISP_GRP_AFF_REQ:
 		arg_put(blk, 0, 1, m->emergency);
-		arg_put(blk, 4, 12, m->sysid);
-		arg_put(blk, 16, 16, m->tg);
-		arg_put(blk, 32, 24, m->src);
+		arg_put(blk, 12, 12, m->sysid);
+		arg_put(blk, 24, 16, m->tg);
+		arg_put(blk, 40, 24, m->src);
 		break;
 	case P25_ISP_U_REG_REQ:
 		arg_put(blk, 8, 20, m->wacn);
@@ -423,9 +426,9 @@ bool p25_isp_parse(const uint8_t blk[P25_TSBK_BYTES], p25_isp_t *m)
 		break;
 	case P25_ISP_GRP_AFF_REQ:
 		m->emergency = arg(blk, 0, 1) != 0;
-		m->sysid = (uint16_t)arg(blk, 4, 12);
-		m->tg = (uint16_t)arg(blk, 16, 16);
-		m->src = arg(blk, 32, 24);
+		m->sysid = (uint16_t)arg(blk, 12, 12);
+		m->tg = (uint16_t)arg(blk, 24, 16);
+		m->src = arg(blk, 40, 24);
 		break;
 	case P25_ISP_U_REG_REQ:
 		m->wacn = arg(blk, 8, 20);

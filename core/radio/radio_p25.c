@@ -719,7 +719,8 @@ bool radio_p25_poll(radio_p25_view_t *v)
 		if (ev.rx_played)
 			n.flags |= RADIO_P25_PLAYED;
 	}
-	if (ev.rx.have_alg && ev.rx.algid != P25_ALGID_CLEAR)
+	if ((ev.rx.have_alg && ev.rx.algid != P25_ALGID_CLEAR) ||
+	    (ev.rx.have_lc && ev.rx.lc.encrypted))
 		n.flags |= RADIO_P25_ENC;
 	if (ev.rx.late)
 		n.flags |= RADIO_P25_LATE;

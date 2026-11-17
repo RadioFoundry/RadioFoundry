@@ -173,11 +173,17 @@ static void testLc(void)
 	p25_lc_build(&lc, raw);
 	CHECK(raw[0] == 0 && raw[1] == 0 && raw[2] == 0x80 && raw[4] == 0xBE && raw[5] == 0xEF && raw[6] == 0x12 && raw[8] == 0x56, "group LC");
 	CHECK(p25_lc_parse(raw, &got) && got.emergency && got.tgid == 0xBEEF && got.src == 0x123456, "group LC back");
+	raw[2] |= 0x40;
+	CHECK(p25_lc_parse(raw, &got) && got.encrypted, "group LC protection retained");
+	lc.encrypted = true;
+	p25_lc_build(&lc, raw);
+	CHECK(raw[2] == 0xC0, "group LC protection built independently of emergency");
 	lc.lcf = P25_LCF_UNIT;
 	lc.dst = 0xABCDEF;
 	p25_lc_build(&lc, raw);
 	CHECK(raw[0] == 3 && raw[3] == 0xAB && raw[5] == 0xEF, "unit LC");
 	CHECK(p25_lc_parse(raw, &got) && got.dst == 0xABCDEF && got.src == 0x123456, "unit LC back");
+	CHECK(raw[2] == 0x40 && got.encrypted, "unit LC protection retained and built");
 	raw[1] = 0x90;
 	CHECK(!p25_lc_parse(raw, &got) && got.mfid == 0x90, "a manufacturer's LC");
 }
@@ -539,6 +545,70 @@ static void testCallLayer(void)
 	CHECK(cs.nvoice == 9, "only the LDU before the encryption sync was played: %u frames", cs.nvoice);
 }
 
+static void receiveUnit(p25_call_rx_t *c, const uint8_t *unit, uint16_t nsyms)
+{
+	air_frame_t f = { .hard = unit, .nsyms = P25_HEAD_SYMS };
+	CHECK(p25_air_mode.head(&f, &c->rx) == nsyms, "valid unit header");
+	f.nsyms = nsyms;
+	p25_air_mode.rx_frame(&f, &c->rx);
+}
+
+static void testEncryptedAdmission(void)
+{
+	uint8_t unit[P25_UNIT_BYTES_MAX], raw[P25_LC_BYTES], es[P25_ES_BYTES] = { 0 };
+	p25_call_rx_t c;
+
+	for (unsigned kind = 0; kind < 2; kind++) {
+		// Independent wire bytes: the protection bit is present before any HDU or LDU2 is received.
+		const uint8_t protected_lc[P25_LC_BYTES] = { kind ? 3 : 0, 0, 0x40, 0, 0x23, 0x45, 0x12, 0x34, 0x56 };
+		memcpy(raw, protected_lc, sizeof raw);
+		memset(&cs, 0, sizeof cs);
+		p25_call_rx_init(&c, 0x293, &cs_sink, NULL);
+		p25_unit_begin(unit, P25_LDU_SYMS, 0x293, P25_DUID_LDU1, P25_SS_UNKNOWN);
+		p25_ldu_lc_put(unit, raw);
+		receiveUnit(&c, unit, P25_LDU_SYMS);
+		CHECK(c.call.have_lc && c.call.lc.encrypted && !c.call.have_alg && cs.nvoice == 0,
+		      "protected late entry cannot reach voice sink: kind %u", kind);
+
+		// Even a clear ESS cannot override the current LC's protection bit.
+		es[9] = P25_ALGID_CLEAR;
+		p25_unit_begin(unit, P25_LDU_SYMS, 0x293, P25_DUID_LDU2, P25_SS_UNKNOWN);
+		p25_ldu_es_put(unit, es);
+		receiveUnit(&c, unit, P25_LDU_SYMS);
+		CHECK(c.call.have_alg && cs.nvoice == 0, "conflicting clear ESS stays muted");
+
+		raw[2] = 0;
+		p25_unit_begin(unit, P25_LDU_SYMS, 0x293, P25_DUID_LDU1, P25_SS_UNKNOWN);
+		p25_ldu_lc_put(unit, raw);
+		receiveUnit(&c, unit, P25_LDU_SYMS);
+		CHECK(!c.call.lc.encrypted && cs.nvoice == 9, "clear LC and known clear ESS resume voice");
+
+		// Preserve unprotected late entry; a later encrypted ESS still vetoes voice.
+		memset(&cs, 0, sizeof cs);
+		p25_call_rx_init(&c, 0x293, &cs_sink, NULL);
+		receiveUnit(&c, unit, P25_LDU_SYMS);
+		CHECK(!c.call.have_alg && cs.nvoice == 9, "unprotected late entry behavior preserved");
+		es[9] = 0x84;
+		p25_unit_begin(unit, P25_LDU_SYMS, 0x293, P25_DUID_LDU2, P25_SS_UNKNOWN);
+		p25_ldu_es_put(unit, es);
+		receiveUnit(&c, unit, P25_LDU_SYMS);
+		CHECK(c.call.have_alg && c.call.algid == 0x84 && cs.nvoice == 9, "encrypted ESS adds no voice");
+
+		// An earlier known-clear header also cannot override a later protected LC.
+		memset(&cs, 0, sizeof cs);
+		uint8_t hdr[P25_HDR_BYTES] = { 0 };
+		hdr[10] = P25_ALGID_CLEAR;
+		p25_unit_begin(unit, P25_HDU_SYMS, 0x293, P25_DUID_HDU, P25_SS_UNKNOWN);
+		p25_hdu_put(unit, hdr);
+		receiveUnit(&c, unit, P25_HDU_SYMS);
+		p25_unit_begin(unit, P25_LDU_SYMS, 0x293, P25_DUID_LDU1, P25_SS_UNKNOWN);
+		p25_ldu_lc_put(unit, protected_lc);
+		receiveUnit(&c, unit, P25_LDU_SYMS);
+		CHECK(c.call.have_alg && c.call.algid == P25_ALGID_CLEAR && cs.nvoice == 0,
+		      "protected LC overrides earlier clear header");
+	}
+}
+
 int main(void)
 {
 	testNid();
@@ -548,6 +618,7 @@ int main(void)
 	testVoice();
 	testCall();
 	testCallLayer();
+	testEncryptedAdmission();
 	printf("p25Test: %d checks, %d failed\n", checks, failures);
 	return failures ? 1 : 0;
 }

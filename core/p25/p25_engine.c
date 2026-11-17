@@ -33,7 +33,8 @@ static bool wanted(const p25_engine_t *e, const p25_call_t *c)
 
 static void rx_fields(p25_engine_t *e, const p25_call_t *c, bool start)
 {
-	bool play = wanted(e, c) && c->algid == P25_ALGID_CLEAR;
+	bool play = wanted(e, c) && c->algid == P25_ALGID_CLEAR &&
+		    !(c->have_lc && c->lc.encrypted);
 
 #if CONFIG_P25_TRUNK
 	if (e->hooks.rx_call)

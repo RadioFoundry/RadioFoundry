@@ -423,6 +423,42 @@ static p25_follow_view_t view(const p25_follow_t *f)
 	return v;
 }
 
+// An unavailable implicit offset is sign-only, distinct from the all-zero simplex value. Build the air fields
+// independently of the encoder: a parser/encoder sharing the same wrong signed-zero conversion would round trip.
+static void testIdentifierOffsets(void)
+{
+	static const uint8_t forms[] = { P25_OP_IDEN_UP, P25_OP_IDEN_UP_VU, P25_OP_IDEN_UP_TDMA };
+
+	for (unsigned f = 0; f < sizeof forms; f++) {
+		uint32_t sign = forms[f] == P25_OP_IDEN_UP ? 0x100u : 0x2000u;
+		uint32_t raw[] = { 0, sign, sign | 17u, 17u };
+		static const int16_t expected[] = { 0, 0, 17, -17 };
+
+		for (unsigned k = 0; k < sizeof raw / sizeof raw[0]; k++) {
+			uint8_t b[P25_TSBK_BYTES], made[P25_TSBK_BYTES];
+			p25_tsbk_t m;
+
+			blk_hand(b, forms[f], 0);
+			put(b, 16, 4, 2);
+			if (forms[f] == P25_OP_IDEN_UP) {
+				put(b, 20, 9, 100);
+				put(b, 29, 9, raw[k]);
+			} else {
+				put(b, 20, 4, forms[f] == P25_OP_IDEN_UP_VU ? 5 : 1);
+				put(b, 24, 14, raw[k]);
+			}
+			put(b, 38, 10, 100);
+			put(b, 48, 32, 433437500u / 5u);
+			p25_tsbk_seal(b);
+			CHECK(p25_tsbk_parse(b, &m) && m.u.iden.tx_off == expected[k] &&
+			      m.u.iden.no_tx_offset == (raw[k] == sign), "offset form %02x raw %x: off %d unavailable %u",
+			      forms[f], (unsigned)raw[k], m.u.iden.tx_off, m.u.iden.no_tx_offset);
+			p25_tsbk_make(&m, made);
+			CHECK(!memcmp(b, made, sizeof b), "offset form %02x raw %x made back", forms[f], (unsigned)raw[k]);
+		}
+	}
+}
+
 // ── Inbound signaling: the radio's blocks, and the answers to them ──
 static void testInbound(void)
 {
@@ -442,6 +478,24 @@ static void testInbound(void)
 	m = (p25_isp_t){ .opcode = P25_ISP_GRP_AFF_REQ, .emergency = true, .sysid = SYSID, .tg = 201, .src = OUR_UNIT };
 	p25_isp_make(&m, b);
 	CHECK(p25_isp_parse(b, &g) && g.emergency && g.sysid == SYSID && g.tg == 201 && g.src == OUR_UNIT, "affiliation request");
+	// TIA-102.AABC group affiliation request: octet 2 E/reserved, octets 3/4 system, 5/6 group, 7-9 source.
+	// Distinct nonzero fields prevent a shared encoder/parser error from passing a self-roundtrip test.
+	{
+		static const uint8_t clear[] = { 0xA8, 0x00, 0x00, 0x01, 0x23, 0x23, 0x45, 0x12, 0x34, 0x56 };
+		static const uint8_t emergency[] = { 0xA8, 0x00, 0x80, 0x01, 0x23, 0x23, 0x45, 0x12, 0x34, 0x56 };
+
+		m = (p25_isp_t){ .opcode = P25_ISP_GRP_AFF_REQ, .sysid = 0x123, .tg = 0x2345, .src = 0x123456 };
+		p25_isp_make(&m, b);
+		CHECK(!memcmp(b, clear, sizeof clear) && p25_tsbk_crc(b) == (uint16_t)(b[10] << 8 | b[11]),
+		      "affiliation request exact clear layout and CRC");
+		memcpy(c, clear, sizeof clear);
+		p25_tsbk_seal(c);
+		CHECK(p25_isp_parse(c, &g) && g.known && !g.emergency && g.sysid == 0x123 && g.tg == 0x2345 &&
+		      g.src == 0x123456, "external affiliation request parsed independently");
+		m.emergency = true;
+		p25_isp_make(&m, b);
+		CHECK(!memcmp(b, emergency, sizeof emergency), "affiliation emergency only changes octet 2 E");
+	}
 	m = (p25_isp_t){ .opcode = P25_ISP_U_REG_REQ, .wacn = WACN, .sysid = SYSID, .src = OUR_UNIT };
 	p25_isp_make(&m, b);
 	CHECK(p25_isp_parse(b, &g) && g.wacn == WACN && g.sysid == SYSID && g.src == OUR_UNIT && g.opcode == 0x2C,
@@ -1072,15 +1126,27 @@ static void testAccess(void)
 	{
 		p25_tsbk_t im = { .kind = P25_TSBK_IDEN, .u.iden = { .id = 1, .form = P25_OP_IDEN_UP_VU, .base = 851006250u / 5,
 								    .spacing = 50, .tx_off = -7200, .bw_khz8 = 100 } };
+		uint32_t learned_at = now_ms;
+
 		answer(&f, &im);
+		cc_alive = true;
+		run_ms(&f, 500);
+		CHECK(nsends == 1 && sends[0].hz == HZ_CC1_IN && sends[0].at >= learned_at &&
+		      last_isp().opcode == P25_ISP_U_REG_REQ && view(&f).reg == P25_REG_WAIT,
+		      "offset learned while CC held: exactly one registration at %u", nsends ? sends[0].hz : 0);
+		cc_alive = false;
+		run_ms(&f, P25_FOLLOW_CC_LOST_MS + 50);
+		CHECK(nsends == 1 && view(&f).state == P25_FOLLOW_HUNT, "CC lost: no second registration before reacquisition");
+		retune(&f);
+		site_ident(&f, 3);
+		uint32_t rejoined_at = now_ms;
+
+		cc_alive = true;
+		run_ms(&f, 500);
+		CHECK(nsends == 2 && sends[1].hz == HZ_CC1_IN && sends[1].at >= rejoined_at && sends[1].at > sends[0].at &&
+		      last_isp().opcode == P25_ISP_U_REG_REQ, "CC reacquired: exactly one new registration at %u",
+		      nsends > 1 ? sends[1].hz : 0);
 	}
-	cc_alive = false;
-	run_ms(&f, P25_FOLLOW_CC_LOST_MS + 50);
-	retune(&f);
-	site_ident(&f, 3);
-	cc_alive = true;
-	run_ms(&f, 500);
-	CHECK(nsends == 1 && sends[0].hz == HZ_CC1_IN, "offset learned: registers at %u", nsends ? sends[0].hz : 0);
 	p25_follow_end(&f);
 	cc_alive = false;
 }
@@ -1757,6 +1823,7 @@ int main(void)
 {
 	pulse_init();
 	testLayouts();
+	testIdentifierOffsets();
 	testInbound();
 	testBlocks();
 	testChannels();

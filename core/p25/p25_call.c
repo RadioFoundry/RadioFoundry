@@ -105,9 +105,10 @@ static void on_unit(const p25_rx_unit_t *u, void *ctx)
 	}
 	if (u->duid == P25_DUID_HDU)
 		return;
-	// Encrypted voice decodes to noise: it stays here. (A late entry learns the algorithm with its first LDU2;
-	// an LDU1 before that is taken as clear, as a call without encryption sync is)
-	if (c->call.algid != P25_ALGID_CLEAR)
+	// The LC protection bit is already available on an encrypted late-entry LDU1, before algorithm sync.
+	// It also vetoes an earlier clear algorithm; unprotected late entry keeps its existing behavior.
+	if (c->call.algid != P25_ALGID_CLEAR ||
+	    (c->call.have_lc && c->call.lc.encrypted))
 		return;
 	for (uint8_t n = 0; n < P25_VOICE_FRAMES; n++) {
 		uint8_t imbe[P25_IMBE_BYTES];
