@@ -3,6 +3,7 @@
 // HR_C7000 DMR slot engine (hrc7000_dmr.h; docs/spec/modem-hrc7000.md 3, 5, 6)
 #include <string.h>
 #include "hrc7000_dmr.h"
+#include "dmr/fec/dmrFec.h"
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
 #include "hrc7000_bs.h"	// split duplex TX half: the BS outbound takes the chip over (e->bs)
 #define BS_ACTIVE(e)	((e)->bs != NULL)
@@ -19,10 +20,12 @@
 #define RTI_CRC16		(1u << 26)
 #define RTI_RS			(1u << 25)
 #define RTI_BLOCK		(1u << 24)
+#define RTI_CACH_AT		(1u << 23)
 
 // System interrupt causes (2.4)
 #define SYS_LATE_LC		(1u << 2)
 #define SYS_DEFRAME		(1u << 3)
+#define SYS_SHORT_LC		(1u << 4)	// a CACH short LC assembled (RX RAM 0x2B-0x2F)
 #define SYS_ABNORMAL		((1u << 5) | (1u << 6) | (1u << 16))
 
 // LAYER2 values (2.5)
@@ -67,6 +70,7 @@
 #define STALL_US		200000u
 #define SYS_STUCK_US		50000u	// a system request pending this long with no handler run: its interrupt was lost
 #define SYS_LOOPS		4u
+#define AT_FRESH_TICKS		4u	// a slot's CACH AT bit is reported with the ticks for two frames after it was read
 
 // TXS_LOCK: an aligned start through a repeater waits, still receiving, for the TC lock before it arms
 enum { TXS_IDLE, TXS_LOCK, TXS_ARMING, TXS_RUN, TXS_DRAIN };
@@ -89,6 +93,7 @@ void hrc7000_dmr_decode(uint32_t rti, hrc7000_rx_status_t *st)
 	st->chip_slot = (uint8_t)((rti >> 19) & 0x1u);
 	st->pi = ((rti >> 17) & 0x1u) != 0;
 	st->lcss = (uint8_t)((rti >> 15) & 0x3u);
+	st->at = (rti & RTI_CACH_AT) != 0;
 	st->voice_index = 0;
 	if (vb >= 1 && vb <= 6) {
 		st->kind = DMR_BURST_VOICE;
@@ -197,6 +202,7 @@ static void ev_simple(hrc7000_dmr_t *e, uint8_t kind, int8_t ts, uint32_t arg)
 	}
 	s->ev.kind = kind;
 	s->ev.ts = ts;
+	s->ev.flags = 0;
 	s->ev.arg = arg;
 	ev_commit(e);
 }
@@ -268,6 +274,7 @@ static void chip_rx_restart(hrc7000_dmr_t *e)
 	e->voice_slots = 0;
 	e->tc_slot[0] = e->tc_slot[1] = 0;
 	e->tc_agree = 0;
+	e->at_flags[0] = e->at_flags[1] = 0;
 	e->emb_pending = 0;
 	// What was heard is gone with the slot timing. Kept, the polite check went on seeing a busy channel: an empty
 	// channel gives no timeslot interrupts after the restart, so rx_resync never aged it out, and every PTT after a
@@ -462,6 +469,66 @@ static uint32_t listen_ctl(const hrc7000_dmr_t *e)
 	return (e->listen_voice || e->voice_chip_slot >= 0) ? TXRX_RX_VOICE : TXRX_RX;
 }
 
+// The slot just listened to, for a BS's outbound RC burst: EMB + RC in place of the sync (ETSI TS 102 361-1 6.4.2),
+// which the chip doesn't report. Its receive tap holds each burst received, the CACH and then the burst deframed, a
+// voice-layout burst's 48-bit sync / EMB / RC field first, in two areas (modem-hrc7000.md 5.4). The second area's
+// first bytes are overwritten by the first's soft values, so its field is taken from its own soft values (one byte
+// per bit, bits 5-0, the hard bit = 32 or more). An area unchanged since its last read holds the same burst, or a
+// stale one, and is skipped. One slot is listened to between two reads: one RC at most
+#define TAP_AREA_0	(C7_RX_RAM + 0x30u + 3u)	// the field, after the CACH
+#define TAP_SOFT_1	(C7_RX_RAM + 0x1C8u)		// the second area's soft values, no CACH
+#define TAP_HARD_LEN	12u	// the field (6) and as many voice bytes: they change per burst
+#define TAP_SOFT_LEN	96u	// the field's 48 bits and as many voice bits
+// The engine runs from RAM (platform/hrc7000/common.ld); this runs after our burst is armed, off its deadline, so it
+// goes in flash (.flashfunc) like the task-side code: RAM is short
+#define TAP_FLASHFUNC	__attribute__((section(".flashfunc"), noinline))
+TAP_FLASHFUNC static uint32_t tap_hash(const volatile uint8_t *p, uint8_t n)
+{
+	uint32_t sum = 2166136261u;	// FNV-1a
+	for (uint8_t i = 0; i < n; i++) {
+		sum = (sum ^ p[i]) * 16777619u;
+	}
+	return sum;
+}
+
+TAP_FLASHFUNC static void rc_tap_read(hrc7000_dmr_t *e)
+{
+	if (e->cc_filter < 0) {
+		return;
+	}
+	bool found = false;
+	uint8_t command = 0;
+	for (int a = 0; a < 2; a++) {
+		const volatile uint8_t *p = &e->dev->buf[a == 0 ? TAP_AREA_0 : TAP_SOFT_1];
+		uint32_t sum = tap_hash(p, a == 0 ? TAP_HARD_LEN : TAP_SOFT_LEN);
+		if (sum == e->tap_sum[a]) {
+			continue;
+		}
+		e->tap_sum[a] = sum;
+		e->st.rc_tap_changed++;
+		uint8_t field[6];
+		if (a == 0) {
+			for (uint8_t i = 0; i < 6u; i++) {
+				field[i] = p[i];
+			}
+		} else {
+			memset(field, 0, sizeof field);
+			for (uint8_t i = 0; i < 48u; i++) {
+				if ((p[i] & 0x3Fu) >= 32u) {
+					field[i / 8u] |= (uint8_t)(0x80u >> (i % 8u));
+				}
+			}
+		}
+		if (!found && dmrFecRcFromField(field, (uint8_t)e->cc_filter, &command) >= 0) {
+			found = true;
+		}
+	}
+	if (found) {
+		e->st.rc_tap++;
+		ev_simple(e, DMR_EV_RC, -1, dmrFecRcInfo(command));
+	}
+}
+
 // In a TX state that ticks on the TX vector (not the TC lock wait, which still receives)
 static bool tx_ticking(const hrc7000_dmr_t *e)
 {
@@ -491,6 +558,9 @@ static void track_tc(hrc7000_dmr_t *e, const hrc7000_rx_status_t *s)
 	e->tc_prev = s->tc;
 	e->tc_tick = slot;
 	e->tc_est = early ? (uint8_t)(s->tc ^ 1u) : s->tc;	// the slot started at the last interrupt
+	// The same CACH's AT bit, for the slot its TC names (DMR_TICK_AT_*): a BS signal's inbound busy state
+	e->at_tick[s->tc] = e->tick;
+	e->at_flags[s->tc] = (uint8_t)(DMR_TICK_AT_KNOWN | (s->at ? DMR_TICK_AT_BUSY : 0u));
 }
 
 // The lock holds while the repeater is heard: a burst in the last 390 ms
@@ -539,6 +609,8 @@ static void tx_tick(hrc7000_dmr_t *e)
 		tx_finish(e, false);
 		return;
 	}
+	// The slot just listened to ends now, ours starts: its tap is read once ours is set up (the decode is flash code)
+	bool tap = e->tx_listen && e->tx_state == TXS_RUN && e->tx_our_next;
 	switch (e->tx_state) {
 	case TXS_ARMING:
 		// Own timing: the first slot is ours. Aligned to an SFR or a direct-mode station (no CACH): the slot whose
@@ -612,6 +684,9 @@ static void tx_tick(hrc7000_dmr_t *e)
 		break;
 	default:
 		break;
+	}
+	if (tap) {
+		rc_tap_read(e);
 	}
 }
 
@@ -687,8 +762,10 @@ static void rx_burst(hrc7000_dmr_t *e)
 	if (e->lock_ts != 0 && ts != e->lock_ts) {
 		return;
 	}
+	// An MBC continuation is a block with no CRC of its own (the last one carries the whole MBC's), so the chip's flag
+	// says nothing about it: it goes up and the caller checks the MBC
 	bool header = s.kind != DMR_BURST_VOICE && s.kind != DMR_BURST_RATE_12_DATA && s.kind != DMR_BURST_RATE_34_DATA &&
-		      s.kind != DMR_BURST_RATE_1_DATA;
+		      s.kind != DMR_BURST_RATE_1_DATA && s.kind != DMR_BURST_MBC_CONT;
 	if (!s.crc_ok) {
 		e->st.rx_crc_err++;
 		// Headers and CSBKs with a bad CRC are dropped (dmr-modem.md 2.2), except while we send: the chip's verdict
@@ -766,8 +843,32 @@ static void rx_burst(hrc7000_dmr_t *e)
 	}
 	slot->ev.kind = DMR_EV_BURST_RX;
 	slot->ev.ts = ts;
+	slot->ev.flags = 0;
 	// The slot after the burst's (hrc7000_dmr.h): a deframe late in a slot is that slot's burst
 	slot->ev.arg = tick_arg(e) + ((now(e) - e->t_tick >= SLOT_US / 2u) ? 1u : 0u);
+	ev_commit(e);
+}
+
+// The tick's slot (the TC estimate once locked to a BS signal, else 0) and the AT bit of the last CACH that named it
+static void push_tick(hrc7000_dmr_t *e)
+{
+	hrc7000_dmr_evslot_t *slot = ev_alloc(e);
+	if (slot == NULL) {
+		return;
+	}
+	int8_t ts = 0;
+	uint8_t fl = 0;
+	if (!tx_ticking(e) && tc_locked(e)) {
+		uint8_t i = e->tc_est;
+		ts = (int8_t)(i + 1u);
+		if (e->tick - e->at_tick[i] <= AT_FRESH_TICKS) {
+			fl = e->at_flags[i];
+		}
+	}
+	slot->ev.flags = fl;
+	slot->ev.kind = DMR_EV_SLOT_TICK;
+	slot->ev.ts = ts;
+	slot->ev.arg = tick_arg(e);
 	ev_commit(e);
 }
 
@@ -815,6 +916,11 @@ void hrc7000_dmr_isr_sys(hrc7000_dmr_t *e)
 		}
 		if (list & SYS_DEFRAME) {
 			rx_burst(e);
+		}
+		// A new short LC in RX RAM, read task-side (hrc7000_dmr_short_lc). Only while receiving a BS signal: a
+		// direct or SFR signal has no CACH, and the RAM keeps the last one
+		if ((list & SYS_SHORT_LC) && e->rx_bs && !tx_ticking(e)) {
+			e->slc_seq++;
 		}
 		if (list & SYS_ABNORMAL) {
 			e->st.slot_abnormal++;
@@ -871,7 +977,7 @@ void hrc7000_dmr_isr_timeslot(hrc7000_dmr_t *e, bool tx_vector)
 		}
 	}
 	e->st.tx_state = e->tx_state;
-	ev_simple(e, DMR_EV_SLOT_TICK, 0, tick_arg(e));
+	push_tick(e);
 }
 
 void hrc7000_dmr_isr_rftx(hrc7000_dmr_t *e)

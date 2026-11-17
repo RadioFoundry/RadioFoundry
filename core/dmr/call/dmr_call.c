@@ -6,6 +6,8 @@
 #include <string.h>
 #include "dmr/call/dmr_call.h"
 #include "config.h"
+#include "dmr/fec/dmrCach.h"
+#include "dmr/fec/dmrFec.h"
 #if CONFIG_SFR
 #include "dmr/sfr.h"
 #endif
@@ -54,6 +56,10 @@ static uint32_t evq_drops_base, tx_underruns_base;	// at the last dmr_call_reset
 static uint32_t tick_count;	// slot ticks, counted by the producer
 static uint8_t tick_alt;	// consecutive ticks with the slot number alternating 1 / 2
 static int8_t tick_ts;
+// The last ticks' slot and flags (DMR_TICK_*), by tick number (tick_count after it) mod TICK_RING: dmr_call_tick_at
+#define TICK_RING	8u
+static uint8_t tick_ring[TICK_RING];
+static uint32_t slc_good, slc_bad, slc_last;	// CACH short LCs (DMR_EV_SHORT_LC): good and bad CRCs, the last good
 static void (*wake_fn)(void);	// dmr_call_set_wake; outlives dmr_call_init
 
 // --- Stack state ---
@@ -119,6 +125,8 @@ static struct {
 	// repeater outbound
 	uint32_t rpt_last_ms;
 	bool rpt_seen;
+	dmr_config_t mc;	// what the modem was last configured with (mc_ok)
+	bool mc_ok;
 	uint32_t tick_seen;
 
 	// TX
@@ -132,6 +140,8 @@ static struct {
 	uint8_t queue_cap;	// the modem's free queue space right after tx_begin
 	bool stop_req;
 	bool tot_hit;
+	bool ceased;		// the reverse channel stopped this over (rc_heard)
+	uint32_t rc_cease_ms;	// the last cease heard, | 1 (0: none)
 	uint8_t stage[DMR_AMBE_FRAMES_PER_BURST][DMR_AMBE_FRAME_BYTES];
 	uint8_t stage_n;
 	uint32_t tx_since;	// PTT handling start (access wait)
@@ -171,6 +181,8 @@ static struct {
 	dmr_tx_burst_t data_stage;
 	dmr_data_rx_fn data_rx;
 	void *data_rx_ctx;
+	dmr_rx_tap_fn rx_tap;
+	void *rx_tap_ctx;
 } s;
 #if CONFIG_SFR && CONFIG_SFR_DUALPATH_RX
 // SFR user, dual-path RX: voice bursts taken but not played yet, oldest first (play order; s.vq_n of them). A burst waits
@@ -457,7 +469,17 @@ static void on_event(const dmr_event_t *ev, void *ctx)
 			tick_alt = 0;
 		}
 		tick_ts = ts;
+		tick_ring[(tick_count + 1u) % TICK_RING] = (uint8_t)((uint8_t)(ts & 3) | (uint8_t)(ev->flags << 2));
 		__atomic_store_n(&tick_count, tick_count + 1, __ATOMIC_RELEASE);
+		return;
+	}
+	if (ev->kind == DMR_EV_SHORT_LC) {
+		if (dmrShortLcCrc8(ev->arg) == ev->flags) {
+			__atomic_store_n(&slc_last, ev->arg & 0x0FFFFFFFu, __ATOMIC_RELAXED);
+			__atomic_store_n(&slc_good, slc_good + 1, __ATOMIC_RELEASE);
+		} else {
+			__atomic_store_n(&slc_bad, slc_bad + 1, __ATOMIC_RELAXED);
+		}
 		return;
 	}
 
@@ -472,7 +494,7 @@ static void on_event(const dmr_event_t *ev, void *ctx)
 
 	it->kind = ev->kind;
 	it->ts = ev->ts;
-	it->arg = ev->arg;
+	it->arg = ev->arg | (ev->kind == DMR_EV_RC ? (uint32_t)ev->flags << 16 : 0u);
 	it->has_burst = ev->kind == DMR_EV_BURST_RX && ev->burst != NULL;
 	if (it->has_burst)
 		it->burst = *ev->burst;
@@ -1024,6 +1046,8 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 		s.rpt_seen = true;
 		s.rpt_bursts = true;
 	}
+	if (s.rx_tap && s.rx_tap(b, now, s.rx_tap_ctx))
+		return;
 	bool slot_known = ts_known(b);
 
 	if (slot_known && b->sync != DMR_SYNC_MS) {
@@ -1090,6 +1114,7 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 			memcpy(s.term_lc, s.call_lc, DMR_LC_BYTES);
 			s.term_ms = now;
 			s.term_seen = true;
+			stats.rx_end_term++;
 			rx_end(now);
 			TR_WHAT('k');
 		}
@@ -1337,7 +1362,10 @@ static void tx_start_voice(uint32_t now)
 		return;
 	}
 	// The repeater's outbound heard between our bursts: a drop under our over is seen (DMR_CALL_TX_DROP_MS)
-	s.tx_listening = tx_listen_on && s.cfg.rmo && s.modem->tx_listen_split != NULL && s.modem->tx_listen_split();
+	// A modem that hears the repeater only at times between our bursts listens for its RC, but the over doesn't
+	// count on hearing it (tx_listen_gaps)
+	s.tx_listening = tx_listen_on && s.cfg.rmo && s.modem->tx_listen_split != NULL && s.modem->tx_listen_split() &&
+			 !s.modem->tx_listen_gaps;
 	s.tx_heard_ms = now;	// the drop check's reference until the repeater is heard
 	dmr_lc_pack(&l, s.tx_lc);
 	s.modem->set_embedded_lc(s.tx_lc);
@@ -1360,6 +1388,8 @@ static void tx_start_voice(uint32_t now)
 	s.queued = s.started = 0;
 	s.stop_req = false;
 	s.tot_hit = false;
+	s.ceased = false;
+	s.rc_cease_ms = 0;
 	s.stage_n = 0;
 	s.tx = TX_ON;
 	stats.tx_calls++;
@@ -1571,9 +1601,9 @@ static void tx_finished(uint32_t now)
 	s.last_call_end_ms = now;
 	s.call_end_seen = true;
 	s.dirty = true;
-	if (s.tot_hit) {
+	if (s.tot_hit || s.ceased) {
 		s.tx = s.ptt ? TX_DENIED : TX_NONE;
-		s.view.tx_error = DMR_TX_ERR_TIMEOUT;
+		s.view.tx_error = s.ceased ? DMR_TX_ERR_CEASED : DMR_TX_ERR_TIMEOUT;
 	} else if (s.ptt) {
 		tx_ptt_pressed(now);	// pressed again while the last one was ending
 	}
@@ -1703,6 +1733,32 @@ static void tx_poll(uint32_t now)
 
 // --- Events (consumer) ---
 
+// The reverse channel (ETSI TS 102 361-4 6.4.14, 6.4.15.2): while our voice goes out, a cease command or cease request
+// heard twice within DMR_CALL_RC_CONFIRM_MS ends the over after burst F with a terminator (tx_fill's stop_req), and
+// PTT must be released before the next. Twice, because a voice burst F's null fragment passes the 7-bit CRC once in
+// 128; the site repeats it every 360 ms. A request is always accepted. Power commands are only counted: the radio
+// keeps the power it was set to
+static void rc_heard(uint32_t arg, uint32_t now)
+{
+	int c = dmrFecRcInfoDecode((uint16_t)(arg & 0x7FFu));
+
+	if (c < 0) {
+		stats.rc_bad++;
+		return;
+	}
+	stats.rc_good++;
+	stats.rc_last = (uint8_t)c;
+	if ((c != DMR_RC_CEASE && c != DMR_RC_CEASE_REQUEST) || s.tx != TX_ON || s.stop_req)
+		return;
+	if (s.rc_cease_ms != 0 && (uint32_t)(now - s.rc_cease_ms) <= DMR_CALL_RC_CONFIRM_MS) {
+		s.stop_req = true;
+		s.ceased = true;
+		stats.rc_ceased++;
+		s.dirty = true;
+	}
+	s.rc_cease_ms = now | 1u;
+}
+
 static void handle_event(const evq_item_t *it, uint32_t now)
 {
 	switch (it->kind) {
@@ -1739,6 +1795,9 @@ static void handle_event(const evq_item_t *it, uint32_t now)
 				s.tx_heard_ms = now;	// the drop check's reference until the repeater is heard
 		}
 		break;
+	case DMR_EV_RC:
+		rc_heard(it->arg, now);
+		break;
 	case DMR_EV_TX_REJECTED:
 		if (tx_rewake(now))
 			break;
@@ -1766,8 +1825,11 @@ static void handle_event(const evq_item_t *it, uint32_t now)
 		}
 		break;
 	case DMR_EV_SYNC_LOST:
-		if (!transmitting())
+		if (!transmitting()) {
+			if (s.rx != RXC_NONE)
+				stats.rx_end_sync++;
 			rx_end(now);
+		}
 		break;
 	default:
 		break;
@@ -1809,10 +1871,11 @@ void dmr_call_set_voice(const dmr_voice_sink_t *sink, const dmr_voice_source_t *
 	s.source = source;
 }
 
-// Through a repeater the modem keeps to our slot, unless the monitor hears both
+// Through a repeater the modem keeps to our slot, unless the monitor hears both or a trunked control channel is
+// received on both
 static int8_t lock_slot(void)
 {
-	return s.cfg.rmo && !s.cfg.listen.both_ts ? (int8_t)s.cfg.ts : 0;
+	return s.cfg.rmo && !s.cfg.listen.both_ts && !s.cfg.both_slots ? (int8_t)s.cfg.ts : 0;
 }
 
 static void modem_config(dmr_config_t *mc)
@@ -1835,7 +1898,14 @@ static void modem_apply(void)
 	dmr_config_t mc;
 
 	modem_config(&mc);
-	s.modem->configure(&mc);
+	// A slot change on the same channel (a trunked call on the control channel's carrier, the other slot of a
+	// repeater) keeps the modem's sync: a restart would search again and miss the call's start
+	if (!s.mc_ok || mc.own_id != s.mc.own_id || mc.cc != s.mc.cc || mc.access != s.mc.access ||
+	    mc.repeater != s.mc.repeater) {
+		s.modem->configure(&mc);
+		s.mc = mc;
+		s.mc_ok = true;
+	}
 	s.modem->set_cc_filter(modem_cc_filter());
 	s.modem->rx_lock_slot(lock_slot());
 }
@@ -1845,7 +1915,8 @@ void dmr_call_configure(const dmr_call_config_t *cfg)
 	bool rf_change = !s.configured || cfg->cc != s.cfg.cc || cfg->ts != s.cfg.ts || cfg->rmo != s.cfg.rmo ||
 			 cfg->access != s.cfg.access ||
 			 cfg->own_id != s.cfg.own_id || cfg->sfr_user != s.cfg.sfr_user || cfg->tx_sync != s.cfg.tx_sync ||
-			 cfg->rx_sync != s.cfg.rx_sync || cfg->sfr_rx != s.cfg.sfr_rx || cfg->cc2 != s.cfg.cc2;
+			 cfg->rx_sync != s.cfg.rx_sync || cfg->sfr_rx != s.cfg.sfr_rx || cfg->cc2 != s.cfg.cc2 ||
+			 cfg->both_slots != s.cfg.both_slots;
 	// Digital monitor on or off widens or narrows what the modem passes, on the same channel: the call being heard
 	// and the reply window stay (a call heard as not ours plays at once, rx_recheck)
 	bool filter_change = cfg->listen.any_cc != s.cfg.listen.any_cc || cfg->listen.both_ts != s.cfg.listen.both_ts;
@@ -1898,6 +1969,8 @@ bool dmr_call_start(void)
 	if (!s.modem->start(&mc, on_event, NULL))
 		return false;
 	s.running = true;
+	s.mc = mc;
+	s.mc_ok = true;
 	s.modem->set_cc_filter(modem_cc_filter());
 	s.modem->rx_lock_slot(lock_slot());
 	s.dirty = true;
@@ -2051,8 +2124,10 @@ void dmr_call_poll(uint32_t now_ms)
 		dual_drain(now_ms);
 #endif
 	// Fade: no burst on the call for a while ends it
-	if (s.rx != RXC_NONE && elapsed(now_ms, s.last_rx_ms, true, fade_ms()))
+	if (s.rx != RXC_NONE && elapsed(now_ms, s.last_rx_ms, true, fade_ms())) {
+		stats.rx_end_fade++;
 		rx_end(now_ms);
+	}
 	if (s.le_active && elapsed(now_ms, s.le_last_ms, true, fade_ms()))
 		le_reset();
 
@@ -2142,4 +2217,37 @@ bool dmr_call_data_tx(const dmr_data_source_t *src)
 bool dmr_call_data_busy(void)
 {
 	return s.data_active;
+}
+
+void dmr_call_set_rx_tap(dmr_rx_tap_fn fn, void *ctx)
+{
+	s.rx_tap = fn;
+	s.rx_tap_ctx = ctx;
+}
+
+uint32_t dmr_call_ticks(int8_t *ts)
+{
+	if (ts)
+		*ts = tick_ts;
+	return __atomic_load_n(&tick_count, __ATOMIC_ACQUIRE);
+}
+
+uint32_t dmr_call_short_lc(uint32_t *slc, uint32_t *bad)
+{
+	uint32_t n = __atomic_load_n(&slc_good, __ATOMIC_ACQUIRE);
+	*slc = __atomic_load_n(&slc_last, __ATOMIC_RELAXED);
+	*bad = __atomic_load_n(&slc_bad, __ATOMIC_RELAXED);
+	return n;
+}
+
+uint8_t dmr_call_tick_at(uint32_t n, int8_t *ts)
+{
+	uint32_t now = __atomic_load_n(&tick_count, __ATOMIC_ACQUIRE);
+	if (n == 0 || n > now || now - n >= TICK_RING - 1u) {
+		*ts = 0;	// not counted yet, or written over (one entry kept spare for the producer)
+		return 0;
+	}
+	uint8_t v = tick_ring[n % TICK_RING];
+	*ts = (int8_t)(v & 3u);
+	return (uint8_t)(v >> 2);
 }

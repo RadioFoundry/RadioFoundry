@@ -79,6 +79,10 @@ CORE_DIRS := $(CORE_BASE_DIRS)
 ifeq ($(CONFIG_DMR),y)
 CORE_DIRS += core/dmr/call core/dmr/ambe core/dmr/fec
 endif
+# DMR Tier III trunking (the mobile station side): PDUs, system rules, channel plans, the engine
+ifeq ($(CONFIG_DMR_TRUNK),y)
+CORE_DIRS += core/dmr/trunk
+endif
 ifeq ($(CONFIG_HOSTLINK),y)
 CORE_DIRS += core/hostlink
 endif

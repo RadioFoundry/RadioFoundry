@@ -109,8 +109,9 @@ zoneShareSvcTest: zoneShareSvcTest.c $(CORE)/dmr/zoneShareSvc.c $(CORE)/dmr/zone
 		$(CORE)/dmr/dmrAirQueue.c $(DATA) $(FRAME)
 
 TESTS   += zoneShareTest zoneShareModesTest
+# (without a mode that has systems: a share then carries no modes part)
 zoneShareTest: zoneShareTest.c fuzz.h $(CORE)/dmr/zoneShare.c $(CORE)/dmr/zoneShare.h
-	$(CC) $(CFLAGS) -Wshadow -o $@ zoneShareTest.c $(CORE)/dmr/zoneShare.c
+	$(CC) $(CFLAGS) -Wshadow -DCONFIG_DMR_TRUNK=0 -o $@ zoneShareTest.c $(CORE)/dmr/zoneShare.c
 # The same with the modes part (CONFIG_ZONE_SHARE_MODES: channels of a kind and their systems)
 zoneShareModesTest: zoneShareTest.c fuzz.h $(CORE)/dmr/zoneShare.c $(CORE)/dmr/zoneShare.h
 	$(CC) $(CFLAGS) -Wshadow -DCONFIG_P25=1 -o $@ zoneShareTest.c $(CORE)/dmr/zoneShare.c
@@ -177,12 +178,16 @@ clean:
 CORE_HAL := -I$(ROOT)/hal -Wshadow
 TESTS   += radioCoreTest inputTest quadratureTest serialmicTest
 
+# A Tier III trunked system on the radio (radio_sm.c's trunk block): the engine and what it reads PDUs with
+T3RADIO := $(CORE)/radio/radio_trunk.c $(CORE)/radio/radio_trunk_cp.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug_records.c \
+           $(CORE)/dmr/trunk/t3_ms.c $(CORE)/dmr/trunk/t3_pdu.c $(CORE)/dmr/trunk/t3_sys.c \
+           $(CORE)/dmr/trunk/t3_plan.c
 # With the DMR call stack, the AMBE voice glue and the simulated modem behind board.dmr
 RFEAT   := $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/battery.c $(CORE)/radio/roam.c $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c \
            $(CORE)/radio/vibe.c $(CORE)/radio/mic_gain.c $(CORE)/radio/ref_trim.c $(CORE)/radio/pa_keyup.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_shift.c \
            $(CORE)/codeplug/zone_settle.c \
-           $(CORE)/radio/radio_sfr.c $(CORE)/radio/radio_cwid.c $(CORE)/radio/tx_limit.c
-RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplug_keys.c $(CORE)/radio/tones.c $(RFEAT) $(CORE)/dmr/call/dmr_call.c \
+           $(CORE)/radio/radio_sfr.c $(CORE)/radio/radio_cwid.c $(CORE)/radio/tx_limit.c $(T3RADIO)
+RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplug_keys.c $(CORE)/radio/tones.c $(RFEAT) $(CORE)/dmr/call/dmr_call.c $(CORE)/dmr/fec/dmrCach.c \
            $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeFec.c \
            $(CORE)/dmr/dmrPrivacy.c sim/dmr_sim_modem.c $(CORE)/dmr/dmrData.c $(CORE)/dmr/dmrDataService.c \
            $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmr_emergency.c $(CORE)/radio/morse.c $(CORE)/dmr/zoneShare.c $(CORE)/dmr/zoneShareSvc.c $(CORE)/dmr/dmrAirQueue.c \
@@ -224,7 +229,7 @@ radioCoreTestAprsDmr: $(RCAPRSD) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE
 
 # The everyday features (scan, beeps, battery, TOT warning, BCL, roger beep, 1750 Hz burst, VOX, battery saving)
 TESTS   += radioFeaturesTest
-RFTEST  := radioFeaturesTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplug_keys.c $(CORE)/radio/tones.c $(RFEAT) $(CORE)/dmr/call/dmr_call.c \
+RFTEST  := radioFeaturesTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplug_keys.c $(CORE)/radio/tones.c $(RFEAT) $(CORE)/dmr/call/dmr_call.c $(CORE)/dmr/fec/dmrCach.c \
            $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeFec.c \
            $(CORE)/dmr/dmrPrivacy.c sim/dmr_sim_modem.c $(CORE)/dmr/dmrData.c $(CORE)/dmr/dmrDataService.c \
            $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmr_emergency.c $(CORE)/radio/morse.c $(CORE)/dmr/zoneShare.c $(CORE)/dmr/zoneShareSvc.c $(CORE)/dmr/dmrAirQueue.c \
@@ -429,7 +434,7 @@ sky72310Test: sky72310Test.c $(ROOT)/drivers/rf/sky72310/sky72310.c $(ROOT)/driv
 
 # The HR_C5000 driver with the shared code only: the HR_C6000 driver is not linked
 HRC5K := $(ROOT)/drivers/modem/hrc5000/hrc5000.c $(ROOT)/drivers/modem/hrc_common/hrc.c $(ROOT)/drivers/modem/hrc_common/hrc6000_dmr.c \
-         $(ROOT)/core/dmr/ambe/ambeFec.c
+         $(ROOT)/core/dmr/ambe/ambeFec.c $(ROOT)/core/dmr/fec/dmrFec.c
 hrc5000Test: hrc5000Test.c $(HRC5K) $(wildcard $(ROOT)/drivers/modem/hrc5000/*.h $(ROOT)/drivers/modem/hrc_common/*.h) $(ROOT)/hal/hal_dmr_modem.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc5000Test.c $(HRC5K)
 
@@ -607,7 +612,7 @@ run-ui: gfxTest gfxTestZh i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiF
 
 # AMBE+2 3600x2450 air frame FEC and interleaving (core/dmr/ambe), with vectors from the stock DM-1701 codec's FEC
 # and the DMR voice glue between the call stack, the FEC, the vocoder and the audio driver (fakes)
-TESTS   += ambeFecTest ambeVoiceTest
+TESTS   += ambeFecTest ambeVoiceTest ambeVoiceCaptureTest
 
 ambeFecTest: ambeFecTest.c $(CORE)/dmr/ambe/ambeFec.c $(CORE)/dmr/ambe/ambeFec.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ ambeFecTest.c $(CORE)/dmr/ambe/ambeFec.c
@@ -615,11 +620,27 @@ ambeFecTest: ambeFecTest.c $(CORE)/dmr/ambe/ambeFec.c $(CORE)/dmr/ambe/ambeFec.h
 ambeVoiceTest: ambeVoiceTest.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeVoice.h $(CORE)/dmr/ambe/ambeFec.c \
 	       $(ROOT)/drivers/vocoder/ambe2_flags.h $(ROOT)/hal/hal_vocoder.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ ambeVoiceTest.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeFec.c
+# The same with the voice capture built (CONFIG_VOICE_CAPTURE)
+ambeVoiceCaptureTest: ambeVoiceTest.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeVoice.h $(CORE)/dmr/ambe/ambeFec.c \
+	       $(ROOT)/drivers/vocoder/ambe2_flags.h $(ROOT)/hal/hal_vocoder.h
+	$(CC) $(CFLAGS) -DCONFIG_VOICE_CAPTURE=1 -I$(ROOT)/hal -Wshadow -o $@ ambeVoiceTest.c $(CORE)/dmr/ambe/ambeVoice.c \
+	      $(CORE)/dmr/ambe/ambeFec.c
 
 # The mic gain setting (core/radio/mic_gain.c): to the board's hook or to DMR's sample scaling, never both
 TESTS   += micGainTest
 micGainTest: micGainTest.c $(CORE)/radio/mic_gain.c $(CORE)/radio/mic_gain.h $(ROOT)/hal/hal_radio.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ micGainTest.c $(CORE)/radio/mic_gain.c
+
+# The debug link's Tier III view sections (core/debuglink/debuglink_t3.c): each fits a reply at its widest
+TESTS   += t3ViewTest
+t3ViewTest: t3ViewTest.c $(CORE)/debuglink/debuglink_t3.c $(CORE)/debuglink/dl_fmt.c $(wildcard $(CORE)/debuglink/*.h) \
+	    $(CORE)/radio/radio.h $(CORE)/radio/radio_trunk.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ t3ViewTest.c $(CORE)/debuglink/debuglink_t3.c $(CORE)/debuglink/dl_fmt.c
+
+run: run-t3view
+run-t3view: t3ViewTest
+	./t3ViewTest
+.PHONY: run-t3view
 
 # The debug link's hardware options command (core/debuglink/debuglink_hwopt.c), with options and without
 TESTS   += hwoptTest hwoptTestNone
@@ -680,9 +701,10 @@ paKeyrunTest: paKeyrunTest.c $(CORE)/radio/pa_keyrun.c $(CORE)/radio/pa_keyrun.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ paKeyrunTest.c $(CORE)/radio/pa_keyrun.c
 
 run: run-ambe
-run-ambe: ambeFecTest ambeVoiceTest micGainTest refTrimTest paKeyupTest paSweepTest paKeyrunTest
+run-ambe: ambeFecTest ambeVoiceTest ambeVoiceCaptureTest micGainTest refTrimTest paKeyupTest paSweepTest paKeyrunTest
 	./ambeFecTest
 	./ambeVoiceTest
+	./ambeVoiceCaptureTest
 	./micGainTest
 	./refTrimTest
 	./paKeyupTest
@@ -691,7 +713,7 @@ run-ambe: ambeFecTest ambeVoiceTest micGainTest refTrimTest paKeyupTest paSweepT
 .PHONY: run-ambe
 
 # The DMR voice call stack (core/dmr/call) against a simulated modem; LC coding cross-checked with sfr.c and dmrData.c
-CALL    := dmrCallTest.c sim/dmr_sim_modem.c $(CORE)/dmr/call/dmr_call.c $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/sfr.c $(DATA) $(FRAME) \
+CALL    := dmrCallTest.c sim/dmr_sim_modem.c $(CORE)/dmr/call/dmr_call.c $(CORE)/dmr/fec/dmrCach.c $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/sfr.c $(DATA) $(FRAME) \
            $(CORE)/dmr/dmrPrivacy.c $(CORE)/dmr/ambe/ambeFec.c
 TESTS   += dmrCallTest
 
@@ -709,12 +731,14 @@ HRCDMR  := $(ROOT)/drivers/modem/hrc_common
 HRC6K   := $(ROOT)/drivers/modem/hrc6000
 
 hrc6000DmrTest: hrc6000DmrTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(HRCDMR)/hrc6000_dmr.h $(HRCDMR)/hrc.h $(HRC6K)/hrc6000.h $(ROOT)/hal/hal_dmr_modem.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc6000DmrTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc6000DmrTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c \
+		$(CORE)/dmr/fec/dmrFec.c
 
 # The HR_C6000's FM TX tone generator: the 1750 Hz burst, roger beep and DTMF pairs, and what it gives back
 TESTS   += hrc6000ToneTest
 hrc6000ToneTest: hrc6000ToneTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(HRCDMR)/hrc.h $(HRC6K)/hrc6000.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc6000ToneTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc6000ToneTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c \
+		$(CORE)/dmr/fec/dmrFec.c
 
 run: run-modem
 run-modem: hrc6000DmrTest hrc6000ToneTest
@@ -725,7 +749,7 @@ run-modem: hrc6000DmrTest hrc6000ToneTest
 # The DMR receive chain: a model of the HR_C6000's reports through the slot engine, a batching board task and the call
 # stack to the voice sink (every burst on air out once, in order, nothing concealed)
 TESTS   += dmrRxChainTest
-RXCHAIN := dmrRxChainTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(CORE)/dmr/call/dmr_call.c \
+RXCHAIN := dmrRxChainTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(CORE)/dmr/call/dmr_call.c $(CORE)/dmr/fec/dmrCach.c \
            $(CORE)/dmr/sfr.c $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/ambe/ambeFec.c
 
 dmrRxChainTest: $(RXCHAIN) $(HRCDMR)/hrc6000_dmr.h $(HRCDMR)/hrc.h $(HRC6K)/hrc6000.h $(ROOT)/hal/hal_dmr_modem.h $(wildcard $(CORE)/dmr/call/*.h)
@@ -733,7 +757,7 @@ dmrRxChainTest: $(RXCHAIN) $(HRCDMR)/hrc6000_dmr.h $(HRCDMR)/hrc.h $(HRC6K)/hrc6
 
 # DMR data end to end: chip model -> slot engine -> call stack -> data service, and its answers back out the engine
 TESTS   += dmrDataChainTest
-DCHAIN  := dmrDataChainTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(CORE)/dmr/call/dmr_call.c \
+DCHAIN  := dmrDataChainTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(CORE)/dmr/call/dmr_call.c $(CORE)/dmr/fec/dmrCach.c \
            $(CORE)/dmr/sfr.c \
            $(CORE)/dmr/call/dmr_lc.c $(DATA) $(FRAME) $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrLrrp.c \
            $(CORE)/dmr/dmr_emergency.c $(CORE)/dmr/zoneShare.c $(CORE)/dmr/zoneShareSvc.c $(CORE)/dmr/dmrAirQueue.c $(CORE)/dmr/ambe/ambeFec.c
@@ -808,7 +832,7 @@ splitSim: $(SPLITSIM) $(SPLITH)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Isim -Wshadow $(SPLITF) -o $@ $(SPLITSIM)
 
 # The HR_C6000 BS outbound (drivers/modem/hrc_common/hrc6000_bs.c), and the slot engine's suite again with its hooks built in
-HRCBS   := $(HRCDMR)/hrc6000_bs.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c
+HRCBS   := $(HRCDMR)/hrc6000_bs.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(CORE)/dmr/fec/dmrFec.c
 hrc6000BsTest: hrc6000BsTest.c $(HRCBS) $(wildcard $(HRCDMR)/*.h) $(ROOT)/hal/hal_dmr_modem.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow $(SPLITF) -o $@ hrc6000BsTest.c $(HRCBS)
 
@@ -986,12 +1010,12 @@ plugPttTest: plugPttTest.c $(ROOT)/drivers/input/plugptt/plug_ptt.c $(ROOT)/driv
 keymatrixTest: keymatrixTest.c $(ROOT)/drivers/input/keymatrix/keymatrix.c $(ROOT)/drivers/input/keymatrix/keymatrix.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ keymatrixTest.c $(ROOT)/drivers/input/keymatrix/keymatrix.c
 
-hrc7000DmrTest: hrc7000DmrTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000.c $(HRC7)/hrc7000_dmr.h $(HRC7)/hrc7000.h $(ROOT)/hal/hal_dmr_modem.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc7000DmrTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000.c
+hrc7000DmrTest: hrc7000DmrTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000_cach.c $(HRC7)/hrc7000.c $(HRC7)/hrc7000_dmr.h $(HRC7)/hrc7000.h $(ROOT)/hal/hal_dmr_modem.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc7000DmrTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000_cach.c $(HRC7)/hrc7000.c $(CORE)/dmr/fec/dmrFec.c
 
 # The HR_C7000 BS outbound (drivers/modem/hrc7000/hrc7000_bs.c, split duplex TX half), and the slot engine's suite again
 # with its hooks built in
-HRC7BS  := $(HRC7)/hrc7000_bs.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000.c
+HRC7BS  := $(HRC7)/hrc7000_bs.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000_cach.c $(HRC7)/hrc7000.c $(CORE)/dmr/fec/dmrFec.c
 TESTS   += hrc7000BsTest hrc7000DmrTestSplit
 hrc7000BsTest: hrc7000BsTest.c $(HRC7BS) $(wildcard $(HRC7)/*.h) $(ROOT)/hal/hal_dmr_modem.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_HOTSPOT_SPLIT=1 -o $@ hrc7000BsTest.c $(HRC7BS)
@@ -1129,7 +1153,7 @@ run-irqstack: hrc7000IrqStackTest
 # radio's own services are mdnsTest's and tftpTest's)
 HLNET   := hostlinkNetTest.c $(CORE)/hostlink/hostlink_net.c $(CORE)/hostlink/hostlink_net_air.c $(CORE)/dmr/ipGateway.c \
            $(CORE)/dmr/dmrAirQueue.c \
-           $(CORE)/net/net.c $(CORE)/net/tcp.c $(CORE)/debuglink/dl_fmt.c $(DATA) $(FRAME)
+           $(CORE)/net/net.c $(CORE)/hostlink/hostlink_view.c $(CORE)/net/tcp.c $(CORE)/debuglink/dl_fmt.c $(DATA) $(FRAME)
 HLNET_OFF := -DCONFIG_NET_KISS=0 -DCONFIG_NET_HTTP=0 -DCONFIG_NET_RIGCTL=0 -DCONFIG_NET_APRSIS=0 -DCONFIG_MDNS=0 -DCONFIG_TFTP=0 \
              -DCONFIG_NET_USRP=0
 TESTS   += hostlinkNetTest
@@ -1325,8 +1349,9 @@ run-zedit: zoneEditTest
 ZIMPORT := $(CORE)/codeplug/zone_import.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/dmr/zoneShare.c $(ZEDIT)
 TESTS   += zoneImportTest
 
+# (without a mode that has systems: no modes part)
 zoneImportTest: zoneImportTest.c $(ZIMPORT) $(CORE)/codeplug/zone_import.h $(CORE)/dmr/zoneShare.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ zoneImportTest.c $(ZIMPORT)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_DMR_TRUNK=0 -o $@ zoneImportTest.c $(ZIMPORT)
 # The same with the modes part: channels of a kind and their systems sent and taken (CONFIG_ZONE_SHARE_MODES)
 TESTS   += zoneImportModesTest
 zoneImportModesTest: zoneImportTest.c $(ZIMPORT) $(CORE)/codeplug/codeplug_records.c $(CORE)/codeplug/zone_import.h $(CORE)/dmr/zoneShare.h
@@ -1384,16 +1409,61 @@ else
 endif
 .PHONY: run-cpsclient
 
-# DMR Tier III prototype: the PDU layouts, tables and authentication vectors behind the ETSI TS 102 361-4 clauses it cites
-TESTS   += tier3ProtoTest
+# DMR Tier III PDUs, system identity and channel plans (core/dmr/trunk): the shared vectors, then the rules
+T3PDU   := $(CORE)/dmr/trunk/t3_pdu.c $(CORE)/dmr/trunk/t3_sys.c $(CORE)/dmr/trunk/t3_plan.c $(CORE)/dmr/call/dmr_lc.c \
+           $(CORE)/dmr/fec/dmrCach.c $(CORE)/dmr/fec/dmrFec.c
+TESTS   += t3PduTest
 
-tier3ProtoTest: tier3ProtoTest.c $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/call/dmr_lc.h $(CORE)/dmr/fec/dmrFec.c
-	$(CC) $(CFLAGS) -o $@ tier3ProtoTest.c $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c
+t3PduTest: t3PduTest.c $(T3PDU) $(wildcard $(CORE)/dmr/trunk/*.h) data/t3_vectors.jsonl
+	$(CC) $(CFLAGS) -o $@ t3PduTest.c $(T3PDU)
 
-run: run-tier3
-run-tier3: tier3ProtoTest
-	./tier3ProtoTest
-.PHONY: run-tier3
+run: run-t3pdu
+run-t3pdu: t3PduTest
+	./t3PduTest
+.PHONY: run-t3pdu
+TESTS   += t3MsTest
+# Tier III systems from the codeplug (core/radio/radio_trunk_cp.c) and DL_CMD_CPKV, on a simulated flash
+T3CP    := t3CodeplugTest.c $(CORE)/radio/radio_trunk.c $(CORE)/radio/radio_trunk_cp.c $(CORE)/codeplug/codeplug_records.c \
+	   $(CORE)/debuglink/debuglink_cpkv.c $(CPEDIT)
+TESTS   += t3CodeplugTest
+
+t3CodeplugTest: $(T3CP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/radio/radio_trunk.h $(CORE)/debuglink/*.h sim/sim_flash.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ $(T3CP)
+run: run-t3cp
+run-t3cp: t3CodeplugTest
+	./t3CodeplugTest
+.PHONY: run-t3cp
+
+t3MsTest: t3MsTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c $(wildcard $(CORE)/dmr/trunk/*.h)
+	$(CC) $(CFLAGS) -o $@ t3MsTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c
+run: run-t3ms
+run-t3ms: t3MsTest
+	./t3MsTest
+.PHONY: run-t3ms
+TESTS   += t3AccessTest
+t3AccessTest: t3AccessTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c $(wildcard $(CORE)/dmr/trunk/*.h)
+	$(CC) $(CFLAGS) -o $@ t3AccessTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c
+run: run-t3access
+run-t3access: t3AccessTest
+	./t3AccessTest
+.PHONY: run-t3access
+# The engine with the radio's receive chain (CACH, short LC, slot type, BPTC) on raw control channel bursts
+TESTS   += t3SiteTest
+t3SiteTest: t3SiteTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c $(wildcard $(CORE)/dmr/trunk/*.h) data/t3_site_tscc.jsonl
+	$(CC) $(CFLAGS) -o $@ t3SiteTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c
+run: run-t3site
+run-t3site: t3SiteTest
+	./t3SiteTest
+.PHONY: run-t3site
+# The same engine on off-air recordings (not in the repository): skips unless RFOUNDRY_T3_RECORDINGS names a manifest,
+# so CI never runs it; the skip prints a "# t3ReplayTest skipped" line
+TESTS   += t3ReplayTest
+t3ReplayTest: t3ReplayTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c $(wildcard $(CORE)/dmr/trunk/*.h)
+	$(CC) $(CFLAGS) -o $@ t3ReplayTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c
+run: run-t3replay
+run-t3replay: t3ReplayTest
+	./t3ReplayTest
+.PHONY: run-t3replay
 
 # USB / network audio building blocks (docs/spec/usb-audio.md): USRP framing, G.711 mu-law, the link's PTT watchdogs,
 # the PCM jitter buffer between drifting clocks (core/usbaudio, not in the firmware yet)
@@ -1405,7 +1475,7 @@ usrpTest: $(UAUDIO) $(wildcard $(CORE)/usbaudio/*.h)
 
 # The shared PCM stream and USRP on the network address (core/usbaudio/audio_mux.c, usrp_net.c) against fake
 # gateway, radio core and board
-UNET    := usrpNetTest.c $(CORE)/usbaudio/usrp_net.c $(CORE)/usbaudio/usrp.c $(CORE)/usbaudio/pcm_slip.c \
+UNET    := usrpNetTest.c $(CORE)/usbaudio/usrp_net.c $(CORE)/hostlink/hostlink_view.c $(CORE)/usbaudio/usrp.c $(CORE)/usbaudio/pcm_slip.c \
            $(CORE)/usbaudio/audio_mux.c $(CORE)/debuglink/dl_fmt.c
 TESTS   += usrpNetTest
 
@@ -1436,7 +1506,7 @@ endif
 
 # The TCP services (core/net) through the real gateway and TCP, against a scripted TCP peer and fakes of the APRS
 # engine and the radio core; tshark checks netSvcTest.pcap
-NETSVC  := netSvcTest.c netSvcCases.c $(CORE)/net/net.c $(CORE)/net/tcp.c $(CORE)/net/kiss_tcp.c $(CORE)/aprs/kiss.c \
+NETSVC  := netSvcTest.c netSvcCases.c $(CORE)/net/net.c $(CORE)/hostlink/hostlink_view.c $(CORE)/net/tcp.c $(CORE)/net/kiss_tcp.c $(CORE)/aprs/kiss.c \
            $(CORE)/net/http.c $(CORE)/net/rigctld.c $(CORE)/net/aprsis.c $(CORE)/net/webctl.c $(CORE)/net/ws.c \
            $(CORE)/dmr/ipGateway.c $(CORE)/debuglink/dl_fmt.c $(DATA)
 TESTS   += netSvcTest
@@ -1479,9 +1549,9 @@ snmpPeer: snmpPeer.c $(SNMPLIB) $(wildcard $(CORE)/snmp/*.h)
 # The agent's firmware glue (snmp_agent.c: the USB and RF request paths, the RF mailbox and limits, settings, traps)
 # on fakes of the radio, the settings and the gateway
 TESTS   += snmpAgentTest
-snmpAgentTest: snmpAgentTest.c fuzz.h $(CORE)/snmp/snmp_agent.c $(SNMPLIB) $(DATA) $(wildcard $(CORE)/snmp/*.h)
+snmpAgentTest: snmpAgentTest.c fuzz.h $(CORE)/snmp/snmp_agent.c $(CORE)/hostlink/hostlink_view.c $(SNMPLIB) $(DATA) $(wildcard $(CORE)/snmp/*.h)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_SNMP=1 -DCONFIG_DMR_IP_GATEWAY=1 -DCONFIG_HOTSPOT=0 -o $@ \
-		snmpAgentTest.c $(CORE)/snmp/snmp_agent.c $(SNMPLIB) $(DATA)
+		snmpAgentTest.c $(CORE)/snmp/snmp_agent.c $(CORE)/hostlink/hostlink_view.c $(SNMPLIB) $(DATA)
 
 run: run-snmp
 run-snmp: snmpTest snmpPeer snmpAgentTest

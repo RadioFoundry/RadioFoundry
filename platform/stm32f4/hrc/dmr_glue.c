@@ -886,6 +886,9 @@ bool stm32_hrc_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		put_kv(&o, " D", m->rx_data);
 		put_kv(&o, " crc", m->rx_crc_err);
 		put_kv(&o, " rc", m->rx_rc);
+		put_kv(&o, " rcr", m->rc_reports);	// reverse channel: from the chip's reports, from the raw bursts
+		put_kv(&o, " rct", m->rc_tap);
+		put_kv(&o, "/", m->rc_tap_changed);
 		break;
 	case 3:		// last burst: CC, sync family as decoded, slot, delay; raw 0x5F
 		put_kv(&o, "cc", m->last_cc);

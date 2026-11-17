@@ -212,6 +212,12 @@ slot when the estimate is the other TS's TC. A first TX-vector interrupt less th
 one is the same slot and does not toggle the estimate. Without the lock in 1 s the start is refused (TX_REJECTED,
 nothing sent).
 
+The same lock numbers the slot ticks on a BS signal: once it holds, each `DMR_EV_SLOT_TICK` carries the TS that the
+estimate gives for the slot starting there, and the AT bit (RX_TYPE_INFO b23) of the last CACH that named that slot,
+when it was read in the last four ticks (`DMR_TICK_AT_KNOWN`, `DMR_TICK_AT_BUSY`). Before the lock, while
+transmitting and without a CACH, `ts` is 0 and AT unknown. On a BS signal on both slots nearly every tick after the
+lock carries AT.
+
 Bench findings behind this (two boards on the SDR bench, 2026-10-18):
 
 | Tried | Result |
@@ -302,8 +308,8 @@ embedded LC fragments correctly is unverified; follow the datasheet.
 | 3:2 | recv_sync_type | 0 MS, 1 BS, 2 TDMA slot 1, 3 TDMA slot 2 |
 | 1:0 | sync_type | 0 none (EMB-only burst), 1 voice, 2 data, 3 RC |
 
-"CRC good" for a deframed burst = bits 30:24 all zero. Data blocks have no CRC-16, so do not drop them on these
-flags; check CRC-9/CRC-32 in software. RX_INFO (0x394): b24:16 trunking multiframe number, b10:0 received RC.
+"CRC good" for a deframed burst = bits 30:24 all zero. Data blocks and MBC continuation blocks have no CRC-16, so do
+not drop them on these flags; check CRC-9/CRC-32 (the MBC's CRC-16 in its last block) in software. RX_INFO (0x394): b24:16 trunking multiframe number, b10:0 received RC.
 
 ### 2.8 Buffer layouts
 
@@ -318,6 +324,11 @@ mode, AUDIO_CONTROL b0 = 1); 0x4B–0x50 embedded RC; 0x495–0x4AF send voice k
 chip keeps the previous call's LC there until a new one is decoded (measured). The LC belongs to the
 chip slot RX_TYPE_INFO shows at its interrupt: through a repeater with a call on each slot, the next burst heard is the
 other slot's, so the driver holds one LC per chip slot and hands each to the next voice burst of that slot.
+0x2B–0x2F: the CACH short LC of a BS signal, 28 bits and the CRC-8 received, the low 4 bits of 0x2F unused; new
+at system interrupt bit 4. The interrupt only counts it, and only while a BS signal is heard (the RAM keeps the last
+one); the event task reads it (`hrc7000_dmr_short_lc`, in flash: a new one comes every 120 ms at most) and reports it
+when it changes (`DMR_EV_SHORT_LC`); the stack checks the CRC-8. The chip's own CRC-8 flag (RX_TYPE_INFO
+b30, in the burst report) isn't used.
 
 **Voice RAM (0x16000960)**: write 27 bytes before arming a voice burst; read 27 bytes after a voice deframe interrupt
 Burst numbering for privacy keystream purposes is RX_TYPE_INFO's 1–6.
@@ -695,6 +706,29 @@ On the SDR bench (an MS simulator answering a confirmed packet with MS sync, 4-6
 | Reception over (nothing taken for 390 ms) | the 5.2 restart: the chip drops the sender's slot timing and its timeslot interrupts stop |
 | Slot timing with nothing usable for 600 ms | the 5.2 restart, again every 600 ms while it lasts. Without it the chip kept a departed sender's timing, reported only unusable and abnormal slots and took no later call (measured) |
 
+### 5.4 The receive tap
+
+In layer 2 mode the RX RAM also holds each burst received as bits, not documented (measured):
+
+| Where | What |
+|---|---|
+| RX 0x30-0x53, RX 0x60-0x83 | one burst each, 288 hard bits in the HR_C6000 layout ([hrc6000-registers.md](hrc6000-registers.md) 2.2): the CACH (24), then the burst deframed, a voice-layout burst's 48-bit sync / EMB / RC field first. Which area takes which slot follows RX_TYPE_INFO b19, not the CACH TC |
+| RX 0x48, RX 0x1C8 | the soft values of those two bursts without the CACH, one byte per bit, bits 5-0; the hard bit is 32 or more |
+
+The first area's soft values overwrite the start of the second area, its CACH and field among them: that burst's
+field is read from its soft values at 0x1C8. The engine reads the tap after a slot it listened to while sending, for a
+BS's dedicated RC burst, which the chip doesn't report ([dmr-modem.md](dmr-modem.md), reverse channel).
+
+While we send through a repeater, the chip hears it in only some of the listen slots (measured, the RF back on the
+receive frequency after each burst). In some overs it gives the BS's bursts, typed or not, and the tap fills; in
+others it gives about one deframe a second and the tap areas don't change for seconds. So the modem says
+`tx_listen_gaps`: an RC is caught when heard, and silence is not a repeater drop. LAYER2_SLOTON stays 0 there (5.3).
+With b2 dll_rx_slot_on set while sending, the chip heard the BS in every listen slot (222 of 224), but the repeater
+decoded none of our voice bursts: set once, it took the header only; set for each listen slot and cleared before ours,
+nothing at all. 0x05, set once or per slot, changed nothing. While we send, the second area's
+soft values are 7-bit signed, a dibit's first bit in the sign (b6); a BS sync read that way matched in all 24 first
+bits.
+
 ---
 
 ## 6. Transmit sequences
@@ -747,6 +781,16 @@ CRC-9 and CRC-32 computed by the CPU), SEND_TYPE = data type << 4, TXRX_CTRL = 0
 slot: TXRX_CTRL = 0 (or 0x40 to listen for a response). Sequence for a packet: data header (0x60), blocks
 (0x70/0x80/0xA0), optional terminator. CSBK signaling: optional preamble CSBKs then the function CSBK, all 0x30
 (datasheet appendices B, C). Open RX afterwards to catch the response.
+
+**Rate 3/4 blocks don't decode.** The chip's trellis encoder doesn't start each rate 3/4 block in state 0
+(TS 102 361-1 B.2.2). A block re-encodes bit for bit from the CPU's 18 octets with start state 4 or 7, varying
+between blocks and tries, and sometimes one more info bit differs in the second constellation point. A receiver that
+starts its decoder in state 0, as the standard has it, takes the wrong path through the first tribits: octets 0-1 (a
+confirmed block's DBSN and CRC-9) come out wrong, and the packet fails. Rate 1/2 blocks, headers and CSBKs are
+sent exactly. SEND_TYPE b8 makes no difference, and the register map has no encoder reset. The glue sets
+`hal_dmr_modem_t.tx_rate34_bad`, so the core sends no rate 3/4 of its own: confirmed IP goes at rate 1/2
+([dmr-data.md](dmr-data.md) 12.9). Rate 3/4 blocks the radio relays (hotspot, repeater) keep their rate and
+have the same fault.
 
 ### 6.5 BS activation (repeater wake)
 

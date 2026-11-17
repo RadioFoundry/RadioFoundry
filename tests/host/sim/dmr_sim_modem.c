@@ -27,7 +27,7 @@ static bool start(const dmr_config_t *cfg, dmr_event_cb_t cb, void *ctx)
 }
 
 static void stop(void) { sim.started = false; sim.cb = NULL; }
-static void configure(const dmr_config_t *cfg) { sim.cfg = *cfg; }
+static void configure(const dmr_config_t *cfg) { sim.cfg = *cfg; sim.configures++; }
 static void rx_restart(void) { sim.rx_restarts++; }
 static void rx_lock_slot(int8_t ts) { sim.locked_ts = ts; }
 
@@ -137,6 +137,15 @@ const hal_dmr_modem_t sim_modem = {
 	.tx_split = tx_split,
 };
 
+// The same, its split listening with gaps (tx_listen_gaps)
+const hal_dmr_modem_t sim_modem_gaps = {
+	.start = start, .stop = stop, .configure = configure, .rx_restart = rx_restart, .rx_lock_slot = rx_lock_slot,
+	.tx_begin = tx_begin, .tx_queue = tx_queue, .tx_queue_space = tx_queue_space, .tx_end = tx_end,
+	.tx_abort = tx_abort, .set_embedded_lc = set_embedded_lc, .set_cc_filter = set_cc_filter,
+	.is_transmitting = is_transmitting, .tx_listen = tx_listen, .tx_listen_split = tx_listen_split, .tx_fill = tx_fill,
+	.tx_listen_gaps = true,
+};
+
 void sim_reset(void)
 {
 	memset(&sim, 0, sizeof(sim));
@@ -150,6 +159,22 @@ void sim_rx(const dmr_burst_t *b)
 void sim_event(uint8_t kind, int8_t ts)
 {
 	emit(kind, ts, 0, NULL);
+}
+
+void sim_short_lc(uint32_t slc, uint8_t crc)
+{
+	dmr_event_t ev = { .kind = DMR_EV_SHORT_LC, .flags = crc, .arg = slc };
+
+	if (sim.cb)
+		sim.cb(&ev, sim.ctx);
+}
+
+void sim_rc(uint16_t info, uint8_t flags)
+{
+	dmr_event_t ev = { .kind = DMR_EV_RC, .ts = -1, .flags = flags, .arg = info };
+
+	if (sim.cb)
+		sim.cb(&ev, sim.ctx);
 }
 
 static void send_one(void)
@@ -177,6 +202,7 @@ static void send_one(void)
 		a->len = b.len;
 		memcpy(a->payload, b.payload, b.len);
 		a->slot = sim.slot;
+		a->ts = sim.last_ts;
 		if (b.kind == DMR_BURST_VOICE) {
 			a->lcss = dmr_emb_lcss(b.voice_index);
 			if (b.voice_index >= 1 && b.voice_index <= 4) {
@@ -200,7 +226,12 @@ void sim_slot(void)
 	int8_t ts = sim.repeater || sim.free_ticks || (sim.held_slot_numbers && sim.tx_active)
 		? (int8_t)(1 + (sim.slot & 1)) : 0;
 
-	emit(DMR_EV_SLOT_TICK, ts, sim.slot, NULL);
+	dmr_event_t tick = { .kind = DMR_EV_SLOT_TICK, .ts = ts, .arg = sim.slot };
+	if (ts != 0) {
+		tick.flags = (uint8_t)(DMR_TICK_AT_KNOWN | ((sim.at_busy >> (ts - 1)) & 1u ? DMR_TICK_AT_BUSY : 0u));
+	}
+	if (sim.cb)
+		sim.cb(&tick, sim.ctx);
 	if (sim.tx_active && sim.align_needs_repeater && sim.last_timing == DMR_TIMING_ALIGNED && !sim.align_found) {
 		if (sim.repeater && (sim.last_ts == 1 || sim.last_ts == 2)) {
 			sim.align_found = true;
@@ -217,7 +248,7 @@ void sim_slot(void)
 		}
 	}
 	if (sim.listen_bursts && sim.repeater &&
-	    (!sim.tx_active || ((int8_t)(sim.slot & 1) != sim.tx_parity && sim.listening))) {
+	    (!sim.tx_active || ((int8_t)(sim.slot & 1) != sim.tx_parity && sim.listening && !sim.listen_deaf))) {
 		dmr_burst_t b;
 
 		memset(&b, 0, sizeof(b));

@@ -35,8 +35,44 @@ enum {
 	DL_CMD_IDDB		= 0x1F,	// the DMR ID database: its format, records and an ID looked up (debuglink_iddb.c, 3.23)
 	DL_CMD_CHIP_REG		= 0x20,	// an RF chip or SoC register read or written (debuglink_chipreg.c, 3.24)
 	DL_CMD_HWOPT		= 0x21,	// the board's hardware options: list, set (debuglink_hwopt.c, 3.25)
-	DL_CMD_LINK_HOLD	= 0x23,	// hold the host port for this client, or let go (docs/spec/debuglink.md 3.27)
-	DL_CMD_MEM		= 0x22,	// peek and poke: memory, registers and pins (CONFIG_DEBUG_MEM; dl_mem.c, 3.26)
+	DL_CMD_T3		= 0x22,	// a Tier III trunked system: stage, select, leave (debuglink_t3.c, 3.26)
+	DL_CMD_CPKV		= 0x23,	// a key of the codeplug settings area: read, write, remove (debuglink_cpkv.c, 3.27)
+	DL_CMD_MEM		= 0x24,	// peek and poke: memory, registers and pins (CONFIG_DEBUG_MEM; dl_mem.c, 3.28)
+	DL_CMD_LINK_HOLD	= 0x25,	// hold the host port for this client, or let go (docs/spec/debuglink.md 3.29)
+};
+
+// DL_CMD_T3 operations (first payload byte; docs/spec/debuglink.md 3.26). Little endian
+enum {
+	DL_T3_RESET = 1,	// the staged system back to empty
+	DL_T3_SYSTEM = 2,	// own ID u32, model u8, net u16, category u8, opts u16, cc u8, talk ID u32, talk private u8
+	DL_T3_CTRL = 3,		// a control channel: lcn u16, rx Hz u32, tx Hz u32, cc u8 (0xFF: the TSCC's)
+	DL_T3_CHAN = 4,		// a channel of the plan, as DL_T3_CTRL
+	DL_T3_TG = 5,		// a talkgroup: id u32, flags u8 (1 listen, 2 talk)
+	DL_T3_SITE = 6,		// a SITE allowed: u16
+	DL_T3_PLAN = 7,		// the fixed plan: base Hz u32, first u16, separation code u8, MS TX low u8, split Hz u32
+	DL_T3_START = 8,	// select the staged system
+	DL_T3_STOP = 9,		// leave it
+	DL_T3_DEREG = 10,	// de-register
+	DL_T3_END = 11,		// end the call being followed
+	DL_T3_STATUS = 12,	// send a status: to u32, group u8, status u8 (0-126; 127 polls an MS)
+	DL_T3_SDATA = 13,	// send short data: to u32, group u8, UDT_Format u8, then 1-46 octets
+	DL_T3_AUTH = 14,	// the authentication key K: 16 octets, then the PSN u32 (optional, 0: none); none: no key
+	DL_T3_PS = 15,		// power save: PowerSave_RQ u8 (0 off, 1-7), T_Awake ms u16 (0: default)
+	DL_T3_DIVERT = 16,	// call diversion: mode u8 (0 clear, 1 set, 2 clear incoming), services u8 (T3_DIV_*), to u32, group u8
+	DL_T3_ALS = 17,		// Ambient Listening: to u32 (0: only the timers), emergency u8, T_ALS s u16, T_ALS_E s u16 (0: default)
+	DL_T3_INTERRUPT = 18,	// stop the talker in the call followed: end ALS u8 (0: status 125, 1: status 123)
+	DL_T3_SDPOLL = 19,	// poll an MS for its short data: to u32, UDT_Format u8, blocks u8 (1-4)
+	DL_T3_POLL_REPLY = 20,	// the answer to a poll: UDT_Format u8, then 0-46 octets (none: refused)
+	DL_T3_LOAD = 21,	// stage system n u8 of the codeplug (dmr-trunking-codeplug.md), not started
+	DL_T3_SUPL = 22,	// supplementary user data offered with each call: UDT_Format u8, then 0-46 octets (none: off)
+	DL_T3_DIAL = 23,	// the digits a call through a dialing gateway sends: 0-44 of "0-9*#" (none: off)
+};
+
+// DL_CMD_CPKV operations (first payload byte, then the key u16; docs/spec/debuglink.md 3.27)
+enum {
+	DL_CPKV_GET = 1,	// offset u16 -> length u16, the value from offset
+	DL_CPKV_SET = 2,	// offset u16, bytes: offset 0 sets the value, else patches it from offset
+	DL_CPKV_REMOVE = 3,
 };
 
 // DL_CMD_HWOPT operations (first payload byte; docs/spec/debuglink.md 3.25)
@@ -45,7 +81,7 @@ enum {
 	DL_HWOPT_OP_SET		= 1,	// option u8, choice u8 -> none (refused: the board didn't store it, or on air)
 };
 
-// DL_CMD_MEM operations (first payload byte; docs/spec/debuglink.md 3.26). u32 little endian. Width is 1, 2 or 4 bytes
+// DL_CMD_MEM operations (first payload byte; docs/spec/debuglink.md 3.28). u32 little endian. Width is 1, 2 or 4 bytes
 // and the address a multiple of it. Everything but READ, ARM and PIN's read is refused unless armed
 enum {
 	DL_MEM_OP_READ = 0,	// width u8, address u32, count u8 (1..DL_MEM_PEEK_MAX) -> status, the values (width each)
@@ -132,6 +168,8 @@ enum {
 					// into the IP gateway's air path as if from the host (CONFIG_DMR_IP_GATEWAY)
 	DL_DATA_OP_TX_SPACING,		// guard ms u16, chain u8 (0 off, 1 on): the data service's spacing of our transmissions,
 					// RAM only, for the SDR bench's comparison (docs/spec/dmr-data.md 12.6)
+	DL_DATA_OP_IP_CONFIRMED_RATE,	// u8: the rate of confirmed IP packets, 0 rate 3/4 (the default), 1 rate 1/2, 2 rate 1;
+					// RAM only, to tell a rate's coding from the rest of the packet on the SDR bench
 };
 
 // DL_CMD_STORAGE operations (first payload byte; docs/spec/debuglink.md 3.13)

@@ -3,6 +3,7 @@
 // DMR voice glue: call stack frames <-> FEC <-> vocoder <-> PCM blocks (ambeVoice.h)
 #include "dmr/ambe/ambeVoice.h"
 #include "dmr/ambe/ambeFec.h"
+#include "config.h"
 
 #include <stddef.h>
 #include <string.h>
@@ -95,6 +96,43 @@ static void rx_push(const uint8_t bits[VOCODER_BITS], uint8_t bad)
 	STORE(rx_head, (uint8_t)(h + 1));
 }
 
+#if CONFIG_VOICE_CAPTURE
+// Written in the call task; the debug link reads count first, then entries below it
+static ambe_cap_entry_t cap[AMBE_VOICE_CAP];
+static volatile uint8_t cap_count, cap_want;
+
+static void cap_put(const uint8_t *frame)
+{
+	uint8_t n = cap_count;
+	if (n >= cap_want) {
+		return;
+	}
+	cap[n].lost = frame == NULL ? 1u : 0u;
+	if (frame != NULL) {
+		memcpy(cap[n].frame, frame, sizeof cap[n].frame);
+	} else {
+		memset(cap[n].frame, 0, sizeof cap[n].frame);
+	}
+	cap_count = (uint8_t)(n + 1u);
+}
+
+void ambeVoiceCaptureArm(uint8_t n)
+{
+	cap_want = 0;
+	cap_count = 0;
+	cap_want = n < AMBE_VOICE_CAP ? n : (uint8_t)AMBE_VOICE_CAP;
+}
+
+uint8_t ambeVoiceCapture(const ambe_cap_entry_t **entries, uint8_t *want)
+{
+	*entries = cap;
+	*want = cap_want;
+	return cap_count;
+}
+#else
+#define cap_put(frame) ((void)0)
+#endif
+
 static void sink_begin(const dmr_caller_t *caller, void *ctx)
 {
 	(void)caller;
@@ -114,6 +152,7 @@ static void sink_frame(const uint8_t ambe72[DMR_AMBE_FRAME_BYTES], void *ctx)
 		sink_begin(NULL, NULL);	// frames with no call open: a new call
 	}
 	stats.rx_in++;
+	cap_put(ambe72);
 	ambeFecDecode(ambe72, bits, &r);
 	if (r.c0_failed) {
 		stats.rx_bad++;
@@ -134,6 +173,7 @@ static void sink_lost(void *ctx)
 {
 	(void)ctx;
 	stats.rx_lost++;
+	cap_put(NULL);
 	rx_push(NULL, 2);
 	rx_place = (uint8_t)((rx_place + 1u) % 3u);
 }

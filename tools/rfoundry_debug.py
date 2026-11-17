@@ -30,7 +30,7 @@
                                                 stop the feeds (docs/spec/watchdog.md 5): the radio resets. starve polls
                                                 until the link goes quiet and prints how long it lasted
     rfoundry_debug.py watchdog load H L [RST]        HR_C7000: re-arm with raw OT_LOAD_H / OT_LOAD_L (RST_LOAD), then starve
-    rfoundry_debug.py mem read ADDR [N] [-w 1|2|4]   peek: N values of the width (CONFIG_DEBUG_MEM; debuglink.md 3.26)
+    rfoundry_debug.py mem read ADDR [N] [-w 1|2|4]   peek: N values of the width (CONFIG_DEBUG_MEM; debuglink.md 3.28)
     rfoundry_debug.py --dangerous mem write|set|clear ADDR VALUE [-w 1|2|4]
                                                 poke: the value, or its bits set or cleared; prints the read back
     rfoundry_debug.py pin PIN [--dangerous in|low|high]
@@ -100,8 +100,8 @@ WATCHDOG = 0x1D                     # the hardware watchdog's bench tests (CONFI
 WDT_OP_CLEAR_GAP, WDT_OP_TEST, WDT_OP_LOAD = range(3)
 WDT_TESTS = {"starve": 1, "spin": 2, "irq-off": 3}
 WDT_TOKEN = 0x474F4457              # 'WDOG'
-LINK_HOLD = 0x23                    # hold the host port for this client (docs/spec/debuglink.md 3.27)
-MEM = 0x22                          # peek and poke (CONFIG_DEBUG_MEM; docs/spec/debuglink.md 3.26)
+LINK_HOLD = 0x25                    # hold the host port for this client (docs/spec/debuglink.md 3.29)
+MEM = 0x24                          # peek and poke (CONFIG_DEBUG_MEM; docs/spec/debuglink.md 3.28)
 MEM_OP_READ, MEM_OP_WRITE, MEM_OP_SET, MEM_OP_CLEAR, MEM_OP_ARM, MEM_OP_DISARM, MEM_OP_PIN = range(7)
 MEM_WRITE_OPS = {"write": MEM_OP_WRITE, "set": MEM_OP_SET, "clear": MEM_OP_CLEAR}
 MEM_PIN_ACTIONS = {"read": 0, "in": 1, "low": 2, "high": 3}
@@ -117,6 +117,24 @@ RX2_FLAGS = {1: "present", 2: "up", 4: "bridge", 8: "restart", 16: "forward"}
 RX2_FORWARD_MAX = REQ_MAX - 2        # a forwarded command's payload: the first SoC's request cap less op and command
 IDDB = 0x1F                         # the DMR ID database: format, records, an ID looked up (docs/spec/debuglink.md 3.23)
 CHIP_REG = 0x20                     # an RF chip or SoC register read or written (docs/spec/debuglink.md 3.24)
+T3 = 0x22                           # a Tier III trunked system: stage, select, leave (docs/spec/debuglink.md 3.26)
+T3_RESET, T3_SYSTEM, T3_CTRL, T3_CHAN, T3_TG, T3_SITE, T3_PLAN, T3_START, T3_STOP, T3_DEREG, T3_END, \
+    T3_STATUS, T3_SDATA, T3_AUTH, T3_PS, T3_DIVERT, T3_ALS, T3_INTERRUPT, T3_SDPOLL, T3_POLL_REPLY, T3_LOAD, T3_SUPL, \
+    T3_DIAL = range(1, 24)
+T3_UDTF = {"binary": 0, "address": 1, "bcd": 2, "iso7": 3, "iso8": 4, "nmea": 5, "ip": 6, "utf16": 7}
+T3_TG_LISTEN, T3_TG_TALK, T3_TG_BROADCAST = 1, 2, 4
+T3_DIV = {"voice": 8, "pdata": 4, "sdata": 2, "status": 1}  # call diversion services (T3_DIV_*)
+T3_PAR = {"a": 1, "b": 2}
+CPKV = 0x23                         # a key of the codeplug settings area (docs/spec/debuglink.md 3.27)
+CPKV_GET, CPKV_SET, CPKV_REMOVE = 1, 2, 3
+# Codeplug settings-area keys of the mode records (docs/spec/channel-modes.md): system n, a system entry, system n's
+# secret, channel c's tag (+ c - 1); a system record's flags; a tag's flags; the Tier III kind and system type
+CPKV_SYSTEM, CPKV_SYS_CHAN, CPKV_SYS_KEY, CPKV_CH_TAG = 0x0100, 0x0200, 0x0300, 0x0400
+SYS_NEEDS_KEY, SYS_TX = 0x01, 0x02
+TAG_TX, TAG_BASE_OWN, TAG_FALLBACK = 0x01, 0x02, 0x04
+KIND_DMR_TRUNK = SYSTYPE_DMR_TRUNK = 1
+T3_TAG_NO_FALLBACK = 0x10                   # a trunked channel's tag: never fall back
+T3_SYS_STUN = 0x0400                        # a Tier III system's option: accept a stun
 CHIP_SOC = 0xFF                     # CHIP_REG's chip number for the SoC's own registers
 SNMP = 0x19                         # the SNMP agent (CONFIG_SNMP; docs/spec/debuglink.md 3.17, docs/spec/snmp.md)
 SNMP_OP_SET, SNMP_OP_COMMUNITY, SNMP_OP_TEST_TRAP = range(3)
@@ -143,7 +161,7 @@ PROBE_BLOCK = 160
 REGIONS = {0: "none", 1: "ours", 2: "foreign"}
 DATA_OP_SMS, DATA_OP_CALL_ALERT, DATA_OP_RADIO_CHECK, DATA_OP_SETTINGS, DATA_OP_INBOX, DATA_OP_MARK_READ = range(1, 7)
 DATA_OP_EMERGENCY, DATA_OP_EMERGENCY_SETTINGS = 7, 8
-DATA_OP_IP_SETTINGS, DATA_OP_IP_SEND, DATA_OP_TX_SPACING = 9, 10, 11
+DATA_OP_IP_SETTINGS, DATA_OP_IP_SEND, DATA_OP_TX_SPACING, DATA_OP_IP_CONFIRMED_RATE = 9, 10, 11, 12
 IP_COMPRESS = {"off": 0, "auto": 1, "all": 2}
 IP_CONFIRMED = {"off": 0, "rules": 1, "all": 2}
 IP_RULE_PORT = 0x80000000
@@ -176,7 +194,8 @@ PRESS, LONG, REPEAT, DOWN, UP = range(5)
 
 VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features", "dmr_data",
                  "storage", "dmr_ext", "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
-                 "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc", "net_link", "cps", "board", "audio"]
+                 "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc", "net_link", "cps", "board", "audio", "t3",
+                 "t3_svc", "t3_roam", "voice_cap", "t3_msg", "t3_ra"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
     OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_DMR_TARGET, OP_DMR_CONTACT, \
@@ -193,6 +212,7 @@ OP_VOLUME = 30
 OP_DMR_FIELDS = 31
 OP_VFO_COPY = 32
 OP_VOICE_TEST = 33
+OP_VOICE_CAPTURE = 41
 OP_DTMF = 34
 OP_TX_LIMIT = 35
 OP_TX_DRIVE = 36
@@ -739,6 +759,195 @@ class DebugLink:
         """The DMR ID database as the radio sees it, and the text it shows for dmr_id: {format, records, found, text}"""
         return decode_iddb(self.request(IDDB, struct.pack("<I", dmr_id))[1])
 
+    # A Tier III trunked system (docs/spec/debuglink.md 3.26): stage it with t3_reset, t3_system, t3_ctrl, t3_chan,
+    # t3_tg (t3_site, t3_plan), then t3_start. State: the t3 view section
+    def t3_op(self, op, args=b""):
+        self.request(T3, bytes([op]) + bytes(args))
+
+    def t3_reset(self):
+        self.t3_op(T3_RESET)
+
+    def t3_system(self, own_id=0, model=0, net=0, par="a", opts=0x20, cc=1, talk_id=0, talk_private=False, dmrla=0,
+                  leave_dbm=0, vote_ms=0, ip_gw=False):
+        """own_id 0: the radio's; model 0 tiny .. 3 huge; par a|b|1|2; opts T3_OPT_* (core/dmr/trunk/t3_ms.h): 0x01
+        listen only, 0x20 private calls to the radio, 0x40 register with the talkgroup, 0x200 no roaming; dmrla: the
+        SITE bits of a registration area; leave_dbm: a TSCC below it is left (0: the radio's roaming threshold);
+        vote_ms: the Vote Now sample (0: default); ip_gw: IP through the system's gateway (IPI), the radio's address
+        advised at registration"""
+        cat = T3_PAR[par] if isinstance(par, str) else par
+        self.t3_op(T3_SYSTEM, struct.pack("<IBHBHBIBBhHB", own_id, model, net, cat, opts, cc, talk_id, int(talk_private),
+                                          dmrla, leave_dbm, vote_ms, int(ip_gw)))
+
+    def t3_ctrl(self, lcn, rx_hz, tx_hz, cc=0xFF):
+        """A control channel candidate (also a channel of the plan); rx/tx as the radio sees them; cc 0xFF: the
+        system's"""
+        self.t3_op(T3_CTRL, struct.pack("<HIIB", lcn, rx_hz, tx_hz, cc))
+
+    def t3_chan(self, lcn, rx_hz, tx_hz, cc=0xFF):
+        self.t3_op(T3_CHAN, struct.pack("<HIIB", lcn, rx_hz, tx_hz, cc))
+
+    def t3_tg(self, tg, listen=True, talk=False, broadcast=False):
+        self.t3_op(T3_TG, struct.pack("<IB", tg, (T3_TG_LISTEN if listen else 0) | (T3_TG_TALK if talk else 0) |
+                                      (T3_TG_BROADCAST if broadcast else 0)))
+
+    def t3_auth(self, key=None, psn=0):
+        """The staged system's authentication key K (16 bytes) and PSN; None removes it. The radio never shows K."""
+        if key is None:
+            self.t3_op(T3_AUTH, b"")
+            return
+        if len(key) != 16:
+            raise DebugLinkError("t3 auth: K is 16 bytes")
+        self.t3_op(T3_AUTH, bytes(key) + struct.pack("<I", psn & 0xFFFFFF))
+
+    def t3_power_save(self, rq, awake_ms=0):
+        """Power save asked for at registration: PowerSave_RQ 0 (off) to 7 (1:128), T_Awake in ms (0: default)."""
+        self.t3_op(T3_PS, struct.pack("<BH", rq, awake_ms))
+
+    def t3_divert(self, to=0, group=False, services=("voice", "pdata", "sdata", "status"), clear=False,
+                  incoming=False):
+        """Call diversion: services to an MS or talkgroup; clear=True ends the radio's own, incoming=True every one
+        to the radio."""
+        mode = 2 if incoming else (0 if clear else 1)
+        bits = sum(T3_DIV[s] for s in services)
+        self.t3_op(T3_DIVERT, struct.pack("<BBIB", mode, bits, to, int(group)))
+
+    def t3_als(self, to=0, emergency=False, als_s=0, als_e_s=0):
+        """Ambient Listening: ask to listen to MS `to` (0: only set T_ALS / T_ALS_E, in s, 0 = default). The radio
+        answers ALS calls to it only with T3_OPT_ALS (0x80) in t3_system's opts."""
+        self.t3_op(T3_ALS, struct.pack("<IBHH", to, int(emergency), als_s, als_e_s))
+
+    def t3_interrupt(self, end_als=False):
+        """Stop the talker in the call followed: status 125 to it, then back to the call (t3.ax_result done =
+        accepted); end_als: end the ALS call the radio listens to (status 123; the radio stays on the TSCC)"""
+        self.t3_op(T3_INTERRUPT, struct.pack("<B", int(end_als)))
+
+    def t3_sdata_poll(self, dst, fmt="iso8", blocks=1):
+        """Poll MS dst for its short data (fmt a T3_UDTF name or number, 1-4 blocks): the answer shows as the last
+        message heard, t3.ax_result done"""
+        f = T3_UDTF[fmt] if isinstance(fmt, str) else fmt
+        self.t3_op(T3_SDPOLL, struct.pack("<IBB", dst, f, blocks))
+
+    def t3_poll_reply(self, data=b"", fmt="iso8"):
+        """The radio's answer to a short data poll (0-46 octets; none: refused), taken at the next start"""
+        f = T3_UDTF[fmt] if isinstance(fmt, str) else fmt
+        self.t3_op(T3_POLL_REPLY, struct.pack("<B", f) + bytes(data))
+
+    def t3_supl(self, data=b"", fmt="binary"):
+        """Supplementary user data offered with each call (0-46 octets; none: off), taken at the next start"""
+        f = T3_UDTF[fmt] if isinstance(fmt, str) else fmt
+        self.t3_op(T3_SUPL, struct.pack("<B", f) + bytes(data))
+
+    def t3_dial(self, digits=""):
+        """The digits ("0-9*#", 0-44; none: off) a call through a dialing gateway (PSTNI, PABXI, LINEI, DISPATI)
+        sends, taken at the next start"""
+        self.t3_op(T3_DIAL, digits.encode("ascii"))
+
+    def t3_site(self, site):
+        self.t3_op(T3_SITE, struct.pack("<H", site))
+
+    def t3_plan(self, base_hz, first=1, sep=0, tx_low=False, split_hz=0):
+        self.t3_op(T3_PLAN, struct.pack("<IHBBI", base_hz, first, sep, int(tx_low), split_hz))
+
+    def t3_status(self, dst, status, group=False):
+        """Send a status 0-126 to an MS or talkgroup, or poll an MS (127: its answer is t3.ax_info)"""
+        self.t3_op(T3_STATUS, struct.pack("<IBB", dst, int(group), status))
+
+    def t3_sdata(self, dst, data, group=False, fmt="iso8"):
+        """Send UDT short data (1-46 octets) to an MS or talkgroup; fmt a T3_UDTF name or number (UDT_Format)"""
+        f = T3_UDTF[fmt] if isinstance(fmt, str) else fmt
+        self.t3_op(T3_SDATA, struct.pack("<IBB", dst, int(group), f) + bytes(data))
+
+    def t3_load(self, n):
+        """Stage system n of the codeplug (docs/spec/dmr-trunking-codeplug.md) without starting it; BAD_ARG when it is absent
+        or has no control channel"""
+        self.t3_op(T3_LOAD, bytes([n]))
+
+    def cpkv_get(self, key):
+        """A key's value from the codeplug settings area (its first bytes for a long one), None when absent"""
+        out, total = b"", None
+        while total is None or len(out) < min(total, 128):
+            try:
+                r = self.request(CPKV, struct.pack("<BHH", CPKV_GET, key, len(out)))[1]
+            except DebugLinkError as e:
+                if e.status == 4:
+                    return None
+                raise
+            total = struct.unpack_from("<H", r)[0]
+            if len(r) <= 2:
+                break
+            out += r[2:]
+        return out
+
+    def cpkv_set(self, key, value):
+        """Set a key to value (bytes), in pieces a request holds: the first replaces, the rest patch"""
+        value = bytes(value)
+        step = 64 - 5
+        for off in range(0, max(len(value), 1), step):
+            self.request(CPKV, struct.pack("<BHH", CPKV_SET, key, off) + value[off:off + step])
+
+    def cpkv_remove(self, key):
+        self.request(CPKV, struct.pack("<BH", CPKV_REMOVE, key))
+
+    @staticmethod
+    def name_check(name):
+        """A channel's name check (docs/spec/channel-modes.md 3): FNV-1a 32 of the 16-byte NUL-padded name, folded"""
+        h = 0x811C9DC5
+        for b in name.encode("latin-1")[:16].ljust(16, b"\0"):
+            h = ((h ^ b) * 0x01000193) & 0xFFFFFFFF
+        return (h ^ (h >> 16)) & 0xFFFF
+
+    @staticmethod
+    def system_record(systype, name, block, identity_len=0, flags=SYS_TX, sharing=0, own_id=0, fb_chan=0, fb_name=""):
+        """A codeplug system record (docs/spec/channel-modes.md 7.1), key CPKV_SYSTEM + n: the header, then the type's
+        block (its first identity_len octets the identity). flags: SYS_TX (without it the radio only listens there),
+        SYS_NEEDS_KEY; fb_chan the fallback channel number (0 none) and fb_name its name, for the check"""
+        check = DebugLink.name_check(fb_name) if fb_chan else 0
+        return (struct.pack("<BBBBIHH", systype, flags, sharing, identity_len, own_id, fb_chan, check) +
+                name.encode("latin-1")[:16].ljust(16, b"\0") + bytes(block))
+
+    @staticmethod
+    def tag_record(kind, system, name, flags=TAG_TX, fb_chan=None, fb_name="", params=b""):
+        """A channel's tag (docs/spec/channel-modes.md 3), key CPKV_CH_TAG + channel - 1: its kind and system, the
+        channel's own name (for the check), the flags (TAG_TX: without it the channel is receive only; TAG_BASE_OWN:
+        the channel record stands as it is) and, when fb_chan is given, a fallback channel of its own (0: none)"""
+        head = struct.pack("<BBHB", kind, system, DebugLink.name_check(name),
+                           flags | (TAG_FALLBACK if fb_chan is not None else 0))
+        if fb_chan is not None:
+            head += struct.pack("<HH", fb_chan, DebugLink.name_check(fb_name) if fb_chan else 0)
+        return head + bytes(params)
+
+    @staticmethod
+    def t3_system_record(name, model, net, par="a", cc=1, opts=0x20, own_id=0, sharing=0, fb_hold_s=0, fb_chan=0,
+                         fb_name="", plan=None, plan_flags=0, leave_dbm=0, ps_rq=0, sites=(), tx=True,
+                         needs_key=False):
+        """A Tier III system record (docs/spec/dmr-trunking-codeplug.md 1); plan: (base Hz, first LCN, separation
+        code, split Hz) or None; plan_flags bit 0 MS TX low, bit 1 don't learn channels; tx False: listen only;
+        needs_key: unusable without its key (CPKV_SYS_KEY + n)"""
+        base, first, sep, split = plan or (0, 0, 0, 0)
+        sites = list(sites)[:8]
+        block = (struct.pack("<BHBBHBIHBBIbBB", model, net, T3_PAR.get(par, par), cc, opts, fb_hold_s, base, first, sep,
+                             plan_flags, split, leave_dbm, ps_rq, len(sites)) + struct.pack(f"<{len(sites)}H", *sites))
+        return DebugLink.system_record(SYSTYPE_DMR_TRUNK, name, block, identity_len=4,
+                                       flags=(SYS_TX if tx else 0) | (SYS_NEEDS_KEY if needs_key else 0),
+                                       sharing=sharing, own_id=own_id, fb_chan=fb_chan, fb_name=fb_name)
+
+    @staticmethod
+    def t3_tag_record(system, name, tx=True, base_own=False, no_fallback=False, fb_chan=None, fb_name=""):
+        """A trunked channel's tag (docs/spec/dmr-trunking-codeplug.md 4). The channel record under it is a DMR
+        receive-only one, or any channel with base_own"""
+        flags = (TAG_TX if tx else 0) | (TAG_BASE_OWN if base_own else 0) | (T3_TAG_NO_FALLBACK if no_fallback else 0)
+        return DebugLink.tag_record(KIND_DMR_TRUNK, system, name, flags, fb_chan, fb_name)
+
+    @staticmethod
+    def t3_chan_record(system, lcn, rx_hz, tx_hz, ctrl=False, cc=0xFF):
+        """A Tier III system's channel (docs/spec/dmr-trunking-codeplug.md 2): a system entry, key CPKV_SYS_CHAN + any
+        free number; the entries are read in key order"""
+        return struct.pack("<BBBBHIIB", system, 0, 0xFF, 1 if ctrl else 0, lcn, rx_hz, tx_hz, cc)
+
+    def t3(self, cmd):
+        """start | stop | dereg | end"""
+        self.t3_op({"start": T3_START, "stop": T3_STOP, "dereg": T3_DEREG, "end": T3_END}[cmd])
+
     def chip_reg(self, chip, reg, value=None, page=0):
         """An RF chip register (the board's chip and page numbering): writes value when given, returns the read-back"""
         req = struct.pack("<BBB", chip, page, reg) + (b"" if value is None else struct.pack("<I", value))
@@ -1094,6 +1303,20 @@ class DebugLink:
         every 20 ms in place of the mic, so an over carries known, varying audio (the dmr view key voice.tx_test)."""
         self.radio(OP_VOICE_TEST, bytes([1 if on else 0]))
 
+    def voice_capture(self, n=32):
+        """Capture the next n (up to 32) voice frames received, raw as on air (RADIO op 41, CONFIG_VOICE_CAPTURE
+        builds); 0 stops. voice_frames() reads them."""
+        self.radio(OP_VOICE_CAPTURE, bytes([n]))
+
+    def voice_frames(self):
+        """The frames captured: (want, [9-byte frame or None for a lost one, ...])"""
+        v = self.view(["voice_cap"])
+        if v.get("vcap.built") != "1":
+            raise DebugLinkError("unavailable: built without CONFIG_VOICE_CAPTURE")
+        text = v.get("vcap.frames", "")
+        frames = [None if f == "L" else bytes.fromhex(f) for f in text.split(",") if f]
+        return int(v.get("vcap.want", 0)), frames
+
     def dtmf_key(self, digit, down):
         """A DTMF key's down or up during FM TX (RADIO op 34; radio-features.md 3.7). Raises DebugLinkError "refused"
         for a down while the radio core isn't ready (features view dtmf_ready=0: not FM TX with PTT held)."""
@@ -1304,6 +1527,11 @@ class DebugLink:
         our own transmission in ms, and whether unconfirmed IP packets to one destination share a transmission.
         State: data.tx_guard_ms and data.tx_chain in the air view section."""
         self.data_request(DATA_OP_TX_SPACING, struct.pack("<HB", int(guard_ms) & 0xFFFF, 1 if chain else 0))
+
+    def ip_confirmed_rate(self, rate="3/4"):
+        """The block rate of confirmed IP packets, "3/4" (the default), "1/2" or "1"; RAM only.
+        State: data.ip_cnf_rate in the air view section."""
+        self.data_request(DATA_OP_IP_CONFIRMED_RATE, bytes([("3/4", "1/2", "1").index(rate)]))
 
     # APRS (docs/spec/debuglink.md 3.16, docs/spec/aprs.md 13). State: the aprs and aprs_set view sections
     def aprs_request(self, op, args=b""):
@@ -2594,7 +2822,7 @@ def main(argv=None):
     p.add_argument("op", nargs="?", default="show", choices=["show", "clear-gap", "test", "load"])
     p.add_argument("args", nargs="*")
     p = sub.add_parser("mem", help="peek and poke: read, or with --dangerous write|set|clear (docs/spec/debuglink.md "
-                       "3.26)")
+                       "3.28)")
     p.add_argument("op", choices=["read", "write", "set", "clear"])
     p.add_argument("addr")
     p.add_argument("value", nargs="?", help="read: how many values (default 1); write, set, clear: the value or bits")
@@ -2608,6 +2836,37 @@ def main(argv=None):
     p = sub.add_parser("hwopt", help="hardware options: list, or set OPTION CHOICE (docs/spec/debuglink.md 3.25)")
     p.add_argument("option", nargs="?", help="number or name, e.g. 'Board revision'")
     p.add_argument("choice", nargs="?", help="one of the option's choices, e.g. V4A/V5")
+    p = sub.add_parser("t3", help="a Tier III trunked system (docs/spec/debuglink.md 3.26): show (the t3 view), "
+                       "start, stop, dereg, end, or setup: reset then stage one from the options and start it")
+    p.add_argument("op", nargs="?", default="show",
+                   choices=["show", "setup", "start", "stop", "dereg", "end", "status", "sdata", "interrupt",
+                            "als-end"])
+    p.add_argument("--to", type=int, default=0, help="status: the MS or talkgroup (--group)")
+    p.add_argument("--status", type=int, default=0, help="status: 0-126, or 127 to poll an MS")
+    p.add_argument("--group", action="store_true", help="status, sdata: --to is a talkgroup")
+    p.add_argument("--text", help="sdata: ISO 8-bit text, up to 46 characters")
+    p.add_argument("--hex", help="sdata: binary octets in hex, up to 46")
+    p.add_argument("--own-id", type=int, default=0)
+    p.add_argument("--model", type=int, default=0)
+    p.add_argument("--net", type=int, default=0)
+    p.add_argument("--par", default="a")
+    p.add_argument("--cc", type=int, default=1)
+    p.add_argument("--dmrla", type=int, default=0, help="SITE bits of a registration area")
+    p.add_argument("--leave-dbm", type=int, default=0, help="leave a TSCC below this (0: the radio's roaming threshold)")
+    p.add_argument("--opts", type=lambda x: int(x, 0), default=0x21,
+                   help="T3_OPT_*; default 0x21: listen only (never transmits), private calls")
+    p.add_argument("--ctrl", action="append", default=[], metavar="LCN:RX_MHZ:TX_MHZ[:CC]")
+    p.add_argument("--chan", action="append", default=[], metavar="LCN:RX_MHZ:TX_MHZ[:CC]")
+    p.add_argument("--tg", action="append", default=[], type=int,
+                   help="listen; the first also talks. With --opts 0x40 (register with the talkgroup) and two or more, "
+                   "registration subscribes to the first seven as a list")
+    p.add_argument("--talk", type=int, default=0, help="PTT's target (16777215 = ALLMSID: an all-call)")
+    p.add_argument("--private", action="store_true")
+    p.add_argument("--broadcast", action="append", default=[], type=int,
+                   help="a talkgroup whose calls from the radio are broadcasts (one-way)")
+    p.add_argument("--ip-gw", action="store_true", help="IP through the system's gateway; the address advised at registration")
+    p.add_argument("--ps-rq", type=int, default=0, help="power save asked for at registration: 0 off, 1-7 = 1:2-1:128")
+    p.add_argument("--no-start", action="store_true")
     p = sub.add_parser("iddb", help="the DMR ID database: its format and records, and the text for each ID given "
                        "(docs/spec/debuglink.md 3.23)")
     p.add_argument("ids", nargs="*", type=int)
@@ -2695,6 +2954,38 @@ def main(argv=None):
                 else:
                     flags = link.rx2_info()
                     print("rx2: " + (", ".join(n for n in RX2_FLAGS.values() if n in flags) or "none"))
+            elif a.cmd == "t3":
+                def chan(text):
+                    f = text.split(":")
+                    return (int(f[0]), round(float(f[1]) * 1e6), round(float(f[2]) * 1e6),
+                            int(f[3]) if len(f) > 3 else 0xFF)
+                if a.op == "setup":
+                    link.t3_reset()
+                    link.t3_system(a.own_id, a.model, a.net, a.par, a.opts, a.cc, a.talk, a.private, a.dmrla,
+                                   a.leave_dbm, ip_gw=a.ip_gw)
+                    for c in a.ctrl:
+                        link.t3_ctrl(*chan(c))
+                    for c in a.chan:
+                        link.t3_chan(*chan(c))
+                    for i, tg in enumerate(a.tg):
+                        link.t3_tg(tg, True, i == 0, tg in a.broadcast)
+                    if a.ps_rq:
+                        link.t3_power_save(a.ps_rq)
+                    if not a.no_start:
+                        link.t3("start")
+                elif a.op == "status":
+                    link.t3_status(a.to, a.status, a.group)
+                elif a.op == "sdata":
+                    if a.hex is not None:
+                        link.t3_sdata(a.to, bytes.fromhex(a.hex), a.group, "binary")
+                    else:
+                        link.t3_sdata(a.to, (a.text or "").encode("latin-1"), a.group, "iso8")
+                elif a.op in ("interrupt", "als-end"):
+                    link.t3_interrupt(a.op == "als-end")
+                elif a.op != "show":
+                    link.t3(a.op)
+                for k, v in link.view(sections=["t3", "t3_svc", "t3_roam", "t3_msg", "t3_ra"]).items():
+                    print(f"{k}={v}")
             elif a.cmd == "iddb":
                 d = link.iddb()
                 print(f"format={d['format'] or 'none'} records={d['records']}")

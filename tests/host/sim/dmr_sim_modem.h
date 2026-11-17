@@ -23,6 +23,7 @@ typedef struct {
 	uint8_t lcss;		// voice: the EMB LCSS sent
 	uint8_t emb[4];		// voice B-E: the 32 embedded signaling bits
 	uint32_t slot;		// slot counter when sent
+	int8_t ts;		// the timeslot of the transmission it went out in (tx_begin)
 } sim_air_t;
 
 typedef struct {
@@ -44,6 +45,7 @@ typedef struct {
 	bool split_offer;		// tx_split(true) answers true (a second transmitter)
 	bool split;			// on and not off since
 	unsigned split_ons, split_offs;	// tx_split calls
+	unsigned configures;	// configure calls (each restarts a real modem's receiver)
 	unsigned rx_restarts;	// rx_restart calls: the receiver drops its slot timing and searches again
 	uint8_t emb_lc[9];
 	bool emb_lc_set;
@@ -53,6 +55,7 @@ typedef struct {
 	bool refuse_start;	// start returns false (a board whose modem is not in DMR mode)
 	bool reject_next;	// send DMR_EV_TX_REJECTED at the next slot
 	bool repeater;		// emit slot ticks with the slot number alternating (a repeater's CACH)
+	uint8_t at_busy;	// repeater ticks: bit 0 / 1 = the CACH naming slot 1 / 2 has AT busy (flags known)
 	bool wake_repeater_on_csbk;	// a BS_Dwn_Act on air starts the repeater (repeater = true)
 	bool no_fill;		// tx_fill finds no placeholder (a modem without one, as a second transmitter)
 	bool stalled;		// no slot timing: no ticks, nothing sent, no tx_done (a modem chip that doesn't answer)
@@ -67,6 +70,7 @@ typedef struct {
 	bool lose_own_csbk;	// a CSBK begun on DMR_TIMING_ASAP or ALIGNED never goes on air: TX done, no slot started
 	unsigned lose_next;	// this many next CSBKs never go on air, whatever their timing
 	bool no_split_listen;	// tx_listen_split refused (the radio's RF can't retune between bursts)
+	bool listen_deaf;	// tx_listen_split taken, but no repeater burst heard while transmitting (sim_modem_gaps)
 
 	// State
 	dmr_event_cb_t cb;
@@ -91,6 +95,7 @@ typedef struct {
 
 extern sim_modem_t sim;
 extern const hal_dmr_modem_t sim_modem;
+extern const hal_dmr_modem_t sim_modem_gaps;	// the same with tx_listen_gaps
 
 void sim_reset(void);
 // Advance one 30 ms slot: tick, send our burst if it is our slot, tx_done when drained
@@ -98,5 +103,9 @@ void sim_slot(void);
 // Deliver a received burst to the stack
 void sim_rx(const dmr_burst_t *b);
 void sim_event(uint8_t kind, int8_t ts);
+// A CACH short LC as a modem reports it: 28 bits and the CRC-8 received (DMR_EV_SHORT_LC)
+void sim_short_lc(uint32_t slc, uint8_t crc);
+// A reverse channel heard between our bursts: the 11 RC info bits and DMR_RC_* flags (DMR_EV_RC)
+void sim_rc(uint16_t info, uint8_t flags);
 
 #endif

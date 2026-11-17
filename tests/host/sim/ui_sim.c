@@ -72,6 +72,9 @@
 #include "hotspot/hotspot.h"
 #include "stubentry/stub_entry.h"
 #include "ui/ui_svc_aprs.h"
+#if CONFIG_DMR_TRUNK
+#include "dmr/trunk/t3_ms.h"
+#endif
 
 #define TICK_MS		50
 #define PRESS_MS	150
@@ -1155,6 +1158,64 @@ static void default_target(void)
 	}
 }
 
+#if CONFIG_DMR_TRUNK
+// Trunked channels (dmr-trunking-codeplug.md 4), after the "t3" token: channel 3 uses the system "County", set up; channel 5
+// "Metro", not set up. On a usable one the radio is registered; "t3state:" changes what it is doing
+static bool t3_tagged;
+int ui_svc_t3_channel(uint16_t num, const channel_t *ch, bool *usable)
+{
+	(void)ch;
+	if (!t3_tagged || (num != 3 && num != 5))
+		return -1;
+	if (usable != NULL)
+		*usable = num == 3;
+	return num == 3 ? 0 : 1;
+}
+bool ui_svc_t3_name(uint8_t n, char *name)
+{
+	static const char *const names[] = { "County", "Metro" };
+	if (n > 1)
+		return false;
+	strcpy(name, names[n]);
+	return true;
+}
+void ui_svc_t3_poll(uint32_t id)
+{
+	(void)id;
+	view.t3.polls++;
+}
+// The digits staged for a gateway call ("dial" check), and the caller's number "t3cli:" gives the gateway 0xFFFEC0
+static char t3_dial_digits[17], t3_cli_digits[17];
+void ui_svc_t3_dial(const char *digits)
+{
+	snprintf(t3_dial_digits, sizeof t3_dial_digits, "%s", digits);
+}
+bool ui_svc_t3_cli(uint32_t gw, char *out, size_t len)
+{
+	if (gw != 0xFFFEC0u || len == 0 || !view.t3.on)
+		return false;
+	snprintf(out, len, "%s", view.t3.state == T3_FOLLOW ? t3_cli_digits : "");
+	return true;
+}
+static void t3_view(void)
+{
+	bool usable = false;
+	int sys = view.vfo ? -1 : ui_svc_t3_channel(view.channel_number, NULL, &usable);
+	uint32_t backs = view.t3.backs;
+	uint16_t poll_fails = view.t3.poll_fails;
+	memset(&view.t3, 0, sizeof view.t3);
+	view.t3.backs = backs;
+	view.t3.poll_fails = poll_fails;
+	if (sys < 0)
+		return;
+	view.t3.sys = (uint8_t)(sys + 1);
+	view.t3.unavail = !usable;
+	view.t3.on = usable;
+	view.t3.state = usable ? T3_CAMPED : T3_OFF;
+	view.t3.reg = usable ? T3_REG_OK : T3_REG_UNKNOWN;
+}
+#endif
+
 static void load_channel(void)
 {
 	zone_t z;
@@ -1173,6 +1234,9 @@ static void load_channel(void)
 	temp_target = 0;
 	view.dmr.hear_all_latch = false;	// the latch ends with the channel, as in the radio core
 	view.dmr.hear_all = view.monitor;
+#if CONFIG_DMR_TRUNK
+	t3_view();
+#endif
 	view.dmr.active = view.ch.mode == RADIO_MODE_DMR;
 	view.dmr.codec = true;
 	view.dmr.cc = view.dmr.rx_cc = view.ch.color_code;
@@ -1211,7 +1275,14 @@ void radio_req_channel_step(int8_t dir)
 void radio_req_zone_pos(uint16_t pos) { retune(); view.vfo = false; view.zone_pos = pos; load_channel(); }
 void radio_req_zone(uint16_t index) { retune(); view.zone_index = index; view.zone_pos = 0; load_channel(); }
 static void sim_vfo(bool on);
-void radio_req_vfo(bool on) { retune(); sim_vfo(on); }
+void radio_req_vfo(bool on)
+{
+	retune();
+	sim_vfo(on);
+#if CONFIG_DMR_TRUNK
+	t3_view();
+#endif
+}
 static void sim_vfo(bool on)
 {
 	view.vfo = on;
@@ -1535,7 +1606,8 @@ void ui_svc_boot_text(char line1[17], char line2[17])
 	strcpy(line1, sim_names[UI_NAME_BOOT1]);
 	strcpy(line2, sim_names[UI_NAME_BOOT2]);
 }
-// Zone sharing (ui_svc.h): one offer of 6 channels, one of them outside the radio's bands
+// Zone sharing (ui_svc.h): one offer of 7 channels, one of them outside the radio's bands, one trunked on a system the
+// radio hasn't set up
 static struct {
 	bool pending, channel;
 	uint32_t src, serial;
@@ -1543,10 +1615,11 @@ static struct {
 	bool sent_one;			// the last send: one channel, from this zone and position
 	uint16_t sent_zone, sent_pos;
 } zs_sim;
-static const struct { const char *name; uint32_t hz; bool dmr; bool in_band; } zs_chans[] = {
-	{ "Club rpt", 146760000, false, true }, { "Club DMR", 442375000, true, true },
-	{ "Simplex", 146520000, false, true }, { "Club TG 2", 442375000, true, true },
-	{ "Field day", 446350000, true, true }, { "Club 900", 927500000, true, false },
+static const struct { const char *name; uint32_t hz; bool dmr; bool in_band; bool unavailable; } zs_chans[] = {
+	{ "Club rpt", 146760000, false, true, false }, { "Club DMR", 442375000, true, true, false },
+	{ "Simplex", 146520000, false, true, false }, { "Club TG 2", 442375000, true, true, false },
+	{ "Field day", 446350000, true, true, false }, { "Club 900", 927500000, true, false, false },
+	{ "County Fire", 451000000, true, true, true },
 };
 #define ZS_SIM_CHANNELS	(sizeof zs_chans / sizeof zs_chans[0])
 uint8_t ui_svc_zone_send(uint16_t zone, uint16_t pos, bool one, uint32_t dst, bool group, uint8_t *total)
@@ -1570,6 +1643,7 @@ bool ui_svc_zone_offer(ui_zone_offer_t *out)
 	out->src = zs_sim.src;
 	out->channels = zs_sim.channel ? 1 : (uint8_t)ZS_SIM_CHANNELS;
 	out->in_band = zs_sim.channel ? 1 : (uint8_t)(ZS_SIM_CHANNELS - 1);
+	out->unavailable = zs_sim.channel ? 0 : 1;
 	strcpy(out->name, zs_sim.channel ? "Club rpt" : "Club net");
 	strcpy(out->from, contact_name(zs_sim.src, false));
 	return true;
@@ -1585,6 +1659,7 @@ bool ui_svc_zone_offer_channel(uint32_t which, uint16_t i, ui_zone_offer_ch_t *o
 	out->rx_hz = zs_chans[i].hz;
 	out->dmr = zs_chans[i].dmr;
 	out->in_band = zs_chans[i].in_band;
+	out->unavailable = zs_chans[i].unavailable;
 	return true;
 }
 void ui_svc_zone_offer_reject(uint32_t which)
@@ -1605,6 +1680,7 @@ bool ui_svc_zone_offer_import(uint32_t which, uint16_t zone)
 	ev.ok = true;
 	strcpy(ev.name, zs_sim.channel ? "Zone 1" : "Club net");
 	ev.index = zs_sim.channel ? 1 : (uint16_t)(ZS_SIM_CHANNELS - 1);
+	ev.ms = zs_sim.channel ? 0 : 1;
 	ui_notify(&ev);
 	return true;
 }
@@ -2195,6 +2271,11 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	hotspot_on = rx_on = usb_net = usb_up = false;
 	board.netif = &sim_netif;
 	aprs_sim_reset();
+#if CONFIG_DMR_TRUNK
+	t3_tagged = false;
+	memset(&view.t3, 0, sizeof view.t3);
+	t3_dial_digits[0] = t3_cli_digits[0] = 0;
+#endif
 	n_edits = 0;
 	n_ct_edits = 0;
 	sim_names_reset();
@@ -2452,6 +2533,9 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "hearall") == 0) snprintf(got, sizeof got, "%u", view.dmr.hear_all_latch);
 	else if (strcmp(key, "vox") == 0) snprintf(got, sizeof got, "%u", view.vox_on);
 	else if (strcmp(key, "focusid") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.dmr.focus_id);
+#if CONFIG_DMR_TRUNK
+	else if (strcmp(key, "dial") == 0) snprintf(got, sizeof got, "%s", t3_dial_digits);
+#endif
 	else if (strcmp(key, "longpress") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.long_press_ms);
 	else if (strcmp(key, "monitor") == 0) snprintf(got, sizeof got, "%u", view.monitor);
 	else if (strcmp(key, "beeps") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.beeps);
@@ -2761,6 +2845,42 @@ static bool run_token(char *t, char *err, size_t len)
 		op.zone = (uint16_t)atoi(arg);
 		ui_svc_zone_edit(&op);
 		advance(300);
+		return true;
+	}
+#endif
+#if CONFIG_DMR_TRUNK
+	if (strcmp(t, "t3") == 0) {		// channels 3 and 5 become trunked (see t3_view)
+		t3_tagged = true;
+		t3_view();
+		serial++;
+		return true;
+	}
+	if (strcmp(t, "t3cli") == 0) {		// the next call from the PSTN gateway gives this caller's number
+		snprintf(t3_cli_digits, sizeof t3_cli_digits, "%s", arg != NULL ? arg : "");
+		return true;
+	}
+	if (strcmp(t, "t3state") == 0 && arg != NULL && view.t3.sys != 0) {	// hunt, follow, refused, fallback, back
+		view.t3.on = true;
+		view.t3.fallback = 0;
+		view.t3.state = T3_CAMPED;
+		view.t3.reg = T3_REG_OK;
+		if (strcmp(arg, "hunt") == 0) {
+			view.t3.state = T3_HUNT;
+		} else if (strcmp(arg, "follow") == 0) {
+			view.t3.state = T3_FOLLOW;
+		} else if (strcmp(arg, "refused") == 0) {
+			view.t3.reg = T3_REG_DENIED;
+		} else if (strcmp(arg, "fallback") == 0) {
+			view.t3.on = false;
+			view.t3.fallback = 1;
+			view.t3.fallbacks++;
+		} else if (strcmp(arg, "back") == 0) {
+			view.t3.backs++;
+		} else if (strcmp(arg, "pollfail") == 0) {
+			view.t3.poll_fails++;
+		}
+		serial++;
+		advance(100);
 		return true;
 	}
 #endif

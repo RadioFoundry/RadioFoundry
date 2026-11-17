@@ -42,6 +42,21 @@ CONFIG_DMR_EMERGENCY ?= $(CONFIG_DMR)
 # DMR repeater roaming: move between the repeater sites of a roaming zone by signal strength (needs DMR;
 # core/radio/roam.c, docs/spec/dmr-roaming.md)
 CONFIG_DMR_ROAMING ?= $(CONFIG_DMR)
+# DMR Tier III trunking, the mobile station side: camp on a trunked system's control channel and follow its grants
+# (needs DMR; core/dmr/trunk, docs/spec/dmr-trunking.md)
+CONFIG_DMR_TRUNK ?= $(CONFIG_DMR)
+# Tier III access: registration, call requests, answers to the control channel, ending calls. Off: a listen-only
+# trunking receiver (needs DMR_TRUNK)
+CONFIG_DMR_TRUNK_TX ?= $(CONFIG_DMR_TRUNK)
+# Tier III supplementary user data: data offered with a call request, and the last heard from the system kept for the
+# debug link (needs DMR_TRUNK_TX; docs/spec/dmr-trunking.md 7.6)
+CONFIG_DMR_TRUNK_SUPL ?= $(CONFIG_DMR_TRUNK_TX)
+# Tier III calls through the PSTN, PABX, line and dispatcher gateways: dialed digits uploaded with the call, and the
+# caller's number a gateway sends kept for the debug link (needs DMR_TRUNK_TX; docs/spec/dmr-trunking.md 7.6)
+CONFIG_DMR_TRUNK_GW ?= $(CONFIG_DMR_TRUNK_TX)
+# Voice capture for receive tests: the next 32 voice frames received, raw as on air, read over the debug link
+# (needs DMR; core/dmr/ambe/ambeVoice.c, debug link RADIO op 41 and the voice_cap view)
+CONFIG_VOICE_CAPTURE ?= n
 # IP over DMR packet data through a network link to the host: the USB network adapter or PPP on the serial host port
 # (needs DMR and USB_NETWORK or NET_PPP; core/hostlink/hostlink_net.c)
 CONFIG_DMR_IP_GATEWAY ?= $(if $(and $(filter y,$(CONFIG_DMR)),$(filter y,$(CONFIG_USB_NETWORK) $(CONFIG_NET_PPP))),y,n)
@@ -130,7 +145,7 @@ CONFIG_DEBUGLINK ?= $(CONFIG_HOSTLINK)
 # table of the tasks (core/app/task_stack.c, docs/spec/debuglink.md 3.7; needs DEBUGLINK). About 0.6 KB
 CONFIG_TASK_STACKS ?= $(CONFIG_DEBUGLINK)
 # peek and poke on the debug link: memory and register reads, and, armed with a key, writes and pin changes
-# (docs/spec/debuglink.md 3.26; needs DEBUGLINK or a second SoC's debug link server). About 1 KB
+# (docs/spec/debuglink.md 3.28; needs DEBUGLINK or a second SoC's debug link server). About 1 KB
 CONFIG_DEBUG_MEM ?= $(CONFIG_DEBUGLINK)
 # the open-firmware CPS protocol shim on the host port, so qdmr and the open-firmware CPS can read and write the
 # codeplug (docs/spec/open-firmware-cps.md; needs HOSTLINK)
@@ -287,7 +302,7 @@ CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFI
 CONFIG_GPS_SKY ?= $(CONFIG_GPS)
 
 
-FEATURES := USB_SERIAL_REQUEST FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB IDDB_COMPACT DMR_CONTROL_STATION SNMP SFR SFR_DUALPATH_RX SFR_CWID TASK_STACKS \
+FEATURES := USB_SERIAL_REQUEST FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_TRUNK DMR_TRUNK_TX DMR_TRUNK_SUPL DMR_TRUNK_GW VOICE_CAPTURE DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB IDDB_COMPACT DMR_CONTROL_STATION SNMP SFR SFR_DUALPATH_RX SFR_CWID TASK_STACKS \
 	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW CPS_FAST VFO VFO_FM VFO_DMR DIAG DEBUG_MEM BACKLIGHT_TEST FONT_XL FONT_AA FONT_BIG LANG_ES LANG_IT LANG_FR LANG_ZH LANG_DEFAULT_ES LANG_DEFAULT_IT LANG_DEFAULT_FR LANG_DEFAULT_ZH UI_COLOR UI_SETTINGS SCAN DUAL_WATCH BEEP FM_TX_TONES DTMF \
 	RX_EXT VOX REF_TRIM BATTERY_SAVE VIBRATE GPS AUDIO_PROBE STUB_ENTRY NAND_STORAGE CRASH_LOG CRASH_SCREEN CRASH_REPORT WATCHDOG FAULT_TRACE AM_RX BCAST_FM APRS APRS_AFSK APRS_DMR APRS_RX APRS_IGATE GPS_SKY KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT ZONE_EDIT CONTACT_EDIT VOLUME_BAR
 
@@ -308,12 +323,14 @@ ifneq ($(call feature_on,SUBTONE),)
     $(error CONFIG_SUBTONE=y needs CONFIG_FM=y)
   endif
 endif
-$(foreach f,IDDB_COMPACT DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP SFR HOTSPOT APRS_DMR,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR=y)))
+$(foreach f,IDDB_COMPACT VOICE_CAPTURE DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_TRUNK DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP SFR HOTSPOT APRS_DMR,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR=y)))
 $(if $(and $(call feature_on,LANG_DEFAULT_ES),$(if $(call feature_on,LANG_ES),,x)),$(error CONFIG_LANG_DEFAULT_ES=y needs CONFIG_LANG_ES=y))
 $(if $(and $(call feature_on,LANG_DEFAULT_IT),$(if $(call feature_on,LANG_IT),,x)),$(error CONFIG_LANG_DEFAULT_IT=y needs CONFIG_LANG_IT=y))
 $(if $(and $(call feature_on,LANG_DEFAULT_FR),$(if $(call feature_on,LANG_FR),,x)),$(error CONFIG_LANG_DEFAULT_FR=y needs CONFIG_LANG_FR=y))
 $(if $(and $(call feature_on,LANG_DEFAULT_ZH),$(if $(call feature_on,LANG_ZH),,x)),$(error CONFIG_LANG_DEFAULT_ZH=y needs CONFIG_LANG_ZH=y))
 $(foreach f,SFR_DUALPATH_RX SFR_CWID,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,SFR),,x)),$(error CONFIG_$(f)=y needs CONFIG_SFR=y)))
+$(foreach f,DMR_TRUNK_TX,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR_TRUNK),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR_TRUNK=y)))
+$(foreach f,DMR_TRUNK_SUPL DMR_TRUNK_GW,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR_TRUNK_TX),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR_TRUNK_TX=y)))
 ifneq ($(call feature_on,CHANNEL_EDIT),)
   ifeq ($(call feature_on,CHANNEL_LIST),)
     $(error CONFIG_CHANNEL_EDIT=y needs CONFIG_CHANNEL_LIST=y)

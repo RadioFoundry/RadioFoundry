@@ -657,9 +657,10 @@ set. An earlier build wrote bits 6:4 and keyed a silent carrier (`gotchas.md` 3.
 
 ### 5.11 Receiver sleep
 
-RadioFoundry's `rx_sleep(true)` (receiver battery save, `radio-features.md` 5.4) puts the AT1846S in idle and switches the
-receive supply off. `rx_sleep(false)` retunes.
-
+RadioFoundry's `rx_sleep(true)` (receiver battery save, `radio-features.md` 5.4) puts the AT1846S in idle and switches
+the receive supply off. `rx_sleep(false)` retunes. It does the same on a DMR channel (`rx_sleep_dmr`, a trunked system's
+power save): the HR_C6000 keeps running and the core restarts its receive on waking. On air at 1:4 the receiver is off
+55-60% of the time, the radio stays camped, and traffic for it arrives within one cycle.
 ### 5.12 Bench register access
 
 The debug link's CHIP_REG ([debuglink.md 3.24](debuglink.md#324-chip_reg)) reaches both RF chips (`uvf_chip_reg`,
@@ -760,6 +761,10 @@ Ordering:
   The receiver must work between bursts (an SFR's inbound slot, `sfr.md` 3). Dropping the PA earlier than the next
   timeslot interrupt (28.5-30 ms after the RF TX interrupt) did not reduce the inbound errors. The "transmitting" state of the radio must therefore be taken from the HR_C6000 slot state, not from the PA
   pins: the last burst of a call (the terminator) is still in flight after the PA logic has gone back to RX once.
+
+  Since the receiver is back on the RX frequency after every burst, a voice over through a repeater listens to its
+  outbound between our bursts on a split channel too (the glue's `listen_split`, [dmr-modem.md](dmr-modem.md) 2.8):
+  on a trunked site's split channel the radio hears a reverse channel cease while it talks (`test_t3_cease`).
 - Power-down: PA enables low, both RX supplies low, mic power optionally low, HR_C6000 PWD high, AT1846S reg 0x30 =
   receiver off value.
 

@@ -13,6 +13,7 @@
 #include "sim/dmr_sim_modem.h"
 #include "dmr/dmrPrivacy.h"
 #include "dmr/ambe/ambeFec.h"
+#include "dmr/fec/dmrFec.h"
 
 static int failures;
 static int checks;
@@ -428,6 +429,8 @@ static dmr_call_config_t base_cfg(void)
 	return c;
 }
 
+static const hal_dmr_modem_t *modem = &sim_modem;	// sim_modem_gaps for test_rmo_listen_gaps
+
 static void setup(const dmr_call_config_t *c)
 {
 	sim_reset();
@@ -435,7 +438,7 @@ static void setup(const dmr_call_config_t *c)
 	memset(&src, 0, sizeof(src));
 	now = 1000;
 	sub_ms = 0;
-	dmr_call_init(&sim_modem);
+	dmr_call_init(modem);
 	dmr_call_set_voice(&sink, &source);
 	dmr_call_configure(c);
 	CHECK(dmr_call_start());
@@ -619,6 +622,53 @@ static void test_tx_timeout_and_starve(void)
 	dmr_call_ptt(false);
 	run_ms(20);
 	CHECK(V()->phase == DMR_CALL_PHASE_IDLE);
+}
+
+// The reverse channel's cease (ETSI TS 102 361-4 6.4.15.2): heard twice within DMR_CALL_RC_CONFIRM_MS while our
+// voice goes out, the over ends after burst F with a terminator and PTT must be released. One alone, a bad CRC, a
+// power command or two too far apart don't stop it
+static void test_tx_rc_cease(void)
+{
+	dmr_call_config_t c = base_cfg();
+	dmr_call_stats_t st;
+	unsigned v;
+	uint8_t lc[9];
+
+	setup(&c);
+	dmr_call_reset_stats();
+	dmr_call_ptt(true);
+	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE);
+	sim_rc(dmrFecRcInfo(DMR_RC_CEASE), 0);
+	run_ms(DMR_CALL_RC_CONFIRM_MS + 100);
+	sim_rc(dmrFecRcInfo(DMR_RC_CEASE), DMR_RC_EMBEDDED);	// too long after the first: counts as a first again
+	run_ms(300);
+	sim_rc((uint16_t)(dmrFecRcInfo(DMR_RC_CEASE) ^ 1u), DMR_RC_EMBEDDED);	// CRC fails
+	sim_rc(dmrFecRcInfo(DMR_RC_POWER_DOWN), 0);
+	run_ms(300);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE);
+	sim_rc(dmrFecRcInfo(DMR_RC_CEASE_REQUEST), DMR_RC_EMBEDDED);	// the second within the window
+	run_ms(10);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE);	// finishing the superframe
+	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_DENIED && V()->tx_error == DMR_TX_ERR_CEASED);
+	mk_lc(lc, 0, TG_TALK, OWN_ID);
+	check_tx_burst_sequence(0, lc, &v);	// whole superframes, then the terminator with LC
+	dmr_call_get_stats(&st);
+	CHECK(st.rc_good == 4 && st.rc_bad == 1 && st.rc_ceased == 1 && st.rc_last == DMR_RC_CEASE_REQUEST);
+	dmr_call_ptt(false);
+	run_ms(20);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE);
+	// The next over isn't stopped by the last one's
+	dmr_call_ptt(true);
+	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE);
+	sim_rc(dmrFecRcInfo(DMR_RC_CEASE), 0);
+	run_ms(300);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE);
+	dmr_call_ptt(false);
+	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE && V()->tx_error == DMR_TX_OK);
 }
 
 static void test_tx_refused(void)
@@ -1479,6 +1529,41 @@ static void test_rmo_drop_under_over(void)
 	run_ms(600);
 }
 
+// A modem that hears the repeater in only some of the slots between our bursts (tx_listen_gaps): it still listens, so
+// the repeater's RC stops the over, but silence there isn't the repeater's drop. Counted as one, the over through an
+// up repeater ended 0.5 s in and was keyed again
+static void test_rmo_listen_gaps(void)
+{
+	dmr_call_config_t c = base_cfg();
+	c.rmo = true;
+	c.ts = 2;
+	unsigned d0;
+
+	dmr_call_set_tx_listen(true);
+	modem = &sim_modem_gaps;
+	setup(&c);
+	sim.held_slot_numbers = true;
+	sim.listen_bursts = true;
+	sim.listen_deaf = true;	// none of its bursts heard while we send
+	sim.repeater = true;
+	run_ms(180);
+	d0 = rpt_drops();
+	dmr_call_ptt(true);
+	run_ms(1500);
+	CHECK(sim.tx_listens == 1 && V()->phase == DMR_CALL_PHASE_TX_VOICE && V()->tx_error == DMR_TX_OK);
+	CHECK(rpt_drops() == d0 && sim.tx_aborts == 0 && sim.tx_ends == 0 && csbks_on_air() == 0);
+	sim_rc(dmrFecRcInfo(DMR_RC_CEASE), 0);
+	run_ms(100);
+	sim_rc(dmrFecRcInfo(DMR_RC_CEASE), 0);
+	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_DENIED && V()->tx_error == DMR_TX_ERR_CEASED);
+	dmr_call_ptt(false);
+	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE);
+	modem = &sim_modem;
+	dmr_call_set_tx_listen(DMR_CALL_TX_LISTEN);
+}
+
 // Keyed as the repeater's hang ends (issue 524): it still counts as up, so no wake-up, and the modem's aligned start
 // finds no repeater timing. The modem's own slot numbers while it transmits must not keep the repeater "up", and the
 // refused start wakes the repeater instead of being refused, once per key-up
@@ -1636,6 +1721,27 @@ static void test_rx_call(void)
 	CHECK(V()->state == DMR_CALL_STATE_IDLE && sink_log.ends == 1);
 }
 
+// Another slot on the same channel only moves the slot lock: a modem restart would lose sync and miss the call's start
+static void test_slot_change_keeps_modem(void)
+{
+	dmr_call_config_t c = base_cfg();
+
+	c.rmo = true;
+	c.ts = 1;
+	setup(&c);
+	unsigned n = sim.configures;
+	CHECK(sim.locked_ts == 1);
+	c.ts = 2;
+	dmr_call_configure(&c);
+	CHECK(sim.configures == n && sim.locked_ts == 2);
+	c.both_slots = true;
+	dmr_call_configure(&c);
+	CHECK(sim.configures == n && sim.locked_ts == 0);
+	c.cc = (uint8_t)((c.cc + 1) & 0x0F);	// another channel's settings: the modem is told
+	dmr_call_configure(&c);
+	CHECK(sim.configures == n + 1 && sim.cfg.cc == (int8_t)c.cc);
+}
+
 // The modem reports bursts in batches: the call's last voice bursts can come after its terminator. They must not start
 // a second call by late entry (HIL 2026-10-10: one bench call counted as two or three)
 static void test_rx_no_call_after_terminator(void)
@@ -1656,12 +1762,17 @@ static void test_rx_no_call_after_terminator(void)
 	run_ms(60);
 	dmr_call_get_stats(&st);
 	CHECK(st.rx_calls == 1 && st.rx_term_dropped >= 1 && sink_log.begins == 1);
+	CHECK(st.rx_end_term == 1 && st.rx_end_fade == 0 && st.rx_end_sync == 0);
 
 	// The same talker again after the fade time, entered late: a new call
 	run_ms(DMR_CALL_FADE_MS);
 	rx_call(lc, 1, false, 4, 3, false, &frame);
 	dmr_call_get_stats(&st);
 	CHECK(st.rx_calls == 2 && st.rx_late_entries == 1 && sink_log.begins == 2);
+	// No terminator: the fade ends it, and the count says so
+	run_ms(DMR_CALL_FADE_MS + 60);
+	dmr_call_get_stats(&st);
+	CHECK(V()->state == DMR_CALL_STATE_IDLE && st.rx_end_term == 1 && st.rx_end_fade == 1 && st.rx_end_sync == 0);
 }
 
 // A call that fades (a dropout, no terminator) and comes back by late entry with its own LC is one call with a hole in
@@ -3224,6 +3335,7 @@ int main(void)
 	test_tx_call();
 	test_tx_permit_hold();
 	test_tx_timeout_and_starve();
+	test_tx_rc_cease();
 	test_tx_refused();
 	test_tx_done_wake();
 	test_tx_modem_stalled();
@@ -3234,6 +3346,7 @@ int main(void)
 	test_rmo_wake_lost();
 	test_rmo_drop_before_first_burst();
 	test_rmo_drop_under_over();
+	test_rmo_listen_gaps();
 	test_rmo_data_after_listened_over();
 	test_rmo_start_stalled();
 	test_rx_call();
@@ -3241,6 +3354,7 @@ int main(void)
 	test_rx_bad_emb();
 	test_rx_recheck_on_configure();
 	test_rx_no_call_after_terminator();
+	test_slot_change_keeps_modem();
 	test_rx_group_callback();
 	test_rx_own_id_parrot();
 	test_rx_resumed_call();

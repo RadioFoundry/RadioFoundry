@@ -339,6 +339,9 @@ void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi)
 	c->at = lo < CODEPLUG_KEY_CALL_END_TONE ? CODEPLUG_KEY_CALL_END_TONE : lo;
 	c->hi = hi > CODEPLUG_KEY_TX_DENY_TONE ? CODEPLUG_KEY_TX_DENY_TONE : hi;
 }
+// No settings area to write: the radio core writes no tag
+bool codeplug_kv_set(uint16_t key, const void *value, uint16_t len) { (void)key; (void)value; (void)len; return false; }
+bool codeplug_kv_remove(uint16_t key) { (void)key; return false; }
 int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max)
 {
 	for (; c->at <= c->hi; c->at++) {

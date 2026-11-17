@@ -20,6 +20,9 @@
 #include "radio/roam.h"
 #include "settings/settings.h"	// SETTINGS_ROAM_ZONE_BYTES
 #endif
+#if CONFIG_DMR_TRUNK
+#include "radio/radio_trunk.h"	// not under roaming: trunking builds without it
+#endif
 
 #define RADIO_SM_CW		(CONFIG_HOTSPOT || CONFIG_SFR_CWID)	// the CW keyer (radio_sm.c)
 #define RADIO_POLL_MS		25	// status poll and squelch period
@@ -159,6 +162,9 @@ typedef enum {
 	RREQ_WAKE,		// radio_task.c: tick now (a DMR transmission ended: dmr_call_set_wake); never radio_sm_request
 	RREQ_VOLUME_HOLD,	// arg: 1 hold the level and ignore the knob (keys locked), 0 follow it again
 	RREQ_VFO_SFR,		// the VFO's SFR role (CONFIG_SFR): arg = byte A, as a channel's (sfr.h); VFO only
+	RREQ_T3,		// a trunked system (CONFIG_DMR_TRUNK): arg = radio_t3_cmd_t
+	RREQ_T3_POLL,		// poll MS arg2 for its short data, as the system's poll setting says (CONFIG_DMR_TRUNK_TX)
+	RREQ_T3_DIAL,		// the digits a call through a gateway sends (CONFIG_DMR_TRUNK_GW): radio_req_t3_dial()
 } radio_req_type_t;
 
 // RREQ_TONE's argument: which (RADIO_TONE_*) in bits 25:24, the tone type in 23:16, the value in 15:0
@@ -361,6 +367,7 @@ typedef struct {
 	uint8_t dmr_prev_state;		// radio_dmr_state_t at the last tick (beeps on changes)
 	bool codec;			// the vocoder is present
 	bool dmr_running;		// the call stack has the modem
+	bool dmr_killed;		// settings t3_kill: no DMR at all (dmr-trunking.md 7.9)
 	bool dmr_keyed;			// board.radio->tx() armed the per-burst keying (until tx_off)
 	bool sfr_rpt;			// the channel's SFR repeater role has the modem (radio_sfr.c), not the call stack
 	bool sfr_denied;		// a repeater channel kept ordinary because the radio may not transmit or a scan
@@ -419,6 +426,46 @@ typedef struct {
 	radio_cwid_t cwid;		// the SFR repeater's ID schedule (the counts are in view.dmr)
 #endif
 #endif
+#if CONFIG_DMR_TRUNK
+	// A Tier III trunked system (radio_trunk.h): the engine drives the channel the radio is on
+	bool t3_on;
+	bool t3_pending;		// a trunked channel was selected: start its system (t3s) at the next t3_tick
+	bool t3_tagged;			// the channel is a trunked one (channel_t.kind)
+	bool t3_ch_rx;			// and receive only (its tag): the system runs listen only from it
+	uint8_t t3_kv;			// codeplug_kv_serial() when t3s was loaded from the codeplug
+	uint8_t t3_fb;			// fallback (dmr-trunking.md 12): 0 off, 1 on the fallback channel, 2 probing
+	uint16_t t3_fb_number;		// the fallback channel, 0: none
+	uint32_t t3_hunt_ms;		// since when the engine has been hunting with no TSCC (0: it isn't)
+	uint32_t t3_probe_ms;		// on the fallback channel: when to look next; probing: until when
+	channel_t t3_fb_ch;
+	bool t3_both;			// on a control channel: both slots
+	bool t3_ptt_wait;		// PTT held on the TSCC: waiting for our grant
+	bool t3_als_keyed;		// keyed by an Ambient Listening call (6.6.2.6), not by the user
+	uint32_t t3_als_quiet_ms;	// unkeyed at T_ALS: the call ends once the terminator is out
+	uint8_t t3_stun_kept;		// settings t3_stun as last written for the system in use (0: not stunned)
+	uint32_t t3_sd_seen;		// the engine's short data count already given to the inbox
+	bool t3_polling;		// a poll from the menus is out (RREQ_T3_POLL): its outcome is counted
+	bool t3_talking;		// PTT went to the stack for a trunked call
+	uint32_t t3_ticks;		// the stack's tick count handed to the engine
+	uint32_t t3_slc_n;		// the stack's short LC count handed to the engine
+	bool t3_rx_off;			// the receiver is off: the engine sleeps (power save)
+	uint32_t t3_rx_off_at;
+	uint32_t t3_tx_end_ms;	// when our last transmission on the system ended, 0 = a burst was heard since
+	uint8_t t3_sent_report;	// the stack's word on our last burst list: 1 sent, 2 dropped, 0 none pending
+	uint8_t t3_slot;		// the slot of the last tick handed to it
+	uint8_t t3_at[2];		// the last tick flags (DMR_TICK_AT_*) of the CACH naming slot 1, 2
+	uint8_t t3_cc;			// the color code of the channel being listened to
+	uint8_t t3_send_left;		// the bursts the data source still has to give
+	uint8_t t3_send_n;		// bursts in t3_send_burst: a CSBK, or a UDT header and its blocks
+	bool t3_send_udt;
+	bool t3_sending;		// a burst list is with the stack: a retune would drop it, so it waits
+	bool t3_tune_held;		// a retune waiting for it: t3_tune_chan, t3_tune_slot, since t3_tune_ms
+	uint8_t t3_tune_slot;
+	t3_chan_t t3_tune_chan;
+	uint32_t t3_tune_ms;
+	uint8_t t3_send_burst[1 + T3_UDT_BLOCKS_MAX][T3_CSBK_BYTES];
+	uint32_t t3_now;		// the clock at the last t3_tick (for the data service's start, which has none)
+#endif
 #if CONFIG_DMR_ROAMING
 	roam_t roam;
 	uint8_t roam_zones[SETTINGS_ROAM_ZONE_BYTES];	// the roaming zones (settings_t.roam_zones)
@@ -454,6 +501,11 @@ typedef struct {
 // Start-up: the codeplug and the settings (core/settings): the saved zone, channel or VFO, else zone 0 and its
 // first channel (or the VFO); FM receive. Every request notes the position and the VFO in the settings, and
 // radio_sm_poll re-reads the codeplug when codeplug_serial() moves
+#if CONFIG_DMR_TRUNK
+// The whole trunking view; view.t3 is its brief, made by radio_sm_t3_brief before the view is published
+extern radio_t3_view_t radio_t3v;
+void radio_sm_t3_brief(radio_sm_t *sm);
+#endif
 void radio_sm_init(radio_sm_t *sm, uint32_t now_ms);
 void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms);
 // Every RADIO_POLL_MS: status, squelch, audio, LEDs, TX time-out

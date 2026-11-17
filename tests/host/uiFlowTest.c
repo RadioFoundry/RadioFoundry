@@ -104,6 +104,10 @@ static const flow_t flows[] = {
 	{ "zone offer banner hidden with Back on a menu", "zoneoffer:9991234 ok", "back", "banner=none screen=hub", 1, false },
 	{ "zone offer banner goes when Tools opens the offer", "zoneoffer:9991234", "ok 6 0", "banner=none shows=Import", 3,
 	  false },
+	// Trunked channels whose system isn't set up here: dimmed in the preview, said after the import (and in the offer's
+	// text, where the screen has room for it)
+	{ "zone offer preview marks a trunked channel", "zoneoffer:9991234 ctx 2", "up", "shows=ystem", 1, false },
+	{ "zone import result names trunked channels", "zoneoffer:9991234 ctx", "1", "shows=trunked", 1, false },
 #endif
 	{ "8 radio check last caller", CALLER, "ctx 4", "checks=1", 2, false },
 	{ "8 radio check by name", "", "5 6 3 ctx 4", "checks=1", 5, false },
@@ -661,6 +665,39 @@ static const flow_t flows[] = {
 	{ "S message failed text", "", "", "screen=home", 0, false },
 	// APRS (docs/spec/aprs.md 10): Tools 9, one row each
 	{ "A APRS page", "", "ok 6 8", "screen=aprs", 3, false },
+#if CONFIG_DMR_TRUNK
+	// Trunked channels (dmr-trunking.md 12.4): "t3" makes channel 3 a channel of "County" and 5 one of "Metro", not set up
+	{ "T a trunked channel names its system in the zone", "t3", "ok 4 ctx", "screen=zone shows=County", 3, false },
+	{ "T a channel without its system is locked out", "t3 ok 4 ctx", "down down ok",
+	  "screen=zone focus=05_Metro_DMR toast=System_not_set_up", 3, false },
+	{ "T Home on a trunked channel: the system and Ready", "t3 dlpos:3", "", "screen=home shows=County shows=Ready hides=CC",
+	  0, false },
+	{ "T Home while hunting", "t3 dlpos:3 t3state:hunt", "", "screen=home shows=Searching", 0, false },
+	{ "T Home on the fallback channel", "t3 dlpos:3 t3state:fallback", "", "screen=home shows=Fallback", 0, false },
+	{ "T back on the system", "t3 dlpos:3 t3state:fallback", "t3state:back", "screen=home toast=Back_on_County", 0, false },
+	{ "T Home on a channel without its system", "t3 dlpos:5", "", "screen=home shows=System_not_set_up", 0, false },
+	// Short data polling (dmr-trunking.md 7.6): an action on a person while on a trunked system, not elsewhere
+	{ "T the actions on a person offer a poll, last", "t3 dlpos:3 9 9 9 1 2 3 4 ctx", "up",
+	  "screen=actions shows=Poll_short_data", 1, false },
+	{ "T no poll on a conventional channel", "9 9 9 1 2 3 4 ctx", "up", "screen=actions hides=Poll_short_data", 1, false },
+	{ "T a poll sent", "t3 dlpos:3 9 9 9 1 2 3 4 ctx", "9", "screen=home toast=Polling_Q1ABC_Joe", 1, false },
+	{ "T a poll with no answer", "t3 dlpos:3", "t3state:pollfail", "toast=Poll:_no_short_data", 0, false },
+#if CONFIG_DMR_TRUNK_GW
+	// Telephone calls through the PSTN gateway (dmr-trunking.md 7.6): a typed number on a trunked system, last in Find
+	{ "T Find offers a phone call on a trunked system", "t3 dlpos:3", "5 5 5 1 2 3 4",
+	  "screen=find shows=Phone_call_5551234 dial=", 7, false },	// typed, not chosen: the dial stays
+	{ "T no phone call on a conventional channel", "", "5 5 5 1 2 3 4", "screen=find hides=Phone_call dial=", 7, false },
+	{ "T PTT on the phone call row calls the gateway", "t3 dlpos:3 5 5 5 1 2 3 4", "up",
+	  "focus=Phone_call focusid=16776896 dial=5551234", 1, false },
+	{ "T OK on it talks to the gateway", "t3 dlpos:3 5 5 5 1 2 3 4", "up ok",
+	  "screen=home talk=16776896 toast=Talking_to_5551234", 2, false },
+	{ "T no actions on a phone call", "t3 dlpos:3 5 5 5 1 2 3 4 up", "ctx", "screen=find toast=No_actions", 1, false },
+	{ "T a gateway call shows the caller's number", "t3 dlpos:3 t3state:follow t3cli:8005551212", "rx:16776896,1,p",
+	  "shows=8005551212 hides=16776896", 0, false },
+	{ "T a gateway call without a number", "t3 dlpos:3 t3state:follow", "rx:16776896,1,p",
+	  "shows=Phone_line hides=16776896", 0, false },
+#endif
+#endif
 	{ "A APRS RF keeps Home with a TX APRS pill", "", "aprstx",
 	  "screen=home shows=TX_APRS shows=SENDING hides=144.390 hides=0:00 hides=left_of", 0, false },
 	{ "A APRS RF returns to the channel", "aprstx", "aprsend",

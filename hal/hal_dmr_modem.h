@@ -74,11 +74,23 @@ typedef enum {
 	DMR_EV_TX_REJECTED,	// polite access refused
 	DMR_EV_TX_DONE,		// the last queued burst's slot has ended
 	DMR_EV_SYNC_LOST,	// receiver restarted after a stall
+	// A CACH short LC from a BS (ETSI TS 102 361-1 7.1.4), as the chip assembled it, when it changes: arg = its 28
+	// bits (SLCO, then 3 octets), flags = the CRC-8 received (unchecked). Optional: drivers that can't read it don't
+	DMR_EV_SHORT_LC,
+	// A reverse channel heard between our bursts (ETSI TS 102 361-1 5.1.5): arg = the 11 RC info bits, CRC unchecked
+	// (dmrFecRcInfoDecode); flags DMR_RC_EMBEDDED when it was in place of a voice burst F's LC fragment. Optional
+	DMR_EV_RC,
 } dmr_event_kind_t;
+
+// DMR_EV_SLOT_TICK flags: the AT bit of the last CACH that named this slot (ETSI TS 102 361-1 9.3.5, the inbound
+// slot's access type), when the driver reads it and the reading is fresh
+enum { DMR_TICK_AT_KNOWN = 1u, DMR_TICK_AT_BUSY = 2u };
+enum { DMR_RC_EMBEDDED = 1u };
 
 typedef struct {
 	uint8_t kind;		// dmr_event_kind_t
 	int8_t ts;
+	uint8_t flags;		// DMR_EV_SLOT_TICK: DMR_TICK_*; DMR_EV_SHORT_LC: its CRC-8; DMR_EV_RC: DMR_RC_*; 0 otherwise
 	uint32_t arg;
 	const dmr_burst_t *burst;	// DMR_EV_BURST_RX only, valid during the callback
 } dmr_event_t;
@@ -151,6 +163,9 @@ typedef struct {
 	// Chip on and in DMR mode (after the board's RF side is in DMR mode); events start flowing to cb
 	bool (*start)(const dmr_config_t *cfg, dmr_event_cb_t cb, void *ctx);
 	void (*stop)(void);		// back to the FM / idle state of the chip
+	// The chip's rate 3/4 encoder doesn't start each block in state 0 (TS 102 361-1 B.2.2), so receivers decode
+	// octets 0-1 wrong: the core sends no rate 3/4 of its own (confirmed data goes at rate 1/2)
+	bool tx_rate34_bad;
 	void (*configure)(const dmr_config_t *cfg);
 	void (*rx_restart)(void);
 	void (*rx_lock_slot)(int8_t ts);	// 1, 2, or 0 for both
@@ -172,6 +187,9 @@ typedef struct {
 	// Optional (NULL: can't): tx_listen on a split channel too, the RF retuned to the receive frequency between our
 	// bursts (a duplex repeater's outbound heard during our over). False when this radio's RF can't: not listening
 	bool (*tx_listen_split)(void);
+	// tx_listen_split hears the repeater in only some of the slots between our bursts, at times in none for seconds:
+	// enough for its reverse channel, but silence there doesn't mean the repeater dropped (no drop check)
+	bool tx_listen_gaps;
 	// Optional: b takes the place of the oldest DMR_BURST_EMPTY still queued (not yet set up). Returns how many queued
 	// entries come after it, -1 when none is left (an SFR's repeat then goes out 90 ms after the inbound burst instead
 	// of behind the placeholders queued for the gap)

@@ -36,6 +36,8 @@ static const beep_seg_t p_emergency[] = { { 1500, 160 }, { 900, 160 }, { 1500, 1
 					  { 900, 160 } };
 // Rising three-note chime: a message
 static const beep_seg_t p_message[] = { { 1000, 60 }, { 0, 30 }, { 1300, 60 }, { 0, 30 }, { 1700, 90 } };
+// Two rising notes: back on the trunked system
+static const beep_seg_t p_system_back[] = { { 1000, 60 }, { 0, 60 }, { 1400, 60 } };
 // The speaker test (tests/hil/test_speaker.py): silence with the route up (a pop or a click there is the route's, not
 // the sweep's), the sweep, a short tail
 static const beep_seg_t p_sweep[] = { { 0, 400 }, { BEEP_HZ_SWEEP, 4000 }, { 0, 200 } };
@@ -58,6 +60,7 @@ static const struct {
 	[BEEP_MESSAGE] = PAT(p_message),
 	[BEEP_TX_PERMIT_SHORT] = PAT(p_permit_short),
 	[BEEP_SWEEP] = PAT(p_sweep),
+	[BEEP_SYSTEM_BACK] = PAT(p_system_back),
 };
 
 // One period of a sine, Q15
@@ -162,6 +165,7 @@ void beep_play(beep_t b, uint8_t level, bool shared)
 	if (b <= BEEP_NONE || b >= BEEP_COUNT || level == 0) {
 		return;
 	}
+	stats.last = (uint8_t)b;
 	if (aud == NULL || aud->start == NULL) {
 		stats.no_stream++;
 		return;

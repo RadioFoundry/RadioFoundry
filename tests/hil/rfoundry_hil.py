@@ -27,7 +27,7 @@ from rfoundry_debug import (DebugLink, DebugLinkError, as_int, find_network_radi
                        parse_counters,
                        to_rgb, write_png, ACTIONS, PRESS, LONG, UP, APRS, APRS_OP_MESSAGE, APRS_OP_SEND_NOW,
                        APRS_OP_STATUS, DATA_OP_CALL_ALERT, DATA_OP_EMERGENCY, DATA_OP_IP_SEND,
-                       DATA_OP_RADIO_CHECK, DATA_OP_SMS, DMR_DATA, KEY, OP_TONE_BURST, PTT, RADIO)
+                       DATA_OP_RADIO_CHECK, DATA_OP_SMS, DMR_DATA, KEY, OP_TONE_BURST, PTT, RADIO, T3)
 
 
 # Layer 1 of the TX guard (README.md, "Transmit frequencies"): with --allow-rf, every debug link request that keys the
@@ -38,6 +38,12 @@ from rfoundry_debug import (DebugLink, DebugLinkError, as_int, find_network_radi
 # tx_inhibit outside radio_tx tests) covers that.
 TX_KEYS = {ACTIONS["ptt"], ACTIONS["emergency"]}
 
+# DL_CMD_T3 ops (core/debuglink/debuglink_proto.h) that send on the Tier III system: start (registers unless the staged
+# system is listen only), de-register, end a call, status, short data, diversion, ALS, interrupt, short data poll
+T3_OP_SYSTEM, T3_OP_CTRL, T3_OP_START = 2, 3, 8
+T3_SENDS = {T3_OP_START, 10, 11, 12, 13, 16, 17, 18, 19}
+T3_OPT_LISTEN_ONLY = 0x0001
+
 # The start of every text message a HIL test sends the radio: test_delete_message deletes one of these without asking
 HIL_SMS_PREFIX = "RadioFoundry HIL "
 
@@ -45,7 +51,7 @@ HIL_SMS_PREFIX = "RadioFoundry HIL "
 def keys_tx(cmd, payload):
     """Where a debug link request transmits: "channel" (the channel's TX frequency), "position" (an APRS position, by
     the way out set.aprs_via picks), "aprs" (an APRS status or message), or None (it doesn't key). KEY's op 1 (physical
-    key bits) is not known here: its bits are the board's."""
+    key bits) is not known here: its bits are the board's. "t3": the Tier III system's inbound frequency."""
     p = bytes(payload)
     if cmd == PTT:
         return "channel" if p[:1] == b"\x01" else None
@@ -60,6 +66,8 @@ def keys_tx(cmd, payload):
                 p[:2] == bytes([DATA_OP_EMERGENCY, 1]):
             return "channel"
         return None
+    if cmd == T3 and p[:1] and p[0] in T3_SENDS:
+        return "t3"
     if cmd == APRS and p[:1] == bytes([APRS_OP_SEND_NOW]):
         return "position"
     if cmd == APRS and p[:1] and p[0] in (APRS_OP_STATUS, APRS_OP_MESSAGE):
@@ -71,6 +79,16 @@ def tx_freqs(link, where):
     """The frequencies (MHz) a request that keys on `where` (keys_tx) would transmit on, as the radio says now"""
     # A position goes out by AFSK, over DMR or both (set.aprs_via; a firmware that doesn't say gets both checked);
     # a status or a message by AFSK only (aprs.md). Only what is needed is read: each view is a round trip
+    if where == "t3":
+        # Camped: the control channel the radio sends on. Not started yet: the first control channel staged through
+        # this link (a system loaded from the codeplug is not known here: the firmware's TX limit covers it)
+        v = link.view(["t3"])
+        hz = int(v.get("t3.tx_hz") or 0) if v.get("t3.on") == "1" else 0
+        staged = getattr(link, "_t3_staged", {})
+        if not hz and staged.get("listen_only"):
+            return []
+        hz = hz or staged.get("tx_hz", 0)
+        return [hz / 1e6] if hz else []
     via = "dmr" if where == "channel" else "rf" if where == "aprs" else \
         link.view(["aprs_set"]).get("set.aprs_via", "both")
     out = []
@@ -90,6 +108,15 @@ _request = DebugLink.request
 
 def _guarded_request(self, cmd, payload=b"", *args, **kwargs):
     import hil_config
+    p = bytes(payload)
+    if cmd == T3 and p[:1]:     # what tx_freqs needs to know of a system staged through this link
+        staged = self.__dict__.setdefault("_t3_staged", {})
+        if p[0] == 1:
+            staged.clear()
+        elif p[0] == T3_OP_SYSTEM and len(p) >= 11:
+            staged["listen_only"] = bool(int.from_bytes(p[9:11], "little") & T3_OPT_LISTEN_ONLY)
+        elif p[0] == T3_OP_CTRL and len(p) >= 11 and "tx_hz" not in staged:
+            staged["tx_hz"] = int.from_bytes(p[7:11], "little")
     if hil_config.CONFIG is not None and hil_config.CONFIG.getoption("--allow-rf"):
         where = keys_tx(cmd, payload)
         if where is not None:
@@ -396,12 +423,18 @@ class Radio:
 
     def counters(self):
         """(firmware ms, flat dict of every counter): the diagnostics lines (modem.*, call.*, voice.*, audio.*), the
-        dmr_stats view with full names (call.rx_calls, voice.rx_frames, ...) and the hotspot counters (hs.*)"""
+        dmr_stats view with full names (call.rx_calls, voice.rx_frames, ...), the reverse channel counters (call.rc_*)
+        and the hotspot counters (hs.*)"""
         ms, lines = self.link.diag()
         out = parse_counters(lines)
         for k, v in self.link.view(["dmr_stats", "hotspot"]).items():
             n = as_int(v)
             if n is not None and k != "ms":
+                out[k] = n
+        # The reverse channel counters sit in dmr_call (dmr_stats fills a reply)
+        for k, v in self.link.view(["dmr_call"]).items():
+            n = as_int(v)
+            if n is not None and k.startswith("call.rc_"):
                 out[k] = n
         return ms, out
 

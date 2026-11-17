@@ -374,6 +374,7 @@ None of them needs a correction in the driver. The HIL test (`test_fm_tx_dtmf`) 
 | scan hold | 1400 Hz 40 ms | the scan stops on a signal, if `scan_beep` (Settings > Sound > Scan stop tone, off by default) |
 | emergency | 1500 / 900 Hz warble, 6 x 160 ms | someone's emergency heard (alarm or emergency call), if the emergency setting's tone is on (Settings > Sound > Emergency tone, `dmr-emergency.md`) |
 | message | 1000, 1300, 1700 Hz rising, 60-90 ms each | a text message arrived: the UI asks for it (`radio_req_beep(BEEP_MESSAGE)`) when Settings > Sound > Message tone is on |
+| system back | 1000 Hz, 1400 Hz, 60 ms each | a trunked system found again from its fallback channel ([dmr-trunking.md](dmr-trunking.md) 12.5) |
 | sweep | 400 ms silence, then 150 Hz to 3.8 kHz over 4 s, phase continuous | the speaker test, from the debug link only (op 22, which can delay it); `test_speaker_sweep` measures the speaker's response and whether the audio path plays it whole |
 
 The four tones with a settings area key (`radio_tone_rows` in `core/radio/radio_keys.h`,
@@ -560,7 +561,8 @@ last transmission began, so an unattended one can be placed afterwards (debuglin
 On an idle FM channel after `rx_save_idle_s` without activity (keys, requests, receptions, PTT), the receiver sleeps
 200 / 400 / 800 ms and listens 100 ms (`rx_sleeping` in the view). Any signal in the listen window keeps it awake;
 anything else (a key, a request, MONITOR, scan, VOX, DMR channel, hotspot, a channel with the codeplug "no eco" flag,
-APRS receive listening on the APRS frequency, `aprs.md` 5.3) stops it. The board's `rx_sleep` hook turns the receiver off and back on. On air
+APRS receive listening on the APRS frequency, `aprs.md` 5.3) stops it. The board's `rx_sleep` hook turns the receiver off and back on. A board that sets `rx_sleep_dmr` also lets a
+trunked system's power save use it on a DMR channel (`dmr-trunking.md` 7.13). On air
 on an AT1846S board since 2026-10-10 (`test_battery_save*`: cycles when idle, MONITOR and a call wake it); the setting stays off by default.
 
 ### 5.5 Power switch

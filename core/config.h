@@ -44,8 +44,23 @@
 #ifndef CONFIG_DMR_ROAMING
 #define CONFIG_DMR_ROAMING		CONFIG_DMR
 #endif
+#ifndef CONFIG_DMR_TRUNK
+#define CONFIG_DMR_TRUNK		CONFIG_DMR
+#endif
+#ifndef CONFIG_DMR_TRUNK_TX
+#define CONFIG_DMR_TRUNK_TX		CONFIG_DMR_TRUNK
+#endif
+#ifndef CONFIG_DMR_TRUNK_SUPL
+#define CONFIG_DMR_TRUNK_SUPL		CONFIG_DMR_TRUNK_TX
+#endif
+#ifndef CONFIG_DMR_TRUNK_GW
+#define CONFIG_DMR_TRUNK_GW		CONFIG_DMR_TRUNK_TX
+#endif
 #ifndef CONFIG_DMR_IP_GATEWAY
 #define CONFIG_DMR_IP_GATEWAY		1
+#endif
+#ifndef CONFIG_VOICE_CAPTURE
+#define CONFIG_VOICE_CAPTURE		0
 #endif
 #ifndef CONFIG_ZONE_SHARE
 #define CONFIG_ZONE_SHARE		CONFIG_DMR
@@ -132,7 +147,7 @@
 #ifndef CONFIG_RX2_DL_SERVER
 #define CONFIG_RX2_DL_SERVER		0
 #endif
-// Peek and poke on the debug link (core/debuglink/dl_mem.c, debuglink.md 3.26): the debug link's, or a second SoC's
+// Peek and poke on the debug link (core/debuglink/dl_mem.c, debuglink.md 3.28): the debug link's, or a second SoC's
 // server's
 #ifndef CONFIG_DEBUG_MEM
 #define CONFIG_DEBUG_MEM		(CONFIG_DEBUGLINK || CONFIG_RX2_DL_SERVER)
@@ -311,7 +326,7 @@
 // Derived: zone sharing carries channels of a kind and their systems (docs/spec/zone-share.md 4.2) in a build with a
 // mode's codec. Without it a share leaves channels of a kind out and refuses a record that has them
 #ifndef CONFIG_ZONE_SHARE_MODES
-#define CONFIG_ZONE_SHARE_MODES		(CONFIG_ZONE_SHARE && CONFIG_P25)
+#define CONFIG_ZONE_SHARE_MODES		(CONFIG_ZONE_SHARE && (CONFIG_P25 || CONFIG_DMR_TRUNK))
 #endif
 // The GPS status screen: the satellites (NMEA GSV / GSA) on a sky plot and signal bars, the fix's quality, the grid
 // locator (core/position/nmea_sky.c, core/ui/ui_gps.c). Needs GPS
@@ -380,9 +395,21 @@
 #if CONFIG_SUBTONE && !CONFIG_FM
 #error "CONFIG_SUBTONE needs CONFIG_FM"
 #endif
-#if (CONFIG_DMR_PRIVACY || CONFIG_DMR_TALKER_ALIAS || CONFIG_DMR_GPS || CONFIG_DMR_DATA_CORE || CONFIG_DMR_ROAMING || CONFIG_SFR || \
+#if (CONFIG_DMR_PRIVACY || CONFIG_DMR_TALKER_ALIAS || CONFIG_DMR_GPS || CONFIG_DMR_DATA_CORE || CONFIG_DMR_ROAMING || CONFIG_DMR_TRUNK || CONFIG_SFR || \
      CONFIG_HOTSPOT || CONFIG_DMR_UDP_COMPRESS || CONFIG_ZONE_SHARE) && !CONFIG_DMR
 #error "a DMR feature is on without CONFIG_DMR"
+#endif
+#if CONFIG_DMR_TRUNK_TX && !CONFIG_DMR_TRUNK
+#error "CONFIG_DMR_TRUNK_TX needs CONFIG_DMR_TRUNK"
+#endif
+#if CONFIG_DMR_TRUNK_SUPL && !CONFIG_DMR_TRUNK_TX
+#error "CONFIG_DMR_TRUNK_SUPL needs CONFIG_DMR_TRUNK_TX"
+#endif
+#if CONFIG_DMR_TRUNK_GW && !CONFIG_DMR_TRUNK_TX
+#error "CONFIG_DMR_TRUNK_GW needs CONFIG_DMR_TRUNK_TX"
+#endif
+#if CONFIG_VOICE_CAPTURE && !CONFIG_DMR
+#error "CONFIG_VOICE_CAPTURE needs CONFIG_DMR"
 #endif
 #if CONFIG_HOTSPOT && !CONFIG_HOSTLINK
 #error "CONFIG_HOTSPOT needs CONFIG_HOSTLINK"

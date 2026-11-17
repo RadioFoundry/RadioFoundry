@@ -100,6 +100,30 @@ spec = "docs/spec/dmr-emergency.md"
 switch = "DMR_ROAMING"
 spec = "docs/spec/dmr-roaming.md"
 
+[feature.dmr_trunk]
+switch = "DMR_TRUNK"
+spec = "docs/spec/dmr-trunking.md"
+source = ["core/dmr/trunk", "core/radio/radio_trunk.c", "core/radio/radio_trunk.h", "core/debuglink/debuglink_t3.c"]
+
+[feature.dmr_trunk_tx]
+switch = "DMR_TRUNK_TX"
+spec = "docs/spec/dmr-trunking.md"
+source = ["core/dmr/trunk", "core/radio/radio_trunk.c", "core/radio/radio_trunk.h", "core/debuglink/debuglink_t3.c"]
+
+[feature.dmr_trunk_supl]
+switch = "DMR_TRUNK_SUPL"
+spec = "docs/spec/dmr-trunking.md"
+source = ["core/dmr/trunk", "core/radio/radio_trunk.c", "core/radio/radio_trunk.h", "core/debuglink/debuglink_t3.c"]
+
+[feature.dmr_trunk_gw]
+switch = "DMR_TRUNK_GW"
+spec = "docs/spec/dmr-trunking.md"
+source = ["core/dmr/trunk", "core/radio/radio_trunk.c", "core/radio/radio_trunk.h", "core/debuglink/debuglink_t3.c"]
+
+[feature.voice_capture]
+switch = "VOICE_CAPTURE"
+spec = "docs/spec/debuglink.md"
+
 [feature.dmr_signaling]
 switch = "DMR_SIGNALING"
 spec = "docs/spec/dmr-data.md"

@@ -279,7 +279,26 @@ The CC fields are defined by TS 102 361-1 9.1.2 (EMB), 9.1.3 (slot type) and 9.3
   Longer than under the over: after our wake-up the HR_C5000 at times hears nothing of a repeater that is up until
   the modem searches again (every 240 ms, [modem-hrc6000.md](modem-hrc6000.md) 5), so the modem gets two searches
   first. `call.rx_in_tx` and `call.rx_bs_in_tx` count what was heard while sending. A radio whose RF can't (the
-  modem's `tx_listen_split` NULL or false) sends as before and doesn't see the drop.
+  modem's `tx_listen_split` NULL or false) sends as before and doesn't see the drop. Nor does a modem that hears the
+  repeater in only some of the listen slots, at times none for seconds (`tx_listen_gaps`): it listens for the RC
+  only, and silence there is not a drop.
+
+- Reverse channel (ETSI TS 102 361-1 5.1.5, 6.4.2; TS 102 361-4 6.4.14, 6.4.15.2): a radio that listens between its
+  bursts also hears an RC the BS sends on the other slot, either a dedicated RC burst or one in voice burst F (EMB
+  LCSS 00, PI 1). The modem reports its 11 RC info bits (`DMR_EV_RC`, `DMR_RC_EMBEDDED` for burst F); the stack
+  checks the CRC-7 (`dmrFecRcInfoDecode`). A cease command (0100) or cease request (0101) heard twice within
+  `DMR_CALL_RC_CONFIRM_MS` (1 s) while our voice goes out ends the over after burst F with a terminator, like the TX
+  time-out: `tx_error` ceased, PTT released before the next over. Twice, because burst F's null fragment passes the
+  CRC one time in 128, and the BS repeats an RC every 360 ms. A request is always accepted. Power commands (0000-0011)
+  are only counted: the power stays as set. `call.rc_good`, `call.rc_bad`, `call.rc_ceased`, `call.rc_last` in the
+  diagnostics and the `dmr_call` view section. The HR_C6000 engine reads the RC info from 0x53 / 0x54 at a class 3 report, or a burst F report with
+  LCSS 00 ([hrc6000-registers.md](hrc6000-registers.md) 2.2). A dedicated RC burst has no sync, and the chips report
+  nothing for it. After each listen slot the engine reads the chip's receive tap instead (the HR_C5000 and HR_C6000:
+  `hrc_chip_t` `tap_addr`, `tap_field`; the HR_C7000: [modem-hrc7000.md](modem-hrc7000.md) 5.4): the burst received,
+  a voice-layout burst's 48-bit sync / EMB / RC field first. It decodes the field (`dmrFecRcFromField`) when its EMB
+  has our color code, PI 1 and LCSS 00. Only an area that changed since its last read is decoded, and none the chip
+  reported itself in that listen slot, so one burst counts once. `rct` in the modem diagnostics: RCs found / areas
+  changed.
 
 - Repeater call hang time: the repeater keeps the outbound up after a call; an MS that keys in it does not need BS
   activation and should reply on the same slot (and talkgroup, if group hang applies).
@@ -374,6 +393,7 @@ interrupt.
 | `tx_rejected` | the modem refused to send (channel busy under a polite policy) | |
 | `tx_done` | the last queued burst's slot has ended (terminator included); the driver is back in receive | after the last burst's slot, not before |
 | `sync_lost` | no slot tick for 200 ms while not idle, or the timing was found out of step; the driver has restarted the receiver | |
+| `short_lc` | a BS's CACH short LC (ETSI TS 102 361-1 7.1.4) as the chip assembled it: 28 bits and the CRC-8 received. The stack checks the CRC (`dmr_call_short_lc`). Optional: only while both slots of a BS signal are received (a trunked control channel), from chips whose short LC location is known | when it changes; a new one every 120 ms |
 
 ### 6.3 Commands (stack to driver)
 

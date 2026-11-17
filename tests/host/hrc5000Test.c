@@ -9,6 +9,7 @@
 #include "modem/hrc5000/hrc5000.h"
 #include "modem/hrc_common/hrc6000_dmr.h"
 #include "dmr/ambe/ambeFec.h"
+#include "dmr/fec/dmrFec.h"
 
 static int failures;
 
@@ -359,11 +360,17 @@ static dmr_tx_burst_t mk(uint8_t kind, uint8_t idx, bool host_crc)
 	return b;
 }
 
+static dmr_event_t evs[256];
+static int nev;
+
 static void drain(void)
 {
 	dmr_event_t ev;
 	dmr_burst_t b;
 	while (hrc6000_dmr_pop(&eng, &ev, &b)) {
+		if (nev < 256) {
+			evs[nev++] = ev;
+		}
 	}
 }
 
@@ -453,6 +460,59 @@ static void test_engine(void)
 	CHECK(count_page(4) == 0);
 }
 
+
+// A BS's outbound RC burst heard between our bursts: the HR_C5000 leaves its 48-bit field (EMB + RC) at page 2 0x30,
+// with bytes after it that change per burst. One DMR_EV_RC per new field, the same RC twice counted twice, another
+// color code's not at all
+static void test_tx_listen_rc_field(void)
+{
+	static const uint8_t cease[6] = { 0x28, 0x70, 0xD0, 0x4F, 0x1F, 0x7E };	// CC 2, cease, as sent on air
+	memset(rd, 0, sizeof(rd));
+	hrc5000_attach(&c5, &bus, false);
+	hrc_t *h = hrc5000_hrc(&c5);
+	CHECK(hrc6000_dmr_enter(h, 0x40, 0x40, 0xC8));
+	t_us = 1000000;
+	hrc6000_dmr_init(&eng, h, &ops);
+	hrc6000_dmr_run(&eng);
+	dmr_config_t cfg = { .own_id = 0x0A0B0C, .cc = 2, .access = DMR_ACCESS_IMPOLITE, .repeater = true };
+	hrc6000_dmr_configure(&eng, &cfg);
+	hrc6000_dmr_set_cc_filter(&eng, 2);
+	drain();
+	nev = 0;
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 2, DMR_ACCESS_IMPOLITE));
+	hrc6000_dmr_tx_listen(&eng);
+	for (int i = 0; i < 8; i++) {
+		dmr_tx_burst_t b = mk(DMR_BURST_IDLE, 0, false);
+		CHECK(hrc6000_dmr_tx_queue(&eng, &b));
+	}
+	hrc6000_dmr_tx_end(&eng);
+	t_us = 6000000;
+	for (int k = 0; k < 30; k++) {
+		if (k == 3 || k == 7 || k == 11) {
+			memcpy(&rd[2][0x30], cease, sizeof cease);
+			rd[2][0x36] = (uint8_t)k;	// the bytes after the field change per burst
+			if (k == 11) {
+				dmrFecRcField(3, DMR_RC_CEASE, &rd[2][0x30]);	// another color code's
+			}
+		}
+		hrc6000_dmr_isr_timeslot(&eng);
+		t_us += 1500;
+		hrc6000_dmr_isr_rftx(&eng);
+		t_us += 28500;
+		drain();
+	}
+	int rc = 0;
+	for (int i = 0; i < nev; i++) {
+		if (evs[i].kind == DMR_EV_RC) {
+			rc++;
+			CHECK(evs[i].arg == dmrFecRcInfo(DMR_RC_CEASE));
+		}
+	}
+	hrc6000_dmr_stats_t st;
+	hrc6000_dmr_stats(&eng, &st);
+	CHECK(rc == 2 && st.rc_tap == 2);
+	CHECK(st.rc_tap_changed == 4);	// the empty area first, then each field
+}
 
 // Received voice on the HR_C5000 (hardware-md380.md 4.8): no report per burst. A call's header starts the decoder
 // (0x22 DecodeStart); the voice port is read at every tick, the slot whose reads carry valid AMBE+2 frames is locked,
@@ -1406,6 +1466,7 @@ int main(void)
 	test_tick_rx_stale_post_access();
 	test_repeater_slot();
 	test_two_slots();
+	test_tx_listen_rc_field();
 	printf("hrc5000Test: %s (%d failures)\n", failures ? "FAILED" : "passed", failures);
 	return failures ? 1 : 0;
 }
