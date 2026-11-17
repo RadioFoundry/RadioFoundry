@@ -282,10 +282,11 @@ static void mark_used(uint16_t base)
 	}
 }
 
-// The lowest free record of the family mark_used marked, now marked used; -1 when none (0xFF is "none" in a reference)
-static int take_free(void)
+// The lowest free record below limit of the family mark_used marked, now marked used; -1 when none (0xFF is "none" in
+// a reference)
+static int take_free(int limit)
 {
-	for (int n = 0; n < 0xFF; n++) {
+	for (int n = 0; n < limit; n++) {
 		if (!(used_bits[n >> 3] & (1u << (n & 7)))) {
 			used_bits[n >> 3] |= (uint8_t)(1u << (n & 7));
 			return n;
@@ -303,17 +304,21 @@ static bool add_key(uint16_t key, const void *value, uint16_t len)
 	return true;
 }
 
-// The system here of the same type and identity as s (channel-modes.md 7.1): its number, CODEPLUG_SYSTEM_NONE if none
-static uint8_t find_system(const zsSystem_t *s)
+// The system here of the same type and identity as s (channel-modes.md 7.1): its number, CODEPLUG_SYSTEM_NONE if none.
+// buf: room for a system's header and that identity (cap octets)
+static uint8_t find_system(const zsSystem_t *s, uint8_t *buf, uint16_t cap)
 {
 	codeplug_kv_cursor_t c;
 	uint16_t key;
 	int len;
 
+	if ((unsigned)CODEPLUG_SYS_HDR + s->idLen > cap) {
+		return CODEPLUG_SYSTEM_NONE;
+	}
 	codeplug_kv_begin(&c, CODEPLUG_KEY_SYSTEM, CODEPLUG_KEY_SYSTEM + 0xFEu);
-	while ((len = codeplug_kv_next(&c, &key, kv_buf, sizeof(kv_buf))) >= 0) {
-		if (len >= (int)CODEPLUG_SYS_HDR + s->idLen && kv_buf[0] == s->type && kv_buf[3] == s->idLen &&
-		    memcmp(&kv_buf[CODEPLUG_SYS_HDR], s->block, s->idLen) == 0) {
+	while ((len = codeplug_kv_next(&c, &key, buf, cap)) >= 0) {
+		if (len >= (int)CODEPLUG_SYS_HDR + s->idLen && buf[0] == s->type && buf[3] == s->idLen &&
+		    memcmp(&buf[CODEPLUG_SYS_HDR], s->block, s->idLen) == 0) {
 			return (uint8_t)(key - CODEPLUG_KEY_SYSTEM);
 		}
 	}
@@ -327,7 +332,7 @@ static uint8_t add_system(const zsSystem_t *s)
 	uint8_t first = added_key_count;
 
 	mark_used(CODEPLUG_KEY_SYSTEM);
-	int n = take_free();
+	int n = take_free((int)CODEPLUG_SYSTEMS_RUN);	// a number past them would never run
 
 	if (n < 0) {
 		return CODEPLUG_SYSTEM_NONE;
@@ -347,7 +352,7 @@ static uint8_t add_system(const zsSystem_t *s)
 	mark_used(CODEPLUG_KEY_SYS_CHAN);
 	for (int k = 0; ok && k < s->entries; k++) {
 		zsEntry_t e;
-		int at = take_free();
+		int at = take_free(0xFF);
 
 		ok = at >= 0 && zsEntryAt(&rec, s, k, &e);
 		if (ok) {
@@ -396,7 +401,7 @@ static void place_systems(zone_import_result_t *res)
 		if (!zsSystemAt(&rec, i, &s)) {
 			continue;
 		}
-		sys_here[i] = find_system(&s);
+		sys_here[i] = find_system(&s, kv_buf, sizeof(kv_buf));
 		if (sys_here[i] == CODEPLUG_SYSTEM_NONE && s.level == ZS_LEVEL_WHOLE && system_used(i)) {
 			sys_here[i] = add_system(&s);
 			res->systems_added += sys_here[i] != CODEPLUG_SYSTEM_NONE;
@@ -439,6 +444,46 @@ static bool write_tag(int i, uint16_t n, const char *name, zone_import_result_t 
 	return true;
 }
 #endif
+
+bool zone_import_unavailable(const zsRecord_t *r, int i)
+{
+#if CONFIG_ZONE_SHARE_MODES
+	// What write_tag will find, without the import's buffers (this runs on the caller's task): the channel's tag
+	// names a system the radio doesn't have and the record doesn't bring whole
+	uint8_t buf[CODEPLUG_SYS_HDR + 16u];	// identities are a few octets (a longer one reads as not here)
+	zsTag_t t;
+	zsSystem_t s;
+
+	for (int k = 0; k < r->tags; k++) {
+		if (!zsTagAt(r, k, &t) || t.channel != i + 1) {
+			continue;
+		}
+		if (t.system == 0) {
+			return false;	// a channel of a kind that needs no system
+		}
+		if (t.system > r->systems || !zsSystemAt(r, t.system - 1, &s)) {
+			return true;
+		}
+		if (find_system(&s, buf, sizeof(buf)) != CODEPLUG_SYSTEM_NONE) {
+			return false;
+		}
+		if (s.level != ZS_LEVEL_WHOLE) {
+			return true;
+		}
+		// A whole system is added at a free number the radio runs (add_system)
+		for (uint8_t n = 0; n < CODEPLUG_SYSTEMS_RUN; n++) {
+			if (codeplug_kv_get((uint16_t)(CODEPLUG_KEY_SYSTEM + n), buf, 0) < 0) {
+				return false;
+			}
+		}
+		return true;
+	}
+#else
+	(void)r;
+	(void)i;
+#endif
+	return false;
+}
 
 // The record's channels the radio can receive, written to free channel numbers and listed in new_zone
 static zone_import_status_t write_channels(zone_import_result_t *res)

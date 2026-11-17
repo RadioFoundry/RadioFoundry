@@ -8,7 +8,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-typedef enum { RADIO_MODE_FM, RADIO_MODE_DMR } radio_mode_t;
+// RADIO_MODE_P25 and RADIO_MODE_NXDN are a channel's modes only (the radio core runs them with the board in
+// RADIO_MODE_DMR, its modem chip's digital mode, docs/spec/p25.md 7, docs/spec/nxdn.md 6): set_mode never gets them
+typedef enum { RADIO_MODE_FM, RADIO_MODE_DMR, RADIO_MODE_P25, RADIO_MODE_NXDN } radio_mode_t;
 typedef enum { RADIO_BW_12K5, RADIO_BW_25K } radio_bw_t;
 
 typedef enum { TONE_NONE, TONE_CTCSS, TONE_DCS, TONE_DCS_INV } tone_type_t;
@@ -69,6 +71,9 @@ typedef struct {
 	// Optional: receiver power saving. true = receiver off (no status until woken), false = receive again with the
 	// last rx() settings
 	void (*rx_sleep)(bool sleep);
+	// rx_sleep also works on a DMR channel (a trunked system's power save, dmr-trunking.md 7.13): the modem keeps
+	// running, the receiver is off; waking tunes back and the core restarts the modem's receive
+	bool rx_sleep_dmr;
 	// Optional (CAP_AM_RX): tune and receive AM (the air band) instead of FM. Receive only: the core never calls tx()
 	// while AM is on. The board leaves AM at the next rx() or set_mode(). No sub-audio in AM (the core takes
 	// tone_ok as true). In AM status() reports noise on the squelch's scale (larger = weaker) from whichever of its

@@ -35,6 +35,8 @@ typedef struct {
 	int32_t avg_us;		// averaged residual (x8)
 	int32_t last_residual_us;
 	uint32_t sets;
+	uint32_t moved;		// slots the anchor has moved forward since the host set E
+	uint32_t last_slot;	// slotEpochLabel's last slot: n counted from the host's E (TS1 even)
 } slotEpoch_t;
 
 void slotEpochInit(slotEpoch_t *e);
@@ -43,7 +45,7 @@ bool slotEpochSet(slotEpoch_t *e, uint32_t t_us, uint32_t period_ns, uint32_t no
 void slotEpochClear(slotEpoch_t *e);
 bool slotEpochValid(const slotEpoch_t *e, uint32_t now_ms);
 // The inbound slot (1 or 2) of a burst whose slot started at t_us (modem clock); 0 without a valid epoch.
-// *residual_us: where it started relative to the prediction (+-P/2)
+// *residual_us: where it started relative to the prediction (+-P/2). e->last_slot: its slot number from E
 int8_t slotEpochLabel(slotEpoch_t *e, uint32_t t_us, uint32_t now_ms, int32_t *residual_us);
 // An in-step burst's residual (from slotEpochLabel): move the anchor toward it
 void slotEpochTrack(slotEpoch_t *e, int32_t residual_us);

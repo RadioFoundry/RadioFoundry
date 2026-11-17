@@ -1320,12 +1320,12 @@ line framing `drivers/gps/nmea_line`:
 |---|---|
 | Start-up | GPIO 0x2C low (module on), UART1 at 9600 8N1 (`hrc_uart_setup`, divisor 547, 0.02 % off), receive interrupt on |
 | Listen | 5 s for one checksum-valid sentence. The module sends a sentence a second from about 1 s after power-up, with or without a fix |
-| Heard | The module is present (`board.gps_present`). Every valid sentence goes to the position service (`position_nmea`, CONFIG_GPS). The module stays powered while Settings > Location > GPS is on; with it off, `hrc_gps_enable(false)` (`board_t.gps_enable`) powers it down and stops the UART within one 20 ms poll, and turning it on powers it up again. The setting is applied at start-up (the probe runs first, whatever it says) and on each change |
+| Heard | The module is present (`board_t.gps` = `hrc_gps`, `present`). Every valid sentence goes to the position service (`position_nmea`, CONFIG_GPS). The module stays powered while Settings > Location > GPS is on; with it off, `hal_gps_t.enable(false)` powers it down and stops the UART within one 20 ms poll, and turning it on powers it up again. The setting is applied at start-up (the probe runs first, whatever it says) and on each change |
 | Nothing heard | GPIO 0x2C high (module off), UART1 interrupt off. The radio reports no GPS and the Location settings are dimmed |
 | Diagnostics | The line `gps yes` (or `gps no`) `GOOD/BAD bBYTES on|off`: valid sentences, bad ones (checksum, length, UART errors, ring overflow), bytes received, and whether the module is powered now (Settings > Location > GPS) |
 | Switching on again | The UART is set up once, before the module is first powered. While the module is off its line is held low, a break the UART is still receiving, and the UART ignores a line control write while busy, so switching on only clears the RX FIFO and status and enables the interrupt (`hrc_uart_rx_clear`). Setting the baud rate again there left the UART deaf on the DB25-D (2026-10-17) |
 
-**Settings > Location > GPS** switches the module's power on the HR_C7000 boards (`hal/board.h` `gps_enable`). An STM32 board's driver doesn't implement the hook (its power pin is left as the hardware has it): the setting there only stops APRS using the fix.
+**Settings > Location > GPS** switches the module's power through `hal_gps_t.enable` ([position.md](position.md) 2); the probe-then-setting rule is `drivers/gps/gps_rx/gps_power`.
 
 ---
 
@@ -1563,6 +1563,25 @@ and jumps: the three guards (magic, length, CRC-32) are what keep a stray or tru
 **Bench results.** Entry from RadioFoundry, program flash and data flash reads, `--write-app` and the restart ran on a second HR_C7000 board (2026-10-15). The universal build ran from RadioFoundry on that board and the DM-32UV (2026-10-17): reads of both chips,
 the bootloader identical to earlier dumps, a write test on the data flash, and the restart. Not yet run with the
 universal build: the boot ROM load at power-on.
+
+### 17.3 Air interface (`CONFIG_P25`)
+
+`board.air` and `board.baseband` are the HR_C7000's provider and receive tap ([modem-hrc7000.md](modem-hrc7000.md) 10),
+under `CONFIG_DMR`. A session runs in DMR: the FD6818 keeps its DMR set-up, the speaker source (GPIO 0x2F) stays on
+the codec, and the transmitter is keyed through the DMR RF burst sequences in continuous mode (one key-up for the whole
+transmission). Checked on this radio against the SDR bench, at the lowest power, with every default feature on:
+
+| What | Result |
+|---|---|
+| P25 conventional receive (`test_p25_rx_from_bench`) | at -122 dBm: 72 of 72 voice frames, none bad, played |
+| P25 conventional transmit (`test_p25_tx_off_air`) | 19 units, header to terminator |
+| P25 trunked transmit ([p25-trunking.md](p25-trunking.md), `test_p25_trunk_tx`) | registration, affiliation, a voice request and a call on the grant, twice |
+| P25 trunked receive (`test_p25_trunk_rx`) | 4 grants, 4 followed; 234 voice frames, 7 bad, 198 played |
+| NXDN receive ([nxdn.md](nxdn.md), `test_nxdn_rx_from_bench`) | 9600 and 4800 bit/s: a call each, 21 and 12 frames, 40 voice frames each |
+| NXDN transmit (`test_nxdn_tx_off_air`) | 9600 and 4800 bit/s: 77 and 39 frames, no CRC failure |
+
+Not checked: a call with a radio of another make, a live trunked system, sensitivity, and the receive copy's
+calibration (modem-hrc7000.md 10.4).
 
 ## Receive past the rated bands
 

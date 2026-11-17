@@ -437,6 +437,11 @@ retunes per burst (`radio_md380.c`):
 The chip receives the other slot as it does when idle, and its bursts go to the stack as heard while sending. On the
 SDR bench, 45 key-ups of 45 got through a repeater whose hang ended around the key-up, against 13 of 15 without it.
 
+The HR_C5000's receive tap is one area, page 2 from 0x30, rewritten per burst received: no CACH, and a voice-layout
+burst's 48-bit sync / EMB / RC field at 0x30-0x35, then the voice bits. A BS's dedicated RC burst lands there too,
+though it has no sync and the chip reports nothing for it: that is how the engine hears a reverse channel cease while
+sending ([dmr-modem.md](dmr-modem.md), reverse channel).
+
 ### 4.10 Codec and audio routing
 
 DMR receive audio plays with the LINEOUT values below (on air, 2026-10-19: our test, not authoritative). This section
@@ -481,6 +486,36 @@ On an MD-380 (UHF, D002.032 codec) against an AT-D878UV on a 70 cm test frequenc
 move: received speech plays clear from the speaker and transmit is clear (one 10 s call: 498 frames, 10 bit errors, 3
 concealed, 0 lost). Why both bits are needed together isn't in the manual (unverified). Not yet checked with it: the buzz after
 a call or after our own transmit, the key beep in DMR and FM, and FM receive.
+
+### 4.11 Air interface (`CONFIG_P25`, `CONFIG_NXDN`)
+
+`board.air` is the shared HR_C5000/HR_C6000 provider (`stm32_hrc_air`, `drivers/modem/hrc_common/hrc6000_air.c`): the
+chip's physical layer mode, with this chip's differences from its chip description
+([modem-hrc6000.md](modem-hrc6000.md) 10.7). The HR_C5000 manual documents the mode (0x10 LayerMode bits 4-3 = 00,
+0x82 bit 0, 36 bytes of physical layer data in page 2). Every fit carries `AIR_FIT_UNTESTED` (`air_verified` is not
+set). `CONFIG_P25`, `CONFIG_P25_TRUNK` and `CONFIG_NXDN` are off on this radio (`BOARD_NOT_WRITTEN`) until receive
+works: a mode that transmits but can't receive isn't offered. Build with them on (`CONFIG_P25=y CONFIG_NXDN=y`) to work
+on it.
+
+| Profile | Receive | Transmit |
+|---|---|---|
+| P25 phase 1 (C4FM), trunking | no: the chip gives no physical layer record (below) | TX RAM (10.3): keys on the radio |
+| NXDN | no | TX RAM (10.3): keys on the radio |
+
+- **Receive.** In an open session, 4:0x10 reads 0x02 and 0x82 stays 0: no record interrupt, `airp.records=0` in the
+  debug link's `air` view. No setting of 0x40, 0x41 or 0x81 tried by CHIP_REG started it (modem-hrc6000.md 10.7).
+- **No soft-modem receive.** NXDN's short sync needs the soft modem on a flat discriminator copy. No FM receive RAM is
+  documented on the HR_C5000, so there is no copy to read from the chip (modem-hrc6000.md 10.6). The discriminator
+  audio on PC3 (ADC1 IN13, section 2.3) is not used: the same line on a sister design is voice band with
+  the sub-audio removed, and a 4-level mode needs the band down to 1/100 of the symbol rate. No `board.baseband`.
+- **Keying.** The session's board mode is DMR, so the PA goes up through the DMR RF switch (`md380_rf_dmr_switch`).
+  The key-up points (TIM7) stop at full power while a continuous transmission runs
+  (`stm32_hrc_dmr_tx_continuous`), and the PA drops only at the switch back to receive, not at the 30 ms burst hold.
+- **Deviation.** The provider scales the channel's 0x45 / 0x46 pair from the 1944 Hz calibration; the pair drives
+  MOD1 (VCO) and MOD2 (TCXO through U603), the same two-point path as DMR.
+- **After close** the slot engine writes the channel's 0x10 again (0x6B, or 0x4F on a repeater channel).
+- **CHIP_REG** (`board.chip_reg`, [debuglink.md](debuglink.md) 3.24): chip 1 is the HR_C5000, pages 1 and 4, for register experiments
+  like the ones above.
 
 ## 5. RF
 
@@ -1001,8 +1036,12 @@ second flash chip select on others 13.7. So nothing drives PD8 until the module 
 `gps_md380.c` enables USART3 RX on PD9 at start-up and listens for 5 s. One checksum-valid sentence (any talker, up to
 82 characters plus CR LF; `drivers/gps/nmea_line`) makes the module present: PD8 is then held at the level it already
 had, and every sentence goes to the position service (`position_nmea`, CONFIG_GPS). Nothing heard: the UART is
-switched off and `board.gps_present()` stays false, so `board_has_gps()` hides the GPS features. UART errors are
+switched off and `board_t.gps` reports no module, so `board_has_gps()` hides the GPS features. UART errors are
 counted and cleared in the interrupt, so one framing error never stops reception ( 13.7).
+
+Once heard, the module follows Settings > Location > GPS (`board_t.gps` = `stm32_gps`): off stops USART3
+and drives PD8 to the other level from the one it was found at, on drives it back and restarts USART3 at the same
+rate. PD8 switching the module off is assumed from its role (untested on a G model).
 
 ---
 
@@ -1128,6 +1167,7 @@ Each with how to settle it; the stage numbers are [md380-bringup.md](../testing/
 | 20 | GPS UART pin, baud rate, power pin polarity | Stage 9: on a G model "gps yes" with counts rising; on a non-G model "gps no" and no flash errors |
 | 21 | Codec windows in D002.032 | Located and verified on a host (14.4); stage 7 checks voice on the radio |
 | 22 | Whether the bootloader key can be derived from a firmware file | Done (14.2): derived from D2.32 and checked by its hash |
+| 23 | The HR_C5000's physical layer mode (soft records, correlator pattern address, second TX RAM half) | The checks in 4.11 |
 
 ## 18. Datasheets
 

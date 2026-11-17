@@ -84,7 +84,7 @@ refreshes the role lease. A firmware without the extension answers `E0 05 7F D6 
 | 05 | SET_AT | TX half | busy mask u8 [mode u8] | AT mask on air u8 |
 | 06 | STATUS | either | none | the STATUS block (3.6) |
 | 07 | ALIGN | TX half | t_us u32, period_ns u32, counter u32 [max_slew_us u16] [mode u8] | phase_us s32, flags u8 (3.8) |
-| 08 | TX_SCHED | TX half | counter u32, slot u8, control u8, burst 33 bytes | counter u32, outcome u8 (3.9) |
+| 08 | TX_SCHED | TX half | counter u32, slot u8, control u8, burst 33 bytes [CACH 3 bytes] | counter u32, outcome u8 (3.9) |
 | 89 | RX_META | from the RX half | (an event, never a request) | result 0, the metadata block (3.10) |
 
 Sub-commands 80 and up are events: frames the radio sends without a request, in the reply format. A host never sends
@@ -104,7 +104,7 @@ Examples: `E0 04 D6 00` (INFO), `E0 05 D6 01 01` (TX half, defaults), `E0 05 D6 
 | 4 | CACH on air: 0 none (BS bursts without a CACH: section 5.4), 1 the chip sends our CACH bits, 2 the chip makes its own CACH (TC at least; our AT / short LC unknown), 3 unknown (experiment) |
 | 5-8 | the modem clock now, µs (u32, wraps every 71.6 minutes) |
 | 9 | flags: 01 RX half has a valid epoch, 02 TX half keyed, 04 TX half in its cool-down, 08 TX half slot clock running |
-| 10-11 | capabilities (u16): bit 0 scheduled TX (3.9), bit 1 ALIGN with the counter base and the snap (3.8), bit 2 ALIGN slewing (3.8), bit 3 RX metadata (3.10), bit 4 carrier trim (reserved, not built), bit 5 PPS input (reserved: no radio wires a pulse, `modem-hrc7000.md` 2.9a). A bit is set only where the radio's modem driver can do it |
+| 10-11 | capabilities (u16): bit 0 scheduled TX (3.9), bit 1 ALIGN with the counter base and the snap (3.8), bit 2 ALIGN slewing (3.8), bit 3 RX metadata (3.10), bit 4 carrier trim (reserved, not built), bit 5 PPS input (reserved: no radio wires a pulse, `modem-hrc7000.md` 2.9a), bit 6 the slot's CACH in TX_SCHED (3.9; only where the chip sends the CACH bits it is given, byte 4 = 1). A bit is set only where the radio's modem driver can do it |
 | 12 | scheduled TX guard, ms (u8): a TX_SCHED burst must arrive at least this long before its slot goes on air |
 | 13 | scheduled TX horizon, slots (u8, 32): a TX_SCHED burst may arrive at most this many slots ahead |
 | 14-15 | TX half slot-to-air delay, µs (s16): the time from a slot boundary as GET_EPOCH and ALIGN give it to the start of that slot on air, a constant of the modem driver (0 unknown) |
@@ -266,6 +266,15 @@ the stream rules fill the slot. A slot with nothing queued sends
 what the stream rules give (section 5.1: an idle burst, a silence voice burst inside a voice stream, a terminator for a
 stream the host left), and the CACH runs as usual: AT, TC and the short LC are the same as in stream 0.
 
+**The slot's CACH** (capability bit 6): the request may end with 3 more bytes (`E0 2E D6 08 ...`), the 24 CACH bits
+sent just before the slot's burst, in air order (the first bit on air in bit 7 of the first byte): TACT and payload
+interleaved as on air, as the host computed them. They go out as given, in place of the half's own AT, TC and short LC
+fragment, so a host that runs a control channel sets every slot's AT and short LC itself. The TC they carry must name
+the slot (0 TS1), else the request is invalid (result 4); a radio without the capability answers result 2. An idle
+burst that carries a CACH holds the slot's place (it is queued, and keys the transmitter, like any burst); the stream
+rules still give the burst itself. A slot with nothing queued, or queued without a CACH, keeps the half's own CACH: a
+host that drives the CACH sends every slot, or the half's short LC fragments land between its own.
+
 **Keying** is the same as stream 0: DMR_START 01 keys and 00 unkeys, the 2 s host-silence rule and the duty guard
 apply. A queued burst keys the transmitter too, early enough for its slot (key-up starts with a TS1 slot, so up to two
 slots of idle before it); a key-up that came from a queued burst (not DMR_START 01) ends 1 s after the last scheduled
@@ -285,10 +294,10 @@ leave out. The block:
 | 6 | label: 1 TS1, 2 TS2, 0 none (no epoch or the slot clock didn't place it) |
 | 7 | kind: the slot type (`hal_dmr_modem.h` burst kinds), voice 0x10 + burst index (A = 0) |
 | 8 | color code heard |
-| 9 | flags: 01 CRC good, 02 in step, 04 PI, 08 LC complete, 10 BS sync, 20 labeled by the epoch, 40 slot time valid |
+| 9 | flags: 01 CRC good, 02 in step, 04 PI, 08 LC complete, 10 BS sync, 20 labeled by the epoch, 40 slot time valid, 80 slot number valid (bytes 14-15) |
 | 10-11 | RSSI, dBm (s16, 0 unknown) |
 | 12-13 | sequence number (u16, counts every event; a gap means a lost frame) |
-| 14-15 | reserved, 0 |
+| 14-15 | the burst's slot number, counted from the SET_EPOCH E (slot 0, a TS1 slot) in force when the burst is reported (s16; with flag 80, else 0). A burst that started before E, reported after the radio took that SET_EPOCH, is negative (-1: the slot just before E). It stays counted from E when the radio moves its own anchor forward, so a host that knows which slot E was maps the burst to its slot exactly; an epoch is used for at most 2 minutes (4000 slots), well inside the s16 range |
 
 A burst that fails its CRC still gets its event (flag 01 clear), though no uplink frame may follow. The events cost
 21 bytes per 30 ms slot heard, well inside the port's budget.

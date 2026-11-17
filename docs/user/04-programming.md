@@ -106,20 +106,74 @@ mode shows that mode's fields under **Mode settings**; a trunked channel takes i
 whose firmware doesn't run a channel's mode shows the mode's short name, receives nothing on it and doesn't transmit.
 The [feature matrix](../feature-matrix.md) lists which builds run which mode.
 
-The **Systems** tab adds a system of a type, edits its fields, its sites, control channels and channel plan
-(**Channels and sites**) and its key (**Key**). Per system:
+The **Systems** tab adds a system of a type. One form holds all of it, in sections: the system's identity, its
+control channels (a row per frequency, **+** to add one, **−** to remove it, tried top to bottom), this radio
+(**Transmit**, **Radio ID on this system**), calls, fallback, the key and wireless sharing. Sections few systems need (sites and
+roaming, remote commands, a fixed channel plan, sites, the channel plan) start closed: click the heading to open one.
+Per system:
 
 | Field | Meaning |
 |---|---|
-| Listen only | The radio never registers or transmits on the system, whatever a channel says |
-| Needs its key | The system can't be used without its key |
-| Sharing | What zone sharing sends of it: off, its identity only (the receiver must have the system), or the whole system |
-| Radio ID on this system | Your ID there; blank uses the mode's own. Never shared |
+| Transmit | Never (listen only): the radio follows calls but never registers or transmits, whatever a channel says. Yes, after registering. P25 also has Yes, without registering: PTT asks for a voice channel at once |
+| Needs its key | The system can't be used without its key. The key's fields are grayed out until this is ticked |
+| Wireless Zone/Channel Sharing | What zone sharing sends of it: off, its identity only (the default; the receiver must have the system), or the whole system |
+| Radio ID on this system | Your ID there; blank uses the mode's own. Never shared. Grayed out while Transmit is Never |
 
-A key is shown only on request. When the codeplug holds keys, **Save** as a codeplug file asks whether to include them;
+When the codeplug holds keys, **Save** as a codeplug file asks whether to include them;
 they are left out unless you tick **Include the keys in this file**. Anyone with a file that holds them can read them.
 CSV and qdmr files hold neither systems nor channel modes: a channel of another mode goes into them as a receive-only
 DMR channel, and comes back from one as that. Keep a codeplug file for them.
+
+### P25 and NXDN
+
+Pick **P25**, **P25 Trunking** or **NXDN** in the channel form's **Mode**. Using them on the radio:
+[Channels, zones and the VFO](07-channels-zones-vfo.md#p25-channels). The talk group is the channel's **TX contact**
+(a group contact) and the RX group list works as on DMR. **Own ID** on a channel overrides the radio's ID for that
+channel.
+
+**P25 channel:**
+
+| Field | Meaning |
+|---|---|
+| Squelch | Normal: every call on the NAC. Selective: the talk group, calls to everyone and calls to this radio |
+| RX NAC | Network access code heard, 3 hex digits. Blank: 293. F7E receives every NAC |
+| TX NAC | Code sent. Blank: the RX NAC (293 when the RX NAC is F7E) |
+
+**NXDN channel:**
+
+| Field | Meaning |
+|---|---|
+| Rate | 9600 bit/s (12.5 kHz) or 4800 bit/s (6.25 kHz) |
+| Squelch | RAN: every call on the RAN. Selective: the group and calls to this radio |
+| RX RAN | Radio access number heard, 0-63. 0 receives every RAN |
+| TX RAN | RAN sent. Blank: the RX RAN (1 when the RX RAN is 0) |
+
+**Radio tab**, per mode:
+
+| Field | Meaning |
+|---|---|
+| P25 unit ID | Your P25 ID. Blank: the DMR ID |
+| NXDN unit ID | Your NXDN ID, 1-65519. Blank: the DMR ID if it is 65519 or less, else 1 |
+
+**P25 Trunking system** (Systems tab, type P25 Trunking). A new system is listen only: set **Transmit** to register and
+transmit.
+
+| Field | Meaning |
+|---|---|
+| WACN, System ID | The system's identity, hex. Blank: any |
+| Control channel NAC | Blank: any |
+| Control channels | RX in MHz, tried top to bottom. TX, identifier and channel number can stay 0 when the control channel announces them |
+| Skip encrypted calls | Don't follow a grant for an encrypted call |
+| Hold after a call | Seconds on the voice channel after a call ends. 0: back to the control channel at once |
+| Use only the channel plan entered here (sites and roaming) | Ignore the plan the control channel sends |
+| Change site below (sites and roaming) | Kept in the codeplug; the radio doesn't change site on signal level yet |
+
+**Sites** and **Channel plan** (per identifier: base frequency, spacing, TX offset, bandwidth) are optional. Without a
+plan entry the radio uses the plan the control channel sends.
+
+**P25 trunked channel:** pick the **System** and the talk group (**TX contact**). **Follow every group of the system**
+follows calls to every talk group, not just the channel's. **Fallback channel** is kept in the codeplug; the radio
+doesn't use it yet and keeps hunting for a control channel. A trunked channel has no frequencies of its own.
 
 ### Files
 
@@ -204,6 +258,7 @@ TFTP (USB network mode) and other CPS programs use the older format.
 | Zones | Name and channel list. Without zones, the radio shows one zone with all channels |
 | Contacts (up to 1024) | Name, DMR ID or talkgroup, private or group, timeslot override |
 | RX group lists | The talkgroups each channel listens to |
+| Trunked systems (up to 8) | Every field of the **Systems** tab, and which channels are trunked |
 | DMR ID database | Names for DMR IDs that aren't contacts, shown on the receive screen |
 | VFO A | Frequency and settings of the VFO, read after the next restart |
 | Boot text | The two lines on the boot screen |

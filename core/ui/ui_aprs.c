@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // Tools > APRS (docs/spec/aprs.md 10): what APRS is doing (callsign, frequency, position, next beacon, or why nothing
 // can be sent) and the everyday choices, one row each: send now, automatic beacons, the frequency (region), the RF
-// power (as the channel, or a level of its own), the digipeater path (the hops), the interval, SmartBeaconing, the
+// power (as the channel, or a level of its own), the digipeater path (the hops), our SSID, the interval, SmartBeaconing, the
 // way out (radio / DMR / both), KISS on the host port, and the stations heard (receive builds). Where the position
 // comes from is the position service's (Settings > Location, ui_position.c). The rest (symbol, comment, digital
 // destination, iGate, digipeater) is set with qdmr, the debug link or tools/rfoundry_debug.py (aprs.md 11).
@@ -38,10 +38,10 @@ WEAK bool ui_svc_aprs_station(uint8_t i, aprs_station_t *out) { (void)i; (void)o
 WEAK bool ui_svc_aprs_station_find(const char *call, aprs_station_t *out) { (void)call; (void)out; return false; }
 WEAK bool ui_svc_aprs_range(const aprs_station_t *s, uint32_t *m, uint16_t *deg) { (void)s; (void)m; (void)deg; return false; }
 
-enum { AP_SEND, AP_AUTO, AP_FREQ, AP_POWER, AP_PATH, AP_INTERVAL, AP_SMART, AP_VIA, AP_KISS, AP_HEARD, AP_COUNT };
+enum { AP_SEND, AP_AUTO, AP_FREQ, AP_POWER, AP_PATH, AP_SSID, AP_INTERVAL, AP_SMART, AP_VIA, AP_KISS, AP_HEARD, AP_COUNT };
 
-// The rows this build shows, in order: the packet rows only with the AX.25 backend (CONFIG_APRS_AFSK), "Send via"
-// only when there is a choice (both backends built)
+// The rows this build shows, in order: the packet rows (SSID too) only with the AX.25 backend (CONFIG_APRS_AFSK),
+// "Send via" only when there is a choice (both backends built)
 static const uint8_t rows[] = {
 	AP_SEND, AP_AUTO,
 #if CONFIG_APRS_AFSK
@@ -53,7 +53,7 @@ static const uint8_t rows[] = {
 #endif
 	AP_KISS,
 #if CONFIG_APRS_AFSK
-	AP_HEARD,
+	AP_HEARD, AP_SSID,	// set once: last, so the rows above keep their digits
 #endif
 };
 #define N_ROWS	((uint16_t)(sizeof(rows) / sizeof(rows[0])))
@@ -159,7 +159,8 @@ static void aprs_item(uint16_t i, ui_item_t *it)
 {
 	static const tr_id_t names[] = { TRN(APRS_ROW_SEND_NOW, "Send position now"),
 		TRN(APRS_LABEL_BEACONS, "Automatic beacons"), TRN(APRS_LABEL_FREQUENCY, "Frequency"),
-		TRN(LABEL_POWER, "Power"), TRN(APRS_LABEL_PATH, "Path"), TRN(APRS_LABEL_INTERVAL, "Interval"),
+		TRN(LABEL_POWER, "Power"), TRN(APRS_LABEL_PATH, "Path"), TRX(APRS_LABEL_SSID, "SSID"),
+		TRN(APRS_LABEL_INTERVAL, "Interval"),
 		TRN(APRS_LABEL_SMARTBEACONING, "SmartBeaconing"), TRN(APRS_LABEL_SEND_VIA, "Send via"),
 		TRN(APRS_LABEL_KISS_ON_USB, "KISS on USB"), TRN(APRS_ROW_STATIONS_HEARD, "Stations heard") };
 	aprs_view_t v;
@@ -211,6 +212,13 @@ static void aprs_item(uint16_t i, ui_item_t *it)
 			sb_str(&b, tr(path_names[c.path < APRS_PATH_COUNT ? c.path : 0]));
 		}
 		break;
+	case AP_SSID:
+		if (!rf_send()) {
+			it->flags |= UI_ITEM_DIM;	// RF packets only: DMR positions carry the network's SSID
+		} else {
+			sb_u32(&b, c.ssid, 1);
+		}
+		break;
 	case AP_INTERVAL: sb_str(&b, tr(interval_names[interval_index(c.interval_s)])); break;
 	case AP_SMART: sb_str(&b, c.smart ? TR(VALUE_ON, "On") : TR(VALUE_OFF, "Off")); break;
 	case AP_VIA: sb_str(&b, tr(via_names[c.via < APRS_VIA_COUNT ? c.via : 0])); break;
@@ -228,7 +236,6 @@ static void aprs_item(uint16_t i, ui_item_t *it)
 
 static void aprs_select(uint16_t i, bool hold)
 {
-	(void)hold;
 	aprs_view_t v;
 	aprs_cfg_t c;
 	if (!ui_svc_aprs_view(&v)) {
@@ -270,6 +277,12 @@ static void aprs_select(uint16_t i, bool hold)
 			return;
 		}
 		c.path = (uint8_t)((c.path + 1u) % APRS_PATH_COUNT);	// none, then more hops; WIDE2-2 wraps to none
+		break;
+	case AP_SSID:
+		if (!rf_send()) {
+			return;
+		}
+		c.ssid = (uint8_t)((c.ssid + (hold ? 15u : 1u)) % 16u);	// 0-15, wrapping; hold steps back
 		break;
 	case AP_INTERVAL: c.interval_s = intervals[(interval_index(c.interval_s) + 1u) % N_INTERVALS]; break;
 	case AP_SMART: c.smart = !c.smart; break;

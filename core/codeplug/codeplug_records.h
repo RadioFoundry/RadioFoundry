@@ -43,6 +43,8 @@ typedef struct {
 // A system record's header (7.1): type, flags, sharing, identity length, own ID (4), fallback channel (2) and its name
 // check (2), name (16); the type's block follows, its identity first
 #define CODEPLUG_SYS_HDR	28u
+#define CODEPLUG_SYSTEMS_RUN	8u	// system numbers a radio runs, 0-7 (a stun names one in 3 bits): an import adds
+					// none past them
 #define CODEPLUG_SYS_NEEDS_KEY	0x01u	// flags: the system can't be used without its secret
 #define CODEPLUG_SYS_TX		0x02u	// flags: may register, affiliate and transmit (clear: listen only, never)
 enum { CODEPLUG_SHARE_OFF, CODEPLUG_SHARE_IDENTITY, CODEPLUG_SHARE_WHOLE };

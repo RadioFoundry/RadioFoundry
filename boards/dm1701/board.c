@@ -143,7 +143,7 @@ static const hal_cps_t cps = {
 
 const board_t board = {
 	.name = "DM-1701",
-	// CAP_GPS: no module from the factory, but the pins are there for one; gps_present says whether one was heard
+	// CAP_GPS: no module from the factory, but the pins are there for one; board_t.gps says whether one was heard
 	.caps = CAP_KEYPAD | CAP_ENCODER | CAP_VOLUME_POT | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
@@ -171,6 +171,10 @@ const board_t board = {
 #endif
 #if CONFIG_DMR
 	.dmr = &stm32_hrc_dmr,
+#if CONFIG_AIR
+	.air = &stm32_hrc_air,	// the HR_C6000 physical layer mode (hrc6000_air.c)
+	.baseband = &stm32_hrc_baseband,	// its FM copy (hrc6000_air.c), the soft modem's input
+#endif
 	.audio = &uvf_audio,
 	.vocoder = &stm32_vocoder,
 #if CONFIG_AUDIO_PROBE || CONFIG_NET_USRP || CONFIG_APRS_RX
@@ -187,7 +191,7 @@ const board_t board = {
 #endif
 	.system = &stm32_system,
 #if CONFIG_GPS
-	.gps_present = stm32_gps_present,
+	.gps = &stm32_gps,
 #endif
 	// hardware-dm1701.md 11.1: low battery 6.2 V (back above 6.4 V); critical 6.0 V (3.0 V a cell) is our choice, the
 	// spec gives none (below 5.5 V the board reads as switched off)

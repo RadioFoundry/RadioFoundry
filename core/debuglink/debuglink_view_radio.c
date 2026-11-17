@@ -32,12 +32,16 @@
 #include "dmr/zone_share_api.h"
 #endif
 #endif
+#if CONFIG_GPS
+#include "position/position.h"
+#endif
 
 #define DL_SETTING_MIC_GAIN	29u	// SETTING id of the mic gain step (radio/mic_gain.h)
 #define DL_SETTING_ENC_OPTIONS	31u	// SETTING id of the vocoder's encode options (VOCODER_OPT_*)
 #define DL_SETTING_ZS_OFFERS	32u	// SETTING id of zone share offers (zone_share_api.h)
 #define DL_SETTING_REF_TRIM	35u	// SETTING id of the reference trim, ppb two's complement (radio/ref_trim.h)
 #define DL_SETTING_TONES_OFF	36u	// SETTING id of the Settings > Sound tones (radio_settings_t.tones_off)
+#define DL_SETTING_GPS		37u	// SETTING id of Settings > Location > GPS (settings_t.gps, board_t.gps)
 
 static const char *word(uint8_t v, const char *const *names, uint8_t n)
 {
@@ -371,26 +375,97 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 #else
 		return DL_ST_UNAVAILABLE;
 #endif
+	case DL_OP_VOICE_CAPTURE:
+		// u8: capture the next n voice frames received (0 stops), the voice_cap view shows them
+		if (len < 1) {
+			return DL_ST_BAD_ARG;
+		}
+#if CONFIG_VOICE_CAPTURE
+		ambeVoiceCaptureArm(a[0]);
+		return DL_ST_OK;
+#else
+		return DL_ST_UNAVAILABLE;
+#endif
 	case DL_OP_DMR_FIELDS:
 		// mode (0xFF = keep, else radio_mode_t), color code (0xFF = keep), timeslot (0 = keep): on a channel they are
 		// temporary changes, in the VFO the VFO's own settings. The radio core refuses what it can't do
-		if (len < 3 || (a[0] != 0xFF && a[0] > RADIO_MODE_DMR) || (a[1] != 0xFF && a[1] > 15) || a[2] > 2) {
+		if (len < 3 || (a[0] != 0xFF && a[0] > RADIO_MODE_NXDN) || (a[1] != 0xFF && a[1] > 15) || a[2] > 2) {
 			return DL_ST_BAD_ARG;
 		}
-#if CONFIG_DMR
+#if CONFIG_DMR || CONFIG_P25
+		if ((a[0] == RADIO_MODE_DMR && !CONFIG_DMR) || (a[0] == RADIO_MODE_P25 && !CONFIG_P25) ||
+		    (a[0] == RADIO_MODE_NXDN && !CONFIG_NXDN) ||
+		    ((a[1] != 0xFF || a[2] != 0) && !CONFIG_DMR)) {
+			return DL_ST_UNAVAILABLE;
+		}
 		if (a[0] != 0xFF) {
 			radio_req_mode(a[0]);
 		}
+#if CONFIG_DMR
 		if (a[1] != 0xFF) {
 			radio_req_dmr_color_code(a[1]);
 		}
 		if (a[2] != 0) {
 			radio_req_dmr_timeslot(a[2]);
 		}
+#endif
 		return DL_ST_OK;
 #else
 		return DL_ST_UNAVAILABLE;
 #endif
+	case DL_OP_P25: {
+		// The P25 settings (radio_p25_settings_t, RAM only; docs/spec/debuglink.md 3.8): u16 rx_nac, u16 tx_nac,
+		// u16 rx_tgid, u8 talkaround (0 auto, 1 on, 2 off), u8 flags (bit 0: PTT calls a unit), u32 tx_dst,
+		// u32 unit_id (0: the radio's DMR ID), little-endian. The engine takes them when not transmitting
+		if (len < 16 || a[6] > RADIO_P25_TA_OFF || (a[7] & 0xFEu) != 0) {
+			return DL_ST_BAD_ARG;
+		}
+#if CONFIG_P25
+		radio_p25_settings_t p;
+		p.rx_nac = (uint16_t)(a[0] | a[1] << 8);
+		p.tx_nac = (uint16_t)(a[2] | a[3] << 8);
+		p.rx_tgid = (uint16_t)(a[4] | a[5] << 8);
+		p.talkaround = a[6];
+		p.unit_call = (a[7] & 1u) != 0;
+		p.tx_dst = (uint32_t)a[8] | (uint32_t)a[9] << 8 | (uint32_t)a[10] << 16 | (uint32_t)a[11] << 24;
+		p.unit_id = (uint32_t)a[12] | (uint32_t)a[13] << 8 | (uint32_t)a[14] << 16 | (uint32_t)a[15] << 24;
+		if (p.rx_nac > 0xFFFu || p.tx_nac > 0xFFFu || p.unit_id > 0xFFFFFFu ||
+		    p.tx_dst > (p.unit_call ? 0xFFFFFFu : 0xFFFFu)) {
+			return DL_ST_BAD_ARG;
+		}
+		radio_req_p25_settings(&p);
+		return DL_ST_OK;
+#else
+		return DL_ST_UNAVAILABLE;
+#endif
+	}
+	case DL_OP_NXDN: {
+		// The NXDN settings (radio_nxdn_settings_t, RAM only; docs/spec/debuglink.md 3.8): u8 flags (bit 0: 9600
+		// bit/s, else 4800; bit 1: PTT calls a unit; bit 2: emergency), u8 rx_ran (0 any), u8 tx_ran, u16 rx_gid (0: the
+		// RAN squelch), u16 unit_id (1..65519), u16 tx_dst, little-endian. The engine takes them when not transmitting;
+		// a new rate starts it over
+		if (len < 9 || (a[0] & 0xF8u) != 0 || a[1] > 63 || a[2] > 63) {
+			return DL_ST_BAD_ARG;
+		}
+#if CONFIG_NXDN
+		radio_nxdn_settings_t n;
+		n.rate9600 = (a[0] & 1u) != 0;
+		n.unit_call = (a[0] & 2u) != 0;
+		n.emergency = (a[0] & 4u) != 0;
+		n.rx_ran = a[1];
+		n.tx_ran = a[2];
+		n.rx_gid = (uint16_t)(a[3] | a[4] << 8);
+		n.unit_id = (uint16_t)(a[5] | a[6] << 8);
+		n.tx_dst = (uint16_t)(a[7] | a[8] << 8);
+		if (n.unit_id == 0 || n.unit_id > RADIO_NXDN_UNIT_MAX) {
+			return DL_ST_BAD_ARG;
+		}
+		radio_req_nxdn_settings(&n);
+		return DL_ST_OK;
+#else
+		return DL_ST_UNAVAILABLE;
+#endif
+	}
 	case DL_OP_VFO_SFR:
 		// u8: the VFO's SFR role as a channel's SFR byte A (sfr.h; role bits 0 = none). The radio core refuses it
 		// outside the VFO; dmr.sfr_role shows what it took
@@ -628,6 +703,22 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 			radio_get_settings(&s);		// again after the flash write: another change meanwhile stays
 			s.tones_off = (uint8_t)v;
 			radio_set_settings(&s);
+			return DL_ST_OK;
+		}
+		if (a[0] == DL_SETTING_GPS) {
+			// Stored and applied as the menu does (ui_svc_apply): the module's power and the position source
+			if (v > 1) {
+				return DL_ST_BAD_ARG;
+			}
+			if (!CONFIG_GPS || !board_has_gps()) {
+				return DL_ST_UNAVAILABLE;
+			}
+			settings_begin()->gps = (uint8_t)v;
+			settings_end(hal_millis());
+			board_gps_enable(v != 0);
+#if CONFIG_GPS
+			position_gps_enable(v != 0);
+#endif
 			return DL_ST_OK;
 		}
 		radio_settings_t s;

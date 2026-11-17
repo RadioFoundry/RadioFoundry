@@ -67,7 +67,7 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 	switch (part) {
 	case 0:
 		dl_text(t, "dmr.built=1\n");
-		dl_text(t, "dmr.active=%u\ndmr.codec=%u\n", d->active, d->codec);
+		dl_text(t, "dmr.active=%u\ndmr.codec=%u\ndmr.killed=%u\n", d->active, d->codec, d->killed);
 		// The vocoder's TX state: here, as dmr_stats (the counters) fills most of a reply
 		{
 			ambe_voice_stats_t a;
@@ -134,6 +134,18 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		dl_text_kv_str(t, "call.alias", d->alias);
 		dl_text(t, "call.rssi_dbm=%d\ncall.ms=%u\n", d->rssi_dbm, (unsigned)d->call_ms);
 		call(t, "last", &d->last);
+		{
+			// Why received calls ended, and what the filters dropped: a call cut short shows here
+			dmr_call_stats_t c;
+			dmr_call_get_stats(&c);
+			dl_text(t, "call.rx_end_term=%u\ncall.rx_end_sync=%u\ncall.rx_end_fade=%u\n", (unsigned)c.rx_end_term,
+				(unsigned)c.rx_end_sync, (unsigned)c.rx_end_fade);
+			dl_text(t, "call.rx_ts_dropped=%u\ncall.rx_cc_dropped=%u\n", (unsigned)c.rx_ts_dropped,
+				(unsigned)c.rx_cc_dropped);
+			// The reverse channel heard while sending: here, as dmr_stats fills a reply
+			dl_text(t, "call.rc_good=%u\ncall.rc_bad=%u\ncall.rc_ceased=%u\ncall.rc_last=%u\n", (unsigned)c.rc_good,
+				(unsigned)c.rc_bad, (unsigned)c.rc_ceased, (unsigned)c.rc_last);
+		}
 		dl_text(t, "last.ms=%u\n", (unsigned)d->last_ms);
 		break;
 	case 2: {

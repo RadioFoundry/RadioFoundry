@@ -373,6 +373,7 @@ generate false PTT events when their bias is removed, so keep PA13 high during r
 | Write | address+W, register, data high byte, data low byte |
 | Read | address+W, register, then repeated transaction address+R, 2 bytes (high first). A stop between the two works |
 | Retries | the bus occasionally NAKs; retry up to 3 times with 1 ms between |
+| Bus clear | a transfer cut short in a read leaves the chip holding SDA low; the peripheral then reports busy and its reset doesn't help. After the third failed try: SCL clocked by hand until SDA is released (9 pulses at most), a stop, then the peripheral set up again. Diagnostics line 4 counts them (`clr`) |
 | Reference | 26 MHz assumed (reg 0x04 bit0 = 0 and reg 0x30 bit14 = 1 select 25.6/26 MHz and 26/13 MHz, i.e. 26 MHz). Unverified on the board |
 | Paging | reg 0x7F selects the register page (0 or 1); page 1 holds the AGC table |
 
@@ -657,9 +658,10 @@ set. An earlier build wrote bits 6:4 and keyed a silent carrier (`gotchas.md` 3.
 
 ### 5.11 Receiver sleep
 
-RadioFoundry's `rx_sleep(true)` (receiver battery save, `radio-features.md` 5.4) puts the AT1846S in idle and switches the
-receive supply off. `rx_sleep(false)` retunes.
-
+RadioFoundry's `rx_sleep(true)` (receiver battery save, `radio-features.md` 5.4) puts the AT1846S in idle and switches
+the receive supply off. `rx_sleep(false)` retunes. It does the same on a DMR channel (`rx_sleep_dmr`, a trunked system's
+power save): the HR_C6000 keeps running and the core restarts its receive on waking. On air at 1:4 the receiver is off
+55-60% of the time, the radio stays camped, and traffic for it arrives within one cycle.
 ### 5.12 Bench register access
 
 The debug link's CHIP_REG ([debuglink.md 3.24](debuglink.md#324-chip_reg)) reaches both RF chips (`uvf_chip_reg`,
@@ -760,6 +762,10 @@ Ordering:
   The receiver must work between bursts (an SFR's inbound slot, `sfr.md` 3). Dropping the PA earlier than the next
   timeslot interrupt (28.5-30 ms after the RF TX interrupt) did not reduce the inbound errors. The "transmitting" state of the radio must therefore be taken from the HR_C6000 slot state, not from the PA
   pins: the last burst of a call (the terminator) is still in flight after the PA logic has gone back to RX once.
+
+  Since the receiver is back on the RX frequency after every burst, a voice over through a repeater listens to its
+  outbound between our bursts on a split channel too (the glue's `listen_split`, [dmr-modem.md](dmr-modem.md) 2.8):
+  on a trunked site's split channel the radio hears a reverse channel cease while it talks (`test_t3_cease`).
 - Power-down: PA enables low, both RX supplies low, mic power optionally low, HR_C6000 PWD high, AT1846S reg 0x30 =
   receiver off value.
 
@@ -1479,7 +1485,8 @@ runs from 3.3 V all the time and leaves PA9 unconnected. Nothing goes to the mod
 RadioFoundry builds GPS by default (`CONFIG_GPS`). At start-up it drives PA9 high and listens on PA10 in 5 s windows,
 9600 first. One checksum-valid NMEA sentence marks the module present. Characters without a valid sentence move on to
 the next rate (14400). A window of silence means no module: USART1 goes off, PA9 goes low, and the listening task ends
-and frees its stack. The task runs at low priority in the background, so start-up doesn't wait for it. The code is
+and frees its stack. The task runs at low priority in the background, so start-up doesn't wait for it. Once heard,
+PA9 follows Settings > Location > GPS (`hal_gps_t.enable`): low and USART1 off while the setting is off. The code is
 `boards/uv380_family/gps_uvf.c`, shared with the MD-UV380 G models ([hardware-mduv380.md](hardware-mduv380.md) 9).
 Untested with a module on a DM-1701.
 
@@ -1995,6 +2002,26 @@ is well above the "mic muted, no tone" row.
   `dm1701-v0206-csv`. An update erases first, then writes in sector order, sector 3 (the vector table) first, so a cut
   before it leaves the bootloader in DFU; a later half application may crash but never bricks. Enter the bootloader by hand (PTT and side
   key 1 at power-on) and flash again.
+
+## Air interface (`CONFIG_P25`, `CONFIG_NXDN`)
+
+`board.air` is the HR_C6000's physical layer mode ([modem-hrc6000.md](modem-hrc6000.md) 10), with receive through
+the chip's FM copy (10.6) for what its correlator can't take: the AT1846S's DMR set-up gives the HR_C6000 the
+discriminator with its audio filters off. Checked on this radio
+against the SDR bench, at the lowest power:
+
+| What | Result |
+|---|---|
+| P25 conventional transmit ([p25.md](p25.md) 9, `test_p25_tx_off_air`) | 19 units, 153 voice frames, none bad, no voice bit corrected; outer deviation 1924 Hz, carrier 75 Hz low |
+| P25 conventional receive (`test_p25_rx_from_bench`) | at -117 dBm: 72 of 72 voice frames, 1 bad, played |
+| A stored P25 or NXDN channel written over CPS | runs the mode on its own parameters, plain again after the restore. One that transmits, keyed: P25 with the channel's NAC, 153 voice frames, none bad; NXDN at 4800 bit/s with the channel's RAN, unit and group, 40 frames, no CRC failure |
+| P25 trunked ([p25-trunking.md](p25-trunking.md), `test_p25_trunk_tx`) | the bench's control channel held; registration, affiliation and voice requests heard off air; two calls keyed on the granted channel, each a header, 5 pairs of voice units and a terminator; back on the control channel after. A call granted to another unit followed to a second transmitter and played (by hand) |
+| NXDN transmit ([nxdn.md](nxdn.md), `test_nxdn_tx_off_air`) | 9600 bit/s: 78 frames, outer deviation 2399 Hz; 4800 bit/s: 40 frames, 1012 Hz; no CRC failure |
+| NXDN receive (`test_nxdn_rx_from_bench`, `test_nxdn_rx_speech`) | through the FM copy, at both rates: a call's frames and its 40 voice frames, no CRC failure; a speech recording's frames, 64 of 64 at 9600 bit/s and 136 of 136 at 4800 bit/s into the vocoder, none bad, decoded PCM peak 15,400 and 16,700. A DMR call right after is received whole |
+
+Not checked: a call with a radio of another make, a live trunked system, how the encoded voice sounds, NXDN
+receive at the speaker (the programming cable mutes it: decoded voice is judged by its PCM, and the PCM stream runs
+at the DMR rate while the copy runs) and its sensitivity.
 
 ## Receive past the rated bands
 
