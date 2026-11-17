@@ -2236,13 +2236,15 @@ function bootloaderPanel(title, makePlanFn, onDone, what, { inline = false } = {
 	const log = logBox();
 	const prog = progressBar();
 	const status = h("div");
-	let plan = null, transport = null, noCodecOk = false;
+	// planKey: the key the plan was made with. A stock file picked again after this (useStock) clears S.key, and a
+	// write with no key would erase the sectors and then stop at the first block, leaving no application
+	let plan = null, planKey = null, transport = null, noCodecOk = false;
 	const place = (btn) => (inline ? slot.replaceChildren(btn) : S.forward(btn));
 	const slot = h("div", { class: "actions" });
 	const draw = async () => {
 		try {
-			const key = await getKey(S.board);
-			plan = await makePlanFn(key);
+			planKey = await getKey(S.board);
+			plan = await makePlanFn(planKey);
 		} catch (e) {
 			// the stock file is what the key and the codec come from: a problem with it is explained, not just quoted
 			box.replaceChildren(h("h2", {}, title), failureNotice(e, S.stock));
@@ -2291,7 +2293,7 @@ function bootloaderPanel(title, makePlanFn, onDone, what, { inline = false } = {
 				await dropSerial();
 				started = flashStarted(what);
 				const programMode = !!loaderProgramMode && loaderProgramMode === (S.fakeRadio || transport.device);
-				await new Dfu(transport, { log: log.add }).run(plan, S.key, (d, total) => {
+				await new Dfu(transport, { log: log.add }).run(plan, planKey, (d, total) => {
 					if (d > 0) flashMark(started, "first_byte");
 					prog.set(d, total, t("flash.write.writing"));
 				}, { programMode });
