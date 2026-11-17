@@ -1056,7 +1056,8 @@ What a working DMR driver does that a first attempt tends to miss. Details are i
 (`hal/hal_baseband.h`) under `CONFIG_AIR`; the glue (`platform/hrc7000/dmr_glue.c`) exports them as `hrc_air` and
 `hrc_baseband` for a board's `board.air` and `board.baseband`. It receives through the soft modem on the FM receive copy and transmits through the physical layer. Fit:
 continuous profiles at 4800 symbols/s (2400 as `AIR_FIT_RATE_DOUBLED`), 2 or 4 levels; every fit carries
-`AIR_FIT_UNTESTED` until 10.4 is done.
+`AIR_FIT_UNTESTED`: the glue has no board flag that clears it (the HR_C6000 boards' `air_verified`). The core doesn't
+read it. What has been checked on air is in 10.4.
 
 | Item | How |
 |---|---|
@@ -1126,12 +1127,16 @@ dev_outer_hz / 1944 (DMR's outer deviation) and clamped to 1..255; b31:16 stay. 
 Outside 100-6000 Hz the fit says `AIR_FIT_DEV_APPROX`. The pulse filter is the chip's own (raised cosine for DMR), so
 every shape but RRC 0.2 is `AIR_FIT_SHAPE_APPROX`.
 
-### 10.4 Not yet checked on a radio
+### 10.4 Checked on a radio, and open
 
-| Item | Check |
+Checked on one HR_C7000 radio against the SDR bench ([feature-matrix.md](../feature-matrix.md) has which): P25
+conventional receive and transmit, P25 trunked receive and transmit, NXDN receive and transmit at both rates. The copy
+in DMR carries 4FSK well enough for every voice frame of a bench call, and a trunked radio transmits on its grant after
+receiving the control channel, so the copy set-up doesn't keep the RF TX interrupt away.
+
+| Open | Check |
 |---|---|
-| The copy in DMR | 4FSK at a known deviation through the tap: polarity, counts per kHz, the band's edges, clipping at the reset AF gain |
-| Transmit after receive | Once, an RF TX interrupt never came after a physical layer receive session until a restart; whether the copy set-up does the same |
+| The copy's calibration | 4FSK at a known deviation through the tap: counts per kHz, the band's edges, clipping at the reset AF gain |
 | Timing | t_us of a received symbol against the bench's |
 | FM and DMR after close | A DMR call and an FM call after a session, without a restart |
 

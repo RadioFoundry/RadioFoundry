@@ -1569,7 +1569,19 @@ universal build: the boot ROM load at power-on.
 `board.air` and `board.baseband` are the HR_C7000's provider and receive tap ([modem-hrc7000.md](modem-hrc7000.md) 10),
 under `CONFIG_DMR`. A session runs in DMR: the FD6818 keeps its DMR set-up, the speaker source (GPIO 0x2F) stays on
 the codec, and the transmitter is keyed through the DMR RF burst sequences in continuous mode (one key-up for the whole
-transmission). Nothing of it has been checked on this radio yet (modem-hrc7000.md 10.4).
+transmission). Checked on this radio against the SDR bench, at the lowest power, with every default feature on:
+
+| What | Result |
+|---|---|
+| P25 conventional receive (`test_p25_rx_from_bench`) | at -122 dBm: 72 of 72 voice frames, none bad, played |
+| P25 conventional transmit (`test_p25_tx_off_air`) | 19 units, header to terminator |
+| P25 trunked transmit ([p25-trunking.md](p25-trunking.md), `test_p25_trunk_tx`) | registration, affiliation, a voice request and a call on the grant, twice |
+| P25 trunked receive (`test_p25_trunk_rx`) | 4 grants, 4 followed; 234 voice frames, 7 bad, 198 played |
+| NXDN receive ([nxdn.md](nxdn.md), `test_nxdn_rx_from_bench`) | 9600 and 4800 bit/s: a call each, 21 and 12 frames, 40 voice frames each |
+| NXDN transmit (`test_nxdn_tx_off_air`) | 9600 and 4800 bit/s: 77 and 39 frames, no CRC failure |
+
+Not checked: a call with a radio of another make, a live trunked system, sensitivity, and the receive copy's
+calibration (modem-hrc7000.md 10.4).
 
 ## Receive past the rated bands
 
