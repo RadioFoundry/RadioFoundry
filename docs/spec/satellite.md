@@ -180,7 +180,7 @@ catalog-ID columns, checksum column, epoch syntax and calendar day, and finite/r
 Every entry is validated before any install begins. Duplicate IDs, malformed entries, or a provider response that
 omits or adds an ID reject the complete batch.
 
-Install uses debug-link command `0x22` (`SATELLITE`) and is available only when capability operation `INFO` succeeds.
+Install uses debug-link command `0x25` (`SATELLITE`) and is available only when capability operation `INFO` succeeds.
 Its protocol-v6 operations are `INFO=0`, `LIST=1`, `BEGIN=2`, `DATA=3`, `COMMIT=4`, `ABORT=5`,
 `SYNC_CHANNELS=6`, `PROFILE_GET=7`, `PROFILE_SET=8`, and `REPLACE_BEGIN=9`. `INFO` reports
 protocol version, record capacity (`10`) and installed count as `u8, u16, u16`; it is unavailable when the feature is

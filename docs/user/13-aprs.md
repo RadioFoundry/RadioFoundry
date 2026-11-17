@@ -40,9 +40,10 @@ frequency, your position and its source, and when the next beacon goes out. If t
 | Send via | AFSK (on FM), DMR, or both |
 | KISS on USB | The radio works as a KISS TNC for APRS programs on the computer |
 | Stations heard | Stations the radio heard (radios that can receive APRS), newest first. A station that sent its position shows how far away and which way it was from yours, when the radio has a position too; the age on that row is then the age of that position. Other rows show when the station was last heard. Objects and items a station sends don't count as its position, and a position more than a day old is dropped. Select one and choose Message to fill its callsign |
+| SSID | The number after your callsign (`N0ABC-9`): 0 to 15, 7 by default. **OK** steps up, holding **OK** steps down; 0 sends the callsign alone. See SSID below. Dimmed on radios that can't send APRS over the air |
 
 A firmware built with only one way to send APRS shows only the rows for it. With APRS over DMR only there is no
-Frequency, Power, Path, Send via or Stations heard, and KISS on USB is called NMEA on USB (the computer can still give
+Frequency, Power, Path, Send via, Stations heard or SSID, and KISS on USB is called NMEA on USB (the computer can still give
 the radio its position).
 
 The symbol, comment and the DMR destination are set with the debug tool for now
@@ -80,6 +81,18 @@ positions sent over DMR.
 
 The path is also in the codeplug's first APRS configuration, which qdmr edits. A change on the radio is written
 there too, and a codeplug written with a different path changes the radio's. Whichever changed last is used.
+
+## SSID
+
+The SSID tells your stations apart on APRS: a mobile and a handheld with the same callsign need different ones
+(commonly 9 for a mobile, 7 for a handheld). It applies to packets sent on FM; positions sent over DMR carry the SSID
+set for your ID at BrandMeister.
+
+Like the path, the SSID is also in the codeplug's first APRS configuration. Set it on the APRS page or in the
+codeplug: a change on the radio is written to the codeplug, and a codeplug written with a different SSID changes the
+radio's. Whichever changed last is used. Only the first APRS configuration counts. After a firmware update, a codeplug
+SSID of 0 is not taken the first time: the radio keeps its own (7 by default). To send without an SSID, set 0 on the
+radio.
 
 ## Receiving
 

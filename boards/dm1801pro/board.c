@@ -40,8 +40,9 @@ static const band_t bands[] = {
 #endif
 };
 
-// The factory calibration holds PA drive points for three power levels (hardware-dm1801pro.md 6.4): low, middle, high
-static const char *const power_names[] = { "L", "M", "H" };
+// The factory calibration holds PA drive points for three power levels (hardware-dm1801pro.md 6.4): low, middle, high.
+// Two more under the low one are fractions of its drive (radio_dm1801pro.c)
+static const char *const power_names[] = { "L--", "L-", "L", "M", "H" };
 
 // docs/ux/information-architecture.md 7.6. The key bits are read off the radio (input_dm1801pro.c)
 static const keymap_entry_t keymap[] = {
@@ -91,7 +92,7 @@ const board_t board = {
 #endif
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
 	.power_names = power_names,
-	.power_default = 0,	// low
+	.power_default = 2,	// low
 	.display = &dm1801pro_display,
 	.input = &dm1801pro_input,
 	.keymap = keymap,
@@ -110,6 +111,10 @@ const board_t board = {
 	.dmr = &hrc_dmr,
 	.audio = &hrc_audio_pcm,
 	.vocoder = &hrc_vocoder,	// the radio's own codec in the slot (codec-dm1801pro.md 4); without it, no voice
+#if CONFIG_AIR
+	.air = &hrc_air,		// the physical layer and the receive copy (modem-hrc7000.md 10)
+	.baseband = &hrc_baseband,
+#endif
 #endif
 #if CONFIG_HOSTLINK
 	.host_port = &hrc_host_uart_stream,

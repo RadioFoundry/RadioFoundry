@@ -262,8 +262,8 @@ static void test_short_lc(void)
 		CHECK(memcmp(back, rows, sizeof(back)) == 0);
 		(void)again;
 	}
-	// One flipped bit in a payload row: a column of the BPTC matrix holds bits of several CACH rows, so the Hamming
-	// rows correct it (when it lands in rows 1-3 of the encode matrix) or the column parity catches it
+	// One flipped bit in a payload row: a column of the BPTC matrix holds bits of several CACH rows. The Hamming rows
+	// correct it when it lands in rows 1-3 of the encode matrix; in row 4 (column parity) it breaks only that row
 	uint32_t rows[4], slc;
 
 	dmrShortLcEncode(dmrShortLcActivity(8, 9, 0x12, 0x34), rows);
@@ -275,13 +275,10 @@ static void test_short_lc(void)
 			hit[r] ^= 1u << i;
 			bool ok = dmrShortLcDecode(hit, &slc);
 
-			// transmit bit t = 17 r + 16 - i sits in encode row t % 4: rows 0-2 correct it, row 3 (parity) fails
-			int t = 17 * r + 16 - i;
-
-			CHECK(ok == ((t % 4) != 3));
-			if (ok) {
-				CHECK(slc == dmrShortLcActivity(8, 9, 0x12, 0x34));
-			}
+			// transmit bit t = 17 r + 16 - i sits in encode row t % 4: rows 0-2 correct it, row 3 (parity) is only
+			// its own error. Rejecting that one lost a quarter of the short LCs with a bit error on air
+			CHECK(ok);
+			CHECK(slc == dmrShortLcActivity(8, 9, 0x12, 0x34));
 		}
 	}
 }
@@ -557,8 +554,10 @@ static void test_epoch(void)
 	uint32_t n = 3001u;	// slots in about 90 s
 	uint64_t t = 5000000ull + ((uint64_t)n * 30003000ull) / 1000ull;
 	CHECK(slotEpochLabel(&e, (uint32_t)t, 1000, &res) == ((n & 1) ? 2 : 1) && res > -2 && res < 2);
+	CHECK(e.moved != 0 && e.last_slot == n);	// the anchor moved; the slot is still counted from the host's E
 	uint64_t t2 = 5000000ull + ((uint64_t)(n + 1) * 30003000ull) / 1000ull;
 	CHECK(slotEpochLabel(&e, (uint32_t)t2, 1000, &res) == ((n & 1) ? 1 : 2) && res > -2 && res < 2);
+	CHECK(e.last_slot == n + 1u);
 
 	// Tracking: a constant 4 ms chip delay is followed; never more than 5 ms in all
 	CHECK(slotEpochSet(&e, 0, 0, 0));
@@ -679,7 +678,7 @@ static int count_out(uint8_t cmd, int from)
 
 static uint8_t split_cmd(uint8_t sub, const uint8_t *data, uint8_t len)
 {
-	uint8_t p[40];
+	uint8_t p[48];
 
 	p[0] = sub;
 	if (len > 0) {
@@ -1388,7 +1387,7 @@ static void test_align(void)
 	start_sched(0);
 	CHECK(split_cmd(SPLIT_SUB_INFO, NULL, 0) == 0);
 	const uint8_t *r = split_reply(SPLIT_SUB_INFO);
-	CHECK(rd16(r + 15) == (SPLIT_CAP_SCHED | SPLIT_CAP_ALIGN | SPLIT_CAP_SLEW | SPLIT_CAP_RX_META) && r[17] == 55 && r[18] == 32 && rd16(r + 19) == 4600);
+	CHECK(rd16(r + 15) == (SPLIT_CAP_SCHED | SPLIT_CAP_ALIGN | SPLIT_CAP_SLEW | SPLIT_CAP_RX_META | SPLIT_CAP_SCHED_CACH) && r[17] == 55 && r[18] == 32 && rd16(r + 19) == 4600);
 
 	// Not TX half / bad period / too short
 	CHECK(align_cmd(grid_t, 31000000u, GRID_C, NULL, NULL) == SPLIT_RESULT_INVALID);
@@ -1652,6 +1651,74 @@ static uint32_t until_slewed(uint32_t max_ms)
 	return 0;
 }
 
+// TX_SCHED with the slot's CACH (spec 3.9): sent as given, idle bursts included; TC must name the slot
+static uint8_t sched_cach_cmd(uint32_t counter, uint8_t slot, uint8_t control, const uint8_t *frame, uint32_t cach)
+{
+	uint8_t p[42];
+
+	for (int i = 0; i < 4; i++) {
+		p[i] = (uint8_t)(counter >> (8 * i));
+	}
+	p[4] = slot;
+	p[5] = control;
+	memcpy(p + 6, frame, 33);
+	p[39] = (uint8_t)(cach >> 16);
+	p[40] = (uint8_t)(cach >> 8);
+	p[41] = (uint8_t)cach;
+	uint8_t r = split_cmd(SPLIT_SUB_TX_SCHED, p, 42);
+
+	return (r != 0) ? (uint8_t)(0xE0 + r) : split_reply(SPLIT_SUB_TX_SCHED)[9];
+}
+
+static void test_sched_cach(void)
+{
+	hotspot_split_view_t v;
+	int32_t ph;
+	uint8_t fl, ts, d[33], idle[33], info[12] = { 0x3C };
+	uint32_t c, t;
+
+	start_sched(0);
+	CHECK(split_cmd(SPLIT_SUB_INFO, NULL, 0) == 0);
+	CHECK((rd16(split_reply(SPLIT_SUB_INFO) + 5 + 10) & SPLIT_CAP_SCHED_CACH) != 0);
+	CHECK(align_cmd(grid_t, 0, GRID_C, &ph, &fl) == 0);
+	run_ms(100);
+	epoch(&c, &t, &ts);
+	data_frame(DMR_TYPE_CSBK, info, 12, d);
+	data_frame(DMR_TYPE_IDLE, info, 0, idle);
+
+	uint32_t g = (c + 10u) & ~1u;
+	uint32_t c1 = dmrCachBuild(1, 0, DMR_LCSS_FIRST, 0x1A5A5u);	// before TS1: AT busy
+	uint32_t c2 = dmrCachBuild(0, 1, DMR_LCSS_LAST, 0x05A5Au);	// before TS2: AT idle
+	unsigned air0 = ssim.air_n;
+	CHECK(sched_cach_cmd(g, 1, 0x43, d, c1) == SPLIT_SCHED_QUEUED);
+	CHECK(sched_cach_cmd(g + 1u, 2, 0x49, idle, c2) == SPLIT_SCHED_QUEUED);	// an idle that carries a CACH
+	CHECK(sched_cach_cmd(g + 2u, 1, 0x43, d, c2) == 0xE0 + SPLIT_RESULT_INVALID);	// TC names TS2
+	CHECK(sched_cmd(g + 2u, 1, 0x43, d) == SPLIT_SCHED_QUEUED);			// no CACH: the half's own
+	run_ms(600);
+	hotspot_split_get_view(&v);
+	bool seen1 = false, seen2 = false, seen3 = false;
+	for (unsigned i = air0; i < ssim.air_n; i++) {
+		uint32_t n = ssim.air[i].counter + v.cbase;
+
+		if (n == g) {
+			seen1 = ssim.air[i].b.kind == DMR_BURST_CSBK && ssim.air[i].cach.bits == c1 && ssim.air[i].cach.at == 1 &&
+				ssim.air[i].cach.tc == 0 && ssim.air[i].cach.payload == 0x1A5A5u;
+		} else if (n == g + 1u) {
+			seen2 = ssim.air[i].b.kind == DMR_BURST_IDLE && ssim.air[i].cach.bits == c2;
+		} else if (n == g + 2u) {
+			seen3 = ssim.air[i].b.kind == DMR_BURST_CSBK && ssim.air[i].cach.bits != c1 && ssim.air[i].cach.tc == 0;
+		}
+	}
+	for (unsigned i = air0; i < ssim.air_n; i++) {
+		uint32_t n = ssim.air[i].counter + v.cbase;
+		if (n >= g && n <= g + 2u && !(seen1 && seen2 && seen3)) {
+			printf("  slot +%u kind %u bits %06x tc %u at %u pl %05x (c1 %06x c2 %06x)\n", n - g, ssim.air[i].b.kind, ssim.air[i].cach.bits, ssim.air[i].cach.tc, ssim.air[i].cach.at, ssim.air[i].cach.payload, c1, c2);
+		}
+	}
+	CHECK(seen1 && seen2 && seen3);
+	CHECK(ssim.late == 0);
+}
+
 static void test_slew(void)
 {
 	hotspot_split_view_t v;
@@ -1781,11 +1848,12 @@ static void test_rx_meta(void)
 	CHECK(n == 2 && data1 > ev[0] && data1 < ev[1] && (data2 < 0 || data2 > ev[1]));
 	const uint8_t *m = out[ev[0]].b + 5;
 	CHECK(rd32(m) == s1 && (int16_t)rd16(m + 4) == 3000 && m[6] == 1 && m[7] == DMR_BURST_VOICE_LC_HEADER && m[8] == 1);
-	CHECK(m[9] == (SPLIT_META_CRC_OK | SPLIT_META_IN_STEP | SPLIT_META_LC | SPLIT_META_EPOCH | SPLIT_META_TIMED));
-	CHECK((int16_t)rd16(m + 10) == -80 && rd16(m + 12) == 0);
+	CHECK(m[9] == (SPLIT_META_CRC_OK | SPLIT_META_IN_STEP | SPLIT_META_LC | SPLIT_META_EPOCH | SPLIT_META_TIMED |
+		       SPLIT_META_SLOT));
+	CHECK((int16_t)rd16(m + 10) == -80 && rd16(m + 12) == 0 && rd16(m + 14) == 20);	// 600 ms after E: slot 20
 	m = out[ev[1]].b + 5;
 	CHECK(rd32(m) == s2 && m[6] == 2 && m[7] == DMR_BURST_VOICE && (int16_t)rd16(m + 10) == -97 && rd16(m + 12) == 1);
-	CHECK(m[9] == (SPLIT_META_CRC_OK | SPLIT_META_EPOCH | SPLIT_META_TIMED));
+	CHECK(m[9] == (SPLIT_META_CRC_OK | SPLIT_META_EPOCH | SPLIT_META_TIMED | SPLIT_META_SLOT) && rd16(m + 14) == 21);
 	// A burst that goes up nowhere (a header with a bad CRC) still gets its event; without an epoch: label 0
 	CHECK(split_cmd(SPLIT_SUB_SET_ROLE, (const uint8_t[]){ 0 }, 1) == 0);
 	CHECK(split_cmd(SPLIT_SUB_SET_ROLE, (const uint8_t[]){ 2, 0, 0, 0, 0, 0, 0, SPLIT_OPT_RX_META }, 8) == 0);
@@ -1799,7 +1867,8 @@ static void test_rx_meta(void)
 			e = out[i].b;
 		}
 	}
-	CHECK(e != NULL && e[5 + 6] == 0 && e[5 + 9] == (SPLIT_META_IN_STEP | SPLIT_META_LC | SPLIT_META_TIMED));
+	CHECK(e != NULL && e[5 + 6] == 0 && e[5 + 9] == (SPLIT_META_IN_STEP | SPLIT_META_LC | SPLIT_META_TIMED) &&
+	      rd16(e + 5 + 14) == 0);
 	CHECK(count_out(MMDVM_DMR_DATA2, from) == 0);
 	hotspot_split_view_t v;
 	hotspot_split_get_view(&v);
@@ -1871,6 +1940,7 @@ int main(void)
 	test_tx_guard();
 	test_align();
 	test_sched();
+	test_sched_cach();
 	test_slew();
 	test_rx_half();
 	test_rx_meta();

@@ -104,6 +104,8 @@ continuation keeps the reserved bytes and the header length as it found them.
 | 0x0200 | System entries | record list | 0x0200-0x02FF: a system's sites, channels and plan rows ([channel-modes.md](channel-modes.md) 7.2) | none | the system's type built |
 | 0x0300 | System secrets | record list | 0x0300-0x03FF: system n's own secret ([channel-modes.md](channel-modes.md) 7.4) | none | the system's type built |
 | 0x0400 | Channel tags | record list | 0x0400-0x07FF: channel n + 1's kind and parameters ([channel-modes.md](channel-modes.md) 2) | none | read in every build |
+| 0x0800 | Short data poll | record list | 0x0800-0x08FF: DMR Tier III system n's short data poll format, size and the radio's reply ([dmr-trunking-codeplug.md](dmr-trunking-codeplug.md) 5) | none: ISO 8 bit, 4 blocks, no reply | Tier III trunking in the build (`CONFIG_DMR_TRUNK`) |
+| 0x0900 | Supplementary data | record list | 0x0900-0x09FF: the supplementary user data format and octets the radio offers with each call on DMR Tier III system n ([dmr-trunking-codeplug.md](dmr-trunking-codeplug.md) 5) | none: no data offered | Tier III supplementary data in the build (`CONFIG_DMR_TRUNK_SUPL`) |
 | 0x0A00 | Mode settings | record list | 0x0A00-0x0AFF: kind n's radio-wide record ([channel-modes.md](channel-modes.md) 5.5) | none | the kind built |
 | 0x1000 | Targets | record list | 0x1000-0x17FF: call targets the contact record can't hold ([channel-modes.md](channel-modes.md) 5.2) | none | a kind that uses them built |
 | 0x1800 | Target lists | record list | 0x1800-0x18FF: receive lists of targets ([channel-modes.md](channel-modes.md) 5.3) | none | a kind that uses them built |

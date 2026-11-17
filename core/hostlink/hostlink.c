@@ -50,11 +50,11 @@
 
 #define HOSTLINK_TASK_PRIORITY	3	// with input and USB; above the UI (core/app/app.c task table)
 #if CONFIG_DEBUGLINK
-// The web debug view needs 731 words; satellite channel sync has a deeper call chain.
+// The web debug view needs 741 words; satellite channel sync has a deeper call chain.
 #if CONFIG_SATELLITE_TLE
 #define HOSTLINK_TASK_STACK	896	// words
 #else
-#define HOSTLINK_TASK_STACK	731
+#define HOSTLINK_TASK_STACK	741
 #endif
 #else
 #define HOSTLINK_TASK_STACK	512	// words: MMDVM frames are built on the stack

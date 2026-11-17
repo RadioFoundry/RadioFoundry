@@ -71,6 +71,12 @@ void sb_i32(sbuf_t *b, int32_t v)
 	}
 }
 
+void sb_hex(sbuf_t *b, uint32_t v, int digits)
+{
+	for (int sh = 4 * (digits - 1); sh >= 0; sh -= 4)
+		sb_chr(b, "0123456789ABCDEF"[(v >> sh) & 0xFu]);
+}
+
 void sb_freq(sbuf_t *b, uint32_t hz)
 {
 	sb_u32(b, hz / 1000000u, 1);

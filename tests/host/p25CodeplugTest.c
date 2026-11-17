@@ -22,6 +22,10 @@ static int failures;
 void storage_lock(void) {}
 void storage_unlock(void) {}
 
+// The board's air interface (core/radio/radio_p25.c in the firmware): whether the radio runs kind 2 here
+static bool fits;
+bool radio_p25_fits(void) { return fits; }
+
 #define FLASH_SIZE	0x200000u
 
 static const hal_flash_map_t map = {
@@ -156,8 +160,13 @@ static void test_conv_load(void)
 	codeplug_tag_t t = { .kind = CODEPLUG_KIND_P25, .system = CODEPLUG_SYSTEM_NONE, .flags = CODEPLUG_TAG_TX };
 	CHECK(codeplug_tag_write(10, "P25 Ops", &t, blk, sizeof blk));
 	CHECK(codeplug_channel(10, &c) && c.kind == CODEPLUG_KIND_P25 && !c.rx_only);
-	// Not built on this tree: the radio parks it, whatever the codec says
+	// Run where the board's air interface carries P25, parked elsewhere, whatever the codec says
+	fits = false;
 	CHECK(!codeplug_kind_built(CODEPLUG_KIND_P25) && strcmp(codeplug_kind_name(c.kind), "P25") == 0);
+	fits = true;
+	CHECK(codeplug_kind_built(CODEPLUG_KIND_P25));
+	p25_conv_t only;
+	CHECK(p25_conv_params(10, &c, &only) && only.rx_nac == 0x34 && only.squelch == P25_SQUELCH_SELECTIVE);
 
 	p25_conv_cfg_t cfg;
 	CHECK(p25_conv_load(10, &c, &cfg));
@@ -165,8 +174,10 @@ static void test_conv_load(void)
 	CHECK(cfg.unit_id == 1234567 && cfg.target == P25_CP_TG_DEFAULT && !cfg.target_unit && !cfg.talkaround);
 	// The radio-wide unit ID, then the channel's own
 	uint8_t u[4] = { 0x40, 0xE2, 0x01, 0x00 };	// 123456
+	CHECK(p25_radio_unit_id(3101276) == 3101276);
 	CHECK(codeplug_kv_set((uint16_t)(CODEPLUG_KEY_MODE_SET + CODEPLUG_KIND_P25), u, 4));
 	CHECK(p25_conv_load(10, &c, &cfg) && cfg.unit_id == 123456);
+	CHECK(p25_radio_unit_id(3101276) == 123456);
 	c.dmr_id = 7654321;
 	c.dmo = true;
 	CHECK(p25_conv_load(10, &c, &cfg) && cfg.unit_id == 7654321 && cfg.talkaround);
@@ -182,6 +193,91 @@ static void test_conv_load(void)
 	// Another kind's channel, or a plain one: no set-up
 	channel_t plain = make("Plain", 453300000, 453300000);
 	CHECK(codeplug_set_channel(12, &plain) && codeplug_channel(12, &plain) && !p25_conv_load(12, &plain, &cfg));
+	CHECK(!p25_conv_params(12, &plain, &only));
+}
+
+// A P25 channel written from the radio (2.3): the safe stand-in first, then a new tag; an edit after lets it follow
+static void test_conv_save(void)
+{
+	fresh();
+	channel_t c = make("Save", 453100000, 458100000);
+	c.mode = RADIO_MODE_P25;	// as the radio core runs it
+	c.rx_only = false;
+	c.contact = 0;
+	p25_conv_t pc = { 0x2A0, 0x2A1, P25_SQUELCH_SELECTIVE };
+	// Over a plain channel with a stale tag of another kind at the number: the tag is replaced
+	channel_t old = make("Old", 453100000, 453100000);
+	CHECK(codeplug_set_channel(30, &old));
+	codeplug_tag_t t = { .kind = 0x77, .system = CODEPLUG_SYSTEM_NONE, .flags = CODEPLUG_TAG_TX };
+	CHECK(codeplug_tag_write(30, "Old", &t, NULL, 0));
+	CHECK(p25_conv_save(30, &c, &pc));
+	channel_t r;
+	CHECK(codeplug_channel(30, &r) && r.kind == CODEPLUG_KIND_P25 && !r.rx_only && r.mode == RADIO_MODE_DMR);
+	codeplug_tag_t rt;
+	CHECK(codeplug_tag_read(30, &rt) && rt.kind == CODEPLUG_KIND_P25 && rt.system == CODEPLUG_SYSTEM_NONE &&
+	      (rt.flags & CODEPLUG_TAG_TX) != 0 && (rt.flags & CODEPLUG_TAG_BASE_OWN) == 0);
+	p25_conv_t back;
+	CHECK(p25_conv_params(30, &r, &back) && back.rx_nac == 0x2A0 && back.tx_nac == 0x2A1 &&
+	      back.squelch == P25_SQUELCH_SELECTIVE);
+	// The record underneath is the stand-in: a reader that knows no tags sees DMR, receive only
+	codeplug_tag_remove(30);
+	CHECK(codeplug_channel(30, &r) && r.kind == CODEPLUG_KIND_NONE && r.mode == RADIO_MODE_DMR && r.rx_only);
+	CHECK(p25_conv_save(30, &c, &pc) && codeplug_channel(30, &r) && r.kind == CODEPLUG_KIND_P25);
+	// Renamed from the radio: the tag follows, its block kept
+	strcpy(r.name, "Saved");
+	r.rx_only = true;
+	CHECK(codeplug_set_channel(30, &r) && codeplug_channel(30, &r) && r.kind == CODEPLUG_KIND_P25 && r.rx_only);
+	CHECK(p25_conv_params(30, &r, &back) && back.rx_nac == 0x2A0);
+	// Receive only from the radio: the tag says so
+	c.rx_only = true;
+	CHECK(p25_conv_save(31, &c, &pc) && codeplug_channel(31, &r) && r.kind == CODEPLUG_KIND_P25 && r.rx_only);
+	// The block edited on a channel that is P25 already (the channel editor's NAC): the tag keeps its system, its
+	// fallback, its other flags and what its block holds after this firmware's; transmit allowed from the channel
+	uint8_t longer[P25_CP_CONV_LEN + 3];
+	uint8_t raw[sizeof longer + CODEPLUG_TAG_HEAD_MAX];
+	p25_conv_encode(&pc, longer);
+	memcpy(&longer[P25_CP_CONV_LEN], "\xA1\xA2\xA3", 3);
+	channel_t base = make("Keep", 453100000, 458100000);
+	CHECK(codeplug_set_channel(33, &base));
+	codeplug_tag_t kt = { .kind = CODEPLUG_KIND_P25, .system = 2, .fb_chan = 30, .fb_check = 0x1234,
+			      .flags = CODEPLUG_TAG_FALLBACK | 0x40u };
+	CHECK(codeplug_tag_write(33, "Keep", &kt, longer, sizeof longer));
+	CHECK(codeplug_channel(33, &r) && r.kind == CODEPLUG_KIND_P25 && r.system == 2 && r.rx_only);
+	strcpy(r.name, "Kept");
+	r.rx_only = false;
+	r.mode = RADIO_MODE_P25;
+	p25_conv_t ed = { 0x123, 0x124, P25_SQUELCH_NORMAL };
+	CHECK(p25_conv_save(33, &r, &ed));
+	CHECK(codeplug_channel(33, &r) && r.kind == CODEPLUG_KIND_P25 && r.system == 2 && !r.rx_only &&
+	      r.mode == RADIO_MODE_DMR && strcmp(r.name, "Kept") == 0);
+	CHECK(codeplug_tag_read(33, &rt) && rt.flags == (CODEPLUG_TAG_FALLBACK | CODEPLUG_TAG_TX | 0x40u) &&
+	      rt.fb_chan == 30 && rt.fb_check == 0x1234 && rt.len == CODEPLUG_TAG_HEAD_MAX + sizeof longer);
+	CHECK(p25_conv_params(33, &r, &back) && back.rx_nac == 0x123 && back.tx_nac == 0x124 &&
+	      back.squelch == P25_SQUELCH_NORMAL);
+	CHECK(codeplug_tag_params(33, &r, raw, sizeof longer) == (int)sizeof longer &&
+	      memcmp(&raw[P25_CP_CONV_LEN], "\xA1\xA2\xA3", 3) == 0);
+	// A mixed channel: its record is an FM channel of its own (wide, transmitting), its tag the P25 side (receive
+	// only). The NAC edited on the radio, which holds the channel as it runs (P25, narrow, the tag's receive only):
+	// the FM side stays as stored, and so does the tag's flag that says the record is its own
+	channel_t fm = make("Mixed", 453200000, 458200000);
+	fm.mode = RADIO_MODE_FM;
+	fm.bw = RADIO_BW_25K;
+	fm.rx_only = false;
+	CHECK(codeplug_set_channel(34, &fm));
+	codeplug_tag_t mt = { .kind = CODEPLUG_KIND_P25, .flags = CODEPLUG_TAG_BASE_OWN };
+	p25_conv_encode(&pc, longer);
+	CHECK(codeplug_tag_write(34, "Mixed", &mt, longer, P25_CP_CONV_LEN));
+	CHECK(codeplug_channel(34, &r) && r.kind == CODEPLUG_KIND_P25 && r.rx_only && r.mode == RADIO_MODE_FM &&
+	      r.bw == RADIO_BW_25K);
+	r.mode = RADIO_MODE_P25;
+	r.bw = RADIO_BW_12K5;
+	CHECK(p25_conv_save(34, &r, &ed));
+	CHECK(codeplug_channel(34, &r) && r.kind == CODEPLUG_KIND_P25 && r.rx_only && r.mode == RADIO_MODE_FM &&
+	      r.bw == RADIO_BW_25K && r.tx_hz == 458200000);
+	CHECK(codeplug_tag_read(34, &rt) && rt.flags == CODEPLUG_TAG_BASE_OWN);
+	CHECK(p25_conv_params(34, &r, &back) && back.rx_nac == 0x123 && back.tx_nac == 0x124);
+	CHECK(codeplug_tag_remove(34) && codeplug_channel(34, &r) && r.kind == CODEPLUG_KIND_NONE && !r.rx_only &&
+	      r.mode == RADIO_MODE_FM && r.bw == RADIO_BW_25K);
 }
 
 #if CONFIG_P25_TRUNK
@@ -293,6 +389,7 @@ int main(void)
 {
 	test_vectors();
 	test_conv_load();
+	test_conv_save();
 #if CONFIG_P25_TRUNK
 	test_trunk_load();
 #endif

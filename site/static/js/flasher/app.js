@@ -24,11 +24,11 @@ import { openVendorFile, describe as describeVendorFile, analysisCandidate, offe
 import { pickProblem, errorProblem, vendorContext, supportedFiles, foldSupported, keepNote, nowFor, nowChoice, OFFER } from "./explain.js";
 import { confirmNoCodec } from "./nocodec.js";
 import { makePlan, KEEP, MERGE } from "./plan.js";
-import { radioPicture, holdKeys } from "./radiotop.js";
+import { radioPicture, holdKeys, hasNoScreen } from "./radiotop.js";
 import { validRef, refShort, defaultRef, firmwareName, betaLink } from "./version.js";
 import { verify, segments, forDevBuild } from "./manifest.js";
 import { Dfu, DfuError, NormalModeError, WebUsbTransport, checkKey, usbSupported } from "./dfu.js";
-import { Link, LinkError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, whyNoAnswer, noAnswerKey, serialSupported, serialApi, browserErrorKey, knownRadioPort } from "./link.js";
+import { Link, LinkError, CableError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, whyNoAnswer, noAnswerKey, serialSupported, serialApi, browserErrorKey, knownRadioPort } from "./link.js";
 import { readRadio, makeBundle, openBundle, bundleFolder, notBundle, bundleName, describeFirmware, CODEPLUG_SPAN } from "./backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug, codeplugLayout } from "./restore.js";
 import { Selection } from "./select.js";
@@ -38,7 +38,8 @@ import { suggestPack, packCode, startCode, startLanguages, startLanguage, setSta
 import { readBootKey } from "./bootkey.js";
 import { codecSegments, loadCodec, readCodec, saveCodec } from "./codecsave.js";
 import { FakeRadio, simulation, randomBytes, rng } from "./fake.js";
-import { t, tOr, num, LANG, ROOT, h, download, filePicker, progressBar, stopBars, logBox, notice, button, spinner, panel, localTime, partNames } from "./dom.js";
+import { t, tOr, num, LANG, ROOT, h, download, filePicker, progressBar, stopBars, logBox, notice, button, spinner, panel, localTime, partNames, barsRunning } from "./dom.js";
+import { stepHistory } from "./stephistory.js";
 import * as c7ui from "./c7000ui.js";
 import { variantWarning, variantVerdict } from "./iapui.js";
 import { groups as variantGroups } from "./variant.js";
@@ -56,7 +57,7 @@ import * as adapter from "./adapter.js";
 import * as crumbs from "./trail.js";
 import { missingApi, kitPanel, kitLine } from "./manual.js";
 import { showBetaNotice } from "./beta.js";
-import { DROP_OK, currentBuild, planUpdate } from "./update.js";
+import { DROP_OK, START_KEEP, currentBuild, planUpdate } from "./update.js";
 import { readDfuInfo, choiceFor, hwoptAction, pendingHwopt, majorsFor, runsOriginal, BOOTLOADER } from "./origversion.js";
 import { readOriginal, deviceKind, spiSeconds, Guard } from "./origbackup.js";
 import { toSerial, CLICK_WAIT_MS } from "./netmode.js";
@@ -84,6 +85,8 @@ function errorText(e) {
 	if (e instanceof DecisionError && e.key) return said(e.key, e.args) + (e.hint ? " " + t("flash.codec.why_not.hint") : "");
 	const withRaw = (key) => `${t(key)} (${raw})`;
 	if (e instanceof NetworkModeError) return t("flash.net.found");
+	// the cable's own fault (a port that never opened, an adapter that stopped taking data): what it is, then what to do
+	if (e instanceof CableError) return `${withRaw(`flash.cable.${e.code}`)} ${t("flash.cable.fix")}`;
 	const browser = browserErrorKey(e);
 	if (browser) return ["flash.err.no_device", "flash.err.security", "flash.err.gesture"].includes(browser) ? t(browser) : withRaw(browser);
 	if (e instanceof DfuError && /^USB transfer/.test(raw)) return withRaw("flash.err.connection_lost");
@@ -170,7 +173,7 @@ function dropVersion(redraw = true) {
 	try { sessionStorage.removeItem(VERSION_STORE); } catch (e) { /* nothing kept */ }
 	const u = new URL(location.href);
 	u.searchParams.delete("version");
-	history.replaceState(null, "", u);
+	history.replaceState(history.state, "", u);
 	if (S.firmware?.pinned) S.firmware = null;
 	if (redraw) render();
 	else document.querySelector(".version-banner")?.remove();
@@ -380,6 +383,8 @@ function stepsFor() {
 	return S.task === "update" && S.editBuild ? [s[0], "build", ...s.slice(1)] : s;
 }
 const backend = () => backendOf(S.radio);
+// A radio without a display: what the page tells the user to look at can't be its screen
+const noScreen = () => hasNoScreen(S.radio);
 
 async function loadData() {
 	const get = async (name) => (await fetch(`${ROOT}data/${name}`)).json();
@@ -771,8 +776,23 @@ async function getKey(board) {
 // ---------------------------------------------------------------------------------------------------------------
 // layout
 
+// The steps that never talk to the radio: everything else may have a transfer running
+const NO_TRANSFER = new Set(["radio", "build", "bundle", "symptom", "recover", "done"]);
+const transferStep = () => !!S.task && !NO_TRANSFER.has(stepsFor()[S.step]);
+const trail = stepHistory(window, {
+	busy: () => barsRunning() && transferStep(),
+	show: (place) => {
+		if (!place) return reset();
+		const [task, step] = place.split("/");
+		S.task = task;
+		S.step = Number(step);
+		render();
+	},
+});
+
 function render() {
 	S.openfwAbort?.abort();	// a backup of another open firmware stops when its step is left (openfwBackupNow)
+	trail.sync(S.task ? `${S.task}/${S.step}` : "");
 	app.replaceChildren();
 	document.querySelector(".page-head")?.classList.toggle("compact", !!S.task);
 	if (!S.task) return app.append(...[versionBanner() || betaNotice(), startView()].filter(Boolean));
@@ -808,6 +828,7 @@ function render() {
 	const missing = S.radio && !S.sim && missingApi(S.radio, S.task, step, { usb: usbSupported(), serial: serialSupported(), stub: stubRoute() });
 	const view = (missing && (() => kitView(missing))) || (step === "restore" && bundleBackend(S.bundle)?.views.restore) || (S.radio && backend().views[step])
 		|| { update: updateView, radio: radioView, build: buildView, bundle: bundleView, symptom: symptomView, recover: recoverView, restart: restartView }[step];
+	if (!missing && transferStep()) app.append(h("p", { class: "notice bad" }, h("strong", {}, t("flash.stay_on_page"))));
 	app.append(view());
 	app.append(h("div", { class: "nav-bar" },
 		h("div", { class: "nav-back" },
@@ -935,12 +956,33 @@ async function connectForUpdate(status) {
 		await keyFromRadio(S.link);
 		await codecFromRadio(S.link, p, status);
 	}
-	S.current = currentBuild(p, r, S.data.releases.filter((x) => x.board === r.id), S.data.reported);
+	const record = await buildRecord(p, r);
+	S.current = currentBuild(p, r, S.data.releases.filter((x) => x.board === r.id), S.data.reported, record);
 	S.decided = {};
 	planUpdate(S.current, S.selection, S.decided);
 	// a build the radio doesn't say: the build step, starting from the closest variant
 	S.editBuild = S.current.kind === "unknown";
-	diag.note("update: radio", { board: p.board, git: p.git, build: S.current.kind, preset: S.current.preset || S.current.guess || null });
+	diag.note("update: radio", { board: p.board, git: p.git, git_time: p.version?.git_time ?? null, said: p.version?.preset ?? null,
+		start: p.version?.start ?? null, record: record ? (record.from_update ? "update" : "yes") : "no", build: S.current.kind,
+		preset: S.current.preset || S.current.guess || null });
+}
+
+// The build service's record of the build on the radio (GET builds/match: its exact switches, and whether an Update
+// asked for it), for a build the service made (preset=custom: every one before it said its variant). null without one,
+// or when the service doesn't answer in time: the update then goes by off= alone
+async function buildRecord(p, r) {
+	const v = p.version || {};
+	if (S.sim || v.preset !== "custom" || v.off === undefined || !p.git) return null;
+	const q = new URLSearchParams({ board: r.id, git: p.git, off: v.off,
+		options: Object.entries(S.buildOptions || {}).map(([k, x]) => `${k}=${x}`).sort().join(",") });
+	try {
+		const res = await fetch(new URL(`builds/match?${q}`, API), { signal: AbortSignal.timeout(5000) });
+		if (!res.ok) return null;
+		const j = await res.json();
+		return Array.isArray(j.features) ? j : null;
+	} catch {
+		return null;
+	}
 }
 
 function updateView() {
@@ -971,7 +1013,7 @@ function updateView() {
 		}
 		const p = S.now.probe, cur = S.current;
 		// the radio's own build, unless the build step has the selection (edits kept when the user comes back)
-		const plan = S.editBuild ? { preset: S.selection.matches(startCode), added: [], needed: [], dropped: [], ask: [], ready: true }
+		const plan = S.editBuild ? { preset: S.selection.matches(startCode), added: [], needed: [], dropped: [], ask: [], startAsk: [], ready: true }
 			: planUpdate(cur, S.selection, S.decided);
 		// an image built for another selection no longer applies
 		if (S.firmware?.selection && S.firmware.selection !== selectionKey(S.selection)) S.firmware = null;
@@ -1021,6 +1063,14 @@ function updateView() {
 					if (S.updateBackup && backupPanel) render();
 					else next();
 				})));
+		// a start language an earlier update may have set by mistake: the user keeps it or goes back to English
+		const askLang = plan.startAsk.map((n) => languageName(startCode(n))).join(", ");
+		const startAsk = !plan.startAsk.length ? null : h("div", { class: `notice ${START_KEEP in S.decided ? "info" : "action"} update-note` },
+			h("p", {}, h("b", {}, t("flash.update.start_title")), " ", t("flash.update.start_text", { language: askLang })),
+			h("div", { class: "update-new" }, h("span", { class: "update-pick" }, ...[false, true].map((keep) => h("label", {},
+				h("input", { type: "radio", name: "start-lang", checked: S.decided[START_KEEP] === keep,
+					onchange: () => { S.decided[START_KEEP] = keep; draw(); } }),
+				" ", keep ? t("flash.update.start_keep", { language: askLang }) : t("flash.update.start_english"))))));
 		const building = S.build && S.build.selection === selectionKey(S.selection);
 		const image = S.firmware ? notice(t("flash.build.image_ready", { what: S.firmware.source }), "ok")
 			: building && S.build.error ? buildErrorNotice(S.build.error)
@@ -1036,7 +1086,7 @@ function updateView() {
 				h("dt", {}, t("flash.update.version")), h("dd", {}, t("flash.update.from_to", { from: firmwareName(p.version), to: updateVersion() })),
 				h("dt", {}, t("flash.update.build")), h("dd", {}, buildText, " ", cur.kind === "unknown" ? null : edit)),
 			cur.kind === "unknown" ? notice(t("flash.update.unknown_text", { variant: vtitle(cur.guess) }), "info") : null,
-			S.editBuild ? null : dropped, S.editBuild ? null : asks, S.editBuild ? null : added, S.editBuild ? null : needed, backup, backupPanel, image, status));
+			S.editBuild ? null : startAsk, S.editBuild ? null : dropped, S.editBuild ? null : asks, S.editBuild ? null : added, S.editBuild ? null : needed, backup, backupPanel, image, status));
 		const busy = building && !S.build.error;
 		const go = async () => {
 			if (S.editBuild) return next();
@@ -1046,7 +1096,8 @@ function updateView() {
 		};
 		S.forward(button(busy ? [spinner(), t("flash.nav.building")] : t(S.editBuild ? "flash.update.to_build" : "flash.update.go"), go,
 			{ primary: true, disabled: busy || (!S.editBuild && !plan.ready) || (S.updateBackup && !!backupPanel) }),
-			S.editBuild || plan.ready ? null : t(plan.dropped.length && !S.decided[DROP_OK] ? "flash.update.drop_first" : "flash.update.decide_first"));
+			S.editBuild || plan.ready ? null : t(plan.dropped.length && !S.decided[DROP_OK] ? "flash.update.drop_first"
+				: plan.startAsk.length && !(START_KEEP in S.decided) ? "flash.update.start_first" : "flash.update.decide_first"));
 	};
 	draw();
 	return out;
@@ -1228,9 +1279,9 @@ function buildView() {
 				const off = S.data.variants.find((v) => v.id === sel.base)?.off.find((o) => o.name === f.name);
 				// a needed feature outside this group that is off: turning this on turns it on too
 				const away = (f.needs?.all || []).filter((n) => !items.some((i) => i.name === n) && sel.supported(n) && !sel.on.has(n));
-				// one line per feature; the help (written for developers) is the tooltip, the build's reason for leaving
-				// a feature out and a needed feature that's off show inline
-				const note = na ? [naNote(f.name)] : [off && !isOn ? off.why : null,
+				// one line per feature; the help (written for developers) is the tooltip, the board's or the build's reason
+				// for leaving a feature out and a needed feature that's off show inline
+				const note = na ? [naNote(f.name)] : [sel.defaultOffWhy(f.name), off && !isOn ? off.why : null,
 					away.length ? t("flash.build.needs", { names: away.map((n) => sel.byName[n]?.title || n).join(", ") }) : null].filter(Boolean);
 				const tipId = `tip-${f.name}`;
 				const tipOpen = S.openTip === f.name;
@@ -1815,7 +1866,7 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 				// the next step talks to RadioFoundry again: it has to be back first
 				prog.set(0, 1, t("flash.backup.restarting"));
 				if (!await waitForRFoundry()) {
-					status.append(notice(t("flash.backup.not_back"), "action"));
+					status.append(notice(t(noScreen() ? "flash.backup.not_back_noscreen" : "flash.backup.not_back"), "action"));
 					return;
 				}
 				prog.el.remove();
@@ -1828,7 +1879,7 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 			if (bulk?.used) await waitForRFoundry();	// readRadio restarted the radio
 			await dropSerial();	// the next try opens the port afresh
 			status.replaceChildren(errorNotice(t("flash.backup.failed", { error: errorText(e) }),
-				{ next: t(pick === "calibration" ? "flash.backup.retry_how_small" : "flash.backup.retry_how"), retry: run }));
+				{ next: t(`flash.backup.${pick === "calibration" ? "retry_how_small" : "retry_how"}${noScreen() ? "_noscreen" : ""}`), retry: run }));
 			box.querySelectorAll("button, input").forEach((b) => { b.disabled = false; });
 			runBtn.disabled = false;
 		}
@@ -2529,7 +2580,7 @@ function doneView() {
 		}
 	}, { primary: true });
 	S.forward(check);
-	const intro = h("div", {}, S.stubResult ? notice(S.stubResult, "ok") : null, h("p", {}, t("flash.done.lead")));
+	const intro = h("div", {}, S.stubResult ? notice(S.stubResult, "ok") : null, h("p", {}, t(noScreen() ? "flash.done.lead_noscreen" : "flash.done.lead")));
 	// whatever the check says: the user may know better (a radio that verifies but misbehaves)
 	const quiet = h("p", { class: "small muted" }, t("report.something_wrong"), " ", reportButton());
 	box.append(panel(t("flash.done.title"), intro, status, quiet));
@@ -2730,7 +2781,7 @@ function backupView() {
 
 function restartView() {
 	S.forward(button(t("flash.nav.finish"), () => reset(), { primary: true }));
-	return panel(t("flash.restart.title", { name: S.radio.name }), h("p", {}, t("flash.restart.manual")), notice(t("flash.restart.battery"), "info"));
+	return panel(t("flash.restart.title", { name: S.radio.name }), h("p", {}, t(noScreen() ? "flash.restart.manual_noscreen" : "flash.restart.manual")), notice(t("flash.restart.battery"), "info"));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -2891,6 +2942,7 @@ function afterRestore() {
 // starts update mode (the STM32 radios' bootloader sectors, the HR_C7000's boot ROM and bootloader), so a radio can
 // always be put back, and every step says so: someone whose radio just went dark is scared it's ruined.
 
+const symptomKey = (id) => (id === "dark" && noScreen() ? "dark_noscreen" : id);
 const SYMPTOMS = ["dark", "stuck", "stopped", "novoice", "channels", "revert"];
 // "iap": a white, backlit screen and a solid red LED at every power-on. Only for a radio whose backend has a way back
 // through an update mode the radio stays in when its application is incomplete (recovery.extra, stuck); it is listed
@@ -3008,7 +3060,7 @@ function answers(items, pick, chosen = null) {
 function symptomView() {
 	S.forward(null);
 	return h("div", { class: "flasher" }, reassure(),
-		panel(t("flash.help.symptom_title"), answers(symptoms().map((id) => [id, t(`flash.help.s.${id}`), t(`flash.help.s.${id}_text`)]),
+		panel(t("flash.help.symptom_title"), answers(symptoms().map((id) => [id, t(`flash.help.s.${symptomKey(id)}`), t(`flash.help.s.${symptomKey(id)}_text`)]),
 			(id) => { S.help = { symptom: id, stage: id === "dark" ? "battery" : id === "iap" ? "fix" : ["stuck", "stopped"].includes(id) ? backend().recovery.first : "fix" }; next(); })));
 }
 
@@ -3019,7 +3071,7 @@ function recoverView() {
 	let body;
 	if (st.stage === "battery") {
 		body = panel(t("flash.help.battery_title"), h("p", {}, t("flash.help.battery_text")),
-			answers([["ok", t("flash.help.works_now")], ["no", t("flash.help.still_dark")]], (a) => go(a === "ok" ? "fixed" : backend().recovery.first)));
+			answers([["ok", t("flash.help.works_now")], ["no", t(noScreen() ? "flash.help.still_dark_noscreen" : "flash.help.still_dark")]], (a) => go(a === "ok" ? "fixed" : backend().recovery.first)));
 	} else if (st.stage === "updatemode") body = updateModeCheck(go);
 	else if (st.stage === "nohope") body = noResponse(go);
 	else if (st.stage === "fix") body = fixChooser(st, go);
@@ -3099,7 +3151,7 @@ function fixChooser(st, go) {
 	};
 	S.forward(button(t("flash.help.continue"), start, { primary: true, disabled: !st.pick }));
 	return panel(t(st.fine ? "flash.help.fine_title" : "flash.help.fix_title"),
-		st.symptom === "iap" ? stuckInUpdateMode() : st.fine ? h("p", {}, t("flash.help.fine_text")) : rec.reach ? h("p", {}, t(rec.reach)) : null,
+		st.symptom === "iap" ? stuckInUpdateMode() : st.fine ? h("p", {}, t("flash.help.fine_text")) : rec.reach ? h("p", {}, t(noScreen() && rec.reach === "flash.help.c7_reach" ? "flash.help.c7_reach_noscreen" : rec.reach)) : null,
 		answers(order.map((id) => [id, ...opts[id]]), (id) => go("fix", { pick: id }), st.pick));
 }
 
@@ -3201,12 +3253,13 @@ async function main() {
 	}
 	c7ui.init({ S, next, render, reset, helpLink, manualKitLine, fb, flashStarted, flashFinished, flashMark, noteReadout, errorText, analysisOffer, problemNotice, failureNotice, useAdapter,
 		stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) });
-	// #sim=<board>[-stock|-romfail|-slowcable|-openfw|-openfw-nocodec]: that board, running RadioFoundry, its stock firmware or another
+	// #sim=<board>[-stock|-romfail|-slowcable|-deafcable|-openfw|-openfw-nocodec]: that board, running RadioFoundry, its stock firmware or another
 	// open firmware (a board the page backs up from one: openfw.js; -nocodec: one without the codec, for the stock-file
 	// fallback); -romfail: an HR_C7000 radio on stock firmware whose boot ROM refuses the load, for the factory update
-	// mode; -slowcable: one on a cable too slow for the boot ROM's answer window, which the answer sent ahead gets through; #sim: the first
+	// mode; -slowcable: one on a cable too slow for the boot ROM's answer window, which the answer sent ahead gets through;
+	// -deafcable: one on a cable that carries the radio's data but none of the page's; #sim: the first
 	// radio on stock firmware
-	const simAsk = location.hash.match(/(?:^#|&)sim(?:=(\w+?)(-stock|-romfail|-slowcable|-openfw(?:-nocodec)?)?)?(?:&|$)/);
+	const simAsk = location.hash.match(/(?:^#|&)sim(?:=(\w+?)(-stock|-romfail|-slowcable|-deafcable|-openfw(?:-nocodec)?)?)?(?:&|$)/);
 	const simRadio = simAsk && (simAsk[1] ? S.data.radios.find((r) => r.id === simAsk[1]) : S.data.radios[0]);
 	const simOpen = !!simAsk?.[2]?.startsWith("-openfw") && openfw.supported(S.data.fb.boards[simRadio?.flash.board]);
 	const simStock = !!simAsk && (!simAsk[1] || (!!simAsk[2] && !simOpen));
@@ -3218,7 +3271,7 @@ async function main() {
 		// -slowcable: the radio's own 48 ms window, and a cable that takes 80 ms
 		const slow = simAsk[2] === "-slowcable";
 		S.fakeC7 = new FakeC7000({ progmem: sim.progmem, speed: 8, stubEntry: true, romWindow: slow ? 48 : 600,
-			faults: { silentAfterReset: true, romNak: simAsk[2] === "-romfail", slowCable: slow ? 80 : 0 },
+			faults: { silentAfterReset: true, romNak: simAsk[2] === "-romfail", slowCable: slow ? 80 : 0, deafCable: simAsk[2] === "-deafcable" },
 			...fakeC7000Options(simRadio, S.data.fb) });
 		if (!simStock) {
 			const img = randomBytes(rng(98), 180 * 1024);

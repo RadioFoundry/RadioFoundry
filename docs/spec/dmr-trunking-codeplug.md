@@ -4,9 +4,13 @@
 # DMR Tier III in the codeplug
 
 The stored records of a DMR Tier III trunked system and its channels, on the generic layer of
-[channel-modes.md](channel-modes.md): kind 1 and system type 1. The trunking engine is not in this tree, so no
-firmware here reads these records yet; the Codeplug Editor writes them and zone sharing carries them. Little endian
-throughout.
+[channel-modes.md](channel-modes.md): kind 1 and system type 1. A build with `CONFIG_DMR_TRUNK` reads them
+(`core/radio/radio_trunk_cp.c`); what the radio does with them is in [dmr-trunking.md](dmr-trunking.md) 12. The
+Codeplug Editor writes them and zone sharing carries them. Little endian throughout. Host test:
+`tests/host/t3CodeplugTest.c`.
+
+The radio runs the Tier III systems numbered 0 to `RADIO_T3_SYSTEMS` - 1 (0 to 7). A Tier III system record at a
+higher number is kept and not run: its channels are unavailable.
 
 ## 1. System (type 1)
 
@@ -40,18 +44,22 @@ The type's block:
 | 22 | 1 | Sites the radio may use: how many, 0 = any |
 | 23 | 16 | Those site values, u16 each, 8 at most |
 
-A system is **usable** when it has a control channel and, if flag bit 0 is set, a key.
+A system is **usable** when its block holds at least the 23 octets up to the site count, it has a control channel
+and, if flag bit 0 is set, a key. A block that ends inside the site values names the sites it holds. Option bits a
+codeplug may not set (the debug link's, and the reserved ones) are read as 0.
 
 ## 2. System channels
 
 Generic entries ([channel-modes.md](channel-modes.md) 7.2) of class 0, group 0xFF. Flag bit 0 marks a control
 channel, hunted in entry order. Body: LCN (2), MS receive Hz (4), MS transmit Hz (4), then one octet: the color code,
-0xFF = the system's.
+0xFF = the system's. An entry shorter than this body is skipped. A system takes its first `T3_CTRL_MAX` control
+channels among its first `RADIO_T3_CHANS` (8) channels in entry order; the rest are skipped. A system whose only control
+channels come after them has none: it is not usable.
 
 ## 3. Key
 
 Key 0x0300 + n: K (16 octets, the first the most significant), then the PSN (3 octets, most significant first; absent
-or 0: none).
+or 0: none). Shorter than 16 octets: no key.
 
 ## 4. Channels (kind 1)
 
@@ -59,9 +67,19 @@ The channel tag ([channel-modes.md](channel-modes.md) 2) names the system. Tag f
 (a site grants every transmission; set by default). Bit 2 with the fallback fields: the channel's own fallback;
 kind bit 4: no fallback on this channel. No parameter block.
 
+| Tag | The channel |
+|---|---|
+| Transmit allowed, on a usable system with its transmit side | registers, affiliates and transmits as the site grants |
+| Transmit flag clear (a zeroed tag too) | follows the system and its calls; never registers, affiliates or transmits, and PTT is refused |
+| On a listen-only system (1) | the same, whatever the tag says |
+| No system (0xFF), a system that is absent, of another type, not usable or past the systems the radio runs, or no ID to register with (the record's own ID and the radio's DMR ID both 0) | **unavailable**: nothing starts, the channel is receive only on its record's frequency and PTT is refused |
+
 The base record carries the talk target (contact: a talkgroup, a private contact or the all-call contact) and the RX
 group list (the talkgroups followed), the name, power, TX time-out and talker alias. Its frequencies are the system's
-first control channel's.
+first control channel's. An all-call contact in the RX group list follows all-calls on that channel only; the system's
+option (1) follows them on all its channels. The talk target's talkgroup is always followed: when the RX group list
+fills the radio's 32 talkgroups, it takes the last place. Another channel of the system running takes its talk target
+and talkgroups without leaving the call or control channel the radio is on.
 
 ## 5. Short data poll and supplementary data
 
@@ -72,5 +90,6 @@ Key 0x0800 + n: system n's short data poll setting: UDT format (1), blocks to as
 ## 6. Sharing
 
 A system's sharing level ([channel-modes.md](channel-modes.md) 7.1, [zone-share.md](zone-share.md)): identity only
-carries the type, flags and identity; the whole system carries the block, the control channels and, with keys turned
-on, the key. Never carried: the own ID, the poll setting and the supplementary data.
+carries the type, flags and identity; the whole system carries the block, the control channels and the key, the key
+only when the sender turns keys on for that share (a radio has no such switch yet: [zone-share.md](zone-share.md)).
+Never carried: the own ID, the poll setting and the supplementary data.
