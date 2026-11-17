@@ -6,7 +6,7 @@
 
 import { h, t, ROOT, HOME, button, notice, download, progressBar, num as fmtNum, date as fmtDate } from "../flasher/dom.js";
 import { equal } from "../flasher/bytes.js";
-import { SerialStream, serialSupported, serialApi, RFOUNDRY_USB, browserErrorKey, knownRadioPort } from "../flasher/link.js";
+import { SerialStream, serialSupported, serialApi, RFOUNDRY_USB, browserErrorKey, noDeviceChosen, knownRadioPort } from "../flasher/link.js";
 import { CodeplugImage, IDDB_HEADER, EDITOR_REGIONS } from "../codeplug/image.js";
 import { decode, encode, empty, remove, validate, newChannel, newContact, numberAll, assignNumbers } from "../codeplug/model.js";
 import { LIMITS, decodeGeneral } from "../codeplug/records.js";
@@ -600,7 +600,7 @@ function radioError(e) {
 		return t(`editor.radio_err.${e.code}`, p);
 	}
 	if (e instanceof FastError && e.status === "no answer") return t("editor.radio_err.no_answer");
-	if (e?.name === "NotFoundError" && !/disconnect/i.test(e.message || "")) return null;	// the user closed the port chooser
+	if (noDeviceChosen(e)) return null;	// the user closed the port chooser
 	// the browser's own serial errors (a port another program holds, a radio unplugged): what to do, then its words
 	const key = browserErrorKey(e);
 	if (key) return `${t(key)} (${e.message})`;

@@ -459,15 +459,19 @@ def board_t_names(board_dir):
 
 
 def flash_map(board_dir):
-    """The FLASH_MAP_FIELDS of the board's hal_flash_map_t definition, {field: literal value}. A board has one; a
-    second one that disagrees is an error. For satellite ternaries use the feature-on reservation and the smaller
-    staging size so write tests protect the sectors in both configurations."""
+    """The board's hal_flash_map_t fields as {field: address}, ignoring maps for smaller chips. For satellite
+    ternaries, reserve the feature-on satellite area and the smaller staging size."""
+    sources = list(_c_sources(board_dir))
+    small_maps = {name for _, text in sources
+                  for name in re.findall(r"\.small_map\s*=\s*&\s*(\w+)", text)}
     out, where = {}, None
-    for f, text in _c_sources(board_dir):
-        for m in re.finditer(r"\bhal_flash_map_t\s+\w+\s*=\s*\{", text):
+    for f, text in sources:
+        for m in re.finditer(r"\bhal_flash_map_t\s+(\w+)\s*=\s*\{", text):
+            if m.group(1) in small_maps:
+                continue
             body = _braced(text, m.end())
-            found = {k: int(v, 0) for k, v in re.findall(r"\.(\w+)\s*=\s*(0[xX][0-9A-Fa-f]+|\d+)[uUlL]*", body)
-                     if k in FLASH_MAP_FIELDS}
+            found = {k: int(v, 0) for k, v in re.findall(
+                r"\.(\w+)\s*=\s*(0[xX][0-9A-Fa-f]+|\d+)[uUlL]*", body) if k in FLASH_MAP_FIELDS}
             for k, _, a, b in re.findall(
                     r"\.(\w+)\s*=\s*([A-Za-z_]\w*)\s*\?\s*(0[xX][0-9A-Fa-f]+|\d+)[uUlL]*"
                     r"\s*:\s*(0[xX][0-9A-Fa-f]+|\d+)[uUlL]*", body):
@@ -476,8 +480,8 @@ def flash_map(board_dir):
                 av, bv = int(a, 0), int(b, 0)
                 found[k] = min(av, bv) if k == "staging_size" else max(av, bv) if k == "satellite_size" else av or bv
             if where is not None and found != out:
-                raise RegistryError("%s: hal_flash_map_t in %s and %s differ" % (os.path.relpath(board_dir, ROOT),
-                                                                                 where, f))
+                d = board_dir if isinstance(board_dir, str) else board_dir[0]
+                raise RegistryError("%s: hal_flash_map_t in %s and %s differ" % (os.path.relpath(d, ROOT), where, f))
             out, where = found, f
     return out
 
@@ -1756,6 +1760,7 @@ def self_test():
                 "\t.openfw_end = 0x00800000UL, .other = 5, .regions = { 1, 2 },\n\t.staging_addr = 0,\n};\n")
     ok(flash_map(tmpc) == {"openfw_eeprom": 0x700000, "openfw_end": 0x800000, "staging_addr": 0},
        "flash_map: the map's fields, suffixes and comments skipped %r" % flash_map(tmpc))
+    ok(flash_map([tmpc]) == flash_map(tmpc), "flash_map: board and family source directories")
     with open(os.path.join(tmpc, "flash.c"), "w", encoding="utf-8") as f:
         f.write("static const hal_flash_map_t fmap = {\n"
                 "\t.openfw_eeprom = 0x00700000u,\n"
@@ -1801,10 +1806,18 @@ def self_test():
     ok(openfw_bases("-DX=1 -DCODEPLUG_OPENFW_EEPROM_BASE=0x700000u -DCODEPLUG_OPENFW_FLASH_BASE=0x720000u") ==
        (0x700000, 0x720000) and openfw_bases("-DX=1") == (0, 0x20000) and openfw_bases(None) == (0, 0x20000),
        "openfw_bases: board.mk's, else the STM32 defaults")
+    with open(os.path.join(tmpc, "flash3.c"), "w", encoding="utf-8") as f:
+        f.write("static const hal_flash_map_t small = { .openfw_eeprom = 0, .openfw_end = 0x100000 };\n"
+                "static const cfg_t cfg = { .map = &fmap, .small_map = &small };\n")
+    ok(flash_map(tmpc) == {"staging_addr": 0xF00000, "staging_size": 0x3D000,
+                           "satellite_addr": 0xF3D000, "satellite_size": 0x3000,
+                           "openfw_eeprom": 0x700000, "openfw_end": 0x800000},
+       "flash_map: a map for a smaller chip (.small_map) is not the board's map")
+    os.remove(os.path.join(tmpc, "flash3.c"))
     with open(os.path.join(tmpc, "flash2.c"), "w", encoding="utf-8") as f:
         f.write("const hal_flash_map_t m2 = { .openfw_eeprom = 0x600000 };\n")
     try:
-        flash_map(tmpc)
+        flash_map([tmpc])
         ok(False, "flash_map refuses two maps that differ")
     except RegistryError:
         ok(True, "flash_map refuses two maps that differ")

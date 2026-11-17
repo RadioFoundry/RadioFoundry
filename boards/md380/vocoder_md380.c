@@ -180,6 +180,19 @@ static const stm32_codec_profile_t xmd380d1407 = {
 	.at = UV_ENTRIES,
 };
 
+// TYT-Vocoder-MD380-D15.01.bin D15.01
+static const codec_desc_window_t xmd380d1501_tables[] = {
+	{ 0x080F0380u, 0x9122u, 0xD16BD540u },
+	{ 0x080F94AEu, 0x4Eu, 0xA28CCD40u },
+	{ 0x080F9504u, 0x87Cu, 0x8AAD31A1u },
+	{ 0x080F9D80u, 0xEu, 0xEFDB66A5u },
+};
+static const stm32_codec_profile_t xmd380d1501 = {
+	.tag = 0x00441501u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E0008u, .code_len = 0x1036Eu, .code_crc = 0x1B534D2Bu, .tables = xmd380d1501_tables, .windows = 4,
+	.at = UV_ENTRIES,
+};
+
 // Upgraded software for newest version.bin D2.24 (upgrade pack)
 static const codec_desc_window_t xmd380d2024up_tables[] = {
 	{ 0x080F08B4u, 0xAFF8u, 0xA072ACC8u },
@@ -375,8 +388,8 @@ static const stm32_codec_profile_t xmd446d3020 = {
 static const stm32_codec_profile_t *const profiles[] = {
 	&d2032, &d3514, &s3514,
 	&xmd380d3032, &xrt3s1404,
-	&xmd380d13034, &xmd380d1314, &xmd380d1320, &xmd380d14004, &xmd380d1407, &xmd380d2024up, &xmd380d2025, &xmd380d2026, &xmd380d2027, &xmd380d2030, &xmd380d2034, &xmd380d3008, &xmd380d3020, &xmd390s1312, &xmd390s1320, &xmd390s1407, &xmd390s3012, &xmd446d1320, &xmd446d3020,
+	&xmd380d13034, &xmd380d1314, &xmd380d1320, &xmd380d14004, &xmd380d1407, &xmd380d1501, &xmd380d2024up, &xmd380d2025, &xmd380d2026, &xmd380d2027, &xmd380d2030, &xmd380d2034, &xmd380d3008, &xmd380d3020, &xmd390s1312, &xmd390s1320, &xmd390s1407, &xmd390s3012, &xmd446d1320, &xmd446d3020,
 };
-const stm32_codec_profiles_t stm32_codec_profiles = { profiles, 24 };
+const stm32_codec_profiles_t stm32_codec_profiles = { profiles, 25 };
 
 #endif	// CONFIG_DMR
