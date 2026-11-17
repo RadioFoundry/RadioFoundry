@@ -175,6 +175,8 @@ bool codeplug_aprs(uint8_t n, codeplug_aprs_t *out);
 // Rewrite configuration n's two path entries ("WIDE1-1", "" for none), the rest of the record kept; false when the
 // record is empty or unknown (a new record isn't made: its other fields' encodings aren't all known)
 bool codeplug_set_aprs_path(uint8_t n, const char *path1, const char *path2);
+// Rewrite configuration n's SSID (0-15), the same way
+bool codeplug_set_aprs_ssid(uint8_t n, uint8_t ssid);
 #endif
 
 // Re-read everything after the image was written underneath (the CPS); bumps the serial

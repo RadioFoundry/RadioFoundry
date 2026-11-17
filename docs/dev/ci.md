@@ -273,7 +273,7 @@ workflow types a version. Platforms that share a toolchain id must pin the same 
 
 | Toolchain | Set-up |
 |---|---|
-| `arm` | `tools/install-arm-toolchain.sh` downloads the pinned, checksummed release into `~/opt`, every time (no cache); a runner that has it already skips the download |
+| `arm` | `tools/install-arm-toolchain.sh` copies the pinned toolchain into `~/opt` out of `[toolchain] image` (public on ghcr.io, pinned by digest, made by `tools/docker/toolchains/build-arm-ci.sh`), or downloads Arm's checksummed release when that fails; every time (no cache). A runner that has it already skips both. The build runs on the runner |
 | `csky` | csky-elf GCC on `PATH` when the runner has it; otherwise the csky-elf image (`[toolchain] image`, public on ghcr.io, or `RFOUNDRY_CSKY_IMAGE`): logged in to only when a workflow passes a registry (`RFOUNDRY_CSKY_REGISTRY`, for a private copy), pulled, then the job runs its build through `tools/docker/csky-toolchain/run.sh` (the action's `run` output) |
 
 No workflow builds csky-elf GCC from source. The image is built by `tools/docker/csky-toolchain/build.sh`

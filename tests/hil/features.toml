@@ -454,6 +454,10 @@ spec = "docs/spec/ui.md"
 switch = "LANG_IT"
 spec = "docs/spec/ui.md"
 
+[feature.lang_fr]
+switch = "LANG_FR"
+spec = "docs/spec/ui.md"
+
 [feature.lang_zh]
 switch = "LANG_ZH"
 spec = "docs/spec/ui.md"
@@ -464,6 +468,10 @@ spec = "docs/spec/ui.md"
 
 [feature.lang_default_it]
 switch = "LANG_DEFAULT_IT"
+spec = "docs/spec/ui.md"
+
+[feature.lang_default_fr]
+switch = "LANG_DEFAULT_FR"
 spec = "docs/spec/ui.md"
 
 [feature.lang_default_zh]

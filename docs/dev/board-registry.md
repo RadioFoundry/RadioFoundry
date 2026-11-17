@@ -295,7 +295,7 @@ How the site draws the radio: `shape`, `body` and `accent` colors, `lens` size.
 | `build` | The script that installs or builds it |
 | `version` | The release CI and releases build with |
 | `sha256` | Optional: the SHA-256 of the archive the script downloads |
-| `image` | Optional: the container image that holds the toolchain (`RFOUNDRY_CSKY_IMAGE` overrides it) |
+| `image` | Optional: the container image that holds the toolchain. C-SKY builds run in it (`RFOUNDRY_CSKY_IMAGE` overrides it); `tools/install-arm-toolchain.sh` copies the Arm toolchain out of it |
 
 The toolchain scripts read these values with `tools/platform_toolchain.sh`, which needs no Python. `check` fails when
 a script, Dockerfile or workflow under `tools/` or `.github/` sets `<ID>_GCC_VERSION` or `<ID>_GCC_SHA256` (for
