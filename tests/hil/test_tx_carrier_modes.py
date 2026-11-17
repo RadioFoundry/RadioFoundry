@@ -14,7 +14,9 @@ measured by the same analyzer, the bench's FM receive (SdrBench.fm_over_start / 
 offset, its own crystal taken out). Every mode keys on --fm-mhz, so that one frequency must be in tx_mhz; --dmr-freq,
 --p25-mhz and --nxdn-mhz aren't used. Pass criteria:
 - each over one keyed segment or more with a carrier;
-- the mode's carrier within MODE_TOL_PPB of the FM carrier just before it (about 150 Hz at UHF);
+- the mode's carrier within MODE_TOL_PPB of the reference carrier keyed just before it (about 150 Hz at UHF). The
+  reference is FM; a build without the FM VFO uses DMR instead (P25 and NXDN against DMR; DMR itself is then judged
+  on the absolute limit only);
 - each carrier within --max-foff Hz of the frequency (default 500), plus the bench board's own tolerance at the
   frequency (freq_tol_hz), as test_fm_tx and test_dmr_tx judge it.
 Every carrier and the difference are printed. Skipped for a mode the build lacks (DMR or the DMR VFO, P25, NXDN), a
@@ -107,13 +109,17 @@ MODES = [
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.sdr_rx
-@pytest.mark.needs_switch("VFO_FM")
 @pytest.mark.parametrize("mode", MODES)
 def test_tx_carrier_mode(radio, sdr_bench, pytestconfig, mode):
     mhz = rig(pytestconfig, "fm-mhz")
     hz = round(mhz * 1e6)
-    if "VFO_FM" not in radio.features():
-        skip("not_built", "built without the FM VFO")
+    feats = radio.features()
+    if "VFO_FM" in feats:
+        ref = "fm"
+    elif mode != "dmr" and "DMR" in feats and "VFO_DMR" in feats:
+        ref = "dmr"
+    else:
+        ref = None      # DMR without an FM VFO: no reference, the absolute limit only
     radio.go_home()
     if radio.core().get("hotspot") == "1":
         skip("state", "the radio is in hotspot mode")
@@ -125,10 +131,10 @@ def test_tx_carrier_mode(radio, sdr_bench, pytestconfig, mode):
         L = radio.link
         try:
             L.vfo_set(hz)
-            radio.wait_for(lambda v: v.get("rx_hz") == str(hz) and v.get("mode") == "fm", what="FM VFO tuned")
+            radio.wait_for(lambda v: v.get("rx_hz") == str(hz), what="VFO tuned")
             time.sleep(MODE_SETTLE_S)
-            for m in ("fm", mode):
-                v = enter(radio, m) if m != "fm" else radio.core()
+            for m in ([ref] if ref else []) + [mode]:
+                v = enter(radio, m) if m != "fm" else to_mode(radio, "fm", lambda x: True, "the FM VFO")
                 assert v.get("tx_hz") == str(hz), f"{m}: the VFO transmits on {v.get('tx_hz')}, not {hz}"
                 radio.lowest_power()
                 r = over(radio, sdr_bench, mhz, m)
@@ -138,11 +144,14 @@ def test_tx_carrier_mode(radio, sdr_bench, pytestconfig, mode):
         finally:
             if nxdn_old is not None:
                 L.nxdn_settings(**nxdn_old)
-    fm, dig = carriers["fm"]["carrier_hz"], carriers[mode]["carrier_hz"]
+    dig = carriers[mode]["carrier_hz"]
     tol = round(MODE_TOL_PPB * mhz / 1000)
-    print(f"{mhz} MHz: FM {fm:+d} Hz, {mode} {dig:+d} Hz, {mode} - FM {dig - fm:+d} Hz (limit +-{tol})")
+    if ref:
+        base = carriers[ref]["carrier_hz"]
+        print(f"{mhz} MHz: {ref} {base:+d} Hz, {mode} {dig:+d} Hz, {mode} - {ref} {dig - base:+d} Hz (limit +-{tol})")
     max_foff = pytestconfig.getoption("--max-foff")
     for m, r in carriers.items():
         lim = max_foff + (r.get("freq_tol_hz") or 0.0)
         assert abs(r["carrier_hz"]) < lim, f"{m}: carrier offset {r['carrier_hz']:+d} Hz (limit {lim:.0f} Hz)"
-    assert abs(dig - fm) <= tol, f"{mode}'s carrier is {dig - fm:+d} Hz from FM's (limit +-{tol} Hz)"
+    if ref:
+        assert abs(dig - base) <= tol, f"{mode}'s carrier is {dig - base:+d} Hz from {ref}'s (limit +-{tol} Hz)"
