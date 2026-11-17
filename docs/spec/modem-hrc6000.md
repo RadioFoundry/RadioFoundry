@@ -907,8 +907,9 @@ receive set-up's slot clock runs on; about 28.7 ms after a stop with 0x40 = 0x03
 - Deviation: Mod1 (0x46) moves the outer deviation linearly, about 23.8 Hz per step, through zero; Mod2 (0x45) must
   keep its ratio to Mod1 (about 0.51). `tx_begin` reads the pair the board set for the channel (calibrated for
   1944 Hz) and scales both by target / 1944: from 0x52 / 0x2A, 1800 Hz is 0x4C / 0x27 and 2400 Hz 0x65 / 0x34.
-  Above Mod1 0x65 is not checked. For C4FM the target is the deviation / 0.903, as a C4FM receiver's integrate and
-  dump reads 0.903 of the chip's outer level. 0x04 moves the carrier (about +24 Hz per step); 0x47 and 0x48 do
+  Above Mod1 0x65 is not checked. For C4FM the target is the deviation / 0.946: the chip's pulse is DMR's, and a C4FM
+  receiver reads 0.946 of its outer level (measured off air from the SDR bench's I/Q: 0.903 gave 1873-1900 Hz for
+  1800 Hz, 104-106 %; 0.946 gives 1783-1793 Hz). 0x04 moves the carrier (about +24 Hz per step); 0x47 and 0x48 do
   nothing here.
 
 ### 10.4 The provider's rules
