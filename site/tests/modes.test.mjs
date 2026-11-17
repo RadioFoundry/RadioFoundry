@@ -12,7 +12,7 @@ import { CodeplugImage } from "../static/js/codeplug/image.js";
 import { decodeArea, getValue, setValue, putArea, KV_ADDR, KV_SIZE } from "../static/js/codeplug/kv.js";
 import { decode, encode, empty, newChannel, newContact, remove, validate, numberAll } from "../static/js/codeplug/model.js";
 import { MODE_KEY, decodeTag, encodeTag, newSystem, setKind, syncModes, decodeSystemRecord, identityKey } from "../static/js/codeplug/channelmodes.js";
-import { KINDS, SYSTEM_TYPES, offeredKinds, kindName } from "../static/js/codeplug/modes.js";
+import { KINDS, SYSTEM_TYPES, offeredKinds, offeredTypes, kindName } from "../static/js/codeplug/modes.js";
 import { nameCheck } from "../static/js/codeplug/modebytes.js";
 import { decodeConv, encodeConv, decodeUnit, decodeTsys, p25System, NAC_ANY } from "../static/js/codeplug/mode_p25.js";
 
@@ -274,6 +274,8 @@ test("offered kinds: the radio's features and what the codeplug holds", () => {
 	assert.deepEqual(offeredKinds(m, "FM,DMR,P25").map((k) => k.id), [2]);
 	const { m: s } = sample();
 	assert.deepEqual(offeredKinds(s, "FM,DMR").map((k) => k.id), [1, 2, 3]);
+	assert.deepEqual(offeredKinds(m, null).map((k) => k.id), KINDS.map((k) => k.id), "no radio: every kind");
+	assert.deepEqual(offeredTypes(m, null).map((k) => k.id), SYSTEM_TYPES.map((k) => k.id), "no radio: every type");
 });
 
 test("validation: mode not in the radio, no system, unit ID, a P25 talk group", () => {
