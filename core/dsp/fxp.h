@@ -56,10 +56,11 @@ FXP_INLINE int32_t fxp_dot16_c(const int16_t *a, const int16_t *b, unsigned n)
 	return (int32_t)y;
 }
 
-// (x * g) >> 16 exactly, in 32-bit steps, for g < 2^24 and |x * g| < 2^39 (a result under 2^23)
+// (x * g) >> 16 exactly, in 32-bit steps, for g < 2^24 and |x * g| < 2^39 (a result under 2^23). The high part alone
+// may pass 2^31 at the range's edge while the sum stays inside: add in uint32_t, where the wrap is defined
 FXP_INLINE int32_t fxp_scale16(int32_t x, uint32_t g)
 {
-	return (int32_t)((x >> 8) * (int32_t)g + (int32_t)(((uint32_t)(x & 0xFF) * g) >> 8)) >> 8;
+	return (int32_t)((uint32_t)(x >> 8) * g + (((uint32_t)(x & 0xFF) * g) >> 8)) >> 8;
 }
 
 FXP_INLINE int32_t fxp_clamp(int32_t v, int32_t lo, int32_t hi) { return v < lo ? lo : v > hi ? hi : v; }

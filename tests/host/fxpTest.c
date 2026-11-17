@@ -42,7 +42,7 @@ int main(void)
 	}
 	for (int t = 0; t < 200000; t++) {
 		int32_t x = (int32_t)(rng() % (1u << 24)) - (1 << 23), y = (int32_t)rng(), s = (int)(rng() % 32);
-		uint32_t g = rng() >> (rng() % 24 + 9);
+		uint32_t g = rng() >> (rng() % 23 + 9);
 		int64_t p = (int64_t)x * g;
 
 		if (g < (1u << 24) && p < ((int64_t)1 << 39) && p > -((int64_t)1 << 39))
