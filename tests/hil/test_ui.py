@@ -721,6 +721,8 @@ def test_zone_editor_moves_a_channel(home):
 
 
 @pytest.mark.feature("dmr_sms")
+@pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_delete_message(home, request, pytestconfig):
     """Hub 2 (Messages), OK on the newest, Delete (the last action): the inbox has one message less. Only a message
     a HIL test sent (its text starting HIL_SMS_PREFIX) is deleted without asking: when the newest isn't one, the bench
