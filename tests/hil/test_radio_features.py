@@ -674,7 +674,7 @@ def test_scan_stops_on_dmr_call(radio, sdr_bench, pytestconfig):
 
 
 SCAN_DMON_OTHER_TG = 999901	# a talkgroup no test channel's contact or RX group list has
-# From the scan's arrival on the call's channel to the call playing there, mid-call (late entry). Measured 0.4-0.7 s on
+# From the scan's arrival on the call's channel to the call playing there, mid-call (late entry). Measured 0.3-0.7 s on
 # an HR_C6000 radio: the receiver's restart at the retune, burst A, then the LC of the next superframe
 SCAN_DMON_PLAY_S = 1.2
 # The bench job's start to its call on the air (about 0.6 s): a scan that got there first waits that long
@@ -770,6 +770,7 @@ def test_scan_digital_monitor_any_talkgroup(radio, sdr_bench, pytestconfig, how)
         print(f"held on {sorted(set(held))}; dmr.hear_all_latch while scanning {sorted(latched)}; "
               f"played {'%.2f s' % took if took is not None else 'never'} after the scan reached {freq} MHz")
         assert str(hz) in held, f"the scan never held on {freq} MHz for TG {SCAN_DMON_OTHER_TG} (CC {call_cc})"
+        assert how != "key_mid_scan" or pressed, "the monitor key was never pressed (no DMR stop seen while scanning)"
         assert latched == {"1"}, "digital monitor off during the scan"
         assert took is not None and took <= SCAN_DMON_PLAY_S, \
             f"the call played {took} s after the scan reached it (at most {SCAN_DMON_PLAY_S} s)"

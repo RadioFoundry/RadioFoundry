@@ -1510,6 +1510,10 @@ static void test_rx_late_entry_stale_number(void)
 
 	k = feed_numbers_cc(stale_f, fresh, 6, got, 2);
 	CHECK(k == 0 && eng.st.rx_lone == 1 && eng.st.rx_no_call == 5);
+	// A stale repeat with A's own voice is no B, any color code or not
+	static const bool repeat[2] = { false, true };
+	k = feed_numbers(stale_f, repeat, 2, got);
+	CHECK(k == 0 && eng.st.rx_no_call == 1);
 }
 
 static void test_halt(void)

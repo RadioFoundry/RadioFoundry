@@ -464,7 +464,7 @@ count as `rx_no_call` until the next A. The B check differs by mode:
 | Receiving | B is |
 |---|---|
 | One color code (0x41 bit 3 clear) | a class 0 report numbered 1 |
-| Any color code (bit 3 set, 5.4), the call in a code other than 0x1F's | any class 0 report one frame after the A. The chip keeps the voice number of the last call it decoded in full (bench: B-F all reported as F), so the number can't be checked; the frame count numbers the rest (5.2) |
+| Any color code (bit 3 set, 5.4) | a class 0 report numbered 1, or any class 0 report one frame after the A with voice other than A's (a stale repeat of A's report has A's voice). For a call in a code other than 0x1F's, the chip keeps the voice number of the last call it decoded in full (bench: B-F all reported as F), and the driver can't tell which code the call is in, so the number isn't checked; the frame count numbers the rest (5.2) |
 
 Before the second rule, a scan with digital monitor on passed any call in another color code that it reached after
 the header: the A was dropped as lone and B-F as no-call, superframe after superframe, and the stop timed out.
