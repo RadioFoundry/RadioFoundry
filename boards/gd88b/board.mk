@@ -5,7 +5,9 @@
 # into A's audio routing. It runs none of the radio core: its start-up is app_gd88b.c. Receive only. The radio, DMR and
 # calibration code is A's (boards/gd88/common)
 PLATFORM   := hrc7000
-MCU_DEFS   := -DHRC_HOST_UART=1 -DHRC_LOADER_CPU_HZ=72000000u
+MCU_DEFS   := -DHRC_HOST_UART=1 -DHRC_LOADER_CPU_HZ=72000000u -DHRC_CPU_HZ=72000000u
+# B stays at the loader's 72 MHz: it draws no screen, and the link, FM and DMR keying and the PA drive points keep time
+# there (hardware-gd88.md 10). Less heat than A's 168 MHz
 # 2 MB program flash (hardware-gd88.md 8): the debug link's READ_MEM window over it (platform/hrc7000/mem_window.h)
 MCU_DEFS   += -DHRC_XIP_FLASH_SIZE=0x200000u
 BOARD_DIRS := boards/gd88b boards/gd88/common drivers/rf/rfbus drivers/rf/bk4819 drivers/rf/at1141 drivers/rf/subaudio drivers/modem/hrc7000 drivers/flash/spi_nand
