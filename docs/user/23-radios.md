@@ -88,7 +88,7 @@ yet, and the core doesn't use them.
 | DB25-D PRO | Pseudo, one receiver. Not checked on air. Its second BK4819 chip is a local oscillator for the receive chain, not a second receiver | Hold the **TONE/T.SEL** key | A press of **TONE/T.SEL** |
 | DM-1801 Pro | Pseudo, one receiver. Not checked on air | Hold the **A/B** key, **\***, **7**, or hold **SK2** | The **A/B** key or **SK2** (a press), **Left** / **Right** |
 
-Holding **SK2** is dual watch on every radio that has an SK2, and on the DB25-D PRO holding the tone key is. A press of
+Holding **SK2** is dual watch on every radio in this table that has an SK2, and on the DB25-D PRO holding the tone key is. A press of
 **SK2** (the tone key on the DB25-D PRO) switches A / B, and with dual watch off says "Turn on dual watch first". The
 DM-1801 Pro's A/B key does both: a press switches A / B, a hold starts and stops dual watch. On it the zones are on **Left** / **Right**, or in the Zones menu.
 
@@ -737,6 +737,43 @@ A 128 x 64 monochrome screen.
 - No hotspot, DTMF, USB network or IP services: they all need the transmitter.
 - No APRS: the radio doesn't pass its received audio to the decoder yet.
 - No air band or broadcast receiver, and no vibration motor.
+
+## Radioddity GD-88
+
+A dual band handheld (136-174 and 400-480 MHz) with a 320x240 color display. It has two HR_C7000 chips. The first
+runs the display, keys, PTT, transmitter, GPS and FM broadcast receiver. The second is a second receiver that listens
+at the same time as the first, so both VFOs can receive at once. **In development:** RadioFoundry doesn't run on this radio
+yet and there is no release for it.
+
+When it is ready, the web installer will build both chips' images together and install them in one step, on the same
+programming cable: the first chip's image, then the second's, with no further choices in between. The first time, the
+second chip still runs its original firmware, so the installer asks for the radio's update mode (`IAP_B`) for that
+part. After that it goes through the first chip by itself.
+
+To start the radio's update mode, turn it off and connect the programming cable. Hold **SK1** (the side key above **PTT**) and turn the radio
+on with the volume knob. When the LED lights red and the top line shows `IAP_A` or `IAP_B`, release **SK1**. Hold **SK1** to
+switch between them: `IAP_A` updates the first chip, `IAP_B` the second.
+
+### GD-88 keys
+
+| Key | Role |
+|---|---|
+| Left soft key (under the display) | **OK** |
+| Right soft key | **Back** |
+| Green | **A/B** |
+| Red | **VFO** |
+| Up, Down | **Up**, **Down** |
+| SK1 (the side key above **PTT**) | **A/B**: press to switch A / B in dual watch, hold for dual watch on or off. Held at power-on, it starts the update mode |
+| SK2 (the side key below **PTT**) | **Monitor** |
+| **#** | **#**. Hold it for the talk target picker |
+| SOS (the orange top key) | User key 3 |
+| **PTT** | **PTT** |
+
+### GD-88 beeps
+
+Beeps don't get quieter with the volume knob: they play at **Settings > Sound > Tone volume** at any knob position
+except all the way down, which silences them too. Tone volume 1 is quiet, about volume 6 of 16 on the knob; 10 is about
+20 dB louder. Tone volume 0 turns beeps off.
 
 ## Planned radios
 
