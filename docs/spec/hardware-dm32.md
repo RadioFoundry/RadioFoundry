@@ -1571,10 +1571,6 @@ under `CONFIG_DMR`. A session runs in DMR: the FD6818 keeps its DMR set-up, the 
 the codec, and the transmitter is keyed through the DMR RF burst sequences in continuous mode (one key-up for the whole
 transmission). Nothing of it has been checked on this radio yet (modem-hrc7000.md 10.4).
 
-RAM: P25, P25 trunking and NXDN take about 4.1 KB, more than an image with Tier III (`CONFIG_DMR_TRUNK`) leaves free.
-Build them with `CONFIG_DMR_TRUNK=n`. ci builds that configuration (`[ci] extra` in `boards/dm32/board.toml`) and
-leaves them out of the maximal one.
-
 ## Receive past the rated bands
 
 16-65, 174-400 and 480-740 MHz: the FD6818 band table (8.3). The chip documents give no other range. Receive only, FM, off by default ([radio-features.md](radio-features.md) 6.2). Not measured on the radio.

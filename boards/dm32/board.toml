@@ -37,12 +37,6 @@ FM and DMR voice both ways, CTCSS/DCS, APRS both ways, GPS data, the hotspot and
 Open: FM deviation at 12.5 kHz and an outdoor GPS fix."""
 release = "stable"
 
-# P25 and NXDN don't fit beside Tier III in RAM (config.mk): ci builds them with Tier III off
-[ci]
-extra = [
-	{ name = "p25-nxdn", make = ["CONFIG_P25=y", "CONFIG_P25_TRUNK=y", "CONFIG_NXDN=y", "CONFIG_DMR_TRUNK=n"] },
-]
-
 # The Baofeng serial updater erases the whole application area before it writes (hardware-dm32.md 13.2 step 7), so
 # the codec can't be kept across an update: every flash merges it again. The platform's two "sectors", the application
 # and the codec slot (boards/dm32/memory.ld), let manifests say where the codec goes

@@ -236,6 +236,49 @@ static void testTx(void)
 	src->end(src->ctx);
 }
 
+// Simplex: a transmission started while a call plays decodes nothing (a platform may keep both codec states in one
+// block, hal_vocoder_t); the call goes on as silence, and the decoder starts fresh once the transmission is over. A call
+// that begins during a transmission doesn't reset the codec then (that would reset the encoder too)
+static void testSimplex(void)
+{
+	const dmr_voice_sink_t *s = ambeVoiceSink();
+	const dmr_voice_source_t *src = ambeVoiceSource();
+	uint8_t bits[8][49], frame[9];
+
+	s->begin(NULL, s->ctx);
+	for (int n = 0; n < 6; n++) {
+		makeFrame(n, bits[n], frame);
+		s->frame(frame, s->ctx);
+	}
+	block();
+	CHECK(spkIs(bits[0]), "simplex: the call plays");
+	int d0 = decodes, r0 = resets;
+	src->begin(src->ctx);
+	block();
+	CHECK(spkSilent() && decodes == d0, "no decode while transmitting");
+	CHECK(resets == r0 + 1, "the transmission's own reset only");
+	block();
+	CHECK(spkSilent() && decodes == d0, "still none");
+	s->begin(NULL, s->ctx);	// a new call meanwhile
+	for (int n = 6; n < 8; n++) {
+		makeFrame(n, bits[n], frame);
+		s->frame(frame, s->ctx);
+	}
+	block();
+	CHECK(spkSilent() && decodes == d0 && resets == r0 + 1, "a call beginning during a transmission: no reset");
+	src->end(src->ctx);
+	makeFrame(5, bits[5], frame);	// a third frame: the new call primes
+	s->frame(frame, s->ctx);
+	s->end(s->ctx);
+	block();
+	CHECK(decodes == d0 + 1 && resets == r0 + 2 && spkIs(bits[6]), "after the transmission: fresh decoder, plays");
+	while (src->next(frame, src->ctx))
+		;
+	for (int n = 0; n < 4; n++)
+		block();
+	CHECK(!speaker_on, "and ends");
+}
+
 // One transmission of n blocks from gen(sample index), then its mic statistics
 static ambe_voice_stats_t micOver(int n, int16_t (*gen)(int))
 {
@@ -522,6 +565,7 @@ int main(void)
 	ambeVoiceInit(&audio, &vocoder);
 	testRx();
 	testTx();
+	testSimplex();
 	testMicStats();
 	testFlagsMap();
 	testEncodeOptions();
