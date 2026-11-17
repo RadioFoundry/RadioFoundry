@@ -61,7 +61,31 @@ const listening = (value) => !!listenBand(parseFreq(value("rxHz")));
 
 // The mode as the radio shows it: an FM channel in the air band is received in AM
 // A channel of a kind (channel-modes.md): the kind's short name
-const modeText = (r, t) => (r.kind ? kindName(r.kind) : r.mode === "dmr" ? "DMR" : listenBand(r.rxHz) ? t(`editor.mode.${listenBand(r.rxHz)}`) : "FM");
+// a kind's full name, or its short one where the text is missing
+const kindText = (id, t) => {
+	const key = `editor.mode_name.${kindRow(id)?.token}`, s = kindRow(id) ? t(key) : key;
+	return s === key ? kindName(id) : s;
+};
+const modeText = (r, t) => (r.kind ? kindText(r.kind, t) : r.mode === "dmr" ? "DMR" : listenBand(r.rxHz) ? t(`editor.mode.${listenBand(r.rxHz)}`) : "FM");
+
+// A channel's Mode, in its form and in the table: FM, DMR and the kinds offered (modes.js), the channel's own kind too.
+// The value is "fm", "dmr" or "k<kind>"
+function modeColumn(m, t, features) {
+	const kinds = offeredKinds(m, features);
+	return {
+		options: (r) => {
+			const out = [["fm", "FM"], ["dmr", "DMR"], ...kinds.map((k) => [`k${k.id}`, kindText(k.id, t)])];
+			if (r?.kind && !kinds.some((k) => k.id === r.kind)) out.push([`k${r.kind}`, kindText(r.kind, t)]);
+			return out;
+		},
+		get: (r) => (r.kind ? `k${r.kind}` : r.mode),
+		set: (r, v) => {
+			if (v === (r.kind ? `k${r.kind}` : r.mode)) return;
+			if (v.startsWith("k")) setKind(m, r, Number(v.slice(1)));
+			else setKind(m, r, 0, v);
+		},
+	};
+}
 const kindMod = (r) => (r.kind ? kindRow(r.kind)?.module ?? null : null);
 // A channel of a kind keeps the record's fields its module lists (a talk target, a unit ID); the rest of FM and DMR
 // stays as stored and is not shown
@@ -125,9 +149,9 @@ const refLabel = (v, t) => (v == null ? "" : typeof v === "number" ? t("editor.m
 
 // The columns Bulk Edit can set: every editable one but the name and number, which must differ per record. None on a
 // table whose members are edited in its own dialog (zones, RX lists): Bulk Edit isn't offered there
-export const bulkColumns = (table, m, t) => columns(table, m, t).filter((c) => c.readOnly !== true && c.key !== "name" && c.key !== "number");
+export const bulkColumns = (table, m, t, opts) => columns(table, m, t, opts).filter((c) => c.readOnly !== true && c.key !== "name" && c.key !== "number");
 
-export function columns(table, m, t) {
+export function columns(table, m, t, { features = null } = {}) {
 	const col = (key, label, type, parse, extra = {}) => ({
 		key, label: t(label), type,
 		get: (r) => r[key],
@@ -149,8 +173,7 @@ export function columns(table, m, t) {
 		return [
 			num,
 			col("name", "editor.col.name", "text", name(LIMITS.name)(t)),
-			// a channel's kind is changed in its form
-			col("mode", "editor.col.mode", "select", pick, { options: () => [["fm", "FM"], ["dmr", "DMR"]], format: (v, r) => modeText(r, t), readOnly: (r) => !!r.kind }),
+			{ ...col("mode", "editor.col.mode", "select", pick), ...modeColumn(m, t, features), readOnly: false, format: (v, r) => modeText(r, t) },
 			own(col("rxHz", "editor.col.rx", "text", (r, k, v) => {
 				// a simplex channel stays simplex: TX follows RX when they were the same
 				const was = r.rxHz;
@@ -270,13 +293,8 @@ export function channelForm(m, t, { features = null } = {}) {
 	const fm = (f) => ({ ...f, show: (r) => r.mode === "fm" && !r.kind });
 	const dmr = (f) => ({ ...f, show: (r) => r.mode === "dmr" && recordField(r, f.key) && (!f.show || f.show(r)) });
 	const sfr = (f, label, options) => dmr({ ...sfrField(...f), label: t(label), type: "select", options, show: (r) => r.sfr && !r.kind });
-	// FM, DMR and the kinds offered (modes.js), the channel's own kind too
 	const kinds = offeredKinds(m, features);
-	const modeOptions = (r) => {
-		const out = [["fm", "FM"], ["dmr", "DMR"], ...kinds.map((k) => [`k${k.id}`, k.short])];
-		if (r.kind && !kinds.some((k) => k.id === r.kind)) out.push([`k${r.kind}`, kindName(r.kind)]);
-		return out;
-	};
+	const mode = modeColumn(m, t, features);
 	const kindFields = [];
 	for (const k of kinds) {
 		const mod = k.module, on = (r) => r.kind === k.id;
@@ -291,14 +309,7 @@ export function channelForm(m, t, { features = null } = {}) {
 	return [
 		{ group: t("editor.form.basic") },
 		txt("name", "editor.col.name", name(LIMITS.name)(t)),
-		sel("mode", "editor.col.mode", modeOptions, {
-			get: (r) => (r.kind ? `k${r.kind}` : r.mode),
-			set: (r, v) => {
-				if (v === (r.kind ? `k${r.kind}` : r.mode)) return;
-				if (v.startsWith("k")) setKind(m, r, Number(v.slice(1)));
-				else setKind(m, r, 0, v);
-			},
-		}),
+		sel("mode", "editor.col.mode", mode.options, { get: mode.get, set: mode.set }),
 		{ type: "note", key: "kindNote", text: (value, w) => (w?.kind && !ownFreqs(w) ? t("editor.modes.freqs_system") : "") },
 		sel("power", "editor.col.power", () => powerOptions(t)),
 		// in a receive-only band TX follows RX, locked (rxFreq)
@@ -365,11 +376,12 @@ const coord = (t, max) => (r, k, v) => {
 };
 
 // A form in a dialog over a working copy of the record; Save hands the copy back
-export function formDialog(title, fields, record, t, onSave) {
+// opts.list: one field per line, for forms whose fields carry help text
+export function formDialog(title, fields, record, t, onSave, opts = {}) {
 	const work = { ...record };
 	const errs = h("p", { class: "notice bad", hidden: true });
 	const rows = [];
-	const body = h("div", { class: "form-grid" });
+	const body = h("div", { class: opts.list ? "form-grid form-list" : "form-grid" });
 	// One field: its label and input, kept in rows for sync() and save()
 	const field = (f) => {
 		const id = "f-" + f.key;
@@ -392,10 +404,33 @@ export function formDialog(title, fields, record, t, onSave) {
 		rows.push({ f, input, row, label });
 		return row;
 	};
+	// a group with collapsed set is a section the user opens: its rows stay hidden until then
+	let section = null;
 	for (const f of fields) {
+		const n0 = rows.length;
 		if (f.group) {
-			const row = h("h3", { class: "form-group" }, f.group);
+			let row;
+			if (f.collapsed != null) {
+				const sec = { open: !f.collapsed };
+				const btn = h("button", { type: "button", class: "form-toggle", "aria-expanded": String(sec.open) }, f.group);
+				btn.addEventListener("click", () => {
+					sec.open = !sec.open;
+					btn.setAttribute("aria-expanded", String(sec.open));
+					sync();
+				});
+				row = h("h3", { class: "form-group" }, btn);
+				section = sec;
+			} else {
+				row = h("h3", { class: "form-group" }, f.group);
+				section = null;
+			}
 			rows.push({ f: { key: null, type: "group", show: f.show }, input: null, row });
+			body.append(row);
+			continue;
+		} else if (f.type === "custom") {
+			// a part the caller draws (a table of rows): f.render() gives its element, f.parse(work) its errors on save
+			const row = f.render();
+			rows.push({ f, input: null, row });
 			body.append(row);
 		} else if (f.type === "note") {
 			// a line of text from the inputs as they are typed
@@ -419,17 +454,21 @@ export function formDialog(title, fields, record, t, onSave) {
 			rows.push({ f: { key: f.key, type: "pair", disabled: f.disabled, show: f.show }, input: null, row: pair, tools });
 			body.append(pair);
 		} else body.append(field(f));
+		for (const r of rows.slice(n0)) r.section = section;
 	}
 	const byKey = (k) => rows.find((r) => r.f.key === k);
+	// a row inside a closed section is hidden whatever its own show says
+	const shut = (r) => r.section && !r.section.open;
 	const value = (k) => byKey(k).input.value;
 	const sync = () => {
+		for (const r of rows) if (r.section) r.row.hidden = false;
 		for (const { f, input, row, label, tools } of rows) {
 			if (f.type === "pair") {
 				for (const b of tools) b.disabled = !!f.disabled?.(work, value);
 				if (f.show && row) row.hidden = !f.show(work);
 				continue;
 			}
-			if (f.type === "group") {
+			if (f.type === "group" || f.type === "custom") {
 				if (f.show) row.hidden = !f.show(work);
 				continue;
 			}
@@ -455,6 +494,7 @@ export function formDialog(title, fields, record, t, onSave) {
 				if (input.disabled && f.follows) input.value = byKey(f.follows).input.value;
 			}
 		}
+		for (const r of rows) if (shut(r)) r.row.hidden = true;
 	};
 	body.addEventListener("change", sync);
 	body.addEventListener("input", sync);
@@ -463,6 +503,10 @@ export function formDialog(title, fields, record, t, onSave) {
 	const save = () => {
 		const bad = [];
 		for (const { f, input } of rows) {
+			if (f.type === "custom") {
+				if (!f.show || f.show(work)) bad.push(...(f.parse(work) ?? []));
+				continue;
+			}
 			if (f.type === "bool" || f.type === "pair" || f.type === "group" || f.type === "note") continue;
 			if (f.type === "select") {
 				const v = input._opts[input.selectedIndex]?.[0];

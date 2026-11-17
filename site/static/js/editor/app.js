@@ -188,7 +188,7 @@ function renderView(p) {
 		return;
 	}
 	const g = new Grid({
-		columns: columns(tab, S.model, t), rows: S.model[tab], t, empty: t(`editor.empty.${tab}`),
+		columns: columns(tab, S.model, t, { features: features() }), rows: S.model[tab], t, empty: t(`editor.empty.${tab}`),
 		onChange: (row, col, value) => {
 			let err = null;
 			change(t("editor.undo.edit"), () => {
@@ -220,7 +220,7 @@ function tableActions(tab, g) {
 	const numbered = tab !== "zones";
 	const out = [
 		// first, so it sits above the row checkboxes it acts on; not on a table with nothing it can set (zones, RX lists)
-		bulkColumns(tab, S.model, t).length ? button(sel.length ? t("editor.bulk_edit_n", { n: sel.length }) : t("editor.bulk_edit"), () => bulkSet(tab, g), { disabled: sel.length < 2 }) : null,
+		bulkColumns(tab, S.model, t, { features: features() }).length ? button(sel.length ? t("editor.bulk_edit_n", { n: sel.length }) : t("editor.bulk_edit"), () => bulkSet(tab, g), { disabled: sel.length < 2 }) : null,
 		button(t("editor.add"), () => addRecord(tab, g), { disabled: full }),
 		button(t("editor.duplicate"), () => duplicate(tab, g), { disabled: full || !g.targets().length }),
 		button(t("editor.delete"), () => del(tab, g), { disabled: !g.targets().length, danger: true }),
@@ -320,7 +320,7 @@ function renumber(tab) {
 
 function bulkSet(tab, g) {
 	const rows = g.selection();
-	const cols = bulkColumns(tab, S.model, t);
+	const cols = bulkColumns(tab, S.model, t, { features: features() });
 	if (!cols.length) return;
 	const pickCol = h("select", {}, ...cols.map((c, i) => h("option", { value: String(i) }, c.label)));
 	const slot = h("div");
@@ -816,7 +816,7 @@ async function readRadio() {
 }
 
 // Features a newer release may add that change what the editor can do with the radio, with what each gains
-const UPDATE_GAINS = ["CPS_FAST", "IDDB_COMPACT"];
+const UPDATE_GAINS = ["CPS_FAST", "IDDB_COMPACT", "DMR_TRUNK", "P25", "P25_TRUNK", "NXDN"];
 let releaseList = null;
 
 // After a read: a newer release for this radio (releases.json, updateFor), offered once per tab for each radio, running
