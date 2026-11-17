@@ -18,7 +18,13 @@
 #include "debuglink/dl_fmt.h"
 
 #define LINE_MAX		64
-#define OUT_MAX			448	// the longest answer (dump_state, about 350 bytes) is built here, then written
+// The longest answer (dump_state: 134 bytes and up to 48 a band line) is built here. At most half the
+// transmit buffer: a line is taken only with room for a whole answer (r_space), so one answer in flight must never
+// block the next
+#define OUT_MAX			536
+_Static_assert(2 * OUT_MAX <= TCP_TXBUF, "an answer in flight must leave room for the next (r_space)");
+#define DUMP_TAIL		140	// dump_state's lines after the bands (128 bytes), which a client must get whole
+#define BAND_LINE_MAX		48	// one range line, both edges past 1 GHz
 #define REQ_GAP_MS		20u	// radio requests at most this often (the radio core's queue holds 16)
 #define FREQ_HOLD_MS		1000u	// a frequency just set is reported until the radio shows it, at most this long
 #define PTT_MAX_MS		180000u	// a PTT from the network is released after this long, whatever the client does
@@ -193,8 +199,9 @@ static void dump_state(void)
 		for (uint8_t i = 0; i < board_band_count(); i++) {
 			const band_t *b = &board.bands[i];
 
-			if (!tx || b->tx) {
-				dl_text(&ot, "%u.000000 %u.000000 0x20 %d %d 0x3 0x1\n", (unsigned)b->lo_hz, (unsigned)b->hi_hz,
+			// a band that would crowd out the lines after the bands is left out: the client needs those whole
+			if ((!tx || b->tx) && ot.cap - ot.len >= DUMP_TAIL + BAND_LINE_MAX) {
+				dl_text(&ot, "%u %u 0x20 %d %d 0x3 0x1\n", (unsigned)b->lo_hz, (unsigned)b->hi_hz,	// Hamlib reads doubles
 					tx ? 1000 : -1, tx ? 5000 : -1);
 			}
 		}
