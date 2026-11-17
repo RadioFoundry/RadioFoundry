@@ -419,6 +419,13 @@ to 0x1F and rewrite 0x40=0xC3 (through a repeater also the 0x41 resync sequence:
 wait 3 ms (a busy wait in the interrupt: faster rewrites crashed the radio). After 8 matches the CC is held.
 Release the hold after 5 s of no received audio while idle.
 
+A call in a CC other than 0x1F's raises no system interrupt on the HR_C5000, so the follow above never starts for it,
+and 0x41 bit 3 made no difference in a test. The timeslot ticks still come while a signal is present. At each tick
+while idle and receiving, 0x52 bits 7-4 read the call's CC on the call's slot phase and other values on the other
+phase. So the driver counts 0x52's CC per slot phase (`cc_tick_follow`). After 3 equal reads on one phase that differ
+from 0x1F's CC, it writes that CC to 0x1F and restarts the receiver, as for any CC change. It skips this when the CC
+is held, during TX, while a restart is pending and for 4 ticks after one.
+
 The driver chooses by the chip description's `cc_any_rx`.
 
 ### 5.4a CACH short LC
