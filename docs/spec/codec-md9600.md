@@ -74,8 +74,9 @@ decode; literal pools and relocations differ throughout). So **no two codec wind
 byte-identical**: they are different links of the same library, as the reference V02.06 and V26.45
 codecs are.
 
-Functionally they are the same codec: with the same init and per-frame calls, all 33 builds and the reference V02.06
-codec give **bit-identical** air bits and decoded PCM (below, "Verification"). The 26.xx (V5) builds use the same entry
+Functionally they are the same codec: with the same init and per-frame calls, the first 32 builds and the reference
+V02.06 codec give **bit-identical** air bits and decoded PCM, and 126.61 matches the map tool's reference build (below,
+"Verification"). The 26.xx (V5) builds use the same entry
 offsets as the rest, so the calls in `boards/md9600/vocoder_md9600.c` fit them as they are; only the FEC decode
 differs (+0xB64 in the 26.45 CSV builds, +0xB54 in the 26.xx REC ones), and the firmware does not call it. The three REC
 builds 03.28, 03.29 and 04.03 have a code window 0x1000 bytes longer than the others (0x102xx), because the library link
@@ -244,13 +245,17 @@ and the decoded PCM of every frame.
 | 1 kHz tone, 30 frames | `32b5fdbac4a399c9` | same | same |
 | stress, 300 frames (noise, silence, full-scale sweeps, 0-4 injected bit errors, random frames, flags 8) | `40d0ca30a8c2f7e0` | same | same |
 
-The other 24 builds (all 32 in all) were run again with the vector set below, each as TYT links it and moved as the merge
+The other 24 builds (32 in all) were run again with the vector set below, each as TYT links it and moved as the merge
 moves it, with only the moved windows mapped:
 
 | run | each of the 32 builds, at the stock address and as placed |
 |---|---|
 | 60 frames (encode and decode, tone plus noise), air bits and PCM hashed | `7cb52253c4b2` in all 64 runs |
 | 300 frames (random samples, silence, sine sweeps, square waves, low-level noise, flags 8 on every 7th frame), air bits and PCM hashed | `2788dd5ca0ad31c5` in all 64 runs |
+
+The 126.61 build was run with the map tool's vector set instead: a 30-frame trace gives `03d150f1c525afe0` and a
+300-frame stress run `7b0f10283a8114ce`, the reference build's hashes for that set, from the whole image, from the moved
+windows alone and as placed.
 
 This second set has no injected bit errors. A decode of a frame with three injected errors gave different PCM for the
 06.09 CSV and the 16.45 CSV builds in a trial run, so the cross-build identity of decoded error frames is not claimed;

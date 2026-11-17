@@ -37,11 +37,11 @@ export class CableError extends Error {
 	}
 }
 
-// The flash.err.* text for one of the browser's own USB or serial errors (a DOMException, by name), or null. The
-// browser's words ("Failed to open serial port.") say little; every tool shows what to do, with them after it
 // The browser's chooser closed with no device picked (Cancel): nothing was tried, so nothing failed
 export const noDeviceChosen = (e) => browserErrorKey(e) === "flash.err.no_device";
 
+// The flash.err.* text for one of the browser's own USB or serial errors (a DOMException, by name), or null. The
+// browser's words ("Failed to open serial port.") say little; every tool shows what to do, with them after it
 export function browserErrorKey(e) {
 	const raw = e?.message || String(e);
 	switch (e?.name) {

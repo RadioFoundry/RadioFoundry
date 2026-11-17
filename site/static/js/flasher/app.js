@@ -2337,8 +2337,10 @@ function writeView() {
 	const what = { task: "install", source: fw.origin || "", radio: S.board.id, firmware: String(fw.manifest.version || ""),
 		variant: fw.variant || fw.manifest.variant || (fw.manifest.dev_build ? "dev" : ""), features: fw.manifest.features || "", build: fw.build || null };
 	const dfu = (opts) => bootloaderPanel(t("flash.write.title"), async () => {
-		// from the cable route the codec step was skipped: decide now, from what the radio reported
-		S.decision ||= decideCodec(S.board, fw.manifest, { haveStock: stockGivesCodec(), haveSaved: !!S.savedCodec, savedKept: savedKept(), probe: S.now?.probe || null });
+		// from the cable route the codec step was skipped: decide now, from what the radio reported. A decision made here
+		// is made again after another stock file is picked; one from the codec step is the user's and stays
+		if (!S.decision || (S.decision.inline && S.decision.stock !== S.stock))
+			S.decision = { ...decideCodec(S.board, fw.manifest, { haveStock: stockGivesCodec(), haveSaved: !!S.savedCodec, savedKept: savedKept(), probe: S.now?.probe || null }), inline: true, stock: S.stock };
 		let codec = [], prof = null;
 		if (S.decision.mode === MERGE && S.decision.source === "saved") {
 			prof = S.savedCodec.profile;
@@ -2356,8 +2358,11 @@ function writeView() {
 	}
 	// the bootloader route stays one click away: it finishes an install the loader couldn't
 	const fallback = h("details", { class: "panel" }, h("summary", {}, t("flash.f4.bootloader")));
-	fallback.addEventListener("toggle", () => { if (fallback.open && fallback.children.length < 2) fallback.append(dfu({ inline: true })); });
-	return h("div", { class: "flasher" }, stubPanel(fallback, next, what), fallback);
+	const fillFallback = () => fallback.replaceChildren(fallback.firstChild, ...(fallback.open ? [dfu({ inline: true })] : []));
+	fallback.addEventListener("toggle", () => { if (fallback.open && fallback.children.length < 2) fillFallback(); });
+	// a stock file picked in the cable route's panel: the bootloader route's plan was made from the earlier one (or none)
+	const stockPicked = () => { if (fallback.children.length > 1) fillFallback(); };
+	return h("div", { class: "flasher" }, stubPanel(fallback, next, what, stockPicked), fallback);
 }
 
 // The segments the loader writes: the build, and where the radio's codec moves (codecMoves) the codec too, from the copy
@@ -2380,7 +2385,7 @@ async function stubSegments(fw, log) {
 
 // Install through the STM32F4 loader on a radio running RadioFoundry (f4stub.js). fallback: the bootloader route's details,
 // opened when the loader can't finish
-function stubPanel(fallback, onDone, what) {
+function stubPanel(fallback, onDone, what, stockPicked = () => {}) {
 	const box = h("section", { class: "panel" });
 	const log = logBox();
 	const prog = progressBar();
@@ -2513,6 +2518,7 @@ function stubPanel(fallback, onDone, what) {
 		S.stock = await pickedStock(f);
 		if (!S.keyFromRadio) S.key = S.keySource = null;
 		drawStock();
+		stockPicked();
 	};
 	const drawStock = () => {
 		go.disabled = needStock();

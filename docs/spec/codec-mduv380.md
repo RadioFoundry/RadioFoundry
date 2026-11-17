@@ -141,7 +141,7 @@ Code windows (decrypted):
 | 10 W P219.74 CSV-GPS AES 255 | 0x080887F0..0x08097BAA | 0xF3BA | `a55a811d85a5d23e3d599b312245b32ebdd70b2a75384772be12422025a4ee7e` |
 | 10 W S219.74 GPS-REC AES 255 | 0x0808B2DC..0x0809A66A | 0xF38E | `fc272e75d71dcac08215794f5d153bac86a0787423f7b187c24b08caa3717eaa` |
 
-Table windows (decrypted). Every file's is 0x12850 bytes, except 10 W D219.71 REC AES 255, whose file ends at 0x080EBC00 (0x11FA4 bytes of window). The codec's own data ends earlier; the merge cuts to it:
+Table windows (decrypted). Every file's is 0x12850 bytes, except 10 W D219.71 REC AES 255, whose file ends at 0x080EBC00 (0x12024 bytes of window). The codec's own data ends earlier; the merge cuts to it:
 
 | build | flash | codec data ends | data length | sha256 of the window |
 |---|---|---|---|---|

@@ -33,7 +33,8 @@
 
 // Each build as the merge places it (tools/rfoundry/rfoundry/stockfw.py, "placed"): CRC-32 (IEEE 802.3) of the code and
 // of the table window after the rewrites, and the code window's length. The descriptor must carry exactly these. The tag
-// is the variant in bits 16-17 (0 CSV, 1 CSV-GPS, 2 REC, 3 GPS-REC) and the version in BCD below (0x1645: 16.45 CSV)
+// is the variant in bits 16-17 (0 CSV, 1 CSV-GPS, 2 REC, 3 GPS-REC) and the version in BCD below (0x1645: 16.45 CSV);
+// bit 20 marks the AES line (0x132661: 126.61 GPS-REC)
 //
 // The two builds first accepted: 06.09 CSV (V1-V3 boards) and 16.45 CSV (V4)
 static const codec_desc_window_t tables_v0609[1] = { { 0x080C000Cu, 0x10FE6u, 0x4C84A4F5u } };
