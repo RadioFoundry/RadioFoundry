@@ -71,6 +71,13 @@ static void set_backlight(uint8_t pct)
 	}
 }
 
+// What a key or start-up wakes the light to: the set brightness, or the low battery cap. Full first and the cap in
+// the same pass flashed the screen and the key light (on only at the set brightness, batt_key_light)
+static uint8_t backlight_wake(void)
+{
+	return radio_backlight_pct(ui_app_brightness(), 0);
+}
+
 static uint8_t backlight_target(uint32_t now)
 {
 	uint32_t idle = input_idle_ms();
@@ -121,7 +128,7 @@ static void ui_task(void *arg)
 		gfx_flush();
 	}
 	ui_app_init();
-	set_backlight(ui_app_brightness());
+	set_backlight(backlight_wake());
 	vTaskDelay(pdMS_TO_TICKS(SPLASH_MS));
 	while (input_next(&ev, 0))
 		;	// keys pressed during the splash are dropped
@@ -158,7 +165,7 @@ static void ui_task(void *arg)
 #if CONFIG_BACKLIGHT_TEST
 			was_off = was_off && ui_app_backlight_hold() < 0;	// a key wakes the light, but not in the tests
 #endif
-			set_backlight(ui_app_brightness());
+			set_backlight(backlight_wake());
 			if (!was_off || ev.action == ACT_PTT || ev.action == ACT_MONITOR)
 				ui_app_key(&ev);
 			dirty = true;
