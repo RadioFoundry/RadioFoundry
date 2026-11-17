@@ -104,8 +104,7 @@ const board_t board = {
 	.battery_low_mv = 7000,
 	.battery_critical_mv = 6000,
 #if CONFIG_GPS
-	.gps_enable = hrc_gps_enable,
-	.gps_present = hrc_gps_present,
+	.gps = &hrc_gps,
 #endif
 	.rx2 = &gd88_rx2,
 #if CONFIG_STUB_ENTRY
