@@ -185,6 +185,7 @@ static void fake_gps_enable(bool on)
 	gps_enable_calls++;
 	gps_enabled = on;
 }
+static const hal_gps_t fake_gps = { .present = fake_gps_present, .enable = fake_gps_enable };
 
 // A hardware option (hal_hwopt.h) whose state the tests set; hidden (detected) unless a test says otherwise
 static uint8_t fake_hwopt_st = HWOPT_ST_HIDDEN;
@@ -201,8 +202,7 @@ const board_t board = {
 	.hwopts = fake_hwopts,
 	.hwopt_count = 1,
 	.caps = CAP_GPS,
-	.gps_enable = fake_gps_enable,
-	.gps_present = fake_gps_present,
+	.gps = &fake_gps,
 	.bands = bands,
 	.band_count = 4,
 	.rx_ext_count = 1,
@@ -3980,6 +3980,19 @@ static void test_ui_glue(void)
 	CHECK(ui_svc_setting_set(UI_SET_GPS, 1));
 	ui_svc_apply(UI_SET_GPS, ui_svc_setting_get(UI_SET_GPS));
 	CHECK(gps_enable_calls == 3 && gps_enabled);
+	// The debug link's SETTING 37 stores and applies it as the menu does, on a radio whose module was heard only
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 37, 0, 0 }, 3) ==
+	      DL_ST_UNAVAILABLE);
+	CHECK(gps_enable_calls == 3);
+	gps_here = true;
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 37, 2, 0 }, 3) == DL_ST_BAD_ARG);
+	if (CONFIG_GPS) {
+		CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 37, 0, 0 }, 3) == DL_ST_OK);
+		CHECK(gps_enable_calls == 4 && !gps_enabled && ui_svc_setting_get(UI_SET_GPS) == 0);
+		CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 37, 1, 0 }, 3) == DL_ST_OK);
+		CHECK(gps_enable_calls == 5 && gps_enabled && ui_svc_setting_get(UI_SET_GPS) == 1);
+	}
+	gps_here = false;
 	ui_svc_apply(UI_SET_LONG_PRESS_MS, 900);
 	ui_svc_apply(UI_SET_REPEAT_MS, 200);
 	CHECK(input_long == 900 && input_repeat == 200);
