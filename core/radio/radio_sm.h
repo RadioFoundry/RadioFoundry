@@ -340,6 +340,12 @@ typedef struct {
 	radio_dual_ref_t dual[2];	// SCAN_DUAL: the two channels
 	uint8_t dual_sel;		// ... the selected one (PTT)
 	uint8_t dual_at;		// ... the one the receiver is on
+	// Zone scan, an FM stop about to hold on a signal that may be digital (scan_mixed): the FM stop, while the scan
+	// checks the digital channel of its frequency, and whether that check heard its mode's signal; then the FM stop
+	// the check heard none on, which holds when the scan goes back to it. SCAN_NO_POS: none
+	uint16_t scan_twin_fm;
+	uint16_t scan_fm_heard;
+	bool scan_twin_digital;
 #if CONFIG_DUAL_WATCH
 	bool rx2_on;			// the second receiver (board.rx2) holds the other channel; the main one stays on dual_sel
 	// Each channel's changes for now (P7), kept while the receiver is on the other one: a hop reloads the channel
