@@ -7399,8 +7399,11 @@ static void use_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t now
 {
 #if CONFIG_DMR
 	bool reply_changed = s->reply_s != sm->set.reply_s || s->sfr_rx != sm->set.sfr_rx ||
-		s->talk_permit != sm->set.talk_permit ||	// the permit hold (permit_before_key)
-		s->sig_dmr[SIG_EV_BEGIN] != sm->set.sig_dmr[SIG_EV_BEGIN];
+		s->talk_permit != sm->set.talk_permit	// the permit hold (permit_before_key)
+#if CONFIG_SIG_TONES
+		|| s->sig_dmr[SIG_EV_BEGIN] != sm->set.sig_dmr[SIG_EV_BEGIN]
+#endif
+		;
 #endif
 	sm->set = *s;
 	clamp_settings(&sm->set);
