@@ -20,7 +20,7 @@ PTT always uses.
 
 | Call | Played when |
 |---|---|
-| Group (FLCO 0) | its talkgroup is the talk target's, all call (0xFFFFFF), in the channel's RX group list (listen list), the reply target's during the reply window, or hear all, "digital monitor" in the UI (the hear-all latch: the MONITOR key's press toggles it on a DMR channel, its release does nothing (#19); Quick 5; `radio_req_dmr_hear_all`; until the channel changes, DMR stops (a mode change), or BACK on Home; the end of a call doesn't end it) |
+| Group (FLCO 0) | its talkgroup is the talk target's, all call (0xFFFFFF), in the channel's RX group list (listen list), the reply target's during the reply window, or hear all, "digital monitor" in the UI (the hear-all latch: the MONITOR key's press toggles it on a DMR channel, its release does nothing (#19); Quick 5; `radio_req_dmr_hear_all`; until the channel changes, DMR stops (a mode change), or BACK on Home; the end of a call doesn't end it. A zone or VFO scan started with it on keeps it on at every stop and latches it on the channel the scan ends on; turning it off during the scan ends it for the scan, [radio-features.md](radio-features.md) 2) |
 | Private (FLCO 3) | addressed to our ID (the channel's DMR ID override, else the radio's), or all call, or hear all |
 | Our own ID as source | not while we transmit or for `DMR_CALL_OWN_ECHO_MS` (700 ms) after our call ended or was cut short (the repeater's echo of it); later it is judged as any other call, so a parrot's playback of our call plays (#294). A terminator from our ID ends only the call with its LC, never another station's |
 | Encrypted | only with a privacy key, and never after a PI header (section 5) |
@@ -252,6 +252,10 @@ codec bits.
   `reset()`, so a new transmission starts with the options in force.
 * The options are read at start-up from the settings and on every change (`ui_svc_apply`). With AGC on, the mic gain
   is step 5, the board's levels (FM too on a radio whose board sets the gain), and Mic gain is dimmed, showing "AGC".
+* Voice is simplex: while a transmission runs, nothing is decoded. A call still being heard goes on as silence, and
+  the decoder starts fresh once the transmission ends; a call that begins meanwhile resets nothing until then. A
+  platform may keep the encoder's and the decoder's state in one block (`hal_vocoder_t`): a decode during the
+  transmission would cost it its encoder.
 * Each board's codec mapping is on its `codec-<id>.md` page ("Encode flags"). Boards with an AMBE+2 host share
   `drivers/vocoder/ambe2_flags.h`.
 

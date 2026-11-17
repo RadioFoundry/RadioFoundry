@@ -103,8 +103,7 @@ const board_t board = {
 		(CONFIG_BCAST_FM ? CAP_BCAST_FM : 0),
 #endif
 #if CONFIG_GPS
-	.gps_enable = mcu_gps_enable,
-	.gps_present = mcu_gps_present,	// CAP_GPS: the module is fitted, but say so only once it has been heard
+	.gps = &mcu_gps,	// CAP_GPS: the module is fitted, but say so only once it has been heard
 #endif
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),

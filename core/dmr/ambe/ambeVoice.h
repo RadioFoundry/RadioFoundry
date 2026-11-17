@@ -72,6 +72,9 @@ const dmr_voice_sink_t *ambeVoiceSink(void);
 const dmr_voice_source_t *ambeVoiceSource(void);
 // Stop the audio stream (leaving DMR mode); the next begin restarts it
 void ambeVoiceStop(void);
+// Start the audio stream now, for a voice path whose frames come from a task that must not start it (NXDN's
+// provider task, radio/radio_nxdn.c): the sink's begin then finds it running. The task that calls ambeVoiceStop
+void ambeVoiceStart(void);
 // Whether the voice stream runs (its callback owns hal_audio_t). Call task only
 bool ambeVoiceStreaming(void);
 // Something else to hear while the voice stream runs (beeps): called at the end of each audio block with the speaker
@@ -97,6 +100,18 @@ void ambeVoiceGetStats(ambe_voice_stats_t *out);
 // Zero the counters (the debug link's RESET_COUNTERS). Counters only: no state changes. From any task; an increment
 // racing the reset may survive it
 void ambeVoiceResetStats(void);
+
+// Voice capture (CONFIG_VOICE_CAPTURE): the next n (up to AMBE_VOICE_CAP) frames received, raw as on air, each frame or
+// a lost one in order. Arm clears what was captured; 0 stops. For receive tests that compare the bits with what was
+// sent (debug link RADIO op 41, the voice_cap view)
+#define AMBE_VOICE_CAP	32u
+typedef struct {
+	uint8_t lost;			// 1: a frame the call stack lost (frame all zero)
+	uint8_t frame[DMR_AMBE_FRAME_BYTES];
+} ambe_cap_entry_t;
+void ambeVoiceCaptureArm(uint8_t n);
+// The frames captured so far (count returned), and how many were asked for
+uint8_t ambeVoiceCapture(const ambe_cap_entry_t **entries, uint8_t *want);
 
 // The audio block callback (exposed for tests): one 20 ms block in, one out
 void ambeVoiceAudioBlock(const int16_t *mic, int16_t *spk, void *ctx);

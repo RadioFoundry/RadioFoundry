@@ -44,8 +44,23 @@
 #ifndef CONFIG_DMR_ROAMING
 #define CONFIG_DMR_ROAMING		CONFIG_DMR
 #endif
+#ifndef CONFIG_DMR_TRUNK
+#define CONFIG_DMR_TRUNK		CONFIG_DMR
+#endif
+#ifndef CONFIG_DMR_TRUNK_TX
+#define CONFIG_DMR_TRUNK_TX		CONFIG_DMR_TRUNK
+#endif
+#ifndef CONFIG_DMR_TRUNK_SUPL
+#define CONFIG_DMR_TRUNK_SUPL		CONFIG_DMR_TRUNK_TX
+#endif
+#ifndef CONFIG_DMR_TRUNK_GW
+#define CONFIG_DMR_TRUNK_GW		CONFIG_DMR_TRUNK_TX
+#endif
 #ifndef CONFIG_DMR_IP_GATEWAY
 #define CONFIG_DMR_IP_GATEWAY		1
+#endif
+#ifndef CONFIG_VOICE_CAPTURE
+#define CONFIG_VOICE_CAPTURE		0
 #endif
 #ifndef CONFIG_ZONE_SHARE
 #define CONFIG_ZONE_SHARE		CONFIG_DMR
@@ -145,6 +160,9 @@
 #ifndef CONFIG_DIAG
 #define CONFIG_DIAG			1
 #endif
+#ifndef CONFIG_BACKLIGHT_TEST
+#define CONFIG_BACKLIGHT_TEST		0
+#endif
 #ifndef CONFIG_FONT_XL
 #define CONFIG_FONT_XL			1
 #endif
@@ -162,11 +180,14 @@
 #ifndef CONFIG_LANG_IT
 #define CONFIG_LANG_IT			0
 #endif
+#ifndef CONFIG_LANG_FR
+#define CONFIG_LANG_FR			0
+#endif
 // Chinese brings its own 16x16 glyphs (core/ui/cjk_font_data.c) and UTF-8 text the text layer decodes (core/ui/gfx.c)
 #ifndef CONFIG_LANG_ZH
 #define CONFIG_LANG_ZH			0
 #endif
-#define CONFIG_LANG_ANY			(CONFIG_LANG_ES || CONFIG_LANG_IT || CONFIG_LANG_ZH)
+#define CONFIG_LANG_ANY			(CONFIG_LANG_ES || CONFIG_LANG_IT || CONFIG_LANG_FR || CONFIG_LANG_ZH)
 // The language the radio starts in until the user picks one (CONFIG_LANG_DEFAULT_<CODE>, needs its CONFIG_LANG_<CODE>):
 // all 0 = English
 #ifndef CONFIG_LANG_DEFAULT_ES
@@ -174,6 +195,9 @@
 #endif
 #ifndef CONFIG_LANG_DEFAULT_IT
 #define CONFIG_LANG_DEFAULT_IT		0
+#endif
+#ifndef CONFIG_LANG_DEFAULT_FR
+#define CONFIG_LANG_DEFAULT_FR		0
 #endif
 #ifndef CONFIG_LANG_DEFAULT_ZH
 #define CONFIG_LANG_DEFAULT_ZH		0
@@ -288,6 +312,39 @@
 #ifndef CONFIG_APRS_IGATE
 #define CONFIG_APRS_IGATE		(CONFIG_APRS_RX && CONFIG_HOSTLINK)
 #endif
+// P25 Phase 1 conventional (core/p25): the one switch. Derived from it (config/features.mk, never set by hand): AIR the
+// air interface (core/air, docs/spec/air-interface.md: the framer for digital modes the core frames itself and the
+// board's provider behind board.air), IMBE the full-rate voice decoder, MBE the MBE core it sits on (core/mbe).
+// AIR_RAW: bench access to raw symbols over the debug link
+#ifndef CONFIG_P25
+#define CONFIG_P25			0
+#endif
+// NXDN conventional voice (core/nxdn, docs/spec/nxdn.md). AIR is on with any air-framed mode
+#ifndef CONFIG_NXDN
+#define CONFIG_NXDN			0
+#endif
+#ifndef CONFIG_AIR
+#define CONFIG_AIR			(CONFIG_P25 || CONFIG_NXDN)
+#endif
+// P25 trunked: the codec of its systems and channels (docs/spec/p25-codeplug.md 3), the control channel decoded, voice
+// channel grants followed and, where the system allows it, registration and transmit on a grant (core/p25/p25_follow.c)
+#ifndef CONFIG_P25_TRUNK
+#define CONFIG_P25_TRUNK		0
+#endif
+#ifndef CONFIG_AIR_RAW
+#define CONFIG_AIR_RAW			0
+#endif
+#ifndef CONFIG_IMBE
+#define CONFIG_IMBE			CONFIG_P25
+#endif
+#ifndef CONFIG_MBE
+#define CONFIG_MBE			CONFIG_IMBE
+#endif
+// Derived: zone sharing carries channels of a kind and their systems (docs/spec/zone-share.md 4.2) in a build with a
+// mode's codec. Without it a share leaves channels of a kind out and refuses a record that has them
+#ifndef CONFIG_ZONE_SHARE_MODES
+#define CONFIG_ZONE_SHARE_MODES		(CONFIG_ZONE_SHARE && (CONFIG_P25 || CONFIG_NXDN || CONFIG_DMR_TRUNK))
+#endif
 // The GPS status screen: the satellites (NMEA GSV / GSA) on a sky plot and signal bars, the fix's quality, the grid
 // locator (core/position/nmea_sky.c, core/ui/ui_gps.c). Needs GPS
 #ifndef CONFIG_GPS_SKY
@@ -355,9 +412,21 @@
 #if CONFIG_SUBTONE && !CONFIG_FM
 #error "CONFIG_SUBTONE needs CONFIG_FM"
 #endif
-#if (CONFIG_DMR_PRIVACY || CONFIG_DMR_TALKER_ALIAS || CONFIG_DMR_GPS || CONFIG_DMR_DATA_CORE || CONFIG_DMR_ROAMING || CONFIG_SFR || \
+#if (CONFIG_DMR_PRIVACY || CONFIG_DMR_TALKER_ALIAS || CONFIG_DMR_GPS || CONFIG_DMR_DATA_CORE || CONFIG_DMR_ROAMING || CONFIG_DMR_TRUNK || CONFIG_SFR || \
      CONFIG_HOTSPOT || CONFIG_DMR_UDP_COMPRESS || CONFIG_ZONE_SHARE) && !CONFIG_DMR
 #error "a DMR feature is on without CONFIG_DMR"
+#endif
+#if CONFIG_DMR_TRUNK_TX && !CONFIG_DMR_TRUNK
+#error "CONFIG_DMR_TRUNK_TX needs CONFIG_DMR_TRUNK"
+#endif
+#if CONFIG_DMR_TRUNK_SUPL && !CONFIG_DMR_TRUNK_TX
+#error "CONFIG_DMR_TRUNK_SUPL needs CONFIG_DMR_TRUNK_TX"
+#endif
+#if CONFIG_DMR_TRUNK_GW && !CONFIG_DMR_TRUNK_TX
+#error "CONFIG_DMR_TRUNK_GW needs CONFIG_DMR_TRUNK_TX"
+#endif
+#if CONFIG_VOICE_CAPTURE && !CONFIG_DMR
+#error "CONFIG_VOICE_CAPTURE needs CONFIG_DMR"
 #endif
 #if CONFIG_HOTSPOT && !CONFIG_HOSTLINK
 #error "CONFIG_HOTSPOT needs CONFIG_HOSTLINK"
@@ -388,6 +457,12 @@
 #endif
 #if CONFIG_NET_PPP && !(CONFIG_HOSTLINK && CONFIG_DMR_IP_GATEWAY)
 #error "CONFIG_NET_PPP needs CONFIG_HOSTLINK and CONFIG_DMR_IP_GATEWAY"
+#endif
+#if CONFIG_AIR_RAW && !CONFIG_AIR
+#error "CONFIG_AIR_RAW needs CONFIG_P25 or CONFIG_NXDN (an air-framed mode)"
+#endif
+#if CONFIG_AIR_RAW && !CONFIG_DEBUGLINK
+#error "CONFIG_AIR_RAW needs CONFIG_DEBUGLINK"
 #endif
 #if CONFIG_NET_TCP && !CONFIG_DMR_IP_GATEWAY
 #error "CONFIG_NET_TCP needs CONFIG_DMR_IP_GATEWAY"
@@ -448,6 +523,12 @@
 #endif
 #if CONFIG_GPS_SKY && !CONFIG_GPS
 #error "CONFIG_GPS_SKY needs CONFIG_GPS"
+#endif
+#if CONFIG_P25_TRUNK && !CONFIG_P25
+#error "CONFIG_P25_TRUNK needs CONFIG_P25"
+#endif
+#if CONFIG_NXDN && !CONFIG_DMR
+#error "CONFIG_NXDN needs CONFIG_DMR (its voice is the DMR vocoder's)"
 #endif
 #if (CONFIG_APRS_RX && !CONFIG_APRS_AFSK) || (CONFIG_APRS_IGATE && !(CONFIG_APRS_RX && CONFIG_HOSTLINK))
 #error "an APRS sub-feature is on without its parent (APRS_RX needs APRS_AFSK; APRS_IGATE needs APRS_RX and HOSTLINK)"

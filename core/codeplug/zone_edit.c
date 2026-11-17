@@ -4,6 +4,7 @@
 // the codeplug calls take it too). The codeplug format is unchanged: these are codeplug_set_zone / _delete_zone.
 #include <string.h>
 #include "codeplug/zone_edit.h"
+#include "codeplug/codeplug_tag.h"
 #include "storage/storage.h"
 
 int zone_list_find(const zone_t *z, uint16_t channel)
@@ -319,7 +320,15 @@ static zone_edit_result_t run(const zone_op_t *op, uint16_t *index)
 	case ZONE_OP_INSERT: return zone_edit_insert(op->zone, op->pos, op->channel);
 	case ZONE_OP_REMOVE: return zone_edit_remove(op->zone, op->pos);
 	case ZONE_OP_MOVE: return zone_edit_move(op->zone, op->pos, op->dir);
-	case ZONE_OP_ADD_NEW: return zone_edit_add_new(op->zone, op->pos, op->channel, &op->ch);
+	case ZONE_OP_ADD_NEW: {
+		// A copy of a channel of a kind takes the source's tag (channel-modes.md 2.4), else it is a stand-in only
+		zone_edit_result_t r = zone_edit_add_new(op->zone, op->pos, op->channel, &op->ch);
+		if (r == ZONE_EDIT_OK && op->ch.kind != CODEPLUG_KIND_NONE && op->from != 0 &&
+		    !codeplug_tag_copy(op->from, op->channel, &op->ch)) {
+			r = ZONE_EDIT_FAILED;
+		}
+		return r;
+	}
 	case ZONE_OP_COPY: return zone_edit_copy(op->zone, index);
 	case ZONE_OP_RENAME: return zone_edit_rename(op->zone, op->name);
 	case ZONE_OP_DELETE: return zone_edit_delete(op->zone);

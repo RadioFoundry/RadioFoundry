@@ -226,9 +226,13 @@ static const band_t bands[] = {
 };
 static const char *const power_names[] = { "L", "H" };
 
+// A module that is always there and always on (hal_gps_t with no hooks)
+static const hal_gps_t fake_gps = { 0 };
+
 const board_t board = {
 	.name = "fake",
 	.caps = CAP_GPS | CAP_BCAST_FM,
+	.gps = &fake_gps,
 	.bands = bands,
 	.band_count = 3,
 	.power_count = 2,
@@ -254,6 +258,7 @@ static char cp_name[CODEPLUG_NAME_LEN + 1];
 codeplug_source_t codeplug_source(void) { return CODEPLUG_OPENFW; }
 static uint32_t cp_serial = 1;
 static char cp_path[2][10];		// the APRS record's path entries
+static uint8_t cp_ssid;			// ... and its SSID
 uint32_t codeplug_serial(void) { return cp_serial; }
 void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi) { (void)c; (void)lo; (void)hi; }	// no settings area
 int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max)
@@ -298,6 +303,7 @@ bool codeplug_aprs(uint8_t n, codeplug_aprs_t *out)
 	strcpy(out->comment, "RadioFoundry test");
 	strcpy(out->path[0], cp_path[0]);
 	strcpy(out->path[1], cp_path[1]);
+	out->ssid = cp_ssid;
 	return true;
 }
 bool codeplug_set_aprs_path(uint8_t n, const char *path1, const char *path2)
@@ -307,6 +313,17 @@ bool codeplug_set_aprs_path(uint8_t n, const char *path1, const char *path2)
 	}
 	strcpy(cp_path[0], path1);
 	strcpy(cp_path[1], path2);
+	cp_serial++;
+	return true;
+}
+static unsigned cp_ssid_writes;
+bool codeplug_set_aprs_ssid(uint8_t n, uint8_t ssid)
+{
+	if (n != 1 || ssid > 15) {
+		return false;
+	}
+	cp_ssid = ssid;
+	cp_ssid_writes++;
 	cp_serial++;
 	return true;
 }
@@ -379,6 +396,8 @@ static void reset(void)
 	strcpy(cp_name, "");
 	strcpy(cp_path[0], "WIDE1-1");
 	strcpy(cp_path[1], "WIDE2-1");
+	cp_ssid = APRS_SSID_DEFAULT;
+	cp_ssid_writes = 0;
 	settings_init();
 	radio_sm_init(&sm, now);
 	aprs_set_test_call("");
@@ -880,6 +899,30 @@ static void test_host_kiss_nmea(void)
 	CHECK(aprs_send_now());
 	run(1000);
 	CHECK(host_out_has("GQ1TST-7>APZRDF,TCPIP*:!/"));	// compressed, no messaging (no receive path)
+}
+
+// The last try's ack wait ends while the frequency is blocked: the message is over, not pending forever
+static void test_message_ends_blocked(void)
+{
+	reset();
+	aprs_set_test_call("Q1TST");
+	configure(0, false);
+	CHECK(aprs_send_message("Q1ABC-9", "Hello"));
+	CHECK(wait_start(1, 5000));
+	wait_idle();
+	CHECK(wait_start(2, 35u * 1000u));
+	wait_idle();
+	CHECK(wait_start(3, 65u * 1000u));
+	wait_idle();
+	aprs_cfg_t c;
+	aprs_get_cfg(&c);
+	c.region = APRS_REGION_CUSTOM;
+	c.freq_hz = 150000000u;		// not amateur: nothing can be sent now
+	aprs_set_cfg(&c, now);
+	run(125u * 1000u);
+	aprs_view_t v;
+	aprs_get_view(&v);
+	CHECK(v.block == APRS_NOT_AMATEUR && !v.msg_pending && hw.starts == 3);
 }
 
 static void test_messages(void)
@@ -1496,7 +1539,7 @@ static void test_codeplug_path(void)
 	CHECK(c.path == APRS_PATH_WIDE2);
 	settings_t st;
 	settings_read(&st);
-	CHECK(st.aprs_stored == 1 && st.aprs_path == APRS_PATH_WIDE2 && st.aprs_cp_path == APRS_PATH_WIDE2 + 1u);
+	CHECK(st.aprs_stored == 1 && st.aprs_path == APRS_PATH_WIDE2 && settings_aprs_cp_path(&st) == APRS_PATH_WIDE2 + 1u);
 	// The menu changes it: the codeplug's unchanged path doesn't take it back
 	c.path = APRS_PATH_WIDE2_2;
 	aprs_set_cfg(&c, now);
@@ -1505,20 +1548,20 @@ static void test_codeplug_path(void)
 	aprs_get_cfg(&c);
 	CHECK(c.path == APRS_PATH_WIDE2_2);
 	// ... and the storage job writes it into the codeplug
-	CHECK(aprs_path_to_codeplug());
+	CHECK(aprs_to_codeplug());
 	CHECK(strcmp(cp_path[0], "WIDE2-2") == 0 && cp_path[1][0] == '\0');
 	run(200);
 	aprs_get_cfg(&c);
 	settings_read(&st);
-	CHECK(c.path == APRS_PATH_WIDE2_2 && st.aprs_cp_path == APRS_PATH_WIDE2_2 + 1u);
+	CHECK(c.path == APRS_PATH_WIDE2_2 && settings_aprs_cp_path(&st) == APRS_PATH_WIDE2_2 + 1u);
 	// Two entries go into both slots
 	c.path = APRS_PATH_WIDE1_WIDE2;
 	aprs_set_cfg(&c, now);
-	CHECK(aprs_path_to_codeplug() && strcmp(cp_path[0], "WIDE1-1") == 0 && strcmp(cp_path[1], "WIDE2-1") == 0);
+	CHECK(aprs_to_codeplug() && strcmp(cp_path[0], "WIDE1-1") == 0 && strcmp(cp_path[1], "WIDE2-1") == 0);
 	// None: both empty
 	c.path = APRS_PATH_NONE;
 	aprs_set_cfg(&c, now);
-	CHECK(aprs_path_to_codeplug() && cp_path[0][0] == '\0' && cp_path[1][0] == '\0');
+	CHECK(aprs_to_codeplug() && cp_path[0][0] == '\0' && cp_path[1][0] == '\0');
 	// The CPS writes a new path: taken
 	strcpy(cp_path[0], "WIDE1-1");
 	cp_serial++;
@@ -1537,6 +1580,93 @@ static void test_codeplug_path(void)
 	run(200);
 	aprs_get_cfg(&c);
 	CHECK(c.path == APRS_PATH_WIDE1);
+}
+
+// The SSID too: a CPS write of a new SSID is taken (it used to stay at the settings' 7), a change on the radio stays
+// and goes into the codeplug, and a later CPS change wins again
+static void test_codeplug_ssid(void)
+{
+	aprs_cfg_t c;
+	aprs_view_t v;
+	settings_t st;
+	reset();
+	strcpy(cp_name, "Q1TST");
+	run(200);
+	aprs_get_cfg(&c);
+	CHECK(c.ssid == APRS_SSID_DEFAULT);
+	settings_read(&st);
+	CHECK(settings_aprs_cp_ssid(&st) == APRS_SSID_DEFAULT + 1u && settings_aprs_cp_path(&st) == APRS_PATH_WIDE1_WIDE2 + 1u);
+	cp_ssid = 9;				// the CPS writes 9
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	aprs_get_view(&v);
+	settings_read(&st);
+	CHECK(c.ssid == 9 && st.aprs_ssid == 9 && settings_aprs_cp_ssid(&st) == 10u);
+	CHECK(strcmp(v.call, "Q1TST-9") == 0);
+	CHECK(settings_aprs_cp_path(&st) == APRS_PATH_WIDE1_WIDE2 + 1u);	// the path marker kept
+	// The menu changes it: the codeplug's unchanged 9 doesn't take it back
+	c.ssid = 5;
+	aprs_set_cfg(&c, now);
+	aprs_reload();
+	run(200);
+	aprs_get_cfg(&c);
+	aprs_get_view(&v);
+	CHECK(c.ssid == 5 && strcmp(v.call, "Q1TST-5") == 0);
+	// ... and the storage job writes it into the codeplug, leaving the path (unchanged) unwritten
+	uint32_t ser = cp_serial;
+	CHECK(aprs_to_codeplug() && cp_ssid == 5 && cp_ssid_writes == 1u && cp_serial == ser + 1u);
+	run(200);
+	aprs_get_cfg(&c);
+	settings_read(&st);
+	CHECK(c.ssid == 5 && settings_aprs_cp_ssid(&st) == 6u);
+	CHECK(aprs_to_codeplug() && cp_ssid_writes == 1u);	// nothing differs: no write
+	// SSID 0 (no suffix) both ways
+	cp_ssid = 0;
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	aprs_get_view(&v);
+	CHECK(c.ssid == 0 && strcmp(v.call, "Q1TST") == 0);
+	// A path change on its own leaves the SSID alone
+	strcpy(cp_path[0], "WIDE2-1");
+	cp_path[1][0] = '\0';
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	CHECK(c.path == APRS_PATH_WIDE2 && c.ssid == 0);
+}
+
+// The first take after an upgrade (no SSID marker yet) leaves a codeplug SSID of 0 alone: the radio keeps sending
+// its own SSID, not the bare callsign. A later CPS write of another SSID is taken as usual
+static void test_codeplug_ssid_first_zero(void)
+{
+	aprs_cfg_t c;
+	aprs_view_t v;
+	settings_t st;
+	reset();
+	strcpy(cp_name, "Q1TST");
+	run(200);
+	settings_t *s = settings_begin();	// a record from before the SSID marker
+	settings_set_aprs_cp_ssid(s, 0);
+	settings_end(now);
+	cp_ssid = 0;				// ... and a codeplug that says 0
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	aprs_get_view(&v);
+	settings_read(&st);
+	CHECK(c.ssid == APRS_SSID_DEFAULT && strcmp(v.call, "Q1TST-7") == 0);
+	CHECK(settings_aprs_cp_ssid(&st) == 1u);	// 0 marked as taken: not looked at again
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	CHECK(c.ssid == APRS_SSID_DEFAULT);
+	cp_ssid = 9;
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	CHECK(c.ssid == 9);
 }
 
 // The transmission's failures: the transmitter won't key, the AFSK won't start, the AFSK never finishes. Each time
@@ -1804,6 +1934,7 @@ int main(void)
 	test_tx_power_own();
 	test_host_kiss_nmea();
 	test_messages();
+	test_message_ends_blocked();
 	test_third_party_messages();
 	test_message_options();
 	test_message_replaces_pending();
@@ -1817,6 +1948,8 @@ int main(void)
 	test_cfg_store();
 	test_dmr_dst();
 	test_codeplug_path();
+	test_codeplug_ssid();
+	test_codeplug_ssid_first_zero();
 	test_rf_failures();
 #if CONFIG_APRS_RX
 	test_stations_digi_igate();

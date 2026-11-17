@@ -82,7 +82,9 @@ export class Dfu {
 		await this.waitDone(what);
 	}
 
-	// Erase the plan's sectors in the bootloader's order, write each, exit (the radio restarts). programMode: this
+	// Erase the plan's sectors (in the bootloader's order), write each, exit (the radio restarts). A codec move erases the
+	// application's first sector first and writes it last (plan.js writeOrder): a move cut short leaves no application
+	// to start. programMode: this
 	// bootloader session already took 91 01 (a backup read its SPI flash, origbackup.js); the bootloader takes 91 01 only
 	// once, so the write starts at 91 31
 	async run(plan, key, progress = () => {}, { programMode = false } = {}) {
@@ -93,13 +95,13 @@ export class Dfu {
 		await this.waitIdle();
 		if (!programMode) await this.vendor(0x91, 0x01);
 		await this.vendor(0x91, 0x31);
-		for (const s of plan.erase) {
+		for (const s of plan.eraseOrder) {
 			this.log(`erase sector ${s.index} at ${hex(s.addr)}`);
 			await this.command(0x41, s.addr, `erase ${hex(s.addr)}`);
 		}
 		const total = plan.totalBlocks;
 		let done = 0;
-		for (const st of plan.writes) {
+		for (const st of plan.writeOrder) {
 			const addr = st.sector.addr;
 			this.log(`write sector ${st.sector.index}: ${st.blocks.length} blocks`);
 			await this.command(0x21, addr, `set address ${hex(addr)}`);
@@ -157,10 +159,23 @@ export class NormalModeError extends DfuError {
 
 export const usbSupported = () => typeof navigator !== "undefined" && "usb" in navigator;
 
+// A WebUSB call the radio never answers waits forever, and the page with it (#446). rfoundry gives each control transfer
+// 5 s (dfu.py), a sector erase included; twice that with no reply is a lost connection. errorText reads the "USB
+// transfer" prefix as one
+export const USB_TIMEOUT_MS = 10000;
+function timed(promise, what, ms) {
+	let timer;
+	const late = new Promise((_, reject) => {
+		timer = setTimeout(() => reject(new DfuError(`USB transfer timeout: no reply to ${what} in ${ms / 1000} s`)), ms);
+	});
+	return Promise.race([promise, late]).finally(() => clearTimeout(timer));
+}
+
 export class WebUsbTransport {
-	constructor(device, intf) {
+	constructor(device, intf, timeoutMs = USB_TIMEOUT_MS) {
 		this.device = device;
 		this.intf = intf;
+		this.timeoutMs = timeoutMs;
 	}
 
 	static async request(board) {
@@ -170,9 +185,10 @@ export class WebUsbTransport {
 	}
 
 	// board: refuse the radio switched on normally before claiming anything or sending a DFU request
-	static async open(device, board = null) {
-		await device.open();
-		if (device.configuration === null) await device.selectConfiguration(1);
+	// timeoutMs: how long any one USB call may go unanswered
+	static async open(device, board = null, { timeoutMs = USB_TIMEOUT_MS } = {}) {
+		await timed(device.open(), "open", timeoutMs);
+		if (device.configuration === null) await timed(device.selectConfiguration(1), "select configuration", timeoutMs);
 		const names = [];
 		for (const i of device.configuration.interfaces)
 			for (const alt of i.alternates)
@@ -187,28 +203,32 @@ export class WebUsbTransport {
 				if (alt.interfaceClass === 0xFE && alt.interfaceSubclass === 0x01 && intf === null) intf = i.interfaceNumber;
 		if (intf === null) throw new DfuError("the device has no DFU interface");
 		try {
-			await device.claimInterface(intf);
+			await timed(device.claimInterface(intf), "claim interface", timeoutMs);
 		} catch (e) {
+			if (e instanceof DfuError) throw e;
 			throw new DfuError(`cannot open the bootloader (${e.message}). Close other programs that use the radio.`);
 		}
-		return new WebUsbTransport(device, intf);
+		return new WebUsbTransport(device, intf, timeoutMs);
 	}
 
 	async out(request, value, data) {
-		const r = await this.device.controlTransferOut({ requestType: "class", recipient: "interface", request, value, index: this.intf }, data || new Uint8Array(0));
+		const r = await timed(this.device.controlTransferOut({ requestType: "class", recipient: "interface", request, value, index: this.intf },
+			data || new Uint8Array(0)), `request ${request}`, this.timeoutMs);
 		if (r.status !== "ok") throw new DfuError(`USB transfer ${r.status}`);
 		return r.bytesWritten;
 	}
 
 	async in(request, length, value = 0) {
-		const r = await this.device.controlTransferIn({ requestType: "class", recipient: "interface", request, value, index: this.intf }, length);
+		const r = await timed(this.device.controlTransferIn({ requestType: "class", recipient: "interface", request, value, index: this.intf }, length),
+			`request ${request}`, this.timeoutMs);
 		if (r.status !== "ok") throw new DfuError(`USB transfer ${r.status}`);
 		return new Uint8Array(r.data.buffer, r.data.byteOffset, r.data.byteLength);
 	}
 
 	async stringDescriptor(index) {
 		try {
-			const r = await this.device.controlTransferIn({ requestType: "standard", recipient: "device", request: 6, value: 0x0300 | index, index: 0x0409 }, 255);
+			const r = await timed(this.device.controlTransferIn({ requestType: "standard", recipient: "device", request: 6, value: 0x0300 | index, index: 0x0409 }, 255),
+				"string descriptor", this.timeoutMs);
 			const b = new Uint8Array(r.data.buffer, r.data.byteOffset, r.data.byteLength);
 			return new TextDecoder("utf-16le").decode(b.subarray(2, b[0]));
 		} catch (e) {

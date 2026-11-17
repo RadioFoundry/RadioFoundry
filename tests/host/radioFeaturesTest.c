@@ -254,7 +254,7 @@ static bool v_present(void) { return true; }
 static void v_reset(void) {}
 static void v_encode(const int16_t *pcm, uint8_t *bits) { (void)pcm; memset(bits, 0, VOCODER_BITS); }
 static void v_decode(const uint8_t *bits, int16_t *pcm) { (void)bits; memset(pcm, 0, VOCODER_FRAME_SAMPLES * 2); }
-static const hal_vocoder_t fake_vocoder = { v_present, v_reset, v_encode, v_decode, NULL, NULL, NULL, NULL };
+static const hal_vocoder_t fake_vocoder = { v_present, v_reset, v_encode, v_decode, NULL, NULL, NULL, NULL, NULL };
 
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
@@ -339,6 +339,9 @@ void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi)
 	c->at = lo < CODEPLUG_KEY_CALL_END_TONE ? CODEPLUG_KEY_CALL_END_TONE : lo;
 	c->hi = hi > CODEPLUG_KEY_TX_DENY_TONE ? CODEPLUG_KEY_TX_DENY_TONE : hi;
 }
+// No settings area to write: the radio core writes no tag
+bool codeplug_kv_set(uint16_t key, const void *value, uint16_t len) { (void)key; (void)value; (void)len; return false; }
+bool codeplug_kv_remove(uint16_t key) { (void)key; return false; }
 int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max)
 {
 	for (; c->at <= c->hi; c->at++) {
@@ -1688,6 +1691,60 @@ static void test_scan_dmr_mid_call(void)
 	CHECK(!held && max5 > 0 && max5 <= 1300);
 	req(RREQ_SCAN, RSCAN_STOP);
 	hw.sig[0].hz = 0;
+}
+
+// #595: digital monitor on when the scan starts stays on at every stop. A call to a talkgroup we don't listen to then
+// holds the scan, the channel the scan ends on keeps digital monitor, and turning it off mid-scan ends it for the scan
+static void test_scan_dmr_digital_monitor(void)
+{
+	for (int off_mid_scan = 0; off_mid_scan <= 1; off_mid_scan++) {
+		start();
+		all_dmr();
+		signal_on(0, 438500000, 30, no_tone);
+		hw.sig[0].tdma = true;
+		air.on = true;
+		air.hz = 438500000;
+		air.t0 = now + 1500;
+		air.dst = 99;
+		air.lc_at = 1;
+		req(RREQ_ZONE_POS, 6);
+		req(RREQ_DMR_HEAR_ALL, 1);
+		CHECK(sm.view.dmr.hear_all_latch);
+		req(RREQ_SCAN, RSCAN_ZONE);
+		run(100);
+		CHECK(sm.view.zone_pos != 6 && sm.view.dmr.hear_all_latch == (sm.view.ch.mode == RADIO_MODE_DMR));
+		if (off_mid_scan) {
+			req(RREQ_DMR_HEAR_ALL, 0);
+			CHECK(!sm.view.dmr.hear_all_latch);
+		}
+		bool held = false;
+		for (int i = 0; i < 300 && !held; i++) {
+			run(25);
+			held = sm.view.zone_pos == 5 && sm.view.scan_phase == SCAN_PH_HOLD && sm.view.dmr.state == RDMR_RX;
+		}
+		CHECK(held == !off_mid_scan);
+		req(RREQ_SCAN, RSCAN_STOP);
+		run(25);
+		CHECK(sm.view.scan == SCAN_OFF);
+		if (!off_mid_scan) {
+			CHECK(sm.view.zone_pos == 5 && sm.hear_all_latch && sm.view.dmr.hear_all_latch && sm.view.dmr.hear_all);
+		} else {
+			CHECK(!sm.view.dmr.hear_all_latch && !sm.view.dmr.hear_all);
+		}
+		air.on = false;
+		hw.sig[0].hz = 0;
+	}
+
+	// Without it, the same call doesn't hold (test_scan_dmr_mid_call) and nothing is latched where the scan stops
+	start();
+	all_dmr();
+	req(RREQ_ZONE_POS, 6);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	run(1000);
+	CHECK(!sm.view.dmr.hear_all_latch);
+	req(RREQ_SCAN, RSCAN_STOP);
+	run(25);
+	CHECK(!sm.hear_all_latch && !sm.view.dmr.hear_all_latch);
 }
 
 // Field report on an HR_C7000 radio (build b0b69d2): "the scan does not stop on DMR channels, even with a
@@ -4161,6 +4218,7 @@ int main(void)
 	test_mixed_scan();
 	test_scan_dmr_mid_call();
 	test_scan_led();
+	test_scan_dmr_digital_monitor();
 	test_scan_dmr_kept_timing();
 	test_scan_dmr_noise_deaf();
 	test_scan_dmr_high_floor();

@@ -28,6 +28,8 @@ $(if $(APP_BASE),,$(error boards/$(BOARD)/board.mk: APP_BASE, the image address,
 CPU_RAM_SECTION ?= .ram_lo
 MCU_DEFS += $(if $(CPU_RAM_SECTION),-DRFOUNDRY_CPU_RAM_SECTION='"$(CPU_RAM_SECTION)"')
 LDSCRIPT ?= boards/$(BOARD)/memory.ld
+# The DMR vocoder lends its one codec state block (vocoder.c) to P25 voice while no DMR voice runs (hal_vocoder.h lend)
+MCU_DEFS += $(if $(filter y,$(CONFIG_DMR)),-DHAL_VOCODER_LEND_BYTES=0x1C00)
 
 # drivers/gps/*: the shared GPS receive ring under gps_hrc.c (unreferenced, so linked out, on a radio without a GPS)
 PLATFORM_DIRS := platform/hrc7000 platform/hrc7000/freertos drivers/gps/nmea_line drivers/gps/gps_rx

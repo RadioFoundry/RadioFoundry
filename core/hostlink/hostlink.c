@@ -52,10 +52,10 @@
 #ifdef HOSTLINK_TASK_STACK
 // the board's (board.mk), for a deeper chain on its platform
 #elif CONFIG_DEBUGLINK
-// words: MMDVM frames on the stack; debug link replies format diagnostics lines. The deepest chain (the web view's
-// debug link section > the DMR data view, with the air queue inlined into the task) reads 2568 bytes with the macOS
-// toolchain; the CI's reads up to 16 deeper, and stack-check.md's overhead and margin come on top, 4 to spare
-#define HOSTLINK_TASK_STACK	731
+// words: MMDVM frames on the stack; debug link replies format diagnostics lines. The deepest chain (a hotspot frame
+// on air > the radio view copied, with the trunked system's view in it) reads 2608 bytes with the macOS toolchain on
+// the deepest board; the CI's reads up to 16 deeper, and stack-check.md's overhead and margin come on top, 4 to spare
+#define HOSTLINK_TASK_STACK	741
 #else
 #define HOSTLINK_TASK_STACK	512	// words: MMDVM frames are built on the stack
 #endif

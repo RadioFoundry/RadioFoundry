@@ -8,8 +8,9 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
 import * as diag from "../static/js/diag.js";
-import { SerialStream, Link, probe, silence, whyNoAnswer, noAnswerKey, writtenWithoutLink, parseRadioInfo, flashBytes, browserErrorKey, grantedPorts, knownRadioPort } from "../static/js/flasher/link.js";
+import { SerialStream, CableError, limits, Link, probe, silence, whyNoAnswer, noAnswerKey, writtenWithoutLink, parseRadioInfo, flashBytes, browserErrorKey, grantedPorts, knownRadioPort } from "../static/js/flasher/link.js";
 import { CpsSerial, TransportError } from "../static/js/codeplug/transport.js";
+import { Stub, limits as stubLimits } from "../static/js/flasher/stub.js";
 import { openFile, FileError } from "../static/js/editor/files.js";
 
 beforeEach(() => diag.reset());
@@ -133,6 +134,159 @@ test("a radio power-cycled with the cable in: hundreds of breaks in a row never 
 	await s.close();
 });
 
+// Field: a low-quality programming cable held the connect step at "Searching for the radio" until the page was
+// started over, every time, until the cable was unplugged: the wait for a quiet line had no end
+test("a line that never goes quiet ends the wait for it, with what came in; a quiet one ends it at once", async (t) => {
+	const was = stubLimits.drain;
+	stubLimits.drain = 150;
+	const s = { buf: new Uint8Array(0), clear() { this.buf = new Uint8Array(0); }, async write() {} };
+	const noise = setInterval(() => { s.buf = Uint8Array.of(...s.buf, 0x55); }, 5);
+	t.after(() => { stubLimits.drain = was; clearInterval(noise); });
+	const lines = [];
+	const stub = new Stub(s, { log: (l) => lines.push(l) });
+	const t0 = Date.now();
+	assert.equal(await stub.drain(30), false);
+	assert.ok(Date.now() - t0 < 1000, "the wait ends");
+	assert.ok(stub.noise.bytes > 5 && stub.noise.ms >= 150, JSON.stringify(stub.noise));
+	assert.match(lines.join("\n"), /never went quiet: \d+ bytes/);
+	clearInterval(noise);
+	const quiet = new Stub(s, { log() {} });
+	assert.equal(await quiet.drain(30), true);
+	assert.equal(quiet.noise, null);
+});
+
+test("a write the adapter never takes ends as a cable fault, and so does every write after it, at once", async (t) => {
+	const was = { ...limits };
+	Object.assign(limits, { write: 60 });
+	t.after(() => Object.assign(limits, was));
+	const port = new FakePort();
+	let aborted = 0, released = 0;
+	const s = await SerialStream.open(port);
+	port.writable = { getWriter: () => ({ write: () => new Promise(() => {}), abort: async () => { aborted++; }, releaseLock: () => { released++; } }) };
+	const t0 = Date.now();
+	await assert.rejects(s.write(new Uint8Array(4)), (e) => e instanceof CableError && e.code === "stalled");
+	assert.ok(Date.now() - t0 < 2000, "the write is given up");
+	assert.deepEqual([aborted, released], [1, 1], "what is queued is dropped and the writer let go");
+	assert.ok(diag.report().log.some((e) => /write stalled/.test(e.text)));
+	const t1 = Date.now();
+	await assert.rejects(s.write(new Uint8Array(4)), CableError);
+	assert.ok(Date.now() - t1 < 50, "no second wait");
+	// a write the adapter takes is not touched by the limit
+	const ok = await SerialStream.open(new FakePort());
+	const sent = [];
+	ok.port.writable = { getWriter: () => ({ write: async (d) => { sent.push(d.length); }, releaseLock() {} }) };
+	await ok.write(new Uint8Array(7));
+	assert.deepEqual(sent, [7]);
+});
+
+// A USB-serial cable (PL2303) whose writer takes `takes` chunks and then never another, as a Prolific adapter whose
+// sending side hung did on a Mac: receiving still worked, so the radio's greeting came in and no answer went out
+class FakeCable extends FakePort {
+	constructor(takes = Infinity) {
+		super();
+		this.takes = takes;
+		this.taken = 0;
+		this.buffers = [];
+		this.aborted = 0;
+		this.drained = 0;
+	}
+
+	getInfo() { return { usbVendorId: 0x067B, usbProductId: 0x2303 }; }
+
+	async open(opts) {
+		await super.open(opts);
+		this.buffers.push(opts.bufferSize);
+		this.writable = { getWriter: () => ({
+			write: (d) => (this.taken < this.takes ? (this.taken++, Promise.resolve()) : new Promise(() => {})),
+			abort: async () => { this.aborted++; },
+			close: () => { this.drained++; return new Promise(() => {}); },
+			releaseLock() {},
+		}) };
+	}
+}
+
+test("a cable whose adapter sends nothing fails as it opens, as a cable fault; one that sends opens as before", async (t) => {
+	const was = { ...limits };
+	Object.assign(limits, { sendCheck: 50 });
+	t.after(() => Object.assign(limits, was));
+	const dead = new FakeCable(3);
+	const t0 = Date.now();
+	await assert.rejects(SerialStream.open(dead), (e) => e instanceof CableError && e.code === "stalled" && /768 of 8192/.test(e.message));
+	assert.ok(Date.now() - t0 < 3000, "the check ends on its own");
+	assert.deepEqual(dead.buffers, [256], "checked through a small buffer, and not opened for use");
+	assert.equal(dead.aborted, 1, "the write left pending is dropped");
+	assert.equal(dead.drained, 0, "never drained: a drain on such an adapter froze the browser");
+	assert.equal(dead.isOpen, false, "the port is closed again, so Try Again can open it");
+	assert.ok(diag.report().log.some((e) => /send check failed/.test(e.text)));
+
+	const good = new FakeCable();
+	const s = await SerialStream.open(good);
+	assert.deepEqual(good.buffers, [256, 65536], "checked, then opened for use with the large buffer");
+	assert.equal(good.taken, 32, "8 KB went out");
+	assert.equal(good.aborted, 0);
+	await s.close();
+	// the radio's own USB port and ports without USB ids are not checked
+	const own = new FakeCable(0);
+	own.getInfo = () => ({ usbVendorId: 0x1FC9, usbProductId: 0x0094 });
+	await (await SerialStream.open(own)).close();
+	assert.deepEqual(own.buffers, [65536]);
+});
+
+// Field: a Prolific adapter on macOS whose port was closed with data still going out sent nothing more, through every
+// later open, until it was unplugged. The boot ROM wait keeps answers going out, so leaving it did exactly that
+test("a port closes only after what was written had its time on the line; a stalled one closes at once", async () => {
+	const port = new FakePort();
+	const s = await SerialStream.open(port);
+	port.writable = { getWriter: () => ({ write: async () => {}, releaseLock() {} }) };
+	await s.write(new Uint8Array(4608));	// 400 ms at 115200
+	const t0 = Date.now();
+	await s.close();
+	const waited = Date.now() - t0;
+	assert.ok(waited >= 400 && waited < 1500, `waited ${waited} ms`);
+	assert.equal(port.isOpen, false);
+	const quiet = await SerialStream.open(new FakePort());
+	const t1 = Date.now();
+	await quiet.close();
+	assert.ok(Date.now() - t1 < 300, "nothing written: no wait");
+	const stalled = await SerialStream.open(new FakePort());
+	stalled.outUntil = Date.now() + 10000;
+	stalled.fault = new CableError("stalled", "x");
+	const t2 = Date.now();
+	await stalled.close();
+	assert.ok(Date.now() - t2 < 300, "a cable that sends nothing is not waited for");
+});
+
+test("a cable picked before that sends nothing is reported, not passed over as a busy port", async (t) => {
+	const was = { ...limits };
+	Object.assign(limits, { sendCheck: 50 });
+	const nav = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+	t.after(() => { Object.assign(limits, was); Object.defineProperty(globalThis, "navigator", nav); });
+	const dead = new FakeCable(3);
+	Object.defineProperty(globalThis, "navigator", { value: { serial: { getPorts: async () => [dead] } }, configurable: true });
+	await assert.rejects(knownRadioPort([{ usbVendorId: 0x067B }]), (e) => e instanceof CableError && e.code === "stalled");
+	assert.equal(dead.opens, 1, "checked once");
+});
+
+test("a port that never opens ends as a cable fault", async (t) => {
+	const was = { ...limits };
+	Object.assign(limits, { open: 60 });
+	t.after(() => Object.assign(limits, was));
+	await assert.rejects(SerialStream.open({ open: () => new Promise(() => {}) }), (e) => e instanceof CableError && e.code === "stalled");
+});
+
+test("the line errors of a port are counted, for the page's verdict on a cable that never carried the radio's greeting", async () => {
+	const port = new FakePort();
+	const s = await SerialStream.open(port);
+	for (const name of ["BreakError", "FramingError", "BreakError"]) {
+		await new Promise((r) => setTimeout(r, 5));
+		lineError(port, name);
+	}
+	await new Promise((r) => setTimeout(r, 5));
+	assert.equal(s.lineErrors, 3);
+	assert.equal(s.received, 0);
+	await s.close();
+});
+
 test("a port this page left open is closed and opened again", async () => {
 	const port = new FakePort();
 	await port.open();
@@ -169,7 +323,7 @@ test("the ports granted before are tried as the chooser would list them; a silen
 	const filters = [{ usbVendorId: 0x0403 }];
 	assert.deepEqual(await grantedPorts(filters), [cable]);
 	assert.equal(await knownRadioPort(filters), null, "nothing answered: the chooser opens");
-	assert.equal(cable.opens, 1);
+	assert.equal(cable.opens, 2, "the send check, then the probe");
 	assert.equal(cable.isOpen, false, "closed again for the chooser to hand out");
 	assert.equal(other.opens, 0);
 });

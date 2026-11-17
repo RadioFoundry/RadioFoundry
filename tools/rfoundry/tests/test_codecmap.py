@@ -17,6 +17,7 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
+from rfoundry import boards, stockfw  # noqa: E402
 from rfoundry import codecmap as cm  # noqa: E402
 
 with open(os.path.join(HERE, "codecmap_vectors.json")) as f:
@@ -130,6 +131,57 @@ class TestCodecMap(unittest.TestCase):
         for p, m in cm.load_maps().items():
             with self.subTest(p):
                 self.assertEqual(m["profile"], p)
+
+
+class TestShippedLayouts(unittest.TestCase):
+    """Every stock profile that places its codec, against its shipped map: what a move relies on"""
+
+    def placing(self):
+        out = [p for p in stockfw.PROFILES.values() if len(stockfw.forms(p)) > 1]
+        self.assertTrue(out)
+        return out
+
+    def test_maps_are_read_once(self):
+        self.assertIs(cm.shipped(), cm.shipped())
+        self.assertEqual(sorted(cm.shipped()), sorted(cm.load_maps()))
+
+    def test_every_listed_site_moves_with_its_window(self):
+        # _layout_sites refuses a site or a value outside the carved windows: every address the map lists has a
+        # window to follow, and nothing it doesn't list points outside them (no outside_refs)
+        for prof in self.placing():
+            with self.subTest(prof["name"]):
+                m = stockfw.code_map(prof)
+                self.assertIsNotNone(m)
+                self.assertEqual(m["outside_refs"], [])
+                cur = stockfw.forms(prof)[0]
+                wins = stockfw.carve(prof, cur)
+                stock = [a for a, _ in wins]
+                for f in stockfw.forms(prof):
+                    sites = cm._layout_sites(m, wins, stock, [a for a, _, _ in stockfw.placed_windows(prof, f)])
+                    self.assertTrue(sites)
+
+    def test_current_crcs_follow_from_the_former_ones(self):
+        # the CRC of each window where the codec goes now, worked out from where an earlier release put it and the map
+        # alone, is the one the firmware pins: the two layouts and the map agree
+        for prof in self.placing():
+            fs = stockfw.forms(prof)
+            wins = stockfw.carve(prof, fs[0])
+            for f in fs[1:]:
+                with self.subTest(prof["name"], former=f["codec_profile"]):
+                    got = cm.relocate_crcs(stockfw.code_map(prof), wins, stockfw._crcs(f),
+                                           [a for a, _, _ in stockfw.placed_windows(prof, f)],
+                                           [a for a, _, _ in stockfw.placed_windows(prof, fs[0])])
+                    self.assertEqual(list(got), stockfw._crcs(fs[0]))
+
+    def test_placed_windows_leave_the_application_alone(self):
+        for prof in self.placing():
+            with self.subTest(prof["name"]):
+                lo, hi = boards.get(prof["board"]).app_region
+                wins = sorted((a, n) for a, n, _ in stockfw.layout(prof))
+                for a, n in wins:
+                    self.assertTrue(a >= hi or a + n <= lo, hex(a))
+                for (a, n), (b, _) in zip(wins, wins[1:]):
+                    self.assertLessEqual(a + n, b, hex(a))		# no two windows (or the descriptor) overlap
 
 
 class TestThumb(unittest.TestCase):

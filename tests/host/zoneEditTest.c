@@ -8,6 +8,7 @@
 #include <string.h>
 #include "codeplug/codeplug.h"
 #include "codeplug/zone_edit.h"
+#include "codeplug/codeplug_tag.h"
 #include "settings/settings.h"
 #include "storage/storage.h"
 #include "sim/sim_flash.h"
@@ -498,6 +499,41 @@ static void test_power_cut(void)
 	CHECK(sim_flash_violations() == 0);
 }
 
+// Copy here of a channel of a kind: the copy written and put in the zone takes the source's tag in the same op
+static void test_add_copy_tag(void)
+{
+	fresh();
+	channel_t c = make("Kind Ch", 451000000);
+	c.mode = RADIO_MODE_DMR;
+	c.rx_only = true;
+	CHECK(codeplug_set_channel(1, &c));
+	codeplug_tag_t t = { .kind = 0x80u, .system = CODEPLUG_SYSTEM_NONE, .flags = CODEPLUG_TAG_TX };
+	const uint8_t blk[2] = { 9, 8 };
+	CHECK(codeplug_tag_write(1, "Kind Ch", &t, blk, sizeof blk));
+	zone_t z = zone_of("Z", (const uint16_t[]){ 1 }, 1);
+	uint16_t at;
+	CHECK(zone_edit_create(&z, &at) == ZONE_EDIT_OK);
+	zone_op_t op;
+	memset(&op, 0, sizeof op);
+	op.kind = ZONE_OP_ADD_NEW;
+	op.zone = at;
+	op.pos = 1;
+	op.channel = codeplug_free_channel();
+	CHECK(codeplug_channel(1, &op.ch) && op.ch.kind == 0x80u && !op.ch.rx_only);
+	strcpy(op.ch.name, "Kind Ch 2");
+	op.from = 1;
+	CHECK(zone_edit_apply(&op, NULL) == ZONE_EDIT_OK && holds(at, (const uint16_t[]){ 1, op.channel }, 2));
+	channel_t back;
+	CHECK(codeplug_channel(op.channel, &back) && back.kind == 0x80u && !back.rx_only);
+	CHECK(codeplug_tag_read(op.channel, &t) && t.check == codeplug_name_check("Kind Ch 2") && t.len == 7);
+	// Without its source the copy is the receive-only stand-in, and the op says it failed
+	op.channel = codeplug_free_channel();
+	strcpy(op.ch.name, "Kind Ch 3");
+	op.from = 9;
+	CHECK(zone_edit_apply(&op, NULL) == ZONE_EDIT_FAILED);
+	CHECK(codeplug_channel(op.channel, &back) && back.kind == CODEPLUG_KIND_NONE && back.rx_only);
+}
+
 int main(void)
 {
 	test_list();
@@ -508,6 +544,7 @@ int main(void)
 	test_log();
 	test_refusals();
 	test_power_cut();
+	test_add_copy_tag();
 	if (failures) {
 		printf("zoneEditTest: %d failures\n", failures);
 		return 1;

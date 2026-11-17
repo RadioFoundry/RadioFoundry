@@ -49,8 +49,11 @@
 
 #define START_TASK_PRIORITY	5
 // words: the radio core's set-up runs here at boot (radio_sm_init, 584 bytes of frame on an HR_C7000 radio, then the APRS
-// identity load or a DMR VFO's contact search down to the flash driver); 512 left that radio 88 bytes (make stack-check)
+// identity load or a DMR VFO's contact search down to the flash driver); 512 left that radio 88 bytes (make stack-check).
+// A board whose deepest start chain needs more (tools/stack_check.py) passes its own START_TASK_STACK
+#ifndef START_TASK_STACK
 #define START_TASK_STACK	640
+#endif
 #define HOUSEKEEPING_MS		100
 #define POWER_OFF_TX_MS		200	// after the PTT release, before the latch drops
 #define POWER_OFF_DEREG_MS	3000	// at most this long for the ARS deregistration (gotcha 7.4)

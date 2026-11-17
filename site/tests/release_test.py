@@ -34,7 +34,7 @@ class Release(unittest.TestCase):
 		with tempfile.TemporaryDirectory() as out:
 			site = build.Site(out, "https://github.com/o/r", "main", log=lambda *a: None)
 			site.release = ""
-			self.assertEqual(site.firmware_line("en"), '<a href="https://github.com/o/r/releases">Changelog</a>')
+			self.assertEqual(site.firmware_line("en"), '<a href="https://github.com/o/r/commits/main">Changelog</a>')
 			site.release = "v26.11"
 			self.assertEqual(site.firmware_line("en"), '<a href="https://github.com/o/r/releases/tag/v26.11">Firmware v26.11</a>'
 					 ' · <a href="https://github.com/o/r/releases">Changelog</a>')

@@ -39,7 +39,9 @@ python3 tools/cps_client.py --exec "tests/host/cpsSim --populate" info     # aga
 The radio reads the open-firmware layout in place (`core/codeplug`): zones, channels, contacts, talkgroup lists, the DMR ID
 database. Edits made on the radio (save a temporary change, rename, add a contact) go through the editing model in
 [codeplug-native.md](../spec/codeplug-native.md) section 2 and are written by the housekeeping task as storage jobs.
-A native codeplug format is planned in the same document and only partly built.
+A native codeplug format is planned in the same document and only partly built. Channels of other digital modes, their systems
+and keys are keyed records beside the layout: [channel-modes.md](../spec/channel-modes.md), and
+[Adding a mode](adding-a-mode.md).
 
 ## Settings and safe writes
 

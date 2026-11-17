@@ -617,6 +617,12 @@ static void test_aprs_path(void)
 	CHECK(codeplug_set_aprs_path(1, "WIDE1-1", "WIDE2-1") && codeplug_aprs(1, &a) &&
 	      strcmp(a.path[0], "WIDE1-1") == 0 && strcmp(a.path[1], "WIDE2-1") == 0);
 	CHECK(!codeplug_set_aprs_path(2, "WIDE1-1", "") && !codeplug_set_aprs_path(0, "", ""));	// no record: none made
+	ser = codeplug_serial();
+	CHECK(codeplug_set_aprs_ssid(1, 12) && codeplug_serial() == ser + 1u && codeplug_aprs(1, &a) && a.ssid == 12 &&
+	      strcmp(a.path[0], "WIDE1-1") == 0 && strcmp(a.comment, "Mobile") == 0);
+	CHECK(sim_flash_data[EE + 0x1588u + 0x08] == 12 && sim_flash_data[EE + 0x1588u + 0x07] == 0 &&
+	      sim_flash_data[EE + 0x1588u + 0x09] == 0);	// one byte written
+	CHECK(!codeplug_set_aprs_ssid(1, 16) && !codeplug_set_aprs_ssid(2, 3) && !codeplug_set_aprs_ssid(0, 3));
 	CHECK(sim_flash_data[EE + 0x1588u + 0x40u] == 0xFF);
 }
 #endif

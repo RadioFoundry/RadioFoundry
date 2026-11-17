@@ -183,3 +183,10 @@ void gd32_gps_counts(uint32_t *good, uint32_t *bad, uint32_t *bytes)
 {
 	gps_rx_counts(&rx, good, bad, bytes);
 }
+
+const hal_gps_t gd32_gps = {
+	.present = gd32_gps_present,
+	.enable = gd32_gps_enable,
+	.running = gd32_gps_running,
+	.counts = gd32_gps_counts,
+};

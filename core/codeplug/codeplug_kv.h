@@ -21,6 +21,21 @@
 #define CODEPLUG_KEY_TOT_WARN_TONE	0x0004u	// bool: the tone before the TX time-out
 #define CODEPLUG_KEY_BATTERY_TONE	0x0005u	// bool: the low and critical battery tones
 #define CODEPLUG_KEY_TX_DENY_TONE	0x0006u	// bool: the tone when PTT is refused or a transmission cut
+// Tier III systems' own records, key = base + system (docs/spec/dmr-trunking-codeplug.md 5)
+#define CODEPLUG_KEY_T3_POLL	0x0800u		// the short data poll setting and reply, 0x0800-0x08FF
+#define CODEPLUG_KEY_T3_SUPL	0x0900u		// the supplementary user data the radio offers, 0x0900-0x09FF
+
+// Key families (record lists): record n is base + n (docs/spec/channel-modes.md 3). Every range is reserved whole,
+// so a later mode never renumbers
+#define CODEPLUG_KEY_SYSTEM	0x0100u		// system records (0x0100-0x01FF)
+#define CODEPLUG_KEY_SYS_CHAN	0x0200u		// system entries: sites, channels, plan rows (0x0200-0x02FF)
+#define CODEPLUG_KEY_SYS_KEY	0x0300u		// a system's own secret, key = 0x0300 + system (0x0300-0x03FF)
+#define CODEPLUG_KEY_CH_TAG	0x0400u		// channel tags, 0x0400 + channel - 1 (0x0400-0x07FF)
+#define CODEPLUG_KEY_MODE_SET	0x0A00u		// a kind's radio-wide record, key = 0x0A00 + kind (0x0A00-0x0AFF)
+#define CODEPLUG_KEY_TARGET	0x1000u		// call targets the contact record can't hold (0x1000-0x17FF)
+#define CODEPLUG_KEY_TLIST	0x1800u		// receive lists of call targets (0x1800-0x18FF)
+#define CODEPLUG_KEY_TRAFFIC	0x1900u		// traffic keys, each a system's (0x1900-0x1CFF)
+#define CODEPLUG_KEY_ZONE_TAG	0x1D00u		// reserved: per-zone mode records, 0x1D00 + zone (0x1D00-0x1DFF)
 
 // How a key's value is encoded (docs/spec/codeplug-settings.md 3.1): the encoding, never a width. A type is never
 // redefined, only grown by appending bytes
@@ -120,7 +135,7 @@ typedef struct {
 #define CODEPLUG_KV_NONE	0xFFFFu
 void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi);
 // The next entry in range: its key in *key, its value's length (at most max bytes copied to buf); -1 at the end, when
-// the area isn't valid or changed since the walk began
+// the area isn't valid or changed since the walk began. max 0 (buf may be NULL) walks the keys only
 int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max);
 
 // One change of a batch (codeplug_kv_write): set key to len bytes at value, or with len CODEPLUG_KV_REMOVE remove it.

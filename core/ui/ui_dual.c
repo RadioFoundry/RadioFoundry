@@ -15,6 +15,7 @@
 #include "gfx.h"
 #include "i18n.h"
 #include "codeplug/codeplug.h"
+#include "codeplug/codeplug_modes.h"
 
 #define START_GRACE_MS	500	// the radio view may still show no watch this soon after asking for one
 #define BACK_AGAIN_MS	2000	// Back on Home, then Back again within this: the watch stops
@@ -169,6 +170,16 @@ static uint8_t tuned_pane(const radio_view_t *v)
 	return UI_DUAL_NONE;
 }
 
+// The mode a channel runs in: a stored channel of a kind keeps DMR in its record (channel-modes.md 2), its kind's mode
+// is the one shown
+static uint8_t shown_mode(const channel_t *c)
+{
+	if (!codeplug_kind_built(c->kind))
+		return c->mode;
+	// The kinds a build runs: P25 (trunked too) and NXDN
+	return c->kind == CODEPLUG_KIND_NXDN ? RADIO_MODE_NXDN : RADIO_MODE_P25;
+}
+
 static void pane_fill(uint8_t i)
 {
 	static channel_t ch;	// static: not on the UI task's stack
@@ -200,8 +211,10 @@ static void pane_fill(uint8_t i)
 	}
 	if (s->valid)
 		ch = s->ch;	// as the radio has it: changes for now included
-	p->mode = ch.mode;
+	p->mode = shown_mode(&ch);
 	p->rx_hz = ch.rx_hz;
+	if (p->mode == RADIO_MODE_P25 || p->mode == RADIO_MODE_NXDN)
+		return;	// no tone or slot: the engine's own squelch (the channel's settings say which)
 	sbuf_t b;
 	sb_init(&b, p->detail, sizeof p->detail);
 #if CONFIG_DMR
@@ -1320,7 +1333,8 @@ static void pick_item(uint16_t i, ui_item_t *it)
 	// "146.940 FM", else "146.940": the channel's name gives way last
 	sb_str(&b, TEXT_ALT_OPEN);
 	sb_freq(&b, ch.rx_hz);
-	sb_str(&b, ch.mode == RADIO_MODE_DMR ? " DMR" : " FM");
+	sb_chr(&b, ' ');
+	sb_str(&b, ui_mode_name(shown_mode(&ch)));
 	sb_str(&b, TEXT_ALT_NEXT);
 	sb_freq(&b, ch.rx_hz);
 	sb_str(&b, TEXT_ALT_CLOSE);
