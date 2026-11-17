@@ -23,7 +23,7 @@ import * as c7 from "./c7000.js";
 import { openVendorFile, describe as describeVendorFile, analysisCandidate, whyNot } from "./vendorfile.js";
 import { pickProblem } from "./explain.js";
 import { upgradeSlot } from "./c7000v1.js";
-import { radioTop } from "./radiotop.js";
+import { radioTop, hasNoScreen } from "./radiotop.js";
 import { putBlob, getBlob } from "./codecsave.js";
 import { makeBundle, describeFirmware, bundleName } from "./backup.js";
 import { register } from "./backends.js";
@@ -82,7 +82,7 @@ const viaIap = () => session().how === "iap";
 // What the radio's screen shows while the stub runs: RadioFoundry's loader screen, whatever the original firmware last drew, or
 // nothing after a boot ROM load
 // A radio without a display: what the page tells the user to look at can't be its screen
-const noScreen = () => S().radio?.display === "none";
+const noScreen = () => hasNoScreen(S().radio);
 const screenNow = () => ({ rfoundry: "loader", usmart: "any" })[session().how] || "off";
 
 export function init(context) {

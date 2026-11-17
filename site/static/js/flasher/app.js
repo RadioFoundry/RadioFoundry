@@ -24,7 +24,7 @@ import { openVendorFile, describe as describeVendorFile, analysisCandidate, offe
 import { pickProblem, errorProblem, vendorContext, supportedFiles, foldSupported, keepNote, nowFor, nowChoice, OFFER } from "./explain.js";
 import { confirmNoCodec } from "./nocodec.js";
 import { makePlan, KEEP, MERGE } from "./plan.js";
-import { radioPicture, holdKeys } from "./radiotop.js";
+import { radioPicture, holdKeys, hasNoScreen } from "./radiotop.js";
 import { validRef, refShort, defaultRef, firmwareName, betaLink } from "./version.js";
 import { verify, segments, forDevBuild } from "./manifest.js";
 import { Dfu, DfuError, NormalModeError, WebUsbTransport, checkKey, usbSupported } from "./dfu.js";
@@ -384,7 +384,7 @@ function stepsFor() {
 }
 const backend = () => backendOf(S.radio);
 // A radio without a display: what the page tells the user to look at can't be its screen
-const noScreen = () => S.radio?.display === "none";
+const noScreen = () => hasNoScreen(S.radio);
 
 async function loadData() {
 	const get = async (name) => (await fetch(`${ROOT}data/${name}`)).json();

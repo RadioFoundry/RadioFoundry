@@ -19,6 +19,8 @@ export const shapeStyle = (radio) => (radio?.frame_geometry?.aspect > 0 ? `--rt-
 
 // The keys held to enter update mode, by key name (board.toml [flash.bootloader] hold): [] when the data has none
 export const holdKeys = (radio) => radio?.flash?.bootloader_hold || [];
+// a radio without a display (radios.json display "none"): text and pictures that would point at a screen change
+export const hasNoScreen = (radio) => radio?.display === "none";
 
 // A key as the radio's label names it (flash.key.<name>), else its name in capitals
 export function keyLabel(name, tr = t) {
@@ -71,8 +73,8 @@ const screenShot = (radio, sc) => (radio?.gallery && SCREEN_SHOTS[sc] ? `${ROOT}
 export function radioTop(radio, initial = {}) {
 	const src = pictureSrc(radio);
 	const pct = radio?.frame_geometry?.screen_pct;
-	// a radio without a display: no screen line in the caption, no shot over the picture
-	const noScreen = radio?.display === "none";
+	// no screen line in the caption, no shot over the picture
+	const noScreen = hasNoScreen(radio);
 	const shot = h("img", { alt: "", class: "rt-shot", hidden: true });
 	// what the screen shows, laid over the picture's screen where the data says it is
 	const screen = src && pct ? h("div", { class: "rt-screen", style: `left:${pct.left}%;top:${pct.top}%;width:${pct.width}%;height:${pct.height}%` }, shot) : null;

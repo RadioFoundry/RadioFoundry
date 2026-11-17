@@ -379,15 +379,12 @@ class Site:
 			self.docs_pages(lang)
 			self.not_found(lang)
 		for b in self.boards:
-			if not device.has_display(b):
-				self.write("static/img/radios/%s.svg" % b["id"], b["render"]["frame"])
-				for look, img in b["look_renders"].items():
-					self.write("static/img/radios/%s-%s.svg" % (b["id"], look), img["frame"])
-				continue
-			boot = self.shots.scaled(b["gallery"], "boot")
-			self.write("static/img/radios/%s.svg" % b["id"], device.boot(b["render"], boot))
+			# the drawing with the boot screen in its display; a radio without one: the bare frame
+			boot = self.shots.scaled(b["gallery"], "boot") if device.has_display(b) else None
+			drawn = lambda img: device.boot(img, boot) if boot is not None else img["frame"]
+			self.write("static/img/radios/%s.svg" % b["id"], drawn(b["render"]))
 			for look, img in b["look_renders"].items():
-				self.write("static/img/radios/%s-%s.svg" % (b["id"], look), device.boot(img, boot))
+				self.write("static/img/radios/%s-%s.svg" % (b["id"], look), drawn(img))
 		scales = self.shots.write(self.out)
 		self.log("screenshots: " + ", ".join("%s x%d" % gk for gk in scales.items()))
 		self.write(".nojekyll", "")

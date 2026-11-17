@@ -61,13 +61,19 @@ test("the picture's shape goes to the stylesheet, which limits its height; none 
 	assert.match(css, /\.rt-pic \{ --rt-h: \d+px;[^}]*width: calc\(var\(--rt-h\) \* var\(--rt-aspect, 1\)\); max-width: \d+px;/);
 });
 
-test("a radio without a display gets no screen line", () => {
+test("a radio without a display gets no screen line", async () => {
+	const { hasNoScreen } = await import("../static/js/flasher/radiotop.js");
+	assert.equal(hasNoScreen({ display: "none" }), true);
+	assert.equal(hasNoScreen({ display: "128x64 mono" }), false);
+	assert.equal(hasNoScreen(null), false);
 	const top = readFileSync(new URL("../static/js/flasher/radiotop.js", import.meta.url), "utf8");
-	assert.match(top, /const noScreen = radio\?\.display === "none";/);
+	assert.match(top, /const noScreen = hasNoScreen\(radio\);/);
 	assert.match(top, /const url = noScreen \? null : screenShot\(radio, sc\);/);
 	assert.match(top, /sc === "any" \|\| noScreen \? null : t\(`flash\.c7\.visual\.screen_\$\{sc\}`\)/);
 	const ui = readFileSync(new URL("../static/js/flasher/c7000ui.js", import.meta.url), "utf8");
-	assert.match(ui, /const noScreen = \(\) => S\(\)\.radio\?\.display === "none";/);
+	assert.match(ui, /const noScreen = \(\) => hasNoScreen\(S\(\)\.radio\);/);
+	const app = readFileSync(new URL("../static/js/flasher/app.js", import.meta.url), "utf8");
+	assert.match(app, /const noScreen = \(\) => hasNoScreen\(S\.radio\);/);
 	assert.match(ui, /noScreen\(\) \? "flash\.c7\.connect\.no_keys_dark" : "flash\.c7\.connect\.no_keys"/);
 	for (const [k, v] of Object.entries(en)) if (k.includes("_noscreen")) assert.ok(!/screen|display/i.test(v), `${k} names a screen`);
 	assert.ok(en["flash.c7.connect.no_keys_dark"] && !/screen/i.test(en["flash.c7.connect.no_keys_dark"]));
