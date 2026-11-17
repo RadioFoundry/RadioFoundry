@@ -431,9 +431,15 @@ export function makeStockRoutes(host) {
 			} catch (e) {
 				ctx.flashFinished(started, e);
 				await busy(false);
+				// a block the radio never took, the loader's retries spent: a second in a row on this cable is the cable,
+				// which loses the same data on every try (users repeated one such write 19 times)
+				c.blockFails = e?.block ? (c.blockFails || 0) + 1 : 0;
 				if (left()) return;
 				const stopped = e.message === "stopped";
-				fill(status, (stopped ? notice(t("flash.iap.cancelled"), "info") : errorNotice(t("flash.iap.failed", { error: ctx.errorText(e) }))),
+				const cableLoses = c.blockFails >= 2 ? h("div", { class: "notice bad" }, h("p", {}, h("b", {}, t("flash.cable.fault_title"))),
+					h("p", {}, t("flash.cable.blocks_lost", { tries: c.blockFails })), h("p", {}, t("flash.cable.fix"))) : null;
+				if (cableLoses) diag.note("cable fault", { code: "blocks_lost", tries: c.blockFails, block: e.block });
+				fill(status, (stopped ? notice(t("flash.iap.cancelled"), "info") : errorNotice(t("flash.iap.failed", { error: ctx.errorText(e) }))), cableLoses,
 					stopped ? null : h("div", { class: "notice info" }, h("p", {}, t("flash.iap.retry_safe")), h("p", { class: "small" }, t("flash.iap.retry_how"))),
 					stopped ? null : ctx.helpLink());
 				prog.el.hidden = true;

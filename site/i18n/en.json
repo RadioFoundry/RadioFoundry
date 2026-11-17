@@ -2216,6 +2216,7 @@
  "flash.cable.heard": "Received through the cable: {bytes} bytes, {errors} line errors.",
  "flash.cable.rom_silent": "Nothing has come through the cable, not even the noise a radio makes on the line when it is switched on. If the radio was switched off and on while the page listened, the plug is not making contact in the radio's jack, or the cable is faulty.",
  "flash.cable.rom_garbled": "The cable carried something from the radio ({bytes} bytes, {errors} line errors), but never the radio's greeting. The cable reads the radio's signal badly: push the plug fully in, or use a cable with another chip.",
+ "flash.cable.blocks_lost": "The radio stopped taking data during the write on {tries} tries in a row. The cable loses data on the way to the radio, and another try with the same cable will most likely fail the same way.",
  "report.try_again": "Try Again",
  "flash.backup.failed": "The backup stopped before it finished, and nothing was saved. {error}",
  "flash.backup.retry_how": "Choose Try Again to start the backup over. If it stops again, turn the radio off and on, wait for its home screen, and try again. If it keeps stopping, choose Calibration only so that at least the factory calibration is saved, and report the problem.",
