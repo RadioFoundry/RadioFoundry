@@ -1251,7 +1251,7 @@
  "flash.c7.write.range": "已写入",
  "flash.c7.write.careful": "在电台编程工具报告完成之前，请勿断开电台或线缆。",
  "flash.c7.write.careful_text": "安装期间 LED 快速闪烁。只写入有变化的部分，且每一部分都会校验。如果安装被中断，请重新运行。",
- "flash.c7.write.rom_flag": "此电台从启动区域的第一个扇区启动固件。该扇区在固件通过校验后最后写入，因此安装若被中断，电台仍会启动此前的固件。",
+ "flash.c7.write.rom_flag": "此电台从启动区域的第一个扇区启动固件。该扇区在固件通过校验后最后写入，因此电台不会启动只写了一半的固件。若安装被中断，请关闭电台后重新安装：电台的启动模式仍可接受安装。",
  "flash.c7.write.go": "安装",
  "flash.c7.write.writing": "正在安装第 {done}/{todo} 部分",
  "flash.c7.write.verified": "已安装并校验",

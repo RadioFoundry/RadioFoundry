@@ -1251,7 +1251,7 @@
  "flash.c7.write.range": "Escrito",
  "flash.c7.write.careful": "No desconectes la radio ni el cable hasta que la utilidad de programación de radios indique que terminó.",
  "flash.c7.write.careful_text": "El LED parpadea rápido durante la instalación. Solo se escriben las partes que cambiaron, y cada una se verifica. Si la instalación se interrumpe, ejecútala de nuevo.",
- "flash.c7.write.rom_flag": "Esta radio arranca su firmware desde el primer sector de su área de arranque. Ese sector se escribe al final, después de verificar el firmware, así que una instalación interrumpida deja la radio arrancando lo mismo que antes.",
+ "flash.c7.write.rom_flag": "Esta radio arranca su firmware desde el primer sector de su área de arranque. Ese sector se escribe al final, después de verificar el firmware, así que la radio nunca arranca un firmware a medio escribir. Si la instalación se interrumpe, apague la radio y vuelva a ejecutarla: el modo de arranque de la radio la sigue aceptando.",
  "flash.c7.write.go": "Instalar",
  "flash.c7.write.writing": "Instalando parte {done} de {todo}",
  "flash.c7.write.verified": "Instalado y verificado",

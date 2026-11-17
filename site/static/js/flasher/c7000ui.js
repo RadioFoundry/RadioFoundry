@@ -1152,7 +1152,8 @@ async function romFlagLast(stub, c, board, res, written, onSector, opts) {
 
 // An install's program flash write: the application (and the codec slot) in the application area, each sector
 // verified (Stub.writeProgram), then on a board the boot ROM starts directly its flag sector, made to name the
-// application's entry. Last, so an interrupted install leaves the radio starting what it started before.
+// application's entry. Last, so the flag never names a half-written application; an interrupted install still
+// leaves the application area changed (recover through the boot ROM).
 // onSector(addr, state) as writeProgram's. Resolves {written, same}
 export function installWrite(stub, c, board, start, data, onSector = () => {}) {
 	return guardedWrite(stub, c, board, async (written) => {

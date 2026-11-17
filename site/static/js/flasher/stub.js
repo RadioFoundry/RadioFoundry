@@ -845,8 +845,8 @@ export class Stub {
 
 	// The boot ROM's flag sector at program flash 0, on a board the boot ROM starts directly (stubtool.py
 	// write_rom_flag): made to name entry, or, with sector, made that sector (a restore: the backup's own flag sector,
-	// which must start with the flag). The caller writes it after the application is written and verified, so an
-	// interrupted write leaves the radio starting what it started before. Only that one sector is written; a protected
+	// which must start with the flag). The caller writes it after the application is written and verified, so it never
+	// names a half-written application; an interrupted install still leaves the application area changed. Only that one sector is written; a protected
 	// region over it refuses it. Resolves true when it was written, false when it already held that.
 	async writeRomFlag(entry, { sector = null } = {}) {
 		if (sector ? sector.length !== SECTOR || !hasRomFlag(sector) : !Number.isInteger(entry)) throw new StubError("not a boot ROM flag sector");

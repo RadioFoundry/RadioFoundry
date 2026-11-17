@@ -1427,8 +1427,8 @@ class Radio:
 
     def write_rom_flag(self):
         """On a board the boot ROM starts directly (profile rom_entry), make the flag sector at flash 0 name the
-        application's entry. Written after the application, so an interrupted write leaves the radio starting what it
-        started before. The rest of the sector is kept; a sector without the flag gets the flag, the entry and 0xFF.
+        application's entry. Written after the application, so the flag never names a half-written one;
+        an interrupted install still leaves the application area changed (recover through the boot ROM). The rest of the sector is kept; a sector without the flag gets the flag, the entry and 0xFF.
         Returns 1 if the sector was written, else 0."""
         entry = (self.profile or {}).get("rom_entry")
         if entry is None:
@@ -3246,8 +3246,8 @@ def main(argv=None, raise_errors=False):
     ap.add_argument("--slow-cable", action="store_true", help="boot ROM: send the answer to its greeting every 30 ms "
                     "from the start, for a cable or USB hub too slow for the ROM's 48 ms window. Radio OFF before the "
                     "tool starts: a running firmware would get the answers too")
-    ap.add_argument("--led-red", type=int, help="GPIO pin index of the red LED (default the board's, else %d; 255 = none)" % LED_RED)
-    ap.add_argument("--led-green", type=int, help="GPIO pin index of the green LED (default the board's, else %d; 255 = none)" % LED_GREEN)
+    ap.add_argument("--led-red", type=int, help="GPIO pin index of the red LED (default the board's, none without --board; 255 = none)")
+    ap.add_argument("--led-green", type=int, help="GPIO pin index of the green LED (default the board's, none without --board; 255 = none)")
     ap.add_argument("--led-status", choices=("red", "green", "both", "off"), default="both",
                     help="which LED blinks while the stub is up: 500 ms phases waiting, 125 ms while data moves")
     ap.add_argument("--led-seq", metavar="SPEC", help="play an LED sequence now, e.g. 255:0:300,0:255:300 (RED:GREEN:MS "
