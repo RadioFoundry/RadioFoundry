@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { DROP_OK, currentBuild, planUpdate, releaseOf } from "../static/js/flasher/update.js";
+import { DROP_OK, START_KEEP, currentBuild, planUpdate, releaseOf, sameVariant } from "../static/js/flasher/update.js";
 import { Selection } from "../static/js/flasher/select.js";
 import { START_SINCE } from "../static/js/flasher/langsuggest.js";
 import { readFileSync } from "node:fs";
@@ -37,7 +37,7 @@ test("a preset build updates to the same preset; its new features are only said"
 	assert.equal(cur.kind, "preset");
 	const s = sel();
 	const plan = planUpdate(cur, s);
-	assert.deepEqual(plan, { preset: "full", added: ["NEW"], needed: [], dropped: [], ask: [], ready: true });
+	assert.deepEqual(plan, { preset: "full", added: ["NEW"], needed: [], dropped: [], ask: [], ready: true, startAsk: [] });
 	assert.deepEqual([...s.on].sort(), ["A", "B", "C", "NEW"]);
 	// the amateur preset gained nothing
 	const am = planUpdate(currentBuild(probe({ git: "aaaa111", preset: "amateur", off: "B,D,NEW" }), RADIO, RELEASES, REPORTED), s);
@@ -165,7 +165,7 @@ test("older firmware: a features= list that fits one variant is that preset, els
 	const odd = old("A,B");
 	assert.deepEqual([odd.kind, odd.guess], ["unknown", "full"]);
 	const s = sel();
-	assert.deepEqual(planUpdate(odd, s), { preset: null, added: [], needed: [], dropped: [], ask: [], ready: true });
+	assert.deepEqual(planUpdate(odd, s), { preset: null, added: [], needed: [], dropped: [], ask: [], ready: true, startAsk: [] });
 	assert.equal(s.matches(), "full");
 	// a derived name features= carries (DMR_DATA_CORE) is no switch: it doesn't count against a variant
 	assert.deepEqual([old("A,B,C,DMR_DATA_CORE").kind, old("A,B,C,DMR_DATA_CORE").preset], ["preset", "full"]);
@@ -218,7 +218,7 @@ test("a custom build's update turns on a new switch that a feature it keeps now 
 	assert.equal(cur.kind, "custom");
 	for (const decided of [{}, { Y: false }]) {
 		const s = new Selection(radio, [F("X", ["Y"]), F("Y"), F("Z")], [{ id: "full" }]);
-		assert.deepEqual(planUpdate(cur, s, decided), { preset: null, added: ["Y"], needed: [], dropped: [], ask: [], ready: true });
+		assert.deepEqual(planUpdate(cur, s, decided), { preset: null, added: ["Y"], needed: [], dropped: [], ask: [], ready: true, startAsk: [] });
 		assert.deepEqual([...s.on].sort(), ["X", "Y"]);
 	}
 });
@@ -229,7 +229,7 @@ test("a custom build's update turns on a switch the build had off when a feature
 	const rels = [{ board: "r1", version: "v1", git: "aaaa111", git_time: 1, variant: "full", features: "W,X,Z" }];
 	const cur = currentBuild(probe({ git: "aaaa111", preset: "custom", off: "W,Z" }), radio, rels, ["W", "X", "Z"]);
 	const s = new Selection(radio, [F("W"), F("X", ["W"]), F("Z")], [{ id: "full" }]);
-	assert.deepEqual(planUpdate(cur, s), { preset: null, added: [], needed: ["W"], dropped: [], ask: [], ready: true });
+	assert.deepEqual(planUpdate(cur, s), { preset: null, added: [], needed: ["W"], dropped: [], ask: [], ready: true, startAsk: [] });
 	assert.deepEqual([...s.on].sort(), ["W", "X"]);
 });
 
@@ -283,4 +283,83 @@ test("a new feature answered On keeps a new one it needs on, whatever the order 
 			assert.equal(plan.ready, true);
 		}
 	}
+});
+
+// The build service's record of a radio's build (GET /v1/builds/match) and VERSION start=: a variant stays that
+// variant, and the start language stays as the radio has it
+const LANGS = ["ES", "FR"].flatMap((c) => [{ name: `LANG_${c}`, needs: { all: [], any: [] } },
+	{ name: `LANG_DEFAULT_${c}`, needs: { all: [`LANG_${c}`], any: [] } }]);
+const LFEATS = [...FEATURES, ...LANGS];
+const LRADIO = { ...RADIO, config: { full: ["A", "B", "C", "NEW", "LANG_ES"], amateur: ["A", "C", "LANG_ES"] } };
+const lsel = () => new Selection(LRADIO, LFEATS, [{ id: "full" }, { id: "amateur" }]);
+const svc = (off, version = {}) => probe({ git: "dddd444", git_time: "1794900000", preset: "custom", off, ...version });
+
+test("a variant is a variant whatever its start language", () => {
+	const full = ["A", "B", "C", "LANG_ES"];
+	assert.ok(sameVariant(full, full));
+	assert.ok(sameVariant([...full, "LANG_DEFAULT_ES"], full));
+	assert.ok(sameVariant([...full, "LANG_FR", "LANG_DEFAULT_FR"], full));
+	assert.ok(!sameVariant([...full, "LANG_FR"], full));
+	assert.ok(!sameVariant(["A", "B", "LANG_ES"], full));
+});
+
+test("a Full build from the service updates as Full, its new features said, nothing outside Full turned on", () => {
+	// built before NEW and the French pack existed: neither in off=, neither in the record
+	const cur = currentBuild(svc("D,LANG_DEFAULT_ES"), LRADIO, [], REPORTED, { features: ["A", "B", "C", "LANG_ES"], from_update: false });
+	assert.deepEqual([cur.kind, cur.preset], ["preset", "full"]);
+	const s = lsel();
+	const plan = planUpdate(cur, s);
+	assert.deepEqual([plan.preset, plan.added, plan.ready], ["full", ["NEW"], true]);
+	assert.deepEqual([...s.on].sort(), ["A", "B", "C", "LANG_ES", "NEW"]);
+});
+
+test("a Full build in Spanish stays Full in Spanish", () => {
+	const cur = currentBuild(svc("D"), LRADIO, [], REPORTED, { features: ["A", "B", "C", "LANG_ES", "LANG_DEFAULT_ES"], from_update: false });
+	assert.deepEqual([cur.kind, cur.preset, cur.start], ["preset", "full", ["LANG_DEFAULT_ES"]]);
+	const s = lsel();
+	assert.ok(planUpdate(cur, s).ready);
+	assert.ok(s.on.has("LANG_DEFAULT_ES") && !s.on.has("LANG_DEFAULT_FR"));
+});
+
+test("firmware that says its variant and start language keeps both", () => {
+	const cur = currentBuild(probe({ git: "eeee555", preset: "amateur", off: "B,D", start: "fr" }), LRADIO, [], REPORTED);
+	assert.deepEqual([cur.kind, cur.preset, cur.start], ["preset", "amateur", ["LANG_DEFAULT_FR"]]);
+	const s = lsel();
+	planUpdate(cur, s);
+	assert.deepEqual([...s.on].sort(), ["A", "C", "LANG_DEFAULT_FR", "LANG_ES", "LANG_FR"]);
+	const en = currentBuild(probe({ git: "eeee555", preset: "full", off: "D", start: "en" }), LRADIO, [], REPORTED);
+	const s2 = lsel();
+	planUpdate(en, s2);
+	assert.ok(![...s2.on].some((n) => n.startsWith("LANG_DEFAULT_")));
+});
+
+test("a Full build an Update turned French by mistake: Full again, the user picks the language", () => {
+	const cur = currentBuild(svc("D,LANG_DEFAULT_ES"), LRADIO, [], REPORTED,
+		{ features: ["A", "B", "C", "NEW", "LANG_ES", "LANG_FR", "LANG_DEFAULT_FR"], from_update: true });
+	assert.deepEqual([cur.kind, cur.preset, cur.startAsk], ["preset", "full", ["LANG_DEFAULT_FR"]]);
+	let s = lsel();
+	let plan = planUpdate(cur, s);
+	assert.deepEqual([plan.startAsk, plan.ready], [["LANG_DEFAULT_FR"], false]);
+	s = lsel();
+	plan = planUpdate(cur, s, { [START_KEEP]: false });
+	assert.ok(plan.ready);
+	assert.deepEqual([...s.on].sort(), ["A", "B", "C", "LANG_ES", "NEW"]);
+	s = lsel();
+	planUpdate(cur, s, { [START_KEEP]: true });
+	assert.ok(s.on.has("LANG_DEFAULT_FR") && s.on.has("LANG_FR"));
+	// firmware that says start= is never asked
+	const told = currentBuild(svc("D,LANG_DEFAULT_ES", { start: "fr" }), LRADIO, [], REPORTED,
+		{ features: ["A", "B", "C", "NEW", "LANG_ES", "LANG_FR", "LANG_DEFAULT_FR"], from_update: true });
+	assert.equal(told.startAsk, undefined);
+});
+
+test("a custom service build keeps its switches and asks about the ones newer than it", () => {
+	// Full without C, built before NEW
+	const cur = currentBuild(svc("C,D,LANG_DEFAULT_ES"), LRADIO, [], REPORTED, { features: ["A", "B", "LANG_ES"], from_update: false });
+	assert.equal(cur.kind, "custom");
+	const s = lsel();
+	const plan = planUpdate(cur, s);
+	assert.deepEqual([plan.ask, plan.ready], [["NEW", "LANG_FR"], false]);	// the French pack is new to it too
+	assert.deepEqual([...s.on].sort(), ["A", "B", "LANG_ES"]);
+	assert.ok(!s.on.has("LANG_DEFAULT_FR") && !s.on.has("LANG_FR"));
 });
