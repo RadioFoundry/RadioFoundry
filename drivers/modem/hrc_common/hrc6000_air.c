@@ -947,6 +947,7 @@ void hrc6000_air_poll(hrc6000_air_t *a)
 			c.hard = r->hard;
 			c.soft = r->soft;
 			ev.chunk = &c;
+			a->st.chunks++;
 		} else {
 			ev.arg = e.arg;
 		}

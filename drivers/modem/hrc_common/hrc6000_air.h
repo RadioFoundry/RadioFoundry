@@ -100,7 +100,7 @@ typedef struct {
 	uint32_t halves;	// FM copy halves taken
 	uint32_t overruns;	// ... dropped: the ring was full (the task was behind)
 	uint32_t half_fixes;	// ... where the RAM showed the other half complete than the one expected
-	uint32_t chunks;	// soft modem chunks handed out
+	uint32_t chunks;	// chunks handed out (records and the soft modem's; not the erasures for a fill)
 	uint32_t modem_us;	// time in the soft modem ...
 	uint32_t modem_span_us;	// ... for this much signal
 } hrc6000_air_stats_t;
