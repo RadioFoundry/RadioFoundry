@@ -826,6 +826,7 @@
  "flash.done.lead": "Quando la radio si è riavviata e lo schermo è acceso, verifica l'installazione.",
  "flash.done.lead_noscreen": "Quando la radio si è riavviata, verifica l'installazione.",
  "flash.done.check": "Verifica l'installazione",
+ "flash.done.pick_port": "La radio ora esegue RadioFoundry, quindi il browser la mostra come un nuovo dispositivo e la chiede una volta. Fai di nuovo clic su «Verifica l'installazione» e scegli {radio} nell'elenco (su Windows può comparire come dispositivo seriale USB). Se l'elenco è vuoto, attendi che la radio si sia riavviata.",
  "flash.nav.finish": "Fine",
  "flash.nav.finish_no_backup": "Fine senza backup",
  "flash.nav.finish_no_channels": "Fine senza canali",

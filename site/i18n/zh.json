@@ -826,6 +826,7 @@
  "flash.done.lead": "电台重启并亮屏后，请校验安装。",
  "flash.done.lead_noscreen": "电台重启后，请校验安装。",
  "flash.done.check": "校验安装",
+ "flash.done.pick_port": "电台现在运行 RadioFoundry，浏览器会把它列为新设备并请求一次授权。请再次点击“校验安装”，并在列表中选择 {radio}（在 Windows 上可能显示为 USB 串行设备）。如果列表为空，请等待电台重启完成。",
  "flash.nav.finish": "完成",
  "flash.nav.finish_no_backup": "不备份，完成",
  "flash.nav.finish_no_channels": "不迁移信道，完成",

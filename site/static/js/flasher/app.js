@@ -28,7 +28,7 @@ import { radioPicture, holdKeys, hasNoScreen } from "./radiotop.js";
 import { validRef, refShort, defaultRef, firmwareName, betaLink } from "./version.js";
 import { verify, segments, forDevBuild } from "./manifest.js";
 import { Dfu, DfuError, NormalModeError, WebUsbTransport, checkKey, usbSupported } from "./dfu.js";
-import { Link, LinkError, CableError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, whyNoAnswer, noAnswerKey, serialSupported, serialApi, browserErrorKey, knownRadioPort } from "./link.js";
+import { Link, LinkError, CableError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, whyNoAnswer, noAnswerKey, serialSupported, serialApi, browserErrorKey, noDeviceChosen, knownRadioPort } from "./link.js";
 import { readRadio, makeBundle, openBundle, bundleFolder, notBundle, bundleName, describeFirmware, CODEPLUG_SPAN } from "./backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug, codeplugLayout } from "./restore.js";
 import { Selection } from "./select.js";
@@ -2575,6 +2575,13 @@ function doneView() {
 		} catch (e) {
 			await dropSerial();
 			check.disabled = false;
+			// the chooser closed with no port: nothing was checked, so nothing is recorded (the next try still is). After a
+			// bootloader write the radio is a device this browser hasn't been granted, so it asks once, and many close it
+			if (noDeviceChosen(e)) {
+				diag.note("verify: no port chosen");
+				status.replaceChildren(notice(t("flash.done.pick_port", { radio: S.board.name }), "info"), serialHelp());
+				return;
+			}
 			flashMark(S.lastStarted, "verify", { ok: false, reason: String(e?.message || e) });
 			diag.note("verify failed", { kind: e?.params?.kind || null, message: String(e?.message || e).slice(0, 120) });
 			S.reportResult = "failed";
