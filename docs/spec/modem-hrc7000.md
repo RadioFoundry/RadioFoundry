@@ -1119,13 +1119,15 @@ with the symbols the radio queued (measured):
 | Last byte one boundary late, two idle slots | 32 of 32 | 0.34 %, no position in the slot above 10 % | 0-10 % | 10.0 % |
 
 The wrong symbols at 140-142 matched the chunk written into the same half two slots later. Outer deviation measured
-1610-1685 Hz against 1800 Hz asked (89-94 %).
+1610-1685 Hz against 1800 Hz asked (89-94 %) while the scaling took the bytes for 1944 Hz (10.3).
 
 ### 10.3 Deviation
 
 The modulation bytes of RF_MOD_BIAS (b15:8, b7:0), which the board writes for DMR at its TX on, are scaled by
-dev_outer_hz / 1944 (DMR's outer deviation) and clamped to 1..255; b31:16 stay. Deviation is linear in them, about
-26 Hz per step near the calibrated value, and 0x118 and FM_DEV_COEF don't move it (measured on one HR_C7000 radio).
+dev_outer_hz / 1820 and clamped to 1..255; b31:16 stay. 1820 Hz is the outer deviation the calibrated DMR bytes give,
+not DMR's nominal 1944 Hz: scaled by 1800 / 1944 they gave 1685 Hz (93.6 % of P25's 1800 Hz) measured from the SDR
+bench's I/Q, which leaves an MMDVM hotspot little room for its own offset. Deviation is linear in them, about
+25 Hz per step through zero, and 0x118 and FM_DEV_COEF don't move it (measured on one HR_C7000 radio).
 Outside 100-6000 Hz the fit says `AIR_FIT_DEV_APPROX`. The pulse filter is the chip's own (raised cosine for DMR), so
 every shape but RRC 0.2 is `AIR_FIT_SHAPE_APPROX`.
 

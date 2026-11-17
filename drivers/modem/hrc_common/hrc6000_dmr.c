@@ -1526,7 +1526,8 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 	// in progress on its slot, as the next burst. Its own number is used when it makes sense (a missed burst then
 	// doesn't shift the rest); the number of the burst just taken is a stale report (dropped).
 	// A voice sync with no header or superframe before it on its slot is held back, not delivered: only a burst B
-	// on the same slot one frame later (class 0, number 2) makes it the start of a call (late entry); anything else
+	// on the same slot one frame later (class 0, number 2; any number when deframing any color code, below) makes it the
+	// start of a call (late entry); anything else
 	// and it was noise or the other slot's echo of A (bench 2026-10-10: 6 such reports made 102 voice bursts of a
 	// 96-burst call). Burst A has no color code on air (voice sync instead of the EMB), so it gets the superframe's
 	uint8_t vph = (uint8_t)((e->tick - 1u) & 1u);
@@ -1560,7 +1561,13 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 				s.cc = vs->cc;
 			}
 		} else if (!live) {
-			if (!(hd->valid && (uint32_t)(e->tick - hd->tick) == 2u && s.voice_index == 1u)) {
+			// B one frame after the lone A. Deframing any color code (rx_ctl), the chip keeps the voice number
+			// of the last call it decoded in full while it receives a call in a code other than 0x1F's: there
+			// the frame and new voice say B (seq_by_count numbers the rest). A late entry in another code was missed.
+			// The 0x52 CC can't tell the codes apart (above), so this holds for a call in 0x1F's code too; a stale
+			// repeat of A's report brings no new voice and stays out
+			bool stale_numbers = (rx_ctl(e) & CTL_CC_ANY) != 0u && hd->valid && sum != voice_sum(hd->nb.payload);
+			if (!(hd->valid && (uint32_t)(e->tick - hd->tick) == 2u && (s.voice_index == 1u || stale_numbers))) {
 				e->st.rx_no_call++;	// stale status on the empty slot, or after the call: never voice
 				capture_early(e);
 				return cc_real;
@@ -1569,11 +1576,7 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 			hd->valid = false;
 			hd->s.cc = cc_fix ? (uint8_t)e->cc_filter : s.cc;
 			take(e, &hd->s, &hd->nb, hd->tick, hd->in_step, hd->on_time, hd->dms, tx);
-			vs->active = true;
-			vs->last = 0;
-			vs->next = 1;
-			vs->cc = s.cc;
-			vs->tick = hd->tick;
+			s.voice_index = 1u;	// the superframe state follows below, as for any B
 		} else if (!seq_by_count(e, vs, &s, sum)) {
 			return cc_real;
 		}

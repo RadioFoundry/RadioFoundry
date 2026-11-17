@@ -218,6 +218,7 @@ void stub_entry_start(void)
 	ident.features = build_features_now();
 	ident.preset = build_preset;
 	ident.off = build_off;
+	ident.start = build_start_now();
 	ident.codec = codec_id;
 	ident.stub = stub_entry_request;
 #if CONFIG_CPS_FAST

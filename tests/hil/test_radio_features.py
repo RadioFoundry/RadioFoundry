@@ -695,25 +695,14 @@ def test_scan_stops_on_dmr_call(radio, sdr_bench, pytestconfig):
 
 
 SCAN_DMON_OTHER_TG = 999901	# a talkgroup no test channel's contact or RX group list has
+# From the scan's arrival on the call's channel to the call playing there, mid-call (late entry). Measured 0.3-0.7 s on
+# an HR_C6000 radio: the receiver's restart at the retune, burst A, then the LC of the next superframe
+SCAN_DMON_PLAY_S = 1.2
+# The bench job's start to its call on the air (about 0.6 s): a scan that got there first waits that long
+SCAN_DMON_KEYUP_S = 0.8
 
 
-@pytest.mark.feature("scan")
-@pytest.mark.rf
-@pytest.mark.bench_service
-@pytest.mark.bench_modem
-@pytest.mark.needs_switch("DMR")
-def test_scan_digital_monitor_any_talkgroup(radio, sdr_bench, pytestconfig):
-    """#595: digital monitor on when a zone scan starts stays on at every stop. A call to a talkgroup the channel
-    doesn't listen to holds the scan, and the channel the scan ends on keeps digital monitor."""
-    need_scan(radio)
-    if "DMR" not in radio.features():
-        skip("not_built", "built without DMR")
-    freq, cc = (pytestconfig.getoption(o) for o in ("--dmr-freq", "--dmr-cc"))
-    hz = round(freq * 1e6)
-    radio.go_home()
-    radio.find_channel(hz, "dmr")
-    if as_int(radio.core().get("zone_size"), 0) < 2:
-        skip("state", "the DMR test channel's zone has one channel")
+def _dmon_on(radio):
     if radio.link.view(["dmr"]).get("dmr.hear_all_latch") != "1":	# Monitor by default may have it on already
         radio.press("quick")	# find_channel left the radio on it
         radio.wait_for(lambda v: v.get("ui.screen") == "quick", sections=("link",), what="quick screen")
@@ -721,15 +710,63 @@ def test_scan_digital_monitor_any_talkgroup(radio, sdr_bench, pytestconfig):
         radio.wait_for(lambda v: v.get("dmr.hear_all_latch") == "1", sections=("dmr",), what="digital monitor on")
         if radio.screen() == "quick":
             radio.press("back")
+
+
+@pytest.mark.feature("scan")
+@pytest.mark.rf
+@pytest.mark.bench_service
+@pytest.mark.bench_modem
+@pytest.mark.needs_switch("DMR")
+@pytest.mark.parametrize("how", ["latched", "key_mid_scan", "other_cc"])
+def test_scan_digital_monitor_any_talkgroup(radio, sdr_bench, pytestconfig, how):
+    """#595: digital monitor on when a zone scan starts stays on at every stop. A call to a talkgroup the channel
+    doesn't listen to holds the scan and plays within SCAN_DMON_PLAY_S of the scan reaching it, and the channel the
+    scan ends on keeps digital monitor. key_mid_scan: off at the start, turned on by a short press of the monitor key
+    on a DMR stop, for the rest of the scan. other_cc: the call in a color code the channel doesn't have (digital
+    monitor hears any)."""
+    need_scan(radio)
+    if "DMR" not in radio.features():
+        skip("not_built", "built without DMR")
+    freq, cc = (pytestconfig.getoption(o) for o in ("--dmr-freq", "--dmr-cc"))
+    hz = round(freq * 1e6)
+    call_cc = (cc + 3) % 16 if how == "other_cc" else cc
+    radio.go_home()
+    radio.find_channel(hz, "dmr")
+    if as_int(radio.core().get("zone_size"), 0) < 2:
+        skip("state", "the DMR test channel's zone has one channel")
+    if how == "key_mid_scan":
+        if radio.link.view(["dmr"]).get("dmr.hear_all_latch") == "1":
+            radio.press("back")	# Monitor by default: off, the key turns it on
+            radio.wait_for(lambda v: v.get("dmr.hear_all_latch") == "0", sections=("dmr",), what="digital monitor off")
+    else:
+        _dmon_on(radio)
     held, latched, done = [], set(), threading.Event()
+    arrived, played, pressed = [], [], []
 
     def watch():
+        was_here = False
         while not done.is_set():
             v = radio.link.view(["core", "features", "dmr"])
+            t = time.monotonic()
+            scanning = v.get("scan") == "zone"
+            here = scanning and v.get("rx_hz") == str(hz)
+            if here and not was_here:
+                arrived.append(t)
+            was_here = here
+            if here and v.get("dmr.state") == "rx":
+                played.append(t)
             if v.get("scan_phase") == "hold":
                 held.append(v.get("rx_hz"))
-            if v.get("scan") == "zone" and v.get("mode") == "dmr":	# an FM stop has no DMR latch to show
-                latched.add(v.get("dmr.hear_all_latch"))
+            if how == "key_mid_scan" and not pressed and scanning and v.get("mode") == "dmr":
+                # A short press: down then up, as the key sends it (a click gesture doesn't reach the radio task)
+                radio.link.monitor(True)
+                time.sleep(0.1)
+                radio.link.monitor(False)
+                pressed.append(t)
+            elif scanning and v.get("mode") == "dmr":
+                # The latch at every DMR stop (an FM stop has none); after the key, once the press took
+                if how != "key_mid_scan" or (pressed and t > pressed[0] + 0.3):
+                    latched.add(v.get("dmr.hear_all_latch"))
             time.sleep(0.05)
 
     try:
@@ -741,14 +778,23 @@ def test_scan_digital_monitor_any_talkgroup(radio, sdr_bench, pytestconfig):
                 t.start()
                 with sdr_bench.lease():
                     # Two calls: the scan starts on the test channel, so it comes back only after a lap of the zone
-                    sdr_bench.voice_call(freq, cc, SCAN_DMON_OTHER_TG, superframes=20, calls=2)
+                    t_bench = time.monotonic()
+                    sdr_bench.voice_call(freq, call_cc, SCAN_DMON_OTHER_TG, superframes=20, calls=2)
             finally:
                 done.set()
                 t.join(2)
                 scan_off(radio)
-        print(f"held on {sorted(set(held))}; dmr.hear_all_latch while scanning {sorted(latched)}")
-        assert str(hz) in held, f"the scan never held on {freq} MHz for TG {SCAN_DMON_OTHER_TG}"
-        assert latched == {"1"}, "digital monitor dropped during the scan"
+        # From the scan's arrival before the first play, or the call's start when the scan got there first
+        first = played[0] if played else None
+        came = max((a for a in arrived if first is not None and a <= first), default=None)
+        took = first - max(came, t_bench + SCAN_DMON_KEYUP_S) if first is not None and came is not None else None
+        print(f"held on {sorted(set(held))}; dmr.hear_all_latch while scanning {sorted(latched)}; "
+              f"played {'%.2f s' % took if took is not None else 'never'} after the scan reached {freq} MHz")
+        assert str(hz) in held, f"the scan never held on {freq} MHz for TG {SCAN_DMON_OTHER_TG} (CC {call_cc})"
+        assert how != "key_mid_scan" or pressed, "the monitor key was never pressed (no DMR stop seen while scanning)"
+        assert latched == {"1"}, "digital monitor off during the scan"
+        assert took is not None and took <= SCAN_DMON_PLAY_S, \
+            f"the call played {took} s after the scan reached it (at most {SCAN_DMON_PLAY_S} s)"
         radio.wait_for(lambda v: v.get("dmr.hear_all_latch") == "1", sections=("dmr",),
                        what="digital monitor kept after the scan")
     finally:

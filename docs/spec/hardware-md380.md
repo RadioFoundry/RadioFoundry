@@ -493,7 +493,9 @@ a call or after our own transmit, the key beep in DMR and FM, and FM receive.
 chip's physical layer mode, with this chip's differences from its chip description
 ([modem-hrc6000.md](modem-hrc6000.md) 10.7). The HR_C5000 manual documents the mode (0x10 LayerMode bits 4-3 = 00,
 0x82 bit 0, 36 bytes of physical layer data in page 2). Every fit carries `AIR_FIT_UNTESTED` (`air_verified` is not
-set).
+set). `CONFIG_P25`, `CONFIG_P25_TRUNK` and `CONFIG_NXDN` are off on this radio (`BOARD_NOT_WRITTEN`) until receive
+works: a mode that transmits but can't receive isn't offered. Build with them on (`CONFIG_P25=y CONFIG_NXDN=y`) to work
+on it.
 
 | Profile | Receive | Transmit |
 |---|---|---|

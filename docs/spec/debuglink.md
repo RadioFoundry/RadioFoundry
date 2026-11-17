@@ -138,6 +138,7 @@ req_max=64
 reply_max=1024
 inject_max_ms=10000     longest hold of an injected key, PTT included
 tone_burst_max_ms=10000 longest tone burst (RADIO op 23); only in builds with CONFIG_FM_TX_TONES
+start=en                the language the radio starts in until the user picks one (ISO 639-1)
 preset=amateur          the build's preset: full, a release variant, or custom
 off=AUDIO_PROBE,FONT_AA  the switches the radio could have that this build left off; may be empty
 ```
@@ -154,8 +155,12 @@ it at either rate ([nxdn.md](nxdn.md) 6). `off=` lists every switch in `config/f
 that the build left off, except those the board can't have or hasn't written (`BOARD_UNSUPPORTED`,
 `BOARD_NOT_WRITTEN`). With it a host knows the whole build: the web installer's update keeps a custom build's choices
 by it. `preset=` is the release variant the image was built as (`VARIANT`, `full` without one), or `custom` when a
-switch was set on the make command line, as a custom build from the build service is. They come last, so a list
-too long for the reply drops only itself. Older builds send neither. Both come from `core/hostlink/build_info.c`, as
+switch was set on the make command line. The build service sets every switch on the command line; when they equal
+a variant's, the start language aside, it also sets `RFOUNDRY_PRESET` to that variant, so the build says it.
+`start=` is the build's start language (`CONFIG_LANG_DEFAULT_<CODE>`, `en` without one): the language shown until
+the user picks one in Settings. `off=` can't carry it, since a start-language switch added after the build is in
+neither list, and an update keeps it; builds before it don't send it. `preset=` and `off=` come last, so a list
+too long for the reply drops only itself. Older builds send neither. All three come from `core/hostlink/build_info.c`, as
 does `features=`, and a build without the debug link sends them too, from the stub entry's listener
 ([stub-entry.md](stub-entry.md) 2).
 

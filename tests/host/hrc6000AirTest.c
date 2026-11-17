@@ -396,7 +396,7 @@ static void test_fit(void)
 	CHECK(hrc6000_air_fit(&q) == 0);
 	CHECK(hrc6000_air_fit(NULL) == 0);
 
-	// The pair: both calibration values scaled by the target over 1944 Hz; C4FM aims at 1800 / 0.903
+	// The pair: both calibration values scaled by the target over 1944 Hz; C4FM aims at 1800 / 0.946
 	uint8_t m2, m1;
 	q = p;
 	q.shape = AIR_SHAPE_RRC;
@@ -406,7 +406,7 @@ static void test_fit(void)
 	hrc6000_air_mod_pair(&q, 0x2A, 0x52, &m2, &m1);
 	CHECK(m1 == 0x65 && m2 == 0x34);
 	hrc6000_air_mod_pair(&p, 0x2A, 0x52, &m2, &m1);
-	CHECK(m1 == 0x54 && m2 == 0x2B);	// C4FM 1800: 1993 Hz at the chip
+	CHECK(m1 == 0x50 && m2 == 0x29);	// C4FM 1800: 1903 Hz at the chip
 }
 
 static void test_golden(void)
@@ -711,7 +711,7 @@ static void test_transmit(void)
 	CHECK(lock_depth == 0);
 	CHECK(last_write(4, 0x10) == 0x66 && last_write(4, 0x40) == 0xE3 && last_write(4, 0x21) == 0x02);
 	CHECK(last_write(4, 0x20) == 0x00 && last_write(4, 0x22) == 0x86);	// the chip's own transmission start
-	CHECK(last_write(4, 0x46) == 0x54 && last_write(4, 0x45) == 0x2B);	// scaled from 0x52 / 0x2A
+	CHECK(last_write(4, 0x46) == 0x50 && last_write(4, 0x45) == 0x29);	// scaled from 0x52 / 0x2A
 	CHECK(half_is(0, 0x5F) && half_is(1, 0x5F));	// both idle until the first chunk's slot
 	CHECK(rf_on == 0 && hrc6000_air_tx_active(AIR));
 	CHECK(!hrc6000_air_tx_begin(AIR));	// already
@@ -985,7 +985,7 @@ static void test_chip_description(void)
 	CHECK(last_write(4, 0x10) == 0x66 && last_write(4, 0x40) == 0xE3);
 	CHECK(last_write(4, 0x20) == 0x00 && last_write(4, 0x21) == 0x02);	// the access policy alone
 	CHECK(count_writes(4, 0x22, -1) == 0);					// no encoder start
-	CHECK(last_write(4, 0x46) == 0x54 && last_write(4, 0x45) == 0x2B);
+	CHECK(last_write(4, 0x46) == 0x50 && last_write(4, 0x45) == 0x29);
 
 	// Close: the chip's own DMR 0x10, and the engine puts the channel's back when it runs (a repeater channel here)
 	nx = 0;

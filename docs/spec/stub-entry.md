@@ -42,8 +42,8 @@ The debug link is the first thing a build short of flash drops. What the web too
 and its build (VERSION), the hand-over to the stub for updates and backups (STUB), and the Codeplug Editor's reads and
 writes (CODEPLUG, [cps-fast.md](cps-fast.md)).
 
-The own listener's VERSION carries the keys the flashing and web tools read, then `stub=1`, then the build's preset and
-off list ([debuglink.md](debuglink.md) 3.1, `core/hostlink/build_info.c`, shared with the debug link):
+The own listener's VERSION carries the keys the flashing and web tools read, then `stub=1`, then the build's start
+language, preset and off list ([debuglink.md](debuglink.md) 3.1, `core/hostlink/build_info.c`, shared with the debug link):
 
 ```
 proto=1
@@ -53,12 +53,13 @@ board=XR-100UV
 features=FM,DMR,...,CPS_FAST,USB,HOSTLINK
 codec=xr100uv-2501
 stub=1
+start=en
 preset=full
 off=APRS_IGATE,FONT_AA
 ```
 
 `stubtool.py` and `f4stub.py` take `board=` from it to pick the stub's profile, `rfoundry` and the web flasher's probe
-take `board=`, `git=` and `codec=`, the web flasher's update `preset=` and `off=`, the Codeplug Editor `features=`
+take `board=`, `git=` and `codec=`, the web flasher's update `start=`, `preset=` and `off=`, the Codeplug Editor `features=`
 (`CPS_FAST`). A key that doesn't fit the reply is left out whole. Their INFO_CHIP request gets `DL_ST_UNKNOWN_CMD`, which every tool already treats
 as "older firmware" and goes on without the chip UID.
 

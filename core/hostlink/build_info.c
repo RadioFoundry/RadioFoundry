@@ -3,6 +3,7 @@
 // What this build is, for VERSION in either listener (see build_info.h)
 #include "config.h"
 #include "hostlink/build_info.h"
+#include "ui/i18n.h"
 #if CONFIG_P25
 #include "radio/radio_p25.h"
 #endif
@@ -19,6 +20,9 @@
 
 const char build_preset[] = RFOUNDRY_PRESET;
 const char build_off[] = RFOUNDRY_FEATURES_OFF;
+
+// The language an empty setting means, as the UI picks it (i18n.c lang_find)
+const char *build_start_now(void) { return lang_code(lang_find(0)); }
 
 // The air-framed modes, each only where the board runs it (build_modes_now)
 #if CONFIG_P25_TRUNK

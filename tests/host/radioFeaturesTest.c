@@ -1588,10 +1588,12 @@ static void test_scan_dmr_mid_call(void)
 }
 
 // #595: digital monitor on when the scan starts stays on at every stop. A call to a talkgroup we don't listen to then
-// holds the scan, the channel the scan ends on keeps digital monitor, and turning it off mid-scan ends it for the scan
+// holds the scan, the channel the scan ends on keeps digital monitor, and turning it off mid-scan ends it for the scan.
+// Turned on mid-scan with the monitor key (a short press on a DMR stop), it holds for the rest of the scan the same way
 static void test_scan_dmr_digital_monitor(void)
 {
-	for (int off_mid_scan = 0; off_mid_scan <= 1; off_mid_scan++) {
+	enum { LATCHED, OFF_MID_SCAN, KEY_MID_SCAN };
+	for (int how = LATCHED; how <= KEY_MID_SCAN; how++) {
 		start();
 		all_dmr();
 		signal_on(0, 438500000, 30, no_tone);
@@ -1602,25 +1604,33 @@ static void test_scan_dmr_digital_monitor(void)
 		air.dst = 99;
 		air.lc_at = 1;
 		req(RREQ_ZONE_POS, 6);
-		req(RREQ_DMR_HEAR_ALL, 1);
-		CHECK(sm.view.dmr.hear_all_latch);
+		if (how != KEY_MID_SCAN) {
+			req(RREQ_DMR_HEAR_ALL, 1);
+			CHECK(sm.view.dmr.hear_all_latch);
+		}
 		req(RREQ_SCAN, RSCAN_ZONE);
 		run(100);
-		CHECK(sm.view.zone_pos != 6 && sm.view.dmr.hear_all_latch == (sm.view.ch.mode == RADIO_MODE_DMR));
-		if (off_mid_scan) {
+		CHECK(sm.view.zone_pos != 6 && sm.view.dmr.hear_all_latch == (how != KEY_MID_SCAN &&
+		      sm.view.ch.mode == RADIO_MODE_DMR));
+		if (how == OFF_MID_SCAN) {
 			req(RREQ_DMR_HEAR_ALL, 0);
 			CHECK(!sm.view.dmr.hear_all_latch);
+		} else if (how == KEY_MID_SCAN) {
+			CHECK(sm.view.ch.mode == RADIO_MODE_DMR && sm.view.scan == SCAN_ZONE);
+			req(RREQ_MONITOR, 1);
+			req(RREQ_MONITOR, 0);
+			CHECK(sm.view.dmr.hear_all_latch && sm.view.dmr.hear_all);
 		}
 		bool held = false;
 		for (int i = 0; i < 300 && !held; i++) {
 			run(25);
 			held = sm.view.zone_pos == 5 && sm.view.scan_phase == SCAN_PH_HOLD && sm.view.dmr.state == RDMR_RX;
 		}
-		CHECK(held == !off_mid_scan);
+		CHECK(held == (how != OFF_MID_SCAN));
 		req(RREQ_SCAN, RSCAN_STOP);
 		run(25);
 		CHECK(sm.view.scan == SCAN_OFF);
-		if (!off_mid_scan) {
+		if (how != OFF_MID_SCAN) {
 			CHECK(sm.view.zone_pos == 5 && sm.hear_all_latch && sm.view.dmr.hear_all_latch && sm.view.dmr.hear_all);
 		} else {
 			CHECK(!sm.view.dmr.hear_all_latch && !sm.view.dmr.hear_all);

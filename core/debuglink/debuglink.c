@@ -249,6 +249,7 @@ static size_t cmd_version(uint8_t *out, size_t cap)
 	}
 	// last: a long list that doesn't fit drops only itself (a host then treats the build as unknown). dl_text, not
 	// dl_text_kv_str: that cuts a value at 39 characters, and a cut off= list would read as complete
+	dl_text(&t, "start=%s\n", build_start_now());
 	dl_text(&t, "preset=%s\n", build_preset);
 	dl_text(&t, "off=%s\n", build_off);	// may be empty: present, it says the build is known in full
 	return 1 + t.len;

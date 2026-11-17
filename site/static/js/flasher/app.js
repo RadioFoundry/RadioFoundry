@@ -57,7 +57,7 @@ import * as adapter from "./adapter.js";
 import * as crumbs from "./trail.js";
 import { missingApi, kitPanel, kitLine } from "./manual.js";
 import { showBetaNotice } from "./beta.js";
-import { DROP_OK, currentBuild, planUpdate } from "./update.js";
+import { DROP_OK, START_KEEP, currentBuild, planUpdate } from "./update.js";
 import { readDfuInfo, choiceFor, hwoptAction, pendingHwopt, majorsFor, runsOriginal, BOOTLOADER } from "./origversion.js";
 import { readOriginal, deviceKind, spiSeconds, Guard } from "./origbackup.js";
 import { toSerial, CLICK_WAIT_MS } from "./netmode.js";
@@ -957,12 +957,33 @@ async function connectForUpdate(status) {
 		await keyFromRadio(S.link);
 		await codecFromRadio(S.link, p, status);
 	}
-	S.current = currentBuild(p, r, S.data.releases.filter((x) => x.board === r.id), S.data.reported);
+	const record = await buildRecord(p, r);
+	S.current = currentBuild(p, r, S.data.releases.filter((x) => x.board === r.id), S.data.reported, record);
 	S.decided = {};
 	planUpdate(S.current, S.selection, S.decided);
 	// a build the radio doesn't say: the build step, starting from the closest variant
 	S.editBuild = S.current.kind === "unknown";
-	diag.note("update: radio", { board: p.board, git: p.git, build: S.current.kind, preset: S.current.preset || S.current.guess || null });
+	diag.note("update: radio", { board: p.board, git: p.git, git_time: p.version?.git_time ?? null, said: p.version?.preset ?? null,
+		start: p.version?.start ?? null, record: record ? (record.from_update ? "update" : "yes") : "no", build: S.current.kind,
+		preset: S.current.preset || S.current.guess || null });
+}
+
+// The build service's record of the build on the radio (GET builds/match: its exact switches, and whether an Update
+// asked for it), for a build the service made (preset=custom: every one before it said its variant). null without one,
+// or when the service doesn't answer in time: the update then goes by off= alone
+async function buildRecord(p, r) {
+	const v = p.version || {};
+	if (S.sim || v.preset !== "custom" || v.off === undefined || !p.git) return null;
+	const q = new URLSearchParams({ board: r.id, git: p.git, off: v.off,
+		options: Object.entries(S.buildOptions || {}).map(([k, x]) => `${k}=${x}`).sort().join(",") });
+	try {
+		const res = await fetch(new URL(`builds/match?${q}`, API), { signal: AbortSignal.timeout(5000) });
+		if (!res.ok) return null;
+		const j = await res.json();
+		return Array.isArray(j.features) ? j : null;
+	} catch {
+		return null;
+	}
 }
 
 function updateView() {
@@ -993,7 +1014,7 @@ function updateView() {
 		}
 		const p = S.now.probe, cur = S.current;
 		// the radio's own build, unless the build step has the selection (edits kept when the user comes back)
-		const plan = S.editBuild ? { preset: S.selection.matches(startCode), added: [], needed: [], dropped: [], ask: [], ready: true }
+		const plan = S.editBuild ? { preset: S.selection.matches(startCode), added: [], needed: [], dropped: [], ask: [], startAsk: [], ready: true }
 			: planUpdate(cur, S.selection, S.decided);
 		// an image built for another selection no longer applies
 		if (S.firmware?.selection && S.firmware.selection !== selectionKey(S.selection)) S.firmware = null;
@@ -1043,6 +1064,14 @@ function updateView() {
 					if (S.updateBackup && backupPanel) render();
 					else next();
 				})));
+		// a start language an earlier update may have set by mistake: the user keeps it or goes back to English
+		const askLang = plan.startAsk.map((n) => languageName(startCode(n))).join(", ");
+		const startAsk = !plan.startAsk.length ? null : h("div", { class: `notice ${START_KEEP in S.decided ? "info" : "action"} update-note` },
+			h("p", {}, h("b", {}, t("flash.update.start_title")), " ", t("flash.update.start_text", { language: askLang })),
+			h("div", { class: "update-new" }, h("span", { class: "update-pick" }, ...[false, true].map((keep) => h("label", {},
+				h("input", { type: "radio", name: "start-lang", checked: S.decided[START_KEEP] === keep,
+					onchange: () => { S.decided[START_KEEP] = keep; draw(); } }),
+				" ", keep ? t("flash.update.start_keep", { language: askLang }) : t("flash.update.start_english"))))));
 		const building = S.build && S.build.selection === selectionKey(S.selection);
 		const image = S.firmware ? imageReady()
 			: building && S.build.error ? buildErrorNotice(S.build.error)
@@ -1058,7 +1087,7 @@ function updateView() {
 				h("dt", {}, t("flash.update.version")), h("dd", {}, t("flash.update.from_to", { from: firmwareName(p.version), to: updateVersion() })),
 				h("dt", {}, t("flash.update.build")), h("dd", {}, buildText, " ", cur.kind === "unknown" ? null : edit)),
 			cur.kind === "unknown" ? notice(t("flash.update.unknown_text", { variant: vtitle(cur.guess) }), "info") : null,
-			S.editBuild ? null : dropped, S.editBuild ? null : asks, S.editBuild ? null : added, S.editBuild ? null : needed, backup, backupPanel, image, status));
+			S.editBuild ? null : startAsk, S.editBuild ? null : dropped, S.editBuild ? null : asks, S.editBuild ? null : added, S.editBuild ? null : needed, backup, backupPanel, image, status));
 		const busy = building && !S.build.error;
 		const go = async () => {
 			if (S.editBuild) return next();
@@ -1068,7 +1097,8 @@ function updateView() {
 		};
 		S.forward(button(busy ? [spinner(), t("flash.nav.building")] : t(S.editBuild ? "flash.update.to_build" : "flash.update.go"), go,
 			{ primary: true, disabled: busy || (!S.editBuild && !plan.ready) || (S.updateBackup && !!backupPanel) }),
-			S.editBuild || plan.ready ? null : t(plan.dropped.length && !S.decided[DROP_OK] ? "flash.update.drop_first" : "flash.update.decide_first"));
+			S.editBuild || plan.ready ? null : t(plan.dropped.length && !S.decided[DROP_OK] ? "flash.update.drop_first"
+				: plan.startAsk.length && !(START_KEEP in S.decided) ? "flash.update.start_first" : "flash.update.decide_first"));
 	};
 	draw();
 	return out;

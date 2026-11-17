@@ -324,8 +324,11 @@ RFOUNDRY_EMPTY :=
 RFOUNDRY_OFF := $(subst $(RFOUNDRY_EMPTY) ,$(strip ,),$(sort $(foreach f,$(filter-out $(BOARD_UNSUPPORTED) $(BOARD_NOT_WRITTEN),$(FEATURES)),\
 	$(if $(call feature_on,$(f)),,$(f)))))
 # The build's preset, VERSION preset=: the release variant (VARIANT, full without one), or custom when a
-# switch is set on the command line (a custom build: the build service sets every one)
+# switch is set on the command line. The build service sets every switch, and passes RFOUNDRY_PRESET=<variant> when
+# they are a variant's (the start language aside), so an update keeps the radio on that variant
 RFOUNDRY_PRESET := $(if $(strip $(foreach v,$(filter CONFIG_%,$(.VARIABLES)),$(filter command line,$(origin $(v))))),custom,$(or $(VARIANT),full))
+$(if $(filter $(RFOUNDRY_PRESET),full custom $(basename $(notdir $(wildcard config/variants/*.mk)))),,\
+	$(error unknown RFOUNDRY_PRESET=$(RFOUNDRY_PRESET): full, custom or a variant))
 
 # Rebuild everything when the compile flags change (feature switches and build values), and the objects that carry
 # the version when it changes. Checked while the Makefile is read, before make looks at any object: the stale objects
