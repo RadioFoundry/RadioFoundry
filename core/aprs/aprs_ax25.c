@@ -539,12 +539,15 @@ void aprs_ax25_service(void)
 	aprs_s.v.msg_pending = aprs_s.out.active;
 	aprs_s.v.msg_tries = aprs_s.out.tries;
 	aprs_s.v.msg_acked = aprs_s.out.acked;
-	if (!aprs_s.out.active || aprs_s.block != APRS_OK || (int32_t)(aprs_s.now - aprs_s.out.next_ms) < 0) {
+	if (!aprs_s.out.active || (int32_t)(aprs_s.now - aprs_s.out.next_ms) < 0) {
 		return;
 	}
-	if (aprs_s.out.acked || aprs_s.out.tries >= APRS_MSG_TRIES) {
+	if (aprs_s.out.acked || aprs_s.out.tries >= APRS_MSG_TRIES) {	// even when blocked: nothing is left to send
 		aprs_s.out.active = false;
 		aprs_changed();
+		return;
+	}
+	if (aprs_s.block != APRS_OK) {
 		return;
 	}
 	size_t n = aprs_build_message(aprs_s.out.to, aprs_s.out.text, aprs_s.out.msgno, aprs_s.info, sizeof(aprs_s.info));

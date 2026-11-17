@@ -361,6 +361,25 @@ Finish (and Update when the radio runs RadioFoundry).
 **Programming cables:** cables with a CH340 chip can be unreliable for backups and installs. If one fails, try a cable
 with an FTDI, CP210x or PL2303 chip. The installer warns when it sees a CH340 cable.
 
+**Cable problems the installer names:** the connect step tells a faulty cable from a radio that doesn't answer, and
+says what to do about it.
+
+| The installer says | What it found |
+|---|---|
+| The cable keeps delivering data that nothing asked for | The line never goes quiet, so the radio can't be heard. **Continue Anyway** goes on with the same cable |
+| The cable disconnected from the computer | The cable left the computer's USB while the page used it |
+| The cable stopped taking data from the computer | The cable's adapter or its driver stopped sending. The page checks this each time it opens the cable. Some adapters stay that way until they are unplugged |
+| The radio received none of this page's answers | The radio's greeting came through when it was turned on, but nothing the page sent reached the radio, and it started normally. The cable carries data from the radio only. Such a cable can also hold the radio's PTT line: unplug it from the radio |
+
+For each: unplug the cable from the computer, wait a few seconds, plug it back in (not through a hub), push the plug
+fully into the radio and select **Try Again**. If it returns, replace the cable with a better one, preferably one with
+an FTDI chip.
+
+While the installer waits for the radio to turn on, it shows how much the cable has carried (bytes and line errors).
+A count that stays at zero while you turn the radio off and on means the plug isn't making contact or the cable is
+faulty. A count that moves without the radio being found means the cable reads the radio badly: push the plug fully
+in, or use a cable with another chip.
+
 **When the cable can't prepare the radio:** a radio installed over its programming cable first gets a small loader in
 its memory. When the radio turns on, it waits only about 1/20 of a second for the installer's answer, and some cables
 and USB hubs are slower than that. So the installer keeps sending its answer while the radio starts (this used to be the
@@ -382,5 +401,9 @@ Factory Update Mode"), and Restore uses it too.
    (see your radio's section), load that backup; without one, load the manufacturer's firmware file. Or run the manufacturer's firmware
    upgrade tool and load the stock file.
 3. Write your codeplug backup with the manufacturer's CPS. The stock firmware can't read the codeplug RadioFoundry used.
+
+On a radio installed over its programming cable, a restore writes only the parts of the radio's memory that differ
+from the backup. When it finishes, it says how many parts it wrote and how many already matched. A codec the radio
+still holds as the backup has it is one of those: the installer says that the codec space was not written.
 
 Your radio's section in the [Radio reference](23-radios.md) says which way applies.
