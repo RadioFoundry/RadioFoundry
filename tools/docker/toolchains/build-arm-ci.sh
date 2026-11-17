@@ -26,7 +26,7 @@ if [ $# -ge 1 ]; then
 else
 	HOME=$CTX/home ARM_GCC_IMAGE='' "$ROOT/tools/install-arm-toolchain.sh"
 	mv "$CTX/home/opt/$NAME" "$CTX/$NAME"
-	rm -rf "$CTX/home"
+	rm -rf "${CTX:?}/home"
 fi
 GCC=$CTX/$NAME/bin/arm-none-eabi-gcc
 "$GCC" --version | head -1 | grep -qi "Toolchain $V" || { echo "build-arm-ci: $GCC isn't version $V" >&2; exit 1; }
