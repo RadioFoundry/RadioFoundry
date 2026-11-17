@@ -53,6 +53,7 @@ neighbor on the same platform.
 | `maker`, `model` | string | The two parts of the name |
 | `also` | list of strings | The same radio sold under other names |
 | `kind` | `handheld` or `mobile` | |
+| `aprs_tocall` | one character, `1`-`9` or `A`-`Z` | The sixth character of the radio's APRS tocall `APRDF?` ([aprs.md](../spec/aprs.md) 4.2). Unique; `0` is the host tests'. Never change or reuse one: the device identifier list names the radio by it |
 | `part_of` | string, optional | Another board this one is a build of |
 | `debuglink_aliases` | list, optional | Names older firmware reported on the debug link |
 | `looks` | list of tables, optional | Other bodies the board ships in that look too different to share its picture: `{ id, name, also }`. Each is its own radio card on the site, drawn in `site/static/img/radios/src/<id>-<look id>.svg` (the site build refuses a missing drawing), and links to the board's page. `name` and every entry of `also` (the radios in that body) must be in the board's `also`; the board's own card lists the rest |

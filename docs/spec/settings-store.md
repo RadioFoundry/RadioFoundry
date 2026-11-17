@@ -34,8 +34,9 @@ Each board fixes the values in its `hal_flash_map_t`, and its hardware page list
 high, is the open-firmware EEPROM image, the settings ring (32 KB, 8 sectors), the journal (2 sectors), the
 open-firmware flash image (up to `openfw_end`), the native codeplug (1 MB) and, on boards with room, a 256 KB staging
 area. A board that keeps its calibration in the vendor layout lists no calibration window. A map assumes its chip's
-size: when the probed chip is smaller than the map's highest area (`hal_flash_map_end`), the driver offers no map, and
-an address past the chip fails rather than wrapping to a lower one. The boards are in
+size: when the probed chip is smaller than the map's highest area (`hal_flash_map_end`), the driver offers the board's
+map for a smaller part if it has one and the chip holds it (`hal_flash_map_for`), else no map, and an address past the
+chip fails rather than wrapping to a lower one. A map without a native area makes the factory reset skip that step. The boards are in
 [feature-matrix.md](../feature-matrix.md).
 
 The core works in 4 KB erase units (`STORAGE_SECTOR`). A board whose flash erases in other units gets no writes. A

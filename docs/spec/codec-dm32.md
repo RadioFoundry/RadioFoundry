@@ -118,6 +118,7 @@ is known only from a program flash read, so its profile is keyed by the SHA-256 
 | 01.01.046 | 0x030C65B0 | 0x03072378 | 0x18000EA8 | 01.02.046 |
 | 01.02.046 | 0x030C6590 | 0x03072358 | 0x18000EA8 | 01.01.046 |
 | 01.01.047 | 0x030C68B8 | 0x03072658 | 0x18000EA8 | 049 |
+| 01.01.047, file dated 20250425 | 0x030C673C | 0x030724E8 | 0x18000EA8 | 049 (codec only: 15 words of the window outside the codec differ) |
 | 01.L01.048 | 0x030C4444 | 0x03070468 | 0x18000EA8 | |
 | 01.01.049 | 0x030C687C | 0x03072628 | 0x18000EA8 | 047 |
 | 01.01.049 NRF and fanti builds | 0x030C7914, 0x030C7954 | 0x03072E80, 0x03072EC0 | 0x18000EB0 | each other |

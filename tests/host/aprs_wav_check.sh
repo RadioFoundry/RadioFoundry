@@ -17,9 +17,9 @@ out=$(mktemp -d "${TMPDIR:-/tmp}/aprs_wav.XXXXXX")
 "$here/aprsTest" --wav "$out" >/dev/null
 log="$out/atest.log"
 atest -B 1200 "$out/aprs_test_44k1.wav" >"$log" 2>&1 || true
-n=$(grep -c "APZRDF" "$log" || true)
+n=$(grep -c "APZTST" "$log" || true)
 echo "aprs_wav_check: atest decoded $n of 3 frames"
-grep "APZRDF" "$log" || true
+grep "APZTST" "$log" || true
 if [ "$n" -lt 3 ]; then
 	echo "aprs_wav_check: FAILED (log in $log)"
 	exit 1
