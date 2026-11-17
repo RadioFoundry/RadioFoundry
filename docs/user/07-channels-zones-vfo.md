@@ -2,7 +2,7 @@
 
 # Channels, Zones and the VFO
 
-A **channel** is a saved frequency with its mode (FM or DMR) and settings. A **zone** is a named list of channels.
+A **channel** is a saved frequency with its mode (FM, DMR, or P25 and NXDN where the radio runs them) and settings. A **zone** is a named list of channels.
 The **VFO** tunes any frequency by hand. Channels and zones come from the codeplug ([Programming the radio](04-programming.md)).
 
 ## Changing the channel
@@ -139,7 +139,8 @@ Focus a row and press **OK**:
 
 | Row | What OK does |
 |---|---|
-| Two choices (mode, timeslot, bandwidth, RX only, scan, VOX, tone burst, direct mode, beeps, talker alias, battery saver) | switches to the other one |
+| Mode | steps to the next mode: FM, DMR, then P25 and NXDN on a radio that runs them. Stepping on comes back to the mode the channel had, with its settings as they were |
+| Two choices (timeslot, bandwidth, RX only, scan, VOX, tone burst, direct mode, beeps, talker alias, battery saver) | switches to the other one |
 | Power, RX CTCSS/DCS, TX CTCSS/DCS, color code, TX time-out | opens a picker: turn the knob (or Up / Down) to the value, **OK** keeps it, **Back** cancels. Color code and time-out also take digits |
 | RX CTCSS/DCS, TX CTCSS/DCS, typed | type a CTCSS tone with its tenths digit: **8 8 5** is 88.5, **1 3 1 8** is 131.8. Under 60 the digits are whole Hz: **6 7** is 67.0, **1 0 0** is 100.0. Start with **0** for a DCS code: **0 2 3** is D023N. **Back** takes the last digit back. For an inverted DCS code, turn the knob one step: each code's I follows its N (D023N, D023I, D025N) |
 | Zones | opens every zone, marked "In" where the channel is. **OK** puts the channel in a zone or takes it out, saved at once. A new channel shows the row once saved |
@@ -324,8 +325,9 @@ On a radio that runs P25 ([feature matrix](../feature-matrix.md)), P25 is one of
 
 ### P25 channels
 
-A P25 channel comes from a codeplug written on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)), a zone shared by another radio, or the VFO: in P25, open
-**Channels**, **New channel from current settings** and save it. The channel keeps the network access codes, the
+A P25 channel comes from a codeplug written on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)), a zone shared by another radio, the VFO (in P25, open
+**Channels**, **New channel from current settings** and save it), or any channel: press **OK** on its Mode until it
+says P25, set the NAC and save. A channel made P25 starts with NAC 293. The channel keeps the network access codes, the
 talkgroup (when a contact has that talkgroup; else talkgroup 1) and talkaround. A shared one comes in receive only, as
 every shared channel does: turn RX only off in its settings. On a radio without P25 the channel shows as P25 and stays
 silent.
@@ -337,9 +339,9 @@ silent.
 - **NAC** sets the network access code both ways. Type its hex digits; **Up** and **Down** step the last digit
   through 0-9 and A-F, so for 1A5 type 1, 9, **Up**, 5. F7E receives every NAC. The talk group is **TX contact**, your
   unit ID **Own ID**.
-- **OK** on Mode steps to FM, then DMR, then back to P25 with its settings as they were, so a slip costs nothing.
-  Saving the channel as FM or DMR removes its P25 settings: the radio asks first ("Save as FM?"), and "No, keep editing" is the
-  default. **Save as new channel** leaves the P25 channel as it is.
+- **OK** on Mode steps to NXDN (on a radio that runs it), FM, DMR, then back to P25 with its settings as they were, so
+  a slip costs nothing. Saving the channel as another mode removes its P25 settings: the radio asks first ("Save as
+  FM?"), and "No, keep editing" is the default. **Save as new channel** leaves the P25 channel as it is.
 - Scan stops on P25 channels and holds on a call you would hear there. Dual watch takes one as A or B.
 
 ### P25 trunked channels
@@ -381,13 +383,14 @@ is NXDN conventional voice at 9600 bit/s (12.5 kHz) or 4800 bit/s (6.25 kHz), th
 
 ### NXDN channels
 
-An NXDN channel comes from a codeplug written on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)), a zone shared by another radio, or the VFO: in NXDN,
-open **Channels**, **New channel from current settings** and save it. The channel keeps the rate, the RANs, the
+An NXDN channel comes from a codeplug written on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)), a zone shared by another radio, the VFO (in NXDN,
+open **Channels**, **New channel from current settings** and save it), or any channel: press **OK** on its Mode until
+it says NXDN, set the RAN and rate, and save. A channel made NXDN starts with RAN 1 at 9600 bit/s. The channel keeps the rate, the RANs, the
 squelch and the group (when a contact has that group; else group 1).
 
 - Home shows it as in the VFO. The channel's settings show "NXDN" as the mode.
-- **OK** on Mode steps to FM, then DMR, then back to NXDN with its settings as they were. Saving the channel as FM
-  or DMR removes its NXDN settings: the radio asks first ("Save as FM?").
+- **OK** on Mode steps to FM, DMR, P25 (on a radio that runs it), then back to NXDN with its settings as they were.
+  Saving the channel as another mode removes its NXDN settings: the radio asks first ("Save as FM?").
 - **RAN** (0-63) and **Rate** (9600 or 4800 bit/s) are in the channel's settings, with the group (**TX contact**) and
   your unit ID (**Own ID**, up to 65519). RAN 0 receives every RAN. The squelch can be changed only from a computer.
 - Scan stops on NXDN channels and holds on a call you would hear there, at a rate the radio can receive. Dual watch

@@ -1299,14 +1299,6 @@ static bool ced_is_nxdn(const channel_t *ch)
 {
 	return CONFIG_NXDN && (ch->kind == CODEPLUG_KIND_NXDN || (ch->kind == CODEPLUG_KIND_NONE && ch->mode == RADIO_MODE_NXDN));
 }
-
-#if CONFIG_CHANNEL_EDIT
-// A mode of its own, which the Mode row's FM / DMR toggle can't reach: a channel of a kind, or P25 or NXDN for now
-static bool ced_own_mode(const channel_t *ch)
-{
-	return ch->kind != CODEPLUG_KIND_NONE || ced_is_p25(ch) || ced_is_nxdn(ch);
-}
-#endif
 #endif
 
 // A trunked channel whose system isn't set up (dmr-trunking-codeplug.md 4) is locked out: selecting it says why
@@ -2514,6 +2506,26 @@ static ui_air_conv_t ced_air;		// a P25 or NXDN channel's own settings, read onc
 #if CONFIG_CHANNEL_EDIT
 static ui_air_conv_t ced_air_orig;	// as stored
 #endif
+
+// A P25 or NXDN channel's settings where none are stored: the default NAC both ways; NXDN at 9600 bit/s on RAN 1
+static void ced_air_default(uint8_t mode)
+{
+	memset(&ced_air, 0, sizeof ced_air);
+#if CONFIG_P25
+	if (mode == RADIO_MODE_P25) {
+		ced_air.p25.rx_nac = ced_air.p25.tx_nac = P25_NAC_DEFAULT;
+		ced_air.p25.squelch = P25_SQUELCH_NORMAL;
+	}
+#endif
+#if CONFIG_NXDN
+	if (mode == RADIO_MODE_NXDN) {
+		ced_air.nxdn.rate9600 = true;
+		ced_air.nxdn.rx_ran = ced_air.nxdn.tx_ran = NXDN_CP_TX_RAN_DEFAULT;
+		ced_air.nxdn.squelch = NXDN_SQUELCH_RAN;
+	}
+#endif
+	(void)mode;
+}
 #endif
 static uint8_t ced_rows[CE_COUNT];
 static uint8_t ced_n;
@@ -2562,10 +2574,84 @@ static const struct { uint8_t off, len, bit; } ced_fields[CE_ZONES] = {
 	[CE_SCAN] = CE_FIELD(scan_skip), [CE_ECO] = CE_FIELD(no_eco),
 };
 
+// The Mode row's steps, in the order OK goes through them (channel-modes.md 2.4): the plain modes, the air modes, then
+// a kind of its own (a trunked channel). Each is offered where it can run; the step back to the one the channel was
+// opened with restores it as stored (its system, its NAC or RAN), so a slip never costs a channel its mode
+enum { CED_FM, CED_DMR, CED_P25, CED_NXDN, CED_KIND, CED_STEPS };
+
+static uint8_t ced_step_of(const channel_t *ch)
+{
+	if (ced_is_p25(ch))
+		return CED_P25;
+	if (ced_is_nxdn(ch))
+		return CED_NXDN;
+	if (ch->kind != CODEPLUG_KIND_NONE)
+		return CED_KIND;
+	return CONFIG_DMR && ch->mode == RADIO_MODE_DMR ? CED_DMR : CED_FM;
+}
+
+// Whether OK may step to s. A listen band is FM (AM) only. P25 and NXDN where the board runs them, as the VFO's mode
+// tile (ui_svc_features), and not for Copy here: it writes through the zone job, which takes the source's tag and has
+// no block of its own. A kind only back to the one it was opened with: its system can't be picked here
+static bool ced_step_ok(uint8_t s, bool listen)
+{
+	bool orig = s == ced_step_of(&ced_orig), into = false;
+#if CONFIG_ZONE_EDIT
+	into = ced_into;
+#endif
+	switch (s) {
+	case CED_FM:
+		return true;
+	case CED_DMR:
+		return CONFIG_DMR && !listen;
+	case CED_P25:
+		return !listen && (orig || (!into && (feats() & UI_FEAT_P25) != 0));
+	case CED_NXDN:
+		return !listen && (orig || (!into && (feats() & UI_FEAT_NXDN) != 0));
+	default:
+		return !listen && orig;
+	}
+}
+
+// c in step s: as stored for the step it was opened with, else plain FM or DMR, or a new P25 or NXDN channel with the
+// default settings (Save writes its tag)
+static void ced_step_set(channel_t *c, uint8_t s)
+{
+	if (s == ced_step_of(&ced_orig)) {
+		c->kind = ced_orig.kind;
+		c->system = ced_orig.system;
+		c->mode = ced_orig.mode;
 #if CONFIG_P25 || CONFIG_NXDN
-// The NAC or RAN row (CE_CODE) and the rate's: what the block holds for them
+		ced_air = ced_air_orig;
+#endif
+		return;
+	}
+	c->kind = CODEPLUG_KIND_NONE;
+	c->system = CODEPLUG_SYSTEM_NONE;
+	c->mode = s == CED_DMR ? RADIO_MODE_DMR : RADIO_MODE_FM;
+#if CONFIG_P25
+	if (s == CED_P25) {
+		c->kind = CODEPLUG_KIND_P25;
+		c->mode = RADIO_MODE_P25;
+		ced_air_default(RADIO_MODE_P25);
+	}
+#endif
+#if CONFIG_NXDN
+	if (s == CED_NXDN) {
+		c->kind = CODEPLUG_KIND_NXDN;
+		c->mode = RADIO_MODE_NXDN;
+		ced_air_default(RADIO_MODE_NXDN);
+	}
+#endif
+}
+
+#if CONFIG_P25 || CONFIG_NXDN
+// The NAC or RAN row (CE_CODE) and the rate's: what the block holds for them; all of it in a mode the channel wasn't
+// stored in
 static bool ced_air_changed(uint8_t r)
 {
+	if (ced_step_of(&ced_ch) != ced_step_of(&ced_orig))
+		return true;
 	const ui_air_conv_t *a = &ced_air, *b = &ced_air_orig;
 #if CONFIG_P25
 	if (ced_is_p25(&ced_ch))
@@ -2662,7 +2748,7 @@ static void ced_air_read(uint16_t number, const channel_t *ch)
 			c->rx_nac = v->p25.rx_nac;
 			c->tx_nac = c->rx_nac == P25_NAC_ANY ? P25_NAC_DEFAULT : c->rx_nac;
 		} else if (!p25_conv_params(number, ch, c)) {
-			c->rx_nac = c->tx_nac = P25_NAC_DEFAULT;
+			ced_air_default(RADIO_MODE_P25);
 		}
 	}
 #endif
@@ -2677,8 +2763,7 @@ static void ced_air_read(uint16_t number, const channel_t *ch)
 		} else if (nxdn_conv_load(number, ch, &cfg)) {
 			*c = cfg.conv;
 		} else {
-			c->rate9600 = true;
-			c->rx_ran = c->tx_ran = NXDN_CP_TX_RAN_DEFAULT;
+			ced_air_default(RADIO_MODE_NXDN);
 		}
 	}
 #endif
@@ -2716,7 +2801,7 @@ static void ced_build(void)
 				       (r == CE_CODE && !into) || (r == CE_RATE && nxdn && !into));
 		if (r == CE_CODE || r == CE_RATE ? !air_row : air && (fm_only || (dmr_only && !air_row)))
 			continue;
-		if (!air_row && ((fm_only && dmr) || (tone && listen) || (dmr_only && !dmr) || (r == CE_MODE && !CONFIG_DMR)))
+		if (!air_row && ((fm_only && dmr) || (tone && listen) || (dmr_only && !dmr) || (r == CE_MODE && !CONFIG_DMR && !CONFIG_P25)))
 			continue;
 		// The radio core skips the burst on a board with no TX tone, so no row for it there (a host board
 		// without a radio keeps the row)
@@ -3139,8 +3224,9 @@ static bool ced_write(uint16_t num, bool as_new)
 #endif
 	(void)as_new;
 #if CONFIG_P25 || CONFIG_NXDN
-	// A changed NAC, RAN or rate goes with the channel; unchanged, the tag is written as without the editor (a plain
-	// channel in P25 or NXDN takes the radio's settings, a copy its source's tag)
+	// A changed NAC, RAN or rate goes with the channel, as does the whole block of one the Mode row made P25 or
+	// NXDN; unchanged, the tag is written as without the editor (a plain channel in P25 or NXDN takes the radio's
+	// settings, a copy its source's tag)
 	if ((ced_is_p25(&ced_ch) || ced_is_nxdn(&ced_ch)) && (ced_air_changed(CE_CODE) || ced_air_changed(CE_RATE)))
 		return ui_svc_write_channel_air(num, &ced_ch, ced_src, &ced_air);
 #endif
@@ -3164,9 +3250,9 @@ static void ced_save(bool as_new)
 		ui_toast(TR(TOAST_NO_FREE_CHANNEL, "No free channel"));
 		return;
 	}
-	// Writing a stored channel of a kind as a plain one removes its tag: the system it names, its NAC or RAN, its
-	// fallback. Never without asking (a new channel takes nothing away)
-	if (!as_new && !ced_new && ced_orig.kind != CODEPLUG_KIND_NONE && ced_ch.kind == CODEPLUG_KIND_NONE && !ced_drop_ok) {
+	// Writing a stored channel of a kind as a plain one or one of another kind replaces its tag: the system it names,
+	// its NAC or RAN, its fallback. Never without asking (a new channel takes nothing away)
+	if (!as_new && !ced_new && ced_orig.kind != CODEPLUG_KIND_NONE && ced_ch.kind != ced_orig.kind && !ced_drop_ok) {
 		discard_contact = false;
 		discard_kind = true;
 		ui_push(SCR_DISCARD, 0);
@@ -3483,26 +3569,21 @@ static void chinfo_select(uint16_t i, bool hold)
 	uint8_t r = ced_rows[i];
 	switch (r) {
 	case CE_NAME: ui_text_open(c->name, CODEPLUG_NAME_LEN); break;
-	case CE_MODE:
-		// No DMR in a listen band: AM in the air band, FM on the broadcast receiver. A channel of a kind (P25, any
-		// other mode) becomes a plain FM one: its tag goes when it is saved (channel-modes.md 2.4), after Save
-		// asks. A slip must not cost the channel its mode: the step after the last plain mode is the mode it was
-		// opened with, its system and its NAC or RAN as they were
-		if (c->kind != CODEPLUG_KIND_NONE || ced_is_p25(c) || ced_is_nxdn(c)) {
-			c->kind = CODEPLUG_KIND_NONE;
-			c->system = CODEPLUG_SYSTEM_NONE;
-			c->mode = RADIO_MODE_FM;
-		} else if (radio_listen_band(c->rx_hz)) {
-			c->mode = RADIO_MODE_FM;
+	case CE_MODE: {
+		// The next step this channel can take (ced_step_ok). A stored channel of a kind left for another mode loses
+		// its tag when it is saved (channel-modes.md 2.4), after Save asks. In a listen band FM is all there is:
+		// AM in the air band, FM on the broadcast receiver
+		bool listen = radio_listen_band(c->rx_hz);
+		uint8_t s = ced_step_of(c);
+		do
+			s = (uint8_t)((s + 1) % CED_STEPS);
+		while (!ced_step_ok(s, listen));
+		if (listen && ced_step_of(c) <= CED_DMR)	// a plain channel: OK can't change it there
 			ui_toast(radio_am_tx_refused(c->rx_hz) ? TR(WHY_AIR_BAND_RX_ONLY, "Air band: receive only") :
 				TR(WHY_BROADCAST_RX_ONLY, "Broadcast: receive only"));
-		} else if (ced_own_mode(&ced_orig) && c->mode == (CONFIG_DMR ? RADIO_MODE_DMR : RADIO_MODE_FM)) {
-			c->kind = ced_orig.kind;
-			c->system = ced_orig.system;
-			c->mode = ced_orig.mode;
-		} else
-			c->mode = c->mode == RADIO_MODE_DMR ? RADIO_MODE_FM : RADIO_MODE_DMR;
+		ced_step_set(c, s);
 		break;
+	}
 	case CE_RX:
 	case CE_TX:
 	case CE_ID:
@@ -3649,7 +3730,7 @@ static const char *discard_body(void)
 // The save question says what the channel becomes; its body says what goes
 static const char *discard_title(void)
 {
-	if (!discard_kind)
+	if (!discard_kind || ced_ch.kind != CODEPLUG_KIND_NONE)	// another kind: the body says what goes
 		return TR(DISCARD_TITLE, "Unsaved Changes");
 	return ced_ch.mode == RADIO_MODE_DMR ? TR(DISCARD_TITLE_DMR, "Save as DMR?") :
 		TR(DISCARD_TITLE_FM, "Save as FM?");
