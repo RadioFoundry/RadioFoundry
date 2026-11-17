@@ -457,15 +457,19 @@ def board_t_names(board_dir):
 
 def flash_map(board_dir):
     """The FLASH_MAP_FIELDS of the board's hal_flash_map_t definition, {field: address}. A board has one; a second one
-    that disagrees is an error."""
+    that disagrees is an error. A map the board gives its driver for a smaller chip (`.small_map = &name`) isn't it."""
+    sources = list(_c_sources(board_dir))
+    small = {n for _, text in sources for n in re.findall(r"\.small_map\s*=\s*&\s*(\w+)", text)}
     out, where = {}, None
-    for f, text in _c_sources(board_dir):
-        for m in re.finditer(r"\bhal_flash_map_t\s+\w+\s*=\s*\{", text):
+    for f, text in sources:
+        for m in re.finditer(r"\bhal_flash_map_t\s+(\w+)\s*=\s*\{", text):
+            if m.group(1) in small:
+                continue
             found = {k: int(v, 0) for k, v in re.findall(r"\.(\w+)\s*=\s*(0[xX][0-9A-Fa-f]+|\d+)[uUlL]*",
                                                         _braced(text, m.end())) if k in FLASH_MAP_FIELDS}
             if where is not None and found != out:
-                raise RegistryError("%s: hal_flash_map_t in %s and %s differ" % (os.path.relpath(board_dir, ROOT),
-                                                                                 where, f))
+                d = board_dir if isinstance(board_dir, str) else board_dir[0]
+                raise RegistryError("%s: hal_flash_map_t in %s and %s differ" % (os.path.relpath(d, ROOT), where, f))
             out, where = found, f
     return out
 
@@ -1757,6 +1761,12 @@ def self_test():
     ok(openfw_bases("-DX=1 -DCODEPLUG_OPENFW_EEPROM_BASE=0x700000u -DCODEPLUG_OPENFW_FLASH_BASE=0x720000u") ==
        (0x700000, 0x720000) and openfw_bases("-DX=1") == (0, 0x20000) and openfw_bases(None) == (0, 0x20000),
        "openfw_bases: board.mk's, else the STM32 defaults")
+    with open(os.path.join(tmpc, "flash3.c"), "w", encoding="utf-8") as f:
+        f.write("static const hal_flash_map_t small = { .openfw_eeprom = 0, .openfw_end = 0x100000 };\n"
+                "static const cfg_t cfg = { .map = &fmap, .small_map = &small };\n")
+    ok(flash_map(tmpc) == {"openfw_eeprom": 0x700000, "openfw_end": 0x800000, "staging_addr": 0},
+       "flash_map: a map for a smaller chip (.small_map) is not the board's map")
+    os.remove(os.path.join(tmpc, "flash3.c"))
     with open(os.path.join(tmpc, "flash2.c"), "w", encoding="utf-8") as f:
         f.write("const hal_flash_map_t m2 = { .openfw_eeprom = 0x600000 };\n")
     try:

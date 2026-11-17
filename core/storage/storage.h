@@ -91,10 +91,10 @@ uint32_t storage_staging_size(void);
 // tells our data from another firmware's there
 #define STORAGE_NATIVE_MAGIC	0x4E52444Fu
 typedef enum {
-	STORAGE_NATIVE_BLANK,		// nothing there: nothing to do
+	STORAGE_NATIVE_BLANK,		// nothing there (or no native area in the map): nothing to do
 	STORAGE_NATIVE_ERASED,		// our native data was there and is erased now
 	STORAGE_NATIVE_FOREIGN,		// something that isn't ours (no magic in the header sector): left alone
-	STORAGE_NATIVE_FAILED,		// no flash, no area, the region isn't ours, or an erase failed
+	STORAGE_NATIVE_FAILED,		// no flash or map, the region isn't ours, or an erase failed
 } storage_native_t;
 // Empty the native area (factory reset): only when it holds our data (the magic) or nothing. The data sectors go
 // first and the header sector last, so a cut in between leaves the magic and the reset can run again. Slow: one

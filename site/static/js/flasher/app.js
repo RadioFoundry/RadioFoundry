@@ -2676,7 +2676,8 @@ async function bringChannels(status, { finish }) {
 			const sectors = m.migrationSectors(conv.image, radio, S.board?.protect);
 			await prepareStorage(box);	// the radio refuses every codeplug write until its settings area is RadioFoundry's
 			const refused = await writeCodeplug(link, sectors, (d, n) => prog.set(d, n, t("flash.channels.writing")));
-			const back = await link.cpsDump(1, 0, m.readSpan(null), { progress: (d, n) => prog.set(d, n, t("flash.channels.checking")) });
+			// the span the first read took: a memory chip smaller than the codeplug span ends the read early
+			const back = await link.cpsDump(1, 0, radio.length, { progress: (d, n) => prog.set(d, n, t("flash.channels.checking")) });
 			const check = m.checkMigration(sectors, back.data, conv.counts);
 			prog.el.remove();
 			diag.note("channels written", { sectors: sectors.length, refused: refused.length, differ: check.differ.length, have: check.have });
