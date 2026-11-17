@@ -69,8 +69,12 @@ MCU_DEFS += $(OPTION_DEFS)
 # none of the code that lists, asks for and stores them
 MCU_DEFS += -DRFOUNDRY_HWOPTS=$(if $(filter y,$(BOARD_HWOPTS)),1,0)
 # The sixth character of the APRS tocall (APRDF?, docs/spec/aprs.md 4.2): board.toml aprs_tocall, one per radio
-APRS_TOCALL_ID := $(shell sed -n 's/^aprs_tocall = "\([0-9A-Z]\)".*/\1/p' boards/$(BOARD)/board.toml 2>/dev/null)
-MCU_DEFS += $(if $(APRS_TOCALL_ID),-DAPRS_TOCALL_ID='"$(APRS_TOCALL_ID)"')
+# (tools/boards.py check validates the file; this only reads the value, and refuses a build without a valid one)
+APRS_TOCALL_ID := $(shell sed -n "s/^aprs_tocall[ 	]*=[ 	]*[\"']\([^\"']*\)[\"'].*/\1/p" boards/$(BOARD)/board.toml 2>/dev/null)
+ifeq ($(filter $(APRS_TOCALL_ID),1 2 3 4 5 6 7 8 9 A B C D E F G H I J K L M N O P Q R S T U V W X Y Z),)
+$(error boards/$(BOARD)/board.toml: aprs_tocall "$(APRS_TOCALL_ID)" is not one character 1-9 or A-Z (docs/dev/board-registry.md))
+endif
+MCU_DEFS += -DAPRS_TOCALL_ID='"$(APRS_TOCALL_ID)"'
 
 BUILD := build/$(BOARD)$(if $(VARIANT),-$(VARIANT))$(OPTION_SUFFIX)
 TARGET := $(BUILD)/rfoundry_$(BOARD)$(OPTION_SUFFIX)

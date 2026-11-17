@@ -1204,7 +1204,8 @@ def check(root=ROOT):
             bad("aprs_tocall %r: one character, 1-9 or A-Z" % d["aprs_tocall"])
         elif d["aprs_tocall"] in tocalls:
             bad("aprs_tocall %r is also the %s's" % (d["aprs_tocall"], tocalls[d["aprs_tocall"]]))
-        tocalls.setdefault(d["aprs_tocall"], bid)
+        else:
+            tocalls[d["aprs_tocall"]] = bid
         fm = b.flash_map
         if b.codeplug() is None:
             bad("no hal_flash_map_t with openfw_eeprom and openfw_end in boards/%s/*.c" % bid)
