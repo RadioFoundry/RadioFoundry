@@ -241,8 +241,8 @@ started by the modem's RF TX interrupt. RadioFoundry runs the bursts from the sh
 Burst TX on, from the RF TX interrupt: the calibration's key-up delay (section 4.1), PTB4 (RX supply) low, the
 FD6818 to the TX frequency in its TX state, PTB3 and PTB0 high, DAC B ramped to the calibration's level. TX off: the
 ramp down, PTB0 and PTB3 low, 100 us, the FD6818 back to the receive frequency (0x4140, 0xBFF1), 100 us, PTB4 high.
-The original starts the key-down at its RF RX interrupt plus the calibration's key-down delay; RadioFoundry holds
-the TX until the burst's last symbol instead.
+The calibration's key-down delay is counted from the modem's RF RX interrupt; RadioFoundry holds the TX until the
+burst's last symbol instead.
 
 RadioFoundry's lead is not a fixed 2.6 ms: it is the shortest 100 us step that has the PA up for the first
 symbol, 0.85 ms after the lead (`rt10_dmr_rf_tx_lead`, `boards/rt10/rt10.h`). After the RF TX interrupt plus the
