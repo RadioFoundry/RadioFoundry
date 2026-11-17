@@ -225,10 +225,10 @@ FM_LEAD_S = 0.5
 
 def squelch_close_ms():
     """The longest the core's squelch stays open after the carrier: up to one poll before a poll sees the carrier gone,
-    then the close polls (read from radio_sm.h so the test copies no number), plus one pop analysis frame for where the
-    burst's edges fall."""
+    then the close polls (read from the core's headers so the test copies no number), plus one pop analysis frame for
+    where the burst's edges fall."""
     import re
-    src = open(os.path.join(A.ROOT, "core", "radio", "radio_sm.h")).read()
+    src = "".join(open(os.path.join(A.ROOT, "core", "radio", f)).read() for f in ("radio_sm.h", "radio_squelch.h"))
     get = lambda name: int(re.search(rf"#define\s+{name}\s+(\d+)", src).group(1))  # noqa: E731
     return (get("RADIO_SQL_CLOSE_POLLS") + 1) * get("RADIO_POLL_MS") + A.POP_WIN_MS
 FM_PROGRAM = [{"kind": "silence", "s": FM_LEAD_S},
