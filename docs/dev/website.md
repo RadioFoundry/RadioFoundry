@@ -269,7 +269,9 @@ catalog has no string. `site/tests/i18n.test.mjs` tests the scripts' side. `tool
 Each radio has an original illustration, `site/static/img/radios/src/<radio>.svg`, drawn from straight-on reference
 photos (the photos stay outside the repository: product photos are not ours to publish). Rules:
 
-- viewBox `0 0 W H`, transparent background, no external references or embedded images;
+- viewBox `0 Y W H`, transparent background, no external references or embedded images. The top edge cuts a handheld's
+  antenna a little above its knobs (Y > 0 when the drawing has the whole antenna), so every radio shows the same stub
+  and its body fills the card;
 - exactly one `<rect id="screen" x y width height/>`, black, transform-free and not covered by anything, on the
   display's visible area, with the aspect ratio of the radio's gallery (5:4 for 160x128 and 160x120i5, 22:31 for
   240x320i10x5, 4:3 for 320x240);

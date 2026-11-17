@@ -300,8 +300,9 @@ CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFI
 # P25 Phase 1 conventional (core/p25, docs/spec/p25.md): the one switch for everything P25 needs. It brings the air
 # interface (core/air: the framer, the soft modem, the shared FEC, and the board's provider behind board.air), the
 # engine and the P25 channel mode, the full-rate voice decoder and the MBE core it sits on (core/mbe). A board without
-# an air interface provider (board.air) lists it in BOARD_NOT_WRITTEN
-CONFIG_P25 ?= y
+# an air interface provider (board.air) lists it in BOARD_NOT_WRITTEN. Needs DMR: its talk groups are the codeplug's
+# contacts and RX group lists
+CONFIG_P25 ?= $(CONFIG_DMR)
 # NXDN conventional voice (core/nxdn, docs/spec/nxdn.md): 4800 and 9600 bit/s frames, the call layer and its engine
 # on the air interface, and the NXDN channel mode. Voice frames go to and from the vocoder the board already hosts for
 # DMR, through the DMR voice path; nothing of the vocoder is in it. Needs DMR
@@ -391,6 +392,7 @@ ifneq ($(call feature_on,HOTSPOT_SPLIT),)
 endif
 $(if $(and $(call feature_on,AIR_RAW),$(if $(call feature_on,AIR),,x)),$(error CONFIG_AIR_RAW=y needs CONFIG_P25=y or CONFIG_NXDN=y (an air-framed mode)))
 $(if $(and $(call feature_on,P25_TRUNK),$(if $(call feature_on,P25),,x)),$(error CONFIG_P25_TRUNK=y needs CONFIG_P25=y))
+$(if $(and $(call feature_on,P25),$(if $(call feature_on,DMR),,x)),$(error CONFIG_P25=y needs CONFIG_DMR=y (its talk groups are the codeplug's contacts)))
 $(if $(and $(call feature_on,NXDN),$(if $(call feature_on,DMR),,x)),$(error CONFIG_NXDN=y needs CONFIG_DMR=y (its voice is the DMR vocoder's)))
 $(if $(and $(call feature_on,AIR_RAW),$(if $(call feature_on,DEBUGLINK),,x)),$(error CONFIG_AIR_RAW=y needs CONFIG_DEBUGLINK=y))
 ifneq ($(call feature_on,DEBUGLINK),)
