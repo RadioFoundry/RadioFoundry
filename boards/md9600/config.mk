@@ -62,7 +62,3 @@ MAXIMAL_SKIP := NET_PPP
 CONFIG_LANG_ES ?= n
 CONFIG_RX_EXT ?= n
 BOARD_NOT_WRITTEN += RX_EXT	# no receive range in its chip documents (a PLL and an IF chain, no single receiver chip)
-# NXDN receive needs the HR_C6000's FM copy tap, which this board doesn't set (hardware-md9600.md 19.11): without it
-# the radio could send NXDN but never hear it
-CONFIG_NXDN ?= n
-BOARD_NOT_WRITTEN += NXDN	# no FM copy receive tap yet

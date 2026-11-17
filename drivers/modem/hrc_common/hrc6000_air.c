@@ -11,7 +11,6 @@
 #define R_MODE		0x10
 #define R_ACCESS0	0x20
 #define R_ACCESS1	0x21
-#define R_CODEC_CTL	0x22
 #define R_FM_FILT	0x34	// FM audio filters: bit 7 band-pass, 6 expander, 5 de-emphasis, 2 receive low-pass
 #define R_FM_AUDIO	0x36	// the FM feed-through to the codec's line out
 #define R_L2_CTL	0x40
@@ -41,7 +40,6 @@
 #define CTL_TX		0x80	// send in the next slot
 #define SYNC_CMP_ALL	0xF0	// every comparator enabled (bits 1-0 read back which one matched)
 #define ACCESS_IMPOLITE	0x02
-#define CODEC_ENC	0x86
 #define INT_PHY		0x01	// 0x82 bit 0: a physical layer record is ready
 #define CLASS_SYNC	2	// 0x51 bits 1-0 on a record with a sync detection
 #define MODE_FM		0x80
@@ -77,7 +75,7 @@
 
 // Profiles the chip takes (modem-hrc6000.md 10.4)
 #define CAL_DEV_HZ	1944u	// the DMR outer deviation the calibrated pair gives
-#define C4FM_SCALE	903u	// a C4FM receiver's integrate and dump reads this much (/1000) of the chip's outer deviation
+#define C4FM_SCALE	946u	// a C4FM receiver reads this much (/1000) of the chip's outer deviation (measured, 10.3)
 #define TX_DEV_MIN	1050u	// the pair scales linearly over this range
 #define TX_DEV_MAX	2400u
 #define RX_DEV_MIN	1700u	// the correlator: syncs at 1800 Hz C4FM, 1944 and 2700 Hz; never at 1350 or 1050
@@ -178,9 +176,20 @@ uint32_t hrc6000_air_fit(const air_profile_t *p)
 	return f;
 }
 
-uint32_t hrc6000_air_fit_tap(const air_profile_t *p, const hal_baseband_t *tap)
+// What the chip itself does with p: a chip without physical layer receive keeps only transmit
+static uint32_t chip_fit(const air_profile_t *p, const hrc_chip_t *chip)
 {
 	uint32_t f = hrc6000_air_fit(p);
+
+	if (chip != NULL && chip->air_tx_only) {
+		f &= ~(uint32_t)(AIR_FIT_RX | AIR_FIT_SOFT | AIR_FIT_NEEDS_SYNC);
+	}
+	return f;
+}
+
+uint32_t hrc6000_air_fit_tap(const air_profile_t *p, const hrc_chip_t *chip, const hal_baseband_t *tap)
+{
+	uint32_t f = chip_fit(p, chip);
 
 	// The copy receives what the correlator can't; transmit stays the chip's, so a profile it can't send gets nothing
 	if (f != 0 && (f & AIR_FIT_RX) == 0 && tap != NULL) {
@@ -433,7 +442,9 @@ static void rx_setup(hrc6000_air_t *a)
 	if (a->rx_on) {
 		write_pattern(a, a->p->sync[a->sync_id].syms);
 	}
-	w(a, R_SYNC_TYPE, SYNC_CMP_ALL);
+	if (a->dev->chip->sync_reg) {
+		w(a, R_SYNC_TYPE, SYNC_CMP_ALL);	// a chip without 0x5F runs its comparators as reset left them
+	}
 	w(a, R_L2_CTL, L2_PHY_RX);
 	w(a, R_SLOT_CTL, CTL_SOFT);
 	a->unsynced = 0;
@@ -811,12 +822,12 @@ static void rx_samples(hrc6000_air_t *a)
 
 bool hrc6000_air_open(hrc6000_air_t *a, const air_profile_t *p, air_event_cb_t cb, void *ctx)
 {
-	uint32_t f = hrc6000_air_fit_tap(p, a->tap_desc);
+	uint32_t f = hrc6000_air_fit_tap(p, a->dev->chip, a->tap_desc);
 
 	if (f == 0 || cb == NULL || a->open || a->tap) {
 		return false;
 	}
-	bool copy = (hrc6000_air_fit(p) & AIR_FIT_RX) == 0 && (f & AIR_FIT_RX) != 0;
+	bool copy = (chip_fit(p, a->dev->chip) & AIR_FIT_RX) == 0 && (f & AIR_FIT_RX) != 0;
 	if (copy && !air_softmodem_rx_open(a->sm, p, HRC6000_AIR_COPY_HZ, a->tap_desc->rx_counts_per_khz, sm_out, a)) {
 		return false;
 	}
@@ -947,6 +958,7 @@ void hrc6000_air_poll(hrc6000_air_t *a)
 			c.hard = r->hard;
 			c.soft = r->soft;
 			ev.chunk = &c;
+			a->st.chunks++;
 		} else {
 			ev.arg = e.arg;
 		}
@@ -980,9 +992,14 @@ bool hrc6000_air_tx_begin(hrc6000_air_t *a)
 		a->copy = false;	// the chip leaves FM: no copy halves while it sends
 		w(a, R_SLOT_CTL, CTL_NONE);
 		w(a, R_MODE, MODE_PHY_TX);
-		w(a, R_ACCESS0, 0x00);
-		w(a, R_ACCESS1, ACCESS_IMPOLITE);
-		w(a, R_CODEC_CTL, CODEC_ENC);
+		// The chip's own transmission start (the HR_C6000's: the access policy and its encoder start, 0x22 = 0x86);
+		// a chip whose vocoder runs on the MCU (the HR_C5000) has none, and gets the access policy alone
+		if (a->dev->chip->tx_begin != NULL) {
+			a->dev->chip->tx_begin(a->dev, ACCESS_IMPOLITE);
+		} else {
+			w(a, R_ACCESS0, 0x00);
+			w(a, R_ACCESS1, ACCESS_IMPOLITE);
+		}
 		// The chip sends TX RAM whenever the PA is up: idle in both halves until the first chunk's slot
 		idle_half(a, half);
 		(void)hrc_write_burst(a->dev, HRC_PAGE_DATA, TX_HALF0, half, sizeof(half));

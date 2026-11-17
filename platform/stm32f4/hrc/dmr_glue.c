@@ -644,6 +644,11 @@ bool stm32_hrc_dmr_tx_listening(void)
 	return active && !AIR_ON() && eng.tx_listen;
 }
 
+bool stm32_hrc_dmr_tx_continuous(void)
+{
+	return active && AIR_ON();
+}
+
 bool stm32_hrc_dmr_tx_last_out(void)
 {
 #if CONFIG_AIR
@@ -890,9 +895,15 @@ static const hal_baseband_t *air_tap(void)
 	return hooks != NULL && hooks->air_tap ? &stm32_hrc_baseband : NULL;
 }
 
+// The chip's description (the HR_C5000 has no physical layer receive), NULL before stm32_hrc_dmr_init
+static const hrc_chip_t *air_chip(void)
+{
+	return eng.dev != NULL ? eng.dev->chip : NULL;
+}
+
 static uint32_t air_fit(const air_profile_t *p)
 {
-	uint32_t f = hrc6000_air_fit_tap(p, air_tap());
+	uint32_t f = hrc6000_air_fit_tap(p, air_chip(), air_tap());
 	if (f != 0 && (hooks == NULL || !hooks->air_verified)) {
 		f |= AIR_FIT_UNTESTED;
 	}
@@ -916,7 +927,7 @@ static void air_take(void)
 static bool air_open(const air_profile_t *p, air_event_cb_t cb, void *ctx)
 {
 	if (hooks == NULL || !active || air_on || hrc6000_dmr_is_transmitting(&eng)
-	    || hrc6000_air_fit_tap(p, air_tap()) == 0) {
+	    || hrc6000_air_fit_tap(p, air_chip(), air_tap()) == 0) {
 		return false;
 	}
 	air_cb = cb;
@@ -1019,10 +1030,20 @@ static bool air_rx_load(uint32_t *work_us, uint32_t *span_us)
 	return copy;
 }
 
+static bool air_rx_counts(air_rx_counts_t *c)
+{
+	if (!air_on) {
+		return false;
+	}
+	*c = (air_rx_counts_t){ .records = AIR->st.records, .synced = AIR->st.synced, .halves = AIR->st.halves,
+				.overruns = AIR->st.overruns + AIR->st.rx_overflow, .chunks = AIR->st.chunks };
+	return true;
+}
+
 const hal_air_t stm32_hrc_air = {
 	.fit = air_fit, .open = air_open, .close = air_close, .rx_restart = air_rx_restart, .tx_begin = air_tx_begin,
 	.tx_queue = air_tx_queue, .tx_space = air_tx_space, .tx_end = air_tx_end, .tx_abort = air_tx_abort,
-	.now_us = air_now_us, .slot_clock = NULL, .slot_slew = NULL, .rx_load = air_rx_load,
+	.now_us = air_now_us, .slot_clock = NULL, .slot_slew = NULL, .rx_load = air_rx_load, .rx_counts = air_rx_counts,
 	.tx_chunk_syms = HRC6000_AIR_SYMS,
 	.tx_queue_depth = HRC6000_AIR_TXQ, .tx_lead_ms = HRC6000_AIR_TX_LEAD_MS, .time_accuracy_us = HRC6000_AIR_TIME_US,
 };

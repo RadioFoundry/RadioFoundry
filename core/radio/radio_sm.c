@@ -483,13 +483,25 @@ static bool bcast_listening(const radio_sm_t *sm)
 #endif
 }
 
-// The LEDs' timed signals over what the state shows (RADIO_LED_*_MS). A deny flashes red, green, ... once: a radio
-// without a screen has no other way to say PTT was refused. While the radio waits for a repeater to wake, red shows
-// each wake-up burst going out, not the whole wait, which is mostly listening
+static bool ptt_line_stuck(void)
+{
+	return board.input != NULL && board.input->ptt_line_stuck != NULL && board.input->ptt_line_stuck();
+}
+
+// The LEDs' timed signals over what the state shows (RADIO_LED_*_MS). A stuck PTT line flashes red and green fast.
+// A deny flashes red, green, ... once: a radio without a screen has no other way to say PTT was refused. While the
+// radio waits for a repeater to wake, red shows each wake-up burst going out, not the whole wait, which is mostly
+// listening
 static void led_signals(radio_sm_t *sm, bool *red, bool *green)
 {
 	uint32_t now = sm->led_now;
 	bool timed = false;
+	if (ptt_line_stuck()) {
+		*red = ((now / RADIO_LED_STUCK_STEP_MS) & 1u) == 0;	// until the power cycle that releases it
+		*green = !*red;
+		sm->led_timed = true;
+		return;
+	}
 	if (sm->deny_led) {
 		uint32_t step = (now - sm->deny_led_ms) / RADIO_LED_DENY_STEP_MS;
 		// A new transmission ends the flash: red then shows the air (or the wake-up bursts), not the refusal before
@@ -4272,10 +4284,89 @@ static void scan_stop(radio_sm_t *sm, bool cancel, uint32_t now_ms)
 	scan_publish(sm);
 }
 
+#define SCAN_NO_POS	0xFFFFu
+
+// Tune zone position pos as a scan stop, outside the sweep's order (the sweep goes on from where it was)
+static bool scan_tune_pos(radio_sm_t *sm, uint16_t pos, uint32_t now_ms)
+{
+	channel_t ch;
+	if (pos >= sm->zone.count || !channel_read(sm->zone.channels[pos], &ch)) {
+		return false;
+	}
+	set_channel(sm, pos, &ch);
+	tune(sm, now_ms);
+	scan_tuned(&sm->scan, now_ms);
+	return true;
+}
+
+// The first scannable digital channel (DMR, P25, NXDN) of the zone from position from on, on the receive frequency of
+// the FM stop at position fm, -1 if none
+static int scan_twin_pos(const radio_sm_t *sm, uint16_t fm, uint16_t from)
+{
+	for (uint16_t pos = from; pos < sm->zone.count; pos++) {
+		channel_t ch;
+		if (pos == fm || scan_pos_skipped(&sm->scan, pos) || !channel_read(sm->zone.channels[pos], &ch) ||
+		    ch.scan_skip || ch.rx_hz != sm->view.ch.rx_hz || !scan_listens(&ch, sm->zone.channels[pos])) {
+			continue;
+		}
+		if ((CONFIG_DMR && ch.mode == RADIO_MODE_DMR) || air_mode(ch.mode)) {
+			return pos;
+		}
+	}
+	return -1;
+}
+
+// An FM channel and a digital one on the same frequency (a mixed zone): a digital signal opens the FM squelch, and a
+// scan that held the FM stop would sit through the call there, never reaching the channel that plays it. So before an
+// FM stop holds, the scan checks the zone's digital channels of that frequency in turn (DMR, P25 and NXDN may share
+// it), each as a stop with the usual probe: a call there holds it, and a stop that heard its mode's signal (a call not
+// for us included) goes on with the sweep. When none heard its mode it was an FM signal: the scan goes back to the FM
+// stop, which holds this time. True when it retuned (poll's action is spent). heard: this stop heard its own digital
+// mode
+static bool scan_mixed(radio_sm_t *sm, uint8_t was, scan_act_t act, bool heard, uint32_t now_ms)
+{
+	scan_t *sc = &sm->scan;
+	if (sc->kind != SCAN_ZONE) {
+		return false;
+	}
+	if (sm->scan_twin_fm != SCAN_NO_POS) {
+		// On the digital channel for the check: a hold or the probe stays here; scan_step clears the check
+		sm->scan_twin_digital |= heard;
+		if (act != SCAN_ACT_NEXT || sm->scan_twin_digital) {
+			return false;
+		}
+		uint16_t fm = sm->scan_twin_fm;
+		int next = scan_twin_pos(sm, fm, (uint16_t)(sm->view.zone_pos + 1u));
+		if (next >= 0 && scan_tune_pos(sm, (uint16_t)next, now_ms)) {
+			return true;	// the frequency's next digital channel
+		}
+		sm->scan_twin_fm = SCAN_NO_POS;
+		if (!scan_tune_pos(sm, fm, now_ms)) {
+			return false;
+		}
+		sm->scan_fm_heard = fm;
+		return true;
+	}
+	bool holds = sc->phase == SCAN_PH_HOLD && was != SCAN_PH_HOLD && was != SCAN_PH_RESUME;
+	if (!holds || sm->view.ch.mode != RADIO_MODE_FM || sm->view.zone_pos == sm->scan_fm_heard) {
+		return false;
+	}
+	int twin = scan_twin_pos(sm, sm->view.zone_pos, 0);
+	uint16_t fm = sm->view.zone_pos;
+	if (twin < 0 || !scan_tune_pos(sm, (uint16_t)twin, now_ms)) {
+		return false;
+	}
+	sc->holds--;		// not a hold after all
+	sm->scan_twin_fm = fm;
+	sm->scan_twin_digital = false;
+	return true;
+}
+
 // Move to the next stop. False (and the scan ends) when there is none
 static bool scan_step(radio_sm_t *sm, uint32_t now_ms)
 {
 	scan_t *sc = &sm->scan;
+	sm->scan_twin_fm = sm->scan_fm_heard = SCAN_NO_POS;	// a mixed frequency's check ends with its stop (scan_mixed)
 	if (sc->kind == SCAN_DUAL) {
 		if (!dual_tune(sm, (uint8_t)!sm->dual_at, now_ms)) {
 			scan_stop(sm, false, now_ms);
@@ -4361,6 +4452,7 @@ static void scan_start(radio_sm_t *sm, uint8_t kind, uint32_t lo_hz, uint32_t hi
 	sm->scan_hear_all = sm->hear_all_latch && sm->latch_ch == sm->view.channel_number &&
 			    sm->latch_vfo == sm->view.vfo;
 #endif
+	sm->scan_twin_fm = sm->scan_fm_heard = SCAN_NO_POS;
 	sc->origin_vfo = sm->view.vfo;
 	sc->origin_pos = sm->view.zone_pos;
 	sc->origin_hz = sm->view.ch.rx_hz;
@@ -4605,7 +4697,7 @@ static void scan_service(radio_sm_t *sm, const radio_status_t *st, uint32_t now_
 	bool dmr = sm->view.ch.mode == RADIO_MODE_DMR;
 	bool air = air_mode(sm->view.ch.mode);
 	bool carrier = carrier_heard(sm, st->noise);
-	bool active, sync = false;
+	bool active, sync = false, digital = false;	// digital: the stop's own digital mode heard (scan_mixed)
 #if CONFIG_DMR
 	if (dmr) {
 		active = sm->view.dmr.state == RDMR_RX;
@@ -4620,6 +4712,7 @@ static void scan_service(radio_sm_t *sm, const radio_status_t *st, uint32_t now_
 		uint32_t heard_ms;
 		sync = dmr_call_last_activity(&heard_ms) && (int32_t)(heard_ms - sc->tuned_ms) >= SCAN_SETTLE_MS &&
 		       now_ms - heard_ms <= RADIO_SCAN_DMR_SYNC_AGE_MS;
+		digital = sync || active || sm->view.dmr.state == RDMR_RX_OTHER;
 		if (sm->view.dmr.state == RDMR_RX_OTHER) {
 			carrier = sync = false;
 		}
@@ -4639,6 +4732,7 @@ static void scan_service(radio_sm_t *sm, const radio_status_t *st, uint32_t now_
 		carrier = carrier || (now_ms - sc->tuned_ms >= SCAN_SETTLE_MS && dmr_strength_heard(sm, st->rssi_dbm));
 		active = h == AIR_HEARD_PLAYED;
 		sync = h == AIR_HEARD_PENDING;
+		digital = h != AIR_HEARD_NONE;
 		if (h == AIR_HEARD_OTHER) {
 			carrier = false;
 		}
@@ -4652,7 +4746,12 @@ static void scan_service(radio_sm_t *sm, const radio_status_t *st, uint32_t now_
 	sc->cfg.sync_ms = dmr ? RADIO_SCAN_DMR_SYNC_MS : air ? RADIO_SCAN_AIR_SYNC_MS : 0;
 	sc->cfg.carrier_hold_ms = dmr || air ? RADIO_SCAN_DMR_CARRIER_MS : 0;
 	uint8_t was = sc->phase;
-	switch (scan_poll(sc, now_ms, active, carrier, sync)) {
+	scan_act_t act = scan_poll(sc, now_ms, active, carrier, sync);
+	if (scan_mixed(sm, was, act, digital, now_ms)) {
+		scan_publish(sm);
+		return;
+	}
+	switch (act) {
 	case SCAN_ACT_NEXT:
 		scan_step(sm, now_ms);
 		return;
@@ -8402,7 +8501,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 {
 	radio_status_t st;
 	sm->led_now = now_ms;
-	if (sm->led_timed || sm->deny_led) {
+	if (sm->led_timed || sm->deny_led || ptt_line_stuck()) {
 		outputs(sm);	// as in radio_sm_tick: some paths below return before their outputs()
 	}
 	// codeplug_serial() before zone_edit_busy(): a zone write that moved indexes has its log entry by then
@@ -8731,7 +8830,7 @@ void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 		bench_tick(sm, now_ms);
 	}
 #endif
-	if (sm->led_timed || sm->deny_led) {
+	if (sm->led_timed || sm->deny_led || ptt_line_stuck()) {
 		outputs(sm);	// a blink or the deny flash runs on time, not only when the state changes
 	}
 }

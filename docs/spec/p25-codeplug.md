@@ -85,7 +85,9 @@ the block kept byte for byte; a copy at another number takes the source's tag ([
 the tag follows it, then the edited NACs and the squelch as read are written over the front of its block
 ([channel-modes.md](channel-modes.md) 2.4): the system, the fallback, the other flags and any later bytes of the block
 stay, and under a tag with the base-record flag the record keeps its own mode. A copy takes its source's tag first. A plain channel in P25 takes the
-edited NACs in place of the settings'.
+edited NACs in place of the settings'. A channel the editor's Mode row made P25 is written the same way with a new
+tag and block: NAC 0x293 both ways (unless edited), squelch normal, its talk target and talkaround as the editor shows
+them.
 
 ## 3. Trunked system (type 3)
 
@@ -100,7 +102,7 @@ clear by default: a system without it is listen only, and the radio never regist
 | 3 | 2 | System ID, bits 11-0; 0xFFFF = any |
 | 5 | 2 | Control channel NAC: bit 15 set = bits 11-0 hold it; clear = any |
 | 7 | 1 | Options: bit 0 skip encrypted calls; bit 1 use only the programmed channel plan (don't learn it from the control channel); bit 2 don't register or affiliate (PTT asks for a voice channel at once). Bits 3-7: 0 |
-| 8 | 1 | Hold time after a call in seconds, 0 = the radio's |
+| 8 | 1 | Hold time on the voice channel after a call in seconds, 0 = none (back to the control channel at once) |
 | 9 | 1 | Change site below this dBm (signed; 0 = the radio's roaming threshold) |
 
 Authentication and traffic keys are appended later; keys use the traffic key family

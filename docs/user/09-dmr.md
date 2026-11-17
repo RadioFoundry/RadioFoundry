@@ -379,16 +379,16 @@ What has been checked on each radio is in the
 
 In the Codeplug Editor ([Programming](04-programming.md#digital-modes-and-systems)):
 
-1. On the **Systems** tab add a system of type T3. Enter its network model, NET, category and color code, and under
-   **Channels and sites** its control channels. The system's operator has these values.
-2. Make a channel, set its **Mode** to T3 and pick the system. Its contact is who you talk to; its RX group list is
-   the talkgroups you hear.
+1. On the **Systems** tab add a system of type DMR Tier III Trunking. Enter its network model, NET, category and color
+   code, and its channels with **Control** ticked on the control channels. The system's operator has these values.
+2. Make a channel, set its **Mode** to DMR Tier III Trunking and pick the system. Its contact is who you talk to; its
+   RX group list is the talkgroups you hear.
 3. Put the channel in a zone, with any other channels.
 
 | Setting | Does |
 |---|---|
-| Listen only | The radio follows the system and its calls, and never registers or transmits there. Use it until the operator has enabled your radio's ID |
-| Needs its key | For a system that authenticates its radios. Set the key under **Key**; without it the channel can't be used |
+| Transmit | Never (listen only): the radio follows the system and its calls, and never registers or transmits there. Use it until the operator has enabled your radio's ID |
+| Needs its key | For a system that authenticates its radios. Enter the key in the form's **Key** section; without it the channel can't be used |
 | Radio ID on this system | Your ID there, when it isn't the radio's DMR ID |
 | Fallback channel | A conventional channel to use when the system can't be found (below). A channel can name its own, or none |
 

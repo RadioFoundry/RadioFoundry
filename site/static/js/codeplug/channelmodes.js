@@ -202,7 +202,7 @@ export function setKind(m, c, kind, mode = "dmr") {
 
 export function newSystem(m, type, name) {
 	const mod = typeRow(type).module;
-	return { number: null, type, name, sharing: SHARE.off, ownId: 0, tx: mod.defaultTx, needsKey: false, flagsRaw: 0, fallback: null, fields: mod.newFields(), entries: [], secret: null, raw: null };
+	return { number: null, type, name, sharing: SHARE.identity, ownId: 0, tx: mod.defaultTx, needsKey: false, flagsRaw: 0, fallback: null, fields: mod.newFields(), entries: [], secret: null, raw: null };
 }
 
 // --- Writing ---

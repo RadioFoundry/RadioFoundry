@@ -76,7 +76,7 @@ typedef struct {
 	uint16_t sysid;		// P25_CP_SYSID_ANY: any
 	uint16_t cc_nac;	// P25_NAC_ANY: any
 	uint8_t options;
-	uint8_t hold_s;		// 0 = the radio's
+	uint8_t hold_s;		// 0 = no hold
 	int8_t roam_dbm;	// 0 = the radio's
 } p25_tsys_t;
 void p25_tsys_decode(const uint8_t *b, int len, p25_tsys_t *out);

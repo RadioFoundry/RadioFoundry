@@ -773,6 +773,11 @@ beep) pass. The bandwidth test passes too: the CTCSS 100.0 tone deviates 298 Hz 
 25 kHz (0x3028), a ratio of 2.00 (2026-10-16).
 The MMDVM hotspot on the programming cable works both ways on air (2026-10-16: the four `test_hotspot_on_air` cases).
 The reference trim passes `test_ref_trim.py` (2026-10-30, 5.2).
+
+P25, P25 trunking and NXDN (`CONFIG_P25`, `CONFIG_P25_TRUNK`, `CONFIG_NXDN`, default on) run on the HR_C7000's air
+interface provider and receive tap (`board.air`, `board.baseband`; [modem-hrc7000.md](modem-hrc7000.md) 10), the same
+glue as the DM-32UV's, with one key-up for the whole transmission. Built, not yet run on this radio: the fits say
+untested.
 Not checked on the radio yet: the air band and the broadcast tuner ([airband-and-broadcast.md](airband-and-broadcast.md)). Not in: USB (the radio has none).
 
 Further measurements and notes:

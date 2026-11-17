@@ -153,6 +153,10 @@ static hal_radio_t fake_radio = { .init = r_init, .set_mode = r_set_mode, .rx = 
 // (fake_radio.volume is set by test_soft_volume only)
 static void p_led(uint8_t which, bool on) { hw.led[which] = on; }
 
+static bool ptt_stuck;
+static bool p_ptt_stuck(void) { return ptt_stuck; }
+static const hal_input_t fake_input = { .ptt_line_stuck = p_ptt_stuck };
+
 // ---- fake PCM audio and vocoder (core/dmr/ambe runs on them) ----
 static struct {
 	bool started;
@@ -310,7 +314,8 @@ static void site_chunk(uint8_t *syms);
 static void site_inbound(const uint8_t *syms, uint16_t n, bool last);
 #endif
 
-static bool far_on_air(void) { return fair[1].on; }
+static bool far_carrier;	// a carrier on far_hz without the far radio (test_scan_every_mode: FM, or DMR's bursts)
+static bool far_on_air(void) { return fair[1].on || far_carrier; }
 
 static void air_deliver(fake_air_t *to, const uint8_t *syms, uint16_t n)
 {
@@ -450,7 +455,7 @@ static void air_abort(uint8_t i) { fair[i].qn = 0; fair[i].on = false; fair[i].a
 	static uint32_t air_now##i(void) { return fair[i].now_us; } \
 	static bool air_load##i(uint32_t *w, uint32_t *s) { *w = 1000u + i; *s = 20000u; return true; } \
 	static const hal_air_t fake_air##i = { air_fit##i, air_open##i, air_close##i, air_restart##i, air_begin##i, air_queue##i, \
-					       air_space##i, air_end##i, air_abort##i, air_now##i, NULL, NULL, air_load##i, AIR_CHUNK, \
+					       air_space##i, air_end##i, air_abort##i, air_now##i, NULL, NULL, air_load##i, NULL, AIR_CHUNK, \
 					       AIR_DEPTH, 60, 100 };
 FAKE_AIR(0)
 FAKE_AIR(1)
@@ -480,6 +485,7 @@ const board_t board = {
 	.home_key_count = 1,
 	.radio = &fake_radio,
 	.power = &fake_power,
+	.input = &fake_input,
 	.dmr = &sim_modem,
 	.audio = &fake_audio,
 	.vocoder = &fake_vocoder,
@@ -2424,6 +2430,26 @@ static void test_dmr_wake_leds(void)
 	req(RREQ_PTT, 0);
 	chans[4].tx_hz = chans[4].rx_hz;
 	setup_codeplug();
+}
+
+// A PTT line stuck low: red and green in turn, one at a time, until it isn't (the power cycle)
+static void test_ptt_line_stuck(void)
+{
+	bool red = hw.led[LED_RED], green = hw.led[LED_GREEN];
+	ptt_stuck = true;
+	run(10);
+	uint32_t turns = 0;
+	bool was = hw.led[LED_RED];
+	for (uint32_t t = 0; t < 1000u; t += 5) {
+		CHECK(hw.led[LED_RED] != hw.led[LED_GREEN]);
+		turns += hw.led[LED_RED] != was;
+		was = hw.led[LED_RED];
+		run(5);
+	}
+	CHECK(turns >= 1000u / RADIO_LED_STUCK_STEP_MS - 1u && turns <= 1000u / RADIO_LED_STUCK_STEP_MS + 1u);
+	ptt_stuck = false;
+	run(20);
+	CHECK(hw.led[LED_RED] == red && hw.led[LED_GREEN] == green);
 }
 
 static void test_hotspot(void)
@@ -7986,6 +8012,98 @@ static void test_nxdn_scan(void)
 	nfar_stop();
 	nxdn_defaults();
 }
+
+#if CONFIG_P25
+// Every mode in one zone scan, on one frequency: FM, DMR, P25 and NXDN channels on 446.1 MHz. Any of their signals
+// opens the FM squelch, so the FM stop (first in the zone) sees each call as a signal: the scan checks the frequency's
+// digital channels in turn and holds on the one whose call it is, never on FM. A plain FM signal (no digital mode
+// heard on any of them) holds the FM stop
+static void test_scan_every_mode(void)
+{
+	enum { M_FM, M_DMR, M_P25, M_NXDN, M_N };
+	static const char *const names[M_N] = { "FM", "DMR", "P25", "NXDN" };
+	static const uint16_t number[M_N] = { 2, 4, 3, 5 };	// the channel each signal should hold
+	const uint32_t hz = 446100000;
+	uint8_t lc[9];
+
+	mk_lc(lc, true, 201, 9991234);
+	for (int sig = M_FM; sig < M_N; sig++) {
+		setup_codeplug();
+		// Zone Local: Simplex, then FM, P25, DMR and NXDN on one frequency (positions 1-4)
+		add(2, "Mixed FM", hz, RADIO_MODE_FM, false, CODEPLUG_POWER_DEFAULT);
+		add(3, "Mixed P25", hz, RADIO_MODE_P25, false, 2);
+		chans[4].rx_hz = chans[4].tx_hz = hz;
+		add(5, "Mixed NXDN", hz, RADIO_MODE_NXDN, false, 2);
+		radio_p25_reset_stats();
+		radio_nxdn_reset_stats();
+		air_nofit = false;
+		air_fit2400[0] = air_fit2400[1] = AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT;
+		memset(fair, 0, sizeof(fair));
+		start();
+		p25_defaults();
+		nxdn_defaults();
+		far_hz = hz;
+		req(RREQ_ZONE_POS, 0);
+		req(RREQ_SCAN, RSCAN_ZONE);
+		CHECK(sm.view.scan == SCAN_ZONE);
+		if (sig == M_P25) {
+			far_begin(P25_NAC_DEFAULT, 1001, false, 201);
+			CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+			far_tx = true;
+		} else if (sig == M_NXDN) {
+			nfar_begin(true, 0, 2001, false, 20);
+			CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+			nfar_tx = true;
+		} else {
+			far_carrier = true;
+		}
+		// 6 s of the call: where the scan held, and for how long at the end
+		uint16_t held[NCH + 1] = { 0 };
+		uint32_t last_ms = 0;
+		uint8_t vi = 0;
+		for (uint32_t t = 0; t < 6000; t += 60) {
+			if (sig == M_DMR && hw.rx_hz == hz && sm.view.ch.mode == RADIO_MODE_DMR) {
+				burst_voice(vi, 2, lc);	// a call already on: voice with its embedded LC
+				vi = (uint8_t)((vi + 1u) % 6u);
+			}
+			run(60);
+			bool hold = sm.view.scan_phase == SCAN_PH_HOLD;
+			if (hold && !sm.view.vfo && sm.view.channel_number <= NCH) {
+				held[sm.view.channel_number]++;
+			}
+			last_ms = hold && sm.view.channel_number == number[sig] ? last_ms + 60 : 0;
+		}
+		bool ok = last_ms >= 3000;
+		for (uint16_t n = 1; n <= NCH; n++) {
+			ok &= n == number[sig] || held[n] == 0;
+		}
+		if (!ok) {
+			printf("  every mode, %s signal: held on channel %u for %u ms at the end; holds FM %u P25 %u DMR %u "
+			       "NXDN %u\n", names[sig], sm.view.channel_number, last_ms, held[2], held[3], held[4], held[5]);
+		}
+		CHECK(ok);
+		if (sig == M_P25) {
+			CHECK(radio_p25_running() && (sm.view.p25.flags & RADIO_P25_PLAYED));
+			p25_engine_tx_stop(&far_eng);
+		} else if (sig == M_NXDN) {
+			CHECK(radio_nxdn_running() && (sm.view.nxdn.flags & RADIO_NXDN_PLAYED));
+			nxdn_engine_tx_stop(&nfar);
+		} else if (sig == M_DMR) {
+			CHECK(sm.view.dmr.state == RDMR_RX && sm.view.dmr.call.dst == 201);
+		}
+		far_carrier = false;
+		run(600);
+		req(RREQ_SCAN, RSCAN_STOP);
+		run(100);
+		far_stop();
+		nfar_stop();
+		far_hz = 0;
+	}
+	setup_codeplug();
+	p25_defaults();
+	nxdn_defaults();
+}
+#endif
 #if CONFIG_DUAL_WATCH
 // Dual watch with a stored NXDN channel on one side: the receiver alternates onto it and a call that plays holds the
 // watch there. With P25 built too, a P25 channel on the other side: one engine at a time, each started at its look
@@ -8278,6 +8396,9 @@ static void test_nxdn(void)
 	test_nxdn_stored();
 #if CONFIG_SCAN
 	test_nxdn_scan();
+#if CONFIG_P25
+	test_scan_every_mode();
+#endif
 #if CONFIG_DUAL_WATCH
 	test_nxdn_dual();
 #endif
@@ -9955,6 +10076,7 @@ int main(void)
 	test_side_keys();
 	test_rx_ext();
 	test_error_paths();
+	test_ptt_line_stuck();
 	test_hotspot();
 	test_hotspot_session();
 	test_hotspot_cwid();

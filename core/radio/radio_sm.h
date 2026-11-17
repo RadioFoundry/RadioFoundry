@@ -31,6 +31,7 @@
 // repeater to wake, red blinks once per wake-up burst sent, not solid (a burst is 30 ms: stretched to be seen); a
 // deny flashes red, green, red, green, red, green, RADIO_LED_DENY_STEP_MS each
 #define RADIO_LED_WAKE_MS	100
+#define RADIO_LED_STUCK_STEP_MS	125	// a stuck PTT line: red and green in turn, to ask for a power cycle
 #define RADIO_LED_DENY_STEP_MS	100
 #define RADIO_LED_DENY_STEPS	6
 #define RADIO_TOT_DEFAULT_S	180	// TX time-out
@@ -337,6 +338,12 @@ typedef struct {
 	radio_dual_ref_t dual[2];	// SCAN_DUAL: the two channels
 	uint8_t dual_sel;		// ... the selected one (PTT)
 	uint8_t dual_at;		// ... the one the receiver is on
+	// Zone scan, an FM stop about to hold on a signal that may be digital (scan_mixed): the FM stop, while the scan
+	// checks the digital channel of its frequency, and whether that check heard its mode's signal; then the FM stop
+	// the check heard none on, which holds when the scan goes back to it. SCAN_NO_POS: none
+	uint16_t scan_twin_fm;
+	uint16_t scan_fm_heard;
+	bool scan_twin_digital;
 #if CONFIG_DUAL_WATCH
 	bool rx2_on;			// the second receiver (board.rx2) holds the other channel; the main one stays on dual_sel
 	// Each channel's changes for now (P7), kept while the receiver is on the other one: a hop reloads the channel

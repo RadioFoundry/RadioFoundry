@@ -97,6 +97,8 @@ def check(boards):
     fails = n = 0
     for b in boards:
         svg, mic = drawings(b)
+        if not os.path.isfile(svg):
+            raise SystemExit("svg_keys: %s has no drawing (%s)" % (b, os.path.relpath(svg, ROOT)))
         # the board's drawing and its looks' (BOARD-<look>.svg, board.toml looks), each with the microphone's
         looks = sorted(os.path.join(SRC, f) for f in os.listdir(SRC)
                        if f.startswith(b + "-") and f.endswith(".svg") and f != b + "-mic.svg")

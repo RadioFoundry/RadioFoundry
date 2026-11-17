@@ -42,7 +42,8 @@
 #define HRC7000_AIR_RATE_HZ	8000u
 #define HRC7000_AIR_RX_LO_HZ	0u	// with the band-pass off (10.1: not measured)
 #define HRC7000_AIR_RX_HI_HZ	3000u	// the copy's low-pass (10.1: not measured)
-#define HRC7000_AIR_DMR_DEV_HZ	1944u	// outer deviation at the board's DMR modulation bytes
+#define HRC7000_AIR_DMR_DEV_HZ	1820u	// outer deviation the board's DMR modulation bytes give (measured, 10.3), not
+					// DMR's nominal 1944 Hz
 
 // The large buffers. The board hands over memory the DMR slot engine leaves unused while the chip is held (its event
 // queue), so a session costs no RAM of its own: hence may_alias

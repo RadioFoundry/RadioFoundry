@@ -3,8 +3,9 @@
 // The registry of channel kinds and system types (docs/spec/channel-modes.md 4) in the Codeplug Editor: the same rows
 // as core/codeplug/codeplug_modes.h and the spec's tables (tools/check_modes.py checks all three). Each row names its
 // mode module, which knows the kind's or the type's bytes and fields; the generic layer (channelmodes.js) and the
-// pages know none. A row's feature is the firmware feature (the radio's probe) that runs it: a mode is offered for a
-// new channel only on a radio that reports it, or in a codeplug that already holds it.
+// pages know none. A row's feature is the firmware feature (the radio's probe) that runs it: with a radio connected, a
+// mode is offered for a new channel only when the radio reports it or the codeplug already holds it; with none, every
+// mode is offered (validation warns once a radio that lacks one connects).
 
 import { t3Kind, t3System } from "./mode_t3.js";
 import { p25Kind, p25TrunkKind, p25System } from "./mode_p25.js";
@@ -31,14 +32,17 @@ export const typeName = (id) => typeRow(id)?.short ?? "?";
 
 const featureList = (features) => (features == null ? [] : Array.isArray(features) ? features : String(features).split(","));
 
-// The kinds a new channel may take: those the radio's features name, and those the codeplug already has
+// The kinds a new channel may take: those the radio's features name, and those the codeplug already has. Null features
+// (no radio): all of them
 export function offeredKinds(m, features) {
+	if (features == null) return KINDS.slice();
 	const have = featureList(features);
 	return KINDS.filter((k) => have.includes(k.feature) || m.channels.some((c) => c.kind === k.id));
 }
 
 // The system types a new system may take, the same way
 export function offeredTypes(m, features) {
+	if (features == null) return SYSTEM_TYPES.slice();
 	const have = featureList(features);
 	const kinds = offeredKinds(m, features);
 	return SYSTEM_TYPES.filter((s) => have.includes(s.feature) || kinds.some((k) => k.module.systemType === s.id) ||

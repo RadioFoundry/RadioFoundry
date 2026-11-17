@@ -100,6 +100,43 @@ class Route(unittest.TestCase):
         self.assertIn("hold the radio's codec", log)
         self.assertNotIn("left running", log)
 
+    def uncommitted(self, attach_ok):
+        # the write stopped after the application was erased (a USB drop mid-write): one try through the stub, then
+        # a plain "not installed, in DFU" with how to finish
+        class DumpError(Exception):
+            pass
+
+        class UncommittedError(DumpError):
+            pass
+        calls, real = [], self.fake.main
+
+        def main(argv, raise_errors=False):
+            calls.append(argv[1])
+            if argv[1] == "--rfoundry-enter":
+                raise UncommittedError("the install stopped at step 2 of 7 (cable pulled)")
+            if not attach_ok:
+                raise DumpError("no stub answers")
+            return real(argv)
+        self.fake.main = main
+        rc, log = run_cli(["flash", self.image(), "--board", stubroute.BOARDS[0], "--route", "stub", "--port", "/dev/x",
+                           "--yes", "--no-probe"])
+        self.assertEqual(calls, ["--rfoundry-enter", "--attach"])
+        self.assertIn("step 2 of 7", log)
+        return rc, log
+
+    def test_uncommitted_finished_by_the_stub(self):
+        rc, log = self.uncommitted(True)
+        self.assertEqual(rc, 0, log)
+        self.assertIn("finished the install", log)
+        self.assertNotIn("NOT INSTALLED", log)
+
+    def test_uncommitted_left_in_dfu_says_so(self):
+        rc, log = self.uncommitted(False)
+        self.assertEqual(rc, 1, log)
+        self.assertIn("NOT INSTALLED", log)
+        self.assertIn("bootloader (DFU)", log)
+        self.assertIn("rfoundry flash again", log)
+
     def test_refusals(self):
         rc, log = run_cli(["flash", self.image(), "--board", stubroute.BOARDS[0], "--route", "stub", "--simulate", "blank"])
         self.assertNotEqual(rc, 0)

@@ -87,6 +87,14 @@ move on from one that doesn't ([p25.md](p25.md) 7.1). Digital monitor on when a 
 at every stop (`hear_all_latch` in the view), so a call to any talkgroup is played and holds the scan; the channel the
 scan ends on, by STOP, CANCEL or PTT, keeps it latched. Toggling it during the scan turns it on or off for the rest of
 the scan. Dual watch doesn't carry it. Empty channels still move on after the dwell.
+
+**A mixed frequency.** A zone may hold an FM channel and digital channels (DMR, P25, NXDN) on one receive frequency.
+A digital signal can open the FM squelch, and a scan that held the FM stop would sit through the call there and never
+reach the channel that plays it. So before an FM stop holds, the scan checks the zone's digital channels on that
+frequency in zone order, each as a stop with its usual probe (`scan_mixed` in `radio_sm.c`). A call there holds it.
+A stop that heard its own mode (a call not for us included) ends the check, and the sweep goes on from where it was.
+When none heard its mode, the signal was FM: the scan goes back to the FM stop, which holds this time. Trunked
+channels are not stops (above), so they are never checked.
 The view counts the stops probed (`scan_probes`) and those with sync (`scan_synced`) for each scan. Active: the scan holds
 (`scan_phase=hold`), then follows `scan_resume`; after the signal ends it waits `scan_delay_ms` (`resume`) and picks
 up again if the signal comes back. MONITOR held pauses the scan (`paused`).
@@ -604,6 +612,7 @@ over that (`radio_sm.c` `led_signals`, the times in `radio_sm.h`), for radios wi
 | --- | --- |
 | Waking a repeater (DMR, PTT through a repeater that isn't up) | red once per wake-up burst sent, `RADIO_LED_WAKE_MS` (100 ms) each, dark while the radio listens for the answer. The call stack counts the bursts (`dmr_call_view_t.wake_sent`) |
 | A TX deny, every reason (`RS_TX_DENIED`), and a repeater that didn't wake after a short press was let go | red, green, red, green, red, green, `RADIO_LED_DENY_STEP_MS` (100 ms) each, once, with the deny tone (none for a busy channel, 3.1); then what the state shows. A transmission that starts during it ends it |
+| The PTT line stuck low, which only a power cycle releases ([gotchas.md](gotchas.md) 16.5) | red and green in turn, 125 ms each, until the power cycle |
 
 Once the repeater answers and the voice goes out, red is solid as for any transmission. The tick and the poll keep
 calling `outputs()` while a signal runs, so it keeps time when nothing else changes.
