@@ -510,7 +510,8 @@ bool md9600_rf_dmr_key(bool tx)
 	key_drop = false;
 	key_since_us = 0;
 	uint32_t until;
-	key_timed = !stm32_hrc_dmr_bs_boundary_us(&until);	// a BS outbound keys once: no drop per burst
+	// a BS outbound or the air interface's continuous transmission keys once: no drop per burst
+	key_timed = !stm32_hrc_dmr_bs_boundary_us(&until) && !stm32_hrc_dmr_tx_continuous();
 
 	if (stm32_hrc_dmr_bs_boundary_us(&until)) {
 		// The split duplex BS outbound keys once, and its slot starts with the CACH, not a guard. Its RF TX interrupt

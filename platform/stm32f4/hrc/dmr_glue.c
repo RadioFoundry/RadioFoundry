@@ -644,6 +644,11 @@ bool stm32_hrc_dmr_tx_listening(void)
 	return active && !AIR_ON() && eng.tx_listen;
 }
 
+bool stm32_hrc_dmr_tx_continuous(void)
+{
+	return active && AIR_ON();
+}
+
 bool stm32_hrc_dmr_tx_last_out(void)
 {
 #if CONFIG_AIR

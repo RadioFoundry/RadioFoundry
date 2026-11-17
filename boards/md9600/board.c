@@ -136,6 +136,7 @@ const board_t board = {
 	.dmr = &stm32_hrc_dmr,
 #if CONFIG_AIR
 	.air = &stm32_hrc_air,	// the HR_C6000 physical layer mode (hrc6000_air.c)
+	.baseband = &stm32_hrc_baseband,	// its FM copy (hrc6000_air.c), the soft modem's input
 #endif
 	.audio = &md9600_audio,
 	.vocoder = &stm32_vocoder,
