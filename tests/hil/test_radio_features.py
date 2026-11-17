@@ -790,6 +790,46 @@ def test_scan_digital_monitor_any_talkgroup(radio, sdr_bench, pytestconfig, how)
 MIX_ZONE = "HIL every mode"
 MIX_HOLD_S = 2.0	# the hold on the call's channel at the end of a call: the scan stayed there
 MIX_CALLS = 3		# P25 and NXDN calls the bench sends while the scan comes round
+MIX_CLEAR_S = 30.0	# the longest wait for the frequency to be clear (someone else on it holds the scan)
+# The squelch: the loosest level whose open line is this far under the quietest noise reading on the frequency. One
+# too loose opens on the noise, and the FM stop holds on nothing before the bench keys; the radios' noise scales differ,
+# so a fixed level (the default too) may never open on the bench's signal on some
+MIX_SQL_MARGIN = 4
+SQL_OPEN_L1, SQL_PER_LEVEL, SQL_LEVELS = 64, 3, 9	# level n opens under 64 - 3 (n - 1) (radio_sm.h RADIO_SQL_*)
+
+
+def _quiet_squelch(radio, reads=20):
+    """(level, noise readings): the loosest squelch level that stays shut on the noise the radio reads now"""
+    noise = []
+    for _ in range(reads):
+        noise.append(int(radio.core()["noise"]))
+        time.sleep(0.05)
+    for level in range(1, SQL_LEVELS + 1):
+        if SQL_OPEN_L1 - SQL_PER_LEVEL * (level - 1) + MIX_SQL_MARGIN <= min(noise):
+            return level, noise
+    return SQL_LEVELS, noise
+
+
+@contextlib.contextmanager
+def squelch_at(radio, level):
+    """The radio's squelch at level for the block, then back to what it was. Set in the VFO: there it is the radio's
+    own level, where on a channel it is a temporary change, which the scan's next stop drops"""
+    from test_fm import _squelch_to
+
+    def to(level):
+        vfo = radio.core().get("vfo") == "1"
+        if not vfo:
+            radio._req_until(lambda: radio.link.vfo(True), lambda v: v.get("vfo") == "1", "VFO")
+        _squelch_to(radio, level)
+        if not vfo:
+            radio._req_until(lambda: radio.link.vfo(False), lambda v: v.get("vfo") == "0", "channel mode")
+
+    was = int(radio.core()["squelch"])
+    to(level)
+    try:
+        yield
+    finally:
+        to(was)
 
 
 def _mixed_zone(img, hz, dmr_number, modes):
@@ -863,8 +903,9 @@ def test_scan_every_mode(radio, sdr_bench, backup_dir, pytestconfig):
     if len(modes) > 2 and cps_client.area_state(probe[lo:hi]) != "valid":
         skip("state", "the codeplug settings area isn't valid: the restore couldn't take the tags back")
     numbers = {}
-    # The DMR call goes to the DMR channel's talk target (a group contact), so it plays there; --dmr-tg without one
-    _, _, contact = cps_client.channel_dmr(probe, dmr_number)
+    # The DMR call goes in the DMR channel's color code (an HR_C5000 hears no other) to its talk target (a group
+    # contact), so it plays there; --dmr-tg without one
+    _, cc, contact = cps_client.channel_dmr(probe, dmr_number)
     at = cps_client.CONTACT_BASE + (contact - 1) * 24
     dmr_dst = [tg]
     if contact > 0 and probe[at + 20] == 0:     # contact type 0: a group
@@ -909,11 +950,18 @@ def test_scan_every_mode(radio, sdr_bench, backup_dir, pytestconfig):
         radio.go_home()
         radio._req_until(lambda: radio.link.zone(index), lambda v: v.get("zone_name") == MIX_ZONE, MIX_ZONE)
         print(f"\nzone {MIX_ZONE!r} on {freq} MHz: " + ", ".join(f"{m} channel {n}" for m, n in numbers.items())
-              + f"; DMR calls to TG {dmr_dst[0]}")
+              + f"; DMR calls to TG {dmr_dst[0]} CC {cc}")
         by_number = {str(n): m for m, n in numbers.items()}
-        with tempfile.TemporaryDirectory() as tmp, sdr_bench.lease():
+        # The zone's first channel, the FM one: its noise with the bench off sets the squelch
+        radio._req_until(lambda: radio.link.zone_pos(0),
+                         lambda v: v.get("channel_number") == str(numbers["fm"]) and v.get("mode") == "fm",
+                         "the zone's FM channel")
+        time.sleep(0.3)
+        sql, noise = _quiet_squelch(radio)
+        print(f"  squelch {sql} (noise {min(noise)}-{max(noise)} with the bench off)")
+        with tempfile.TemporaryDirectory() as tmp, squelch_at(radio, sql), sdr_bench.lease():
             for mode in modes:
-                held, last, done, trail = {}, [None, 0.0], threading.Event(), []
+                held, last, done, trail, on_air = {}, [None, 0.0], threading.Event(), [], [False]
 
                 def watch():
                     prev = None
@@ -925,11 +973,11 @@ def test_scan_every_mode(radio, sdr_bench, backup_dir, pytestconfig):
                         # resume: the call that held the stop ended, and the scan waits there before going on
                         hold = v.get("scan") == "zone" and v.get("scan_phase") in ("hold", "resume")
                         step = (at, v.get("scan_phase"), v.get("dmr.state"))
-                        if not trail or trail[-1][1:] != step:
-                            trail.append((round(now - t0, 1),) + step)
+                        if not trail or trail[-1][1:4] != step:
+                            trail.append((round(now - t0, 1),) + step + (v.get("rssi_dbm"), v.get("scan_synced")))
                         # A hold counts when two reads in a row see it on one channel: the sections are read one
                         # request each, and a scan step between them pairs one stop's channel with another's phase
-                        if hold and prev == at:
+                        if hold and prev == at and on_air[0]:
                             held[at] = held.get(at, 0) + 1
                             if last[0] != at:
                                 last[:] = [at, now]
@@ -940,6 +988,14 @@ def test_scan_every_mode(radio, sdr_bench, backup_dir, pytestconfig):
 
                 radio.link.scan("zone")
                 wait_features(radio, lambda v: v.get("scan") == "zone", 1.0, "scan=zone")
+                # Only the bench's own signal counts: another user of the frequency holds the scan too (the bench
+                # also waits for a clear channel before it keys). Wait for no hold first
+                clear_by = time.monotonic() + MIX_CLEAR_S
+                while radio.link.view(["features"]).get("scan_phase") in ("hold", "resume"):
+                    if time.monotonic() > clear_by:
+                        scan_off(radio)
+                        skip("bench", f"{freq} MHz busy for {MIX_CLEAR_S:.0f} s (another user holds the scan)")
+                    time.sleep(0.5)
                 t_watch, sent = time.monotonic(), []
                 t = threading.Thread(target=watch, daemon=True)
                 t.start()
@@ -947,12 +1003,14 @@ def test_scan_every_mode(radio, sdr_bench, backup_dir, pytestconfig):
                     for _ in range(1 if mode in ("fm", "dmr") else MIX_CALLS):
                         sent.append(round(time.monotonic() - t_watch, 1))
                         job = send(mode, tmp)
+                        on_air[0] = True
                         sent.append(round(time.monotonic() - t_watch, 1))
                         while not job.req.done.is_set():
                             time.sleep(0.1)
                             if last[0] == mode and time.monotonic() - last[1] >= MIX_HOLD_S:
                                 break
                         r = job.wait(60)
+                        on_air[0] = False
                         if isinstance(r, dict):
                             sent.append({k: r.get(k) for k in ("on_air_s", "cut") if k in r})
                         if mode in held:
@@ -965,7 +1023,8 @@ def test_scan_every_mode(radio, sdr_bench, backup_dir, pytestconfig):
                 print(f"  {mode} signal: holds (reads) {held}")
                 if mode not in held or len(held) > 1:
                     print(f"    the bench (s from the scan's start, keyed, done): {sent}")
-                    print("    the scan's path (s, channel, phase, dmr.state): " + " ".join(map(str, trail[:80])))
+                    print("    the scan's path (s, channel, phase, dmr.state, dBm, synced): "
+                          + " ".join(map(str, trail[:80])))
                 time.sleep(1.0)
     for mode in modes:
         assert mode in results[mode], f"the {mode} signal never held the scan on its channel: holds {results[mode]}"
