@@ -47,8 +47,7 @@ typedef struct {
 	// channel too (stm32_hrc_dmr_tx_listening; the modem's tx_listen_split)
 	bool listen_split;
 #if CONFIG_AIR
-	// The physical layer pipe (stm32_hrc_air, HR_C6000 only) has been checked on air on this board: its fit loses
-	// AIR_FIT_UNTESTED
+	// The physical layer pipe (stm32_hrc_air) has been checked on air on this board: its fit loses AIR_FIT_UNTESTED
 	bool air_verified;
 	// The RF chip gives the HR_C6000 the flat discriminator in its DMR set-up, so the chip's FM copy carries it
 	// (modem-hrc6000.md 10.6): the provider receives the profiles the correlator can't through the soft modem, and
@@ -82,6 +81,9 @@ bool stm32_hrc_dmr_tx_end(void);
 bool stm32_hrc_dmr_tx_active(void);	// the engine's slot state says a transmission is in progress
 bool stm32_hrc_dmr_tx_listening(void);	// that transmission receives between its bursts (an SFR, tx_listen)
 bool stm32_hrc_dmr_tx_last_out(void);	// its last burst is set up: the next PA drop ends it (hrc6000_dmr_tx_last_out)
+// The air interface's physical layer mode has the chip (stm32_hrc_air): a transmission keys the PA once and holds it
+// until the RF switch back, with no burst to end it. Interrupt context: a board's per-burst PA drop must not run
+bool stm32_hrc_dmr_tx_continuous(void);
 // The split duplex BS outbound has the chip (hrc6000_bs.c): µs to its next slot boundary (the slot clock). False
 // otherwise. Interrupt context: a board times the outbound's one PA key-up with it
 bool stm32_hrc_dmr_bs_boundary_us(uint32_t *us);
@@ -92,8 +94,9 @@ void stm32_hrc_dmr_tx_prepare(void);
 
 extern const hal_dmr_modem_t stm32_hrc_dmr;
 #if CONFIG_AIR
-// The HR_C6000's physical layer mode as the board's air interface (hal_air.h, hrc6000_air.h): a session halts the slot
-// engine and takes the three interrupt lines and this task; close starts the engine again. HR_C6000 boards only
+// The chip's physical layer mode as the board's air interface (hal_air.h, hrc6000_air.h): a session halts the slot
+// engine and takes the three interrupt lines and this task; close starts the engine again. The HR_C6000 and the
+// HR_C5000 (the chip description gives what differs)
 extern const hal_air_t stm32_hrc_air;
 // The FM copy as a receive tap (hal_baseband.h): a board with air_tap points board.baseband at it
 extern const hal_baseband_t stm32_hrc_baseband;
@@ -117,6 +120,7 @@ static inline bool stm32_hrc_dmr_tx_end(void) { return false; }
 static inline bool stm32_hrc_dmr_tx_active(void) { return false; }
 static inline bool stm32_hrc_dmr_tx_listening(void) { return false; }
 static inline bool stm32_hrc_dmr_tx_last_out(void) { return false; }
+static inline bool stm32_hrc_dmr_tx_continuous(void) { return false; }
 static inline bool stm32_hrc_dmr_bs_boundary_us(uint32_t *us) { (void)us; return false; }
 static inline void stm32_hrc_dmr_tx_drop(void) {}
 static inline void stm32_hrc_dmr_tx_prepare(void) {}

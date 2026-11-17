@@ -419,6 +419,10 @@ static const stm32_hrc_dmr_board_t dmr_board = {
 	.tx_done = md9600_rf_dmr_done,
 	.tx_end = md9600_dmr_tx_end,
 #endif
+#if CONFIG_AIR
+	// the chip demodulates the IF itself, so its FM copy is the discriminator (hardware-md9600.md 19.11)
+	.air_tap = true,
+#endif
 };
 
 // --- radio hooks (radio_md9600.c) ---
