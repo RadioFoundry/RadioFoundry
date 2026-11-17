@@ -541,6 +541,9 @@ def test_p25_scan_from_bench(radio, sdr_bench, backup_dir, pytestconfig, kind):
         else:
             radio.link.scan("zone")
         held = None
+        # a second receiver (dual.both) takes the other channel and the main one stays here: no hold phase, the call
+        # playing on this channel is the stop
+        calls0 = as_int(radio.link.view(["p25"]).get("p25.rx_calls"), 0)
         try:
             radio.wait_for(lambda x: x.get("scan") == kind, 1.0, sections=("features",), what=f"scan={kind}")
             with tempfile.TemporaryDirectory() as tmp, sdr_bench.lease():
@@ -556,7 +559,9 @@ def test_p25_scan_from_bench(radio, sdr_bench, backup_dir, pytestconfig, kind):
                                             shape="c4fm", clip_hz=4064)
                     while held is None and not tx.req.done.is_set():
                         v = radio.link.view(["core", "features", "p25"])
-                        if v.get("scan_phase") == "hold" and v.get("channel_number") == str(number):
+                        stop = v.get("scan_phase") == "hold" or (v.get("dual.both") == "1" and
+                                                               as_int(v.get("p25.rx_calls"), 0) > calls0)
+                        if stop and v.get("channel_number") == str(number):
                             held = v
                     tx.wait(n / 4800 + 30)
                     if held is not None:

@@ -508,6 +508,9 @@ def test_nxdn_scan_from_bench(radio, sdr_bench, backup_dir, pytestconfig, kind):
         else:
             radio.link.scan("zone")
         held = None
+        # a second receiver (dual.both) takes the other channel and the main one stays here: no hold phase, the call
+        # playing on this channel is the stop
+        calls0 = as_int(radio.link.view(["nxdn"]).get("nxdn.rx_calls"), 0)
         try:
             radio.wait_for(lambda x: x.get("scan") == kind, 1.0, sections=("features",), what=f"scan={kind}")
             with tempfile.TemporaryDirectory() as tmp, sdr_bench.lease():
@@ -526,7 +529,9 @@ def test_nxdn_scan_from_bench(radio, sdr_bench, backup_dir, pytestconfig, kind):
                                             shape="rrc", baud=baud, dev_hz=dev, clip_hz=4064)
                     while held is None and not tx.req.done.is_set():
                         x = radio.link.view(["core", "features", "nxdn"])
-                        if x.get("scan_phase") == "hold" and x.get("channel_number") == str(number):
+                        stop = x.get("scan_phase") == "hold" or (x.get("dual.both") == "1" and
+                                                               as_int(x.get("nxdn.rx_calls"), 0) > calls0)
+                        if stop and x.get("channel_number") == str(number):
                             held = x
                     tx.wait(n / baud + 30)
                     if held is not None:
