@@ -188,6 +188,11 @@ msgid "Imported "
 msgstr "Importati "
 
 #: core/ui/ui_app.c
+msgctxt "SHARE_BANNER_SYSTEM_MISSING"
+msgid " trunked: system not set up"
+msgstr " trunking: sistema non configurato"
+
+#: core/ui/ui_app.c
 msgctxt "SHARE_BANNER_CHANNEL_RX_ONLY"
 msgid " channel, receive only"
 msgstr " canale, solo RX"
@@ -641,6 +646,16 @@ msgstr "Batteria "
 msgctxt "BATT_PART_CHARGE_SOON"
 msgid "%: charge soon"
 msgstr "%: ricarica presto"
+
+#: core/ui/ui_app.c
+msgctxt "TRUNK_TOAST_BACK_ON"
+msgid "Back on "
+msgstr "Di nuovo su "
+
+#: core/ui/ui_app.c
+msgctxt "TRUNK_TOAST_POLL_NO_DATA"
+msgid "Poll: no short data"
+msgstr "Richiesta: nessun dato"
 
 #: core/ui/ui_app.c
 msgctxt "ZONE_TOAST_WAS_DELETED"
@@ -1253,6 +1268,11 @@ msgid "Create contact "
 msgstr "Crea contatto "
 
 #: core/ui/ui_find.c
+msgctxt "TRUNK_ROW_PHONE_CALL"
+msgid "Phone call "
+msgstr "Telefonata "
+
+#: core/ui/ui_find.c
 msgctxt "FIND_CHIP_MENU"
 msgid "Menu"
 msgstr "Menu"
@@ -1478,6 +1498,11 @@ msgid "Make channel default"
 msgstr "Rendi canale predef."
 
 #: core/ui/ui_menus.c
+msgctxt "TRUNK_ROW_POLL_SHORT_DATA"
+msgid "Poll short data"
+msgstr "Richiedi dati brevi"
+
+#: core/ui/ui_menus.c
 msgctxt "WHY_MESSAGES_NOT_IN_BUILD"
 msgid "Messages: not in this build"
 msgstr "Messaggi: non in questa build"
@@ -1516,6 +1541,11 @@ msgstr "Già nei tuoi contatti"
 msgctxt "ACT_TOAST_ADD_CONTACTS_IN_QDMR"
 msgid "Add contacts in qdmr"
 msgstr "Aggiungi contatti in qdmr"
+
+#: core/ui/ui_menus.c
+msgctxt "TRUNK_TOAST_POLLING"
+msgid "Polling "
+msgstr "Interrogo "
 
 #: core/ui/ui_menus.c
 msgctxt "ACT_HINT"
@@ -1752,6 +1782,11 @@ msgctxt "ZONE_EMPTY_NO_ZONES"
 msgid "No zones"
 msgstr "Nessuna zona"
 
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "TRUNK_WHY_SYSTEM_NOT_SET_UP"
+msgid "System not set up"
+msgstr "Sistema non configurato"
+
 #: core/ui/ui_menus.c
 msgctxt "TOAST_CANT_SAVE_NOW"
 msgid "Couldn't save now: try again"
@@ -1888,6 +1923,16 @@ msgid " not in band"
 msgstr " fuori banda"
 
 #: core/ui/ui_menus.c
+msgctxt "SHARE_BODY_CHANNEL_NO_SYSTEM"
+msgid " trunked channel unavailable: system not set up"
+msgstr " canale trunking non disponibile: sistema non configurato"
+
+#: core/ui/ui_menus.c
+msgctxt "SHARE_BODY_CHANNELS_NO_SYSTEM"
+msgid " trunked channels unavailable: system not set up"
+msgstr " canali trunking non disponibili: sistema non configurato"
+
+#: core/ui/ui_menus.c
 msgctxt "SHARE_TITLE_CHANNEL_RECEIVED"
 msgid "{Channel Share Received ⤓|Ch Share Received ⤓|Ch Received ⤓|Ch Received}"
 msgstr "{Canale condiviso ricevuto ⤓|Can. condiviso ric. ⤓|Can. ricevuto ⤓|Can. ricevuto}"
@@ -1906,6 +1951,11 @@ msgstr "Niente in attesa"
 msgctxt "SHARE_CHIP_NOT_IN_BAND"
 msgid "{Not in band|Out}"
 msgstr "{Fuori banda|Fuori}"
+
+#: core/ui/ui_menus.c
+msgctxt "SHARE_VALUE_NO_SYSTEM"
+msgid "{System not set up|No system}"
+msgstr "{Sistema non configurato|Senza sistema}"
 
 #: core/ui/ui_menus.c
 msgctxt "SHARE_HINT_PREVIEW"
@@ -4263,6 +4313,11 @@ msgid "TX time-out reached"
 msgstr "Timeout TX raggiunto"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_WHY_SYSTEM_STOPPED"
+msgid "System stopped TX"
+msgstr "TX interrotta dal sistema"
+
+#: core/ui/ui_screens.c
 msgctxt "DENY_WHY_NO_TX_FREQ"
 msgid "No TX frequency set"
 msgstr "Nessuna freq. TX impostata"
@@ -4378,6 +4433,11 @@ msgid "Pick a user channel to talk"
 msgstr "Scegli un canale utente per parlare"
 
 #: core/ui/ui_screens.c
+msgctxt "TRUNK_WORD_PHONE_LINE"
+msgid "Phone line"
+msgstr "Linea telefonica"
+
+#: core/ui/ui_screens.c
 msgctxt "CALL_VALUE_PRIVATE_TO_YOU"
 msgid "Private to you"
 msgstr "Privata per te"
@@ -4406,6 +4466,41 @@ msgstr "Ripetitore SFR"
 msgctxt "HOME_STATE_DMR_MODEM_OFF"
 msgid "DMR modem off"
 msgstr "Modem DMR off"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_FALLBACK"
+msgid "Fallback"
+msgstr "Riserva"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_SEARCHING"
+msgid "Searching"
+msgstr "Ricerca"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_IN_CALL"
+msgid "In call"
+msgstr "In chiamata"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_REFUSED"
+msgid "Refused"
+msgstr "Rifiutato"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_REGISTERING"
+msgid "Registering"
+msgstr "Registrazione"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_READY"
+msgid "Ready"
+msgstr "Pronto"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_WORD_SYSTEM"
+msgid "System"
+msgstr "Sistema"
 
 #: core/ui/ui_screens.c
 msgctxt "HOME_CHIP_ROAM_LOCK"

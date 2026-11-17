@@ -48,6 +48,11 @@ typedef struct {
 	uint8_t sfr_flag1;
 	uint8_t sfr_a;
 	uint8_t sfr_b;
+	// A channel tag's (codeplug_tag.h, docs/spec/channel-modes.md): the channel's kind, 0 for a plain FM or DMR
+	// channel, and with a kind its system (0xFF none). rx_only is then the tag's. The kind's own fields are in its
+	// parameter block, which its mode module fetches (codeplug_tag_params); none of them live here
+	uint8_t kind;
+	uint8_t system;
 } channel_t;
 
 // channel_t.alias_tx: what the channel sends as talker alias on each timeslot (text = our radio name)
@@ -170,6 +175,8 @@ bool codeplug_aprs(uint8_t n, codeplug_aprs_t *out);
 // Rewrite configuration n's two path entries ("WIDE1-1", "" for none), the rest of the record kept; false when the
 // record is empty or unknown (a new record isn't made: its other fields' encodings aren't all known)
 bool codeplug_set_aprs_path(uint8_t n, const char *path1, const char *path2);
+// Rewrite configuration n's SSID (0-15), the same way
+bool codeplug_set_aprs_ssid(uint8_t n, uint8_t ssid);
 #endif
 
 // Re-read everything after the image was written underneath (the CPS); bumps the serial

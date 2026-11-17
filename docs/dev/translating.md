@@ -249,12 +249,14 @@ cut it safely. Don't compare shown text with `strcmp`; compare the state it came
 
 ### Looking at the result
 
-`make -C tests/host ui-gallery` renders the screens in English. To see a language, render the gallery with `UI_LANG`
-set to its code, into a directory outside the repo, and look for text that is cut or runs into something:
+`make -C tests/host ui-gallery` renders the screens in English. To see a language, build the simulator with that
+language in (`UI_LANG` on the `make` line turns its `CONFIG_LANG_<CODE>` on, for a language that is off by default),
+then render the gallery with `UI_LANG` set to its code, into a directory outside the repo, and look for text that is cut
+or runs into something:
 
 ```
-make -C tests/host uiSim
-cd tests/host && UI_LANG=es ./uiSim --gallery /tmp/gallery-es    # contact sheets in /tmp/gallery-es/sheets
+make -C tests/host -B uiSim UI_LANG=fr
+cd tests/host && UI_LANG=fr ./uiSim --gallery /tmp/gallery-fr    # contact sheets in /tmp/gallery-fr/sheets
 ```
 
 Commit only the English gallery.

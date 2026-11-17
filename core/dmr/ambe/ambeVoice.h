@@ -98,6 +98,18 @@ void ambeVoiceGetStats(ambe_voice_stats_t *out);
 // racing the reset may survive it
 void ambeVoiceResetStats(void);
 
+// Voice capture (CONFIG_VOICE_CAPTURE): the next n (up to AMBE_VOICE_CAP) frames received, raw as on air, each frame or
+// a lost one in order. Arm clears what was captured; 0 stops. For receive tests that compare the bits with what was
+// sent (debug link RADIO op 41, the voice_cap view)
+#define AMBE_VOICE_CAP	32u
+typedef struct {
+	uint8_t lost;			// 1: a frame the call stack lost (frame all zero)
+	uint8_t frame[DMR_AMBE_FRAME_BYTES];
+} ambe_cap_entry_t;
+void ambeVoiceCaptureArm(uint8_t n);
+// The frames captured so far (count returned), and how many were asked for
+uint8_t ambeVoiceCapture(const ambe_cap_entry_t **entries, uint8_t *want);
+
 // The audio block callback (exposed for tests): one 20 ms block in, one out
 void ambeVoiceAudioBlock(const int16_t *mic, int16_t *spk, void *ctx);
 

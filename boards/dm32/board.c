@@ -38,9 +38,9 @@ static const band_t bands[] = {
 #endif
 };
 
-// Power levels 0..8 of hardware-dm32.md 11.3 (level 9, the user value, isn't offered). Labels are nominal: the radio
-// is rated 5 W VHF / 4 W UHF at high power; check against a meter at the bring-up
-static const char *const power_names[] = { "L-", "L", "L+", "L++", "M", "M+", "M++", "H-", "H" };
+// Five of the power levels 0..8 of hardware-dm32.md 11.3: very low, low, mid, a step above mid, high (radio_dm32.c).
+// Labels are nominal: the radio is rated 5 W VHF / 4 W UHF at high power; check against a meter at the bring-up
+static const char *const power_names[] = { "L-", "L", "M", "M+", "H" };
 
 // docs/ux/information-architecture.md 7.1 (the DM-32 has no top key; SK1 / SK2 are the side keys below the PTT)
 static const keymap_entry_t keymap[] = {
@@ -119,8 +119,7 @@ const board_t board = {
 	.netif = &hostlink_ppp_netif,	// IPv4 over PPP on the programming cable's UART (docs/spec/ppp.md)
 #endif
 #if CONFIG_GPS
-	.gps_enable = hrc_gps_enable,
-	.gps_present = hrc_gps_present,	// CAP_GPS: the module is fitted, but say so only once it has been heard
+	.gps = &hrc_gps,	// CAP_GPS: the module is fitted, but say so only once it has been heard
 #endif
 	.system = &hrc_system,
 	.chip_reg = dm32_chip_reg,

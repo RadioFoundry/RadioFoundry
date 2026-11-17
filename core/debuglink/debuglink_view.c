@@ -17,6 +17,9 @@
 #include "radio/tx_limit.h"
 #include "radio/pa_keyup.h"
 #include "storage/storage.h"
+#if CONFIG_VOICE_CAPTURE
+#include "dmr/ambe/ambeVoice.h"
+#endif
 #if CONFIG_DMR_DATA_CORE
 #include "codeplug/codeplug_kv.h"
 #endif
@@ -60,7 +63,7 @@ static const char *deny_key(uint8_t d)
 {
 	static const char *const names[] = { "none", "rx_only", "band", "timeout", "no_freq", "mode", "no_codec",
 					     "no_dmr", "busy", "no_repeater", "rejected", "hotspot", "no_id", "inhibit",
-					     "battery", "am", "bcast", "sfr_rpt", "hwopt", "refused" };
+					     "battery", "am", "bcast", "sfr_rpt", "hwopt", "refused", "ceased" };
 	return d < sizeof(names) / sizeof(names[0]) ? names[d] : "?";
 }
 
@@ -114,13 +117,17 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 #if CONFIG_DMR
 	const pa_keyup_cfg_t *ku = pa_keyup_cfg();
 	if (ku != NULL) {
-		// The DMR PA key-up's constants (RADIO op 37) and the last key-up's drives
-		pa_keyup_t k = pa_keyup_last();
-		dl_text(t, "pa_keyup=%u/%u/%u/%u/%u/%u/%u/%u\n", (unsigned)ku->dead, (unsigned)ku->knee,
-			(unsigned)ku->slope_us, (unsigned)ku->boost_pct, (unsigned)ku->hold_pct, (unsigned)ku->boost_us,
-			(unsigned)ku->pa_us, (unsigned)ku->drive_us);
-		dl_text(t, "pa_keyup.last=%u/%u/%u/%u\n", (unsigned)k.boost, (unsigned)k.hold, (unsigned)k.drive,
-			(unsigned)k.hold_us);
+		// The DMR PA key-up's constants (RADIO op 37), the board's limits (the earliest point, the highest drive) and
+		// the last key-up: its drives and times, and the table's top drive and anchor it was planned against
+		uint16_t top, ref, ahead, max;
+		pa_keyup_t k = pa_keyup_last(&top, &ref);
+		pa_keyup_limits(&ahead, &max);
+		dl_text(t, "pa_keyup=%u/%u/%u/%u/%u/%u/%u\n", (unsigned)ku->dead_pm, (unsigned)ku->knee_us,
+			(unsigned)ku->slope_us, (unsigned)ku->window_us, (unsigned)ku->settle_us, (unsigned)ku->pa_us,
+			(unsigned)ku->ease_pm);
+		dl_text(t, "pa_keyup.limits=%u/%u\n", (unsigned)ahead, (unsigned)max);
+		dl_text(t, "pa_keyup.last=%u/%u/%u/%u/%u/%u/%u\n", (unsigned)k.boost, (unsigned)k.drive, (unsigned)k.boost_us,
+			(unsigned)k.pa_us, (unsigned)k.drive_us, (unsigned)top, (unsigned)ref);
 	}
 #endif
 	// The board's bands in Hz, so a HIL test skips a frequency the radio can't tune instead of failing on it
@@ -539,11 +546,38 @@ static void board_section(dl_text_t *t)
 	}
 }
 
+// The voice frames captured, in order: 18 hex digits a frame, L a lost one
+static void voice_cap_section(dl_text_t *t)
+{
+#if CONFIG_VOICE_CAPTURE
+	const ambe_cap_entry_t *e;
+	uint8_t want;
+	uint8_t n = ambeVoiceCapture(&e, &want);
+	dl_text(t, "vcap.built=1\nvcap.want=%u\nvcap.count=%u\nvcap.frames=", want, n);
+	for (uint8_t i = 0; i < n; i++) {
+		if (i != 0) {
+			dl_text(t, ",");
+		}
+		if (e[i].lost) {
+			dl_text(t, "L");
+			continue;
+		}
+		for (uint8_t k = 0; k < sizeof e[i].frame; k++) {
+			dl_text(t, "%02x", e[i].frame[k]);
+		}
+	}
+	dl_text(t, "\n");
+#else
+	dl_text(t, "vcap.built=0\n");
+#endif
+}
+
 static const char *const section_names[DL_VIEW_COUNT] = { "core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot",
 						  "link", "features", "dmr_data", "storage", "dmr_ext",
 						  "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
 						  "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc",
-						  "net_link", "cps", "board", "audio" };
+						  "net_link", "cps", "board", "audio", "t3", "t3_svc", "t3_roam", "voice_cap", "t3_msg",
+						  "t3_ra" };
 
 const char *debuglink_view_name(uint8_t section)
 {
@@ -653,6 +687,24 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_AUDIO:
 		debuglink_view_audio(t);
+		break;
+	case DL_VIEW_T3:
+		debuglink_view_t3(v, t);
+		break;
+	case DL_VIEW_T3_SVC:
+		debuglink_view_t3_svc(v, t);
+		break;
+	case DL_VIEW_T3_ROAM:
+		debuglink_view_t3_roam(v, t);
+		break;
+	case DL_VIEW_VOICE_CAP:
+		voice_cap_section(t);
+		break;
+	case DL_VIEW_T3_MSG:
+		debuglink_view_t3_msg(v, t);
+		break;
+	case DL_VIEW_T3_RA:
+		debuglink_view_t3_ra(v, t);
 		break;
 	case DL_VIEW_USRP:
 #if CONFIG_NET_USRP

@@ -181,14 +181,14 @@ The side keys are, top to bottom, SK1, **PTT**, SK2 and SK3.
 
 ### DM-1701 power levels
 
-Nine levels: 50 mW, 250 mW, 500 mW, 750 mW, 1 W, 2 W, 3 W, 4 W, 5 W. The values are nominal and use the radio's
-factory calibration.
+Five levels: 100 mW, 500 mW, 1 W, 2.5 W, 5 W. The values are nominal and use the radio's factory calibration. They
+haven't been measured with a wattmeter.
 
 | Way to change it | Levels |
 |---|---|
 | A channel without a power in the codeplug | 1 W |
-| **\***, **1** | 50 mW, 1 W, 5 W |
-| SK3 on Home | All nine, one per press |
+| **\***, **1** | 100 mW, 1 W, 5 W |
+| SK3 on Home | All five, one per press |
 
 ### DM-1701 battery
 
@@ -233,8 +233,9 @@ layout.
 ### What the DM-1701 lacks
 
 - No GPS from the factory. LRRP location requests get "no fix". APRS positions come from a computer or a fixed
-  position. If you fit a GPS module yourself, wire its NMEA output to PA10 (STM32 pin 69). The radio finds it at
-  start-up ([hardware-dm1701.md 14.2](../spec/hardware-dm1701.md#142-gps-module)).
+  position. If you fit a GPS module yourself, wire its NMEA output to PA10 (STM32 pin 69) and its power enable, if it
+  has one, to PA9. The radio finds it at start-up ([hardware-dm1701.md 14.2](../spec/hardware-dm1701.md#142-gps-module))
+  and powers it only while **Settings > Location > GPS** is on.
 - APRS receive needs the squelch open: the radio hears packets strong enough to open the squelch, not weaker ones.
 - No APRS iGate (passing heard packets to APRS-IS) in the default image: `CONFIG_APRS_IGATE` is off by default.
 - No vibration motor: **Settings > Sound > Vibrate** isn't in the image.
@@ -306,8 +307,9 @@ bootloader starts when you hold **PTT** and the side key just above it at power-
 One band per radio: UHF (400-480 MHz) or VHF (136-174 MHz). There is one image for each band, and an image refuses
 the other band.
 
-Two power levels, 1 W and 5 W. A channel without a power in the codeplug uses 1 W. **\***, **1** switches between the
-two. The radio refuses to transmit without a valid factory calibration.
+Five power levels: 100 mW, 500 mW, 1 W, 2.5 W, 5 W. 1 W and 5 W are the factory calibration's; the others are set from
+them and haven't been measured with a wattmeter. A channel without a power in the codeplug uses 1 W. **\***, **1**
+steps through 100 mW, 1 W and 5 W. The radio refuses to transmit without a valid factory calibration.
 
 ### MD-380 battery
 
@@ -334,7 +336,8 @@ A 160 x 128 color screen, every row visible. The controller type is unconfirmed.
 - Audio linking (USRP, [USB network](15-usb-network.md#linking-audio-allstarlink-and-dvswitch)) carries DMR only: the
   FM transmit path from the processor isn't written.
 - GPS only on the "G" models. The radio listens for the GPS module for 5 s at start-up and hides the GPS features if
-  it hears nothing. **Settings > Location > GPS** off only stops APRS using the fix; the module stays powered.
+  it hears nothing. Once heard, the module is powered only while **Settings > Location > GPS** is on, which takes
+  effect at once.
 - No vibration motor: **Settings > Sound > Vibrate** isn't in the image.
 - Some early VHF radios may have a 1 MB memory chip instead of 16 MB (not yet confirmed on a radio). RadioFoundry
   can't store a codeplug on it: settings are lost when the radio is turned off, and the Codeplug Editor and the
@@ -375,8 +378,8 @@ No **P1**, **P2**, **SK3** or top key, so no **Power level** or zone keys and no
 
 ### MD-UV380 power levels
 
-Nine levels as on the DM-1701, 50 mW to 5 W. On the MD-UV390 Plus 10 W image the top four are 2, 3, 5 and 10 W. A
-channel without a power in the codeplug uses 1 W. The radio refuses to transmit without a valid factory calibration.
+Nine levels: 50 mW, 250 mW, 500 mW, 750 mW, 1 W, 2 W, 3 W, 4 W, 5 W. On the MD-UV390 Plus 10 W image the top four are
+2, 3, 5 and 10 W. A channel without a power in the codeplug uses 1 W. The radio refuses to transmit without a valid factory calibration.
 
 ### MD-UV380 battery
 
@@ -395,7 +398,8 @@ A 160 x 128 color screen, every row visible.
 
 - No vibration motor: **Settings > Sound > Vibrate** isn't in the image.
 - GPS only on the G models. The radio powers the module for 5 s at start-up and hides the GPS features if it hears
-  nothing; then the module is switched off again.
+  nothing; then the module is switched off again. Once heard, the module is powered only while **Settings > Location >
+  GPS** is on, which takes effect at once.
 - Nothing is checked on a radio yet: treat every function as untested.
 
 ## Baofeng DM-32UV
@@ -436,7 +440,7 @@ hold), or change the power with **\***, **1**.
 
 ### DM-32UV power levels
 
-Nine levels, L-, L, L+, L++, M, M+, M++, H-, H, from the radio's factory calibration. The radio is rated 5 W (VHF) and
+Five levels, L-, L, M, M+, H, from the radio's factory calibration. The radio is rated 5 W (VHF) and
 4 W (UHF) at high power. The levels haven't been measured. A channel without a power in the codeplug uses L.
 **\***, **1** steps through L-, L and H.
 
@@ -555,7 +559,9 @@ timeout Off until it is switched off. Switch the radio off before unplugging the
 
 ### DB25-D PRO power and supply
 
-Two levels, L and H (nominal 20 W). The radio refuses to transmit until RadioFoundry can read its power calibration.
+Five levels: L--, L-, L, M, H. L and H (nominal 20 W) are the factory calibration's; the others are set from them and
+haven't been measured. A channel without a power in the codeplug uses L. The radio refuses to transmit until
+RadioFoundry can read its power calibration.
 
 The radio runs from a 13.8 V supply and has no battery. The status line shows no battery icon or percentage, Tools has
 no Battery page, and Settings > Power saving has no Battery saver or Low battery warning. RadioFoundry doesn't read the supply
@@ -660,8 +666,9 @@ installation) or from a codec the browser kept. Untested on a DM-1801 Pro from t
 
 ### DM-1801 Pro power and display
 
-Three power levels, L, M and H, Low, Middle and High. The radio refuses to transmit until RadioFoundry can
-read its factory calibration. The battery
+Five power levels: L--, L-, L, M, H. L, M and H are the factory calibration's Low, Middle and High; the two under L are
+set from L and haven't been measured. A channel without a power in the codeplug uses L. The radio refuses to transmit
+until RadioFoundry can read its factory calibration. The battery
 reading is scaled from a measurement on one radio. The screen is monochrome; the backlight is on or off.
 The radio vibrates for messages, call alerts and emergencies (**Settings > Sound > Vibrate**).
 

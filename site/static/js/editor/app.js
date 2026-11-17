@@ -20,6 +20,8 @@ import { FakeCpsRadio } from "../codeplug/fakecps.js";
 import { Grid } from "./grid.js";
 import { History } from "./undo.js";
 import { bulkColumns, columns, channelForm, formDialog, membersDialog, refLabel, parseAreaKey } from "./views.js";
+import { systemsTab, systemsShown, modeSettingsPart } from "./modesview.js";
+import { syncModes, countSecrets, withoutSecrets } from "../codeplug/channelmodes.js";
 import { openFile, saveBytes, tftpBytes, datedName, FileError, imageFrom, saveDraft, loadDraft, clearDraft } from "./files.js";
 import { extensions } from "./extensions.js";
 import "./parts.js";
@@ -28,7 +30,7 @@ import { initReporting, reportedLine } from "../report.js";
 import { updateFor } from "../flasher/version.js";
 
 const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ usbVendorId }));
-const TABS = ["radio", "channels", "zones", "contacts", "rxLists", "dtmfContacts", "aprs", "iddb", "problems"];
+const TABS = ["radio", "channels", "zones", "contacts", "rxLists", "dtmfContacts", "aprs", "systems", "iddb", "problems"];
 const TABLE_MAX = { channels: LIMITS.channels, zones: LIMITS.zones, contacts: LIMITS.contacts, rxLists: LIMITS.rxLists, dtmfContacts: LIMITS.dtmfContacts, aprs: LIMITS.aprs };
 
 const S = {
@@ -111,7 +113,12 @@ function say(text, kind = "info", { report = null } = {}) {
 // --- Rendering ---
 
 function problems() {
-	return validate(S.model, { bands: S.conn?.radio?.bands_hz || null });
+	return validate(S.model, { bands: S.conn?.radio?.bands_hz || null, features: features() });
+}
+
+// The connected radio's firmware features (its probe), which say the channel modes it runs; null without a radio
+function features() {
+	return S.conn ? S.conn.probe?.features ?? "" : null;
 }
 
 function refresh() {
@@ -121,9 +128,10 @@ function refresh() {
 	const counts = {
 		channels: S.model.channels.length, zones: S.model.zones.length, contacts: S.model.contacts.length,
 		rxLists: S.model.rxLists.length, dtmfContacts: S.model.dtmfContacts.length, aprs: S.model.aprs.length,
-		iddb: S.model.iddb?.count || 0, problems: p.length,
+		systems: S.model.systems?.length || 0, iddb: S.model.iddb?.count || 0, problems: p.length,
 	};
-	tabs.replaceChildren(...TABS.map((k) => {
+	// the Systems tab only where a mode that has systems is offered, or the codeplug has systems
+	tabs.replaceChildren(...TABS.filter((k) => k !== "systems" || systemsShown(S.model, features())).map((k) => {
 		const b = h("button", { type: "button", role: "tab", "aria-selected": String(S.tab === k), class: k === "problems" && errors ? "has-errors" : "",
 			onclick: () => show(k) }, t(`editor.tab.${k}`), k in counts && k !== "radio" ? h("span", { class: "ed-count" }, String(counts[k])) : null);
 		return b;
@@ -171,6 +179,7 @@ function renderView(p) {
 	const tab = S.tab;
 	if (tab === "radio") return view.replaceChildren(radioTab());
 	if (tab === "iddb") return view.replaceChildren(extensions.iddbTab(api()));
+	if (tab === "systems") return view.replaceChildren(systemsTab(api(), features()));
 	if (tab === "problems") return view.replaceChildren(problemsTab(p));
 	// a table: keep the grid (focus, sort, selection) when only its rows changed
 	if (S.grid && S.grid.table === tab) {
@@ -351,7 +360,11 @@ function bulkSet(tab, g) {
 
 function openRecord(tab, r) {
 	if (tab === "channels") {
-		formDialog(t("editor.channel_title", { name: r.name }), channelForm(S.model, t), r, t, (work) => change(t("editor.undo.edit"), () => Object.assign(r, work)));
+		// a channel of a kind keeps its stand-in record (channelmodes.js syncModes), whatever the form's hidden fields hold
+		formDialog(t("editor.channel_title", { name: r.name }), channelForm(S.model, t, { features: features() }), r, t, (work) => change(t("editor.undo.edit"), () => {
+			Object.assign(r, work);
+			syncModes(S.model);
+		}));
 	} else if (tab === "zones") {
 		membersDialog(t("editor.zone_title", { name: r.name }), r.channels, [...S.model.channels].sort((a, b) => a.number - b.number), LIMITS.zoneChannels, t,
 			(c) => `${c.number} · ${c.name}`, (list) => change(t("editor.undo.edit"), () => (r.channels = list)));
@@ -411,7 +424,8 @@ function radioTab() {
 			onOff("callEndTone", t("editor.general.call_end_tone")),
 			onOff("totWarnTone", t("editor.general.tot_warn_tone")),
 			onOff("batteryTone", t("editor.general.battery_tone")),
-			onOff("txDenyTone", t("editor.general.tx_deny_tone"))),
+			onOff("txDenyTone", t("editor.general.tx_deny_tone")),
+			...modeSettingsPart(api(), features())),
 	];
 	if (S.conn) {
 		const p = S.conn.probe;
@@ -474,6 +488,20 @@ function saveFile(kind) {
 	const errors = problems().filter((p) => p.level === "error");
 	if (errors.length) return say(t("editor.err.fix_first", { n: errors.length }), "bad");
 	const img = encode(S.model);
+	// keys (channel-modes.md 8) go into a file only when the user turns them on for this export
+	const n = countSecrets(img.bytes);
+	if (!n) return saveImage(kind, img);
+	const box = h("input", { type: "checkbox", id: "keep-secrets" });
+	dialog(t("editor.secrets.title"), [h("p", {}, t("editor.secrets.text", { n })),
+		h("div", { class: "form-row form-check" }, h("label", { for: "keep-secrets" }, t("editor.secrets.include")), box)],
+	t("editor.save"), (close) => {
+		close();
+		if (!box.checked) withoutSecrets(img.bytes);
+		saveImage(kind, img);
+	});
+}
+
+function saveImage(kind, img) {
 	if (kind === "tftp") {
 		download("codeplug.bin", tftpBytes(img, iddbEnd(S.conn?.radio)));
 		say(t("editor.saved_tftp"), "info");
@@ -510,7 +538,8 @@ async function connect() {
 		// &git_time=N: a build of a commit from that time (Unix seconds)
 		const hash = location.hash;
 		S.fake = S.fake || new FakeCpsRadio({ board: "DM-1701", image: CodeplugImage.blank().bytes, foreign: hash === "#sim-foreign",
-			features: hash.startsWith("#sim-compact") ? "FM,DMR,IDDB_COMPACT" : "FM,DMR", release: hash.match(/[#&]release=([\w.]+)/)?.[1],
+			// #sim-modes: firmware that runs every channel mode the editor knows (modes.js)
+			features: hash.startsWith("#sim-compact") ? "FM,DMR,IDDB_COMPACT" : hash.startsWith("#sim-modes") ? "FM,DMR,DMR_TRUNK,P25,P25_TRUNK" : "FM,DMR", release: hash.match(/[#&]release=([\w.]+)/)?.[1],
 			gitTime: Number(hash.match(/[#&]git_time=(\d+)/)?.[1]) || 0 });
 		stream = S.fake.stream();
 	} else {

@@ -108,59 +108,93 @@ static uint8_t path_from_codeplug(const codeplug_aprs_t *cp)
 	return APRS_PATH_COUNT;
 }
 
-// A path in the codeplug we haven't taken yet (a CPS wrote it) replaces ours: the path lives in both places and the
-// last one changed wins (aprs.md 11). Outside the lock
-static void take_codeplug_path(const settings_t *st, const codeplug_aprs_t *cp)
+// A path or SSID in the codeplug we haven't taken yet (a CPS wrote it) replaces ours: they live in both places and the
+// last one changed wins (aprs.md 11). Outside the lock. noinline: inlined, its frame sits under the codeplug read in
+// aprs_ax25_identity, the start-up task's deepest path
+static void __attribute__((noinline)) take_codeplug(const settings_t *st, const codeplug_aprs_t *cp)
 {
 	uint8_t path = path_from_codeplug(cp);
-	if (path >= APRS_PATH_COUNT || st->aprs_cp_path == path + 1u) {
+	bool new_path = path < APRS_PATH_COUNT && settings_aprs_cp_path(st) != path + 1u;
+	bool new_ssid = cp->ssid <= 15 && settings_aprs_cp_ssid(st) != cp->ssid + 1u;
+	// None taken yet (a record from before the marker) and the codeplug says 0: most likely a byte no CPS user ever set,
+	// and taking it would drop our SSID from every packet. Mark it taken and keep ours; a later CPS write of another
+	// SSID is taken as usual, and 0 can still be set on the radio
+	bool keep_ssid = new_ssid && cp->ssid == 0 && settings_aprs_cp_ssid(st) == 0;
+	if (!new_path && !new_ssid) {
 		return;
 	}
 	settings_t *s = settings_begin();
 	if (s->aprs_stored != 1) {
-		aprs_cfg_store_defaults(s);	// so the path can be stored
+		aprs_cfg_store_defaults(s);	// so they can be stored
 	}
-	s->aprs_path = path;
-	s->aprs_cp_path = (uint8_t)(path + 1u);
+	if (new_path) {
+		s->aprs_path = path;
+		settings_set_aprs_cp_path(s, (uint8_t)(path + 1u));
+	}
+	if (new_ssid) {
+		if (!keep_ssid) {
+			s->aprs_ssid = cp->ssid;
+		}
+		settings_set_aprs_cp_ssid(s, (uint8_t)(cp->ssid + 1u));
+	}
 	settings_end(aprs_s.now);
 	LOCK();
-	aprs_s.cfg.path = path;
+	if (new_path) {
+		aprs_s.cfg.path = path;
+	}
+	if (new_ssid && !keep_ssid) {
+		aprs_s.cfg.ssid = cp->ssid;
+		if (aprs_s.me_ok) {
+			aprs_s.me.ssid = cp->ssid;
+		}
+	}
 	aprs_changed();
 	UNLOCK();
 }
 
-// One write of the path into record 1, taken as seen when it lands
-static bool write_codeplug_path(uint8_t path)
+// One write of the path and the SSID into record 1 (only what differs), taken as seen when it lands
+static bool write_codeplug(uint8_t path, uint8_t ssid)
 {
-	char p1[16], p2[16];
-	const char *t = path_texts[path];
-	const char *comma = strchr(t, ',');
-	size_t n = comma != NULL ? (size_t)(comma - t) : strlen(t);
-	memcpy(p1, t, n);
-	p1[n] = '\0';
-	strcpy(p2, comma != NULL ? comma + 1 : "");
-	if (!codeplug_set_aprs_path(1, p1, p2)) {
+	codeplug_aprs_t cp;
+	if (!codeplug_aprs(1, &cp)) {
+		return false;
+	}
+	if (path_from_codeplug(&cp) != path) {
+		char p1[16], p2[16];
+		const char *t = path_texts[path];
+		const char *comma = strchr(t, ',');
+		size_t n = comma != NULL ? (size_t)(comma - t) : strlen(t);
+		memcpy(p1, t, n);
+		p1[n] = '\0';
+		strcpy(p2, comma != NULL ? comma + 1 : "");
+		if (!codeplug_set_aprs_path(1, p1, p2)) {
+			return false;
+		}
+	}
+	if (cp.ssid != ssid && !codeplug_set_aprs_ssid(1, ssid)) {
 		return false;
 	}
 	settings_t *s = settings_begin();
-	s->aprs_cp_path = (uint8_t)(path + 1u);
+	settings_set_aprs_cp_path(s, (uint8_t)(path + 1u));
+	settings_set_aprs_cp_ssid(s, (uint8_t)(ssid + 1u));
 	settings_end(aprs_s.now);
 	return true;
 }
 
-bool aprs_path_to_codeplug(void)
+bool aprs_to_codeplug(void)
 {
 	// A change that came while the job waited or ran couldn't post a job of its own: write again until the
-	// codeplug holds the path in use (a few times at most)
+	// codeplug holds the path and SSID in use (a few times at most)
 	for (uint8_t tries = 0; tries < 3u; tries++) {
 		LOCK();
 		uint8_t path = aprs_s.cfg.path < APRS_PATH_COUNT ? aprs_s.cfg.path : APRS_PATH_WIDE1_WIDE2;
+		uint8_t ssid = aprs_s.cfg.ssid <= 15 ? aprs_s.cfg.ssid : APRS_SSID_DEFAULT;
 		UNLOCK();
-		if (!write_codeplug_path(path)) {
+		if (!write_codeplug(path, ssid)) {
 			return false;
 		}
 		LOCK();
-		bool same = aprs_s.cfg.path == path;
+		bool same = aprs_s.cfg.path == path && aprs_s.cfg.ssid == ssid;
 		UNLOCK();
 		if (same) {
 			return true;
@@ -217,7 +251,7 @@ void aprs_ax25_identity(void)
 	aprs_s.cp_serial = codeplug_serial();
 	aprs_s.ident_ms = aprs_s.now;
 	if (have_cp) {
-		take_codeplug_path(&st, &cp);
+		take_codeplug(&st, &cp);
 	}
 }
 

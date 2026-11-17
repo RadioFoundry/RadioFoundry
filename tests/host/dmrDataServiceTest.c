@@ -1139,6 +1139,20 @@ static void testIpTx(void)
 	respond(RADIO_A, DMR_SAP_UDPIP_COMPRESSION, DMR_RESPONSE_ACK(ns), NULL);
 	CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK);
 
+	// The bench's rate override: the same packet confirmed at rate 1/2 (10 octets a block: 8), then back to 3/4
+	CHECK(dmrDataServiceIpConfirmedRate() == DMR_TYPE_RATE_3_4);
+	dmrDataServiceSetIpConfirmedRate(DMR_TYPE_RATE_1_2);
+	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
+	runMainTask(SEND_MS);
+	h = txHeader();
+	CHECK(h != NULL && (h->payload[0] & 0x4F) == (0x40 | DMR_DPF_CONFIRMED) && (h->payload[8] & 0x7F) == 8 &&
+	      lastTxCount == DMR_DATA_TX_PREAMBLES + 1 + 8 + 1 && h[1].dataType == DMR_TYPE_RATE_1_2 &&
+	      h[8].dataType == DMR_TYPE_RATE_1_2);
+	ns = (h->payload[9] >> 4) & 7;
+	respond(RADIO_A, DMR_SAP_UDPIP_COMPRESSION, DMR_RESPONSE_ACK(ns), NULL);
+	CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK);
+	dmrDataServiceSetIpConfirmedRate(DMR_TYPE_RATE_3_4);
+
 	// The ACK before the stack reports our list done (BrandMeister answers that fast): taken, the late report ignored
 	txAutoDone = false;
 	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
@@ -1231,8 +1245,8 @@ static void testIpTx(void)
 	ch.canTransmit = true;
 
 	dmrDataServiceGetStats(&st);
-	CHECK(st.ipPackets - st0.ipPackets == 10 && st.ipSent - st0.ipSent == 7 && st.ipFailed - st0.ipFailed == 3);
-	CHECK(st.ipConfirmed - st0.ipConfirmed == 7 && st.ipCnfAcks - st0.ipCnfAcks == 5 && st.ipCnfSacks - st0.ipCnfSacks == 1);
+	CHECK(st.ipPackets - st0.ipPackets == 11 && st.ipSent - st0.ipSent == 8 && st.ipFailed - st0.ipFailed == 3);
+	CHECK(st.ipConfirmed - st0.ipConfirmed == 8 && st.ipCnfAcks - st0.ipCnfAcks == 6 && st.ipCnfSacks - st0.ipCnfSacks == 1);
 	CHECK(st.ipCnfNacks - st0.ipCnfNacks == 1 && st.ipCnfResyncs - st0.ipCnfResyncs == 1 && st.ipCnfTooLong - st0.ipCnfTooLong == 0);
 	CHECK(st.ipCnfTimeouts - st0.ipCnfTimeouts == DMR_IPC_TRIES_DEFAULT + 3 && st.ipCnfFailed - st0.ipCnfFailed == 3);
 	CHECK(st.ipCnfRetries - st0.ipCnfRetries == 2 + (DMR_IPC_TRIES_DEFAULT - 1) + 1);
@@ -2451,8 +2465,20 @@ static void testTmsOff(void)
 }
 #endif
 
+// A modem whose rate 3/4 blocks receivers can't decode: confirmed IP at rate 1/2 from the start; others at rate 3/4
+static void testNoRate34(void)
+{
+	dmrDataEnv_t e = fakeEnv;
+	e.noRate34 = true;
+	dmrDataServiceInit(&e);
+	CHECK(dmrDataServiceIpConfirmedRate() == DMR_TYPE_RATE_1_2);
+	dmrDataServiceInit(&fakeEnv);
+	CHECK(dmrDataServiceIpConfirmedRate() == DMR_TYPE_RATE_3_4);
+}
+
 int main(void)
 {
+	testNoRate34();
 	dmrDataServiceInit(&fakeEnv);
 
 #if CONFIG_DMR_TMS

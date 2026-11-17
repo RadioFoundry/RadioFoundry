@@ -35,6 +35,8 @@
 #      check's self-test
 #      (tools/stack_check.py); every relative link, image and anchor in the Markdown resolves (tools/check_doc_links.py);
 #      the codeplug settings area's keys agree in the spec, the firmware and the Codeplug Editor (tools/check_keys.py);
+#      the channel-mode kinds and system types agree in the spec, the firmware and the Codeplug Editor
+#      (tools/check_modes.py);
 #      the glossary data is sound and its pages current (tools/glossary.py); the web site builds without a warning (site/build.py, needs markdown-it-py or uv) and the web flasher's tests
 #      pass against rfoundry (site/tests/run.sh, needs Node 20+)
 #   3. firmware, for every boards/<b>/board.mk whose compiler is installed (a board without one is skipped with a
@@ -233,7 +235,7 @@ for f in sys.argv[1:]:
 	fi
 	if python3 -c 'import pytest' 2>/dev/null; then
 		if python3 -m pytest -q -p no:cacheprovider tests/hil/test_skip_kinds.py tests/hil/test_radio_reconnect.py tests/hil/test_bench_line.py \
-			tests/hil/test_bench_envelope.py \
+			tests/hil/test_bench_envelope.py tests/hil/test_pa_cal.py tests/hil/test_pa_shape.py \
 			tests/hil/test_tx_guard.py tests/hil/test_rig_state.py tests/hil/test_dmr_packets.py \
 			> "$OUT/hil-skip-test.log" 2>&1; then
 			ok "HIL skip, reconnect, TX guard, rig state, bench line and DMR packet helper tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-skip-test.log"))"
@@ -313,6 +315,12 @@ for f in sys.argv[1:]:
 	else
 		head -20 "$OUT/keys.log"
 		bad "settings area keys (see $OUT/keys.log)"
+	fi
+	if python3 tools/check_modes.py > "$OUT/modes.log" 2>&1; then
+		ok "channel-mode registry: $(tail -1 "$OUT/modes.log" | sed 's/^check_modes: //')"
+	else
+		head -20 "$OUT/modes.log"
+		bad "channel-mode registry (see $OUT/modes.log)"
 	fi
 	if python3 tools/glossary.py --check > "$OUT/glossary.log" 2>&1; then
 		ok "glossary: $(tail -1 "$OUT/glossary.log" | sed 's/^glossary: //')"

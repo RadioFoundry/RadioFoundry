@@ -56,6 +56,18 @@
 
 // Record flags
 #define ZS_FLAG_CHANNEL			0x01	// one channel, not a zone: the receiver adds it to a zone it chooses
+#define ZS_FLAG_MODES			0x02	// a modes part follows the channels (4.2). A build without one refuses the record
+
+// The modes part (CONFIG_ZONE_SHARE_MODES, docs/spec/zone-share.md 4.2): the systems the record's channels of a kind
+// are on, then the channels' tags. Kinds' and system types' bytes are opaque here (docs/spec/channel-modes.md)
+#define ZS_SYSTEMS_MAX			8		// systems in one record
+#define ZS_ENTRIES_MAX			64		// system entries in one record, all systems together
+#define ZS_BLOCK_MAX			200		// a system type's block, octets
+#define ZS_BODY_MAX				64		// a system entry's body, a secret, a tag's parameter block: octets each
+#define ZS_LEVEL_IDENTITY		1		// a system sent as its identity alone: the receiver must have it
+#define ZS_LEVEL_WHOLE			2		// the whole system: its block, its entries, its secret if the sender added it
+#define ZS_SYSTEM_FLAGS			0xF3	// a system's flags on air: bits 2-3 are reserved
+#define ZS_TAG_FLAGS			0xF3	// a tag's flags on air: transmit, base stands on its own, the kind's 4-7
 
 // Contact types on air
 #define ZS_CONTACT_GROUP		0
@@ -100,6 +112,45 @@ typedef struct
 	char     name[ZS_NAME_MAX + 1];
 } zsChannel_t;
 
+// A system of the modes part. Read: the pointers are into the record. Written: the caller's
+typedef struct
+{
+	uint8_t  type;						// the system type (channel-modes.md 4)
+	uint8_t  flags;						// the system record's (ZS_SYSTEM_FLAGS)
+	uint8_t  level;						// ZS_LEVEL_*
+	uint8_t  idLen;						// the identity: the first idLen octets of the block
+	uint8_t  blockLen;					// ZS_LEVEL_IDENTITY: idLen
+	const uint8_t *block;
+	char     name[ZS_NAME_MAX + 1];
+	uint8_t  entries;					// ZS_LEVEL_WHOLE: the entries that follow
+	uint8_t  secretLen;					// ZS_LEVEL_WHOLE: 0 = none
+	const uint8_t *secret;
+	uint16_t entryAt;					// read: where the first entry starts
+} zsSystem_t;
+
+// A system entry (channel-modes.md 7.2) without its system: class, group, flags, body
+typedef struct
+{
+	uint8_t  cls;
+	uint8_t  group;
+	uint8_t  flags;
+	uint8_t  len;
+	const uint8_t *body;
+} zsEntry_t;
+
+// A channel's tag: which of the record's channels (1-based), its kind, its system (1-based in the record; 0 none,
+// ZS_SYSTEM_WITHHELD on a system the sender doesn't share), its flags (ZS_TAG_FLAGS) and parameter block
+#define ZS_SYSTEM_WITHHELD		0xFF
+typedef struct
+{
+	uint8_t  channel;
+	uint8_t  kind;
+	uint8_t  system;
+	uint8_t  flags;
+	uint8_t  len;
+	const uint8_t *params;
+} zsTag_t;
+
 // A decoded record: the header, and where its contacts and channels start (read them with zsContactAt / zsChannelAt)
 typedef struct
 {
@@ -112,6 +163,12 @@ typedef struct
 	char     name[ZS_NAME_MAX + 1];
 	uint16_t contactAt[ZS_CONTACTS_MAX];
 	uint16_t channelAt[ZS_CHANNELS_MAX];
+#if CONFIG_ZONE_SHARE_MODES
+	uint8_t  systems;					// ZS_FLAG_MODES: the modes part's systems and tags
+	uint8_t  tags;
+	uint16_t systemsAt;					// the first system
+	uint16_t tagsAt;					// the first tag
+#endif
 } zsRecord_t;
 
 // --- Writing a record ---
@@ -124,12 +181,24 @@ typedef struct
 	uint8_t  channels;
 	uint8_t  contacts;
 	bool     failed;					// too long or too many: zsWriterEnd returns 0
+#if CONFIG_ZONE_SHARE_MODES
+	uint8_t  modes;						// 0 none, 1 writing systems, 2 writing tags
+#endif
 } zsWriter_t;
 
 // The contacts first, then the channels (a channel's contact is the contact's 1-based position)
 void zsWriterBegin(zsWriter_t *w, uint8_t *out, int size, uint32_t zoneId, uint8_t flags, const char *zoneName);
 bool zsWriterContact(zsWriter_t *w, const zsContact_t *c);
 bool zsWriterChannel(zsWriter_t *w, const zsChannel_t *ch);
+#if CONFIG_ZONE_SHARE_MODES
+// After the channels, the modes part: zsWriterModes with the count of systems, each system (a whole one followed by
+// its entries), then zsWriterTags with the count of tags and each tag, in channel order
+void zsWriterModes(zsWriter_t *w, uint8_t systems);
+bool zsWriterSystem(zsWriter_t *w, const zsSystem_t *s);
+bool zsWriterEntry(zsWriter_t *w, const zsEntry_t *e);
+bool zsWriterTags(zsWriter_t *w, uint8_t tags);
+bool zsWriterTag(zsWriter_t *w, const zsTag_t *t);
+#endif
 // The record's length, 0 when it didn't fit or anything was wrong
 int zsWriterEnd(zsWriter_t *w);
 
@@ -137,6 +206,12 @@ int zsWriterEnd(zsWriter_t *w);
 int zsHeaderSize(const char *zoneName);
 int zsContactSize(const zsContact_t *c);
 int zsChannelSize(const zsChannel_t *ch);
+#if CONFIG_ZONE_SHARE_MODES
+// A system with its entries (not counted here: zsEntrySize each) and its secret; an entry; a tag
+int zsSystemSize(const zsSystem_t *s);
+int zsEntrySize(const zsEntry_t *e);
+int zsTagSize(const zsTag_t *t);
+#endif
 // A tone the record can carry (ZS_TONE_NONE with value 0 included)
 bool zsToneValid(uint8_t type, uint16_t value);
 
@@ -146,6 +221,12 @@ bool zsToneValid(uint8_t type, uint16_t value);
 bool zsParse(const uint8_t *data, int length, zsRecord_t *rec);
 bool zsContactAt(const zsRecord_t *rec, int index, zsContact_t *c);
 bool zsChannelAt(const zsRecord_t *rec, int index, zsChannel_t *ch);
+#if CONFIG_ZONE_SHARE_MODES
+// System index (0-based) of the modes part, tag index, and entry index of a system read by zsSystemAt
+bool zsSystemAt(const zsRecord_t *rec, int index, zsSystem_t *s);
+bool zsEntryAt(const zsRecord_t *rec, const zsSystem_t *s, int index, zsEntry_t *e);
+bool zsTagAt(const zsRecord_t *rec, int index, zsTag_t *t);
+#endif
 
 // --- Messages ---
 

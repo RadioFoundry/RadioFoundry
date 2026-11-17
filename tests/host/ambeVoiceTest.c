@@ -479,6 +479,44 @@ static void testEncodeOptions(void)
 	ambeVoiceInit(&audio, &vocoder);
 }
 
+#if CONFIG_VOICE_CAPTURE
+// The capture keeps the frames as received, before the FEC, lost ones marked, up to the number armed
+static void testCapture(void)
+{
+	const dmr_voice_sink_t *s = ambeVoiceSink();
+	const ambe_cap_entry_t *e;
+	uint8_t want, bits[49], frame[9], sent[3][9];
+	CHECK(ambeVoiceCapture(&e, &want) == 0 && want == 0, "not armed: nothing");
+	s->begin(NULL, s->ctx);
+	makeFrame(1, bits, frame);
+	s->frame(frame, s->ctx);
+	CHECK(ambeVoiceCapture(&e, &want) == 0, "nothing before arming");
+	ambeVoiceCaptureArm(3);
+	makeFrame(2, bits, sent[0]);
+	sent[0][4] ^= 0x10;	// an error: kept as received
+	s->frame(sent[0], s->ctx);
+	s->lost(s->ctx);
+	makeFrame(3, bits, sent[2]);
+	s->frame(sent[2], s->ctx);
+	s->frame(frame, s->ctx);	// past the three asked for
+	uint8_t n = ambeVoiceCapture(&e, &want);
+	CHECK(n == 3 && want == 3, "three captured of three: %u of %u", n, want);
+	CHECK(!e[0].lost && memcmp(e[0].frame, sent[0], 9) == 0, "the first as received, error and all");
+	CHECK(e[1].lost, "a lost frame is marked");
+	CHECK(!e[2].lost && memcmp(e[2].frame, sent[2], 9) == 0, "the third");
+	ambeVoiceCaptureArm(200);
+	CHECK(ambeVoiceCapture(&e, &want) == 0 && want == AMBE_VOICE_CAP, "armed again: cleared, capped at %u", want);
+	for (unsigned i = 0; i < AMBE_VOICE_CAP + 5; i++) {
+		s->frame(frame, s->ctx);
+	}
+	CHECK(ambeVoiceCapture(&e, &want) == AMBE_VOICE_CAP, "full");
+	ambeVoiceCaptureArm(0);
+	s->frame(frame, s->ctx);
+	CHECK(ambeVoiceCapture(&e, &want) == 0 && want == 0, "0 stops");
+	s->end(s->ctx);
+}
+#endif
+
 int main(void)
 {
 	ambeVoiceInit(&audio, &vocoder);
@@ -488,6 +526,9 @@ int main(void)
 	testFlagsMap();
 	testEncodeOptions();
 	testRepeats();
+#if CONFIG_VOICE_CAPTURE
+	testCapture();
+#endif
 	ambeVoiceStop();
 	CHECK(stops == 1 && !speaker_on, "stop");
 	ambeVoiceSink()->begin(NULL, NULL);

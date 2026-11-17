@@ -13,6 +13,7 @@
 #include "font.h"
 #include "fmt.h"
 #include "codeplug/codeplug.h"
+#include "codeplug/codeplug_modes.h"
 #include "dmr/dmrDataService.h"
 #include "config.h"
 #include "hal_time.h"
@@ -137,7 +138,7 @@ static const ui_scr_def_t hub_screen = {
 // ======================= Actions on a station or talkgroup =======================
 
 enum { A_TALK, A_PRIVATE, A_MESSAGE, A_CHECK, A_ALERT, A_POSITION, A_SAVE_CONTACT, A_SPEAK, A_SAVE_CHANNEL,
-       A_MAKE_DEFAULT };
+       A_MAKE_DEFAULT, A_POLL };
 
 static uint8_t act_list(uint8_t *out)
 {
@@ -153,6 +154,10 @@ static uint8_t act_list(uint8_t *out)
 						  A_SAVE_CONTACT, A_SPEAK };
 		memcpy(out, person, sizeof person);
 		n = sizeof person;
+#if CONFIG_DMR_TRUNK_TX
+		if (ui_view()->t3.on)
+			out[n++] = A_POLL;	// short data polling: a trunked system's service (dmr-trunking.md 7.6)
+#endif
 	}
 	if (ui_view()->temporary)
 		out[n++] = A_SAVE_CHANNEL;
@@ -250,6 +255,9 @@ static void act_item(uint16_t i, ui_item_t *it)
 		if (!(feats() & UI_FEAT_TALK_TARGET))
 			it->flags |= UI_ITEM_DIM;
 		break;
+	case A_POLL:
+		sb_str(&b, TR(TRUNK_ROW_POLL_SHORT_DATA, "Poll short data"));
+		break;
 	default:
 		break;
 	}
@@ -327,6 +335,15 @@ static void act_select(uint16_t i, bool hold)
 		if (ui_try_save_channel())
 			ui_go_home();
 		break;
+#if CONFIG_DMR_TRUNK_TX
+	case A_POLL:
+		ui_svc_t3_poll(ui_target.id);	// the answer arrives as a message; ui_app says when none comes
+		sb_str(&b, TR(TRUNK_TOAST_POLLING, "Polling "));
+		sb_str(&b, name);
+		ui_go_home();
+		ui_toast(msg);
+		break;
+#endif
 	default:
 		break;
 	}
@@ -1268,15 +1285,36 @@ static const ui_scr_def_t channels_screen = {
 	.filter = &(const ui_filter_def_t){ .raw_count = chans_raw_count, .raw_label = chans_raw_label },
 };
 
+// A trunked channel whose system isn't set up (dmr-trunking-codeplug.md 4) is locked out: selecting it says why
+static bool ch_locked(uint16_t num)
+{
+#if CONFIG_DMR_TRUNK
+	static channel_t ch;
+	bool usable = true;
+	if (codeplug_channel(num, &ch) && ui_svc_t3_channel(num, &ch, &usable) >= 0 && !usable) {
+		ui_toast(TR(TRUNK_WHY_SYSTEM_NOT_SET_UP, "System not set up"));
+		return true;
+	}
+#else
+	(void)num;
+#endif
+	return false;
+}
+
 // A channel row's value: its RX frequency and what it talks to, the talkgroup on DMR ("TG3113", "ID9991234" for a
 // private contact) or "FM". The whole name comes first; where both don't fit beside it, the frequency and the bare
-// number, then the talkgroup alone (text alternates)
-static void sb_channel_row(sbuf_t *b, const channel_t *ch)
+// number, then the talkgroup alone (text alternates). A trunked channel (dmr-trunking-codeplug.md 4) names its system
+// where the frequency would be. Returns false for a trunked channel whose system isn't set up: the caller dims the row
+static bool sb_channel_row(sbuf_t *b, uint16_t num, const channel_t *ch)
 {
 	char what[16];
 	uint8_t prefix = 0;	// "TG" / "ID": left out in the middle form
 	sbuf_t wb;
 	sb_init(&wb, what, sizeof what);
+	// Another kind (docs/spec/channel-modes.md): its short name. A trunked channel this build runs says its talkgroup
+	if (ch->kind != CODEPLUG_KIND_NONE && !(CONFIG_DMR_TRUNK && ch->kind == CODEPLUG_KIND_DMR_TRUNK)) {
+		sb_str(&wb, codeplug_kind_name(ch->kind));
+	} else
 #if CONFIG_DMR
 	if (ch->mode == RADIO_MODE_DMR) {
 		static contact_t c;
@@ -1290,6 +1328,28 @@ static void sb_channel_row(sbuf_t *b, const channel_t *ch)
 	{
 		sb_str(&wb, ch->mode == RADIO_MODE_DMR ? "DMR" : radio_am_channel(ch) ? "AM" : "FM");
 	}
+#if CONFIG_DMR_TRUNK
+	bool usable;
+	int sys = ui_svc_t3_channel(num, ch, &usable);
+	if (sys >= 0) {
+		char name[CODEPLUG_NAME_LEN + 1];
+		if (!usable) {
+			sb_str(b, TR(TRUNK_WHY_SYSTEM_NOT_SET_UP, "System not set up"));
+			return false;
+		}
+		ui_svc_t3_name((uint8_t)sys, name);
+		sb_str(b, TEXT_ALT_OPEN);
+		sb_str(b, name);
+		sb_chr(b, ' ');
+		sb_str(b, what);
+		sb_str(b, TEXT_ALT_NEXT);
+		sb_str(b, what);
+		sb_str(b, TEXT_ALT_CLOSE);
+		return true;
+	}
+#else
+	(void)num;
+#endif
 	sb_str(b, TEXT_ALT_OPEN);
 	sb_freq(b, ch->rx_hz);
 	sb_chr(b, ' ');
@@ -1303,6 +1363,7 @@ static void sb_channel_row(sbuf_t *b, const channel_t *ch)
 	sb_str(b, TEXT_ALT_NEXT);
 	sb_str(b, what);
 	sb_str(b, TEXT_ALT_CLOSE);
+	return true;
 }
 
 static zone_t zone_cache;
@@ -1463,7 +1524,8 @@ static void zone_item(uint16_t i, ui_item_t *it)
 	sb_chr(&b, ' ');
 	sb_str(&b, ch.name);
 	sb_init(&b, it->value, sizeof it->value);
-	sb_channel_row(&b, &ch);
+	if (!sb_channel_row(&b, z->channels[raw], &ch))
+		it->flags |= UI_ITEM_DIM;	// a trunked channel whose system isn't set up: locked out
 	const radio_view_t *v = ui_view();
 	if (!v->vfo && v->zone_index == ui_frame()->arg && v->zone_pos == raw)
 		it->flags |= UI_ITEM_TEMP;	// the channel we are on
@@ -1497,11 +1559,15 @@ static void zone_select(uint16_t i, bool hold)
 	}
 #endif
 	(void)hold;
+	const zone_t *z = zone_of_frame();
+	uint16_t pos = (uint16_t)(raw - ZE_ADD);
+	if (pos < z->count && ch_locked(z->channels[pos]))
+		return;
 	if (v->vfo)
 		radio_req_vfo(false);
 	if (v->zone_index != zi)
 		radio_req_zone(zi);
-	radio_req_zone_pos((uint16_t)(raw - ZE_ADD));
+	radio_req_zone_pos(pos);
 	ui_go_home();
 }
 
@@ -1799,7 +1865,7 @@ static void offer_select(uint16_t i, bool hold)
 // "Zone Club, 24 channels, from Joe 9991234" and how many can't be received here
 static const char *offer_body(void)
 {
-	static char body[96];
+	static char body[128];
 	sbuf_t b;
 	sb_init(&b, body, sizeof body);
 	if (!offer_get())
@@ -1822,6 +1888,14 @@ static const char *offer_body(void)
 		sb_str(&b, ". ");
 		sb_u32(&b, (uint32_t)(offer.channels - offer.in_band), 1);
 		sb_str(&b, TR(SHARE_BODY_NOT_IN_BAND, " not in band"));
+	}
+	if (offer.unavailable != 0) {
+		// Trunked channels whose system neither this radio nor the share has (zone-share.md 5.2)
+		sb_str(&b, ". ");
+		sb_u32(&b, offer.unavailable, 1);
+		sb_str(&b, offer.unavailable == 1 ?
+			   TR(SHARE_BODY_CHANNEL_NO_SYSTEM, " trunked channel unavailable: system not set up") :
+			   TR(SHARE_BODY_CHANNELS_NO_SYSTEM, " trunked channels unavailable: system not set up"));
 	}
 	return body;
 }
@@ -1858,6 +1932,11 @@ static void preview_item(uint16_t i, ui_item_t *it)
 	sb_init(&b, it->value, sizeof it->value);
 	if (!ch.in_band) {
 		sb_str(&b, TR(SHARE_CHIP_NOT_IN_BAND, TEXT_ALT_OPEN "Not in band" TEXT_ALT_NEXT "Out" TEXT_ALT_CLOSE));
+		it->flags |= UI_ITEM_DIM;
+		return;
+	}
+	if (ch.unavailable) {
+		sb_str(&b, TR(SHARE_VALUE_NO_SYSTEM, TEXT_ALT_OPEN "System not set up" TEXT_ALT_NEXT "No system" TEXT_ALT_CLOSE));
 		it->flags |= UI_ITEM_DIM;
 		return;
 	}
@@ -2311,7 +2390,8 @@ static void chlist_item(uint16_t i, ui_item_t *it)
 	ch_label(num, ch.name, it->label, sizeof it->label);
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
-	sb_channel_row(&b, &ch);
+	if (!sb_channel_row(&b, num, &ch))
+		it->flags |= UI_ITEM_DIM;
 	if (num == chlist_current())
 		it->flags |= UI_ITEM_TEMP;	// the channel we are on
 }
@@ -2322,6 +2402,8 @@ static bool chlist_tune(uint16_t num)
 	static zone_t z;
 	const radio_view_t *v = ui_view();
 	uint16_t zones = codeplug_zone_count();
+	if (ch_locked(num))
+		return false;
 	for (uint16_t k = 0; k <= zones; k++) {
 		// k == 0 tries the zone in use first, then every zone in order
 		uint16_t zi = k == 0 ? v->zone_index : (uint16_t)(k - 1u);
@@ -2694,7 +2776,9 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 		break;
 	case CE_MODE:
 		// What the radio does with it: a listen band is AM or FM whatever the channel says
-		if (radio_am_tx_refused(ch->rx_hz))
+		if (ch->kind != CODEPLUG_KIND_NONE)
+			sb_str(&b, codeplug_kind_name(ch->kind));
+		else if (radio_am_tx_refused(ch->rx_hz))
 			sb_str(&b, "AM");
 		else
 			sb_str(&b, ch->mode == RADIO_MODE_DMR && !radio_listen_band(ch->rx_hz) ? "DMR" : "FM");
@@ -3629,7 +3713,7 @@ static void zpick_item(uint16_t i, ui_item_t *it)
 	ch_label(num, ch.name, it->label, sizeof it->label);
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
-	sb_channel_row(&b, &ch);
+	sb_channel_row(&b, num, &ch);	// adding to a zone: allowed, the row says the system isn't set up
 }
 
 static void zpick_select(uint16_t i, bool hold)
@@ -4928,6 +5012,264 @@ static const ui_scr_def_t about_screen = {
 	.name = "about", .flags = SF_FIELD | SF_NO_STRIP, .key = about_key, .draw = about_draw, .enter = about_enter,
 };
 
+// ======================= Backlight tests (Settings > Advanced > Backlight tests) =======================
+
+#if CONFIG_BACKLIGHT_TEST
+// A bench tool (docs/testing/backlight-curve.md), so its text is untranslated. OK steps through the pages the board
+// has; each draws the boot splash with its reading.
+// 1, the PWM compare value (the board's raw hooks): the knob steps 1; Up / Down 1 on a knob with end stops, else 50;
+//    digits type a value, applied at as many digits as the maximum has (# applies fewer, BACK takes one back); * the
+//    rate; OK held flips to full and back. Shows the duty and the on and off time a period.
+// 2, the brightness, 0-100 % in 10 % steps: kept as the setting on leaving it (10 % for 0).
+// 3, the PWM rate at that brightness (the board's rates): the standard one again on leaving it.
+enum { BT_RAW, BT_LEVEL, BT_RATE, BT_COUNT };
+static uint8_t bt_page, bt_pct, bt_rate, bt_ndig;
+static bool bt_full;		// page 1: OK held shows full, to compare the value against
+static uint32_t bt_hz, bt_typed;
+static uint16_t bt_raw;
+
+static const hal_display_t *bt_disp(void) { return board.display; }
+
+static bool bt_has_raw(void)
+{
+	const hal_display_t *d = bt_disp();
+	return d->set_backlight_raw != NULL && d->backlight_raw != NULL && d->backlight_raw_max != 0;
+}
+
+static bool bt_has_rate(void)
+{
+	return bt_has_raw() && bt_disp()->set_backlight_rate != NULL && bt_disp()->backlight_rates > 1;
+}
+
+static bool bt_page_ok(uint8_t p)
+{
+	return p == BT_LEVEL || (p == BT_RAW && bt_has_raw()) || (p == BT_RATE && bt_has_rate());
+}
+
+static uint8_t bt_std(void)
+{
+	return bt_disp()->backlight_rate_std < bt_disp()->backlight_rates ? bt_disp()->backlight_rate_std : 0;
+}
+
+static void bt_level(uint8_t pct)
+{
+	if (bt_disp()->set_backlight != NULL)
+		bt_disp()->set_backlight(pct);
+}
+
+static void bt_set_rate(uint8_t i)
+{
+	bt_rate = i;
+	bt_hz = bt_has_rate() ? bt_disp()->set_backlight_rate(i) : 0;
+}
+
+// The digits the maximum compare value has: a typed value is applied at that many
+static uint8_t bt_max_digits(void)
+{
+	uint8_t n = 1;
+	for (uint32_t v = bt_disp()->backlight_raw_max; v >= 10u; v /= 10u)
+		n++;
+	return n;
+}
+
+static void bt_set_raw(uint32_t v)
+{
+	uint32_t max = bt_disp()->backlight_raw_max;
+	bt_raw = (uint16_t)(v > max ? max : v);
+	bt_full = false;
+	bt_disp()->set_backlight_raw(bt_raw);
+}
+
+// Leaving a page (to the next, or off the screen)
+static void bt_end(void)
+{
+	bt_ndig = 0;
+	bt_full = false;
+	if (bt_page == BT_LEVEL) {
+		if (bt_pct == 0)
+			bt_pct = 10;
+		ui_backlight_hold(bt_pct);
+		ui_st.brightness = bt_pct;
+		ui_svc_setting_set(UI_SET_BRIGHTNESS, bt_pct);
+	} else if (bt_rate != bt_std()) {
+		bt_set_rate(bt_std());
+	}
+	bt_level(bt_pct);	// the level again over a raw value
+}
+
+static void bt_begin(void)
+{
+	if (bt_page == BT_RAW) {
+		bt_raw = bt_disp()->backlight_raw();
+		if (bt_has_rate())
+			bt_set_rate(bt_std());
+	} else if (bt_page == BT_RATE) {
+		bt_set_rate(bt_std());
+	}
+}
+
+static void bt_enter(void)
+{
+	bt_pct = ui_st.brightness;
+	ui_backlight_hold(bt_pct);
+	bt_rate = bt_has_rate() ? bt_std() : 0;
+	bt_hz = 0;
+	bt_ndig = 0;
+	bt_full = false;
+	bt_page = BT_RAW;
+	while (!bt_page_ok(bt_page))
+		bt_page++;
+	bt_begin();
+}
+
+static void bt_leave(void)
+{
+	bt_end();
+	ui_backlight_hold(-1);
+}
+
+static void bt_draw(void)
+{
+	char a[24], b[24];
+	sbuf_t sa, sb;
+	sb_init(&sa, a, sizeof a);
+	sb_init(&sb, b, sizeof b);
+	if (bt_page == BT_LEVEL) {
+		sb_str(&sa, "Brightness");
+		sb_u32(&sb, bt_pct, 1);
+		sb_chr(&sb, '%');
+	} else if (bt_page == BT_RATE) {
+		sb_str(&sa, "PWM rate");
+		sb_u32(&sb, bt_hz, 1);
+		sb_str(&sb, " Hz");
+	} else {
+		// "7324 Hz CV 2137" / "52.1% 71.2/65.3us" (on / off time a period); "CV 21_" while typing; "full" held
+		uint32_t max = bt_disp()->backlight_raw_max;
+		uint16_t raw = bt_full ? (uint16_t)max : bt_raw;
+		if (bt_hz != 0) {
+			sb_u32(&sa, bt_hz, 1);
+			sb_str(&sa, " Hz ");
+		}
+		sb_str(&sa, "CV ");
+		if (bt_ndig != 0) {
+			sb_u32(&sa, bt_typed, bt_ndig);
+			sb_chr(&sa, '_');
+		} else {
+			sb_u32(&sa, raw, 1);
+		}
+		if (bt_full) {
+			sb_str(&sb, "full");
+		} else {
+			uint32_t pm = (uint32_t)raw * 1000u / max;	// duty, 0.1 %
+			sb_u32(&sb, pm / 10u, 1);
+			sb_chr(&sb, '.');
+			sb_u32(&sb, pm % 10u, 1);
+			sb_chr(&sb, '%');
+			if (bt_hz != 0) {
+				uint32_t period = 1000000000u / bt_hz;	// ns
+				uint32_t on = (uint32_t)((uint64_t)raw * 1000000000u / ((uint64_t)bt_hz * max));
+				uint32_t off = period > on ? period - on : 0;
+				sb_chr(&sb, ' ');
+				sb_u32(&sb, on / 1000u, 1);
+				sb_chr(&sb, '.');
+				sb_u32(&sb, on % 1000u / 100u, 1);
+				sb_chr(&sb, '/');
+				sb_u32(&sb, off / 1000u, 1);
+				sb_chr(&sb, '.');
+				sb_u32(&sb, off % 1000u / 100u, 1);
+				sb_str(&sb, "us");
+			}
+		}
+	}
+	ui_draw_splash(board.name, RFOUNDRY_RELEASE[0] != '\0' ? RFOUNDRY_RELEASE : RFOUNDRY_GIT, a, b);
+}
+
+// A step from the knob (1) or Up / Down: 1 on a knob with end stops, which can't turn far, else 50
+static int bt_step(const input_event_t *ev)
+{
+	if (ev->action == ACT_ENC_STEP)
+		return ev->value > 0 ? 1 : ev->value < 0 ? -1 : 0;
+	if (ev->gesture != GESTURE_PRESS && ev->gesture != GESTURE_REPEAT)
+		return 0;
+	int n = bt_page == BT_RAW && !(board.input != NULL && board.input->encoder_limited) ? 50 : 1;
+	return ev->action == ACT_NAV_UP ? n : ev->action == ACT_NAV_DOWN ? -n : 0;
+}
+
+static bool bt_raw_key(const input_event_t *ev)
+{
+	bool press = ev->gesture == GESTURE_PRESS;
+	if (ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 && press) {
+		bt_typed = (bt_ndig == 0 ? 0 : bt_typed * 10u) + (uint32_t)(ev->action - ACT_DIGIT_0);
+		if (++bt_ndig >= bt_max_digits()) {
+			bt_ndig = 0;
+			bt_set_raw(bt_typed);
+		}
+		return true;
+	}
+	if (bt_ndig != 0 && press && ev->action == ACT_CONTEXT) {	// #: apply what is typed
+		bt_ndig = 0;
+		bt_set_raw(bt_typed);
+		return true;
+	}
+	if (bt_ndig != 0 && press && ev->action == ACT_BACK) {		// a digit back
+		bt_typed /= 10u;
+		bt_ndig--;
+		return true;
+	}
+	if (ev->action == ACT_SELECT && ev->gesture == GESTURE_LONG) {
+		bt_ndig = 0;
+		bt_full = !bt_full;
+		bt_disp()->set_backlight_raw(bt_full ? bt_disp()->backlight_raw_max : bt_raw);
+		return true;
+	}
+	if (ev->action == ACT_QUICK && press && bt_has_rate()) {
+		bt_set_rate((uint8_t)((bt_rate + 1u) % bt_disp()->backlight_rates));
+		return true;
+	}
+	int d = bt_step(ev);
+	if (d == 0)
+		return false;
+	bt_ndig = 0;
+	int32_t v = (int32_t)bt_raw + d;
+	bt_set_raw(v < 0 ? 0u : (uint32_t)v);
+	return true;
+}
+
+static bool bt_key(const input_event_t *ev)
+{
+	bool used;
+	if (ev->action == ACT_SELECT && ev->gesture == GESTURE_PRESS) {
+		bt_end();
+		do {
+			bt_page = (uint8_t)((bt_page + 1u) % BT_COUNT);
+		} while (!bt_page_ok(bt_page));
+		bt_begin();
+		used = true;
+	} else if (bt_page == BT_RAW) {
+		used = bt_raw_key(ev);
+	} else {
+		int d = bt_step(ev);
+		used = d != 0;
+		if (used && bt_page == BT_LEVEL) {
+			int p = bt_pct + d * 10;
+			bt_pct = (uint8_t)(p < 0 ? 0 : p > 100 ? 100 : p);
+			ui_backlight_hold(bt_pct);
+			bt_level(bt_pct);
+		} else if (used) {
+			int r = bt_rate + d, k = bt_disp()->backlight_rates;
+			bt_set_rate((uint8_t)(r < 0 ? 0 : r >= k ? k - 1 : r));
+		}
+	}
+	if (used)
+		ui_dirty();
+	return used;
+}
+
+static const ui_scr_def_t bl_test_screen = {
+	.name = "bltest", .flags = 0, .key = bt_key, .draw = bt_draw, .enter = bt_enter, .leave = bt_leave,
+};
+#endif
+
 // ======================= Roaming (Tools > Roaming, docs/spec/dmr-roaming.md 6.2) =======================
 
 enum { RM_ZONE, RM_NOW, RM_LOCK, RM_SURVEY, RM_BEACON, RM_LEN, RM_PROBE, RM_COUNT };
@@ -5619,7 +5961,8 @@ static const ui_scr_def_t tools_screen = {
 #if CONFIG_UI_SETTINGS
 
 typedef enum { ST_TOGGLE, ST_LIST, ST_NUMBER, ST_ACTION } set_type_t;
-enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_CRASH, SA_LANGUAGE, SA_HARDWARE, SA_FIXED_POS, SA_DATA_SERVICES };
+enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_CRASH, SA_LANGUAGE, SA_HARDWARE, SA_FIXED_POS, SA_DATA_SERVICES,
+       SA_BL_TEST };
 
 typedef struct {
 	tr_id_t name;			// TRN; TR_NONE for a key's row (set_name)
@@ -6013,6 +6356,11 @@ static const set_item_t s_advanced[] = {
 	ACTION(TRN(TITLE_ABOUT, "About"), "firmware version license authors", SA_FIRMWARE),
 	ACTION(TRN(TITLE_CODEPLUG, "Codeplug"), NULL, SA_CODEPLUG),
 	ACTION(TRN(TITLE_DIAGNOSTICS, "Diagnostics"), "debug", SA_DIAG),
+#if CONFIG_BACKLIGHT_TEST
+	// Beside Diagnostics, so it moves the rows below it down one: the flows that reach them count the presses
+	// (tests/host/uiFlowTest.c ADV_BELOW_DIAG). Not ideal; rows found by name instead of position would end that
+	ACTION(TRX(TITLE_BACKLIGHT_TESTS, "Backlight tests"), "brightness PWM duty rate", SA_BL_TEST),
+#endif
 	ACTION(TRN(SET_ROW_FACTORY_RESET, "Factory reset"), "erase", SA_RESET),
 	// After Factory reset, so its place (and its tests' key presses) stays
 #if CONFIG_CRASH_SCREEN
@@ -6432,6 +6780,9 @@ static void group_select(uint16_t i, bool hold)
 		case SA_LANGUAGE: ui_push(SCR_LANGUAGE, 0); break;
 #if DATA_IDS
 		case SA_DATA_SERVICES: ui_push(SCR_DATA_SERVICES, 0); break;
+#if CONFIG_BACKLIGHT_TEST
+		case SA_BL_TEST: ui_push(SCR_BL_TEST, 0); break;
+#endif
 #endif
 #if CONFIG_CRASH_SCREEN
 		case SA_CRASH: ui_push(SCR_CRASH, 0); break;
@@ -7247,6 +7598,9 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_CP_FOREIGN] = &cpf_screen,
 #if DATA_IDS
 	[SCR_DATA_SERVICES] = &ds_screen,
+#endif
+#if CONFIG_BACKLIGHT_TEST
+	[SCR_BL_TEST] = &bl_test_screen,
 #endif
 #if CONFIG_REF_TRIM
 	[SCR_REF_TRIM] = &trim_screen,

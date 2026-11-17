@@ -100,8 +100,10 @@ bool ui_svc_zone_offer(ui_zone_offer_t *out)
 	out->src = o.src;
 	out->channels = rec.channels;
 	for (int i = 0; i < rec.channels; i++)
-		if (zsChannelAt(&rec, i, &ch) && zone_import_in_band(&ch))
+		if (zsChannelAt(&rec, i, &ch) && zone_import_in_band(&ch)) {
 			out->in_band++;
+			out->unavailable += zone_import_unavailable(&rec, i);
+		}
 	if (out->channel && zsChannelAt(&rec, 0, &ch))
 		strcpy(out->name, ch.name);
 	else
@@ -126,6 +128,7 @@ bool ui_svc_zone_offer_channel(uint32_t serial, uint16_t i, ui_zone_offer_ch_t *
 	out->rx_hz = ch.rxHz;
 	out->dmr = ch.dmr;
 	out->in_band = zone_import_in_band(&ch);
+	out->unavailable = zone_import_unavailable(&rec, i);
 	return true;
 }
 
@@ -143,8 +146,9 @@ static struct {
 // The import list's copy: the settings aren't held while the codeplug is written
 static settings_zs_import_t job_imports[SETTINGS_ZS_IMPORTS];
 
-// ok: name the zone's name here, index the channels written, id 1 when it updated an earlier import; else why, a key
-// (TRN): the UI shows it in the language in use
+// ok: name the zone's name here, index the channels written, id 1 when it updated an earlier import, ms the channels
+// of a kind that came in unavailable (their system isn't set up here); else why, a key (TRN): the UI shows it in the
+// language in use
 static void import_done(bool ok, tr_id_t why, const zone_import_result_t *r)
 {
 	ui_event_t ev;
@@ -155,6 +159,7 @@ static void import_done(bool ok, tr_id_t why, const zone_import_result_t *r)
 		memcpy(ev.name, r->name, sizeof ev.name - 1);
 		ev.index = r->channels;
 		ev.id = r->updated;
+		ev.ms = r->unavailable;
 	}
 	ev.why = why;
 	ui_notify(&ev);
