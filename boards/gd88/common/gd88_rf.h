@@ -13,6 +13,7 @@
 #include "config.h"
 #include "gd88_cal.h"
 #include "rx2/rx2_link.h"
+#include "radio/radio_squelch.h"
 
 // Transmit (config.mk GD88_TX=1, A only; B is built as a receiver). A's main chip makes the signal; its PA, PA
 // supplies and PA drive (DAC B) are B's, keyed by B on A's TX line PTB2 with the drive A sends (hardware-gd88.md 10)
@@ -55,9 +56,9 @@ typedef struct {
 	bool audio_open, pcm_on;	// the speaker's requests: FM receive audio, the modem's PCM (speaker())
 } gd88_radio_diag_t;
 void gd88_radio_diag(gd88_radio_diag_t *d);
-// The squelch now (B's own squelch): the main chip's noise reading at level as the radio core reads it
-// (radio_squelch.h; 0 = open), with the core's hysteresis while open, and the CTCSS decoder when a tone is set
-bool gd88_radio_squelch_open(uint8_t level, bool open);
+// B's own squelch: the main chip's noise reading and RX tone at level, read by the radio core's rule
+// (radio_squelch.h; 0 = open). Nothing opens or holds while it can't receive (transmitting, not tuned)
+radio_squelch_read_t gd88_radio_squelch_read(uint8_t level);
 // The core's last volume() in percent (A passes it on to B's audio)
 uint8_t gd88_radio_volume(void);
 // The debug link's CHIP_REG for the main chip and a BK4819 LO (board.chip_reg)

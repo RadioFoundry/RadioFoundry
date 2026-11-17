@@ -877,19 +877,14 @@ static void status(radio_status_t *st)
 	st->tone_ok = bk4819_rx_tone_ok(&rf_main, bk_tone(rx_tone.type));
 }
 
-bool gd88_radio_squelch_open(uint8_t level, bool open)
+radio_squelch_read_t gd88_radio_squelch_read(uint8_t level)
 {
 	if (!supported || !have_rx || transmitting) {
-		return false;
+		return radio_squelch_read(level, 255, false);
 	}
 	radio_status_t st;
 	status(&st);
-	if (!st.tone_ok) {
-		return false;
-	}
-	// The radio core's rule on the noise reading (radio_squelch.h), so both receivers open at the same level
-	uint8_t below = radio_squelch_open_below(level);
-	return level == 0 || st.noise < below + (open ? RADIO_SQL_HYST_DB : 0);
+	return radio_squelch_read(level, st.noise, st.tone_ok);
 }
 
 static void audio(bool on)

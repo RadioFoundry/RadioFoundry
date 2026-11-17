@@ -38,11 +38,7 @@
 #define RADIO_TOT_DEFAULT_S	180	// TX time-out
 #define RADIO_VFO_STEP_HZ	12500
 
-// The squelch levels (RADIO_SQUELCH_*, RADIO_SQL_*): radio/radio_squelch.h
-// A carrier that goes: the noise jumps far over the line at once, while a fade crosses it by a little. A reading this
-// far above the close line (open threshold + RADIO_SQL_HYST_DB) closes after one poll, which halves the squelch tail
-// (radio-features.md 3.5)
-#define RADIO_SQL_FAST_CLOSE_DB	12
+// The squelch levels and its close (RADIO_SQUELCH_*, RADIO_SQL_*): radio/radio_squelch.h
 // DMR scan: a stop also hears a carrier by its signal strength, as the squelch levels do on noise: level 1 above
 // RADIO_DMR_SQL_L1_DBM, RADIO_SQL_DB_PER_STEP more a level (5, the default, above -100 dBm). Some receivers' noise
 // reading doesn't follow a DMR signal (gotchas 17.3)

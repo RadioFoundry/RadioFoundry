@@ -1309,6 +1309,47 @@ static void test_codeplug_tones(void)
 	req(RREQ_PTT, 0);
 }
 
+// A receiver's own squelch (a second receiver, hal_rx2.h) by the core's rule, polled faster than the core: it opens
+// and holds as the core's does, and closes after the same time, or at once on a carrier that goes
+static void test_squelch_step(void)
+{
+	const uint32_t poll = 10;
+	uint8_t thr = radio_squelch_open_below(RADIO_SQUELCH_DEFAULT);
+	radio_squelch_t s = { 0 };
+	CHECK(!radio_squelch_step(&s, radio_squelch_read(RADIO_SQUELCH_DEFAULT, thr, true), poll));
+	CHECK(!radio_squelch_step(&s, radio_squelch_read(RADIO_SQUELCH_DEFAULT, thr - 10, false), poll));	// tone missing
+	CHECK(radio_squelch_step(&s, radio_squelch_read(RADIO_SQUELCH_DEFAULT, thr - 10, true), poll));
+	for (int i = 0; i < 30; i++) {		// inside the hysteresis: stays open
+		CHECK(radio_squelch_step(&s, radio_squelch_read(RADIO_SQUELCH_DEFAULT, thr + RADIO_SQL_HYST_DB - 1, true), poll));
+	}
+	radio_squelch_read_t over = radio_squelch_read(RADIO_SQUELCH_DEFAULT, thr + RADIO_SQL_HYST_DB, true);
+	for (uint32_t ms = poll; ms < RADIO_SQL_CLOSE_MS; ms += poll) {
+		CHECK(radio_squelch_step(&s, over, poll));
+	}
+	CHECK(!radio_squelch_step(&s, over, poll));		// closed after RADIO_SQL_CLOSE_MS, as the core's
+	CHECK(!radio_squelch_step(&s, radio_squelch_read(RADIO_SQUELCH_DEFAULT, thr + 1, true), poll));	// shut: the open line
+	CHECK(radio_squelch_step(&s, radio_squelch_read(RADIO_SQUELCH_DEFAULT, thr - 1, true), poll));
+	// a reading that holds starts the close time again
+	CHECK(radio_squelch_step(&s, over, poll));
+	CHECK(radio_squelch_step(&s, radio_squelch_read(RADIO_SQUELCH_DEFAULT, thr, true), poll));
+	for (uint32_t ms = poll; ms < RADIO_SQL_CLOSE_MS; ms += poll) {
+		CHECK(radio_squelch_step(&s, over, poll));
+	}
+	CHECK(!radio_squelch_step(&s, over, poll));
+	// the carrier goes: one reading closes it
+	CHECK(radio_squelch_step(&s, radio_squelch_read(RADIO_SQUELCH_DEFAULT, thr - 10, true), poll));
+	CHECK(radio_squelch_step(&s, radio_squelch_read(RADIO_SQUELCH_DEFAULT,
+							thr + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB - 1, true), poll));
+	CHECK(!radio_squelch_step(&s, radio_squelch_read(RADIO_SQUELCH_DEFAULT,
+							 thr + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB, true), poll));
+	// level 0: open on any noise while the tone is heard, and never a fast close
+	CHECK(radio_squelch_step(&s, radio_squelch_read(0, 127, true), poll));
+	CHECK(radio_squelch_step(&s, radio_squelch_read(0, 127, true), poll));
+	CHECK(!radio_squelch_read(0, 127, false).holds);
+	// the core's own polls make the same close time
+	CHECK(RADIO_SQL_CLOSE_POLLS * RADIO_POLL_MS == RADIO_SQL_CLOSE_MS);
+}
+
 static void test_tone_squelch(void)
 {
 	setup_codeplug();
@@ -9928,6 +9969,7 @@ int main(void)
 	test_channel_step();
 	test_vfo_step_auto();
 	test_squelch();
+	test_squelch_step();
 	test_parked_kind();
 	test_tx();
 	test_deny_flash_then_tx();

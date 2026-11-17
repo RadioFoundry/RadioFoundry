@@ -49,7 +49,6 @@
 #define POLL_MS			10u
 #define LINK_BAUD		115200u
 #define DIPLEX0_UART3		0x6000u		// IO_DIPLEX0 bits 13 / 14: PTA13 / PTA14 are UART3 TXD / RXD
-#define SQ_CLOSE_POLLS		15u		// FM: the squelch closes after this many closed readings (150 ms)
 #define WD_STALL_MS		2000u		// the idle task feeds the watchdog only while the task runs this recently
 
 // The first stage's long window (boot/gd88b): STAY at STAY_ADDR, then a jump to the stage
@@ -63,8 +62,7 @@ static rx2_recv_t link;
 static rx2_tune_t cur;
 static bool tuned;
 static bool audio_on;
-static uint8_t sq_closed;
-static bool sq_open;
+static radio_squelch_t sq;		// FM: the squelch, by the radio core's rule
 static volatile uint32_t alive_ms;
 
 static void send(const uint8_t *buf, uint16_t len)
@@ -135,8 +133,7 @@ static bool op_tune(const rx2_tune_t *t)
 		return false;
 	}
 	cur = *t;
-	sq_open = false;
-	sq_closed = 0;
+	sq = (radio_squelch_t){ 0 };
 #if CONFIG_DMR
 	if (t->mode == RADIO_MODE_DMR && !dmr_start(t)) {
 		tuned = false;
@@ -161,7 +158,7 @@ static void op_stop(void)
 	gd88_radio.audio(false);
 	gd88_path_rx(cur.rx_hz, false, false);
 	tuned = false;
-	sq_open = false;
+	sq = (radio_squelch_t){ 0 };
 }
 
 static void op_audio(bool on, uint8_t volume)
@@ -202,7 +199,7 @@ static void op_status(rx2_status_t *st)
 		return;
 	}
 #endif
-	st->active = sq_open;
+	st->active = sq.open;
 }
 
 // Into the first stage's long window, for an update through A (rx2-link.md 4): from RAM with interrupts off, the
@@ -258,7 +255,7 @@ static bool tx_split(bool on, int8_t cc)
 	if (on) {
 		dmr_stop();
 		gd88_radio.audio(false);
-		sq_open = false;
+		sq = (radio_squelch_t){ 0 };
 		split = true;
 		split_cc = cc;
 		return true;
@@ -329,7 +326,7 @@ static void view(dl_text_t *t)
 	radio_status_t rs;
 	gd88_radio.status(&rs);
 	dl_text(t, "rx.tuned=%u\nrx.hz=%u\nrx.mode=%u\nrx.bw=%u\nrx.squelch=%u\nrx.sq_open=%u\nrx.audio=%u\n", tuned,
-		(unsigned)cur.rx_hz, cur.mode, cur.bw, cur.squelch, sq_open, audio_on);
+		(unsigned)cur.rx_hz, cur.mode, cur.bw, cur.squelch, sq.open, audio_on);
 	dl_text(t, "rx.rssi_dbm=%d\nrx.noise=%u\nrx.carrier=%u\nrx.tone_ok=%u\n", rs.rssi_dbm, rs.noise, rs.carrier,
 		rs.tone_ok);
 	dl_text(t, "spk.switch=%u\n", gd88b_speaker_on());
@@ -370,7 +367,7 @@ bool gd88b_diag_line(uint8_t i, char *buf, uint8_t len)
 		gd88_radio.status(&rs);
 		dl_fmt(buf, len, "b rx %s %u.%05u %s sq %s rssi %d nz %u", tuned ? "on" : "off",
 		       (unsigned)(cur.rx_hz / 1000000u), (unsigned)((cur.rx_hz % 1000000u) / 10u),
-		       cur.mode == RADIO_MODE_DMR ? "DMR" : "FM", sq_open ? "open" : "shut", rs.rssi_dbm, rs.noise);
+		       cur.mode == RADIO_MODE_DMR ? "DMR" : "FM", sq.open ? "open" : "shut", rs.rssi_dbm, rs.noise);
 		return true;
 	case 1:
 		dl_fmt(buf, len, "b link frames %u bad %u dl %u audio %u", (unsigned)link.frames,
@@ -398,19 +395,12 @@ bool gd88b_diag_line(uint8_t i, char *buf, uint8_t len)
 	}
 }
 
-// FM: the squelch with a short hold, and the chip's audio while it is open
+// FM: the squelch, opening and closing as the radio core's does, and the chip's audio while it is open
 static void fm_poll(void)
 {
-	bool open = gd88_radio_squelch_open(cur.squelch, sq_open);
-	if (open) {
-		sq_closed = 0;
-	} else if (sq_closed < SQ_CLOSE_POLLS) {
-		sq_closed++;
-	}
-	bool now = open || (sq_open && sq_closed < SQ_CLOSE_POLLS);
-	if (now != sq_open) {
-		sq_open = now;
-		gd88_radio.audio(now);
+	bool was = sq.open;
+	if (radio_squelch_step(&sq, gd88_radio_squelch_read(cur.squelch), POLL_MS) != was) {
+		gd88_radio.audio(sq.open);
 	}
 }
 

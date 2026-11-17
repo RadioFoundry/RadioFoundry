@@ -8308,6 +8308,8 @@ static bool save_poll(radio_sm_t *sm, uint32_t now_ms)
 }
 #endif
 
+_Static_assert(RADIO_SQL_CLOSE_POLLS * RADIO_POLL_MS == RADIO_SQL_CLOSE_MS, "the close polls make the close time");
+
 // Polls of noise above the line before the squelch closes
 static uint8_t close_polls(void)
 {
@@ -8622,12 +8624,10 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 
 	// Open on carrier (noise below the level's threshold) and the RX tone, both; the monitor overrides (outputs())
 	follow_tone(sm, st.tone_ok);
-	uint8_t sq = sm->view.squelch;
-	uint8_t open_below = radio_sm_squelch_open_below(sq);
+	radio_squelch_read_t sql = radio_squelch_read(sm->view.squelch, st.noise, sm->view.tone_ok);
 	bool listening = bcast_listening(sm);
-	bool opens = (listening || (sm->view.tone_ok && (sq == 0 || st.noise < open_below))) && !dual_peeking(sm) &&
-		     !parked(&sm->view.ch);
-	bool holds = listening || (sm->view.tone_ok && (sq == 0 || st.noise < open_below + RADIO_SQL_HYST_DB));
+	bool opens = (listening || sql.opens) && !dual_peeking(sm) && !parked(&sm->view.ch);
+	bool holds = listening || sql.holds;
 
 	if (sm->view.state == RS_IDLE) {
 		if (opens) {
@@ -8638,8 +8638,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	} else if (holds) {
 		activity(sm, now_ms);
 		sm->close_count = 0;
-	} else if (++sm->close_count >= close_polls() || (sq != 0 && close_polls() == RADIO_SQL_CLOSE_POLLS &&
-			   st.noise >= open_below + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB)) {
+	} else if (++sm->close_count >= close_polls() || (sql.fast && close_polls() == RADIO_SQL_CLOSE_POLLS)) {
 		if (sm->view.state == RS_TX_DENIED) {
 			// A busy refusal over a reception (deny_rx): its audio stops where the squelch closes; the refusal
 			// stays until PTT is released

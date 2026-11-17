@@ -288,6 +288,11 @@ Squelch level 0 (always open) and the APRS hold (`RADIO_SQL_CLOSE_POLLS_APRS`) k
 (BK4819 receiver) the tail at the speaker went from 55 ms to 15-35 ms in three calls (measured,
 `test_fm_rx_speaker`); what is left is the poll and the chip's noise reading lag.
 
+A second receiver that runs its own squelch (`hal_rx2.h`) uses the same rule, `radio_squelch_read` and
+`radio_squelch_step` in `radio_squelch.h`: the same open line, hysteresis and fast close, and closing after
+`RADIO_SQL_CLOSE_MS` (50 ms) at whatever rate it polls. `test_fm_rx_speaker_second_receiver` checks its tail at the
+speaker.
+
 ### 3.6 Mic gain
 
 Settings > Talk & listen > Mic gain: a step 0-10, 2 dB a step, 5 = the board's own levels (`core/radio/mic_gain.c`).
