@@ -1394,7 +1394,8 @@ run: run-t3site
 run-t3site: t3SiteTest
 	./t3SiteTest
 .PHONY: run-t3site
-# The same engine on off-air recordings (not in the repository): skips unless RFOUNDRY_T3_RECORDINGS names a manifest
+# The same engine on off-air recordings (not in the repository): skips unless RFOUNDRY_T3_RECORDINGS names a manifest,
+# so CI never runs it; the skip prints a "# t3ReplayTest skipped" line
 TESTS   += t3ReplayTest
 t3ReplayTest: t3ReplayTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c $(wildcard $(CORE)/dmr/trunk/*.h)
 	$(CC) $(CFLAGS) -o $@ t3ReplayTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c

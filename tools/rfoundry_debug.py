@@ -731,7 +731,7 @@ class DebugLink:
         self.t3_op(T3_SUPL, struct.pack("<B", f) + bytes(data))
 
     def t3_dial(self, digits=""):
-        """The digits ("0-9*#", 0-44; none: off) a call through a dialling gateway (PSTNI, PABXI, LINEI, DISPATI)
+        """The digits ("0-9*#", 0-44; none: off) a call through a dialing gateway (PSTNI, PABXI, LINEI, DISPATI)
         sends, taken at the next start"""
         self.t3_op(T3_DIAL, digits.encode("ascii"))
 

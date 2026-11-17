@@ -84,7 +84,6 @@ static void push(t3_ms_t *ms, const t3_act_t *a)
 static void tune(t3_ms_t *ms, uint32_t now, const t3_chan_t *c, uint8_t slot, bool payload)
 {
 	ms->tuned = *c;
-	ms->tuned_slot = slot;
 	ms->tuned_ms = now;
 	ms->level_dbm = 0;
 	ms->weak_since = 0;
@@ -161,7 +160,7 @@ static bool chan_lookup(const t3_ms_t *ms, uint16_t lcn, t3_chan_t *out)
 // The adjacent sites' TSCCs come first (6.7.1.7: they are the likelier to serve), then the programmed ones
 static uint8_t hunt_count(const t3_ms_t *ms)
 {
-	return (uint8_t)(ms->nadj + ms->cfg->nctrl + ms->cfg->nhunt);
+	return (uint8_t)(ms->nadj + ms->cfg->nctrl);
 }
 
 static bool hunt_candidate(const t3_ms_t *ms, uint8_t i, t3_chan_t *out)
@@ -176,13 +175,12 @@ static bool hunt_candidate(const t3_ms_t *ms, uint8_t i, t3_chan_t *out)
 		*out = c->ctrl[i];
 		return out->rx_hz != 0;
 	}
-	i = (uint8_t)(i - c->nctrl);
-	return i < c->nhunt && chan_lookup(ms, c->hunt[i], out);
+	return false;
 }
 
 static void hunt_next(t3_ms_t *ms, uint32_t now)
 {
-	uint32_t dwell = or_default(ms->cfg->dwell_ms, T3_DWELL_MS);
+	uint32_t dwell = T3_DWELL_MS;
 	ms->hunt_deadline = now + dwell;
 	if (ms->retry_tscc) {
 		// The channel just lost comes first: a fade more often than a move
@@ -552,9 +550,10 @@ static void return_to_tscc(t3_ms_t *ms, uint32_t now)
 
 // ---- The control channel ----
 
-// The registration area of a system code: MODEL, NET and the DMRLA most significant bits of SITE (6.4.4). A new
-// area needs a new registration. DMRLA 0 is reserved (table 6.5: 1 at least), so unset means every site is an area
-// of its own: the radio registers wherever it moves, never missing one
+// The registration area of a system code: MODEL and NET (so two networks' areas never match) followed by SYS_AREA,
+// the DMRLA most significant bits of SITE (t3_sys_area, 6.4.4). A new area needs a new registration. DMRLA 0 is
+// reserved (table 6.5: 1 at least), so unset means every site is an area of its own: the radio registers wherever it
+// moves, never missing one
 static uint16_t reg_area(const t3_ms_t *ms, uint16_t code)
 {
 	t3_syscode_t s;
@@ -579,7 +578,7 @@ static void set_reg(t3_ms_t *ms, bool reg)
 	uint16_t area = reg_area(ms, ms->syscode);
 	if (!reg) {
 		ms->reg = T3_REG_NOT_NEEDED;
-	} else if (ms->cfg->opts & T3_OPT_LISTEN_ONLY) {
+	} else if (!may_send(ms)) {	// listen-only, or a build without access
 		ms->reg = T3_REG_LISTEN;
 	} else if (area_denied(ms, area)) {
 		ms->reg = T3_REG_DENIED;
@@ -602,7 +601,7 @@ const char *t3_res_name(t3_res_t r)
 	case T3_RES_TIMEOUT: return "timeout";
 	case T3_RES_NOT_ALLOWED: return "not-allowed";
 	case T3_RES_LOST: return "lost";
-	case T3_RES_CANCELLED: return "cancelled";
+	case T3_RES_CANCELED: return "canceled";
 	case T3_RES_DIVERTED: return "diverted";
 	}
 	return "?";
@@ -710,7 +709,7 @@ static void start_access(t3_ms_t *ms, uint32_t now, t3_svc_t svc, uint32_t dst, 
 	ms->ax.frames = 0;
 	ms->ax.to_air = false;
 	ms->ax.tries = 0;
-	ms->ax.tc_deadline = now + or_default(ms->cfg->trand_tc_ms, T3_TRAND_TC_MS);
+	ms->ax.tc_deadline = now + T3_TRAND_TC_MS;
 	ms->ax.ack_deadline = 0;
 	ms->ax.result = T3_RES_PENDING;
 	ms->ax.reason = 0;
@@ -817,8 +816,8 @@ static void build_rand(t3_ms_t *ms, uint8_t out[T3_CSBK_BYTES])
 		q->extra = ms->ax.als ? 0x2u : 0u;
 		break;
 	case T3_SVC_PDATA:
-		// Table 6.50: single slot, single item, normal priority, no supplementary data. To IPI (multi-part,
-		// 6.6.3.2.3) the Proxy Flag 0 says the extended address is IPv4
+		// Table 6.50: single slot, single item, normal priority; supplementary data is added below when offered.
+		// To IPI (multi-part, 6.6.3.2.3) the Proxy Flag 0 says the extended address is IPv4
 		q->kind = ms->ax.group ? T3_SK_TG_DATA : T3_SK_IND_DATA;
 		q->options = ms->ax.emergency ? T3_SO_EMERGENCY : 0;
 		q->proxy = false;
@@ -957,8 +956,7 @@ static void on_ack(t3_ms_t *ms, uint32_t now, const t3_ack_t *a)
 		// More to come: TP_Timer for a call, TNP_Timer for the rest; each further one restarts it
 		ms->ax.state = T3_AX_ACKED;
 		ms->ax.progress = (uint8_t)t3_ack_class(a->reason);
-		ms->ax.ack_deadline = now + (is_call(svc) ? or_default(ms->cfg->tp_ms, T3_TP_MS) :
-							    or_default(ms->cfg->tnp_ms, T3_TNP_MS));
+		ms->ax.ack_deadline = now + (is_call(svc) ? T3_TP_MS : T3_TNP_MS);
 		break;
 	case T3_ACK:
 		if (svc == T3_SVC_REGISTER && a->reason != T3_RC_REG_ACCEPTED && a->reason != T3_RC_REG_SUBSCRIPTION) {
@@ -985,14 +983,14 @@ static void on_ack(t3_ms_t *ms, uint32_t now, const t3_ack_t *a)
 		} else if (is_voice(svc) && a->reason == T3_RC_MS_ALERTING) {
 			// The called radio rings: the call goes on
 			ms->ax.state = T3_AX_ACKED;
-			ms->ax.ack_deadline = now + or_default(ms->cfg->tp_ms, T3_TP_MS);
+			ms->ax.ack_deadline = now + T3_TP_MS;
 			break;
 		}
 		finish(ms, now, T3_RES_DONE);
 		break;
 	case T3_NACK:
 		if (svc == T3_SVC_REGISTER && a->reason == T3_RC_REG_DENIED) {
-			// Barred from this area until power off; find another TSCC (6.4.4.1)
+			// Barred from this area until the engine restarts; find another TSCC (6.4.4.1)
 			uint16_t area = reg_area(ms, ms->syscode);
 			uint8_t i = 0;
 			while (i < T3_DENIED_MAX - 1 && ms->denied[i] != 0 && ms->denied[i] != (uint16_t)(area + 1u)) {
@@ -1106,7 +1104,7 @@ static void queue_udt(t3_ms_t *ms, uint32_t now, uint8_t slot, t3_udt_t *u, cons
 	ms->tx.nblocks = u->blocks;
 	if (access) {
 		ms->ax.state = T3_AX_ACKED;
-		ms->ax.ack_deadline = now + or_default(ms->cfg->tnp_ms, T3_TNP_MS);
+		ms->ax.ack_deadline = now + T3_TNP_MS;
 	}
 }
 
@@ -1133,7 +1131,7 @@ void t3_bcd_text(const uint8_t *bcd, uint8_t n, char *out)
 	out[n] = '\0';
 }
 
-// A request to a dialling gateway needs the digits, and goes to the gateway as an individual (6.6.2.2.3)
+// A request to a dialing gateway needs the digits, and goes to the gateway as an individual (6.6.2.2.3)
 static bool dial_bad(const t3_ms_t *ms, uint32_t dst, bool group)
 {
 	if (!t3_dial_gw(dst)) {
@@ -1191,7 +1189,7 @@ static bool on_dial_ask(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t
 }
 
 // The caller's number from a gateway (CLI, table 6.33): a UDT download with SF 1, BCD, from PSTNI or PABXI (or another
-// dialling gateway) to the radio or a talkgroup it follows, ahead of the call. Kept in cli; to the radio with A 1,
+// dialing gateway) to the radio or a talkgroup it follows, ahead of the call. Kept in cli; to the radio with A 1,
 // C_ACKU Message_Accepted to the gateway
 static bool cli_heard(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_udt_t *h, bool to_me)
 {
@@ -1239,7 +1237,7 @@ static bool on_upload(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *
 	}
 	if (!may_send(ms) || ms->ax.svc != T3_SVC_SDATA ||
 	    (ms->ax.state != T3_AX_WAIT_RESP && ms->ax.state != T3_AX_ACKED)) {
-		return true;	// nothing to upload (6.6.4.4 d, supplementary data, isn't sent)
+		return true;	// no short data request waiting: nothing to upload
 	}
 	t3_udt_t u;
 	memset(&u, 0, sizeof(u));
@@ -1416,7 +1414,7 @@ static void challenge_tscc(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t what
 		ms->acvit = what;
 		ms->acvit_challenge = rnd(ms) % (T3_AUTH_CHALLENGE_MAX + 1u);
 	}
-	ms->acvit_until = (now + or_default(ms->cfg->tnp_ms, T3_TNP_MS)) | 1u;
+	ms->acvit_until = (now + T3_TNP_MS) | 1u;
 	t3_csbk_t p;
 	memset(&p, 0, sizeof(p));
 	p.lb = true;
@@ -1492,7 +1490,7 @@ static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h,
 		t3_svc_t want = h->kind == T3_SK_STATUS ? T3_SVC_STATUS : T3_SVC_SDPOLL;
 		if (ms->ax.svc == want && (ms->ax.state == T3_AX_WAIT_RESP || ms->ax.state == T3_AX_ACKED)) {
 			ms->ax.state = T3_AX_ACKED;
-			ms->ax.ack_deadline = now + or_default(ms->cfg->tnp_ms, T3_TNP_MS);
+			ms->ax.ack_deadline = now + T3_TNP_MS;
 		}
 		return;
 	}
@@ -1553,7 +1551,7 @@ static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h,
 		ms->auths++;
 		if (ms->ax.state == T3_AX_WAIT_RESP || ms->ax.state == T3_AX_ACKED) {
 			ms->ax.state = T3_AX_ACKED;
-			ms->ax.ack_deadline = now + or_default(ms->cfg->tnp_ms, T3_TNP_MS);
+			ms->ax.ack_deadline = now + T3_TNP_MS;
 		}
 	} else if (h->src == T3_ID_TSI && (h->kind == T3_SK_REGISTRATION ||
 					    (payload && h->kind == (h->group ? T3_SK_TG_VOICE : T3_SK_IND_VOICE)))) {
@@ -1651,7 +1649,7 @@ static void on_move(t3_ms_t *ms, uint32_t now, const t3_move_t *m, const t3_cdef
 		if (cdef == NULL) {
 			return;
 		}
-		c = (t3_chan_t){ cdef->chan, cdef->rx_hz, cdef->tx_hz, cdef->cc };
+		c = (t3_chan_t){ .lcn = cdef->chan, .cc = cdef->cc, .rx_hz = cdef->rx_hz, .tx_hz = cdef->tx_hz };
 		if (ms->cfg->plan.learn && t3_learn_add(&ms->learned, cdef)) {
 			ms->st.learned++;
 		}
@@ -1694,7 +1692,7 @@ static int adj_note(t3_ms_t *ms, const t3_bcast_t *b, const t3_cdef_t *cdef)
 		if (cdef == NULL) {
 			return -1;
 		}
-		c = (t3_chan_t){ cdef->chan, cdef->rx_hz, cdef->tx_hz, cdef->cc };
+		c = (t3_chan_t){ .lcn = cdef->chan, .cc = cdef->cc, .rx_hz = cdef->rx_hz, .tx_hz = cdef->tx_hz };
 	} else if (!chan_lookup(ms, ch, &c)) {
 		return -1;
 	}
@@ -1896,7 +1894,7 @@ static void on_tscc(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t
 	}
 	if (is_grant(p->op)) {
 		if (cdef != NULL) {
-			t3_chan_t c = { cdef->chan, cdef->rx_hz, cdef->tx_hz, cdef->cc };
+			t3_chan_t c = { .lcn = cdef->chan, .cc = cdef->cc, .rx_hz = cdef->rx_hz, .tx_hz = cdef->tx_hz };
 			if (ms->cfg->plan.learn && t3_learn_add(&ms->learned, cdef)) {
 				ms->st.learned++;
 			}
@@ -1938,7 +1936,7 @@ static void on_payload(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_csbk_t 
 			bool to = false;
 			if (p->u.clear.lpcn == T3_LPCN_ABSOLUTE && cdef != NULL) {
 				// An MBC: the appended block gives the TSCC's frequencies
-				c = (t3_chan_t){ cdef->chan, cdef->rx_hz, cdef->tx_hz, cdef->cc };
+				c = (t3_chan_t){ .lcn = cdef->chan, .cc = cdef->cc, .rx_hz = cdef->rx_hz, .tx_hz = cdef->tx_hz };
 				to = true;
 			} else if (p->u.clear.lpcn != T3_LPCN_NULL && p->u.clear.lpcn != T3_LPCN_ABSOLUTE &&
 				   p->u.clear.lpcn != ms->tscc.lcn) {
@@ -2008,7 +2006,7 @@ static void on_payload(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_csbk_t 
 	default:
 		if (is_grant(p->op)) {
 			if (cdef != NULL) {
-				t3_chan_t c = { cdef->chan, cdef->rx_hz, cdef->tx_hz, cdef->cc };
+				t3_chan_t c = { .lcn = cdef->chan, .cc = cdef->cc, .rx_hz = cdef->rx_hz, .tx_hz = cdef->tx_hz };
 				on_grant(ms, now, p, &c);
 			} else {
 				on_grant(ms, now, p, NULL);
@@ -2053,8 +2051,7 @@ static bool cc_ok(const t3_ms_t *ms, uint8_t cc)
 	return want == T3_CC_ANY || want == cc;
 }
 
-// A UDT short data message whole (6.6.4.7): kept when it is to the radio or a talkgroup it listens to; one to the
-// radio that asks for a response is answered MS_Accepted. A bad CRC gets no answer: the TSCC sends it again
+// A 24-bit address, most significant octet first
 static uint32_t addr24(const uint8_t *d)
 {
 	return ((uint32_t)d[0] << 16) | ((uint32_t)d[1] << 8) | d[2];
@@ -2184,6 +2181,8 @@ static bool supl_heard(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_udt_t *
 #endif
 }
 
+// A UDT short data message whole (6.6.4.7): kept when it is to the radio or a talkgroup it listens to; one to the
+// radio that asks for a response is answered MS_Accepted. A bad CRC gets no answer: the TSCC sends it again
 static void udt_done(t3_ms_t *ms, uint32_t now, uint8_t slot)
 {
 	const t3_udt_t *h = &ms->udt_rx.h;
@@ -2312,7 +2311,7 @@ void t3_ms_rx(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t dt, uint8_t cc, c
 	ms->st.csbk++;
 	bool known = t3_csbk_parse(d, &p);
 	if (ms->state == T3_FOLLOW && slot == ms->call.slot) {
-		// Any good CSBK on the call's slot keeps it alive, a manufacturer's own included
+		// Any good CSBK on the call's slot keeps it alive, one with another FID included
 		ms->last_act_ms = now;
 	}
 	if (!known || p.fid != 0) {
@@ -2413,10 +2412,10 @@ uint8_t t3_ms_at_tc(const t3_ms_t *ms, uint8_t slot)
 	return ms->aloha.offset ? slot : (uint8_t)(3u - slot);
 }
 
-// The answer to a random access burst comes NRand_Wait frames after the burst itself (6.2.2). A radio can hold a
-// burst list back for a while (after a retune its stack waits for the channel's slot timing): counted from the
-// hand-over, the wait would end before an answer in time. So the window starts again from the radio's report; a
-// burst it dropped is tried again after the backoff, without waiting for an answer that can't come
+// The answer to a random access burst comes in one of the NRand_Wait + 1 frames after the burst itself (6.2.1.1.5).
+// A radio can hold a burst list back for a while (after a retune its stack waits for the channel's slot timing):
+// counted from the hand-over, the wait would end before an answer in time. So the window starts again from the
+// radio's report; a burst it dropped is tried again after the backoff, without waiting for an answer that can't come
 void t3_ms_sent(t3_ms_t *ms, uint32_t now, bool ok)
 {
 	if (!ms->ax.to_air) {
@@ -2488,7 +2487,7 @@ bool t3_ms_poll(t3_ms_t *ms, uint32_t now, t3_act_t *act)
 		}
 		ms->asleep = sleep;
 		ms->ps_tick_ms = now;
-		if (since(now, ms->last_valid_ms, or_default(ms->cfg->nosig_ms, T3_NOSIG_MS))) {
+		if (since(now, ms->last_valid_ms, T3_NOSIG_MS)) {
 			enter_hunt(ms, now, true);
 			break;
 		}
@@ -2534,7 +2533,7 @@ bool t3_ms_poll(t3_ms_t *ms, uint32_t now, t3_act_t *act)
 		if (ms->protect_other_ms != 0 && since(now, ms->protect_other_ms, T3_PROTECT_ONE_MS)) {
 			ms->protect_other_ms = 0;
 		}
-		if (since(now, ms->last_act_ms, or_default(ms->cfg->inactive_ms, T3_INACTIVE_MS)) ||
+		if (since(now, ms->last_act_ms, T3_INACTIVE_MS) ||
 		    since(now, ms->call.start_ms, T3_CALL_MAX_MS)) {
 			return_to_tscc(ms, now);
 		} else if (ms->data_end_ms != 0 && (int32_t)(now - ms->data_end_ms) >= 0 && ms->tx.count == 0) {
@@ -2775,7 +2774,7 @@ void t3_ms_cancel(t3_ms_t *ms, uint32_t now)
 	}
 	if (ms->ax.state == T3_AX_WAIT_SLOT && ms->ax.tries == 0) {
 		// Nothing sent yet: just drop it (6.6.1.2.1)
-		finish(ms, now, T3_RES_CANCELLED);
+		finish(ms, now, T3_RES_CANCELED);
 		return;
 	}
 	// The TSCC has it: ask it to cancel; it answers with C_ACKD (Message_Accepted)
@@ -2851,7 +2850,7 @@ bool t3_ms_deregister(t3_ms_t *ms, uint32_t now)
 		return false;
 	}
 	if (ms->ax.state != T3_AX_IDLE) {
-		finish(ms, now, T3_RES_CANCELLED);
+		finish(ms, now, T3_RES_CANCELED);
 	}
 	start_access(ms, now, T3_SVC_DEREGISTER, 0, false);
 	return true;

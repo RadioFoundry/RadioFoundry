@@ -60,7 +60,7 @@ typedef struct {
 	uint8_t div_svcs;	// T3_DIV_*
 	uint8_t poll_reply[T3_UDT_MAX];	// the answer to a short data poll: cfg.poll_len octets, cfg.poll_format
 #if CONFIG_DMR_TRUNK_GW
-	uint8_t dial[T3_DIAL_MAX / 2];	// the digits a call through a dialling gateway sends: cfg.dial_n of them, BCD
+	uint8_t dial[T3_DIAL_MAX / 2];	// the digits a call through a dialing gateway sends: cfg.dial_n of them, BCD
 #endif
 #if CONFIG_DMR_TRUNK_SUPL
 	uint8_t supl[T3_UDT_MAX];	// supplementary user data offered with each call: cfg.supl_len octets, cfg.supl_format

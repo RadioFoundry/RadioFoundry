@@ -15,7 +15,7 @@ static int checks;
 #define CHECK(cond, ...) do { checks++; if (!(cond)) { failures++; printf("FAIL %s:%d: ", __FILE__, __LINE__); \
 	printf(__VA_ARGS__); printf("\n"); } } while (0)
 
-#define OWN		3101276u
+#define OWN		2345678u
 #define CALLER		4321u
 #define TG_A		5278505u	// listened to, the talk group
 #define TG_B		5310449u	// listened to
@@ -165,7 +165,8 @@ static void setup(uint16_t opts, bool reg)
 	cfg.auth.category = T3_PAR_A;
 	cfg.dmrla = 3;
 	cfg.plan.fixed = (t3_fixed_plan_t){ 455000000u, 1, 3, false, 5000000u };
-	cfg.ctrl[0] = (t3_chan_t){ TSCC_LCN, RX(TSCC_LCN), RX(TSCC_LCN) + 5000000u, T3_CC_ANY };
+	cfg.ctrl[0] = (t3_chan_t){ .lcn = TSCC_LCN, .rx_hz = RX(TSCC_LCN), .tx_hz = RX(TSCC_LCN) + 5000000u,
+				    .cc = T3_CC_ANY };
 	cfg.nctrl = 1;
 	cfg.tg[0] = (t3_tg_t){ TG_A, T3_TG_LISTEN | T3_TG_TALK };
 	cfg.tg[1] = (t3_tg_t){ TG_B, T3_TG_LISTEN };
@@ -229,7 +230,7 @@ static void test_register(void)
 	CHECK(sent_act[0].slot == 1 && !sent_act[0].payload, "on the TSCC's slot");
 	CHECK(ms.ax.state == T3_AX_WAIT_RESP, "waiting for the answer");
 
-	// More signalling to follow, then accepted
+	// More signaling to follow, then accepted
 	t3_csbk_t w = ack(T3_OP_C_ACKD, T3_RC_WAIT, OWN, T3_ID_REGI);
 	rx(&ms, 1, &w);
 	CHECK(ms.ax.state == T3_AX_ACKED, "C_WACKD: waiting");
@@ -881,7 +882,7 @@ static void test_cancel(void)
 	t3_ms_cancel(&ms, T);
 	at_busy = false;
 	frames(&ms, 20);
-	CHECK(nsent == 0 && ms.ax.result == T3_RES_CANCELLED, "withdrawn before sending");
+	CHECK(nsent == 0 && ms.ax.result == T3_RES_CANCELED, "withdrawn before sending");
 
 	CHECK(t3_ms_request(&ms, T, CALLER, false, false), "request");
 	frames(&ms, 2);
@@ -892,7 +893,7 @@ static void test_cancel(void)
 	      sent[1].u.rand.src == OWN, "cancel request");
 	t3_csbk_t a = ack(T3_OP_C_ACKD, T3_RC_MESSAGE_ACCEPTED, OWN, CALLER);
 	rx(&ms, 1, &a);
-	CHECK(ms.ax.result == T3_RES_DONE && ms.ax.svc == T3_SVC_CANCEL, "cancelled at the TSCC");
+	CHECK(ms.ax.result == T3_RES_DONE && ms.ax.svc == T3_SVC_CANCEL, "canceled at the TSCC");
 }
 
 static void test_ahoy(void)
@@ -2422,7 +2423,7 @@ static void test_ip_advice(void)
 {
 	t3_ms_t ms;
 	setup(T3_OPT_PRIVATE, true);
-	cfg.ip_addr = 0x0C2F525Cu;	// 12.47.82.92
+	cfg.ip_addr = 0x0C23CACEu;	// 12.35.202.206
 	cfg.ps_rq = 2;
 	nsent = 0;
 	nup = 0;
@@ -2438,7 +2439,7 @@ static void test_ip_advice(void)
 	t3_udt_t u;
 	CHECK(nup == 1 && nup_blocks == 1 && t3_udt_parse(up_hdr, &u) && u.format == T3_UDTF_IP && u.sf &&
 	      u.dst == T3_ID_IPI && u.src == OWN && u.blocks == 1, "the address uploaded: %d", nup);
-	static const uint8_t want[10] = { 12, 47, 82, 92, 0, 0, 0, 0, 0, 0 };
+	static const uint8_t want[10] = { 12, 35, 202, 206, 0, 0, 0, 0, 0, 0 };
 	CHECK(memcmp(up_blocks[0], want, sizeof want) == 0, "IPv4, 48 bits reserved");
 	t3_csbk_t a = ack(T3_OP_C_ACKD, T3_RC_REG_ACCEPTED, OWN, T3_ID_IPI);
 	a.u.ack.info = 1;
@@ -2448,7 +2449,7 @@ static void test_ip_advice(void)
 
 	// Refused at once (no IP bearer service): registered, without the address or power save
 	setup(T3_OPT_PRIVATE, true);
-	cfg.ip_addr = 0x0C2F525Cu;
+	cfg.ip_addr = 0x0C23CACEu;
 	cfg.ps_rq = 2;
 	nsent = 0;
 	nup = 0;
@@ -2463,7 +2464,7 @@ static void test_ip_advice(void)
 	      nsent);
 	// Refused after the upload: the same
 	setup(T3_OPT_PRIVATE, true);
-	cfg.ip_addr = 0x0C2F525Cu;
+	cfg.ip_addr = 0x0C23CACEu;
 	nsent = 0;
 	nup = 0;
 	camp(&ms);
@@ -2763,7 +2764,7 @@ static void test_supl(void)
 	      "voice request with supplementary data");
 	nsent = 0;
 	t3_ms_cancel(&ms, T);
-	CHECK(sent_rand(&ms) && sent[nsent - 1].u.rand.kind == T3_SK_CANCEL, "cancelled");
+	CHECK(sent_rand(&ms) && sent[nsent - 1].u.rand.kind == T3_SK_CANCEL, "canceled");
 	a = ack(T3_OP_C_ACKD, T3_RC_MESSAGE_ACCEPTED, OWN, TG_A);
 	rx(&ms, 1, &a);
 
@@ -2866,7 +2867,7 @@ static void test_supl(void)
 	      (unsigned)ms.supl_rx.count, (unsigned)ms.status_rx.count);
 }
 
-// Calls through a dialling gateway (6.6.2.2.3, table 6.41; 6.6.4.2, table 6.54): the request goes to the gateway with
+// Calls through a dialing gateway (6.6.2.2.3, table 6.41; 6.6.4.2, table 6.54): the request goes to the gateway with
 // the Proxy Flag set by the digits' count, and the digits go up as BCD with SF 1 when the gateway asks (table B.3 for
 // the Pad Nibble). A caller's number from a gateway (table 6.33) is kept and, with A, accepted
 static void test_dial(void)
@@ -2882,7 +2883,7 @@ static void test_dial(void)
 	      t3_dial_pack("123456789012345678901234567890123456789012345", bcd) == 0, "bad strings refused");
 	CHECK(t3_dial_gw(T3_ID_PSTNI) && t3_dial_gw(T3_ID_PABXI) && t3_dial_gw(T3_ID_LINEI) && t3_dial_gw(T3_ID_DISPATI) &&
 	      t3_dial_gw(T3_ID_PSTNDI) && t3_dial_gw(T3_ID_DISPATDI) && !t3_dial_gw(T3_ID_IPI) && !t3_dial_gw(T3_ID_SDMI),
-	      "dialling gateways");
+	      "dialing gateways");
 
 	// No digits, or to a talkgroup: refused
 	CHECK(!t3_ms_request(&ms, T, T3_ID_PSTNI, false, false) && ms.ax.result == T3_RES_NOT_ALLOWED, "no digits");
@@ -2932,7 +2933,7 @@ static void test_dial(void)
 	      "21 digits: 2 blocks, pad %u", u.pad);
 	nsent = 0;
 	t3_ms_cancel(&ms, T);
-	CHECK(sent_rand(&ms) && sent[nsent - 1].u.rand.kind == T3_SK_CANCEL, "cancelled");
+	CHECK(sent_rand(&ms) && sent[nsent - 1].u.rand.kind == T3_SK_CANCEL, "canceled");
 	t3_csbk_t a = ack(T3_OP_C_ACKD, T3_RC_MESSAGE_ACCEPTED, OWN, T3_ID_PABXI);
 	rx(&ms, 1, &a);
 	CHECK(ms.ax.state == T3_AX_IDLE, "idle again: %d", ms.ax.state);

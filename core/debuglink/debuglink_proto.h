@@ -63,7 +63,7 @@ enum {
 	DL_T3_POLL_REPLY = 20,	// the answer to a poll: UDT_Format u8, then 0-46 octets (none: refused)
 	DL_T3_LOAD = 21,	// stage system n u8 of the codeplug (dmr-trunking-codeplug.md), not started
 	DL_T3_SUPL = 22,	// supplementary user data offered with each call: UDT_Format u8, then 0-46 octets (none: off)
-	DL_T3_DIAL = 23,	// the digits a call through a dialling gateway sends: 0-44 of "0-9*#" (none: off)
+	DL_T3_DIAL = 23,	// the digits a call through a dialing gateway sends: 0-44 of "0-9*#" (none: off)
 };
 
 // DL_CMD_CPKV operations (first payload byte, then the key u16; docs/spec/debuglink.md 3.27)

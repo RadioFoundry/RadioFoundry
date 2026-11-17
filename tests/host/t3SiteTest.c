@@ -161,7 +161,7 @@ int main(void)
 		path = "data/t3_site_tscc.jsonl";
 	}
 	unsigned model = T3_MODEL_SMALL, net = 5, site = 1, cc = 2;
-	uint32_t hz = 461462500u;
+	uint32_t hz = 455012500u;	// the recording's own Chan_Freq names this pair (placeholders: 455.0125 / 450.0125)
 	const char *e = getenv("RFOUNDRY_T3_SITE_SYS");
 	if (e != NULL) {
 		sscanf(e, "%u %u %u", &model, &net, &site);
@@ -179,12 +179,12 @@ int main(void)
 	}
 
 	memset(&cfg, 0, sizeof(cfg));
-	cfg.own_id = 3105738u;
+	cfg.own_id = 2345679u;
 	cfg.auth.model = (uint8_t)model;
 	cfg.auth.net = (uint16_t)net;
 	cfg.auth.category = T3_PAR_A;
 	cfg.plan.learn = true;
-	cfg.ctrl[0] = (t3_chan_t){ 0, hz, hz, (uint8_t)cc };
+	cfg.ctrl[0] = (t3_chan_t){ .lcn = 0, .rx_hz = hz, .tx_hz = hz, .cc = (uint8_t)cc };
 	cfg.nctrl = 1;
 	cfg.tg[0] = (t3_tg_t){ 1, T3_TG_LISTEN | T3_TG_TALK };
 	cfg.ntg = 1;

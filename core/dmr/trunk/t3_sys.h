@@ -7,6 +7,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "dmr/trunk/t3_pdu.h"	// T3_ID_GATEWAY_FIRST
 
 #define T3_MODEL_TINY	0
 #define T3_MODEL_SMALL	1
@@ -37,7 +38,8 @@ static inline uint16_t t3_syscode_14(uint16_t code)
 	return (uint16_t)(code >> 2);
 }
 
-// SYS_AREA: the dmrla most significant bits of SITE (6.3.2.2.3, 6.4.4). dmrla is clamped to the SITE width
+// SYS_AREA: the dmrla most significant bits of SITE (6.3.2.2.3, 6.4.4). dmrla is clamped to the SITE width. The
+// engine's registration area puts MODEL and NET in front of it (t3_ms.c reg_area)
 uint16_t t3_sys_area(uint16_t code, uint8_t dmrla);
 
 // The six bits Response_Check carries (table 7.41 note: NET + SITE bits 8-3 of figure 6.19)
@@ -80,7 +82,7 @@ uint8_t t3_backoff_frames(uint8_t backoff);
 // Is this a gateway or special address (A.4) rather than an MS or talkgroup?
 static inline bool t3_is_gateway(uint32_t id)
 {
-	return id >= 0xFFFEC0u;
+	return id >= T3_ID_GATEWAY_FIRST;
 }
 
 #endif

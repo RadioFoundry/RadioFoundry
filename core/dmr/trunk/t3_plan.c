@@ -38,7 +38,7 @@ bool t3_learn_add(t3_learned_t *l, const t3_cdef_t *c)
 	if (c->cdeftype != 0 || c->chan == T3_LPCN_NULL || c->chan > T3_LPCN_MAX || c->rx_hz == 0 || c->tx_hz == 0) {
 		return false;
 	}
-	t3_chan_t e = { c->chan, c->rx_hz, c->tx_hz, T3_CC_ANY };
+	t3_chan_t e = { .lcn = c->chan, .cc = T3_CC_ANY, .rx_hz = c->rx_hz, .tx_hz = c->tx_hz };
 	for (uint8_t i = 0; i < l->n; i++) {
 		if (l->e[i].lcn == c->chan) {
 			bool changed = l->e[i].rx_hz != e.rx_hz || l->e[i].tx_hz != e.tx_hz;

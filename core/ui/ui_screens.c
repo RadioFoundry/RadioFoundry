@@ -11,6 +11,9 @@
 #include "cjk_font.h"	// CJK_FONT_H: the line height a CJK language needs (CONFIG_LANG_ZH)
 #include "config.h"
 #include "codeplug/codeplug_modes.h"	// channel kinds: the mode word
+#if CONFIG_DMR_TRUNK
+#include "dmr/trunk/t3_ms.h"	// the engine's states, for the trunked status words
+#endif
 
 ui_layout_t ui_layout;
 static const font_t *font_largest;	// the large text setting's font (large_font)
@@ -1461,16 +1464,14 @@ static void draw_talk_dmr(const radio_view_t *v, bool label_first)
 }
 
 #if CONFIG_DMR_TRUNK
-#include "dmr/trunk/t3_ms.h"
-
 // What the radio is doing on the trunked channel's system (dmr-trunking.md 12.4); *warn: something the user should see
 static const char *t3_state_word(const radio_view_t *v, bool *warn)
 {
 	*warn = true;
 	if (v->t3.unavail)
 		return TR(TRUNK_WHY_SYSTEM_NOT_SET_UP, "System not set up");
-	if (v->t3.fallback != 0)
-		return TR(TRUNK_STATE_FALLBACK, "Fallback");		// on the system's fallback channel, or looking for the system from it
+	if (v->t3.fallback != 0)	// on the system's fallback channel, or looking for the system from it
+		return TR(TRUNK_STATE_FALLBACK, "Fallback");
 	if (!v->t3.on || v->t3.state == T3_HUNT)
 		return TR(TRUNK_STATE_SEARCHING, "Searching");
 	if (v->t3.state == T3_FOLLOW) {

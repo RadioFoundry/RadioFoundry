@@ -393,7 +393,7 @@ static void base_cfg(t3_cfg_t *cfg, uint32_t ctrl_hz, uint16_t lcn)
 	cfg->auth.category = T3_PAR_A;
 	cfg->plan.fixed = man.plan;
 	cfg->plan.learn = true;
-	cfg->ctrl[0] = (t3_chan_t){ lcn, ctrl_hz, 0, T3_CC_ANY };
+	cfg->ctrl[0] = (t3_chan_t){ .lcn = lcn, .rx_hz = ctrl_hz, .tx_hz = 0, .cc = T3_CC_ANY };
 	cfg->nctrl = 1;
 	cfg->opts = T3_OPT_LISTEN_ONLY | T3_OPT_PRIVATE;
 }
@@ -540,7 +540,7 @@ int main(void)
 {
 	const char *m = getenv("RFOUNDRY_T3_RECORDINGS");
 	if (m == NULL || *m == 0) {
-		printf("t3ReplayTest: skipped (RFOUNDRY_T3_RECORDINGS not set)\n");
+		printf("# t3ReplayTest skipped (RFOUNDRY_T3_RECORDINGS not set: the recordings stay outside the repository, so CI never runs it)\n");
 		return 0;
 	}
 	if (!man_load(m)) {

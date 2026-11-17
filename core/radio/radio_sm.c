@@ -3079,8 +3079,6 @@ static uint8_t t3_stun_word(uint8_t sys, uint8_t model, uint16_t net)
 	return (uint8_t)(SETTINGS_T3_STUN | ((sys - 1u) << 4) | (h & 0x0Fu));
 }
 
-// A short data poll from the menus (6.6.5): the system's prearranged format and size; the answer comes as short data
-// (into the inbox, t3_sd_inbox). A poll that can't start, is refused or goes unanswered counts in poll_fails
 #if CONFIG_DMR_TRUNK_GW
 // RREQ_T3_DIAL: the 16 BCD nibbles radio_req_t3_dial packs, into the system in use (the engine reads cfg.dial when
 // the gateway asks); a new start copies the staged system's digits again
@@ -3101,6 +3099,8 @@ static void t3_dial(int32_t a, uint32_t b)
 }
 #endif
 
+// A short data poll from the menus (6.6.5): the system's prearranged format and size; the answer comes as short data
+// (into the inbox, t3_sd_inbox). A poll that can't start, is refused or goes unanswered counts in poll_fails
 static void t3_poll(radio_sm_t *sm, uint32_t dst, uint32_t now_ms)
 {
 	radio_t3v.polls++;
@@ -3564,9 +3564,8 @@ static void t3_als_tick(radio_sm_t *sm, uint32_t now_ms)
 }
 #endif
 
-// Each radio tick while a system is selected: the slots since the last tick, then the engine's actions
 #if CONFIG_DMR_TRUNK_TX && CONFIG_DMR_EMERGENCY
-// An emergency alarm heard (status 126) raises the alert; the radio's own emergency over, its alarm is cancelled with
+// An emergency alarm heard (status 126) raises the alert; the radio's own emergency over, its alarm is canceled with
 // status 124 to the same target (361-4 6.6.6.3.2)
 static void t3_emergency_tick(uint32_t now_ms)
 {
@@ -3579,12 +3578,14 @@ static void t3_emergency_tick(uint32_t now_ms)
 		}
 	}
 	if (t3_em.alarm_sent && !dmr_emergency_in_progress() && t3s.sys == t3_em.alarm_sys && m->state == T3_CAMPED &&
-	    m->ax.state == T3_AX_IDLE && !data_tx.t3_wait && t3_ms_status(&t3m, now_ms, t3_em.alarm_dst, t3_em.alarm_group, T3_STATUS_EMERGENCY_CANCEL)) {
+	    m->ax.state == T3_AX_IDLE && !data_tx.t3_wait &&
+	    t3_ms_status(&t3m, now_ms, t3_em.alarm_dst, t3_em.alarm_group, T3_STATUS_EMERGENCY_CANCEL)) {
 		t3_em.alarm_sent = false;
 	}
 }
 #endif
 
+// Each radio tick while a system is selected: the slots since the last tick, then the engine's actions
 static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 {
 	if (sm->t3_pending) {
@@ -3595,13 +3596,11 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 	if (!sm->t3_on) {
 		return;
 	}
-	int8_t ts;
-	uint32_t tc = dmr_call_ticks(&ts);
+	uint32_t tc = dmr_call_ticks(NULL);
 	uint32_t n = tc - sm->t3_ticks;
 	if (n > 8u) {
 		n = 8u;		// a stall: the engine only needs the frames to count, not every one
 	}
-	(void)ts;
 	for (uint32_t i = 0; i < n; i++) {
 		// The tick's slot when the modem knows it, else alternating; its CACH's AT bit when the modem reads it. A
 		// modem that never reports AT gets every slot as free, so random access still runs (docs 7)

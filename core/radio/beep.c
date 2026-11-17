@@ -36,10 +36,10 @@ static const beep_seg_t p_emergency[] = { { 1500, 160 }, { 900, 160 }, { 1500, 1
 					  { 900, 160 } };
 // Rising three-note chime: a message
 static const beep_seg_t p_message[] = { { 1000, 60 }, { 0, 30 }, { 1300, 60 }, { 0, 30 }, { 1700, 90 } };
-// The speaker test (tests/hil/test_speaker.py): silence with the route up (a pop or a click there is the route's, not
-// the sweep's), the sweep, a short tail
 // Two rising notes: back on the trunked system
 static const beep_seg_t p_system_back[] = { { 1000, 60 }, { 0, 60 }, { 1400, 60 } };
+// The speaker test (tests/hil/test_speaker.py): silence with the route up (a pop or a click there is the route's, not
+// the sweep's), the sweep, a short tail
 static const beep_seg_t p_sweep[] = { { 0, 400 }, { BEEP_HZ_SWEEP, 4000 }, { 0, 200 } };
 
 #define PAT(p)	{ p, sizeof(p) / sizeof(p[0]) }

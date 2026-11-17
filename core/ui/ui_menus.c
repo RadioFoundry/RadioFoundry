@@ -338,7 +338,6 @@ static void act_select(uint16_t i, bool hold)
 		ui_svc_t3_poll(ui_target.id);	// the answer arrives as a message; ui_app says when none comes
 		sb_str(&b, TR(TRUNK_TOAST_POLLING, "Polling "));
 		sb_str(&b, name);
-		sb_str(&b, "...");
 		ui_go_home();
 		ui_toast(msg);
 		break;
@@ -1302,8 +1301,8 @@ static bool ch_locked(uint16_t num)
 
 // A channel row's value: its RX frequency and what it talks to, the talkgroup on DMR ("TG3113", "ID9991234" for a
 // private contact) or "FM". The whole name comes first; where both don't fit beside it, the frequency and the bare
-// number, then the talkgroup alone (text alternates). A trunked channel (dmr-trunking-codeplug.md 4) names its system where
-// the frequency would be. Returns false for a trunked channel whose system isn't set up: the caller dims the row
+// number, then the talkgroup alone (text alternates). A trunked channel (dmr-trunking-codeplug.md 4) names its system
+// where the frequency would be. Returns false for a trunked channel whose system isn't set up: the caller dims the row
 static bool sb_channel_row(sbuf_t *b, uint16_t num, const channel_t *ch)
 {
 	char what[16];
@@ -1892,7 +1891,8 @@ static const char *offer_body(void)
 		// Trunked channels whose system neither this radio nor the share has (zone-share.md 5.2)
 		sb_str(&b, ". ");
 		sb_u32(&b, offer.unavailable, 1);
-		sb_str(&b, offer.unavailable == 1 ? TR(SHARE_BODY_CHANNEL_NO_SYSTEM, " trunked channel unavailable: system not set up") :
+		sb_str(&b, offer.unavailable == 1 ?
+			   TR(SHARE_BODY_CHANNEL_NO_SYSTEM, " trunked channel unavailable: system not set up") :
 			   TR(SHARE_BODY_CHANNELS_NO_SYSTEM, " trunked channels unavailable: system not set up"));
 	}
 	return body;

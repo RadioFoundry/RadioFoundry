@@ -138,9 +138,9 @@ bool ui_svc_roam(uint8_t cmd);			// radio_roam_cmd_t: zone on / off, roam now, l
 int ui_svc_t3_channel(uint16_t num, const channel_t *ch, bool *usable);
 bool ui_svc_t3_name(uint8_t n, char *name);	// system n's name (CODEPLUG_NAME_LEN + 1); false: no such system
 void ui_svc_t3_poll(uint32_t id);	// poll an MS for its short data (radio_req_t3_poll)
-// CONFIG_DMR_TRUNK_GW (else no-ops): the digits ("0-9*#", up to 16) the next call through a dialling gateway sends,
-// and whether src is a dialling gateway on the system in use (false: no, or not this build); out: the caller's number it gave for its
-// call being followed now, "" when it gave none
+// CONFIG_DMR_TRUNK_GW (else no-ops): the digits ("0-9*#", up to 16) the next call through a dialing gateway sends,
+// and whether src is a dialing gateway on the system in use (false: no, or not this build); out: the caller's number
+// it gave for its call being followed now, "" when it gave none
 void ui_svc_t3_dial(const char *digits);
 bool ui_svc_t3_cli(uint32_t gw, char *out, size_t len);
 #endif

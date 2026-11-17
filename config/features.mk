@@ -51,7 +51,7 @@ CONFIG_DMR_TRUNK_TX ?= $(CONFIG_DMR_TRUNK)
 # Tier III supplementary user data: data offered with a call request, and the last heard from the system kept for the
 # debug link (needs DMR_TRUNK_TX; docs/spec/dmr-trunking.md 7.6)
 CONFIG_DMR_TRUNK_SUPL ?= $(CONFIG_DMR_TRUNK_TX)
-# Tier III calls through the PSTN, PABX, line and dispatcher gateways: dialled digits uploaded with the call, and the
+# Tier III calls through the PSTN, PABX, line and dispatcher gateways: dialed digits uploaded with the call, and the
 # caller's number a gateway sends kept for the debug link (needs DMR_TRUNK_TX; docs/spec/dmr-trunking.md 7.6)
 CONFIG_DMR_TRUNK_GW ?= $(CONFIG_DMR_TRUNK_TX)
 # Voice capture for receive tests: the next 32 voice frames received, raw as on air, read over the debug link

@@ -335,7 +335,7 @@ typedef struct {
 	bool divert_group;
 	uint32_t als_calls;	// Ambient Listening calls the radio transmitted on
 	bool call_als;		// the call followed is one
-	bool killed;		// killed by the system (6.4.10), until a restart
+	bool killed;		// killed by the system (6.4.10): kept until a factory reset (settings t3_kill)
 	uint32_t kills, tscc_auth_fails;
 	bool st_group;		// the last status heard: to a talkgroup
 	uint8_t st_value;
@@ -592,7 +592,7 @@ void radio_req_roam(uint8_t cmd);
 void radio_req_t3(uint8_t cmd);
 // Poll MS dst for its short data (dmr-trunking.md 7.6): the reply comes as a message; t3.poll_fails counts failures
 void radio_req_t3_poll(uint32_t dst);
-// The digits ("0-9*#", up to 16; "" none) the next call through a dialling gateway sends (dmr-trunking.md 7.6;
+// The digits ("0-9*#", up to 16; "" none) the next call through a dialing gateway sends (dmr-trunking.md 7.6;
 // CONFIG_DMR_TRUNK_GW, else ignored). The system in use only: a new start drops them
 void radio_req_t3_dial(const char *digits);
 // A beep (radio/beep.h beep_t) at the settings' level: key beeps only when key_beep is set (CONFIG_BEEP)

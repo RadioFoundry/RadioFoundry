@@ -16,8 +16,8 @@
 //   t3_ms_poll()      every 10-30 ms: T3_ACT_TUNE means retune to act->chan and listen to act->slot (0: both)
 //   t3_ms_stop()      another zone or channel selected
 //   t3_ms_slot()      once per TDMA frame for each slot heard, at its CACH: the AT bit for the inbound slot after it
-// Access (registration, calls, answers) is built with CONFIG_DMR_TRUNK_TX. T3_ACT_SEND asks the radio to send one
-// CSBK in the inbound slot after the CACH t3_ms_slot() just reported. A radio in listen-only mode never transmits.
+// Access (registration, calls, answers) is built with CONFIG_DMR_TRUNK_TX. T3_ACT_SEND: send a CSBK (or a UDT header
+// and its blocks) on act->slot. A radio in listen-only mode never transmits.
 #ifndef RFOUNDRY_T3_MS_H
 #define RFOUNDRY_T3_MS_H
 
@@ -36,7 +36,6 @@
 #define T3_DT_R12		7	// a UDT block
 
 #define T3_CTRL_MAX		4	// programmed control channel candidates
-#define T3_HUNT_MAX		8	// extra hunt LCNs (Annex D short hunt), resolved through the plan
 #define T3_SITES_MAX		8
 #define T3_TG_MAX		32
 #define T3_DGNA_MAX		15	// DGNA_Address mode talkgroups (6.6.8.1.1)
@@ -57,11 +56,12 @@
 #define T3_OPT_PRIVATE		0x0020	// follow private calls to the radio's ID (on by default)
 #define T3_OPT_REG_TG		0x0040	// register with the talk group (subscription) rather than the system code
 #define T3_OPT_ALS		0x0080	// accept Ambient Listening (6.6.2.6): the radio transmits by itself when called so
-#define T3_OPT_KILL		0x0100	// accept an authenticated kill (6.4.10); the radio keeps it in RAM only
+#define T3_OPT_KILL		0x0100	// accept an authenticated kill (6.4.10); the radio core keeps it in the settings (t3_kill)
 #define T3_OPT_NO_ROAM		0x0200	// stay on a TSCC whatever its signal: no Vote Now sampling, no leaving a weak one
 #define T3_OPT_STUN		0x0400	// accept a stun or revive (6.4.9): authenticated first with K, else as sent
 
-// Defaults (TS 102 361-4 Annex A ranges in the comments)
+// Timers and limits (TS 102 361-4 Annex A ranges in the comments). Fixed, but for the few t3_cfg_t overrides
+// (T_Awake, T_ALS, T_ALS_E, the Vote Now sample)
 #define T3_AWAKE_MS		2000	// T_Awake, 0.1-60 s: power save, awake this long after traffic for the radio
 #define T3_NOSIG_MS		5000	// T_Nosig, 1-15 s: no valid TSCC PDU this long, hunt again
 #define T3_DWELL_MS		700	// hunting: time on a candidate (12 TSCC slots and two short LCs)
@@ -86,8 +86,8 @@
 #define T3_CLI_CALL_MS		10000	// a gateway's caller number belongs to its call granted this soon after
 #define T3_REPEAT_MS		4000	// a status or short data the same as the last heard this soon is the TSCC's repeat
 #define T3_SUPL_HOLD_MS		10000	// supplementary data waits this long for the call that names its sender
-#define T3_DIAL_MAX		44	// dialled digits through a gateway (the Proxy Flag's most, 6.6.2.1.2)
-#define T3_DENIED_MAX		4	// SYS_AREAs that denied registration (cleared at power on)
+#define T3_DIAL_MAX		44	// dialed digits through a gateway (the Proxy Flag's most, 6.6.2.1.2)
+#define T3_DENIED_MAX		4	// SYS_AREAs that denied registration (cleared by t3_ms_start)
 #define T3_ADJ_MAX		4	// adjacent sites' TSCCs (Adjacent_Site, Vote_Now), hunted first
 #define T3_VOTE_MS		360	// sampling an adjacent TSCC after a Vote Now (VOTE_BLK: 2-10 frames)
 #define T3_VOTE_MARGIN_DB	6	// an adjacent TSCC this much stronger is better (no radiated preference)
@@ -118,20 +118,12 @@ typedef struct {
 	t3_plan_t plan;
 	t3_chan_t ctrl[T3_CTRL_MAX];	// control channel candidates, in hunt order
 	uint8_t nctrl;
-	uint16_t hunt[T3_HUNT_MAX];
-	uint8_t nhunt;
 	t3_tg_t tg[T3_TG_MAX];
 	uint8_t ntg;
 	uint16_t opts;			// T3_OPT_*
-	uint16_t nosig_ms;		// 0 = default
-	uint16_t inactive_ms;
-	uint16_t dwell_ms;
 	int16_t leave_dbm;		// signal quality (6.3.2.3): a TSCC below this is left for another; 0 = never
 	uint16_t vote_ms;		// 0 = default
 	uint32_t reg_id;		// the ID registered and called from, 0 = own_id
-	uint16_t trand_tc_ms;		// 0 = default, as the rest
-	uint16_t tp_ms;
-	uint16_t tnp_ms;
 	uint32_t seed;			// random access backoff; 0 = from the ID and the time
 	bool auth_key_set;		// authentication (6.4.8): K and the PSN; without K a challenge is not supported
 	uint8_t auth_key[T3_AUTH_KEY_LEN];
@@ -145,11 +137,11 @@ typedef struct {
 	uint8_t poll_len;
 	uint8_t poll_format;
 	// Supplementary user data (6.4.13), in a format and size prearranged with the system: offered with every voice,
-	// packet data and short data request while supl_len > 0 (up to T3_UDT_MAX octets)
+	// packet data, short data and status request while supl_len > 0 (up to T3_UDT_MAX octets)
 	const uint8_t *supl_data;
 	uint8_t supl_len;
 	uint8_t supl_format;
-	// The digits a call through a dialling gateway uploads (6.6.2.2.3; t3_dial_pack): dial_n BCD digits, the first in
+	// The digits a call through a dialing gateway uploads (6.6.2.2.3; t3_dial_pack): dial_n BCD digits, the first in
 	// the high nibble (CONFIG_DMR_TRUNK_GW)
 	const uint8_t *dial;
 	uint8_t dial_n;
@@ -202,7 +194,6 @@ typedef enum {
 } t3_svc_t;
 
 #define T3_STATUS_POLL		127	// the status that asks the called MS for its own (6.6.6.2)
-#define T3_STATUS_MAX		126	// 0-126 are statuses (126 the emergency alarm, 124 its cancel)
 #define T3_STATUS_EMERGENCY	126	// 6.6.6.3.1
 #define T3_STATUS_EMERGENCY_CANCEL	124	// 6.6.6.3.2
 #define T3_STATUS_ALS_END	123	// ends an ALS call: the TS stops the talker (6.4.14.3.4)
@@ -212,13 +203,13 @@ typedef enum {
 	T3_RES_NONE,
 	T3_RES_PENDING,		// trying, or acknowledged and waiting (ax.progress says which)
 	T3_RES_GRANTED,		// the call has its channel: the engine follows it
-	T3_RES_DONE,		// registered, de-registered, cancelled, call-back accepted
+	T3_RES_DONE,		// registered, de-registered, canceled, call-back accepted
 	T3_RES_REFUSED,		// a NACK: ax.reason
 	T3_RES_NO_ANSWER,	// every try went unanswered
 	T3_RES_TIMEOUT,		// TRand_TC, or TP / TNP after a progress acknowledgement
 	T3_RES_NOT_ALLOWED,	// not now: listen only, not registered, no TSCC, PTT disabled
 	T3_RES_LOST,		// the TSCC was lost meanwhile
-	T3_RES_CANCELLED,	// withdrawn before anything was sent
+	T3_RES_CANCELED,	// withdrawn before anything was sent
 	T3_RES_DIVERTED,	// the called party's calls are diverted: divert_to (6.6.1.3 a 2)
 } t3_res_t;
 
@@ -298,7 +289,6 @@ typedef struct {
 
 	// where the radio is
 	t3_chan_t tuned;
-	uint8_t tuned_slot;
 	uint32_t tuned_ms;
 	t3_act_t q[T3_ACT_QUEUE];	// actions for t3_ms_poll, oldest first
 	uint8_t nq;
@@ -308,7 +298,7 @@ typedef struct {
 	// hunting
 	uint32_t slc_foreign;	// the last foreign C_SYS_Parms code + 1 (0: none): two alike leave a candidate
 	bool retry_tscc;	// the lost TSCC is tried before the list
-	uint8_t hunt_idx;	// next candidate: ctrl[], then hunt[] through the plan
+	uint8_t hunt_idx;	// next candidate: the adjacent sites' TSCCs, then ctrl[]
 	uint32_t hunt_deadline;
 
 	// timers
@@ -334,8 +324,12 @@ typedef struct {
 	// The radio challenging the TSCC before a stun, revive (6.4.9.2) or kill (6.4.10): what it was asked, its
 	// challenge, until when an answer counts
 	uint8_t acvit;		// T3_ACVIT_*
+#define T3_ACVIT_NONE	0
+#define T3_ACVIT_STUN	1
+#define T3_ACVIT_REVIVE	2
+#define T3_ACVIT_KILL	3
 	uint32_t acvit_challenge, acvit_until;
-	bool killed;		// killed (6.4.10): no DMR service at all until the radio restarts
+	bool killed;		// killed (6.4.10): no DMR service; the radio core keeps it until a factory reset
 	uint32_t kills, tscc_auth_fails;	// kills taken; TSCC answers that failed the check
 	// Mass registration (6.4.5.1): a registration due at massreg_at; the window ends at massreg_end
 	bool massreg;
@@ -430,8 +424,6 @@ typedef struct {
 		uint8_t data[T3_UDT_MAX];
 		uint32_t ms;
 	} sd_rx;
-	// The last supplementary user data heard (6.4.13.2). The download doesn't name the sender: src is 0 until the
-	// call's grant or user data that follows does (CONFIG_DMR_TRUNK_SUPL)
 #if CONFIG_DMR_TRUNK_GW
 	// The last caller's number a gateway sent (CLI, table 6.33): n BCD digits as on air, from gateway gw
 	struct {
@@ -445,6 +437,8 @@ typedef struct {
 	} cli;
 #endif
 #if CONFIG_DMR_TRUNK_SUPL
+	// The last supplementary user data heard (6.4.13.2). The download doesn't name the sender: src is 0 until the
+	// call's grant or user data that follows does
 	struct {
 		uint32_t count;
 		uint32_t src;
@@ -528,9 +522,9 @@ bool t3_ms_status(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t s
 // Send UDT short data (1-46 octets in format, T3_UDTF_*; ISO 7 bit: 1-52 characters, one an octet) to dst, a talkgroup
 // or an MS. False (ax.result says why) when it can't start
 bool t3_ms_sdata(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t format, const uint8_t *data, uint8_t len);
-// Calls through a gateway (6.6.2.2.3, 6.6.4.2): t3_ms_request, t3_ms_sdata or t3_ms_pdata to a dialling gateway
+// Calls through a gateway (6.6.2.2.3, 6.6.4.2): t3_ms_request, t3_ms_sdata or t3_ms_pdata to a dialing gateway
 // (t3_dial_gw) upload cfg.dial when it asks. t3_dial_pack packs "0-9", '*', '#' (1-T3_DIAL_MAX) for it: the digits'
-// number, 0 for a bad string. Without CONFIG_DMR_TRUNK_GW a request to a dialling gateway is refused
+// number, 0 for a bad string. Without CONFIG_DMR_TRUNK_GW a request to a dialing gateway is refused
 uint8_t t3_dial_pack(const char *digits, uint8_t bcd[T3_DIAL_MAX / 2]);
 // PSTNI, PABXI, LINEI, DISPATI and their offset-timing addresses (A.4)
 bool t3_dial_gw(uint32_t id);
@@ -545,19 +539,19 @@ bool t3_ms_pdata_ip(t3_ms_t *ms, uint32_t now, uint32_t ipv4);
 // Ask MS dst for its short data (6.6.5.2): UDT_Format format, in 1-4 blocks (a prearranged size). The answer lands in
 // sd_rx; ax.result done once it came. False (ax.result says why) when it can't start
 bool t3_ms_sdata_poll(t3_ms_t *ms, uint32_t now, uint32_t dst, uint8_t format, uint8_t blocks);
-// Call diversion (6.6.7). Set: the services (T3_DIV_*) go to an MS or talkgroup from now on. Clear: the services' own
-// diversion ends (incoming false), or every diversion to this radio does (incoming true). False when it can't start
 // Ask to listen to an MS's surroundings (ALS, 6.6.2.6.2): an individual call it transmits on by itself
 bool t3_ms_request_als(t3_ms_t *ms, uint32_t now, uint32_t dst, bool emergency);
 // An ALS call to the radio: transmit now (als_tx); its T_ALS is over and the call ends once the radio is quiet
 // (als_over: the caller sends t3_ms_end_call)
 bool t3_ms_als_tx(const t3_ms_t *ms, uint32_t now);
 bool t3_ms_als_over(const t3_ms_t *ms, uint32_t now);
-// Stop the MS talking in the voice call followed (6.4.14.3.3, payload interrupt): leave for the TSCC, send status 125 to
-// the talker (or the talkgroup), and come back to the call whatever the answer (ax.result: done = accepted). end_als:
-// end an ALS call the radio asked for instead (6.4.14.3.4.3): status 123, and the radio stays on the TSCC. False when
-// it can't start
+// Stop the MS talking in the voice call followed (6.4.14.3.3, payload interrupt): leave for the TSCC, send status 125
+// to the talker (or the talkgroup), and come back to the call whatever the answer (ax.result: done = accepted).
+// end_als: end an ALS call the radio asked for instead (6.4.14.3.4.3): status 123, and the radio stays on the TSCC.
+// False when it can't start
 bool t3_ms_interrupt(t3_ms_t *ms, uint32_t now, bool end_als);
+// Call diversion (6.6.7). Set: the services (T3_DIV_*) go to an MS or talkgroup from now on. Clear: the services' own
+// diversion ends (incoming false), or every diversion to this radio does (incoming true). False when it can't start
 bool t3_ms_divert(t3_ms_t *ms, uint32_t now, uint8_t services, uint32_t to, bool group);
 bool t3_ms_divert_clear(t3_ms_t *ms, uint32_t now, uint8_t services, bool incoming);
 // On a packet data payload channel, settled: the data service may send (the caller first, 6.6.3.3)
@@ -571,21 +565,17 @@ void t3_ms_data_heard(t3_ms_t *ms, uint32_t now);
 void t3_ms_cancel(t3_ms_t *ms, uint32_t now);
 // The user ends the call being followed: P_MAINT when the radio started it or it is individual, then back
 void t3_ms_end_call(t3_ms_t *ms, uint32_t now);
-// Switching off or leaving the system: de-register when registered. True when a de-registration started
+// De-register when registered (the debug link's DEREG). True when a de-registration started
 bool t3_ms_deregister(t3_ms_t *ms, uint32_t now);
 // The talkgroups in cfg changed (another channel of the system): with T3_OPT_REG_TG, register with them again once
 // they have stayed T3_REG_TG_DELAY_MS. Otherwise nothing: the new ones are followed and talked to at once
 void t3_ms_groups_changed(t3_ms_t *ms, uint32_t now);
-// May the user talk on the payload channel now (the call is ours or a group call, PTT not disabled)?
+// May the user talk on the payload channel now: a voice call, not a broadcast or all-call another radio made, PTT not
+// disabled by P_PROTECT
 bool t3_ms_can_talk(const t3_ms_t *ms);
 // A talkgroup DGNA assigned (6.6.8)
 bool t3_ms_is_dgna(const t3_ms_t *ms, uint32_t tg);
 // Power save: the receiver may sleep now (t3_ms_poll decides; the radio wakes it the moment this goes false)
-#define T3_ACVIT_NONE	0
-#define T3_ACVIT_STUN	1
-#define T3_ACVIT_REVIVE	2
-#define T3_ACVIT_KILL	3
-
 bool t3_ms_asleep(const t3_ms_t *ms);
 const char *t3_res_name(t3_res_t r);
 

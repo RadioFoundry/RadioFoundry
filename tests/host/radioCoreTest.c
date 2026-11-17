@@ -5723,11 +5723,11 @@ static void test_volume_step_of(void)
 }
 
 #if CONFIG_DMR_TRUNK_TX
-// A Tier III site on the sim: TS1 of 461.4625 is the TSCC (C_ALOHA, no registration asked), LCN 1 is that carrier
-#define T3_OWN		3105738u
+// A Tier III site on the sim: TS1 of 450.0125 is the TSCC (C_ALOHA, no registration asked), LCN 1 is that carrier
+#define T3_OWN		2345679u
 #define T3_TG		1u
-#define T3_RX_HZ	461462500u
-#define T3_TX_HZ	461087500u
+#define T3_RX_HZ	450012500u
+#define T3_TX_HZ	455012500u
 
 // A site's PDU comes when the radio can hear it: not in the middle of the radio's own burst list
 static void t3_quiet(void)
@@ -5804,7 +5804,7 @@ static void t3_stage_with(uint16_t opts, const uint8_t *key)
 		memcpy(s->cfg.auth_key, key, T3_AUTH_KEY_LEN);
 	}
 	s->cc = 2;
-	s->cfg.ctrl[0] = (t3_chan_t){ 1, T3_RX_HZ, T3_TX_HZ, 2 };
+	s->cfg.ctrl[0] = (t3_chan_t){ .lcn = 1, .rx_hz = T3_RX_HZ, .tx_hz = T3_TX_HZ, .cc = 2 };
 	s->cfg.nctrl = 1;
 	s->chans[0] = s->cfg.ctrl[0];
 	s->nchans = 1;
@@ -6310,7 +6310,7 @@ static void test_t3_emergency(void)
 	run(400);
 	CHECK(radio_t3v.state == T3_CAMPED);
 
-	// Cancelled: status 124 to the alarm's target
+	// Canceled: status 124 to the alarm's target
 	from = sim.air_count;
 	dmr_emergency_cancel();
 	t3_site_run(600);
@@ -6615,7 +6615,7 @@ static void test_t3_channels(void)
 	t3_site_run(3000);
 	CHECK(radio_t3v.state == T3_CAMPED);
 
-	// A zone scan visits only the conventional channel; cancelled, the radio is back on its system
+	// A zone scan visits only the conventional channel; canceled, the radio is back on its system
 	zones[2].channels[2] = 6;
 	zones[2].count = 3;
 	req(RREQ_ZONE, 1);
@@ -6957,7 +6957,7 @@ static void test_t3_power_save(void)
 	s->cfg.opts = T3_OPT_PRIVATE;
 	s->cfg.ps_rq = 2;	// 1:4
 	s->cc = 2;
-	s->cfg.ctrl[0] = (t3_chan_t){ 1, T3_RX_HZ, T3_TX_HZ, 2 };
+	s->cfg.ctrl[0] = (t3_chan_t){ .lcn = 1, .rx_hz = T3_RX_HZ, .tx_hz = T3_TX_HZ, .cc = 2 };
 	s->cfg.nctrl = 1;
 	s->chans[0] = s->cfg.ctrl[0];
 	s->nchans = 1;
@@ -7004,7 +7004,7 @@ static void test_t3_ip_advice(void)
 	s->cfg.opts = T3_OPT_PRIVATE;
 	s->ip_gw = true;
 	s->cc = 2;
-	s->cfg.ctrl[0] = (t3_chan_t){ 1, T3_RX_HZ, T3_TX_HZ, 2 };
+	s->cfg.ctrl[0] = (t3_chan_t){ .lcn = 1, .rx_hz = T3_RX_HZ, .tx_hz = T3_TX_HZ, .cc = 2 };
 	s->cfg.nctrl = 1;
 	s->chans[0] = s->cfg.ctrl[0];
 	s->nchans = 1;

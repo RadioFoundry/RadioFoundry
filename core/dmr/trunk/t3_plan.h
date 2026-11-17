@@ -3,10 +3,10 @@
 // DMR Tier III channel plans (ETSI TS 102 361-4 Annex C): a logical physical channel number (LPCN, 1..4094) to the
 // MS's receive and transmit frequencies. Three sources, looked up in this order:
 //   1. learned: C_BCAST Chan_Freq (BC_AP) and grant CG_AP blocks heard on the selected system, kept in RAM only and
-//      dropped when the system changes (when the system's record allows learning)
+//      dropped when the network (model or NET) changes (when the system's record allows learning)
 //   2. table: the programmed per-channel list (Annex C.1.1.3, the flexible plan)
 //   3. fixed: the programmed formula (Annex C.1.1.2)
-// A grant whose channel none of these knows can't be followed; the engine counts it (t3.unmapped_lcn).
+// A grant whose channel none of these knows can't be followed; the engine counts it (t3.unmapped, t3.last_unmapped).
 #ifndef RFOUNDRY_T3_PLAN_H
 #define RFOUNDRY_T3_PLAN_H
 
@@ -17,12 +17,14 @@
 #define T3_LEARN_MAX	64
 #define T3_CC_ANY	0xFF	// color code: use the control channel's
 
+// lcn and cc first: 12 bytes, not 16 (64 learned channels, and every table and call copy)
 typedef struct {
 	uint16_t lcn;
+	uint8_t cc;		// color code, T3_CC_ANY = the control channel's
 	uint32_t rx_hz;		// the MS receives here
 	uint32_t tx_hz;		// the MS transmits here
-	uint8_t cc;		// color code, T3_CC_ANY = the control channel's
 } t3_chan_t;
+_Static_assert(sizeof(t3_chan_t) == 12, "t3_chan_t packs into 12 bytes");
 
 // Annex C.1.1.2: fMS_Tx = base + (CHAN - first) x separation; fMS_Rx = fMS_Tx -/+ split
 typedef struct {

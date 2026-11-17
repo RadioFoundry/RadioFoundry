@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The DMR Tier III mobile station engine, receive side (core/dmr/trunk/t3_ms): hunting, confirming the TSCC,
-// following grants, returning, T_Nosig, learned channels, adjacent sites and Vote Now, leaving a weak TSCC, against PDUs
-// built from the standard's layouts.
+// following grants, returning, T_Nosig, learned channels, adjacent sites and Vote Now, leaving a weak TSCC, against
+// PDUs built from the standard's layouts.
 //
 //   make -C tests/host t3MsTest && (cd tests/host && ./t3MsTest)
 #include <stdio.h>
@@ -15,7 +15,7 @@ static int checks;
 #define CHECK(cond, ...) do { checks++; if (!(cond)) { failures++; printf("FAIL %s:%d: ", __FILE__, __LINE__); \
 	printf(__VA_ARGS__); printf("\n"); } } while (0)
 
-#define OWN		3101276u
+#define OWN		2345678u
 #define TG_A		5278505u
 #define TG_B		5310449u
 #define TG_OTHER	5275843u
@@ -116,9 +116,9 @@ static void setup(void)
 	cfg.plan.fixed = (t3_fixed_plan_t){ 455000000u, 1, 3, false, 5000000u };
 	cfg.plan.learn = true;
 	// silent, another system, ours
-	cfg.ctrl[0] = (t3_chan_t){ 0, 452000000u, 457000000u, T3_CC_ANY };
-	cfg.ctrl[1] = (t3_chan_t){ 0, 453000000u, 458000000u, T3_CC_ANY };
-	cfg.ctrl[2] = (t3_chan_t){ 154, RX(154), RX(154) + 5000000u, T3_CC_ANY };
+	cfg.ctrl[0] = (t3_chan_t){ .lcn = 0, .cc = T3_CC_ANY, .rx_hz = 452000000u, .tx_hz = 457000000u };
+	cfg.ctrl[1] = (t3_chan_t){ .lcn = 0, .cc = T3_CC_ANY, .rx_hz = 453000000u, .tx_hz = 458000000u };
+	cfg.ctrl[2] = (t3_chan_t){ .lcn = 154, .cc = T3_CC_ANY, .rx_hz = RX(154), .tx_hz = RX(154) + 5000000u };
 	cfg.nctrl = 3;
 	cfg.tg[0] = (t3_tg_t){ TG_A, T3_TG_LISTEN | T3_TG_TALK };
 	cfg.tg[1] = (t3_tg_t){ TG_B, T3_TG_LISTEN };
@@ -726,7 +726,7 @@ static void test_weak(void)
 	setup();
 	cfg.leave_dbm = -100;
 	cfg.nctrl = 1;
-	cfg.ctrl[0] = (t3_chan_t){ 154, RX(154), RX(154) + 5000000u, T3_CC_ANY };
+	cfg.ctrl[0] = (t3_chan_t){ .lcn = 154, .cc = T3_CC_ANY, .rx_hz = RX(154), .tx_hz = RX(154) + 5000000u };
 	t3_ms_start(&ms, &cfg, T);
 	poll_all(&ms);
 	camp_at(&ms, T3_WEAK_MS * 2, ours, -112);

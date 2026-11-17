@@ -660,7 +660,7 @@ static const flow_t flows[] = {
 	{ "T the actions on a person offer a poll, last", "t3 dlpos:3 9 9 9 1 2 3 4 ctx", "up",
 	  "screen=actions shows=Poll_short_data", 1, false },
 	{ "T no poll on a conventional channel", "9 9 9 1 2 3 4 ctx", "up", "screen=actions hides=Poll_short_data", 1, false },
-	{ "T a poll sent", "t3 dlpos:3 9 9 9 1 2 3 4 ctx", "9", "screen=home toast=Polling_Q1ABC_Joe...", 1, false },
+	{ "T a poll sent", "t3 dlpos:3 9 9 9 1 2 3 4 ctx", "9", "screen=home toast=Polling_Q1ABC_Joe", 1, false },
 	{ "T a poll with no answer", "t3 dlpos:3", "t3state:pollfail", "toast=Poll:_no_short_data", 0, false },
 #if CONFIG_DMR_TRUNK_GW
 	// Telephone calls through the PSTN gateway (dmr-trunking.md 7.6): a typed number on a trunked system, last in Find

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // DMR Tier III PDUs, system identity and channel plans (core/dmr/trunk/t3_pdu, t3_sys, t3_plan): the shared vector
-// file (data/t3_vectors.jsonl, the same file the gateway's Rust codec and the Python reference check), then the rules
-// that aren't a bit layout.
+// file (data/t3_vectors.jsonl: PDUs packed by a separate encoder written from the standard's field tables), then
+// the rules that aren't a bit layout.
 //
 //   make -C tests/host t3PduTest && (cd tests/host && ./t3PduTest)
 #include <stdio.h>
@@ -372,7 +372,8 @@ static void rules(void)
 	CHECK(!t3_learn_add(&learned, &cd), "learn same");
 	cd.tx_hz += 12500;
 	CHECK(t3_learn_add(&learned, &cd) && learned.n == 1, "learn changed");
-	static const t3_chan_t table[] = { { 7, 460000000, 465000000, 3 }, { 8, 460012500, 465012500, T3_CC_ANY } };
+	static const t3_chan_t table[] = { { .lcn = 7, .cc = 3, .rx_hz = 460000000, .tx_hz = 465000000 },
+					    { .lcn = 8, .cc = T3_CC_ANY, .rx_hz = 460012500, .tx_hz = 465012500 } };
 	t3_plan_t plan = { { 450000000, 1, 3, false, 0 }, table, 2, true };
 	t3_chan_t c;
 	CHECK(t3_plan_lookup(&plan, &learned, 7, &c) && c.rx_hz == 456000000 && c.tx_hz == 451012500, "learned wins");

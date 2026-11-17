@@ -97,7 +97,7 @@ static void ch_rec(uint16_t number, const char *name, uint16_t contact, uint16_t
 	channel_t ch;
 	memset(&ch, 0, sizeof ch);
 	strcpy(ch.name, name);
-	ch.rx_hz = ch.tx_hz = 461462500;
+	ch.rx_hz = ch.tx_hz = 450012500;
 	ch.mode = RADIO_MODE_DMR;
 	ch.rx_only = true;
 	ch.color_code = 2;
@@ -158,7 +158,7 @@ static void test_load(void)
 	sys_rec(v, "Metro", TX, T3_OPT_PRIVATE | T3_OPT_NO_ROAM | T3_OPT_STUN | T3_OPT_MONITOR | 0x0001, 9, 0x1234);
 	CHECK(codeplug_kv_set(SYS(0), v, sizeof v));
 	// Written out of entry order, with another system's channel among them
-	chan(ENTRY(5), 0, true, 1, 461462500, 461087500);
+	chan(ENTRY(5), 0, true, 1, 450012500, 455012500);
 	chan(ENTRY(1), 0, false, 2, 461337500, 461237500);
 	chan(ENTRY(3), 1, true, 7, 451000000, 456000000);
 	chan(ENTRY(2), 0, true, 3, 461287500, 461137500);
@@ -175,7 +175,7 @@ static void test_load(void)
 	CHECK(s.nchans == 3 && s.chans[0].lcn == 2 && s.chans[1].lcn == 3 && s.chans[2].lcn == 1);
 	CHECK(s.cfg.plan.table == s.chans && s.cfg.plan.ntable == 3);
 	CHECK(s.cfg.nctrl == 2 && s.cfg.ctrl[0].lcn == 3 && s.cfg.ctrl[1].lcn == 1);
-	CHECK(s.cfg.ctrl[1].rx_hz == 461462500 && s.cfg.ctrl[1].tx_hz == 461087500 && s.cfg.ctrl[1].cc == T3_CC_ANY);
+	CHECK(s.cfg.ctrl[1].rx_hz == 450012500 && s.cfg.ctrl[1].tx_hz == 455012500 && s.cfg.ctrl[1].cc == T3_CC_ANY);
 	CHECK(s.cfg.ntg == 0 && s.talk_id == 0);	// the talkgroups are a channel's
 	CHECK(radio_t3_usable(0) && !radio_t3_usable(2));
 
@@ -203,7 +203,7 @@ static void test_supl(void)
 	fresh();
 	sys_rec(v, "Metro", TX, T3_OPT_PRIVATE, 0, 0);
 	CHECK(codeplug_kv_set(SYS(0), v, sizeof v));
-	chan(ENTRY(0), 0, true, 1, 461462500, 461087500);
+	chan(ENTRY(0), 0, true, 1, 450012500, 455012500);
 	CHECK(radio_t3_load(0, &s) && s.cfg.supl_len == 0);
 
 	const uint8_t rec[] = { T3_UDTF_ISO8, 'U', 'n', 'i', 't', ' ', '7' };
@@ -237,7 +237,7 @@ static void test_poll_long(void)
 	fresh();
 	sys_rec(v, "Metro", TX, T3_OPT_PRIVATE, 0, 0);
 	CHECK(codeplug_kv_set(SYS(0), v, sizeof v));
-	chan(ENTRY(0), 0, true, 1, 461462500, 461087500);
+	chan(ENTRY(0), 0, true, 1, 450012500, 455012500);
 	uint8_t big[2 + T3_UDT_MAX + 20];
 	memset(big, 'y', sizeof big);
 	big[0] = T3_UDTF_ISO8;
@@ -321,7 +321,7 @@ static void test_chan_limit(void)
 	for (uint16_t i = 0; i < RADIO_T3_CHANS; i++) {
 		chan(ENTRY(i), 0, false, (uint16_t)(10 + i), 461000000 + i, 462000000 + i);
 	}
-	chan(ENTRY(RADIO_T3_CHANS), 0, true, 1, 461462500, 461087500);
+	chan(ENTRY(RADIO_T3_CHANS), 0, true, 1, 450012500, 455012500);
 	CHECK(!radio_t3_usable(0) && !radio_t3_load(0, &s));
 	chan(ENTRY(0), 0, true, 10, 461000000, 462000000);	// one among them
 	CHECK(radio_t3_usable(0) && radio_t3_load(0, &s));
@@ -336,7 +336,7 @@ static void test_key(void)
 	fresh();
 	sys_rec(v, "Auth", TX | NEEDS_KEY, 0, 0, 0);
 	CHECK(codeplug_kv_set(SYS(0), v, sizeof v));
-	chan(ENTRY(0), 0, true, 1, 461462500, 461087500);
+	chan(ENTRY(0), 0, true, 1, 450012500, 455012500);
 	CHECK(!radio_t3_usable(0) && !radio_t3_load(0, &s));		// it authenticates: no key, not usable
 	for (int i = 0; i < 16; i++) {
 		k[i] = (uint8_t)(0xA0 + i);
@@ -434,7 +434,7 @@ static void test_refused(void)
 	chan(ENTRY(0), 0, false, 2, 461337500, 461237500);
 	CHECK(!radio_t3_load(0, &s) && !radio_t3_usable(0));	// no control channel
 	CHECK(radio_t3_name(0, name) && strcmp(name, "NoCtrl") == 0);
-	chan(ENTRY(1), 0, true, 1, 461462500, 461087500);
+	chan(ENTRY(1), 0, true, 1, 450012500, 455012500);
 	CHECK(radio_t3_load(0, &s) && radio_t3_usable(0));
 	// A block shorter than the fields read: named, not usable. One with no site values names no sites
 	CHECK(codeplug_kv_set(SYS(0), v, BLOCK + BLOCK_MIN - 1));
@@ -502,8 +502,8 @@ static void test_debuglink(void)
 	// The channel and the load over the link (DL_T3_LOAD's call)
 	uint8_t r[CHAN_LEN] = { 0, CODEPLUG_ENTRY_CHANNEL, CODEPLUG_GROUP_NONE, CODEPLUG_ENTRY_CONTROL };
 	put16(&r[4], 1);
-	put32(&r[6], 461462500);
-	put32(&r[10], 461087500);
+	put32(&r[6], 450012500);
+	put32(&r[10], 455012500);
 	r[14] = 0xFF;
 	CHECK(cpkv(DL_CPKV_SET, ENTRY(0), 0, r, sizeof r, out) == 1 && out[0] == DL_ST_OK);
 	CHECK(radio_t3_load(0, &s) && s.cc == 7 && s.cfg.nctrl == 1);

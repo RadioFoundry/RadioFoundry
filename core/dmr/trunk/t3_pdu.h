@@ -49,7 +49,7 @@
 #define T3_OP_C_MOVE		57
 
 // Gateway and special addresses (A.4)
-#define T3_ID_PSTNI		0xFFFEC0u	// PSTN, PABX, line and dispatcher gateways (aligned timing): dialled digits
+#define T3_ID_PSTNI		0xFFFEC0u	// PSTN, PABX, line and dispatcher gateways (aligned timing): dialed digits
 #define T3_ID_PABXI		0xFFFEC1u
 #define T3_ID_LINEI		0xFFFEC2u
 #define T3_ID_IPI		0xFFFEC3u	// the IP gateway: packet data to an IP destination (multi-part)
@@ -57,7 +57,7 @@
 #define T3_ID_SDMI		0xFFFEC5u
 #define T3_ID_REGI		0xFFFEC6u
 #define T3_ID_MSI		0xFFFEC7u	// call diversion to an MS
-#define T3_ID_DIVERTI		0xFFFEC9u	// call diversion: its address upload, cancelling incoming diversions
+#define T3_ID_DIVERTI		0xFFFEC9u	// call diversion: its address upload, canceling incoming diversions
 #define T3_ID_TSI		0xFFFECAu
 #define T3_ID_DISPATI		0xFFFECBu
 #define T3_ID_PSTNDI		0xFFFED0u	// the same gateways with payload offset timing
@@ -339,7 +339,7 @@ uint32_t t3_sysparms_build(const t3_sysparms_t *in);
 #define T3_UDT_MAX		(T3_UDT_BLOCKS_MAX * T3_UDT_BLOCK - 2)	// 46 octets
 #define T3_UDT_ISO7_MAX		52	// 7-bit symbols in 46 octets (table B.4)
 
-// UDT_Format (7.2.27)
+// UDT_Format (7.2.27, table 7.88)
 #define T3_UDTF_BINARY		0x0
 #define T3_UDTF_ADDRESS		0x1
 #define T3_UDTF_BCD		0x2
