@@ -149,8 +149,11 @@ meters away gets a true bearing. The longitude difference is wrapped to the shor
 
 ### 4.2 Tocall
 
-Destination `APZRDF`: the APZ block is the experimental range anyone may use. A registered tocall (APxxxx from the
-tocalls list) is an open decision.
+Destination `APRDF?`. The [APRS device identifier list](https://github.com/aprsorg/aprs-deviceid) allocates `APRDF?`
+to RadioFoundry, so APRS apps and aprs.fi name the device. The sixth character tells the radios apart: each board's
+`board.toml` sets it (`aprs_tocall`, [board-registry.md](../dev/board-registry.md)), and `tools/boards.py check` keeps it
+unique. A character stays with its radio for good; the device identifier list maps each one to its model. `0` is no
+radio: the host tests build without a board. The debug link shows the tocall in use as `aprs.tocall`.
 
 ### 4.3 Received (RX builds)
 
@@ -358,7 +361,7 @@ in the radio's own APRS-IS client (`CONFIG_NET_APRSIS`, `tcp-services.md` 7), wh
   packet once per 30 s.
 - IS -> RF (`igate_tx`, off): only messages and acks, to a station heard directly in the last 30 minutes, from a
   station not heard on RF in the last 10 minutes, not seen in the last 30 s; sent as `}SRC>DST,TCPIP,OURCALL*:info`.
-- Our own beacons to APRS-IS (`to_is`): `CALL>APZRDF,TCPIP*:info` over the same channel.
+- Our own beacons to APRS-IS (`to_is`): `CALL>APRDF?,TCPIP*:info` over the same channel.
 - Digipeater (RX builds, off): fill-in (WIDE1-1 only) or wide (WIDE1-1 and WIDE2-N), also our own call in the path;
   our call inserted before the WIDE entry, marked used (traced), the hop count decremented; duplicates suppressed
   for 30 s.
@@ -464,7 +467,7 @@ saved and put back once the queued frames and message retries have gone out on t
 
 1. Position, status, message: a bench board decodes Bell 202 / AX.25 itself while the radio sends (an FM receive
    job with APRS decode: frames with a good FCS and their tone measurements, no I/Q). Asserted: a valid FCS,
-   `CALL-SSID>APZRDF` with no digipeaters, the payload (position within 1e-4 degree, `>status`,
+   `CALL-SSID>` the radio's `aprs.tocall` with no digipeaters, the payload (position within 1e-4 degree, `>status`,
    `:ADDRESSEE:text{N`), `aprs.rf_sent` +1, the radio back on its channel, deviation peak 2.0-4.5 kHz, twist under
    6 dB. Printed: mark and space deviation, TX delay (flags before the frame). The position is sent from the DMR
    channel and from the FM VFO.
@@ -484,7 +487,6 @@ is still to run on the HR_C7000 boards. Per-radio levels and results are in the 
 ## 14. Open decisions
 
 - Default triggers: SmartBeaconing on with a 10 min interval fallback, after-PTT and boot off.
-- A registered tocall instead of APZRDF.
 - The LRRP request ID and token for unsolicited reports to BrandMeister; whether LRRP answers should use the APRS
   position when there is no GPS; whether Settings > Location > Send position should drive APRS.
 - The codeplug APRS record's fixed position and frequency encodings.
