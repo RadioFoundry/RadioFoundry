@@ -23,10 +23,10 @@ typedef enum {
 } satellite_pass_status_t;
 
 typedef struct {
-	int64_t aos_us;
-	int64_t los_us;
-	int64_t maximum_elevation_us;
-	double maximum_elevation_deg;
+	int64_t aos_s;
+	int64_t los_s;
+	int64_t maximum_elevation_s;
+	uint16_t maximum_elevation_tenths_deg;
 	bool visible_now;
 	bool aos_horizon_clipped;
 	bool horizon_clipped;
@@ -37,17 +37,17 @@ typedef struct {
 	uint16_t path[SATELLITE_PASS_PATH_POINTS];
 	uint8_t path_count;
 	satellite_pass_status_t status;
-	int64_t start_us;
-	int64_t cursor_us;
-	int64_t end_us;
+	int64_t start_s;
+	int64_t cursor_s;
+	int64_t end_s;
 	uint32_t catalog_id;
-	int64_t epoch_us;
+	int64_t epoch_s;
 	int32_t latitude_e7;
 	int32_t longitude_e7;
 	int32_t altitude_m;
-	double previous_elevation_deg;
-	uint16_t previous_azimuth_deg;
-	uint16_t pass_start_azimuth_deg;
+	int16_t previous_elevation_tenths_deg;
+	uint16_t previous_azimuth_tenths_deg;
+	uint16_t pass_start_azimuth_tenths_deg;
 	bool pass_valid;
 	bool have_sample;
 	bool in_pass;
@@ -64,7 +64,7 @@ void satellite_pass_summary_insert(uint32_t *summaries, uint8_t *count, uint8_t 
 bool satellite_pass_cache_fresh(bool cache_valid, uint32_t now_ms, uint32_t completed_ms);
 
 bool satellite_pass_search_begin(satellite_pass_search_t *search, const satellite_orbit_t *orbit,
-				 int64_t start_us, uint32_t horizon_hours, int32_t latitude_e7,
+				 int64_t start_s, uint32_t horizon_hours, int32_t latitude_e7,
 				 int32_t longitude_e7, int32_t altitude_m);
 satellite_pass_status_t satellite_pass_search_step(satellite_pass_search_t *search,
 						   satellite_orbit_t *orbit, int32_t latitude_e7,

@@ -78,6 +78,8 @@ static void cw_cancel(radio_sm_t *sm);
 #include "position/position.h"		// our position for DMR GPS Info and LRRP (docs/spec/position.md)
 #endif
 
+static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms);
+
 // The radio's own DMR ID when the codeplug's general settings hold none (build value; 0 = refuse DMR transmit)
 #ifndef RADIO_DMR_ID_DEFAULT
 #define RADIO_DMR_ID_DEFAULT	0
@@ -579,22 +581,6 @@ static void bcast_status(radio_sm_t *sm, radio_status_t *st)
 	}
 }
 #endif
-
-// The air band (on a radio with AM receive) and the broadcast receiver's range: receive only, and never DMR
-// (docs/spec/airband-and-broadcast.md 2)
-static bool listen_band(uint32_t hz)
-{
-#if CONFIG_AM_RX
-	if (radio_am_tx_refused(hz))
-		return true;
-#endif
-#if CONFIG_BCAST_FM
-	if (radio_bcast_band(hz))
-		return true;
-#endif
-	(void)hz;
-	return false;
-}
 
 #if CONFIG_SATELLITE_TLE
 #define RADIO_SATELLITE_DEADBAND_HZ 10u
@@ -2303,7 +2289,6 @@ static void data_save_settings(uint32_t now_ms)
 
 static uint32_t em_saved_serial;
 static void ptt_down(radio_sm_t *sm, uint32_t now_ms);
-static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms);
 
 static void emergency_init(const settings_t *st)
 {

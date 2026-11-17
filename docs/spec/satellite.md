@@ -34,6 +34,9 @@ orbital data. A firmware build refreshes its built-in TLE cache from CelesTrak n
 `build/satellite-tle-cache.json`; set `SATELLITE_TLE_OFFLINE=1` to skip network access. A failed refresh uses the last
 cache or checked-in snapshot.
 
+Firmware propagation uses integer fixed-point arithmetic, CORDIC trigonometry and integer roots. Keep double-precision
+math, libm calls and 64-bit division out of the firmware path.
+
 ## 2. Satellite and pass results
 
 For a selected satellite and UTC instant, the calculation reports its topocentric azimuth, elevation, range and range
@@ -44,7 +47,7 @@ new search for the next pass. The retained pass includes at most 16 packed azimu
 
 Pass prediction may be spread across service iterations so a long forecast cannot block radio, input or UI work. The
 pass-list scan performs one orbit initialization or propagation sample per radio tick, with the interval measured from
-completion so a slow software-floating-point step cannot trigger a catch-up burst. A partial prediction is publishable
+completion so a slow propagation step cannot trigger a catch-up burst. A partial prediction is publishable
 as soon as the first pass is found, and its path grows as samples arrive. If inputs
 change, the result must be invalidated or restarted; small GPS variations do not count as an observer change, while a
 movement of about 500 m horizontally or 100 m vertically restarts the forecast. Results from different TLE epochs or

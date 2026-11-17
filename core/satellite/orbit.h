@@ -9,37 +9,37 @@
 #include "satellite/store.h"
 
 typedef struct {
-	double semi_major_axis_km;
-	double mean_motion_rad_s;
-	double mean_motion_dot_rad_s2;
-	double eccentricity;
-	double inclination_rad;
-	double raan_rad;
-	double argument_perigee_rad;
-	double mean_anomaly_rad;
-	double raan_rate_rad_s;
-	double argument_perigee_rate_rad_s;
-	int64_t epoch_us;
+	uint32_t semi_major_axis_m;
+	uint32_t mean_motion_rev_day_e8;
+	int32_t mean_motion_dot_half_rev_day2_e8;
+	uint32_t eccentricity_q30;
+	uint32_t inclination_phase;
+	uint32_t raan_phase;
+	uint32_t argument_perigee_phase;
+	uint32_t mean_anomaly_phase;
+	int32_t raan_rate_phase_s_q8;
+	int32_t argument_perigee_rate_phase_s_q8;
+	int64_t epoch_s;
 	uint32_t catalog_id;
 	bool valid;
 } satellite_orbit_t;
 
 typedef struct {
-	double position_km[3];
-	double velocity_km_s[3];
+	int32_t position_m[3];
+	int32_t velocity_cm_s[3];
 } satellite_orbit_state_t;
 
 typedef struct {
-	double azimuth_deg;
-	double elevation_deg;
-	double range_km;
-	double range_rate_m_s;
+	uint16_t azimuth_tenths_deg;
+	int16_t elevation_tenths_deg;
+	uint32_t range_m;
+	int32_t range_rate_cm_s;
 } satellite_observation_t;
 
 bool satellite_orbit_init(satellite_orbit_t *orbit, const satellite_record_t *record);
-bool satellite_orbit_is_fresh(const satellite_orbit_t *orbit, int64_t utc_us);
-bool satellite_orbit_at(satellite_orbit_t *orbit, int64_t utc_us, satellite_orbit_state_t *state);
-bool satellite_orbit_observe(satellite_orbit_t *orbit, int64_t utc_us, int32_t latitude_e7, int32_t longitude_e7,
+bool satellite_orbit_is_fresh(const satellite_orbit_t *orbit, int64_t utc_s);
+bool satellite_orbit_at(satellite_orbit_t *orbit, int64_t utc_s, satellite_orbit_state_t *state);
+bool satellite_orbit_observe(satellite_orbit_t *orbit, int64_t utc_s, int32_t latitude_e7, int32_t longitude_e7,
 			    int32_t altitude_m, satellite_observation_t *observation);
 
 #endif

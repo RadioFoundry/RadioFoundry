@@ -6,7 +6,6 @@
 #include "satellite/tracking.h"
 
 #define TRACKING_UPDATE_MS 1000u
-#define MICROSECONDS_PER_SECOND INT64_C(1000000)
 #define SATELLITE_OBSERVER_POSITION_TOLERANCE_E7 32000
 #define SATELLITE_OBSERVER_ALTITUDE_TOLERANCE_M 100
 
@@ -31,9 +30,9 @@ static bool observer_moved(const satellite_pass_search_t *search, const position
 	       altitude_delta < -SATELLITE_OBSERVER_ALTITUDE_TOLERANCE_M;
 }
 
-bool satellite_utc_from_fields(uint32_t date_ddmmyy, uint32_t utc_hms, int64_t *utc_us)
+bool satellite_utc_from_fields(uint32_t date_ddmmyy, uint32_t utc_hms, int64_t *utc_s)
 {
-	if (utc_us == NULL || date_ddmmyy > 999999u || utc_hms > 999999u)
+	if (utc_s == NULL || date_ddmmyy > 999999u || utc_hms > 999999u)
 		return false;
 	uint32_t day = date_ddmmyy / 10000u;
 	uint32_t month = date_ddmmyy / 100u % 100u;
@@ -55,8 +54,7 @@ bool satellite_utc_from_fields(uint32_t date_ddmmyy, uint32_t utc_hms, int64_t *
 	for (uint32_t m = 1u; m < month; m++)
 		days += month_days[m - 1u] + (m == 2u && leap_year(year) ? 1u : 0u);
 	days += day - 1u;
-	*utc_us = (days * 86400 + (int64_t)hour * 3600 + (int64_t)minute * 60 + second) *
-		  MICROSECONDS_PER_SECOND;
+	*utc_s = days * 86400 + (int64_t)hour * 3600 + (int64_t)minute * 60 + second;
 	return true;
 }
 
@@ -115,14 +113,14 @@ void satellite_tracking_stop(satellite_tracking_t *tracking)
 
 satellite_tracking_status_t satellite_tracking_update(satellite_tracking_t *tracking,
 						       const position_fix_t *fix, uint8_t position_source,
-						       int64_t utc_us, uint32_t now_ms,
+						       int64_t utc_s, uint32_t now_ms,
 						       uint32_t tuning_step_hz)
 {
 	if (tracking == NULL || !tracking->enabled)
 		return SATELLITE_TRACKING_OFF;
 	if (fix == NULL || position_source == POSITION_SRC_NONE || fix->alt_m == POSITION_ALT_NONE ||
 	    fix->lat < -900000000 || fix->lat > 900000000 || fix->lon < -1800000000 || fix->lon > 1800000000 ||
-	    !satellite_orbit_is_fresh(&tracking->orbit, utc_us) || tuning_step_hz == 0u) {
+	    !satellite_orbit_is_fresh(&tracking->orbit, utc_s) || tuning_step_hz == 0u) {
 		tracking->override_active = false;
 		tracking->status = SATELLITE_TRACKING_UNAVAILABLE;
 		tracking->pass_search_started = false;
@@ -133,38 +131,38 @@ satellite_tracking_status_t satellite_tracking_update(satellite_tracking_t *trac
 		return tracking->status;
 	tracking->initialized = true;
 	tracking->last_update_ms = now_ms;
-	tracking->last_utc_us = utc_us;
+	tracking->last_utc_s = utc_s;
 	tracking->override_active = false;
-	if (!satellite_orbit_observe(&tracking->orbit, utc_us, fix->lat, fix->lon, fix->alt_m,
+	if (!satellite_orbit_observe(&tracking->orbit, utc_s, fix->lat, fix->lon, fix->alt_m,
 				     &tracking->observation) ||
 	    !satellite_doppler_calculate(tracking->nominal_rx_hz, tracking->nominal_tx_hz,
-					 tracking->observation.range_rate_m_s, tuning_step_hz,
+					 tracking->observation.range_rate_cm_s, tuning_step_hz,
 					 &tracking->targets)) {
 		tracking->status = SATELLITE_TRACKING_UNAVAILABLE;
 		return tracking->status;
 	}
-	if (tracking->pass_search_started && tracking->observation.elevation_deg < 0.0 &&
+	if (tracking->pass_search_started && tracking->observation.elevation_tenths_deg < 0 &&
 	    observer_moved(&tracking->pass_search, fix)) {
 		tracking->pass_search_started = false;
 		tracking->pass_forecast_valid = false;
 	}
 	const satellite_pass_t *next_pass = satellite_tracking_next_pass(tracking);
 	if (tracking->pass_search_started && tracking->pass_search.status == SATELLITE_PASS_COMPLETE &&
-	    (utc_us - tracking->pass_search.start_us >= INT64_C(12) * 3600 * MICROSECONDS_PER_SECOND ||
-	     (next_pass != NULL && next_pass->los_us <= utc_us))) {
+	    (utc_s - tracking->pass_search.start_s >= INT64_C(12) * 3600 ||
+	     (next_pass != NULL && next_pass->los_s <= utc_s))) {
 		tracking->pass_search_started = false;
 		tracking->pass_forecast_valid = false;
 	}
 	if (!tracking->pass_search_started) {
 		tracking->pass_search_started = satellite_pass_search_begin(&tracking->pass_search, &tracking->orbit,
-										      utc_us,
+										      utc_s,
 										      SATELLITE_PASS_MAX_HORIZON_HOURS,
 										      fix->lat, fix->lon,
 										      fix->alt_m);
 		tracking->pass_forecast_valid = false;
 	}
 	tracking->override_active = true;
-	tracking->status = tracking->observation.elevation_deg >= 0.0 ?
+	tracking->status = tracking->observation.elevation_tenths_deg >= 0 ?
 			   SATELLITE_TRACKING_VISIBLE : SATELLITE_TRACKING_BELOW_HORIZON;
 	return tracking->status;
 }
@@ -203,11 +201,11 @@ satellite_tracking_status_t satellite_tracking_tick(satellite_tracking_t *tracki
 	position_fix_t fix;
 	uint8_t source = position_fix_for_satellite(&fix, now_ms);
 	uint32_t date_ddmmyy, utc_hms;
-	int64_t utc_us;
+	int64_t utc_s;
 	if (source == POSITION_SRC_NONE || !position_utc_fields(&date_ddmmyy, &utc_hms, now_ms) ||
-	    !satellite_utc_from_fields(date_ddmmyy, utc_hms, &utc_us))
+	    !satellite_utc_from_fields(date_ddmmyy, utc_hms, &utc_s))
 		return satellite_tracking_update(tracking, NULL, POSITION_SRC_NONE, -1, now_ms, tuning_step_hz);
-	return satellite_tracking_update(tracking, &fix, source, utc_us, now_ms, tuning_step_hz);
+	return satellite_tracking_update(tracking, &fix, source, utc_s, now_ms, tuning_step_hz);
 #else
 	(void)now_ms;
 	(void)tuning_step_hz;

@@ -161,7 +161,10 @@ class SatelliteTleTest(unittest.TestCase):
                 mock.patch.object(satellite_tle, "_request", side_effect=request):
             with self.assertRaisesRegex(satellite_tle.SatelliteTleError, "changed unexpectedly"):
                 satellite_tle.install_records(object(), [record])
-        self.assertLess(calls.index(satellite_tle.OP_COMMIT), calls.index(satellite_tle.OP_SYNC_CHANNELS))
+        commit = calls.index(satellite_tle.OP_COMMIT)
+        readback = calls.index(satellite_tle.OP_INFO, commit + 1)
+        self.assertLess(commit, readback)
+        self.assertNotIn(satellite_tle.OP_SYNC_CHANNELS, calls)
 
 
 if __name__ == "__main__":

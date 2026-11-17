@@ -71,7 +71,7 @@ static uint16_t satellite_channel_zone, satellite_channel_pos, satellite_channel
 static uint32_t satellite_next_work_ms;
 #define SATELLITE_SCAN_MAX_RECORDS 10u
 static uint32_t satellite_scan_results[SATELLITE_SCAN_MAX_RECORDS];
-static int64_t satellite_scan_start_utc_us;
+static int64_t satellite_scan_start_utc_s;
 static int32_t satellite_scan_latitude_e7, satellite_scan_longitude_e7;
 static int16_t satellite_scan_altitude_m;
 static uint8_t satellite_scan_status, satellite_scan_completed, satellite_scan_total;
@@ -142,7 +142,7 @@ static void publish(void)
 	const satellite_pass_t *next_pass = satellite_tracking_next_pass(&satellite_tracking);
 	shared_view.satellite_pass_valid = sm.view.satellite_tracking && satellite_tracking.enabled &&
 		next_pass != NULL;
-	shared_view.satellite_los_known = shared_view.satellite_pass_valid && next_pass->los_us != 0;
+	shared_view.satellite_los_known = shared_view.satellite_pass_valid && next_pass->los_s != 0;
 	shared_view.satellite_pass_visible_now = shared_view.satellite_pass_valid &&
 		next_pass->visible_now;
 	shared_view.satellite_pass_horizon_clipped = shared_view.satellite_pass_valid &&
@@ -153,31 +153,31 @@ static void publish(void)
 	if (shared_view.satellite_pass_valid) {
 		memcpy(shared_satellite_path.points, satellite_tracking.pass_search.path,
 		       (size_t)shared_satellite_path.count * sizeof(shared_satellite_path.points[0]));
-		shared_satellite_path.azimuth_deg = (uint16_t)(satellite_tracking.observation.azimuth_deg + 0.5);
+		shared_satellite_path.azimuth_deg =
+			(uint16_t)((satellite_tracking.observation.azimuth_tenths_deg + 5u) / 10u);
 		if (shared_satellite_path.azimuth_deg >= 360u)
 			shared_satellite_path.azimuth_deg = 0u;
 	}
-	if (shared_view.satellite_pass_valid && next_pass->aos_us > satellite_tracking.last_utc_us) {
-		int64_t seconds = (next_pass->aos_us - satellite_tracking.last_utc_us) / 1000000;
+	if (shared_view.satellite_pass_valid && next_pass->aos_s > satellite_tracking.last_utc_s) {
+		int64_t seconds = next_pass->aos_s - satellite_tracking.last_utc_s;
 		shared_view.satellite_aos_in_s = seconds > UINT32_MAX ? UINT32_MAX : (uint32_t)seconds;
 	}
-	if (shared_view.satellite_pass_valid && next_pass->los_us > satellite_tracking.last_utc_us) {
-		int64_t seconds = (next_pass->los_us - satellite_tracking.last_utc_us) / 1000000;
+	if (shared_view.satellite_pass_valid && next_pass->los_s > satellite_tracking.last_utc_s) {
+		int64_t seconds = next_pass->los_s - satellite_tracking.last_utc_s;
 		shared_view.satellite_los_in_s = seconds > UINT32_MAX ? UINT32_MAX : (uint32_t)seconds;
 	}
 	shared_view.satellite_pass_visible_now = shared_view.satellite_pass_valid &&
-		satellite_tracking.observation.elevation_deg >= 0.0 &&
-		satellite_tracking.last_utc_us >= next_pass->aos_us &&
-		(next_pass->los_us == 0 || satellite_tracking.last_utc_us <= next_pass->los_us);
+		satellite_tracking.observation.elevation_tenths_deg >= 0 &&
+		satellite_tracking.last_utc_s >= next_pass->aos_s &&
+		(next_pass->los_s == 0 || satellite_tracking.last_utc_s <= next_pass->los_s);
 	if (shared_view.satellite_pass_valid && !shared_view.satellite_pass_visible_now &&
-	    next_pass->aos_us > satellite_tracking.last_utc_us) {
+	    next_pass->aos_s > satellite_tracking.last_utc_s) {
 		shared_view.satellite_pass_visible_now = false;
 	}
 	shared_view.satellite_max_elevation_tenths = shared_view.satellite_pass_valid ?
-		(uint16_t)(next_pass->maximum_elevation_deg * 10.0 + 0.5) : 0u;
+		next_pass->maximum_elevation_tenths_deg : 0u;
 	shared_view.satellite_elevation_tenths = satellite_tracking.enabled ?
-		(int16_t)(satellite_tracking.observation.elevation_deg * 10.0 +
-			 (satellite_tracking.observation.elevation_deg >= 0.0 ? 0.5 : -0.5)) : 0;
+		satellite_tracking.observation.elevation_tenths_deg : 0;
 #endif
 	dtmf_ready = sm.view.dtmf_ready;
 	radio_sm_shown_view(&sm, &shared_view);	// a roaming survey visit: the screens keep the site it left
@@ -284,12 +284,12 @@ static void satellite_scan_request(bool enabled, uint32_t now_ms)
 	satellite_scan_search_started = false;
 	position_fix_t fix;
 	uint32_t date_ddmmyy, utc_hms;
-	int64_t utc_us;
+	int64_t utc_s;
 #if CONFIG_POSITION
 	uint8_t source = position_fix_for_satellite(&fix, now_ms);
 	if (source == POSITION_SRC_NONE || fix.alt_m == POSITION_ALT_NONE ||
 	    !position_utc_fields(&date_ddmmyy, &utc_hms, now_ms) ||
-	    !satellite_utc_from_fields(date_ddmmyy, utc_hms, &utc_us)) {
+	    !satellite_utc_from_fields(date_ddmmyy, utc_hms, &utc_s)) {
 		satellite_scan_status_set(RADIO_SAT_SCAN_UNAVAILABLE);
 		return;
 	}
@@ -297,12 +297,12 @@ static void satellite_scan_request(bool enabled, uint32_t now_ms)
 	(void)fix;
 	(void)date_ddmmyy;
 	(void)utc_hms;
-	(void)utc_us;
+	(void)utc_s;
 	satellite_scan_status_set(RADIO_SAT_SCAN_UNAVAILABLE);
 	return;
 #endif
 	xSemaphoreTake(view_lock, portMAX_DELAY);
-	satellite_scan_start_utc_us = utc_us;
+	satellite_scan_start_utc_s = utc_s;
 	satellite_scan_latitude_e7 = fix.lat;
 	satellite_scan_longitude_e7 = fix.lon;
 	satellite_scan_altitude_m = fix.alt_m;
@@ -319,11 +319,11 @@ static void satellite_scan_request(bool enabled, uint32_t now_ms)
 
 static void satellite_scan_add_result(uint8_t index, const satellite_pass_t *pass)
 {
-	int64_t delta = pass->aos_us - satellite_scan_start_utc_us;
-	uint32_t eta_minutes = delta <= 0 ? 0u : (uint32_t)((delta + INT64_C(59999999)) / INT64_C(60000000));
+	int64_t delta = pass->aos_s - satellite_scan_start_utc_s;
+	uint32_t eta_minutes = delta <= 0 ? 0u : ((uint32_t)delta + 59u) / 60u;
 	if (eta_minutes > 1440u)
 		eta_minutes = 1440u;
-	uint32_t maximum_elevation = (uint32_t)(pass->maximum_elevation_deg + 0.5);
+	uint32_t maximum_elevation = (pass->maximum_elevation_tenths_deg + 5u) / 10u;
 	if (maximum_elevation > 90u)
 		maximum_elevation = 90u;
 	uint32_t packed = satellite_pass_summary_pack(index, (uint16_t)eta_minutes,
@@ -363,7 +363,7 @@ __attribute__((noinline)) static void satellite_scan_service(uint32_t now_ms)
 		}
 		satellite_tracking.enabled = false;
 		if (!satellite_pass_search_begin(&satellite_tracking.pass_search, &satellite_tracking.orbit,
-						 satellite_scan_start_utc_us, SATELLITE_PASS_MAX_HORIZON_HOURS,
+						 satellite_scan_start_utc_s, SATELLITE_PASS_MAX_HORIZON_HOURS,
 						 satellite_scan_latitude_e7, satellite_scan_longitude_e7,
 						 satellite_scan_altitude_m)) {
 			satellite_scan_advance_record();
