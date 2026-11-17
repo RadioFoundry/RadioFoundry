@@ -1072,6 +1072,21 @@ static void rx_sleep(bool sleep)
 	}
 }
 
+// The debug link's CHIP_REG (board.chip_reg): chip 1 is the HR_C5000, pages 1 and 4 (2 and 3 are the data and
+// vocoder FIFOs, which a read would drain). Straight on the bus, each access one transaction; the driver's next
+// set-up overwrites a write
+bool md380_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write)
+{
+	if (chip != 1 || (page != HRC_PAGE_AUX && page != HRC_PAGE_SYS) || (write && *val > 0xFFu)) {
+		return false;
+	}
+	hrc_t *h = hrc5000_hrc(&r.modem);
+	uint8_t v = (uint8_t)*val;
+	bool ok = (!write || hrc_write(h, page, reg, v)) && hrc_read(h, page, reg, &v);
+	*val = v;
+	return ok;
+}
+
 const hal_radio_t md380_radio = {
 	.init = init,
 	.set_mode = set_mode,

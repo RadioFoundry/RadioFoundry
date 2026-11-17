@@ -111,6 +111,7 @@ const board_t board = {
 	.side_key_names = side_key_names,
 	.side_key_count = sizeof(side_keys),
 	.radio = &md380_radio,
+	.chip_reg = md380_chip_reg,
 	.power = &md380_power,
 	.flash = &stm32_spi_flash,
 #if CONFIG_DIAG
