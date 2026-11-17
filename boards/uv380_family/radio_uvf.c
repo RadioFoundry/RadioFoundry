@@ -612,6 +612,11 @@ void uvf_rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx_retr
 
 static void dmr_tx_end(void);
 
+// A radio whose air interface was checked on air, receive and transmit, says so in its board.mk
+#ifndef UVF_AIR_VERIFIED
+#define UVF_AIR_VERIFIED	0
+#endif
+
 // The shared DMR glue's view of this board: the modem's interrupt lines are PC0-PC2
 static const stm32_hrc_dmr_board_t dmr_board = {
 	.int_port = GPIOC,
@@ -623,6 +628,7 @@ static const stm32_hrc_dmr_board_t dmr_board = {
 	// The AT1846S's DMR set-up gives the HR_C6000 the low-frequency baseband with its audio filters off
 	// (hardware-dm1701.md, Air interface)
 	.air_tap = true,
+	.air_verified = UVF_AIR_VERIFIED,
 #endif
 	// rf_to_rx() puts the AT1846S on the RX frequency after every burst and rf_key() back on TX for the next, so the
 	// slots between hear the repeater's outbound on a split channel too

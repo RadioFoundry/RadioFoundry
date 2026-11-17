@@ -1056,8 +1056,8 @@ What a working DMR driver does that a first attempt tends to miss. Details are i
 (`hal/hal_baseband.h`) under `CONFIG_AIR`; the glue (`platform/hrc7000/dmr_glue.c`) exports them as `hrc_air` and
 `hrc_baseband` for a board's `board.air` and `board.baseband`. It receives through the soft modem on the FM receive copy and transmits through the physical layer. Fit:
 continuous profiles at 4800 symbols/s (2400 as `AIR_FIT_RATE_DOUBLED`), 2 or 4 levels; every fit carries
-`AIR_FIT_UNTESTED`: the glue has no board flag that clears it (the HR_C6000 boards' `air_verified`). The core doesn't
-read it. What has been checked on air is in 10.4.
+`AIR_FIT_UNTESTED` unless the board sets `hrc_dmr_board_t.air_verified`, once its receive and transmit were checked on
+air (10.4; [feature-matrix.md](../feature-matrix.md) has which radios).
 
 | Item | How |
 |---|---|
