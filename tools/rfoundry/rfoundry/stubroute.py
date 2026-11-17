@@ -83,7 +83,7 @@ def run(board, image, port=None, backup_dir=None, log=print, stubtool=None):
             log("stub     trying to finish the install through the stub, in case it still runs")
             rc, err2 = _call(stubtool, argv(board.id, path, port, backup_dir, attach=True))
             if err2 is not None:
-                rc = rc or 1
+                log("stub     the stub did not finish it: %s" % err2)
                 log("stub     NOT INSTALLED: the radio has no committed application and starts in its bootloader (DFU) "
                     "until an install finishes. Run the same rfoundry flash again without --route: with the radio in DFU "
                     "it takes the bootloader route (--stock FILE if it asks for the key or the codec)")
