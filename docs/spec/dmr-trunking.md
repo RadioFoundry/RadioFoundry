@@ -4,8 +4,9 @@
 
 A radio on a DMR Tier III trunked system (ETSI TS 102 361-4) finds the system's trunked site control channel (TSCC),
 stays on it, and follows the channel grants for the calls it wants to hear. Switch: `CONFIG_DMR_TRUNK`, a child of
-`CONFIG_DMR` (`docs/build-config.md`); the access side (section 7) is `CONFIG_DMR_TRUNK_TX`, a child of it. The radio core runs the engine on
-a system from the codeplug (section 12) or one set up over the debug link (section 11).
+`CONFIG_DMR` ([build-config.md](../build-config.md)); the access side (section 7) is `CONFIG_DMR_TRUNK_TX`, a child of
+it. The radio core runs the engine on a system from the codeplug (section 12) or one set up over the debug link
+(section 11).
 
 | Section | Topic |
 |---|---|
@@ -24,13 +25,14 @@ a system from the codeplug (section 12) or one set up over the debug link (secti
 
 ## 1. Standards position
 
-Everything here comes from ETSI TS 102 361-4 (the Tier III trunking protocol) and TS 102 361-1 (the air interface).
-Section and table numbers below are TS 102 361-4's unless marked -1.
+Everything here comes from ETSI TS 102 361-4 (the Tier III trunking protocol), TS 102 361-1 (the air interface) and
+TS 102 361-2 (voice and generic services). Section and table numbers below are TS 102 361-4's unless marked -1 or -2.
 
 - Only the standard's PDUs and procedures, with the standard feature set ID (FID 0). A CSBK with another FID is
   counted and ignored.
-- No vendor's own trunking protocol. A system that sends its control channel with another CRC or framing fails the
-  standard CRC checks and is never confirmed as a TSCC (section 9.2 checks this on recordings).
+- Only the standard's trunking protocol, no proprietary one: FID 0 PDUs with the standard's CRC and framing. A system
+  that sends its control channel with another CRC or framing fails the standard CRC checks and is never confirmed as
+  a TSCC (section 9.2 checks this on recordings).
 - On a trunked system the radio transmits only the access side (section 7) and the calls it is granted.
 - Authentication only as section 7.10 gives it: with a key K, the radio answers a challenge and checks the TSCC's
   answer to its own; without one, a challenge is answered "not supported".
@@ -48,7 +50,7 @@ All in `core/dmr/trunk/`. None includes a board, platform or RTOS header; the ho
 
 ## 3. PDUs
 
-A CSBK is 12 octets after the BPTC (-1 9.3.6): octet 0 holds LB, PF and the 6-bit opcode, octet 1 the FID, octets 2-9
+A CSBK is 12 octets once the BPTC is decoded: octet 0 holds LB, PF and the 6-bit opcode, octet 1 the FID, octets 2-9
 the fields, most significant bit first, octets 10-11 the CRC-CCITT.
 
 | Block | CRC mask (-1 B.3.12) |
@@ -57,16 +59,17 @@ the fields, most significant bit first, octets 10-11 the CRC-CCITT.
 | MBC header | 0xAAAA |
 | MBC continuation (last block) | none; the CRC covers the continuation only |
 
-Decoded opcodes (`t3_csbk_parse`): C_ALOHA, C_BCAST, C_AHOY, C_RAND, C_ACKD, C_ACKU, P_ACKD, P_ACKU, P_CLEAR,
-P_PROTECT, P_MAINT and the grants PV, TV, BTV, PD, TD (and the duplex and multi-item variants). `t3_csbk_parse`
-returns false for another opcode but still fills the opcode, FID and the raw fields. `t3_csbk_build` packs the same
-set; the engine's tests and the access side use it.
+Decoded opcodes (`t3_csbk_parse`): C_ALOHA, C_BCAST, C_AHOY, C_ACKVIT, C_MOVE, C_RAND, C_ACKD, C_ACKU, P_ACKD, P_ACKU,
+P_CLEAR, P_PROTECT, P_MAINT and the grants PV, TV, BTV, PD, TD (and the duplex and multi-item variants). `t3_csbk_parse`
+returns false for another opcode but still fills the opcode, FID and the raw fields. `t3_csbk_build` packs the same set;
+the engine's tests and the access side use it.
 
 | PDU | Fields kept |
 |---|---|
 | C_ALOHA | TSCCAS, site timeslot sync, version, offset, active connection, Mask, service function, NRand_Wait, Reg, Backoff, C_SYScode, MS address |
 | Grants | LPCN (12 bits), slot, late entry (TV/BTV), high rate (PD/TD), emergency, offset, destination, source |
 | C_BCAST | announcement type, parameters 1 (14 bits), Reg, Backoff, C_SYScode, parameters 2 (24 bits) |
+| C_MOVE | Mask, Reg, Backoff, LPCN, MS address |
 | P_CLEAR | LPCN to return to (0: the last TSCC), group flag, destination, source |
 | P_PROTECT, P_MAINT | kind, destination, source |
 
@@ -91,7 +94,8 @@ C_SYScode is 16 bits: MODEL (2), NET and SITE (14 together), PAR (2).
 PAR says which control categories may use the TSCC: 1 A, 2 B, 3 both.
 
 `t3_authorize` checks a TSCC in the order of 6.3.2.2.2: model, network, the radio's site list (empty: any site), PAR
-against the radio's category. SYS_AREA is the top DMRLA bits of SITE. Response_Check is bits 7-2 of the code.
+against the radio's category. SYS_AREA is the top DMRLA bits of SITE. Response_Check is bits 7-2 of the code (bit 0 the
+least significant).
 
 **Mask rule (6.2.1.1.1).** An Aloha's Mask (0-24) applies to a radio when the Mask low bits of the Aloha's address and
 the radio's own match. Mask 0 means every radio.
@@ -141,7 +145,7 @@ retune not yet taken and what was queued after it.
 | FOLLOW | listens to one slot of a payload channel |
 
 **Hunt.** The candidates are the adjacent sites' control channels (7.18), then the programmed control channels in
-order, then the extra hunt LPCNs through the plan. Each gets a dwell (700 ms: at least 12 TSCC slots and two short
+order. Each gets a dwell (700 ms: at least 12 TSCC slots and two short
 LCs). After a loss, the lost TSCC is tried first.
 
 - An authorized C_ALOHA confirms the channel: the radio camps, and keeps the color code it was heard with.
@@ -152,6 +156,18 @@ LCs). After a loss, the lost TSCC is tried first.
 **Camped.** Every valid PDU from the TSCC (CRC good, our color code; Alohas and broadcasts also with our system code)
 restarts T_Nosig. When it runs out, the engine hunts again. Short LCs don't restart it: every channel of the site
 carries them. The registration state follows the latest Aloha or broadcast Reg flag:
+
+| Reg | Listen-only | State |
+|---|---|---|
+| 0 | either | not needed |
+| 1 | yes, or a build without access (`CONFIG_DMR_TRUNK_TX` off) | listen |
+| 1 | no | needed; the access side registers (section 7.2) |
+
+A registration record holds the area it was made in: MODEL, NET and SYS_AREA (the DMRLA top bits of SITE, 6.4.4).
+DMRLA 0 is reserved (361-4 table 6.5), so a radio without one takes every site as an area of its own and registers
+on each site it moves to.
+A TSCC of another area needs a new registration. An area that denied registration stays denied until the engine
+restarts.
 
 **Composite TSCC.** A site with few channels may lend the TSCC's slot to a call (5.3.2). Its grant names the TSCC's
 own channel and slot, and the radio follows it like any other; P_CLEAR to channel 0 brings it back to the TSCC. While
@@ -166,24 +182,11 @@ P_SYS_Parms with type 0, or another system's, changes nothing. A radio waiting t
 was in another call) follows a Late_Entry grant heard on the lent slot for one of its talkgroups (6.6.2.4.1), as on
 the TSCC. A radio switched on meanwhile camps only at the Aloha: a grant doesn't carry the system's identity.
 
-
-| Reg | Listen-only | State |
-|---|---|---|
-| 0 | either | not needed |
-| 1 | yes | listen |
-| 1 | no | needed; the access side registers (section 7.2) |
-
-A registration record holds the area it was made in: MODEL, NET and the DMRLA top bits of SITE (SYS_AREA, 6.4.4).
-DMRLA 0 is reserved (361-4 table 6.5), so a radio without one takes every site as an area of its own and registers
-on each site it moves to.
-A TSCC of another area needs a new registration. An area that denied registration stays denied until the engine
-restarts.
-
 **Grants.** While camped, a grant is followed when:
 
 | Grant | Followed when |
 |---|---|
-| TV, BTV | the radio is the source (its own call); or, unless it is a late-entry grant for a talkgroup call the user left, the talkgroup is in the system's list with the listen flag; or it is an all-call (ALLMSID, ALLMSIDL, ALLMSIDZ) and all-calls are on; or the grant is an emergency and emergencies on any talkgroup are on; or monitor is on |
+| TV, BTV | the radio is the source (its own call); otherwise, unless it is a late-entry grant for a talkgroup call the user left: the talkgroup is in the system's list with the listen flag, or it is an all-call (ALLMSID, ALLMSIDL, ALLMSIDZ) and all-calls are on, or the grant is an emergency and emergencies on any talkgroup are on, or monitor is on |
 | PV | the radio is the source; or the destination is the radio's ID and private calls are on |
 | PD, TD (and the multi-item 55, 56) | as data calls: PD with the radio as source or target; TD with the radio as source, or to a talkgroup it listens to (section 7.7) |
 
@@ -227,11 +230,11 @@ every burst; the radio core only sends it in the slot it is told.
 | `t3_ms_request` | PTT while camped: a voice call to a talkgroup or an individual. False (`ax.result` says why) when not allowed now |
 | `t3_ms_cancel` | PTT released before the grant |
 | `t3_ms_end_call` | the user ends the call being followed |
-| `t3_ms_deregister` | switching off or leaving the system |
+| `t3_ms_deregister` | the debug link's DEREG. Leaving a system or switching off sends nothing (section 12.4) |
 | `t3_ms_can_talk` | may the user talk on the payload channel now |
 
 `ax.result` holds the outcome: pending, granted, done, refused (`ax.reason` has the reason code), no answer, timeout,
-not allowed, lost (the TSCC was lost meanwhile), cancelled.
+not allowed, lost (the TSCC was lost meanwhile), canceled.
 
 ### 7.1 Random access (6.2)
 
@@ -247,10 +250,10 @@ One request at a time, on the TSCC's first slot (TS1 on a dedicated TSCC).
 | Overall | TRand_TC from the request, then timeout |
 | C_WACKD, C_QACKD | stop retrying; TP_Timer for a call, TNP_Timer for the rest; a further one restarts it |
 
-Which CACH's AT bit describes the TSCC's inbound depends on the Aloha's Offset bit. A CACH describes the inbound slot its
-TC names (361-1 4.5). With aligned timing (Offset 0) logical channel 1 sends on inbound slot 2 (361-1 table 5.1), so the
-TSCC slot's AT is in the CACH naming the other slot: the one right after the TSCC's own burst, where a PDU wanting an
-answer is followed by AT busy (361-4 6.2.1.1.3). With offset timing it is the CACH naming the TSCC's slot
+Which CACH's AT bit describes the TSCC's inbound depends on the Aloha's Offset bit. A CACH describes the inbound slot
+its TC names (361-1 4.5). With aligned timing (Offset 0) logical channel 1 sends on inbound slot 2 (361-1 table 5.1), so
+the TSCC slot's AT is in the CACH naming the other slot: the one right after the TSCC's own burst, where a PDU wanting
+an answer is followed by AT busy (361-4 6.2.1.1.3). With offset timing it is the CACH naming the TSCC's slot
 (`t3_ms_at_tc`).
 
 | Service Function | Allows |
@@ -311,9 +314,9 @@ De-registration is the same request with Reg_Dereg 0. After it the engine doesn'
 | cancel, nothing sent yet | dropped |
 | cancel, sent | a C_RAND kind cancel to the same target; the TSCC answers C_ACKD Message_Accepted |
 
-PTT on the payload channel (`t3_ms_can_talk`): following, not disabled by P_PROTECT, and not a broadcast (BTV_GRANT)
-or all-call someone else made. At the end of a call the radio made, or of any private call, `t3_ms_end_call` sends N_Maint P_MAINT
-(DISCON, to TSI) in consecutive frames on the call's slot, then returns. A talkgroup call's recipient returns
+PTT on the payload channel (`t3_ms_can_talk`): following, not disabled by P_PROTECT, and not a broadcast (BTV_GRANT) or
+all-call someone else made. At the end of a call the radio made, or of any private call, `t3_ms_end_call` sends N_Maint
+P_MAINT (DISCON, to TSI) in consecutive frames on the call's slot, then returns. A talkgroup call's recipient returns
 without sending, and the call's late-entry grants don't bring it back.
 
 ### 7.4 Answers (6.4.8, 6.6.1.2.2, 6.6.2.3)
@@ -379,10 +382,10 @@ before it, unmasked (TS 102 361-1 8.2.2.5).
 | DPF, SAP | 0000b, 0000b |
 | UDT_Format | table 7.88, as the caller gives it |
 | Pad Nibble | BCD, ISO 7 bit, ISO 8 bit, UTF-16 and mixed: the 1111b pad nibbles, counted (B.3.3-B.3.5, B.3.8, B.3.9; a last BCD digit 1111b, DigitNULL, counts); ISO 7 bit counts the spare bits of its last octet too (table B.4); other formats: 0, pad octets 0 |
-
-ISO 7-bit text is given one character an octet (1-52) and packed 7 bits each, first character first.
 | UAB | blocks less one |
 | SF, opcode | 0 (the user's data); C_UDTHD outbound, C_UDTHU inbound |
+
+ISO 7-bit text is given one character an octet (1-52) and packed 7 bits each, first character first.
 
 `t3_ms_sdata` sends one to an MS or a talkgroup:
 
@@ -431,10 +434,15 @@ bits (tables 6.40, 6.50, 6.55, 6.57). A status's SUPED_SV is bit 5, above the st
 | the same to a talkgroup the radio listens to | kept, not answered |
 | the grant, user data or status that follows to the same destination, within `T3_SUPL_HOLD_MS` (10 s) | names the sender: `supl_rx.src` (0 until then) |
 
+The download doesn't carry the sender (figures 6.38, 6.39), so the radio holds it until the call does. A repeat within
+`T3_REPEAT_MS` is answered again and keeps a sender already named. The data comes from the system's codeplug record
+(12.8), or the debug link stages it (`SUPL`, [debuglink.md](debuglink.md) 3.26); the view shows the last heard
+(`supl_*`).
+
 All of it is built with `CONFIG_DMR_TRUNK_SUPL` ([build-config.md](../build-config.md)). Without it the radio offers
 none, and a download from SUPLI is taken off the air unanswered (it is never short data).
 
-**Calls through a dialling gateway (6.6.2.2.3, 6.6.4.2).** A voice, short data or packet data request to PSTNI,
+**Calls through a dialing gateway (6.6.2.2.3, 6.6.4.2).** A voice, short data or packet data request to PSTNI,
 PABXI, LINEI or DISPATI (or their offset-timing addresses, A.4) carries no called number: the TSCC asks for it.
 `t3_cfg_t.dial` holds the digits (`t3_dial_pack`: `0-9`, `*`, `#`, up to 44; table 7.46).
 
@@ -443,24 +451,20 @@ PABXI, LINEI or DISPATI (or their offset-timing addresses, A.4) carries no calle
 | the request | individual (a talkgroup is refused), destination the gateway, Proxy Flag 0 for 1-20 digits, 1 for 21-44 (6.6.2.1.2); refused without digits |
 | C_AHOY from that gateway to the radio | a C_UDTHU to the gateway, SF 1, BCD (B.3.3: the first digit in the high nibble, Pad Nibble per table B.3), in the slots that follow (tables 6.35, 6.41, 6.54); the request goes on |
 | C_AHOY from SDMI or SUPLI | as without a gateway: the message, the supplementary data |
-| C_UDTHD from a dialling gateway, SF 1, BCD, to the radio | the caller's number (CLI, table 6.33): kept in `cli`, answered C_ACKU Message_Accepted to the gateway when A is set |
+| C_UDTHD from a dialing gateway, SF 1, BCD, to the radio | the caller's number (CLI, table 6.33): kept in `cli`, answered C_ACKU Message_Accepted to the gateway when A is set |
 | the same to a talkgroup the radio listens to | kept, not answered |
 
-Built with `CONFIG_DMR_TRUNK_GW`. Without it a request to a dialling gateway is refused and a caller's number is
+Built with `CONFIG_DMR_TRUNK_GW`. Without it a request to a dialing gateway is refused and a caller's number is
 dropped unanswered. Two places set the digits of the system in use: the debug link (DIAL,
 [debuglink.md](debuglink.md)) and Find (`radio_req_t3_dial`, up to 16 digits; a new start drops them).
 
 | On screen | |
 |---|---|
 | Find, digits typed on a trunked system | a last row "Phone call 5551234": the digits go to the radio at once, PTT on the row calls PSTNI privately (one call), OK makes PSTNI the talk target for now. No actions, never the channel's own target |
-| a call from a dialling gateway | the caller's number in place of the gateway's ID, on the call screen and in the private call notice; "Phone line" when the gateway gave none |
+| a call from a dialing gateway | the caller's number in place of the gateway's ID, on the call screen and in the private call notice; "Phone line" when the gateway gave none |
 
 The number belongs to a call when the grant from that gateway to the same destination comes within `T3_CLI_CALL_MS`
 (10 s) of it (`t3_call_t.cli`): the TSCC downloads it in the call set-up (figure 6.45).
-
-The download doesn't carry the sender (figures 6.38, 6.39), so the radio holds it until the call does. A repeat within
-`T3_REPEAT_MS` is answered again and keeps a sender already named. The data comes from the system's codeplug record (12.8), or the debug
-link stages it (`SUPL`, [debuglink.md](debuglink.md) 3.26); the view shows the last heard (`supl_*`).
 
 ### 7.7 Packet data (6.6.3)
 
@@ -587,9 +591,10 @@ Service_Kind 1110b, whose source is below the gateway block (0-0xFFFCDF) is a ch
 3. The response is XORed with the PSN.
 
 The radio answers C_ACKU, Reason Authentication_Response (0x48, table 7.42), the target the response, the additional
-address its own ID; on the payload channel, P_ACKU (6.6.2.3.2.2). A challenge during an access (a registration or a call request) is progress: the access waits
-TNP_Timer for its final answer. Without K a challenge is answered not supported. A radio check (from TSI, above the
-range) is unchanged. `t3_auth_response` passes the test vectors of tables 6.15 and 6.16.
+address its own ID; on the payload channel, P_ACKU (6.6.2.3.2.2). A challenge during an access (a registration or a call
+request) is progress: the access waits TNP_Timer for its final answer. Without K a challenge is answered not supported.
+A radio check (from TSI, above the range) is unchanged. `t3_auth_response` passes the test vectors of tables 6.15 and
+6.16.
 
 ### 7.11 Mass registration (6.4.5)
 
@@ -746,20 +751,20 @@ the adjacent sites, and for one pass confirms only a TSCC at or above the thresh
 | Sample again | 30 s | |
 | Weak before leaving | 5 s | |
 
-The system's record may override T_Nosig, TV_Inactive, the dwell, TRand_TC, TP_Timer and TNP_Timer; 0 keeps the
-default.
+These values are fixed, but for four the debug link may set (section 11; 0 keeps the default): T_Awake (power
+save), T_ALS, T_ALS_E and the Vote Now sample time.
 
 ## 9. Tests
 
 ### 9.1 PDUs (`tests/host/t3PduTest.c`)
 
-`tests/host/data/t3_vectors.jsonl` holds PDUs packed by an independent implementation from the field tables of 7.1,
-7.2 and Annex C, with the field values beside each. The test parses each one, checks every field, rebuilds the exact
+`tests/host/data/t3_vectors.jsonl` holds PDUs packed by a separate encoder written from the field tables of 7.1, 7.2
+and Annex C, with the field values beside each. The test parses each one, checks every field, rebuilds the exact
 octets, and checks the CRC (including corrupted copies and the wrong mask). The same file is meant for every codec of
 these PDUs. Then the rules: Mask, delay tables, acknowledgement classes, authorization order, SYS_AREA, plan order and
 the learned ring.
 
-### 9.2 Engine (`tests/host/t3MsTest.c`, `tests/host/t3ReplayTest.c`)
+### 9.2 Engine (`tests/host/t3MsTest.c`, `t3AccessTest.c`, `t3SiteTest.c`, `t3ReplayTest.c`)
 
 `t3MsTest` drives the engine with built PDUs: hunting over silent and foreign candidates, the settle time, CRC and
 color code filters, every follow rule, every return, T_Nosig, short LCs, learning from Chan_Freq and CG_AP, late MBC
@@ -771,12 +776,22 @@ its answers, the retry spacing and count, denied and refused areas, the AT bit, 
 rules, group and private calls with their acknowledgements and timers, cancel, P_PROTECT, P_MAINT at the end, the
 answers to C_AHOY and P_AHOY, de-registration, and the follow rules for the radio's own calls.
 
-`t3ReplayTest` feeds the engine off-air recordings decoded on the SDR bench, in time order; the engine hears a
-channel's records only while it is tuned there. The recordings are not in the repository: `RFOUNDRY_T3_RECORDINGS`
-names a manifest (format in the test's header) with the files and what is known about the recorded system. Without
-it the test skips. It checks that the engine camps within 1.5 s, reads the system code and Aloha parameters, stays on
-the TSCC except across gaps in the recording, follows only planned channels and known talkgroups, keeps a call alive
-on its voice, and never camps on another system or on a control channel that isn't Tier III.
+`t3SiteTest` runs the radio's own receive chain (CACH, short LC, slot type, BPTC) and the engine on raw control
+channel bursts recorded off air on the SDR bench (`tests/host/data/t3_site_tscc.jsonl`, about 30 s of a test site's
+TSCC, no voice): the engine camps, reads the system and learns the channel the site broadcasts.
+
+`t3ReplayTest` feeds the engine off-air recordings decoded on the SDR bench, in time order; the engine hears a channel's
+records only while it is tuned there. Its recordings are not in the repository: `RFOUNDRY_T3_RECORDINGS` names a
+manifest (format in the test's header) with the files and what is known about the recorded system. Without it the test
+skips, so CI doesn't run it. It checks that the engine camps within 1.5 s, reads the system code and Aloha parameters,
+stays on the TSCC except across gaps in the recording, follows only planned channels and known talkgroups, keeps a call
+alive on its voice, and never camps on another system or on a control channel that isn't Tier III.
+
+### 9.3 On the radio's side (`tests/host/t3CodeplugTest.c`, `t3ViewTest.c`, `radioCoreTest.c`)
+
+`t3CodeplugTest` reads systems and trunked channels from a simulated codeplug (section 12) and writes them over the
+debug link (`DL_CMD_CPKV`). `t3ViewTest` checks that each Tier III debug link view section fits one reply with every
+field at its widest. `radioCoreTest` runs the radio core with the engine: start, follow, PTT, fallback, the kill.
 
 ## 10. Not done yet
 
@@ -802,7 +817,7 @@ on its voice, and never camps on another system or on a control channel that isn
 | Slots | Each slot tick from the modem goes to `t3_ms_slot` with its slot number and its CACH AT bit (`DMR_TICK_AT_KNOWN`, `DMR_TICK_AT_BUSY`). A modem that doesn't number slots gets them alternating; one that doesn't read AT gets every slot free. The HR_C6000 and HR_C7000 drivers number them and read AT once locked to the CACH's TC ([modem-hrc7000.md](modem-hrc7000.md) 2.5). |
 | Receive | The stack's receive tap hands CSBKs and MBC blocks to `t3_ms_rx`. Any other burst on a known slot, idle ones excepted, is activity on that slot (`t3_ms_activity`). |
 | Send | A `T3_ACT_SEND` keys one CSBK as a data list, on the action's slot only, and not while the radio is talking. A `T3_ACT_TUNE` that comes while the list is still with the stack waits until it has gone out (at most 500 ms): a new slot or channel would drop it, and an answer before leaving a payload channel (a selective clear's P_ACKU) would never be sent. |
-| PTT | Camped, PTT asks for a call to the system's talk target (the first talkgroup with `T3_TG_TALK` when none is set) and waits with PTT held. The grant puts the radio on the payload slot and keys it. A refusal, no answer or timeout denies TX (`TXDENY_NO_DMR`). Released before the grant, the request is cancelled. |
+| PTT | Camped, PTT asks for a call to the system's talk target (the first talkgroup with `T3_TG_TALK` when none is set) and waits with PTT held. The grant puts the radio on the payload slot and keys it. A refusal, no answer or timeout denies TX (`TXDENY_NO_DMR`). Released before the grant, the request is canceled. |
 | Following | The stack takes the system's ID as its own, hears every call on the slot, and talks to the call's group or to the other party. The radio's own transmission counts as the call's activity: it never hears its own slot, so TV_Inactive would otherwise end the call while it talks. |
 | Status | `RADIO_T3_STATUS` sends the staged status (section 7.5). The last status heard is in the view. |
 | Short data poll | `RADIO_T3_SDPOLL` polls the staged MS (section 7.6). The reply to a poll is staged with the system (`DL_T3_POLL_REPLY`). |
@@ -812,9 +827,12 @@ on its voice, and never camps on another system or on a control channel that isn
 | Emergency | `data_t3_start` sends the data service's alarm as status 126; `t3_emergency_tick` sends the cancel and passes a status 126 heard to the emergency module (section 7.8). |
 | View | The `t3` section ([debuglink.md](debuglink.md) 3.26). |
 
-Tests: `tests/host/radioCoreTest.c` (`test_t3_talk`) runs a simulated site through PTT, request, grant and a call
-with nothing heard; `test_t3_pdata` through a text message out on a granted channel and one in; `test_t3_emergency` through the alarm, the emergency call, the cancel and an alarm heard. `test_t3_channels` selects trunked channels from the codeplug (same system, another system, unavailable, scan); `test_t3_never_keys` checks that a receive-only channel, a listen-only system and a channel with no system send nothing; `test_t3_fallback` runs the fallback and its probes. `tests/hil/test_t3_site.py` runs camp, registration, group and private calls against a site on
-the SDR bench.
+Tests: `tests/host/radioCoreTest.c` (`test_t3_talk`) runs a simulated site through PTT, request, grant and a call with
+nothing heard; `test_t3_pdata` through a text message out on a granted channel and one in; `test_t3_emergency` through
+the alarm, the emergency call, the cancel and an alarm heard. `test_t3_channels` selects trunked channels from the
+codeplug (same system, another system, unavailable, scan); `test_t3_never_keys` checks that a receive-only channel, a
+listen-only system and a channel with no system send nothing; `test_t3_fallback` runs the fallback and its probes.
+`tests/hil/test_t3_site.py` runs camp, registration, group and private calls against a site on the SDR bench.
 
 ## 12. In the codeplug
 
@@ -881,14 +899,14 @@ channel. The radio follows the system on it as on a listen-only system (12.1) an
 
 | The user selects | The radio |
 |---|---|
-| a trunked channel, its system not running | starts the system (section 7.1), its talkgroups the channel's |
+| a trunked channel, its system not running | starts the system (section 11), its talkgroups the channel's |
 | a trunked channel of the system running | keeps the TSCC; takes the channel's talk target and talkgroups, and registers again only when its talkgroups changed and the system registers with them (0x0040) |
 | a trunked channel of another system | leaves the running one and starts the new one |
 | a conventional channel or the VFO | leaves the system |
 | a receive-only trunked channel | runs the system listen only: no registration, nothing sent, PTT refused |
 | an unavailable trunked channel (its tag names no system, or one that is absent, not a Tier III system, not usable or past the systems the radio runs) | leaves any system and works the record receive only, so PTT is refused; the screen says "System not set up" |
 
-Leaving sends nothing: a site drops a radio that has gone quiet (section 7.2). Zone scan passes trunked channels by:
+Leaving sends nothing: a site drops a radio that has gone quiet. Zone scan passes trunked channels by:
 a frequency is not what the radio follows there. The talkgroups' re-registration waits until the user has rested on a
 channel for `T3_REG_TG_DELAY_MS` (1 s), so turning the knob through channels registers once.
 
@@ -928,9 +946,9 @@ system's sharing level allows:
 | 1 identity only | the channels and the system's name, flags and identity (model, NET, category). Enough for a radio that already has the system |
 | 2 the whole system | the channels, the system's block (color code, options, plan, sites) and its channels |
 
-Never carried: the radio's ID on the system, a system's or a channel's fallback channel, the key (a radio has no
-switch to send one), kill or stun state, registration, the short data poll setting (12.7), the supplementary data
-(12.8).
+Never carried: the radio's ID on the system, a system's or a channel's fallback channel, kill or stun state,
+registration, the short data poll setting (12.7), the supplementary data (12.8). The key goes only when the sender turns
+keys on for that share, which a radio can't yet ([dmr-trunking-codeplug.md](dmr-trunking-codeplug.md) 6).
 
 A receiver matches a shared system to one of its own by type and identity. A match is used as it is: the share
 changes nothing in it. With no match, a share with the whole system adds it at the lowest free system number; one
@@ -949,7 +967,7 @@ this radio's own reply.
 
 | Offset | Size | Field |
 |---|---|---|
-| 0 | 1 | UDT_Format (table 7.60): of the reply, and asked for when the radio polls |
+| 0 | 1 | UDT_Format (table 7.88): of the reply, and asked for when the radio polls |
 | 1 | 1 | Blocks to ask for, 1-4 (0 or past 4: 4) |
 | 2 | 0-46 | The reply's octets, in that format (ISO 8 bit: the text itself) |
 
@@ -968,7 +986,7 @@ format and size prearranged with the system, a position or a unit number, say.
 
 | Offset | Size | Field |
 |---|---|---|
-| 0 | 1 | UDT_Format (table 7.60) |
+| 0 | 1 | UDT_Format (table 7.88) |
 | 1 | 1-46 | The octets, in that format (ISO 8 bit: the text itself) |
 
 With no record, or one without octets, the radio offers none. The debug link's SUPL (11) replaces it for the staged

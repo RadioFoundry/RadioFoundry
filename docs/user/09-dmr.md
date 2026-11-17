@@ -99,8 +99,8 @@ On Home, type the number. Find lists "Talk to TG 3100" and "Private call 3100" (
 Focus one and press **PTT** for one call, or **OK** for now.
 
 On a trunked channel, Find also lists "Phone call 5551234" last: **PTT** on it calls that number through the system's
-telephone gateway (the system refuses it when it has none). A call from the telephone network shows the caller's number, or "Phone line"
-when the system didn't send one.
+telephone gateway (the system refuses it when it has none). A call from the telephone network shows the caller's
+number, or "Phone line" when the system didn't send one.
 
 ## Replying
 
@@ -372,7 +372,7 @@ A DMR Tier III trunked system gives out a channel for each call. The radio stays
 registers there, and goes to the channel the system grants. The system sets the frequency, slot and color code of each
 call, so a trunked channel has none of its own.
 
-Trunking is new. What has been checked on each radio is in the
+What has been checked on each radio is in the
 [feature matrix](../feature-matrix.md#checked-on-each-radio).
 
 ### Setting one up

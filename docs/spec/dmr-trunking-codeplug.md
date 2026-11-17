@@ -90,5 +90,6 @@ Key 0x0800 + n: system n's short data poll setting: UDT format (1), blocks to as
 ## 6. Sharing
 
 A system's sharing level ([channel-modes.md](channel-modes.md) 7.1, [zone-share.md](zone-share.md)): identity only
-carries the type, flags and identity; the whole system carries the block, the control channels and, with keys turned
-on, the key. Never carried: the own ID, the poll setting and the supplementary data.
+carries the type, flags and identity; the whole system carries the block, the control channels and the key, the key
+only when the sender turns keys on for that share (a radio has no such switch yet: [zone-share.md](zone-share.md)).
+Never carried: the own ID, the poll setting and the supplementary data.
