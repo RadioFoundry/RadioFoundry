@@ -220,7 +220,7 @@ SETTINGS = {"tot_s": 1, "tot_warn_s": 2, "bcl": 3, "roger_beep": 4, "tx_inhibit"
             "roam_probe": 23, "roam_check_s": 24, "roam_beacon_s": 25, "roam_beacon_len_s": 26, "roam_survey": 27,
             "rpt_beacon": 28, "mic_gain": 29, "dual_delay_ms": 30, "enc_options": 31,
             "zs_offers": 32, "sfr_cwid": 33, "sfr_rx": 34, "ref_trim": 35,
-            "tones_off": 36}
+            "tones_off": 36, "gps": 37}
 
 
 class DebugLinkError(Exception):

@@ -226,9 +226,13 @@ static const band_t bands[] = {
 };
 static const char *const power_names[] = { "L", "H" };
 
+// A module that is always there and always on (hal_gps_t with no hooks)
+static const hal_gps_t fake_gps = { 0 };
+
 const board_t board = {
 	.name = "fake",
 	.caps = CAP_GPS | CAP_BCAST_FM,
+	.gps = &fake_gps,
 	.bands = bands,
 	.band_count = 3,
 	.power_count = 2,
