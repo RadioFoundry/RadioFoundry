@@ -27,20 +27,20 @@ void sb_chr(sbuf_t *b, char c);
 void sb_u32(sbuf_t *b, uint32_t v, int min_digits);
 void sb_i32(sbuf_t *b, int32_t v);
 
-// Formats into the buffer, like printf. A value is %[n$][flags][width]<kind>:
+// Formats into the buffer, like printf. A placeholder is %[n$][flags][width]<kind>, replaced by its argument:
 //   %d %i %u %x %X %c   numbers and a character; %05u pads with zeros after the sign up to the width (at most 20);
 //                       'l' reads a long. A width without the '0' (space padding, %5u, %8s) is ignored unless
 //                       SB_FMT_SPACE_PAD is 1: nothing uses it, and the code stays for whoever needs it
-//   %s                  text
-//   %K                  (UI) text kept as it is: our own, which may carry text alternates (font.h)
-//   %%                  a '%'. Anything else after a '%' is text, as written
-// The values are used in the order they are passed. A UI format (a translation) may number them, %1$s to %4$s, so
-// that it can move or repeat them: every value is then read first, by the kinds the text gives it, so the text must
-// use each value at least once. A UI format's %s is text that isn't ours (a name, a received text): a byte below
-// 0x20 is shown as '?', since the text layer reads those as markers (font.h), and NULL is nothing. UI text also has
-// a CJK character cut whole at the buffer's end. The debug link's (sb_vprintf) keeps every byte as it is and shows
-// NULL as "(null)". sb_fmt returns where the last %s value went, NULL when there was none (a banner's title breaks its
-// line there)
+//   %s                  a string. In UI text it is untrusted (a name, the CPS's data, a received message): its
+//                       control characters (below 0x20, the markers font.h reads) are shown as '?'
+//   %K                  (UI) a trusted string the firmware built, kept as it is (K for Keep), so its text features
+//                       (text alternates) work
+//   %%                  a '%'. Anything else after a '%' is text, as written (tools/i18n.py rejects it in UI text)
+// Placeholders take the arguments in the order they are passed. UI text (a translation) may number them, %1$s to
+// %4$s, to move or repeat them: every argument is then read first, by the kind its placeholder gives, so the text must
+// use each argument at least once. In UI text a NULL string shows nothing, and a CJK character is cut whole at the
+// buffer's end. The debug link's text (sb_vprintf) keeps every byte as it is and shows NULL as "(null)". sb_fmt
+// returns where the last %s argument went, NULL when there was none (a banner's title breaks its line there)
 #define SB_FMT_VALUES	4
 #ifndef SB_FMT_SPACE_PAD
 #define SB_FMT_SPACE_PAD	0

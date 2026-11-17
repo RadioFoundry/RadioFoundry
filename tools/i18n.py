@@ -236,52 +236,63 @@ def format_text(text):
 
 
 def format_values(text, where):
-    """{number: kind} of a format's values, numbered from 1. A value is a text (s, K) or a number (d, u) everywhere it
-    is used, and what looks like a value must be one"""
+    """{argument number: kind} of a TRF text's placeholders, arguments numbered from 1. An argument is a string (s, K)
+    or a number (d, u) everywhere it is used; a '%' starts a placeholder or is "%%" """
     kinds = {}
-    for m in FORMAT_LIKE.finditer(format_text(text)):
-        raise I18nError("%s: %r: %r is not a value: write %%s, %%K, %%d, %%u or %%03u, numbered %%1$s to %%%d$s "
-                        "in a translation" % (where, text, m.group(0), FORMAT_VALUES))
+    rest = format_text(text)
+    for m in FORMAT_LIKE.finditer(rest):
+        raise I18nError("%s: %r: %r is not a placeholder: use %%s, %%K, %%d, %%u or %%03u (numbered %%1$s to %%%d$s), "
+                        "or %%%% for a percent sign" % (where, text, m.group(0), FORMAT_VALUES))
+    if "%" in rest:
+        raise I18nError("%s: %r: a '%%' that starts no placeholder: write %%%% for a percent sign" % (where, text))
     unnumbered = 0
     for m in format_found(text):
         n, width, kind = m.group(1), m.group(2), m.group(3)
         if not n:
             unnumbered += 1
-        # Without a number a value is the one after the last value written without one (sb_fmt)
+        # A placeholder without a number takes the argument after the last one without a number (sb_fmt)
         n = int(n) if n else unnumbered
         if width and kind in "sK":
-            raise I18nError("%s: %r: %s: only a number takes a width" % (where, text, m.group(0)))
+            raise I18nError("%s: %r: %s: only %%d and %%u take a width" % (where, text, m.group(0)))
         if kinds.setdefault(n, kind) != kind:
-            raise I18nError("%s: %r: value %d is %%%s in one place and %%%s in another"
+            raise I18nError("%s: %r: argument %d is %%%s in one place and %%%s in another"
                             % (where, text, n, kinds[n], kind))
     return kinds
 
 
 def format_numbering(text, where, english=None):
-    """Problems with how a format numbers its values (a list of strings): the English's (english None) or a
-    translation's of the English with the values english"""
+    """Problems with how a TRF text numbers its placeholders (a list of strings): the English's (english None), or a
+    translation's of the English whose arguments are english. A number is written only where the order alone can't
+    say which argument a placeholder takes (docs/dev/translating.md, Numbering placeholders)"""
     found = format_found(text)
     numbered = [m for m in found if m.group(1)]
-    twice = len({m.group(1) for m in numbered}) < len(numbered)
-    # A value inside a text alternate {a|b}: each choice must say which value it shows, since a choice may leave one
-    # out ("{Here, %1$u ch|Here}")
+    if numbered and len(numbered) < len(found):
+        return ["%s: %r: number every placeholder or none" % (where, text)]
+    order = []
+    for m in numbered:
+        if int(m.group(1)) not in order:
+            order.append(int(m.group(1)))
+    twice = len(order) < len(numbered)
+    # A placeholder inside a text alternate {a|b}: a choice may leave an argument out ("{Here, %1$u ch|Here}"), so
+    # each must say which argument it takes
     depth, alt = 0, False
     for i, ch in enumerate(text):
         depth += (ch == "{") - (ch == "}")
         alt |= depth > 0 and any(m.start() == i for m in found)
     if alt:
-        if len(numbered) < len(found):
-            return ["%s: %r: a value inside a text alternate {a|b} is numbered (%%1$u), and so is every value"
-                    % (where, text)]
+        if not numbered:
+            return ["%s: %r: a placeholder inside a text alternate {a|b} needs a number (%%1$u), and then every "
+                    "placeholder does" % (where, text)]
         return []
     if len(found) == 1 and numbered:
-        return ["%s: %r: one value is written without a number (%%%s)" % (where, text, found[0].group(0).split("$")[1])]
+        return ["%s: %r: one argument used once takes no number: write %%%s"
+                % (where, text, found[0].group(0).split("$")[1])]
     if english is None:
-        if numbered and (len(numbered) < len(found) or not twice):
-            return ["%s: %r: the English writes its values in order without numbers (\"%%u of %%u: %%s\"), unless it "
-                    "uses one twice: then it numbers them all" % (where, text)]
-    elif (len(english) > 1 or twice) and len(numbered) < len(found):
-        return ["%s: %r: a translation of more than one value, or of one used twice, numbers every value (%%1$s %%2$u)"
+        if numbered and not twice and order == sorted(order):
+            return ["%s: %r: the numbers add nothing: each argument is used once, in the order passed. Leave them out "
+                    "(\"Site %%u of %%u: %%s\")" % (where, text)]
+    elif (len(english) > 1 or twice) and not numbered:
+        return ["%s: %r: a translation of more than one argument numbers every placeholder (%%1$s %%2$u)"
                 % (where, text)]
     return []
 
@@ -367,10 +378,10 @@ def scan(rel, src, old_ok=False):
             for e in format_numbering(text, where):
                 raise I18nError(e)
             if sorted(kinds) != list(range(1, len(kinds) + 1)) or not kinds:
-                raise I18nError("%s: %r: a format's values are numbered from 1 with none left out (a text without "
-                                "values is TR)" % (where, text))
+                raise I18nError("%s: %r: every argument must be used, numbered from 1 with none left out (text "
+                                "without placeholders is TR)" % (where, text))
         elif format_found(text) or FORMAT_LIKE.search(format_text(text)):
-            raise I18nError("%s: %r has a value: only TRF() formats one" % (where, text))
+            raise I18nError("%s: %r has a placeholder: only TRF() fills one in" % (where, text))
         out.append(Mark(kind, key, text, rel, int(where.rsplit(":", 1)[1]), at))
     return out
 
