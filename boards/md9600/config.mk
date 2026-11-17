@@ -56,8 +56,9 @@ BOARD_REQUIRED := FM
 # CONFIG_STUB_ENTRY is on with the host link (config/features.mk): the STM32F4 flash stub serves this radio through its
 # board record (board.toml [flash.stub], docs/spec/stub-stm32f4.md)
 # Supported, but the maximal configuration leaves these off too: PPP stands in for the USB network adapter on UART-only
-# radios (docs/spec/ppp.md), and this one has the adapter
-MAXIMAL_SKIP := NET_PPP
+# radios (docs/spec/ppp.md), and this one has the adapter. Chinese is off by default, and its glyph table doesn't fit
+# beside the rest
+MAXIMAL_SKIP := NET_PPP LANG_ZH LANG_DEFAULT_ZH
 # English only (the owner's choice, 2026-11-03)
 CONFIG_LANG_ES ?= n
 CONFIG_RX_EXT ?= n

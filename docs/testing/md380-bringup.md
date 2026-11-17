@@ -44,7 +44,7 @@ The web installer's channel step ([web-flasher.md](../dev/web-flasher.md), "Chan
 | First run | 508 channels, 96 contacts, 76 RX lists, 0 zones, reported as a success. The claim had erased the stock zone table (0x0149E0, inside the settings area) before the step read the radio, and the check compares against the conversion's own counts |
 | After the fix | The step converts from the backup's copy of the memory chip: 508 channels, 46 zones, 96 contacts, 76 RX lists. All zones present on the radio |
 
-## Chinese image (2026-11-12)
+## Chinese image
 
 `LANG_ZH` is no longer unsupported on this board: the 160 px class moves its words up to the 8x16 font while a wide
 language is in use, so a 16 px CJK glyph fits on the 160x128 panel ([UI spec](../spec/ui.md) 2.5). The `chinese` ci

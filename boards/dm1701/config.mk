@@ -14,9 +14,9 @@ CONFIG_DISPLAY_INSET_BOTTOM ?= 0
 CONFIG_APRS_IGATE ?= n
 MAXIMAL_VARS := LTO=1
 # Left out of tools/ci.sh's maximal configuration: PPP stands in for the USB network adapter on UART-only radios
-# (docs/spec/ppp.md), and this one has the adapter; the APRS iGate is off by default (above). Every other switch fits
-# the 720 KB region, Chinese beside Spanish included, so maximal turns them all on
-MAXIMAL_SKIP := NET_PPP APRS_IGATE
+# (docs/spec/ppp.md), and this one has the adapter; the APRS iGate is off by default (above). Chinese is left out too:
+# it is off by default, and its glyph table doesn't fit the 720 KB region beside the rest
+MAXIMAL_SKIP := NET_PPP APRS_IGATE LANG_ZH LANG_DEFAULT_ZH
 # What the radio's hardware can't do, one switch per line with the reason (tools/boards.py checks there is one;
 # docs/build-config.md, "Unsupported, not written, unconfirmed"): ci's maximal configuration leaves these off
 BOARD_UNSUPPORTED += FONT_XL	# the 160x120 panel is too small for the large font (it is for 240 px and wider)
@@ -34,9 +34,8 @@ BOARD_UNSUPPORTED += FAULT_TRACE	# needs a host UART: the host port is USB, and 
 # Chinese (CONFIG_LANG_ZH, docs/build-config.md): a line of it needs 16 px, and this class draws its words in the 6x12
 # font, so core/ui/ui_screens.c moves lists, labels, the strip, the hints and the text pages up to the 8x16 font while a
 # wide language is in use; Home then has no room for the zone line and a list shows 5 rows instead of 7 on the 160x120
-# panel (docs/spec/ui.md 2.5). Off by default like on every radio. Chinese costs 32,856 B on top of the lookup and
-# Latin-1 glyphs Spanish brings (28,456 B, docs/feature-matrix.md); the 720 KB region holds both beside each other with
-# the debug link on, so neither CONFIG_LANG_ES=n nor CONFIG_DEBUGLINK=n is needed
+# panel (docs/spec/ui.md 2.5). Off by default like on every radio. Its glyph table (about 128 KB, docs/feature-matrix.md)
+# doesn't fit the 720 KB region beside the default build: a Chinese image has to turn other switches off
 #
 #	make BOARD=dm1701 CONFIG_LANG_ZH=y CONFIG_LANG_DEFAULT_ZH=y
 #

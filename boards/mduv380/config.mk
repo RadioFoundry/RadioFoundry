@@ -31,5 +31,5 @@ BOARD_UNSUPPORTED += FAULT_TRACE	# needs a host UART: the host port is USB, and 
 
 # Chinese (CONFIG_LANG_ZH): a 160x128 panel is the 160 px class, whose layout moves its words up to the 8x16 font while
 # a wide language is in use (core/ui/ui_screens.c, docs/spec/ui.md 2.5), so a 16 px CJK glyph fits; Home then has no
-# zone line and a list shows 5 rows instead of 7. Off by default like on every radio. The 720 KB region has room for it
-# beside Spanish (docs/feature-matrix.md); board.toml's "chinese" ci extra builds that image
+# zone line and a list shows 5 rows instead of 7. Off by default like on every radio. Its glyph table (about 128 KB,
+# docs/feature-matrix.md) doesn't fit the region beside the default build: a Chinese image has to turn other switches off

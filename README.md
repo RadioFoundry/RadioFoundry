@@ -2,8 +2,8 @@
 
 **English** · [简体中文](README.zh.md)
 
-**Free, MIT-licensed firmware for affordable DMR radios.** One shared core runs the DMR stack, the UI, the codeplug and
-the host tools; each radio adds a thin board layer. It brings the FM and DMR features low-cost stock firmware leaves
+**Free, MIT-licensed multi-mode firmware for affordable digital radios: DMR, P25, NXDN and FM.** One shared core runs the digital voice stacks, the UI, the codeplug and
+the host tools; each radio adds a thin board layer. It brings the features low-cost stock firmware leaves
 out, with a UI designed from first principles. Anyone can use it for anything, commercial products included.
 
 ### 🌐 [radiofoundry.org](https://radiofoundry.org)

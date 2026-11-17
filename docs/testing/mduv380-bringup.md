@@ -26,7 +26,7 @@ Runs on radios (community testers). The codec builds were checked on a host: TYT
 219.74, 5 W and 10 W; TYT and Retevis 18.11 and 18.16; Retevis RT3S 19.06 and 219.60. A first DMR test
 should use a 19.26 file and one whose code goes to the start of sector 10 (RT3S 219.60, any 219.74, S19.74).
 
-## Chinese image (2026-11-12)
+## Chinese image
 
 `LANG_ZH` is no longer unsupported on this board: the 160 px class moves its words up to the 8x16 font while a wide
 language is in use, so a 16 px CJK glyph fits on the 160x128 panel ([UI spec](../spec/ui.md) 2.5). The `chinese` ci

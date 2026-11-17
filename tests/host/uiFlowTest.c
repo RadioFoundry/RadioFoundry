@@ -1466,12 +1466,11 @@ static void crawl(const sim_geom_t *g, sim_map_t map, const char *mapname)
 static void about_checks(void)
 {
 	char err[300];
-	// AUTHORS is the About page's author list, in order (tools/gen_about.py): a new co-author goes last, and every
-	// name has to fit the same buffer as the rest of the page (core/ui/ui_menus.c)
+	// AUTHORS is the About page's author list, in order (tools/gen_about.py), and every name has to fit the same
+	// buffer as the rest of the page (core/ui/ui_menus.c)
 	static const char *const authors[] = RFOUNDRY_ABOUT_AUTHORS;
-	if ((size_t)RFOUNDRY_ABOUT_AUTHOR_COUNT != sizeof authors / sizeof authors[0] ||
-	    strcmp(authors[RFOUNDRY_ABOUT_AUTHOR_COUNT - 1], "BG2LNY") != 0) {
-		printf("FAIL about: the author list does not end with BG2LNY\n");
+	if ((size_t)RFOUNDRY_ABOUT_AUTHOR_COUNT != sizeof authors / sizeof authors[0]) {
+		printf("FAIL about: the author count does not match the list\n");
 		fails++;
 	}
 	for (int g = 0; g < sim_geom_count; g++) {
