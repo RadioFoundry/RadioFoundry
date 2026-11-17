@@ -1439,9 +1439,13 @@ static void test_rx_missed_burst(void)
 
 // Feeds the reports a frame apart (each burst with its own voice unless same_voice[i]); fills got with the voice
 // numbers delivered and returns how many
-static int feed_numbers(const uint8_t *r51s, const bool *same_voice, int n, uint8_t *got)
+// cc: the receive filter (-1: any color code, as fresh_engine leaves it)
+static int feed_numbers_cc(const uint8_t *r51s, const bool *same_voice, int n, uint8_t *got, int8_t cc)
 {
 	fresh_engine();
+	if (cc >= 0) {
+		hrc6000_dmr_set_cc_filter(&eng, cc);
+	}
 	uint32_t t = 14000000;
 	for (int i = 0; i < n; i++) {
 		ts_at(t);
@@ -1460,6 +1464,11 @@ static int feed_numbers(const uint8_t *r51s, const bool *same_voice, int n, uint
 		}
 	}
 	return k;
+}
+
+static int feed_numbers(const uint8_t *r51s, const bool *same_voice, int n, uint8_t *got)
+{
+	return feed_numbers_cc(r51s, same_voice, n, got, -1);
 }
 
 // A report with another burst's number, no frame missed (bench: A B F C E F and C D F A): numbered by the frames
@@ -1484,6 +1493,27 @@ static void test_rx_wrong_number(void)
 	k = feed_numbers(stale, again, 5, got);
 	CHECK(k == 4 && memcmp(got, (const uint8_t[]){ 0, 1, 2, 4 }, 4) == 0);
 	CHECK(eng.st.rx_stale == 1 && eng.st.rx_seq_jump == 1 && eng.st.rx_seq_fix == 0);
+}
+
+// Late entry on a call in a color code other than 0x1F's, with any color code deframed (0x41 bit 3): the chip keeps
+// the voice number of the last call it decoded in full (here F) in every class 0 report. The report one frame after a
+// lone A is its B whatever its number, and the superframe is numbered by the frames counted. With a filter on, the
+// number must say B: a lone voice sync followed by a stale report is noise
+static void test_rx_late_entry_stale_number(void)
+{
+	static const bool fresh[6] = { false };
+	static const uint8_t stale_f[] = { 0x91, 0xE0, 0xE0, 0xE0, 0xE0, 0xE0 };	// A, then "F" five times
+	uint8_t got[8];
+	int k = feed_numbers(stale_f, fresh, 6, got);
+	CHECK(k == 6 && memcmp(got, (const uint8_t[]){ 0, 1, 2, 3, 4, 5 }, 6) == 0);
+	CHECK(eng.st.rx_lone == 0 && eng.st.rx_no_call == 0);
+
+	k = feed_numbers_cc(stale_f, fresh, 6, got, 2);
+	CHECK(k == 0 && eng.st.rx_lone == 1 && eng.st.rx_no_call == 5);
+	// A stale repeat with A's own voice is no B, any color code or not
+	static const bool repeat[2] = { false, true };
+	k = feed_numbers(stale_f, repeat, 2, got);
+	CHECK(k == 0 && eng.st.rx_no_call == 1);
 }
 
 static void test_halt(void)
@@ -1526,6 +1556,7 @@ int main(void)
 	test_rx_bench_call();
 	test_rx_missed_burst();
 	test_rx_wrong_number();
+	test_rx_late_entry_stale_number();
 	test_halt();
 	if (failures) {
 		printf("# hrc6000DmrTest: %d FAILED\n", failures);

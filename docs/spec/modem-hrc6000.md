@@ -456,6 +456,19 @@ On the HR_C6000, on the bench (a call joined at burst C of its second superframe
 in most runs and the LC was taken there; on a weak signal it came one superframe later in 2 of 9 runs, page 2
 still held the old LC at F, and the call played from the superframe after that.
 
+**Joining at burst A.** With no header and no superframe in progress on its slot, a voice sync report (burst A) is
+held, not played: it can be noise or the tail of another slot's call. It is taken when the next frame (2 ticks later)
+brings a class 0 report for burst B; otherwise it is dropped (counter `rx_lone`) and the class 0 reports that follow
+count as `rx_no_call` until the next A. The B check differs by mode:
+
+| Receiving | B is |
+|---|---|
+| One color code (0x41 bit 3 clear) | a class 0 report numbered 1 |
+| Any color code (bit 3 set, 5.4) | a class 0 report numbered 1, or any class 0 report one frame after the A with voice other than A's (a stale repeat of A's report has A's voice). For a call in a code other than 0x1F's, the chip keeps the voice number of the last call it decoded in full (bench: B-F all reported as F), and the driver can't tell which code the call is in, so the number isn't checked; the frame count numbers the rest (5.2) |
+
+Before the second rule, a scan with digital monitor on passed any call in another color code that it reached after
+the header: the A was dropped as lone and B-F as no-call, superframe after superframe, and the stop timed out.
+
 **Resuming a call.** A call that stopped with no terminator and comes back has the sticky LC problem in its worst
 form: the LC in page 2 is the call's own, so the sticky rule waits for the A after the first whole superframe. That page 2 still
 shows the call's LC proves nothing: it would show the same if another caller had started. The post-access interrupt
