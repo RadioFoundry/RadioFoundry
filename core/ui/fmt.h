@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Small text builders for the UI: the values a sentence shows (frequencies, times, places). The buffer and the
+// Small text builders for the UI: dynamic data a text shows (frequencies, times, places). The buffer and the
 // formatter are textfmt.h
 #ifndef UI_FMT_H
 #define UI_FMT_H

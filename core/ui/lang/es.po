@@ -5159,8 +5159,8 @@ msgstr ", solo categoría B"
 
 #: core/ui/ui_screens.c
 msgctxt "CALL_BODY_PRIVATE_ID"
-msgid "{Private %u|Private}"
-msgstr "{Privada %u|Privada}"
+msgid "{Private %1$u|Private}"
+msgstr "{Privada %1$u|Privada}"
 
 #: core/ui/ui_screens.c
 msgctxt "STATE_TALKING"

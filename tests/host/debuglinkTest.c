@@ -6,6 +6,7 @@
 #include <string.h>
 #include "debuglink/debuglink_proto.h"
 #include "debuglink/dl_fmt.h"
+#include "ui/textfmt.h"
 #include "debuglink/dlog.h"
 #include "debuglink/dl_chip.h"
 #include "debuglink/dl_shot.h"
@@ -118,7 +119,9 @@ static void test_fmt(void)
 	dl_fmt(b, sizeof(b), "a%db%uc%xd%Xe%sf%cg%%", -12, 34u, 0xabu, 0xCDu, "str", 'Z');
 	CHECK(strcmp(b, "a-12b34cabdCDestrfZg%") == 0, "fmt basic: %s", b);
 	dl_fmt(b, sizeof(b), "[%5d][%05d][%08x][%3s][%q]", 42, -42, 0x1234u, "ab");
-	CHECK(strcmp(b, "[   42][-0042][00001234][ ab][%q]") == 0, "fmt width, unknown conversion shown as is: %s", b);
+	// Space padding (a width without '0') only with SB_FMT_SPACE_PAD
+	CHECK(strcmp(b, SB_FMT_SPACE_PAD ? "[   42][-0042][00001234][ ab][%q]" : "[42][-0042][00001234][ab][%q]") == 0,
+		"fmt width, unknown conversion shown as is: %s", b);
 	dl_fmt(b, sizeof(b), "%ld %lu %d", -2147483647L - 1, 4294967295UL, 0);
 	CHECK(strcmp(b, "-2147483648 4294967295 0") == 0, "fmt extremes: %s", b);
 	size_t n = dl_fmt(b, 6, "%s", "truncated");
@@ -126,7 +129,7 @@ static void test_fmt(void)
 	dl_fmt(b, sizeof(b), "%s", (const char *)NULL);
 	CHECK(strcmp(b, "(null)") == 0, "fmt null string");
 	dl_fmt(b, sizeof(b), "%s|%5s", "a\x1d", "b\x1f");	// the UI's formatter, but a marker byte is kept as it is
-	CHECK(strcmp(b, "a\x1d|   b\x1f") == 0, "fmt keeps control bytes: %s", b);
+	CHECK(strcmp(b, SB_FMT_SPACE_PAD ? "a\x1d|   b\x1f" : "a\x1d|b\x1f") == 0, "fmt keeps control bytes: %s", b);
 
 	dl_text_t t;
 	char tb[16];

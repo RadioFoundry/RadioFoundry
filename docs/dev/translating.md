@@ -80,7 +80,7 @@ going stale, and a translator who reads the key in a catalog knows what kind of 
 | `PART` | A piece joined to other text, with no role of its own |
 | `WORD` | A term used as title, label and value alike (`VFO`, `Scan`) |
 
-A sentence with values (`"Message from %s"`) is named for the sentence. A number in a name is the number in the
+Text containing dynamic data (`"Message from %s"`) is named for the whole text. A number in a name is the number in the
 text (`VALUE_10_MIN`, `HINT_1_5_PICK_BACK`), never a counter: two texts that would get the same name differ in
 meaning, so say how.
 
@@ -279,13 +279,13 @@ TRF(&b, ROAM_BODY_SITE, "Site %u of %u: %s", site + 1u, sites, ch.name);
 | `%K` | `const char *` | Text kept as it is: our own, which may carry text alternates (a translated word, the result of `sb_age`) |
 | `%d` | `int` | A signed number |
 | `%u` | `unsigned` | An unsigned number |
-| `%3u`, `%3d` | | At least 3 characters, space padded (widths 1 to 9) |
-| `%03u`, `%03d` | | At least 3 digits, zero padded, after the sign |
+| `%03u`, `%03d` | | At least 3 digits, zero padded, after the sign (widths 1 to 9). Space padding (`%3u`) is off: `SB_FMT_SPACE_PAD` in `core/ui/textfmt.h` |
 
 - **Numbering.** The English writes its values in the order the code passes them, without numbers:
   `"Site %u of %u: %s"`. A translation of more than one value numbers every value from 1 in that order, whether or
   not it moves them: `"%3$s: sitio %1$u de %2$u"`, `%2$03u`. A lone value is never numbered (`"De %s"`), and
-  `--check` rejects `%1$s` used alone. Text that uses a value twice numbers every value, the English too.
+  `--check` rejects `%1$s` used alone. Text that uses a value twice, or has a value inside a text alternate
+  (`{Here, %1$u ch|Here}`), numbers every value, the English too: each choice says which value it shows.
 - At most 4 values, none left out. A value may be used more than once
   (`TEXT_ALT_OPEN "%1$s to you" TEXT_ALT_NEXT "%1$s" TEXT_ALT_CLOSE`).
 - `%%` is a `%`; any other `%` that is not a value is text: `"Battery %u%: charge soon"`.

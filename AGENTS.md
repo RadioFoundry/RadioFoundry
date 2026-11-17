@@ -99,8 +99,8 @@ The source tree is in [README.md, Layout](README.md#layout). The layers and the 
 - **Languages.** The radio and the site are translated ([docs/dev/translating.md](docs/dev/translating.md)). Mark text
   a user reads with a key and its English, `TR(KEY, "English")` (`TRN(KEY, ...)` in a static table or struct field,
   `tr()` where it is shown; `TRX(KEY, ...)` for untranslated text in such a table; `TRF(&b, KEY, "... %s ...", name)`
-  for a sentence with a name or number in it, never pieces glued around the value), never debug link or protocol text,
-  and run `python3 tools/i18n.py --sync`. Name the key `AREA_ROLE_MEANING` ([Key
+  for text containing dynamic data such as a measurement or user text, never pieces glued around the value), never
+  debug link or protocol text, and run `python3 tools/i18n.py --sync`. Name the key `AREA_ROLE_MEANING` ([Key
   names](docs/dev/translating.md#key-names)); rename one only with `tools/i18n.py --rename`. One key, one English. A
   `tr_id_t` is opaque: pass it to `tr()` or `tr_en()`, compare it with `TR_NONE`, nothing else (it is a number in a
   translated build, the text itself in an English-only one); text crossing tasks travels as its `tr_id_t`. Code must
