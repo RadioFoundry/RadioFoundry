@@ -529,7 +529,9 @@ switch.
 
 `radio_backlight_pct(brightness, idle_ms)`: the UI's brightness, dimmed to a fifth (at least 5 %) after
 `backlight_dim_s` without input, off after `backlight_off_s`, capped at 30 % while the battery is low or critical.
-The UI owns the backlight and calls it; the radio core doesn't drive the backlight itself.
+The UI owns the backlight and calls it; the radio core doesn't drive the backlight itself. A board's keypad light
+(`hal_display_t.set_key_light`) follows it: on only while the backlight is at the set brightness (`batt_key_light`), so
+off when it dims, goes off or is capped on a low battery.
 
 Either time 0 means never: `backlight_dim_s` 0 never dims, `backlight_off_s` 0 never turns the backlight off, so a
 dim time with off 0 dims and stays on. The UI's setting (`UI_SET_BACKLIGHT_S`, Settings > Display > Backlight

@@ -230,7 +230,7 @@ static void audio(bool on)
 	route_b();
 }
 
-// A's status LEDs, which are wired to B: LED 1 (PTA16 on B) for TX, LED 2 (PTB17) for receive
+// A's status LEDs, which are wired to B: LED 1 (PTA16 on B, red) for TX, LED 2 (PTB17, green) for receive
 void gd88_rx2_led(uint8_t which, bool on)
 {
 	if (lock == NULL) {

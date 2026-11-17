@@ -31,6 +31,7 @@
 #define PIN_RF_STATUS1		0x3B
 
 #define PIN_LCD_RESET		0x42	// PTC2, low = reset
+#define PIN_KEY_LIGHT		0x10	// PTA16, the keypad backlight (red), high = on
 #define PIN_SPK_AMP		0x52	// PTC18, high = speaker amplifier on
 // PTC20: low cuts the modem's audio line (taken low while a beep plays over DMR audio). Low at start-up
 #define PIN_DIG_AUDIO		0x54
@@ -38,6 +39,6 @@
 #define KEY_ROWS		6
 #define KEY_SENSES		3
 
-// The status LEDs are on SoC B (PTA16, PTB17): A switches them over the link (RX2_LED)
+// The status LEDs are on SoC B (PTA16 red, PTB17 green): A switches them over the link (RX2_LED)
 
 #endif

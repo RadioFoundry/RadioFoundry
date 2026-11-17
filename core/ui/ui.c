@@ -19,6 +19,7 @@
 #include "ui_svc.h"
 #include "input/input.h"
 #include "radio/radio.h"
+#include "radio/battery.h"
 #include "config.h"
 
 #ifndef RFOUNDRY_RELEASE
@@ -65,6 +66,8 @@ static void set_backlight(uint8_t pct)
 	if (pct != backlight_now) {
 		backlight_now = pct;
 		board.display->set_backlight(pct);
+		if (board.display->set_key_light != NULL)
+			board.display->set_key_light(batt_key_light(pct, ui_app_brightness()));
 	}
 }
 

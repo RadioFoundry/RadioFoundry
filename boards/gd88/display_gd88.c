@@ -132,6 +132,7 @@ static void init(void)
 	panel.width = PANEL_W;
 	panel.height = PANEL_H;
 	panel.variant = panel_variant();
+	hrc_pin_out(PIN_KEY_LIGHT, false);
 	ili9341_init(&panel);
 	ready = true;
 }
@@ -149,6 +150,11 @@ static void set_backlight(uint8_t percent)
 	hrc_backlight(percent);
 }
 
+static void set_key_light(bool on)
+{
+	hrc_pin_write(PIN_KEY_LIGHT, on);
+}
+
 const hal_display_t gd88_display = {
 	.inset_top = CONFIG_DISPLAY_INSET_TOP, .inset_bottom = CONFIG_DISPLAY_INSET_BOTTOM,
 	.inset_left = CONFIG_DISPLAY_INSET_LEFT, .inset_right = CONFIG_DISPLAY_INSET_RIGHT,
@@ -158,4 +164,5 @@ const hal_display_t gd88_display = {
 	.init = init,
 	.flush_indexed = flush,
 	.set_backlight = set_backlight,
+	.set_key_light = set_key_light,
 };

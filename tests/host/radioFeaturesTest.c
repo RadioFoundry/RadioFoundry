@@ -692,6 +692,13 @@ static void test_battery_module(void)
 	CHECK(batt_backlight_pct(80, 30, 120, 120000, BATT_OK) == 0);
 	CHECK(batt_backlight_pct(80, 0, 0, 999999, BATT_OK) == 80);
 	CHECK(batt_backlight_pct(80, 30, 120, 0, BATT_LOW) == BATT_DIM_PCT);
+	// The keypad light: only at the set brightness
+	CHECK(batt_key_light(80, 80));
+	CHECK(!batt_key_light(16, 80));
+	CHECK(!batt_key_light(0, 80));
+	CHECK(!batt_key_light(BATT_DIM_PCT, 80));
+	CHECK(batt_key_light(100, 255));
+	CHECK(!batt_key_light(0, 0));
 }
 
 // ---- the beep engine on its own ----
