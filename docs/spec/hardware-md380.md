@@ -648,8 +648,28 @@ DMR: the PA follows the bursts, keyed by the key-up rule ([pa-keyup.md](pa-keyup
 reaches -3 dB 0.19-0.34 ms before the first symbol and is within 0.4 dB of its power over the first 10 symbols
 (mean), nothing over the floor in the slot before. Overshoot: 0.7-1.1 dB, and 1.7-1.8 dB at drive 972, which that
 drive gives written alone too (the power loop's). The lowest level leaves the floor about 1 ms ahead and stays near
--28 dB for about 0.1 ms before it rises (the PA just over its turn-on edge, at any boost tried). The 5 W level is not
-measured.
+-28 dB for about 0.1 ms before it rises (the PA just over its turn-on edge, at any boost tried).
+
+Across the 70 cm band, the same radio on its antenna, all five levels: the -3 dB point before the first symbol, the
+overshoot, and the first symbol against the settled level.
+
+| Level | 432 MHz | 445 MHz | 449.9 MHz |
+|---|---|---|---|
+| 100 mW | 0.54 ms, 4.7 dB, +1.9 dB | 0.48 ms, 4.3 dB, +2.3 dB | 0.40 ms, 3.6 dB, +2.3 dB |
+| 500 mW | 0.43 ms, 1.2 dB, +0.4 dB | 0.37 ms, 0.9 dB, +0.5 dB | 0.29 ms, 0.8 dB, +0.5 dB |
+| 1 W | 0.35 ms, 1.0 dB, +0.5 dB | 0.31 ms, 1.1 dB, +0.7 dB | 0.26 ms, 1.1 dB, +0.9 dB |
+| 2.5 W | 0.39 ms, 0.5 dB, +0.2 dB | 0.36 ms, 0.8 dB, +0.4 dB | 0.33 ms, 1.4 dB, +0.7 dB |
+| 5 W | 0.43 ms, 0.4 dB, 0.0 dB | 0.40 ms, 0.6 dB, +0.2 dB | 0.38 ms, 1.2 dB, +0.3 dB |
+
+The 100 mW level's boost overshoots at these frequencies: the boost drive by itself settles 4.3 dB over the level
+(445 MHz), and the 506 µs settle time is too short to fall back from it. The first symbol is about 2 dB high and the
+first 5 symbols are within 0.3 dB (mean). A settle time of 1100 µs takes the overshoot away there (0.2-1.1 dB, first
+symbol -0.5 dB), but with the 1 W row at 972 the level then sags after the boost: 3.4 dB under its power at the first
+symbol with 900 µs, 5 dB under and up to 0.12 ms late with 1100 µs. So the constants stay: this level is early and
+over, never late. Its drive by itself is too slow: at 445 MHz it reaches -3 dB as the first symbol starts.
+
+Key-down at 445 MHz, every level: -3 dB 0.39-0.47 ms after the last symbol's end and 30 dB down by 0.46-0.57 ms,
+nothing over the floor in the slot between two bursts. The power of the levels over 1 W is not measured.
 
 The lowest level's drive is 56.5 % of the 1 W row's, 0 to 3 counts over the dead zone's edge depending on the row
 (2 on the radio measured, its 1 W row 972). At 0 it takes the edge's boost ([pa-keyup.md](pa-keyup.md) 2), within a

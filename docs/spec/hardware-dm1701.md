@@ -874,6 +874,25 @@ The top level is 1.6-2.5 dB short at the first symbol
 and settles after it: its PA point can't move earlier (SFR, below). A refit on the cable came out worse at every
 round.
 
+Across the 70 cm band, the radio on its antenna over the air, all five levels: the -3 dB point before the first
+symbol, the overshoot, and the first symbol against the settled level.
+
+| Level | 432 MHz | 445 MHz | 449.9 MHz |
+|---|---|---|---|
+| 100 mW | 0.67 ms, 3.2 dB, +2.6 dB | 0.49 ms, 2.2 dB, +1.9 dB | 0.44 ms, 2.1 dB, +1.8 dB |
+| 500 mW | 0.61 ms, 2.0 dB, +1.5 dB | 0.51 ms, 1.3 dB, +1.1 dB | 0.47 ms, 1.2 dB, +0.9 dB |
+| 1 W | 0.60 ms, 1.8 dB, +1.3 dB | 0.53 ms, 1.4 dB, +1.2 dB | 0.50 ms, 1.6 dB, +1.2 dB |
+| 2.5 W | 0.57 ms, 0.8 dB, +0.4 dB | 0.51 ms, 1.2 dB, +0.8 dB | 0.49 ms, 1.7 dB, +1.3 dB |
+| 5 W | 0.32 ms, 0.3 dB, -1.1 dB | 0.16 ms, 0.3 dB, -1.4 dB | 0.13 ms, 0.3 dB, -1.6 dB |
+
+No level is late, and the -3 dB point stays within 50 µs from burst to burst. The four lower levels are early and
+over, the lowest the most; the first 5 symbols are within 1.8 dB of the settled level (mean). The top level's knee is
+slow: -6 dB 0.32-0.52 ms ahead, -1 dB 0.2 ms after the first symbol's start, so its first symbol is 1.1-1.6 dB low,
+as on the cable, and its first 5 symbols 0.6 dB low (mean). Its lead thins toward the top of the band.
+
+Against this set's row in the table above, the lowest level is 0.35 ms earlier here with 1.6 dB more overshoot, and
+the second and third levels overshoot less. The difference is not traced.
+
 The lowest UHF level's drive (339) lies close over the dead zone's edge, 34.9 % of the low row's drive: 38 counts over
 at 445 MHz (low row 864) and 2 at the second frequency (low row 967). Where the low row is 972 or more it is under
 the edge, and takes the edge's boost ([pa-keyup.md](pa-keyup.md) 2), a count or two under its boost at the second
@@ -902,10 +921,17 @@ The radio's USB link drops while it transmits at VHF above 100 mW, and the host 
 restarts or the cable is replugged. VHF is therefore measured with `--key-run restart`
 ([pa-keyup.md](pa-keyup.md) 4, 6).
 
+VHF timing can't be read over the air from the radio's antenna on the SDR bench: each burst carries 1.6-2.8 dB of
+ripple there (0.3 dB at UHF), in a pattern that repeats every fifth burst, and the -3 dB point moves by as much as
+3 ms with it. Its source is not found. The -10 dB point holds through it, 0.20-0.48 ms before the first symbol at every
+level at 146 MHz.
+
 Key-down: TIM7 drops the PA 30 ms after the RF TX interrupt, when the burst's last symbol ends
 ([gotchas.md](gotchas.md) 3.4); the timeslot interrupt after it puts the receiver back and stays the fallback. The
 carrier is 30 dB down 0.5-0.9 ms after the last symbol's end, inside the 1.25 ms guard time. Dropped at the timeslot
-interrupt alone it fell 1.7-1.8 ms after the last symbol, about 0.5 ms into the next slot.
+interrupt alone it fell 1.7-1.8 ms after the last symbol, about 0.5 ms into the next slot. By level at 432, 445 and
+449.9 MHz: 100 mW to 2.5 W reach -3 dB 0.43-0.47 ms after the last symbol's end and are 30 dB down by 0.49-0.58 ms;
+5 W reaches -3 dB at 0.50-0.62 ms and is 30 dB down by 0.73-0.93 ms.
 
 With the earlier form, every level measured on the SDR bench:
 
