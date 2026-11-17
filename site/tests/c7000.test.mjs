@@ -526,7 +526,11 @@ test("every C7 board: the stub drives only the board's LED pins, from the boot R
 		r.stop();
 	}
 	assert.ok(Object.values(C.boards).some((b) => b.stub_board.led.red !== C.led.red), "a board whose LEDs are not the stub's own");
-	assert.ok(equal(stubFor(C, "dm1801pro", stubs.image), stubs.image), "a board on the stub's own pins gets the image as it is");
+	// every board on the stub's own pins gets the image byte for byte as before per-board pins, so an install on
+	// one of them loads the very stub it always did
+	const own = Object.keys(C.boards).filter((id) => ledFor(C, id).red === C.led.red && ledFor(C, id).green === C.led.green);
+	assert.ok(own.includes("dm1801pro"), `boards on the stub's own pins: ${own.join(", ")}`);
+	for (const id of own) assert.ok(equal(stubFor(C, id, stubs.image), stubs.image), `${id}: on the stub's own pins, gets the image as it is`);
 });
 
 test("simulated radio: after the stub's reset the host link stays silent until a power cycle, as on the real radios", async (t) => {
