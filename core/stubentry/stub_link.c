@@ -30,7 +30,7 @@ static void kv(char *out, size_t *n, size_t cap, const char *key, const char *va
 
 // VERSION with the keys the flashing tools and the web tools read (docs/spec/debuglink.md 3.1): which radio, which
 // build, which codec. stub=1 says this is the stub entry's listener, so a host knows the debug link's other commands
-// aren't built. preset= and off= come last: a list too long for the reply drops only itself
+// aren't built. start= says the build's start language. preset= and off= come last: a list too long for the reply drops only itself
 static size_t version(const stub_link_t *l, uint8_t *out, size_t cap)
 {
 	size_t n = 1;
@@ -59,6 +59,9 @@ static size_t version(const stub_link_t *l, uint8_t *out, size_t cap)
 	}
 	kv((char *)out, &n, cap, "codec", l->codec != NULL ? l->codec() : "none");
 	kv((char *)out, &n, cap, "stub", "1");
+	if (l->start != NULL) {
+		kv((char *)out, &n, cap, "start", l->start);
+	}
 	if (l->preset != NULL && l->off != NULL) {
 		kv((char *)out, &n, cap, "preset", l->preset);
 		kv((char *)out, &n, cap, "off", l->off);
