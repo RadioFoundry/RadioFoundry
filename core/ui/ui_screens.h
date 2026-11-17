@@ -53,6 +53,7 @@ typedef struct {
 	bool vfo;		// the VFO, not a channel
 	uint16_t number;	// codeplug channel number (0: the VFO)
 	uint8_t mode;		// radio_mode_t
+	bool am;		// an FM channel (or the VFO) received in AM: the air band (radio_am_channel)
 	uint32_t rx_hz;
 	char name[CODEPLUG_NAME_LEN + 1];
 	char zone[CODEPLUG_NAME_LEN + 1];	// the zone's name, "VFO" for the VFO

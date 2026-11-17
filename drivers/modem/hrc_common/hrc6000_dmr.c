@@ -88,6 +88,8 @@
 #define CC_SET_MATCHES		2u
 #define CC_HOLD_MATCHES		8u
 #define CC_RELEASE_TICKS	167u	// 5 s
+#define CC_TICK_MATCHES		3u	// the same code at this many ticks of one phase running (120 ms) is followed
+#define CC_TICK_QUIET		4u	// ... while no burst was taken for this many ticks
 #define TC_STABLE		4u	// more than this many agreements
 #define TC_RESYNC		3u	// more than this many disagreements
 #define BS_RECENT_TICKS		40u
@@ -846,6 +848,34 @@ static void cc_follow(hrc6000_dmr_t *e, uint8_t cc, uint32_t t)
 		e->cc_held = true;
 		e->cc_hold_tick = e->tick;
 	}
+}
+
+// A chip without any-CC deframing (the HR_C5000) raises no interrupt at all for a call in a code other than 0x1F's,
+// so cc_follow never hears it. But 0x52 read at the timeslot interrupt holds the call's code in the slot it is on,
+// and junk in the other (bench: the call's code at 45 % of the ticks, the rest spread over the other codes). The
+// same code at CC_TICK_MATCHES ticks of one phase running is followed as cc_follow does. Only while nothing is
+// taken: a call in 0x1F's code is never left for a code read in its empty slot
+static void cc_tick_follow(hrc6000_dmr_t *e, uint8_t ph)
+{
+	if (!cc_any(e) || e->dev->chip->cc_any_rx || e->cc_held || e->tx_state != TXS_IDLE || e->restart_pending ||
+	    e->tick - e->rx_tick < CC_TICK_QUIET) {
+		e->cc_tick_n[ph] = 0;
+		return;
+	}
+	uint8_t cc = (uint8_t)(r(e->dev, R_RX_CC) >> 4);
+	if (e->cc_tick_n[ph] == 0 || cc != e->cc_tick_last[ph]) {
+		e->cc_tick_last[ph] = cc;
+		e->cc_tick_n[ph] = 1;
+		return;
+	}
+	if (++e->cc_tick_n[ph] < CC_TICK_MATCHES || cc == e->cc_cur) {
+		return;
+	}
+	e->cc_tick_n[0] = e->cc_tick_n[1] = 0;
+	e->cc_cur = cc;
+	hrc6000_dmr_set_cc(e->dev, cc);
+	e->restart_pending = true;	// later in this timeslot interrupt (the idle branch), after the 0x1F write
+	e->restart_why = HRC6000_RS_CC;
 }
 
 // Raw evidence for the bench, before anything is dropped: status class and type, sync type, report timing
@@ -1858,6 +1888,9 @@ void hrc6000_dmr_isr_timeslot(hrc6000_dmr_t *e)
 		track_tc(e);
 	}
 	uint8_t ph = (uint8_t)(e->tick & 1u);
+	if (idle && (ctl_ended & CTL_RX) != 0) {
+		cc_tick_follow(e, ph);
+	}
 	push_tick(e, e->phase_ts[ph]);
 	if (idle && e->lock_ts == 0 && (ctl_ended & CTL_RX) != 0 && rmo(e)) {
 		slc_read(e);
