@@ -33,10 +33,12 @@ typedef struct {
 } air_mem_t;
 static hrc7000_dmr_t eng;
 _Static_assert(sizeof(air_mem_t) <= sizeof(eng.evq), "the session no longer fits the engine's event queue");
-_Static_assert(sizeof(air_softmodem_t) <= sizeof(eng.txq), "the soft modem no longer fits the engine's TX queue");
+// The glue (platform/hrc7000/dmr_glue.c) puts the soft modem in the engine's TX queue at its first aligned address and
+// checks the fit for the target. Here pointers are 64-bit and the state larger, so it gets its own aligned memory
+static air_softmodem_t sm_mem;
 #define A	(&((air_mem_t *)(void *)eng.evq)->a)
 #define B	(&((air_mem_t *)(void *)eng.evq)->b)
-#define SM	((air_softmodem_t *)(void *)eng.txq)
+#define SM	(&sm_mem)
 
 // --- ops ---
 
