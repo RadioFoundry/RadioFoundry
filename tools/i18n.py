@@ -211,7 +211,7 @@ def taken_keys():
     return taken_cache
 
 
-# A value in a TRF format (core/ui/textfmt.h, sb_fmt): %<kind>, or %<number>$<kind> with the number from 1; a
+# A value in a TRF format (core/text/format.h, sb_fmt): %<kind>, or %<number>$<kind> with the number from 1; a
 # number may ask for its least width, zero padded (%03u). Space padding (%3u) is off in the formatter
 # (SB_FMT_SPACE_PAD). Every other '%' is text. FORMAT_LIKE is what was probably meant as a value and isn't one.
 # Numbering (format_numbering): the English writes its values in order without numbers ("Site %u of %u: %s") unless
@@ -220,18 +220,30 @@ def taken_keys():
 FORMAT_VALUES = 4
 FORMAT_VALUE = re.compile(r"%(?:([1-" + str(FORMAT_VALUES) + r"])\$)?(0[1-9])?([sKdu])")
 FORMAT_LIKE = re.compile(r"%[0-9]*\$[0-9]*.?|%[-+#0-9.]*l*[sdiuxXcK]")
-FORMAT_C_TYPE = {"s": "const char *", "K": "const char *", "d": "int", "u": "unsigned"}
+# "%%" is a '%': read before the values, so the '%' after it never starts one ("50%%s" has no value)
+FORMAT_TOKEN = re.compile(r"%%|" + FORMAT_VALUE.pattern)
+FORMAT_CHECK = {"s": "TR_CHECK_TEXT", "K": "TR_CHECK_TEXT", "d": "TR_CHECK_NUM", "u": "TR_CHECK_NUM"}
+
+
+def format_found(text):
+    """The values of a format, in order (FORMAT_VALUE matches), "%%" left out"""
+    return [m for m in FORMAT_TOKEN.finditer(text) if m.group(0) != "%%"]
+
+
+def format_text(text):
+    """A format without its values and "%%": what is left must not look like a value"""
+    return FORMAT_TOKEN.sub("", text)
 
 
 def format_values(text, where):
     """{number: kind} of a format's values, numbered from 1. A value is a text (s, K) or a number (d, u) everywhere it
     is used, and what looks like a value must be one"""
     kinds = {}
-    for m in FORMAT_LIKE.finditer(FORMAT_VALUE.sub("", text)):
+    for m in FORMAT_LIKE.finditer(format_text(text)):
         raise I18nError("%s: %r: %r is not a value: write %%s, %%K, %%d, %%u or %%03u, numbered %%1$s to %%%d$s "
                         "in a translation" % (where, text, m.group(0), FORMAT_VALUES))
     unnumbered = 0
-    for m in FORMAT_VALUE.finditer(text):
+    for m in format_found(text):
         n, width, kind = m.group(1), m.group(2), m.group(3)
         if not n:
             unnumbered += 1
@@ -248,7 +260,7 @@ def format_values(text, where):
 def format_numbering(text, where, english=None):
     """Problems with how a format numbers its values (a list of strings): the English's (english None) or a
     translation's of the English with the values english"""
-    found = list(FORMAT_VALUE.finditer(text))
+    found = format_found(text)
     numbered = [m for m in found if m.group(1)]
     twice = len({m.group(1) for m in numbered}) < len(numbered)
     # A value inside a text alternate {a|b}: each choice must say which value it shows, since a choice may leave one
@@ -357,7 +369,7 @@ def scan(rel, src, old_ok=False):
             if sorted(kinds) != list(range(1, len(kinds) + 1)) or not kinds:
                 raise I18nError("%s: %r: a format's values are numbered from 1 with none left out (a text without "
                                 "values is TR)" % (where, text))
-        elif FORMAT_VALUE.search(text) or FORMAT_LIKE.search(text):
+        elif format_found(text) or FORMAT_LIKE.search(format_text(text)):
             raise I18nError("%s: %r has a value: only TRF() formats one" % (where, text))
         out.append(Mark(kind, key, text, rel, int(where.rsplit(":", 1)[1]), at))
     return out
@@ -960,11 +972,14 @@ def generate(out_path, found=None):
         keys.append("\tTR_%s = %d," % (k, i))
     keys.append("};")
     source, _ = extract(found)
-    formats = [(k, format_values(t, k)) for k, t, _ in sorted(source) if FORMAT_VALUE.search(t)]
+    formats = [(k, format_values(t, k)) for k, t, _ in sorted(source) if format_found(t)]
     if formats:
-        keys += ["", "// The values each format takes (TRF in i18n.h checks a call against these; defined nowhere)"]
+        keys += ["", "// The values each format takes: TRF (i18n.h) checks a call's values against these, "
+                 "and no code is made"]
     for k, kinds in formats:
-        keys.append("int tr_args_%s(%s);" % (k, ", ".join(FORMAT_C_TYPE[kinds[n]] for n in sorted(kinds))))
+        args = ["v%d" % n for n in sorted(kinds)]
+        keys.append("#define tr_check_%s(%s)\t(%s)" % (k, ", ".join(args),
+                    " + ".join("%s(v%d)" % (FORMAT_CHECK[kinds[n]], n) for n in sorted(kinds))))
     keys += ["", "#define TR_TRANSLATED\t%d\t// the first TRX key" % translated,
              "#define TR_KEYS\t\t%d" % (len(ids) + 1), "", "#endif"]
     write_if_changed(os.path.join(os.path.dirname(os.path.abspath(out_path)), KEYS_HEADER), "\n".join(keys) + "\n")

@@ -719,8 +719,8 @@ msgstr "Un tasto lo tiene accesa"
 
 #: core/ui/ui_app.c
 msgctxt "BATT_BANNER_CHARGE_SOON"
-msgid "Battery %u%: charge soon"
-msgstr "Batteria %u%: ricarica presto"
+msgid "Battery %u%%: charge soon"
+msgstr "Batteria %u%%: ricarica presto"
 
 #: core/ui/ui_app.c
 msgctxt "TRUNK_TOAST_BACK_ON"

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The debug link's text: the shared formatter (ui/textfmt.h) into its buffers
+// The debug link's text: the shared formatter (text/format.h) into its buffers
 #include "debuglink/dl_fmt.h"
-#include "ui/textfmt.h"
+#include "text/format.h"
 
 size_t dl_vfmt(char *buf, size_t cap, const char *fmt, va_list ap)
 {
@@ -10,7 +10,7 @@ size_t dl_vfmt(char *buf, size_t cap, const char *fmt, va_list ap)
 		return 0;
 	sbuf_t b;
 	sb_init(&b, buf, cap);
-	sb_vfmt(&b, fmt, false, ap);
+	sb_vprintf(&b, fmt, ap);
 	return (size_t)(b.p - buf);
 }
 

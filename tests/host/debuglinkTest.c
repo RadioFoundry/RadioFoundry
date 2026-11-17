@@ -6,7 +6,7 @@
 #include <string.h>
 #include "debuglink/debuglink_proto.h"
 #include "debuglink/dl_fmt.h"
-#include "ui/textfmt.h"
+#include "text/format.h"
 #include "debuglink/dlog.h"
 #include "debuglink/dl_chip.h"
 #include "debuglink/dl_shot.h"

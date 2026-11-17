@@ -6874,23 +6874,18 @@ static void key_labels(void)
 		return;
 	key_label_lang = lang_current();
 	for (uint8_t r = 0; r < UI_KEY_ROLES; r++) {
-		for (uint8_t h = 0; h < 2; h++) {
-			// The key's name, then the same with "hold"
-			SB_LOCAL(key, sizeof key_label[0]);
-			if (board.side_key_names != NULL && r < board.side_key_count) {
-				sb_str(&key, board.side_key_names[r]);
-			} else if (board.home_key_names != NULL && r >= board.side_key_count &&
-				   r < board.side_key_count + board.home_key_count) {
-				sb_str(&key, board.home_key_names[r - board.side_key_count]);
-			} else {
-				TRF(&key, SET_LABEL_KEY_N, "Key %d", r + 1);
-			}
-			sb_init(&b, key_label[2 * r + h], sizeof key_label[0]);
-			if (h)
-				TRF(&b, SET_LABEL_KEY_HOLD, "%K hold", key_text);
-			else
-				sb_str(&b, key_text);
+		// The key's name, then the same with "hold"
+		sb_init(&b, key_label[2 * r], sizeof key_label[0]);
+		if (board.side_key_names != NULL && r < board.side_key_count) {
+			sb_str(&b, board.side_key_names[r]);
+		} else if (board.home_key_names != NULL && r >= board.side_key_count &&
+			   r < board.side_key_count + board.home_key_count) {
+			sb_str(&b, board.home_key_names[r - board.side_key_count]);
+		} else {
+			TRF(&b, SET_LABEL_KEY_N, "Key %d", r + 1);
 		}
+		sb_init(&b, key_label[2 * r + 1], sizeof key_label[0]);
+		TRF(&b, SET_LABEL_KEY_HOLD, "%K hold", key_label[2 * r]);
 	}
 }
 #endif

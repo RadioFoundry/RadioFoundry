@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The debug link's text replies and dlog(): a printf subset, formatted by the UI's formatter (ui/textfmt.h, sb_vfmt)
+// The debug link's text replies and dlog(): a printf subset, formatted by the UI's formatter (text/format.h, sb_vfmt)
 //
 //   %d %i %u %x %X %s %c %%   with an optional '0' flag, a width (1..20) and an 'l' modifier (32-bit values; int and
 //                             long are the same size on every target and on the host tests' ILP32/LP64 the 'l' forms
-//                             read a long). No floats, no precision.
+//                             read a long). The width zero pads: "%05d" (a width without the '0', space padding, is
+//                             off in text/format.h: SB_FMT_SPACE_PAD). No floats, no precision.
 //
 // No RTOS and no board globals: the host tests build it.
 #ifndef DL_FMT_H

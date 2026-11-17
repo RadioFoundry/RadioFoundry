@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // Small text builders for the UI: dynamic data a text shows (frequencies, times, places). The buffer and the
-// formatter are textfmt.h
+// formatter are text/format.h
 #ifndef UI_FMT_H
 #define UI_FMT_H
 
 #include <stdint.h>
 #include <stddef.h>
 #include "hal_radio.h"
-#include "textfmt.h"
+#include "text/format.h"
 
 // A buffer of its own for a value a helper makes: SB_LOCAL(f, 12); sb_freq(&f, hz); then f_text is the value
 #define SB_LOCAL(name, size) \

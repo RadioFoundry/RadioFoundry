@@ -102,6 +102,10 @@ class Marks(unittest.TestCase):
         self.assertEqual(i18n.format_values("%s to %2$u", ""), {1: "s", 2: "u"})
         self.assertEqual(i18n.format_values("%2$u", ""), {2: "u"})
         self.assertEqual(i18n.format_values("{%1$u%2$K ago|%1$u%2$K}", ""), {1: "u", 2: "K"})
+        # "%%" is a '%', read first: the '%' after it never starts a value
+        self.assertEqual(i18n.format_values("50%%s", ""), {})
+        self.assertEqual(i18n.format_values("%u%%: used", ""), {1: "u"})
+        self.assertEqual(i18n.check_translation("%u%% used", "%u%%usado", "x"), [])
         for src, why in (('x = TR(FROM, "From %1$s");', "only TRF"),
                          ('x = TR(FROM, "From %s");', "only TRF"),
                          ('TRF(&b, FROM, "From %2$s and %3$s or %3$s", a);', "numbered from 1"),
@@ -156,8 +160,9 @@ class Marks(unittest.TestCase):
                 i18n.LANG_DIR = saved
             with open(os.path.join(d, i18n.KEYS_HEADER), encoding="utf-8") as f:
                 keys = f.read()
-        self.assertIn("int tr_args_SITE(unsigned, int, const char *, const char *);", keys)
-        self.assertNotIn("tr_args_DONE", keys)
+        self.assertIn("#define tr_check_SITE(v1, v2, v3, v4)\t(TR_CHECK_NUM(v1) + TR_CHECK_NUM(v2) + "
+                      "TR_CHECK_TEXT(v3) + TR_CHECK_TEXT(v4))", keys)
+        self.assertNotIn("tr_check_DONE", keys)
 
     def test_key_from_text(self):
         self.assertEqual(i18n.key_from_text("Couldn't save: try again"), "COULDNT_SAVE_TRY_AGAIN")

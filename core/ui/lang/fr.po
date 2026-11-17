@@ -719,8 +719,8 @@ msgstr "Touche p/ maintenir"
 
 #: core/ui/ui_app.c
 msgctxt "BATT_BANNER_CHARGE_SOON"
-msgid "Battery %u%: charge soon"
-msgstr "Batterie %u% : recharger vite"
+msgid "Battery %u%%: charge soon"
+msgstr "Batterie %u%% : recharger vite"
 
 #: core/ui/ui_app.c
 msgctxt "TRUNK_TOAST_BACK_ON"

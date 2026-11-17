@@ -3,8 +3,8 @@
 // The text formatter: an appending buffer and one printf-like formatter for the UI's text with dynamic data (i18n.h's
 // TRF) and the debug link's text (dl_fmt.h). No libc printf (flash, stack, reentrancy), no RTOS, no language tables:
 // the host tests and the debug link build it on its own
-#ifndef UI_TEXTFMT_H
-#define UI_TEXTFMT_H
+#ifndef TEXT_FORMAT_H
+#define TEXT_FORMAT_H
 
 #include <stdarg.h>
 #include <stdbool.h>
@@ -37,15 +37,16 @@ void sb_i32(sbuf_t *b, int32_t v);
 // The values are used in the order they are passed. A UI format (a translation) may number them, %1$s to %4$s, so
 // that it can move or repeat them: every value is then read first, by the kinds the text gives it, so the text must
 // use each value at least once. A UI format's %s is text that isn't ours (a name, a received text): a byte below
-// 0x20 is shown as '?', since the text layer reads those as markers (font.h); NULL is nothing, and sb_fmt_name is
-// where the last one went. The debug link's (ugc false) keeps every byte and shows NULL as "(null)"
+// 0x20 is shown as '?', since the text layer reads those as markers (font.h), and NULL is nothing. UI text also has
+// a CJK character cut whole at the buffer's end. The debug link's (sb_vprintf) keeps every byte as it is and shows
+// NULL as "(null)". sb_fmt returns where the last %s value went, NULL when there was none (a banner's title breaks its
+// line there)
 #define SB_FMT_VALUES	4
 #ifndef SB_FMT_SPACE_PAD
 #define SB_FMT_SPACE_PAD	0
 #endif
-void sb_vfmt(sbuf_t *b, const char *fmt, bool ugc, va_list ap);
-void sb_fmt(sbuf_t *b, const char *fmt, ...);
-// Where the last UI format put its %s value, NULL when it had none (a banner's title breaks its line there)
-extern const char *sb_fmt_name;
+const char *sb_fmt(sbuf_t *b, const char *fmt, ...);
+// The debug link's (dl_fmt.h): printf's values in order, every byte kept, NULL as "(null)"
+void sb_vprintf(sbuf_t *b, const char *fmt, va_list ap);
 
 #endif

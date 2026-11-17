@@ -719,8 +719,8 @@ msgstr "Una tecla la mantiene"
 
 #: core/ui/ui_app.c
 msgctxt "BATT_BANNER_CHARGE_SOON"
-msgid "Battery %u%: charge soon"
-msgstr "Batería %u%: cargar pronto"
+msgid "Battery %u%%: charge soon"
+msgstr "Batería %u%%: cargar pronto"
 
 #: core/ui/ui_app.c
 msgctxt "TRUNK_TOAST_BACK_ON"

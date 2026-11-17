@@ -51,9 +51,17 @@ static inline const char *tr(tr_id_t id) { return id; }
 static inline const char *tr_en(tr_id_t id) { return id; }
 #endif
 
-// tr_args_<KEY> is declared in tr_keys.h and defined nowhere: inside sizeof it is only checked, a value of the wrong
-// type, in the wrong order or missing fails the build, and no code is made
-#define TRF(b, k, s, ...)	((void)sizeof(tr_args_##k(__VA_ARGS__)), sb_fmt((b), TRF_TEXT(k, s), __VA_ARGS__))
+// TRF checks each value against the English's kinds: tr_check_<KEY>(values) in tr_keys.h adds TR_CHECK_NUM or
+// TR_CHECK_TEXT for each, an array whose size is negative unless the value's type is one the formatter reads that
+// way. A number is an int or smaller, signed or not (long only where it is the size of an int); a text is a char
+// pointer. A wrong type (an 8-byte integer, a float, another pointer) or a wrong count fails the build. It is all
+// inside sizeof: no code is made, nothing is evaluated twice. Returns sb_fmt's: where the last %s went, or NULL
+#define TR_CHECK_(ok)	sizeof(char[(ok) ? 1 : -1])
+#define TR_CHECK_NUM(v)	TR_CHECK_(_Generic((v), _Bool: 1, char: 1, signed char: 1, unsigned char: 1, short: 1, \
+	unsigned short: 1, int: 1, unsigned: 1, long: sizeof(long) == sizeof(int), \
+	unsigned long: sizeof(long) == sizeof(int), default: 0))
+#define TR_CHECK_TEXT(v)	TR_CHECK_(_Generic((v), char *: 1, const char *: 1, default: 0))
+#define TRF(b, k, s, ...)	((void)sizeof(tr_check_##k(__VA_ARGS__)), sb_fmt((b), TRF_TEXT(k, s), __VA_ARGS__))
 
 // Every language a catalog exists for, English first, built into this image or not (Settings > Display > Language
 // lists them all and dims the ones left out)
