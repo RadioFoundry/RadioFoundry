@@ -24,9 +24,10 @@ group 1, the channel's parameters and not the settings'.
 
 test_nxdn_tx_off_air[9600|4800] (opt-in: --allow-rf --allow-service-stop --nxdn-mhz MHz; the radio transmits, the bench
 only receives): the VFO on --nxdn-mhz in NXDN at the lowest power, at that rate, RAN TEST_RAN, unit TEST_UNIT calling
-group TEST_GROUP, keys for PTT_S through the debug link while the bench's 4FSK receiver (the rx op, mode fsk4: 2400 or
-4800 baud, root raised cosine, the FSW CDF59 as its 10-symbol sync) slices it. tools/bench/nxdntool.py (the firmware's
-own framer and call layer, built for the host) decodes the symbols. Pass criteria:
+group TEST_GROUP, keys for PTT_S through the debug link while the bench board records its FM discriminator (the rx
+op's disc stream). tools/bench/nxdntool.py disc (the firmware's own soft modem, framer and call layer, built for the
+host) decodes it, the stream averaged down to the modem's rate first (at most 10 samples a symbol). The bench's 4FSK
+slicer (mode fsk4) is not used: at 2400 baud it loses frames of an over the discriminator decodes clean. Pass criteria:
 - one call, RAN TEST_RAN, from TEST_UNIT to group TEST_GROUP;
 - at least as many frames as the over's length gives, less MISSING_FRAMES (80 ms a frame at both rates);
 - voice frames handed on; at most MAX_CRC_FAIL SACCH and FACCH1 CRC failures;
@@ -54,7 +55,7 @@ at 4800 bit/s with RAN STORED_RAN to group 1, up to SCAN_CALLS of them, until th
 (`scan_phase=hold`). Skipped without CONFIG_SCAN, in a zone of one channel, or where the air interface can't receive
 4800 bit/s.
 """
-import json
+import array
 import os
 import tempfile
 import time
@@ -72,13 +73,11 @@ SPEECH_FRAMES = {"9600": 64, "4800": 136}   # voice frames of the recording that
 SPEECH_LATE = 8         # voice frames of a call's start a receiver may miss before its VCALL is in
 PEAK_MIN = 1000         # decoded speech peaks at thousands (test_dmr_voice.py)
 FRAME_MS = 80.0
-MISSING_FRAMES = 4      # the bench receiver's sync takes a frame or two to find the carrier, the release frame ends it
+MISSING_FRAMES = 4      # the decoder's sync takes a frame or two to find the carrier, the release frame ends it
 MAX_CRC_FAIL = 1
 TEST_RAN = 5
 TEST_UNIT = 1234
 TEST_GROUP = 77
-NXDN_SYNC = "CDF59"     # the FSW, ten symbols (TS 1-A 4.3)
-SYNC_LEN = 10
 RATES = {"9600": (4800, 2400), "4800": (2400, 1050)}    # bit/s -> (symbols/s, outer deviation Hz, TS 1-A table 3.3-1)
 
 
@@ -223,23 +222,30 @@ def test_nxdn_stored_channel(radio, backup_dir):
                    sections=("core", "channel", "nxdn"), what="the channel back as it was, NXDN stopped")
 
 
-def nxdn_decode(job, rate, done=None):
-    """nxdntool's JSON lines for an fsk4 rx job's records; done (the job's last record) says why there are none"""
+def nxdn_decode(job, rate):
+    """nxdntool's JSON lines for an rx job's disc stream, averaged down to at most 10 samples a symbol"""
     import nxdntool
-    recs = [r for r in job.records if any(isinstance(r.get(k), (str, dict)) for k in ("dibits", "syms", "symbols"))]
-    if not recs:
-        what = (done or {}).get("summary")
-        if what and what.get("carrier") is False and not what.get("keyings"):
-            raise AssertionError(f"the bench board heard no carrier while the radio keyed: {what}")
-        skip("bench", f"the bench board sent no symbols (the fsk4 rx op's records): {what}")
+    pcm = job.pcm.get("disc")
+    if not pcm:
+        skip("bench", "the bench board sent no discriminator stream (the rx op's disc)")
+    srate, full = None, None
+    for st in (job.header or {}).get("streams", []):
+        if st.get("name") == "disc":
+            srate, full = st.get("rate", (job.header or {}).get("rate")), st.get("full")
+    if not srate or not full:
+        skip("bench", f"the bench board gave no rate or full scale for its disc stream: {job.header}")
+    srate = int(round(float(srate)))
+    k = -(-srate // (RATES[rate][0] * 10))
+    if k > 1:
+        a = array.array("h", pcm[:len(pcm) // 2 * 2])
+        pcm = array.array("h", (sum(a[i:i + k]) // k for i in range(0, len(a) - k + 1, k))).tobytes()
+        srate //= k
     with tempfile.TemporaryDirectory() as tmp:
-        path = os.path.join(tmp, "rx.jsonl")
-        with open(path, "w") as f:
-            for r in job.records:
-                f.write(json.dumps({"rec": r}) + "\n")
+        raw = os.path.join(tmp, "disc.raw")
+        with open(raw, "wb") as f:
+            f.write(pcm)
         try:
-            syms = nxdntool.records_to_syms(path, tmp)
-            return nxdntool.run(["decode", syms, "--unpacked"] + (["--9600"] if rate == "9600" else []))
+            return nxdntool.run(["disc", raw, "--rate", srate, "--full", full] + (["--9600"] if rate == "9600" else []))
         except SystemExit as e:
             pytest.fail(f"nxdntool: {e}")
 
@@ -256,8 +262,8 @@ def test_nxdn_tx_off_air(radio, sdr_bench, pytestconfig, rate):
     v = nxdn_view(radio)
     if (as_int(v.get(f"nxdn.fit{rate}")) or 0) & AIR_FIT_TX == 0:
         skip("no_hw", f"the radio's air interface can't transmit NXDN at {rate} bit/s")
-    if not sdr_bench.can_fsk4_rx():
-        skip("bench", f"the bench board {sdr_bench.api_rx} has no 4FSK receive")
+    if not sdr_bench.can_fm_rx():
+        skip("bench", f"the bench board {sdr_bench.api_rx} has no FM receive")
     old = settings_of(v)
     with radio.vfo_session():
         L = radio.link
@@ -280,33 +286,29 @@ def test_nxdn_tx_off_air(radio, sdr_bench, pytestconfig, rate):
 
 
 def key_over(radio, sdr_bench, mhz, rate, v0):
-    """One over of PTT_S at rate, sliced by the bench's 4FSK receiver on mhz. Returns (the job, its last record, how
-    much the radio's nxdn.tx_calls and nxdn.tx_underruns grew since the view v0)"""
-    baud, dev = RATES[rate]
+    """One over of PTT_S at rate, the bench's FM discriminator recorded on mhz. Returns (the job, how much the radio's
+    nxdn.tx_calls and nxdn.tx_underruns grew since the view v0)"""
     with sdr_bench.lease():
-        job = sdr_bench.fsk4_rx_start(mhz, PTT_S + 4, baud=baud, shape="rrc", sync=NXDN_SYNC,
-                                      sync_len=SYNC_LEN, nominal_dev_hz=dev)
+        job = sdr_bench.fm_rx_start(mhz, PTT_S + 4, bw=16000, streams="disc")
         time.sleep(0.5)
         radio.ptt_for(PTT_S)
         radio.wait_for(lambda x: x.get("state") != "tx", timeout=3, what="TX ended")
         done = job.wait(PTT_S + 20)
+    if done.get("gap_samples"):
+        skip("bench", f"the bench board lost samples (gap_samples {done['gap_samples']})")
     v = radio.view(["nxdn"])
     grew = tuple((as_int(v.get(f"nxdn.{k}")) or 0) - (as_int(v0.get(f"nxdn.{k}")) or 0)
                  for k in ("tx_calls", "tx_underruns"))
-    print(f"\nnxdn tx: calls +{grew[0]}, underruns +{grew[1]}; bench {done.get('summary')}")
-    return job, done, grew
+    print(f"\nnxdn tx: calls +{grew[0]}, underruns +{grew[1]}")
+    return job, grew
 
 
 def check_over(over, rate, ran, src, dst):
     """The pass criteria of an over decoded off air: one group call from src to dst with ran"""
     import nxdntool
-    job, done, grew = over
-    lines = nxdn_decode(job, rate, done)
-    m = nxdntool.summary(lines)
-    syncs = [r for r in job.records if "sync" in r or "offset_hz" in r]
-    print(f"\nnxdn off air at {rate} bit/s: {nxdntool.summary_text(m)}; bench syncs {len(syncs)}")
-    if syncs:
-        print(f"first sync record (not judged): {syncs[0]}")
+    job, grew = over
+    m = nxdntool.summary(nxdn_decode(job, rate))
+    print(f"\nnxdn off air at {rate} bit/s: {nxdntool.summary_text(m)}")
     assert m["calls"] == 1, f"{m['calls']} calls"
     assert m["ran"] == ran, f"RAN {m['ran']}, the radio's {ran}"
     assert m["src"] == src and m["dst"] == dst and m["type"] == "group", \
@@ -332,8 +334,8 @@ def test_nxdn_stored_channel_tx(radio, sdr_bench, backup_dir, pytestconfig):
         skip("not_built", "NXDN isn't in the radio's feature list")
     if (as_int(v.get("nxdn.fit4800")) or 0) & AIR_FIT_TX == 0:
         skip("no_hw", "the radio's air interface can't transmit NXDN at 4800 bit/s (the stored channel's rate)")
-    if not sdr_bench.can_fsk4_rx():
-        skip("bench", f"the bench board {sdr_bench.api_rx} has no 4FSK receive")
+    if not sdr_bench.can_fm_rx():
+        skip("bench", f"the bench board {sdr_bench.api_rx} has no FM receive")
     import cps_client
     from test_cps import codeplug_edited, pick_channel, read_backup
     regions = cps_client.REGIONS["radio"]      # with the settings area, where the tag goes
