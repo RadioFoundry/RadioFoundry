@@ -993,8 +993,6 @@
  "home.f_tools_text": "Instalación, copia de seguridad y editor de codeplug desde la web, CPS compatible con qdmr, registro de fallos, temas, modos de texto grande y alto contraste",
  "radio.bands_am": "AM de banda aérea 108-137 MHz",
  "radio.bands_bcast": "FM comercial 87-108 MHz",
- "radio.modes_dmr_fm": "DMR y FM",
- "radio.modes_fm": "FM",
  "flash.build.custom_card_text": "Selecciona cada función individualmente.",
  "flash.build.features_title": "Funciones",
  "flash.build.group_count": "{on}/{total}",

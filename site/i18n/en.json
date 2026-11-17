@@ -993,8 +993,6 @@
  "home.f_tools_text": "Web-based install / backup / codeplug editor, qdmr-compatible CPS, crash log, themes, large text / high contrast modes",
  "radio.bands_am": "Air band AM 108-137 MHz",
  "radio.bands_bcast": "Broadcast FM 87-108 MHz",
- "radio.modes_dmr_fm": "DMR and FM",
- "radio.modes_fm": "FM",
  "flash.build.custom_card_text": "Select each feature individually.",
  "flash.build.features_title": "Features",
  "flash.build.group_count": "{on}/{total}",

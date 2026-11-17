@@ -476,17 +476,23 @@ class Site:
 			 if sw not in b["unsupported"]]
 		return " · ".join([b["bands"]] + extra)
 
+	def modes(self, lang, b):
+		"""The voice modes the board's default build runs, "FM·DMR·P25·NXDN": its switches, so a mode the board can't
+		run yet is left out. The names are the same in every language."""
+		on = b["config"]["full"]
+		return "·".join(["FM"] + [m for m in ("DMR", "P25", "NXDN") if m in on])
+
 	def radio_card(self, lang, b):
 		"""The board's card, then one per other body it ships in (board.toml looks), each with its own drawing and the
 		radios in it; the board's card lists the rest."""
-		dmr = "DMR" in b["config"]["full"]
+		modes = self.modes(lang, b)
 		moved = {n for lk in b["looks"] for n in [lk["name"]] + lk.get("also", [])}
 		cards = [(b["id"], b["name"], [n for n in b["also"] if n not in moved])]
 		cards += [("%s-%s" % (b["id"], lk["id"]), lk["name"], lk.get("also", [])) for lk in b["looks"]]
 		return "".join(self.tpl.partial("radio_card", {
 			"id": img, "name": name, "also": ", ".join(also),
 			"badge": self.badge(lang, b["status"]), "bands": self.bands(lang, b),
-			"modes": self.t(lang, "radio.modes_dmr_fm" if dmr else "radio.modes_fm"),
+			"modes": modes,
 			"href": "radios/%s.html" % b["id"]}, lang) for img, name, also in cards)	# under {{home}}
 
 	def request_card(self, lang):

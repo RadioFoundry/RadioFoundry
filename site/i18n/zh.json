@@ -993,8 +993,6 @@
  "home.f_tools_text": "网页安装 / 备份 / 电台频率编辑器、兼容 qdmr 的 CPS、崩溃日志、主题、大字体 / 高对比度模式",
  "radio.bands_am": "航空波段 AM 108-137 MHz",
  "radio.bands_bcast": "调频广播 87-108 MHz",
- "radio.modes_dmr_fm": "DMR 和 FM",
- "radio.modes_fm": "FM",
  "flash.build.custom_card_text": "逐项选择功能。",
  "flash.build.features_title": "功能",
  "flash.build.group_count": "{on}/{total}",
