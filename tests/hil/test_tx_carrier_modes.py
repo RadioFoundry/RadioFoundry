@@ -34,6 +34,9 @@ rate the radio's air interface can't transmit (nxdn.fit4800 / nxdn.fit9600), a r
 hotspot mode, and where the bench board lacks a receiver an over needs (bench): FM receive for FM and P25, decoded
 bursts on --fm-mhz for DMR, 4FSK receive for NXDN. The VFO's mode and the NXDN settings are put back afterwards.
 
+test_dmr_after_mode[p25|nxdn4800|nxdn9600]: DMR, then the mode, then DMR again on --dmr-freq, with no restart between
+(its own docstring).
+
 The bench board takes its own crystal out of all four the same way (the gateway's bench-api.md 14.7): the rx op (FM,
 its disc stream, 4FSK) and the bursts op each mix the channel from where a carrier on the frequency shows with the
 board's ppm, so every estimate is the carrier from the true frequency. What is left, ppm_tol at the frequency, is
@@ -229,3 +232,72 @@ def test_tx_carrier_mode(radio, sdr_bench, pytestconfig, mode):
         assert abs(c) < lim, f"{m}: carrier offset {c:+d} Hz (limit {lim:.0f} Hz)"
     if ref:
         assert abs(dig - base) <= tol, f"{mode}'s carrier is {dig - base:+d} Hz from {ref}'s (limit +-{tol} Hz)"
+
+
+# The second DMR over must decode at least this share of the first's bursts: a mode that leaves the modulator or the
+# DMR engine set up its way makes the bench (and a hotspot) decode few or none
+SWITCH_BURSTS_MIN = 0.8
+
+SWITCH_MODES = [
+    pytest.param("p25", marks=pytest.mark.feature("p25")),
+    pytest.param("nxdn4800", marks=pytest.mark.feature("nxdn")),
+    pytest.param("nxdn9600", marks=pytest.mark.feature("nxdn")),
+]
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+@pytest.mark.sdr_rx
+@pytest.mark.feature("vfo_dmr")
+@pytest.mark.needs_switch("VFO_DMR")
+@pytest.mark.parametrize("mode", SWITCH_MODES)
+def test_dmr_after_mode(radio, sdr_bench, pytestconfig, mode):
+    """DMR, then mode, then DMR again on one VFO frequency (--dmr-freq) without a restart: the second DMR over must
+    decode like the first, on the same carrier (MODE_TOL_PPB), and mode's carrier must match DMR's. A mode that leaves
+    the modulator's deviation pair, the RF chip's set-up or the DMR engine its own way shows here, where a channel
+    change from a P25 or NXDN channel to a DMR one would no longer reach a hotspot or repeater until a power cycle."""
+    mhz = rig(pytestconfig, "dmr-freq")
+    hz = round(mhz * 1e6)
+    radio.go_home()
+    if radio.core().get("hotspot") == "1":
+        skip("state", "the radio is in hotspot mode")
+    check_built(radio, "dmr")
+    nxdn_old = check_built(radio, mode)
+    for m in ("dmr", mode):
+        need_receiver(sdr_bench, m, mhz)
+    res = []
+    with radio.vfo_session():
+        L = radio.link
+        try:
+            L.vfo_set(hz)
+            radio.wait_for(lambda v: v.get("rx_hz") == str(hz), what="VFO tuned")
+            time.sleep(MODE_SETTLE_S)
+            for m in ("dmr", mode, "dmr"):
+                v = enter(radio, m)
+                assert v.get("tx_hz") == str(hz), f"{m}: the VFO transmits on {v.get('tx_hz')}, not {hz}"
+                radio.lowest_power()
+                if m == "dmr":
+                    from test_dmr_tx import burst_carrier
+                    with sdr_bench.lease():
+                        watch = sdr_bench.dmr_watch_start(None, mhz, PTT_S + 6)
+                        radio.ptt_for(PTT_S)
+                        radio.wait_for(lambda x: x.get("state") != "tx", timeout=3, what="TX ended")
+                        sdr = sdr_bench.dmr_watch_result(watch)
+                    n = len(sdr.get("bursts") or [])
+                    c = burst_carrier(sdr)
+                    res.append((m, c, n))
+                    print(f"\n{m} over {len(res)}: {n} bursts, carrier {c} Hz")
+                else:
+                    c, _, note = over(radio, sdr_bench, mhz, m, v)
+                    res.append((m, c, None))
+                    print(f"\n{m}: carrier {c:+d} Hz, {note}")
+        finally:
+            if nxdn_old is not None:
+                L.nxdn_settings(**nxdn_old)
+    (_, c1, n1), (_, cm, _), (_, c2, n2) = res
+    tol = round(MODE_TOL_PPB * mhz / 1000)
+    assert n1 > 0 and c1 is not None, "the first DMR over: the bench decoded no burst"
+    assert n2 >= SWITCH_BURSTS_MIN * n1, f"DMR after {mode}: {n2} bursts decoded, {n1} before it"
+    assert c2 is not None, f"DMR after {mode}: no carrier"
+    assert abs(c2 - c1) <= tol, f"DMR after {mode}: carrier {c2 - c1:+d} Hz from before it (limit +-{tol})"
+    assert abs(cm - c1) <= tol, f"{mode}'s carrier is {cm - c1:+d} Hz from DMR's (limit +-{tol})"
