@@ -10,6 +10,10 @@
 #include "ui_svc.h"
 #include "cjk_font.h"	// CJK_FONT_H: the line height a CJK language needs (CONFIG_LANG_ZH)
 #include "config.h"
+#include "codeplug/codeplug_modes.h"	// channel kinds: the mode word
+#if CONFIG_DMR_TRUNK
+#include "dmr/trunk/t3_ms.h"	// the engine's states, for the trunked status words
+#endif
 
 ui_layout_t ui_layout;
 static const font_t *font_largest;	// the large text setting's font (large_font)
@@ -259,10 +263,14 @@ static uint8_t rssi_bars(int16_t dbm)
 	return 0;
 }
 
-// The mode word: AM where an FM channel or the VFO is received in AM (the air band)
+// The mode word: AM where an FM channel or the VFO is received in AM (the air band); a channel of another kind
+// (docs/spec/channel-modes.md) its kind's short name
 static const char *mode_word(const radio_view_t *v)
 {
-	return v->ch.mode == RADIO_MODE_DMR ? "DMR" : v->am ? "AM" : "FM";
+	if (v->ch.kind != CODEPLUG_KIND_NONE) {
+		return codeplug_kind_name(v->ch.kind);
+	}
+	return v->ch.mode == RADIO_MODE_FM && v->am ? "AM" : ui_mode_name(v->ch.mode);
 }
 
 // Status strip (P2): state pill, mode, monitor, lock, unread messages, signal, battery.
@@ -411,7 +419,7 @@ static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t
 	const char *mw = mode_word(v);
 #if CONFIG_DUAL_WATCH
 	if (s->dual.on && !v->aprs_tx)
-		mw = s->dual.pane[s->dual.sel].mode == RADIO_MODE_DMR ? "DMR" : "FM";
+		mw = ui_mode_name(s->dual.pane[s->dual.sel].mode);
 #endif
 	if (v->aprs_tx)
 		mw = "FM";
@@ -1003,12 +1011,63 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 	if (v->ch.mode == RADIO_MODE_DMR) {
 		sb_str(&b, TR(WHY_DMR_NOT_IN_BUILD, "DMR: not in this build"));
 		c = ui_col.warn;
+#if CONFIG_P25_TRUNK
+	} else if (v->ch.mode == RADIO_MODE_P25 && v->ch.kind == CODEPLUG_KIND_P25_TRUNK &&
+		   v->p25.trunk != RADIO_P25_TRUNK_OFF) {
+		// What the follower does, and with the transmit side on, how far it is from talking: registering, the
+		// talk group once PTT can ask for it, a request's state
+		bool txs = (v->p25.flags & RADIO_P25_TRUNK_TX) != 0;
+		if (v->p25.trunk == RADIO_P25_TRUNK_HUNT) {
+			sb_str(&b, TR(HOME_STATE_P25T_HUNT, "Finding system"));
+			c = ui_col.dim;
+		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treq == P25_REQ_WAIT) {
+			sb_str(&b, TR(HOME_STATE_P25T_WAIT, "Wait"));
+		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treq == P25_REQ_QUEUED) {
+			sb_str(&b, TR(HOME_STATE_P25T_QUEUED, "Queued"));
+		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treq == P25_REQ_DENIED) {
+			sb_str(&b, TR(HOME_STATE_P25T_DENIED, "Denied"));
+			c = ui_col.warn;
+		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treg == P25_REG_DENIED) {
+			sb_str(&b, TR(HOME_STATE_P25T_REG_DENIED, "Reg. denied"));
+			c = ui_col.warn;
+		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treg != P25_REG_READY &&
+			   v->p25.treg != P25_REG_OFF && v->p25.treg != P25_REG_NO_TX) {
+			sb_str(&b, TR(HOME_STATE_P25T_REG, "Registering"));
+			c = ui_col.dim;
+		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treg != P25_REG_NO_TX) {
+			sb_str(&b, "TG ");
+			sb_u32(&b, v->p25.talk, 1);
+		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL) {
+			sb_str(&b, TR(HOME_STATE_P25T_CONTROL, "Control channel"));
+		} else if (v->p25.treq == P25_REQ_TALK) {
+			sb_str(&b, "TG ");
+			sb_u32(&b, v->p25.talk, 1);
+		} else {
+			sb_str(&b, TR(HOME_STATE_P25T_FOLLOW, "Following"));
+			sb_str(&b, (v->p25.flags & RADIO_P25_UNIT) != 0 ? " ID " : " TG ");
+			sb_u32(&b, v->p25.dst, 1);
+		}
+#endif
 	} else if (v->ch.rx_only) {
 		sb_str(&b, TR(WORD_RX_ONLY, "RX only"));
 		c = ui_col.warn;
 	} else if (v->ch.tx_hz == 0) {
 		sb_str(&b, TR(HOME_STATE_NO_TX_FREQ, "No TX frequency"));
 		c = ui_col.warn;
+#if CONFIG_P25
+	} else if (v->ch.mode == RADIO_MODE_P25) {
+		// What PTT calls, as on DMR's talk line: "TG 1", or the unit's ID
+		if ((v->p25.flags & RADIO_P25_TALK_UNIT) == 0)
+			sb_str(&b, "TG ");
+		sb_u32(&b, v->p25.talk, 1);
+#endif
+#if CONFIG_NXDN
+	} else if (v->ch.mode == RADIO_MODE_NXDN) {
+		// The same for NXDN: the group, or the unit's ID
+		if ((v->nxdn.flags & RADIO_NXDN_TALK_UNIT) == 0)
+			sb_str(&b, "TG ");
+		sb_u32(&b, v->nxdn.talk, 1);
+#endif
 	} else {
 		// " MHz" goes before the frequency is cut (font.h alternates)
 		sb_str(&b, TEXT_ALT_OPEN);
@@ -1025,6 +1084,10 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 }
 
 // Chips: tone, bandwidth, power, squelch. A dot marks a temporary change
+#if CONFIG_DMR_TRUNK
+static void draw_chips_t3(const radio_view_t *v);
+#endif
+
 static void draw_chips(const radio_view_t *v, const ui_state_t *s)
 {
 	const ui_layout_t *L = &ui_layout;
@@ -1034,6 +1097,12 @@ static void draw_chips(const radio_view_t *v, const ui_state_t *s)
 	sbuf_t b;
 	int x = 0, y = L->chips_y;
 
+#if CONFIG_DMR_TRUNK
+	if (v->t3.sys != 0) {
+		draw_chips_t3(v);
+		return;
+	}
+#endif
 #if CONFIG_DMR
 	if (v->ch.mode == RADIO_MODE_DMR) {
 		draw_chips_dmr(v, s);
@@ -1051,6 +1120,36 @@ static void draw_chips(const radio_view_t *v, const ui_state_t *s)
 			if (x + gfx_text_width(f, buf) <= w)
 				gfx_text(f, x, y, buf, ui_col.fg);
 		}
+		return;
+	}
+	bool pw_temp = v->power != channel_power(v);
+	if (v->ch.mode == RADIO_MODE_P25) {
+		// No sub-audio tone, always 12.5 kHz, no FM squelch: the power, then the NAC heard (F7E: any)
+		if (pw_temp)
+			x = gfx_text(f, x, y, GLYPH_DOT, ui_col.warn);
+		x = gfx_text(f, x, y, ui_power_name(v->power, v->ch.tx_hz), pw_temp ? ui_col.warn : ui_col.fg) + f->w;
+#if CONFIG_P25
+		sb_init(&b, buf, sizeof buf);
+		sb_str(&b, "NAC ");
+		sb_hex(&b, v->p25.rx_nac, 3);
+		if (x + gfx_text_width(f, buf) <= w)
+			gfx_text(f, x, y, buf, ui_col.fg);
+#endif
+		return;
+	}
+	if (v->ch.mode == RADIO_MODE_NXDN) {
+		// The same for NXDN: the power, the RAN sent and the rate
+		if (pw_temp)
+			x = gfx_text(f, x, y, GLYPH_DOT, ui_col.warn);
+		x = gfx_text(f, x, y, ui_power_name(v->power, v->ch.tx_hz), pw_temp ? ui_col.warn : ui_col.fg) + f->w;
+#if CONFIG_NXDN
+		sb_init(&b, buf, sizeof buf);
+		sb_str(&b, "RAN ");
+		sb_u32(&b, v->nxdn.tx_ran, 1);
+		sb_str(&b, (v->nxdn.flags & RADIO_NXDN_9600) != 0 ? " 9600" : " 4800");
+		if (x + gfx_text_width(f, buf) <= w)
+			gfx_text(f, x, y, buf, ui_col.fg);
+#endif
 		return;
 	}
 	sb_init(&b, buf, sizeof buf);
@@ -1078,7 +1177,6 @@ static void draw_chips(const radio_view_t *v, const ui_state_t *s)
 	if (bw_temp)
 		x = gfx_text(f, x, y, GLYPH_DOT, ui_col.warn);
 	x = gfx_text(f, x, y, v->ch.bw == RADIO_BW_25K ? "25k" : "12.5k", bw_temp ? ui_col.warn : ui_col.fg) + f->w;
-	bool pw_temp = v->power != channel_power(v);
 	if (pw_temp)
 		x = gfx_text(f, x, y, GLYPH_DOT, ui_col.warn);
 	x = gfx_text(f, x, y, ui_power_name(v->power, v->ch.tx_hz), pw_temp ? ui_col.warn : ui_col.fg) + f->w;
@@ -1148,6 +1246,7 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 		break;
 	}
 	case TXDENY_TIMEOUT: sb_str(&b, TR(DENY_WHY_TIMEOUT, "TX time-out reached")); break;
+	case TXDENY_CEASED: sb_str(&b, TR(DENY_WHY_SYSTEM_STOPPED, "System stopped TX")); break;
 	case TXDENY_NO_FREQ: sb_str(&b, TR(DENY_WHY_NO_TX_FREQ, "No TX frequency set")); break;
 	case TXDENY_MODE: sb_str(&b, TR(WHY_MODE_NOT_IN_BUILD, "Mode: not in this build")); break;
 	case TXDENY_NO_CODEC: sb_str(&b, TR(WHY_NO_CODEC, "No codec: voice off")); break;
@@ -1162,6 +1261,20 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 	case TXDENY_SFR_RPT: sb_str(&b, TR(DENY_WHY_REPEATER_CHANNEL, "Repeater channel: PTT off")); break;
 	case TXDENY_HWOPT: hwopt_needed(&b); break;
 	case TXDENY_REFUSED: sb_str(&b, TR(DENY_WHY_RADIO_REFUSED, "Radio refused to send")); break;
+	case TXDENY_BENCH: sb_str(&b, TR(DENY_WHY_AIR_BENCH, "Air bench: PTT off")); break;
+	case TXDENY_AIR_NO_TX: sb_str(&b, TR(DENY_WHY_AIR_NO_TX, "This mode: receive only")); break;
+#if CONFIG_P25_TRUNK
+	case TXDENY_TRUNK:
+		switch (v->p25.twhy) {
+		case RADIO_P25T_WHY_NO_CC: sb_str(&b, TR(DENY_WHY_P25T_NO_CC, "No control channel")); break;
+		case RADIO_P25T_WHY_NOT_REG: sb_str(&b, TR(DENY_WHY_P25T_NOT_REG, "Not registered yet")); break;
+		case RADIO_P25T_WHY_DENIED: sb_str(&b, TR(DENY_WHY_P25T_DENIED, "System denied the call")); break;
+		case RADIO_P25T_WHY_NO_ANSWER: sb_str(&b, TR(DENY_WHY_P25T_NO_ANSWER, "No answer from system")); break;
+		case RADIO_P25T_WHY_NO_CHAN: sb_str(&b, TR(DENY_WHY_P25T_NO_CHAN, "Voice channel unusable")); break;
+		default: sb_str(&b, TR(DENY_WHY_RX_ONLY, "This channel is RX only")); break;
+		}
+		break;
+#endif
 	default: sb_str(&b, TR(DENY_WHY_NOT_ALLOWED, "Not allowed here")); break;
 	}
 	return buf;
@@ -1172,7 +1285,8 @@ static const char *deny_action(const radio_view_t *v)
 	switch (v->tx_deny) {
 	case TXDENY_BAND: return v->vfo ? TR(DENY_FIX_TUNE_INTO_BAND, "Tune into a band, then PTT") :
 		TR(DENY_FIX_PICK_ANOTHER_CHANNEL, "Pick another channel");
-	case TXDENY_TIMEOUT: return TR(DENY_FIX_RELEASE_PTT, "Release PTT to talk again");
+	case TXDENY_TIMEOUT:
+	case TXDENY_CEASED: return TR(DENY_FIX_RELEASE_PTT, "Release PTT to talk again");
 	case TXDENY_NO_CODEC: return TR(DENY_FIX_ADD_CODEC, "Add codec with rfoundry");
 	case TXDENY_BUSY: return TR(DENY_FIX_WAIT_FOR_CALL_END, "Wait for the call to end");
 	case TXDENY_NO_REPEATER: return TR(DENY_FIX_CHECK_CC_AND_RANGE, "Check CC and range");
@@ -1186,6 +1300,8 @@ static const char *deny_action(const radio_view_t *v)
 	case TXDENY_SFR_RPT: return TR(DENY_FIX_PICK_USER_CHANNEL, "Pick a user channel to talk");
 	case TXDENY_HWOPT: return hwopt_action();
 	case TXDENY_REFUSED: return TR(DENY_FIX_RELEASE_AND_RETRY, "Release PTT, try again");
+	case TXDENY_BENCH: return TR(DENY_FIX_END_BENCH_ON_PC, "End the bench on the PC");
+	case TXDENY_TRUNK: return TR(DENY_FIX_RELEASE_AND_RETRY, "Release PTT, try again");
 	default: return TR(DENY_FIX_PICK_ANOTHER_CHANNEL, "Pick another channel");
 	}
 }
@@ -1199,6 +1315,22 @@ static bool sending_data(const radio_view_t *v)
 	(void)v;
 	return false;
 #endif
+}
+
+// Outside the DMR block: the event banners call it in every build
+bool ui_sb_gw_caller(sbuf_t *b, uint32_t src)
+{
+#if CONFIG_DMR_TRUNK_GW
+	char num[24];
+	if (ui_svc_t3_cli(src, num, sizeof num)) {
+		sb_str(b, num[0] != '\0' ? num : TR(TRUNK_WORD_PHONE_LINE, "Phone line"));
+		return true;
+	}
+#else
+	(void)b;
+	(void)src;
+#endif
+	return false;
 }
 
 // --- DMR (docs/ux/wireframes: Home DMR, Receiving, Transmitting) ---
@@ -1346,6 +1478,8 @@ static void sb_talk_alts(sbuf_t *b, uint32_t id, bool private_call, const char *
 // The caller as the big line: the contact name, else the ID
 static void sb_caller(sbuf_t *b, const radio_dmr_call_t *c)
 {
+	if (c->src_name[0] == '\0' && ui_sb_gw_caller(b, c->src))
+		return;
 	if (c->src_name[0] != '\0')
 		sb_str(b, c->src_name);
 	else
@@ -1398,7 +1532,11 @@ static void draw_talk_dmr(const radio_view_t *v, bool label_first)
 		: gfx_text(f, 0, L->talk_y, GLYPH_ARROW, ui_col.dim);
 	size_t room = x < w ? (size_t)((w - x) / f->w) : 0;
 	sb_init(&b, buf, sizeof buf);
-	if (v->ch.rx_only) {
+	if (v->ch.kind != CODEPLUG_KIND_NONE && !codeplug_kind_built(v->ch.kind)) {
+		// a mode this build doesn't run: its record's DMR fields are only a safe stand-in
+		sb_str(&b, TR(WHY_MODE_NOT_IN_BUILD, "Mode: not in this build"));
+		c = ui_col.warn;
+	} else if (v->ch.rx_only) {
 		sb_str(&b, TR(WORD_RX_ONLY, "RX only"));
 		c = ui_col.warn;
 	} else if (d->sfr_rpt) {
@@ -1426,6 +1564,58 @@ static void draw_talk_dmr(const radio_view_t *v, bool label_first)
 	gfx_text_fit(f, buf, w - x, fit, sizeof fit);
 	gfx_text(f, x, L->talk_y, fit, c);
 }
+
+#if CONFIG_DMR_TRUNK
+// What the radio is doing on the trunked channel's system (dmr-trunking.md 12.4); *warn: something the user should see
+static const char *t3_state_word(const radio_view_t *v, bool *warn)
+{
+	*warn = true;
+	if (v->t3.unavail)
+		return TR(TRUNK_WHY_SYSTEM_NOT_SET_UP, "System not set up");
+	if (v->t3.fallback != 0)	// on the system's fallback channel, or looking for the system from it
+		return TR(TRUNK_STATE_FALLBACK, "Fallback");
+	if (!v->t3.on || v->t3.state == T3_HUNT)
+		return TR(TRUNK_STATE_SEARCHING, "Searching");
+	if (v->t3.state == T3_FOLLOW) {
+		*warn = false;
+		return TR(TRUNK_STATE_IN_CALL, "In call");
+	}
+	if (v->t3.reg == T3_REG_DENIED)
+		return TR(TRUNK_STATE_REFUSED, "Refused");
+	if (v->t3.reg == T3_REG_NEEDED || v->t3.reg == T3_REG_UNKNOWN)
+		return TR(TRUNK_STATE_REGISTERING, "Registering");
+	*warn = false;
+	return TR(TRUNK_STATE_READY, "Ready");
+}
+
+// Chips on a trunked channel: the system's name, what the radio does on it, power. Slot and color code are the
+// site's, not the channel's. On the fallback channel the name and frequency rows are that channel's
+static void draw_chips_t3(const radio_view_t *v)
+{
+	const ui_layout_t *L = &ui_layout;
+	const font_t *f = L->small;
+	static char name[CODEPLUG_NAME_LEN + 1];
+	static uint8_t named;		// the system name holds (n + 1; 0 none): read once, not every frame
+	if (named != v->t3.sys) {
+		named = v->t3.sys;
+		if (!ui_svc_t3_name((uint8_t)(v->t3.sys - 1u), name) || name[0] == '\0')
+			str_copy(name, sizeof name, TR(TRUNK_WORD_SYSTEM, "System"));
+	}
+	bool warn;
+	const char *st = t3_state_word(v, &warn);
+	const char *pw = ui_power_name(v->power, v->ch.tx_hz);
+	int room = gfx_width() - gfx_text_width(f, st) - gfx_text_width(f, pw) - 2 * f->w;
+	char fit[CODEPLUG_NAME_LEN + 4];
+	int x = 0;
+	if (room > 0) {
+		gfx_text_fit(f, name, room, fit, sizeof fit);
+		x = gfx_text(f, x, L->chips_y, fit, ui_col.fg) + f->w;
+	}
+	x = gfx_text(f, x, L->chips_y, st, warn ? ui_col.warn : ui_col.fg) + f->w;
+	if (x + gfx_text_width(f, pw) <= gfx_width())
+		gfx_text(f, x, L->chips_y, pw, ui_col.fg);
+}
+#endif
 
 // Chips: timeslot, color code, repeater / direct, roaming, power, hear all
 static void draw_chips_dmr(const radio_view_t *v, const ui_state_t *s)
@@ -1676,6 +1866,77 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 }
 #endif
 
+#if CONFIG_AIR
+// A P25 or NXDN call coming in (air_call): whether one is heard now, and its fields
+typedef struct {
+	bool played, enc, unit;
+	uint32_t src, dst;
+} air_call_t;
+
+static bool air_call(const radio_view_t *v, air_call_t *c)
+{
+#if CONFIG_P25
+	if (v->ch.mode == RADIO_MODE_P25 && (v->p25.flags & RADIO_P25_RX) != 0) {
+		const radio_p25_view_t *p = &v->p25;
+		c->played = (p->flags & RADIO_P25_PLAYED) != 0;
+		c->enc = (p->flags & RADIO_P25_ENC) != 0;
+		c->unit = (p->flags & RADIO_P25_UNIT) != 0;
+		c->src = p->src;
+		c->dst = p->dst;
+		return true;
+	}
+#endif
+#if CONFIG_NXDN
+	if (v->ch.mode == RADIO_MODE_NXDN && (v->nxdn.flags & RADIO_NXDN_RX) != 0) {
+		const radio_nxdn_view_t *n = &v->nxdn;
+		c->played = (n->flags & RADIO_NXDN_PLAYED) != 0;
+		c->enc = (n->flags & RADIO_NXDN_ENC) != 0;
+		c->unit = (n->flags & RADIO_NXDN_UNIT) != 0;
+		c->src = n->src;
+		c->dst = n->dst;
+		return true;
+	}
+#endif
+	(void)v;
+	(void)c;
+	return false;
+}
+
+// Why the call isn't played, else who calls and where ("ID 1234 > TG 1", "ID 1234 > Private to 5678"; the ID is
+// missing until the call's link control is read)
+static void air_call_line(const air_call_t *c, const font_t *f, int y)
+{
+	char buf[64], fit[48];
+	sbuf_t b;
+
+	if (c->enc || !c->played) {
+		gfx_text_fit(f, c->enc ? TR(CALL_WHY_ENCRYPTED, "Encrypted: not played") :
+			TR(CALL_WHY_OTHER_TG, "Other TG: not played"), gfx_width(), fit, sizeof fit);
+		gfx_text(f, 0, y, fit, ui_col.warn);
+		return;
+	}
+	// Too wide: the caller's ID goes first, then the target is cut
+	for (int with_id = c->src != 0; with_id >= 0; with_id--) {
+		sb_init(&b, buf, sizeof buf);
+		if (with_id) {
+			sb_str(&b, "ID ");
+			sb_u32(&b, c->src, 1);
+			sb_str(&b, " " GLYPH_ARROW " ");
+		}
+		if (c->unit) {
+			sb_str(&b, TR(CALL_VALUE_PRIVATE_TO, "Private to "));
+		} else {
+			sb_str(&b, "TG ");
+		}
+		sb_u32(&b, c->dst, 1);
+		if (gfx_text_width(f, buf) <= gfx_width())
+			break;
+	}
+	gfx_text_fit(f, buf, gfx_width(), fit, sizeof fit);
+	gfx_text(f, 0, y, fit, ui_col.rx);
+}
+#endif
+
 static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 {
 	const ui_layout_t *L = &ui_layout;
@@ -1694,14 +1955,29 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 	bool meter = v->state == RS_RX || (v->state == RS_IDLE && v->monitor && v->ch.mode != RADIO_MODE_DMR);
 	switch (meter ? RS_RX : v->state) {
 	case RS_RX: {
+#if CONFIG_AIR
+		air_call_t ac;
+		bool air_rx = air_call(v, &ac);
+		if (!two && air_rx) {
+			air_call_line(&ac, sm, y);	// one line: who calls says more than the meter
+			break;
+		}
+#endif
 		sb_i32(&b, v->rssi_dbm);
 		sb_str(&b, " dBm");
 		int tw = gfx_text_width(big, buf);
 		gfx_text(big, w - tw, y, buf, ui_col.fg);
 		draw_meter(0, y + big->h / 4, w - tw - big->w, big->h / 2, v->rssi_dbm);
-		if (two)
-			gfx_text(sm, 0, y2, v->monitor ? TR(ACTIVITY_STATE_SQUELCH_OPEN, "Squelch open") :
-				TR(STATE_RECEIVING, "Receiving"), ui_col.rx);
+		if (!two)
+			break;
+#if CONFIG_AIR
+		if (air_rx) {
+			air_call_line(&ac, sm, y2);
+			break;
+		}
+#endif
+		gfx_text(sm, 0, y2, v->monitor ? TR(ACTIVITY_STATE_SQUELCH_OPEN, "Squelch open") :
+			TR(STATE_RECEIVING, "Receiving"), ui_col.rx);
 		break;
 	}
 	case RS_TX: {

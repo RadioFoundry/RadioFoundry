@@ -49,8 +49,8 @@ static void put_drive(out_t *o, uint32_t hz)
 		put(o, "none");
 		return;
 	}
-	for (uint8_t k = 0; k < 3; k++) {
-		if (k > 0) {
+	for (uint8_t k = 2; k < 5; k++) {	// the rows: levels 2..4
+		if (k > 2) {
 			put(o, "/");
 		}
 		put_u(o, dm1801pro_pa_drive(hz, k));

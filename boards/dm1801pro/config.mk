@@ -15,6 +15,7 @@ CONFIG_UI_COLOR ?= n
 # docs/build-config.md, "Unsupported, not written, unconfirmed"): ci's maximal configuration leaves these off. USB
 # and USB_NETWORK are in the platform's list.
 BOARD_UNSUPPORTED += FONT_XL	# the 128x64 panel is too small for the large font
+BOARD_UNSUPPORTED += FONT_BIG	# the 9x18 font is drawn only on panels 220 px and wider; this one is 128x64
 BOARD_UNSUPPORTED += UI_COLOR	# the 128x64 panel is monochrome: no colors to set
 BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is SPI NOR: 4 KB erase (docs/spec/hardware-dm1801pro.md 6.1)
 CONFIG_GPS ?= n
@@ -30,3 +31,10 @@ BOARD_NOT_WRITTEN += AUDIO_PROBE	# the probe's audio tap (board.audio_tap) isn't
 # gap, not a build-switch or flash one
 BOARD_UNSUPPORTED += LANG_ZH	# a Chinese line needs 16 px; this layout draws its words in a smaller font
 BOARD_UNSUPPORTED += LANG_DEFAULT_ZH	# needs LANG_ZH
+# P25 and NXDN need an air interface provider (board.air): this radio's modem glue doesn't give one yet
+CONFIG_P25 ?= n
+CONFIG_P25_TRUNK ?= n
+CONFIG_NXDN ?= n
+BOARD_NOT_WRITTEN += P25	# no board.air yet (docs/spec/air-interface.md)
+BOARD_NOT_WRITTEN += P25_TRUNK	# needs P25
+BOARD_NOT_WRITTEN += NXDN	# no board.air yet

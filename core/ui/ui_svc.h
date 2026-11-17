@@ -10,10 +10,21 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include "config.h"
 #include "i18n.h"
 #include "radio/radio.h"
 #include "codeplug/zone_edit.h"
+#if CONFIG_P25
+#include "p25/p25_codeplug.h"
+#endif
+#if CONFIG_NXDN
+#include "nxdn/nxdn_codeplug.h"
+#endif
+
+// The UI services' one radio view copy (the UI task's only; too big for its stack). A service fetches it with
+// radio_get_view and reads it before returning: nothing may hold it across a call into another service
+extern radio_view_t ui_svc_view;
 
 // --- What is available (screens gray out what isn't, and say why on SELECT) ---
 #define UI_FEAT_TALK_TARGET	(1u << 0)	// ui_svc_talk_to / ui_svc_focus_target (dmr-voice)
@@ -38,6 +49,8 @@
 #define UI_FEAT_ZONE_SHARE	(1u << 19)	// ui_svc_zone_* (zone sharing over DMR data, CONFIG_ZONE_SHARE)
 #define UI_FEAT_VOLUME_KNOB	(1u << 21)	// the MCU reads a volume knob (radio_volume_knob): Settings > Key lock > Knob when locked
 #define UI_FEAT_REF_TRIM	(1u << 20)	// a reference trim (hal_radio_t.ref_trim, radio/ref_trim.h): Freq trim setting
+#define UI_FEAT_P25		(1u << 22)	// P25 on this board (CONFIG_P25, radio_p25_fits): the VFO's mode tile offers it
+#define UI_FEAT_NXDN		(1u << 23)	// NXDN on this board (CONFIG_NXDN, radio_nxdn_fits): the same
 uint32_t ui_svc_features(void);
 // The parts of it each package reports (ui_svc_features ORs them): dmr-voice / radio core, dmr-data, storage-cps,
 // radio-features
@@ -66,6 +79,11 @@ bool ui_svc_dmr_color_code(uint8_t cc);
 // The VFO's SFR role (CONFIG_SFR, sfr.md 4): a as a channel's SFR byte A; false: not in this build
 bool ui_svc_vfo_sfr(uint8_t a);
 bool ui_svc_mode(uint8_t mode);			// radio_mode_t: the VFO's mode (a channel's goes through Copy to VFO)
+// A channel mode's name as the screens show it (radio_mode_t). A name, never translated
+static inline const char *ui_mode_name(uint8_t mode)
+{
+	return mode == RADIO_MODE_DMR ? "DMR" : mode == RADIO_MODE_P25 ? "P25" : mode == RADIO_MODE_NXDN ? "NXDN" : "FM";
+}
 // Copy to VFO: the channel on view into the VFO, which opens (CONFIG_VFO). Returns a radio_vfo_copy_t: VFO_COPY_OK
 // when the request went to the radio core, else why nothing changed
 uint8_t ui_svc_vfo_copy(const radio_view_t *v);
@@ -76,8 +94,25 @@ bool ui_svc_vox(bool on);
 // Make temporary channel changes permanent (storage-cps): false when busy, off a stored channel, or unavailable
 bool ui_svc_save_channel(void);
 // Store a whole channel (the channel editor, ui.md 2.1) at number 1..CODEPLUG_CHANNELS_MAX, as a storage job like
-// ui_svc_save_channel. false: a write is still going on, or no codeplug storage in this build
-bool ui_svc_write_channel(uint16_t number, const channel_t *ch);
+// ui_svc_save_channel. from: the stored channel ch is a copy of (number itself when edited in place), 0 = none; a
+// copy of a channel of a kind takes its mode with it (channel-modes.md 2.4). false: a write is still going on, or no
+// codeplug storage in this build
+bool ui_svc_write_channel(uint16_t number, const channel_t *ch, uint16_t from);
+#if CONFIG_P25 || CONFIG_NXDN
+// A P25 or NXDN channel's own settings, its tag's parameter block (p25-codeplug.md 2, nxdn-codeplug.md 2)
+typedef union {
+#if CONFIG_P25
+	p25_conv_t p25;
+#endif
+#if CONFIG_NXDN
+	nxdn_conv_t nxdn;
+#endif
+} ui_air_conv_t;
+// ui_svc_write_channel for a P25 or NXDN channel (ch's kind, or a plain one in that mode) with conv as its block: the
+// channel editor's NAC, RAN and rate. A plain channel takes its talk target and talkaround from the radio's settings
+// as it does without conv
+bool ui_svc_write_channel_air(uint16_t number, const channel_t *ch, uint16_t from, const ui_air_conv_t *conv);
+#endif
 #if CONFIG_CONTACT_EDIT
 // Store a contact (the contact editor, ui.md 2.4) at index 1..CODEPLUG_CONTACTS_MAX, as a storage job. false: a write
 // is still going on, or no codeplug storage in this build
@@ -125,6 +160,20 @@ bool ui_svc_vfo_get(uint8_t index, channel_t *out);
 
 // --- DMR repeater roaming (the radio core, docs/spec/dmr-roaming.md). Its state is radio_view_t.roam ---
 bool ui_svc_roam(uint8_t cmd);			// radio_roam_cmd_t: zone on / off, roam now, lock / unlock
+
+#if CONFIG_DMR_TRUNK
+// --- Trunked channels (docs/spec/dmr-trunking-codeplug.md 4). The system in use is radio_view_t.t3 ---
+// The system of channel num, read as ch (-1: not a trunked channel; 0xFF: it names none); *usable (may be NULL): the
+// system is set up
+int ui_svc_t3_channel(uint16_t num, const channel_t *ch, bool *usable);
+bool ui_svc_t3_name(uint8_t n, char *name);	// system n's name (CODEPLUG_NAME_LEN + 1); false: no such system
+void ui_svc_t3_poll(uint32_t id);	// poll an MS for its short data (radio_req_t3_poll)
+// CONFIG_DMR_TRUNK_GW (else no-ops): the digits ("0-9*#", up to 16) the next call through a dialing gateway sends,
+// and whether src is a dialing gateway on the system in use (false: no, or not this build); out: the caller's number
+// it gave for its call being followed now, "" when it gave none
+void ui_svc_t3_dial(const char *digits);
+bool ui_svc_t3_cli(uint32_t gw, char *out, size_t len);
+#endif
 
 // --- Beeps (radio-features): the radio sounds key beeps only when its key_beep setting is on ---
 typedef enum { UI_BEEP_KEY, UI_BEEP_ERROR, UI_BEEP_MESSAGE, UI_BEEP_BATTERY_LOW } ui_beep_t;
@@ -252,6 +301,7 @@ typedef struct {
 	uint32_t src;		// the sender's DMR ID
 	uint8_t channels;	// in the record
 	uint8_t in_band;	// of them, the ones this radio can receive (the rest are left out)
+	uint8_t unavailable;	// of those, channels on a system the radio doesn't have: they come in unavailable
 	char name[17];		// the zone's (or channel's) name as sent
 	char from[17];		// the sender's contact name, "" when not a contact
 } ui_zone_offer_t;
@@ -266,6 +316,7 @@ typedef struct {
 	uint32_t rx_hz;
 	bool dmr;
 	bool in_band;
+	bool unavailable;	// on a system the radio doesn't have
 } ui_zone_offer_ch_t;
 bool ui_svc_zone_offer_channel(uint32_t serial, uint16_t i, ui_zone_offer_ch_t *out);
 void ui_svc_zone_offer_reject(uint32_t serial);
@@ -396,8 +447,9 @@ typedef enum {
 	UI_EV_POWER_OFF_FAILED,	// auto power off dropped the power latch but the radio is still on (the knob holds it)
 	UI_EV_ZONE_OFFER,	// another radio (id, name) offers a zone or channel (index 1): text "Zone Club, 24 channels"
 	UI_EV_ZONE_SENT,	// our zone to id (index 1: a talkgroup): ok = it went out whole
-	UI_EV_ZONE_IMPORTED,	// the import ended: ok with name (the zone here), index (channels), id 1 for an update; else
-				// why says why
+	UI_EV_ZONE_IMPORTED,	// the import ended: ok with name (the zone here), index (channels), id 1 for an update, ms
+				// the channels of a kind that can't be used (their system isn't set up here); else why
+				// says why
 	UI_EV_CODEPLUG_FOREIGN,	// a codeplug write is held: ask what to do with another firmware's codeplug
 } ui_event_kind_t;
 

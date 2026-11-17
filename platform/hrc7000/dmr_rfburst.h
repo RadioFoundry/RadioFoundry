@@ -34,6 +34,9 @@ typedef struct {
 	void (*on)(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait);
 	// The burst's TX off, from the RF task: the PA down and the RF back to receive
 	void (*off)(void);
+	// off this long after the last symbol's point, for a PA that drops at once: one with a ramp of its own is still
+	// up at the symbol's end, and needs none
+	uint16_t off_after_us;
 } hrc_rfburst_board_t;
 
 typedef struct {

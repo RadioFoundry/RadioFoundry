@@ -72,6 +72,7 @@ CONFIG_FONT_XL ?= n
 # docs/build-config.md, "Unsupported, not written, unconfirmed"): ci's maximal configuration leaves these off. USB
 # and USB_NETWORK are in the platform's list.
 BOARD_UNSUPPORTED += FONT_XL	# the 160x128 panel is too small for the large font (it is for 240 px and wider)
+BOARD_UNSUPPORTED += FONT_BIG	# the 9x18 font is drawn only on panels 220 px and wider; this one is 160x128
 BOARD_UNSUPPORTED += VIBRATE	# no vibration motor (owner, 2026-10-22)
 BOARD_UNSUPPORTED += AM_RX	# no air band receive (owner, 2026-10-22)
 # What the hardware can do but this radio's driver or glue doesn't yet, the same way: off by default, and off in ci's
@@ -90,3 +91,10 @@ BOARD_REQUIRED := FM
 # there is no room for a 16 px line, and the CJK face must not be built in (docs/build-config.md)
 BOARD_UNSUPPORTED += LANG_ZH	# a Chinese line needs 16 px; this layout draws its words in a smaller font
 BOARD_UNSUPPORTED += LANG_DEFAULT_ZH	# needs LANG_ZH
+# P25 and NXDN need an air interface provider (board.air): this radio's modem glue doesn't give one yet
+CONFIG_P25 ?= n
+CONFIG_P25_TRUNK ?= n
+CONFIG_NXDN ?= n
+BOARD_NOT_WRITTEN += P25	# no board.air yet (docs/spec/air-interface.md)
+BOARD_NOT_WRITTEN += P25_TRUNK	# needs P25
+BOARD_NOT_WRITTEN += NXDN	# no board.air yet

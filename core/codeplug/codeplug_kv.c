@@ -181,7 +181,7 @@ int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t
 			} else if (seen_flash(data, c->first, at, k)) {
 				continue;	// a later entry of a key: no reader takes it (docs/spec/codeplug-settings.md 4)
 			}
-			if (!board.flash->read(data + at + ENTRY_HDR, buf, n < max ? n : max)) {
+			if (max != 0 && !board.flash->read(data + at + ENTRY_HDR, buf, n < max ? n : max)) {
 				break;
 			}
 			*key = k;

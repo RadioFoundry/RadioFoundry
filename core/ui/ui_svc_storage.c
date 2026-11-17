@@ -44,6 +44,15 @@
 #if CONFIG_POSITION
 #include "position/position.h"
 #endif
+#include "codeplug/codeplug_tag.h"
+#if CONFIG_P25
+#include "p25/p25_codeplug.h"
+#include "radio/radio_p25.h"
+#endif
+#if CONFIG_NXDN
+#include "nxdn/nxdn_codeplug.h"
+#include "radio/radio_nxdn.h"
+#endif
 #if CONFIG_KEY_ASSIGN
 #include "input/input.h"
 #include "input/input_engine.h"
@@ -82,7 +91,7 @@ static uint8_t ui_flag(uint8_t id)
 	}
 }
 
-static radio_view_t v;		// the radio's view (static: too big for the UI task's stack)
+radio_view_t ui_svc_view;	// ui_svc.h
 
 #if CONFIG_DMR_PRIVACY
 // Privacy key slot 1 (settings-store.md 3.1), typed in on the radio. While privacy is on, the radio core holds the
@@ -103,8 +112,8 @@ static void privacy_store(uint8_t type, uint32_t key)
 		st->privacy_active = 0;
 	}
 	settings_end(hal_millis());
-	radio_get_view(&v);
-	if (v.dmr.privacy) {
+	radio_get_view(&ui_svc_view);
+	if (ui_svc_view.dmr.privacy) {
 		radio_req_dmr_privacy(type, (uint16_t)key);
 	}
 }
@@ -742,6 +751,10 @@ static struct {
 	};
 	uint32_t id;		// the talk target's, or the radio's own DMR ID
 	bool private_call;
+#if CONFIG_P25 || CONFIG_NXDN
+	bool air_set;		// write_channel_job: air is the channel's block
+	ui_air_conv_t air;
+#endif
 } job;
 
 // Another firmware's codeplug (codeplug_foreign, docs/spec/codeplug-native.md 2): the radio erases nothing of it on
@@ -947,6 +960,72 @@ static bool tone_post(uint16_t key, bool on)
 
 static channel_t job_ch;	// the job's working copy of the stored channel
 
+#if CONFIG_P25
+// A plain channel in P25 (the VFO, a mode changed for now) made a stored P25 channel from the radio's P25 settings
+// (p25-codeplug.md 2.3): its NACs, the squelch, the talk target's stored contact (none: talk group 1), talkaround
+// on or automatic; the NACs and squelch from conv instead when given (the channel editor's). Uses job_ch
+static bool p25_save_now(uint16_t number, const channel_t *ch, const p25_conv_t *given)
+{
+	radio_p25_settings_t s;
+	radio_p25_settings(&s);
+	p25_conv_t conv = { .rx_nac = s.rx_nac, .tx_nac = s.tx_nac,
+			    .squelch = s.rx_tgid != 0 ? P25_SQUELCH_SELECTIVE : P25_SQUELCH_NORMAL };
+	if (given != NULL)
+		conv = *given;
+	if (ch != &job_ch)
+		job_ch = *ch;
+#if CONFIG_DMR
+	job_ch.contact = codeplug_contact_find_index(s.tx_dst, !s.unit_call, NULL);
+#else
+	job_ch.contact = 0;
+#endif
+	job_ch.dmo = s.talkaround == RADIO_P25_TA_ON;
+	return p25_conv_save(number, &job_ch, &conv);
+}
+#endif
+
+#if CONFIG_NXDN
+// A plain channel in NXDN (the VFO, a mode changed for now) made a stored NXDN channel from the radio's NXDN settings
+// (nxdn-codeplug.md 2.2): the rate, the RANs, the squelch, the talk target's stored contact (none: group 1); the
+// block from conv instead when given (the channel editor's). Uses job_ch
+static bool nxdn_save_now(uint16_t number, const channel_t *ch, const nxdn_conv_t *given)
+{
+	radio_nxdn_settings_t s;
+	radio_nxdn_settings(&s);
+	nxdn_conv_t conv = { .rate9600 = s.rate9600, .rx_ran = s.rx_ran, .tx_ran = s.tx_ran,
+			     .squelch = s.rx_gid != 0 ? NXDN_SQUELCH_SELECTIVE : NXDN_SQUELCH_RAN };
+	if (given != NULL)
+		conv = *given;
+	if (ch != &job_ch)
+		job_ch = *ch;
+	job_ch.contact = codeplug_contact_find_index(s.tx_dst, !s.unit_call, NULL);	// CONFIG_NXDN needs CONFIG_DMR
+	return nxdn_conv_save(number, &job_ch, &conv);
+}
+#endif
+
+// A plain channel in an air mode written as a stored channel of its kind (the VFO, a mode changed for now); false in
+// *ok's place when it isn't one: the caller writes it as a plain channel
+static bool air_save_now(uint16_t number, const channel_t *ch, bool *ok)
+{
+	if (ch->kind != CODEPLUG_KIND_NONE)
+		return false;
+#if CONFIG_P25
+	if (ch->mode == RADIO_MODE_P25) {
+		*ok = p25_save_now(number, ch, NULL);
+		return true;
+	}
+#endif
+#if CONFIG_NXDN
+	if (ch->mode == RADIO_MODE_NXDN) {
+		*ok = nxdn_save_now(number, ch, NULL);
+		return true;
+	}
+#endif
+	(void)number;
+	(void)ok;
+	return false;
+}
+
 // Power, bandwidth, tones, mode, color code and timeslot go into the channel; the squelch is radio-wide (the default
 // squelch preference). The radio core re-reads the channel (codeplug_serial), and the clear makes the remaining
 // flags follow the new values
@@ -971,7 +1050,10 @@ static void save_channel_job(void *ctx)
 		job_ch.color_code = job.now.color_code;
 	if (job.temp & RADIO_TEMP_TS)
 		job_ch.timeslot = job.now.timeslot;
-	if (!codeplug_set_channel(job.channel, &job_ch)) {
+	bool ok;
+	if (!air_save_now(job.channel, &job_ch, &ok))
+		ok = codeplug_set_channel(job.channel, &job_ch);
+	if (!ok) {
 		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
 		return;
 	}
@@ -983,21 +1065,21 @@ static void save_channel_job(void *ctx)
 	radio_req_clear_temporary();
 }
 
-// Whether the radio is on a stored channel (its view in v)
+// Whether the radio is on a stored channel (its view in ui_svc_view)
 static bool take_channel(void)
 {
 	if (job_busy()) {
 		return false;	// the last write is still going on
 	}
-	radio_get_view(&v);
-	if (v.vfo || v.channel_number == 0 || v.hotspot) {
+	radio_get_view(&ui_svc_view);
+	if (ui_svc_view.vfo || ui_svc_view.channel_number == 0 || ui_svc_view.hotspot) {
 		return false;
 	}
-	job.channel = v.channel_number;
-	job.temp = v.temp;
-	job.power = v.power;
-	job.squelch = v.squelch;
-	job.now = v.ch;
+	job.channel = ui_svc_view.channel_number;
+	job.temp = ui_svc_view.temp;
+	job.power = ui_svc_view.power;
+	job.squelch = ui_svc_view.squelch;
+	job.now = ui_svc_view.ch;
 	return true;
 }
 
@@ -1006,13 +1088,56 @@ bool ui_svc_save_channel(void)
 	return take_channel() && cp_post(save_channel_job);
 }
 
+#if CONFIG_P25 || CONFIG_NXDN
+// The channel editor's P25 or NXDN channel with its block: a plain one in that mode becomes a stored one as in
+// air_save_now; one of the kind is written with the block over its tag's, the rest of the tag kept. A copy (from: the
+// source, another number) takes the source's tag first, so it keeps the same; where that fails its tag is new. False
+// in *ok's place when ch is neither: the caller writes it as usual
+static bool air_conv_save(uint16_t number, uint16_t from, const channel_t *ch, const ui_air_conv_t *conv, bool *ok)
+{
+	bool plain = ch->kind == CODEPLUG_KIND_NONE;
+	bool p25 = false, nxdn = false;
+#if CONFIG_P25
+	p25 = plain ? ch->mode == RADIO_MODE_P25 : ch->kind == CODEPLUG_KIND_P25;
+#endif
+#if CONFIG_NXDN
+	nxdn = plain ? ch->mode == RADIO_MODE_NXDN : ch->kind == CODEPLUG_KIND_NXDN;
+#endif
+	if (!p25 && !nxdn)
+		return false;
+	if (!plain && from != 0 && from != number && codeplug_set_channel(number, ch))
+		(void)codeplug_tag_copy(from, number, ch);
+#if CONFIG_P25
+	if (p25)
+		*ok = plain ? p25_save_now(number, ch, &conv->p25) : p25_conv_save(number, ch, &conv->p25);
+#endif
+#if CONFIG_NXDN
+	if (nxdn)
+		*ok = plain ? nxdn_save_now(number, ch, &conv->nxdn) : nxdn_conv_save(number, ch, &conv->nxdn);
+#endif
+	return true;
+}
+#endif
+
 // The channel editor's whole channel (ui.md 2.1). Writing the channel in use drops its temporary changes: the radio
 // core re-reads it (codeplug_serial), and the edited values are what the user wants now. Whether it is the channel in
-// use is decided here on the UI task: the job runs on the housekeeping task, which must not touch v
+// use is decided here on the UI task: the job runs on the housekeeping task, which must not touch ui_svc_view. A copy
+// of a channel of a kind takes its source's tag (job.id: the source); a plain channel in P25 or NXDN becomes a stored
+// one of that kind
 static void write_channel_job(void *ctx)
 {
 	(void)ctx;
-	if (!codeplug_set_channel(job.channel, &job.now)) {
+	bool ok = false;
+	uint16_t from = (uint16_t)job.id;
+	bool done = false;
+#if CONFIG_P25 || CONFIG_NXDN
+	done = job.air_set && air_conv_save(job.channel, from, &job.now, &job.air, &ok);
+#endif
+	if (!done && !air_save_now(job.channel, &job.now, &ok))
+		ok = codeplug_set_channel(job.channel, &job.now) &&
+		     (job.now.kind == CODEPLUG_KIND_NONE || from == 0 || from == job.channel ||
+		      codeplug_tag_copy(from, job.channel, &job.now));
+	if (!ok) {
 		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
 		return;
 	}
@@ -1021,17 +1146,38 @@ static void write_channel_job(void *ctx)
 	}
 }
 
-bool ui_svc_write_channel(uint16_t number, const channel_t *ch)
+// conv: the block of a P25 or NXDN channel (the channel editor's), NULL: none given
+static bool write_channel_post(uint16_t number, const channel_t *ch, uint16_t from, const void *conv)
 {
 	if (number == 0 || number > CODEPLUG_CHANNELS_MAX || job_busy()) {
 		return false;
 	}
-	radio_get_view(&v);
+	radio_get_view(&ui_svc_view);
 	job.channel = number;
-	job.temp = !v.vfo && v.channel_number == number && v.temporary;	// here: drop the temporary changes after it
+	job.temp = !ui_svc_view.vfo && ui_svc_view.channel_number == number && ui_svc_view.temporary;	// here: drop the temporary changes after it
 	job.now = *ch;
+	job.id = from;
+#if CONFIG_P25 || CONFIG_NXDN
+	job.air_set = conv != NULL;	// before the post: the job may run at once on its own task
+	if (conv != NULL)
+		job.air = *(const ui_air_conv_t *)conv;
+#else
+	(void)conv;
+#endif
 	return cp_post(write_channel_job);
 }
+
+bool ui_svc_write_channel(uint16_t number, const channel_t *ch, uint16_t from)
+{
+	return write_channel_post(number, ch, from, NULL);
+}
+
+#if CONFIG_P25 || CONFIG_NXDN
+bool ui_svc_write_channel_air(uint16_t number, const channel_t *ch, uint16_t from, const ui_air_conv_t *conv)
+{
+	return write_channel_post(number, ch, from, conv);
+}
+#endif
 
 #if CONFIG_CONTACT_EDIT
 // The contact editor's contact (ui.md 2.4). The radio core's name cache follows codeplug_serial()
@@ -1158,9 +1304,9 @@ bool ui_svc_save_talk_target(uint32_t id, bool private_call)
 {
 	if (id == 0)
 		return false;
-	radio_get_view(&v);
-	if (v.vfo) {
-		if (!CONFIG_VFO_DMR || v.hotspot)
+	radio_get_view(&ui_svc_view);
+	if (ui_svc_view.vfo) {
+		if (!CONFIG_VFO_DMR || ui_svc_view.hotspot)
 			return false;
 		radio_req_dmr_target(id, private_call);	// the VFO's own target: kept with its settings, nothing to write
 		return true;

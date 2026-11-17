@@ -31,6 +31,7 @@ BOARD_UNSUPPORTED += SFR	# the HR_C5000 lacks CRC_MCU_Control for the idle burst
 BOARD_UNSUPPORTED += SFR_DUALPATH_RX	# needs SFR
 BOARD_UNSUPPORTED += SFR_CWID	# needs SFR
 BOARD_UNSUPPORTED += FONT_XL	# the 160x128 panel is too small for the large font (it is for 240 px and wider)
+BOARD_UNSUPPORTED += FONT_BIG	# the 9x18 font is drawn only on panels 220 px and wider; this one is 160x128
 CONFIG_AM_RX ?= n
 BOARD_UNSUPPORTED += AM_RX	# no air band receiver (docs/spec/airband-and-broadcast.md)
 CONFIG_BCAST_FM ?= n
@@ -70,3 +71,10 @@ BOARD_NOT_WRITTEN += RX_EXT	# no receive range in its chip documents (a PLL and 
 # without it. Chinese must not build here (the 720 KB and 880 KB radios carry it)
 BOARD_UNSUPPORTED += LANG_ZH	# the 128 KB of CJK glyphs won't fit beside the default build in 464 KB
 BOARD_UNSUPPORTED += LANG_DEFAULT_ZH	# needs LANG_ZH
+# P25 and NXDN need an air interface provider (board.air): this radio's modem glue doesn't give one yet
+CONFIG_P25 ?= n
+CONFIG_P25_TRUNK ?= n
+CONFIG_NXDN ?= n
+BOARD_NOT_WRITTEN += P25	# no board.air yet (docs/spec/air-interface.md)
+BOARD_NOT_WRITTEN += P25_TRUNK	# needs P25
+BOARD_NOT_WRITTEN += NXDN	# no board.air yet

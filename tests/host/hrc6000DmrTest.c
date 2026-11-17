@@ -6,6 +6,7 @@
 #include <string.h>
 #include "modem/hrc_common/hrc6000_dmr.h"
 #include "modem/hrc6000/hrc6000.h"
+#include "dmr/fec/dmrFec.h"
 
 static int failures;
 
@@ -628,6 +629,62 @@ static void test_tx_listen(void)
 	CHECK(count_ev(DMR_EV_TX_DONE) == 1 && !eng.tx_listen);	// per transmission
 }
 
+// A BS's outbound RC burst heard while we send (ETSI TS 102 361-1 6.4.2): EMB + RC in place of the sync, so the chip
+// reports nothing. Its receive tap (CACH, then the burst's 48-bit field) is read before our next burst: one DMR_EV_RC
+// per RC burst, none for an unchanged area, another color code or a burst that isn't an RC, nor for one the chip
+// reported itself (a class 3 report in the same listen slot)
+static void test_tx_listen_rc(void)
+{
+	fresh_engine();
+	pending_burst = false;
+	hrc6000_dmr_set_cc_filter(&eng, 2);
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 2, DMR_ACCESS_IMPOLITE));
+	hrc6000_dmr_tx_listen(&eng);
+	for (int i = 0; i < 8; i++) {
+		dmr_tx_burst_t b = mk(DMR_BURST_IDLE, 0, false);
+		CHECK(hrc6000_dmr_tx_queue(&eng, &b));
+	}
+	hrc6000_dmr_tx_end(&eng);
+	nev = 0;
+
+	uint8_t burst[12];
+	int listened = 0;
+	uint32_t t = 7500000;
+	for (int k = 0; k < 40 && hrc6000_dmr_is_transmitting(&eng); k++) {
+		int r50, r41;
+		tx_tick(t, &r50, &r41);
+		if (r41 == 0x50) {	// a listen slot: what the BS sends in it lands in a raw area
+			listened++;
+			memset(burst, 0x5A, sizeof burst);
+			burst[11] = (uint8_t)listened;	// the voice bits after the field differ per burst
+			if (listened == 1 || listened == 4) {
+				dmrFecRcField(2, DMR_RC_CEASE, burst + 3);	// a cease, area 0, then area 1
+			} else if (listened == 3) {
+				dmrFecRcField(3, DMR_RC_CEASE, burst + 3);	// another color code
+			}
+			if (listened == 5) {	// a cease the chip reports too: one event
+				dmrFecRcField(2, DMR_RC_CEASE, burst + 3);
+				rd[4][0x53] = (uint8_t)(dmrFecRcInfo(DMR_RC_CEASE) >> 3);
+				rd[4][0x54] = (uint8_t)(dmrFecRcInfo(DMR_RC_CEASE) & 7u);
+				report_at(t + 12000, 0x03, 0x20, 0x01);
+			}
+			if (listened != 2) {	// slot 2: nothing new heard, both areas unchanged
+				memcpy(&rd[2][(listened == 4) ? 0x60 : 0x30], burst, sizeof burst);
+			}
+		}
+		drain();
+		t += 30000;
+	}
+	drain();
+	CHECK(listened >= 5);
+	CHECK(count_ev(DMR_EV_RC) == 3 && eng.st.rc_tap == 2 && eng.st.rc_reports == 1);
+	for (int i = 0; i < nev; i++) {
+		if (evs[i].kind == DMR_EV_RC) {
+			CHECK(evs[i].arg == dmrFecRcInfo(DMR_RC_CEASE) && evs[i].flags == 0);
+		}
+	}
+}
+
 // DMR_BURST_EMPTY: our slot left empty and received (an SFR's gap), counted as taken, no PA
 static void test_tx_empty_slot(void)
 {
@@ -1163,6 +1220,17 @@ static void test_cc_follow(void)
 		report_at(t + 4000, 0x32, 0x20, 0x00);
 	}
 	CHECK(last_write(4, 0x1F) == -1);
+
+	// The same filter again: no write, no restart (the call layer sets it on every slot change)
+	restarts = eng.st.rx_restarts;
+	hrc6000_dmr_set_cc_filter(&eng, 5);
+	ts_at(t += 30000);
+	ts_at(t += 30000);
+	CHECK(last_write(4, 0x1F) == -1 && eng.st.rx_restarts == restarts);
+	// Another one still restarts
+	hrc6000_dmr_set_cc_filter(&eng, 6);
+	ts_at(t += 30000);
+	CHECK(last_write(4, 0x1F) == 0x60 && eng.st.rx_restarts == restarts + 1);
 	dev.chip = c6;
 }
 
@@ -1200,6 +1268,34 @@ static void test_rx_repeat_report(void)
 	CHECK(eng.st.by_class[0] == 20 && eng.st.by_class[1] == 4 && eng.st.by_class[2] == 16);
 	CHECK(eng.st.by_type[0x9] == 4 && eng.st.by_type[0x1] == 16);
 	CHECK(eng.st.dt_hist[2] == 40);	// all 3 ms after the tick
+}
+
+// A base station carrier idle on both slots: every slot an idle burst with the same bits. Each is delivered (a hang's
+// idles keep a trunked call), while a BS sync CSBK reported again one slot later is still a repeat
+static void test_rx_bs_idles(void)
+{
+	fresh_engine();
+	dmr_config_t cfg = { .own_id = 9990001, .cc = 1, .access = DMR_ACCESS_POLITE_CC, .repeater = true };
+	hrc6000_dmr_configure(&eng, &cfg);
+	uint32_t t = 9800000;
+	uint32_t idle0 = eng.st.rx_idle;
+	for (int k = 0; k < 20; k++) {
+		uint8_t tc = (uint8_t)(((eng.tick + 1u) & 1u) ? 0x04 : 0x00);
+		rd[4][0x52] = tc;
+		ts_at(t);
+		report_at(t + 3000, 0x92, (uint8_t)(0x10 | tc), 0x01);	// idle (type 9, class 2), CC 1, BS sync
+		t += 30000;
+	}
+	CHECK(eng.st.rx_idle == idle0 + 20);
+	uint32_t c0 = eng.st.rx_csbk, d0 = eng.st.rx_dup_repeat;
+	for (int k = 0; k < 2; k++) {
+		uint8_t tc = (uint8_t)(((eng.tick + 1u) & 1u) ? 0x04 : 0x00);
+		rd[4][0x52] = tc;
+		ts_at(t);
+		report_at(t + 3000, 0x32, (uint8_t)(0x10 | tc), 0x01);	// the same CSBK twice
+		t += 30000;
+	}
+	CHECK(eng.st.rx_csbk == c0 + 1 && eng.st.rx_dup_repeat == d0 + 1);
 }
 
 // The quiet-period restart happens once, not every 20 ticks (each one drops the sync)
@@ -1412,6 +1508,7 @@ int main(void)
 	test_out_of_step_resync();
 	test_tx_voice_dmo();
 	test_tx_listen();
+	test_tx_listen_rc();
 	test_tx_empty_slot();
 	test_tx_fill();
 	test_tx_crc_and_underrun();
@@ -1424,6 +1521,7 @@ int main(void)
 	test_cc_any_rx();
 	test_cc_follow();
 	test_rx_repeat_report();
+	test_rx_bs_idles();
 	test_idle_restart_once();
 	test_rx_bench_call();
 	test_rx_missed_burst();
