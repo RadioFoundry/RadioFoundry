@@ -704,7 +704,9 @@ class Radio:
                 self._req_until(lambda: L.zone_pos(int(snap["zone_pos"])),
                                 lambda v: v.get("zone_pos") == snap["zone_pos"], "channel restored")
         cur = self.core()
-        if snap["temp"] in ("0x00", "0") and cur.get("temp") not in ("0x00", "0"):
+        # any temporary change the snapshot didn't have (a mode on top of a temporary squelch, temp 0x02 -> 0x82):
+        # undo them all; the power and squelch steps below put back the snapshot's own
+        if int(cur.get("temp") or "0", 0) & ~int(snap["temp"] or "0", 0):
             self._req_until(L.clear_temporary, lambda v: v.get("temp") in ("0x00", "0"), "temporary changes undone")
         self._step_to("power", L.power_step, snap["power"], int(cur.get("power_count") or 9), wraps=True)
         self._step_to("squelch", L.squelch_step, snap["squelch"], 10, wraps=False)
