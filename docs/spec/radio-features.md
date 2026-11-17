@@ -87,6 +87,14 @@ move on from one that doesn't ([p25.md](p25.md) 7.1). Digital monitor on when a 
 at every stop (`hear_all_latch` in the view), so a call to any talkgroup is played and holds the scan; the channel the
 scan ends on, by STOP, CANCEL or PTT, keeps it latched. Toggling it during the scan turns it on or off for the rest of
 the scan. Dual watch doesn't carry it. Empty channels still move on after the dwell.
+
+**A mixed frequency.** A zone may hold an FM channel and digital channels (DMR, P25, NXDN) on one receive frequency.
+A digital signal can open the FM squelch, and a scan that held the FM stop would sit through the call there and never
+reach the channel that plays it. So before an FM stop holds, the scan checks the zone's digital channels on that
+frequency in zone order, each as a stop with its usual probe (`scan_mixed` in `radio_sm.c`). A call there holds it.
+A stop that heard its own mode (a call not for us included) ends the check, and the sweep goes on from where it was.
+When none heard its mode, the signal was FM: the scan goes back to the FM stop, which holds this time. Trunked
+channels are not stops (above), so they are never checked.
 The view counts the stops probed (`scan_probes`) and those with sync (`scan_synced`) for each scan. Active: the scan holds
 (`scan_phase=hold`), then follows `scan_resume`; after the signal ends it waits `scan_delay_ms` (`resume`) and picks
 up again if the signal comes back. MONITOR held pauses the scan (`paused`).

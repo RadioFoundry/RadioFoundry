@@ -265,6 +265,14 @@ static const char *mode_word(const radio_view_t *v)
 	return v->ch.mode == RADIO_MODE_FM && v->am ? "AM" : ui_mode_name(v->ch.mode);
 }
 
+#if CONFIG_DUAL_WATCH
+// The same for a dual watch pane, from the channel picked for it (the receiver may be on the other one)
+static const char *dual_mode_word(const ui_dual_pane_t *p)
+{
+	return p->am ? "AM" : ui_mode_name(p->mode);
+}
+#endif
+
 // Status strip (P2): state pill, mode, monitor, lock, unread messages, signal, battery.
 // A titled screen (prefix and / or name) on a display under UI_TALL_PX high merges its title into the strip
 // (wireframes 160x128 and 128x64): the pill shows only while not idle, the signal bars and the battery give way to the
@@ -411,7 +419,7 @@ static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t
 	const char *mw = mode_word(v);
 #if CONFIG_DUAL_WATCH
 	if (s->dual.on && !v->aprs_tx)
-		mw = ui_mode_name(s->dual.pane[s->dual.sel].mode);
+		mw = dual_mode_word(&s->dual.pane[s->dual.sel]);
 #endif
 	if (v->aprs_tx)
 		mw = "FM";
@@ -2441,7 +2449,8 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 		else if (ft->detail == NULL)
 			sb_str(&rb, p->detail);
 	} else if (p->vfo) {
-		sb_str(&b, "VFO FM");
+		sb_str(&b, "VFO ");
+		sb_str(&b, dual_mode_word(p));
 		if (ft->detail == NULL)
 			sb_str(&rb, p->detail);
 	} else {
