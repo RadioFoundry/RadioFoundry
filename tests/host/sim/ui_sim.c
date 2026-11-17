@@ -3053,8 +3053,14 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(100);
 		return true;
 	}
-	if (strcmp(t, "dlvfo") == 0 && arg != NULL) {	// the debug link tunes the VFO
-		radio_req_vfo_set((uint32_t)strtoul(arg, NULL, 10));
+	if (strcmp(t, "dlvfo") == 0) {	// the debug link tunes the VFO
+		char *end = NULL;
+		unsigned long hz = arg != NULL ? strtoul(arg, &end, 10) : 0;
+		if (arg == NULL || end == arg || *end != '\0' || hz == 0) {
+			snprintf(err, len, "bad %s", t);
+			return false;
+		}
+		radio_req_vfo_set((uint32_t)hz);
 		advance(100);
 		return true;
 	}
@@ -3065,6 +3071,7 @@ static bool run_token(char *t, char *err, size_t len)
 			snprintf(err, len, "bad %s", t);
 			return false;
 		}
+		c.kind = CODEPLUG_KIND_NONE;	// a plain FM channel, whatever chkind made it
 		c.mode = RADIO_MODE_FM;
 		c.rx_hz = c.tx_hz = hz;
 		if (sim_write((uint16_t)n, &c) < 0) {

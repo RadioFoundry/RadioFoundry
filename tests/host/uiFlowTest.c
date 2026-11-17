@@ -253,6 +253,8 @@ static const flow_t flows[] = {
 	  "dual=1 shows=AM_signal hides=FM_signal", 0, false },
 	{ "11 dual watch modes: AM channel", "am chhz:3,122395000 up down quick 7", "",
 	  "dual=1 sel=A shows=AM shows=122.395 hides=FM", 0, false },
+	{ "11 dual watch modes: AM VFO's chip, no tone or width", "am dlvfo:129700000 quick 7", "",
+	  "dual=1 shows=Air_Band_AM hides=No_tone", 0, false },
 	{ "11 dual watch modes: AM channel in the B picker", "am chhz:4,122395000 quick 7", "ctx 3",
 	  "shows=122.395_AM hides=122.395_FM", 2, false },
 	{ "11 dual watch modes: AM channel's signal", "am chhz:3,122395000 up down quick 7 tune:a", "fmrx",

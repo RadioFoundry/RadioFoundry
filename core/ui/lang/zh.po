@@ -990,6 +990,11 @@ msgid "OK choose  Back"
 msgstr "OK 选  返回"
 
 #: core/ui/ui_dual.c core/ui/ui_screens.c
+msgctxt "HOME_CHIP_AIR_BAND_AM"
+msgid "Air Band AM"
+msgstr "航空 AM"
+
+#: core/ui/ui_dual.c core/ui/ui_screens.c
 msgctxt "CHIP_NO_TONE"
 msgid "No tone"
 msgstr "无亚音"
@@ -4373,11 +4378,6 @@ msgstr "监听"
 msgctxt "HOME_STATE_NO_TX_FREQ"
 msgid "No TX frequency"
 msgstr "无发射频率"
-
-#: core/ui/ui_screens.c
-msgctxt "HOME_CHIP_AIR_BAND_AM"
-msgid "Air Band AM"
-msgstr "航空 AM"
 
 #: core/ui/ui_screens.c
 msgctxt "HOME_CHIP_BROADCAST_FM"

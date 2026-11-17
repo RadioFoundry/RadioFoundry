@@ -988,6 +988,11 @@ msgid "OK choose  Back"
 msgstr "OK choisir  Retour"
 
 #: core/ui/ui_dual.c core/ui/ui_screens.c
+msgctxt "HOME_CHIP_AIR_BAND_AM"
+msgid "Air Band AM"
+msgstr "Bande Aviation AM"
+
+#: core/ui/ui_dual.c core/ui/ui_screens.c
 msgctxt "CHIP_NO_TONE"
 msgid "No tone"
 msgstr "Pas de tonalité"
@@ -4371,11 +4376,6 @@ msgstr "Suivi"
 msgctxt "HOME_STATE_NO_TX_FREQ"
 msgid "No TX frequency"
 msgstr "Pas de fréq TX"
-
-#: core/ui/ui_screens.c
-msgctxt "HOME_CHIP_AIR_BAND_AM"
-msgid "Air Band AM"
-msgstr "Bande Aviation AM"
 
 #: core/ui/ui_screens.c
 msgctxt "HOME_CHIP_BROADCAST_FM"
