@@ -69,7 +69,7 @@ void debuglink_view_aprs(uint8_t part, dl_text_t *t)
 	aprs_get_view(&v);
 	dl_text(t, "aprs.built=1\naprs.afsk_built=%u\naprs.dmr_built=%u\naprs.rx_built=%u\naprs.igate_built=%u\n",
 		CONFIG_APRS_AFSK, CONFIG_APRS_DMR, CONFIG_APRS_RX, CONFIG_APRS_IGATE);
-	dl_text(t, "aprs.call=%s\naprs.block=%s\naprs.freq_hz=%u\n", v.call, word(v.block, blocks, 7),
+	dl_text(t, "aprs.tocall=%s\naprs.call=%s\naprs.block=%s\naprs.freq_hz=%u\n", APRS_TOCALL, v.call, word(v.block, blocks, 7),
 		(unsigned)v.freq_hz);
 	dl_text(t, "aprs.pos_src=%s\naprs.pos_valid=%u\n", word(v.pos_src, srcs, 4), v.pos_valid);
 	if (v.pos_valid) {

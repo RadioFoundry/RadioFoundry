@@ -68,6 +68,9 @@ MCU_DEFS += $(OPTION_DEFS)
 # Hardware options (hal/hal_hwopt.h): a board that has some says BOARD_HWOPTS := y in its board.mk. The others build
 # none of the code that lists, asks for and stores them
 MCU_DEFS += -DRFOUNDRY_HWOPTS=$(if $(filter y,$(BOARD_HWOPTS)),1,0)
+# The sixth character of the APRS tocall (APRDF?, docs/spec/aprs.md 4.2): board.toml aprs_tocall, one per radio
+APRS_TOCALL_ID := $(shell sed -n 's/^aprs_tocall = "\([0-9A-Z]\)".*/\1/p' boards/$(BOARD)/board.toml 2>/dev/null)
+MCU_DEFS += $(if $(APRS_TOCALL_ID),-DAPRS_TOCALL_ID='"$(APRS_TOCALL_ID)"')
 
 BUILD := build/$(BOARD)$(if $(VARIANT),-$(VARIANT))$(OPTION_SUFFIX)
 TARGET := $(BUILD)/rfoundry_$(BOARD)$(OPTION_SUFFIX)

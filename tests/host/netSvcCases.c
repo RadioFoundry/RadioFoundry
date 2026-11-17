@@ -547,14 +547,14 @@ static void test_aprsis(void)
 
 	// The engine's lines for APRS-IS go to the server; other frames don't
 	peer_clear(&srv);
-	static const uint8_t g[] = { 0xC0, 0x06, 'G', 'Q', '0', 'T', 'E', 'S', 'T', '-', '7', '>', 'A', 'P', 'Z', 'R', 'D',
-				     'F', ',', 'T', 'C', 'P', 'I', 'P', '*', ':', '>', 'h', 'i', 0xC0 };
+	static const uint8_t g[] = { 0xC0, 0x06, 'G', 'Q', '0', 'T', 'E', 'S', 'T', '-', '7', '>', 'A', 'P', 'R', 'D', 'F',
+				     '0', ',', 'T', 'C', 'P', 'I', 'P', '*', ':', '>', 'h', 'i', 0xC0 };
 	static const uint8_t data[] = { 0xC0, 0x00, 'x', 0xC0 };
 	ring_put(data, sizeof(data));
 	ring_put(g, sizeof(g));
 	pump();
 	srv.rx[srv.rxn] = 0;
-	CHECK(ring_n == 0 && strcmp((char *)srv.rx, "Q0TEST-7>APZRDF,TCPIP*:>hi\r\n") == 0);
+	CHECK(ring_n == 0 && strcmp((char *)srv.rx, "Q0TEST-7>APRDF0,TCPIP*:>hi\r\n") == 0);
 
 	// The server's lines go to the engine (its iGate rules decide); comments don't
 	is_lines = 0;
