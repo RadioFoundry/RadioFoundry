@@ -256,7 +256,7 @@ static void beep(radio_sm_t *sm, uint8_t b)
 #endif
 }
 
-// --- Signaling tones (sigtone.h, docs/spec/radio-features.md 4.4) ---
+// --- Signaling tones (sigtone.h, docs/spec/radio-features.md 4.3) ---
 
 _Static_assert(SIG_EV_COUNT == 3, "radio_settings_t.sig_* hold three events");
 _Static_assert(SIG_STEPS == 10, "radio_settings_t.sig_hz / sig_ms hold ten steps");
@@ -1596,7 +1596,14 @@ static void dmr_configure(radio_sm_t *sm)
 	}
 #endif
 	dmr_call_configure(&cfg);
+	sm->dmr_end_wait = false;	// a pending end tone belongs to the channel it was sent on
 	sm->view.dmr.own_id = cfg.own_id;
+	// The channel's color code, timeslot and repeater mode in the same update as the channel: dmr_publish copies the
+	// stack's own only at the next tick, and a reader between the two (dual watch's snapshot at each hop) would take
+	// the old channel's timeslot for the new one
+	sm->view.dmr.cc = cfg.cc;
+	sm->view.dmr.ts = cfg.ts;
+	sm->view.dmr.rmo = cfg.rmo;
 	sm->view.dmr.hear_all = cfg.listen.hear_all;
 	sm->view.dmr.hear_all_latch = hear_all_on(sm);
 	sm->view.dmr.one_shot = sm->one_shot;
@@ -2153,14 +2160,18 @@ static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
 				} else if (sig_local_on(sm, SIG_EV_IDLE)) {
 					sig_local(sm, SIG_EV_IDLE);
 				}
-			} else if (sm->dmr_prev_state == RDMR_TX && st != RDMR_TX && sig_local_on(sm, SIG_EV_END)) {
-				// Our transmission is over, but the engine may still be sending its last burst: a board whose
+			} else if (sm->dmr_prev_state == RDMR_TX && st != RDMR_TX && !sm->ptt &&
+				   sig_local_on(sm, SIG_EV_END)) {
+				// Our transmission is over (PTT let go: not a time-out or a denial, as in FM), but the engine may still be sending its last burst: a board whose
 				// audio path is gated drops what is queued meanwhile, and the tone was heard half. Wait for it
 				sm->dmr_end_wait = true;
 				sm->dmr_end_ms = now_ms;
 			}
 		}
 		sm->dmr_prev_state = st;
+	}
+	if (sm->dmr_end_wait && sm->view.ch.mode != RADIO_MODE_DMR) {
+		sm->dmr_end_wait = false;	// the channel is not DMR any more
 	}
 	if (sm->dmr_end_wait) {
 		const hal_audio_t *a = board.audio;
@@ -5775,6 +5786,30 @@ static bool tx_tone(uint16_t hz)
 	return board.radio->tx_tone != NULL && board.radio->tx_tone(hz);
 }
 
+// Step i of an on-air FM chain. A pause is a silent carrier (tx_tone_key), not tx_tone(0): that gives the microphone
+// back on some chips (HR_C7000), so every gap would send live audio. A chain that opens with a pause first starts its
+// first tone, then keys it off. A board without tx_tone_key can't key a silent carrier: the old behavior (tx_tone(0)
+// between steps, the microphone live before a leading pause)
+static bool chain_tone(const beep_seg_t *g, uint8_t n, uint8_t i)
+{
+	if (g[i].hz != 0) {
+		return board.radio->tx_tone(g[i].hz);
+	}
+	if (board.radio->tx_tone_key == NULL) {
+		return i == 0 || board.radio->tx_tone(0);
+	}
+	if (i == 0) {
+		uint8_t k = 0;
+		while (k < n && g[k].hz == 0) {
+			k++;
+		}
+		if (k == n || !board.radio->tx_tone(g[k].hz)) {
+			return false;
+		}
+	}
+	return board.radio->tx_tone_key(false) || board.radio->tx_tone(0);
+}
+
 // The tone sent before unkeying on an FM channel when PTT is let go: the roger beep (the end tone's default, if it is
 // on) or the end tone's sequence when it is set to go on air. Starts its first step; true when it runs (roger_poll
 // goes through the rest and unkeys)
@@ -5797,7 +5832,7 @@ static bool roger_start(radio_sm_t *sm, uint32_t now_ms)
 	} else {
 		return false;
 	}
-	if (board.radio->tx_tone == NULL || (g[0].hz != 0 && !board.radio->tx_tone(g[0].hz))) {
+	if (board.radio->tx_tone == NULL || !chain_tone(g, n, 0)) {
 		return false;
 	}
 	sm->roger_n = n;
@@ -5824,7 +5859,7 @@ static void roger_poll(radio_sm_t *sm, uint32_t now_ms)
 			fm_unkey(sm, false, now_ms);
 			return;
 		}
-		tx_tone(sm->roger_seg[sm->roger_i].hz);
+		chain_tone(sm->roger_seg, sm->roger_n, sm->roger_i);
 	}
 }
 
@@ -5860,7 +5895,7 @@ static void fm_lead_start(radio_sm_t *sm, uint32_t now_ms)
 	}
 	beep_seg_t *g = sm->roger_seg;
 	uint8_t n = sig_chain(sm->set.sig_hz[SIG_EV_BEGIN], sm->set.sig_ms[SIG_EV_BEGIN], SIG_EV_BEGIN, g);
-	if (g[0].hz != 0 && !board.radio->tx_tone(g[0].hz)) {
+	if (!chain_tone(g, n, 0)) {
 		return;
 	}
 	sm->roger_n = n;
@@ -7175,10 +7210,10 @@ static void persist(radio_sm_t *sm, uint32_t now_ms)
 
 static void clamp_settings(radio_settings_t *s)
 {
-	for (int i = 0; i < SIG_EV_COUNT; i++) {
-		s->sig_dmr[i] = CONFIG_SIG_TONES ? sig_out_clean(s->sig_dmr[i], (sig_event_t)i) : SIG_OUT_DEFAULT;
-		s->sig_fm[i] = CONFIG_SIG_TONES ? sig_out_clean(s->sig_fm[i], (sig_event_t)i) : SIG_OUT_DEFAULT;
 #if CONFIG_SIG_TONES
+	for (int i = 0; i < SIG_EV_COUNT; i++) {
+		s->sig_dmr[i] = sig_out_clean(s->sig_dmr[i], (sig_event_t)i);
+		s->sig_fm[i] = sig_out_clean(s->sig_fm[i], (sig_event_t)i);
 		for (unsigned k = 0; k < SIG_STEPS; k++) {
 			if (s->sig_hz[i][k] > SIG_HZ_MAX) {
 				s->sig_hz[i][k] = SIG_HZ_MAX;
@@ -7188,8 +7223,8 @@ static void clamp_settings(radio_settings_t *s)
 				s->sig_ms[i][k] = SIG_MAX_MS / SIG_MS_UNIT;
 			}
 		}
-#endif
 	}
+#endif
 	if (s->beep_level > 100) {
 		s->beep_level = 100;
 	}
@@ -7277,10 +7312,12 @@ static void settings_to_radio(const settings_t *st, radio_settings_t *s)
 		clamp_settings(s);
 	}
 	s->tones_off = settings_tones_off(st) & RADIO_TONES_MASK;	// 0, all on, in a record from before it
+#if CONFIG_SIG_TONES
 	for (int i = 0; i < SIG_EV_COUNT; i++) {
 		s->sig_dmr[i] = st->sig_dmr[i];	// 0 = default, in a record from before them; clamp_settings checks
 		s->sig_fm[i] = st->sig_fm[i];
 	}
+#endif
 	if (st->rs_stored != 1) {
 		return;
 	}

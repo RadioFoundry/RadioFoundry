@@ -95,7 +95,7 @@ void ambeVoiceSetMicGain(uint8_t step);
 // of the transmission, or from its first if it has not started. Encoded as a tone frame, noise reduction off for it.
 // final: after the tone the mic stays muted until the transmission ends (an end of transmission tone). The encoder
 // waits for room in its queue, so none of the tone is lost. Radio task. A request for a transmission that never
-// starts is cancelled by ambeVoiceTxToneCancel (the stack's end of transmission does it too)
+// starts is cancelled by ambeVoiceTxToneCancel (the stack's end of transmission drops it too, in the audio callback)
 void ambeVoiceTxTone(const beep_seg_t *steps, uint8_t n, bool final);
 void ambeVoiceTxToneCancel(void);
 // The tone is asked for, playing, or its frames are not yet pulled by the call stack (the source's busy: the over is

@@ -216,9 +216,8 @@ CONFIG_VOLUME_BAR ?= y
 CONFIG_CONTACT_EDIT ?= $(if $(and $(filter y,$(CONFIG_CHANNEL_EDIT)),$(filter y,$(CONFIG_DMR))),y,n)
 # beeps and alert tones as PCM through the speaker (needs the board's PCM audio, which some radios have only with DMR)
 CONFIG_BEEP ?= y
-# signaling tones: Settings > Signaling tones, a chain of up to five tones for the start of a transmission, its end and a
-# reception's end, on the speaker, on air or both, in DMR and FM (docs/spec/radio-features.md 4.3; needs BEEP;
-# untested on air)
+# signaling tones: Settings > Signaling tones, a chain of up to ten tones for the start of a transmission, its end and a
+# reception's end, on the speaker, on air or both, in DMR and FM (docs/spec/radio-features.md 4.3; needs BEEP)
 CONFIG_SIG_TONES ?= $(CONFIG_BEEP)
 # FM transmit tones: roger beep and the 1750 Hz repeater access burst (needs FM)
 CONFIG_FM_TX_TONES ?= $(CONFIG_FM)

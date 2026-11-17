@@ -244,13 +244,14 @@ typedef struct {
 	// SETTINGS_T3_KILLED set, no DMR at all until a factory reset
 	uint8_t t3_kill;
 	uint8_t reserved10[2];		// 0
-	// Signaling tones (core/radio/sigtone.h), appended after power_levels so a record written before reads them as 0:
+	// Signaling tones (core/radio/sigtone.h), appended at the end so a record written before reads them as 0:
 	// per event (start of a transmission, its end, a reception's end) where it sounds in DMR and in FM (sig_out_t).
 	// 0 = the default output, as an older record reads. The event's chain of steps is only in its codeplug record
 	// (CODEPLUG_KEY_SIG_BEGIN + event): settings_t is copied onto several task stacks, and the steps would cost every
 	// copy 60 bytes
 	uint8_t sig_dmr[3];
 	uint8_t sig_fm[3];
+	uint8_t reserved11[2];		// 0
 } settings_t;
 
 // Pages: settings_t is stored as records of SETTINGS_PAGE_BYTES each (settings-store.md 2.1). Only the pages its size

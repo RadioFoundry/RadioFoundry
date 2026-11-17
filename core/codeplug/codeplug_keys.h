@@ -54,4 +54,9 @@ bool codeplug_keys_store(const codeplug_key_row_t *rows, uint8_t n, const void *
 // key was written, or couldn't be and the codeplug holds none. False when the key is present and couldn't be updated
 bool codeplug_keys_store_record(uint16_t key, const void *was, const void *now, uint16_t len);
 
+// As codeplug_keys_store_record, for a record that has no copy in settings_t (the signaling tone chains): the codeplug
+// is its only home, so a write that can't be made (no settings area, another firmware's codeplug, a CPS session) is a
+// failure, not "keep it in RAM": the steps would be gone at the next restart
+bool codeplug_keys_write_record(uint16_t key, const void *was, const void *now, uint16_t len);
+
 #endif

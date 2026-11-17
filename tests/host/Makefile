@@ -164,8 +164,8 @@ airQueueTest: airQueueTest.c fuzz.h $(CORE)/dmr/dmrAirQueue.c $(CORE)/dmr/dmrAir
 
 # Signaling tones: which outputs sound where, the presets and the sample generator
 TESTS   += sigToneTest
-sigToneTest: sigToneTest.c $(CORE)/radio/sigtone.c $(CORE)/radio/sigtone.h $(CORE)/radio/beep.h
-	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/hal -o $@ sigToneTest.c $(CORE)/radio/sigtone.c
+sigToneTest: sigToneTest.c $(CORE)/radio/sigtone.c $(CORE)/radio/sigtone.h $(CORE)/radio/beep.c $(CORE)/radio/beep.h
+	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/hal -o $@ sigToneTest.c $(CORE)/radio/sigtone.c $(CORE)/radio/beep.c
 
 # Tables of settings-area keys (core/codeplug/codeplug_keys.c) and the radio core's (core/radio/radio_keys.h): lookup,
 # the types and ranges, apply, write-back
@@ -735,12 +735,12 @@ ambeFecTest: ambeFecTest.c $(CORE)/dmr/ambe/ambeFec.c $(CORE)/dmr/ambe/ambeFec.h
 
 ambeVoiceTest: ambeVoiceTest.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeVoice.h $(CORE)/dmr/ambe/ambeFec.c \
 	       $(ROOT)/drivers/vocoder/ambe2_flags.h $(ROOT)/hal/hal_vocoder.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ ambeVoiceTest.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/radio/sigtone.c $(CORE)/dmr/ambe/ambeFec.c
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ ambeVoiceTest.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/radio/sigtone.c $(CORE)/radio/beep.c $(CORE)/dmr/ambe/ambeFec.c
 # The same with the voice capture built (CONFIG_VOICE_CAPTURE)
 ambeVoiceCaptureTest: ambeVoiceTest.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeVoice.h $(CORE)/dmr/ambe/ambeFec.c \
 	       $(ROOT)/drivers/vocoder/ambe2_flags.h $(ROOT)/hal/hal_vocoder.h
 	$(CC) $(CFLAGS) -DCONFIG_VOICE_CAPTURE=1 -I$(ROOT)/hal -Wshadow -o $@ ambeVoiceTest.c $(CORE)/dmr/ambe/ambeVoice.c \
-	      $(CORE)/radio/sigtone.c $(CORE)/dmr/ambe/ambeFec.c
+	      $(CORE)/radio/sigtone.c $(CORE)/radio/beep.c $(CORE)/dmr/ambe/ambeFec.c
 
 # The mic gain setting (core/radio/mic_gain.c): to the board's hook or to DMR's sample scaling, never both
 TESTS   += micGainTest

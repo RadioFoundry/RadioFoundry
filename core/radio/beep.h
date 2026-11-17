@@ -65,6 +65,9 @@ typedef struct {
 #define BEEP_CUSTOM_MAX	10	// steps of a custom pattern (SIG_STEPS)
 
 // audio NULL: beeps are counted as dropped
+// One period of a sine, Q15: the beep engine's, and the signaling tones' generator (sigtone.c) uses it too
+extern const int16_t beep_sine[64];
+
 void beep_init(const hal_audio_t *audio);
 // Start a pattern at level 1..100 (0 or BEEP_NONE: nothing). shared: the DMR voice stream is running and mixes the
 // beep in; otherwise the beep starts its own stream. Replaces a pattern still playing

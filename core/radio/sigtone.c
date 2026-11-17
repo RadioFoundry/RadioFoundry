@@ -3,6 +3,7 @@
 // Signaling tones (sigtone.h)
 #include <string.h>
 #include "radio/sigtone.h"
+#include "radio/beep.h"
 #include "hal_audio.h"
 #include "config.h"
 
@@ -97,15 +98,6 @@ uint8_t sig_chain(const uint16_t hz[SIG_STEPS], const uint8_t ms10[SIG_STEPS], s
 	return m;
 }
 
-// One period of a sine, Q15 (the same table as beep.c: this file builds without CONFIG_BEEP)
-static const int16_t sine[64] = {
-	0, 3212, 6393, 9512, 12539, 15446, 18204, 20787, 23170, 25329, 27245, 28898, 30273, 31356, 32137, 32609,
-	32767, 32609, 32137, 31356, 30273, 28898, 27245, 25329, 23170, 20787, 18204, 15446, 12539, 9512, 6393, 3212,
-	0, -3212, -6393, -9512, -12539, -15446, -18204, -20787, -23170, -25329, -27245, -28898, -30273, -31356, -32137,
-	-32609, -32767, -32609, -32137, -31356, -30273, -28898, -27245, -25329, -23170, -20787, -18204, -15446, -12539,
-	-9512, -6393, -3212,
-};
-
 uint32_t sig_gen_samples(const beep_seg_t *s, uint8_t n)
 {
 	return sig_total_ms(s, n) * (AUDIO_RATE_HZ / 1000);
@@ -159,7 +151,7 @@ bool sig_gen_block(sig_gen_t *g, int16_t *pcm, unsigned count)
 			}
 			uint32_t idx = g->phase >> 26;
 			int32_t frac = (int32_t)((g->phase >> 16) & 0x3FFu);
-			int32_t a = sine[idx], b = sine[(idx + 1) & 63u];
+			int32_t a = beep_sine[idx], b = beep_sine[(idx + 1) & 63u];
 			v = ((a + (((b - a) * frac) >> 10)) * amp) >> 15;
 			g->phase += g->step;
 		}

@@ -71,6 +71,7 @@ static beep_seg_t tone_req_seg[SIG_AIR_STEPS];
 static uint8_t tone_req_n;
 static bool tone_req_final;
 static uint8_t tone_req_seq, cb_tone_seq;
+static int16_t tone_stale = -1;	// the call task's: the request number the over had ended with (source_end), -1 none
 static sig_gen_t tone_gen;
 static bool tone_active;		// the generator still has samples
 static bool tone_mute;			// after a final tone: silence in the mic's place until the transmission ends
@@ -243,7 +244,10 @@ static void source_end(void *ctx)
 	(void)ctx;
 	STORE(tx_end_seq, tx_seq);
 #if CONFIG_SIG_TONES
-	ambeVoiceTxToneCancel();	// a tone asked for a transmission that never went on air is not for the next one
+	// A tone asked for a transmission that never went on air is not for the next one. Not a request of its own (that
+	// is the radio task's: both would write tone_req_*): the number of the latest request is noted, and the audio
+	// callback drops it if it has not taken it by then. A later request has another number
+	STORE(tone_stale, (int16_t)LOAD(tone_req_seq));
 #endif
 }
 
@@ -508,7 +512,7 @@ static void tx_block(const int16_t *mic)
 	if (tseq != cb_tone_seq) {
 		cb_tone_seq = tseq;
 		tone_mute = false;
-		tone_active = tone_req_n != 0;
+		tone_active = tone_req_n != 0 && LOAD(tone_stale) != (int16_t)tseq;
 		if (tone_active) {
 			sig_gen_start(&tone_gen, tone_req_seg, tone_req_n, TONE_AMP_Q15);
 		}
@@ -554,15 +558,14 @@ static void tx_block(const int16_t *mic)
 		mic = scaled;
 	}
 #if CONFIG_SIG_TONES
+	// The tone's last block: tone_active stays set until its frame is queued and tone_last_* published below, so
+	// source_busy() never reads false with the end tone's frames still to go. A full queue drops this frame and the
+	// block is made again next time (the generator is spent: silence)
 	bool tone_last = false;
 	if (tone_active) {
 		bool more = sig_gen_block(&tone_gen, scaled, AUDIO_BLOCK_SAMPLES);
 		mic = scaled;
-		if (!more) {
-			tone_active = false;
-			tone_mute = tone_req_final;
-			tone_last = true;
-		}
+		tone_last = !more;
 	} else if (tone_mute) {
 		memset(scaled, 0, sizeof(scaled));
 		mic = scaled;
@@ -593,6 +596,8 @@ static void tx_block(const int16_t *mic)
 		tone_last_n = tx_pushed;
 		STORE(tone_last_seq, seq);
 		STORE(tone_last_valid, true);
+		tone_mute = tone_req_final;
+		tone_active = false;
 	}
 #endif
 	stats.tx_frames++;

@@ -4518,18 +4518,21 @@ static void test_ui_glue(void)
 	kv_serial++;
 	run(20);
 	CHECK(sm.set.sig_hz[SIG_EV_END][0] == 0 && sm.set.sig_hz[SIG_EV_END][1] == 1570);
-	// With another firmware's codeplug the area can't be written and holds no key: saved as the radio's own
+	// With another firmware's codeplug the area can't be written and holds no key: refused with "not saved" (the chains
+	// have no home but the record, so keeping the change in RAM would lose it at the next restart)
 	kv_sig_len[SIG_EV_BEGIN] = kv_sig_len[SIG_EV_END] = kv_sig_len[SIG_EV_IDLE] = -1;
 	cp_foreign = true;
 	kv_held = true;
 	n_ev = 0;
+	uint8_t keep_dmr = sm.set.sig_dmr[SIG_EV_BEGIN];
 	CHECK(ui_svc_setting_set(UI_SET_SIG_DMR + SIG_EV_BEGIN, SIG_OUT_AIR));
 	storage_job_poll();
 	run(20);
 	settings_read(&sv);
-	CHECK(n_ev == 0 && kv_sig_len[SIG_EV_BEGIN] < 0 && sm.set.sig_dmr[SIG_EV_BEGIN] == SIG_OUT_AIR &&
-	      sv.sig_dmr[SIG_EV_BEGIN] == SIG_OUT_AIR);
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && kv_sig_len[SIG_EV_BEGIN] < 0 &&
+	      sm.set.sig_dmr[SIG_EV_BEGIN] == keep_dmr && sv.sig_dmr[SIG_EV_BEGIN] == keep_dmr);
 	cp_foreign = false;
+	n_ev = 0;
 	// A key that is present and can't be updated (a CPS session holds the flash) refuses the change
 	kv_sig_len[SIG_EV_BEGIN] = 2;
 	kv_sig[SIG_EV_BEGIN][0] = SIG_OUT_AIR;
@@ -4538,7 +4541,7 @@ static void test_ui_glue(void)
 	storage_job_poll();
 	run(20);
 	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && kv_sig[SIG_EV_BEGIN][0] == SIG_OUT_AIR &&
-	      sm.set.sig_dmr[SIG_EV_BEGIN] == SIG_OUT_AIR);
+	      sm.set.sig_dmr[SIG_EV_BEGIN] == keep_dmr);
 	kv_held = false;
 	kv_sig_len[SIG_EV_BEGIN] = -1;
 	n_ev = 0;
@@ -5714,7 +5717,7 @@ static void test_factory_reset(void)
 	CHECK(settings_flush());
 	n_ev = 0;
 	CHECK(ui_svc_factory_reset());
-	sim_flash_cut_after(448);	// the settings records (page 1: 184 + 4 bytes, page 0: 252 + 4, rounded up as the sizes are) go in, the native erase fails
+	sim_flash_cut_after(448);	// the settings records (page 1: 188 + 4 bytes, page 0: 252 + 4, rounded up as the sizes are) go in, the native erase fails
 	storage_job_poll();
 	sim_flash_power_on();
 	CHECK(n_ev == 1 && strstr(tr_en(last_ev.why), "native") != NULL);

@@ -195,6 +195,7 @@ static __attribute__((noinline)) int32_t setting_get_radio(uint8_t id)
 	case UI_SET_SCAN_TONE:
 		radio_get_settings(&rs);
 		return id == UI_SET_TALK_PERMIT ? rs.talk_permit : rs.scan_beep;
+#if CONFIG_SIG_TONES
 	case UI_SET_SIG_DMR ... UI_SET_SIG_DMR_LAST:
 		radio_get_settings(&rs);
 		return rs.sig_dmr[id - UI_SET_SIG_DMR];
@@ -207,6 +208,7 @@ static __attribute__((noinline)) int32_t setting_get_radio(uint8_t id)
 	case UI_SET_SIG_MS ... UI_SET_SIG_MS_LAST:
 		radio_get_settings(&rs);
 		return (int32_t)rs.sig_ms[(id - UI_SET_SIG_MS) / SIG_STEPS][(id - UI_SET_SIG_MS) % SIG_STEPS] * 10;
+#endif
 	case UI_SET_CALL_END_TONE:
 	case UI_SET_TOT_WARN_TONE:
 	case UI_SET_BATTERY_TONE:
@@ -1053,7 +1055,7 @@ static void sig_job(void *ctx)
 	sig_change(&now, (uint8_t)job.channel, (int32_t)job.id);
 	sig_rec_encode(&was, a);
 	sig_rec_encode(&now, b);
-	if (!codeplug_keys_store_record((uint16_t)(CODEPLUG_KEY_SIG_BEGIN + ev), a, b, SIG_REC_LEN)) {
+	if (!codeplug_keys_write_record((uint16_t)(CODEPLUG_KEY_SIG_BEGIN + ev), a, b, SIG_REC_LEN)) {
 		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
 		return;
 	}

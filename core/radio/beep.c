@@ -64,7 +64,7 @@ static const struct {
 };
 
 // One period of a sine, Q15
-static const int16_t sine[64] = {
+const int16_t beep_sine[64] = {
 	0, 3212, 6393, 9512, 12539, 15446, 18204, 20787,
 	23170, 25329, 27245, 28898, 30273, 31356, 32137, 32609,
 	32767, 32609, 32137, 31356, 30273, 28898, 27245, 25329,
@@ -348,7 +348,7 @@ static bool tone_mix(int16_t *spk)
 			// Linear interpolation between table entries (top 6 bits index, next 10 the fraction)
 			uint32_t idx = cb_phase >> 26;
 			int32_t frac = (int32_t)((cb_phase >> 16) & 0x3FFu);
-			int32_t a = sine[idx], b = sine[(idx + 1) & 63u];
+			int32_t a = beep_sine[idx], b = beep_sine[(idx + 1) & 63u];
 			int32_t v = a + (((b - a) * frac) >> 10);
 			int32_t out = spk[i] + ((v * amp) >> 15);
 			spk[i] = (int16_t)(out > 32767 ? 32767 : out < -32768 ? -32768 : out);
