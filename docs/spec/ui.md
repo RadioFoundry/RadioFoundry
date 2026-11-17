@@ -135,7 +135,7 @@ without its label, for the cursor's steps. With 1024 channels a key took 0.34 s 
 | Channels | `channels` | Hub 5: every codeplug channel as number and name, in number order, filtered by T9. The value (also in a zone's list): RX frequency and talkgroup, "438.250 TG3100", or FM; beside a long name "438.250 3100", then "TG3100" (the name is never cut for it). The first row is "New from current", New channel from current settings (2.1). OK opens the channel (`channel`), CONTEXT goes to it |
 | Channel | `channel` | OK in Channels: the channel's settings, editable (2.1). The last rows go to it (in the zone in use if it holds the channel, else the first zone that does; in none, "Not in any zone"), share it (with `CONFIG_ZONE_SHARE`), save, and save as a new channel |
 | Text entry | `text` | OK on a text row (a channel's name): keypad letters, 2.1 |
-| Unsaved Changes | `discard` | BACK in the channel editor with unsaved changes (2.1), or in the contact editor (2.4) |
+| Unsaved Changes | `discard` | BACK in the channel editor with unsaved changes (2.1), or in the contact editor (2.4); titled "Save as FM?" or "Save as DMR?" before a save that would remove a channel's own mode (2.1) |
 | New Contact | `contactedit` | New contact in Contacts, Find's "Create contact 3100", or Save as contact in a station's or talkgroup's actions (`CONFIG_CONTACT_EDIT`): the contact editor (2.4) |
 | List picker | `chpick` | OK on a channel's TX contact or RX group list row: "None", then every stored contact or list, T9 filtered |
 | Talk target picker | `picker` | long CONTEXT on a DMR channel (else "Talk target: DMR channels only"), TALK_TARGET (a side key set to it), Quick 8. Its last rows: "Type a number..." (Find) and "Select contact..." (Contacts, whose keys are the picker's) |
@@ -196,6 +196,29 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
 - New from current (the first row in Channels: New channel from current settings) fills a copy from what the radio uses now: the channel in use
   with its temporary changes, or the VFO. It opens as an unsaved channel at the lowest free number, named after the
   source with a number appended (or the frequency, from the VFO).
+- A channel of a kind ([channel-modes.md](channel-modes.md)) shows its kind as the Mode. OK on Mode makes the copy a
+  plain FM channel, and the step after the last plain mode (DMR, or FM without `CONFIG_DMR`) is the mode the channel
+  was opened with again, with its system and its NAC or RAN as they were: a slip on the row is taken back by pressing
+  on. The same holds for a channel that is in P25 or NXDN for now. The row's changed mark counts the kind. Saving a
+  stored channel of a kind as a plain one removes its tag, so Save asks first on the `discard` screen, titled
+  "Save as FM?" (or "Save as DMR?"): the kind's name and "settings will be removed", "No, keep editing" first (the default; BACK is the same), then "Yes,
+  save". Save as new channel takes nothing from the stored channel and isn't asked. Save as new channel and Copy here pass the source's number
+  (`ui_svc_write_channel`'s `from`, `zone_op_t.from`), so the copy takes the source's tag (channel-modes.md 2.4).
+- A P25 channel (a stored one, or New from current on a channel or VFO in P25) shows Mode as "P25" and only the rows
+  P25 uses: Name, Number, Mode, NAC, RX, TX, Power, RX only, TX contact (the talk target), Own ID (the unit ID),
+  Talkaround (On or Auto, the record's direct-mode bit), the TX time-out, Scan, Battery saver. Saving a plain channel in
+  P25 writes a stored P25 channel from the radio's P25 settings ([p25-codeplug.md](p25-codeplug.md) 2.3).
+- An NXDN channel the same way: Mode "NXDN", then RAN and Rate in place of NAC, no Talkaround. Own ID over 65519 is
+  refused ("NXDN IDs go up to 65519").
+- NAC shows the received NAC in hex, then the sent one where they differ ("F7E/293"); RAN the same in decimal. OK opens
+  it. NAC: digits type hex digits (up to 3; a fourth starts over), Up and Down step the last one through 0-F (so A-F
+  are reached), with none typed they step the whole NAC; BACK takes a digit back. RAN: a spinner 0-63 that also takes
+  digits, as Color code. OK sets both ways, except F7E (every NAC) and RAN 0 (every RAN), which set the received one
+  only; F7F (a repeater's) is refused ("F7F is for repeaters"). Rate: OK toggles 9600 and 4800 bit/s. A changed NAC, RAN
+  or rate is saved with the channel (`ui_svc_write_channel_air`): the record, then the block over its tag's, the rest
+  of the tag kept (`p25_conv_save`, `nxdn_conv_save`), or for a plain channel in that mode the block given with the
+  talk target and talkaround from the radio's settings. Copy here shows no NAC, RAN or Rate row: the copy takes its
+  source's tag, and they are changed on the copy afterwards.
 
 Text entry supports both keypad conventions radios use: more presses of the same key (2: A B C 2 a b c) and `#` for
 the input mode, with BACK to delete (and to leave once the field is empty). In ABC and abc, keys 2-9 cycle their

@@ -55,6 +55,9 @@ enum {
 	DL_VIEW_VOICE_CAP,	// the voice frames captured (RADIO op 41)
 	DL_VIEW_T3_MSG,		// Tier III: the last status, short data, caller number, supplementary data heard
 	DL_VIEW_T3_RA,		// Tier III: random access bursts and their answers, the TX to RX turnaround
+	DL_VIEW_P25,		// P25 on the channel: the call, settings, engine and voice counters (debuglink_view_p25.c)
+	DL_VIEW_P25_TRUNK,	// a trunked P25 channel's follower: system, channels, call followed, counters (the same file)
+	DL_VIEW_NXDN,		// NXDN on the channel: the call, settings, the provider's fit, engine counters (debuglink_view_nxdn.c)
 	DL_VIEW_COUNT
 };
 #define DL_VIEW_VERSION		5	// bumped when a key changes meaning or goes away (new keys don't bump it)
@@ -75,10 +78,18 @@ void debuglink_dmr_reset(void);
 
 // The radio features (debuglink_view_radio.c): the "features" section, and the RADIO operations for scan, beeps, the
 // tone burst, one setting, roaming, vibration, volume, the DMR voice test signal, DTMF keys, the test TX limit, the PA
-// drive, the DMR PA key-up constants and the VFO's SFR role (DL_OP_*;
+// drive, the DMR PA key-up constants, the VFO's SFR role, the P25 and the NXDN settings (DL_OP_*;
 // returns a DL_ST_* status)
 void debuglink_view_radio(const radio_view_t *v, dl_text_t *t);
 void debuglink_view_audio(dl_text_t *t);
+// The p25 section (debuglink_view_p25.c; "p25.built=0" without CONFIG_P25) and its counter reset
+void debuglink_view_p25(const radio_view_t *v, dl_text_t *t);
+// The p25_trunk section ("p25t.built=0" without CONFIG_P25_TRUNK)
+void debuglink_view_p25_trunk(dl_text_t *t);
+void debuglink_p25_reset(void);
+// The nxdn section (debuglink_view_nxdn.c; "nxdn.built=0" without CONFIG_NXDN) and its counter reset
+void debuglink_view_nxdn(const radio_view_t *v, dl_text_t *t);
+void debuglink_nxdn_reset(void);
 void debuglink_view_keys(dl_text_t *t);
 enum {
 	DL_OP_SCAN = 20, DL_OP_SCAN_VFO = 21, DL_OP_BEEP = 22, DL_OP_TONE_BURST = 23, DL_OP_SETTING = 24,
@@ -92,6 +103,8 @@ enum {
 	DL_OP_PA_SWEEP = 39,
 	DL_OP_PA_KEYRUN = 40,
 	DL_OP_VOICE_CAPTURE = 41,
+	DL_OP_P25 = 42,
+	DL_OP_NXDN = 43,
 };
 uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *args, uint16_t len);
 // After a reply: the host port's reattach a PA key run asked for (PA_KEYRUN_FLAG_REATTACH); else a no-op
@@ -102,7 +115,8 @@ static inline bool debuglink_is_feature_op(uint8_t op)
 	return (op >= DL_OP_SCAN && op <= DL_OP_SETTING) || op == DL_OP_ROAM || op == DL_OP_VIBRATE || op == DL_OP_VOLUME ||
 	       op == DL_OP_DMR_FIELDS || op == DL_OP_VFO_COPY || op == DL_OP_VOICE_TEST || op == DL_OP_DTMF ||
 	       op == DL_OP_TX_LIMIT || op == DL_OP_TX_DRIVE || op == DL_OP_PA_KEYUP || op == DL_OP_VFO_SFR ||
-	       op == DL_OP_PA_SWEEP || op == DL_OP_PA_KEYRUN || op == DL_OP_VOICE_CAPTURE;
+	       op == DL_OP_PA_SWEEP || op == DL_OP_PA_KEYRUN || op == DL_OP_VOICE_CAPTURE ||
+	       op == DL_OP_P25 || op == DL_OP_NXDN;
 }
 // VERSION's codec= (hal_vocoder_id; the name the host tests use)
 static inline const char *debuglink_codec_id(const hal_vocoder_t *v)

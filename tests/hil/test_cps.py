@@ -123,12 +123,12 @@ def test_settings_survive_restart(radio):
     assert s["settings.load"] in ("loaded", "upgraded"), s
 
 
-def read_backup(radio, backup_dir, tag):
-    """Two reads of the qdmr regions, identical byte for byte (else the codeplug isn't stable enough to restore
-    exactly), saved to backup_dir and read back from the file. Returns (image, path)."""
-    a = cps_session(radio, lambda c: c.read_image(QDMR))
-    b = cps_session(radio, lambda c: c.read_image(QDMR))
-    d = cps_client.compare(a, b, QDMR, skip=())
+def read_backup(radio, backup_dir, tag, regions=QDMR):
+    """Two reads of the regions (the qdmr ones unless given), identical byte for byte (else the codeplug isn't stable
+    enough to restore exactly), saved to backup_dir and read back from the file. Returns (image, path)."""
+    a = cps_session(radio, lambda c: c.read_image(regions))
+    b = cps_session(radio, lambda c: c.read_image(regions))
+    d = cps_client.compare(a, b, regions, skip=())
     assert not d, f"two codeplug reads differ at {len(d)} bytes: not writing (first {d[:4]})"
     os.makedirs(backup_dir, exist_ok=True)
     path = os.path.join(str(backup_dir), f"codeplug-{tag}-{time.strftime('%Y%m%d-%H%M%S')}.bin")
@@ -140,8 +140,9 @@ def read_backup(radio, backup_dir, tag):
 
 
 @contextlib.contextmanager
-def codeplug_edited(radio, backup_dir, edit, tag):
-    """Back the codeplug up (read_backup), write edit(copy of the backup) over CPS (only the sectors that differ),
+def codeplug_edited(radio, backup_dir, edit, tag, regions=QDMR):
+    """Back the codeplug up (read_backup: regions, the qdmr ones unless given; an edit of the settings area needs
+    REGIONS["radio"]), write edit(copy of the backup) over CPS (only the sectors that differ),
     check the radio reads back exactly the edit, yield (backup, edited); afterwards write the backup again over
     whatever the radio holds then and verify it byte for byte. With --codeplug-image (RFOUNDRY_HIL_CODEPLUG_IMAGE) that
     file is the backup and only the sectors the edit writes are read, before the write (a stale file fails there),
@@ -150,23 +151,23 @@ def codeplug_edited(radio, backup_dir, edit, tag):
     if path:
         backup = bytes(cps_client.load_image(path))
     else:
-        backup, path = read_backup(radio, backup_dir, tag)
+        backup, path = read_backup(radio, backup_dir, tag, regions)
     edited = bytearray(backup)
     edit(edited)
-    changed = cps_client.compare(backup, edited, QDMR, skip=())
+    changed = cps_client.compare(backup, edited, regions, skip=())
     assert changed, "the edit changes nothing"
-    check = QDMR                                # what is read back after the write and after the restore
+    check = regions                             # what is read back after the write and after the restore
     if os.environ.get("RFOUNDRY_HIL_CODEPLUG_IMAGE"):
         # Only the sectors the edit writes are read: they must hold the file's bytes, else the file is stale
         spans = [(max(s, n * cps_client.SECTOR), min(e, (n + 1) * cps_client.SECTOR))
-                 for n, s, e in cps_client.plan_write(edited, QDMR, backup)]
+                 for n, s, e in cps_client.plan_write(edited, regions, backup)]
         radio_now = cps_session(radio, lambda c: c.read_image(spans))
         stale = cps_client.compare(backup, radio_now, spans)
         assert not stale, f"--codeplug-image {path} differs from the radio at {len(stale)} bytes: not writing"
         print(f"codeplug backup: {path} (--codeplug-image; the {len(spans)} sectors to write match the radio)")
         check = spans
     try:
-        cps_session(radio, lambda c: c.write_image(edited, QDMR, reboot=False, base=backup))
+        cps_session(radio, lambda c: c.write_image(edited, regions, reboot=False, base=backup))
         back = cps_session(radio, lambda c: c.read_image(check))
         d = cps_client.compare(edited, back, check)
         assert not d, f"read back differs at {len(d)} bytes, first {[(hex(x), y, z) for x, y, z in d[:4]]}"
@@ -174,22 +175,23 @@ def codeplug_edited(radio, backup_dir, edit, tag):
     finally:
         # With --codeplug-image the radio holds the edit (checked above), so only the edited sectors go back
         restore_backup(radio, backup, path, fallback=edited, check=check,
-                       now=edited if os.environ.get("RFOUNDRY_HIL_CODEPLUG_IMAGE") else None)
+                       now=edited if os.environ.get("RFOUNDRY_HIL_CODEPLUG_IMAGE") else None, regions=regions)
 
 
-def restore_backup(radio, backup, path, fallback, check=QDMR, now=None):
+def restore_backup(radio, backup, path, fallback, check=None, now=None, regions=QDMR):
     """Write backup over whatever the radio holds now (only the sectors that differ) and verify the regions in check
     byte for byte; fallback is the image to plan from when the radio can't be read first (None: write every sector).
     now, when given, is what the radio is known to hold, so it isn't read."""
+    check = regions if check is None else check
     if now is None:
         try:
-            now = cps_session(radio, lambda c: c.read_image(QDMR))
+            now = cps_session(radio, lambda c: c.read_image(regions))
         except Exception:                       # write every sector the fallback's plan names if the read fails
             now = fallback
-    changed = cps_client.compare(backup, now, QDMR, skip=()) if now is not None else "an unknown number of"
+    changed = cps_client.compare(backup, now, regions, skip=()) if now is not None else "an unknown number of"
     for attempt in range(3):                    # a radio busy just after a test can miss the session's first command
         try:
-            cps_session(radio, lambda c: c.write_image(backup, QDMR, reboot=False, base=now))
+            cps_session(radio, lambda c: c.write_image(backup, regions, reboot=False, base=now))
             break
         except cps_client.CpsError:
             if attempt == 2:

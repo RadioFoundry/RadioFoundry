@@ -55,7 +55,7 @@ test("vectors: P25 trunked system block and identifier plan rows", () => {
 		assert.equal(s.wacn ?? 0xFFFFFF, wacn, l);
 		assert.equal(s.sysid ?? 0xFFFF, sysid, l);
 		assert.equal(s.ccNac ?? NAC_ANY, nac, l);
-		assert.equal((s.skipEnc ? 1 : 0) | (s.planOnly ? 2 : 0), opts, l);
+		assert.equal((s.skipEnc ? 1 : 0) | (s.planOnly ? 2 : 0) | (s.noReg ? 4 : 0), opts, l);
 		assert.equal(s.holdS, hold, l);
 		assert.equal(s.roamDbm & 0xFF, roam, l);
 	}
@@ -399,4 +399,95 @@ test("declared fields: hex with any, lists, keys, frequencies", () => {
 	// a field of another mode neither sets nor complains
 	const f = specField({ key: "x", label: "editor.x", type: "int", min: 0, max: 1 }, t, { on: () => false, get: (r) => r.p, put: () => assert.fail() }, "k");
 	assert.equal(f.parse({}, f.key, "9"), undefined);
+});
+
+// --- NXDN conventional (docs/spec/nxdn-codeplug.md) ---
+
+import * as nxdn from "../static/js/codeplug/mode_nxdn.js";
+
+test("vectors: NXDN conventional block, unit ID record", () => {
+	const conv = (rate, rx, tx, sq) => ({ rate9600: rate === "1", rxRan: parseInt(rx, 16), txRan: parseInt(tx, 16), squelch: parseInt(sq, 16) });
+	assert.ok(vectors("nxdnconv").length >= 10);
+	for (const l of vectors("nxdnconv")) {
+		const [b, ...p] = l.split(" ");
+		assert.deepEqual(nxdn.decodeConv(bytes(b) ?? new Uint8Array(0)), conv(...p), l);
+	}
+	for (const l of vectors("nxdnenc")) {
+		const [rate, rx, tx, sq, b] = l.split(" ");
+		assert.equal(hexOf(nxdn.encodeConv(conv(rate, rx, tx, sq))), b, l);
+	}
+	for (const l of vectors("nxdnunit")) {
+		const [b, dmr, unit] = l.split(" ");
+		const u = nxdn.decodeUnit(bytes(b)).unitId;
+		assert.equal(u || nxdn.unitFallback(parseInt(dmr, 16)), parseInt(unit, 16), l);
+	}
+});
+
+// A codeplug with an NXDN channel on a group, one on a unit, and the radio-wide unit ID
+function nxdnSample() {
+	const m = empty();
+	const grp = newContact({ name: "Group 7", id: 7 });
+	const unit = newContact({ name: "Unit 42", id: 42, type: "private" });
+	m.contacts.push(grp, unit);
+	const a = newChannel({ name: "NXDN Ops", rxHz: 451250000, txHz: 456250000, contact: grp });
+	const b = newChannel({ name: "NXDN Unit", rxHz: 451250000, txHz: 451250000, contact: unit });
+	m.channels.push(a, b);
+	numberAll(m);
+	setKind(m, a, 4);
+	a.params = { ...a.params, rxRan: 9, txRan: 9, squelch: 1 };
+	setKind(m, b, 4);
+	b.params = { ...b.params, rate9600: false, rxRan: 0, txRan: 2 };
+	m.modeSettings[4] = { unitId: 1234 };
+	return { m, a, b };
+}
+
+test("NXDN: channels and the unit ID round-trip; unknown bytes are kept", () => {
+	const { m } = nxdnSample();
+	const img = encode(m);
+	const d = decode(img);
+	const a = d.channels.find((c) => c.name === "NXDN Ops"), b = d.channels.find((c) => c.name === "NXDN Unit");
+	assert.equal(a.kind, 4);
+	assert.deepEqual(a.params, { rate9600: true, squelch: 1, rxRan: 9, txRan: 9 });
+	assert.equal(a.tagTx, true);
+	assert.equal(a.mode, "dmr");
+	assert.equal(a.rxOnly, true, "the record is the safe stand-in");
+	assert.deepEqual(b.params, { rate9600: false, squelch: 0, rxRan: 0, txRan: 2 });
+	assert.equal(b.contact.type, "private");
+	assert.deepEqual(d.modeSettings[4], { unitId: 1234 });
+	assert.deepEqual(encode(d).bytes, img.bytes);
+	const e = area(img);
+	assert.equal(hexOf(decodeTag(getValue(e, MODE_KEY.tag + a.number - 1)).params), "010900");
+	assert.equal(hexOf(decodeTag(getValue(e, MODE_KEY.tag + b.number - 1)).params), "040082");
+	assert.equal(hexOf(getValue(e, MODE_KEY.setting + 4)), "D204");
+	// a longer block keeps its tail through an edit
+	const key = MODE_KEY.tag + a.number - 1;
+	putArea(img.bytes, setValue(area(img), key, Uint8Array.from([...getValue(area(img), key), 0xAB])));
+	const d2 = decode(img);
+	d2.channels.find((c) => c.name === "NXDN Ops").params.txRan = 5;
+	const t = decodeTag(getValue(area(encode(d2)), key)).params;
+	assert.equal(hexOf(t), "010985AB");
+	// a blank unit ID writes no record
+	d2.modeSettings[4] = { unitId: 0 };
+	assert.equal(getValue(area(encode(d2)), MODE_KEY.setting + 4), null);
+});
+
+test("NXDN: offered with the radio's feature; group, unit and channel ID ranges", () => {
+	assert.deepEqual(offeredKinds(empty(), "FM,DMR,NXDN").map((k) => k.id), [4]);
+	assert.equal(kindName(4), "NXDN");
+	const { m, a, b } = nxdnSample();
+	assert.deepEqual(offeredKinds(m, "FM,DMR").map((k) => k.id), [4], "the codeplug holds it");
+	const has = (p, code, c) => p.some((x) => x.code === code && (!c || x.item === c));
+	let p = validate(m, { features: "FM,DMR,NXDN" });
+	assert.ok(!has(p, "mode_not_in_radio", a));
+	assert.ok(!has(p, "nxdn_group_range") && !has(p, "nxdn_unit_range"));
+	assert.ok(has(validate(m, { features: "FM,DMR,P25" }), "mode_not_in_radio", a));
+	a.contact.id = 70000;
+	b.contact.id = 65520;
+	p = validate(m, { features: "FM,DMR,NXDN" });
+	assert.ok(has(p, "nxdn_group_range", a));
+	assert.ok(has(p, "nxdn_unit_range", b));
+	b.contact.id = 42;
+	a.contact.id = 7;
+	a.dmrId = 3101276;
+	assert.ok(has(validate(m, { features: "FM,DMR,NXDN" }), "nxdn_unit_range", a));
 });
