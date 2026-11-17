@@ -433,8 +433,20 @@ static void edge(bool scl, bool sda_m)
 	}
 }
 
-static void p_scl(bool high) { edge(high, pin.sda_m); }
-static void p_sda(bool high) { edge(pin.scl, high); }
+// The board interface's state (rda5807m_hal, below); the bus pins see when the first transfer starts
+static struct {
+	bool enabled, path, armed;
+	int enables, delays_ms, enabled_at, settle_ms;	// settle_ms: waited from the enable to the first bus edge
+} brd;
+static void first_edge(void)
+{
+	if (brd.armed) {
+		brd.armed = false;
+		brd.settle_ms = brd.delays_ms - brd.enabled_at;
+	}
+}
+static void p_scl(bool high) { first_edge(); edge(high, pin.sda_m); }
+static void p_sda(bool high) { first_edge(); edge(pin.scl, high); }
 static bool p_sda_in(void) { return line(); }
 static void p_delay(uint32_t us) { (void)us; }
 static const i2c_gpio_t gpio = { p_scl, p_sda, p_sda_in, p_delay, 5 };
@@ -496,11 +508,13 @@ static void test_i2c_gpio(void)
 }
 
 // ---- the board interface (rda5807m_hal) ----
-static struct {
-	bool enabled, path;
-	int enables, delays_ms;
-} brd;
-static void h_enable(bool on) { brd.enabled = on; brd.enables++; }
+static void h_enable(bool on)
+{
+	brd.enabled = on;
+	brd.enables++;
+	brd.armed = on;
+	brd.enabled_at = brd.delays_ms;
+}
 static void h_path(bool on) { brd.path = on; }
 static void h_delay(uint32_t ms) { brd.delays_ms += (int)ms; }
 static const rda5807m_hal_cfg_t hal_cfg = {
@@ -526,6 +540,7 @@ static void test_hal(void)
 	// The chip is probed after the enable line goes active, then powered up on the first frequency
 	CHECK(h->power(true));
 	CHECK(brd.enabled && (chip.reg[2] & RDA5807M_ENABLE) && (chip.reg[3] >> 6) == 480);
+	CHECK(brd.settle_ms >= 10);	// the supply or enable settles before the first transfer
 	CHECK(brd.delays_ms > 0);	// the reset time was waited out through the board's delay
 	h->volume(11);
 	CHECK((chip.reg[5] & RDA5807M_VOLUME_MASK) == 11);
