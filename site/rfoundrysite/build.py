@@ -187,9 +187,11 @@ class Site:
 		}
 
 	def firmware_line(self, lang):
-		"""The footer's firmware release (what the flasher installs) and the changelog: the GitHub releases."""
+		"""The footer's firmware release (what the flasher installs) and the changelog: the GitHub releases, or main's
+		commits when no tagged release is installed."""
 		rels = self.repo_url + "/releases"
-		line = '<a href="%s">%s</a>' % (html.escape(rels), html.escape(self.i18n.t(lang, "footer.changelog")))
+		log = rels if self.release else self.repo_url + "/commits/main"
+		line = '<a href="%s">%s</a>' % (html.escape(log), html.escape(self.i18n.t(lang, "footer.changelog")))
 		if self.release:
 			line = '<a href="%s/tag/%s">%s</a> · %s' % (html.escape(rels), html.escape(self.release),
 				html.escape(self.i18n.t(lang, "footer.firmware", version=self.release)), line)
