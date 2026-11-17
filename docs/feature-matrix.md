@@ -57,8 +57,8 @@ is `tools/bringup.py list --radio <id>`.
 | `dmr_roaming` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `dmr_trunk` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_trunk_tx` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `dmr_trunk_supl` | off | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `dmr_trunk_gw` | off | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `dmr_trunk_supl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `dmr_trunk_gw` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `voice_capture` | off | off | off | off | off | off | off |
 | `dmr_signaling` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `vfo` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
@@ -118,7 +118,7 @@ is `tools/bringup.py list --radio <id>`.
 | `net_http` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `net_http_gzip` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `net_webctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `net_rigctl` | off | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
+| `net_rigctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `net_usrp` | not recorded | not recorded | not recorded | not written | not recorded | not recorded | pass, needs re-run |
 | `net_aprsis` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `mdns` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
@@ -126,7 +126,7 @@ is `tools/bringup.py list --radio <id>`.
 | `tftp_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `iddb_compact` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
-| `snmp` | off | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
+| `snmp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `net_ppp` | not recorded | off | pass (seed) | pass (seed) | off | off | off |
 | `ui_navigation` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `key_lock` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
@@ -195,8 +195,8 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `DMR_ROAMING` | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_TRUNK` | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_TRUNK_TX` | ● | ● | ● | ● | ● | ● | ● |
-| `DMR_TRUNK_SUPL` | ○ | ● | ● | ● | ● | ● | ● |
-| `DMR_TRUNK_GW` | ○ | ● | ● | ● | ● | ● | ● |
+| `DMR_TRUNK_SUPL` | ● | ● | ● | ● | ● | ● | ● |
+| `DMR_TRUNK_GW` | ● | ● | ● | ● | ● | ● | ● |
 | `VOICE_CAPTURE` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `DMR_IP_GATEWAY` | ● | ● | ● | ● | ● | ● | ● |
 | `ZONE_SHARE` | ● | ● | ● | ● | ● | ● | ● |
@@ -206,7 +206,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `NET_HTTP` | ● | ● | ● | ● | ● | ● | ● |
 | `NET_HTTP_GZIP` | ● | ● | ● | ● | ● | ● | ● |
 | `NET_WEBCTL` | ● | ● | ● | ● | ● | ● | ● |
-| `NET_RIGCTL` | ○ | ● | ● | ● | ● | ● | ● |
+| `NET_RIGCTL` | ● | ● | ● | ● | ● | ● | ● |
 | `NET_APRSIS` | ● | ● | ● | ● | ● | ● | ● |
 | `NET_USRP` | ● | ● | ● | … | ● | ● | ● |
 | `MDNS` | ● | ● | ● | ● | ● | ● | ● |
@@ -214,7 +214,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `TFTP_IDDB` | ● | ● | ● | ● | ● | ● | ● |
 | `IDDB_COMPACT` | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_CONTROL_STATION` | ● | ● | ● | ● | ● | ● | ● |
-| `SNMP` | ○ | ● | ● | ● | ● | ● | ● |
+| `SNMP` | ● | ● | ● | ● | ● | ● | ● |
 | `SFR` | ● | ● | ● | ● | ✕ | ● | ● |
 | `SFR_DUALPATH_RX` | ● | ● | ● | ● | ✕ | ● | ● |
 | `SFR_CWID` | ● | ● | ● | ● | ✕ | ● | ● |
