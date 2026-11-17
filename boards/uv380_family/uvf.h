@@ -106,8 +106,8 @@ enum {
 bool uvf_flash_init(void);
 
 #if CONFIG_GPS
-// The GPS module on USART1 / PA9, detected at run time (gps_uvf.c): from the variant's init. board_t.gps_present is
-// stm32_gps_present
+// The GPS module on USART1 / PA9, detected at run time (gps_uvf.c): from the variant's init. board_t.gps is
+// &stm32_gps
 void uvf_gps_init(void);
 #endif
 

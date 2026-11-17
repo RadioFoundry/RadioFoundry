@@ -814,6 +814,21 @@ static void test_modes(void)
 	at = -1;
 	CHECK(codeplug_sys_entry_next(&at, 0, 0, &ent, block, sizeof(block)) < 0);
 
+	// Systems 0-7 all taken (none of them the record's): the whole system isn't added past the eight a radio runs, and
+	// the preview says so
+	fresh();
+	with_zones();
+	CHECK(!zone_import_unavailable(&rec, 1));
+	for (uint8_t n = 0; n < CODEPLUG_SYSTEMS_RUN; n++) {
+		static const uint8_t other[] = { 0x07, 0x00, 0x09 };
+		put_system(n, 1, 0, CODEPLUG_SHARE_OFF, "Full", other, 3, sizeof(other));
+	}
+	CHECK(zone_import_unavailable(&rec, 1));
+	CHECK(zone_import_zone(sent, len, 77, imports, &res) == ZI_OK && res.systems_added == 0);
+	CHECK(codeplug_system(CODEPLUG_SYSTEMS_RUN, &sys, block, sizeof(block)) < 0);
+	CHECK(codeplug_zone(res.zone, &z) && codeplug_channel(z.channels[1], &ch) && ch.kind == 3 &&
+	      ch.system == CODEPLUG_SYSTEM_NONE && ch.rx_only);
+
 	// The undo takes the added system with the channels: a codeplug with no room for the last channel
 	fresh();
 	with_zones();

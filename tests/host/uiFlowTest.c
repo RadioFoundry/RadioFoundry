@@ -190,6 +190,10 @@ static const flow_t flows[] = {
 	{ "zone offer banner hidden with Back on a menu", "zoneoffer:9991234 ok", "back", "banner=none screen=hub", 1, false },
 	{ "zone offer banner goes when Tools opens the offer", "zoneoffer:9991234", "ok 6 0", "banner=none shows=Import", 3,
 	  false },
+	// Trunked channels whose system isn't set up here: dimmed in the preview, said after the import (and in the offer's
+	// text, where the screen has room for it)
+	{ "zone offer preview marks a trunked channel", "zoneoffer:9991234 ctx 2", "up", "shows=ystem", 1, false },
+	{ "zone import result names trunked channels", "zoneoffer:9991234 ctx", "1", "shows=trunked", 1, false },
 #endif
 	{ "8 radio check last caller", CALLER, "ctx 4", "checks=1", 2, false },
 	{ "8 radio check by name", "", "5 6 3 ctx 4", "checks=1", 5, false },
@@ -741,6 +745,39 @@ static const flow_t flows[] = {
 	{ "S message failed text", "", "", "screen=home", 0, false },
 	// APRS (docs/spec/aprs.md 10): Tools 9, one row each
 	{ "A APRS page", "", "ok 6 8", "screen=aprs", 3, false },
+#if CONFIG_DMR_TRUNK
+	// Trunked channels (dmr-trunking.md 12.4): "t3" makes channel 3 a channel of "County" and 5 one of "Metro", not set up
+	{ "T a trunked channel names its system in the zone", "t3", "ok 4 ctx", "screen=zone shows=County", 3, false },
+	{ "T a channel without its system is locked out", "t3 ok 4 ctx", "down down ok",
+	  "screen=zone focus=05_Metro_DMR toast=System_not_set_up", 3, false },
+	{ "T Home on a trunked channel: the system and Ready", "t3 dlpos:3", "", "screen=home shows=County shows=Ready hides=CC",
+	  0, false },
+	{ "T Home while hunting", "t3 dlpos:3 t3state:hunt", "", "screen=home shows=Searching", 0, false },
+	{ "T Home on the fallback channel", "t3 dlpos:3 t3state:fallback", "", "screen=home shows=Fallback", 0, false },
+	{ "T back on the system", "t3 dlpos:3 t3state:fallback", "t3state:back", "screen=home toast=Back_on_County", 0, false },
+	{ "T Home on a channel without its system", "t3 dlpos:5", "", "screen=home shows=System_not_set_up", 0, false },
+	// Short data polling (dmr-trunking.md 7.6): an action on a person while on a trunked system, not elsewhere
+	{ "T the actions on a person offer a poll, last", "t3 dlpos:3 9 9 9 1 2 3 4 ctx", "up",
+	  "screen=actions shows=Poll_short_data", 1, false },
+	{ "T no poll on a conventional channel", "9 9 9 1 2 3 4 ctx", "up", "screen=actions hides=Poll_short_data", 1, false },
+	{ "T a poll sent", "t3 dlpos:3 9 9 9 1 2 3 4 ctx", "9", "screen=home toast=Polling_Q1ABC_Joe", 1, false },
+	{ "T a poll with no answer", "t3 dlpos:3", "t3state:pollfail", "toast=Poll:_no_short_data", 0, false },
+#if CONFIG_DMR_TRUNK_GW
+	// Telephone calls through the PSTN gateway (dmr-trunking.md 7.6): a typed number on a trunked system, last in Find
+	{ "T Find offers a phone call on a trunked system", "t3 dlpos:3", "5 5 5 1 2 3 4",
+	  "screen=find shows=Phone_call_5551234 dial=", 7, false },	// typed, not chosen: the dial stays
+	{ "T no phone call on a conventional channel", "", "5 5 5 1 2 3 4", "screen=find hides=Phone_call dial=", 7, false },
+	{ "T PTT on the phone call row calls the gateway", "t3 dlpos:3 5 5 5 1 2 3 4", "up",
+	  "focus=Phone_call focusid=16776896 dial=5551234", 1, false },
+	{ "T OK on it talks to the gateway", "t3 dlpos:3 5 5 5 1 2 3 4", "up ok",
+	  "screen=home talk=16776896 toast=Talking_to_5551234", 2, false },
+	{ "T no actions on a phone call", "t3 dlpos:3 5 5 5 1 2 3 4 up", "ctx", "screen=find toast=No_actions", 1, false },
+	{ "T a gateway call shows the caller's number", "t3 dlpos:3 t3state:follow t3cli:8005551212", "rx:16776896,1,p",
+	  "shows=8005551212 hides=16776896", 0, false },
+	{ "T a gateway call without a number", "t3 dlpos:3 t3state:follow", "rx:16776896,1,p",
+	  "shows=Phone_line hides=16776896", 0, false },
+#endif
+#endif
 	{ "A APRS RF keeps Home with a TX APRS pill", "", "aprstx",
 	  "screen=home shows=TX_APRS shows=SENDING hides=144.390 hides=0:00 hides=left_of", 0, false },
 	{ "A APRS RF returns to the channel", "aprstx", "aprsend",
@@ -785,12 +822,17 @@ static const flow_t flows[] = {
 	{ "G GPS signal page", "ok 6 2", "3", "shows=9_of_14_in_the_fix", 1, false },
 	{ "G GPS grid page", "ok 6 2", "4", "shows=FN42li", 1, false },
 	{ "G GPS pages wrap", "ok 6 2", "up down", "shows=Status", 2, false },
-	{ "A KISS on USB", "ok 6 8", "up up ok", "aprs_kiss=1", 3, false },
-	{ "A stations heard", "", "ok 6 8 up ok", "screen=aprs-heard count=2", 5, false },
-	{ "A station message survives a newer packet", "ok 6 8 up ok ok aprs:reorder", "ok",
+	{ "A KISS on USB", "ok 6 8", "up up up ok", "aprs_kiss=1", 4, false },
+	// SSID: the last row (set once); OK steps up and wraps, a long OK steps back
+	{ "A SSID shows the default", "ok 6 8", "up", "focus=SSID shows=7 aprs_ssid=7", 1, false },
+	{ "A SSID: the next one", "ok 6 8 up", "ok ok", "aprs_ssid=9 shows=9", 2, false },
+	{ "A SSID: long OK steps back", "ok 6 8 up", "long:ok", "aprs_ssid=6", 1, false },
+	{ "A SSID wraps 15 to 0", "ok 6 8 up ok ok ok ok ok ok ok ok", "ok", "aprs_ssid=0", 1, false },
+	{ "A stations heard", "", "ok 6 8 up up ok", "screen=aprs-heard count=2", 6, false },
+	{ "A station message survives a newer packet", "ok 6 8 up up ok ok aprs:reorder", "ok",
 	  "screen=compose shows=Q4WABC-15", 1, false },
-	{ "A station opens its Message action", "ok 6 8 up ok", "ok", "screen=aprs-station shows=Message", 1, false },
-	{ "A station Message fills its callsign", "ok 6 8 up ok ok", "ok", "screen=compose shows=Q4WABC-15", 1, false },
+	{ "A station opens its Message action", "ok 6 8 up up ok", "ok", "screen=aprs-station shows=Message", 1, false },
+	{ "A station Message fills its callsign", "ok 6 8 up up ok ok", "ok", "screen=compose shows=Q4WABC-15", 1, false },
 	{ "A new APRS message appears independently of DMR format", "", "ok 2", "shows=New_APRS_message", 2, false },
 	{ "A new APRS message opens its composer", "ok 2", "ok", "screen=compose shows=To_callsign", 1, false },
 	{ "A new APRS message needs our callsign", "aprs:nocall ok 2", "", "hides=New_APRS_message", 0, false },
@@ -1528,7 +1570,7 @@ static void heard_checks(void)
 	for (int g = 0; g < sim_geom_count; g++) {
 		for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
 			sim_reset(&sim_geoms[g], SIM_MAP_K);
-			snprintf(buf, sizeof buf, "%sok 6 8 up ok expect:screen=aprs-heard expect:shows=Q4WABC-15 "
+			snprintf(buf, sizeof buf, "%sok 6 8 up up ok expect:screen=aprs-heard expect:shows=Q4WABC-15 "
 				 "expect:shows=QJ4XYZ expect:%s=14.5_km_NE", cases[i].setup,
 				 cases[i].range ? "shows" : "hides");
 			if (!sim_run(buf, err, sizeof err)) {
@@ -1540,7 +1582,7 @@ static void heard_checks(void)
 	// Packets without a position since the last one: the row's age is the position's (10 min), not the last
 	// packet's (1 min), so it says how old the range is
 	sim_reset(&sim_geoms[0], SIM_MAP_K);
-	if (!sim_run("wait:600000 ok 6 8 up ok expect:shows=14.5_km_NE expect:shows=10m expect:hides=1m", err,
+	if (!sim_run("wait:600000 ok 6 8 up up ok expect:shows=14.5_km_NE expect:shows=10m expect:hides=1m", err,
 		     sizeof err)) {
 		printf("FAIL stations heard position age [%s]: %s\n", sim_geoms[0].name, err);
 		fails++;
@@ -1548,7 +1590,7 @@ static void heard_checks(void)
 	// BVA on the row's width: a display too narrow for the call, the range and the age gives up the range, never
 	// the call (96 px: under 20 cells, the call and the range alone are 20)
 	sim_reset(sim_geom_find("96x64m"), SIM_MAP_K);
-	if (!sim_run("ok 6 8 up ok expect:screen=aprs-heard expect:shows=Q4WABC-15 expect:hides=km", err, sizeof err)) {
+	if (!sim_run("ok 6 8 up up ok expect:screen=aprs-heard expect:shows=Q4WABC-15 expect:hides=km", err, sizeof err)) {
 		printf("FAIL stations heard narrow [96x64m]: %s\n", err);
 		fails++;
 	}
@@ -1558,33 +1600,33 @@ static void heard_checks(void)
 static void station_checks(void)
 {
 	static const struct { const char *name, *script; } cases[] = {
-		{ "position", "wait:600000 ok 6 8 up ok ok expect:screen=aprs-station expect:count=10 "
+		{ "position", "wait:600000 ok 6 8 up up ok ok expect:screen=aprs-station expect:count=10 "
 		  "down expect:shows=14.5_km_NE down expect:shows=1m down expect:shows=Direct "
 		  "down expect:shows=10m down expect:shows=19_km/h down expect:shows=40 "
 		  "down expect:shows=/> down expect:shows=On_the_road down expect:focus=Packets expect:shows=3 "
 		  "ok expect:screen=aprs-station" },
-		{ "no local position", "aprs:nopos ok 6 8 up ok ok expect:count=8 down expect:shows=Heard" },
-		{ "no speed", "aprs:nospeed ok 6 8 up ok ok expect:count=7 down down down down expect:shows=/>" },
-		{ "no station position", "ok 6 8 up ok down ok expect:count=5 down down "
+		{ "no local position", "aprs:nopos ok 6 8 up up ok ok expect:count=8 down expect:shows=Heard" },
+		{ "no speed", "aprs:nospeed ok 6 8 up up ok ok expect:count=7 down down down down expect:shows=/>" },
+		{ "no station position", "ok 6 8 up up ok down ok expect:count=5 down down "
 		  "expect:shows=Via_digipeater down expect:shows=At_home down expect:shows=Packets" },
-		{ "speed unknown", "aprs:speedunknown ok 6 8 up ok ok expect:count=8 "
+		{ "speed unknown", "aprs:speedunknown ok 6 8 up up ok ok expect:count=8 "
 		  "down down down down expect:focus=Course expect:shows=40 expect:hides=Speed" },
-		{ "course unknown", "aprs:courseunknown ok 6 8 up ok ok expect:count=8 "
+		{ "course unknown", "aprs:courseunknown ok 6 8 up up ok ok expect:count=8 "
 		  "down down down down expect:focus=Speed expect:shows=19_km/h down expect:focus=Symbol" },
-		{ "known zero motion", "aprs:zero ok 6 8 up ok ok expect:count=9 "
+		{ "known zero motion", "aprs:zero ok 6 8 up up ok ok expect:count=9 "
 		  "down down down down expect:focus=Speed expect:shows=0_km/h down expect:focus=Course expect:shows=0" },
-		{ "equal ages", "wait:600000 aprs:sameage ok 6 8 up ok ok expect:count=9 "
+		{ "equal ages", "wait:600000 aprs:sameage ok 6 8 up up ok ok expect:count=9 "
 		  "down down expect:focus=Heard expect:shows=1m down expect:focus=Direct down expect:focus=Speed" },
-		{ "position lost while open", "wait:600000 ok 6 8 up ok ok aprs:stationnopos down "
+		{ "position lost while open", "wait:600000 ok 6 8 up up ok ok aprs:stationnopos down "
 		  "expect:count=6 expect:shows=Q4WABC-15 expect:focus=Heard expect:hides=km "
 		  "down expect:focus=Direct down expect:focus=Symbol" },
-		{ "empty text and symbol", "aprs:emptytext ok 6 8 up ok ok expect:count=7 "
+		{ "empty text and symbol", "aprs:emptytext ok 6 8 up up ok ok expect:count=7 "
 		  "up expect:focus=Packets up expect:focus=Course" },
-		{ "retained text", "aprs:longtext ok 6 8 up ok ok up up "
+		{ "retained text", "aprs:longtext ok 6 8 up up ok ok up up "
 		  "expect:focus=12345678901234567890123" },
-		{ "reordered detail", "ok 6 8 up ok ok aprs:reorder down expect:count=9 "
+		{ "reordered detail", "ok 6 8 up up ok ok aprs:reorder down expect:count=9 "
 		  "expect:shows=Q4WABC-15 expect:shows=14.5_km_NE up ok expect:screen=compose expect:shows=Q4WABC-15" },
-		{ "evicted", "ok 6 8 up ok ok aprs:evict down expect:count=2 expect:shows=No_longer_in_list "
+		{ "evicted", "ok 6 8 up up ok ok aprs:evict down expect:count=2 expect:shows=No_longer_in_list "
 		  "up ok expect:screen=compose expect:shows=Q4WABC-15" },
 	};
 	char err[300];

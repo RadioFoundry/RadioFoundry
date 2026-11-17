@@ -259,6 +259,9 @@ Detection: the same board ships with and without the module (unverified). A list
 high for the listen window and back low if nothing is heard, avoids needing a model flag (?: on a non-GPS radio PA9
 drives nothing that is known). The vendor firmware files differ between GPS and non-GPS radios (section 11).
 
+Once heard, PA9 follows Settings > Location > GPS (`board_t.gps` = `stm32_gps`): off stops USART1 and
+drives PA9 low, on drives it high and restarts USART1 at the rate found. `boards/uv380_family/gps_uvf.c`.
+
 ---
 
 ## 10. USB and model reporting

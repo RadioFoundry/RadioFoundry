@@ -34,7 +34,6 @@
 #include "radio/radio_p25.h"
 #endif
 
-radio_view_t ui_svc_view;
 
 uint32_t ui_svc_feat_voice(void)
 {

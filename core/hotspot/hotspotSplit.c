@@ -34,6 +34,9 @@ typedef struct {
 	dmr_tx_burst_t b;
 	uint8_t lc[LC_LEN];
 	bool lc_valid;
+	bool burst;			// b goes out (else an idle burst that only carries cach)
+	bool cach_valid;		// the host's CACH for the slot, sent as given
+	uint32_t cach;			// ... first bit on air in bit 23
 } sched_t;
 
 static struct {
@@ -194,6 +197,9 @@ static uint16_t caps(void)
 		c |= SPLIT_CAP_ALIGN;
 		if (m->bs_queue_at != NULL) {
 			c |= SPLIT_CAP_SCHED;	// slots are numbered only after an ALIGN
+			if (m->bs_cach == DMR_BS_CACH_OURS) {
+				c |= SPLIT_CAP_SCHED_CACH;	// the chip sends the CACH bits it is given
+			}
 		}
 		if ((m->bs_slew != NULL) && (m->bs_slew_step_us > 0)) {
 			c |= SPLIT_CAP_SLEW;
@@ -577,14 +583,31 @@ static void sched_commit(uint32_t now_ms)
 			break;		// the driver is behind: the next poll
 		}
 		sched_t *e = sched_find(x + sp.cbase);
+		bool own_cach = true;
+		uint32_t host_cach = 0;
 
 		if (e != NULL) {
-			bsOutboundPush(&sp.out, xts, &e->b, e->lc_valid ? e->lc : NULL, now_ms);
+			if (e->burst) {
+				bsOutboundPush(&sp.out, xts, &e->b, e->lc_valid ? e->lc : NULL, now_ms);
+			}
+			if (e->cach_valid) {
+				own_cach = false;
+				host_cach = e->cach;
+			}
 			e->used = false;
 			sp.sch_sent++;
 			sp.sched_last_ms = now_ms;
 		}
 		bsOutboundNext(&sp.out, xts, now_ms, &b, &cach, &lc);
+		if (!own_cach) {
+			// The host's CACH in place of ours (AT, TC, LCSS and the payload as it computed them); the fields
+			// follow it for whoever reads them
+			uint8_t tact;
+
+			cach.bits = host_cach;
+			dmrCachDeinterleave(host_cach, &tact, &cach.payload);
+			(void)dmrCachTactDecode(tact, &cach.at, &cach.tc, &cach.lcss);
+		}
 		if (!m->bs_queue_at(x, xts, &b, &cach, lc)) {
 			break;
 		}
@@ -965,9 +988,13 @@ static void rx_meta(const dmr_burst_t *b, bool timed, uint32_t t_slot, int8_t la
 	f |= (b->sync == DMR_SYNC_BS) ? SPLIT_META_BS_SYNC : 0u;
 	f |= (label != 0) ? SPLIT_META_EPOCH : 0u;
 	f |= timed ? SPLIT_META_TIMED : 0u;
+	f |= (label != 0) ? SPLIT_META_SLOT : 0u;
 	d[9] = f;
 	put16(d + 10, (uint16_t)b->rssi_dbm);
 	put16(d + 12, sp.meta_seq);
+	if (label != 0) {
+		put16(d + 14, (uint16_t)sp.ep.last_slot);	// the slot slotEpochLabel just placed it in
+	}
 	sp.meta_seq++;
 	mmdvm_send(MMDVM_RFOUNDRY_SPLIT, p, sizeof(p));
 }
@@ -1361,9 +1388,30 @@ static uint8_t tx_sched(const uint8_t *p, uint8_t len, uint8_t *data, uint8_t *r
 	uint32_t c, t;
 	int8_t ts;
 
-	if ((len != 6 + MMDVM_DMR_FRAME_LEN) || (p[4] != (uint8_t)ts_of_counter(le32(p)))) {
+	bool has_cach = len == 6 + MMDVM_DMR_FRAME_LEN + 3;
+	uint32_t host_cach = 0;
+
+	if (((len != 6 + MMDVM_DMR_FRAME_LEN) && !has_cach) || (p[4] != (uint8_t)ts_of_counter(le32(p)))) {
 		*res = SPLIT_RESULT_INVALID;
 		return 0;
+	}
+	if (has_cach) {
+		// The CACH sent just before the slot: its TC must name the slot (0 TS1)
+		uint8_t tact, at, tc, lcss;
+		uint32_t payload;
+		const uint8_t *q = p + 6 + MMDVM_DMR_FRAME_LEN;
+
+		host_cach = ((uint32_t)q[0] << 16) | ((uint32_t)q[1] << 8) | q[2];
+		dmrCachDeinterleave(host_cach, &tact, &payload);
+		(void)dmrCachTactDecode(tact, &at, &tc, &lcss);
+		if (!(caps() & SPLIT_CAP_SCHED_CACH)) {
+			*res = SPLIT_RESULT_STATE;	// the chip makes its own CACH
+			return 0;
+		}
+		if (tc != (uint8_t)(p[4] - 1u)) {
+			*res = SPLIT_RESULT_INVALID;
+			return 0;
+		}
 	}
 	if ((sp.role != SPLIT_ROLE_TX) || (sp.stream != SPLIT_STREAM_SCHED) || !sp.al_base ||
 	    !slot_clock(&c, &t, &ts) || (ts == 0)) {
@@ -1400,12 +1448,16 @@ static uint8_t tx_sched(const uint8_t *p, uint8_t len, uint8_t *data, uint8_t *r
 		if (e->used && !same) {
 			outcome = SPLIT_SCHED_FULL;
 			sp.sch_refused++;
-		} else if (r == NET_SKIP) {
+		} else if ((r == NET_SKIP) && !has_cach) {
 			e->used = false;	// an idle (or a repeated terminator) for that slot: the stream rules fill it
 			outcome = same ? SPLIT_SCHED_REPLACED : SPLIT_SCHED_QUEUED;
 		} else {
+			// A burst, or an idle that carries the slot's CACH: the slot is the host's
 			e->used = true;
 			e->counter = g;
+			e->burst = r != NET_SKIP;
+			e->cach_valid = has_cach;
+			e->cach = host_cach;
 			e->b = b;
 			e->lc_valid = lc != NULL;
 			if (lc != NULL) {

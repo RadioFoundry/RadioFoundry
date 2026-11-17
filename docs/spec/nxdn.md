@@ -189,7 +189,7 @@ Refused in the listen-only bands, and where the board's air interface carries ne
 
 ### 6.2 Settings
 
-RAM only, one set for the VFO and for channels in NXDN for now (`radio_req_nxdn_settings`, debug link op 42,
+RAM only, one set for the VFO and for channels in NXDN for now (`radio_req_nxdn_settings`, debug link op 43,
 `rfoundry_debug.py radio nxdn`). A stored NXDN channel runs on its own: the rate, both RANs, the squelch and the talk
 target from its record, the unit ID from it or the radio-wide record ([nxdn-codeplug.md](nxdn-codeplug.md)); these
 settings don't reach it. The debug link view shows what is in force (`nxdn.run.*`).

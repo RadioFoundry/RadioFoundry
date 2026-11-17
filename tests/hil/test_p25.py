@@ -8,7 +8,7 @@ where the provider counts it, the receive load at idle (`p25.rx_work_us / p25.rx
 Undoing the temporary change brings the channel's own mode back with the engine stopped, and a DMR channel's call
 stack running again.
 
-test_p25_settings: the P25 settings (op 41, RAM only) round trip through the p25 view and are put back.
+test_p25_settings: the P25 settings (op 42, RAM only) round trip through the p25 view and are put back.
 
 test_p25_stored_channel (opt-in: --allow-codeplug-write; nothing is sent): the channel on view is made a stored P25
 channel over CPS (p25-codeplug.md 2): its record the safe stand-in, DMR and receive only, and a tag of kind 2 with no

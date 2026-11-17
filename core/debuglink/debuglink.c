@@ -852,6 +852,10 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		return debuglink_cmd_rx2(req, len, out, cap);
 	case DL_CMD_IDDB:
 		return debuglink_cmd_iddb(req, len, out, cap);
+	case DL_CMD_T3:
+		return debuglink_cmd_t3(req, len, out, cap);
+	case DL_CMD_CPKV:
+		return debuglink_cmd_cpkv(req, len, out, cap);
 	case DL_CMD_CHIP_REG:
 		return debuglink_cmd_chip_reg(req, len, out, cap);
 	case DL_CMD_HWOPT:

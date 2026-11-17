@@ -140,7 +140,7 @@ static const ui_scr_def_t hub_screen = {
 // ======================= Actions on a station or talkgroup =======================
 
 enum { A_TALK, A_PRIVATE, A_MESSAGE, A_CHECK, A_ALERT, A_POSITION, A_SAVE_CONTACT, A_SPEAK, A_SAVE_CHANNEL,
-       A_MAKE_DEFAULT };
+       A_MAKE_DEFAULT, A_POLL };
 
 static uint8_t act_list(uint8_t *out)
 {
@@ -156,6 +156,10 @@ static uint8_t act_list(uint8_t *out)
 						  A_SAVE_CONTACT, A_SPEAK };
 		memcpy(out, person, sizeof person);
 		n = sizeof person;
+#if CONFIG_DMR_TRUNK_TX
+		if (ui_view()->t3.on)
+			out[n++] = A_POLL;	// short data polling: a trunked system's service (dmr-trunking.md 7.6)
+#endif
 	}
 	if (ui_view()->temporary)
 		out[n++] = A_SAVE_CHANNEL;
@@ -253,6 +257,9 @@ static void act_item(uint16_t i, ui_item_t *it)
 		if (!(feats() & UI_FEAT_TALK_TARGET))
 			it->flags |= UI_ITEM_DIM;
 		break;
+	case A_POLL:
+		sb_str(&b, TR(TRUNK_ROW_POLL_SHORT_DATA, "Poll short data"));
+		break;
 	default:
 		break;
 	}
@@ -330,6 +337,15 @@ static void act_select(uint16_t i, bool hold)
 		if (ui_try_save_channel())
 			ui_go_home();
 		break;
+#if CONFIG_DMR_TRUNK_TX
+	case A_POLL:
+		ui_svc_t3_poll(ui_target.id);	// the answer arrives as a message; ui_app says when none comes
+		sb_str(&b, TR(TRUNK_TOAST_POLLING, "Polling "));
+		sb_str(&b, name);
+		ui_go_home();
+		ui_toast(msg);
+		break;
+#endif
 	default:
 		break;
 	}
@@ -1293,17 +1309,38 @@ static bool ced_own_mode(const channel_t *ch)
 #endif
 #endif
 
+// A trunked channel whose system isn't set up (dmr-trunking-codeplug.md 4) is locked out: selecting it says why
+static bool ch_locked(uint16_t num)
+{
+#if CONFIG_DMR_TRUNK
+	static channel_t ch;
+	bool usable = true;
+	if (codeplug_channel(num, &ch) && ui_svc_t3_channel(num, &ch, &usable) >= 0 && !usable) {
+		ui_toast(TR(TRUNK_WHY_SYSTEM_NOT_SET_UP, "System not set up"));
+		return true;
+	}
+#else
+	(void)num;
+#endif
+	return false;
+}
+
 // A channel row's value: its RX frequency and what it talks to, the talkgroup on DMR ("TG3113", "ID9991234" for a
 // private contact), on P25 its name and talkgroup ("P25 TG201"), or "FM". The whole name comes first; where both don't
 // fit beside it, the frequency and the bare number (P25: the frequency and "P25"), then the talkgroup alone (text
-// alternates)
-static void sb_channel_row(sbuf_t *b, const channel_t *ch)
+// alternates). A trunked channel (dmr-trunking-codeplug.md 4) names its system where the frequency would be. Returns
+// false for a trunked channel whose system isn't set up: the caller dims the row
+static bool sb_channel_row(sbuf_t *b, uint16_t num, const channel_t *ch)
 {
 	char what[16];
 	uint8_t mid = 0;	// the middle form: what from here ("TG" left out), or for P25 its kind's name alone
 	sbuf_t wb;
 	sb_init(&wb, what, sizeof what);
 	bool p25 = ced_is_p25(ch);
+	// Another kind (docs/spec/channel-modes.md): its short name. A trunked channel this build runs says its talkgroup
+	if (ch->kind != CODEPLUG_KIND_NONE && !p25 && !(CONFIG_DMR_TRUNK && ch->kind == CODEPLUG_KIND_DMR_TRUNK)) {
+		sb_str(&wb, codeplug_kind_name(ch->kind));
+	} else
 #if CONFIG_DMR
 	if (p25 || ch->mode == RADIO_MODE_DMR) {
 		// DMR: TG 9 when the contact can't be read; P25: TG 1 with no contact (p25-codeplug.md 2)
@@ -1324,6 +1361,28 @@ static void sb_channel_row(sbuf_t *b, const channel_t *ch)
 	} else {
 		sb_str(&wb, ch->mode == RADIO_MODE_FM && radio_am_channel(ch) ? "AM" : ui_mode_name(ch->mode));
 	}
+#if CONFIG_DMR_TRUNK
+	bool usable;
+	int sys = ui_svc_t3_channel(num, ch, &usable);
+	if (sys >= 0) {
+		char name[CODEPLUG_NAME_LEN + 1];
+		if (!usable) {
+			sb_str(b, TR(TRUNK_WHY_SYSTEM_NOT_SET_UP, "System not set up"));
+			return false;
+		}
+		ui_svc_t3_name((uint8_t)sys, name);
+		sb_str(b, TEXT_ALT_OPEN);
+		sb_str(b, name);
+		sb_chr(b, ' ');
+		sb_str(b, what);
+		sb_str(b, TEXT_ALT_NEXT);
+		sb_str(b, what);
+		sb_str(b, TEXT_ALT_CLOSE);
+		return true;
+	}
+#else
+	(void)num;
+#endif
 	sb_str(b, TEXT_ALT_OPEN);
 	sb_freq(b, ch->rx_hz);
 	sb_chr(b, ' ');
@@ -1340,6 +1399,7 @@ static void sb_channel_row(sbuf_t *b, const channel_t *ch)
 	sb_str(b, TEXT_ALT_NEXT);
 	sb_str(b, what);
 	sb_str(b, TEXT_ALT_CLOSE);
+	return true;
 }
 
 static zone_t zone_cache;
@@ -1500,7 +1560,8 @@ static void zone_item(uint16_t i, ui_item_t *it)
 	sb_chr(&b, ' ');
 	sb_str(&b, ch.name);
 	sb_init(&b, it->value, sizeof it->value);
-	sb_channel_row(&b, &ch);
+	if (!sb_channel_row(&b, z->channels[raw], &ch))
+		it->flags |= UI_ITEM_DIM;	// a trunked channel whose system isn't set up: locked out
 	const radio_view_t *v = ui_view();
 	if (!v->vfo && v->zone_index == ui_frame()->arg && v->zone_pos == raw)
 		it->flags |= UI_ITEM_TEMP;	// the channel we are on
@@ -1534,11 +1595,15 @@ static void zone_select(uint16_t i, bool hold)
 	}
 #endif
 	(void)hold;
+	const zone_t *z = zone_of_frame();
+	uint16_t pos = (uint16_t)(raw - ZE_ADD);
+	if (pos < z->count && ch_locked(z->channels[pos]))
+		return;
 	if (v->vfo)
 		radio_req_vfo(false);
 	if (v->zone_index != zi)
 		radio_req_zone(zi);
-	radio_req_zone_pos((uint16_t)(raw - ZE_ADD));
+	radio_req_zone_pos(pos);
 	ui_go_home();
 }
 
@@ -1836,7 +1901,7 @@ static void offer_select(uint16_t i, bool hold)
 // "Zone Club, 24 channels, from Joe 9991234" and how many can't be received here
 static const char *offer_body(void)
 {
-	static char body[96];
+	static char body[128];
 	sbuf_t b;
 	sb_init(&b, body, sizeof body);
 	if (!offer_get())
@@ -1859,6 +1924,14 @@ static const char *offer_body(void)
 		sb_str(&b, ". ");
 		sb_u32(&b, (uint32_t)(offer.channels - offer.in_band), 1);
 		sb_str(&b, TR(SHARE_BODY_NOT_IN_BAND, " not in band"));
+	}
+	if (offer.unavailable != 0) {
+		// Trunked channels whose system neither this radio nor the share has (zone-share.md 5.2)
+		sb_str(&b, ". ");
+		sb_u32(&b, offer.unavailable, 1);
+		sb_str(&b, offer.unavailable == 1 ?
+			   TR(SHARE_BODY_CHANNEL_NO_SYSTEM, " trunked channel unavailable: system not set up") :
+			   TR(SHARE_BODY_CHANNELS_NO_SYSTEM, " trunked channels unavailable: system not set up"));
 	}
 	return body;
 }
@@ -1895,6 +1968,11 @@ static void preview_item(uint16_t i, ui_item_t *it)
 	sb_init(&b, it->value, sizeof it->value);
 	if (!ch.in_band) {
 		sb_str(&b, TR(SHARE_CHIP_NOT_IN_BAND, TEXT_ALT_OPEN "Not in band" TEXT_ALT_NEXT "Out" TEXT_ALT_CLOSE));
+		it->flags |= UI_ITEM_DIM;
+		return;
+	}
+	if (ch.unavailable) {
+		sb_str(&b, TR(SHARE_VALUE_NO_SYSTEM, TEXT_ALT_OPEN "System not set up" TEXT_ALT_NEXT "No system" TEXT_ALT_CLOSE));
 		it->flags |= UI_ITEM_DIM;
 		return;
 	}
@@ -2348,7 +2426,8 @@ static void chlist_item(uint16_t i, ui_item_t *it)
 	ch_label(num, ch.name, it->label, sizeof it->label);
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
-	sb_channel_row(&b, &ch);
+	if (!sb_channel_row(&b, num, &ch))
+		it->flags |= UI_ITEM_DIM;
 	if (num == chlist_current())
 		it->flags |= UI_ITEM_TEMP;	// the channel we are on
 }
@@ -2359,6 +2438,8 @@ static bool chlist_tune(uint16_t num)
 	static zone_t z;
 	const radio_view_t *v = ui_view();
 	uint16_t zones = codeplug_zone_count();
+	if (ch_locked(num))
+		return false;
 	for (uint16_t k = 0; k <= zones; k++) {
 		// k == 0 tries the zone in use first, then every zone in order
 		uint16_t zi = k == 0 ? v->zone_index : (uint16_t)(k - 1u);
@@ -3979,7 +4060,7 @@ static void zpick_item(uint16_t i, ui_item_t *it)
 	ch_label(num, ch.name, it->label, sizeof it->label);
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
-	sb_channel_row(&b, &ch);
+	sb_channel_row(&b, num, &ch);	// adding to a zone: allowed, the row says the system isn't set up
 }
 
 static void zpick_select(uint16_t i, bool hold)

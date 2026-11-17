@@ -9,6 +9,7 @@ image is built for the host's own architecture, so an Apple silicon Mac runs it 
 |---|---|---|
 | `rfoundry-arm-gcc15` | Arm GNU Toolchain 15.2.rel1, Arm's prebuilt release | `build-arm-gcc.sh` |
 | `rfoundry-csky-gcc15` | csky-elf GCC 15.2.0, built by `tools/build-csky-toolchain.sh` | `build-csky-gcc.sh` |
+| `rfoundry-arm-ci` | The Arm toolchain CI pins, as `tools/install-arm-toolchain.sh` installs it (x86_64 only, no shell): CI copies it out instead of downloading Arm's archive | `build-arm-ci.sh` |
 
 Tags: `<version>-<yyyymmdd>` and `latest` for amd64; the same with `-arm64` for arm64 (`latest-arm64`). The images
 CI uses are the ones `platform/<platform>/platform.toml` `[toolchain]` names.

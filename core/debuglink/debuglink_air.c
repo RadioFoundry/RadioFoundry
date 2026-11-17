@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Air interface bench access on the debug link (see debuglink_air.h; docs/spec/debuglink.md 3.26). Requests come from
+// Air interface bench access on the debug link (see debuglink_air.h; docs/spec/debuglink.md 3.28). Requests come from
 // the debug link task; the provider's events from the board's modem task. The receive chunk ring between them is one
 // producer, one consumer, and takes its memory from the RTOS heap only while a session is open (no static RAM).
 #include "config.h"

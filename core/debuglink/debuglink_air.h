@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Air interface bench access on the debug link (CONFIG_AIR_RAW; docs/spec/debuglink.md 3.26): the board's receive tap
+// Air interface bench access on the debug link (CONFIG_AIR_RAW; docs/spec/debuglink.md 3.28): the board's receive tap
 // (board.baseband) as raw samples, and a session on its provider (board.air) with a profile the host sends, its
 // receive chunks and a transmission of the host's symbols. Generic over any board with either.
 //

@@ -200,3 +200,62 @@ def test_gate_without_the_limit(monkeypatch):
     assert not r.tx_gate(False) and not r.tx_gate(True)
     r.tx_gate_end()
     assert r.link.limits == []
+
+
+def test_run_tx_mhz_t3_payload(monkeypatch):
+    """--t3-payload-tx-mhz joins the run's transmit frequencies (the firmware's TX limit lets a granted call key)"""
+    cfg = run_config(True)
+    cfg.option.t3_payload_tx_mhz = "467.375, 461.4625"
+    monkeypatch.setattr(hil_config, "CONFIG", cfg)
+    assert hil_config.t3_payload_tx_mhz() == [467.375, 461.4625]
+    assert hil_config.run_tx_mhz() == [446.05, 461.4625, 467.375]
+    monkeypatch.setattr(hil_config, "CONFIG", run_config(False))
+    assert hil_config.run_tx_mhz() == []
+
+
+def t3_link(on=False, tx_mhz=0.0):
+    link = FakeLink()
+    link.views["t3"] = {"t3.on": "1" if on else "0", "t3.tx_hz": str(round(tx_mhz * 1e6))}
+    return link
+
+
+def t3_system(opts):
+    return H.T3, bytes([H.T3_OP_SYSTEM]) + struct.pack("<IBHBHBIBBhHB", 0, 1, 5, 1, opts, 2, 0, 0, 0, 0, 0, 0)
+
+
+def t3_ctrl(tx_mhz):
+    return H.T3, bytes([H.T3_OP_CTRL]) + struct.pack("<HIIB", 1, 450012500, round(tx_mhz * 1e6), 0xFF)
+
+
+@pytest.mark.parametrize("op,where", [(H.T3_OP_START, "t3"), (12, "t3"), (13, "t3"), (19, "t3"), (9, None),
+                                      (H.T3_OP_CTRL, None)])
+def test_keys_tx_t3(op, where):
+    assert H.keys_tx(H.T3, bytes([op])) == where
+
+
+def test_t3_start_checks_the_staged_control_channel(rig):
+    """Not started yet: the guard checks the control channel staged through the link"""
+    link = t3_link()
+    H._guarded_request(link, *t3_system(0x20))
+    H._guarded_request(link, *t3_ctrl(467.375))
+    with pytest.raises(RuntimeError, match="467.37500 MHz"):
+        H._guarded_request(link, H.T3, bytes([H.T3_OP_START]))
+    link = t3_link()
+    H._guarded_request(link, *t3_system(0x20))
+    H._guarded_request(link, *t3_ctrl(461.4625))
+    H._guarded_request(link, H.T3, bytes([H.T3_OP_START]))
+    assert rig[-1] == (H.T3, bytes([H.T3_OP_START]))
+
+
+def test_t3_listen_only_start_passes(rig):
+    link = t3_link()
+    H._guarded_request(link, *t3_system(0x21))
+    H._guarded_request(link, *t3_ctrl(467.375))
+    H._guarded_request(link, H.T3, bytes([H.T3_OP_START]))
+    assert rig[-1] == (H.T3, bytes([H.T3_OP_START]))
+
+
+def test_t3_camped_checks_its_control_channel(rig):
+    with pytest.raises(RuntimeError, match="467.37500 MHz"):
+        H._guarded_request(t3_link(True, 467.375), H.T3, bytes([12]) + struct.pack("<IBB", 1, 1, 37))
+    H._guarded_request(t3_link(True, 461.4625), H.T3, bytes([12]) + struct.pack("<IBB", 1, 1, 37))

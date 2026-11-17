@@ -146,14 +146,14 @@ Ids are only appended and never reused. A kind and a system type that belong tog
 
 | Kind | Name | Short | Built when | Spec |
 |---|---|---|---|---|
-| 1 | DMR Tier III trunked | T3 | not yet (the trunking engine is not in this tree) | [dmr-trunking-codeplug.md](dmr-trunking-codeplug.md) |
+| 1 | DMR Tier III trunked | T3 | `CONFIG_DMR_TRUNK` | [dmr-trunking-codeplug.md](dmr-trunking-codeplug.md) |
 | 2 | P25 conventional | P25 | `CONFIG_P25` and a board whose air interface receives P25 (`radio_p25_fits`) | [p25-codeplug.md](p25-codeplug.md) |
 | 3 | P25 trunked | P25T | `CONFIG_P25_TRUNK` and a board whose air interface receives P25; receive, and transmit where the system allows it ([p25-trunking.md](p25-trunking.md) 5, 7) | [p25-codeplug.md](p25-codeplug.md) |
 | 4 | NXDN conventional | NXDN | `CONFIG_NXDN` and a board whose air interface carries NXDN (`radio_nxdn_fits`) | [nxdn-codeplug.md](nxdn-codeplug.md) |
 
 | System type | Name | Short | Built when | Spec |
 |---|---|---|---|---|
-| 1 | DMR Tier III system | T3 | not yet | [dmr-trunking-codeplug.md](dmr-trunking-codeplug.md) |
+| 1 | DMR Tier III system | T3 | `CONFIG_DMR_TRUNK` | [dmr-trunking-codeplug.md](dmr-trunking-codeplug.md) |
 | 2 | Reserved: P25 conventional system (identity and keys) | | | |
 | 3 | P25 trunked system | P25T | `CONFIG_P25_TRUNK` | [p25-codeplug.md](p25-codeplug.md) |
 
