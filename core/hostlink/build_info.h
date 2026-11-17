@@ -14,5 +14,8 @@ const char *build_features_now(void);
 extern const char build_preset[];
 // off=: every switch this radio could have that the build left off, comma separated; may be empty
 extern const char build_off[];
+// start=: the language the radio starts in until the user picks one (CONFIG_LANG_DEFAULT_<CODE>), its ISO 639-1 code,
+// "en" for English. off= can't say it: a start-language switch added after this build is in neither list
+const char *build_start_now(void);
 
 #endif

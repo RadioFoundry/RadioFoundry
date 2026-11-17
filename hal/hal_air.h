@@ -120,6 +120,16 @@ typedef struct {
 // Called by the provider at task level (its deferred handler), never from an interrupt. Must not block
 typedef void (*air_event_cb_t)(const air_event_t *ev, void *ctx);
 
+// What a provider's receive side delivered since the session opened (debug link, HIL): a field the provider doesn't
+// have stays 0
+typedef struct {
+	uint32_t records;	// receive records the chip gave (a correlator provider)
+	uint32_t synced;	// ... of those, with a sync detection
+	uint32_t halves;	// FM copy halves taken (a tap provider)
+	uint32_t overruns;	// ... dropped: the task was behind
+	uint32_t chunks;	// chunks handed to the framer (AIR_EV_RX)
+} air_rx_counts_t;
+
 // A provider. One session at a time: open ... close. The core stops the board's DMR stack before open (the provider
 // may run on its chip, interrupts and task) and starts it again after close. What every provider keeps while a
 // session is open:
@@ -156,6 +166,8 @@ typedef struct {
 	// the provider spent turning samples into symbols, and the microseconds of signal they covered. false: a chip
 	// does the work for the profile that is open (nothing is counted, the two are 0)
 	bool (*rx_load)(uint32_t *work_us, uint32_t *span_us);
+	// Optional (NULL: not counted). The receive side's counters (air_rx_counts_t); false while no session is open
+	bool (*rx_counts)(air_rx_counts_t *c);
 	uint16_t tx_chunk_syms;		// symbols per transmit chunk (every chunk but the last is full)
 	uint8_t tx_queue_depth;		// chunks the queue holds
 	uint16_t tx_lead_ms;		// how far ahead of the air the queue must be kept: the framer holds this much queued

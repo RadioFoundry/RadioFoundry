@@ -33,6 +33,7 @@ Derived values:
 | Erasable sectors | The platform geometry from the application base up |
 | Stub NAND flag | `drivers/flash/spi_nand` in `BOARD_DIRS` |
 | Stub power pins | `PIN_POWER_LATCH` and `PIN_POWER_KEY` in `pins.h`, when `hold_power` is set |
+| Stub LED pins (HR_C7000) | `PIN_LED_RED` and `PIN_LED_GREEN` in `pins.h`, else none |
 | Stub board record (STM32F4) | `spi` and `idle_cs`, the `PIN_FLASH_*` pins, the bus's alternate function from the platform's `board_stub.spi_af`, `HSE_VALUE` and `APP_BASE` |
 | Debug link names | The `board_t` names, each build option value's `board_name`, `debuglink_aliases`, the id |
 | Codec windows of a linker slot | The `__codec_slot` symbols |
@@ -193,10 +194,15 @@ original firmware's or the bootloader's DFU device before an install (`origbacku
 
 | Platform stub | Required | Optional |
 |---|---|---|
-| `stubtool` (HR_C7000) | `hold_power` (the stub drives the power latch), `progmem` (program flash size) | `stock_console` (the stock firmware answers a console the web flasher reads), `read_rate`, `write_test` (the data flash offset of the 16 KB `--write-test` erases and programs; the check refuses one that overlaps the flash map, a protected region or the chip's end, or a NAND. Without it the tool writes no data flash) |
+| `stubtool` (HR_C7000) | `hold_power` (the stub drives the power latch), `progmem` (program flash size), `calibration` | `stock_console` (the original firmware answers a console the web flasher reads), `read_rate`, `write_test` (the data flash offset of the 16 KB `--write-test` erases and programs; the check refuses one that overlaps the flash map, a protected region or the chip's end, or a NAND. Without it the tool writes no data flash), `rom_entry` (the boot ROM starts the application itself: the flag sector at program flash 0 names this entry) |
 | `f4stub` (STM32F4) | `spi = { bus, mode, hz }` (the SPI flash's bus 1-3, SPI mode 0-3, fastest clock) | `idle_cs` (up to two `pins.h` names of other chip selects on that bus, held high) |
 
 A key of another platform's stub fails the check.
+
+The HR_C7000 stub's LED pins come from `pins.h`, not `[flash.stub]`. The stub drives its LED pins from its first
+instruction, so the tools write the board's pins into the stub image's parameter block before they send it, and send
+them again in CONFIG. The stub's built-in pins (PTB1 red, PTB0 green) can be other signals on another board. A board
+without `PIN_LED_RED` or `PIN_LED_GREEN` gets 255 (no LED) for it.
 
 #### Protected regions
 

@@ -16,6 +16,11 @@
 // interrupt writes only the half the next slot reads. The PA is keyed once, held, and dropped after the last chunk.
 // Deviation: the two-point pair (0x45, 0x46) read at tx_begin is scaled to the profile and put back after.
 //
+// The HR_C5000 has the same physical layer mode in its manual (0x10 LayerMode, the 0x82 bit 0 record interrupt, 36
+// bytes of physical layer data in page 2) and the same 0x40 / 0x41 slot control the slot engine uses on both. What
+// differs comes from the chip description (hrc_chip_t): no 0x5F to write, no encoder start at tx_begin
+// (modem-hrc6000.md 10.7).
+//
 // Receive through the FM copy (10.6), for a profile the correlator can't take, on a board whose RF chip gives the
 // HR_C6000 the flat discriminator in its DMR set-up: the chip in FM with its audio filters and the feed-through off,
 // each 256-sample half of the FM receive RAM (8 kHz) copied into a ring at its interrupt (0x82 bit 1). A session runs
@@ -95,7 +100,7 @@ typedef struct {
 	uint32_t halves;	// FM copy halves taken
 	uint32_t overruns;	// ... dropped: the ring was full (the task was behind)
 	uint32_t half_fixes;	// ... where the RAM showed the other half complete than the one expected
-	uint32_t chunks;	// soft modem chunks handed out
+	uint32_t chunks;	// chunks handed out (records and the soft modem's; not the erasures for a fill)
 	uint32_t modem_us;	// time in the soft modem ...
 	uint32_t modem_span_us;	// ... for this much signal
 } hrc6000_air_stats_t;

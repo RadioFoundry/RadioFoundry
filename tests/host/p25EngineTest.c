@@ -134,7 +134,7 @@ static void p_abort(uint8_t i) { prov[i].qn = 0; prov[i].on = false; ev(&prov[i]
 	static void abort##i(void) { p_abort(i); } \
 	static uint32_t now##i(void) { return prov[i].now_us; } \
 	static const hal_air_t air##i = { p_fit, open##i, close##i, restart##i, begin##i, queue##i, space##i, end##i, abort##i, \
-					  now##i, NULL, NULL, NULL, CHUNK, DEPTH, 60, 100 };
+					  now##i, NULL, NULL, NULL, NULL, CHUNK, DEPTH, 60, 100 };
 PROVIDER(0)
 PROVIDER(1)
 

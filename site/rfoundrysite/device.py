@@ -8,7 +8,8 @@ An illustration of the radio in site/static/img/radios/src/<id>.svg is used when
 Its key-<name> ids, for the radio's web control page, must name keys the radio has; where each key sits goes into the
 geometry, for the web flasher, which marks the keys to hold for update mode (board.toml [flash.bootloader] hold).
 Without one, a generic drawing per shape (handheld, tall handheld, mobile) tinted by board.toml [frame] stands in; its
-handheld shapes tag their side PTT.
+handheld shapes tag their side PTT. A radio without a display (board.toml display = "none") has no screen rect and no
+boot screen.
 """
 import base64
 import importlib.util
@@ -25,6 +26,12 @@ def png_size(data):
 	if data[:8] != b"\x89PNG\r\n\x1a\n":
 		raise repo.SourceError("not a PNG")
 	return struct.unpack(">II", data[16:24])
+
+
+def has_display(radio):
+	"""Whether the radio has a display (board.toml display): one without has no screen rect, screenshots or gallery
+	on the site."""
+	return radio.get("display", "") != "none"
 
 
 SCREEN_RECT = re.compile(r"<rect\b[^>]*\bid=\"screen\"[^>]*/>")
@@ -56,7 +63,8 @@ def render(radio, label, look=None):
 	screen in it). geometry: {"viewbox": [x, y, w, h], "screen": {x, y, w, h} in viewBox units,
 	"screen_pct": {left, top, width, height} as percentages of the image, "keys": {name: {left, top, width, height}}
 	as percentages, for each key the drawing shows}, so any screenshot can be laid over the frame (data/radios.json,
-	the radio pages) and the flasher can mark a key (radiotop.js)."""
+	the radio pages) and the flasher can mark a key (radiotop.js). Without a display, screen and screen_pct are None."""
+	screen = has_display(radio)
 	with open(repo.path("docs", "ux", "screens", radio["gallery"], "boot.png"), "rb") as f:
 		png = f.read()
 	# a look (board.toml looks): the same radio in another body, drawn in <id>-<look>.svg, with the same keys
@@ -75,15 +83,18 @@ def render(radio, label, look=None):
 	else:
 		frame = generic(radio, png, label)
 		src = "generic drawing of %s" % radio["id"]
+		if not screen:
+			frame = SCREEN_RECT.sub("", frame)	# the bezel stays, as the radio's dark front panel
 	rects = SCREEN_RECT.findall(frame)
-	if len(rects) != 1:
-		raise repo.SourceError("%s: needs exactly one <rect id=\"screen\" .../>" % src)
-	r = rects[0]
-	x, y, w, h = (attr(r, k) for k in ("x", "y", "width", "height"))
-	pw, ph = png_size(png)
-	if abs(w / h - pw / ph) > 0.02:
-		raise repo.SourceError("%s: the screen rect is %gx%g, the boot screen %dx%d: the aspect ratios differ"
-				       % (src, w, h, pw, ph))
+	if len(rects) != (1 if screen else 0):
+		raise repo.SourceError("%s: needs %s" % (src, "exactly one <rect id=\"screen\" .../>" if screen
+							 else "no <rect id=\"screen\"/>: the radio has no display"))
+	if screen:
+		x, y, w, h = (attr(rects[0], k) for k in ("x", "y", "width", "height"))
+		pw, ph = png_size(png)
+		if abs(w / h - pw / ph) > 0.02:
+			raise repo.SourceError("%s: the screen rect is %gx%g, the boot screen %dx%d: the aspect ratios differ"
+					       % (src, w, h, pw, ph))
 	m = re.search(r"viewBox=\"([-\d.\s]+)\"", frame)
 	if not m:
 		raise repo.SourceError("%s: no viewBox" % src)
@@ -91,16 +102,18 @@ def render(radio, label, look=None):
 	pct = lambda x0, y0, x1, y1: {"left": round(100 * (x0 - vx) / vw, 3), "top": round(100 * (y0 - vy) / vh, 3),
 				      "width": round(100 * (x1 - x0) / vw, 3), "height": round(100 * (y1 - y0) / vh, 3)}
 	frame = re.sub(r"<svg\b", '<svg role="img" aria-label="%s"' % label, frame, count=1)
-	geometry = {"viewbox": [vx, vy, vw, vh], "screen": {"x": x, "y": y, "w": w, "h": h},
-		    "screen_pct": pct(x, y, x + w, y + h), "aspect": round(vw / vh, 5),
+	geometry = {"viewbox": [vx, vy, vw, vh], "screen": {"x": x, "y": y, "w": w, "h": h} if screen else None,
+		    "screen_pct": pct(x, y, x + w, y + h) if screen else None, "aspect": round(vw / vh, 5),
 		    "keys": {k: pct(*b) for k, b in sorted(svg_keys().key_boxes(frame).items())}}
 	return {"frame": frame, "geometry": geometry}
 
 
 def boot(img, png):
 	"""render()'s drawing with png in its display: the boot screen's copy at the site's scale (shots.py), which
-	the browser scales down smoothly, so it carries no image-rendering."""
+	the browser scales down smoothly, so it carries no image-rendering. A drawing without a display stays as it is."""
 	s = img["geometry"]["screen"]
+	if s is None:
+		return img["frame"]
 	image = ('<image href="data:image/png;base64,%s" x="%g" y="%g" width="%g" height="%g" preserveAspectRatio="none"/>'
 		 % (base64.b64encode(png).decode(), s["x"], s["y"], s["w"], s["h"]))
 	return SCREEN_RECT.sub(image, img["frame"], count=1)

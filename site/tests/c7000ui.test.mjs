@@ -331,6 +331,8 @@ test("restore: the write logs its range and that the bootloader is unchanged, as
 	const forwards = [];
 	const pm = new Uint8Array(C.progmem_size).fill(0xFF);
 	pm.fill(0x11, C.app_start, C.app_start + 8192);
+	const slot0 = C.boards[radio.flash.board].slot[0];
+	pm.fill(0x22, slot0, slot0 + 3 * C.sector);
 	const state = { radio, task: "restore", forward: (b) => forwards.push(b), data: { fb },
 		bundle: { meta: { radio: { name: radio.name }, firmware_now: { kind: "stock" } },
 			parts: new Map([["c7000-progmem", { what: "c7000-progmem", file: "program-memory.bin", complete: true, addr: 0, data: pm }]]) } };
@@ -341,12 +343,20 @@ test("restore: the write logs its range and that the bootloader is unchanged, as
 	const boot = new Uint8Array(C.app_start).fill(0xA5);
 	state.c7 = { log: { add() {}, el: new El("div") }, stream: null,
 		stub: { dump: async () => boot.slice(), ledSequence: async () => {}, resetChip: async () => {},
-			writeProgram: async (data, start, { onSector }) => { onSector(C.app_start, "todo"); onSector(C.app_start, "written"); return { written: 1, same: 0 }; } } };
+			writeProgram: async (data, start, { onSector }) => {
+				onSector(C.app_start, "todo");
+				onSector(C.app_start, "written");
+				for (let a = slot0; a < slot0 + 3 * C.sector; a += C.sector) onSector(a, "same");
+				return { written: 1, same: 3 };
+			} } };
 	state.fakeC7 = {};
 	const box = c7ui.restoreView();
 	forwards.at(-1).click();
 	for (let i = 0; i < 300 && !/Restore complete/.test(box.textContent); i++) await sleep(10);
 	assert.match(box.textContent, /Restore complete/);
+	// what was not written is said in words: a codec the radio already had as the backup has it looked skipped
+	assert.match(box.textContent, /Parts written: 1\. Parts that already matched the backup and were not written again: 3\./);
+	assert.match(box.textContent, /codec in the radio already matched the backup/);
 	const tr = diag.trail(50).join("\n");
 	assert.match(tr, /restore bundle \{"progmem":true/);
 	assert.match(tr, /write range \{"sectors":1,.*"bootloader":"unchanged"/);
@@ -529,4 +539,160 @@ test("backup: after Restart Radio the task ends on a finished screen, not at the
 	assert.equal(state.step, 0);
 	assert.equal(state.c7, null, "the install starts with a new session: its check step reads the radio itself");
 	assert.equal(state.backupDone, undefined, "nothing tells the next task its backup is done");
+});
+
+// A cable session as the connect step finds it when the task already opened the cable: nothing answers on it
+function deadCable(state, stream) {
+	state.c7 = { log: { add() {}, el: new El("div") }, stream };
+	delete state.fakeC7;
+}
+
+// Field: a low-quality cable left the connect step at "Searching for the radio" for good
+test("connect step: a cable that keeps sending data nobody asked for is named, with the way on", async (t) => {
+	const { limits } = await import("../static/js/flasher/stub.js");
+	const was = limits.drain;
+	limits.drain = 200;
+	const stream = { buf: new Uint8Array(0), clear() { this.buf = new Uint8Array(0); }, take(n) { const o = this.buf.slice(0, n); this.buf = this.buf.slice(n); return o; },
+		async write() {}, async close() {} };
+	const noise = setInterval(() => { stream.buf = Uint8Array.of(...stream.buf.slice(-64), 0x00); }, 5);
+	t.after(() => { limits.drain = was; clearInterval(noise); });
+	const forwards = [];
+	const state = { radio, task: "backup", forward: (b) => forwards.push(b), data: { fb }, board: fb.boards[radio.flash.board] };
+	c7ui.init({ S: state, fb: () => fb, helpLink: () => null, reset() {}, render() {}, errorText: (e) => e.message });
+	deadCable(state, stream);
+	const box = c7ui.connectView();
+	box.isConnected = true;
+	assert.match(box.textContent, /Searching for the radio/);
+	for (let i = 0; i < 400 && !/Cable Problem Detected/.test(box.textContent); i++) await sleep(20);
+	assert.match(box.textContent, /keeps delivering data that nothing asked for \(\d+ bytes in \d+ s\)/);
+	assert.match(box.textContent, /Unplug the cable from the computer/);
+	const [anyway, again] = forwards.at(-1);
+	assert.equal(anyway.textContent, "Continue Anyway");
+	assert.equal(again.textContent, "Try Again");
+	assert.equal(state.c7.stream, stream, "the cable is kept for Continue Anyway");
+	anyway.click();
+	for (let i = 0; i < 400 && /Cable Problem Detected/.test(box.textContent); i++) await sleep(20);
+	assert.doesNotMatch(box.textContent, /Cable Problem Detected/, "the search goes on to the next way in");
+});
+
+test("connect step: a cable that left the computer's USB is said as that, not as a radio that doesn't answer", async () => {
+	let closed = 0;
+	const stream = { buf: new Uint8Array(0), lost: true, clear() {}, take() { return new Uint8Array(0); },
+		async write() { throw Object.assign(new Error("The device has been lost."), { name: "NetworkError" }); }, async close() { closed++; } };
+	const forwards = [];
+	const state = { radio, task: "backup", forward: (b) => forwards.push(b), data: { fb }, board: fb.boards[radio.flash.board] };
+	c7ui.init({ S: state, fb: () => fb, helpLink: () => null, reset() {}, render() {}, errorText: (e) => e.message });
+	// the cable goes while the step searches (one already gone when the step is drawn is asked for again at once)
+	deadCable(state, { ...stream, lost: false });
+	const box = c7ui.connectView();
+	box.isConnected = true;
+	Object.assign(state.c7.stream, { lost: true, write: stream.write, close: stream.close });
+	for (let i = 0; i < 400 && !/Cable Problem Detected/.test(box.textContent); i++) await sleep(20);
+	assert.match(box.textContent, /disconnected from the computer while the page was using it/);
+	assert.equal(state.c7.stream, null, "the session forgot the cable");
+	assert.equal(closed, 1);
+	assert.equal(forwards.at(-1).textContent, "Try Again");
+});
+
+// Field: a Prolific cable on a Mac stopped sending after a port close, and the page went on to listen for the boot ROM
+// through it. The send check as the cable opens finds it: the step names the fault, says to replug it and, if it comes
+// back, to use a better cable, and offers Try Again
+test("connect step: a cable that takes no data is found as it opens, with what to do and Try Again", async (t) => {
+	const { limits } = await import("../static/js/flasher/link.js");
+	const was = { ...limits };
+	Object.assign(limits, { sendCheck: 50 });
+	const nav = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+	t.after(() => { Object.assign(limits, was); Object.defineProperty(globalThis, "navigator", nav); });
+	let taken = 0;
+	const dead = { isOpen: false, getInfo: () => ({ usbVendorId: 0x067B, usbProductId: 0x2303 }),
+		async open() { this.isOpen = true; this.readable = null; this.writable = { getWriter: () => ({
+			write: () => (taken++ < 3 ? Promise.resolve() : new Promise(() => {})), async abort() {}, releaseLock() {} }) }; },
+		async close() { this.isOpen = false; } };
+	Object.defineProperty(globalThis, "navigator", { value: { serial: { getPorts: async () => [dead], requestPort: async () => dead } }, configurable: true });
+	const forwards = [];
+	const state = { radio, task: "backup", forward: (b) => forwards.push(b), data: { fb }, board: fb.boards[radio.flash.board] };
+	c7ui.init({ S: state, fb: () => fb, helpLink: () => null, reset() {}, render() {}, errorText: (e) => e.message });
+	delete state.fakeC7;
+	state.c7 = null;
+	const box = c7ui.connectView();
+	box.isConnected = true;
+	const choose = [forwards.at(-1)].flat().find((b) => b?.textContent === "Choose Cable");
+	assert.ok(choose, `the cable step: ${[forwards.at(-1)].flat().map((b) => b?.textContent)}`);
+	choose.click();
+	for (let i = 0; i < 300 && !/Cable Problem Detected/.test(box.textContent); i++) await sleep(20);
+	assert.match(box.textContent, /stopped taking data from the computer/);
+	assert.match(box.textContent, /Unplug the cable from the computer/);
+	assert.match(box.textContent, /FTDI chip/);
+	assert.equal(dead.isOpen, false, "closed again, for Try Again");
+	assert.equal([forwards.at(-1)].flat().filter(Boolean).at(-1).textContent, "Try Again");
+});
+
+// Field: a cable that held the radio's line low. The boot ROM's greeting came through, the radio heard nothing, and
+// the page went on to load the stub into a radio that had started its firmware
+test("connect step: a radio that is heard and hears nothing is said as a cable that only carries data one way", async () => {
+	const sent = [];
+	const stream = { buf: new Uint8Array(0), received: 0, lineErrors: 0, clear() { this.buf = new Uint8Array(0); },
+		take(n) { const o = this.buf.slice(0, n); this.buf = this.buf.slice(n); return o; },
+		async write(b) { sent.push(b); }, async close() {} };
+	const say = (...b) => { stream.buf = Uint8Array.of(...stream.buf, ...b); stream.received += b.length; };
+	const forwards = [];
+	const state = { radio, task: "backup", forward: (b) => forwards.push(b), data: { fb }, board: fb.boards[radio.flash.board] };
+	c7ui.init({ S: state, fb: () => fb, helpLink: () => null, reset() {}, render() {}, errorText: (e) => e.message });
+	deadCable(state, stream);
+	const box = c7ui.connectView();
+	box.isConnected = true;
+	// nothing answers: the step asks for the radio to be switched off, then listens while it is switched on
+	const press = async (label) => {
+		for (let i = 0; i < 500; i++) {
+			const b = [forwards.at(-1)].flat().find((x) => x?.textContent === label);
+			if (b) return b.click();
+			await sleep(20);
+		}
+		assert.fail(`no ${label} button: ${box.textContent.slice(0, 200)}`);
+	};
+	await press("Radio Is Off");
+	const answer = (b) => b.length === 4 && b[0] === 0x02 && b[1] === 0x14 && b[2] === 0x00 && b[3] === 0x03;
+	for (let i = 0; i < 200 && !sent.some(answer); i++) await sleep(10);
+	assert.ok(sent.some(answer), "the answers go out ahead of the greeting");
+	say(0x00, 0x02, 0x24, 0x00, 0x03);
+	await sleep(80);
+	say(0x00, 0xC0, 0x00, 0x03);		// the ROM stops waiting and names the application it starts
+	for (let i = 0; i < 300 && !/Cable Problem Detected/.test(box.textContent); i++) await sleep(20);
+	assert.match(box.textContent, /radio received none of this page's answers and started normally/);
+	assert.match(box.textContent, /hold the radio's PTT line/);
+	assert.equal(state.c7.stream, null, "the session forgot the cable");
+	assert.equal([forwards.at(-1)].flat().filter(Boolean).at(-1).textContent, "Try Again");
+});
+
+// Field: a PL2303 adapter in a bad state read the line at another rate; the page listened on for its full 3 minutes
+test("connect step: the radio's greeting read at the wrong rate is said as a cable fault at once, with Try Again", async () => {
+	const stream = { buf: new Uint8Array(0), received: 0, lineErrors: 0, clear() { this.buf = new Uint8Array(0); },
+		take(n) { const o = this.buf.slice(0, n); this.buf = this.buf.slice(n); return o; },
+		async write() {}, async close() {} };
+	const say = (...b) => { stream.buf = Uint8Array.of(...stream.buf, ...b); stream.received += b.length; };
+	const forwards = [];
+	const state = { radio, task: "backup", forward: (b) => forwards.push(b), data: { fb }, board: fb.boards[radio.flash.board] };
+	c7ui.init({ S: state, fb: () => fb, helpLink: () => null, reset() {}, render() {}, errorText: (e) => e.message });
+	deadCable(state, stream);
+	const box = c7ui.connectView();
+	box.isConnected = true;
+	const press = async (label) => {
+		for (let i = 0; i < 500; i++) {
+			const b = [forwards.at(-1)].flat().find((x) => x?.textContent === label);
+			if (b) return b.click();
+			await sleep(20);
+		}
+		assert.fail(`no ${label} button: ${box.textContent.slice(0, 200)}`);
+	};
+	await press("Radio Is Off");
+	await sleep(100);
+	say(0x70, 0x80, 0x70, 0x00, 0x7C);
+	await sleep(55);
+	say(0x00, 0x00, 0x00, 0x7C);
+	for (let i = 0; i < 100 && !/Cable Problem Detected/.test(box.textContent); i++) await sleep(20);
+	assert.match(box.textContent, /never the radio's greeting/);
+	assert.match(box.textContent, /9 bytes, 0 line errors/);
+	assert.match(box.textContent, /FTDI chip/);
+	assert.equal(state.c7.stream, null, "the session forgot the cable");
+	assert.equal([forwards.at(-1)].flat().filter(Boolean).at(-1).textContent, "Try Again");
 });

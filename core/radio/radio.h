@@ -487,6 +487,9 @@ void radio_core_start(void);
 void radio_get_view(radio_view_t *v);
 // Just the view's state, for a caller short of stack (the view is some 0.7 KB)
 radio_state_t radio_get_state(void);
+// Just the view's zone index and position and the zone's size (0 while none is loaded), likewise. False while the
+// radio would refuse radio_req_zone_pos (transmitting, a hotspot)
+bool radio_get_zone_pos(uint16_t *zone, uint16_t *pos, uint16_t *size);
 #if CONFIG_DMR_TRUNK
 // Runs fn on the whole trunking view as published with the view, under its lock (no copy: the view is 0.5 KB); fn
 // must be short and take no other lock
