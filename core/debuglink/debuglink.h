@@ -49,6 +49,12 @@ enum {
 	DL_VIEW_CPS,		// the CPS shims' counters (were in DL_VIEW_STORAGE until view version 5)
 	DL_VIEW_BOARD,		// the board's own keys (board.view_line): pins, ADC, clock, flash, calibration
 	DL_VIEW_AUDIO,		// the beeps' speaker route: stream, lead-in, amplifier hang
+	DL_VIEW_T3,		// a Tier III trunked system: engine state, call, access, counters (debuglink_t3.c)
+	DL_VIEW_T3_SVC,		// its services: polls, stun, power save, DGNA (its own section: t3 fills a reply)
+	DL_VIEW_T3_ROAM,	// its roaming: level, adjacent sites, Vote Now
+	DL_VIEW_VOICE_CAP,	// the voice frames captured (RADIO op 41)
+	DL_VIEW_T3_MSG,		// Tier III: the last status, short data, caller number, supplementary data heard
+	DL_VIEW_T3_RA,		// Tier III: random access bursts and their answers, the TX to RX turnaround
 	DL_VIEW_COUNT
 };
 #define DL_VIEW_VERSION		5	// bumped when a key changes meaning or goes away (new keys don't bump it)
@@ -85,6 +91,7 @@ enum {
 	DL_OP_VFO_SFR = 38,
 	DL_OP_PA_SWEEP = 39,
 	DL_OP_PA_KEYRUN = 40,
+	DL_OP_VOICE_CAPTURE = 41,
 };
 uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *args, uint16_t len);
 // After a reply: the host port's reattach a PA key run asked for (PA_KEYRUN_FLAG_REATTACH); else a no-op
@@ -95,7 +102,7 @@ static inline bool debuglink_is_feature_op(uint8_t op)
 	return (op >= DL_OP_SCAN && op <= DL_OP_SETTING) || op == DL_OP_ROAM || op == DL_OP_VIBRATE || op == DL_OP_VOLUME ||
 	       op == DL_OP_DMR_FIELDS || op == DL_OP_VFO_COPY || op == DL_OP_VOICE_TEST || op == DL_OP_DTMF ||
 	       op == DL_OP_TX_LIMIT || op == DL_OP_TX_DRIVE || op == DL_OP_PA_KEYUP || op == DL_OP_VFO_SFR ||
-	       op == DL_OP_PA_SWEEP || op == DL_OP_PA_KEYRUN;
+	       op == DL_OP_PA_SWEEP || op == DL_OP_PA_KEYRUN || op == DL_OP_VOICE_CAPTURE;
 }
 // VERSION's codec= (hal_vocoder_id; the name the host tests use)
 static inline const char *debuglink_codec_id(const hal_vocoder_t *v)
@@ -159,6 +166,19 @@ void debuglink_rx2_service(void);
 // The DMR ID database (debuglink_iddb.c, docs/spec/debuglink.md 3.23): DL_CMD_IDDB, id u32 -> format, records, found,
 // text. Without CONFIG_DMR, unavailable
 size_t debuglink_cmd_iddb(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+
+// A key of the codeplug settings area (debuglink_cpkv.c, docs/spec/debuglink.md 3.27): DL_CMD_CPKV. Unavailable
+// without the DMR data core or Tier III trunking, the features that read keys
+size_t debuglink_cmd_cpkv(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+
+// A Tier III trunked system (debuglink_t3.c, docs/spec/debuglink.md 3.26): DL_CMD_T3 and the t3 section ("t3.built=0"
+// without CONFIG_DMR_TRUNK)
+size_t debuglink_cmd_t3(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+void debuglink_view_t3(const radio_view_t *v, dl_text_t *t);
+void debuglink_view_t3_svc(const radio_view_t *v, dl_text_t *t);
+void debuglink_view_t3_roam(const radio_view_t *v, dl_text_t *t);
+void debuglink_view_t3_msg(const radio_view_t *v, dl_text_t *t);
+void debuglink_view_t3_ra(const radio_view_t *v, dl_text_t *t);
 
 // The radio transmits: a call, or the hotspot (the gate of REBOOT and CHIP_REG's SoC writes). The debug link task only
 bool debuglink_transmitting(void);

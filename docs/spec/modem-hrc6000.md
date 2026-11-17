@@ -237,6 +237,12 @@ Whether bit 7 raises the line by itself is unverified.
 one for the burst. A voice handler takes a burst number 1..6 at most once per 45 ms. It drops a second report that
 comes within 45 ms of the last voice burst taken.
 
+**The same status reported again one slot later.** In direct mode the chip can report a burst a second time at the
+next timeslot interrupt, with the same status and payload. The driver drops a report of the same kind (and, for data,
+the same payload) within 45 ms as a repeat. Idle bursts with BS sync are exempt: a base station sends a burst in every
+slot, and every idle burst has the same bits, so on a carrier idle on both slots each slot's idle looks like a repeat
+of the one before. Dropped, the carrier looked silent and a trunked call's hang of idles timed out.
+
 **Timing of a burst report.** For a burst received in step with the chip's slot timing, the received-data interrupt
 comes 3-5 ms after the timeslot interrupt (2-10 ms observed). A delay of 25-30 ms means the chip's timing is out of
 step with the sender, because it locked to noise or to another station. The receiver should then be resynchronized.
@@ -414,6 +420,15 @@ wait 3 ms (a busy wait in the interrupt: faster rewrites crashed the radio). Aft
 Release the hold after 5 s of no received audio while idle.
 
 The driver chooses by the chip description's `cc_any_rx`.
+
+### 5.4a CACH short LC
+
+The chip assembles the CACH short LC from four CACHs and leaves it in page 2 0x2B-0x2F: 36 bits, MSB first, the 28
+short LC bits then the CRC-8; the low 4 bits of 0x2F are unused (`hrc6000-registers.md` 2.2). While receiving both
+slots of a BS signal (`rx_lock_slot(0)`, a trunked control channel) and idle, the driver reads it at each timeslot
+interrupt after a received slot and reports it (`DMR_EV_SHORT_LC`) when the bytes change. It doesn't wait for 0x86
+bit 2 (short LC received): that flag comes with the TX-end interrupt (0x82 bit 5), which the mask leaves off. The
+chip descriptor's `slc_rx_addr` gives the location; a chip without one reports none. On air a TSCC gives about 8 short LCs a second, about 0.15% with a bad CRC.
 
 ### 5.5 End of a reception
 

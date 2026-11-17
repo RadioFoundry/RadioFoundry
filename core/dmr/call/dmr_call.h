@@ -35,6 +35,7 @@
 #ifndef DMR_CALL_TX_LISTEN
 #define DMR_CALL_TX_LISTEN		1
 #endif
+#define DMR_CALL_RC_CONFIRM_MS		1000	// a second reverse channel cease within this stops our over
 #define DMR_CALL_TX_DROP_MS		240	// listening, no repeater burst this long during our over: it dropped
 #define DMR_CALL_TX_START_DROP_MS	540	// the same before our first burst: the modem's search for the slot gets two tries
 #define DMR_CALL_TX_HEADERS		3	// voice LC headers before burst A
@@ -128,6 +129,9 @@ typedef struct {
 	// DMR_CALL_PERMIT_MAX_MS, then keys. Each hold counts in view.permit_seq: the tone's cue. 0 = keys at once
 	uint16_t permit_hold_ms;
 	bool (*permit_busy)(void);	// NULL = the minimum alone
+	// Receive both slots through a repeater (rmo): a trunked control channel (CONFIG_DMR_TRUNK). The stack still
+	// takes calls on ts only; the other slot reaches the RX tap (dmr_call_set_rx_tap)
+	bool both_slots;
 } dmr_call_config_t;
 
 // Caller info for the UI
@@ -191,6 +195,7 @@ typedef enum {
 	DMR_TX_ERR_REJECTED,		// the modem refused (tx_begin false or tx_rejected)
 	DMR_TX_ERR_TIMEOUT,		// TX time-out ended the transmission
 	DMR_TX_ERR_STALLED,		// the modem took no burst for DMR_CALL_TX_STALL_MS (no slot timing)
+	DMR_TX_ERR_CEASED,		// the system stopped the over with the reverse channel
 } dmr_tx_error_t;
 
 typedef struct {
@@ -285,6 +290,13 @@ typedef struct {
 	uint32_t rx_sfr_direct;		// SFR user, repeat only: bursts of the talker's own copy dropped
 	uint32_t rx_sfr_held;		// SFR user, dual-path RX: bursts held for the other copy (a frame's FEC failed)
 	uint32_t rx_sfr_fixed;		// ... frames taken from the other copy
+	uint32_t rx_end_term;		// received calls ended by their terminator
+	uint32_t rx_end_sync;		// ... by the modem losing the channel
+	uint32_t rx_end_fade;		// ... by no burst on the call for the fade time
+	uint32_t rc_good;		// reverse channel commands heard while we transmitted (DMR_EV_RC, CRC good)
+	uint32_t rc_bad;		// ... CRC failed (or a null fragment)
+	uint32_t rc_ceased;		// overs the reverse channel stopped (DMR_TX_ERR_CEASED)
+	uint8_t rc_last;		// the last command heard (DMR_RC_*)
 } dmr_call_stats_t;
 void dmr_call_get_stats(dmr_call_stats_t *out);
 // The talker alias our calls send now ("" = none: off for the channel, no callsign, or built without it)
@@ -331,5 +343,19 @@ typedef struct {
 bool dmr_call_data_tx(const dmr_data_source_t *src);
 // A list is being sent (or its repeater woken)
 bool dmr_call_data_busy(void);
+
+// The RX tap (a trunked system, CONFIG_DMR_TRUNK): every burst heard, either slot, after the color code filter and
+// before the slot filter, never while we transmit, from dmr_call_poll(). True takes the burst: the stack doesn't look at
+// it further (control channel CSBKs aren't calls or data for the data service). NULL = no tap
+typedef bool (*dmr_rx_tap_fn)(const dmr_burst_t *b, uint32_t now_ms, void *ctx);
+void dmr_call_set_rx_tap(dmr_rx_tap_fn fn, void *ctx);
+// Slot boundaries the modem has reported since the stack started (DMR_EV_SLOT_TICK), and the slot of the last one
+// (1, 2, 0 unknown). A trunked system paces its slot work by them
+uint32_t dmr_call_ticks(int8_t *ts);
+// Tick n's (a dmr_call_ticks count) slot (0: unknown) and DMR_TICK_* flags; 0 and ts 0 once it is out of the last few
+uint8_t dmr_call_tick_at(uint32_t n, int8_t *ts);
+// CACH short LCs with a good CRC-8 (B.3.7) since boot, which a count newer than the caller's last says has come; *slc
+// the latest (28 bits), *bad those with a bad CRC. Only from modems that report them (DMR_EV_SHORT_LC)
+uint32_t dmr_call_short_lc(uint32_t *slc, uint32_t *bad);
 
 #endif

@@ -114,6 +114,11 @@ below are for an STM32F4 radio.
 | `CONFIG_DMR_SIGNALING` | = DMR | CSBK signaling: call alert and radio check, answered and sent |
 | `CONFIG_DMR_EMERGENCY` | = DMR | DMR emergency: the alarm CSBK, the emergency call with hot mic, the alert heard (`spec/dmr-emergency.md`) |
 | `CONFIG_DMR_ROAMING` | = DMR | DMR repeater roaming: per-zone roaming between repeater sites with the same talkgroup, chosen by base station sync with our color code and signal, passive (an optional wake probe sends a standard BS_Dwn_Act); Tools > Roaming, the Home chip (`docs/spec/dmr-roaming.md`). About 1 KB RAM |
+| `CONFIG_DMR_TRUNK` | = DMR | DMR Tier III trunking, the mobile station side (`docs/spec/dmr-trunking.md`): trunked systems and channels from the codeplug, the control channel receiver, calls followed to their payload channels. Off: a trunked channel is parked (`docs/spec/channel-modes.md` 6) |
+| `CONFIG_DMR_TRUNK_TX` | = DMR_TRUNK | Tier III access: registration, call requests, answers to the control channel and ending a call (`dmr-trunking.md`). Off: trunking only listens |
+| `CONFIG_DMR_TRUNK_GW` | = DMR_TRUNK_TX | Tier III calls through the PSTN, PABX, line and dispatcher gateways: the dialed digits go up with a voice, short data or packet data request, and the caller's number a gateway sends is kept (`dmr-trunking.md` 7.6). Off: a call to one of them is refused, and a caller's number is dropped |
+| `CONFIG_DMR_TRUNK_SUPL` | = DMR_TRUNK_TX | Tier III supplementary user data: data offered with a call request, and the last heard from the system, staged and read over the debug link (`dmr-trunking.md` 7.6). About 300 B RAM. Off: none is offered, and what the system sends is dropped unanswered |
+| `CONFIG_VOICE_CAPTURE` | n | Voice capture for receive tests: the next 32 voice frames received, raw as on air, read over the debug link (RADIO op 41, the `voice_cap` view; [debuglink.md](spec/debuglink.md)). About 330 B RAM. Needs DMR |
 | `CONFIG_DMR_IP_GATEWAY` | = DMR and (USB_NETWORK or NET_PPP) | IP over DMR packet data through a network link to the host, the USB network adapter or PPP on the serial host port, carried by the data service (`docs/spec/usb-network.md`, `docs/spec/ppp.md`). Needs one of the two links |
 | `CONFIG_ZONE_SHARE` | = DMR | zone and channel sharing over DMR data: send a zone or one channel to a contact or talkgroup, and a received one offered for import as receive-only channels (UDP port 4100, `docs/spec/zone-share.md`). Received shares are offered by default (Settings > Connections > Accept zone shares) and imported only when the user says so. About 12 KB flash and 4 KB RAM, with its screens and the import (one board's build, measured on and off); it also builds the TX queue |
 | `CONFIG_DMR_UDP_COMPRESS` | = DMR | compressed UDP/IPv4 headers (SAP 3, TS 102 361-3 5.6) on transmit: UDP packets go with a 5-9 octet header instead of 28 where the setting allows (default: ports outside 4000-4099; `docs/spec/dmr-data.md` 11) |
@@ -187,8 +192,8 @@ below are for an STM32F4 radio.
 Derived (not set by hand): `CONFIG_DMR_DATA_CORE`, the shared packet data / CSBK code, on when any data feature is;
 `CONFIG_DMR_AIR_QUEUE`, the data service's TX queue (`docs/spec/dmr-data.md` 12.6), on with `CONFIG_DMR_IP_GATEWAY` or
 `CONFIG_ZONE_SHARE`. `CONFIG_ZONE_SHARE_MODES`: zone sharing carries channels of a kind and their systems
-(`docs/spec/zone-share.md` 4.2), on with `CONFIG_ZONE_SHARE` and `CONFIG_P25`. `CONFIG_LANG_ANY` (`core/config.h`): on when any `CONFIG_LANG_*` is, the translation lookup and the
-fonts' Latin-1 glyphs.
+(`docs/spec/zone-share.md` 4.2), on with `CONFIG_ZONE_SHARE` and `CONFIG_P25` or `CONFIG_DMR_TRUNK`. `CONFIG_LANG_ANY`
+(`core/config.h`): on when any `CONFIG_LANG_*` is, the translation lookup and the fonts' Latin-1 glyphs.
 
 ## Values
 

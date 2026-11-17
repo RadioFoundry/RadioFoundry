@@ -190,6 +190,11 @@ msgid "Imported "
 msgstr "已导入 "
 
 #: core/ui/ui_app.c
+msgctxt "SHARE_BANNER_SYSTEM_MISSING"
+msgid " trunked: system not set up"
+msgstr " 个集群信道：系统未设置"
+
+#: core/ui/ui_app.c
 msgctxt "SHARE_BANNER_CHANNEL_RX_ONLY"
 msgid " channel, receive only"
 msgstr " 个信道，仅接收"
@@ -643,6 +648,16 @@ msgstr "电池 "
 msgctxt "BATT_PART_CHARGE_SOON"
 msgid "%: charge soon"
 msgstr "%：请尽快充电"
+
+#: core/ui/ui_app.c
+msgctxt "TRUNK_TOAST_BACK_ON"
+msgid "Back on "
+msgstr "已回到 "
+
+#: core/ui/ui_app.c
+msgctxt "TRUNK_TOAST_POLL_NO_DATA"
+msgid "Poll: no short data"
+msgstr "请求：无数据"
 
 #: core/ui/ui_app.c
 msgctxt "ZONE_TOAST_WAS_DELETED"
@@ -1255,6 +1270,11 @@ msgid "Create contact "
 msgstr "新建联系人 "
 
 #: core/ui/ui_find.c
+msgctxt "TRUNK_ROW_PHONE_CALL"
+msgid "Phone call "
+msgstr "电话 "
+
+#: core/ui/ui_find.c
 msgctxt "FIND_CHIP_MENU"
 msgid "Menu"
 msgstr "菜单"
@@ -1480,6 +1500,11 @@ msgid "Make channel default"
 msgstr "设为默认信道"
 
 #: core/ui/ui_menus.c
+msgctxt "TRUNK_ROW_POLL_SHORT_DATA"
+msgid "Poll short data"
+msgstr "请求数据"
+
+#: core/ui/ui_menus.c
 msgctxt "WHY_MESSAGES_NOT_IN_BUILD"
 msgid "Messages: not in this build"
 msgstr "消息：本版本无"
@@ -1518,6 +1543,11 @@ msgstr "已在联系人中"
 msgctxt "ACT_TOAST_ADD_CONTACTS_IN_QDMR"
 msgid "Add contacts in qdmr"
 msgstr "在 qdmr 中添加联系人"
+
+#: core/ui/ui_menus.c
+msgctxt "TRUNK_TOAST_POLLING"
+msgid "Polling "
+msgstr "正在请求 "
 
 #: core/ui/ui_menus.c
 msgctxt "ACT_HINT"
@@ -1754,6 +1784,11 @@ msgctxt "ZONE_EMPTY_NO_ZONES"
 msgid "No zones"
 msgstr "无区域"
 
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "TRUNK_WHY_SYSTEM_NOT_SET_UP"
+msgid "System not set up"
+msgstr "系统未设置"
+
 #: core/ui/ui_menus.c
 msgctxt "TOAST_CANT_SAVE_NOW"
 msgid "Couldn't save now: try again"
@@ -1890,6 +1925,16 @@ msgid " not in band"
 msgstr " 不在频段"
 
 #: core/ui/ui_menus.c
+msgctxt "SHARE_BODY_CHANNEL_NO_SYSTEM"
+msgid " trunked channel unavailable: system not set up"
+msgstr " 个集群信道不可用：系统未设置"
+
+#: core/ui/ui_menus.c
+msgctxt "SHARE_BODY_CHANNELS_NO_SYSTEM"
+msgid " trunked channels unavailable: system not set up"
+msgstr " 个集群信道不可用：系统未设置"
+
+#: core/ui/ui_menus.c
 msgctxt "SHARE_TITLE_CHANNEL_RECEIVED"
 msgid "{Channel Share Received ⤓|Ch Share Received ⤓|Ch Received ⤓|Ch Received}"
 msgstr "{收到信道共享 ⤓|收到信道共享 ⤓|收到信道 ⤓|收到信道}"
@@ -1908,6 +1953,11 @@ msgstr "无待处理共享"
 msgctxt "SHARE_CHIP_NOT_IN_BAND"
 msgid "{Not in band|Out}"
 msgstr "{不在频段|超出}"
+
+#: core/ui/ui_menus.c
+msgctxt "SHARE_VALUE_NO_SYSTEM"
+msgid "{System not set up|No system}"
+msgstr "{系统未设置|无系统}"
 
 #: core/ui/ui_menus.c
 msgctxt "SHARE_HINT_PREVIEW"
@@ -4265,6 +4315,11 @@ msgid "TX time-out reached"
 msgstr "已达发射超时"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_WHY_SYSTEM_STOPPED"
+msgid "System stopped TX"
+msgstr "系统已停止发射"
+
+#: core/ui/ui_screens.c
 msgctxt "DENY_WHY_NO_TX_FREQ"
 msgid "No TX frequency set"
 msgstr "未设发射频率"
@@ -4380,6 +4435,11 @@ msgid "Pick a user channel to talk"
 msgstr "请选用户信道通话"
 
 #: core/ui/ui_screens.c
+msgctxt "TRUNK_WORD_PHONE_LINE"
+msgid "Phone line"
+msgstr "电话"
+
+#: core/ui/ui_screens.c
 msgctxt "CALL_VALUE_PRIVATE_TO_YOU"
 msgid "Private to you"
 msgstr "发给你的个呼"
@@ -4408,6 +4468,41 @@ msgstr "单频中继"
 msgctxt "HOME_STATE_DMR_MODEM_OFF"
 msgid "DMR modem off"
 msgstr "DMR 调制解调器关"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_FALLBACK"
+msgid "Fallback"
+msgstr "备用信道"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_SEARCHING"
+msgid "Searching"
+msgstr "搜索中"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_IN_CALL"
+msgid "In call"
+msgstr "通话中"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_REFUSED"
+msgid "Refused"
+msgstr "已拒绝"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_REGISTERING"
+msgid "Registering"
+msgstr "正在注册"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_READY"
+msgid "Ready"
+msgstr "就绪"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_WORD_SYSTEM"
+msgid "System"
+msgstr "系统"
 
 #: core/ui/ui_screens.c
 msgctxt "HOME_CHIP_ROAM_LOCK"

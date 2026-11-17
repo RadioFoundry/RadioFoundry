@@ -40,12 +40,35 @@ RIG = {
     "wattmeter-mhz": (str, "MHz, comma separated: where the wattmeter check keys every power level (test_fm_tx "
                            "--manual; default 445,146, the middle of where hams transmit on 70 cm and 2 m); each "
                            "must be in tx_mhz", True),
+    "t3-rx-mhz": (float, "MHz: a Tier III site's control channel as the radio receives it (test_t3_site; the site is "
+                         "the rig's own, always on the air)", False),
+    "t3-tx-mhz": (float, "MHz: that control channel's inbound frequency, where the radio transmits (test_t3_site)",
+                  True),
+    "t3-payload-tx-mhz": (str, "MHz, comma separated: the Tier III site's payload channels' inbound frequencies, "
+                                "where the radio transmits once granted, when they aren't the control channel's "
+                                "(test_t3_site); each must be in tx_mhz", True),
+    "t3-lcn": (int, "the Tier III control channel's logical channel number", False),
+    "t3-system": (str, "the Tier III site's identity MODEL,NET,SITE (model 0 tiny, 1 small, 2 large, 3 huge)", False),
+    "t3-cc": (int, "the Tier III site's color code", False),
+    "t3-tg": (int, "the talkgroup test_t3_site registers with and calls", False),
+    "t3-own-id": (int, "the DMR ID the radio uses on the Tier III site (test_t3_site; default: its codeplug ID)",
+                  False),
+    "t3-peer": (int, "a second radio ID the Tier III site grants individual calls to (test_t3_private_call)", False),
+    "t3-broadcast-tg": (int, "a talkgroup the Tier III site takes broadcast calls to (test_t3_broadcast)",
+                        False),
+    "t3-tg-list": (str, "talkgroups, comma separated, the radio subscribes to after --t3-tg as a list "
+                        "(test_t3_reg_list)", False),
+    "t3-call-cmd": (str, "a shell command that has another radio on the Tier III site make one group call to --t3-tg "
+                         "carrying speech (test_t3_follow_speech); it returns once the call is asked for", False),
+    "t3-cease-cmd": (str, "a shell command that has the Tier III site end the radio's over on --t3-tg with a reverse "
+                          "channel cease, e.g. another radio's transmit interrupt (test_t3_cease); it returns once "
+                          "that is asked for", False),
     "tx-mhz": (str, "MHz, comma separated: the frequencies this rig may transmit on (the radio and the bench); "
                     "--allow-rf needs it", False),
 }
 # the transmit frequencies among the other options (None when not given)
 TX_OPTIONS = ("dmr-freq", "fm-mhz", "aprs-test-mhz", "sfr-freq", "roam-rx", "roam-tx", "split-out-mhz",
-              "split-tx-mhz", "outbound-mhz", "am-mhz", "vhf-fm-mhz", "repeater-in-mhz")
+              "split-tx-mhz", "outbound-mhz", "am-mhz", "vhf-fm-mhz", "repeater-in-mhz", "t3-tx-mhz")
 
 
 def add_options(g):
@@ -147,10 +170,11 @@ def configure(config):
         if given and not allowed:
             raise pytest.UsageError("--allow-rf: give the frequencies this rig may transmit on (--tx-mhz, "
                                     f"${env_name('tx-mhz')} or tx_mhz in the rig's file)")
+        given.update({f"t3-payload-tx-mhz {f:g}": f for f in t3_payload_tx_mhz(config)})
         bad = {n: f for n, f in given.items() if not tx_allowed(config, f)}
         if bad:
             raise pytest.UsageError("transmit frequencies not in tx_mhz: "
-                                    + ", ".join(f"--{n} {f:g}" for n, f in bad.items()))
+                                    + ", ".join(f"--{n}" if " " in n else f"--{n} {f:g}" for n, f in bad.items()))
 
 
 def tx_allowed(config, mhz):
@@ -169,14 +193,25 @@ def wattmeter_mhz(config=None):
     return [float(x) for x in str(v).replace(",", " ").split()] if v else list(WATTMETER_MHZ)
 
 
+def t3_payload_tx_mhz(config=None):
+    """The Tier III payload channels' transmit frequencies (MHz): --t3-payload-tx-mhz, else none"""
+    config = config or CONFIG
+    v = getattr(config.option, key("t3-payload-tx-mhz"), None) if config is not None else None
+    try:
+        return [float(x) for x in str(v).replace(",", " ").split()] if v else []
+    except ValueError:
+        raise pytest.UsageError(f"--t3-payload-tx-mhz {v!r}: MHz, comma separated")
+
+
 def run_tx_mhz(config=None):
     """The run's own transmit frequencies (MHz, sorted, each once): the TX_OPTIONS given, with --allow-rf (they are
-    in tx_mhz, configure() checked), and with --manual the wattmeter check's that are in tx_mhz; none without
+    in tx_mhz, configure() checked), the Tier III payload channels', and with --manual the wattmeter check's that are in tx_mhz; none without
     --allow-rf. The firmware's test TX limit allows only these (Radio.tx_gate)"""
     config = config or CONFIG
     if config is None or not config.getoption("--allow-rf"):
         return []
     out = {round(float(f), 6) for f in (getattr(config.option, key(n), None) for n in TX_OPTIONS) if f is not None}
+    out |= {round(f, 6) for f in t3_payload_tx_mhz(config)}
     if config.getoption("--manual"):
         out |= {round(f, 6) for f in wattmeter_mhz(config) if tx_allowed(config, f)}
     return sorted(out)

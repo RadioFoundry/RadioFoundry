@@ -146,6 +146,9 @@ static const hrc_chip_t chip = {
 	.voice_lcss = voice_lcss,
 	.set_mic_gain = set_mic_gain,
 	.dmr_enter = dmr_enter,
+	.slc_rx_addr = 0x2B,	// RX RAM 0x2B-0x2F (hrc6000-registers.md 2.2)
+	.tap_addr = { 0x30, 0x60 },	// RX RAM 264bit_info_0 / _1, 288 bits each, the CACH first (hrc6000-registers.md 2.2)
+	.tap_field = 3,
 };
 
 void hrc6000_attach(hrc_t *dev, const hrc_bus_t *bus)

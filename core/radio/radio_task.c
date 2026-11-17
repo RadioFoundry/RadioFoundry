@@ -7,6 +7,7 @@
 #include <string.h>
 #include "radio/radio.h"
 #include "radio/radio_sm.h"
+#include "radio/radio_trunk.h"
 #include "hal_time.h"
 #include "config.h"
 #if CONFIG_HOTSPOT
@@ -53,6 +54,9 @@ static radio_settings_t shared_settings;	// the published copy, under view_lock
 // settings are the ones in force soon, so radio_get_settings answers with them
 static uint32_t settings_sent, settings_taken, settings_published;
 static radio_view_t shared_view;	// the published copy, under view_lock
+#if CONFIG_DMR_TRUNK
+static radio_t3_view_t shared_t3;	// ... and the whole trunking view (radio_get_t3_view)
+#endif
 static volatile bool dtmf_ready;	// shared_view.dtmf_ready, read without the lock (radio_dtmf_ready)
 #if CONFIG_DUAL_WATCH
 static channel_t shared_vfo[2];		// the VFOs' settings (radio_get_vfo), under view_lock
@@ -110,6 +114,10 @@ static void hs_post(const radio_req_t *req, bool must)
 static void publish(void)
 {
 	xSemaphoreTake(view_lock, portMAX_DELAY);
+#if CONFIG_DMR_TRUNK
+	radio_sm_t3_brief(&sm);
+	shared_t3 = radio_t3v;
+#endif
 	shared_view = sm.view;
 	dtmf_ready = sm.view.dtmf_ready;
 	radio_sm_shown_view(&sm, &shared_view);	// a roaming survey visit: the screens keep the site it left
@@ -234,6 +242,10 @@ void radio_core_start(void)
 #if CONFIG_DMR
 	dmr_call_set_wake(wake);
 #endif
+#if CONFIG_DMR_TRUNK
+	radio_sm_t3_brief(&sm);
+	shared_t3 = radio_t3v;
+#endif
 	shared_view = sm.view;
 	shared_serial = sm.serial;
 	shared_settings = sm.set;
@@ -256,6 +268,19 @@ void radio_get_view(radio_view_t *v)
 	*v = shared_view;
 	xSemaphoreGive(view_lock);
 }
+
+#if CONFIG_DMR_TRUNK
+void radio_with_t3_view(void (*fn)(const radio_t3_view_t *x, void *ctx), void *ctx)
+{
+	if (view_lock == NULL) {
+		fn(&shared_t3, ctx);	// all zero: the radio task hasn't started
+		return;
+	}
+	xSemaphoreTake(view_lock, portMAX_DELAY);
+	fn(&shared_t3, ctx);
+	xSemaphoreGive(view_lock);
+}
+#endif
 
 radio_state_t radio_get_state(void)
 {
@@ -424,6 +449,18 @@ void radio_req_beep(uint8_t b) { post(RREQ_BEEP, b, 0); }
 void radio_req_beep_after(uint8_t b, uint32_t delay_ms) { post_pair(RREQ_BEEP, b, delay_ms, 0); }
 void radio_req_vibrate(uint8_t pattern) { post(RREQ_VIBRATE, pattern, 0); }
 void radio_req_roam(uint8_t cmd) { post(RREQ_ROAM, cmd, 0); }
+void radio_req_t3(uint8_t cmd) { post(RREQ_T3, cmd, 0); }
+void radio_req_t3_poll(uint32_t dst) { post_pair(RREQ_T3_POLL, 0, dst, 0); }
+void radio_req_t3_dial(const char *digits)
+{
+#if CONFIG_DMR_TRUNK_GW
+	uint32_t w[2];
+	radio_t3_dial_args(digits, w);
+	post_pair(RREQ_T3_DIAL, (int32_t)w[0], w[1], 0);
+#else
+	(void)digits;
+#endif
+}
 // A lost release would leave the burst keyed until the time-out
 void radio_req_tone_burst(bool on, uint32_t max_ms) { post_pair(RREQ_TONE_BURST, on, max_ms, pdMS_TO_TICKS(50)); }
 void radio_req_tone_burst_key(bool down) { post(RREQ_TONE_BURST_KEY, down, pdMS_TO_TICKS(50)); }

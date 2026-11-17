@@ -62,6 +62,9 @@ uint8_t dmrDataServiceIpResult(void) { return DMR_REQ_OK; }
 int dmrDataServiceLrrpTriggerCount(void) { return 0; }
 const char *dmrDataServiceTxKindName(uint8_t kind) { (void)kind; return "other"; }
 void dmrDataServiceSetTxSpacing(uint16_t guardMs, bool chain) { (void)guardMs; (void)chain; }
+static uint8_t cnfRate = DMR_TYPE_RATE_3_4;
+void dmrDataServiceSetIpConfirmedRate(uint8_t dataType) { cnfRate = dataType; }
+uint8_t dmrDataServiceIpConfirmedRate(void) { return cnfRate; }
 
 // The codeplug's settings area: the gateway key, a write that can fail (a CPS session holds the flash)
 static struct {
@@ -236,8 +239,24 @@ static void test_ip_send(void)
 	CHECK(cmd(r, DL_REQ_MAX) == 1 && out[0] == DL_ST_OK && air.calls == 6 && air.length == 8 + DL_REQ_MAX - 14);
 }
 
+// IP_CONFIRMED_RATE: 0 rate 3/4, 1 rate 1/2, 2 rate 1; anything else or nothing refused, the rate left
+static void test_ip_confirmed_rate(void)
+{
+	uint8_t r[2] = { DL_DATA_OP_IP_CONFIRMED_RATE, 1 };
+
+	CHECK(cmd(r, 2) == 1 && out[0] == DL_ST_OK && cnfRate == DMR_TYPE_RATE_1_2);
+	r[1] = 2;
+	CHECK(cmd(r, 2) == 1 && out[0] == DL_ST_OK && cnfRate == DMR_TYPE_RATE_1);
+	r[1] = 3;
+	CHECK(cmd(r, 2) == 1 && out[0] == DL_ST_BAD_ARG && cnfRate == DMR_TYPE_RATE_1);
+	CHECK(cmd(r, 1) == 1 && out[0] == DL_ST_BAD_ARG && cnfRate == DMR_TYPE_RATE_1);
+	r[1] = 0;
+	CHECK(cmd(r, 2) == 1 && out[0] == DL_ST_OK && cnfRate == DMR_TYPE_RATE_3_4);
+}
+
 int main(void)
 {
+	test_ip_confirmed_rate();
 	test_ip_settings();
 	test_ip_send();
 	printf("# debuglinkDmrDataTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");

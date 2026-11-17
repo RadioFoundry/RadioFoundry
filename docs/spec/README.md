@@ -28,6 +28,7 @@ Past bugs, by subsystem: [gotchas.md](gotchas.md). Contributors read [docs/dev](
 | [zone-share.md](zone-share.md) | Zone and channel sharing over DMR data: the record, fragments, offers, the import |
 | [dmr-emergency.md](dmr-emergency.md) | DMR emergency |
 | [dmr-roaming.md](dmr-roaming.md) | DMR repeater roaming |
+| [dmr-trunking.md](dmr-trunking.md) | DMR Tier III trunking, mobile station |
 | [sfr.md](sfr.md) | Single frequency repeater |
 | [split-duplex.md](split-duplex.md) | Two radios as one duplex MMDVM modem |
 

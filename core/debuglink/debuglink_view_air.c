@@ -36,6 +36,8 @@ void debuglink_view_air(dl_text_t *t)
 	dmrDataServiceGetStats(&d);
 	dl_text(t, "data.tx_guarded=%u\ndata.tx_guard_ms=%u\ndata.tx_chain=%u\n", (unsigned)d.txGuarded,
 		dmrDataServiceTxGuardMs(), dmrDataServiceTxChain());
+	dl_text(t, "data.ip_cnf_rate=%s\n", dmrDataServiceIpConfirmedRate() == DMR_TYPE_RATE_1_2 ? "1/2" :
+		dmrDataServiceIpConfirmedRate() == DMR_TYPE_RATE_1 ? "1" : "3/4");
 	// Transmissions that carried more than one IP packet, and the packets after the first in them
 	dl_text(t, "ip.chains=%u\nip.chained=%u\n", (unsigned)d.ipChains, (unsigned)d.ipChained);
 #endif

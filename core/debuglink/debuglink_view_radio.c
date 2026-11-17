@@ -375,6 +375,17 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 #else
 		return DL_ST_UNAVAILABLE;
 #endif
+	case DL_OP_VOICE_CAPTURE:
+		// u8: capture the next n voice frames received (0 stops), the voice_cap view shows them
+		if (len < 1) {
+			return DL_ST_BAD_ARG;
+		}
+#if CONFIG_VOICE_CAPTURE
+		ambeVoiceCaptureArm(a[0]);
+		return DL_ST_OK;
+#else
+		return DL_ST_UNAVAILABLE;
+#endif
 	case DL_OP_DMR_FIELDS:
 		// mode (0xFF = keep, else radio_mode_t), color code (0xFF = keep), timeslot (0 = keep): on a channel they are
 		// temporary changes, in the VFO the VFO's own settings. The radio core refuses what it can't do

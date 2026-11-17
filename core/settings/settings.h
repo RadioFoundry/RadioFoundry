@@ -237,6 +237,13 @@ typedef struct {
 	// was reserved9: 0 in an older record). A record whose count isn't the board's has those levels reset at load
 	// (settings-store.md 3): a level index names another power when a board's levels change
 	uint8_t power_levels;
+	// A Tier III stun kept across a restart (dmr-trunking.md 7.9; appended: an older record reads none):
+	// SETTINGS_T3_STUN set, the codeplug system's slot in bits 4-6, its network's hash in bits 0-3
+	uint8_t t3_stun;
+	// A Tier III kill kept across a restart (dmr-trunking.md 7.9; appended: an older record reads none):
+	// SETTINGS_T3_KILLED set, no DMR at all until a factory reset
+	uint8_t t3_kill;
+	uint8_t reserved10[2];		// 0
 } settings_t;
 
 // Pages: settings_t is stored as records of SETTINGS_PAGE_BYTES each (settings-store.md 2.1). Only the pages its size
@@ -250,6 +257,8 @@ typedef struct {
 // 2); app.c keeps it equal to codeplug_acceptance(), which a codeplug written by a CPS or TFTP drops
 #define SETTINGS_CP_ACCEPTED		0x01u
 #define SETTINGS_CP_RX_EXT		0x02u	// receive past the band table is on (not about the codeplug: the free bit here)
+#define SETTINGS_T3_STUN		0x80u	// t3_stun: a stun is kept (bits 0-6 say on which system)
+#define SETTINGS_T3_KILLED		0x01u	// t3_kill: killed
 
 #define SETTINGS_ZONE_JRN_NONE		0u	// zone_jrn_kind
 #define SETTINGS_ZONE_JRN_ADD		1u

@@ -6,6 +6,7 @@
 #include <string.h>
 #include "hrc6000_dmr.h"
 #include "config.h"
+#include "dmr/fec/dmrFec.h"
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
 #include "hrc6000_bs.h"	// split duplex TX half: the BS outbound takes the chip over (e->bs)
 #define BS_HOOK(call)	do { if (e->bs != NULL) { call; return; } } while (0)
@@ -27,6 +28,8 @@
 #define R_TX_TYPE	0x50
 #define R_RX_TYPE	0x51
 #define R_RX_CC		0x52
+#define R_RC_HI		0x53	// RC info bits 10-3
+#define R_RC_LO		0x54	// bits 7-6: the voice EMB's LCSS; 2-0: RC info bits 2-0
 #define R_SYNC_TYPE	0x5F
 #define R_INT_FLAGS	0x82
 #define R_INT_CLEAR	0x83
@@ -305,9 +308,52 @@ static void push(hrc6000_dmr_t *e, uint8_t kind, int8_t ts, uint32_t arg)
 	if (s != NULL) {
 		s->ev.kind = kind;
 		s->ev.ts = ts;
+		s->ev.flags = 0;
 		s->ev.arg = arg;
 		s->ev.burst = NULL;
 		ev_commit(e);
+	}
+}
+
+// A slot tick, with the AT bit of the slot's last CACH when one was read in the last two frames
+static void push_tick(hrc6000_dmr_t *e, int8_t ts)
+{
+	hrc6000_dmr_evslot_t *s = ev_begin(e);
+	if (s == NULL) {
+		return;
+	}
+	s->ev.kind = DMR_EV_SLOT_TICK;
+	s->ev.ts = ts;
+	s->ev.flags = 0;
+	if ((ts == 1 || ts == 2) && e->at_tick[ts - 1] != 0 && (uint32_t)(e->tick - e->at_tick[ts - 1]) <= 4u) {
+		s->ev.flags = (uint8_t)(DMR_TICK_AT_KNOWN | (e->at_busy[ts - 1] ? DMR_TICK_AT_BUSY : 0u));
+	}
+	s->ev.arg = e->tick;
+	s->ev.burst = NULL;
+	ev_commit(e);
+}
+
+// The CACH short LC (ETSI TS 102 361-1 7.1.4) while both slots of a BS's signal are received (a trunked control
+// channel): the chip assembles it from four CACHs; a change is a new one. The stack checks the CRC
+static void slc_read(hrc6000_dmr_t *e)
+{
+	uint8_t b[5];
+	if (e->dev->chip->slc_rx_addr == 0 || !hrc_read_burst(e->dev, HRC_PAGE_DATA, e->dev->chip->slc_rx_addr, b, 5) ||
+	    memcmp(b, e->slc_last, 5) == 0) {
+		return;
+	}
+	memcpy(e->slc_last, b, 5);
+	uint64_t v = ((uint64_t)b[0] << 32) | ((uint64_t)b[1] << 24) | ((uint64_t)b[2] << 16) | ((uint64_t)b[3] << 8) | b[4];
+	v >>= 4;	// the low 4 bits of the last byte are unused
+	hrc6000_dmr_evslot_t *s = ev_begin(e);
+	if (s != NULL) {
+		s->ev.kind = DMR_EV_SHORT_LC;
+		s->ev.ts = 0;
+		s->ev.flags = (uint8_t)v;
+		s->ev.arg = (uint32_t)(v >> 8) & 0x0FFFFFFFu;
+		s->ev.burst = NULL;
+		ev_commit(e);
+		e->st.slc_reads++;
 	}
 }
 
@@ -355,6 +401,8 @@ static void forget_slots(hrc6000_dmr_t *e)
 	e->own_ts = 0;
 	e->tc_agree = 0;
 	e->tc_disagree = 0;
+	e->at_tick[0] = 0;
+	e->at_tick[1] = 0;
 }
 
 static void do_restart(hrc6000_dmr_t *e, uint8_t why)
@@ -521,6 +569,7 @@ static void tx_finish(hrc6000_dmr_t *e)
 	}
 	e->tx_state = TXS_IDLE;
 	e->tx_listen = false;
+	e->tap_reports = e->st.rc_reports;	// a report after the last tap read is not the next transmission's
 	e->tx_end_req = false;
 	e->tx_abort_req = false;
 	e->st.tx_done++;
@@ -582,6 +631,52 @@ static void tx_end_check(hrc6000_dmr_t *e, uint8_t r42)
 	}
 }
 
+// The slot just listened to, for a BS's outbound RC burst: EMB + RC in place of the sync (ETSI TS 102 361-1 6.4.2).
+// The chip reports nothing for it, but its receive tap (tap_addr) holds the burst with that field where a voice burst's
+// sync or EMB goes. Read the field and the voice bytes after it, which change per burst: an area unchanged since its
+// last read holds the same burst, or a stale one, and is skipped. One slot is listened to between two reads, so an RC
+// the chip reported since (rc_report: a class 3 or burst F) is this burst's: not counted twice
+#define TAP_READ_LEN	12u	// the field (6) and as many voice bytes
+static void rc_tap_read(hrc6000_dmr_t *e)
+{
+	const hrc_chip_t *chip = e->dev->chip;
+	bool reported = e->st.rc_reports != e->tap_reports;
+	e->tap_reports = e->st.rc_reports;
+	if (e->cc_filter < 0) {
+		return;
+	}
+	for (int a = 0; a < 2; a++) {
+		uint8_t raw[TAP_READ_LEN];
+		uint8_t addr = chip->tap_addr[a];
+		if (addr == 0u || !hrc_read_burst(e->dev, HRC_PAGE_DATA, (uint8_t)(addr + chip->tap_field), raw, TAP_READ_LEN)) {
+			continue;
+		}
+		uint32_t sum = 2166136261u;	// FNV-1a
+		for (uint8_t i = 0; i < TAP_READ_LEN; i++) {
+			sum = (sum ^ raw[i]) * 16777619u;
+		}
+		if (sum == e->tap_sum[a]) {
+			continue;
+		}
+		e->tap_sum[a] = sum;
+		e->st.rc_tap_changed++;
+		uint8_t command;
+		if (dmrFecRcFromField(raw, (uint8_t)e->cc_filter, &command) < 0 || reported) {
+			continue;
+		}
+		e->st.rc_tap++;
+		hrc6000_dmr_evslot_t *ev = ev_begin(e);
+		if (ev != NULL) {
+			ev->ev.kind = DMR_EV_RC;
+			ev->ev.ts = -1;
+			ev->ev.flags = 0;
+			ev->ev.arg = dmrFecRcInfo(command);
+			ev->ev.burst = NULL;
+			ev_commit(e);
+		}
+	}
+}
+
 static void tx_tick(hrc6000_dmr_t *e, uint8_t r42)
 {
 	uint8_t next_phase = (uint8_t)((e->tick + 1u) & 1u);
@@ -638,6 +733,9 @@ static void tx_tick(hrc6000_dmr_t *e, uint8_t r42)
 	}
 	case TXS_RUN:
 		if (next_phase == e->tx_phase) {
+			if (e->tx_listen) {
+				rc_tap_read(e);	// the slot just listened to, before ours is set up
+			}
 			tx_slot(e);
 			if (e->tx_state == TXS_ENDING) {
 				// Nothing more to send: over at this tick if the last burst's slot has gone by. Waiting for the
@@ -683,6 +781,9 @@ static void track_tc(hrc6000_dmr_t *e)
 {
 	uint8_t r52 = r(e->dev, R_RX_CC);
 	int8_t heard = (int8_t)(((r52 >> 2) & 1u) ? 2 : 1);
+	// The same CACH's AT bit (bit 3): kept for the slot its TC names, for the slot ticks (DMR_TICK_AT_*)
+	e->at_tick[heard - 1] = e->tick;
+	e->at_busy[heard - 1] = ((r52 >> 3) & 1u) != 0;
 	if (!HRC6000_DMR_TC_IS_SLOT_NOW && !e->dev->chip->tc_last_rx) {
 		heard = (int8_t)(3 - heard);	// it was the slot that ended: the one starting is the other
 	}
@@ -1278,6 +1379,7 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 	}
 	slot->ev.kind = DMR_EV_BURST_RX;
 	slot->ev.ts = b->ts;
+	slot->ev.flags = 0;
 	slot->ev.arg = tick;	// DMR_EV_BURST_RX: the slot counter of the report (never 0); the stack orders bursts by it
 	slot->ev.burst = NULL;
 	slot->dms = dms;
@@ -1288,6 +1390,34 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 // voice (burst A has no CC on air; B-F under the CC filter get the filter's) nor for unusable reports.
 // at_tick: serviced from the timeslot interrupt, before the tick advanced: the report's interrupt was not taken in its
 // slot (no edge seen), so its delay is unknown; it still belongs to the slot that ended at e->tick
+// The reverse channel heard between our bursts (ETSI TS 102 361-1 5.1.5, 6.4.2; hrc6000-registers.md 2.2): a
+// dedicated RC burst (sync class 3), or an embedded one in burst F (ETSI 6.4.2: LCSS 00, a single fragment, and PI 1;
+// the chip's PI is unreliable on voice, so not checked). The chip gives the 11 RC info bits in 0x53 / 0x54; the core
+// checks their CRC, which also drops burst F's usual null fragment
+static void rc_report(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, uint8_t r51)
+{
+	bool dedicated = s->sync_class == 3u;
+	if (!dedicated && !(s->kind == DMR_BURST_VOICE && s->voice_index == 5u)) {
+		return;
+	}
+	uint8_t hi = r(e->dev, R_RC_HI);
+	uint8_t lo = r(e->dev, R_RC_LO);
+	if (!dedicated && (lo >> 6) != 0u) {
+		return;
+	}
+	e->st.rc_reports++;
+	e->st.rc_last = (uint32_t)r51 << 16 | (uint32_t)hi << 8 | lo;
+	hrc6000_dmr_evslot_t *ev = ev_begin(e);
+	if (ev != NULL) {
+		ev->ev.kind = DMR_EV_RC;
+		ev->ev.ts = -1;
+		ev->ev.flags = dedicated ? 0u : DMR_RC_EMBEDDED;
+		ev->ev.arg = (uint32_t)hi << 3 | (lo & 7u);
+		ev->ev.burst = NULL;
+		ev_commit(e);
+	}
+}
+
 static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 {
 	uint8_t r51 = r(e->dev, R_RX_TYPE);
@@ -1306,6 +1436,9 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 	// 1-12 ms; bench 2026-10-10 on 90ce091: reports 12-22 ms after the tick)
 	bool on_time = !at_tick && e->timing && dt >= IN_STEP_MIN_US && dt < OUT_OF_STEP_US;
 	e->report_dms = (uint8_t)(at_tick || dms > 254u ? 255u : dms);
+	if (tx && e->tx_listen) {
+		rc_report(e, &s, r51);
+	}
 
 	if (s.kind == HRC6000_KIND_NONE) {
 		e->st.rx_rc++;
@@ -1358,8 +1491,12 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 	// The same burst reported again at the next timeslot interrupt (bench 2026-10-09: every voice burst came twice,
 	// both in step, 30 ms apart, so the 28 ms window let both through). A repeat: within 45 ms of the burst taken,
 	// same kind and voice number, and for data the same payload (two calls on two slots never share one). TS1 / TS2
-	// direct mode sync on different slots are two calls, not a repeat
+	// direct mode sync on different slots are two calls, not a repeat. Idle bursts with BS sync are exempt: every one
+	// carries the same bits, and a base station sends a burst in every slot, so on a carrier idle on both slots the
+	// next slot's idle looks like a repeat. Dropping them hid the carrier (a trunked call's hang of idles timed out);
+	// a repeated idle delivered costs nothing, it carries no information
 	bool same = e->report_valid && s.kind == e->last_rx_kind
+		    && !(s.kind == DMR_BURST_IDLE && s.sync == DMR_SYNC_BS)
 		    && !(s.sync != e->last_rx_sync && (s.sync == DMR_SYNC_TS1 || s.sync == DMR_SYNC_TS2))
 		    && (voice ? s.voice_index == e->last_rx_index : memcmp(nb.payload, e->last_rx_payload, nb.len) == 0);
 	if (same && (uint32_t)(t - e->t_report) < VOICE_DEDUP_US) {
@@ -1718,7 +1855,10 @@ void hrc6000_dmr_isr_timeslot(hrc6000_dmr_t *e)
 		track_tc(e);
 	}
 	uint8_t ph = (uint8_t)(e->tick & 1u);
-	push(e, DMR_EV_SLOT_TICK, e->phase_ts[ph], e->tick);
+	push_tick(e, e->phase_ts[ph]);
+	if (idle && e->lock_ts == 0 && (ctl_ended & CTL_RX) != 0 && rmo(e)) {
+		slc_read(e);
+	}
 	for (int k = 0; k < 2; k++) {	// a lone burst A whose B (one frame later) did not come
 		if (e->held[k].valid && (uint32_t)(e->tick - e->held[k].tick) > 2u) {
 			held_drop(e, &e->held[k]);
@@ -2169,6 +2309,12 @@ void hrc6000_dmr_set_embedded_lc(hrc6000_dmr_t *e, const uint8_t lc[9])
 void hrc6000_dmr_set_cc_filter(hrc6000_dmr_t *e, int8_t cc)
 {
 	lock(e);
+	// The same filter again changes nothing: a restart would drop the sync. The call layer sets the filter on every
+	// reconfigure, and a trunked call followed on the control channel's carrier then lost its voice syncs
+	if (cc == e->cc_filter) {
+		unlock(e);
+		return;
+	}
 	e->cc_filter = cc;
 	e->cc_held = false;
 	e->cc_matches = 0;
