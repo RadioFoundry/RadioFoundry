@@ -82,7 +82,7 @@ static void pitch(const mbe_est_state_t *s, i16a *nl, mbe_est_t *e)
 		return;
 	sh = bits_of((uint32_t)m) - 11;			// to 11 bits: 128 products of two fit 32 bits
 	for (int i = 0; i < MBE_EST_LP; i++)
-		nl[i] = (int16_t)(sh > 0 ? s->lp[i] >> sh : s->lp[i] << -sh);
+		nl[i] = (int16_t)(sh > 0 ? s->lp[i] >> sh : s->lp[i] * (1 << -sh));	// a multiply: no left shift of a negative
 	e0 = fxp_dot16(x, x, AC_LEN);
 	et = fxp_dot16(x - LAG_MIN, x - LAG_MIN, AC_LEN);
 	for (int lag = LAG_MIN; lag <= LAG_MAX; lag++) {
@@ -186,8 +186,8 @@ void mbe_est_frame(mbe_est_state_t *s, const int16_t pcm[MBE_FRAME_LEN], int32_t
 		int32_t w = 17695 + ((15073 * mbe_cos_i(ph)) >> 15);
 		int32_t a = comb[HALF + k], b = comb[HALF - k];
 
-		a = sh >= 0 ? a << sh : a >> -sh;
-		b = sh >= 0 ? b << sh : b >> -sh;
+		a = sh >= 0 ? a * (1 << sh) : a >> -sh;	// a multiply: a left shift of a negative value is undefined
+		b = sh >= 0 ? b * (1 << sh) : b >> -sh;
 		buf[k] = (a * w) >> 15;
 		if (k)
 			buf[FFT_LEN - k] = (b * w) >> 15;
