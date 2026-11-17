@@ -370,12 +370,15 @@ test("channel form: the mode list offers the radio's kinds; picking one makes th
 	assert.equal(work.rxOnly, true);
 });
 
-test("channel table: a channel of a kind shows its short name; the mode and fields of other modes locked", () => {
+test("channel table: a channel of a kind shows its mode, offers every mode, and locks the fields of other modes", () => {
 	const { m, conv, p25t } = sample();
 	const cols = columns("channels", m, t);
 	const col = (k) => cols.find((c) => c.key === k);
 	assert.equal(col("mode").format(conv.mode, conv), "P25");
-	assert.equal(col("mode").readOnly(conv), true);
+	assert.equal(col("mode").readOnly, false, "the kind can be changed in the table too");
+	const offered = col("mode").options(conv).map(([v]) => v);
+	assert.ok(["fm", "dmr", "k2", "k3"].every((v) => offered.includes(v)), "FM, DMR and the kinds, with no radio connected");
+	assert.equal(col("mode").get(conv), "k2");
 	assert.equal(col("timeslot").readOnly(conv), true);
 	assert.equal(col("contact").readOnly(conv), false);
 	assert.equal(col("rxHz").readOnly(conv), false);

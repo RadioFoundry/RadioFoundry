@@ -116,7 +116,9 @@ export class Grid {
 			const tr = h("tr", { "data-i": i, class: this.selected.has(r) ? "selected" : "" }, h("td", { class: "grid-check" }, check));
 			if (this.onOpen) tr.append(h("td", { class: "grid-open" }, h("button", { type: "button", class: "btn-quiet", "aria-label": this.t("editor.grid.open"), title: this.t("editor.grid.open"), onclick: () => this.onOpen(r) }, pencil())));
 			this.columns.forEach((c, j) => {
-				const cls = [c.type === "bool" ? "c-bool" : "", c.type === "number" || c.numeric ? "c-num" : "", this.locked(c, r) ? "c-ro" : ""].join(" ");
+				// locked for this row only (another mode's field, a system's frequencies): grayed as not applying
+				const na = typeof c.readOnly === "function" && c.readOnly(r);
+				const cls = [c.type === "bool" ? "c-bool" : "", c.type === "number" || c.numeric ? "c-num" : "", this.locked(c, r) ? "c-ro" : "", na ? "c-na" : ""].join(" ");
 				tr.append(h("td", { "data-col": j, tabindex: -1, class: cls.trim(), title: c.title ? c.title(r) : null }, this.text(c, r)));
 			});
 			body.append(tr);

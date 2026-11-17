@@ -61,7 +61,31 @@ const listening = (value) => !!listenBand(parseFreq(value("rxHz")));
 
 // The mode as the radio shows it: an FM channel in the air band is received in AM
 // A channel of a kind (channel-modes.md): the kind's short name
-const modeText = (r, t) => (r.kind ? kindName(r.kind) : r.mode === "dmr" ? "DMR" : listenBand(r.rxHz) ? t(`editor.mode.${listenBand(r.rxHz)}`) : "FM");
+// a kind's full name, or its short one where the text is missing
+const kindText = (id, t) => {
+	const key = `editor.mode_name.${kindRow(id)?.token}`, s = kindRow(id) ? t(key) : key;
+	return s === key ? kindName(id) : s;
+};
+const modeText = (r, t) => (r.kind ? kindText(r.kind, t) : r.mode === "dmr" ? "DMR" : listenBand(r.rxHz) ? t(`editor.mode.${listenBand(r.rxHz)}`) : "FM");
+
+// A channel's Mode, in its form and in the table: FM, DMR and the kinds offered (modes.js), the channel's own kind too.
+// The value is "fm", "dmr" or "k<kind>"
+function modeColumn(m, t, features) {
+	const kinds = offeredKinds(m, features);
+	return {
+		options: (r) => {
+			const out = [["fm", "FM"], ["dmr", "DMR"], ...kinds.map((k) => [`k${k.id}`, kindText(k.id, t)])];
+			if (r?.kind && !kinds.some((k) => k.id === r.kind)) out.push([`k${r.kind}`, kindText(r.kind, t)]);
+			return out;
+		},
+		get: (r) => (r.kind ? `k${r.kind}` : r.mode),
+		set: (r, v) => {
+			if (v === (r.kind ? `k${r.kind}` : r.mode)) return;
+			if (v.startsWith("k")) setKind(m, r, Number(v.slice(1)));
+			else setKind(m, r, 0, v);
+		},
+	};
+}
 const kindMod = (r) => (r.kind ? kindRow(r.kind)?.module ?? null : null);
 // A channel of a kind keeps the record's fields its module lists (a talk target, a unit ID); the rest of FM and DMR
 // stays as stored and is not shown
@@ -125,9 +149,9 @@ const refLabel = (v, t) => (v == null ? "" : typeof v === "number" ? t("editor.m
 
 // The columns Bulk Edit can set: every editable one but the name and number, which must differ per record. None on a
 // table whose members are edited in its own dialog (zones, RX lists): Bulk Edit isn't offered there
-export const bulkColumns = (table, m, t) => columns(table, m, t).filter((c) => c.readOnly !== true && c.key !== "name" && c.key !== "number");
+export const bulkColumns = (table, m, t, opts) => columns(table, m, t, opts).filter((c) => c.readOnly !== true && c.key !== "name" && c.key !== "number");
 
-export function columns(table, m, t) {
+export function columns(table, m, t, { features = null } = {}) {
 	const col = (key, label, type, parse, extra = {}) => ({
 		key, label: t(label), type,
 		get: (r) => r[key],
@@ -149,8 +173,7 @@ export function columns(table, m, t) {
 		return [
 			num,
 			col("name", "editor.col.name", "text", name(LIMITS.name)(t)),
-			// a channel's kind is changed in its form
-			col("mode", "editor.col.mode", "select", pick, { options: () => [["fm", "FM"], ["dmr", "DMR"]], format: (v, r) => modeText(r, t), readOnly: (r) => !!r.kind }),
+			{ ...col("mode", "editor.col.mode", "select", pick), ...modeColumn(m, t, features), readOnly: false, format: (v, r) => modeText(r, t) },
 			own(col("rxHz", "editor.col.rx", "text", (r, k, v) => {
 				// a simplex channel stays simplex: TX follows RX when they were the same
 				const was = r.rxHz;
@@ -270,13 +293,8 @@ export function channelForm(m, t, { features = null } = {}) {
 	const fm = (f) => ({ ...f, show: (r) => r.mode === "fm" && !r.kind });
 	const dmr = (f) => ({ ...f, show: (r) => r.mode === "dmr" && recordField(r, f.key) && (!f.show || f.show(r)) });
 	const sfr = (f, label, options) => dmr({ ...sfrField(...f), label: t(label), type: "select", options, show: (r) => r.sfr && !r.kind });
-	// FM, DMR and the kinds offered (modes.js), the channel's own kind too
 	const kinds = offeredKinds(m, features);
-	const modeOptions = (r) => {
-		const out = [["fm", "FM"], ["dmr", "DMR"], ...kinds.map((k) => [`k${k.id}`, t(`editor.mode_name.${k.token}`)])];
-		if (r.kind && !kinds.some((k) => k.id === r.kind)) out.push([`k${r.kind}`, kindName(r.kind)]);
-		return out;
-	};
+	const mode = modeColumn(m, t, features);
 	const kindFields = [];
 	for (const k of kinds) {
 		const mod = k.module, on = (r) => r.kind === k.id;
@@ -291,14 +309,7 @@ export function channelForm(m, t, { features = null } = {}) {
 	return [
 		{ group: t("editor.form.basic") },
 		txt("name", "editor.col.name", name(LIMITS.name)(t)),
-		sel("mode", "editor.col.mode", modeOptions, {
-			get: (r) => (r.kind ? `k${r.kind}` : r.mode),
-			set: (r, v) => {
-				if (v === (r.kind ? `k${r.kind}` : r.mode)) return;
-				if (v.startsWith("k")) setKind(m, r, Number(v.slice(1)));
-				else setKind(m, r, 0, v);
-			},
-		}),
+		sel("mode", "editor.col.mode", mode.options, { get: mode.get, set: mode.set }),
 		{ type: "note", key: "kindNote", text: (value, w) => (w?.kind && !ownFreqs(w) ? t("editor.modes.freqs_system") : "") },
 		sel("power", "editor.col.power", () => powerOptions(t)),
 		// in a receive-only band TX follows RX, locked (rxFreq)
