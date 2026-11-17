@@ -287,6 +287,25 @@ The FD6818 has no AFSK path of its own, so APRS goes through the HR_C7000 (`plat
 Measured on air (927.5 MHz, lowest power): the frames decode with a valid FCS, 3.0 kHz peak deviation at the default
 level, 2.8 dB less at the 1200 Hz tone than at the 2200 Hz tone. Receive is not yet measured on air.
 
+### 7.3 Air interface (`CONFIG_P25`, `CONFIG_NXDN`)
+
+`board.air` and `board.baseband` are the HR_C7000's provider and receive tap ([modem-hrc7000.md](modem-hrc7000.md) 10),
+under `CONFIG_DMR`. A session runs in DMR: the FD6818 keeps its DMR set-up (7.1), so the receive copy carries the 4FSK
+the modem's AF ADC sees, and a transmission keys the RF through the burst sequences of 7.1 once for its whole length.
+The radio has no VFO, so the modes run on stored channels. Checked on air at 927.5 MHz against the SDR bench, lowest
+power, the radio on its antenna:
+
+| What | Test | Result |
+| --- | --- | --- |
+| P25 transmit on a stored channel | `test_p25_stored_channel_tx` | decoded off air: the channel's NAC, talk group and unit ID |
+| P25 receive | `test_p25_scan_from_bench` (zone, dual) | a bench call stops a zone scan and dual watch on the P25 channel |
+| P25 trunked transmit ([p25-trunking.md](p25-trunking.md)) | `test_p25_trunk_tx` | control channel at 927.0, inbound 927.5: registration, affiliation, a voice request, and a call on the granted voice channel (927.25), twice |
+| NXDN transmit, 4800 bit/s, stored channel | `test_nxdn_stored_channel_tx` | decoded off air: the channel's RAN, unit and group |
+| NXDN receive, 4800 bit/s | `test_nxdn_scan_from_bench` (zone, dual) | a bench call stops a zone scan and dual watch on the NXDN channel |
+
+Not checked: NXDN at 9600 bit/s (the stored-channel tests use 4800), P25 receive frame counts (that test runs in the
+VFO), P25 trunked receive (needs two bench transmitters), a radio of another make, a live trunked system, sensitivity.
+
 ## 8. Codec
 
 The AMBE+2 vocoder is part of the original image: its code runs from RAM, its tables are copied to modem SRAM. No
@@ -328,6 +347,7 @@ No codec bytes are in the repository or in a release.
 | Speaker | listened to: the amplifier is PTB8 (section 3); FM monitor, the talk permit and deny tones and a parrot reply play, FM squelch stays closed after an unkey, no hiss in a DMR key-up |
 | IP data over the air | measured on air: UDP to and from the radio, compressed and full headers, off-net, confirmed, bursts from the radio. The IP gateway is off with PPP (3.1) |
 | IP link to the computer | written: PPP on the host link (UART0, 115200 baud), off: pppd sends while the radio sends, which latches the cable line low until a power cycle (3.1). It builds with `CONFIG_NET_PPP=y`, for a check with another cable |
+| P25, P25 trunked, NXDN | measured on air (7.3): P25 both ways and trunked transmit; NXDN both ways at 4800 bit/s. NXDN at 9600 bit/s and P25 trunked receive untested |
 | APRS | written (7.2): the radio keys up and sends its frames; deviation, twist and decoding on air not yet measured |
 | Hotspot | written, off: the MMDVM host sends at any time, as pppd does, so it may latch the cable line (3.1). It builds with `CONFIG_HOTSPOT=y`, for that check |
 | Hotspot split, USRP | not written: no continuous base-station outbound; USRP's 8 kHz audio both ways needs more than 115200 baud |
