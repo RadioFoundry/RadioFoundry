@@ -124,6 +124,7 @@ static void task_fn(void *arg)
 		rx2_main_audio(&link, link.audio, gd88_radio_volume());
 		give();
 		uint32_t now = hal_millis();
+		gd88_path_service(now);
 		if (gd88_path_speaker_wanted()) {
 			spk_ms = now;
 			spk_hold = true;

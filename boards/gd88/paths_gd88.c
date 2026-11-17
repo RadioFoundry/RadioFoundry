@@ -16,6 +16,7 @@
 #include "gd88.h"
 #include "pins.h"
 #include "platform.h"
+#include "hal_time.h"
 
 #define BYTE_SPK		0u
 #define BYTE_HEADSET		1u
@@ -25,6 +26,9 @@
 #define BIT_BCAST		6u
 #define VFO_A			0u
 #define VFO_B			1u
+// The amplifier goes off this long after the last source: off together with them it popped now and then (**HW**,
+// by microphone: about 1 beep in 4 against none in 48 with the delay)
+#define AMP_OFF_MS		40u
 
 static bool spk_a, spk_b;
 static bool a_dmr, b_dmr;	// the receivers' modes
@@ -32,7 +36,9 @@ static bool a_modem;		// A's speaker source is the modem's line out (DMR voice, 
 static bool receiving;		// A's receive path is on (not transmitting)
 static bool bcast;		// the broadcast FM tuner has the speaker
 static bool muted;		// volume step 0 (gd88_path_mute): the amplifier off, B's speaker switch open
-static volatile bool spk_any;	// any of them: B closes the switch in the speaker's path (gd88_path_speaker_wanted)
+static volatile bool spk_any;	// the amplifier on: B closes the switch in the speaker's path (gd88_path_speaker_wanted)
+static bool amp_on, amp_off_pending;
+static uint32_t amp_off_at;
 // Where A receives, for B (gd88_path_wanted): A's front end and path pins are on SoC B. The TX start
 // (gd88_path_rx_front_off) leaves it, since it also runs per DMR burst, faster than the link can follow
 static volatile bool want_on;
@@ -53,20 +59,51 @@ static void bit(uint8_t byte, uint8_t b, bool on)
 	gd88_chain_set((uint8_t)(8u * byte + b), on);
 }
 
-// Both output groups: the sources that play now, the amplifier
+// The amplifier: the chain's bit in both groups, then PTC18. PTC18 low with the chain's bit still on pops every time
+// (**HW**), so it goes last when off as well
+static void amp(bool on)
+{
+	bit(BYTE_SPK, BIT_AMP, on);
+	bit(BYTE_HEADSET, BIT_AMP, on);
+	hrc_pin_write(PIN_SPK_AMP, on);
+	amp_on = on;
+	spk_any = on;
+	amp_off_pending = false;
+}
+
+// Both output groups: the sources that play now; the amplifier on at once, off AMP_OFF_MS after the last source
+// (gd88_path_service), or at once when muted
 static void outputs(void)
 {
+	bool want = spk_a || spk_b || bcast;
+	if (want && !muted && !amp_on) {
+		amp(true);
+	}
 	for (uint8_t g = BYTE_SPK; g <= BYTE_HEADSET; g++) {
 		for (uint8_t d = 0; d < 2u; d++) {
 			bit(g, src_bit(d != 0, VFO_A), spk_a && (a_modem == (d != 0)));
 			bit(g, src_bit(d != 0, VFO_B), spk_b && (b_dmr == (d != 0)));
 		}
 		bit(g, BIT_BCAST, bcast);
-		bit(g, BIT_AMP, (spk_a || spk_b || bcast) && !muted);
 	}
-	spk_any = (spk_a || spk_b || bcast) && !muted;
-	hrc_pin_write(PIN_SPK_AMP, spk_any);
 	hrc_pin_write(PIN_DIG_AUDIO, spk_a && a_modem);
+	if (muted && amp_on) {
+		amp(false);
+	} else if (want) {
+		amp_off_pending = false;
+	} else if (amp_on && !amp_off_pending) {
+		amp_off_pending = true;
+		amp_off_at = hal_millis() + AMP_OFF_MS;
+	}
+}
+
+void gd88_path_service(uint32_t now)
+{
+	uint32_t s = hrc_irq_save();
+	if (amp_off_pending && (int32_t)(now - amp_off_at) >= 0) {
+		amp(false);
+	}
+	hrc_irq_restore(s);
 }
 
 // The receive path bit: B's while B has the speaker, else A's
@@ -86,7 +123,7 @@ void gd88_path_init(void)
 	hrc_pin_out(PIN_TX_RX, false);
 	hrc_pin_out(PIN_DIG_AUDIO, false);
 	hrc_pin_out(PIN_SPK_AMP, false);
-	spk_a = spk_b = a_dmr = b_dmr = a_modem = receiving = bcast = spk_any = muted = false;
+	spk_a = spk_b = a_dmr = b_dmr = a_modem = receiving = bcast = spk_any = muted = amp_on = amp_off_pending = false;
 }
 
 void gd88_path_rx(uint32_t hz, bool on, bool dmr)
