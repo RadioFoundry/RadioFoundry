@@ -95,6 +95,9 @@ bool gd88_dmr_listen(uint32_t *hz, uint8_t *power);	// rx2_dmr_main_cfg_t.listen
 #endif
 // The speaker: on or off, fed from the modem's line out (DMR voice, beeps) or the main chip's AF (FM)
 void gd88_path_speaker(bool on, bool from_modem);
+// Volume step 0: the speaker amplifier stays off whatever plays, so it neither pops nor hisses. A no-op on SoC B, whose
+// audio goes to A
+void gd88_path_mute(bool muted);
 
 // --- DMR (dmr_gd88.c, CONFIG_DMR) ---
 #if CONFIG_DMR

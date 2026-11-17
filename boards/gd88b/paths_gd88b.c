@@ -122,6 +122,11 @@ void gd88_path_speaker(bool on, bool from_modem)
 	hrc_irq_restore(s);
 }
 
+void gd88_path_mute(bool on)
+{
+	(void)on;
+}
+
 // A transmits (on, in its band) or not. On: the source pair at mode 0, the band pair to
 // A's TX band, A's RX path off. Off: all three back as the receivers have them
 void gd88b_path_a_tx(bool on, bool uhf)

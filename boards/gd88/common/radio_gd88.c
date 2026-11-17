@@ -952,6 +952,7 @@ static void volume(uint8_t percent)
 	vol_pct = percent;
 	unsigned step = vol_step(percent);
 	vol_muted = step == 0;
+	gd88_path_mute(vol_muted);
 	vol_db = (int8_t)vol_level_db(step);
 	pcm_gain();
 	volume_apply();

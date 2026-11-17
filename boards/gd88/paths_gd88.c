@@ -31,6 +31,7 @@ static bool a_dmr, b_dmr;	// the receivers' modes
 static bool a_modem;		// A's speaker source is the modem's line out (DMR voice, beeps)
 static bool receiving;		// A's receive path is on (not transmitting)
 static bool bcast;		// the broadcast FM tuner has the speaker
+static bool muted;		// volume step 0 (gd88_path_mute): the amplifier off, B's speaker switch open
 static volatile bool spk_any;	// any of them: B closes the switch in the speaker's path (gd88_path_speaker_wanted)
 // Where A receives, for B (gd88_path_wanted): A's front end and path pins are on SoC B. The TX start
 // (gd88_path_rx_front_off) leaves it, since it also runs per DMR burst, faster than the link can follow
@@ -61,9 +62,9 @@ static void outputs(void)
 			bit(g, src_bit(d != 0, VFO_B), spk_b && (b_dmr == (d != 0)));
 		}
 		bit(g, BIT_BCAST, bcast);
-		bit(g, BIT_AMP, spk_a || spk_b || bcast);
+		bit(g, BIT_AMP, (spk_a || spk_b || bcast) && !muted);
 	}
-	spk_any = spk_a || spk_b || bcast;
+	spk_any = (spk_a || spk_b || bcast) && !muted;
 	hrc_pin_write(PIN_SPK_AMP, spk_any);
 	hrc_pin_write(PIN_DIG_AUDIO, spk_a && a_modem);
 }
@@ -85,7 +86,7 @@ void gd88_path_init(void)
 	hrc_pin_out(PIN_TX_RX, false);
 	hrc_pin_out(PIN_DIG_AUDIO, false);
 	hrc_pin_out(PIN_SPK_AMP, false);
-	spk_a = spk_b = a_dmr = b_dmr = a_modem = receiving = bcast = spk_any = false;
+	spk_a = spk_b = a_dmr = b_dmr = a_modem = receiving = bcast = spk_any = muted = false;
 }
 
 void gd88_path_rx(uint32_t hz, bool on, bool dmr)
@@ -135,6 +136,16 @@ void gd88_path_speaker(bool on, bool from_modem)
 	spk_a = on;
 	a_modem = from_modem;
 	outputs();
+}
+
+void gd88_path_mute(bool on)
+{
+	uint32_t s = hrc_irq_save();
+	if (on != muted) {
+		muted = on;
+		outputs();
+	}
+	hrc_irq_restore(s);
 }
 
 void gd88_audio_b(bool on, bool dmr)
