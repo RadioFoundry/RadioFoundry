@@ -28,7 +28,8 @@ clock = { rtc = "unbacked", note = "the SoC RTC, with no coin cell or backup cap
 level = "supported"
 summary = """\
 Boots from the boot ROM with the host link, stub entry, the watchdog and the crash log. FM receive with CTCSS/DCS \
-decode, FM transmit, DMR transmit and receive with the radio's own codec, and APRS transmit work on the radio."""
+decode, FM transmit, DMR transmit and receive with the radio's own codec, P25 (conventional, and trunked transmit) and \
+NXDN at 4800 bit/s on stored channels, and APRS transmit work on the radio."""
 release = "stable"
 
 # No vendor loader: the boot ROM's serial window on the accessory jack is the way in at every power-on
