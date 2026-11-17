@@ -10,7 +10,7 @@ import pytest
 from rfoundry_hil import DebugLinkError, as_int, skip
 
 CRASH_KIND_FAULT, CRASH_KIND_ASSERT, CRASH_KIND_HANG, CRASH_KIND_STALL, CRASH_KIND_LINK = 1, 4, 5, 6, 7
-LINK_HOLD = 0x25        # docs/spec/debuglink.md 3.29
+LINK_HOLD = 0x24        # docs/spec/debuglink.md 3.28
 STALL_MS = 60000        # WATCHDOG_STALL_MS (core/app/watchdog.h)
 
 

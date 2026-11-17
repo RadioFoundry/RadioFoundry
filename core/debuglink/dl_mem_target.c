@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// DL_CMD_MEM on the radio (dl_mem.h): volatile accesses of the asked width, and the platform's pin hook
+// CHIP_REG chip DL_CHIP_MEM on the radio (dl_mem.h): volatile accesses of the asked width, and the platform's pin hook
 // (hal_system_t.pin)
 #include "config.h"
 #include "debuglink/dl_mem.h"

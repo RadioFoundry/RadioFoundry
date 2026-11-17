@@ -37,8 +37,7 @@ enum {
 	DL_CMD_HWOPT		= 0x21,	// the board's hardware options: list, set (debuglink_hwopt.c, 3.25)
 	DL_CMD_T3		= 0x22,	// a Tier III trunked system: stage, select, leave (debuglink_t3.c, 3.26)
 	DL_CMD_CPKV		= 0x23,	// a key of the codeplug settings area: read, write, remove (debuglink_cpkv.c, 3.27)
-	DL_CMD_MEM		= 0x24,	// peek and poke: memory, registers and pins (CONFIG_DEBUG_MEM; dl_mem.c, 3.28)
-	DL_CMD_LINK_HOLD	= 0x25,	// hold the host port for this client, or let go (docs/spec/debuglink.md 3.29)
+	DL_CMD_LINK_HOLD	= 0x24,	// hold the host port for this client, or let go (docs/spec/debuglink.md 3.28)
 };
 
 // DL_CMD_T3 operations (first payload byte; docs/spec/debuglink.md 3.26). Little endian
@@ -81,8 +80,9 @@ enum {
 	DL_HWOPT_OP_SET		= 1,	// option u8, choice u8 -> none (refused: the board didn't store it, or on air)
 };
 
-// DL_CMD_MEM operations (first payload byte; docs/spec/debuglink.md 3.28). u32 little endian. Width is 1, 2 or 4 bytes
-// and the address a multiple of it. Everything but READ, ARM and PIN's read is refused unless armed
+// DL_CMD_CHIP_REG chip DL_CHIP_MEM: peek, poke and pins (CONFIG_DEBUG_MEM; docs/spec/debuglink.md 3.24). The operation
+// is the byte after the chip. u32 little endian. Width is 1, 2 or 4 bytes and the address a multiple of it. Everything
+// but READ, ARM and PIN's read is refused unless armed, and while the radio transmits
 enum {
 	DL_MEM_OP_READ = 0,	// width u8, address u32, count u8 (1..DL_MEM_PEEK_MAX) -> status, the values (width each)
 	DL_MEM_OP_WRITE = 1,	// width u8, address u32, value u32 -> status, the value read back u32
@@ -105,6 +105,8 @@ enum { DL_MEM_PIN_READ = 0, DL_MEM_PIN_INPUT = 1, DL_MEM_PIN_LOW = 2, DL_MEM_PIN
 // DL_CMD_CHIP_REG's chip number for the SoC's own registers (board.system->reg): an address u32 follows, not a page and
 // register. The board's RF chips are numbered below it
 #define DL_CHIP_SOC		0xFFu
+// Its chip number for peek, poke and pins (DL_MEM_OP_*, dl_mem.c): any address at 1, 2 or 4 bytes once armed
+#define DL_CHIP_MEM		0xFEu
 
 // DL_CMD_RX2 operations (first payload byte; docs/spec/debuglink.md 3.22). The token is u32 little endian
 enum {

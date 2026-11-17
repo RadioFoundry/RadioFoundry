@@ -30,7 +30,7 @@
                                                 stop the feeds (docs/spec/watchdog.md 5): the radio resets. starve polls
                                                 until the link goes quiet and prints how long it lasted
     rfoundry_debug.py watchdog load H L [RST]        HR_C7000: re-arm with raw OT_LOAD_H / OT_LOAD_L (RST_LOAD), then starve
-    rfoundry_debug.py mem read ADDR [N] [-w 1|2|4]   peek: N values of the width (CONFIG_DEBUG_MEM; debuglink.md 3.28)
+    rfoundry_debug.py mem read ADDR [N] [-w 1|2|4]   peek: N values of the width (CONFIG_DEBUG_MEM; debuglink.md 3.24)
     rfoundry_debug.py --dangerous mem write|set|clear ADDR VALUE [-w 1|2|4]
                                                 poke: the value, or its bits set or cleared; prints the read back
     rfoundry_debug.py pin PIN [--dangerous in|low|high]
@@ -100,8 +100,7 @@ WATCHDOG = 0x1D                     # the hardware watchdog's bench tests (CONFI
 WDT_OP_CLEAR_GAP, WDT_OP_TEST, WDT_OP_LOAD = range(3)
 WDT_TESTS = {"starve": 1, "spin": 2, "irq-off": 3}
 WDT_TOKEN = 0x474F4457              # 'WDOG'
-LINK_HOLD = 0x25                    # hold the host port for this client (docs/spec/debuglink.md 3.29)
-MEM = 0x24                          # peek and poke (CONFIG_DEBUG_MEM; docs/spec/debuglink.md 3.28)
+LINK_HOLD = 0x24                    # hold the host port for this client (docs/spec/debuglink.md 3.28)
 MEM_OP_READ, MEM_OP_WRITE, MEM_OP_SET, MEM_OP_CLEAR, MEM_OP_ARM, MEM_OP_DISARM, MEM_OP_PIN = range(7)
 MEM_WRITE_OPS = {"write": MEM_OP_WRITE, "set": MEM_OP_SET, "clear": MEM_OP_CLEAR}
 MEM_PIN_ACTIONS = {"read": 0, "in": 1, "low": 2, "high": 3}
@@ -136,6 +135,7 @@ KIND_DMR_TRUNK = SYSTYPE_DMR_TRUNK = 1
 T3_TAG_NO_FALLBACK = 0x10                   # a trunked channel's tag: never fall back
 T3_SYS_STUN = 0x0400                        # a Tier III system's option: accept a stun
 CHIP_SOC = 0xFF                     # CHIP_REG's chip number for the SoC's own registers
+CHIP_MEM = 0xFE                     # and for peek, poke and pins (CONFIG_DEBUG_MEM; debuglink.md 3.24)
 SNMP = 0x19                         # the SNMP agent (CONFIG_SNMP; docs/spec/debuglink.md 3.17, docs/spec/snmp.md)
 SNMP_OP_SET, SNMP_OP_COMMUNITY, SNMP_OP_TEST_TRAP = range(3)
 SNMP_FIELDS = {"flags": 0, "rf_manager": 1, "rf_gap_s": 2, "trap_port": 3}
@@ -703,24 +703,25 @@ class DebugLink:
 
     def mem_read(self, addr, width=4, count=1):
         """count values of width bytes from addr (aligned), as ints."""
-        _, r = self.request(MEM, struct.pack("<BBIB", MEM_OP_READ, width, addr, count))
+        _, r = self.request(CHIP_REG, struct.pack("<BBBIB", CHIP_MEM, MEM_OP_READ, width, addr, count))
         return [int.from_bytes(r[i * width:(i + 1) * width], "little") for i in range(len(r) // width)]
 
     def mem_arm(self):
         """Allow writes and pin changes for the next minute (the radio refuses them otherwise)."""
-        self.request(MEM, struct.pack("<BI", MEM_OP_ARM, MEM_KEY))
+        self.request(CHIP_REG, struct.pack("<BBI", CHIP_MEM, MEM_OP_ARM, MEM_KEY))
 
     def mem_disarm(self):
-        self.request(MEM, bytes([MEM_OP_DISARM]))
+        self.request(CHIP_REG, bytes([CHIP_MEM, MEM_OP_DISARM]))
 
     def mem_write(self, addr, value, width=4, op="write"):
         """Write value (op 'write'), or set or clear its bits, at addr; returns the value read back. Needs mem_arm()."""
-        _, r = self.request(MEM, struct.pack("<BBII", MEM_WRITE_OPS[op], width, addr, value & 0xFFFFFFFF))
+        req = struct.pack("<BBBII", CHIP_MEM, MEM_WRITE_OPS[op], width, addr, value & 0xFFFFFFFF)
+        _, r = self.request(CHIP_REG, req)
         return struct.unpack_from("<I", r)[0]
 
     def pin(self, pin, action="read"):
         """A pin's state after the action ('read', or with mem_arm(): 'in', 'low', 'high'): dict output, level, latch."""
-        _, r = self.request(MEM, bytes([MEM_OP_PIN, pin, MEM_PIN_ACTIONS[action]]))
+        _, r = self.request(CHIP_REG, bytes([CHIP_MEM, MEM_OP_PIN, pin, MEM_PIN_ACTIONS[action]]))
         return {"output": bool(r[0] & MEM_PS_OUTPUT), "level": int(bool(r[0] & MEM_PS_LEVEL)),
                 "latch": int(bool(r[0] & MEM_PS_LATCH))}
 
@@ -2822,7 +2823,7 @@ def main(argv=None):
     p.add_argument("op", nargs="?", default="show", choices=["show", "clear-gap", "test", "load"])
     p.add_argument("args", nargs="*")
     p = sub.add_parser("mem", help="peek and poke: read, or with --dangerous write|set|clear (docs/spec/debuglink.md "
-                       "3.28)")
+                       "3.24)")
     p.add_argument("op", choices=["read", "write", "set", "clear"])
     p.add_argument("addr")
     p.add_argument("value", nargs="?", help="read: how many values (default 1); write, set, clear: the value or bits")

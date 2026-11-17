@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-"""The debug link's peek and poke (DL_CMD_MEM, docs/spec/debuglink.md 3.28), without changing anything on the radio.
+"""The debug link's peek and poke (CHIP_REG chip 0xFE, docs/spec/debuglink.md 3.24), without changing anything on the radio.
 
 - test_mem_read_matches_read_mem: 16 bytes at the start of a READ_MEM window read by MEM at each width equal READ_MEM's.
 - test_mem_changes_need_the_key: a write and a pin change unarmed, and after an arm and a disarm, are refused before any
@@ -40,7 +40,7 @@ def _need_mem(link):
         link.mem_read(_window(link), 4, 1)
     except dbg.DebugLinkError as e:
         if e.status in (1, dbg.ST_UNAVAILABLE):
-            skip("not_built", "firmware without DL_CMD_MEM (CONFIG_DEBUG_MEM=n)")
+            skip("not_built", "firmware without peek and poke (CONFIG_DEBUG_MEM=n)")
         raise
 
 

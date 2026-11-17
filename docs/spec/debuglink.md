@@ -111,12 +111,11 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x1D` | WATCHDOG | operation u8 + arguments (3.21); `CONFIG_WATCHDOG` builds, else status 4 | none (3.21) |
 | `0x1E` | RX2 | operation u8 + arguments (3.22) | flags, or the second SoC's reply (3.22) |
 | `0x1F` | IDDB | DMR ID u32 (3.23); `CONFIG_DMR` builds, else status 4 | format u8, records u32, found u8, text (3.23) |
-| `0x20` | CHIP_REG | chip u8, page u8, register u8 [+ value u32]; or chip `0xFF`, address u32 [+ value u32] (3.24) | the register's value u32 (3.24) |
+| `0x20` | CHIP_REG | chip u8, page u8, register u8 [+ value u32]; or chip `0xFF`, address u32 [+ value u32]; or chip `0xFE`, operation u8 + arguments (3.24) | the register's value u32, or for chip `0xFE` values, the value read back or a pin's state (3.24) |
 | `0x21` | HWOPT | operation u8 + arguments (3.25) | the options as key=value text, or none (3.25) |
 | `0x22` | T3 | operation u8 + arguments (3.26); `CONFIG_DMR_TRUNK` builds, else status 4 | none |
 | `0x23` | CPKV | operation u8, key u16 + arguments (3.27); builds with the DMR data core or Tier III trunking, else status 4 | GET: the value (3.27) |
-| `0x24` | MEM | operation u8 + arguments (3.28); `CONFIG_DEBUG_MEM` builds, else unknown | values, the value read back, or a pin's state (3.28) |
-| `0x25` | LINK_HOLD | on u8, optional watch seconds u16 (3.29) | none |
+| `0x24` | LINK_HOLD | on u8, optional watch seconds u16 (3.28) | none |
 
 ### 3.1 VERSION
 
@@ -816,6 +815,7 @@ that register overwrites it.
 | chip u8, page u8, register u8, value u32 | the value read back u32 (a write-only register: the value written) |
 | `0xFF`, address u32 | the value u32 |
 | `0xFF`, address u32, value u32 | the value read back u32 |
+| `0xFE`, operation u8 + arguments | peek, poke and pins: values, the value read back, or a pin's state (below) |
 
 Chips below `0xFF` are the radio's RF chips, through the board's `board.chip_reg`. The chip and page numbers are the
 board's, listed on its hardware page. A chip, page, register or value the board doesn't offer answers bad argument (2);
@@ -833,6 +833,35 @@ hook answers unavailable (4).
 | STM32F4 (`platform/stm32f4/mem_window.h`) | the peripheral buses `0x40000000-0x5FFFFFFF`, the FSMC control registers `0xA0000000-0xA0000FFF` and the Cortex-M4 private peripheral bus `0xE0000000-0xE00FFFFF` (SCB, NVIC, SysTick, DWT, DBGMCU). The access runs with bus faults ignored: a reserved address that faults is refused (7) |
 
 Writes are logged. `rfoundry_debug.py reg CHIP REG [VALUE] [--page N]`, or `reg soc ADDR [VALUE]` for the SoC.
+
+#### Chip 0xFE: peek, poke and pins
+
+Peek and poke for the bench (`CONFIG_DEBUG_MEM`, on with the debug link, and on a second SoC with its own server,
+[rx2-link.md](rx2-link.md) 2.3): any address at 1, 2 or 4 bytes, and the SoC's GPIO pins. For what no view key shows
+yet: a peripheral's registers after a fault, a chip's settings, which pin does what. The handler is portable
+(`core/debuglink/dl_mem.c`); the platform gives the pin hook (`hal_system_t.pin`). u32 values are little endian; the
+address is a multiple of the width. The request is `0xFE`, the operation u8 and its arguments.
+
+| Op | Name | Arguments | Reply after the status |
+|---|---|---|---|
+| 0 | READ | width u8, address u32, count u8 (1 to 64) | count values, width bytes each |
+| 1 | WRITE | width u8, address u32, value u32 | the value read back u32. Armed only |
+| 2 | SET | the same | the value's bits set (read, or, write); the value read back. Armed only |
+| 3 | CLEAR | the same | the value's bits cleared; the value read back. Armed only |
+| 4 | ARM | key u32 | none: writes and pin changes allowed for 60 s. A wrong key disarms and is refused |
+| 5 | DISARM | none | none |
+| 6 | PIN | pin u8, action u8: 0 read, 1 input, 2 drive low, 3 drive high | state u8 after it: bit 0 an output, bit 1 the level at the pin, bit 2 the level it drives. Actions other than read armed only. No hook: status 4 |
+
+The key is `'POKE'` (`0x454B4F50`). Unarmed writes and pin changes are refused (7) before any access, and so are
+writes, bit sets and clears and pin changes while the radio transmits, as for chip `0xFF`. Writes and pin changes are
+logged. A build without `CONFIG_DEBUG_MEM` answers unavailable (4). A pin is the platform's index; on the HR_C7000
+PTA0 to PTC31 are 0 to 95, and the action leaves the pad's function alone.
+
+- `rfoundry_debug.py mem read ADDR [N] [-w 1|2|4]`
+- `rfoundry_debug.py --dangerous mem write|set|clear ADDR VALUE [-w 1|2|4]`
+- `rfoundry_debug.py pin PIN [in|low|high]` (PIN a number or `PTB9`); a change needs `--dangerous`
+
+The tool sends the key only with `--dangerous`. With `--rx2` every request goes to the second SoC.
 
 ### 3.25 HWOPT
 
@@ -956,34 +985,7 @@ codeplug tool would. Every op starts with the op u8 and the key u16. Writes go t
 channel tag ([channel-modes.md](channel-modes.md)), `t3_system_record`, `t3_chan_record` and `t3_tag_record` a trunked
 system's.
 
-### 3.28 MEM
-
-Peek and poke for the bench (`CONFIG_DEBUG_MEM`, on with the debug link, and on a second SoC with its own server,
-[rx2-link.md](rx2-link.md) 2.3): any address at 1, 2 or 4 bytes, and the SoC's GPIO pins. For what no view key shows
-yet: a peripheral's registers after a fault, a chip's settings, which pin does what. The handler is portable
-(`core/debuglink/dl_mem.c`); the platform gives the pin hook (`hal_system_t.pin`). u32 values are little endian; the
-address is a multiple of the width.
-
-| Op | Name | Arguments | Reply after the status |
-|---|---|---|---|
-| 0 | READ | width u8, address u32, count u8 (1 to 64) | count values, width bytes each |
-| 1 | WRITE | width u8, address u32, value u32 | the value read back u32. Armed only |
-| 2 | SET | the same | the value's bits set (read, or, write); the value read back. Armed only |
-| 3 | CLEAR | the same | the value's bits cleared; the value read back. Armed only |
-| 4 | ARM | key u32 | none: writes and pin changes allowed for 60 s. A wrong key disarms and is refused |
-| 5 | DISARM | none | none |
-| 6 | PIN | pin u8, action u8: 0 read, 1 input, 2 drive low, 3 drive high | state u8 after it: bit 0 an output, bit 1 the level at the pin, bit 2 the level it drives. Actions other than read armed only. No hook: status 4 |
-
-The key is `'POKE'` (`0x454B4F50`). Unarmed writes and pin changes are refused (7) before any access. A pin is the
-platform's index; on the HR_C7000 PTA0 to PTC31 are 0 to 95, and the action leaves the pad's function alone.
-
-- `rfoundry_debug.py mem read ADDR [N] [-w 1|2|4]`
-- `rfoundry_debug.py --dangerous mem write|set|clear ADDR VALUE [-w 1|2|4]`
-- `rfoundry_debug.py pin PIN [in|low|high]` (PIN a number or `PTB9`); a change needs `--dangerous`
-
-The tool sends the key only with `--dangerous`. With `--rx2` every request goes to the second SoC.
-
-### 3.29 LINK_HOLD
+### 3.28 LINK_HOLD
 
 Holds the host port for this client (on = 1), or lets go (on = 0). While held, an idle port stays idle: bytes that
 would open CPS, hotspot, TNC or PPP are dropped and counted in `hostlink.noise_bytes`, and a valid debug frame ends a
@@ -1004,11 +1006,11 @@ without `CONFIG_WATCHDOG` and `CONFIG_CRASH_LOG` answers unavailable to a watch.
 - INFO_CHIP and READ_MEM only read. READ_MEM reads only the platform's windows (3.10): flash, ROM, OTP and option bytes
   on the STM32F4 (never RAM or peripherals); program flash, SRAM and a few register blocks without read side effects
   (system block, GPIO, PIC), in aligned words only, on the HR_C7000. Nothing in the debug link writes or erases
-  internal flash or the option bytes, except a MEM write to a flash controller's registers, which the person at the
+  internal flash or the option bytes, except a peek and poke write (CHIP_REG chip `0xFE`, 3.24) to a flash controller's registers, which the person at the
   bench chooses.
-- MEM reads any address; a read can clear a status flag or pop a FIFO. Its writes and pin changes can key the
+- CHIP_REG chip `0xFE` reads any address; a read can clear a status flag or pop a FIFO. Its writes and pin changes can key the
   transmitter, short a driven pin or hang the SoC: they need the key, last 60 s, and the host tool sends the key only
-  with `--dangerous` (3.25).
+  with `--dangerous` (3.24).
 - STUB ENTER is refused while transmitting, and the transmitter is switched to receive before the jump (3.18).
 - CRASH TEST needs its token and is refused while transmitting (3.19).
 - WATCHDOG TEST and LOAD need their token and are refused while transmitting; each ends in a reset (3.21).
@@ -1020,8 +1022,8 @@ without `CONFIG_WATCHDOG` and `CONFIG_CRASH_LOG` answers unavailable to a watch.
 - Memory dumps are never written inside a git tree (the vendor bootloader is proprietary).
 - AUDIO_PROBE (diagnostic builds only) writes audio chip registers as asked, and CHIP_REG writes the RF chip registers
   the board offers and the SoC registers in the platform's windows (3.24); nothing else in the debug link writes chip
-  registers, except an armed MEM (3.25). A CHIP_REG write can move the transmitter's frequency or power (the radio's band and power limits don't
-  apply to it) or stop a timer or an interrupt; a SoC register write is refused while transmitting.
+  registers, except an armed peek and poke (chip `0xFE`). A CHIP_REG write can move the transmitter's frequency or power (the radio's band and power limits don't
+  apply to it) or stop a timer or an interrupt; a SoC register write or a poke is refused while transmitting.
 - STUB (bench builds only) writes arbitrary RAM and then runs it, giving the host full control: it is gated by a magic
   key, the exact length and a CRC-32, loads only into the platform's declared free RAM span, is refused while
   transmitting, and never returns (recover by a power cycle). Off in a release. The stub, not the debug link, is

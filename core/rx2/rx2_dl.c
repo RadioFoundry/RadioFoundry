@@ -13,7 +13,6 @@
 #include "debuglink/dl_chip.h"
 #include "debuglink/debuglink_proto.h"
 #include "debuglink/dlog.h"
-#include "debuglink/dl_mem.h"
 #if CONFIG_CRASH_LOG
 #include "crash/crash.h"
 #endif
@@ -298,8 +297,6 @@ size_t rx2_dl_handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		return cmd_reboot(req, len, out);
 	case DL_CMD_CRASH:
 		return cmd_crash(req, len, out);
-	case DL_CMD_MEM:
-		return debuglink_cmd_mem(req, len, out, cap);
 	case DL_CMD_CHIP_REG:
 		return debuglink_cmd_chip_reg(req, len, out, cap);
 	default:

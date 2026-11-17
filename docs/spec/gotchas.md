@@ -227,7 +227,7 @@ a flagged character (`rx_line_errors`, and the receive tap still sees it) and dr
 the pin by the shared PTT gate. The disturbance can still corrupt a host request sent during the burst, so a host polling
 through a transmission retries. The line can also deliver clean bytes: a short low pulse reads as 0xE0 or 0xC0, so an idle
 port changes protocol only for a plausible request (mmdvm-protocol.md 5.1), and a debug client can hold it
-([debuglink.md](debuglink.md) 3.29).
+([debuglink.md](debuglink.md) 3.28).
 
 ## 3. TX/RX state and PA handling
 
