@@ -71,6 +71,37 @@ test("a start-language switch added since is not asked about: off, the radio kee
 	assert.ok(!s.on.has("LANG_DEFAULT_ES"));
 });
 
+// Without releases (none made yet) nothing counts as new: a start switch the radio's off= doesn't name is on only when
+// its build could have had it (langsuggest.js START_SINCE), else every radio came up in the newest language
+test("without releases, a start switch newer than the radio's build stays off; one it could have had is kept", () => {
+	const starts = ["ES", "IT", "ZH", "FR"].flatMap((c) => [`LANG_${c}`, `LANG_DEFAULT_${c}`]);
+	const feats = [...FEATURES, ...starts.map((name) => ({ name, needs: { all: name.startsWith("LANG_DEFAULT_") ? [`LANG_${name.slice(13)}`] : [], any: [] } }))];
+	const s = () => new Selection(RADIO, feats, [{ id: "full" }, { id: "amateur" }]);
+	// built between Chinese (#365) and French (#346), English: off= names the switches it knew, not French's
+	const english = currentBuild(probe({ git: "dddd444", git_time: "1794500000", preset: "custom",
+		off: "D,LANG_IT,LANG_ZH,LANG_DEFAULT_ES,LANG_DEFAULT_IT,LANG_DEFAULT_ZH" }), RADIO, [], REPORTED);
+	let sel = s();
+	planUpdate(english, sel);
+	assert.ok(!sel.on.has("LANG_DEFAULT_FR") && !sel.on.has("LANG_DEFAULT_ZH") && !sel.on.has("LANG_DEFAULT_ES"));
+	// built before Chinese, starting in Spanish: Spanish kept, Chinese and French off
+	const spanish = currentBuild(probe({ git: "cccc333", git_time: "1794000000", preset: "custom",
+		off: "D,LANG_IT,LANG_DEFAULT_IT" }), RADIO, [], REPORTED);
+	sel = s();
+	planUpdate(spanish, sel);
+	assert.ok(sel.on.has("LANG_DEFAULT_ES") && !sel.on.has("LANG_DEFAULT_ZH") && !sel.on.has("LANG_DEFAULT_FR"));
+	// built after French, starting in French: kept
+	const french = currentBuild(probe({ git: "eeee555", git_time: "1794900000", preset: "custom",
+		off: "D,LANG_IT,LANG_ZH,LANG_DEFAULT_ES,LANG_DEFAULT_IT,LANG_DEFAULT_ZH" }), RADIO, [], REPORTED);
+	sel = s();
+	planUpdate(french, sel);
+	assert.ok(sel.on.has("LANG_DEFAULT_FR") && sel.on.has("LANG_FR"));
+	// no git_time: no start switch the off= list leaves out is taken as on
+	const unknown = currentBuild(probe({ git: "ffff666", preset: "custom", off: "D" }), RADIO, [], REPORTED);
+	sel = s();
+	planUpdate(unknown, sel);
+	assert.ok(starts.filter((n) => n.startsWith("LANG_DEFAULT_")).every((n) => !sel.on.has(n)));
+});
+
 test("from a release without off lists, a switch on in no variant is asked about too", () => {
 	const cur = currentBuild(probe({ git: "aaaa111", preset: "custom", off: "C" }, "A,B"), RADIO, RELEASES, REPORTED);
 	assert.deepEqual(planUpdate(cur, sel()).ask, ["D", "NEW"]);

@@ -6,7 +6,7 @@
 //   currentBuild(probe, radio, releases, reported)   what runs: {kind: "preset" | "custom" | "unknown", ...}
 //   planUpdate(cur, sel, decided)                    the update's selection, and what it adds or must ask
 
-import { startCode } from "./langsuggest.js";
+import { startCode, startKnownAt } from "./langsuggest.js";
 
 const split = (s) => String(s || "").split(",").filter(Boolean);
 
@@ -104,7 +104,11 @@ export function planUpdate(cur, sel, decided = {}) {
 	// new start-language switch (langsuggest.js) is no feature to ask about: off, the radio keeps the language it has
 	const names = sel.features.map((f) => f.name);
 	const news = fresh(names);
-	const off = new Set([...(cur.off || []), ...news.filter((n) => startCode(n))]);
+	// a start switch off= doesn't name is on only if the radio's build could have had it (langsuggest.js START_SINCE):
+	// without releases nothing counts as new, and the newest language came up on every radio updated
+	const gitTime = cur.probe?.version?.git_time;
+	const off = new Set([...(cur.off || []), ...news.filter((n) => startCode(n)),
+		...names.filter((n) => startCode(n) && !startKnownAt(n, gitTime))]);
 	const kept = names.filter((n) => sel.supported(n) && (!off.has(n) || sel.required(n)) && !news.includes(n));
 	sel.useVariant("full");
 	// all kept ones first, so an "any of" need finds one already on; then enable() brings each one's needs
