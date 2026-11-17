@@ -492,14 +492,16 @@ a call or after our own transmit, the key beep in DMR and FM, and FM receive.
 `board.air` is the shared HR_C5000/HR_C6000 provider (`stm32_hrc_air`, `drivers/modem/hrc_common/hrc6000_air.c`): the
 chip's physical layer mode, with this chip's differences from its chip description
 ([modem-hrc6000.md](modem-hrc6000.md) 10.7). The HR_C5000 manual documents the mode (0x10 LayerMode bits 4-3 = 00,
-0x82 bit 0, 36 bytes of physical layer data in page 2). Untested on this radio: every fit carries `AIR_FIT_UNTESTED`
-(`air_verified` is not set).
+0x82 bit 0, 36 bytes of physical layer data in page 2). Every fit carries `AIR_FIT_UNTESTED` (`air_verified` is not
+set).
 
 | Profile | Receive | Transmit |
 |---|---|---|
-| P25 phase 1 (C4FM), trunking | the chip's correlator and soft records (modem-hrc6000.md 10.2) | TX RAM (10.3) |
-| NXDN | no | TX RAM (10.3) |
+| P25 phase 1 (C4FM), trunking | no: the chip gives no physical layer record (below) | TX RAM (10.3): keys on the radio |
+| NXDN | no | TX RAM (10.3): keys on the radio |
 
+- **Receive.** In an open session, 4:0x10 reads 0x02 and 0x82 stays 0: no record interrupt, `airp.records=0` in the
+  debug link's `air` view. No setting of 0x40, 0x41 or 0x81 tried by CHIP_REG started it (modem-hrc6000.md 10.7).
 - **No soft-modem receive.** NXDN's short sync needs the soft modem on a flat discriminator copy. No FM receive RAM is
   documented on the HR_C5000, so there is no copy to read from the chip (modem-hrc6000.md 10.6). The discriminator
   audio on PC3 (ADC1 IN13, section 2.3) is not used: the same line on a sister design is voice band with
@@ -510,17 +512,8 @@ chip's physical layer mode, with this chip's differences from its chip descripti
 - **Deviation.** The provider scales the channel's 0x45 / 0x46 pair from the 1944 Hz calibration; the pair drives
   MOD1 (VCO) and MOD2 (TCXO through U603), the same two-point path as DMR.
 - **After close** the slot engine writes the channel's 0x10 again (0x6B, or 0x4F on a repeater channel).
-
-First checks on the radio (debug link, `CONFIG_AIR_RAW` for a raw session):
-
-1. Open a P25 session, read 4:0x10 (expect 0x02); 0x82 bit 0 interrupts every 30 ms; page 2 0x30 holds 144 levels of
-   6 bits that follow a C4FM signal from the bench.
-2. A P25 call from the bench is detected: if not, the correlator pattern isn't at aux 1:0x47-0x4C on this chip
-   (aux 1:0x04, the DMR sync register, is the next candidate).
-3. Transmit into a dummy load: 4:0x10 = 0x66 after `tx_begin`; both TX RAM halves (0x00 and 0x24) go out (the manual
-   lists only 36 bytes); outer deviation against the target; the PA held for the whole transmission.
-4. Close, then a DMR call each way, on a simplex and a repeater channel.
-5. Speaker silent through the session (0x36 = 0 is written at open; the DMR voice route writes the same).
+- **CHIP_REG** (`board.chip_reg`, [debuglink.md](debuglink.md) 3.24): chip 1 is the HR_C5000, pages 1 and 4, for register experiments
+  like the ones above.
 
 ## 5. RF
 

@@ -989,6 +989,14 @@ differs:
 | 0x10 after close (`mode_per_channel`) | 0x6E | the chip's `dmr_mode`; the engine writes the channel's value again when it runs | `hrc6000_air_close`, `hrc6000_dmr_run` |
 | FM copy (10.6) | yes | none documented: no `air_tap`, so the correlator profiles only | the board |
 
+On the radio, transmit works: the provider keys P25 and NXDN from the TX RAM halves as on the HR_C6000. Receive
+doesn't: in an open session with the receiver on, 0x82 stays 0 and the chip gives no physical layer record
+(`airp.records=0`, view `air` in [debuglink.md](debuglink.md)). Writing 0x40 (0x40, 0x43, 0xC0, 0xC3), 0x41 (0x40, 0x41,
+0x50, 0x60, 0xC0) or 0x81 (0x01, 0x19, 0xFF) by CHIP_REG during the session changed nothing, and 0x81 reads back 0
+after a write. Writing the pattern into the transmit sync field (aux 0x04-0x09) as well didn't help either. Until a
+setting that starts the record clock is found, a radio with this chip transmits the correlator profiles and can't
+receive them.
+
 Not confirmed on the HR_C5000, because the manual is an early draft and leaves these out:
 
 - 0x40 = 0x40 / 0x41 = 0x40 for soft records, and the record format at page 2 0x30 (144 levels of 6 bits).
@@ -999,6 +1007,8 @@ Not confirmed on the HR_C5000, because the manual is an early draft and leaves t
 
 Nothing of 10.5 has been checked on this chip; its fits stay `AIR_FIT_UNTESTED`.
 
+Open: what starts the physical layer record clock on this chip (11).
+
 ---
 
 ## 11. Open questions
@@ -1007,6 +1017,7 @@ Nothing of 10.5 has been checked on this chip; its fits stay `AIR_FIT_UNTESTED`.
 - The meaning of the unexplained init values (0x10=0xF3 / 0x6B during init, the 0x11-0x3C bulk block, the page 1 tables).
 - Whether the post-access interrupt is reliable for data calls (it is a voice mechanism in the manual).
 - Crystal frequency on the boards (the PLL values match 29.4912 MHz).
+- HR_C5000 physical layer receive (10.7): no record interrupt in any setting tried.
 - Passive full duplex (manual 5.4.4) for a true SFR / repeater: not tried.
 - The BS outbound's key-up (9.1): timed from the slot clock, full power still lands inside the first frames in about
   half the key-ups, so the timeslot interrupt's place against the slot on air seems to vary between key-ups. The first
