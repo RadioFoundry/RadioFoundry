@@ -47,9 +47,9 @@ block names the trunking formats.
 | Status symbols | as in every unit, one after each 70 information bits |
 
 The NID does not give a TSDU's length. The receiver (`p25_rx.c`, `rx_head`) decodes the first block as soon as its
-symbols are in and asks the framer for the next one until a block says it is the last, or the third is in. A block
-whose CRC fails still gives its best guess of the flag. For a packet, the header block gives the count of blocks that
-follow; a header whose CRC fails, or a packet longer than the unit buffer (eight blocks), is not taken.
+symbols are in and asks the framer for the next one until a CRC-valid block says it is the last, or the third is in.
+For a packet, the header block gives the count of blocks that follow; a header whose CRC fails, or a packet longer
+than the unit buffer (eight blocks), is not taken.
 
 TSDU and PDU are taken only on a trunked channel (`p25_engine_cfg_t.trunk`); a conventional channel refuses them as
 before. They go to the engine's `rx_unit` hook and never to the call layer.
