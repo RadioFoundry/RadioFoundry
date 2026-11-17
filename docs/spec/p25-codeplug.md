@@ -85,7 +85,9 @@ the block kept byte for byte; a copy at another number takes the source's tag ([
 the tag follows it, then the edited NACs and the squelch as read are written over the front of its block
 ([channel-modes.md](channel-modes.md) 2.4): the system, the fallback, the other flags and any later bytes of the block
 stay, and under a tag with the base-record flag the record keeps its own mode. A copy takes its source's tag first. A plain channel in P25 takes the
-edited NACs in place of the settings'.
+edited NACs in place of the settings'. A channel the editor's Mode row made P25 is written the same way with a new
+tag and block: NAC 0x293 both ways (unless edited), squelch normal, its talk target and talkaround as the editor shows
+them.
 
 ## 3. Trunked system (type 3)
 

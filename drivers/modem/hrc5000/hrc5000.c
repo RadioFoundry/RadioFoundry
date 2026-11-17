@@ -162,6 +162,7 @@ static const hrc_chip_t chip = {
 	.sync_reg = false,
 	.mode_per_channel = true,
 	.tc_last_rx = true,
+	.air_tx_only = true,	// no physical layer receive interrupt in any setting tried (modem-hrc6000.md 10.7)
 	.dmr_mode = dmr_mode,
 	.crc_len = crc_len,
 	.voice_lcss = voice_lcss,

@@ -1234,6 +1234,62 @@ static void test_cc_follow(void)
 	dev.chip = c6;
 }
 
+// HIL (scan with digital monitor, an HR_C5000 radio): a call in a code other than 0x1F's raised no interrupt at all, so
+// cc_follow never heard it and digital monitor played nothing, parked or scanning. 0x52 read at the ticks held the
+// call's code in its slot and junk in the other: follow that (cc_tick_follow)
+static void test_cc_tick_follow(void)
+{
+	fresh_engine();
+	hrc_chip_t c5 = *dev.chip;
+	c5.cc_any_rx = false;
+	const hrc_chip_t *c6 = dev.chip;
+	dev.chip = &c5;
+	hrc6000_dmr_set_cc_filter(&eng, 14);	// 0x1F = 14, then digital monitor
+	hrc6000_dmr_set_cc_filter(&eng, -1);
+	uint32_t t = 9600000;
+	rd[4][0x52] = 0xE0;		// 0x1F's own code (a steady other one is followed: a deaf receiver, issue 524, restarts)
+	for (int k = 0; k < 8; k++) {	// past CC_TICK_QUIET since the restarts above
+		ts_at(t += 30000);
+	}
+	CHECK(eng.cc_cur == 14);
+	log_reset();
+	uint32_t restarts = eng.st.rs_why[HRC6000_RS_CC], junk = 0x1234567u;
+	int followed_at = -1;
+	for (int k = 0; k < 12 && followed_at < 0; k++) {
+		junk = junk * 1103515245u + 12345u;
+		rd[4][0x52] = (k & 1) ? 0x20 : (uint8_t)((junk >> 16) & 0xF0u);	// CC 2 on odd ticks only
+		ts_at(t += 30000);
+		if (last_write(4, 0x1F) == 0x20) {
+			followed_at = k;
+		}
+	}
+	CHECK(followed_at >= 5 && followed_at <= 7 && eng.cc_cur == 2);
+	ts_at(t += 30000);
+	CHECK(eng.st.rs_why[HRC6000_RS_CC] == restarts + 1);
+
+	// A call in 0x1F's code being taken: a steady other code in its empty slot is not followed
+	log_reset();
+	for (int k = 0; k < 12; k++) {
+		ts_at(t += 30000);
+		rd[4][0x52] = (k & 1) ? 0x20 : 0x90;
+		if (k & 1) {
+			report_at(t + 4000, 0x32, 0x20, 0x00);	// a voice burst of the call, taken
+		}
+	}
+	CHECK(last_write(4, 0x1F) == -1 && eng.cc_cur == 2);
+
+	// A chip that deframes any code never reads it at the ticks
+	dev.chip = c6;
+	fresh_engine();
+	hrc6000_dmr_set_cc_filter(&eng, -1);
+	log_reset();
+	for (int k = 0; k < 12; k++) {
+		rd[4][0x52] = 0x20;
+		ts_at(t += 30000);
+	}
+	CHECK(last_write(4, 0x1F) == -1);
+}
+
 // Bench 2026-10-09: each voice burst was reported twice, in step, at two consecutive ticks (V twice the bursts sent)
 static void test_rx_repeat_report(void)
 {
@@ -1550,6 +1606,7 @@ int main(void)
 	test_rx_stall();
 	test_cc_any_rx();
 	test_cc_follow();
+	test_cc_tick_follow();
 	test_rx_repeat_report();
 	test_rx_bs_idles();
 	test_idle_restart_once();

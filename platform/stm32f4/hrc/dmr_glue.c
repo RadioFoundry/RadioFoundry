@@ -895,9 +895,15 @@ static const hal_baseband_t *air_tap(void)
 	return hooks != NULL && hooks->air_tap ? &stm32_hrc_baseband : NULL;
 }
 
+// The chip's description (the HR_C5000 has no physical layer receive), NULL before stm32_hrc_dmr_init
+static const hrc_chip_t *air_chip(void)
+{
+	return eng.dev != NULL ? eng.dev->chip : NULL;
+}
+
 static uint32_t air_fit(const air_profile_t *p)
 {
-	uint32_t f = hrc6000_air_fit_tap(p, air_tap());
+	uint32_t f = hrc6000_air_fit_tap(p, air_chip(), air_tap());
 	if (f != 0 && (hooks == NULL || !hooks->air_verified)) {
 		f |= AIR_FIT_UNTESTED;
 	}
@@ -921,7 +927,7 @@ static void air_take(void)
 static bool air_open(const air_profile_t *p, air_event_cb_t cb, void *ctx)
 {
 	if (hooks == NULL || !active || air_on || hrc6000_dmr_is_transmitting(&eng)
-	    || hrc6000_air_fit_tap(p, air_tap()) == 0) {
+	    || hrc6000_air_fit_tap(p, air_chip(), air_tap()) == 0) {
 		return false;
 	}
 	air_cb = cb;
