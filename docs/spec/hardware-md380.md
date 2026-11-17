@@ -1008,7 +1008,7 @@ clamped to the first and last point outside them. Power and tuning bytes go to t
 ### 12.1 Device and bus
 
 Winbond W25Q128FV, 16 MB, on SPI1 (PB3-PB5, AF5) with chip select PD7, mode 0, 4.5 MHz (unverified). Some
-early VHF radios have a 1 MB part (unverified). `flash_md380.c` accepts any W25Q (JEDEC type 0x40) and probes the
+early VHF radios have a 1 MB part, a W25Q80 (JEDEC EF 40 14). `flash_md380.c` accepts any W25Q (JEDEC type 0x40) and probes the
 size.
 
 ### 12.2 Map
@@ -1019,9 +1019,11 @@ by the first open-firmware write, and writing the TYT codeplug again (stock firm
 radio ID, zones and first channels while the rest stays, a mixed codeplug ([codeplug-port.md](codeplug-port.md) 5.2;
 measured in a backup, 2026-10-21). `board.toml` `[stock_codeplug]` gives the TYT codeplug's span, 0x2000-0x3FFFF, decoded
 with qdmr's md380 driver. Read it out with the manufacturer's CPS first if it matters ([md380-migration.md](md380-migration.md) does that, converts it with qdmr and writes it back). There is no calibration window in the
-main array (11.1). On a smaller part the core gets no areas: settings live in RAM and nothing is written. The CPS still
-reads the chip (area 1, up to its end) and the radio info gives its size, so a backup saves all of it; the Codeplug
-Editor and the flasher's channel step say that the radio stores no codeplug.
+main array (11.1). A 1 MB part gets the same map up to its end (`map_1mb`): settings 0x011000, journal 0x019000,
+open-firmware codeplug 0x000000 and 0x020000-0x0FFFFF (flash image 0-0xDFFFF: the codeplug, and the DMR ID database
+as far as it fits), no native area and no TFTP staging. A part smaller than 1 MB gets no areas: settings live in RAM and
+nothing is written. The CPS still reads the chip (area 1, up to its end) and the radio info gives its size, so a backup
+saves all of it.
 
 ---
 
@@ -1135,7 +1137,7 @@ The open-firmware CPS shim reports radio type 7 and serves the MCU ROM from 0x08
 | Retevis RT3 | a rebadged MD-380 |
 | MD-380G / MD-390G / RT3 GPS | GPS module on USART3, power on PD8 (section 13) |
 | UHF / VHF | separate boards: different RF parts and VCOs, one RadioFoundry image each |
-| 1 MB flash | some early VHF radios; RadioFoundry stores nothing on them |
+| 1 MB flash | some early VHF radios; RadioFoundry stores settings and the codeplug in the first megabyte (12.2) |
 
 (unverified) for all rows.
 

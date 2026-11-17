@@ -17,8 +17,10 @@ typedef struct {
 	bool cpol, cpha;		// SPI mode
 	uint8_t br;			// clock PCLK / 2^(br + 1) (stm32_spi_master_init)
 	uint16_t device, device_mask;	// the JEDEC memory type and capacity accepted: (id & mask) == device
-	// The core's areas, given only on a part that holds them all (hal_flash_map_end; smaller: nothing is stored)
+	// The core's areas, given only on a part that holds them all (hal_flash_map_end). small_map: optional, the areas
+	// on a part too small for map (a radio sold with two chip sizes); a part that holds neither stores nothing
 	const hal_flash_map_t *map;
+	const hal_flash_map_t *small_map;
 	// Optional: the board's lock for a bus the chip shares with another device (a display), held around every
 	// transaction in place of the driver's own mutex. Both or neither
 	void (*bus_take)(void);

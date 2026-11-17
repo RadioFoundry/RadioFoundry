@@ -325,9 +325,8 @@ A 160 x 128 color screen, every row visible. The controller type is unconfirmed.
   it hears nothing. Once heard, the module is powered only while **Settings > Location > GPS** is on, which takes
   effect at once.
 - No vibration motor: **Settings > Sound > Vibrate** isn't in the image.
-- Some early VHF radios may have a 1 MB memory chip instead of 16 MB (not yet confirmed on a radio). RadioFoundry
-  can't store a codeplug on it: settings are lost when the radio is turned off, and the Codeplug Editor and the
-  web installer say so. A backup still saves the whole chip.
+- Some early VHF radios have a 1 MB memory chip instead of 16 MB. RadioFoundry keeps settings and the codeplug on it
+  as on other radios; the DMR ID database is limited to what fits.
 
 ## TYT MD-UV380
 
