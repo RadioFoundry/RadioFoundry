@@ -1775,8 +1775,9 @@ class SdrBench:
     def aprs_rx_start(self, freq, seconds, bw=APRS_RX_BW):
         """The receive board's own Bell 202 / AX.25 decode (an FM rx job with "aprs": true, the gateway's
         bench-api.md 14.6) on freq (MHz) for `seconds` from now, in the background; returns once the board receives,
-        so the radio can key next. No raw I/Q comes back. Finish with aprs_rx_result()."""
-        job = self.fm_rx_start(freq, seconds, bw=bw, aprs=True)
+        so the radio can key next. No raw I/Q comes back. Finish with aprs_rx_result(). The FM tests' squelch: the
+        board's default (10 dB over the floor) shut out a radio on its lowest power."""
+        job = self.fm_rx_start(freq, seconds, bw=bw, aprs=True, squelch_over_db=FM_SQUELCH_DB)
         job.seconds = float(seconds)
         return job
 
