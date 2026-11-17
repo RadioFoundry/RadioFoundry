@@ -49,9 +49,9 @@ is `tools/bringup.py list --radio <id>`.
 | `am_rx` | not recorded | ✕ | not recorded | ✕ | ✕ | ✕ | ✕ |
 | `bcast_fm` | not recorded | ✕ | not recorded | not written | ✕ | ✕ | ✕ |
 | `rx_ext` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not written |
-| `p25` | off | off | off | off | off | off | off |
-| `p25_trunk` | off | off | off | off | off | off | off |
-| `nxdn` | off | off | off | off | off | off | off |
+| `p25` | not recorded | not recorded | not written | not written | not written | not recorded | not recorded |
+| `p25_trunk` | not recorded | not recorded | not written | not written | not written | not recorded | not recorded |
+| `nxdn` | not recorded | not recorded | not written | not written | not written | not recorded | not written |
 | `dmr_voice` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | partial, needs re-run |
 | `dmr_privacy` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `dmr_talker_alias` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
@@ -285,9 +285,9 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `ZONE_EDIT` | ● | ● | ● | ● | ● | ● | ● |
 | `CONTACT_EDIT` | ● | ● | ● | ● | ● | ● | ● |
 | `VOLUME_BAR` | ● | ● | ● | ● | ● | ● | ● |
-| `P25` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
-| `P25_TRUNK` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
-| `NXDN` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
+| `P25` | ● | ● | … | … | … | ● | ● |
+| `P25_TRUNK` | ● | ● | … | … | … | ● | ● |
+| `NXDN` | ● | ● | … | … | … | ● | … |
 | `AIR_RAW` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | Voltage reading (board, no switch) | Battery | Battery | Battery | None | Battery | Battery | Supply |
 | Clock kept through power-off (board, no switch) | Yes | ? | Yes | ? | ? | ? | ? |
@@ -320,8 +320,8 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Trunked calls and services: voice, status, short data, packet data, authentication | `DMR_TRUNK_TX` | 11,548 | 11,876 | Needs `DMR_TRUNK`. Includes its children. Off, the radio follows a system and never transmits there |
 | Trunked supplementary data and the short data poll | `DMR_TRUNK_SUPL` | 724 | 684 | Needs `DMR_TRUNK_TX` |
 | Trunked calls through a system's telephone, line and dispatcher gateways: dialed digits sent with the call | `DMR_TRUNK_GW` | 1,552 | 1,732 | Needs `DMR_TRUNK_TX` |
-| P25 channels in the codeplug: the conventional codec | `P25` | 56 | — | Off by default. The codec only: a P25 channel is shown as a mode not in this build ([p25-codeplug.md](spec/p25-codeplug.md)). A stored P25 channel runs on its own parameters ([p25.md](spec/p25.md) 7) |
-| P25 trunked systems in the codeplug: the codec | `P25_TRUNK` | 13,300* | — | Needs `P25`; on top of it. MD-380: no air interface, nothing runs. Off by default. A trunked channel hunts its system's control channel and follows voice grants for its talk group; where the system allows transmit it registers, affiliates, asks for a voice channel on PTT and transmits on the grant ([p25-trunking.md](spec/p25-trunking.md)). Run on the DM-1701 and the DM-32UV against a control channel the SDR bench plays, not on a live system. RAM: 1,232 B on the DM-1701 |
+| P25 channels in the codeplug: the conventional codec | `P25` | 56 | — | The codec only: a P25 channel is shown as a mode not in this build ([p25-codeplug.md](spec/p25-codeplug.md)). A stored P25 channel runs on its own parameters ([p25.md](spec/p25.md) 7) |
+| P25 trunked systems in the codeplug: the codec | `P25_TRUNK` | 13,300* | — | Needs `P25`; on top of it. MD-380: no air interface, nothing runs. A trunked channel hunts its system's control channel and follows voice grants for its talk group; where the system allows transmit it registers, affiliates, asks for a voice channel on PTT and transmits on the grant ([p25-trunking.md](spec/p25-trunking.md)). Run on the DM-1701 and the DM-32UV against a control channel the SDR bench plays, not on a live system. RAM: 1,232 B on the DM-1701 |
 | VFO (hand-tuned frequency) | `VFO` | 656 | 516 | Includes the DMR VFO; `VFO` and `VFO_DMR` re-measured 2026-10-17 (DM-1701 plain build, MD-380 with LTO). Copy to VFO ([dmr-voice.md](spec/dmr-voice.md) 2.2) is on top of that figure, behind the same switch: about 630 B on the DM-1701 and 730 B on the MD-380 (default builds, LTO as each has it), 750 B on the C-SKY radios |
 | FM VFO | `VFO_FM` | 504 | 452 |  |
 | DMR VFO (color code, slot, talk target typed in; mode change FM / DMR) | `VFO_DMR` | 144 | 104 | The VFO's mode, color code, slot and talk target are settings of the VFO, kept across power cycles ([dmr-voice.md](spec/dmr-voice.md) 2.1) |

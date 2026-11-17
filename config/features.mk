@@ -296,12 +296,13 @@ CONFIG_APRS_RX ?= $(CONFIG_APRS_AFSK)
 CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
 # P25 Phase 1 conventional (core/p25, docs/spec/p25.md): the one switch for everything P25 needs. It brings the air
 # interface (core/air: the framer, the soft modem, the shared FEC, and the board's provider behind board.air), the
-# engine and the P25 channel mode, the full-rate voice decoder and the MBE core it sits on (core/mbe)
-CONFIG_P25 ?= n
+# engine and the P25 channel mode, the full-rate voice decoder and the MBE core it sits on (core/mbe). A board without
+# an air interface provider (board.air) lists it in BOARD_NOT_WRITTEN
+CONFIG_P25 ?= y
 # NXDN conventional voice (core/nxdn, docs/spec/nxdn.md): 4800 and 9600 bit/s frames, the call layer and its engine
 # on the air interface, and the NXDN channel mode. Voice frames go to and from the vocoder the board already hosts for
 # DMR, through the DMR voice path; nothing of the vocoder is in it. Needs DMR
-CONFIG_NXDN ?= n
+CONFIG_NXDN ?= $(CONFIG_DMR)
 # Derived, never set by hand (a command line or a board's config.mk that sets one stops the build): AIR the air
 # interface, on with any air-framed mode (P25, NXDN); IMBE the full-rate voice decoder and MBE the MBE core, with P25
 $(foreach f,AIR IMBE MBE,$(if $(filter-out undefined,$(origin CONFIG_$(f))),$(error CONFIG_$(f) is derived from CONFIG_P25 \
@@ -315,7 +316,7 @@ CONFIG_AIR_RAW ?= n
 # P25 trunked: the codec of its systems and channels (docs/spec/p25-codeplug.md 3), a control channel decoded and voice
 # channel grants followed, and where the system allows it registration, voice requests and transmit on the grant
 # (core/p25/p25_follow.c, docs/spec/p25-trunking.md). Needs P25
-CONFIG_P25_TRUNK ?= n
+CONFIG_P25_TRUNK ?= $(CONFIG_P25)
 # the GPS status screen: satellites on a sky plot and signal bars, fix quality, grid locator (core/position/nmea_sky.c,
 # core/ui/ui_gps.c, docs/spec/position.md 3). Needs GPS; off, Tools > Position is a page of text
 CONFIG_GPS_SKY ?= $(CONFIG_GPS)

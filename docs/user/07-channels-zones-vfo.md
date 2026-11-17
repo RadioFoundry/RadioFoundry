@@ -311,8 +311,7 @@ radio that runs them ([P25 in the VFO](#p25-in-the-vfo), [NXDN in the VFO](#nxdn
 
 ### P25 in the VFO
 
-A build with P25 ([build options](../build-config.md)) on a radio whose feature list has it
-([Radio reference](23-radios.md)) adds P25 to the VFO's modes: **\***, **4** goes FM, DMR, P25, then FM again
+On a radio that runs P25 ([feature matrix](../feature-matrix.md)), P25 is one of the VFO's modes: **\***, **4** goes FM, DMR, P25, then FM again
 ("VFO: P25"). The VFO keeps the mode when the radio is switched off.
 
 - It hears clear P25 voice calls on network access code 293, to every talkgroup. Encrypted calls stay silent.
@@ -325,7 +324,7 @@ A build with P25 ([build options](../build-config.md)) on a radio whose feature 
 
 ### P25 channels
 
-A P25 channel comes from a codeplug written on a computer, a zone shared by another radio, or the VFO: in P25, open
+A P25 channel comes from a codeplug written on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)), a zone shared by another radio, or the VFO: in P25, open
 **Channels**, **New channel from current settings** and save it. The channel keeps the network access codes, the
 talkgroup (when a contact has that talkgroup; else talkgroup 1) and talkaround. A shared one comes in receive only, as
 every shared channel does: turn RX only off in its settings. On a radio without P25 the channel shows as P25 and stays
@@ -345,9 +344,9 @@ silent.
 
 ### P25 trunked channels
 
-A build with P25 trunking adds channels that belong to a P25 trunked system (Phase 1 voice channels). The system
+On a radio that runs P25 trunking, a channel can belong to a P25 trunked system (Phase 1 voice channels). The system
 (its control channels, its identity, your unit ID) and its channels (one talkgroup each) come from a codeplug written
-on a computer. The channel's settings show "P25T" as the mode.
+on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)). A new system is listen only. The channel's settings show "P25T" as the mode.
 
 | Home says | What the radio is doing |
 |---|---|
@@ -361,14 +360,14 @@ on a computer. The channel's settings show "P25T" as the mode.
 
 - A system set to listen only, a channel set to RX only, or one without a unit ID or talkgroup never transmits: PTT
   says "RX only".
-- Calls to other talkgroups are not followed.
+- Calls to other talkgroups are followed only when the channel is set to follow every group of the system.
 - Calls to one unit, emergency and Phase 2 (TDMA) voice channels are not there yet.
 - Scan skips these channels and dual watch doesn't take them: a trunked channel follows its system instead.
 - This has run against a test control channel only, not yet on a working system.
 
 ### NXDN in the VFO
 
-A build with NXDN on a radio whose feature list has it adds NXDN to the VFO's modes after P25 ("VFO: NXDN"). It
+On a radio that runs NXDN, NXDN is one of the VFO's modes, after P25 ("VFO: NXDN"). It
 is NXDN conventional voice at 9600 bit/s (12.5 kHz) or 4800 bit/s (6.25 kHz), through the radio's DMR voice codec.
 
 - It hears clear voice calls on every radio access number (RAN), to every group. Encrypted calls stay silent.
@@ -382,7 +381,7 @@ is NXDN conventional voice at 9600 bit/s (12.5 kHz) or 4800 bit/s (6.25 kHz), th
 
 ### NXDN channels
 
-An NXDN channel comes from a codeplug written on a computer, a zone shared by another radio, or the VFO: in NXDN,
+An NXDN channel comes from a codeplug written on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)), a zone shared by another radio, or the VFO: in NXDN,
 open **Channels**, **New channel from current settings** and save it. The channel keeps the rate, the RANs, the
 squelch and the group (when a contact has that group; else group 1).
 
