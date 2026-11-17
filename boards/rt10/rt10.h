@@ -29,9 +29,7 @@ uint8_t rt10_knob_raw(void);
 
 uint32_t rt10_input_ptt_ignored(void);
 
-// The FD6818's register bus (radio_rt10.c), its ID as read at start-up and the frames it didn't acknowledge
-#include "rf/rfbus/rfbus.h"
-rfbus_t *rt10_rf_bus(void);
+// The FD6818's ID as read at start-up and the register bus frames it didn't acknowledge (radio_rt10.c)
 void rt10_rf_info(uint16_t *id, uint32_t *nacks);
 bool rt10_radio_transmitting(void);	// the radio is keyed (the shared PTT line's gate)
 // The debug link's CHIP_REG for the FD6818 (board.chip_reg)

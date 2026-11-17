@@ -318,7 +318,14 @@ static size_t wr(const uint8_t *buf, size_t len)
 	bool rtos = xTaskGetSchedulerState() == taskSCHEDULER_RUNNING && !hrc_in_isr() && rx_sem != NULL;
 	if (HRC_HOST_TX_IDLE_MS != 0u && rtos) {
 		uint32_t since = hal_millis();
-		while (hrc_uart_tx_wait(hal_millis(), rx_any_ms, rx_any_seen, since, HRC_HOST_TX_IDLE_MS, TX_IDLE_MAX_MS)) {
+		for (;;) {
+			// The last character's time before the clock: read after it, a character arriving in between would look
+			// 2^32 ms old and end the wait just as the host sends
+			uint32_t last = rx_any_ms;
+			bool seen = rx_any_seen;
+			if (!hrc_uart_tx_wait(hal_millis(), last, seen, since, HRC_HOST_TX_IDLE_MS, TX_IDLE_MAX_MS)) {
+				break;
+			}
 			vTaskDelay(1);
 		}
 	}

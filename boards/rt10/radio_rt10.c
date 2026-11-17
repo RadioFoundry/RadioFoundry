@@ -163,11 +163,6 @@ static const hrc_afsk_board_t afsk_board = {
 };
 #endif
 
-rfbus_t *rt10_rf_bus(void)
-{
-	return &fd_bus.bus;
-}
-
 // The shared PTT line's gate trusts no new press while this is set (drivers/input/sharedptt). DMR TX keys the RF per
 // burst while armed, without setting transmitting
 bool rt10_radio_transmitting(void)
@@ -213,6 +208,12 @@ static void init(void)
 #endif
 	hrc_pin_in(PIN_RF_CSS);
 	hrc_pin_in(PIN_RF_SQ);
+#if CONFIG_APRS
+	// Before the FD6818 check: board.afsk is hrc_afsk either way, and its receive start calls these hooks
+	hrc_fm_rx_attach(&modem);
+	modem.fm_tx_limit[0] = modem.fm_tx_limit[1] = 0x0Fu;	// the default 4 caps the tones near 1.65 kHz (modem-hrc7000.md 8.4)
+	hrc_afsk_attach(&modem, &afsk_board);
+#endif
 	hrc_pin_out(PIN_FD_SCL, true);
 	rfbus_i2c_attach(&fd_bus, &fd_i2c, FD_ADDR7, hal_delay_ms);
 	fd_bus.crit_enter = hrc_irq_save;
@@ -227,11 +228,6 @@ static void init(void)
 	fd6818sh_init_main(&fd);
 	fd6818sh_set_af_gain(&fd, FD_VOLUME);
 	fd6818sh_analog_mode(&fd);
-#if CONFIG_APRS
-	hrc_fm_rx_attach(&modem);
-	modem.fm_tx_limit[0] = modem.fm_tx_limit[1] = 0x0Fu;	// the default 4 caps the tones near 1.65 kHz (modem-hrc7000.md 8.4)
-	hrc_afsk_attach(&modem, &afsk_board);
-#endif
 }
 
 // The FD6818's AF output: the speaker's audio with the squelch open; in DMR the modem's input, and while APRS listens
