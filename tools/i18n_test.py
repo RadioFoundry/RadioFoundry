@@ -91,11 +91,11 @@ class Marks(unittest.TestCase):
     def test_format_mark(self):
         # TRF(buffer, KEY, "English", values...): the buffer and the values are skipped, whatever they hold
         found = scan('TRF(sb(&b, 1), FROM, "Message from %s, "\n\t"%02u", station(ev, id), n);\n'
-                     'x = TR(PCT, "50% of 100%");\nTRF(&b, AT, "At %3u", n);\n'
+                     'x = TR(PCT, "50% of 100%");\nTRF(&b, AT, "At %03u", n);\n'
                      'TRF(&b, AGE, TEXT_ALT_OPEN "%1$u%2$K ago" TEXT_ALT_NEXT "%1$u%2$K" TEXT_ALT_CLOSE, n, u);\n')
         self.assertEqual([(m.kind, m.key, m.text) for m in found],
                          [("TRF", "FROM", "Message from %s, %02u"), ("TR", "PCT", "50% of 100%"),
-                          ("TRF", "AT", "At %3u"), ("TRF", "AGE", "{%1$u%2$K ago|%1$u%2$K}")])
+                          ("TRF", "AT", "At %03u"), ("TRF", "AGE", "{%1$u%2$K ago|%1$u%2$K}")])
         self.assertEqual(i18n.format_values(found[0].text, ""), {1: "s", 2: "u"})
         self.assertEqual(i18n.format_values(found[2].text, ""), {1: "u"})
         self.assertEqual(i18n.format_values("%1$u, %1$u", ""), {1: "u"})
@@ -110,11 +110,14 @@ class Marks(unittest.TestCase):
                          ('TRF(&b, FROM, "From %1$s to %2$s", a, b);', "in order without numbers"),
                          ('TRF(&b, FROM, "From %s to %2$s or %2$s", a, b);', "in order without numbers"),
                          ('TRF(&b, FROM, "To %2$s from %1$s", a, b);', "in order without numbers"),
+                         ('TRF(&b, FROM, TEXT_ALT_OPEN "Here, %u ch" TEXT_ALT_NEXT "Here" TEXT_ALT_CLOSE, n);',
+                          "inside a text alternate"),
                          ('TRF(&b, FROM, "%1$s and %1$u", a);', "in one place"),
                          ('TRF(&b, FROM, "%02s", a);', "only a number takes a width"),
                          ('TRF(&b, FROM, "%1$s %5$s", a);', "is not a value"),
                          ('TRF(&b, FROM, "%1$s %2$x", a, b);', "is not a value"),
                          ('TRF(&b, FROM, "%s %x", a, b);', "is not a value"),
+                         ('TRF(&b, FROM, "%s %3u", a, b);', "is not a value"),
                          ('TRF(&b, "From %1$s", a);', "takes a buffer, a key")):
             with self.assertRaisesRegex(i18n.I18nError, why, msg=src):
                 scan(src + "\n")
@@ -138,6 +141,10 @@ class Marks(unittest.TestCase):
         self.assertEqual(i18n.check_translation("From %s", "%1$s, de %1$s", "x"), [])
         self.assertTrue(i18n.check_translation("From %s", "De %1$s", "x"))
         self.assertTrue(i18n.check_translation("From %s", "De %u", "x"))
+        # A value inside a text alternate is numbered, even alone
+        en = "{Here, %1$u ch|Here}"
+        self.assertEqual(i18n.check_translation(en, "{Aquí, %1$u can.|Aquí}", "x"), [])
+        self.assertTrue(i18n.check_translation(en, "{Aquí, %u can.|Aquí}", "x"))
 
     def test_format_prototypes(self):
         with tempfile.TemporaryDirectory() as d:

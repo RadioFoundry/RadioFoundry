@@ -1970,7 +1970,7 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 	sb_init(&b, title, sizeof title);
 	if (v->state == RS_TX && d->target_private && d->target_id != 0xFFFFFFu) {
 		// A private call says so where a group call has its "TG": "Private 9991234", else "Private"
-		TRF(&b, CALL_BODY_PRIVATE_ID, TEXT_ALT_OPEN "Private %u" TEXT_ALT_NEXT "Private" TEXT_ALT_CLOSE,
+		TRF(&b, CALL_BODY_PRIVATE_ID, TEXT_ALT_OPEN "Private %1$u" TEXT_ALT_NEXT "Private" TEXT_ALT_CLOSE,
 			d->target_id);
 	} else if (v->state == RS_TX) {
 		sb_target(&b, d->target_id, d->target_private, "");

@@ -598,7 +598,7 @@ int main(void)
 	CHECK(strcmp(f, "-5 03:12 2147483647") == 0);
 	CHECK(sb_fmt_name == NULL);
 	sb_init(&b, f, sizeof f); sb_fmt(&b, "[%3d|%03d|%2u|%1u]", -5, -5, 123u, 0u);
-	CHECK(strcmp(f, "[ -5|-05|123|0]") == 0);
+	CHECK(strcmp(f, SB_FMT_SPACE_PAD ? "[ -5|-05|123|0]" : "[-5|-05|123|0]") == 0);
 	sb_init(&b, f, sizeof f); sb_fmt(&b, "From %s, %u", "Bob", 4u);
 	CHECK(strcmp(f, "From Bob, 4") == 0);
 	CHECK(sb_fmt_name == f + 5);

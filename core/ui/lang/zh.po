@@ -5156,8 +5156,8 @@ msgstr "，仅 B 类"
 
 #: core/ui/ui_screens.c
 msgctxt "CALL_BODY_PRIVATE_ID"
-msgid "{Private %u|Private}"
-msgstr "{个呼 %u|个呼}"
+msgid "{Private %1$u|Private}"
+msgstr "{个呼 %1$u|个呼}"
 
 #: core/ui/ui_screens.c
 msgctxt "STATE_TALKING"

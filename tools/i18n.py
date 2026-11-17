@@ -212,12 +212,13 @@ def taken_keys():
 
 
 # A value in a TRF format (core/ui/textfmt.h, sb_fmt): %<kind>, or %<number>$<kind> with the number from 1; a
-# number may ask for its least width, space padded (%3u) or zero padded (%03u). Every other '%' is text. FORMAT_LIKE
-# is what was probably meant as a value and isn't one. Numbering (format_numbering): the English writes its values in
-# order without numbers ("Site %u of %u: %s") unless it uses one twice; a translation of more than one value numbers
-# every value ("%3$s: sitio %1$u de %2$u")
+# number may ask for its least width, zero padded (%03u). Space padding (%3u) is off in the formatter
+# (SB_FMT_SPACE_PAD). Every other '%' is text. FORMAT_LIKE is what was probably meant as a value and isn't one.
+# Numbering (format_numbering): the English writes its values in order without numbers ("Site %u of %u: %s") unless
+# it uses one twice or has one inside a text alternate; a translation of more than one value numbers every value
+# ("%3$s: sitio %1$u de %2$u")
 FORMAT_VALUES = 4
-FORMAT_VALUE = re.compile(r"%(?:([1-" + str(FORMAT_VALUES) + r"])\$)?(0?[1-9])?([sKdu])")
+FORMAT_VALUE = re.compile(r"%(?:([1-" + str(FORMAT_VALUES) + r"])\$)?(0[1-9])?([sKdu])")
 FORMAT_LIKE = re.compile(r"%[0-9]*\$[0-9]*.?|%[-+#0-9.]*l*[sdiuxXcK]")
 FORMAT_C_TYPE = {"s": "const char *", "K": "const char *", "d": "int", "u": "unsigned"}
 
@@ -227,7 +228,7 @@ def format_values(text, where):
     is used, and what looks like a value must be one"""
     kinds = {}
     for m in FORMAT_LIKE.finditer(FORMAT_VALUE.sub("", text)):
-        raise I18nError("%s: %r: %r is not a value: write %%s, %%K, %%d, %%u, %%3u or %%03u, numbered %%1$s to %%%d$s "
+        raise I18nError("%s: %r: %r is not a value: write %%s, %%K, %%d, %%u or %%03u, numbered %%1$s to %%%d$s "
                         "in a translation" % (where, text, m.group(0), FORMAT_VALUES))
     unnumbered = 0
     for m in FORMAT_VALUE.finditer(text):
@@ -250,6 +251,17 @@ def format_numbering(text, where, english=None):
     found = list(FORMAT_VALUE.finditer(text))
     numbered = [m for m in found if m.group(1)]
     twice = len({m.group(1) for m in numbered}) < len(numbered)
+    # A value inside a text alternate {a|b}: each choice must say which value it shows, since a choice may leave one
+    # out ("{Here, %1$u ch|Here}")
+    depth, alt = 0, False
+    for i, ch in enumerate(text):
+        depth += (ch == "{") - (ch == "}")
+        alt |= depth > 0 and any(m.start() == i for m in found)
+    if alt:
+        if len(numbered) < len(found):
+            return ["%s: %r: a value inside a text alternate {a|b} is numbered (%%1$u), and so is every value"
+                    % (where, text)]
+        return []
     if len(found) == 1 and numbered:
         return ["%s: %r: one value is written without a number (%%%s)" % (where, text, found[0].group(0).split("$")[1])]
     if english is None:

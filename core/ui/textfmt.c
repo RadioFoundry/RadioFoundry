@@ -33,8 +33,8 @@ static void put(sbuf_t *b, const char *s, const char *end, bool safe)
 {
 	while (s != end && *s) {
 #if CONFIG_LANG_ZH
-		// A CJK catalog's text is UTF-8 (tools/i18n.py): when the buffer has no room for a whole character, drop
-		// it whole rather than leave half of it for the text layer to draw as a box
+		// A CJK catalog's text is UTF-8 (tools/i18n.py): when the buffer has no room for a whole character,
+		// drop it whole rather than leave half of it for the text layer to draw as a box
 		const uint8_t *p = (const uint8_t *)s;
 		int seq = ((p[0] & 0xF0) == 0xE0 && (p[1] & 0xC0) == 0x80 && (p[2] & 0xC0) == 0x80) ? 3 : 1;
 		if ((size_t)(b->end - b->p) < (size_t)seq)
@@ -53,25 +53,28 @@ void sb_str(sbuf_t *b, const char *s)
 }
 
 
-// v in base 10 or 16 with its sign: '0' pads with zeros after the sign, ' ' with spaces before it, up to width
+// v in base 10 or 16 with its sign, zero padded after the sign up to width (SB_FMT_SPACE_PAD: or with spaces before
+// it). The digits come from the highest power of the base down, with no buffer: this sits under the debug link's
+// deepest calls (docs/dev/stack-check.md)
 static void put_num(sbuf_t *b, uint32_t v, bool neg, unsigned base, bool upper, char pad, int width)
 {
-	const char *digits = upper ? "0123456789ABCDEF" : "0123456789abcdef";
-	char t[10];
-	int n = 0;
-	do {
-		t[n++] = digits[v % base];
-		v /= base;
-	} while (v != 0);
-	int len = n + (int)neg;
+	uint32_t div = 1;
+	int len = 1 + (int)neg;
+	while (v / div >= base) {
+		div *= base;
+		len++;
+	}
 	if (neg && pad == '0')
 		sb_chr(b, '-');
 	for (; width > len; width--)
 		sb_chr(b, pad);
 	if (neg && pad != '0')
 		sb_chr(b, '-');
-	while (n > 0)
-		sb_chr(b, t[--n]);
+	do {
+		unsigned d = (unsigned)(v / div % base);
+		sb_chr(b, (char)(d < 10u ? '0' + d : (upper ? 'A' : 'a') + d - 10u));
+		div /= base;
+	} while (div != 0);
 }
 
 void sb_u32(sbuf_t *b, uint32_t v, int min_digits)
@@ -86,33 +89,33 @@ void sb_i32(sbuf_t *b, int32_t v)
 
 const char *sb_fmt_name;
 
-// The value after the '%' at f: n is its number from 0 (unnumbered: *next, which then moves on), and the return is
-// its kind ('%' for "%%", 0 for text that isn't a value) with *end just after it
+// One value's spec: %[n$][0][width][l]<kind>
 typedef struct {
-	unsigned n;
-	int width;
+	uint8_t n;		// its number from 0
+	uint8_t width;
 	char pad;
 	bool is_long, numbered;
 } spec_t;
 
+// The value after the '%' at f. Its number is n$, else *next, which then moves on. The return is its kind ('%' for
+// "%%", 0 for text that isn't a value), with *end just after it
 static char spec(const char *f, spec_t *v, unsigned *next, const char **end)
 {
 	const char *k = f + 1;
 	v->numbered = k[0] >= '1' && k[0] <= '0' + SB_FMT_VALUES && k[1] == '$';
-	v->n = v->numbered ? (unsigned)(k[0] - '1') : *next;
+	v->n = (uint8_t)(v->numbered ? (unsigned)(k[0] - '1') : *next);
 	if (v->numbered)
 		k += 2;
-	v->pad = ' ';
-	v->width = 0;
+	v->pad = SB_FMT_SPACE_PAD ? ' ' : 0;
 	v->is_long = false;
 	if (*k == '0') {
 		v->pad = '0';
 		k++;
 	}
+	unsigned w = 0;
 	while (*k >= '0' && *k <= '9')
-		v->width = v->width * 10 + (*k++ - '0');
-	if (v->width > 20)
-		v->width = 20;
+		w = w * 10u + (unsigned)(*k++ - '0');
+	v->width = (uint8_t)(v->pad && w <= 20u ? w : v->pad ? 20u : 0u);
 	while (*k == 'l') {
 		v->is_long = true;
 		k++;
@@ -128,26 +131,39 @@ static char spec(const char *f, spec_t *v, unsigned *next, const char **end)
 	return c;
 }
 
-static uintptr_t arg(va_list *ap, char c, bool is_long)
+static uintptr_t arg(va_list *ap, bool text, bool is_signed, bool is_long)
 {
-	if (c == 's' || c == 'K')
+	if (text)
 		return (uintptr_t)va_arg(*ap, const char *);
-	if (c == 'd' || c == 'i')
+	if (is_signed)
 		return (uintptr_t)(uint32_t)(is_long ? (int32_t)va_arg(*ap, long) : va_arg(*ap, int));
 	return is_long ? (uint32_t)va_arg(*ap, unsigned long) : va_arg(*ap, unsigned);
 }
 
+// Value n (from 0) of a numbered format: the values before it are stepped over by their kind (text: bit i of text),
+// from a copy of the list. A va_list gives values only in order, and keeping them all would cost the stack
+static uintptr_t nth(va_list *start, unsigned n, unsigned text)
+{
+	va_list ap;
+	va_copy(ap, *start);
+	uintptr_t a;
+	for (unsigned i = 0;; i++) {
+		a = arg(&ap, (text >> i) & 1u, false, false);
+		if (i == n)
+			break;
+	}
+	va_end(ap);
+	return a;
+}
+
 void sb_vfmt(sbuf_t *b, const char *fmt, bool ugc, va_list ap)
 {
-	// A numbered format uses its values in any order, and a va_list gives them only in order: read them all first,
-	// each by the kind the text gives it
 	va_list args;
 	va_copy(args, ap);
-	uintptr_t value[SB_FMT_VALUES];
-	bool numbered = false;
+	// A numbered format uses its values in any order: find each value's kind first (text: bit n), and which exist
 	spec_t v;
-	unsigned next = 0;
-	char kind[SB_FMT_VALUES] = { 0 };
+	unsigned next = 0, text = 0, seen = 0;
+	bool numbered = false;
 	for (const char *p = fmt; *p;) {
 		if (*p != '%') {
 			p++;
@@ -156,13 +172,11 @@ void sb_vfmt(sbuf_t *b, const char *fmt, bool ugc, va_list ap)
 		char c = spec(p, &v, &next, &p);
 		if (c != 0 && c != '%') {
 			numbered |= v.numbered;
-			if (v.n < SB_FMT_VALUES)
-				kind[v.n] = c;
+			seen |= 1u << v.n;
+			if (c == 's' || c == 'K')
+				text |= 1u << v.n;
 		}
 	}
-	if (numbered)
-		for (unsigned i = 0; i < SB_FMT_VALUES && kind[i]; i++)
-			value[i] = arg(&args, kind[i], false);
 	if (ugc)
 		sb_fmt_name = NULL;
 	next = 0;
@@ -179,23 +193,28 @@ void sb_vfmt(sbuf_t *b, const char *fmt, bool ugc, va_list ap)
 			sb_chr(b, '%');
 			continue;
 		}
-		if (c == 0 || (numbered && (v.n >= SB_FMT_VALUES || !kind[v.n]))) {
+		// A numbered format's values must be 1 to n with none left out (tools/i18n.py), else nothing is read
+		// past one that is missing
+		if (c == 0 || (numbered && (seen + 1u) & seen)) {
 			put(b, pc, f, false);	// not a value: text, as written
 			continue;
 		}
-		uintptr_t a = numbered ? value[v.n] : arg(&args, c, v.is_long);
-		if (c == 's' || c == 'K') {
+		bool is_text = c == 's' || c == 'K';
+		uintptr_t a = numbered ? nth(&args, v.n, text) : arg(&args, is_text, c == 'd' || c == 'i', v.is_long);
+		if (is_text) {
 			const char *s = (const char *)a;
 			if (s == NULL)
 				s = ugc ? "" : "(null)";
 			bool name = ugc && c == 's';
 			if (name)
 				sb_fmt_name = b->p;
+#if SB_FMT_SPACE_PAD
 			int len = 0;
 			for (const char *q = s; *q && len < v.width; q++)
 				len++;
 			for (int w = v.width; w > len; w--)
 				sb_chr(b, ' ');
+#endif
 			put(b, s, NULL, name);
 		} else if (c == 'c') {
 			sb_chr(b, (char)a);
