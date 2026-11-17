@@ -52,7 +52,13 @@ typedef struct {
 	hrc7000_air_buf_t b;
 } air_mem_t;
 _Static_assert(sizeof(air_mem_t) <= sizeof(eng.evq), "the air session no longer fits the slot engine's event queue");
-_Static_assert(sizeof(air_softmodem_t) <= sizeof(eng.txq), "the soft modem no longer fits the slot engine's TX queue");
+// The soft modem lives in the engine's transmit queue, a queue of bytes: the state starts at its first address aligned
+// for it, or the first word store faults (the queue sits at an odd offset in the engine)
+#define AIR_SM_ALIGN	(_Alignof(air_softmodem_t))
+_Static_assert(sizeof(air_softmodem_t) + AIR_SM_ALIGN - 1u <= sizeof(eng.txq),
+	       "the soft modem no longer fits the slot engine's TX queue");
+#define AIR_SM \
+	((air_softmodem_t *)(void *)(((uintptr_t)(void *)eng.txq + AIR_SM_ALIGN - 1u) & ~(uintptr_t)(AIR_SM_ALIGN - 1u)))
 #define AIR		(&((air_mem_t *)(void *)eng.evq)->a)
 static volatile bool air_on;
 static air_event_cb_t air_cb;
@@ -513,7 +519,7 @@ HRC_FLASHFUNC static bool air_take(void)
 	hrc7000_dmr_halt(&eng);
 	lock(NULL);
 	eng.evq_tail = eng.evq_head;	// what the engine left is dropped
-	hrc7000_air_init(AIR, eng.dev, &ops, &((air_mem_t *)(void *)eng.evq)->b, (air_softmodem_t *)(void *)eng.txq);
+	hrc7000_air_init(AIR, eng.dev, &ops, &((air_mem_t *)(void *)eng.evq)->b, AIR_SM);
 	return true;	// locked
 }
 
