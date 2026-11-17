@@ -90,7 +90,9 @@ set for your ID at BrandMeister.
 
 Like the path, the SSID is also in the codeplug's first APRS configuration. Set it on the APRS page or in the
 codeplug: a change on the radio is written to the codeplug, and a codeplug written with a different SSID changes the
-radio's. Whichever changed last is used. Only the first APRS configuration counts.
+radio's. Whichever changed last is used. Only the first APRS configuration counts. After a firmware update, a codeplug
+SSID of 0 is not taken the first time: the radio keeps its own (7 by default). To send without an SSID, set 0 on the
+radio.
 
 ## Receiving
 

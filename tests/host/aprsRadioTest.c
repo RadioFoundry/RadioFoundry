@@ -1581,6 +1581,38 @@ static void test_codeplug_ssid(void)
 	CHECK(c.path == APRS_PATH_WIDE2 && c.ssid == 0);
 }
 
+// The first take after an upgrade (no SSID marker yet) leaves a codeplug SSID of 0 alone: the radio keeps sending
+// its own SSID, not the bare callsign. A later CPS write of another SSID is taken as usual
+static void test_codeplug_ssid_first_zero(void)
+{
+	aprs_cfg_t c;
+	aprs_view_t v;
+	settings_t st;
+	reset();
+	strcpy(cp_name, "Q1TST");
+	run(200);
+	settings_t *s = settings_begin();	// a record from before the SSID marker
+	settings_set_aprs_cp_ssid(s, 0);
+	settings_end(now);
+	cp_ssid = 0;				// ... and a codeplug that says 0
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	aprs_get_view(&v);
+	settings_read(&st);
+	CHECK(c.ssid == APRS_SSID_DEFAULT && strcmp(v.call, "Q1TST-7") == 0);
+	CHECK(settings_aprs_cp_ssid(&st) == 1u);	// 0 marked as taken: not looked at again
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	CHECK(c.ssid == APRS_SSID_DEFAULT);
+	cp_ssid = 9;
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	CHECK(c.ssid == 9);
+}
+
 // The transmission's failures: the transmitter won't key, the AFSK won't start, the AFSK never finishes. Each time
 // the radio goes back to its channel unkeyed, and the frame is tried again later, then given up
 static void test_rf_failures(void)
@@ -1859,6 +1891,7 @@ int main(void)
 	test_dmr_dst();
 	test_codeplug_path();
 	test_codeplug_ssid();
+	test_codeplug_ssid_first_zero();
 	test_rf_failures();
 #if CONFIG_APRS_RX
 	test_stations_digi_igate();

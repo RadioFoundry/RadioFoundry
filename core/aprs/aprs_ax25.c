@@ -116,6 +116,10 @@ static void __attribute__((noinline)) take_codeplug(const settings_t *st, const 
 	uint8_t path = path_from_codeplug(cp);
 	bool new_path = path < APRS_PATH_COUNT && settings_aprs_cp_path(st) != path + 1u;
 	bool new_ssid = cp->ssid <= 15 && settings_aprs_cp_ssid(st) != cp->ssid + 1u;
+	// None taken yet (a record from before the marker) and the codeplug says 0: most likely a byte no CPS user ever set,
+	// and taking it would drop our SSID from every packet. Mark it taken and keep ours; a later CPS write of another
+	// SSID is taken as usual, and 0 can still be set on the radio
+	bool keep_ssid = new_ssid && cp->ssid == 0 && settings_aprs_cp_ssid(st) == 0;
 	if (!new_path && !new_ssid) {
 		return;
 	}
@@ -128,7 +132,9 @@ static void __attribute__((noinline)) take_codeplug(const settings_t *st, const 
 		settings_set_aprs_cp_path(s, (uint8_t)(path + 1u));
 	}
 	if (new_ssid) {
-		s->aprs_ssid = cp->ssid;
+		if (!keep_ssid) {
+			s->aprs_ssid = cp->ssid;
+		}
 		settings_set_aprs_cp_ssid(s, (uint8_t)(cp->ssid + 1u));
 	}
 	settings_end(aprs_s.now);
@@ -136,7 +142,7 @@ static void __attribute__((noinline)) take_codeplug(const settings_t *st, const 
 	if (new_path) {
 		aprs_s.cfg.path = path;
 	}
-	if (new_ssid) {
+	if (new_ssid && !keep_ssid) {
 		aprs_s.cfg.ssid = cp->ssid;
 		if (aprs_s.me_ok) {
 			aprs_s.me.ssid = cp->ssid;
