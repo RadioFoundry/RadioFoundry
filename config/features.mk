@@ -159,7 +159,7 @@ CONFIG_LANG_ES ?= y
 # browsers. About 17 KB with Spanish on
 CONFIG_LANG_IT ?= n
 # French on the radio (core/ui/lang/fr.po): off by default, listed dimmed; the web flasher offers it to French
-# browsers. About 17 KB with Spanish on
+# browsers. About 15.5 KB with Spanish on
 CONFIG_LANG_FR ?= n
 # Chinese on the radio (core/ui/lang/zh.po): the Latin fonts have no glyph for it, so it brings a 16x16 CJK font of the
 # characters its catalog uses (core/ui/cjk_font_data.c, built by tools/cjkfont.py) and text the text layer decodes.
