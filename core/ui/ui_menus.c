@@ -2700,15 +2700,21 @@ static bool ced_changed(uint8_t r)
 }
 
 // RX in a receive-only band (the air band, broadcast FM: docs/spec/airband-and-broadcast.md 2): the copy becomes RX
-// only, and FM (AM there) in a listen band, which is all the radio does there
+// only, and FM (AM there) in a listen band, which is all the radio does there: a P25 or NXDN channel becomes a plain
+// one (the radio core refuses those modes there), and Save asks before a stored one loses its tag
 static void ced_rx_band(channel_t *c)
 {
 	if (!board_in_band(c->rx_hz, false) || board_in_band(c->rx_hz, true))
 		return;
 	c->rx_only = true;
 	c->tx_hz = c->rx_hz;
-	if (radio_listen_band(c->rx_hz))
+	if (radio_listen_band(c->rx_hz)) {
+		if (ced_is_p25(c) || ced_is_nxdn(c)) {
+			c->kind = CODEPLUG_KIND_NONE;
+			c->system = CODEPLUG_SYSTEM_NONE;
+		}
 		c->mode = RADIO_MODE_FM;
+	}
 }
 
 // A copy of what the radio uses now (temporary changes included), named after it: "Name 2", or the frequency
@@ -2801,7 +2807,7 @@ static void ced_build(void)
 				       (r == CE_CODE && !into) || (r == CE_RATE && nxdn && !into));
 		if (r == CE_CODE || r == CE_RATE ? !air_row : air && (fm_only || (dmr_only && !air_row)))
 			continue;
-		if (!air_row && ((fm_only && dmr) || (tone && listen) || (dmr_only && !dmr) || (r == CE_MODE && !CONFIG_DMR && !CONFIG_P25)))
+		if (!air_row && ((fm_only && dmr) || (tone && listen) || (dmr_only && !dmr) || (r == CE_MODE && !CONFIG_DMR)))
 			continue;
 		// The radio core skips the burst on a board with no TX tone, so no row for it there (a host board
 		// without a radio keeps the row)
@@ -3204,6 +3210,11 @@ static const char *ced_problem(void)
 	// (P25 and NXDN: none is talk group 1)
 	if (CONFIG_DMR && c->mode == RADIO_MODE_DMR && !c->rx_only && c->contact == 0 && !ced_is_p25(c) && !ced_is_nxdn(c))
 		return TR(CHAN_WHY_PICK_TX_CONTACT, "Pick a TX contact first");
+#if CONFIG_NXDN
+	// A DMR channel's own ID kept when the Mode row made it NXDN: past NXDN's range, as the ID row refuses it
+	if (ced_is_nxdn(c) && c->dmr_id > NXDN_CP_UNIT_MAX)
+		return TR(CHAN_TOAST_NXDN_ID_MAX, "NXDN IDs go up to 65519");
+#endif
 	return NULL;
 }
 

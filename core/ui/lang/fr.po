@@ -2243,6 +2243,11 @@ msgid "Pick a TX contact first"
 msgstr "Choisir contact TX"
 
 #: core/ui/ui_menus.c
+msgctxt "CHAN_TOAST_NXDN_ID_MAX"
+msgid "NXDN IDs go up to 65519"
+msgstr "ID NXDN: 65519 max"
+
+#: core/ui/ui_menus.c
 msgctxt "CHAN_TOAST_NO_CHANGES"
 msgid "No changes to save"
 msgstr "Rien à enregistrer"
@@ -2271,11 +2276,6 @@ msgstr "Codes DCS: 0 à 7"
 msgctxt "CHAN_TOAST_NAC_REPEATER"
 msgid "F7F is for repeaters"
 msgstr "F7F: pour relais"
-
-#: core/ui/ui_menus.c
-msgctxt "CHAN_TOAST_NXDN_ID_MAX"
-msgid "NXDN IDs go up to 65519"
-msgstr "ID NXDN: 65519 max"
 
 #: core/ui/ui_menus.c
 msgctxt "CHAN_TOAST_TIMEOUT_RANGE"

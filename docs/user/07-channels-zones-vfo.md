@@ -341,7 +341,7 @@ silent.
   unit ID **Own ID**.
 - **OK** on Mode steps to NXDN (on a radio that runs it), FM, DMR, then back to P25 with its settings as they were, so
   a slip costs nothing. Saving the channel as another mode removes its P25 settings: the radio asks first ("Save as
-  FM?"), and "No, keep editing" is the default. **Save as new channel** leaves the P25 channel as it is.
+  FM?", "Save as DMR?", or "Unsaved Changes" for NXDN), and "No, keep editing" is the default. **Save as new channel** leaves the P25 channel as it is.
 - Scan stops on P25 channels and holds on a call you would hear there. Dual watch takes one as A or B.
 
 ### P25 trunked channels
@@ -390,7 +390,8 @@ squelch and the group (when a contact has that group; else group 1).
 
 - Home shows it as in the VFO. The channel's settings show "NXDN" as the mode.
 - **OK** on Mode steps to FM, DMR, P25 (on a radio that runs it), then back to NXDN with its settings as they were.
-  Saving the channel as another mode removes its NXDN settings: the radio asks first ("Save as FM?").
+  Saving the channel as another mode removes its NXDN settings: the radio asks first ("Save as FM?", "Save as
+  DMR?", or "Unsaved Changes" for P25).
 - **RAN** (0-63) and **Rate** (9600 or 4800 bit/s) are in the channel's settings, with the group (**TX contact**) and
   your unit ID (**Own ID**, up to 65519). RAN 0 receives every RAN. The squelch can be changed only from a computer.
 - Scan stops on NXDN channels and holds on a call you would hear there, at a rate the radio can receive. Dual watch
