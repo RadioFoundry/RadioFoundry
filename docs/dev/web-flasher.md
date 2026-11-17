@@ -280,9 +280,23 @@ Which build runs (`update.js` `currentBuild`), from VERSION ([debuglink.md](../s
 | Radio says | Build | The update |
 |---|---|---|
 | `preset=` a variant, `off=` | that variant | the same variant; features it gained since are listed |
-| `preset=custom`, `off=` equal to a variant's | that variant | as above |
+| `preset=custom`, the build service's record of it a variant's switches | that variant | as above |
+| `preset=custom`, `off=` equal to a variant's in its release | that variant | as above |
 | `preset=custom`, `off=` | custom | every switch as it was; each feature added since is asked, On or Off, before Update. A switch a kept feature now needs comes on with it and is listed. A feature it had on that now needs what the radio can't have is listed with that need (`Selection.blockers`); the user disables them or edits the build |
 | neither (older firmware) | its `features=` against the variants of its release, by the names `features=` can carry (`features.json` `reported`) | one exact match: that variant; else the build step, from the closest |
+
+An update never moves a radio off its variant, and never changes its start language unless the user picks one. The
+build service sets every switch on the make command line, so its builds said `preset=custom` until it passed
+`RFOUNDRY_PRESET`; for those, the page asks the service which build it made (`GET /v1/builds/match` with the radio's
+board, `git=` and `off=`: the largest build at that commit with none of `off=`). That record gives the build's exact
+switches: the variant they are, the start language aside (`sameVariant`, the same rule as the service's), and every
+switch the build knew, so one newer than it is asked about, never taken as on.
+
+The start language is VERSION `start=`, else the record's start switch. Without either, a start switch that `off=`
+doesn't name is on only if the build is at least as new as that switch (`langsuggest.js` `START_SINCE`). A record that
+an Update asked for, on firmware without `start=`, may carry a start language that update set by mistake (before this
+rule, every radio updated came up in the newest language): the page asks whether to keep it or start in English
+(`START_KEEP`), and Update waits for the answer.
 
 The release a radio's build came from is the one with its commit, else the newest one older than its `git_time`. What
 that release knew is its variants' features and its manifests' `off` lists (`tools/release.py`): a switch in neither
