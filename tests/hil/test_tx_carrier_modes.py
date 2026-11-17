@@ -9,20 +9,37 @@ or bias set on one path and not the other, or a DC term that scales with the dev
 off the others, and a receiver tuned for one mode then needs another offset for the next.
 
 test_tx_carrier_mode[dmr|p25|nxdn4800|nxdn9600]: the VFO on --fm-mhz at the lowest power. FM with no tone keys for
-PTT_S, then the mode keys for PTT_S on the same VFO and frequency (tx_hz checked before each key-up). Both overs are
-measured by the same analyzer, the bench's FM receive (SdrBench.fm_over_start / fm_over_result: the board's mean carrier
-offset, its own crystal taken out). Every mode keys on --fm-mhz, so that one frequency must be in tx_mhz; --dmr-freq,
---p25-mhz and --nxdn-mhz aren't used. Pass criteria:
-- each over one keyed segment or more with a carrier;
-- the mode's carrier within MODE_TOL_PPB of the reference carrier keyed just before it (about 150 Hz at UHF). The
+PTT_S, then the mode keys for PTT_S on the same VFO and frequency (tx_hz checked before each key-up). Each over's
+carrier comes from the estimate the mode's own TX test uses:
+- FM: the bench's FM receive (SdrBench.fm_over_start / fm_over_result), the mean of the discriminator over the
+  keyed segment: an unmodulated carrier has no other mean;
+- DMR: the bench board's decoded bursts (dmr_watch_start / dmr_watch_result), the median of the bursts' carrier
+  offsets, as test_dmr_tx judges against --max-foff;
+- P25: the FM receive's raw discriminator (the rx op's disc stream) through the host soft modem (p25tool.py), the
+  median of the offsets it fits at the syncs, as test_p25_tx_off_air prints;
+- NXDN: the bench's 4FSK receiver (fsk4_rx_start, the FSW as its sync), the median of the carrier offsets it fits at
+  the syncs.
+A digital mode's estimate is fitted to the sync's known symbols: the mean of a discriminator would also read the
+mean of the symbols sent (syncs, status symbols, a quiet room's voice frames), a hundred Hz or more on P25.
+Every mode keys on --fm-mhz, so that one frequency must be in tx_mhz; --dmr-freq, --p25-mhz and --nxdn-mhz aren't
+used. Pass criteria:
+- the FM over one keyed segment or more with a carrier; a digital over at least one sync or burst;
+- the mode's carrier within MODE_TOL_PPB of the reference carrier keyed just before it (about 120 Hz at UHF). The
   reference is FM; a build without the FM VFO uses DMR instead (P25 and NXDN against DMR; DMR itself is then judged
   on the absolute limit only);
 - each carrier within --max-foff Hz of the frequency (default 500), plus the bench board's own tolerance at the
-  frequency (freq_tol_hz), as test_fm_tx and test_dmr_tx judge it.
+  frequency (freq_tol_hz, a DMR watch's cfo_hz.tol), as test_fm_tx and test_dmr_tx judge it.
 Every carrier and the difference are printed. Skipped for a mode the build lacks (DMR or the DMR VFO, P25, NXDN), a
-rate the radio's air interface can't transmit (nxdn.fit4800 / nxdn.fit9600), a radio with no DMR ID (DMR), and in
-hotspot mode. The VFO's mode and the NXDN settings are put back afterwards.
+rate the radio's air interface can't transmit (nxdn.fit4800 / nxdn.fit9600), a radio with no DMR ID (DMR), in
+hotspot mode, and where the bench board lacks a receiver an over needs (bench): FM receive for FM and P25, decoded
+bursts on --fm-mhz for DMR, 4FSK receive for NXDN. The VFO's mode and the NXDN settings are put back afterwards.
+
+The bench board takes its own crystal out of all four the same way (the gateway's bench-api.md 14.7): the rx op (FM,
+its disc stream, 4FSK) and the bursts op each mix the channel from where a carrier on the frequency shows with the
+board's ppm, so every estimate is the carrier from the true frequency. What is left, ppm_tol at the frequency, is
+common to the two overs of a pair (one board, seconds apart) and drops out of their difference.
 """
+import statistics
 import time
 
 import pytest
@@ -33,48 +50,81 @@ from hil_config import rig
 PTT_S = 3.0
 # A mode change can restart the air interface and retune: time for it and the RF supply before the key-up
 MODE_SETTLE_S = 1.0
-# How far a mode's carrier may sit from the FM carrier keyed just before it, in ppb so a higher band gets the same
-# share: 325 ppb is about 150 Hz at 461 MHz. It holds the board's carrier estimate and the reference's drift between
-# two overs back to back (test_ref_trim allows 260 ppb for that and a trim's scale), plus the transmitted symbols'
-# own mean, which this analyzer (a mean of the discriminator) reads as carrier in a digital mode: syncs, status
-# symbols and a quiet room's voice frames, tens of Hz. 150 Hz is under half of the 350 Hz decision margin of NXDN at
-# 4800 bit/s (levels 700 Hz apart), the mode most hurt by an offset
-MODE_TOL_PPB = 325
+# How far a mode's carrier may sit from the reference carrier keyed just before it, in ppb so a higher band gets the
+# same share: 260 ppb is about 120 Hz at 461 MHz. It holds the two estimates' scatter (medians over tens of syncs or
+# bursts: a few Hz to tens) and the reference's drift between two overs back to back, test_ref_trim's figure for the
+# same two terms. The symbols' own mean, which made a mean of the discriminator need 325 ppb, is out of the sync
+# fits. 120 Hz is about a third of the 350 Hz decision margin of NXDN at 4800 bit/s (levels 700 Hz apart), the mode
+# most hurt by an offset
+MODE_TOL_PPB = 260
 AIR_FIT_TX = 0x2
-BURST_DB = 1.0          # a bursted over's full blocks: within this of the strongest
-BURST_MIN_BLOCKS = 20   # about a third of a 3 s DMR over's full 10 ms blocks
 
 
-def burst_carrier(job):
-    """The mean carrier of a bursted over (DMR simplex: 27.5 ms on, 32.5 ms off), which fm_measure doesn't count as a
-    segment: the board's carrier blocks within BURST_DB of the strongest ones (a block that straddles a burst's edge is
-    weaker and carries the off part's noise), None without enough of them"""
-    import fm_measure
-    blocks = [b for b in fm_measure.blocks_of(job.records) if b.get("carrier") and b.get("cfo_hz") is not None
-              and b.get("power_dbfs") is not None]
-    print(f"bursted over: {len(blocks)} carrier blocks of {len(job.records)} records")
-    if not blocks:
-        return None
-    top = sorted(b["power_dbfs"] for b in blocks)[len(blocks) * 9 // 10]
-    full = [b["cfo_hz"] for b in blocks if b["power_dbfs"] >= top - BURST_DB]
-    return round(sum(full) / len(full)) if len(full) >= BURST_MIN_BLOCKS else None
-
-
-def over(radio, sdr_bench, mhz, tag):
-    """One PTT_S over measured by the bench's FM receive: fm_measure's report (a bursted over's carrier from its
-    full blocks)"""
+def fm_over(radio, sdr_bench, mhz):
+    """One PTT_S FM over measured by the bench's FM receive: (carrier Hz, bench tolerance Hz, what else to print)"""
     with sdr_bench.lease():
         job = sdr_bench.fm_over_start(mhz, PTT_S + 5, bw_khz=12.5)
         radio.ptt_for(PTT_S)
         radio.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
         r = sdr_bench.fm_over_result(job)
-    if r["segments"] == 0 and r.get("carrier_s"):
-        r["carrier_hz"] = burst_carrier(job)
-        r["segments"] = 1 if r["carrier_hz"] is not None else 0
-        r["track"] = r.get("track") or []
-    assert r["segments"] >= 1, f"{tag}: no keyed segment, the board heard {r['carrier_s']} s of carrier: {r}"
-    assert r["carrier_hz"] is not None, f"{tag}: no carrier: {r}"
-    return r
+    assert r["segments"] >= 1, f"fm: no keyed segment, the board heard {r['carrier_s']} s of carrier: {r}"
+    assert r["carrier_hz"] is not None, f"fm: no carrier: {r}"
+    return r["carrier_hz"], r.get("freq_tol_hz"), f"discriminator mean, first 50 ms steps {r['track'][:8]}"
+
+
+def dmr_over(radio, sdr_bench, mhz):
+    """One PTT_S DMR over watched by the bench board's burst decoder (test_dmr_tx's carrier)"""
+    from test_dmr_tx import burst_carrier
+    with sdr_bench.lease():
+        watch = sdr_bench.dmr_watch_start(None, mhz, PTT_S + 6)
+        radio.ptt_for(PTT_S)
+        radio.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
+        sdr = sdr_bench.dmr_watch_result(watch)
+    hz = burst_carrier(sdr)
+    assert hz is not None, f"dmr: the bench decoded no burst: {sdr.get('bursts_summary')}"
+    cfo = sdr.get("bursts_summary", {}).get("cfo_hz")
+    return hz, cfo.get("tol") if isinstance(cfo, dict) else None, f"median of {len(sdr['bursts'])} bursts"
+
+
+def p25_over(radio, sdr_bench, mhz, v):
+    """One PTT_S P25 over, its discriminator through the soft modem (test_p25_tx_off_air's carrier)"""
+    from test_p25 import key_over, p25_decode, sync_offset
+    job, _ = key_over(radio, sdr_bench, mhz, v)
+    lines = p25_decode(job)
+    hz = sync_offset(lines)
+    assert hz is not None, "p25: the soft modem fitted no sync"
+    n = sum(1 for d in lines if d["ev"] == "sync" and "outer_hz" in d)
+    return round(hz), (job.header or {}).get("freq_tol_hz"), f"median of {n} syncs"
+
+
+def nxdn_over(radio, sdr_bench, mhz, rate, v):
+    """One PTT_S NXDN over sliced by the bench's 4FSK receiver (test_nxdn_tx_off_air's receive)"""
+    from test_nxdn import key_over, sync_cfo
+    job, done, _ = key_over(radio, sdr_bench, mhz, rate, v)
+    cfo = sync_cfo(job.records)
+    assert cfo, f"nxdn{rate}: the bench's 4FSK receiver found no sync: {done.get('summary')}"
+    return round(statistics.median(cfo)), (job.header or {}).get("freq_tol_hz"), f"median of {len(cfo)} syncs"
+
+
+def over(radio, sdr_bench, mhz, mode, v):
+    """One over in mode, measured by its estimate (the module docstring): (carrier Hz, bench tolerance Hz, note)"""
+    if mode == "fm":
+        return fm_over(radio, sdr_bench, mhz)
+    if mode == "dmr":
+        return dmr_over(radio, sdr_bench, mhz)
+    if mode == "p25":
+        return p25_over(radio, sdr_bench, mhz, v)
+    return nxdn_over(radio, sdr_bench, mhz, mode[4:], v)
+
+
+def need_receiver(sdr_bench, mode, mhz):
+    """Skip, before anything keys, when the bench board lacks the receiver an over in mode needs"""
+    if mode in ("fm", "p25") and not sdr_bench.can_fm_rx():
+        skip("bench", f"the bench board {sdr_bench.api_rx} has no FM receive")
+    if mode == "dmr" and not sdr_bench.can_watch(mhz):
+        skip("bench", f"the bench board {sdr_bench.api_rx} can't decode bursts on {mhz} MHz")
+    if mode.startswith("nxdn") and not sdr_bench.can_fsk4_rx():
+        skip("bench", f"the bench board {sdr_bench.api_rx} has no 4FSK receive")
 
 
 def to_mode(radio, mode, ready, what, sections=("core",)):
@@ -110,6 +160,8 @@ def check_built(radio, mode):
 def enter(radio, mode):
     """The VFO switched to mode, its engine running"""
     L = radio.link
+    if mode == "fm":
+        return to_mode(radio, "fm", lambda x: True, "the FM VFO")
     if mode == "dmr":
         return to_mode(radio, "dmr", lambda x: x.get("dmr.active") == "1", "the DMR VFO", ("core", "dmr"))
     if mode == "p25":
@@ -146,8 +198,9 @@ def test_tx_carrier_mode(radio, sdr_bench, pytestconfig, mode):
     if radio.core().get("hotspot") == "1":
         skip("state", "the radio is in hotspot mode")
     nxdn_old = check_built(radio, mode)
-    if not sdr_bench.can_fm_rx():
-        skip("bench", f"the bench board {sdr_bench.api_rx} has no FM receive")
+    order = ([ref] if ref else []) + [mode]
+    for m in order:
+        need_receiver(sdr_bench, m, mhz)
     carriers = {}
     with radio.vfo_session():
         L = radio.link
@@ -155,25 +208,24 @@ def test_tx_carrier_mode(radio, sdr_bench, pytestconfig, mode):
             L.vfo_set(hz)
             radio.wait_for(lambda v: v.get("rx_hz") == str(hz), what="VFO tuned")
             time.sleep(MODE_SETTLE_S)
-            for m in ([ref] if ref else []) + [mode]:
-                v = enter(radio, m) if m != "fm" else to_mode(radio, "fm", lambda x: True, "the FM VFO")
+            for m in order:
+                v = enter(radio, m)
                 assert v.get("tx_hz") == str(hz), f"{m}: the VFO transmits on {v.get('tx_hz')}, not {hz}"
                 radio.lowest_power()
-                r = over(radio, sdr_bench, mhz, m)
-                print(f"\n{m}: carrier {r['carrier_hz']:+d} Hz, first 50 ms steps {r['track'][:8]} (bench "
-                      f"+-{r.get('freq_tol_hz')} Hz, {r.get('ppm_source')})")
-                carriers[m] = r
+                carriers[m] = over(radio, sdr_bench, mhz, m, v)
+                c, tol_hz, note = carriers[m]
+                print(f"\n{m}: carrier {c:+d} Hz, {note} (bench +-{tol_hz} Hz)")
         finally:
             if nxdn_old is not None:
                 L.nxdn_settings(**nxdn_old)
-    dig = carriers[mode]["carrier_hz"]
+    dig = carriers[mode][0]
     tol = round(MODE_TOL_PPB * mhz / 1000)
     if ref:
-        base = carriers[ref]["carrier_hz"]
+        base = carriers[ref][0]
         print(f"{mhz} MHz: {ref} {base:+d} Hz, {mode} {dig:+d} Hz, {mode} - {ref} {dig - base:+d} Hz (limit +-{tol})")
     max_foff = pytestconfig.getoption("--max-foff")
-    for m, r in carriers.items():
-        lim = max_foff + (r.get("freq_tol_hz") or 0.0)
-        assert abs(r["carrier_hz"]) < lim, f"{m}: carrier offset {r['carrier_hz']:+d} Hz (limit {lim:.0f} Hz)"
+    for m, (c, tol_hz, _) in carriers.items():
+        lim = max_foff + (tol_hz or 0.0)
+        assert abs(c) < lim, f"{m}: carrier offset {c:+d} Hz (limit {lim:.0f} Hz)"
     if ref:
         assert abs(dig - base) <= tol, f"{mode}'s carrier is {dig - base:+d} Hz from {ref}'s (limit +-{tol} Hz)"

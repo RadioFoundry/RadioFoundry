@@ -302,6 +302,13 @@ def key_over(radio, sdr_bench, mhz, rate, v0):
     return job, done, grew
 
 
+def sync_cfo(records):
+    """The carrier offsets the bench's 4FSK receiver fitted at each sync of an fsk4 rx job's records (Hz). Fitted to
+    the sync's known symbols, they leave out the mean of the symbols sent"""
+    return [r["sync"]["cfo_hz"] for r in records
+            if isinstance(r.get("sync"), dict) and r["sync"].get("cfo_hz") is not None]
+
+
 def check_over(over, rate, ran, src, dst):
     """The pass criteria of an over decoded off air: one group call from src to dst with ran"""
     import nxdntool

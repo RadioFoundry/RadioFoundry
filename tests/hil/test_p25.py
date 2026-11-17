@@ -348,6 +348,13 @@ def key_over(radio, sdr_bench, mhz, v0):
                       for k in ("tx_calls", "tx_underruns"))
 
 
+def sync_offset(lines):
+    """The carrier offset the soft modem fitted at its syncs (p25tool's lines; median, Hz), None where it measured no
+    level. Fitted to the sync's known symbols, it leaves out the mean of the symbols sent"""
+    syncs = [d for d in lines if d["ev"] == "sync" and "outer_hz" in d]
+    return statistics.median(d["offset_hz"] for d in syncs) if syncs else None
+
+
 def check_over(lines, nac, tg, src, group, grew):
     """The pass criteria of an over decoded off air (p25tool's lines): one call from src with nac, to talk group tg
     (group) or unit tg"""
@@ -393,7 +400,7 @@ def check_over(lines, nac, tg, src, group, grew):
     assert c["lc_fail"] == 0 and c["es_fail"] == 0, f"LC fails {c['lc_fail']}, ES fails {c['es_fail']}"
     assert syncs, "the soft modem measured no level"
     outer = statistics.median(d["outer_hz"] for d in syncs)
-    offset = statistics.median(d["offset_hz"] for d in syncs)
+    offset = sync_offset(lines)
     print(f"outer deviation {outer:.0f} Hz ({outer / 18:.1f} % of 1800), carrier offset {offset:+.0f} Hz (not judged)")
     assert DEV_PCT[0] <= outer / 18 <= DEV_PCT[1], f"outer deviation {outer:.0f} Hz"
     assert grew[0] == 1, f"the radio counted {grew[0]} P25 calls"
