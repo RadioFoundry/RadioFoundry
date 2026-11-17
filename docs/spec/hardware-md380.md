@@ -1004,7 +1004,7 @@ had, and every sentence goes to the position service (`position_nmea`, CONFIG_GP
 switched off and `board_t.gps` reports no module, so `board_has_gps()` hides the GPS features. UART errors are
 counted and cleared in the interrupt, so one framing error never stops reception ( 13.7).
 
-Once heard, the module follows Settings > Location > GPS (`board_t.gps_enable` = `stm32_gps_enable`): off stops USART3
+Once heard, the module follows Settings > Location > GPS (`board_t.gps` = `stm32_gps`): off stops USART3
 and drives PD8 to the other level from the one it was found at, on drives it back and restarts USART3 at the same
 rate. PD8 switching the module off is assumed from its role (untested on a G model).
 

@@ -30,10 +30,10 @@
 #include "dmr/ambe/ambeVoice.h"
 #if CONFIG_ZONE_SHARE
 #include "dmr/zone_share_api.h"
+#endif
+#endif
 #if CONFIG_GPS
 #include "position/position.h"
-#endif
-#endif
 #endif
 
 #define DL_SETTING_MIC_GAIN	29u	// SETTING id of the mic gain step (radio/mic_gain.h)

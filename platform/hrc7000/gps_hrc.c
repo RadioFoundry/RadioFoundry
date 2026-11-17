@@ -139,7 +139,7 @@ static void gps_counts(uint32_t *good, uint32_t *bad, uint32_t *bytes)
 
 static uint32_t gps_baud(void)
 {
-	return power.gone ? 0u : GPS_BAUD;
+	return power.on ? GPS_BAUD : 0u;	// 0 while off or once given up, as on the STM32 boards
 }
 
 const hal_gps_t hrc_gps = {

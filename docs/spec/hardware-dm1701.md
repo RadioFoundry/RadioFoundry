@@ -1480,7 +1480,7 @@ RadioFoundry builds GPS by default (`CONFIG_GPS`). At start-up it drives PA9 hig
 9600 first. One checksum-valid NMEA sentence marks the module present. Characters without a valid sentence move on to
 the next rate (14400). A window of silence means no module: USART1 goes off, PA9 goes low, and the listening task ends
 and frees its stack. The task runs at low priority in the background, so start-up doesn't wait for it. Once heard,
-PA9 follows Settings > Location > GPS (`board_t.gps_enable`): low and USART1 off while the setting is off. The code is
+PA9 follows Settings > Location > GPS (`hal_gps_t.enable`): low and USART1 off while the setting is off. The code is
 `boards/uv380_family/gps_uvf.c`, shared with the MD-UV380 G models ([hardware-mduv380.md](hardware-mduv380.md) 9).
 Untested with a module on a DM-1701.
 

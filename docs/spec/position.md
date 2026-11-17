@@ -45,7 +45,7 @@ Position source (setting: Auto, GPS, Computer, Fixed):
 - The fixed position counts as unset while latitude and longitude are both 0.
 - Settings > Location > GPS off (`position_gps_enable(false)`) drops the board fix at once and ignores later
   sentences, so the position falls back.
-- The same setting goes to the board (`board_t.gps_enable`, at start-up and on each change): the module is powered and
+- The same setting goes to the board (`hal_gps_t.enable`, at start-up and on each change): the module is powered and
   listened to at start-up whatever it says, so the radio knows whether it has one, and once heard its supply and
   receive path follow the setting within one poll (`drivers/gps/gps_rx/gps_power`). A board whose module shares a
   supply it can't cut stops only the receive path (its hardware page says so).

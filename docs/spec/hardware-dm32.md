@@ -1325,7 +1325,7 @@ line framing `drivers/gps/nmea_line`:
 | Diagnostics | The line `gps yes` (or `gps no`) `GOOD/BAD bBYTES on|off`: valid sentences, bad ones (checksum, length, UART errors, ring overflow), bytes received, and whether the module is powered now (Settings > Location > GPS) |
 | Switching on again | The UART is set up once, before the module is first powered. While the module is off its line is held low, a break the UART is still receiving, and the UART ignores a line control write while busy, so switching on only clears the RX FIFO and status and enables the interrupt (`hrc_uart_rx_clear`). Setting the baud rate again there left the UART deaf on the DB25-D (2026-10-17) |
 
-**Settings > Location > GPS** switches the module's power through `board_t.gps_enable` ([position.md](position.md) 2); the probe-then-setting rule is `drivers/gps/gps_rx/gps_power`.
+**Settings > Location > GPS** switches the module's power through `hal_gps_t.enable` ([position.md](position.md) 2); the probe-then-setting rule is `drivers/gps/gps_rx/gps_power`.
 
 ---
 

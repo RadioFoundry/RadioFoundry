@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// When a GPS module is powered, the part every board shares (board_t.gps_enable): the module is powered and listened
+// When a GPS module is powered, the part every board shares (hal_gps_t.enable): the module is powered and listened
 // to at start-up whatever Settings > Location > GPS says, so the radio knows whether it has one. Once it has been heard
 // it follows the setting: the board's GPS task switches its supply and receive path within one poll. Never heard: off
 // for good. Generic and pure: no UART, no RTOS. The setting may come from any task; everything else is the GPS task's.
