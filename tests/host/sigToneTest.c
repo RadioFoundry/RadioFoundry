@@ -23,6 +23,31 @@ static void test_out(void)
 	CHECK(sig_out_clean(200, SIG_EV_BEGIN) == SIG_OUT_DEFAULT && sig_out_clean(SIG_OUT_COUNT, SIG_EV_END) == SIG_OUT_DEFAULT);
 }
 
+// What the radio core and the audio side take as the steps' count, length and "a chain is set"
+static bool chain_set(const uint8_t ms10[SIG_STEPS])
+{
+	return ms10[0] != 0;
+}
+
+static uint32_t total_ms(const beep_seg_t *s, uint8_t n)
+{
+	uint32_t t = 0;
+	for (uint8_t i = 0; i < n; i++) {
+		t += s[i].ms;
+	}
+	return t;
+}
+
+static uint32_t gen_samples(const beep_seg_t *s, uint8_t n)
+{
+	return total_ms(s, n) * 8;
+}
+
+static bool gen_done(const beep_gen_t *g)
+{
+	return g->i >= g->n;
+}
+
 static void test_chain(void)
 {
 	beep_seg_t s[SIG_STEPS];
@@ -30,7 +55,7 @@ static void test_chain(void)
 	uint8_t ms[SIG_STEPS] = { 0 };
 
 	// no step: the event's standard sound, whatever the frequencies say
-	CHECK(!sig_chain_set(ms));
+	CHECK(!chain_set(ms));
 	hz[0] = 1234;
 	uint8_t n = sig_chain(hz, ms, SIG_EV_BEGIN, s);
 	CHECK(n == 3 && s[0].hz == 1600 && s[1].hz == 0 && s[2].hz == 1600);
@@ -42,10 +67,10 @@ static void test_chain(void)
 	// a CPS call tone: a pause, then four tones of 40 ms
 	static const uint16_t c5h[SIG_STEPS] = { 0, 1570, 1050, 1570, 1320 };
 	static const uint8_t c5m[SIG_STEPS] = { 4, 4, 4, 4, 4 };
-	CHECK(sig_chain_set(c5m));
+	CHECK(chain_set(c5m));
 	n = sig_chain(c5h, c5m, SIG_EV_BEGIN, s);
 	CHECK(n == 5 && s[0].hz == 0 && s[1].hz == 1570 && s[2].hz == 1050 && s[3].hz == 1570 && s[4].hz == 1320);
-	CHECK(s[0].ms == 40 && s[4].ms == 40 && sig_total_ms(s, n) == 200);
+	CHECK(s[0].ms == 40 && s[4].ms == 40 && total_ms(s, n) == 200);
 
 	// a step of length 0 ends the chain: what follows it is ignored
 	static const uint16_t eh[SIG_STEPS] = { 640, 950, 2000, 0, 0 };
@@ -55,7 +80,7 @@ static void test_chain(void)
 
 	// a first step of length 0 is no chain at all, even with later steps
 	static const uint8_t zm[SIG_STEPS] = { 0, 9, 9, 9, 9 };
-	CHECK(!sig_chain_set(zm));
+	CHECK(!chain_set(zm));
 	n = sig_chain(eh, zm, SIG_EV_END, s);
 	CHECK(n == 3 && s[0].hz == 1200);
 
@@ -63,10 +88,10 @@ static void test_chain(void)
 	static const uint16_t bh[SIG_STEPS] = { 9000, 1000, 1000, 1000, 1000 };
 	static const uint8_t bm[SIG_STEPS] = { 255, 255, 255, 255, 255, 255, 255, 255, 255, 255 };
 	n = sig_chain(bh, bm, SIG_EV_END, s);
-	CHECK(n == 1 && s[0].hz == SIG_HZ_MAX && sig_total_ms(s, n) == SIG_MAX_MS);
+	CHECK(n == 1 && s[0].hz == SIG_HZ_MAX && total_ms(s, n) == SIG_MAX_MS);
 	static const uint8_t cm[SIG_STEPS] = { 30, 30, 30, 30, 30 };	// 300 ms each: the third fills the 900 ms
 	n = sig_chain(bh, cm, SIG_EV_END, s);
-	CHECK(n == 3 && s[0].ms == 300 && s[2].ms == 300 && sig_total_ms(s, n) == SIG_MAX_MS);
+	CHECK(n == 3 && s[0].ms == 300 && s[2].ms == 300 && total_ms(s, n) == SIG_MAX_MS);
 	static const uint8_t dm[SIG_STEPS] = { 50, 30, 20, 10, 10 };	// 500, 300, then 100 of the next 200
 	n = sig_chain(bh, dm, SIG_EV_END, s);
 	CHECK(n == 3 && s[0].ms == 500 && s[1].ms == 300 && s[2].ms == 100);
@@ -75,10 +100,10 @@ static void test_chain(void)
 	static const uint16_t zh[SIG_STEPS] = { 1830, 2200, 1830, 1400, 1270, 1670, 1160, 1060, 0, 0 };
 	static const uint8_t zm8[SIG_STEPS] = { 7, 7, 7, 7, 7, 7, 7, 7, 0, 0 };
 	n = sig_chain(zh, zm8, SIG_EV_BEGIN, s);
-	CHECK(n == 8 && s[7].hz == 1060 && sig_total_ms(s, n) == 560);
+	CHECK(n == 8 && s[7].hz == 1060 && total_ms(s, n) == 560);
 	static const uint8_t tm[SIG_STEPS] = { 9, 9, 9, 9, 9, 9, 9, 9, 9, 9 };
 	n = sig_chain(zh, tm, SIG_EV_BEGIN, s);
-	CHECK(n == 10 && sig_total_ms(s, n) == SIG_MAX_MS);
+	CHECK(n == 10 && total_ms(s, n) == SIG_MAX_MS);
 }
 
 // Zero crossings of a block: about 2 * hz * seconds
@@ -138,12 +163,12 @@ static void test_gen(void)
 {
 	static int16_t pcm[8000];
 	beep_seg_t one[] = { { 1000, 100 } };
-	sig_gen_t g;
-	CHECK(sig_gen_samples(one, 1) == 800);
-	sig_gen_start(&g, one, 1, 16000);
+	beep_gen_t g;
+	CHECK(gen_samples(one, 1) == 800);
+	beep_gen_start(&g, one, 1, 16000);
 	memset(pcm, 0x55, sizeof(pcm));
 	// 160 samples: the tone's first 100 ms is 800 samples, so the sequence goes on
-	CHECK(sig_gen_block(&g, pcm, 160) && !sig_gen_done(&g));
+	CHECK(beep_gen_block(&g, pcm, 160) && !gen_done(&g));
 	int c = crossings(pcm + 16, 144);
 	CHECK(c >= 2 * 1000 * 144 / 8000 - 2 && c <= 2 * 1000 * 144 / 8000 + 2);
 	// the fade in: the first sample is silent, the peak is near the level
@@ -153,8 +178,8 @@ static void test_gen(void)
 	}
 	CHECK(pcm[0] == 0 && peak > 14000 && peak <= 16000);
 	// the rest: 640 samples of the tone end the sequence; the unplayed part of the block is zero
-	CHECK(!sig_gen_block(&g, pcm, 800 - 160 + 40));
-	CHECK(sig_gen_done(&g));
+	CHECK(!beep_gen_block(&g, pcm, 800 - 160 + 40));
+	CHECK(gen_done(&g));
 	for (int i = 800 - 160; i < 800 - 160 + 40; i++) {
 		CHECK(pcm[i] == 0);
 	}
@@ -162,27 +187,27 @@ static void test_gen(void)
 
 	// a pause is silent, the next step goes on in phase (no jump to a full level at its first sample)
 	beep_seg_t seq[] = { { 0, 40 }, { 1570, 40 }, { 1050, 40 } };
-	sig_gen_start(&g, seq, 3, 20000);
-	CHECK(sig_gen_samples(seq, 3) == 960);
-	CHECK(sig_gen_block(&g, pcm, 320));
+	beep_gen_start(&g, seq, 3, 20000);
+	CHECK(gen_samples(seq, 3) == 960);
+	CHECK(beep_gen_block(&g, pcm, 320));
 	for (int i = 0; i < 320; i++) {
 		CHECK(pcm[i] == 0);
 	}
-	CHECK(!sig_gen_block(&g, pcm, 640));
+	CHECK(!beep_gen_block(&g, pcm, 640));
 	c = crossings(pcm + 16, 320 - 32);
 	CHECK(c >= 2 * 1570 * 288 / 8000 - 2 && c <= 2 * 1570 * 288 / 8000 + 2);
 	c = crossings(pcm + 320 + 16, 320 - 32);
 	CHECK(c >= 2 * 1050 * 288 / 8000 - 2 && c <= 2 * 1050 * 288 / 8000 + 2);
-	CHECK(sig_gen_done(&g));
+	CHECK(gen_done(&g));
 	// after the end: zeros, and no longer "more"
 	memset(pcm, 0x55, 320);
-	CHECK(!sig_gen_block(&g, pcm, 160) && pcm[0] == 0 && pcm[159] == 0);
+	CHECK(!beep_gen_block(&g, pcm, 160) && pcm[0] == 0 && pcm[159] == 0);
 
 	// an empty sequence is done at once
-	sig_gen_start(&g, one, 0, 1000);
-	CHECK(sig_gen_done(&g) && !sig_gen_block(&g, pcm, 160));
+	beep_gen_start(&g, one, 0, 1000);
+	CHECK(gen_done(&g) && !beep_gen_block(&g, pcm, 160));
 	// a level above full scale is held at full scale
-	sig_gen_start(&g, one, 1, 99999);
+	beep_gen_start(&g, one, 1, 99999);
 	CHECK(g.amp == 32767);
 }
 

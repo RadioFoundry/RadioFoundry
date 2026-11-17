@@ -63,20 +63,6 @@ void sig_rec_encode(const sig_rec_t *r, uint8_t out[SIG_REC_LEN])
 	}
 }
 
-uint32_t sig_total_ms(const beep_seg_t *s, uint8_t n)
-{
-	uint32_t t = 0;
-	for (uint8_t i = 0; i < n; i++) {
-		t += s[i].ms;
-	}
-	return t;
-}
-
-bool sig_chain_set(const uint8_t ms10[SIG_STEPS])
-{
-	return ms10[0] != 0;
-}
-
 uint8_t sig_chain(const uint16_t hz[SIG_STEPS], const uint8_t ms10[SIG_STEPS], sig_event_t ev,
 		  beep_seg_t out[SIG_STEPS])
 {
@@ -96,75 +82,6 @@ uint8_t sig_chain(const uint16_t hz[SIG_STEPS], const uint8_t ms10[SIG_STEPS], s
 	m = ev == SIG_EV_BEGIN ? sizeof(s_permit) / sizeof(s_permit[0]) : sizeof(s_end) / sizeof(s_end[0]);
 	memcpy(out, src, m * sizeof(beep_seg_t));
 	return m;
-}
-
-uint32_t sig_gen_samples(const beep_seg_t *s, uint8_t n)
-{
-	return sig_total_ms(s, n) * (AUDIO_RATE_HZ / 1000);
-}
-
-static void load_step(sig_gen_t *g)
-{
-	const beep_seg_t *s = &g->seg[g->i];
-	g->len = g->left = (uint32_t)s->ms * (AUDIO_RATE_HZ / 1000);
-	g->step = (uint32_t)(((uint64_t)s->hz << 32) / AUDIO_RATE_HZ);
-}
-
-void sig_gen_start(sig_gen_t *g, const beep_seg_t *s, uint8_t n, int32_t amp_q15)
-{
-	memset(g, 0, sizeof(*g));
-	if (n > SIG_AIR_STEPS) {
-		n = SIG_AIR_STEPS;
-	}
-	memcpy(g->seg, s, n * sizeof(beep_seg_t));
-	g->n = n;
-	g->amp = amp_q15 > 32767 ? 32767 : amp_q15 < 0 ? 0 : amp_q15;
-	if (n != 0) {
-		load_step(g);
-	}
-}
-
-bool sig_gen_done(const sig_gen_t *g)
-{
-	return g->i >= g->n;
-}
-
-bool sig_gen_block(sig_gen_t *g, int16_t *pcm, unsigned count)
-{
-	for (unsigned k = 0; k < count; k++) {
-		while (g->i < g->n && g->left == 0) {
-			if (++g->i < g->n) {
-				load_step(g);
-			}
-		}
-		if (g->i >= g->n) {
-			pcm[k] = 0;
-			continue;
-		}
-		int32_t v = 0;
-		if (g->step != 0) {
-			uint32_t done = g->len - g->left;
-			uint32_t edge = done < g->left ? done : g->left - 1;
-			int32_t amp = g->amp;
-			if (edge < RAMP_SAMPLES) {
-				amp = amp * (int32_t)edge / RAMP_SAMPLES;
-			}
-			uint32_t idx = g->phase >> 26;
-			int32_t frac = (int32_t)((g->phase >> 16) & 0x3FFu);
-			int32_t a = beep_sine[idx], b = beep_sine[(idx + 1) & 63u];
-			v = ((a + (((b - a) * frac) >> 10)) * amp) >> 15;
-			g->phase += g->step;
-		}
-		pcm[k] = (int16_t)v;
-		g->left--;
-	}
-	// Exhausted steps are skipped here so "more" is true only while samples remain
-	while (g->i < g->n && g->left == 0) {
-		if (++g->i < g->n) {
-			load_step(g);
-		}
-	}
-	return g->i < g->n;
 }
 
 #endif

@@ -72,7 +72,8 @@ static uint8_t tone_req_n;
 static bool tone_req_final;
 static uint8_t tone_req_seq, cb_tone_seq;
 static int16_t tone_stale = -1;	// the call task's: the request number the over had ended with (source_end), -1 none
-static sig_gen_t tone_gen;
+static beep_gen_t tone_gen;
+static beep_seg_t tone_seg[SIG_AIR_STEPS];	// the running tone's own copy of the steps: a new request may overwrite tone_req_seg
 static bool tone_active;		// the generator still has samples
 static bool tone_mute;			// after a final tone: silence in the mic's place until the transmission ends
 static uint32_t tone_last_n;		// tx_pushed after the last frame of the tone
@@ -514,7 +515,8 @@ static void tx_block(const int16_t *mic)
 		tone_mute = false;
 		tone_active = tone_req_n != 0 && LOAD(tone_stale) != (int16_t)tseq;
 		if (tone_active) {
-			sig_gen_start(&tone_gen, tone_req_seg, tone_req_n, TONE_AMP_Q15);
+			memcpy(tone_seg, tone_req_seg, tone_req_n * sizeof(beep_seg_t));
+			beep_gen_start(&tone_gen, tone_seg, tone_req_n, TONE_AMP_Q15);
 		}
 	}
 	// The queue is full (the call stack is in its headers, or behind): the tone waits for room rather than losing
@@ -563,7 +565,7 @@ static void tx_block(const int16_t *mic)
 	// block is made again next time (the generator is spent: silence)
 	bool tone_last = false;
 	if (tone_active) {
-		bool more = sig_gen_block(&tone_gen, scaled, AUDIO_BLOCK_SAMPLES);
+		bool more = beep_gen_block(&tone_gen, scaled, AUDIO_BLOCK_SAMPLES);
 		mic = scaled;
 		tone_last = !more;
 	} else if (tone_mute) {

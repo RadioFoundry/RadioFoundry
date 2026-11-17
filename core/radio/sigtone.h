@@ -62,16 +62,14 @@ static inline uint8_t sig_out_clean(uint8_t out, sig_event_t ev)
 	return out;
 }
 
-// The chain and the sample generator below are in sigtone.c, which builds with CONFIG_SIG_TONES only
+// The chain and the records below are in sigtone.c, which builds with CONFIG_SIG_TONES only (the sample generator is
+// the beep engine's, beep.h)
 
 // A chain (as stored: hz[], ms10[] in SIG_MS_UNIT) into out[SIG_STEPS]; the count. An empty chain gives the event's
 // standard sound, so there is always at least one step. A frequency over SIG_HZ_MAX is cut to it; the total length is
 // within SIG_MAX_MS
 uint8_t sig_chain(const uint16_t hz[SIG_STEPS], const uint8_t ms10[SIG_STEPS], sig_event_t ev,
 		  beep_seg_t out[SIG_STEPS]);
-// Whether a stored chain has a step (it replaces the standard sound)
-bool sig_chain_set(const uint8_t ms10[SIG_STEPS]);
-uint32_t sig_total_ms(const beep_seg_t *s, uint8_t n);
 
 // The settings area's record of one event (docs/spec/codeplug-settings.md 3): the outputs and the chain, the fields in
 // this order. A record shorter than SIG_REC_LEN reads with the missing fields zero (Default, no step); a longer one
@@ -92,21 +90,5 @@ typedef struct {
 bool sig_rec_decode(const uint8_t *v, int len, sig_event_t ev, sig_rec_t *r);
 void sig_rec_encode(const sig_rec_t *r, uint8_t out[SIG_REC_LEN]);
 
-// Sample generator (8 kHz mono, phase continuous across steps, 2 ms fades at each step's edges)
-typedef struct {
-	beep_seg_t seg[SIG_AIR_STEPS];
-	uint8_t n, i;
-	uint32_t left;		// samples left in the step
-	uint32_t len;		// samples in the step
-	uint32_t phase, step;
-	int32_t amp;		// Q15 of full scale
-} sig_gen_t;
-
-void sig_gen_start(sig_gen_t *g, const beep_seg_t *s, uint8_t n, int32_t amp_q15);
-// Fill count samples; the unplayed rest is zero. True while the sequence still has samples after this call
-bool sig_gen_block(sig_gen_t *g, int16_t *pcm, unsigned count);
-bool sig_gen_done(const sig_gen_t *g);
-// Samples in the whole sequence
-uint32_t sig_gen_samples(const beep_seg_t *s, uint8_t n);
 
 #endif

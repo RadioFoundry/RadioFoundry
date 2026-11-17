@@ -54,6 +54,8 @@ static struct {
 	bool led[2];
 	uint16_t tone_hz;	// tx_tone
 	bool side;		// tx_tone_side
+	bool key_down;		// tx_tone_key: the tone is on (a tx_tone call turns it on), false = a silent carrier
+	int key_calls;
 	unsigned side_calls;
 	int tone_calls;
 	uint16_t tone_log[16];
@@ -140,11 +142,18 @@ static bool r_tx_tone(uint16_t hz)
 		return false;
 	}
 	hw.tone_hz = hz;
+	hw.key_down = hz != 0;
 	if (hw.tone_calls < 16) {
 		hw.tone_log[hw.tone_calls] = hz;
 	}
 	hw.tone_calls++;
 	return true;
+}
+static bool r_tx_tone_key(bool down)
+{
+	hw.key_calls++;
+	hw.key_down = down;
+	return hw.tone_hz != 0;
 }
 static bool r_tx_dtmf(char digit)
 {
@@ -3685,6 +3694,33 @@ static void test_sig_fm(void)
 	CHECK(hw.tone_hz == 1320 && sm.view.state == RS_TX);
 	run(60);
 	CHECK(sm.view.state == RS_IDLE && !sm.view.roger && hw.tone_hz == 0 && hw.tx_off_calls == 1);
+
+	// The same on a board that can key a silent carrier (tx_tone_key): a pause is not tx_tone(0), which gives the
+	// microphone back on the HR_C7000, so no zero reaches tx_tone until the chain ends. The silent first step starts
+	// the first tone and keys it off
+	hal_radio_t radio_key = fake_radio;
+	radio_key.tx_tone_key = r_tx_tone_key;
+	board.radio = &radio_key;
+	start();
+	settings(set_sig_end_air_call5);
+	req(RREQ_PTT, 1);
+	run(500);
+	hw.tone_calls = 0;
+	hw.key_calls = 0;
+	req(RREQ_PTT, 0);
+	run(30);
+	CHECK(hw.tone_hz == 1570 && !hw.key_down && hw.key_calls == 1 && sm.view.state == RS_TX);	// silent carrier
+	run(40);
+	CHECK(hw.tone_hz == 1570 && hw.key_down);
+	run(40);
+	CHECK(hw.tone_hz == 1050 && hw.key_down);
+	run(120);
+	CHECK(sm.view.state == RS_IDLE && hw.tone_hz == 0 && hw.tx_off_calls >= 1);
+	for (int i = 0; i + 1 < hw.tone_calls && i < 15; i++) {
+		CHECK(hw.tone_log[i] != 0);	// no tx_tone(0) in the middle of the chain
+	}
+	CHECK(hw.tone_calls <= 16 && hw.tone_log[hw.tone_calls - 1] == 0);
+	board.radio = &fake_radio;
 
 	// The roger preset on air is the roger beep (the same pitches and lengths), roger_beep off or on
 	start();

@@ -68,6 +68,25 @@ typedef struct {
 // One period of a sine, Q15: the beep engine's, and the signaling tones' generator (sigtone.c) uses it too
 extern const int16_t beep_sine[64];
 
+// The tone generator both the beep engine and the signaling tones (the DMR tone frames, ambeVoice.c) use: 8 kHz mono,
+// phase continuous across steps, 2 ms fades at each step's edges. It reads the steps where they are (they must stay
+// until it is done); BEEP_HZ_SWEEP is a step too
+typedef struct {
+	const beep_seg_t *seg;
+	uint8_t n, i;
+	uint32_t left;		// samples left in the step
+	uint32_t len;		// samples in the step
+	uint32_t phase, step, dstep;
+	int32_t amp;		// Q15 of full scale
+} beep_gen_t;
+void beep_gen_start(beep_gen_t *g, const beep_seg_t *s, uint8_t n, int32_t amp_q15);
+// The next sample of the sequence (amplitude applied): false when it is over
+bool beep_gen_next(beep_gen_t *g, int32_t *v);
+// True while the sequence still has samples
+bool beep_gen_more(beep_gen_t *g);
+// Fill count samples; the unplayed rest is zero. True while the sequence still has samples after this call
+bool beep_gen_block(beep_gen_t *g, int16_t *pcm, unsigned count);
+
 void beep_init(const hal_audio_t *audio);
 // Start a pattern at level 1..100 (0 or BEEP_NONE: nothing). shared: the DMR voice stream is running and mixes the
 // beep in; otherwise the beep starts its own stream. Replaces a pattern still playing
