@@ -75,7 +75,7 @@
 
 // Profiles the chip takes (modem-hrc6000.md 10.4)
 #define CAL_DEV_HZ	1944u	// the DMR outer deviation the calibrated pair gives
-#define C4FM_SCALE	903u	// a C4FM receiver's integrate and dump reads this much (/1000) of the chip's outer deviation
+#define C4FM_SCALE	946u	// a C4FM receiver reads this much (/1000) of the chip's outer deviation (measured, 10.3)
 #define TX_DEV_MIN	1050u	// the pair scales linearly over this range
 #define TX_DEV_MAX	2400u
 #define RX_DEV_MIN	1700u	// the correlator: syncs at 1800 Hz C4FM, 1944 and 2700 Hz; never at 1350 or 1050
