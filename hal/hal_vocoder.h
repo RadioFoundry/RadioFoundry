@@ -23,7 +23,9 @@ typedef struct {
 	// True when the codec is present and matches the board's profile (signature / hash). False: FM only
 	bool (*present)(void);
 	void (*reset)(void);	// fresh encoder and decoder state (start of a call)
-	// 49 bits, one per byte (0/1), MSB of the parameter frame first
+	// 49 bits, one per byte (0/1), MSB of the parameter frame first. Voice is simplex: the caller never decodes while a
+	// transmission encodes (core/dmr/ambe), so a platform may keep both states in one block, built again by the first
+	// encode after a decode and the first decode after an encode
 	void (*encode)(const int16_t pcm[VOCODER_FRAME_SAMPLES], uint8_t bits[VOCODER_BITS]);
 	void (*decode)(const uint8_t bits[VOCODER_BITS], int16_t pcm[VOCODER_FRAME_SAMPLES]);
 	// Optional (may be NULL): the id of the codec profile the board recognized in flash, e.g. "<radio>-v0206-csv", or
