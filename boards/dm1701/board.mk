@@ -16,5 +16,3 @@ BOARD_HAL_MODULES := hal_i2c
 MCU_DEFS   += -DGFX_INDEXED=1 -DGFX_FB_BYTES=9600u -DGFX_MAX_ROWS=120u
 # The lens hides the panel's last 8 rows (boards/uv380_family/display_uvf.c)
 MCU_DEFS   += -DUVF_LCD_HIDDEN_ROWS=8
-# P25 and NXDN checked on air both ways (hardware-dm1701.md, Air interface): the provider's fits aren't marked untested
-MCU_DEFS   += -DUVF_AIR_VERIFIED=1
