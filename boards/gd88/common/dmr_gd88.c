@@ -20,7 +20,7 @@
 // averaging, AF gain 0x4C, RX IQ inverted (high-side LO: gd88_dmr_lo_side), dynamic sync threshold, dual receive
 // channels, two-point TX.
 // GD88_DMR_RF_MODE=0x... replaces it on the bench. Receive works with it on the radio (voice and data decode).
-// TODO(gd88): unknown, needs a GD88_TX build: its transmit half on the GD-88
+// TODO(gd88): unknown, needs a radio: its transmit half on the GD-88 (DMR transmit works on the radio with it)
 #ifndef GD88_DMR_RF_MODE
 #define GD88_DMR_RF_MODE	0x034C9860u
 #endif

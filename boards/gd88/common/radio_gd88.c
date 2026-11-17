@@ -39,7 +39,7 @@
 #endif
 
 // TODO(gd88): unknown, needs a radio: DAC C's role on each SoC. These are hardware-db25d.md's levels. Not receive gain
-// or front-end tuning: on A, 0 to 4095 leave the RSSI at 146, 162 and 461 MHz unchanged; a reference
+// or front-end tuning: on A, 0 to 4095 leave the RSSI on VHF and UHF unchanged; a reference
 // frequency trim or a transmit-only role is left
 #define DAC_C_INIT		1762u			// at init, and 1780 once receive is set up
 #define DAC_C_RX		1780u

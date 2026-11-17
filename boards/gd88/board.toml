@@ -32,8 +32,8 @@ unconfirmed = { VIBRATE = "no source names a vibration motor or a pin for one (d
 [status]
 level = "bring-up"
 summary = """\
-Runs on the radio: analog FM, DMR voice and data, dual watch on the second SoC, transmit through that SoC's PA, settings \
-on the SPI NAND and the host link. Open: a wattmeter check of the power levels."""
+Runs on the radio: analog FM, DMR voice and data, P25 and NXDN voice, dual watch on the second SoC, transmit through \
+that SoC's PA, settings on the SPI NAND and the host link. Open: a wattmeter check of the power levels."""
 release = "testing"
 
 # The vendor IAP loader (0x03000000..0x0300BFFF) is never written. RadioFoundry's first stage fills the sector at 0x0300C000

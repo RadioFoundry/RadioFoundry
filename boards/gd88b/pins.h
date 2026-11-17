@@ -51,8 +51,8 @@
 // speaker plays nothing (bench, A's microphone hears the receiver's noise only with it closed)
 #define PIN_SPK_CLOSE		0x0F	// PTA15
 #define PIN_SPK_OPEN		0x29	// PTB9
-// The status LEDs, high = on. A's status LEDs: A switches them over the link (RX2_LED).
-// TODO(gd88): unknown, needs a radio: their colors. LED 1 lights while A transmits, LED 2 while it receives
+// The status LEDs, high = on. A's status LEDs: A switches them over the link (RX2_LED). One top LED, two colors
+// (settled on the radio): LED 1 red, lit while A transmits; LED 2 green, while it receives
 #define PIN_LED1		0x10	// PTA16
 #define PIN_LED2		0x31	// PTB17
 
