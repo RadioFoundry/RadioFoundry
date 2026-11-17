@@ -813,7 +813,8 @@ in air order, with soft values and time stamps, for modes the core frames itself
 mode (0x10 bits 4-3 = 00) and only modulates and slices. A session halts the slot engine and takes its three
 interrupt lines and its task; its state lives in the halted engine's event queue (and the soft modem of 10.6 in its
 transmit queue), so a session costs no RAM of its own. Close puts the DMR receive set-up back (0x10 = 0x6E, the MS pattern in the correlator, 0x40 = 0xC3) and the slot
-engine restarts the receiver (5.1). Host test: `tests/host/hrc6000AirTest.c`.
+engine restarts the receiver (5.1). Host test: `tests/host/hrc6000AirTest.c`. The same provider serves the HR_C5000
+(10.7).
 
 ### 10.1 What a profile gets
 
@@ -972,6 +973,31 @@ every frame decoded and every voice frame of a speech recording decoded by the v
 (`test_nxdn_rx_from_bench`, `test_nxdn_rx_speech`); a DMR call received right after sessions of both kinds. Not
 checked: the level at the speaker by ear or by measurement (decoded voice is judged by its PCM peak), the
 sensitivity, the receive delay for t_us.
+
+### 10.7 The HR_C5000
+
+The HR_C5000 user manual has the same physical layer mode: 0x10 LayerMode (bits 4-3) = 00, the 0x82 bit 0
+interrupt for physical layer receive only, the 30 ms timeslot interrupt in the physical layer and data link modes,
+and 36 bytes of physical layer data in page 2 (addresses 0-35). The slot engine already drives the same 0x40 and 0x41
+slot control on both chips. So the provider runs on it unchanged, and the chip description (`hrc_chip_t`) gives what
+differs:
+
+| | HR_C6000 | HR_C5000 | Where |
+|---|---|---|---|
+| 0x5F sync type (`sync_reg`) | written 0xF0 at `rx_setup` | not written: the comparators run as reset left them | `rx_setup` |
+| Transmission start (`tx_begin`) | the chip's own: 0x20 = 0, 0x21 = access, 0x22 = 0x86 (encoder start) | the access policy alone (0x20 = 0, 0x21 = 0x02): the vocoder runs on the MCU | `hrc6000_air_tx_begin` |
+| 0x10 after close (`mode_per_channel`) | 0x6E | the chip's `dmr_mode`; the engine writes the channel's value again when it runs | `hrc6000_air_close`, `hrc6000_dmr_run` |
+| FM copy (10.6) | yes | none documented: no `air_tap`, so the correlator profiles only | the board |
+
+Not confirmed on the HR_C5000, because the manual is an early draft and leaves these out:
+
+- 0x40 = 0x40 / 0x41 = 0x40 for soft records, and the record format at page 2 0x30 (144 levels of 6 bits).
+- The correlator pattern at aux 1:0x47-0x4C (the provider writes it at open and the MS pattern back at close).
+- The second TX RAM half at page 2 0x24: the manual gives 36 bytes.
+- 0x36 = 0 at open (on this chip 0x36 also carries the I2S clock set-up).
+- The 0x45 / 0x46 two-point pair and its scale with deviation.
+
+Nothing of 10.5 has been checked on this chip; its fits stay `AIR_FIT_UNTESTED`.
 
 ---
 

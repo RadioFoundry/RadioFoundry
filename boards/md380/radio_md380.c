@@ -343,6 +343,11 @@ void TIM7_IRQHandler(void)
 			key_point(r.key_pt[p].kind);
 		}
 		r.key_i = ++i;
+		if (i >= r.key_ns && stm32_hrc_dmr_tx_continuous()) {
+			// The air interface's transmission is keyed once and held: its end drops the PA (the RF switch)
+			pa_timer_stop();
+			return;
+		}
 		if (i >= r.key_ns) {
 			// The PA drop, PA_HOLD_US after the interrupt
 			TIM7->ARR = PA_HOLD_US - (DMR_KEY_INT_AHEAD_US - r.key_base_us) - 1u;
@@ -481,7 +486,10 @@ bool md380_rf_dmr_switch(bool tx)
 	uint32_t t0 = hal_micros();
 
 	if (!tx) {
-		if (!pa_timer_running) {
+		if (stm32_hrc_dmr_tx_continuous()) {
+			pa_timer_stop();	// the end of an air interface transmission, key-up points still running or not
+			pa_off();
+		} else if (!pa_timer_running) {
 			pa_off();	// else the one-shot ends the burst on time
 			listen_rx();
 		}

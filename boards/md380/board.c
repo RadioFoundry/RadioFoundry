@@ -119,6 +119,12 @@ const board_t board = {
 #endif
 #if CONFIG_DMR
 	.dmr = &stm32_hrc_dmr,
+#if CONFIG_AIR
+	// The HR_C5000's physical layer mode through the shared provider (hrc6000_air.c; hardware-md380.md, Air interface).
+	// No board.baseband: no FM receive RAM is known on this chip, and the discriminator audio on PC3 isn't known to
+	// reach the low frequencies a 4-level mode needs
+	.air = &stm32_hrc_air,
+#endif
 	.audio = &md380_audio,
 	.vocoder = &stm32_vocoder,
 #endif

@@ -59,10 +59,5 @@ BOARD_NOT_WRITTEN += RX_EXT	# no receive range in its chip documents (a PLL and 
 # there is no room for a 16 px line, and the CJK face must not be built in (docs/build-config.md)
 BOARD_UNSUPPORTED += LANG_ZH	# a Chinese line needs 16 px; this layout draws its words in a smaller font
 BOARD_UNSUPPORTED += LANG_DEFAULT_ZH	# needs LANG_ZH
-# P25 and NXDN need an air interface provider (board.air): this radio's modem glue doesn't give one yet
-CONFIG_P25 ?= n
-CONFIG_P25_TRUNK ?= n
-CONFIG_NXDN ?= n
-BOARD_NOT_WRITTEN += P25	# no board.air yet (docs/spec/air-interface.md)
-BOARD_NOT_WRITTEN += P25_TRUNK	# needs P25
-BOARD_NOT_WRITTEN += NXDN	# no board.air yet
+# P25 and NXDN run on the HR_C5000's physical layer mode (board.air, hardware-md380.md 4.11). NXDN is transmit only
+# here: its receive needs a flat discriminator copy, which this radio isn't known to give the MCU (same section)
