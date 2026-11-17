@@ -16,6 +16,7 @@
 #include "i18n.h"
 #include "codeplug/codeplug.h"
 #include "codeplug/codeplug_modes.h"
+#include "radio/radio_am.h"
 
 #define START_GRACE_MS	500	// the radio view may still show no watch this soon after asking for one
 #define BACK_AGAIN_MS	2000	// Back on Home, then Back again within this: the watch stops
@@ -212,6 +213,7 @@ static void pane_fill(uint8_t i)
 	if (s->valid)
 		ch = s->ch;	// as the radio has it: changes for now included
 	p->mode = shown_mode(&ch);
+	p->am = p->mode == RADIO_MODE_FM && radio_am_channel(&ch);	// as the receiver hears it (Home's mode word)
 	p->rx_hz = ch.rx_hz;
 	if (p->mode == RADIO_MODE_P25 || p->mode == RADIO_MODE_NXDN)
 		return;	// no tone or slot: the engine's own squelch (the channel's settings say which)
@@ -808,13 +810,27 @@ void ui_dual_key(void)
 	}
 }
 
-// "Joe Smith TG 91", with "Joe Smith" as the shorter alternate (font.h): the caller's name gives way last
-static void caller_text(char *out, size_t len, bool dmr, uint32_t src, const char *name, uint32_t dst, bool group)
+// What comes in on pane p without a caller to name: the pane's mode (AM in the air band)
+static const char *signal_word(const ui_dual_pane_t *p, bool dmr)
+{
+	if (dmr || p->mode == RADIO_MODE_DMR)
+		return TR(DUAL_VALUE_DMR_CALL, "DMR call");
+	if (p->mode == RADIO_MODE_P25)
+		return TR(DUAL_VALUE_P25_CALL, "P25 call");
+	if (p->mode == RADIO_MODE_NXDN)
+		return TR(DUAL_VALUE_NXDN_CALL, "NXDN call");
+	return p->am ? TR(DUAL_VALUE_AM_SIGNAL, "AM signal") : TR(DUAL_VALUE_FM_SIGNAL, "FM signal");
+}
+
+// "Joe Smith TG 91", with "Joe Smith" as the shorter alternate (font.h): the caller's name gives way last. Without a
+// DMR caller: what pane p hears ("FM signal")
+static void caller_text(char *out, size_t len, const ui_dual_pane_t *p, bool dmr, uint32_t src, const char *name,
+			uint32_t dst, bool group)
 {
 	sbuf_t b;
 	sb_init(&b, out, len);
 	if (!dmr || (!src && !dst)) {
-		sb_str(&b, dmr ? TR(DUAL_VALUE_DMR_CALL, "DMR call") : TR(DUAL_VALUE_FM_SIGNAL, "FM signal"));
+		sb_str(&b, signal_word(p, dmr));
 		return;
 	}
 	sb_str(&b, TEXT_ALT_OPEN);
@@ -1097,7 +1113,7 @@ __attribute__((noinline)) bool ui_dual_tick(const radio_view_t *v, uint32_t now)
 			ui_dual_rx_t *x = &r[t];
 			x->active = x->heard = true;
 			x->rssi_dbm = v->rssi_dbm;
-			x->dmr = v->ch.mode == RADIO_MODE_DMR;
+			x->dmr = shown_mode(&v->ch) == RADIO_MODE_DMR;	// a P25 or NXDN record keeps DMR
 #if CONFIG_DMR
 			x->src = v->dmr.call.src;
 			x->dst = v->dmr.call.dst;
@@ -1117,7 +1133,7 @@ __attribute__((noinline)) bool ui_dual_tick(const radio_view_t *v, uint32_t now)
 				talk_back(d, i, now);
 		}
 		if (x->active) {
-			caller_text(caller_buf, sizeof caller_buf, x->dmr, x->src, x->src_name, x->dst, x->group);
+			caller_text(caller_buf, sizeof caller_buf, p, x->dmr, x->src, x->src_name, x->dst, x->group);
 			if (strcmp(caller_buf, p->caller) != 0) {
 				strcpy(p->caller, caller_buf);
 				dirty = true;
@@ -1334,7 +1350,7 @@ static void pick_item(uint16_t i, ui_item_t *it)
 	sb_str(&b, TEXT_ALT_OPEN);
 	sb_freq(&b, ch.rx_hz);
 	sb_chr(&b, ' ');
-	sb_str(&b, ui_mode_name(shown_mode(&ch)));
+	sb_str(&b, shown_mode(&ch) == RADIO_MODE_FM && radio_am_channel(&ch) ? "AM" : ui_mode_name(shown_mode(&ch)));
 	sb_str(&b, TEXT_ALT_NEXT);
 	sb_freq(&b, ch.rx_hz);
 	sb_str(&b, TEXT_ALT_CLOSE);

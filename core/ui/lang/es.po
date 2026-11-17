@@ -1098,6 +1098,21 @@ msgid "DMR call"
 msgstr "Llamada DMR"
 
 #: core/ui/ui_dual.c
+msgctxt "DUAL_VALUE_P25_CALL"
+msgid "P25 call"
+msgstr "Llamada P25"
+
+#: core/ui/ui_dual.c
+msgctxt "DUAL_VALUE_NXDN_CALL"
+msgid "NXDN call"
+msgstr "Llamada NXDN"
+
+#: core/ui/ui_dual.c
+msgctxt "DUAL_VALUE_AM_SIGNAL"
+msgid "AM signal"
+msgstr "Señal AM"
+
+#: core/ui/ui_dual.c
 msgctxt "DUAL_VALUE_FM_SIGNAL"
 msgid "FM signal"
 msgstr "Señal FM"

@@ -39,6 +39,8 @@
 //   zoneoffer:<src>[,c] another radio offers its zone "Club net" (,c: one channel); the import and sends always work
 //   zoneexpire          the offer is gone (not opened in time)
 //   dlmode:fm|dmr|p25   the debug link sets the mode: the channel's for now, the VFO's own in the VFO
+//   dlvfo:<hz>          the debug link tunes the VFO to hz (it opens, as Find's Tune VFO)
+//   chhz:<n>,<hz>       stored channel n is an FM channel on hz (the air band with "am": received in AM)
 //   hotspot:on|off      the host link enters / leaves hotspot mode
 //   usbnet:off|on|up    USB a serial port, a network adapter, or a network adapter the computer has brought up
 //   timeout             the TX timeout cuts the transmission off while PTT is still held (shows the timeout deny)
@@ -3049,6 +3051,27 @@ static bool run_token(char *t, char *err, size_t len)
 		ui_svc_mode(strcmp(arg, "p25") == 0 ? RADIO_MODE_P25 : strcmp(arg, "nxdn") == 0 ? RADIO_MODE_NXDN :
 			    strcmp(arg, "dmr") == 0 ? RADIO_MODE_DMR : RADIO_MODE_FM);
 		advance(100);
+		return true;
+	}
+	if (strcmp(t, "dlvfo") == 0 && arg != NULL) {	// the debug link tunes the VFO
+		radio_req_vfo_set((uint32_t)strtoul(arg, NULL, 10));
+		advance(100);
+		return true;
+	}
+	if (strcmp(t, "chhz") == 0) {		// stored channel n is an FM channel on hz
+		unsigned n = 0, hz = 0;
+		channel_t c;
+		if (arg == NULL || sscanf(arg, "%u,%u", &n, &hz) != 2 || !codeplug_channel((uint16_t)n, &c)) {
+			snprintf(err, len, "bad %s", t);
+			return false;
+		}
+		c.mode = RADIO_MODE_FM;
+		c.rx_hz = c.tx_hz = hz;
+		if (sim_write((uint16_t)n, &c) < 0) {
+			snprintf(err, len, "no room for %s", t);
+			return false;
+		}
+		sim_rec.codeplug_writes--;	// the codeplug as found, not a write of the UI's
 		return true;
 	}
 #if CONFIG_P25 || CONFIG_NXDN

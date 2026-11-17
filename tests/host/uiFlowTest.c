@@ -233,6 +233,45 @@ static const flow_t flows[] = {
 	{ "11 dual watch: Tools > Scan, a zone scan instead", "quick 7 ctx 3 5 ok", "ok 6 1", "dual=0 scanning=1", 3, false },
 	{ "11 dual watch: the last B after power off", "quick 7 ctx 3 5 ok back back reboot", "quick 7", "dual=1 sel=A bpos=5",
 	  2, false },
+	// Each pane names its own mode (the strip names the selected one's), every mode the build runs: a VFO pane says
+	// "VFO <mode>", a call without a caller to name says what came in. AM where an FM channel or the VFO is in the
+	// air band on a radio that receives AM there (radio_am_channel), FM where it can't. A starts on the VFO or channel 3
+	{ "11 dual watch modes: FM VFO", "dlvfo:146520000 quick 7", "", "dual=1 sel=A shows=VFO_FM hides=VFO_AM", 0, false },
+	{ "11 dual watch modes: FM VFO in the air band without AM", "dlvfo:129700000 quick 7", "",
+	  "dual=1 sel=A shows=VFO_FM hides=VFO_AM", 0, false },
+	{ "11 dual watch modes: FM signal", "dlvfo:146520000 quick 7 tune:a", "fmrx", "dual=1 shows=FM_signal", 0, false },
+	{ "11 dual watch modes: DMR VFO", "dlvfo:438800000 dlmode:dmr quick 7", "", "dual=1 sel=A shows=DMR hides=VFO_FM",
+	  0, false },
+	{ "11 dual watch modes: DMR call", "dlvfo:438800000 dlmode:dmr quick 7 tune:a", "fmrx",
+	  "dual=1 shows=DMR_call hides=FM_signal", 0, false },
+#if CONFIG_AM_RX
+	{ "11 dual watch modes: AM VFO", "am dlvfo:129700000 quick 7", "", "dual=1 sel=A shows=AM shows=VFO_AM hides=VFO_FM",
+	  0, false },
+	{ "11 dual watch modes: AM VFO, B selected", "am dlvfo:129700000 quick 7 abkey", "",
+	  "dual=1 sel=B shows=VFO_AM hides=VFO_FM", 0, false },
+	{ "11 dual watch modes: AM signal", "am dlvfo:129700000 quick 7 tune:a", "fmrx",
+	  "dual=1 shows=AM_signal hides=FM_signal", 0, false },
+	{ "11 dual watch modes: AM channel", "am chhz:3,122395000 up down quick 7", "",
+	  "dual=1 sel=A shows=AM shows=122.395 hides=FM", 0, false },
+	{ "11 dual watch modes: AM channel in the B picker", "am chhz:4,122395000 quick 7", "ctx 3",
+	  "shows=122.395_AM hides=122.395_FM", 2, false },
+	{ "11 dual watch modes: AM channel's signal", "am chhz:3,122395000 up down quick 7 tune:a", "fmrx",
+	  "dual=1 shows=AM_signal hides=FM_signal", 0, false },
+#endif
+#if CONFIG_P25
+	{ "11 dual watch modes: P25 VFO", "dlvfo:438800000 dlmode:p25 quick 7", "",
+	  "dual=1 sel=A shows=VFO_P25 hides=VFO_FM", 0, false },
+	{ "11 dual watch modes: P25 channel", "p25 chkind:3,p25 up down quick 7", "", "dual=1 sel=A shows=P25 hides=FM", 0, false },
+	{ "11 dual watch modes: P25 call", "p25 chkind:3,p25 up down quick 7 tune:a", "fmrx",
+	  "dual=1 shows=P25_call hides=FM_signal hides=DMR_call", 0, false },
+#endif
+#if CONFIG_NXDN
+	{ "11 dual watch modes: NXDN VFO", "dlvfo:438800000 dlmode:nxdn quick 7", "",
+	  "dual=1 sel=A shows=VFO_NXDN hides=VFO_FM", 0, false },
+	{ "11 dual watch modes: NXDN channel", "nxdn chkind:3,nxdn up down quick 7", "", "dual=1 sel=A shows=NXDN hides=FM", 0, false },
+	{ "11 dual watch modes: NXDN call", "nxdn chkind:3,nxdn up down quick 7 tune:a", "fmrx",
+	  "dual=1 shows=NXDN_call hides=FM_signal hides=DMR_call", 0, false },
+#endif
 	// Settings > Advanced > Hardware (last row): OK steps a choice without storing ("*"), holding OK stores it
 	{ "S hardware options open", "hwopt", "ok 7 up ok up ok", "screen=hwopt shows=Not_set", 6, false },
 	{ "S hardware option stepped, not stored", "hwopt ok 7 up ok up ok", "ok ok", "shows=V2*", 2, false },
