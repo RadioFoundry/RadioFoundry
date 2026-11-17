@@ -14,6 +14,7 @@
 #include "radio/beep.h"
 
 #define SIG_STEPS	10u	// ten: an eight tone ZVEI or a CPS call tone's five and some to spare
+#define SIG_AIR_END_GUARD_MS 100u	// the same after an end tone: a receiver that is slow to close its audio cut the tone's last part now and then at 60
 #define SIG_AIR_GUARD_MS 60u	// silence the DMR on air copy carries before a start tone and after an end tone: a link that
 				// drops the first or last frames of a transmission (a hotspot) loses this instead of the tone
 #define SIG_AIR_STEPS	(SIG_STEPS + 1u)	// a chain and its guard

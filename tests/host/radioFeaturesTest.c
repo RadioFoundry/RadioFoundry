@@ -4128,7 +4128,7 @@ static void test_sig_dmr_air(void)
 	ambeVoiceGetStats(&vs);
 	CHECK(sm.view.state == RS_IDLE && v_enc_tone == 6 && vs.tx_overflows == 0 && !ambeVoiceTxToneBusy());
 	// ... and the guard's silence after it is encoded too (the transmission ends after it, not with the tone)
-	CHECK(v_enc_blocks >= v_enc_last + SIG_AIR_GUARD_MS / 20);
+	CHECK(v_enc_blocks >= v_enc_last + SIG_AIR_END_GUARD_MS / 20);
 
 	// Both: the speaker has its copy of each too
 	start();
