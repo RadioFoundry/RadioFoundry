@@ -721,8 +721,8 @@ msgstr "按任意键保持开机"
 
 #: core/ui/ui_app.c
 msgctxt "BATT_BANNER_CHARGE_SOON"
-msgid "Battery %u%: charge soon"
-msgstr "电池 %u%：请尽快充电"
+msgid "Battery %u%%: charge soon"
+msgstr "电池 %u%%：请尽快充电"
 
 #: core/ui/ui_app.c
 msgctxt "TRUNK_TOAST_BACK_ON"

@@ -580,14 +580,14 @@ bool ui_notify(const ui_event_t *ev)
 	return ok;
 }
 
-static void banner(uint8_t kind, bool warn, uint32_t id, const char *title, const char *text)
+// name_at: where the title's format put the station's name (sb_fmt's return), NULL for none. The title breaks its
+// line there, not at a word that a name or a translation may also hold (" de " in Spanish)
+static void banner_named(uint8_t kind, bool warn, uint32_t id, const char *title, const char *name_at,
+			 const char *text)
 {
 	ui_banner_t *b = &ui_st.banner;
-	// Where the title's format put the station's name (fmt.h): the title breaks its line there, not at a word that a
-	// name or a translation may also hold (" de " in Spanish)
-	uintptr_t at = (uintptr_t)sb_fmt_name - (uintptr_t)title;
-	b->name_at = sb_fmt_name != NULL && at < strlen(title) ? (uint8_t)at : 0;
-	sb_fmt_name = NULL;
+	uintptr_t at = (uintptr_t)name_at - (uintptr_t)title;
+	b->name_at = name_at != NULL && at < strlen(title) ? (uint8_t)at : 0;
 	b->kind = kind;
 	b->warn = warn;
 	b->id = id;
@@ -600,6 +600,11 @@ static void banner(uint8_t kind, bool warn, uint32_t id, const char *title, cons
 	ui_st.toast = NULL;	// the banner has the news now ("Checking Joe..." is answered)
 	dirty = true;
 	wake_req = true;
+}
+
+static void banner(uint8_t kind, bool warn, uint32_t id, const char *title, const char *text)
+{
+	banner_named(kind, warn, id, title, NULL, text);
 }
 
 bool ui_app_take_wake(void)
@@ -638,17 +643,17 @@ static void handle_event(const ui_event_t *ev)
 	char title[UI_BANNER_TEXT];
 	sbuf_t b;
 	sb_init(&b, title, sizeof title);
-	sb_fmt_name = NULL;	// a mark from an earlier event would point into this same buffer
+	const char *at = NULL;	// where the title's station name went (banner_named)
 	char id[24];
 	const char *who = station(ev, id, ev->kind == UI_EV_ZONE_SENT && ev->index);
 	switch (ev->kind) {
 	case UI_EV_MESSAGE:
-		TRF(&b, MSG_BANNER_FROM, "Message from %s", who);
+		at = TRF(&b, MSG_BANNER_FROM, "Message from %s", who);
 		{
 			// The banner shows two lines of the message: more than the event carries, from the inbox
 			ui_msg_t m;
 			bool got = ui_svc_msg_get(ev->index, &m);
-			banner(UI_BANNER_MESSAGE, false, ev->id, title, got ? m.text : ev->text);
+			banner_named(UI_BANNER_MESSAGE, false, ev->id, title, at, got ? m.text : ev->text);
 		}
 		ui_st.banner.msg = ev->index;
 		if (ui_st.message_tone)
@@ -658,24 +663,24 @@ static void handle_event(const ui_event_t *ev)
 	case UI_EV_MESSAGE_SENT:
 		if (ev->ok) {
 			if (ev->index == 1)
-				TRF(&b, BANNER_SENT_TO, "Sent to %s", who);
+				at = TRF(&b, BANNER_SENT_TO, "Sent to %s", who);
 			else
-				TRF(&b, MSG_BANNER_DELIVERED_TO, "Delivered to %s", who);
-			banner(UI_BANNER_RESULT, false, ev->id, title, NULL);
+				at = TRF(&b, MSG_BANNER_DELIVERED_TO, "Delivered to %s", who);
+			banner_named(UI_BANNER_RESULT, false, ev->id, title, at, NULL);
 		} else {
-			TRF(&b, BANNER_NO_ANSWER_FROM, "No answer from %s", who);
-			banner(UI_BANNER_RESULT, true, ev->id, title,
+			at = TRF(&b, BANNER_NO_ANSWER_FROM, "No answer from %s", who);
+			banner_named(UI_BANNER_RESULT, true, ev->id, title, at,
 				TR(MSG_BANNER_NOT_DELIVERED, "Not delivered: send again"));
 		}
 		break;
 	case UI_EV_CALL_ALERT:
-		TRF(&b, ALERT_BANNER_FROM, "Call alert from %s", who);
-		banner(UI_BANNER_CALL_ALERT, false, ev->id, title, TR(HINT_PTT_REPLIES, "PTT replies"));
+		at = TRF(&b, ALERT_BANNER_FROM, "Call alert from %s", who);
+		banner_named(UI_BANNER_CALL_ALERT, false, ev->id, title, at, TR(HINT_PTT_REPLIES, "PTT replies"));
 		vibrate(UI_VIBE_CALL);
 		break;
 	case UI_EV_PRIVATE_CALL:
-		TRF(&b, CALL_BANNER_PRIVATE_FROM, "Private call from %s", who);
-		banner(UI_BANNER_PRIVATE, false, ev->id, title, TR(HINT_PTT_REPLIES, "PTT replies"));
+		at = TRF(&b, CALL_BANNER_PRIVATE_FROM, "Private call from %s", who);
+		banner_named(UI_BANNER_PRIVATE, false, ev->id, title, at, TR(HINT_PTT_REPLIES, "PTT replies"));
 		vibrate(UI_VIBE_CALL);
 		break;
 	case UI_EV_RADIO_CHECK:
@@ -685,11 +690,11 @@ static void handle_event(const ui_event_t *ev)
 			sbuf_t tb;
 			sb_init(&tb, t, sizeof t);
 			TRF(&tb, CHECK_BANNER_ANSWERED, "answered (%u.%u s)", ev->ms / 1000u, (ev->ms % 1000u) / 100u);
-			banner(UI_BANNER_RESULT, false, ev->id, title, t);
+			banner_named(UI_BANNER_RESULT, false, ev->id, title, at, t);
 		} else {
 			sb_init(&b, title, sizeof title);
-			TRF(&b, BANNER_NO_ANSWER_FROM, "No answer from %s", who);
-			banner(UI_BANNER_RESULT, true, ev->id, title,
+			at = TRF(&b, BANNER_NO_ANSWER_FROM, "No answer from %s", who);
+			banner_named(UI_BANNER_RESULT, true, ev->id, title, at,
 				TR(BANNER_OFF_OR_OUT_OF_RANGE, "Off or out of range: try later"));
 		}
 		break;
@@ -718,11 +723,11 @@ static void handle_event(const ui_event_t *ev)
 		break;
 	case UI_EV_CALL_ALERT_RESULT:
 		if (ev->ok) {
-			TRF(&b, ALERT_BANNER_ANSWERED, "%s answered the alert", who);
-			banner(UI_BANNER_RESULT, false, ev->id, title, NULL);
+			at = TRF(&b, ALERT_BANNER_ANSWERED, "%s answered the alert", who);
+			banner_named(UI_BANNER_RESULT, false, ev->id, title, at, NULL);
 		} else {
-			TRF(&b, BANNER_NO_ANSWER_FROM, "No answer from %s", who);
-			banner(UI_BANNER_RESULT, true, ev->id, title,
+			at = TRF(&b, BANNER_NO_ANSWER_FROM, "No answer from %s", who);
+			banner_named(UI_BANNER_RESULT, true, ev->id, title, at,
 				TR(BANNER_OFF_OR_OUT_OF_RANGE, "Off or out of range: try later"));
 		}
 		break;
@@ -738,20 +743,20 @@ static void handle_event(const ui_event_t *ev)
 		break;
 	case UI_EV_ZONE_OFFER:
 		if (ev->index)
-			TRF(&b, SHARE_BANNER_CHANNEL_FROM, GLYPH_DOWNLOAD " Channel from %s", who);
+			at = TRF(&b, SHARE_BANNER_CHANNEL_FROM, GLYPH_DOWNLOAD " Channel from %s", who);
 		else
-			TRF(&b, SHARE_BANNER_ZONE_FROM, GLYPH_DOWNLOAD " Zone from %s", who);
-		banner(UI_BANNER_ZONE_OFFER, false, ev->id, title, ev->text);
+			at = TRF(&b, SHARE_BANNER_ZONE_FROM, GLYPH_DOWNLOAD " Zone from %s", who);
+		banner_named(UI_BANNER_ZONE_OFFER, false, ev->id, title, at, ev->text);
 		if (ui_st.message_tone)
 			ui_svc_beep(UI_BEEP_MESSAGE);
 		vibrate(UI_VIBE_MESSAGE);
 		break;
 	case UI_EV_ZONE_SENT:
 		if (ev->ok)
-			TRF(&b, BANNER_SENT_TO, "Sent to %s", who);
+			at = TRF(&b, BANNER_SENT_TO, "Sent to %s", who);
 		else
-			TRF(&b, SHARE_BANNER_NOT_SENT_TO, "Not sent to %s", who);
-		banner(UI_BANNER_RESULT, !ev->ok, ev->id, title, ev->ok ? NULL :
+			at = TRF(&b, SHARE_BANNER_NOT_SENT_TO, "Not sent to %s", who);
+		banner_named(UI_BANNER_RESULT, !ev->ok, ev->id, title, at, ev->ok ? NULL :
 			TR(SHARE_BANNER_TRY_ON_DMR, "Try again on a DMR channel"));
 		break;
 	case UI_EV_ZONE_IMPORTED:
@@ -760,9 +765,9 @@ static void handle_event(const ui_event_t *ev)
 			sbuf_t tb;
 			sb_init(&tb, text, sizeof text);
 			if (ev->id)
-				TRF(&b, SHARE_BANNER_UPDATED, "Updated %s", ev->name);
+				at = TRF(&b, SHARE_BANNER_UPDATED, "Updated %s", ev->name);
 			else
-				TRF(&b, SHARE_BANNER_IMPORTED, "Imported %s", ev->name);
+				at = TRF(&b, SHARE_BANNER_IMPORTED, "Imported %s", ev->name);
 			if (ev->ms != 0)
 				// Channels whose system isn't set up came in locked out (zone-share.md 5.5)
 				TRF(&tb, SHARE_BANNER_SYSTEM_MISSING, "%u trunked: system not set up", ev->ms);
@@ -770,7 +775,7 @@ static void handle_event(const ui_event_t *ev)
 				TRF(&tb, SHARE_BANNER_CHANNEL_RX_ONLY, "%u channel, receive only", ev->index);
 			else
 				TRF(&tb, SHARE_BANNER_CHANNELS_RX_ONLY, "%u channels, receive only", ev->index);
-			banner(UI_BANNER_RESULT, ev->ms != 0, 0, title, text);
+			banner_named(UI_BANNER_RESULT, ev->ms != 0, 0, title, at, text);
 		} else {
 			banner(UI_BANNER_RESULT, true, 0, TR(SHARE_BANNER_NOT_IMPORTED, "Zone not imported"),
 				tr(ev->why));
@@ -2346,7 +2351,7 @@ static void battery_tick(const radio_view_t *v)
 	batt_warned_ms = now;
 	sbuf_t b;
 	sb_init(&b, text, sizeof text);
-	TRF(&b, BATT_BANNER_CHARGE_SOON, "Battery %u%: charge soon", pct);
+	TRF(&b, BATT_BANNER_CHARGE_SOON, "Battery %u%%: charge soon", pct);
 	banner(UI_BANNER_INFO, true, 0, text, NULL);
 	if (v->battery == RADIO_BATT_OK)
 		ui_svc_beep(UI_BEEP_BATTERY_LOW);

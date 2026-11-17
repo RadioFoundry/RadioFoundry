@@ -278,7 +278,7 @@ TRF(&b, ROAM_BODY_SITE, "Site %u of %u: %s", site + 1u, sites, ch.name);
 | `%K` | `const char *` | Text kept as it is: our own, which may carry text alternates (a translated word, the result of `sb_age`) |
 | `%d` | `int` | A signed number |
 | `%u` | `unsigned` | An unsigned number |
-| `%03u`, `%03d` | | At least 3 digits, zero padded, after the sign (widths 1 to 9). Space padding (`%3u`) is off: `SB_FMT_SPACE_PAD` in `core/ui/textfmt.h` |
+| `%03u`, `%03d` | | At least 3 digits, zero padded, after the sign (widths 1 to 9). Space padding (`%3u`) is off: `SB_FMT_SPACE_PAD` in `core/text/format.h` |
 
 - **Numbering.** The English writes its values in the order the code passes them, without numbers:
   `"Site %u of %u: %s"`. A translation of more than one value numbers every value from 1 in that order, whether or
