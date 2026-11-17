@@ -145,6 +145,38 @@ static const flow_t flows[] = {
 	  "focus=Mode shows=NXDN shows=RAN", 3, false },
 	{ "stored NXDN channel as FM: Save asks", "chkind:3,nxdn ok 5 ok down down ok", "long:ok",
 	  "screen=discard shows=Save_as_FM? shows=NXDN_settings_will_be shows=removed writes=0", 1, false },
+	// Where the radio runs P25 and NXDN, Mode steps through every mode: DMR, P25 with the default NAC, NXDN with
+	// RAN 1 at 9600, FM, and DMR again with nothing to save
+	{ "E Mode: DMR to P25", "p25 nxdn ok 5 ok down down", "ok", "focus=Mode shows=P25 shows=NAC shows=293", 1,
+	  false },
+	{ "E Mode: P25 to NXDN", "p25 nxdn ok 5 ok down down", "ok ok", "focus=Mode shows=NXDN shows=RAN shows=9600",
+	  2, false },
+	{ "E Mode: NXDN to FM", "p25 nxdn ok 5 ok down down", "ok ok ok", "focus=Mode shows=FM hides=RAN hides=NAC", 3,
+	  false },
+	{ "E Mode: round to DMR, nothing to save", "p25 nxdn ok 5 ok down down", "ok ok ok ok long:ok",
+	  "focus=Mode shows=DMR toast=No_changes_to_save writes=0", 5, false },
+	{ "E Mode: no NXDN where the radio doesn't run it", "p25 ok 5 ok down down", "ok ok", "focus=Mode shows=FM", 2,
+	  false },
+	// A channel made P25 or NXDN on the radio is saved as one, its NAC or RAN with it
+	{ "E Mode: DMR channel saved as P25", "p25 nxdn ok 5 ok down down ok", "long:ok",
+	  "screen=channel writes=1 toast=Saved_channel_3 shows=P25 shows=293", 1, true },
+	{ "E Mode: DMR channel saved as NXDN", "p25 nxdn ok 5 ok down down ok ok", "long:ok",
+	  "screen=channel writes=1 toast=Saved_channel_3 shows=NXDN shows=RAN", 1, true },
+	// Opened again it is a stored channel of the kind, the block read back
+	{ "E Mode: the saved P25 channel opens as P25", "p25 nxdn ok 5 ok down down ok long:ok back back back",
+	  "ok 5 ok", "screen=channel shows=P25 shows=NAC shows=293 hides=Color_code", 3, false },
+	{ "E Mode: the saved NXDN channel opens as NXDN", "p25 nxdn ok 5 ok down down ok ok long:ok back back back",
+	  "ok 5 ok", "screen=channel shows=NXDN shows=RAN hides=Color_code", 3, false },
+	// An own ID typed in P25 past NXDN's range is kept when the Mode row makes the channel NXDN: Save refuses it
+	{ "E Mode: NXDN with an ID past 65519 not saved",
+	  "p25 nxdn ok 5 ok down down ok down down down down down down down ok 7 0 0 0 0 ok up up up up up up up ok",
+	  "long:ok", "screen=channel focus=Mode shows=NXDN toast=NXDN_IDs_go_up_to_65519 writes=0", 1, false },
+	// A channel made P25 whose RX goes to the air band: AM there, no P25
+	{ "E Mode: a P25 channel's air band RX makes it AM", "am p25 nxdn ok 5 ok down down ok down down",
+	  "ok 1 2 1 5 0 0 ok", "shows=121.500 shows=AM hides=NAC hides=P25", 8, false },
+	// A stored P25 channel made NXDN loses its P25 tag: asked first
+	{ "stored P25 channel as NXDN: Save asks", "p25 nxdn chkind:3,p25 ok 5 ok down down ok", "long:ok",
+	  "screen=discard shows=Unsaved_Changes shows=P25_settings_will_be writes=0", 1, false },
 #endif
 #endif
 #endif
