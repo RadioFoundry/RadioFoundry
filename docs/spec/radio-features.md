@@ -57,8 +57,9 @@ Requests: `radio_req_scan(cmd)` with stop, zone, VFO, dual, cancel, nuisance or 
 tuned channel or frequency is the core view's as usual.
 
 - **Zone scan** visits the current zone's channels in order, from the one it started on, skipping empty positions and
-  channels marked "zone skip" in the codeplug. FM and DMR channels mix freely: each stop tunes the channel as a
-  channel change would.
+  channels marked "zone skip" in the codeplug. FM, DMR, P25 and NXDN channels mix freely: each stop tunes the
+  channel as a channel change would (P25, NXDN: the engine starts there). Left out: parked channels, P25 trunked
+  channels, and NXDN channels at a rate the board can't receive ([p25.md](p25.md) 7.1, [nxdn.md](nxdn.md) 6.4).
 - **VFO scan** steps the VFO frequency by its step from `lo` to `hi` and wraps. Without a range it sweeps the board
   band the VFO frequency is in. Both ends must be in one band, at least one step apart.
 - **Dual watch** alternates between two channels, skip flags ignored (2.1). `radio_req_scan_dual(pos)` (the debug
@@ -80,7 +81,9 @@ its LC included) the probe lasts up to 1.5 s: a call already in progress is take
 next complete superframe at best and the one after it when the modem's sticky LC equals this call's (about 1.1 s from
 the retune). Each DMR stop on a new frequency restarts the modem's receiver, so it searches from the retune and not on the
 last transmitter's slot timing ([gotchas](gotchas.md) 17.2). A call known not to be for us (another talkgroup) ends
-the probe. Digital monitor on when a zone or VFO scan starts (the hear-all latch, [dmr-voice.md](dmr-voice.md) 1) stays on
+the probe. P25 and NXDN stops read a carrier as DMR does, probe up to 700 ms for a call of the channel's NAC or RAN,
+up to 1.5 s while its squelch waits for a field (a late entry's talk group or group), hold on a call that plays and
+move on from one that doesn't ([p25.md](p25.md) 7.1). Digital monitor on when a zone or VFO scan starts (the hear-all latch, [dmr-voice.md](dmr-voice.md) 1) stays on
 at every stop (`hear_all_latch` in the view), so a call to any talkgroup is played and holds the scan; the channel the
 scan ends on, by STOP, CANCEL or PTT, keeps it latched. Toggling it during the scan turns it on or off for the rest of
 the scan. Dual watch doesn't carry it. Empty channels still move on after the dwell.
@@ -132,11 +135,19 @@ VFO during the watch copies into a VFO the other channel isn't on: the one last 
 dual.sel dual.at`, [debuglink.md 3.7](debuglink.md#37-get_view)); the view's `dual_busy` is `dual.busy`. `radio_get_vfo(index)` returns a VFO's settings while something else is tuned (a VFO pane). Built without `CONFIG_DUAL_WATCH`
 only the debug link's dual watch is left: two channels of the current zone, and PTT ends it as it ends any scan.
 
+A P25 or NXDN channel (a stored one, or the VFO in that mode) can be either side. The scan's rules apply to it (2): it
+is one only where the board receives that mode at the channel's rate, never as a trunked channel, and a look there
+starts its engine, probes a carrier for up to 700 ms and holds for a call that plays. The air interface runs one engine
+at a time, so with P25 on one side and NXDN on the other each hop stops one engine and starts the other. The UI
+refuses a trunked channel at once; a mode the board can't receive is refused by the radio core, and the watch doesn't
+start. The panes name the mode and show no tone or bandwidth for it, and don't show the caller of a P25 or NXDN call.
+
 ### 2.2 A second receiver
 
 A board with a second receiver sets `board.rx2` (`hal/hal_rx2.h`; a second SoC, over the link in
 [rx2-link.md](rx2-link.md)). In dual watch the main receiver then stays on the selected channel and the second one gets
-the other. Nothing alternates, and the scan's hold and resume timing aren't used. The view's `rx2` is 1 while this is
+the other. Nothing alternates, and the scan's hold and resume timing aren't used. It takes FM and DMR only: when the
+channel not selected is P25 or NXDN, the main receiver alternates as in 2.1. The view's `rx2` is 1 while this is
 so (the debug link's `dual.both`).
 
 | Event | What happens |

@@ -25,6 +25,9 @@
 #include "dmr/bsOutbound.h"
 #endif
 #include "audio_pcm.h"
+#if CONFIG_AIR
+#include "modem/hrc7000/hrc7000_air.h"
+#endif
 #include "hal_time.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -40,6 +43,30 @@ static volatile bool active;
 static volatile bool rf_on_rx;	// the last burst switch put the RF back to receive (hrc_dmr_tx_end)
 static dmr_event_cb_t volatile stack_cb;
 static void *volatile stack_ctx;
+
+#if CONFIG_AIR
+// An air interface session (hrc_air) or the receive tap (hrc_baseband) holds the chip: the interrupts and the task go to
+// it, and its state lives in the slot engine's queues, which a halted engine leaves unused (hrc7000_air.h)
+typedef struct {
+	hrc7000_air_t a;
+	hrc7000_air_buf_t b;
+} air_mem_t;
+_Static_assert(sizeof(air_mem_t) <= sizeof(eng.evq), "the air session no longer fits the slot engine's event queue");
+// The soft modem lives in the engine's transmit queue, a queue of bytes: the state starts at its first address aligned
+// for it, or the first word store faults (the queue sits at an odd offset in the engine)
+#define AIR_SM_ALIGN	(_Alignof(air_softmodem_t))
+_Static_assert(sizeof(air_softmodem_t) + AIR_SM_ALIGN - 1u <= sizeof(eng.txq),
+	       "the soft modem no longer fits the slot engine's TX queue");
+#define AIR_SM \
+	((air_softmodem_t *)(void *)(((uintptr_t)(void *)eng.txq + AIR_SM_ALIGN - 1u) & ~(uintptr_t)(AIR_SM_ALIGN - 1u)))
+#define AIR		(&((air_mem_t *)(void *)eng.evq)->a)
+static volatile bool air_on;
+static air_event_cb_t air_cb;
+static void *air_ctx;
+#define AIR_ON()	air_on
+#else
+#define AIR_ON()	false
+#endif
 
 // --- Engine ops ---
 
@@ -88,12 +115,13 @@ static void notify(void *ctx)
 }
 
 // A split duplex hotspot's base-station outbound keys once for its whole length (hrc7000_bs.c)
+// An air interface transmission too: keyed at its first RF TX interrupt, held to its end (hrc7000_air.c)
 static bool outbound_continuous(void)
 {
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
-	return eng.bs != NULL;
+	return eng.bs != NULL || AIR_ON();
 #else
-	return false;
+	return AIR_ON();
 #endif
 }
 
@@ -101,7 +129,12 @@ static void rf(void *ctx, bool tx)
 {
 	(void)ctx;
 	if (brd->burst != NULL) {
-		hrc_rfburst_switch(tx, outbound_continuous(), eng.t_tick);
+#if CONFIG_AIR
+		uint32_t tick = air_on ? AIR->t_tick : eng.t_tick;
+#else
+		uint32_t tick = eng.t_tick;
+#endif
+		hrc_rfburst_switch(tx, outbound_continuous(), tick);
 	} else if (brd->rf_switch != NULL) {
 		brd->rf_switch(tx);
 	}
@@ -123,10 +156,17 @@ static const hrc7000_dmr_ops_t ops = {
 
 // --- Interrupts ---
 
+#if CONFIG_AIR
+static void isr_sys(void) { if (air_on) hrc7000_air_isr_sys(AIR); else hrc7000_dmr_isr_sys(&eng); }
+static void isr_ts_tx(void) { if (air_on) hrc7000_air_isr_timeslot(AIR); else hrc7000_dmr_isr_timeslot(&eng, true); }
+static void isr_ts_rx(void) { if (air_on) hrc7000_air_isr_timeslot(AIR); else hrc7000_dmr_isr_timeslot(&eng, false); }
+static void isr_rftx(void) { if (air_on) hrc7000_air_isr_rftx(AIR); else hrc7000_dmr_isr_rftx(&eng); }
+#else
 static void isr_sys(void) { hrc7000_dmr_isr_sys(&eng); }
 static void isr_ts_tx(void) { hrc7000_dmr_isr_timeslot(&eng, true); }
 static void isr_ts_rx(void) { hrc7000_dmr_isr_timeslot(&eng, false); }
 static void isr_rftx(void) { hrc7000_dmr_isr_rftx(&eng); }
+#endif
 
 static void isr_pa_timer(void)
 {
@@ -206,6 +246,12 @@ HRC_FLASHFUNC static void dmr_task(void *arg)
 			hrc7000_dmr_poll(&eng);
 			lost_check(pic);
 		}
+#if CONFIG_AIR
+		if (air_on) {
+			hrc7000_air_poll(AIR);	// the engine is halted, and its queue is the session's memory
+			continue;
+		}
+#endif
 		while (hrc7000_dmr_pop(&eng, &ev, &burst)) {
 			dmr_event_cb_t cb = stack_cb;
 			if (cb != NULL) {
@@ -245,6 +291,15 @@ HRC_FLASHFUNC void hrc_dmr_board_init(hrc7000_t *modem, const hrc_dmr_board_t *h
 void hrc_dmr_enter(void)
 {
 	rf_on_rx = false;
+#if CONFIG_AIR
+	if (air_on) {
+		// Back in DMR under a session or the tap (the board wrote the chip's DMR set-up): the copy set-up again
+		active = true;
+		irqs_enable(true);
+		hrc7000_air_resume(AIR);
+		return;
+	}
+#endif
 	hrc7000_dmr_run(&eng);
 	active = true;
 	irqs_enable(true);
@@ -254,12 +309,22 @@ void hrc_dmr_leave(void)
 {
 	irqs_enable(false);
 	active = false;
+#if CONFIG_AIR
+	if (air_on) {
+		hrc7000_air_suspend(AIR);	// a transmission ends (TX_DONE); the engine is halted already
+		rf_on_rx = false;
+		return;
+	}
+#endif
 	hrc7000_dmr_halt(&eng);
 	rf_on_rx = false;	// after the halt: its switch back to RX doesn't count outside DMR
 }
 
 bool hrc_dmr_fm_rx_hook(void (*fn)(void))
 {
+	if (fn != NULL && AIR_ON()) {
+		return false;	// the copy interrupt is the session's
+	}
 	uint32_t s = hrc_irq_save();
 	eng.fm_rx = fn;
 	hrc_irq_restore(s);
@@ -280,11 +345,22 @@ bool hrc_dmr_tx_end(void)
 void hrc_dmr_rx_restart(void)
 {
 	rf_on_rx = false;
+#if CONFIG_AIR
+	if (air_on) {
+		hrc7000_air_rx_restart(AIR);
+		return;
+	}
+#endif
 	hrc7000_dmr_rx_restart(&eng);
 }
 
 bool hrc_dmr_tx_active(void)
 {
+#if CONFIG_AIR
+	if (air_on) {
+		return active && hrc7000_air_tx_active(AIR);
+	}
+#endif
 	return active && hrc7000_dmr_is_transmitting(&eng);
 }
 
@@ -293,15 +369,22 @@ void hrc_dmr_tx_drop(void)
 	if (!active) {
 		return;
 	}
+#if CONFIG_AIR
+	if (air_on) {
+		hrc7000_air_tx_abort(AIR);	// PA off now, TX_DONE to the session, receiving
+		return;
+	}
+#endif
 	hrc7000_dmr_halt(&eng);		// PA off now, TX_DONE to the stack, engine off ...
 	hrc7000_dmr_run(&eng);		// ... and on again, receiving
 }
 
 // --- hal_dmr_modem_t ---
 
+// While a session or the tap holds the chip the engine's calls do nothing: its queues are their memory
 static bool start(const dmr_config_t *cfg, dmr_event_cb_t cb, void *ctx)
 {
-	if (!active) {
+	if (!active || AIR_ON()) {
 		return false;	// the radio is not in DMR mode (set_mode(RADIO_MODE_DMR) first)
 	}
 	hrc7000_dmr_configure(&eng, cfg);
@@ -314,40 +397,43 @@ static bool start(const dmr_config_t *cfg, dmr_event_cb_t cb, void *ctx)
 static void stop(void)
 {
 	stack_cb = NULL;
-	if (active && hrc7000_dmr_is_transmitting(&eng)) {
+	if (active && !AIR_ON() && hrc7000_dmr_is_transmitting(&eng)) {
 		hrc_dmr_tx_drop();
 	}
 }
 
-static void configure(const dmr_config_t *cfg) { hrc7000_dmr_configure(&eng, cfg); }
-static void rx_restart(void) { hrc7000_dmr_rx_restart(&eng); }
-static void rx_lock_slot(int8_t ts) { hrc7000_dmr_rx_lock_slot(&eng, ts); }
+static void configure(const dmr_config_t *cfg) { if (!AIR_ON()) hrc7000_dmr_configure(&eng, cfg); }
+static void rx_restart(void) { if (!AIR_ON()) hrc7000_dmr_rx_restart(&eng); }
+static void rx_lock_slot(int8_t ts) { if (!AIR_ON()) hrc7000_dmr_rx_lock_slot(&eng, ts); }
 
 // The prompt FIFO also feeds the modulator: its gate closes before the first burst can be armed, and audio_pcm.c opens
 // it once the engine has stopped transmitting
 static bool tx_begin(dmr_timing_t timing, int8_t ts, dmr_access_t access)
 {
+	if (AIR_ON()) {
+		return false;
+	}
 	hrc_audio_pcm_tx_gate();
 	return active && hrc7000_dmr_tx_begin(&eng, timing, ts, access);
 }
 
-static bool tx_queue(const dmr_tx_burst_t *b) { return hrc7000_dmr_tx_queue(&eng, b); }
-static uint8_t tx_queue_space(void) { return hrc7000_dmr_tx_queue_space(&eng); }
-static void tx_listen(void) { hrc7000_dmr_tx_listen(&eng); }
+static bool tx_queue(const dmr_tx_burst_t *b) { return !AIR_ON() && hrc7000_dmr_tx_queue(&eng, b); }
+static uint8_t tx_queue_space(void) { return AIR_ON() ? 0 : hrc7000_dmr_tx_queue_space(&eng); }
+static void tx_listen(void) { if (!AIR_ON()) hrc7000_dmr_tx_listen(&eng); }
 HRC_FLASHFUNC static bool tx_listen_split(void)
 {
-	if (brd == NULL || !brd->listen_split) {
+	if (brd == NULL || !brd->listen_split || AIR_ON()) {
 		return false;
 	}
 	tx_listen();
 	return true;
 }
-static int8_t tx_fill(const dmr_tx_burst_t *b) { return hrc7000_dmr_tx_fill(&eng, b); }
-static void tx_end(void) { hrc7000_dmr_tx_end(&eng); }
-static void tx_abort(void) { hrc7000_dmr_tx_abort(&eng); }
-static void set_embedded_lc(const uint8_t lc[9]) { hrc7000_dmr_set_embedded_lc(&eng, lc); }
-static void set_cc_filter(int8_t cc) { hrc7000_dmr_set_cc_filter(&eng, cc); }
-static bool is_transmitting(void) { return hrc7000_dmr_is_transmitting(&eng); }
+static int8_t tx_fill(const dmr_tx_burst_t *b) { return AIR_ON() ? -1 : hrc7000_dmr_tx_fill(&eng, b); }
+static void tx_end(void) { if (!AIR_ON()) hrc7000_dmr_tx_end(&eng); }
+static void tx_abort(void) { if (!AIR_ON()) hrc7000_dmr_tx_abort(&eng); }
+static void set_embedded_lc(const uint8_t lc[9]) { if (!AIR_ON()) hrc7000_dmr_set_embedded_lc(&eng, lc); }
+static void set_cc_filter(int8_t cc) { if (!AIR_ON()) hrc7000_dmr_set_cc_filter(&eng, cc); }
+static bool is_transmitting(void) { return !AIR_ON() && hrc7000_dmr_is_transmitting(&eng); }
 
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
 // --- Split duplex (docs/spec/split-duplex.md 5): the slot clock and the TX half's BS outbound (hrc7000_bs.c) ---
@@ -366,7 +452,7 @@ static bool slot_clock(uint32_t *counter, uint32_t *t_us, int8_t *ts)
 
 static bool bs_start(const dmr_bs_config_t *cfg)
 {
-	return active && hrc7000_bs_start(&bs, &eng, cfg, bsOutboundRawSlot);
+	return active && !AIR_ON() && hrc7000_bs_start(&bs, &eng, cfg, bsOutboundRawSlot);
 }
 
 static void bs_key(bool on)
@@ -419,6 +505,167 @@ const hal_dmr_modem_t hrc_dmr = {
 	.tx_listen_gaps = true,	// modem-hrc7000.md 5.4
 	SPLIT_OPS
 };
+
+#if CONFIG_AIR
+// --- hal_air_t and hal_baseband_t: the receive copy and the physical layer (hrc7000_air.c) ---
+// Task level, so in flash; only the interrupts above and hrc7000_air.c's handlers run from RAM
+
+// The chip from the halted engine to the session or the tap: the engine's queues become their memory
+HRC_FLASHFUNC static bool air_take(void)
+{
+	if (!active || air_on || hrc7000_dmr_is_transmitting(&eng) || eng.fm_rx != NULL) {
+		return false;	// not in DMR, a DMR transmission, or FM receive audio (APRS) holds the copy interrupt
+	}
+	hrc7000_dmr_halt(&eng);
+	lock(NULL);
+	eng.evq_tail = eng.evq_head;	// what the engine left is dropped
+	hrc7000_air_init(AIR, eng.dev, &ops, &((air_mem_t *)(void *)eng.evq)->b, AIR_SM);
+	return true;	// locked
+}
+
+// ... and back: the engine's queues empty again, the engine running when the chip is in DMR
+HRC_FLASHFUNC static void air_give(void)
+{
+	air_on = false;
+	eng.evq_head = eng.evq_tail = 0;
+	eng.txq_head = eng.txq_tail = 0;
+	unlock(NULL);
+	if (active) {
+		hrc7000_dmr_run(&eng);
+	}
+}
+
+HRC_FLASHFUNC static void air_event(const air_event_t *ev, void *ctx)
+{
+	(void)ctx;
+	air_event_cb_t cb = air_cb;
+	if (cb != NULL) {
+		cb(ev, air_ctx);
+	}
+}
+
+HRC_FLASHFUNC static uint32_t air_fit(const air_profile_t *p)
+{
+	uint32_t f = air_softmodem_rx_fit(p, &hrc_baseband) | hrc7000_air_tx_fit(p);
+	// Untested until the board says its receive and transmit were checked on air (modem-hrc7000.md 10.4)
+	return f != 0 && (brd == NULL || !brd->air_verified) ? f | AIR_FIT_UNTESTED : f;
+}
+
+// Rule 1 (hal_air.h): in DMR the speaker carries only the codec's PCM, and the session keeps FM playback off. Rule 2:
+// in the physical layer the modulator sends TX RAM only, and the prompt FIFO's gate is closed for each transmission
+HRC_FLASHFUNC static bool air_open(const air_profile_t *p, air_event_cb_t cb, void *ctx)
+{
+	uint32_t f = air_fit(p) & ~(uint32_t)AIR_FIT_UNTESTED;
+	if (f == 0 || cb == NULL || !air_take()) {
+		return false;
+	}
+	air_cb = cb;
+	air_ctx = ctx;
+	bool ok = hrc7000_air_open(AIR, p, f, air_event, NULL);
+	if (!ok) {
+		air_cb = NULL;
+		air_give();
+		return false;
+	}
+	air_on = true;
+	unlock(NULL);
+	return true;
+}
+
+HRC_FLASHFUNC static void air_close(void)
+{
+	if (!air_on || !AIR->open) {
+		return;
+	}
+	lock(NULL);
+	hrc7000_air_close(AIR, active);
+	air_cb = NULL;
+	air_give();
+}
+
+HRC_FLASHFUNC static void air_rx_restart(void)
+{
+	if (air_on) {
+		hrc7000_air_rx_restart(AIR);
+	}
+}
+
+HRC_FLASHFUNC static bool air_tx_begin(void)
+{
+	if (!active || !air_on) {
+		return false;
+	}
+	hrc_audio_pcm_tx_gate();	// the prompt FIFO also feeds the modulator (as tx_begin)
+	return hrc7000_air_tx_begin(AIR);
+}
+
+HRC_FLASHFUNC static bool air_tx_queue(const air_tx_chunk_t *c) { return air_on && hrc7000_air_tx_queue(AIR, c); }
+HRC_FLASHFUNC static uint8_t air_tx_space(void) { return air_on ? hrc7000_air_tx_space(AIR) : 0; }
+HRC_FLASHFUNC static void air_tx_end(void) { if (air_on) hrc7000_air_tx_end(AIR); }
+HRC_FLASHFUNC static void air_tx_abort(void) { if (air_on) hrc7000_air_tx_abort(AIR); }
+static uint32_t air_now_us(void) { return hrc_micros(); }
+
+static bool air_rx_load(uint32_t *work_us, uint32_t *span_us)
+{
+	*work_us = air_on ? AIR->st.modem_us : 0;
+	*span_us = air_on ? AIR->st.modem_span_us : 0;
+	return true;
+}
+
+const hal_air_t hrc_air = {
+	.fit = air_fit, .open = air_open, .close = air_close, .rx_restart = air_rx_restart, .tx_begin = air_tx_begin,
+	.tx_queue = air_tx_queue, .tx_space = air_tx_space, .tx_end = air_tx_end, .tx_abort = air_tx_abort,
+	.now_us = air_now_us, .slot_clock = NULL, .slot_slew = NULL, .rx_load = air_rx_load,
+	.tx_chunk_syms = HRC7000_AIR_SYMS,
+	.tx_queue_depth = HRC7000_AIR_TXQ, .tx_lead_ms = HRC7000_AIR_TX_LEAD_MS, .time_accuracy_us = HRC7000_AIR_TIME_US,
+};
+
+HRC_FLASHFUNC static bool tap_start(void)
+{
+	if (!air_take()) {
+		return false;
+	}
+	bool ok = hrc7000_air_tap_start(AIR);
+	if (!ok) {
+		air_give();
+		return false;
+	}
+	air_on = true;
+	unlock(NULL);
+	return true;
+}
+
+HRC_FLASHFUNC static uint16_t tap_read(int16_t *buf, uint16_t max) { return air_on ? hrc7000_air_tap_read(AIR, buf, max) : 0; }
+
+HRC_FLASHFUNC static void tap_stop(void)
+{
+	if (!air_on || !AIR->tap) {
+		return;
+	}
+	lock(NULL);
+	hrc7000_air_tap_stop(AIR);
+	air_give();
+}
+
+HRC_FLASHFUNC static uint32_t tap_time(void) { return air_on ? hrc7000_air_tap_time(AIR) : hrc_micros(); }
+
+// The receive copy on the RF chip's DMR output (modem-hrc7000.md 10.1); no transmit path from the MCU
+const hal_baseband_t hrc_baseband = {
+	.rx_rate_hz = HRC7000_AIR_RATE_HZ, .rx_channels = 1, .rx_lo_hz = HRC7000_AIR_RX_LO_HZ,
+	.rx_hi_hz = HRC7000_AIR_RX_HI_HZ, .rx_counts_per_khz = 0, .rx_start = tap_start, .rx_read = tap_read,
+	.rx_stop = tap_stop, .tx_start = NULL, .tx_write = NULL, .tx_stop = NULL, .now_us = air_now_us,
+	.rx_time_us = tap_time,
+};
+
+HRC_FLASHFUNC void hrc_air_stats(hrc7000_air_stats_t *st)
+{
+	if (air_on) {
+		*st = AIR->st;
+	} else {
+		memset(st, 0, sizeof(*st));
+	}
+}
+#endif
 
 // --- Bring-up counters (the board's diagnostics page shows these lines first) ---
 

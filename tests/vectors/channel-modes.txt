@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-# Test vectors of docs/spec/channel-modes.md and docs/spec/p25-codeplug.md, read by the host tests (C) and the Codeplug
+# Test vectors of docs/spec/channel-modes.md, p25-codeplug.md and nxdn-codeplug.md, read by the host tests (C) and the Codeplug
 # Editor's tests (JS). One vector a line, fields split on spaces; "-" is no bytes; numbers are hex without 0x.
 #
 # check <name check> <name: the rest of the line>
@@ -49,7 +49,8 @@ p25tsys - 0 0 F7E 0 0 0
 p25tsys 00000000000000000000 0 0 F7E 0 0 0
 p25tsys 45230B1F01938201059C B2345 11F 293 1 5 9C
 p25tsys FFFFFFFFFF0000000000 FFFFFF FFFF F7E 0 0 0
-p25tsys FFFFFFFFFFFFFFFFFFFF FFFFFF FFFF F7E 3 FF FF
+p25tsys FFFFFFFFFFFFFFFFFFFF FFFFFF FFFF F7E 7 FF FF
+p25tsys 00000000000000040000 0 0 F7E 4 0 0
 p25tsys 452301 12345 0 F7E 0 0 0
 #
 # p25iden <body> <base Hz> <spacing Hz> <TX offset Hz as u32> <bandwidth Hz> <type> <slots>
@@ -57,3 +58,41 @@ p25iden 2A53B932D4300000C05A51FDD43000000000 32B9532A 30D4 FD515AC0 30D4 0 1
 p25iden AA1AD62D6A18000080C3C901D43000000102 2DD61AAA 186A 1C9C380 30D4 1 2
 p25iden AA1AD62D6A18000080C3C901D43000000100 2DD61AAA 186A 1C9C380 30D4 1 2
 p25iden 40BDB932 32B9BD40 0 0 0 0 1
+#
+# nxdnconv <block> <9600: 1, 4800: 0> <RX RAN> <TX RAN> <squelch>: decoding an NXDN channel's block
+nxdnconv - 1 0 1 0
+nxdnconv 000000 1 0 1 0
+nxdnconv 01 1 0 1 1
+nxdnconv 04 0 0 1 0
+nxdnconv 05 0 0 1 1
+nxdnconv 02 1 0 1 0
+nxdnconv 03 1 0 1 0
+nxdnconv 0009 1 9 9 0
+nxdnconv 000985 1 9 5 0
+nxdnconv 000080 1 0 0 0
+nxdnconv 0040 1 0 1 0
+nxdnconv 00FF 1 0 1 0
+nxdnconv 0007C5 1 7 7 0
+nxdnconv 0D3FBF 0 3F 3F 1
+nxdnconv 0000050A 1 0 1 0
+#
+# nxdnenc <9600> <RX RAN> <TX RAN> <squelch> <block>: encoding
+nxdnenc 1 0 1 0 000000
+nxdnenc 1 0 1 1 010000
+nxdnenc 0 0 1 0 040000
+nxdnenc 1 9 9 0 000900
+nxdnenc 1 9 5 0 000985
+nxdnenc 1 0 0 0 000080
+nxdnenc 1 0 2 0 000082
+nxdnenc 0 3F 1 1 053F81
+#
+# nxdnunit <record> <DMR ID> <unit ID>
+nxdnunit - 2F5C9C 1
+nxdnunit - 3E8 3E8
+nxdnunit - FFF0 1
+nxdnunit 0000 3E8 3E8
+nxdnunit 0100 2F5C9C 1
+nxdnunit 3930 3E8 3039
+nxdnunit EFFF 3E8 FFEF
+nxdnunit F0FF 3E8 3E8
+nxdnunit 30 3E8 3E8

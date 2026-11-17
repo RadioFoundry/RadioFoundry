@@ -14,7 +14,9 @@ boards); the stack-side contract is in `dmr-modem.md`; the HR_C6000 equivalent i
 | 4, 5 | Initialization, entering DMR, receive |
 | 6, 7 | Transmit sequences, CRC and FEC |
 | 8 | FM mode: registers, tones, DTMF, prompt FIFO, receive audio |
-| 9, 10 | Driver requirements, open questions |
+| 9 | Driver requirements |
+| 10 | Air interface provider and receive tap (`CONFIG_AIR`, derived from `CONFIG_P25`) |
+| 11 | Open questions |
 
 Sources: the HR_C7000 chip user guide v2.7 (2016; "the datasheet" below) and measurements on a radio or the SDR bench
 (marked "measured"). Values without a mark are the ones the driver writes and that work on air (simplex voice both
@@ -1050,7 +1052,99 @@ What a working DMR driver does that a first attempt tends to miss. Details are i
 
 ---
 
-## 10. Open questions
+## 10. Air interface provider
+
+`drivers/modem/hrc7000/hrc7000_air.c` makes the modem a `hal_air_t` provider (`hal/hal_air.h`) and a receive tap
+(`hal/hal_baseband.h`) under `CONFIG_AIR`; the glue (`platform/hrc7000/dmr_glue.c`) exports them as `hrc_air` and
+`hrc_baseband` for a board's `board.air` and `board.baseband`. It receives through the soft modem on the FM receive copy and transmits through the physical layer. Fit:
+continuous profiles at 4800 symbols/s (2400 as `AIR_FIT_RATE_DOUBLED`), 2 or 4 levels; every fit carries
+`AIR_FIT_UNTESTED` unless the board sets `hrc_dmr_board_t.air_verified`, once its receive and transmit were checked on
+air (10.4; [feature-matrix.md](../feature-matrix.md) has which radios).
+
+| Item | How |
+|---|---|
+| Ownership | A tap or a session opens only in DMR with no DMR transmission and no FM receive hook (APRS) running. The glue halts the slot engine, and the session lives in the engine's event and TX queues (`_Static_assert`): no RAM of its own. The interrupts go to the session; the modem task polls it instead of the engine. At close the queues are emptied and the engine runs again |
+| Interrupts | System (bit 14 copy half, bit 12 PHY_RDY), both timeslot vectors, RF TX. Their handlers run from RAM (9 #15) |
+| Mode changes | Leaving DMR under a session ends any transmission (PA off, `AIR_EV_TX_DONE`) and stops receive; the next DMR entry sets the copy up again |
+| Events | From the interrupts through an 8-entry queue to the modem task, which calls the session's callback. TX_SPACE events in a row merge into one; the last entry is kept for TX_DONE |
+
+### 10.1 Receive: the FM receive copy
+
+The copy of 8.5 with the RF chip left in its DMR set-up, the band-pass off, so the copy carries the discriminator's
+output. Whether 4FSK reaches it whole (de-emphasis, the band's edges, the level) is not measured yet (10.4).
+
+| Step | Write |
+|---|---|
+| Save | SYS_INTERP_MASK, FM_BANDWIDTH, FM_DEV_COEF |
+| Copy set-up | TXRX 0, SLOTON 0, LAYER2_CONTROL 0xC0, FM_PTT 0, AUDIO_CONTROL FM playback (b6) off, FM_BANDWIDTH 0x00 (band-pass off, 12.5 kHz), FM_DEV_COEF 0x40A25, WORK_MODE 0x80, SYS_INTERP_CLEAR and MASK = bit 14 + bit 12 |
+| Each half | Bit 14: the half FM_ADDR_SW names into a 512-sample ring (two halves), stamped with the interrupt's time less 255 samples. A half that finds the ring full is dropped and the next one is flagged as a gap |
+| Session | The modem task feeds each half to the soft modem (`core/air/air_softmodem.h`), resetting it at a flagged half; its chunks go out as `AIR_EV_RX` |
+| Undo | Mask, band and coefficient back; TXRX 0, WORK_MODE 0x80 then 0x6E, LAYER2_CONTROL 0xC0, TXRX 0xC00000 then 0. A mode change before the undo leaves the band and coefficient to the next FM entry and puts back only the mask (only power-on writes it otherwise) |
+
+FM playback off keeps the copy off the speaker (hal_air.h rule 1); in DMR the speaker carries the codec's PCM.
+`hrc_baseband` reports 8000 Hz, one channel, 0-3000 Hz, counts per kHz unknown (10.4).
+
+### 10.2 Transmit: the physical layer
+
+The timeslot mode of 2.10 with every slot sent, so the carrier runs from the first slot to the last without a ramp
+between slots. One 36-byte TX RAM half is one 144-symbol chunk (30 ms at 4800 symbols/s).
+
+1. `tx_begin` (at least one chunk queued, the core has called the board's TX on): save RF_MOD_BIAS and write it scaled
+   (10.3); TXRX 0, SLOTON 0, WORK_MODE 0x80 then 0x22; both halves idle (the profile's idle byte); LAYER2_CONTROL
+   0x82 (own TX timing); AUDIO_BUFFER_CLR 3. The copy stops for the transmission.
+2. The first RF TX interrupt keys the RF (the board's `rf` and `pa_arm` ops), once, held to the end. Until then, and
+   for `HRC7000_AIR_TX_LEAD_SLOTS` (2) boundaries after it, each boundary sends an idle slot and the queue waits (no
+   underrun counted): the carrier is up about 45 ms before it carries modulation, and a first chunk sent in that time
+   was lost.
+3. Each slot boundary (the first of the timeslot or PHY_RDY interrupts in a slot; one more within 15 ms is the same
+   slot) writes only the half the next slot reads, alternating, then TXRX 0x80. A half takes the oldest queued chunk,
+   idle after a short last chunk; with none queued, idle and one `AIR_EV_TX_UNDERRUN`. The half's last byte (symbols
+   140-143) is written at the next boundary, first thing: the chip reads it after the boundary that rewrites its half,
+   so written with the rest it went out with the chunk two slots later. The slot set up at a boundary is on air about
+   5 ms later: `AIR_EV_TX_STARTED` carries that time plus half a symbol.
+4. After the `AIR_TX_LAST` chunk (or `tx_end` with nothing queued) one idle slot, then at the next boundary: TXRX 0,
+   RF off, RF_MOD_BIAS back, the copy set up again (or WORK_MODE 0x80 without a receiver), `AIR_EV_TX_DONE`.
+5. Watchdog (modem task): no slot boundary for 200 ms, or no RF TX interrupt 200 ms after `tx_begin`, ends the
+   transmission as `tx_abort` does.
+
+Writing both halves at each boundary corrupted the end of the slot on air; writing only the next one gave no errors
+(measured). WORK_MODE 0x02 (continuous) never keyed on the bench.
+
+A P25 call from one HR_C7000 radio (lowest power, 4.5 s keyed, 26388 symbols), recorded on the SDR bench and compared
+with the symbols the radio queued (measured):
+
+| Driver | Units decoded | Symbol errors | Errors at symbols 140-142 of a slot | Soft EVM |
+|---|---|---|---|---|
+| Last byte with the rest, no idle lead | 31 of 32: the header lost | 1.60 % | 50-75 % | 16.2 % |
+| Last byte one boundary late, two idle slots | 32 of 32 | 0.34 %, no position in the slot above 10 % | 0-10 % | 10.0 % |
+
+The wrong symbols at 140-142 matched the chunk written into the same half two slots later. Outer deviation measured
+1610-1685 Hz against 1800 Hz asked (89-94 %).
+
+### 10.3 Deviation
+
+The modulation bytes of RF_MOD_BIAS (b15:8, b7:0), which the board writes for DMR at its TX on, are scaled by
+dev_outer_hz / 1944 (DMR's outer deviation) and clamped to 1..255; b31:16 stay. Deviation is linear in them, about
+26 Hz per step near the calibrated value, and 0x118 and FM_DEV_COEF don't move it (measured on one HR_C7000 radio).
+Outside 100-6000 Hz the fit says `AIR_FIT_DEV_APPROX`. The pulse filter is the chip's own (raised cosine for DMR), so
+every shape but RRC 0.2 is `AIR_FIT_SHAPE_APPROX`.
+
+### 10.4 Checked on a radio, and open
+
+Checked on one HR_C7000 radio against the SDR bench ([feature-matrix.md](../feature-matrix.md) has which): P25
+conventional receive and transmit, P25 trunked receive and transmit, NXDN receive and transmit at both rates. The copy
+in DMR carries 4FSK well enough for every voice frame of a bench call, and a trunked radio transmits on its grant after
+receiving the control channel, so the copy set-up doesn't keep the RF TX interrupt away.
+
+| Open | Check |
+|---|---|
+| The copy's calibration | 4FSK at a known deviation through the tap: counts per kHz, the band's edges, clipping at the reset AF gain |
+| Timing | t_us of a received symbol against the bench's |
+| FM and DMR after close | A DMR call and an FM call after a session, without a restart |
+
+---
+
+## 11. Open questions
 
 1. LCSS bits on voice bursts B–E (2.6): the datasheet sets them, the driver does not. Does late entry work on other
    radios receiving this modem's transmissions?

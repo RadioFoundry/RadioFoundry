@@ -859,6 +859,11 @@ class _LineTx:
                 self.started.set()
         elif "rec" in d:
             self.records.append(d["rec"])
+        elif data is not None and any(isinstance(d.get(k), dict) for k in ("dibits", "syms", "symbols")):
+            # an fsk4 rx op's sliced symbols as a payload after a line that says how many: kept as a record would
+            # carry them (hex, packed four a byte)
+            k = next(k for k in ("dibits", "syms", "symbols") if isinstance(d.get(k), dict))
+            self.records.append({"dibits": bytes(data).hex(), "n": d[k].get("n") or d[k].get("nsyms") or 4 * len(data)})
         elif "pcm" in d and data is not None:
             self.pcm.setdefault(d["pcm"].get("stream"), bytearray()).extend(data)
         elif "started" in d:
@@ -1331,6 +1336,31 @@ class SdrBench:
             pass
         if t.req.error is not None:
             self._api_fail(t.req.error, f"FM receive on {freq} MHz")
+        return t
+
+    def can_fsk4_rx(self):
+        """True when the receive board has a 4-level FSK receiver (the rx op, mode fsk4)"""
+        return "fsk4" in (self._api_info(rx=True).get("signal_modes") or {}).get("rx", [])
+
+    def fsk4_rx_start(self, freq, seconds, **fields):
+        """The receive board's 4FSK receiver on freq (MHz) for `seconds` from now, in the background (as
+        fm_rx_start): its records are the syncs it found and the sliced symbols (fsk4_bench.py rx). fields: sync (hex),
+        sync_len (symbols), baud, nominal_dev_hz, shape, max_symbols (None left out). Receives only."""
+        if not self.can_fsk4_rx():
+            skip("bench", f"the bench board {self.api_rx} has no 4FSK receive (signal modes)")
+        self._need_lease()
+        L = self._line()
+        req = {"op": "rx", "mode": "fsk4", "freq": freq, "seconds": float(seconds), "label": self.label or "fsk4 rx"}
+        if self.api_rx == self.api:
+            req["session"] = self._api_session
+        req.update({k: v for k, v in fields.items() if v is not None})
+        t = _LineTx(L, L.address(self.api_rx), req)
+        self.bg.append(t)
+        end = time.monotonic() + 15
+        while not t.started.wait(0.2) and not t.req.done.is_set() and time.monotonic() < end:
+            pass
+        if t.req.error is not None:
+            self._api_fail(t.req.error, f"4FSK receive on {freq} MHz")
         return t
 
     def fm_over_start(self, freq, seconds, bw_khz=12.5, audio=False, dtmf=False):

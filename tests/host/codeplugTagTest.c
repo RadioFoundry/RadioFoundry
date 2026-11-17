@@ -205,6 +205,102 @@ static void test_write_follows(void)
 	CHECK(tag_bytes(12, v, sizeof v) < 0);
 	c = get(12);
 	CHECK(c.kind == CODEPLUG_KIND_NONE && c.mode == RADIO_MODE_DMR && c.rx_only);
+
+	// ... until the copy takes the tag: the new name's check, its system and transmit flag, the block as it was
+	const uint8_t blk[3] = { 1, 2, 3 };
+	tagged(10, "T Ops", CODEPLUG_TAG_TX, blk, sizeof blk);
+	c = get(10);
+	strcpy(c.name, "T Ops 2");
+	c.system = 7;
+	c.rx_only = true;
+	CHECK(codeplug_set_channel(12, &c) && codeplug_tag_copy(10, 12, &c));
+	CHECK(tag_bytes(12, v, sizeof v) == 8 && v[1] == 7 && v[2] == (codeplug_name_check("T Ops 2") & 0xFF));
+	CHECK((v[4] & CODEPLUG_TAG_TX) == 0 && v[5] == 1 && v[7] == 3);
+	c = get(12);
+	CHECK(c.kind == TEST_KIND && c.system == 7 && c.rx_only && strcmp(c.name, "T Ops 2") == 0);
+	CHECK(get(10).kind == TEST_KIND && !get(10).rx_only);	// the source is untouched
+	// A mixed channel (its record a channel of its own: FM, wide, transmitting) copied on the radio: the copy is
+	// written as the kind runs and so in the stand-in shape, then takes the source's tag and its record's own mode,
+	// receive-only bit and bandwidth. Both halves arrive; the source keeps both
+	channel_t fm = make("T Mixed", RADIO_MODE_FM, false);
+	fm.bw = RADIO_BW_25K;
+	CHECK(codeplug_set_channel(14, &fm));
+	codeplug_tag_t own = { .kind = TEST_KIND, .system = 2, .flags = CODEPLUG_TAG_BASE_OWN | CODEPLUG_TAG_TX };
+	CHECK(codeplug_tag_write(14, "T Mixed", &own, blk, sizeof blk));
+	c = get(14);
+	strcpy(c.name, "T Mixed 2");
+	c.mode = RADIO_MODE_DMR;
+	c.bw = RADIO_BW_12K5;
+	CHECK(codeplug_set_channel(15, &c));
+	CHECK(get(15).kind == CODEPLUG_KIND_NONE && get(15).rx_only && get(15).mode == RADIO_MODE_DMR);	// the stand-in
+	CHECK(codeplug_tag_copy(14, 15, &c));
+	CHECK(tag_bytes(15, v, sizeof v) == 8 && v[4] == (CODEPLUG_TAG_BASE_OWN | CODEPLUG_TAG_TX) && v[5] == 1 && v[7] == 3);
+	c = get(15);
+	CHECK(c.kind == TEST_KIND && !c.rx_only && c.mode == RADIO_MODE_FM && c.bw == RADIO_BW_25K &&
+	      strcmp(c.name, "T Mixed 2") == 0);
+	CHECK(codeplug_tag_remove(15));
+	c = get(15);
+	CHECK(c.kind == CODEPLUG_KIND_NONE && !c.rx_only && c.mode == RADIO_MODE_FM && c.bw == RADIO_BW_25K);
+	CHECK(codeplug_tag_remove(14) && get(14).mode == RADIO_MODE_FM && get(14).bw == RADIO_BW_25K && !get(14).rx_only);
+	CHECK(codeplug_delete_channel(14) && codeplug_delete_channel(15));
+	// No copy from a plain channel, a stale tag, to itself, or for a plain channel
+	CHECK(!codeplug_tag_copy(10, 10, &c) && !codeplug_tag_copy(13, 12, &c));
+	channel_t plain = make("T Ops", RADIO_MODE_DMR, true);
+	CHECK(!codeplug_tag_copy(10, 12, &plain));
+	codeplug_tag_t st = { .kind = TEST_KIND, .flags = CODEPLUG_TAG_TX };
+	CHECK(codeplug_tag_write(10, "Gone", &st, NULL, 0) && !codeplug_tag_copy(10, 12, &c));
+}
+
+// A kind's block edited on the radio (codeplug_tag_rewrite): the system and transmit allowed from the writer, the
+// front of the block; the fallback, the other flags and the block's later bytes as stored
+static void test_rewrite(void)
+{
+	fresh();
+	const uint8_t blk[5] = { 1, 2, 3, 4, 5 };
+	const uint8_t front[2] = { 0x11, 0x22 };
+	channel_t c = make("T Ops", RADIO_MODE_DMR, true);
+	CHECK(codeplug_set_channel(10, &c));
+	codeplug_tag_t t = { .kind = TEST_KIND, .system = 2, .fb_chan = 40, .fb_check = 0xBEEF,
+			     .flags = CODEPLUG_TAG_FALLBACK | CODEPLUG_TAG_BASE_OWN | 0x48u };
+	CHECK(codeplug_tag_write(10, "T Ops", &t, blk, sizeof blk));
+	codeplug_tag_t w = { .kind = TEST_KIND, .system = 6, .flags = CODEPLUG_TAG_TX };
+	uint8_t v[24];
+	CHECK(codeplug_tag_rewrite(10, "T Ops", &w, front, sizeof front));
+	CHECK(tag_bytes(10, v, sizeof v) == 14 && v[0] == TEST_KIND && v[1] == 6);
+	CHECK(v[4] == (CODEPLUG_TAG_FALLBACK | CODEPLUG_TAG_BASE_OWN | CODEPLUG_TAG_TX | 0x48u) && v[5] == 40 &&
+	      v[6] == 0 && v[7] == 0xEF && v[8] == 0xBE);
+	CHECK(v[9] == 0x11 && v[10] == 0x22 && v[11] == 3 && v[12] == 4 && v[13] == 5);
+	// A block longer than the stored one grows it; without a fallback it starts after the short header
+	tagged(11, "T Two", 0, blk, 1);
+	CHECK(codeplug_tag_rewrite(11, "T Two", &w, front, sizeof front));
+	CHECK(tag_bytes(11, v, sizeof v) == 7 && v[4] == CODEPLUG_TAG_TX && v[5] == 0x11 && v[6] == 0x22);
+	// Under a base-own tag the record is a channel of its own, here FM, wide, transmitting. A write from the radio
+	// carries the kind's mode, receive-only bit and bandwidth in their place: the record keeps its own three, takes
+	// the rest (the name, the frequency), and the tag stays live
+	channel_t fm = make("T Mixed", RADIO_MODE_FM, false);
+	fm.bw = RADIO_BW_25K;
+	CHECK(codeplug_set_channel(13, &fm));
+	codeplug_tag_t own = { .kind = TEST_KIND, .system = 2, .flags = CODEPLUG_TAG_BASE_OWN };
+	CHECK(codeplug_tag_write(13, "T Mixed", &own, blk, sizeof blk));
+	c = get(13);
+	CHECK(c.kind == TEST_KIND && c.rx_only && c.mode == RADIO_MODE_FM && c.bw == RADIO_BW_25K);
+	strcpy(c.name, "T Mixed 2");
+	c.mode = RADIO_MODE_DMR;	// as a kind's channel runs: its own mode and bandwidth, the tag's receive only
+	c.bw = RADIO_BW_12K5;
+	c.rx_hz += 12500;
+	CHECK(codeplug_set_channel(13, &c) && codeplug_tag_rewrite(13, "T Mixed 2", &w, front, sizeof front));
+	c = get(13);
+	CHECK(c.kind == TEST_KIND && !c.rx_only && c.mode == RADIO_MODE_FM && c.bw == RADIO_BW_25K &&
+	      c.rx_hz == fm.rx_hz + 12500 && strcmp(c.name, "T Mixed 2") == 0);
+	CHECK(codeplug_tag_remove(13));
+	c = get(13);
+	CHECK(c.kind == CODEPLUG_KIND_NONE && !c.rx_only && c.mode == RADIO_MODE_FM && c.bw == RADIO_BW_25K);
+	// No tag, another kind's, one under another name: nothing written
+	codeplug_tag_t other = { .kind = TEST_KIND + 1u, .system = 6, .flags = CODEPLUG_TAG_TX };
+	CHECK(!codeplug_tag_rewrite(12, "T Ops", &w, front, sizeof front) && tag_bytes(12, v, sizeof v) < 0);
+	CHECK(!codeplug_tag_rewrite(10, "T Ops", &other, front, sizeof front));
+	CHECK(!codeplug_tag_rewrite(10, "Other", &w, front, sizeof front));
+	CHECK(tag_bytes(10, v, sizeof v) == 14 && v[1] == 6 && v[9] == 0x11);
 }
 
 static void test_stale_and_delete(void)
@@ -487,6 +583,7 @@ int main(void)
 	test_tag();
 	test_live_rule();
 	test_write_follows();
+	test_rewrite();
 	test_stale_and_delete();
 	test_unknown_kind();
 	test_full_area();

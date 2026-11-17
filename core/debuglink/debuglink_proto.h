@@ -37,7 +37,8 @@ enum {
 	DL_CMD_HWOPT		= 0x21,	// the board's hardware options: list, set (debuglink_hwopt.c, 3.25)
 	DL_CMD_T3		= 0x22,	// a Tier III trunked system: stage, select, leave (debuglink_t3.c, 3.26)
 	DL_CMD_CPKV		= 0x23,	// a key of the codeplug settings area: read, write, remove (debuglink_cpkv.c, 3.27)
-	DL_CMD_LINK_HOLD	= 0x24,	// hold the host port for this client, or let go (docs/spec/debuglink.md 3.28)
+	DL_CMD_AIR		= 0x24,	// the air interface on the bench: tap, session, RX, TX (CONFIG_AIR_RAW; debuglink_air.c, 3.28)
+	DL_CMD_LINK_HOLD	= 0x25,	// hold the host port for this client, or let go (docs/spec/debuglink.md 3.29)
 };
 
 // DL_CMD_T3 operations (first payload byte; docs/spec/debuglink.md 3.26). Little endian
@@ -72,6 +73,22 @@ enum {
 	DL_CPKV_GET = 1,	// offset u16 -> length u16, the value from offset
 	DL_CPKV_SET = 2,	// offset u16, bytes: offset 0 sets the value, else patches it from offset
 	DL_CPKV_REMOVE = 3,
+};
+
+// DL_CMD_AIR operations (first payload byte; docs/spec/debuglink.md 3.28). Little endian
+enum {
+	DL_AIR_OP_STATUS	= 0,	// none -> key=value text
+	DL_AIR_OP_TAP_START	= 1,	// bits u8 (8, 16), shift u8 -> rate u32, lo u16, hi u16, counts_per_khz u16, channels u8
+	DL_AIR_OP_TAP_READ	= 2,	// none -> seq u32, t_us u32, gaps u32, n u16, samples
+	DL_AIR_OP_TAP_STOP	= 3,	// none -> none
+	DL_AIR_OP_OPEN		= 4,	// flags u8, profile -> fit u32, tx_chunk_syms u16, tx_queue_depth u8
+	DL_AIR_OP_CLOSE		= 5,	// none -> none
+	DL_AIR_OP_RX_READ	= 6,	// none -> dropped u32, count u8, records
+	DL_AIR_OP_RX_RESTART	= 7,	// none -> none
+	DL_AIR_OP_TX_DATA	= 8,	// flags u8, nsyms u8, packed symbols -> space u8 (busy: queue full)
+	DL_AIR_OP_TX_KEY	= 9,	// max_ms u16 -> none
+	DL_AIR_OP_TX_END	= 10,	// none -> none
+	DL_AIR_OP_TX_ABORT	= 11,	// none -> none
 };
 
 // DL_CMD_HWOPT operations (first payload byte; docs/spec/debuglink.md 3.25)

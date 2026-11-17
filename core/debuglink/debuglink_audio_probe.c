@@ -6,7 +6,7 @@
 // (optionally sending a test tone), and reports the levels of both I2S channels. It also reads and writes the chip's
 // RAM (board.audio_tap->modem_ram: the HR_C6000's FM data buffers) and watches its interrupt flags and one RAM word
 // for a while, to find the chip's own FM sample path (hardware-dm1701.md 21.3, candidate C). Diagnostics only: it borrows the
-// stream, so it refuses while DMR voice owns it, and a beep in the meantime may stop it (status says so).
+// stream, so it refuses while DMR or P25 voice owns it, and a beep in the meantime may stop it (status says so).
 #include <string.h>
 #include <math.h>
 #include "config.h"
@@ -17,6 +17,9 @@
 #include "hal_time.h"
 #if CONFIG_AUDIO_PROBE
 #include "dmr/ambe/ambeVoice.h"
+#if CONFIG_P25 && CONFIG_IMBE
+#include "p25/p25Voice.h"
+#endif
 #endif
 
 #if CONFIG_AUDIO_PROBE
@@ -187,14 +190,29 @@ static void probe_block(const int16_t *mic, int16_t *spk, void *ctx)
 	}
 }
 
+#define PROBE_VOICE_DMR	0x08u	// STATUS flags: the voice path that owns the stream
+#define PROBE_VOICE_P25	0x10u
+
+// Which voice path owns the PCM stream now: the probe stays off it, and STATUS says which
+static uint8_t voice_owner(void)
+{
+	uint8_t v = ambeVoiceStreaming() ? PROBE_VOICE_DMR : 0u;
+#if CONFIG_P25 && CONFIG_IMBE
+	if (p25VoiceStreaming()) {
+		v |= PROBE_VOICE_P25;
+	}
+#endif
+	return v;
+}
+
 static uint8_t probe_start(uint16_t hz, uint16_t amp, uint8_t flags)
 {
 	const hal_audio_t *aud = board.audio;
 	if (aud == NULL || board.audio_tap == NULL || board.audio_tap->last_block == NULL) {
 		return DL_ST_UNAVAILABLE;
 	}
-	if (ambeVoiceStreaming() && !probing) {
-		return DL_ST_BUSY;	// DMR voice owns the stream: leave DMR (an FM channel) first
+	if (voice_owner() != 0 && !probing) {
+		return DL_ST_BUSY;	// DMR or P25 voice owns the stream: go to an FM channel first
 	}
 	if (hz > 3800) {
 		return DL_ST_BAD_ARG;
@@ -467,8 +485,10 @@ size_t debuglink_cmd_audio_probe(const uint8_t *req, uint16_t len, uint8_t *out,
 		uint32_t blocks = 0;
 		bool running = tap->last_block != NULL && tap->last_block(scr_l, scr_r, &blocks);
 		out[0] = DL_ST_OK;
-		// bit 0 ours, bit 1 the stream runs, bit 2 the board has no PCM tap (START is unavailable there)
-		out[1] = (uint8_t)((probing ? 1u : 0u) | (running ? 2u : 0u) | (tap->last_block == NULL ? 4u : 0u));
+		// bit 0 ours, bit 1 the stream runs, bit 2 the board has no PCM tap (START is unavailable there), bits 3-4
+		// the voice path that owns the stream (DMR, P25)
+		out[1] = (uint8_t)((probing ? 1u : 0u) | (running ? 2u : 0u) | (tap->last_block == NULL ? 4u : 0u) |
+			voice_owner());
 		put32(out + 2, blocks);
 		for (int c = 0; c < 2; c++) {
 			put16(out + 6 + 6 * c, level[c].peak);

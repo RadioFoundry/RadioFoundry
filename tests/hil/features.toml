@@ -75,6 +75,24 @@ switch = "RX_EXT"
 hardware = "a receiver chip whose documents give a range past the rated bands"
 spec = "docs/spec/radio-features.md"
 
+# P25 brings the air interface, the full-rate voice decoder and the MBE core (derived switches AIR, IMBE, MBE)
+[feature.p25]
+switch = "P25"
+spec = "docs/spec/p25.md"
+source = ["core/p25", "core/radio/radio_p25.c", "core/radio/radio_p25.h", "core/air", "core/fec", "core/mbe",
+          "hal/hal_air.h", "hal/hal_baseband.h"]
+
+[feature.p25_trunk]
+switch = "P25_TRUNK"
+spec = "docs/spec/p25-trunking.md"
+source = ["core/p25/p25_follow.c", "core/p25/p25_tsbk.c", "core/radio/radio_p25.c"]
+
+[feature.nxdn]
+switch = "NXDN"
+spec = "docs/spec/nxdn.md"
+source = ["core/nxdn", "core/air", "core/fec", "core/radio/radio_nxdn.c", "core/radio/radio_nxdn.h",
+          "core/radio/radio_air.h", "core/debuglink/debuglink_view_nxdn.c"]
+
 [feature.dmr_voice]
 switch = "DMR"
 spec = "docs/spec/dmr-voice.md"
@@ -526,6 +544,11 @@ spec = "docs/spec/codec-placement.md"
 source = ["tools/rfoundry/rfoundry"]
 
 # ── Bench ──
+
+[feature.air_raw]
+switch = "AIR_RAW"
+spec = "docs/spec/debuglink.md"
+source = ["core/debuglink/debuglink_air.c", "core/debuglink/debuglink_air.h"]
 
 [feature.audio_probe]
 switch = "AUDIO_PROBE"

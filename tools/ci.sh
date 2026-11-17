@@ -67,7 +67,7 @@
 # Build trees: build/ci/<board>-<config>/ (logs next to them). The exit status is 0 only when nothing failed.
 set -u
 # Switches the maximal configuration leaves off on every board: bench diagnostics, never in a release
-MAXIMAL_SKIP="AUDIO_PROBE"
+MAXIMAL_SKIP="AUDIO_PROBE AIR_RAW"
 cd "$(dirname "$0")/.." || exit 2
 
 QUICK=0

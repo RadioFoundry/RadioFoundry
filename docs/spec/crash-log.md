@@ -79,7 +79,7 @@ link's loop (`core/hostlink/hostlink.c`) and the tick.
 
 #### 1.1.2 The link watch
 
-A debug client can ask for this with LINK_HOLD ([debuglink.md](debuglink.md) 3.28). If no valid frame comes for its
+A debug client can ask for this with LINK_HOLD ([debuglink.md](debuglink.md) 3.29). If no valid frame comes for its
 limit, the tick interrupt turns the transmitter off, stores a record and restarts the radio. The stall check covers a
 stuck host link task; this covers a task that runs while the port no longer delivers frames. A client that never asks
 is never watched. Code: `watchdog_link_watch` and `watchdog_link_lost` in `core/app/watchdog.c`.

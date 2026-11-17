@@ -27,12 +27,18 @@
 //                       zone z cut to n channels
 //   zonejob:<z>         another task (an import) deletes zone z (0-based) through the zone storage job
 //   fmrx / fmrxend      an FM signal opens / closes the squelch
+//   p25rx:<src>,<dst>[,u|e|o]   a P25 call (CONFIG_P25 builds): u a unit call, e encrypted, o another talk group
+//                       (both not played); p25rxend ends it
+//   chkind:<n>,p25|nxdn stored channel n is a P25 or NXDN channel (CONFIG_P25 / CONFIG_NXDN builds)
+//   p25t:<state>[,<tg>] the channel on view is a trunked P25 one (CONFIG_P25_TRUNK builds), its follower in state
+//                       1 finding the system, 2 on the control channel, 3 following talk group tg
 //   rx:<src>,<dst>,g|p[,name]   a DMR call starts (g = group, p = private to us); rxend ends it
 //   call:<src>,<dst>,g|p        a 2 s call, then 1 s of quiet
 //   msg:<src>,<text>    a text message arrives (_ = space); alert:<src>; emergency:<src>; privcall:<src>
 //                       (each also <src>,<name>: the station's name, _ = space, for one not in the contacts)
 //   zoneoffer:<src>[,c] another radio offers its zone "Club net" (,c: one channel); the import and sends always work
 //   zoneexpire          the offer is gone (not opened in time)
+//   dlmode:fm|dmr|p25   the debug link sets the mode: the channel's for now, the VFO's own in the VFO
 //   hotspot:on|off      the host link enters / leaves hotspot mode
 //   usbnet:off|on|up    USB a serial port, a network adapter, or a network adapter the computer has brought up
 //   timeout             the TX timeout cuts the transmission off while PTT is still held (shows the timeout deny)
@@ -72,6 +78,11 @@
 #include "hotspot/hotspot.h"
 #include "stubentry/stub_entry.h"
 #include "ui/ui_svc_aprs.h"
+#include "codeplug/codeplug_tag.h"
+#if CONFIG_P25
+#include "p25/p25_codeplug.h"
+#include "radio/radio_p25.h"
+#endif
 #if CONFIG_DMR_TRUNK
 #include "dmr/trunk/t3_ms.h"
 #endif
@@ -683,7 +694,14 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 
 // Channels the channel editor saved (ui_svc_write_channel): they shadow the built-in ones and fill numbers past 40
 #define SIM_EDITS	8
-static struct { uint16_t number; channel_t ch; } sim_edits[SIM_EDITS];
+static struct {
+	uint16_t number;
+	channel_t ch;
+#if CONFIG_P25 || CONFIG_NXDN
+	bool air_set;		// saved with a block (ui_svc_write_channel_air)
+	ui_air_conv_t air;
+#endif
+} sim_edits[SIM_EDITS];
 static uint8_t n_edits;
 
 static const channel_t *sim_edit(uint16_t number)
@@ -694,22 +712,61 @@ static const channel_t *sim_edit(uint16_t number)
 	return NULL;
 }
 
-bool ui_svc_write_channel(uint16_t number, const channel_t *ch)
+static int sim_write(uint16_t number, const channel_t *ch)
 {
-	if (sim_hold())
-		return sim_held;
 	uint8_t i = 0;
 	while (i < n_edits && sim_edits[i].number != number)
 		i++;
 	if (i == SIM_EDITS)
-		return false;
+		return -1;
 	if (i == n_edits)
 		n_edits++;
 	sim_edits[i].number = number;
 	sim_edits[i].ch = *ch;
+#if CONFIG_P25 || CONFIG_NXDN
+	sim_edits[i].air_set = false;
+#endif
 	sim_rec.codeplug_writes++;
+	return i;
+}
+
+bool ui_svc_write_channel(uint16_t number, const channel_t *ch, uint16_t from)
+{
+	(void)from;
+	if (sim_hold())
+		return sim_held;
+	return sim_write(number, ch) >= 0;
+}
+
+#if CONFIG_P25 || CONFIG_NXDN
+// The block goes with the channel: a plain channel in P25 or NXDN becomes one of the kind, as the storage job makes it
+bool ui_svc_write_channel_air(uint16_t number, const channel_t *ch, uint16_t from, const ui_air_conv_t *conv)
+{
+	(void)from;
+	if (sim_hold())
+		return sim_held;
+	channel_t c = *ch;
+	if (c.kind == CODEPLUG_KIND_NONE) {
+		c.kind = c.mode == RADIO_MODE_P25 ? CODEPLUG_KIND_P25 : CODEPLUG_KIND_NXDN;
+		c.mode = RADIO_MODE_DMR;	// the stand-in record
+	}
+	int i = sim_write(number, &c);
+	if (i < 0)
+		return false;
+	sim_edits[i].air_set = true;
+	sim_edits[i].air = *conv;
 	return true;
 }
+
+// The block saved with channel number, NULL: none
+static const ui_air_conv_t *sim_air(uint16_t number)
+{
+	for (uint8_t i = 0; i < n_edits; i++)
+		if (sim_edits[i].number == number && sim_edits[i].air_set)
+			return &sim_edits[i].air;
+	return NULL;
+}
+#endif
 
 uint16_t codeplug_free_channel(void)
 {
@@ -772,6 +829,48 @@ bool codeplug_channel(uint16_t number, channel_t *out)
 	out->rx_only = number == 25 || number == 26;	// NOAA
 	return true;
 }
+
+// Channel tags (codeplug_tag.c): no tag area here; a copy keeps its kind in sim_edits already
+bool codeplug_tag_copy(uint16_t from, uint16_t to, const channel_t *ch)
+{
+	(void)from;
+	(void)to;
+	(void)ch;
+	return true;
+}
+
+#if CONFIG_P25
+static bool p25_radio;		// below: the "p25" token
+// A stored P25 channel's block (p25_codeplug.c): the defaults (NAC 293, normal squelch)
+bool p25_conv_params(uint16_t number, const channel_t *ch, p25_conv_t *out)
+{
+	if (ch->kind != CODEPLUG_KIND_P25)
+		return false;
+	out->rx_nac = out->tx_nac = P25_NAC_DEFAULT;
+	out->squelch = P25_SQUELCH_NORMAL;
+	if (sim_air(number) != NULL)
+		*out = sim_air(number)->p25;	// as the editor saved it
+	return true;
+}
+bool radio_p25_fits(void) { return p25_radio; }
+#endif
+#if CONFIG_NXDN
+static bool nxdn_radio;		// below: the "nxdn" token
+bool radio_nxdn_fits(void) { return nxdn_radio; }
+// A stored NXDN channel's set-up (nxdn_codeplug.c): 9600 bit/s, RAN 1, unless the editor saved a block
+bool nxdn_conv_load(uint16_t number, const channel_t *ch, nxdn_conv_cfg_t *out)
+{
+	if (ch->kind != CODEPLUG_KIND_NXDN)
+		return false;
+	memset(out, 0, sizeof *out);
+	out->conv = (nxdn_conv_t){ .rate9600 = true, .rx_ran = 1, .tx_ran = 1, .squelch = NXDN_SQUELCH_RAN };
+	if (sim_air(number) != NULL)
+		out->conv = sim_air(number)->nxdn;
+	out->unit_id = 1;
+	out->target = 1;
+	return true;
+}
+#endif
 
 // Zones the zone editor wrote (ui_svc_zone_edit, the real zone_edit.c on these fakes): once one is written, every
 // zone is a copy here, which the editor changes
@@ -869,7 +968,7 @@ bool codeplug_delete_zone(uint16_t index)
 	return true;
 }
 
-bool codeplug_set_channel(uint16_t number, const channel_t *ch) { return ui_svc_write_channel(number, ch); }
+bool codeplug_set_channel(uint16_t number, const channel_t *ch) { return ui_svc_write_channel(number, ch, 0); }
 // Only a channel the editor wrote (Copy here's rollback when its zone write fails)
 bool codeplug_delete_channel(uint16_t number)
 {
@@ -1555,6 +1654,9 @@ static uint16_t n_inbox;
 static bool soft_volume;
 // The broadcast receiver (Settings > Talk & listen > FM broadcast step) only with the "bcast" token, the same way
 static bool bcast_rx;
+// P25 on this radio (UI_FEAT_P25: the VFO's mode tile offers it) only with the "p25" token; NXDN with "nxdn"
+static bool p25_radio;
+static bool nxdn_radio;
 // Hardware options (Settings > Advanced > Hardware, hal_hwopt.h) only with the "hwopt" token: a revision that starts
 // unset and a plain option
 static int8_t hwopt_val[2];
@@ -1578,7 +1680,8 @@ uint32_t ui_svc_features(void)
 {
 	return 0xFFFFFFFFu & ~(soft_volume ? 0 : UI_FEAT_VOLUME) & ~(bcast_rx ? 0 : UI_FEAT_BCAST) &
 	       ~(ref_trim ? 0 : UI_FEAT_REF_TRIM) &
-	       ~(knob_radio ? 0 : UI_FEAT_VOLUME_KNOB);
+	       ~(knob_radio ? 0 : UI_FEAT_VOLUME_KNOB) & ~(p25_radio ? 0 : UI_FEAT_P25) &
+	       ~(nxdn_radio ? 0 : UI_FEAT_NXDN);
 }
 // My radio's names (ui_svc_name_*): placeholders, as the user's own would be; a save writes at once
 static char sim_names[UI_NAME_COUNT][17];
@@ -2295,6 +2398,19 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	view.volume = -1;	// no level passed on yet (power-up)
 	view.volume_src = RVOL_KNOB;
 	bcast_rx = false;
+	p25_radio = false;
+	nxdn_radio = false;
+#if CONFIG_NXDN
+	memset(&view.nxdn, 0, sizeof view.nxdn);
+	view.nxdn.flags = RADIO_NXDN_9600;	// the NXDN settings' defaults (radio_nxdn.c): 9600 bit/s, RAN 1, group 1
+	view.nxdn.tx_ran = 1;
+	view.nxdn.talk = 1;
+#endif
+#if CONFIG_P25
+	memset(&view.p25, 0, sizeof view.p25);
+	view.p25.rx_nac = 0x293;	// the P25 settings' defaults (radio_p25.c): NAC 293, talk group 1
+	view.p25.talk = 1;
+#endif
 	board.radio = NULL;
 	ref_trim = false;
 	knob_radio = false;
@@ -2488,7 +2604,9 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "vfo") == 0) snprintf(got, sizeof got, "%u", view.vfo);
 	else if (strcmp(key, "freq") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.ch.rx_hz);
 	else if (strcmp(key, "txfreq") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.ch.tx_hz);
-	else if (strcmp(key, "mode") == 0) snprintf(got, sizeof got, "%s", view.ch.mode == RADIO_MODE_DMR ? "dmr" : "fm");
+	else if (strcmp(key, "mode") == 0) snprintf(got, sizeof got, "%s", view.ch.mode == RADIO_MODE_DMR ? "dmr" :
+								     view.ch.mode == RADIO_MODE_P25 ? "p25" :
+								     view.ch.mode == RADIO_MODE_NXDN ? "nxdn" : "fm");
 	else if (strcmp(key, "tx") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tx_count);
 	else if (strcmp(key, "txid") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tx_id);
 	else if (strcmp(key, "txpriv") == 0) snprintf(got, sizeof got, "%u", sim_rec.tx_private);
@@ -2928,6 +3046,77 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(100);
 		return true;
 	}
+	if (strcmp(t, "dlmode") == 0 && arg != NULL) {	// the debug link sets the mode (DMR_FIELDS): fm, dmr, p25 or nxdn
+		ui_svc_mode(strcmp(arg, "p25") == 0 ? RADIO_MODE_P25 : strcmp(arg, "nxdn") == 0 ? RADIO_MODE_NXDN :
+			    strcmp(arg, "dmr") == 0 ? RADIO_MODE_DMR : RADIO_MODE_FM);
+		advance(100);
+		return true;
+	}
+#if CONFIG_P25 || CONFIG_NXDN
+	if (strcmp(t, "chkind") == 0) {		// stored channel n is a P25 or NXDN channel: its tag, over a stand-in record
+		unsigned n = 0;
+		char k[8] = "";
+		channel_t c;
+		if (arg == NULL || sscanf(arg, "%u,%7s", &n, k) != 2 || !codeplug_channel((uint16_t)n, &c)) {
+			snprintf(err, len, "bad %s", t);
+			return false;
+		}
+		c.kind = strcmp(k, "nxdn") == 0 ? CODEPLUG_KIND_NXDN : CODEPLUG_KIND_P25;
+		c.mode = RADIO_MODE_DMR;
+		if (sim_write((uint16_t)n, &c) < 0) {
+			snprintf(err, len, "no room for %s", t);
+			return false;
+		}
+		sim_rec.codeplug_writes--;	// the codeplug as found, not a write of the UI's
+		return true;
+	}
+#endif
+#if CONFIG_P25
+	if (strcmp(t, "p25rx") == 0) {		// a P25 call: src,dst[,u|e|o] (unit call, encrypted, other talk group)
+		unsigned src = 0, dst = 0;
+		char kind = 'g';
+		if (arg == NULL || sscanf(arg, "%u,%u,%c", &src, &dst, &kind) < 2) {
+			snprintf(err, len, "bad %s", t);
+			return false;
+		}
+		view.p25.flags = (uint8_t)((view.p25.flags & RADIO_P25_TALK_UNIT) | RADIO_P25_ON | RADIO_P25_RX |
+			(kind == 'u' ? RADIO_P25_UNIT : 0) | (kind == 'e' ? RADIO_P25_ENC : 0) |
+			(kind == 'e' || kind == 'o' ? 0 : RADIO_P25_PLAYED));
+		view.p25.src = src;
+		view.p25.dst = dst;
+		view.state = RS_RX;
+		view.rssi_dbm = -84;
+		changed();
+		advance(300);
+		return true;
+	}
+#if CONFIG_P25_TRUNK
+	if (strcmp(t, "p25t") == 0) {
+		unsigned st = 0, tg = 0;
+		if (arg == NULL || sscanf(arg, "%u,%u", &st, &tg) < 1 || st > RADIO_P25_TRUNK_VOICE) {
+			snprintf(err, len, "bad %s", t);
+			return false;
+		}
+		view.ch.mode = RADIO_MODE_P25;
+		view.ch.kind = CODEPLUG_KIND_P25_TRUNK;
+		view.ch.rx_only = true;
+		view.p25.flags = RADIO_P25_ON;
+		view.p25.trunk = (uint8_t)st;
+		view.p25.dst = tg;
+		changed();
+		advance(100);
+		return true;
+	}
+#endif
+	if (strcmp(t, "p25rxend") == 0) {
+		view.p25.flags &= (uint8_t)~(RADIO_P25_RX | RADIO_P25_PLAYED | RADIO_P25_ENC);
+		view.state = RS_IDLE;
+		view.last_rx_ms = now_ms;
+		changed();
+		advance(200);
+		return true;
+	}
+#endif
 	if (strcmp(t, "fmrx") == 0) {		// an FM signal opens the squelch; fmrxend closes it
 		view.state = RS_RX;
 		view.rssi_dbm = -84;
@@ -3156,6 +3345,14 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "bcast") == 0) {		// this radio has a broadcast FM receiver
 		bcast_rx = true;
+		return true;
+	}
+	if (strcmp(t, "p25") == 0) {		// this radio runs P25
+		p25_radio = true;
+		return true;
+	}
+	if (strcmp(t, "nxdn") == 0) {		// this radio runs NXDN
+		nxdn_radio = true;
 		return true;
 	}
 	if (strcmp(t, "hwopt") == 0) {		// this radio has hardware options (sim_hwopts)

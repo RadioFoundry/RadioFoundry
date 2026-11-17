@@ -79,6 +79,10 @@
 					// LC from the second complete superframe at worst: about 1.1 s from the retune)
 #define RADIO_SCAN_DMR_CARRIER_MS 150	// DMR: a carrier this recent still counts (direct mode: 30 ms on air in 60)
 #define RADIO_SCAN_DMR_SYNC_AGE_MS 400	// DMR: bursts this recent are sync (a superframe and a slot)
+#define RADIO_SCAN_AIR_PROBE_MS	700	// P25, NXDN: a carrier, waiting for a call of the channel's NAC or RAN (the engine
+					// starts at the retune; a P25 voice frame and its NID come every 180 ms)
+#define RADIO_SCAN_AIR_SYNC_MS	1500	// P25, NXDN: such a call heard, waiting for the field its squelch needs (a P25
+					// late entry's link control comes every 360 ms, an NXDN VCALL in each SACCH superframe)
 // Dual watch with a second receiver (board.rx2): how often its settings go again (the link drops repeats), how long
 // it may take to say it is on them, and how long after a failure to try it again (meanwhile the main receiver alternates)
 #define RADIO_RX2_REFRESH_MS	2000
@@ -165,6 +169,10 @@ typedef enum {
 	RREQ_T3,		// a trunked system (CONFIG_DMR_TRUNK): arg = radio_t3_cmd_t
 	RREQ_T3_POLL,		// poll MS arg2 for its short data, as the system's poll setting says (CONFIG_DMR_TRUNK_TX)
 	RREQ_T3_DIAL,		// the digits a call through a gateway sends (CONFIG_DMR_TRUNK_GW): radio_req_t3_dial()
+	RREQ_P25_SET,		// radio_task.c: the pending P25 settings were copied (radio_p25_set_settings); applied here
+	RREQ_AIR_BENCH,		// the air interface bench (CONFIG_AIR_RAW): arg 1 take the modem, 0 give it back
+	RREQ_AIR_TX,		// ... arg 1 key (arg2: the longest time in ms), 0 unkey
+	RREQ_NXDN_SET,		// radio_task.c: the pending NXDN settings were copied (radio_nxdn_set_settings); applied here
 } radio_req_type_t;
 
 // RREQ_TONE's argument: which (RADIO_TONE_*) in bits 25:24, the tone type in 23:16, the value in 15:0
@@ -295,6 +303,24 @@ typedef struct {
 	uint8_t wake_seen;		// dmr_call_view_t.wake_sent last seen
 	bool led_timed;			// a timed signal was showing at the last outputs(): the tick keeps calling it
 	bool hotspot;			// hotspot mode: the host link owns the modem
+#if CONFIG_AIR
+	// An air-framed mode (P25, NXDN; radio_air.h)
+	bool air_tx;			// a transmission runs in the engine (from prepare until it is done and cleared)
+	bool air_keyed;			// board.radio->tx() keyed for it (until tx_off)
+#endif
+#if CONFIG_P25
+#if CONFIG_P25_TRUNK
+	bool p25_req;			// PTT on a trunked channel: a voice request waits for its grant
+	bool p25_talk;			// the transmission runs on the voice channel granted to us
+#endif
+#endif
+#if CONFIG_AIR_RAW
+	bool air_bench;			// the debug link's air interface bench has the modem (RREQ_AIR_BENCH)
+	bool bench_keyed;		// ... and the transmitter keyed for it (RREQ_AIR_TX)
+	uint16_t bench_max_ms;		// its cap
+	uint32_t bench_key_ms;		// when it keyed
+	uint8_t bench_seq;		// the latest bench request handled (radio_task.c waits for it)
+#endif
 
 	radio_settings_t set;		// the settings in effect
 	uint32_t activity_ms;		// last request, reception or transmission (battery save)

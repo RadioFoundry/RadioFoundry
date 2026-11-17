@@ -23,6 +23,9 @@
 #include "task.h"
 #include "hal_time.h"
 #include "debuglink/dlog.h"
+#if CONFIG_AIR
+#include "modem/hrc_common/hrc6000_air.h"
+#endif
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
 #include "modem/hrc_common/hrc6000_bs.h"
 #include "dmr/bsOutbound.h"
@@ -46,6 +49,29 @@ static volatile bool active;
 static volatile bool rf_on_rx;	// the RF is back to receive after our transmission (stm32_hrc_dmr_tx_end)
 static dmr_event_cb_t volatile stack_cb;
 static void *volatile stack_ctx;
+#if CONFIG_AIR
+// An air interface session (stm32_hrc_air) holds the chip: the three lines and the task go to it, and its state lives
+// in the halted engine's event queue (no RAM of its own)
+typedef struct {
+	hrc6000_air_t a;
+	hrc6000_air_buf_t b;
+} __attribute__((may_alias)) air_mem_t;
+_Static_assert(sizeof(air_mem_t) <= sizeof(eng.evq), "the air session no longer fits the slot engine's event queue");
+// ... and the soft modem of a session that receives through the FM copy lives in the engine's transmit queue
+// (a queue of bytes: the state starts at its first address aligned for it, or the first aligned access faults)
+#define AIR_SM_ALIGN	(_Alignof(air_softmodem_t))
+_Static_assert(sizeof(air_softmodem_t) + AIR_SM_ALIGN - 1u <= sizeof(eng.txq),
+	       "the soft modem no longer fits the slot engine's TX queue");
+#define AIR_SM \
+	((air_softmodem_t *)(void *)(((uintptr_t)(void *)eng.txq + AIR_SM_ALIGN - 1u) & ~(uintptr_t)(AIR_SM_ALIGN - 1u)))
+#define AIR		(&((air_mem_t *)(void *)eng.evq)->a)
+static volatile bool air_on;
+static air_event_cb_t air_cb;
+static void *air_ctx;
+#define AIR_ON()	air_on
+#else
+#define AIR_ON()	false
+#endif
 
 // --- Engine ops ---
 
@@ -251,18 +277,37 @@ void EXTI0_IRQHandler(void)
 	if (hooks->ts_service != NULL) {
 		hooks->ts_service();
 	}
+#if CONFIG_AIR
+	if (air_on) {
+		hrc6000_air_isr_timeslot(AIR);
+		return;
+	}
+#endif
 	hrc6000_dmr_isr_timeslot(&eng);
 }
 
 void EXTI1_IRQHandler(void)
 {
 	__HAL_GPIO_EXTI_CLEAR_IT(INT_SYS);
+#if CONFIG_AIR
+	if (air_on) {
+		eng.st.sys_ints++;	// sys_line_check's count
+		hrc6000_air_isr_sys(AIR);
+		return;
+	}
+#endif
 	hrc6000_dmr_isr_sys(&eng);
 }
 
 void EXTI2_IRQHandler(void)
 {
 	__HAL_GPIO_EXTI_CLEAR_IT(INT_RFTX);
+#if CONFIG_AIR
+	if (air_on) {
+		hrc6000_air_isr_rftx(AIR);
+		return;
+	}
+#endif
 	hrc6000_dmr_isr_rftx(&eng);
 }
 
@@ -471,6 +516,12 @@ static void dmr_task(void *arg)
 			}
 			sys_line_check();
 		}
+#if CONFIG_AIR
+		if (air_on) {
+			hrc6000_air_poll(AIR);	// the engine is halted: nothing of its own to pop
+			continue;
+		}
+#endif
 		while (hrc6000_dmr_pop(&eng, &ev, &burst)) {
 #if CONFIG_DEBUGLINK
 			trace_lc();	// before the burst: an LC looked at when its report was taken
@@ -507,6 +558,18 @@ void stm32_hrc_dmr_init(hrc_t *modem, const stm32_hrc_dmr_board_t *b)
 void stm32_hrc_dmr_enter(void)
 {
 	rf_on_rx = false;
+#if CONFIG_AIR
+	if (air_on) {
+		// Back in DMR under a session (the board wrote the chip's DMR set-up): its receive set-up again
+		active = true;
+		exti_enable(true);
+		hrc6000_air_rx_restart(AIR);
+		if (sys_line_low(NULL)) {
+			NVIC_SetPendingIRQ(EXTI1_IRQn);
+		}
+		return;
+	}
+#endif
 	hrc6000_dmr_run(&eng);
 	active = true;
 	exti_enable(true);
@@ -519,6 +582,13 @@ void stm32_hrc_dmr_leave(void)
 {
 	exti_enable(false);
 	active = false;
+#if CONFIG_AIR
+	if (air_on) {
+		hrc6000_air_suspend(AIR);	// a transmission ends (TX_DONE); the engine is halted already
+		rf_on_rx = false;
+		return;
+	}
+#endif
 	hrc6000_dmr_halt(&eng);
 	rf_on_rx = false;	// after the halt: its switch back to RX doesn't count outside DMR
 }
@@ -536,6 +606,12 @@ bool stm32_hrc_dmr_tx_end(void)
 void stm32_hrc_dmr_rx_restart(void)
 {
 	rf_on_rx = false;
+#if CONFIG_AIR
+	if (air_on) {
+		hrc6000_air_rx_restart(AIR);
+		return;
+	}
+#endif
 	hrc6000_dmr_rx_restart(&eng);
 }
 
@@ -555,16 +631,26 @@ void stm32_hrc_dmr_tx_prepare(void)
 
 bool stm32_hrc_dmr_tx_active(void)
 {
+#if CONFIG_AIR
+	if (air_on) {
+		return active && hrc6000_air_tx_active(AIR);
+	}
+#endif
 	return active && hrc6000_dmr_is_transmitting(&eng);
 }
 
 bool stm32_hrc_dmr_tx_listening(void)
 {
-	return active && eng.tx_listen;
+	return active && !AIR_ON() && eng.tx_listen;
 }
 
 bool stm32_hrc_dmr_tx_last_out(void)
 {
+#if CONFIG_AIR
+	if (air_on) {
+		return active && hrc6000_air_tx_last_out(AIR);
+	}
+#endif
 	return active && hrc6000_dmr_tx_last_out(&eng);
 }
 
@@ -587,6 +673,12 @@ void stm32_hrc_dmr_tx_drop(void)
 	if (!active) {
 		return;
 	}
+#if CONFIG_AIR
+	if (air_on) {
+		hrc6000_air_tx_abort(AIR);	// PA off now, TX_DONE to the session, receiving
+		return;
+	}
+#endif
 	hrc6000_dmr_halt(&eng);		// PA off now, TX_DONE to the stack, engine off ...
 	hrc6000_dmr_run(&eng);		// ... and on again, receiving
 }
@@ -765,6 +857,234 @@ const hal_dmr_modem_t stm32_hrc_dmr = {
 	.tx_listen_split = tx_listen_split, .tx_fill = tx_fill, .health = health,
 	SPLIT_OPS
 };
+
+#if CONFIG_AIR
+// --- hal_air_t: the physical layer pipe (hrc6000_air.c) ---
+
+// A one-synthesizer board (tx_prepare) puts its receiver back at the end of a transmission, as after a DMR one
+static void air_tx_done(void)
+{
+	if (hooks->tx_prepare != NULL) {
+		lock(NULL);
+		tx_rf_due = false;
+		rf_on_rx = hooks->tx_done != NULL && hooks->tx_done();
+		unlock(NULL);
+	}
+}
+
+static void air_event(const air_event_t *ev, void *ctx)
+{
+	(void)ctx;
+	if (ev->kind == AIR_EV_TX_DONE) {
+		air_tx_done();
+	}
+	air_event_cb_t cb = air_cb;
+	if (cb != NULL) {
+		cb(ev, air_ctx);
+	}
+}
+
+// The FM copy's band on this board (stm32_hrc_baseband), NULL when its RF chip doesn't feed the flat discriminator
+static const hal_baseband_t *air_tap(void)
+{
+	return hooks != NULL && hooks->air_tap ? &stm32_hrc_baseband : NULL;
+}
+
+static uint32_t air_fit(const air_profile_t *p)
+{
+	uint32_t f = hrc6000_air_fit_tap(p, air_tap());
+	if (f != 0 && (hooks == NULL || !hooks->air_verified)) {
+		f |= AIR_FIT_UNTESTED;
+	}
+	return f;
+}
+
+// The chip from the halted engine to a session or the tap: the engine's queues become their memory (locked after)
+static void air_take(void)
+{
+	hrc6000_dmr_halt(&eng);
+	lock(NULL);
+	eng.evq_tail = eng.evq_head;	// what the engine left is dropped: its queue is the session's memory now
+	eng.txq_tail = eng.txq_head;
+	hrc6000_air_init(AIR, eng.dev, &ops, &((air_mem_t *)(void *)eng.evq)->b, AIR_SM,
+			 air_tap());
+}
+
+// Rule 1 (hal_air.h): in DMR the speaker carries only the codec's PCM, and in the FM copy set-up the chip's FM
+// receive doesn't reach the line out; the session keeps the FM feed-through off. Rule 2: in the physical layer mode
+// the modulator sends TX RAM only
+static bool air_open(const air_profile_t *p, air_event_cb_t cb, void *ctx)
+{
+	if (hooks == NULL || !active || air_on || hrc6000_dmr_is_transmitting(&eng)
+	    || hrc6000_air_fit_tap(p, air_tap()) == 0) {
+		return false;
+	}
+	air_cb = cb;
+	air_ctx = ctx;
+	air_take();
+	bool ok = hrc6000_air_open(AIR, p, air_event, NULL);
+	air_on = ok;
+	unlock(NULL);
+	if (!ok) {
+		eng.txq_head = eng.txq_tail = 0;
+		hrc6000_dmr_run(&eng);
+		return false;
+	}
+	if (sys_line_low(NULL)) {
+		NVIC_SetPendingIRQ(EXTI1_IRQn);	// a flag the halted engine left holds the line low
+	}
+	return true;
+}
+
+static void air_close(void)
+{
+	if (!air_on) {
+		return;
+	}
+	bool was_tx = hrc6000_air_tx_active(AIR);
+	lock(NULL);
+	hrc6000_air_close(AIR, active);
+	air_on = false;
+	eng.txq_head = eng.txq_tail = 0;	// the soft modem's memory is the engine's queue again
+	unlock(NULL);
+	air_cb = NULL;
+	if (was_tx) {
+		air_tx_done();
+	}
+	if (active) {
+		hrc6000_dmr_run(&eng);
+		if (sys_line_low(NULL)) {
+			NVIC_SetPendingIRQ(EXTI1_IRQn);
+		}
+	}
+}
+
+static void air_rx_restart(void)
+{
+	if (air_on) {
+		hrc6000_air_rx_restart(AIR);
+	}
+}
+
+static bool air_tx_begin(void)
+{
+	if (!active || !air_on) {
+		return false;
+	}
+	tx_rf_due = true;
+	stm32_hrc_dmr_tx_prepare();	// a one-synthesizer board's transmitter on the carrier, locked
+	if (!hrc6000_air_tx_begin(AIR)) {
+		air_tx_done();
+		return false;
+	}
+	return true;
+}
+
+static bool air_tx_queue(const air_tx_chunk_t *c)
+{
+	return air_on && hrc6000_air_tx_queue(AIR, c);
+}
+
+static uint8_t air_tx_space(void)
+{
+	return air_on ? hrc6000_air_tx_space(AIR) : 0;
+}
+
+static void air_tx_end(void)
+{
+	if (air_on) {
+		hrc6000_air_tx_end(AIR);
+	}
+}
+
+static void air_tx_abort(void)
+{
+	if (air_on) {
+		hrc6000_air_tx_abort(AIR);
+	}
+}
+
+static uint32_t air_now_us(void)
+{
+	return now_us(NULL);
+}
+
+// Only a session that receives through the FM copy costs the MCU a modem; the chip's correlator does the others'
+static bool air_rx_load(uint32_t *work_us, uint32_t *span_us)
+{
+	bool copy = air_on && AIR->rx_copy;
+
+	*work_us = copy ? AIR->st.modem_us : 0;
+	*span_us = copy ? AIR->st.modem_span_us : 0;
+	return copy;
+}
+
+const hal_air_t stm32_hrc_air = {
+	.fit = air_fit, .open = air_open, .close = air_close, .rx_restart = air_rx_restart, .tx_begin = air_tx_begin,
+	.tx_queue = air_tx_queue, .tx_space = air_tx_space, .tx_end = air_tx_end, .tx_abort = air_tx_abort,
+	.now_us = air_now_us, .slot_clock = NULL, .slot_slew = NULL, .rx_load = air_rx_load,
+	.tx_chunk_syms = HRC6000_AIR_SYMS,
+	.tx_queue_depth = HRC6000_AIR_TXQ, .tx_lead_ms = HRC6000_AIR_TX_LEAD_MS, .time_accuracy_us = HRC6000_AIR_TIME_US,
+};
+
+// --- hal_baseband_t: the FM copy as the board's receive tap (hrc6000_air.c) ---
+
+static bool tap_start(void)
+{
+	if (air_tap() == NULL || !active || air_on || hrc6000_dmr_is_transmitting(&eng)) {
+		return false;	// no copy on this board, not in DMR, or a session or a DMR transmission holds the chip
+	}
+	air_take();
+	bool ok = hrc6000_air_tap_start(AIR);
+	air_on = ok;
+	unlock(NULL);
+	if (!ok) {
+		eng.txq_head = eng.txq_tail = 0;
+		hrc6000_dmr_run(&eng);
+		return false;
+	}
+	if (sys_line_low(NULL)) {
+		NVIC_SetPendingIRQ(EXTI1_IRQn);
+	}
+	return true;
+}
+
+static uint16_t tap_read(int16_t *buf, uint16_t max)
+{
+	return air_on ? hrc6000_air_tap_read(AIR, buf, max) : 0;
+}
+
+static void tap_stop(void)
+{
+	if (!air_on || !AIR->tap) {
+		return;
+	}
+	lock(NULL);
+	hrc6000_air_tap_stop(AIR, active);
+	air_on = false;
+	eng.txq_head = eng.txq_tail = 0;
+	unlock(NULL);
+	if (active) {
+		hrc6000_dmr_run(&eng);
+		if (sys_line_low(NULL)) {
+			NVIC_SetPendingIRQ(EXTI1_IRQn);
+		}
+	}
+}
+
+static uint32_t tap_time(void)
+{
+	return air_on ? hrc6000_air_tap_time(AIR) : now_us(NULL);
+}
+
+// The HR_C6000's FM receive RAM in the copy set-up (modem-hrc6000.md 10.6); no transmit path from the MCU
+const hal_baseband_t stm32_hrc_baseband = {
+	.rx_rate_hz = HRC6000_AIR_COPY_HZ, .rx_channels = 1, .rx_lo_hz = HRC6000_AIR_COPY_LO_HZ,
+	.rx_hi_hz = HRC6000_AIR_COPY_HI_HZ, .rx_counts_per_khz = HRC6000_AIR_COPY_COUNTS_PER_KHZ, .rx_start = tap_start,
+	.rx_read = tap_read, .rx_stop = tap_stop, .tx_start = NULL, .tx_write = NULL, .tx_stop = NULL,
+	.now_us = air_now_us, .rx_time_us = tap_time,
+};
+#endif
 
 // --- Bring-up counters ---
 

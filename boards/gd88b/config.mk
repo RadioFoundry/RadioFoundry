@@ -75,6 +75,10 @@ BOARD_UNSUPPORTED += APRS	# the air band, broadcast tuner and APRS are SoC A's
 BOARD_UNSUPPORTED += APRS_RX	# the air band, broadcast tuner and APRS are SoC A's
 BOARD_UNSUPPORTED += APRS_IGATE	# the air band, broadcast tuner and APRS are SoC A's
 BOARD_UNSUPPORTED += GPS_SKY	# the GPS receiver and APRS are SoC A's
+BOARD_UNSUPPORTED += P25	# B runs no radio core: SoC A runs P25 and NXDN on its own modem
+BOARD_UNSUPPORTED += P25_TRUNK	# B runs no radio core: SoC A runs P25 and NXDN on its own modem
+BOARD_UNSUPPORTED += NXDN	# B runs no radio core: SoC A runs P25 and NXDN on its own modem
+BOARD_UNSUPPORTED += AIR_RAW	# B has no host port, only the link to A (UART3)
 # Every unsupported switch defaults off, read before the platform's defaults (CONFIG_HOSTLINK among them)
 $(foreach f,$(BOARD_UNSUPPORTED),$(eval CONFIG_$(f) ?= n))
 # The receiver is the board: FM always (a configuration without DMR is still a receiver)

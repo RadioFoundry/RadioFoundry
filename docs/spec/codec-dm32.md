@@ -192,6 +192,11 @@ How RadioFoundry runs it ([codec-placement.md](codec-placement.md), "HR_C7000 ra
    window 0x18000E48..0x18003E38 (the union of the builds' tables) is reserved.
 4. **Versions**: every DM-32UV build with a codec map (eight maps in `tools/rfoundry/rfoundry/codec_maps/dm32/`) runs in the
    same window, since only the 3 words depend on the run address.
+5. **State**: one 0x1C00-byte block in main RAM holds the encoder's state (E) or the decoder's (D), never both. Voice
+   is simplex, and each half of the init sequence above touches only its own block, so the first encode after a
+   decode runs the encoder's steps (its parameters, encoder init, FEC init(E+0x16E0), encoder set) and the first decode after an encode runs
+   the decoder's (decoder init, FEC init(D+0xFD0), the first decode, decoder set). P25 borrows the block while it
+   runs (`hal_vocoder_t.lend`).
 
 ## Open items
 

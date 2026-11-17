@@ -300,7 +300,9 @@ static const hrc_rfburst_board_t rf_board = { .on = burst_on, .off = burst_off, 
 static void dmr_tx_end(void);
 
 // burst_off() puts the FD6818 back on the RX frequency: the slots between our bursts hear a repeater's outbound
-static const hrc_dmr_board_t dmr_board = { .burst = &rf_board, .tx_end = dmr_tx_end, .listen_split = true };
+// air_verified: P25 (conventional and trunked) and NXDN at both rates checked both ways (hardware-dm32.md 17.3)
+static const hrc_dmr_board_t dmr_board = { .burst = &rf_board, .tx_end = dmr_tx_end, .listen_split = true,
+	.air_verified = true };
 
 // Per-burst keying off (task level): waits for the RF task to finish the burst it is in and leave the RF receiving
 static void dmr_disarm(void)

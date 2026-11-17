@@ -568,7 +568,8 @@ def reported_feature_errors():
     """A HIL test that asks `"X" in radio.features()` needs X in the version reply's features= (build_info.c); a
     switch missing there makes the test skip as not built on every radio"""
     with open(os.path.join(ROOT, "core", "hostlink", "build_info.c")) as f:
-        reported = set(re.findall(r'"([A-Z0-9_]+),"', f.read()))
+        # every name in a string of them: one a line ("DMR,"), or several in one ("P25,P25_TRUNK,")
+        reported = {n for lit in re.findall(r'"((?:[A-Z0-9_]+,)+)"', f.read()) for n in lit.split(",") if n}
     errs = []
     hil = os.path.join(ROOT, "tests", "hil")
     for name in sorted(os.listdir(hil)):

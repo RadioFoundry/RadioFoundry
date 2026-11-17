@@ -4,23 +4,28 @@
 #include <string.h>
 #include "stubentry/stub_link.h"
 
-// Append "key=value\n" to the text at out[*n], whole or not at all: a line cut short would read as another value
-static void kv(char *out, size_t *n, size_t cap, const char *key, const char *value)
+// Append "key=headvalue\n" to the text at out[*n], whole or not at all: a line cut short would read as another value
+static void kv2(char *out, size_t *n, size_t cap, const char *key, const char *head, const char *value)
 {
-	const char *parts[4] = { key, "=", value != NULL ? value : "", "\n" };
+	const char *parts[5] = { key, "=", head != NULL ? head : "", value != NULL ? value : "", "\n" };
 	size_t len = 0;
 
-	for (int p = 0; p < 4; p++) {
+	for (int p = 0; p < 5; p++) {
 		len += strlen(parts[p]);
 	}
 	if (*n + len > cap) {
 		return;
 	}
-	for (int p = 0; p < 4; p++) {
+	for (int p = 0; p < 5; p++) {
 		for (const char *c = parts[p]; *c != '\0'; c++) {
 			out[(*n)++] = *c;
 		}
 	}
+}
+
+static void kv(char *out, size_t *n, size_t cap, const char *key, const char *value)
+{
+	kv2(out, n, cap, key, NULL, value);
 }
 
 // VERSION with the keys the flashing tools and the web tools read (docs/spec/debuglink.md 3.1): which radio, which
@@ -50,7 +55,7 @@ static size_t version(const stub_link_t *l, uint8_t *out, size_t cap)
 	}
 	kv((char *)out, &n, cap, "board", l->board);
 	if (l->features != NULL) {
-		kv((char *)out, &n, cap, "features", l->features);
+		kv2((char *)out, &n, cap, "features", l->modes, l->features);
 	}
 	kv((char *)out, &n, cap, "codec", l->codec != NULL ? l->codec() : "none");
 	kv((char *)out, &n, cap, "stub", "1");

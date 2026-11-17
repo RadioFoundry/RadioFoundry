@@ -39,9 +39,10 @@ static const hrc_rfburst_board_t rf_board = {
 };
 #endif
 
+// air_verified: P25 conventional and NXDN at both rates checked both ways (hardware-gd88.md 13.2)
 static const hrc_dmr_board_t dmr_board = {
 #if GD88_DMR_TX
-	.burst = &rf_board, .tx_end = gd88_dmr_tx_end,
+	.burst = &rf_board, .tx_end = gd88_dmr_tx_end, .air_verified = true,
 #endif
 };
 

@@ -62,6 +62,92 @@ static const flow_t flows[] = {
 	{ "menu entry skips unavailable GPS", "", "ok 7 5", "screen=group focus=Answer_GPS_requests", 3, false },
 	{ "1 next channel", "", "up", "pos=4", 1, false },
 	{ "1 channel 12 by number", "", "1 2 ok", "pos=12 screen=home", 3, false },
+	// A P25 channel (the debug link's mode): named P25 in the strip; FM's tiles say why they are off
+	{ "P25 channel shows its mode", "dlmode:p25", "", "mode=p25 screen=home shows=P25 hides=No_tone hides=12.5k hides=25k hides=SQ5", 0, false },
+#if CONFIG_NXDN
+	// NXDN the same way: the power, the RAN sent and the rate in the chips, the group PTT calls on the talk line
+	{ "NXDN channel shows its mode", "dlmode:nxdn", "", "mode=nxdn screen=home shows=NXDN shows=RAN_1_9600 shows=TG_1 hides=No_tone hides=SQ5", 0, false },
+	{ "NXDN channel: bandwidth is FM only", "dlmode:nxdn", "quick 8", "mode=nxdn toast=FM_only:_this_is_NXDN", 2, false },
+#endif
+	{ "P25 channel: bandwidth is FM only", "dlmode:p25", "quick 8", "mode=p25 toast=FM_only:_this_is_a_P25_channel",
+	  2, false },
+#if CONFIG_P25
+	// P25 on Home: what PTT calls on the talk line, the NAC in the chips, the caller while a call comes in
+	{ "P25 home: talk group and NAC", "dlmode:p25", "", "screen=home shows=TG_1 shows=NAC_293", 0, false },
+	{ "P25 home: the caller", "dlmode:p25", "p25rx:3101234,7", "screen=home shows=ID_3101234 shows=TG_7", 0, false },
+	{ "P25 home: a unit call", "dlmode:p25", "p25rx:3101234,3105555,u", "shows=Private_to_3105555", 0, false },
+	{ "P25 home: encrypted", "dlmode:p25", "p25rx:3101234,7,e", "shows=Encrypted:_not_played hides=ID_3101234", 0,
+	  false },
+	{ "P25 home: another talk group", "dlmode:p25", "p25rx:3101234,7,o", "shows=Other_TG:_not_played", 0, false },
+	{ "P25 home: the call ends", "dlmode:p25 p25rx:3101234,7", "p25rxend", "screen=home hides=ID_3101234", 0, false },
+	// Dual watch with A on P25: the pane names the mode, no tone or bandwidth for it
+	{ "P25 dual watch: A in P25", "dlmode:p25", "quick 7", "dual=1 sel=A shows=P25 hides=No_tone hides=12.5k", 2, false },
+#if CONFIG_P25_TRUNK
+	// A trunked channel: the talk line says what the follower does, never what PTT calls (it is receive only)
+	{ "P25 trunked home: finding the system", "dlmode:p25", "p25t:1", "screen=home shows=Finding_system hides=TG_1",
+	  0, false },
+	{ "P25 trunked home: control channel", "dlmode:p25", "p25t:2", "screen=home shows=Control_channel hides=RX_only",
+	  0, false },
+	{ "P25 trunked home: following a call", "dlmode:p25", "p25t:3,201", "screen=home shows=Following_TG_201", 0,
+	  false },
+#endif
+#if CONFIG_CHANNEL_EDIT
+	// A channel saved from P25 (New from current): P25 and its NAC, no FM or DMR-only rows, talkaround automatic
+	{ "P25 new from current: its rows", "dlmode:p25", "ok 5 up up up ok down down down",
+	  "screen=channel shows=P25 focus=NAC shows=293", 9, false },
+	{ "P25 new from current: talkaround", "dlmode:p25 ok 5 up up up ok",
+	  "down down down down down down down down down down",
+	  "focus=Talkaround shows=Auto hides=Bandwidth hides=Color_code hides=Timeslot", 10, false },
+	// The NAC typed in hex: digits, and Up steps the last one past 9
+	{ "P25 NAC: typed, A by Up", "dlmode:p25 ok 5 up up up ok down down down", "ok 1 9 up 5",
+	  "focus=NAC shows=1A5", 5, false },
+	{ "P25 NAC: set", "dlmode:p25 ok 5 up up up ok down down down", "ok 1 9 up 5 ok", "focus=NAC shows=1A5", 6,
+	  false },
+	{ "P25 NAC: saved with the channel", "dlmode:p25 ok 5 up up up ok down down down ok 1 9 up 5 ok", "long:ok",
+	  "writes=1 toast=Saved_as_channel_41", 1, true },
+	{ "P25 new from current, saved", "dlmode:p25", "ok 5 up up up ok long:ok", "writes=1 toast=Saved_as_channel_41",
+	  7, true },
+	// Mode on a P25 channel makes it a plain FM one
+	{ "P25 channel's mode to FM", "dlmode:p25 ok 5 up up up ok down down", "ok", "shows=FM hides=NAC", 1,
+	  false },
+	// A slip on Mode is taken back by stepping on: FM, DMR, then P25 again with its NAC
+	{ "P25 channel's mode: back to P25", "dlmode:p25 ok 5 up up up ok down down", "ok ok ok",
+	  "focus=Mode shows=P25 shows=NAC shows=293", 3, false },
+	// A stored P25 channel: the same steps leave nothing to save
+	{ "stored P25 channel: Mode steps back to P25", "chkind:3,p25 ok 5 ok down down", "ok ok ok long:ok",
+	  "focus=Mode shows=P25 shows=NAC toast=No_changes_to_save", 4, false },
+	{ "stored P25 channel made DMR: a change", "chkind:3,p25 ok 5 ok down down ok ok", "back",
+	  "screen=discard shows=Discard_the_changes", 1, false },
+	// Saving it as FM takes its P25 settings away: asked first, keep editing the default
+	{ "stored P25 channel as FM: Save asks", "chkind:3,p25 ok 5 ok down down ok", "long:ok",
+	  "screen=discard shows=Save_as_FM? shows=P25_settings_will_be shows=removed shows=Yes,_save focus=No,_keep_editing writes=0", 1, false },
+	{ "stored P25 channel as FM: keep editing", "chkind:3,p25 ok 5 ok down down ok long:ok", "ok",
+	  "screen=channel focus=Mode shows=FM", 1, false },
+	{ "stored P25 channel as FM: Back keeps editing", "chkind:3,p25 ok 5 ok down down ok long:ok", "back",
+	  "screen=channel focus=Mode shows=FM", 1, false },
+	{ "stored P25 channel as FM: yes saves", "chkind:3,p25 ok 5 ok down down ok long:ok", "down ok",
+	  "screen=channel writes=1 toast=Saved_channel_3 shows=FM hides=NAC", 2, true },
+	// Save as new channel takes nothing from the stored one: not asked
+	{ "stored P25 channel as FM: a new channel isn't asked", "chkind:3,p25 ok 5 ok down down ok", "up up up ok",
+	  "screen=channel writes=1 toast=Saved_as_channel_41", 4, true },
+#if CONFIG_NXDN
+	// The same from NXDN: its RAN and rate, no color code or timeslot; an ID past NXDN's range is refused
+	{ "NXDN new from current: RAN", "dlmode:nxdn", "ok 5 up up up ok down down down",
+	  "screen=channel shows=NXDN focus=RAN hides=Color_code hides=Timeslot", 9, false },
+	{ "NXDN RAN: typed", "dlmode:nxdn ok 5 up up up ok down down down", "ok 1 7 ok", "focus=RAN shows=17", 4, false },
+	{ "NXDN rate: 4800", "dlmode:nxdn ok 5 up up up ok down down down down", "ok", "focus=Rate shows=4800_bit/s", 1,
+	  false },
+	{ "NXDN ID: past 65519 refused", "dlmode:nxdn ok 5 up up up ok down down down down down down down down down down",
+	  "ok 7 0 0 0 0 ok", "toast=NXDN_IDs_go_up_to_65519", 7, false },
+	{ "NXDN RAN: saved with the channel", "dlmode:nxdn ok 5 up up up ok down down down ok 1 7 ok", "long:ok",
+	  "writes=1 toast=Saved_as_channel_41", 1, true },
+	{ "NXDN channel's mode: back to NXDN", "dlmode:nxdn ok 5 up up up ok down down", "ok ok ok",
+	  "focus=Mode shows=NXDN shows=RAN", 3, false },
+	{ "stored NXDN channel as FM: Save asks", "chkind:3,nxdn ok 5 ok down down ok", "long:ok",
+	  "screen=discard shows=Save_as_FM? shows=NXDN_settings_will_be shows=removed writes=0", 1, false },
+#endif
+#endif
+#endif
 	// The status strip's USB word (#58): IP as a network adapter, with the link arrows once the computer has it up,
 	// none on serial
 	{ "1 USB network: IP on the strip, no link arrows", "usbnet:on", "", "shows=IP nomarkafter=IP", 0, false },
@@ -652,6 +738,20 @@ static const flow_t flows[] = {
 	// Quick settings in the FM VFO: tile 8 is Width, as on a channel
 	{ "Q FM VFO: Width on 8", "vfokey", "quick 8", "toast=Bandwidth", 2, false },
 	{ "S VFO mode back to FM", "ok 4 up ok quick 4 back", "quick 4", "toast=VFO:_FM mode=fm temporary=0", 2, false },
+	// A radio that runs P25: the mode tile goes FM, DMR, P25, FM
+	{ "S VFO mode: DMR to P25", "p25 ok 4 up ok quick 4 back", "quick 4", "toast=VFO:_P25 mode=p25 temporary=0 vfo=1",
+	  2, false },
+	{ "S VFO mode: P25 back to FM", "p25 ok 4 up ok quick 4 back quick 4 back", "quick 4",
+	  "toast=VFO:_FM mode=fm temporary=0", 2, false },
+	// NXDN: after DMR where the radio has no P25, after P25 where it has both; then FM
+	{ "S VFO mode: DMR to NXDN", "nxdn ok 4 up ok quick 4 back", "quick 4", "toast=VFO:_NXDN mode=nxdn temporary=0 vfo=1",
+	  2, false },
+	{ "S VFO mode: P25 to NXDN", "p25 nxdn ok 4 up ok quick 4 back quick 4 back", "quick 4", "toast=VFO:_NXDN mode=nxdn",
+	  2, false },
+	{ "S VFO mode: NXDN back to FM", "nxdn ok 4 up ok quick 4 back quick 4 back", "quick 4", "toast=VFO:_FM mode=fm", 2,
+	  false },
+	{ "S VFO mode: P25 shows on the strip", "p25 ok 4 up ok quick 4 back quick 4 back", "", "mode=p25 screen=home shows=P25",
+	  0, false },
 	{ "S VFO DMR: color code 7", "ok 4 up ok quick 4 back", "quick 3 7 ok", "cc=7 temporary=0", 4, false },
 	{ "S VFO DMR: timeslot 2", "ok 4 up ok quick 4 back", "quick 2 back", "ts=2 temporary=0", 3, false },
 	{ "S VFO DMR: talk to a typed TG", "ok 4 up ok quick 4 back", "quick 8 down ok 3 1 0 0 ok", "talk=3100 temporary=0",

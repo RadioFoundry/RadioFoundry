@@ -104,8 +104,17 @@ endif
 ifeq ($(CONFIG_APRS),y)
 CORE_DIRS += core/aprs
 endif
+ifeq ($(CONFIG_AIR),y)
+CORE_DIRS += core/air core/fec
+endif
 ifeq ($(CONFIG_P25),y)
 CORE_DIRS += core/p25
+endif
+ifeq ($(CONFIG_NXDN),y)
+CORE_DIRS += core/nxdn
+endif
+ifeq ($(CONFIG_MBE),y)
+CORE_DIRS += core/mbe
 endif
 ifeq ($(CONFIG_POSITION),y)
 CORE_DIRS += core/position
@@ -334,7 +343,12 @@ $(shell echo '$(RFOUNDRY_PRESET) $(RFOUNDRY_OFF)' | cmp -s - $(BUILD)/build_info
 	rm -f $(BUILD)/core/hostlink/build_info.o; })
 # The About page's authors and third-party list (tools/gen_about.py), and the objects that include it when it changed
 ABOUT_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -l rfoundry_about.h $(APP_SRC) 2>/dev/null))
-$(shell python3 tools/gen_about.py AUTHORS platform/$(PLATFORM)/THIRD_PARTY $(BUILD)/gen/rfoundry_about.h | grep -q changed \
+# A feature built from third-party code adds its own list
+ABOUT_MORE :=
+ifeq ($(CONFIG_IMBE),y)
+ABOUT_MORE += core/mbe/THIRD_PARTY
+endif
+$(shell python3 tools/gen_about.py AUTHORS platform/$(PLATFORM)/THIRD_PARTY $(BUILD)/gen/rfoundry_about.h $(ABOUT_MORE) | grep -q changed \
 	&& rm -f $(ABOUT_OBJ))
 # The language tables (tools/i18n.py, core/ui/lang/*.po) and the text keys every file that includes i18n.h needs
 # (tr_keys.h, rewritten only when a key changed: the dependency files rebuild those); i18n.o is rebuilt when the tables

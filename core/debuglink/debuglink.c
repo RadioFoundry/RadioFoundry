@@ -10,6 +10,7 @@
 #include "hal_time.h"
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
+#include "debuglink/debuglink_air.h"
 #include "debuglink/dl_chip.h"
 #include "debuglink/dl_shot.h"
 #include "debuglink/dlog.h"
@@ -129,8 +130,8 @@ static bool summary_line(uint8_t i, char *buf, uint8_t len)
 	const char *pw = board_power_name(v->power, v->ch.tx_hz);
 	switch (i) {
 	case 0:
-		dl_fmt(buf, len, "radio %s %s ch %u '%s' %u.%05u %s%s", v->ch.mode == RADIO_MODE_DMR ? "DMR" : "FM",
-		       v->vfo ? "VFO" : "MEM", v->channel_number, v->ch.name, (unsigned)(v->ch.rx_hz / 1000000u),
+		dl_fmt(buf, len, "radio %s %s ch %u '%s' %u.%05u %s%s",
+		       v->ch.mode == RADIO_MODE_NXDN ? "NXDN" : v->ch.mode == RADIO_MODE_P25 ? "P25" : v->ch.mode == RADIO_MODE_DMR ? "DMR" : "FM", v->vfo ? "VFO" : "MEM", v->channel_number, v->ch.name, (unsigned)(v->ch.rx_hz / 1000000u),
 		       (unsigned)((v->ch.rx_hz % 1000000u) / 10u), state_name((uint8_t)v->state),
 		       v->hotspot ? " HOTSPOT" : "");
 		return true;
@@ -208,6 +209,8 @@ static size_t cmd_reset(uint8_t *out)
 	beep_reset_stats();
 #endif
 	debuglink_dmr_data_reset();
+	debuglink_p25_reset();
+	debuglink_nxdn_reset();
 	uint32_t now = hal_millis();
 	dlog("debuglink: counters reset");
 	out[0] = DL_ST_OK;
@@ -233,7 +236,7 @@ static size_t cmd_version(uint8_t *out, size_t cap)
 		dl_text_kv_str(&t, "release", RFOUNDRY_RELEASE);
 	}
 	dl_text_kv_str(&t, "board", board.name);
-	dl_text(&t, "features=%s\n", build_features);
+	dl_text(&t, "features=%s%s\n", build_modes_now(), build_features_now());
 	dl_text_kv_str(&t, "codec", debuglink_codec_id(board.vocoder));
 	if (d != NULL) {
 		dl_text(&t, "display=%ux%ux%u\ninset=%u,%u,%u,%u\n", d->width, d->height, d->bpp, d->inset_top,
@@ -714,6 +717,7 @@ static void reboot_now(void)
 		dlog("debuglink: reboot %u aborted (%u)", reboot_mode, why);
 		return;
 	}
+	settings_flush();	// a change still in its save delay (a mode picked just before) survives the restart
 	if (!board.system->reboot(reboot_mode)) {
 		dlog("debuglink: reboot %u failed (%u)", reboot_mode, DL_REBOOT_ARM_FAILED);
 	}
@@ -894,6 +898,10 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		return debuglink_cmd_chip_reg(req, len, out, cap);
 	case DL_CMD_HWOPT:
 		return debuglink_cmd_hwopt(req, len, out, cap);
+#if CONFIG_AIR_RAW
+	case DL_CMD_AIR:
+		return debuglink_cmd_air(req, len, out, cap);
+#endif
 	case DL_CMD_CODEPLUG:
 #if CONFIG_CPS_FAST
 		return cps_fast_cmd(req, len, out, cap, hal_millis());
