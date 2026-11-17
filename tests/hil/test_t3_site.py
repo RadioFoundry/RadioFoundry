@@ -9,8 +9,11 @@ The site is the rig's, always on the air: nothing here transmits for it. The rig
 control channel as the radio receives it), --t3-tx-mhz (where the radio transmits to it), --t3-lcn (the control
 channel's logical channel number), --t3-system "MODEL,NET,SITE" (model 0 tiny .. 3 huge), --t3-cc and --t3-tg, the
 talkgroup the radio registers with and calls; --t3-peer is a second radio ID the individual call goes to (the site
-must grant calls to it). The tests that transmit key at the radio's lowest power. A run that transmits holds what
-the rig asks for the control channel's frequencies and the radio (locks, leases); the tests don't take any.
+must grant calls to it). The tests that transmit key at the radio's lowest power. A granted call is sent on the
+payload channel's inbound frequency: when the site's payload channels aren't on the control channel's carrier, give
+theirs with --t3-payload-tx-mhz (comma separated), as the firmware's test TX limit allows only the run's transmit
+frequencies. Each must be in tx_mhz. A run that transmits holds what the rig asks for the site's frequencies and the
+radio (locks, leases); the tests don't take any.
 
 Pass criteria:
 - test_t3_view: t3.built=1 and every key of T3_KEYS present; t3.on=0 and t3.state=off before a start.
@@ -20,66 +23,66 @@ Pass criteria:
   site's Chan_Freq broadcasts (t3.learned >= 1). Over that time CSBKs keep coming (t3.csbk grows), none is from
   another system (t3.foreign 0), at most 1 % fail their CRC, and the radio sent nothing (t3.sent 0). After the stop:
   t3.on=0, t3.state off.
-- test_t3_register[syscode|talkgroup] (rf, radio_tx): registration open, the radio registers by random access
+- test_t3_register[syscode|talkgroup] (radio_tx): registration open, the radio registers by random access
   within REG_S: t3.reg ok, t3.ax_svc register with t3.ax_result done, t3.sent >= 1. With talkgroup the request names
   --t3-tg (TRGT_ADR_CNTS 01b); the site may answer Reg_Accepted or Reg_Subscription (t3.ax_reason 0x62 or 0x65).
   t3 dereg then de-registers within DEREG_S (t3.ax_svc deregister, t3.ax_result done).
-- test_t3_group_call (rf, radio_tx): registered, PTT held: a group call request to --t3-tg (t3.ptt_wait 1), granted
+- test_t3_group_call (radio_tx): registered, PTT held: a group call request to --t3-tg (t3.ptt_wait 1), granted
   within GRANT_S: t3.state follow, t3.call_ours 1, t3.call_group 1, t3.call_dst the talkgroup, t3.slot 1 or 2,
   t3.can_talk 1, and the radio transmits (core state tx) for TALK_S. After the release the call ends (the radio
   sends P_MAINT, the site clears it) and the radio is back on the control channel within CLEAR_S: t3.state camped,
   t3.rx_hz --t3-rx-mhz, t3.returns +1, t3.reg still ok. The site's own log says whether it heard the voice; the
   radio's view only shows it was sent.
-- test_t3_private_call (rf, radio_tx; needs --t3-peer): as the group call, to --t3-peer as an individual call
+- test_t3_private_call (radio_tx; needs --t3-peer): as the group call, to --t3-peer as an individual call
   (t3.ax_svc individual): granted within PRIVATE_S, t3.call_group 0, t3.call_dst the peer; back on the control
   channel within CLEAR_S after the release.
-- test_t3_broadcast[talkgroup|allcall] (rf, radio_tx; talkgroup needs --t3-broadcast-tg): as the group call, to
+- test_t3_broadcast[talkgroup|allcall] (radio_tx; talkgroup needs --t3-broadcast-tg): as the group call, to
   --t3-broadcast-tg set as a broadcast talkgroup, or to all units (ALLMSID): granted within GRANT_S, then back on the
   control channel within BCAST_CLEAR_S of the release, as a broadcast has no hang time (6.6.2.1).
-- test_t3_status[group|peer|poll] (rf, radio_tx; peer and poll need --t3-peer): registered, the radio sends status
+- test_t3_status[group|peer|poll] (radio_tx; peer and poll need --t3-peer): registered, the radio sends status
   STATUS_VALUE to --t3-tg or to --t3-peer, or polls the peer. Within SERVICE_S: t3.ax_svc status, t3.ax_result done,
   t3.ax_reason 0x60 Message_Accepted (talkgroup), 0x44 MS_Accepted (peer) or 0x47 (poll; t3_svc t3.ax_info is the
   peer's status, 0-126). The radio is back to camped.
-- test_t3_sdata[group|peer] (rf, radio_tx; peer needs --t3-peer): registered, the radio sends SDATA_TEXT as ISO
+- test_t3_sdata[group|peer] (radio_tx; peer needs --t3-peer): registered, the radio sends SDATA_TEXT as ISO
   8-bit short data (two UDT blocks) to --t3-tg or --t3-peer: within SERVICE_S t3.ax_svc sdata, t3.ax_result done,
   t3.ax_reason 0x60 or 0x44. Whether the octets arrived whole is in the site's log; the radio's view shows only that
   the site took them (it acknowledges after the UDT's CRC passed).
-- test_t3_pdata[unconfirmed|confirmed] (rf, radio_tx; needs --t3-peer and the DMR data service): registered, the
+- test_t3_pdata[unconfirmed|confirmed] (radio_tx; needs --t3-peer and the DMR data service): registered, the
   data service sends PDATA_TEXT as an IP text message to --t3-peer. Within PDATA_S the engine asks for a data channel
   (t3.ax_svc pdata seen), the message is sent (data.sms_state ok; confirmed: the peer acknowledged its blocks) and the radio
   is back on the control channel within CLEAR_S.
-- test_t3_reg_list (rf, radio_tx; needs --t3-tg-list): registration by talkgroup with --t3-tg and --t3-tg-list
+- test_t3_reg_list (radio_tx; needs --t3-tg-list): registration by talkgroup with --t3-tg and --t3-tg-list
   (two to seven in all) listened to: within REG_S t3.reg ok, t3.ax_reason 0x62 or 0x65, t3_svc t3.reg_tgs the
   number sent, and t3.reg_tg_ok has no bit set past them. Which the site accepted is printed; the site's own
   configuration decides it.
 
-- test_t3_follow_speech (rf, radio_tx; needs --t3-call-cmd): registered, the rig's command has another radio on the
+- test_t3_follow_speech (radio_tx; needs --t3-call-cmd): registered, the rig's command has another radio on the
   site call --t3-tg with speech. Within GRANT_S + CLEAR_S the radio follows it (t3.state follow, t3.call_ours 0,
   t3.call_dst the talkgroup) and is back on the control channel within CALL_S after. The voice: no late entry
   (call.rx_late_entries 0), no frame lost (call.rx_lost_frames, voice.rx_lost 0), at least SPEECH_MIN frames in, all
   but PRIME played, no overflow, and the decoded speech peaks at PEAK_MIN or more (voice.rx_peak), as
   test_dmr_voice: silence would pass every counter.
-- test_t3_cease (rf, radio_tx; needs --t3-cease-cmd and a board that listens between its bursts): registered, the
+- test_t3_cease (radio_tx; needs --t3-cease-cmd and a board that listens between its bursts): registered, the
   radio talks on --t3-tg with the voice test signal, PTT held (a board that heard nothing between its bursts,
   call.rx_bs_in_tx 0, skips). TALK_S into the over the rig's command has the site
   send a reverse channel cease on the call's other slot (ETSI TS 102 361-4 6.4.15.2). Within CEASE_S the radio stops
   sending (call.rc_ceased +1, call.rc_good >= 2: a cease is acted on only when heard twice) though PTT is still held,
   and it doesn't key again while PTT stays held (CEASE_HOLD_S). After the release it is back on the control channel
   within CALL_S (the site may give the channel to the radio that interrupted first).
-- test_t3_cp_channel (rf, radio_tx): the system from the codeplug instead (dmr-trunking-codeplug.md): a system record in
+- test_t3_cp_channel (radio_tx): the system from the codeplug instead (dmr-trunking-codeplug.md): a system record in
   slot CP_SYS with --t3-system's identity, its control channel and a tag on the channel in use. Selecting the channel
   starts the system (t3.sys CP_SYS + 1): within CAMP_S + REG_S it camps on --t3-rx-mhz and registers (t3.reg ok).
   Another channel of the zone stops it (t3.sys 0, t3.on 0) within DEREG_S. The channel's talkgroup is its contact's,
   so the channel in use must be a DMR channel whose contact the site serves.
-- test_t3_cp_unavailable (rf, radio_tx): the same system marked as needing its key, with no key: the channel is
+- test_t3_cp_unavailable (radio_tx): the same system marked as needing its key, with no key: the channel is
   unavailable (t3.unavail 1, t3.on 0) and PTT is refused: nothing is sent (t3.sent 0) and the radio never transmits
   (core state never tx).
 
-The cp tests leave the codeplug as they found it: they refuse a slot, channel record or tag already there, and remove
-what they wrote after. On a failure every test prints the last t3 view.
+The cp tests write codeplug records over the debug link, so they also need --allow-codeplug-write. They leave the
+codeplug as they found it: they refuse a slot, channel record or tag already there, and remove what they wrote after. On a failure every test prints the last t3 view.
 
-    python3 -m pytest tests/hil/test_t3_site.py -v -rs -s --allow-rf --t3-rx-mhz RX --t3-tx-mhz TX --t3-lcn 1 \\
-        --t3-system 1,5,1 --t3-cc 2 --t3-tg 1 [--t3-peer ID]
+    python3 -m pytest tests/hil/test_t3_site.py -v -rs -s --allow-rf --t3-rx-mhz RX --t3-tx-mhz TX --t3-lcn LCN \\
+        --t3-system MODEL,NET,SITE --t3-cc CC --t3-tg TG [--t3-peer ID] [--t3-payload-tx-mhz TX,...]
 """
 import subprocess
 import time
@@ -125,7 +128,7 @@ PDATA_S = 40.0      # the data channel request, the grant, the data, the answer 
 SERVICE_S = 20.0    # random access, the site's C_AHOY to the called MS and its answer, retries
 BCAST_CLEAR_S = 3.0  # a broadcast has no hang time: the terminator, the site's P_CLEAR, the retune
 ALLMSID = 0xFFFFFF  # all-call (TS 102 361-4 A.4)
-PTT_MAX_MS = 20000  # the firmware's own PTT time-out, past every wait here
+PTT_MAX_MS = 10000  # the debug link's longest injected hold (INPUT_INJECT_MAX_MS); a repeated press re-arms it
 CALL_S = 30.0       # the other radio's call: its request, the speech, the hang time, the clear
 SPEECH_MIN = 90     # voice frames: the shortest call the command may make (5 superframes)
 PRIME = 3           # AMBE_VOICE_PRIME in core/dmr/ambe/ambeVoice.h
@@ -136,10 +139,11 @@ CP_SYS = 7          # the codeplug system slot the cp tests write (the last: the
 CP_CHAN = 0xF0      # the system entry they write (CPKV_SYS_CHAN + it)
 
 
-def site(config):
-    """The rig's site: dict of rx/tx Hz, lcn, model, net, site, cc, tg (skips opt_in for any missing)"""
+def site(config, tx=True):
+    """The rig's site: dict of rx/tx Hz, lcn, model, net, site, cc, tg (skips opt_in for any missing). tx False: a
+    receive-only test, which doesn't need --t3-tx-mhz (tx 0 then)"""
     rx = rig(config, "t3-rx-mhz", "a Tier III site's control channel")
-    tx = rig(config, "t3-tx-mhz", "a Tier III site's control channel")
+    tx = rig(config, "t3-tx-mhz", "a Tier III site's control channel") if tx else config.getoption("--t3-tx-mhz") or 0
     lcn = rig(config, "t3-lcn", "the control channel's logical channel number")
     sysd = rig(config, "t3-system", "the site's system identity")
     cc = rig(config, "t3-cc", "the site's color code")
@@ -147,7 +151,7 @@ def site(config):
     try:
         model, net, site_no = (int(x, 0) for x in str(sysd).split(","))
     except ValueError:
-        raise pytest.UsageError(f"--t3-system {sysd!r}: MODEL,NET,SITE (e.g. 1,5,1)")
+        raise pytest.UsageError(f"--t3-system {sysd!r}: MODEL,NET,SITE, numbers")
     own = config.getoption("--t3-own-id")
     return {"rx": round(rx * 1e6), "tx": round(tx * 1e6), "lcn": int(lcn), "model": model, "net": net,
             "site": site_no, "cc": int(cc), "tg": int(tg), "own_id": int(own or 0)}
@@ -233,6 +237,19 @@ def register(radio, s, reg_tg=False, **kw):
         raise
 
 
+def wait_held(radio, pred, timeout, what):
+    """wait_t3 with PTT held: the hold re-armed every few seconds, so a long wait (a grant) outlasts PTT_MAX_MS"""
+    end = time.monotonic() + timeout
+    while True:
+        radio.link.ptt(True, PTT_MAX_MS)
+        left = end - time.monotonic()
+        try:
+            return wait_t3(radio, pred, max(0.2, min(left, 5.0)), what)
+        except AssertionError:
+            if left <= 5.0:
+                raise
+
+
 def back_on_tscc(radio, s, returns0):
     v = wait_t3(radio, lambda x: x.get("t3.state") == "camped" and as_int(x.get("t3.returns"), 0) > returns0,
                 CLEAR_S, "back on the control channel")
@@ -252,15 +269,16 @@ def call(radio, s, dst, group, grant_s):
         v = wait_t3(radio, lambda x: x.get("t3.ptt_wait") == "1" or x.get("t3.state") == "follow", 2.0,
                     "the call request")
         assert v.get("t3.ax_svc") == ("group" if group else "individual"), f"request {v.get('t3.ax_svc')}"
-        v = wait_t3(radio, lambda x: x.get("t3.state") == "follow" and x.get("t3.can_talk") == "1" or
-                    x.get("t3.ax_result") in ("refused", "no_answer", "timeout", "not_allowed", "lost"),
-                    grant_s, "the grant")
+        v = wait_held(radio, lambda x: x.get("t3.state") == "follow" and x.get("t3.can_talk") == "1" or
+                      x.get("t3.ax_result") in ("refused", "no_answer", "timeout", "not_allowed", "lost"),
+                      grant_s, "the grant")
         assert v.get("t3.state") == "follow", (f"no grant: {v.get('t3.ax_result')} reason "
                                                f"{v.get('t3.ax_reason')}")
         assert v.get("t3.call_ours") == "1" and v.get("t3.call_group") == ("1" if group else "0"), \
             f"following another call: ours {v.get('t3.call_ours')} group {v.get('t3.call_group')}"
         assert num(v, "t3.call_dst") == dst, f"call to {v.get('t3.call_dst')}, asked {dst}"
         assert v.get("t3.slot") in ("1", "2"), f"payload slot {v.get('t3.slot')}"
+        L.ptt(True, PTT_MAX_MS)     # re-arm the hold: the request and the grant may have used most of it
         wait_t3(radio, lambda x: str(x.get("state", "")).lower() == "tx", 3.0, "the radio transmitting voice")
         time.sleep(TALK_S)
         assert t3(radio).get("t3.state") == "follow", "the call dropped while talking"
@@ -288,7 +306,7 @@ def test_t3_view(trunk):
 
 @pytest.mark.feature("dmr_trunk")
 def test_t3_camp(trunk, pytestconfig):
-    s = site(pytestconfig)
+    s = site(pytestconfig, tx=False)
     v = start(trunk, s, listen_only=True)
     try:
         assert num(v, "t3.syscode") == syscode(s), f"system code {v['t3.syscode']}, want {syscode(s):#06x}"
@@ -316,7 +334,6 @@ def test_t3_camp(trunk, pytestconfig):
 
 
 @pytest.mark.feature("dmr_trunk_tx")
-@pytest.mark.rf
 @pytest.mark.radio_tx
 @pytest.mark.parametrize("by", ["syscode", "talkgroup"])
 def test_t3_register(trunk_tx, pytestconfig, by):
@@ -337,7 +354,6 @@ def test_t3_register(trunk_tx, pytestconfig, by):
 
 
 @pytest.mark.feature("dmr_trunk_tx")
-@pytest.mark.rf
 @pytest.mark.radio_tx
 def test_t3_group_call(trunk_tx, pytestconfig):
     s = site(pytestconfig)
@@ -347,7 +363,6 @@ def test_t3_group_call(trunk_tx, pytestconfig):
 
 
 @pytest.mark.feature("dmr_trunk_tx")
-@pytest.mark.rf
 @pytest.mark.radio_tx
 @pytest.mark.parametrize("kind", ["talkgroup", "allcall"])
 def test_t3_broadcast(trunk_tx, pytestconfig, kind):
@@ -364,7 +379,6 @@ def test_t3_broadcast(trunk_tx, pytestconfig, kind):
 
 
 @pytest.mark.feature("dmr_trunk_tx")
-@pytest.mark.rf
 @pytest.mark.radio_tx
 def test_t3_private_call(trunk_tx, pytestconfig):
     s = site(pytestconfig)
@@ -406,7 +420,6 @@ def svc_target(trunk_tx, pytestconfig, to):
 
 
 @pytest.mark.feature("dmr_trunk_tx")
-@pytest.mark.rf
 @pytest.mark.radio_tx
 @pytest.mark.parametrize("to", ["group", "peer", "poll"])
 def test_t3_status(trunk_tx, pytestconfig, to):
@@ -420,7 +433,6 @@ def test_t3_status(trunk_tx, pytestconfig, to):
 
 
 @pytest.mark.feature("dmr_trunk_tx")
-@pytest.mark.rf
 @pytest.mark.radio_tx
 @pytest.mark.parametrize("to", ["group", "peer"])
 def test_t3_sdata(trunk_tx, pytestconfig, to):
@@ -430,7 +442,6 @@ def test_t3_sdata(trunk_tx, pytestconfig, to):
 
 
 @pytest.mark.feature("dmr_trunk_tx")
-@pytest.mark.rf
 @pytest.mark.radio_tx
 @pytest.mark.parametrize("ack", ["unconfirmed", "confirmed"])
 def test_t3_pdata(trunk_tx, pytestconfig, ack):
@@ -461,7 +472,6 @@ def test_t3_pdata(trunk_tx, pytestconfig, ack):
 
 
 @pytest.mark.feature("dmr_trunk_tx")
-@pytest.mark.rf
 @pytest.mark.radio_tx
 def test_t3_reg_list(trunk_tx, pytestconfig):
     s = site(pytestconfig)
@@ -547,8 +557,8 @@ def cp_system(trunk_tx, pytestconfig):
 
 
 @pytest.mark.feature("dmr_trunk_tx")
-@pytest.mark.rf
 @pytest.mark.radio_tx
+@pytest.mark.codeplug_write
 def test_t3_cp_channel(trunk_tx, cp_system):
     s, other = cp_system(OPT_PRIVATE)
     try:
@@ -566,8 +576,8 @@ def test_t3_cp_channel(trunk_tx, cp_system):
 
 
 @pytest.mark.feature("dmr_trunk_tx")
-@pytest.mark.rf
 @pytest.mark.radio_tx
+@pytest.mark.codeplug_write
 def test_t3_cp_unavailable(trunk_tx, cp_system):
     cp_system(OPT_PRIVATE, needs_key=True)
     L = trunk_tx.link
@@ -579,7 +589,7 @@ def test_t3_cp_unavailable(trunk_tx, cp_system):
         mhz = (as_int(trunk_tx.core().get("tx_hz")) or 0) / 1e6
         if not tx_allowed(None, mhz):
             # Were the refusal broken, PTT would key the channel's own frequency: only on one the rig may use
-            skip("bench", f"PTT refusal not checked: the channel's own TX frequency {mhz:.5f} MHz isn't in tx_mhz")
+            skip("opt_in", f"PTT refusal not checked: the channel's own TX frequency {mhz:.5f} MHz isn't in tx_mhz")
         L.ptt(True, 3000)
         try:
             end = time.monotonic() + 2.0
@@ -595,7 +605,6 @@ def test_t3_cp_unavailable(trunk_tx, cp_system):
 
 
 @pytest.mark.feature("dmr_trunk_tx")
-@pytest.mark.rf
 @pytest.mark.radio_tx
 def test_t3_follow_speech(trunk_tx, pytestconfig):
     s = site(pytestconfig)
@@ -634,7 +643,6 @@ def test_t3_follow_speech(trunk_tx, pytestconfig):
 
 
 @pytest.mark.feature("dmr_trunk_tx")
-@pytest.mark.rf
 @pytest.mark.radio_tx
 def test_t3_cease(trunk_tx, pytestconfig):
     s = site(pytestconfig)
@@ -646,12 +654,15 @@ def test_t3_cease(trunk_tx, pytestconfig):
     L.voice_test(True)
     L.ptt(True, PTT_MAX_MS)
     try:
-        wait_t3(trunk_tx, lambda x: x.get("t3.state") == "follow" and x.get("t3.can_talk") == "1", GRANT_S,
-                "the grant")
+        wait_held(trunk_tx, lambda x: x.get("t3.state") == "follow" and x.get("t3.can_talk") == "1", GRANT_S,
+                  "the grant")
+        L.ptt(True, PTT_MAX_MS)     # re-arm the hold after the grant
         wait_t3(trunk_tx, lambda x: str(x.get("state", "")).lower() == "tx", 3.0, "the radio transmitting voice")
         time.sleep(TALK_S)
+        L.ptt(True, PTT_MAX_MS)
         subprocess.run(cmd, shell=True, check=True, timeout=30)
-        asked = time.monotonic()
+        L.ptt(True, PTT_MAX_MS)     # re-arm: only the cease may end the over, never the hold's time-out
+        armed = asked = time.monotonic()
         try:
             wait_t3(trunk_tx, lambda x: str(x.get("state", "")).lower() != "tx", CEASE_S,
                     "the over ended by the cease")
@@ -662,6 +673,8 @@ def test_t3_cease(trunk_tx, pytestconfig):
                      "doesn't listen while sending, so it can't hear a reverse channel")
             raise
         took = time.monotonic() - asked
+        assert time.monotonic() - armed + CEASE_HOLD_S < PTT_MAX_MS / 1000, \
+            "the PTT hold would time out during the check: the cease came too late to tell"
         end = time.monotonic() + CEASE_HOLD_S
         while time.monotonic() < end:
             assert str(trunk_tx.link.view(["core"]).get("state", "")).lower() != "tx", "keyed again with PTT held"

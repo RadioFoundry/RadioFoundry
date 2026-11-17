@@ -44,6 +44,9 @@ RIG = {
                          "the rig's own, always on the air)", False),
     "t3-tx-mhz": (float, "MHz: that control channel's inbound frequency, where the radio transmits (test_t3_site)",
                   True),
+    "t3-payload-tx-mhz": (str, "MHz, comma separated: the Tier III site's payload channels' inbound frequencies, "
+                                "where the radio transmits once granted, when they aren't the control channel's "
+                                "(test_t3_site); each must be in tx_mhz", True),
     "t3-lcn": (int, "the Tier III control channel's logical channel number", False),
     "t3-system": (str, "the Tier III site's identity MODEL,NET,SITE (model 0 tiny, 1 small, 2 large, 3 huge)", False),
     "t3-cc": (int, "the Tier III site's color code", False),
@@ -167,10 +170,11 @@ def configure(config):
         if given and not allowed:
             raise pytest.UsageError("--allow-rf: give the frequencies this rig may transmit on (--tx-mhz, "
                                     f"${env_name('tx-mhz')} or tx_mhz in the rig's file)")
+        given.update({f"t3-payload-tx-mhz {f:g}": f for f in t3_payload_tx_mhz(config)})
         bad = {n: f for n, f in given.items() if not tx_allowed(config, f)}
         if bad:
             raise pytest.UsageError("transmit frequencies not in tx_mhz: "
-                                    + ", ".join(f"--{n} {f:g}" for n, f in bad.items()))
+                                    + ", ".join(f"--{n}" if " " in n else f"--{n} {f:g}" for n, f in bad.items()))
 
 
 def tx_allowed(config, mhz):
@@ -189,14 +193,25 @@ def wattmeter_mhz(config=None):
     return [float(x) for x in str(v).replace(",", " ").split()] if v else list(WATTMETER_MHZ)
 
 
+def t3_payload_tx_mhz(config=None):
+    """The Tier III payload channels' transmit frequencies (MHz): --t3-payload-tx-mhz, else none"""
+    config = config or CONFIG
+    v = getattr(config.option, key("t3-payload-tx-mhz"), None) if config is not None else None
+    try:
+        return [float(x) for x in str(v).replace(",", " ").split()] if v else []
+    except ValueError:
+        raise pytest.UsageError(f"--t3-payload-tx-mhz {v!r}: MHz, comma separated")
+
+
 def run_tx_mhz(config=None):
     """The run's own transmit frequencies (MHz, sorted, each once): the TX_OPTIONS given, with --allow-rf (they are
-    in tx_mhz, configure() checked), and with --manual the wattmeter check's that are in tx_mhz; none without
+    in tx_mhz, configure() checked), the Tier III payload channels', and with --manual the wattmeter check's that are in tx_mhz; none without
     --allow-rf. The firmware's test TX limit allows only these (Radio.tx_gate)"""
     config = config or CONFIG
     if config is None or not config.getoption("--allow-rf"):
         return []
     out = {round(float(f), 6) for f in (getattr(config.option, key(n), None) for n in TX_OPTIONS) if f is not None}
+    out |= {round(f, 6) for f in t3_payload_tx_mhz(config)}
     if config.getoption("--manual"):
         out |= {round(f, 6) for f in wattmeter_mhz(config) if tx_allowed(config, f)}
     return sorted(out)
