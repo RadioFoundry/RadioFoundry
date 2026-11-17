@@ -57,7 +57,7 @@ radio uses, and the Problems list warns about a DMR channel there or a TX freque
 | Band table | the board lists the air band as an RX-only band ({108000000, 136000000, false} after the VHF TX band) |
 | Saving | the channel editor makes a copy whose RX lands in an RX-only band of the table (New from current, a typed RX) RX only, and FM in a listen band (the air band on a radio with AM receive, the broadcast receiver's range), so it saves as is; a DMR copy in a listen band is refused ("Receive only band: set FM"). In another receive-only band a DMR copy stays DMR, RX only ([ui.md](ui.md) 2.1). The codeplug stores a listen band's channel as an FM channel |
 | Mode tile | DMR is refused: "AM only in the air band" |
-| Screen | "AM" in place of "FM" for the mode on Home, in the strip, on the mode tile and in the channel list. Home's chips are "Air Band AM" and the squelch level (no tone, width or power). PTT shows "Air band: receive only" |
+| Screen | "AM" in place of "FM" for the mode on Home, in the strip, on the mode tile and in the channel list, and in dual watch for each pane on its own (the pane, the strip for the selected one, "AM signal", the picker). Home's chips are "Air Band AM" and the squelch level (no tone, width or power). PTT shows "Air band: receive only" |
 
 ### 3.3 Board contract (hal_radio.h)
 
@@ -169,5 +169,5 @@ The board must also set the capability bits; without them the code does nothing 
 |---|---|
 | `tests/host/radioListenBandsTest.c` | AM and broadcast channels and VFO, TX refusal, squelch, the steps, a dead receiver |
 | `tests/host/fd6818Test.c` | the AF output word for AM and back to FM |
-| `tests/host/uiFlowTest.c` | the FM broadcast step row on a radio with the receiver |
+| `tests/host/uiFlowTest.c` | the FM broadcast step row on a radio with the receiver; AM in dual watch (a VFO and a channel pane, the signal line) |
 | `tests/hil/test_listen_bands.py` | the VFO at 118.0 MHz gives `am=1`; at 100.1 MHz `bcast=1` and `bcast_fault=0`. Nothing keys |
