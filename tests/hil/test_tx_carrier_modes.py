@@ -41,15 +41,37 @@ MODE_SETTLE_S = 1.0
 # 4800 bit/s (levels 700 Hz apart), the mode most hurt by an offset
 MODE_TOL_PPB = 325
 AIR_FIT_TX = 0x2
+BURST_DB = 1.0          # a bursted over's full blocks: within this of the strongest
+BURST_MIN_BLOCKS = 20   # about a third of a 3 s DMR over's full 10 ms blocks
+
+
+def burst_carrier(job):
+    """The mean carrier of a bursted over (DMR simplex: 27.5 ms on, 32.5 ms off), which fm_measure doesn't count as a
+    segment: the board's carrier blocks within BURST_DB of the strongest ones (a block that straddles a burst's edge is
+    weaker and carries the off part's noise), None without enough of them"""
+    import fm_measure
+    blocks = [b for b in fm_measure.blocks_of(job.records) if b.get("carrier") and b.get("cfo_hz") is not None
+              and b.get("power_dbfs") is not None]
+    print(f"bursted over: {len(blocks)} carrier blocks of {len(job.records)} records")
+    if not blocks:
+        return None
+    top = sorted(b["power_dbfs"] for b in blocks)[len(blocks) * 9 // 10]
+    full = [b["cfo_hz"] for b in blocks if b["power_dbfs"] >= top - BURST_DB]
+    return round(sum(full) / len(full)) if len(full) >= BURST_MIN_BLOCKS else None
 
 
 def over(radio, sdr_bench, mhz, tag):
-    """One PTT_S over measured by the bench's FM receive: fm_measure's report"""
+    """One PTT_S over measured by the bench's FM receive: fm_measure's report (a bursted over's carrier from its
+    full blocks)"""
     with sdr_bench.lease():
         job = sdr_bench.fm_over_start(mhz, PTT_S + 5, bw_khz=12.5)
         radio.ptt_for(PTT_S)
         radio.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
         r = sdr_bench.fm_over_result(job)
+    if r["segments"] == 0 and r.get("carrier_s"):
+        r["carrier_hz"] = burst_carrier(job)
+        r["segments"] = 1 if r["carrier_hz"] is not None else 0
+        r["track"] = r.get("track") or []
     assert r["segments"] >= 1, f"{tag}: no keyed segment, the board heard {r['carrier_s']} s of carrier: {r}"
     assert r["carrier_hz"] is not None, f"{tag}: no carrier: {r}"
     return r
