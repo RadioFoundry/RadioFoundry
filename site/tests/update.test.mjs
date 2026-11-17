@@ -9,6 +9,8 @@ import assert from "node:assert/strict";
 
 import { DROP_OK, currentBuild, planUpdate, releaseOf } from "../static/js/flasher/update.js";
 import { Selection } from "../static/js/flasher/select.js";
+import { START_SINCE } from "../static/js/flasher/langsuggest.js";
+import { readFileSync } from "node:fs";
 
 // A radio with five switches: B needs A; NEW came in the second release
 const FEATURES = ["A", "B", "C", "D", "NEW"].map((name) => ({ name, needs: name === "B" ? { all: ["A"], any: [] } : { all: [], any: [] } }));
@@ -100,6 +102,41 @@ test("without releases, a start switch newer than the radio's build stays off; o
 	sel = s();
 	planUpdate(unknown, sel);
 	assert.ok(starts.filter((n) => n.startsWith("LANG_DEFAULT_")).every((n) => !sel.on.has(n)));
+});
+
+// A build made after a language's merge but before the next release: the release doesn't know its start switch, the
+// build did (git_time), and off= leaving it out means it was on
+test("with releases, a start switch newer than the release but not the build is kept", () => {
+	const starts = ["ES", "IT", "ZH", "FR"].flatMap((c) => [`LANG_${c}`, `LANG_DEFAULT_${c}`]);
+	const feats = [...FEATURES, ...starts.map((name) => ({ name, needs: { all: name.startsWith("LANG_DEFAULT_") ? [`LANG_${name.slice(13)}`] : [], any: [] } }))];
+	const s = () => new Selection(RADIO, feats, [{ id: "full" }, { id: "amateur" }]);
+	const knew = "LANG_ES,LANG_IT,LANG_ZH,LANG_DEFAULT_ES,LANG_DEFAULT_IT,LANG_DEFAULT_ZH";
+	// custom, starting in French
+	const custom = currentBuild(probe({ git: "eeee555", git_time: "1794900000", preset: "custom", off: `C,${knew}` }), RADIO, WITH_OFF, REPORTED);
+	assert.equal(custom.kind, "custom");
+	let sel = s();
+	const plan = planUpdate(custom, sel);
+	assert.ok(sel.on.has("LANG_DEFAULT_FR") && sel.on.has("LANG_FR"));
+	assert.deepEqual(plan.ask, []);
+	// equal to Full, starting in French
+	const full = currentBuild(probe({ git: "eeee555", git_time: "1794900000", preset: "custom", off: `D,${knew}` }), RADIO, WITH_OFF, REPORTED);
+	assert.equal(full.preset, "full");
+	sel = s();
+	planUpdate(full, sel);
+	assert.ok(sel.on.has("LANG_DEFAULT_FR") && sel.on.has("LANG_FR"));
+	// the same off= from before French: English stays
+	const older = currentBuild(probe({ git: "dddd444", git_time: "1794500000", preset: "custom", off: `C,${knew}` }), RADIO, WITH_OFF, REPORTED);
+	sel = s();
+	planUpdate(older, sel);
+	assert.ok(!sel.on.has("LANG_DEFAULT_FR"));
+});
+
+// A start switch without its merge time would never be kept: radios built to start in it would switch to English
+test("every start-language switch in config/features.mk has its START_SINCE", () => {
+	const mk = readFileSync(new URL("../../config/features.mk", import.meta.url), "utf8");
+	const names = [...new Set([...mk.matchAll(/^CONFIG_(LANG_DEFAULT_[A-Z]{2,3})\b/gm)].map((m) => m[1]))];
+	assert.ok(names.length > 0);
+	assert.deepEqual(names.filter((n) => START_SINCE[n] === undefined), []);
 });
 
 test("from a release without off lists, a switch on in no variant is asked about too", () => {

@@ -289,6 +289,11 @@ that release knew is its variants' features and its manifests' `off` lists (`too
 is new. A release from before manifests carried `off` names only its variants' features, so a switch a custom build had
 on in no variant reads as new, once.
 
+A start-language switch (`LANG_DEFAULT_<CODE>`) is never asked about. One that `off=` doesn't name is on only when the
+radio's `git_time` is at or after that switch's merge (`START_SINCE` in `langsuggest.js`), with or without releases;
+otherwise it is off and the radio keeps the language it starts in. A new start switch needs its entry there (a host test
+checks it).
+
 The Codeplug Editor's **Update Firmware** opens `flash/index.html#update` and closes its own connection.
 
 ## The original firmware version

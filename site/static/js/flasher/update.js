@@ -6,7 +6,7 @@
 //   currentBuild(probe, radio, releases, reported)   what runs: {kind: "preset" | "custom" | "unknown", ...}
 //   planUpdate(cur, sel, decided)                    the update's selection, and what it adds or must ask
 
-import { startCode, startKnownAt } from "./langsuggest.js";
+import { START_SINCE, startCode, startKnownAt } from "./langsuggest.js";
 
 const split = (s) => String(s || "").split(",").filter(Boolean);
 
@@ -39,7 +39,9 @@ export function currentBuild(probe, radio, releases, reported) {
 		// (langsuggest.js) is left out of the comparison and kept: Full in Spanish is still Full
 		const preset = variantOf(radio, off, old);
 		if (!preset) return { ...said, kind: "custom", off, old };
-		const start = [...new Set(old.flatMap((e) => [...split(e.features), ...split(e.off)]))].filter((n) => startCode(n) && !off.includes(n));
+		// a start switch newer than the release but not newer than the build (langsuggest.js START_SINCE) counts too
+		const start = [...new Set([...old.flatMap((e) => [...split(e.features), ...split(e.off)]),
+			...Object.keys(START_SINCE).filter((n) => startKnownAt(n, v.git_time))])].filter((n) => startCode(n) && !off.includes(n));
 		return { ...said, kind: "preset", preset, off, old, start };
 	}
 	// older firmware: its features= list against each variant, by the names it can report
@@ -101,14 +103,14 @@ export function planUpdate(cur, sel, decided = {}) {
 		return { ...none, preset: cur.preset, added: fresh(sel.radio.config[cur.preset]) };
 	}
 	// a custom build (or a variant this release no longer has): every switch as it was, the new ones as decided. A
-	// new start-language switch (langsuggest.js) is no feature to ask about: off, the radio keeps the language it has
+	// start-language switch (langsuggest.js) is no feature to ask about: one off= doesn't name is on only if the radio's
+	// build could have had it (START_SINCE), else off and the radio keeps the language it has. Not by release: without
+	// releases nothing counts as new (the newest language came up on every radio updated), and a build made after a
+	// language's merge but before the next release that starts in it would lose it
 	const names = sel.features.map((f) => f.name);
-	const news = fresh(names);
-	// a start switch off= doesn't name is on only if the radio's build could have had it (langsuggest.js START_SINCE):
-	// without releases nothing counts as new, and the newest language came up on every radio updated
 	const gitTime = cur.probe?.version?.git_time;
-	const off = new Set([...(cur.off || []), ...news.filter((n) => startCode(n)),
-		...names.filter((n) => startCode(n) && !startKnownAt(n, gitTime))]);
+	const news = fresh(names).filter((n) => !(startCode(n) && startKnownAt(n, gitTime)));
+	const off = new Set([...(cur.off || []), ...names.filter((n) => startCode(n) && !startKnownAt(n, gitTime))]);
 	const kept = names.filter((n) => sel.supported(n) && (!off.has(n) || sel.required(n)) && !news.includes(n));
 	sel.useVariant("full");
 	// all kept ones first, so an "any of" need finds one already on; then enable() brings each one's needs
