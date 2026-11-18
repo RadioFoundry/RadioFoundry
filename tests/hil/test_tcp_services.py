@@ -248,7 +248,7 @@ def test_zone_channel_api(net):
     assert set(by_number) == {n for z in plan["zones"] for n in z["channels"]}
     here = plan["zones"][start["zone"]]["channels"]
     print(f"/api/zones: {nzones} zones, {len(by_number)} channels in {took:.2f} s")
-    zone = json.loads(_get(ip, f"/api/zone?zone={start['zone']}")[2])
+    zone = json.loads(_get(ip, f"/api/zone?zone={start['zone']}&from={start['pos']}")[2])     # its page
     assert zone["size"] == len(here), (zone["size"], here)
     item = next(i for i in zone["items"] if i["pos"] == start["pos"])
     assert dict(by_number[item["number"]], pos=item["pos"]) == item, (by_number[item["number"]], item)
