@@ -915,8 +915,11 @@ empty at every block edge. It ran dry there: the queue emptied with the FIFO tak
 of beeps, and every tone broke up at 20 ms intervals, its pitch jumping and its level dipping by up to 40 dB at the
 microphone (measured). `audio_pcm.c` therefore pushes nothing after the queue is emptied (route on, gate edges) until
 two blocks are queued, so the queue stays a block ahead of the FIFO for one block (20 ms) of latency. With that hold
-the queue never ran out in the same beeps. A dedicated 2 ms timer refills the FIFO independently of the audio task:
-a voice decoder can occupy that task longer than the FIFO's 8 ms capacity. Three queue entries can be published,
+the queue never ran out in the same beeps. A dedicated timer checks the FIFO every 2 ms independently of the audio task:
+a voice decoder can occupy that task longer than the FIFO's 8 ms capacity. On seeing room, the timer schedules a
+write at least 200 µs later; the interrupt does not busy-wait during that interval. Each write interrupt pushes at most
+one chunk after checking the queue generation, speaker route, TX gate, FIFO ownership and available space again.
+Stop/start, queue resets and FIFO ownership changes cancel a pending write. Three queue entries can be published,
 with a fourth reserved for the producer: variable decode time can finish a third block before either primed entry
 has drained. The occupancy check occurs after decoding, so space freed during decoding can be used. The `un` field
 of the `pg` diagnostics line (below) counts run-outs and stays 0.
@@ -935,10 +938,11 @@ reordered. On a swept tone, broken stretches had the energy just above the tone'
 tone; whole ones 39-55 dB below it (measured, `test_speaker_sweep`). Traces of the broken stretches showed pushes that found
 b31 set on entry and clear microseconds later, then wrote at once; in clean ones, almost none.
 
-`platform/hrc7000/prompt_fifo.h` therefore waits 200 µs after it sees b31 clear before writing (twice the shortest wait
+Every push therefore waits 200 µs after it sees b31 clear before writing (twice the shortest wait
 that was clean; pushes 0.1-3 ms after the edge played in order in 12 of 12 sweeps). Only a push that saw the bit
-clear writes, so the bit can only have cleared before that look. At 250 pushes a second the wait costs about 5 % of
-the CPU. Speaker PCM (`audio_pcm.c`) and APRS (`hrc_afsk.c`) both push through it. Every sweep recorded with the wait played
+clear writes, so the bit can only have cleared before that look. Speaker PCM (`audio_pcm.c`) uses the deferred timer
+write above. APRS (`hrc_afsk.c`) uses the blocking wrapper in `platform/hrc7000/prompt_fifo.h`; at 250 pushes a second
+that wait costs about 5 % of the CPU while AFSK is active. Every sweep recorded with the settling delay played
 whole, 8 of them; one more recording had half its energy above 4.3 kHz, which an 8 kHz stream can't make, and was
 the capture's fault (measured).
 

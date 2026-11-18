@@ -7,15 +7,15 @@
 // With AUDIO_CONTROL b4 set the modem fills 80 mic samples at 0x18000000 every 10 ms and raises PCM_wr (PIC 28). The
 // mic interrupt paces everything: two halves make a 20 ms block, the task runs the block callback (never in the ISR)
 // and queues the speaker block it returned. While the speaker is routed (AUDIO_CONTROL b7, set by the board's hook)
-// a 2 ms timer pushes the queue to the prompt FIFO, 32 samples at a time while b31 says there is room. The
+// a timer checks the prompt FIFO every 2 ms and pushes the queue 32 samples at a time while b31 says there is room. The
 // CPU-fed speaker buffer (b5, 0x180000A0) sounded rough and choppy on the bench with every sample layout tried.
 //
 // The FIFO takes only two of those chunks (8 ms), less than a block, and the blocks come at the rate it plays them.
 // Pushed as each block came, it was nearly empty at every block edge and ran dry there, which broke each tone up at
 // 20 ms intervals (modem-hrc7000.md 8.4). So after the route turns on (or a gate edge) nothing is pushed until
 // SPK_PRIME_BLOCKS are queued: the queue stays a block ahead of the FIFO, at the cost of one block of latency. Each
-// push waits a moment after the FIFO showed room (prompt_fifo.h): written at once, a chunk could land in the half
-// being played, and the audio then jumped by a chunk every 4 ms.
+// push is deferred until the FIFO has had room for HRC_PROMPT_SETTLE_US (prompt_fifo.h): written at once, a chunk could
+// land in the half being played. The timer returns during that interval, so other interrupts can run.
 //
 // Sample format: mic buffer 16-bit native words; prompt FIFO 16-bit samples, low byte first (bench).
 //
@@ -47,6 +47,7 @@
 #define HALF			C7_PCM_SAMPLES	// 80
 #define SPK_BLOCKS		4	// two primed blocks, a third for decode jitter, one reserved for the producer
 #define SPK_PRIME_BLOCKS	2	// queued before the first push after the queue was emptied (spk_drop)
+#define SPK_POLL_US		2000u
 
 static int16_t mic_blk[2][AUDIO_BLOCK_SAMPLES];	// double buffered: the ISR fills one while the task reads the other
 static int16_t spk_q[SPK_BLOCKS][AUDIO_BLOCK_SAMPLES];
@@ -70,6 +71,9 @@ static bool spk_loud[SPK_BLOCKS];	// the queued block has a sample other than 0 
 static volatile uint32_t loud_pushed;	// hrc_micros() when the last chunk of a loud block went to the FIFO
 static volatile bool loud_recent;	// loud_pushed is set and less than FIFO_PLAY_MS old when last looked at
 static volatile uint8_t spk_gen;	// bumped by spk_drop: a block the task filled meanwhile is not queued
+static volatile bool fifo_settling;	// a room observation is waiting for its write; lifecycle changes cancel it
+static uint8_t fifo_gen;
+static uint32_t fifo_ready_at, fifo_poll_at;	// timer context: earliest write, next space check
 static volatile bool tx_gated;		// the DMR engine transmits: no ring play, no pushes
 static bool ring_want;			// the board's ring play (hrc_audio_pcm_ring), applied when not gated
 static uint32_t gate_at;		// hrc_micros() at the last close
@@ -126,49 +130,70 @@ static void isr_pcm_wr(void)
 
 static void gate_check(void);
 
-// Timer context: refill every 2 ms even while a voice decoder occupies the audio task. The FIFO holds only 8 ms,
-// less than a worst-case decode; servicing it from that task made every digital mode vulnerable to gaps.
-static void fifo_feed(void)
+// Timer context: a space check and its deferred write are separate interrupts. The audio task may be decoding for
+// longer than the FIFO's 8 ms capacity, but neither phase waits with all other interrupts masked.
+static uint32_t fifo_feed(void)
 {
 	if (!spk_routed || fifo_held || tx_gated) {
-		return;
+		fifo_settling = false;
+		return SPK_POLL_US;
+	}
+	if (fifo_settling && fifo_gen != spk_gen) {
+		fifo_settling = false;
 	}
 	if (!spk_primed) {
 		if ((uint8_t)((spk_head + SPK_BLOCKS - spk_tail) % SPK_BLOCKS) < SPK_PRIME_BLOCKS) {
-			return;
+			return SPK_POLL_US;
 		}
 		spk_primed = true;
 	}
-	bool full = false, pushed = false;
-	while (spk_tail != spk_head) {
-		uint8_t gen = spk_gen;
-		if (!hrc_prompt_push(modem, &spk_q[spk_tail][spk_pos])) {
-			full = true;
-			break;
-		}
-		if (gen != spk_gen) {
-			return;	// a gate edge emptied the queue during the push's wait: its state is spk_drop's, not ours
-		}
-		pushed = true;
-		if (spk_loud[spk_tail]) {
-			loud_pushed = hrc_micros();
-			loud_recent = true;
-		}
-		spk_pos = (uint8_t)(spk_pos + C7_PROMPT_CHUNK);
-		if (spk_pos >= AUDIO_BLOCK_SAMPLES) {
-			spk_pos = 0;
-			spk_tail = (uint8_t)((spk_tail + 1u) % SPK_BLOCKS);
-		}
+	if (spk_tail == spk_head) {
+		fifo_settling = false;
+		return SPK_POLL_US;
 	}
-	if (pushed && !full && loud_recent) {
+	if (!fifo_settling) {
+		if ((hrc7000_rd(modem, C7_AUDIO_CONTROL) & C7_AUDIO_RING_FULL) != 0) {
+			return SPK_POLL_US;
+		}
+		uint32_t now = hrc_micros();	// after observing room: the full settling interval remains
+		fifo_ready_at = now + HRC_PROMPT_SETTLE_US;
+		fifo_poll_at = now + SPK_POLL_US;
+		fifo_gen = spk_gen;
+		fifo_settling = true;
+		return HRC_PROMPT_SETTLE_US;
+	}
+	int32_t wait = (int32_t)(fifo_ready_at - hrc_micros());
+	if (wait > 0) {
+		return (uint32_t)wait;
+	}
+	fifo_settling = false;
+	// Lifecycle changes cannot interleave with this non-nested interrupt. The raw push rechecks FIFO space and
+	// writes at most one chunk; the next interrupt must make a fresh room observation before another write.
+	if (!hrc7000_prompt_push(modem, &spk_q[spk_tail][spk_pos])) {
+		return SPK_POLL_US;
+	}
+	if (spk_loud[spk_tail]) {
+		loud_pushed = hrc_micros();
+		loud_recent = true;
+	}
+	spk_pos = (uint8_t)(spk_pos + C7_PROMPT_CHUNK);
+	if (spk_pos >= AUDIO_BLOCK_SAMPLES) {
+		spk_pos = 0;
+		spk_tail = (uint8_t)((spk_tail + 1u) % SPK_BLOCKS);
+	}
+	if (spk_tail == spk_head && loud_recent) {
 		underruns++;	// this push emptied the queue (once per run-out, not per poll)
 	}
+	wait = (int32_t)(fifo_poll_at - hrc_micros());
+	return wait > 0 ? (uint32_t)wait : 1u;
 }
 
 static void fifo_tick(void)
 {
-	hrc_timer_ack(TIMER_PCM);
-	fifo_feed();
+	hrc_timer_stop(TIMER_PCM);	// one-shot timers stop and acknowledge at entry
+	if (running) {
+		hrc_timer_oneshot(TIMER_PCM, fifo_feed());
+	}
 }
 
 static void audio_task(void *arg)
@@ -222,17 +247,23 @@ void hrc_audio_pcm_attach(hrc7000_t *m, void (*speaker_pcm)(bool on))
 
 void hrc_audio_pcm_hold(bool on)
 {
+	uint32_t s = hrc_irq_save();
+	if (fifo_held != on) {
+		fifo_settling = false;	// another FIFO owner may write during even a brief hold
+	}
 	fifo_held = on;
+	hrc_irq_restore(s);
 }
 
-// Empty the speaker queue. Callers have interrupts off; a block the task is filling just then may still land, and at
-// most one chunk in the middle of a push reaches the FIFO (with ring play clear when gated, so it is never sent)
+// Empty the speaker queue and cancel its deferred write. Callers have interrupts off; the generation check also
+// discards a block the audio task is filling just then.
 static void spk_drop(void)
 {
 	spk_head = spk_tail = 0;
 	spk_pos = 0;
 	spk_primed = false;
 	spk_gen++;
+	fifo_settling = false;
 }
 
 static void ring_apply(void)
@@ -365,15 +396,18 @@ bool hrc_audio_pcm_start(audio_block_cb_t cb, void *ctx)
 	hrc7000_wr(modem, C7_INTERP_CLEAR, C7_INT_PCM_WR);
 	hrc_irq_enable(IRQ_PCM_WR, true);
 	hrc7000_audio_bits(modem, C7_AUDIO_PCM_MIC, 0);	// under the lock set at attach
-	hrc_timer_periodic(TIMER_PCM, 2000u);
+	hrc_timer_oneshot(TIMER_PCM, SPK_POLL_US);
 	hrc_irq_restore(irq);
 	return true;
 }
 
+// Stop callbacks and FIFO refills without draining queued speaker PCM. The caller releases the speaker route;
+// the next start drops any remaining queue contents.
 void hrc_audio_pcm_stop(void)
 {
 	uint32_t s = hrc_irq_save();	// the meter's interrupt decides on the same state
 	running = false;
+	fifo_settling = false;
 	hrc_timer_stop(TIMER_PCM);
 	block_cb = NULL;
 #if CONFIG_VOX

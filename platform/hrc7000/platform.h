@@ -80,13 +80,13 @@
 #define TMR_CTRL_INT_MASK	0x04u	// 1 = interrupt masked
 
 // Timer allocation: 1 = RTOS tick, 2 = free-running microsecond clock (no interrupt), 3 = DMR PA one-shot (as
-// stock; hardware-dm32.md 8.6), 4 = AFSK, 5 = the board's own, 6 free
+// stock; hardware-dm32.md 8.6), 4 = AFSK, 5 = the board's own, 6 = PCM FIFO check / deferred write
 #define TIMER_TICK		1
 #define TIMER_CLOCK		2
 #define TIMER_PA		3
 #define TIMER_AFSK		4	// APRS AFSK transmit: tops up the prompt FIFO (hrc_afsk.c)
-#define TIMER_PCM		6	// speaker FIFO refill, independent of blocking voice decoders
 #define TIMER_BOARD		5	// a board's one-shot (e.g. the waits of a board's own DMR burst sequence)
+#define TIMER_PCM		6	// speaker FIFO check / settled write, independent of blocking voice decoders
 
 // --- PIC: source s is CPU vector s + 32 (hardware-dm32.md 4) ---
 #define PIC_MODE		REG32(PIC_BASE + 0x00)

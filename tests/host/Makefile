@@ -1757,8 +1757,9 @@ run-webctlassets: httpAssetsTestWebctl
 
 TESTS += hrc7000PcmTest
 # The harness supplies the RTOS calls; existing empty headers keep it independent of target submodules.
-hrc7000PcmTest: hrc7000PcmTest.c $(ROOT)/platform/hrc7000/audio_pcm.c $(ROOT)/platform/hrc7000/prompt_fifo.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Iwatchdog_stub -DCONFIG_VOX=0 -o $@ $<
+hrc7000PcmTest: hrc7000PcmTest.c $(ROOT)/platform/hrc7000/audio_pcm.c $(ROOT)/platform/hrc7000/audio_pcm.h \
+	       $(ROOT)/platform/hrc7000/prompt_fifo.h $(ROOT)/drivers/modem/hrc7000/hrc7000.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Iwatchdog_stub -Wshadow -DCONFIG_VOX=0 -o $@ $<
 run: run-hrc-pcm
 run-hrc-pcm: hrc7000PcmTest
 	./hrc7000PcmTest

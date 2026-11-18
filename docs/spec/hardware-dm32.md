@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 Open25-DM32 Authors -->
 # Baofeng DM-32UV hardware
 
 This page covers what is needed to bring up the DM-32UV: SoC, memory, peripherals, pins, RF chip, audio, flash,
@@ -216,11 +217,12 @@ CONTROLREG: bit 0 enable, bit 1 user-defined (periodic reload) mode, bit 2 inter
 
 | Timer | Vector | Use |
 |---|---|---|
-| 1 (0x14000000) | 33 | Registered as the RTOS tick, **but never started** (see section 16) |
-| 2 (0x14000014) | 34 | 1 kHz system tick |
+| 1 (0x14000000) | 33 | RTOS tick (`TIMER_TICK`, started by the FreeRTOS port) |
+| 2 (0x14000014) | 34 | Free-running system clock (`TIMER_CLOCK`) |
 | 3 (0x14000028) | 35 | DMR PA one-shot (`TIMER_PA`) |
 | 4 (0x1400003C) | 36 | APRS AFSK: tops up the prompt FIFO (`TIMER_AFSK`) |
-| 5, 6 | 37, 38 | unused |
+| 5 (0x14000050) | 37 | Board sequence waits (`TIMER_BOARD`), including DMR RF burst timing |
+| 6 (0x14000064) | 38 | Speaker PCM FIFO readiness and deferred settling/write (`TIMER_PCM`) |
 
 ### 3.5 Watchdog (0x14010000)
 
