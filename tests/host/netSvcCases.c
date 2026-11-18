@@ -386,6 +386,7 @@ void radio_req_zone_pos(uint16_t pos) { req_zone_pos = pos; req_pos_n++; }
 void radio_req_channel_step(int8_t dir) { req_steps += dir; req_step_n++; }
 uint16_t codeplug_zone_count(void) { return 3; }
 static uint32_t fake_serial = 7;
+static int bump_after;	// > 0: the codeplug changes after this many more channel reads
 uint32_t codeplug_serial(void) { return fake_serial; }
 bool codeplug_zone(uint16_t index, zone_t *out)
 {
@@ -404,6 +405,9 @@ bool codeplug_zone(uint16_t index, zone_t *out)
 }
 bool codeplug_channel(uint16_t number, channel_t *out)
 {
+	if (bump_after > 0 && --bump_after == 0) {
+		fake_serial++;
+	}
 	memset(out, 0, sizeof(*out));
 	snprintf(out->name, sizeof(out->name), "Ch%u", number);
 	out->rx_hz = 446000000u + number * 12500u;
@@ -451,15 +455,50 @@ static void test_radio_api(void)
 	// /status has them too
 	CHECK(http_get(&a, 54002, "GET /status HTTP/1.0\r\n\r\n") > 0 && strstr(body_of(&a), "\"zone\":1,\"zone_pos\":1,\"zone_size\":2"));
 
-	// The zones, names escaped
-	CHECK(http_get(&a, 54003, "GET /api/zones HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, "application/json"));
+	// The whole structure in one reply, streamed with no Content-Length (the close ends it): every zone with its
+	// channel numbers, then each channel the zones name once, in number order
+	CHECK(http_get(&a, 54003, "GET /api/zones HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, "application/json") &&
+	      !strstr((char *)a.rx, "Content-Length") && a.fin);
 	const char *j = body_of(&a);
-	CHECK(strstr(j, "{\"zones\":3,\"zone\":1,\"codeplug\":7,\"from\":0,\"items\":[{\"zone\":0,\"name\":\"Local\",\"channels\":3},") &&
-	      strstr(j, "{\"zone\":1,\"name\":\"Rpt \\\"A\\\"\",\"channels\":2}") && strstr(j, "],\"next\":null}"));
+	CHECK(strncmp(j, "{\"codeplug\":7,\"zone\":1,\"pos\":1,\"vfo\":false,\"zones\":[{\"zone\":0,\"name\":\"Local\",\"channels\":[1,2,3]},"
+		      "{\"zone\":1,\"name\":\"Rpt \\\"A\\\"\",\"channels\":[101,102]},{\"zone\":2,\"name\":\"Big\",\"channels\":[201,202,", 160) == 0);
+	CHECK(strstr(j, ",280]}],\"channels\":[{\"number\":1,\"name\":\"Ch1\",") &&
+	      strcmp(j + strlen(j) - 4, "}]}\n") == 0);
+	{
+		int n = 0, last = 0;
+		bool order = true;
+		for (const char *q = j; (q = strstr(q, "{\"number\":")) != NULL; q++, n++) {
+			order = order && atoi(q + 10) > last;
+			last = atoi(q + 10);
+		}
+		CHECK(n == 3 + 2 + CODEPLUG_ZONE_MAX && order && last == 280);
+		CHECK(strstr(j, "{\"number\":2,\"name\":\"Ch2\",\"rx_hz\":446025000,\"tx_hz\":446025000,\"mode\":\"fm\",\"bw\":\"25\",\"power\":1,\"rx_tone\":\"100.0\",\"tx_tone\":\"D023I\"}"));
+	}
+	// HEAD: the header alone
+	CHECK(http_get(&a, 54006, "HEAD /api/zones HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 ") && strlen(body_of(&a)) == 0);
+	// Limits: the first N zones and M channels of each, and only those channels
+	CHECK(http_get(&a, 54007, "GET /api/zones?zones=2&per_zone=2 HTTP/1.0\r\n\r\n") > 0);
+	j = body_of(&a);
+	CHECK(strstr(j, "\"channels\":[1,2]},{\"zone\":1,\"name\":\"Rpt \\\"A\\\"\",\"channels\":[101,102]}],\"channels\":[{\"number\":1,") &&
+	      !strstr(j, "\"Big\"") && !strstr(j, "{\"number\":3,") && strstr(j, "{\"number\":102,") &&
+	      strcmp(j + strlen(j) - 4, "}]}\n") == 0);
+	CHECK(http_get(&a, 54008, "GET /api/zones?zones=0 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 400 "));
+	// The codeplug changing while it goes out: cut, so a client never keeps a mix of old and new
+	CHECK(peer_connect(&a, net_test_host_ip(), 54009, NET_HTTP_PORT));
+	bump_after = 20;
+	peer_send(&a, "GET /api/zones HTTP/1.0\r\n\r\n", 27);
+	for (int i = 0; i < 100 && !a.fin && !a.reset; i++) {
+		run_for(5);
+	}
+	fake_serial = 7;
+	CHECK(a.reset);
+	a.rx[a.rxn] = 0;
+	CHECK(!strstr((char *)a.rx, "}]}\n"));
+	run_for(100);
 	// A zone's channels: DMR with its talkgroup, FM without
 	CHECK(http_get(&a, 54004, "GET /api/zone?zone=0 HTTP/1.0\r\n\r\n") > 0);
 	j = body_of(&a);
-	CHECK(strstr(j, "{\"zone\":0,\"name\":\"Local\",\"channels\":3,\"codeplug\":7,\"from\":0,\"items\":[") &&
+	CHECK(strstr(j, "{\"zone\":0,\"name\":\"Local\",\"size\":3,\"codeplug\":7,\"from\":0,\"items\":[") &&
 	      strstr(j, "{\"pos\":0,\"number\":1,\"name\":\"Ch1\",\"rx_hz\":446012500,\"tx_hz\":446012500,\"mode\":\"dmr\",\"bw\":\"12.5\",\"cc\":1,\"ts\":2,\"tg\":3107,\"call\":\"group\",\"contact\":\"TG 3100\"}") &&
 	      strstr(j, ",{\"pos\":1,\"number\":2,\"name\":\"Ch2\",\"rx_hz\":446025000,\"tx_hz\":446025000,\"mode\":\"fm\",\"bw\":\"25\",\"power\":1,\"rx_tone\":\"100.0\",\"tx_tone\":\"D023I\"}") &&
 	      strstr(j, "],\"next\":null}"));

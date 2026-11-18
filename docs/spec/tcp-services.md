@@ -84,7 +84,7 @@ The client receives the engine's output (section 3) exactly as the serial port w
 
 ## 5. HTTP status server (port 80)
 
-HTTP/1.0 (RFC 1945): GET and HEAD, one request per connection, `Connection: close`, `Content-Length` always, no
+HTTP/1.0 (RFC 1945): GET and HEAD, one request per connection, `Connection: close`, `Content-Length` always (but `/api/zones`, 5.2), no
 keep-alive or chunking (HTTP/1.1 clients accept a 1.0 answer). The request line may be 95 bytes long (else 414);
 header lines are skipped, except `Sec-WebSocket-Key` (any case) for `/ws`; a request not complete within 10 s is reset. Responses carry `Cache-Control: no-store` and
 `Access-Control-Allow-Origin: *` (a web page on the host may poll the radio).
@@ -211,8 +211,8 @@ select a zone and channel directly, or step through them as a knob would, and re
 wants to know what they are. Zones and positions are 0-based indexes, the same in every request and reply.
 
 Control is short on purpose: a select or a step answers `{"ok":true}`, never channel data, and `/api/select` alone
-says where the radio is in two indexes. A client reads the structure once at its start (`/api/zones`, then each
-`/api/zone`) and keeps it, to show a channel's name, frequency or talkgroup when the indexes change. `codeplug` in
+says where the radio is in two indexes. A client reads the whole structure once at its start (`/api/zones`) and keeps
+it, to show a channel's name, frequency or talkgroup when the indexes change. `codeplug` in
 those replies counts the codeplug's changes (`codeplug_serial`: the radio's menus, a CPS or TFTP write); the client
 reads the lists again only when it differs from the one it read them with.
 
@@ -222,16 +222,33 @@ reads the lists again only when it differs from the one it read them with.
 | `GET /api/select?zone=Z[&pos=P]` | the host | zone Z, at position P or its first channel; leaves the VFO. `{"ok":true}` |
 | `GET /api/step?channel=N` | the host | N channels on, negative back (-100 to 100, not 0), wrapping in the zone; from the VFO, back to the channel first. `{"ok":true}` |
 | `GET /api/step?zone=N` | the host | N zones on, wrapping at the ends, to the zone's first channel. `{"ok":true}` |
-| `GET /api/zones[?from=I]` | anyone | `{"zones":n,"zone":Z,"codeplug":N,"from":I,"items":[{"zone","name","channels"}],"next":J}` |
-| `GET /api/zone?zone=Z[&from=I]` | anyone | `{"zone":Z,"name","channels":n,"codeplug":N,"from":I,"items":[...],"next":J}`, each item a channel (below) |
+| `GET /api/zones[?zones=N&per_zone=M]` | anyone | the whole structure in one reply (below); `zones` and `per_zone` keep it to the first N zones and their first M channels |
+| `GET /api/zone?zone=Z[&from=I]` | anyone | one zone in pages: `{"zone":Z,"name","size":n,"codeplug":N,"from":I,"items":[...],"next":J}`, each item a channel (below) with its `pos` |
 | `GET /api/channel` | anyone | what the radio is on now: `{"zone","pos","vfo",` and the channel's fields`}`; in the VFO its settings, `number` 0 |
 | `GET /api/channel?zone=Z&pos=P` | anyone | that channel: `{"zone","pos",` and its fields`}` |
 
-A channel, the same in `/api/zone`'s items and `/api/channel` (and the structure a later VFO setting will take):
+`/api/zones`:
+
+```
+{"codeplug":12,"zone":0,"pos":1,"vfo":false,
+ "zones":[{"zone":0,"name":"Local","channels":[1,2,3]},{"zone":1,"name":"Repeaters","channels":[3,40]}],
+ "channels":[{"number":1,"name":"Simplex",...},{"number":2,...},{"number":3,...},{"number":40,...}]}
+```
+
+- `zones` in order, each with its channels' numbers in position order: zone Z position P is `zones[Z].channels[P]`.
+- `channels`: each channel the zones name, once, in number order (a channel in two zones is sent once).
+- It is streamed: the server writes a buffer's worth of zones or channels as TCP takes it, never the whole in RAM,
+  with no `Content-Length` (the close ends it, RFC 1945 7.2.2). A channel takes about 125 bytes: 200 channels are about
+  25 KB, under a second over USB and 2-3 s over PPP at 115200 baud. The largest codeplug (68 zones, 1024 channels)
+  is under 200 KB.
+- If the codeplug changes while it goes out, the server cuts the connection: a client never keeps a mix. Read it again.
+- HEAD sends the header only.
+
+A channel, the same in `/api/zones`' and `/api/zone`'s items and `/api/channel` (and the structure a later VFO setting will take):
 
 | Field | |
 |---|---|
-| `pos number` | its position in the zone; its codeplug channel number (1 up; 0 the VFO) |
+| `pos number` | its position in the zone (not in `/api/zones`, where the zone's list gives it); its codeplug channel number (1 up; 0 the VFO) |
 | `name rx_hz tx_hz` | |
 | `mode` | `fm` `dmr` `p25` `nxdn` |
 | `bw` | `"12.5"` or `"25"` (kHz) |
@@ -242,8 +259,8 @@ A channel, the same in `/api/zone`'s items and `/api/channel` (and the structure
 | `tg call contact` | DMR with a talk target: its ID, `group` / `private` / `all`, its contact name |
 
 
-- A list is in pages of what fits the server's 1.5 KB buffer (about 7 channels, 30 zones): `next` is the `from` of
-  the next page, `null` after the last.
+- `/api/zone` is in pages of what fits the server's 1.5 KB buffer (about 7 channels): `next` is the `from` of the
+  next page, `null` after the last. It is for a client that wants one zone; most read `/api/zones`.
 - "The host" is the computer at the other end of the USB network or PPP link (`ipGatewayHostIP`), as for rigctld's PTT
   and web control. From elsewhere: 403.
 - Refused with 409 while transmitting or in hotspot mode, as the radio's keys are. 400 for an index out of range or a

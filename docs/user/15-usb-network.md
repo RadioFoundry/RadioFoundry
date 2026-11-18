@@ -149,16 +149,20 @@ Zones and channels are counted from 0, in the order the radio shows them.
 | `/api/select?zone=2&pos=5` | Zone 2, its sixth channel (without `pos`, its first) |
 | `/api/step?channel=1` | One channel on; `-1` one back; it wraps at the zone's ends |
 | `/api/step?zone=1` | One zone on, to its first channel; `-1` one back |
-| `/api/zones` | The zones: name and number of channels |
-| `/api/zone?zone=2` | Zone 2's channels: name, frequencies, mode, bandwidth, tones, and on DMR the color code, timeslot and talkgroup |
+| `/api/zones` | Everything in one reply: every zone with its channels, and each channel's name, frequencies, mode, bandwidth, tones, and on DMR the color code, timeslot and talkgroup |
+| `/api/zone?zone=2` | Zone 2 alone, with the same details |
 | `/api/channel` | The channel the radio is on now (or the VFO's settings), with the same details |
 | `/api/channel?zone=2&pos=5` | Zone 2's sixth channel, with the same details |
 
-Select and step answer only `{"ok":true}`. Read the zones and their channels once when your program starts, and keep
-them to show a channel's details when the zone or channel changes. `codeplug` goes up whenever the channels or zones
-change (on the radio, or a codeplug written to it): read the lists again when it does. Long lists come in pages:
-ask again with `&from=` set to the reply's `next`. Select and step work only from your computer, and not while the
-radio transmits or is a hotspot. Details: [tcp-services.md](../spec/tcp-services.md) 5.2.
+Select and step answer only `{"ok":true}`. Read `/api/zones` once when your program starts, and keep it to show a
+channel's details when the zone or channel changes: zone 2's sixth channel is `zones[2].channels[5]`, a number to
+look up in `channels`. A device with little memory can ask for less: `/api/zones?zones=32&per_zone=32`.
+
+`codeplug` goes up whenever the channels or zones change (on the radio, or a codeplug written to it): read
+`/api/zones` again when it does. `/api/zone` comes in pages: ask again with `&from=` set to the reply's `next`.
+
+Select and step work only from your computer, and not while the radio transmits or is a hotspot. Details:
+[tcp-services.md](../spec/tcp-services.md) 5.2.
 
 For example, with curl: `curl http://<radio address>/api/step?channel=1`.
 

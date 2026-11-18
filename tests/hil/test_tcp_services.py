@@ -237,11 +237,21 @@ def test_zone_channel_api(net):
     start = _where(ip)
     if start.get("vfo"):
         skip("bench", "the radio is in the VFO: put it on a channel")
-    zones = json.loads(_get(ip, "/api/zones")[2])
-    assert zones["zones"] >= 1 and zones["zone"] == start["zone"], zones
-    assert zones["codeplug"] == start["codeplug"], (zones, start)       # no edit in between
+    # The whole structure, as a client reads it at its start
+    t0 = time.monotonic()
+    plan = json.loads(_get(ip, "/api/zones", timeout=60)[2])
+    took = time.monotonic() - t0
+    assert plan["zone"] == start["zone"] and plan["codeplug"] == start["codeplug"], (plan["zone"], start)
+    nzones = len(plan["zones"])
+    assert nzones >= 1 and all(z["zone"] == i for i, z in enumerate(plan["zones"])), plan["zones"][:3]
+    by_number = {c["number"]: c for c in plan["channels"]}
+    assert set(by_number) == {n for z in plan["zones"] for n in z["channels"]}
+    here = plan["zones"][start["zone"]]["channels"]
+    print(f"/api/zones: {nzones} zones, {len(by_number)} channels in {took:.2f} s")
     zone = json.loads(_get(ip, f"/api/zone?zone={start['zone']}")[2])
+    assert zone["size"] == len(here), (zone["size"], here)
     item = next(i for i in zone["items"] if i["pos"] == start["pos"])
+    assert dict(by_number[item["number"]], pos=item["pos"]) == item, (by_number[item["number"]], item)
     assert item["rx_hz"] == int(link.view(["channel"])["ch.rx_hz"]), (item, zone)
     now = json.loads(_get(ip, "/api/channel")[2])
     assert now["vfo"] is False and now["zone"] == start["zone"] and now["pos"] == start["pos"], now
@@ -249,14 +259,14 @@ def test_zone_channel_api(net):
     one = json.loads(_get(ip, f"/api/channel?zone={start['zone']}&pos={start['pos']}")[2])
     assert {k: v for k, v in one.items() if k != "zone"} == item, (one, item)
     try:
-        if zone["channels"] > 1:
+        if zone["size"] > 1:
             assert json.loads(_get(ip, "/api/step?channel=1")[2]) == {"ok": True}
-            want = {"zone": start["zone"], "pos": (start["pos"] + 1) % zone["channels"], "codeplug": start["codeplug"]}
+            want = {"zone": start["zone"], "pos": (start["pos"] + 1) % zone["size"], "codeplug": start["codeplug"]}
             assert _wait_where(ip, want) == want
             assert json.loads(_get(ip, "/api/step?channel=-1")[2]) == {"ok": True}
             assert _wait_where(ip, start) == start
-        if zones["zones"] > 1:
-            other = (start["zone"] + 1) % zones["zones"]
+        if nzones > 1:
+            other = (start["zone"] + 1) % nzones
             _get(ip, f"/api/select?zone={other}&pos=0")
             want = {"zone": other, "pos": 0, "codeplug": start["codeplug"]}
             assert _wait_where(ip, want) == want

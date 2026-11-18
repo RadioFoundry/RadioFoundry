@@ -47,7 +47,7 @@
 #define USB_SWITCH_MS	500u	// /api/usb: the answer goes out and the connection closes before the link goes away
 
 enum { H_FREE, H_REQ, H_WAIT, H_SEND, H_WS };	// H_WS: webctl.c has the connection
-enum { SRC_NONE, SRC_MEM, SRC_BUF, SRC_BMP };
+enum { SRC_NONE, SRC_MEM, SRC_BUF, SRC_BMP, SRC_GEN };	// SRC_GEN: buf refilled by http_radio_more
 
 typedef struct {
 	uint8_t state;
@@ -277,10 +277,15 @@ static void respond_enc(int c, int code, const char *type, uint8_t src, const vo
 {
 	hconn_t *h = &hc[c];
 
+	char cl[28] = "";
+
+	if (src != SRC_GEN) {	// a generated body's length isn't known: the close ends it (RFC 1945 7.2.2)
+		dl_fmt(cl, sizeof(cl), "Content-Length: %u\r\n", (unsigned)len);
+	}
 	h->hlen = (uint16_t)dl_fmt(h->hdr, sizeof(h->hdr),
-				   "HTTP/1.0 %d %s\r\nContent-Type: %s\r\n%sContent-Length: %u\r\nConnection: close\r\n"
+				   "HTTP/1.0 %d %s\r\nContent-Type: %s\r\n%s%sConnection: close\r\n"
 				   "Cache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\n\r\n",
-				   code, reason(code), type, gz ? "Content-Encoding: gzip\r\n" : "", (unsigned)len);
+				   code, reason(code), type, gz ? "Content-Encoding: gzip\r\n" : "", cl);
 	h->hoff = 0;
 	h->src = src;
 	h->body = body;
@@ -536,6 +541,10 @@ static void dispatch(int c)
 	} else if (radiop) {
 		int code = http_radio(path, query, tcp_remote_ip(c), h->head, &t);
 
+		if (code == HTTP_RADIO_STREAM) {
+			respond(c, 200, "application/json", SRC_GEN, buf, (uint32_t)t.len);	// buf stays ours to the end
+			return;
+		}
 		if (code != 200) {
 			buf_owner = -1;
 			fail(c, (code == 0) ? 404 : code);
@@ -585,6 +594,25 @@ static void send_more(int c)
 			h->hoff = (uint16_t)(h->hoff + n);
 			continue;
 		}
+#if CONFIG_NET_RADIO_API
+		if ((h->boff >= h->blen) && (h->src == SRC_GEN) && !h->head) {
+			dl_text_t t;
+			int more;
+
+			dl_text_init(&t, buf, BUF_MAX);
+			more = http_radio_more(&t);
+			if (more < 0) {
+				tcp_abort(c);	// the codeplug changed under it: a cut reply, not a mixed one
+				release(c);
+				return;
+			}
+			if (more > 0) {
+				h->blen = (uint32_t)t.len;
+				h->boff = 0;
+				continue;
+			}
+		}
+#endif
 		if (h->boff >= h->blen) {
 #if CONFIG_NET_WEBCTL
 			if (h->ws) {

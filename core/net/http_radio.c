@@ -17,6 +17,7 @@
 #define REQ_GAP_MS	20u	// radio requests at most this often (the radio core's queue holds 16), as rigctld's
 #define ZONE_HOLD_MS	1000u	// a zone step counts from the last zone asked for this long (the view lags the request)
 #define STEP_MAX	100	// one request's step, either way
+#define ROOM_ZONE	560u	// a zone: its name escaped and 80 channel numbers
 #define ROOM_ITEM	420u	// the most one list item takes (both names escaped, every field); a page ends before it
 				// would not fit
 
@@ -68,29 +69,6 @@ static void next_field(dl_text_t *t, uint32_t next, uint32_t count)
 	} else {
 		dl_text(t, "],\"next\":null}\n");
 	}
-}
-
-// GET /api/zones[?from=N]: {"zones":Z,"zone":current,"from":N,"items":[{"zone":i,"name":..,"channels":n}],"next":..}
-static int zones_json(const char *q, dl_text_t *t)
-{
-	int32_t from = 0;
-	uint16_t count = codeplug_zone_count();
-	if (q != NULL && strstr(q, "from=") != NULL && (!query_int(q, "from", &from) || from < 0)) {
-		return 400;
-	}
-	dl_text(t, "{\"zones\":%u,\"zone\":%u,\"codeplug\":%u,\"from\":%u,\"items\":[", count,
-		net_radio_view()->zone_index, (unsigned)codeplug_serial(), (unsigned)from);
-	uint32_t i = (uint32_t)from;
-	for (; i < count && t->len + ROOM_ITEM < t->cap; i++) {
-		if (!codeplug_zone((uint16_t)i, &zone)) {
-			continue;
-		}
-		dl_text(t, "%s{\"zone\":%u,\"name\":", (i > (uint32_t)from) ? "," : "", (unsigned)i);
-		http_json_str(t, zone.name);
-		dl_text(t, ",\"channels\":%u}", zone.count);
-	}
-	next_field(t, i, count);
-	return 200;
 }
 
 // A subtone as radio programs write it: "100.0" (CTCSS), "D023N" or "D023I" (DCS)
@@ -173,7 +151,94 @@ static int channel_req(const char *q, dl_text_t *t)
 	return 200;
 }
 
-// GET /api/zone?zone=Z[&from=N]: {"zone":Z,"name":..,"channels":n,"from":N,"items":[...],"next":..}
+// GET /api/zones[?zones=N&per_zone=M]: the whole structure in one reply, streamed (a buffer at a time as TCP takes
+// it, never all in RAM): {"codeplug","zone","pos","vfo","zones":[{"zone","name","channels":[numbers]}],
+// "channels":[{"number", fields}]}, each channel once, those the zones name. zones and per_zone keep it to the first
+// N zones and their first M channels, for a client with little memory
+enum { GEN_IDLE, GEN_ZONES, GEN_CHANNELS };
+static struct {
+	uint8_t phase;
+	bool first;		// the next item is the first of its list (no comma)
+	uint16_t zone, zones, per_zone;	// the next zone; the limits
+	uint16_t number;	// the next channel number to look at
+	uint32_t serial;	// the codeplug's change count at the start: a change cuts the reply
+	uint8_t used[CODEPLUG_CHANNELS_MAX / 8u];	// channels the zones sent name
+} gen;
+
+static int dump_start(const char *q, bool head, dl_text_t *t)
+{
+	int32_t zn = 0, pz = 0;
+	if (q != NULL && ((strstr(q, "zones=") != NULL && (!query_int(q, "zones", &zn) || zn < 1)) ||
+			  (strstr(q, "per_zone=") != NULL && (!query_int(q, "per_zone", &pz) || pz < 1)))) {
+		return 400;
+	}
+	const radio_view_t *v = net_radio_view();
+	uint16_t count = codeplug_zone_count();
+	memset(&gen, 0, sizeof(gen));
+	gen.serial = codeplug_serial();
+	gen.zones = (zn > 0 && zn < count) ? (uint16_t)zn : count;
+	gen.per_zone = (pz > 0 && pz < CODEPLUG_ZONE_MAX) ? (uint16_t)pz : CODEPLUG_ZONE_MAX;
+	gen.first = true;
+	gen.phase = head ? GEN_IDLE : GEN_ZONES;
+	dl_text(t, "{\"codeplug\":%u,\"zone\":%u,\"pos\":%u,\"vfo\":%s,\"zones\":[", (unsigned)gen.serial,
+		v->zone_index, v->zone_pos, v->vfo ? "true" : "false");
+	return HTTP_RADIO_STREAM;
+}
+
+int http_radio_more(dl_text_t *t)
+{
+	if (gen.phase == GEN_IDLE) {
+		return 0;
+	}
+	if (codeplug_serial() != gen.serial) {
+		gen.phase = GEN_IDLE;
+		return -1;
+	}
+	while (gen.phase == GEN_ZONES && t->len + ROOM_ZONE < t->cap) {
+		if (gen.zone >= gen.zones) {
+			dl_text(t, "],\"channels\":[");
+			gen.phase = GEN_CHANNELS;
+			gen.number = 1;
+			gen.first = true;
+			break;
+		}
+		if (codeplug_zone(gen.zone, &zone)) {
+			dl_text(t, "%s{\"zone\":%u,\"name\":", gen.first ? "" : ",", gen.zone);
+			http_json_str(t, zone.name);
+			dl_text(t, ",\"channels\":[");
+			for (uint16_t i = 0; i < zone.count && i < gen.per_zone; i++) {
+				uint16_t n = zone.channels[i];
+				dl_text(t, "%s%u", i ? "," : "", n);
+				if (n >= 1 && n <= CODEPLUG_CHANNELS_MAX) {
+					gen.used[(n - 1u) / 8u] |= (uint8_t)(1u << ((n - 1u) % 8u));
+				}
+			}
+			dl_text(t, "]}");
+			gen.first = false;
+		}
+		gen.zone++;
+	}
+	while (gen.phase == GEN_CHANNELS && t->len + ROOM_ITEM < t->cap) {
+		if (gen.number > CODEPLUG_CHANNELS_MAX) {
+			dl_text(t, "]}\n");
+			gen.phase = GEN_IDLE;
+			break;
+		}
+		uint16_t n = gen.number++;
+		channel_t ch;
+		if ((gen.used[(n - 1u) / 8u] & (1u << ((n - 1u) % 8u))) == 0 || !codeplug_channel(n, &ch)) {
+			continue;
+		}
+		dl_text(t, "%s{\"number\":%u", gen.first ? "" : ",", n);
+		channel_fields(t, &ch);
+		dl_text(t, "}");
+		gen.first = false;
+	}
+	return (t->len > 0) ? 1 : 0;
+}
+
+// GET /api/zone?zone=Z[&from=N]: one zone in pages, each item a channel with its position:
+// {"zone":Z,"name":..,"size":n,"codeplug":..,"from":N,"items":[...],"next":..}
 static int zone_json(const char *q, dl_text_t *t)
 {
 	int32_t z, from = 0;
@@ -186,7 +251,7 @@ static int zone_json(const char *q, dl_text_t *t)
 	}
 	dl_text(t, "{\"zone\":%u,\"name\":", (unsigned)z);
 	http_json_str(t, zone.name);
-	dl_text(t, ",\"channels\":%u,\"codeplug\":%u,\"from\":%u,\"items\":[", zone.count, (unsigned)codeplug_serial(),
+	dl_text(t, ",\"size\":%u,\"codeplug\":%u,\"from\":%u,\"items\":[", zone.count, (unsigned)codeplug_serial(),
 		(unsigned)from);
 	uint32_t i = (uint32_t)from;
 	for (; i < zone.count && t->len + ROOM_ITEM < t->cap; i++) {
@@ -315,7 +380,7 @@ int http_radio(const char *path, const char *query, uint32_t from_ip, bool head,
 	int code;
 	if (strcmp(path, "/api/zones") == 0) {
 		st.lists++;
-		return zones_json(query, t);
+		return dump_start(query, head, t);
 	}
 	if (strcmp(path, "/api/zone") == 0) {
 		st.lists++;
