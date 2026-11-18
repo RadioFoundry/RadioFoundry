@@ -112,13 +112,15 @@ export function importRows(m, rows, zoneName = "CHIRP", notes = new Map()) {
 			note("bad_frequency");
 			continue;
 		}
-		if (r.duplex === "+" || r.duplex === "-") {
-			if (off === null) note("bad_frequency");
-			else txHz = r.duplex === "+" ? rxHz + off : rxHz - off;
-		} else if (r.duplex === "split") {
-			// the offset column holds the transmit frequency
-			if (off === null) note("bad_frequency");
-			else txHz = off;
+		// A repeater channel without a usable transmit frequency is receive only: simplex would transmit on its output
+		let rxOnly = r.duplex === "off";
+		if (r.duplex === "+" || r.duplex === "-" || r.duplex === "split") {
+			// split: the offset column holds the transmit frequency
+			const tx = off === null ? null : r.duplex === "split" ? off : r.duplex === "+" ? rxHz + off : rxHz - off;
+			if (tx === null || tx <= 0) {
+				note("bad_frequency");
+				rxOnly = true;
+			} else txHz = tx;
 		}
 		const t = r._tx !== undefined ? { tx: r._tx, rx: r._rx } : tones(r, note);
 		let name = r.name || `${(rxHz / 1e6).toFixed(4)}`;
@@ -127,8 +129,8 @@ export function importRows(m, rows, zoneName = "CHIRP", notes = new Map()) {
 			note("shortened");
 		}
 		made.push({
-			number: null, name, rxHz, txHz: r.duplex === "off" ? rxHz : txHz, mode: "fm", power: power(r.power), tot: 0,
-			rxTone: t.rx, txTone: t.tx, bw: mode === "NFM" ? 12.5 : 25, rxOnly: r.duplex === "off", allSkip: r.skip === "S",
+			number: null, name, rxHz, txHz, mode: "fm", power: power(r.power), tot: 0,
+			rxTone: t.rx, txTone: t.tx, bw: mode === "NFM" ? 12.5 : 25, rxOnly, allSkip: r.skip === "S",
 			zoneSkip: false, vox: false, squelch: 0, colorCode: 0, timeslot: 1, contact: null, rxList: null, aprs: null,
 			dmrId: 0, noBeep: false, noEco: false, dmo: false, roam: false, aliasTs1: 0, aliasTs2: 0, useLocation: false,
 			lat: 0, lon: 0, sfr: false, sfrA: 0, sfrB: 0, toneBurst: false,

@@ -174,3 +174,23 @@ test("an image channel with no TX frequency is receive only, not simplex", () =>
 	assert.deepEqual([c.name, c.rxOnly, c.txHz], ["SIMPLEX", true, 146520000]);
 	assert.equal(m.channels[1].rxOnly, false);
 });
+
+test("a repeater row without a usable transmit frequency is receive only, not simplex", () => {
+	const row = (n, name, duplex, offset) =>
+		`${n},${name},146.94,${duplex},${offset},,88.5,88.5,023,NN,023,Tone->Tone,FM,5,,,,,,,`;
+	const rows = [row(0, "NoOff", "-", ""), row(1, "Below0", "-", "200.0"), row(2, "Split0", "split", "0"),
+		row(3, "Good", "-", "0.6")];
+	const m = empty();
+	const { notes } = importChirp(m, `${HEAD}\n${rows.join("\n")}\n`);
+	assert.deepEqual(m.channels.map((c) => [c.name, c.rxOnly, c.txHz]), [["NoOff", true, 146940000],
+		["Below0", true, 146940000], ["Split0", true, 146940000], ["Good", false, 146340000]]);
+	assert.deepEqual(notes, [{ code: "bad_frequency", n: 3 }]);
+});
+
+test("an image channel whose TX bytes aren't a frequency is receive only", () => {
+	const b = image();
+	b.fill(0x00, 8 + 4, 8 + 8);	// channel 0's TX frequency all zero, not 0xFF
+	const m = empty();
+	importChirpImg(m, b);
+	assert.deepEqual([m.channels[0].rxOnly, m.channels[0].txHz], [true, 146520000]);
+});

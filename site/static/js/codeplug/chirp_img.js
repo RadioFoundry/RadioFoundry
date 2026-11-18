@@ -10,7 +10,8 @@
 //                  unused, TX all 0xFF = no transmit), RX tone and TX tone (2 bytes each), 4 flag bytes
 //   0x1008 + 16 n  its name, 0xFF padded
 // A tone is 0 or 0xFFFF for none, 600 to 3000 for a CTCSS tone in tenths of a hertz, or 1 to 104 for the DCS code
-// at that place in the standard code list (below; the samples confirm places 53 and 65). Flags: byte 2 bit 0 = low power; byte 3 bit 6 = wide, bit 2 = in
+// at that place in the standard code list (below; the samples confirm places 53 and 65). Flags: byte 2 bit 0 = low
+// power; byte 3 bit 6 = wide, bit 2 = in
 // the scan list. Reversed DCS polarity is not seen in the sample, so it is not read.
 
 import { importRows, ChirpError } from "./chirp.js";
@@ -101,7 +102,7 @@ export function importChirpImg(m, bytes, zoneName = "CHIRP") {
 		const txOff = bytes.subarray(o + 4, o + 8).every((x) => x === 0xFF);
 		// CSV columns the shared reader takes; the offset column holds the TX frequency for a split
 		rows.push({
-			name, frequency: (rx / 1e6).toFixed(6), duplex: txOff ? "off" : tx === rx || tx === null ? "" : "split",
+			name, frequency: (rx / 1e6).toFixed(6), duplex: txOff ? "off" : tx === rx ? "" : "split",
 			offset: tx === null ? "" : (tx / 1e6).toFixed(6), mode: f3 & 0x40 ? "FM" : "NFM", skip: f3 & 0x04 ? "" : "S",
 			power: flags & 1 ? "1.0W" : "4.0W", _rx: a ?? "", _tx: b ?? "",
 		});
