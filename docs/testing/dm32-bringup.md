@@ -191,6 +191,11 @@ The HR_C7000 copies its FM receive audio to the CPU (`modem-hrc7000.md` 8.5). AP
 | An FM signal on 144.390 with the squelch open | heard on the speaker, through the C7000's FM playback | AUDIO_CONTROL bit 6, the codec line out |
 | A packet sent at level 50, recorded by the SDR bench (`aprs.md` 13) | decodes with a valid FCS, about 3 kHz peak deviation, twist within 2 dB | no tones: AUDIO_CONTROL bit 7 during the transmission, Timer 4 (vector 36) not firing. Deviation: `amp_per_level` in `radio_dm32.c` |
 
+## NXDN scrambler interoperability
+
+Manual on-air testing with firmware commit `e6e2799f` confirmed scrambled NXDN voice between Baofeng DM-32UV
+radios and between a DM-32UV and Kenwood 5000-series radios.
+
 ## Open items to settle on the bench
 
 - PIC: vectored (32 + source) works: the DMR slot, RF TX and PCM interrupts all arrive (settled on the radio).

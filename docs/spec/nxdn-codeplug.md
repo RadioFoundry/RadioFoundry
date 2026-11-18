@@ -20,7 +20,7 @@ Key 0x0A00 + 4 ([channel-modes.md](channel-modes.md) 5.5):
 |---|---|---|
 | 0 | 2 | Unit ID, 1 to 65519; 0, absent or out of range = the radio's DMR ID where it is 1 to 65519, else 1 |
 
-A channel's own unit ID is the record's per-channel DMR ID, where it is 1 to 65519; the narrowest one set counts, followed by the system's unit ID and the radio-wide unit ID. IDs
+A channel's own unit ID is the record's per-channel DMR ID, where it is 1 to 65519. Otherwise, use the system's unit ID if set and valid, then the radio-wide unit ID. IDs
 above 65519 are special (TS 1-B) and never a radio's. The VFO keeps its own unit ID ([nxdn.md](nxdn.md) 6.2).
 
 ## 2. Conventional channel (kind 4)
@@ -32,11 +32,14 @@ The tag ([channel-modes.md](channel-modes.md) 2): optional system of type 4, fla
 | 0 | 1 | Bits 0-1 squelch: 0 RAN (every call of the RX RAN), 1 selective (2.1); 2 and 3 read as RAN. Bit 2: 4800 bit/s; clear: 9600 bit/s. Bits 3-7: 0 |
 | 1 | 1 | RX RAN, 0 to 63; 0 = every RAN (TS 1-B 4.1.7.1). Above 63 reads as 0 |
 | 2 | 1 | TX RAN: bit 7 set = bits 5-0 hold it (0 to 63); clear = the RX RAN, 1 when the RX RAN is 0. Bit 6: 0, set reads as clear |
+| 3 | 1 | Optional transmit cipher: 0 clear, 1 NXDN scrambler |
+| 4 | 1 | Transmit key ID, 0 to 63 when the cipher is 1 |
 
 A zeroed block, or none, is 9600 bit/s, RAN squelch, every RAN received and RAN 1 sent; with the tag's flag bit 0
-clear, receive only. Both rates use 12.5 kHz channel settings ([nxdn.md](nxdn.md) 9). The Web CPS appends byte 3 (cipher, 1 for scrambler) and byte 4 (key ID, 0–63) when a transmit key is selected.
-An absent or zero cipher selects clear transmission. A nonzero cipher without a valid system, supported algorithm,
-or valid key blocks transmission.
+clear, receive only. Both rates use 12.5 kHz channel settings ([nxdn.md](nxdn.md) 9).
+The original parameter block is three bytes. The Web CPS writes the five-byte form when a transmit key is selected.
+An absent or zero transmit cipher selects clear transmission. A nonzero cipher blocks transmission if the key ID
+byte is missing, the cipher is unsupported, or the channel's NXDN Conventional system has no valid matching key.
 
 The base record carries:
 
