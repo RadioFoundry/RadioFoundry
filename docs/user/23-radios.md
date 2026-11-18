@@ -14,8 +14,9 @@ and what has been checked on it.
 | [Baofeng DM-1801 Pro](#baofeng-dm-1801-pro) | Baofeng DM-1801 | FM with CTCSS/DCS, DMR voice with the radio's own codec, DMR data and text, the hotspot, single frequency repeating, the PPP network services and each split duplex half work on air. Open: VHF transmit and VOX. |
 | [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings storage work on the radio. The older FD6818 batches run the same image, untested on a radio. Open: the Retevis RT73. |
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
-| [TYT MD-UV380](#tyt-md-uv380) | TYT MD-UV390, Retevis RT3S, TYT MD-UV390 Plus 10 W | Built on the UV380 family code with the MD-UV380's keys, display, power tables and GPS; nothing has run on a radio yet. Open: every function on air. |
+| [TYT MD-UV380](#tyt-md-uv380) | TYT MD-UV390, Retevis RT3S, TYT MD-UV390 Plus 10 W | Built on the UV380 family code, with the MD-UV380's keys, display, power tables and GPS. Run on radios by community testers. |
 | [TYT MD-9600](#tyt-md-9600) | Retevis RT90 | One image serves every board revision. On a V1-V3 radio, FM and DMR on both bands, DMR voice and data, text messages, roaming, scan, dual watch, APRS, the hotspot, each split duplex half and the USB network services work on air, with every power level checked on a wattmeter on both bands. V4A/V5 boards are detected; on older boards the radio asks for the revision once. Open: V4 and V4A/V5 boards have not run on a radio, and SFR loses inbound voice frames. |
+| [Retevis RT10](#retevis-rt10) |  | Boots from the boot ROM with the host link, stub entry, the watchdog and the crash log. FM receive with CTCSS/DCS decode, FM transmit, DMR transmit and receive with the radio's own codec, P25 (conventional, and trunked transmit) and NXDN at 4800 bit/s on stored channels, and APRS transmit work on the radio. |
 <!-- end generated -->
 
 [Planned radios](#planned-radios) lists the radios that aren't built yet.
@@ -181,14 +182,14 @@ The side keys are, top to bottom, SK1, **PTT**, SK2 and SK3.
 
 ### DM-1701 power levels
 
-Nine levels: 50 mW, 250 mW, 500 mW, 750 mW, 1 W, 2 W, 3 W, 4 W, 5 W. The values are nominal and use the radio's
-factory calibration.
+Five levels: 100 mW, 500 mW, 1 W, 2.5 W, 5 W. The values are nominal and use the radio's factory calibration. They
+haven't been measured with a wattmeter.
 
 | Way to change it | Levels |
 |---|---|
 | A channel without a power in the codeplug | 1 W |
-| **\***, **1** | 50 mW, 1 W, 5 W |
-| SK3 on Home | All nine, one per press |
+| **\***, **1** | 100 mW, 1 W, 5 W |
+| SK3 on Home | All five, one per press |
 
 ### DM-1701 battery
 
@@ -218,8 +219,9 @@ manual are this size.
 ### What the DM-1701 lacks
 
 - No GPS from the factory. LRRP location requests get "no fix". APRS positions come from a computer or a fixed
-  position. If you fit a GPS module yourself, wire its NMEA output to PA10 (STM32 pin 69). The radio finds it at
-  start-up ([hardware-dm1701.md 14.2](../spec/hardware-dm1701.md#142-gps-module)).
+  position. If you fit a GPS module yourself, wire its NMEA output to PA10 (STM32 pin 69) and its power enable, if it
+  has one, to PA9. The radio finds it at start-up ([hardware-dm1701.md 14.2](../spec/hardware-dm1701.md#142-gps-module))
+  and powers it only while **Settings > Location > GPS** is on.
 - APRS receive needs the squelch open: the radio hears packets strong enough to open the squelch, not weaker ones.
 - No APRS iGate (passing heard packets to APRS-IS): it doesn't fit in the flash yet.
 - No vibration motor: **Settings > Sound > Vibrate** isn't in the image.
@@ -291,8 +293,9 @@ bootloader starts when you hold **PTT** and the side key just above it at power-
 One band per radio: UHF (400-480 MHz) or VHF (136-174 MHz). There is one image for each band, and an image refuses
 the other band.
 
-Two power levels, 1 W and 5 W. A channel without a power in the codeplug uses 1 W. **\***, **1** switches between the
-two. The radio refuses to transmit without a valid factory calibration.
+Five power levels: 100 mW, 500 mW, 1 W, 2.5 W, 5 W. 1 W and 5 W are the factory calibration's; the others are set from
+them and haven't been measured with a wattmeter. A channel without a power in the codeplug uses 1 W. **\***, **1**
+steps through 100 mW, 1 W and 5 W. The radio refuses to transmit without a valid factory calibration.
 
 ### MD-380 battery
 
@@ -319,11 +322,11 @@ A 160 x 128 color screen, every row visible. The controller type is unconfirmed.
 - Audio linking (USRP, [USB network](15-usb-network.md#linking-audio-allstarlink-and-dvswitch)) carries DMR only: the
   FM transmit path from the processor isn't written.
 - GPS only on the "G" models. The radio listens for the GPS module for 5 s at start-up and hides the GPS features if
-  it hears nothing. **Settings > Location > GPS** off only stops APRS using the fix; the module stays powered.
+  it hears nothing. Once heard, the module is powered only while **Settings > Location > GPS** is on, which takes
+  effect at once.
 - No vibration motor: **Settings > Sound > Vibrate** isn't in the image.
-- Some early VHF radios may have a 1 MB memory chip instead of 16 MB (not yet confirmed on a radio). RadioFoundry
-  can't store a codeplug on it: settings are lost when the radio is turned off, and the Codeplug Editor and the
-  web installer say so. A backup still saves the whole chip.
+- Some early VHF radios have a 1 MB memory chip instead of 16 MB. RadioFoundry keeps settings and the codeplug on it
+  as on other radios; the DMR ID database is limited to what fits.
 
 ## TYT MD-UV380
 
@@ -360,8 +363,8 @@ No **P1**, **P2**, **SK3** or top key, so no **Power level** or zone keys and no
 
 ### MD-UV380 power levels
 
-Nine levels as on the DM-1701, 50 mW to 5 W. On the MD-UV390 Plus 10 W image the top four are 2, 3, 5 and 10 W. A
-channel without a power in the codeplug uses 1 W. The radio refuses to transmit without a valid factory calibration.
+Nine levels: 50 mW, 250 mW, 500 mW, 750 mW, 1 W, 2 W, 3 W, 4 W, 5 W. On the MD-UV390 Plus 10 W image the top four are
+2, 3, 5 and 10 W. A channel without a power in the codeplug uses 1 W. The radio refuses to transmit without a valid factory calibration.
 
 ### MD-UV380 battery
 
@@ -380,7 +383,8 @@ A 160 x 128 color screen, every row visible.
 
 - No vibration motor: **Settings > Sound > Vibrate** isn't in the image.
 - GPS only on the G models. The radio powers the module for 5 s at start-up and hides the GPS features if it hears
-  nothing; then the module is switched off again.
+  nothing; then the module is switched off again. Once heard, the module is powered only while **Settings > Location >
+  GPS** is on, which takes effect at once.
 - Nothing is checked on a radio yet: treat every function as untested.
 
 ## Baofeng DM-32UV
@@ -421,7 +425,7 @@ hold), or change the power with **\***, **1**.
 
 ### DM-32UV power levels
 
-Nine levels, L-, L, L+, L++, M, M+, M++, H-, H, from the radio's factory calibration. The radio is rated 5 W (VHF) and
+Five levels, L-, L, M, M+, H, from the radio's factory calibration. The radio is rated 5 W (VHF) and
 4 W (UHF) at high power. The levels haven't been measured. A channel without a power in the codeplug uses L.
 **\***, **1** steps through L-, L and H.
 
@@ -540,7 +544,9 @@ timeout Off until it is switched off. Switch the radio off before unplugging the
 
 ### DB25-D PRO power and supply
 
-Two levels, L and H (nominal 20 W). The radio refuses to transmit until RadioFoundry can read its power calibration.
+Five levels: L--, L-, L, M, H. L and H (nominal 20 W) are the factory calibration's; the others are set from them and
+haven't been measured. A channel without a power in the codeplug uses L. The radio refuses to transmit until
+RadioFoundry can read its power calibration.
 
 The radio runs from a 13.8 V supply and has no battery. The status line shows no battery icon or percentage, Tools has
 no Battery page, and Settings > Power saving has no Battery saver or Low battery warning. RadioFoundry doesn't read the supply
@@ -645,8 +651,9 @@ installation) or from a codec the browser kept. Untested on a DM-1801 Pro from t
 
 ### DM-1801 Pro power and display
 
-Three power levels, L, M and H, Low, Middle and High. The radio refuses to transmit until RadioFoundry can
-read its factory calibration. The battery
+Five power levels: L--, L-, L, M, H. L, M and H are the factory calibration's Low, Middle and High; the two under L are
+set from L and haven't been measured. A channel without a power in the codeplug uses L. The radio refuses to transmit
+until RadioFoundry can read its factory calibration. The battery
 reading is scaled from a measurement on one radio. The screen is monochrome; the backlight is on or off.
 The radio vibrates for messages, call alerts and emergencies (**Settings > Sound > Vibrate**).
 
@@ -661,6 +668,51 @@ The radio vibrates for messages, call alerts and emergencies (**Settings > Sound
 - Air band and FM broadcast receive
   ([Air band and FM broadcast](07-channels-zones-vfo.md#air-band-and-fm-broadcast)) are built in but not checked on
   the radio yet. Broadcast covers 65 to 108 MHz.
+
+## Retevis RT10
+
+A handheld for 902-928 MHz with a 16-position channel knob, two side keys and no display. FM receive with CTCSS
+and DCS decode, FM transmit, DMR transmit and receive with the radio's own codec, and APRS transmit work on the radio.
+DMR speech to the speaker isn't checked yet ([hardware and bring-up state](../spec/hardware-rt10.md#9-bring-up-state)).
+
+### Installing on the RT10
+
+The radio has no bootloader of its own: the chip's boot window on the programming cable is the way in, at every power-on.
+
+| Item | RT10 |
+|---|---|
+| Cable | the radio's programming cable on the accessory jack, with an FTDI chip. A CH340 cable that works with other radios got no answer from the RT10 ([cables tried](../spec/hardware-rt10.md#31-the-cable-line)) |
+| Keys | none: turn the radio on when the tool asks |
+| Backup | installing replaces the whole original image. Only a full program flash backup taken first puts it back |
+| Board name | `rt10` |
+
+### The RT10's channel knob
+
+The knob picks the channel by where it points: positions 1 to 16 are the first 16 channels of the zone, in the
+zone's order, also when the radio is switched on and when the zone changes. A position past the end of a shorter zone
+changes nothing.
+
+### RT10 power levels
+
+Two, **L** and **H**: the radio's own factory calibration for each 10 MHz step. Without a valid calibration the
+radio refuses to transmit.
+
+### If the RT10's LEDs flash red and green fast
+
+The cable line is stuck low. The radio won't transmit until the line is released: switch the radio off and on again. Holding PTT for more than 2 s while the radio starts shows the same flash until the key is let go.
+
+A programming cable can hold the line low by itself. Then the flash starts whenever that cable is in and stops when it is pulled out, and the radio receives nothing from the computer: use another cable ([Installing](02-installing.md#if-something-goes-wrong)).
+
+### What the RT10 lacks today
+
+- The network over the programming cable (PPP) and the services on it. The cable's line latches when the computer
+  and the radio send at the same time, and only switching the radio off frees it, so PPP is off by default in the
+  RT10 build. A custom build can turn it on, at that risk.
+- Hotspot mode. The hotspot software on the computer also sends at any time, so it may latch the line the same way.
+  The hotspot is off by default in the RT10 build until that is resolved. A custom build can turn it on, at that risk.
+- GPS. The radio has no receiver, so DMR position reports and LRRP location replies are off by default in the RT10
+  build.
+- The battery scale.
 
 ## TYT MD-9600
 
@@ -686,7 +738,7 @@ accepted:
 |---|---|
 | MD-9600 V1-V3 boards | TYT `MD9600-CSV-V06.09.bin` and the rest of the 06.09, 06.24 and 06.03 files; the older `MD9600-REC-D03.28.bin`, `-D03.29.bin` and `-D04.03.bin` |
 | MD-9600 V4 | TYT `MD9600-CSV(V4)-V16.45.bin` and the 16.24 and 16.45 files |
-| MD-9600 V5 and Retevis RT90 | the file the radio came with: TYT `MD9600-CSV(2571V5)-V26.45.bin` and the other 26.45 files, `MD9600-REC(2571V4)-D26.57.bin`, or Retevis `RT90-CSV(2571V5)-V26.41.bin`, `RT90-REC(2571V5)-D26.38.bin`, `RT90-CSV-GPS(2571V5)-P26.41.bin` and `RT90-GPS-REC(2571V5)-S26.42.bin` |
+| MD-9600 V5 and Retevis RT90 | the file the radio came with: TYT `MD9600-CSV(2571V5)-V26.45.bin` and the other 26.45 files, `MD9600-REC(2571V4)-D26.57.bin`, or Retevis `RT90-CSV(2571V5)-V26.41.bin`, `RT90-REC(2571V5)-D26.38.bin`, `RT90-CSV-GPS(2571V5)-P26.41.bin` and `RT90-GPS-REC(2571V5)-S26.42.bin`, or TYT `MD9600-AES-GPS-REC(2571V5)-S126.61.bin` |
 
 The CSV, CSV-GPS, REC and GPS-REC variants of one version all work. The full list with hashes is in
 [codec-md9600.md](../spec/codec-md9600.md#stock-files). No V5 radio has run these files yet: the checks so far ran their
@@ -738,13 +790,13 @@ models it covers.
 <!-- generated: tools/boards.py docs planned; edit the Port cells of docs/spec/radios.md -->
 | Radio | Status |
 |---|---|
+| Anytone AT-D868UV / AT-D878UV / AT-D878UVII Plus, BTECH DMR-6X2, Alinco DJ-MD5, Radioddity GD-AT10G | In progress ([#291](https://github.com/radiofoundry/radiofoundry/pull/291)). A new platform (GD32F30x) and a new DMR chip (SCT3258, which runs the vocoder itself), so it starts the Anytone family ([hardware-anytone.md](../spec/hardware-anytone.md)). |
 | Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | In progress ([#111](https://github.com/radiofoundry/radiofoundry/pull/111)). A new platform: a different MCU (NXP MK22FN512), the same HR_C6000 and AT1846S, a 128x64 mono LCD. A DM-1801 bought new today is not v1, and the look-alike DR-1801 is unrelated. |
 | Radioddity GD-88 | In progress ([#132](https://github.com/radiofoundry/radiofoundry/pull/132)). Dual receiver on the HR_C7000 platform (chip count not confirmed yet); should reuse much of the DM-32UV port. |
-| Anytone AT-D868UV / AT-D878UV / AT-D878UVII Plus, BTECH DMR-6X2, Alinco DJ-MD5, Radioddity GD-AT10G | Planned. A new platform (GD32F30x) and a new DMR chip (SCT3258, which runs the vocoder itself), so it starts the Anytone family ([hardware-anytone.md](../spec/hardware-anytone.md)). |
+| Baofeng DM-36 | In progress ([#607](https://github.com/radiofoundry/radiofoundry/pull/607)). Built on the DM-32UV's platform: FM, the display, keys and programming run; DMR voice on air and power levels open. |
+| Anytone AT-D578UV (mobile) | In progress ([#291](https://github.com/radiofoundry/radiofoundry/pull/291)). The 878's chips in a mobile, with a mid-run MCU change: two platforms ([hardware-anytone.md](../spec/hardware-anytone.md)). |
 | Radioddity DB40-D, Kydera CDR-700UV (mobile) | Planned. Hardware needed. Two HR_C7000-class processors (A and B), like the GD-88, so it follows the GD-88 port. |
 | TYT MD-2017 / Retevis RT82 | Planned. The DM-1701's STM32 and HR_C6000 pair with two receivers, so it should reuse the STM32F4 platform. The hardware can receive two channels at once. |
 | BTECH DMR-6X2 PRO | Planned. Built on the AT-D878UVII Plus, so it should follow the Anytone port. |
-| Anytone AT-D578UV (mobile) | Planned. The 878's chips in a mobile, with a mid-run MCU change: two platforms ([hardware-anytone.md](../spec/hardware-anytone.md)). |
 | BridgeCom Maverick | Planned. Sold as an upgraded AT-D878UV, so it likely follows the Anytone port. |
-| Retevis RT10 (902-928 MHz) | Planned. A DMR and FM handheld for 902-928 MHz, a band no other radio here covers; the chips aren't known yet. |
 <!-- end generated -->

@@ -12,6 +12,8 @@ view sections of every build with a position service.
   report would carry; the ambiguity blurs it. Every setting is put back.
 - test_position_settings_survive_restart (opt-in, --allow-reboot): they are back after a restart, on a build without
   APRS as on one with it.
+- test_gps_power_switch: Settings > Location > GPS (debug link SETTING 37) switches the module and its receive path off
+  and on again: pos.gps_on follows, no bytes arrive while off, sentences come back once on. Skips without a module.
 - test_gps_fix (--manual: the owner takes the radio where it sees the sky): the board GPS is heard and gets a fix.
 """
 import time
@@ -26,7 +28,10 @@ LAT, LON = 33.7490, -84.3880
 
 def _pos(radio):
     v = radio.view(["aprs"])
-    v.update(radio.view(["aprs_set"]))
+    s = radio.view(["aprs_set"])
+    # A section that outgrows a reply drops its last keys: the board GPS keys once went missing that way
+    assert v.get("truncated") != "1" and s.get("truncated") != "1", "aprs or aprs_set outgrew a reply"
+    v.update(s)
     if v.get("pos.built") != "1":
         skip("not_built", "no position service (needs CONFIG_GPS, CONFIG_APRS, CONFIG_DMR_LRRP or CONFIG_DMR_GPS)")
     return v
@@ -115,6 +120,42 @@ def test_position_settings_survive_restart(radio):
         assert v["pos.src"] == "fixed", v
     finally:
         _restore(radio, before)
+
+
+def _nmea(v):
+    """pos.gps_nmea as (good, bad, bytes)."""
+    return tuple(int(x) for x in v["pos.gps_nmea"].split("/"))
+
+
+@pytest.mark.feature("gps")
+def test_gps_power_switch(radio):
+    """Settings > Location > GPS off powers the module down and stops its receive path, on brings both back (a board
+    whose module shares a supply it can't cut stops the receive path only). The setting is put back."""
+    v = _pos(radio)
+    if "pos.gps_present" not in v:
+        skip("not_built", "built without CONFIG_GPS")
+    if v["pos.gps_present"] != "1":
+        time.sleep(6)  # just started: the driver may still be listening
+        v = _pos(radio)
+        if v["pos.gps_present"] != "1":
+            skip("no_hw", "no GPS module heard on this radio")
+    was_on = v["pos.gps_on"] == "1"
+    try:
+        radio.link.setting("gps", 0)
+        v = radio.wait_for(lambda x: x.get("pos.gps_on") == "0", timeout=2.0, sections=("aprs", "aprs_set"),
+                           what="GPS off")
+        assert v["pos.gps_heard"] == "0", v
+        b0 = _nmea(v)[2]
+        time.sleep(3)
+        assert _nmea(_pos(radio))[2] == b0, "bytes received with the GPS off"
+        radio.link.setting("gps", 1)
+        v = radio.wait_for(lambda x: x.get("pos.gps_on") == "1" and _nmea(x)[0] > 0 and _nmea(x)[2] > b0,
+                           timeout=10.0, sections=("aprs", "aprs_set"), what="sentences again with the GPS on")
+        good = _nmea(v)[0]
+        radio.wait_for(lambda x: _nmea(x)[0] > good, timeout=5.0, sections=("aprs", "aprs_set"),
+                       what="new valid sentences")
+    finally:
+        radio.link.setting("gps", 1 if was_on else 0)
 
 
 @pytest.mark.feature("gps", owner="take the radio where it sees the sky, Settings > Location > GPS on, and wait for "

@@ -303,6 +303,9 @@ int dmrDataBuildEtsiText(bool group, uint32_t dst, uint32_t src, const char *tex
 // The text of a received defined short data (any of the text DD formats above) or UDT text packet, as Latin-1 ('?'
 // for characters outside it). False when the packet isn't one, or its format isn't text
 bool dmrDataDecodeEtsiText(const dmrDataPacket_t *packet, char *text, int textSize);
+// UDT text (UDT_Format ISO 7 bit, ISO 8 bit or UTF-16BE) from bits of appended data, CRC and pad already gone, as
+// Latin-1. False for another format
+bool dmrDataDecodeUdtText(uint8_t format, const uint8_t *d, int bits, char *text, int textSize);
 // ETSI IP text (TS 102 361-3 5.7.1): Latin-1 text (NUL terminated, DMR_ETSI_TEXT_MAX characters at most) as UTF-16BE
 // in UDP from and to DMR_UDP_PORT_ETSI_TEXT, full IPv4 header (SAP 4). 0 if it doesn't fit or the text is empty
 // The same text as the UDP datagram (header, checksum left 0 for the IPv4 layer, then the payload) into l4: its

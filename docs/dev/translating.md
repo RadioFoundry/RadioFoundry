@@ -20,16 +20,76 @@ source of both. This page is the how-to; the rules are in [ui.md 2.5](../spec/ui
 
 ### How it works
 
-The source is English. A string the radio shows is marked where it is written:
+The source is English. A string the radio shows is marked where it is written, with a key that names it and its
+English:
 
 | Mark | Where | Meaning |
 |---|---|---|
-| `TR("Text")` | In code | Returns the text in the language in use |
-| `TRN("Text")` | In a static table (a `const` initializer) | Only marks the text for the tool; the code that shows it calls `tr()` on it |
-| `tr(s)` | Where a table entry is shown | Looks `s` up; returns `s` when there is no translation |
+| `TR(KEY, "Text")` | In code | Returns the text in the language in use |
+| `TRN(KEY, "Text")` | Where the text is stored now and shown later: an initializer of a `static const` array or struct, a field, an event | A `tr_id_t` for the text (a name for it, not the text); the code that shows it calls `tr()` on it |
+| `TRX(KEY, "Text")` | In the same places, for text never translated (`"RX"`, `"12.5 kHz"`) that sits beside translated text | A `tr_id_t` like `TRN`; no catalog has it |
+| `tr(id)` | Where a table entry is shown | The text in the language in use; the English when there is no translation |
+| `tr_en(id)` | Where the English is needed too (Find matches both) | The English |
 
-`tools/i18n.py` reads the marks, keeps the catalogs in step and turns each catalog into a table the build links in.
-With every language switched off, `TR()` is the text itself and the lookup is gone.
+```c
+ui_toast(TR(ZONE_TOAST_FULL, "Zone full"));           // shown right here: TR gives the text
+
+static const tr_id_t modes[] = { TRN(VALUE_OFF, "Off"), TRN(VALUE_AUTO, "Auto"), TRX(WORD_VOX, "VOX") };
+sb_str(&b, tr(modes[i]));                             // stored first, shown later: TRN or TRX, then tr()
+```
+
+`TR` cannot be used in a `static const` initializer: it is a function call, and which language is in use is known only
+when the text is shown. That is what `TRN` is for. `TRX` exists because every entry of such an array is a `tr_id_t`,
+so text that is never translated needs one too.
+
+The key is a C identifier, upper case. One key always has the same English (the tool fails otherwise); the same English
+may have more than one key, where it needs different translations. The English at the mark is the source of truth: a
+catalog entry is the key's (its `msgctxt`), and the tool reads the English from the mark.
+
+#### Key names
+
+A key says where the text is shown and what it is for, not what the English says: `AREA_ROLE_MEANING`
+(`ZONE_TOAST_RENAMED`, `CHAN_LABEL_BANDWIDTH`, `DENY_FIX_ADD_CODEC`). The English can then change without the name
+going stale, and a translator who reads the key in a catalog knows what kind of text it is.
+
+| Part | What it is |
+|---|---|
+| Area | The screen or feature the text belongs to, as in the code: `HOME`, `ZONE`, `CHAN`, `MSG`, `SHARE`, `QUICK`, `SET`, `DUAL`, `APRS`, `ROAM`, ... Reuse one from the catalogs before making a new one. Left out for text several areas share (`VALUE_OFF`, `HINT_OK_PICK_BACK`, `WHY_SCAN_NOT_IN_BUILD`) |
+| Role | How the text is shown, from the list below |
+| Meaning | What it says, in a few words. Left out when the area has one such text (`QUICK_TITLE`, `GPS_HINT`) |
+
+| Role | The text is |
+|---|---|
+| `TITLE` | A screen's title; also on the row that opens that screen |
+| `ROW` | A list row that does something when picked: an action, a choice, a sub-menu |
+| `LABEL` | The name beside a value: a settings row, a field, a caption |
+| `VALUE` | A value shown for a setting or field |
+| `HINT` | The hint row: what the keys do |
+| `TOAST` | A short message after a key press |
+| `BANNER` | A line of a banner (an event from outside) |
+| `BODY` | Running text on a page, or a piece of it |
+| `STATE` | A status word a screen shows while something goes on (`TALKING`) |
+| `CHIP` | A short tag: the status bar, a list row's right edge |
+| `EMPTY` | What a list or page shows when it has nothing |
+| `WHY` | Why something can't be done: a refusal, a missing feature |
+| `FIX` | What to do about it |
+| `ASK` | A question to confirm |
+| `ERR` | A failure reported by a background job |
+| `UNIT` | A unit joined to a number (` channels`) |
+| `PART` | A piece joined to other text, with no role of its own (` of `) |
+| `WORD` | A term used as title, label and value alike (`VFO`, `Scan`) |
+
+A piece of a sentence (`"Message from "`) takes the role of the sentence. A number in a name is the number in the
+text (`VALUE_10_MIN`, `HINT_1_5_PICK_BACK`), never a counter: two texts that would get the same name differ in
+meaning, so say how.
+
+A `tr_id_t` is opaque. Code passes it to `tr()` or `tr_en()`, or compares it with `TR_NONE` (none: zero, so a field
+left out of an initializer is none), and nothing else. With a language built it is the key's number (`TR_<KEY>` in
+the generated `tr_keys.h`), and `tr()` reads it from a table: no search. With every language switched off it is the
+English text itself and costs nothing. Code compiles the same either way.
+
+`tools/i18n.py` reads the marks, keeps the catalogs in step and turns them into the tables the build links in: the
+English of every key, and each language's translations by key.
 
 ### Adding a language
 
@@ -87,8 +147,8 @@ Some strings are joined in English word order, a number or name before or after 
 Translate the piece so the joined text reads well ("14m atrás"), even when the usual phrase puts the words the other
 way round.
 
-To see where a string goes, search for it in the file its `#:` line names: `grep -n -F '"Backlight"'
-core/ui/ui_menus.c`. The comments next to a `TR()` often say more. A string with a leading or trailing space is
+To see where a string goes, search for its key (the `msgctxt` line) in the file its `#:` line names: `grep -n
+'BACKLIGHT,' core/ui/ui_menus.c`. The comments next to a `TR()` often say more. A string with a leading or trailing space is
 always such a piece.
 
 ### Chinese and other CJK languages
@@ -124,19 +184,39 @@ commit the table it wrote.
 
 ### When the source changes
 
-`python3 tools/i18n.py --sync` adds the new marked strings to every catalog (untranslated) and drops the ones the
-source no longer has. A change that adds or edits a marked string runs it and commits the catalogs with the code.
+`python3 tools/i18n.py --sync` adds the new keys to every catalog (untranslated) and drops the ones the source no
+longer has. A change that adds or edits a marked string runs it and commits the catalogs with the code.
 
 | Case | What `--sync` does | CI |
 |---|---|---|
-| A new string | Adds it untranslated | Fails until it is translated in every catalog |
-| English edited a little (mostly the same words) | Keeps the old translation, still in use | A warning on the pull request: the old and new English and each language's text |
-| English rewritten | A new entry, untranslated; the old one dropped | Fails until it is translated |
-| A translation marked `#, fuzzy` (in doubt) | Kept, not used | Fails until a translator checks it and removes `#, fuzzy` (and the `#\|` line under it) |
+| A new key | Adds it untranslated | Fails until it is translated in every catalog |
+| A key's English edited | Keeps the translation, still in use | A warning on the pull request: the old and new English and each language's text |
+| A translation marked `#, fuzzy` by a translator (in doubt) | Kept, not used | Fails until a translator checks it and removes `#, fuzzy` (and the `#\|` line under it) |
+| New English under a new key | A new entry, untranslated; the old key dropped | Fails until it is translated |
 
-A small edit of the English often leaves the translations right, so a changed string is a warning
-(`tools/i18n_changes.py`), not a failure: the reviewer reads the warning and decides whether each language needs an
-update. The same holds for the site's catalogs: a key whose English changed while a translation didn't is a warning.
+An entry follows its key, so an edit of the English never loses a translation. A small edit often leaves the
+translations right, so a key whose English changed while a translation stayed the same is a warning on the pull
+request, not a failure (`tools/i18n_changes.py`): the old and new English and each language's text. Say in the pull
+request whether each language still fits. When the meaning changes, use a new key: its entry starts untranslated.
+
+#### Renaming a key
+
+The tool matches a catalog entry by its key alone, so a key renamed only at the mark looks like a new key: `--sync`
+drops the old entry with its translations and adds an empty one. Rename with the tool, which changes the marks and
+the catalogs together:
+
+```
+python3 tools/i18n.py --rename OLD_KEY NEW_KEY     # one key
+python3 tools/i18n.py --rename names.txt           # many: a line "OLD_KEY NEW_KEY" each
+python3 tools/i18n.py --sync
+```
+
+It rewrites the key at every mark in `core/`, `tests/` and `sim/` and the `msgctxt` of its entry in every catalog,
+and refuses a name that is taken. The pairs of a file are renamed together, so two keys may swap names. Afterwards
+`git diff core/ui/lang` shows only `msgctxt` lines; no `msgstr` is lost.
+
+The site's catalogs follow the same rule for edited English: a key whose English changed while a translation didn't
+is a warning.
 
 A pull request that adds or rewrites text and can't translate it lists it as an open task in its description
 (`- [ ] translations: es, it`), and the strings are translated before the merge. To build or test with strings still
@@ -148,36 +228,44 @@ untranslated, `python3 tools/i18n.py --check --allow-pending` skips them; CI doe
 
 | Text | Mark |
 |---|---|
-| A word or sentence the user reads | `TR("...")`, or `TRN("...")` in a table and `tr()` where it is shown |
+| A word or sentence the user reads | `TR(KEY, "...")`, or `TRN(KEY, "...")` in a table and `tr()` where it is shown |
 | A screen's title, hint, empty text, a menu row | `TRN()` in the table: `list_draw` and the menus translate them |
-| Names, numbers, units, standard abbreviations | Not marked |
+| A hint built when the screen is drawn | `SF_HINT_FN` and `hint_fn` in the screen's definition, returning text already in the language in use |
+| Names, numbers, units, standard abbreviations | Not marked; in a table of `tr_id_t` beside marked text, `TRX(KEY, "...")` |
 | Debug link names and values, protocol text sent off the radio, log text | Not marked: tools and tests read them |
 | Canned text messages | Marked: the radio sends them in the language in use, so keep them short and plain |
 | Search words (the second string of a settings row) | Not marked: Find matches the English words and the shown name |
 
-A marked string is one C literal, or literals and the `font.h` glyph macros (`GLYPH_ELLIPSIS`, `TEXT_ALT_OPEN`, ...)
+A mark's text is one C literal, or literals and the `font.h` glyph macros (`GLYPH_ELLIPSIS`, `TEXT_ALT_OPEN`, ...)
 next to each other. Not a variable, no `\n` (write the line break with `sb_chr`). A macro whose value is a
-`TRN(...)` is found like any other. Build text from pieces
+`TRN(...)` is found like any other. Name a new key by [Key names](#key-names); a key in use is reused for the
+same text where the meaning is the same. `TR_<KEY>` must not be a name the source already uses (the tool says so). `python3 tools/i18n.py --rewrite [FILE]`
+gives a mark written without a key, `TR("...")`, one made from its English (the same English gets the key it already
+has); rename it before the commit (`--rename`, below).
+A text that travels between tasks (an event) travels as its `tr_id_t`, not as text. Build text from pieces
 with `sbuf_t`, not `strcpy`/`strcat`: a translation can be longer than the English, and `str_copy` and `sb_str`
 cut it safely. Don't compare shown text with `strcmp`; compare the state it came from. After marking, run
 `--sync` and commit the catalogs.
 
 ### Looking at the result
 
-`make -C tests/host ui-gallery` renders the screens in English. To see a language, render the gallery with `UI_LANG`
-set to its code, into a directory outside the repo, and look for text that is cut or runs into something:
+`make -C tests/host ui-gallery` renders the screens in English. To see a language, build the simulator with that
+language in (`UI_LANG` on the `make` line turns its `CONFIG_LANG_<CODE>` on, for a language that is off by default),
+then render the gallery with `UI_LANG` set to its code, into a directory outside the repo, and look for text that is cut
+or runs into something:
 
 ```
-make -C tests/host uiSim
-cd tests/host && UI_LANG=es ./uiSim --gallery /tmp/gallery-es    # contact sheets in /tmp/gallery-es/sheets
+make -C tests/host -B uiSim UI_LANG=fr
+cd tests/host && UI_LANG=fr ./uiSim --gallery /tmp/gallery-fr    # contact sheets in /tmp/gallery-fr/sheets
 ```
 
 Commit only the English gallery.
 
 ### Flash cost
 
-The first language costs the most: the lookup and the Latin-1 glyphs of every font. Each further language adds only its
-text, about the size of the catalog's translations. Measure a language like any switch
+The first language costs the most: the lookup, the English of every key in one table (the literals it replaces, plus
+an offset per 8 keys) and the Latin-1 glyphs of every font. Each further language adds only its text, about the size
+of the catalog's translations, and an offset per 8 keys. Measure a language like any switch
 ([building.md](building.md)) and put the bytes in the feature matrix.
 
 ## Translating the web site
@@ -205,8 +293,9 @@ What the site leaves in English (radio data, error details, logs) is listed in
 
 | Check | Runs |
 |---|---|
-| `python3 tools/i18n.py --check` | Catalogs in step with the source, none untranslated or fuzzy, drawable characters, text alternates, spaces, the switch in every file |
-| `make -C tests/host` | `i18nTest`: lookups, switching, a language not built; `uiFlowTest`: the Language screen |
+| `python3 tools/i18n.py --check` | Every mark has a key, one English per key; catalogs in step with the source, none untranslated or fuzzy, drawable characters, text alternates, spaces, the switch in every file |
+| `python3 tools/i18n_test.py` | The tool: keys, tables, sync, migration, rewrite, rename |
+| `make -C tests/host` | `i18nTest`: a key to its translation or its English, `tr_en`, switching, a language not built; `uiFlowTest`: the Language screen |
 | `python3 site/build.py --strict` | The site catalogs: keys, placeholders, tags, `languages.json` |
 | `python3 -m rfoundrysite.i18n` (from `site/`) | The same, and no key missing from a language |
 | `tools/i18n_changes.py` | Warnings, not failures: English the branch changed while a translation didn't, radio and site |

@@ -72,7 +72,7 @@ static uint16_t pos_count(void) { return PP_COUNT; }
 
 static void pos_item(uint16_t i, ui_item_t *it)
 {
-	static const char *const names[] = { TRN("Latitude"), TRN("Longitude") };
+	static const tr_id_t names[] = { TRN(POS_LABEL_LATITUDE, "Latitude"), TRN(POS_LABEL_LONGITUDE, "Longitude") };
 	str_copy(it->label, sizeof it->label, tr(names[i]));
 	it->num = (char)('1' + i);
 	sbuf_t b;
@@ -85,7 +85,7 @@ static void pos_item(uint16_t i, ui_item_t *it)
 	}
 	int32_t e7 = ui_svc_setting_get(pos_id(i));
 	if (ui_svc_setting_get(UI_SET_POS_FIXED_LAT) == 0 && ui_svc_setting_get(UI_SET_POS_FIXED_LON) == 0) {
-		sb_str(&b, TR("Not set"));
+		sb_str(&b, TR(VALUE_NOT_SET, "Not set"));
 		return;
 	}
 	pos_text(&b, i, pos_e4(e7), e7 < 0, false, false);
@@ -143,7 +143,7 @@ static bool pos_key(const input_event_t *ev)
 			pos_digits[pos_n++] = d;
 			if (pos_typed(row) > pos_max(row)) {
 				pos_n--;	// past 90 / 180 degrees: refused as typed
-				ui_toast(TR("Up to 90 N/S, 180 E/W"));
+				ui_toast(TR(POS_TOAST_RANGE, "Up to 90 N/S, 180 E/W"));
 			}
 		}
 		ui_dirty();
@@ -164,8 +164,9 @@ static bool pos_key(const input_event_t *ev)
 static void pos_enter(void) { pos_editing = false; }
 
 const ui_scr_def_t ui_fixed_pos_screen = {
-	.name = "fixed-pos", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .prefix = TRN("Fixed position"),
-	.hint = TRN("OK change  Back"),
+	.name = "fixed-pos", .flags = SF_LIST | SF_NUMBERED | SF_FIELD,
+	.prefix = TRN(SET_LABEL_FIXED_POSITION, "Fixed position"),
+	.hint = TRN(HINT_OK_CHANGE_BACK, "OK change  Back"),
 	.count = pos_count, .item = pos_item, .select = pos_select, .key = pos_key, .enter = pos_enter,
 };
 #endif

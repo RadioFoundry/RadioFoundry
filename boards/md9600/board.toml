@@ -12,6 +12,8 @@ kind = "mobile"
 debuglink_aliases = ["MD9600", "RT90"]
 # where the radio appears in the site's lists (the lowest: the home page's radio)
 order = 7
+# the sixth character of the APRS tocall, APRDF9 (docs/spec/aprs.md 4.2): one per radio, never reused
+aprs_tocall = "9"
 
 [docs]
 hardware = "docs/spec/hardware-md9600.md"
@@ -47,7 +49,7 @@ family = "usb-dfu"
 keep_codec = true
 notice = "One image serves every MD-9600, but only V1-V3 boards (original firmware V06.xx) have run RadioFoundry so far. V4 (V16.xx) and V4A/V5 (V26.xx) boards have not been tried on a radio: receive or transmit may not work. Transmit stays off until you turn it on in Settings > Advanced > Hardware. Keep a backup so you can go back to the original firmware, and please report what you find."
 stock_versions = [
-	"03.28 to 06.24 (V1-V3 boards)", "16.24 and 16.45 (V4 boards)", "26.38 to 26.45 (V5 boards)", "26.57 (V4A boards)",
+	"03.28 to 06.24 (V1-V3 boards)", "16.24 and 16.45 (V4 boards)", "26.38 to 26.45 and 126.61 (V5 boards)", "26.57 (V4A boards)",
 ]
 backup = { stock = "none", rfoundry = "full", spi_size = 0x1000000 }
 
@@ -100,13 +102,14 @@ quick = 0x200000
 loader_interface = "@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg"
 loader_spi = 0x100000
 
-# The codec where the merge puts it (docs/spec/codec-md9600.md "Hosting"): the tables stay at the stock build's address in
-# sector 9 (the largest GPS-REC builds' run a few hundred bytes into sector 10, which is free), the code moves to the
-# start of sector 11 and the descriptor to its end. The application has sectors 3-8, so an update leaves the codec
-# sectors alone. The builds keep their tables at different addresses and report the one codec id: a merge uses the
-# windows of the file it merges, and the board's windows are all the files' (sectors 9-11). Each line is one original
-# firmware file: 03.28 to 06.24 (06.09 is the V1-V3 boards' file), 16.xx for V4, 26.38 to 26.45 for V5 (the RT90's are 26.38, 26.41 and
-# 26.42) and 26.57 for V4A, in the CSV, CSV-GPS, REC and GPS-REC variants that exist
+# The codec where the merge puts it (docs/spec/codec-md9600.md "Hosting"): the table window, moved as one block, to the
+# start of sector 10, the code to the start of sector 11 and the descriptor to its end. The application has sectors 3-9,
+# so an update leaves the codec sectors alone. Releases before this layout kept the tables at the stock build's address
+# in sector 9; the flashing tools read the codec back from there and move it (stockfw.py "former"). The builds report
+# the one codec id: a merge uses the windows of the file it merges, and the board's windows are all the files' (sectors
+# 10-11). Each line is one original
+# firmware file: 03.28 to 06.24 (06.09 is the V1-V3 boards' file), 16.xx for V4, 26.38 to 26.45 and 126.61 (AES) for V5
+# (the RT90's are 26.38, 26.41 and 26.42) and 26.57 for V4A, in the CSV, CSV-GPS, REC and GPS-REC variants that exist
 [codec]
 tool = "codec_extract"
 stock = [
@@ -142,6 +145,7 @@ stock = [
 	"8acfedbc60fe8dec2d88ed1f00a1444d6f8f243590d967a1a59b121f5d6dfef4@md9600",	# RT90-CSV-GPS(2571V5)-P26.41.bin
 	"267dac314c1aa217ab259a6f9709f2e19342ff3a79aa18a2bf8b501939347e49@md9600",	# RT90-REC(2571V5)-D26.38.bin
 	"a10bad809048c8bbd9602c7b50ca4c824a6dbdee34b2167b872ec86c0affbbe1@md9600",	# RT90-GPS-REC(2571V5)-S26.42.bin
+	"86af65c40c66307f10262995a8037740df8433e67ce0af87137c809fa1ba9578@md9600",	# MD9600-AES-GPS-REC(2571V5)-S126.61.bin
 ]
 
 # How the site draws the radio

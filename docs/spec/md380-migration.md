@@ -31,9 +31,9 @@ reads its manual and `--help`, and contains none of its code. Facts below marked
 - Limits: 1024 channels, 68 zones of 80 channels, 1024 contacts, 76 RX group lists of 32 contacts
   ([open-firmware-cps.md](open-firmware-cps.md) 7.2-7.3). A stock MD-380 holds 1000 channels, 1000 contacts,
   250 zones of 16 channels and 250 RX group lists. In practice only zones and RX group lists can overflow.
-- SPI flash: on a 16 MB part the DM-1701 map applies ([hardware-md380.md](hardware-md380.md) 12.2). On a 1 MB part
-  RadioFoundry gets no storage areas, so `storage info` says `region none`. RadioFoundry then runs from RAM and nothing can be
-  restored. The tool stops there and keeps the backup.
+- SPI flash: on a 16 MB part the DM-1701 map applies, on a 1 MB part the same map up to its end
+  ([hardware-md380.md](hardware-md380.md) 12.2). A smaller part gets no storage areas, so `storage info` says
+  `region none`. RadioFoundry then runs from RAM and nothing can be restored. The tool stops there and keeps the backup.
 - The stock firmware keeps its codeplug at the start of the SPI flash, where RadioFoundry's settings ring and journal go
   (0x011000-0x01AFFF). After the flash, that region is foreign ([settings-store.md](settings-store.md) 5), and every
   CPS commit is refused until `rfoundry_debug.py storage claim` runs. The claim dumps the region and the calibration copy

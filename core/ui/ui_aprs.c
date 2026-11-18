@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // Tools > APRS (docs/spec/aprs.md 10): what APRS is doing (callsign, frequency, position, next beacon, or why nothing
 // can be sent) and the everyday choices, one row each: send now, automatic beacons, the frequency (region), the RF
-// power (as the channel, or a level of its own), the digipeater path (the hops), the interval, SmartBeaconing, the
+// power (as the channel, or a level of its own), the digipeater path (the hops), our SSID, the interval, SmartBeaconing, the
 // way out (radio / DMR / both), KISS on the host port, and the stations heard (receive builds). Where the position
 // comes from is the position service's (Settings > Location, ui_position.c). The rest (symbol, comment, digital
 // destination, iGate, digipeater) is set with qdmr, the debug link or tools/rfoundry_debug.py (aprs.md 11).
@@ -38,10 +38,10 @@ WEAK bool ui_svc_aprs_station(uint8_t i, aprs_station_t *out) { (void)i; (void)o
 WEAK bool ui_svc_aprs_station_find(const char *call, aprs_station_t *out) { (void)call; (void)out; return false; }
 WEAK bool ui_svc_aprs_range(const aprs_station_t *s, uint32_t *m, uint16_t *deg) { (void)s; (void)m; (void)deg; return false; }
 
-enum { AP_SEND, AP_AUTO, AP_FREQ, AP_POWER, AP_PATH, AP_INTERVAL, AP_SMART, AP_VIA, AP_KISS, AP_HEARD, AP_COUNT };
+enum { AP_SEND, AP_AUTO, AP_FREQ, AP_POWER, AP_PATH, AP_SSID, AP_INTERVAL, AP_SMART, AP_VIA, AP_KISS, AP_HEARD, AP_COUNT };
 
-// The rows this build shows, in order: the packet rows only with the AX.25 backend (CONFIG_APRS_AFSK), "Send via"
-// only when there is a choice (both backends built)
+// The rows this build shows, in order: the packet rows (SSID too) only with the AX.25 backend (CONFIG_APRS_AFSK),
+// "Send via" only when there is a choice (both backends built)
 static const uint8_t rows[] = {
 	AP_SEND, AP_AUTO,
 #if CONFIG_APRS_AFSK
@@ -53,7 +53,7 @@ static const uint8_t rows[] = {
 #endif
 	AP_KISS,
 #if CONFIG_APRS_AFSK
-	AP_HEARD,
+	AP_HEARD, AP_SSID,	// set once: last, so the rows above keep their digits
 #endif
 };
 #define N_ROWS	((uint16_t)(sizeof(rows) / sizeof(rows[0])))
@@ -65,17 +65,21 @@ static bool rf_only(const aprs_cfg_t *c)
 }
 
 static const uint16_t intervals[] = { 0, 60, 120, 300, 600, 1800 };
-static const char *const interval_names[] = { TRN("Off"), TRN("1 min"), TRN("2 min"), TRN("5 min"),
-						       TRN("10 min"), TRN("30 min") };
+static const tr_id_t interval_names[] = { TRN(VALUE_OFF, "Off"), TRN(VALUE_1_MIN, "1 min"), TRN(VALUE_2_MIN, "2 min"),
+	TRN(VALUE_5_MIN, "5 min"), TRN(VALUE_10_MIN, "10 min"), TRN(VALUE_30_MIN, "30 min") };
 #define N_INTERVALS	(sizeof(intervals) / sizeof(intervals[0]))
 // aprs_path_t order; the text is aprs_path_text()'s, kept here so the page builds without APRS (the simulator)
-static const char *const path_names[APRS_PATH_COUNT] = { TRN("None"), "WIDE1-1", "WIDE1-1,WIDE2-1", "WIDE2-1",
-							   "WIDE2-2" };
-static const char *const via_names[] = { "AFSK", "DMR", TRN("Both") };
-static const char *const pos_names[] = { TRN("Auto"), "GPS", TRN("Computer"), TRN("Fixed") };
-static const char *const region_names[APRS_REGION_COUNT] = { TRN("N America"), TRN("Europe"), TRN("Australia"),
-							      TRN("New Zealand"), TRN("Japan"), TRN("China"),
-							      TRN("Custom") };
+static const tr_id_t path_names[APRS_PATH_COUNT] = { TRN(VALUE_NONE, "None"), TRX(APRS_VALUE_WIDE1_1, "WIDE1-1"),
+	TRX(APRS_VALUE_WIDE1_1_WIDE2_1, "WIDE1-1,WIDE2-1"), TRX(APRS_VALUE_WIDE2_1, "WIDE2-1"),
+	TRX(APRS_VALUE_WIDE2_2, "WIDE2-2") };
+static const tr_id_t via_names[] = { TRX(APRS_VALUE_AFSK, "AFSK"), TRX(APRS_VALUE_DMR, "DMR"),
+	TRN(APRS_VALUE_BOTH, "Both") };
+static const tr_id_t pos_names[] = { TRN(VALUE_AUTO, "Auto"), TRX(WORD_GPS, "GPS"), TRN(POS_VALUE_COMPUTER, "Computer"),
+	TRN(POS_VALUE_FIXED, "Fixed") };
+static const tr_id_t region_names[APRS_REGION_COUNT] = { TRN(APRS_VALUE_REGION_N_AMERICA, "N America"),
+	TRN(APRS_VALUE_REGION_EUROPE, "Europe"), TRN(APRS_VALUE_REGION_AUSTRALIA, "Australia"),
+	TRN(APRS_VALUE_REGION_NEW_ZEALAND, "New Zealand"), TRN(APRS_VALUE_REGION_JAPAN, "Japan"),
+	TRN(APRS_VALUE_REGION_CHINA, "China"), TRN(APRS_VALUE_REGION_CUSTOM, "Custom") };
 
 // The radio can send APRS on RF (a board with an AFSK transmit path; some only receive)
 static bool rf_send(void)
@@ -86,10 +90,10 @@ static bool rf_send(void)
 static const char *why_text(uint8_t block)
 {
 	switch (block) {
-	case APRS_NO_CALL: return TR("Set your callsign (the radio name) in qdmr.");
-	case APRS_NO_FREQ: return TR("No APRS frequency: pick a region.");
-	case APRS_NOT_AMATEUR: return TR("Pick a frequency in a ham band this radio sends on.");
-	case APRS_NO_AFSK: return TR("No APRS tones on this radio; DMR positions work.");
+	case APRS_NO_CALL: return TR(APRS_WHY_NO_CALLSIGN, "Set your callsign (the radio name) in qdmr.");
+	case APRS_NO_FREQ: return TR(APRS_WHY_NO_FREQUENCY, "No APRS frequency: pick a region.");
+	case APRS_NOT_AMATEUR: return TR(APRS_WHY_NOT_HAM_BAND, "Pick a frequency in a ham band this radio sends on.");
+	case APRS_NO_AFSK: return TR(APRS_WHY_NO_TONES, "No APRS tones on this radio; DMR positions work.");
 	default: return NULL;
 	}
 }
@@ -101,15 +105,15 @@ static const char *aprs_body(void)
 	aprs_view_t v;
 	sb_init(&b, t, sizeof t);
 	if (!ui_svc_aprs_view(&v)) {
-		sb_str(&b, TR("APRS: not in this build"));
+		sb_str(&b, TR(WHY_APRS_NOT_IN_BUILD, "APRS: not in this build"));
 		return t;
 	}
 	if (CONFIG_APRS_AFSK) {		// who and where on RF: the AX.25 backend's
-		sb_str(&b, v.call[0] != '\0' ? v.call : TR("No callsign"));
-		sb_str(&b, TR(" on "));
+		sb_str(&b, v.call[0] != '\0' ? v.call : TR(APRS_BODY_NO_CALLSIGN, "No callsign"));
+		sb_str(&b, TR(APRS_BODY_ON, " on "));
 		sb_freq(&b, v.freq_hz);
 		if (v.rf_active) {
-			sb_str(&b, TR(" (sending)"));
+			sb_str(&b, TR(APRS_BODY_SENDING, " (sending)"));
 		}
 		const char *why = why_text(v.block);
 		if (why != NULL) {
@@ -125,15 +129,15 @@ static const char *aprs_body(void)
 		sb_chr(&b, ' ');
 		sb_degrees(&b, v.lon);
 	} else {
-		sb_str(&b, TR("No position"));
+		sb_str(&b, TR(APRS_BODY_NO_POSITION, "No position"));
 	}
 	if (v.next_s != 0xFFFFu) {
 		sb_chr(&b, '\n');
-		sb_str(&b, TR("Next in "));
+		sb_str(&b, TR(APRS_BODY_NEXT_IN, "Next in "));
 		sb_mmss(&b, v.next_s);
 	}
 	if (v.rf_sent + v.dmr_sent != 0) {
-		sb_str(&b, TR("  Sent "));
+		sb_str(&b, TR(APRS_BODY_SENT, "  Sent "));
 		sb_u32(&b, v.rf_sent + v.dmr_sent, 1);
 	}
 	return t;
@@ -153,9 +157,12 @@ static uint8_t interval_index(uint16_t s)
 
 static void aprs_item(uint16_t i, ui_item_t *it)
 {
-	static const char *const names[] = { TRN("Send position now"), TRN("Automatic beacons"), TRN("Frequency"),
-					     TRN("Power"), TRN("Path"), TRN("Interval"), TRN("SmartBeaconing"),
-					     TRN("Send via"), TRN("KISS on USB"), TRN("Stations heard") };
+	static const tr_id_t names[] = { TRN(APRS_ROW_SEND_NOW, "Send position now"),
+		TRN(APRS_LABEL_BEACONS, "Automatic beacons"), TRN(APRS_LABEL_FREQUENCY, "Frequency"),
+		TRN(LABEL_POWER, "Power"), TRN(APRS_LABEL_PATH, "Path"), TRX(APRS_LABEL_SSID, "SSID"),
+		TRN(APRS_LABEL_INTERVAL, "Interval"),
+		TRN(APRS_LABEL_SMARTBEACONING, "SmartBeaconing"), TRN(APRS_LABEL_SEND_VIA, "Send via"),
+		TRN(APRS_LABEL_KISS_ON_USB, "KISS on USB"), TRN(APRS_ROW_STATIONS_HEARD, "Stations heard") };
 	aprs_view_t v;
 	aprs_cfg_t c;
 	bool built = ui_svc_aprs_view(&v);
@@ -166,7 +173,8 @@ static void aprs_item(uint16_t i, ui_item_t *it)
 		return;
 	}
 	// Without the AX.25 backend the host port is no TNC: it only takes NMEA positions
-	str_copy(it->label, sizeof it->label, i == AP_KISS && !CONFIG_APRS_AFSK ? TR("NMEA on USB") : tr(names[i]));
+	str_copy(it->label, sizeof it->label, i == AP_KISS && !CONFIG_APRS_AFSK ?
+		TR(APRS_LABEL_NMEA_ON_USB, "NMEA on USB") : tr(names[i]));
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
 	if (!built) {
@@ -179,7 +187,7 @@ static void aprs_item(uint16_t i, ui_item_t *it)
 			it->flags |= UI_ITEM_DIM;
 		}
 		break;
-	case AP_AUTO: sb_str(&b, c.tx_on ? TR("On") : TR("Off")); break;
+	case AP_AUTO: sb_str(&b, c.tx_on ? TR(VALUE_ON, "On") : TR(VALUE_OFF, "Off")); break;
 	case AP_FREQ:
 		if (board.afsk == NULL && !CONFIG_APRS_RX) {
 			it->flags |= UI_ITEM_DIM;	// no APRS on RF here
@@ -193,7 +201,8 @@ static void aprs_item(uint16_t i, ui_item_t *it)
 		if (!rf_send()) {
 			it->flags |= UI_ITEM_DIM;	// no APRS on RF here (no transmit tone path)
 		} else {
-			sb_str(&b, c.power == 0 ? TR("As channel") : ui_power_name((uint8_t)(c.power - 1u), v.freq_hz));
+			sb_str(&b, c.power == 0 ? TR(APRS_VALUE_AS_CHANNEL, "As channel") :
+				ui_power_name((uint8_t)(c.power - 1u), v.freq_hz));
 		}
 		break;
 	case AP_PATH:
@@ -203,10 +212,17 @@ static void aprs_item(uint16_t i, ui_item_t *it)
 			sb_str(&b, tr(path_names[c.path < APRS_PATH_COUNT ? c.path : 0]));
 		}
 		break;
+	case AP_SSID:
+		if (!rf_send()) {
+			it->flags |= UI_ITEM_DIM;	// RF packets only: DMR positions carry the network's SSID
+		} else {
+			sb_u32(&b, c.ssid, 1);
+		}
+		break;
 	case AP_INTERVAL: sb_str(&b, tr(interval_names[interval_index(c.interval_s)])); break;
-	case AP_SMART: sb_str(&b, c.smart ? TR("On") : TR("Off")); break;
+	case AP_SMART: sb_str(&b, c.smart ? TR(VALUE_ON, "On") : TR(VALUE_OFF, "Off")); break;
 	case AP_VIA: sb_str(&b, tr(via_names[c.via < APRS_VIA_COUNT ? c.via : 0])); break;
-	case AP_KISS: sb_str(&b, c.kiss ? TR("On") : TR("Off")); break;
+	case AP_KISS: sb_str(&b, c.kiss ? TR(VALUE_ON, "On") : TR(VALUE_OFF, "Off")); break;
 	case AP_HEARD:
 		if (!CONFIG_APRS_RX) {
 			it->flags |= UI_ITEM_DIM;
@@ -220,25 +236,26 @@ static void aprs_item(uint16_t i, ui_item_t *it)
 
 static void aprs_select(uint16_t i, bool hold)
 {
-	(void)hold;
 	aprs_view_t v;
 	aprs_cfg_t c;
 	if (!ui_svc_aprs_view(&v)) {
-		ui_toast(TR("APRS: not in this build"));
+		ui_toast(TR(WHY_APRS_NOT_IN_BUILD, "APRS: not in this build"));
 		return;
 	}
 	ui_svc_aprs_cfg(&c);
 	switch (i < N_ROWS ? rows[i] : AP_COUNT) {
 	case AP_SEND:
 		if (ui_svc_aprs_send_now()) {
-			ui_toast(TR("Sending position"));
+			ui_toast(TR(APRS_TOAST_SENDING_POSITION, "Sending position"));
 		} else {
-			ui_toast(v.block == APRS_NO_CALL ? TR("Set your callsign first") : TR("Can't send now"));
+			ui_toast(v.block == APRS_NO_CALL ?
+				TR(APRS_TOAST_SET_CALLSIGN_FIRST, "Set your callsign first") :
+				TR(APRS_TOAST_CANT_SEND_NOW, "Can't send now"));
 		}
 		return;
 	case AP_AUTO:
 		c.tx_on = !c.tx_on;
-		ui_toast(c.tx_on ? TR("Beacons on") : TR("Beacons off"));
+		ui_toast(c.tx_on ? TR(APRS_TOAST_BEACONS_ON, "Beacons on") : TR(APRS_TOAST_BEACONS_OFF, "Beacons off"));
 		break;
 	case AP_FREQ:
 		if (board.afsk == NULL && !CONFIG_APRS_RX) {
@@ -261,13 +278,19 @@ static void aprs_select(uint16_t i, bool hold)
 		}
 		c.path = (uint8_t)((c.path + 1u) % APRS_PATH_COUNT);	// none, then more hops; WIDE2-2 wraps to none
 		break;
+	case AP_SSID:
+		if (!rf_send()) {
+			return;
+		}
+		c.ssid = (uint8_t)((c.ssid + (hold ? 15u : 1u)) % 16u);	// 0-15, wrapping; hold steps back
+		break;
 	case AP_INTERVAL: c.interval_s = intervals[(interval_index(c.interval_s) + 1u) % N_INTERVALS]; break;
 	case AP_SMART: c.smart = !c.smart; break;
 	case AP_VIA: c.via = (uint8_t)((c.via + 1u) % APRS_VIA_COUNT); break;
 	case AP_KISS: c.kiss = !c.kiss; break;
 	case AP_HEARD:
 		if (!CONFIG_APRS_RX) {
-			ui_toast(TR("This radio can't receive APRS"));
+			ui_toast(TR(APRS_WHY_CANT_RECEIVE, "This radio can't receive APRS"));
 		} else {
 			ui_push(SCR_APRS_HEARD, 0);
 		}
@@ -279,7 +302,8 @@ static void aprs_select(uint16_t i, bool hold)
 }
 
 const ui_scr_def_t ui_aprs_screen = {
-	.name = "aprs", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .prefix = "APRS", .hint = TRN("0-9 pick  Back"),
+	.name = "aprs", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .prefix = TRX(WORD_APRS, "APRS"),
+	.hint = TRN(HINT_0_9_PICK_BACK, "0-9 pick  Back"),
 	.count = aprs_count, .item = aprs_item, .select = aprs_select, .body = aprs_body,
 };
 
@@ -330,8 +354,9 @@ static void heard_item(uint16_t i, ui_item_t *it)
 }
 
 const ui_scr_def_t ui_aprs_heard_screen = {
-	.name = "aprs-heard", .flags = SF_LIST | SF_FIELD, .prefix = TRN("Heard"), .hint = TRN("Back"),
-	.empty = TRN("Nothing heard yet"),
+	.name = "aprs-heard", .flags = SF_LIST | SF_FIELD, .prefix = TRN(APRS_TITLE_HEARD, "Heard"),
+	.hint = TRN(HINT_BACK, "Back"),
+	.empty = TRN(APRS_EMPTY_NOTHING_HEARD, "Nothing heard yet"),
 	.count = heard_count, .item = heard_item, .select = heard_select,
 };
 
@@ -375,11 +400,11 @@ static void station_item(uint16_t i, ui_item_t *it)
 	aprs_station_t s;
 	bool found = ui_svc_aprs_station_find(station_call, &s);
 	if (i == 0) {
-		str_copy(it->label, sizeof it->label, TR("Message"));
+		str_copy(it->label, sizeof it->label, TR(WORD_MESSAGE, "Message"));
 		return;
 	}
 	if (!found) {
-		str_copy(it->label, sizeof it->label, TR("No longer in list"));
+		str_copy(it->label, sizeof it->label, TR(APRS_BODY_STATION_GONE, "No longer in list"));
 		return;
 	}
 	sbuf_t b;
@@ -391,31 +416,34 @@ static void station_item(uint16_t i, ui_item_t *it)
 	uint8_t n = station_rows(&s, shown, &m, &deg);
 	switch (i < n ? shown[i] : ST_COUNT) {
 	case ST_RANGE:
-		label = TR(TEXT_ALT_OPEN "Distance" TEXT_ALT_NEXT "Dist" TEXT_ALT_NEXT "" TEXT_ALT_CLOSE);
+		label = TR(APRS_LABEL_DISTANCE, TEXT_ALT_OPEN "Distance" TEXT_ALT_NEXT "Dist"
+			TEXT_ALT_NEXT "" TEXT_ALT_CLOSE);
 		sb_range(&b, m, deg);
 		break;
 	case ST_HEARD:
-		label = TR("Heard");
+		label = TR(APRS_TITLE_HEARD, "Heard");
 		ui_sb_age(it->value, sizeof it->value, ui_st.now_ms - s.heard_ms);
 		break;
-	case ST_PATH: label = s.direct ? TR("Direct") : TR("Via digipeater"); break;
+	case ST_PATH: label = s.direct ? TR(APRS_VALUE_DIRECT, "Direct") :
+		TR(APRS_VALUE_VIA_DIGIPEATER, "Via digipeater"); break;
 	case ST_POS_AGE:
-		label = TR(TEXT_ALT_OPEN "Position age" TEXT_ALT_NEXT "Pos age" TEXT_ALT_CLOSE);
+		label = TR(APRS_LABEL_POSITION_AGE, TEXT_ALT_OPEN "Position age"
+			TEXT_ALT_NEXT "Pos age" TEXT_ALT_CLOSE);
 		ui_sb_age(it->value, sizeof it->value, ui_st.now_ms - s.pos_ms);
 		break;
 	case ST_SPEED:
-		label = TR("Speed");
+		label = TR(LABEL_SPEED, "Speed");
 		sb_u32(&b, ((uint32_t)s.speed_kn * 1852u + 500u) / 1000u, 1);
 		sb_str(&b, " km/h");
 		break;
 	case ST_COURSE:
-		label = TR("Course");
+		label = TR(APRS_LABEL_COURSE, "Course");
 		sb_u32(&b, s.course, 1);
 		sb_str(&b, GLYPH_DEGREE " ");
 		sb_compass(&b, s.course);
 		break;
 	case ST_SYMBOL:
-		label = TR("Symbol");
+		label = TR(APRS_LABEL_SYMBOL, "Symbol");
 		sb_chr(&b, s.sym_table);
 		sb_chr(&b, s.sym_code);
 		break;
@@ -424,7 +452,7 @@ static void station_item(uint16_t i, ui_item_t *it)
 		it->flags |= UI_ITEM_PREVIEW;
 		break;
 	case ST_PACKETS:
-		label = TR("Packets");
+		label = TR(APRS_LABEL_PACKETS, "Packets");
 		sb_u32(&b, s.count, 1);
 		break;
 	default: break;
@@ -445,7 +473,7 @@ static uint16_t station_count(void) { return 1; }
 static void station_item(uint16_t i, ui_item_t *it)
 {
 	(void)i;
-	str_copy(it->label, sizeof it->label, TR("Message"));
+	str_copy(it->label, sizeof it->label, TR(WORD_MESSAGE, "Message"));
 }
 static const char *station_title(void)
 {
@@ -465,6 +493,7 @@ static void station_select(uint16_t i, bool hold)
 }
 #endif
 const ui_scr_def_t ui_aprs_station_screen = {
-	.name = "aprs-station", .flags = SF_LIST | SF_FIELD, .prefix = TRN("Heard"), .hint = TRN("OK choose  Back"),
+	.name = "aprs-station", .flags = SF_LIST | SF_FIELD, .prefix = TRN(APRS_TITLE_HEARD, "Heard"),
+	.hint = TRN(HINT_OK_CHOOSE_BACK, "OK choose  Back"),
 	.count = station_count, .item = station_item, .select = station_select, .title = station_title,
 };

@@ -28,7 +28,7 @@ static const hal_flash_map_t map = {
 	.calibration_addr = 0x10000u, .calibration_size = 0x200u,
 };
 
-const board_t board = { .name = "test", .flash = &sim_flash };
+const board_t board = { .name = "test", .flash = &sim_flash, .power_count = 5 };
 
 static void boot(void)
 {
@@ -530,10 +530,11 @@ static void test_native_and_jobs(void)
 	sim_flash_power_on();
 	CHECK(memcmp(&sim_flash_data[na], magic, 4) == 0 && sim_flash_data[na + 0x6000u] == 0xFF);
 	CHECK(storage_native_erase() == STORAGE_NATIVE_ERASED && sim_flash_data[na + 0x1000u] == 0xFF);
-	// No native area in the map: refused
+	// No native area in the map (a small chip's): nothing to empty, so a factory reset doesn't stop on it
 	sim_flash_create(FLASH_SIZE, &map);
 	boot();
-	CHECK(storage_native_erase() == STORAGE_NATIVE_FAILED);
+	e0 = sim_flash_units();
+	CHECK(storage_native_erase() == STORAGE_NATIVE_BLANK && sim_flash_units() == e0);
 
 	// Jobs: one at a time, run by the poll, then the next may come
 	int one = 1;
@@ -604,6 +605,57 @@ static void test_settings_gateway_upgrade(void)
 	CHECK(st.load == SETTINGS_LOADED && s.ds_ip_gateway == 9996543u && s.vfo2_rx_hz == 446006250u);
 }
 
+// Stored power levels count against the board's level count (power_levels): a record from before it (0), or from a
+// build whose board had another count, loads with the levels back to the defaults, since the same index may name a
+// higher power now; a record of this count keeps them
+static void power_record(uint32_t seq, uint8_t levels)
+{
+	settings_t old;
+	settings_defaults(&old);
+	old.squelch = 3;
+	old.vfo_power = 4;
+	old.master_power = 4;
+	old.aprs_power = 5;
+	old.vfo2_power = 3;
+	old.power_levels = levels;
+	sim_flash_create(FLASH_SIZE, &map);
+	put_record(&map, 0, 0, seq, SETTINGS_LAYOUT | (1u << SETTINGS_PAGE_SHIFT),
+		   (uint16_t)(sizeof(settings_t) - SETTINGS_PAGE_BYTES), (const uint8_t *)&old + SETTINGS_PAGE_BYTES, true,
+		   true);
+	put_record(&map, 0, 1, seq + 1u, SETTINGS_LAYOUT, SETTINGS_PAGE_BYTES, &old, true, true);
+	boot();
+}
+
+static void test_settings_power_levels(void)
+{
+	settings_t s;
+	settings_stats_t st;
+
+	CHECK(board.power_count == 5);
+	settings_defaults(&s);
+	CHECK(s.power_levels == 5);
+	static const uint8_t other[] = { 0, 2, 9 };	// an older record, then other counts
+	for (unsigned i = 0; i < sizeof(other); i++) {
+		power_record(1, other[i]);
+		settings_read(&s);
+		settings_get_stats(&st);
+		CHECK(st.load == SETTINGS_LOADED && s.squelch == 3);
+		CHECK(s.vfo_power == SETTINGS_UNSET8 && s.vfo2_power == SETTINGS_UNSET8 &&
+		      s.master_power == SETTINGS_UNSET8 && s.aprs_power == 0 && s.power_levels == 5);
+	}
+	power_record(1, 5);
+	settings_read(&s);
+	CHECK(s.vfo_power == 4 && s.vfo2_power == 3 && s.master_power == 4 && s.aprs_power == 5 && s.power_levels == 5);
+	// A level chosen after the reset is saved with the count, and kept
+	power_record(1, 0);
+	settings_begin()->master_power = 1;
+	settings_end(1);
+	CHECK(settings_flush());
+	boot();
+	settings_read(&s);
+	CHECK(s.master_power == 1 && s.vfo_power == SETTINGS_UNSET8 && s.power_levels == 5);
+}
+
 // hal_flash_map_end: where a map's highest area ends, so a driver can refuse a map its chip is too small for
 static void test_map_end(void)
 {
@@ -626,6 +678,25 @@ static void test_map_end(void)
 	low.calibration_size = 0;			// an area of size 0 is none, wherever its address points
 	low.staging_addr = 0x80000u;
 	CHECK(hal_flash_map_end(&low, 4096) == 0x1B000u);
+}
+
+// hal_flash_map_for: a board with two chip sizes (a 16 MB map and a 1 MB one) gets the map its chip holds, and a chip
+// smaller than both gets none. Before the small map, a 1 MB part stored nothing and lost its settings at every restart
+static void test_map_for(void)
+{
+	const hal_flash_map_t big = { .settings_addr = 0x11000u, .settings_size = 0x8000u, .journal_addr = 0x19000u,
+				      .openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = 0xE00000u,
+				      .native_addr = 0xE00000u, .native_size = 0x100000u,
+				      .staging_addr = 0xF00000u, .staging_size = 0x40000u };
+	const hal_flash_map_t small = { .settings_addr = 0x11000u, .settings_size = 0x8000u, .journal_addr = 0x19000u,
+					.openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = 0x100000u };
+	CHECK(hal_flash_map_for(&big, &small, 0x1000000u, 4096) == &big);
+	CHECK(hal_flash_map_for(&big, &small, 0x800000u, 4096) == &small);
+	CHECK(hal_flash_map_for(&big, &small, 0x100000u, 4096) == &small);
+	CHECK(hal_flash_map_for(&big, &small, 0x80000u, 4096) == NULL);
+	CHECK(hal_flash_map_for(&big, NULL, 0x100000u, 4096) == NULL);		// a board with one map: as before
+	CHECK(hal_flash_map_for(&big, NULL, 0x1000000u, 4096) == &big);
+	CHECK(hal_flash_map_for(NULL, NULL, 0x1000000u, 4096) == NULL);
 }
 
 // The crash report's mode and target live in spare bits of accent, theme and updown_home (settings.h): each field
@@ -1142,8 +1213,10 @@ int main(void)
 	test_crash_bits();
 	test_sound_flags();
 	test_map_end();
+	test_map_for();
 	test_settings_pages();
 	test_settings_gateway_upgrade();
+	test_settings_power_levels();
 	test_settings_bad_records();
 	test_settings_worn_sector();
 	test_write_across_sectors();

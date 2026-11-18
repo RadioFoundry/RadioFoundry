@@ -95,13 +95,18 @@ The source tree is in [README.md, Layout](README.md#layout). The layers and the 
 - Match the file you're editing: tabs, naming, comment density. Comments say why.
 - Keep RTOS calls and blocking waits out of protocol engines and UI behavior code, so the host tests can run them.
 - **Languages.** The radio and the site are translated ([docs/dev/translating.md](docs/dev/translating.md)). Mark text
-  a user reads with `TR()` (`TRN()` in a static table, `tr()` where it is shown), never debug link or protocol text,
-  and run `python3 tools/i18n.py --sync`. Code must work with any translation missing: `tr()` returns the English, a
-  site key falls back to `en.json`; build text with `sbuf_t`/`str_copy` (a translation can be longer) and never
-  compare shown text. Translate new or rewritten strings into every catalog (`core/ui/lang/*.po`,
-  `site/i18n/*.json`) when you can; otherwise add an open task to the PR description (`- [ ] translations: es, it`).
-  CI fails on a missing translation, so they are done before the merge. English you changed with a translation left
-  the same is a CI warning (`tools/i18n_changes.py`): say in the PR whether each language still fits.
+  a user reads with a key and its English, `TR(KEY, "English")` (`TRN(KEY, ...)` in a static table or struct field,
+  `tr()` where it is shown; `TRX(KEY, ...)` for untranslated text in such a table), never debug link or protocol text,
+  and run `python3 tools/i18n.py --sync`. Name the key `AREA_ROLE_MEANING` ([Key
+  names](docs/dev/translating.md#key-names)); rename one only with `tools/i18n.py --rename`. One key, one English. A
+  `tr_id_t` is opaque: pass it to `tr()` or `tr_en()`, compare it with `TR_NONE`, nothing else (it is a number in a
+  translated build, the text itself in an English-only one); text crossing tasks travels as its `tr_id_t`. Code must
+  work with any translation missing: `tr()` returns the English, a site key falls back to `en.json`; build text with
+  `sbuf_t`/`str_copy` (a translation can be longer) and never compare shown text. Translate new or rewritten strings
+  into every catalog (`core/ui/lang/*.po`, `site/i18n/*.json`) when you can; otherwise add an open task to the PR
+  description (`- [ ] translations: es, it`). CI fails on a missing translation, so they are done before the merge.
+  English you changed with a translation left the same is a CI warning (`tools/i18n_changes.py`): say in the PR
+  whether each language still fits.
 - Docs read like technical documentation: short sentences, tables, no filler.
 
 ## Git

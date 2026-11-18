@@ -11,13 +11,13 @@ import { join } from "node:path";
 
 import { crc32, equal, sha256 } from "../static/js/flasher/bytes.js";
 import { decodeBlock, encodeBlock } from "../static/js/flasher/lz4.js";
-import { Stub, stubImages, StubError, DONE_LED, univFits, univLayout } from "../static/js/flasher/stub.js";
+import { Stub, stubImages, StubError, DONE_LED, univFits, univLayout, romSignOffs } from "../static/js/flasher/stub.js";
 import { Link, probe } from "../static/js/flasher/link.js";
 import * as c7 from "../static/js/flasher/c7000.js";
 import { FakeC7000, c7000Simulation, fakeC7000Options } from "../static/js/flasher/fakec7000.js";
 import { stockVersion } from "../static/js/flasher/usmart.js";
 import { openVendorFile, whyNot, analysisCandidate } from "../static/js/flasher/vendorfile.js";
-import { vendorBundle, hasC7Backup, backupChoices } from "../static/js/flasher/c7000ui.js";
+import { vendorBundle, hasC7Backup, backupChoices, ledFor, stubFor } from "../static/js/flasher/c7000ui.js";
 import * as explain from "../static/js/flasher/explain.js";
 import * as crumbs from "../static/js/flasher/trail.js";
 import * as diag from "../static/js/diag.js";
@@ -250,6 +250,79 @@ test("boot ROM wait: the ROM giving up with no greeting seen ends the wait at on
 	assert.ok(Date.now() - t0 < 1000);
 });
 
+// Field: a radio whose flash names the application signed off with 00 c0 00 03, which the page didn't know, so it
+// went on to load the stub into a radio that had started its firmware
+test("boot ROM sign-off: any 256-byte-aligned program flash address, never one of the ROM's own frames", () => {
+	for (const b of [[0, 0x10, 0, 3], [0, 0xC0, 0, 3], [0, 0x80, 0x0E, 3], [0, 0, 0x10, 3]]) assert.equal(romSignOffs(Uint8Array.from(b)), 1, b.join(" "));
+	for (const b of [[2, 0x24, 0, 3], [2, 5, 0, 3], [2, 0x0A, 0, 3], [2, 0x14, 0, 3], [0, 0, 0, 3], [0, 0x10, 0, 2], [4, 0x10, 0, 3]])
+		assert.equal(romSignOffs(Uint8Array.from(b)), 0, b.join(" "));
+	// greeting, NAKs and acknowledgements in a row hold none
+	assert.equal(romSignOffs(Uint8Array.from([0, 2, 0x24, 0, 3, 2, 0x0A, 0, 3, 2, 5, 0, 3, 2, 0x0A, 0, 3])), 0);
+});
+
+const bareStream = () => ({ buf: new Uint8Array(0), sent: 0, clear() { this.buf = new Uint8Array(0); },
+	take(n) { const b = this.buf.slice(0, n); this.buf = this.buf.slice(n); return b; }, async write() { this.sent++; },
+	say(...b) { this.buf = Uint8Array.of(...this.buf, ...b); } });
+
+test("boot ROM wait: the greeting, answers already on their way and a sign-off: the radio hears nothing (rom-deaf)", async () => {
+	const stream = bareStream();
+	const lines = [];
+	const s = new Stub(stream, { log: (l) => lines.push(l) });
+	setTimeout(() => stream.say(0x00, 0x02, 0x24, 0x00, 0x03), 60);
+	setTimeout(() => stream.say(0x00, 0xC0, 0x00, 0x03), 140);
+	await assert.rejects(s.waitForRom(5000, { repeat: 30 }), (e) => e.code === "rom-deaf" && /does not receive what the cable sends/.test(e.message));
+	assert.ok(stream.sent >= 2, "answers went out ahead");
+	assert.ok(lines.some((l) => /00 c0 00 03/.test(l)), "the log has what came after the greeting");
+});
+
+// Field: a PL2303 adapter in a bad state read the line at about 307200 baud whatever the page set, so the greeting came
+// in as 70 80 70 00 7c and the sign-off as 00 00 00 7c, and the page listened on for its full 3 minutes
+test("boot ROM wait: the greeting and sign-off read at the wrong rate end the wait as a cable that reads badly (rom-garbled)", async () => {
+	const stream = bareStream();
+	const lines = [];
+	const s = new Stub(stream, { log: (l) => lines.push(l) });
+	setTimeout(() => stream.say(0x70, 0x80, 0x70, 0x00, 0x7C), 60);
+	setTimeout(() => stream.say(0x00, 0x00, 0x00, 0x7C), 115);
+	const t0 = Date.now();
+	await assert.rejects(s.waitForRom(5000, { repeat: 30 }), (e) => e.code === "rom-garbled" && /wrong rate/.test(e.message));
+	assert.ok(Date.now() - t0 < 1500, "told within a second of the radio starting");
+	assert.ok(lines.some((l) => /70 80 70 00 7c 00 00 00 7c/.test(l)), "the log has the bytes");
+});
+
+test("boot ROM wait: a burst of noise, or stray single bytes, then the greeting later: still the greeting", async () => {
+	const stream = bareStream();
+	const s = new Stub(stream, { log: quiet });
+	setTimeout(() => stream.say(0x40), 20);	// the power switch
+	setTimeout(() => stream.say(0xFF), 80);
+	setTimeout(() => stream.say(0x13, 0x37, 0x00), 450);	// one burst alone
+	setTimeout(() => stream.say(0x02, 0x24, 0x00, 0x03), 1000);
+	assert.deepEqual(await s.waitForRom(3000), { answered: false });
+});
+
+test("boot ROM wait: stray bytes at power-on that look like a sign-off don't end the wait while more follows", async () => {
+	const stream = bareStream();
+	const s = new Stub(stream, { log: quiet });
+	setTimeout(() => stream.say(0x00, 0x40, 0x00, 0x03), 20);
+	setTimeout(() => stream.say(0xFF, 0x00), 35);
+	setTimeout(() => stream.say(0x02, 0x24, 0x00, 0x03), 120);
+	assert.deepEqual(await s.waitForRom(3000), { answered: false });
+});
+
+test("simulated boot ROM: a board it starts directly signs off with the address its flash names; a deaf cable is told", async (t) => {
+	const direct = Object.keys(C.boards).find((b) => (C.boards[b].rom_entry ?? null) !== null);
+	if (!direct) return t.skip("no board the boot ROM starts directly");
+	const sim = await c7000Simulation(C, direct);
+	const entry = C.boards[direct].rom_entry;
+	const progmem = sim.progmem.slice();
+	progmem.set([entry & 0xFF, (entry >> 8) & 0xFF, (entry >> 16) & 0xFF, entry >>> 24], 4);	// RadioFoundry's flag
+	const r = new FakeC7000({ progmem, dataSize: 0x200000, speed: 200, romWindow: 60, bootTime: 200, romEntry: entry, faults: { deafCable: true } });
+	t.after(() => r.stop());
+	const s = new Stub(r.stream, { log: quiet });
+	setTimeout(() => r.powerOn(), 50);
+	await assert.rejects(s.waitForRom(5000, { repeat: 30 }), (e) => e.code === "rom-deaf");
+	assert.equal(r.state === "booting" || r.state === "firmware", true, "the radio started its firmware");
+});
+
 test("simulated boot ROM: unanswered, it says it stops waiting; a second answer is NAKed", async (t) => {
 	const { r } = await radio("stock");
 	t.after(() => r.stop());
@@ -427,6 +500,37 @@ test("boot ROM path: load, read with damaged frames, write, reset into RadioFoun
 	const p = await probe(new Link(r.stream));
 	assert.equal(p.board, "DM-1801 Pro");
 	assert.equal(p.codec, "dm1801pro-049");
+});
+
+// A radio's LED pins may be other pins on another radio (a TX supply, a knob input): the stub must drive only the
+// board's own, from its first instruction (the parameter block) and after CONFIG and the LED setup
+test("every C7 board: the stub drives only the board's LED pins, from the boot ROM load on", async (t) => {
+	for (const [id, b] of Object.entries(C.boards)) {
+		const led = ledFor(C, id);
+		assert.deepEqual(led, b.stub_board.led, `${id}: its own pins`);
+		const r = new FakeC7000({ progmem: new Uint8Array(0x100000).fill(0xFF), dataSize: 0x200000, speed: 200, romWindow: 400, bootTime: 200 });
+		t.after(() => r.stop());
+		const s = new Stub(r.stream, { log: quiet });
+		setTimeout(() => r.powerOn(), 50);
+		await s.waitForRom(5000);
+		const image = stubFor(C, id, stubs.image);
+		assert.equal(image.length, stubs.image.length);
+		assert.ok(equal(image.subarray(0, 0xA8), stubs.image.subarray(0, 0xA8)) && equal(image.subarray(0xB0), stubs.image.subarray(0xB0)),
+			`${id}: only the LED pins change`);
+		await s.loadThroughRom(image, stubs.load);
+		assert.deepEqual([...r.ledPins].sort(), [led.red, led.green].sort(), `${id}: the stub starts on the board's LED pins`);
+		await s.configure(b.stub_board);
+		assert.deepEqual([...r.configs.at(-1).subarray(10, 12)], [led.red, led.green], `${id}: CONFIG carries the board's LED pins`);
+		await s.setupLed(led.red, led.green);
+		assert.deepEqual([...r.ledPins].sort(), [led.red, led.green].sort(), `${id}: no other pin driven`);
+		r.stop();
+	}
+	assert.ok(Object.values(C.boards).some((b) => b.stub_board.led.red !== C.led.red), "a board whose LEDs are not the stub's own");
+	// every board on the stub's own pins gets the image byte for byte as before per-board pins, so an install on
+	// one of them loads the very stub it always did
+	const own = Object.keys(C.boards).filter((id) => ledFor(C, id).red === C.led.red && ledFor(C, id).green === C.led.green);
+	assert.ok(own.includes("dm1801pro"), `boards on the stub's own pins: ${own.join(", ")}`);
+	for (const id of own) assert.ok(equal(stubFor(C, id, stubs.image), stubs.image), `${id}: on the stub's own pins, gets the image as it is`);
 });
 
 test("simulated radio: after the stub's reset the host link stays silent until a power cycle, as on the real radios", async (t) => {
@@ -825,4 +929,11 @@ test("a pick nothing in which serves is logged with its problem and why, not as 
 	assert.ok(rec.problem);
 	assert.ok(rec.why, "why the file was not taken");
 	assert.match(rec.id, /^problem:/);
+});
+
+test("a whole data memory read is the board's own chip, not the usual 16 MB", () => {
+	const usual = 0x1000000;
+	assert.equal(c7.dataMemSize({ backup: { spi_size: 0x200000 } }, "q128", usual), 0x200000);
+	assert.equal(c7.dataMemSize({ backup: { spi_size: 0 } }, "q128", usual), usual, "no SPI NOR listed");
+	assert.equal(c7.dataMemSize({ backup: { spi_size: 0x200000 } }, "nand", 0x10000000), 0x10000000, "a NAND has its own size");
 });

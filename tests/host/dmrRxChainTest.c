@@ -12,6 +12,7 @@
 #include <string.h>
 #include "modem/hrc_common/hrc6000_dmr.h"
 #include "modem/hrc6000/hrc6000.h"
+#include "dmr/fec/dmrCach.h"
 #include "dmr/call/dmr_call.h"
 #include "dmr/call/dmr_lc.h"
 
@@ -640,6 +641,69 @@ static void test_late_entry(void)
 	CHECK(eng.st.lc_n == 3 && strcmp(lc_tr(1), "Fs") == 0 && strcmp(lc_tr(2), "Av") == 0);
 }
 
+// The CACH short LC (DMR_EV_SHORT_LC): read from page 2 0x2B-0x2F while both slots of a BS signal are received,
+// reported when it changes, and its CRC checked by the stack
+static void put_slc(uint32_t slc, uint8_t crc)
+{
+	uint64_t v = (((uint64_t)(slc & 0x0FFFFFFFu) << 8) | crc) << 4;
+	for (int i = 0; i < 5; i++) {
+		rd[2][0x2B + i] = (uint8_t)(v >> (8 * (4 - i)));
+	}
+}
+
+static void ticks(unsigned n)
+{
+	for (unsigned i = 0; i < n; i++) {
+		t_us += 30000;
+		hrc6000_dmr_isr_timeslot(&eng);
+		board_task();
+		dmr_call_poll(t_us / 1000u);
+	}
+}
+
+static void test_short_lc(void)
+{
+	memset(rd, 0, sizeof(rd));
+	t_us = 1000000;
+	hrc6000_dmr_init(&eng, &dev, &ops);
+	hrc6000_dmr_run(&eng);
+	dmr_call_init(&modem);
+	dmr_call_set_voice(&sink, NULL);
+	dmr_call_config_t cfg;
+	dmr_call_config_default(&cfg);
+	cfg.own_id = 1234;
+	cfg.cc = 2;
+	cfg.ts = 1;
+	cfg.rmo = true;
+	cfg.both_slots = true;
+	dmr_call_configure(&cfg);
+	CHECK(dmr_call_start());
+	uint32_t slc, bad;
+	uint32_t n0 = dmr_call_short_lc(&slc, &bad), bad0 = bad;
+	const uint32_t parms = 0x2A5C3E1u;	// C_SYS_Parms (SLCO 2), CSC 0x1E1
+	put_slc(parms, dmrShortLcCrc8(parms));
+	ticks(6);
+	CHECK(dmr_call_short_lc(&slc, &bad) == n0 + 1u && slc == parms && bad == bad0);
+	CHECK(eng.st.slc_reads == 1u);	// read every slot, reported once
+	put_slc(parms + 1u, dmrShortLcCrc8(parms));	// a bad CRC: counted, not taken
+	ticks(2);
+	CHECK(dmr_call_short_lc(&slc, &bad) == n0 + 1u && slc == parms && bad == bad0 + 1u);
+	put_slc(parms + 4u, dmrShortLcCrc8(parms + 4u));
+	ticks(2);
+	CHECK(dmr_call_short_lc(&slc, &bad) == n0 + 2u && slc == parms + 4u);
+
+	// One slot only (a conventional repeater channel): the short LC isn't read
+	cfg.both_slots = false;
+	dmr_call_configure(&cfg);
+	ticks(2);
+	uint32_t reads = eng.st.slc_reads;
+	put_slc(parms + 8u, dmrShortLcCrc8(parms + 8u));
+	ticks(6);
+	CHECK(eng.st.slc_reads == reads && dmr_call_short_lc(&slc, &bad) == n0 + 2u);
+	dmr_call_stop();
+	hrc6000_dmr_halt(&eng);
+}
+
 int main(void)
 {
 	hrc6000_attach(&dev, &bus);
@@ -651,6 +715,7 @@ int main(void)
 	test_voice_lost();
 	test_late_reports();
 	test_late_entry();
+	test_short_lc();
 	if (failures) {
 		printf("# dmrRxChainTest: %d FAILED\n", failures);
 		return 1;

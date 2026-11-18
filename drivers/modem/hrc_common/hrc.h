@@ -36,6 +36,12 @@ typedef struct {
 	bool mcu_crc;			// CRC_MCU_Control: a burst's CRC can be sent as given (else the chip makes its own)
 	bool sync_reg;			// the sync type register 0x5F exists
 	bool mode_per_channel;		// 4:0x10 depends on the channel (repeater or not) and is rewritten when it changes
+	// 0x41 bit 3 (CC_Match_Ctrl) deframes bursts of any color code: with the color code filter off the receiver
+	// takes every call as it comes, no 0x1F rewrites or restarts to follow a new code (modem-hrc6000.md 5.4)
+	bool cc_any_rx;
+	// The physical layer mode gives no receive records: the air interface only transmits, unless the board's FM copy
+	// receives (hrc6000_air_fit_tap; modem-hrc6000.md 10.7)
+	bool air_tx_only;
 	uint8_t (*dmr_mode)(bool repeater);		// 4:0x10 for DMR
 	// 4:0x52 bit 2 is the TC of the last burst received, 1 = TS2 starting, and changes only in slots opened for
 	// receive: the repeater slot lock keeps both slots open
@@ -59,6 +65,14 @@ typedef struct {
 	// (the HR_C6000)
 	int (*rx_voice_read)(hrc_t *dev, uint8_t out[27]);
 	void (*rx_decode)(hrc_t *dev, bool on);
+	// Page 2 address of the last CACH short LC the chip assembled (36 bits, MSB first: 28 bits then the CRC-8); 0 =
+	// not known for this chip, none reported
+	uint8_t slc_rx_addr;
+	// Page 2 addresses of the receive tap: each burst received, as the chip deframed it (fields not in air order:
+	// a voice-layout burst is its 48-bit sync / EMB / RC field, then the voice bits), one area per slot; 0 = none.
+	// tap_field: that field's byte offset in an area (after the CACH where the chip puts one first)
+	uint8_t tap_addr[2];
+	uint8_t tap_field;
 } hrc_chip_t;
 
 struct hrc {

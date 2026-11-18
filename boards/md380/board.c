@@ -47,7 +47,7 @@ static const band_t bands[] = {
 #endif
 
 // The stock radio has two power levels, about 1 W and 5 W (hardware-md380.md 5.6)
-static const char *const power_names[] = { "1W", "5W" };
+static const char *const power_names[] = { "100mW", "500mW", "1W", "2.5W", "5W" };
 
 // docs/ux/information-architecture.md 7.1 on a radio without function or top keys (a few-key map): the
 // zone and power are reached from the menus. Matrix positions are unconfirmed (hardware-md380.md 9.1)
@@ -94,7 +94,7 @@ static const hal_cps_t cps = {
 
 const board_t board = {
 	.name = BOARD_NAME,
-	// CAP_GPS: the G models; gps_present says whether this one has the module (hardware-md380.md 13). No
+	// CAP_GPS: the G models; board_t.gps says whether this one has the module (hardware-md380.md 13). No
 	// CAP_VOLUME_POT: the knob sets the volume in the analog path, the MCU only sees its position. CAP_ENCODER: the
 	// channel knob is a 16-position switch, reported to the core as steps (input_md380.c)
 	.caps = CAP_KEYPAD | CAP_ENCODER | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0),
@@ -102,7 +102,7 @@ const board_t board = {
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
 	.power_names = power_names,
-	.power_default = 0,
+	.power_default = 2,	// 1 W
 	.display = &md380_display,
 	.input = &md380_input,
 	.keymap = keymap,
@@ -111,6 +111,7 @@ const board_t board = {
 	.side_key_names = side_key_names,
 	.side_key_count = sizeof(side_keys),
 	.radio = &md380_radio,
+	.chip_reg = md380_chip_reg,
 	.power = &md380_power,
 	.flash = &stm32_spi_flash,
 #if CONFIG_DIAG
@@ -119,6 +120,12 @@ const board_t board = {
 #endif
 #if CONFIG_DMR
 	.dmr = &stm32_hrc_dmr,
+#if CONFIG_AIR
+	// The HR_C5000's physical layer mode through the shared provider (hrc6000_air.c; hardware-md380.md, Air interface).
+	// No board.baseband: no FM receive RAM is known on this chip, and the discriminator audio on PC3 isn't known to
+	// reach the low frequencies a 4-level mode needs
+	.air = &stm32_hrc_air,
+#endif
 	.audio = &md380_audio,
 	.vocoder = &stm32_vocoder,
 #endif
@@ -138,7 +145,7 @@ const board_t board = {
 	.cps = &cps,
 #endif
 #if CONFIG_GPS
-	.gps_present = stm32_gps_present,
+	.gps = &stm32_gps,
 #endif
 };
 

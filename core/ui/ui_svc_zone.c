@@ -100,8 +100,10 @@ bool ui_svc_zone_offer(ui_zone_offer_t *out)
 	out->src = o.src;
 	out->channels = rec.channels;
 	for (int i = 0; i < rec.channels; i++)
-		if (zsChannelAt(&rec, i, &ch) && zone_import_in_band(&ch))
+		if (zsChannelAt(&rec, i, &ch) && zone_import_in_band(&ch)) {
 			out->in_band++;
+			out->unavailable += zone_import_unavailable(&rec, i);
+		}
 	if (out->channel && zsChannelAt(&rec, 0, &ch))
 		strcpy(out->name, ch.name);
 	else
@@ -126,6 +128,7 @@ bool ui_svc_zone_offer_channel(uint32_t serial, uint16_t i, ui_zone_offer_ch_t *
 	out->rx_hz = ch.rxHz;
 	out->dmr = ch.dmr;
 	out->in_band = zone_import_in_band(&ch);
+	out->unavailable = zone_import_unavailable(&rec, i);
 	return true;
 }
 
@@ -143,9 +146,10 @@ static struct {
 // The import list's copy: the settings aren't held while the codeplug is written
 static settings_zs_import_t job_imports[SETTINGS_ZS_IMPORTS];
 
-// ok: name the zone's name here, index the channels written, id 1 when it updated an earlier import; else text why, in
-// English (TRN): the UI translates it when it shows it, so a longer translation isn't cut to the event's 40 bytes
-static void import_done(bool ok, const char *text, const zone_import_result_t *r)
+// ok: name the zone's name here, index the channels written, id 1 when it updated an earlier import, ms the channels
+// of a kind that came in unavailable (their system isn't set up here); else why, a key (TRN): the UI shows it in the
+// language in use
+static void import_done(bool ok, tr_id_t why, const zone_import_result_t *r)
 {
 	ui_event_t ev;
 	memset(&ev, 0, sizeof ev);
@@ -155,22 +159,22 @@ static void import_done(bool ok, const char *text, const zone_import_result_t *r
 		memcpy(ev.name, r->name, sizeof ev.name - 1);
 		ev.index = r->channels;
 		ev.id = r->updated;
+		ev.ms = r->unavailable;
 	}
-	if (text != NULL)
-		strncpy(ev.text, text, sizeof ev.text - 1);
+	ev.why = why;
 	ui_notify(&ev);
 }
 
-static const char *import_failure(zone_import_status_t st)
+static tr_id_t import_failure(zone_import_status_t st)
 {
 	switch (st) {
-	case ZI_NONE_IN_BAND: return TRN("No channel in this radio's bands");
-	case ZI_NO_ZONE: return TRN("No room for another zone");
-	case ZI_ZONE_FULL: return TRN("That zone is full");
-	case ZI_NO_CHANNELS: return TRN("Not enough free channels");
-	case ZI_NO_CONTACTS: return TRN("Not enough free contacts");
-	case ZI_FLASH: return TRN("Couldn't save: try again");
-	default: return TRN("Not a zone this radio reads");
+	case ZI_NONE_IN_BAND: return TRN(SHARE_ERR_NO_CHANNEL_IN_BANDS, "No channel in this radio's bands");
+	case ZI_NO_ZONE: return TRN(ZONE_ERR_NO_ROOM, "No room for another zone");
+	case ZI_ZONE_FULL: return TRN(SHARE_ERR_ZONE_FULL, "That zone is full");
+	case ZI_NO_CHANNELS: return TRN(SHARE_ERR_FREE_CHANNELS, "Not enough free channels");
+	case ZI_NO_CONTACTS: return TRN(SHARE_ERR_FREE_CONTACTS, "Not enough free contacts");
+	case ZI_FLASH: return TRN(TOAST_SAVE_FAILED, "Couldn't save: try again");
+	default: return TRN(SHARE_ERR_NOT_A_ZONE, "Not a zone this radio reads");
 	}
 }
 
@@ -181,7 +185,7 @@ static void import_job(void *ctx)
 	zone_share_offer_t o;
 	const uint8_t *data;
 	if (!zone_share_offer(&o, &data) || o.serial != job.serial) {
-		import_done(false, TRN("The offer is gone"), NULL);
+		import_done(false, TRN(SHARE_ERR_OFFER_GONE, "The offer is gone"), NULL);
 		return;
 	}
 	zone_import_status_t st;
@@ -205,7 +209,7 @@ static void import_job(void *ctx)
 		return;
 	}
 	zone_share_offer_done(o.serial);
-	import_done(true, NULL, &r);
+	import_done(true, TR_NONE, &r);
 }
 
 bool ui_svc_zone_offer_import(uint32_t serial, uint16_t zone)
@@ -243,12 +247,12 @@ bool ui_svc_zone_event(uint8_t kind, uint32_t id, ui_event_t *ev)
 	name[sizeof name - 1] = 0;
 	sbuf_t b;
 	sb_init(&b, ev->text, sizeof ev->text);
-	sb_str(&b, o.channel ? TR("Channel ") : TR("Zone "));
+	sb_str(&b, o.channel ? TR(SHARE_BODY_CHANNEL, "Channel ") : TR(SHARE_BODY_ZONE, "Zone "));
 	sb_str(&b, name);
 	if (!o.channel) {
 		sb_str(&b, ", ");
 		sb_u32(&b, o.channels, 1);
-		sb_str(&b, o.channels == 1 ? TR(" channel") : TR(" channels"));
+		sb_str(&b, o.channels == 1 ? TR(UNIT_CHANNEL, " channel") : TR(UNIT_CHANNELS, " channels"));
 	}
 	return true;
 }

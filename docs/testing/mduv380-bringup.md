@@ -3,8 +3,8 @@
 
 # MD-UV380 bring-up checklist
 
-The MD-UV380 port (`make BOARD=mduv380`, and `POWER=10w` for an MD-UV390 Plus 10 W) builds and passes its host tests.
-Nothing has run on a radio yet. This page is the order to try it in, what each stage proves, and what to change when
+The MD-UV380 port (`make BOARD=mduv380`, and `POWER=10w` for an MD-UV390 Plus 10 W) builds, passes its host tests and runs on radios
+(community testers). This page is the order to try it in, what each stage proves, and what to change when
 it doesn't work. The stage numbers match the unknowns table in [hardware-mduv380.md](../spec/hardware-mduv380.md)
 section 14. Every row names the knob in the source that the likely failure points at.
 
@@ -22,7 +22,7 @@ change when one fails.
 
 ## Status
 
-Not run on a radio. The codec builds were checked on a host only (untested on the radio): TYT 19.26; TYT 19.74 and
+Runs on radios (community testers). The codec builds were checked on a host: TYT 19.26; TYT 19.74 and
 219.74, 5 W and 10 W; TYT and Retevis 18.11 and 18.16; Retevis RT3S 19.06 and 219.60. A first DMR test
 should use a 19.26 file and one whose code goes to the start of sector 10 (RT3S 219.60, any 219.74, S19.74).
 
