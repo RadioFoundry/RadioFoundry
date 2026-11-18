@@ -46,8 +46,21 @@ void gfx_clip_off(void);
 void gfx_pixel(int x, int y, color_t c);
 color_t gfx_get_pixel(int x, int y);	// RGB565, or 0 / 1 on a 1 bpp panel
 // n bytes of the frame as RGB565 (little endian, rows of width * 2 bytes) from byte off: screen captures of a bpp 4
-// panel. At bpp 16 the frame buffer itself
+// panel. At bpp 16 the frame buffer itself. Always the whole panel: a safe-area frame buffer (hal_display_t
+// fb_safe_area) has its insets filled in with the background
 void gfx_read_rgb565(uint32_t off, uint8_t *out, size_t n);
+// The same at the panel's own depth: n bytes of the whole panel as a frame buffer of it would hold them (rows of
+// (width * bpp + 7) / 8 bytes, the leftmost pixel in the high bits), from byte off. A safe-area frame buffer's insets
+// are palette entry 0, the background
+void gfx_read_packed(uint32_t off, uint8_t *out, size_t n);
+// Where the frame buffer lies on the panel: the whole panel (x = y = 0), or with fb_safe_area its safe area. stride:
+// bytes a row. For a capture that sends the frame buffer as it is (the debug link's packed screenshot)
+typedef struct {
+	uint16_t x, y, w, h;
+	uint32_t stride;
+	bool safe_area;
+} gfx_fb_rect_t;
+void gfx_fb_rect(gfx_fb_rect_t *r);
 // The color index i stands for, for a screen capture at the panel's own depth (the frame buffer's rows and this):
 // bpp 4 the palette (0 for an entry not set), bpp 1 the paper (0) and ink (1) of the UI gallery's screenshots, bpp 16
 // 0
@@ -62,7 +75,8 @@ void gfx_frame_begin(void);
 bool gfx_frame_idle(uint32_t *frames);
 #if CONFIG_NET_WEBCTL
 // A copy of the screen kept elsewhere (the web control page, core/net/webctl.c), sent the rows that change: gfx_flush
-// marks the rows it sent the panel
+// marks the rows it sent the panel. Panel rows, also with a safe-area frame buffer (its rows from inset_top on, every
+// row when the insets were filled)
 int gfx_row_next(int from);		// the first row from `from` on that changed since it was taken, -1 none
 void gfx_rows_take(int from, int to);	// rows from..to (inclusive) sent: unmarked
 void gfx_rows_mark_all(void);		// a new reader: every row

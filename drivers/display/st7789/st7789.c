@@ -162,6 +162,32 @@ void st7789_write_rows_indexed(const st7789_t *p, const uint8_t *fb, const uint1
 	b->end();
 }
 
+void st7789_write_window_indexed(const st7789_t *p, const uint8_t *fb, const uint16_t *palette, uint16_t x, uint16_t y,
+				 uint16_t w, uint16_t y0, uint16_t y1)
+{
+	const st7789_bus_t *b = p->bus;
+	uint32_t stride = (w + 1u) / 2u;
+	if (x >= p->width || y >= p->height || w > p->width - x || w == 0 || w > ST7789_MAX_LINE) {
+		return;
+	}
+	if (y1 > p->height - y) {
+		y1 = (uint16_t)(p->height - y);
+	}
+	if (y0 >= y1) {
+		return;
+	}
+	b->begin();
+	window(p, x, (uint16_t)(y + y0), (uint16_t)(x + w), (uint16_t)(y + y1));
+	for (uint32_t r = y0; r < y1; r++) {
+		const uint8_t *row = fb + r * stride;
+		for (uint32_t i = 0; i < w; i++) {
+			line[i] = palette[(row[i >> 1] >> ((i & 1u) ? 0 : 4)) & 0x0Fu];
+		}
+		b->pixels(line, w);
+	}
+	b->end();
+}
+
 void st7789_invert(const st7789_t *p, bool on)
 {
 	p->bus->begin();

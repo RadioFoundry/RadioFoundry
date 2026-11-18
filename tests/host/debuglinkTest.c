@@ -291,7 +291,7 @@ static void shot_read(const dl_shot_t *s, size_t cap, const char *what)
 		CHECK((out[1] | out[2] << 8) == s->width && (out[3] | out[4] << 8) == s->height && out[7] == s->insets[0] &&
 		      out[10] == s->insets[3], "%s: geometry", what);
 		CHECK(get32le(out + 15) == offset && get32le(out + 19) == s->size && get32le(out + 23) == s->frame &&
-		      out[27] == s->drawing, "%s: offset, size, frame", what);
+		      out[27] == ((s->drawing ? 1 : 0) | (s->safe_area ? 2 : 0)), "%s: offset, size, frame", what);
 		if (s->bpp == 4)
 			CHECK((out[DL_SHOT_HDR + 2] | out[DL_SHOT_HDR + 3] << 8) == s->palette[1], "%s: palette", what);
 		total = get32le(out + 11);
@@ -329,6 +329,15 @@ static void test_shot(void)
 	s.size = 120 * 320;
 	s.drawing = false;
 	shot_read(&s, DL_REPLY_MAX, "240 x 320");
+	// A frame buffer of the safe area only (hal_display_t fb_safe_area): its own bytes, the flag in byte 27 bit 1
+	s.insets[0] = s.insets[1] = 5;
+	s.insets[2] = s.insets[3] = 10;
+	s.size = 110 * 310;
+	s.safe_area = true;
+	shot_read(&s, DL_REPLY_MAX, "240 x 320, the safe area only");
+	s.drawing = true;
+	shot_read(&s, DL_REPLY_MAX, "the safe area only, drawing");
+	s.safe_area = s.drawing = false;
 	s.bpp = 1;
 	s.width = 128;
 	s.height = 64;

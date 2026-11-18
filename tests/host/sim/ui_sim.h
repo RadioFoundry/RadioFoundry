@@ -19,6 +19,7 @@ typedef struct {
 	uint8_t inset_tb;	// top and bottom
 	bool aa;		// anti-aliased fonts: the radio is built with CONFIG_FONT_AA
 	bool big;		// lists and labels one size up: the radio is built with CONFIG_FONT_BIG
+	bool safe;		// the frame buffer holds the safe area only, as the radio builds it (hal_display_t fb_safe_area)
 } sim_geom_t;
 
 // K full keypad, M navigation keys, V a mobile's front panel + hand-mic keypad, F few keys, P that front panel
