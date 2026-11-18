@@ -219,7 +219,7 @@ manual are this size.
 ### DM-1701 languages
 
 The default image is English and Spanish. Chinese builds beside it: the app region is sectors 3-9, 720 KB, and the
-two languages leave well over 350 KB free with the debug link on
+two languages leave room with the debug link on
 ([the feature matrix](../feature-matrix.md#whole-images)). Pick Chinese as the Radio language when you install with the
 web flasher ([Installing](02-installing.md)), or build it:
 

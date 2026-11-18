@@ -12,9 +12,12 @@ and writes the C tables the firmware links (core/ui/cjk_font_data.c) plus a PNG 
         --font-name "Noto Sans SC 2.004" \
         --copyright "2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'" \
         --license LICENSES/OFL-1.1.txt --spdx OFL-1.1 \
-        --po core/ui/lang/zh.po --out-c core/ui/cjk_font_data.c --out-png /tmp/cjk.png
+        --po core/ui/lang/zh.po --chars-file tools/cjk_names_zh.txt \
+        --out-c core/ui/cjk_font_data.c --out-png /tmp/cjk.png
     tools/cjkfont.py ... --text "确认 取消 信道" --out-c /tmp/cjk.c
 
+--chars-file adds characters from a UTF-8 file (one name per line, # comments ignored) to the catalog's characters.
+It is for user text the catalogs do not contain, such as Chinese channel names.
 The cell is 16x16 pixels because smaller is not readable: at 12x12 an outline font loses the strokes of all but the
 simplest characters (a hand-tuned 12x12 bitmap font would do it, but none with a license that suits this project).
 
@@ -63,11 +66,25 @@ MACRO_CHARS = "\u2026\u00b7\u2192\u00b0\u2912\u2913"
 
 # From a catalog: every character a msgstr holds that is not ASCII, which is what the Latin fonts cannot draw
 def chars_from_po(path):
-    text = open(path, encoding="utf-8").read()
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
     out = set()
     for m in re.finditer(r'^msgstr "((?:[^"\\]|\\.)*)"$', text, re.M):
         s = m.group(1).replace('\\"', '"').replace("\\n", "\n").replace("\\\\", "\\")
         out.update(ch for ch in s if ord(ch) > 0x7E and ch not in MACRO_CHARS)
+    return out
+
+
+# From a reviewed name list: every character outside ASCII and the Latin font's macro characters. Lines starting with
+# # are comments, so a list can explain where its names came from.
+def chars_from_file(path):
+    out = set()
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            out.update(ch for ch in line if ord(ch) > 0x7E and ch not in MACRO_CHARS)
     return out
 
 
@@ -162,6 +179,7 @@ def main():
     ap.add_argument("--threshold", type=int, default=100, help="coverage that counts as ink, 0-255 (default 100)")
     ap.add_argument("--po", help="take the characters from a gettext catalog's msgstr lines")
     ap.add_argument("--text", help="take the characters from this text instead")
+    ap.add_argument("--chars-file", help="also take the characters from a UTF-8 name list (# comments ignored)")
     ap.add_argument("--gb2312-level1", action="store_true",
                     help="also the 3755 common ideographs (GB2312 level 1), so Chinese channel names draw")
     ap.add_argument("--font-name", default="", help="the font and its version, for the generated file's notice")
@@ -175,6 +193,8 @@ def main():
     if not args.po and not args.text:
         ap.error("give --po or --text")
     chars = chars_from_po(args.po) if args.po else set(args.text)
+    if args.chars_file:
+        chars |= chars_from_file(args.chars_file)
     if args.gb2312_level1:
         chars |= gb2312_level1()
     chars = sorted(ch for ch in chars if codepoint_ok(ord(ch)) and not ch.isspace())

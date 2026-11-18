@@ -34,8 +34,8 @@ BOARD_UNSUPPORTED += FAULT_TRACE	# needs a host UART: the host port is USB, and 
 # Chinese (CONFIG_LANG_ZH, docs/build-config.md): a line of it needs 16 px, and this class draws its words in the 6x12
 # font, so core/ui/ui_screens.c moves lists, labels, the strip, the hints and the text pages up to the 8x16 font while a
 # wide language is in use; Home then has no room for the zone line and a list shows 5 rows instead of 7 on the 160x120
-# panel (docs/spec/ui.md 2.5). Off by default like on every radio. Its glyph table (about 128 KB, docs/feature-matrix.md)
-# doesn't fit the 720 KB region beside the default build: a Chinese image has to turn other switches off
+# panel (docs/spec/ui.md 2.5). Off by default like on every radio. Its glyph table (about 27 KB, docs/feature-matrix.md)
+# is far smaller than the old GB2312 one: the `chinese` CI extra builds it beside the default build
 #
 #	make BOARD=dm1701 CONFIG_LANG_ZH=y CONFIG_LANG_DEFAULT_ZH=y
 #

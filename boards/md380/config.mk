@@ -56,9 +56,9 @@ CONFIG_RX_EXT ?= n
 BOARD_NOT_WRITTEN += RX_EXT	# no receive range in its chip documents (a PLL and an IF chain, no single receiver chip)
 
 # Chinese needs a 16x16 glyph for every character it draws (core/ui/cjk_font_data.c): the translation face plus a
-# GB2312 level-1 set for channel names is 3765 glyphs, about 128 KB, and this 464 KB region is already 99 % full
+# reviewed list of Chinese names and repeater words is about 27 KB, and this 464 KB region is already 99 % full
 # without it. Chinese must not build here (the 720 KB and 880 KB radios carry it)
-BOARD_UNSUPPORTED += LANG_ZH	# the 128 KB of CJK glyphs won't fit beside the default build in 464 KB
+BOARD_UNSUPPORTED += LANG_ZH	# the CJK glyphs won't fit beside the default build in 464 KB
 BOARD_UNSUPPORTED += LANG_DEFAULT_ZH	# needs LANG_ZH
 # P25 and NXDN transmit on the HR_C5000's physical layer mode (board.air, hardware-md380.md 4.11), but receive isn't
 # written: the chip gives no physical layer records, and NXDN's receive needs a flat discriminator copy, which this

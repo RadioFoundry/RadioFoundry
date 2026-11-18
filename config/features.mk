@@ -178,7 +178,7 @@ CONFIG_LANG_IT ?= n
 CONFIG_LANG_FR ?= n
 # Chinese on the radio (core/ui/lang/zh.po): the Latin fonts have no glyph for it, so it brings a 16x16 CJK font of the
 # characters its catalog uses (core/ui/cjk_font_data.c, built by tools/cjkfont.py) and text the text layer decodes.
-# Off by default: about 16 KB of glyphs and 12 KB of text. Each radio with another display font needs its glyphs checked
+# Off by default: about 27 KB of glyphs and 17 KB of text. Each radio with another display font needs its glyphs checked
 # against that font's height (docs/dev/translating.md)
 CONFIG_LANG_ZH ?= n
 # the CJK glyph table for Chinese channel names and text: built with CONFIG_LANG_ZH, but a board too small to show
