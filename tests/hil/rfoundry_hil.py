@@ -1231,6 +1231,9 @@ class SdrBench:
                "label": self.label or mode}
         if self.api_level is not None:
             req["power"] = self.api_level
+        if mode == "fsk4":
+            # A bench board can lose about the first 30 ms of a keying: lead with carrier so no symbols go there
+            fields.setdefault("lead_s", 0.04)
         req.update({k: v for k, v in fields.items() if v is not None})
         t = _LineTx(L, L.address(self.api), req)
         self.bg.append(t)
