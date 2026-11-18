@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// AT-D578UV DMR baseband: the SCT3258 on its 8-bit host port (docs/spec/hardware-d578uv.md 4), bit-banged on GPIO, and
+// AT-D578UV DMR baseband: the SCT3258 on its 8-bit host port, bit-banged on GPIO, and
 // the SCT driver (drivers/modem/sct) on top. The boot block comes from the codec slot the flashing tool fills from the
 // user's own stock file; without it the radio runs FM only.
 #include <stddef.h>
@@ -30,10 +30,10 @@
 
 extern const uint8_t __codec_slot[];
 
-// The voice set-up (hardware-d578uv.md 4.4), sent after the boot. The codec is a TLV320AIC3204, the vocoder AMBE+2
+// The voice set-up, sent after the boot. The codec is a TLV320AIC3204, the vocoder AMBE+2
 #define VOICE_CODEC		1
 #define VOICE_VOCODER		4
-// The calibration block (hardware-d578uv.md 7): current copy marked at +CAL_MARKS. The audio bytes start at CAL_AUDIO:
+// The calibration block: current copy marked at +CAL_MARKS. The audio bytes start at CAL_AUDIO:
 // four codec levels (line out left and right, the right input, the headphone driver), then the digital mode speaker
 // and microphone gains (MSB first) at CAL_SPK and CAL_MIC. DMR_OFFSET's 8 bytes sit at CAL_OFFSET
 #define CAL_A			0x02F60000u
@@ -205,8 +205,8 @@ static const uint8_t mod_gain_uhf[2] = { 0x0C, 0x60 };
 static const uint8_t mod_gain_vhf[2] = { 0x24, 0x75 };
 
 // MODOUT_CONFIG: byte 0 the delay of LOR against LOL in 10.4 us steps, signed; bytes 1-4 fixed. The 4FSK is on LOL,
-// and LOL later by 21 steps (0xEB) puts the inbound burst on the repeater's grid with the DAC filter of codec_start
-// (hardware-d578uv.md 5.1). Positive values moved it by less than a sample
+// and LOL later by 21 steps (0xEB) puts the inbound burst on the repeater's grid with the DAC filter of codec_start.
+// Positive values moved it by less than a sample
 static const uint8_t modout_config[5] = { 0xEB, 0x10, 0x00, 0x00, 0x00 };
 
 static const sct_field_t tx_uhf[] = {
@@ -252,7 +252,7 @@ static bool cal_current(uint32_t base)
 	return written && !superseded;
 }
 
-// The rest of the DMR start (hardware-d578uv.md 4.4) but MODOUT_CONFIG (in tx_fields): DMR_OFFSET from calibration, the
+// The rest of the DMR start but MODOUT_CONFIG (in tx_fields): DMR_OFFSET from calibration, the
 // squelch's fixed levels (no gain adjustment, LNA 2, AGC, OOBE every 80 ms, carrier thresholds 0x1770 / 0x157C for
 // digital and analog) and the demodulator's auto calibration
 static uint8_t dmr_offset[8];
@@ -266,7 +266,7 @@ static const sct_field_t start_fields[] = {
 };
 
 // The codec's DAC on processing block PRB_P17 (page 0 register 60): interpolation filter C, 13 samples of delay where
-// the baseband's own set-up has 18, so 0.41 ms less on the 4FSK's way out (hardware-d578uv.md 5.1). It takes effect
+// the baseband's own set-up has 18, so 0.41 ms less on the 4FSK's way out. It takes effect
 // with the DAC running
 static const sct_codec_write_t codec_start[] = { { 0, 0x3C, 17 } };
 
@@ -314,8 +314,8 @@ static const sct_host_t host = {
 // the identity queries below
 static SemaphoreHandle_t field_mutex;
 
-// The baseband's answers to the Packet Interface's identity queries (Q_PRO_STR, Q_HW_VER, Q_SW_VER, Q_CID_SN;
-// hardware-d578uv.md 4.4), in a TYPE 3 packet, asked by the modem task without waiting on the answer: one query at a
+// The baseband's answers to the Packet Interface's identity queries (Q_PRO_STR, Q_HW_VER, Q_SW_VER, Q_CID_SN),
+// in a TYPE 3 packet, asked by the modem task without waiting on the answer: one query at a
 // time, a poll looks for its answer. Asked only once d578uv_modem_identity has been called (the diagnostics page), so
 // the engine's field slot stays idle in normal use, and only while the engine has nothing of its own out
 // (sct_dmr_field_begin refuses then). One left unanswered IDENT_TRIES times waits for the next pass.
@@ -419,7 +419,7 @@ static void port_unlock(void *ctx)
 		xSemaphoreGiveRecursive(lock);
 }
 
-// DMR_CALL_OPTION and REPORT_FIELD (hardware-d578uv.md 4.4). Byte 0: the chip's own squelch off (bit 6 clear), so the
+// DMR_CALL_OPTION and REPORT_FIELD. Byte 0: the chip's own squelch off (bit 6 clear), so the
 // board's carrier (d578uv_modem_carrier) and the return to receive below start the sync search; with it on, a lone
 // burst soon after a transmission went undecoded. No RF control (the MCU keys the RF chips). Byte 2: four good CACH,
 // two LC header repeats. Byte 3: every idle frame, CSBK, LC header and terminator reported. The stack takes a repeater
@@ -430,7 +430,7 @@ static void port_unlock(void *ctx)
 // CARRIER_READY 2 (CR_READY below) 14 ms after each transmission. With the burst line's edges the transmission ends
 // about 2 ms after the last burst's fall and the receiver is set up about 8 ms after it, so CARRIER_READY goes out
 // about 16 ms after the fall. A one-burst reply 62.5 ms after our last burst then decodes; one 32.5 ms after it does
-// not (hardware-d578uv.md 4.4)
+// not
 #define CR_READY	2
 static const sct_dmr_port_t port = {
 	.send = port_send,
@@ -477,7 +477,7 @@ static void modem_task(void *arg)
 	}
 }
 
-// A baseband field (hardware-d578uv.md 4.4): a write sends data as the field (n bytes, the field's length, 0 for a
+// A baseband field: a write sends data as the field (n bytes, the field's length, 0 for a
 // bare command) and returns 0 once taken; a query returns the bytes of the answer copied to out (at most cap and
 // SCT_DMR_FIELD_MAX). -1: not booted, a length the field doesn't have, the slot busy, refused or no answer in
 // FIELD_WAIT_MS
@@ -553,7 +553,7 @@ bool d578uv_modem_init(void)
 }
 
 // 2, ready with the phase reversed: with the RF chip's DMR AF output (inverted below 300 MHz, qa4818.h), that is the
-// polarity the baseband gets on both bands. With 1, no call decodes (hardware-d578uv.md 4.4)
+// polarity the baseband gets on both bands. With 1, no call decodes
 void d578uv_modem_carrier(bool carrier)
 {
 	if (booted)

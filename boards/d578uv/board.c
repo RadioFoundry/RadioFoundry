@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// AnyTone AT-D578UV: board descriptor, clocks and reset-time pin levels, key map (docs/spec/hardware-d578uv.md)
+// AnyTone AT-D578UV: board descriptor, clocks and reset-time pin levels, key map
 #include "board.h"
 #include "config.h"
 #include "d578uv.h"
@@ -25,14 +25,14 @@ static const band_t bands[] = {
 	{ 136000000, 174000000, true },
 	{ 400000000, 480000000, true },
 #if CONFIG_AM_RX
-	{ 108000000, 136000000, false },	// the air band, AM receive only (docs/spec/hardware-d578uv.md 5.4)
+	{ 108000000, 136000000, false },	// the air band, AM receive only
 #endif
 #if CONFIG_BCAST_FM
-	{ 87500000, 108000000, false },		// the broadcast band, on the KTMicro receiver (hardware-d578uv.md 5.4)
+	{ 87500000, 108000000, false },		// the broadcast band, on the KTMicro receiver
 #endif
 };
 
-// The power levels, per band (hardware-d578uv.md: measured with a wattmeter; pa_drive in rf_plan.h). The top
+// The power levels, per band (measured with a wattmeter; pa_drive in rf_plan.h). The top
 // differs: 45 W on UHF, 50 W on VHF
 static const char *const power_names[] = { "1W", "10W", "25W", "45W" };
 static const char *const power_names_vhf[] = { "1W", "10W", "25W", "50W" };
@@ -156,7 +156,7 @@ const board_t board = {
 #endif
 };
 
-// The 12 MHz crystal to 120 MHz (hardware-d578uv.md 2)
+// The 12 MHz crystal to 120 MHz
 #define CRYSTAL_HZ	12000000u
 #define CORE_HZ		120000000u
 
@@ -181,7 +181,7 @@ void board_init(void)
 	d578uv_bus_init();	// the backlight (on the RF bus) is set before the radio starts
 	d578uv_nand_init();
 #if CONFIG_NAND_STORAGE
-	// The core's storage (hardware-d578uv.md 6.3): mounted before storage_init reads it. Without it the radio runs on
+	// The core's storage: mounted before storage_init reads it. Without it the radio runs on
 	// the default settings
 	d578uv_flash.init();
 #endif

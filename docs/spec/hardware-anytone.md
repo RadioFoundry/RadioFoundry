@@ -7,9 +7,8 @@ still missing. The survey entry is in [radios.md](radios.md). The AT-D868UV pin 
 **Summary.** These radios are a GD32F303 (or, on late D578UVs, an AT32F43x) MCU driving a Sicomm SCT3258 DMR
 baseband over an 8-bit parallel host port. The SCT3258 runs DMR layers 1 and 2 and the AMBE+2 vocoder itself, and
 voice audio goes codec ↔ SCT3258 over I2S without passing through the MCU. The handhelds' RF chip is the AT1846S,
-which RadioFoundry already drives; the AT-D578UV has four QA4818N / WX4818N chips with a different register set
-([hardware-d578uv.md](hardware-d578uv.md) 5). On the AT-D868UV, every bus (the SCT3258 host port, the LCD, the SPI
-NAND, the AT1846S and I2C) is bit-banged on GPIO: the vendor firmware uses no SPI, I2C or EXMC peripheral. Loading our firmware looks possible: native USB, a documented vendor
+which RadioFoundry already drives; the AT-D578UV has four QA4818N / WX4818N chips with a different register set.
+On the AT-D868UV, every bus (the SCT3258 host port, the LCD, the SPI NAND, the AT1846S and I2C) is bit-banged on GPIO: the vendor firmware uses no SPI, I2C or EXMC peripheral. Loading our firmware looks possible: native USB, a documented vendor
 update mode, and SWD pads with no read-out protection on the units documented so far. The cost is the baseband.
 RadioFoundry's burst-level modem and vocoder interfaces don't map onto it directly, and features that need the AMBE bits
 (privacy, the hotspot voice bridge) aren't possible unless a vocoder bypass is found.
@@ -131,7 +130,7 @@ confirm on the radio: the `CHAN_D` frame format in DMR mode and its timing again
 | --- | --- |
 | PC link | Native USB on the MCU, a CDC serial port (`/dev/ttyACM*`). The cable is a plain USB cable; the baud setting makes no difference |
 | MCU update mode, 868/878 | Hold PTT + PF3 (top key) at power-on; the red LED blinks |
-| MCU update mode, 578 | Hold MENU + EXIT at power-on (or while switching off); the status LED blinks. The radio stays in update mode until an update is written. The bootloader reads it ([hardware-d578uv.md](hardware-d578uv.md) 3.2) |
+| MCU update mode, 578 | Hold MENU + EXIT at power-on (or while switching off); the status LED blinks. The radio stays in update mode until an update is written. The bootloader reads it |
 | Vendor tool | CPS → Tool → Firmware and Icon Update ("QX_Firmware_Update"): opens a `.spi` file, shows model and version, 921600 baud, a "Duplex" option and a grayed-out "Encrypt" option |
 | Update files | Three per update: `.spi` (14 or 51 bytes, the file the user opens), `.CDI` (278 bytes for firmware, about 11 KB for icon sets), `.CDD` (the payload). The icon (graphics) update uses the same tool and file set |
 | Image sizes (.CDD) | D878UV 3.08n: 939,168 bytes. D878UVII 3.08n: 939,240. D578UV2 GD 2.08: 1,020,408. D578UV2 AT 2.08: 1,040,008. Icon sets: 3.7 MB (878), 2.1–7.3 MB (578) |
@@ -217,8 +216,8 @@ the user's radio and its calibration.
 
 ## 5. What a port needs
 
-The AT-D578UV port has the GD32F30x platform, the SCT driver, the SPI NAND storage and the update tool; its bring-up
-state is in [hardware-d578uv.md](hardware-d578uv.md) 9. The rest of this table is what the handhelds still need.
+The AT-D578UV port has the GD32F30x platform, the SCT driver, the SPI NAND storage and the update tool. The rest
+of this table is what the handhelds still need.
 
 | Part | RadioFoundry has | New work |
 |---|---|---|
@@ -238,8 +237,8 @@ state is in [hardware-d578uv.md](hardware-d578uv.md) 9. The rest of this table i
 1. **Board version**: the 868UV's version and MCU (VET6 with 64 KB RAM, or VGT6). Read the MCU marking, or read the
    ID code over SWD. The 868 images of both lines fit 64 KB RAM.
 2. **The unidentified 868 outputs** (4.3) and the DAC and PWM roles. Next step: confirm on the radio with a meter.
-3. **878 pin map**: not yet recorded. The 878 has a larger display. The 578's (GD32F303 radios) is in
-   [hardware-d578uv.md](hardware-d578uv.md).
+3. **878 pin map**: not yet recorded. The 878 has a larger display. The 578's (GD32F303 radios) is in its
+   board files (`boards/d578uv/pins.h`).
 4. **The .CDD format**: plain, a Cortex-M image linked at 0x08004000 (868/878) or 0x08006000 (578). Still open:
    the 878 trailer after the stated length, how the identity check works, and whether the vendor update mode loads
    any image. The update protocol lives in the bootloader, which isn't in the update files.

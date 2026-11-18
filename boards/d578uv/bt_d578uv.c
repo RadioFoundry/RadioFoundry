@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// AT-D578UV Bluetooth PTT and keys (docs/spec/hardware-d578uv.md 3.7): the module on UART4 (PC10 TX, PC11 RX), 115200
+// AT-D578UV Bluetooth PTT and keys: the module on UART4 (PC10 TX, PC11 RX), 115200
 // 8N1, its AT lines read by drivers/input/bt_at. The module's supply is the shift register's bit 0x02, on from boot
 // (radio_d578uv.c). Not every model has the module and no pin tells: the radio asks BT_AT_PROBE a few times at start
 // and takes any answer as the module. The APRS add-on board answers on the same UART and is told apart by its answer;

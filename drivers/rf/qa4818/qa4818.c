@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // QA4818N / WX4818N-class transceiver (qa4818.h). The register meanings in the comments are inferred
-// (docs/spec/hardware-d578uv.md 5)
+//
 #include "qa4818.h"
 #include "rf/subaudio/subaudio.h"
 

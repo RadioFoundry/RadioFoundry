@@ -551,7 +551,7 @@ at1846sTest: at1846sTest.c $(ROOT)/drivers/rf/at1846s/at1846s.c $(ROOT)/drivers/
 subaudioTest: subaudioTest.c $(SUBAUDIO) $(ROOT)/drivers/rf/subaudio/subaudio.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ subaudioTest.c $(SUBAUDIO)
 
-# The QA4818-class transceiver (docs/spec/hardware-d578uv.md 5): pure helpers and register sequences on a fake bus
+# The QA4818-class transceiver: pure helpers and register sequences on a fake bus
 TESTS   += qa4818Test
 
 qa4818Test: qa4818Test.c $(ROOT)/drivers/rf/qa4818/qa4818.c $(ROOT)/drivers/rf/qa4818/qa4818.h $(RFBUS) $(SUBAUDIO)

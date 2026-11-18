@@ -6,10 +6,12 @@ A new radio is a new `boards/<b>/` directory, drivers for any chip the tree does
 is new. The core doesn't change. If it seems to need a change, the difference belongs in `board_t` or a `hal_*`
 interface instead, used through a field that other radios leave at its default.
 
-Before writing code, the facts go into a hardware spec, `docs/spec/hardware-<b>.md`, written by the spec side under
-the [clean-room rules](contributing.md#clean-room). Use the hardware spec of a radio on the same platform (`hardware-<id>.md`, [radios.md](../spec/radios.md)) as the model: MCU and memory map, pins, chips, keys, display, power,
-bootloader and image format, calibration, codec location. Start from the radio's entry in
-[radios.md](../spec/radios.md): its chip list and which RadioFoundry drivers it can reuse.
+Before writing code, the spec side collects the facts under the [clean-room rules](contributing.md#clean-room): MCU
+and memory map, pins, chips, keys, display, power, bootloader and image format, calibration, codec location. A new
+radio's detailed hardware notes and bring-up checklist are kept outside the repository. The code states each fact it
+relies on in a comment where it is used, and behavior shared with other radios goes in the generic specs.
+Start from the radio's entry in [radios.md](../spec/radios.md): its chip list and which RadioFoundry drivers it can
+reuse.
 
 ## The files
 
@@ -193,8 +195,8 @@ A bring-up page under [docs/testing/](../testing/README.md) is this list made co
 
 What the docs claim for a radio comes from its records, so each step above ends with a recorded run.
 
-1. Add `boards/<b>/board.toml` with `[status] level = "bring-up"`, a `summary` and `[docs] hardware`. A bring-up page
-   (`docs/testing/<b>-bringup.md`, `[docs] bringup`) is optional; with one, the README links the radio to it.
+1. Add `boards/<b>/board.toml` with `[status] level = "bring-up"` and a `summary`. A new radio has no `[docs]`
+   table ([board registry](board-registry.md#docs)), so the README shows its name without a link.
 2. `tools/bringup.py list --radio <b>` shows the checklist: every feature of
    [tests/hil/features.toml](../../tests/hil/features.toml) the board builds, `n/a` for its `BOARD_UNSUPPORTED`
    switches and `not written` for its `BOARD_NOT_WRITTEN` ones. Each needs a reason in `config.mk`; a feature built

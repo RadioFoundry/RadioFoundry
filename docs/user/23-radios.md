@@ -681,8 +681,7 @@ The radio vibrates for messages, call alerts and emergencies (**Settings > Sound
 
 A mobile radio for 136-174 and 400-480 MHz with a color screen, a front knob, front keys and a hand microphone.
 This section is the radios with a GigaDevice GD32F303 processor; the radios with an AT32 processor take their own
-image ([AT-D578UV (AT32)](#anytone-at-d578uv-at32)). It runs on the radio; the
-[bring-up checklist](../testing/d578uv-bringup.md) lists what has been checked and how.
+image ([AT-D578UV (AT32)](#anytone-at-d578uv-at32)). It runs on the radio.
 
 **Which AT-D578UV.** Open the radio's version screen. A radio that shows `GD_Ver` has the GD32F303 and takes the
 `d578uv` image. A radio that shows `AT_Ver` has the AT32 processor, and RadioFoundry can't be installed on it yet
@@ -792,8 +791,7 @@ room for what the GD32F303 image leaves out:
   voice stays in the DMR chip.
 
 **RadioFoundry can't be installed on an AT32 radio yet.** Nothing has run on one, and its processor set-up (clock,
-USB) is untested
-([hardware-d578uv.md](../spec/hardware-d578uv.md)). The installer and `rfoundry` name the radio and refuse it, with
+USB) is untested. The installer and `rfoundry` name the radio and refuse it, with
 nothing written. The list above is what the image is built to have once one has been tested.
 
 An AT32 radio can still get its original firmware back: `rfoundry restore-stock FW.CDD --board d578uva`, where the

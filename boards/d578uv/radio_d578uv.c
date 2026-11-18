@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // AT-D578UV radio: the four QA4818-class chips as two superhets, side A (receive and transmit) and side B (receive
-// only, the second receiver), analog FM and DMR (docs/spec/hardware-d578uv.md 5, 7).
+// only, the second receiver), analog FM and DMR.
 //
 // Receive on f: chip 2 (side A's LO) runs at f - 38.85 MHz when that is at least 300 MHz, else at f + 38.85 MHz, and
-// chip 0 receives and demodulates at the 38.85 MHz IF. Side B is the same with chips 3 (LO) and 1 at a 38.55 MHz IF
-// (5.2): with CONFIG_DUAL_WATCH it is the core's second receiver (hal_rx2.h) for an FM channel, so dual watch hears
+// chip 0 receives and demodulates at the 38.85 MHz IF. Side B is the same with chips 3 (LO) and 1 at a 38.55 MHz IF:
+// with CONFIG_DUAL_WATCH it is the core's second receiver (hal_rx2.h) for an FM channel, so dual watch hears
 // both channels at once; it is off otherwise, and while side A transmits. Its squelch is decided here, by the core's
 // noise levels (radio_sm.h). The speaker takes side B's audio through the level device's second channel.
 //
@@ -23,7 +23,7 @@
 // set-up alone. One level for both modes (kt_level). Side A keeps its last set-up, muted by the core, as the core
 // expects; dual watch's side B runs on as with an FM channel.
 //
-// TX tones (5.3): the 1750 Hz burst (tx_tone) from chip 0's tone generator, DTMF (tx_dtmf) synthesized on PB9
+// TX tones: the 1750 Hz burst (tx_tone) from chip 0's tone generator, DTMF (tx_dtmf) synthesized on PB9
 // (tone_d578uv.c) into the chip's audio input pin, and APRS (d578uv_afsk) the same way; chip 0's output bit 0 mutes the
 // microphone meanwhile (inferred).
 //
@@ -31,7 +31,7 @@
 // PA4's DAC from the factory calibration (NAND, 7), corrected by the wattmeter table (tx_drive_level). TX is refused
 // without a valid calibration block and outside the bands.
 //
-// DMR transmit (5.1): tx() keys chip 0 once with the digital set and it stays keyed until tx_off(); only the PA follows
+// DMR transmit: tx() keys chip 0 once with the digital set and it stays keyed until tx_off(); only the PA follows
 // the bursts, from the baseband's burst line PD0 (EXTI 0, both edges) and a one-shot on TIM2 (pa_gate.h): the DAC and
 // PE6 on 5.75 ms after PD0 rises, the DAC off 5 ms after it falls and PE6 800 us later, because the burst's modulation
 // lags PD0 by that much. The core calls tx() before the call stack starts the modem's transmission, so the RF is keyed
@@ -91,7 +91,7 @@
 // Chip 0 GPIO bits: 3/6 side A's complementary band pair (UHF sets 3, VHF 6), 7/4 side B's (UHF sets 7, VHF 4; both
 // clear with side B off); 5 set while transmitting above 300 MHz, cleared at TX end (inferred); 1 the fan, high = on:
 // while transmitting or while the PA is hot (fan_poll), the radio's "Fan Open" menu setting "Both"; 2 the GPS module's
-// supply, high = on (d578uv_gps_power, hardware-d578uv.md 3.6); 0 set in receive and while a TX tone sounds, clear for
+// supply, high = on (d578uv_gps_power); 0 set in receive and while a TX tone sounds, clear for
 // the microphone: a microphone mute (inferred)
 #define GPIO_BAND_A_MASK	0x0048u
 #define GPIO_BAND_A_UHF		0x0008u
@@ -298,7 +298,7 @@ static uint8_t rx_threshold;		// RSSI below which a signal counts as lost
 // DMR's carrier for CARRIER_READY: the RSSI alone, this many raw steps (0.5 dB each) under rx_threshold. The chip's
 // signal flag (its analog squelch: the RSSI over register 0x78 and the noise at most 0x4F's limit) stayed off for a
 // bench call at -102 to -106 dBm that the baseband decodes, so no DMR call below about -104 dBm was heard. At
-// 446.125 MHz this is raw 92 (about -114 dBm); with no signal the RSSI read 82-87 (hardware-d578uv.md 4.4)
+// 446.125 MHz this is raw 92 (about -114 dBm); with no signal the RSSI read 82-87
 #define DMR_CARRIER_BELOW	10u
 static uint8_t dmr_threshold;
 static volatile uint8_t backlight_reg = 0xFFu;	// the PA5 device's register 8 as last asked (full until the UI sets it)
@@ -873,7 +873,7 @@ static bool ref_trim(int16_t ppb)
 
 #if CONFIG_VOX
 // The microphone meter for VOX (hal_power_t.mic_level): chip 0's voice amplitude (0x64), the input of the chip's own
-// VOX detector in the BK4819 register map the QA4818 follows (hardware-d578uv.md 5.6; inferred). Its scale is taken as
+// VOX detector in the BK4819 register map the QA4818 follows (inferred). Its scale is taken as
 // 11 bits, the detector's thresholds' width. The radio task reads it while a reader has asked within MIC_METER_MS, with
 // chip 0 on in FM; in receive the microphone mute (GPIO bit 0) is lifted for it. Any task reads the last level
 #define MIC_METER_MS		1000u
@@ -1445,7 +1445,7 @@ static void b_resume(void) {}
 #endif
 
 #if KT_USED
-// ---- The KTMicro receiver's bus and level (5.4) ----
+// ---- The KTMicro receiver's bus and level ----
 
 #define KT_TRIES		3u	// tries for a refused address
 
@@ -1500,7 +1500,7 @@ static void kt_delay(uint32_t us)
 static const ktamfm_bus_t kt_bus = { .read = kt_read, .write = kt_write, .delay_us = kt_delay };
 
 #if CONFIG_BCAST_FM
-// Some units carry an RDA5807 instead of the KTMicro, on the same two pins (5.4): broadcast FM through the shared
+// Some units carry an RDA5807 instead of the KTMicro, on the same two pins: broadcast FM through the shared
 // driver (rda5807m_hal), no air band. The board's routing stays as for the KTMicro's FM
 static void rda_delay_ms(uint32_t ms)
 {
@@ -1588,7 +1588,7 @@ static bool kt_init(void)
 #endif
 
 #if CONFIG_AM_RX
-// ---- Air band AM: chip 3 and the KTMicro receiver (5.4) ----
+// ---- Air band AM: chip 3 and the KTMicro receiver ----
 
 // The RSSI shown at the calibrated level-1 point (VHF block byte 0x1A), where the core's AM squelch level 1 opens: the
 // squelch value (hal_radio.h rx_am) is AM_NOISE_LEVEL1 there and falls 1 per count of the reading, so each core level
@@ -1914,7 +1914,7 @@ static void rx_sleep(bool sleep)
 }
 
 #if CONFIG_DMR
-// The digital TX-on (5.1): chips off, chip 0 to hz with the digital set, keyed, band bits, 10 ms, then the
+// The digital TX-on: chips off, chip 0 to hz with the digital set, keyed, band bits, 10 ms, then the
 // PA is the bursts'. Called before the modem's transmission starts (the core's order), held until tx_off()
 static uint16_t dmr_tx_dac;	// the DAC word of the last dmr_tx, for dmr_wake_listen to key again with
 
@@ -2038,7 +2038,7 @@ static bool fm_keyed(void)
 	return transmitting && mode == RADIO_MODE_FM;
 }
 
-// The 1750 Hz burst: tone drive by band, page 1 0x1B = 5, the microphone muted, then the generator (5.3). Any
+// The 1750 Hz burst: tone drive by band, page 1 0x1B = 5, the microphone muted, then the generator. Any
 // tone the generator makes; the core sends 1750 Hz
 static bool tx_tone(uint16_t hz)
 {
@@ -2438,8 +2438,8 @@ static void trims_b(void)
 #endif
 
 // board.chip_reg (debuglink.md 3.24): chips 0-3 are the QA4818s, pages 0 and 1 (not the page register itself); chip
-// 4 is the PA5 trims device, registers 0-0xF, write-only (hardware-d578uv.md 5.5); chip 5 the baseband's fields (page
-// the packet TYPE, register the field ID) and chip 6 the bytes of its DMR_CALL_OPTION (hardware-d578uv.md 4.4)
+// 4 is the PA5 trims device, registers 0-0xF, write-only; chip 5 the baseband's fields (page
+// the packet TYPE, register the field ID) and chip 6 the bytes of its DMR_CALL_OPTION
 bool d578uv_chip_reg(uint8_t chip, uint8_t pg, uint8_t reg, uint32_t *val, bool write)
 {
 #if CONFIG_DMR
@@ -2484,7 +2484,7 @@ bool d578uv_chip_reg(uint8_t chip, uint8_t pg, uint8_t reg, uint32_t *val, bool 
 }
 
 // board.chip_reg_bytes (debuglink.md 3.24): chip 5's baseband fields of any length, such as the identity queries'
-// text (hardware-d578uv.md 4.4)
+// text
 int d578uv_chip_reg_bytes(uint8_t chip, uint8_t pg, uint8_t reg, uint8_t *out, uint8_t cap)
 {
 #if CONFIG_DMR

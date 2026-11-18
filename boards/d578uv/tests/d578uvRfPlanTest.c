@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The AT-D578UV's frequency plans outside the RF chips (rf_plan.h, hardware-d578uv.md 5.4, 5.5): the air band LO on
+// The AT-D578UV's frequency plans outside the RF chips (rf_plan.h): the air band LO on
 // either side and its VCO sub-band at the radio's limits; the PA5 trims' tables from the factory defaults, and
 // lookups worked out apart from the code, rising and falling tables, at the cells' edges and outside the bands
 #include <stdio.h>
@@ -99,7 +99,7 @@ static void test_trim_tx(void)
 	CHECK(trim_tx(F10(145), 3, 0x96, 0x91) == 0x91);
 }
 
-// The drives measured at 446.050 and 146.535 MHz (hardware-d578uv.md 5.8) from those frequencies' factory values
+// The drives measured at 446.050 and 146.535 MHz from those frequencies' factory values
 static void test_pa_drive(void)
 {
 	CHECK(pa_drive(true, 0, 24) == 316);

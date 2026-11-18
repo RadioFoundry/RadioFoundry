@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // AT-D578UV APRS (hal_afsk.h). Transmit: the tones on PB9 into the RF chip's audio input (tone_d578uv.c). Receive
-// (CONFIG_APRS_RX, docs/spec/hardware-d578uv.md 3.4): the demodulated receive audio on PC0, ADC channel 10, sampled at
+// (CONFIG_APRS_RX): the demodulated receive audio on PC0, ADC channel 10, sampled at
 // 9600 Hz (eight samples a bit at 1200 baud) for the core's AFSK demodulator.
 //
 // TIM6 (the GD32 manual's TIMER5) interrupts at the rate. Its handler reads the conversion it started on the last tick
@@ -13,7 +13,7 @@
 // The timer runs only between the core's rx_start and rx_stop, which it calls while the radio receives FM on the APRS
 // frequency. Readings reach the core only while side A is receiving FM (d578uv_fm_rx_a): while it transmits or side B
 // has the AM receiver, the ring is emptied instead. PC0 carries side A's audio while chip 1's GPIO bit 6 is set, which
-// radio_d578uv.c does in receive; that it still does while side B also receives is not known (hardware-d578uv.md 3.4).
+// radio_d578uv.c does in receive; that it still does while side B also receives is not known.
 #include "d578uv.h"
 #include "config.h"
 

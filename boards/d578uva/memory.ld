@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: MIT */
 /* Copyright (c) 2026 The RadioFoundry Authors */
 /* AnyTone AT-D578UV, Artery builds: AT32F435 (more than 1 MB of flash), application behind the vendor bootloader at
- * 0x08006000 as on the GD32 builds (docs/spec/hardware-d578uv.md 10). The flash layout is boards/d578uv/memory.ld's:
+ * 0x08006000 as on the GD32 builds. The flash layout is boards/d578uv/memory.ld's:
  * the image stays below the modem boot block slot (0x080FF000..0x08100000), where the boot block the DMR baseband
- * needs is merged from the user's stock file (hardware-d578uv.md 4.3). The layout is the platform's
+ * needs is merged from the user's stock file. The layout is the platform's
  * (platform/at32f43x/common.ld). */
 
 /* The modem boot slot, known to the registry and the flashing tools as the codec slot (tools/boards.py) */

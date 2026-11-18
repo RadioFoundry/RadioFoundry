@@ -62,19 +62,21 @@ neighbor on the same platform.
 
 ### [docs]
 
+Optional. A radio whose hardware notes are kept outside the repository has no `[docs]` table.
+
 | Key | Meaning |
 |---|---|
-| `hardware` | The hardware spec, `docs/spec/hardware-<id>.md` |
+| `hardware` | Optional: the hardware spec, `docs/spec/hardware-<id>.md` |
 | `codec` | Optional: the codec spec |
 | `install` | Optional: the user manual's page for moving from stock firmware |
 | `bringup` | Optional: the bring-up checklist |
 
 `check` fails when a page doesn't exist. The README's radio table links the board to its `bringup` page, else its
-`hardware` page.
+`hardware` page, else shows its name without a link.
 
 ### [hardware]
 
-One-line summaries for the site and the generated tables; the facts stay in `docs.hardware`.
+One-line summaries for the site and the generated tables; the facts stay in the hardware notes.
 
 | Key | Meaning |
 |---|---|
@@ -226,7 +228,7 @@ what = "factory calibration: the page tagged 2 in the stock codeplug area (hardw
 |---|---|
 | `mem` | The memory: `progmem` (the MCU's program flash), `data` (the SPI NOR data flash), `nand` (the SPI NAND's main area, without spare bytes) or `secreg` (the SPI NOR flash's security registers) |
 | `start`, `end` | The range, `end` exclusive, as offsets in that memory: `progmem` from the platform's `flash_base`, `data` and `nand` from 0, `secreg` 256 bytes per register from register 1 at 0 |
-| `what` | What lies there, with the spec section that establishes it in parentheses |
+| `what` | What lies there, with the spec section that establishes it in parentheses when the board has a `hardware` page |
 
 `tools/boards.py check` refuses an entry:
 
@@ -236,7 +238,7 @@ what = "factory calibration: the page tagged 2 in the stock codeplug area (hardw
 - that isn't on the memory's erase boundaries: the platform's sectors (or 4 KB) for `progmem`, 4 KB for `data`, a
   block for `nand`, a register for `secreg`
 - that overlaps another entry, the application or the codec slot
-- whose `what` cites no section
+- whose `what` is empty, or cites no section on a board with a `hardware` page
 
 A region whose place moves (remapped by a bad-block table, for example) is protected over every place it can be. The
 registry carries the list as `protect` (`registry.json`, `radios.json` `flash`, `flash-boards.json` `boards`, `c7000`

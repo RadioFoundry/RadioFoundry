@@ -1898,7 +1898,7 @@
      "mem": "progmem",
      "start": 0,
      "end": 24576,
-     "what": "the vendor bootloader and its update mode (hardware-d578uv.md 2, 8)"
+     "what": "the vendor bootloader and its update mode"
     }
    ],
    "keep_codec_supported": false,
@@ -4520,7 +4520,7 @@
      "mem": "progmem",
      "start": 0,
      "end": 24576,
-     "what": "the vendor bootloader and its update mode (hardware-d578uv.md 2, 8)"
+     "what": "the vendor bootloader and its update mode"
     }
    ],
    "keep_codec_supported": false,

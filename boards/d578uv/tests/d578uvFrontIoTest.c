@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The AT-D578UV's microphone key lines, backlight levels and speaker amplifier (front_io.h, hardware-d578uv.md 3.1,
-// 3.2, 4.4): every line combination, the percent to register byte map at its edges, every amplifier input
+// The AT-D578UV's microphone key lines, backlight levels and speaker amplifier (front_io.h):
+// every line combination, the percent to register byte map at its edges, every amplifier input
 #include <stdio.h>
 #include "front_io.h"
 

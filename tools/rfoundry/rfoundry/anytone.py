@@ -2,7 +2,7 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 """The AnyTone update mode (boards.py family "anytone-update"): the radio's own firmware update protocol on the
 radio's USB serial port, which the bootloader runs when the radio is turned on with the board's keys held
-(docs/spec/hardware-d578uv.md 8). rfoundry (cli.py), tools/anytone_update.py and the web flasher
+. rfoundry (cli.py), tools/anytone_update.py and the web flasher
 (site/static/js/flasher/anytone.js) speak it the same way.
 
 The radio names its model when asked (byte 02), and the name differs by MCU: a GD32 radio and an Artery radio of the

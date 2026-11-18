@@ -85,7 +85,7 @@ async function openPort() {
 	if (S().sim) return (a.stream = simRadio().stream);
 	if (!serialSupported()) throw new Error(t("flash.err.no_serial"));
 	// the chooser lists the variants' USB ids, which the update mode and the PC mode share with the normal mode (seen on
-	// the GD32; the AT32's assumed: hardware-d578uv.md 1), and RadioFoundry's; allPortsLink lists every port
+	// the GD32; the AT32's assumed), and RadioFoundry's; allPortsLink lists every port
 	const port = await navigator.serial.requestPort(a.everyPort ? {} : { filters: portFilters(S().radio) });
 	a.stream = await SerialStream.open(port, BAUD);
 	return a.stream;
@@ -106,7 +106,7 @@ function probeOpener() {
 		port ||= await navigator.serial.requestPort(every ? {} : { filters: portFilters(S().radio) });
 		return SerialStream.open(port, baud || BAUD);
 	};
-	// the AT32's update mode USB id is assumed (hardware-d578uv.md 1), so the filtered chooser may not list it
+	// the AT32's update mode USB id is assumed, so the filtered chooser may not list it
 	open.showAll = () => { every = true; port = null; };
 	return open;
 }

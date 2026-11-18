@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // AT32F43x system services (hal_system.h): chip identity, memory reads, reboot, the flash stub's entry (stub_entry.c).
-// No ROM bootloader entry from software: the vendor bootloader's own update mode is the other way back (the board's
-// hardware page)
+// No ROM bootloader entry from software: the vendor bootloader's own update mode is the other way back
 #include <string.h>
 #include "config.h"
 #include "platform.h"

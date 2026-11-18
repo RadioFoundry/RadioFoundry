@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // AT-D578UV SPI NAND: Kioxia TC58CVG1S3HRAIG-class (2 Gbit) or a GigaDevice part (manufacturer 0x98 or 0xC8), on GPIO
-// pins, bit-banged (docs/spec/hardware-d578uv.md 6). The factory calibration is read from it; with CONFIG_NAND_STORAGE
+// pins, bit-banged. The factory calibration is read from it; with CONFIG_NAND_STORAGE
 // the core's storage lives in RadioFoundry's own block range (6.3, flash_d578uv.c), the only blocks the driver will
 // program or erase. One recursive mutex serializes every NAND transaction once the scheduler runs: the storage layer
 // holds it across a whole read-modify-program sequence, which uses the chip's page buffer.
@@ -234,7 +234,7 @@ static void dev_busy(void *ctx)
 }
 
 // The factory's block test leaves ten 0x55 bytes at the start of each block, the rest erased (read on a radio, in
-// RadioFoundry's range too): blank to the sector layer (docs/spec/hardware-d578uv.md 6.3)
+// RadioFoundry's range too): blank to the sector layer
 static const uint8_t factory_mark[10] = { 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55 };
 
 const nand_dev_t d578uv_nand_dev = {

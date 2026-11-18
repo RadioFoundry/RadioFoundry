@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// AT-D578UV data flash for the core (hal_flash_t): one device over RadioFoundry's two NAND ranges (hardware-d578uv.md
-// 6.3). 4 KB sectors with NOR semantics over the sectors' range (drivers/flash/nand_sectors, docs/spec/nand-sectors.md),
+// AT-D578UV data flash for the core (hal_flash_t): one device over RadioFoundry's two NAND ranges.
+// 4 KB sectors with NOR semantics over the sectors' range (drivers/flash/nand_sectors, docs/spec/nand-sectors.md),
 // with the ID database's range (drivers/flash/nand_blocks, docs/spec/nand-blocks.md) mapped in right after the
 // open-firmware flash image's first 1 MB, so the image, and the ID database's room in it, runs on into it. Every call
 // holds the NAND's mutex for the whole operation: a rewrite reads the old pages, then moves them inside the chip.
@@ -11,7 +11,7 @@
 
 #if CONFIG_NAND_STORAGE
 
-// The device (hardware-d578uv.md 6.3), laid out as the SPI NOR radios' so the open-firmware codeplug images sit at the
+// The device, laid out as the SPI NOR radios' so the open-firmware codeplug images sit at the
 // addresses the core's defaults use: the 64 KB "EEPROM" image at 0, the settings ring and the sector journal in the gap
 // after it, the 1 MB "flash" image at 0x20000 and the ID database's 24 MB right after it (the image's end), then the
 // native codeplug and the staging area. The sector layer holds all but the 24 MB: its addresses from 0x120000 show

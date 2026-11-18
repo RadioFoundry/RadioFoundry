@@ -4,7 +4,7 @@
 """Merge the DMR baseband's boot block from a radio's own stock firmware into a RadioFoundry image, on your machine
 (the radios whose board.toml says [codec] tool = "modem_boot").
 
-The SCT3258 baseband loads a 2048-byte boot block from the MCU at every power-up (docs/spec/hardware-d578uv.md 4.3).
+The SCT3258 baseband loads a 2048-byte boot block from the MCU at every power-up.
 It is the radio maker's, not ours: it is never stored in this repository or in a release. This tool finds it in your
 stock file by its SHA-256 (rfoundry/modemboot.py) and writes the image with the block in the board's modem boot slot
 (memory.ld __codec_slot) to a file you choose (by default next to the built image, in build/, which git ignores).

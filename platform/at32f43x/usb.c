@@ -3,7 +3,7 @@
 // USB port glue for TinyUSB on the AT32F43x OTGFS1 core, a Synopsys DWC2 like the STM32F4's OTG_FS (TinyUSB's dwc2
 // driver, OPT_MCU_AT32F435_437; at32f435_437.h here stands in for Artery's header). Device only, PA11 (DM) / PA12 (DP)
 // on multiplexed function 10, the core's own D+ pull-up, VBUS not sensed. The 48 MHz clock is the HICK, kept on
-// frequency by the ACC from the host's start of frame (docs/spec/hardware-d578uv.md 10).
+// frequency by the ACC from the host's start of frame.
 #include "config.h"
 #if CONFIG_USB	// the whole file
 #include "platform.h"

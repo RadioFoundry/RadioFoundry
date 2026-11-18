@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // The AnyTone update mode (radios.json flash.backend "anytone-update"): the radio's own firmware update protocol on the
 // radio's USB serial port at 921600 baud, which the bootloader runs when the radio is turned on with the board's keys
-// held (docs/spec/hardware-d578uv.md 8). A port of rfoundry's anytone.py: the same frames, the same checks. No DOM
+// held. A port of rfoundry's anytone.py: the same frames, the same checks. No DOM
 // here, so the Node tests can use it (site/tests/anytone.test.mjs).
 //
 // The radio names its model when asked (02), and the name differs by MCU: the board's flash-boards.json anytone_models

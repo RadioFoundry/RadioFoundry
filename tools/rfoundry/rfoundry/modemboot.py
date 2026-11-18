@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
 """The DMR baseband's boot block: the 2048 bytes an SCT3258 baseband takes from the MCU at every power-up
-(docs/spec/hardware-d578uv.md 4.3). It is the radio maker's, so it is never in this repository or a release: it is
+. It is the radio maker's, so it is never in this repository or a release: it is
 found in the user's own stock firmware file by its SHA-256 and placed in the image's modem boot slot on their machine.
 
 The stock file is a flat application image (the vendor's .CDD, from its first byte at the application address), or a

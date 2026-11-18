@@ -2,10 +2,10 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 # AT-D578UV feature defaults, Artery builds (config/features.mk lists them all). The radio's code is boards/d578uv's,
 # and so are these switches and reasons, kept in step with boards/d578uv/config.mk (tools/boards.py reads each board's
-# own file). Bring-up state: docs/spec/hardware-d578uv.md 9, 10 and the bring-up records. The image gets 128 KB of
+# own file). Bring-up state: the bring-up records. The image gets 128 KB of
 # SRAM (memory.ld), no CCM
 # DMR runs through the SCT3258 baseband, which carries its own vocoder and plays the voice to the codec itself
-# (hardware-d578uv.md 4, CAP_MODEM_VOICE). Its driver (drivers/modem/sct), the voice set-up and the RF side (receive,
+# (CAP_MODEM_VOICE). Its driver (drivers/modem/sct), the voice set-up and the RF side (receive,
 # the transmit keying and the PA per burst) are written
 CONFIG_DMR ?= y
 # What needs the voice frames on the MCU is not written (below)
@@ -24,14 +24,13 @@ CONFIG_NET_TCP ?= n
 CONFIG_NET_USRP ?= n
 # 160x128 like the other 160x128 radios
 CONFIG_FONT_XL ?= n
-# The core's storage in RadioFoundry's own NAND block range (hardware-d578uv.md 6.3)
+# The core's storage in RadioFoundry's own NAND block range
 CONFIG_NAND_STORAGE ?= y
-# PTT and keys from the Bluetooth module on UART4 (PC10 / PC11; hardware-d578uv.md 3.7). Found by asking it at start,
+# PTT and keys from the Bluetooth module on UART4 (PC10 / PC11). Found by asking it at start,
 # so a radio without the module (not every model has it) only shows it absent
 CONFIG_BT_PTT ?= y
-# Air band AM and broadcast FM receive run on the KTMicro receiver on PB6/PB7, AM behind side B's chips
-# (hardware-d578uv.md 5.4). APRS receive samples the receive audio on PC0 (boards/d578uv/afsk_d578uv.c,
-# hardware-d578uv.md 3.4)
+# Air band AM and broadcast FM receive run on the KTMicro receiver on PB6/PB7, AM behind side B's chips.
+# APRS receive samples the receive audio on PC0 (boards/d578uv/afsk_d578uv.c)
 # What the radio's hardware can't do, one switch per line with the reason (tools/boards.py checks there is one;
 # docs/build-config.md, "Unsupported, not written, unconfirmed")
 BOARD_UNSUPPORTED += FONT_XL	# the 160x128 panel is too small for the large font (it is for 240 px and wider)

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// AT-D578UV: the plain hand microphone's two key lines, the backlight level and the speaker amplifier and its hang
-// (docs/spec/hardware-d578uv.md 3.2, 3.1, 4.4). Pure, so the host tests check them; input_d578uv.c and radio_d578uv.c
+// AT-D578UV: the plain hand microphone's two key lines, the backlight level and the speaker amplifier and its hang.
+// Pure, so the host tests check them; input_d578uv.c and radio_d578uv.c
 // apply them.
 #ifndef D578UV_FRONT_IO_H
 #define D578UV_FRONT_IO_H

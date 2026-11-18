@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// AT-D578UV GPS (docs/spec/hardware-d578uv.md 3.6): the module on USART2 (PA2 TX, PA3 RX), 9600 8N1, through the
+// AT-D578UV GPS: the module on USART2 (PA2 TX, PA3 RX), 9600 8N1, through the
 // platform's GPS driver (gps_uart/). The module's supply is RF chip 0's output bit 2, set through the radio's shadow of
 // that register (d578uv_gps_power, radio_d578uv.c). A CASIC module is known by its first $xxTXT sentence and gets the
 // set-up below; any other module's default output is parsed as is

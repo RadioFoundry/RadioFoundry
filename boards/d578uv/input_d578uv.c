@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// AT-D578UV keys and encoder (docs/spec/hardware-d578uv.md 3.2). The front keys sit on two resistor ladders read by the
+// AT-D578UV keys and encoder. The front keys sit on two resistor ladders read by the
 // ADC, four keys each, with these windows (at or below 500, 1500, 2500 and 3500 counts; above: none); one key has a pin
 // of its own (PA1), low when pressed. The encoder's lines are PC8 and PC9, sampled on every edge of either (EXTI 8 and
 // 9). PTT and the microphone's Up and Down keys come from the plain hand microphone's two lines, PA9 and PA10, as with

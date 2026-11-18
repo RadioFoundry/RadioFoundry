@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// AnyTone AT-D578UV pin map, both MCU builds (docs/spec/hardware-d578uv.md 3). Each pin is a port and a bit mask
+// AnyTone AT-D578UV pin map, both MCU builds. Each pin is a port and a bit mask
 #ifndef D578UV_PINS_H
 #define D578UV_PINS_H
 
@@ -51,7 +51,7 @@
 #define PIN_SCT_PC7		GPIOC, MCU_PIN(7)	// low in the reset sequence
 #define PIN_SCT_PIO1		GPIOC, MCU_PIN(12)	// boot strap, low in the reset sequence
 
-// The KTMicro AM/FM receiver on a bit-banged I2C bus (hardware-d578uv.md 5.4). PB6 is the data line, switched between
+// The KTMicro AM/FM receiver on a bit-banged I2C bus. PB6 is the data line, switched between
 // output and input with pull-up
 #define PIN_KT_SDA		GPIOB, MCU_PIN(6)
 #define PIN_KT_SCL		GPIOB, MCU_PIN(7)
@@ -76,10 +76,10 @@
 #define PIN_POWER_LATCH		GPIOC, MCU_PIN(3)
 #define PIN_POWER_KEY		GPIOA, MCU_PIN(0)
 // The switched rail of the LCD backlight, the RF chips and the audio (high = on): raised at boot, then 150 ms to settle
-// (hardware-d578uv.md 3)
+//
 #define PIN_RAIL		GPIOE, MCU_PIN(0)
 
-// USB: the D+ pull-up's switch (high = seen by the host), on the GD32 builds (hardware-d578uv.md 3)
+// USB: the D+ pull-up's switch (high = seen by the host), on the GD32 builds
 #define PIN_USB_PULLUP		GPIOE, MCU_PIN(2)
 
 // Keys: two resistor ladders on the ADC (four keys each), one key on its own pin, the encoder. PTT is the microphone's
@@ -100,10 +100,10 @@
 #define ADC_VOL_A		12u
 #define PIN_VOL_B		GPIOC, MCU_PIN(5)
 #define ADC_VOL_B		15u
-// The PA's temperature sensor, higher = hotter: the fan runs from it (hardware-d578uv.md 5)
+// The PA's temperature sensor, higher = hotter: the fan runs from it
 #define PIN_PA_TEMP		GPIOA, MCU_PIN(6)
 #define ADC_PA_TEMP		6u
-// Demodulated receive audio, biased at mid-scale (hardware-d578uv.md 3.4): APRS receive samples it (afsk_d578uv.c)
+// Demodulated receive audio, biased at mid-scale: APRS receive samples it (afsk_d578uv.c)
 #define PIN_RX_AUDIO		GPIOC, MCU_PIN(0)
 #define ADC_RX_AUDIO		10u
 

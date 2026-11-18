@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The AT-D578UV's per-burst PA switching in DMR transmit (pa_gate.h, hardware-d578uv.md 5.1): a model of PE6, the DAC
+// The AT-D578UV's per-burst PA switching in DMR transmit (pa_gate.h): a model of PE6, the DAC
 // and the one-shot timer run on a microsecond clock through bursts, a burst under way at the key-up, and the end of the
 // transmission. The PA must cover each burst's modulation, which lags the burst line (7.0 ms after its rise to 4.5 ms
 // after its fall, measured), and stay off for most of the other slot

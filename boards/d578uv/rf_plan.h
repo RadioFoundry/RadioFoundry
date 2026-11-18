@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// AT-D578UV: frequency plans computed outside the RF chips: the air band LO (docs/spec/
-// hardware-d578uv.md 5.4) and the PA5 device's trims from the calibration (5.5). Pure, so the host tests check them;
+// AT-D578UV: frequency plans computed outside the RF chips: the air band LO
+// and the PA5 device's trims from the calibration. Pure, so the host tests check them;
 // radio_d578uv.c applies them.
 #ifndef D578UV_RF_PLAN_H
 #define D578UV_RF_PLAN_H
@@ -25,7 +25,7 @@ static inline uint8_t am_lo_subband(uint32_t lo_hz)
 	return lo_hz >= 140000000u ? 3u : lo_hz >= 85000000u ? 4u : 5u;
 }
 
-// --- PA5 device trims (5.5). Each trim is interpolated from three calibration bytes p0, p1, p2 into a table of byte
+// --- PA5 device trims. Each trim is interpolated from three calibration bytes p0, p1, p2 into a table of byte
 // cells, then a frequency's value between two cells. Steps are signed divisions truncated toward zero, cells wrap
 // modulo 256, and the fraction is taken of the difference as an unsigned 16-bit value (so a falling table doesn't
 // interpolate downward). Frequencies are in 10 Hz units here ---
@@ -102,7 +102,7 @@ static inline uint8_t trim_tx(uint32_t f, uint8_t level, uint8_t uhf_16, uint8_t
 }
 
 // The PA DAC word (12 bits) for power level 0-3 from the factory value for that level and frequency (8 bits, 0 = none),
-// as measured with a wattmeter (hardware-d578uv.md 5.8): the factory rows put out 1.5-2 times their ratings. The
+// as measured with a wattmeter: the factory rows put out 1.5-2 times their ratings. The
 // lowest level is a fixed word per band, since the factory's lowest row moves the wrong way with frequency; the others
 // are the factory value scaled, which holds the measured power to 0.5 dB. 0 where the factory value is 0
 static inline uint16_t pa_drive(bool uhf, uint8_t level, uint8_t factory)

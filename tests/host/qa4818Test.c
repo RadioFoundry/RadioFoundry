@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // QA4818-class transceiver driver: the pure helpers (frequency word, superhet plan, sub-bands, CTCSS detector
-// thresholds, drive word, RSSI) and the register sequences on a fake register bus (docs/spec/hardware-d578uv.md 5)
+// thresholds, drive word, RSSI) and the register sequences on a fake register bus
 #include <stdio.h>
 #include <string.h>
 #include "rf/qa4818/qa4818.h"

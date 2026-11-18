@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// AT-D578UV: the samples tone_d578uv.c writes to PB9's PWM, one per sample interrupt (docs/spec/hardware-d578uv.md
-// 5.3). Pure, so the host tests run them through the core's AFSK demodulator; no division per sample, as the
+// AT-D578UV: the samples tone_d578uv.c writes to PB9's PWM, one per sample interrupt.
+// Pure, so the host tests run them through the core's AFSK demodulator; no division per sample, as the
 // interrupt runs at about 26 kHz. Phases are 16 bits, the sine a quarter table of 0..255.
 #ifndef D578UV_TONE_SYNTH_H
 #define D578UV_TONE_SYNTH_H

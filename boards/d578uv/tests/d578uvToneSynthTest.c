@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The AT-D578UV's PB9 samples (tone_synth.h, hardware-d578uv.md 5.3): APRS tones made at the sample interrupt's rate
+// The AT-D578UV's PB9 samples (tone_synth.h): APRS tones made at the sample interrupt's rate
 // decode through the core's demodulator, keep the baud rate though a symbol isn't a whole number of samples, stay
 // within the PWM's range and change tone without a phase step
 #include <stdio.h>

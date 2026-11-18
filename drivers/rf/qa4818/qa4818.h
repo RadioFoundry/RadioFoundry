@@ -4,7 +4,7 @@
 //
 // No data sheet was found. The register use is BK4819-like (frequency in 0x38/0x39, sub-audio in 0x07/0x08/0x51/0x52,
 // noise and RSSI in 0x65/0x67) but the enables, the pages (0x7F) and the gain registers differ, so this is its own
-// driver. What a register means is inferred (docs/spec/hardware-d578uv.md 5, the only radio so far).
+// driver. What a register means is inferred (the only radio so far).
 //
 // A radio can use the chip in two roles on one 3-wire bus with separate enables: a transceiver (receives at an IF,
 // transmits on the channel) and a local oscillator for it. One qa4818_t per chip; the board gives each its register

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
 """anytone_update: write a firmware image through an AnyTone radio's factory update mode, over its USB serial port
-(boards with [flash] family = "anytone-update"). The protocol is docs/spec/hardware-d578uv.md 8; the logic is
+(boards with [flash] family = "anytone-update"). The logic is
 rfoundry's (tools/rfoundry/rfoundry/anytone.py), which `rfoundry flash` uses too.
 
     anytone_update.py --board BOARD IMAGE --stock FILE.CDD      RadioFoundry (the boot block merged from the stock file)

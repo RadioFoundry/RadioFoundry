@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// AT-D578UV power hold, power key and supply voltage (docs/spec/hardware-d578uv.md 3.3).
+// AT-D578UV power hold, power key and supply voltage.
 //
 // A mobile on a fixed 13.8 V supply: no battery (CAP_NO_BATTERY). PC3 is the power hold, set at boot. Dropping it
 // doesn't cut the supply, so "off" is a standby the radio wakes from on a one second hold of the power key. The supply
@@ -115,7 +115,7 @@ static uint16_t supply_mv(void)
 }
 
 // The PA's temperature sensor in mV: four readings averaged (3.3 V reference, 12 bits).
-// Higher is hotter; its curve to degrees is not known yet (hardware-d578uv.md 5)
+// Higher is hotter; its curve to degrees is not known yet
 static uint16_t pa_temp_mv(void)
 {
 	uint32_t sum = 0;

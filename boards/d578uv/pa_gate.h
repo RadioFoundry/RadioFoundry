@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// AT-D578UV DMR transmit: what the PA switch does at each event while the RF chips stay keyed for a call
-// (docs/spec/hardware-d578uv.md 5.1). Pure, so the host tests check it; radio_d578uv.c applies it in its interrupts.
+// AT-D578UV DMR transmit: what the PA switch does at each event while the RF chips stay keyed for a call.
+// Pure, so the host tests check it; radio_d578uv.c applies it in its interrupts.
 //
 // The baseband's burst line (PD0) is high for 30 ms per burst, but the burst's modulation starts 7.0 ms after its
 // rising edge and ends 4.5 ms after its falling edge (measured). A PA that followed PD0 cut off the burst's last 4 ms

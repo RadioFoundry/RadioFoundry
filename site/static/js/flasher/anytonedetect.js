@@ -10,7 +10,7 @@ import { AnytoneUpdate, ACK, BAUD, HELLO, HELLO_REPLY, variantOf } from "./anyto
 // nothing sent. Its PC mode can't: both builds of a model answer the identify with the same name, and leaving PC mode
 // (END) restarts the radio, so the page never enters it to detect. Then the update mode's UPDATE: the running original
 // firmware ignores the word, as RadioFoundry's debug link does. RadioFoundry's frames (A5 5A) come last, once no
-// bootloader answered (docs/spec/hardware-d578uv.md 1, 8)
+// bootloader answered
 export const PROBES = ["usb-id", "anytone-update", "rfoundry"];
 
 const PROBE_TIMEOUT = 800;	// ms: a radio that answers this protocol does so at once

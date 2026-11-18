@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// AT-D578UV diagnostics page lines: the raw readings the bring-up needs (docs/testing/d578uv-bringup.md): the
+// AT-D578UV diagnostics page lines: the raw readings the bring-up needs: the
 // baseband's boot result, the key ladders and microphone lines (to place the keys), the supply and volume pots, the
 // NAND's ID, the baseband's CARRIER_READY and received frames, the DMR PA gate's bursts, the GPS receiver's sentences,
 // whether the KTMicro receiver answered, side A's raw RSSI, the ID database's NAND range, the serial hand
@@ -62,7 +62,7 @@ static const char *boot_name(uint8_t r)
 	return r < sizeof(names) / sizeof(names[0]) ? names[r] : "?";
 }
 // The baseband's identity answers (d578uv_modem_identity): product, hardware and software versions as text, then a
-// 3-byte BCD customer ID and a 5-byte BCD serial (hardware-d578uv.md 4.4)
+// 3-byte BCD customer ID and a 5-byte BCD serial
 
 // A text answer: printable characters up to a NUL, trailing spaces dropped; "?" for none
 static void put_text(out_t *o, int q)

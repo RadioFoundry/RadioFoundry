@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// AT-D578UV audio synthesized on the MCU and fed to the RF chip's audio input: DTMF (docs/spec/hardware-d578uv.md 5.3),
+// AT-D578UV audio synthesized on the MCU and fed to the RF chip's audio input: DTMF,
 // and APRS's AFSK (hal_afsk.h transmit). TIM4 CH4 (the GD32 manual's TIMER3 CH3) runs PB9 as an 8-bit PWM (period 256
 // at the core clock, about 470 kHz); TIM5's (TIMER4's) update interrupt, about 26.1 kHz, writes the next duty from
 // 16-bit phase accumulators and a quarter sine table. DTMF: the sum of the two sines, the low group at 39/63 of the

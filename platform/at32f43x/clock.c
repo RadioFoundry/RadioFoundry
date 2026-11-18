@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// AT32F43x system clock: HEXT through the PLL (AT32F435/437 reference manual, CRM and PWC chapters). The order
-// (docs/spec/hardware-d578uv.md 10): the regulator's output and the flash divider first, the bus dividers, then the
+// AT32F43x system clock: HEXT through the PLL (AT32F435/437 reference manual, CRM and PWC chapters). The order:
+// the regulator's output and the flash divider first, the bus dividers, then the
 // PLL, and the switch to it with the automatic step on. The USB clock is the 48 MHz HICK, not the PLL (usb.c)
 #include "platform.h"
 

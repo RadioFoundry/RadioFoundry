@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// AT-D578UV display: 1.77" 160x128 ST7735S-class TFT on an 8-bit 8080 bus driven by GPIO (docs/spec/hardware-d578uv.md
-// 5): data on PE7-PE14, a write strobe, D/C, chip select and reset on PB10-PB13, RD held high.
+// AT-D578UV display: 1.77" 160x128 ST7735S-class TFT on an 8-bit 8080 bus driven by GPIO:
+// data on PE7-PE14, a write strobe, D/C, chip select and reset on PB10-PB13, RD held high.
 #include "d578uv.h"
 #include "config.h"
 #include "pins.h"
