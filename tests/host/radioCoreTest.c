@@ -7768,7 +7768,8 @@ static bool nf_tx(uint8_t ehr[NXDN_EHR_BYTES], void *ctx)
 	ambeFecEncode(bits, ehr);
 	return true;
 }
-static const nxdn_engine_hooks_t nfar_hooks = { nf_start, nf_update, nf_voice, nf_end, nf_tx };
+static const nxdn_engine_hooks_t nfar_hooks = { .rx_start = nf_start, .rx_update = nf_update, .rx_voice = nf_voice,
+	.rx_end = nf_end, .tx_voice = nf_tx };
 
 // The decoder's frames: how many came in the far radio's order (a repeat to conceal a gap is not counted)
 static uint8_t dec_next;
@@ -8131,15 +8132,19 @@ bool nxdn_conv_load(uint16_t number, const channel_t *ch, nxdn_conv_cfg_t *out)
 	*out = stored_nxdn[number];
 	return true;
 }
-bool nxdn_system_load(uint8_t system, uint16_t *keys, uint16_t *own_id)
+bool nxdn_system_load(uint8_t system, uint16_t *own_id)
 {
 	*own_id = system == 2 ? 3333 : 0;
 	if (system != 2)
 		return false;
-	if (keys)
-		keys[12] = 1234;
 	return true;
 }
+#if CONFIG_NXDN_SCRAMBLER
+uint16_t nxdn_system_key(uint8_t system, uint8_t cipher, uint8_t id)
+{
+	return system == 2 && cipher == NXDN_CIPHER_SCRAMBLE && id == 12 ? 1234 : 0;
+}
+#endif
 // A plain channel in NXDN saved as a stored one: the record and block it was given
 static struct { uint16_t number; channel_t ch; nxdn_conv_t conv; } nxdn_saved;
 bool nxdn_conv_save(uint16_t number, const channel_t *ch, const nxdn_conv_t *conv)

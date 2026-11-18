@@ -309,7 +309,6 @@ CONFIG_P25 ?= $(CONFIG_DMR)
 # DMR, through the DMR voice path; nothing of the vocoder is in it. Needs DMR
 CONFIG_NXDN ?= $(CONFIG_DMR)
 CONFIG_NXDN_SCRAMBLER ?= $(CONFIG_NXDN)
-$(if $(and $(filter y,$(CONFIG_NXDN_SCRAMBLER)),$(if $(filter y,$(CONFIG_NXDN)),,x)),$(error CONFIG_NXDN_SCRAMBLER=y needs CONFIG_NXDN=y))
 # Derived, never set by hand (a command line or a board's config.mk that sets one stops the build): AIR the air
 # interface, on with any air-framed mode (P25, NXDN); IMBE the full-rate voice decoder and MBE the MBE core, with P25
 $(foreach f,AIR IMBE MBE,$(if $(filter-out undefined,$(origin CONFIG_$(f))),$(error CONFIG_$(f) is derived from CONFIG_P25 \
@@ -393,6 +392,7 @@ ifneq ($(call feature_on,HOTSPOT_SPLIT),)
     $(error CONFIG_HOTSPOT_SPLIT=y needs CONFIG_HOTSPOT=y)
   endif
 endif
+$(if $(and $(call feature_on,NXDN_SCRAMBLER),$(if $(call feature_on,NXDN),,x)),$(error CONFIG_NXDN_SCRAMBLER=y needs CONFIG_NXDN=y))
 $(if $(and $(call feature_on,AIR_RAW),$(if $(call feature_on,AIR),,x)),$(error CONFIG_AIR_RAW=y needs CONFIG_P25=y or CONFIG_NXDN=y (an air-framed mode)))
 $(if $(and $(call feature_on,P25_TRUNK),$(if $(call feature_on,P25),,x)),$(error CONFIG_P25_TRUNK=y needs CONFIG_P25=y))
 $(if $(and $(call feature_on,P25),$(if $(call feature_on,DMR),,x)),$(error CONFIG_P25=y needs CONFIG_DMR=y (its talk groups are the codeplug's contacts)))

@@ -34,16 +34,16 @@ static bool wanted(const nxdn_engine_t *e, const nxdn_call_t *c)
 	return c->vcall.dst == e->cfg.rx_gid || c->vcall.dst == NXDN_ID_ALL;
 }
 
-static uint16_t key_for(const nxdn_engine_cfg_t *cfg, uint8_t cipher, uint8_t id)
+static uint16_t key_for(const nxdn_engine_t *e, uint8_t cipher, uint8_t id)
 {
 #if CONFIG_NXDN_SCRAMBLER
-	if (cipher == NXDN_CIPHER_SCRAMBLE && id < NXDN_KEY_IDS) {
-		uint16_t key = cfg->keys[id];
+	if (cipher == NXDN_CIPHER_SCRAMBLE && id < NXDN_KEY_IDS && e->hooks.traffic_key) {
+		uint16_t key = e->hooks.traffic_key(e->cfg.system, cipher, id, e->ctx);
 		if (key <= NXDN_SCRAMBLE_KEY_MAX)
 			return key;
 	}
 #else
-	(void)cfg;
+	(void)e;
 	(void)cipher;
 	(void)id;
 #endif
@@ -52,7 +52,8 @@ static uint16_t key_for(const nxdn_engine_cfg_t *cfg, uint8_t cipher, uint8_t id
 
 static void rx_fields(nxdn_engine_t *e, const nxdn_call_t *c, bool start)
 {
-	e->rx.scramble_key = key_for(&e->cfg, c->vcall.cipher, c->vcall.key_id);
+	if (start || c->vcall.cipher != e->view.rx.vcall.cipher || c->vcall.key_id != e->view.rx.vcall.key_id)
+		e->rx.scramble_key = key_for(e, c->vcall.cipher, c->vcall.key_id);
 	bool play = wanted(e, c) && !c->iv && (c->vcall.cipher == NXDN_CIPHER_NONE || e->rx.scramble_key);
 
 	view_begin(e);
@@ -143,14 +144,15 @@ static void tx_fill(void *ctx)
 			uint8_t ehr[NXDN_EHR_BYTES];
 
 			// (not done and nothing ready: a frame waits for its next voice frame)
-			if (e->hooks.tx_voice && e->hooks.tx_voice(ehr, e->ctx)) {
-				nxdn_call_tx_voice(&e->tx, ehr);
-			} else if (!e->hooks.tx_voice ||
+			if (e->hooks.tx_voice && e->hooks.tx_voice(ehr, e->ctx) && nxdn_call_tx_voice(&e->tx, ehr))
+				continue;
+			if (!e->hooks.tx_voice ||
 				   (air_session_tx_state(&e->session) != AIR_TX_PRIMING && air_session_tx_queued(&e->session) < lead)) {
 				// (before the transmitter is on nothing is lost by waiting: the preamble and header are queued)
 				if (e->hooks.tx_voice)
 					e->view.tx_filler++;
-				nxdn_call_tx_voice(&e->tx, e->cfg.silence);
+				if (!nxdn_call_tx_voice(&e->tx, e->cfg.silence))
+					return;
 			} else {
 				return;
 			}
@@ -198,7 +200,7 @@ void nxdn_engine_set(nxdn_engine_t *e, const nxdn_engine_cfg_t *cfg)
 	e->cfg = *cfg;
 	e->cfg.rate9600 = rate;		// the mode is the session's: a new rate is a new session
 	e->rx.rx.ran = cfg->rx_ran;
-	e->rx.scramble_key = key_for(cfg, e->rx.call.vcall.cipher, e->rx.call.vcall.key_id);
+	e->rx.scramble_key = key_for(e, e->rx.call.vcall.cipher, e->rx.call.vcall.key_id);
 	e->recheck = true;
 }
 
@@ -210,7 +212,7 @@ bool nxdn_engine_tx_prepare(nxdn_engine_t *e)
 
 	if (cfg->tx_inhibit)
 		return false;
-	uint16_t key = key_for(cfg, cipher, id);
+	uint16_t key = key_for(e, cipher, id);
 	if (cipher != NXDN_CIPHER_NONE && !key)
 		return false;
 	if (!air_session_is_open(&e->session) || !(e->session.fit & AIR_FIT_TX) || !e->cfg.silence)

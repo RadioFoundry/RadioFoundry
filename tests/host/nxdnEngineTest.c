@@ -181,7 +181,20 @@ static bool h_tx_voice(uint8_t ehr[NXDN_EHR_BYTES], void *ctx)
 	memcpy(ehr, x->enc[x->enc_taken++], NXDN_EHR_BYTES);
 	return true;
 }
-static const nxdn_engine_hooks_t hooks = { h_start, h_update, h_voice, h_end, h_tx_voice };
+#if CONFIG_NXDN_SCRAMBLER
+static uint16_t seeds[2];
+static uint16_t h_key(uint8_t system, uint8_t cipher, uint8_t id, void *ctx)
+{
+	return system == 2 && cipher == NXDN_CIPHER_SCRAMBLE && id == 63 ?
+		seeds[(radio_t *)ctx - r] : 0;
+}
+#endif
+static const nxdn_engine_hooks_t hooks = {
+	h_start, h_update, h_voice, h_end, h_tx_voice,
+#if CONFIG_NXDN_SCRAMBLER
+	h_key,
+#endif
+};
 
 static void encode(radio_t *x, uint8_t n)
 {
@@ -279,8 +292,8 @@ static void testSystemKeys(bool rate9600)
 	tx.tx_cipher = NXDN_CIPHER_SCRAMBLE;
 	tx.tx_key_id = 63;
 	tx.silence = rx.silence = valid_silence;
-	tx.keys[0] = rx.keys[0] = 0x4567;
-	tx.keys[63] = 0x1234;
+	tx.system = rx.system = 2;
+	seeds[0] = 0x1234;
 	begin(0, &tx, &hooks);
 	begin(1, &rx, &hooks);
 	over(30, 0, 0);
@@ -291,7 +304,7 @@ static void testSystemKeys(bool rate9600)
 	nxdn_engine_end(&r[0].e);
 	nxdn_engine_end(&r[1].e);
 
-	rx.keys[63] = 0x1234;
+	seeds[1] = 0x1234;
 	begin(0, &tx, &hooks);
 	begin(1, &rx, &hooks);
 	over(70, 0, 0);
@@ -300,7 +313,7 @@ static void testSystemKeys(bool rate9600)
 	nxdn_engine_end(&r[0].e);
 	nxdn_engine_end(&r[1].e);
 
-	tx.keys[63] = 0;
+	seeds[0] = 0;
 	begin(0, &tx, &hooks);
 	CHECK(!nxdn_engine_tx_prepare(&r[0].e), "missing TX key refuses transmit");
 	nxdn_engine_end(&r[0].e);

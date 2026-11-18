@@ -305,7 +305,7 @@ static void test_traffic_keys(void)
 	uint8_t params[] = { 0, 3, 0, NXDN_CIPHER_SCRAMBLE, 63 };
 	uint8_t system[CODEPLUG_SYS_HDR] = { CODEPLUG_SYSTYPE_NXDN, CODEPLUG_SYS_TX };
 	uint8_t key[] = { 2, NXDN_CIPHER_SCRAMBLE, 63, 0, 0, 0x34, 0x12 };
-	uint16_t keys[NXDN_KEY_IDS] = { 0 }, own_id;
+	uint16_t own_id;
 	system[4] = 0x37;
 	system[5] = 0x13;
 
@@ -328,12 +328,15 @@ static void test_traffic_keys(void)
 	key[2] = 4;
 	key[6] = 0x80;
 	CHECK(codeplug_kv_set(CODEPLUG_KEY_TRAFFIC + 4, key, sizeof key));
-	CHECK(nxdn_system_load(2, keys, &own_id) && own_id == 0x1337);
-	CHECK(keys[0] == 0x1278 && keys[63] == 0x1234 && !keys[2] && !keys[3] && !keys[4]);
+	CHECK(nxdn_system_load(2, &own_id) && own_id == 0x1337);
+	CHECK(nxdn_system_key(2, NXDN_CIPHER_SCRAMBLE, 0) == 0x1278);
+	CHECK(nxdn_system_key(2, NXDN_CIPHER_SCRAMBLE, 63) == 0x1234);
+	for (uint8_t id = 2; id <= 4; id++)
+		CHECK(!nxdn_system_key(2, NXDN_CIPHER_SCRAMBLE, id));
 	system[1] = 0;
 	CHECK(codeplug_kv_set(CODEPLUG_KEY_SYSTEM + 2, system, sizeof system));
-	memset(keys, 0, sizeof keys);
-	CHECK(!nxdn_system_load(2, keys, &own_id) && keys[63] == 0x1234 && own_id == 0x1337);
+	CHECK(!nxdn_system_load(2, &own_id) && own_id == 0x1337);
+	CHECK(nxdn_system_key(2, NXDN_CIPHER_SCRAMBLE, 63) == 0x1234);
 }
 
 int main(void)

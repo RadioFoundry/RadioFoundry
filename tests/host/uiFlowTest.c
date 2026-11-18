@@ -68,7 +68,7 @@ static const flow_t flows[] = {
 	// NXDN the same way: the power, the RAN sent and the rate in the chips, the group PTT calls on the talk line
 	{ "NXDN channel shows its mode", "dlmode:nxdn", "", "mode=nxdn screen=home shows=NXDN shows=RAN_1_9600 shows=TG_1 hides=No_tone hides=SQ5", 0, false },
 	{ "NXDN home: scrambled call with a matching key", "dlmode:nxdn", "nxdnrx:1234,7,p",
-	  "screen=home shows=ID_1234 shows=TG_7 hides=Encrypted:_not_played", 0, false },
+	  "screen=home shows=ENC shows=ID_1234 shows=TG_7 hides=Encrypted:_not_played", 0, false },
 	{ "NXDN home: scrambled call without a matching key", "dlmode:nxdn", "nxdnrx:1234,7,e",
 	  "screen=home shows=Encrypted:_not_played hides=ID_1234", 0, false },
 	{ "NXDN channel: bandwidth is FM only", "dlmode:nxdn", "quick 8", "mode=nxdn toast=FM_only:_this_is_NXDN", 2, false },

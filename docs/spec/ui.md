@@ -84,7 +84,7 @@ Text is shortened with a middle ellipsis only as a last resort (P5 allows it for
   "Private to Joe Smith" while receiving. The TX screen's target line follows the short form rule above, and its
   detail line ends in "Private" or "Group". The word is the cue, not a color: the privacy (encryption) marker is
   "Priv" in blue, and a private call is not encrypted.
-- NXDN Home shows the caller and destination when a scrambled call plays. It shows "Encrypted: not played" when
+- NXDN Home shows an ENC marker with the caller and destination when a scrambled call plays. It shows "Encrypted: not played" when
   the radio receives an encrypted call and holds its audio.
 
 `uiSim --ellipsis` (section 7) lists what is still shortened; `uiSim --layout` fails the build on a middle ellipsis

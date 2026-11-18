@@ -67,4 +67,5 @@ BOARD_UNSUPPORTED += LANG_DEFAULT_ZH	# needs LANG_ZH
 # radio isn't known to give the MCU (same section). Off until receive works
 BOARD_NOT_WRITTEN += P25	# receive isn't written (hardware-md380.md 4.11)
 BOARD_NOT_WRITTEN += P25_TRUNK	# needs P25
+BOARD_NOT_WRITTEN += NXDN_SCRAMBLER
 BOARD_NOT_WRITTEN += NXDN	# receive isn't written (hardware-md380.md 4.11)

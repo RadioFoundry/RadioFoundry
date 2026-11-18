@@ -22,7 +22,7 @@ State:
 | Dual watch | written, host tested: a stored NXDN channel on either side, the receiver alternating onto it ([radio-features.md](radio-features.md) 2.1); not checked on a radio |
 | Channel editor on the radio | written, host tested: RAN, rate, group, unit ID ([ui.md](ui.md) 2.1) |
 | On air | transmit checked off air on a radio at both rates (`test_nxdn_tx_off_air`); receive checked at both rates with a bench transmitter, speech frames through the vocoder included (`test_nxdn_rx_from_bench`, `test_nxdn_rx_speech`); the sound at the speaker is not checked (8) |
-| Scramble encryption, 4800 and 9600 EHR | implemented and host tested; manual [on-air interoperability check](../testing/dm32-bringup.md#nxdn-scrambler-interoperability) |
+| Scramble encryption, 4800 and 9600 EHR | implemented and host tested; [checked on air](../feature-matrix.md) against another radio running RadioFoundry and a commercial portable |
 | 9600 bit/s full-rate voice (EFR), data, trunking, DES and AES | not written (10). Unsupported encrypted calls are recognized and not played |
 
 ## 1. On air
@@ -163,7 +163,7 @@ NXDN Conventional system channel the receiver selects the system key by those fi
 when no matching key is available. Transmit uses the channel's selected key and refuses PTT if it is unavailable.
 See [NXDN in the codeplug](nxdn-codeplug.md). RX corrects FEC before descrambling; a frame with
 uncorrectable protected bits is held. DES and AES remain unsupported. The scrambling is unauthenticated and an
-incorrect key cannot be detected. See the [manual on-air interoperability check](../testing/dm32-bringup.md#nxdn-scrambler-interoperability).
+incorrect key cannot be detected. Scrambled voice was checked on air against another radio running RadioFoundry and a commercial portable. See the [feature matrix](../feature-matrix.md).
 
 | Item | State |
 |---|---|
@@ -304,7 +304,7 @@ scrambler examples), so the codec checks against itself and the clauses only.
 | A short sync | one wrong symbol in a header's FSW makes the framer miss the header (10 symbols, the fit's limit); the call is joined late at the next superframe | 5.3.1.2 |
 | Unit ID range | 1 to 65519 (the top IDs are special) | TS 1-B |
 | A board's transmit pulse | the provider's shaping at the profile's symbol rate and deviation, as its fit reports (`AIR_FIT_SHAPE_APPROX`, `AIR_FIT_DEV_APPROX`); whether a receiver of another make takes it is untested | 3.4, 3.5 |
-| Voice on air | the VCH bit order is settled against 7.2.1 (5); [manual on-air scrambler interoperability checked](../testing/dm32-bringup.md#nxdn-scrambler-interoperability) | 7.2 |
+| Voice on air | the VCH bit order is settled against 7.2.1 (5); [manual on-air scrambler interoperability checked](../feature-matrix.md) | 7.2 |
 
 ## 10. Not written
 

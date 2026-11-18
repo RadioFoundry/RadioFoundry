@@ -157,6 +157,11 @@ channel.
 
 #### NXDN voice scrambling
 
+NXDN uses a 15-bit voice scrambler with 32,767 possible keys. It deters casual listening and provides no dependable
+security. The receiver cannot verify who sent a scrambled call or whether it used the right seed. Use scrambling
+only in licensed services that permit it. Most countries prohibit scrambling that obscures the meaning of amateur
+radio messages. The Amateur firmware variant disables NXDN scrambling.
+
 Use firmware with NXDN scrambler support.
 
 1. In **Systems**, choose **Add System** and set the type to **NXDN Conventional**. Leave **Radio ID on this system**
@@ -166,6 +171,10 @@ Use firmware with NXDN scrambler support.
 3. Edit an NXDN channel, select the **System**, and choose a **Transmit key**. Choose **Clear** to transmit without
    scrambling while still receiving scrambled calls with matching system keys. Save the channel and write the
    codeplug to the radio.
+
+The radio shows **ENC** when it plays scrambled voice. If a scrambled call has no matching receive key, the radio
+shows **Encrypted: not played**. If a channel's selected transmit key is missing, pressing PTT on that channel
+does not transmit.
 
 **Show scrambler seeds** reveals the stored values. File exports omit the keys by default. Zone shares omit them
 as well.

@@ -32,12 +32,12 @@ The tag ([channel-modes.md](channel-modes.md) 2): optional system of type 4, fla
 | 0 | 1 | Bits 0-1 squelch: 0 RAN (every call of the RX RAN), 1 selective (2.1); 2 and 3 read as RAN. Bit 2: 4800 bit/s; clear: 9600 bit/s. Bits 3-7: 0 |
 | 1 | 1 | RX RAN, 0 to 63; 0 = every RAN (TS 1-B 4.1.7.1). Above 63 reads as 0 |
 | 2 | 1 | TX RAN: bit 7 set = bits 5-0 hold it (0 to 63); clear = the RX RAN, 1 when the RX RAN is 0. Bit 6: 0, set reads as clear |
-| 3 | 1 | Optional transmit cipher: 0 clear, 1 NXDN scrambler |
-| 4 | 1 | Transmit key ID, 0 to 63 when the cipher is 1 |
+| 3 | 1 | Transmit cipher: 0 or absent = clear, 1 = NXDN scrambler. Other values refuse PTT |
+| 4 | 1 | Transmit key ID, 0 to 63, from the channel's system (3). Absent with a nonzero cipher refuses PTT |
 
 A zeroed block, or none, is 9600 bit/s, RAN squelch, every RAN received and RAN 1 sent; with the tag's flag bit 0
 clear, receive only. Both rates use 12.5 kHz channel settings ([nxdn.md](nxdn.md) 9).
-The original parameter block is three bytes. The Web CPS writes the five-byte form when a transmit key is selected.
+The three-byte form selects clear transmission. A channel with a selected transmit key uses the five-byte form.
 An absent or zero transmit cipher selects clear transmission. A nonzero cipher blocks transmission if the key ID
 byte is missing, the cipher is unsupported, or the channel's NXDN Conventional system has no valid matching key.
 
@@ -90,8 +90,8 @@ System type 4 has an empty parameter block and no identity bytes for matching du
 Its common radio ID field overrides the radio-wide NXDN unit ID when the channel supplies no valid unit ID.
 NXDN Conventional has no fallback channel. Each scrambler key uses the generic traffic-key record
 ([channel-modes.md](channel-modes.md) 5.4), with algorithm 1, a key ID from 0 to 63, and a two-byte little-endian
-seed from 1 to 32767. Key IDs are unique within a system. The radio loads the assigned system's keys with the
-channel settings. On receive it uses the cipher and key ID from the VCALL. Transmit uses the channel's
+seed from 1 to 32767. Key IDs are unique within a system. On receive the radio looks up the key in the assigned
+system using the cipher and key ID from the VCALL. Transmit uses the channel's
 configured key and puts its cipher and ID in the VCALL. A listen-only system still supplies receive keys.
 
 ## 4. Sharing
