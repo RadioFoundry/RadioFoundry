@@ -1601,6 +1601,9 @@ static void dmr_configure(radio_sm_t *sm)
 	if (sm->t3_on) {
 		cfg.own_id = t3s.cfg.own_id;	// the system's ID: calls to it, and the source of ours
 		cfg.both_slots = sm->t3_both;
+		// Digital monitor follows every grant (t3_monitor), not every burst: the call plays on its own slot and the
+		// system's color code, while the other slot carries another call
+		cfg.listen.any_cc = cfg.listen.both_ts = false;
 		if (t3m.state == T3_FOLLOW) {
 			const t3_call_t *c = &t3m.call;
 			cfg.listen.hear_all = true;
@@ -3526,6 +3529,19 @@ static void t3_keep_kill(radio_sm_t *sm, uint32_t now_ms)
 	changed(sm);
 }
 
+// Digital monitor on a trunked channel follows every talkgroup's grant (T3_OPT_MONITOR), as it hears every talkgroup
+// on a conventional one; off, the system's own setting again (t3_monitor_set, taken where t3s is loaded: t3s keeps
+// monitor's bit while the engine stops for the fallback and starts again). The engine reads the option at each grant:
+// a call already followed plays to its end
+static void t3_monitor(radio_sm_t *sm)
+{
+	if (sm->t3_monitor_set || hear_all_on(sm)) {
+		t3s.cfg.opts |= T3_OPT_MONITOR;
+	} else {
+		t3s.cfg.opts &= (uint16_t)~T3_OPT_MONITOR;
+	}
+}
+
 // Start the engine on t3s
 static void t3_begin(radio_sm_t *sm, uint32_t now_ms)
 {
@@ -3576,6 +3592,7 @@ static void t3_begin(radio_sm_t *sm, uint32_t now_ms)
 	sm->t3_hunt_ms = now_ms | 1u;	// hunting from now (the fallback's clock)
 	memset(sm->t3_at, 0, sizeof(sm->t3_at));
 	sm->t3_cc = t3s.cc;
+	t3_monitor(sm);
 	dmr_call_set_rx_tap(t3_tap, sm);
 	// A stun outlasts leaving the system and coming back (6.4.9): it is the network's, so another network's
 	// doesn't carry over
@@ -3623,6 +3640,7 @@ static void t3_start(radio_sm_t *sm, uint32_t now_ms)
 	t3_off(sm);
 	t3s = *radio_t3_staged();
 	radio_t3_fix(&t3s);
+	sm->t3_monitor_set = (t3s.cfg.opts & T3_OPT_MONITOR) != 0;
 	t3_begin(sm, now_ms);
 }
 
@@ -3708,6 +3726,12 @@ static bool t3_channel(radio_sm_t *sm, uint16_t number, const channel_t *ch)
 		// A receive-only channel never transmits (channel-modes.md 2.1): no registration from it either
 		t3s.cfg.opts |= T3_OPT_LISTEN_ONLY;
 	}
+	if (!(t3s.cfg.opts & T3_OPT_LISTEN_ONLY)) {
+		// The system code learned from the air (dmr-trunking-codeplug.md 1) only for listening: a radio that
+		// transmits registers on the system its codeplug names, never on whichever it heard first
+		t3s.cfg.opts &= (uint16_t)~T3_OPT_LEARN_SYSCODE;
+	}
+	sm->t3_monitor_set = (t3s.cfg.opts & T3_OPT_MONITOR) != 0;
 	radio_t3_talk(ch, &t3s);
 	sm->t3_fb_number = radio_t3_fallback(number, &t3s, &sm->t3_fb_ch);
 	sm->t3_pending = true;		// started by t3_tick, which has the clock
@@ -3934,6 +3958,7 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 	if (!sm->t3_on) {
 		return;
 	}
+	t3_monitor(sm);
 	uint32_t tc = dmr_call_ticks(NULL);
 	uint32_t n = tc - sm->t3_ticks;
 	if (n > 8u) {

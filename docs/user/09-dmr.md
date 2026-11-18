@@ -271,6 +271,10 @@ is on, the reply window lets you answer any call you heard with **PTT**. **PTT**
 timeslot and color code, so a call heard on another one doesn't hear the reply. While digital monitor plays a call on
 the other timeslot, the channel counts as busy.
 
+On a [Tier III trunked channel](#setting-one-up) digital monitor follows calls on every talkgroup of the system, not
+only the channel's RX group list. It still plays only the system's calls, on their own timeslot. While it plays one,
+**PTT** talks on that call, as on any call the radio follows (not on a broadcast or an all-call someone else made).
+
 ## Privacy
 
 RadioFoundry has two kinds of basic privacy: Motorola basic privacy (keys 1 to 255) and Anytone 16-bit basic privacy. Basic
@@ -399,6 +403,8 @@ In the Codeplug Editor ([Programming](04-programming.md#digital-modes-and-system
 | Needs its key | For a system that authenticates its radios. Enter the key in the form's **Key** section; without it the channel can't be used |
 | Radio ID on this system | Your ID there, when it isn't the radio's DMR ID |
 | Fallback channel | A conventional channel to use when the system can't be found (below). A channel can name its own, or none |
+| Follow every talkgroup | Plays calls on all the system's talkgroups, not only the channel's RX group list. Digital monitor does the same while it is on. Off by default |
+| Learn the system from the air | For listening to a system whose model and NET you don't know: the radio takes the first control channel it hears as the system. Only while it listens (Transmit off, or a receive-only channel). Off by default |
 
 A channel that is receive only in the editor stays receive only on the system: the radio listens and refuses PTT.
 

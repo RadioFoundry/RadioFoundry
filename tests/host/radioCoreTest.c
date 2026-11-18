@@ -8651,8 +8651,13 @@ static void t3_csbk_rx(const t3_csbk_t *p, int8_t ts)
 	sim_rx(&b);
 }
 
+static uint16_t t3_site_code;	// the TSCC's system code when not 0 (another network's), else t3_code()
+
 static uint16_t t3_code(void)
 {
+	if (t3_site_code != 0) {
+		return t3_site_code;
+	}
 	t3_syscode_t c = { T3_MODEL_SMALL, 5, 1, T3_PAR_A };
 	return t3_syscode_join(&c);
 }
@@ -9563,6 +9568,102 @@ static void test_t3_channels(void)
 	t3_cp_done();
 }
 
+// A grant on the TSCC for talkgroup tg, on the carrier's TS2
+static void t3_grant_tg(uint32_t tg)
+{
+	t3_csbk_t g = { .lb = true, .op = T3_OP_TV_GRANT };
+	g.u.grant.lpcn = 1;
+	g.u.grant.slot = 2;
+	g.u.grant.dst = tg;
+	g.u.grant.src = 1000001u;
+	t3_csbk_rx(&g, 1);
+	run(300);
+}
+
+// Digital monitor on a trunked channel follows every talkgroup's grant (dmr-trunking.md 6), as the system's own
+// "follow every talkgroup" does; off again, only the channel's talkgroups. The call plays on its own slot and color
+// code: monitor's any color code and both slots stay conventional DMR's
+static void test_t3_follow_all(void)
+{
+	t3_cp_zone(T3_OPT_PRIVATE, 0, 0, NULL);
+	req(RREQ_ZONE, 2);
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED);
+	t3_grant_tg(777);		// not the channel's talkgroup
+	CHECK(radio_t3v.state == T3_CAMPED && radio_t3v.followed == 0);
+
+	req(RREQ_DMR_HEAR_ALL, 1);
+	run(20);
+	CHECK(sm.view.dmr.hear_all_latch);
+	t3_grant_tg(777);
+	CHECK(radio_t3v.state == T3_FOLLOW && radio_t3v.followed == 1 && sm.view.ch.timeslot == 2);
+	CHECK(sim.cc_filter == 2);	// the system's color code, not monitor's any
+	t3_site_run(3000);		// the call ends: back on the TSCC
+	CHECK(radio_t3v.state == T3_CAMPED);
+
+	req(RREQ_DMR_HEAR_ALL, 0);
+	run(20);
+	t3_grant_tg(777);
+	CHECK(radio_t3v.state == T3_CAMPED && radio_t3v.followed == 1);
+
+	// Monitor on, the system lost to the fallback channel and found again: the engine restarts with the system's
+	// own setting, not the one monitor added. Monitor off then, a grant to another talkgroup isn't followed
+	t3_cp_done();
+	t3_cp_zone(T3_OPT_PRIVATE, 3, 6, "Other");
+	req(RREQ_ZONE, 2);
+	run(100);
+	req(RREQ_DMR_HEAR_ALL, 1);
+	run(3000);			// no TSCC heard: the fallback channel
+	CHECK(radio_t3v.fallback == 1);
+	run(RADIO_T3_PROBE_MS);		// a probe restarts the engine
+	t3_site_run(600);
+	CHECK(radio_t3v.fallback == 0 && radio_t3v.state == T3_CAMPED);
+	req(RREQ_DMR_HEAR_ALL, 0);
+	run(20);
+	CHECK(!sm.view.dmr.hear_all_latch);
+	t3_grant_tg(777);
+	CHECK(radio_t3v.state == T3_CAMPED && radio_t3v.followed == 0);
+
+	// The system's own option: every grant, monitor off
+	t3_cp_done();
+	t3_cp_zone(T3_OPT_PRIVATE | T3_OPT_MONITOR, 0, 0, NULL);
+	req(RREQ_ZONE, 2);
+	t3_site_run(600);
+	t3_grant_tg(778);
+	CHECK(radio_t3v.state == T3_FOLLOW && radio_t3v.followed == 1);
+	t3_site_run(3000);
+	t3_cp_done();
+}
+
+// "Learn the system code" (dmr-trunking-codeplug.md 1): a listen-only system takes the first TSCC heard as its own,
+// whatever its NET says. A system that transmits never does: another network's TSCC stays foreign
+static void test_t3_learn_syscode(void)
+{
+	t3_syscode_t other = { T3_MODEL_LARGE, 12, 4, T3_PAR_AB };
+	t3_site_code = t3_syscode_join(&other);
+
+	t3_cp_zone(T3_OPT_PRIVATE, 0, 0, NULL);	// NET 5 in the codeplug, NET 12 on the air
+	req(RREQ_ZONE, 2);
+	t3_site_run(1500);
+	CHECK(radio_t3v.state == T3_HUNT && radio_t3v.foreign > 0);
+	t3_cp_done();
+
+	// A system without a transmit side: listen only, so it learns
+	t3_cp_zone(T3_OPT_PRIVATE | T3_OPT_LEARN_SYSCODE | T3_OPT_LISTEN_ONLY, 0, 0, NULL);
+	req(RREQ_ZONE, 2);
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED && radio_t3v.foreign == 0 && radio_t3v.syscode == t3_site_code);
+	t3_cp_done();
+
+	// The same system with a transmit side and channels allowed to transmit: the option is dropped
+	t3_cp_zone(T3_OPT_PRIVATE | T3_OPT_LEARN_SYSCODE, 0, 0, NULL);
+	req(RREQ_ZONE, 2);
+	t3_site_run(1500);
+	CHECK(radio_t3v.state == T3_HUNT && radio_t3v.foreign > 0);
+	t3_cp_done();
+	t3_site_code = 0;
+}
+
 // A trunked channel transmits only when its tag allows it and its system is one the radio runs with a transmit side
 // (channel-modes.md 3 and 4): a receive-only channel and a system without the transmit flag camp and listen, send
 // nothing on the control channel and refuse PTT; a channel that names no system, or one with no record, is unavailable
@@ -10243,6 +10344,8 @@ int main(void)
 	test_t3_never_keys();
 	test_t3_no_id();
 	test_t3_fallback();
+	test_t3_follow_all();
+	test_t3_learn_syscode();
 #endif
 	test_dmr_stalled();
 	test_dmr_list_talk_target();
