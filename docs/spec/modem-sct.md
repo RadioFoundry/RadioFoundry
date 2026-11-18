@@ -330,8 +330,12 @@ not known well enough (section 10).
 | `codec_start` | codec writes sent at each start, after the start packet: a codec setting the chip's own set-up doesn't make, such as a DAC filter with less delay (section 5) |
 | Voice set-up | `sct_voice_t`: CODEC_SELECT and VOCODER_SEL for the board's chips, control `fields` (the digital mode microphone and speaker gains), then the codec writes (gains and routing for the board's audio wiring). Calibrated values where the radio's calibration has them |
 
-The field access `sct_dmr_field_begin/poll/cancel` and `sct_dmr_call_option` give a board's debug link a read or write
-of any baseband field, for checking a driver value against the chip.
+The field access `sct_dmr_field_begin/poll/cancel` and `sct_dmr_call_option` give a board a read or write of any
+baseband field: the debug link's checks of a driver value against the chip, and a board's own queries, such as the
+AT-D578UV's identity queries for its diagnostics page. The engine has one field slot, so a board with more than one user
+makes them take turns. A field doesn't start while the engine has a packet of its own out or queued (a frame, the start,
+WORK_MODE), and the chip's general-error ACK, which doesn't say which packet it answers, is the field's only while the
+engine has nothing out; otherwise the engine takes it and the field times out.
 
 ## 9. Packet Interface options not taken
 

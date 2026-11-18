@@ -820,12 +820,19 @@ static void rx_event(uint8_t code)
 	}
 }
 
-// The answer to the field the debug link asked for. Not the engine's: a refusal isn't counted as a NAK
+// The engine has a packet of its own out or queued (a frame, the start, WORK_MODE): a general-error ACK may be its
+static bool engine_busy(void)
+{
+	return s.waiting || s.start_wait || s.mode_wait || s.q_count != 0;
+}
+
+// The answer to the field a board asked for. Not the engine's: a refusal isn't counted as a NAK. A general-error ACK
+// is the field's only while the engine has nothing out; otherwise the engine gets it and the field times out
 static bool field_answer(uint8_t id, const uint8_t *d, uint8_t n, bool ack)
 {
 	if (s.field.state != FIELD_WAIT)
 		return false;
-	if (id == SCT_F_ACK && !ack && d[0] != SCT_ACK_OK && d[0] != SCT_ACK_FAR_DONE && d[0] != SCT_ACK_RESET_READY) {
+	if (id == SCT_F_ACK && !ack && !engine_busy() && d[0] != SCT_ACK_OK && d[0] != SCT_ACK_FAR_DONE && d[0] != SCT_ACK_RESET_READY) {
 		s.field.state = FIELD_REFUSED;	// the chip's general error for a packet it couldn't take
 		return true;
 	}
@@ -1259,7 +1266,7 @@ bool sct_dmr_field_begin(uint8_t type, uint8_t id, const uint8_t *data, uint8_t 
 	s.field.id = id;
 	s.field.read = read;
 	s.field.n = 0;
-	ok = s.running && send(&p);
+	ok = s.running && !engine_busy() && send(&p);
 	if (!ok)
 		s.field.state = FIELD_IDLE;
 	unlock();

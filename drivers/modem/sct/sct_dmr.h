@@ -137,8 +137,9 @@ void sct_dmr_carrier(uint8_t ready);
 // board's carrier threshold
 bool sct_dmr_synced(void);
 
-// Bench access for the debug link's CHIP_REG (docs/spec/modem-sct.md 8): one field to the chip in a packet of TYPE
-// `type`, or a query for it (read: the data is ignored). sct_dmr_field_poll: 0 no answer yet, 1 answered (a query's
+// Field access for a board, such as the debug link's CHIP_REG (docs/spec/modem-sct.md 8): one field to the chip in a
+// packet of TYPE `type`, or a query for it (read: the data is ignored). One at a time; false when the engine isn't
+// running or has a packet of its own out or queued (a frame, the start, WORK_MODE). sct_dmr_field_poll: 0 no answer yet, 1 answered (a query's
 // data in out, at most cap bytes of the first SCT_DMR_FIELD_MAX; *n the bytes copied), -1 refused. The caller waits
 // between polls and cancels if the answer never comes. A field the engine also sends is overwritten at its next set-up
 #define SCT_DMR_FIELD_MAX	16	// the longest answer kept: the version queries' text (Q_SW_VER "V2.01.01PF")

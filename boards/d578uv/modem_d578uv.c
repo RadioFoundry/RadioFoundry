@@ -305,6 +305,90 @@ static const sct_host_t host = {
 };
 
 #define FIELD_WAIT_MS	200	// the manual's 40 ms for most fields, with room for a busy modem task
+#define IDENT_RETRY_MS	1000	// an identity query unanswered: asked again this much later, IDENT_TRIES times in a pass
+#define IDENT_GAP_MS	50	// between queries, so a CHIP_REG waiting for the slot gets it
+#define IDENT_AGAIN_MS	30000	// a pass left some unanswered: another pass for those this much later
+#define FIELD_TAKE_MS	(2 * FIELD_WAIT_MS + 50)	// CHIP_REG's wait for the slot: longer than an identity query holds it
+
+// The engine has one field slot, so its users take turns: the debug link's CHIP_REG (d578uv_modem_field_bytes) and
+// the identity queries below
+static SemaphoreHandle_t field_mutex;
+
+// The baseband's answers to the Packet Interface's identity queries (Q_PRO_STR, Q_HW_VER, Q_SW_VER, Q_CID_SN;
+// hardware-d578uv.md 4.4), in a TYPE 3 packet, asked by the modem task without waiting on the answer: one query at a
+// time, a poll looks for its answer. Asked only once d578uv_modem_identity has been called (the diagnostics page), so
+// the engine's field slot stays idle in normal use, and only while the engine has nothing of its own out
+// (sct_dmr_field_begin refuses then). One left unanswered IDENT_TRIES times waits for the next pass.
+// d578uv_modem_identity reads them
+#define IDENT_TRIES	3
+static const uint8_t ident_id[D578UV_SCT_IDENTITY] = {
+	[D578UV_SCT_PRO] = 0x30, [D578UV_SCT_HW] = 0x31, [D578UV_SCT_SW] = 0x32, [D578UV_SCT_CID] = 0x33,
+};
+static struct {
+	uint8_t d[D578UV_SCT_IDENTITY][SCT_DMR_FIELD_MAX];
+	volatile int8_t n[D578UV_SCT_IDENTITY];	// bytes answered; -1 not yet
+	volatile bool wanted;	// d578uv_modem_identity was called
+	uint8_t q;		// the query asked now or next
+	uint8_t tries;		// ... its answers missed
+	bool asked;		// ... it is out, since at
+	uint32_t at;
+	uint32_t next_ms;	// none goes before this
+} ident = { .n = { -1, -1, -1, -1 } };
+
+static void ident_step(uint32_t now)
+{
+	if (!ident.wanted || field_mutex == NULL)
+		return;
+	if (!ident.asked) {
+		while (ident.q < D578UV_SCT_IDENTITY && ident.n[ident.q] >= 0)
+			ident.q++;	// answered in an earlier pass
+		if (ident.q >= D578UV_SCT_IDENTITY) {
+			uint8_t q = 0;
+			while (q < D578UV_SCT_IDENTITY && ident.n[q] >= 0)
+				q++;
+			if (q >= D578UV_SCT_IDENTITY || (int32_t)(now - ident.next_ms) < 0)
+				return;	// all answered, or the next pass not due
+			ident.q = q;
+		}
+		if ((int32_t)(now - ident.next_ms) < 0 || xSemaphoreTake(field_mutex, 0) != pdTRUE)
+			return;
+		if (!sct_dmr_field_begin(0x03, ident_id[ident.q], NULL, 0, true)) {
+			xSemaphoreGive(field_mutex);	// the engine not running (FM) or busy: later, not counted
+			ident.next_ms = now + IDENT_RETRY_MS;
+			return;
+		}
+		ident.asked = true;
+		ident.at = now;
+		return;
+	}
+	uint8_t got = 0;
+	int r = sct_dmr_field_poll(ident.d[ident.q], SCT_DMR_FIELD_MAX, &got);
+
+	if (r == 0 && (int32_t)(now - ident.at) < FIELD_WAIT_MS)
+		return;
+	if (r == 0)
+		sct_dmr_field_cancel();
+	xSemaphoreGive(field_mutex);
+	ident.asked = false;
+	if (r > 0) {
+		ident.n[ident.q] = (int8_t)got;
+	} else if (++ident.tries < IDENT_TRIES) {
+		ident.next_ms = now + IDENT_RETRY_MS;
+		return;
+	}
+	ident.q++;
+	ident.tries = 0;
+	ident.next_ms = now + (ident.q < D578UV_SCT_IDENTITY ? IDENT_GAP_MS : IDENT_AGAIN_MS);
+}
+
+int d578uv_modem_identity(uint8_t q, const uint8_t **d)
+{
+	ident.wanted = true;
+	if (q >= D578UV_SCT_IDENTITY || ident.n[q] < 0)
+		return -1;
+	*d = ident.d[q];
+	return ident.n[q];
+}
 
 static bool port_send(const uint8_t *buf, uint16_t len, void *ctx)
 {
@@ -388,32 +472,47 @@ static void modem_task(void *arg)
 		sct_host_poll(&host, &rx, on_packet, NULL);
 		port_unlock(NULL);
 		sct_dmr_poll(hal_millis());
+		ident_step(hal_millis());
 		vTaskDelay(pdMS_TO_TICKS(MODEM_POLL_MS));
 	}
 }
 
-// The baseband fields of board.chip_reg and board.chip_reg_bytes (hardware-d578uv.md 4.4): n > 0 sends data as the
-// field (its length the field's) and returns 0 once taken; n == 0 queries it and returns the bytes of the answer
-// copied to out (at most cap and SCT_DMR_FIELD_MAX). -1: not booted, a length the field doesn't have, refused or no answer in FIELD_WAIT_MS
-int d578uv_modem_field_bytes(uint8_t type, uint8_t id, const uint8_t *data, uint8_t n, uint8_t *out, uint8_t cap)
+// A baseband field (hardware-d578uv.md 4.4): a write sends data as the field (n bytes, the field's length, 0 for a
+// bare command) and returns 0 once taken; a query returns the bytes of the answer copied to out (at most cap and
+// SCT_DMR_FIELD_MAX). -1: not booted, a length the field doesn't have, the slot busy, refused or no answer in
+// FIELD_WAIT_MS
+static int field_io(uint8_t type, uint8_t id, const uint8_t *data, uint8_t n, bool query, uint8_t *out, uint8_t cap)
 {
 	uint8_t got = 0, scratch;
+	int res = -1;
 
-	if (!booted || (n > 0 && sct_field_len(id) != n))
+	if (!booted || field_mutex == NULL || (!query && sct_field_len(id) != n))
 		return -1;
-	if (!sct_dmr_field_begin(type, id, data, n, n == 0))
+	if (xSemaphoreTake(field_mutex, pdMS_TO_TICKS(FIELD_TAKE_MS)) != pdTRUE)
 		return -1;
-	for (int t = 0; t < FIELD_WAIT_MS; t += 2) {
-		int r = n ? sct_dmr_field_poll(&scratch, 0, &got) : sct_dmr_field_poll(out, cap, &got);
+	if (sct_dmr_field_begin(type, id, data, n, query)) {
+		int t;
 
-		if (r < 0)
-			return -1;
-		if (r > 0)
-			return n ? 0 : got;
-		vTaskDelay(pdMS_TO_TICKS(2));
+		for (t = 0; t < FIELD_WAIT_MS; t += 2) {
+			int r = query ? sct_dmr_field_poll(out, cap, &got) : sct_dmr_field_poll(&scratch, 0, &got);
+
+			if (r != 0) {
+				res = r < 0 ? -1 : query ? got : 0;
+				break;
+			}
+			vTaskDelay(pdMS_TO_TICKS(2));
+		}
+		if (t >= FIELD_WAIT_MS)
+			sct_dmr_field_cancel();
 	}
-	sct_dmr_field_cancel();
-	return -1;
+	xSemaphoreGive(field_mutex);
+	return res;
+}
+
+// board.chip_reg_bytes's baseband fields: n > 0 writes, n == 0 queries (field_io)
+int d578uv_modem_field_bytes(uint8_t type, uint8_t id, const uint8_t *data, uint8_t n, uint8_t *out, uint8_t cap)
+{
+	return field_io(type, id, data, n, n == 0, out, cap);
 }
 
 // board.chip_reg's baseband fields: a field of up to 4 bytes, MSB first
@@ -427,9 +526,9 @@ bool d578uv_modem_field(uint8_t type, uint8_t id, uint32_t *val, bool write)
 			return false;
 		for (int i = 0; i < len; i++)
 			d[i] = (uint8_t)(*val >> (8 * (len - 1 - i)));
-		return d578uv_modem_field_bytes(type, id, d, (uint8_t)len, NULL, 0) == 0;
+		return field_io(type, id, d, (uint8_t)len, false, NULL, 0) == 0;
 	}
-	int r = d578uv_modem_field_bytes(type, id, NULL, 0, d, sizeof(d));
+	int r = field_io(type, id, NULL, 0, true, d, sizeof(d));
 	if (r < 0)
 		return false;
 	*val = 0;
@@ -448,6 +547,7 @@ bool d578uv_modem_init(void)
 	}
 	cal_values();
 	lock = xSemaphoreCreateRecursiveMutex();
+	field_mutex = xSemaphoreCreateMutex();
 	xTaskCreate(modem_task, "modem", MODEM_TASK_STACK, NULL, MODEM_TASK_PRIORITY, NULL);
 	return true;
 }
@@ -474,11 +574,6 @@ const char *d578uv_modem_codec(void)
 bool d578uv_modem_booting(void)
 {
 	return !boot_done;
-}
-
-bool d578uv_modem_booted(void)
-{
-	return booted;
 }
 
 uint8_t d578uv_modem_boot_result(void)

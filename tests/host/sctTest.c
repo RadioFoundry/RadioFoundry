@@ -1749,9 +1749,13 @@ static void test_field_access(void)
 	sct_dmr_stats_t st;
 
 	CHECK(sct_dmr_modem.start(&cfg, on_event, NULL));
+	// Not while the start waits for its answers: a general-error ACK then would be ambiguous
+	v = 8;
+	CHECK(!sct_dmr_field_begin(SCT_TYPE_CONTROL, 0x2F, &v, 1, false));
+	const uint8_t slot_ok[] = { 0x84, 0xA9, 0x61, 0x00, 0x02, 0x00, SCT_F_DMR_CALL_SLOT, 0x00 };
+	sct_dmr_packet(slot_ok, sizeof(slot_ok), 5);
 	nsent = 0;
 	CHECK(sct_dmr_field_poll(d, sizeof(d), &n) == 0);
-	v = 8;
 	CHECK(sct_dmr_field_begin(SCT_TYPE_CONTROL, 0x2F, &v, 1, false));
 	CHECK(nsent == 1 && sent[0].pkt[5] == SCT_TYPE_CONTROL && sent[0].pkt[6] == 0x2F && sent[0].pkt[7] == 8);
 	CHECK(sct_dmr_field_poll(d, sizeof(d), &n) == 0);
@@ -1768,6 +1772,16 @@ static void test_field_access(void)
 	CHECK(sct_dmr_field_poll(d, sizeof(d), &n) == -1);
 	sct_dmr_get_stats(&st);
 	CHECK(st.naks == naks);
+	// A general-error ACK while the engine has a packet out (here the start, run again) is the engine's: counted as
+	// its NAK, and the field's answer stays to come
+	CHECK(sct_dmr_field_begin(SCT_TYPE_CONTROL, 0x2F, &v, 1, false));
+	sct_dmr_modem.stop();
+	CHECK(sct_dmr_modem.start(&cfg, on_event, NULL));
+	CHECK(sct_dmr_field_begin(SCT_TYPE_CONTROL, 0x2F, &v, 1, false) == false);
+	sct_dmr_packet(no, sizeof(no), 25);
+	sct_dmr_get_stats(&st);
+	CHECK(st.naks == naks + 1);
+	sct_dmr_packet(slot_ok, sizeof(slot_ok), 26);
 	// A query: the read bit on, the ID alone; the answer's data comes back
 	nsent = 0;
 	CHECK(sct_dmr_field_begin(SCT_TYPE_DMR, SCT_F_DMR_CC, NULL, 0, true));
