@@ -55,9 +55,11 @@ BOARD_UNSUPPORTED += FAULT_TRACE	# needs a host UART: the host port is USB, and 
 BOARD_REQUIRED := FM
 # CONFIG_STUB_ENTRY is on with the host link (config/features.mk): the STM32F4 flash stub serves this radio through its
 # board record (board.toml [flash.stub], docs/spec/stub-stm32f4.md)
-# Supported, but the maximal configuration leaves these off too: PPP stands in for the USB network adapter on UART-only
-# radios (docs/spec/ppp.md), and this one has the adapter
+# Supported, but the maximal configuration leaves PPP off: it stands in for the USB network adapter on UART-only radios
+# (docs/spec/ppp.md), and this one has the adapter. The all-feature image exceeds app FLASH with satellite tracking
+# enabled, so only the maximal build turns it off; the default build keeps it on.
 MAXIMAL_SKIP := NET_PPP
+MAXIMAL_VARS := CONFIG_SATELLITE_TLE=n
 # English only (the owner's choice, 2026-11-03)
 CONFIG_LANG_ES ?= n
 CONFIG_RX_EXT ?= n

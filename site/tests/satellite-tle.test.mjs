@@ -12,7 +12,7 @@ const SAMPLE = `ISS (ZARYA)\n1 25544U 98067A   26317.20662175  .00008559  00000+
 
 test("site satellite profiles match the firmware frequency table", async () => {
 	const source = await readFile(new URL("../../core/satellite/frequency.c", import.meta.url), "utf8");
-	const firmware = [...source.matchAll(/\{\s*(\d+)u,\s*(\d+)u,\s*(\d+)u,\s*(\d+)u\s*\}/g)]
+	const firmware = [...source.matchAll(/\{\s*(\d+)u,\s*"[^"]+",\s*(\d+)u,\s*(\d+)u,\s*(\d+)u\s*\}/g)]
 		.map((m) => m.slice(1).map(Number));
 	assert.deepEqual(SATELLITES.map(({ id, rxHz, txHz, toneHz }) => [id, rxHz, txHz, toneHz]), firmware);
 	assert.deepEqual(DEFAULT_SELECTED_IDS, [25544, 27607, 43017]);
@@ -52,7 +52,7 @@ test("rejects malformed, stale, and unselected catalog data", () => {
 });
 
 test("accepts bulletin satellites with manually supplied frequency profiles", () => {
-	const customText = `Manual satellite\n1 99001U 26001A   26317.20662175  .00008559  00000+0  16132-3 0  9990\n2 99001  51.6325 282.6584 0007349  20.2588 339.8690 15.49346920594859\n`;
+	const customText = `Manual satellite\n1 99001U 26001A   26317.20662175  .00008559  00000+0  16132-3 0  9998\n2 99001  51.6325 282.6584 0007349  20.2588 339.8690 15.49346920594858\n`;
 	const catalog = parseTleCatalog(customText);
 	const profile = { catalog_id: 99001, rx_hz: 145900000, tx_hz: 435100000, tx_tone_tenths: 885 };
 	const bundle = buildTleBundle(catalog, [99001], {

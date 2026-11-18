@@ -9,8 +9,8 @@ import { encodeSatelliteRecords, pushSatelliteBundle, satelliteCrc32 } from "../
 const record = {
 	catalog_id: 99001,
 	name: "Manual satellite",
-	line1: "1 99001U 26001A   26317.20662175  .00008559  00000+0  16132-3 0  9990",
-	line2: "2 99001  51.6325 282.6584 0007349  20.2588 339.8690 15.49346920594859",
+	line1: "1 99001U 26001A   26317.20662175  .00008559  00000+0  16132-3 0  9998",
+	line2: "2 99001  51.6325 282.6584 0007349  20.2588 339.8690 15.49346920594858",
 };
 const profile = { catalog_id: 99001, rx_hz: 145900000, tx_hz: 435100000, tx_tone_tenths: 885 };
 
@@ -45,10 +45,11 @@ class FakeLink {
 			return reply;
 		}
 		case 3: {
-			const offset = payload[2] | payload[3] << 8;
-			const next = new Uint8Array(this.recordBytes.length + payload.length - 5);
+			const offset = payload[3] | payload[4] << 8;
+			const data = payload.slice(5);
+			const next = new Uint8Array(Math.max(this.recordBytes.length, offset + data.length));
 			next.set(this.recordBytes);
-			next.set(payload.slice(5), this.recordBytes.length);
+			next.set(data, offset);
 			this.recordBytes = next;
 			return new Uint8Array([next.length & 0xFF, next.length >> 8]);
 		}
@@ -106,7 +107,9 @@ test("pushes, commits, verifies, and synchronizes a full replacement", async () 
 	const link = new FakeLink();
 	const progress = [];
 	await pushSatelliteBundle(link, bundle, (step) => progress.push(step));
-	assert.deepEqual(link.calls.map((call) => call[0]), [0, 9, 3, 10, 4, 1, 11]);
+	assert.deepEqual(link.calls.map((call) => call[0]), [0, 9, 3, 3, 3, 10, 4, 1, 11]);
+	const chunks = link.calls.filter((call) => call[0] === 3);
+	assert.deepEqual(chunks.map((call) => [call[3] | call[4] << 8, call.length]), [[0, 64], [59, 64], [118, 46]]);
 	assert.deepEqual(progress, ["writing", "committing", "verifying", "done"]);
 	assert.equal(satelliteCrc32(link.recordBytes), new DataView(Uint8Array.from(link.calls[1]).buffer).getUint32(5, true));
 });
@@ -115,7 +118,7 @@ test("supports consecutive full replacements without resetting the link", async 
 	const link = new FakeLink();
 	await pushSatelliteBundle(link, bundle);
 	await pushSatelliteBundle(link, bundle);
-	assert.deepEqual(link.calls.map((call) => call[0]), [0, 9, 3, 10, 4, 1, 11, 0, 9, 3, 10, 4, 1, 11]);
+	assert.deepEqual(link.calls.map((call) => call[0]), [0, 9, 3, 3, 3, 10, 4, 1, 11, 0, 9, 3, 3, 3, 10, 4, 1, 11]);
 	assert.equal(link.recordBytes.length, encodeSatelliteRecords(bundle.records).length);
 });
 
