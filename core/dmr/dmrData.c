@@ -1153,10 +1153,12 @@ int dmrDataBuildIPText(bool group, uint32_t dst, uint32_t src, const char *text,
 	return bursts;
 }
 
-// A Unicode code point as Latin-1, '?' outside it; control characters are dropped (0)
+// A Unicode code point as Latin-1, '?' outside it; control characters are dropped (0). The C1 controls and DEL
+// (0x7F-0x9F) too: they are no letter, and in the UI's text the bytes 0x80-0x86 are its own glyphs and icons
+// (core/ui/font.h), so a sender's U+0082 would have drawn an arrow
 static char latin1(uint32_t cp)
 {
-	if (cp < 0x20)
+	if ((cp < 0x20) || ((cp >= 0x7F) && (cp < 0xA0)))
 	{
 		return 0;
 	}

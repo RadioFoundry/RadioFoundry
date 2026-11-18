@@ -1639,6 +1639,21 @@ static void testIpText(void)
 	CHECK(dmrDataDecodeIPText(bomLe, sizeof(bomLe), text, sizeof(text)) && (strcmp(text, "le") == 0));
 	CHECK(dmrDataDecodeIPText(bomBe, sizeof(bomBe), text, sizeof(text)) && (strcmp(text, "b?") == 0));
 	CHECK(!dmrDataDecodeIPText(be, 1, text, sizeof(text)));
+	// Control characters are dropped, the C1 ones and DEL too: the UI's text takes 0x80-0x86 as its own glyphs and
+	// icons (core/ui/font.h), so a sender's U+0082 would have drawn an arrow. Latin-1 letters stay
+	static const uint8_t c1[] = { 0x00, 'a', 0x00, 0x82, 0x00, 0x85, 0x00, 0x7F, 0x00, 0x9F, 0x00, 0x0A, 0x00, 0xE9, 0x00, 0xA0 };
+	CHECK(dmrDataDecodeIPText(c1, sizeof(c1), text, sizeof(text)) && (strcmp(text, "a\xE9\xA0") == 0));
+	// The same in ISO 8859-1 defined short data, where the bytes are the characters
+	count = dmrDataBuildEtsiText(false, OUR_ID, RADIO_A, "x\x82y\x9Fz\xF1", false, 0, bursts, DMR_DATA_MAX_BURSTS);
+	r = DMR_DATA_RX_NONE;
+	dmrDataRxReset();
+	for (int i = 0; (i < count) && (r != DMR_DATA_RX_PACKET); i++)
+	{
+		r = dmrDataRxBurst(&bursts[i]);
+	}
+	CHECK((count > 0) && (r == DMR_DATA_RX_PACKET));
+	CHECK(dmrDataDecodeEtsiText(&dmrDataRxPacket, text, sizeof(text)) && (strcmp(text, "xyz\xF1") == 0));
+	dmrDataRxReset();
 
 	// Ours, individual, in the default format: confirmed data (no ACK of its own), done when the ETSI response ACKs it
 	reset();

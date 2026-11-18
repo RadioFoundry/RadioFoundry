@@ -297,7 +297,8 @@ with N(S) 0 within 20 s.
   first).
 - DD formats read (`dmrData.h`): 0x02 7-bit (ISO/IEC 646, packed, the bit padding gives the length), 0x03-0x11 ISO
   8859-x (all read as 8859-1), 0x12 UTF-8, 0x13 UTF-16 (with a byte order mark; big endian without one), 0x14
-  UTF-16BE, 0x15 UTF-16LE; characters outside Latin-1 become '?'. Binary and BCD are not text: counted, not shown.
+  UTF-16BE, 0x15 UTF-16LE; characters outside Latin-1 become '?', and control characters (C0, DEL and C1,
+  0x00-0x1F and 0x7F-0x9F) are dropped: the UI's text takes 0x80-0x86 as its own glyphs (`core/ui/font.h`). Binary and BCD are not text: counted, not shown.
   The codes are TS 102 361-1 V2.7.1 Table 9.50 (9.3.38); the bit padding is 9.3.44. A host test holds one message
   computed from those clauses apart from this code (`dmrDataChainTest`, "ETSI TXT 541"); a commercial radio is still
   to be tried (open point). HIL 2026-10-10: the bench tool sent ISO 8859-1 text marked 0x02 (its bug, fixed), and the
