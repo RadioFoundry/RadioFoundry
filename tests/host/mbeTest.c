@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Open25-DM32 Authors
 // The MBE synthesis core and the full-rate vocoder front end (core/mbe): the dequantizer against golden vectors
 // from a floating-point reference decoder (numbers only), the pitch code table, the synthesis of a tone, of noise and of
 // silence, concealment (repeat, then mute), the level against the reference's, and extreme inputs. Built with
@@ -615,35 +614,6 @@ static void level_run(const uint8_t (*bits)[IMBE_BYTES], const uint16_t *ref, co
 	free(r);
 }
 
-// Playback attenuation must precede int16 saturation; the default API stays bit-identical.
-static void test_playback_gain(void)
-{
-	rig_t *a = malloc(sizeof *a), *b = malloc(sizeof *b);
-	int16_t x[MBE_FRAME_LEN], y[MBE_FRAME_LEN];
-	double ex = 0, ey = 0;
-	int clipped = 0;
-	rig_init(a);
-	rig_init(b);
-	for (int f = 0; f < LVL_FRAMES; f++) {
-		imbe_dec_frame(&a->m, LVL_A_BITS[f], 0, x);
-		imbe_dec_frame_gain(&b->m, LVL_A_BITS[f], 0, y, -3402);
-		for (int n = 0; n < MBE_FRAME_LEN; n++) {
-			ex += (double)x[n] * x[n];
-			ey += (double)y[n] * y[n];
-			clipped += y[n] == 32767 || y[n] == -32768;
-		}
-	}
-	CHECK(fabs(10 * log10(ey / ex) + 10) < 0.25, "playback attenuation %.2f dB", 10 * log10(ey/ex));
-	CHECK(clipped == 0, "attenuated voiced reference clipped %d samples", clipped);
-	CHECK(!memcmp(&a->m.s->q, &b->m.s->q, sizeof a->m.s->q), "playback gain changed quantizer prediction");
-	// Muting/loss concealment also keeps the attenuated path; it must not repeat native-level speech.
-	for (int f = 0; f < MBE_REPEAT_MAX + 4; f++)
-		imbe_dec_frame_gain(&b->m, imbe_silence, IMBE_ERRS_LOST, y, -3402);
-	CHECK(rms_of(y, MBE_FRAME_LEN) < 2, "attenuated loss tail failed to mute");
-	free(a);
-	free(b);
-}
-
 static void test_level(void)
 {
 	level_run(LVL_A_BITS, LVL_A_RMS, "L=27 voiced");
@@ -875,7 +845,6 @@ int main(void)
 	test_noise();
 	test_silence();
 	test_level();
-	test_playback_gain();
 	test_conceal();
 	test_channel_errors();
 	test_extremes();

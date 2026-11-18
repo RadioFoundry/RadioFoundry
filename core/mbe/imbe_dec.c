@@ -16,7 +16,6 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Open25-DM32 Authors
 //
 // Full-rate vocoder decoder front end (imbe.h), in integers. The dequantization follows TIA-102.BABA: the pitch code,
 // the voicing bands, the gain and the DCT blocks of the log amplitudes, and the prediction from the last frame (the
@@ -301,8 +300,7 @@ static void enhance_and_smooth(imbe_dec_state_t *s, mbe_params_t *p, int total, 
 	}
 }
 
-int imbe_dec_frame_gain(const imbe_mem_t *m, const uint8_t imbe[IMBE_BYTES], uint8_t errs, int16_t pcm[MBE_FRAME_LEN],
-			int16_t gain_q11)
+int imbe_dec_frame(const imbe_mem_t *m, const uint8_t imbe[IMBE_BYTES], uint8_t errs, int16_t pcm[MBE_FRAME_LEN])
 {
 	imbe_dec_state_t *s = m->s;
 	mbe_params_t *p = m->p;
@@ -328,16 +326,11 @@ int imbe_dec_frame_gain(const imbe_mem_t *m, const uint8_t imbe[IMBE_BYTES], uin
 		enhance_and_smooth(s, p, IMBE_ERRS_TOTAL(errs), IMBE_ERRS_C4(errs));
 		p->flags |= MBE_NO_ENHANCE;
 		for (int l = 0; l < p->L; l++)
-			p->a[l] = (int16_t)fxp_clamp(p->a[l] + OUT_GAIN + gain_q11, -32767, 32767);
+			p->a[l] = (int16_t)fxp_clamp(p->a[l] + OUT_GAIN, -32767, 32767);
 		return mbe_synth_frame(&m->mbe, p, 0, pcm);
 	}
 	run = mbe_synth_frame(&m->mbe, NULL, 1, pcm);
 	if (run > MBE_REPEAT_MAX)
 		imbe_state_reset(&s->q);
 	return run;
-}
-
-int imbe_dec_frame(const imbe_mem_t *m, const uint8_t imbe[IMBE_BYTES], uint8_t errs, int16_t pcm[MBE_FRAME_LEN])
-{
-	return imbe_dec_frame_gain(m, imbe, errs, pcm, 0);
 }
