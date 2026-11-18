@@ -268,6 +268,11 @@ A channel, the same in `/api/zones`' and `/api/zone`'s items and `/api/channel` 
 - The requests are the radio core's own (`radio_req_zone`, `radio_req_zone_pos`, `radio_req_channel_step`), at most
   one every 20 ms as rigctld's: steps that come quicker add up into one request, and a zone step counts from the zone
   last asked for (for 1 s) rather than from the view, which lags it. A select replaces steps not yet passed on.
+- The knob: on a radio whose knob is read as steps (an encoder, or a switch decoded into steps), its next detent moves
+  on from the host's channel. On one whose knob is read as a position (`hal_input_t.position`), the host's choice
+  stands, the zone too, until the knob is turned; then the knob's position is taken again ([ui.md](ui.md) 3).
+- `tg` is the talkgroup the radio talks to on the channel (`codeplug_channel_talk_contact`): its TX contact, else the
+  first talkgroup of its RX group list.
 - Selecting the current zone's position reads no flash (its size is in the radio's view); another zone's reads its
   record once.
 - The debug link view key `http.radio_*` counts lists, selects, steps and refusals.

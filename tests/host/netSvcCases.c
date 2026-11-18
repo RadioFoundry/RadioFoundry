@@ -384,6 +384,8 @@ static int req_zone = -1, req_zone_pos = -1, req_zone_n, req_pos_n, req_steps, r
 void radio_req_zone(uint16_t index) { req_zone = index; req_zone_n++; }
 void radio_req_zone_pos(uint16_t pos) { req_zone_pos = pos; req_pos_n++; }
 void radio_req_channel_step(int8_t dir) { req_steps += dir; req_step_n++; }
+static int hold_zone = -1;
+void input_switch_hold(uint16_t zone) { hold_zone = zone; }
 uint16_t codeplug_zone_count(void) { return 3; }
 static uint32_t fake_serial = 7;
 static int bump_after;	// > 0: the codeplug changes after this many more channel reads
@@ -416,6 +418,10 @@ bool codeplug_channel(uint16_t number, channel_t *out)
 	out->color_code = 1;
 	out->timeslot = 2;
 	out->contact = (number % 2u) ? 7 : 0;
+	if (number == 3) {
+		out->contact = 0;	// no TX contact: talks to its RX group list's first talkgroup
+		out->listen_list = 1;
+	}
 	out->power = CODEPLUG_POWER_DEFAULT;
 	if (number == 2) {
 		out->rx_tone = (subtone_t){ TONE_CTCSS, 1000 };
@@ -424,6 +430,11 @@ bool codeplug_channel(uint16_t number, channel_t *out)
 		out->power = 1;
 	}
 	return true;
+}
+// As codeplug_talk.c: the TX contact, else the RX group list's first talkgroup (here list N's is contact N + 10)
+uint16_t codeplug_channel_talk_contact(const channel_t *ch)
+{
+	return (ch->contact != 0) ? ch->contact : (ch->listen_list != 0) ? (uint16_t)(ch->listen_list + 10u) : 0;
 }
 bool codeplug_contact(uint16_t index, contact_t *out)
 {
@@ -502,6 +513,8 @@ static void test_radio_api(void)
 	      strstr(j, "{\"pos\":0,\"number\":1,\"name\":\"Ch1\",\"rx_hz\":446012500,\"tx_hz\":446012500,\"mode\":\"dmr\",\"bw\":\"12.5\",\"cc\":1,\"ts\":2,\"tg\":3107,\"call\":\"group\",\"contact\":\"TG 3100\"}") &&
 	      strstr(j, ",{\"pos\":1,\"number\":2,\"name\":\"Ch2\",\"rx_hz\":446025000,\"tx_hz\":446025000,\"mode\":\"fm\",\"bw\":\"25\",\"power\":1,\"rx_tone\":\"100.0\",\"tx_tone\":\"D023I\"}") &&
 	      strstr(j, "],\"next\":null}"));
+	// A channel with no TX contact shows the talkgroup it talks to: its RX group list's first
+	CHECK(strstr(j, "{\"pos\":2,\"number\":3,") && strstr(j, "\"tg\":3111,\"call\":\"group\""));
 	// A long zone in pages: next says where the following page starts, and the pages cover every position once
 	int seen = 0;
 	uint16_t port = 54010;
@@ -551,6 +564,7 @@ static void test_radio_api(void)
 	run_for(30);
 	CHECK(http_get(&a, port++, "GET /api/select?zone=2&pos=40 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 "));
 	CHECK(req_zone_n == 1 && req_zone == 2 && req_pos_n == 2 && req_zone_pos == 40);
+	CHECK(hold_zone == 2);	// a channel switch leaves the host's choice
 	// a position past the zone's end, a zone that isn't there, a bad number
 	CHECK(http_get(&a, port++, "GET /api/select?zone=1&pos=2 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 400 "));
 	CHECK(http_get(&a, port++, "GET /api/select?zone=9 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 400 "));

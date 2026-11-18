@@ -405,7 +405,9 @@ selects that position in the zone (`radio_req_zone_pos`), at power-on too, so th
 points at, and again after a zone change (a new zone starts on its first channel). It asks again until the radio is
 on it, so a turn during a transmission, in hotspot mode or before the codeplug is loaded takes effect afterward; a
 position past the end of the zone changes nothing. Once on it, the knob is left alone until it moves or the zone
-changes, so a scan stands. Its position is `input.switch_pos` in the debug link view
+changes, so a scan stands. A host's zone and channel request ([tcp-services.md](tcp-services.md) 5.2) holds too: the
+radio stays on the host's choice, in that zone, until the knob moves. Its position is `input.switch_pos` in the debug
+link view
 (-1: no switch, or not settled). A radio's hardware page says which kind of knob it has.
 
 VFO_TOGGLE goes between the channel and the VFO, "VFO" and "Back to channels" (in dual watch, on the selected side).

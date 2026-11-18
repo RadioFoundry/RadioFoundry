@@ -13,6 +13,7 @@
 #include "codeplug/codeplug.h"
 #include "dmr/ipGateway.h"
 #include "hal_time.h"
+#include "input/input.h"
 
 #define REQ_GAP_MS	20u	// radio requests at most this often (the radio core's queue holds 16), as rigctld's
 #define ZONE_HOLD_MS	1000u	// a zone step counts from the last zone asked for this long (the view lags the request)
@@ -103,8 +104,10 @@ static void channel_fields(dl_text_t *t, const channel_t *ch)
 #if CONFIG_DMR
 	if (ch->mode == RADIO_MODE_DMR) {
 		dl_text(t, ",\"cc\":%u,\"ts\":%u", ch->color_code, ch->timeslot);
+		// the contact the radio talks to on it: the TX contact, else its RX group list's first talkgroup
+		uint16_t talk = codeplug_channel_talk_contact(ch);
 		contact_t c;
-		if (ch->contact != 0 && codeplug_contact(ch->contact, &c)) {
+		if (talk != 0 && codeplug_contact(talk, &c)) {
 			static const char *const kinds[] = { "group", "private", "all" };
 			dl_text(t, ",\"tg\":%u,\"call\":\"%s\",\"contact\":", (unsigned)c.id,
 				(c.type < 3u) ? kinds[c.type] : "?");
@@ -284,12 +287,14 @@ static void apply(uint32_t now)
 		if (pend.pos_due) {
 			radio_req_zone_pos(pend.pos_to);
 		}
+		input_switch_hold(pend.zone_to);	// a channel switch (an absolute knob) leaves the host's choice
 		pend.zone_due = pend.pos_due = false;
 		pend.last_req_ms = now;
 	} else if (pend.channel_steps != 0) {
 		if (v->vfo) {
 			radio_req_vfo(false);	// channel steps are channels: back to the channel first
 		}
+		input_switch_hold(v->zone_index);
 		radio_req_channel_step((int8_t)((pend.channel_steps > 127) ? 127 : (pend.channel_steps < -127) ? -127 :
 						pend.channel_steps));
 		pend.channel_steps = 0;
