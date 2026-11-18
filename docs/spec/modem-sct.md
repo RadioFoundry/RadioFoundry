@@ -332,7 +332,7 @@ not known well enough (section 10).
 
 The field access `sct_dmr_field_begin/poll/cancel` and `sct_dmr_call_option` give a board a read or write of any
 baseband field: the debug link's checks of a driver value against the chip, and a board's own queries, such as the
-AT-D578UV's identity queries for its diagnostics page. The engine has one field slot, so a board with more than one user
+baseband identity a diagnostics page shows. The engine has one field slot, so a board with more than one user
 makes them take turns. A field doesn't start while the engine has a packet of its own out or queued (a frame, the start,
 WORK_MODE), and the chip's general-error ACK, which doesn't say which packet it answers, is the field's only while the
 engine has nothing out; otherwise the engine takes it and the field times out.
