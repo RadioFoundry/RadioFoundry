@@ -497,7 +497,7 @@ DMR mode (the HR_C6000 needs the raw 4FSK baseband):
 |---|---|
 | 0x40 = 0x0031 | undocumented; bit 0 set passes low-frequency audio (needed for 4FSK) |
 | 0x15 = 0x1100 | IF tuning |
-| 0x32 = 0x4495 | AGC target |
+| 0x32 = 0x4490 | AGC target 18 (bits 11:6, 2 dB units); bits 2:0 clear (below) |
 | 0x3A = 0x00C3 | no mic input to the AT1846S modulator |
 | 0x3C = 0x1B34 | pk_det_th |
 | 0x3F = 0x29D1 | rssi3_th |
@@ -524,9 +524,30 @@ bit errors a frame and the share of frames received, at -103 dBm with the transm
 
 0x07EF keeps every frame from x0.8 to x1.2, so a transmitter under deviation (common on hotspots) and one over both
 decode; the over-deviated side costs corrected bits, never frames. The gain also sets how far off frequency a
-transmitter can be: full gain clips first and has the narrowest window (5.13). On strong signals (-50 dBm) about a bit a
-frame stays at every gain and offset: that is the AGC (0x32), not this gain. `test_dmr_audio_rx_deviation` (tests/hil)
-checks x0.85 and x1.15 at -100 dBm.
+transmitter can be: full gain clips first and has the narrowest window (5.13). `test_dmr_audio_rx_deviation`
+(tests/hil) checks x0.85 and x1.15 at -100 dBm.
+
+DMR receive AGC. A simplex transmitter keys one 30 ms burst every 60 ms, so the AGC sees the carrier come and go with
+every burst. With 0x32 bits 2:0 at 2 or more (the 12.5 kHz table's 0x4495 has 5) the start of each burst is overloaded:
+about a bit a frame from -85 to -40 dBm, however strong the signal, and bad frames now and then. A repeater's
+continuous carrier hides it: the same call as a repeater outbound at -65 dBm corrected nothing, as simplex bursts 1.67
+bits a frame. The datasheet names only bits 11:6 (agc_target_pwr); bits 2:0 are undocumented. Bit 15 doesn't take a
+write (reads 0). Voice bit errors a frame, speech at the standard's deviation, simplex (SDR bench, conducted,
+`tools/dmr_rx_sweep.py --reg 0:0x32 --field 2:0`):
+
+| Level at the radio | 0x4490 | 0x4491 | 0x4492 | 0x4493 | 0x4494 | 0x4495 | 0x4496 | 0x4497 | 0x4498 |
+|---|---|---|---|---|---|---|---|---|---|
+| -45 dBm | 0.00 | 0.00 | 0.33 | 1.35 | 1.43 | 1.26 | 1.15 | 0.86 | 0.00 |
+| -65 dBm | 0.01 | 0.00 | 0.64 | 1.07 | 1.38 | 1.01 | 0.98 | 0.88 | 0.00 |
+| -75 dBm | 0.01 | 0.02 | 0.39 | 0.69 | 0.61 | 1.51 | 1.24 | 1.29 | 0.01 |
+| -87 dBm | 0.00 | 0.00 | 0.22 | 0.18 | 0.54 | 0.65 | 0.61 | 0.67 | 0.00 |
+
+Bits 2:0 cost nothing near sensitivity: 0x4490 and 0x4495 are within a run's spread of each other from -107 to
+-126 dBm at x0.85, x1.0 and x1.15 (0.01 at -107 dBm, 0.03-0.05 at -120, 0.3-0.4 at -123, 0.8-0.9 at -126, every frame
+received). With bits 2:0 clear, bits 15:12 make no difference (0x0490 to 0x7490 all clean at -45 and -75 dBm). With
+them at 5, a higher AGC target (20 to 31) only moved the errors to stronger signals, and no 0x33 ("AGC number") value
+removed them (0x44FF read the signal some 30 dB weaker). The DMR table writes 0x4490; FM keeps the bandwidth table's
+0x4495 (a continuous carrier). `test_dmr_audio_rx_strong` (tests/hil) checks simplex speech at -75 and -55 dBm.
 
 ### 5.6 Frequency setting
 
@@ -716,11 +737,8 @@ The VHF offset was measured at full gain, inside the overload (voice bit errors 
 It is not measured again at 0x07EF yet. `test_dmr_audio_rx_offset_wide` (tests/hil) checks a carrier 2.5 kHz below
 and above the channel at -100 dBm.
 
-Bursts keyed through idle write the transmit frequency, so the offset doesn't reach the transmitter. A direct burst
-(section 6, UHF only) keys from the receive frequency and takes any offset back in whole MOD1 steps toward zero (about
-74 Hz each mid-band: for an offset of 875 Hz, 11 put the carrier about 5 Hz high, 12 about 85 Hz high); every burst
-decodes, the first within 20 Hz of the rest. With the UHF offset at 0 there is nothing to take back. The MD-UV380 has
-the same two chips and is not measured on its own.
+Bursts keyed through idle write the transmit frequency, so the receive offset doesn't reach the transmitter. Direct
+bursts (an SFR, section 6) don't write it: they take the receive offset back out in MOD1 steps.
 
 ---
 
@@ -745,19 +763,22 @@ Ordering:
 - Burst-by-burst DMR TX (the PA follows the bursts), keyed 1 ms after the RF TX interrupt (it comes about 1.28 ms
   before the slot boundary; keyed at once, the PA cut the end of the inbound burst an SFR receives in the other slot).
   Two sequences:
-  - Direct, when the synthesizer already holds the receive frequency of a simplex channel (SFR, simplex) and the band
-    is UHF: reg 0x30 straight from RX to DMR TX, HR_C6000 4:0x04 (MOD1 offset) = calibrated value + 42, plus the DMR
-    receive offset in MOD1 steps (5.13), both RX supplies off, then the PA. Back to
+  - Through idle, the normal one: reg 0x30 receiver off, the TX frequency, reg 0x30 DMR TX, both RX supplies off, then
+    the PA. Back to RX, the PA enables low, reg 0x30 receiver off, the RX frequency if it differs, the RX supply for
+    the band, reg 0x30 RX on. Going straight back to RX after a burst entered from idle leaves the receiver about 3 kHz
+    off.
+  - Direct, only while an SFR repeats (a channel's or the VFO's role, or the hotspot's SFR mode;
+    the board asks at each burst: `hal_radio_t.dmr_direct_query`), on a simplex UHF channel whose receive frequency the
+    synthesizer already holds: reg 0x30 straight from RX to DMR TX, HR_C6000 4:0x04 (MOD1 offset) =
+    calibrated value + 42, plus the DMR receive offset in MOD1 steps (5.13), both RX supplies off, then the PA. Back to
     RX: the PA enables low, 4:0x04 = calibrated value, the RX supply, reg 0x30 RX on. RX straight to TX puts the
-    carrier about 3.07 kHz low, and a frequency write can't correct it (the AT1846S applies one only coming out of
-    idle); 42 steps of about 75 Hz put it back (measured near 461 MHz: +16..+60 Hz). The idle step that the other
-    sequence takes every slot makes the synthesizer settle again, and an SFR lost the first and last frames of its
-    inbound bursts to it: about 190 bit errors and 5-10 lost frames per 72 repeated frames, against about 60 and none
-    direct (SDR bench, 2026-10-19).
-  - Through idle, otherwise (VHF, where 3.07 kHz is more steps than the register holds; RX and TX frequencies that
-    differ): reg 0x30 receiver off, the TX frequency, reg 0x30 DMR TX, both RX supplies off, then the PA. Back to RX,
-    the PA enables low, reg 0x30 receiver off, the RX frequency if it differs, the RX supply for the band, reg 0x30 RX
-    on. Going straight back to RX after a burst entered from idle leaves the receiver about 3 kHz off.
+    carrier about 3.07 kHz low and a frequency write can't correct it (the AT1846S applies one only coming out of
+    idle); 42 steps of about 75 Hz put it back on the board measured near 461 MHz (+16..+60 Hz). On two other DM-1701s
+    at 433.45 MHz the same correction left the DMR carrier 178 Hz and 449-554 Hz below the FM carrier, enough for an
+    MMDVM hotspot to reject the call, and through idle they measured +36 and +41 Hz (on an SDR). That is
+    why direct keying is kept to the SFR: there the idle step, which makes the synthesizer settle again each slot, lost
+    the first and last frames of the inbound bursts, about 190 bit errors and 5-10 lost frames per 72 repeated frames
+    against about 60 and none direct (on an SDR). A per-radio correction would make it right everywhere.
 
   The receiver must work between bursts (an SFR's inbound slot, `sfr.md` 3). Dropping the PA earlier than the next
   timeslot interrupt (28.5-30 ms after the RF TX interrupt) did not reduce the inbound errors. The "transmitting" state of the radio must therefore be taken from the HR_C6000 slot state, not from the PA

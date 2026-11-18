@@ -32,6 +32,9 @@ played" and treats the channel as busy while it lasts.
 
 Transmitting keeps the channel's color code even while listening on any color code.
 
+Unless digital monitor is on, a repeater channel hears only its own timeslot. A call the radio joins partway
+through shows that call's caller and talkgroup, never those of a call on the other timeslot or of an earlier call.
+
 ## Who you talk to
 
 **PTT** sends to, in this order:

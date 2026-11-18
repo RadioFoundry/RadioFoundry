@@ -92,7 +92,9 @@ static const reg_val_t fm_regs[] = {
 static const reg_val_t dmr_regs[] = {
 	{ 0x40, 0x0031 },	// bit 0 set: low-frequency baseband for 4FSK
 	{ 0x15, 0x1100 },
-	{ 0x32, 0x4495 },
+	// AGC target 18 (bits 11:6) with bits 2:0 clear: at 2 or more the AGC overloads the start of every simplex burst
+	// (30 ms on, 30 off), about a bit a frame from -85 to -40 dBm (hardware-dm1701.md 5.5)
+	{ 0x32, 0x4490 },
 	{ 0x3A, 0x00C3 },
 	{ 0x3C, 0x1B34 },
 	{ 0x3F, 0x29D1 },

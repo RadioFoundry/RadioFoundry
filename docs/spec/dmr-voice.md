@@ -295,12 +295,17 @@ keeps its window centered on the channel. Where a board's window was measured is
 
 | Tool | What it does |
 |---|---|
-| `tools/dmr_rx_sweep.py` | Steps a chip register (debug link CHIP_REG) through values while the SDR bench sends speech, over bench levels, deviations and carrier offsets (`--detune` makes the offset by tuning the radio away instead); ranks the values by their worst cell. About three minutes a grid |
+| `tools/dmr_rx_sweep.py` | Steps a chip register (debug link CHIP_REG), or one bit field of it (`--field HI:LO`), through values while the SDR bench sends speech, over bench levels, deviations and carrier offsets (`--detune` makes the offset by tuning the radio away instead); ranks the values by their worst cell. About three minutes a grid |
+| `test_dmr_audio_rx_strong` | The bench's simplex speech at -75 and -55 dBm at the radio: 95 % of the frames and at most 0.2 corrected bits a frame at each (a level the bench can't reach is left out) |
 | `test_dmr_audio_rx_deviation` | The bench's speech at 0.85 and 1.15 of the standard deviation, at -100 dBm at the radio: 95 % of the frames and at most 0.8 corrected bits a frame, both ways |
 | `test_dmr_audio_rx_offset_wide` | The bench's speech with its carrier 2.5 kHz below and above the channel, at -100 dBm at the radio: 90 % of the frames and at most 2 corrected bits a frame, both ways |
 
-Measure near sensitivity (-90 to -105 dBm at the radio): with a strong signal other limits (the AGC) dominate and a
-setting barely shows. Use speech or another varied recording, never AMBE silence: its errors land in bits with no FEC.
+Measure near sensitivity (-90 to -105 dBm at the radio) for the level window: there a fraction of a dB shows. Measure
+strong simplex signals too (-75 to -45 dBm): a simplex transmitter keys one 30 ms burst every 60 ms, so the receiver's
+AGC sees the carrier come and go with every burst, and one that settles too slowly overloads the start of each burst.
+That costs a bit or more a frame however strong the signal, and only on simplex: a repeater's continuous carrier
+hides it. A clean receiver corrects almost nothing at those levels. Use speech or another varied recording, never
+AMBE silence: its errors land in bits with no FEC.
 Let the radio drop the last call before the next one starts (about 2 s): a call that begins while it still follows the
 last one's slot timing can be decoded at that timing to its end.
 

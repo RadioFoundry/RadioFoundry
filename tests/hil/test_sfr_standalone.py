@@ -9,7 +9,8 @@ listener of the chain test still need channels). Every setting they change is pu
 
 test_sfr_repeater_quality (rf, radio_tx, bench_service): a repeater-role channel (Rpt or Rpt Moto) repeats a 4
 superframe call. Pass: at least 19 bursts repeated (18 voice and a header); the inbound frames the runner decoded
-(sfr.rx_fec) at least 60 of the call's 72, with at most 3 lost and fewer than 4 bit errors a frame on average. The
+(sfr.rx_fec) at least 60 of the call's 72, with at most 3 lost and fewer than 4 bit errors a frame on average, and
+where the board reports it the bursts keyed straight from RX at UHF (dmr.keyed_direct 1). The
 An AT1846S board with the direct keying gives 0 lost and under 1 bit a frame (gotchas 14.14); the per-frame-place counts (sfr.rx_fec_pos) are printed.
 
 test_sfr_repeater_tx_inhibit (rf, radio_tx, bench_service): with TX inhibit the repeater role lets go of the modem
@@ -195,6 +196,11 @@ def test_sfr_repeater_quality(radio, sdr_bench, pytestconfig, tx_allowed):
     assert frames >= 60, f"the runner decoded only {frames} of the call's 72 frames"
     assert lost <= 3, f"{lost} inbound frames lost"
     assert bits < 4 * frames, f"{bits} bit errors in {frames} frames"
+    # The repeater keys straight from RX for the inbound slot (hal_radio_t.dmr_keying, where the board reports it;
+    # UHF only on the UV380 family: at VHF the correction is out of range and it keys through idle)
+    keyed = radio.view(["dmr"]).get("dmr.keyed_direct")
+    if freq > 300:
+        assert keyed in (None, "1"), "the SFR repeated through idle (dmr.keyed_direct=0), not straight from RX"
 
 
 @pytest.mark.rf

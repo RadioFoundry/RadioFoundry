@@ -2563,13 +2563,15 @@ static bool press(const char *name, bool lng, char *err, size_t len)
 		}
 		presses++;
 		if (a == ACT_MONITOR) {
+			// The radio gets the edge first, as on the radio (input_forward runs before the UI's queue, and the
+			// radio task outranks the UI): the UI reads the view the edge already changed
 			input_event_t ev = { ACT_MONITOR, GESTURE_DOWN, 0 };
-			ui_app_key(&ev);
 			radio_req_monitor(true);
+			ui_app_key(&ev);
 			advance(lng ? LONG_MS : PRESS_MS);
 			ev.gesture = GESTURE_UP;
-			ui_app_key(&ev);
 			radio_req_monitor(false);
+			ui_app_key(&ev);
 			return true;
 		}
 		input_event_t ev = { a, (uint8_t)(lng ? GESTURE_LONG : GESTURE_PRESS), 0 };
@@ -2886,8 +2888,8 @@ static bool run_token(char *t, char *err, size_t len)
 		if (down)
 			presses++;
 		input_event_t ev = { ACT_MONITOR, down ? GESTURE_DOWN : GESTURE_UP, 0 };
+		radio_req_monitor(down);	// the radio first, as on the radio (see `mon`)
 		ui_app_key(&ev);
-		radio_req_monitor(down);
 		advance(200);
 		return true;
 	}

@@ -150,10 +150,10 @@ meters away gets a true bearing. The longitude difference is wrapped to the shor
 ### 4.2 Tocall
 
 Destination `APRDF?`. The [APRS device identifier list](https://github.com/aprsorg/aprs-deviceid) allocates `APRDF?`
-to RadioFoundry, so APRS apps and aprs.fi name the device. The sixth character tells the radios apart: each board's
-`board.toml` sets it (`aprs_tocall`, [board-registry.md](../dev/board-registry.md)), and `tools/boards.py check` keeps it
-unique. A character stays with its radio for good; the device identifier list maps each one to its model. `0` is no
-radio: the host tests build without a board. The debug link shows the tocall in use as `aprs.tocall`.
+to RadioFoundry as one entry, so APRS apps and aprs.fi name the firmware, not yet the radio. The sixth character tells
+the radios apart: each board's `board.toml` sets it (`aprs_tocall`, [board-registry.md](../dev/board-registry.md)), and
+`tools/boards.py check` keeps it unique. A character stays with its radio for good, so the list can later name the
+model per character. `0` is no radio: the host tests build without a board. The debug link shows the tocall in use as `aprs.tocall`.
 
 ### 4.3 Received (RX builds)
 
