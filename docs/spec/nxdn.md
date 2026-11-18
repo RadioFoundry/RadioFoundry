@@ -161,8 +161,9 @@ to the 49 vocoder bits before FEC. The sequence restarts at each four-frame supe
 FACCH1 frames are skipped. The VCALL identifies the scramble cipher and key ID. On an
 NXDN Conventional system channel the receiver selects the system key by those fields, and holds scrambled voice
 when no matching key is available. Transmit uses the channel's selected key and refuses PTT if it is unavailable.
-See [NXDN in the codeplug](nxdn-codeplug.md). RX corrects FEC before descrambling; a frame with
-uncorrectable protected bits is held. DES and AES remain unsupported. The scrambling is unauthenticated and an
+See [NXDN in the codeplug](nxdn-codeplug.md). RX corrects FEC before descrambling and holds a frame with
+uncorrectable protected bits. TX drops a vocoder frame that fails FEC and uses scrambled silence if the air
+queue needs a replacement frame. DES and AES remain unsupported. The scrambling is unauthenticated and an
 incorrect key cannot be detected. Scrambled voice was checked on air against another radio running RadioFoundry and a commercial portable. See the [feature matrix](../feature-matrix.md).
 
 | Item | State |
@@ -265,6 +266,7 @@ The radio core needs from a board: a provider (`board_t.air`) whose fit takes 24
 |---|---|
 | `tests/host/fecTest.c` (`test_conv`) | the Viterbi decoder: clean, punctured, soft against hard in noise |
 | `tests/host/nxdnTest.c` | the scrambler against its register, the syncs, the LICH and its parity, SACCH and FACCH1 round trips through errors and CRC checks, VCH places, the 7.2.1 FEC frames, messages; calls through the framer: clear, RAN squelch, RAN 0, late entry, LICH coasting, symbol errors, a header sync with an error, encrypted, 9600 bit/s |
+| `tests/host/nxdnScrambleTest.c` | the complete TS 1-D v1.3 scramble vectors for EHR voice (7.2.1.1) and UDCH user data (7.2.2.1), plus FEC correction and invalid inputs |
 | `tests/host/nxdnEngineTest.c` | two engines on made-up providers at both rates: a call heard with its fields and voice in order, an encoder stall covered by silence, no underruns, late entry, group and individual squelch, a squelch change mid-call, an abort, another RAN, RAN 0, an encrypted call; a call through a modeled discriminator tap and the soft modem at 2400 symbols/s, eight calls per noise level |
 | `tests/host/radioCoreTest.c` (`radioCoreTestNxdn`, `radioCoreTestP25Nxdn`) | the radio core against an NXDN engine on a fake provider: a call heard, its voice in order to the vocoder, another RAN, group squelch; PTT heard by the far engine with the settings, settings sent mid-transmission, 4800 bit/s, a TX-only and an RX-only fit, no fit, the time-out; the mode by request, the debug link and the VFO saved; P25 and NXDN in turn in the same memory; a zone scan over a stored NXDN channel: a stop with nothing on air, held on a late entry to its group, not on another group or RAN, never a stop at a rate the provider can't receive (`test_nxdn_scan`); dual watch with it as B: a hold on its group's call, not on another group, refused at such a rate, and with P25 on A one engine at a time (`test_nxdn_dual`) |
 | `tests/host/uiFlowTest.c` | the mode tile's order, the home screen in NXDN, the FM-only tiles |
@@ -290,8 +292,8 @@ An over checked off air: the radio in NXDN on a test frequency, the SDR bench's 
 
 ## 9. Unconfirmed
 
-Facts the documents leave open, and what the code assumes. The documents have no frame-level test vectors (no CRC or
-scrambler examples), so the codec checks against itself and the clauses only.
+Facts the frame format and channel coding documents leave open, and what the code assumes. The frame codec checks
+its CRC and frame whitening against the clauses. The separate voice scrambler uses the published vectors in section 8.
 
 | Item | Assumed | Where |
 |---|---|---|
