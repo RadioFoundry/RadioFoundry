@@ -81,12 +81,6 @@ bool hal_watchdog_test_load(const uint32_t arg[3])
 	return true;
 }
 
-void radio_get_view(radio_view_t *v)
-{
-	memset(v, 0, sizeof *v);
-	v->state = fake_state;
-}
-
 radio_state_t radio_get_state(void)
 {
 	return (radio_state_t)fake_state;

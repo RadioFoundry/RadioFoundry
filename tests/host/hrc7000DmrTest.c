@@ -1710,6 +1710,109 @@ static void test_rx_slot_arg(void)
 	CHECK(n == 1 && evs[0].arg == 3);
 }
 
+// A late-entry report for chip slot cs: its LC (9 bytes from base) in the RX RAM, bad_cs sets cs_check_flag
+static void late_report(uint8_t cs, uint8_t base, bool bad_cs)
+{
+	for (int i = 0; i < 9; i++) {
+		buf[C7_RX_RAM + i] = (uint8_t)(base + i);
+	}
+	REG(C7_RX_TYPE_INFO) = rti(6, 0, 3, 0, cs, 0) | (bad_cs ? 1u << 27 : 0u);
+	REG(C7_SYS_INTERP_LIST) = 1u << 2;
+	hrc7000_dmr_isr_sys(&eng);
+	REG(C7_SYS_INTERP_LIST) = 0;
+}
+
+// The LC a voice A on chip slot cs carries: its first byte, or 0 when it carries none
+static uint8_t voice_lc(uint8_t cs)
+{
+	dmr_burst_t b;
+	deframe(rti(1, 0, 3, 0, cs, 0));
+	if (count_kind(DMR_EV_BURST_RX, &b) != 1 || b.kind != DMR_BURST_VOICE) {
+		return 0xFF;
+	}
+	return b.lc_valid ? b.lc[0] : 0;
+}
+
+// A pending late-entry LC belongs to its chip slot until a voice burst there takes it: everything that says the call
+// it came from is over discards it, on that slot only (issue 495)
+static void test_rx_late_entry_slots(void)
+{
+	setup();
+	hrc7000_dmr_run(&eng);
+	const dmr_config_t cfg = { .own_id = 1234, .cc = 3, .access = DMR_ACCESS_POLITE_CC, .repeater = false };
+	hrc7000_dmr_configure(&eng, &cfg);
+	tick(false);
+	count_kind(0xFF, NULL);
+
+	// A bad late-entry checksum drops only its own slot's LC
+	late_report(0, 0xA0, false);
+	late_report(1, 0xB0, false);
+	late_report(0, 0xC0, true);
+	CHECK(voice_lc(0) == 0);
+	CHECK(voice_lc(1) == 0xB0);
+
+	// A slot filter change drops both; the same filter again keeps them
+	late_report(1, 0xB0, false);
+	hrc7000_dmr_rx_lock_slot(&eng, 2);
+	CHECK(voice_lc(1) == 0);
+	late_report(1, 0xB0, false);
+	hrc7000_dmr_rx_lock_slot(&eng, 2);
+	CHECK(voice_lc(1) == 0xB0);
+	hrc7000_dmr_rx_lock_slot(&eng, 0);
+
+	// Any non-voice burst on the slot drops it, a header with a bad CRC included (that one is never delivered)
+	const uint32_t others[] = {
+		rti(0, DMR_BURST_VOICE_LC_HEADER, 3, 0, 0, 0) | (1u << 25),
+		rti(0, DMR_BURST_CSBK, 3, 0, 0, 0),
+		rti(0, DMR_BURST_DATA_HEADER, 3, 0, 0, 0),
+	};
+	for (unsigned i = 0; i < sizeof others / sizeof others[0]; i++) {
+		late_report(0, 0xA0, false);
+		late_report(1, 0xB0, false);
+		deframe(others[i]);
+		count_kind(0xFF, NULL);
+		CHECK(voice_lc(0) == 0);
+		CHECK(voice_lc(1) == 0xB0);
+	}
+
+	// A call that fades after its LC came: once its slot ages out, the next headerless caller there doesn't get it.
+	// Bursts go on on the other slot, so the receiver isn't restarted (that drops it anyway)
+	CHECK(voice_lc(0) == 0);
+	late_report(0, 0xA0, false);
+	uint32_t restarts = eng.st.rx_restarts;
+	for (int i = 0; i < 15; i++) {
+		tick(false);
+		deframe(rti(0, DMR_BURST_IDLE, 3, 0, 1, 0));
+	}
+	count_kind(0xFF, NULL);
+	CHECK(eng.st.rx_restarts == restarts);
+	CHECK(voice_lc(0) == 0);
+
+	// A receiver restart drops both
+	late_report(0, 0xA0, false);
+	late_report(1, 0xB0, false);
+	hrc7000_dmr_rx_restart(&eng);
+	CHECK(voice_lc(0) == 0 && voice_lc(1) == 0);
+
+	// So does the receive hold after a direct transmission
+	const dmr_config_t own = { .own_id = 1234, .cc = 3, .access = DMR_ACCESS_IMPOLITE, .repeater = false };
+	hrc7000_dmr_configure(&eng, &own);
+	tick(false);
+	count_kind(0xFF, NULL);
+	uint32_t holds = eng.st.rx_holds;
+	late_report(0, 0xA0, false);
+	late_report(1, 0xB0, false);
+	CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	dmr_tx_burst_t d = { .kind = DMR_BURST_DATA_HEADER, .len = 10 };
+	CHECK(hrc7000_dmr_tx_queue(&eng, &d));
+	for (int i = 0; i < 8 && hrc7000_dmr_is_transmitting(&eng); i++) {
+		tick(true);
+	}
+	CHECK(!hrc7000_dmr_is_transmitting(&eng) && eng.st.rx_holds == holds + 1);
+	count_kind(0xFF, NULL);
+	CHECK(voice_lc(0) == 0 && voice_lc(1) == 0);
+}
+
 // A whole call through a chip model: the chip writes a burst's voice into the voice RAM only when the voice-access flag
 // (LAYER2_TXRX_CTRL b15) was set at the timeslot interrupt that decided that burst's slot, the one LAYER2_STATUS b30
 // shows then. Every burst's payload must be the voice the chip wrote for it. With the flag on the other slot
@@ -1847,6 +1950,7 @@ int main(void)
 	test_rx_emb_lc_per_slot();
 	test_rx_slot_arg();
 	test_rx_voice_ram_call();
+	test_rx_late_entry_slots();
 	test_bs_mode_cleared();
 	test_rx_resync();
 	test_cc_any();

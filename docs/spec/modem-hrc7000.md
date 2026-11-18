@@ -332,6 +332,20 @@ one); the event task reads it (`hrc7000_dmr_short_lc`, in flash: a new one comes
 when it changes (`DMR_EV_SHORT_LC`); the stack checks the CRC-8. The chip's own CRC-8 flag (RX_TYPE_INFO
 b30, in the burst report) isn't used.
 
+The driver saves each late-entry LC under the chip slot `hrc7000_dmr_decode` reads from `RX_TYPE_INFO` at the
+late-entry interrupt (`current_rx_slot`, b19) and attaches it only to a voice burst on that chip slot. A single
+pending LC can cross slots even when the voice burst filter works: an unselected slot's late-entry interrupt sets it,
+its deframe is dropped, and the next selected voice burst takes the wrong caller (#495, host reproduction). Separate
+pending buffers also preserve both LCs when both reports arrive before voice. A slot's pending LC is discarded by any
+non-voice burst on that slot (LC header, terminator, CSBK, MBC, data header, PI header, idle; a header with a bad CRC
+too), by a filtered burst, and when the slot's voice ages out (390 ms without a voice burst), so a call that fades
+before a voice burst takes its LC doesn't name the next headerless caller. Receiver resets and a slot filter change
+discard both. A failed late-entry checksum invalidates only the reporting slot's pending LC.
+
+Nothing here confirms that b19 at a late-entry interrupt with no deframe names the burst that completed the LC rather
+than the last burst deframed; that needs on-air confirmation with calls on both slots. It does not infer a DMR
+timeslot from the chip slot: BS bursts retain their CACH TC labels.
+
 **Voice RAM (0x16000960)**: write 27 bytes before arming a voice burst; read 27 bytes after a voice deframe interrupt
 Burst numbering for privacy keystream purposes is RX_TYPE_INFO's 1–6.
 
@@ -898,6 +912,7 @@ detection uses FM_FUNCTION_COEF1 = 0x7F499D (134.4 Hz).
 | Default tone registers | FM_TONE1 = 697 / 770 Hz (0x0593 / 0x0629), FM_TONE2 = 852 / 941 (0x06D1 / 0x0787), FM_TONE3 = 1209 / 1336 (0x09AC / 0x0AB0), FM_TONE4 = 1477 / 1633 (0x0BD1 / 0x0D10); high half = first tone |
 | DTMF deviation (SUBVOICE_COEF b15:8) | Measured (UHF, 1750 Hz single tone): about 5.8 Hz per step, 0x60 = 559 Hz, 0xC0 = 1117 Hz; a value of 0x12 gives about 100 Hz. RadioFoundry uses 0xC0 at 12.5 kHz and 0xFF (the most, about 1.5 kHz) at 25 kHz, on both bands. VHF is unmeasured (a VHF value about 3.25 times the UHF one would match the ratio of the VHF to the UHF modulation calibration bytes, unverified; RadioFoundry applies those bytes per band and keeps the UHF values) |
 | Send sequence | FM_MOD b1 = 1; FM_PTT = 1; TONE_SEND_CTRL b6 = 0 (mute voice); AUDIO_CONTROL b3 = 1 for sidetone; TONE_SEND_CTRL b3:0 = digit; b7 = 1 to start the digit, b7 = 0 to end it; repeat per digit; finally b6 = 1 to restore voice |
+| Sidetone (`hrc7000_tx_tone_side`) | AUDIO_CONTROL b3 set while a tone is sent: the codec plays the tone the generator sends, so the speaker (amplifier on, source = codec) hears the start tone on air without the prompt path, which would reach the modulator. Used for the FM start tone set to speaker + air. Untested on the radio |
 | Arbitrary single tone | write the tone step into the high halves of FM_TONE1 and FM_TONE3 and send DTMF digit "1" (697 + 1209 pair), restore the defaults after. On air at 1750 Hz (measured): TONE_SEND_CTRL = 0x81 (digit 1 on, voice muted) with FM_MOD b1 set, 0 afterwards (the reset value) |
 | RadioFoundry's DTMF (`hrc7000_tx_dtmf`, `radio-features.md` 3.7) | the arbitrary-tone sequence with the low tone's step in FM_TONE1's high half and the high tone's in FM_TONE3's, digit "1" sent: one sequence for every digit and for single tones, without the digit codes of figure 95. The deviation is the single tone's (SUBVOICE_COEF b15:8, `hrc7000_dtmf_dev`); the chip attenuates the low tone 2.5 dB; on air the high tone is 5.0 dB over the low one for every digit on two boards (measured), so the datasheet's figure is likely 10 log of the amplitude ratio. That forward twist is the chip's design and isn't corrected: after a receiver's de-emphasis it is +0.4 to +2.1 dB (`radio-features.md` 3.7) |
 | Receive | FM_MOD b1 = 1; SUBVOICE_COEF b27:16 = 1056 (33 ms at 32 kHz), b7:0 threshold; FM_FUNCTION_COEF1..8 = 0x7ECD9D, 0x7E8A34, 0x7E368C, 0x7DD245, 0x7C690D, 0x7B9F03, 0x7AA7A8, 0x7979F5; read FM_DECODE_FLAG2 b11:8 on each signaling interrupt; FM_MOD b23:16 sets the repeat-symbol window |
@@ -917,7 +932,13 @@ empty at every block edge. It ran dry there: the queue emptied with the FIFO tak
 of beeps, and every tone broke up at 20 ms intervals, its pitch jumping and its level dipping by up to 40 dB at the
 microphone (measured). `audio_pcm.c` therefore pushes nothing after the queue is emptied (route on, gate edges) until
 two blocks are queued, so the queue stays a block ahead of the FIFO for one block (20 ms) of latency. With that hold
-the queue never ran out in the same beeps, and the FIFO was topped up at least every 4 ms (measured). The `un` field
+the queue never ran out in the same beeps. A dedicated timer checks the FIFO every 2 ms independently of the audio task:
+a voice decoder can occupy that task longer than the FIFO's 8 ms capacity. On seeing room, the timer schedules a
+write at least 200 µs later; the interrupt does not busy-wait during that interval. Each write interrupt pushes at most
+one chunk after checking the queue generation, speaker route, TX gate, FIFO ownership and available space again.
+Stop/start, queue resets and FIFO ownership changes cancel a pending write. Three queue entries can be published,
+with a fourth reserved for the producer: variable decode time can finish a third block before either primed entry
+has drained. The occupancy check occurs after decoding, so space freed during decoding can be used. The `un` field
 of the `pg` diagnostics line (below) counts run-outs and stays 0.
 
 The FIFO is two halves of one push (32 samples, 4 ms) each. b31 clears exactly every 4.00 ms, as the modem moves on to
@@ -934,10 +955,11 @@ reordered. On a swept tone, broken stretches had the energy just above the tone'
 tone; whole ones 39-55 dB below it (measured, `test_speaker_sweep`). Traces of the broken stretches showed pushes that found
 b31 set on entry and clear microseconds later, then wrote at once; in clean ones, almost none.
 
-`platform/hrc7000/prompt_fifo.h` therefore waits 200 µs after it sees b31 clear before writing (twice the shortest wait
+Every push therefore waits 200 µs after it sees b31 clear before writing (twice the shortest wait
 that was clean; pushes 0.1-3 ms after the edge played in order in 12 of 12 sweeps). Only a push that saw the bit
-clear writes, so the bit can only have cleared before that look. At 250 pushes a second the wait costs about 5 % of
-the CPU. Speaker PCM (`audio_pcm.c`) and APRS (`hrc_afsk.c`) both push through it. Every sweep recorded with the wait played
+clear writes, so the bit can only have cleared before that look. Speaker PCM (`audio_pcm.c`) uses the deferred timer
+write above. APRS (`hrc_afsk.c`) uses the blocking wrapper in `platform/hrc7000/prompt_fifo.h`; at 250 pushes a second
+that wait costs about 5 % of the CPU while AFSK is active. Every sweep recorded with the settling delay played
 whole, 8 of them; one more recording had half its energy above 4.3 kHz, which an 8 kHz stream can't make, and was
 the capture's fault (measured).
 
@@ -948,8 +970,8 @@ transmitting, all three headers decoded in five runs (measured). Keep b7 clear d
 
 `audio_pcm.c` keeps it clear for every board on the platform with one gate. The DMR glue closes it as the engine starts
 to transmit (`tx_begin`, and the hotspot's `bs_key`); while it is closed, b7 stays clear and nothing is pushed to the
-FIFO. It opens at least 50 ms later, once `hrc_dmr_tx_active()` is false: checked by the audio task (every 2 ms with
-the speaker stream routed, every 10 ms without), on each speaker route change and on each `hrc_audio_pcm_ring()` call
+FIFO. It opens at least 50 ms later, once `hrc_dmr_tx_active()` is false: checked by the audio task (at each PCM block,
+or every 10 ms while gated), on each speaker route change and on each `hrc_audio_pcm_ring()` call
 (the audio task only exists once a stream has run, and APRS sets b7 without one). On both edges the speaker queue is
 emptied, a block the audio task was filling at that moment included, so a beep queued during the transmission is
 dropped, not played late. Boards set b7 only through `hrc_audio_pcm_ring()`, which applies the gate. The last of the

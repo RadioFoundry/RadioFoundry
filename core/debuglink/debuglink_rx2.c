@@ -19,7 +19,7 @@ static bool bridge_pending;
 
 static bool on_air(void)
 {
-	return radio_get_state() == RS_TX;	// not the whole view: it is too big for the host task's stack
+	return radio_get_state() == RS_TX;	// the state alone: a view copy is ~800 B of the host task's stack
 }
 
 static uint8_t flags(void)

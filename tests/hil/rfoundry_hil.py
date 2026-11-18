@@ -339,6 +339,10 @@ class Radio:
                             foreign.add(port)
                         continue
                     self.link, self.port = link, port
+                    # The UI drops keys pressed during its start-up splash (ui.screen reads home already): wait for
+                    # its first draw, so a test's first key after a restart counts
+                    while as_int(link.view(["link"]).get("ui.draws"), 1) == 0 and time.monotonic() < end + 10:
+                        time.sleep(0.2)
                     return
                 except (DebugLinkError, OSError):
                     # A serial hub takes one client per port: a link left open would lock out every later try.
@@ -1245,6 +1249,9 @@ class SdrBench:
                "label": self.label or mode}
         if self.api_level is not None:
             req["power"] = self.api_level
+        if mode == "fsk4":
+            # A bench board can lose about the first 30 ms of a keying: lead with carrier so no symbols go there
+            fields.setdefault("lead_s", 0.04)
         req.update({k: v for k, v in fields.items() if v is not None})
         t = _LineTx(L, L.address(self.api), req)
         self.bg.append(t)

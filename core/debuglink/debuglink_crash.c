@@ -20,7 +20,7 @@ static uint8_t test_pending;		// DL_CRASH_TEST_* to run after the reply, 0 none
 
 static bool on_air(void)
 {
-	return radio_get_state() == RS_TX;	// not the whole view: it is too big for the host task's stack
+	return radio_get_state() == RS_TX;	// the state alone: a view copy is ~800 B of the host task's stack
 }
 
 size_t debuglink_cmd_crash(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)

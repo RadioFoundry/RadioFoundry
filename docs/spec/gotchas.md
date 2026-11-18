@@ -263,9 +263,9 @@ time.
 **3.5 The AT1846S +3 kHz TX offset is a sequencing hack.** The driver adds 3 kHz to the TX frequency to compensate an
 offset caused by turning the receiver on between the frequency write and TX. A switch that writes the frequency with
 the receiver off and goes straight to TX must not add it (bursts were +2.93 kHz off). Rule: measure TX frequency per
-switching sequence; don't carry a fixed offset. RFoundry's direct sequence (RX straight to TX, no idle, which a
-single frequency repeater needs) corrects the same shift with the HR_C6000 MOD1 offset, because the AT1846S applies a
-frequency write only coming out of idle.
+switching sequence; don't carry a fixed offset. RFoundry's direct sequence (RX straight to TX, no idle; SFR roles only)
+corrects the same shift with the HR_C6000 MOD1 offset, roughly (178-554 Hz off on other units), because the AT1846S
+applies a frequency write only coming out of idle.
 
 **3.6 Listen before talk for machine traffic.** Data, ACKs and CSBK answers collided with the far end. Rule: direct
 mode: no voice, data burst or carrier for 120 ms; repeater: 180 ms without data bursts and wait for the hang time to
@@ -338,6 +338,14 @@ receive worked. Rule: change the chip's settings with the state at idle and ente
 `fd6818sh` does (`FD6818SH_STATE_IDLE`, then the new state). The band word is the chip's band, not the radio's: a
 word from another of the chip's bands leaves the receiver deaf with every other register right. Radios: boards with
 the FD6818 as the transceiver.
+
+**3.18 Test DMR receive with strong simplex bursts, not only near sensitivity.** Symptom: about a bit a frame
+corrected on every DMR call from -85 to -40 dBm, and none near sensitivity. Cause: the AT1846S AGC with reg 0x32
+bits 2:0 at 2 or more (undocumented bits) overloads the start of every simplex burst, as the carrier comes and goes
+every 30 ms; a repeater's continuous carrier showed nothing. Sweeps near sensitivity, where receive settings are
+usually tuned, never saw it. Rule: the AT1846S DMR mode table writes 0x32 bits 2:0 clear (`drivers/rf/at1846s`);
+judge a receiver setting at strong simplex levels as well (`dmr-voice.md` 7.1). Radios: AT1846S boards. Test:
+`test_dmr_audio_rx_strong` (tests/hil).
 
 ## 4. AMBE codec calling
 
@@ -757,10 +765,12 @@ the talker's direct copy was clean. It plays, but it is the reason a user would 
 - Going through idle (reg 0x30) at every switch (14.9) makes the synthesizer settle again each slot. The repeat then
   lost 5-10 of 72 inbound frames, with about 190 bit errors. With RX and TX on one frequency, switching 0x30 straight
   between RX and DMR TX keeps it locked: no frames lost, 48-68 bits. The band's RX supply still follows the PA.
-- Straight from RX the carrier is about 3.07 kHz low, and a frequency write can't correct it (3.5). Raise the HR_C6000
-  MOD1 offset (4:0x04, about 75 Hz a step at 461 MHz) for the burst and restore it for RX. On the board measured that is 42
-  steps over the calibrated value (41: -57..-15 Hz, 42: +16..+60 Hz), at one frequency near 461 MHz only. Check it at
-  other frequencies and on each radio.
+- Straight from RX the carrier is about 3.07 kHz low, and a frequency write can't correct it (3.5). The SFR raises the
+  HR_C6000 MOD1 offset (4:0x04, about 75 Hz a step at 461 MHz) for the burst and restores it for RX: 42 steps over the
+  calibrated value on the board measured near 461 MHz (41: -57..-15 Hz, 42: +16..+60 Hz). On two other units of the
+  same radio at 433.45 MHz it missed by 178 and 449-554 Hz, so only the SFR keys this way; everything else goes
+  through idle (each board's hardware page has its keying sequences). Measure the correction per radio and frequency
+  before using it more widely.
 - Key 1 ms after the RF TX interrupt, which comes about 1.28 ms before the slot. 0.6-1.2 ms all did the same; keying
   at the interrupt lost frames. Dropping the PA earlier (28.5-30 ms) changed nothing.
 - VHF and split frequencies keep the idle sequence (not measured).

@@ -64,7 +64,7 @@ static const struct {
 };
 
 // One period of a sine, Q15
-static const int16_t sine[64] = {
+static const int16_t beep_sine[64] = {
 	0, 3212, 6393, 9512, 12539, 15446, 18204, 20787,
 	23170, 25329, 27245, 28898, 30273, 31356, 32137, 32609,
 	32767, 32609, 32137, 31356, 30273, 28898, 27245, 25329,
@@ -78,8 +78,18 @@ static const int16_t sine[64] = {
 static const hal_audio_t *aud;
 static beep_stats_t stats;
 
+#if CONFIG_SIG_TONES
+// Custom patterns (BEEP_CUSTOM): two copies, alternating
+static beep_seg_t cust[2][BEEP_CUSTOM_MAX];
+static uint8_t cust_n[2];
+static uint8_t cust_next;
+#endif
+
 // Handed from the radio task to the audio side
 static uint8_t req_pattern;
+#if CONFIG_SIG_TONES
+static uint8_t req_slot;
+#endif
 static uint8_t req_level;
 static uint8_t req_seq;
 
@@ -89,12 +99,7 @@ static bool own_stream;
 // Audio side
 static uint8_t cb_seq;
 static uint8_t cb_pattern;
-static uint8_t cb_seg;
-static uint32_t cb_left;	// samples left in the segment
-static uint32_t cb_len;		// samples in the segment
-static uint32_t cb_phase, cb_step;
-static uint32_t cb_dstep;	// the sweep's step increase per sample, 0 for a tone
-static int32_t cb_amp;
+static beep_gen_t cb_gen;	// the pattern's steps, taken when it started, and where it is
 static volatile bool cb_active;
 static volatile uint8_t cb_idle;
 static volatile uint32_t cb_blocks;	// own callback calls, for the stall check
@@ -162,7 +167,7 @@ bool beep_busy(void)
 
 void beep_play(beep_t b, uint8_t level, bool shared)
 {
-	if (b <= BEEP_NONE || b >= BEEP_COUNT || level == 0) {
+	if (b <= BEEP_NONE || (b >= BEEP_COUNT && (!CONFIG_SIG_TONES || b != BEEP_CUSTOM)) || level == 0) {
 		return;
 	}
 	stats.last = (uint8_t)b;
@@ -201,6 +206,33 @@ void beep_play(beep_t b, uint8_t level, bool shared)
 	}
 	stats.played++;
 }
+
+#if CONFIG_SIG_TONES
+void beep_play_custom(const beep_seg_t *segs, uint8_t n, uint8_t level, bool shared)
+{
+	bool tone = false;
+	if (n > BEEP_CUSTOM_MAX) {
+		n = BEEP_CUSTOM_MAX;
+	}
+	for (uint8_t i = 0; i < n; i++) {
+		tone = tone || (segs[i].hz > BEEP_HZ_SWEEP && segs[i].ms != 0);
+	}
+	if (!tone) {
+		return;
+	}
+	uint8_t slot = cust_next;
+	cust_next ^= 1u;
+	memcpy(cust[slot], segs, n * sizeof(beep_seg_t));
+	for (uint8_t i = 0; i < n; i++) {
+		if (cust[slot][i].hz == BEEP_HZ_SWEEP) {
+			cust[slot][i].hz = 0;	// the sweep is a fixed pattern's
+		}
+	}
+	cust_n[slot] = n;
+	req_slot = slot;
+	beep_play(BEEP_CUSTOM, level, shared);
+}
+#endif
 
 void beep_service(bool shared, uint32_t now_ms)
 {
@@ -247,17 +279,75 @@ void beep_service(bool shared, uint32_t now_ms)
 	}
 }
 
-static void load_seg(void)
+static void gen_load(beep_gen_t *g)
 {
-	const beep_seg_t *s = &patterns[cb_pattern].segs[cb_seg];
-	cb_len = cb_left = (uint32_t)s->ms * (AUDIO_RATE_HZ / 1000);
+	const beep_seg_t *s = &g->seg[g->i];
+	g->len = g->left = (uint32_t)s->ms * (AUDIO_RATE_HZ / 1000);
 	// Phase step: hz / rate of a 2^32 turn
-	cb_step = (uint32_t)(((uint64_t)s->hz << 32) / AUDIO_RATE_HZ);
-	cb_dstep = 0;
-	if (s->hz == BEEP_HZ_SWEEP && cb_len != 0) {
-		cb_step = (uint32_t)(((uint64_t)BEEP_SWEEP_LO_HZ << 32) / AUDIO_RATE_HZ);
-		cb_dstep = (uint32_t)((((uint64_t)(BEEP_SWEEP_HI_HZ - BEEP_SWEEP_LO_HZ) << 32) / AUDIO_RATE_HZ) / cb_len);
+	g->step = (uint32_t)(((uint64_t)s->hz << 32) / AUDIO_RATE_HZ);
+	g->dstep = 0;
+	if (s->hz == BEEP_HZ_SWEEP && g->len != 0) {
+		g->step = (uint32_t)(((uint64_t)BEEP_SWEEP_LO_HZ << 32) / AUDIO_RATE_HZ);
+		g->dstep = (uint32_t)((((uint64_t)(BEEP_SWEEP_HI_HZ - BEEP_SWEEP_LO_HZ) << 32) / AUDIO_RATE_HZ) / g->len);
 	}
+}
+
+void beep_gen_start(beep_gen_t *g, const beep_seg_t *s, uint8_t n, int32_t amp_q15)
+{
+	memset(g, 0, sizeof(*g));
+	g->seg = s;
+	g->n = n;
+	g->amp = amp_q15 > 32767 ? 32767 : amp_q15 < 0 ? 0 : amp_q15;
+	if (n != 0) {
+		gen_load(g);
+	}
+}
+
+static bool beep_gen_more(beep_gen_t *g)
+{
+	// Exhausted steps are skipped here so "more" is true only while samples remain
+	while (g->i < g->n && g->left == 0) {
+		if (++g->i < g->n) {
+			gen_load(g);
+		}
+	}
+	return g->i < g->n;
+}
+
+// The next sample of the sequence (amplitude applied): false when it is over
+static bool beep_gen_next(beep_gen_t *g, int32_t *v)
+{
+	if (!beep_gen_more(g)) {
+		return false;
+	}
+	int32_t out = 0;
+	if (g->step != 0) {
+		uint32_t done = g->len - g->left;
+		uint32_t edge = done < g->left ? done : g->left - 1;
+		int32_t amp = g->amp;
+		if (edge < RAMP_SAMPLES) {
+			amp = amp * (int32_t)edge / RAMP_SAMPLES;
+		}
+		// Linear interpolation between table entries (top 6 bits index, next 10 the fraction)
+		uint32_t idx = g->phase >> 26;
+		int32_t frac = (int32_t)((g->phase >> 16) & 0x3FFu);
+		int32_t a = beep_sine[idx], b = beep_sine[(idx + 1) & 63u];
+		out = ((a + (((b - a) * frac) >> 10)) * amp) >> 15;
+		g->phase += g->step;
+		g->step += g->dstep;
+	}
+	g->left--;
+	*v = out;
+	return true;
+}
+
+bool beep_gen_block(beep_gen_t *g, int16_t *pcm, unsigned count)
+{
+	for (unsigned k = 0; k < count; k++) {
+		int32_t v;
+		pcm[k] = beep_gen_next(g, &v) ? (int16_t)v : 0;
+	}
+	return beep_gen_more(g);
 }
 
 // The pattern into one block (both streams)
@@ -267,11 +357,20 @@ static bool tone_mix(int16_t *spk)
 	if (seq != cb_seq) {
 		cb_seq = seq;
 		cb_pattern = req_pattern;
-		cb_amp = (int32_t)req_level * AMP_PER_LEVEL;
-		cb_seg = 0;
-		cb_phase = 0;
+		const beep_seg_t *segs;
+		uint8_t count;
+#if CONFIG_SIG_TONES
+		if (cb_pattern == BEEP_CUSTOM) {
+			segs = cust[req_slot];
+			count = cust_n[req_slot];
+		} else
+#endif
+		{
+			segs = patterns[cb_pattern].segs;
+			count = patterns[cb_pattern].count;
+		}
+		beep_gen_start(&cb_gen, segs, count, (int32_t)req_level * AMP_PER_LEVEL);
 		cb_active = true;
-		load_seg();
 	}
 	if (!cb_active) {
 		if (cb_idle < 255) {
@@ -282,33 +381,15 @@ static bool tone_mix(int16_t *spk)
 	cb_idle = 0;
 	stats.blocks++;
 	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
-		while (cb_left == 0) {
-			if (++cb_seg >= patterns[cb_pattern].count) {
-				cb_active = false;
-				return true;	// the rest of this block is left as it was
-			}
-			load_seg();
+		int32_t v;
+		if (!beep_gen_next(&cb_gen, &v)) {
+			cb_active = false;
+			return true;	// the rest of this block is left as it was
 		}
-		if (cb_step != 0) {
-			uint32_t done = cb_len - cb_left;
-			uint32_t edge = done < cb_left ? done : cb_left - 1;
-			int32_t amp = cb_amp;
-			if (edge < RAMP_SAMPLES) {
-				amp = amp * (int32_t)edge / RAMP_SAMPLES;
-			}
-			// Linear interpolation between table entries (top 6 bits index, next 10 the fraction)
-			uint32_t idx = cb_phase >> 26;
-			int32_t frac = (int32_t)((cb_phase >> 16) & 0x3FFu);
-			int32_t a = sine[idx], b = sine[(idx + 1) & 63u];
-			int32_t v = a + (((b - a) * frac) >> 10);
-			int32_t out = spk[i] + ((v * amp) >> 15);
-			spk[i] = (int16_t)(out > 32767 ? 32767 : out < -32768 ? -32768 : out);
-			cb_phase += cb_step;
-			cb_step += cb_dstep;
-		}
-		cb_left--;
+		int32_t out = spk[i] + v;
+		spk[i] = (int16_t)(out > 32767 ? 32767 : out < -32768 ? -32768 : out);
 	}
-	if (cb_left == 0 && cb_seg + 1u >= patterns[cb_pattern].count) {
+	if (!beep_gen_more(&cb_gen)) {
 		cb_active = false;	// ended exactly at the block's end
 	}
 	return true;

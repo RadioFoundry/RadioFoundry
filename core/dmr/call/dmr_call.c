@@ -140,6 +140,7 @@ static struct {
 	uint8_t queue_cap;	// the modem's free queue space right after tx_begin
 	bool stop_req;
 	bool tot_hit;
+	uint8_t tail_holds;		// superframe boundaries passed with the source's tail still to send (voice_source_t.busy)
 	bool ceased;		// the reverse channel stopped this over (rc_heard)
 	uint32_t rc_cease_ms;	// the last cease heard, | 1 (0: none)
 	uint8_t stage[DMR_AMBE_FRAMES_PER_BURST][DMR_AMBE_FRAME_BYTES];
@@ -1288,6 +1289,14 @@ static void tx_superframe_lc(void)
 		stats.tx_alias_lcs++;
 }
 
+// At a superframe boundary after PTT was let go: whether the source has a tail (an end tone) to send first. A
+// time-out ends the over at once, and a tail that doesn't end is cut after DMR_CALL_TX_TAIL_HOLDS boundaries
+static bool tx_tail_hold(void)
+{
+	return !s.tot_hit && s.tail_holds < DMR_CALL_TX_TAIL_HOLDS && s.source && s.source->busy &&
+	       s.source->busy(s.source->ctx);
+}
+
 static void tx_fill(uint32_t now)
 {
 	while (s.tx == TX_ON) {
@@ -1304,7 +1313,7 @@ static void tx_fill(uint32_t now)
 			s.headers_left--;
 			continue;
 		}
-		if (s.stop_req && s.voice_index == 0) {
+		if (s.stop_req && s.voice_index == 0 && !tx_tail_hold()) {
 			tx_terminate(now, inflight);	// superframe boundary
 			return;
 		}
@@ -1331,6 +1340,8 @@ static void tx_fill(uint32_t now)
 		s.stage_n = 0;
 		if (s.voice_index == 0 && s.tx_sf < 255)
 			s.tx_sf++;
+		if (s.voice_index == 0 && s.stop_req)
+			s.tail_holds++;		// a superframe sent for the source's tail (tx_tail_hold)
 		s.voice_index = (uint8_t)((s.voice_index + 1) % 6);
 	}
 }
@@ -1388,6 +1399,7 @@ static void tx_start_voice(uint32_t now)
 	s.queued = s.started = 0;
 	s.stop_req = false;
 	s.tot_hit = false;
+	s.tail_holds = 0;
 	s.ceased = false;
 	s.rc_cease_ms = 0;
 	s.stage_n = 0;

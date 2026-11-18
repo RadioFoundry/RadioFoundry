@@ -45,6 +45,9 @@ typedef struct {
 	// PCM speaker gain follows the volume plays beep-only blocks at its fixed beep gain instead, so beeps sound at
 	// beep_level whatever the volume, and none at volume 0. NULL: beeps follow the volume (radio-features.md 4)
 	void (*spk_beep)(bool on);
+	// Optional: the speaker audio queued now is thrown away (the DMR engine is on air and the audio path is gated).
+	// A sound that must be heard whole waits until this is false. NULL: never
+	bool (*speaker_blocked)(void);
 	// Optional: the stream's timing (debug link view audio.*). NULL: not counted
 	void (*stream_stats)(audio_stream_stats_t *out);
 } hal_audio_t;

@@ -12,6 +12,8 @@ also = []
 kind = "handheld"
 order = 9
 part_of = "gd88"
+# the radio's APRS tocall character (gd88): SoC B is part of it, not a radio of its own
+aprs_tocall = "G"
 
 [hardware]
 cpu = "HR_C7000"

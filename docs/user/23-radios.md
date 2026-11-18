@@ -326,9 +326,8 @@ A 160 x 128 color screen, every row visible. The controller type is unconfirmed.
   it hears nothing. Once heard, the module is powered only while **Settings > Location > GPS** is on, which takes
   effect at once.
 - No vibration motor: **Settings > Sound > Vibrate** isn't in the image.
-- Some early VHF radios may have a 1 MB memory chip instead of 16 MB (not yet confirmed on a radio). RadioFoundry
-  can't store a codeplug on it: settings are lost when the radio is turned off, and the Codeplug Editor and the
-  web installer say so. A backup still saves the whole chip.
+- Some early VHF radios have a 1 MB memory chip instead of 16 MB. RadioFoundry keeps settings and the codeplug on it
+  as on other radios; the DMR ID database is limited to what fits.
 
 ## TYT MD-UV380
 
@@ -740,7 +739,7 @@ accepted:
 |---|---|
 | MD-9600 V1-V3 boards | TYT `MD9600-CSV-V06.09.bin` and the rest of the 06.09, 06.24 and 06.03 files; the older `MD9600-REC-D03.28.bin`, `-D03.29.bin` and `-D04.03.bin` |
 | MD-9600 V4 | TYT `MD9600-CSV(V4)-V16.45.bin` and the 16.24 and 16.45 files |
-| MD-9600 V5 and Retevis RT90 | the file the radio came with: TYT `MD9600-CSV(2571V5)-V26.45.bin` and the other 26.45 files, `MD9600-REC(2571V4)-D26.57.bin`, or Retevis `RT90-CSV(2571V5)-V26.41.bin`, `RT90-REC(2571V5)-D26.38.bin`, `RT90-CSV-GPS(2571V5)-P26.41.bin` and `RT90-GPS-REC(2571V5)-S26.42.bin` |
+| MD-9600 V5 and Retevis RT90 | the file the radio came with: TYT `MD9600-CSV(2571V5)-V26.45.bin` and the other 26.45 files, `MD9600-REC(2571V4)-D26.57.bin`, or Retevis `RT90-CSV(2571V5)-V26.41.bin`, `RT90-REC(2571V5)-D26.38.bin`, `RT90-CSV-GPS(2571V5)-P26.41.bin` and `RT90-GPS-REC(2571V5)-S26.42.bin`, or TYT `MD9600-AES-GPS-REC(2571V5)-S126.61.bin` |
 
 The CSV, CSV-GPS, REC and GPS-REC variants of one version all work. The full list with hashes is in
 [codec-md9600.md](../spec/codec-md9600.md#stock-files). No V5 radio has run these files yet: the checks so far ran their

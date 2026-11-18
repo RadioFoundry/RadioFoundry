@@ -43,6 +43,7 @@ import codeplug_port as cp  # noqa: E402
 ROOT = os.path.dirname(HERE)
 RFOUNDRY_DRIVER = "openuv380"    # the open-firmware layout RadioFoundry serves (open-firmware-cps.md 7)
 OPENFW_SPAN = 0x120000        # the EEPROM image and the flash image, as the CPS wire addresses them (7.1)
+OPENFW_REGIONS_END = 0xAEE60  # the last codeplug region ends here (7.2: flash image 0x8EE60); a 1 MB data flash ends before the span
 PAGE = 0x1000
 # the bundle parts that hold the data flash from address 0: the whole of it (a NAND without its spare bytes), or only
 # its start (c7000ui.js)
@@ -111,9 +112,11 @@ def openfw_dfu(data, base):
     """RadioFoundry's codeplug as a DfuSe file dmrconf's open-firmware driver decodes, or None when it is blank. One
     element over the whole span: the decoder reads what it needs and the bytes it doesn't are kept."""
     img = data[base:base + OPENFW_SPAN]
-    if len(img) < OPENFW_SPAN:
+    if len(img) < OPENFW_REGIONS_END:
         raise NotInBackup("the backup ends at 0x%X, before the codeplug image (0x%X..0x%X)" %
-                          (len(data), base, base + OPENFW_SPAN))
+                          (len(data), base, base + OPENFW_REGIONS_END))
+    # a data flash smaller than the span (1 MB) holds every codeplug region: the rest reads as erased
+    img = img + b"\xff" * (OPENFW_SPAN - len(img))
     if blank(img):
         return None
     return cp.build_dfuse([("Codeplug EEPROM", []), ("Codeplug FLASH", [(0, img)])])
@@ -360,9 +363,13 @@ def self_test():
     t = cp.parse_dfuse(openfw_dfu(bytes(flash), 0x10000))
     check(len(t) == 2 and t[1][1][0][0] == 0 and t[1][1][0][1][0x80:0x84] == b"ABCD", "open-firmware DfuSe")
     check(openfw_dfu(b"\xff" * OPENFW_SPAN, 0) is None, "blank open-firmware image")
-    expect_error(lambda: openfw_dfu(bytes(flash), 0x20000), "a backup shorter than the image")
+    expect_error(lambda: openfw_dfu(bytes(flash), 0x90000), "a backup shorter than the codeplug regions")
+    small = bytearray(b"\xff" * 0x100000)
+    small[0xAEE5F] = 0x12
+    t = cp.parse_dfuse(openfw_dfu(bytes(small), 0))
+    check(len(t[1][1][0][1]) == OPENFW_SPAN and t[1][1][0][1][0xAEE5F] == 0x12, "1 MB backup: padded to the span")
     try:
-        openfw_dfu(bytes(flash), 0x20000)
+        openfw_dfu(bytes(flash), 0x90000)
     except NotInBackup:
         pass
     except BackupError:

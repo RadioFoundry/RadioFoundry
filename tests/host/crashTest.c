@@ -487,12 +487,6 @@ static uint8_t fake_radio_state = RS_RX;
 static unsigned asserts, delays;
 static unsigned assert_line;
 
-void radio_get_view(radio_view_t *v)
-{
-	memset(v, 0, sizeof *v);
-	v->state = fake_radio_state;
-}
-
 radio_state_t radio_get_state(void)
 {
 	return (radio_state_t)fake_radio_state;

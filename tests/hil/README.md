@@ -43,7 +43,8 @@ frame counter can check. Without `--allow-rf`, a radio or the SDR bench, these t
 `DMR AUDIO NOT CHECKED`: such a run hasn't checked DMR audio. With the radio and the bench there, nothing else skips
 them: no recording, no vocoder, no DMR channel on `MHZ` or firmware without the view keys fails. The exceptions are
 `test_dmr_audio_rx_deviation` and `test_dmr_audio_rx_offset_wide`, which skip on a bench board that can't scale its
-deviation (info feature `dev_scale`) or bring the radio near -100 dBm (`power_dbm`). Run only the smoke with
+deviation (info feature `dev_scale`) or bring the radio near -100 dBm (`power_dbm`), and `test_dmr_audio_rx_strong`,
+which skips when the bench can't bring the radio near -75 or -55 dBm (coupled too loosely). Run only the smoke with
 `-m audio_smoke`.
 
 ### Opt-in flags
@@ -442,7 +443,9 @@ the frames sent; `voice.rx_peak` at least 1000; `voice.rx_repeats` at most the r
 + 2 + 2 % of the frames; FEC corrections at most 2 bits a frame on average. The same near -100 dBm at the radio: with
 the carrier 2.5 kHz below and above the channel (`test_dmr_audio_rx_offset_wide`), and from a transmitter at 0.85 and
 1.15 of the standard's deviation with at least 95 % of the frames and at most 0.8 bits a frame
-(`test_dmr_audio_rx_deviation`). TX: the radio made one call of at least 30
+(`test_dmr_audio_rx_deviation`). Simplex speech near -75 and -55 dBm with at least 95 % of the frames and at most 0.2
+bits a frame at each (`test_dmr_audio_rx_strong`: a receiver AGC that overloads the start of every burst corrects a bit
+or more). TX: the radio made one call of at least 30
 frames a second of PTT with at most 10 % `voice.tx_repeats`; the bench heard a call from the radio's ID with at least
 as many frames, at most 15 % of them the AMBE silence frame, at most 10 % equal to the frame before and at least a
 tenth distinct (the test signal repeats its cycle); played back to the radio, the RX criteria without the FEC limit (the recording carries what the bench heard).
@@ -510,7 +513,7 @@ and unkeys, the LCs heard to the talkgroup from us all carry service options bit
 
 `test_aprs`: the view keys present, the SSID round trip; with a test call and host NMEA `aprs.pos_src=host`,
 `aprs.lat` / `aprs.lon` within 1e-3 degree. On air (AFSK): `aprs.tx_power=0` before keying (else skipped), one frame
-with a valid FCS from `CALL-SSID` to `APZRDF` with no digipeaters, control 0x03, PID 0xF0; the position within 1e-4
+with a valid FCS from `CALL-SSID` to the radio's tocall (`aprs.tocall`, `APRDF?`) with no digipeaters, control 0x03, PID 0xF0; the position within 1e-4
 degree of 33.7490, -84.3880, the status `>` + its text, the message `:ADDRESSEE:text{N`; `aprs.rf_sent` +1 within
 15 s, `aprs.rf_active=0`, the radio idle on its channel afterwards; deviation peak (99.9th percentile) 2.0-4.5 kHz,
 |twist| under 6 dB; printed: mark and space deviation, TX delay (flags and carrier to first frame bit), the phase
