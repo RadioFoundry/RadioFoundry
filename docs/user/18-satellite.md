@@ -76,7 +76,8 @@ current date and time. The list is ordered by time to AOS and shows each pass's 
 select a pass; **OK** opens its details and starts tracking. The selected satellite is remembered across power cycles.
 The firmware image contains no TLEs. Load selected records into the radio's flash store from the site's Satellite TLE
 Update page or with `tools/satellite_tle.py sync`. With an empty store, Satellite shows **No TLEs: load from site**.
-Refresh installed TLEs regularly because prediction accuracy declines as their epochs age.
+The detail screen shows each installed TLE's age when current UTC is available. It warns once per satellite when a TLE
+reaches 14 days; load a fresh set from the site to improve prediction accuracy.
 Pass and Doppler values use an approximate Keplerian orbit model, not SGP4. They can differ from a precision ephemeris,
 especially as the TLE ages, so keep the installed elements current.
 Tracking gets its nominal RX/TX frequencies and optional transmit CTCSS tone from the persisted catalog-ID profile,

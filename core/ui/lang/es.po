@@ -2055,32 +2055,32 @@ msgstr "{Atrás borrar  # ABC/123/abc  OK listo|Atrás borr.  # modo  OK}"
 #: core/ui/ui_menus.c
 msgctxt "SATELLITE_TLE_TITLE_LINE1_UPPER"
 msgid "1 ABC"
-msgstr ""
+msgstr "1 ABC"
 
 #: core/ui/ui_menus.c
 msgctxt "SATELLITE_TLE_TITLE_LINE1_NUMERIC"
 msgid "1 123"
-msgstr ""
+msgstr "1 123"
 
 #: core/ui/ui_menus.c
 msgctxt "SATELLITE_TLE_TITLE_LINE1_LOWER"
 msgid "1 abc"
-msgstr ""
+msgstr "1 abc"
 
 #: core/ui/ui_menus.c
 msgctxt "SATELLITE_TLE_TITLE_LINE2_UPPER"
 msgid "2 ABC"
-msgstr ""
+msgstr "2 ABC"
 
 #: core/ui/ui_menus.c
 msgctxt "SATELLITE_TLE_TITLE_LINE2_NUMERIC"
 msgid "2 123"
-msgstr ""
+msgstr "2 123"
 
 #: core/ui/ui_menus.c
 msgctxt "SATELLITE_TLE_TITLE_LINE2_LOWER"
 msgid "2 abc"
-msgstr ""
+msgstr "2 abc"
 
 #: core/ui/ui_menus.c core/ui/ui_satellite.c
 msgctxt "SATELLITE_2"
@@ -4348,6 +4348,11 @@ msgid "Up to 90 N/S, 180 E/W"
 msgstr "Hasta 90 N/S, 180 E/W"
 
 #: core/ui/ui_satellite.c
+msgctxt "SATELLITE_TLE_STALE"
+msgid "TLE is 14+ days old; refresh from site"
+msgstr "TLE de más de 14 días; actualízalo desde el sitio"
+
+#: core/ui/ui_satellite.c
 msgctxt "TLE_UPDATE_FAILED_2"
 msgid "TLE update failed"
 msgstr "No se pudo guardar el TLE"
@@ -4380,7 +4385,7 @@ msgstr "Calculando pasos"
 #: core/ui/ui_satellite.c
 msgctxt "SATELLITE_NO_TLE_LOAD_SITE"
 msgid "No TLEs: load from site"
-msgstr ""
+msgstr "Sin TLE: cargar desde el sitio"
 
 #: core/ui/ui_satellite.c
 msgctxt "GPS_TIME_UNAVAILABLE"
@@ -4406,6 +4411,11 @@ msgstr "Arriba Abajo elegir  Atrás"
 msgctxt "NO_PASSES_IN_NEXT_24H"
 msgid "No passes in next 24h"
 msgstr "Sin pasos en las próximas 24 h"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_TLE_AGE"
+msgid "TLE age"
+msgstr "Edad del TLE"
 
 #: core/ui/ui_satellite.c
 msgctxt "VISIBLE_2"

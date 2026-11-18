@@ -134,6 +134,18 @@ static void test_keplerian_propagation(void)
 	CHECK(!satellite_orbit_init(&orbit, &record));
 }
 
+static void test_tle_age_days(void)
+{
+	uint16_t age_days = 0u;
+	CHECK(satellite_tle_age_days(1000u, 1000 + INT64_C(13) * 86400 + 86399, &age_days) &&
+	      age_days == 13u);
+	CHECK(satellite_tle_age_days(1000u, 1000 + INT64_C(14) * 86400, &age_days) &&
+	      age_days == 14u);
+	CHECK(satellite_tle_age_days(1000u, 999, &age_days) && age_days == 0u);
+	CHECK(satellite_tle_age_days(0u, INT64_MAX, &age_days) && age_days == UINT16_MAX);
+	CHECK(!satellite_tle_age_days(1000u, 1000, NULL));
+}
+
 static void test_circular_kepler_orbit(void)
 {
 	satellite_record_t record = record_for(
@@ -406,6 +418,7 @@ static void test_utc_and_tracking_lifecycle(void)
 
 int main(void)
 {
+	test_tle_age_days();
 	test_keplerian_propagation();
 	test_circular_kepler_orbit();
 	test_invalid_decimal_field();

@@ -29,6 +29,7 @@ typedef struct {
 
 typedef struct {
 	uint32_t catalog_id;
+	uint32_t epoch;
 	uint8_t name_length;
 	char name[SATELLITE_NAME_MAX + 1u];
 } satellite_record_summary_t;

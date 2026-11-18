@@ -59,6 +59,7 @@ typedef struct {
 } satellite_tracking_t;
 
 bool satellite_utc_from_fields(uint32_t date_ddmmyy, uint32_t utc_hms, int64_t *utc_s);
+bool satellite_tle_age_days(uint32_t epoch, int64_t utc_s, uint16_t *age_days);
 bool satellite_tracking_start(satellite_tracking_t *tracking, uint8_t record_index,
 			      uint32_t nominal_rx_hz, uint32_t nominal_tx_hz);
 bool satellite_tracking_start_scan(satellite_tracking_t *tracking, uint8_t record_index);

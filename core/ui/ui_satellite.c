@@ -16,6 +16,19 @@ static uint8_t selected;
 static char edit_line1[SATELLITE_TLE_LINE_LENGTH + 1u];
 static char edit_line2[SATELLITE_TLE_LINE_LENGTH + 1u];
 static satellite_record_summary_t pass_record;
+static uint32_t stale_warning_ids[SATELLITE_STORE_MAX_RECORDS];
+static uint8_t stale_warning_next;
+
+static void satellite_warn_stale_tle(uint32_t catalog_id)
+{
+	for (uint8_t i = 0u; i < SATELLITE_STORE_MAX_RECORDS; i++) {
+		if (stale_warning_ids[i] == catalog_id)
+			return;
+	}
+	stale_warning_ids[stale_warning_next] = catalog_id;
+	stale_warning_next = (uint8_t)((stale_warning_next + 1u) % SATELLITE_STORE_MAX_RECORDS);
+	ui_toast(TR(SATELLITE_TLE_STALE, "TLE is 14+ days old; refresh from site"));
+}
 
 static void satellite_line2_kept(void)
 {
@@ -393,6 +406,10 @@ static void satellite_draw(void)
 		selected = 0u;
 	satellite_record_summary_t record;
 	bool have_record = count != 0u && ui_svc_satellite_summary(selected, &record);
+	uint16_t age_days = 0u;
+	bool have_age = have_record && ui_svc_satellite_tle_age(record.epoch, &age_days);
+	if (have_age && age_days >= 14u)
+		satellite_warn_stale_tle(record.catalog_id);
 	const radio_view_t *view = ui_view();
 	satellite_path_view_t path = {0};
 	if (view->satellite_tracking && view->satellite_index == selected)
@@ -402,6 +419,15 @@ static void satellite_draw(void)
 	if (!have_record) {
 		gfx_text(ui_layout.small, 0, y, TR(SATELLITE_NO_TLE_LOAD_SITE, "No TLEs: load from site"), ui_col.warn);
 	} else if (compact) {
+		sb_init(&b, value, sizeof(value));
+		if (have_age) {
+			sb_u32(&b, age_days, 1);
+			sb_str(&b, "d");
+		} else {
+			sb_str(&b, "N/A");
+		}
+		row(&y, TR(SATELLITE_TLE_AGE, "TLE age"), value,
+		    have_age && age_days >= 14u ? ui_col.warn : ui_col.dim);
 		if (view->satellite_tracking && view->satellite_index == selected) {
 			const char *status = view->satellite_status == SATELLITE_TRACKING_VISIBLE ? TR(VISIBLE_2, "Visible") :
 				view->satellite_status == SATELLITE_TRACKING_BELOW_HORIZON ? TR(BELOW_HORIZON_2, "Below horizon") :
@@ -424,6 +450,15 @@ static void satellite_draw(void)
 		sb_str(&b, "NORAD ");
 		sb_u32(&b, record.catalog_id, 1);
 		row(&y, TR(CATALOG, "Catalog"), value, ui_col.fg);
+		sb_init(&b, value, sizeof(value));
+		if (have_age) {
+			sb_u32(&b, age_days, 1);
+			sb_str(&b, "d");
+		} else {
+			sb_str(&b, "N/A");
+		}
+		row(&y, TR(SATELLITE_TLE_AGE, "TLE age"), value,
+		    have_age && age_days >= 14u ? ui_col.warn : ui_col.dim);
 		if (view->satellite_tracking && view->satellite_index == selected) {
 			const char *status = view->satellite_status == SATELLITE_TRACKING_VISIBLE ? TR(VISIBLE_2, "Visible") :
 				view->satellite_status == SATELLITE_TRACKING_BELOW_HORIZON ? TR(BELOW_HORIZON_2, "Below horizon") :

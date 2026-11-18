@@ -767,6 +767,7 @@ static bool satellite_store_read(uint8_t index, satellite_record_t *record, sate
 	if (summary != NULL) {
 		memset(summary, 0, sizeof(*summary));
 		summary->catalog_id = entry->catalog_id;
+		summary->epoch = entry->epoch;
 		summary->name_length = name_length;
 		memcpy(summary->name, record_buf + 5u, name_length);
 	}

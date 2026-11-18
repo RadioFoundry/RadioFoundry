@@ -2057,32 +2057,32 @@ msgstr "{返回 删除  # ABC/123/abc  OK 保留|返回 删  # 模式  OK}"
 #: core/ui/ui_menus.c
 msgctxt "SATELLITE_TLE_TITLE_LINE1_UPPER"
 msgid "1 ABC"
-msgstr ""
+msgstr "1 ABC"
 
 #: core/ui/ui_menus.c
 msgctxt "SATELLITE_TLE_TITLE_LINE1_NUMERIC"
 msgid "1 123"
-msgstr ""
+msgstr "1 123"
 
 #: core/ui/ui_menus.c
 msgctxt "SATELLITE_TLE_TITLE_LINE1_LOWER"
 msgid "1 abc"
-msgstr ""
+msgstr "1 abc"
 
 #: core/ui/ui_menus.c
 msgctxt "SATELLITE_TLE_TITLE_LINE2_UPPER"
 msgid "2 ABC"
-msgstr ""
+msgstr "2 ABC"
 
 #: core/ui/ui_menus.c
 msgctxt "SATELLITE_TLE_TITLE_LINE2_NUMERIC"
 msgid "2 123"
-msgstr ""
+msgstr "2 123"
 
 #: core/ui/ui_menus.c
 msgctxt "SATELLITE_TLE_TITLE_LINE2_LOWER"
 msgid "2 abc"
-msgstr ""
+msgstr "2 abc"
 
 #: core/ui/ui_menus.c core/ui/ui_satellite.c
 msgctxt "SATELLITE_2"
@@ -4350,6 +4350,11 @@ msgid "Up to 90 N/S, 180 E/W"
 msgstr "北南 90，东西 180"
 
 #: core/ui/ui_satellite.c
+msgctxt "SATELLITE_TLE_STALE"
+msgid "TLE is 14+ days old; refresh from site"
+msgstr "TLE已超过14天；请从网站更新"
+
+#: core/ui/ui_satellite.c
 msgctxt "TLE_UPDATE_FAILED_2"
 msgid "TLE update failed"
 msgstr "TLE 更新失败"
@@ -4382,7 +4387,7 @@ msgstr "正在预测过境"
 #: core/ui/ui_satellite.c
 msgctxt "SATELLITE_NO_TLE_LOAD_SITE"
 msgid "No TLEs: load from site"
-msgstr ""
+msgstr "无TLE：请从网站加载"
 
 #: core/ui/ui_satellite.c
 msgctxt "GPS_TIME_UNAVAILABLE"
@@ -4408,6 +4413,11 @@ msgstr "返回 上下选择"
 msgctxt "NO_PASSES_IN_NEXT_24H"
 msgid "No passes in next 24h"
 msgstr "未来 24 小时无过境"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_TLE_AGE"
+msgid "TLE age"
+msgstr "TLE天数"
 
 #: core/ui/ui_satellite.c
 msgctxt "VISIBLE_2"

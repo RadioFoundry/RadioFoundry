@@ -44,6 +44,18 @@ bool ui_svc_satellite_summary(uint8_t index, satellite_record_summary_t *summary
 	return satellite_store_summary_get(index, summary);
 }
 
+bool ui_svc_satellite_tle_age(uint32_t epoch, uint16_t *age_days)
+{
+	if (age_days == NULL)
+		return false;
+	uint32_t date_ddmmyy, utc_hms;
+	int64_t utc_s;
+	if (!position_utc_fields(&date_ddmmyy, &utc_hms, hal_millis()) ||
+	    !satellite_utc_from_fields(date_ddmmyy, utc_hms, &utc_s))
+		return false;
+	return satellite_tle_age_days(epoch, utc_s, age_days);
+}
+
 uint8_t ui_svc_satellite_selected(void)
 {
 	settings_t settings;

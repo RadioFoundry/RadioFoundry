@@ -58,6 +58,19 @@ bool satellite_utc_from_fields(uint32_t date_ddmmyy, uint32_t utc_hms, int64_t *
 	return true;
 }
 
+bool satellite_tle_age_days(uint32_t epoch, int64_t utc_s, uint16_t *age_days)
+{
+	if (age_days == NULL)
+		return false;
+	if (utc_s < epoch) {
+		*age_days = 0u;
+		return true;
+	}
+	uint64_t days = (uint64_t)(utc_s - epoch) / 86400u;
+	*age_days = days > UINT16_MAX ? UINT16_MAX : (uint16_t)days;
+	return true;
+}
+
 bool satellite_tracking_start_record(satellite_tracking_t *tracking, uint8_t record_index,
 				     uint32_t nominal_rx_hz, uint32_t nominal_tx_hz,
 				     const satellite_record_t *record)

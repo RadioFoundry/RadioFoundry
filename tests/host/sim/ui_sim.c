@@ -2195,6 +2195,8 @@ static bool sim_satellite_path_pending;
 static bool sim_satellite_los_pending;
 static bool sim_satellite_future_pass;
 static bool sim_satellite_empty;
+static uint16_t sim_satellite_tle_age_days;
+static uint32_t sim_satellite_test_id_offset;
 static const char *const sim_satellite_names[] = { "ISS", "NOAA 19", "SO-50", "AO-91", "AO-123" };
 static const uint32_t sim_satellite_catalog_ids[] = { 25544u, 33591u, 27607u, 43017u, 58421u };
 static const uint16_t sim_satellite_eta_minutes[] = { 14u, 36u, 53u, 71u, 96u };
@@ -2221,9 +2223,20 @@ bool ui_svc_satellite_summary(uint8_t index, satellite_record_summary_t *summary
 	if (index >= ui_svc_satellite_count() || summary == NULL)
 		return false;
 	memset(summary, 0, sizeof(*summary));
-	summary->catalog_id = sim_satellite_catalog_ids[index];
+	summary->catalog_id = sim_satellite_catalog_ids[index] +
+		(sim_satellite_tle_age_days >= 14u ? sim_satellite_test_id_offset : 0u);
+	summary->epoch = 0u;
 	summary->name_length = (uint8_t)strlen(sim_satellite_names[index]);
 	memcpy(summary->name, sim_satellite_names[index], summary->name_length);
+	return true;
+}
+
+bool ui_svc_satellite_tle_age(uint32_t epoch, uint16_t *age_days)
+{
+	(void)epoch;
+	if (age_days == NULL)
+		return false;
+	*age_days = sim_satellite_tle_age_days;
 	return true;
 }
 
@@ -2498,6 +2511,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	sim_satellite_los_pending = false;
 	sim_satellite_future_pass = false;
 	sim_satellite_empty = false;
+	sim_satellite_tle_age_days = 1u;
 #endif
 	vfo_mode = RADIO_MODE_FM;	// a fresh VFO
 	vfo_cc = vfo_ts = 1;
@@ -3566,6 +3580,11 @@ static bool run_token(char *t, char *err, size_t len)
 #if CONFIG_SATELLITE_TLE
 	if (strcmp(t, "satempty") == 0) {
 		sim_satellite_empty = true;
+		return true;
+	}
+	if (strcmp(t, "satagestale") == 0) {
+		sim_satellite_tle_age_days = 14u;
+		sim_satellite_test_id_offset++;
 		return true;
 	}
 	if (strcmp(t, "satpredict") == 0) {

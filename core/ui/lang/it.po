@@ -2055,32 +2055,32 @@ msgstr "{Indietro canc.  # ABC/123/abc  OK tieni|Indietro canc  # modo  OK}"
 #: core/ui/ui_menus.c
 msgctxt "SATELLITE_TLE_TITLE_LINE1_UPPER"
 msgid "1 ABC"
-msgstr ""
+msgstr "1 ABC"
 
 #: core/ui/ui_menus.c
 msgctxt "SATELLITE_TLE_TITLE_LINE1_NUMERIC"
 msgid "1 123"
-msgstr ""
+msgstr "1 123"
 
 #: core/ui/ui_menus.c
 msgctxt "SATELLITE_TLE_TITLE_LINE1_LOWER"
 msgid "1 abc"
-msgstr ""
+msgstr "1 abc"
 
 #: core/ui/ui_menus.c
 msgctxt "SATELLITE_TLE_TITLE_LINE2_UPPER"
 msgid "2 ABC"
-msgstr ""
+msgstr "2 ABC"
 
 #: core/ui/ui_menus.c
 msgctxt "SATELLITE_TLE_TITLE_LINE2_NUMERIC"
 msgid "2 123"
-msgstr ""
+msgstr "2 123"
 
 #: core/ui/ui_menus.c
 msgctxt "SATELLITE_TLE_TITLE_LINE2_LOWER"
 msgid "2 abc"
-msgstr ""
+msgstr "2 abc"
 
 #: core/ui/ui_menus.c core/ui/ui_satellite.c
 msgctxt "SATELLITE_2"
@@ -4348,6 +4348,11 @@ msgid "Up to 90 N/S, 180 E/W"
 msgstr "Fino a 90 N/S, 180 E/O"
 
 #: core/ui/ui_satellite.c
+msgctxt "SATELLITE_TLE_STALE"
+msgid "TLE is 14+ days old; refresh from site"
+msgstr "TLE di oltre 14 giorni; aggiorna dal sito"
+
+#: core/ui/ui_satellite.c
 msgctxt "TLE_UPDATE_FAILED_2"
 msgid "TLE update failed"
 msgstr "Aggiornamento TLE non riuscito"
@@ -4380,7 +4385,7 @@ msgstr "Calcolo dei passaggi"
 #: core/ui/ui_satellite.c
 msgctxt "SATELLITE_NO_TLE_LOAD_SITE"
 msgid "No TLEs: load from site"
-msgstr ""
+msgstr "Nessun TLE: carica dal sito"
 
 #: core/ui/ui_satellite.c
 msgctxt "GPS_TIME_UNAVAILABLE"
@@ -4406,6 +4411,11 @@ msgstr "Su Giu scegli  Indietro"
 msgctxt "NO_PASSES_IN_NEXT_24H"
 msgid "No passes in next 24h"
 msgstr "Nessun passaggio nelle prossime 24 h"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_TLE_AGE"
+msgid "TLE age"
+msgstr "Età TLE"
 
 #: core/ui/ui_satellite.c
 msgctxt "VISIBLE_2"

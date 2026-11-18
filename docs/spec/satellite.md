@@ -110,13 +110,14 @@ Reacquiring valid inputs may resume tracking only while the same satellite and f
 ## 5. User-facing behavior
 
 Tools > Satellite first predicts passes for every locally installed TLE using one current GPS position and UTC
-snapshot. The list is ordered by AOS, shows time to AOS in hours and minutes (`H:MM`) and maximum elevation, and reports prediction progress. Missing
-position, altitude or valid UTC leaves the list unavailable instead of using stale inputs. Its AOS countdown updates
-as time passes from the scan's UTC snapshot. Selecting a pass persists its record, starts tracking, and opens that satellite's detail
-screen with visibility, Doppler offsets, pass countdowns (`↑ in` to AOS and `↓ in` to LOS) and the sky path. Countdown
-minutes round up while time remains. The detail screen's pass data continues updating in bounded service steps. The
-nominal RX/TX pair
-and optional TX tone come from the selected satellite's persisted catalog profile. An active session keeps those nominal
+snapshot. The list is ordered by AOS, shows time to AOS in hours and minutes (`H:MM`) and maximum elevation, and
+reports prediction progress. Missing position, altitude or valid UTC leaves the list unavailable instead of using stale
+inputs. Its AOS countdown updates as time passes from the scan's UTC snapshot. Selecting a pass persists its record,
+starts tracking, and opens that satellite's detail screen with its TLE age (when UTC is available), visibility, Doppler
+offsets, pass countdowns (`↑ in` to AOS and `↓ in` to LOS) and the sky path. At 14 days old, the screen warns once per
+satellite to refresh the TLE from the site. Countdown minutes round up while time remains. The detail screen's pass data
+continues updating in bounded service steps. The nominal RX/TX pair and optional TX tone come from the selected
+satellite's persisted catalog profile. An active session keeps those nominal
 values even as Doppler targets
 change. While PTT is held, the detail screen shows the applied TX frequency during on-air transmission and otherwise
 continues to show the live Doppler target; the newest target is applied when transmission ends.
