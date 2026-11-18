@@ -1,5 +1,6 @@
 <!-- SPDX-License-Identifier: MIT -->
 <!-- Copyright (c) 2026 The RadioFoundry Authors -->
+<!-- Copyright (c) 2026 dB-SPL -->
 
 # NXDN
 
@@ -21,7 +22,8 @@ State:
 | Dual watch | written, host tested: a stored NXDN channel on either side, the receiver alternating onto it ([radio-features.md](radio-features.md) 2.1); not checked on a radio |
 | Channel editor on the radio | written, host tested: RAN, rate, group, unit ID ([ui.md](ui.md) 2.1) |
 | On air | transmit checked off air on a radio at both rates (`test_nxdn_tx_off_air`); receive checked at both rates with a bench transmitter, speech frames through the vocoder included (`test_nxdn_rx_from_bench`, `test_nxdn_rx_speech`); the sound at the speaker is not checked (8) |
-| 9600 bit/s full-rate voice (EFR), data, trunking, encryption | not written (10). Encrypted calls are recognized and not played |
+| Scramble encryption, 4800 and 9600 EHR | written, host tested; interoperability on air is untested |
+| 9600 bit/s full-rate voice (EFR), data, trunking, DES and AES | not written (10). Unsupported encrypted calls are recognized and not played |
 
 ## 1. On air
 
@@ -130,8 +132,9 @@ Receive:
 | Header VCALL with other fields during a call | the old call ended unseen: a new one starts |
 | TX_REL, or the signal lost | the call ends |
 
-Voice is handed on only once the VCALL is in, the cipher is none, no VCALL_IV was seen and the voice option is half
-rate (4800 or 9600 EHR). Everything else is counted (`voice_held`), not played.
+Voice is handed on only once the VCALL is in, no VCALL_IV was seen, the voice option is half rate (4800 or 9600 EHR),
+and the cipher is clear or scramble with a configured key. Everything else is counted (`voice_held`), not played.
+Scrambled voice requires a valid SACCH to identify its superframe position; frames without it are held.
 
 Transmit (TS 1-B 4.1.3): preamble, a header frame (SACCH IDLE, VCALL in both FACCH1), superframe frames (SACCH VCALL
 part 1/4 to 4/4, four VCH), and a release frame (SACCH IDLE, TX_REL in both FACCH1). Frames go out symbol by symbol:
@@ -152,6 +155,15 @@ hook hands each 72-bit frame to its sink, which takes the FEC off (`ambeFec`, 72
 parameter bits for `hal_vocoder_t`; `tx_voice` takes the next frame from its source, which encodes the microphone's
 49 bits and adds the FEC. The audio stream runs while the engine does. Nothing in the tree encodes or decodes NXDN
 speech: the engine, the call layer, the tests and `nxdntool` move made-up patterns.
+
+With `CONFIG_NXDN_SCRAMBLER` and a key from 1 to 32767, TS 1-D 5.3.1 and 5.4.4.1 apply a key-seeded 15-bit sequence
+to the 49 vocoder bits before FEC. The sequence restarts at each four-frame superframe; the positions of 9600-bit/s
+FACCH1 frames are skipped. The VCALL identifies the scramble cipher and key ID. On an
+NXDN Conventional system channel the receiver selects the system key by those fields, and holds scrambled voice
+when no matching key is available. Transmit uses the channel's selected key and refuses PTT if it is unavailable.
+See [NXDN in the codeplug](nxdn-codeplug.md). RX corrects FEC before descrambling; a frame with
+uncorrectable protected bits is held. DES and AES remain unsupported. The scrambling is unauthenticated and an
+incorrect key cannot be detected. No on-air interoperability test has been performed.
 
 | Item | State |
 |---|---|
@@ -297,4 +309,4 @@ scrambler examples), so the codec checks against itself and the clauses only.
 ## 10. Not written
 
 Changing an NXDN channel's squelch on the radio, 9600 bit/s full rate, data (UDCH, short data), trunking (RCCH), status and other supplementary messages,
-encryption, a transmit filter in a provider.
+DES and AES encryption, a transmit filter in a provider.

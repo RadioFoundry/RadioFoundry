@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
+# Copyright (c) 2026 dB-SPL
 #
 # The feature checklist (tests/hil/README.md, "Bring-up mode"): one table per feature, never a column per radio. The
 # tests say which feature they check (@pytest.mark.feature("<id>")), so this file lists no tests. A radio's state for
@@ -92,6 +93,11 @@ switch = "NXDN"
 spec = "docs/spec/nxdn.md"
 source = ["core/nxdn", "core/air", "core/fec", "core/radio/radio_nxdn.c", "core/radio/radio_nxdn.h",
           "core/radio/radio_air.h", "core/debuglink/debuglink_view_nxdn.c"]
+
+[feature.nxdn_scrambler]
+switch = "NXDN_SCRAMBLER"
+spec = "docs/spec/nxdn.md"
+source = ["core/nxdn/nxdn_scramble.c", "core/nxdn/nxdn_call.c", "core/nxdn/nxdn_engine.c"]
 
 [feature.dmr_voice]
 switch = "DMR"

@@ -156,6 +156,7 @@ Ids are only appended and never reused. A kind and a system type that belong tog
 | 1 | DMR Tier III system | T3 | `CONFIG_DMR_TRUNK` | [dmr-trunking-codeplug.md](dmr-trunking-codeplug.md) |
 | 2 | Reserved: P25 conventional system (identity and keys) | | | |
 | 3 | P25 trunked system | P25T | `CONFIG_P25_TRUNK` | [p25-codeplug.md](p25-codeplug.md) |
+| 4 | NXDN conventional system | NXDN | `CONFIG_NXDN` | [nxdn-codeplug.md](nxdn-codeplug.md) |
 
 A mode claims an id by adding a row to all three in one change, with its spec: the parameter block, the type's
 system block and channel tail, its targets' address format, its traffic keys' algorithm ids and its radio-wide

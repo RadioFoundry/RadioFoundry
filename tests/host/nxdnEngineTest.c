@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 dB-SPL
 // The NXDN engine (core/nxdn/nxdn_engine.c) and the air interface session under it: two engines on two made-up
 // providers whose transmit queues feed each other's receivers a chunk at a time. A call from one is heard by the
 // other with its fields and its voice in order; an encoder that stalls is covered with silence and never underruns
@@ -12,6 +13,7 @@
 #include <string.h>
 
 #include "nxdn/nxdn_engine.h"
+#include "dmr/ambe/ambeFec.h"
 #include "air/air_syms.h"
 #include "air/air_softmodem.h"
 
@@ -184,8 +186,15 @@ static const nxdn_engine_hooks_t hooks = { h_start, h_update, h_voice, h_end, h_
 static void encode(radio_t *x, uint8_t n)
 {
 	while (n-- && x->enc_made < VMAX) {
-		for (uint8_t k = 0; k < NXDN_EHR_BYTES; k++)
-			x->enc[x->enc_made][k] = (uint8_t)rng();
+		if (x->e.cfg.tx_cipher == NXDN_CIPHER_SCRAMBLE) {
+			uint8_t bits[AMBE_PARAM_BITS];
+			for (uint8_t k = 0; k < AMBE_PARAM_BITS; k++)
+				bits[k] = (uint8_t)(rng() & 1u);
+			ambeFecEncode(bits, x->enc[x->enc_made]);
+		} else {
+			for (uint8_t k = 0; k < NXDN_EHR_BYTES; k++)
+				x->enc[x->enc_made][k] = (uint8_t)rng();
+		}
 		x->enc_made++;
 	}
 }
@@ -239,13 +248,13 @@ static uint16_t check_order(const radio_t *rx, const radio_t *tx, uint16_t *firs
 {
 	uint16_t bad = 0, k = 0, i = 0;
 
-	while (i < rx->nvoice && !memcmp(rx->voice[i], silence, NXDN_EHR_BYTES))
+	while (i < rx->nvoice && !memcmp(rx->voice[i], tx->e.cfg.silence, NXDN_EHR_BYTES))
 		i++;
 	while (k < tx->enc_made && i < rx->nvoice && memcmp(rx->voice[i], tx->enc[k], NXDN_EHR_BYTES))
 		k++;	// a late entry: the first ones are missing
 	*first = k;
 	for (; i < rx->nvoice; i++) {
-		if (!memcmp(rx->voice[i], silence, NXDN_EHR_BYTES))
+		if (!memcmp(rx->voice[i], tx->e.cfg.silence, NXDN_EHR_BYTES))
 			continue;
 		if (k >= tx->enc_made || memcmp(rx->voice[i], tx->enc[k++], NXDN_EHR_BYTES))
 			bad++;
@@ -259,6 +268,46 @@ static nxdn_engine_cfg_t base_cfg(bool rate9600)
 				  .tx_call_type = NXDN_CALL_GROUP, .tx_dst = 77, .silence = silence };
 
 	return cfg;
+}
+
+static void testSystemKeys(bool rate9600)
+{
+	static const uint8_t valid_silence[9] = { 0xb9, 0xe8, 0x81, 0x52, 0x61, 0x73, 0x00, 0x2a, 0x6b };
+	nxdn_engine_cfg_t tx = base_cfg(rate9600), rx = base_cfg(rate9600);
+	uint16_t first;
+
+	tx.tx_cipher = NXDN_CIPHER_SCRAMBLE;
+	tx.tx_key_id = 63;
+	tx.silence = rx.silence = valid_silence;
+	tx.keys[0] = rx.keys[0] = 0x4567;
+	tx.keys[63] = 0x1234;
+	begin(0, &tx, &hooks);
+	begin(1, &rx, &hooks);
+	over(30, 0, 0);
+	CHECK(r[1].starts == 0 && r[1].nvoice == 0, "unknown ID is held even with another key");
+	nxdn_engine_view_t view;
+	nxdn_engine_view(&r[1].e, &view);
+	CHECK(view.rx.vcall.cipher == NXDN_CIPHER_SCRAMBLE && view.rx.vcall.key_id == 63, "received cipher and ID");
+	nxdn_engine_end(&r[0].e);
+	nxdn_engine_end(&r[1].e);
+
+	rx.keys[63] = 0x1234;
+	begin(0, &tx, &hooks);
+	begin(1, &rx, &hooks);
+	over(70, 0, 0);
+	CHECK(r[1].starts == 1 && r[1].nvoice > 10, "matching system key opens audio");
+	CHECK(check_order(&r[1], &r[0], &first) == 0, "voice descrambled with the selected ID");
+	nxdn_engine_end(&r[0].e);
+	nxdn_engine_end(&r[1].e);
+
+	tx.keys[63] = 0;
+	begin(0, &tx, &hooks);
+	CHECK(!nxdn_engine_tx_prepare(&r[0].e), "missing TX key refuses transmit");
+	nxdn_engine_end(&r[0].e);
+	tx.tx_cipher = 2;
+	begin(0, &tx, &hooks);
+	CHECK(!nxdn_engine_tx_prepare(&r[0].e), "unsupported cipher refuses transmit");
+	nxdn_engine_end(&r[0].e);
 }
 
 static void testCall(bool rate9600)
@@ -681,6 +730,8 @@ static void testSoftModem(void)
 
 int main(void)
 {
+	testSystemKeys(false);
+	testSystemKeys(true);
 	testCall(false);
 	testCall(true);
 	testSquelch();

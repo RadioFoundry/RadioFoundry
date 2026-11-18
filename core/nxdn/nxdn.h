@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 dB-SPL
 // NXDN conventional voice (docs/spec/nxdn.md): the frame and its channels, the framer's table for the mode, and a
 // voice call on top of them. Section numbers are NXDN TS 1-A's (Common Air Interface) unless another part is named.
 //
@@ -85,6 +86,8 @@
 // Cipher type
 #define NXDN_CIPHER_NONE	0
 #define NXDN_CIPHER_SCRAMBLE	1
+#define NXDN_KEY_IDS		64u
+#define NXDN_SCRAMBLE_KEY_MAX	32767u
 #define NXDN_CIPHER_DES		2
 #define NXDN_CIPHER_AES		3
 // IDs (6.5): 16 bits
@@ -207,6 +210,7 @@ typedef struct {
 	uint8_t sf[NXDN_SACCH_MSG_BYTES];
 	uint8_t sf_parts;		// bit k: part k is in
 	int8_t sf_next;			// the part expected next, -1 none
+	uint16_t scramble_key;		// zero disables NXDN scramble decryption
 	nxdn_call_stats_t stats;
 } nxdn_call_rx_t;
 
@@ -221,6 +225,7 @@ typedef struct {
 	uint8_t ran, dir;
 	uint8_t sf_frame;	// frame of the superframe, 0..3
 	uint8_t nvoice;		// VCH filled in the frame in hand
+	uint16_t scramble_key;	// zero disables scrambling
 	uint16_t nsyms, ready, sent;
 	uint8_t msg[NXDN_FACCH1_BYTES];	// VCALL, as FACCH1 and SACCH carry it
 	uint8_t rel[NXDN_FACCH1_BYTES];	// TX_REL

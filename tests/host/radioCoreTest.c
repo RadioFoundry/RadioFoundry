@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 dB-SPL
 // The radio core's state machine (core/radio/radio_sm.c) against a fake board and a fake codeplug
 #include "input/input.h"
 #include "input/keyassign.h"
@@ -8130,6 +8131,14 @@ bool nxdn_conv_load(uint16_t number, const channel_t *ch, nxdn_conv_cfg_t *out)
 	*out = stored_nxdn[number];
 	return true;
 }
+bool nxdn_system_load(uint8_t system, uint16_t *keys)
+{
+	if (system != 2)
+		return false;
+	if (keys)
+		keys[12] = 1234;
+	return true;
+}
 // A plain channel in NXDN saved as a stored one: the record and block it was given
 static struct { uint16_t number; channel_t ch; nxdn_conv_t conv; } nxdn_saved;
 bool nxdn_conv_save(uint16_t number, const channel_t *ch, const nxdn_conv_t *conv)
@@ -8582,10 +8591,55 @@ static void test_nxdn_stored(void)
 	memset(stored_nxdn, 0, sizeof(stored_nxdn));
 }
 
+#if CONFIG_NXDN_SCRAMBLER
+static void test_nxdn_system(void)
+{
+	setup_codeplug_nxdn();
+	add(3, "NXDN system", 446100000, RADIO_MODE_DMR, false, 2);
+	chans[3].kind = CODEPLUG_KIND_NXDN;
+	chans[3].system = 2;
+	stored_nxdn[3] = (nxdn_conv_cfg_t){ .conv = { .rate9600 = true, .rx_ran = 7, .tx_ran = 7 },
+					    .unit_id = 4321, .target = 20,
+					    .tx_cipher = NXDN_CIPHER_SCRAMBLE, .tx_key_id = 12 };
+	start();
+	nxdn_defaults();
+	aud.feed = true;
+	req(RREQ_ZONE_POS, 2);
+	nfar_begin(true, 7, 2001, false, 20);
+	nxdn_engine_cfg_t cfg = nfar.cfg;
+	cfg.tx_cipher = NXDN_CIPHER_SCRAMBLE;
+	cfg.tx_key_id = 12;
+	cfg.keys[12] = 1234;
+	nxdn_engine_set(&nfar, &cfg);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	run(800);
+	CHECK((sm.view.nxdn.flags & (RADIO_NXDN_ENC | RADIO_NXDN_PLAYED)) == (RADIO_NXDN_ENC | RADIO_NXDN_PLAYED));
+	nxdn_engine_tx_stop(&nfar);
+	run(500);
+	req(RREQ_PTT, 1);
+	run(600);
+	CHECK(nfar_heard.starts == 1 && nfar_heard.call.vcall.cipher == NXDN_CIPHER_SCRAMBLE &&
+	      nfar_heard.call.vcall.key_id == 12);
+	req(RREQ_PTT, 0);
+	run(500);
+	nfar_stop();
+
+	stored_nxdn[3].tx_key_id = 13;
+	radio_nxdn_apply(&sm.view.ch, 3);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state != RS_TX && !hw.keyed);
+	req(RREQ_PTT, 0);
+}
+#endif
+
 static void test_nxdn(void)
 {
 	test_nxdn_rx();
 	test_nxdn_tx();
+#if CONFIG_NXDN_SCRAMBLER
+	test_nxdn_system();
+#endif
 	test_nxdn_mode();
 	test_nxdn_stored();
 #if CONFIG_SCAN

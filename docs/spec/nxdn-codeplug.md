@@ -10,7 +10,7 @@ channel of kind 4 where the build has `CONFIG_NXDN` and the board's air interfac
 
 | Id | Kind | System type |
 |---|---|---|
-| 4 | NXDN conventional | none |
+| 4 | NXDN conventional | 4 (optional) |
 
 ## 1. Radio-wide record (kind 4)
 
@@ -25,7 +25,7 @@ above 65519 are special (TS 1-B) and never a radio's. The VFO keeps its own unit
 
 ## 2. Conventional channel (kind 4)
 
-The tag ([channel-modes.md](channel-modes.md) 2): no system, flag bit 0 transmit allowed. The parameter block:
+The tag ([channel-modes.md](channel-modes.md) 2): optional system of type 4, flag bit 0 transmit allowed. The parameter block:
 
 | Offset | Size | Field |
 |---|---|---|
@@ -34,8 +34,9 @@ The tag ([channel-modes.md](channel-modes.md) 2): no system, flag bit 0 transmit
 | 2 | 1 | TX RAN: bit 7 set = bits 5-0 hold it (0 to 63); clear = the RX RAN, 1 when the RX RAN is 0. Bit 6: 0, set reads as clear |
 
 A zeroed block, or none, is 9600 bit/s, RAN squelch, every RAN received and RAN 1 sent; with the tag's flag bit 0
-clear, receive only. Both rates use 12.5 kHz channel settings ([nxdn.md](nxdn.md) 9). Encryption fields are appended
-later.
+clear, receive only. Both rates use 12.5 kHz channel settings ([nxdn.md](nxdn.md) 9). The Web CPS appends byte 3 (cipher, 1 for scrambler) and byte 4 (key ID, 0–63) when a transmit key is selected.
+An absent or zero cipher selects clear transmission. A nonzero cipher without a valid system, supported algorithm,
+or valid key blocks transmission.
 
 The base record carries:
 
@@ -80,7 +81,15 @@ record keeps its own mode. A copy takes its source's tag first. A plain channel 
 with a new tag and block: 9600 bit/s, RAN 1 both ways (unless edited), squelch by RAN, its talk target as the editor
 shows it.
 
-## 3. Sharing
+## 3. Conventional system and traffic keys
+
+System type 4 has an empty parameter block. Each scrambler key uses the generic traffic-key record
+([channel-modes.md](channel-modes.md) 5.4), with algorithm 1, a key ID from 0 to 63, and a two-byte little-endian
+seed from 1 to 32767. Key IDs are unique within a system. The radio loads the assigned system's keys with the
+channel settings. On receive it uses the cipher and key ID from the VCALL. Transmit uses the channel's
+configured key and puts its cipher and ID in the VCALL. A listen-only system still supplies receive keys.
+
+## 4. Sharing
 
 A zone share carries an NXDN channel's tag as it is ([zone-share.md](zone-share.md) 4.2): the block is 3 octets, inside
 the share's limit of 64.

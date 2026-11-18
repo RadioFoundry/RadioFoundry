@@ -19,7 +19,7 @@ export function systemsTab(api, features) {
 	const { model: m, t, h, button } = api;
 	const systems = [...(m.systems ?? [])].sort((a, b) => a.number - b.number);
 	const types = offeredTypes(m, features);
-	const pick = h("select", { "aria-label": t("editor.modes.type") }, ...types.map((x) => h("option", { value: String(x.id) }, t(`editor.mode_name.${x.token}`))));
+	const pick = h("select", { "aria-label": t("editor.modes.type") }, ...types.map((x) => h("option", { value: String(x.id) }, t(x.module.label ?? `editor.mode_name.${x.token}`))));
 	const full = systems.length >= MODE_LIMITS.systems;
 	const parts = [
 		h("p", { class: "small muted" }, t("editor.modes.intro")),
@@ -40,7 +40,7 @@ export function systemsTab(api, features) {
 				button(t("editor.modes.edit"), () => systemDialog(api, s, false), { quiet: true }),
 			] : [];
 			return h("tr", {},
-				h("td", {}, String(s.number)), h("td", {}, s.name), h("td", {}, row ? t(`editor.mode_name.${row.token}`) : typeName(s.type)),
+				h("td", {}, String(s.number)), h("td", {}, s.name), h("td", {}, row ? t(mod.label ?? `editor.mode_name.${row.token}`) : typeName(s.type)),
 				h("td", {}, mod ? mod.identity(s.fields) : t("editor.modes.type_unknown")),
 				h("td", {}, t(`editor.modes.tx${!s.tx ? 0 : mod?.noRegField && s.fields?.[mod.noRegField] ? 2 : 1}_short`)),
 				h("td", {}, t(`editor.modes.share${s.sharing <= 2 ? s.sharing : 0}`)),
@@ -93,12 +93,12 @@ function systemDialog(api, s, isNew) {
 		radio: [
 			// listen only is the user's per-system choice (7.1): never forced by sharing
 			{ key: "transmit", label: t("editor.modes.transmit"), type: "select",
-				options: () => [[0, t("editor.modes.tx0")], [1, t("editor.modes.tx1")], ...(mod.noRegField ? [[2, t("editor.modes.tx2")]] : [])],
+				options: () => [[0, t("editor.modes.tx0")], [1, t(mod.conventional ? "editor.modes.tx1_short" : "editor.modes.tx1")], ...(mod.noRegField ? [[2, t("editor.modes.tx2")]] : [])],
 				get: (r) => (!r.tx ? 0 : mod.noRegField && r.fields[mod.noRegField] ? 2 : 1),
 				set: (r, v) => {
 					r.tx = v > 0;
 					if (mod.noRegField) r.fields = { ...r.fields, [mod.noRegField]: v === 2 };
-				}, help: t(mod.noRegField ? "editor.modes.transmit_help_noreg" : "editor.modes.transmit_help") },
+				}, help: mod.conventional ? null : t(mod.noRegField ? "editor.modes.transmit_help_noreg" : "editor.modes.transmit_help") },
 			{ key: "ownId", label: t("editor.modes.own_id"), type: "text", format: (v) => (v ? String(v) : ""), parse: (r, k, v) => {
 				const res = parseSpec({ type: "int", min: 0, max: 0xFFFFFFFF }, v, t);
 				if (res.error) return res.error;
@@ -138,7 +138,8 @@ function systemDialog(api, s, isNew) {
 			{ type: "note", key: "sys.keynote", text: () => t("editor.modes.secret_note") },
 			...sec.fields.map((x) => ({ ...specField(x, t, keyHolder, "sec"), disabled: (r) => !r.needsKey })));
 	}
-	formDialog(t(isNew ? "editor.modes.add_title" : "editor.modes.edit_title", { name: s.name, type: t(`editor.mode_name.${row.token}`) }), fields, s, t, (work) => api.change(t("editor.undo.edit"), () => {
+	if (mod.traffic) fields.push(...trafficFields(api, s, mod.traffic));
+	formDialog(t(isNew ? "editor.modes.add_title" : "editor.modes.edit_title", { name: s.name, type: t(mod.label ?? `editor.mode_name.${row.token}`) }), fields, s, t, (work) => api.change(t("editor.undo.edit"), () => {
 		if (isNew) {
 			m.systems.push(s);
 			assignNumbers(m.systems, MODE_LIMITS.systems);
@@ -148,6 +149,49 @@ function systemDialog(api, s, isNew) {
 		if (sec) s.secret = !v || Object.values(v).every((x) => x === "" || x === 0) ? null : v;
 		syncModes(m);
 	}), { list: true });
+}
+
+function trafficFields({ t, h, button }, system, traffic) {
+	const rows = (system.trafficKeys ?? []).map((key) => ({ ...key }));
+	const tbody = h("tbody", {});
+	const add = button(`+ ${t("editor.nxdn.add_key")}`, () => {
+		rows.push({});
+		draw();
+	}, { quiet: true });
+	const draw = () => {
+		add.disabled = rows.length >= traffic.max;
+		tbody.replaceChildren(...rows.map((row, i) => h("tr", {},
+			...traffic.columns.map((col) => h("td", {}, cell(h, t, col, row))),
+			h("td", {}, button(t("editor.modes.remove_row"), () => {
+				rows.splice(i, 1);
+				draw();
+			}, { quiet: true, danger: true })))));
+	};
+	draw();
+	const table = h("div", { class: "form-table" },
+		h("div", { class: "table-wrap" }, h("table", { class: "data" },
+			h("thead", {}, h("tr", {}, ...traffic.columns.map((col) => h("th", {}, label(t, col.label))), h("th", {}))), tbody)),
+		add);
+	return [
+		{ group: t("editor.nxdn.traffic_keys") },
+		{ type: "custom", key: "trafficKeys", render: () => table, parse: (form) => {
+			const errors = [], keys = [], ids = new Set();
+			for (const row of rows) {
+				const key = { slot: row.slot, flags: row.flags };
+				for (const col of traffic.columns) {
+					const raw = row._text?.[col.key] ?? formatSpec(col, row[col.key], t);
+					const result = raw.trim() ? parseSpec(col, raw, t) : { error: t("editor.err.range", { min: col.min, max: col.max }) };
+					if (result.error) errors.push(`${label(t, col.label)}: ${result.error}`);
+					else key[col.key] = result.value;
+				}
+				if (key.id != null && ids.has(key.id)) errors.push(t("editor.nxdn.duplicate_key", { id: key.id }));
+				ids.add(key.id);
+				keys.push(key);
+			}
+			if (!errors.length) form.trafficKeys = keys;
+			return errors;
+		} },
+	];
 }
 
 // --- A system's entries: a table per class, inside the system form ---

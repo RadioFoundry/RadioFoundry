@@ -29,6 +29,7 @@
 //   fmrx / fmrxend      an FM signal opens / closes the squelch
 //   p25rx:<src>,<dst>[,u|e|o]   a P25 call (CONFIG_P25 builds): u a unit call, e encrypted, o another talk group
 //                       (both not played); p25rxend ends it
+//   nxdnrx:<src>,<dst>[,e|p]    an NXDN call: e scrambled and muted, p scrambled and played
 //   chkind:<n>,p25|nxdn stored channel n is a P25 or NXDN channel (CONFIG_P25 / CONFIG_NXDN builds)
 //   p25t:<state>[,<tg>] the channel on view is a trunked P25 one (CONFIG_P25_TRUNK builds), its follower in state
 //                       1 finding the system, 2 on the control channel, 3 following talk group tg
@@ -3107,6 +3108,26 @@ static bool run_token(char *t, char *err, size_t len)
 			return false;
 		}
 		sim_rec.codeplug_writes--;	// the codeplug as found, not a write of the UI's
+		return true;
+	}
+#endif
+#if CONFIG_NXDN
+	if (strcmp(t, "nxdnrx") == 0) {
+		unsigned src = 0, dst = 0;
+		char kind = 'g';
+		if (arg == NULL || sscanf(arg, "%u,%u,%c", &src, &dst, &kind) < 2) {
+			snprintf(err, len, "bad %s", t);
+			return false;
+		}
+		view.nxdn.flags = (uint8_t)(RADIO_NXDN_ON | RADIO_NXDN_RX |
+			(kind == 'e' || kind == 'p' ? RADIO_NXDN_ENC : 0) |
+			(kind == 'e' ? 0 : RADIO_NXDN_PLAYED));
+		view.nxdn.src = (uint16_t)src;
+		view.nxdn.dst = (uint16_t)dst;
+		view.state = RS_RX;
+		view.rssi_dbm = -84;
+		changed();
+		advance(300);
 		return true;
 	}
 #endif

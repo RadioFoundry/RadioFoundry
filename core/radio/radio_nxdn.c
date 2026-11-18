@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 dB-SPL
 // NXDN conventional on a channel, the radio core's side (radio_nxdn.h)
 #include "config.h"
 #if CONFIG_NXDN	// the whole file
@@ -11,6 +12,7 @@
 #include "nxdn/nxdn_engine.h"
 #include "nxdn/nxdn_codeplug.h"
 #include "codeplug/codeplug_modes.h"
+#include "codeplug/codeplug_tag.h"
 #include "dmr/ambe/ambeVoice.h"
 #include "dmr/call/dmr_call.h"
 #if CONFIG_P25 && !defined(HAL_VOCODER_LEND_BYTES)
@@ -110,6 +112,15 @@ static void params(const channel_t *ch, uint16_t number, nxdn_engine_cfg_t *c)
 		c->unit_id = cc.unit_id;
 		c->tx_call_type = cc.target_unit ? NXDN_CALL_INDIVIDUAL : NXDN_CALL_GROUP;
 		c->tx_dst = cc.target;
+		c->tx_cipher = cc.tx_cipher;
+		c->tx_key_id = cc.tx_key_id;
+		if (ch->system != CODEPLUG_SYSTEM_NONE || c->tx_cipher != NXDN_CIPHER_NONE) {
+#if CONFIG_NXDN_SCRAMBLER
+			c->tx_inhibit = !nxdn_system_load(ch->system, c->keys);
+#else
+			c->tx_inhibit = !nxdn_system_load(ch->system, NULL);
+#endif
+		}
 		return;
 	}
 	c->rate9600 = set.rate9600;
