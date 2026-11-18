@@ -602,6 +602,19 @@ test("codec decision follows rfoundry's rules", () => {
 	assert.throws(() => decideCodec(fb.boards.md380, m, {}), DecisionError);
 });
 
+test("a switch a board leaves off by default can be chosen, with the board's reason", () => {
+	const radios = json("radios.json").radios;
+	const features = json("features.json").features, variants = json("variants.json").variants;
+	const rt10 = new Selection(radios.find((r) => r.id === "rt10"), features, variants);
+	assert.ok(rt10.supported("NET_PPP") && rt10.supported("HOTSPOT"));
+	assert.ok(!rt10.on.has("NET_PPP") && !rt10.on.has("HOTSPOT"));
+	assert.match(rt10.defaultOffWhy("NET_PPP"), /switched off and on/);
+	assert.equal(rt10.defaultOffWhy("DMR"), null);
+	rt10.set("NET_PPP", true);
+	assert.ok(rt10.on.has("NET_PPP") && rt10.on.has("DMR_IP_GATEWAY"), "turning it on brings what it needs");
+	assert.equal(new Selection(radios.find((r) => r.id === "dm1701"), features, variants).defaultOffWhy("NET_PPP"), null);
+});
+
 // A codec slot's board reports the stock build its slot came from (rfoundry Board.codec_present): any build counts, an
 // unknown slot or another board's codec doesn't; a stock-file board has only its profile's id
 test("a reported codec counts for the board", () => {
@@ -653,6 +666,18 @@ async function simulated(state) {
 	const sim = await simulation(fb, "dm1701", 7);
 	return { sim, radio: new FakeRadio(sim, { state, spiSize: 0x200000 }) };
 }
+
+// A stock file picked again on the write step cleared the key after the plan was made: the write erased, then failed
+// at the first block with a null key, and the radio had no application left
+test("a DFU write without the key stops before it erases anything", async () => {
+	const { sim, radio } = await simulated("stock");
+	const plan = makePlan(sim.board, segments(fx.manifest, image), KEEP);
+	radio.enterBootloader();
+	const before = radio.flash.slice();
+	for (const key of [null, new Uint8Array(0)]) await assert.rejects(new Dfu(radio.dfuTransport(), noWait).run(plan, key), /no bootloader key/);
+	assert.deepEqual(radio.erased, []);
+	assert.deepEqual(radio.flash, before);
+});
 
 test("first install on stock: the codec merged from the stock file, then back up through RadioFoundry", async () => {
 	const { sim, radio } = await simulated("stock");

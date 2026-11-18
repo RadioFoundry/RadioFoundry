@@ -108,6 +108,10 @@ const board_t board = {
 	.dmr = &hrc_dmr,
 	.audio = &hrc_audio_pcm,
 	.vocoder = &hrc_vocoder,
+#if CONFIG_AIR
+	.air = &hrc_air,		// the physical layer and the receive copy (modem-hrc7000.md 10)
+	.baseband = &hrc_baseband,
+#endif
 #endif
 #if CONFIG_APRS_AFSK
 	.afsk = &hrc_afsk,
@@ -119,8 +123,7 @@ const board_t board = {
 	.netif = &hostlink_ppp_netif,	// IPv4 over PPP on the programming cable's UART (docs/spec/ppp.md)
 #endif
 #if CONFIG_GPS
-	.gps_enable = hrc_gps_enable,
-	.gps_present = hrc_gps_present,	// CAP_GPS: the module is fitted, but say so only once it has been heard
+	.gps = &hrc_gps,	// CAP_GPS: the module is fitted, but say so only once it has been heard
 #endif
 	.system = &hrc_system,
 	.chip_reg = dm32_chip_reg,

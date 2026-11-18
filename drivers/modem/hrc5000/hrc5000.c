@@ -162,11 +162,14 @@ static const hrc_chip_t chip = {
 	.sync_reg = false,
 	.mode_per_channel = true,
 	.tc_last_rx = true,
+	.air_tx_only = true,	// no physical layer receive interrupt in any setting tried (modem-hrc6000.md 10.7)
 	.dmr_mode = dmr_mode,
 	.crc_len = crc_len,
 	.voice_lcss = voice_lcss,
 	.set_mic_gain = set_mic_gain,
 	.dmr_enter = dmr_enter,
+	.tap_addr = { 0x30, 0 },	// one area, 264 bits, no CACH (hardware-md380.md 4.9.1)
+	.tap_field = 0,
 #if HRC5000_TICK_RX
 	.rx_voice_read = rx_voice_read,
 	.rx_decode = rx_decode,

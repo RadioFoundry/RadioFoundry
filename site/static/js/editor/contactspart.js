@@ -379,7 +379,7 @@ async function fetchUsers() {
 	B.apiClient = B.apiClient || new radioid.RadioIdApi({ key: B.key });
 	const client = B.apiClient;
 	const ctrl = new AbortController();
-	const bar = progressBar();
+	const bar = progressBar({ stay: false });
 	const d = api.dialog(t("editor.rid.fetching"), [bar.el], null, null, () => ctrl.abort(), { cancel: t("editor.stop") });
 	try {
 		// sizes first, so a selection too big for the API is caught before the long part

@@ -1,8 +1,8 @@
 <!-- SPDX-License-Identifier: MIT -->
 # MD-9600: hosting the AMBE+2 codec
 
-Status: format description and a map and install profile for each of 32 TYT and Retevis original firmware files (03.28
-to 26.57, below). The codecs were run in a host instruction set emulator (measured); no MD-9600 has run any of them, the V5
+Status: format description and a map and install profile for each of 33 TYT and Retevis original firmware files (03.28
+to 126.61, below). The codecs were run in a host instruction set emulator (measured); no MD-9600 has run any of them, the V5
 (26.xx) ones included.
 
 Rule: the radio runs exactly the codec its own TYT firmware shipped. The user's machine extracts it from a firmware
@@ -50,8 +50,9 @@ wherever the install put it (`stockfw.from_moved`). The radio's own codec page l
 | 26.45 REC | V5 ("2571") | `MD9600-REC(2571V5)-D26.45.bin` | 1106432 | `baee36b0fd852dfc1fb14952242a1231dbfa4fabc37cba57c61f1b8d3e0d830d` |
 | 26.45 GPS + REC | V5 ("2571") | `MD9600-GPS-REC(2571V5)-S26.45.bin` | 1112576 | `6df34152e9786530d61032ab71f1962cf194aca0b99cf0a54e3802fd2cd4ac72` |
 | 26.57 REC | V4A ("2571V4") | `MD9600-REC(2571V4)-D26.57.bin` | 1107456 | `2522008737d7845e43ab47a307d38498ee783c788a377fac855dff94dea53af0` |
+| 126.61 GPS + REC AES | V5 ("2571"), user-supplied | `MD9600-AES-GPS-REC(2571V5)-S126.61.bin` | 1153536 | `86af65c40c66307f10262995a8037740df8433e67ce0af87137c809fa1ba9578` |
 
-All 32 on hand (the 03.28, 03.29 and 04.03 ones from a dealer's page, the 06.03 ones from a community page that mirrors TYT's update, the RT90 ones from the Retevis firmware download, the others as before): TYT "OutSecurityBin" container, two segments (0x00060000, 0x59800) and (0x0800C000, app length),
+All 33 on hand (the 03.28, 03.29 and 04.03 ones from a dealer's page, the 06.03 ones from a community page that mirrors TYT's update, the RT90 ones from the Retevis firmware download, the others as before): TYT "OutSecurityBin" container, two segments (0x00060000, 0x59800) and (0x0800C000, app length),
 payload at 0x100, 0x100 trailing bytes ([hardware-md9600.md](hardware-md9600.md) 14.3).
 
 ## Container and encryption
@@ -65,7 +66,7 @@ Key: SHA-256 `c3d665b297651b52310ec098e87440b147136241359c1154d474e517b048c9ae`,
 column vote (most common cipher byte per key column) gives it on all the files without any refinement; this is what
 `rfoundry/stockfw.derive_key` does first. No key file is needed.
 
-## Same codec, 32 builds
+## Same codec, 33 builds
 
 The codec does not sit at one address: every version and variant links it elsewhere, and the library's object code
 differs slightly between builds (the head of V06.09 has 0x14 extra bytes at +0x9D2 against V26.45, which moves the FEC
@@ -73,8 +74,9 @@ decode; literal pools and relocations differ throughout). So **no two codec wind
 byte-identical**: they are different links of the same library, as the reference V02.06 and V26.45
 codecs are.
 
-Functionally they are the same codec: with the same init and per-frame calls, all 32 builds and the reference V02.06
-codec give **bit-identical** air bits and decoded PCM (below, "Verification"). The 26.xx (V5) builds use the same entry
+Functionally they are the same codec: with the same init and per-frame calls, the first 32 builds and the reference
+V02.06 codec give **bit-identical** air bits and decoded PCM, and 126.61 matches the map tool's reference build (below,
+"Verification"). The 26.xx (V5) builds use the same entry
 offsets as the rest, so the calls in `boards/md9600/vocoder_md9600.c` fit them as they are; only the FEC decode
 differs (+0xB64 in the 26.45 CSV builds, +0xB54 in the 26.xx REC ones), and the firmware does not call it. The three REC
 builds 03.28, 03.29 and 04.03 have a code window 0x1000 bytes longer than the others (0x102xx), because the library link
@@ -171,6 +173,7 @@ Every other build has a map and a profile too:
 | REC(2571V5)-D26.45 | 0x0807751C+0xF20E | 0x080ADEE0+0x11046 | +0xB54 | `8974385c...` | `fa652e60...` |
 | GPS-REC(2571V5)-S26.45 | 0x08078D14+0xF216 | 0x080AF6E0+0x110C6 | +0xB54 | `7789393c...` | `17ad382f...` |
 | REC(2571V4)-D26.57 | 0x08077C3C+0xF1EE | 0x080AE5E0+0x11032 | +0xB54 | `c43426f0...` | `87786610...` |
+| AES-GPS-REC(2571V5)-S126.61 | 0x0808274C+0xF21E | 0x080B94EC+0x110C2 | +0xB54 | `b50a9528...` | `88fd5c8c...` |
 
 Executed code in 06.09 CSV: 0x08074B18..0x08083D2A and a code island 0x080B25B8..0x080B26A0 inside the table window
 (reached by BL from the code window, as in the hosted builds). The code also holds two code pointers, one into
@@ -206,7 +209,7 @@ and reported `md9600-s11`. The flashing tools read such a codec back and move it
 
 One profile per file, one codec id (`md9600-s11v2`): the tag in the descriptor says which build the radio holds. The tag
 is the variant in bits 16-17 (0 CSV, 1 CSV-GPS, 2 REC, 3 GPS-REC) and the version in BCD below, so 0x0609 is 06.09 CSV,
-0x1645 is 16.45 CSV and 0x11645 its CSV-GPS build.
+0x1645 is 16.45 CSV and 0x11645 its CSV-GPS build. Bit 20 marks the AES line (126.xx): 0x132661 is 126.61 GPS + REC.
 
 The codec in the earlier layout was run on the host (Cortex-M model) against the stock-address run: the same 60-frame
 vector (encode and decode, tone plus noise) gives the same air bits and PCM for every build, with the code at
@@ -217,7 +220,7 @@ had that run yet. The placed CRC-32s are in `stockfw.PROFILES` and
 **Supported donors: every file in the first table.** 06.09 CSV (V1-V3 boards) and 16.45 CSV (V4) came first and are the
 default; they are the plain CSV builds (no recorder or GPS code moving the codec). The rest work the same way with their
 own windows from the table above. An owner of a V5 radio (the TYT 26.45 files, the Retevis RT90 26.38, 26.41 and 26.42
-files, or the 26.57 V4A REC build) installs from the file the radio came with: the 26.xx codec calls are the 16.xx ones
+files, the 26.57 V4A REC build, or the 126.61 AES GPS + REC build) installs from the file the radio came with: the 26.xx codec calls are the 16.xx ones
 at the same entry offsets. **Not covered:** the 05.xx files (05.02, 05.04 and 05.05), whose copies on hand are cut off at 1 MiB, short of their
 tables. A file whose hash is none of the above is refused, not guessed at.
 
@@ -242,13 +245,17 @@ and the decoded PCM of every frame.
 | 1 kHz tone, 30 frames | `32b5fdbac4a399c9` | same | same |
 | stress, 300 frames (noise, silence, full-scale sweeps, 0-4 injected bit errors, random frames, flags 8) | `40d0ca30a8c2f7e0` | same | same |
 
-The other 24 builds (all 32 in all) were run again with the vector set below, each as TYT links it and moved as the merge
+The other 24 builds (32 in all) were run again with the vector set below, each as TYT links it and moved as the merge
 moves it, with only the moved windows mapped:
 
 | run | each of the 32 builds, at the stock address and as placed |
 |---|---|
 | 60 frames (encode and decode, tone plus noise), air bits and PCM hashed | `7cb52253c4b2` in all 64 runs |
 | 300 frames (random samples, silence, sine sweeps, square waves, low-level noise, flags 8 on every 7th frame), air bits and PCM hashed | `2788dd5ca0ad31c5` in all 64 runs |
+
+The 126.61 build was run with the map tool's vector set instead: a 30-frame trace gives `03d150f1c525afe0` and a
+300-frame stress run `7b0f10283a8114ce`, the reference build's hashes for that set, from the whole image, from the moved
+windows alone and as placed.
 
 This second set has no injected bit errors. A decode of a frame with three injected errors gave different PCM for the
 06.09 CSV and the 16.45 CSV builds in a trial run, so the cross-build identity of decoded error frames is not claimed;

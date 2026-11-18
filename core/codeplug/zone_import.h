@@ -58,6 +58,10 @@ uint32_t zone_import_key(uint32_t sender, uint32_t zone_id);
 // A receive frequency the radio can tune (board_in_band without transmit)
 bool zone_import_in_band(const zsChannel_t *ch);
 
+// Whether channel i (0-based) of a parsed record would come in unavailable (zone-share.md 5.5): it is on a system the
+// radio doesn't have and the record doesn't bring. For the offer's screens: any task, no codeplug write
+bool zone_import_unavailable(const zsRecord_t *rec, int i);
+
 // A zone record into the codeplug. imports: settings_t.zs_import (SETTINGS_ZS_IMPORTS entries), updated on success:
 // the caller saves it
 zone_import_status_t zone_import_zone(const uint8_t *record, int length, uint32_t sender,

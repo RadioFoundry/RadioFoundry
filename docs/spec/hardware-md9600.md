@@ -623,8 +623,9 @@ Optional, JS-M710 (unverified); the "MD-9600-5P GPS" FCC class II change. NMEA o
 
 ### 13.2 Power and detection
 
-PA9 high powers the GPS and the microphone together, so it stays on. No presence pin: detect by listening
-for valid NMEA, as on the MD-380 (ours).
+PA9 high powers the GPS and the microphone together, so it stays on while the radio runs, whatever Settings > Location
+> GPS says (the setting stops USART1 only). It is low from reset, through the standby wait and after "off" (`latch`),
+and driven high in `board_init`. No presence pin: detect by listening for valid NMEA, as on the MD-380 (ours).
 
 ---
 
@@ -859,7 +860,7 @@ the original firmware sounds the same on this radio is not checked); UHF receive
 | Receive | FM on both bands, every revision (19.3). Front-end tuning from calibration rows 0x30 / 0x39 (11.2) when they aren't blank, else mid scale |
 | DMR | receive on the shared HR_C6000 glue (configuration port PE2-PE5, voice port SPI1 at 4.5 MHz, interrupts PC0-PC2, I2S3 PCM). Reference offset and DMR modulation pair (11.2 rows 0x130-0x149) rewritten at each retune. The two codec profiles (tags 0x0609 and 0x1645, one id `md9600-s11v2`) run the codec from flash: code at 0x080E0000, tables at the start of sector 10, descriptor at 0x080FFF80 ([codec-md9600.md](codec-md9600.md)) |
 | Audio | FM from the IF chip (FM_MUTE high), PCM (DMR voice, beeps) from the HR_C6000 line out with FM held back, AF_SW muting otherwise (`boards/md9600/speaker_md9600.h`). A host audio session (`NET_USRP`) hears FM from PC3 and DMR from the stream, and transmits FM as PWM on PC8 into the HR_C6000's microphone input (19.9) |
-| GPS | USART1 RX (PA10), receive interrupt; 9600 baud first, then 4800, 19200, 38400, 57600, 115200, 3 s each. A silent line ends the search after the first window; a module once heard feeds APRS positions. PA9 stays on (it also powers the mic) |
+| GPS | USART1 RX (PA10), receive interrupt; 9600 baud first, then 4800, 19200, 38400, 57600, 115200, 3 s each. A silent line ends the search after the first window; a module once heard feeds APRS positions. Settings > Location > GPS off stops USART1; PA9 stays on (it also powers the mic) |
 | Hand mic | the keypad of 9.3 through `drivers/input/adckeys`, three equal scans per key. Key roles of A-D and A/B are a proposal (unverified). No `CAP_KEYPAD`: a mic may have no keypad |
 | Transmit | FM and DMR on UHF and VHF, checked off air into a dummy load (19.8, 19.9; VHF 19.9.1). On in the build (`CONFIG_MD9600_TX`, `CONFIG_MD9600_DMR_TX`); it still needs a confirmed revision (19.3) and plausible PA rows. Sub-audio: CTCSS and DCS from the PWM generator on PC7, with the DCS turn-off tail |
 | Not yet | Transmit power per level (a power meter), split duplex and the two-PLL burst switching (17 #17), the CPS's own command set, update packaging |
@@ -953,7 +954,7 @@ board.
 | PC6 | TIM8 CH1 | off | backlight | unverified |
 | PC7 | open drain, TIM8 CH2 when driven | released (high) | sub-audio tone PWM into the reference oscillator's modulation input (19.9). Driven low it pulls the reference: FM still receives, DMR never syncs (first radio, 2026-11-02) | checked |
 | PC8 | out, TIM8 CH3 when driven | low | beep PWM net into the HR_C6000's MIC_P / MIC_N and LINEIN1; host FM transmit audio (19.9) | checked |
-| PA9 | out | high | mic and GPS supply | unverified |
+| PA9 | out | low (high once switched on) | mic and GPS supply | unverified |
 | PB12, PD14, PD13, PD12 | out | high, high, low, low then high | flash CS, LCD CS, A0, reset | unverified |
 | PB13-PB15 | SPI2 AF5 | - | flash and LCD | unverified |
 | PE0, PE1, PD0, PD1 | out, open drain | high | key rows | unverified |
@@ -1028,7 +1029,6 @@ voltage is the generic `supply_mv` key instead (`hal_power_t.supply_mv`; the div
 | `c6000`, `c6000.dmr`, `c6000.errors`, `c6000.tx_refused` | the HR_C6000 answered after set-up (with 4:0x10), in DMR, failed transfers, bursts the RF switch refused |
 | `speaker` | bit 0 amplifier on, bit 1 FM audio through, bit 2 codec line out, bit 3 amplifier held warm (`speaker_hang_s`) |
 | `mic_key` | the hand-mic key decoded on the last scan, 255 for none |
-| `gps`, `gps.baud`, `gps.nmea` | module heard; the rate listened at (0 once given up); valid / bad sentences / bytes |
 | `subtone` | the sub-audio decoder (`CONFIG_SUBTONE`): samples fed / rate; the input's rms and mean over 0.11 s (12-bit counts); the tone kind (0 none, 1 CTCSS, 2 DCS, 3 DCS inverted); match; an ADC or DMA fault |
 
 `tests/hil/test_md9600.py` checks them on a radio: identity, every key present, the transmitter switches low, the
@@ -1207,3 +1207,24 @@ Feature switches that differ from the platform's defaults (`config.mk`; the two 
 | `NET_PPP` (maximal build too: `MAXIMAL_SKIP`) | the radio has the USB network adapter; PPP is for radios with only a UART |
 | `LANG_ES` and what follows it | English only |
 | `UI_COLOR`, `FONT_XL`, `FONT_AA`, `FONT_BIG`, `AM_RX`, `BCAST_FM`, `VIBRATE`, `NAND_STORAGE`, `FAULT_TRACE` (maximal build too: `BOARD_UNSUPPORTED`) | a 128x64 monochrome screen; no air band or broadcast receiver; no vibration motor; NOR data flash; no UART for a fault trace |
+
+### 19.11 Air interface (`CONFIG_P25`, `CONFIG_NXDN`)
+
+`board.air` is the HR_C6000's physical layer mode ([modem-hrc6000.md](modem-hrc6000.md) 10). The chip demodulates
+the 450 kHz IF itself (4.2), so its FM copy (10.6 there) is the discriminator: the board sets `air_tap` and gives
+`board.baseband`, and the soft modem receives what the correlator can't, NXDN among it. Both switches are on by
+default. A transmission in the physical layer mode keys the PA once and holds it to the end
+(`stm32_hrc_dmr_tx_continuous`), where a DMR burst's key-up drops it after `KEY_HOLD_US`. Checked on a V1-V3 radio,
+UHF, against the SDR bench:
+
+| What | Result |
+|---|---|
+| P25 conventional receive (`test_p25_rx_from_bench`) | 72 of 72 voice frames, none bad, 32-43 bits corrected, played |
+| NXDN receive at 4800 and 9600 bit/s through the FM copy (`test_nxdn_rx_from_bench`) | each call decoded, 40 voice frames per call |
+| NXDN zone scan and dual watch onto a stored channel (`test_nxdn_scan_from_bench`) | each holds on the channel during a call from the bench |
+| A stored P25 channel written over CPS (`test_p25_stored_channel`) | runs P25 on its own parameters, plain again after the restore |
+| Zone scan and dual watch onto a stored P25 channel (`test_p25_scan_from_bench`) | each holds on the channel during a call from the bench |
+| The P25 or NXDN mode in the VFO, a stored NXDN channel | set and dropped; the radio idles in the mode |
+
+Not checked: P25 and NXDN transmit (the provider reports both as untested), sensitivity on the FM copy, VHF (the
+receive I/Q swap there inverts the copy's spectrum), and trunking.

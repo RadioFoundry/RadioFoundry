@@ -3,10 +3,14 @@
 // Updating a radio that runs RadioFoundry: which build it runs (the debug link's preset= and off=, or on older firmware
 // its features= list matched against the releases), the build the update installs, and the features that came after it.
 //
-//   currentBuild(probe, radio, releases, reported)   what runs: {kind: "preset" | "custom" | "unknown", ...}
-//   planUpdate(cur, sel, decided)                    the update's selection, and what it adds or must ask
+//   currentBuild(probe, radio, releases, reported, match)   what runs: {kind: "preset" | "custom" | "unknown", ...}
+//   planUpdate(cur, sel, decided)                           the update's selection, and what it adds or must ask
+//
+// An update never moves a radio off its variant, and never changes the language it starts in unless the user picks
+// one: a build from the build service is matched to its variant by its exact switch set (the service's record of it,
+// match: GET /v1/builds/match), and the start language comes from VERSION start= or that record.
 
-import { startCode } from "./langsuggest.js";
+import { START_SINCE, startCode, startKnownAt } from "./langsuggest.js";
 
 const split = (s) => String(s || "").split(",").filter(Boolean);
 
@@ -26,21 +30,40 @@ export function releaseOf(probe, releases) {
 //   {kind: "preset", preset, off, old}   a release variant (off: null on firmware that doesn't say)
 //   {kind: "custom", off, old}           a build of its own, every switch known
 //   {kind: "unknown", guess, old}        older firmware whose features= list fits no one variant; guess: the closest
-// start: on a variant the service built, the start-language switches it had on (planUpdate keeps them)
-// old: the release entries it came from (releaseOf); each also carries the probe. reported: the names features= can carry (features.json reported)
-export function currentBuild(probe, radio, releases, reported) {
+// start: the start-language switches it has on (planUpdate keeps them); null: not known (the off= rule applies)
+// startAsk: start switches an earlier update may have turned on by mistake (an Update asked for this build, and the
+// firmware doesn't say start=): the user keeps the language or goes back to English, decided[START_KEEP]
+// known: with match, every switch the build knew (its features and off=), exactly
+// old: the release entries it came from (releaseOf); each also carries the probe. reported: the names features= can
+// carry (features.json reported). match: the build service's record of the radio's build, {features, from_update}
+// (GET /v1/builds/match), or null
+export function currentBuild(probe, radio, releases, reported, match = null) {
 	const v = probe.version || {};
 	const old = releaseOf(probe, releases);
 	const said = { probe };
 	if (v.preset && v.off !== undefined) {
 		const off = split(v.off);
-		if (v.preset !== "custom") return { ...said, kind: "preset", preset: v.preset, off, old };
+		const on = match ? match.features : null;
+		const told = v.start !== undefined ? startSwitches(v.start) : null;
+		const start = told ?? (on ? on.filter((n) => startCode(n)) : null);
+		const startAsk = told === null && match?.from_update && start?.length ? start : null;
+		const extra = { ...(start ? { start } : {}), ...(startAsk ? { startAsk } : {}), ...(on ? { known: new Set([...on, ...off]) } : {}) };
+		if (v.preset !== "custom") return { ...said, kind: "preset", preset: v.preset, off, old, ...extra };
+		// the service's record: the variant whose switches the build has, the start language aside, as far as the
+		// build knew them (a switch newer than the build doesn't count)
+		if (on) {
+			const preset = variantByRecord(radio, on, extra.known);
+			if (preset) return { ...said, kind: "preset", preset, off, old, ...extra };
+			return { ...said, kind: "custom", off, old, ...extra };
+		}
 		// the build service names every build custom: one equal to a variant is that variant. The start language
 		// (langsuggest.js) is left out of the comparison and kept: Full in Spanish is still Full
 		const preset = variantOf(radio, off, old);
 		if (!preset) return { ...said, kind: "custom", off, old };
-		const start = [...new Set(old.flatMap((e) => [...split(e.features), ...split(e.off)]))].filter((n) => startCode(n) && !off.includes(n));
-		return { ...said, kind: "preset", preset, off, old, start };
+		// a start switch newer than the release but not newer than the build (langsuggest.js START_SINCE) counts too
+		const fromRelease = [...new Set([...old.flatMap((e) => [...split(e.features), ...split(e.off)]),
+			...Object.keys(START_SINCE).filter((n) => startKnownAt(n, v.git_time))])].filter((n) => startCode(n) && !off.includes(n));
+		return { ...said, kind: "preset", preset, off, old, start: told ?? fromRelease };
 	}
 	// older firmware: its features= list against each variant, by the names it can report
 	const rep = new Set(reported);
@@ -58,6 +81,31 @@ export function currentBuild(probe, radio, releases, reported) {
 	return { ...said, kind: "unknown", guess: scored[0]?.id || "full", old };
 }
 
+// The start switches a VERSION start= code means: none for English
+function startSwitches(code) {
+	const c = String(code || "").toLowerCase();
+	return c && c !== "en" ? [`LANG_DEFAULT_${c.toUpperCase()}`] : [];
+}
+
+// Whether a build's switches are a variant's, the start language aside: its start switch and the pack that brought it
+// (when the variant lacks the pack) don't count. Full in Spanish is still Full. The build service decides the same way
+// (odr-backend buildhost/odr_build.py same_variant)
+export function sameVariant(on, variantOn) {
+	const v = new Set(variantOn);
+	const packs = new Set(on.filter((n) => startCode(n)).map((n) => `LANG_${startCode(n).toUpperCase()}`));
+	const mine = on.filter((n) => !startCode(n) && !(packs.has(n) && !v.has(n)));
+	const want = [...v].filter((n) => !startCode(n));
+	return mine.length === want.length && mine.every((n) => v.has(n));
+}
+
+// The variant a service build is, from its exact switches; known: every switch it knew (a variant's switch added
+// since doesn't count). null: none
+function variantByRecord(radio, on, known) {
+	for (const [id, list] of Object.entries(radio.config || {}))
+		if (sameVariant(on, list.filter((n) => known.has(n)))) return id;
+	return null;
+}
+
 // A custom build that is a variant after all: its off list equals the variant's (in the release it came from, else now)
 function variantOf(radio, off, old) {
 	const offSet = new Set(off);
@@ -73,6 +121,7 @@ function variantOf(radio, off, old) {
 // switch it has off (manifest off, tools/release.py), so its variants name them all; one from before that names only
 // its variants' features, and a switch on in no variant reads as new (asked once: the next update knows it)
 function knownBefore(cur, probe) {
+	if (cur.known) return cur.known;
 	if (!cur.old.length) return null;
 	return new Set([...(cur.off || []), ...split(probe?.features), ...cur.old.flatMap((e) => [...split(e.features), ...split(e.off)])]);
 }
@@ -86,7 +135,22 @@ function knownBefore(cur, probe) {
 // on the radio, because something it now needs the radio can't have; the user agrees (decided[DROP_OK]) or edits the build.
 // Returns {preset, added, needed, dropped, ask, ready}: ready once every new feature of a custom build is decided
 export const DROP_OK = "*drop";
+// decided[START_KEEP]: true keeps cur.startAsk's language, false starts the radio in English
+export const START_KEEP = "*start";
 export function planUpdate(cur, sel, decided = {}) {
+	const plan = planSwitches(cur, sel, decided);
+	// the start language: as the radio has it, or as the user answered when an earlier update may have set it
+	const starts = sel.features.map((f) => f.name).filter((n) => startCode(n));
+	if (cur.start) {
+		const keep = cur.startAsk && decided[START_KEEP] !== true ? cur.start.filter((n) => !cur.startAsk.includes(n)) : cur.start;
+		for (const n of starts) if (sel.on.has(n) && !keep.includes(n)) sel.set(n, false);
+		for (const n of keep) if (sel.supported(n)) sel.set(n, true);
+	}
+	const startAsk = cur.startAsk || [];
+	return { ...plan, startAsk, ready: plan.ready && (!startAsk.length || START_KEEP in decided) };
+}
+
+function planSwitches(cur, sel, decided) {
 	const known = knownBefore(cur, cur.probe);
 	const fresh = (names) => (known ? names.filter((n) => !known.has(n) && sel.supported(n)) : []);
 	const variants = Object.keys(sel.radio.config);
@@ -97,14 +161,19 @@ export function planUpdate(cur, sel, decided = {}) {
 	}
 	if (cur.kind === "preset" && variants.includes(cur.preset)) {
 		sel.useVariant(cur.preset);
-		for (const n of cur.start || []) sel.set(n, true);
 		return { ...none, preset: cur.preset, added: fresh(sel.radio.config[cur.preset]) };
 	}
 	// a custom build (or a variant this release no longer has): every switch as it was, the new ones as decided. A
-	// new start-language switch (langsuggest.js) is no feature to ask about: off, the radio keeps the language it has
+	// start-language switch (langsuggest.js) is no feature to ask about: one off= doesn't name is on only if the radio's
+	// build could have had it (START_SINCE), else off and the radio keeps the language it has. Not by release: without
+	// releases nothing counts as new (the newest language came up on every radio updated), and a build made after a
+	// language's merge but before the next release that starts in it would lose it. The service's record of the build
+	// (cur.known) is exact, so it decides when there is one
 	const names = sel.features.map((f) => f.name);
-	const news = fresh(names);
-	const off = new Set([...(cur.off || []), ...news.filter((n) => startCode(n))]);
+	const gitTime = cur.probe?.version?.git_time;
+	const had = (n) => (cur.known ? cur.known.has(n) : startKnownAt(n, gitTime));
+	const news = fresh(names).filter((n) => !(startCode(n) && had(n)));
+	const off = new Set([...(cur.off || []), ...names.filter((n) => startCode(n) && !had(n))]);
 	const kept = names.filter((n) => sel.supported(n) && (!off.has(n) || sel.required(n)) && !news.includes(n));
 	sel.useVariant("full");
 	// all kept ones first, so an "any of" need finds one already on; then enable() brings each one's needs

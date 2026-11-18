@@ -26,6 +26,8 @@ SECTIONS
 		KEEP(*(.entry))	/* crt0: the loader, or the first stage, jumps to the first byte */
 		*(EXCLUDE_FILE(*hrc7000_dmr.o *hrc7000_bs.o *dmr_glue.o) .text EXCLUDE_FILE(*hrc7000_dmr.o *hrc7000_bs.o *dmr_glue.o) .text.*)
 		*(.flashfunc .flashfunc.*)	/* HRC_FLASHFUNC: task-side code in the files placed in RAM below */
+		/* ... and the engine's set-up, start and stop: task-side, once per mode change; matched here before .ramfunc */
+		*hrc7000_dmr.o(.text.hrc7000_dmr_init .text.hrc7000_dmr_run .text.hrc7000_dmr_halt)
 		. = ALIGN(4);
 	} >FLASH
 

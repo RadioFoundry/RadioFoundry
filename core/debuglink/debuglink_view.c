@@ -17,6 +17,9 @@
 #include "radio/tx_limit.h"
 #include "radio/pa_keyup.h"
 #include "storage/storage.h"
+#if CONFIG_VOICE_CAPTURE
+#include "dmr/ambe/ambeVoice.h"
+#endif
 #if CONFIG_DMR_DATA_CORE
 #include "codeplug/codeplug_kv.h"
 #endif
@@ -56,11 +59,19 @@ static const char *state_key(uint8_t s)
 	return s < 4 ? names[s] : "?";
 }
 
+// The channel's mode (radio_mode_t) as the view names it
+static const char *mode_key(uint8_t m)
+{
+	static const char *const names[] = { "fm", "dmr", "p25", "nxdn" };
+	return m < sizeof(names) / sizeof(names[0]) ? names[m] : "?";
+}
+
 static const char *deny_key(uint8_t d)
 {
 	static const char *const names[] = { "none", "rx_only", "band", "timeout", "no_freq", "mode", "no_codec",
 					     "no_dmr", "busy", "no_repeater", "rejected", "hotspot", "no_id", "inhibit",
-					     "battery", "am", "bcast", "sfr_rpt", "hwopt", "refused" };
+					     "battery", "am", "bcast", "sfr_rpt", "hwopt", "refused", "ceased", "bench",
+					     "trunk", "air_no_tx" };
 	return d < sizeof(names) / sizeof(names[0]) ? names[d] : "?";
 }
 
@@ -85,7 +96,7 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 		dl_text(t, "txlim=%s\ntxlim.n=%u\ntxlim.refused=%u\ntxlim.last_hz=%u\n",
 			l.block ? "block" : l.n != 0 ? "list" : "off", l.n, (unsigned)l.refused, (unsigned)l.last_hz);
 	}
-	dl_text(t, "mode=%s\n", v->ch.mode == RADIO_MODE_DMR ? "dmr" : "fm");
+	dl_text(t, "mode=%s\n", mode_key(v->ch.mode));
 	dl_text(t, "am=%u\nbcast=%u\nbcast_fault=%u\nbcast_khz=%u\n", v->am, v->bcast, v->bcast_fault, (unsigned)v->bcast_khz);
 	dl_text(t, "vfo=%u\nvfo_index=%u\n", v->vfo, v->vfo_index);
 	dl_text(t, "zone_index=%u\nzone_pos=%u\nzone_size=%u\nzone_count=%u\n", v->zone_index, v->zone_pos, v->zone_size,
@@ -139,7 +150,7 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "tx_elapsed_ms=%u\ntot_s=%u\n", (unsigned)v->tx_elapsed_ms, v->tot_s);
 	dl_text(t, "last_rx_ms=%u\nlast_tx_ms=%u\ntx_auto=%u\nwakes=%u\n", (unsigned)v->last_rx_ms,
 		(unsigned)v->last_tx_ms, v->tx_auto, radio_view_wakes(v));
-	dl_text(t, "vfo_step_hz=%u\n", (unsigned)v->vfo_step_hz);
+	dl_text(t, "vfo_step_hz=%u\nvfo_drop=%u\n", (unsigned)v->vfo_step_hz, v->vfo_drop);
 	dl_text(t, "codeplug=%s\n", v->source < 3 ? sources[v->source] : "?");
 	dl_text(t, "hotspot=%u\n", v->hotspot);
 	uint32_t handled, dropped;
@@ -155,7 +166,8 @@ static void channel_section(const radio_view_t *v, dl_text_t *t)
 
 	dl_text_kv_str(t, "ch.name", c->name);
 	dl_text(t, "ch.rx_hz=%u\nch.tx_hz=%u\n", (unsigned)c->rx_hz, (unsigned)c->tx_hz);
-	dl_text(t, "ch.mode=%s\n", c->mode == RADIO_MODE_DMR ? "dmr" : "fm");
+	dl_text(t, "ch.mode=%s\n", mode_key(c->mode));
+	dl_text(t, "ch.kind=%u\n", c->kind);	// channel-modes.md 4: 0 a plain channel
 	dl_text(t, "ch.bw=%s\n", c->bw == RADIO_BW_25K ? "25k" : "12k5");
 	tone(t, "ch.rx_tone", &c->rx_tone);
 	tone(t, "ch.tx_tone", &c->tx_tone);
@@ -379,6 +391,7 @@ static void link_section(dl_text_t *t)
 	dl_text(t, "input.raw_keys=0x%08x\ninput.injected=0x%08x\n", (unsigned)input_raw_keys(),
 		(unsigned)input_injected_keys());
 	dl_text(t, "input.encoder_total=%d\n", (int)input_encoder_total());
+	dl_text(t, "input.switch_pos=%d\n", (int)input_switch_pos());
 	hal_encoder_stats_t es;
 	uint32_t deferred;
 	bool stats = input_encoder_stats(&es, &deferred);
@@ -543,11 +556,38 @@ static void board_section(dl_text_t *t)
 	}
 }
 
+// The voice frames captured, in order: 18 hex digits a frame, L a lost one
+static void voice_cap_section(dl_text_t *t)
+{
+#if CONFIG_VOICE_CAPTURE
+	const ambe_cap_entry_t *e;
+	uint8_t want;
+	uint8_t n = ambeVoiceCapture(&e, &want);
+	dl_text(t, "vcap.built=1\nvcap.want=%u\nvcap.count=%u\nvcap.frames=", want, n);
+	for (uint8_t i = 0; i < n; i++) {
+		if (i != 0) {
+			dl_text(t, ",");
+		}
+		if (e[i].lost) {
+			dl_text(t, "L");
+			continue;
+		}
+		for (uint8_t k = 0; k < sizeof e[i].frame; k++) {
+			dl_text(t, "%02x", e[i].frame[k]);
+		}
+	}
+	dl_text(t, "\n");
+#else
+	dl_text(t, "vcap.built=0\n");
+#endif
+}
+
 static const char *const section_names[DL_VIEW_COUNT] = { "core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot",
 						  "link", "features", "dmr_data", "storage", "dmr_ext",
 						  "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
 						  "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc",
-						  "net_link", "cps", "board", "audio" };
+						  "net_link", "cps", "board", "audio", "t3", "t3_svc", "t3_roam", "voice_cap", "t3_msg",
+						  "t3_ra", "p25", "p25_trunk", "nxdn" };
 
 const char *debuglink_view_name(uint8_t section)
 {
@@ -657,6 +697,33 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_AUDIO:
 		debuglink_view_audio(t);
+		break;
+	case DL_VIEW_T3:
+		debuglink_view_t3(v, t);
+		break;
+	case DL_VIEW_T3_SVC:
+		debuglink_view_t3_svc(v, t);
+		break;
+	case DL_VIEW_T3_ROAM:
+		debuglink_view_t3_roam(v, t);
+		break;
+	case DL_VIEW_VOICE_CAP:
+		voice_cap_section(t);
+		break;
+	case DL_VIEW_T3_MSG:
+		debuglink_view_t3_msg(v, t);
+		break;
+	case DL_VIEW_T3_RA:
+		debuglink_view_t3_ra(v, t);
+		break;
+	case DL_VIEW_P25:
+		debuglink_view_p25(v, t);
+		break;
+	case DL_VIEW_P25_TRUNK:
+		debuglink_view_p25_trunk(t);
+		break;
+	case DL_VIEW_NXDN:
+		debuglink_view_nxdn(v, t);
 		break;
 	case DL_VIEW_USRP:
 #if CONFIG_NET_USRP

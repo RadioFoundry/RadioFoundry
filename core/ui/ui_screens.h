@@ -11,6 +11,7 @@
 #include "font.h"
 #include "gfx.h"
 #include "config.h"
+#include "fmt.h"
 #if CONFIG_HOTSPOT
 #include "hotspot/hotspot.h"
 #endif
@@ -52,6 +53,7 @@ typedef struct {
 	bool vfo;		// the VFO, not a channel
 	uint16_t number;	// codeplug channel number (0: the VFO)
 	uint8_t mode;		// radio_mode_t
+	bool am;		// an FM channel (or the VFO) received in AM: the air band (radio_am_channel)
 	uint32_t rx_hz;
 	char name[CODEPLUG_NAME_LEN + 1];
 	char zone[CODEPLUG_NAME_LEN + 1];	// the zone's name, "VFO" for the VFO
@@ -282,5 +284,8 @@ uint32_t ui_freq_parse(const char *digits, uint8_t len);
 void ui_bands_text(char *out, size_t len, bool tx);
 // The board's power level name
 const char *ui_power_name(uint8_t level, uint32_t tx_hz);
+// A call from a dialing gateway on the trunked system in use (CONFIG_DMR_TRUNK_GW): the caller's number it gave
+// (dmr-trunking.md 7.6), else "Phone line"; false (nothing written) for any other source
+bool ui_sb_gw_caller(sbuf_t *b, uint32_t src);
 
 #endif

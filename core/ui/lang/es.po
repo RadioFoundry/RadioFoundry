@@ -188,6 +188,11 @@ msgid "Imported "
 msgstr "Importado "
 
 #: core/ui/ui_app.c
+msgctxt "SHARE_BANNER_SYSTEM_MISSING"
+msgid " trunked: system not set up"
+msgstr " troncales: sistema sin configurar"
+
+#: core/ui/ui_app.c
 msgctxt "SHARE_BANNER_CHANNEL_RX_ONLY"
 msgid " channel, receive only"
 msgstr " canal, solo RX"
@@ -386,6 +391,16 @@ msgstr "Código color: no disponible"
 msgctxt "QUICK_WHY_FM_ONLY_DMR_CHANNEL"
 msgid "FM only: this is a DMR channel"
 msgstr "Solo FM: es un canal DMR"
+
+#: core/ui/ui_app.c
+msgctxt "QUICK_WHY_FM_ONLY_P25_CHANNEL"
+msgid "FM only: this is a P25 channel"
+msgstr "Solo FM: es un canal P25"
+
+#: core/ui/ui_app.c
+msgctxt "QUICK_WHY_FM_ONLY_NXDN_CHANNEL"
+msgid "FM only: this is NXDN"
+msgstr "Solo FM: es NXDN"
 
 #: core/ui/ui_app.c core/ui/ui_menus.c
 msgctxt "WHY_NOT_IN_BUILD"
@@ -641,6 +656,16 @@ msgstr "Batería "
 msgctxt "BATT_PART_CHARGE_SOON"
 msgid "%: charge soon"
 msgstr "%: cargar pronto"
+
+#: core/ui/ui_app.c
+msgctxt "TRUNK_TOAST_BACK_ON"
+msgid "Back on "
+msgstr "De vuelta en "
+
+#: core/ui/ui_app.c
+msgctxt "TRUNK_TOAST_POLL_NO_DATA"
+msgid "Poll: no short data"
+msgstr "Sondeo: sin datos cortos"
 
 #: core/ui/ui_app.c
 msgctxt "ZONE_TOAST_WAS_DELETED"
@@ -963,6 +988,11 @@ msgid "OK choose  Back"
 msgstr "OK elegir  Atrás"
 
 #: core/ui/ui_dual.c core/ui/ui_screens.c
+msgctxt "HOME_CHIP_AIR_BAND_AM"
+msgid "Air Band AM"
+msgstr "Banda aérea AM"
+
+#: core/ui/ui_dual.c core/ui/ui_screens.c
 msgctxt "CHIP_NO_TONE"
 msgid "No tone"
 msgstr "Sin tono"
@@ -1071,6 +1101,21 @@ msgstr "{No hay otro canal para escuchar|No hay otro canal}"
 msgctxt "DUAL_VALUE_DMR_CALL"
 msgid "DMR call"
 msgstr "Llamada DMR"
+
+#: core/ui/ui_dual.c
+msgctxt "DUAL_VALUE_P25_CALL"
+msgid "P25 call"
+msgstr "Llamada P25"
+
+#: core/ui/ui_dual.c
+msgctxt "DUAL_VALUE_NXDN_CALL"
+msgid "NXDN call"
+msgstr "Llamada NXDN"
+
+#: core/ui/ui_dual.c
+msgctxt "DUAL_VALUE_AM_SIGNAL"
+msgid "AM signal"
+msgstr "Señal AM"
 
 #: core/ui/ui_dual.c
 msgctxt "DUAL_VALUE_FM_SIGNAL"
@@ -1251,6 +1296,11 @@ msgstr "VFO a "
 msgctxt "FIND_ROW_CREATE_CONTACT"
 msgid "Create contact "
 msgstr "Crear contacto "
+
+#: core/ui/ui_find.c
+msgctxt "TRUNK_ROW_PHONE_CALL"
+msgid "Phone call "
+msgstr "Llamada telefónica "
 
 #: core/ui/ui_find.c
 msgctxt "FIND_CHIP_MENU"
@@ -1478,6 +1528,11 @@ msgid "Make channel default"
 msgstr "Hacer canal predet."
 
 #: core/ui/ui_menus.c
+msgctxt "TRUNK_ROW_POLL_SHORT_DATA"
+msgid "Poll short data"
+msgstr "Pedir datos cortos"
+
+#: core/ui/ui_menus.c
 msgctxt "WHY_MESSAGES_NOT_IN_BUILD"
 msgid "Messages: not in this build"
 msgstr "Mensajes: no disponible"
@@ -1516,6 +1571,11 @@ msgstr "Ya está en los contactos"
 msgctxt "ACT_TOAST_ADD_CONTACTS_IN_QDMR"
 msgid "Add contacts in qdmr"
 msgstr "Añade contactos en qdmr"
+
+#: core/ui/ui_menus.c
+msgctxt "TRUNK_TOAST_POLLING"
+msgid "Polling "
+msgstr "Consultando a "
 
 #: core/ui/ui_menus.c
 msgctxt "ACT_HINT"
@@ -1752,6 +1812,11 @@ msgctxt "ZONE_EMPTY_NO_ZONES"
 msgid "No zones"
 msgstr "Sin zonas"
 
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "TRUNK_WHY_SYSTEM_NOT_SET_UP"
+msgid "System not set up"
+msgstr "Sistema sin configurar"
+
 #: core/ui/ui_menus.c
 msgctxt "TOAST_CANT_SAVE_NOW"
 msgid "Couldn't save now: try again"
@@ -1888,6 +1953,16 @@ msgid " not in band"
 msgstr " fuera de banda"
 
 #: core/ui/ui_menus.c
+msgctxt "SHARE_BODY_CHANNEL_NO_SYSTEM"
+msgid " trunked channel unavailable: system not set up"
+msgstr " canal troncal no disponible: sistema sin configurar"
+
+#: core/ui/ui_menus.c
+msgctxt "SHARE_BODY_CHANNELS_NO_SYSTEM"
+msgid " trunked channels unavailable: system not set up"
+msgstr " canales troncales no disponibles: sistema sin configurar"
+
+#: core/ui/ui_menus.c
 msgctxt "SHARE_TITLE_CHANNEL_RECEIVED"
 msgid "{Channel Share Received ⤓|Ch Share Received ⤓|Ch Received ⤓|Ch Received}"
 msgstr "{Canal compartido recibido ⤓|Canal recibido ⤓|Can recibido ⤓|Can recibido}"
@@ -1906,6 +1981,11 @@ msgstr "Nada pendiente"
 msgctxt "SHARE_CHIP_NOT_IN_BAND"
 msgid "{Not in band|Out}"
 msgstr "{Fuera de banda|Fuera}"
+
+#: core/ui/ui_menus.c
+msgctxt "SHARE_VALUE_NO_SYSTEM"
+msgid "{System not set up|No system}"
+msgstr "{Sistema sin configurar|Sin sistema}"
 
 #: core/ui/ui_menus.c
 msgctxt "SHARE_HINT_PREVIEW"
@@ -2027,6 +2107,11 @@ msgctxt "LABEL_MODE"
 msgid "Mode"
 msgstr "Modo"
 
+#: core/ui/ui_menus.c
+msgctxt "CHAN_LABEL_RATE"
+msgid "Rate"
+msgstr "Velocidad"
+
 #: core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "WORD_RX_ONLY"
 msgid "RX only"
@@ -2128,6 +2213,11 @@ msgid "Save as new channel"
 msgstr "Guardar como nuevo"
 
 #: core/ui/ui_menus.c
+msgctxt "CHAN_LABEL_TALKAROUND"
+msgid "Talkaround"
+msgstr "Directo"
+
+#: core/ui/ui_menus.c
 msgctxt "VALUE_YES"
 msgid "Yes"
 msgstr "Sí"
@@ -2173,6 +2263,11 @@ msgid "Pick a TX contact first"
 msgstr "Elige antes un contacto TX"
 
 #: core/ui/ui_menus.c
+msgctxt "CHAN_TOAST_NXDN_ID_MAX"
+msgid "NXDN IDs go up to 65519"
+msgstr "ID NXDN máximo es 65519"
+
+#: core/ui/ui_menus.c
 msgctxt "CHAN_TOAST_NO_CHANGES"
 msgid "No changes to save"
 msgstr "Sin cambios que guardar"
@@ -2196,6 +2291,11 @@ msgstr "ID máximo es 16776415"
 msgctxt "CHAN_TOAST_DCS_DIGITS"
 msgid "DCS codes use digits 0-7"
 msgstr "Códigos DCS: dígitos 0-7"
+
+#: core/ui/ui_menus.c
+msgctxt "CHAN_TOAST_NAC_REPEATER"
+msgid "F7F is for repeaters"
+msgstr "F7F es para repetidores"
 
 #: core/ui/ui_menus.c
 msgctxt "CHAN_TOAST_TIMEOUT_RANGE"
@@ -2263,9 +2363,19 @@ msgid "No, keep editing"
 msgstr "No, seguir editando"
 
 #: core/ui/ui_menus.c
+msgctxt "DISCARD_ROW_SAVE"
+msgid "Yes, save"
+msgstr "Sí, guardar"
+
+#: core/ui/ui_menus.c
 msgctxt "DISCARD_ROW_DISCARD"
 msgid "Yes, discard"
 msgstr "Sí, descartar"
+
+#: core/ui/ui_menus.c
+msgctxt "DISCARD_ASK_KIND"
+msgid " settings will be removed"
+msgstr " - se quitarán sus ajustes"
 
 #: core/ui/ui_menus.c
 msgctxt "DISCARD_ASK_NEW_CONTACT"
@@ -2281,6 +2391,16 @@ msgstr "¿Descartar los cambios de este canal?"
 msgctxt "DISCARD_TITLE"
 msgid "Unsaved Changes"
 msgstr "Cambios sin guardar"
+
+#: core/ui/ui_menus.c
+msgctxt "DISCARD_TITLE_DMR"
+msgid "Save as DMR?"
+msgstr "¿Guardar como DMR?"
+
+#: core/ui/ui_menus.c
+msgctxt "DISCARD_TITLE_FM"
+msgid "Save as FM?"
+msgstr "¿Guardar como FM?"
 
 #: core/ui/ui_menus.c
 msgctxt "DISCARD_HINT"
@@ -4213,14 +4333,49 @@ msgid "Step "
 msgstr "Paso "
 
 #: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_HUNT"
+msgid "Finding system"
+msgstr "Buscando sistema"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_WAIT"
+msgid "Wait"
+msgstr "Espere"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_QUEUED"
+msgid "Queued"
+msgstr "En cola"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_DENIED"
+msgid "Denied"
+msgstr "Denegado"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_REG_DENIED"
+msgid "Reg. denied"
+msgstr "Reg. denegado"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_REG"
+msgid "Registering"
+msgstr "Registrando"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_CONTROL"
+msgid "Control channel"
+msgstr "Canal de control"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_FOLLOW"
+msgid "Following"
+msgstr "Siguiendo"
+
+#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_NO_TX_FREQ"
 msgid "No TX frequency"
 msgstr "Sin frecuencia TX"
-
-#: core/ui/ui_screens.c
-msgctxt "HOME_CHIP_AIR_BAND_AM"
-msgid "Air Band AM"
-msgstr "Banda aérea AM"
 
 #: core/ui/ui_screens.c
 msgctxt "HOME_CHIP_BROADCAST_FM"
@@ -4261,6 +4416,11 @@ msgstr "Bandas "
 msgctxt "DENY_WHY_TIMEOUT"
 msgid "TX time-out reached"
 msgstr "Tiempo límite TX alcanzado"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_SYSTEM_STOPPED"
+msgid "System stopped TX"
+msgstr "El sistema detuvo la TX"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_NO_TX_FREQ"
@@ -4316,6 +4476,41 @@ msgstr "Canal repetidor: sin PTT"
 msgctxt "DENY_WHY_RADIO_REFUSED"
 msgid "Radio refused to send"
 msgstr "La radio no quiso transmitir"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_AIR_BENCH"
+msgid "Air bench: PTT off"
+msgstr "Banco de aire: sin PTT"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_AIR_NO_TX"
+msgid "This mode: receive only"
+msgstr "Este modo: solo recibe"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_P25T_NO_CC"
+msgid "No control channel"
+msgstr "Sin canal de control"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_P25T_NOT_REG"
+msgid "Not registered yet"
+msgstr "Aún no registrado"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_P25T_DENIED"
+msgid "System denied the call"
+msgstr "Sistema denegó llamada"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_P25T_NO_ANSWER"
+msgid "No answer from system"
+msgstr "Sistema no responde"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_P25T_NO_CHAN"
+msgid "Voice channel unusable"
+msgstr "Canal de voz inválido"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_NOT_ALLOWED"
@@ -4378,6 +4573,16 @@ msgid "Pick a user channel to talk"
 msgstr "Elige un canal de usuario"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_FIX_END_BENCH_ON_PC"
+msgid "End the bench on the PC"
+msgstr "Termina el banco en el PC"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_WORD_PHONE_LINE"
+msgid "Phone line"
+msgstr "Línea telefónica"
+
+#: core/ui/ui_screens.c
 msgctxt "CALL_VALUE_PRIVATE_TO_YOU"
 msgid "Private to you"
 msgstr "Privada para ti"
@@ -4406,6 +4611,41 @@ msgstr "Repetidor SFR"
 msgctxt "HOME_STATE_DMR_MODEM_OFF"
 msgid "DMR modem off"
 msgstr "Módem DMR apagado"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_FALLBACK"
+msgid "Fallback"
+msgstr "Respaldo"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_SEARCHING"
+msgid "Searching"
+msgstr "Buscando"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_IN_CALL"
+msgid "In call"
+msgstr "En llamada"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_REFUSED"
+msgid "Refused"
+msgstr "Rechazado"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_REGISTERING"
+msgid "Registering"
+msgstr "Registrando"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_READY"
+msgid "Ready"
+msgstr "Listo"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_WORD_SYSTEM"
+msgid "System"
+msgstr "Sistema"
 
 #: core/ui/ui_screens.c
 msgctxt "HOME_CHIP_ROAM_LOCK"

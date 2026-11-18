@@ -343,6 +343,11 @@ void TIM7_IRQHandler(void)
 			key_point(r.key_pt[p].kind);
 		}
 		r.key_i = ++i;
+		if (i >= r.key_ns && stm32_hrc_dmr_tx_continuous()) {
+			// The air interface's transmission is keyed once and held: its end drops the PA (the RF switch)
+			pa_timer_stop();
+			return;
+		}
 		if (i >= r.key_ns) {
 			// The PA drop, PA_HOLD_US after the interrupt
 			TIM7->ARR = PA_HOLD_US - (DMR_KEY_INT_AHEAD_US - r.key_base_us) - 1u;
@@ -481,7 +486,10 @@ bool md380_rf_dmr_switch(bool tx)
 	uint32_t t0 = hal_micros();
 
 	if (!tx) {
-		if (!pa_timer_running) {
+		if (stm32_hrc_dmr_tx_continuous()) {
+			pa_timer_stop();	// the end of an air interface transmission, key-up points still running or not
+			pa_off();
+		} else if (!pa_timer_running) {
 			pa_off();	// else the one-shot ends the burst on time
 			listen_rx();
 		}
@@ -1062,6 +1070,21 @@ static void rx_sleep(bool sleep)
 		count(sky72310_power_down(&r.pll, false));
 		rx(r.rx_hz, r.rx_bw, NULL);
 	}
+}
+
+// The debug link's CHIP_REG (board.chip_reg): chip 1 is the HR_C5000, pages 1 and 4 (2 and 3 are the data and
+// vocoder FIFOs, which a read would drain). Straight on the bus, each access one transaction; the driver's next
+// set-up overwrites a write
+bool md380_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write)
+{
+	if (chip != 1 || (page != HRC_PAGE_AUX && page != HRC_PAGE_SYS) || (write && *val > 0xFFu)) {
+		return false;
+	}
+	hrc_t *h = hrc5000_hrc(&r.modem);
+	uint8_t v = (uint8_t)*val;
+	bool ok = (!write || hrc_write(h, page, reg, v)) && hrc_read(h, page, reg, &v);
+	*val = v;
+	return ok;
 }
 
 const hal_radio_t md380_radio = {

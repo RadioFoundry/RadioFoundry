@@ -11,6 +11,7 @@
 #include "dmr/ipGateway.h"
 #include "config.h"
 #include "radio/radio.h"
+#include "hostlink/hostlink_view.h"
 #include "ui/gfx.h"
 #include "debuglink/debuglink.h"
 #include "debuglink/dl_fmt.h"
@@ -238,6 +239,8 @@ static void test_http(void)
 	CHECK(strstr((char *)a.rx, "application/json") && j[0] == '{');
 	CHECK(strstr(j, "\"rx_hz\":145500000") && strstr(j, "\"channel\":\"Ch \\\"1\\\"\"") && strstr(j, "\"rssi_dbm\":-97"));
 	CHECK(strstr(j, "\"power\":\"High\"") && strstr(j, "\"mode\":\"fm\"") && strstr(j, "\"radio\":\"fake\""));
+	// The services read the host link task's one view copy (hostlink_view.h), refreshed from the radio
+	CHECK(net_radio_view() == &hostlink_view && hostlink_view.ch.rx_hz == 145500000 && hostlink_view.rssi_dbm == -97);
 
 	// A view section as JSON: numbers stay numbers, the rest strings
 	CHECK(http_get(&a, 51003, "GET /api/view?section=core HTTP/1.0\r\n\r\n") > 0);
@@ -544,14 +547,14 @@ static void test_aprsis(void)
 
 	// The engine's lines for APRS-IS go to the server; other frames don't
 	peer_clear(&srv);
-	static const uint8_t g[] = { 0xC0, 0x06, 'G', 'Q', '0', 'T', 'E', 'S', 'T', '-', '7', '>', 'A', 'P', 'Z', 'R', 'D',
-				     'F', ',', 'T', 'C', 'P', 'I', 'P', '*', ':', '>', 'h', 'i', 0xC0 };
+	static const uint8_t g[] = { 0xC0, 0x06, 'G', 'Q', '0', 'T', 'E', 'S', 'T', '-', '7', '>', 'A', 'P', 'Z', 'T', 'S',
+				     'T', ',', 'T', 'C', 'P', 'I', 'P', '*', ':', '>', 'h', 'i', 0xC0 };
 	static const uint8_t data[] = { 0xC0, 0x00, 'x', 0xC0 };
 	ring_put(data, sizeof(data));
 	ring_put(g, sizeof(g));
 	pump();
 	srv.rx[srv.rxn] = 0;
-	CHECK(ring_n == 0 && strcmp((char *)srv.rx, "Q0TEST-7>APZRDF,TCPIP*:>hi\r\n") == 0);
+	CHECK(ring_n == 0 && strcmp((char *)srv.rx, "Q0TEST-7>APZTST,TCPIP*:>hi\r\n") == 0);
 
 	// The server's lines go to the engine (its iGate rules decide); comments don't
 	is_lines = 0;

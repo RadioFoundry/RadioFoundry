@@ -1038,10 +1038,17 @@ bool codeplug_set_channel(uint16_t number, const channel_t *ch)
 		if (!is_used(number)) {
 			blank_channel(r);	// a free slot's bytes aren't ours to keep (another firmware's, or deleted)
 		}
+		uint8_t base_mode = r[CH_MODE], base_flag4 = r[CH_FLAG4];
 		codeplug_openfw_encode(ch, r);
 		if (safe) {
 			r[CH_MODE] = 1;
 			r[CH_FLAG4] |= FLAG4_RX_ONLY;
+		} else if (ch->kind != CODEPLUG_KIND_NONE) {
+			// The tag that follows says the base record is a channel of its own (flag bit 1). Its mode, receive-only
+			// bit and bandwidth are that channel's: ch has the kind's in their place, so they stay as stored
+			const uint8_t own = FLAG4_RX_ONLY | FLAG4_25K;
+			r[CH_MODE] = base_mode;
+			r[CH_FLAG4] = (uint8_t)((r[CH_FLAG4] & ~own) | (base_flag4 & own));
 		}
 		ok = flash_write(channel_addr(number), r, sizeof(r));
 	}
@@ -1059,6 +1066,29 @@ bool codeplug_set_channel(uint16_t number, const channel_t *ch)
 	storage_unlock();
 	// The record first: a cut between the two leaves a harmless record
 	return ok && codeplug_tag_after_write(number, ch, action, &tag);
+}
+
+bool codeplug_base_copy(uint16_t from, uint16_t to)
+{
+	uint8_t r[CH_SIZE];
+	uint8_t mode, flag4;
+	if (source != CODEPLUG_OPENFW || from < 1 || from > CH_MAX || to < 1 || to > CH_MAX || from == to) {
+		return false;
+	}
+	const uint8_t own = FLAG4_RX_ONLY | FLAG4_25K;
+	storage_lock();
+	bool ok = is_used(from) && is_used(to) && flash_read(channel_addr(from) + CH_MODE, &mode, 1) &&
+		  flash_read(channel_addr(from) + CH_FLAG4, &flag4, 1) && flash_read(channel_addr(to), r, sizeof(r));
+	if (ok) {
+		r[CH_MODE] = mode;
+		r[CH_FLAG4] = (uint8_t)((r[CH_FLAG4] & ~own) | (flag4 & own));
+		ok = flash_write(channel_addr(to), r, sizeof(r));
+	}
+	if (ok) {
+		serial++;
+	}
+	storage_unlock();
+	return ok;
 }
 
 bool codeplug_delete_channel(uint16_t number)
@@ -1357,6 +1387,28 @@ bool codeplug_set_aprs_path(uint8_t n, const char *path1, const char *path2)
 	storage_unlock();
 	return ok;
 }
+
+bool codeplug_set_aprs_ssid(uint8_t n, uint8_t ssid)
+{
+	uint8_t b[APRS_SIZE];
+	if (n < 1 || n > CODEPLUG_APRS_CONFIGS || ssid > 15) {
+		return false;
+	}
+	uint32_t addr = APRS_BASE + (uint32_t)(n - 1u) * APRS_SIZE;
+	storage_lock();
+	bool ok = source == CODEPLUG_OPENFW && flash_read(addr, b, sizeof(b));
+	uint16_t magic = le16(&b[0x3E]);
+	ok = ok && b[0] != 0xFF && b[0] != 0x00 && (magic == APRS_MAGIC || magic == APRS_MAGIC - 1u);
+	if (ok) {
+		b[0x08] = ssid;
+		ok = flash_write(addr + 0x08u, &b[0x08], 1);
+	}
+	if (ok) {
+		serial++;
+	}
+	storage_unlock();
+	return ok;
+}
 #endif
 
 bool codeplug_set_radio_name(const char *name)
@@ -1615,7 +1667,9 @@ static bool find_one(uint16_t index, const contact_t *c, void *ctx)
 	if (c == NULL || c->id != f->id || (c->type == CONTACT_PRIVATE) == f->group) {
 		return true;
 	}
-	*f->out = *c;
+	if (f->out != NULL) {
+		*f->out = *c;
+	}
 	f->index = index;
 	return false;
 }

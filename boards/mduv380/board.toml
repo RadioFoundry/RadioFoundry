@@ -11,6 +11,8 @@ also = ["TYT MD-UV390", "Retevis RT3S", "TYT MD-UV390 Plus 10 W"]
 kind = "handheld"
 # where the radio appears in the site's lists (the lowest: the home page's radio)
 order = 6
+# the sixth character of the APRS tocall, APRDFU (docs/spec/aprs.md 4.2): one per radio, never reused
+aprs_tocall = "U"
 
 [docs]
 hardware = "docs/spec/hardware-mduv380.md"
@@ -27,11 +29,11 @@ gallery = "160x128"
 clock = { rtc = "unknown", note = "STM32 RTC on a 32.768 kHz crystal, as on the UV380 family; no backup supply known (docs/spec/hardware-mduv380.md)" }
 
 [status]
-level = "bring-up"
+level = "supported"
 summary = """\
-Built on the UV380 family code with the MD-UV380's keys, display, power tables and GPS; nothing has run on a radio yet. \
-Open: every function on air."""
-release = "testing"
+Built on the UV380 family code, with the MD-UV380's keys, display, power tables and GPS. \
+Run on radios by community testers."""
+release = "stable"
 
 # The Plus 10 W swaps two pins and has its own power tables (hardware-mduv380.md 3, 7), a build choice (board.mk POWER).
 # The first value is the default build; ci and the release build the other one too. board_name: what the radio
@@ -67,6 +69,7 @@ stock_versions = [
 	"V19.06 CSV",
 	"P19.06 CSV-GPS",
 	"P19.33 CSV-GPS",
+	"D19.62 REC",
 	"V19.74 CSV",
 	"D19.74 REC",
 	"P19.74 CSV-GPS",
@@ -75,8 +78,13 @@ stock_versions = [
 	"10W D19.74 REC",
 	"10W P19.74 CSV-GPS",
 	"10W S19.74 GPS-REC",
+	"V119.33 CSV AES 256",
+	"10W D219.43 REC AES 255",
 	"V219.60 CSV AES 255",
 	"P219.60 CSV-GPS AES 255",
+	"10W S219.43 GPS-REC AES 255",
+	"S219.62 GPS-REC AES 255",
+	"10W D219.71 REC AES 255",
 	"V219.74 CSV AES 255",
 	"D219.74 REC AES 255",
 	"P219.74 CSV-GPS AES 255",
@@ -152,6 +160,7 @@ stock = [
 	"657cd4e6c86aa63428f1bc081ce0614b35db0607d34ba6b6065357a58a045c89",	# V19.06 CSV
 	"9c58aca48de3d42b897852e424b0da1392f6e983d51ca69b1425b72a0a836ca1",	# P19.06 CSV-GPS
 	"a2f38eaf4b98379fee6dfc00cae916bbc550e26ba0dd04c5fb56199a9e62b7f8",	# P19.33 CSV-GPS
+	"8f580928ad418bce413bba9973809a71708094a917c943b7beb8fb5b24c4eab3",	# D19.62 REC
 	"1e6a74b8cc62ffabd06dd83912f1bf0a7a7ef12d4bda63b961544c7e1393655a",	# V19.74 CSV
 	"d3996d672d6878ca823880320e240883ea64208f121923cd2bb6fe51d2e50784",	# D19.74 REC
 	"14e5634eeffa5f99f85fd762df4dc141432762d75b933031000d1f398fc4d2e4",	# P19.74 CSV-GPS
@@ -160,8 +169,13 @@ stock = [
 	"2768ece93ddd4f1fd4ffc4e58ee073bd145b865f4ea6d256315f6e0019e93995",	# 10 W D19.74 REC
 	"ebc5e34f4a00679a9200df8233c4b42b89dbd440a7487bbac2796223b796b392",	# 10 W P19.74 CSV-GPS
 	"b0345e8c9e28b353954f3b6aa66599b5ac682c2037e212052af16e2c888572cd",	# 10 W S19.74 GPS-REC
+	"16c168ba18fccf3b05f810251f8a5e73b7b3bed0ca03ebd79294a97fd484e044",	# V119.33 CSV AES 256
+	"11a1195b14f586239d8532b74545bd67b1ab977fef6ee89bfc3eb08fd15d0ec8",	# 10 W D219.43 REC AES 255
 	"447ed4e09482c45661cd6e4c83d1e9f777463993ab7dd48b0e0597bb14f519ee",	# V219.60 CSV AES 255
 	"a7b277137c32ac3583083d8a650488415f62360b7f38a6d903fc732b858dd502",	# P219.60 CSV-GPS AES 255
+	"6825fc129cc4720a1f493dae388cc4a50b5f40b876e02235044a5e28df6fcdb9",	# 10 W S219.43 GPS-REC AES 255
+	"13e2fd862a0ca5dd505c9bbedee17393afb676e11923bacec487be6bbe0b4a0f",	# S219.62 GPS-REC AES 255
+	"bae53921628926460c6225c9d48074de9b81f3078f5df413650f2d3cd61c7c1f",	# 10 W D219.71 REC AES 255
 	"a8a5265d29f8f69ee050a0a47052a8925a3c403ac270d8e5fda324a4a697b220",	# V219.74 CSV AES 255
 	"3d1b9ed4a2293981d0915d0655172e7a4d9bc702fe493328be37901427d51108",	# D219.74 REC AES 255
 	"70a44a4a77d6ffb4b0b6b9b4a8f26afb9607d65875d2ba1094baf6c8e6a46c9a",	# P219.74 CSV-GPS AES 255

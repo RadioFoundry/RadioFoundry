@@ -3,7 +3,8 @@
 /*
  * DMR forward error correction used by the data, hotspot and SFR code, from ETSI TS 102 361-1 annex B:
  * BPTC(196,96) (B.1.1) with its Hamming(15,11,3) row and Hamming(13,9,3) column codes (B.3.4, B.3.5), the
- * slot type's Golay(20,8) (B.3.1), and the voice EMB's QR(16,7,6) (B.3.2).
+ * slot type's Golay(20,8) (B.3.1), the voice EMB's QR(16,7,6) (B.3.2), and the reverse channel (9.1.5, B.2.2.2,
+ * B.3.13).
  *
  * A burst is 33 bytes (264 bits, most significant bit of byte 0 first): 98 info bits, 10 slot type bits, 48 sync bits,
  * 10 slot type bits, 98 info bits. The 196 BPTC info bits are burst bits 0-97 and 166-263; the slot type is burst bits
@@ -55,5 +56,32 @@ int dmrFecQr1676Decode(uint16_t codeword, uint8_t *data);
 uint16_t dmrFecEmbEncode(uint8_t colorCode, bool pi, uint8_t lcss);
 // Returns the number of bit errors corrected, or -1 if the EMB can't be trusted
 int dmrFecEmbDecode(uint16_t emb, uint8_t *colorCode, bool *pi, uint8_t *lcss);
+
+// Reverse channel (RC, ETSI TS 102 361-1 9.1.5): a 4-bit command (TS 102 361-4 table 6.32) and its CRC-7 (B.3.13)
+// masked with 0x7A (table B.21) make the 11 RC info bits, RC(10)-RC(0); the single burst BPTC (B.2.2.2) makes them
+// the 32-bit field sent in place of an embedded LC fragment.
+#define DMR_RC_POWER_UP		0x0u
+#define DMR_RC_POWER_DOWN	0x1u
+#define DMR_RC_POWER_HIGHEST	0x2u
+#define DMR_RC_POWER_LOWEST	0x3u
+#define DMR_RC_CEASE		0x4u	// cease transmission command
+#define DMR_RC_CEASE_REQUEST	0x5u	// cease transmission request: the MS may go on
+
+// The 11 RC info bits for a command: the command in bits 10-7, the masked CRC-7 in bits 6-0
+uint16_t dmrFecRcInfo(uint8_t command);
+// The command in 11 RC info bits (as a modem that decodes the BPTC itself gives them), or -1 when the CRC fails
+int dmrFecRcInfoDecode(uint16_t info);
+// The 32-bit field for a command, interleaved (table B.5B): TX(31), the first bit sent, in bit 31
+uint32_t dmrFecRcEncode(uint8_t command);
+// The nearest command to a received field (up to 3 bit errors corrected). Returns the number of bit errors, or -1 if
+// there were too many
+int dmrFecRcDecode(uint32_t field, uint8_t *command);
+// An outbound RC burst's 48-bit embedded field (6.4.2, 9.3.2, 9.3.3), in place of the sync or an embedded LC
+// fragment: the EMB with PI 1 and LCSS 00 (a single fragment) around the 32 RC bits. 6 bytes, MSB first: EMB 8 bits,
+// RC 32, EMB 8 (on air, burst bits 108-155)
+void dmrFecRcField(uint8_t colorCode, uint8_t command, uint8_t field[6]);
+// The RC in a received embedded field, when its EMB has colorCode, PI 1 and LCSS 00. Returns the bit errors corrected
+// (EMB and RC), or -1 when the field carries no RC
+int dmrFecRcFromField(const uint8_t *field, uint8_t colorCode, uint8_t *command);
 
 #endif

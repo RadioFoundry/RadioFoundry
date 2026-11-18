@@ -73,6 +73,7 @@ static struct {
 	radio_bw_t rx_bw;
 	subtone_t rx_tone;
 	uint32_t bus_errors;	// I2C failures and failed chip operations since start (debug)
+	uint32_t bus_clears;	// times the AT1846S held SDA and was clocked free (i2c_bus_clear)
 	uvf_radio_diag_t diag;
 	radio_status_t last_status;	// returned without bus traffic while DMR transmits
 	uint16_t tone_hz;		// FM TX tone in place of the microphone (tx_tone), 0 = none
@@ -140,12 +141,44 @@ static void i2c_setup(void)
 	HAL_I2C_Init(&i2c3);
 }
 
+// A transfer cut short in the middle of a read leaves the chip driving SDA low until it gets the rest of its clocks.
+// The peripheral then sees a busy bus for good, and resetting it changes nothing: every transfer after it fails.
+// Clock SCL by hand until the chip lets SDA go (nine pulses end any byte), then a stop (I2C-bus specification, bus
+// clear). The lines are released through the pull-ups, never driven high
+static void i2c_line(GPIO_TypeDef *port, uint16_t pin, bool high)
+{
+	if (high) {
+		stm32_pin_in(port, pin, GPIO_PULLUP);
+	} else {
+		stm32_pin_out(port, pin, false, true);
+	}
+	hal_delay_us(10);
+}
+
+static void i2c_bus_clear(void)
+{
+	i2c_line(PIN_PORT(PIN_I2C3_SDA), PIN_MASK(PIN_I2C3_SDA), true);
+	i2c_line(PIN_PORT(PIN_I2C3_SCL), PIN_MASK(PIN_I2C3_SCL), true);
+	if (PIN_READ(PIN_I2C3_SDA)) {
+		return;		// nothing holds it: the peripheral reset is enough
+	}
+	r.bus_clears++;
+	for (int i = 0; i < 9 && !PIN_READ(PIN_I2C3_SDA); i++) {
+		i2c_line(PIN_PORT(PIN_I2C3_SCL), PIN_MASK(PIN_I2C3_SCL), false);
+		i2c_line(PIN_PORT(PIN_I2C3_SCL), PIN_MASK(PIN_I2C3_SCL), true);
+	}
+	i2c_line(PIN_PORT(PIN_I2C3_SCL), PIN_MASK(PIN_I2C3_SCL), false);	// a stop: SDA rises while SCL is high
+	i2c_line(PIN_PORT(PIN_I2C3_SDA), PIN_MASK(PIN_I2C3_SDA), false);
+	i2c_line(PIN_PORT(PIN_I2C3_SCL), PIN_MASK(PIN_I2C3_SCL), true);
+	i2c_line(PIN_PORT(PIN_I2C3_SDA), PIN_MASK(PIN_I2C3_SDA), true);
+}
+
 // Task-level transfers from more than one task (the radio task's driver, the debug link's CHIP_REG): one at a time,
 // so a retry's peripheral reset never lands in another task's transfer. ISR writes (rf_isr_write) don't take it
 static SemaphoreHandle_t i2c_lock;
 
 // One register transfer, the lock held in task context (i2c_xfer). Task context: up to 3 tries 1 ms apart, then the
-// peripheral is reset. ISR context: one try, and none at all while a task transfer owns the bus (skip, never wait)
+// bus is cleared and the peripheral reset. ISR context: one try, and none at all while a task transfer owns the bus (skip, never wait)
 static bool i2c_xfer_once(uint8_t reg, uint8_t *buf, bool write, bool isr)
 {
 	int tries = isr ? 1 : I2C_TRIES;
@@ -166,6 +199,7 @@ static bool i2c_xfer_once(uint8_t reg, uint8_t *buf, bool write, bool isr)
 	r.bus_errors++;
 	if (!isr) {
 		HAL_I2C_DeInit(&i2c3);
+		i2c_bus_clear();
 		i2c_setup();
 	}
 	return false;
@@ -514,7 +548,7 @@ void TIM7_IRQHandler(void)
 		}
 		r.key_i = ++i;
 		if (i >= r.key_ns) {
-			if (!r.key_timed) {	// a BS outbound keys once for all its slots: its end drops the PA
+			if (!r.key_timed) {	// keyed once for the whole transmission: its end drops the PA
 				key_timer_stop();
 				return;
 			}
@@ -548,7 +582,8 @@ bool uvf_rf_dmr_switch(bool tx)
 	}
 	uint16_t first = r.key_st[0].us;	// no earlier than DMR_KEY_MIN_US after the interrupt
 	uint32_t until;
-	r.key_timed = !stm32_hrc_dmr_bs_boundary_us(&until);
+	// a BS outbound or the air interface's continuous transmission keys once: its end drops the PA
+	r.key_timed = !stm32_hrc_dmr_bs_boundary_us(&until) && !stm32_hrc_dmr_tx_continuous();
 	TIM7->CR1 = 0;
 	TIM7->CNT = 0;
 	TIM7->ARR = (uint32_t)(DMR_KEY_INT_AHEAD_US - first) - 1u;
@@ -585,6 +620,17 @@ static const stm32_hrc_dmr_board_t dmr_board = {
 	.ts_service = uvf_rf_dmr_service,
 	.rf_counters = uvf_rf_dmr_counters,
 	.tx_end = dmr_tx_end,
+#if CONFIG_AIR
+	// The AT1846S's DMR set-up gives the HR_C6000 the low-frequency baseband with its audio filters off
+	// (hardware-dm1701.md, Air interface)
+	.air_tap = true,
+	// P25 and NXDN checked on air both ways on a radio of the family (hardware-dm1701.md, Air interface): the same
+	// chips and code on every one
+	.air_verified = true,
+#endif
+	// rf_to_rx() puts the AT1846S on the RX frequency after every burst and rf_key() back on TX for the next, so the
+	// slots between hear the repeater's outbound on a split channel too
+	.listen_split = true,
 };
 
 // Stop per-burst keying (task level): disarm, drop a transmission still running, PA off
@@ -1218,10 +1264,11 @@ void uvf_afsk_end(void)
 }
 #endif
 
-// Receiver battery saving (FM receive only): the AT1846S idle and the RX supply off; waking retunes with rx()
+// Receiver power saving (FM battery save, a trunked system's power save on DMR): the AT1846S idle and the RX supply
+// off; waking retunes with rx(). The HR_C6000 keeps running
 static void rx_sleep(bool sleep)
 {
-	if (r.mode != RADIO_MODE_FM || r.tx_on || !r.rx_valid || sleep == r.asleep) {
+	if ((r.mode != RADIO_MODE_FM && r.mode != RADIO_MODE_DMR) || r.tx_on || !r.rx_valid || sleep == r.asleep) {
 		return;
 	}
 	if (sleep) {
@@ -1248,6 +1295,7 @@ const hal_radio_t uvf_radio = {
 	.tx_tone = tx_tone,
 	.tx_tail = tx_tail,
 	.tx_tone_key = tx_tone_key,
+	.rx_sleep_dmr = true,
 #if CONFIG_DTMF
 	.tx_dtmf = tx_dtmf,
 #endif
@@ -1263,6 +1311,7 @@ void uvf_radio_diag(uvf_radio_diag_t *d)
 {
 	*d = r.diag;
 	d->bus_errors = r.bus_errors;
+	d->bus_clears = r.bus_clears;
 }
 
 // The debug link's CHIP_REG (board.chip_reg, hardware-dm1701.md 5.12): chip 0 is the AT1846S, page 0, registers

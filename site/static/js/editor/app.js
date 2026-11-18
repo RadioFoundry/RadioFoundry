@@ -6,7 +6,7 @@
 
 import { h, t, ROOT, HOME, button, notice, download, progressBar, num as fmtNum, date as fmtDate } from "../flasher/dom.js";
 import { equal } from "../flasher/bytes.js";
-import { SerialStream, serialSupported, serialApi, RFOUNDRY_USB, browserErrorKey, knownRadioPort } from "../flasher/link.js";
+import { SerialStream, serialSupported, serialApi, RFOUNDRY_USB, browserErrorKey, noDeviceChosen, knownRadioPort } from "../flasher/link.js";
 import { CodeplugImage, IDDB_HEADER, EDITOR_REGIONS } from "../codeplug/image.js";
 import { decode, encode, empty, remove, validate, newChannel, newContact, numberAll, assignNumbers } from "../codeplug/model.js";
 import { LIMITS, decodeGeneral } from "../codeplug/records.js";
@@ -188,7 +188,7 @@ function renderView(p) {
 		return;
 	}
 	const g = new Grid({
-		columns: columns(tab, S.model, t), rows: S.model[tab], t, empty: t(`editor.empty.${tab}`),
+		columns: columns(tab, S.model, t, { features: features() }), rows: S.model[tab], t, empty: t(`editor.empty.${tab}`),
 		onChange: (row, col, value) => {
 			let err = null;
 			change(t("editor.undo.edit"), () => {
@@ -220,7 +220,7 @@ function tableActions(tab, g) {
 	const numbered = tab !== "zones";
 	const out = [
 		// first, so it sits above the row checkboxes it acts on; not on a table with nothing it can set (zones, RX lists)
-		bulkColumns(tab, S.model, t).length ? button(sel.length ? t("editor.bulk_edit_n", { n: sel.length }) : t("editor.bulk_edit"), () => bulkSet(tab, g), { disabled: sel.length < 2 }) : null,
+		bulkColumns(tab, S.model, t, { features: features() }).length ? button(sel.length ? t("editor.bulk_edit_n", { n: sel.length }) : t("editor.bulk_edit"), () => bulkSet(tab, g), { disabled: sel.length < 2 }) : null,
 		button(t("editor.add"), () => addRecord(tab, g), { disabled: full }),
 		button(t("editor.duplicate"), () => duplicate(tab, g), { disabled: full || !g.targets().length }),
 		button(t("editor.delete"), () => del(tab, g), { disabled: !g.targets().length, danger: true }),
@@ -320,7 +320,7 @@ function renumber(tab) {
 
 function bulkSet(tab, g) {
 	const rows = g.selection();
-	const cols = bulkColumns(tab, S.model, t);
+	const cols = bulkColumns(tab, S.model, t, { features: features() });
 	if (!cols.length) return;
 	const pickCol = h("select", {}, ...cols.map((c, i) => h("option", { value: String(i) }, c.label)));
 	const slot = h("div");
@@ -539,7 +539,7 @@ async function connect() {
 		const hash = location.hash;
 		S.fake = S.fake || new FakeCpsRadio({ board: "DM-1701", image: CodeplugImage.blank().bytes, foreign: hash === "#sim-foreign",
 			// #sim-modes: firmware that runs every channel mode the editor knows (modes.js)
-			features: hash.startsWith("#sim-compact") ? "FM,DMR,IDDB_COMPACT" : hash.startsWith("#sim-modes") ? "FM,DMR,DMR_TRUNK,P25,P25_TRUNK" : "FM,DMR", release: hash.match(/[#&]release=([\w.]+)/)?.[1],
+			features: hash.startsWith("#sim-compact") ? "FM,DMR,IDDB_COMPACT" : hash.startsWith("#sim-modes") ? "FM,DMR,DMR_TRUNK,P25,P25_TRUNK,NXDN" : "FM,DMR", release: hash.match(/[#&]release=([\w.]+)/)?.[1],
 			gitTime: Number(hash.match(/[#&]git_time=(\d+)/)?.[1]) || 0 });
 		stream = S.fake.stream();
 	} else {
@@ -600,7 +600,7 @@ function radioError(e) {
 		return t(`editor.radio_err.${e.code}`, p);
 	}
 	if (e instanceof FastError && e.status === "no answer") return t("editor.radio_err.no_answer");
-	if (e?.name === "NotFoundError" && !/disconnect/i.test(e.message || "")) return null;	// the user closed the port chooser
+	if (noDeviceChosen(e)) return null;	// the user closed the port chooser
 	// the browser's own serial errors (a port another program holds, a radio unplugged): what to do, then its words
 	const key = browserErrorKey(e);
 	if (key) return `${t(key)} (${e.message})`;
@@ -816,7 +816,7 @@ async function readRadio() {
 }
 
 // Features a newer release may add that change what the editor can do with the radio, with what each gains
-const UPDATE_GAINS = ["CPS_FAST", "IDDB_COMPACT"];
+const UPDATE_GAINS = ["CPS_FAST", "IDDB_COMPACT", "DMR_TRUNK", "P25", "P25_TRUNK", "NXDN"];
 let releaseList = null;
 
 // After a read: a newer release for this radio (releases.json, updateFor), offered once per tab for each radio, running

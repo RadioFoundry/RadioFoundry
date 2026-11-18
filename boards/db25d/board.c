@@ -101,8 +101,7 @@ const board_t board = {
 	.radio = &db25d_radio,
 	.power = &db25d_power,
 #if CONFIG_GPS
-	.gps_enable = hrc_gps_enable,
-	.gps_present = hrc_gps_present,	// CAP_GPS: the module is fitted, but say so only once it has been heard
+	.gps = &hrc_gps,	// CAP_GPS: the module is fitted, but say so only once it has been heard
 #endif
 #if CONFIG_DIAG
 	.diag_line = db25d_diag_line,
@@ -112,6 +111,10 @@ const board_t board = {
 	.dmr = &hrc_dmr,
 	.audio = &db25d_audio,
 	.vocoder = &hrc_vocoder,
+#if CONFIG_AIR
+	.air = &hrc_air,		// the physical layer and the receive copy (modem-hrc7000.md 10)
+	.baseband = &hrc_baseband,
+#endif
 #endif
 #if CONFIG_HOSTLINK
 	.host_port = &hrc_host_uart_stream,
