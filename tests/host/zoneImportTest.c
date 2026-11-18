@@ -918,6 +918,7 @@ static void test_identityless_nxdn_system(void)
 	static const uint8_t traffic[] = { 0, 1, 7, 0, 0, 0x34, 0x12 };
 	codeplug_tag_t tag = { .kind = CODEPLUG_KIND_NXDN, .system = 0, .flags = CODEPLUG_TAG_TX };
 	channel_t ch = make("NXDN sender", 451500000, 456500000, true);
+	ch.rx_only = true;	// the live tag requires the safe stand-in record
 	zone_t z = { .name = "NXDN", .count = 1, .channels = { 1 } };
 	uint8_t included = 0;
 	zsRecord_t rec;
