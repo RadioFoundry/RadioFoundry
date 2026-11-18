@@ -375,9 +375,11 @@ typedef struct {
 	bool burst_keyed;		// the 1750 Hz burst keyed the transmitter (not PTT)
 	uint32_t burst_end_ms;		// the burst ends by itself at this time (RREQ_TONE_BURST arg2), 0 = no limit
 	uint32_t roger_ms;		// start of the roger beep's current step (the end tone's, sigtone.h), 0 = none
+#if CONFIG_SIG_TONES
 	uint8_t roger_n, roger_i;	// its steps and the one sounding
 	bool roger_lead;		// the tone running is the start tone on air (PTT is down): it ends with the microphone live
 	beep_seg_t roger_seg[SIG_STEPS];
+#endif
 #endif
 #if CONFIG_DTMF
 	bool dtmf_held;			// the key of the digit sounding (view.dtmf) is still down
@@ -410,8 +412,10 @@ typedef struct {
 	uint8_t dmr_wake_admits;	// the stack's wake_admits at the last tick (the permit tone for a short press)
 	uint8_t dmr_permit_seq;		// the stack's permit_seq at the last tick (the permit tone before keying)
 	uint8_t dmr_prev_state;		// radio_dmr_state_t at the last tick (beeps on changes)
+#if CONFIG_SIG_TONES
 	bool dmr_end_wait;		// our end tone waits for the audio path to open after the transmission
 	uint32_t dmr_end_ms;		// when it started waiting
+#endif
 	bool codec;			// the vocoder is present
 	bool dmr_running;		// the call stack has the modem
 	bool dmr_killed;		// settings t3_kill: no DMR at all (dmr-trunking.md 7.9)

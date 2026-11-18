@@ -81,8 +81,10 @@ static uint8_t tone_last_seq;		// the transmission it belongs to
 static bool tone_last_valid;
 #define TONE_AMP_Q15	14000		// about -7 dBFS: a tone frame carries its level, speech-like peaks stay below it
 #endif
+#if CONFIG_SIG_TONES
 static uint32_t tx_pushed;		// frames the audio callback queued, and the call task removed (pulled or dropped)
 static uint32_t tx_pulled;
+#endif
 static uint16_t test_phase;		// the test signal's phase (a full cycle is 65536) and its pitch step
 static uint8_t test_blocks;
 static uint8_t tx_prev[VOCODER_BITS];	// the transmission's previous frame (tx_repeats)
@@ -213,7 +215,9 @@ static void source_begin(void *ctx)
 {
 	(void)ctx;
 	STORE(tx_seq, (uint8_t)(tx_seq + 1));
+#if CONFIG_SIG_TONES
 	tx_pulled += (uint8_t)(LOAD(tx_head) - tx_tail);
+#endif
 	STORE(tx_tail, LOAD(tx_head));	// drop what an earlier transmission left (next() also skips by sequence)
 	ensure_streaming();
 }
@@ -232,7 +236,9 @@ static bool source_next(uint8_t ambe72[DMR_AMBE_FRAME_BYTES], void *ctx)
 			memcpy(ambe72, e->frame, AMBE_FRAME_BYTES);
 		}
 		STORE(tx_tail, (uint8_t)(t + 1));
+#if CONFIG_SIG_TONES
 		tx_pulled++;
+#endif
 		if (current) {
 			return true;
 		}
@@ -592,8 +598,8 @@ static void tx_block(const int16_t *mic)
 	e->seq = seq;
 	ambeFecEncode(bits, e->frame);
 	STORE(tx_head, (uint8_t)(h + 1));
-	tx_pushed++;
 #if CONFIG_SIG_TONES
+	tx_pushed++;
 	if (tone_last) {
 		tone_last_n = tx_pushed;
 		STORE(tone_last_seq, seq);
@@ -721,11 +727,6 @@ void ambeVoiceTxTone(const beep_seg_t *steps, uint8_t n, bool final)
 void ambeVoiceTxToneCancel(void)
 {
 	ambeVoiceTxTone(NULL, 0, false);
-}
-
-bool ambeVoiceTxToneBusy(void)
-{
-	return source_busy(NULL);
 }
 #endif
 

@@ -15,6 +15,14 @@ static int failures, checks;
 static audio_block_cb_t cb;
 static int starts, stops, speaker_on, speaker_calls;
 static bool fake_start(audio_block_cb_t c, void *ctx) { (void)ctx; cb = c; starts++; return true; }
+// The tone is asked for, playing, or its frames are not yet pulled by the call stack (the source's busy: the over is
+// held open for it after PTT)
+static bool ambeVoiceTxToneBusy(void)
+{
+	const dmr_voice_source_t *s = ambeVoiceSource();
+	return s->busy != NULL && s->busy(s->ctx);
+}
+
 static void fake_stop(void) { stops++; cb = NULL; }
 static void fake_speaker(bool on) { speaker_on = on; speaker_calls++; }
 static const hal_audio_t audio = { .start = fake_start, .stop = fake_stop, .speaker_pcm = fake_speaker };

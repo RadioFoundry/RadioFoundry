@@ -98,9 +98,6 @@ void ambeVoiceSetMicGain(uint8_t step);
 // starts is cancelled by ambeVoiceTxToneCancel (the stack's end of transmission drops it too, in the audio callback)
 void ambeVoiceTxTone(const beep_seg_t *steps, uint8_t n, bool final);
 void ambeVoiceTxToneCancel(void);
-// The tone is asked for, playing, or its frames are not yet pulled by the call stack (the source's busy: the over is
-// held open for it after PTT)
-bool ambeVoiceTxToneBusy(void);
 #endif
 void ambeVoiceSetTestSignal(bool on);
 bool ambeVoiceTestSignal(void);

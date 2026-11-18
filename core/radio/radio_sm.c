@@ -1596,7 +1596,9 @@ static void dmr_configure(radio_sm_t *sm)
 	}
 #endif
 	dmr_call_configure(&cfg);
+#if CONFIG_SIG_TONES
 	sm->dmr_end_wait = false;	// a pending end tone belongs to the channel it was sent on
+#endif
 	sm->view.dmr.own_id = cfg.own_id;
 	// The channel's color code, timeslot and repeater mode in the same update as the channel: dmr_publish copies the
 	// stack's own only at the next tick, and a reader between the two (dual watch's snapshot at each hop) would take
@@ -2160,16 +2162,19 @@ static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
 				} else if (sig_local_on(sm, SIG_EV_IDLE)) {
 					sig_local(sm, SIG_EV_IDLE);
 				}
+#if CONFIG_SIG_TONES
 			} else if (sm->dmr_prev_state == RDMR_TX && st != RDMR_TX && !sm->ptt &&
 				   sig_local_on(sm, SIG_EV_END)) {
 				// Our transmission is over (PTT let go: not a time-out or a denial, as in FM), but the engine may still be sending its last burst: a board whose
 				// audio path is gated drops what is queued meanwhile, and the tone was heard half. Wait for it
 				sm->dmr_end_wait = true;
 				sm->dmr_end_ms = now_ms;
+#endif
 			}
 		}
 		sm->dmr_prev_state = st;
 	}
+#if CONFIG_SIG_TONES
 	if (sm->dmr_end_wait && sm->view.ch.mode != RADIO_MODE_DMR) {
 		sm->dmr_end_wait = false;	// the channel is not DMR any more
 	}
@@ -2183,6 +2188,7 @@ static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
 			}
 		}
 	}
+#endif
 }
 
 // --- One-shot talk target: PTT while a list row is focused talks to that row's target once, and keeps it as the
@@ -5860,6 +5866,7 @@ static void fm_unkey(radio_sm_t *sm, bool keyed, uint32_t now_ms)
 }
 
 #if CONFIG_FM_TX_TONES
+#if CONFIG_SIG_TONES
 // The start tone's sidetone stays on through the silent steps of the chain; it ends with the chain
 static void tone_side_off(void)
 {
@@ -5867,11 +5874,14 @@ static void tone_side_off(void)
 		board.radio->tx_tone_side(false);
 	}
 }
+#endif
 
 static bool tx_tone(uint16_t hz)
 {
 	return board.radio->tx_tone != NULL && board.radio->tx_tone(hz);
 }
+
+#if CONFIG_SIG_TONES
 
 // Step i of an on-air FM chain. A pause is a silent carrier (tx_tone_key), not tx_tone(0): that gives the microphone
 // back on some chips (HR_C7000), so every gap would send live audio. A chain that opens with a pause first starts its
@@ -5961,6 +5971,41 @@ static void roger_cancel(radio_sm_t *sm)
 		changed(sm);
 	}
 }
+#else
+// Without the chains: the roger beep alone, two fixed steps timed from roger_ms (no steps to keep in RAM)
+static bool roger_start(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (!sm->set.roger_beep || !tx_tone(RADIO_ROGER_HZ1)) {
+		return false;
+	}
+	sm->roger_ms = now_ms != 0 ? now_ms : 1;
+	return true;
+}
+
+// The roger beep's second tone, then its end (every poll while it runs)
+static void roger_poll(radio_sm_t *sm, uint32_t now_ms)
+{
+	uint32_t t = now_ms - sm->roger_ms;
+	if (t >= 2u * RADIO_ROGER_STEP_MS) {
+		tx_tone(0);
+		sm->roger_ms = 0;
+		sm->view.roger = false;
+		fm_unkey(sm, false, now_ms);
+	} else if (t >= RADIO_ROGER_STEP_MS && t < RADIO_ROGER_STEP_MS + RADIO_POLL_MS) {
+		tx_tone(RADIO_ROGER_HZ2);
+	}
+}
+
+static void roger_cancel(radio_sm_t *sm)
+{
+	if (sm->roger_ms != 0) {
+		tx_tone(0);
+		sm->roger_ms = 0;
+		sm->view.roger = false;
+		changed(sm);
+	}
+}
+#endif
 #endif
 
 #if CONFIG_SIG_TONES && CONFIG_FM_TX_TONES
@@ -9006,7 +9051,9 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 			if (sm->roger_ms != 0 || sm->view.tone_burst) {
 				tx_tone(0);
 				sm->roger_ms = 0;
+#if CONFIG_SIG_TONES
 				sm->roger_lead = false;
+#endif
 				sm->view.roger = false;
 				sm->view.tone_burst = false;
 			}

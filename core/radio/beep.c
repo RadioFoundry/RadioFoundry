@@ -64,7 +64,7 @@ static const struct {
 };
 
 // One period of a sine, Q15
-const int16_t beep_sine[64] = {
+static const int16_t beep_sine[64] = {
 	0, 3212, 6393, 9512, 12539, 15446, 18204, 20787,
 	23170, 25329, 27245, 28898, 30273, 31356, 32137, 32609,
 	32767, 32609, 32137, 31356, 30273, 28898, 27245, 25329,
@@ -303,7 +303,7 @@ void beep_gen_start(beep_gen_t *g, const beep_seg_t *s, uint8_t n, int32_t amp_q
 	}
 }
 
-bool beep_gen_more(beep_gen_t *g)
+static bool beep_gen_more(beep_gen_t *g)
 {
 	// Exhausted steps are skipped here so "more" is true only while samples remain
 	while (g->i < g->n && g->left == 0) {
@@ -314,7 +314,8 @@ bool beep_gen_more(beep_gen_t *g)
 	return g->i < g->n;
 }
 
-bool beep_gen_next(beep_gen_t *g, int32_t *v)
+// The next sample of the sequence (amplitude applied): false when it is over
+static bool beep_gen_next(beep_gen_t *g, int32_t *v)
 {
 	if (!beep_gen_more(g)) {
 		return false;

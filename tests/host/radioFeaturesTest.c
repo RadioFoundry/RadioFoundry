@@ -86,6 +86,14 @@ static bool same_tone(subtone_t a, subtone_t b)
 	return a.type == b.type && (a.type == TONE_NONE || a.value == b.value);
 }
 
+// The tone is asked for, playing, or its frames are not yet pulled by the call stack (the source's busy: the over is
+// held open for it after PTT)
+static bool ambeVoiceTxToneBusy(void)
+{
+	const dmr_voice_source_t *s = ambeVoiceSource();
+	return s->busy != NULL && s->busy(s->ctx);
+}
+
 static void r_init(void) {}
 static void r_set_mode(radio_mode_t m) { (void)m; }
 static bool r_rx(uint32_t hz, radio_bw_t bw, const subtone_t *t)
