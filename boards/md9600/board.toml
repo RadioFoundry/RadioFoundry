@@ -12,6 +12,8 @@ kind = "mobile"
 debuglink_aliases = ["MD9600", "RT90"]
 # where the radio appears in the site's lists (the lowest: the home page's radio)
 order = 7
+# the sixth character of the APRS tocall, APRDF9 (docs/spec/aprs.md 4.2): one per radio, never reused
+aprs_tocall = "9"
 
 [docs]
 hardware = "docs/spec/hardware-md9600.md"

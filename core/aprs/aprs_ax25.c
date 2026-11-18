@@ -402,7 +402,7 @@ static void host_is_line(const char *line, size_t n)
 	host_emit(KISS_CMD_SETHW, buf, n + 1u);
 }
 
-// Our own packet straight to APRS-IS: "CALL>APZRDF,TCPIP*:info"
+// Our own packet straight to APRS-IS: "CALL>APRDF?,TCPIP*:info"
 static void own_to_is(const char *info, size_t n)
 {
 	if (!aprs_s.cfg.to_is || !aprs_s.cfg.kiss || !aprs_s.me_ok) {

@@ -154,6 +154,7 @@ BOARD_SCHEMA = {
     "also": _req(STR_LIST),
     "kind": _req(KINDS),
     "order": _req(int),		# where the radio appears in the site's lists; the lowest is the home page's radio
+    "aprs_tocall": _req(str),	# the APRS tocall's sixth character, APRDF? (docs/spec/aprs.md 4.2): 1-9, A-Z, unique
     "part_of": _opt(str),
     # other bodies the same board ships in that look too different to share its picture: each is its own card on the
     # site, drawn in site/static/img/radios/src/<id>-<look id>.svg (the site build refuses a missing one), and links to
@@ -1160,7 +1161,7 @@ def check(root=ROOT):
     except RegistryError as e:
         return [str(e)]
     hw = hardware_switches(root)
-    stub_ids, orders = {}, {}
+    stub_ids, orders, tocalls = {}, {}, {}
     classes = gallery_classes(root)
     geoms = gallery_geoms(root) or {}
     for bid, b in boards.items():
@@ -1217,6 +1218,13 @@ def check(root=ROOT):
         if d["order"] in orders:
             bad("order %d is also the %s's" % (d["order"], orders[d["order"]]))
         orders.setdefault(d["order"], bid)
+        # "0" is the host tests' (no radio); the registry lists each character with its radio, so one never moves
+        if not re.fullmatch(r"[1-9A-Z]", d["aprs_tocall"]):
+            bad("aprs_tocall %r: one character, 1-9 or A-Z" % d["aprs_tocall"])
+        elif d["aprs_tocall"] in tocalls:
+            bad("aprs_tocall %r is also the %s's" % (d["aprs_tocall"], tocalls[d["aprs_tocall"]]))
+        else:
+            tocalls[d["aprs_tocall"]] = bid
         fm = b.flash_map
         if b.codeplug() is None:
             bad("no hal_flash_map_t with openfw_eeprom and openfw_end in boards/%s/*.c" % bid)
@@ -2080,6 +2088,10 @@ def self_test():
         two = board_dirs(tmp)[1]
         other = _tomllib().load(open(os.path.join(tmp, "boards", two, "board.toml"), "rb"))["order"]
         broken(re.sub(r"(?m)^order = .*$", "order = %d" % other, good), "an order another board has", "also the")
+        other = _tomllib().load(open(os.path.join(tmp, "boards", two, "board.toml"), "rb"))["aprs_tocall"]
+        broken(re.sub(r"(?m)^aprs_tocall = .*$", 'aprs_tocall = "%s"' % other, good), "an APRS tocall another board has",
+               "also the")
+        broken(re.sub(r"(?m)^aprs_tocall = .*$", 'aprs_tocall = "0"', good), "the host tests' APRS tocall", "1-9 or A-Z")
         fm_c = [os.path.join(tmp, "boards", one, f) for f, text in _c_sources(os.path.join(tmp, "boards", one))
                 if "hal_flash_map_t" in text]
         fm_good = open(fm_c[0], encoding="utf-8").read()
