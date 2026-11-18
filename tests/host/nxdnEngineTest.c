@@ -185,8 +185,11 @@ static bool h_tx_voice(uint8_t ehr[NXDN_EHR_BYTES], void *ctx)
 static uint16_t seeds[2];
 static uint16_t h_key(uint8_t system, uint8_t cipher, uint8_t id, void *ctx)
 {
-	return system == 2 && cipher == NXDN_CIPHER_SCRAMBLE && id == 63 ?
-		seeds[(radio_t *)ctx - r] : 0;
+	if (system != 2 || cipher != NXDN_CIPHER_SCRAMBLE)
+		return 0;
+	if (id == 0)
+		return 0x4567;
+	return id == 63 ? seeds[(radio_t *)ctx - r] : 0;
 }
 #endif
 static const nxdn_engine_hooks_t hooks = {
@@ -294,6 +297,7 @@ static void testSystemKeys(bool rate9600)
 	tx.silence = rx.silence = valid_silence;
 	tx.system = rx.system = 2;
 	seeds[0] = 0x1234;
+	seeds[1] = 0;
 	begin(0, &tx, &hooks);
 	begin(1, &rx, &hooks);
 	over(30, 0, 0);
