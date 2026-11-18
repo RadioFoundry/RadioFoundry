@@ -493,6 +493,12 @@ static void test_debuglink(void)
 	CHECK(codeplug_kv_get(SYS(0), back, sizeof back) == SYS_LEN && memcmp(back, v, SYS_LEN) == 0);
 	CHECK(cpkv(DL_CPKV_GET, SYS(0), 16, NULL, 0, out) == 3u + SYS_LEN - 16u && out[0] == DL_ST_OK &&
 	      out[1] == SYS_LEN && out[2] == 0 && memcmp(out + 3, v + 16, SYS_LEN - 16) == 0);
+	// The debug interface can provision keys but cannot return their values.
+	uint8_t seed[] = { 0, 1, 7, 0, 0, 0x34, 0x12 };
+	CHECK(cpkv(DL_CPKV_SET, CODEPLUG_KEY_TRAFFIC, 0, seed, sizeof seed, out) == 1 && out[0] == DL_ST_OK);
+	CHECK(cpkv(DL_CPKV_GET, CODEPLUG_KEY_TRAFFIC, 0, NULL, 0, out) == 1 && out[0] == DL_ST_UNAVAILABLE);
+	CHECK(cpkv(DL_CPKV_SET, CODEPLUG_KEY_SYS_KEY, 0, seed, sizeof seed, out) == 1 && out[0] == DL_ST_OK);
+	CHECK(cpkv(DL_CPKV_GET, CODEPLUG_KEY_SYS_KEY, 0, NULL, 0, out) == 1 && out[0] == DL_ST_UNAVAILABLE);
 	// A patch inside the value keeps the rest; one past its end is refused
 	uint8_t cc = 7;
 	CHECK(cpkv(DL_CPKV_SET, SYS(0), BLOCK + 4, &cc, 1, out) == 1 && out[0] == DL_ST_OK);

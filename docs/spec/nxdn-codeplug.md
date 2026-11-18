@@ -20,7 +20,7 @@ Key 0x0A00 + 4 ([channel-modes.md](channel-modes.md) 5.5):
 |---|---|---|
 | 0 | 2 | Unit ID, 1 to 65519; 0, absent or out of range = the radio's DMR ID where it is 1 to 65519, else 1 |
 
-A channel's own unit ID is the record's per-channel DMR ID, where it is 1 to 65519; the narrowest one set counts. IDs
+A channel's own unit ID is the record's per-channel DMR ID, where it is 1 to 65519; the narrowest one set counts, followed by the system's unit ID and the radio-wide unit ID. IDs
 above 65519 are special (TS 1-B) and never a radio's. The VFO keeps its own unit ID ([nxdn.md](nxdn.md) 6.2).
 
 ## 2. Conventional channel (kind 4)
@@ -44,7 +44,7 @@ The base record carries:
 |---|---|
 | Name, RX and TX frequency, power, TX time-out, scan skip | As any channel |
 | Contact | The talk target: a group contact = group (1-65535; 65535 calls all), a private contact = a unit call (1-65519), the all-call contact = group 65535, none or an ID out of range = group 1 |
-| Per-channel DMR ID | This radio's unit ID on the channel where 1 to 65519; else the radio-wide one (1) |
+| Per-channel DMR ID | This radio's unit ID on the channel where 1 to 65519; else the system ID override or radio-wide ID (1) |
 | RX group list | Kept, not read |
 | Mode, receive only | DMR, receive only, always (the safe stand-in) |
 
@@ -83,7 +83,9 @@ shows it.
 
 ## 3. Conventional system and traffic keys
 
-System type 4 has an empty parameter block. Each scrambler key uses the generic traffic-key record
+System type 4 has an empty parameter block and no identity bytes for matching during a zone import.
+Its common radio ID field overrides the radio-wide NXDN unit ID when the channel supplies no valid unit ID.
+NXDN Conventional has no fallback channel. Each scrambler key uses the generic traffic-key record
 ([channel-modes.md](channel-modes.md) 5.4), with algorithm 1, a key ID from 0 to 63, and a two-byte little-endian
 seed from 1 to 32767. Key IDs are unique within a system. The radio loads the assigned system's keys with the
 channel settings. On receive it uses the cipher and key ID from the VCALL. Transmit uses the channel's
@@ -92,4 +94,5 @@ configured key and puts its cipher and ID in the VCALL. A listen-only system sti
 ## 4. Sharing
 
 A zone share carries an NXDN channel's tag as it is ([zone-share.md](zone-share.md) 4.2): the block is 3 octets, inside
-the share's limit of 64.
+the share's limit of 64. The length is 5 with a transmit key selected. The tag can carry the selected key ID,
+but zone sharing does not carry NXDN traffic-key records.

@@ -12,6 +12,8 @@ import { newSystem, syncModes, SHARE, MODE_LIMITS } from "../codeplug/channelmod
 import { remove, assignNumbers } from "../codeplug/model.js";
 
 const SHARE_LEVELS = [SHARE.off, SHARE.identity, SHARE.whole];
+const shareLabel = (mod, level) => mod?.conventional && level === SHARE.whole
+	? "editor.nxdn.share_whole" : `editor.modes.share${level}`;
 
 // --- The tab ---
 
@@ -43,7 +45,7 @@ export function systemsTab(api, features) {
 				h("td", {}, String(s.number)), h("td", {}, s.name), h("td", {}, row ? t(mod.label ?? `editor.mode_name.${row.token}`) : typeName(s.type)),
 				h("td", {}, mod ? mod.identity(s.fields) : t("editor.modes.type_unknown")),
 				h("td", {}, t(`editor.modes.tx${!s.tx ? 0 : mod?.noRegField && s.fields?.[mod.noRegField] ? 2 : 1}_short`)),
-				h("td", {}, t(`editor.modes.share${s.sharing <= 2 ? s.sharing : 0}`)),
+				h("td", {}, t(shareLabel(mod, s.sharing <= 2 ? s.sharing : 0))),
 				h("td", {}, mod?.conventional ? "" : String(s.entries.filter((e) => e.control).length)),
 				h("td", {}, mod?.conventional ? "" : t(s.secret ? "editor.modes.secret_set" : "editor.modes.secret_none")),
 				h("td", {}, String(used)),
@@ -116,12 +118,12 @@ function systemDialog(api, s, isNew) {
 			systemOwnIdField(mod, t),
 			mod.secret ? { key: "needsKey", label: t("editor.modes.needs_key"), type: "bool", help: t("editor.modes.needs_key_help") } : null,
 		],
-		fallback: [
+		fallback: mod.conventional ? [] : [
 			{ key: "fallback", label: t("editor.modes.fallback"), type: "select", options: (r) => fallbackOptions(m, t, r.fallback, null, t("editor.none")),
 				help: t(mod.fallbackHelp ?? "editor.modes.fallback_help") },
 		],
 		sharing: [
-			{ key: "sharing", label: t("editor.modes.share_what"), type: "select", options: () => SHARE_LEVELS.map((n) => [n, t(`editor.modes.share${n}`)]), help: t("editor.modes.sharing_help") },
+			{ key: "sharing", label: t("editor.modes.share_what"), type: "select", options: () => SHARE_LEVELS.map((n) => [n, t(shareLabel(mod, n))]), help: t(mod.conventional ? "editor.nxdn.sharing_help" : "editor.modes.sharing_help") },
 		],
 	};
 	const sections = mod.sections ?? [{ id: "identity" }, { id: "radio" }, { id: "fallback" }, { id: "sharing" }];
@@ -163,6 +165,7 @@ function systemDialog(api, s, isNew) {
 
 function trafficFields({ t, h, button }, system, traffic) {
 	const rows = (system.trafficKeys ?? []).map((key) => ({ ...key }));
+	let reveal = false;
 	const tbody = h("tbody", {});
 	const add = button(`+ ${t("editor.nxdn.add_key")}`, () => {
 		rows.push({});
@@ -171,14 +174,24 @@ function trafficFields({ t, h, button }, system, traffic) {
 	const draw = () => {
 		add.disabled = rows.length >= traffic.max;
 		tbody.replaceChildren(...rows.map((row, i) => h("tr", {},
-			...traffic.columns.map((col) => h("td", {}, cell(h, t, col, row))),
+			...traffic.columns.map((col) => {
+				const hiddenSeed = col.key === "seed" && !reveal;
+				return h("td", {}, hiddenSeed && row.seed != null
+					? t("editor.modes.secret_set") : cell(h, t, col, row, hiddenSeed));
+			}),
 			h("td", {}, button(t("editor.modes.remove_row"), () => {
 				rows.splice(i, 1);
 				draw();
 			}, { quiet: true, danger: true })))));
 	};
 	draw();
+	const show = h("input", { type: "checkbox", id: "show-traffic-seeds" });
+	show.addEventListener("change", () => {
+		reveal = show.checked;
+		draw();
+	});
 	const table = h("div", { class: "form-table" },
+		h("div", { class: "form-row form-check" }, h("label", { for: show.id }, t("editor.nxdn.show_seeds")), show),
 		h("div", { class: "table-wrap" }, h("table", { class: "data" },
 			h("thead", {}, h("tr", {}, ...traffic.columns.map((col) => h("th", {}, label(t, col.label))), h("th", {}))), tbody)),
 		add);
@@ -284,7 +297,7 @@ function entryTables(api, s) {
 }
 
 // One cell's input: a checkbox, a select, or text kept as typed until Save parses it
-function cell(h, t, col, r) {
+function cell(h, t, col, r, masked = false) {
 	if (col.type === "bool") {
 		const box = h("input", { type: "checkbox", "aria-label": label(t, col.label) });
 		box.checked = !!r[col.key];
@@ -298,7 +311,7 @@ function cell(h, t, col, r) {
 		sel.addEventListener("change", () => (r[col.key] = opts[sel.selectedIndex][0]));
 		return sel;
 	}
-	const input = h("input", { type: "text", size: col.type === "freq" ? 9 : 5, spellcheck: "false", "aria-label": label(t, col.label), value: r._text?.[col.key] ?? formatSpec(col, r[col.key], t) });
+	const input = h("input", { type: masked ? "password" : "text", size: col.type === "freq" ? 9 : 5, spellcheck: "false", "aria-label": label(t, col.label), value: r._text?.[col.key] ?? formatSpec(col, r[col.key], t) });
 	input.addEventListener("input", () => (r._text = { ...r._text, [col.key]: input.value }));
 	return input;
 }
