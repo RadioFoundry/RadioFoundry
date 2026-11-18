@@ -11,6 +11,7 @@
 #include "dmr/ipGateway.h"
 #include "config.h"
 #include "radio/radio.h"
+#include "hostlink/hostlink_view.h"
 #include "ui/gfx.h"
 #include "debuglink/debuglink.h"
 #include "debuglink/dl_fmt.h"
@@ -238,6 +239,8 @@ static void test_http(void)
 	CHECK(strstr((char *)a.rx, "application/json") && j[0] == '{');
 	CHECK(strstr(j, "\"rx_hz\":145500000") && strstr(j, "\"channel\":\"Ch \\\"1\\\"\"") && strstr(j, "\"rssi_dbm\":-97"));
 	CHECK(strstr(j, "\"power\":\"High\"") && strstr(j, "\"mode\":\"fm\"") && strstr(j, "\"radio\":\"fake\""));
+	// The services read the host link task's one view copy (hostlink_view.h), refreshed from the radio
+	CHECK(net_radio_view() == &hostlink_view && hostlink_view.ch.rx_hz == 145500000 && hostlink_view.rssi_dbm == -97);
 
 	// A view section as JSON: numbers stay numbers, the rest strings
 	CHECK(http_get(&a, 51003, "GET /api/view?section=core HTTP/1.0\r\n\r\n") > 0);

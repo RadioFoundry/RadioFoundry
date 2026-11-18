@@ -27,7 +27,8 @@ static const band_t bands[] = {
 };
 
 // Nominal 20 W mobile. The radio refuses TX until the PA calibration can be read (radio_db25d.c)
-static const char *const power_names[] = { "L", "H" };
+// Five levels from the calibration's two tables (radio_db25d.c): "L" and "H" are the tables
+static const char *const power_names[] = { "L--", "L-", "L", "M", "H" };
 
 // docs/ux/information-architecture.md 7.4 (mobile: front encoder and a few keys; the encoder push is OK). The hand
 // mic adds the digits, * and # (marked down and up) and P4-P7, which send DTMF A-D while PTT is held on FM (the
@@ -89,7 +90,7 @@ const board_t board = {
 #endif
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
 	.power_names = power_names,
-	.power_default = 0,
+	.power_default = 2,	// "L"
 	.display = &db25d_display,
 	.input = &db25d_input,
 	.keymap = keymap,
@@ -100,8 +101,7 @@ const board_t board = {
 	.radio = &db25d_radio,
 	.power = &db25d_power,
 #if CONFIG_GPS
-	.gps_enable = hrc_gps_enable,
-	.gps_present = hrc_gps_present,	// CAP_GPS: the module is fitted, but say so only once it has been heard
+	.gps = &hrc_gps,	// CAP_GPS: the module is fitted, but say so only once it has been heard
 #endif
 #if CONFIG_DIAG
 	.diag_line = db25d_diag_line,
@@ -111,6 +111,10 @@ const board_t board = {
 	.dmr = &hrc_dmr,
 	.audio = &db25d_audio,
 	.vocoder = &hrc_vocoder,
+#if CONFIG_AIR
+	.air = &hrc_air,		// the physical layer and the receive copy (modem-hrc7000.md 10)
+	.baseband = &hrc_baseband,
+#endif
 #endif
 #if CONFIG_HOSTLINK
 	.host_port = &hrc_host_uart_stream,

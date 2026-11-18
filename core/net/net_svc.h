@@ -16,8 +16,8 @@
 #define NET_RIGCTL_PORT		4532	// Hamlib's rigctld
 
 #if CONFIG_NET_HTTP || CONFIG_NET_RIGCTL
-// The radio core's view, fetched now into the one copy the services share (static: too large for the host link task's
-// stack; the services all run in that task)
+// The radio core's view, fetched now into the host link task's one copy (hostlink_view.h; the services all run in
+// that task)
 #include "radio/radio.h"
 const radio_view_t *net_radio_view(void);
 #endif

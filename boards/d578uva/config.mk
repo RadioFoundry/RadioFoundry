@@ -12,6 +12,9 @@ CONFIG_DMR ?= y
 CONFIG_HOTSPOT ?= n
 CONFIG_SFR ?= n
 CONFIG_DMR_PRIVACY ?= n
+# P25 and NXDN run on an air interface provider (board.air), which isn't written for the SCT3258 (below)
+CONFIG_P25 ?= n
+CONFIG_NXDN ?= n
 # RAM decides what runs on the USB network adapter beside DMR and APRS receive. The IP gateway (about 8.8 KB with the
 # adapter), mDNS and TFTP (0.6 KB), the control station mode and SNMP (3.4 KB) fit, unlike on the GD32 builds, and so
 # does zone sharing (about 4.7 KB). The TCP services don't: TCP alone takes about 4.7 KB, and the HTTP server, the
@@ -45,4 +48,8 @@ BOARD_NOT_WRITTEN += SFR_CWID	# needs SFR (above)
 BOARD_NOT_WRITTEN += DMR_PRIVACY	# scrambles the voice frames on the MCU (above)
 BOARD_NOT_WRITTEN += AUDIO_PROBE	# the probe taps an audio chip's PCM path; the voice stays in the baseband here
 BOARD_NOT_WRITTEN += NET_USRP	# needs an audio tap (PCM both ways): the voice stays in the baseband, only receive audio reaches the MCU
+BOARD_NOT_WRITTEN += P25	# no air interface provider (board.air) for the SCT3258 baseband yet
+BOARD_NOT_WRITTEN += P25_TRUNK	# needs P25 (above)
+BOARD_NOT_WRITTEN += NXDN	# no air interface provider (board.air) for the SCT3258 baseband yet
+BOARD_NOT_WRITTEN += AIR_RAW	# needs P25 or NXDN (above)
 BOARD_REQUIRED := FM

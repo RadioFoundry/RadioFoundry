@@ -22,6 +22,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "platform.h"
+#include "hal_gps.h"
 #include "gps/gps_rx/gps_setup.h"
 
 typedef struct {
@@ -42,12 +43,14 @@ typedef struct {
 void gd32_gps_init(const gd32_gps_cfg_t *cfg);
 // From the board's USART interrupt handler
 void gd32_gps_irq(void);
-// The module has been heard (board_t.gps_present)
+// The module has been heard (hal_gps_t.present)
 bool gd32_gps_present(void);
-// Settings > Location > GPS (board_t.gps_enable): the module's power, once it has been heard
+// Settings > Location > GPS (hal_gps_t.enable): the module's power, once it has been heard
 void gd32_gps_enable(bool on);
 // For diagnostics: valid sentences, bad ones, bytes received; whether the module is powered and listened to
 void gd32_gps_counts(uint32_t *good, uint32_t *bad, uint32_t *bytes);
 bool gd32_gps_running(void);
+// board_t.gps: the functions above
+extern const hal_gps_t gd32_gps;
 
 #endif

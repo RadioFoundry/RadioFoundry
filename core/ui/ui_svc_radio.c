@@ -13,6 +13,7 @@
 #include "radio/ref_trim.h"
 #include "radio/radio_cwid.h"
 #include "radio/radio_bcast.h"
+#include "codeplug/codeplug_modes.h"	// channel kinds: a trunked one is never watched
 #include "input/input.h"
 #include "settings/settings.h"
 #include <string.h>
@@ -26,6 +27,13 @@
 #if CONFIG_DMR
 #include "dmr/ambe/ambeVoice.h"
 #endif
+#if CONFIG_NXDN
+#include "radio/radio_nxdn.h"
+#endif
+#if CONFIG_P25
+#include "radio/radio_p25.h"
+#endif
+
 
 uint32_t ui_svc_feat_voice(void)
 {
@@ -148,7 +156,8 @@ bool ui_svc_vfo_sfr(uint8_t a)
 #if CONFIG_FM
 bool ui_svc_mode(uint8_t mode)
 {
-	if (mode != RADIO_MODE_FM && mode != RADIO_MODE_DMR) {
+	if (mode != RADIO_MODE_FM && mode != RADIO_MODE_DMR && !(mode == RADIO_MODE_P25 && CONFIG_P25) &&
+	    !(mode == RADIO_MODE_NXDN && CONFIG_NXDN)) {
 		return false;
 	}
 	radio_req_mode(mode);
@@ -208,7 +217,14 @@ uint32_t ui_svc_feat_radio(void)
 	       (motor ? UI_FEAT_VIBRATE : 0) | (radio_volume_soft() ? UI_FEAT_VOLUME : 0) |
 	       (knob ? UI_FEAT_VOLUME_KNOB : 0) |
 	       (radio_bcast_capable() ? UI_FEAT_BCAST : 0) | (CONFIG_POSITION && board_has_gps() ? UI_FEAT_GPS : 0) |
-	       (ref_trim_available() ? UI_FEAT_REF_TRIM : 0);
+	       (ref_trim_available() ? UI_FEAT_REF_TRIM : 0) |
+#if CONFIG_P25
+	       (radio_p25_fits() ? UI_FEAT_P25 : 0) |
+#endif
+#if CONFIG_NXDN
+	       (radio_nxdn_fits() ? UI_FEAT_NXDN : 0) |
+#endif
+	       0;
 }
 
 #if CONFIG_DMR
@@ -267,8 +283,8 @@ bool ui_svc_dual(const ui_dual_ref_t ref[2], uint8_t sel)
 			if (!(CONFIG_VFO_FM || CONFIG_VFO_DMR))
 				return false;
 		} else if (r[i].pos >= CODEPLUG_ZONE_MAX || !codeplug_zone(r[i].zone, &z) || r[i].pos >= z.count ||
-			   !codeplug_channel(z.channels[r[i].pos], &ch)) {
-			return false;
+			   !codeplug_channel(z.channels[r[i].pos], &ch) || ch.kind == CODEPLUG_KIND_P25_TRUNK) {
+			return false;	// a trunked channel follows its system: not one to watch
 		}
 	}
 	if (sel > 1 || (r[0].vfo == r[1].vfo && r[0].zone == r[1].zone && r[0].pos == r[1].pos))

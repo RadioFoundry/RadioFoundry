@@ -13,6 +13,8 @@
 #include "radio/ref_trim.h"
 #include "radio/tx_limit.h"
 #include "radio/pa_keyup.h"
+#include "radio/pa_sweep.h"
+#include "radio/pa_keyrun.h"
 #include "radio/radio_cwid.h"
 #include "radio/radio_keys.h"
 #include "hal_time.h"
@@ -30,12 +32,16 @@
 #include "dmr/zone_share_api.h"
 #endif
 #endif
+#if CONFIG_GPS
+#include "position/position.h"
+#endif
 
 #define DL_SETTING_MIC_GAIN	29u	// SETTING id of the mic gain step (radio/mic_gain.h)
 #define DL_SETTING_ENC_OPTIONS	31u	// SETTING id of the vocoder's encode options (VOCODER_OPT_*)
 #define DL_SETTING_ZS_OFFERS	32u	// SETTING id of zone share offers (zone_share_api.h)
 #define DL_SETTING_REF_TRIM	35u	// SETTING id of the reference trim, ppb two's complement (radio/ref_trim.h)
 #define DL_SETTING_TONES_OFF	36u	// SETTING id of the Settings > Sound tones (radio_settings_t.tones_off)
+#define DL_SETTING_GPS		37u	// SETTING id of Settings > Location > GPS (settings_t.gps, board_t.gps)
 
 static const char *word(uint8_t v, const char *const *names, uint8_t n)
 {
@@ -68,6 +74,50 @@ void debuglink_view_audio(dl_text_t *t)
 	(void)t;
 }
 
+// The last PA drive sweep (RADIO op 39): the points it ran and the top level's drive it counted from
+static uint8_t pa_sweep_last_n;
+static uint16_t pa_sweep_last_top;
+// The last PA key run (RADIO op 40): the keys it ran of those asked
+static uint8_t pa_keyrun_last_n, pa_keyrun_last_of;
+#define KEYRUN_RESTART_DELAY_MS	100u
+static bool keyrun_reattach;		// a key run asked for the host port to come back after its reply
+static bool keyrun_restart;		// or for the radio to restart
+
+void debuglink_keyrun_service(void)
+{
+	if (keyrun_restart) {
+		keyrun_restart = false;
+		keyrun_reattach = false;
+		hal_delay_ms(KEYRUN_RESTART_DELAY_MS);	// the reply on its way
+		if (board.system != NULL && board.system->reboot != NULL && radio_get_state() != RS_TX) {
+			(void)board.system->reboot(HAL_REBOOT_NORMAL);
+		}
+	}
+	if (keyrun_reattach) {
+		keyrun_reattach = false;
+		if (board.host_port != NULL && board.host_port->reattach != NULL) {
+			board.host_port->reattach();
+		}
+	}
+}
+
+#if CONFIG_DMR
+static bool keyrun_keyup(const pa_keyup_cfg_t *c)
+{
+	return pa_keyup_set(c);
+}
+
+static bool keyrun_ptt(bool down, uint32_t max_ms)
+{
+	return input_inject_ptt(down, max_ms) == INPUT_INJ_OK;
+}
+
+static bool keyrun_keyed(void)
+{
+	return radio_get_state() == RS_TX;
+}
+#endif
+
 void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 {
 	static const char *const kinds[] = { "off", "zone", "vfo", "dual" };
@@ -79,6 +129,13 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 	radio_settings_t s;
 
 	dl_text(t, "scan.built=%u\n", CONFIG_SCAN);
+	if (board.radio != NULL && board.radio->tx_drive_now != NULL) {
+		dl_text(t, "pa_sweep.last=%u/%u/%u\n", (unsigned)pa_sweep_last_n, (unsigned)pa_sweep_last_top,
+			board.radio->tx_mark != NULL ? 1u : 0u);
+	}
+	if (CONFIG_DMR && board.radio != NULL && board.radio->tx_drive != NULL) {
+		dl_text(t, "pa_keyrun.last=%u/%u\n", (unsigned)pa_keyrun_last_n, (unsigned)pa_keyrun_last_of);
+	}
 	dl_text(t, "scan=%s\nscan_phase=%s\nscan_skipped=%u\n", word(v->scan, kinds, 4), word(v->scan_phase, phases, 5),
 		v->scan_skipped);
 	dl_text(t, "scan_probes=%u\nscan_synced=%u\n", v->scan_probes, v->scan_synced);
@@ -329,26 +386,97 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 #else
 		return DL_ST_UNAVAILABLE;
 #endif
+	case DL_OP_VOICE_CAPTURE:
+		// u8: capture the next n voice frames received (0 stops), the voice_cap view shows them
+		if (len < 1) {
+			return DL_ST_BAD_ARG;
+		}
+#if CONFIG_VOICE_CAPTURE
+		ambeVoiceCaptureArm(a[0]);
+		return DL_ST_OK;
+#else
+		return DL_ST_UNAVAILABLE;
+#endif
 	case DL_OP_DMR_FIELDS:
 		// mode (0xFF = keep, else radio_mode_t), color code (0xFF = keep), timeslot (0 = keep): on a channel they are
 		// temporary changes, in the VFO the VFO's own settings. The radio core refuses what it can't do
-		if (len < 3 || (a[0] != 0xFF && a[0] > RADIO_MODE_DMR) || (a[1] != 0xFF && a[1] > 15) || a[2] > 2) {
+		if (len < 3 || (a[0] != 0xFF && a[0] > RADIO_MODE_NXDN) || (a[1] != 0xFF && a[1] > 15) || a[2] > 2) {
 			return DL_ST_BAD_ARG;
 		}
-#if CONFIG_DMR
+#if CONFIG_DMR || CONFIG_P25
+		if ((a[0] == RADIO_MODE_DMR && !CONFIG_DMR) || (a[0] == RADIO_MODE_P25 && !CONFIG_P25) ||
+		    (a[0] == RADIO_MODE_NXDN && !CONFIG_NXDN) ||
+		    ((a[1] != 0xFF || a[2] != 0) && !CONFIG_DMR)) {
+			return DL_ST_UNAVAILABLE;
+		}
 		if (a[0] != 0xFF) {
 			radio_req_mode(a[0]);
 		}
+#if CONFIG_DMR
 		if (a[1] != 0xFF) {
 			radio_req_dmr_color_code(a[1]);
 		}
 		if (a[2] != 0) {
 			radio_req_dmr_timeslot(a[2]);
 		}
+#endif
 		return DL_ST_OK;
 #else
 		return DL_ST_UNAVAILABLE;
 #endif
+	case DL_OP_P25: {
+		// The P25 settings (radio_p25_settings_t, RAM only; docs/spec/debuglink.md 3.8): u16 rx_nac, u16 tx_nac,
+		// u16 rx_tgid, u8 talkaround (0 auto, 1 on, 2 off), u8 flags (bit 0: PTT calls a unit), u32 tx_dst,
+		// u32 unit_id (0: the radio's DMR ID), little-endian. The engine takes them when not transmitting
+		if (len < 16 || a[6] > RADIO_P25_TA_OFF || (a[7] & 0xFEu) != 0) {
+			return DL_ST_BAD_ARG;
+		}
+#if CONFIG_P25
+		radio_p25_settings_t p;
+		p.rx_nac = (uint16_t)(a[0] | a[1] << 8);
+		p.tx_nac = (uint16_t)(a[2] | a[3] << 8);
+		p.rx_tgid = (uint16_t)(a[4] | a[5] << 8);
+		p.talkaround = a[6];
+		p.unit_call = (a[7] & 1u) != 0;
+		p.tx_dst = (uint32_t)a[8] | (uint32_t)a[9] << 8 | (uint32_t)a[10] << 16 | (uint32_t)a[11] << 24;
+		p.unit_id = (uint32_t)a[12] | (uint32_t)a[13] << 8 | (uint32_t)a[14] << 16 | (uint32_t)a[15] << 24;
+		if (p.rx_nac > 0xFFFu || p.tx_nac > 0xFFFu || p.unit_id > 0xFFFFFFu ||
+		    p.tx_dst > (p.unit_call ? 0xFFFFFFu : 0xFFFFu)) {
+			return DL_ST_BAD_ARG;
+		}
+		radio_req_p25_settings(&p);
+		return DL_ST_OK;
+#else
+		return DL_ST_UNAVAILABLE;
+#endif
+	}
+	case DL_OP_NXDN: {
+		// The NXDN settings (radio_nxdn_settings_t, RAM only; docs/spec/debuglink.md 3.8): u8 flags (bit 0: 9600
+		// bit/s, else 4800; bit 1: PTT calls a unit; bit 2: emergency), u8 rx_ran (0 any), u8 tx_ran, u16 rx_gid (0: the
+		// RAN squelch), u16 unit_id (1..65519), u16 tx_dst, little-endian. The engine takes them when not transmitting;
+		// a new rate starts it over
+		if (len < 9 || (a[0] & 0xF8u) != 0 || a[1] > 63 || a[2] > 63) {
+			return DL_ST_BAD_ARG;
+		}
+#if CONFIG_NXDN
+		radio_nxdn_settings_t n;
+		n.rate9600 = (a[0] & 1u) != 0;
+		n.unit_call = (a[0] & 2u) != 0;
+		n.emergency = (a[0] & 4u) != 0;
+		n.rx_ran = a[1];
+		n.tx_ran = a[2];
+		n.rx_gid = (uint16_t)(a[3] | a[4] << 8);
+		n.unit_id = (uint16_t)(a[5] | a[6] << 8);
+		n.tx_dst = (uint16_t)(a[7] | a[8] << 8);
+		if (n.unit_id == 0 || n.unit_id > RADIO_NXDN_UNIT_MAX) {
+			return DL_ST_BAD_ARG;
+		}
+		radio_req_nxdn_settings(&n);
+		return DL_ST_OK;
+#else
+		return DL_ST_UNAVAILABLE;
+#endif
+	}
 	case DL_OP_VFO_SFR:
 		// u8: the VFO's SFR role as a channel's SFR byte A (sfr.h; role bits 0 = none). The radio core refuses it
 		// outside the VFO; dmr.sfr_role shows what it took
@@ -412,9 +540,9 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 		}
 		return board.radio->tx_drive((uint16_t)(a[0] | (a[1] << 8))) ? DL_ST_OK : DL_ST_BAD_ARG;
 	case DL_OP_PA_KEYUP: {
-		// dead u16, knee u16, slope_us u16, boost u8, hold u8 (%), boost_us u16, pa_us u16, drive_us u16: the DMR
+		// dead_pm, knee_us, slope_us, window_us, settle_us, pa_us and (optional, else 0) ease_pm, each u16: the DMR
 		// PA key-up constants (radio/pa_keyup.h), RAM only, from the next key-up; no argument = the board's again
-		if (len != 0 && len != 14) {
+		if (len != 0 && len != 12 && len != 14) {
 			return DL_ST_BAD_ARG;
 		}
 #if !CONFIG_DMR
@@ -427,12 +555,68 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 			return pa_keyup_set(NULL) ? DL_ST_OK : DL_ST_BAD_ARG;
 		}
 		pa_keyup_cfg_t c = {
-			.dead = (uint16_t)(a[0] | (a[1] << 8)), .knee = (uint16_t)(a[2] | (a[3] << 8)),
-			.slope_us = (uint16_t)(a[4] | (a[5] << 8)), .boost_pct = a[6], .hold_pct = a[7],
-			.boost_us = (uint16_t)(a[8] | (a[9] << 8)), .pa_us = (uint16_t)(a[10] | (a[11] << 8)),
-			.drive_us = (uint16_t)(a[12] | (a[13] << 8)),
+			.dead_pm = (uint16_t)(a[0] | (a[1] << 8)), .knee_us = (uint16_t)(a[2] | (a[3] << 8)),
+			.slope_us = (uint16_t)(a[4] | (a[5] << 8)), .window_us = (uint16_t)(a[6] | (a[7] << 8)),
+			.settle_us = (uint16_t)(a[8] | (a[9] << 8)), .pa_us = (uint16_t)(a[10] | (a[11] << 8)),
+			.ease_pm = len == 14 ? (uint16_t)(a[12] | (a[13] << 8)) : (uint16_t)0u,
 		};
 		return pa_keyup_set(&c) ? DL_ST_OK : DL_ST_BAD_ARG;
+#endif
+	}
+	case DL_OP_PA_SWEEP: {
+		// start u16, step i16, count u8, on_ms u8, off_ms u8, ceiling u8 (% of the top level's drive), mark_ms u8: the PA
+		// drive sweep on the FM carrier the radio transmits now (radio/pa_sweep.h). Returns when it is done (at most
+		// PA_SWEEP_MS_MAX); the view's pa_sweep.last says how many points ran and the top level's drive
+		if (len != 9) {
+			return DL_ST_BAD_ARG;
+		}
+		const hal_radio_t *r = board.radio;
+		if (r == NULL || r->tx_drive_top == NULL || r->tx_drive_now == NULL) {
+			return DL_ST_UNAVAILABLE;
+		}
+		uint16_t top = r->tx_drive_top();
+		if (top == 0u) {
+			return DL_ST_REFUSED;	// not transmitting FM
+		}
+		pa_sweep_req_t q = {
+			.start = (uint16_t)(a[0] | (a[1] << 8)), .step = (int16_t)(uint16_t)(a[2] | (a[3] << 8)), .count = a[4],
+			.on_ms = a[5], .off_ms = a[6], .ceiling_pct = a[7], .mark_ms = a[8],
+		};
+		const pa_sweep_io_t io = { .drive = r->tx_drive_now, .mark = r->tx_mark, .delay_ms = hal_delay_ms };
+		uint16_t max = UINT16_MAX;	// the board's drive limit, as the key-up's (pa_keyup_init)
+#if CONFIG_DMR
+		uint16_t ahead, lim;
+		pa_keyup_limits(&ahead, &lim);
+		if (lim != 0u) {
+			max = lim;
+		}
+#endif
+		pa_sweep_last_n = pa_sweep_run(&q, top, max, &io);
+		pa_sweep_last_top = top;
+		return DL_ST_OK;
+	}
+	case DL_OP_PA_KEYRUN: {
+		// key_ms u16, gap_ms u16, flags u8, n u8, [the key-up constants as op 37's 14 bytes], n drives u16: the radio
+		// keys n times at those drives on its channel (radio/pa_keyrun.h), the host link held until it is done. The
+		// view's pa_keyrun.last says how many ran
+#if !CONFIG_DMR
+		return DL_ST_UNAVAILABLE;
+#else
+		pa_keyrun_req_t q;
+		if (!pa_keyrun_parse(a, len, &q)) {
+			return DL_ST_BAD_ARG;
+		}
+		if (board.radio == NULL || board.radio->tx_drive == NULL) {
+			return DL_ST_UNAVAILABLE;
+		}
+		const pa_keyrun_io_t io = { .drive = board.radio->tx_drive, .keyup = keyrun_keyup, .ptt = keyrun_ptt,
+					    .keyed = keyrun_keyed, .delay_ms = hal_delay_ms };
+		pa_keyrun_last_of = q.n;
+		pa_keyrun_last_n = 0u;
+		pa_keyrun_last_n = pa_keyrun_run(&q, &io);
+		keyrun_reattach = q.reattach;	// after the reply (debuglink_keyrun_service)
+		keyrun_restart = q.restart;
+		return pa_keyrun_last_n == q.n ? DL_ST_OK : DL_ST_REFUSED;
 #endif
 	}
 	case DL_OP_DTMF:
@@ -530,6 +714,22 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 			radio_get_settings(&s);		// again after the flash write: another change meanwhile stays
 			s.tones_off = (uint8_t)v;
 			radio_set_settings(&s);
+			return DL_ST_OK;
+		}
+		if (a[0] == DL_SETTING_GPS) {
+			// Stored and applied as the menu does (ui_svc_apply): the module's power and the position source
+			if (v > 1) {
+				return DL_ST_BAD_ARG;
+			}
+			if (!CONFIG_GPS || !board_has_gps()) {
+				return DL_ST_UNAVAILABLE;
+			}
+			settings_begin()->gps = (uint8_t)v;
+			settings_end(hal_millis());
+			board_gps_enable(v != 0);
+#if CONFIG_GPS
+			position_gps_enable(v != 0);
+#endif
 			return DL_ST_OK;
 		}
 		radio_settings_t s;

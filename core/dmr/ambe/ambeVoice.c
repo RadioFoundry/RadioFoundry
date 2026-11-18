@@ -3,6 +3,7 @@
 // DMR voice glue: call stack frames <-> FEC <-> vocoder <-> PCM blocks (ambeVoice.h)
 #include "dmr/ambe/ambeVoice.h"
 #include "dmr/ambe/ambeFec.h"
+#include "config.h"
 
 #include <stddef.h>
 #include <string.h>
@@ -55,6 +56,10 @@ static bool have_last;
 static ambe_voice_stats_t stats;
 static ambe_voice_mixer_t mixer;
 static bool cb_mixing;
+// Simplex: nothing is decoded while a transmission runs. A platform may keep the encoder's and the decoder's state in
+// one block (hal_vocoder_t), so a decode then would cost the transmission its encoder. A call heard meanwhile plays as
+// silence, and the decoder starts fresh once the transmission is over (cb_dec_fresh)
+static bool cb_tx_on, cb_dec_fresh;
 static uint16_t mic_gain_q8 = 256;	// ambeVoiceSetMicGain: the mic samples times this / 256 before encoding
 static bool test_signal;		// ambeVoiceSetTestSignal
 static uint16_t test_phase;		// the test signal's phase (a full cycle is 65536) and its pitch step
@@ -93,6 +98,43 @@ static void rx_push(const uint8_t bits[VOCODER_BITS], uint8_t bad)
 	STORE(rx_head, (uint8_t)(h + 1));
 }
 
+#if CONFIG_VOICE_CAPTURE
+// Written in the call task; the debug link reads count first, then entries below it
+static ambe_cap_entry_t cap[AMBE_VOICE_CAP];
+static volatile uint8_t cap_count, cap_want;
+
+static void cap_put(const uint8_t *frame)
+{
+	uint8_t n = cap_count;
+	if (n >= cap_want) {
+		return;
+	}
+	cap[n].lost = frame == NULL ? 1u : 0u;
+	if (frame != NULL) {
+		memcpy(cap[n].frame, frame, sizeof cap[n].frame);
+	} else {
+		memset(cap[n].frame, 0, sizeof cap[n].frame);
+	}
+	cap_count = (uint8_t)(n + 1u);
+}
+
+void ambeVoiceCaptureArm(uint8_t n)
+{
+	cap_want = 0;
+	cap_count = 0;
+	cap_want = n < AMBE_VOICE_CAP ? n : (uint8_t)AMBE_VOICE_CAP;
+}
+
+uint8_t ambeVoiceCapture(const ambe_cap_entry_t **entries, uint8_t *want)
+{
+	*entries = cap;
+	*want = cap_want;
+	return cap_count;
+}
+#else
+#define cap_put(frame) ((void)0)
+#endif
+
 static void sink_begin(const dmr_caller_t *caller, void *ctx)
 {
 	(void)caller;
@@ -112,6 +154,7 @@ static void sink_frame(const uint8_t ambe72[DMR_AMBE_FRAME_BYTES], void *ctx)
 		sink_begin(NULL, NULL);	// frames with no call open: a new call
 	}
 	stats.rx_in++;
+	cap_put(ambe72);
 	ambeFecDecode(ambe72, bits, &r);
 	if (r.c0_failed) {
 		stats.rx_bad++;
@@ -132,6 +175,7 @@ static void sink_lost(void *ctx)
 {
 	(void)ctx;
 	stats.rx_lost++;
+	cap_put(NULL);
 	rx_push(NULL, 2);
 	rx_place = (uint8_t)((rx_place + 1u) % 3u);
 }
@@ -212,11 +256,26 @@ static void test_block(int16_t *out)
 	test_blocks = (uint8_t)((test_blocks + 1u) % 5u);
 }
 
+// A frame to the speaker: silence while transmitting
+static void decode(const uint8_t bits[VOCODER_BITS], int16_t *spk)
+{
+	if (cb_tx_on) {
+		cb_dec_fresh = true;
+		memset(spk, 0, AUDIO_BLOCK_SAMPLES * sizeof(int16_t));
+		return;
+	}
+	if (cb_dec_fresh) {
+		cb_dec_fresh = false;
+		voc->reset();
+	}
+	voc->decode(bits, spk);
+}
+
 static void conceal(int16_t *spk)
 {
 	if (have_last && cb_bad_run < AMBE_VOICE_REPEAT && voc_ok()) {
 		stats.rx_concealed++;
-		voc->decode(last_bits, spk);
+		decode(last_bits, spk);
 	} else {
 		stats.rx_silence++;
 		memset(spk, 0, AUDIO_BLOCK_SAMPLES * sizeof(int16_t));
@@ -241,7 +300,11 @@ static void rx_block(int16_t *spk)
 		have_last = false;
 		stats.rx_peak = 0;
 		if (voc_ok()) {
-			voc->reset();
+			if (cb_tx_on) {
+				cb_dec_fresh = true;	// not now: it would reset the encoder too (decode())
+			} else {
+				voc->reset();
+			}
 		}
 	}
 	// Drop entries of earlier calls
@@ -293,7 +356,7 @@ static void rx_block(int16_t *spk)
 		stats.rx_frames++;
 		cb_call_frames++;
 		if (voc_ok()) {
-			voc->decode(last_bits, spk);
+			decode(last_bits, spk);
 			// A decoder fed the wrong bits plays silence with every counter clean (a codec reading stale voice RAM)
 			for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
 				uint32_t a = (uint32_t)(spk[i] < 0 ? -spk[i] : spk[i]);
@@ -379,7 +442,8 @@ static void mic_stats(const int16_t *mic)
 static void tx_block(const int16_t *mic)
 {
 	uint8_t seq = LOAD(tx_seq);
-	if (LOAD(tx_end_seq) == seq) {
+	cb_tx_on = LOAD(tx_end_seq) != seq;
+	if (!cb_tx_on) {
 		return;	// not transmitting
 	}
 	if (seq != cb_tx_seq) {
@@ -445,7 +509,7 @@ static void tx_block(const int16_t *mic)
 void ambeVoiceAudioBlock(const int16_t *mic, int16_t *spk, void *ctx)
 {
 	(void)ctx;
-	// DMR is simplex: TX first (a fresh transmission resets the vocoder), then RX playback
+	// DMR is simplex: TX first (a fresh transmission resets the vocoder), then RX playback (silent while transmitting)
 	tx_block(mic);
 	rx_block(spk);
 	ambe_voice_mixer_t mix = LOAD(mixer);
@@ -519,6 +583,11 @@ void ambeVoiceStop(void)
 		}
 	}
 	streaming = false;
+}
+
+void ambeVoiceStart(void)
+{
+	ensure_streaming();
 }
 
 bool ambeVoiceStreaming(void)

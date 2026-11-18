@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+# The pinned Arm GNU Toolchain as tools/install-arm-toolchain.sh installs it (Linux x86_64, trimmed to the Cortex-M4
+# multilib) and nothing else: no shell, no libc. Not run; install-arm-toolchain.sh copies the tree out of it when
+# platform/stm32f4/platform.toml [toolchain] names it. build-arm-ci.sh makes it.
+FROM scratch
+ARG NAME
+COPY toolchain-info.txt /toolchain-info.txt
+COPY ${NAME} /opt/${NAME}
+LABEL org.opencontainers.image.source=https://github.com/RadioFoundry/RadioFoundry

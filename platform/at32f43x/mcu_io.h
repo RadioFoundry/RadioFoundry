@@ -145,6 +145,7 @@ static inline bool mcu_clock_init(uint32_t hxtal_hz, uint32_t sys_hz)
 #define mcu_gps_enable		at32_gps_enable
 #define mcu_gps_counts		at32_gps_counts
 #define mcu_gps_running		at32_gps_running
+#define mcu_gps			at32_gps
 #define MCU_USART2		USART2
 #define MCU_USART2_IRQn		USART2_IRQn
 #define MCU_USART2_HANDLER	USART2_IRQHandler

@@ -316,6 +316,7 @@ def test_zone_scan_nuisance(radio):
 
 
 @pytest.mark.feature("scan")
+@pytest.mark.needs_switch("VFO_FM")
 def test_vfo_scan(radio):
     need_scan(radio)
     if "VFO_FM" not in radio.features():
@@ -425,6 +426,7 @@ def fm_tx(radio, pytestconfig):
 
 @pytest.mark.feature("radio_controls")
 @pytest.mark.radio_tx
+@pytest.mark.needs_switch("VFO_FM")
 def test_tx_inhibit(fm_tx):
     with settings(fm_tx, tx_inhibit=1):
         fm_tx.link.log()            # empty the ring
@@ -445,6 +447,7 @@ def test_tx_inhibit(fm_tx):
 
 @pytest.mark.feature("debuglink")
 @pytest.mark.radio_tx
+@pytest.mark.needs_switch("VFO_FM")
 def test_tx_limit(fm_tx):
     """PTT under the test TX limit: if the limit failed, the radio keys on the FM VFO at its lowest power."""
     core = fm_tx.core()
@@ -479,7 +482,7 @@ def test_tx_drive_op(radio):
     if "tx_drive" not in core:
         with pytest.raises(DebugLinkError):
             radio.link.tx_drive(0)          # a radio without the view key has no override either
-        skip("not_built", "no PA drive override for this radio (hal_radio_t.tx_drive)")
+        skip("other_board", "no PA drive override for this radio (hal_radio_t.tx_drive)")
     drives = [int(x) for x in core["tx_drive"].split("/")]
     assert len(drives) == int(core["power_count"]), core
     on = [d for d in drives if d]
@@ -493,7 +496,7 @@ def test_tx_drive_op(radio):
         radio.link.tx_drive(0)
 
 
-@pytest.mark.feature("debuglink", optional=True)    # only a radio that keys its PA this way has the op (pa-keyup.md)
+@pytest.mark.feature("debuglink", optional=True)    # a board opts in to the key-up (pa-keyup.md): no switch to excuse it
 def test_pa_keyup_op(radio):
     """The DMR PA key-up constants (RADIO op 37, docs/spec/pa-keyup.md) without keying: the core view shows the board's,
     the op takes a valid set and shows it, refuses one out of range or out of order and keeps the set before, and no
@@ -502,19 +505,22 @@ def test_pa_keyup_op(radio):
     if "pa_keyup" not in core:
         with pytest.raises(DebugLinkError):
             radio.link.pa_keyup()               # a radio without the view key doesn't key this way
-        skip("not_built", "no DMR PA key-up on this radio (docs/spec/pa-keyup.md)")
+        skip("other_board", "no DMR PA key-up on this radio (docs/spec/pa-keyup.md)")
     board = [int(x) for x in core["pa_keyup"].split("/")]
-    assert len(board) == 8, core
-    dead, knee, slope_us, boost, hold, boost_us, pa_us, drive_us = board
-    assert 50 <= boost <= 120 and hold <= 100, board
-    assert boost_us == 0 or (boost_us >= pa_us and boost_us >= drive_us), board
-    assert len(core["pa_keyup.last"].split("/")) == 4, core
-    mine = [dead, max(knee - 50, 0), slope_us, 100, hold, boost_us, pa_us, drive_us]
+    assert len(board) == 7, core
+    dead_pm, knee_us, slope_us, window_us, settle_us, pa_us, ease_pm = board
+    ahead, max_drive = [int(x) for x in core["pa_keyup.limits"].split("/")]
+    assert window_us <= ahead and (settle_us < window_us or window_us == 0) and max_drive > 0, (board, core)
+    assert len(core["pa_keyup.last"].split("/")) == 7, core
+    window = max(window_us, 2)
+    mine = [dead_pm, knee_us + 50, slope_us, window, window // 2, pa_us, ease_pm + 1]
     try:
         radio.link.pa_keyup(*mine)
         assert [int(x) for x in radio.core()["pa_keyup"].split("/")] == mine
-        for bad in (mine[:3] + [121] + mine[4:], mine[:4] + [101] + mine[5:], mine[:6] + [boost_us + 1, drive_us],
-                    mine[:7] + [boost_us + 1], mine[:5] + [60000, pa_us, drive_us]):
+        # a window ahead of the board's earliest point, a boost that ends before it starts
+        for bad in (mine[:3] + [ahead + 1] + mine[4:], mine[:4] + [window, pa_us, 1], mine[:4] + [window + 1, pa_us, 1]):
+            if bad[3] > 0xFFFF:
+                continue
             with pytest.raises(DebugLinkError) as e:
                 radio.link.pa_keyup(*bad)
             assert e.value.status == 2, (bad, e.value)     # bad argument
@@ -526,6 +532,7 @@ def test_pa_keyup_op(radio):
 
 @pytest.mark.feature("radio_controls")
 @pytest.mark.radio_tx
+@pytest.mark.needs_switch("VFO_FM")
 def test_tot_warning(fm_tx):
     with settings(fm_tx, tot_s=6, tot_warn_s=3):
         t0 = time.monotonic()
@@ -547,6 +554,7 @@ def test_tot_warning(fm_tx):
 
 @pytest.mark.feature("fm_tx_tones")
 @pytest.mark.radio_tx
+@pytest.mark.needs_switch("VFO_FM")
 def test_roger_beep(fm_tx):
     if "FM_TX_TONES" not in fm_tx.features():
         skip("not_built", "built without CONFIG_FM_TX_TONES")
@@ -570,6 +578,7 @@ def test_roger_beep(fm_tx):
 
 @pytest.mark.feature("fm_tx_tones")
 @pytest.mark.radio_tx
+@pytest.mark.needs_switch("VFO_FM")
 def test_tone_burst(fm_tx):
     if "FM_TX_TONES" not in fm_tx.features():
         skip("not_built", "built without CONFIG_FM_TX_TONES")
@@ -585,6 +594,7 @@ def test_tone_burst(fm_tx):
 
 @pytest.mark.feature("fm_tx_tones")
 @pytest.mark.radio_tx
+@pytest.mark.needs_switch("VFO_FM")
 def test_tone_burst_time_limit(fm_tx):
     """A burst whose "off" never comes (the host went away) ends by itself at its time limit. The radio's own
     transmission may jam the link while it is keyed, so the over is read once the link answers again."""
@@ -677,6 +687,69 @@ def test_scan_stops_on_dmr_call(radio, sdr_bench, pytestconfig):
     assert str(hz) in held, f"the scan never held on {freq} MHz: {sorted(set(held))}"
 
 
+
+SCAN_DMON_OTHER_TG = 999901	# a talkgroup no test channel's contact or RX group list has
+
+
+@pytest.mark.feature("scan")
+@pytest.mark.rf
+@pytest.mark.bench_service
+@pytest.mark.bench_modem
+@pytest.mark.needs_switch("DMR")
+def test_scan_digital_monitor_any_talkgroup(radio, sdr_bench, pytestconfig):
+    """#595: digital monitor on when a zone scan starts stays on at every stop. A call to a talkgroup the channel
+    doesn't listen to holds the scan, and the channel the scan ends on keeps digital monitor."""
+    need_scan(radio)
+    if "DMR" not in radio.features():
+        skip("not_built", "built without DMR")
+    freq, cc = (pytestconfig.getoption(o) for o in ("--dmr-freq", "--dmr-cc"))
+    hz = round(freq * 1e6)
+    radio.go_home()
+    radio.find_channel(hz, "dmr")
+    if as_int(radio.core().get("zone_size"), 0) < 2:
+        skip("state", "the DMR test channel's zone has one channel")
+    if radio.link.view(["dmr"]).get("dmr.hear_all_latch") != "1":	# Monitor by default may have it on already
+        radio.press("quick")	# find_channel left the radio on it
+        radio.wait_for(lambda v: v.get("ui.screen") == "quick", sections=("link",), what="quick screen")
+        radio.press("5")
+        radio.wait_for(lambda v: v.get("dmr.hear_all_latch") == "1", sections=("dmr",), what="digital monitor on")
+        if radio.screen() == "quick":
+            radio.press("back")
+    held, latched, done = [], set(), threading.Event()
+
+    def watch():
+        while not done.is_set():
+            v = radio.link.view(["core", "features", "dmr"])
+            if v.get("scan_phase") == "hold":
+                held.append(v.get("rx_hz"))
+            if v.get("scan") == "zone" and v.get("mode") == "dmr":	# an FM stop has no DMR latch to show
+                latched.add(v.get("dmr.hear_all_latch"))
+            time.sleep(0.05)
+
+    try:
+        with settings(radio, scan_resume=1):
+            radio.link.scan("zone")
+            t = threading.Thread(target=watch, daemon=True)
+            try:
+                wait_features(radio, lambda v: v.get("scan") == "zone", 1.0, "scan=zone")
+                t.start()
+                with sdr_bench.lease():
+                    # Two calls: the scan starts on the test channel, so it comes back only after a lap of the zone
+                    sdr_bench.voice_call(freq, cc, SCAN_DMON_OTHER_TG, superframes=20, calls=2)
+            finally:
+                done.set()
+                t.join(2)
+                scan_off(radio)
+        print(f"held on {sorted(set(held))}; dmr.hear_all_latch while scanning {sorted(latched)}")
+        assert str(hz) in held, f"the scan never held on {freq} MHz for TG {SCAN_DMON_OTHER_TG}"
+        assert latched == {"1"}, "digital monitor dropped during the scan"
+        radio.wait_for(lambda v: v.get("dmr.hear_all_latch") == "1", sections=("dmr",),
+                       what="digital monitor kept after the scan")
+    finally:
+        radio.go_home()
+        if radio.link.view(["dmr"]).get("dmr.hear_all_latch") == "1":
+            radio.press("back")	# BACK on Home drops digital monitor
+
 # ── scans and battery save against a signal from the SDR bench ───────────
 
 BENCH_FM_CALL_S = 6.0      # the FM signal's length, as long as the DMR call and under the 10 s key limit
@@ -715,6 +788,7 @@ def _bench_call_watch(radio, sdr_bench, pytestconfig, keys=("core", "features"),
 @pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
+@pytest.mark.needs_switch("VFO_FM")
 def test_vfo_scan_stops_on_signal(radio, sdr_bench, pytestconfig):
     need_scan(radio)
     if "VFO_FM" not in radio.features():
@@ -946,6 +1020,7 @@ def _battery_save(radio, pytestconfig, mhz=None):
 
 
 @pytest.mark.feature("battery_save")
+@pytest.mark.needs_switch("VFO_FM")
 def test_battery_save(radio, pytestconfig):
     with _battery_save(radio, pytestconfig):
         seen, _ = collect(radio, "rx_sleeping", 2.0, sections=("features",))
@@ -965,6 +1040,7 @@ def test_battery_save(radio, pytestconfig):
 @pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
+@pytest.mark.needs_switch("VFO_FM")
 def test_battery_save_wakes_for_signal(radio, sdr_bench, pytestconfig):
     mhz = rig(pytestconfig, "fm-mhz")
     with _battery_save(radio, pytestconfig, mhz):

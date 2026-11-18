@@ -45,7 +45,7 @@ test("the DB25-D's data in the flasher tables", () => {
 		assert.ok(b.ram >= 0x18000000 && b.ram < 0x18001000 && b.ram % 4 === 0, b.date);
 	}
 	assert.equal(new Set(BUILDS.map((b) => b.date)).size, BUILDS.length);
-	assert.deepEqual(b.stub_board, { id: 3, latch: 45, key: 44, nand: true });
+	assert.deepEqual(b.stub_board, { id: 3, latch: 45, key: 44, nand: true, led: { red: 33, green: 32 } });
 	assert.deepEqual(b.slot, [0xE8000, 0x100000]);
 	const ps = C.profiles.filter((p) => p.board === "db25d");
 	// any number of builds: each with its own tag, and the 020 build among them

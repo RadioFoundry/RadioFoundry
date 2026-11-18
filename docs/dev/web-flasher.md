@@ -18,8 +18,8 @@ The flasher is plain ES modules. The logic ports rfoundry, and the tests check t
 | `plan.js` | Sector plans: keep, merge, and restore (a whole image put back exactly) | `rfoundry/plan.py` |
 | `manifest.js` | Release manifest checks | `rfoundry/manifest.py` |
 | `decide.js` | Keep or merge the codec | `rfoundry/cli.py` `decide_codec` |
-| `dfu.js` | The AnyRoad DFU bootloader over WebUSB. `WebUsbTransport.open` refuses the radio switched on normally (`normalMode`: the board's `dfu_layout`, else a layout of only the bootloader's sectors) before it claims the interface | `rfoundry/dfu.py` |
-| `codecsave.js` | The codec read back from a radio that runs RadioFoundry (where stock keeps it, or where the merge placed it), checked against the profile's hashes, and a copy kept in IndexedDB: before every update that erases it, elsewhere once, so an install that can't keep or check the codec (a radio back on stock firmware, in its bootloader, or after an interrupted install) needs no stock file | `rfoundry/codecsave.py` |
+| `dfu.js` | The AnyRoad DFU bootloader over WebUSB. `WebUsbTransport.open` refuses the radio switched on normally (`normalMode`: the board's `dfu_layout`, else a layout of only the bootloader's sectors) before it claims the interface. `run` erases and writes in the board's sector order; for a codec move (`plan.js` `vectorLast`) the application's first sector is erased first and written last. Every USB call fails after 10 s with no reply (`USB_TIMEOUT_MS`, a lost connection to the user), so a radio that stops answering can't hold the page | `rfoundry/dfu.py` |
+| `codecsave.js` | The codec read back from a radio that runs RadioFoundry (where stock keeps it, where the merge placed it, or where an earlier release's layout placed it: `codecSegments()` moves that copy to the current layout), checked against the profile's hashes, and a copy kept in IndexedDB, one per radio by its chip UID (a move reads the codec again and falls back only to that radio's copy): before every update that erases it, elsewhere once, so an install that can't keep or check the codec (a radio back on stock firmware, in its bootloader, or after an interrupted install) needs no stock file | `rfoundry/codecsave.py` |
 | `bootkey.js` | The bootloader key from a radio that runs RadioFoundry: the bootloader read over READ_MEM, the block with the key's SHA-256 | `rfoundry/bootkey.py` |
 | `origbackup.js` | The backup before the install through the original firmware's or the bootloader's DFU device, behind an allowlist (below) | |
 | `origversion.js` | The original firmware's version read before an install, and the hardware option it settles (below) | `rfoundry/origversion.py` |
@@ -49,7 +49,8 @@ through the loader hand-over). `#sim` alone is the first radio on stock firmware
 (`fakeC7000Options()` and `c7000Simulation()` in `fakec7000.js`, `simulation()` in `fake.js`): a radio with a stock
 console gets one, with its first stock version. `#sim=<radio>-romfail` is an HR_C7000 radio on stock firmware whose boot
 ROM refuses the load, to practice the factory update mode; `#sim=<radio>-slowcable` one on a cable too slow for the
-boot ROM's 48 ms window, to check that the page's answer sent ahead gets through; a radio with the Baofeng updater enters it when switched on
+boot ROM's 48 ms window, to check that the page's answer sent ahead gets through; `#sim=<radio>-deafcable` one on a
+cable that carries the radio's data and none of the page's; a radio with the Baofeng updater enters it when switched on
 with "Hold the Keys and Turn On".
 
 ## The beta notice
@@ -252,7 +253,11 @@ the address are deleted within 90 days. It works with `?reporting=0`, since the 
 locally (`practiceFetch`) and sends nothing.
 
 Where it is offered: the button under every failure notice (`errorNotice()`, `problemNotice()`), the failed checks of
-the install, cable radio and loader routes, and the quiet "Something wrong? Report a Problem" link on Verify.
+the install, cable radio and loader routes, the quiet "Something wrong? Report a Problem" link on Verify, and the nav
+bar under every other step (`render()`), so a page stuck waiting on the radio, with no error shown, can still send its
+trail. It gives way to another Report a Problem the step shows (the stylesheet hides `.nav-report`). A report's
+`result` is the step's verdict (`problem` from a verify), else `failed` after an error, else `problem`. The verdict is
+dropped when the user leaves its step.
 
 Every failure says what to do next: the message itself, or `errorNotice(text, { next })` beside it. Where the step can
 run again in place, `{ retry }` puts Try Again in the notice. Pressing it removes the notice first, so a second
@@ -369,7 +374,7 @@ a radio, such as another bootloader protocol or a stock firmware's own read-back
 | Backend | Radios | Module |
 |---|---|---|
 | `anyroad-dfu` | `usb-dfu` family (STM32F4 radios) | `app.js` (`dfu.js`, `f4stub.js`) |
-| `c7000-stub` | `serial-loader` and `serial-iap` families (HR_C7000 radios) | `c7000ui.js` (`stub.js`, `c7000.js`) |
+| `c7000-stub` | `serial-loader`, `serial-iap` and `boot-rom` families (HR_C7000 radios) | `c7000ui.js` (`stub.js`, `c7000.js`) |
 | `anytone-update` | `anytone-update` family (the vendor update mode on the radio's USB serial port) | `anytoneui.js` (`anytone.js`; `fakeanytone.js` for tests) |
 | `none` | any other | none: the radio is listed but grayed out |
 
@@ -585,17 +590,17 @@ erased before the check.
 
 ## HR_C7000 radios (the boot stub)
 
-Radios whose backend is `c7000-stub` (the `serial-loader` and `serial-iap` families; a board with a first stage adds the section
-below) are flashed over their
+Radios whose backend is `c7000-stub` (the `serial-loader`, `serial-iap` and `boot-rom` families; a board with a first
+stage or one the boot ROM starts directly adds a section below) are flashed over their
 programming cable with Web Serial, through the boot stub ([stub/README.md](../../stub/README.md),
 [debuglink.md](../spec/debuglink.md) 3.18), or through the radio's factory update mode when the stub can't be loaded
 (below). No loader in the radio is ever written. The install has its own steps:
 
 | Step | What happens |
 |---|---|
-| Connect | The page looks for a stub that still runs, then for RadioFoundry. RadioFoundry with `CONFIG_STUB_ENTRY` hands over to the stub (command 0x1A); RadioFoundry without it is restarted with its CPS reboot, which passes the boot ROM's serial window (not yet tried on a radio). Otherwise the page asks the user to switch the radio off and on and catches the boot ROM. The radio model is then checked by the bootloader's ID string, and the page sends the stub the board's profile (CONFIG: clocks, UART, pins, board id) and checks the echo; the stub refuses writes until then |
+| Connect | The page looks for a stub that still runs, then for RadioFoundry. RadioFoundry with `CONFIG_STUB_ENTRY` hands over to the stub (command 0x1A); RadioFoundry without it is restarted with its CPS reboot, which passes the boot ROM's serial window (not yet tried on a radio). Otherwise the page asks the user to switch the radio off and on and catches the boot ROM. The stub image sent carries the board's LED pins in its parameter block (`stubFor()` in `c7000ui.js`), so the stub drives no other pin before CONFIG. The radio model is then checked by the bootloader's ID string, and the page sends the stub the board's profile (CONFIG: clocks, UART, pins, board id) and checks the echo; the stub refuses writes until then |
 | Back up and check | A first install reads the whole program memory (required) and the calibration area; the whole data memory only if asked (off by default: many minutes at 115200 baud). Each choice shows its time: the stub's sector sums count the blank sectors first (no data moved, `c7000.js` `blankCount`, at most 8 s per memory, windows spread over the range), and `readSeconds` turns the used share into wire bytes, plus the radio's own time per sector where it is slower (a NAND), pessimistically: every used sector whole (no credit for LZ4), 13 bytes a record, at 9000 B/s or the rate measured on this radio, never above the 11,520 B/s of the line; without a count every sector is taken as used ("up to"). The page keeps the program memory in IndexedDB and downloads a backup bundle. A first install can skip the program memory read, before or during it, and take the codec from the stock file instead: only the codec slot is read, and the firmware is reported as not read. An update reads only the codec slot. The page then decides the codec |
-| Write | Only sectors whose CRC differs are written. The first application sector goes last, each sector is read back right away (three tries), and a final pass checks every sector |
+| Write | Only sectors whose CRC differs are written. The first application sector goes last, each sector is read back right away (three tries), and a final pass checks every sector. A board the boot ROM starts directly then gets its flag sector ([below](#a-board-the-boot-rom-starts-directly)) |
 | Check | The stub resets the chip; the page asks RadioFoundry's VERSION for the build and the codec |
 
 A cable whose USB vendor id is a CH340's (1a86) gets a warning on the connect, check, write, backup and restore steps:
@@ -603,9 +608,27 @@ some of these cables fail the backup or the install. The boot ROM load drops an 
 cables loop TX back to RX). A frame not acknowledged logs the first 16 bytes received, and the error names the cable's
 chip.
 
+A USB-serial cable (FTDI, CH340, CP210x or PL2303 vendor id; not the WebUSB stand-in) is checked as it opens
+(`SerialStream.open()`, `sendsData()` in `link.js`): the port is opened with a 256-byte buffer and takes 8 KB of 0xFF,
+which must leave within their time on the line plus `limits.sendCheck` (0.7 s + 1.5 s at 115200). An adapter whose
+sending side stopped takes about 1 KB and then nothing, and fails as `CableError("stalled")`: the connect step shows
+the cable fault, with Try Again ([gotchas.md](../spec/gotchas.md) 16.6). The pending write is aborted, never
+drained: a drain on such an adapter froze the browser. `knownRadioPort()` throws that fault when no other granted port
+answers. A cable that passes waits for the burst to leave before the port is closed and opened again with the 64 KB
+buffer, and `SerialStream.close()` waits for whatever was written (`outUntil`, at most 3 s): a port closed with data
+still going out stopped one adapter for good, until it was unplugged.
+
 The boot ROM waits about 48 ms for the answer to its greeting (measured; the radio pages have the timing), and
 the greeting in and the answer out both cross the cable and the browser's read loop. When the load fails, the ROM says
-it stopped waiting (`00 10 00 03`, error code `rom-late`, or `rom-booted` when no greeting was seen). Answering only
+it stopped waiting (error code `rom-late`, or `rom-booted` when no greeting was seen). What it sends then is the
+address it starts, little endian: `00 10 00 03` with a loader at the start of the flash, `00 c0 00 03` on a board
+whose flash names the application (`rom_entry`). `romSignOffs()` in `stub.js` takes any 256-byte-aligned program
+flash address, and doesn't count the ones in an echo of the frame just sent (the stub image holds such words).
+The greeting, answers already on their way and then the sign-off is `rom-deaf`: nothing the cable sends reaches
+the radio, and the connect step shows it as the cable fault `oneway` instead of offering another try. Two bursts of
+a few bytes 25 to 300 ms apart, then a quiet line, with no greeting in them, is `rom-garbled`: the ROM's two frames
+read at the wrong rate (a cable adapter in a bad state, [gotchas](../spec/gotchas.md) 16.6), shown at once as the cable
+fault `rom_garbled`. Stray bytes from the power switch come one at a time and don't count. Answering only
 after the greeting arrived failed often on the first try, so every wait for the ROM uses the **slow cable mode**
 (`powerCycle()` in `c7000ui.js`; it was once a choice offered after a failure, and a collapsed note on these panels
 says where it went): `waitForRom({ repeat: ROM_REPEAT })` sends the answer every 30 ms, and on for 150 ms after the
@@ -654,6 +677,28 @@ starts RadioFoundry by itself, so the done step's first check waits 20 s before 
 `bfloader.js` and `c7000.js` have installed a radio this way from Node, over an FTDI cable (the radio's hardware page
 has the figures). The page around them is checked only in practice mode, and the route is untested on the other
 radios on this loader.
+
+### A board the boot ROM starts directly
+
+A board with no vendor loader (`boot-rom` family, `rom_entry` in its `[flash.stub]`) is started by the boot ROM
+itself: after its serial window the ROM reads a flag at program flash 0 (`74 68 64 0C`, then the entry address, little
+endian) and jumps to that entry. Its original firmware starts below the application area and runs into it, so an
+install overwrites part of it. `c7000.boards.<id>.rom_entry` in `data/flash-boards.json` (from `stub/stubtool.py`
+`C7_BOARDS`) and `c7000.rom_flag` carry what the page needs; `progmem_size` is the whole program flash, which the
+backup reads.
+
+| Step | What changes |
+|---|---|
+| Back up and check | The whole program flash is read (`c7.totalSize()`): the only copy of the original firmware below the application area is this backup |
+| Write | After the application and the codec slot are written and verified, `installWrite()` (`c7000ui.js`) has `Stub.writeRomFlag()` make the flag sector name `rom_entry`: the flag, the entry, then the rest of the sector as it was when it held the flag, else 0xFF (`stubtool.py` `write_rom_flag`). It is the last write, so an install stopped before it leaves the radio starting its original firmware, and running the install again writes only that sector |
+| Bootloader check | The hash of the area below the application before and after the write leaves out that one sector; the rest of the area is checked as on every board |
+| Restore | `restoreWrite()`: the backup must start with the flag (else nothing is written), the radio's flash between the flag sector and the application must already match the backup by CRC (nothing writes it; else nothing is written), then the application area, then the backup's own flag sector, last |
+
+The restore puts back the program flash up to the end of the application area; flash past it is not written by any
+route. `stubtool.py` has no restore: it reads the whole program flash and writes only the application
+area and the flag sector. `site/tests/c7000boot.test.mjs` runs the backup, the codec from the radio's own flash, the
+install, an install stopped before the flag sector and the restore against the simulated radio (`fakec7000.js`
+`romEntry`: it starts what the flag names).
 
 ### A board with a first stage
 
@@ -746,10 +791,10 @@ loader route is used when all of these hold:
 | Condition | Why |
 |---|---|
 | RadioFoundry offers stub entry (`CONFIG_STUB_ENTRY`) | the hand-over needs it |
-| RadioFoundry reports the radio's codec | the loader writes only the firmware's own flash, so the codec must already be in place |
+| RadioFoundry reports the radio's codec, or one where an earlier release kept it (`board.codec.former`) | the loader writes only the firmware's own flash, so the codec is either in place or moves with the install: from the copy kept in IndexedDB, else from the stock file the write step asks for (`stubSegments`; a copy only in the page is never used for a move, `decide.js` `savedKept`) |
 | the image has no codec in it, and no mode was forced under Advanced | a merge or a forced mode goes through the bootloader |
 
-The codec step then needs no stock file or key. The write step sends the embedded stub (`data/f4-stub.json`, from
+There is no codec step; only a codec move without a kept copy asks for the stock file (which also gives the key), on the write step. The write step sends the embedded stub (`data/f4-stub.json`, from
 `stub/f4stub.py`), finds it on the same port or, if it enumerated again, on the granted port with the same serial
 number (one click picks it when the browser didn't keep the grant), and sends it the radio's board record
 ([stub-stm32f4.md](../spec/stub-stm32f4.md) 5.2: SPI flash bus, mode and pins, chip select, chip selects held high,
@@ -758,13 +803,16 @@ configured flag is set and the application base is 0x0800C000. Then it installs 
 [stub-stm32f4.md](../spec/stub-stm32f4.md) 7: sector 3 erased first and its first word written last. A sector that
 also holds bytes the firmware doesn't own (no radio has one since the codec moved) is downloaded as a file before
 anything is erased, and those bytes are written back unchanged. The bootloader route stays on the same step, folded,
-and opens by itself when the loader can't finish. An install cut short leaves the radio in its bootloader at the next
-power-on, which that route finishes.
+and opens by itself when the loader can't finish. For a codec move the codec segments are built before the radio is
+handed to the loader (`stubSegments`): with no source the install is refused and the radio is not touched. An install
+cut short leaves the radio in its bootloader at the next power-on, which that route finishes.
 
 | Loader answer | What the page does |
 |---|---|
 | HELLO before CONFIG: application base 0, no SPI flash, configured flag clear | Expected for protocol 4: it sends CONFIG |
 | CONFIG refused (status `0D`) | Stops, nothing written; the bootloader route opens |
+| The codec guard refuses a plain image over a codec window (`f4stub.js` `guardCodec`, `codecGuard` set) | Nothing written: restarts the radio out of the loader into its firmware (or says to turn it off and on) and opens the bootloader route |
+| Any other failure once the loader runs | Restarts the radio from the loader (`resetChip`): before sector 3 was erased (`F4Stub.erased`) it runs its firmware as before, after it it starts in update mode, and the page says which and opens the bootloader route. Only a loader that doesn't answer gets Try Again |
 | HELLO after CONFIG echoes other bytes, or another application base | Stops, nothing written |
 | A write answered `11` (not configured) | Stops; the page checks the echo before every write, so this means the loader lost its record |
 | Protocol 2 (an older loader still running from an earlier session) | No CONFIG: accepted only for a board whose record matches the wiring built into it (`v2_wiring`) |
