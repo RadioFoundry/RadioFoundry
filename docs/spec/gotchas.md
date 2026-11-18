@@ -323,6 +323,14 @@ receive worked. Rule: change the chip's settings with the state at idle and ente
 word from another of the chip's bands leaves the receiver deaf with every other register right. Radios: boards with
 the FD6818 as the transceiver.
 
+**3.18 Test DMR receive with strong simplex bursts, not only near sensitivity.** Symptom: about a bit a frame
+corrected on every DMR call from -85 to -40 dBm, and none near sensitivity. Cause: the AT1846S AGC with reg 0x32
+bits 2:0 at 2 or more (undocumented bits) overloads the start of every simplex burst, as the carrier comes and goes
+every 30 ms; a repeater's continuous carrier showed nothing. Sweeps near sensitivity, where receive settings are
+usually tuned, never saw it. Rule: the AT1846S DMR mode table writes 0x32 bits 2:0 clear (`drivers/rf/at1846s`);
+judge a receiver setting at strong simplex levels as well (`dmr-voice.md` 7.1). Radios: AT1846S boards. Test:
+`test_dmr_audio_rx_strong` (tests/hil).
+
 ## 4. AMBE codec calling
 
 **4.1 The STM32 codec glue must be built at -O0.** The codec entry calls were inline assembly that depended on the
