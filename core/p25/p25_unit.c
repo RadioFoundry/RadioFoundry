@@ -409,6 +409,7 @@ bool p25_lc_parse(const uint8_t raw[P25_LC_BYTES], p25_lc_t *lc)
 	lc->src = ((uint32_t)raw[6] << 16) | ((uint32_t)raw[7] << 8) | raw[8];
 	if (lc->mfid != 0)
 		return false;		// a manufacturer's own format
+	lc->encrypted = (raw[2] & 0x40) != 0;
 	switch (lc->lcf) {
 	case P25_LCF_GROUP:
 		lc->emergency = (raw[2] & 0x80) != 0;
@@ -427,12 +428,13 @@ void p25_lc_build(const p25_lc_t *lc, uint8_t raw[P25_LC_BYTES])
 	memset(raw, 0, P25_LC_BYTES);
 	raw[0] = lc->lcf;
 	raw[1] = lc->mfid;
+	raw[2] = lc->encrypted ? 0x40 : 0;
 	if (lc->lcf == P25_LCF_UNIT) {
 		raw[3] = (uint8_t)(lc->dst >> 16);
 		raw[4] = (uint8_t)(lc->dst >> 8);
 		raw[5] = (uint8_t)lc->dst;
 	} else {
-		raw[2] = lc->emergency ? 0x80 : 0;
+		raw[2] |= lc->emergency ? 0x80 : 0;
 		raw[4] = (uint8_t)(lc->tgid >> 8);
 		raw[5] = (uint8_t)lc->tgid;
 	}

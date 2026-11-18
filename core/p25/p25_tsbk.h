@@ -97,6 +97,7 @@ typedef struct {
 	uint8_t id;		// 0-15
 	uint8_t form;		// the opcode it came in
 	bool tdma;		// the TDMA form with a channel type that is not single-slot full rate
+	bool no_tx_offset;	// sign-only offset: no implicit uplink; tx_off 0 alone means simplex
 	uint8_t slots;		// channels per carrier: 1, or the TDMA type's
 	uint8_t type;		// the TDMA form's channel type (0-15), else 0
 	uint32_t base;		// x 5 Hz

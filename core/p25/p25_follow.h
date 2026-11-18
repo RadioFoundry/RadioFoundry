@@ -214,6 +214,7 @@ typedef struct {
 	bool left_enc;		// left_ch / left_tg is an encrypted call skipped
 	bool tuning;		// a tune was asked: units are of the old channel until p25_follow_retuned
 	bool have_id;		// the candidate's system identity matched
+	bool identity_conflict;	// conflicting NET/RFSS proof: a fresh matching NET is required before reacquisition
 	volatile uint8_t seq;	// odd while view is written
 	p25_follow_acc_t acc;
 	p25_follow_iden_e iden[P25_FOLLOW_IDENS];
