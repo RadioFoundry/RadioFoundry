@@ -195,6 +195,33 @@ def test_needs_switch_excuses_a_switch_left_out(tmp_path):
     assert outcomes(out)["test_stops_on_dmr_call"]["outcome"] == "failed", r.stdout
 
 
+def test_delete_message_without_a_bench(tmp_path, monkeypatch):
+    # Collect the actual inbox test. The newest message belongs to the owner.
+    (tmp_path / "test_inbox.py").write_text('''import pytest
+from unittest.mock import Mock
+from test_ui import test_delete_message
+
+@pytest.fixture
+def home():
+    r = Mock()
+    r.data_view.return_value = {"data.built": 1}
+    r.view.return_value = {"data.inbox_count": "1"}
+    r.link.inbox.return_value = {"text": "owner message"}
+    yield r
+    r.press.assert_not_called()
+''')
+    monkeypatch.delenv("RFOUNDRY_HIL_DELETE_MESSAGE", raising=False)
+    out = tmp_path / "out.json"
+    for flags, kind in (([], "opt_in"), (["--allow-rf"], "bench")):
+        run = pytest_run(tmp_path, "test_inbox.py", "--bringup", "dmr_sms", "--bringup-out", str(out),
+                         "--bench-api", "", *flags)
+        assert run.returncode == 0, run.stdout + run.stderr
+        result = outcomes(out)["test_delete_message"]
+        assert result["outcome"] == "skipped" and result["excused"] and result["skip_kind"] == kind
+        if kind == "opt_in":
+            assert "newest inbox message" in result["reason"]   # checked the inbox before requiring a transmitter
+
+
 def test_a_failed_gate_fails_the_feature_unrun(tmp_path):
     t = fake_tree(tmp_path)
     out = t / "out.json"

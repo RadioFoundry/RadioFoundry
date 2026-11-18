@@ -553,7 +553,9 @@ checks reported as not judged when the receiver clips, and the bench modem's tri
   the firmware releases PTT by itself at its time-out). Call `radio.go_home()` first for UI tests.
 - Check state with `radio.wait_for(lambda v: ..., timeout)` on the view (key=value strings, `docs/spec/debuglink.md`
   3.7), never with fixed sleeps alone; counters with `radio.reset_counters()` then `radio.counters()` deltas.
-- Anything that transmits gets `@pytest.mark.rf` (the radio: `radio_tx`, also when it only replies or beacons by
+- A test that can finish without transmitting uses `rf_fallback` if its fallback sends a bench signal. It checks
+  `--allow-rf` before taking that path. For example, deleting a HIL message only needs RF to supply a missing message.
+- Anything that always transmits gets `@pytest.mark.rf` (the radio: `radio_tx`, also when it only replies or beacons by
   itself: [Transmit frequencies](#transmit-frequencies)); anything that uses the SDR bench's
   transmitter or receiver also gets `@pytest.mark.bench_service`, one of `sdr_rx` / `bench_modem` / `sdr_or_modem`
   (both of the first two for a test that needs both, see Bench hardware markers) and runs inside

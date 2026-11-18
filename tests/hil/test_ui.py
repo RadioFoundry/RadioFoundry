@@ -721,6 +721,7 @@ def test_zone_editor_moves_a_channel(home):
 
 
 @pytest.mark.feature("dmr_sms")
+@pytest.mark.rf_fallback
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 def test_delete_message(home, request, pytestconfig):
