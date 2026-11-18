@@ -30,6 +30,7 @@
 #include "dmr/dmrPrivacy.h"
 #endif
 #include "radio/beep.h"	// beep_t (beep_play only with CONFIG_BEEP)
+#include "radio/sigtone.h"
 #include "radio/vibe.h"	// vibe_t (vibe_play only with CONFIG_VIBRATE)
 #include "radio/tx_limit.h"	// the test TX limit (radio-features.md 3.1)
 #if CONFIG_P25 || CONFIG_NXDN
@@ -224,22 +225,71 @@ static inline bool voice_streaming(void)
 	return on;
 }
 
-// A beep at the settings' level: mixed into the voice stream when one runs, else on its own stream
-static void beep(radio_sm_t *sm, uint8_t b)
-{
 #if CONFIG_BEEP
-	bool shared = voice_streaming();
-	if (radio_tone_off(sm->set.tones_off, b)) {
-		return;		// Settings > Sound turned it off (the codeplug's settings area)
-	}
+// The level a beep plays at, and whether it is mixed into the voice stream (running) or has its own stream
+static uint8_t beep_level_now(const radio_sm_t *sm)
+{
 	uint8_t level = sm->set.beep_level;
 	if (board.radio != NULL && board.radio->volume != NULL && !board.radio->volume_pcm) {
 		level = radio_beep_level(level, sm->volume_sent);
 	}
-	beep_play((beep_t)b, level, shared);
+	return level;
+}
+
+static bool beep_shared_now(void)
+{
+	return voice_streaming();
+}
+#endif
+
+// A beep at the settings' level: mixed into the voice stream when one runs, else on its own stream
+static void beep(radio_sm_t *sm, uint8_t b)
+{
+#if CONFIG_BEEP
+	if (radio_tone_off(sm->set.tones_off, b)) {
+		return;		// Settings > Sound turned it off (the codeplug's settings area)
+	}
+	beep_play((beep_t)b, beep_level_now(sm), beep_shared_now());
 #else
 	(void)sm;
 	(void)b;
+#endif
+}
+
+// --- Signaling tones (sigtone.h, docs/spec/radio-features.md 4.3) ---
+
+_Static_assert(SIG_EV_COUNT == 3, "radio_settings_t.sig_* hold three events");
+_Static_assert(SIG_STEPS == 10, "radio_settings_t.sig_hz / sig_ms hold ten steps");
+
+// Where the event's tone goes on this channel's mode (sig_out_t)
+static uint8_t sig_out(const radio_sm_t *sm, sig_event_t ev)
+{
+#if CONFIG_SIG_TONES
+	return sm->view.ch.mode == RADIO_MODE_DMR ? sm->set.sig_dmr[ev] : sm->set.sig_fm[ev];
+#else
+	(void)sm;
+	(void)ev;
+	return SIG_OUT_DEFAULT;	// built without the chains: the radio's own sounds
+#endif
+}
+
+// Whether the event's tone sounds on the speaker instead of the radio's own: the setting says so, on a channel that
+// allows beeps
+static bool sig_local_on(const radio_sm_t *sm, sig_event_t ev)
+{
+	return CONFIG_BEEP && !sm->view.ch.no_beep && sig_out_local(sig_out(sm, ev));
+}
+
+// The event's tone on the speaker
+static void sig_local(radio_sm_t *sm, sig_event_t ev)
+{
+#if CONFIG_BEEP && CONFIG_SIG_TONES
+	beep_seg_t seg[SIG_STEPS];
+	uint8_t n = sig_chain(sm->set.sig_hz[ev], sm->set.sig_ms[ev], ev, seg);
+	beep_play_custom(seg, n, beep_level_now(sm), beep_shared_now());
+#else
+	(void)sm;
+	(void)ev;
 #endif
 }
 
@@ -266,12 +316,45 @@ static bool tones_apply(radio_settings_t *s)
 	return true;
 }
 
+#if CONFIG_SIG_TONES
+// The signaling tones' records over s->sig_*, the radio's own copy: one walk over their keys. A record the setting can't
+// take reads as absent (sig_rec_decode). True if one changed
+static bool sig_apply(radio_settings_t *s)
+{
+	bool changed = false;
+	codeplug_kv_cursor_t c;
+	uint16_t key;
+	uint8_t v[SIG_REC_LEN];
+	int len;
+	codeplug_kv_begin(&c, CODEPLUG_KEY_SIG_BEGIN, CODEPLUG_KEY_SIG_BEGIN + SIG_EV_COUNT - 1);
+	while ((len = codeplug_kv_next(&c, &key, v, sizeof(v))) >= 0) {
+		sig_event_t ev = (sig_event_t)(key - CODEPLUG_KEY_SIG_BEGIN);
+		sig_rec_t r, now;
+		uint8_t a[SIG_REC_LEN], b[SIG_REC_LEN];
+		radio_sig_get(s, ev, &now);
+		if (sig_rec_decode(v, len, ev, &r)) {
+			sig_rec_encode(&r, a);	// compared as stored: the struct has padding
+			sig_rec_encode(&now, b);
+			if (memcmp(a, b, sizeof a) != 0) {
+				radio_sig_put(s, ev, &r);
+				changed = true;
+			}
+		}
+	}
+	return changed;
+}
+#endif
+
 static void radio_to_settings(const radio_settings_t *s, uint32_t now_ms);
 
 static void kv_load(radio_sm_t *sm, uint32_t now_ms)
 {
 	kv_seen = codeplug_kv_serial();
-	if (tones_apply(&sm->set)) {
+	bool sig = false;
+#if CONFIG_SIG_TONES
+	sig = sig_apply(&sm->set);
+#endif
+	if (tones_apply(&sm->set) || sig) {
 		changed(sm);	// published with the settings (radio_get_settings): the menu shows it
 		radio_to_settings(&sm->set, now_ms);	// the radio's own copy follows the key
 	}
@@ -1371,6 +1454,8 @@ static uint8_t hang_s(uint16_t ms, uint8_t dflt)
 // from beep_play on); the hold lasts while the beep plays or its audio is still in the board's buffers, so none of it
 // is left to reach the modulator
 #define PERMIT_HOLD_MIN_MS	40u
+// Longest our DMR end tone waits for the audio path to open after the transmission (the engine's last burst)
+#define DMR_END_WAIT_MS		400u
 
 static bool permit_busy(void)
 {
@@ -1382,10 +1467,29 @@ static bool permit_busy(void)
 #endif
 }
 
+// Whether the DMR talk permit sounds on the speaker: the radio's own tone when the setting is the default (and the
+// talk permit is on), else the start of transmission tone's sequence when it is set to sound there
+static bool permit_local(const radio_sm_t *sm)
+{
+	return sig_out(sm, SIG_EV_BEGIN) == SIG_OUT_DEFAULT ? sm->set.talk_permit : sig_local_on(sm, SIG_EV_BEGIN);
+}
+
+static void permit_play(radio_sm_t *sm, uint8_t b)
+{
+	if (sm->view.ch.no_beep || !permit_local(sm)) {
+		return;
+	}
+	if (sig_out(sm, SIG_EV_BEGIN) == SIG_OUT_DEFAULT) {
+		beep(sm, b);
+	} else {
+		sig_local(sm, SIG_EV_BEGIN);
+	}
+}
+
 // Whether the talk permit sounds before keying on this channel: the board can't play it on air, and it is on
 static bool permit_before_key(const radio_sm_t *sm)
 {
-	return CONFIG_BEEP && (board.caps & CAP_BEEP_NOT_ON_AIR) != 0 && sm->set.talk_permit && !sm->view.ch.no_beep;
+	return CONFIG_BEEP && (board.caps & CAP_BEEP_NOT_ON_AIR) != 0 && permit_local(sm) && !sm->view.ch.no_beep;
 }
 
 // Digital monitor on now: latched on this channel, or carried by a zone or VFO scan started with it on, so every
@@ -1512,6 +1616,9 @@ static void dmr_configure(radio_sm_t *sm)
 	}
 #endif
 	dmr_call_configure(&cfg);
+#if CONFIG_SIG_TONES
+	sm->dmr_end_wait = false;	// a pending end tone belongs to the channel it was sent on
+#endif
 	sm->view.dmr.own_id = cfg.own_id;
 	// The channel's color code, timeslot and repeater mode in the same update as the channel: dmr_publish copies the
 	// stack's own only at the next tick, and a reader between the two (dual watch's snapshot at each hop) would take
@@ -2055,28 +2162,54 @@ static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
 	uint8_t permit = early ? BEEP_TX_PERMIT_SHORT : BEEP_TX_PERMIT;
 	if (cv->wake_admits != sm->dmr_wake_admits) {
 		sm->dmr_wake_admits = cv->wake_admits;
-		if (!sm->view.ch.no_beep && sm->set.talk_permit) {
-			beep(sm, permit);	// a short press: the repeater woke after PTT was let go
-		}
+		permit_play(sm, permit);	// a short press: the repeater woke after PTT was let go
 	}
 	if (cv->permit_seq != sm->dmr_permit_seq) {
 		sm->dmr_permit_seq = cv->permit_seq;
 		if (permit_before_key(sm)) {
-			beep(sm, BEEP_TX_PERMIT_SHORT);	// the stack holds the key-up until it has played
+			permit_play(sm, BEEP_TX_PERMIT_SHORT);	// the stack holds the key-up until it has played
 		}
 	}
 	uint8_t st = sm->view.dmr.state;
 	if (st != sm->dmr_prev_state) {
 		if (!sm->view.ch.no_beep) {
-			if (st == RDMR_TX && sm->set.talk_permit && !early) {
-				beep(sm, BEEP_TX_PERMIT);
+			if (st == RDMR_TX && !early) {
+				permit_play(sm, BEEP_TX_PERMIT);
 			} else if (sm->dmr_prev_state == RDMR_RX && (st == RDMR_IDLE || st == RDMR_RX_OTHER) &&
 				   sm->view.state != RS_TX_DENIED) {	// a refusal's idle: the call plays on
-				beep(sm, BEEP_CALL_END);
+				// The call heard ended: the radio's call end tone, unless the channel free tone is set
+				if (sig_out(sm, SIG_EV_IDLE) == SIG_OUT_DEFAULT) {
+					beep(sm, BEEP_CALL_END);
+				} else if (sig_local_on(sm, SIG_EV_IDLE)) {
+					sig_local(sm, SIG_EV_IDLE);
+				}
+#if CONFIG_SIG_TONES
+			} else if (sm->dmr_prev_state == RDMR_TX && st != RDMR_TX && !sm->ptt &&
+				   sig_local_on(sm, SIG_EV_END)) {
+				// Our transmission is over (PTT let go: not a time-out or a denial, as in FM), but the engine may still be sending its last burst: a board whose
+				// audio path is gated drops what is queued meanwhile, and the tone was heard half. Wait for it
+				sm->dmr_end_wait = true;
+				sm->dmr_end_ms = now_ms;
+#endif
 			}
 		}
 		sm->dmr_prev_state = st;
 	}
+#if CONFIG_SIG_TONES
+	if (sm->dmr_end_wait && sm->view.ch.mode != RADIO_MODE_DMR) {
+		sm->dmr_end_wait = false;	// the channel is not DMR any more
+	}
+	if (sm->dmr_end_wait) {
+		const hal_audio_t *a = board.audio;
+		bool blocked = a != NULL && a->speaker_blocked != NULL && a->speaker_blocked();
+		if (st == RDMR_TX || (!blocked && !sm->dmr_keyed) || now_ms - sm->dmr_end_ms >= DMR_END_WAIT_MS) {
+			sm->dmr_end_wait = false;
+			if (st != RDMR_TX) {
+				sig_local(sm, SIG_EV_END);
+			}
+		}
+	}
+#endif
 }
 
 // --- One-shot talk target: PTT while a list row is focused talks to that row's target once, and keeps it as the
@@ -2168,6 +2301,34 @@ static void one_shot_follow(radio_sm_t *sm, uint32_t now_ms)
 
 // PTT on a DMR channel (band, RX-only and frequency checks passed): arm the board's per-burst keying, then the stack
 // decides when the bursts go out
+// The event's tone on air in DMR (sigtone.h): sent as voice in place of the mic, from the first voice of the
+// transmission (start) or after the last of it (end, which holds the over open for it). Not on a no-beep channel, and
+// not while the host sends its own audio
+static void sig_air_dmr(radio_sm_t *sm, sig_event_t ev)
+{
+#if CONFIG_SIG_TONES
+	if (sm->host_audio || sm->view.ch.no_beep || !sig_out_air(sig_out(sm, ev), ev)) {
+		return;
+	}
+	beep_seg_t seg[SIG_AIR_STEPS];
+	uint8_t n = sig_chain(sm->set.sig_hz[ev], sm->set.sig_ms[ev], ev, seg);
+	// A guard of silence on the outer side: before a start tone (the transmission's first frames), after an end tone
+	// (its last), where a lossy link such as a hotspot has been seen to clip
+	const beep_seg_t guard = { 0, ev == SIG_EV_END ? SIG_AIR_END_GUARD_MS : SIG_AIR_GUARD_MS };
+	if (ev == SIG_EV_END) {
+		seg[n++] = guard;
+	} else {
+		memmove(&seg[1], &seg[0], n * sizeof seg[0]);
+		seg[0] = guard;
+		n++;
+	}
+	ambeVoiceTxTone(seg, n, ev == SIG_EV_END);
+#else
+	(void)sm;
+	(void)ev;
+#endif
+}
+
 static void dmr_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 {
 	const channel_t *ch = &sm->view.ch;
@@ -2202,6 +2363,7 @@ static void dmr_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_DMR_GPS
 	dmr_gps_tx(sm, now_ms);
 #endif
+	sig_air_dmr(sm, SIG_EV_BEGIN);
 	dmr_call_ptt(true);
 	dmr_call_poll(now_ms);
 	dmr_follow(sm, now_ms);
@@ -5655,6 +5817,7 @@ static void fm_tx_end(radio_sm_t *sm, bool keyed, uint32_t now_ms)
 	sm->tail_ms = 0;
 #endif
 	if (sm->view.state == RS_TX || sm->view.state == RS_TX_DENIED) {
+		bool sent = sm->view.state == RS_TX && sm->view.tx_deny == TXDENY_NONE;
 		// A busy refusal's reception goes on as it was, its tone already heard; anything else starts from idle
 		bool rx_on = sm->view.state == RS_TX_DENIED && sm->deny_rx;
 		sm->deny_rx = false;
@@ -5669,6 +5832,11 @@ static void fm_tx_end(radio_sm_t *sm, bool keyed, uint32_t now_ms)
 		}
 		outputs(sm);
 		changed(sm);
+		// The end of transmission tone on the speaker, once the transmitter is off (so a board that can't beep on
+		// air plays it too). Not after a time-out or a denial: they have their own beeps
+		if (sent && sm->view.ch.mode == RADIO_MODE_FM && sig_local_on(sm, SIG_EV_END)) {
+			sig_local(sm, SIG_EV_END);
+		}
 	}
 	sm->tx_end_ms = now_ms;
 	if (sm->retune_pending) {
@@ -5719,9 +5887,120 @@ static void fm_unkey(radio_sm_t *sm, bool keyed, uint32_t now_ms)
 }
 
 #if CONFIG_FM_TX_TONES
+#if CONFIG_SIG_TONES
+// The start tone's sidetone stays on through the silent steps of the chain; it ends with the chain
+static void tone_side_off(void)
+{
+	if (board.radio->tx_tone_side != NULL) {
+		board.radio->tx_tone_side(false);
+	}
+}
+#endif
+
 static bool tx_tone(uint16_t hz)
 {
 	return board.radio->tx_tone != NULL && board.radio->tx_tone(hz);
+}
+
+#if CONFIG_SIG_TONES
+
+// Step i of an on-air FM chain. A pause is a silent carrier (tx_tone_key), not tx_tone(0): that gives the microphone
+// back on some chips (HR_C7000), so every gap would send live audio. A chain that opens with a pause first starts its
+// first tone, then keys it off. A board without tx_tone_key can't key a silent carrier: the old behavior (tx_tone(0)
+// between steps, the microphone live before a leading pause)
+static bool chain_tone(const beep_seg_t *g, uint8_t n, uint8_t i)
+{
+	if (g[i].hz != 0) {
+		return board.radio->tx_tone(g[i].hz);
+	}
+	if (board.radio->tx_tone_key == NULL) {
+		return i == 0 || board.radio->tx_tone(0);
+	}
+	if (i == 0) {
+		uint8_t k = 0;
+		while (k < n && g[k].hz == 0) {
+			k++;
+		}
+		if (k == n || !board.radio->tx_tone(g[k].hz)) {
+			return false;
+		}
+	}
+	return board.radio->tx_tone_key(false) || board.radio->tx_tone(0);
+}
+
+// The tone sent before unkeying on an FM channel when PTT is let go: the roger beep (the end tone's default, if it is
+// on) or the end tone's sequence when it is set to go on air. Starts its first step; true when it runs (roger_poll
+// goes through the rest and unkeys)
+static bool roger_start(radio_sm_t *sm, uint32_t now_ms)
+{
+	uint8_t out = sig_out(sm, SIG_EV_END);
+	beep_seg_t *g = sm->roger_seg;
+	uint8_t n;
+	if (out == SIG_OUT_DEFAULT) {
+		if (!sm->set.roger_beep) {
+			return false;
+		}
+		g[0] = (beep_seg_t){ RADIO_ROGER_HZ1, RADIO_ROGER_STEP_MS };
+		g[1] = (beep_seg_t){ RADIO_ROGER_HZ2, RADIO_ROGER_STEP_MS };
+		n = 2;
+#if CONFIG_SIG_TONES
+	} else if (sig_out_air(out, SIG_EV_END)) {
+		n = sig_chain(sm->set.sig_hz[SIG_EV_END], sm->set.sig_ms[SIG_EV_END], SIG_EV_END, g);
+#endif
+	} else {
+		return false;
+	}
+	if (board.radio->tx_tone == NULL || !chain_tone(g, n, 0)) {
+		return false;
+	}
+	sm->roger_n = n;
+	sm->roger_i = 0;
+	sm->roger_lead = false;
+	sm->roger_ms = now_ms != 0 ? now_ms : 1;
+	return true;
+}
+
+// The next step of the tone, then its end (every poll while it runs)
+static void roger_poll(radio_sm_t *sm, uint32_t now_ms)
+{
+	while (sm->roger_ms != 0 && now_ms - sm->roger_ms >= sm->roger_seg[sm->roger_i].ms) {
+		sm->roger_ms += sm->roger_seg[sm->roger_i].ms;	// from the step's own start: no drift over the steps
+		if (++sm->roger_i >= sm->roger_n) {
+			tx_tone(0);
+			tone_side_off();
+			sm->roger_ms = 0;
+			if (sm->roger_lead) {
+				sm->roger_lead = false;	// the start tone is over: the transmission goes on, the microphone live
+				return;
+			}
+			sm->view.roger = false;
+			fm_unkey(sm, false, now_ms);
+			return;
+		}
+		chain_tone(sm->roger_seg, sm->roger_n, sm->roger_i);
+	}
+}
+
+static void roger_cancel(radio_sm_t *sm)
+{
+	if (sm->roger_ms != 0) {
+		tx_tone(0);
+		tone_side_off();
+		sm->roger_ms = 0;
+		sm->roger_lead = false;
+		sm->view.roger = false;
+		changed(sm);
+	}
+}
+#else
+// Without the chains: the roger beep alone, two fixed steps timed from roger_ms (no steps to keep in RAM)
+static bool roger_start(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (!sm->set.roger_beep || !tx_tone(RADIO_ROGER_HZ1)) {
+		return false;
+	}
+	sm->roger_ms = now_ms != 0 ? now_ms : 1;
+	return true;
 }
 
 // The roger beep's second tone, then its end (every poll while it runs)
@@ -5745,6 +6024,40 @@ static void roger_cancel(radio_sm_t *sm)
 		sm->roger_ms = 0;
 		sm->view.roger = false;
 		changed(sm);
+	}
+}
+#endif
+#endif
+
+#if CONFIG_SIG_TONES && CONFIG_FM_TX_TONES
+// The start tone goes to the speaker with the board's sidetone, on air too
+static bool lead_side(const radio_sm_t *sm)
+{
+	return board.radio->tx_tone_side != NULL && sig_local_on(sm, SIG_EV_BEGIN) &&
+	       sig_out_air(sig_out(sm, SIG_EV_BEGIN), SIG_EV_BEGIN);
+}
+
+// The start tone on air in FM (sigtone.h): right after keying, the chain goes out as tone on the carrier with
+// hal_radio_t.tx_tone, step by step as the roger beep does (roger_poll), and the microphone opens when it ends. Not on
+// a no-beep channel, with the host's audio, or on a board with no tx_tone
+static void fm_lead_start(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (sm->host_audio || sm->view.ch.no_beep || board.radio->tx_tone == NULL ||
+	    !sig_out_air(sig_out(sm, SIG_EV_BEGIN), SIG_EV_BEGIN)) {
+		return;
+	}
+	beep_seg_t *g = sm->roger_seg;
+	uint8_t n = sig_chain(sm->set.sig_hz[SIG_EV_BEGIN], sm->set.sig_ms[SIG_EV_BEGIN], SIG_EV_BEGIN, g);
+	if (!chain_tone(g, n, 0)) {
+		return;
+	}
+	sm->roger_n = n;
+	sm->roger_i = 0;
+	sm->roger_ms = now_ms != 0 ? now_ms : 1;
+	sm->roger_lead = true;
+	// On the speaker too: the modem's sidetone plays what goes on air (the speaker copy of sig_local isn't played then)
+	if (lead_side(sm)) {
+		board.radio->tx_tone_side(true);
 	}
 }
 #endif
@@ -6267,6 +6580,18 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		return;
 	}
 #endif
+	// The start of transmission tone on the speaker. CAP_BEEP_NOT_ON_AIR is about the DMR engine closing the audio path
+	// while it transmits; the FM transmitter doesn't, so the speaker copy plays on every board
+	bool side = false;
+#if CONFIG_FM_TX_TONES && CONFIG_SIG_TONES
+	side = !sm->host_audio && board.radio->tx_tone != NULL && lead_side(sm);	// the sidetone plays it
+#endif
+	if (!side && sig_local_on(sm, SIG_EV_BEGIN)) {
+		sig_local(sm, SIG_EV_BEGIN);
+	}
+#if CONFIG_FM_TX_TONES && CONFIG_SIG_TONES
+	fm_lead_start(sm, now_ms);	// and on air
+#endif
 	changed(sm);
 }
 
@@ -6296,6 +6621,13 @@ static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms)
 #endif
 #if CONFIG_DMR
 	if (sm->dmr_running) {
+		if (sm->view.dmr.state == RDMR_TX) {
+			sig_air_dmr(sm, SIG_EV_END);	// before the stack hears PTT is up: it holds the over open for it
+		} else {
+#if CONFIG_SIG_TONES
+			ambeVoiceTxToneCancel();	// a start tone for a transmission that never went on air
+#endif
+		}
 		dmr_call_ptt(false);
 		dmr_call_poll(now_ms);
 		if (sm->view.state == RS_TX) {
@@ -6309,6 +6641,7 @@ static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms)
 #endif
 	dtmf_cancel(sm, now_ms);	// before the roger beep: the board never mixes the two
 #if CONFIG_FM_TX_TONES
+	roger_cancel(sm);	// let go during the start tone on air: it ends here (the end tone is next)
 	sm->burst_timed = sm->burst_held = sm->burst_key_owned = false;
 	sm->burst_ms = sm->burst_end_ms = 0;
 	if (sm->view.tone_burst) {
@@ -6317,9 +6650,7 @@ static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms)
 		sm->view.tone_burst = false;
 	}
 	sm->burst_keyed = false;
-	if (roger && !keyed && sm->set.roger_beep && sm->view.state == RS_TX && sm->view.ch.mode == RADIO_MODE_FM &&
-			tx_tone(RADIO_ROGER_HZ1)) {
-		sm->roger_ms = now_ms != 0 ? now_ms : 1;
+	if (roger && !keyed && sm->view.state == RS_TX && sm->view.ch.mode == RADIO_MODE_FM && roger_start(sm, now_ms)) {
 		sm->view.roger = true;
 		changed(sm);
 		return;		// roger_poll unkeys
@@ -7032,6 +7363,21 @@ static void persist(radio_sm_t *sm, uint32_t now_ms)
 
 static void clamp_settings(radio_settings_t *s)
 {
+#if CONFIG_SIG_TONES
+	for (int i = 0; i < SIG_EV_COUNT; i++) {
+		s->sig_dmr[i] = sig_out_clean(s->sig_dmr[i], (sig_event_t)i);
+		s->sig_fm[i] = sig_out_clean(s->sig_fm[i], (sig_event_t)i);
+		for (unsigned k = 0; k < SIG_STEPS; k++) {
+			if (s->sig_hz[i][k] > SIG_HZ_MAX) {
+				s->sig_hz[i][k] = SIG_HZ_MAX;
+			}
+			s->sig_hz[i][k] = (uint16_t)(s->sig_hz[i][k] / SIG_HZ_UNIT * SIG_HZ_UNIT);
+			if (s->sig_ms[i][k] > SIG_MAX_MS / SIG_MS_UNIT) {
+				s->sig_ms[i][k] = SIG_MAX_MS / SIG_MS_UNIT;
+			}
+		}
+	}
+#endif
 	if (s->beep_level > 100) {
 		s->beep_level = 100;
 	}
@@ -7119,6 +7465,12 @@ static void settings_to_radio(const settings_t *st, radio_settings_t *s)
 		clamp_settings(s);
 	}
 	s->tones_off = settings_tones_off(st) & RADIO_TONES_MASK;	// 0, all on, in a record from before it
+#if CONFIG_SIG_TONES
+	for (int i = 0; i < SIG_EV_COUNT; i++) {
+		s->sig_dmr[i] = st->sig_dmr[i];	// 0 = default, in a record from before them; clamp_settings checks
+		s->sig_fm[i] = st->sig_fm[i];
+	}
+#endif
 	if (st->rs_stored != 1) {
 		return;
 	}
@@ -7175,6 +7527,12 @@ static void radio_to_settings(const radio_settings_t *s, uint32_t now_ms)
 	st->rs_dual_delay = (uint8_t)(s->dual_delay_ms / 100u + 1u);
 	st->rs_bcast_step = (uint8_t)(s->bcast_step + 1u);
 	settings_set_tones_off(st, s->tones_off);
+#if CONFIG_SIG_TONES
+	for (int i = 0; i < SIG_EV_COUNT; i++) {
+		st->sig_dmr[i] = s->sig_dmr[i];
+		st->sig_fm[i] = s->sig_fm[i];
+	}
+#endif
 	st->rs_stored = 1;
 	st->roam_rssi_dbm = s->roam_rssi_dbm;
 	st->roam_hyst_db = s->roam_hyst_db;
@@ -7194,7 +7552,11 @@ static void use_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t now
 {
 #if CONFIG_DMR
 	bool reply_changed = s->reply_s != sm->set.reply_s || s->sfr_rx != sm->set.sfr_rx ||
-		s->talk_permit != sm->set.talk_permit;	// the permit hold (permit_before_key)
+		s->talk_permit != sm->set.talk_permit	// the permit hold (permit_before_key)
+#if CONFIG_SIG_TONES
+		|| s->sig_dmr[SIG_EV_BEGIN] != sm->set.sig_dmr[SIG_EV_BEGIN]
+#endif
+		;
 #endif
 	sm->set = *s;
 	clamp_settings(&sm->set);
@@ -8716,6 +9078,9 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 			if (sm->roger_ms != 0 || sm->view.tone_burst) {
 				tx_tone(0);
 				sm->roger_ms = 0;
+#if CONFIG_SIG_TONES
+				sm->roger_lead = false;
+#endif
 				sm->view.roger = false;
 				sm->view.tone_burst = false;
 			}
@@ -8755,6 +9120,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		sm->close_count = 0;
 	} else if (++sm->close_count >= close_polls() || (sq != 0 && close_polls() == RADIO_SQL_CLOSE_POLLS &&
 			   st.noise >= open_below + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB)) {
+		bool was_rx = sm->view.state == RS_RX;
 		if (sm->view.state == RS_TX_DENIED) {
 			// A busy refusal over a reception (deny_rx): its audio stops where the squelch closes; the refusal
 			// stays until PTT is released
@@ -8764,6 +9130,12 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 			end_reception(sm, now_ms);
 		}
 		changed(sm);
+		// The channel is free again: the idle tone (a scan landing or a broadcast listen has none)
+		// (not within a second of our own transmission: the end tone just played and the squelch tail is not a call)
+		if (was_rx && !listening && sm->view.ch.mode == RADIO_MODE_FM && now_ms - sm->tx_end_ms > 1000u &&
+		    sig_local_on(sm, SIG_EV_IDLE)) {
+			sig_local(sm, SIG_EV_IDLE);
+		}
 	}
 	outputs(sm);
 }

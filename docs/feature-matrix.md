@@ -77,6 +77,7 @@ is `tools/bringup.py list --radio <id>`.
 | `scan` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | partial, needs re-run |
 | `dual_watch` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | partial, needs re-run | ✕ |
 | `beep` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial, needs re-run | partial, needs re-run |
+| `signaling_tones` | not recorded | not recorded | not recorded | not recorded | off | not recorded | not recorded | not recorded |
 | `vibrate` | off | ✕ | not recorded | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `gps` | pass (seed) | not recorded | ✕ | not recorded | not recorded | not recorded | not recorded | ✕ |
 | `position` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
@@ -255,6 +256,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `SCAN` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `DUAL_WATCH` | ● | ● | ● | ● | ● | ● | ● | ✕ |
 | `BEEP` | ● | ● | ● | ● | ● | ● | ● | ● |
+| `SIG_TONES` | ● | ● | ● | ● | ○ | ● | ● | ● |
 | `FM_TX_TONES` | ● | ● | ● | ● | … | ● | ● | ● |
 | `DTMF` | ● | ● | ● | ● | … | ● | ● | ✕ |
 | `RX_EXT` | ● | ● | ● | ● | … | ● | … | ● |
@@ -334,6 +336,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Scan, band scan, dual watch, nuisance delete | `SCAN` | 2,576 | 3,032 |  |
 | Dual watch: A and B in any zone or the VFO, PTT on the selected one, its screens, talk back | `DUAL_WATCH` | 10,864 | 11,456 | Needs `SCAN`. Without it, only the debug link's dual watch (two channels of one zone). Measured 2026-10-21 on the dual watch branch, default builds |
 | Beeps and alert tones | `BEEP` | 1,552 | 1,800 |  |
+| Signaling tone chains (Settings > Signaling tones) | `SIG_TONES` | — | — | Needs `BEEP`. Not measured yet: no C-SKY or ARM compiler in the session that wrote it |
 | Vibration alerts (Settings > Sound > Vibrate) | `VIBRATE` | 520* | — | Needs a vibration motor (`hal_power_t.vibrate`): none of these radios has one RadioFoundry drives. On for the DM-1801 Pro. Measured 2026-10-16 with `CONFIG_SNMP=n`; 236 B with LTO |
 | GPS receiver: the module driver and its NMEA input (Settings > Location > GPS) | `GPS` | — | 1,196 | Needs a GPS receiver. Off, DMR GPS Info, LRRP and APRS send the fixed position when one is set ([position](spec/position.md)). MD-380 measured 2026-10-22 (LTO, 58f2cebe). The DM-1701 has none from the factory but listens for an owner-fitted one (1,308 B, LTO) |
 

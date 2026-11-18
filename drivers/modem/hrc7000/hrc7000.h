@@ -129,6 +129,7 @@
 #define C7_AUDIO_RING_PLAY	(1u << 7)
 #define C7_AUDIO_FM_PLAY	(1u << 6)
 #define C7_AUDIO_PCM_SPK	(1u << 5)	// CPU-fed speaker PCM
+#define C7_AUDIO_SIDETONE	(1u << 3)	// the modem's tone generator to the codec: the transmitted tone on the speaker
 #define C7_AUDIO_PCM_MIC	(1u << 4)	// mic PCM to the CPU
 #define C7_AUDIO_I2S_SLAVE	(1u << 1)
 
@@ -281,6 +282,8 @@ bool hrc7000_subtone_ok(hrc7000_t *d);
 // sub-audio deviation and the default DTMF steps back. tx_tone_key: the tone off (a silent carrier) and on again
 void hrc7000_tx_tone(hrc7000_t *d, uint16_t hz, uint8_t dev);
 void hrc7000_tx_tone_key(hrc7000_t *d, bool down);
+// The sidetone (AUDIO_CONTROL b3, modem-hrc7000.md 8.3): the tone being sent is heard in the codec
+void hrc7000_tx_tone_side(hrc7000_t *d, bool on);
 // Two tones the same way: low in FM_TONE1's high half, high in FM_TONE3's, digit "1" sent. low = 0: as tx_tone(0)
 void hrc7000_tx_pair(hrc7000_t *d, uint16_t low_hz, uint16_t high_hz, uint8_t dev);
 // A DTMF digit ('0'-'9', '*', '#', 'A'-'D'; hal_dtmf.h) with tx_pair, 0 = the microphone again. False: not a digit

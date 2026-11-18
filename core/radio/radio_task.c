@@ -609,6 +609,20 @@ void radio_get_settings(radio_settings_t *s)
 	xSemaphoreGive(view_lock);
 }
 
+void radio_get_sfr_settings(uint8_t *rx, uint8_t *cwid)
+{
+	*rx = 0;		// the defaults (radio_settings_default), before the task runs
+	*cwid = 0;
+	if (view_lock == NULL) {
+		return;
+	}
+	xSemaphoreTake(view_lock, portMAX_DELAY);
+	const radio_settings_t *p = settings_published == settings_sent ? &shared_settings : &pending_settings;
+	*rx = p->sfr_rx;
+	*cwid = p->sfr_cwid;
+	xSemaphoreGive(view_lock);
+}
+
 void radio_req_power_off(void)
 {
 	power_off_busy = true;
