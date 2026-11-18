@@ -336,6 +336,10 @@ class Radio:
                             foreign.add(port)
                         continue
                     self.link, self.port = link, port
+                    # The UI drops keys pressed during its start-up splash (ui.screen reads home already): wait for
+                    # its first draw, so a test's first key after a restart counts
+                    while as_int(link.view(["link"]).get("ui.draws"), 1) == 0 and time.monotonic() < end + 10:
+                        time.sleep(0.2)
                     return
                 except (DebugLinkError, OSError):
                     # A serial hub takes one client per port: a link left open would lock out every later try.

@@ -25,6 +25,10 @@ class FakeLink:
     def ping(self):
         return True
 
+    def view(self, sections):
+        assert sections == ["link"]
+        return {}               # older firmware does not report ui.draws
+
     def chip(self):
         if self.port in FakeLink.booting:
             raise DebugLinkError("INFO_CHIP: not ready")
@@ -114,6 +118,18 @@ def test_reconnect_closes_the_old_link(bench):
     old = r.link
     r.reconnect(timeout=1)
     assert old in bench.closed and r.link is not old
+
+
+def test_reconnect_waits_for_first_draw(bench, monkeypatch):
+    draws = iter(["0", "0", "1"])
+
+    def view(link, sections):
+        assert sections == ["link"]
+        return {"ui.draws": next(draws)}
+
+    monkeypatch.setattr(bench, "view", view)
+    Radio("A").reconnect(timeout=1)
+    assert next(draws, None) is None
 
 
 def test_another_radio_is_asked_once(bench):

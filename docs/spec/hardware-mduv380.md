@@ -358,7 +358,7 @@ there.
 | 6 | Battery divider (40.3) | open: no scale in the images; thresholds are raw counts | compare against a meter |
 | 7 | Volume pot ranges per model | open | read the raw value at both ends |
 | 8 | GPS on PA10 / PA9, 9600 baud; PA9 on non-GPS radios | images: 9600 on the wire, PA9 driven only in the GPS images | G model: sentences arrive; non-G: nothing breaks |
-| 9 | AT1846S DMR AF gain and receive offset | open: 0x07EF and UHF offset 0, the DM-1701's values | `test_dmr_audio_rx_deviation`, `test_dmr_audio_rx_offset_wide`; `tools/dmr_rx_sweep.py --reg 0:0x44` (`--detune` for offsets) for the window |
+| 9 | AT1846S DMR AF gain, receive offset and AGC | open: 0x07EF, UHF offset 0 and 0x32 = 0x4490, the DM-1701's values | `test_dmr_audio_rx_deviation`, `test_dmr_audio_rx_offset_wide`, `test_dmr_audio_rx_strong`; `tools/dmr_rx_sweep.py --reg 0:0x44` (`--detune` for offsets) for the window, `--reg 0:0x32 --field 2:0` at -75 to -45 dBm for the AGC |
 | 10 | Power fractions and k factors | open; the images' power rows are averaged between points (section 8) | power meter at each level, band edges |
 | 11 | Bootloader entry check and stack rule | open; the application has no entry code | dump the loader (RDP 1 allows the application to read it) |
 | 12 | Codec voice on air | open: bit-identical in the emulator for every build ([codec-mduv380.md](codec-mduv380.md)) | DMR TX and RX through the placed codec |

@@ -35,10 +35,9 @@ static unsigned bridges, restarts;
 uint32_t hal_millis(void) { return now_ms; }
 void hal_delay_ms(uint32_t ms) { now_ms += ms; fake_state = state_after_delay; }
 
-void radio_get_view(radio_view_t *v)
+radio_state_t radio_get_state(void)
 {
-	memset(v, 0, sizeof *v);
-	v->state = fake_state;
+	return (radio_state_t)fake_state;
 }
 
 void dlog(const char *fmt, ...)
