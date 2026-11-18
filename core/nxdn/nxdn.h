@@ -237,7 +237,8 @@ uint16_t nxdn_call_tx_ready(const nxdn_call_tx_t *t, uint16_t *first);
 const uint8_t *nxdn_call_tx_syms(const nxdn_call_tx_t *t);
 void nxdn_call_tx_sent(nxdn_call_tx_t *t, uint16_t n);
 bool nxdn_call_tx_wants_voice(const nxdn_call_tx_t *t);
-void nxdn_call_tx_voice(nxdn_call_tx_t *t, const uint8_t ehr[NXDN_EHR_BYTES]);
+// False if the call cannot accept a voice frame or scrambling rejects its FEC.
+bool nxdn_call_tx_voice(nxdn_call_tx_t *t, const uint8_t ehr[NXDN_EHR_BYTES]);
 // The operator let go: the frame in hand is filled with silence (one without voice yet is not sent), then the
 // release frame
 void nxdn_call_tx_end(nxdn_call_tx_t *t, const uint8_t silence[NXDN_EHR_BYTES]);

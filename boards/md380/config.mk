@@ -12,6 +12,9 @@ CONFIG_DISPLAY_INSET_LEFT ?= 2
 # not written
 CONFIG_FM_TX_TONES ?= n
 CONFIG_DTMF ?= n
+# The signaling tones (user-defined start, end and idle tone chains, about 6.4 KB) don't fit: the default build has
+# about 3 KB left. The plain beeps stay. Supported, so not in BOARD_NOT_WRITTEN: a leaner build can turn it on
+CONFIG_SIG_TONES ?= n
 CONFIG_APRS_RX ?= n
 # SFR needs CRC_MCU_Control, which the HR_C5000 lacks (docs/spec/sfr.md); the split duplex glue is written for the
 # HR_C6000 and HR_C7000 only
@@ -64,4 +67,5 @@ BOARD_UNSUPPORTED += LANG_DEFAULT_ZH	# needs LANG_ZH
 # radio isn't known to give the MCU (same section). Off until receive works
 BOARD_NOT_WRITTEN += P25	# receive isn't written (hardware-md380.md 4.11)
 BOARD_NOT_WRITTEN += P25_TRUNK	# needs P25
+BOARD_NOT_WRITTEN += NXDN_SCRAMBLER
 BOARD_NOT_WRITTEN += NXDN	# receive isn't written (hardware-md380.md 4.11)

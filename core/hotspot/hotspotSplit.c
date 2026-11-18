@@ -1458,11 +1458,9 @@ static uint8_t tx_sched(const uint8_t *p, uint8_t len, uint8_t *data, uint8_t *r
 			e->burst = r != NET_SKIP;
 			e->cach_valid = has_cach;
 			e->cach = host_cach;
-			if (e->burst) {
-				e->b = b;
-			}
-			e->lc_valid = e->burst && lc != NULL;
-			if (e->lc_valid) {
+			e->b = b;
+			e->lc_valid = lc != NULL;
+			if (lc != NULL) {
 				memcpy(e->lc, lc, LC_LEN);
 			}
 			outcome = same ? SPLIT_SCHED_REPLACED : SPLIT_SCHED_QUEUED;

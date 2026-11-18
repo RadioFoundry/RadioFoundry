@@ -76,6 +76,9 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "home_vfo_split_dmr", "ok 4 up ok quick 4 6 up ok back wait:5000" },	// the TX frequency in the top row
 	{ "home_vfo_tx", "ok 4 up ok quick 5 up ok back pttdown" },	// FM: the TX frequency large, in red
 	{ "home_vfo_dmr_tx", "ok 4 up ok quick 4 6 up ok back pttdown" },	// the call screen's TX line
+#if CONFIG_NXDN
+	{ "home_nxdn_scrambled", "chkind:3,nxdn,COUNTY_NXDN dlpos:3 dlmode:nxdn nxdnrx:1234,7,p expect:shows=COUNTY_NXDN expect:shows=ENC" },
+#endif
 	{ "quick_vfo_dmr", "ok 4 up ok quick 4" },
 	{ "quick_vfo_cc_editor", "ok 4 up ok quick 4 3 7" },
 	{ "find_name", "5 6 3" },
@@ -159,6 +162,9 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "settings_freq_trim", "trim ok 7 up ok up" },	// on a radio with a reference trim (radio-features.md 6.1)
 	{ "freq_trim", "trim ok 7 up ok up ok ctx 4 5 ok" },
 	{ "freq_trim_typing", "trim ok 7 up ok up ok 1 2" },
+	{ "settings_signaling", "ok 7 up up ok" },	// Settings > Signaling tones (radio-features.md 4.3)
+	{ "signaling_steps", "ok 7 up up ok down down down down down down ok" },
+	{ "signaling_step_edit", "ok 7 up up ok down down down down down down ok ok 1 5 7 0" },
 	{ "settings_advanced", "ok 7 up ok" },
 	{ "factory_reset", "ok 7 up ok down down down ok" },
 	{ "about", "ok 7 up ok ok" },
@@ -228,6 +234,7 @@ static const struct { const char *name, *script; } audit_extra[] = {
 	{ "settings_power", "ok 7 7" DOWN12 },
 	{ "settings_keys", "ok 7 8" DOWN12 },
 	{ "settings_my_radio", "ok 7 0" DOWN12 },
+	{ "settings_signaling", "ok 7 up up ok" DOWN12 },
 	{ "settings_advanced", "ok 7 up ok" DOWN12 },
 	{ "about_scrolled", "ok 7 up ok ok" DOWN12 DOWN12 },
 	{ "codeplug", "ok 7 up ok down ok" },

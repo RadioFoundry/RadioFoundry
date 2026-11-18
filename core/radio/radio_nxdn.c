@@ -101,6 +101,9 @@ static void params(const channel_t *ch, uint16_t number, nxdn_engine_cfg_t *c)
 
 	memset(c, 0, sizeof(*c));
 	c->silence = dmr_ambe_silence;
+#if CONFIG_NXDN_SCRAMBLER
+	c->system = CODEPLUG_SYSTEM_NONE;
+#endif
 	if (number != 0 && nxdn_conv_load(number, ch, &cc)) {
 		// Selective: the channel's group, all and unit calls to us; a channel that calls a unit or all keeps the
 		// last two
@@ -117,10 +120,9 @@ static void params(const channel_t *ch, uint16_t number, nxdn_engine_cfg_t *c)
 		if (ch->system != CODEPLUG_SYSTEM_NONE || c->tx_cipher != NXDN_CIPHER_NONE) {
 			uint16_t own_id;
 #if CONFIG_NXDN_SCRAMBLER
-			c->tx_inhibit = !nxdn_system_load(ch->system, c->keys, &own_id);
-#else
-			c->tx_inhibit = !nxdn_system_load(ch->system, NULL, &own_id);
+			c->system = ch->system;
 #endif
+			c->tx_inhibit = !nxdn_system_load(ch->system, &own_id);
 			if (own_id && (ch->dmr_id == 0 || ch->dmr_id > NXDN_CP_UNIT_MAX))
 				c->unit_id = own_id;
 		}
@@ -172,7 +174,20 @@ static bool v_tx(uint8_t ehr[NXDN_EHR_BYTES], void *ctx)
 	return s->next(ehr, s->ctx);
 }
 
-static const nxdn_engine_hooks_t voice_hooks = { v_start, NULL, v_voice, v_end, v_tx };
+#if CONFIG_NXDN_SCRAMBLER
+static uint16_t v_key(uint8_t system, uint8_t cipher, uint8_t id, void *ctx)
+{
+	(void)ctx;
+	return nxdn_system_key(system, cipher, id);
+}
+#endif
+
+static const nxdn_engine_hooks_t voice_hooks = {
+	v_start, NULL, v_voice, v_end, v_tx,
+#if CONFIG_NXDN_SCRAMBLER
+	v_key,
+#endif
+};
 
 // The encoder runs from the header on, so the first voice frames are ready when the engine asks
 static void voice_tx(bool on)

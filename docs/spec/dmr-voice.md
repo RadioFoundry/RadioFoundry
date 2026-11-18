@@ -252,6 +252,24 @@ codec bits.
 * Each board's codec mapping is on its `codec-<id>.md` page ("Encode flags"). Boards with an AMBE+2 host share
   `drivers/vocoder/ambe2_flags.h`.
 
+### 6.1 A tone in place of the microphone
+
+`ambeVoiceTxTone` (`ambeVoice.h`, radio task) hands the audio callback a tone sequence of up to `SIG_AIR_STEPS` steps (`SIG_STEPS` and a guard of silence, `SIG_AIR_GUARD_MS`)
+([radio-features.md](radio-features.md) 4.3). From the next block of a transmission (the first, if it has not started)
+the encoder gets the generated tone instead of the microphone, after the mic gain. While it plays the encode options are
+`VOCODER_OPT_TONE_FRAMES` set and `VOCODER_OPT_NOISE_REDUCTION` cleared, and the options in force come back after it.
+
+* The encoder waits for room in its queue (`AMBE_VOICE_QUEUE`) before each block of the tone, instead of letting the
+  queue overflow, so a tone longer than the headers' time is not cut.
+* `final`: the microphone stays muted after the tone until the transmission ends.
+* `dmr_voice_source_t.busy` tells the call stack the tone's frames are not all pulled yet. After PTT is let go the stack
+  then goes on at each superframe boundary, for at most `DMR_CALL_TX_TAIL_HOLDS` superframes, before it ends the over
+  with the terminator. A time-out ends it at once.
+* `ambeVoiceTxToneCancel` drops a request, and the source's `end` does it too: a request for a transmission that never
+  went on air is not played in the next one. `busy` is false while no transmission runs.
+* The tone's amplitude is fixed (`TONE_AMP_Q15`). It is not checked on air, nor how other makes of radio play a tone
+  frame.
+
 ## 7. Observing it
 
 Debug link (`debuglink.md`): the `core` view's `mode` and `vfo`, the `dmr` view's `dmr.cc`, `dmr.ts`, `dmr.target_id`,

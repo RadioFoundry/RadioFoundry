@@ -30,7 +30,7 @@
 //   p25rx:<src>,<dst>[,u|e|o]   a P25 call (CONFIG_P25 builds): u a unit call, e encrypted, o another talk group
 //                       (both not played); p25rxend ends it
 //   nxdnrx:<src>,<dst>[,e|p]    an NXDN call: e scrambled and muted, p scrambled and played
-//   chkind:<n>,p25|nxdn stored channel n is a P25 or NXDN channel (CONFIG_P25 / CONFIG_NXDN builds)
+//   chkind:<n>,p25|nxdn[,<name>]  a stored P25 or NXDN channel, with an optional name (_ = space)
 //   p25t:<state>[,<tg>] the channel on view is a trunked P25 one (CONFIG_P25_TRUNK builds), its follower in state
 //                       1 finding the system, 2 on the control channel, 3 following talk group tg
 //   rx:<src>,<dst>,g|p[,name]   a DMR call starts (g = group, p = private to us); rxend ends it
@@ -690,6 +690,14 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 {
 	if (id < UI_SET_RAM_COUNT || id >= UI_SET_COUNT)
 		return ui_svc_ram_set(id, value);
+	if (id == UI_SET_SIG_STEP) {	// a whole step: the firmware writes one record, here its two settings
+		uint32_t ev = (uint32_t)value >> 23 & 3u, k = (uint32_t)value >> 19 & 15u;
+		if (ev >= 3 || k >= 10)
+			return false;
+		sim_late[UI_SET_SIG_HZ + 10 * ev + k - UI_SET_RAM_COUNT] = value & 0xFFF;
+		sim_late[UI_SET_SIG_MS + 10 * ev + k - UI_SET_RAM_COUNT] = (value >> 12 & 0x7F) * 10;
+		return true;
+	}
 	sim_late[id - UI_SET_RAM_COUNT] = value;
 	return true;
 }
@@ -3089,9 +3097,17 @@ static bool run_token(char *t, char *err, size_t len)
 		unsigned n = 0;
 		char k[8] = "";
 		channel_t c;
-		if (arg == NULL || sscanf(arg, "%u,%7s", &n, k) != 2 || !codeplug_channel((uint16_t)n, &c)) {
+		int end = 0;
+		if (arg == NULL || sscanf(arg, "%u,%7[^,]%n", &n, k, &end) != 2 ||
+		    !codeplug_channel((uint16_t)n, &c)) {
 			snprintf(err, len, "bad %s", t);
 			return false;
+		}
+		if (arg[end] == ',') {
+			snprintf(c.name, sizeof c.name, "%s", arg + end + 1);
+			for (char *ch = c.name; *ch; ch++)
+				if (*ch == '_')
+					*ch = ' ';
 		}
 		c.kind = strcmp(k, "nxdn") == 0 ? CODEPLUG_KIND_NXDN : CODEPLUG_KIND_P25;
 		c.mode = RADIO_MODE_DMR;

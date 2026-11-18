@@ -3639,6 +3639,21 @@ msgctxt "SET_VALUE_SFR_RX_DUAL_PATH"
 msgid "Dual-path RX"
 msgstr "双路接收"
 
+#: core/ui/ui_menus.c
+msgctxt "SIG_VALUE_SPEAKER"
+msgid "Speaker"
+msgstr "扬声器"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_VALUE_ON_AIR"
+msgid "On air"
+msgstr "空中发射"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_VALUE_SPEAKER_AIR"
+msgid "Speaker + air"
+msgstr "扬声器+空中"
+
 #: core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "TITLE_VOLUME"
 msgid "Volume"
@@ -3703,6 +3718,51 @@ msgstr "消息提示音"
 msgctxt "SET_LABEL_VIBRATE"
 msgid "Vibrate"
 msgstr "振动"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_ROW_DMR_START_TONE"
+msgid "DMR start tone"
+msgstr "DMR 起始音"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_ROW_DMR_END_TONE"
+msgid "DMR end tone"
+msgstr "DMR 结束音"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_ROW_DMR_IDLE_TONE"
+msgid "DMR idle tone"
+msgstr "DMR 空闲音"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_ROW_FM_START_TONE"
+msgid "FM start tone"
+msgstr "FM 起始音"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_ROW_FM_END_TONE"
+msgid "FM end tone"
+msgstr "FM 结束音"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_ROW_FM_IDLE_TONE"
+msgid "FM idle tone"
+msgstr "FM 空闲音"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_ROW_START_STEPS"
+msgid "Start steps"
+msgstr "起始步骤"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_ROW_END_STEPS"
+msgid "End steps"
+msgstr "结束步骤"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_ROW_IDLE_STEPS"
+msgid "Idle steps"
+msgstr "空闲步骤"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_LABEL_BRIGHTNESS"
@@ -4035,6 +4095,16 @@ msgid "My radio"
 msgstr "我的电台"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_ROW_SIGNALING_TONES"
+msgid "Signaling tones"
+msgstr "信令音"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_TITLE_SIGNALING_TONES"
+msgid "Signaling Tones"
+msgstr "信令音"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_ROW_ADVANCED"
 msgid "Advanced"
 msgstr "高级"
@@ -4043,6 +4113,71 @@ msgstr "高级"
 msgctxt "HINT_0_9_OPEN_BACK"
 msgid "0-9 open  Back"
 msgstr "0-9 打开  返回"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "HOME_LABEL_STEP"
+msgid "Step "
+msgstr "步进 "
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_VALUE_STANDARD_SOUND"
+msgid "Standard sound"
+msgstr "标准音"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_LABEL_LENGTH"
+msgid "Length: "
+msgstr "长度: "
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_TITLE_START_TONE"
+msgid "Start Tone"
+msgstr "起始音"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_TITLE_END_TONE"
+msgid "End Tone"
+msgstr "结束音"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_TITLE_IDLE_TONE"
+msgid "Idle Tone"
+msgstr "空闲音"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_TOAST_NOT_CHANGED"
+msgid "Not changed: "
+msgstr "未改： "
+
+#: core/ui/ui_menus.c
+msgctxt "SET_TOAST_RANGE_TO"
+msgid " to "
+msgstr " 到 "
+
+#: core/ui/ui_menus.c
+msgctxt "SET_TOAST_STEPS_OF"
+msgid ", steps of "
+msgstr "，步进 "
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_HINT_TYPE_OK_NEXT_BACK"
+msgid "0-9 type  OK next  Back"
+msgstr "0-9 输入  OK 下一步  返回"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_VALUE_STANDARD"
+msgid "Standard"
+msgstr "标准"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_UNIT_STEP"
+msgid " step"
+msgstr " 步"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_UNIT_STEPS"
+msgid " steps"
+msgstr " 步"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_PERMIT_TONE_NOT_IN_BUILD"
@@ -4123,21 +4258,6 @@ msgstr "诊断：本版本无"
 msgctxt "SET_TOAST_SAVED_AS_YOU_CHANGE"
 msgid "Settings are saved as you change them"
 msgstr "设置更改即保存"
-
-#: core/ui/ui_menus.c
-msgctxt "SET_TOAST_NOT_CHANGED"
-msgid "Not changed: "
-msgstr "未改： "
-
-#: core/ui/ui_menus.c
-msgctxt "SET_TOAST_RANGE_TO"
-msgid " to "
-msgstr " 到 "
-
-#: core/ui/ui_menus.c
-msgctxt "SET_TOAST_STEPS_OF"
-msgid ", steps of "
-msgstr "，步进 "
 
 #: core/ui/ui_menus.c core/ui/ui_position.c
 msgctxt "HINT_OK_CHANGE_BACK"
@@ -4328,11 +4448,6 @@ msgstr "扫描"
 msgctxt "TOP_CHIP_ROAM"
 msgid "ROAM"
 msgstr "漫游"
-
-#: core/ui/ui_screens.c
-msgctxt "HOME_LABEL_STEP"
-msgid "Step "
-msgstr "步进 "
 
 #: core/ui/ui_screens.c
 msgctxt "HOME_STATE_P25T_HUNT"

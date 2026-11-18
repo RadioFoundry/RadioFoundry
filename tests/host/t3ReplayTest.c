@@ -57,10 +57,13 @@ static struct {
 	int nneg;
 } man;
 
-static bool man_path(char *out, const char *rel)
+static void man_path(char *out, const char *rel)
 {
-	int n = rel[0] == '/' ? snprintf(out, 512, "%s", rel) : snprintf(out, 512, "%s/%s", man.dir, rel);
-	return n >= 0 && n < 512;
+	if (rel[0] == '/') {
+		snprintf(out, 512, "%s", rel);
+	} else {
+		snprintf(out, 512, "%s/%s", man.dir, rel);
+	}
 }
 
 static bool man_load(const char *path)
@@ -85,17 +88,14 @@ static bool man_load(const char *path)
 		}
 		const char *rest = line + strlen(key);
 		if (strcmp(key, "tscc") == 0 && sscanf(rest, "%511s %lu %lu", a, &v[0], &v[1]) == 3) {
-			if (!man_path(man.tscc, a))
-				goto bad_manifest;
+			man_path(man.tscc, a);
 			man.tscc_hz = (uint32_t)v[0];
 			man.tscc_lcn = (uint16_t)v[1];
 		} else if (strcmp(key, "payload") == 0 && sscanf(rest, "%511s %lu", a, &v[0]) == 2) {
-			if (!man_path(man.payload, a))
-				goto bad_manifest;
+			man_path(man.payload, a);
 			man.payload_hz = (uint32_t)v[0];
 		} else if (strcmp(key, "negative") == 0 && man.nneg < 4 && sscanf(rest, "%511s %lu", a, &v[0]) == 2) {
-			if (!man_path(man.neg[man.nneg], a))
-				goto bad_manifest;
+			man_path(man.neg[man.nneg], a);
 			man.neg_hz[man.nneg++] = (uint32_t)v[0];
 		} else if (strcmp(key, "plan") == 0 && sscanf(rest, "%lu %lu %lu %lu %lu", &v[0], &v[1], &v[2], &v[3],
 							      &v[4]) == 5) {
@@ -131,16 +131,13 @@ static bool man_load(const char *path)
 				}
 			}
 		} else {
-			goto bad_manifest;
+			printf("manifest: can't read: %s", line);
+			fclose(f);
+			return false;
 		}
 	}
 	fclose(f);
 	return man.tscc[0] != 0 && man.payload[0] != 0 && man.plan.base_hz != 0;
-
-bad_manifest:
-	printf("manifest: can't read: %s", line);
-	fclose(f);
-	return false;
 }
 
 enum { R_BURST, R_VOICE, R_SLC };
