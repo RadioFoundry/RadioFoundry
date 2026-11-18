@@ -146,9 +146,13 @@ static char dtmf_on;		// tx_dtmf: the digit sounding
 static bool r_tx_dtmf(char digit) { dtmf_on = digit; return true; }
 static int16_t ref_trim_ppb = 1;	// ref_trim: the last trim (1: never called)
 static bool r_ref_trim(int16_t ppb) { ref_trim_ppb = ppb; return true; }
+static bool (*direct_q)(void);	// hal_radio_t.dmr_direct_query: what the board asks as it keys a burst
+static void r_dmr_direct_query(bool (*q)(void)) { direct_q = q; }
+static int direct_now(void) { return direct_q != NULL ? direct_q() : -1; }	// the board's answer at a burst now
 static hal_radio_t fake_radio = { .init = r_init, .set_mode = r_set_mode, .rx = r_rx, .tx = r_tx, .tx_off = r_tx_off,
 					.status = r_status, .audio = r_audio, .tx_tone = r_tx_tone,
-					.tx_tone_key = r_tx_tone_key, .tx_dtmf = r_tx_dtmf, .ref_trim = r_ref_trim };
+					.tx_tone_key = r_tx_tone_key, .tx_dtmf = r_tx_dtmf, .ref_trim = r_ref_trim,
+					.dmr_direct_query = r_dmr_direct_query };
 
 // (fake_radio.volume is set by test_soft_volume only)
 static void p_led(uint8_t which, bool on) { hw.led[which] = on; }
@@ -2432,6 +2436,22 @@ static void test_dmr_wake_leds(void)
 	setup_codeplug();
 }
 
+// A stand-in for the hotspot's SFR engine (hotspot_alt_t): only its active flag matters here
+static bool fake_alt_on;
+static bool fa_active(void) { return fake_alt_on; }
+static void fa_poll(uint32_t now_ms) { (void)now_ms; }
+static void fa_event(uint8_t kind, const dmr_burst_t *b, uint32_t now_ms) { (void)kind; (void)b; (void)now_ms; }
+static uint8_t fa_net(uint8_t c, uint8_t ctl, const uint8_t *f, uint32_t now_ms)
+{
+	(void)c; (void)ctl; (void)f; (void)now_ms;
+	return 0;
+}
+static void fa_none(void) {}
+static bool fa_tx(void) { return false; }
+static void fa_stopped(void) { fake_alt_on = false; }
+static const hotspot_alt_t fake_alt = { .active = fa_active, .poll = fa_poll, .event = fa_event, .net_frame = fa_net,
+					.net_abort = fa_none, .transmitting = fa_tx, .stopped = fa_stopped };
+
 // A PTT line stuck low: red and green in turn, one at a time, until it isn't (the power cycle)
 static void test_ptt_line_stuck(void)
 {
@@ -2670,9 +2690,38 @@ static void test_hotspot_session(void)
 	}
 	CHECK(mm_naks == 0 && hotspot_running() && sm.hs_tx_hz == 453625000 && sm.dmr_keyed);
 	hs_run(500);
-	mmdvm_end();
+	CHECK(direct_now() == 0);	// a simplex hotspot keys the board's normal way
+	// The hotspot's SFR mode (hotspotSfr.c, not linked here: an alternative engine that says it's active) is read by
+	// the board itself at each burst (hal_radio_t.dmr_direct_query): straight from RX while it runs, normal when it stops
+	hotspot_set_alt(&fake_alt);
+	fake_alt_on = true;
 	hs_run(100);
-	CHECK(!sm.hotspot && !sm.dmr_keyed && sm.view.dmr.active);
+	CHECK(hotspot_alt_active() && direct_now() == 1);
+	fake_alt_on = false;
+	hs_run(100);
+	CHECK(direct_now() == 0);
+	// The SFR mode on and off with no radio task poll in between (#540 review): the board's answer follows at once,
+	// as nothing is copied to it
+	fake_alt_on = true;
+	mmdvm_poll(now);
+	CHECK(direct_now() == 1 && hotspot_sfr_repeating());
+	fake_alt_on = false;
+	mmdvm_poll(now);
+	CHECK(direct_now() == 0 && !hotspot_sfr_repeating());
+	hs_run(100);
+	CHECK(direct_now() == 0 && direct_now() == 0);
+	// The radio leaves the hotspot (an orphan watch, a menu) while its SFR mode still says it repeats: normal
+	// keying at once, whatever the hotspot's mode says
+	fake_alt_on = true;
+	hs_run(100);
+	CHECK(direct_now() == 1 && sm.hotspot);
+	req(RREQ_HS_LEAVE, 0);
+	run(50);
+	CHECK(!sm.hotspot && direct_now() == 0);
+	mmdvm_end();
+	CHECK(direct_now() == 0 && !hotspot_sfr_repeating());
+	hs_run(100);
+	CHECK(!sm.hotspot && !sm.dmr_keyed && sm.view.dmr.active && direct_now() == 0);
 	mm_cmd(MMDVM_GET_VERSION, NULL, 0);
 	hs_run(100);
 	hotspot_get_stats(&st);
@@ -5674,6 +5723,7 @@ static void test_sfr_roles(void)
 	chans[4].sfr_a = SFR_ROLE_RPT_STANDARD;
 	reload_channel();
 	CHECK(sm.sfr_rpt && sm.view.dmr.sfr_rpt && !sm.view.dmr.active && !sm.dmr_running);
+	CHECK(direct_now() == 1);	// the board may key the SFR's bursts straight from RX (hal_radio_t.dmr_direct_query)
 	CHECK(sm.view.dmr.sfr_role == SFR_ROLE_RPT_STANDARD);
 	CHECK(sim.started && sim.cb != NULL && sim.locked_ts == 0 && sim.cc_filter == 2 && !sim.cfg.repeater);
 	CHECK(hw.tx_calls > tx0 && hw.tx_hz == 438500000 && sm.dmr_keyed);
@@ -5745,6 +5795,7 @@ static void test_sfr_roles(void)
 	tx_fail = true;
 	reload_channel();
 	CHECK(!sm.sfr_rpt && !sm.dmr_keyed && sm.view.dmr.active);
+	CHECK(direct_now() == 0);	// the role stopped: normal keying again
 	tx_fail = false;
 	reload_channel();
 	CHECK(sm.sfr_rpt && sm.dmr_keyed);
@@ -5817,6 +5868,21 @@ static void test_sfr_vfo(void)
 	settings_read(&st);
 	CHECK(st.vfo_sfr == SFR_ROLE_RPT_STANDARD);
 
+	CHECK(direct_now() == 1);
+	// The role back to none, as the HIL test leaves it (#540 review): normal keying at once, and still after the mode
+	// goes FM and back to DMR and an ordinary call keys
+	req(RREQ_VFO_SFR, SFR_ROLE_OFF);
+	run(50);
+	CHECK(!sm.sfr_rpt && direct_now() == 0);
+	req(RREQ_PTT, 1);
+	run(100);
+	CHECK(direct_now() == 0);
+	req(RREQ_PTT, 0);
+	run(3000);
+	CHECK(direct_now() == 0 && !sm.dmr_keyed);
+	req(RREQ_VFO_SFR, SFR_ROLE_RPT_STANDARD);
+	run(50);
+	CHECK(sm.sfr_rpt && direct_now() == 1);
 	// A new color code: the repeater takes it
 	req(RREQ_DMR_CC, 5);
 	run(50);
