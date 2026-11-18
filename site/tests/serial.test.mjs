@@ -316,10 +316,11 @@ class GrantedPort extends FakePort {
 
 test("the ports granted before are tried as the chooser would list them; a silent one is closed and passed over", async (t) => {
 	const cable = new GrantedPort(0x0403, 0x6001), other = new GrantedPort(0x05AC, 0x1234);
-	// Node's navigator is a getter without a setter: replaced for this test and put back
+	// Node 21+ has a navigator getter without a setter: replaced for this test and put back. Node 20 has none, so
+	// there is nothing to put back and the stand-in is removed instead (defineProperty with undefined throws)
 	const was = Object.getOwnPropertyDescriptor(globalThis, "navigator");
 	Object.defineProperty(globalThis, "navigator", { value: { serial: { getPorts: async () => [other, cable] } }, configurable: true });
-	t.after(() => Object.defineProperty(globalThis, "navigator", was));
+	t.after(() => (was ? Object.defineProperty(globalThis, "navigator", was) : delete globalThis.navigator));
 	const filters = [{ usbVendorId: 0x0403 }];
 	assert.deepEqual(await grantedPorts(filters), [cable]);
 	assert.equal(await knownRadioPort(filters), null, "nothing answered: the chooser opens");
