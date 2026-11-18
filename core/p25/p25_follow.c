@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 tylerwatt12
 // The P25 trunking follower (p25_follow.h, docs/spec/p25-trunking.md 4) and its transmit side (5).
 #include "../config.h"
 #if CONFIG_P25_TRUNK	// the whole file
@@ -659,9 +660,10 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 	}
 	if (known && m.kind == P25_TSBK_RFSS &&
 	    ((!any_sysid(c) && m.u.site.sysid != c->sysid) ||
-	     (f->view.wacn != UINT32_MAX && m.u.site.sysid != f->view.sysid))) {
+	     (st == P25_FOLLOW_CONTROL && f->view.wacn != UINT32_MAX && m.u.site.sysid != f->view.sysid))) {
 		// A conflicting site advertisement invalidates prior proof, including wildcard selections. A grant
-		// cannot immediately reacquire this channel: wait for a fresh matching network identity first.
+		// cannot immediately reacquire this channel: wait for a fresh matching network identity first. In HUNT
+		// the view still holds the last system's identity, so only the configured one is compared there.
 		count(&f->view.wrong_sys);
 		f->identity_conflict = true;
 		if (st == P25_FOLLOW_HUNT) {

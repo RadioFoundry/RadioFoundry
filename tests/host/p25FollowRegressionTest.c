@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 tylerwatt12
 // Regression cases at the follower's actual block, timing, tune and inbound-send interfaces.
 #include <stdio.h>
 #include <string.h>
@@ -16,7 +17,7 @@ typedef struct {
 	p25_follow_iden_t plan[P25_FOLLOW_IDENS];
 	p25_isp_t last_request;
 	uint32_t now, sent_hz;
-	unsigned sends, fallbacks;
+	unsigned sends, fallbacks, tunes;
 	bool request_valid;
 } fixture_t;
 
@@ -24,6 +25,7 @@ static void tuned(uint32_t hz, uint8_t what, uint32_t id, void *ctx)
 {
 	fixture_t *x = ctx;
 	(void)hz; (void)what; (void)id;
+	x->tunes++;
 	p25_follow_retuned(&x->f, x->now);
 }
 
@@ -77,14 +79,16 @@ static void identifier(fixture_t *x, bool unavailable, int16_t offset)
 	feed(x, &m);
 }
 
-static void begin(fixture_t *x, bool programmed, int32_t offset, uint32_t explicit_tx, bool wildcard)
+enum { WILDCARD_WACN = 1u, WILDCARD_SYSID = 2u, WILDCARD_BOTH = 3u };
+
+static void begin(fixture_t *x, bool programmed, int32_t offset, uint32_t explicit_tx, unsigned wildcard)
 {
 	memset(x, 0, sizeof *x);
 	x->now = 1;
 	x->cc = (p25_follow_cc_t){ .hz = 433000000, .tx_hz = explicit_tx, .chan = 0x1000 };
 	x->plan[1] = (p25_follow_iden_t){ .base_hz = 433000000, .spacing_hz = 12500, .tx_off_hz = offset };
-	x->cfg = (p25_follow_cfg_t){ .wacn = wildcard ? P25_FOLLOW_WACN_ANY : 0xABCDE,
-		.sysid = wildcard ? P25_FOLLOW_SYSID_ANY : 0x123, .nac = 0x293,
+	x->cfg = (p25_follow_cfg_t){ .wacn = wildcard & WILDCARD_WACN ? P25_FOLLOW_WACN_ANY : 0xABCDE,
+		.sysid = wildcard & WILDCARD_SYSID ? P25_FOLLOW_SYSID_ANY : 0x123, .nac = 0x293,
 		.unit_id = 0x123456, .talk_group = 0x2345, .flags = P25_FOLLOW_TX | P25_FOLLOW_NO_REG,
 		.ncc = 1, .cc = &x->cc, .iden = x->plan, .iden_set = programmed ? 2 : 0 };
 	p25_follow_begin(&x->f, &x->cfg, &hooks, x, x->now);
@@ -148,7 +152,7 @@ static void testSiteIdentity(void)
 {
 	fixture_t x;
 	for (unsigned wildcard = 0; wildcard < 2; wildcard++) {
-		begin(&x, true, 5000000, 0, wildcard != 0);
+		begin(&x, true, 5000000, 0, wildcard ? WILDCARD_BOTH : 0);
 		site(&x, 0x456);
 		grant(&x);
 		CHECK(x.f.view.state == P25_FOLLOW_HUNT && x.f.view.follows == 0 && x.f.view.wrong_sys == 1,
@@ -164,7 +168,7 @@ static void testSiteIdentity(void)
 		CHECK(x.f.view.state == P25_FOLLOW_VOICE && x.f.view.follows == 1,
 		      "fresh matching identity permits normal grant following again");
 	}
-	begin(&x, true, 5000000, 0, true);
+	begin(&x, true, 5000000, 0, WILDCARD_BOTH);
 	site(&x, 0x456);
 	grant(&x);
 	CHECK(x.f.view.state == P25_FOLLOW_HUNT && x.f.view.follows == 0,
@@ -183,6 +187,46 @@ static void testSiteIdentity(void)
 	}
 	CHECK(x.f.view.state == P25_FOLLOW_HUNT && x.f.view.follows == 0 && x.fallbacks == 1,
 	      "continuous conflicting RFSS cannot slide hunt fallback deadline");
+}
+
+static void testRfssBeforeNetwork(void)
+{
+	fixture_t x;
+	for (unsigned fixed_wacn = 0; fixed_wacn < 2; fixed_wacn++) {
+		begin(&x, true, 5000000, 0, fixed_wacn ? WILDCARD_SYSID : WILDCARD_BOTH);
+		x.now += P25_FOLLOW_CC_LOST_MS + 1;
+		p25_follow_tick(&x.f, x.now);
+		CHECK(x.f.view.state == P25_FOLLOW_HUNT && x.f.view.wacn == 0xABCDE && x.f.view.sysid == 0x123,
+		      "control loss retains the prior identity while hunting");
+		unsigned tunes = x.tunes, wrong = x.f.view.wrong_sys;
+		uint8_t cc = x.f.view.cc;
+		site(&x, 0x456);
+		CHECK(x.f.view.wrong_sys == wrong && x.tunes == tunes && x.f.view.cc == cc,
+		      "acceptable RFSS before NET neither rejects nor leaves the current candidate");
+		CHECK(x.f.view.state == (fixed_wacn ? P25_FOLLOW_HUNT : P25_FOLLOW_CONTROL),
+		      "RFSS settles any WACN, but a configured WACN still needs NET");
+		if (fixed_wacn) {
+			grant(&x);
+			request(&x);
+			CHECK(x.f.view.follows == 0 && x.sends == 0,
+			      "retained identity cannot admit grants or access while configured WACN remains unproved");
+		}
+		network(&x, 0x456);
+		CHECK(x.f.view.state == P25_FOLLOW_CONTROL && x.f.view.sysid == 0x456 &&
+		      x.f.view.wacn == 0xABCDE && x.f.view.wrong_sys == wrong && x.tunes == tunes,
+		      "later acceptable NET acquires the same candidate and updates the learned identity");
+	}
+	// A configured system ID remains authoritative during HUNT, even when WACN is wildcard.
+	begin(&x, true, 5000000, 0, WILDCARD_WACN);
+	x.now += P25_FOLLOW_CC_LOST_MS + 1;
+	p25_follow_tick(&x.f, x.now);
+	unsigned wrong = x.f.view.wrong_sys;
+	site(&x, 0x456);
+	grant(&x);
+	request(&x);
+	CHECK(x.f.view.state == P25_FOLLOW_HUNT && x.f.view.wrong_sys == wrong + 1 &&
+	      x.f.view.follows == 0 && x.sends == 0,
+	      "HUNT still rejects configured system mismatch and blocks grants and access");
 }
 
 static void testWarmHuntRegistration(void)
@@ -234,6 +278,7 @@ int main(void)
 {
 	testUnavailableOffsets();
 	testSiteIdentity();
+	testRfssBeforeNetwork();
 	testWarmHuntRegistration();
 	testEncryptedLinkControl();
 	printf("P25 follower regressions: %u checks, %u failures\n", checks, failures);

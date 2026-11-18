@@ -1,5 +1,6 @@
 <!-- SPDX-License-Identifier: MIT -->
 <!-- Copyright (c) 2026 The RadioFoundry Authors -->
+<!-- Copyright (c) 2026 tylerwatt12 -->
 
 # P25 trunking
 
@@ -26,7 +27,8 @@ State:
 
 The radio runs are against a control channel `p25tool.py` writes from the same descriptions as the firmware, so they
 check the radio's timing, retunes and transmissions, not the layouts: no live system has been heard or answered.
-Every message layout of the transmit side comes from published descriptions, not a capture: 9 lists them.
+The affiliation request is checked against the TIA reference in 2.1. Other transmit-side layouts come from published
+descriptions, not a capture; 9 lists what remains unconfirmed.
 
 Sources: published descriptions of TIA-102.AABB (trunking control channel formats), TIA-102.AABC (trunking messages)
 and TIA-102.BAAA-A (the common air interface): test equipment application notes and public opcode references. Facts
@@ -176,9 +178,11 @@ Hunting:
 
 A candidate without a frequency (a channel number whose identifier is not known yet) is passed over. With WACN and
 system ID set to any, the first block decoded on a candidate of the right NAC holds it. RFSS status names the
-system but not the WACN: it settles a candidate only when the WACN is any. A conflicting RFSS system invalidates
-prior identity proof and stops grant/access admission. Reacquisition needs fresh network identity, including
-when the configured identity is wildcard; a grant cannot reuse stale proof after the conflict.
+system but not the WACN: it settles a candidate only when the WACN is any. During HUNT, RFSS is checked against the
+configured system ID; the displayed identity retained from the previous system does not restrict a wildcard search.
+In CONTROL, a conflicting RFSS system also invalidates prior learned identity proof and stops grant/access admission.
+Reacquisition needs fresh network identity, including when the configured identity is wildcard; a grant cannot reuse
+stale proof after the conflict.
 
 Following a grant (group: `talk_group`, the `groups` list, or every group with `P25_FOLLOW_ALL_GROUPS`; unit to unit:
 to or from `unit_id`, unless `P25_FOLLOW_NO_UNIT`):
@@ -364,7 +368,7 @@ of a live control channel settles them.
 | The TDMA identifier's channel types: slots per carrier (types 0-2 one, 3 two, 4 four, others two) | only type 1 counts as FDMA; every other type is refused as TDMA |
 | The transmit offset's unit in the VHF/UHF and TDMA forms | taken as channel spacings; the `0x3D` form as 250 kHz. A programmed identifier's offset is used where given |
 | The sense of the transmit offset's sign bit (1: above) | as stated |
-| The inbound request layouts (2.1): field order and reserved bits of `0x2C`, `0x28`, `0x00` | as stated; a capture of another radio, or the site's answers, settles them |
+| The inbound request layouts (2.1): field order and reserved bits of `0x2C`, `0x00` | as stated; a capture of another radio, or the site's answers, settles them |
 | The answer layouts (2): registration, affiliation, deny and queued responses | as stated; an answer that doesn't name our unit is ignored, so a wrong guess shows as no answer (`timeouts`) |
 | A grant answering our request is `0x00` with our unit as the source | as stated; the explicit form or another source is not taken as ours |
 | When a subscriber may send on the inbound channel: after an idle status symbol, how long after it, and the random wait | after a block heard since the tune, not while the last status symbol says busy; waits as in 5 |

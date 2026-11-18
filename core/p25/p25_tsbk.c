@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 tylerwatt12
 // P25 trunking signaling blocks and their messages (p25_tsbk.h, docs/spec/p25-trunking.md).
 #include "../config.h"
 #if CONFIG_P25_TRUNK	// the whole file
@@ -382,7 +383,7 @@ void p25_tsbk_make(const p25_tsbk_t *m, uint8_t blk[P25_TSBK_BYTES])
 	p25_tsbk_seal(blk);
 }
 
-// ── Inbound signaling (layouts in docs/spec/p25-trunking.md 2.1; their argument places are unconfirmed) ──
+// ── Inbound signaling (layouts and the affiliation reference in docs/spec/p25-trunking.md 2.1) ──
 void p25_isp_make(const p25_isp_t *m, uint8_t blk[P25_TSBK_BYTES])
 {
 	memset(blk, 0, P25_TSBK_BYTES);
