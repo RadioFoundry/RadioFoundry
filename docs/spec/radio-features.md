@@ -517,8 +517,8 @@ below a threshold lower the level; it goes back up 200 mV above it.
 
 A board with `CAP_NO_BATTERY` (a mobile on a fixed supply) has no battery monitor. The core never reads
 `battery_mv`, the level stays ok, `battery_pct` and `battery_mv` stay 0, and nothing warns or refuses a transmission
-for the battery. The UI shows no battery icon, percentage, Tools > Battery page, Battery saver setting or Low battery
-warning setting. The debug link reports `battery=none` (with `battery_pct=0` and `battery_mv=0`), `/status` leaves
+for the battery. The UI shows no battery icon, percentage, Battery saver setting or Low battery warning setting. The
+debug link reports `battery=none` (with `battery_pct=0` and `battery_mv=0`), `/status` leaves
 `battery_pct` and `battery_mv` out, and SNMP reports rfoundryBatteryVoltage 0, rfoundryBatteryPercent 0 and rfoundryBatteryState
 ok(1) without ever sending rfoundryLowBattery.
 

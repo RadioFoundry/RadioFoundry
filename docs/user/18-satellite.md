@@ -74,12 +74,9 @@ and altitude, and fresh GPS or computer NMEA for UTC, to predict passes for the 
 can therefore provide the observer location while the GPS is acquiring its first fix, once the receiver provides
 current date and time. The list is ordered by time to AOS and shows each pass's maximum elevation. Up and Down
 select a pass; **OK** opens its details and starts tracking. The selected satellite is remembered across power cycles.
-The firmware includes initial ISS, SO-50, and AO-91 TLEs. Firmware builds refresh the shared TLE cache from CelesTrak
-at most once per 24 hours; use `SATELLITE_TLE_OFFLINE=1` for an offline build. A failed refresh uses the last cache or
-checked-in snapshot. On boot, missing built-in satellites are added to the installed list; existing records and their
-TLEs are refreshed once when the firmware or built-in TLE set changes. Other satellite records are preserved. The
-firmware fingerprint is retained across PC syncs and on-radio TLE edits, so your changes are not reset on each boot.
-TLEs age, so refresh them from a PC regularly; daily is recommended.
+The firmware image contains no TLEs. Load selected records into the radio's flash store from the site's Satellite TLE
+Update page or with `tools/satellite_tle.py sync`. With an empty store, Satellite shows **No TLEs: load from site**.
+Refresh installed TLEs regularly because prediction accuracy declines as their epochs age.
 Pass and Doppler values use an approximate Keplerian orbit model, not SGP4. They can differ from a precision ephemeris,
 especially as the TLE ages, so keep the installed elements current.
 Tracking gets its nominal RX/TX frequencies and optional transmit CTCSS tone from the persisted catalog-ID profile,

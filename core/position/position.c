@@ -195,16 +195,16 @@ static uint8_t choose(position_fix_t *out, uint32_t now_ms)
 		return POSITION_SRC_GPS;
 	}
 #endif
-	if (allows(POSITION_FIXED) && fixed_set()) {
-		fixed_position(out, now_ms);
-		return POSITION_SRC_FIXED;
-	}
 #if CONFIG_POSITION_HOST
 	if (allows(POSITION_HOST) && fresh(&p.host, now_ms)) {
 		*out = p.host.f;
 		return POSITION_SRC_HOST;
 	}
 #endif
+	if (allows(POSITION_FIXED) && fixed_set()) {
+		fixed_position(out, now_ms);
+		return POSITION_SRC_FIXED;
+	}
 	return POSITION_SRC_NONE;
 }
 
@@ -216,10 +216,27 @@ uint8_t position_fix(position_fix_t *out, uint32_t now_ms)
 	return src;
 }
 
+#if CONFIG_SATELLITE_TLE
 uint8_t position_fix_for_satellite(position_fix_t *out, uint32_t now_ms)
 {
 	LOCK();
-	uint8_t src = choose(out, now_ms);
+	uint8_t src = POSITION_SRC_NONE;
+#if CONFIG_GPS
+	if (allows(POSITION_GPS) && board_has_gps() && fresh(&p.gps, now_ms)) {
+		*out = p.gps.f;
+		src = POSITION_SRC_GPS;
+	}
+#endif
+	if (src == POSITION_SRC_NONE && allows(POSITION_FIXED) && fixed_set()) {
+		fixed_position(out, now_ms);
+		src = POSITION_SRC_FIXED;
+	}
+#if CONFIG_POSITION_HOST
+	if (src == POSITION_SRC_NONE && allows(POSITION_HOST) && fresh(&p.host, now_ms)) {
+		*out = p.host.f;
+		src = POSITION_SRC_HOST;
+	}
+#endif
 	if ((src == POSITION_SRC_NONE || (src != POSITION_SRC_FIXED && out->alt_m == POSITION_ALT_NONE)) &&
 	    fixed_set() && p.cfg.fix_alt_m != INT16_MIN) {
 		fixed_position(out, now_ms);
@@ -257,6 +274,7 @@ bool position_utc_fields(uint32_t *date_ddmmyy, uint32_t *utc_hms, uint32_t now_
 	UNLOCK();
 	return false;
 }
+#endif
 
 // The middle of the ambiguity cell (grid in 1e-7 degree, within the whole degree) the position is in
 static int32_t blur(int32_t v, int32_t grid)
@@ -442,6 +460,7 @@ bool position_gps(position_gps_t *out, uint32_t now_ms)
 	return on;
 }
 
+#if CONFIG_SATELLITE_TLE
 bool position_save_gps(uint32_t now_ms)
 {
 	position_gps_t gps;
@@ -455,6 +474,7 @@ bool position_save_gps(uint32_t now_ms)
 	position_set_cfg(&cfg, now_ms);
 	return true;
 }
+#endif
 
 #if CONFIG_GPS_SKY
 bool position_gps_sat(uint8_t i, sky_sat_t *out, bool *used)

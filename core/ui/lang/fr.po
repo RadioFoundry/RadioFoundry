@@ -657,7 +657,7 @@ msgctxt "BATT_BANNER_BATTERY"
 msgid "Battery "
 msgstr "Batterie "
 
-#: core/ui/ui_app.c core/ui/ui_menus.c
+#: core/ui/ui_app.c
 msgctxt "BATT_PART_CHARGE_SOON"
 msgid "%: charge soon"
 msgstr "% : recharger vite"
@@ -2052,6 +2052,36 @@ msgctxt "TEXT_HINT_KEEP"
 msgid "{Back delete  # ABC/123/abc  OK keep|Back del  # mode  OK}"
 msgstr "{Ret eff  # mode  OK|Ret eff  # mode  OK}"
 
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE1_UPPER"
+msgid "1 ABC"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE1_NUMERIC"
+msgid "1 123"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE1_LOWER"
+msgid "1 abc"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE2_UPPER"
+msgid "2 ABC"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE2_NUMERIC"
+msgid "2 123"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE2_LOWER"
+msgid "2 abc"
+msgstr ""
+
 #: core/ui/ui_menus.c core/ui/ui_satellite.c
 msgctxt "SATELLITE_2"
 msgid "Satellite"
@@ -2668,11 +2698,6 @@ msgid "Hotspot"
 msgstr "Point d'accès"
 
 #: core/ui/ui_menus.c
-msgctxt "TITLE_BATTERY"
-msgid "Battery"
-msgstr "Batterie"
-
-#: core/ui/ui_menus.c
 msgctxt "TITLE_ABOUT"
 msgid "About"
 msgstr "À propos"
@@ -2711,11 +2736,6 @@ msgstr "Répéteur"
 msgctxt "SFR_VALUE_REPEATER_ERDM"
 msgid "Repeater (ERDM style)"
 msgstr "Répéteur (ERDM)"
-
-#: core/ui/ui_menus.c
-msgctxt "TITLE_SUPPLY"
-msgid "Supply"
-msgstr "Alimentation"
 
 #: core/ui/ui_menus.c
 msgctxt "POS_BODY_NO_GPS_OR_OFF"
@@ -4358,6 +4378,11 @@ msgid "Predicting passes"
 msgstr "Calcul des passages"
 
 #: core/ui/ui_satellite.c
+msgctxt "SATELLITE_NO_TLE_LOAD_SITE"
+msgid "No TLEs: load from site"
+msgstr ""
+
+#: core/ui/ui_satellite.c
 msgctxt "GPS_TIME_UNAVAILABLE"
 msgid "GPS/time unavailable"
 msgstr "GPS/heure indisponibles"
@@ -4381,11 +4406,6 @@ msgstr "Haut Bas choisir  Retour"
 msgctxt "NO_PASSES_IN_NEXT_24H"
 msgid "No passes in next 24h"
 msgstr "Aucun passage dans les 24 h"
-
-#: core/ui/ui_satellite.c
-msgctxt "NO_TLE_RECORDS_INSTALLED"
-msgid "No TLE records installed"
-msgstr "Aucun TLE installé"
 
 #: core/ui/ui_satellite.c
 msgctxt "VISIBLE_2"

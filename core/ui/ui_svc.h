@@ -232,7 +232,7 @@ typedef struct {
 	uint32_t utc_hms;	// hhmmss, 0xFFFFFFFF unknown
 } ui_position_t;
 bool ui_svc_position(ui_position_t *out);	// false: no GPS on this radio (or off)
-#if CONFIG_GPS && CONFIG_POSITION
+#if CONFIG_GPS && CONFIG_POSITION && CONFIG_SATELLITE_TLE
 bool ui_svc_position_save_gps(void);	// save the current fresh board fix as the fixed-position fallback
 #endif
 #if CONFIG_SATELLITE_TLE

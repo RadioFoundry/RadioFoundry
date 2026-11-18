@@ -31,7 +31,7 @@ bool ui_svc_position(ui_position_t *out)
 	return true;
 }
 
-#if CONFIG_POSITION
+#if CONFIG_GPS && CONFIG_POSITION && CONFIG_SATELLITE_TLE
 bool ui_svc_position_save_gps(void)
 {
 	return board_has_gps() && position_save_gps(hal_millis());

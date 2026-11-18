@@ -145,10 +145,10 @@ static const struct { const char *name, *script; } gallery[] = {
 #endif
 	{ "tools", "ok 6" },
 #if CONFIG_SATELLITE_TLE
-	{ "satellite_passes", "ok 6 down down down down down down down down down ok" },
-	{ "satellite", "ok 6 down down down down down down down down down ok ok" },
-	{ "satellite_passes_predicting", "satpredict ok 6 down down down down down down down down down ok" },
-	{ "satellite_tle_text", "ok 6 down down down down down down down down down ok ok ctx" },
+	{ "satellite_passes", "ok 6 9" },
+	{ "satellite", "ok 6 9 ok" },
+	{ "satellite_passes_predicting", "satpredict ok 6 9" },
+	{ "satellite_tle_text", "ok 6 9 ok ctx" },
 #endif
 	{ "position", "ok 6 2" },
 	{ "gps_sky", "ok 6 2 2" },
@@ -309,7 +309,7 @@ static const struct { const char *name, *script; } worst_screens[] = {
 	{ "w_aprs_station_evicted", "ok 6 8 up ok ok aprs:evict down" },
 	{ "w_usb", "ok 6 4" },
 	{ "w_sfr", "ok 6 5" },
-	{ "w_battery", "battery:5 ok 6 9" },
+	{ "w_satellite", "ok 6 9" },
 	{ "w_my_radio", "ok 7 0 ok" },
 	{ "w_codeplug", "ok 7 up ok down ok" },
 	{ "w_settings_number", "ok 7 3 ok up" },

@@ -3954,11 +3954,16 @@ static void test_position(void)
 	CHECK(saved_cfg.fix_lat == up.lat_e7 && saved_cfg.fix_lon == up.lon_e7 && saved_cfg.fix_alt_m == up.alt_m);
 	uint32_t auto_fallback_now = now + POSITION_STALE_MS;
 #if CONFIG_POSITION_HOST
-	position_nmea(rmc, strlen(rmc), false, auto_fallback_now);	// a fresh host fix must not displace Fixed in Auto
+	position_nmea(rmc, strlen(rmc), false, auto_fallback_now);
 #endif
 	saved_cfg.pref = POSITION_AUTO;
 	position_set_cfg(&saved_cfg, now);
+#if CONFIG_POSITION_HOST
+	CHECK(position_fix(&merged_fix, auto_fallback_now) == POSITION_SRC_HOST);
+	CHECK(position_fix_for_satellite(&merged_fix, auto_fallback_now) == POSITION_SRC_FIXED);
+#else
 	CHECK(position_fix(&merged_fix, auto_fallback_now) == POSITION_SRC_FIXED);
+#endif
 	saved_cfg.pref = POSITION_GPS;
 	position_set_cfg(&saved_cfg, now);
 	CHECK(position_fix_for_satellite(&merged_fix, now) == POSITION_SRC_GPS);
@@ -3974,8 +3979,13 @@ static void test_position(void)
 	settings_read(&saved_settings);
 	position_load(&saved_settings);
 	position_fix_t saved_fix;
+#if CONFIG_POSITION_HOST
+	CHECK(position_fix(&saved_fix, auto_fallback_now) == POSITION_SRC_HOST);
+	CHECK(saved_fix.lat == up.lat_e7 && saved_fix.lon == up.lon_e7 && saved_fix.alt_m == POSITION_ALT_NONE);
+#else
 	CHECK(position_fix(&saved_fix, auto_fallback_now) == POSITION_SRC_FIXED);
 	CHECK(saved_fix.lat == up.lat_e7 && saved_fix.lon == up.lon_e7 && saved_fix.alt_m == up.alt_m);
+#endif
 	position_get_cfg(&saved_cfg);
 	saved_cfg.fix_lat = original_cfg.fix_lat;
 	saved_cfg.fix_lon = original_cfg.fix_lon;

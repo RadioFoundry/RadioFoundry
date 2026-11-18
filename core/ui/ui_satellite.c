@@ -306,6 +306,8 @@ static void draw_path(int y, const radio_view_t *view, const satellite_path_view
 
 static uint16_t satellite_pass_count(void)
 {
+	if (ui_svc_satellite_count() == 0u)
+		return 1u;
 	uint8_t status, completed, total, passes;
 	ui_svc_satellite_scan_state(&status, &completed, &total, &passes);
 	(void)completed;
@@ -315,6 +317,12 @@ static uint16_t satellite_pass_count(void)
 
 static void satellite_pass_item(uint16_t row_index, ui_item_t *item)
 {
+	if (ui_svc_satellite_count() == 0u) {
+		item->flags = UI_ITEM_INFO;
+		str_copy(item->label, sizeof(item->label),
+			 TR(SATELLITE_NO_TLE_LOAD_SITE, "No TLEs: load from site"));
+		return;
+	}
 	uint8_t status, completed, total, passes;
 	ui_svc_satellite_scan_state(&status, &completed, &total, &passes);
 	if (status != RADIO_SAT_SCAN_COMPLETE) {
@@ -351,6 +359,8 @@ static void satellite_pass_item(uint16_t row_index, ui_item_t *item)
 static void satellite_pass_select(uint16_t row_index, bool hold)
 {
 	(void)hold;
+	if (ui_svc_satellite_count() == 0u)
+		return;
 	radio_satellite_pass_t pass;
 	if (!ui_svc_satellite_pass((uint8_t)row_index, &pass))
 		return;
@@ -390,7 +400,7 @@ static void satellite_draw(void)
 	gfx_clear(ui_col.bg);
 	int y = ui_draw_top(view, &ui_st, TR(SATELLITE_2, "Satellite"), have_record ? record.name : "") + 2;
 	if (!have_record) {
-		gfx_text(ui_layout.small, 0, y, TR(NO_TLE_RECORDS_INSTALLED, "No TLE records installed"), ui_col.warn);
+		gfx_text(ui_layout.small, 0, y, TR(SATELLITE_NO_TLE_LOAD_SITE, "No TLEs: load from site"), ui_col.warn);
 	} else if (compact) {
 		if (view->satellite_tracking && view->satellite_index == selected) {
 			const char *status = view->satellite_status == SATELLITE_TRACKING_VISIBLE ? TR(VISIBLE_2, "Visible") :

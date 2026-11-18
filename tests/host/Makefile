@@ -1358,20 +1358,14 @@ run-settings: settingsTest spiNorTest spiNandTest nandSectorsTest
 
 TESTS   += satelliteStoreTest
 SAT_STORE := $(CORE)/debuglink/debuglink_satellite.c $(CORE)/satellite/frequency.c $(CORE)/storage/storage.c sim/sim_flash.c
-SAT_BUILTINS := $(ROOT)/build/host/gen/builtin_satellite_records.inc
-.PHONY: satellite-builtins-offline
-$(SAT_BUILTINS): satellite-builtins-offline
-	@mkdir -p $(dir $@)
-	$(PYTHON) $(ROOT)/tools/gen_satellite_builtins.py --offline --cache $(ROOT)/build/satellite-tle-cache.json \
-		--build-id 0xFFFFFFFFu --output $@
 TESTS   += satelliteChannelsTest
 TESTS   += satelliteOrbitTest
 SAT_ORBIT := $(CORE)/satellite/orbit.c $(CORE)/satellite/pass.c $(CORE)/satellite/doppler.c \
 	$(CORE)/satellite/tracking.c
 
-satelliteStoreTest: satelliteStoreTest.c $(SAT_STORE) $(SAT_BUILTINS) $(CORE)/debuglink/debuglink_satellite.c \
+satelliteStoreTest: satelliteStoreTest.c $(SAT_STORE) $(CORE)/debuglink/debuglink_satellite.c \
 		$(wildcard $(CORE)/debuglink/*.h $(CORE)/satellite/*.h $(CORE)/storage/*.h) sim/sim_flash.h
-	$(CC) $(CFLAGS) -I$(ROOT)/build/host/gen -I$(ROOT)/hal -I. -Wshadow -DCONFIG_SATELLITE_TLE=1 -o $@ satelliteStoreTest.c $(SAT_STORE)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_SATELLITE_TLE=1 -o $@ satelliteStoreTest.c $(SAT_STORE)
 
 run: run-satellite
 run-satellite: satelliteStoreTest satelliteChannelsTest satelliteOrbitTest

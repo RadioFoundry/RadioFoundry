@@ -2194,6 +2194,7 @@ static bool sim_satellite_predicting;
 static bool sim_satellite_path_pending;
 static bool sim_satellite_los_pending;
 static bool sim_satellite_future_pass;
+static bool sim_satellite_empty;
 static const char *const sim_satellite_names[] = { "ISS", "NOAA 19", "SO-50", "AO-91", "AO-123" };
 static const uint32_t sim_satellite_catalog_ids[] = { 25544u, 33591u, 27607u, 43017u, 58421u };
 static const uint16_t sim_satellite_eta_minutes[] = { 14u, 36u, 53u, 71u, 96u };
@@ -2201,7 +2202,7 @@ static const uint8_t sim_satellite_max_elevations[] = { 36u, 21u, 35u, 41u, 17u 
 
 uint8_t ui_svc_satellite_count(void)
 {
-	return (uint8_t)(sizeof(sim_satellite_names) / sizeof(sim_satellite_names[0]));
+	return sim_satellite_empty ? 0u : (uint8_t)(sizeof(sim_satellite_names) / sizeof(sim_satellite_names[0]));
 }
 
 bool ui_svc_satellite_get(uint8_t index, satellite_record_t *record)
@@ -2496,6 +2497,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	sim_satellite_path_pending = false;
 	sim_satellite_los_pending = false;
 	sim_satellite_future_pass = false;
+	sim_satellite_empty = false;
 #endif
 	vfo_mode = RADIO_MODE_FM;	// a fresh VFO
 	vfo_cc = vfo_ts = 1;
@@ -3562,6 +3564,10 @@ static bool run_token(char *t, char *err, size_t len)
 		return true;
 	}
 #if CONFIG_SATELLITE_TLE
+	if (strcmp(t, "satempty") == 0) {
+		sim_satellite_empty = true;
+		return true;
+	}
 	if (strcmp(t, "satpredict") == 0) {
 		sim_satellite_predicting = true;
 		return true;

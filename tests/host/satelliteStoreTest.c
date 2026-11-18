@@ -296,30 +296,6 @@ static bool install_replace_profile_chunks(const uint8_t *data, uint16_t data_le
 	return output[0] == DL_ST_OK;
 }
 
-static bool downgrade_active_bank_to_v1(void)
-{
-	uint8_t records[STORAGE_SECTOR - 24u];
-	for (uint8_t bank = 0u; bank < 3u; bank++) {
-		uint8_t *base = sim_flash_data + map.satellite_addr + (uint32_t)bank * STORAGE_SECTOR;
-		uint16_t header_size = base[4] == 4u ? 172u : base[4] == 3u ? 72u : base[4] == 2u ? 24u : 0u;
-		if (get32(base) != 0x31544653u || header_size == 0u || get32(base + 20u) != 0x54494D43u)
-			continue;
-		uint16_t length = get16(base + 6u);
-		if (length > sizeof(records))
-			return false;
-		uint8_t header[16];
-		memcpy(header, base, sizeof(header));
-		memcpy(records, base + header_size, length);
-		memset(base, 0xFF, STORAGE_SECTOR);
-		memcpy(base, header, sizeof(header));
-		base[4] = 1u;
-		memcpy(base + 20u, records, length);
-		put32(base + 16u, 0x54494D43u);
-		return true;
-	}
-	return false;
-}
-
 static void test_inventory_transactions(void)
 {
 	uint8_t req[9] = { DL_SAT_OP_INFO };
@@ -472,13 +448,17 @@ static void test_inventory_transactions(void)
 	      frequency_profile.tx_hz == 435100000u && frequency_profile.tx_tone_tenths == 885u);
 }
 
-static void test_corrupt_empty_area_fails_closed(void)
+static void test_corrupt_empty_area_recovers(void)
 {
 	uint8_t req = DL_SAT_OP_INFO;
 	sim_flash_create(FLASH_SIZE, &map);
 	CHECK(storage_init());
 	sim_flash_data[map.satellite_addr] = 0u;
-	CHECK(command(&req, 1) == 1 && output[0] == DL_ST_REFUSED);
+	CHECK(command(&req, 1) == 6u && output[0] == DL_ST_OK && get16(output + 4u) == 0u);
+	uint8_t record[TEST_RECORD_MAX];
+	uint16_t length = make_record(record, 25544u, "ISS", "26315.50000000");
+	CHECK(install(record, length, 1u, false, false, false));
+	CHECK(satellite_store_count() == 1u);
 }
 
 static void test_commit_power_cuts(void)
@@ -654,68 +634,17 @@ static void test_first_install_recovery(void)
 	CHECK(command(&info, 1u) == 6u && output[0] == DL_ST_OK && get16(output + 4) == 1u);
 }
 
-static void test_builtin_seed(void)
-{
-	sim_flash_create(FLASH_SIZE, &map);
-	CHECK(storage_init());
-	CHECK(satellite_store_count() == 0u);
-	CHECK(satellite_store_seed_defaults());
-	CHECK(satellite_store_count() == 3u);
-	satellite_record_t iss, so50, ao91;
-	CHECK(satellite_store_get(0u, &iss) && satellite_store_get(1u, &so50) && satellite_store_get(2u, &ao91));
-	CHECK(iss.catalog_id == 25544u && strcmp(iss.name, "ISS (ZARYA)") == 0);
-	CHECK(so50.catalog_id == 27607u && strcmp(so50.name, "SO-50") == 0);
-	CHECK(ao91.catalog_id == 43017u && strcmp(ao91.name, "AO-91") == 0);
-	CHECK(strlen(iss.line1) == SATELLITE_TLE_LINE_LENGTH && strlen(iss.line2) == SATELLITE_TLE_LINE_LENGTH);
-	CHECK(strlen(so50.line1) == SATELLITE_TLE_LINE_LENGTH && strlen(so50.line2) == SATELLITE_TLE_LINE_LENGTH);
-	CHECK(strlen(ao91.line1) == SATELLITE_TLE_LINE_LENGTH && strlen(ao91.line2) == SATELLITE_TLE_LINE_LENGTH);
-	CHECK(satellite_store_seed_defaults());
-	CHECK(satellite_store_count() == 3u && satellite_store_get(0u, &iss));
-	char replacement_line1[SATELLITE_TLE_LINE_LENGTH + 1u];
-	char replacement_line2[SATELLITE_TLE_LINE_LENGTH + 1u];
-	make_line((uint8_t *)replacement_line1, '1', 25544u, "26318.50000000");
-	make_line((uint8_t *)replacement_line2, '2', 25544u, "00000.00000000");
-	replacement_line1[SATELLITE_TLE_LINE_LENGTH] = '\0';
-	replacement_line2[SATELLITE_TLE_LINE_LENGTH] = '\0';
-	CHECK(satellite_store_replace(0u, replacement_line1, replacement_line2));
-	CHECK(satellite_store_seed_defaults());
-	CHECK(satellite_store_get(0u, &iss) && memcmp(iss.line1, replacement_line1, SATELLITE_TLE_LINE_LENGTH) == 0);
-	CHECK(satellite_store_get(1u, &so50) && so50.catalog_id == 27607u);
-	CHECK(satellite_store_get(2u, &ao91) && ao91.catalog_id == 43017u);
-}
-
-static void test_builtin_seed_migration(void)
-{
-	sim_flash_create(FLASH_SIZE, &map);
-	CHECK(storage_init());
-	uint8_t records[2u * TEST_RECORD_MAX];
-	uint16_t iss_length = make_record(records, 25544u, "Old ISS", "26315.50000000");
-	uint16_t so50_length = make_record(records + iss_length, 27607u, "Old SO-50", "26315.50000000");
-	CHECK(install(records, (uint16_t)(iss_length + so50_length), 2u, false, false, false));
-	CHECK(downgrade_active_bank_to_v1());
-	satellite_record_t iss, ao91;
-	CHECK(satellite_store_count() == 2u && satellite_store_get(0u, &iss));
-	char installed_line1[SATELLITE_TLE_LINE_LENGTH];
-	memcpy(installed_line1, iss.line1, sizeof(installed_line1));
-	CHECK(satellite_store_seed_defaults());
-	CHECK(satellite_store_count() == 3u && satellite_store_get(0u, &iss) &&
-	      memcmp(iss.line1, installed_line1, sizeof(installed_line1)) != 0 && strcmp(iss.name, "ISS (ZARYA)") == 0);
-	CHECK(satellite_store_get(2u, &ao91) && ao91.catalog_id == 43017u && strcmp(ao91.name, "AO-91") == 0);
-}
-
 int main(void)
 {
 	sim_flash_create(FLASH_SIZE, &map);
 	CHECK(storage_init());
 	test_inventory_transactions();
 	CHECK(sim_flash_violations() == 0);
-	test_corrupt_empty_area_fails_closed();
+	test_corrupt_empty_area_recovers();
 	test_commit_power_cuts();
 	test_replace_power_cuts();
 	test_custom_frequency_profiles();
 	test_first_install_recovery();
-	test_builtin_seed_migration();
-	test_builtin_seed();
 	CHECK(sim_flash_violations() == 0);
 	sim_flash_free();
 	if (failures != 0) {

@@ -237,14 +237,13 @@ typedef struct {
 	// was reserved9: 0 in an older record). A record whose count isn't the board's has those levels reset at load
 	// (settings-store.md 3): a level index names another power when a board's levels change
 	uint8_t power_levels;
-	uint8_t satellite_index;	// selected installed TLE record, SETTINGS_UNSET8 when none
 	// A Tier III stun kept across a restart (dmr-trunking.md 7.9; appended: an older record reads none):
 	// SETTINGS_T3_STUN set, the codeplug system's slot in bits 4-6, its network's hash in bits 0-3
 	uint8_t t3_stun;
 	// A Tier III kill kept across a restart (dmr-trunking.md 7.9; appended: an older record reads none):
 	// SETTINGS_T3_KILLED set, no DMR at all until a factory reset
 	uint8_t t3_kill;
-	uint8_t reserved10;		// 0
+	uint8_t satellite_index;	// selected installed TLE record, SETTINGS_UNSET8 when none
 } settings_t;
 
 // Pages: settings_t is stored as records of SETTINGS_PAGE_BYTES each (settings-store.md 2.1). Only the pages its size

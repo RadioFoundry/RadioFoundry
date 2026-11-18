@@ -33,8 +33,6 @@
 #define SAT_VERSION_LEGACY	1u
 #define SAT_PROTOCOL_VERSION	6u
 
-#include <builtin_satellite_records.inc>
-
 typedef struct {
 	uint32_t catalog_id;
 	uint32_t epoch;
@@ -45,7 +43,6 @@ typedef struct {
 typedef struct {
 	uint32_t generation;
 	uint32_t crc;
-	uint32_t defaults_hash;
 	uint32_t profile_ids[SATELLITE_PROFILE_MAX];
 	satellite_frequency_profile_t profiles[SATELLITE_PROFILE_MAX];
 	uint16_t length;
@@ -511,7 +508,6 @@ static bool check_bank(const hal_flash_map_t *m, uint8_t bank, sat_bank_t *info,
 	}
 	info->generation = get32(h + 8);
 	info->crc = crc;
-	info->defaults_hash = h[4] >= SAT_VERSION_V2 ? get32(h + 16) : 0u;
 	info->length = length;
 	info->header_size = header_size;
 	info->count = count;
@@ -584,38 +580,6 @@ static bool bank_erased(const hal_flash_map_t *m, uint8_t bank, bool *erased)
 	return true;
 }
 
-static bool marker_prefix(const hal_flash_map_t *m, uint8_t bank, uint32_t offset, uint32_t marker)
-{
-	uint8_t bytes[4];
-	uint8_t expected[4];
-	put32(expected, marker);
-	if (!flash_read(bank_addr(m, bank) + offset, bytes, sizeof(bytes))) {
-		return false;
-	}
-	for (uint8_t prefix = 1u; prefix <= sizeof(bytes); prefix++) {
-		bool matches = true;
-		for (uint8_t i = 0; i < prefix; i++) {
-			matches = matches && bytes[i] == expected[i];
-		}
-		for (uint8_t i = prefix; i < sizeof(bytes); i++) {
-			matches = matches && bytes[i] == 0xFFu;
-		}
-		if (matches) {
-			return true;
-		}
-	}
-	return false;
-}
-
-static bool bank_recoverable(const hal_flash_map_t *m, uint8_t bank)
-{
-	bool erased;
-	return (bank_erased(m, bank, &erased) && erased) ||
-	       marker_prefix(m, bank, 0u, SAT_STAGE_MAGIC) ||
-	       marker_prefix(m, bank, 20u, SAT_PENDING) ||
-	       marker_prefix(m, bank, 16u, SAT_PENDING);
-}
-
 static bool active_bank(const hal_flash_map_t *m, int *active, sat_bank_t *info)
 {
 	bool found = false;
@@ -631,13 +595,6 @@ static bool active_bank(const hal_flash_map_t *m, int *active, sat_bank_t *info)
 			*active = i;
 			*info = candidate;
 			found = true;
-		}
-	}
-	if (!found) {
-		for (uint8_t i = 0; i < 3u; i++) {
-			if (!bank_recoverable(m, i)) {
-				return false;
-			}
 		}
 	}
 	if (*active >= 0) {
@@ -681,8 +638,7 @@ static bool copy_record(uint32_t src, uint16_t src_header_size, uint16_t src_off
 }
 
 static bool commit_transaction(const hal_flash_map_t *m, int active, const sat_bank_t *old_info,
-			       uint32_t defaults_hash, uint8_t profile_count,
-			       const satellite_frequency_profile_t *profiles,
+			       uint8_t profile_count, const satellite_frequency_profile_t *profiles,
 			       bool replace_records)
 {
 	if (!stage_entries(m) || !valid_frequency_profiles(profile_count, profiles)) {
@@ -744,7 +700,7 @@ static bool commit_transaction(const hal_flash_map_t *m, int active, const sat_b
 	put16(h + 6, out_len);
 	put32(h + 8, active >= 0 ? old_info->generation + 1u : 1u);
 	put32(h + 12, out_crc);
-	put32(h + 16, defaults_hash);
+	put32(h + 16, 0u);
 	uint8_t profile_data[SAT_PROFILE_BYTES] = { 0 };
 	profile_data[0] = profile_count;
 	for (uint8_t i = 0u; i < profile_count; i++) {
@@ -971,7 +927,7 @@ static bool satellite_store_frequency_profiles_set_locked(uint8_t count,
 	}
 	transaction_offset = transaction_length;
 	transaction_active = true;
-	bool result = commit_transaction(m, active, &current, current.defaults_hash, count, profiles, false);
+	bool result = commit_transaction(m, active, &current, count, profiles, false);
 	transaction_active = false;
 	return result;
 #else
@@ -1039,92 +995,6 @@ bool satellite_store_profile_selected(uint32_t catalog_id)
 	return false;
 }
 
-bool satellite_store_seed_defaults(void)
-{
-#if CONFIG_SATELLITE_TLE
-	bool result = false;
-	storage_lock();
-	const hal_flash_map_t *m = sat_map();
-	int active;
-	sat_bank_t current;
-	if (m == NULL || transaction_active || !active_bank(m, &active, &current))
-		goto done;
-	if (active >= 0 && current.defaults_hash == SATELLITE_BUILTIN_BUILD_HASH) {
-		result = true;
-		goto done;
-	}
-	uint16_t built_in_count = sizeof(built_in_records) / sizeof(built_in_records[0]);
-	uint16_t missing_count = 0u;
-	for (uint16_t i = 0u; i < built_in_count; i++) {
-		bool found = false;
-		for (uint8_t j = 0u; active >= 0 && j < current.count; j++)
-			found = found || active_entries[j].catalog_id == built_in_records[i].catalog_id;
-		missing_count += !found;
-	}
-	if (active >= 0 && (uint16_t)current.count + missing_count > SAT_MAX_RECORDS)
-		goto done;
-	if (active < 0) {
-		for (uint8_t i = 0u; i < 3u; i++) {
-			bool erased;
-			if (!bank_erased(m, i, &erased) || !erased)
-				goto done;
-		}
-	}
-	transaction_bank = 0xFFu;
-	for (uint8_t i = 0u; i < 3u; i++) {
-		if ((int)i != active) {
-			transaction_bank = i;
-			break;
-		}
-	}
-	if (transaction_bank == 0xFFu || !flash_erase(bank_addr(m, transaction_bank)))
-		goto done;
-	transaction_count = built_in_count;
-	transaction_length = 0u;
-	for (uint16_t i = 0u; i < built_in_count; i++)
-		transaction_length = (uint16_t)(transaction_length + 5u + built_in_records[i].name_length +
-						2u * SAT_TLE_LINE);
-	transaction_offset = transaction_length;
-	transaction_crc = 0u;
-	transaction_active = true;
-	uint8_t marker[4];
-	put32(marker, SAT_STAGE_MAGIC);
-	if (!flash_write(bank_addr(m, transaction_bank), marker, sizeof(marker)))
-		goto finish;
-	uint16_t offset = 0u;
-	for (uint16_t i = 0u; i < built_in_count; i++) {
-		const satellite_record_t *record = &built_in_records[i];
-		uint16_t length = (uint16_t)(5u + record->name_length + 2u * SAT_TLE_LINE);
-		put32(record_buf, record->catalog_id);
-		record_buf[4] = record->name_length;
-		memcpy(record_buf + 5u, record->name, record->name_length);
-		memcpy(record_buf + 5u + record->name_length, record->line1, SAT_TLE_LINE);
-		memcpy(record_buf + 5u + record->name_length + SAT_TLE_LINE, record->line2, SAT_TLE_LINE);
-		sat_entry_t entry;
-		if (!validate_record(record_buf, length, &entry) ||
-		    !flash_write(bank_addr(m, transaction_bank) + SAT_HEADER_SIZE + offset, record_buf, length))
-			goto finish;
-		transaction_crc = storage_crc32(transaction_crc, record_buf, length);
-		offset = (uint16_t)(offset + length);
-	}
-	satellite_frequency_profile_t defaults[SATELLITE_PROFILE_MAX] = { 0 };
-	if (active < 0 && !default_frequency_profiles(defaults))
-		goto finish;
-	uint8_t profile_count = active >= 0 ? current.profile_count :
-		(uint8_t)(sizeof(default_profile_ids) / sizeof(default_profile_ids[0]));
-	const satellite_frequency_profile_t *profiles = active >= 0 ? current.profiles : defaults;
-	result = offset == transaction_length &&
-		commit_transaction(m, active, &current, SATELLITE_BUILTIN_BUILD_HASH, profile_count, profiles, false);
-finish:
-	transaction_active = false;
-done:
-	storage_unlock();
-	return result;
-#else
-	return false;
-#endif
-}
-
 static bool satellite_store_replace_locked(uint8_t index, const char *line1, const char *line2)
 {
 #if CONFIG_SATELLITE_TLE
@@ -1174,7 +1044,7 @@ static bool satellite_store_replace_locked(uint8_t index, const char *line1, con
 	put32(marker, SAT_STAGE_MAGIC);
 	bool result = flash_write(bank_addr(m, bank), marker, sizeof(marker)) &&
 		flash_write(bank_addr(m, bank) + SAT_HEADER_SIZE, record_buf, length) &&
-		commit_transaction(m, active, &current, current.defaults_hash, current.profile_count, current.profiles, false);
+		commit_transaction(m, active, &current, current.profile_count, current.profiles, false);
 	transaction_active = false;
 	return result;
 #else
@@ -1413,7 +1283,6 @@ static size_t debuglink_cmd_satellite_locked(const uint8_t *req, uint16_t len, u
 				if (!found) merged++;
 			}
 		}
-		uint32_t defaults_hash = active >= 0 ? current.defaults_hash : 0u;
 		satellite_frequency_profile_t defaults[SATELLITE_PROFILE_MAX] = { 0 };
 		if (active < 0 && !default_frequency_profiles(defaults))
 			return status(out, DL_ST_REFUSED);
@@ -1422,7 +1291,7 @@ static size_t debuglink_cmd_satellite_locked(const uint8_t *req, uint16_t len, u
 		const satellite_frequency_profile_t *profiles = transaction_profiles_staged ? transaction_profiles :
 			active >= 0 ? current.profiles : defaults;
 		if (merged > SAT_MAX_RECORDS ||
-		    !commit_transaction(m, active, &current, defaults_hash, profile_count, profiles, transaction_replace)) {
+		    !commit_transaction(m, active, &current, profile_count, profiles, transaction_replace)) {
 			return status(out, DL_ST_REFUSED);
 		}
 		transaction_active = false;

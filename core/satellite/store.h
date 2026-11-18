@@ -38,8 +38,6 @@ bool satellite_store_get(uint8_t index, satellite_record_t *record);
 // Read the catalog ID and name without copying the TLE lines.
 bool satellite_store_summary_get(uint8_t index, satellite_record_summary_t *summary);
 uint8_t satellite_store_count(void);
-// Seed the built-in TLEs only when all inventory banks are erased; existing or interrupted inventories are preserved.
-bool satellite_store_seed_defaults(void);
 // Replace the selected record's TLE without changing its catalog ID or name. The validated inventory commits atomically.
 bool satellite_store_replace(uint8_t index, const char *line1, const char *line2);
 bool satellite_store_profiles_get(uint8_t *count, uint32_t ids[SATELLITE_PROFILE_MAX]);

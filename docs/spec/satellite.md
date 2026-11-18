@@ -30,10 +30,9 @@ approximation, not SGP4/SDP4: it omits periodic perturbations and detailed atmos
 estimates can drift from a standards-based ephemeris, particularly as the TLE ages. Tests verify the model's orbital
 invariants and Kepler/J2 reference positions, not SGP4 output. Propagation retains the fractional second of the TLE
 epoch even though the radio clock supplies whole UTC seconds. Do not treat TLE elements as long-term orbital constants:
-expose their epoch and reject or mark stale elements outside the supported age. The radio does not fetch
-orbital data. A firmware build refreshes its built-in TLE cache from CelesTrak no more than once per 24 hours, using
-`build/satellite-tle-cache.json`; set `SATELLITE_TLE_OFFLINE=1` to skip network access. A failed refresh uses the last
-cache or checked-in snapshot.
+expose their epoch and reject or mark stale elements outside the supported age. Builds and the radio do not fetch or
+embed TLE data. Load selected records into the radio's flash store with `tools/satellite_tle.py sync` or the site's
+Satellite TLE Update page.
 
 Firmware propagation uses integer fixed-point arithmetic, CORDIC trigonometry and integer roots. Keep double-precision
 math, libm calls and 64-bit division out of the firmware path.
@@ -125,13 +124,6 @@ While tracking SO-50, a long press of OK on its detail screen explicitly sends t
 two seconds. The radio uses its normal transmit checks and the active Doppler-adjusted uplink. The action does not
 change the profile's normal 67.0 Hz tone, and PTT release never starts an arm transmission.
 
-A firmware build includes initial ISS, SO-50 and AO-91 TLE records. The build refreshes their cached elements from
-CelesTrak at most once per 24 hours. The inventory stores a fingerprint of the firmware commit and built-in TLE set.
-At startup, a changed fingerprint refreshes the built-in IDs once, replacing their previous records and adding new
-ones while preserving unrelated IDs. The fingerprint is retained through PC sync and on-radio TLE edits, so those
-updates are not overwritten on every reboot. An old inventory without a fingerprint is refreshed once. If the refreshed
-set would exceed capacity, the update is refused. TLEs still need routine PC refreshes as their epochs age.
-
 Manual channel and VFO operation remain unchanged when tracking is off. Leaving the Satellite screen does not stop an
 active session; use OK on the active satellite to stop and restore the nominal pair. Starting another satellite replaces
 the previous tracking session. Changing channel/VFO context, entering scan or hotspot mode, or losing required inputs
@@ -156,11 +148,11 @@ also supports CelesTrak's public GP endpoint, `https://celestrak.org/NORAD/eleme
 redirects. Catalog browsing is separate from installation: the user selects catalog IDs, and a response or group is
 never installed wholesale. For ID-based provider requests, the returned ID set must exactly match the selection.
 
-The site Tools page links to a standalone Satellite TLE page. It lists only IDs in the curated FM frequency catalog,
-preselects ISS, SO-50 and AO-91 when present, and allows up to 10 profiles. Non-FM TLE objects are omitted. The AMSAT
+The site Tools page links to a standalone Satellite TLE page. It lists IDs in the curated FM frequency catalog and
+allows up to 10 profiles. Non-FM TLE objects are omitted. The AMSAT
 button loads the fixed daily bulletin through a same-origin site endpoint; Browse remains available for another local
-source. The built-in catalog covers every entry in AMSAT's live FM table; the daily TLE bulletin itself contains no
-frequency data. The page validates selected IDs, checksums, orbital fields and age, then creates a schema-v3 bundle or
+source. The daily TLE bulletin itself contains no frequency data. The page validates selected IDs, checksums, orbital
+fields and age, then creates a schema-v3 bundle or
 pushes TLE and frequency data over Web Serial/WebUSB. A direct browser connection requires a supported browser and a
 secure context (HTTPS or localhost). TLE IDs and profile IDs must match exactly. `tools/satellite_tle.py install`
 supports the same schema-v3 bundle. Unselected installed TLEs disappear from the radio's satellite-tracking inventory.

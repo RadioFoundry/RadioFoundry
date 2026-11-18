@@ -4,17 +4,13 @@
 
 The battery, power level and power switch values depend on the radio. The [Radio reference](23-radios.md) has them
 for each radio. A radio without a battery (a mobile on a fixed supply) has none of the battery items in this chapter:
-no battery icon or percentage, no Tools > Battery page, no Battery saver or Low battery warning setting, and no
-battery warnings.
+no battery icon or percentage, no Battery saver or Low battery warning setting, and no battery warnings.
 
 ## Battery level
 
 The status line shows the battery as an icon and a percentage. On a small screen a page's title takes over the
 status line, so the battery shows on Home and on the larger screens' pages. The percentage turns to the warning color at the low
 battery warning level and below. The level is set in **Settings > Power saving > Low battery warning** (15 % by default).
-
-**OK**, **6**, **9** opens Tools > Battery, which shows the level. At the warning level and below it also shows "charge
-soon".
 
 The radio reads the battery once a second. It doesn't read it while transmitting or for 3 s after, because the
 voltage sags under transmit.

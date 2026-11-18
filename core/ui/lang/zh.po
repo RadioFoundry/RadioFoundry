@@ -659,7 +659,7 @@ msgctxt "BATT_BANNER_BATTERY"
 msgid "Battery "
 msgstr "电池 "
 
-#: core/ui/ui_app.c core/ui/ui_menus.c
+#: core/ui/ui_app.c
 msgctxt "BATT_PART_CHARGE_SOON"
 msgid "%: charge soon"
 msgstr "%：请尽快充电"
@@ -2054,6 +2054,36 @@ msgctxt "TEXT_HINT_KEEP"
 msgid "{Back delete  # ABC/123/abc  OK keep|Back del  # mode  OK}"
 msgstr "{返回 删除  # ABC/123/abc  OK 保留|返回 删  # 模式  OK}"
 
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE1_UPPER"
+msgid "1 ABC"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE1_NUMERIC"
+msgid "1 123"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE1_LOWER"
+msgid "1 abc"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE2_UPPER"
+msgid "2 ABC"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE2_NUMERIC"
+msgid "2 123"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE2_LOWER"
+msgid "2 abc"
+msgstr ""
+
 #: core/ui/ui_menus.c core/ui/ui_satellite.c
 msgctxt "SATELLITE_2"
 msgid "Satellite"
@@ -2670,11 +2700,6 @@ msgid "Hotspot"
 msgstr "热点"
 
 #: core/ui/ui_menus.c
-msgctxt "TITLE_BATTERY"
-msgid "Battery"
-msgstr "电池"
-
-#: core/ui/ui_menus.c
 msgctxt "TITLE_ABOUT"
 msgid "About"
 msgstr "关于"
@@ -2713,11 +2738,6 @@ msgstr "中继台"
 msgctxt "SFR_VALUE_REPEATER_ERDM"
 msgid "Repeater (ERDM style)"
 msgstr "中继台（ERDM 式）"
-
-#: core/ui/ui_menus.c
-msgctxt "TITLE_SUPPLY"
-msgid "Supply"
-msgstr "供电"
 
 #: core/ui/ui_menus.c
 msgctxt "POS_BODY_NO_GPS_OR_OFF"
@@ -4360,6 +4380,11 @@ msgid "Predicting passes"
 msgstr "正在预测过境"
 
 #: core/ui/ui_satellite.c
+msgctxt "SATELLITE_NO_TLE_LOAD_SITE"
+msgid "No TLEs: load from site"
+msgstr ""
+
+#: core/ui/ui_satellite.c
 msgctxt "GPS_TIME_UNAVAILABLE"
 msgid "GPS/time unavailable"
 msgstr "GPS/时间不可用"
@@ -4383,11 +4408,6 @@ msgstr "返回 上下选择"
 msgctxt "NO_PASSES_IN_NEXT_24H"
 msgid "No passes in next 24h"
 msgstr "未来 24 小时无过境"
-
-#: core/ui/ui_satellite.c
-msgctxt "NO_TLE_RECORDS_INSTALLED"
-msgid "No TLE records installed"
-msgstr "未安装 TLE 数据"
 
 #: core/ui/ui_satellite.c
 msgctxt "VISIBLE_2"

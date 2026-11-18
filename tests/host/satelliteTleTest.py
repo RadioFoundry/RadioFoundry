@@ -15,7 +15,6 @@ import zlib
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "tools"))
 import satellite_tle as tle  # noqa: E402
-import gen_satellite_builtins as builtin_tles  # noqa: E402
 from rfoundry_debug import DebugLinkError  # noqa: E402
 
 
@@ -461,47 +460,12 @@ def test_install_transaction():
         check(any(payload[0] == tle.OP_ABORT for _, payload in failed.calls), "failed transfer abort attempted")
 
 
-def test_builtin_generation():
-    with tempfile.TemporaryDirectory() as temp:
-        cache = os.path.join(temp, "satellite-tles.json")
-        now = dt.datetime.now(dt.timezone.utc)
-        calls = []
-
-        def fetch(ids, now=None):
-            calls.extend(ids)
-            return [make_record(catalog_id) for catalog_id in ids]
-
-        records, source = builtin_tles.resolve_records(cache, now=now, fetch_records=fetch)
-        check(source == "refreshed" and calls == list(builtin_tles.CATALOG_IDS), "built-in TLE fetches selected IDs")
-        check([item["catalog_id"] for item in records] == list(builtin_tles.CATALOG_IDS), "built-in IDs are complete")
-        check(records[2]["name"] == "AO-91", "built-in name remains curated for AO-91")
-
-        calls.clear()
-        cached, source = builtin_tles.resolve_records(cache, now=now + dt.timedelta(hours=23),
-                                     fetch_records=lambda *_args, **_kwargs: (_ for _ in ()).throw(
-                                     AssertionError("fresh cache triggered a fetch")))
-        check(source == "cache" and cached == records, "fresh built-in cache skips provider")
-
-        refreshed, source = builtin_tles.resolve_records(cache, now=now + dt.timedelta(hours=25),
-                                     fetch_records=fetch)
-        check(source == "refreshed" and calls == list(builtin_tles.CATALOG_IDS), "built-in cache refreshes daily")
-
-        fallback, source = builtin_tles.resolve_records(os.path.join(temp, "empty.json"), offline=True, now=now)
-        check(source == "fallback" and fallback[2]["catalog_id"] == 43017, "offline build uses AO-91 fallback")
-        header = builtin_tles.render_header(fallback, 1234)
-        check(".catalog_id = 43017u" in header and '.name = "AO-91"' in header,
-              "generated include contains AO-91")
-        check("SATELLITE_BUILTIN_BUILD_HASH" in header and
-              header != builtin_tles.render_header(fallback, 1235), "firmware build ID changes defaults fingerprint")
-
-
 def main():
     test_tle_validation()
     test_provider_selection()
     test_provider_parser_fuzz()
     test_bundle_round_trip()
     test_install_transaction()
-    test_builtin_generation()
     print(f"# satelliteTleTest {'FAILED' if failures else 'PASSED'} ({checks} checks, {failures} failures)")
     return 1 if failures else 0
 

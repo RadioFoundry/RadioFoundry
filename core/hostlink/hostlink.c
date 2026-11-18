@@ -50,9 +50,10 @@
 
 #define HOSTLINK_TASK_PRIORITY	3	// with input and USB; above the UI (core/app/app.c task table)
 #if CONFIG_DEBUGLINK
-// The web debug view needs 741 words; satellite channel sync has a deeper call chain.
+// MMDVM frames and debug link replies are built on the stack. The deepest hotspot-view chain reads 2608 bytes with the
+// macOS toolchain on the deepest board; CI reads up to 16 bytes deeper. stack-check.md's overhead and margin leave 4.
 #if CONFIG_SATELLITE_TLE
-#define HOSTLINK_TASK_STACK	896	// words
+#define HOSTLINK_TASK_STACK	896	// words; includes the satellite channel-sync call chain
 #else
 #define HOSTLINK_TASK_STACK	741
 #endif

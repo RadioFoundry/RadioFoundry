@@ -922,7 +922,9 @@ static void test_settings_layout(void)
 		{ offsetof(settings_t, zone_jrn_index), 272 },
 		{ offsetof(settings_t, zone_jrn_count), 274 },
 		{ offsetof(settings_t, zone_jrn_kind), 276 },
-		{ offsetof(settings_t, satellite_index), 396 },
+		{ offsetof(settings_t, t3_stun), 396 },
+		{ offsetof(settings_t, t3_kill), 397 },
+		{ offsetof(settings_t, satellite_index), 398 },
 	};
 	CHECK(sizeof(settings_t) == 400);
 	for (unsigned i = 0; i < sizeof(offs) / sizeof(offs[0]); i++) {

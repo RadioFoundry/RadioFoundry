@@ -29,9 +29,6 @@
 #include "ui/ui.h"
 #include "ui/ui_svc.h"
 #include "config.h"
-#if CONFIG_SATELLITE_TLE
-#include "satellite/store.h"
-#endif
 #if CONFIG_HOSTLINK
 #include "hostlink/hostlink.h"
 #endif
@@ -104,9 +101,6 @@ static void startup_task(void *arg)
 	board.display->set_backlight(100);
 	board.input->init();
 	storage_init();			// finishes a codeplug sector rewrite a power cut interrupted
-#if CONFIG_SATELLITE_TLE
-	(void)satellite_store_seed_defaults();
-#endif
 	bool written = false;		// a commit below wrote a new codeplug
 #if CONFIG_CPS_FAST
 	written = cps_fast_resume();	// and a fast codeplug protocol commit (docs/spec/cps-fast.md 7)

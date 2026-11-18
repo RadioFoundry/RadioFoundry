@@ -2309,10 +2309,13 @@ static const ui_scr_def_t text_screen = {
 #if CONFIG_SATELLITE_TLE
 static const char *satellite_text_title(void)
 {
-	static const char *const titles[2][TEXT_MODES] = {
-		{ "1 ABC", "1 123", "1 abc" }, { "2 ABC", "2 123", "2 abc" },
+	static const tr_id_t titles[2][TEXT_MODES] = {
+		{ TRN(SATELLITE_TLE_TITLE_LINE1_UPPER, "1 ABC"), TRN(SATELLITE_TLE_TITLE_LINE1_NUMERIC, "1 123"),
+		  TRN(SATELLITE_TLE_TITLE_LINE1_LOWER, "1 abc") },
+		{ TRN(SATELLITE_TLE_TITLE_LINE2_UPPER, "2 ABC"), TRN(SATELLITE_TLE_TITLE_LINE2_NUMERIC, "2 123"),
+		  TRN(SATELLITE_TLE_TITLE_LINE2_LOWER, "2 abc") },
 	};
-	return titles[(satellite_text_line == 2u) ? 1u : 0u][text_mode];
+	return tr(titles[(satellite_text_line == 2u) ? 1u : 0u][text_mode]);
 }
 
 static const ui_scr_def_t satellite_text_screen = {
@@ -4536,12 +4539,11 @@ static const ui_scr_def_t chpick_screen = {
 
 // ======================= Info pages =======================
 
-enum { INFO_POSITION, INFO_HOTSPOT, INFO_BATTERY, INFO_FIRMWARE, INFO_CODEPLUG, INFO_USB_NET,
-       INFO_SFR };
+enum { INFO_POSITION, INFO_HOTSPOT, INFO_FIRMWARE, INFO_CODEPLUG, INFO_USB_NET, INFO_SFR };
 
 static const tr_id_t info_titles[] = { TRN(TITLE_POSITION, "Position"), TRN(TITLE_HOTSPOT, "Hotspot"),
-	TRN(TITLE_BATTERY, "Battery"), TRN(TITLE_ABOUT, "About"), TRN(TITLE_CODEPLUG, "Codeplug"),
-	TRN(USBNET_TITLE, "USB Network"), TRN(SFR_TITLE, "Single-Freq Repeater") };
+	TRN(TITLE_ABOUT, "About"), TRN(TITLE_CODEPLUG, "Codeplug"), TRN(USBNET_TITLE, "USB Network"),
+	TRN(SFR_TITLE, "Single-Freq Repeater") };
 
 // The USB personality can be switched here (the host link's network adapter, CONFIG_USB_NETWORK)
 #define USB_NET_UI	(CONFIG_USB_NETWORK && CONFIG_HOSTLINK)
@@ -4564,19 +4566,7 @@ static uint8_t sfr_vfo_a(void)
 
 static const char *info_title(void)
 {
-	uint16_t a = ui_frame()->arg;
-	return a == INFO_BATTERY && board_volts() == BOARD_VOLTS_SUPPLY ? TR(TITLE_SUPPLY, "Supply") :
-		tr(info_titles[a]);
-}
-
-// mV as volts with one decimal: 13.8 V
-static void sb_volts(sbuf_t *b, uint16_t mv)
-{
-	uint32_t dv = (mv + 50u) / 100u;
-	sb_u32(b, dv / 10u, 1);
-	sb_chr(b, '.');
-	sb_u32(b, dv % 10u, 1);
-	sb_str(b, " V");
+	return tr(info_titles[ui_frame()->arg]);
 }
 
 static const char *info_body(void)
@@ -4617,15 +4607,6 @@ static const char *info_body(void)
 #else
 		sb_str(&b, TR(WHY_HOTSPOT_NOT_IN_BUILD, "Hotspot: not in this build"));
 #endif
-		break;
-	case INFO_BATTERY:
-		if (board_volts() == BOARD_VOLTS_SUPPLY) {	// a reading only: no charge level or warning
-			sb_volts(&b, ui_view()->supply_mv);
-			break;
-		}
-		sb_u32(&b, ui_st.battery_pct, 1);
-		sb_str(&b, ui_st.battery_pct <= (ui_st.low_batt_pct ? ui_st.low_batt_pct : 15) ?
-			TR(BATT_PART_CHARGE_SOON, "%: charge soon") : "%");
 		break;
 	case INFO_CODEPLUG: {
 		static const tr_id_t src[] = { TRN(CPLUG_VALUE_NONE_BUILT_IN, "None: built-in channels"),
@@ -6257,21 +6238,17 @@ void ui_crash_tick(uint32_t now_ms)
 // ======================= Tools =======================
 
 // Every tool keeps its number on every radio and build, so a key path (OK 6 7: Diagnostics; tests/hil/test_ui.py and the
-// user guide) is the same everywhere. The one a radio may not have (Battery) is last, so no radio has a gap; a build
-// without diagnostics skips 7
-enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_ROAM, T_DIAG, T_APRS, T_BATTERY, T_ZONE_OFFER,
-	T_SATELLITE, T_COUNT };
+// user guide) is the same everywhere. A build without diagnostics skips 7.
+enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_ROAM, T_DIAG, T_APRS, T_SATELLITE, T_ZONE_OFFER, T_COUNT };
 
-// A tool this build or radio doesn't have is left out of the list (Battery, Supply on a radio that measures its DC
-// input instead, is left out where the radio measures neither)
+// A tool this build doesn't have is left out of the list
 static bool tool_shown(uint16_t i)
 {
 #if CONFIG_ZONE_SHARE
 	if (i == T_ZONE_OFFER)
 		return offer_waiting();	// 0 on the keypad: only while another radio's zone waits
 #endif
-	return (i != T_DIAG || CONFIG_DIAG) && (i != T_BATTERY || board_volts() != BOARD_VOLTS_NONE) &&
-	       i != T_ZONE_OFFER && (i != T_SATELLITE || CONFIG_SATELLITE_TLE);
+	return (i != T_DIAG || CONFIG_DIAG) && i != T_ZONE_OFFER && (i != T_SATELLITE || CONFIG_SATELLITE_TLE);
 }
 
 static uint16_t tools_last;	// the highest tool's number, found on each count (the list counts before the hint)
@@ -6317,14 +6294,11 @@ static void tools_item(uint16_t row, ui_item_t *it)
 	static const tr_id_t names[] = { TRN(WORD_SCAN, "Scan"), TRN(TITLE_POSITION, "Position"), TRN(TITLE_HOTSPOT, "Hotspot"),
 					 TRN(TOOLS_ROW_USB_NETWORK, "USB network"), TRN(TOOLS_ROW_SFR, "Single-freq repeater"),
 					 TRN(TITLE_ROAMING, "Roaming"), TRN(TITLE_DIAGNOSTICS, "Diagnostics"), TRX(WORD_APRS, "APRS"),
-					 TRN(TITLE_BATTERY, "Battery"), TRN(TOOLS_ROW_SHARES_RECEIVED, "Zones/Chs Received"),
-					 TRN(SATELLITE_2, "Satellite") };
+					 TRN(SATELLITE_2, "Satellite"), TRN(TOOLS_ROW_SHARES_RECEIVED, "Zones/Chs Received") };
 	uint16_t i = tools_row(row);
 	if (i >= T_COUNT)
 		return;
-	str_copy(it->label, sizeof it->label, i == T_BATTERY && board_volts() == BOARD_VOLTS_SUPPLY ?
-		TR(TITLE_SUPPLY, "Supply") :
-		 tr(names[i]));
+	str_copy(it->label, sizeof it->label, tr(names[i]));
 	item_num(it, (uint16_t)(i + 1u));	// the tool's own number, not its row (see the enum)
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
@@ -6362,14 +6336,6 @@ static void tools_item(uint16_t row, ui_item_t *it)
 	case T_SFR:
 		if (!CONFIG_SFR)
 			it->flags |= UI_ITEM_DIM;
-		break;
-	case T_BATTERY:
-		if (board_volts() == BOARD_VOLTS_SUPPLY) {
-			sb_volts(&b, ui_view()->supply_mv);
-			break;
-		}
-		sb_u32(&b, ui_st.battery_pct, 1);
-		sb_chr(&b, '%');
 		break;
 	case T_ROAM:
 #if CONFIG_DMR_ROAMING
@@ -6414,7 +6380,6 @@ static void tools_select(uint16_t row, bool hold)
 	case T_HOTSPOT: ui_push(SCR_INFO, INFO_HOTSPOT); break;
 	case T_USB_NET: ui_push(SCR_INFO, INFO_USB_NET); break;
 	case T_SFR: ui_push(SCR_INFO, INFO_SFR); break;
-	case T_BATTERY: ui_push(SCR_INFO, INFO_BATTERY); break;
 	case T_DIAG: ui_push(SCR_DIAG, 0); break;
 	case T_ROAM: ui_push(SCR_ROAM, 0); break;
 	case T_APRS: ui_push(SCR_APRS, 0); break;
@@ -6740,7 +6705,7 @@ static const set_item_t s_location[] = {
 	ACTION(TRN(SET_LABEL_FIXED_POSITION, "Fixed position"), "latitude longitude coordinates", SA_FIXED_POS),
 	TOGGLE(TRN(SET_LABEL_SEND_IN_DMR_CALLS, "Send in DMR calls"), "GPS info position location talker",
 		UI_SET_POS_DMR_CALLS),
-#if CONFIG_GPS
+#if CONFIG_GPS && CONFIG_SATELLITE_TLE
 	ACTION(TRN(SAVE_GPS_POSITION, "Save GPS position"), "save current GPS fix as fixed fallback", SA_SAVE_GPS_POS),
 #endif
 #endif
@@ -7270,7 +7235,7 @@ static void group_select(uint16_t i, bool hold)
 #if CONFIG_POSITION
 		case SA_FIXED_POS: ui_push(SCR_FIXED_POS, 0); break;
 #endif
-#if CONFIG_POSITION && CONFIG_GPS
+#if CONFIG_POSITION && CONFIG_GPS && CONFIG_SATELLITE_TLE
 		case SA_SAVE_GPS_POS:
 			ui_toast(ui_svc_position_save_gps() ? TR(GPS_POSITION_SAVED, "GPS position saved") : TR(NO_CURRENT_GPS_FIX, "No current GPS fix"));
 			break;

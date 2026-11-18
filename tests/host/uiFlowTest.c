@@ -58,23 +58,25 @@ typedef struct {
 
 static const flow_t flows[] = {
 #if CONFIG_SATELLITE_TLE
-	{ "Satellite pass list selects tracking detail", "", "ok 6 down down down down down down down down down ok ok",
+	{ "Satellite asks to load TLEs when the store is empty", "satempty", "ok 6 9",
+	  "screen=satellite-passes shows=No_TLEs:_load_from_site", 4, false },
+	{ "Satellite pass list selects tracking detail", "", "ok 6 9 ok",
 	  "screen=satellite shows=ISS shows=RX shows=TX shows=144.9988_MHz shows=435.0036_MHz hides=Path hides=Doppler hides=Predicting_passes hides=Calculating", 13, false },
-	{ "SO-50 arm requires long OK while tracking", "", "ok 6 down down down down down down down down down ok down down ok long:ok",
+	{ "SO-50 arm requires long OK while tracking", "", "ok 6 9 down down ok long:ok",
 	  "screen=satellite shows=SO-50 toast=SO-50_arm_requested", 16, false },
 	{ "Satellite detail shows sky while pass prediction is pending", "satpathpending",
-	  "ok 6 down down down down down down down down down ok ok",
+	  "ok 6 9 ok",
 	  "screen=satellite shows=Below_horizon", 13, false },
-	{ "Satellite detail returns to pass list", "", "ok 6 down down down down down down down down down ok ok back",
+	{ "Satellite detail returns to pass list", "", "ok 6 9 ok back",
 	  "screen=satellite-passes shows=Next_passes hides=Predicting_passes", 14, false },
 	{ "Satellite pass list shows prediction progress", "satpredict",
-	  "ok 6 down down down down down down down down down ok",
+	  "ok 6 9",
 	  "screen=satellite-passes shows=Predicting_passes shows=2/5", 13, false },
-	{ "Satellite pass list opens from Tools", "", "ok 6 down down down down down down down down down ok",
+	{ "Satellite pass list opens from Tools", "", "ok 6 9",
 	  "screen=satellite-passes shows=Next_passes shows=NOAA_19 shows=0:14", 13, false },
-	{ "Satellite TLE editor opens line 1", "", "ok 6 down down down down down down down down down ok ok ctx",
+	{ "Satellite TLE editor opens line 1", "", "ok 6 9 ok ctx",
 	  "screen=satellite-tle-text shows=1_ABC", 14, false },
-	{ "Satellite TLE editor cancels an empty line", "", "ok 6 down down down down down down down down down ok ok ctx back",
+	{ "Satellite TLE editor cancels an empty line", "", "ok 6 9 ok ctx back",
 	  "screen=satellite shows=ISS", 15, false },
 #endif
 	{ "menu entry keeps an available first row", "", "ok", "screen=hub focus=Contacts", 1, false },
@@ -1121,10 +1123,10 @@ static const flow_t flows[] = {
 #if CONFIG_SATELLITE_TLE
 static const flow_t satellite_detail_flows[] = {
 	{ "Satellite detail rounds AOS and LOS timers up", "satfuturepass",
-	  "ok 6 down down down down down down down down down ok ok",
+	  "ok 6 9 ok",
 	  "screen=satellite shows=\x87_in shows=0:02 shows=\x88_in shows=0:03", 13, false },
 	{ "Satellite detail shows LOS as calculating until known", "satlospending",
-	  "ok 6 down down down down down down down down down ok ok",
+	  "ok 6 9 ok",
 	  "screen=satellite shows=Calculating", 13, false },
 };
 #endif
@@ -1748,8 +1750,7 @@ static void station_checks(void)
 }
 
 // A radio without a battery (CAP_NO_BATTERY), at every display class: no percentage in the status strip, no battery
-// warning, and no Battery page, Battery saver or Low battery warning in the lists (Tools keep their numbers, Battery
-// is the last one; in Settings the other rows move up). With a
+// warning, and no Battery saver or Low battery warning in the lists. With a
 // battery they are all there
 // A split DMR VFO on Home, at every display class: the whole TX frequency in the top row, or the whole offset among
 // the chips where there is no top row; never shortened (the step gives way first)
@@ -1775,16 +1776,10 @@ static void no_battery_checks(void)
 		{ "strip with a battery", "", "shows=84%" },
 		{ "strip", "nobattery", "hides=%" },
 		{ "no warning", "nobattery battery:14", "banner=none" },
-		{ "Tools with a battery", "ok 6 9", "screen=info shows=Battery" },
-		{ "Tools", "nobattery ok 6", "hides=Battery" },
 		{ "Tools keep their numbers", "nobattery ok 6 7", "screen=diag" },
 		{ "Tools: Roaming is 6", "nobattery ok 6 6", "screen=roaming" },
-		{ "Tools: no Battery to open", "nobattery ok 6 9", "toast=No_item" },
 		{ "Power settings with a battery", "ok 7 7", "shows=Battery_saver shows=Low_battery" },
 		{ "Power settings", "nobattery ok 7 7", "hides=Battery_saver hides=Low_battery shows=Auto_power_off" },
-		// a radio that measures its DC input: the last tool is Supply with the reading, nothing battery-only
-		{ "Tools: Supply", "supply:13800 ok 6 up", "shows=Supply shows=13.8_V hides=Battery" },
-		{ "Supply page", "supply:13800 ok 6 9", "screen=info shows=13.8_V hides=%" },
 		{ "Supply: no warning", "supply:9000 battery:14", "banner=none hides=%" },
 		{ "Supply: no battery settings", "supply:13800 ok 7 7", "hides=Battery_saver hides=Low_battery" },
 	};
@@ -1956,7 +1951,7 @@ static int check_satellite_path_endpoint_colors(void)
 	char err[160];
 	const sim_geom_t *geom = sim_geom_find("240x320");
 	sim_reset(geom, SIM_MAP_K);
-	if (!sim_run("ok 6 down down down down down down down down down ok ok", err, sizeof err)) {
+	if (!sim_run("ok 6 9 ok", err, sizeof err)) {
 		printf("FAIL satellite path endpoint colors: %s\n", err);
 		return 1;
 	}
