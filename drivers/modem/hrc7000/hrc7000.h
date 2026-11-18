@@ -282,7 +282,7 @@ bool hrc7000_subtone_ok(hrc7000_t *d);
 // sub-audio deviation and the default DTMF steps back. tx_tone_key: the tone off (a silent carrier) and on again
 void hrc7000_tx_tone(hrc7000_t *d, uint16_t hz, uint8_t dev);
 void hrc7000_tx_tone_key(hrc7000_t *d, bool down);
-// The sidetone (AUDIO_CONTROL b3, the original firmware's own: modem-hrc7000.md 8.3): the tone being sent is heard in the codec
+// The sidetone (AUDIO_CONTROL b3, modem-hrc7000.md 8.3): the tone being sent is heard in the codec
 void hrc7000_tx_tone_side(hrc7000_t *d, bool on);
 // Two tones the same way: low in FM_TONE1's high half, high in FM_TONE3's, digit "1" sent. low = 0: as tx_tone(0)
 void hrc7000_tx_pair(hrc7000_t *d, uint16_t low_hz, uint16_t high_hz, uint8_t dev);
