@@ -410,7 +410,24 @@ test("declared fields: hex with any, lists, keys, frequencies", () => {
 // --- NXDN conventional (docs/spec/nxdn-codeplug.md) ---
 
 import * as nxdn from "../static/js/codeplug/mode_nxdn.js";
-import { systemOwnIdField } from "../static/js/editor/modesview.js";
+import { systemOwnIdField, systemsTab } from "../static/js/editor/modesview.js";
+
+test("Systems table leaves control channels and authentication key cells blank for NXDN", () => {
+	const m = empty();
+	const n = newSystem(m, 4, "Conventional");
+	const t3 = newSystem(m, 1, "Trunked");
+	n.number = 1;
+	t3.number = 2;
+	t3.entries.push({ control: true });
+	t3.secret = { key: "00000000000000000000000000000000" };
+	m.systems.push(n, t3);
+	const h = (tag, attrs, ...children) => ({ tag, children });
+	const page = systemsTab({ model: m, t: (key) => key, h, button: () => h("button") }, null);
+	const rows = page.children.find((part) => part?.children[0]?.tag === "table").children[0].children[1].children;
+	const cells = (row) => row.children.slice(6, 8).map((cell) => cell.children[0]);
+	assert.deepEqual(cells(rows[0]), ["", ""]);
+	assert.deepEqual(cells(rows[1]), ["1", "editor.modes.secret_set"]);
+});
 
 test("NXDN system Radio ID accepts blank or a whole number from 1 to 65519", () => {
 	const m = empty();
