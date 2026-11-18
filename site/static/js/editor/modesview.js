@@ -44,8 +44,8 @@ export function systemsTab(api, features) {
 				h("td", {}, mod ? mod.identity(s.fields) : t("editor.modes.type_unknown")),
 				h("td", {}, t(`editor.modes.tx${!s.tx ? 0 : mod?.noRegField && s.fields?.[mod.noRegField] ? 2 : 1}_short`)),
 				h("td", {}, t(`editor.modes.share${s.sharing <= 2 ? s.sharing : 0}`)),
-				h("td", {}, String(s.entries.filter((e) => e.control).length)),
-				h("td", {}, s.secret ? t("editor.modes.secret_set") : t("editor.modes.secret_none")),
+				h("td", {}, mod?.conventional ? "" : String(s.entries.filter((e) => e.control).length)),
+				h("td", {}, mod?.conventional ? "" : t(s.secret ? "editor.modes.secret_set" : "editor.modes.secret_none")),
 				h("td", {}, String(used)),
 				h("td", {}, h("div", { class: "ed-actions" }, ...actions,
 					button(t("editor.delete"), () => deleteSystem(api, s), { quiet: true, danger: true }))));
