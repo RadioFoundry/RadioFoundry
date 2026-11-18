@@ -242,6 +242,11 @@ def test_zone_channel_api(net):
     zone = json.loads(_get(ip, f"/api/zone?zone={start['zone']}")[2])
     item = next(i for i in zone["items"] if i["pos"] == start["pos"])
     assert item["rx_hz"] == int(link.view(["channel"])["ch.rx_hz"]), (item, zone)
+    now = json.loads(_get(ip, "/api/channel")[2])
+    assert now["vfo"] is False and now["zone"] == start["zone"] and now["pos"] == start["pos"], now
+    assert {k: v for k, v in now.items() if k not in ("zone", "vfo")} == item, (now, item)
+    one = json.loads(_get(ip, f"/api/channel?zone={start['zone']}&pos={start['pos']}")[2])
+    assert {k: v for k, v in one.items() if k != "zone"} == item, (one, item)
     try:
         if zone["channels"] > 1:
             assert json.loads(_get(ip, "/api/step?channel=1")[2]) == {"ok": True}

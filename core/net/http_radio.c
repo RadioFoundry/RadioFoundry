@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // Zone and channel control over the status server (docs/spec/tcp-services.md 5.2), for a device or program on the
-// host (USB network or PPP): the zones and a zone's channels as JSON, read when asked, and short requests to select a
-// zone and position or step through them, as a knob would. The requests are the radio core's own (radio_req_zone,
-// radio_req_zone_pos, radio_req_channel_step), so the UI's refusals apply; their replies carry no channel data: a
-// client that wants to know reads the list once, or /status.
+// host (USB network or PPP): the zones, a zone's channels and one channel as JSON, read when asked, and short requests
+// to select a zone and position or step through them, as a knob would. The requests are the radio core's own
+// (radio_req_zone, radio_req_zone_pos, radio_req_channel_step), so the UI's refusals apply; their replies carry no
+// channel data: a client that wants to know reads the list once, or /api/channel.
 #include "config.h"
 #if CONFIG_NET_RADIO_API	// the whole file
 #include <string.h>
@@ -17,7 +17,8 @@
 #define REQ_GAP_MS	20u	// radio requests at most this often (the radio core's queue holds 16), as rigctld's
 #define ZONE_HOLD_MS	1000u	// a zone step counts from the last zone asked for this long (the view lags the request)
 #define STEP_MAX	100	// one request's step, either way
-#define ROOM_ITEM	320u	// the most one list item takes (names escaped); a page ends before it would not fit
+#define ROOM_ITEM	420u	// the most one list item takes (both names escaped, every field); a page ends before it
+				// would not fit
 
 static zone_t zone;		// 80 channels: not on the host link task's stack
 static struct {
@@ -92,34 +93,84 @@ static int zones_json(const char *q, dl_text_t *t)
 	return 200;
 }
 
-// One channel of a zone: what a client needs to show it and know what it is, nothing it can't use from here
-static void channel_json(dl_text_t *t, bool first, uint16_t pos, uint16_t number)
+// A subtone as radio programs write it: "100.0" (CTCSS), "D023N" or "D023I" (DCS)
+static void tone_json(dl_text_t *t, const char *key, const subtone_t *s)
 {
-	channel_t ch;
-	dl_text(t, "%s{\"pos\":%u,\"number\":%u", first ? "" : ",", pos, number);
-	if (!codeplug_channel(number, &ch)) {
-		dl_text(t, "}");
-		return;
+	if (s->type == TONE_CTCSS) {
+		dl_text(t, ",\"%s\":\"%u.%u\"", key, s->value / 10u, s->value % 10u);
+	} else if (s->type == TONE_DCS || s->type == TONE_DCS_INV) {
+		dl_text(t, ",\"%s\":\"D%u%u%u%c\"", key, (s->value >> 6) & 7u, (s->value >> 3) & 7u, s->value & 7u,
+			(s->type == TONE_DCS_INV) ? 'I' : 'N');	// octal digits (dl_text has no %o)
 	}
+}
+
+// A channel's fields after its "pos" and "number": the one structure /api/zone's items and /api/channel share (and a
+// VFO setting would take): what a client needs to show it and know what it is
+static void channel_fields(dl_text_t *t, const channel_t *ch)
+{
 	dl_text(t, ",\"name\":");
-	http_json_str(t, ch.name);
-	dl_text(t, ",\"rx_hz\":%u,\"tx_hz\":%u,\"mode\":\"%s\"", (unsigned)ch.rx_hz, (unsigned)ch.tx_hz,
-		(ch.mode < 4u) ? mode_names[ch.mode] : "?");
-	if (ch.rx_only) {
+	http_json_str(t, ch->name);
+	dl_text(t, ",\"rx_hz\":%u,\"tx_hz\":%u,\"mode\":\"%s\",\"bw\":\"%s\"", (unsigned)ch->rx_hz,
+		(unsigned)ch->tx_hz, (ch->mode < 4u) ? mode_names[ch->mode] : "?", (ch->bw == RADIO_BW_25K) ? "25" : "12.5");
+	if (ch->power != CODEPLUG_POWER_DEFAULT) {
+		dl_text(t, ",\"power\":%u", ch->power);
+	}
+	if (ch->rx_only) {
 		dl_text(t, ",\"rx_only\":true");
 	}
+	if (ch->mode == RADIO_MODE_FM) {
+		tone_json(t, "rx_tone", &ch->rx_tone);
+		tone_json(t, "tx_tone", &ch->tx_tone);
+	}
 #if CONFIG_DMR
-	if (ch.mode == RADIO_MODE_DMR) {
-		dl_text(t, ",\"cc\":%u,\"ts\":%u", ch.color_code, ch.timeslot);
+	if (ch->mode == RADIO_MODE_DMR) {
+		dl_text(t, ",\"cc\":%u,\"ts\":%u", ch->color_code, ch->timeslot);
 		contact_t c;
-		if (ch.contact != 0 && codeplug_contact(ch.contact, &c)) {
+		if (ch->contact != 0 && codeplug_contact(ch->contact, &c)) {
 			static const char *const kinds[] = { "group", "private", "all" };
-			dl_text(t, ",\"tg\":%u,\"call\":\"%s\",\"contact\":", (unsigned)c.id, (c.type < 3u) ? kinds[c.type] : "?");
+			dl_text(t, ",\"tg\":%u,\"call\":\"%s\",\"contact\":", (unsigned)c.id,
+				(c.type < 3u) ? kinds[c.type] : "?");
 			http_json_str(t, c.name);
 		}
 	}
 #endif
+}
+
+// One channel of a zone, as a list item
+static void channel_json(dl_text_t *t, bool first, uint16_t pos, uint16_t number)
+{
+	channel_t ch;
+	dl_text(t, "%s{\"pos\":%u,\"number\":%u", first ? "" : ",", pos, number);
+	if (codeplug_channel(number, &ch)) {
+		channel_fields(t, &ch);
+	}
 	dl_text(t, "}");
+}
+
+// GET /api/channel: what the radio is on now, a channel or the VFO (its settings, "vfo":true; zone and pos are then
+// the channel it came from). GET /api/channel?zone=Z&pos=P: that channel. One object, a zone item's fields
+static int channel_req(const char *q, dl_text_t *t)
+{
+	int32_t z, p;
+	if (q == NULL || *q == '\0') {
+		const radio_view_t *v = net_radio_view();
+		dl_text(t, "{\"zone\":%u,\"pos\":%u,\"vfo\":%s,\"number\":%u", v->zone_index, v->zone_pos,
+			v->vfo ? "true" : "false", v->channel_number);
+		channel_fields(t, &v->ch);
+		dl_text(t, "}\n");
+		return 200;
+	}
+	if (!query_int(q, "zone", &z) || !query_int(q, "pos", &p) || z < 0 || z >= codeplug_zone_count() || p < 0 ||
+	    !codeplug_zone((uint16_t)z, &zone) || p >= zone.count) {
+		return 400;
+	}
+	channel_t ch;
+	dl_text(t, "{\"zone\":%u,\"pos\":%u,\"number\":%u", (unsigned)z, (unsigned)p, zone.channels[p]);
+	if (codeplug_channel(zone.channels[p], &ch)) {
+		channel_fields(t, &ch);
+	}
+	dl_text(t, "}\n");
+	return 200;
 }
 
 // GET /api/zone?zone=Z[&from=N]: {"zone":Z,"name":..,"channels":n,"from":N,"items":[...],"next":..}
@@ -268,6 +319,10 @@ int http_radio(const char *path, const char *query, uint32_t from_ip, bool head,
 	if (strcmp(path, "/api/zone") == 0) {
 		st.lists++;
 		return zone_json(query, t);
+	}
+	if (strcmp(path, "/api/channel") == 0) {
+		st.lists++;
+		return channel_req(query, t);
 	}
 	bool sel = strcmp(path, "/api/select") == 0;
 	if (!sel && strcmp(path, "/api/step") != 0) {

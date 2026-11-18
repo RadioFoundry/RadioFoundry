@@ -98,7 +98,7 @@ header lines are skipped, except `Sec-WebSocket-Key` (any case) for `/ws`; a req
 | `/api/view?section=<name or number>` | the section's key=value lines as one flat JSON object; values that are decimal integers are numbers, the rest strings (hex values such as `net.host_ip` stay strings) |
 | `/api/screen.bmp` | the frame buffer as a BMP, top-down (negative height), at the panel's depth: 1 bpp with two palette entries (the paper and ink of the UI gallery), 4 bpp with the 16-entry palette (`gfx_palette`), both the frame buffer's rows as they are; 16 bpp as BI_BITFIELDS (RGB565 masks). About 10 KB on a 160 x 128 4 bpp screen, 38 KB on 240 x 320, 1 KB on 128 x 64 1 bpp; UI redraws are held while it goes out (as the debug link's screenshot does), so it is one frame; the hold ends with the last byte, so a page that polls it does not slow the UI |
 | `/api/aprsis` | the APRS-IS client's settings and state (section 7) |
-| `/api/select`, `/api/step`, `/api/zones`, `/api/zone` | with `CONFIG_NET_RADIO_API`: zone and channel control (5.2) |
+| `/api/select`, `/api/step`, `/api/zones`, `/api/zone`, `/api/channel` | with `CONFIG_NET_RADIO_API`: zone and channel control (5.2) |
 | `/api/usb?mode=serial` | from the host only (else 403), over the USB network link only (else 400, as for any other query): a short HTML page that closes its tab, and 500 ms later the USB personality switches to serial (`hostlink_request_usb_network`, `usb-network.md` 1). For a web page that needs the serial port: it opens this in a tab, at 12.255.255.254 (the radio on this link, `usb-network.md` 1; every TCP service answers there too). HEAD answers and does not switch. A GET that changes state, because a page can only navigate to it: any page open in a browser on the host can send it too (an image, a no-cors fetch) and take the radio out of network mode until it restarts. Nothing else follows from it |
 | anything else | 404; another method 405; a malformed request line 400 (errors have an empty body) |
 
@@ -221,9 +221,26 @@ radio is.
 | `GET /api/step?channel=N` | the host | N channels on, negative back (-100 to 100, not 0), wrapping in the zone; from the VFO, back to the channel first. `{"ok":true}` |
 | `GET /api/step?zone=N` | the host | N zones on, wrapping at the ends, to the zone's first channel. `{"ok":true}` |
 | `GET /api/zones[?from=I]` | anyone | `{"zones":n,"zone":Z,"from":I,"items":[{"zone","name","channels"}],"next":J}` |
-| `GET /api/zone?zone=Z[&from=I]` | anyone | `{"zone":Z,"name","channels":n,"from":I,"items":[...],"next":J}`; an item is `pos number name rx_hz tx_hz mode` (fm / dmr / p25 / nxdn), `rx_only` when set, and on DMR `cc ts`, with a talk target `tg call` (group / private / all) `contact` (its name) |
+| `GET /api/zone?zone=Z[&from=I]` | anyone | `{"zone":Z,"name","channels":n,"from":I,"items":[...],"next":J}`, each item a channel (below) |
+| `GET /api/channel` | anyone | what the radio is on now: `{"zone","pos","vfo",` and the channel's fields`}`; in the VFO its settings, `number` 0 |
+| `GET /api/channel?zone=Z&pos=P` | anyone | that channel: `{"zone","pos",` and its fields`}` |
 
-- A list is in pages of what fits the server's 1.5 KB buffer (about 8 channels, 30 zones): `next` is the `from` of
+A channel, the same in `/api/zone`'s items and `/api/channel` (and the structure a later VFO setting will take):
+
+| Field | |
+|---|---|
+| `pos number` | its position in the zone; its codeplug channel number (1 up; 0 the VFO) |
+| `name rx_hz tx_hz` | |
+| `mode` | `fm` `dmr` `p25` `nxdn` |
+| `bw` | `"12.5"` or `"25"` (kHz) |
+| `power` | the board's power level index, left out for the radio's default |
+| `rx_only` | `true`, left out otherwise |
+| `rx_tone tx_tone` | FM, when set: `"100.0"` (CTCSS, Hz), `"D023N"` / `"D023I"` (DCS, normal / inverted) |
+| `cc ts` | DMR: color code, timeslot |
+| `tg call contact` | DMR with a talk target: its ID, `group` / `private` / `all`, its contact name |
+
+
+- A list is in pages of what fits the server's 1.5 KB buffer (about 7 channels, 30 zones): `next` is the `from` of
   the next page, `null` after the last.
 - "The host" is the computer at the other end of the USB network or PPP link (`ipGatewayHostIP`), as for rigctld's PTT
   and web control. From elsewhere: 403.

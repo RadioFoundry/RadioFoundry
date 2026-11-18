@@ -410,6 +410,13 @@ bool codeplug_channel(uint16_t number, channel_t *out)
 	out->color_code = 1;
 	out->timeslot = 2;
 	out->contact = (number % 2u) ? 7 : 0;
+	out->power = CODEPLUG_POWER_DEFAULT;
+	if (number == 2) {
+		out->rx_tone = (subtone_t){ TONE_CTCSS, 1000 };
+		out->tx_tone = (subtone_t){ TONE_DCS_INV, 023 };
+		out->bw = RADIO_BW_25K;
+		out->power = 1;
+	}
 	return true;
 }
 bool codeplug_contact(uint16_t index, contact_t *out)
@@ -447,8 +454,8 @@ static void test_radio_api(void)
 	CHECK(http_get(&a, 54004, "GET /api/zone?zone=0 HTTP/1.0\r\n\r\n") > 0);
 	j = body_of(&a);
 	CHECK(strstr(j, "{\"zone\":0,\"name\":\"Local\",\"channels\":3,\"from\":0,\"items\":[") &&
-	      strstr(j, "{\"pos\":0,\"number\":1,\"name\":\"Ch1\",\"rx_hz\":446012500,\"tx_hz\":446012500,\"mode\":\"dmr\",\"cc\":1,\"ts\":2,\"tg\":3107,\"call\":\"group\",\"contact\":\"TG 3100\"}") &&
-	      strstr(j, ",{\"pos\":1,\"number\":2,\"name\":\"Ch2\",\"rx_hz\":446025000,\"tx_hz\":446025000,\"mode\":\"fm\"}") &&
+	      strstr(j, "{\"pos\":0,\"number\":1,\"name\":\"Ch1\",\"rx_hz\":446012500,\"tx_hz\":446012500,\"mode\":\"dmr\",\"bw\":\"12.5\",\"cc\":1,\"ts\":2,\"tg\":3107,\"call\":\"group\",\"contact\":\"TG 3100\"}") &&
+	      strstr(j, ",{\"pos\":1,\"number\":2,\"name\":\"Ch2\",\"rx_hz\":446025000,\"tx_hz\":446025000,\"mode\":\"fm\",\"bw\":\"25\",\"power\":1,\"rx_tone\":\"100.0\",\"tx_tone\":\"D023I\"}") &&
 	      strstr(j, "],\"next\":null}"));
 	// A long zone in pages: next says where the following page starts, and the pages cover every position once
 	int seen = 0;
@@ -467,6 +474,26 @@ static void test_radio_api(void)
 		CHECK(from < 0 || from == seen);
 	}
 	CHECK(seen == CODEPLUG_ZONE_MAX);
+	// One channel, the same fields as a zone's item: a position, or what the radio is on now (the VFO too)
+	CHECK(http_get(&a, port++, "GET /api/channel?zone=0&pos=1 HTTP/1.0\r\n\r\n") > 0);
+	CHECK(strcmp(body_of(&a), "{\"zone\":0,\"pos\":1,\"number\":2,\"name\":\"Ch2\",\"rx_hz\":446025000,\"tx_hz\":446025000,"
+		     "\"mode\":\"fm\",\"bw\":\"25\",\"power\":1,\"rx_tone\":\"100.0\",\"tx_tone\":\"D023I\"}\n") == 0);
+	codeplug_channel(1, &fake_view.ch);
+	fake_view.channel_number = 1;
+	CHECK(http_get(&a, port++, "GET /api/channel HTTP/1.0\r\n\r\n") > 0);
+	CHECK(strstr(body_of(&a), "{\"zone\":1,\"pos\":1,\"vfo\":false,\"number\":1,\"name\":\"Ch1\",") == body_of(&a) &&
+	      strstr(body_of(&a), "\"tg\":3107,\"call\":\"group\",\"contact\":\"TG 3100\"}\n"));
+	fake_view.vfo = true;
+	fake_view.channel_number = 0;
+	strcpy(fake_view.ch.name, "VFO");
+	fake_view.ch.mode = RADIO_MODE_FM;
+	fake_view.ch.rx_hz = 146520000;
+	CHECK(http_get(&a, port++, "GET /api/channel HTTP/1.0\r\n\r\n") > 0 &&
+	      strstr(body_of(&a), "\"vfo\":true,\"number\":0,\"name\":\"VFO\",\"rx_hz\":146520000,") &&
+	      !strstr(body_of(&a), "\"cc\""));
+	fake_view.vfo = false;
+	CHECK(http_get(&a, port++, "GET /api/channel?zone=1&pos=2 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 400 "));
+	CHECK(http_get(&a, port++, "GET /api/channel?zone=1 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 400 "));
 	CHECK(http_get(&a, port++, "GET /api/zone?zone=3 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 400 "));
 	CHECK(http_get(&a, port++, "GET /api/zone HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 400 "));
 

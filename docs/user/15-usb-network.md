@@ -150,7 +150,9 @@ Zones and channels are counted from 0, in the order the radio shows them.
 | `/api/step?channel=1` | One channel on; `-1` one back; it wraps at the zone's ends |
 | `/api/step?zone=1` | One zone on, to its first channel; `-1` one back |
 | `/api/zones` | The zones: name and number of channels |
-| `/api/zone?zone=2` | Zone 2's channels: name, frequencies, mode, and on DMR the color code, timeslot and talkgroup |
+| `/api/zone?zone=2` | Zone 2's channels: name, frequencies, mode, bandwidth, tones, and on DMR the color code, timeslot and talkgroup |
+| `/api/channel` | The channel the radio is on now (or the VFO's settings), with the same details |
+| `/api/channel?zone=2&pos=5` | Zone 2's sixth channel, with the same details |
 
 Select and step answer only `{"ok":true}`. Read a zone's list once to know its channels. Long lists come in pages:
 ask again with `&from=` set to the reply's `next`. Select and step work only from your computer, and not while the
