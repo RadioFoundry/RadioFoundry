@@ -39,6 +39,9 @@ typedef struct {
 	// 0x41 bit 3 (CC_Match_Ctrl) deframes bursts of any color code: with the color code filter off the receiver
 	// takes every call as it comes, no 0x1F rewrites or restarts to follow a new code (modem-hrc6000.md 5.4)
 	bool cc_any_rx;
+	// The physical layer mode gives no receive records: the air interface only transmits, unless the board's FM copy
+	// receives (hrc6000_air_fit_tap; modem-hrc6000.md 10.7)
+	bool air_tx_only;
 	uint8_t (*dmr_mode)(bool repeater);		// 4:0x10 for DMR
 	// 4:0x52 bit 2 is the TC of the last burst received, 1 = TS2 starting, and changes only in slots opened for
 	// receive: the repeater slot lock keeps both slots open

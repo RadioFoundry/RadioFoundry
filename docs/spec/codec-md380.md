@@ -41,6 +41,7 @@ top byte for the MD-446).
 | D13.20 | `TYT-Vocoder-MD380-D13.20.bin` | UV build | 0x080530A8 | 0x00441320 |
 | D14.004 | `D014.004.bin` | UV build | 0x080533B4 | 0x00441404 |
 | D14.07 | `TYT-Vocoder-MD380-D14.07.bin` | UV build | 0x080535D0 | 0x00441407 |
+| D15.01 | `TYT-Vocoder-MD380-D15.01.bin` | UV build | 0x08053908 | 0x00441501 |
 | D2.24 (upgrade pack) | `Upgraded software for newest version.bin` | D2 build | 0x08051FE8 | 0x00440224 |
 | D2.25 | `MD-380-D2.25.bin` | D2 build | 0x08050A4C | 0x00440225 |
 | D2.26 | `MD-380-D2.26.bin` | D2 build | 0x080509E0 | 0x00440226 |
@@ -55,6 +56,9 @@ top byte for the MD-446).
 | S3.012 | `TYT-GPS-MD390-MD380-S003.012.bin` | D2 build | 0x08053C4C | 0x00530312 |
 | D13.20 | `TYT-Vocoder-MD446-D13.20.bin` | UV build | 0x080530C4 | 0x04441320 |
 | D3.20 | `TYT-TFT-MD446-D3.20.bin` | D2 build | 0x08053060 | 0x04440320 |
+
+D15.01's third table window is 0x87C bytes; the other UV builds have 0x868. Its codec was run from the whole image,
+from the windows alone and as placed, with the same 30 frame hash.
 
 ## Container and encryption
 

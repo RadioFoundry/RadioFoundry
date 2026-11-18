@@ -19,7 +19,7 @@ static int failures, checks;
 #define REG(off)	regs[(off) / 4]
 #define PHY_RDY		(1u << 12)
 #define HALF		HRC7000_FM_RX_SAMPLES
-#define DMR_MOD_BIAS	0x01E94A4Au	// a board's DMR value: modulation bytes 0x4A at 1944 Hz
+#define DMR_MOD_BIAS	0x01E94A4Au	// a board's DMR value: modulation bytes 0x4A
 #define IDLE		0x77u
 
 static uint32_t regs[0x600 / 4];
@@ -310,12 +310,12 @@ static void test_pure(void)
 	CHECK((hrc7000_air_tx_fit(&p) & AIR_FIT_DEV_APPROX) != 0);
 
 	// Deviation is linear in the modulation bytes: both scaled, the bias half kept
-	p.dev_outer_hz = 1944;
+	p.dev_outer_hz = HRC7000_AIR_DMR_DEV_HZ;
 	CHECK(hrc7000_air_mod_bias(&p, DMR_MOD_BIAS) == DMR_MOD_BIAS);
-	p.dev_outer_hz = 1800;	// 0x4A * 1800 / 1944 = 68.5 -> 69
-	CHECK(hrc7000_air_mod_bias(&p, DMR_MOD_BIAS) == 0x01E94545u);
-	p.dev_outer_hz = 2880;	// 109.6 -> 110
-	CHECK(hrc7000_air_mod_bias(&p, 0x01E94A21u) == (0x01E90000u | 110u << 8 | 49u));
+	p.dev_outer_hz = 1800;	// 0x4A * 1800 / 1820 = 73.2 -> 73
+	CHECK(hrc7000_air_mod_bias(&p, DMR_MOD_BIAS) == 0x01E94949u);
+	p.dev_outer_hz = 2880;	// 117.1 -> 117, 0x21: 52.2 -> 52
+	CHECK(hrc7000_air_mod_bias(&p, 0x01E94A21u) == (0x01E90000u | 117u << 8 | 52u));
 	p.dev_outer_hz = 6000;	// clamped
 	CHECK((hrc7000_air_mod_bias(&p, 0x0000FFFFu) & 0xFFFFu) == 0xFFFFu);
 	p.dev_outer_hz = 1;
@@ -440,7 +440,7 @@ static void test_tx(void)
 
 	CHECK(hrc7000_air_tx_begin(A));
 	CHECK(REG(C7_WORK_MODE) == C7_WORK_MODE_PHY && REG(C7_LAYER2_CONTROL) == 0x82u && REG(C7_AUDIO_BUFFER_CLR) == 3);
-	CHECK(REG(C7_RF_MOD_BIAS) == 0x01E94545u);
+	CHECK(REG(C7_RF_MOD_BIAS) == 0x01E94949u);
 	CHECK(half_is(0, NULL) && half_is(1, NULL));
 	CHECK(!hrc7000_air_tx_begin(A) && hrc7000_air_tx_active(A));
 	uint32_t t_begin = now;

@@ -88,6 +88,8 @@
 #define CC_SET_MATCHES		2u
 #define CC_HOLD_MATCHES		8u
 #define CC_RELEASE_TICKS	167u	// 5 s
+#define CC_TICK_MATCHES		3u	// the same code at this many ticks of one phase running (120 ms) is followed
+#define CC_TICK_QUIET		4u	// ... while no burst was taken for this many ticks
 #define TC_STABLE		4u	// more than this many agreements
 #define TC_RESYNC		3u	// more than this many disagreements
 #define BS_RECENT_TICKS		40u
@@ -848,6 +850,34 @@ static void cc_follow(hrc6000_dmr_t *e, uint8_t cc, uint32_t t)
 	}
 }
 
+// A chip without any-CC deframing (the HR_C5000) raises no interrupt at all for a call in a code other than 0x1F's,
+// so cc_follow never hears it. But 0x52 read at the timeslot interrupt holds the call's code in the slot it is on,
+// and junk in the other (bench: the call's code at 45 % of the ticks, the rest spread over the other codes). The
+// same code at CC_TICK_MATCHES ticks of one phase running is followed as cc_follow does. Only while nothing is
+// taken: a call in 0x1F's code is never left for a code read in its empty slot
+static void cc_tick_follow(hrc6000_dmr_t *e, uint8_t ph)
+{
+	if (!cc_any(e) || e->dev->chip->cc_any_rx || e->cc_held || e->tx_state != TXS_IDLE || e->restart_pending ||
+	    e->tick - e->rx_tick < CC_TICK_QUIET) {
+		e->cc_tick_n[ph] = 0;
+		return;
+	}
+	uint8_t cc = (uint8_t)(r(e->dev, R_RX_CC) >> 4);
+	if (e->cc_tick_n[ph] == 0 || cc != e->cc_tick_last[ph]) {
+		e->cc_tick_last[ph] = cc;
+		e->cc_tick_n[ph] = 1;
+		return;
+	}
+	if (++e->cc_tick_n[ph] < CC_TICK_MATCHES || cc == e->cc_cur) {
+		return;
+	}
+	e->cc_tick_n[0] = e->cc_tick_n[1] = 0;
+	e->cc_cur = cc;
+	hrc6000_dmr_set_cc(e->dev, cc);
+	e->restart_pending = true;	// later in this timeslot interrupt (the idle branch), after the 0x1F write
+	e->restart_why = HRC6000_RS_CC;
+}
+
 // Raw evidence for the bench, before anything is dropped: status class and type, sync type, report timing
 static void rx_evidence(hrc6000_dmr_t *e, uint8_t r51, uint8_t r5f, uint32_t dt)
 {
@@ -1526,7 +1556,8 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 	// in progress on its slot, as the next burst. Its own number is used when it makes sense (a missed burst then
 	// doesn't shift the rest); the number of the burst just taken is a stale report (dropped).
 	// A voice sync with no header or superframe before it on its slot is held back, not delivered: only a burst B
-	// on the same slot one frame later (class 0, number 2) makes it the start of a call (late entry); anything else
+	// on the same slot one frame later (class 0, number 2; any number when deframing any color code, below) makes it the
+	// start of a call (late entry); anything else
 	// and it was noise or the other slot's echo of A (bench 2026-10-10: 6 such reports made 102 voice bursts of a
 	// 96-burst call). Burst A has no color code on air (voice sync instead of the EMB), so it gets the superframe's
 	uint8_t vph = (uint8_t)((e->tick - 1u) & 1u);
@@ -1560,7 +1591,13 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 				s.cc = vs->cc;
 			}
 		} else if (!live) {
-			if (!(hd->valid && (uint32_t)(e->tick - hd->tick) == 2u && s.voice_index == 1u)) {
+			// B one frame after the lone A. Deframing any color code (rx_ctl), the chip keeps the voice number
+			// of the last call it decoded in full while it receives a call in a code other than 0x1F's: there
+			// the frame and new voice say B (seq_by_count numbers the rest). A late entry in another code was missed.
+			// The 0x52 CC can't tell the codes apart (above), so this holds for a call in 0x1F's code too; a stale
+			// repeat of A's report brings no new voice and stays out
+			bool stale_numbers = (rx_ctl(e) & CTL_CC_ANY) != 0u && hd->valid && sum != voice_sum(hd->nb.payload);
+			if (!(hd->valid && (uint32_t)(e->tick - hd->tick) == 2u && (s.voice_index == 1u || stale_numbers))) {
 				e->st.rx_no_call++;	// stale status on the empty slot, or after the call: never voice
 				capture_early(e);
 				return cc_real;
@@ -1569,11 +1606,7 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 			hd->valid = false;
 			hd->s.cc = cc_fix ? (uint8_t)e->cc_filter : s.cc;
 			take(e, &hd->s, &hd->nb, hd->tick, hd->in_step, hd->on_time, hd->dms, tx);
-			vs->active = true;
-			vs->last = 0;
-			vs->next = 1;
-			vs->cc = s.cc;
-			vs->tick = hd->tick;
+			s.voice_index = 1u;	// the superframe state follows below, as for any B
 		} else if (!seq_by_count(e, vs, &s, sum)) {
 			return cc_real;
 		}
@@ -1855,6 +1888,9 @@ void hrc6000_dmr_isr_timeslot(hrc6000_dmr_t *e)
 		track_tc(e);
 	}
 	uint8_t ph = (uint8_t)(e->tick & 1u);
+	if (idle && (ctl_ended & CTL_RX) != 0) {
+		cc_tick_follow(e, ph);
+	}
 	push_tick(e, e->phase_ts[ph]);
 	if (idle && e->lock_ts == 0 && (ctl_ended & CTL_RX) != 0 && rmo(e)) {
 		slc_read(e);

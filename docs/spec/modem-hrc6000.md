@@ -419,6 +419,13 @@ to 0x1F and rewrite 0x40=0xC3 (through a repeater also the 0x41 resync sequence:
 wait 3 ms (a busy wait in the interrupt: faster rewrites crashed the radio). After 8 matches the CC is held.
 Release the hold after 5 s of no received audio while idle.
 
+A call in a CC other than 0x1F's raises no system interrupt on the HR_C5000, so the follow above never starts for it,
+and 0x41 bit 3 made no difference in a test. The timeslot ticks still come while a signal is present. At each tick
+while idle and receiving, 0x52 bits 7-4 read the call's CC on the call's slot phase and other values on the other
+phase. So the driver counts 0x52's CC per slot phase (`cc_tick_follow`). After 3 equal reads on one phase that differ
+from 0x1F's CC, it writes that CC to 0x1F and restarts the receiver, as for any CC change. It skips this when the CC
+is held, during TX, while a restart is pending and for 4 ticks after one.
+
 The driver chooses by the chip description's `cc_any_rx`.
 
 ### 5.4a CACH short LC
@@ -455,6 +462,19 @@ before the reception. An LC read then that differs from the last capture is kept
 On the HR_C6000, on the bench (a call joined at burst C of its second superframe), it came before the next F
 in most runs and the LC was taken there; on a weak signal it came one superframe later in 2 of 9 runs, page 2
 still held the old LC at F, and the call played from the superframe after that.
+
+**Joining at burst A.** With no header and no superframe in progress on its slot, a voice sync report (burst A) is
+held, not played: it can be noise or the tail of another slot's call. It is taken when the next frame (2 ticks later)
+brings a class 0 report for burst B; otherwise it is dropped (counter `rx_lone`) and the class 0 reports that follow
+count as `rx_no_call` until the next A. The B check differs by mode:
+
+| Receiving | B is |
+|---|---|
+| One color code (0x41 bit 3 clear) | a class 0 report numbered 1 |
+| Any color code (bit 3 set, 5.4) | a class 0 report numbered 1, or any class 0 report one frame after the A with voice other than A's (a stale repeat of A's report has A's voice). For a call in a code other than 0x1F's, the chip keeps the voice number of the last call it decoded in full (bench: B-F all reported as F), and the driver can't tell which code the call is in, so the number isn't checked; the frame count numbers the rest (5.2) |
+
+Before the second rule, a scan with digital monitor on passed any call in another color code that it reached after
+the header: the A was dropped as lone and B-F as no-call, superframe after superframe, and the stop timed out.
 
 **Resuming a call.** A call that stopped with no terminator and comes back has the sticky LC problem in its worst
 form: the LC in page 2 is the call's own, so the sticky rule waits for the A after the first whole superframe. That page 2 still
@@ -907,8 +927,9 @@ receive set-up's slot clock runs on; about 28.7 ms after a stop with 0x40 = 0x03
 - Deviation: Mod1 (0x46) moves the outer deviation linearly, about 23.8 Hz per step, through zero; Mod2 (0x45) must
   keep its ratio to Mod1 (about 0.51). `tx_begin` reads the pair the board set for the channel (calibrated for
   1944 Hz) and scales both by target / 1944: from 0x52 / 0x2A, 1800 Hz is 0x4C / 0x27 and 2400 Hz 0x65 / 0x34.
-  Above Mod1 0x65 is not checked. For C4FM the target is the deviation / 0.903, as a C4FM receiver's integrate and
-  dump reads 0.903 of the chip's outer level. 0x04 moves the carrier (about +24 Hz per step); 0x47 and 0x48 do
+  Above Mod1 0x65 is not checked. For C4FM the target is the deviation / 0.946: the chip's pulse is DMR's, and a C4FM
+  receiver reads 0.946 of its outer level (measured off air from the SDR bench's I/Q: 0.903 gave 1873-1900 Hz for
+  1800 Hz, 104-106 %; 0.946 gives 1783-1793 Hz). 0x04 moves the carrier (about +24 Hz per step); 0x47 and 0x48 do
   nothing here.
 
 ### 10.4 The provider's rules
@@ -988,6 +1009,7 @@ differs:
 | Transmission start (`tx_begin`) | the chip's own: 0x20 = 0, 0x21 = access, 0x22 = 0x86 (encoder start) | the access policy alone (0x20 = 0, 0x21 = 0x02): the vocoder runs on the MCU | `hrc6000_air_tx_begin` |
 | 0x10 after close (`mode_per_channel`) | 0x6E | the chip's `dmr_mode`; the engine writes the channel's value again when it runs | `hrc6000_air_close`, `hrc6000_dmr_run` |
 | FM copy (10.6) | yes | none documented: no `air_tap`, so the correlator profiles only | the board |
+| Physical layer receive (`air_tx_only`) | yes | none found (below): the fit drops `AIR_FIT_RX`, `AIR_FIT_SOFT` and `AIR_FIT_NEEDS_SYNC`, and an open session doesn't write the correlator pattern | `hrc6000_air_fit_tap`, `hrc6000_air_open` |
 
 On the radio, transmit works: the provider keys P25 and NXDN from the TX RAM halves as on the HR_C6000. Receive
 doesn't: in an open session with the receiver on, 0x82 stays 0 and the chip gives no physical layer record
@@ -995,7 +1017,9 @@ doesn't: in an open session with the receiver on, 0x82 stays 0 and the chip give
 0x50, 0x60, 0xC0) or 0x81 (0x01, 0x19, 0xFF) by CHIP_REG during the session changed nothing, and 0x81 reads back 0
 after a write. Writing the pattern into the transmit sync field (aux 0x04-0x09) as well didn't help either. Until a
 setting that starts the record clock is found, a radio with this chip transmits the correlator profiles and can't
-receive them.
+receive them. The chip description says so (`air_tx_only`): the provider reports those profiles as transmit only. P25
+needs receive, so the radio doesn't offer it; NXDN stays for transmit, and scan skips a channel the radio can't hear. A board that gives the
+provider an FM copy (`air_tap`) still receives through the soft modem.
 
 Not confirmed on the HR_C5000, because the manual is an early draft and leaves these out:
 

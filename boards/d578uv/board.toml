@@ -12,6 +12,8 @@ also = ["AnyTone AT-D578UV PRO", "AnyTone AT-D578UV PLUS"]
 kind = "mobile"
 # where the radio appears in the site's lists (the lowest: the home page's radio)
 order = 8
+# the sixth character of the APRS tocall, APRDFD (docs/spec/aprs.md 4.2): one per radio, never reused
+aprs_tocall = "D"
 
 [docs]
 hardware = "docs/spec/hardware-d578uv.md"

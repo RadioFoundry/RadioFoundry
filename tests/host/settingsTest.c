@@ -530,10 +530,11 @@ static void test_native_and_jobs(void)
 	sim_flash_power_on();
 	CHECK(memcmp(&sim_flash_data[na], magic, 4) == 0 && sim_flash_data[na + 0x6000u] == 0xFF);
 	CHECK(storage_native_erase() == STORAGE_NATIVE_ERASED && sim_flash_data[na + 0x1000u] == 0xFF);
-	// No native area in the map: refused
+	// No native area in the map (a small chip's): nothing to empty, so a factory reset doesn't stop on it
 	sim_flash_create(FLASH_SIZE, &map);
 	boot();
-	CHECK(storage_native_erase() == STORAGE_NATIVE_FAILED);
+	e0 = sim_flash_units();
+	CHECK(storage_native_erase() == STORAGE_NATIVE_BLANK && sim_flash_units() == e0);
 
 	// Jobs: one at a time, run by the poll, then the next may come
 	int one = 1;
@@ -677,6 +678,25 @@ static void test_map_end(void)
 	low.calibration_size = 0;			// an area of size 0 is none, wherever its address points
 	low.staging_addr = 0x80000u;
 	CHECK(hal_flash_map_end(&low, 4096) == 0x1B000u);
+}
+
+// hal_flash_map_for: a board with two chip sizes (a 16 MB map and a 1 MB one) gets the map its chip holds, and a chip
+// smaller than both gets none. Before the small map, a 1 MB part stored nothing and lost its settings at every restart
+static void test_map_for(void)
+{
+	const hal_flash_map_t big = { .settings_addr = 0x11000u, .settings_size = 0x8000u, .journal_addr = 0x19000u,
+				      .openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = 0xE00000u,
+				      .native_addr = 0xE00000u, .native_size = 0x100000u,
+				      .staging_addr = 0xF00000u, .staging_size = 0x40000u };
+	const hal_flash_map_t small = { .settings_addr = 0x11000u, .settings_size = 0x8000u, .journal_addr = 0x19000u,
+					.openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = 0x100000u };
+	CHECK(hal_flash_map_for(&big, &small, 0x1000000u, 4096) == &big);
+	CHECK(hal_flash_map_for(&big, &small, 0x800000u, 4096) == &small);
+	CHECK(hal_flash_map_for(&big, &small, 0x100000u, 4096) == &small);
+	CHECK(hal_flash_map_for(&big, &small, 0x80000u, 4096) == NULL);
+	CHECK(hal_flash_map_for(&big, NULL, 0x100000u, 4096) == NULL);		// a board with one map: as before
+	CHECK(hal_flash_map_for(&big, NULL, 0x1000000u, 4096) == &big);
+	CHECK(hal_flash_map_for(NULL, NULL, 0x1000000u, 4096) == NULL);
 }
 
 // The crash report's mode and target live in spare bits of accent, theme and updown_home (settings.h): each field
@@ -1193,6 +1213,7 @@ int main(void)
 	test_crash_bits();
 	test_sound_flags();
 	test_map_end();
+	test_map_for();
 	test_settings_pages();
 	test_settings_gateway_upgrade();
 	test_settings_power_levels();

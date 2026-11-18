@@ -59,6 +59,20 @@ static inline uint32_t hal_flash_map_end(const hal_flash_map_t *m, uint32_t eras
 	return end;
 }
 
+// The map a chip of size bytes gets: the board's map when the chip holds it, else its map for a smaller part when that
+// fits, else none (nothing is stored). Either may be NULL
+static inline const hal_flash_map_t *hal_flash_map_for(const hal_flash_map_t *map, const hal_flash_map_t *small,
+						       uint32_t size, uint32_t erase_size)
+{
+	if (map != NULL && hal_flash_map_end(map, erase_size) <= size) {
+		return map;
+	}
+	if (small != NULL && hal_flash_map_end(small, erase_size) <= size) {
+		return small;
+	}
+	return NULL;
+}
+
 typedef struct {
 	bool (*init)(void);
 	uint32_t size;		// bytes, filled in by init on boards that probe it

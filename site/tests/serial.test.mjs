@@ -8,7 +8,7 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
 import * as diag from "../static/js/diag.js";
-import { SerialStream, CableError, limits, Link, probe, silence, whyNoAnswer, noAnswerKey, writtenWithoutLink, parseRadioInfo, flashBytes, browserErrorKey, grantedPorts, knownRadioPort } from "../static/js/flasher/link.js";
+import { SerialStream, CableError, limits, Link, probe, silence, whyNoAnswer, noAnswerKey, writtenWithoutLink, parseRadioInfo, flashBytes, browserErrorKey, noDeviceChosen, grantedPorts, knownRadioPort } from "../static/js/flasher/link.js";
 import { CpsSerial, TransportError } from "../static/js/codeplug/transport.js";
 import { Stub, limits as stubLimits } from "../static/js/flasher/stub.js";
 import { openFile, FileError } from "../static/js/editor/files.js";
@@ -510,6 +510,11 @@ test("the browser's own serial and USB errors get what to do", () => {
 	assert.equal(browserErrorKey(err("NotFoundError", "The device has been disconnected.")), "flash.err.disconnected");
 	assert.equal(browserErrorKey(err("BreakError", "Break received")), "flash.err.connection_lost");
 	assert.equal(browserErrorKey(new Error("anything else")), null);
+	// the chooser closed with nothing picked: the after-install check records no failure for it (most of its recorded
+	// failures were this)
+	assert.ok(noDeviceChosen(err("NotFoundError", "Failed to execute 'requestPort' on 'Serial': No port selected by the user.")));
+	assert.ok(!noDeviceChosen(err("NotFoundError", "The device has been disconnected.")));
+	assert.ok(!noDeviceChosen(new Error("No port selected by the user.")));
 });
 
 test("an unknown file is reported by its type, size and first 8 bytes, never its name", async () => {

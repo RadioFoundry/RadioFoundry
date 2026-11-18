@@ -167,7 +167,7 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
 
 | Kind | OK does | Rows |
 |---|---|---|
-| Toggle | the other value, at once | Mode (FM / DMR, with `CONFIG_DMR`; in a listen band it shows what the radio receives, AM or FM, and OK keeps it there with the band's receive-only toast), RX only, Bandwidth (FM), Timeslot (DMR), VOX (FM), Direct mode (DMR), Talk permit beeps (DMR), Talker alias TS1 / TS2 (DMR), Scan, Battery saver |
+| Toggle | the other value, at once | Mode (steps through the modes, below; in a listen band it shows what the radio receives, AM or FM, and OK keeps it there with the band's receive-only toast), RX only, Bandwidth (FM), Timeslot (DMR), VOX (FM), Direct mode (DMR), Talk permit beeps (DMR), Talker alias TS1 / TS2 (DMR), Scan, Battery saver |
 | Spin | opens the spinner: the knob or Up / Down step through the values, shown as they change; digits type where the value is a number; OK keeps, BACK cancels (the quick-tile and Settings-number editor) | Power (the board's levels, then "Radio's"), Color code (0-15), TX time-out (0 = "Radio's", 15-495 s in steps of 15), RX CTCSS/DCS and TX CTCSS/DCS (None, the CTCSS (PL) tones, the DCS codes normal then inverted. Digits type a tone: CTCSS in Hz with the last digit the tenths, "885" 88.5, and a value under 60 Hz read as whole Hz, "67" 67.0; a leading 0 types a DCS code, "023" D023N, digits 8 and 9 refused. OK refuses a CTCSS tone outside 60.0-260.0 Hz and a DCS code not on the standard list; a step of the knob goes on from the typed tone. In a build without `CONFIG_SUBTONE`, such as a small-flash board's, the tone rows only show the stored tone and OK toasts "Tones: not in this build") |
 | Direct entry | opens an editor that takes digits | RX and TX frequency (as VFO entry: MHz digits, then decimals, refused out of band as typed), Own ID (0 = "Radio's", up to 16776415, `CODEPLUG_DMR_ID_MAX`) |
 | Text | opens Text entry | Name |
@@ -197,12 +197,17 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
 - New from current (the first row in Channels: New channel from current settings) fills a copy from what the radio uses now: the channel in use
   with its temporary changes, or the VFO. It opens as an unsaved channel at the lowest free number, named after the
   source with a number appended (or the frequency, from the VFO).
-- A channel of a kind ([channel-modes.md](channel-modes.md)) shows its kind as the Mode. OK on Mode makes the copy a
-  plain FM channel, and the step after the last plain mode (DMR, or FM without `CONFIG_DMR`) is the mode the channel
-  was opened with again, with its system and its NAC or RAN as they were: a slip on the row is taken back by pressing
-  on. The same holds for a channel that is in P25 or NXDN for now. The row's changed mark counts the kind. Saving a
-  stored channel of a kind as a plain one removes its tag, so Save asks first on the `discard` screen, titled
-  "Save as FM?" (or "Save as DMR?"): the kind's name and "settings will be removed", "No, keep editing" first (the default; BACK is the same), then "Yes,
+- OK on Mode steps FM, DMR, P25, NXDN, then the channel's own kind, and round to FM. A step is offered where it can
+  run: DMR with `CONFIG_DMR`; P25 and NXDN where the radio runs them (`UI_FEAT_P25`, `UI_FEAT_NXDN`, as the VFO's
+  mode tile), and not in a copy made by Copy here, which takes its source's tag and has no block of its own; a kind
+  of its own (a trunked channel, [channel-modes.md](channel-modes.md)) only on the channel opened as one, since its
+  system can't be picked here. In a listen band only FM. The step back to the mode the channel was opened with
+  restores it as it was, with its system and its NAC or RAN: a slip on the row is taken back by pressing on. A
+  channel made P25 starts with NAC 293 both ways and squelch normal, one made NXDN with RAN 1 both ways at 9600 bit/s;
+  either keeps its talk target and own ID, and Save writes it as a stored channel of the kind with that block. The
+  row's changed mark counts the kind. Saving a stored channel of a kind as a plain one or one of another kind
+  replaces its tag, so Save asks first on the `discard` screen, titled "Save as FM?" (or "Save as DMR?"; "Unsaved
+  Changes" when it becomes another kind): the kind's name and "settings will be removed", "No, keep editing" first (the default; BACK is the same), then "Yes,
   save". Save as new channel takes nothing from the stored channel and isn't asked. Save as new channel and Copy here pass the source's number
   (`ui_svc_write_channel`'s `from`, `zone_op_t.from`), so the copy takes the source's tag (channel-modes.md 2.4).
 - A P25 channel (a stored one, or New from current on a channel or VFO in P25) shows Mode as "P25" and only the rows

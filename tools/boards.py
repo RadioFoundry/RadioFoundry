@@ -164,6 +164,7 @@ BOARD_SCHEMA = {
     "also": _req(STR_LIST),
     "kind": _req(KINDS),
     "order": _req(int),		# where the radio appears in the site's lists; the lowest is the home page's radio
+    "aprs_tocall": _req(str),	# the APRS tocall's sixth character, APRDF? (docs/spec/aprs.md 4.2): 1-9, A-Z, unique
     "part_of": _opt(str),
     # other bodies the same board ships in that look too different to share its picture: each is its own card on the
     # site, drawn in site/static/img/radios/src/<id>-<look id>.svg (the site build refuses a missing one), and links to
@@ -492,15 +493,19 @@ def board_t_names(board_dir):
 
 def flash_map(board_dir):
     """The FLASH_MAP_FIELDS of the board's hal_flash_map_t definition, {field: address}. A board has one; a second one
-    that disagrees is an error."""
+    that disagrees is an error. A map the board gives its driver for a smaller chip (`.small_map = &name`) isn't it."""
+    sources = list(_c_sources(board_dir))
+    small = {n for _, text in sources for n in re.findall(r"\.small_map\s*=\s*&\s*(\w+)", text)}
     out, where = {}, None
-    for f, text in _c_sources(board_dir):
-        for m in re.finditer(r"\bhal_flash_map_t\s+\w+\s*=\s*\{", text):
+    for f, text in sources:
+        for m in re.finditer(r"\bhal_flash_map_t\s+(\w+)\s*=\s*\{", text):
+            if m.group(1) in small:
+                continue
             found = {k: int(v, 0) for k, v in re.findall(r"\.(\w+)\s*=\s*(0[xX][0-9A-Fa-f]+|\d+)[uUlL]*",
                                                         _braced(text, m.end())) if k in FLASH_MAP_FIELDS}
             if where is not None and found != out:
-                raise RegistryError("%s: hal_flash_map_t in %s and %s differ" % (os.path.relpath(board_dir, ROOT),
-                                                                                 where, f))
+                d = board_dir if isinstance(board_dir, str) else board_dir[0]
+                raise RegistryError("%s: hal_flash_map_t in %s and %s differ" % (os.path.relpath(d, ROOT), where, f))
             out, where = found, f
     return out
 
@@ -1223,7 +1228,7 @@ def check(root=ROOT):
     except RegistryError as e:
         return [str(e)]
     hw = hardware_switches(root)
-    stub_ids, orders = {}, {}
+    stub_ids, orders, tocalls = {}, {}, {}
     classes = gallery_classes(root)
     geoms = gallery_geoms(root) or {}
     for bid, b in boards.items():
@@ -1282,6 +1287,13 @@ def check(root=ROOT):
         if d["order"] in orders:
             bad("order %d is also the %s's" % (d["order"], orders[d["order"]]))
         orders.setdefault(d["order"], bid)
+        # "0" is the host tests' (no radio); the registry lists each character with its radio, so one never moves
+        if not re.fullmatch(r"[1-9A-Z]", d["aprs_tocall"]):
+            bad("aprs_tocall %r: one character, 1-9 or A-Z" % d["aprs_tocall"])
+        elif d["aprs_tocall"] in tocalls:
+            bad("aprs_tocall %r is also the %s's" % (d["aprs_tocall"], tocalls[d["aprs_tocall"]]))
+        else:
+            tocalls[d["aprs_tocall"]] = bid
         fm = b.flash_map
         if b.codeplug() is None:
             bad("no hal_flash_map_t with openfw_eeprom and openfw_end in boards/%s/*.c" % bid)
@@ -1864,6 +1876,12 @@ def self_test():
     ok(openfw_bases("-DX=1 -DCODEPLUG_OPENFW_EEPROM_BASE=0x700000u -DCODEPLUG_OPENFW_FLASH_BASE=0x720000u") ==
        (0x700000, 0x720000) and openfw_bases("-DX=1") == (0, 0x20000) and openfw_bases(None) == (0, 0x20000),
        "openfw_bases: board.mk's, else the STM32 defaults")
+    with open(os.path.join(tmpc, "flash3.c"), "w", encoding="utf-8") as f:
+        f.write("static const hal_flash_map_t small = { .openfw_eeprom = 0, .openfw_end = 0x100000 };\n"
+                "static const cfg_t cfg = { .map = &fmap, .small_map = &small };\n")
+    ok(flash_map(tmpc) == {"openfw_eeprom": 0x700000, "openfw_end": 0x800000, "staging_addr": 0},
+       "flash_map: a map for a smaller chip (.small_map) is not the board's map")
+    os.remove(os.path.join(tmpc, "flash3.c"))
     with open(os.path.join(tmpc, "flash2.c"), "w", encoding="utf-8") as f:
         f.write("const hal_flash_map_t m2 = { .openfw_eeprom = 0x600000 };\n")
     try:
@@ -2134,6 +2152,10 @@ def self_test():
         two = next(b for b in board_dirs(tmp) if b != one)
         other = _tomllib().load(open(os.path.join(tmp, "boards", two, "board.toml"), "rb"))["order"]
         broken(re.sub(r"(?m)^order = .*$", "order = %d" % other, good), "an order another board has", "also the")
+        other = _tomllib().load(open(os.path.join(tmp, "boards", two, "board.toml"), "rb"))["aprs_tocall"]
+        broken(re.sub(r"(?m)^aprs_tocall = .*$", 'aprs_tocall = "%s"' % other, good), "an APRS tocall another board has",
+               "also the")
+        broken(re.sub(r"(?m)^aprs_tocall = .*$", 'aprs_tocall = "0"', good), "the host tests' APRS tocall", "1-9 or A-Z")
         fm_c = [os.path.join(tmp, "boards", one, f) for f, text in _c_sources(os.path.join(tmp, "boards", one))
                 if "hal_flash_map_t" in text]
         fm_good = open(fm_c[0], encoding="utf-8").read()

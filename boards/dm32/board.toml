@@ -14,6 +14,8 @@ order = 1
 # RadioFoundry writes only from 0x700000 (docs/spec/hardware-dm32.md 10): the radio's own codeplug and data below it
 # stay for going back, and the native codeplug takes the last 1 MB
 iddb_small = "RadioFoundry writes only the data flash's top 9 MB (hardware-dm32.md 10)"
+# the sixth character of the APRS tocall, APRDF3 (docs/spec/aprs.md 4.2): one per radio, never reused
+aprs_tocall = "3"
 # Older VERSION board= values that also mean this radio (debug link). The current one is board_t .name (or a
 # build option value's board_name), and the id always counts
 debuglink_aliases = ["DM-32"]

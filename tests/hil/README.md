@@ -510,7 +510,7 @@ and unkeys, the LCs heard to the talkgroup from us all carry service options bit
 
 `test_aprs`: the view keys present, the SSID round trip; with a test call and host NMEA `aprs.pos_src=host`,
 `aprs.lat` / `aprs.lon` within 1e-3 degree. On air (AFSK): `aprs.tx_power=0` before keying (else skipped), one frame
-with a valid FCS from `CALL-SSID` to `APZRDF` with no digipeaters, control 0x03, PID 0xF0; the position within 1e-4
+with a valid FCS from `CALL-SSID` to the radio's tocall (`aprs.tocall`, `APRDF?`) with no digipeaters, control 0x03, PID 0xF0; the position within 1e-4
 degree of 33.7490, -84.3880, the status `>` + its text, the message `:ADDRESSEE:text{N`; `aprs.rf_sent` +1 within
 15 s, `aprs.rf_active=0`, the radio idle on its channel afterwards; deviation peak (99.9th percentile) 2.0-4.5 kHz,
 |twist| under 6 dB; printed: mark and space deviation, TX delay (flags and carrier to first frame bit), the phase

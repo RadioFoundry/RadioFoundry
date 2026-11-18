@@ -158,6 +158,38 @@ test("factory update mode: a loader that identified itself is kept for the next 
 	await sleep(300);
 });
 
+test("factory update mode: a second data step failure in a row on one cable says the cable loses data", async () => {
+	const { state, forwards, calls, routes } = route();
+	const fault = { e: null };
+	const box = routes.iapRestoreView(backup(), null, () => {});
+	box.isConnected = true;
+	const text = (el) => el.textContent;
+	const tryOnce = async (e) => {
+		fault.e = e;
+		forwards.at(-1).click();
+		await sleep(10);
+		state.c7.loader.write = async () => { calls.write++; throw fault.e; };
+		calls.found();
+		await sleep(50);
+		return text(box);
+	};
+	const blockLost = () => Object.assign(new Error("step 8, block 1: answered nothing after 5 tries"), { block: 1 });
+	assert.doesNotMatch(await tryOnce(blockLost()), /Cable Problem Detected/, "one failure may be the radio or a slip");
+	const second = await tryOnce(blockLost());
+	assert.match(second, /Cable Problem Detected[^]*2 tries in a row[^]*Use another cable/);
+	assert.doesNotMatch(second, /Select Try Again, then turn the radio off/, "no retry steps before the cable change");
+	// a failure that is not a lost block starts the count again
+	assert.doesNotMatch(await tryOnce(new Error("step 1: no answer")), /Cable Problem Detected/);
+	assert.doesNotMatch(await tryOnce(blockLost()), /Cable Problem Detected/);
+	// block numbers wrap at 256: a lost block 0 is a lost block too
+	assert.match(await tryOnce(Object.assign(new Error("step 8, block 0: answered nothing after 5 tries"), { block: 0 })), /2 tries in a row/);
+	// another cable (a new stream) starts the count again
+	state.c7.stream = {};
+	assert.doesNotMatch(await tryOnce(blockLost()), /Cable Problem Detected/);
+	box.isConnected = false;
+	await sleep(300);
+});
+
 // ---- the hardware variant on the stock console route (a radio with a stock console and variants, found by its data)
 
 const stockRadio = json("radios.json").radios.find((r) => r.flash.stock_console && r.variants?.length);

@@ -68,6 +68,13 @@ MCU_DEFS += $(OPTION_DEFS)
 # Hardware options (hal/hal_hwopt.h): a board that has some says BOARD_HWOPTS := y in its board.mk. The others build
 # none of the code that lists, asks for and stores them
 MCU_DEFS += -DRFOUNDRY_HWOPTS=$(if $(filter y,$(BOARD_HWOPTS)),1,0)
+# The sixth character of the APRS tocall (APRDF?, docs/spec/aprs.md 4.2): board.toml aprs_tocall, one per radio
+# (tools/boards.py check validates the file; this only reads the value, and refuses a build without a valid one)
+APRS_TOCALL_ID := $(shell sed -n "s/^aprs_tocall[ 	]*=[ 	]*[\"']\([^\"']*\)[\"'].*/\1/p" boards/$(BOARD)/board.toml 2>/dev/null)
+ifeq ($(filter $(APRS_TOCALL_ID),1 2 3 4 5 6 7 8 9 A B C D E F G H I J K L M N O P Q R S T U V W X Y Z),)
+$(error boards/$(BOARD)/board.toml: aprs_tocall "$(APRS_TOCALL_ID)" is not one character 1-9 or A-Z (docs/dev/board-registry.md))
+endif
+MCU_DEFS += -DAPRS_TOCALL_ID='"$(APRS_TOCALL_ID)"'
 
 BUILD := build/$(BOARD)$(if $(VARIANT),-$(VARIANT))$(OPTION_SUFFIX)
 TARGET := $(BUILD)/rfoundry_$(BOARD)$(OPTION_SUFFIX)
@@ -323,8 +330,11 @@ RFOUNDRY_EMPTY :=
 RFOUNDRY_OFF := $(subst $(RFOUNDRY_EMPTY) ,$(strip ,),$(sort $(foreach f,$(filter-out $(BOARD_UNSUPPORTED) $(BOARD_NOT_WRITTEN),$(FEATURES)),\
 	$(if $(call feature_on,$(f)),,$(f)))))
 # The build's preset, VERSION preset=: the release variant (VARIANT, full without one), or custom when a
-# switch is set on the command line (a custom build: the build service sets every one)
+# switch is set on the command line. The build service sets every switch, and passes RFOUNDRY_PRESET=<variant> when
+# they are a variant's (the start language aside), so an update keeps the radio on that variant
 RFOUNDRY_PRESET := $(if $(strip $(foreach v,$(filter CONFIG_%,$(.VARIABLES)),$(filter command line,$(origin $(v))))),custom,$(or $(VARIANT),full))
+$(if $(filter $(RFOUNDRY_PRESET),full custom $(basename $(notdir $(wildcard config/variants/*.mk)))),,\
+	$(error unknown RFOUNDRY_PRESET=$(RFOUNDRY_PRESET): full, custom or a variant))
 
 # Rebuild everything when the compile flags change (feature switches and build values), and the objects that carry
 # the version when it changes. Checked while the Makefile is read, before make looks at any object: the stale objects

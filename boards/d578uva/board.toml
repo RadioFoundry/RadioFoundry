@@ -14,6 +14,8 @@ variant_of = "d578uv"
 kind = "mobile"
 part_of = "d578uv"
 order = 9
+# the sixth character of the APRS tocall, APRDFA (docs/spec/aprs.md 4.2): one per radio, never reused
+aprs_tocall = "A"
 
 [docs]
 hardware = "docs/spec/hardware-d578uv.md"

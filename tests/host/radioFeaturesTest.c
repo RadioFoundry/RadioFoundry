@@ -1694,10 +1694,12 @@ static void test_scan_dmr_mid_call(void)
 }
 
 // #595: digital monitor on when the scan starts stays on at every stop. A call to a talkgroup we don't listen to then
-// holds the scan, the channel the scan ends on keeps digital monitor, and turning it off mid-scan ends it for the scan
+// holds the scan, the channel the scan ends on keeps digital monitor, and turning it off mid-scan ends it for the scan.
+// Turned on mid-scan with the monitor key (a short press on a DMR stop), it holds for the rest of the scan the same way
 static void test_scan_dmr_digital_monitor(void)
 {
-	for (int off_mid_scan = 0; off_mid_scan <= 1; off_mid_scan++) {
+	enum { LATCHED, OFF_MID_SCAN, KEY_MID_SCAN };
+	for (int how = LATCHED; how <= KEY_MID_SCAN; how++) {
 		start();
 		all_dmr();
 		signal_on(0, 438500000, 30, no_tone);
@@ -1708,25 +1710,33 @@ static void test_scan_dmr_digital_monitor(void)
 		air.dst = 99;
 		air.lc_at = 1;
 		req(RREQ_ZONE_POS, 6);
-		req(RREQ_DMR_HEAR_ALL, 1);
-		CHECK(sm.view.dmr.hear_all_latch);
+		if (how != KEY_MID_SCAN) {
+			req(RREQ_DMR_HEAR_ALL, 1);
+			CHECK(sm.view.dmr.hear_all_latch);
+		}
 		req(RREQ_SCAN, RSCAN_ZONE);
 		run(100);
-		CHECK(sm.view.zone_pos != 6 && sm.view.dmr.hear_all_latch == (sm.view.ch.mode == RADIO_MODE_DMR));
-		if (off_mid_scan) {
+		CHECK(sm.view.zone_pos != 6 && sm.view.dmr.hear_all_latch == (how != KEY_MID_SCAN &&
+		      sm.view.ch.mode == RADIO_MODE_DMR));
+		if (how == OFF_MID_SCAN) {
 			req(RREQ_DMR_HEAR_ALL, 0);
 			CHECK(!sm.view.dmr.hear_all_latch);
+		} else if (how == KEY_MID_SCAN) {
+			CHECK(sm.view.ch.mode == RADIO_MODE_DMR && sm.view.scan == SCAN_ZONE);
+			req(RREQ_MONITOR, 1);
+			req(RREQ_MONITOR, 0);
+			CHECK(sm.view.dmr.hear_all_latch && sm.view.dmr.hear_all);
 		}
 		bool held = false;
 		for (int i = 0; i < 300 && !held; i++) {
 			run(25);
 			held = sm.view.zone_pos == 5 && sm.view.scan_phase == SCAN_PH_HOLD && sm.view.dmr.state == RDMR_RX;
 		}
-		CHECK(held == !off_mid_scan);
+		CHECK(held == (how != OFF_MID_SCAN));
 		req(RREQ_SCAN, RSCAN_STOP);
 		run(25);
 		CHECK(sm.view.scan == SCAN_OFF);
-		if (!off_mid_scan) {
+		if (how != OFF_MID_SCAN) {
 			CHECK(sm.view.zone_pos == 5 && sm.hear_all_latch && sm.view.dmr.hear_all_latch && sm.view.dmr.hear_all);
 		} else {
 			CHECK(!sm.view.dmr.hear_all_latch && !sm.view.dmr.hear_all);
@@ -1745,6 +1755,56 @@ static void test_scan_dmr_digital_monitor(void)
 	req(RREQ_SCAN, RSCAN_STOP);
 	run(25);
 	CHECK(!sm.hear_all_latch && !sm.view.dmr.hear_all_latch);
+}
+
+// HIL (test_scan_digital_monitor_any_talkgroup): a zone with an FM channel and a DMR channel on the call's frequency.
+// The DMR bursts opened the FM squelch, so the scan held the FM stop for the whole call, hold and resume with the
+// bursts, and never reached the DMR channel. Now an FM stop about to hold first checks the zone's DMR channel of that
+// frequency: a DMR call plays there; an FM signal (nothing of DMR heard) goes back to the FM stop, which holds
+static void test_scan_mixed_frequency(void)
+{
+	enum { CALL, CALL_HEAR_ALL, FM_SIGNAL };
+	for (int how = CALL; how <= FM_SIGNAL; how++) {
+		start();
+		all_dmr();
+		add(7, "Mixed", 438500000, RADIO_MODE_FM);	// position 6: FM on the DMR channel's frequency (position 5)
+		signal_on(0, 438500000, 30, no_tone);
+		if (how != FM_SIGNAL) {
+			hw.sig[0].tdma = true;
+			air.on = true;
+			air.hz = 438500000;
+			air.t0 = now + 300;
+			air.dst = how == CALL ? 9 : 99;
+			air.lc_at = 1;
+		}
+		req(RREQ_ZONE_POS, 5);
+		if (how == CALL_HEAR_ALL) {
+			req(RREQ_DMR_HEAR_ALL, 1);
+		}
+		req(RREQ_SCAN, RSCAN_ZONE);
+		bool fm_held = false, dmr_held = false;
+		uint32_t fm_ms = 0;
+		for (int i = 0; i < 160; i++) {
+			run(25);
+			bool hold = sm.view.scan_phase == SCAN_PH_HOLD || sm.view.scan_phase == SCAN_PH_RESUME;
+			fm_held |= hold && sm.view.zone_pos == 6;
+			dmr_held |= hold && sm.view.zone_pos == 5 && sm.view.dmr.state == RDMR_RX;
+			fm_ms = hold && sm.view.zone_pos == 6 ? fm_ms + 25 : 0;
+		}
+		if (how == FM_SIGNAL) {
+			// Held on the FM stop to the end, after one check of the DMR channel
+			CHECK(!dmr_held && fm_ms >= 3000 && sm.view.zone_pos == 6);
+		} else {
+			if (fm_held || !dmr_held) {
+				printf("  mixed frequency, %s: FM stop held %d, DMR call held %d\n",
+				       how == CALL ? "call" : "hear all", fm_held, dmr_held);
+			}
+			CHECK(!fm_held && dmr_held && sm.view.zone_pos == 5);
+		}
+		req(RREQ_SCAN, RSCAN_STOP);
+		air.on = false;
+		hw.sig[0].hz = 0;
+	}
 }
 
 // Field report on an HR_C7000 radio (build b0b69d2): "the scan does not stop on DMR channels, even with a
@@ -4219,6 +4279,7 @@ int main(void)
 	test_scan_dmr_mid_call();
 	test_scan_led();
 	test_scan_dmr_digital_monitor();
+	test_scan_mixed_frequency();
 	test_scan_dmr_kept_timing();
 	test_scan_dmr_noise_deaf();
 	test_scan_dmr_high_floor();

@@ -524,6 +524,37 @@ class CodecGuardError(F4Error):
     """guard_codec's refusal: raised before any erase, so the radio's flash is as it was."""
 
 
+class UncommittedError(F4Error):
+    """write_image stopped after it erased sector 3 (a lost link, a failed step, a verify): the application is not
+    committed, so the radio starts in its bootloader (DFU) until an install finishes. The message says how to finish."""
+
+
+def uncommitted_note(board_id, step, steps, cause):
+    return ("the install stopped at step %d of %d (%s). The application is not committed: the radio starts in its "
+            "bootloader (DFU, its screen dark) until an install finishes; the bootloader itself was not touched. "
+            "Finish it: if the stub still runs, stubtool.py PORT --attach --board %s --write-app IMAGE --boot reset; "
+            "else rfoundry flash IMAGE (no --route), which takes the bootloader route (with --stock FILE for the key and "
+            "codec)"
+            % (step, steps, cause, board_id))
+
+
+def commit_note(board_id, cause):
+    """The link went down once the commit word was sent: it may be in, so the radio may start either way"""
+    return ("the install stopped while committing (%s): the commit word may already be written. If the radio starts "
+            "RadioFoundry, the install finished. If it starts in its bootloader (DFU, its screen dark), finish it: if the "
+            "stub still runs, stubtool.py PORT --attach --board %s --write-app IMAGE --boot reset; else rfoundry flash "
+            "IMAGE (no --route), which takes the bootloader route (with --stock FILE for the key and codec)"
+            % (cause, board_id))
+
+
+def failure_cause(e, port):
+    """What stopped an install, with the cable advice when a write stalled (stubtool main prints it only for an error
+    that reaches it unwrapped)"""
+    if type(e).__name__ == "SerialTimeoutException":
+        return "%s: %s" % (e, stubtool.stalled_text(stubtool.unsent_bytes(port)))
+    return e
+
+
 STUB_USB_ID = (0x1FC9, 0x0094)	# RadioFoundry's and the stub's USB identity (same serial number too)
 PORT_FALLBACK_S = 10.0		# how long the original port name gets before a look-alike is tried
 PORT_WAIT_S = 20.0		# how long attach() waits in all for the stub's port after a fresh enumeration
@@ -985,26 +1016,69 @@ class F4Radio(stubtool.Radio):
         order = [first] + [i for i in changed if i != first]
         steps = len(order)
         self.install_started = True
-        self.erase(first)
-        for n, idx in enumerate(order[1:], 1):
+        n = 0
+        committing = False
+        try:
+            self.erase(first)		# a failure in it leaves the commit sector partly erased: no longer committed either
+            for n, idx in enumerate(order[1:], 1):
+                if progress:
+                    progress(n, steps)
+                a, _ = sec[idx]
+                self.sector_again("sector %d" % idx, lambda: (self.erase(idx), self.program(a, new[idx])))
+            n = steps
             if progress:
-                progress(n, steps)
-            a, _ = sec[idx]
-            self.erase(idx)
-            self.program(a, new[idx])
-        if progress:
-            progress(steps, steps)
-        self.program(base + 4, new[first][4:])
-        expect = {i: new[i] for i in order}
-        expect[first] = b"\xff\xff\xff\xff" + new[first][4:]
-        bad = [i for i in order if self.differs(sec[i][0], expect[i])]
-        if bad:
-            raise F4Error("verify before the commit: sector(s) %s differ. The application is not committed: the radio "
-                          "starts in its bootloader until an install finishes" % bad)
-        self.program(base, new[first][:4])
-        if self.differs(base, new[first][:BLOCK]):
-            raise F4Error("the commit word did not verify")
+                progress(steps, steps)
+            self.sector_again("sector %d" % first, lambda: self.program(base + 4, new[first][4:]),
+                              lambda: (self.erase(first), self.program(base + 4, new[first][4:])))
+            expect = {i: new[i] for i in order}
+            expect[first] = b"\xff\xff\xff\xff" + new[first][4:]
+            bad = [i for i in order if self.differs(sec[i][0], expect[i])]
+            if bad:
+                raise F4Error("verify before the commit: sector(s) %s differ" % bad)
+            committing = True
+            try:
+                self.program(base, new[first][:4])
+            except stubtool.StatusError:
+                raise
+            except stubtool.DumpError as e:
+                # Its reply lost: the word may be in. Written or still erased, the CRC below says which
+                self.resync("the commit word", e)
+                if not self.committed(board_id):
+                    self.program(base, new[first][:4])
+            if self.differs(base, new[first][:BLOCK]):
+                raise F4Error("the commit word did not verify")
+        except (stubtool.DumpError, OSError) as e:
+            # From the first erase on, any failure leaves the radio in DFU. Said plainly: a bare "cable pulled" or
+            # "no answer" read as harmless, and a script that went on (reset, cleanup) left the owner to find it
+            cause = failure_cause(e, self.port)
+            raise UncommittedError(commit_note(board_id, cause) if committing else
+                                   uncommitted_note(board_id, n or 1, steps, cause)) from e
+        except KeyboardInterrupt:
+            # Stopped by hand: the same state, said before the stop goes on (main prints only "stopped")
+            self.log(commit_note(board_id, "stopped by hand") if committing else
+                     uncommitted_note(board_id, n or 1, steps, "stopped by hand"))
+            raise
         return len(order), len(new) - len(order)
+
+    def resync(self, what, e):
+        """After a request with no clean reply: let the stub finish what it was doing, drop whatever came late, and
+        check it answers again (else the error stands)"""
+        self.log("%s: %s; once more" % (what, e))
+        time.sleep(0.3)
+        self.port.reset_input_buffer()
+        self.request(OP_HELLO, retries=2, timeout=0.5)
+
+    def sector_again(self, what, job, again=None):
+        """job (a sector's erase and program), and once more (again, else job) when a request in it had no clean reply.
+        The stub may have done the request whose reply was lost: a program again over it is refused (not blank), so the
+        second try erases the sector first. A refusal (a status) is not retried"""
+        try:
+            job()
+        except stubtool.StatusError:
+            raise
+        except stubtool.DumpError as e:
+            self.resync(what, e)
+            (again or job)()
 
     def differs(self, addr, data):
         sums = self.sums(addr, len(data) // BLOCK)
@@ -1457,6 +1531,8 @@ class FakeF4:
         self.timeout = 0.02
         self.erased, self.programs, self.resets = [], 0, 0
         self.fail_after = fail_after        # programs before the "cable" is pulled
+        self.lose = {}                      # {op: [n, ...]}: the reply to that op's nth request (from 1) never comes
+        self.seen = {}                      # ... the op's requests so far
         self.jedec = bytes([0xEF, 0x40, 0x18])
         # The security registers (version 5): 3 x 256 bytes, status register 2 (QE set, as many chips ship) and the
         # registers each SWRITE erased
@@ -1524,6 +1600,15 @@ class FakeF4:
         return s is not None and base >= 0x08001000
 
     def handle(self, op, p):
+        self.seen[op] = self.seen.get(op, 0) + 1
+        if self.seen[op] in self.lose.get(op, ()):
+            mark = len(self.out)
+            self.handle_op(op, p)           # done, the reply lost on the way
+            del self.out[mark:]
+            return
+        self.handle_op(op, p)
+
+    def handle_op(self, op, p):
         if op in (OP_ERASE, OP_PROGRAM, OP_XERASE, OP_XPROGRAM, OP_SWRITE) and not self.record:
             return self.frame(NOCONFIG)
         if op == OP_HELLO:
@@ -1774,13 +1859,82 @@ def self_test():
     try:
         r.write_image("dm1701", segs, backup_dir=tmp)
         check(False, "interrupted write raises")
-    except OSError:
-        pass
+    except UncommittedError as e:
+        check(isinstance(e.__cause__, OSError) and "DFU" in str(e) and "--attach --board dm1701" in str(e)
+              and "rfoundry flash" in str(e), "interrupted: the error says DFU and how to finish (%s)" % e)
     check(fake.w(APP_BASE) == 0xFFFFFFFF, "interrupted: the application is not committed (DFU on the next start)")
     check(bytes(fake.flash[:0xC000]) == boot, "interrupted: bootloader untouched")
     fake.fail_after = None
     nw, _ = r.write_image("dm1701", segs, backup_dir=tmp)
+
+    # The commit word sent, its reply lost and the link gone: the word is in, and the error says it may be
+    probe = FakeF4(stock(7))
+    r = F4Radio(probe, log=quiet)
+    r.hello()
+    r.configure("dm1701")
+    r.write_image("dm1701", segs, backup_dir=tmp)
+    fake = FakeF4(stock(7))
+    r = F4Radio(fake, log=quiet)
+    r.hello()
+    r.configure("dm1701")
+    fake.lose = {OP_PROGRAM: [probe.programs]}
+    fake.fail_after = probe.programs
+    try:
+        r.write_image("dm1701", segs, backup_dir=tmp)
+        check(False, "link lost at the commit: raises")
+    except UncommittedError as e:
+        check("may already be written" in str(e) and fake.w(APP_BASE) != 0xFFFFFFFF,
+              "link lost at the commit: the word is in and the error says it may be (%s)" % e)
+    check(isinstance(failure_cause(OSError("x"), fake), OSError), "a plain failure is its own cause")
+    stall = type("SerialTimeoutException", (OSError,), {})("Write timeout")
+    check("stopped taking data" in str(failure_cause(stall, fake)), "a stalled write keeps the cable advice")
     check(bytes(fake.flash[0xC000:0xC000 + 300000]) == segs[0][1], "a second run completes the install")
+
+    # A reply lost on the way (the stub did the request): the sector is erased and written once more, and the install
+    # completes. Seen on a radio: the first PROGRAM after an erase went unanswered, twice in a row, then a third run
+    # went through. The lost reply to the commit word: written, the CRC says so. Two in one sector: the error stands
+    for op, nth, what in ((OP_PROGRAM, [1], "a program"), (OP_ERASE, [2], "an erase"), (OP_PROGRAM, [5], "a later program")):
+        fake = FakeF4(stock(7))
+        r = F4Radio(fake, log=quiet)
+        r.hello()
+        r.configure("dm1701")
+        fake.lose = {op: nth}
+        fake.seen = {}
+        try:
+            r.write_image("dm1701", segs, backup_dir=tmp)
+            check(bytes(fake.flash[0xC000:0xC000 + 300000]) == segs[0][1] and fake.w(APP_BASE) != 0xFFFFFFFF,
+                  "the reply to %s lost: the install completes" % what)
+        except F4Error as e:
+            check(False, "the reply to %s lost: the install completes (%s)" % (what, e))
+    fake = FakeF4(stock(7))
+    r = F4Radio(fake, log=quiet)
+    r.hello()
+    r.configure("dm1701")
+    fake.seen = {}
+    r.write_image("dm1701", segs, backup_dir=tmp)       # the count of programs, the commit word's the last
+    commit_at = fake.seen[OP_PROGRAM]
+    fake = FakeF4(stock(7))
+    r = F4Radio(fake, log=quiet)
+    r.hello()
+    r.configure("dm1701")
+    fake.seen = {}
+    fake.lose = {OP_PROGRAM: [commit_at]}
+    try:
+        r.write_image("dm1701", segs, backup_dir=tmp)
+        check(bytes(fake.flash[0xC000:0xC000 + 300000]) == segs[0][1], "the commit word's reply lost: committed")
+    except F4Error as e:
+        check(False, "the commit word's reply lost: committed (%s)" % e)
+    fake = FakeF4(stock(7))
+    r = F4Radio(fake, log=quiet)
+    r.hello()
+    r.configure("dm1701")
+    fake.seen = {}
+    fake.lose = {OP_PROGRAM: [1, 2]}
+    try:
+        r.write_image("dm1701", segs, backup_dir=tmp)
+        check(False, "two lost replies in one sector: the error stands")
+    except UncommittedError as e:
+        check("DFU" in str(e) and fake.w(APP_BASE) == 0xFFFFFFFF, "two lost replies in one sector: uncommitted, said")
 
     # MD-380: sectors 3-10 for the application, the codec sector 11 untouched
     f = stock(13)

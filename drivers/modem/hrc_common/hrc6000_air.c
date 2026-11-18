@@ -75,7 +75,7 @@
 
 // Profiles the chip takes (modem-hrc6000.md 10.4)
 #define CAL_DEV_HZ	1944u	// the DMR outer deviation the calibrated pair gives
-#define C4FM_SCALE	903u	// a C4FM receiver's integrate and dump reads this much (/1000) of the chip's outer deviation
+#define C4FM_SCALE	946u	// a C4FM receiver reads this much (/1000) of the chip's outer deviation (measured, 10.3)
 #define TX_DEV_MIN	1050u	// the pair scales linearly over this range
 #define TX_DEV_MAX	2400u
 #define RX_DEV_MIN	1700u	// the correlator: syncs at 1800 Hz C4FM, 1944 and 2700 Hz; never at 1350 or 1050
@@ -176,9 +176,20 @@ uint32_t hrc6000_air_fit(const air_profile_t *p)
 	return f;
 }
 
-uint32_t hrc6000_air_fit_tap(const air_profile_t *p, const hal_baseband_t *tap)
+// What the chip itself does with p: a chip without physical layer receive keeps only transmit
+static uint32_t chip_fit(const air_profile_t *p, const hrc_chip_t *chip)
 {
 	uint32_t f = hrc6000_air_fit(p);
+
+	if (chip != NULL && chip->air_tx_only) {
+		f &= ~(uint32_t)(AIR_FIT_RX | AIR_FIT_SOFT | AIR_FIT_NEEDS_SYNC);
+	}
+	return f;
+}
+
+uint32_t hrc6000_air_fit_tap(const air_profile_t *p, const hrc_chip_t *chip, const hal_baseband_t *tap)
+{
+	uint32_t f = chip_fit(p, chip);
 
 	// The copy receives what the correlator can't; transmit stays the chip's, so a profile it can't send gets nothing
 	if (f != 0 && (f & AIR_FIT_RX) == 0 && tap != NULL) {
@@ -811,12 +822,12 @@ static void rx_samples(hrc6000_air_t *a)
 
 bool hrc6000_air_open(hrc6000_air_t *a, const air_profile_t *p, air_event_cb_t cb, void *ctx)
 {
-	uint32_t f = hrc6000_air_fit_tap(p, a->tap_desc);
+	uint32_t f = hrc6000_air_fit_tap(p, a->dev->chip, a->tap_desc);
 
 	if (f == 0 || cb == NULL || a->open || a->tap) {
 		return false;
 	}
-	bool copy = (hrc6000_air_fit(p) & AIR_FIT_RX) == 0 && (f & AIR_FIT_RX) != 0;
+	bool copy = (chip_fit(p, a->dev->chip) & AIR_FIT_RX) == 0 && (f & AIR_FIT_RX) != 0;
 	if (copy && !air_softmodem_rx_open(a->sm, p, HRC6000_AIR_COPY_HZ, a->tap_desc->rx_counts_per_khz, sm_out, a)) {
 		return false;
 	}

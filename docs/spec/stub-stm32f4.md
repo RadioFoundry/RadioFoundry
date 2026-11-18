@@ -342,6 +342,22 @@ The bootloader stays in DFU mode when the application's initial stack pointer at
 
 The bootloader (sectors 0-2) is never touched, so the bootloader route always stays.
 
+On the bench, a host USB controller fault at step 5 dropped the link and the radio came back in DFU (the stub reset,
+nothing committed). The host reports any failure from step 4 on as one error (`UncommittedError` in `f4stub.py`): the
+step reached, the cause, that the radio now starts in DFU, and both ways to finish. A failure once the commit word was
+sent says instead that the word may already be written, so the radio may start either way. A write that stalled keeps
+its cable advice in the cause, and a stop by hand prints the same note before it ends. `rfoundry flash` then attaches
+once, in case the stub still runs on a link that came back, and otherwise ends with "NOT INSTALLED" and a rerun
+without `--route`, which takes the bootloader route. A script that drives `stubtool.py` must stop on its exit code:
+a reset, a version read or a cleanup after a failed write hides this state.
+
+A request in steps 5 and 6 that gets no clean reply (lost, cut or damaged, not a refusal) is not the end of the
+install. The stub may have done it, and a PROGRAM over bytes already written is refused (not blank), so the host
+waits 300 ms, drops what came late, checks the stub answers HELLO, and erases and programs that whole sector once more.
+For step 8 it reads the first word back: still erased, it programs it again; written, the block's SUMS decides. A
+second failure in the same sector ends the install as above. On the bench the first PROGRAM after an erase went
+unanswered on two runs in a row, and the third run went through.
+
 HR_C5000 boards: whether the bootloader checks the stack pointer the same way is **unverified**. If it does not, an
 interrupted update makes the radio jump to an erased vector. The power-on key combination still reaches DFU, so
 recovery is the same with the keys held.

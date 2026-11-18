@@ -145,6 +145,38 @@ static const flow_t flows[] = {
 	  "focus=Mode shows=NXDN shows=RAN", 3, false },
 	{ "stored NXDN channel as FM: Save asks", "chkind:3,nxdn ok 5 ok down down ok", "long:ok",
 	  "screen=discard shows=Save_as_FM? shows=NXDN_settings_will_be shows=removed writes=0", 1, false },
+	// Where the radio runs P25 and NXDN, Mode steps through every mode: DMR, P25 with the default NAC, NXDN with
+	// RAN 1 at 9600, FM, and DMR again with nothing to save
+	{ "E Mode: DMR to P25", "p25 nxdn ok 5 ok down down", "ok", "focus=Mode shows=P25 shows=NAC shows=293", 1,
+	  false },
+	{ "E Mode: P25 to NXDN", "p25 nxdn ok 5 ok down down", "ok ok", "focus=Mode shows=NXDN shows=RAN shows=9600",
+	  2, false },
+	{ "E Mode: NXDN to FM", "p25 nxdn ok 5 ok down down", "ok ok ok", "focus=Mode shows=FM hides=RAN hides=NAC", 3,
+	  false },
+	{ "E Mode: round to DMR, nothing to save", "p25 nxdn ok 5 ok down down", "ok ok ok ok long:ok",
+	  "focus=Mode shows=DMR toast=No_changes_to_save writes=0", 5, false },
+	{ "E Mode: no NXDN where the radio doesn't run it", "p25 ok 5 ok down down", "ok ok", "focus=Mode shows=FM", 2,
+	  false },
+	// A channel made P25 or NXDN on the radio is saved as one, its NAC or RAN with it
+	{ "E Mode: DMR channel saved as P25", "p25 nxdn ok 5 ok down down ok", "long:ok",
+	  "screen=channel writes=1 toast=Saved_channel_3 shows=P25 shows=293", 1, true },
+	{ "E Mode: DMR channel saved as NXDN", "p25 nxdn ok 5 ok down down ok ok", "long:ok",
+	  "screen=channel writes=1 toast=Saved_channel_3 shows=NXDN shows=RAN", 1, true },
+	// Opened again it is a stored channel of the kind, the block read back
+	{ "E Mode: the saved P25 channel opens as P25", "p25 nxdn ok 5 ok down down ok long:ok back back back",
+	  "ok 5 ok", "screen=channel shows=P25 shows=NAC shows=293 hides=Color_code", 3, false },
+	{ "E Mode: the saved NXDN channel opens as NXDN", "p25 nxdn ok 5 ok down down ok ok long:ok back back back",
+	  "ok 5 ok", "screen=channel shows=NXDN shows=RAN hides=Color_code", 3, false },
+	// An own ID typed in P25 past NXDN's range is kept when the Mode row makes the channel NXDN: Save refuses it
+	{ "E Mode: NXDN with an ID past 65519 not saved",
+	  "p25 nxdn ok 5 ok down down ok down down down down down down down ok 7 0 0 0 0 ok up up up up up up up ok",
+	  "long:ok", "screen=channel focus=Mode shows=NXDN toast=NXDN_IDs_go_up_to_65519 writes=0", 1, false },
+	// A channel made P25 whose RX goes to the air band: AM there, no P25
+	{ "E Mode: a P25 channel's air band RX makes it AM", "am p25 nxdn ok 5 ok down down ok down down",
+	  "ok 1 2 1 5 0 0 ok", "shows=121.500 shows=AM hides=NAC hides=P25", 8, false },
+	// A stored P25 channel made NXDN loses its P25 tag: asked first
+	{ "stored P25 channel as NXDN: Save asks", "p25 nxdn chkind:3,p25 ok 5 ok down down ok", "long:ok",
+	  "screen=discard shows=Unsaved_Changes shows=P25_settings_will_be writes=0", 1, false },
 #endif
 #endif
 #endif
@@ -233,6 +265,47 @@ static const flow_t flows[] = {
 	{ "11 dual watch: Tools > Scan, a zone scan instead", "quick 7 ctx 3 5 ok", "ok 6 1", "dual=0 scanning=1", 3, false },
 	{ "11 dual watch: the last B after power off", "quick 7 ctx 3 5 ok back back reboot", "quick 7", "dual=1 sel=A bpos=5",
 	  2, false },
+	// Each pane names its own mode (the strip names the selected one's), every mode the build runs: a VFO pane says
+	// "VFO <mode>", a call without a caller to name says what came in. AM where an FM channel or the VFO is in the
+	// air band on a radio that receives AM there (radio_am_channel), FM where it can't. A starts on the VFO or channel 3
+	{ "11 dual watch modes: FM VFO", "dlvfo:146520000 quick 7", "", "dual=1 sel=A shows=VFO_FM hides=VFO_AM", 0, false },
+	{ "11 dual watch modes: FM VFO in the air band without AM", "dlvfo:129700000 quick 7", "",
+	  "dual=1 sel=A shows=VFO_FM hides=VFO_AM", 0, false },
+	{ "11 dual watch modes: FM signal", "dlvfo:146520000 quick 7 tune:a", "fmrx", "dual=1 shows=FM_signal", 0, false },
+	{ "11 dual watch modes: DMR VFO", "dlvfo:438800000 dlmode:dmr quick 7", "", "dual=1 sel=A shows=DMR hides=VFO_FM",
+	  0, false },
+	{ "11 dual watch modes: DMR call", "dlvfo:438800000 dlmode:dmr quick 7 tune:a", "fmrx",
+	  "dual=1 shows=DMR_call hides=FM_signal", 0, false },
+#if CONFIG_AM_RX
+	{ "11 dual watch modes: AM VFO", "am dlvfo:129700000 quick 7", "", "dual=1 sel=A shows=AM shows=VFO_AM hides=VFO_FM",
+	  0, false },
+	{ "11 dual watch modes: AM VFO, B selected", "am dlvfo:129700000 quick 7 abkey", "",
+	  "dual=1 sel=B shows=VFO_AM hides=VFO_FM", 0, false },
+	{ "11 dual watch modes: AM signal", "am dlvfo:129700000 quick 7 tune:a", "fmrx",
+	  "dual=1 shows=AM_signal hides=FM_signal", 0, false },
+	{ "11 dual watch modes: AM channel", "am chhz:3,122395000 up down quick 7", "",
+	  "dual=1 sel=A shows=AM shows=122.395 hides=FM", 0, false },
+	{ "11 dual watch modes: AM VFO's chip, no tone or width", "am dlvfo:129700000 quick 7", "",
+	  "dual=1 shows=Air_Band_AM hides=No_tone", 0, false },
+	{ "11 dual watch modes: AM channel in the B picker", "am chhz:4,122395000 quick 7", "ctx 3",
+	  "shows=122.395_AM hides=122.395_FM", 2, false },
+	{ "11 dual watch modes: AM channel's signal", "am chhz:3,122395000 up down quick 7 tune:a", "fmrx",
+	  "dual=1 shows=AM_signal hides=FM_signal", 0, false },
+#endif
+#if CONFIG_P25
+	{ "11 dual watch modes: P25 VFO", "dlvfo:438800000 dlmode:p25 quick 7", "",
+	  "dual=1 sel=A shows=VFO_P25 hides=VFO_FM", 0, false },
+	{ "11 dual watch modes: P25 channel", "p25 chkind:3,p25 up down quick 7", "", "dual=1 sel=A shows=P25 hides=FM", 0, false },
+	{ "11 dual watch modes: P25 call", "p25 chkind:3,p25 up down quick 7 tune:a", "fmrx",
+	  "dual=1 shows=P25_call hides=FM_signal hides=DMR_call", 0, false },
+#endif
+#if CONFIG_NXDN
+	{ "11 dual watch modes: NXDN VFO", "dlvfo:438800000 dlmode:nxdn quick 7", "",
+	  "dual=1 sel=A shows=VFO_NXDN hides=VFO_FM", 0, false },
+	{ "11 dual watch modes: NXDN channel", "nxdn chkind:3,nxdn up down quick 7", "", "dual=1 sel=A shows=NXDN hides=FM", 0, false },
+	{ "11 dual watch modes: NXDN call", "nxdn chkind:3,nxdn up down quick 7 tune:a", "fmrx",
+	  "dual=1 shows=NXDN_call hides=FM_signal hides=DMR_call", 0, false },
+#endif
 	// Settings > Advanced > Hardware (last row): OK steps a choice without storing ("*"), holding OK stores it
 	{ "S hardware options open", "hwopt", "ok 7 up ok up ok", "screen=hwopt shows=Not_set", 6, false },
 	{ "S hardware option stepped, not stored", "hwopt ok 7 up ok up ok", "ok ok", "shows=V2*", 2, false },

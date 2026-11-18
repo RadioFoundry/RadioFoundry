@@ -495,7 +495,7 @@ static void test_beacon_on_air(void)
 	CHECK(sm.view.state == RS_TX);
 	CHECK(sm.view.tx_auto && !radio_view_wakes(&sm.view));	// a timed beacon leaves the screen as it is
 	CHECK(nframes == 1);
-	CHECK(strcmp(frames[0], "Q1TST-7>APZRDF,WIDE1-1,WIDE2-1:!4903.50N/07201.75W[RadioFoundry test") == 0);
+	CHECK(strcmp(frames[0], "Q1TST-7>" APRS_TOCALL ",WIDE1-1,WIDE2-1:!4903.50N/07201.75W[RadioFoundry test") == 0);
 	if (nframes > 0) {
 		printf("# on air: %s\n", frames[0]);
 	}
@@ -898,7 +898,7 @@ static void test_host_kiss_nmea(void)
 	host_out_has("");
 	CHECK(aprs_send_now());
 	run(1000);
-	CHECK(host_out_has("GQ1TST-7>APZRDF,TCPIP*:!/"));	// compressed, no messaging (no receive path)
+	CHECK(host_out_has("GQ1TST-7>" APRS_TOCALL ",TCPIP*:!/"));	// compressed, no messaging (no receive path)
 }
 
 // The last try's ack wait ends while the frequency is blocked: the message is over, not pending forever
@@ -1019,7 +1019,7 @@ static void test_third_party_messages(void)
 	rx_line("Q1GTE>APDW17,WIDE2*:}Q1ABC-9>APQRX,TCPIP,Q1GTE*::Q1XYZ    :Not ours{78");
 	rx_line("Q1GTE>APDW17,WIDE2*:}garbage");
 	rx_line("Q1GTE>APDW17,WIDE2*:}Q1ABC>:");
-	rx_line("Q1GTE>APDW17,WIDE2*:}Q1TST-7>APZRDF,TCPIP,Q1GTE*::Q1TST-7  :Echo{79");
+	rx_line("Q1GTE>APDW17,WIDE2*:}Q1TST-7>APZTST,TCPIP,Q1GTE*::Q1TST-7  :Echo{79");
 	rx_line("Q1GTE>APDW17,WIDE2*:}Q1GTF>APDW17,TCPIP,Q1GTE*:}Q1ABC-9>APQRX,TCPIP,Q1GTF*::Q1TST-7  :Nested{80");
 	run(10u * 1000u);
 	CHECK(aprs_msg_count() == 1 && nframes == 2 && hw.starts == 2);
@@ -1150,23 +1150,23 @@ static void test_stations_digi_igate(void)
 	c.igate_tx = true;
 	aprs_set_cfg(&c, now);
 	host_out_has("");
-	rx_line("Q1ABC-9>APZRDF,WIDE1-1,WIDE2-1:=4903.50N/07201.75W>Mobile");
+	rx_line("Q1ABC-9>APZTST,WIDE1-1,WIDE2-1:=4903.50N/07201.75W>Mobile");
 	CHECK(aprs_station_count() == 1);
 	aprs_station_t s;
 	CHECK(aprs_station(0, &s) && strcmp(s.call, "Q1ABC-9") == 0 && s.has_pos && s.direct && s.sym_code == '>');
 	// gated to APRS-IS with our q construct; the raw frame to the KISS host too
-	CHECK(host_out_has("GQ1ABC-9>APZRDF,WIDE1-1,WIDE2-1,qAR,Q1TST-7:=4903.50N/07201.75W>Mobile"));
+	CHECK(host_out_has("GQ1ABC-9>APZTST,WIDE1-1,WIDE2-1,qAR,Q1TST-7:=4903.50N/07201.75W>Mobile"));
 	// digipeated (fill-in): our call in the path, used (TNC2 stars the last used entry)
 	CHECK(wait_start(1, 5000));
 	wait_idle();
-	CHECK(nframes == 1 && strcmp(frames[0], "Q1ABC-9>APZRDF,Q1TST-7,WIDE1*,WIDE2-1:=4903.50N/07201.75W>Mobile") == 0);
+	CHECK(nframes == 1 && strcmp(frames[0], "Q1ABC-9>APZTST,Q1TST-7,WIDE1*,WIDE2-1:=4903.50N/07201.75W>Mobile") == 0);
 	// a message from APRS-IS for the station we just heard: to RF as a third-party packet
 	nframes = 0;
 	const char *is = "Q9WXY>APRS,TCPIP*,qAC,TIER2::Q1ABC-9  :From the net{7";
 	aprs_host_is_line(is, strlen(is), now);
 	CHECK(wait_start(2, 5000));
 	wait_idle();
-	CHECK(nframes == 1 && strcmp(frames[0], "Q1TST-7>APZRDF:}Q9WXY>APRS,TCPIP,Q1TST-7*::Q1ABC-9  :From the net{7") == 0);
+	CHECK(nframes == 1 && strcmp(frames[0], "Q1TST-7>" APRS_TOCALL ":}Q9WXY>APRS,TCPIP,Q1TST-7*::Q1ABC-9  :From the net{7") == 0);
 	// RFONLY stays local
 	rx_line("Q2DEF>APRS,RFONLY:>local only");
 	CHECK(!host_out_has("Q2DEF"));
@@ -1230,16 +1230,16 @@ static void test_station_range(void)
 
 	reset();
 	aprs_set_test_call("Q1TST");
-	rx_line("Q1ABC-9>APZRDF:=4913.50N/07201.75W>North");	// 10' north of the fixed position
-	rx_line("Q1ABC-8>APZRDF:=4903.50N/07201.75W>Here");	// on it
-	rx_line("Q1ABC-7>APZRDF:>Status only");
+	rx_line("Q1ABC-9>APZTST:=4913.50N/07201.75W>North");	// 10' north of the fixed position
+	rx_line("Q1ABC-8>APZTST:=4903.50N/07201.75W>Here");	// on it
+	rx_line("Q1ABC-7>APZTST:>Status only");
 	CHECK(aprs_station_count() == 3);
 	CHECK(ui_svc_aprs_station_find("Q1ABC-9", &far) && far.has_pos);
-	rx_line("Q1ABC-8>APZRDF:>New packet");
+	rx_line("Q1ABC-8>APZTST:>New packet");
 	CHECK(aprs_station(0, &here) && strcmp(here.call, "Q1ABC-8") == 0);
 	CHECK(ui_svc_aprs_station_find("Q1ABC-9", &far) && strcmp(far.call, "Q1ABC-9") == 0);
 	CHECK(!ui_svc_aprs_station_find("Q1NONE", &nopos));
-	rx_line("Q1ABC-7>APZRDF:>Status only");
+	rx_line("Q1ABC-7>APZTST:>Status only");
 	CHECK(aprs_station(2, &far) && far.has_pos && aprs_station(1, &here) && here.has_pos);
 	CHECK(aprs_station(0, &nopos) && !nopos.has_pos);
 	// our position: none
@@ -1260,12 +1260,12 @@ static void test_station_range(void)
 	reset();
 	aprs_set_test_call("Q1TST");
 	configure(0, false);
-	rx_line("Q1ABC-9>APZRDF:=4913.50N/07201.75W>North");
-	rx_line("Q1ABC-9>APZRDF:;LEADER   *092345z4803.50N/07001.75W>Object far away");
-	rx_line("Q1ABC-9>APZRDF:)AID#2!4703.50N/07101.75W>Item far away");
-	rx_line("Q1ABC-9>APZRDF:;LEADER   _092345z4803.50N/07001.75W>Object deleted");
-	rx_line("Q1OBJ>APZRDF:;MARKER   *092345z4803.50N/07001.75W>Object only");
-	rx_line("Q1OBJ>APZRDF:)AID#3!4703.50N/07101.75W>Item only");
+	rx_line("Q1ABC-9>APZTST:=4913.50N/07201.75W>North");
+	rx_line("Q1ABC-9>APZTST:;LEADER   *092345z4803.50N/07001.75W>Object far away");
+	rx_line("Q1ABC-9>APZTST:)AID#2!4703.50N/07101.75W>Item far away");
+	rx_line("Q1ABC-9>APZTST:;LEADER   _092345z4803.50N/07001.75W>Object deleted");
+	rx_line("Q1OBJ>APZTST:;MARKER   *092345z4803.50N/07001.75W>Object only");
+	rx_line("Q1OBJ>APZTST:)AID#3!4703.50N/07101.75W>Item only");
 	CHECK(aprs_station_count() == 2 && aprs_station(1, &far) && strcmp(far.call, "Q1ABC-9") == 0);
 	CHECK(far.count == 4 && far.has_pos && far.lat == 492250000);
 	CHECK(ui_svc_aprs_range(&far, &m, &deg) && m > 18450 && m < 18600 && deg == 0);
@@ -1274,10 +1274,10 @@ static void test_station_range(void)
 	// The position's time: packets without one later move heard_ms on, not pos_ms (the row shows pos_ms's age)
 	uint32_t t0 = now;
 	now += 600000;
-	rx_line("Q1ABC-9>APZRDF:>Status, no position");
+	rx_line("Q1ABC-9>APZTST:>Status, no position");
 	CHECK(aprs_station(0, &far) && strcmp(far.call, "Q1ABC-9") == 0 && far.heard_ms == now && far.pos_ms == t0);
 	CHECK(far.has_pos && ui_svc_aprs_range(&far, &m, &deg) && m > 18450 && m < 18600);
-	rx_line("Q1ABC-9>APZRDF:=4923.50N/07201.75W>Further north");
+	rx_line("Q1ABC-9>APZTST:=4923.50N/07201.75W>Further north");
 	CHECK(aprs_station(0, &far) && far.pos_ms == now && ui_svc_aprs_range(&far, &m, &deg) && m > 37000 && m < 37200);
 
 	// BVA on the position's age (STATION_POS_MS, 24 h): packets without a position keep the entry fresh, the
@@ -1288,11 +1288,11 @@ static void test_station_range(void)
 		aprs_set_test_call("Q1TST");
 		configure(0, false);
 		now = starts[k];
-		rx_line("Q1ABC-9>APZRDF:=4913.50N/07201.75W>North");
+		rx_line("Q1ABC-9>APZTST:=4913.50N/07201.75W>North");
 		t0 = now;
 		for (int h = 1; h < 24; h++) {	// a status every hour
 			now = t0 + (uint32_t)h * 3600000u;
-			rx_line("Q1ABC-9>APZRDF:>Status");
+			rx_line("Q1ABC-9>APZTST:>Status");
 			run(RADIO_POLL_MS);
 		}
 		now = t0 + 24u * 3600000u - RADIO_POLL_MS - 1u;	// 1 ms inside the day after this poll
@@ -1301,10 +1301,10 @@ static void test_station_range(void)
 		run(RADIO_POLL_MS);				// a day old: gone
 		CHECK(aprs_station(0, &far) && !far.has_pos && !ui_svc_aprs_range(&far, &m, &deg));
 		now = t0 + 0x80000000u;				// still sending, the old position doesn't come back
-		rx_line("Q1ABC-9>APZRDF:>Status");
+		rx_line("Q1ABC-9>APZTST:>Status");
 		run(RADIO_POLL_MS);
 		CHECK(aprs_station_count() == 1 && aprs_station(0, &far) && !far.has_pos && far.heard_ms == now - RADIO_POLL_MS);
-		rx_line("Q1ABC-9>APZRDF:=4913.50N/07201.75W>North");	// a new one counts again
+		rx_line("Q1ABC-9>APZTST:=4913.50N/07201.75W>North");	// a new one counts again
 		CHECK(aprs_station(0, &far) && far.has_pos && far.pos_ms == now);
 	}
 }

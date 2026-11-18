@@ -16,6 +16,8 @@
 #include "i18n.h"
 #include "codeplug/codeplug.h"
 #include "codeplug/codeplug_modes.h"
+#include "radio/radio_am.h"
+#include "radio/radio_bands.h"
 
 #define START_GRACE_MS	500	// the radio view may still show no watch this soon after asking for one
 #define BACK_AGAIN_MS	2000	// Back on Home, then Back again within this: the watch stops
@@ -171,12 +173,12 @@ static uint8_t tuned_pane(const radio_view_t *v)
 }
 
 // The mode a channel runs in: a stored channel of a kind keeps DMR in its record (channel-modes.md 2), its kind's mode
-// is the one shown
+// is the one shown. A Tier III channel runs on its record's DMR
 static uint8_t shown_mode(const channel_t *c)
 {
-	if (!codeplug_kind_built(c->kind))
+	if (!codeplug_kind_built(c->kind) || c->kind == CODEPLUG_KIND_DMR_TRUNK)
 		return c->mode;
-	// The kinds a build runs: P25 (trunked too) and NXDN
+	// The other kinds a build runs: P25 (trunked too) and NXDN
 	return c->kind == CODEPLUG_KIND_NXDN ? RADIO_MODE_NXDN : RADIO_MODE_P25;
 }
 
@@ -211,12 +213,19 @@ static void pane_fill(uint8_t i)
 	}
 	if (s->valid)
 		ch = s->ch;	// as the radio has it: changes for now included
+	if (radio_listen_band(ch.rx_hz))
+		ch.mode = RADIO_MODE_FM;	// the radio core receives FM (or AM) there, whatever the record says
 	p->mode = shown_mode(&ch);
+	p->am = p->mode == RADIO_MODE_FM && radio_am_channel(&ch);	// as the receiver hears it (Home's mode word)
 	p->rx_hz = ch.rx_hz;
 	if (p->mode == RADIO_MODE_P25 || p->mode == RADIO_MODE_NXDN)
 		return;	// no tone or slot: the engine's own squelch (the channel's settings say which)
 	sbuf_t b;
 	sb_init(&b, p->detail, sizeof p->detail);
+	if (p->am) {
+		sb_str(&b, TR(HOME_CHIP_AIR_BAND_AM, "Air Band AM"));	// no tone or width: the receiver is fixed (Home's chip)
+		return;
+	}
 #if CONFIG_DMR
 	if (ch.mode == RADIO_MODE_DMR) {
 		static contact_t c;
@@ -364,6 +373,9 @@ static void snap_seed(uint8_t i, const radio_view_t *v)
 		strcpy(s->zone_name, z.name);
 	}
 	s->valid = true;
+	if (radio_listen_band(s->ch.rx_hz))
+		s->ch.mode = RADIO_MODE_FM;	// as the radio core tunes it (pane_fill)
+	s->am = radio_am_channel(&s->ch);	// as the radio core's view has it: Home's chips, the mode tile's refusal
 	s->tot_s = v->tot_s;
 	s->power = s->ch.power != CODEPLUG_POWER_DEFAULT ? s->ch.power : v->power;	// the default level, as on the other
 	s->squelch = v->squelch;
@@ -808,13 +820,27 @@ void ui_dual_key(void)
 	}
 }
 
-// "Joe Smith TG 91", with "Joe Smith" as the shorter alternate (font.h): the caller's name gives way last
-static void caller_text(char *out, size_t len, bool dmr, uint32_t src, const char *name, uint32_t dst, bool group)
+// What comes in on pane p without a caller to name: the pane's mode (AM in the air band)
+static const char *signal_word(const ui_dual_pane_t *p, bool dmr)
+{
+	if (dmr || p->mode == RADIO_MODE_DMR)
+		return TR(DUAL_VALUE_DMR_CALL, "DMR call");
+	if (p->mode == RADIO_MODE_P25)
+		return TR(DUAL_VALUE_P25_CALL, "P25 call");
+	if (p->mode == RADIO_MODE_NXDN)
+		return TR(DUAL_VALUE_NXDN_CALL, "NXDN call");
+	return p->am ? TR(DUAL_VALUE_AM_SIGNAL, "AM signal") : TR(DUAL_VALUE_FM_SIGNAL, "FM signal");
+}
+
+// "Joe Smith TG 91", with "Joe Smith" as the shorter alternate (font.h): the caller's name gives way last. Without a
+// DMR caller: what pane p hears ("FM signal")
+static void caller_text(char *out, size_t len, const ui_dual_pane_t *p, bool dmr, uint32_t src, const char *name,
+			uint32_t dst, bool group)
 {
 	sbuf_t b;
 	sb_init(&b, out, len);
 	if (!dmr || (!src && !dst)) {
-		sb_str(&b, dmr ? TR(DUAL_VALUE_DMR_CALL, "DMR call") : TR(DUAL_VALUE_FM_SIGNAL, "FM signal"));
+		sb_str(&b, signal_word(p, dmr));
 		return;
 	}
 	sb_str(&b, TEXT_ALT_OPEN);
@@ -1097,7 +1123,7 @@ __attribute__((noinline)) bool ui_dual_tick(const radio_view_t *v, uint32_t now)
 			ui_dual_rx_t *x = &r[t];
 			x->active = x->heard = true;
 			x->rssi_dbm = v->rssi_dbm;
-			x->dmr = v->ch.mode == RADIO_MODE_DMR;
+			x->dmr = shown_mode(&v->ch) == RADIO_MODE_DMR;	// a P25 or NXDN record keeps DMR
 #if CONFIG_DMR
 			x->src = v->dmr.call.src;
 			x->dst = v->dmr.call.dst;
@@ -1117,7 +1143,7 @@ __attribute__((noinline)) bool ui_dual_tick(const radio_view_t *v, uint32_t now)
 				talk_back(d, i, now);
 		}
 		if (x->active) {
-			caller_text(caller_buf, sizeof caller_buf, x->dmr, x->src, x->src_name, x->dst, x->group);
+			caller_text(caller_buf, sizeof caller_buf, p, x->dmr, x->src, x->src_name, x->dst, x->group);
 			if (strcmp(caller_buf, p->caller) != 0) {
 				strcpy(p->caller, caller_buf);
 				dirty = true;
@@ -1334,7 +1360,8 @@ static void pick_item(uint16_t i, ui_item_t *it)
 	sb_str(&b, TEXT_ALT_OPEN);
 	sb_freq(&b, ch.rx_hz);
 	sb_chr(&b, ' ');
-	sb_str(&b, ui_mode_name(shown_mode(&ch)));
+	uint8_t mode = shown_mode(&ch);
+	sb_str(&b, mode == RADIO_MODE_FM && radio_am_channel(&ch) ? "AM" : ui_mode_name(mode));
 	sb_str(&b, TEXT_ALT_NEXT);
 	sb_freq(&b, ch.rx_hz);
 	sb_str(&b, TEXT_ALT_CLOSE);
