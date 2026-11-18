@@ -19,6 +19,9 @@ Sources: RFC 9293 (TCP), RFC 6298 (retransmission timer), RFC 5681 3.1 (one segm
 | `CONFIG_NET_HTTP` | = NET_TCP | the HTTP status server, port 80 (`core/net/http.c`, section 5) |
 | `CONFIG_NET_WEBCTL` | = NET_HTTP | web control: the front panel page and its WebSocket `/ws` (`core/net/webctl.c`, `core/net/ws.c`, section 5.1) |
 | `CONFIG_NET_RADIO_API` | = NET_HTTP | zone and channel control on the status server (`core/net/http_radio.c`, section 5.2) |
+| `CONFIG_NET_RADIO_NOTIFY` | = NET_RADIO_API | its change notices over UDP (5.2) |
+| `CONFIG_NET_RADIO_ZONES` | = NET_RADIO_API | its zone channel lists, `/api/zone` (5.2) |
+| `CONFIG_NET_RADIO_DUMP` | = NET_RADIO_ZONES | the whole codeplug in one reply, `/api/zones` (5.2) |
 | `CONFIG_NET_RIGCTL` | = NET_TCP | Hamlib's network rig control, port 4532 (`core/net/rigctld.c`, section 6) |
 | `CONFIG_NET_APRSIS` | = NET_TCP and APRS | the radio's own APRS-IS client (`core/net/aprsis.c`, section 7) |
 
@@ -98,7 +101,7 @@ header lines are skipped, except `Sec-WebSocket-Key` (any case) for `/ws`; a req
 | `/api/view?section=<name or number>` | the section's key=value lines as one flat JSON object; values that are decimal integers are numbers, the rest strings (hex values such as `net.host_ip` stay strings) |
 | `/api/screen.bmp` | the frame buffer as a BMP, top-down (negative height), at the panel's depth: 1 bpp with two palette entries (the paper and ink of the UI gallery), 4 bpp with the 16-entry palette (`gfx_palette`), both the frame buffer's rows as they are; 16 bpp as BI_BITFIELDS (RGB565 masks). About 10 KB on a 160 x 128 4 bpp screen, 38 KB on 240 x 320, 1 KB on 128 x 64 1 bpp; UI redraws are held while it goes out (as the debug link's screenshot does), so it is one frame; the hold ends with the last byte, so a page that polls it does not slow the UI |
 | `/api/aprsis` | the APRS-IS client's settings and state (section 7) |
-| `/api/select`, `/api/step`, `/api/zones`, `/api/zone`, `/api/channel` | with `CONFIG_NET_RADIO_API`: zone and channel control (5.2) |
+| `/api/select`, `/api/step`, `/api/zone`, `/api/zones` | with `CONFIG_NET_RADIO_API` and its parts: zone and channel control (5.2) |
 | `/api/usb?mode=serial` | from the host only (else 403), over the USB network link only (else 400, as for any other query): a short HTML page that closes its tab, and 500 ms later the USB personality switches to serial (`hostlink_request_usb_network`, `usb-network.md` 1). For a web page that needs the serial port: it opens this in a tab, at 12.255.255.254 (the radio on this link, `usb-network.md` 1; every TCP service answers there too). HEAD answers and does not switch. A GET that changes state, because a page can only navigate to it: any page open in a browser on the host can send it too (an image, a no-cors fetch) and take the radio out of network mode until it restarts. Nothing else follows from it |
 | anything else | 404; another method 405; a malformed request line 400 (errors have an empty body) |
 
@@ -206,28 +209,70 @@ webctl.frames_out webctl.audio_out webctl.audio_dropped webctl.screen` (the clie
 
 ### 5.2 Zone and channel control
 
-`CONFIG_NET_RADIO_API` (`core/net/http_radio.c`). For a device or program on the host, over USB network or PPP:
-select a zone and channel directly, or step through them as a knob would, and read the zones and channels when it
-wants to know what they are. Zones and positions are 0-based indexes, the same in every request and reply.
+For a device or program on the host, over USB network or PPP: select a zone and channel directly, or step through
+them as a knob would, and know what the radio is on. Zones and positions are 0-based indexes, the same in every
+request and reply. `core/net/http_radio.c`, in four switches, so a radio short of flash can leave out what its users
+don't need:
 
-Control is short on purpose: a select or a step answers `{"ok":true}`, never channel data, and `/api/select` alone
-says where the radio is in two indexes. A client reads the whole structure once at its start (`/api/zones`) and keeps
-it, to show a channel's name, frequency or talkgroup when the indexes change. `codeplug` in
-those replies counts the codeplug's changes (`codeplug_serial`: the radio's menus, a CPS or TFTP write); the client
-reads the lists again only when it differs from the one it read them with.
+| Switch | Needs | Gives | For |
+|---|---|---|---|
+| `CONFIG_NET_RADIO_API` | `NET_HTTP` | `/api/select` (read, select), `/api/step` | every client (takRF's radio controls) |
+| `CONFIG_NET_RADIO_NOTIFY` | `NET_RADIO_API` | `/api/select?notify=PORT` and its UDP notices | a client that follows the radio without polling |
+| `CONFIG_NET_RADIO_ZONES` | `NET_RADIO_API` | `/api/zone` pages | a client that shows channels the radio isn't on |
+| `CONFIG_NET_RADIO_DUMP` | `NET_RADIO_ZONES` | `/api/zones`, the whole codeplug streamed | a web page or script that operates the radio; nothing else needs it |
+
+VERSION lists each one built. A path a build leaves out answers 404.
+
+Control is short on purpose: a select or a step answers `{"ok":true}`, never channel data. `/api/select` says where
+the radio is and what it is on, from the radio's view alone (no flash read), so a client can read it often, or
+subscribe to notices instead. A client that shows other channels reads them once (`/api/zone`, or `/api/zones`) and
+keeps them; `codeplug` counts the codeplug's changes (`codeplug_serial`: the radio's menus, a CPS or TFTP write), so
+it reads them again only when that differs from the count it read them with.
+
+Idle, the API costs the radio nothing: the radio's view is read only for a request, a step still to pass on, or every
+100 ms while a host is subscribed to notices.
 
 | Request | Who | Reply |
 |---|---|---|
-| `GET /api/select` | anyone | `{"zone":Z,"pos":P,"codeplug":N}`, and `"vfo":true` while the VFO is on (P is then the channel it came from) |
+| `GET /api/select` | anyone | where the radio is (below) |
 | `GET /api/select?zone=Z[&pos=P]` | the host | zone Z, at position P or its first channel; leaves the VFO. `{"ok":true}` |
-| `GET /api/step?channel=N` | the host | N channels on, negative back (-100 to 100, not 0), wrapping in the zone; from the VFO, back to the channel first. `{"ok":true}` |
+| `GET /api/step?channel=N` | the host | N channels on, negative back (-100 to 100, not 0), wrapping in the zone. From the VFO: back to the channel the VFO came from is the first step (VFO from position 5: +1 lands on 5, +3 on 7). `{"ok":true}` |
 | `GET /api/step?zone=N` | the host | N zones on, wrapping at the ends, to the zone's first channel. `{"ok":true}` |
-| `GET /api/zones[?zones=N&per_zone=M]` | anyone | the whole structure in one reply (below); `zones` and `per_zone` keep it to the first N zones and their first M channels |
-| `GET /api/zone?zone=Z[&from=I]` | anyone | one zone in pages: `{"zone":Z,"name","size":n,"codeplug":N,"from":I,"items":[...],"next":J}`, each item a channel (below) with its `pos` |
-| `GET /api/channel` | anyone | what the radio is on now: `{"zone","pos","vfo",` and the channel's fields`}`; in the VFO its settings, `number` 0 |
-| `GET /api/channel?zone=Z&pos=P` | anyone | that channel: `{"zone","pos",` and its fields`}` |
+| `GET /api/select?notify=PORT` | the host | `NET_RADIO_NOTIFY`: subscribe that host UDP port to notices (below). The reply is where the radio is plus `"notify":120`, the lease in seconds. `notify=0` cancels: `{"ok":true}`. 1-65535, else 400 |
+| `GET /api/zone?zone=Z[&from=I]` | anyone | `NET_RADIO_ZONES`: one zone in pages: `{"zone":Z,"name","size":n,"codeplug":N,"from":I,"items":[...],"next":J}`, each item a channel (below) with its `pos` |
+| `GET /api/zones[?zones=N&per_zone=M]` | anyone | `NET_RADIO_DUMP`: the whole codeplug in one reply (below); `zones` and `per_zone` keep it to the first N zones and their first M channels |
 
-`/api/zones`:
+Where the radio is (`/api/select`, and each notice):
+
+```
+{"zone":0,"pos":4,"vfo":false,"codeplug":12,"seq":7,"zone_name":"FAV",
+ "number":27,"name":"HS GA","mode":"dmr","rx_hz":443700000,"cc":1,"ts":1,"tg":2,"call":"group"}
+```
+
+| Field | |
+|---|---|
+| `zone pos zone_name` | the zone and position; in the VFO, the channel the VFO came from |
+| `vfo` | `true` while the VFO is on |
+| `codeplug` | the codeplug's change count |
+| `seq` | notices sent (u32, wrapping; 0 before any); a client lines replies and notices up by it |
+| `number name mode rx_hz` | the channel (`number` its codeplug number); in the VFO the VFO's settings, `number` 0 |
+| `cc ts` | DMR: color code, timeslot |
+| `tg call` | DMR with a talk target: the radio's own, a manual change included (`group` / `private`) |
+
+Notices (`NET_RADIO_NOTIFY`):
+
+- One UDP datagram from the radio's port 80 to `host:PORT`, the same JSON as `/api/select`.
+- Sent at once when a new port subscribes; then when any of `zone pos vfo codeplug`, the channel number, `rx_hz`,
+  `mode`, `ts` or the talk target (`tg call`) changes (`rx_hz` and `mode` for the VFO, which no index shows); and every 30 s as a heartbeat, changed or not.
+- The radio looks for a change every 100 ms, so a fast knob turn sends where it came to rest, not every detent.
+- The lease ends 120 s after the last subscribe: a client renews by subscribing again, about every 60 s. One
+  subscriber: a new port replaces the old.
+- Nothing is sent without a subscriber or while the link is down. A send the USB link refuses (busy) is tried again at
+  the next check. A notice that would not fit a datagram leaves out the channel's keys after `number`.
+- Subscribing changes nothing on the radio: it answers while transmitting or in hotspot mode too. HEAD subscribes to
+  nothing.
+
+`/api/zones` (`NET_RADIO_DUMP`):
 
 ```
 {"codeplug":12,"zone":0,"pos":1,"vfo":false,
@@ -244,11 +289,11 @@ reads the lists again only when it differs from the one it read them with.
 - If the codeplug changes while it goes out, the server cuts the connection: a client never keeps a mix. Read it again.
 - HEAD sends the header only.
 
-A channel, the same in `/api/zones`' and `/api/zone`'s items and `/api/channel` (and the structure a later VFO setting will take):
+A channel in `/api/zone`'s items and `/api/zones`' channels (and the structure a later VFO setting will take):
 
 | Field | |
 |---|---|
-| `pos number` | its position in the zone (not in `/api/zones`, where the zone's list gives it); its codeplug channel number (1 up; 0 the VFO) |
+| `pos number` | its position in the zone (not in `/api/zones`, where the zone's list gives it); its codeplug channel number |
 | `name rx_hz tx_hz` | |
 | `mode` | `fm` `dmr` `p25` `nxdn` |
 | `bw` | `"12.5"` or `"25"` (kHz) |
@@ -256,26 +301,26 @@ A channel, the same in `/api/zones`' and `/api/zone`'s items and `/api/channel` 
 | `rx_only` | `true`, left out otherwise |
 | `rx_tone tx_tone` | FM, when set: `"100.0"` (CTCSS, Hz), `"D023N"` / `"D023I"` (DCS, normal / inverted) |
 | `cc ts` | DMR: color code, timeslot |
-| `tg call contact` | DMR with a talk target: its ID, `group` / `private` / `all`, its contact name |
-
+| `tg call contact` | DMR with a talk target: the one the radio talks to on the channel by default (`codeplug_channel_talk_contact`: its TX contact, else the first talkgroup of its RX group list), `group` / `private` / `all`, its contact name |
 
 - `/api/zone` is in pages of what fits the server's 1.5 KB buffer (about 7 channels): `next` is the `from` of the
-  next page, `null` after the last. It is for a client that wants one zone; most read `/api/zones`.
+  next page, `null` after the last.
 - "The host" is the computer at the other end of the USB network or PPP link (`ipGatewayHostIP`), as for rigctld's PTT
   and web control. From elsewhere: 403.
 - Refused with 409 while transmitting or in hotspot mode, as the radio's keys are. 400 for an index out of range or a
   malformed number. HEAD answers and changes nothing.
-- The requests are the radio core's own (`radio_req_zone`, `radio_req_zone_pos`, `radio_req_channel_step`), at most
-  one every 20 ms as rigctld's: steps that come quicker add up into one request, and a zone step counts from the zone
-  last asked for (for 1 s) rather than from the view, which lags it. A select replaces steps not yet passed on.
+- The requests are the radio core's own (`radio_req_zone`, `radio_req_zone_pos`, `radio_req_channel_step`, and
+  `radio_req_vfo` to leave the VFO), at most one every 20 ms as rigctld's: steps that come quicker add up into one
+  request, and a zone step counts from the zone last asked for (for 1 s) rather than from the view, which lags it. A
+  select replaces steps not yet passed on.
 - The knob: on a radio whose knob is read as steps (an encoder, or a switch decoded into steps), its next detent moves
   on from the host's channel. On one whose knob is read as a position (`hal_input_t.position`), the host's choice
   stands, the zone too, until the knob is turned; then the knob's position is taken again ([ui.md](ui.md) 3).
-- `tg` is the talkgroup the radio talks to on the channel (`codeplug_channel_talk_contact`): its TX contact, else the
-  first talkgroup of its RX group list.
 - Selecting the current zone's position reads no flash (its size is in the radio's view); another zone's reads its
   record once.
-- The debug link view key `http.radio_*` counts lists, selects, steps and refusals.
+- Debug link view keys: `http.radio_lists radio_selects radio_steps radio_refused` count requests;
+  `http.radio_notify` is the subscribed port (0 none), `http.radio_notices` the notices sent and
+  `http.radio_notice_busy` the sends the link refused.
 
 ## 6. rigctld (port 4532)
 

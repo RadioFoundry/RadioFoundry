@@ -453,12 +453,26 @@ static void test_radio_api(void)
 	fake_view.zone_pos = 1;
 	fake_view.zone_size = 2;
 
-	// Where it is: two indexes and nothing else, from anywhere
+	strcpy(fake_view.zone_name, "Rpt \"A\"");
+	codeplug_channel(101, &fake_view.ch);
+	fake_view.channel_number = 101;
+	fake_view.dmr.target_id = 3107;
+
+	// Where it is and what it is on, from the view alone (no flash read), from anywhere: the talk target the radio's own
 	CHECK(http_get(&a, 54000, "GET /api/select HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 "));
-	CHECK(strcmp(body_of(&a), "{\"zone\":1,\"pos\":1,\"codeplug\":7}\n") == 0);
+	CHECK(strcmp(body_of(&a), "{\"zone\":1,\"pos\":1,\"vfo\":false,\"codeplug\":7,\"seq\":0,\"zone_name\":\"Rpt \\\"A\\\"\","
+		     "\"number\":101,\"name\":\"Ch101\",\"mode\":\"dmr\",\"rx_hz\":447262500,\"cc\":1,\"ts\":2,\"tg\":3107,\"call\":\"group\"}\n") == 0);
+	// the VFO: its settings, number 0; FM: no DMR keys
 	fake_view.vfo = true;
-	CHECK(http_get(&a, 54001, "GET /api/select HTTP/1.0\r\n\r\n") > 0 && strcmp(body_of(&a), "{\"zone\":1,\"pos\":1,\"codeplug\":7,\"vfo\":true}\n") == 0);
+	fake_view.channel_number = 0;
+	fake_view.ch.mode = RADIO_MODE_FM;
+	strcpy(fake_view.ch.name, "VFO");
+	CHECK(http_get(&a, 54001, "GET /api/select HTTP/1.0\r\n\r\n") > 0 &&
+	      strstr(body_of(&a), "\"vfo\":true,") && strstr(body_of(&a), "\"number\":0,\"name\":\"VFO\",\"mode\":\"fm\",\"rx_hz\":447262500}\n"));
 	fake_view.vfo = false;
+	fake_view.channel_number = 101;
+	codeplug_channel(101, &fake_view.ch);
+	CHECK(http_get(&a, 54011, "GET /api/channel HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 404 "));	// gone: /api/select has it
 	// an edit (the radio's menus, a CPS or TFTP write) changes the count: the client's cue to read the lists again
 	fake_serial = 8;
 	CHECK(http_get(&a, 54005, "GET /api/select HTTP/1.0\r\n\r\n") > 0 && strstr(body_of(&a), "\"codeplug\":8"));
@@ -532,26 +546,6 @@ static void test_radio_api(void)
 		CHECK(from < 0 || from == seen);
 	}
 	CHECK(seen == CODEPLUG_ZONE_MAX);
-	// One channel, the same fields as a zone's item: a position, or what the radio is on now (the VFO too)
-	CHECK(http_get(&a, port++, "GET /api/channel?zone=0&pos=1 HTTP/1.0\r\n\r\n") > 0);
-	CHECK(strcmp(body_of(&a), "{\"zone\":0,\"pos\":1,\"number\":2,\"name\":\"Ch2\",\"rx_hz\":446025000,\"tx_hz\":446025000,"
-		     "\"mode\":\"fm\",\"bw\":\"25\",\"power\":1,\"rx_tone\":\"100.0\",\"tx_tone\":\"D023I\"}\n") == 0);
-	codeplug_channel(1, &fake_view.ch);
-	fake_view.channel_number = 1;
-	CHECK(http_get(&a, port++, "GET /api/channel HTTP/1.0\r\n\r\n") > 0);
-	CHECK(strstr(body_of(&a), "{\"zone\":1,\"pos\":1,\"vfo\":false,\"number\":1,\"name\":\"Ch1\",") == body_of(&a) &&
-	      strstr(body_of(&a), "\"tg\":3107,\"call\":\"group\",\"contact\":\"TG 3100\"}\n"));
-	fake_view.vfo = true;
-	fake_view.channel_number = 0;
-	strcpy(fake_view.ch.name, "VFO");
-	fake_view.ch.mode = RADIO_MODE_FM;
-	fake_view.ch.rx_hz = 146520000;
-	CHECK(http_get(&a, port++, "GET /api/channel HTTP/1.0\r\n\r\n") > 0 &&
-	      strstr(body_of(&a), "\"vfo\":true,\"number\":0,\"name\":\"VFO\",\"rx_hz\":146520000,") &&
-	      !strstr(body_of(&a), "\"cc\""));
-	fake_view.vfo = false;
-	CHECK(http_get(&a, port++, "GET /api/channel?zone=1&pos=2 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 400 "));
-	CHECK(http_get(&a, port++, "GET /api/channel?zone=1 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 400 "));
 	CHECK(http_get(&a, port++, "GET /api/zone?zone=3 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 400 "));
 	CHECK(http_get(&a, port++, "GET /api/zone HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 400 "));
 
@@ -611,6 +605,96 @@ static void test_radio_api(void)
 	run_for(30);
 	CHECK(req_zone == 2);
 	CHECK(http_get_from(&far, 0xC0000201u, port++, "GET /api/step?zone=1 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)far.rx, " 403 "));
+	// A channel step from the VFO: back to the channel the VFO came from is its first step (from position 5, +1 lands
+	// on 5, +3 on 7); a second step before the view shows the channel is a plain step
+	run_for(1100);
+	fake_view.zone_index = 1;
+	fake_view.vfo = true;
+	off = req_vfo_off;
+	sn = req_step_n;
+	req_steps = 0;
+	CHECK(http_get(&a, port++, "GET /api/step?channel=1 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 "));
+	CHECK(req_vfo_off == off + 1 && req_step_n == sn);
+	run_for(30);
+	CHECK(http_get(&a, port++, "GET /api/step?channel=2 HTTP/1.0\r\n\r\n") > 0);
+	CHECK(req_vfo_off == off + 1 && req_steps == 2);
+	run_for(1100);
+	CHECK(http_get(&a, port++, "GET /api/step?channel=3 HTTP/1.0\r\n\r\n") > 0);
+	CHECK(req_vfo_off == off + 2 && req_steps == 4);
+	fake_view.vfo = false;
+
+	// Change notices: a UDP datagram from port 80 to the subscribed host port, the /api/select JSON
+	run_for(30);
+	udp_catch.port = 50555;
+	udp_catch.count = 0;
+	CHECK(http_get_from(&far, 0xC0000201u, port++, "GET /api/select?notify=50555 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)far.rx, " 403 "));
+	CHECK(http_get(&a, port++, "GET /api/select?notify=70000 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 400 "));
+	CHECK(http_get(&a, port++, "HEAD /api/select?notify=50555 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 "));
+	run_for(300);
+	CHECK(udp_catch.count == 0);	// HEAD didn't subscribe
+	CHECK(http_get(&a, port++, "GET /api/select?notify=50555 HTTP/1.0\r\n\r\n") > 0);
+	CHECK(strstr(body_of(&a), "{\"zone\":1,") == body_of(&a) && strstr(body_of(&a), "\"tg\":3107,\"call\":\"group\",\"notify\":120}\n"));
+	run_for(150);
+	CHECK(udp_catch.count == 1 && udp_catch.from_port == 80);	// a new subscriber: one at once
+	CHECK(strstr(udp_catch.last, "{\"zone\":1,\"pos\":1,") == udp_catch.last && strstr(udp_catch.last, "\"seq\":1,") &&
+	      !strstr(udp_catch.last, "notify"));
+	run_for(2000);
+	CHECK(udp_catch.count == 1);	// nothing changed: nothing sent
+	// a change: one notice; a quick run of changes (a knob turned fast): where it came to rest, not every step
+	fake_view.zone_pos = 0;
+	run_for(150);
+	CHECK(udp_catch.count == 2 && strstr(udp_catch.last, "\"pos\":0,") && strstr(udp_catch.last, "\"seq\":2,"));
+	for (uint16_t i = 1; i <= 8; i++) {
+		fake_view.zone_pos = i;
+		run_for(20);
+	}
+	run_for(200);
+	CHECK(udp_catch.count >= 3 && udp_catch.count <= 5 && strstr(udp_catch.last, "\"pos\":8,"));
+	int c = udp_catch.count;
+	// the talk target alone, the codeplug count alone
+	fake_view.dmr.target_id = 91;
+	run_for(150);
+	CHECK(udp_catch.count == c + 1 && strstr(udp_catch.last, "\"tg\":91,"));
+	fake_serial = 8;
+	run_for(150);
+	CHECK(udp_catch.count == c + 2 && strstr(udp_catch.last, "\"codeplug\":8,"));
+	fake_serial = 7;
+	run_for(150);
+	// in the VFO, a new frequency or mode (no index changes)
+	c = udp_catch.count;
+	fake_view.ch.rx_hz = 446100000;
+	run_for(150);
+	CHECK(udp_catch.count == c + 1 && strstr(udp_catch.last, "\"rx_hz\":446100000"));
+	fake_view.ch.mode = RADIO_MODE_FM;
+	run_for(150);
+	CHECK(udp_catch.count == c + 2 && strstr(udp_catch.last, "\"mode\":\"fm\""));
+	fake_view.ch.mode = RADIO_MODE_DMR;
+	run_for(150);
+	// /api/select's seq is the last notice's
+	CHECK(http_get(&a, port++, "GET /api/select HTTP/1.0\r\n\r\n") > 0 && strstr(body_of(&a), "\"seq\":") &&
+	      atoi(strstr(body_of(&a), "\"seq\":") + 6) == atoi(strstr(udp_catch.last, "\"seq\":") + 6));
+	// a heartbeat every 30 s, changed or not
+	c = udp_catch.count;
+	run_for(31000);
+	CHECK(udp_catch.count == c + 1);
+	// the lease: renewed by subscribing again; not renewed, it ends 120 s after the last subscribe
+	CHECK(http_get(&a, port++, "GET /api/select?notify=50555 HTTP/1.0\r\n\r\n") > 0 && strstr(body_of(&a), "\"notify\":120"));
+	run_for(121000);
+	c = udp_catch.count;
+	fake_view.zone_pos = 1;
+	run_for(300);
+	CHECK(udp_catch.count == c);
+	// notify=0 cancels
+	CHECK(http_get(&a, port++, "GET /api/select?notify=50555 HTTP/1.0\r\n\r\n") > 0);
+	run_for(150);
+	c = udp_catch.count;
+	CHECK(http_get(&a, port++, "GET /api/select?notify=0 HTTP/1.0\r\n\r\n") > 0 && strcmp(body_of(&a), "{\"ok\":true}\n") == 0);
+	fake_view.zone_pos = 2;
+	run_for(300);
+	CHECK(udp_catch.count == c);
+	udp_catch.port = 0;
+	fake_view.dmr.target_id = 3107;
+
 	// HEAD answers and changes nothing
 	zn = req_zone_n;
 	CHECK(http_get(&a, port++, "HEAD /api/select?zone=0 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 "));

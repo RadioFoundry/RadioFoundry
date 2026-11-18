@@ -219,57 +219,62 @@ def _where(ip):
     return json.loads(_get(ip, "/api/select")[2])
 
 
-def _wait_where(ip, want, seconds=3):
+def _at(where):
+    return where["zone"], where["pos"]
+
+
+def _wait_at(ip, zone, pos, seconds=3):
     end = time.monotonic() + seconds
-    while time.monotonic() < end and _where(ip) != want:
+    while time.monotonic() < end and _at(_where(ip)) != (zone, pos):
         time.sleep(0.1)
-    return _where(ip)
+    return _at(_where(ip))
 
 
 @pytest.mark.feature("net_radio_api")
 @pytest.mark.usb_switch
 def test_zone_channel_api(net):
-    """Zone and channel control (tcp-services.md 5.2): the lists agree with the radio, a step and a select move it, and
-    it is left where it was."""
-    if "NET_RADIO_API" not in net["features"]:
+    """Zone and channel control (tcp-services.md 5.2): /api/select agrees with the radio, the lists with it where built,
+    a step and a select move it, and it is left where it was."""
+    feats = net["features"]
+    if "NET_RADIO_API" not in feats:
         skip("not_built", "built without CONFIG_NET_RADIO_API")
     ip, link = net["ip"], net["link"]
     start = _where(ip)
-    if start.get("vfo"):
+    if start["vfo"]:
         skip("bench", "the radio is in the VFO: put it on a channel")
-    # The whole structure, as a client reads it at its start
-    t0 = time.monotonic()
-    plan = json.loads(_get(ip, "/api/zones", timeout=60)[2])
-    took = time.monotonic() - t0
-    assert plan["zone"] == start["zone"] and plan["codeplug"] == start["codeplug"], (plan["zone"], start)
-    nzones = len(plan["zones"])
-    assert nzones >= 1 and all(z["zone"] == i for i, z in enumerate(plan["zones"])), plan["zones"][:3]
-    by_number = {c["number"]: c for c in plan["channels"]}
-    assert set(by_number) == {n for z in plan["zones"] for n in z["channels"]}
-    here = plan["zones"][start["zone"]]["channels"]
-    print(f"/api/zones: {nzones} zones, {len(by_number)} channels in {took:.2f} s")
-    zone = json.loads(_get(ip, f"/api/zone?zone={start['zone']}&from={start['pos']}")[2])     # its page
-    assert zone["size"] == len(here), (zone["size"], here)
-    item = next(i for i in zone["items"] if i["pos"] == start["pos"])
-    assert dict(by_number[item["number"]], pos=item["pos"]) == item, (by_number[item["number"]], item)
-    assert item["rx_hz"] == int(link.view(["channel"])["ch.rx_hz"]), (item, zone)
-    now = json.loads(_get(ip, "/api/channel")[2])
-    assert now["vfo"] is False and now["zone"] == start["zone"] and now["pos"] == start["pos"], now
-    assert {k: v for k, v in now.items() if k not in ("zone", "vfo")} == item, (now, item)
-    one = json.loads(_get(ip, f"/api/channel?zone={start['zone']}&pos={start['pos']}")[2])
-    assert {k: v for k, v in one.items() if k != "zone"} == item, (one, item)
+    ch = link.view(["core", "channel"])
+    assert start["rx_hz"] == int(ch["ch.rx_hz"]) and start["name"] == ch["ch.name"], (start, ch)
+    assert start["zone_name"] == ch["zone_name"] and start["number"] == int(ch["channel_number"]), (start, ch)
+    size = int(ch["zone_size"])
+    nzones = int(ch["zone_count"])
+    if "NET_RADIO_ZONES" in feats:
+        zone = json.loads(_get(ip, f"/api/zone?zone={start['zone']}&from={start['pos']}")[2])     # its page
+        assert zone["size"] == size, (zone, size)
+        item = next(i for i in zone["items"] if i["pos"] == start["pos"])
+        assert item["number"] == start["number"] and item["name"] == start["name"], (item, start)
+        assert item["rx_hz"] == start["rx_hz"], (item, start)
+        if "NET_RADIO_DUMP" in feats:
+            # The whole structure, as a web page reads it at its start
+            t0 = time.monotonic()
+            plan = json.loads(_get(ip, "/api/zones", timeout=60)[2])
+            took = time.monotonic() - t0
+            assert plan["zone"] == start["zone"] and plan["codeplug"] == start["codeplug"], (plan["zone"], start)
+            assert len(plan["zones"]) == nzones and all(z["zone"] == i for i, z in enumerate(plan["zones"]))
+            by_number = {c["number"]: c for c in plan["channels"]}
+            assert set(by_number) == {n for z in plan["zones"] for n in z["channels"]}
+            assert dict(by_number[item["number"]], pos=item["pos"]) == item, (by_number[item["number"]], item)
+            print(f"/api/zones: {nzones} zones, {len(by_number)} channels in {took:.2f} s")
+    here = _at(start)
     try:
-        if zone["size"] > 1:
+        if size > 1:
             assert json.loads(_get(ip, "/api/step?channel=1")[2]) == {"ok": True}
-            want = {"zone": start["zone"], "pos": (start["pos"] + 1) % zone["size"], "codeplug": start["codeplug"]}
-            assert _wait_where(ip, want) == want
+            assert _wait_at(ip, start["zone"], (start["pos"] + 1) % size) == (start["zone"], (start["pos"] + 1) % size)
             assert json.loads(_get(ip, "/api/step?channel=-1")[2]) == {"ok": True}
-            assert _wait_where(ip, start) == start
+            assert _wait_at(ip, *here) == here
         if nzones > 1:
             other = (start["zone"] + 1) % nzones
             _get(ip, f"/api/select?zone={other}&pos=0")
-            want = {"zone": other, "pos": 0, "codeplug": start["codeplug"]}
-            assert _wait_where(ip, want) == want
+            assert _wait_at(ip, other, 0) == (other, 0)
         try:
             _get(ip, "/api/select?zone=65000")
             assert False, "400 expected"
@@ -277,8 +282,61 @@ def test_zone_channel_api(net):
             assert e.code == 400
     finally:
         _get(ip, f"/api/select?zone={start['zone']}&pos={start['pos']}")
-        assert _wait_where(ip, start) == start
+        assert _wait_at(ip, *here) == here
     assert int(_net_view(link)["http.radio_steps"]) >= 0
+
+
+@pytest.mark.feature("net_radio_notify")
+@pytest.mark.usb_switch
+def test_zone_channel_notify(net):
+    """Change notices (tcp-services.md 5.2): a subscribed host port gets one at once, then one when the channel
+    changes the way a knob changes it (the debug link's channel step), each soon after it comes to rest."""
+    if "NET_RADIO_NOTIFY" not in net["features"]:
+        skip("not_built", "built without CONFIG_NET_RADIO_NOTIFY")
+    ip, link = net["ip"], net["link"]
+    start = _where(ip)
+    size = int(link.view(["core"])["zone_size"])
+    if start["vfo"] or size < 2:
+        skip("bench", "needs the radio on a channel in a zone of two or more")
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    probe.connect((ip, 9))        # no packet: picks the host's address on the link
+    host = probe.getsockname()[0]
+    probe.close()
+    rx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    rx.bind((host, 0))
+    rx.settimeout(1.0)
+    port = rx.getsockname()[1]
+
+    def notice(seconds):
+        rx.settimeout(seconds)
+        data, src = rx.recvfrom(2048)
+        assert src == (ip, 80), src
+        return json.loads(data)
+
+    try:
+        sub = json.loads(_get(ip, f"/api/select?notify={port}")[2])
+        assert sub["notify"] == 120 and _at(sub) == _at(start), sub
+        first = notice(1.0)
+        assert _at(first) == _at(start) and first["seq"] >= 1, first
+        to = (start["pos"] + 1) % size
+        t0 = time.monotonic()
+        link.channel_step(1)
+        moved = notice(1.0)
+        took = time.monotonic() - t0
+        assert _at(moved) == (start["zone"], to) and moved["seq"] == first["seq"] + 1, moved
+        print(f"notice {took * 1000:.0f} ms after the step")
+        assert took < 0.5, took
+        link.channel_step(-1)
+        back = notice(1.0)
+        assert _at(back) == _at(start), back
+        assert int(_net_view(link)["http.radio_notify"]) == port
+    finally:
+        try:
+            _get(ip, "/api/select?notify=0")
+        finally:
+            rx.close()
+    assert int(_net_view(link)["http.radio_notify"]) == 0
+    assert _at(_where(ip)) == _at(start)
 
 
 class _AprsIsStandIn:

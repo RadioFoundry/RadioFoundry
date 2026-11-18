@@ -186,5 +186,13 @@
  "feature.ZONE_EDIT.title": "区域编辑器：在区域内移动、添加、复制和移除信道；重命名、复制和删除区域",
  "feature.ZONE_EDIT.help": "区域列表中的区域编辑器：添加、移动、复制到此处、移除信道；重命名、复制、删除区域（docs/spec/ui.md 2.2）：配合信道编辑器",
  "feature.CONTACT_EDIT.title": "联系人编辑器：从查找或呼叫操作新建联系人（名称、ID、类型、时隙）",
- "feature.CONTACT_EDIT.help": "联系人编辑器：从查找、呼叫操作或手动输入的号码新建联系人，设置名称、ID、类型和时隙（docs/spec/ui.md 2.4）：配合信道编辑器（其文本输入）和 DMR"
+ "feature.CONTACT_EDIT.help": "联系人编辑器：从查找、呼叫操作或手动输入的号码新建联系人，设置名称、ID、类型和时隙（docs/spec/ui.md 2.4）：配合信道编辑器（其文本输入）和 DMR",
+ "feature.NET_RADIO_API.title": "信道组与信道控制：读取当前位置，选择或步进信道组和信道（/api/select、/api/step）",
+ "feature.NET_RADIO_API.help": "供电脑上的设备或程序（USB 网络或 PPP）使用的信道组与信道控制：/api/select 给出电台的当前信道组、信道和通话组，并可选择信道组和信道；/api/step 像旋钮一样步进；takRF 的电台控制使用它（需要 NET_HTTP；core/net/http_radio.c，docs/spec/tcp-services.md 5.2）",
+ "feature.NET_RADIO_NOTIFY.title": "向已订阅的程序发送信道组与信道变化通知（UDP）",
+ "feature.NET_RADIO_NOTIFY.help": "信道组与信道变化通知：信道组、信道或通话组变化时，向电脑上已订阅的程序发送一个小的 UDP 消息，程序无需反复查询；没有订阅者时不发送（需要 NET_RADIO_API）",
+ "feature.NET_RADIO_ZONES.title": "信道组的信道列表，/api/zone",
+ "feature.NET_RADIO_ZONES.help": "信道组与信道控制的信道列表：/api/zone 给出一个信道组的信道及其频率、模式和通话组，程序可在电台切换到某信道之前显示其名称（需要 NET_RADIO_API）",
+ "feature.NET_RADIO_DUMP.title": "一次回复整个写频数据，/api/zones",
+ "feature.NET_RADIO_DUMP.help": "一次回复整个写频数据（/api/zones）：所有信道组和信道，只用于通过 API 操作电台的网页或脚本（远程控制页面）；takRF 和选择信道组、信道都不需要它（需要 NET_RADIO_ZONES）"
 }

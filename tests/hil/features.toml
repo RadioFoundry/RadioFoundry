@@ -402,6 +402,18 @@ planned_tests = ["tests/hil/test_webctl.py::test_webctl_keys_ptt_audio"]
 switch = "NET_RADIO_API"
 spec = "docs/spec/tcp-services.md"
 
+[feature.net_radio_notify]
+switch = "NET_RADIO_NOTIFY"
+spec = "docs/spec/tcp-services.md"
+
+[feature.net_radio_zones]
+switch = "NET_RADIO_ZONES"
+spec = "docs/spec/tcp-services.md"
+
+[feature.net_radio_dump]
+switch = "NET_RADIO_DUMP"
+spec = "docs/spec/tcp-services.md"
+
 [feature.net_rigctl]
 switch = "NET_RIGCTL"
 spec = "docs/spec/tcp-services.md"

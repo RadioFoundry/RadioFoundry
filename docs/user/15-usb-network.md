@@ -140,28 +140,25 @@ USB** and "to APRS-IS" are on (`tools/rfoundry_debug.py aprs set to_is 1`).
 
 ## Selecting zones and channels from a program
 
-A device or program on your computer can choose the radio's zone and channel over HTTP, as a knob or a list would.
-Zones and channels are counted from 0, in the order the radio shows them.
+A device or program on your computer, such as takRF, can choose the radio's zone and channel over HTTP, as a knob
+would. Zones and channels are counted from 0, in the order the radio shows them.
 
 | Request | Does |
 |---|---|
-| `http://<radio address>/api/select` | Says where the radio is: `{"zone":2,"pos":5,"codeplug":12}` |
+| `http://<radio address>/api/select` | Says where the radio is and what it is on: zone, channel, name, frequency, and on DMR the color code, timeslot and talkgroup |
 | `/api/select?zone=2&pos=5` | Zone 2, its sixth channel (without `pos`, its first) |
-| `/api/step?channel=1` | One channel on; `-1` one back; it wraps at the zone's ends |
+| `/api/step?channel=1` | One channel on; `-1` one back; it wraps at the zone's ends. From the VFO, the first step goes back to the channel you came from |
 | `/api/step?zone=1` | One zone on, to its first channel; `-1` one back |
-| `/api/zones` | Everything in one reply: every zone with its channels, and each channel's name, frequencies, mode, bandwidth, tones, and on DMR the color code, timeslot and talkgroup |
-| `/api/zone?zone=2` | Zone 2 alone, with the same details |
-| `/api/channel` | The channel the radio is on now (or the VFO's settings), with the same details |
-| `/api/channel?zone=2&pos=5` | Zone 2's sixth channel, with the same details |
+| `/api/select?notify=5000` | Sends a short message to UDP port 5000 on your computer whenever the zone, channel or talkgroup changes, so your program doesn't have to keep asking. Ask again every minute to keep it going; `notify=0` stops it |
+| `/api/zone?zone=2` | Zone 2's channels: names, frequencies, mode, bandwidth, tones, and on DMR the color code, timeslot and talkgroup |
+| `/api/zones` | Every zone and channel in one reply, for a web page or script that operates the radio |
 
-Select and step answer only `{"ok":true}`. Read `/api/zones` once when your program starts, and keep it to show a
-channel's details when the zone or channel changes: zone 2's sixth channel is `zones[2].channels[5]`, a number to
-look up in `channels`. A device with little memory can ask for less: `/api/zones?zones=32&per_zone=32`.
+Select and step answer only `{"ok":true}`. A program that shows channels the radio isn't on reads them once with
+`/api/zone` (it comes in pages: ask again with `&from=` set to the reply's `next`) and keeps them. `codeplug` goes up
+whenever the channels or zones change (on the radio, or a codeplug written to it): read them again when it does.
 
-`codeplug` goes up whenever the channels or zones change (on the radio, or a codeplug written to it): read
-`/api/zones` again when it does. `/api/zone` comes in pages: ask again with `&from=` set to the reply's `next`.
-
-Select and step work only from your computer, and not while the radio transmits or is a hotspot. Details:
+Select, step and notify work only from your computer, and select and step not while the radio transmits or is a
+hotspot. A firmware built without some of these answers 404 for them ([build options](../build-config.md)). Details:
 [tcp-services.md](../spec/tcp-services.md) 5.2.
 
 For example, with curl: `curl http://<radio address>/api/step?channel=1`.

@@ -541,10 +541,12 @@ static void dispatch(int c)
 	} else if (radiop) {
 		int code = http_radio(path, query, tcp_remote_ip(c), h->head, &t);
 
+#if CONFIG_NET_RADIO_DUMP
 		if (code == HTTP_RADIO_STREAM) {
 			respond(c, 200, "application/json", SRC_GEN, buf, (uint32_t)t.len);	// buf stays ours to the end
 			return;
 		}
+#endif
 		if (code != 200) {
 			buf_owner = -1;
 			fail(c, (code == 0) ? 404 : code);
@@ -594,7 +596,7 @@ static void send_more(int c)
 			h->hoff = (uint16_t)(h->hoff + n);
 			continue;
 		}
-#if CONFIG_NET_RADIO_API
+#if CONFIG_NET_RADIO_DUMP
 		if ((h->boff >= h->blen) && (h->src == SRC_GEN) && !h->head) {
 			dl_text_t t;
 			int more;

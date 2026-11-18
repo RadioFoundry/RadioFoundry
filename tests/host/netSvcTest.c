@@ -230,6 +230,27 @@ static bool peer_take(const uint8_t *f, int len)
 	return false;
 }
 
+udp_catch_t udp_catch;
+
+// A datagram to the host's udp_catch.port: kept as text, its checksum checked
+static void udp_take(const uint8_t *f, int len)
+{
+	if (len < 42 || get16(f + 12) != 0x0800 || f[14 + 9] != 17 || udp_catch.port == 0) {
+		return;
+	}
+	const uint8_t *ip = f + 14, *u = ip + 20;
+	int dlen = get16(u + 4) - 8;
+	if (get16(u + 2) != udp_catch.port || dlen < 0 || dlen >= (int)sizeof(udp_catch.last)) {
+		return;
+	}
+	CHECK(get32(ip + 16) == net_test_host_ip());
+	udp_catch.count++;
+	udp_catch.from_port = get16(u);
+	memcpy(udp_catch.last, u + 8, (size_t)dlen);
+	udp_catch.last[dlen] = 0;
+	udp_catch.len = dlen;
+}
+
 // Deliver the radio's queued frames to the peers until nothing more comes, polling the services in between
 void pump(void)
 {
@@ -245,7 +266,9 @@ void pump(void)
 		memcpy(fl, qlen, sizeof(int) * (size_t)n);
 		qn = 0;
 		for (int i = 0; i < n; i++) {
-			peer_take(f[i], fl[i]);
+			if (!peer_take(f[i], fl[i])) {
+				udp_take(f[i], fl[i]);
+			}
 		}
 	}
 }

@@ -54,10 +54,12 @@ void http_json_str(dl_text_t *t, const char *s);
 #if CONFIG_NET_RADIO_API
 // Zone and channel control on the status server (http_radio.c): the reply's HTTP status for path, its JSON in t when
 // 200 (0: not one of its paths). from_ip: the client's, control only from the host. head: answer, change nothing
-#define HTTP_RADIO_STREAM	1	// http_radio: 200, t has the start, http_radio_more the rest
 int http_radio(const char *path, const char *query, uint32_t from_ip, bool head, dl_text_t *t);
+#if CONFIG_NET_RADIO_DUMP
+#define HTTP_RADIO_STREAM	1	// http_radio: 200, t has the start, http_radio_more the rest
 // The streamed reply's next part into t: 1 more, 0 done (t empty), -1 the codeplug changed (cut the connection)
 int http_radio_more(dl_text_t *t);
+#endif
 void http_radio_poll(uint32_t now_ms);	// passes on requests held back by the rate limit
 void http_radio_view(dl_text_t *t);
 #endif
