@@ -47,6 +47,16 @@ void http_view(dl_text_t *t);
 void http_status_json(dl_text_t *t);
 // The frame buffer can be sent as it is: /api/screen.bmp and the web control page's screen
 bool http_screen_ok(void);
+// A string as a JSON string, quotes included
+void http_json_str(dl_text_t *t, const char *s);
+#endif
+
+#if CONFIG_NET_RADIO_API
+// Zone and channel control on the status server (http_radio.c): the reply's HTTP status for path, its JSON in t when
+// 200 (0: not one of its paths). from_ip: the client's, control only from the host. head: answer, change nothing
+int http_radio(const char *path, const char *query, uint32_t from_ip, bool head, dl_text_t *t);
+void http_radio_poll(uint32_t now_ms);	// passes on requests held back by the rate limit
+void http_radio_view(dl_text_t *t);
 #endif
 
 #endif

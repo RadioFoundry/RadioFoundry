@@ -215,6 +215,55 @@ def test_rigctl(net):
     assert r.returncode == 0 and r.stdout.strip().isdigit(), (r.stdout, r.stderr)
 
 
+def _where(ip):
+    return json.loads(_get(ip, "/api/select")[2])
+
+
+def _wait_where(ip, want, seconds=3):
+    end = time.monotonic() + seconds
+    while time.monotonic() < end and _where(ip) != want:
+        time.sleep(0.1)
+    return _where(ip)
+
+
+@pytest.mark.feature("net_radio_api")
+@pytest.mark.usb_switch
+def test_zone_channel_api(net):
+    """Zone and channel control (tcp-services.md 5.2): the lists agree with the radio, a step and a select move it, and
+    it is left where it was."""
+    if "NET_RADIO_API" not in net["features"]:
+        skip("not_built", "built without CONFIG_NET_RADIO_API")
+    ip, link = net["ip"], net["link"]
+    start = _where(ip)
+    if start.get("vfo"):
+        skip("bench", "the radio is in the VFO: put it on a channel")
+    zones = json.loads(_get(ip, "/api/zones")[2])
+    assert zones["zones"] >= 1 and zones["zone"] == start["zone"], zones
+    zone = json.loads(_get(ip, f"/api/zone?zone={start['zone']}")[2])
+    item = next(i for i in zone["items"] if i["pos"] == start["pos"])
+    assert item["rx_hz"] == int(link.view(["channel"])["ch.rx_hz"]), (item, zone)
+    try:
+        if zone["channels"] > 1:
+            assert json.loads(_get(ip, "/api/step?channel=1")[2]) == {"ok": True}
+            want = {"zone": start["zone"], "pos": (start["pos"] + 1) % zone["channels"]}
+            assert _wait_where(ip, want) == want
+            assert json.loads(_get(ip, "/api/step?channel=-1")[2]) == {"ok": True}
+            assert _wait_where(ip, start) == start
+        if zones["zones"] > 1:
+            other = (start["zone"] + 1) % zones["zones"]
+            _get(ip, f"/api/select?zone={other}&pos=0")
+            assert _wait_where(ip, {"zone": other, "pos": 0}) == {"zone": other, "pos": 0}
+        try:
+            _get(ip, "/api/select?zone=65000")
+            assert False, "400 expected"
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+    finally:
+        _get(ip, f"/api/select?zone={start['zone']}&pos={start['pos']}")
+        assert _wait_where(ip, start) == start
+    assert int(_net_view(link)["http.radio_steps"]) >= 0
+
+
 class _AprsIsStandIn:
     """An APRS-IS server for the client's login alone, on the host's end of the radio's link (the radio reaches it with
     no NAT and no internet): sends a banner, takes the "user CALL pass N vers ..." line, answers "# logresp CALL

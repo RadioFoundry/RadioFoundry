@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // An HTTP/1.0 status server on port 80 (RFC 1945; docs/spec/tcp-services.md 5): static files (http_assets.h), the
-// radio's state as JSON, the debug link's view sections as JSON, the screen as a BMP. GET and HEAD, one request per
+// radio's state as JSON, the debug link's view sections as JSON, the screen as a BMP, the zones and channels and
+// requests to select them (http_radio.c). GET and HEAD, one request per
 // connection (Connection: close), no keep-alive, no chunking. With CONFIG_NET_WEBCTL, GET /ws upgrades to a WebSocket
 // (RFC 6455 4.2) and the connection is handed to webctl.c. Responses are streamed into TCP as its buffer frees up:
 // the files from flash, the screen straight from the frame buffer, JSON from one shared buffer (a second JSON request
@@ -99,7 +100,7 @@ static void put32le(uint8_t *p, uint32_t v)
 
 // ---- JSON ----
 
-static void json_str(dl_text_t *t, const char *s)
+void http_json_str(dl_text_t *t, const char *s)
 {
 	char tmp[8];
 
@@ -131,14 +132,15 @@ void http_status_json(dl_text_t *t)
 	const channel_t *ch = &v->ch;
 	const char *pw = board_power_name(v->power, v->ch.tx_hz);
 	dl_text(t, "{\"radio\":");
-	json_str(t, board.name);
-	dl_text(t, ",\"version\":\"%s\",\"uptime_s\":%u,\"state\":\"%s\",\"vfo\":%s,\"zone\":%u,\"channel_number\":%u,"
-		"\"channel\":", RFOUNDRY_GIT, (unsigned)(hal_millis() / 1000u), (v->state < 4) ? states[v->state] : "?",
-		bool_s(v->vfo), v->zone_index, v->channel_number);
-	json_str(t, ch->name);
+	http_json_str(t, board.name);
+	dl_text(t, ",\"version\":\"%s\",\"uptime_s\":%u,\"state\":\"%s\",\"vfo\":%s,\"zone\":%u,\"zone_pos\":%u,"
+		"\"zone_size\":%u,\"channel_number\":%u,\"channel\":", RFOUNDRY_GIT, (unsigned)(hal_millis() / 1000u),
+		(v->state < 4) ? states[v->state] : "?", bool_s(v->vfo), v->zone_index, v->zone_pos, v->zone_size,
+		v->channel_number);
+	http_json_str(t, ch->name);
 	dl_text(t, ",\"rx_hz\":%u,\"tx_hz\":%u,\"mode\":\"%s\",\"bw\":\"%s\",\"power\":", (unsigned)ch->rx_hz,
 		(unsigned)ch->tx_hz, (ch->mode == RADIO_MODE_DMR) ? "dmr" : "fm", (ch->bw == RADIO_BW_25K) ? "25" : "12.5");
-	json_str(t, pw);
+	http_json_str(t, pw);
 	dl_text(t, ",\"rssi_dbm\":%d,\"squelch\":%u", v->rssi_dbm, v->squelch);
 	if (board_has_battery()) {	// a radio without a battery leaves both fields out
 		dl_text(t, ",\"battery_pct\":%u,\"battery_mv\":%u", v->battery_pct, v->battery_mv);
@@ -238,12 +240,12 @@ static bool view_json(dl_text_t *t, const char *query)
 			memcpy(val, eq + 1, vn);
 			val[vn] = '\0';
 			dl_text(t, "%s", first ? "" : ",");
-			json_str(t, key);
+			http_json_str(t, key);
 			dl_text(t, ":");
 			if (is_number(val, vn)) {
 				dl_text(t, "%s", val);
 			} else {
-				json_str(t, val);
+				http_json_str(t, val);
 			}
 			first = false;
 		}
@@ -504,7 +506,13 @@ static void dispatch(int c)
 	bool setp = false;
 #endif
 
-	if (!status && !viewp && !setp) {
+#if CONFIG_NET_RADIO_API
+	bool radiop = strncmp(path, "/api/", 5) == 0 && !viewp && !setp;	// zones and channels (http_radio.c)
+#else
+	bool radiop = false;
+#endif
+
+	if (!status && !viewp && !setp && !radiop) {
 		fail(c, 404);
 		return;
 	}
@@ -524,6 +532,16 @@ static void dispatch(int c)
 	dl_text_init(&t, buf, BUF_MAX);
 	if (status) {
 		http_status_json(&t);
+#if CONFIG_NET_RADIO_API
+	} else if (radiop) {
+		int code = http_radio(path, query, tcp_remote_ip(c), h->head, &t);
+
+		if (code != 200) {
+			buf_owner = -1;
+			fail(c, (code == 0) ? 404 : code);
+			return;
+		}
+#endif
 	} else if (viewp) {
 #if CONFIG_DEBUGLINK
 		ok = view_json(&t, query);
@@ -750,6 +768,9 @@ void http_poll(uint32_t now_ms)
 		hostlink_request_usb_network(false);
 	}
 #endif
+#if CONFIG_NET_RADIO_API
+	http_radio_poll(now_ms);
+#endif
 	for (int c = 0; c < TCP_CONNS; c++) {
 		hconn_t *h = &hc[c];
 
@@ -776,6 +797,9 @@ void http_view(dl_text_t *t)
 		(unsigned)st.requests, (unsigned)st.ok, (unsigned)st.not_found, (unsigned)st.bad, (unsigned)st.busy_waits);
 #if CONFIG_NET_WEBCTL
 	webctl_view(t);
+#endif
+#if CONFIG_NET_RADIO_API
+	http_radio_view(t);
 #endif
 }
 

@@ -18,6 +18,7 @@ Sources: RFC 9293 (TCP), RFC 6298 (retransmission timer), RFC 5681 3.1 (one segm
 | `CONFIG_NET_KISS` | = NET_TCP and APRS | KISS over TCP, port 8001 (`core/net/kiss_tcp.c`, section 4) |
 | `CONFIG_NET_HTTP` | = NET_TCP | the HTTP status server, port 80 (`core/net/http.c`, section 5) |
 | `CONFIG_NET_WEBCTL` | = NET_HTTP | web control: the front panel page and its WebSocket `/ws` (`core/net/webctl.c`, `core/net/ws.c`, section 5.1) |
+| `CONFIG_NET_RADIO_API` | = NET_HTTP | zone and channel control on the status server (`core/net/http_radio.c`, section 5.2) |
 | `CONFIG_NET_RIGCTL` | = NET_TCP | Hamlib's network rig control, port 4532 (`core/net/rigctld.c`, section 6) |
 | `CONFIG_NET_APRSIS` | = NET_TCP and APRS | the radio's own APRS-IS client (`core/net/aprsis.c`, section 7) |
 
@@ -92,11 +93,12 @@ header lines are skipped, except `Sec-WebSocket-Key` (any case) for `/ws`; a req
 |---|---|
 | `/` and `/<file>` | the static files (below); `/` is `index.html`, the status as a table and the screen, refreshed every 3 s; with `CONFIG_NET_WEBCTL` the front panel page (5.1) |
 | `/ws` | with `CONFIG_NET_WEBCTL`: the WebSocket upgrade (5.1); 400 without a valid key or for HEAD, 503 while another client has it |
-| `/status` | JSON: `radio version uptime_s state` (idle / rx / tx / tx_denied) `vfo zone channel_number channel rx_hz tx_hz mode` (fm / dmr) `bw` ("12.5" / "25") `power rssi_dbm squelch battery_pct battery_mv` (both left out on a radio without a battery) `hotspot`, on a DMR channel `dmr: {own_id cc ts target private heard}`, `tcp_open`, `led_green led_red` (the radio's LEDs), `backlight` (percent), `draws` (counts screen redraws: fetch the screen when it changes) |
+| `/status` | JSON: `radio version uptime_s state` (idle / rx / tx / tx_denied) `vfo zone zone_pos zone_size channel_number channel rx_hz tx_hz mode` (fm / dmr) `bw` ("12.5" / "25") `power rssi_dbm squelch battery_pct battery_mv` (both left out on a radio without a battery) `hotspot`, on a DMR channel `dmr: {own_id cc ts target private heard}`, `tcp_open`, `led_green led_red` (the radio's LEDs), `backlight` (percent), `draws` (counts screen redraws: fetch the screen when it changes) |
 | `/api/view` | JSON `{"sections": [...]}`: the debug link's view section names (needs `CONFIG_DEBUGLINK`) |
 | `/api/view?section=<name or number>` | the section's key=value lines as one flat JSON object; values that are decimal integers are numbers, the rest strings (hex values such as `net.host_ip` stay strings) |
 | `/api/screen.bmp` | the frame buffer as a BMP, top-down (negative height), at the panel's depth: 1 bpp with two palette entries (the paper and ink of the UI gallery), 4 bpp with the 16-entry palette (`gfx_palette`), both the frame buffer's rows as they are; 16 bpp as BI_BITFIELDS (RGB565 masks). About 10 KB on a 160 x 128 4 bpp screen, 38 KB on 240 x 320, 1 KB on 128 x 64 1 bpp; UI redraws are held while it goes out (as the debug link's screenshot does), so it is one frame; the hold ends with the last byte, so a page that polls it does not slow the UI |
 | `/api/aprsis` | the APRS-IS client's settings and state (section 7) |
+| `/api/select`, `/api/step`, `/api/zones`, `/api/zone` | with `CONFIG_NET_RADIO_API`: zone and channel control (5.2) |
 | `/api/usb?mode=serial` | from the host only (else 403), over the USB network link only (else 400, as for any other query): a short HTML page that closes its tab, and 500 ms later the USB personality switches to serial (`hostlink_request_usb_network`, `usb-network.md` 1). For a web page that needs the serial port: it opens this in a tab, at 12.255.255.254 (the radio on this link, `usb-network.md` 1; every TCP service answers there too). HEAD answers and does not switch. A GET that changes state, because a page can only navigate to it: any page open in a browser on the host can send it too (an image, a no-cors fetch) and take the radio out of network mode until it restarts. Nothing else follows from it |
 | anything else | 404; another method 405; a malformed request line 400 (errors have an empty body) |
 
@@ -201,6 +203,38 @@ View keys: `webctl.client` (its TCP slot, -1 none) `webctl.control webctl.conns 
 (control from beyond the host, an unknown key) `webctl.busy` (another injected key held) `webctl.errors
 webctl.frames_out webctl.audio_out webctl.audio_dropped webctl.screen` (the client asked for it) `webctl.screen_out`
 (screen frames) `webctl.ptt webctl.ptt_downs`.
+
+### 5.2 Zone and channel control
+
+`CONFIG_NET_RADIO_API` (`core/net/http_radio.c`). For a device or program on the host, over USB network or PPP:
+select a zone and channel directly, or step through them as a knob would, and read the zones and channels when it
+wants to know what they are. Zones and positions are 0-based indexes, the same in every request and reply.
+
+Control is short on purpose: a select or a step answers `{"ok":true}`, never channel data. A client that wants the
+frequency, mode or talkgroup reads the zone's list once (`/api/zone`) and keeps it; `/api/select` alone says where the
+radio is.
+
+| Request | Who | Reply |
+|---|---|---|
+| `GET /api/select` | anyone | `{"zone":Z,"pos":P}`, and `"vfo":true` while the VFO is on (P is then the channel it came from) |
+| `GET /api/select?zone=Z[&pos=P]` | the host | zone Z, at position P or its first channel; leaves the VFO. `{"ok":true}` |
+| `GET /api/step?channel=N` | the host | N channels on, negative back (-100 to 100, not 0), wrapping in the zone; from the VFO, back to the channel first. `{"ok":true}` |
+| `GET /api/step?zone=N` | the host | N zones on, wrapping at the ends, to the zone's first channel. `{"ok":true}` |
+| `GET /api/zones[?from=I]` | anyone | `{"zones":n,"zone":Z,"from":I,"items":[{"zone","name","channels"}],"next":J}` |
+| `GET /api/zone?zone=Z[&from=I]` | anyone | `{"zone":Z,"name","channels":n,"from":I,"items":[...],"next":J}`; an item is `pos number name rx_hz tx_hz mode` (fm / dmr / p25 / nxdn), `rx_only` when set, and on DMR `cc ts`, with a talk target `tg call` (group / private / all) `contact` (its name) |
+
+- A list is in pages of what fits the server's 1.5 KB buffer (about 8 channels, 30 zones): `next` is the `from` of
+  the next page, `null` after the last.
+- "The host" is the computer at the other end of the USB network or PPP link (`ipGatewayHostIP`), as for rigctld's PTT
+  and web control. From elsewhere: 403.
+- Refused with 409 while transmitting or in hotspot mode, as the radio's keys are. 400 for an index out of range or a
+  malformed number. HEAD answers and changes nothing.
+- The requests are the radio core's own (`radio_req_zone`, `radio_req_zone_pos`, `radio_req_channel_step`), at most
+  one every 20 ms as rigctld's: steps that come quicker add up into one request, and a zone step counts from the zone
+  last asked for (for 1 s) rather than from the view, which lags it. A select replaces steps not yet passed on.
+- Selecting the current zone's position reads no flash (its size is in the radio's view); another zone's reads its
+  record once.
+- The debug link view key `http.radio_*` counts lists, selects, steps and refusals.
 
 ## 6. rigctld (port 4532)
 

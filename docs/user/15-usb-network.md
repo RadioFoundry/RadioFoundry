@@ -105,7 +105,7 @@ The radio answers at its own address on these TCP ports, over the USB cable only
 
 | Port | Service |
 |---|---|
-| 80 | The radio's front panel. Open `http://<radio address>/` in a browser. It shows the radio with its live screen and LEDs, and the channel, frequency, signal and battery. On a mobile radio its hand microphone is drawn too. Click a key or use the keyboard. Side and top keys also have a labeled button outside the radio's edge, and the arrows over the channel knob turn it one step per click (hold to keep turning). Keyboard keys: digits, `*` and `#`; the arrows; Enter for select (green key or MENU); Esc or Backspace for back (red key or BACK); `[` and `]` (or Page Up and Page Down) turn the channel knob; hold Space to talk. The page lists the keyboard keys your radio has beside the picture. **Listen** plays what the radio receives (on radios with network audio, [Linking audio](#linking-audio-allstarlink-and-dvswitch)); over the programming cable (PPP, below) the page has no Listen, since the cable is too slow for audio. Keys work only from the computer the radio is plugged into; one page at a time controls the radio, and others show the status only. Programs can read `/status` (JSON) and the debug link's sections at `/api/view?section=core` |
+| 80 | The radio's front panel. Open `http://<radio address>/` in a browser. It shows the radio with its live screen and LEDs, and the channel, frequency, signal and battery. On a mobile radio its hand microphone is drawn too. Click a key or use the keyboard. Side and top keys also have a labeled button outside the radio's edge, and the arrows over the channel knob turn it one step per click (hold to keep turning). Keyboard keys: digits, `*` and `#`; the arrows; Enter for select (green key or MENU); Esc or Backspace for back (red key or BACK); `[` and `]` (or Page Up and Page Down) turn the channel knob; hold Space to talk. The page lists the keyboard keys your radio has beside the picture. **Listen** plays what the radio receives (on radios with network audio, [Linking audio](#linking-audio-allstarlink-and-dvswitch)); over the programming cable (PPP, below) the page has no Listen, since the cable is too slow for audio. Keys work only from the computer the radio is plugged into; one page at a time controls the radio, and others show the status only. Programs can read `/status` (JSON) and the debug link's sections at `/api/view?section=core`, and select zones and channels (below) |
 | 8001 | KISS over TCP for APRS programs (APRSdroid, Xastir, YAAC). Set the program's TNC to "KISS over TCP", the radio's address, port 8001. Turn on **KISS on USB** in Tools > APRS first. The radio sends only packets from your own callsign. On a radio that can't receive APRS ([Radio reference](23-radios.md)), programs see only what they send |
 | 4532 | Hamlib rig control for loggers, SDR and satellite programs. Choose "Hamlib NET rigctl" with the radio's address and port 4532, or run `rigctl -m 2 -r <radio address>:4532 f`. Programs can read and set the frequency, read the mode and the S meter, and key the transmitter. Setting the frequency of a channel switches to the VFO. Transmit works only from your computer, at most 3 minutes per keying |
 
@@ -137,6 +137,26 @@ curl "http://12.152.116.67/api/aprsis?server=off"   # stop
 
 The radio logs in with its APRS callsign and the passcode computed from it. Your beacons go to APRS-IS when **KISS on
 USB** and "to APRS-IS" are on (`tools/rfoundry_debug.py aprs set to_is 1`).
+
+## Selecting zones and channels from a program
+
+A device or program on your computer can choose the radio's zone and channel over HTTP, as a knob or a list would.
+Zones and channels are counted from 0, in the order the radio shows them.
+
+| Request | Does |
+|---|---|
+| `http://<radio address>/api/select` | Says where the radio is: `{"zone":2,"pos":5}` |
+| `/api/select?zone=2&pos=5` | Zone 2, its sixth channel (without `pos`, its first) |
+| `/api/step?channel=1` | One channel on; `-1` one back; it wraps at the zone's ends |
+| `/api/step?zone=1` | One zone on, to its first channel; `-1` one back |
+| `/api/zones` | The zones: name and number of channels |
+| `/api/zone?zone=2` | Zone 2's channels: name, frequencies, mode, and on DMR the color code, timeslot and talkgroup |
+
+Select and step answer only `{"ok":true}`. Read a zone's list once to know its channels. Long lists come in pages:
+ask again with `&from=` set to the reply's `next`. Select and step work only from your computer, and not while the
+radio transmits or is a hotspot. Details: [tcp-services.md](../spec/tcp-services.md) 5.2.
+
+For example, with curl: `curl http://<radio address>/api/step?channel=1`.
 
 ## Linking audio: AllStarLink and DVSwitch
 

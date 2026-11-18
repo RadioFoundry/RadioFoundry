@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // netSvcTest's cases: each TCP service against the scripted peer, with fakes for the APRS engine and the radio core
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "netSvcFakes.h"
@@ -11,6 +12,7 @@
 #include "dmr/ipGateway.h"
 #include "config.h"
 #include "radio/radio.h"
+#include "codeplug/codeplug.h"
 #include "hostlink/hostlink_view.h"
 #include "ui/gfx.h"
 #include "debuglink/debuglink.h"
@@ -366,15 +368,170 @@ static void test_http(void)
 }
 
 // ---- fake radio core requests ----
-static int req_vfo_on, req_vfo_set, req_bw = -1, req_mode = -1;
+static int req_vfo_on, req_vfo_off, req_vfo_set, req_bw = -1, req_mode = -1;
 static uint32_t req_hz;
 static bool req_ptt;
 static int ptt_downs;
-void radio_req_vfo(bool on) { req_vfo_on += on; }
+void radio_req_vfo(bool on) { req_vfo_on += on; req_vfo_off += !on; }
 void radio_req_vfo_set(uint32_t hz) { req_vfo_set++; req_hz = hz; }
 void radio_req_ptt(bool down) { ptt_downs += down && !req_ptt; req_ptt = down; }
 void radio_req_bandwidth(radio_bw_t bw) { req_bw = bw; }
 void radio_req_mode(uint8_t mode) { req_mode = mode; }
+
+// ---- zone and channel control (http_radio.c) ----
+// Three zones: "Local" (3 channels), "Rpt \"A\"" (2), "Big" (CODEPLUG_ZONE_MAX, more than one page)
+static int req_zone = -1, req_zone_pos = -1, req_zone_n, req_pos_n, req_steps, req_step_n;
+void radio_req_zone(uint16_t index) { req_zone = index; req_zone_n++; }
+void radio_req_zone_pos(uint16_t pos) { req_zone_pos = pos; req_pos_n++; }
+void radio_req_channel_step(int8_t dir) { req_steps += dir; req_step_n++; }
+uint16_t codeplug_zone_count(void) { return 3; }
+bool codeplug_zone(uint16_t index, zone_t *out)
+{
+	static const char *const names[] = { "Local", "Rpt \"A\"", "Big" };
+	static const uint16_t counts[] = { 3, 2, CODEPLUG_ZONE_MAX };
+	if (index >= 3) {
+		return false;
+	}
+	memset(out, 0, sizeof(*out));
+	strcpy(out->name, names[index]);
+	out->count = counts[index];
+	for (uint16_t i = 0; i < out->count; i++) {
+		out->channels[i] = (uint16_t)(index * 100u + i + 1u);
+	}
+	return true;
+}
+bool codeplug_channel(uint16_t number, channel_t *out)
+{
+	memset(out, 0, sizeof(*out));
+	snprintf(out->name, sizeof(out->name), "Ch%u", number);
+	out->rx_hz = 446000000u + number * 12500u;
+	out->tx_hz = out->rx_hz;
+	out->mode = (number % 2u) ? RADIO_MODE_DMR : RADIO_MODE_FM;
+	out->color_code = 1;
+	out->timeslot = 2;
+	out->contact = (number % 2u) ? 7 : 0;
+	return true;
+}
+bool codeplug_contact(uint16_t index, contact_t *out)
+{
+	memset(out, 0, sizeof(*out));
+	strcpy(out->name, "TG 3100");
+	out->id = 3100u + index;
+	out->type = CONTACT_GROUP;
+	return true;
+}
+
+static void test_radio_api(void)
+{
+	static peer_t a, far;
+	memset(&fake_view, 0, sizeof(fake_view));
+	fake_view.zone_index = 1;
+	fake_view.zone_pos = 1;
+	fake_view.zone_size = 2;
+
+	// Where it is: two indexes and nothing else, from anywhere
+	CHECK(http_get(&a, 54000, "GET /api/select HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 "));
+	CHECK(strcmp(body_of(&a), "{\"zone\":1,\"pos\":1}\n") == 0);
+	fake_view.vfo = true;
+	CHECK(http_get(&a, 54001, "GET /api/select HTTP/1.0\r\n\r\n") > 0 && strcmp(body_of(&a), "{\"zone\":1,\"pos\":1,\"vfo\":true}\n") == 0);
+	fake_view.vfo = false;
+	// /status has them too
+	CHECK(http_get(&a, 54002, "GET /status HTTP/1.0\r\n\r\n") > 0 && strstr(body_of(&a), "\"zone\":1,\"zone_pos\":1,\"zone_size\":2"));
+
+	// The zones, names escaped
+	CHECK(http_get(&a, 54003, "GET /api/zones HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, "application/json"));
+	const char *j = body_of(&a);
+	CHECK(strstr(j, "{\"zones\":3,\"zone\":1,\"from\":0,\"items\":[{\"zone\":0,\"name\":\"Local\",\"channels\":3},") &&
+	      strstr(j, "{\"zone\":1,\"name\":\"Rpt \\\"A\\\"\",\"channels\":2}") && strstr(j, "],\"next\":null}"));
+	// A zone's channels: DMR with its talkgroup, FM without
+	CHECK(http_get(&a, 54004, "GET /api/zone?zone=0 HTTP/1.0\r\n\r\n") > 0);
+	j = body_of(&a);
+	CHECK(strstr(j, "{\"zone\":0,\"name\":\"Local\",\"channels\":3,\"from\":0,\"items\":[") &&
+	      strstr(j, "{\"pos\":0,\"number\":1,\"name\":\"Ch1\",\"rx_hz\":446012500,\"tx_hz\":446012500,\"mode\":\"dmr\",\"cc\":1,\"ts\":2,\"tg\":3107,\"call\":\"group\",\"contact\":\"TG 3100\"}") &&
+	      strstr(j, ",{\"pos\":1,\"number\":2,\"name\":\"Ch2\",\"rx_hz\":446025000,\"tx_hz\":446025000,\"mode\":\"fm\"}") &&
+	      strstr(j, "],\"next\":null}"));
+	// A long zone in pages: next says where the following page starts, and the pages cover every position once
+	int seen = 0;
+	uint16_t port = 54010;
+	char req[64];
+	for (int from = 0, page = 0; from >= 0 && page < 40; page++) {
+		snprintf(req, sizeof req, "GET /api/zone?zone=2&from=%d HTTP/1.0\r\n\r\n", from);
+		CHECK(http_get(&a, port++, req) > 0 && strstr((char *)a.rx, " 200 "));
+		j = body_of(&a);
+		for (const char *q = j; (q = strstr(q, "{\"pos\":")) != NULL; q++) {
+			CHECK(atoi(q + 7) == seen);	// every position once, in order
+			seen++;
+		}
+		const char *n = strstr(j, "\"next\":");
+		from = (n && n[7] != 'n') ? atoi(n + 7) : -1;
+		CHECK(from < 0 || from == seen);
+	}
+	CHECK(seen == CODEPLUG_ZONE_MAX);
+	CHECK(http_get(&a, port++, "GET /api/zone?zone=3 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 400 "));
+	CHECK(http_get(&a, port++, "GET /api/zone HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 400 "));
+
+	// Select: from the host only; a short reply; the current zone's position alone, another zone then a position
+	CHECK(http_get_from(&far, 0xC0000201u, port++, "GET /api/select?zone=0 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)far.rx, " 403 "));
+	CHECK(req_zone_n == 0);
+	run_for(30);
+	CHECK(http_get(&a, port++, "GET /api/select?zone=1&pos=0 HTTP/1.0\r\n\r\n") > 0 && strcmp(body_of(&a), "{\"ok\":true}\n") == 0);
+	CHECK(req_zone_n == 0 && req_pos_n == 1 && req_zone_pos == 0);
+	run_for(30);
+	CHECK(http_get(&a, port++, "GET /api/select?zone=2&pos=40 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 "));
+	CHECK(req_zone_n == 1 && req_zone == 2 && req_pos_n == 2 && req_zone_pos == 40);
+	// a position past the zone's end, a zone that isn't there, a bad number
+	CHECK(http_get(&a, port++, "GET /api/select?zone=1&pos=2 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 400 "));
+	CHECK(http_get(&a, port++, "GET /api/select?zone=9 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 400 "));
+	CHECK(http_get(&a, port++, "GET /api/select?zone=x1 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 400 "));
+	// In the VFO: back to the channel first
+	run_for(30);
+	fake_view.vfo = true;
+	int off = req_vfo_off;
+	CHECK(http_get(&a, port++, "GET /api/select?zone=0 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 "));
+	CHECK(req_vfo_off == off + 1 && req_zone == 0);
+	fake_view.vfo = false;
+	// Transmitting or a hotspot: refused, nothing asked
+	fake_view.state = RS_TX;
+	int zn = req_zone_n;
+	CHECK(http_get(&a, port++, "GET /api/select?zone=1 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 409 "));
+	CHECK(http_get(&a, port++, "GET /api/step?channel=1 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 409 "));
+	fake_view.state = RS_IDLE;
+	fake_view.hotspot = true;
+	CHECK(http_get(&a, port++, "GET /api/select?zone=1 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 409 "));
+	fake_view.hotspot = false;
+	CHECK(req_zone_n == zn);
+
+	// Steps: a knob's quick turns add up into one request; wrap at the ends
+	run_for(30);
+	int sn = req_step_n;
+	req_steps = 0;
+	CHECK(http_get(&a, port++, "GET /api/step?channel=1 HTTP/1.0\r\n\r\n") > 0 && strcmp(body_of(&a), "{\"ok\":true}\n") == 0);
+	CHECK(req_step_n == sn + 1 && req_steps == 1);
+	CHECK(http_get(&a, port++, "GET /api/step?channel=-3 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 "));
+	run_for(30);
+	CHECK(req_steps == -2);
+	CHECK(http_get(&a, port++, "GET /api/step?channel=0 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 400 "));
+	CHECK(http_get(&a, port++, "GET /api/step?channel=101 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 400 "));
+	// zones: from zone 1, +1 is 2, then +1 again (before the view shows 2) wraps to 0, -1 from there back to 2
+	run_for(1100);
+	fake_view.zone_index = 1;
+	CHECK(http_get(&a, port++, "GET /api/step?zone=1 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 "));
+	run_for(30);
+	CHECK(req_zone == 2);
+	CHECK(http_get(&a, port++, "GET /api/step?zone=1 HTTP/1.0\r\n\r\n") > 0);
+	run_for(30);
+	CHECK(req_zone == 0);
+	CHECK(http_get(&a, port++, "GET /api/step?zone=-1 HTTP/1.0\r\n\r\n") > 0);
+	run_for(30);
+	CHECK(req_zone == 2);
+	CHECK(http_get_from(&far, 0xC0000201u, port++, "GET /api/step?zone=1 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)far.rx, " 403 "));
+	// HEAD answers and changes nothing
+	zn = req_zone_n;
+	CHECK(http_get(&a, port++, "HEAD /api/select?zone=0 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 "));
+	run_for(30);
+	CHECK(req_zone_n == zn);
+	run_for(100);
+}
 
 // One command line, the answer (waits for it)
 static const char *rig(peer_t *p, const char *line)
@@ -1032,7 +1189,9 @@ static void test_webctl(void)
 	ws_text(&a, "d3");
 	ws_text(&a, "d7");
 	CHECK(inj_mask == 8u && inj_ptt);
-	at = a.rxn;
+	run_for(10);
+	peer_clear(&a);	// the screen frames so far have nearly filled the test peer's 64 KB: room for what follows
+	at = 0;
 	run_for(WEBCTL_PING_MS + 10);
 	bool pinged = false;
 	while ((op = ws_next(&a, &at, m, sizeof m, &len)) >= 0) {
@@ -1142,4 +1301,5 @@ void tests_run(void)
 	test_rigctl();
 	test_aprsis();
 	test_fuzz();
+	test_radio_api();	// last: its waits move the clock the others' checks expect
 }
