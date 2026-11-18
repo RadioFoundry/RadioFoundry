@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 dB-SPL
 // Feature switches (config/features.mk sets them for firmware builds; everything defaults on here, e.g. for host
 // tests). Always defined to 0 or 1: test with #if CONFIG_X, never #ifdef. See docs/build-config.md.
 #ifndef RFOUNDRY_CONFIG_H
@@ -319,6 +320,9 @@
 // NXDN conventional voice (core/nxdn, docs/spec/nxdn.md). AIR is on with any air-framed mode
 #ifndef CONFIG_NXDN
 #define CONFIG_NXDN			0
+#endif
+#ifndef CONFIG_NXDN_SCRAMBLER
+#define CONFIG_NXDN_SCRAMBLER		0
 #endif
 #ifndef CONFIG_AIR
 #define CONFIG_AIR			(CONFIG_P25 || CONFIG_NXDN)

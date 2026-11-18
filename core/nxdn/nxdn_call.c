@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 dB-SPL
 // A conventional NXDN voice call (nxdn.h): on receive, the frames of nxdn_rx.c become a call with its fields and its
 // voice frames in order; on transmit, the frames are built and released symbol by symbol. Section numbers are NXDN
 // TS 1-B's (Basic Operation) where the text says so, else TS 1-A's.
 
 #include "nxdn.h"
+#include "config.h"
+#if CONFIG_NXDN_SCRAMBLER
+#include "nxdn_scramble.h"
+#include "dmr/ambe/ambeFec.h"
+#endif
 
 #include <string.h>
 
@@ -46,11 +52,13 @@ static void call_end(nxdn_call_rx_t *c)
 
 // Voice that can be played: the call's VCALL is in (a late entry waits for a whole superframe of SACCH, TS 1-B
 // 4.1.6), clear (TS 1-B 4.1.7: encrypted voice is noise without the key) and half rate (the vocoder's)
-static bool playable(const nxdn_call_t *call)
+static bool playable(const nxdn_call_rx_t *c)
 {
+	const nxdn_call_t *call = &c->call;
 	uint8_t mode = call->vcall.voice_opt & 7;
 
-	return call->have_vcall && call->vcall.cipher == NXDN_CIPHER_NONE && !call->iv &&
+	return call->have_vcall && (call->vcall.cipher == NXDN_CIPHER_NONE ||
+	       (CONFIG_NXDN_SCRAMBLER && call->vcall.cipher == NXDN_CIPHER_SCRAMBLE && c->scramble_key)) && !call->iv &&
 	       (mode == NXDN_VOICE_4800_EHR || mode == NXDN_VOICE_9600_EHR);
 }
 
@@ -166,11 +174,18 @@ static void on_frame(const nxdn_rx_frame_t *f, void *ctx)
 
 		if (opt == NXDN_STEAL_BOTH || (opt == NXDN_STEAL_FIRST && n < 2) || (opt == NXDN_STEAL_SECOND && n >= 2))
 			continue;
-		if (!c->active || !playable(&c->call)) {
+		if (!c->active || !playable(c)) {
 			c->stats.voice_held++;
 			continue;
 		}
 		nxdn_vch_get(f->hard, n, ehr);
+#if CONFIG_NXDN_SCRAMBLER
+		if (c->call.vcall.cipher == NXDN_CIPHER_SCRAMBLE &&
+		    (!sf || f->sacch_errs < 0 || !nxdn_scramble_vch(c->scramble_key, NXDN_SR_PART(f->sacch[0]), n, ehr))) {
+			c->stats.voice_held++;
+			continue;
+		}
+#endif
 		c->stats.voice++;
 		if (c->sink->voice)
 			c->sink->voice(ehr, c->ctx);
@@ -314,6 +329,18 @@ void nxdn_call_tx_voice(nxdn_call_tx_t *t, const uint8_t ehr[NXDN_EHR_BYTES])
 {
 	if (!nxdn_call_tx_wants_voice(t))
 		return;
+#if CONFIG_NXDN_SCRAMBLER
+	if (t->scramble_key) {
+		uint8_t scrambled[NXDN_EHR_BYTES];
+		memcpy(scrambled, ehr, sizeof scrambled);
+		if (!nxdn_scramble_vch(t->scramble_key, t->sf_frame, t->nvoice, scrambled)) {
+			uint8_t bits[AMBE_PARAM_BITS] = { 0 };
+			nxdn_scramble_ehr(t->scramble_key, t->sf_frame, t->nvoice, bits);
+			ambeFecEncode(bits, scrambled);
+		}
+		nxdn_vch_put(t->frame, t->nvoice, scrambled);
+	} else
+#endif
 	nxdn_vch_put(t->frame, t->nvoice, ehr);
 	t->nvoice++;
 	t->ready = NXDN_VCH_SYM(t->nvoice);

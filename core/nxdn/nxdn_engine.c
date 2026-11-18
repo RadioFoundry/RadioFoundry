@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 dB-SPL
 // NXDN conventional voice on a channel (nxdn_engine.h).
 #include "nxdn_engine.h"
+#include "config.h"
 
 #include <string.h>
 
@@ -32,14 +34,26 @@ static bool wanted(const nxdn_engine_t *e, const nxdn_call_t *c)
 	return c->vcall.dst == e->cfg.rx_gid || c->vcall.dst == NXDN_ID_ALL;
 }
 
-static bool clear(const nxdn_call_t *c)
+static uint16_t key_for(const nxdn_engine_cfg_t *cfg, uint8_t cipher, uint8_t id)
 {
-	return c->vcall.cipher == NXDN_CIPHER_NONE && !c->iv;
+#if CONFIG_NXDN_SCRAMBLER
+	if (cipher == NXDN_CIPHER_SCRAMBLE && id < NXDN_KEY_IDS) {
+		uint16_t key = cfg->keys[id];
+		if (key <= NXDN_SCRAMBLE_KEY_MAX)
+			return key;
+	}
+#else
+	(void)cfg;
+	(void)cipher;
+	(void)id;
+#endif
+	return 0;
 }
 
 static void rx_fields(nxdn_engine_t *e, const nxdn_call_t *c, bool start)
 {
-	bool play = wanted(e, c) && clear(c);
+	e->rx.scramble_key = key_for(&e->cfg, c->vcall.cipher, c->vcall.key_id);
+	bool play = wanted(e, c) && !c->iv && (c->vcall.cipher == NXDN_CIPHER_NONE || e->rx.scramble_key);
 
 	view_begin(e);
 	e->view.rx = *c;
@@ -184,11 +198,21 @@ void nxdn_engine_set(nxdn_engine_t *e, const nxdn_engine_cfg_t *cfg)
 	e->cfg = *cfg;
 	e->cfg.rate9600 = rate;		// the mode is the session's: a new rate is a new session
 	e->rx.rx.ran = cfg->rx_ran;
+	e->rx.scramble_key = key_for(cfg, e->rx.call.vcall.cipher, e->rx.call.vcall.key_id);
 	e->recheck = true;
 }
 
 bool nxdn_engine_tx_prepare(nxdn_engine_t *e)
 {
+	const nxdn_engine_cfg_t *cfg = &e->cfg;
+	uint8_t cipher = cfg->tx_cipher;
+	uint8_t id = cfg->tx_key_id;
+
+	if (cfg->tx_inhibit)
+		return false;
+	uint16_t key = key_for(cfg, cipher, id);
+	if (cipher != NXDN_CIPHER_NONE && !key)
+		return false;
 	if (!air_session_is_open(&e->session) || !(e->session.fit & AIR_FIT_TX) || !e->cfg.silence)
 		return false;
 	if (air_session_tx_state(&e->session) == AIR_TX_IDLE) {
@@ -199,12 +223,14 @@ bool nxdn_engine_tx_prepare(nxdn_engine_t *e)
 			.voice_opt = e->cfg.rate9600 ? NXDN_VOICE_9600_EHR : NXDN_VOICE_4800_EHR,
 			.src = e->cfg.unit_id,
 			.dst = e->cfg.tx_dst,
-			.cipher = NXDN_CIPHER_NONE,
+			.cipher = cipher,
+			.key_id = cipher == NXDN_CIPHER_NONE ? 0 : id,
 		};
 
 		e->tx_stop = e->tx_ended = false;
 		// A subscriber unit sends inbound, direct or through a repeater (table 5.2-2)
 		nxdn_call_tx_begin(&e->tx, &v, e->cfg.tx_ran, NXDN_DIR_INBOUND, e->cfg.rate9600);
+		e->tx.scramble_key = key;
 	}
 	return air_session_tx_prime(&e->session);
 }

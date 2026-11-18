@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
+# Copyright (c) 2026 dB-SPL
 """NXDN conventional on the radio (docs/spec/nxdn.md 6).
 
 test_nxdn_mode_switch: the channel on view becomes NXDN by a temporary mode change (the debug link's mode request,
@@ -99,6 +100,14 @@ def settings_of(v):
             "rx_gid": int(v["nxdn.rx_gid"]), "unit_call": v.get("nxdn.unit_call") == "1",
             "tx_dst": int(v["nxdn.tx_dst"]), "unit_id": int(v["nxdn.unit_id"]),
             "emergency": v.get("nxdn.tx_emergency") == "1"}
+
+
+@pytest.mark.feature("nxdn_scrambler")
+def test_nxdn_scrambler_built(radio):
+    """The advertised feature is present alongside the NXDN engine; no key or radio state is changed."""
+    if "NXDN_SCRAMBLER" not in radio.features():
+        skip("not_built", "built without CONFIG_NXDN_SCRAMBLER")
+    assert radio.view(["nxdn"]).get("nxdn.built") == "1"
 
 
 @pytest.mark.feature("nxdn")
