@@ -182,6 +182,9 @@ static const char features[] =
 #if CONFIG_CRASH_LOG
 	"CRASH_LOG,"
 #endif
+#if CONFIG_SUPPORT_INFO
+	"SUPPORT_INFO,"
+#endif
 #if CONFIG_SCAN
 	"SCAN,"
 #endif
