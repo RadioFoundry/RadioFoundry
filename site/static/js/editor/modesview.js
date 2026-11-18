@@ -75,6 +75,20 @@ function deleteSystem(api, s) {
 
 // --- A system's header and its type's fields ---
 
+export function systemOwnIdField(mod, t) {
+	const spec = { type: "int", min: mod.ownIdMax == null ? 0 : 1, max: mod.ownIdMax ?? 0xFFFFFFFF };
+	return {
+		key: "ownId", label: t("editor.modes.own_id"), type: "text",
+		format: (v) => (v ? String(v) : ""),
+		parse: (r, k, v) => {
+			const res = parseSpec(spec, v, t);
+			if (res.error) return res.error;
+			r.ownId = res.value;
+		},
+		help: t("editor.modes.own_id_help"), disabled: (r) => !r.tx,
+	};
+}
+
 function systemDialog(api, s, isNew) {
 	const { model: m, t } = api;
 	const row = typeRow(s.type), mod = row.module;
@@ -99,11 +113,7 @@ function systemDialog(api, s, isNew) {
 					r.tx = v > 0;
 					if (mod.noRegField) r.fields = { ...r.fields, [mod.noRegField]: v === 2 };
 				}, help: mod.conventional ? null : t(mod.noRegField ? "editor.modes.transmit_help_noreg" : "editor.modes.transmit_help") },
-			{ key: "ownId", label: t("editor.modes.own_id"), type: "text", format: (v) => (v ? String(v) : ""), parse: (r, k, v) => {
-				const res = parseSpec({ type: "int", min: 0, max: 0xFFFFFFFF }, v, t);
-				if (res.error) return res.error;
-				r.ownId = res.value;
-			}, help: t("editor.modes.own_id_help"), disabled: (r) => !r.tx },
+			systemOwnIdField(mod, t),
 			mod.secret ? { key: "needsKey", label: t("editor.modes.needs_key"), type: "bool", help: t("editor.modes.needs_key_help") } : null,
 		],
 		fallback: [
