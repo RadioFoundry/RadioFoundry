@@ -444,7 +444,9 @@ export function validateModes(m, err, warn, { features = null, baseNames } = {})
 		const mod = row.module;
 		if (!s.name) err(S, s, "name", "no_name");
 		if (s.name.length > MODE_LIMITS.name) err(S, s, "name", "too_long", { max: MODE_LIMITS.name });
-		if (!(Number.isInteger(s.ownId) && s.ownId >= 0 && s.ownId <= 0xFFFFFFFF)) err(S, s, "ownId", "range", { min: 0, max: 0xFFFFFFFF });
+		const ownIdMax = mod.ownIdMax ?? 0xFFFFFFFF;
+		if (!(Number.isInteger(s.ownId) && s.ownId >= 0 && s.ownId <= ownIdMax))
+			err(S, s, "ownId", "range", { min: mod.ownIdMax == null ? 0 : 1, max: ownIdMax });
 		const problem = { err: (f, code, p = {}) => err(S, s, f, code, p), warn: (f, code, p = {}) => warn(S, s, f, code, p) };
 		mod.validate(s, s.fields, s.entries, problem);
 		if (mod.classes.some((c) => c.control) && !s.entries.some((e) => e.cls === 0 && e.control)) warn(S, s, "entries", "mode_no_control");

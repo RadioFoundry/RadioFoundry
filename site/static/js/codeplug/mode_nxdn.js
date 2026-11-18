@@ -110,6 +110,7 @@ export const nxdnSystem = {
 	label: "editor.nxdn.system_type",
 	idLen: 0,
 	conventional: true,
+	ownIdMax: UNIT_MAX,
 	defaultTx: true,
 	classes: [],
 	newFields: () => ({}),

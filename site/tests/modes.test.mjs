@@ -410,6 +410,25 @@ test("declared fields: hex with any, lists, keys, frequencies", () => {
 // --- NXDN conventional (docs/spec/nxdn-codeplug.md) ---
 
 import * as nxdn from "../static/js/codeplug/mode_nxdn.js";
+import { systemOwnIdField } from "../static/js/editor/modesview.js";
+
+test("NXDN system Radio ID accepts blank or a whole number from 1 to 65519", () => {
+	const m = empty();
+	const system = newSystem(m, 4, "Operations");
+	m.systems.push(system);
+	const field = systemOwnIdField(nxdn.nxdnSystem, (key, { min, max } = {}) =>
+		key === "editor.err.range" ? `${min}–${max}` : key);
+	for (const [input, value] of [["", 0], ["  ", 0], ["1", 1], ["65519", 65519]]) {
+		assert.equal(field.parse(system, "ownId", input), undefined);
+		assert.equal(system.ownId, value);
+	}
+	for (const input of ["0", "-1", "1.5", "65520", "abc"]) {
+		assert.equal(field.parse(system, "ownId", input), "1–65519");
+		assert.equal(system.ownId, 65519);
+	}
+	system.ownId = 65520;
+	assert.ok(has(validate(m), "range", system));
+});
 
 test("vectors: NXDN conventional block, unit ID record", () => {
 	const conv = (rate, rx, tx, sq) => ({ rate9600: rate === "1", rxRan: parseInt(rx, 16), txRan: parseInt(tx, 16), squelch: parseInt(sq, 16) });
