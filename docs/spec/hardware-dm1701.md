@@ -497,7 +497,7 @@ DMR mode (the HR_C6000 needs the raw 4FSK baseband):
 |---|---|
 | 0x40 = 0x0031 | undocumented; bit 0 set passes low-frequency audio (needed for 4FSK) |
 | 0x15 = 0x1100 | IF tuning |
-| 0x32 = 0x4495 | AGC target |
+| 0x32 = 0x4490 | AGC target 18 (bits 11:6, 2 dB units); bits 2:0 clear (below) |
 | 0x3A = 0x00C3 | no mic input to the AT1846S modulator |
 | 0x3C = 0x1B34 | pk_det_th |
 | 0x3F = 0x29D1 | rssi3_th |
@@ -524,9 +524,30 @@ bit errors a frame and the share of frames received, at -103 dBm with the transm
 
 0x07EF keeps every frame from x0.8 to x1.2, so a transmitter under deviation (common on hotspots) and one over both
 decode; the over-deviated side costs corrected bits, never frames. The gain also sets how far off frequency a
-transmitter can be: full gain clips first and has the narrowest window (5.13). On strong signals (-50 dBm) about a bit a
-frame stays at every gain and offset: that is the AGC (0x32), not this gain. `test_dmr_audio_rx_deviation` (tests/hil)
-checks x0.85 and x1.15 at -100 dBm.
+transmitter can be: full gain clips first and has the narrowest window (5.13). `test_dmr_audio_rx_deviation`
+(tests/hil) checks x0.85 and x1.15 at -100 dBm.
+
+DMR receive AGC. A simplex transmitter keys one 30 ms burst every 60 ms, so the AGC sees the carrier come and go with
+every burst. With 0x32 bits 2:0 at 2 or more (the 12.5 kHz table's 0x4495 has 5) the start of each burst is overloaded:
+about a bit a frame from -85 to -40 dBm, however strong the signal, and bad frames now and then. A repeater's
+continuous carrier hides it: the same call as a repeater outbound at -65 dBm corrected nothing, as simplex bursts 1.67
+bits a frame. The datasheet names only bits 11:6 (agc_target_pwr); bits 2:0 are undocumented. Bit 15 doesn't take a
+write (reads 0). Voice bit errors a frame, speech at the standard's deviation, simplex (SDR bench, conducted,
+`tools/dmr_rx_sweep.py --reg 0:0x32 --field 2:0`):
+
+| Level at the radio | 0x4490 | 0x4491 | 0x4492 | 0x4493 | 0x4494 | 0x4495 | 0x4496 | 0x4497 | 0x4498 |
+|---|---|---|---|---|---|---|---|---|---|
+| -45 dBm | 0.00 | 0.00 | 0.33 | 1.35 | 1.43 | 1.26 | 1.15 | 0.86 | 0.00 |
+| -65 dBm | 0.01 | 0.00 | 0.64 | 1.07 | 1.38 | 1.01 | 0.98 | 0.88 | 0.00 |
+| -75 dBm | 0.01 | 0.02 | 0.39 | 0.69 | 0.61 | 1.51 | 1.24 | 1.29 | 0.01 |
+| -87 dBm | 0.00 | 0.00 | 0.22 | 0.18 | 0.54 | 0.65 | 0.61 | 0.67 | 0.00 |
+
+Bits 2:0 cost nothing near sensitivity: 0x4490 and 0x4495 are within a run's spread of each other from -107 to
+-126 dBm at x0.85, x1.0 and x1.15 (0.01 at -107 dBm, 0.03-0.05 at -120, 0.3-0.4 at -123, 0.8-0.9 at -126, every frame
+received). With bits 2:0 clear, bits 15:12 make no difference (0x0490 to 0x7490 all clean at -45 and -75 dBm). With
+them at 5, a higher AGC target (20 to 31) only moved the errors to stronger signals, and no 0x33 ("AGC number") value
+removed them (0x44FF read the signal some 30 dB weaker). The DMR table writes 0x4490; FM keeps the bandwidth table's
+0x4495 (a continuous carrier). `test_dmr_audio_rx_strong` (tests/hil) checks simplex speech at -75 and -55 dBm.
 
 ### 5.6 Frequency setting
 
