@@ -4,4 +4,5 @@
 
 import "./csvpart.js";
 import "./qdmrpart.js";
+import "./chirppart.js";
 import "./contactspart.js";
