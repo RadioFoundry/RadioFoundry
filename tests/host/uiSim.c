@@ -77,7 +77,7 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "home_vfo_tx", "ok 4 up ok quick 5 up ok back pttdown" },	// FM: the TX frequency large, in red
 	{ "home_vfo_dmr_tx", "ok 4 up ok quick 4 6 up ok back pttdown" },	// the call screen's TX line
 #if CONFIG_NXDN
-	{ "home_nxdn_scrambled", "dlmode:nxdn nxdnrx:1234,7,p" },
+	{ "home_nxdn_scrambled", "chkind:3,nxdn,COUNTY_NXDN dlpos:3 dlmode:nxdn nxdnrx:1234,7,p expect:shows=COUNTY_NXDN expect:shows=ENC" },
 #endif
 	{ "quick_vfo_dmr", "ok 4 up ok quick 4" },
 	{ "quick_vfo_cc_editor", "ok 4 up ok quick 4 3 7" },
