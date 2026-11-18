@@ -1105,8 +1105,8 @@ PD8 (PC6 on Plus 10 W), active high. Dimming: a 101-entry table of 32-bit words 
 request, circular, 100 transfers) to the port's BSRR register: entry 0 sets the pin, entry N resets it, all others are
 0, so the duty is N %. 0 % and 100 % stop the DMA and drive the pin directly.
 
-RadioFoundry dims at 40 kHz with two one-word DMA writes per cycle instead (`boards/uv380_family/backlight_uvf.h`):
-TIM1 counts 1800 per cycle, its update request (DMA2 Stream5 channel 6) writes the set bit and its CC1 request (DMA2
+RadioFoundry uses two one-word DMA writes per PWM cycle (`boards/uv380_family/backlight_uvf.h`):
+At 40 kHz TIM1 counts 1800 per cycle, its update request (DMA2 Stream5 channel 6) writes the set bit and its CC1 request (DMA2
 Stream1 channel 6) the reset bit, so CCR1 is the duty at any percent, 80,000 transfers a second. The ripple of the
 switched backlight current reaches the FM transmit audio. Measured on a DM-1701, Brightness 10 %, 50 mW, FM
 demodulated from a separate receiver, peak deviation:
@@ -1115,12 +1115,18 @@ demodulated from a separate receiver, peak deviation:
 |---|---|---|---|---|
 | 101 Hz, the 100-entry table | 8 Hz | 15 Hz | 13-15 Hz | (it is the 101 Hz line: an audible buzz, #330) |
 | 10 kHz (tried) | 0.5 Hz | 1.9 Hz | 1.1 Hz | 470 Hz: sidebands about 33 dB down at ±10 kHz, in the adjacent 12.5 kHz channel |
-| 40 kHz | 0.6-0.7 Hz | 1.6-2.3 Hz | 1.6 Hz | 99-206 Hz: sidebands 52-58 dB down at ±40 kHz |
+| 40 kHz | 0.6-0.7 Hz | 1.6-2.3 Hz | 1.6 Hz | The conducted measurement below supersedes the over-the-air estimate for this line |
 
 The panel's backlight driver doesn't follow 40 kHz: Brightness 20 % looked close to full, and the idle dim step (a
-fifth) hardly showed. At 2 kHz it dims as set. So the PWM runs at 2 kHz and switches to 40 kHz while the radio
-transmits (`uvf_backlight_tx`, from the radio's TX on and off). Measured on a DM-1701, FM, 50 mW, deviation in the
-demodulated transmit audio:
+fifth) hardly showed. At 2 kHz it dims as set. The PWM uses 2 kHz while idle and 40 kHz while transmitting or while FM or DMR receive audio is open.
+The receive selection follows the audio route even at zero volume, when FM still feeds APRS.
+
+A conducted DM-1701 UHF measurement through 60 dB of attenuation found at most 4.4 Hz deviation at 40 kHz over
+5–90 % pin duty, with sidebands at or below -85 dBc. At 2 kHz and 50 % brightness, an unmodulated -88 dBm carrier
+put a tone in the FM receive audio 14 dB below a 1 kHz tone at 1 kHz deviation. With 40 kHz PWM the same bin was
+48 dB lower. The receiver's local oscillator picks up the backlight ripple with the squelch open.
+
+Earlier over-the-air DM-1701 measurements, FM, 50 mW, deviation in the demodulated transmit audio:
 
 | Backlight PWM during FM transmit | 2 kHz | 4 kHz | 40 kHz |
 |---|---|---|---|
@@ -1147,8 +1153,7 @@ steady backlight as the reference:
 | 20, 22, 25, 30 kHz | 3.3-5.7 Hz | 2.9-6.3 Hz | -76 to -78 dBc (the floor) |
 
 From about 18 kHz up the backlight leaves no trace in transmit. Only 2 kHz lands in the voice band (300-3400 Hz).
-The leak falls about 26 dB from 10 to 18 kHz, much faster than the switching harmonics do, so it is the transmit audio
-path's own filtering, not the backlight's.
+This over-the-air sweep used 50 % pin duty. The conducted sweep above measured both the transmit and receive paths.
 
 The backlight stage behind the pin has a turn-off tail: after the pin falls the LEDs stay at full current for about
 22 us, then fall over about 34 us, 38 us of full light in all, the same at any rate. Two independent measurements on

@@ -710,6 +710,7 @@ static void speaker_apply(void)
 	bool pcm = pcm_wanted;
 	bool fm = audio_wanted && !pcm;
 	bool on = (fm || pcm) && !volume_zero;
+	uvf_backlight_rx(fm || pcm);	// volume zero still feeds FM audio to APRS
 	// The FM feed-through also gates the FM audio on the I2S stream that APRS receive reads (hardware-dm1701.md
 	// 21.3.1), so it follows the core's request, not the knob: at volume zero only the amp is off
 	count(hrc6000_fm_audio(&r.modem, fm));	// FM feed-through only for FM; PCM comes from the codec DAC

@@ -4,17 +4,18 @@
 #ifndef BACKLIGHT_UVF_H
 #define BACKLIGHT_UVF_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 // The backlight pin has no timer channel. TIM1's update sets it and its CC1 match clears it, each through a one-word
 // DMA write to the port's BSRR: two writes per cycle at any duty. Two rates (hardware-dm1701.md 9.4):
-// - While transmitting, 40 kHz keeps the ripple's FM sidebands far below the carrier and three channels away; at
+// - During TX or open receive audio, 40 kHz keeps the backlight ripple out of the signal. At
 //   101 Hz it was an audible buzz in FM transmit, at 10 kHz sidebands about 33 dB down in the adjacent channel (#330).
 // - Otherwise 2 kHz: the backlight driver doesn't follow 40 kHz, so the panel barely dimmed (Brightness 20 % looked
 //   close to full, and the idle dim step hardly showed); at 2 kHz it dims (the stage's tail is taken off below), with
 //   no visible flicker.
 #define UVF_BL_TIMER_HZ		72000000u
-#define UVF_BL_PWM_HZ		40000u		// while transmitting
+#define UVF_BL_PWM_HZ		40000u		// during TX or open receive audio
 #define UVF_BL_PERIOD		(UVF_BL_TIMER_HZ / UVF_BL_PWM_HZ)	// timer counts per cycle (1800)
 #define UVF_BL_IDLE_HZ		2000u		// otherwise
 #define UVF_BL_IDLE_PERIOD	(UVF_BL_TIMER_HZ / UVF_BL_IDLE_HZ)	// (36000)
@@ -25,6 +26,11 @@
 // shortened by it.
 #define UVF_BL_TAIL_US		38u
 #define UVF_BL_TAIL		(UVF_BL_TIMER_HZ / 1000000u * UVF_BL_TAIL_US)	// timer counts (2736)
+
+static inline uint16_t uvf_bl_period(bool tx, bool rx_audio)
+{
+	return tx || rx_audio ? UVF_BL_PERIOD : UVF_BL_IDLE_PERIOD;
+}
 
 // CC1 value for a brightness at a period (UVF_BL_PERIOD or UVF_BL_IDLE_PERIOD): the count at which the pin clears, so
 // that the pulse plus the tail is the brightness's share of the period. A level too low for the tail keeps one count:

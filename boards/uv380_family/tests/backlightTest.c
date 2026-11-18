@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// UV380 family backlight PWM (backlight_uvf.h): a low rate the backlight follows while receiving and a rate far above
-// the FM audio band while transmitting (#330). The backlight stage stays lit about 38 us after the pin falls, at any
+// UV380 family backlight PWM (backlight_uvf.h): a low rate the backlight follows while idle and a rate far above
+// the FM audio band while transmitting or playing receive audio (#330). The backlight stage stays lit about 38 us after the pin falls, at any
 // rate, so the compare is shortened by that tail: pulse plus tail is the brightness asked for, where the period allows.
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,24 +14,28 @@ static int failures, checks;
 
 int main(void)
 {
-	// Transmit rate: the period divides the timer clock exactly, fits the 16-bit counter, and the cycle is far above
+	CHECK(uvf_bl_period(false, false) == UVF_BL_IDLE_PERIOD);
+	CHECK(uvf_bl_period(false, true) == UVF_BL_PERIOD);
+	CHECK(uvf_bl_period(true, false) == UVF_BL_PERIOD);
+	CHECK(uvf_bl_period(true, true) == UVF_BL_PERIOD);
+	// Active rate: the period divides the timer clock exactly, fits the 16-bit counter, and the cycle is far above
 	// the voice band so the ripple's FM sidebands fall well outside the adjacent channel
 	CHECK(UVF_BL_TIMER_HZ % UVF_BL_PWM_HZ == 0);
 	CHECK(UVF_BL_PERIOD == 1800u);
 	CHECK(UVF_BL_PERIOD - 1 <= 0xFFFFu);
 	CHECK(UVF_BL_PWM_HZ >= 25000u);
-	// Receive rate: one the backlight driver follows (40 kHz barely dimmed the panel), still above visible flicker,
+	// Idle rate: one the backlight driver follows (40 kHz barely dimmed the panel), still above visible flicker,
 	// exact in timer counts and within the 16-bit counter
 	CHECK(UVF_BL_TIMER_HZ % UVF_BL_IDLE_HZ == 0);
 	CHECK(UVF_BL_IDLE_PERIOD == 36000u);
 	CHECK(UVF_BL_IDLE_PERIOD - 1 <= 0xFFFFu);
 	CHECK(UVF_BL_IDLE_HZ >= 1000u && UVF_BL_IDLE_HZ <= 5000u);
 	// The tail in timer counts: 38 us at 72 MHz, longer than the transmit period (so transmit can't dim) and a small
-	// share of the receive period
+	// share of the idle period
 	CHECK(UVF_BL_TAIL == 2736u);
 	CHECK(UVF_BL_TAIL > UVF_BL_PERIOD);
 	CHECK(UVF_BL_TAIL * 10u < UVF_BL_IDLE_PERIOD);
-	// Equivalence partitions at the receive rate: off, too low for the tail (one count), a middle level, fully on,
+	// Equivalence partitions at the idle rate: off, too low for the tail (one count), a middle level, fully on,
 	// values above 100
 	CHECK(uvf_bl_compare(0, UVF_BL_IDLE_PERIOD) == 0);
 	CHECK(uvf_bl_compare(5, UVF_BL_IDLE_PERIOD) == 1);	// the idle dim floor: 1800 counts lit is under the tail
