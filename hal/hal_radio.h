@@ -14,6 +14,12 @@ typedef enum { RADIO_MODE_FM, RADIO_MODE_DMR, RADIO_MODE_P25, RADIO_MODE_NXDN } 
 typedef enum { RADIO_BW_12K5, RADIO_BW_25K } radio_bw_t;
 
 typedef enum { TONE_NONE, TONE_CTCSS, TONE_DCS, TONE_DCS_INV } tone_type_t;
+// hal_radio_t.dmr_keying
+typedef struct {
+	bool last_direct;	// the last DMR burst was keyed straight from RX
+	uint32_t direct, idle;	// bursts keyed straight from RX and through idle since boot
+} hal_dmr_keying_t;
+
 typedef struct {
 	uint8_t type;		// tone_type_t
 	uint16_t value;		// CTCSS: Hz x 10 (1000 = 100.0 Hz). DCS: the code as written, octal digits (023 -> 0x13 = 19 = 023 octal)
@@ -93,6 +99,16 @@ typedef struct {
 	// level's again. False: over the board's hardware limit. Any task may call it
 	uint16_t (*tx_drive_level)(uint32_t hz, uint8_t level);
 	bool (*tx_drive)(uint16_t drive);
+	// Optional: the radio core gives the board, once at start, a question to ask as it keys each DMR burst: does an SFR
+	// repeat right now (a channel's or the VFO's repeater role, or the hotspot's SFR mode)? While it does, the board may
+	// key straight from RX, keeping the synthesizer locked for the inbound slot, at the cost of a carrier error it
+	// corrects only roughly; otherwise it keys every burst its normal way. The answer is read from the state itself at
+	// that moment, nothing is copied to the board, so it can't go stale. The question is a few reads of single flags,
+	// safe from an interrupt. NULL = no such mode
+	void (*dmr_direct_query)(bool (*sfr_repeats)(void));
+	// Optional: how the board keyed DMR bursts, for the debug link's view and HIL tests: the last one straight from RX
+	// (dmr_direct_query), and the bursts keyed each way since boot
+	void (*dmr_keying)(hal_dmr_keying_t *k);
 	// Optional, for the PA drive sweep (radio/pa_sweep.h; needs tx_drive_level). tx_drive_top: during an FM
 	// transmission, the drive of the board's highest power level at its frequency (the sweep's ceiling counts from it);
 	// 0 otherwise, which refuses the sweep. tx_drive_now: during an FM transmission, the PA drive at once (0: the PA

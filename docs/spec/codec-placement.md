@@ -101,6 +101,13 @@ All STM32 stock codecs seen so far are builds of one library, with the same entr
 sizes. The codec page of the first radio hosted ("Per-frame calls") specifies them. Its V02.06 build is the reference
 build that the other codec research pages compare with; [radios.md](radios.md) links each radio's pages.
 
+**State.** `platform/stm32f4/hrc/vocoder.c` keeps one CCM block, the size of the encoder's state, for the encoder's
+state or the decoder's, never both. Voice is simplex (the caller decodes nothing while a transmission runs,
+[dmr-voice.md](dmr-voice.md)), and each half of the init touches only its own state, so the first encode after a
+decode runs the encoder's half on the zeroed block (encoder init, FEC init on its own small block, encoder
+parameters, encoder set) and the first decode after an encode runs the decoder's (decoder init, decoder set, the
+first decode). `reset()` only marks the block empty.
+
 Entry points stay in the firmware, as offsets from the code start. Every window must lie inside the flash the board
 leaves to the codec (a board's `memory.ld` and its codec page give the sectors).
 

@@ -249,7 +249,8 @@ so a copy read from a radio is checked by taking it back to the original windows
   file and is flashed with such a release, keeping the codec, finds no codec and is FM only. Going back to it needs the
   codec merged again from D002.032's file.
 * **Calls.** Through the generic veneer `platform/stm32f4/codec_call.c`, as on the DM-1701, with the init sequence and
-  per-frame calls above. The state blocks live in CCM.
+  per-frame calls above. One CCM block holds the encoder's state or the decoder's, never both
+  ([codec-placement.md](codec-placement.md), "STM32 radios").
 
 ### 35.14
 
