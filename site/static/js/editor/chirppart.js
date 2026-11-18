@@ -39,7 +39,12 @@ function open(api, name, f) {
 			return false;
 		}
 	});
-	if (error) return api.say(t(`editor.chirp.err.${error.code}`, { name, ...error.params }), "bad");
+	if (error) {
+		api.say(t(`editor.chirp.err.${error.code}`, { name, ...error.params }), "bad");
+		// nothing was imported: say why, row by row kind
+		if (error.params.notes?.length) report(api, t("editor.chirp.report_title", { name }), t("editor.chirp.empty_notes"), error.params.notes);
+		return;
+	}
 	const { channels, zones } = result.counts;
 	api.say(t("editor.chirp.imported", { name, channels, zones }), result.notes.length ? "warn" : "ok");
 	if (!result.notes.length) return;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// CHIRP CSV in the codeplug editor (static/js/codeplug/chirp.js): the mapping to the model, what is left out, and a
-// round trip through the export. The sample rows are made up.
+// CHIRP CSV in the codeplug editor (static/js/codeplug/chirp.js): the mapping to the model, what is left out or can't
+// be read, and a round trip through the export; and the CHIRP image reader (chirp_img.js). The samples are made up.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -114,4 +114,63 @@ test("an image of the supported radio imports its channels", () => {
 test("an image of another radio is refused by name", () => {
 	assert.throws(() => importChirpImg(empty(), image("UV-82", "BaofengUV82Radio")), (e) => e.code === "img_model" && e.params.model === "Baofeng UV-82");
 	assert.throws(() => importChirpImg(empty(), new Uint8Array(100)), (e) => e.code === "not_chirp");
+});
+
+test("a file with nothing to import is refused and changes nothing", () => {
+	const m = empty();
+	importChirp(m, SAMPLE);
+	const before = JSON.stringify([m.channels, m.zones]);
+	assert.throws(() => importChirp(m, `${HEAD}\n`), (e) => e.code === "empty");
+	const dv = `${HEAD}\n0,D-Star,146.94,,0.6,,88.5,88.5,023,NN,023,Tone->Tone,DV,5,,,,,,,\n`;
+	assert.throws(() => importChirp(m, dv), (e) => e.code === "empty" && e.params.notes[0].code === "mode");
+	const blank = image();
+	blank.fill(0xFF, 0, 0x1808);
+	assert.throws(() => importChirpImg(m, blank), (e) => e.code === "empty");
+	assert.equal(JSON.stringify([m.channels, m.zones]), before);
+});
+
+test("reverse tone squelch is counted as a tone the radio can't hold", () => {
+	const rows = ["DTCS-R", "TSQL-R"].map((t, i) => `${i},R${i},146.5${i},,0.6,${t},88.5,88.5,023,NN,023,Tone->Tone,FM,5,,,,,,,`);
+	const m = empty();
+	const { counts, notes } = importChirp(m, `${HEAD}\n${rows.join("\n")}\n`);
+	assert.equal(counts.channels, 2);
+	assert.deepEqual(notes, [{ code: "bad_tone", n: 2 }]);
+	assert.deepEqual(m.channels.map((c) => [c.rxTone, c.txTone]), [["", ""], ["", ""]]);
+});
+
+test("rows that can't be read are counted apart from other modes", () => {
+	const ok = "0,Simplex,146.52,,0.6,,88.5,88.5,023,NN,023,Tone->Tone,FM,5,,,,,,,";
+	const short = "1,Short,146.53,,0.6";
+	const unclosed = '2,"Open quote,146.54,,0.6,,88.5,88.5,023,NN,023,Tone->Tone,FM,5,,,,,,,\n3,Lost,146.55,,0.6,,88.5,88.5,023,NN,023,Tone->Tone,FM,5,,,,,,,';
+	const m = empty();
+	const { counts, notes } = importChirp(m, `${HEAD}\n${ok}\n${short}\n${unclosed}\n`);
+	assert.equal(counts.channels, 1);
+	assert.deepEqual(notes, [{ code: "unreadable", n: 2 }]);
+});
+
+// Bytes with a footer naming model at offset at, the memory before it all 0xFF
+function footerOnly(at, model, rclass) {
+	const json = Buffer.from(JSON.stringify({ rclass, vendor: "Baofeng", model })).toString("base64");
+	const b = new Uint8Array(at + 11 + json.length).fill(0xFF);
+	b.set([0x63, 0x68, 0x69, 0x72, 0x70, 0xEE, 0x69, 0x6D, 0x67, 0x00, 0x01], at);
+	b.set(new TextEncoder().encode(json), at + 11);
+	return b;
+}
+
+test("a larger image of another radio is refused by name; a cut short one by its size, another class by its class", () => {
+	const big = footerOnly(0x4000, "UV-82", "BaofengUV82Radio");
+	assert.ok(isChirpImg(big));
+	assert.throws(() => importChirpImg(empty(), big), (e) => e.code === "img_model" && e.params.model === "Baofeng UV-82");
+	assert.throws(() => importChirpImg(empty(), footerOnly(0x1000, "UV-5R", "BaofengUV5RGeneric")), (e) => e.code === "img_size");
+	assert.throws(() => importChirpImg(empty(), image("UV-5R", "DynamicRadioAlias")), (e) => e.code === "img_class" && e.params.rclass === "DynamicRadioAlias");
+});
+
+test("an image channel with no TX frequency is receive only, not simplex", () => {
+	const b = image();
+	b.fill(0xFF, 8 + 4, 8 + 8);	// channel 0's TX frequency
+	const m = empty();
+	importChirpImg(m, b);
+	const c = m.channels[0];
+	assert.deepEqual([c.name, c.rxOnly, c.txHz], ["SIMPLEX", true, 146520000]);
+	assert.equal(m.channels[1].rxOnly, false);
 });

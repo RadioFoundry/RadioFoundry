@@ -100,8 +100,9 @@ data is in the repository or on the site: `regions.js` holds only country and st
 
 `site/tests/codeplug.test.mjs` checks the decoder and encoder against the radio's own codeplug code: `fixtures.py`
 builds `tests/host/cpsSim`, stores a populated codeplug, and records what the radio reads back (`--detail`). The JS
-decode must match it, and the encode must store what the radio then reads. `csv.test.mjs` covers the CSV round trips
-and import problems; `sources.test.mjs` covers the RadioID parser, the API client against a fake `fetch` (the key
-never sent through the proxy), templates and outputs. `chirp.test.mjs` covers the CHIRP CSV mapping and its round trip. `qdmr.test.mjs` covers the YAML parser, the mapping, round
-trips and the converters; when `dmrconf` (qdmr's command line tool) is installed it also encodes an exported file.
-Nothing reaches the network.
+decode must match it, and the encode must store what the radio then reads. `csv.test.mjs` covers the CSV round trips and
+import problems; `sources.test.mjs` covers the RadioID parser, the API client against a fake `fetch` (the key never sent
+through the proxy), templates and outputs. `chirp.test.mjs` covers the CHIRP CSV mapping, its round trip and what it
+can't read, and the CHIRP image reader: a made-up image in the documented layout, other radios, cut short images and
+receive-only channels. `qdmr.test.mjs` covers the YAML parser, the mapping, round trips and the converters; when
+`dmrconf` (qdmr's command line tool) is installed it also encodes an exported file. Nothing reaches the network.

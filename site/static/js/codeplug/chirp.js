@@ -66,8 +66,8 @@ function tones(r, note) {
 		const one = (x, tonekey, codekey, pol) => (x === "Tone" ? ctcss(tonekey) : x === "DTCS" ? code(codekey, pol) : "");
 		tx = one(a, "rtonefreq", "dtcscode", polarity[0]);
 		rx = one(b, "ctonefreq", r.rxdtcscode ? "rxdtcscode" : "dtcscode", polarity[1]);
-	} else if (mode && mode !== "DTCS-R" && mode !== "TSQL-R") {
-		note("bad_tone");
+	} else if (mode) {
+		note("bad_tone");	// DTCS-R and TSQL-R (reverse tone squelch) among them
 	}
 	if (tx === null || rx === null) {
 		note("bad_tone");
@@ -77,11 +77,20 @@ function tones(r, note) {
 }
 
 // Replace m's channels and zones with the file's FM channels, in zones named zoneName. Returns {counts: {channels, zones}, notes}.
+// A row that ends before the Mode column, or has a line break in a cell (a quote never closed takes in the rest of the
+// file), is counted as unreadable rather than taken for a channel in another mode
 export function importChirp(m, textIn, zoneName = "CHIRP") {
 	const rows = parse(textIn);
 	const head = (rows[0] || []).map((h) => h.trim().toLowerCase());
 	if (!REQUIRED.every((k) => head.includes(k))) throw new ChirpError("not_chirp");
-	return importRows(m, rows.slice(1).map((cells) => Object.fromEntries(head.map((h, i) => [h, (cells[i] ?? "").trim()]))), zoneName);
+	const modeAt = head.indexOf("mode");
+	const notes = new Map();
+	const good = rows.slice(1).filter((cells) => {
+		if (cells.length > modeAt && !cells.some((c) => /[\r\n]/.test(c))) return true;
+		notes.set("unreadable", (notes.get("unreadable") || 0) + 1);
+		return false;
+	});
+	return importRows(m, good.map((cells) => Object.fromEntries(head.map((h, i) => [h, (cells[i] ?? "").trim()]))), zoneName, notes);
 }
 
 // The same for rows already split into CHIRP's columns (lower case keys), as the image reader makes them. A row can
@@ -91,7 +100,7 @@ export function importRows(m, rows, zoneName = "CHIRP", notes = new Map()) {
 	const made = [];
 	for (const r of rows) {
 		if (!r.frequency && !r.name) continue;
-		const mode = r.mode.toUpperCase();
+		const mode = (r.mode || "").toUpperCase();
 		if (mode !== "FM" && mode !== "NFM") {
 			note("mode");
 			continue;
@@ -125,6 +134,8 @@ export function importRows(m, rows, zoneName = "CHIRP", notes = new Map()) {
 			lat: 0, lon: 0, sfr: false, sfrA: 0, sfrB: 0, toneBurst: false,
 		});
 	}
+	// Nothing to bring in: the codeplug stays as it is rather than losing its channels to an empty list
+	if (!made.length) throw new ChirpError("empty", { notes: [...notes].map(([code, n]) => ({ code, n })) });
 	if (made.length > LIMITS.channels) {
 		note("too_many_channels", made.length - LIMITS.channels);
 		made.length = LIMITS.channels;
