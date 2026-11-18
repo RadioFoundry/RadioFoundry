@@ -95,5 +95,4 @@ If the radio restarted by itself, look at **Settings > Advanced > Crash log** ([
 and copy its lines into the issue. Developers get the whole record with `tools/rfoundry_debug.py crash`.
 
 For gaps in received digital speech, include the mode, signal strength and whether they occur throughout the call or
-only at its beginning or end. The speaker playback scheduling fix leaves speaker volume and microphone gain
-unchanged; persistent distortion or quiet transmitted speech needs its own report.
+only at its beginning or end.
