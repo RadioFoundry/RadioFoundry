@@ -116,6 +116,30 @@ def test_reconnect_closes_the_old_link(bench):
     assert old in bench.closed and r.link is not old
 
 
+@pytest.mark.parametrize("reopen", [False, True], ids=["same-link", "reopened-link"])
+def test_vfo_session_restores_the_frequency(bench, monkeypatch, reopen):
+    state = {"vfo": "1", "mode": "fm", "rx_hz": "446500000"}
+
+    class VfoLink(FakeLink):
+        def version(self):
+            return {"features": "VFO"}
+
+        def view(self, sections):
+            return state if sections == ["core"] else {}
+
+        def vfo_set(self, hz):
+            assert self not in bench.closed, "VFO write on a closed link"
+            state["rx_hz"] = str(hz)
+
+    monkeypatch.setattr(rfoundry_hil, "DebugLink", VfoLink)
+    r = Radio("A")
+    with r.vfo_session() as hz:
+        r.link.vfo_set(hz + 12500)
+        if reopen:
+            r.reconnect(timeout=1)
+    assert state["rx_hz"] == "446500000"
+
+
 def test_another_radio_is_asked_once(bench):
     r = Radio("A")
     r.pinned = False
