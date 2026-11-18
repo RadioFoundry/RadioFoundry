@@ -25,6 +25,9 @@
 #ifndef configTOTAL_HEAP_SIZE
 #define configTOTAL_HEAP_SIZE			(40 * 1024)	// task stacks and queues (the STM32 radios need 28 KB; more room here)
 #endif
+// ucHeap is ours (main.c), in a section the linker script puts last: main() runs on its top before the scheduler
+// starts, and the tasks get that RAM afterwards (common.ld)
+#define configAPPLICATION_ALLOCATED_HEAP	1
 #define configMAX_TASK_NAME_LEN			12
 #define configUSE_16_BIT_TICKS			0
 #define configIDLE_SHOULD_YIELD			1

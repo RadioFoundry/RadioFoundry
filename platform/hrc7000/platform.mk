@@ -19,6 +19,9 @@ STACK_OVERHEAD := 68
 # every function passed to hrc_irq_register must fit it with the margin (crash-log.md: the interrupt stack's canary
 # catches what slips past)
 STACK_IRQ := --irq-stack-symbols __irq_stack_bottom,__irq_stack_top --irq-register hrc_irq_register
+# main() runs on the top of the RTOS heap until the scheduler starts (common.ld): checked against that size too, since
+# below it lie the first tasks' stacks rather than free RAM
+STACK_IRQ += --startup-stack-symbols __startup_stack_bottom,__stack_top
 
 RTOS := third_party/FreeRTOS-Kernel
 
