@@ -76,7 +76,9 @@ byte; a copy at another number takes the source's tag. When the channel editor c
 ([ui.md](ui.md) 2.1), the record is written as the safe stand-in and the tag follows it, then the edited block (its
 squelch as read) is written over the front of the tag's ([channel-modes.md](channel-modes.md) 2.4): the system, the
 fallback, the other flags and any later bytes of the block stay, and under a tag with the base-record flag the
-record keeps its own mode. A copy takes its source's tag first. A plain channel in NXDN takes the edited block in place of the settings'.
+record keeps its own mode. A copy takes its source's tag first. A plain channel in NXDN takes the edited block in place of the settings'. A channel the editor's Mode row made NXDN is written the same way
+with a new tag and block: 9600 bit/s, RAN 1 both ways (unless edited), squelch by RAN, its talk target as the editor
+shows it.
 
 ## 3. Sharing
 

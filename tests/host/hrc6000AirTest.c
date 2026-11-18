@@ -962,6 +962,7 @@ static uint8_t c5_mode(bool repeater)
 
 static const hrc_chip_t chip_c5 = {
 	.cfg_page = 4, .id_low_first = true, .sync_reg = false, .mode_per_channel = true, .tc_last_rx = true,
+	.air_tx_only = true,
 	.dmr_mode = c5_mode,
 };
 
@@ -971,12 +972,16 @@ static void test_chip_description(void)
 	hrc_attach(&dev, &bus, &chip_c5);
 	hrc6000_dmr_init(&eng, &dev, &ops);
 	air_profile_t p = p25();
+	// No physical layer receive: P25 transmits only, so the radio doesn't offer or scan it (a channel it can't hear)
+	uint32_t f = hrc6000_air_fit_tap(&p, &chip_c5, NULL);
+	CHECK(f == (hrc6000_air_fit(&p) & ~(uint32_t)(AIR_FIT_RX | AIR_FIT_SOFT | AIR_FIT_NEEDS_SYNC)));
+	CHECK((f & AIR_FIT_TX) != 0 && (f & AIR_FIT_RX) == 0);
 	hrc6000_air_init(AIR, &dev, &ops, BUF, NULL, NULL);
 	nx = 0;
 	CHECK(hrc6000_air_open(AIR, &p, on_event, NULL));
 	CHECK(last_write(4, 0x10) == 0x02 && last_write(4, 0x40) == 0x40 && last_write(4, 0x41) == 0x40);
 	CHECK(count_writes(4, 0x5F, -1) == 0);	// a register the chip doesn't have
-	CHECK(memcmp(&wr[1][0x47], P25_SYNC, 6) == 0);
+	CHECK(memcmp(&wr[1][0x47], P25_SYNC, 6) != 0);	// no receive: no sync pattern to match
 
 	air_tx_chunk_t c = chunk(0x11, 144, 0);
 	CHECK(hrc6000_air_tx_queue(AIR, &c));
@@ -1025,12 +1030,17 @@ static void test_copy(void)
 	q.sync[1].flags = AIR_SYNC_START_ONLY;	// a sync the correlator can't hold: transmit only by the chip alone
 
 	// Fit: the copy adds receive where the correlator has none, and only there
-	CHECK(hrc6000_air_fit_tap(&q, NULL) == hrc6000_air_fit(&q));
-	CHECK(hrc6000_air_fit_tap(&q, &tap) == (hrc6000_air_fit(&q) | AIR_FIT_RX | AIR_FIT_SOFT));
-	CHECK(hrc6000_air_fit_tap(&p, &tap) == hrc6000_air_fit(&p));
+	CHECK(hrc6000_air_fit_tap(&q, NULL, NULL) == hrc6000_air_fit(&q));
+	CHECK(hrc6000_air_fit_tap(&q, NULL, &tap) == (hrc6000_air_fit(&q) | AIR_FIT_RX | AIR_FIT_SOFT));
+	CHECK(hrc6000_air_fit_tap(&p, NULL, &tap) == hrc6000_air_fit(&p));
 	air_profile_t z = q;
 	z.sym_rate = 1200;
-	CHECK(hrc6000_air_fit_tap(&z, &tap) == 0);	// nothing to send it with: no session
+	CHECK(hrc6000_air_fit_tap(&z, NULL, &tap) == 0);	// nothing to send it with: no session
+	// A chip without physical layer receive (air_tx_only) receives through the copy only, a profile its correlator
+	// would take too
+	CHECK(hrc6000_air_fit_tap(&p, &chip_c5, &tap) ==
+	      (hrc6000_air_fit_tap(&p, &chip_c5, NULL) | air_softmodem_rx_fit(&p, &tap)));
+	CHECK((hrc6000_air_fit_tap(&p, &chip_c5, &tap) & AIR_FIT_RX) != 0);
 
 	// A board without the copy: the profile opens for transmit only, the chip in the physical layer
 	fresh();
