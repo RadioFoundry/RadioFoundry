@@ -133,7 +133,7 @@ Open Diagnostics (Menu > Settings > Diagnostics, or `rfoundry_debug.py diag`). T
 | "bat raw R NNNNmV" matches a meter within 2 % | `MD380_BATT_COUNTS_X10` in `power_md380.c`. Unknown 6 |
 | Switching off with the knob: the radio dies at once | if it stays on, the switch is sensed, not direct: `switch_on()` in `power_md380.c`. Unknown 7 |
 | "flash EF4018 16384K" (W25Q128) or a 1 MB part | `flash_md380.c` accepts any JEDEC type 0x40. Unknown 8 |
-| Settings survive a power cycle (16 MB parts) | the flash map in `flash_md380.c` |
+| Settings survive a power cycle (16 MB and 1 MB parts) | the flash map in `flash_md380.c` |
 
 ## 4. Synthesizer, HR_C5000, calibration
 

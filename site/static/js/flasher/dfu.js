@@ -89,6 +89,9 @@ export class Dfu {
 	// once, so the write starts at 91 31
 	async run(plan, key, progress = () => {}, { programMode = false } = {}) {
 		const base = plan.board.app_base;
+		// checked before the erase: every block is XORed with it, so a missing key would stop at the first block with
+		// the application area already erased
+		if (!key || key.length !== KEY_LEN) throw new DfuError(`no bootloader key for ${plan.board.name || "this radio"}`);
 		// makePlan refuses or carves these; a plan built another way is checked again before anything is sent
 		for (const s of plan.erase) protect.check(plan.board.protect, "progmem", s.addr - plan.board.rom_base, s.addr + s.size - plan.board.rom_base, "erase");
 		for (const st of plan.writes) if ((st.sector.addr - base) % KEY_LEN) throw new DfuError(`sector ${hex(st.sector.addr)} is not key-aligned`);

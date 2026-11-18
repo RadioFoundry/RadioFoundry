@@ -181,9 +181,10 @@ typedef struct hrc6000_air {
 
 // Pure: what the chip can do with a profile (hal_air_t.fit, without AIR_FIT_UNTESTED: the board adds that)
 uint32_t hrc6000_air_fit(const air_profile_t *p);
-// Pure: the same with the FM copy's receive (the soft modem's fit on tap) where the correlator gives none; tap NULL:
-// the board has no copy
-uint32_t hrc6000_air_fit_tap(const air_profile_t *p, const hal_baseband_t *tap);
+// Pure: what chip can do with a profile, with the FM copy's receive (the soft modem's fit on tap) where the correlator
+// gives none. A chip without physical layer receive (air_tx_only) has the copy's receive only; chip NULL: the
+// HR_C6000's. tap NULL: the board has no copy
+uint32_t hrc6000_air_fit_tap(const air_profile_t *p, const hrc_chip_t *chip, const hal_baseband_t *tap);
 // Pure: the two-point pair for a transmit deviation, from the pair calibrated for DMR (1944 Hz outer)
 void hrc6000_air_mod_pair(const air_profile_t *p, uint8_t cal2, uint8_t cal1, uint8_t *mod2, uint8_t *mod1);
 // Pure: one record (2 bytes per symbol, chip order) to air order without its first skip symbols, soft scaled to

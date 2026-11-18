@@ -300,6 +300,7 @@ typedef struct {
 	uint32_t t_cc;
 	uint32_t cc_hold_tick;
 	bool cc_held;
+	uint8_t cc_tick_last[2], cc_tick_n[2];	// a chip without any-CC deframing: 0x52's code at the ticks, by phase
 	bool restart_pending;
 	uint8_t restart_why;
 	bool idle_restarted;	// the quiet-period restart has been done

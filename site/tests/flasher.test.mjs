@@ -667,6 +667,18 @@ async function simulated(state) {
 	return { sim, radio: new FakeRadio(sim, { state, spiSize: 0x200000 }) };
 }
 
+// A stock file picked again on the write step cleared the key after the plan was made: the write erased, then failed
+// at the first block with a null key, and the radio had no application left
+test("a DFU write without the key stops before it erases anything", async () => {
+	const { sim, radio } = await simulated("stock");
+	const plan = makePlan(sim.board, segments(fx.manifest, image), KEEP);
+	radio.enterBootloader();
+	const before = radio.flash.slice();
+	for (const key of [null, new Uint8Array(0)]) await assert.rejects(new Dfu(radio.dfuTransport(), noWait).run(plan, key), /no bootloader key/);
+	assert.deepEqual(radio.erased, []);
+	assert.deepEqual(radio.flash, before);
+});
+
 test("first install on stock: the codec merged from the stock file, then back up through RadioFoundry", async () => {
 	const { sim, radio } = await simulated("stock");
 	const m = { ...fx.manifest };

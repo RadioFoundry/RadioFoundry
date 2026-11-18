@@ -28,7 +28,7 @@ import { radioPicture, holdKeys, hasNoScreen } from "./radiotop.js";
 import { validRef, refShort, defaultRef, firmwareName, betaLink } from "./version.js";
 import { verify, segments, forDevBuild } from "./manifest.js";
 import { Dfu, DfuError, NormalModeError, WebUsbTransport, checkKey, usbSupported } from "./dfu.js";
-import { Link, LinkError, CableError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, whyNoAnswer, noAnswerKey, serialSupported, serialApi, browserErrorKey, knownRadioPort } from "./link.js";
+import { Link, LinkError, CableError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, whyNoAnswer, noAnswerKey, serialSupported, serialApi, browserErrorKey, noDeviceChosen, knownRadioPort } from "./link.js";
 import { readRadio, makeBundle, openBundle, bundleFolder, notBundle, bundleName, describeFirmware, CODEPLUG_SPAN } from "./backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug, codeplugLayout } from "./restore.js";
 import { Selection } from "./select.js";
@@ -2236,13 +2236,15 @@ function bootloaderPanel(title, makePlanFn, onDone, what, { inline = false } = {
 	const log = logBox();
 	const prog = progressBar();
 	const status = h("div");
-	let plan = null, transport = null, noCodecOk = false;
+	// planKey: the key the plan was made with. A stock file picked again after this (useStock) clears S.key, and a
+	// write with no key would erase the sectors and then stop at the first block, leaving no application
+	let plan = null, planKey = null, transport = null, noCodecOk = false;
 	const place = (btn) => (inline ? slot.replaceChildren(btn) : S.forward(btn));
 	const slot = h("div", { class: "actions" });
 	const draw = async () => {
 		try {
-			const key = await getKey(S.board);
-			plan = await makePlanFn(key);
+			planKey = await getKey(S.board);
+			plan = await makePlanFn(planKey);
 		} catch (e) {
 			// the stock file is what the key and the codec come from: a problem with it is explained, not just quoted
 			box.replaceChildren(h("h2", {}, title), failureNotice(e, S.stock));
@@ -2291,7 +2293,7 @@ function bootloaderPanel(title, makePlanFn, onDone, what, { inline = false } = {
 				await dropSerial();
 				started = flashStarted(what);
 				const programMode = !!loaderProgramMode && loaderProgramMode === (S.fakeRadio || transport.device);
-				await new Dfu(transport, { log: log.add }).run(plan, S.key, (d, total) => {
+				await new Dfu(transport, { log: log.add }).run(plan, planKey, (d, total) => {
 					if (d > 0) flashMark(started, "first_byte");
 					prog.set(d, total, t("flash.write.writing"));
 				}, { programMode });
@@ -2335,8 +2337,10 @@ function writeView() {
 	const what = { task: "install", source: fw.origin || "", radio: S.board.id, firmware: String(fw.manifest.version || ""),
 		variant: fw.variant || fw.manifest.variant || (fw.manifest.dev_build ? "dev" : ""), features: fw.manifest.features || "", build: fw.build || null };
 	const dfu = (opts) => bootloaderPanel(t("flash.write.title"), async () => {
-		// from the cable route the codec step was skipped: decide now, from what the radio reported
-		S.decision ||= decideCodec(S.board, fw.manifest, { haveStock: stockGivesCodec(), haveSaved: !!S.savedCodec, savedKept: savedKept(), probe: S.now?.probe || null });
+		// from the cable route the codec step was skipped: decide now, from what the radio reported. A decision made here
+		// is made again after another stock file is picked; one from the codec step is the user's and stays
+		if (!S.decision || (S.decision.inline && S.decision.stock !== S.stock))
+			S.decision = { ...decideCodec(S.board, fw.manifest, { haveStock: stockGivesCodec(), haveSaved: !!S.savedCodec, savedKept: savedKept(), probe: S.now?.probe || null }), inline: true, stock: S.stock };
 		let codec = [], prof = null;
 		if (S.decision.mode === MERGE && S.decision.source === "saved") {
 			prof = S.savedCodec.profile;
@@ -2354,8 +2358,11 @@ function writeView() {
 	}
 	// the bootloader route stays one click away: it finishes an install the loader couldn't
 	const fallback = h("details", { class: "panel" }, h("summary", {}, t("flash.f4.bootloader")));
-	fallback.addEventListener("toggle", () => { if (fallback.open && fallback.children.length < 2) fallback.append(dfu({ inline: true })); });
-	return h("div", { class: "flasher" }, stubPanel(fallback, next, what), fallback);
+	const fillFallback = () => fallback.replaceChildren(fallback.firstChild, ...(fallback.open ? [dfu({ inline: true })] : []));
+	fallback.addEventListener("toggle", () => { if (fallback.open && fallback.children.length < 2) fillFallback(); });
+	// a stock file picked in the cable route's panel: the bootloader route's plan was made from the earlier one (or none)
+	const stockPicked = () => { if (fallback.children.length > 1) fillFallback(); };
+	return h("div", { class: "flasher" }, stubPanel(fallback, next, what, stockPicked), fallback);
 }
 
 // The segments the loader writes: the build, and where the radio's codec moves (codecMoves) the codec too, from the copy
@@ -2378,7 +2385,7 @@ async function stubSegments(fw, log) {
 
 // Install through the STM32F4 loader on a radio running RadioFoundry (f4stub.js). fallback: the bootloader route's details,
 // opened when the loader can't finish
-function stubPanel(fallback, onDone, what) {
+function stubPanel(fallback, onDone, what, stockPicked = () => {}) {
 	const box = h("section", { class: "panel" });
 	const log = logBox();
 	const prog = progressBar();
@@ -2511,6 +2518,7 @@ function stubPanel(fallback, onDone, what) {
 		S.stock = await pickedStock(f);
 		if (!S.keyFromRadio) S.key = S.keySource = null;
 		drawStock();
+		stockPicked();
 	};
 	const drawStock = () => {
 		go.disabled = needStock();
@@ -2573,6 +2581,13 @@ function doneView() {
 		} catch (e) {
 			await dropSerial();
 			check.disabled = false;
+			// the chooser closed with no port: nothing was checked, so nothing is recorded (the next try still is). After a
+			// bootloader write the radio is a device this browser hasn't been granted, so it asks once, and many close it
+			if (noDeviceChosen(e)) {
+				diag.note("verify: no port chosen");
+				status.replaceChildren(notice(t("flash.done.pick_port", { radio: S.board.name }), "info"), serialHelp());
+				return;
+			}
 			flashMark(S.lastStarted, "verify", { ok: false, reason: String(e?.message || e) });
 			diag.note("verify failed", { kind: e?.params?.kind || null, message: String(e?.message || e).slice(0, 120) });
 			S.reportResult = "failed";
@@ -2676,7 +2691,8 @@ async function bringChannels(status, { finish }) {
 			const sectors = m.migrationSectors(conv.image, radio, S.board?.protect);
 			await prepareStorage(box);	// the radio refuses every codeplug write until its settings area is RadioFoundry's
 			const refused = await writeCodeplug(link, sectors, (d, n) => prog.set(d, n, t("flash.channels.writing")));
-			const back = await link.cpsDump(1, 0, m.readSpan(null), { progress: (d, n) => prog.set(d, n, t("flash.channels.checking")) });
+			// the span the first read took: a memory chip smaller than the codeplug span ends the read early
+			const back = await link.cpsDump(1, 0, radio.length, { progress: (d, n) => prog.set(d, n, t("flash.channels.checking")) });
 			const check = m.checkMigration(sectors, back.data, conv.counts);
 			prog.el.remove();
 			diag.note("channels written", { sectors: sectors.length, refused: refused.length, differ: check.differ.length, have: check.have });

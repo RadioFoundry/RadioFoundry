@@ -21,7 +21,12 @@
 #include "aprs/ax25.h"
 #include "position/position.h"
 
-#define APRS_TOCALL		"APZRDF"	// destination: the experimental APZ block (docs/spec/aprs.md 4.2)
+// Destination: our registered tocall APRDF?, the sixth character the board's (board.toml aprs_tocall, passed in by the
+// build; docs/spec/aprs.md 4.2). "0" is no radio: the host tests
+#ifndef APRS_TOCALL_ID
+#define APRS_TOCALL_ID		"0"
+#endif
+#define APRS_TOCALL		"APRDF" APRS_TOCALL_ID
 #define APRS_SSID_DEFAULT	7		// handheld
 #define APRS_DMR_DST_DEFAULT	310999u		// BrandMeister's APRS gateway, <master MCC>999 (310999 for US masters); 5057 retired 2019-03-01
 #define APRS_LEVEL_DEFAULT	50

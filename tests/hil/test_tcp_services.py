@@ -134,7 +134,7 @@ def _ax25_addr(call, ssid, last):
 
 
 def _ui_frame(src, ssid, info):
-    return _ax25_addr("APZRDF", 0, False) + _ax25_addr(src, ssid, True) + b"\x03\xf0" + info
+    return _ax25_addr("APZTST", 0, False) + _ax25_addr(src, ssid, True) + b"\x03\xf0" + info
 
 
 @pytest.mark.feature("net_kiss")
