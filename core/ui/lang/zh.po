@@ -24,6 +24,71 @@ msgctxt "STUB_HINT_POWER_CYCLE"
 msgid "Power-cycle to exit"
 msgstr "断电重启退出"
 
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_OFFICIAL"
+msgid "RadioFoundry release build"
+msgstr "RadioFoundry 正式版本"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_SERVICE"
+msgid "RadioFoundry build service"
+msgstr "RadioFoundry 构建服务"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_PR"
+msgid "Pull request build"
+msgstr "PR 构建"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_LOCAL"
+msgid "Built locally"
+msgstr "本地构建"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_FORK"
+msgid "Fork"
+msgstr "分支版本"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_UNKNOWN"
+msgid "Unknown"
+msgstr "不详"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_MCU"
+msgid "MCU: "
+msgstr "MCU： "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_FLASH"
+msgid "Flash: "
+msgstr "存储器： "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_DISPLAY"
+msgid "Display: "
+msgstr "显示屏： "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_DMR_CHIP"
+msgid "DMR chip: "
+msgstr "DMR 器件： "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_RF_CHIP"
+msgid "RF chip: "
+msgstr "射频器件： "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_HARDWARE"
+msgid "Hardware: "
+msgstr "设备： "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_HWOPT_UNSET"
+msgid "not set"
+msgstr "未设置"
+
 #: core/ui/fmt.c core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "VALUE_OFF"
 msgid "Off"
@@ -3058,6 +3123,21 @@ msgstr "上下  # +/-  OK 完成"
 msgctxt "TRIM_TOAST_MAX"
 msgid "Up to 10.0 ppm"
 msgstr "最大 10.0 ppm"
+
+#: core/ui/ui_menus.c
+msgctxt "ABOUT_LABEL_SOURCE"
+msgid "Source: "
+msgstr "来源： "
+
+#: core/ui/ui_menus.c
+msgctxt "ABOUT_LABEL_IMAGE"
+msgid "Image: "
+msgstr "固件标识： "
+
+#: core/ui/ui_menus.c
+msgctxt "ABOUT_VALUE_IMAGE_CHECKING"
+msgid "checking"
+msgstr "检查中"
 
 #: core/ui/ui_menus.c
 msgctxt "ABOUT_BODY_FIRMWARE"

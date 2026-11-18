@@ -109,6 +109,7 @@ is `tools/bringup.py list --radio <id>`.
 | `crash_screen` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | ✕ |
 | `crash_report` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | ✕ |
 | `watchdog` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | pass |
+| `support_info` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `fault_trace` | not recorded | ✕ | not recorded | not recorded | ✕ | ✕ | ✕ | not recorded |
 | `usb_network` | ✕ | pass (seed) | ✕ | ✕ | not recorded | not recorded | pass, needs re-run | ✕ |
 | `usb_serial_request` | off | not recorded | off | off | not recorded | not recorded | not recorded | off |
@@ -270,6 +271,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `CRASH_SCREEN` | ● | ● | ● | ● | ● | ● | ● | ✕ |
 | `CRASH_REPORT` | ● | ● | ● | ● | ● | ● | ● | ✕ |
 | `WATCHDOG` | ● | ● | ● | ● | ● | ● | ● | ● |
+| `SUPPORT_INFO` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `FAULT_TRACE` | ● | ✕ | ● | ● | ✕ | ✕ | ✕ | ● |
 | `AM_RX` | ● | ✕ | ● | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `BCAST_FM` | ● | ✕ | ● | … | ✕ | ✕ | ✕ | ✕ |
@@ -405,6 +407,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 |---|---|---:|---:|---|
 | Settings menu on the radio | `UI_SETTINGS` | 5,304 | 5,640 |  |
 | Diagnostics page | `DIAG` | 3,752 | 3,532 |  |
+| Support info on About and the debug link (build source, chips, image hash) | `SUPPORT_INFO` | 2,528 | 2,632 | Read only when About opens or a host asks ([support-info.md](spec/support-info.md)). Measured 2026-11-18 |
 | Backlight test pages | `BACKLIGHT_TEST` | 1,536 | 1,552 | Off by default; bench work ([backlight-curve.md](testing/backlight-curve.md)) |
 | Color screen settings (theme, highlight color, filled status bar) | `UI_COLOR` | 672 | 608 | Off on the DM-1801 Pro (monochrome screen; 628 B there). Measured 2026-10-17; DM-1701 with LTO 612 B |
 | 16x32 font | `FONT_XL` | 6,352* | — | Only useful at 240 px and wider (MD-380 is 160 px). Anti-aliased on the DM-32 (7.4 KB of glyphs) |

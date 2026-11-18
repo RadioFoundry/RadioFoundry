@@ -1566,6 +1566,24 @@ static void about_checks(void)
 			fails++;
 		}
 		sim_run("pttup", err, sizeof err);
+		// The support info (docs/spec/support-info.md): the source, the image hash (done after a few redraws: the
+		// sim's image is one step), the MCU and the board's chips
+		bool src = false, mcu = false, dmr = false, checking = false;
+		sim_reset(&sim_geoms[g], SIM_MAP_K);
+		if (sim_run("ok 7 up ok ok wait:1000", err, sizeof err)) {
+			for (int i = 0; i < 40; i++) {
+				src = src || sim_run("expect:shows=Source:", err, sizeof err);
+				mcu = mcu || sim_run("expect:shows=STM32F4", err, sizeof err);
+				dmr = dmr || sim_run("expect:showsraw=HR_C6000", err, sizeof err);
+				checking = checking || sim_run("expect:shows=checking", err, sizeof err);
+				sim_run("down", err, sizeof err);
+			}
+		}
+		if (!src || !mcu || !dmr || checking) {
+			printf("FAIL about [%s]: support info: source %d, MCU %d, DMR chip %d, still checking %d\n", gn, src, mcu,
+				dmr, checking);
+			fails++;
+		}
 		// In every language built, the whole text fits its buffer: scrolling a line at a time passes where the
 		// contributors are listed and ends on the last line (the codec's)
 		for (uint8_t l = 0; l < lang_count(); l++) {

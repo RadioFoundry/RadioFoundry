@@ -132,6 +132,7 @@ void ui_toast(const char *text);
 // Save temporary channel changes and tell the user why a save cannot start
 bool ui_try_save_channel(void);
 void ui_dirty(void);
+bool ui_about_busy(void);	// About is still working out the image hash: redraw it at the fast rate (CONFIG_SUPPORT_INFO)
 // The focused row changed: tell the radio what PTT would talk to now
 void ui_focus_changed(void);
 // Open the actions for a target (SCR_ACTIONS)

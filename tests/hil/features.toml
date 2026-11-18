@@ -346,6 +346,10 @@ spec = "docs/spec/crash-log.md"
 switch = "WATCHDOG"
 spec = "docs/spec/watchdog.md"
 
+[feature.support_info]
+switch = "SUPPORT_INFO"
+spec = "docs/spec/support-info.md"
+
 [feature.fault_trace]
 switch = "FAULT_TRACE"
 spec = "docs/spec/crash-log.md"

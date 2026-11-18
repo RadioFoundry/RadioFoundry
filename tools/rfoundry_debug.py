@@ -98,6 +98,8 @@ HWOPT_OP_LIST, HWOPT_OP_SET = range(2)
 AIR = 0x24                          # the air interface on the bench (CONFIG_AIR_RAW; docs/spec/debuglink.md 3.28)
 AIR_OP_STATUS, AIR_OP_TAP_START, AIR_OP_TAP_READ, AIR_OP_TAP_STOP, AIR_OP_OPEN, AIR_OP_CLOSE, AIR_OP_RX_READ, \
     AIR_OP_RX_RESTART, AIR_OP_TX_DATA, AIR_OP_TX_KEY, AIR_OP_TX_END, AIR_OP_TX_ABORT = range(12)
+SUPPORT = 0x25                      # the support info (CONFIG_SUPPORT_INFO; docs/spec/debuglink.md 3.29)
+SUPPORT_OP_INFO, SUPPORT_OP_HASH = range(2)
 AIR_OPEN_SOFT = 0x01
 AIR_TX_LAST = 0x01
 AIR_FIT = {0x1: "rx", 0x2: "tx", 0x4: "soft", 0x8: "shape_approx", 0x10: "dev_approx", 0x20: "rate_doubled",
@@ -333,7 +335,7 @@ def find_cables():
 
 
 # Commands (and their ops) that only read: everything else restarts the radio or changes it
-READ_ONLY = {"hwopt": None, "reg": None, "ping": None, "version": None, "diag": None, "view": None, "screenshot": None, "log": None, "chip": None,
+READ_ONLY = {"hwopt": None, "support": None, "reg": None, "ping": None, "version": None, "diag": None, "view": None, "screenshot": None, "log": None, "chip": None,
              "dump": None, "peek": None, "iddb": None, "crash": ("show",), "watchdog": ("show",), "rx2": ("info",),
              "air": ("status", "tap", "rx"), "storage": ("info", "dump"), "split": ("view",),
              "aprobe": ("status", "reg", "samples", "ram", "watch")}
@@ -711,6 +713,24 @@ class DebugLink:
                         "choices": kv.get(f"hwopt.{i}.choices", "").split("|"),
                         "state": kv.get(f"hwopt.{i}.state") or ("ask" if value < 0 else "ok")})
         return out
+
+    def support(self):
+        """The support info: {source, repo, hw.<part>, image.addr, image.size} (docs/spec/support-info.md)"""
+        return parse_kv(self.request(SUPPORT, bytes([SUPPORT_OP_INFO]))[1].decode("ascii", "replace"))
+
+    def image_hash(self, progress=None):
+        """The firmware image's SHA-256 as hex, a 32 KB step per request (the radio carries on between them); None
+        where the platform reports no image span. progress(done, size) after each pending step."""
+        for _ in range(4096):
+            kv = parse_kv(self.request(SUPPORT, bytes([SUPPORT_OP_HASH]))[1].decode("ascii", "replace"))
+            state = kv.get("image.state")
+            if state == "done":
+                return kv.get("image.sha256")
+            if state != "pending":
+                return None
+            if progress is not None:
+                progress(int(kv.get("image.done", "0")), int(kv.get("image.size", "0")))
+        raise DebugLinkError("image hash: no end")
 
     def hwopt_set(self, option, choice):
         """Store a choice; raises DebugLinkError (status 7) when the board refuses it or the radio transmits."""
@@ -2597,6 +2617,14 @@ def cmd_hwopt(link, a):
     return 0
 
 
+def cmd_support(link, a):
+    for k, v in link.support().items():
+        print(f"{k}={v}")
+    h = link.image_hash()
+    print(f"image.sha256={h}" if h else "image.sha256=unavailable")
+    return 0
+
+
 def cmd_air(link, a):
     if a.op == "status":
         st = link.air_status()
@@ -2933,6 +2961,7 @@ def main(argv=None):
     p = sub.add_parser("hwopt", help="hardware options: list, or set OPTION CHOICE (docs/spec/debuglink.md 3.25)")
     p.add_argument("option", nargs="?", help="number or name, e.g. 'Board revision'")
     p.add_argument("choice", nargs="?", help="one of the option's choices, e.g. V4A/V5")
+    sub.add_parser("support", help="the support info: build source, hardware, image hash (docs/spec/debuglink.md 3.29)")
     p = sub.add_parser("air", help="the air interface on the bench (CONFIG_AIR_RAW builds; docs/spec/debuglink.md 3.28)")
     p.add_argument("op", choices=["status", "tap", "open", "rx", "tx", "restart", "abort", "close"])
     p.add_argument("--seconds", type=float, default=5.0, help="tap, rx: how long")
@@ -3049,6 +3078,8 @@ def main(argv=None):
                 return cmd_watchdog(link, a)
             elif a.cmd == "hwopt":
                 return cmd_hwopt(link, a)
+            elif a.cmd == "support":
+                return cmd_support(link, a)
             elif a.cmd == "air":
                 return cmd_air(link, a)
             elif a.cmd == "storage":

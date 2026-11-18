@@ -788,6 +788,11 @@ void dm32_bcast_audio(bool on)
 }
 #endif
 
+char dm32_rf_setup(void)
+{
+	return rf_unlocked ? '-' : rf_b ? 'B' : 'A';
+}
+
 void dm32_radio_diag(dm32_radio_diag_t *d)
 {
 	d->rssi_raw = last_rssi_raw;

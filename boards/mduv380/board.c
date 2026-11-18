@@ -9,6 +9,7 @@
 #include "hrc/vocoder.h"
 #include "pins.h"
 #include "fsmc_keypad/fsmc_keypad.h"
+#include "ui/fmt.h"
 #if CONFIG_GPS
 #include "gps_uart/gps_uart.h"
 #endif
@@ -51,6 +52,24 @@ static const char *tx_block(void)
 	return NULL;
 }
 
+// The support info: the Plus 10 W marker as start-up read it (hardware-mduv380.md 4), and the power this image drives
+static bool hw_line(uint8_t i, uint8_t *role, char *buf, uint8_t len)
+{
+	if (i != 0) {
+		return false;
+	}
+	*role = BOARD_HW_BOARD;
+	sbuf_t b;
+	sb_init(&b, buf, len);
+#if RFOUNDRY_POWER_10W
+	sb_str(&b, "10 W image, mark ");
+#else
+	sb_str(&b, "5 W image, mark ");
+#endif
+	sb_hex(&b, mark_10w, 2);
+	return true;
+}
+
 static void init(void)
 {
 	if (!stm32_spi_flash_read_security(3, 0x1C, &mark_10w, 1)) {
@@ -80,6 +99,7 @@ const uvf_variant_t uvf_variant = {
 #endif
 	.init = init,
 	.tx_block = tx_block,
+	.hw_line = hw_line,
 };
 
 #if CONFIG_RX_EXT
@@ -174,6 +194,7 @@ const board_t board = {
 	.power = &uvf_power,
 	.flash = &stm32_spi_flash,
 	.chip_reg = uvf_chip_reg,
+	.hw_line = uvf_hw_line,
 #if CONFIG_DIAG
 	.diag_line = uvf_diag_line,
 	.diag_reset = uvf_diag_reset,

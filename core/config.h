@@ -277,6 +277,9 @@
 #ifndef CONFIG_WATCHDOG
 #define CONFIG_WATCHDOG			1
 #endif
+#ifndef CONFIG_SUPPORT_INFO
+#define CONFIG_SUPPORT_INFO		1
+#endif
 #ifndef CONFIG_FAULT_TRACE
 #define CONFIG_FAULT_TRACE		1
 #endif

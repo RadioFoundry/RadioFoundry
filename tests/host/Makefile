@@ -650,7 +650,8 @@ i18nTestDefault: i18nTest.c $(I18N) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/
 # (ui_svc_stub.c) give way to the simulator's.
 UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/ui/ui_position.c $(CORE)/ui/ui_gps.c $(CORE)/ui/ui_dual.c $(CORE)/radio/tones.c \
            $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c $(CORE)/radio/radio_am.c \
-           $(CORE)/radio/radio_bcast.c sim/ui_sim.c sim/ui_png.c
+           $(CORE)/radio/radio_bcast.c $(CORE)/support/sha256.c $(CORE)/support/image_hash.c \
+           $(CORE)/support/support_info.c sim/ui_sim.c sim/ui_png.c
 # The About page's data header, as the firmware build makes it (tools/gen_about.py; the STM32F4 list stands in)
 ABOUT_H := out/gen/rfoundry_about.h
 $(shell python3 $(ROOT)/tools/gen_about.py $(ROOT)/AUTHORS $(ROOT)/platform/stm32f4/THIRD_PARTY $(ABOUT_H) >/dev/null)
@@ -767,6 +768,18 @@ run-hwopt: hwoptTest hwoptTestNone
 	./hwoptTest
 	./hwoptTestNone
 .PHONY: run-hwopt
+# The support info (core/support, docs/spec/support-info.md): SHA-256, the image hash, the hardware lines and the debug
+# link's SUPPORT command, English only (no catalogs linked)
+TESTS   += supportInfoTest
+SUPPORTT := supportInfoTest.c $(CORE)/support/sha256.c $(CORE)/support/image_hash.c $(CORE)/support/support_info.c \
+            $(CORE)/debuglink/debuglink_support.c $(CORE)/debuglink/dl_fmt.c $(CORE)/ui/fmt.c
+supportInfoTest: $(SUPPORTT) $(wildcard $(CORE)/support/*.h) $(ROOT)/hal/board.h $(ROOT)/hal/hal_system.h $(ROOT)/hal/hal_flash.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_LANG_ES=0 -DCONFIG_LANG_IT=0 -DCONFIG_LANG_FR=0 -DCONFIG_LANG_ZH=0 \
+		-o $@ $(SUPPORTT)
+run: run-support
+run-support: supportInfoTest
+	./supportInfoTest
+.PHONY: run-support
 # The reference trim setting (core/radio/ref_trim.c): clamped, rounded to 100 ppb, to the board's hook
 TESTS   += refTrimTest
 refTrimTest: refTrimTest.c $(CORE)/radio/ref_trim.c $(CORE)/radio/ref_trim.h $(ROOT)/hal/hal_radio.h

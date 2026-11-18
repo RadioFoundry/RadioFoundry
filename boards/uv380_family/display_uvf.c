@@ -141,6 +141,7 @@ static st7735_t panel = {
 };
 
 static bool ready;
+static int16_t factory = -1;	// the factory panel byte (security register 3, 0x1D), -1: not read
 
 // ---- Backlight: TIM1 paces two one-word DMA writes to the backlight port's BSRR (backlight_uvf.h) ----
 // The update (DMA2 Stream5 channel 6) sets the pin, the CC1 match (DMA2 Stream1 channel 6) clears it: duty = CCR1 /
@@ -239,6 +240,8 @@ static void init(void)
 
 	if (!stm32_spi_flash_read_security(3, 0x1D, &type, 1)) {
 		type = 0;
+	} else {
+		factory = type;
 	}
 	// hardware-dm1701.md 9.2: what each factory type means is the radio's (the DM-1701 runs its type 2 as type 3 in RGB
 	// order, the MD-UV380 keeps every type and is always RGB)
@@ -256,6 +259,14 @@ static void flush(const void *fb, const uint16_t *palette, uint16_t y0, uint16_t
 	st7735_write_rows_indexed(&panel, (const uint8_t *)fb, palette, y0, y1);
 }
 
+// What init chose the panel's type from (the support info): the factory byte as read, nothing from the bus
+static void panel_info(hal_display_panel_t *p)
+{
+	p->factory = factory;
+	p->type = panel.type;
+	p->source = factory >= 0 ? "factory" : "default";
+}
+
 const hal_display_t uvf_display = {
 	// Safe area from the build (the board's config.mk)
 	.inset_top = CONFIG_DISPLAY_INSET_TOP, .inset_bottom = CONFIG_DISPLAY_INSET_BOTTOM,
@@ -266,6 +277,7 @@ const hal_display_t uvf_display = {
 	.init = init,
 	.flush_indexed = flush,
 	.set_backlight = set_backlight,
+	.panel = panel_info,
 };
 
 uint8_t uvf_display_panel_type(void)
