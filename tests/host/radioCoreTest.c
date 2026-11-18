@@ -7768,8 +7768,19 @@ static bool nf_tx(uint8_t ehr[NXDN_EHR_BYTES], void *ctx)
 	ambeFecEncode(bits, ehr);
 	return true;
 }
+#if CONFIG_NXDN_SCRAMBLER
+static uint16_t nf_key(uint8_t system, uint8_t cipher, uint8_t id, void *ctx)
+{
+	(void)ctx;
+	return nxdn_system_key(system, cipher, id);
+}
+#endif
 static const nxdn_engine_hooks_t nfar_hooks = { .rx_start = nf_start, .rx_update = nf_update, .rx_voice = nf_voice,
-	.rx_end = nf_end, .tx_voice = nf_tx };
+	.rx_end = nf_end, .tx_voice = nf_tx,
+#if CONFIG_NXDN_SCRAMBLER
+	.traffic_key = nf_key,
+#endif
+};
 
 // The decoder's frames: how many came in the far radio's order (a repeat to conceal a gap is not counted)
 static uint8_t dec_next;
@@ -8615,7 +8626,7 @@ static void test_nxdn_system(void)
 	nxdn_engine_cfg_t cfg = nfar.cfg;
 	cfg.tx_cipher = NXDN_CIPHER_SCRAMBLE;
 	cfg.tx_key_id = 12;
-	cfg.keys[12] = 1234;
+	cfg.system = 2;
 	nxdn_engine_set(&nfar, &cfg);
 	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
 	nfar_tx = true;
