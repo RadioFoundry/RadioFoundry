@@ -349,7 +349,12 @@ static void test_hc_strip_white(void)
 	CHECK(ui_col.strip_bg == RGB565(240, 112, 112));
 	ui_accent_set(UI_ACCENT_DEFAULT);
 	ui_theme_set(0);
-	CHECK(ui_col.strip_bg == RGB565(216, 216, 216));
+	CHECK(ui_col.strip_bg == RGB565(255, 176, 48));	// Dark's own strip is amber, with its own warning color
+	CHECK(ui_col.strip_warn == RGB565(0, 32, 120));
+	ui_theme_set(1);
+	CHECK(ui_col.strip_bg == RGB565(216, 216, 216));	// Light keeps the light gray strip and its warning color
+	CHECK(ui_col.strip_warn == RGB565(136, 68, 0));
+	ui_theme_set(0);
 }
 
 static void test_big_text(void)
@@ -604,7 +609,7 @@ int main(void)
 	color_t idle = gfx_get_pixel(2, 3);
 	v.state = RS_TX;
 	ui_draw_home(&v, &s);
-	CHECK(gfx_get_pixel(2, 3) != idle && gfx_get_pixel(2, 3) == RGB565(224, 32, 32));
+	CHECK(gfx_get_pixel(2, 3) != idle && gfx_get_pixel(2, 3) == ui_col.tx);
 
 	disp.height = 128;
 	CHECK(gfx_init(&disp));
@@ -623,7 +628,7 @@ int main(void)
 		bool margins_clear = true;
 		for (int y = 0; y < 120; y++)
 			for (int x = 0; x < 160; x++)
-				if ((x < 5 || x >= 155 || y < 5 || y >= 115) && fb[y * 160 + x] != 0)
+				if ((x < 5 || x >= 155 || y < 5 || y >= 115) && fb[y * 160 + x] != ui_col.bg)
 					margins_clear = false;
 		CHECK(margins_clear);
 	}

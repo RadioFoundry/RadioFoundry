@@ -27,7 +27,7 @@ static bool ui_strip_fill;
 // (reverse video: the color as background, text and icons black) and the focus highlight (black text), so the two
 // match; also Home's channel number. All are light shades: black on each is at least 7.5:1 after RGB565 rounding.
 // The red is lighter and pinker than TX's (the TX pill also says TX); there is no green, which would hide the RX
-// pill. Default keeps the theme's blue focus; its filled strip is light gray (white in high contrast). Built without CONFIG_UI_COLOR (radios
+// pill. Default keeps the theme's own focus; its filled strip is amber in Dark, light gray in Light (white in high contrast). Built without CONFIG_UI_COLOR (radios
 // with only a monochrome screen) the theme's own colors stay
 static void accent_apply(void)
 {
@@ -63,6 +63,11 @@ static void accent_apply(void)
 		c = RGB565(255, 255, 255);	// high contrast has no gray: its default strip is white
 	ui_col.strip_bg = c;
 	ui_col.strip_warn = warn[a];
+	if (a == UI_ACCENT_DEFAULT && ui_theme == 0) {
+		c = RGB565(255, 176, 48);	// Dark's own strip: amber with black text (11.7:1)
+		ui_col.strip_bg = c;
+		ui_col.strip_warn = RGB565(0, 32, 120);	// dark blue on amber (7.8:1); the gray strip's dark amber would be 3.9:1
+	}
 	if (a != UI_ACCENT_DEFAULT) {
 		ui_col.focus = c;
 		ui_col.focus_fg = RGB565(0, 0, 0);
@@ -103,17 +108,20 @@ void ui_theme_set(uint8_t theme)
 		ui_col.hint_bg = RGB565(0, 0, 0);
 		ui_col.priv = RGB565(0, 255, 255);
 	} else {
-		ui_col.bg = RGB565(0, 0, 0);
-		ui_col.fg = RGB565(255, 255, 255);
-		ui_col.dim = RGB565(168, 168, 168);
-		ui_col.line = RGB565(72, 72, 72);
-		ui_col.tx = RGB565(224, 32, 32);
-		ui_col.rx = RGB565(40, 184, 72);
-		ui_col.warn = RGB565(240, 168, 0);
-		ui_col.idle = RGB565(96, 96, 96);
-		ui_col.focus = RGB565(32, 96, 200);
-		ui_col.hint_bg = RGB565(32, 32, 32);
-		ui_col.priv = RGB565(64, 140, 255);
+		// Dark, "Ember Cryo": a teal-black ground with cyan-teal lines, cream and copper text, a burnt-orange focus,
+		// red TX against the amber strip, aqua RX. Contrast on the ground: text 17.5, quiet text 8.5, TX 6.0, RX 12.9,
+		// warning 16.4; text on the focus 6.2
+		ui_col.bg = RGB565(3, 13, 18);
+		ui_col.fg = RGB565(255, 238, 214);
+		ui_col.dim = RGB565(200, 160, 116);
+		ui_col.line = RGB565(20, 96, 116);
+		ui_col.tx = RGB565(255, 76, 60);
+		ui_col.rx = RGB565(0, 232, 196);
+		ui_col.warn = RGB565(255, 232, 110);
+		ui_col.idle = RGB565(20, 96, 116);
+		ui_col.focus = RGB565(150, 66, 8);
+		ui_col.hint_bg = RGB565(8, 30, 38);
+		ui_col.priv = RGB565(104, 192, 255);
 	}
 	ui_col.pill_fg = RGB565(255, 255, 255);
 	ui_col.pill_dark_fg = RGB565(0, 0, 0);
