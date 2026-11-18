@@ -8131,8 +8131,9 @@ bool nxdn_conv_load(uint16_t number, const channel_t *ch, nxdn_conv_cfg_t *out)
 	*out = stored_nxdn[number];
 	return true;
 }
-bool nxdn_system_load(uint8_t system, uint16_t *keys)
+bool nxdn_system_load(uint8_t system, uint16_t *keys, uint16_t *own_id)
 {
+	*own_id = system == 2 ? 3333 : 0;
 	if (system != 2)
 		return false;
 	if (keys)
@@ -8619,11 +8620,17 @@ static void test_nxdn_system(void)
 	run(500);
 	req(RREQ_PTT, 1);
 	run(600);
-	CHECK(nfar_heard.starts == 1 && nfar_heard.call.vcall.cipher == NXDN_CIPHER_SCRAMBLE &&
-	      nfar_heard.call.vcall.key_id == 12);
+	CHECK(nfar_heard.starts == 1 && nfar_heard.call.vcall.src == 3333 &&
+	      nfar_heard.call.vcall.cipher == NXDN_CIPHER_SCRAMBLE && nfar_heard.call.vcall.key_id == 12);
 	req(RREQ_PTT, 0);
 	run(500);
 	nfar_stop();
+
+	channel_t override = sm.view.ch;
+	radio_nxdn_settings_t active;
+	override.dmr_id = 4321;
+	radio_nxdn_apply(&override, 3);
+	CHECK(radio_nxdn_in_force(&active) && active.unit_id == 4321);
 
 	stored_nxdn[3].tx_key_id = 13;
 	radio_nxdn_apply(&sm.view.ch, 3);

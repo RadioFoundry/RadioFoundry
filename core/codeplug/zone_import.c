@@ -312,7 +312,7 @@ static uint8_t find_system(const zsSystem_t *s, uint8_t *buf, uint16_t cap)
 	uint16_t key;
 	int len;
 
-	if ((unsigned)CODEPLUG_SYS_HDR + s->idLen > cap) {
+	if (s->idLen == 0 || (unsigned)CODEPLUG_SYS_HDR + s->idLen > cap) {
 		return CODEPLUG_SYSTEM_NONE;
 	}
 	codeplug_kv_begin(&c, CODEPLUG_KEY_SYSTEM, CODEPLUG_KEY_SYSTEM + 0xFEu);

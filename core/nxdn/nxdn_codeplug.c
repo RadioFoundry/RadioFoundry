@@ -109,13 +109,16 @@ bool nxdn_conv_load(uint16_t number, const channel_t *ch, nxdn_conv_cfg_t *out)
 	return true;
 }
 
-bool nxdn_system_load(uint8_t system, uint16_t *keys)
+bool nxdn_system_load(uint8_t system, uint16_t *keys, uint16_t *own_id)
 {
 	codeplug_system_t s;
 	uint8_t header[CODEPLUG_SYS_HDR];
 
+	*own_id = 0;
 	if (codeplug_system(system, &s, header, 0) < 0 || s.type != CODEPLUG_SYSTYPE_NXDN)
 		return false;
+	if (unit_ok(s.own_id))
+		*own_id = (uint16_t)s.own_id;
 #if CONFIG_NXDN_SCRAMBLER
 	if (keys != NULL) {
 		codeplug_kv_cursor_t cursor;

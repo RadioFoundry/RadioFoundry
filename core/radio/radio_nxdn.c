@@ -115,11 +115,14 @@ static void params(const channel_t *ch, uint16_t number, nxdn_engine_cfg_t *c)
 		c->tx_cipher = cc.tx_cipher;
 		c->tx_key_id = cc.tx_key_id;
 		if (ch->system != CODEPLUG_SYSTEM_NONE || c->tx_cipher != NXDN_CIPHER_NONE) {
+			uint16_t own_id;
 #if CONFIG_NXDN_SCRAMBLER
-			c->tx_inhibit = !nxdn_system_load(ch->system, c->keys);
+			c->tx_inhibit = !nxdn_system_load(ch->system, c->keys, &own_id);
 #else
-			c->tx_inhibit = !nxdn_system_load(ch->system, NULL);
+			c->tx_inhibit = !nxdn_system_load(ch->system, NULL, &own_id);
 #endif
+			if (own_id && (ch->dmr_id == 0 || ch->dmr_id > NXDN_CP_UNIT_MAX))
+				c->unit_id = own_id;
 		}
 		return;
 	}

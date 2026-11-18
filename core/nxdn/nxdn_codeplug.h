@@ -49,8 +49,8 @@ typedef struct {
 // it isn't a live NXDN channel
 bool nxdn_conv_load(uint16_t number, const channel_t *ch, nxdn_conv_cfg_t *out);
 // Load the system's seeds into a zeroed NXDN_KEY_IDS-element array (NULL when scrambling is disabled).
-// Returns whether the named NXDN conventional system permits transmit.
-bool nxdn_system_load(uint8_t system, uint16_t *keys);
+// Sets *own_id to the valid system unit ID or zero. Returns whether the system permits transmit.
+bool nxdn_system_load(uint8_t system, uint16_t *keys, uint16_t *own_id);
 // Write ch at number as an NXDN channel (channel-modes.md 2.4): the base record in its safe stand-in shape,
 // then the tag with conv's block, transmit allowed unless ch->rx_only. A channel that is NXDN already keeps its tag's
 // system, fallback, other flags and what its block holds after conv's (codeplug_tag_rewrite), and under a base-own
