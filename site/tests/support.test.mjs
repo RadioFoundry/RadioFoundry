@@ -12,13 +12,13 @@ import { Link, LinkError, CMD } from "../static/js/flasher/link.js";
 
 const SHA = "ab".repeat(32);
 const releases = [
-	{ board: "dm1701", variant: "full", version: "v26.11", sha256: SHA },
-	{ board: "dm1701", variant: "amateur", version: "v26.11", sha256: "cd".repeat(32) },
+	{ board: "radio1", variant: "full", version: "v26.11", sha256: SHA },
+	{ board: "radio1", variant: "amateur", version: "v26.11", sha256: "cd".repeat(32) },
 ];
 
 const data = (over = {}) => ({
 	site: "site/build.py 1234abcd", browser: "test", at: new Date(Date.UTC(2026, 10, 18)),
-	version: { board: "DM-1701", git: "5277f73a", source: "official", repo: "RadioFoundry/RadioFoundry", proto: "1" },
+	version: { board: "Radio-1", git: "5277f73a", source: "official", repo: "RadioFoundry/RadioFoundry", proto: "1" },
 	chip: { family: 0, idcode: 0x10076413, flashKb: 1024, uid: "00112233445566778899aabb", token: 0x33221100 },
 	support: { source: "official", "hw.mcu": "STM32F4 413 rev 1007, 1024 KB", "hw.dmr": "HR_C6000", "hw.rf": "AT1846S",
 		"image.addr": "0x0800C000", "image.size": "639012" },
@@ -41,7 +41,7 @@ test("report: build, hardware lines, options, and the release it matches", () =>
 	assert.match(r, /^dmr: HR_C6000$/m);
 	assert.match(r, /^rf: AT1846S$/m);
 	assert.match(r, /^option Board revision: not set$/m);
-	assert.match(r, /^release: one of our release images: v26\.11 dm1701 full$/m);
+	assert.match(r, /^release: one of our release images: v26\.11 radio1 full$/m);
 	assert.match(r, /^size: 639012$/m);
 	// never the chip UID: its low word is the REBOOT token
 	assert.doesNotMatch(r, /00112233445566778899aabb|33221100/i);
