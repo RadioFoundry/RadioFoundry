@@ -239,6 +239,7 @@ def test_zone_channel_api(net):
         skip("bench", "the radio is in the VFO: put it on a channel")
     zones = json.loads(_get(ip, "/api/zones")[2])
     assert zones["zones"] >= 1 and zones["zone"] == start["zone"], zones
+    assert zones["codeplug"] == start["codeplug"], (zones, start)       # no edit in between
     zone = json.loads(_get(ip, f"/api/zone?zone={start['zone']}")[2])
     item = next(i for i in zone["items"] if i["pos"] == start["pos"])
     assert item["rx_hz"] == int(link.view(["channel"])["ch.rx_hz"]), (item, zone)
@@ -250,14 +251,15 @@ def test_zone_channel_api(net):
     try:
         if zone["channels"] > 1:
             assert json.loads(_get(ip, "/api/step?channel=1")[2]) == {"ok": True}
-            want = {"zone": start["zone"], "pos": (start["pos"] + 1) % zone["channels"]}
+            want = {"zone": start["zone"], "pos": (start["pos"] + 1) % zone["channels"], "codeplug": start["codeplug"]}
             assert _wait_where(ip, want) == want
             assert json.loads(_get(ip, "/api/step?channel=-1")[2]) == {"ok": True}
             assert _wait_where(ip, start) == start
         if zones["zones"] > 1:
             other = (start["zone"] + 1) % zones["zones"]
             _get(ip, f"/api/select?zone={other}&pos=0")
-            assert _wait_where(ip, {"zone": other, "pos": 0}) == {"zone": other, "pos": 0}
+            want = {"zone": other, "pos": 0, "codeplug": start["codeplug"]}
+            assert _wait_where(ip, want) == want
         try:
             _get(ip, "/api/select?zone=65000")
             assert False, "400 expected"

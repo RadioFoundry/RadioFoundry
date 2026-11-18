@@ -385,6 +385,8 @@ void radio_req_zone(uint16_t index) { req_zone = index; req_zone_n++; }
 void radio_req_zone_pos(uint16_t pos) { req_zone_pos = pos; req_pos_n++; }
 void radio_req_channel_step(int8_t dir) { req_steps += dir; req_step_n++; }
 uint16_t codeplug_zone_count(void) { return 3; }
+static uint32_t fake_serial = 7;
+uint32_t codeplug_serial(void) { return fake_serial; }
 bool codeplug_zone(uint16_t index, zone_t *out)
 {
 	static const char *const names[] = { "Local", "Rpt \"A\"", "Big" };
@@ -438,22 +440,26 @@ static void test_radio_api(void)
 
 	// Where it is: two indexes and nothing else, from anywhere
 	CHECK(http_get(&a, 54000, "GET /api/select HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 "));
-	CHECK(strcmp(body_of(&a), "{\"zone\":1,\"pos\":1}\n") == 0);
+	CHECK(strcmp(body_of(&a), "{\"zone\":1,\"pos\":1,\"codeplug\":7}\n") == 0);
 	fake_view.vfo = true;
-	CHECK(http_get(&a, 54001, "GET /api/select HTTP/1.0\r\n\r\n") > 0 && strcmp(body_of(&a), "{\"zone\":1,\"pos\":1,\"vfo\":true}\n") == 0);
+	CHECK(http_get(&a, 54001, "GET /api/select HTTP/1.0\r\n\r\n") > 0 && strcmp(body_of(&a), "{\"zone\":1,\"pos\":1,\"codeplug\":7,\"vfo\":true}\n") == 0);
 	fake_view.vfo = false;
+	// an edit (the radio's menus, a CPS or TFTP write) changes the count: the client's cue to read the lists again
+	fake_serial = 8;
+	CHECK(http_get(&a, 54005, "GET /api/select HTTP/1.0\r\n\r\n") > 0 && strstr(body_of(&a), "\"codeplug\":8"));
+	fake_serial = 7;
 	// /status has them too
 	CHECK(http_get(&a, 54002, "GET /status HTTP/1.0\r\n\r\n") > 0 && strstr(body_of(&a), "\"zone\":1,\"zone_pos\":1,\"zone_size\":2"));
 
 	// The zones, names escaped
 	CHECK(http_get(&a, 54003, "GET /api/zones HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, "application/json"));
 	const char *j = body_of(&a);
-	CHECK(strstr(j, "{\"zones\":3,\"zone\":1,\"from\":0,\"items\":[{\"zone\":0,\"name\":\"Local\",\"channels\":3},") &&
+	CHECK(strstr(j, "{\"zones\":3,\"zone\":1,\"codeplug\":7,\"from\":0,\"items\":[{\"zone\":0,\"name\":\"Local\",\"channels\":3},") &&
 	      strstr(j, "{\"zone\":1,\"name\":\"Rpt \\\"A\\\"\",\"channels\":2}") && strstr(j, "],\"next\":null}"));
 	// A zone's channels: DMR with its talkgroup, FM without
 	CHECK(http_get(&a, 54004, "GET /api/zone?zone=0 HTTP/1.0\r\n\r\n") > 0);
 	j = body_of(&a);
-	CHECK(strstr(j, "{\"zone\":0,\"name\":\"Local\",\"channels\":3,\"from\":0,\"items\":[") &&
+	CHECK(strstr(j, "{\"zone\":0,\"name\":\"Local\",\"channels\":3,\"codeplug\":7,\"from\":0,\"items\":[") &&
 	      strstr(j, "{\"pos\":0,\"number\":1,\"name\":\"Ch1\",\"rx_hz\":446012500,\"tx_hz\":446012500,\"mode\":\"dmr\",\"bw\":\"12.5\",\"cc\":1,\"ts\":2,\"tg\":3107,\"call\":\"group\",\"contact\":\"TG 3100\"}") &&
 	      strstr(j, ",{\"pos\":1,\"number\":2,\"name\":\"Ch2\",\"rx_hz\":446025000,\"tx_hz\":446025000,\"mode\":\"fm\",\"bw\":\"25\",\"power\":1,\"rx_tone\":\"100.0\",\"tx_tone\":\"D023I\"}") &&
 	      strstr(j, "],\"next\":null}"));

@@ -145,7 +145,7 @@ Zones and channels are counted from 0, in the order the radio shows them.
 
 | Request | Does |
 |---|---|
-| `http://<radio address>/api/select` | Says where the radio is: `{"zone":2,"pos":5}` |
+| `http://<radio address>/api/select` | Says where the radio is: `{"zone":2,"pos":5,"codeplug":12}` |
 | `/api/select?zone=2&pos=5` | Zone 2, its sixth channel (without `pos`, its first) |
 | `/api/step?channel=1` | One channel on; `-1` one back; it wraps at the zone's ends |
 | `/api/step?zone=1` | One zone on, to its first channel; `-1` one back |
@@ -154,7 +154,9 @@ Zones and channels are counted from 0, in the order the radio shows them.
 | `/api/channel` | The channel the radio is on now (or the VFO's settings), with the same details |
 | `/api/channel?zone=2&pos=5` | Zone 2's sixth channel, with the same details |
 
-Select and step answer only `{"ok":true}`. Read a zone's list once to know its channels. Long lists come in pages:
+Select and step answer only `{"ok":true}`. Read the zones and their channels once when your program starts, and keep
+them to show a channel's details when the zone or channel changes. `codeplug` goes up whenever the channels or zones
+change (on the radio, or a codeplug written to it): read the lists again when it does. Long lists come in pages:
 ask again with `&from=` set to the reply's `next`. Select and step work only from your computer, and not while the
 radio transmits or is a hotspot. Details: [tcp-services.md](../spec/tcp-services.md) 5.2.
 

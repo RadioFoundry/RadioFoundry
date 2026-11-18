@@ -210,18 +210,20 @@ webctl.frames_out webctl.audio_out webctl.audio_dropped webctl.screen` (the clie
 select a zone and channel directly, or step through them as a knob would, and read the zones and channels when it
 wants to know what they are. Zones and positions are 0-based indexes, the same in every request and reply.
 
-Control is short on purpose: a select or a step answers `{"ok":true}`, never channel data. A client that wants the
-frequency, mode or talkgroup reads the zone's list once (`/api/zone`) and keeps it; `/api/select` alone says where the
-radio is.
+Control is short on purpose: a select or a step answers `{"ok":true}`, never channel data, and `/api/select` alone
+says where the radio is in two indexes. A client reads the structure once at its start (`/api/zones`, then each
+`/api/zone`) and keeps it, to show a channel's name, frequency or talkgroup when the indexes change. `codeplug` in
+those replies counts the codeplug's changes (`codeplug_serial`: the radio's menus, a CPS or TFTP write); the client
+reads the lists again only when it differs from the one it read them with.
 
 | Request | Who | Reply |
 |---|---|---|
-| `GET /api/select` | anyone | `{"zone":Z,"pos":P}`, and `"vfo":true` while the VFO is on (P is then the channel it came from) |
+| `GET /api/select` | anyone | `{"zone":Z,"pos":P,"codeplug":N}`, and `"vfo":true` while the VFO is on (P is then the channel it came from) |
 | `GET /api/select?zone=Z[&pos=P]` | the host | zone Z, at position P or its first channel; leaves the VFO. `{"ok":true}` |
 | `GET /api/step?channel=N` | the host | N channels on, negative back (-100 to 100, not 0), wrapping in the zone; from the VFO, back to the channel first. `{"ok":true}` |
 | `GET /api/step?zone=N` | the host | N zones on, wrapping at the ends, to the zone's first channel. `{"ok":true}` |
-| `GET /api/zones[?from=I]` | anyone | `{"zones":n,"zone":Z,"from":I,"items":[{"zone","name","channels"}],"next":J}` |
-| `GET /api/zone?zone=Z[&from=I]` | anyone | `{"zone":Z,"name","channels":n,"from":I,"items":[...],"next":J}`, each item a channel (below) |
+| `GET /api/zones[?from=I]` | anyone | `{"zones":n,"zone":Z,"codeplug":N,"from":I,"items":[{"zone","name","channels"}],"next":J}` |
+| `GET /api/zone?zone=Z[&from=I]` | anyone | `{"zone":Z,"name","channels":n,"codeplug":N,"from":I,"items":[...],"next":J}`, each item a channel (below) |
 | `GET /api/channel` | anyone | what the radio is on now: `{"zone","pos","vfo",` and the channel's fields`}`; in the VFO its settings, `number` 0 |
 | `GET /api/channel?zone=Z&pos=P` | anyone | that channel: `{"zone","pos",` and its fields`}` |
 

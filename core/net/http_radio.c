@@ -78,8 +78,8 @@ static int zones_json(const char *q, dl_text_t *t)
 	if (q != NULL && strstr(q, "from=") != NULL && (!query_int(q, "from", &from) || from < 0)) {
 		return 400;
 	}
-	dl_text(t, "{\"zones\":%u,\"zone\":%u,\"from\":%u,\"items\":[", count, net_radio_view()->zone_index,
-		(unsigned)from);
+	dl_text(t, "{\"zones\":%u,\"zone\":%u,\"codeplug\":%u,\"from\":%u,\"items\":[", count,
+		net_radio_view()->zone_index, (unsigned)codeplug_serial(), (unsigned)from);
 	uint32_t i = (uint32_t)from;
 	for (; i < count && t->len + ROOM_ITEM < t->cap; i++) {
 		if (!codeplug_zone((uint16_t)i, &zone)) {
@@ -186,7 +186,8 @@ static int zone_json(const char *q, dl_text_t *t)
 	}
 	dl_text(t, "{\"zone\":%u,\"name\":", (unsigned)z);
 	http_json_str(t, zone.name);
-	dl_text(t, ",\"channels\":%u,\"from\":%u,\"items\":[", zone.count, (unsigned)from);
+	dl_text(t, ",\"channels\":%u,\"codeplug\":%u,\"from\":%u,\"items\":[", zone.count, (unsigned)codeplug_serial(),
+		(unsigned)from);
 	uint32_t i = (uint32_t)from;
 	for (; i < zone.count && t->len + ROOM_ITEM < t->cap; i++) {
 		channel_json(t, i == (uint32_t)from, (uint16_t)i, zone.channels[i]);
@@ -329,9 +330,11 @@ int http_radio(const char *path, const char *query, uint32_t from_ip, bool head,
 		return 0;
 	}
 	if (sel && (query == NULL || *query == '\0')) {
-		// where the radio is: two indexes, read often (a knob's display), so nothing else
+		// where the radio is: two indexes, read often (a knob's display), and the codeplug's change count: a client
+		// keeps the lists it read and reads them again only when that changes
 		const radio_view_t *v = net_radio_view();
-		dl_text(t, "{\"zone\":%u,\"pos\":%u%s}\n", v->zone_index, v->zone_pos, v->vfo ? ",\"vfo\":true" : "");
+		dl_text(t, "{\"zone\":%u,\"pos\":%u,\"codeplug\":%u%s}\n", v->zone_index, v->zone_pos,
+			(unsigned)codeplug_serial(), v->vfo ? ",\"vfo\":true" : "");
 		return 200;
 	}
 	if (from_ip != ipGatewayHostIP()) {
