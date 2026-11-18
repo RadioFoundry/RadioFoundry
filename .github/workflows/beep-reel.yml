@@ -35,7 +35,7 @@ jobs:
     # a public repository always (a fork's run may not get repository variables); a private copy when it opts in
     if: (github.server_url != 'https://github.com' || !github.event.repository.private || vars.RFOUNDRY_CI_GITHUB == 'true')
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
@@ -53,8 +53,8 @@ jobs:
         run: |
           set -eu
           if ! command -v ffmpeg > /dev/null; then
-            sudo apt-get update -qq
-            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends ffmpeg fonts-dejavu-core
+            sudo apt-get update
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core
           fi
 
       - name: Make the reel with the base's beeps and with the pull request's
