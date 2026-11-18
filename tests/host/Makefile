@@ -1357,21 +1357,25 @@ run-settings: settingsTest spiNorTest spiNandTest nandSectorsTest
 .PHONY: run-settings
 
 TESTS   += satelliteStoreTest
-SAT_STORE := $(CORE)/debuglink/debuglink_satellite.c $(CORE)/satellite/frequency.c $(CORE)/storage/storage.c sim/sim_flash.c
+SAT_STORE := $(CORE)/debuglink/debuglink_satellite.c $(CORE)/satellite/store.c $(CORE)/satellite/orbit.c \
+	$(CORE)/satellite/frequency.c $(CORE)/storage/storage.c sim/sim_flash.c
 TESTS   += satelliteChannelsTest
 TESTS   += satelliteOrbitTest
+TESTS   += satelliteServiceTest
 SAT_ORBIT := $(CORE)/satellite/orbit.c $(CORE)/satellite/pass.c $(CORE)/satellite/doppler.c \
 	$(CORE)/satellite/tracking.c
+SAT_SERVICE := $(CORE)/satellite/service.c $(SAT_ORBIT)
 
-satelliteStoreTest: satelliteStoreTest.c $(SAT_STORE) $(CORE)/debuglink/debuglink_satellite.c \
+satelliteStoreTest: satelliteStoreTest.c $(SAT_STORE) \
 		$(wildcard $(CORE)/debuglink/*.h $(CORE)/satellite/*.h $(CORE)/storage/*.h) sim/sim_flash.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_SATELLITE_TLE=1 -o $@ satelliteStoreTest.c $(SAT_STORE)
 
 run: run-satellite
-run-satellite: satelliteStoreTest satelliteChannelsTest satelliteOrbitTest
+run-satellite: satelliteStoreTest satelliteChannelsTest satelliteOrbitTest satelliteServiceTest
 	./satelliteStoreTest
 	./satelliteChannelsTest
 	./satelliteOrbitTest
+	./satelliteServiceTest
 .PHONY: run-satellite
 
 satelliteChannelsTest: satelliteChannelsTest.c $(CORE)/satellite/channels.c $(CORE)/satellite/frequency.c \
@@ -1380,6 +1384,10 @@ satelliteChannelsTest: satelliteChannelsTest.c $(CORE)/satellite/channels.c $(CO
 
 satelliteOrbitTest: satelliteOrbitTest.c $(SAT_ORBIT) $(wildcard $(CORE)/satellite/*.h)
 	$(CC) $(CFLAGS) -DCONFIG_POSITION=0 -I$(ROOT)/hal -I. -Wshadow -o $@ satelliteOrbitTest.c $(SAT_ORBIT) -lm
+
+satelliteServiceTest: satelliteServiceTest.c $(SAT_SERVICE) $(wildcard $(CORE)/satellite/*.h $(ROOT)/core/position/*.h)
+	$(CC) $(CFLAGS) -DCONFIG_SATELLITE_TLE=1 -DCONFIG_POSITION=1 -I$(ROOT)/hal -I. -Wshadow \
+		-o $@ satelliteServiceTest.c $(SAT_SERVICE)
 
 # The SPI NOR driver against a model of the chip at the bus, and the journal and settings store on it (16 MB and
 # 1 MB parts, power cuts tearing page programs and erases)

@@ -4380,44 +4380,9 @@ msgid "↓ in"
 msgstr "↓ 后"
 
 #: core/ui/ui_satellite.c
-msgctxt "PREDICTING_PASSES_2"
-msgid "Predicting passes"
-msgstr "正在预测过境"
-
-#: core/ui/ui_satellite.c
-msgctxt "SATELLITE_NO_TLE_LOAD_SITE"
-msgid "No TLEs: load from site"
-msgstr "无TLE：请从网站加载"
-
-#: core/ui/ui_satellite.c
-msgctxt "GPS_TIME_UNAVAILABLE"
-msgid "GPS/time unavailable"
-msgstr "GPS/时间不可用"
-
-#: core/ui/ui_satellite.c
-msgctxt "NOW"
-msgid "Now"
-msgstr "当前"
-
-#: core/ui/ui_satellite.c
-msgctxt "NEXT_PASSES"
-msgid "Next passes"
-msgstr "后续过境"
-
-#: core/ui/ui_satellite.c
-msgctxt "UP_DOWN_PICK_BACK"
-msgid "Up Down pick  Back"
-msgstr "返回 上下选择"
-
-#: core/ui/ui_satellite.c
-msgctxt "NO_PASSES_IN_NEXT_24H"
-msgid "No passes in next 24h"
-msgstr "未来 24 小时无过境"
-
-#: core/ui/ui_satellite.c
-msgctxt "SATELLITE_TLE_AGE"
-msgid "TLE age"
-msgstr "TLE天数"
+msgctxt "OTHER_SATELLITE_2"
+msgid "Other satellite"
+msgstr "其他卫星"
 
 #: core/ui/ui_satellite.c
 msgctxt "VISIBLE_2"
@@ -4435,14 +4400,49 @@ msgid "Waiting for position/time"
 msgstr "等待位置/时间"
 
 #: core/ui/ui_satellite.c
+msgctxt "PREDICTING_PASSES_2"
+msgid "Predicting passes"
+msgstr "正在预测过境"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_NO_TLE_LOAD_SITE"
+msgid "No TLEs: load from site"
+msgstr "无TLE：请从网站加载"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_TLE_AGE"
+msgid "TLE age"
+msgstr "TLE天数"
+
+#: core/ui/ui_satellite.c
+msgctxt "GPS_TIME_UNAVAILABLE"
+msgid "GPS/time unavailable"
+msgstr "GPS/时间不可用"
+
+#: core/ui/ui_satellite.c
+msgctxt "NO_PASSES_IN_NEXT_24H"
+msgid "No passes in next 24h"
+msgstr "未来 24 小时无过境"
+
+#: core/ui/ui_satellite.c
+msgctxt "NOW"
+msgid "Now"
+msgstr "当前"
+
+#: core/ui/ui_satellite.c
+msgctxt "NEXT_PASSES"
+msgid "Next passes"
+msgstr "后续过境"
+
+#: core/ui/ui_satellite.c
+msgctxt "UP_DOWN_PICK_BACK"
+msgid "Up Down pick  Back"
+msgstr "返回 上下选择"
+
+#: core/ui/ui_satellite.c
 msgctxt "TRACKING_4"
 msgid "Tracking"
 msgstr "跟踪中"
-
-#: core/ui/ui_satellite.c
-msgctxt "OTHER_SATELLITE_2"
-msgid "Other satellite"
-msgstr "其他卫星"
 
 #: core/ui/ui_satellite.c
 msgctxt "CATALOG"

@@ -415,6 +415,23 @@ test("every step's nav bar offers Report a Problem", () => {
 	assert.match(c7, /class: "notice report-offer" \}[^\n]*\n[^\n]*reportButton\(\{ quiet: false \}\)/);
 });
 
+test("verified satellite installs and updates offer the TLE updater after channel handling", () => {
+	const src = readFileSync(new URL("../static/js/flasher/app.js", import.meta.url), "utf8");
+	const done = src.slice(src.indexOf("function doneView()"));
+	const body = done.slice(0, done.indexOf("\n}\n") + 3);
+	assert.match(body, /\(S\.task !== "install" && S\.task !== "update"\) \|\| S\.sim/);
+	assert.match(body, /S\.firmware\?\.manifest\?\.features[^;]*includes\("SATELLITE_TLE"\)/);
+	assert.match(body, /status\.append\(notice\(t\("flash\.done\.satellite_tle_offer"\), "info"\)\)/);
+	assert.match(body, /await dropSerial\(\);\s*location\.assign\(`\$\{HOME\}tools\/satellite\/index\.html`\)/);
+	assert.match(body, /const channels = \(\) => bringChannels\(status, \{ finish \}\)/);
+	assert.match(body, /if \(!p\) throw await noAnswer/);
+	const c7 = readFileSync(new URL("../static/js/flasher/c7000ui.js", import.meta.url), "utf8");
+	const c7Done = c7.slice(c7.indexOf("export function doneView()"), c7.indexOf("// After an install over the stock firmware"));
+	assert.match(c7Done, /\["install", "update"\]\.includes\(S\(\)\.task\)/);
+	assert.match(c7Done, /t\("flash\.done\.satellite_tle_offer"\)/);
+	assert.match(c7Done, /location\.assign\(`\$\{HOME\}tools\/satellite\/index\.html`\)/);
+});
+
 // A report with no error and no step verdict is the user's own ("problem", not a failed flash), and a verdict is
 // dropped when the user leaves its step, so Back from a verified install and a report later isn't "problem" for the write
 test("a report says failed only for an error or a step's verdict, and the verdict stays with its step", () => {

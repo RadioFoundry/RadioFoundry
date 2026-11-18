@@ -11,6 +11,7 @@
 #include "config.h"
 #if CONFIG_SATELLITE_TLE
 #include "satellite/path.h"
+#include "satellite/store.h"
 typedef enum {
 	RADIO_SAT_SCAN_IDLE,
 	RADIO_SAT_SCAN_RUNNING,
@@ -519,6 +520,7 @@ bool radio_get_satellite_path(satellite_path_view_t *path);
 void radio_req_satellite_scan(bool enabled);
 void radio_get_satellite_scan(uint8_t *status, uint8_t *completed, uint8_t *total, uint8_t *passes);
 bool radio_get_satellite_pass(uint8_t rank, radio_satellite_pass_t *pass);
+bool radio_get_satellite_pass_summary(uint8_t record_index, satellite_record_summary_t *summary);
 #endif
 // Just the view's state, for a caller short of stack (the view is some 0.7 KB)
 radio_state_t radio_get_state(void);

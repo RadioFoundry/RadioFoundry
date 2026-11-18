@@ -374,6 +374,33 @@ static int64_t days_before_year(uint32_t year)
 	return days;
 }
 
+bool satellite_tle_epoch(const char line1[SATELLITE_TLE_LINE_LENGTH + 1u], int64_t *epoch_s,
+			 uint16_t *fraction_q16)
+{
+	if (line1 == NULL || epoch_s == NULL || fraction_q16 == NULL ||
+	    line1[SATELLITE_TLE_LINE_LENGTH] != 0 || !digits(line1 + 18, 5u) || line1[23] != '.' ||
+	    !digits(line1 + 24, 8u))
+		return false;
+	uint32_t short_year = number(line1 + 18, 2u);
+	uint32_t year = short_year >= 57u ? 1900u + short_year : 2000u + short_year;
+	uint32_t day = number(line1 + 20, 3u);
+	if (year < 1970u)
+		return false;
+	bool leap = year % 4u == 0u && (year % 100u != 0u || year % 400u == 0u);
+	if (day == 0u || day > (leap ? 366u : 365u))
+		return false;
+	uint32_t fraction_digits = number(line1 + 24, 8u);
+	uint32_t fractional_numerator = (fraction_digits % 1000000u) * 864u;
+	uint32_t fractional_seconds = fraction_digits / 1000000u * 864u +
+		fractional_numerator / 1000000u;
+	int64_t days = days_before_year(year) + (int64_t)day - 1;
+	if (days < 0)
+		return false;
+	*epoch_s = days * 86400 + fractional_seconds;
+	*fraction_q16 = fraction_u32_q16(fractional_numerator % 1000000u, 1000000u);
+	return true;
+}
+
 static bool parse_elements(satellite_orbit_t *orbit, const satellite_record_t *record)
 {
 	const char *line1 = record->line1;
@@ -389,22 +416,10 @@ static bool parse_elements(satellite_orbit_t *orbit, const satellite_record_t *r
 	    !digits(line2 + 26, 7u))
 		return false;
 
-	uint32_t short_year = number(line1 + 18, 2u);
-	uint32_t year = short_year >= 57u ? 1900u + short_year : 2000u + short_year;
-	uint32_t day = number(line1 + 20, 3u);
-	if (year < 1970u)
+	int64_t epoch_s;
+	uint16_t epoch_fraction_q16;
+	if (!satellite_tle_epoch(line1, &epoch_s, &epoch_fraction_q16))
 		return false;
-	bool leap = year % 4u == 0u && (year % 100u != 0u || year % 400u == 0u);
-	if (day == 0u || day > (leap ? 366u : 365u))
-		return false;
-	uint32_t fraction_digits = number(line1 + 24, 8u);
-	int64_t unix_days = days_before_year(year) + (int64_t)day - 1;
-	if (unix_days < 0)
-		return false;
-	uint32_t fractional_numerator = (fraction_digits % 1000000u) * 864u;
-	uint32_t fractional_seconds = fraction_digits / 1000000u * 864u +
-		fractional_numerator / 1000000u;
-	int64_t epoch_s = unix_days * 86400 + fractional_seconds;
 	if ((uint64_t)epoch_s != record->epoch)
 		return false;
 
@@ -432,8 +447,7 @@ static bool parse_elements(satellite_orbit_t *orbit, const satellite_record_t *r
 	orbit->argument_perigee_phase = microdegrees_to_phase(argument);
 	orbit->mean_anomaly_phase = microdegrees_to_phase(anomaly);
 	orbit->epoch_s = epoch_s;
-	orbit->epoch_fraction_q16 =
-		fraction_u32_q16(fractional_numerator % 1000000u, 1000000u);
+	orbit->epoch_fraction_q16 = epoch_fraction_q16;
 	if (!semi_major_axis_m(orbit->mean_motion_rev_day_e8, &orbit->semi_major_axis_m))
 		return false;
 	if (((uint64_t)orbit->semi_major_axis_m *

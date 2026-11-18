@@ -16,6 +16,8 @@ python3 site/build.py --strict              # any warning fails (CI)
 site/tests/run.sh                           # the flasher's and the editor's tests (Node 20+)
 ```
 
+Use `--serve` to test the Satellite TLE Update page locally. A plain static server cannot provide its `/api/amsat-tle` proxy.
+
 The generator needs two Python packages, markdown-it-py and resvg_py (`pip install -r site/requirements.txt`, or prefix the
 command with `uv run --no-project --with-requirements site/requirements.txt`). The pages need no build step and no
 npm packages: plain HTML, CSS and ES modules. `tools/ci.sh` builds the site and runs the tests (Python step).

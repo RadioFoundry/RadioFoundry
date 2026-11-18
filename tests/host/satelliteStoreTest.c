@@ -453,7 +453,8 @@ static void test_corrupt_empty_area_recovers(void)
 	uint8_t req = DL_SAT_OP_INFO;
 	sim_flash_create(FLASH_SIZE, &map);
 	CHECK(storage_init());
-	sim_flash_data[map.satellite_addr] = 0u;
+	for (uint8_t bank = 0u; bank < 3u; bank++)
+		sim_flash_data[map.satellite_addr + (uint32_t)bank * STORAGE_SECTOR] = 0u;
 	CHECK(command(&req, 1) == 6u && output[0] == DL_ST_OK && get16(output + 4u) == 0u);
 	uint8_t record[TEST_RECORD_MAX];
 	uint16_t length = make_record(record, 25544u, "ISS", "26315.50000000");

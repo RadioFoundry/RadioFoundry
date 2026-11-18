@@ -4378,44 +4378,9 @@ msgid "↓ in"
 msgstr "↓ dans"
 
 #: core/ui/ui_satellite.c
-msgctxt "PREDICTING_PASSES_2"
-msgid "Predicting passes"
-msgstr "Calcul des passages"
-
-#: core/ui/ui_satellite.c
-msgctxt "SATELLITE_NO_TLE_LOAD_SITE"
-msgid "No TLEs: load from site"
-msgstr "Pas de TLE : charger depuis le site"
-
-#: core/ui/ui_satellite.c
-msgctxt "GPS_TIME_UNAVAILABLE"
-msgid "GPS/time unavailable"
-msgstr "GPS/heure indisponibles"
-
-#: core/ui/ui_satellite.c
-msgctxt "NOW"
-msgid "Now"
-msgstr "Maintenant"
-
-#: core/ui/ui_satellite.c
-msgctxt "NEXT_PASSES"
-msgid "Next passes"
-msgstr "Prochains passages"
-
-#: core/ui/ui_satellite.c
-msgctxt "UP_DOWN_PICK_BACK"
-msgid "Up Down pick  Back"
-msgstr "Haut Bas choisir  Retour"
-
-#: core/ui/ui_satellite.c
-msgctxt "NO_PASSES_IN_NEXT_24H"
-msgid "No passes in next 24h"
-msgstr "Aucun passage dans les 24 h"
-
-#: core/ui/ui_satellite.c
-msgctxt "SATELLITE_TLE_AGE"
-msgid "TLE age"
-msgstr "Âge du TLE"
+msgctxt "OTHER_SATELLITE_2"
+msgid "Other satellite"
+msgstr "Autre satellite"
 
 #: core/ui/ui_satellite.c
 msgctxt "VISIBLE_2"
@@ -4433,14 +4398,49 @@ msgid "Waiting for position/time"
 msgstr "En attente de position/heure"
 
 #: core/ui/ui_satellite.c
+msgctxt "PREDICTING_PASSES_2"
+msgid "Predicting passes"
+msgstr "Calcul des passages"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_NO_TLE_LOAD_SITE"
+msgid "No TLEs: load from site"
+msgstr "Pas de TLE : charger depuis le site"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_TLE_AGE"
+msgid "TLE age"
+msgstr "Âge du TLE"
+
+#: core/ui/ui_satellite.c
+msgctxt "GPS_TIME_UNAVAILABLE"
+msgid "GPS/time unavailable"
+msgstr "GPS/heure indisponibles"
+
+#: core/ui/ui_satellite.c
+msgctxt "NO_PASSES_IN_NEXT_24H"
+msgid "No passes in next 24h"
+msgstr "Aucun passage dans les 24 h"
+
+#: core/ui/ui_satellite.c
+msgctxt "NOW"
+msgid "Now"
+msgstr "Maintenant"
+
+#: core/ui/ui_satellite.c
+msgctxt "NEXT_PASSES"
+msgid "Next passes"
+msgstr "Prochains passages"
+
+#: core/ui/ui_satellite.c
+msgctxt "UP_DOWN_PICK_BACK"
+msgid "Up Down pick  Back"
+msgstr "Haut Bas choisir  Retour"
+
+#: core/ui/ui_satellite.c
 msgctxt "TRACKING_4"
 msgid "Tracking"
 msgstr "Suivi"
-
-#: core/ui/ui_satellite.c
-msgctxt "OTHER_SATELLITE_2"
-msgid "Other satellite"
-msgstr "Autre satellite"
 
 #: core/ui/ui_satellite.c
 msgctxt "CATALOG"

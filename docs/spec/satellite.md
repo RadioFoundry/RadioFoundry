@@ -20,7 +20,9 @@ Tracking needs three independent inputs:
 Satellite calculations are pure, bounded work: they take a TLE, observer state and UTC instant, then return a result.
 They do not read board registers, access settings storage, wait, or tune hardware. Position remains owned by
 `core/position`; the radio state machine remains the only owner of an applied channel tune. Satellite tracking supplies
-frequency targets to that state machine.
+frequency targets to that state machine. `core/satellite/service.c` coordinates tracking requests, pass scans and their
+cache without RTOS or radio-state-machine dependencies. The radio task supplies current radio context and applies the
+service's updates. `core/satellite/store.c` owns persistent TLE storage; debug-link commands adapt its transfer API.
 
 Use the lightweight Keplerian model implemented by `core/satellite/orbit.c`: interpret the TLE mean elements as an
 elliptic orbit, integrate the line-1 mean-motion derivative, solve Kepler's equation with a bounded Newton iteration,
@@ -28,11 +30,11 @@ and apply secular J2 rates to the ascending node and argument of perigee. Rotate
 using Greenwich sidereal time, then calculate observer-relative azimuth, elevation, range and range rate. This is an
 approximation, not SGP4/SDP4: it omits periodic perturbations and detailed atmospheric drag, and its pass and Doppler
 estimates can drift from a standards-based ephemeris, particularly as the TLE ages. Tests verify the model's orbital
-invariants and Kepler/J2 reference positions, not SGP4 output. Propagation retains the fractional second of the TLE
-epoch even though the radio clock supplies whole UTC seconds. Do not treat TLE elements as long-term orbital constants:
-expose their epoch and reject or mark stale elements outside the supported age. Builds and the radio do not fetch or
-embed TLE data. Load selected records into the radio's flash store with `tools/satellite_tle.py sync` or the site's
-Satellite TLE Update page.
+invariants and cross-check positions against published SGP4 vectors at 1, 3 and 7 days. Propagation retains the
+fractional second of the TLE epoch even though the radio clock supplies whole UTC seconds. Do not treat TLE elements as
+long-term orbital constants: expose their epoch and reject or mark stale elements outside the supported age. Builds and
+the radio do not fetch or embed TLE data. Load selected records into the radio's flash store with
+`tools/satellite_tle.py sync` or the site's Satellite TLE Update page.
 
 Firmware propagation uses integer fixed-point arithmetic, CORDIC trigonometry and integer roots. Keep double-precision
 math, libm calls and 64-bit division out of the firmware path.
@@ -52,10 +54,10 @@ as soon as the first pass is found, and its path grows as samples arrive. If inp
 change, the result must be invalidated or restarted; small GPS variations do not count as an observer change, while a
 movement of about 500 m horizontally or 100 m vertically restarts the forecast. Results from different TLE epochs or
 observer locations must not be mixed. A pass already in progress is represented as visible now; propagation looks back up to 30 minutes to recover
-its AOS when available. The UI reports countdowns to AOS and LOS and plots the retained pass on a north-up polar sky circle,
-with elevation mapped from the horizon at the rim to the zenith at the center. AOS and LOS endpoints are interpolated
-to the horizon, and adjacent projected samples are smoothly connected across azimuth wrap. The live position is marked
-separately.
+its AOS when available. The UI reports countdowns to AOS and LOS and plots the retained pass on a north-up polar sky
+plot, with elevation mapped from the horizon at the rim to the zenith at the center. On 128x64 displays, the plot is
+replaced by a compact row with the AOS and LOS countdowns. AOS and LOS endpoints are interpolated to the horizon, and
+adjacent projected samples are smoothly connected across azimuth wrap. The live position is marked separately.
 
 Once the pass path is predicted, retain that arc for the pass. While the satellite is visible, update only its live
 position marker; do not restart the path for observer-position drift. Resume prediction after the pass ends so the next
@@ -112,10 +114,10 @@ Reacquiring valid inputs may resume tracking only while the same satellite and f
 Tools > Satellite first predicts passes for every locally installed TLE using one current GPS position and UTC
 snapshot. The list is ordered by AOS, shows time to AOS in hours and minutes (`H:MM`) and maximum elevation, and
 reports prediction progress. Missing position, altitude or valid UTC leaves the list unavailable instead of using stale
-inputs. Its AOS countdown updates as time passes from the scan's UTC snapshot. Selecting a pass persists its record,
-starts tracking, and opens that satellite's detail screen with its TLE age (when UTC is available), visibility, Doppler
-offsets, pass countdowns (`↑ in` to AOS and `↓ in` to LOS) and the sky path. At 14 days old, the screen warns once per
-satellite to refresh the TLE from the site. Countdown minutes round up while time remains. The detail screen's pass data
+inputs. Its AOS countdown updates as time passes from the scan's UTC snapshot. The pass list shows the common age of the
+installed TLE set when UTC is available and warns once when it reaches 14 days. Selecting a pass persists its record,
+starts tracking, and opens that satellite's detail screen with visibility, Doppler offsets, pass countdowns (`↑ in` to
+AOS and `↓ in` to LOS) and the sky path. Countdown minutes round up while time remains. The detail screen's pass data
 continues updating in bounded service steps. The nominal RX/TX pair and optional TX tone come from the selected
 satellite's persisted catalog profile. An active session keeps those nominal
 values even as Doppler targets

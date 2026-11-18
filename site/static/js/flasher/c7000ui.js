@@ -15,7 +15,7 @@
 // it is written, and a second pass checks them all; a failed or interrupted install is resumed by running it again
 // (only what still differs is written).
 
-import { h, t, notice, button, panel, progressBar, logBox, download, filePicker, localTime, partNames } from "./dom.js";
+import { h, t, HOME, notice, button, panel, progressBar, logBox, download, filePicker, localTime, partNames } from "./dom.js";
 import { hex, sha256, sleep } from "./bytes.js";
 import { SerialStream, Link, CableError, probe, serialSupported, serialApi, knownRadioPort, grantedPorts } from "./link.js";
 import { Stub, stubImages, univForBoard, StubError, DONE_LED, MEM, ROM_REPEAT, hasRomFlag } from "./stub.js";
@@ -1294,6 +1294,21 @@ export function doneView() {
 	const quiet = h("p", { class: "small muted" }, t("report.something_wrong"), " ", reportButton());
 	const box = panel(t("flash.done.title"), h("div", { class: "c7-grid" }, h("div", {}, h("p", {}, t("flash.c7.done.lead")), status, quiet), top.el));
 	let tries = 0;
+	let satelliteTleOfferShown = false;
+	const finish = () => {
+		if (!["install", "update"].includes(S().task) || S().fakeC7 || satelliteTleOfferShown
+			|| !String(S().firmware?.manifest?.features || "").split(",").includes("SATELLITE_TLE"))
+			return S().forward(button(t("flash.nav.finish"), () => ctx.reset(), { primary: true }));
+		satelliteTleOfferShown = true;
+		status.append(notice(t("flash.done.satellite_tle_offer"), "info"));
+		S().forward([
+			button(t("flash.nav.finish"), () => ctx.reset(), { quiet: true }),
+			button(t("flash.done.satellite_tle_load"), async () => {
+				await dropC7();
+				location.assign(`${HOME}tools/satellite/index.html`);
+			}, { primary: true }),
+		]);
+	};
 	// The user left this step (Start over, Back) while a check still runs: it must not draw into the step that replaced
 	// it (as connectPanel's gone())
 	let attached = false;
@@ -1343,7 +1358,7 @@ export function doneView() {
 			h("p", { class: "small muted" }, t(hasStubEntry() ? "flash.c7.done.next_time" : "flash.c7.done.next_time_power")));
 		if (good) await bringChannels(c, status, left);
 		if (left()) return;
-		S().forward(button(t("flash.nav.finish"), () => ctx.reset(), { primary: true }));
+		finish();
 		await dropC7();
 	};
 	check();

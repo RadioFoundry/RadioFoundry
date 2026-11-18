@@ -2231,6 +2231,11 @@ bool ui_svc_satellite_summary(uint8_t index, satellite_record_summary_t *summary
 	return true;
 }
 
+bool ui_svc_satellite_pass_summary(uint8_t record_index, satellite_record_summary_t *summary)
+{
+	return ui_svc_satellite_summary(record_index, summary);
+}
+
 bool ui_svc_satellite_tle_age(uint32_t epoch, uint16_t *age_days)
 {
 	(void)epoch;

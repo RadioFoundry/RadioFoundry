@@ -99,6 +99,10 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "mode=%s\n", mode_key(v->ch.mode));
 	dl_text(t, "am=%u\nbcast=%u\nbcast_fault=%u\nbcast_khz=%u\n", v->am, v->bcast, v->bcast_fault, (unsigned)v->bcast_khz);
 	dl_text(t, "vfo=%u\nvfo_index=%u\n", v->vfo, v->vfo_index);
+#if CONFIG_SATELLITE_TLE
+	dl_text(t, "satellite.tracking=%u\nsatellite.index=%u\nsatellite.status=%u\nsatellite.pass_valid=%u\n",
+		v->satellite_tracking, v->satellite_index, v->satellite_status, v->satellite_pass_valid);
+#endif
 	dl_text(t, "zone_index=%u\nzone_pos=%u\nzone_size=%u\nzone_count=%u\n", v->zone_index, v->zone_pos, v->zone_size,
 		(unsigned)codeplug_zone_count());
 	dl_text_kv_str(t, "zone_name", v->zone_name);

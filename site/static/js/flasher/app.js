@@ -38,7 +38,7 @@ import { suggestPack, packCode, startCode, startLanguages, startLanguage, setSta
 import { readBootKey } from "./bootkey.js";
 import { codecSegments, loadCodec, readCodec, saveCodec } from "./codecsave.js";
 import { FakeRadio, simulation, randomBytes, rng } from "./fake.js";
-import { t, tOr, num, LANG, ROOT, h, download, filePicker, progressBar, stopBars, logBox, notice, button, spinner, panel, localTime, partNames, barsRunning } from "./dom.js";
+import { t, tOr, num, LANG, ROOT, HOME, h, download, filePicker, progressBar, stopBars, logBox, notice, button, spinner, panel, localTime, partNames, barsRunning } from "./dom.js";
 import { stepHistory } from "./stephistory.js";
 import * as c7ui from "./c7000ui.js";
 import { variantWarning, variantVerdict } from "./iapui.js";
@@ -2538,12 +2538,26 @@ function stubPanel(fallback, onDone, what, stockPicked = () => {}) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// install: after the write
+// install or update: after the write
 
 function doneView() {
 	const box = h("div", { class: "flasher" });
 	const status = h("div");
-	const finish = () => button(t("flash.nav.finish"), () => reset(), { primary: true });
+	let satelliteTleOfferShown = false;
+	const finish = () => {
+		if ((S.task !== "install" && S.task !== "update") || S.sim || satelliteTleOfferShown
+			|| !String(S.firmware?.manifest?.features || "").split(",").includes("SATELLITE_TLE"))
+			return button(t("flash.nav.finish"), () => reset(), { primary: true });
+		satelliteTleOfferShown = true;
+		status.append(notice(t("flash.done.satellite_tle_offer"), "info"));
+		return [
+			button(t("flash.nav.finish"), () => reset(), { quiet: true }),
+			button(t("flash.done.satellite_tle_load"), async () => {
+				await dropSerial();
+				location.assign(`${HOME}tools/satellite/index.html`);
+			}, { primary: true }),
+		];
+	};
 	const check = button(t("flash.done.check"), async () => {
 		check.disabled = true;
 		status.replaceChildren(h("p", { class: "muted" }, t("flash.now.connecting")));
@@ -2712,7 +2726,7 @@ async function bringChannels(status, { finish }) {
 	if (copy) return run();
 	// no backup: the user decides, knowing the original codeplug is not saved anywhere
 	say(h("p", {}, t("flash.channels.found", { counts: counts(conv.counts) })), notes, notice(t("flash.channels.no_backup"), "warn"));
-	S.forward([button(t("flash.nav.finish_no_channels"), () => reset(), { quiet: true }),
+	S.forward([button(t("flash.nav.finish_no_channels"), () => S.forward(finish()), { quiet: true }),
 		button(t("flash.channels.go"), run, { primary: true })]);
 }
 

@@ -133,6 +133,14 @@ WEAK bool ui_svc_satellite_pass(uint8_t rank, radio_satellite_pass_t *pass)
 	if (pass != NULL) *pass = (radio_satellite_pass_t){0};
 	return false;
 }
+
+WEAK bool ui_svc_satellite_pass_summary(uint8_t record_index, satellite_record_summary_t *summary)
+{
+	(void)record_index;
+	if (summary != NULL) *summary = (satellite_record_summary_t){0};
+	return false;
+}
+
 WEAK bool ui_svc_satellite_path(satellite_path_view_t *path)
 {
 	if (path != NULL)

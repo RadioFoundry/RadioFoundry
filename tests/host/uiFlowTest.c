@@ -61,11 +61,11 @@ static const flow_t flows[] = {
 	{ "Satellite asks to load TLEs when the store is empty", "satempty", "ok 6 9",
 	  "screen=satellite-passes shows=No_TLEs:_load_from_site", 4, false },
 	{ "Satellite pass list selects tracking detail", "", "ok 6 9 ok",
-	  "screen=satellite shows=ISS shows=RX shows=TX shows=144.9988_MHz shows=435.0036_MHz hides=Path hides=Doppler hides=Predicting_passes hides=Calculating", 13, false },
-	{ "Satellite detail shows a fresh TLE age", "", "ok 6 9 ok",
-	  "screen=satellite shows=TLE_age shows=1d", 13, false },
-	{ "Satellite detail warns once for a stale TLE", "satagestale", "ok 6 9 ok",
-	  "screen=satellite shows=TLE_age shows=14d toast=TLE_is_14+_days_old;_refresh_from_site", 13, false },
+	  "screen=satellite shows=ISS shows=RX shows=TX shows=144.9988_MHz shows=435.0036_MHz hides=TLE_age hides=Path hides=Doppler hides=Predicting_passes hides=Calculating", 13, false },
+	{ "Pass list shows the shared TLE age", "", "ok 6 9",
+	  "screen=satellite-passes shows=TLE_age shows=1d", 13, false },
+	{ "Pass list warns once for stale TLEs", "satagestale", "ok 6 9",
+	  "screen=satellite-passes shows=TLE_age shows=14d toast=TLE_is_14+_days_old;_refresh_from_site", 13, false },
 	{ "SO-50 arm requires long OK while tracking", "", "ok 6 9 down down ok long:ok",
 	  "screen=satellite shows=SO-50 toast=SO-50_arm_requested", 16, false },
 	{ "Satellite detail shows sky while pass prediction is pending", "satpathpending",
@@ -903,7 +903,9 @@ static const flow_t flows[] = {
 	{ "L position source", "ok 7 5 down", "ok", "pos_source=1 shows=GPS", 1, false },
 	{ "L position source wraps to auto", "ok 7 5 down ok ok ok", "ok", "pos_source=0 shows=Auto", 1, false },
 	{ "L position in DMR calls", "ok 7 5 down down down", "ok", "pos_dmrgps=1 focus=Send_in_DMR_calls", 1, false },
+#if CONFIG_SATELLITE_TLE
 	{ "L save GPS without a fix", "ok 7 5 down down down down", "ok", "toast=No_current_GPS_fix focus=Save_GPS_position", 1, false },
+#endif
 	{ "L fixed position page", "ok 7 5 down down", "ok", "screen=fixed-pos", 1, false },
 	{ "L no fixed position yet", "ok 7 5 down down", "ok", "shows=Not_set", 1, false },
 	{ "L fixed position found by latitude", "", "5 2 8 4 8 8 3 3", "shows=Fixed_position", 8, false },
@@ -1132,6 +1134,12 @@ static const flow_t satellite_detail_flows[] = {
 	{ "Satellite detail shows LOS as calculating until known", "satlospending",
 	  "ok 6 9 ok",
 	  "screen=satellite shows=Calculating", 13, false },
+};
+
+static const flow_t satellite_small_detail_flows[] = {
+	{ "128x64 satellite detail shows AOS and LOS instead of the path", "satfuturepass",
+	  "ok 6 9 ok",
+	  "screen=satellite shows=\x87_0:02 shows=\x88_0:03", 13, false },
 };
 #endif
 
@@ -2002,6 +2010,9 @@ int main(void)
 	const sim_geom_t *satellite_geom = sim_geom_find("240x320");
 	for (size_t i = 0; i < sizeof satellite_detail_flows / sizeof satellite_detail_flows[0]; i++)
 		run_flow(&satellite_detail_flows[i], satellite_geom, SIM_MAP_K, "K 240x320");
+	const sim_geom_t *satellite_small_geom = sim_geom_find("128x64");
+	for (size_t i = 0; i < sizeof satellite_small_detail_flows / sizeof satellite_small_detail_flows[0]; i++)
+		run_flow(&satellite_small_detail_flows[i], satellite_small_geom, SIM_MAP_M, "M GD-77 satellite");
 #endif
 	for (size_t i = 0; i < sizeof flows_mono / sizeof flows_mono[0]; i++)
 		run_flow(&flows_mono[i], sim_geom_find("128x64"), SIM_MAP_M, "M GD-77");

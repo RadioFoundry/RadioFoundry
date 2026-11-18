@@ -76,8 +76,8 @@ current date and time. The list is ordered by time to AOS and shows each pass's 
 select a pass; **OK** opens its details and starts tracking. The selected satellite is remembered across power cycles.
 The firmware image contains no TLEs. Load selected records into the radio's flash store from the site's Satellite TLE
 Update page or with `tools/satellite_tle.py sync`. With an empty store, Satellite shows **No TLEs: load from site**.
-The detail screen shows each installed TLE's age when current UTC is available. It warns once per satellite when a TLE
-reaches 14 days; load a fresh set from the site to improve prediction accuracy.
+The pass list shows the common age of the installed TLE set when current UTC is available. At 14 days, it warns once to
+refresh the set from the site and improve prediction accuracy.
 Pass and Doppler values use an approximate Keplerian orbit model, not SGP4. They can differ from a precision ephemeris,
 especially as the TLE ages, so keep the installed elements current.
 Tracking gets its nominal RX/TX frequencies and optional transmit CTCSS tone from the persisted catalog-ID profile,
@@ -87,10 +87,10 @@ orbital elements, not communication frequencies. PC synchronization does not tou
 channel does not change the runtime profile used for tracking.
 
 The screen reports visibility, receive and transmit Doppler offsets, the current Doppler-adjusted RX and TX frequencies,
-and the next pass's AOS and LOS countdowns. Its
-north-up circular sky plot shows the predicted path from horizon to zenith and marks the satellite's current position
-while it is visible. During an active transmission, the TX row shows the frequency in use; tracking continues
-calculating the latest target in the background and applies it as soon as transmission ends.
+and the next pass's AOS and LOS countdowns. The north-up circular sky plot shows the predicted path from horizon to
+zenith and marks the satellite's current position while it is visible. On 128x64 displays, the detail screen shows the
+AOS and LOS countdowns instead of the plot. During an active transmission, the TX row shows the frequency in use;
+tracking continues calculating the latest target in the background and applies it as soon as transmission ends.
 While SO-50 is actively tracked, long-press **OK** on its detail screen to send the 74.4 Hz CTCSS arm signal for two
 seconds. The radio applies its normal transmit checks and uses the active Doppler-adjusted uplink. This does not change
 the normal 67.0 Hz profile tone, and the arm signal is never sent automatically when PTT is released.

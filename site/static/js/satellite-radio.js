@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 
-const COMMAND = 0x22;
+const COMMAND = 0x25;
 const OP = Object.freeze({ INFO: 0, LIST: 1, DATA: 3, COMMIT: 4, ABORT: 5,
 	REPLACE_BEGIN: 9, PROFILE_STAGE: 10, PROFILE_VALUES_GET: 11, PROFILE_STAGE_CHUNK: 12 });
 

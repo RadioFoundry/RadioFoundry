@@ -3934,21 +3934,35 @@ static void test_position(void)
 	gps_here = true;
 	CHECK(ui_svc_feat_radio() & UI_FEAT_GPS);
 	CHECK(!ui_svc_position(&up));		// nothing heard yet
+#if CONFIG_SATELLITE_TLE
 	CHECK(!position_save_gps(now));
+#endif
 	position_nmea(rmc_void, strlen(rmc_void), true, now);
 	position_nmea(gga, strlen(gga), true, now);
 	position_fix_t merged_fix;
+#if CONFIG_SATELLITE_TLE
 	uint32_t gps_date, gps_utc;
+#endif
 	CHECK(position_fix(&merged_fix, now) == POSITION_SRC_GPS);
 	CHECK(merged_fix.date == 230394u && merged_fix.utc_hms == 123519u);
+#if CONFIG_SATELLITE_TLE
 	CHECK(position_utc_fields(&gps_date, &gps_utc, now));
 	CHECK(gps_date == 230394u && gps_utc == 123519u);
+#endif
 	position_nmea(rmc, strlen(rmc), true, now);
 	CHECK(ui_svc_position(&up) && up.fix && up.sats == 8 && up.lat_e7 == 481173000 && up.lon_e7 == 115166666);
 	CHECK(up.alt_ok && up.alt_m == 545 && up.course == 84);
 	position_cfg_t original_cfg;
 	position_get_cfg(&original_cfg);
+#if CONFIG_SATELLITE_TLE
 	CHECK(position_save_gps(now));
+#else
+	position_cfg_t gps_cfg = original_cfg;
+	gps_cfg.fix_lat = up.lat_e7;
+	gps_cfg.fix_lon = up.lon_e7;
+	gps_cfg.fix_alt_m = up.alt_m;
+	position_set_cfg(&gps_cfg, now);
+#endif
 	position_cfg_t saved_cfg;
 	position_get_cfg(&saved_cfg);
 	CHECK(saved_cfg.fix_lat == up.lat_e7 && saved_cfg.fix_lon == up.lon_e7 && saved_cfg.fix_alt_m == up.alt_m);
@@ -3960,19 +3974,25 @@ static void test_position(void)
 	position_set_cfg(&saved_cfg, now);
 #if CONFIG_POSITION_HOST
 	CHECK(position_fix(&merged_fix, auto_fallback_now) == POSITION_SRC_HOST);
+#if CONFIG_SATELLITE_TLE
 	CHECK(position_fix_for_satellite(&merged_fix, auto_fallback_now) == POSITION_SRC_FIXED);
+#endif
 #else
 	CHECK(position_fix(&merged_fix, auto_fallback_now) == POSITION_SRC_FIXED);
 #endif
 	saved_cfg.pref = POSITION_GPS;
 	position_set_cfg(&saved_cfg, now);
+#if CONFIG_SATELLITE_TLE
 	CHECK(position_fix_for_satellite(&merged_fix, now) == POSITION_SRC_GPS);
 	CHECK(position_fix_for_satellite(&merged_fix, now + POSITION_STALE_MS) == POSITION_SRC_FIXED);
 	CHECK(merged_fix.lat == up.lat_e7 && merged_fix.lon == up.lon_e7 && merged_fix.alt_m == up.alt_m);
+#endif
 	saved_cfg.pref = POSITION_FIXED;
 	position_set_cfg(&saved_cfg, now);
 	CHECK(position_fix(&merged_fix, now) == POSITION_SRC_FIXED && merged_fix.lat == up.lat_e7);
+#if CONFIG_SATELLITE_TLE
 	CHECK(position_utc_fields(&gps_date, &gps_utc, now));
+#endif
 	saved_cfg.pref = original_cfg.pref;
 	position_set_cfg(&saved_cfg, now);
 	settings_t saved_settings;

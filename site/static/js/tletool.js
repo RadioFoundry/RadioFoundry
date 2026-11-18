@@ -131,13 +131,28 @@ amsatButton.addEventListener("click", async () => {
 	status.textContent = t("tools.satellite.status.fetching");
 	try {
 		const response = await fetch("/api/amsat-tle", { headers: { Accept: "text/plain" } });
-		if (!response.ok) throw new Error(t("tools.satellite.status.fetch_failed", { status: response.status }));
+		if (!response.ok) {
+			catalog = null;
+			buildButton.disabled = true;
+			pushButton.disabled = true;
+			status.textContent = response.status === 404
+				? t("tools.satellite.status.api_not_found")
+				: t("tools.satellite.status.fetch_failed", { status: response.status });
+			return;
+		}
 		const text = await response.text();
-		if (new TextEncoder().encode(text).length > 1000000) throw new Error(t("tools.satellite.status.too_large"));
+		if (new TextEncoder().encode(text).length > 1000000) {
+			catalog = null;
+			buildButton.disabled = true;
+			pushButton.disabled = true;
+			status.textContent = t("tools.satellite.status.too_large");
+			return;
+		}
 		await loadText(text, AMSAT_BULLETIN);
 	} catch (error) {
 		catalog = null;
 		buildButton.disabled = true;
+		pushButton.disabled = true;
 		status.textContent = t("tools.satellite.status.fetch_failed", { status: error.message });
 	} finally {
 		amsatButton.disabled = false;

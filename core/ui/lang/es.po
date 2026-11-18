@@ -4378,44 +4378,9 @@ msgid "↓ in"
 msgstr "↓ en"
 
 #: core/ui/ui_satellite.c
-msgctxt "PREDICTING_PASSES_2"
-msgid "Predicting passes"
-msgstr "Calculando pasos"
-
-#: core/ui/ui_satellite.c
-msgctxt "SATELLITE_NO_TLE_LOAD_SITE"
-msgid "No TLEs: load from site"
-msgstr "Sin TLE: cargar desde el sitio"
-
-#: core/ui/ui_satellite.c
-msgctxt "GPS_TIME_UNAVAILABLE"
-msgid "GPS/time unavailable"
-msgstr "GPS/hora no disponible"
-
-#: core/ui/ui_satellite.c
-msgctxt "NOW"
-msgid "Now"
-msgstr "Ahora"
-
-#: core/ui/ui_satellite.c
-msgctxt "NEXT_PASSES"
-msgid "Next passes"
-msgstr "Próximos pasos"
-
-#: core/ui/ui_satellite.c
-msgctxt "UP_DOWN_PICK_BACK"
-msgid "Up Down pick  Back"
-msgstr "Arriba Abajo elegir  Atrás"
-
-#: core/ui/ui_satellite.c
-msgctxt "NO_PASSES_IN_NEXT_24H"
-msgid "No passes in next 24h"
-msgstr "Sin pasos en las próximas 24 h"
-
-#: core/ui/ui_satellite.c
-msgctxt "SATELLITE_TLE_AGE"
-msgid "TLE age"
-msgstr "Edad del TLE"
+msgctxt "OTHER_SATELLITE_2"
+msgid "Other satellite"
+msgstr "Otro satélite"
 
 #: core/ui/ui_satellite.c
 msgctxt "VISIBLE_2"
@@ -4433,14 +4398,49 @@ msgid "Waiting for position/time"
 msgstr "Esperando posición/hora"
 
 #: core/ui/ui_satellite.c
+msgctxt "PREDICTING_PASSES_2"
+msgid "Predicting passes"
+msgstr "Calculando pasos"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_NO_TLE_LOAD_SITE"
+msgid "No TLEs: load from site"
+msgstr "Sin TLE: cargar desde el sitio"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_TLE_AGE"
+msgid "TLE age"
+msgstr "Edad del TLE"
+
+#: core/ui/ui_satellite.c
+msgctxt "GPS_TIME_UNAVAILABLE"
+msgid "GPS/time unavailable"
+msgstr "GPS/hora no disponible"
+
+#: core/ui/ui_satellite.c
+msgctxt "NO_PASSES_IN_NEXT_24H"
+msgid "No passes in next 24h"
+msgstr "Sin pasos en las próximas 24 h"
+
+#: core/ui/ui_satellite.c
+msgctxt "NOW"
+msgid "Now"
+msgstr "Ahora"
+
+#: core/ui/ui_satellite.c
+msgctxt "NEXT_PASSES"
+msgid "Next passes"
+msgstr "Próximos pasos"
+
+#: core/ui/ui_satellite.c
+msgctxt "UP_DOWN_PICK_BACK"
+msgid "Up Down pick  Back"
+msgstr "Arriba Abajo elegir  Atrás"
+
+#: core/ui/ui_satellite.c
 msgctxt "TRACKING_4"
 msgid "Tracking"
 msgstr "Seguimiento"
-
-#: core/ui/ui_satellite.c
-msgctxt "OTHER_SATELLITE_2"
-msgid "Other satellite"
-msgstr "Otro satélite"
 
 #: core/ui/ui_satellite.c
 msgctxt "CATALOG"

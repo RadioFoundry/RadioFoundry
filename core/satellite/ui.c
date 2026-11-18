@@ -13,7 +13,7 @@
 static const char *pending_line1;
 static const char *pending_line2;
 static uint8_t pending_index;
-static uint8_t scan_last_status, scan_last_completed, scan_last_passes;
+static uint8_t scan_last_status, scan_last_completed, scan_last_total, scan_last_passes;
 static bool scan_state_known;
 
 static void satellite_replace_job(void *ctx)
@@ -31,7 +31,9 @@ static void satellite_replace_job(void *ctx)
 
 uint8_t ui_svc_satellite_count(void)
 {
-	return satellite_store_count();
+	uint8_t count = 0u;
+	radio_get_satellite_scan(NULL, NULL, &count, NULL);
+	return count;
 }
 
 bool ui_svc_satellite_get(uint8_t index, satellite_record_t *record)
@@ -41,7 +43,7 @@ bool ui_svc_satellite_get(uint8_t index, satellite_record_t *record)
 
 bool ui_svc_satellite_summary(uint8_t index, satellite_record_summary_t *summary)
 {
-	return satellite_store_summary_get(index, summary);
+	return radio_get_satellite_pass_summary(index, summary);
 }
 
 bool ui_svc_satellite_tle_age(uint32_t epoch, uint16_t *age_days)
@@ -65,7 +67,7 @@ uint8_t ui_svc_satellite_selected(void)
 
 bool ui_svc_satellite_select(uint8_t index)
 {
-	if (index >= satellite_store_count())
+	if (index >= ui_svc_satellite_count())
 		return false;
 	settings_t *settings = settings_begin();
 	if (settings->satellite_index != index)
@@ -98,12 +100,12 @@ void ui_svc_satellite_poll(void)
 {
 	uint8_t status, completed, total, passes;
 	radio_get_satellite_scan(&status, &completed, &total, &passes);
-	(void)total;
 	if (!scan_state_known || status != scan_last_status || completed != scan_last_completed ||
-	    passes != scan_last_passes) {
+	    total != scan_last_total || passes != scan_last_passes) {
 		scan_state_known = true;
 		scan_last_status = status;
 		scan_last_completed = completed;
+		scan_last_total = total;
 		scan_last_passes = passes;
 		ui_dirty();
 	}
@@ -117,6 +119,11 @@ void ui_svc_satellite_scan_state(uint8_t *status, uint8_t *completed, uint8_t *t
 bool ui_svc_satellite_pass(uint8_t rank, radio_satellite_pass_t *pass)
 {
 	return radio_get_satellite_pass(rank, pass);
+}
+
+bool ui_svc_satellite_pass_summary(uint8_t record_index, satellite_record_summary_t *summary)
+{
+	return radio_get_satellite_pass_summary(record_index, summary);
 }
 
 bool ui_svc_satellite_path(satellite_path_view_t *path)

@@ -18,6 +18,13 @@ test("site satellite profiles match the firmware frequency table", async () => {
 	assert.deepEqual(DEFAULT_SELECTED_IDS, [25544, 27607, 43017]);
 });
 
+test("AMSAT fetch failures distinguish a missing local API route", async () => {
+	const source = await readFile(new URL("../static/js/tletool.js", import.meta.url), "utf8");
+	assert.match(source, /response\.status === 404\s*\? t\("tools\.satellite\.status\.api_not_found"\)/);
+	assert.match(source, /t\("tools\.satellite\.status\.fetch_failed", \{ status: response\.status \}\)/);
+	assert.doesNotMatch(source, /throw new Error\(t\("tools\.satellite\.status\.fetch_failed"/);
+});
+
 test("only known FM satellites are included in the selectable catalog", () => {
 	const records = [...SATELLITES.map(({ id, name }) => ({ catalog_id: id, name })),
 		{ catalog_id: 99001, name: "Non-FM test object" }];

@@ -25,7 +25,7 @@ class FakeLink {
 	}
 
 	async request(command, payload) {
-		assert.equal(command, 0x22);
+		assert.equal(command, 0x25);
 		this.calls.push([...payload]);
 		switch (payload[0]) {
 		case 0: {

@@ -86,6 +86,76 @@ static satellite_record_t test_record(void)
 		5u, 962131819u);
 }
 
+static void check_sgp4_reference(const char *line1, const char *line2, uint32_t catalog_id,
+				 const int32_t expected_m[3][3])
+{
+	static const uint8_t days[] = { 1u, 3u, 7u };
+	satellite_record_t record = record_for(line1, line2, catalog_id, 0u);
+	int64_t epoch_s;
+	uint16_t fraction_q16;
+	if (!satellite_tle_epoch(record.line1, &epoch_s, &fraction_q16) ||
+	    epoch_s < 0 || (uint64_t)epoch_s > UINT32_MAX) {
+		CHECK(false);
+		return;
+	}
+	record.epoch = (uint32_t)epoch_s;
+	satellite_orbit_t orbit;
+	if (!satellite_orbit_init(&orbit, &record)) {
+		CHECK(false);
+		return;
+	}
+	for (uint8_t sample = 0u; sample < sizeof(days); sample++) {
+		satellite_orbit_state_t state;
+		int64_t sample_s = epoch_s + (int64_t)days[sample] * 86400;
+		if (!satellite_orbit_at(&orbit, sample_s, &state)) {
+			CHECK(false);
+			continue;
+		}
+		int64_t error_squared_m = 0;
+		for (uint8_t axis = 0u; axis < 3u; axis++) {
+			int64_t error_m = (int64_t)state.position_m[axis] - expected_m[sample][axis];
+			error_squared_m += error_m * error_m;
+		}
+		CHECK(error_squared_m <= INT64_C(25000) * 25000);
+	}
+}
+
+static void test_sgp4_reference_vectors(void)
+{
+	/* Vallado verification TLEs from
+	 * https://github.com/brandon-rhodes/python-sgp4/blob/master/sgp4/SGP4-VER.TLE.
+	 * SGP4 positions use the MIT-licensed python-sgp4 2.27 at epoch +1, +3, and +7 days.
+	 * The 25 km bound allows for the firmware's simplified Kepler/J2 model.
+	 */
+	static const int32_t vanguard_m[3][3] = {
+		{ -938559, -6268187, -4294029 },
+		{ -9060474, 4658710, 813687 },
+		{ -2591256, -6292441, -4558812 },
+	};
+	static const int32_t delta_1_deb_m[3][3] = {
+		{ -2777147, -5663160, -2462549 },
+		{ 946926, -3781660, -5557692 },
+		{ 6320808, 2422330, -610513 },
+	};
+	static const int32_t cbers_2_m[3][3] = {
+		{ 688161, 4124876, 5794560 },
+		{ -2543092, -6454421, 1740216 },
+		{ 1254184, 6290291, 3160757 },
+	};
+	check_sgp4_reference(
+		"1 00005U 58002B   00179.78495062  .00000023  00000-0  28098-4 0  4753",
+		"2 00005  34.2682 348.7242 1859667 331.7664  19.3264 10.82419157413667",
+		5u, vanguard_m);
+	check_sgp4_reference(
+		"1 06251U 62025E   06176.82412014  .00008885  00000-0  12808-3 0  3985",
+		"2 06251  58.0579  54.0425 0030035 139.1568 221.1854 15.56387291  6774",
+		6251u, delta_1_deb_m);
+	check_sgp4_reference(
+		"1 28057U 03049A   06177.78615833  .00000060  00000-0  35940-4 0  1836",
+		"2 28057  98.4283 247.6961 0000884  88.1964 271.9322 14.35478080140550",
+		28057u, cbers_2_m);
+}
+
 static void test_keplerian_propagation(void)
 {
 	satellite_record_t record = test_record();
@@ -419,6 +489,7 @@ static void test_utc_and_tracking_lifecycle(void)
 int main(void)
 {
 	test_tle_age_days();
+	test_sgp4_reference_vectors();
 	test_keplerian_propagation();
 	test_circular_kepler_orbit();
 	test_invalid_decimal_field();
