@@ -8813,6 +8813,96 @@ static void test_t3_talk(void)
 	sim.repeater = false;
 }
 
+// Voice bursts the radio sent on TS2 (the payload slot of a one-carrier site)
+static unsigned ts2_voice(void)
+{
+	unsigned n = 0;
+	for (unsigned i = 0; i < sim.air_count; i++) {
+		if ((sim.air[i].kind == DMR_BURST_VOICE || sim.air[i].kind == DMR_BURST_VOICE_LC_HEADER) && sim.air[i].ts == 2) {
+			n++;
+		}
+	}
+	return n;
+}
+
+// A one-carrier site: TSCC on TS1, the call granted on TS2 of the same LPCN. The site sends Late_Entry grants and
+// P_PROTECT(ILLEGALLY_PARKED) naming the call in its gaps, Message_Accepted, and a P_CLEAR naming an LPCN the radio
+// doesn't know. The caller talks through all of it; a Message_Accepted before the grant doesn't end the ask
+static void test_t3_one_carrier(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	req(RREQ_PTT, 1);
+	t3_site_run(600);
+	CHECK(radio_t3v.ptt_wait);
+	t3_csbk_t g = { .lb = true, .op = T3_OP_TV_GRANT };
+	g.u.grant.lpcn = 1;
+	g.u.grant.slot = 2;
+	g.u.grant.dst = T3_TG;
+	g.u.grant.src = T3_OWN;
+	t3_csbk_rx(&g, 1);
+	unsigned v0 = ts2_voice();
+	// The payload slot: Late_Entry grants and P_PROTECT(ILLEGALLY_PARKED) naming the call
+	for (int i = 0; i < 50; i++) {
+		t3_csbk_t p;
+		if (i % 2) {
+			p = g;
+			p.u.grant.late_entry = true;
+		} else {
+			p = (t3_csbk_t){ .lb = true, .op = T3_OP_P_PROTECT };
+			p.u.protect.kind = T3_PROTECT_ILLEGALLY_PARKED;
+			p.u.protect.group = true;
+			p.u.protect.dst = T3_TG;
+			p.u.protect.src = T3_OWN;
+		}
+		t3_csbk_rx(&p, 2);
+		run(60);
+		if (i % 10 == 0) {
+		}
+	}
+	CHECK(radio_t3v.state == T3_FOLLOW && sm.view.state == RS_TX && radio_t3v.returns == 0);
+	CHECK(ts2_voice() - v0 > 20);
+	// The call's end: C_ACKD Message_Accepted (MS <- TG), then P_CLEAR to an LPCN never programmed
+	t3_csbk_t a = { .lb = true, .op = T3_OP_C_ACKD };
+	a.u.ack.reason = T3_RC_MESSAGE_ACCEPTED;
+	a.u.ack.dst = T3_OWN;
+	a.u.ack.src = T3_TG;
+	t3_csbk_rx(&a, 2);
+	run(60);
+	CHECK(radio_t3v.state == T3_FOLLOW && sm.view.state == RS_TX);
+	req(RREQ_PTT, 0);
+	run(800);
+	t3_csbk_t c = { .lb = true, .op = T3_OP_P_CLEAR };
+	c.u.clear.lpcn = 622;
+	c.u.clear.dst = T3_ID_ALLMSI;
+	c.u.clear.src = T3_ID_TSI;
+	c.u.clear.group = true;
+	t3_csbk_rx(&c, 2);
+	run(200);
+	CHECK(radio_t3v.state == T3_CAMPED && radio_t3v.tscc_lcn == 1 && radio_t3v.rx_hz == T3_RX_HZ);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+
+	// Message_Accepted to the ask before the grant comes (the site acknowledging the C_RAND): the ask goes on
+	dmr_start(true);
+	t3_stage_start();
+	req(RREQ_PTT, 1);
+	t3_site_run(600);
+	CHECK(radio_t3v.ptt_wait);
+	t3_csbk_rx(&a, 1);
+	t3_site_run(200);
+	CHECK(radio_t3v.ptt_wait && sm.view.state != RS_TX_DENIED);
+	t3_csbk_rx(&g, 1);
+	run(600);
+	CHECK(radio_t3v.state == T3_FOLLOW && sm.view.state == RS_TX);
+	req(RREQ_PTT, 0);
+	run(500);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
 // Short data: the upload goes out as a UDT header and its blocks in consecutive frames of the TSCC's slot; a download
 // to the radio is kept and answered
 static void test_t3_sdata(void)
@@ -10264,6 +10354,7 @@ int main(void)
 #if CONFIG_DMR_TRUNK_TX
 	test_t3_at();
 	test_t3_talk();
+	test_t3_one_carrier();
 	test_t3_sdata();
 	test_t3_radio_check();
 	test_t3_clear_slot();
