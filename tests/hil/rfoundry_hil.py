@@ -502,22 +502,25 @@ class Radio:
         write_png(path, w, h, rows, scale)
         return path
 
-    def wait_for(self, pred, timeout=3.0, interval=0.1, sections=("core",), what="condition"):
-        """Poll the view until pred(view) is true; returns that view. AssertionError with the last view if not."""
+    def wait_for(self, pred, timeout=3.0, interval=0.1, sections=("core",), what="condition", quiet_s=0.0):
+        """Poll the view until pred(view) is true; returns that view. AssertionError with the last view if not.
+        quiet_s: while the radio keys up for that long (a CW ID), unanswered requests for up to that many seconds."""
         end = time.monotonic() + timeout
         v = {}
-        missed = False
+        missed = None   # when the first unanswered request in a row was sent
         while True:
+            sent = time.monotonic()
             try:
                 v = self.link.view(list(sections))
             except DebugLinkError as e:
                 # One unanswered request is no fault: a key-up or burst can disturb a cable line shared with the PTT
-                # (docs/spec/gotchas.md 2.13). A second in a row is a radio that stopped answering
-                if e.status is not None or missed:
+                # (docs/spec/gotchas.md 2.13). A second in a row (or quiet_s of them) is a radio that stopped answering
+                if e.status is not None or (missed is not None and sent - missed >= quiet_s):
                     raise
-                missed = True
+                if missed is None:
+                    missed = sent
                 continue
-            missed = False
+            missed = None
             if pred(v):
                 return v
             if time.monotonic() > end:
