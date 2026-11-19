@@ -4728,6 +4728,16 @@ msgid "DMR modem off"
 msgstr "Módem DMR apagado"
 
 #: core/ui/ui_screens.c
+msgctxt "TRUNK_TITLE_INCOMING_CALL"
+msgid "Incoming private call"
+msgstr "Llamada privada entrante"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_HINT_PTT_ANSWER"
+msgid "Press PTT to Answer"
+msgstr "Pulse PTT para responder"
+
+#: core/ui/ui_screens.c
 msgctxt "TRUNK_STATE_FALLBACK"
 msgid "Fallback"
 msgstr "Respaldo"

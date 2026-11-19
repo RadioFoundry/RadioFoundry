@@ -9017,7 +9017,7 @@ static void test_t3_incoming_foacsu(void)
 	t3_csbk_rx(&h, 1);
 	t3_site_run(300);
 	radio_sm_t3_brief(&sm);
-	CHECK(sm.view.t3.ringing);
+	CHECK(sm.view.t3.ring_src == caller);
 	bool alerted = false;
 	for (unsigned i = from; i < sim.air_count; i++) {
 		t3_csbk_t a;
@@ -9035,7 +9035,7 @@ static void test_t3_incoming_foacsu(void)
 	t3_csbk_t q;
 	CHECK(t3_rand_since(from, T3_SK_ANSWER, &q) && q.u.rand.dst == caller);
 	radio_sm_t3_brief(&sm);
-	CHECK(!sm.view.t3.ringing);
+	CHECK(sm.view.t3.ring_src == 0);
 
 	t3_csbk_t g = { .lb = true, .op = T3_OP_PV_GRANT };
 	g.u.grant.lpcn = 1;

@@ -2417,6 +2417,13 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 #if CONFIG_DMR_TRUNK
 	// Back on the trunked system from its fallback channel (dmr-trunking.md 12.5): the radio beeped, the toast names it
 	static uint32_t backs_seen;
+	static uint32_t ring_seen;
+	if (view->t3.ring_src != ring_seen) {
+		ring_seen = view->t3.ring_src;
+		if (ring_seen != 0)
+			wake_req = true;
+		dirty = true;
+	}
 	if (v->t3.backs != backs_seen) {
 		bool back = v->t3.backs > backs_seen && v->t3.sys != 0;
 		backs_seen = v->t3.backs;
@@ -2644,6 +2651,13 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 
 static bool strip_ok, volbar_top;
 
+#if CONFIG_DMR_TRUNK
+static bool incoming_call_visible(void)
+{
+	return view->t3.ring_src != 0 && stack[sp].scr != SCR_EMERGENCY;
+}
+#endif
+
 static void draw_screen(void);
 
 void ui_app_draw(void)
@@ -2665,6 +2679,12 @@ void ui_app_draw(void)
 
 static void draw_screen(void)
 {
+#if CONFIG_DMR_TRUNK
+	if (incoming_call_visible()) {
+		ui_draw_incoming_call(view, &ui_st);
+		return;
+	}
+#endif
 #if CONFIG_HOTSPOT
 	if (in_hotspot() && !(CONFIG_DIAG && hs_diag)) {
 		hotspot_get_view(&hs_view);
@@ -2705,6 +2725,10 @@ void ui_app_status(ui_app_status_t *s)
 #if CONFIG_HOTSPOT
 	if (in_hotspot())
 		s->screen = "hotspot";
+#endif
+	#if CONFIG_DMR_TRUNK
+	if (incoming_call_visible())
+		s->screen = "incoming-call";
 #endif
 	s->depth = sp;
 	s->focus = stack[sp].scr == SCR_QUICK ? ui_st.quick_focus : stack[sp].focus;
