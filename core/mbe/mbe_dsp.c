@@ -10,7 +10,8 @@ int32_t mbe_cos_i(uint32_t ph)
 	uint32_t i = ph >> 22;
 	int32_t c0 = mbe_sin_idx(i + 256u), c1 = mbe_sin_idx(i + 257u);
 
-	return c0 + fxp_mulshr(c1 - c0, (int32_t)(ph & 0x3FFFFFu), 22);
+	// one step of the quarter wave is at most 201 (32767 pi / 512), so the product stays under 2^30: no 64-bit one
+	return c0 + (((c1 - c0) * (int32_t)(ph & 0x3FFFFFu)) >> 22);
 }
 
 int32_t mbe_exp2_q11(int32_t x)
@@ -58,7 +59,8 @@ int32_t mbe_log2_q11_64(uint64_t x)
 	return mbe_log2_q11(l);
 }
 
-static inline __attribute__((always_inline)) int32_t mulq15(int32_t a, int32_t b) { return fxp_mulshr(a, b, 15); }
+// b is a Q15 twiddle from the quarter wave, a 16-bit factor: fxp_mulshr16's two 32-bit products give fxp_mulshr's result
+static inline __attribute__((always_inline)) int32_t mulq15(int32_t a, int32_t b) { return fxp_mulshr16(a, b, 15); }
 
 // Complex FFT of N points, radix 2, decimation in time, no scaling; the inverse (e^{+i}) when inv. The k = 0 and
 // k = half/2 butterflies of each stage need no multiply.
