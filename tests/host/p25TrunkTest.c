@@ -1432,6 +1432,57 @@ static void testWacnLinkControl(void)
 	cc_alive = false;
 }
 
+// An adjacent site learned from the abbreviated broadcast (one WACN with this site's, TIA-102.AABC-D 6.2.2.1): the
+// follower moves there when this site goes; that site naming $BEE00 gets nothing, registration included
+static void testWacnNeighbor(void)
+{
+	static const p25_follow_cc_t cc[] = { { .hz = HZ_CC1, .chan = 0x1004, .site = 3 } };
+	static const p25_follow_iden_t iden[P25_FOLLOW_IDENS] = {
+		[1] = { .base_hz = 851006250u, .spacing_hz = 6250, .tx_off_hz = -45000000 } };
+	static p25_follow_t f;
+	p25_follow_cfg_t cfg = { .wacn = P25_FOLLOW_WACN_ANY, .sysid = SYSID, .nac = NAC, .flags = P25_FOLLOW_TX,
+				 .unit_id = OUR_UNIT, .talk_group = 100, .ncc = 1, .cc = cc, .iden_set = 1u << 1, .iden = iden };
+	const uint32_t hz_adj = 851006250u + 16 * 6250;	// channel 0x1010
+	uint8_t b[P25_TSBK_BYTES];
+	p25_follow_view_t v;
+	unsigned n;
+
+	ntunes = nsends = 0;
+	now_ms = 200000;
+	cc_wacn = WACN;
+	cc_alive = true;
+	p25_follow_begin(&f, &cfg, &ahooks, NULL, now_ms);
+	retune(&f);
+	site_ident_w(&f, WACN, 3);
+	run_ms(&f, 300);
+	answer_reg(&f, P25_RV_ACCEPT);
+	run_ms(&f, 200);
+	answer_aff(&f, P25_RV_ACCEPT, 100);
+	mk_rfss(b, P25_TSBK_ADJ, SYSID, 4, 0x1010);
+	p25_follow_tsbk(&f, b, NAC, now_ms);
+	CHECK(view(&f).reg == P25_REG_READY && view(&f).learned == 1 && nsends == 2, "ready, the adjacent site learned");
+	// This site goes; the adjacent one answers, naming $BEE00
+	n = nsends;
+	cc_alive = false;
+	run_ms(&f, P25_FOLLOW_CC_LOST_MS + 20);
+	for (uint32_t t0 = now_ms; view(&f).state != P25_FOLLOW_CONTROL && now_ms - t0 < 20000;) {
+		run_ms(&f, 100);
+		if (!f.tuning && f.view.cc_hz == hz_adj)
+			site_ident_w(&f, P25_WACN_NO_TX, 4);
+	}
+	cc_wacn = P25_WACN_NO_TX;
+	cc_alive = true;
+	p25_follow_ptt(&f, true, now_ms);
+	run_ms(&f, 5000);
+	v = view(&f);
+	CHECK(v.state == P25_FOLLOW_CONTROL && v.cc_hz == hz_adj && v.reg == P25_REG_BLOCKED && nsends == n,
+	      "adjacent site, $BEE00: state %u at %u, reg %u, %u sent", v.state, v.cc_hz, v.reg, nsends - n);
+	p25_follow_ptt(&f, false, now_ms);
+	p25_follow_end(&f);
+	cc_wacn = WACN;
+	cc_alive = false;
+}
+
 static void testFollowOptions(void)
 {
 	static const uint16_t groups[] = { 200 };
@@ -2114,6 +2165,7 @@ int main(void)
 	testWacnBlocked();
 	testWacnExtended();
 	testWacnLinkControl();
+	testWacnNeighbor();
 	testFuzz();
 	testAirSystem();
 	testAirLoss();
