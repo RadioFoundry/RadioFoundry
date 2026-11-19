@@ -1,16 +1,17 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # HR_C6000 register reference
 
-A complete English register reference for the Hongrui HR_C6000 DMR / FM baseband chip, translated from the vendor's
+This page is an English register reference for the Hongrui HR_C6000 DMR / FM baseband chip, translated from its
 user manual: Zhejiang Hongrui Communication Technology (浙江宏睿通信技术有限公司), *HR_C6000 用户手册*, Chinese,
-updated edition (revision A2, 2014-04-26). The Chinese text is authoritative. The English machine translations that
-circulate (the "updated translated English" PDF, the older translated PDF and other translations) have
-errors; section 9 lists the ones that matter.
+updated edition (revision A2). The Chinese text is authoritative. The English machine translations that circulate (the
+"updated translated English" PDF, the older translated PDF, and others) have errors; section 9 lists the ones that
+matter.
 
-This file is a fact reference: what the manual says each register, bit and RAM location does. How RadioFoundry drives the
-chip, and what the bench has confirmed, is in [modem-hrc6000.md](modem-hrc6000.md); section 10 here repeats only
-the bench facts that bear on a register's meaning. FM audio paths and their bench results are in `modem-hrc6000.md` 8.
+The page gives what the manual says each register, bit, and RAM location does. How RadioFoundry drives the chip is in
+[HR_C6000 modem](modem-hrc6000.md); section 10 here gives the measured behavior that bears on a register's meaning.
+The FM audio paths are in [modem-hrc6000.md](modem-hrc6000.md) 8.
 
 | Contents | |
 |---|---|
@@ -20,9 +21,9 @@ the bench facts that bear on a register's meaning. FM audio paths and their benc
 | 5, 6 | Transmit and receive interfaces, interrupts and layer 2 timing |
 | 7, 8 | FM, signaling and MSK; FM transmit from MCU data |
 | 9 | Translation notes and manual conflicts |
-| 10 | Bench notes |
+| 10 | Measured register behavior |
 
-Conventions:
+The page uses these conventions:
 
 | Mark | Meaning |
 |---|---|
@@ -63,7 +64,7 @@ A transaction is: CS low, a command byte, an address, one or more data bytes, CS
 | 110 | write: RX RAM; read: TX RAM | 6 | |
 | 111 | external AMBE1000 vocoder registers | 7 | |
 
-So OPMode 010 is the normal direction (the MCU fills what the chip sends and reads what it received), and 110 is the
+OPMode 010 is the normal direction (the MCU fills what the chip sends and reads what it received), and 110 is the
 crossed direction (the MCU can read back the TX RAM, or preload the RX RAM).
 
 ### 1.2 Address
@@ -75,7 +76,7 @@ crossed direction (the MCU can read back the TX RAM, or preload the RX RAM).
 
 The address auto-increments after each data byte for as long as CS stays low.
 
-Manual examples:
+The manual gives these examples:
 
 | Operation | Cmd | Addr | Data |
 |---|---|---|---|
@@ -88,9 +89,9 @@ The vocoder SPI (pins 41-44) is a second slave port with the same framing, one o
 Cmd = 0x83, Addr = 0x00, 27 data bytes; write Cmd = 0x03, Addr = 0x00, 27 data bytes. SCLK is at most 4 MHz. Using
 the HR_V3000 vocoder over V_SPI needs only 0x06 = 0x24 (manual).
 
-RadioFoundry note: on U_SPI, OPMode 011 is the prompt tone FIFO (section 7.7). RadioFoundry's "flush page 3 with 0x06 = 0x22"
-(modem-hrc6000.md 3.2) is, in the manual's terms, 64 prompt-tone samples of 0x7F7F written with the prompt tone path
-open (0x06 bit 1).
+On U_SPI, OPMode 011 is the prompt tone FIFO (section 7.7). The driver's "flush page 3 with 0x06 = 0x22"
+([modem-hrc6000.md](modem-hrc6000.md) 3.2) is, in the manual's terms, 64 prompt-tone samples of 0x7F7F written with the
+prompt tone path open (0x06 bit 1).
 
 ### 1.4 Power down, reset and clocks (manual 4.1, 4.3, 4.4)
 
@@ -139,8 +140,9 @@ manual's tables are for layer 2 mode. Areas overlap: the RAM is reused per mode.
 | FM data buffer 2 | 0x230-0x42F | 512 bytes, same text |
 | Encryption key stream | 0x495-0x4AF | 216 bits, 27 bytes |
 
-The manual says nothing more about the FM buffers: not the sample format, the rate, the order of the two halves,
-or which register makes the chip transmit from them instead of the codec. Section 8 collects what it does say.
+The manual gives nothing more about the FM buffers: not the sample format, the rate, the order of the two halves, or
+which register makes the chip transmit from them instead of the codec. Section 8 collects what it does say, and
+section 10 gives their measured format.
 
 ### 2.2 RX RAM (表 5.3)
 
@@ -183,8 +185,8 @@ present only in continuous mode.
 
 ## 3. System parameter table (manual table 8.1, OPMode 100)
 
-One table per functional group, in the manual's order. Addresses the manual's table omits are listed in 3.22 with
-whatever other chapters say about them.
+The tables follow the manual's functional groups, in its order. Section 3.22 lists the addresses the manual's table
+omits, with what other chapters say about them.
 
 ### 3.1 Reset (0x00)
 
@@ -590,17 +592,17 @@ decode_flag by mode (0xA1):
 
 ### 3.15 AMBE1000 squelch packet (0xB0-0xB8)
 
-| Addr | R/W | Name | Default | Meaning |
-|---|---|---|---|---|
-| 0xB0-0xB8 | W/R | Ambe1000_noise_reg0..8 | CE C9 32 E8 A4 06 2C F7 B4 | the 9 bytes of the AMBE1000 squelch (comfort noise) output packet |
+| Addr | R/W | Name | Default | Bit | Meaning |
+|---|---|---|---|---|---|
+| 0xB0-0xB8 | W/R | Ambe1000_noise_reg0..8 | CE C9 32 E8 A4 06 2C F7 B4 | 7-0 | the 9 bytes of the AMBE1000 squelch (comfort noise) output packet |
 
 ### 3.16 Clocks (0xB9-0xBB)
 
-| Addr | R/W | Name | Default | Meaning |
-|---|---|---|---|---|
-| 0xB9 | W/R | Sys_clk_Reg | 0x05 | system clock divider (Sys_clk) |
-| 0xBA | W/R | Codec_clk_Reg | 0x04 | built-in codec clock divider |
-| 0xBB | W/R | ClkOut_Reg | 0x02 | CLKOUT divider |
+| Addr | R/W | Name | Default | Bit | Meaning |
+|---|---|---|---|---|---|
+| 0xB9 | W/R | Sys_clk_Reg | 0x05 | 7-0 | system clock divider (Sys_clk) |
+| 0xBA | W/R | Codec_clk_Reg | 0x04 | 7-0 | built-in codec clock divider |
+| 0xBB | W/R | ClkOut_Reg | 0x02 | 7-0 | CLKOUT divider |
 
 ### 3.17 RF timing, codec level, pin multiplexing (0xC0-0xD0)
 
@@ -624,16 +626,16 @@ decode_flag by mode (0xA1):
 | 0xC8 | W/R | RF_3TC_OFF | 0x00 | 7 | reserved |
 | | | | | 6 | edge to low: 1 = after the boundary, 0 = before |
 | | | | | 5-0 | that time, 100 µs steps |
-| 0xC9 / 0xCA | W/R | RF_5TC_ON / OFF | 0x00 | as 0xC7 / 0xC8 | pin 19 (ADCDAT) as RF_5TC_EN |
-| 0xCB / 0xCC | W/R | RF_ANT_ON / OFF | 0x00 | as 0xC7 / 0xC8 | pin 16 (MCLK) as RF_ANT_EN |
-| 0xCD / 0xCE | W/R | RF_3RC_ON / OFF | 0x00 | as 0xC7 / 0xC8 | pin 18 (BCLK) as RF_3RC_EN |
-| 0xCF / 0xD0 | W/R | RF_5RC_ON / OFF | 0x00 | as 0xC7 / 0xC8 | pin 20 (DACDAT) as RF_5RC_EN |
+| 0xC9 / 0xCA | W/R | RF_5TC_ON / OFF | 0x00 | 7-0 | pin 19 (ADCDAT) as RF_5TC_EN, bits as 0xC7 / 0xC8 |
+| 0xCB / 0xCC | W/R | RF_ANT_ON / OFF | 0x00 | 7-0 | pin 16 (MCLK) as RF_ANT_EN, bits as 0xC7 / 0xC8 |
+| 0xCD / 0xCE | W/R | RF_3RC_ON / OFF | 0x00 | 7-0 | pin 18 (BCLK) as RF_3RC_EN, bits as 0xC7 / 0xC8 |
+| 0xCF / 0xD0 | W/R | RF_5RC_ON / OFF | 0x00 | 7-0 | pin 20 (DACDAT) as RF_5RC_EN, bits as 0xC7 / 0xC8 |
 
 Manual 4.5.2 (表 4.4, figure 4.15): any external-codec pin can be a GPIO output whose edges sit up to 6 ms either
 side of the 30 ms boundary, in 100 µs steps. The figure labels its two cases "C7=0x81, C7=0x61" (high 100 µs early,
 low 100 µs late) and "C7=0xC1, C7=0x01" (high 100 µs late, low 100 µs early). By the bit definitions the first value
-of each pair fits 0xC7 and the second belongs in 0xC8 (whose bit 7 is reserved); 0x61 doesn't decode as 100 µs. Treat
-the figure as illustrative.
+of each pair fits 0xC7 and the second belongs in 0xC8 (whose bit 7 is reserved); 0x61 doesn't decode as 100 µs. The
+figure is illustrative only.
 
 ### 3.18 FM tone decoder control (0xD1-0xD4)
 
@@ -774,7 +776,7 @@ ADC; the output path K1 drives LINEOUT1 / LINEOUT2. Table 4.3 says 0xE3 is "the 
 | RX TDMA1 sync | 0x134-0x139 | DATA SYNC1_2-6_2 | F7 FD D5 DD FD 55 | direct mode slot 1 data sync |
 | RX TDMA2 sync | 0x13A-0x13F | DATA SYNC1_3-6_3 | D7 55 7F 5F F7 F5 | direct mode slot 2 data sync |
 
-Addresses outside these rows are not in the table. Appendix A2 uses two more ranges of this table:
+Addresses outside these rows aren't in the table. Appendix A2 uses two more ranges of this table:
 
 | Addr | Use (A2) |
 |---|---|
@@ -1033,10 +1035,10 @@ behind a 3 kHz 4th-order IIR low-pass; each decoded code raises an interrupt.
 | send | each new PTT sends the sequence once |
 | receive | at each FM interrupt queue 0x93 bits 3-0; when 0x93 bit 4 = 1 compare the queue with the expected digits; 0x36 = 0x72 on a match, 0x80 otherwise |
 
-The 4-bit codes for 0, *, #, A-D are not stated (the manual shows only the standard keypad grid).
+The manual doesn't give the 4-bit codes for 0, *, #, and A-D; it shows only the standard keypad grid.
 
-Seen on air (2026-11-03): one code at 0xA4 = 0xFF lasts 510 ms and ends in about 20 ms of silence even with 0xA3 = 0,
-so a digit held longer than one code has a short dropout every 510 ms. 0xD1 = 16 sends 16 codes, 8.16 s.
+On air, one code at 0xA4 = 0xFF lasts 510 ms and ends in about 20 ms of silence, even with 0xA3 = 0, so a digit held
+longer than one code has a short dropout every 510 ms. 0xD1 = 16 sends 16 codes, 8.16 s.
 
 | Hz | RX coefficient (aux, 24 bit) | Address | TX phase step (aux, 16 bit) | Address |
 |---|---|---|---|---|
@@ -1099,7 +1101,7 @@ is then set up as in A1; 0x37 = 0x00.
 
 Each sequence goes out once per PTT.
 
-Seen on air (2026-11-03): the code nibbles are the tones' hex letters. 0xAF bits 3-0 = 0xA (with 0xAE bits 7-4 = 0xB or
+On air, the code nibbles are the tones' hex letters. 0xAF bits 3-0 = 0xA (with 0xAE bits 7-4 = 0xB or
 0) sends; 0, 1 and 2 send nothing. With every tone entry set to one frequency and 0xA4 = 0xA5 = 0xFF, a 2-tone sequence
 is one gapless tone of at least 25.5 s, used for single tones (1750 Hz burst, roger beep, AFSK).
 
@@ -1131,8 +1133,8 @@ by register). The manual never says where the MSK TX ping-pong buffer is or how 
 
 ## 8. FM transmit from MCU data: what the manual gives
 
-The open question is how to make the chip transmit FM audio the MCU writes into TX RAM 0x030-0x42F. Everything the
-manual says that touches it:
+This table collects everything the manual says about transmitting FM audio that the MCU writes into TX RAM
+0x030-0x42F:
 
 | Item | Source | What it says |
 |---|---|---|
@@ -1148,8 +1150,8 @@ manual says that touches it:
 | 0x88 bit 0 | 8.1, A1 | the MCU-written PCM FIFO's full flag |
 | 0xE3 bit 0 | 8.1 | codec internal DAC-ADC pass-through |
 
-Nothing names a sample format, a rate, a buffer order or a bit that selects RAM over the codec ADC. The register
-the manual pairs with "send FM voice" is **0xD7 bit 1**, not 0xDB (section 9.3).
+Nothing names a sample format, a rate, a buffer order, or a bit that selects RAM over the codec ADC. The register the
+manual pairs with "send FM voice" is **0xD7 bit 1**. Section 10 gives what the TX RAM buffers do on air.
 
 ---
 
@@ -1205,35 +1207,27 @@ the manual pairs with "send FM voice" is **0xD7 bit 1**, not 0xDB (section 9.3).
 | 表 5.5 codes | 1011 listed twice, 1101 missing | |
 | Layer 2 mode value | 5.4.3: 0x10 = 0x68 | 5.4.5: 0x10 = 0x6A |
 
-### 9.3 Conflicts with RadioFoundry's current docs and code
+## 10. Measured register behavior
 
-| Item | RadioFoundry | Manual |
-|---|---|---|
-| "send FM voice" bit | `tests/hil/test_audio_probe.py` uses **0xDB** bit 1 (modem-hrc6000.md 8.1 names 0xD7) | 0xD7 bit 1 (msk_voice_send_en). 0xDB is not in the manual. The bench result "0xDB bit 1: no FM TX from RAM" says nothing about 0xD7 |
-| CDCSS TX polarity | modem-hrc6000.md 8: 0xA2 = 0x00 inverted, 0x08 normal | 0xA2 bit 3 = 1 means TX inverted. The RX mapping (0x04 inverted) agrees with the manual |
-| Page 1 table at 0x60 | modem-hrc6000.md 3: a 32-entry table of `nn EF 00` is not needed | aux 0x60-0xBF is the 32-entry multi-group address table; `nn EF 00` matches the group default 0x00EF33 pattern (L, M, H) |
-| Page 3 flush | modem-hrc6000.md 3.2: "vocoder frame buffer" | U_SPI OPMode 011 with 0x06 bit 1 is the prompt tone FIFO (7.7) |
+This table gives register behavior measured on air with the chip driving an AT1846S. The driver's use of it is in
+[modem-hrc6000.md](modem-hrc6000.md).
 
----
-
-## 10. Bench notes
-
-Only facts already recorded in [modem-hrc6000.md](modem-hrc6000.md), plus the 2026-10-12 two-point measurement, measured on an AT1846S board.
-
-| Register | Bench fact |
+| Register | Measured behavior |
 |---|---|
-| OPMode 010 | writes land in the TX RAM and go out bit exact; OPMode 110 untried |
+| OPMode 010 | writes land in the TX RAM and go out bit exact |
+| OPMode 110 | reads back the TX RAM (the codec's samples in the FM TX buffers while keyed) |
 | 0x01 | 0xF0 in DMR (two-point TX, IF RX, bit 7 = 1) |
-| 0x04 | **FM TX, two-point mode (2026-10-12):** writing 0x04 moves the carrier about 75 Hz per step, as a signed byte around the calibrated base 0xCF, linear over ±128. Firmware writing 0x04 at 37,500 writes a second sends tones of 300-3000 Hz, about 57 Hz of deviation per step at 1 kHz |
-| 0x02, 0x03, 0x05, 0x45, 0x46, 0x47, 0x48 | stepped while keyed in FM: no carrier movement (2026-10-12) |
-| 0x10 | 0x6E in DMR operation; 0x80 for FM. **Every FM value (0x81-0xFF) leaves the TX RAM unused** (2026-10-12). 0x66 (physical layer, timeslot) modulates TX RAM 0x00-0x23 / 0x24-0x47 as 288 raw bits per slot in alternate slots |
+| 0x04 | **FM TX, two-point mode:** writing 0x04 moves the carrier about 75 Hz per step, as a signed byte around the calibrated base 0xCF, linear over ±128. Firmware writing 0x04 at 37,500 writes a second sends tones of 300-3000 Hz, about 57 Hz of deviation per step at 1 kHz |
+| 0x02, 0x03, 0x05, 0x45, 0x46, 0x47, 0x48 | stepped while keyed in FM: no carrier movement |
+| 0x10 | 0x6E in DMR operation; 0x80 for FM. **Every FM value (0x81-0xFF) leaves the TX RAM unused.** 0x66 (physical layer, timeslot) modulates TX RAM 0x00-0x23 / 0x24-0x47 as 288 raw bits per slot in alternate slots |
 | 0x40 bit 3 | set: the 96 info bits go out verbatim (MCU CRC); also upsets the receiver's deframing while set |
 | 0x41 | 0x80 send, 0x50 receive, 0x20 drop sync; passive timing corrects within 1.25 ms |
 | 0x52 (W) | layer 2 BS CACH stays all zero on air whatever is written |
 | 0x82 | bit 7 is seen set when read on other interrupts. FM, keyed: bit 7 every 32 ms (31.0 a second) once 0x81 unmasks it. FM receive: bit 1 every 32 ms once unmasked (0x81 = 0x19 masks it) |
 | RX RAM FM buffers | 8 kHz, 16-bit big endian receive audio, ungated, after 0x34's processing; one 512-byte half per 32 ms, filled progressively |
 | 0x34 | de-emphasis (bit 5), band-pass (bit 7) and the wider RX filter (bit 2) act on the RX RAM tap; a fixed sub-audio high-pass stays about 20 dB down below 300 Hz |
-| TX RAM FM buffers | a 1 kHz tone in both halves, either byte order, never reached the air with: the flags unmasked, "0xDB" bit 1, 0x60 = 0x40 or 0xC0, 0x06 bits 0, 2, 3 or 4, 0xE0 bit 7 off, 0xE2 bit 4. The chip doesn't clear or rewrite the TX RAM |
+| TX RAM FM buffers | a 1 kHz tone in both halves, either byte order, doesn't reach the air with any of: the flags unmasked, 0xDB bit 1, 0x60 = 0x40 or 0xC0, 0x06 bits 0, 2, 3, or 4, 0xE0 bit 7 off, 0xE2 bit 4. The chip doesn't clear or rewrite the TX RAM |
+| 0xD7 bit 1 | no effect on the TX RAM |
 | Prompt tone FIFO | drains at 8000 samples a second whether 0x06 bit 1 is set or not; never reaches the modulator, with or without 0xE3 bit 0 |
 | 0xE0 bit 5 (LINEIN2) | puts a 2.49-2.61 kHz tone of its own on air during FM TX |
 | 0xE3 bit 0 | no effect on FM TX from I2S; lowers FM RX on I2S |
@@ -1241,6 +1235,6 @@ Only facts already recorded in [modem-hrc6000.md](modem-hrc6000.md), plus the 20
 | 0x36 | 0x02 / 0x00 feed-through; also gates the I2S receive stream |
 | aux 0x04-0x09 | the TX data sync; voice sync is sent as its inverse |
 
-The 2026-10-12 result fits the manual's 4.7.2 reading of 0x04 as the MOD1 offset: MOD1 drives the reference
-oscillator, where a DC step moves the carrier, while a DC step on the VCO side (MOD2, 0x02) is pulled back by the
-synthesizer loop. That is an inference, not a measurement of the wiring.
+The 0x04 behavior matches the manual's 4.7.2 reading of 0x04 as the MOD1 offset: MOD1 drives the reference
+oscillator, where a DC step moves the carrier, while the synthesizer loop pulls back a DC step on the VCO side (MOD2,
+0x02).

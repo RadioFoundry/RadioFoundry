@@ -1564,7 +1564,7 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 	hrc6000_dmr_vstate_t *vs = &e->vs[vph];
 	hrc6000_dmr_held_t *hd = &e->held[vph];
 	// The chip deframes only bursts of the color code in 0x1F (modem-hrc6000.md 5.4): voice it reports under the CC
-	// filter is ours. 0x52 is not reliable for voice (A has no CC on air; bench 2026-10-10 on 90ce091: CC 5 in 0x52
+	// filter is ours. 0x52 is not reliable for voice (A has no CC on air; on the bench: CC 5 in 0x52
 	// for every voice burst of a CC 2 call, reports late in the slot)
 	bool cc_fix = voice && e->cc_filter >= 0;
 	if (voice) {

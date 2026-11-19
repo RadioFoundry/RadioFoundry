@@ -50,7 +50,7 @@
 // The chip slot the RX timeslot interrupt decides is the one LAYER2_STATUS b30 shows then (0), not the one after it
 // (1). With the flag on the other slot the chip leaves the voice RAM unwritten, and every voice burst reads the same
 // stale bytes: silence with every counter clean (voice.rx_peak about 6, exactly 3 bit errors a frame). 0 on every
-// HR_C7000 radio measured (2026-10-17 to 2026-10-22, docs/spec/modem-hrc7000.md; one had the old
+// HR_C7000 radio measured (docs/spec/modem-hrc7000.md; one had the old
 // default of 1). A board can still override it
 #ifndef HRC7000_RX_NEXT_SLOT_XOR
 #define HRC7000_RX_NEXT_SLOT_XOR	0u
@@ -538,7 +538,7 @@ static bool tx_ticking(const hrc7000_dmr_t *e)
 // A repeater's slot numbering (modem-hrc7000.md 5.3): the CACH TC of BS-sourced bursts, locked once it alternated
 // TC_LOCK times in a row; the estimate then runs on with the slot ticks. The first bursts after the receiver syncs
 // to a repeater can carry a wrong TC (LAYER2_STATUS b31 still set): a TX slot picked from one of them was the wrong
-// one about half the time (issue 72, on the SDR bench, 2026-10-18)
+// one about half the time (issue 72, on the SDR bench)
 static void track_tc(hrc7000_dmr_t *e, const hrc7000_rx_status_t *s)
 {
 	e->rx_bs = s->sync == DMR_SYNC_BS;

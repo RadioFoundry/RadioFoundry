@@ -1,20 +1,25 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # The MMDVM modem protocol, as a DMR-only radio must speak it
 
-What a radio acting as an MMDVM modem (a "hotspot") must send and accept so that every host that will talk to it
-works: standard MMDVM hosts (MMDVMHost, Pi-Star, WPSD) and our bench tools
-(`tools/bench/`). Written from the public protocol and from what those hosts send and expect.
-Section 6 lists our own additions (the SFR debug command 0xD5 and the extra status bytes, and the split duplex command
-0xD6). Section 7 is the test list for the host tests and `tools/mmdvm_probe.py`.
+This page covers what a radio acting as an MMDVM modem (a "hotspot") must send and accept so that every host that
+talks to it works: standard MMDVM hosts (MMDVMHost, Pi-Star, WPSD) and the SDR bench's hotspot tools. It follows the
+public protocol and what those hosts send and expect on the wire. Section 6 lists RadioFoundry's own additions (the
+SFR debug command 0xD5 and the extra status bytes, and the split duplex command 0xD6). Section 7 is the test list for
+the host tests and `tools/mmdvm_probe.py`.
 
-Conventions: byte values are hex. "Frame offset" counts from the 0xE0 start byte (offset 0). "Payload offset" counts
-from the first byte after the command byte (payload offset 0 = frame offset 3). Frequencies are in Hz, little endian.
-"Host" is the PC side, "modem" is the radio.
+These conventions apply throughout:
 
-Related specs: `gotchas.md` section 8 (hotspot pitfalls), `open-firmware-cps.md` section 6 (how the
-programming port switches to hotspot mode), `dmr-modem.md` (the burst layer under all of this), `capabilities.md`
-("Hotspot and repeater").
+- Byte values are hex.
+- "Frame offset" counts from the 0xE0 start byte (offset 0). "Payload offset" counts from the first byte after the
+  command byte (payload offset 0 = frame offset 3).
+- Frequencies are in Hz, little endian.
+- "Host" is the PC side, "modem" is the radio.
+
+Related specs: [gotchas.md](gotchas.md) section 8 (hotspot pitfalls), [open-firmware-cps.md](open-firmware-cps.md)
+section 6 (how the programming port switches to hotspot mode), [dmr-modem.md](dmr-modem.md) (the burst layer under
+all of this), [capabilities.md](capabilities.md) ("Hotspot and repeater").
 
 | Section | Topic |
 |---|---|
@@ -22,25 +27,25 @@ programming port switches to hotspot mode), `dmr-modem.md` (the burst layer unde
 | 3 | Handshake and timing |
 | 4 | Client compatibility matrix |
 | 5 | Transport details |
-| 6 | Our extensions |
+| 6 | RadioFoundry extensions |
 | 7 | Conformance checklist and test list |
 
 ## 1. Framing
 
 | Item | Rule |
 | --- | --- |
-| Start byte | 0xE0. Anything that is not 0xE0 where a frame should start is skipped, one byte at a time, until 0xE0. |
+| Start byte | 0xE0. Anything that is not 0xE0 where a frame starts is skipped, one byte at a time, until 0xE0. |
 | Length | One byte at frame offset 1: the length of the whole frame, start byte included. The shortest frame is 3 bytes (E0 03 cmd). |
 | Command | Frame offset 2. |
 | Payload | Frame offset 3 up to the length. |
 | Long frames | Length byte 0 means a long frame: the real length is (frame offset 2) + 255, and the command moves to frame offset 3, the payload to offset 4. Total lengths 256 to 510. A DMR-only modem never sends one, but its parser must skip a whole long frame (consume LL + 255 bytes) and stay in sync. A frame of exactly 255 bytes uses the short form (length FF). |
-| Checksum | None. No escaping, no byte stuffing. 0xE0 can appear inside a payload; resynchronizing on 0xE0 is only for after a bad length. |
+| Checksum | None. No escaping, no byte stuffing. 0xE0 can appear inside a payload; resynchronize on 0xE0 only after a bad length. |
 | Byte order | Multi-byte numbers are little endian (frequencies), except the RSSI and DEBUG values, which are big endian. |
 | Transport | A byte stream: USB CDC ACM (baud rate ignored; hosts open it at 115200 8N1), a UART at 115200 8N1, or UDP (section 5.3). Frames can be split across USB packets or arrive several to a packet; never assume one frame per packet. |
 
-Frames the modem sends must be complete and in order; two frames must never interleave (a status reply written in
-the middle of a DMR frame corrupts both). The host parses one frame at a time and drops nothing it can't parse except
-up to the next 0xE0.
+Frames the modem sends must be complete and in order. Two frames must never interleave: a status reply written in
+the middle of a DMR frame corrupts both. The host parses one frame at a time, and when it can't parse a frame it drops
+bytes only up to the next 0xE0.
 
 ## 2. Commands and replies for a DMR-only modem
 
@@ -71,14 +76,14 @@ up to the next 0xE0.
 | 80 | SERIAL | both (passthrough) | silently dropped | no |
 | 90 | TRANSPARENT | both | silently dropped | no |
 | 91 | QSO_INFO | host to modem | silently dropped, or ACK | no |
-| D5 | our SFR debug command | host to modem | ACK / NAK 4 (section 6) | no (ours) |
-| D6 | our split duplex command (CONFIG_HOTSPOT_SPLIT builds only) | host to modem | one D6 reply with a result byte (section 6.5) | no (ours) |
+| D5 | RadioFoundry's SFR debug command | host to modem | ACK / NAK 4 (section 6) | no (RadioFoundry only) |
+| D6 | RadioFoundry's split duplex command (CONFIG_HOTSPOT_SPLIT builds only) | host to modem | one D6 reply with a result byte (section 6.5) | no (RadioFoundry only) |
 | F1-F5, FA | DEBUG1-5, DEBUG_DUMP | modem to host | | no (host logs them) |
 | anything else | | | NAK 1 | |
 
-"None on success" for DMR_DATA: a modem may stay silent and only NAK a refused frame; a modem may also ACK every
-DMR_DATA2. Every host here accepts both (an ACK of DMR data is ignored;
-the bench tools drop ACKs). Pick one and keep it; ACKing costs 4 bytes per 60 ms.
+"None on success" for DMR_DATA means a modem may stay silent and only NAK a refused frame. A modem may also ACK
+every DMR_DATA2. Every host here accepts both: a standard host ignores an ACK of DMR data, and the bench tools drop
+ACKs. Pick one and keep it; ACKing costs 4 bytes per 60 ms.
 
 ### 2.2 ACK and NAK
 
@@ -89,13 +94,12 @@ the bench tools drop ACKs). Pick one and keep it; ACKing costs 4 bytes per 60 ms
 | --- | --- |
 | 1 | unknown command |
 | 2 | wrong mode: the mode isn't enabled, or the command doesn't apply now (other digital modes, DMR_DATA1 in plain simplex, SFR not on) |
-| 3 | (unused by the hosts; "too long" in our numbering) |
+| 3 | unused by the hosts; "too long" in RadioFoundry's numbering |
 | 4 | invalid: bad length, bad value (color code above 15, unknown state, TX delay out of range), a burst type the radio can't send, a frequency the radio can't tune |
 | 5 | no space (TX buffer full); also SEND_CWID while not idle |
-| 6 | Duplex not supported by this build. **Ours (SFR only): RF busy**, the inbound call is being repeated (section 6) |
+| 6 | Duplex not supported by this build. **RadioFoundry (SFR only): RF busy**, the inbound call is being repeated (section 6) |
 
-Outside startup a NAK is a warning in the host's log; the refused frame is lost
-(no retry).
+Outside startup a NAK is a warning in the host's log, and the refused frame is lost (no retry).
 
 ### 2.3 GET_VERSION (00)
 
@@ -109,33 +113,37 @@ Request: `E0 03 00`. The reply must be a short frame (at most 255 bytes).
 | 3 | 01 (protocol version) |
 | 4.. | description, ASCII, to the end of the frame. No terminating NUL needed. A modem may append a NUL and a hex UDID after the description. |
 
-Protocol 1 has no capability bytes, so a host can't tell which modes the modem has.
-It may therefore send SET_CONFIG enable bits and SET_MODE values for modes RadioFoundry doesn't
-have if the user's configuration enables them; the radio must tolerate that (2.5, 2.6).
+Protocol 1 has no capability bytes, so a host can't tell which modes the modem has. It can therefore send SET_CONFIG
+enable bits and SET_MODE values for modes RadioFoundry doesn't have, if the user's configuration enables them. The
+radio must tolerate that (2.5, 2.6).
 
 Answer version 1 or 2; a host may stop on anything else.
 
 #### 2.3.1 Which version to answer
 
-Answer **protocol 1**. Reasons: our bench tools (`hotspot_test.py`, `hs_normal.py` and their copies) send only the
-23-byte protocol 1 SET_CONFIG and read the protocol 1 status layout (flags at frame offset 5, slot 2 space at offset
-8); our status extension starts at the protocol 1 offset 13. The
-cost of protocol 1: the host can't learn that the radio is DMR only, so a misconfigured host may try other modes (they
-get NAK 2 / NAK 4).
+Answer **protocol 1**, for these reasons:
+
+- The bench tools (`tools/bench/mmdvm_hotspot.py` and the SDR bench's hotspot scripts) send only the 23-byte protocol 1
+  SET_CONFIG and read the protocol 1 status layout (flags at frame offset 5, slot 2 space at offset 8).
+- RadioFoundry's status extension starts at the protocol 1 offset 13.
+
+The cost of protocol 1 is that the host can't learn that the radio is DMR only, so a misconfigured host can try other
+modes. They get NAK 2 or NAK 4.
 
 #### 2.3.2 Description string rules
 
-- ASCII, printable, no NUL, at most 120 bytes (keeps the frame short and under two 64-byte USB packets; an
-  earlier buffer overflowed with a long build ID plus a suffix, gotchas 8.11).
-- SFR capability is announced by the suffix ` SFR TS<in>>TS<out> <framing>` (framing `MS`, `TS` or `BS`), present
-  whenever the firmware has SFR, on or not, giving the slots and framing it would use: e.g. `... SFR TS1>TS2 TS`.
-- Split duplex capability is announced by the suffix ` SPLIT<version>` (` SPLIT1`), present whenever the firmware
-  has the extension, role or not (section 6.5).
+- ASCII, printable, no NUL, at most 120 bytes. This keeps the frame short and under two 64-byte USB packets, and
+  leaves room for a long build ID plus the suffixes in the description buffer (gotchas 8.11).
+- The suffix ` SFR TS<in>>TS<out> <framing>` (framing `MS`, `TS` or `BS`) announces SFR. It is present whenever the
+  firmware has SFR, on or not, and gives the slots and framing it would use: for example `... SFR TS1>TS2 TS`.
+- The suffix ` SPLIT<version>` (` SPLIT1`) announces split duplex. It is present whenever the firmware has the
+  extension, in a role or not (section 6.5).
 
 ### 2.4 GET_STATUS (01)
 
-Request: `E0 03 01`. A standard host sends it every 250 ms, whether or not the last one was answered. The reply must come
-within a few tens of milliseconds even while transmitting (a standard host resets the modem after 2 s without a status reply, 3.4).
+Request: `E0 03 01`. A standard host sends it every 250 ms, whether or not the last one was answered. The reply must
+come within a few tens of milliseconds, even while transmitting: a standard host resets the modem after 2 s without a
+status reply (3.4).
 
 **Protocol 1 layout** (send this one):
 
@@ -144,7 +152,7 @@ within a few tens of milliseconds even while transmitting (a standard host reset
 | 0-2 | E0, length, 01 |
 | 3 | modes enabled: 02 DMR, 20 POCSAG. RadioFoundry sends the modes it was configured with, DMR and POCSAG only. |
 | 4 | modem state: 00 idle, 02 DMR, 06 POCSAG. |
-| 5 | flags: 01 TX, 02 ADC overflow, 04 RX overflow, 08 TX overflow, 10 lockout, 20 DAC overflow, 40 carrier detect. 80: ours, SFR inbound busy (section 6). |
+| 5 | flags: 01 TX, 02 ADC overflow, 04 RX overflow, 08 TX overflow, 10 lockout, 20 DAC overflow, 40 carrier detect. 80: RadioFoundry's, SFR inbound busy (section 6). |
 | 6 | D-Star space: 00 |
 | 7 | DMR slot 1 space |
 | 8 | DMR slot 2 space |
@@ -152,10 +160,9 @@ within a few tens of milliseconds even while transmitting (a standard host reset
 | 10 | P25 space: 00 |
 | 11 | NXDN space: 00 |
 | 12 | POCSAG space: 00 or 01, never more (see 2.6) |
-| 13.. | Ours: the SFR debug bytes, only in SFR mode (section 6) |
+| 13.. | RadioFoundry's: the SFR debug bytes, only in SFR mode (section 6) |
 
-Send 13
-(length 0D) or 14 bytes. The bench tools read offsets 5, 7, 8 and, from 13 on, the SFR debug bytes.
+Send 13 (length 0D) or 14 bytes. The bench tools read offsets 5, 7, 8 and, from 13 on, the SFR debug bytes.
 
 **Flags**:
 
@@ -167,39 +174,37 @@ Send 13
 | 08 TX overflow | The TX buffer was full and a frame was refused since the last status. Event. |
 | 10 lockout | **Never set.** A host treats it as locked out. |
 | 40 carrier detect | Something is on the channel (from the receiver's noise / RSSI, so analog and other color codes count too), evaluated only while not transmitting. |
-| 80 | Not defined by MMDVM. Ours, SFR mode only (section 6). |
+| 80 | Not defined by MMDVM. RadioFoundry's, SFR mode only (section 6). |
 
-**Space** (offsets 7 and 8): the number of further 33-byte DMR bursts the modem will accept for that slot right now
-without a NAK. Unit: one burst, i.e. one DMR_DATA frame, i.e. 60 ms of air time in simplex. One byte, 0-255; never
-negative, never wrapped (a negative count once reported 255, gotchas 8.4).
+**Space** (offsets 7 and 8) is the number of further 33-byte DMR bursts the modem accepts for that slot right now
+without a NAK. The unit is one burst: one DMR_DATA frame, 60 ms of air time in simplex. It is one byte, 0-255, never
+negative and never wrapped: a negative count would read as 255 (gotchas 8.4).
 
-How a host uses it: take the value from each status reply, write a
-DMR_DATA frame only while its copy is above 1 (so the last free place is never used), subtract 1 per frame written,
-and overwrite the copy with the next status reply. Consequences for the modem:
+A host takes the value from each status reply and writes a DMR_DATA frame only while its copy is above 1, so the last
+free place is never used. It subtracts 1 per frame written and overwrites the copy with the next status reply. That
+has these consequences for the modem:
 
 - The value must be conservative. Frames written after the GET_STATUS was sent but before the reply was processed
   are still on the way when the host overwrites its copy, so with 250 ms polling the host can overcommit by several
   frames. Report the free count minus a margin of at least 2, or keep that slack in the buffer. A refused frame is
   lost for good (no host retries).
 - Only frames that will occupy the buffer count. Frames the modem drops at once (idle bursts) need not consume space.
-- Simplex: slot 1's byte may be the constant 10 (0A) or 0; RadioFoundry reports 0.
-  Slot 2's byte is the
-  real space. A host may still write DMR_DATA1 frames; the modem refuses them
-  (NAK 2) or drops them, and never transmits them.
-- The initial value sets how much the host sends in one clump at the start of a network call: a host can queue 6 idle
-  bursts and 8 voice headers up front, so a space of at least 16 lets a call start without
-  waiting for a status round trip.
+- Simplex: slot 1's byte may be the constant 10 (0A) or 0; RadioFoundry reports 0. Slot 2's byte is the real space.
+  A host may still write DMR_DATA1 frames; the modem refuses them (NAK 2) or drops them, and never transmits them.
+- The initial value sets how much the host sends in one clump at the start of a network call. A host can queue 6 idle
+  bursts and 8 voice headers up front, so a space of at least 16 lets a call start without waiting for a status round
+  trip.
 - In SFR mode both bytes carry the outbound slot's space (section 6).
 - With no DMR mode (before SET_CONFIG, or in POCSAG / idle) the value may still be reported; it may be 0 when
   DMR isn't enabled. Hosts only write after SET_MODE DMR.
 
 ### 2.5 SET_CONFIG (02)
 
-A standard host sends it once at startup (after SET_FREQ) and again after a modem reset. The modem answers ACK or NAK. **A NAK at startup can stop the host**,
-so NAK only for values that make DMR impossible.
+A standard host sends it once at startup (after SET_FREQ) and again after a modem reset. The modem answers ACK or
+NAK. **A NAK at startup can stop the host**, so NAK only for values that make DMR impossible.
 
-**Protocol 1 payload** (a standard host sends 23 bytes, frame length 1A; RadioFoundry accepts 7 or
-more; the bench tools send 23):
+**Protocol 1 payload.** A standard host sends 23 bytes (frame length 1A), and so do the bench tools. RadioFoundry
+accepts 7 or more.
 
 | Payload offset | Content | DMR-only radio |
 | --- | --- | --- |
@@ -210,9 +215,10 @@ more; the bench tools send 23):
 | 6 | DMR color code 0-15 | honor; NAK 4 above 15 |
 | 4-5, 7-22 | other levels and settings | ignore |
 
-**Protocol 2 payload** (37 bytes, frame length 28): not used by RadioFoundry. Payload byte 25 carries the DMR flags (80 trunking).
+**Protocol 2 payload** (37 bytes, frame length 28): RadioFoundry doesn't use it. Payload byte 25 carries the DMR flags
+(80 trunking).
 
-Effects to apply: color code (RX acceptance and TX framing), simplex / duplex, the state byte (as SET_MODE would),
+Apply the color code (RX acceptance and TX framing), simplex or duplex, the state byte (as SET_MODE would) and the
 debug flag. SET_CONFIG must not reset a transmission in progress unless the color code or duplex flag changed. In SFR
 builds, re-evaluate the SFR trigger after it (section 6).
 
@@ -228,7 +234,8 @@ Payload: 1 byte, the state. `E0 04 03 <state>`. A standard host doesn't wait for
 | same as now | ACK, no change. |
 | 01, 03, 04, 05, 07, 0A and others | NAK 4. |
 
-A standard host sends SET_MODE idle at startup and when its mode hang expires, and SET_MODE DMR after the first RF frame in idle.
+A standard host sends SET_MODE idle at startup and when its mode hang expires, and SET_MODE DMR after the first RF
+frame in idle.
 
 ### 2.7 SET_FREQ (04)
 
@@ -240,16 +247,15 @@ A standard host sends SET_MODE idle at startup and when its mode hang expires, a
 | 9 | RF level 0-255 (100 % = FF) |
 | 10-13 | POCSAG TX frequency, Hz, little endian (hosts send a filler or the TX frequency when POCSAG is off) |
 
-Lengths: hosts normally send 14 payload bytes (frame length 11 hex). Accept 9 (no
-RF level: full power), 10 (with RF level) and 14. Protocol 1 and 2 use the same layout.
+Hosts normally send 14 payload bytes (frame length 11 hex). Accept 9 (no RF level: full power), 10 (with RF level)
+and 14. Protocol 1 and 2 use the same layout.
 
-Rules:
+Follow these rules:
 
 - RX = TX is the normal simplex hotspot. RX ≠ TX in simplex is allowed (split simplex); tune both.
-- Validate against the radio's hardware range only. Do not restrict to amateur bands: the SDR bench runs business-band
-  channels (461-467 MHz), and a band check that refused them had to go (gotchas 8.7). A NAK at
-  startup can stop the host, which is the right outcome for a frequency the radio can't tune. Ignore the POCSAG
-  frequency unless POCSAG TX is implemented (never NAK because of it).
+- Validate against the radio's hardware range only. Don't restrict to amateur bands: a host can use any channel the
+  radio can tune (gotchas 8.7). A NAK at startup can stop the host, which is the right outcome for a frequency the
+  radio can't tune. Ignore the POCSAG frequency unless POCSAG TX is implemented, and never NAK because of it.
 - RF level: map 0-255 onto the radio's power steps; FF (the user never touched it) keeps the radio's own power setting.
   RadioFoundry retunes at once.
 - SET_FREQ resets the hotspot's call state (gotchas 8.6): anything buffered for TX is dropped and the RF uplink call
@@ -259,14 +265,14 @@ Rules:
 
 ### 2.8 DMR_DATA1 / DMR_DATA2 (18 / 1A)
 
-One DMR burst. Frame: `E0 25 1A <control> <33 bytes>` (length 37) for slot 2, 18 for slot 1. From the modem it may
-carry 2 more bytes of RSSI: length 27 (39).
+One DMR burst. The frame is `E0 25 1A <control> <33 bytes>` (length 37) for slot 2, with 18 for slot 1. From the
+modem it may carry 2 more bytes of RSSI: length 27 (39).
 
 The 33 bytes are the whole 264-bit burst, first bit in the top bit of byte 0: 108 bits of payload, the 48-bit
 sync / EMB / embedded-signaling field (bits 108-155: low nibble of byte 13, bytes 14-18, high nibble of byte 19),
 108 bits of payload. For data-sync bursts the slot type (Golay(20,8), systematic) occupies the 10 bits on each side
 of the sync: color code in bits 98-101 (frame byte 12, mask 3C), data type in bits 102-105 (byte 12 mask 03, then
-byte 13 mask C0). Sync words (ETSI TS 102 361-1 table 9.2), 48 bits:
+byte 13 mask C0). These are the 48-bit sync words (ETSI TS 102 361-1 table 9.2):
 
 | Source | Voice | Data |
 | --- | --- | --- |
@@ -289,19 +295,16 @@ byte 13 mask C0). Sync words (ETSI TS 102 361-1 table 9.2), 48 bits:
 
 - A host may write control byte **00 on every frame**: header, voice, terminator, idle, data alike. The modem must
   classify each burst from its own content: the sync word (any of the eight above; a simplex host uses MS sync on
-  traffic and may use BS data sync on idle bursts), then for data sync the slot
-  type's data type. Voice B-F carry an EMB instead of a sync: their position follows from the count since the last
-  voice A and is confirmed by the
-  EMB's LCSS (B first fragment, C and D continuation, E last, F single / reverse channel). Classifying from the
-  control byte sent data as voice, ignored terminators and NAKed the idle bursts before each call (gotchas 8.2).
-  When the control byte is non-zero it may be trusted,
-  but classification from the burst must give the same answer.
-- A network voice call in simplex can arrive as 6 idle bursts,
-  8 voice LC headers, the voice superframes (A-F, silence bursts where the
-  network lost frames), 3 terminators. A late-entry network call (no header) starts with the idle bursts and 8
-  headers it builds itself. A PI header, if the network carries one, follows the headers. Data: 2 idle bursts, the
-  data header, the blocks; CSBKs with up to 15 preamble CSBKs before them. A simplex host sends 8 headers and 3
-  terminators.
+  traffic and may use BS data sync on idle bursts), then for data sync the slot type's data type. Voice B-F carry an
+  EMB instead of a sync: their position follows from the count since the last voice A and is confirmed by the EMB's
+  LCSS (B first fragment, C and D continuation, E last, F single / reverse channel). A modem that classifies from the
+  control byte sends data as voice, ignores terminators and NAKs the idle bursts before each call (gotchas 8.2). A
+  non-zero control byte can be trusted, but classification from the burst must give the same answer.
+- A network voice call in simplex can arrive as 6 idle bursts, 8 voice LC headers, the voice superframes (A-F, silence
+  bursts where the network lost frames) and 3 terminators. A late-entry network call (no header) starts with the idle
+  bursts and 8 headers the host builds itself. A PI header, if the network carries one, follows the headers. Data is 2
+  idle bursts, the data header and the blocks; CSBKs come with up to 15 preamble CSBKs before them. A simplex host
+  sends 8 headers and 3 terminators.
 - Idle bursts: accept (no NAK) and drop; the radio makes its own fill.
 - PI headers: a radio that transmits privacy calls passes them on; one that doesn't accepts and drops them.
 - Voice LC header: starts (or keys up) a call. Repeated headers with the same LC are the same call. A header with a
@@ -310,8 +313,9 @@ byte 13 mask C0). Sync words (ETSI TS 102 361-1 table 9.2), 48 bits:
   while still buffering (nothing on air yet) replaces the LC.
 - Terminator: ends the call now; send what is buffered, then the radio's own terminator; no network timeout, no
   extra delay (gotchas 8.1). Further terminators of the same call are accepted and dropped.
-- Start of transmission: start as soon as a few bursts are buffered (more than 4, or the terminator of a short call), never pad the start with silence superframes (gotchas 1.1). If nothing arrives for
-  about 360 ms while buffering, give up and return to receive.
+- Start of transmission: start as soon as a few bursts are buffered (more than 4, or the terminator of a short call),
+  and never pad the start with silence superframes (gotchas 1.1). If nothing arrives for about 360 ms while
+  buffering, give up and return to receive.
 - Lone CSBKs and data: key, send, unkey.
 - Length must be exactly 37 (34 payload bytes); NAK 4 otherwise.
 - Full buffer: NAK 5 and drop the frame; never overwrite unsent frames (gotchas 8.4).
@@ -320,104 +324,109 @@ byte 13 mask C0). Sync words (ETSI TS 102 361-1 table 9.2), 48 bits:
 
 **Modem to host** (what was heard on air), plain simplex:
 
-- Every burst goes up as **DMR_DATA2**, whatever slot or sync the sender used.
-  SFR mode uses the inbound slot's command (section 6).
+- Every burst goes up as **DMR_DATA2**, whatever slot or sync the sender used. SFR mode uses the inbound slot's
+  command (section 6).
 - Control byte as in the table: 41 for each voice header heard, 20 for voice A, 01-05 for B-F, 42 for the
   terminator, 40 + type for PI headers, CSBK, data headers and blocks. A frame whose control byte is
   exactly 42 ends the call.
-- The 33 bytes must be a well-formed burst: the full LC of headers and terminators must decode (BPTC(196,96)
-  and RS(12,9) with the header / terminator masks),
-  the EMB must carry the configured color code, and B-E carry the embedded LC, talker alias
-  and GPS. Send the embedded signaling for B-E made from the call's LC, or as received if it decoded.
-- Sequence: after voice A (20), B-F must follow as 01, 02, 03, 04, 05 in order. A repeated number loses that burst; a skipped
-  number loses the rest of that superframe up to the next voice A. Fill a missed burst with a silence burst at
-  its position rather than skip it (gotchas 8.5).
-- Headers: send every header heard (a sender may send up to 8; repeats are ignored once the call is
-  open). Late entry (voice heard without a header): a host can start a call itself from the embedded
-  LC of B-E once it has seen a voice A. RadioFoundry sends, once the embedded LC is known, a voice LC header made
-  from it, then the superframe so far as silence from A so the sequence restarts cleanly.
+- The 33 bytes must be a well-formed burst. The full LC of headers and terminators must decode (BPTC(196,96) and
+  RS(12,9) with the header / terminator masks), the EMB must carry the configured color code, and B-E carry the
+  embedded LC, talker alias and GPS. Send the embedded signaling for B-E made from the call's LC, or as received if
+  it decoded.
+- Sequence: after voice A (20), B-F must follow as 01, 02, 03, 04, 05 in order. A repeated number loses that burst; a
+  skipped number loses the rest of that superframe up to the next voice A. Fill a missed burst with a silence burst
+  at its position rather than skip it (gotchas 8.5).
+- Headers: send every header heard. A sender may send up to 8; the host ignores repeats once the call is open.
+- Late entry (voice heard without a header): a host can start a call itself from the embedded LC of B-E once it has
+  seen a voice A. Once the embedded LC is known, RadioFoundry sends a voice LC header made from it, then the
+  superframe so far as silence from A, so the sequence restarts cleanly.
 - One terminator per call (repeated terminators heard on air are the same call). Then nothing until the next call.
-- RSSI: 2 bytes after the burst, big endian, raw. A host maps raw to dBm with a table or formula. Send 00 and the AT1846S RSSI register (0x1B) high
-  byte on AT1846S radios; on other RF chips, document the scale.
+- RSSI: 2 bytes after the burst, big endian, raw. A host maps raw to dBm with a table or formula. With an AT1846S,
+  send 00 and the AT1846S RSSI register (0x1B) high byte; with another RF chip, document the scale (5.4).
 
 ### 2.9 DMR_LOST1 / DMR_LOST2 (19 / 1B)
 
-`E0 03 1B` (slot 2; 19 for slot 1). Sent when a call heard on air stops without a terminator. A standard host has **no** short
-watchdog for RF calls: without DMR_LOST it keeps the call open. Timing: about 500 ms after the last burst of the call (RadioFoundry: 500 ms simplex,
-300 ms in SFR mode). Never
-send it during a long header run (8 headers take 480 ms: time the gap from the last burst of any kind) and never
-mid-call because of one missed burst (one header followed by a 300 ms timer produced DMR_LOST mid-call and split calls
-in two, gotchas 8.5).
+`E0 03 1B` (slot 2; 19 for slot 1). The modem sends it when a call heard on air stops without a terminator. A
+standard host has **no** short watchdog for RF calls: without DMR_LOST it keeps the call open.
+
+Send it about 500 ms after the last burst of the call (RadioFoundry: 500 ms in simplex, 300 ms in SFR mode). Never
+send it during a long header run: 8 headers take 480 ms, so time the gap from the last burst of any kind. Never send
+it mid-call because of one missed burst: one header followed by a 300 ms timer gives a DMR_LOST mid-call and splits
+the call in two (gotchas 8.5).
 
 ### 2.10 DMR_SHORTLC (1C), DMR_START (1D), DMR_ABORT (1E), DMR_ALOHA (17)
 
-- DMR_SHORTLC: `E0 0C 1C <9 bytes>`, the CACH short LC (activity per slot), encoded and interleaved. **A standard host sends
-  it in simplex too**, around every call. A direct-mode radio has no CACH:
-  accept and ignore it, with no NAK (a NAK puts a warning in the host's log per call).
-- DMR_START: `E0 04 1D 01` (key) / `E0 04 1D 00` (unkey). Duplex only. Ignore it
-  (ACK or silence).
-- DMR_ABORT: `E0 04 1E <slot>` (01 or 02). Duplex only for a standard host.
-  In SFR mode: drop what is queued for TX. ACK or silence. Never NAK.
+- DMR_SHORTLC: `E0 0C 1C <9 bytes>`, the CACH short LC (activity per slot), encoded and interleaved. **A standard
+  host sends it in simplex too**, around every call. A direct mode radio has no CACH: accept and ignore it, with no
+  NAK (a NAK puts a warning in the host's log per call).
+- DMR_START: `E0 04 1D 01` (key) / `E0 04 1D 00` (unkey). Duplex only. Ignore it (ACK or silence).
+- DMR_ABORT: `E0 04 1E <slot>` (01 or 02). Duplex only for a standard host. In SFR mode, drop what is queued for TX.
+  ACK or silence; never NAK.
 - DMR_ALOHA: trunking only; NAK 2 or ignore.
 
 ### 2.11 SEND_CWID (0A)
 
-`E0 <len> 0A <ASCII callsign>`; a host may send up to 200 characters. Accepted only
-in idle state (hosts put the modem in idle first and wait for TX to clear): ACK, then key FM
-and send the Morse; TX flag set until done. In any other state NAK 5.
-After CW, restore the DMR setup fully (gotchas 8.13: the HR_C6000 tone configuration must be
-restored or DMR fails until a power cycle).
+`E0 <len> 0A <ASCII callsign>`; a host may send up to 200 characters. The modem accepts it only in idle state (hosts
+put the modem in idle first and wait for TX to clear): ACK, then key FM and send the Morse, with the TX flag set until
+done. In any other state, NAK 5. After CW, restore the DMR set-up fully (gotchas 8.13: the HR_C6000 tone
+configuration must be restored, or DMR fails until a power cycle).
 
-Ours: the hotspot's `cw_id` op (`core/radio/radio_hotspot.c`) hands the callsign (up to 40 characters) to the radio
-task, which keys it on boards whose `hal_radio_t` has `tx_tone` (`tx_tone_key` switches
-the tone without retuning): the DMR keying released, `set_mode(FM)`, a carrier on the hotspot's TX frequency, 150 ms
-lead, the Morse (`core/radio/morse.c`: PARIS timing, dot = 1200 / wpm ms, `settings_t` `cw_wpm`, default 20 wpm,
-tone `cw_tone_hz`, default 800 Hz), 150 ms tail, then `set_mode(DMR)` (the modem set up again, 8.13), the receiver
-back on the hotspot's RX frequency and the DMR keying armed. The TX flag stays set meanwhile (`cw_busy`). Leaving
-hotspot mode or SET_FREQ cuts the ID. Boards without `tx_tone` ACK and count it (`hs.cwid_unsent`, nothing keyed).
-Debug link: `hs.cw_*` in the `dmr_ext` view section.
+RadioFoundry's implementation: the hotspot's `cw_id` op (`core/radio/radio_hotspot.c`) hands the callsign (up to 40
+characters) to the radio task. The task keys it on boards whose `hal_radio_t` has `tx_tone` (`tx_tone_key` switches
+the tone without retuning), in this order:
+
+1. The DMR keying is released, then `set_mode(FM)` and a carrier on the hotspot's TX frequency.
+2. 150 ms lead, the Morse (`core/radio/morse.c`: PARIS timing, dot = 1200 / wpm ms, `settings_t` `cw_wpm`, default
+   20 wpm, tone `cw_tone_hz`, default 800 Hz), 150 ms tail.
+3. `set_mode(DMR)` (the modem set up again, gotchas 8.13), the receiver back on the hotspot's RX frequency and the DMR
+   keying armed.
+
+The TX flag stays set meanwhile (`cw_busy`). Leaving hotspot mode or SET_FREQ cuts the ID. Boards without `tx_tone`
+ACK and count it (`hs.cwid_unsent`, nothing keyed). The debug link shows `hs.cw_*` in the `dmr_ext` view section.
 
 ### 2.12 SERIAL (80), TRANSPARENT (90), QSO_INFO (91)
 
-- SERIAL: passthrough for a display attached to the modem; it may arrive
-  at any time. Drop silently (no NAK: it would flood the log). Never send it up.
+- SERIAL: passthrough for a display attached to the modem; it may arrive at any time. Drop it silently (a NAK would
+  flood the log). Never send it up.
 - TRANSPARENT: drop silently.
 - QSO_INFO: drop silently or ACK; never NAK.
 
 ### 2.13 DEBUG1-5 (F1-F5) and DEBUG_DUMP (FA), modem to host
 
-Debug text from the modem to the host. Send them only
-when SET_CONFIG's debug flag (10) is set, never before the host has had its GET_VERSION reply (3.1), and never in a
-burst (each costs host log I/O and serial time). Optional; not needed by any host.
+Debug text from the modem to the host. Send them only when SET_CONFIG's debug flag (10) is set, never before the host
+has had its GET_VERSION reply (3.1), and never in a burst (each costs host log I/O and serial time). They are
+optional; no host needs them.
 
 ### 2.14 FM parameters (60-63) and other modes
 
-Hosts only send FM_PARAMS1-4 when FM is configured. The
-ACK and ignore them even without FM, so a misconfigured host still starts.
-D-Star, YSF, P25, NXDN, M17 and POCSAG data: NAK 2.
+Hosts send FM_PARAMS1-4 only when FM is configured. ACK and ignore them even without FM, so a misconfigured host still
+starts. Answer D-Star, YSF, P25, NXDN, M17 and POCSAG data with NAK 2.
 
 ## 3. Handshake and timing
 
 ### 3.1 Standard host startup
 
+A standard host starts like this:
+
 1. Opens the port (serial at the configured speed, 115200 usually; or UDP).
 2. Waits **2 s**.
-3. Sends GET_VERSION, and repeats it about every 1.8 s while no version reply arrives, **6 attempts** in all (about 11 s), then
-   gives up and stops. Frames the modem sends before the
-   version reply get in its way: **the modem must not send unsolicited frames (DMR uplink, DEBUG) until
-   it has been addressed** (send nothing up until the host has sent any command).
+3. Sends GET_VERSION, and repeats it about every 1.8 s while no version reply arrives, **6 attempts** in all (about
+   11 s), then gives up and stops. Frames the modem sends before the version reply get in its way: **the modem must
+   not send unsolicited frames (DMR uplink, DEBUG) until it has been addressed.** Send nothing up until the host has
+   sent any command.
 4. Sends **SET_FREQ** and waits for ACK / NAK.
 5. Sends **SET_CONFIG** and waits for ACK / NAK.
 6. (FM only) FM_PARAMS1-4.
 7. Sends SET_MODE idle and starts polling GET_STATUS every 250 ms.
 
-Commands follow each other about 10 ms apart at the modem port, so ACK quickly (within 10 ms is ideal), and in any case before any other frame.
+Commands follow each other about 10 ms apart at the modem port, so ACK quickly (within 10 ms is ideal), and in any
+case before any other frame.
 
 In hotspot mode's trial the radio answers the first host-like frame but takes the modem only with the second
 ([open-firmware-cps.md 6](open-firmware-cps.md#6-hotspot-mode-switch-0xe0), trial). Both startups above pass.
 
-The order is SET_FREQ before SET_CONFIG. The bench tools also send SET_FREQ,
-SET_CONFIG, SET_MODE in that order, and skip GET_VERSION entirely. The modem must accept these commands in any order, repeated, at any time.
+The order is SET_FREQ before SET_CONFIG. The bench tools also send SET_FREQ, SET_CONFIG, SET_MODE in that order, and
+skip GET_VERSION entirely. The modem must accept these commands in any order, repeated, at any time.
 
 ### 3.2 Tuning while running
 
@@ -428,11 +437,13 @@ duplex flag changed (2.5).
 
 ### 3.3 Bench tools
 
-`hotspot_test.py` and `hs_normal.py` (and their copy `mmdvm_hotspot.py` in this repo): no
-GET_VERSION; SET_FREQ, SET_CONFIG (protocol 1, 23 bytes), SET_MODE DMR, 150 ms apart, replies not waited on; then
-GET_STATUS every 250 ms. Over UDP they treat each datagram as one frame (command at datagram byte 2): the modem must
-send exactly one frame per datagram (5.3). `hs_normal.py` paces network calls by the reported space (space above 1, minus one
-per frame).
+The bench tools (`tools/bench/mmdvm_hotspot.py` and the SDR bench's hotspot scripts) work like this:
+
+- No GET_VERSION. SET_FREQ, SET_CONFIG (protocol 1, 23 bytes) and SET_MODE DMR, 150 ms apart, replies not waited on;
+  then GET_STATUS every 250 ms.
+- Over UDP they treat each datagram as one frame (command at datagram byte 2), so the modem must send exactly one
+  frame per datagram (5.3).
+- They pace network calls by the reported space (space above 1, minus one per frame).
 
 ### 3.4 What makes a standard host declare the modem dead
 
@@ -444,22 +455,20 @@ A modem that reboots (watchdog) while the host is running must answer the host's
 
 ### 3.5 Playout and pacing (network to air)
 
-A host writes DMR frames only while its space copy
-is above 1 (2.4). A call therefore arrives as a clump (idle bursts +
-headers, as far as space allows) and then at the network rate, about one frame per 60 ms, with jitter.
+A host writes DMR frames only while its space copy is above 1 (2.4). A call therefore arrives as a clump (idle bursts
+and headers, as far as space allows) and then at the network rate, about one frame per 60 ms, with jitter.
 
 ### 3.6 Simplex (Duplex=0) DMR behavior
 
 - One timeslot on air. The host uses DMR_DATA2 / DMR_LOST2 only (slot 1 space is the constant 10).
 - TX: MS-sourced framing on air regardless of the sync in the host's frames (a host may put MS sync on simplex
-  traffic). The radio builds its own slot type,
-  EMB and sync with the configured color code.
+  traffic). The radio builds its own slot type, EMB and sync with the configured color code.
 - The radio can't receive while it transmits; RF heard right after a transmission goes up normally.
 - No DMR_START, no DMR_ABORT, short LC ignored, no CACH.
 - After the host's terminator, the TX flag stays set until the radio's own terminator is on air (about 0.7 s after
   the host's terminator, measured, gotchas 8.6), then clears.
-- SET_CONFIG with the simplex flag clear and RX ≠ TX: a standard host then expects a duplex repeater (both slots, DMR_START,
-  BS framing). RadioFoundry runs as a plain simplex hotspot in that case; with RX = TX it turns SFR on
+- SET_CONFIG with the simplex flag clear and RX ≠ TX: a standard host then expects a duplex repeater (both slots,
+  DMR_START, BS framing). RadioFoundry runs as a plain simplex hotspot in that case; with RX = TX it turns SFR on
   (section 6).
 
 ### 3.7 Calls and "space" around back-to-back traffic
@@ -478,8 +487,8 @@ headers, as far as space allows) and then at the network rate, about one frame p
 
 ## 4. Client compatibility matrix
 
-Columns: **Standard host** (Linux / Pi-Star / WPSD class hosts) and **bench** (our `hotspot_test.py`, `hs_normal.py`,
-`run_sfr_call.sh` and copies).
+The columns are **Standard host** (Linux / Pi-Star / WPSD class hosts) and **bench** (the SDR bench's hotspot tools
+and `tools/bench/mmdvm_hotspot.py`).
 
 | # | Point | Standard host | bench |
 | --- | --- | --- | --- |
@@ -509,7 +518,7 @@ Columns: **Standard host** (Linux / Pi-Star / WPSD class hosts) and **bench** (o
 | 25 | Carrier detect 40 | stored | ignored |
 | 26 | SEND_CWID | only from idle, not waited on | never |
 | 28 | POCSAG | SET_MODE 06 when pages arrive (if enabled) | never |
-| 29 | Transport | serial or UDP (`Protocol=udp`, ModemAddress / ModemPort 3334, LocalPort 3335) | **UDP 12.47.82.93:3334 from 12.47.82.92:3335**, one frame per datagram (copies: serial or UDP) |
+| 29 | Transport | serial or UDP (`Protocol=udp`, ModemAddress / ModemPort 3334, LocalPort 3335) | **UDP to the radio's port 3334 from local port 3335**, one frame per datagram (`mmdvm_hotspot.py`: serial or UDP) |
 | 30 | DTR | Windows: **clears DTR**; Linux / macOS: raised by the OS on open | n/a (UDP) |
 | 31 | 0xD5 / extra status bytes | never sent / ignored | `--debug` sends 0xD5; parses 13.. |
 | 31a | 0xD6 / ` SPLIT1` | never sent / suffix ignored | not used (a split duplex host: `tools/split_duplex_host.py`) |
@@ -519,8 +528,8 @@ Columns: **Standard host** (Linux / Pi-Star / WPSD class hosts) and **bench** (o
 ### 5.1 USB CDC ACM
 
 - Don't gate anything on DTR / RTS / line coding: a host on Windows may open the port with DTR cleared, and many USB
-  stacks' "connected" test is DTR. Check that the USB stack doesn't discard or block TX data while DTR is clear (test
-  7, T-USB-2).
+  stacks' "connected" test is DTR. Check that the USB stack doesn't discard or block TX data while DTR is clear
+  (test T-USB-2).
 - Replies whose length is a multiple of 64 must be ended with a zero-length packet so the host sees them at once.
 - Linux ModemManager probes new ACM ports with AT commands: the parser must skip those bytes (they aren't 0xE0) and
   answer the next real frame.
@@ -529,42 +538,42 @@ Columns: **Standard host** (Linux / Pi-Star / WPSD class hosts) and **bench** (o
 
 ### 5.2 UART
 
-115200 8N1 (the programming cable's UART on a board without USB). A 39-byte frame takes about 3.4 ms; status replies and uplink frames at 60 ms
-intervals fit easily. Write from task context, not from an interrupt handler (gotchas 8.10). Stream parsing with
-0xE0 resync as in section 1.
+115200 8N1 (the programming cable's UART on a board without USB). A 39-byte frame takes about 3.4 ms, so status
+replies and uplink frames at 60 ms intervals fit easily. Write from task context, not from an interrupt handler
+(gotchas 8.10). Parse the stream with the 0xE0 resync of section 1.
 
 ### 5.3 UDP (`Protocol=udp`)
 
 - The modem listens on UDP port 3334 at its own address. The host sends from its LocalPort (configured in the host).
 - Replies go from the modem's address, **source port 3334**, to the address and port the host's last datagram came
   from. Hosts drop datagrams that don't come from exactly ModemAddress:ModemPort.
-- One MMDVM frame per datagram in both directions (the bench tools need
-  each reply in its own datagram). Still parse incoming datagrams as a stream.
+- One MMDVM frame per datagram in both directions: the bench tools need each reply in its own datagram. Still parse
+  incoming datagrams as a stream.
 - One host at a time (the last sender wins).
-- RadioFoundry offers this over its USB network adapter (CDC-NCM, the radio's IP derived from the user's DMR ID; on
-  the bench 12.47.82.93 with the Mac at 12.47.82.92). Gotchas 9.1-9.8 cover the network side.
+- RadioFoundry offers this over its USB network adapter (CDC-NCM, the radio's IP derived from the user's DMR ID, the
+  host's one below it). Gotchas 9.1-9.8 cover the network side.
 
 ### 5.4 RSSI scale
 
-The raw value is the 16-bit big-endian number after the burst; RadioFoundry puts 00 in the
-high byte and the AT1846S register 0x1B high byte in the low byte. On the radio's raw scale, dBm = raw − 151 at
-300 MHz and above; dBm = −164 + raw × 32 / 27 below.
+The raw value is the 16-bit big-endian number after the burst. With an AT1846S, RadioFoundry puts 00 in the high byte
+and the AT1846S register 0x1B high byte in the low byte. On that raw scale, dBm = raw − 151 at 300 MHz and above;
+dBm = −164 + raw × 32 / 27 below.
 
-## 6. Our extensions (not part of MMDVM)
+## 6. RadioFoundry extensions (not part of MMDVM)
 
-Both exist only for our single frequency repeater (SFR) in hotspot mode and for its on-air debugging. A standard host
-can't trigger either: SFR turns on only when SET_CONFIG has the simplex flag **clear** and SET_FREQ has **RX = TX**
-(both non-zero), evaluated after each of those commands in either order (gotchas 8.12). A host with `Duplex=0`, and
-Pi-Star, never get there.
+The SFR extensions exist only for RadioFoundry's single frequency repeater (SFR) in hotspot mode and for its on-air
+debugging. A standard host can't trigger them: SFR turns on only when SET_CONFIG has the simplex flag **clear** and
+SET_FREQ has **RX = TX** (both non-zero), evaluated after each of those commands in either order (gotchas 8.12). A
+host with `Duplex=0`, and Pi-Star, never get there. The split duplex command (6.5) does nothing until a host sends it.
 
 ### 6.1 Detecting them
 
 - The GET_VERSION description's ` SFR TS<in>>TS<out> <framing>` suffix (2.3.2) says the firmware has SFR and with
   which slots and framing. It appears whether SFR is on or not.
-- Sending 0xD5 to a modem without it gets NAK 1 (unknown command) from any firmware without SFR;
-  ours answers ACK (or NAK 4 if too short). Send it only to a modem whose description announces SFR.
+- 0xD5 sent to any firmware without SFR gets NAK 1 (unknown command); RadioFoundry with SFR answers ACK (or NAK 4 if
+  too short). Send it only to a modem whose description announces SFR.
 - The extra status bytes appear only while SFR is on: a status reply longer than 13 bytes from a radio announcing
-  SFR. A client must not assume them from the length alone (a 14-byte status is not ours).
+  SFR. A client must not assume them from the length alone: a 14-byte status isn't RadioFoundry's extension.
 
 ### 6.2 SFR mode behavior seen by the host
 
@@ -584,11 +593,11 @@ Pi-Star, never get there.
 
 ### 6.3 GET_STATUS extra bytes (SFR mode only)
 
-The protocol 1 status (frame offsets 0-12) unchanged, followed by 108 bytes of SFR counters and state, frame offsets
-13 to 120; frame length 121 (79 hex). Counters are modulo 256. Layout: `drivers/modem/hrc6000/sfr_glue/hrcSfr.h`
-(the `hrcSfrDebug_t` structure), first member at frame offset 13; the field list and
-meanings are also in `tools/bench/mmdvm_hotspot.py`. A host that doesn't know them reads only up to offset 12 and is
-not disturbed.
+The protocol 1 status (frame offsets 0-12) is unchanged, followed by 108 bytes of SFR counters and state at frame
+offsets 13 to 120; the frame length is 121 (79 hex). Counters are modulo 256. The layout is the `hrcSfrDebug_t`
+structure in `drivers/modem/hrc6000/sfr_glue/hrcSfr.h`, first member at frame offset 13; the field list and meanings
+are also in `tools/bench/mmdvm_hotspot.py`. A host that doesn't know them reads only up to offset 12 and isn't
+disturbed.
 
 Keep the length and member order stable; add new members only at the end, and never change a member's meaning, so
 old bench tool versions stay correct.
@@ -598,34 +607,42 @@ fills the members it knows: 14 bursts written, 15 bursts heard, 16 repeated, 17 
 02 own timing, 10 RF call, 20 busy), 25 flags, 28 echo, 29 ignored, 30 duplicate, 31 last burst, 32 its color code,
 35 reg10, 36 reg12, 38 ignored on the outbound slot, 39 bad checksum, 55 rssiMin, 60 raw area (FF: not used), 99 LC
 rebuilt, 106 reg11, 107 flags2, 117 late entry held. The rest (register reads, RF switch timing, raw bursts) belong
-to an HR_C6000 driver level SFR and stay 0 until one fills them.
+to an HR_C6000 driver level SFR and stay 0.
 
 ### 6.4 Command 0xD5 (SFR debug)
 
-`E0 <len> D5 <flags> <framing> [<reg10> [<reg12> [<rssiMin> [<reg11> [<flags2>]]]]]`, payload 2 to 7 bytes. ACK
-(`E0 04 70 D5`) when at least 2 payload bytes are present, NAK 4 otherwise. Not stored (all zero at power on). Missing
-optional bytes take their defaults: reg10 00 (the driver's), reg12 FF (the driver's), rssiMin 00 (default threshold),
-reg11 00, flags2 00. Meanings of each bit: the `HRC_SFR_DEBUG_*` and `HRC_SFR_DEBUG2_*` definitions in
-`drivers/modem/hrc6000/sfr_glue/hrcSfr.h`; framing 0 = the channel setting, 1 MS, 2 TS, 3 BS (GET_VERSION shows the
-result). In a firmware without SFR, 0xD5 is an unknown command (NAK 1). The generic SFR layer acts on the framing and on flags2 0x40
-(data calls repeated as heard, no hold); it keeps and reports the other switches for a driver that uses them.
+`E0 <len> D5 <flags> <framing> [<reg10> [<reg12> [<rssiMin> [<reg11> [<flags2>]]]]]`, payload 2 to 7 bytes. The
+modem answers ACK (`E0 04 70 D5`) when at least 2 payload bytes are present, NAK 4 otherwise. The settings aren't
+stored (all zero at power on). Missing optional bytes take their defaults: reg10 00 (the driver's), reg12 FF (the
+driver's), rssiMin 00 (default threshold), reg11 00, flags2 00.
+
+The `HRC_SFR_DEBUG_*` and `HRC_SFR_DEBUG2_*` definitions in `drivers/modem/hrc6000/sfr_glue/hrcSfr.h` give each bit's
+meaning. Framing 0 is the channel setting, 1 MS, 2 TS, 3 BS; GET_VERSION shows the result. In a firmware without SFR,
+0xD5 is an unknown command (NAK 1). The generic SFR layer acts on the framing and on flags2 0x40 (data calls repeated
+as heard, no hold); it keeps and reports the other switches for a driver that uses them.
 
 ### 6.5 Command 0xD6 (split duplex)
 
-Two radios run as one duplex repeater, each an MMDVM modem (`docs/spec/split-duplex.md`, the full definition). Built
-only with `CONFIG_HOTSPOT_SPLIT`; a firmware without it NAKs 0xD6 with 1, like any unknown command. Request
-`E0 <len> D6 <sub> [<data>]`, reply `E0 <len> D6 <sub> <result> [<data>]` (result 0 done, 1 unknown sub-command,
-2 wrong state, 4 invalid). Sub-commands: 00 INFO, 01 SET_ROLE, 02 TIME, 03 GET_EPOCH, 04 SET_EPOCH, 05 SET_AT,
-06 STATUS. Nothing changes for a host that never sends 0xD6 except the ` SPLIT1` description suffix: a role starts
-only with SET_ROLE 1 (TX half) or 2 (RX half) and ends with SET_ROLE 0, the end of the session (the port closed with
-DTR, the 20 s timeout) or a 10 s lease that any 0xD6 refreshes. In a role the standard commands keep their framing
-and change meaning as a duplex MMDVM board's (`split-duplex.md` 4); no other status bytes are added.
+Two radios run as one duplex repeater, each an MMDVM modem; [split-duplex.md](split-duplex.md) has the full
+definition. The command is built only with `CONFIG_HOTSPOT_SPLIT`; a firmware without it NAKs 0xD6 with 1, like any
+unknown command.
+
+| Item | Content |
+|---|---|
+| Request | `E0 <len> D6 <sub> [<data>]` |
+| Reply | `E0 <len> D6 <sub> <result> [<data>]`; result 0 done, 1 unknown sub-command, 2 wrong state, 4 invalid |
+| Sub-commands | 00 INFO, 01 SET_ROLE, 02 TIME, 03 GET_EPOCH, 04 SET_EPOCH, 05 SET_AT, 06 STATUS |
+
+Nothing changes for a host that never sends 0xD6, except the ` SPLIT1` description suffix. A role starts only with
+SET_ROLE 1 (TX half) or 2 (RX half). It ends with SET_ROLE 0, the end of the session (the port closed with DTR, the
+20 s timeout) or a 10 s lease that any 0xD6 refreshes. In a role the standard commands keep their framing and change
+meaning as a duplex MMDVM board's ([split-duplex.md](split-duplex.md) 4); no other status bytes are added.
 
 ## 7. Conformance checklist and test list
 
-For the host tests (a fake transport feeding the protocol code) and `tools/mmdvm_probe.py` (against the radio).
-"→" is what the modem must answer; "(none)" means no frame within 100 ms. Payload bytes in examples are written in
-full where they matter; `<33>` is a 33-byte burst.
+These tests serve the host tests (a fake transport feeding the protocol code) and `tools/mmdvm_probe.py` (against
+the radio). "→" is what the modem must answer; "(none)" means no frame within 100 ms. Payload bytes in examples are
+written in full where they matter; `<33>` is a 33-byte burst.
 
 ### 7.1 Framing
 
@@ -655,7 +672,7 @@ full where they matter; `<33>` is a 33-byte burst.
 
 ### 7.3 Configuration
 
-Example frames (typical host defaults: levels 50 %, CC 1, TX delay 100 ms, simplex, DMR only):
+These are example frames with typical host defaults (levels 50 %, CC 1, TX delay 100 ms, simplex, DMR only):
 
 - SET_FREQ 463.2500 MHz, RF 100 %: `E0 11 04 00 50 A2 9C 1B 50 A2 9C 1B FF 40 0E CF 19` → `E0 04 70 04`
 - SET_CONFIG v1: `E0 1A 02 80 02 0A 00 80 80 01 00 80 80 80 80 80 80 80 80 04 80 80 05 05 00 00` → `E0 04 70 02`
@@ -701,7 +718,7 @@ Example frames (typical host defaults: levels 50 %, CC 1, TX delay 100 ms, simpl
 
 ### 7.5 DMR uplink (air to host)
 
-Tests with a bench board or the host test's uplink stream recorder (`tests/host/hotspotUplinkTest.c`).
+Run these tests with a bench board or the host test's uplink stream recorder (`tests/host/hotspotUplinkTest.c`).
 
 | Id | On air | Expect from the modem |
 | --- | --- | --- |
@@ -729,7 +746,7 @@ Tests with a bench board or the host test's uplink stream recorder (`tests/host/
 | T-USB-2 | Port opened with DTR cleared (as a host on Windows may): full handshake and a call both ways work. |
 | T-UDP-1 | Over UDP: replies come from port 3334 to the sender's port, one frame per datagram; datagrams with two frames from the host are both handled. |
 
-### 7.7 Our extensions
+### 7.7 RadioFoundry extensions
 
 | Id | Send | Expect |
 | --- | --- | --- |
