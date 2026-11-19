@@ -372,6 +372,10 @@ and one to the radio again when the answer was lost: the same status from the sa
 
 ### 7.6 UDT short data (6.5, 6.6.4)
 
+Default SMS on a trunked channel carries UTF-16BE text via UDT and waits for the Tier III short-data result.
+One message holds up to 23 characters from the Latin-1 editor. Inbox replies reuse the received message transport.
+A reply to IP text uses a packet data channel.
+
 A message is 1-46 octets in a UDT: a header (data type data header, CRC mask 0xCCCC) and 1-4 rate 1/2 blocks of 12
 octets in consecutive frames of one slot. The blocks hold the data, pad octets, and a CRC-CCITT over all the octets
 before it, unmasked (TS 102 361-1 8.2.2.5).

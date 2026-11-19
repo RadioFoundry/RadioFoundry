@@ -8820,14 +8820,9 @@ static void test_t3_sdata(void)
 	dmr_start(true);
 	sim.repeater = true;
 	t3_stage_start();
-	radio_t3_setup_t *s = radio_t3_staged();
-	s->sd_dst = 1000001u;
-	s->sd_group = false;
-	s->sd_format = T3_UDTF_ISO8;
-	memcpy(s->sd_data, "hello trunk world", 17);
-	s->sd_len = 17;
+	static const uint8_t expected[] = { 0, 'H', 0, 'e', 0, 'l', 0, 'l', 0, 'o', 0, '!' };
 	unsigned before = t3_sent(T3_OP_C_RAND);
-	req(RREQ_T3, RADIO_T3_SDATA);
+	CHECK(sms_send(1000001u, false, "Hello!", true, DMR_SMS_FORMAT_DEFAULT));
 	t3_site_run(600);
 	CHECK(t3_sent(T3_OP_C_RAND) > before && radio_t3v.ax_svc == T3_SVC_SDATA);
 
@@ -8851,16 +8846,23 @@ static void test_t3_sdata(void)
 		const sim_air_t *a = &sim.air[hdr];
 		t3_udt_t u;
 		CHECK(t3_udt_parse(a->payload, &u) && u.op == T3_OP_C_UDTHU && u.dst == 1000001u && u.src == T3_OWN &&
-		      u.blocks == 2 && u.format == T3_UDTF_ISO8);
+		      u.blocks == 2 && u.format == T3_UDTF_UTF16);
 		CHECK(sim.air[hdr + 1].kind == DMR_BURST_RATE_12_DATA && sim.air[hdr + 2].kind == DMR_BURST_RATE_12_DATA);
 		// One frame apart each: consecutive inbound slots of the TSCC's slot
 		CHECK(sim.air[hdr + 1].slot == a->slot + 2u && sim.air[hdr + 2].slot == a->slot + 4u);
 		uint8_t blk[2][T3_UDT_BLOCK];
 		memcpy(blk[0], sim.air[hdr + 1].payload, T3_UDT_BLOCK);
 		memcpy(blk[1], sim.air[hdr + 2].payload, T3_UDT_BLOCK);
-		CHECK(t3_udt_crc_ok((const uint8_t (*)[T3_UDT_BLOCK])blk, 2) && memcmp(blk, "hello trunk world", 17) == 0);
+		CHECK(t3_udt_crc_ok((const uint8_t (*)[T3_UDT_BLOCK])blk, 2) && memcmp(blk, expected, sizeof expected) == 0);
 	}
 	CHECK(radio_t3v.send_fail == 0);
+	t3_csbk_t ack = { .lb = true, .op = T3_OP_C_ACKD };
+	ack.u.ack.reason = T3_RC_MESSAGE_ACCEPTED;
+	ack.u.ack.dst = T3_OWN;
+	ack.u.ack.src = 1000001u;
+	t3_csbk_rx(&ack, 1);
+	t3_site_run(180);
+	CHECK(sms_send_state() == DMR_REQ_OK);
 
 	// A download to the radio
 	uint8_t blk[T3_UDT_BLOCKS_MAX][T3_UDT_BLOCK], pad, d[T3_CSBK_BYTES];
@@ -8881,7 +8883,8 @@ static void test_t3_sdata(void)
 	CHECK(msgs >= 1);
 	if (msgs >= 1) {
 		const dmrDataMessage_t *m = dmrDataServiceMessage(0);
-		CHECK(m->src == 1000001u && !m->group && strcmp(m->text, "hi there") == 0 && m->unread);
+		CHECK(m->src == 1000001u && !m->group && strcmp(m->text, "hi there") == 0 && m->unread &&
+		      m->format == DMR_SMS_FORMAT_T3_UDT);
 	}
 	while (sms_inbox_count() > 0 && sms_inbox_delete(0)) {
 	}
@@ -8975,7 +8978,8 @@ static void test_t3_pdata(void)
 	run(500);
 	CHECK(sms_inbox_count() == inbox + 1);
 	dmrDataMessage_t m;
-	CHECK(sms_inbox_get(0, &m) && m.src == 1000001u && strcmp(m.text, "hi radio") == 0);
+	CHECK(sms_inbox_get(0, &m) && m.src == 1000001u && strcmp(m.text, "hi radio") == 0 &&
+	      m.format == DMR_SMS_FORMAT_ETSI_IP);
 	CHECK(sms_inbox_delete(0));	// the inbox as the later tests expect it
 	req(RREQ_T3, RADIO_T3_STOP);
 	run(100);

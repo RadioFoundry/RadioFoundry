@@ -73,6 +73,12 @@ bool ui_svc_msg_send(uint32_t dst, bool group, const char *text)
 	return sms_send(dst, group, text, !group, DMR_SMS_FORMAT_DEFAULT);
 }
 
+bool ui_svc_msg_reply(uint16_t i, const char *text)
+{
+	static dmrDataMessage_t m;
+	return sms_inbox_get(i, &m) && sms_send(m.src, false, text, true, (dmr_sms_format_t)m.format);
+}
+
 static uint32_t check_sent_ms;
 
 _Static_assert((int)UI_ARS_OFF == (int)DMR_ARS_STATE_OFF &&

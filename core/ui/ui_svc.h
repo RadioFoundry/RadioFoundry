@@ -209,6 +209,7 @@ void ui_svc_msg_read(uint16_t i);		// mark read
 bool ui_svc_msg_delete(uint16_t i);
 // Queue a text message; the result comes back as a ui_notify() event
 bool ui_svc_msg_send(uint32_t dst, bool group, const char *text);
+bool ui_svc_msg_reply(uint16_t i, const char *text);
 bool ui_svc_radio_check(uint32_t id);
 bool ui_svc_call_alert(uint32_t id);
 // ARS registration with the presence server (Settings > Connections > Data services), as dmrArsState_t

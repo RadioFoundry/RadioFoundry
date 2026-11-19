@@ -2151,6 +2151,10 @@ bool ui_svc_msg_send(uint32_t dst, bool group, const char *text)
 	sim_rec.tx_id = dst;
 	return true;
 }
+bool ui_svc_msg_reply(uint16_t i, const char *text)
+{
+	return i < n_inbox && ui_svc_msg_send(inbox[i].m.src, false, text);
+}
 bool ui_svc_aprs_send_message(const char *to, const char *text, uint8_t flags)
 {
 	if (to[0] == '\0')
