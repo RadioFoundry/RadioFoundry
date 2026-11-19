@@ -271,6 +271,44 @@ static void test_http(void)
 	CHECK(http_get(&a, 51131, "GET /api/view?section=core HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 ") &&
 	      !strstr((char *)a.rx, "Access-Control"));
 	CHECK(http_get(&a, 51132, "GET / HTTP/1.0\r\n\r\n") > 0 && !strstr((char *)a.rx, "Access-Control"));
+	// An allowed page (the project's site or one served on the host) may read every API reply: its Origin comes back.
+	// Matched whole: a name that only starts or ends like one is another page
+	static const char *const allowed[] = { "https://radiofoundry.org", "http://radiofoundry.org",
+		"https://editor.RadioFoundry.org", "https://a.b.radiofoundry.org", "http://localhost:8080",
+		"http://127.0.0.1:5173", "https://localhost" };
+	static const char *const other[] = { "https://radiofoundry.org.example.com", "https://evilradiofoundry.org",
+		"https://.radiofoundry.org", "https://a..radiofoundry.org", "https://a_b.radiofoundry.org",
+		"ftp://radiofoundry.org", "http://localhost.example.com", "http://127.0.0.10", "http://localhost:",
+		"http://localhost:80x", "https://abcdefghijklmnopqrstuv.radiofoundry.org", "null" };
+	char rq[400], want[120];
+	for (size_t i = 0; i < sizeof allowed / sizeof allowed[0]; i++) {
+		snprintf(rq, sizeof rq, "GET /api/view?section=core HTTP/1.1\r\nOrigin: %s\r\nSec-Fetch-Site: cross-site\r\n\r\n",
+			 allowed[i]);
+		snprintf(want, sizeof want, "\r\nAccess-Control-Allow-Origin: %s\r\n\r\n{", allowed[i]);
+		CHECK(http_get(&a, (uint16_t)(51140 + i), rq) > 0 && strstr((char *)a.rx, " 200 ") && strstr((char *)a.rx, want));
+	}
+	for (size_t i = 0; i < sizeof other / sizeof other[0]; i++) {
+		snprintf(rq, sizeof rq, "GET /api/view?section=core HTTP/1.1\r\nOrigin: %s\r\n\r\n", other[i]);
+		CHECK(http_get(&a, (uint16_t)(51160 + i), rq) > 0 && !strstr((char *)a.rx, "Access-Control"));
+	}
+	// The status: any page, but an allowed one gets its own Origin
+	CHECK(http_get(&a, 51180, "GET /status HTTP/1.1\r\nOrigin: https://radiofoundry.org\r\n\r\n") > 0 &&
+	      strstr((char *)a.rx, "\r\nAccess-Control-Allow-Origin: https://radiofoundry.org\r\n\r\n{"));
+	// The static files carry none
+	CHECK(http_get(&a, 51181, "GET / HTTP/1.1\r\nOrigin: https://radiofoundry.org\r\n\r\n") > 0 &&
+	      strstr((char *)a.rx, " 200 ") && !strstr((char *)a.rx, "Access-Control"));
+	// A browser asks first for a public page reaching a private address: yes for an allowed page, else 405
+	CHECK(http_get(&a, 51182, "OPTIONS /api/view HTTP/1.1\r\nOrigin: https://radiofoundry.org\r\n"
+		       "Access-Control-Request-Method: GET\r\nAccess-Control-Request-Private-Network: true\r\n\r\n") > 0);
+	CHECK(strncmp((char *)a.rx, "HTTP/1.0 204 No Content\r\n", 25) == 0 &&
+	      strstr((char *)a.rx, "\r\nAccess-Control-Allow-Private-Network: true\r\n") &&
+	      strstr((char *)a.rx, "\r\nAccess-Control-Allow-Origin: https://radiofoundry.org\r\n\r\n") &&
+	      a.rxn == (int)(strstr((char *)a.rx, "\r\n\r\n") + 4 - (char *)a.rx));
+	CHECK(http_get(&a, 51183, "OPTIONS /api/view HTTP/1.1\r\nOrigin: https://example.com\r\n\r\n") > 0 &&
+	      strstr((char *)a.rx, " 405 "));
+	// A header line longer than the room left before the kept Origin is cut, not run into it
+	snprintf(rq, sizeof rq, "GET /api/view?section=core HTTP/1.1\r\nOrigin: http://localhost:1\r\nX-Long: %0200d\r\n\r\n", 0);
+	CHECK(http_get(&a, 51184, rq) > 0 && strstr((char *)a.rx, "\r\nAccess-Control-Allow-Origin: http://localhost:1\r\n\r\n{"));
 	// At a name that isn't the radio's (a page that pointed its own name at it): the page's files, nothing else
 	CHECK(http_get(&a, 51133, "GET /status HTTP/1.1\r\nHost: radio.example.com\r\n\r\n") > 0 &&
 	      strstr((char *)a.rx, " 403 "));
@@ -573,6 +611,12 @@ static void test_aprsis(void)
 	CHECK(strstr((char *)h.rx, " 403 ") && settings.aprsis_ip == 0);
 	CHECK(http_get(&h, 53042, "GET /api/aprsis?server=999.0.2.10 HTTP/1.1\r\nSec-Fetch-Site: same-origin\r\n\r\n") > 0);
 	CHECK(strstr((char *)h.rx, " 400 "));	// past the check: the address is what is wrong
+	// An allowed page (the project's site) gets past it too; a lookalike name doesn't
+	CHECK(http_get(&h, 53043, "GET /api/aprsis?server=999.0.2.10 HTTP/1.1\r\nSec-Fetch-Site: cross-site\r\n"
+		       "Origin: https://radiofoundry.org\r\n\r\n") > 0 && strstr((char *)h.rx, " 400 "));
+	CHECK(http_get(&h, 53044, "GET /api/aprsis?server=192.0.2.10 HTTP/1.1\r\nSec-Fetch-Site: cross-site\r\n"
+		       "Origin: https://radiofoundry.org.example.com\r\n\r\n") > 0);
+	CHECK(strstr((char *)h.rx, " 403 ") && settings.aprsis_ip == 0);
 	CHECK(http_get(&h, 53001, "GET /api/aprsis?server=999.0.2.10 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)h.rx, " 400 "));
 	CHECK(http_get(&h, 53002, "GET /api/aprsis?server=192.0.2.10%3A14580&range=50 HTTP/1.0\r\n\r\n") > 0);
 	CHECK(strstr(body_of(&h), "\"server\":\"192.0.2.10:14580\"") && strstr(body_of(&h), "\"range_km\":50"));
@@ -1044,6 +1088,10 @@ static void test_webctl(void)
 	CHECK(http_get(&b, 53130, "GET /ws HTTP/1.1\r\nHost: 12.255.255.254\r\nOrigin: http://12.255.255.254\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n") > 0 &&
 	      strstr((char *)b.rx, " 503 "));
 	CHECK(http_get(&b, 53131, "GET /ws HTTP/1.1\r\nOrigin: http://12.255.255.254:80\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n") > 0 &&
+	      strstr((char *)b.rx, " 503 "));
+	CHECK(http_get(&b, 53132, "GET /ws HTTP/1.1\r\nOrigin: https://radiofoundry.org\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n") > 0 &&
+	      strstr((char *)b.rx, " 503 "));	// an allowed page
+	CHECK(http_get(&b, 53133, "GET /ws HTTP/1.1\r\nOrigin: http://localhost:3000\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n") > 0 &&
 	      strstr((char *)b.rx, " 503 "));
 
 	// Keys: down holds (capped by the input task), up releases; one at a time; keys not on the radio refused

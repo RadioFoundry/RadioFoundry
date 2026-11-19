@@ -87,20 +87,30 @@ The client receives the engine's output (section 3) exactly as the serial port w
 
 ## 5. HTTP status server (port 80)
 
-HTTP/1.0 (RFC 1945): GET and HEAD, one request per connection, `Connection: close`, `Content-Length` always, no
+HTTP/1.0 (RFC 1945): GET and HEAD (and OPTIONS from an allowed page, below), one request per connection, `Connection: close`, `Content-Length` always, no
 keep-alive or chunking (HTTP/1.1 clients accept a 1.0 answer). The request line may be 95 bytes long (else 414);
 the header lines read (field names in any case) are `Host`, `Origin`, `Sec-Fetch-Site` and `Sec-WebSocket-Key` for
-`/ws`, the rest are skipped; a request not complete within 10 s is reset. Responses carry `Cache-Control: no-store`;
-only `/status` also carries `Access-Control-Allow-Origin: *` (a web page on the host may poll the status, which has no
-position in it). The other answers can't be read by another site's page.
+`/ws`, the rest are skipped (a header line is cut at 167 bytes); a request not complete within 10 s is reset. Responses
+carry `Cache-Control: no-store`.
+
+Allowed pages may use the radio from a browser: the project's site (`radiofoundry.org` or a name under it) and pages
+served on the host itself (`localhost`, `127.0.0.1`), over `http://` or `https://`, any port. The `Origin` is matched
+whole (`radiofoundry.org.example.com` is not one) and may be 39 bytes long. Who may read an answer:
+
+| Answer | Read by |
+|---|---|
+| The static files | the radio's own page (no `Access-Control-Allow-Origin`) |
+| `/status` | any page: `Access-Control-Allow-Origin` is an allowed page's `Origin`, else `*` (no position in it) |
+| The other paths | the radio's own page and allowed pages: an allowed page's `Origin` is sent back in `Access-Control-Allow-Origin` |
+| `OPTIONS` from an allowed page | 204 with its `Origin` and `Access-Control-Allow-Private-Network: true` (a browser asks first when a public page reaches a private address); `OPTIONS` from anyone else is 405 |
 
 Where a request comes from (a browser says so in its headers; tools that send none are taken as they come):
 
 | Header | Taken | Else |
 |---|---|---|
 | `Host` | absent, an IPv4 address (with or without a port), or the radio's mDNS name with `.local` | 403 for everything but the static files. Open the page at the radio's address or its `.local` name |
-| `Origin` | absent, or `http://` and one of the radio's addresses (its own, 12.255.255.254) or its `.local` name | 403 for `/ws` and `/api/aprsis`: another page in a browser on the host |
-| `Sec-Fetch-Site` | absent, `same-origin` or `none` (typed or bookmarked) | 403 for `/api/aprsis` (an image or link on another site sends no `Origin` on a GET) |
+| `Origin` | absent, `http://` and one of the radio's addresses (its own, 12.255.255.254) or its `.local` name, or an allowed page | 403 for `/ws` and `/api/aprsis`: another page in a browser on the host |
+| `Sec-Fetch-Site` | absent, `same-origin` or `none` (typed or bookmarked), or any value with an allowed page's `Origin` | 403 for `/api/aprsis` (an image or link on another site sends no `Origin` on a GET) |
 
 `/api/usb?mode=serial` takes requests from other sites on purpose (the site's flasher opens it in a tab).
 

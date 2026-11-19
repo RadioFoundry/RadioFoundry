@@ -40,7 +40,8 @@
 #endif
 
 #define LINE_MAX	96	// request line ("GET /api/view?section=dmr_data_stats HTTP/1.1" and room)
-#define HDR_MAX		192	// the longest header: an asset's, with Content-Encoding
+#define HDR_MAX		208	// the longest header: an asset's, with Content-Encoding, or a reply to an allowed page
+#define ORIGIN_MAX	40	// an allowed page's Origin, kept at the end of hdr until the reply (NUL included)
 #define BUF_MAX		1536	// JSON bodies; a view section's text is rendered into its upper part first
 #define VIEW_AT		512	// where the section's text goes (the JSON written from 0 never catches up with it)
 #define REQ_TIMEOUT_MS	10000u
@@ -55,7 +56,10 @@ enum {
 	HF_FOREIGN = 1,		// Origin: a page that isn't the radio's own
 	HF_XSITE = 2,		// Sec-Fetch-Site: sent by another site's page
 	HF_NAME = 4,		// Host: a name that isn't the radio's (a name pointed at it, not it)
+	HF_ALLOWED = 8,		// Origin: a page allowed to use the radio (allowed_origin), kept at ORIGIN_AT
+	HF_PREFLIGHT = 16,	// OPTIONS: a browser asking before an allowed page's request
 };
+#define ORIGIN_AT	(HDR_MAX - ORIGIN_MAX)
 
 typedef struct {
 	uint8_t state;
@@ -66,7 +70,8 @@ typedef struct {
 	uint8_t ln;
 	uint8_t hn;		// the header line under way, in hdr (free until the response)
 	uint8_t hf;		// HF_*
-	bool cors;		// the response may be read by any page
+	bool cors;		// an API reply: an allowed page may read it
+	bool cors_any;		// any page may read it (/status)
 #if CONFIG_NET_WEBCTL
 	bool ws;		// the 101 is going out: the connection is webctl's once it's sent
 	char key[WS_KEY_LEN + 1];	// Sec-WebSocket-Key, "" = none
@@ -272,6 +277,7 @@ static const char *reason(int code)
 	switch (code) {
 	case 101: return "Switching Protocols";
 	case 200: return "OK";
+	case 204: return "No Content";
 	case 400: return "Bad Request";
 	case 403: return "Forbidden";
 	case 404: return "Not Found";
@@ -282,15 +288,29 @@ static const char *reason(int code)
 	}
 }
 
+// The header in hdr, n long, ends in "Access-Control-Allow-Origin: ": the allowed page's Origin follows, kept at
+// ORIGIN_AT since its header line, then the header's end. Returns the header's length
+static size_t with_origin(hconn_t *h, size_t n)
+{
+	size_t on = strlen(h->hdr + ORIGIN_AT);
+
+	memmove(h->hdr + n, h->hdr + ORIGIN_AT, on);	// n < ORIGIN_AT - 4, and on < ORIGIN_MAX: it fits
+	memcpy(h->hdr + n + on, "\r\n\r\n", 4);
+	return n + on + 4;
+}
+
 static void respond_enc(int c, int code, const char *type, uint8_t src, const void *body, uint32_t len, bool gz)
 {
 	hconn_t *h = &hc[c];
 
-	h->hlen = (uint16_t)dl_fmt(h->hdr, sizeof(h->hdr),
-				   "HTTP/1.0 %d %s\r\nContent-Type: %s\r\n%sContent-Length: %u\r\nConnection: close\r\n"
-				   "Cache-Control: no-store\r\n%s\r\n",
-				   code, reason(code), type, gz ? "Content-Encoding: gzip\r\n" : "", (unsigned)len,
-				   h->cors ? "Access-Control-Allow-Origin: *\r\n" : "");
+	bool echo = h->cors && (h->hf & HF_ALLOWED);
+	size_t n = dl_fmt(h->hdr, echo ? ORIGIN_AT - 4 : sizeof(h->hdr),
+			  "HTTP/1.0 %d %s\r\nContent-Type: %s\r\n%sContent-Length: %u\r\nConnection: close\r\n"
+			  "Cache-Control: no-store\r\n%s",
+			  code, reason(code), type, gz ? "Content-Encoding: gzip\r\n" : "", (unsigned)len,
+			  echo ? "Access-Control-Allow-Origin: " : h->cors_any ? "Access-Control-Allow-Origin: *\r\n\r\n" : "\r\n");
+
+	h->hlen = (uint16_t)(echo ? with_origin(h, n) : n);
 	h->hoff = 0;
 	h->src = src;
 	h->body = body;
@@ -422,6 +442,15 @@ static void release(int c)
 	hc[c].state = H_FREE;
 }
 
+// Sent by a page in a browser that is neither the radio's own nor an allowed one (tcp-services.md 5). Programs
+// outside a browser send neither header
+#if CONFIG_NET_WEBCTL || CONFIG_NET_APRSIS
+static bool other_page(const hconn_t *h)
+{
+	return (h->hf & HF_FOREIGN) || ((h->hf & HF_XSITE) && !(h->hf & HF_ALLOWED));
+}
+#endif
+
 // The request line is in h->line: pick the response
 static void dispatch(int c)
 {
@@ -438,6 +467,21 @@ static void dispatch(int c)
 	*sp1 = '\0';
 	*sp2 = '\0';
 	h->head = strcmp(h->line, "HEAD") == 0;
+	if ((strcmp(h->line, "OPTIONS") == 0) && (h->hf & HF_ALLOWED)) {
+		// An allowed page's request that the browser asks about first (a public page reaching a private address):
+		// yes, for that page
+		size_t n = dl_fmt(h->hdr, ORIGIN_AT - 4, "HTTP/1.0 %d %s\r\nAccess-Control-Allow-Private-Network: true\r\n"
+				  "Content-Length: 0\r\nConnection: close\r\nAccess-Control-Allow-Origin: ", 204, reason(204));
+
+		h->hlen = (uint16_t)with_origin(h, n);
+		h->hoff = 0;
+		h->src = SRC_NONE;
+		h->blen = 0;
+		h->boff = 0;
+		h->state = H_SEND;
+		st.ok++;
+		return;
+	}
 	if (!h->head && (strcmp(h->line, "GET") != 0)) {
 		fail(c, 405);
 		return;
@@ -462,6 +506,7 @@ static void dispatch(int c)
 		fail(c, 403);
 		return;
 	}
+	h->cors = true;
 #if CONFIG_NET_WEBCTL
 	if (strcmp(path, "/ws") == 0) {
 		char acc[WS_ACCEPT_LEN + 1];
@@ -470,8 +515,8 @@ static void dispatch(int c)
 			fail(c, 400);	// not a WebSocket handshake
 			return;
 		}
-		if (h->hf & HF_FOREIGN) {
-			fail(c, 403);	// the radio's own page only: a browser says which page opens it
+		if (other_page(h)) {
+			fail(c, 403);	// the radio's own page or an allowed one: a browser says which page opens it
 			return;
 		}
 		if (webctl_conn() >= 0) {
@@ -520,7 +565,7 @@ static void dispatch(int c)
 #endif
 	bool status = strcmp(path, "/status") == 0;
 
-	h->cors = status;	// a page on the host may poll the status (no position in it); nothing else is shared
+	h->cors_any = status;	// any page on the host may poll the status (no position in it); the rest only allowed pages
 	bool viewp = strcmp(path, "/api/view") == 0;
 #if CONFIG_NET_APRSIS
 	bool setp = strcmp(path, "/api/aprsis") == 0;
@@ -557,8 +602,8 @@ static void dispatch(int c)
 	} else {
 #if CONFIG_NET_APRSIS
 		// The APRS-IS client's settings, changed from the host only (not from beyond it), and not by another site's
-		// page in a browser there
-		int code = (h->hf & (HF_FOREIGN | HF_XSITE)) ? 403 : aprsis_http(&t, query, tcp_remote_ip(c));
+		// page in a browser there unless it is an allowed one
+		int code = other_page(h) ? 403 : aprsis_http(&t, query, tcp_remote_ip(c));
 
 		if (code != 200) {
 			buf_owner = -1;
@@ -712,6 +757,80 @@ static bool own_host(const char *v, size_t n, uint32_t *ip)
 #endif
 }
 
+// Whether a and b, n long, are the same but for case
+static bool same_ci(const char *a, const char *b, size_t n)
+{
+	for (size_t i = 0; i < n; i++) {
+		char x = a[i], y = b[i];
+
+		if ((x >= 'A') && (x <= 'Z')) {
+			x = (char)(x - 'A' + 'a');
+		}
+		if (x != y) {
+			return false;
+		}
+	}
+	return true;
+}
+
+// An Origin, n long, of a page allowed to use the radio from a browser: the project's site (radiofoundry.org or a
+// name under it) and pages served on the host itself (localhost, 127.0.0.1), over http or https, any port. Matched
+// whole, so radiofoundry.org.example.com is not one. Longer than ORIGIN_MAX - 1: not one (it is kept for the reply)
+static bool allowed_origin(const char *v, size_t n)
+{
+	static const char site[] = "radiofoundry.org";
+	size_t sn = sizeof(site) - 1;
+
+	if (n >= ORIGIN_MAX) {
+		return false;
+	}
+	if ((n > 7) && same_ci(v, "http://", 7)) {
+		v += 7;
+		n -= 7;
+	} else if ((n > 8) && same_ci(v, "https://", 8)) {
+		v += 8;
+		n -= 8;
+	} else {
+		return false;
+	}
+	const char *colon = memchr(v, ':', n);
+
+	if (colon != NULL) {
+		if (colon + 1 == v + n) {
+			return false;
+		}
+		for (const char *p = colon + 1; p < v + n; p++) {
+			if ((*p < '0') || (*p > '9')) {
+				return false;
+			}
+		}
+		n = (size_t)(colon - v);
+	}
+	if (((n == 9) && same_ci(v, "localhost", 9)) || ((n == 9) && (memcmp(v, "127.0.0.1", 9) == 0))) {
+		return true;
+	}
+	if ((n < sn) || !same_ci(v + n - sn, site, sn)) {
+		return false;
+	}
+	if (n == sn) {
+		return true;
+	}
+	// A name under it: labels of letters, digits and hyphens, the last one before the site's
+	if ((n < sn + 2) || (v[n - sn - 1] != '.')) {
+		return false;
+	}
+	for (size_t i = 0; i < n - sn - 1; i++) {
+		char ch = v[i];
+		bool ok = ((ch >= 'a') && (ch <= 'z')) || ((ch >= 'A') && (ch <= 'Z')) || ((ch >= '0') && (ch <= '9')) ||
+			  (ch == '-') || ((ch == '.') && (i > 0) && (v[i - 1] != '.'));
+
+		if (!ok) {
+			return false;
+		}
+	}
+	return (v[0] != '.') && (v[n - sn - 2] != '.');	// no empty label
+}
+
 // A header line is in: the ones that say where the request comes from (HF_*), and Sec-WebSocket-Key for /ws.
 // Host: any address (a page can't make a browser send one it isn't loaded from) or the radio's mDNS name. Origin:
 // the radio's own page, at one of its addresses or its name. Sec-Fetch-Site: the browser's own word for it
@@ -727,13 +846,16 @@ static void header_line(hconn_t *h)
 			h->hf |= HF_NAME;
 		}
 	} else if ((v = field(h->hdr, "origin:")) != NULL) {
-		bool own = strncmp(v, "http://", 7) == 0;
+		size_t vn = strcspn(v, " \t");
 
-		if (own) {
-			v += 7;
-			own = own_host(v, strcspn(v, " \t/"), &ip) && ((ip == 0) || own_ip(ip));
-		}
-		if (!own) {
+		h->hf &= (uint8_t)~(HF_FOREIGN | HF_ALLOWED);	// the last Origin line counts
+		if ((vn > 7) && (strncmp(v, "http://", 7) == 0) && own_host(v + 7, vn - 7, &ip) && ((ip == 0) || own_ip(ip))) {
+			// the radio's own page
+		} else if (allowed_origin(v, vn)) {
+			memcpy(h->hdr + ORIGIN_AT, v, vn);	// for the reply's Access-Control-Allow-Origin
+			h->hdr[ORIGIN_AT + vn] = '\0';
+			h->hf |= HF_ALLOWED;
+		} else {
 			h->hf |= HF_FOREIGN;
 		}
 	} else if ((v = field(h->hdr, "sec-fetch-site:")) != NULL) {
@@ -776,7 +898,7 @@ static void h_recv(int c, const uint8_t *d, int n)
 				}
 				h->ln = (uint8_t)((h->ln < LINE_MAX) ? (h->ln + 1u) : LINE_MAX);
 			}
-			else if (h->hn < HDR_MAX - 1) {
+			else if (h->hn < ORIGIN_AT - 1) {	// past that, an allowed page's Origin is kept
 				h->hdr[h->hn++] = ch;
 			}
 			h->at_bol = false;
