@@ -818,9 +818,13 @@ as held, and the transmit time-out ends it.
 **16.3 PTT on an empty mic jack.**
 Symptom: a radio powered on without its hand mic transmitted at once (RadioFoundry, issue #230). Cause: the mic's PTT
 line has no pull-up the firmware can set, and with nothing in the jack it reads low from power-on, which is a press.
-Rule: on a PTT line that comes through a connector, count a low as a press only once the line has read high since
-start-up, something plugged in (`drivers/input/plugptt`). Pulling the plug while armed still reads as a held press;
-the transmit timeout ends it, and with TX timeout Off nothing does until power-off. Radios: one confirmed. Check every
+Rule: on a PTT line that comes through a connector, count a low as a press only once the line has idled high for
+100 ms, something plugged in (`drivers/input/plugptt`). Highs read while the lines settle at start-up don't count:
+a line that reads high on the first scans and then falls to rest low would read as a press held from power-on. Radios
+still keyed at power-on with a mic or a cable in (issue #716). A press is a fall from idle high, the edge a pin
+interrupt sees, never a level found at start-up. Every PTT line on a connector goes through this, a serial line shared with the cable included. Pulling the
+plug while armed still reads as a held press; the transmit timeout ends it, and with TX timeout Off nothing does
+until power-off. Radios: one confirmed. Check every
 radio with a mic jack: power on with the jack empty and watch the raw PTT pin (adding-a-radio.md, bring-up order).
 
 **16.4 Encoder interrupt lost for good.**

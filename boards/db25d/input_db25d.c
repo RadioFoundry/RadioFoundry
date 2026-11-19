@@ -9,7 +9,9 @@
 // and the line then has to read low on three scans in a row (INF: the pad level is assumed readable while the pin is
 // the UART's). The hand mic's PTT is PTC11, low while held (found on the radio), as the stock firmware reads it.
 // With no mic in the front jack PTC11 rests low from power-on, so it counts only once it has read high, a mic
-// plugged in (drivers/input/plugptt, 3.3).
+// plugged in (drivers/input/plugptt, 3.3). PTA9 is on the jacks too and goes through the same arming as well as the
+// serial gate: a line held low from power-on (by a mic or cable, or after reading high while it settled) never keys.
+// A press is a fall from an idle high, the edge the line's interrupt would see.
 #include "db25d.h"
 #include "config.h"
 #include "pins.h"
@@ -56,6 +58,7 @@ static uint32_t last_raw, stable;
 static uint8_t ptt_low;
 static shared_ptt_t ptt_gate;	// PTA9 is also the host UART's RXD
 static plug_ptt_t mic_ptt;	// PTC11 rests low with no mic
+static plug_ptt_t rxd_ptt;	// PTA9 counts once it has idled high (plug_ptt.h)
 static uint8_t mic_levels;
 static uint16_t a9_changes, c11_changes;
 
@@ -155,9 +158,9 @@ uint32_t db25d_input_ptt_ignored(void)
 	return ptt_gate.ignored;
 }
 
-bool db25d_input_mic_armed(void)
+uint8_t db25d_input_ptt_armed(void)
 {
-	return mic_ptt.armed;
+	return (uint8_t)((rxd_ptt.armed ? 1u : 0u) | (mic_ptt.armed ? 2u : 0u));
 }
 
 void db25d_mic_lines_reset(void)
@@ -193,7 +196,9 @@ static uint32_t scan(void)
 	shared_ptt_line_t line = { .flagged = hrc_host_uart_line_errors(), .keyed = db25d_radio_transmitting() };
 	line.rx_seen = hrc_host_uart_last_rx(&line.rx_ms);
 	line.tx_seen = hrc_host_uart_last_tx(&line.tx_ms);
-	bool rxd_low = shared_ptt_pressed(&ptt_gate, !hrc_pin_read(PIN_MIC_RXD), &line, now);
+	bool rxd_pin_low = !hrc_pin_read(PIN_MIC_RXD);
+	bool rxd_gated = shared_ptt_pressed(&ptt_gate, rxd_pin_low, &line, now);
+	bool rxd_low = plug_ptt_pressed(&rxd_ptt, rxd_pin_low, now) && rxd_gated;	// both see every scan
 	bool mic_low = plug_ptt_pressed(&mic_ptt, !hrc_pin_read(PIN_PTT2), now);
 	if (rxd_low || mic_low) {
 		if (ptt_low < PTT_SCANS) {

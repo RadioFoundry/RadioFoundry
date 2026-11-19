@@ -153,7 +153,11 @@ bool db25d_diag_line(uint8_t i, char *buf, uint8_t len)
 		put_u(&o, c11);
 		put(&o, " ign ");
 		put_u(&o, db25d_input_ptt_ignored());
-		put(&o, db25d_input_mic_armed() ? " mic" : " nomic");
+		uint8_t armed = db25d_input_ptt_armed();	// a low counts as PTT: a9/c11 (hardware-db25d.md 3.3)
+		put(&o, " arm ");
+		put_u(&o, armed & 1u);
+		put(&o, "/");
+		put_u(&o, (armed >> 1) & 1u);
 		break;
 	}
 	case 10: {
