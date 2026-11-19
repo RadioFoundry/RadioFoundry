@@ -679,7 +679,7 @@ def check_seed(r, b, by_id):
     where, errs = r["_file"], []
     if os.path.basename(where) != "seed.json":
         errs.append(f"{where}: a seed record is named seed.json")
-    for k in ("format", "board", "source", "date", "features"):
+    for k in ("format", "board", "date", "features"):
         if k not in r:
             errs.append(f"{where}: no {k}")
     if r.get("board") != b:

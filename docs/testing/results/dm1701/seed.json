@@ -2,9 +2,8 @@
  "format": 1,
  "kind": "seed",
  "board": "dm1701",
- "source": "docs/testing/on-air-coverage.md",
  "date": "2026-10-22",
- "note": "From the docs' evidence before the first recorded run: docs/testing/on-air-coverage.md and its row in docs/feature-matrix.md",
+ "note": "From the docs' evidence before the first recorded run: the board's row in docs/feature-matrix.md",
  "features": {
   "fm": {
    "result": "pass"
@@ -76,7 +75,6 @@
   },
   "ref_trim": {
    "result": "pass",
-   "source": "docs/spec/hardware-dm1701.md",
    "note": "+-5 ppm moved DMR at 438.5 MHz +2155 / -2120 Hz (2175 expected)"
   }
  }

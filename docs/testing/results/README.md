@@ -47,7 +47,7 @@ says works on the radio. It keeps the generated claims from understating a board
 | `format` | 1 |
 | `kind` | `seed` |
 | `board` | The board id, the same as the directory |
-| `source` | The doc the evidence came from, a path in the repository |
+| `source` | Optional: the doc the evidence came from, a path in the repository |
 | `date` | When the seed was written, ISO 8601 |
 | `features` | Feature id to row: `result` (`pass` or `fail`), and optionally `commit` (the commit the check ran on, where known), `source` (a doc for this row, when it isn't the record's), and `note` |
 

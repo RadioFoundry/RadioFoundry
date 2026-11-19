@@ -2,9 +2,8 @@
  "format": 1,
  "kind": "seed",
  "board": "dm1801pro",
- "source": "docs/spec/hardware-dm1801pro.md",
  "date": "2026-10-22",
- "note": "From the docs' evidence before the first recorded run: docs/spec/hardware-dm1801pro.md and its row in docs/feature-matrix.md",
+ "note": "From the docs' evidence before the first recorded run: the board's row in docs/feature-matrix.md",
  "features": {
   "fm": {
    "result": "pass",
@@ -52,7 +51,6 @@
   },
   "ref_trim": {
    "result": "pass",
-   "source": "docs/spec/hardware-dm1801pro.md",
    "note": "test_ref_trim.py: +-5 ppm moved FM on the UHF test frequency +2309 / -2310 Hz"
   }
  }
