@@ -9598,6 +9598,24 @@ static void test_t3_other_system(void)
 	sim.repeater = false;
 }
 
+// The channel selected before its system's record was written (an editor writing channels first): unavailable, then
+// usable once the record lands, with no other channel selected meanwhile (a zone of one channel has none to select)
+static void test_t3_system_late(void)
+{
+	t3_cp_zone(T3_OPT_PRIVATE, 0, 0, NULL);
+	t3_cp_tag(7, 1);			// "Ops A" names system 1, which has no record yet
+	req(RREQ_ZONE, 2);
+	req(RREQ_ZONE_POS, 0);
+	t3_site_run(300);
+	CHECK(sm.view.channel_number == 7 && radio_t3v.sys == 2 && radio_t3v.unavail && !radio_t3v.on &&
+	      sm.view.ch.rx_only);
+	t3_cp_system(1, T3_OPT_PRIVATE, 0, 0, NULL);
+	t3_site_run(600);
+	CHECK(sm.view.channel_number == 7 && radio_t3v.sys == 2 && !radio_t3v.unavail && radio_t3v.on &&
+	      radio_t3v.state == T3_CAMPED);
+	t3_cp_done();
+}
+
 static void test_t3_no_id(void)
 {
 	own_dmr_id = 0;
@@ -10380,6 +10398,7 @@ int main(void)
 	test_t3_channels();
 	test_t3_never_keys();
 	test_t3_no_id();
+	test_t3_system_late();
 	test_t3_other_system();
 	test_t3_fallback();
 #endif

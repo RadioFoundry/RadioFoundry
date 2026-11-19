@@ -9231,11 +9231,30 @@ static void sfr_rpt_tick(radio_sm_t *sm, uint32_t now_ms)
 }
 #endif
 
+#if CONFIG_DMR_TRUNK
+// A key written while the channel is a trunked one whose system couldn't be used: select it again. Systems are keys,
+// written apart from the channels; one that lands after the channel was selected (an editor writing the channel
+// first) would otherwise stay "not set up" until another channel is selected, which a zone of one never allows
+static void t3_kv_retry(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (!sm->t3_tagged || !radio_t3v.unavail || sm->view.vfo || !sm->have_channels ||
+	    sm->view.zone_pos >= sm->zone.count) {
+		return;
+	}
+	select_position(sm, sm->view.zone_index, sm->zone.channels[sm->view.zone_pos], sm->view.zone_pos);
+	tune(sm, now_ms);
+	changed(sm);
+}
+#endif
+
 void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 {
 	sm->led_now = now_ms;
 	if (codeplug_kv_serial() != kv_seen) {
 		kv_load(sm, now_ms);	// a key written (menu, debug link): its value only, without a codeplug reload
+#if CONFIG_DMR_TRUNK
+		t3_kv_retry(sm, now_ms);
+#endif
 	}
 #if CONFIG_FM_TX_TONES
 	if (sm->burst_timed && !sm->burst_held && now_ms - sm->burst_ms >= RADIO_BURST_MIN_MS) {

@@ -951,7 +951,8 @@ registration is accepted. Refused is Reg_Denied: barred from the area, never ask
 | the radio's call granted on a channel the codeplug doesn't list | Unknown channel N / Check system settings |
 
 At power-on the radio restores the channel it was on, so a trunked channel starts its system. Keys written while a
-system runs are taken at the next selection of a channel.
+system runs are taken at the next selection of a channel. A channel shown as not set up is selected again whenever a key is
+written, so a system written after its channel (an editor writing channels first) is used at once.
 
 ### 12.5 Fallback
 
