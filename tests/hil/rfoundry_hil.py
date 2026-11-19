@@ -1270,6 +1270,15 @@ class SdrBench:
         """fm_tx_start, then its done record once the last sample went out"""
         return self.fm_tx_start(freq, program, max_s, **fields).wait(max_s + 15)
 
+    def dmr_bursts(self, freq, cc, bursts, listen_after=0):
+        """DMR bursts built by the test (33 octets each, tools/bench/dmr_burst.py) sent as they are, a burst every
+        60 ms in one key-up (a bench_tx raw job), for what the board's own jobs can't build; returns its JSON records.
+        Needs the lease and --allow-rf."""
+        assert 0 < len(bursts) <= 128, f"{len(bursts)} bursts: a raw job takes 1 to 128"
+        a = f"--listen-after {listen_after} " if listen_after else ""
+        a += "raw --bursts " + ",".join(bytes(b).hex() for b in bursts)
+        return self.transmit(a, freq, cc, expect_s=len(bursts) * 0.06 + listen_after)
+
     # ── a bench board's confirmed data responder (the line protocol's mssim op, the gateway's bench-api.md 14.2) ──
     def mssim_arm(self, freq, cc, profile, seconds=120):
         """The TX board answers individual confirmed data packets on freq (MHz) as a radio would, per profile (answer,
