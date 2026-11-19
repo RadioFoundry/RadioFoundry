@@ -3,8 +3,9 @@
 
 # Fast codeplug protocol
 
-A second way to read and write the codeplug, beside the open-firmware CPS (`cps-protocol.md` 2). It moves the same
-bytes: the open-firmware image of `open-firmware-cps.md` 7, as the CPS shows it. It differs in how they travel:
+The fast codeplug protocol is a second way to read and write the codeplug, beside the open-firmware CPS
+([cps-protocol.md](cps-protocol.md) 2). It moves the same bytes: the open-firmware image of
+[open-firmware-cps.md](open-firmware-cps.md) 7, as the CPS shows it. It differs in how they travel:
 
 - Whole 4 KB blocks, the flash's erase unit.
 - Blocks of 0xFF are reported, never sent, in both directions.
@@ -12,17 +13,18 @@ bytes: the open-firmware image of `open-firmware-cps.md` 7, as the CPS shows it.
   read reads only the difference, and writes only the blocks it changed.
 - Blocks travel as LZ4 streams in both directions.
 - A write is staged and committed under a record a power cut can't break, where the board has a staging area.
-- At the end the radio re-reads its codeplug, as after a CPS `C 5`. No restart.
+- At the end, the radio re-reads its codeplug, as after a CPS `C 5`. No restart.
 
-The CPS stays: qdmr and the open-firmware CPS speak it. The fast protocol is for our own tools: `tools/cps_fast.py`
-and the web Codeplug Editor (`site/static/js/codeplug/fastlink.js`), which use it when the radio's VERSION features
-list `CPS_FAST`.
+The CPS stays: qdmr and the open-firmware CPS speak it. The fast protocol is for RadioFoundry's own tools:
+`tools/cps_fast.py` and the web Codeplug Editor (`site/static/js/codeplug/fastlink.js`), which use it when the radio's
+VERSION features list `CPS_FAST`.
 
 - Firmware: `core/cps/cps_fast.c` (the engine, no RTOS), `core/cps/cps_lz4.c` (the codec), the hooks in
-  `core/debuglink/debuglink.c` and `core/stubentry/stub_entry.c`, the tick in `core/hostlink/hostlink.c`, the boot resume in `core/app/app.c`.
-- Switch: `CONFIG_CPS_FAST` (`docs/build-config.md`), on by default with `CONFIG_CPS_OPENFW` and either listener:
-  the debug link, or the stub entry's own listener in a build without it (`stub-entry.md` 2).
-  Built without it, the command answers status 4 (unavailable).
+  `core/debuglink/debuglink.c` and `core/stubentry/stub_entry.c`, the tick in `core/hostlink/hostlink.c`, the boot
+  resume in `core/app/app.c`.
+- Switch: `CONFIG_CPS_FAST` ([build-config.md](../build-config.md)), on by default with `CONFIG_CPS_OPENFW` and either
+  listener: the debug link, or the stub entry's own listener in a build without it (`stub-entry.md` 2). Built without
+  it, the command answers status 4 (unavailable).
 - Hosts: `tools/cps_fast.py`, the editor's `fastlink.js` and `transport.js`.
 - Tests: `tests/host/cpsFastTest.c` (the engine), `tests/host/cpsFastClientTest.py` (the client against `cpsSim`),
   `site/tests/codeplug.test.mjs` (the editor's client against `cpsSim`).
@@ -33,15 +35,15 @@ The protocol is a debug link command: `CODEPLUG`, command byte `0x1C` (`debuglin
 link answers it with the stub entry's own listener, on the same framing (`stub-entry.md` 2). Each request is one debug
 link frame, each answer one reply frame (`debuglink.md` 2). The first payload byte is the operation.
 
-Why the debug link and not a mode of the CPS port:
+The protocol runs on the debug link, not as a mode of the CPS port, for these reasons:
 
 | | Debug link frame | CPS byte protocol |
 |---|---|---|
-| Integrity | CRC-16 on every frame, both ways | none: a garbled byte in a write is written |
-| Request boundary | length field | the header, or 3 ms of quiet |
-| Lost answer | sequence number: the host tells a late answer from a new one | none |
-| Status | a status byte and a reason | `-` for both "done" and "error" |
-| Hosts | `rfoundry_debug.py`, `tests/hil`, the web flasher's `link.js` already speak it, over USB, a UART cable and UDP | needs its own parser |
+| Integrity | CRC-16 on every frame, both ways | None: a garbled byte in a write is written |
+| Request boundary | Length field | The header, or 3 ms of quiet |
+| Lost answer | Sequence number: the host tells a late answer from a new one | None |
+| Status | A status byte and a reason | `-` for both "done" and "error" |
+| Hosts | `rfoundry_debug.py`, `tests/hil`, and the web flasher's `link.js` speak it, over USB, a UART cable, and UDP | Needs its own parser |
 
 The debug link's limits shape the operations: a request carries at most 64 payload bytes, a reply at most 1024. Both
 come from buffers the firmware already has, so the protocol adds none. Writes therefore move in pieces of 61 stream
@@ -51,8 +53,9 @@ several milliseconds beyond the bytes; hosts send DATA pipelined instead (sectio
 ## 2. The image and its blocks
 
 Addresses on the wire are image offsets, as in the files `tools/cps_client.py` and the web editor keep: 0 is the
-EEPROM image (`hal_flash_map_t.openfw_eeprom`), the flash image starts at `openfw_flash - openfw_eeprom` (0x20000 on
-every radio so far). The radio adds `openfw_eeprom` (0x700000 on the HR_C7000 radios), so a host never needs it.
+EEPROM image (`hal_flash_map_t.openfw_eeprom`), and the flash image starts at `openfw_flash - openfw_eeprom`
+(`0x20000` on every board). The radio adds `openfw_eeprom` (`0x700000` on the HR_C7000 boards), so a host never needs
+it.
 
 A block is 4096 bytes at an offset that is a multiple of 4096. The protocol reads and writes a block when all of it
 lies inside:
@@ -62,8 +65,8 @@ lies inside:
 
 and none of it overlaps the radio's own areas: the settings ring, the sector journal, the native codeplug area, the
 staging area and the calibration window. Any other block is refused (reason 1, section 6), for reads too. The gap
-between the two images (0x10000 to 0x1FFFF on the STM32 radios: calibration, settings, journal) is never served,
-unlike the CPS's area 1, which reads it raw (`cps-protocol.md` 2.7, decision 2).
+between the two images (`0x10000` to `0x1FFFF` on the STM32 boards: calibration, settings, journal) is never served,
+unlike the CPS's area 1, which reads it raw ([cps-protocol.md](cps-protocol.md) 2.7).
 
 The image is the one the CPS shows. The VFO A record (EEPROM 0x7590) shows the live VFO when one is set, in sums and
 reads alike (`open-firmware-cps.md` 2.2). A block written with a VFO A record that differs from the live VFO gives the
@@ -112,7 +115,7 @@ older than the command) or 4 (built without `CONFIG_CPS_FAST`): the host falls b
 ### 3.2 SUMS
 
 Up to 16 consecutive blocks from addr. For each, the CRC-32 of its 4096 bytes (section 4) and, in the mask, bit i set
-when block i is all 0xFF. The radio reads and hashes 64 KB at most per request (some 30 ms on an STM32F4 radio). The whole
+when block i is all `0xFF`. The radio reads and hashes 64 KB at most per request (some 30 ms on an STM32F4). The whole
 request is refused when any of its blocks is outside the image.
 
 A host compares the CRCs with its own image: a block whose CRC matches is not read (a delta read) or not written (a
@@ -179,9 +182,10 @@ The debug link's `cps` view section has `cpsf.state`, `cpsf.read`, `cpsf.written
 ### 3.6 Pipelined DATA
 
 A host may send up to 8 DATA requests of one block before reading their answers. Nothing on the radio changes for it:
-the requests queue and are answered in order. 8 frames are at most 576 bytes: a UART host port's 1 KB receive ring
-holds them all, and USB holds back what its 512-byte CDC buffer can't take yet (an OUT packet isn't acknowledged
-until there is room), so nothing is lost on either. BLOCK and END are still sent alone, and END's answer waited for, since END writes the flash.
+the requests queue and are answered in order. 8 frames are at most 576 bytes: a UART host port's 1 KB receive ring holds
+them all, and USB holds back what its 512-byte CDC buffer can't take yet (an OUT packet isn't acknowledged until there
+is room), so nothing is lost on either. BLOCK and END are still sent alone, and END's answer waited for, since END
+writes the flash.
 
 A window that goes wrong (an answer missing, a refusal: a frame lost to an overrun leaves a gap, and the requests
 after it are refused with reason 8) is not repaired piece by piece: the host sends the block again from BLOCK, one
@@ -209,16 +213,16 @@ already: `stub/stubtool.py` (`lz4_block`, `lz4_encode`) and `site/static/js/flas
 
 ### 5.1 Which direction compresses on the radio
 
-Both. The cost decided it:
+Both directions compress on the radio. The cost decided it:
 
-| Part | Flash (STM32F4 radio) | RAM |
+| Part | Flash (STM32F4) | RAM |
 |---|---|---|
 | Decoder (writes) | about 300 B | none: a streaming decoder writes each DATA's bytes straight into the storage sector buffer, matches copy from what it already decoded there |
 | Encoder (reads) | about 300 B | 128 B of stack (64 hash entries); it writes the requested window of the stream straight into the debug link's reply buffer |
 
 Neither needs a buffer of its own, which is why the protocol fits a small RAM (section 9). The encoder's table
-is small because codeplug blocks repeat over short distances (records of 56, 24 or 80 bytes, padding runs): on a
-33-block codeplug read from a bench radio (135,168 bytes), a 64-entry table gives 3,618 bytes of LZ4, a 4096-entry one
+is small because codeplug blocks repeat over short distances (records of 56, 24 or 80 bytes, padding runs). On a
+33-block codeplug (135,168 bytes), a 64-entry table gives 3,618 bytes of LZ4, a 4096-entry one
 3,692, a full search about 3,500. Runs of one byte only (no table at all) give 17,397: the table pays for itself on
 any link.
 
@@ -317,9 +321,11 @@ changed blocks fit, direct mode otherwise or with `--direct`.
 The TFTP server's codeplug write (`tftp.md` 4) uses the same area. The first word of its first sector says whose
 record is there (`STORAGE_STAGE_MAGIC_TFTP`, `STORAGE_STAGE_MAGIC_CPSF`):
 
-- At boot `cps_fast_resume` runs first and leaves a TFTP record alone; `tftp_codeplug_resume` leaves ours alone.
+- At boot, `cps_fast_resume` runs first and leaves a TFTP record alone; `tftp_codeplug_resume` leaves a fast
+  protocol record alone.
 - BEGIN staged is refused (reason 5) while a TFTP write is open or a record of either kind is there.
-- A TFTP write is refused while a staged session is open, a commit runs, or our record waits for the boot.
+- A TFTP write is refused while a staged session is open, a commit runs, or a fast protocol record waits for the
+  boot.
 - A record sector whose first word is erased but whose other bytes are not (a torn erase) is erased at BEGIN.
 
 Both run in the host link task, so the checks don't race.
@@ -337,8 +343,8 @@ Both run in the host link task, so the checks don't race.
 | LZ4 stream | 1 to 4128 bytes per block |
 | staged blocks | stage_max: (staging size / 4096) - 1, at most 64 (63 for a 256 KB area) |
 | session time-out | 10 s after the last request |
-| RAM | about 200 B of state (STM32F4 radio); the 4 KB storage sector buffer and the debug link's buffers are shared |
-| flash | about 3.9 KB (STM32F4 radio) with the switch on, nothing with it off |
+| RAM | about 200 B of state (STM32F4); the 4 KB storage sector buffer and the debug link's buffers are shared |
+| flash | about 3.9 KB (STM32F4) with the switch on, nothing with it off |
 
 ## 9. Example exchange
 
@@ -369,12 +375,13 @@ channel 3 and writes the block back staged. Payloads in hex; each travels in a d
 | > | `08` | STATUS |
 | < | `00 04 01 01 00 01 00 00` | OK, done, staged, 1 block, 1 copied, no refusal |
 
-The read took 2 requests (SUMS, READ) and about 1 KB on the wire, where the CPS's 32-byte reads of the same 4 KB take 128 requests and
-5.5 KB. The CPS's chunked reads (the web editor's 32 KB on USB) move the full 4 KB plus the codeplug's blank blocks.
+The read took 2 requests (SUMS, READ) and about 1 KB on the wire, where the CPS's 32-byte reads of the same 4 KB take
+128 requests and 5.5 KB. The CPS's chunked reads (the web editor's 32 KB on USB) move the full 4 KB plus the codeplug's
+blank blocks.
 
 ## 10. Speed
 
-What a transfer costs, on a 33-block codeplug (the bench radio's, 135 KB in blocks that aren't blank):
+This table shows what a transfer costs, on a 33-block codeplug (135 KB in blocks that aren't blank):
 
 | Transfer | Bytes on the wire | 115200 baud cable | USB |
 |---|---|---|---|
@@ -385,31 +392,24 @@ What a transfer costs, on a 33-block codeplug (the bench radio's, 135 KB in bloc
 | fast, write one changed channel | one block: about 0.8 KB of stream | under 0.1 s on the wire | |
 | fast, verify after a write | SUMS of the written blocks, 72 bytes per 16 | a few round trips | a few ms |
 
-Writes are limited by the flash, not the link. A 4 KB sector erase and program take some 60 ms on a
-W25Q128 SPI NOR (the erase alone up to 400 ms at worst). A direct block costs two of them (journal and target), a staged block
-three (slot, journal, target). Only changed blocks are written, where a CPS write rewrites every sector of its regions
-(qdmr) or every sector with a change (the web editor).
+Writes are limited by the flash, not the link. A 4 KB sector erase and program take some 60 ms on a W25Q128 SPI NOR (the
+erase alone up to 400 ms at worst). A direct block costs two of them (journal and target), a staged block three (slot,
+journal, target). Only changed blocks are written, where a CPS write rewrites every sector of its regions (qdmr) or
+every sector with a change (the web editor).
 
 ## 11. Alternative considered: the RAM stub
 
 The flash stubs (`stub/README.md`, `stub-stm32f4.md`) already offer CRC-compared sector writes, blank detection and,
 on the HR_C7000 stub, LZ4 reads. The codeplug could be transferred through them instead, with no protocol code in
-the application. It was not chosen:
+the application. The protocol runs in the application instead, for these reasons:
 
 | | In the application (this protocol) | Through the RAM stub |
 |---|---|---|
-| Flash (STM32F4 radio) | about 3.9 KB | about 0.8 KB for `CONFIG_STUB_ENTRY` (on by default) |
-| RAM (STM32F4 radio) | about 0.2 KB | 8 KB: the stub's staging buffer (`CONFIG_STUB_ENTRY` takes RAM from 87 % to 94 %) |
+| Flash (STM32F4) | about 3.9 KB | about 0.8 KB for `CONFIG_STUB_ENTRY` (on by default) |
+| RAM (STM32F4) | about 0.2 KB | 8 KB: the stub's staging buffer |
 | The radio meanwhile | keeps working; the codeplug is re-read at the end | stops (the stub owns the SoC); a restart at the end |
 | Power-cut safety | the journal and the staged commit | the stub writes sectors in place: a cut mid-write leaves a broken sector |
 | Refusals | the radio enforces its areas | the host must; the stub writes any sector |
 | VFO and settings | as the CPS | not seen |
 
 The stub stays the tool for firmware and whole-flash work.
-
-## 12. Open points
-
-- Not yet run on a radio: the HIL test (a read against the CPS, a staged write, a power cut during a commit) is to be
-  written once the owner flashes a build with the switch. The web editor speaks the protocol
-  (`site/static/js/codeplug/fastlink.js`) and is tested against the host simulator only; it keeps the CPS for
-  radios that don't list `CPS_FAST`.

@@ -1,28 +1,26 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # Open-firmware CPS interoperability
 
-This spec describes the serial protocol and the codeplug memory layout that the open-firmware CPS and qdmr's MK22 and UV380
-open-firmware drivers use. A new implementation can use it to build an interop shim, so that existing PC tools can
-read and write our radios. It covers wire formats and stored data formats only. How the new firmware stores its own data internally
-is a separate decision. The shim can translate between the image described here and our own storage, or it can keep
-this image as the storage.
+This page describes the serial protocol and the codeplug memory layout that open-firmware PC tools use: the
+open-firmware CPS, and qdmr's MK22 and UV380 open-firmware drivers. It covers wire formats and stored data formats
+only. "The radio" on this page is any radio that speaks the protocol. RadioFoundry's shim implements it
+(`core/cps/cps_openfw.c`, [cps-protocol.md](cps-protocol.md)), and RadioFoundry keeps this image as its codeplug
+storage ([codeplug-native.md](codeplug-native.md)).
 
-Sources: qdmr's open-firmware drivers for the MK22 and the UV380 families (GPL-3, github.com/hmatuschek/qdmr; only protocol
-facts were taken from it) and the behavior of RadioFoundry's own implementation (`core/cps/cps_openfw.c`,
-`core/codeplug/`). The open-firmware CPS is closed source. What it reads and writes is what the radio accepts and what
-qdmr does.
-
-| Contents | |
+| Sections | Contents |
 |---|---|
 | 1, 2, 3 | Transports and framing, requests, memory areas |
 | 4 | Radio info and radio types |
 | 5, 6 | The `D` data service commands, the hotspot mode switch |
 | 7 | The codeplug image: address mapping, EEPROM map, records, DMR ID database, voice prompts, settings block |
-| 8, 9, 10 | Byte order, version differences, open questions |
+| 8, 9 | Byte order, version differences |
+
+Section numbers are identifiers: code and other pages cite them.
 
 Conventions: "BE" is big endian and "LE" is little endian. Offsets are hexadecimal unless they are plainly decimal
-counts. "Image address" means the address the PC tool puts on the wire. Strings in the codeplug are padded with 0xFF,
+counts. "Image address" means the address the PC tool puts on the wire. Strings in the codeplug are padded with `0xFF`,
 not NUL terminated, unless stated otherwise.
 
 ## 1. Transports and framing
@@ -32,11 +30,10 @@ not NUL terminated, unless stated otherwise.
 | STM32F405 radios | USB full speed CDC-ACM, VID 0x1FC9 PID 0x0094; qdmr matches on the VID and PID only | USB bulk packets (64 bytes max), reassembled as below |
 | NXP MK22 radios | USB full speed CDC-ACM, VID 0x1FC9 PID 0x0094 | as STM32 |
 | HR_C7000 radios with no USB | Programming cable on a UART at 115200 8N1, through a USB-serial adapter. No USB on the radio | A request ends after 3 ms without a received byte, or when the header gives the length. Image at the STM32 addresses |
+| STM32 radios in RadioFoundry's USB network mode | USB CDC-NCM (VID 0x1FC9 PID 0x0096, no serial port). The serial protocol is carried in UDP datagrams to port 3334 at the radio's address | one datagram is one USB packet. Replies go back to the address and port that sent last. One client at a time |
 
-| STM32 radios in our USB network mode | USB CDC-NCM (VID 0x1FC9 PID 0x0096, no serial port). The serial protocol is carried in UDP datagrams to port 3334 at the radio's address | one datagram is one USB packet. Replies go back to the address and port that sent last. One client at a time |
-| MK22 radios in our USB network mode | Composite device VID 0x1FC9 PID 0x0095: CDC-ACM (interfaces 0-1) plus CDC-NCM (interfaces 2-3) | as USB |
-
-qdmr finds radios only by VID 0x1FC9 and PID 0x0094. A radio in network mode, or one behind a generic USB-serial adapter, has to be picked by port.
+qdmr finds radios only by VID 0x1FC9 and PID 0x0094. Pick a radio in network mode, or one behind a generic USB-serial
+adapter, by its port.
 
 ### 1.1 USB reassembly (STM32 and MK22)
 
@@ -53,20 +50,17 @@ while a request is being handled are dropped. The PC waits for each reply before
   Packets are then appended until the expected count is reached or a short packet arrives.
 - The request buffer is 2048 bytes on the STM32 radios and 1536 bytes on the MK22. A request that would overflow it
   is discarded, and the radio answers with a single `-` (0x2D).
-- The radio clears the request buffer before each new request. The text command (`C` 2) relies on this for NUL
-  termination.
+- The text command (`C` 2) can arrive without its NUL: the bytes after a request read as zero.
 
 ### 1.2 UART framing (radios without USB)
 
-- The receive interrupt appends bytes to a 2048 byte request buffer. While a request is being handled, received
-  bytes are dropped.
-- When 3 ms have passed since the last byte, the main loop takes the bytes as one request. It handles the request,
-  writes the reply on UART0 from the main loop, and clears the buffer.
-- If the request overflowed the buffer, the reply is `-`.
-- For 10 s after a request a "CPS session" is active. Debug text on UART0 (a build option) is suppressed during the
-  session, so it can never land in the middle of a reply.
-- In hotspot mode the bytes go to a separate 1024 byte ring instead, and are split into MMDVM frames by the frame
-  length byte (section 6).
+- A request is at most 2048 bytes. Bytes received while a request is being handled are dropped.
+- When 3 ms have passed since the last byte, the bytes so far are one request. The radio handles it and sends the
+  reply on the same UART.
+- If the request was longer than 2048 bytes, the reply is `-`.
+- For 10 s after a request, a "CPS session" is active. The radio sends no other text on the port during the session,
+  so nothing lands in the middle of a reply.
+- In hotspot mode, the bytes are split into MMDVM frames by the frame length byte instead (section 6).
 - The radio info reports the board's radio type (4); a board without a `radio_type` hook reports 6.
 
 ### 1.3 Addresses and lengths
@@ -84,7 +78,7 @@ The first byte of a request selects the command.
 | `W` (0x57) | Write. On the MK22 this is the real write command. On the STM32 radios and the HR_C7000 radios it is a "fake write": the radio acknowledges it (echoes bytes 0-1) and does nothing | all |
 | `X` (0x58) | Write, on the STM32 radios and the HR_C7000 radios (sub commands as for `W`) | STM32, HR_C7000 |
 | `C` (0x43) | Control command | all |
-| `D` (0x44) | Our DMR data service host commands (section 5). A build with USB debug commands uses `D` for the debug console | all of our builds |
+| `D` (0x44) | DMR data service host commands (section 5) | RadioFoundry (answered as failed) |
 | 0xE0 | First byte of an MMDVM frame: switches to hotspot mode (section 6) | all, when a hotspot type is set |
 | anything else | Answered with `-` | |
 
@@ -108,16 +102,16 @@ Reply on success:
 | 1 | 2 | Length actually returned, BE |
 | 3 | n | Data |
 
-On failure the reply is a single `-`. The original firmware clips the length to its reply buffer size minus 3 (2045).
-RadioFoundry streams the reply in small pieces instead of building it in a buffer, so it clips at 32768: a client that reads
-large areas (the web flasher's backup) asks for 32 KB at a time and takes what comes back, which is 2045 bytes from
-the original firmware and older RadioFoundry builds. qdmr checks that the returned length equals the requested one, and asks
-for 2045 or less. The radio info area always returns its own structure length, whatever length was asked for.
+On failure, the reply is a single `-`. Other open firmware clips the length to its reply buffer size minus 3 (2045).
+RadioFoundry streams the reply in small pieces instead of building it in a buffer, so it clips at 32768. A client that
+reads large areas (the web flasher's backup) asks for 32 KB at a time and takes what comes back, which can be 2045
+bytes. qdmr checks that the returned length equals the requested one, and asks for 2045 or less. The radio info area
+always returns its own structure length, whatever length was asked for.
 
 Send the header and the first data in one USB write. qdmr (0.15) reads a reply as soon as part of it has arrived and
-doesn't wait for the rest. A 32-byte block sent as the header and then the data reached it short. qdmr then read the
-late data byte as the next reply's first byte, reported an error and asked the radio to reboot. One write of 35 bytes
-fits a single full-speed USB packet, as the original firmware sends it.
+doesn't wait for the rest. A 32-byte block sent as the header and then the data reaches it short: qdmr then reads the
+late data byte as the next reply's first byte, reports an error, and asks the radio to reboot. One write of 35 bytes
+fits a single full-speed USB packet.
 
 ### 2.2 `W` / `X`: write
 
@@ -133,18 +127,18 @@ fits a single full-speed USB packet, as the original firmware sends it.
 The reply on success is 2 bytes: byte 0 and byte 1 of the request echoed. On failure it is a single `-`, and any
 pending sector is dropped. Data lengths are clipped to the request buffer size minus 8.
 
-Special cases the radio applies to sub commands 1-3 (and 4 on the MK22). An interop shim must reproduce them:
+The radio applies these special cases to sub commands 1-3 (and 4 on the MK22). An interop shim reproduces them:
 
 | Case | Behavior |
 | --- | --- |
 | Calibration window, flash image 0x10000..0x101FF (STM32 and HR_C7000 radios) | Preparing sector 0x10 succeeds without reading flash. Data inside the window goes to the radio's working calibration copy. The commit saves that copy. Reads of the window are served from the copy (2.1). On an HR_C7000 radio the copy is the UV380-format table: the radio's own factory calibration is not exposed, and the CPS has no calibration window of its own (the sector is plain data). The MK22 family has no window: its calibration is plain flash at 0xF000 (working copy) and 0x8F000 (factory) |
-| Codeplug settings area, EEPROM image 0xE000..0xEFFF | RadioFoundry only. At the commit the radio keeps its own sector when its area is valid and the pending one isn't, or its area is of a newer version (`codeplug-settings.md` 6). The commit is acknowledged either way, so a CPS that writes 0xFF there doesn't erase the settings |
-| Quick-key slots, EEPROM image 0x7524..0x7537 (10 entries of 2 bytes) | Written like the rest of the codeplug. RadioFoundry keeps the key assignment there (`ui.md` 3.1); values another firmware left are ignored |
-| Channel bank 0 rewritten (a write that falls entirely inside EEPROM image 0x3780..0x538F) | Remembered. At "save and reboot" (`C` 6 0) the radio re-reads the zones and channels, selects the All Channels zone, and points it at its last used channel, or else the first channel in use |
+| Codeplug settings area, EEPROM image 0xE000..0xEFFF | RadioFoundry only. At the commit, the radio keeps its own sector when its area is valid and the pending one isn't, or its area is of a newer version ([codeplug-settings.md](codeplug-settings.md) 6). The commit is acknowledged either way, so a CPS that writes `0xFF` there doesn't erase the settings |
+| Quick-key slots, EEPROM image 0x7524..0x7537 (10 entries of 2 bytes) | Written like the rest of the codeplug. RadioFoundry keeps the key assignment there ([ui.md](ui.md) 3.1); values another firmware left are ignored |
+| Channel bank 0 rewritten (a write that falls entirely inside EEPROM image 0x3780..0x538F) | Remembered. At "save and reboot" (`C` 6 0), the radio re-reads the zones and channels, selects the All Channels zone, and points it at its last used channel, or otherwise the first channel in use |
 | LUCZ rewritten (a write inside 0x6000..0x6049) | Remembered. The radio then doesn't overwrite the LUCZ with its own copy at "save and reboot" |
 | Voice prompt header written | If a sub command 2 write starts at the voice prompt header address (new or old location, section 7.6) and its first 8 bytes carry a valid magic and version, the radio switches announcements to voice level 1 |
-| DMR ID database upload | Preparing the sector at image 0x30000 marks a DMR ID upload. On Close (`C` 5) the radio re-reads the database header. The check uses the address without the 128 KB offset, so on STM32 radios it doesn't match the real database location (0x50000). A new implementation should re-read the database after any write that touches it |
-| VFO overlay on read (STM32 and HR_C7000 radios) | When a flash read starts at or before 0x7590 and runs past the VFO pair, the radio replaces those 112 bytes in the reply with its live VFO settings in codeplug format. The check uses the radio's in-memory record size, so the read must extend somewhat beyond 0x75FF. A tool that reads 32-byte blocks never triggers it. A large-block CPS read does. The MK22 doesn't do this. The CPS sends `C` 6 2 first, so the VFOs are already saved |
+| DMR ID database upload | Preparing the sector at image 0x30000 marks a DMR ID upload. On Close (`C` 5), the radio re-reads the database header. RadioFoundry re-reads the database after any write that touches it (the database is at 0x50000 on the STM32 mapping, 7.5) |
+| VFO overlay on read (STM32 and HR_C7000 radios) | When a flash read starts at or before 0x7590 and runs past the VFO pair, the radio replaces those 112 bytes in the reply with its live VFO settings in codeplug format. The read has to extend somewhat beyond 0x75FF. A tool that reads 32-byte blocks never triggers it; a large-block CPS read does. MK22 radios don't do this. The CPS sends `C` 6 2 first, so the VFOs are already saved |
 
 ### 2.3 `C`: control
 
@@ -180,10 +174,10 @@ request starts with a zero byte ([cps-protocol.md](cps-protocol.md) 2.1, `cps.ju
 | 10 | Wait 10 ms |
 | 8, 9, other | Ignored |
 
-RadioFoundry takes `C` 6 0 and `C` 6 1 only in programming mode: after a `C` 0, with no quiet longer than the session time
-(10 s) since. Without it the reply is `-` and nothing happens (`cps.reboots_ignored` on the debug link). On a radio
-whose debug link shares the CPS's serial port, any three bytes "C 6 1" would otherwise reboot it (bench 2026-10-15).
-qdmr sends `C` 0 first (the typical session below).
+RadioFoundry takes `C` 6 0 and `C` 6 1 only in programming mode: after a `C` 0, with no quiet longer than the session
+time (10 s) since. Without it, the reply is `-` and nothing happens (`cps.reboots_ignored` on the debug link). On a
+radio whose debug link shares the CPS's serial port, any three bytes "C 6 1" would otherwise reboot it. qdmr sends
+`C` 0 first (the typical session below).
 
 A typical session, as qdmr does it:
 - Read: `C` 0, `C` 1, three `C` 2 lines, `C` 3, `C` 6 3, `C` 6 2, the reads, then `C` 5.
@@ -199,25 +193,22 @@ A typical session, as qdmr does it:
 | 5 | MCU ROM | Offset into the MCU's program flash | STM32: offset from 0x08000000. MK22: absolute address from 0. HR_C7000: offset from 0x03000000, bounds-checked to 1 MB (other builds don't check bounds) |
 | 6 | Display buffer | Byte offset into the frame buffer | MK22: 128x64 mono, 1 bit per pixel (1024 bytes, 8-pixel pages). STM32 and HR_C7000: RGB565, 2 bytes per pixel (160x128 on the STM32 radios). Some panels have an 8-row top offset: the first 8 rows read 0xFF (white). Used for screenshots |
 | 7 | WAV buffer | Byte offset into the audio / hotspot buffer (2400 bytes on STM32) | Read or write raw PCM (8 kHz, 16 bit) |
-| 8 | AMBE compress | ignored | Encodes the PCM in the WAV buffer (960 bytes = 3 voice frames) and returns 27 bytes of AMBE+2, zero-padded to the requested length (the CPS asks for 32). Then clears 960 bytes of the WAV buffer. Used by the CPS to make voice prompts. **The new firmware carries no AMBE codec, so the shim should answer `-`** |
+| 8 | AMBE compress | ignored | Encodes the PCM in the WAV buffer (960 bytes = 3 voice frames) and returns 27 bytes of AMBE+2, zero-padded to the requested length (the CPS asks for 32). Then clears 960 bytes of the WAV buffer. Used by the CPS to make voice prompts. RadioFoundry answers `-` |
 | 9 | Radio info | ignored | Section 4 |
-| 10 | Flash security registers | Register address in the SPI flash's OTP security register space | Not on the MK22. Used by the CPS for identification. The shim may answer `-` or return the chip's registers |
+| 10 | Flash security registers | Register address in the SPI flash's OTP security register space | Not on the MK22. Used by the CPS for identification. RadioFoundry returns the chip's registers ([cps-protocol.md](cps-protocol.md) 2.2) |
 
-A client that reads a radio running the original firmware (the web flasher's backup before an install,
-[web-flasher.md](../dev/web-flasher.md)) keeps to what that firmware is known to take:
+A client that reads a radio running another open firmware (the web flasher's backup before an install,
+[web-flasher.md](../dev/web-flasher.md)) keeps to these limits:
 
 - Ask at most 2045 bytes per `R`. The reply buffer holds no more.
-- Area 5 has no bounds check on the STM32 builds. A read past the end of the MCU flash can fault the radio. Read
-  exactly the MCU flash, from its base to its end, as the board data gives them.
-- Area 10 may not be answered at all: one STM32 build sent nothing, not even `-`. Don't ask it, or don't wait on it.
+- Area 5 can have no bounds check. A read past the end of the MCU flash can fault the radio. Read exactly the MCU
+  flash, from its base to its end, as the board data gives them.
+- Area 10 can go unanswered, without even a `-`. Don't ask for it, or don't wait on it.
 - Area 1 at 0x7590-0x75FF is the live VFO overlay (2.2). Read that range in 32-byte requests to get the flash's own
   bytes.
-- Send no `C` command when only reading. `C` 6 2 saves settings, and once left a radio's USB hung.
-- Long runs of reads hung one radio once. Reads change nothing, so a read that goes unanswered can be asked again, and
-  a backup can stop and continue later.
-
-These points come from one radio and this spec, not from the original firmware's source. Not all are confirmed on
-every build.
+- Send no `C` command when only reading. `C` 6 2 saves settings and can leave a radio's USB hung.
+- A long run of reads can hang a radio. Reads change nothing, so ask again for a read that goes unanswered; a backup
+  can stop and continue later.
 
 ## 4. Radio info (area 9)
 
@@ -245,52 +236,22 @@ The structure is little endian, packed, 46 bytes in struct version 3.
 | 8 | a UV380-class radio with a BGR panel | qdmr (UV380 driver) |
 | 9 | MD-2017 / RT-82 | qdmr (UV380 driver) |
 | 10 | the same radio as 8 with an RGB panel (the type follows the detected panel color order) | qdmr (UV380 driver) |
-| 11 | an HR_C7000 radio (known to the open-firmware CPS since E2026.07.13) | **not known to qdmr**: it fails with an "Unknown ... variant" error |
+| 11 | an HR_C7000 radio (known to the open-firmware CPS) | **not known to qdmr**: it fails with an "Unknown ... variant" error |
 
 qdmr chooses its "extended callsign DB" layout when features bit 1 is set and bit 2 is clear.
 
-## 5. `D`: DMR data service host commands (ours)
+## 5. `D`: data service host commands
 
-This is our protocol: it has no open-firmware counterpart and no other users yet. It is available in programming mode on
-the serial port, and on the STM32 radios also over UDP 3334 in network mode. It doesn't run in hotspot mode.
-
-Each request is one USB packet (64 bytes at most) or one UART frame: `D`, the sub command, then the arguments. Every
-reply starts with `D`, the sub command, and a result byte: 1 means OK; 0 means failed, busy or nothing available.
-
-| Sub | Request arguments | Reply after the result byte |
-| --- | --- | --- |
-| 1 Clear | none | none. Fails while a transmission is in progress |
-| 2 Append bytes | len (1 byte), then len bytes (up to 61) | none. Appends to a 300 byte message buffer; fails when full |
-| 3 Append burst | data type (1), flags (1: bit 0 = the payload already holds its CRC / mask, send it verbatim), len (1, at most 24), payload | none. Up to 64 bursts; fails while busy |
-| 4 Send | kind (1), flags (1), destination (3 bytes BE), port (2 bytes BE; for kind 3: byte 0 = DPF, low 4 bits of byte 1 = SAP) | none. Result 1 means queued |
-| 5 Status | none | The result byte is the TX status (0 idle, 1 running, 2 done, 3 failed); then the received bursts waiting (1 byte) and the inbox messages not yet read by the host (1 byte) |
-| 6 Pop RX burst | none | data type, flags (bit 1 = the receiver reported a CRC error), len, payload (oldest first; the queue holds the last 8) |
-| 7 Pop message | none | source ID (3 BE), destination ID (3 BE), group flag (1), text length (1), text (Latin-1). The oldest message the host hasn't read. The inbox holds 4 |
-| 8 Network mode | 1 on, 0 off, 0xFF query | saved mode (1 byte), network link up (1 byte). Saved with the other settings (for example by `C` 6 0). Takes effect at the next boot |
-
-Send kinds:
-
-| Kind | Meaning |
-| --- | --- |
-| 0 | Send the appended bursts as they are, at whatever rate they were built |
-| 1 | TMS text message from the appended bytes (Latin-1 text) |
-| 2 | UDP datagram from the appended bytes, to and from the given port |
-| 3 | Unconfirmed packet from the appended bytes, with the DPF and SAP given in the port bytes |
-
-Send flags:
-- bit 0: group destination (a talkgroup, not an individual).
-- bit 1: request a TMS acknowledgement (kind 1).
-- bits 2-3: block rate for kinds 1-3 (0 Rate 1/2, 1 Rate 3/4, 2 Rate 1). The value 3 is refused.
-
-Data types are the ETSI TS 102 361-1 values: 0 PI header, 1 voice LC header, 2 terminator with LC, 3 CSBK, 4 MBC
-header, 5 MBC continuation, 6 data header, 7 Rate 1/2 data, 8 Rate 3/4 data, 9 idle, 10 Rate 1 data.
+The first byte `D` is reserved for DMR data service host commands, which have no open-firmware counterpart.
+RadioFoundry answers every `D` request with `D`, the sub command, and a result byte of 0 (failed)
+([cps-protocol.md](cps-protocol.md) 2.4).
 
 ## 6. Hotspot mode switch (0xE0)
 
 The MMDVM protocol itself is public and is specified separately. The switch works as follows:
 
 - **Entering.** In programming mode, a request whose first byte is 0xE0 and that is at least 3 bytes long switches
-  the radio to hotspot mode, if a hotspot type is configured (MMDVM or BlueDV) and DMR isn't disabled. There is no
+  the radio to hotspot mode, if a hotspot type is configured and DMR isn't disabled. There is no
   CPS reply. The request is queued as the first MMDVM frame. The radio also stops GPS NMEA output, so MMDVMHost
   doesn't see stray text.
 - **Trial.** Line noise on a UART (a loose cable) is full of 0xE0 bytes, so the switch starts a trial first. The radio
@@ -300,20 +261,19 @@ The MMDVM protocol itself is public and is specified separately. The switch work
   frame that isn't host-like, a byte the framer throws away, or 500 ms without the second frame. The debug link counts
   failed trials (`hostlink.noise`).
 - **USB (STM32, MK22).** From then on, every USB packet starting with 0xE0 and at least 3 bytes long is taken as one
-  MMDVM frame. The radio does not parse the MMDVM length byte. A packet that doesn't fit in the frame ring is dropped
+  MMDVM frame. The radio doesn't parse the MMDVM length byte. A packet that doesn't fit in the frame ring is dropped
   and counted.
-- **UART (radios without USB).** Bytes are split into frames by the MMDVM length byte, resynchronizing on 0xE0. A host may
-  send frames back to back, so gaps can't be used. Bytes that came with the first request are split the same way.
+- **UART (radios without USB).** Bytes are split into frames by the MMDVM length byte, resynchronizing on 0xE0. A host
+  can send frames back to back, so gaps can't be used. Bytes that came with the first request are split the same way.
 - **UDP 3334 (network mode).** A datagram is treated like a USB packet.
-- **Leaving.** In MMDVMHost mode the radio leaves after 20 s without traffic from the host. In BlueDV mode the user
-  leaves. The radio then returns to programming mode. While in hotspot mode, `R`, `W`, `X`, `C` and `D` are not
-  answered.
+- **Leaving.** The radio leaves after 20 s without traffic from the host, or when the user leaves. The radio then
+  returns to programming mode. While in hotspot mode, `R`, `W`, `X`, `C`, and `D` aren't answered.
 
 ## 7. The codeplug image
 
 The PC tools see two images, "EEPROM" and "flash", in the MK22 radios' terms. They have a 64 KB I2C EEPROM and a 1 MB
-SPI flash. The STM32 radios and the HR_C7000 radios have no EEPROM: both images live in one large SPI flash. The tools address
-it with the per-family offsets below. A new firmware can store the data any way it likes, as long as the shim
+SPI flash. The STM32 radios and the HR_C7000 radios have no EEPROM: both images live in one large SPI flash. The tools
+address it with the per-family offsets below. A firmware can store the data any way it likes, as long as its shim
 presents these addresses.
 
 The CPS reads the image as stored, whatever it holds. RadioFoundry uses it only when its records in use look like an
@@ -397,8 +357,7 @@ write the 80-channel layout.
 | 0x40 | 24 | DSP firmware version |
 | 0x58 | 8 | Reserved |
 
-The firmware treats all of these as informational (inherited from the vendor layout). The shim should store and return
-them unchanged.
+All of these are informational. RadioFoundry stores and returns them unchanged.
 
 #### 7.3.2 General settings (EEPROM 0x00E0, 40 bytes)
 
@@ -413,9 +372,9 @@ them unchanged.
 | 0x1E | 2 | Reserved |
 | 0x20 | 8 | Programming password |
 
-Only the callsign and the DMR ID matter to the firmware. The rest is vendor layout and should be kept.
-The group and private hang bytes (0x18, 0x19) have no unit here. Our firmware reads them as the reply window,
-assuming 500 ms steps (`codeplug.c` `GEN_HANG_UNIT_MS`, `dmr-voice.md` 7); that unit is not confirmed.
+Of these, RadioFoundry uses the callsign, the DMR ID, and the hang bytes, and keeps the rest as written. The group
+and private hang bytes (0x18, 0x19) have no unit in the layout. RadioFoundry reads them as the reply window in 500 ms
+steps (`codeplug.c` `GEN_HANG_UNIT_MS`, [dmr-voice.md](dmr-voice.md) 7).
 
 #### 7.3.3 Channel (56 bytes; EEPROM 0x3790 + 56 x (n-1) for n = 1..128, flash banks for 129..1024; VFOs too)
 
@@ -433,19 +392,19 @@ assuming 500 ms steps (`codeplug.c` `GEN_HANG_UNIT_MS`, `dmr-voice.md` 7); that 
 | 0x20 | 2 | RX tone (LE): 0xFFFF or 0 = none. CTCSS: BCD of tenths of Hz (0x0885 = 88.5 Hz), bits 14-15 clear. DCS: bit 15 set, bit 14 set = inverted, the low bits are the code's octal digits written as hex digits (D023 = 0x8023, D023I = 0xC023) |
 | 0x22 | 2 | TX tone, same encoding |
 | 0x24 | 1 | Longitude, high byte |
-| 0x25 | 1 | SFR byte A (ours; was unused, see below) |
+| 0x25 | 1 | SFR byte A (RadioFoundry; see below) |
 | 0x26 | 1 | flag byte 1 (bits below) |
-| 0x27 | 3 | Per-channel DMR ID override, 24-bit BE, valid when flag 1 bit 7 is set. When unset, the CPS writes 00 16 00 (the vendor defaults of the fields these bytes replaced) |
-| 0x2A | 1 | SFR byte B (ours; was unused, see below) |
+| 0x27 | 3 | Per-channel DMR ID override, 24-bit BE, valid when flag 1 bit 7 is set. When unset, the CPS writes 00 16 00 (the legacy defaults of the fields these bytes replaced) |
+| 0x2A | 1 | SFR byte B (RadioFoundry; see below) |
 | 0x2B | 1 | RX group list (TG list) index, 1-based, 0 = none |
 | 0x2C | 1 | Color code 0-15 |
 | 0x2D | 1 | APRS configuration index, 1-based, 0 = none |
 | 0x2E | 2 | TX contact index, LE, 1-based, 0 = none |
-| 0x30 | 1 | flag1: bits 0-1 talker alias TX on TS1, bits 2-3 on TS2 (0 off, 1 APRS, 2 text, 3 both). RadioFoundry reads APRS as "our position in this channel's calls" (GPS Info, `dmr-voice.md` 3.1), in builds without APRS too |
+| 0x30 | 1 | flag1: bits 0-1 talker alias TX on TS1, bits 2-3 on TS2 (0 off, 1 APRS, 2 text, 3 both). RadioFoundry reads APRS as "the radio's position in this channel's calls" (GPS Info, [dmr-voice.md](dmr-voice.md) 3.1), in builds without APRS too |
 | 0x31 | 1 | flag2: bit 6 = timeslot 2 (clear = TS1) |
-| 0x32 | 1 | flag3: bits 6-7 = 0b11 STE, bit 5 non-STE.  |
-| 0x33 | 1 | flag4: bit 7 power (vendor; superseded by 0x19), bit 6 VOX, bit 5 zone scan skip, bit 4 all-channel scan skip, bit 3 talkaround (unused), bit 2 RX only, bit 1 bandwidth 25 kHz (clear = 12.5 kHz), bit 0 squelch (vendor) |
-| 0x34 | 2 | VFO offset frequency (vendor; qdmr uses it as the VFO TX offset) |
+| 0x32 | 1 | flag3: bits 6-7 = 0b11 STE, bit 5 non-STE |
+| 0x33 | 1 | flag4: bit 7 power (legacy; superseded by 0x19), bit 6 VOX, bit 5 zone scan skip, bit 4 all-channel scan skip, bit 3 talkaround (unused), bit 2 RX only, bit 1 bandwidth 25 kHz (clear = 12.5 kHz), bit 0 squelch (legacy) |
+| 0x34 | 2 | VFO offset frequency (legacy; qdmr uses it as the VFO TX offset) |
 | 0x36 | 1 | VFO flags: bits 4-7 step index (2.5, 5, 6.25, 10, 12.5, 25, 30, 50 kHz); bits 2-3 offset mode (qdmr) |
 | 0x37 | 1 | Squelch: 0 = the radio's default, 1-21 = level. Values above 21 are read as 10 |
 
@@ -463,20 +422,21 @@ Flag 1 (offset 0x26):
 | 4 | Out of band (set at run time on boards that have it, never saved) |
 | 3 | Use the fixed location |
 | 2 | Force DMO (direct mode on a duplex channel; qdmr calls it "simplex") |
-| 1 | SFR enabled for this channel (ours) |
-| 0 | Roaming (ours reads it: in a roaming zone, flagged channels narrow the sites to themselves; `dmr-roaming.md` 5.2) |
+| 1 | SFR enabled for this channel (RadioFoundry) |
+| 0 | Roaming (RadioFoundry reads it: in a roaming zone, flagged channels narrow the sites to themselves; [dmr-roaming.md](dmr-roaming.md) 5.2) |
 
-SFR bytes (ours; the CPS doesn't know them and leaves them as read). The SFR fields are only read when flag 1 bit 1 is set; byte B bit 6 (the tone burst) is read on every channel:
+The SFR bytes are RadioFoundry's; the CPS doesn't know them and leaves them as read. The SFR fields are read only when
+flag 1 bit 1 is set; byte B bit 6 (the tone burst) is read on every channel:
 
 | Byte | Bits | Meaning |
 | --- | --- | --- |
-| A (0x25) | 2-0 | Role: 0 off, 1 user of a standard SFR, 2 user of a Motorola ERDM repeater, 3 this radio is a standard SFR repeater, 4 this radio is an ERDM-style repeater |
-| A | 4-3 | Outbound framing: 0 auto (BS for the Motorola role, else TS), 1 MS sync, 2 TS1/TS2 sync, 3 BS sync |
+| A (0x25) | 2-0 | Role: 0 off, 1 user of a standard SFR, 2 user of an ERDM-style repeater, 3 this radio is a standard SFR repeater, 4 this radio is an ERDM-style repeater |
+| A | 4-3 | Outbound framing: 0 auto (BS for the ERDM-style user role, otherwise TS), 1 MS sync, 2 TS1/TS2 sync, 3 BS sync |
 | A | 5 | Inbound slot: 1 = TS2, 0 = TS1. The outbound slot is the other one |
 | A | 7-6 | Hang time index: 1 s, 2 s, 4 s, none |
 | B (0x2A) | 7 | Outbound color code set |
 | B | 6 | FM: the 1750 Hz tone burst at each PTT key-up ([radio-features.md](radio-features.md) 3.3). Read and written without the SFR flag. A byte of 0xFF reads as off (a writer that fills bytes it doesn't know); setting the bit on such a byte writes 0xCF (the unused bits 5-4 cleared), never 0xFF |
-| B | 3-0 | That color code (else the channel's) |
+| B | 3-0 | That color code (otherwise the channel's) |
 
 The repeater's timeout is the channel TOT, or 180 s when the TOT is 0.
 
@@ -502,8 +462,8 @@ Channels" zone after the real ones.
 | 0x00 | 16 | Name, 0xFF padded. 0xFF in the first byte means empty |
 | 0x10 | 4 | Talkgroup or ID: 8 BCD digits stored big endian (as the DMR ID in 7.3.2) |
 | 0x14 | 1 | Call type: 0 group, 1 private, 2 all call. 0xFF means empty |
-| 0x15 | 1 | Call receive tone (vendor) |
-| 0x16 | 1 | Ring style (vendor) |
+| 0x15 | 1 | Call receive tone (legacy) |
+| 0x16 | 1 | Ring style (legacy) |
 | 0x17 | 1 | Timeslot override: bit 0 set = no override; otherwise bit 1 is the timeslot minus 1. 0xFF = no override |
 
 #### 7.3.6 RX group lists (TG lists)
@@ -589,7 +549,7 @@ Flash image 0x00000 holds the custom data area:
 | 4 | Day theme colors (color radios) |
 | 5 | Night theme colors |
 
-A block's length can't change once written; the firmware rewrites a block only when the length is the same.
+A block's length can't change once written: a block is rewritten only with the same length.
 
 Calibration: on the STM32 and HR_C7000 radios, the window at flash image 0x10000..0x101FF is the working calibration
 copy (2.2). This address is physical, not offset. On an MK22 radio, calibration is at 0xF000 (working copy) and 0x8F000
@@ -600,8 +560,8 @@ HR_C7000 specifics:
   prompts) is placed at +0x700000 in the 16 MB data flash (`board.openfw_eeprom` 0x700000, `board.openfw_flash`
   0x720000, end 0xF00000). Below that is the radio's own data (settings, contacts, fonts, voice prompts,
   recordings, factory calibration), which is never touched. The window therefore covers 9 MB (to 0xFFFFFF).
-- **Collision with the radio's own firmware.** The window sits inside a region (0x6DC000..0xFFFFFF) that the original
-  firmware may use for recording and extended contacts. Going back to the original firmware and recording can
+- **Collision with the manufacturer's firmware.** The window sits inside a region (0x6DC000..0xFFFFFF) that the
+  manufacturer's firmware can use for recordings and extended contacts. Going back to that firmware and recording can
   overwrite the codeplug.
 - **Flash image offset.** The build uses the STM32 mapping: the EEPROM image at 0x700000 and the flash image at
   +0x20000 from it, so the custom data area and the EEPROM image don't overlap.
@@ -635,7 +595,7 @@ it are not read. Each record is:
   convention). The record size is 3 + 3/4 of the text length. qdmr's default text length is 16 characters (15 byte
   records) on the MK22 family and 32 (27 byte records) on the UV380 family.
 
-The radio looks IDs up by binary search, using a cache of 14 evenly spaced IDs once there are more than 40 records.
+Records are sorted, so a lookup can use a binary search.
 
 RadioFoundry takes a header only if its records end inside the open-firmware area (`openfw_end`, or the data
 flash's end on a board without a flash map). A larger count or record size is no database, so a lookup never reads
@@ -668,28 +628,18 @@ Prompt numbering, fixed part:
   phrases, power, channel mode, scan mode, timeslot mode, filter mode, zone mode, power mode, color code mode,
   hertz, settings update, star, hash, VOX, sweep scan mode, eco mode, duration, reverse repeater, distance, km/h,
   kilometers, then three unused slots.
-- That gives 88 fixed prompts. Entries from 88 onward follow the order of the language strings of the firmware the CPS targets; the
-  mono builds skip the theme strings.
+- That gives 88 fixed prompts. Entries from 88 onward follow the order of the language strings of the firmware the
+  CPS targets; the mono builds skip the theme strings.
 
-The voice prompt files are made with the AMBE codec, and the new firmware carries no codec. Whether the new firmware
-reads this file at all is a product decision. If it does, the language-string index list has to be supplied as interop data, which is an open question.
+The voice prompt files are made with the AMBE codec.
 
 ### 7.7 The radio's own settings block
 
-At EEPROM image 0x604B, right after the LUCZ, the firmware keeps its own non-volatile settings. This block is not a
-CPS codeplug structure, and the CPS doesn't interpret it. The first field is a 32-bit LE magic, which changes whenever
-the layout changes; on a mismatch the radio resets the block to defaults.
-
-| Family | Magic | Size |
-| --- | --- | --- |
-| STM32 base | 0x4780 | 0x74 |
-| STM32 with the DMR data settings | 0x4781 | 0x80 |
-| MK22 base | 0x4784 (0x4785 with GPS logging) | 112 |
-| HR_C7000 | 0x477C | |
-
-
-The new firmware should keep its settings elsewhere, and treat bytes 0x604B..0x605F of a codeplug write as noise
-(7.1).
+At EEPROM image 0x604B, right after the LUCZ, an open firmware keeps its own non-volatile settings. This block isn't
+a CPS codeplug structure, and the CPS doesn't interpret it. Its first field is a 32-bit LE magic that the firmware
+changes whenever the layout changes. RadioFoundry keeps its settings elsewhere
+([settings-store.md](settings-store.md)) and treats bytes 0x604B..0x605F of a codeplug write as noise (7.1); the
+Codeplug Editor never writes them.
 
 ## 8. Byte order summary
 
@@ -707,21 +657,13 @@ The new firmware should keep its settings elsewhere, and treat bytes 0x604B..0x6
 ## 9. Version differences to handle
 
 - **structVersion.** Version 3 (46 bytes, with features). qdmr reads version 1 (44 bytes, no features field) as well.
-- **radioType 11 (HR_C7000).** Known to the open-firmware CPS since E2026.07.13, unknown to qdmr (checked against its current source). RadioFoundry reports 6 on HR_C7000 boards, which qdmr accepts because the image mapping matches (7.4); qdmr then shows the UV380 model.
+- **radioType 11 (HR_C7000).** Known to the open-firmware CPS, unknown to qdmr. RadioFoundry reports 6 on HR_C7000
+  boards, which qdmr accepts because the image mapping matches (7.4); qdmr then shows the UV380 model.
 - **Panel types 8 and 10.** The type follows the panel's color order. The CPS needs it only for screenshots.
   qdmr treats the two alike.
-- **APRS magic.** 0x4153 now, 0x4152 in older records (7.3.8).
+- **APRS magic.** `0x4153` in the current layout, `0x4152` in older records (7.3.8).
 - **Voice prompt versions.** 8 for mono radios, 9 for color radios. A version mismatch makes the radio fall back to
   beeps.
-- **Our additions.** The SFR bytes (with the tone burst bit) and flag 1 bit 1, the `D` commands, the codeplug settings
-  area at EEPROM image 0xE000 ([codeplug-settings.md](codeplug-settings.md)) and the network mode USB identities
-  (PID 0x0095 / 0x0096) don't exist in R20260131. They are invisible to the CPS, which round-trips the bytes it read.
-
-## 10. Open questions
-
-1. Which flash image offset does the open-firmware CPS use for radio type 11? RadioFoundry reports type 6 and uses the STM32 mapping (7.4), which works with qdmr.
-2. Which radio type the HR_C7000 boards should report: 11 for the open-firmware CPS, or an STM32 type (today 6) so that qdmr works, or a qdmr change to add type 11.
-3. Exactly which EEPROM and flash ranges the closed open-firmware CPS reads and writes, beyond the qdmr ranges above
-   (themes, boot image, calibration, security registers). This needs a USB capture of a full CPS read and write.
-4. Whether to support voice prompt files (they need the language-string index list and AMBE playback).
-5. Whether the shim answers area 8 (AMBE compress) and area 10 (security registers) at all, or always with `-`.
+- **RadioFoundry additions.** The SFR bytes (with the tone burst bit) and flag 1 bit 1, the codeplug settings area at
+  EEPROM image 0xE000 ([codeplug-settings.md](codeplug-settings.md)), and the network mode USB identity (PID 0x0096)
+  are RadioFoundry's. They're invisible to the CPS, which round-trips the bytes it read.

@@ -1,14 +1,15 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # TCP services on the USB network link
 
-In the USB network personality ([usb-network.md](usb-network.md)) the radio has an address of its own on the link
-(the host's address xor 1, e.g. 12.0.39.20 for DMR ID 10005). With `CONFIG_NET_TCP` it runs a small TCP there and a
-few services on it. TCP never goes over the air: the IP gateway hands the TCP only segments addressed to the radio
-itself, and TCP to other radios' addresses is dropped as before.
+In the USB network personality ([usb-network.md](usb-network.md)), the radio has an address of its own on the link
+(the host's address xor 1, for example 12.0.39.20 for DMR ID 10005). With `CONFIG_NET_TCP`, it runs a small TCP there
+and a few services on it. TCP never goes over the air: the IP gateway hands the TCP only segments addressed to the
+radio itself, and drops TCP to other radios' addresses.
 
-Sources: RFC 9293 (TCP), RFC 6298 (retransmission timer), RFC 5681 3.1 (one segment after a timeout), RFC 5961
-(RST and SYN checks), RFC 1122 4.2.3.6 (keepalive), RFC 6528 (initial sequence numbers).
+The TCP follows RFC 9293 (TCP), RFC 6298 (retransmission timer), RFC 5681 3.1 (one segment after a timeout),
+RFC 5961 (RST and SYN checks), RFC 1122 4.2.3.6 (keepalive), and RFC 6528 (initial sequence numbers).
 
 ## 1. Switches
 
@@ -21,28 +22,29 @@ Sources: RFC 9293 (TCP), RFC 6298 (retransmission timer), RFC 5681 3.1 (one segm
 | `CONFIG_NET_RIGCTL` | = NET_TCP | Hamlib's network rig control, port 4532 (`core/net/rigctld.c`, section 6) |
 | `CONFIG_NET_APRSIS` | = NET_TCP and APRS | the radio's own APRS-IS client (`core/net/aprsis.c`, section 7) |
 
-A board without USB runs them over PPP on its host port (`ppp.md`), with 3 TCP connections instead of 4
-(`TCP_CONNS` in `platform/hrc7000/config.mk`). On a flash-tight board they fit only with link time optimization (its
-default; [feature-matrix.md](../feature-matrix.md), "Whole images"). Which radios send and receive AFSK: `aprs.md` 1.
+A board without USB runs the services over PPP on its host port ([ppp.md](ppp.md)), with 3 TCP connections instead
+of 4 (`TCP_CONNS` in `platform/hrc7000/config.mk`). On a board with little flash, they fit only with link-time
+optimization (that board's default; see the [feature matrix](../feature-matrix.md)). For which radios send and receive
+AFSK, see `aprs.md` 1.
 
 ## 2. TCP
 
-`core/net/tcp.c`, no RTOS calls: the host link task feeds it segments from the gateway (`ipGatewaySetTCP`) and calls
-`tcp_poll` on every pass in network mode (5 ms); segments go out through `ipGatewaySendLocal` to the host's MAC
-address, the host being the only neighbor and the router.
+`core/net/tcp.c` makes no RTOS calls. The host link task feeds it segments from the gateway (`ipGatewaySetTCP`) and
+calls `tcp_poll` on every pass in network mode (5 ms). Segments go out through `ipGatewaySendLocal` to the host's MAC
+address, because the host is the only neighbor and the router.
 
 | Item | Value |
 |---|---|
-| Connections | `TCP_CONNS` (4 by default) in all, TIME_WAIT included; 4 listening ports. A SYN takes a free slot, else the oldest TIME_WAIT, else the oldest FIN_WAIT_2 (reset) |
-| MSS | 536 (14 + 20 + 20 + 536 = 590 bytes, within the gateway's 600 byte frames); a smaller MSS option from the peer is honored |
+| Connections | `TCP_CONNS` (4 by default) in all, TIME_WAIT included; 4 listening ports. A SYN takes a free slot, otherwise the oldest TIME_WAIT, otherwise the oldest FIN_WAIT_2 (reset) |
+| MSS | 536 (14 + 20 + 20 + 536 = 590 bytes, within the gateway's 600-byte frames); a smaller MSS option from the peer is honored |
 | Options | MSS only (sent on SYN); no window scaling, SACK or timestamps |
 | Transmit | one buffer per connection, 1072 bytes (two segments) from SND.UNA on; data is sent as soon as it is written (no Nagle: the services write whole messages) |
 | Receive | in order only; a segment that doesn't start at RCV.NXT is dropped and answered with an ACK for RCV.NXT; old data overlapping new data is trimmed. The window offered is what the service can take |
 | Retransmission | RFC 6298 RTO, initial 1 s, minimum 200 ms (a USB round trip is about 1 ms), maximum 16 s, doubled per timeout; Karn's rule; after a timeout SND.NXT goes back to SND.UNA and one segment goes at a time until new data is acknowledged; an ACK up to the highest sequence number sent (SND.MAX) is accepted, so a peer that had it all doesn't get it twice; 7 retransmissions, then RST |
-| SYN | ours: 4 retries (about 31 s); a peer's repeated SYN gets the same SYN-ACK again |
+| SYN | the radio's own: 4 retries (about 31 s); a peer's repeated SYN gets the same SYN-ACK again |
 | Zero window | the persist timer probes with one byte, for as long as the peer answers |
 | Unknown port or connection | RST (RFC 9293 3.10.7.1); a SYN while every slot is busy gets nothing (the client tries again a second later) |
-| RST / SYN on a connection | RST only at exactly RCV.NXT, else a challenge ACK; a SYN gets a challenge ACK (RFC 5961) |
+| RST / SYN on a connection | RST only at exactly RCV.NXT, otherwise a challenge ACK; a SYN gets a challenge ACK (RFC 5961) |
 | TIME_WAIT | 2 s; the oldest TIME_WAIT slot is reused for a new SYN; a new SYN on the same ports ends it |
 | FIN_WAIT_2 | 10 s, then the slot is freed |
 | Keepalive | after 60 s without a segment from the peer, a probe every 10 s (SND.NXT - 1); 4 unanswered and the connection is reset |
@@ -50,9 +52,9 @@ address, the host being the only neighbor and the router.
 | Initial sequence numbers | a salt from the radio's MAC address, the clock (250 per ms) and a counter |
 
 Segments to the radio's address are taken from any source, not only the host: replies to the radio's own client
-connections come back through the host when it routes. The checksum is checked; bad segments are counted and dropped.
+connections come back through the host when it routes. The TCP checks the checksum, and counts and drops bad segments.
 
-Debug link view, section `net`: `tcp.open tcp.segs_in tcp.segs_out tcp.retransmits tcp.rst_out tcp.bad_checksum
+Debug link view, section `net`, holds `tcp.open tcp.segs_in tcp.segs_out tcp.retransmits tcp.rst_out tcp.bad_checksum
 tcp.accepted tcp.refused tcp.no_slot tcp.timeouts net.link_up`, and the services' keys below.
 
 ## 3. The TNC pump
@@ -62,31 +64,33 @@ builds, SetHardware 'G' lines for APRS-IS), which the host link sends to the ser
 takes it (`net_tnc_taken`: a KISS client is connected and the APRS KISS setting is on, or the APRS-IS client is
 logged in), `core/net/net.c` drains the ring instead, decodes it frame by frame and routes each frame: 'G' lines to
 APRS-IS when it is logged in, everything else to the KISS client. It pulls only while the receivers have room for a
-whole frame (every byte escaped), so nothing is dropped for want of TCP buffer; the ring holds the rest. The host link
-leaves the output alone meanwhile (`hostlink.c`).
+whole frame (every byte escaped), so nothing is dropped for lack of TCP buffer; the ring holds the rest. Meanwhile, the
+host link leaves the output alone (`hostlink.c`).
 
 ## 4. KISS over TCP (port 8001)
 
-The de facto network TNC port of APRS programs (APRSdroid, Xastir, YAAC, Dire Wolf clients). The stream carries KISS
-frames as on the serial port (Chepponis and Karn, "The KISS TNC", 1987; [aprs.md](aprs.md) 9): FEND-delimited, FESC
-escapes, a type byte. Frames from the client go to the same handler as the serial port's (`aprs_host_kiss_frame`):
-port 0 data frames are checked by the APRS engine (our callsign as the source, the amateur frequency, the rate limit)
-and queued for RF; SetHardware 'G' and 'N' lines as on the serial port; TXDELAY and the other parameters are ignored.
-The client receives the engine's output (section 3) exactly as the serial port would.
+Port 8001 is the de facto network TNC port of APRS programs (APRSdroid, Xastir, YAAC, Dire Wolf clients). The stream
+carries KISS frames as on the serial port (Chepponis and Karn, "The KISS TNC", 1987; [aprs.md](aprs.md) 9):
+FEND-delimited, FESC escapes, a type byte. Frames from the client go to the same handler as the serial port's
+(`aprs_host_kiss_frame`). The APRS engine checks port 0 data frames (the radio's callsign as the source, the amateur
+frequency, the rate limit) and queues them for RF. SetHardware 'G' and 'N' lines work as on the serial port; TXDELAY
+and the other parameters are ignored. The client receives the engine's output (section 3) exactly as the serial port
+would.
 
 - One client at a time: a new connection replaces the old one (reset), so a client that vanished without closing
   doesn't hold the port.
-- Needs the APRS KISS setting (Tools > APRS > KISS on USB), as on the serial port: without it the engine neither
-  takes frames nor produces output.
-- On a radio without an APRS receive path (`aprs.md` 1) only transmit works; a client sees no received packets.
+- The service needs the APRS KISS setting (**Tools > APRS > KISS on USB**), as on the serial port. Without it, the
+  engine neither takes frames nor produces output.
+- On a radio without an APRS receive path (`aprs.md` 1), only transmit works; a client sees no received packets.
 - View keys (`net` section): `kiss.client kiss.conns kiss.frames_in kiss.frames_out kiss.dropped`.
 
 ## 5. HTTP status server (port 80)
 
-HTTP/1.0 (RFC 1945): GET and HEAD, one request per connection, `Connection: close`, `Content-Length` always, no
-keep-alive or chunking (HTTP/1.1 clients accept a 1.0 answer). The request line may be 95 bytes long (else 414);
-header lines are skipped, except `Sec-WebSocket-Key` (any case) for `/ws`; a request not complete within 10 s is reset. Responses carry `Cache-Control: no-store` and
-`Access-Control-Allow-Origin: *` (a web page on the host may poll the radio).
+The server speaks HTTP/1.0 (RFC 1945): GET and HEAD, one request per connection, `Connection: close`,
+`Content-Length` always, no keep-alive or chunking (HTTP/1.1 clients accept a 1.0 answer). The request line can be up
+to 95 bytes long (otherwise 414). Header lines are skipped, except `Sec-WebSocket-Key` (any case) for `/ws`. A request
+not complete within 10 s is reset. Responses carry `Cache-Control: no-store` and `Access-Control-Allow-Origin: *`, so
+a web page on the host can poll the radio.
 
 | Path | Response |
 |---|---|
@@ -95,56 +99,59 @@ header lines are skipped, except `Sec-WebSocket-Key` (any case) for `/ws`; a req
 | `/status` | JSON: `radio version uptime_s state` (idle / rx / tx / tx_denied) `vfo zone channel_number channel rx_hz tx_hz mode` (fm / dmr) `bw` ("12.5" / "25") `power rssi_dbm squelch battery_pct battery_mv` (both left out on a radio without a battery) `hotspot`, on a DMR channel `dmr: {own_id cc ts target private heard}`, `tcp_open`, `led_green led_red` (the radio's LEDs), `backlight` (percent), `draws` (counts screen redraws: fetch the screen when it changes) |
 | `/api/view` | JSON `{"sections": [...]}`: the debug link's view section names (needs `CONFIG_DEBUGLINK`) |
 | `/api/view?section=<name or number>` | the section's key=value lines as one flat JSON object; values that are decimal integers are numbers, the rest strings (hex values such as `net.host_ip` stay strings) |
-| `/api/screen.bmp` | the frame buffer as a BMP, top-down (negative height), at the panel's depth: 1 bpp with two palette entries (the paper and ink of the UI gallery), 4 bpp with the 16-entry palette (`gfx_palette`), both the frame buffer's rows as they are; 16 bpp as BI_BITFIELDS (RGB565 masks). About 10 KB on a 160 x 128 4 bpp screen, 38 KB on 240 x 320, 1 KB on 128 x 64 1 bpp; UI redraws are held while it goes out (as the debug link's screenshot does), so it is one frame; the hold ends with the last byte, so a page that polls it does not slow the UI |
+| `/api/screen.bmp` | the frame buffer as a BMP, top-down (negative height), at the panel's depth: 1 bpp with two palette entries (the paper and ink of the UI gallery), 4 bpp with the 16-entry palette (`gfx_palette`), both the frame buffer's rows as they are; 16 bpp as BI_BITFIELDS (RGB565 masks). About 10 KB on a 160 x 128 4 bpp screen, 38 KB on 240 x 320, 1 KB on 128 x 64 1 bpp; UI redraws are held while it goes out (as the debug link's screenshot does), so it's one frame; the hold ends with the last byte, so a page that polls it doesn't slow the UI |
 | `/api/aprsis` | the APRS-IS client's settings and state (section 7) |
-| `/api/usb?mode=serial` | from the host only (else 403), over the USB network link only (else 400, as for any other query): a short HTML page that closes its tab, and 500 ms later the USB personality switches to serial (`hostlink_request_usb_network`, `usb-network.md` 1). For a web page that needs the serial port: it opens this in a tab, at 12.255.255.254 (the radio on this link, `usb-network.md` 1; every TCP service answers there too). HEAD answers and does not switch. A GET that changes state, because a page can only navigate to it: any page open in a browser on the host can send it too (an image, a no-cors fetch) and take the radio out of network mode until it restarts. Nothing else follows from it |
+| `/api/usb?mode=serial` | from the host only (otherwise 403), over the USB network link only (otherwise 400, as for any other query): a short HTML page that closes its tab, and 500 ms later the USB personality switches to serial (`hostlink_request_usb_network`, `usb-network.md` 1). A web page that needs the serial port opens this in a tab, at 12.255.255.254 (the radio on this link, `usb-network.md` 1; every TCP service answers there too). HEAD answers and doesn't switch. It's a GET that changes state, because a page can only navigate to it, so any page open in a browser on the host can send it too (an image, a no-cors fetch) and take the radio out of network mode until it restarts. Nothing else follows from it |
 | anything else | 404; another method 405; a malformed request line 400 (errors have an empty body) |
 
-Static files: every file in `core/net/http_assets/` (html, css, js, svg, ...: add one there and it is served at
-`/<name>`, the type from its extension) is put into a table at build time by `tools/gen_http_assets.py` (run by make
-into the build's `gen/http_assets_gen.h`: path, Content-Type, bytes, length, gzip flag). The script minifies each file
+Static files: `tools/gen_http_assets.py` puts every file in `core/net/http_assets/` (html, css, js, svg, ...) into a
+table at build time; make writes it to the build's `gen/http_assets_gen.h` (path, Content-Type, bytes, length, gzip
+flag). A file added there is served at `/<name>`, with the type from its extension. The script minifies each file
 first: comments and the whitespace between tags go, and so does the whitespace in CSS and scripts that the syntax
-doesn't need. Strings, templates and regular expressions are kept as they are, and names are not shortened (that
-would save about 9% of the page's script, at the cost of a node toolchain in the build). With `CONFIG_NET_HTTP_GZIP`
-(the default with `CONFIG_NET_HTTP`) the files are stored gzip compressed (level 9, mtime 0: the same bytes on every
-build machine) and served with `Content-Encoding: gzip`; off, stored and served as they are. A gzip response goes
-whatever the request's `Accept-Encoding` says: a request without the header accepts any coding (RFC 9110 12.5.3),
-every browser takes gzip, and keeping a plain copy too would cost the flash the compression saves; `curl` needs
-`--compressed`. `index.html` today: 498 bytes, 360 gzip compressed; the web control page (5.1) 19.7 KB, 6.9 KB
-minified and compressed. Host test: `httpAssetsTest` (the table, gzip and plain, and the web control set decompress to
-the minified sources; with node on the PATH, every minified script still parses), `netSvcTest` (the bytes and headers
-served).
+doesn't need. Strings, templates, and regular expressions are kept as they are, and names aren't shortened (that would
+save about 9% of the page's script, at the cost of a node toolchain in the build).
 
-Bodies stream into TCP as its buffer frees up: the files from flash and the screen straight from the frame buffer;
-JSON is rendered once into a shared 1.5 KB buffer (a view section's text into its upper part, the JSON written from
-the start never overtakes it), and a second JSON request waits until the first response is all in TCP's buffer.
+With `CONFIG_NET_HTTP_GZIP` (the default with `CONFIG_NET_HTTP`), the files are stored gzip-compressed (level 9,
+mtime 0: the same bytes on every build machine) and served with `Content-Encoding: gzip`. With it off, they're stored
+and served as they are. A gzip response goes out whatever the request's `Accept-Encoding` says: a request without the
+header accepts any coding (RFC 9110 12.5.3), every browser takes gzip, and a plain copy would cost the flash the
+compression saves. `curl` needs `--compressed`. `index.html` is 498 bytes, 360 compressed; the web control page (5.1)
+is 19.7 KB, 6.9 KB minified and compressed. Host test: `httpAssetsTest` (the table, gzip and plain, and the web control
+set decompress to the minified sources; with node on the PATH, every minified script still parses), `netSvcTest` (the
+bytes and headers served).
+
+Bodies stream into TCP as its buffer frees up: the files from flash, and the screen straight from the frame buffer.
+JSON is rendered once into a shared 1.5 KB buffer (a view section's text goes into its upper part, and the JSON
+written from the start never overtakes it). A second JSON request waits until the first response is all in TCP's
+buffer.
 
 View keys: `http.requests http.ok http.not_found http.bad http.busy_waits`.
 
 ### 5.1 Web control (`/ws`)
 
-With `CONFIG_NET_WEBCTL` the page at `/` is the radio's front panel: its drawing (the site's
+With `CONFIG_NET_WEBCTL`, the page at `/` is the radio's front panel: its drawing (the site's
 `site/static/img/radios/src/<radio>.svg`, served as `/radio.svg`) with the live screen in its display, the LEDs, and
 every key clickable. A mobile's hand microphone (`<radio>-mic.svg`, served as `/mic.svg`) is drawn below it, its keys
-clickable too. The knob carries two translucent halves that turn it one detent per click (holding repeats). Each key off
-the front face (side and top keys, marked `data-edge` in the drawing) also gets a labeled button outside the edge it
-is on, easier to hit than the key; buttons are sized in screen pixels, so they are the same on every radio. A
-drawing wider than tall (a mobile) takes the page's width, with its mic and the controls below it.
-Beside the drawing: the status (state, channel, frequency, signal, battery), a large PTT button, Listen with a volume
-slider, and buttons for the keys the drawings don't show. The page's files are in `core/net/webctl_assets/` and
+clickable too. The knob carries two translucent halves that turn it one detent per click (holding repeats). Each key
+off the front face (side and top keys, marked `data-edge` in the drawing) also gets a labeled button outside the edge
+it's on, which is easier to hit than the key. Buttons are sized in screen pixels, so they're the same on every radio.
+A drawing wider than tall (a mobile) takes the page's width, with its mic and the controls below it. Beside the
+drawing are the status (state, channel, frequency, signal, battery), a large PTT button, Listen with a volume slider,
+and buttons for the keys the drawings don't show. The page's files are in `core/net/webctl_assets/` and
 replace `core/net/http_assets/` files of the same name; `tools/gen_webctl_assets.py` writes `/keys.json` (each key's
 name and bit, from the board's `KEY_*` enum), `/radio.svg` and `/mic.svg`. A radio without a drawing gets its keys as
 buttons and the screen as an image. The screen comes over `/ws` as the rows that changed (below); a page that has
 only the status (another client holds `/ws`) fetches `/api/screen.bmp` when `draws` changes.
 
-The keyboard presses the same keys (the first of a row's names the radio has; a key held is held on the radio):
+The keyboard presses the same keys (the first of a row's names that the radio has; a key held is held on the
+radio):
 
 | Keyboard | Radio key |
 |---|---|
 | 0-9, `*`, `#` | the digit, star, hash (on a mobile, the hand mic's) |
-| arrows | up, down; left / right, else P1 / P2 (`fn_left`, `fn_right`) |
-| Enter, M | green, else MENU |
-| Esc, Backspace | red, else BACK |
+| arrows | up, down; left / right, otherwise P1 / P2 (`fn_left`, `fn_right`) |
+| Enter, M | green, otherwise MENU |
+| Esc, Backspace | red, otherwise BACK |
 | V, A | VFO/MR, A/B |
 | Space | PTT, held while the key is |
 | `[` `]`, Page Up / Down | the encoder, one detent back / forward |
@@ -154,12 +161,12 @@ in its `aria-keyshortcuts` and tooltip, and the page lists them under the drawin
 
 `GET /ws` with `Upgrade: websocket` and a `Sec-WebSocket-Key` gets `HTTP/1.1 101` and the connection becomes a
 WebSocket (RFC 6455; the accept value from SHA-1 and base64, `ws.c`). One client at a time; the next one gets 503
-until it goes. The radio's rules:
+until the first one goes. The radio's rules are:
 
 | Rule | Value |
 |---|---|
-| Client frames | masked, unfragmented, payload up to 125 bytes; else close 1002 (protocol) or 1009 (too big) |
-| Binary from the client | close 1003 (nothing takes it yet) |
+| Client frames | masked, unfragmented, payload up to 125 bytes; otherwise close 1002 (protocol) or 1009 (too big) |
+| Binary from the client | close 1003 (no command takes binary) |
 | Close | the client's close code is sent back, then the connection closes |
 | Ping | one every 5 s; nothing from the client for 15 s and it is dropped |
 | Status | `/status`'s JSON as a text frame, rendered every 250 ms and sent when it changed |
@@ -167,10 +174,14 @@ until it goes. The radio's rules:
 | Audio | 20 ms binary frames (`'A'`, a reserved 0, then 160 samples of 8 kHz PCM16 little-endian), while the client asked and the squelch is open; needs `CONFIG_NET_USRP` (the frames USRP reads, `usb-audio.md`); a frame that doesn't fit in TCP's buffer is dropped. Not while PPP carries the link: its 128 kbit/s doesn't fit a 115200 baud UART ([ppp.md](ppp.md) 6), so the hello says `audio:false` and `a1` is refused; keys, status and the screen work as on USB |
 
 The first frame is the hello:
-`{"hello":1,"control":true,"audio":true,"keys":[0,1,...],"ptt":21,"encoder":true,"screen":[160,128,4,0,0,160,128]}`
-(the keymap's bits, the PTT key's bit or -1, whether the radio has an encoder). `screen` is the panel's width, height
-and bpp, then the visible part inside the insets: left, top, width, height. It is left out when the frame buffer
-can't be sent (as `/api/screen.bmp`'s 404) or a raw row doesn't fit a frame. Commands are text frames:
+
+```json
+{"hello":1,"control":true,"audio":true,"keys":[0,1,...],"ptt":21,"encoder":true,"screen":[160,128,4,0,0,160,128]}
+```
+
+It holds the keymap's bits, the PTT key's bit or -1, and whether the radio has an encoder. `screen` is the panel's
+width, height, and bpp, then the visible part inside the insets: left, top, width, height. It's left out when the frame
+buffer can't be sent (as `/api/screen.bmp`'s 404) or a raw row doesn't fit a frame. Commands are text frames:
 
 | Command | Effect |
 |---|---|
@@ -189,9 +200,9 @@ row is its y (u16 little-endian) and one of:
 | set | raw: the frame buffer's bytes for the row, `(width * bpp + 7) / 8` (leftmost pixel in the high bits; RGB565 little-endian at bpp 16) |
 | clear | runs, left to right until the row is full: a byte whose high nibble c and low nibble i (the color index) mean c + 1 pixels of i, or for c = 15, 16 plus the next byte |
 
-A row is sent raw when its runs would not be shorter, and always at bpp 16. The UI's screens are mostly long runs of
-one color: on the UI gallery a 240 x 320 bpp 4 screen is about 5 KB as runs against 38 KB as a BMP, 160 x 128 about
-2 KB against 10 KB. After the first frame a redraw sends only its rows (a signal bar, a clock digit).
+A row is sent raw when its runs wouldn't be shorter, and always at bpp 16. The UI's screens are mostly long runs of
+one color: on the UI gallery, a 240 x 320 bpp 4 screen is about 5 KB as runs against 38 KB as a BMP, and 160 x 128 is
+about 2 KB against 10 KB. After the first frame, a redraw sends only its rows (a signal bar, a clock digit).
 
 Keys, PTT and the encoder are taken only from the computer the radio is plugged into (`control:false` for a client
 beyond it, as rigctld's PTT); audio and status go to any client. Everything the client holds is released when it
@@ -204,21 +215,22 @@ webctl.frames_out webctl.audio_out webctl.audio_dropped webctl.screen` (the clie
 
 ## 6. rigctld (port 4532)
 
-Hamlib's network rig control protocol as the rigctld(1) and rigctl(1) manual pages describe it, so loggers, SDR
-programs and satellite trackers can follow and set the radio (`rigctl -m 2 -r <radio>:4532`, or a program's "Hamlib
-NET rigctl" rig). One command per line (CR ignored), the short form or the backslash long name, arguments separated
-by spaces. A "get" answers its value lines; a "set" answers `RPRT 0`, an error `RPRT -<Hamlib error>` (1 invalid
-argument, 4 not implemented, 9 refused, 11 not available). A leading `+` (or `;` `|` `,`) asks for the extended answer:
-the command's long name with a colon, the values with their labels, then `RPRT`. A VFO argument right after the
-command (clients started with `--vfo`) is skipped. A line longer than 63 characters is answered -1 and not run.
+The radio speaks Hamlib's network rig control protocol as the rigctld(1) and rigctl(1) manual pages describe it, so
+loggers, SDR programs, and satellite trackers can follow and set the radio (`rigctl -m 2 -r <radio>:4532`, or a
+program's "Hamlib NET rigctl" rig). One command per line (CR ignored), the short form or the backslash long name,
+arguments separated by spaces. A "get" answers its value lines; a "set" answers `RPRT 0`, an error `RPRT -<Hamlib
+error>` (1 invalid argument, 4 not implemented, 9 refused, 11 not available). A leading `+` (or `;` `|` `,`) asks for
+the extended answer: the command's long name with a colon, the values with their labels, then `RPRT`. A VFO argument
+right after the command (clients started with `--vfo`) is skipped. A line longer than 63 characters is answered -1 and
+not run.
 
 | Command | Answer / action |
 |---|---|
 | `f` `\get_freq` | the receive frequency in Hz; a frequency just set is reported until the radio shows it (at most 1 s) |
 | `F` `\set_freq <Hz>` | the VFO to that frequency (simplex); on a channel the radio moves to the VFO first. Outside the board's bands -1, in hotspot mode -9. Requests go at most every 20 ms: a burst of updates (Doppler tracking) ends at its latest value |
 | `m` `\get_mode` | `FM` and the passband, 12500 or 25000 (a DMR channel answers FM too: DMR is 4FSK on an FM carrier, and Hamlib has no DMR mode) |
-| `M` `\set_mode FM\|FMN <passband>` | FM on the channel (a DMR channel turns FM for now) and the bandwidth: 0 / -1 unchanged, up to 12500 narrow, above wide; FMN narrow. Other modes -1 |
-| `t` `\get_ptt`, `T` `\set_ptt 0-3` | PTT; keyed only from the computer the radio is plugged into (else -9), at most 3 minutes per keying (the radio's own TX time-out may end it sooner), again only 1 s after a release (else -9), released when the connection ends |
+| `M` `\set_mode FM\|FMN <passband>` | FM on the channel (a DMR channel turns FM) and the bandwidth: 0 / -1 unchanged, up to 12500 narrow, above wide; FMN narrow. Other modes -1 |
+| `t` `\get_ptt`, `T` `\set_ptt 0-3` | PTT; keyed only from the computer the radio is plugged into (otherwise -9), at most 3 minutes per keying (the radio's own TX time-out can end it sooner), again only 1 s after a release (otherwise -9), released when the connection ends |
 | `\get_dcd` | 1 while the squelch is open |
 | `l STRENGTH` | dB over S9, S9 = -93 dBm (IARU VHF / UHF); `l RFPOWER` 0.00-1.00 from the power level; other levels -11 |
 | `v`, `V VFOA` | `VFOA`; `V` takes VFOA, currVFO, VFO, Main |
@@ -230,8 +242,8 @@ command (clients started with `--vfo`) is skipped. A line longer than 63 charact
 | `q` `Q` `\quit` | closes the connection |
 | anything else | `RPRT -4` |
 
-`\dump_state` is written from the manual's description and the line layout clients are known to parse; the HIL test
-checks it with Hamlib's own `rigctl -m 2` where it is installed.
+`\dump_state` follows the manual's description and the line layout that clients parse. The HIL test checks it with
+Hamlib's own `rigctl -m 2` where that's installed.
 
 View keys: `rigctl.conns rigctl.commands rigctl.errors rigctl.freq_sets rigctl.ptt rigctl.ptt_downs`.
 
@@ -241,28 +253,30 @@ The radio connects to an APRS-IS server itself, out through the host, instead of
 `tools/aprs_gate.py` doing it over USB (aprs-is.net "Connecting to APRS-IS", "IGate Design"). It carries lines only;
 the iGate rules stay in the APRS engine ([aprs.md](aprs.md) 9.1).
 
-- Off until a server address is set (settings `aprsis_ip`, `aprsis_port` 0 = 14580, `aprsis_range_km`) and the APRS
-  callsign is. IPv4 addresses only: no DNS client (pick a server's address, e.g. `dig +short rotate.aprs2.net`, or run
-  a local aprsc / aprs_gate-like relay on the host).
-- Set over HTTP from the host only (a request from beyond the host gets 403): `GET /api/aprsis?server=a.b.c.d[:port]`
-  (`off` clears it), `&range=<km>`; `GET /api/aprsis` alone answers the state as JSON (`state server range_km call
-  connects logins unverified lines_out lines_in`).
+- The client is off until a server address is set (settings `aprsis_ip`, `aprsis_port` 0 = 14580,
+  `aprsis_range_km`) and the APRS callsign is set. It takes IPv4 addresses only, because the radio has no DNS client.
+  Pick a server's address (for example, `dig +short rotate.aprs2.net`), or run a local aprsc or aprs_gate-like relay
+  on the host.
+- The settings are set over HTTP from the host only (a request from beyond the host gets 403): `GET
+  /api/aprsis?server=a.b.c.d[:port]` (`off` clears it), `&range=<km>`; `GET /api/aprsis` alone answers the state as JSON
+  (`state server range_km call connects logins unverified lines_out lines_in`).
 - Login: `user <CALL-SSID> pass <passcode> vers RadioFoundry <version>[ filter m/<km>]`, the passcode computed
-  from the callsign by the published 15-bit hash (`aprsis_passcode`, the same as `tools/aprs_gate.py`). Online once
-  the server's `# logresp ... verified` line comes; an "unverified" answer drops the connection and waits 5 minutes.
-- Online, the TNC pump (section 3) sends it the engine's SetHardware 'G' lines with CR LF: our beacons, status and
-  messages as `CALL>APRDF?,TCPIP*:...` when the APRS settings "KISS on USB" and "to APRS-IS" (`to_is`) are on, and on
-  receive builds the RF packets the iGate passes. Server lines that aren't comments go to the engine
+  from the callsign by the published 15-bit hash (`aprsis_passcode`, the same as `tools/aprs_gate.py`). The client is
+  online once the server's `# logresp ... verified` line comes; an "unverified" answer drops the connection and waits
+  5 minutes.
+- Online, the TNC pump (section 3) sends it the engine's SetHardware 'G' lines with CR LF: the radio's beacons, status,
+  and messages as `CALL>APRDF?,TCPIP*:...` when the APRS settings "KISS on USB" and "to APRS-IS" (`to_is`) are on, and
+  on receive builds the RF packets the iGate passes. Server lines that aren't comments go to the engine
   (`aprs_host_is_line`), whose IS -> RF rules decide (iGate builds; elsewhere they are dropped).
-- Reconnects 30 s after a failure, doubling up to 5 minutes; a server silent for 2 minutes (servers comment every
-  20 s) or no logresp within 30 s is dropped; a settings or callsign change reconnects at once.
+- The client reconnects 30 s after a failure, doubling up to 5 minutes. A server silent for 2 minutes (servers
+  comment every 20 s), or with no logresp within 30 s, is dropped. A settings or callsign change reconnects at once.
 - View keys: `aprsis.state aprsis.server aprsis.connects aprsis.logins aprsis.unverified aprsis.lines_out
   aprsis.lines_in aprsis.drops`.
 
 ### 7.1 Routing through the host
 
-The radio's address (12.x.y.z, the host's xor 1) is only known to the host, which must forward and NAT it. With
-`RADIO=12.0.39.20` (the radio's address) and the host's Internet interface `en0` / `eth0`:
+Only the host knows the radio's address (12.x.y.z, the host's xor 1), so the host must forward and NAT it. With
+`RADIO=12.0.39.20` (the radio's address) and the host's Internet interface `en0` / `eth0`, run:
 
 ```
 # macOS
@@ -279,39 +293,37 @@ sudo iptables -A FORWARD -i eth0 -o usb0 -m state --state RELATED,ESTABLISHED -j
 The replies come back translated to the radio's address and reach it over the host route the radio's DHCP gave
 (option 121). A server address inside 12.0.0.0/8 can't be used (the host routes that range to the radio).
 
-## 8. Changes in the IP gateway
+## 8. TCP in the IP gateway
 
-`core/dmr/ipGateway.{c,h}`: TCP (protocol 6) to the radio's own address goes to the function set with
-`ipGatewaySetTCP` (NULL by default: dropped, as before), from any source and before the "only what the host itself
-sends" check; any other TCP is dropped and never goes over the air. `ipGatewayLocalPayload` / `ipGatewaySendLocal`
+In `core/dmr/ipGateway.{c,h}`, TCP (protocol 6) to the radio's own address goes to the function set with
+`ipGatewaySetTCP` (NULL by default: dropped), from any source and before the "only what the host itself sends" check.
+Any other TCP is dropped and never goes over the air. `ipGatewayLocalPayload` / `ipGatewaySendLocal`
 send a packet from the radio's address to any destination through the host's MAC address. The TCP's glue
 (`core/net/net.c`) waits up to 20 ms for a busy USB IN endpoint before giving a segment up to the retransmission timer.
 
 ## 9. Tests
 
 - Host: `tests/host/tcpTest.c`, the TCP against a scripted peer: handshakes both ways, data within the window and the
-  MSS, retransmission with backoff, a zero window probed, in-order receive with trimming, RST for unknown ports,
-  RFC 5961 challenge ACKs, closes from either side (simultaneous too), TIME_WAIT reuse, slot exhaustion, keepalive, a
-  lost SYN-ACK, a busy IP layer. Every segment goes to `tcpTest.pcap`, which tshark checks for malformed segments and
-  bad checksums. `tests/host/hostlinkNetTest.c`: TCP through the gateway (RST from the radio's address, a source
-  beyond the host, no TCP to the air, the link going down). `tests/host/netSvcTest.c` (+ `netSvcCases.c`): the
-  services through the real gateway and TCP against a scripted TCP peer, with fakes for the APRS engine and the radio
-  core; KISS: frames both ways with escapes and split segments, bulk output paced by the client's ACKs, a second
-  client replacing the first, the KISS setting off, the client closing. HTTP: the page, HEAD, the status JSON with an
-  escaped name, view sections as JSON (numbers, strings, escapes, by name and number, the list, unknown), the screen
-  BMP against the frame buffer, 405 / 404 / 400 / 414, a client sending a byte at a time, two JSON requests at once
-  (the second waits for the buffer), the 10 s request timeout. Web control: the handshake, the hello, status sent on change, 503 for a second
-  client, 400 without a key, keys down and up (busy, refused from beyond the host), the encoder, PTT repeats and the 3
-  minute release, pings, the 15 s drop with keys released, audio frames only when asked and the squelch is open, the
-  screen at bpp 4 and 1 (every row after `s1` over more than one frame, runs and raw rows decoded against the frame
-  buffer, then only a changed row, nothing during a frame, nothing after `s0`), the close code echoed, an unmasked frame (1002); `wsTest.c` checks SHA-1, base64 and frame headers against FIPS 180 and
-  RFC 6455. rigctld: get / set frequency (the VFO move, the read
-  back before the radio shows it, the request gap, out of band), mode, PTT (the rate limit, the 3 minute limit, the
-  release on disconnect, refused from beyond the host), levels, VFO, split, info, chk_vfo, dump_state, extended
-  answers, unknown commands, quit. APRS-IS: the passcode, off without a server, settings over HTTP (403 from beyond
-  the host, 400 for a bad address), the login line, logresp verified / unverified and the waits, the engine's 'G'
-  lines to the server and nothing else, server lines to the engine without comments, a silent server dropped and
-  tried again, a callsign change, turned off. `netSvcTest.pcap` is checked by tshark.
-- HIL: `tests/hil/test_tcp_services.py` (opt-in, below).
-- The host OS stack is the other end in the HIL tests (curl, nc); a tap / utun test on the host would need root and
-  is not done.
+  MSS, retransmission with backoff, a zero window probed, in-order receive with trimming, RST for unknown ports, RFC
+  5961 challenge ACKs, closes from either side (simultaneous too), TIME_WAIT reuse, slot exhaustion, keepalive, a lost
+  SYN-ACK, a busy IP layer. Every segment goes to `tcpTest.pcap`, which tshark checks for malformed segments and bad
+  checksums. `tests/host/hostlinkNetTest.c`: TCP through the gateway (RST from the radio's address, a source beyond the
+  host, no TCP to the air, the link going down). `tests/host/netSvcTest.c` (+ `netSvcCases.c`): the services through the
+  real gateway and TCP against a scripted TCP peer, with fakes for the APRS engine and the radio core; KISS: frames both
+  ways with escapes and split segments, bulk output paced by the client's ACKs, a second client replacing the first, the
+  KISS setting off, the client closing. HTTP: the page, HEAD, the status JSON with an escaped name, view sections as
+  JSON (numbers, strings, escapes, by name and number, the list, unknown), the screen BMP against the frame buffer, 405
+  / 404 / 400 / 414, a client sending a byte at a time, two JSON requests at once (the second waits for the buffer), the
+  10 s request timeout. Web control: the handshake, the hello, status sent on change, 503 for a second client, 400
+  without a key, keys down and up (busy, refused from beyond the host), the encoder, PTT repeats and the 3 minute
+  release, pings, the 15 s drop with keys released, audio frames only when asked and the squelch is open, the screen at
+  bpp 4 and 1 (every row after `s1` over more than one frame, runs and raw rows decoded against the frame buffer, then
+  only a changed row, nothing during a frame, nothing after `s0`), the close code echoed, an unmasked frame (1002);
+  `wsTest.c` checks SHA-1, base64 and frame headers against FIPS 180 and RFC 6455. rigctld: get / set frequency (the VFO
+  move, the read back before the radio shows it, the request gap, out of band), mode, PTT (the rate limit, the 3 minute
+  limit, the release on disconnect, refused from beyond the host), levels, VFO, split, info, chk_vfo, dump_state,
+  extended answers, unknown commands, quit. APRS-IS: the passcode, off without a server, settings over HTTP (403 from
+  beyond the host, 400 for a bad address), the login line, logresp verified / unverified and the waits, the engine's 'G'
+  lines to the server and nothing else, server lines to the engine without comments, a silent server dropped and tried
+  again, a callsign change, turned off. `netSvcTest.pcap` is checked by tshark.
+- HIL: `tests/hil/test_tcp_services.py` (opt-in). The host OS stack is the other end (curl, nc).

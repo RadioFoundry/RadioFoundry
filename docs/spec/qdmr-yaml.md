@@ -4,13 +4,12 @@
 # qdmr YAML codeplug
 
 qdmr and its command-line tool `dmrconf` save a codeplug as a YAML file, the "extensible codeplug". The Codeplug
-Editor opens and saves this file, so a codeplug can move between qdmr and the editor in both directions. This spec
+Editor opens and saves this file, so a codeplug can move between qdmr and the editor in both directions. This page
 covers the file as qdmr 0.15 writes it, the editor's mapping to the open-firmware records
 ([open-firmware-cps.md](open-firmware-cps.md) 7), and what each direction leaves out.
 
-Sources: qdmr's published manual (the "Extensible Codeplug File Format" chapter), files written by qdmr 0.15.1, and
-`dmrconf encode` run on test files, with the binary it writes decoded by the editor's own decoder. qdmr's source is
-GPL and was not read ([CLEANROOM.md](../CLEANROOM.md)).
+The format facts come from qdmr's published manual (the "Extensible Codeplug File Format" chapter), files that qdmr
+0.15.1 writes, and the binary that `dmrconf encode` writes from test files, decoded by the editor's own decoder.
 
 Code: `site/static/js/codeplug/yaml.js` (the YAML subset), `site/static/js/codeplug/qdmr.js` (the mapping),
 `site/static/js/editor/qdmrpart.js` (the editor's Open and Save), tests in `site/tests/qdmr.test.mjs`.
@@ -87,7 +86,7 @@ in table order. The import doesn't depend on the form. A reference to an id the 
 | default radio ID `name` | Radio, radio name | Shortened to 8 characters |
 | other radio IDs | Channel DMR ID | A channel whose `radioId` names another ID gets that ID as its own DMR ID |
 | `settings.boot.message1`, `message2` | Boot text lines 1 and 2 | 16 characters |
-| `settings.dmr.groupCallHangTime`, `privateCallHangTime` | Group and private hang | In 500 ms steps (open-firmware-cps.md 7.3.2, the unit our firmware assumes) |
+| `settings.dmr.groupCallHangTime`, `privateCallHangTime` | Group and private hang | In 500 ms steps ([open-firmware-cps.md](open-firmware-cps.md) 7.3.2, the unit RadioFoundry uses) |
 | `settings.gnss.fixedPositionEnabled`, `fixedPosition` | APRS: use fixed position, latitude, longitude | Applied to every APRS configuration |
 | `settings.audio.vox` | | Decides a channel's VOX when the channel says `!default` |
 
@@ -134,7 +133,7 @@ Both types:
 | `openGD77.beep` | Not "no beep" | |
 | `openGD77.powerSave` | Not "no economy" | |
 | `openGD77.location` | Use location, latitude, longitude | Locator to the center of its square. The export writes a 6-character locator, about 5 km |
-| `openGD77.talkerAliasTS1`, `TS2`: `None`, `APRS`, `Text`, `Both` | Talker alias TX on TS1, TS2: 0-3 | `APRS` and `Both` send our position in the channel's calls (`dmr-voice.md` 3.1) |
+| `openGD77.talkerAliasTS1`, `TS2`: `None`, `APRS`, `Text`, `Both` | Talker alias TX on TS1, TS2: 0-3 | `APRS` and `Both` send the radio's position in the channel's calls ([dmr-voice.md](dmr-voice.md) 3.1) |
 | `aprs` | APRS configuration | Only an APRS system the file defines |
 | `scanList` | Dropped | |
 | `admit` | Dropped | Written as `Always` |
@@ -167,12 +166,13 @@ The SFR settings (flag, bytes A and B) have no qdmr counterpart; the export leav
 
 `name` and `A` map to a zone and its channels. qdmr's zones have two lists, A and B, while an open-firmware zone has
 one. A zone with an empty B list imports as one zone. A zone with channels in both imports as two, `<name> A` and
-`<name> B`, which is also what `dmrconf encode` writes for this radio. The export writes each zone as an A list with an
-empty B list. A zone keeps its first 80 channels.
+`<name> B`, which is also what `dmrconf encode` writes for an open-firmware radio. The export writes each zone as an A
+list with an empty B list. A zone keeps its first 80 channels.
 
 ### 3.6 APRS
 
-An `aprs` element under `positioning` becomes an APRS configuration (open-firmware-cps.md 7.3.8):
+An `aprs` element under `positioning` becomes an APRS configuration ([open-firmware-cps.md](open-firmware-cps.md)
+7.3.8):
 
 | qdmr | Editor | Notes |
 |---|---|---|
@@ -210,7 +210,8 @@ A symbol from the alternate table, or `/D` and `/J`, exports as `None` with a no
 The import returns the record counts and a list of notes, each a code and a count, for what it changed or left out:
 names shortened, scan lists, roaming, encryption keys, DMR position reporting, APRS periods, extra path entries,
 unknown icons, lists and zones over their limits, records over the table limits, unknown element types, channels
-without a valid frequency, sub-tones that aren't CTCSS or DCS, channels whose timeout was off. The editor lists them after the import.
+without a valid frequency, sub-tones that aren't CTCSS or DCS, and channels whose timeout was off. The editor lists
+them after the import.
 
 The export returns notes for SFR settings, power levels qdmr has no name for, channel locations rounded to a locator,
 APRS frequencies with no FM channel to name, APRS symbols with no icon, and the silent and ambiguity flags. The VFOs
@@ -223,17 +224,17 @@ Records are numbered in file order.
 
 ## 5. qdmr's own binary encoding
 
-`dmrconf encode -R openuv380` on the same file writes the same channels, contacts, lists, zones, DTMF contacts and
-boot settings as the editor, with these differences (qdmr 0.15.1):
+From the same file, `dmrconf encode -R openuv380` (qdmr 0.15.1) writes the same channels, contacts, lists, zones, DTMF
+contacts, and boot settings as the editor, with these differences in the binary:
 
 | Field | qdmr writes | Editor writes |
 |---|---|---|
 | TX contact of a channel with an RX group list | 0 | The contact |
-| Squelch (channel byte 0x37) | 0 | The level (3.4) |
+| Squelch (channel byte `0x37`) | 0 | The level (3.4) |
 | Group and private hang | 0 (the bytes are left zero) | The settings (3.1) |
-| APRS symbol (bytes 0x1D, 0x1E) | Table index (0 primary) and symbol index (character - 0x21) | The characters, as `core/codeplug/codeplug.c` reads them |
+| APRS symbol (bytes `0x1D`, `0x1E`) | Table index (0 primary) and symbol index (character - `0x21`) | The characters, as `core/codeplug/codeplug.c` reads them |
 | APRS TX frequency | 0 | The `revert` channel's TX frequency |
-| APRS record magic | 0x4152 (older layout) | 0x4153 |
+| APRS record magic | `0x4152` (older layout) | `0x4153` |
 | A channel without an `openGD77` block | Beep and power save off | Beep and power save on |
 | A contact without an `openGD77` block | Timeslot override TS1 | No override |
 | Channel without location, `settings.gnss.fixedPosition` set | The fixed position | No location |

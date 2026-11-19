@@ -3,38 +3,46 @@
 
 # CPS protocol
 
-How a PC programs the radio over USB. Section 2 describes the open-firmware shim, which is built. Section 3 drafts a native
-protocol for later. The wire protocol the open-firmware tools speak is described in `open-firmware-cps.md`. This page says
-only what *our* radio does with it.
+This page describes how a PC programs the radio over the host port. The wire protocol that the open-firmware tools
+speak is in [open-firmware-cps.md](open-firmware-cps.md); this page says only what the RadioFoundry radio does with
+it.
+
+| Part | Where |
+|---|---|
+| Host port dispatch | `core/hostlink` |
+| Protocol engine (no RTOS, no USB) | `core/cps/cps_openfw.c` |
+| Glue to the host link and the reboot | `core/cps/cps_port.c` |
+| A board's answers | `hal_cps_t` (`board.cps`); `cps.radio_types` in `board.toml` |
+| Tests | `tests/host/cpsTest.c`, `tests/host/cpsSim`, `tests/hil/test_cps.py` |
 
 ## 1. On the host port
 
 The radio has one host port: a USB CDC serial port on radios with USB (the board's `board_usb_ids`, 1FC9:0094 on
-the STM32 radios), a UART on radios without. The host link
-(`core/hostlink`) dispatches on the first byte of a burst:
+the STM32 boards), and a UART on radios without. The host link (`core/hostlink`) dispatches on the first byte of a
+burst:
 
 | First byte | Goes to |
 |---|---|
-| `0xE0` | the MMDVM hotspot (`mmdvm-protocol.md`) |
-| `0xA5 0x5A` | the debug link (`debuglink.md`) |
-| anything else | the CPS shim (`CONFIG_CPS_OPENFW`), or ignored without it |
+| `0xE0` | The MMDVM hotspot ([mmdvm-protocol.md](mmdvm-protocol.md)) |
+| `0xA5 0x5A` | The debug link ([debuglink.md](debuglink.md)) |
+| Anything else | The CPS shim (`CONFIG_CPS_OPENFW`), or ignored without it |
 
-Once a CPS request is seen, the host link stays in CPS mode, and the shim gets every byte and a tick every pass
-(`cps_feed(NULL, 0, now)`). The session ends at `C 5` (close) or after 10 s without a byte (`CPS_SESSION_MS`). A
-debug link frame (`A5 5A`) arriving between CPS requests is still answered by the debug link, so bench tools can
-watch a CPS transfer. While the shim holds part of a request (`cps_mid_request()`), a pause is no request boundary,
-so the rest of the request is never taken for a debug or MMDVM frame. Limitation: a request whose length the header
-doesn't give (`D`, unknown bytes) that pauses for more than 3 ms after a data byte of `0xA5` may still lose its
-next bytes to a debug frame.
+Once a CPS request arrives, the host link stays in CPS mode, and the shim gets every byte and a tick every pass
+(`cps_feed(NULL, 0, now)`). The session ends at `C 5` (close) or after 10 s without a byte (`CPS_SESSION_MS`). The
+debug link still answers a debug link frame (`A5 5A`) that arrives between CPS requests, so test tools can watch a CPS
+transfer. While the shim holds part of a request (`cps_mid_request()`), a pause is no request boundary, so the rest of
+the request is never taken for a debug or MMDVM frame. One case remains: a request whose length the header doesn't give
+(`D`, unknown bytes) that pauses for more than 3 ms after a data byte of `0xA5` can lose its next bytes to a debug
+frame.
 
 ## 2. The open-firmware shim (`core/cps`, `CONFIG_CPS_OPENFW`)
 
-`core/cps/cps_openfw.c` is the protocol engine with no RTOS or USB in it. `cps_port.c` hooks it to the host link
+`core/cps/cps_openfw.c` is the protocol engine, with no RTOS or USB in it. `cps_port.c` hooks it to the host link
 and the board's reboot. Host tests drive the engine directly (`tests/host/cpsTest.c`), and `tests/host/cpsSim`
 serves it on stdin / stdout for `tools/cps_client.py`.
 
-Our own tools can move the same image faster with the debug link's CODEPLUG command: 4 KB blocks, CRC-32 sums so
-only changed blocks move, LZ4 both ways and a staged commit ([cps-fast.md](cps-fast.md), `CONFIG_CPS_FAST`).
+RadioFoundry's own tools can move the same image faster with the debug link's CODEPLUG command: 4 KB blocks, CRC-32 sums
+so only changed blocks move, LZ4 both ways, and a staged commit ([cps-fast.md](cps-fast.md), `CONFIG_CPS_FAST`).
 
 ### 2.1 Request assembly
 
@@ -51,59 +59,59 @@ USB gives no request boundaries. A request is complete when its header says so:
 | other `C` | 2 |
 | `D` | ended by 3 ms of quiet (`CPS_GAP_MS`) |
 
-A request still short of the length its header gives waits for the rest for up to 50 ms of quiet (`CPS_STALL_MS`),
-then whatever came is handled (usually `-`), so a UART host port that delivers a request in pieces doesn't cut it
-short.
+A request still short of the length its header gives waits for the rest for up to 50 ms of quiet (`CPS_STALL_MS`).
+Then the shim handles whatever came (usually with `-`), so a UART host port that delivers a request in pieces doesn't
+cut it short.
 
 A byte that no request starts with (anything but `R`, `W`, `X`, `C`, `D`) is dropped and counted (`cps.junk`), never
-answered. A programming cable on the microphone / speaker jack now and then delivers a burst
-of noise bytes (`0xFC`, `0xFE`) between requests. Answered `-`, such a burst was read as the reply to the next request.
+answered. A programming cable on the microphone / speaker jack can deliver a burst of noise bytes (`0xFC`, `0xFE`)
+between requests; an answer to such a burst would read as the reply to the next request.
 
 A request longer than 2048 bytes (`CPS_REQUEST_MAX`) is dropped up to the next quiet gap and answered `-`
 (`cps.overflows`). Several requests in one USB packet are handled in order. The debug link's `cps.openfw_eeprom` is
-where the image starts in the flash: what a client adds to its addresses (0 on the STM32 radios, 0x700000 on the
+where the image starts in the flash: what a client adds to its addresses (0 on the STM32 boards, `0x700000` on the
 HR_C7000 ones; `tools/cps_client.py --offset`).
 
 ### 2.2 Reads (`R`)
 
 | Area | Answer |
 |---|---|
-| 1 | SPI flash at the physical address (the STM32 tools add the +128 KB offset themselves). Up to 32768 bytes per request (2045 in the original firmware, open-firmware-cps.md 2.1). The VFO A record (EEPROM 0x7590) is replaced by the live VFO (2.3) |
-| 2 | the 64 KB EEPROM image (`openfw_eeprom` + addr), same rules |
-| 5 | MCU ROM from `board.cps->rom_base`, inside `rom_size` (per radio, table below) |
-| 9 | radio info, 46 bytes, structure version 3 (`open-firmware-cps.md` 4): radio type from `board.cps->radio_type()` (table below), git hash, build date `YYYYMMDDhhmmss`, flash id `0x40 << 8 \| log2(size)` (W25Q128: `0x4018`), features 0 |
+| 1 | SPI flash at the physical address (the STM32 tools add the +128 KB offset themselves). Up to 32768 bytes per request; the protocol's usual limit is 2045 ([open-firmware-cps.md](open-firmware-cps.md) 2.1). The live VFO replaces the VFO A record (EEPROM `0x7590`, section 2.3) |
+| 2 | The 64 KB EEPROM image (`openfw_eeprom` + addr), same rules |
+| 5 | MCU ROM from `board.cps->rom_base`, inside `rom_size` (per board, table below) |
+| 9 | Radio info, 46 bytes, structure version 3 ([open-firmware-cps.md](open-firmware-cps.md) 4): radio type from `board.cps->radio_type()` (table below), git hash, build date `YYYYMMDDhhmmss`, flash ID `0x40 << 8 \| log2(size)` (W25Q128: `0x4018`), features 0 |
 | 10 | SPI flash security registers (`board.cps->security_read`) |
-| 6, 7, 8, other | `-` (screen capture, WAV and AMBE are not offered) |
+| 6, 7, 8, other | `-` (screen capture, WAV, and AMBE aren't offered) |
 
 A range that runs off the end of the flash or the EEPROM image is refused with `-` before any data goes out.
 
-The board's `hal_cps_t` (`board.cps`) supplies the radio-specific answers:
+The board's `hal_cps_t` (`board.cps`) supplies the board-specific answers:
 
 | Answer | Meaning |
 |---|---|
-| `radio_type()` | The radio type byte the CPS identifies the radio by. A board may report two values by hardware version |
+| `radio_type()` | The radio type byte the CPS identifies the radio by. A board can report two values by hardware version |
 | `rom_base`, `rom_size` | The internal flash range area 5 reads |
 
-Each radio's values are in its hardware spec.
+Each board's values are in its `boards/<id>/` code, and its radio types in `cps.radio_types` in `board.toml`.
 
 ### 2.3 Writes (`X`, `W`)
 
-`X 1 sector` reads the 4 KB sector into the shared storage buffer, `X 2 addr len data` merges bytes into it and
-`X 3` writes it through the sector journal (`settings-store.md` 4). The commit reply comes after the sector is
-written and verified (about 100 ms). Rules:
+`X 1 sector` reads the 4 KB sector into the shared storage buffer, `X 2 addr len data` merges bytes into it, and
+`X 3` writes it through the sector journal ([settings-store.md](settings-store.md) 4). The commit reply comes after
+the sector is written and verified (about 100 ms). The shim follows these rules:
 
-- **Writable**: the EEPROM image (0 to 64 KB) and the open-firmware flash image (`openfw_flash` to `openfw_end`). Anything
-  else is refused at `X 1`. That includes the settings ring, the journal and the native area.
-- **Foreign journal**: while the settings / journal region holds foreign data (`settings-store.md` 5),
-  every `X 1` is refused, because a commit would erase the journal. Reads still work, so a backup can be taken
+- **Writable**: the EEPROM image (0 to 64 KB) and the open-firmware flash image (`openfw_flash` to `openfw_end`).
+  Anything else is refused at `X 1`. That includes the settings ring, the journal, and the native area.
+- **Foreign journal**: while the settings / journal region holds foreign data ([settings-store.md](settings-store.md)
+  5), every `X 1` is refused, because a commit would erase the journal. Reads still work, so a backup can be taken
   first.
-- **Quick-key slots** (EEPROM 0x7524-0x7537) hold the key assignment (`ui.md` 3.1) and are written like any
+- **Quick-key slots** (EEPROM 0x7524-0x7537) hold the key assignment ([ui.md](ui.md) 3.1) and are written like any
   other codeplug byte. A CPS that writes back a stale copy (an old codeplug file) brings back that file's keys, the
   same as for channels. Foreign values there are ignored: without RadioFoundry's marker in slot 0 the keys are the
   board's.
-- **Calibration** (`calibration_addr`, `calibration_size` in the board's flash map; for example 512 bytes inside
-  a 4 KB sector): only the window's bytes take the CPS's values, and the rest of
-  the sector is kept. A board with no calibration window (size 0) takes the sector as plain data. *Open decision: refuse calibration writes entirely.*
+- **Calibration** (`calibration_addr`, `calibration_size` in the board's flash map; for example, 512 bytes inside
+  a 4 KB sector): only the window's bytes take the CPS's values, and the rest of the sector is kept. A board with no
+  calibration window (size 0) takes the sector as plain data.
 - **VFO A** (EEPROM 0x7590): a commit whose VFO A record differs from what the radio would show (the CPS edited the
   VFO) is decoded into the settings store's VFO fields. A record written back unchanged is ignored. The VFO
   follows after the next boot or reload.
@@ -129,8 +137,8 @@ Every `C` request is answered `-`, which the open-firmware tools treat as "done"
 | `C 6` other | nothing |
 | other | nothing |
 
-`D` (the data-service host commands, `open-firmware-cps.md` 5) is answered `D sub 0`, meaning failed: there is no
-data service in RadioFoundry yet.
+The shim answers `D` (the data-service host commands, [open-firmware-cps.md](open-firmware-cps.md) 5) with `D sub 0`,
+meaning failed: the shim offers no data-service host commands.
 
 ### 2.5 qdmr
 
@@ -152,31 +160,10 @@ python3 tools/cps_client.py --exec "tests/host/cpsSim --populate" info     # aga
 The debug link's `storage` view section (`debuglink.md` 3.7) shows `cps.requests reads commits refused overflows
 last session pending`.
 
-### 2.7 Open decisions
+### 2.7 Exposure and races
 
-1. A board with two radio types for one radio (by panel type, say): qdmr treats both as the same radio.
-2. Area 1 reads of the settings area expose the privacy keys (`settings-store.md` 3.1). Should area 1 be limited
-   to the open-firmware image?
-3. Area 10 (security registers) is readable, factory calibration included. Should it be read-only, as now, or
-   refused?
-4. Calibration window writes (2.3).
-5. A CPS writing VFO A while the user turns the VFO: the user's change wins until the next save, and the CPS's at
-   the next reload.
-
-## 3. Native protocol (draft, not built)
-
-For a future native CPS and a qdmr driver. Same port and same first-byte dispatch, under its own first byte
-(proposed `0xC0`, unused by MMDVM, the debug link and the open-firmware protocol).
-
-- **Framing**: the debug link's framing (`debuglink.md` 2): length, command, payload, CRC-16, with a sequence number
-  so a lost reply can be retried without doing the operation twice.
-- **Records, not addresses**: `GET type index` / `PUT type index record` / `DELETE type index` for channel, zone,
-  contact, listen list, general settings; `LIST type` returns the used bitmap. Records are the native records
-  (`codeplug-native.md` 3), versioned per type.
-- **Transactions**: `BEGIN` / `COMMIT` / `ABORT`. Puts inside a transaction are staged and applied in one pass, so
-  a cut cable leaves the old codeplug, not half of the new one.
-- **Settings**: `SETTINGS_GET` / `SETTINGS_PUT` by field name, never the privacy keys over a read.
-- **Info**: the radio info of area 9 plus a capability list: the record types and versions the firmware knows.
-
-Open: whether the open-firmware shim and the native protocol both stay forever, or the shim goes once qdmr speaks the
-native one.
+- A board with two radio types for one radio (by panel type, for example) shows qdmr the same radio for both.
+- Area 1 reads the settings area raw, privacy keys included ([settings-store.md](settings-store.md) 3.1).
+- Area 10 (security registers) is readable, factory calibration included, and never writable.
+- When a CPS writes VFO A while the user turns the VFO, the user's change wins until the next save, and the CPS's
+  at the next reload.

@@ -3,12 +3,13 @@
 
 # Compact DMR ID database (format C)
 
-A second layout for the DMR ID database, beside format N (`open-firmware-cps.md` 7.5). It holds the same thing: a
-name for each DMR ID. It is smaller, and a database refreshed from RadioID changes few 4 KB blocks, so a write with
-the fast codeplug protocol (`cps-fast.md`) moves little.
+Format C is a second layout for the DMR ID database, beside format N ([open-firmware-cps.md](open-firmware-cps.md)
+7.5). It holds the same thing: a name for each DMR ID. It's smaller, and a database refreshed from RadioID changes few
+4 KB blocks, so a write with the fast codeplug protocol ([cps-fast.md](cps-fast.md)) moves little.
 
-- Firmware: `core/codeplug/dmr_iddb.c` reads both formats. Switch: `CONFIG_IDDB_COMPACT` (`docs/build-config.md`),
-  on with `CONFIG_DMR`. A build with it lists `IDDB_COMPACT` in the debug link's VERSION features (`debuglink.md`).
+- Firmware: `core/codeplug/dmr_iddb.c` reads both formats. Switch: `CONFIG_IDDB_COMPACT`
+  ([build-config.md](../build-config.md)), on with `CONFIG_DMR`. A build with it lists `IDDB_COMPACT` in the debug
+  link's VERSION features (`debuglink.md`).
 - Host: `site/static/js/codeplug/iddb.js` writes and reads both. `tools/iddb_read.py` reads both and
   `tools/iddb_write.py` writes both (fresh only, for the HIL test's synthetic databases).
 - Tests: `tests/host/codeplugTest.c` (the radio's lookup), `site/tests/codeplug.test.mjs` (the encoder against the
@@ -16,9 +17,9 @@ the fast codeplug protocol (`cps-fast.md`) moves little.
   formats built from the specs, `tools/iddb_read.py` and the debug link's IDDB command), `tests/hil/test_iddb.py` (the
   radio's answers against the database it holds, or a synthetic one written for the test and the original put back).
 
-## 1. Why
+## 1. Why a second format
 
-Measured on a database of 133,148 records (RadioID, one country, 32 characters of text):
+This table compares the formats on a database of 133,148 records (RadioID, one country, 32 characters of text):
 
 | Part | Format N | Format C |
 |---|---|---|
@@ -28,8 +29,8 @@ Measured on a database of 133,148 records (RadioID, one country, 32 characters o
 | Total | 3.6 MB | about 1.45 MB with the slack of section 3.4 |
 
 Format N packs records end to end, so one record added near the start moves every record after it: a monthly
-RadioID refresh rewrote 874 of 878 blocks in a simulation. Format C keeps each record inside one page and leaves room
-in each page, so the same refresh changes 143 pages.
+RadioID refresh of that database rewrites 874 of 878 blocks. Format C keeps each record inside one page and leaves
+room in each page, so the same refresh changes 143 pages.
 
 LZ4 (the fast protocol's transfer coding) shrinks format N by only 8 %: the text is already packed. The dictionary,
 not the wire, is where the size goes.
@@ -74,7 +75,7 @@ All numbers are little endian.
 | 24 | 4 | Dictionary table offset |
 | 28 | 4 | Dictionary strings offset |
 
-The rest of page 0 is 0xFF. The radio takes the header only when every offset plus its section's length lies inside
+The rest of page 0 is `0xFF`. The radio takes the header only when every offset plus its section's length lies inside
 `size`, and `size` inside the space the radio has.
 
 ### 3.2 Index
@@ -97,7 +98,7 @@ characters), then the characters packed at 6 bits, most significant first, in th
 | Offset | Size | Field |
 |---|---|---|
 | 0 | 2 | Records in the page |
-| 2 | | The records, back to back. The rest of the page is 0xFF |
+| 2 | | The records, back to back. The rest of the page is `0xFF` |
 
 A record never crosses a page. Records in a page are sorted by ID, and each page's IDs lie between its index entry's
 first ID and the next entry's.
@@ -180,8 +181,8 @@ it reads (`IDDB_COMPACT` in VERSION features). So a newer format never reaches a
 | The radio reads format C, the database is format N (an old file, or read from the radio) | The editor offers to convert it: a smaller database with room for more names and faster writes after it. Converting is a full write of the database, once. After a read the offer comes at most once in 12 hours for each radio model |
 | The radio doesn't read format C, the database is format C | Written as format N. Each text keeps up to the length the longest one needs (16, 24, 32 or 48 characters). If they don't all fit the room, the editor says how many are left out and that a firmware update makes room |
 | A format C database on the radio, then older firmware flashed | The older firmware sees no database (3.1, byte 3): no names, nothing wrong. The editor, on reading that radio, marks the database to be written again in format N |
-| Firmware without the fast protocol | Format C is still written, through the open-firmware CPS (`cps-protocol.md`), in full |
+| Firmware without the fast protocol | Format C is still written, through the open-firmware CPS ([cps-protocol.md](cps-protocol.md)), in full |
 | TFTP (`tftp.md` 5) | Takes format N only: a format C header is refused before anything is erased. The editor's `codeplug.bin` for TFTP carries the database as format N |
-| qdmr and other open-firmware CPS | Write format N. The radio reads it as before |
+| qdmr and other open-firmware CPS | Write format N, which the radio reads |
 
 Format N stays readable by every build: qdmr writes it, and it is the way back.

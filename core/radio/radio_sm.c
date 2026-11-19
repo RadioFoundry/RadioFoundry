@@ -7118,7 +7118,7 @@ static void apply_prefs(radio_sm_t *sm, const settings_t *st)
 	sm->group_hang_ms = gs.group_hang_ms;
 	sm->private_hang_ms = gs.private_hang_ms;
 #if CONFIG_DMR_PRIVACY
-	// The privacy key in use, kept in the settings (slot 1 for now; per-channel choice: codeplug-native.md)
+	// The privacy key in use: the radio-wide key slot kept in the settings (settings-store.md 3.1)
 	uint8_t slot = st->privacy_active;
 	if (slot >= 1 && slot <= SETTINGS_PRIVACY_KEYS && st->privacy_type[slot - 1] < DMR_PRIVACY_NUM_TYPES &&
 	    st->privacy_type[slot - 1] != DMR_PRIVACY_OFF &&
