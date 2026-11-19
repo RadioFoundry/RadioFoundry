@@ -287,6 +287,7 @@
  "screen.in_theme": "{screen}，{theme}主题",
  "theme.light": "浅色",
  "theme.high_contrast": "高对比度",
+ "theme.night": "夜间（红色）",
  "color.red": "红色",
  "color.orange": "橙色",
  "color.yellow": "黄色",

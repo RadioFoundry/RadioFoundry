@@ -287,6 +287,7 @@
  "screen.in_theme": "{screen}, tema {theme}",
  "theme.light": "chiaro",
  "theme.high_contrast": "ad alto contrasto",
+ "theme.night": "notturno (rosso)",
  "color.red": "rossa",
  "color.orange": "arancio",
  "color.yellow": "gialla",
