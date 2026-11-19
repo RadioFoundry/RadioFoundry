@@ -172,14 +172,19 @@ enum { UI_USB_NET_OFF, UI_USB_NET_WAIT, UI_USB_NET_UP };
 // pills are inverse video
 typedef struct {
 	color_t bg, fg, dim, line, tx, rx, warn, idle, pill_fg, pill_dark_fg, focus, hint_bg, priv;
+	color_t idle_fg;		// the idle pill's word (pill_fg is the word on the TX color)
 	color_t focus_fg;		// text on the focus highlight
 	color_t chnum;			// Home's channel number
 	color_t strip_bg;		// the filled status strip's background (its text is pill_dark_fg)
 	color_t strip_warn;		// warnings on it
 } ui_colors_t;
 extern ui_colors_t ui_col;
-// Color theme on color displays (Settings > Display): 0 dark, 1 light, 2 high contrast. After ui_layout_init
+// Color theme on color displays (Settings > Display), the values of settings_t.theme. Night is shades of pure red
+// on black, for eyes adapted to the dark: it has no highlight color of its own choosing
+enum { UI_THEME_DARK, UI_THEME_LIGHT, UI_THEME_HIGH_CONTRAST, UI_THEME_NIGHT, UI_THEME_COUNT };
+// After ui_layout_init; a value out of range is the dark theme
 void ui_theme_set(uint8_t theme);
+uint8_t ui_theme_get(void);
 // Color displays (Settings > Display): the highlight color (UI_ACCENT_*, ui_svc.h) for list and tile focus and Home's
 // channel number, and whether the status strip is filled with it. Both re-apply the theme's colors
 void ui_accent_set(uint8_t accent);
