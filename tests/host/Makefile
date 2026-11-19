@@ -1841,6 +1841,29 @@ ifneq ($(PYTHON),)
 endif
 .PHONY: run-dstar
 
+# core/dsp/fxp.h's products from 16-bit halves (what a C-SKY build without HI/LO runs) against the 64-bit ones, as the
+# host builds it and as that core does (-DFXP_SPLIT16); and the full-rate codec's output the same either way
+TESTS   += fxpHalvesTest fxpHalvesSplitTest mbeExactTest mbeExactSplitTest
+fxpHalvesTest: fxpHalvesTest.c $(CORE)/dsp/fxp.h
+	$(CC) $(CFLAGS) -Wshadow -O1 -o $@ fxpHalvesTest.c
+
+fxpHalvesSplitTest: fxpHalvesTest.c $(CORE)/dsp/fxp.h
+	$(CC) $(CFLAGS) -Wshadow -O1 -DFXP_SPLIT16 -o $@ fxpHalvesTest.c
+
+mbeExactTest: mbeExactTest.c $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ mbeExactTest.c $(MBE) -lm
+
+mbeExactSplitTest: mbeExactTest.c $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
+	$(CC) $(CFLAGS) -Wshadow -DFXP_SPLIT16 -o $@ mbeExactTest.c $(MBE) -lm
+
+run: run-mbe-halves
+run-mbe-halves: fxpHalvesTest fxpHalvesSplitTest mbeExactTest mbeExactSplitTest
+	./fxpHalvesTest | tail -1
+	./fxpHalvesSplitTest | tail -1
+	./mbeExactTest | tail -1
+	./mbeExactSplitTest | tail -1
+.PHONY: run-mbe-halves
+
 # Yaesu System Fusion (core/ysf, docs/spec/ysf-modem.md): the coding against tools/ysf_ref.py's vectors, the
 # decoders against errors, whole transmissions through the receiver
 TESTS   += ysfTest
