@@ -105,11 +105,13 @@ MFID `0x00`, LB set.
 | Opcode | Request | Fields sent (bit offsets in the arguments) |
 |---|---|---|
 | `0x2C` | unit registration request | reserved 8, WACN 20 @8, system 12 @28, unit ID 24 @40 |
-| `0x28` | group affiliation request | emergency 1 @0, reserved 3, system 12 @4, group 16 @16, unit ID 24 @32, reserved 8 |
+| `0x28` | group affiliation request | reserved 12, system 12 @12, group 16 @24, unit ID 24 @40 |
 | `0x00` | group voice service request | service options 8 @0, reserved 16, group 16 @24, unit ID 24 @40 |
 
 The registration request carries the WACN and system ID the control channel names (or the configured ones). Service
-options are 0 (no emergency, clear, half duplex, priority 0).
+options are 0 (no emergency, clear, half duplex, priority 0). The affiliation request's reserved bits are 0; it
+carries no emergency flag. Its group and unit ID places were confirmed on a live control channel, which read them
+one octet early when they were packed at bits 16 and 32.
 
 ## 3. Channels to frequencies
 
