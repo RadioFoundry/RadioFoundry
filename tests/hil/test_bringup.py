@@ -5,6 +5,7 @@ through pytest with this directory's conftest. A required test that skips on it 
 test only skips in a plain run; an excused skip and an optional test's skip stay skips; a run that finds no radio
 fails. The tools/bringup.py parts need Python 3.11 or later ($RFOUNDRY_PYTHON, else the newest python3.N on PATH)."""
 import fcntl
+import functools
 import glob
 import json
 import os
@@ -448,21 +449,31 @@ def test_the_lock_follows_the_port(tmp_path):
 
 
 
+def real_boards():
+    return [b for b in sorted(os.listdir(os.path.join(ROOT, "boards")))
+            if os.path.isfile(os.path.join(ROOT, "boards", b, "board.toml"))]
+
+
+@functools.cache
+def listed(board):
+    """`bringup.py list --radio <board> --json` on the real tree, once a session: two tests read every board's."""
+    r = subprocess.run([python311(), BRINGUP, "list", "--radio", board, "--json"], cwd=ROOT, capture_output=True,
+                       text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+    return json.loads(r.stdout)
+
+
 def test_not_written_reads_as_not_written():
     """A switch in a board's BOARD_NOT_WRITTEN resolves to "not written", one in BOARD_UNSUPPORTED to "n/a"
     (docs/build-config.md, "Unsupported, not written, unconfirmed"), on every board."""
-    py = python311()
     checked = 0
-    for board in sorted(os.listdir(os.path.join(ROOT, "boards"))):
-        if not os.path.isfile(os.path.join(ROOT, "boards", board, "board.toml")):
-            continue
-        lists = {t: subprocess.run(["make", "-s", "BOARD=" + board, "print-" + t], cwd=ROOT, capture_output=True,
-                                   text=True).stdout.split() for t in ("unsupported", "not-written")}
-        r = subprocess.run([py, BRINGUP, "list", "--radio", board, "--json"], cwd=ROOT, capture_output=True, text=True)
-        assert r.returncode == 0, r.stdout + r.stderr
-        state = {row["switch"]: row["state"] for row in json.loads(r.stdout) if row["switch"]}
-        for t, want in (("unsupported", "n/a"), ("not-written", "not written")):
-            for s in lists[t]:
+    for board in real_boards():
+        out = subprocess.run(["make", "-s", "BOARD=" + board, "print-unsupported", "print-not-written"], cwd=ROOT,
+                             capture_output=True, text=True).stdout.splitlines()
+        assert len(out) == 2, (board, out)
+        state = {row["switch"]: row["state"] for row in listed(board) if row["switch"]}
+        for line, want in zip(out, ("n/a", "not written")):
+            for s in line.split():
                 if s in state:
                     assert state[s] == want, (board, s, state[s])
                     checked += 1
@@ -492,12 +503,8 @@ print(json.dumps({b: bringup.resolve(b, e)[0] for b in bringup._BOARDS}))
     assert r.returncode == 0, r.stdout + r.stderr
     assert json.loads(r.stdout) == {"na": "n/a", "nw": "not written", "off": "off", "has": "required"}, r.stdout
     checked = 0
-    for board in sorted(os.listdir(os.path.join(ROOT, "boards"))):
-        if not os.path.isfile(os.path.join(ROOT, "boards", board, "board.toml")):
-            continue
-        r = subprocess.run([py, BRINGUP, "list", "--radio", board, "--json"], cwd=ROOT, capture_output=True, text=True)
-        assert r.returncode == 0, r.stdout + r.stderr
-        rows = json.loads(r.stdout)
+    for board in real_boards():
+        rows = listed(board)
         own = {row["switch"]: row["state"] for row in rows if row["switch"]}
         for row in rows:
             req = row.get("requires")

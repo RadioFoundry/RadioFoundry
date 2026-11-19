@@ -636,7 +636,7 @@ class Board:
         self.data = data
         self.id = data["id"]
         self.platform = platform
-        self.mk = mk				# the make variables of MAKE_VARS and the build options
+        self.mk = mk				# the make variables of MAKE_VARS, the build options and load()'s more_vars
         self.symbols = layout["symbols"]	# __codec_* of every linker script in the board directory
         self.app_region = layout["flash"]	# (start, end) of MEMORY FLASH in the build's LDSCRIPT
         self.source_names = names		# board_t .name: [(literal, macro)]
@@ -906,9 +906,9 @@ def _layout(root, bid, mk):
     return {"flash": (org, org + length), "symbols": syms}
 
 
-def load(root=ROOT, only=None):
+def load(root=ROOT, only=None, more_vars=()):
     """{id: Board} for every board directory with a board.mk (or the ids in only). Fails on a missing or malformed
-    board.toml."""
+    board.toml. more_vars: more make variables to read into Board.mk in the same make run."""
     platforms = load_platforms(root)
     out = {}
     dirs = board_dirs(root)
@@ -924,7 +924,8 @@ def load(root=ROOT, only=None):
         validate(data, BOARD_SCHEMA, "boards/%s/board.toml" % bid)
         if data["id"] != bid:
             raise RegistryError("boards/%s/board.toml: id %r must be the directory name" % (bid, data["id"]))
-        mk = make_vars(root, bid, MAKE_VARS + tuple(o["name"] + "_VALUES" for o in data.get("build_options", [])))
+        mk = make_vars(root, bid, MAKE_VARS + tuple(o["name"] + "_VALUES" for o in data.get("build_options", []))
+                       + tuple(more_vars))
         plat = platforms.get(mk.get("PLATFORM", ""))
         if plat is None:
             raise RegistryError("boards/%s: PLATFORM %r has no platform/<p>/platform.toml" % (bid, mk.get("PLATFORM")))

@@ -59,34 +59,47 @@ def die(msg):
 
 # ── board data ──
 #
-# Everything below reads boards only through _boards(), and _boards() only through the board registry
+# Everything below reads boards only through _board(), and _board() only through the board registry
 # (tools/boards.py): the board list, the debug link names, config.mk's BOARD_UNSUPPORTED and BOARD_NOT_WRITTEN with
 # each switch's reason,
 # board.toml [features] (the unsupported marks) and each switch's default (by make).
 
-_BOARDS = None
+_BOARDS = None   # id -> board, each loaded when first asked for: make runs about half a second a board
+
+
+def _registry():
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import boards as registry
+    return registry
+
+
+def _board_ids():
+    """Every board id (boards/*/board.mk), without running make."""
+    return _registry().board_dirs(ROOT)
+
+
+def _board(bid):
+    """One board: {unsupported: {switch: reason}, not_written: {switch: reason}, config, overrides,
+    debuglink_names}."""
+    global _BOARDS
+    if _BOARDS is None:
+        _BOARDS = {}
+    if bid not in _BOARDS:
+        registry = _registry()
+        sws = switches()
+        try:
+            b = registry.load(ROOT, only=[bid], more_vars=[f"CONFIG_{s}" for s in sws])[bid]
+        except registry.RegistryError as e:
+            die(f"board registry: {e}")
+        _BOARDS[bid] = {"unsupported": b.unsupported, "not_written": b.not_written,
+                        "config": {s: b.mk.get(f"CONFIG_{s}", "") for s in sws},
+                        "overrides": b.get("features", {}), "debuglink_names": b.debuglink_names()}
+    return _BOARDS[bid]
 
 
 def _boards():
-    """Every board: id -> {unsupported: {switch: reason}, not_written: {switch: reason}, config, overrides,
-    debuglink_names}."""
-    global _BOARDS
-    if _BOARDS is not None:
-        return _BOARDS
-    sys.path.insert(0, os.path.join(ROOT, "tools"))
-    import boards as registry
-    sws = switches()
-    out = {}
-    try:
-        for bid, b in registry.load(ROOT).items():
-            mk = registry.make_vars(ROOT, bid, [f"CONFIG_{s}" for s in sws])
-            out[bid] = {"unsupported": b.unsupported, "not_written": b.not_written,
-                        "config": {s: mk.get(f"CONFIG_{s}", "") for s in sws},
-                        "overrides": b.get("features", {}), "debuglink_names": b.debuglink_names()}
-    except registry.RegistryError as e:
-        die(f"board registry: {e}")
-    _BOARDS = out
-    return out
+    """Every board, as _board() gives it."""
+    return {bid: _board(bid) for bid in _board_ids()}
 
 
 # ── the checklist ──
@@ -160,7 +173,17 @@ def _tree_texts():
     return _TREE
 
 
+_DEFAULT_SOURCE = {}
+
+
 def default_source(switch):
+    """What the Makefile builds for the switch, as _default_source() finds it (once a switch: it reads the tree)."""
+    if switch not in _DEFAULT_SOURCE:
+        _DEFAULT_SOURCE[switch] = _default_source(switch)
+    return list(_DEFAULT_SOURCE[switch])
+
+
+def _default_source(switch):
     """What the Makefile builds for the switch (inside an ifeq / ifneq on it, or a -$(CONFIG_X) line), else the files
     that test CONFIG_<switch> (core/config.h, which names them all, left out)."""
     if not switch:
@@ -184,8 +207,22 @@ def default_source(switch):
                     found.append(tok)
     if found:
         return found
-    pat = re.compile(rf"\bCONFIG_{switch}\b")
-    return sorted(p for p, t in _tree_texts().items() if p != os.path.join("core", "config.h") and pat.search(t))
+    return sorted(_switch_users().get(switch, ()))
+
+
+_SWITCH_USERS = None
+
+
+def _switch_users():
+    """switch -> the files that test CONFIG_<switch> (core/config.h left out), from one pass over the tree."""
+    global _SWITCH_USERS
+    if _SWITCH_USERS is None:
+        _SWITCH_USERS = {}
+        for p, t in _tree_texts().items():
+            if p != os.path.join("core", "config.h"):
+                for sw in set(re.findall(r"\bCONFIG_(\w+)\b", t)):
+                    _SWITCH_USERS.setdefault(sw, []).append(p)
+    return _SWITCH_USERS
 
 
 def feature_paths(e):
@@ -194,7 +231,7 @@ def feature_paths(e):
 
 def resolve(board, e):
     """(state, reason) of a feature on a board."""
-    bd = _boards()[board]
+    bd = _board(board)
     ov = bd["overrides"].get(e["id"])
     if e["switch"] and e["switch"] in bd["unsupported"]:
         if ov and ov.get("state") == "unsupported":
@@ -220,7 +257,7 @@ def resolve(board, e):
 def absent_switches(board):
     """The switches a board leaves out by design: n/a, not written, or off in its default build. A test marked
     needs_switch for one of them skips not_built there, and bring-up excuses that (tests/hil/bringup_plugin.py)."""
-    bd = _boards()[board]
+    bd = _board(board)
     return sorted(set(bd["unsupported"]) | set(bd["not_written"]) | {s for s, v in bd["config"].items() if v != "y"})
 
 
@@ -280,6 +317,7 @@ def load_records(results=RESULTS):
 
 
 _HASHES = {}
+_LS_TREE = {}   # rev -> {path: object id} of every file and directory, from one ls-tree
 _TREE_REV = None
 
 
@@ -301,12 +339,12 @@ def source_hashes(e, rev=None):
     paths = [p.rstrip("/") for p in feature_paths(e)]
     key = (rev, tuple(paths))
     if key not in _HASHES:
-        out = dict.fromkeys(paths)
-        for line in git("ls-tree", rev, "--", *paths, check=False).stdout.splitlines():
-            meta, _, path = line.partition("\t")
-            if path in out:
-                out[path] = meta.split()[2]
-        _HASHES[key] = out
+        if rev not in _LS_TREE:
+            _LS_TREE[rev] = {path: meta.split()[2] for meta, _, path in (
+                line.partition("\t") for line in git("ls-tree", "-r", "-t", rev, check=False).stdout.splitlines())}
+        # As `git ls-tree rev -- <paths>` reports them, which records hold: a directory listed with a path inside it
+        # is descended into, not hashed itself
+        _HASHES[key] = {p: None if any(q.startswith(p + "/") for q in paths) else _LS_TREE[rev].get(p) for p in paths}
     return _HASHES[key]
 
 
@@ -358,15 +396,47 @@ def same_code(path, old, new):
     return _SAME_CODE[(path, old, new)]
 
 
+_CAT = None
+
+
+def cat(oid):
+    """(type, bytes) of a git object, or (None, b"") when the repository lacks it. One `git cat-file --batch` serves
+    every lookup: a process a lookup costs seconds on a board with many records."""
+    global _CAT
+    if _CAT is None:
+        _CAT = subprocess.Popen(["git", "cat-file", "--batch"], cwd=ROOT, stdin=subprocess.PIPE,
+                                stdout=subprocess.PIPE)
+    _CAT.stdin.write(oid.encode() + b"\n")
+    _CAT.stdin.flush()
+    head = _CAT.stdout.readline().split()
+    if len(head) != 3:
+        return None, b""
+    data = _CAT.stdout.read(int(head[2]))
+    _CAT.stdout.read(1)
+    return head[1].decode(), data
+
+
+_TREES = {}
+
+
 def _objects(path, oid):
     """file path -> blob id: every file under a tree, or the one file a blob is."""
-    if git("cat-file", "-t", oid, check=False).stdout.strip() != "tree":
+    if cat(oid)[0] != "tree":
         return {path: oid}
-    out = {}
-    for line in git("ls-tree", "-r", oid, check=False).stdout.splitlines():
-        meta, _, name = line.partition("\t")
-        out[path + "/" + name] = meta.split()[2]
-    return out
+    if oid not in _TREES:
+        _TREES[oid] = [line.partition("\t") for line in git("ls-tree", "-r", oid, check=False).stdout.splitlines()]
+    return {path + "/" + name: meta.split()[2] for meta, _, name in _TREES[oid]}
+
+
+_CODE = {}
+
+
+def _code_of(oid):
+    """code_text() of a blob, or None when the repository lacks it."""
+    if oid not in _CODE:
+        kind, data = cat(oid)
+        _CODE[oid] = code_text(data.decode(errors="replace")) if kind == "blob" else None
+    return _CODE[oid]
 
 
 def _same_code(path, old, new):
@@ -378,8 +448,8 @@ def _same_code(path, old, new):
             continue
         if not f.endswith(C_LIKE):
             return False
-        x, y = (git("cat-file", "-p", o, check=False) for o in (a[f], b[f]))
-        if x.returncode or y.returncode or code_text(x.stdout) != code_text(y.stdout):
+        x, y = _code_of(a[f]), _code_of(b[f])
+        if x is None or y is None or x != y:
             return False
     return True
 
@@ -431,8 +501,7 @@ def feature_status(board, e, records, tests=None):
 
 def cmd_list(args):
     feats = load_features(args.features)
-    boards = _boards()
-    if args.radio not in boards:
+    if args.radio not in _board_ids():
         die(f"no board {args.radio!r} (boards/*/board.mk)")
     records = load_records(args.results)
     found = collected(args)
@@ -477,7 +546,7 @@ def print_owner(rows, head="owner actions (run with --manual; they're asked for 
 
 def cmd_status(args):
     feats = load_features(args.features)
-    boards = sorted(_boards()) if not args.radio else [args.radio]
+    boards = _board_ids() if not args.radio else [args.radio]
     records = load_records(args.results)
     table = {e["id"]: {} for e in feats}
     for b in boards:
@@ -555,8 +624,7 @@ class RadioLock:
 
 def cmd_run(args):
     feats = load_features(args.features)
-    boards = _boards()
-    if args.radio not in boards:
+    if args.radio not in _board_ids():
         die(f"no board {args.radio!r} (boards/*/board.mk)")
     if not args.no_record and not git_checkout():
         die(f"{NO_GIT}, and a record needs the commit: run from a clone, or pass --no-record")
@@ -601,8 +669,8 @@ def cmd_run(args):
     with open(out_path) as f:
         out = json.load(f)
     fw_board = out.get("firmware", {}).get("board")
-    if fw_board and fw_board not in boards[args.radio]["debuglink_names"]:
-        die(f"the radio reports board={fw_board}, not {args.radio} ({', '.join(boards[args.radio]['debuglink_names'])})"
+    if fw_board and fw_board not in _board(args.radio)["debuglink_names"]:
+        die(f"the radio reports board={fw_board}, not {args.radio} ({', '.join(_board(args.radio)['debuglink_names'])})"
             ": nothing recorded")
     if args.no_record:
         return rc
