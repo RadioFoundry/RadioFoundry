@@ -368,6 +368,26 @@ def test_bundle_round_trip():
             check(True, "boolean inventory schema version rejected")
 
 
+def test_protocol_versions():
+    ids = sorted(tle.SUPPORTED_PROFILE_IDS)[:10]
+    records = tle.validate_records([make_record(catalog_id) for catalog_id in ids])
+    profiles = [{"catalog_id": catalog_id, "rx_hz": 145900000, "tx_hz": 435100000,
+                 "tx_tone_tenths": 885} for catalog_id in ids]
+    for version in (6, 7):
+        radio = FakeRadio(capacity=10, protocol_version=version)
+        result = tle.install_records(radio, records, ids, profiles)
+        capacity, entries = tle.radio_inventory(radio)
+        chunks = [payload for _, payload in radio.calls if payload[0] == tle.OP_PROFILE_STAGE_CHUNK]
+        check(result["frequency_profiles"] == profiles and capacity == 10 and len(entries) == 10 and len(chunks) == 3,
+              f"protocol-v{version} installs and reads ten profiles using chunks")
+    radio = FakeRadio(protocol_version=8)
+    try:
+        tle.radio_inventory(radio)
+        check(False, "unknown protocol is rejected")
+    except tle.SatelliteTleError:
+        check(True, "unknown protocol is rejected")
+
+
 def test_install_transaction():
     selected = tle.validate_records([make_record(25544), make_record(20580)])
     old_epoch = int(selected[0]["epoch"].timestamp()) - 1000
@@ -466,6 +486,7 @@ def main():
     test_provider_parser_fuzz()
     test_bundle_round_trip()
     test_install_transaction()
+    test_protocol_versions()
     print(f"# satelliteTleTest {'FAILED' if failures else 'PASSED'} ({checks} checks, {failures} failures)")
     return 1 if failures else 0
 

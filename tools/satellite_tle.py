@@ -27,7 +27,8 @@ DEFAULT_MAX_AGE_DAYS = 30
 SCHEMA_VERSION = 3
 SUPPORTED_SCHEMA_VERSIONS = (1, 2, 3)
 PROFILE_VALUES_PROTOCOL_VERSION = 5
-SATELLITE_PROTOCOL_VERSION = 6
+PROFILE_CHUNK_PROTOCOL_VERSION = 6
+SATELLITE_PROTOCOL_VERSION = 7
 REPLACE_PROTOCOL_MIN_VERSION = 4
 PROFILE_PROTOCOL_MIN_VERSION = 3
 LEGACY_SATELLITE_PROTOCOL_VERSION = 2
@@ -446,7 +447,7 @@ def radio_inventory(link):
     version, capacity, installed_count = struct.unpack("<BHH", info)
     if version not in (LEGACY_SATELLITE_PROTOCOL_VERSION, PROFILE_PROTOCOL_MIN_VERSION,
                        REPLACE_PROTOCOL_MIN_VERSION, PROFILE_VALUES_PROTOCOL_VERSION,
-                       SATELLITE_PROTOCOL_VERSION) or \
+                       PROFILE_CHUNK_PROTOCOL_VERSION, SATELLITE_PROTOCOL_VERSION) or \
             capacity == 0 or installed_count > capacity:
         raise SatelliteTleError("radio satellite capability is unsupported or invalid")
     entries = list_installed(link, capacity, installed_count)
@@ -598,7 +599,7 @@ def set_radio_profile_ids(link, profile_ids, protocol_version=None):
 
 def stage_radio_frequency_profiles(link, transaction, profiles, protocol_version=SATELLITE_PROTOCOL_VERSION):
     profiles = validate_frequency_profiles(profiles)
-    if protocol_version >= SATELLITE_PROTOCOL_VERSION:
+    if protocol_version >= PROFILE_CHUNK_PROTOCOL_VERSION:
         for start in range(0, len(profiles), 4):
             chunk = profiles[start:start + 4]
             payload = bytearray(struct.pack("<HBBB", transaction, len(profiles), start, len(chunk)))
@@ -685,14 +686,14 @@ def install_records(link, records, profile_ids=None, profiles=None):
     version, capacity, installed_count = struct.unpack("<BHH", info)
     if version not in (LEGACY_SATELLITE_PROTOCOL_VERSION, PROFILE_PROTOCOL_MIN_VERSION,
                        REPLACE_PROTOCOL_MIN_VERSION, PROFILE_VALUES_PROTOCOL_VERSION,
-                       SATELLITE_PROTOCOL_VERSION) or \
+                       PROFILE_CHUNK_PROTOCOL_VERSION, SATELLITE_PROTOCOL_VERSION) or \
             capacity == 0 or installed_count > capacity:
         raise SatelliteTleError("radio satellite capability is unsupported or invalid")
     if selected_ids is not None and version < REPLACE_PROTOCOL_MIN_VERSION:
         raise SatelliteTleError("this bundle replaces the selected TLE set and requires satellite protocol version 4")
     if full_profiles is not None and version < PROFILE_VALUES_PROTOCOL_VERSION:
         raise SatelliteTleError("frequency-valued bundles require satellite protocol version 5")
-    if full_profiles is not None and len(full_profiles) > 4 and version < SATELLITE_PROTOCOL_VERSION:
+    if full_profiles is not None and len(full_profiles) > 4 and version < PROFILE_CHUNK_PROTOCOL_VERSION:
         raise SatelliteTleError("more than four frequency profiles require satellite protocol version 6")
     if selected_ids is not None and {item["catalog_id"] for item in validated} != set(selected_ids):
         raise SatelliteTleError("replacement bundle TLE records must exactly match its selected profile IDs")

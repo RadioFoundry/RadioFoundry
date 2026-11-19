@@ -218,7 +218,7 @@ guessed names.
 `ABORT` takes a transaction ID `u16` and discards an uncommitted batch. Protocol v2 remains supported for schema-v1
 additive TLE installs. Schema-v2 replacement bundles require protocol v4. Schema-v3 bundles require protocol v5 and
 stage TLEs and frequency values before one commit; protocol v5 supports up to four selected profiles, while protocol
-v6 supports the full ten. The host reads both back before reporting success. The standalone
+v6 and later support the full ten. The host reads both back before reporting success. The standalone
 `profiles` command requires protocol v3 or newer. `PROFILE_GET` returns up to 10 catalog IDs and `PROFILE_SET` accepts
 IDs from the built-in catalog for the legacy profile-only workflow. PC TLE synchronization does not invoke
 `SYNC_CHANNELS` and does not create, modify, or remove codeplug zones or channels. The separate `SYNC_CHANNELS`
