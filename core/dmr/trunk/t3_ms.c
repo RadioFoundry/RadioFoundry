@@ -2295,8 +2295,20 @@ void t3_ms_rx(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t dt, uint8_t cc, c
 		if (!have) {
 			return;
 		}
+		bool hytera = ms->mbc[si].hdr.fid == T3_FID_HYTERA;
+		if (hytera && d[0] == T3_OP_PD_GRANT && !ms->mbc[si].has_intermediate) {
+			// The Hytera grant puts its absolute channel in the first of two continuations.
+			memcpy(ms->mbc[si].intermediate, d, T3_CSBK_BYTES);
+			ms->mbc[si].has_intermediate = true;
+			ms->mbc[si].open = true;
+			ms->mbc[si].ms = now;
+			return;
+		}
 		t3_cdef_t c;
-		if (!t3_crc_ok(d, 0) || !t3_cdef_parse(d, ms->mbc[si].hdr.op, &c)) {
+		bool valid = hytera ?
+			ms->mbc[si].has_intermediate && t3_hytera_pd_cdef_parse(ms->mbc[si].intermediate, d, &c) :
+			t3_crc_ok(d, 0) && t3_cdef_parse(d, ms->mbc[si].hdr.op, &c);
+		if (!valid) {
 			ms->st.crc_bad++;
 			return;
 		}
@@ -2314,12 +2326,13 @@ void t3_ms_rx(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t dt, uint8_t cc, c
 		// Any good CSBK on the call's slot keeps it alive, one with another FID included
 		ms->last_act_ms = now;
 	}
-	if (!known || p.fid != 0) {
+	if (!known || (p.fid != 0 && dt != T3_DT_MBC_HDR)) {
 		return;
 	}
 	if (dt == T3_DT_MBC_HDR) {
 		// The header of a multi-block PDU: wait for its continuation
 		ms->mbc[si].open = true;
+		ms->mbc[si].has_intermediate = false;
 		ms->mbc[si].hdr = p;
 		ms->mbc[si].ms = now;
 		return;

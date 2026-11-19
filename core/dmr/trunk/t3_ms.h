@@ -310,6 +310,8 @@ typedef struct {
 	// MBC assembly, per slot
 	struct {
 		bool open;
+		bool has_intermediate;
+		uint8_t intermediate[T3_CSBK_BYTES];
 		t3_csbk_t hdr;
 		uint32_t ms;
 	} mbc[2];
