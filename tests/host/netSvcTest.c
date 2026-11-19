@@ -141,6 +141,40 @@ static void peer_segment(peer_t *p, uint8_t flags, const void *data, int len)
 	ipGatewayEthernetIn(f, 54 + len);
 }
 
+// A UDP datagram from ip:sport on the host's side to the radio's port dport (checksum 0: none, as IPv4 allows)
+void udp_to_radio(uint32_t ip, uint16_t sport, uint16_t dport, const char *text)
+{
+	uint8_t f[14 + 20 + 8 + 512];
+	int len = (int)strlen(text);
+	memcpy(f, RADIO_MAC, 6);
+	memcpy(f + 6, HOST_MAC, 6);
+	put16(f + 12, 0x0800);
+	uint8_t *ip4 = f + 14;
+	memset(ip4, 0, 28);
+	ip4[0] = 0x45;
+	put16(ip4 + 2, (uint16_t)(28 + len));
+	ip4[8] = 64;
+	ip4[9] = 17;
+	put32(ip4 + 12, ip);
+	put32(ip4 + 16, net_test_radio_ip);
+	uint32_t sum = 0;
+	for (int k = 0; k < 20; k += 2) {
+		sum += get16(ip4 + k);
+	}
+	while (sum >> 16) {
+		sum = (sum & 0xFFFF) + (sum >> 16);
+	}
+	put16(ip4 + 10, (uint16_t)~sum);
+	uint8_t *u = ip4 + 20;
+	put16(u, sport);
+	put16(u + 2, dport);
+	put16(u + 4, (uint16_t)(8 + len));
+	put16(u + 6, 0);
+	memcpy(u + 8, text, (size_t)len);
+	pcap_write(f, 42 + len);
+	ipGatewayEthernetIn(f, 42 + len);
+}
+
 static peer_t *peers[32];
 static int npeers;
 

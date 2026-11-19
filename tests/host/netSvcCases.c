@@ -1461,6 +1461,103 @@ static void test_webctl(void)
 }
 #endif
 
+// ---- zone and channel control over UDP (radio_udp.c) ----
+static void test_radio_udp(void)
+{
+	uint32_t host = net_test_host_ip();
+	const char *last = udp_catch.last;
+	memset(&fake_view, 0, sizeof(fake_view));
+	fake_view.zone_index = 1;
+	fake_view.zone_size = 2;
+	strcpy(fake_view.zone_name, "Rpt");
+	codeplug_channel(101, &fake_view.ch);
+	fake_view.channel_number = 101;
+	fake_view.dmr.target_id = 3107;
+	run_for(130000);	// the HTTP cases' subscription has lapsed
+	udp_catch.port = 50600;
+	udp_catch.count = 0;
+
+	// Where the radio is: one datagram back from the control port, with the lease; a line from nc is fine
+	udp_to_radio(host, 50600, NET_RADIO_UDP_PORT, "select\n");
+	pump();
+	CHECK(udp_catch.count == 1 && udp_catch.from_port == NET_RADIO_UDP_PORT);
+	CHECK(strstr(last, "{\"zone\":1,\"pos\":0,\"vfo\":false,") == last &&
+	      strstr(last, "\"tg\":3107,\"call\":\"group\",\"lease\":120}\n") && !strstr(last, "err"));
+	// the sender is now the subscriber; the reply said where the radio is, so no notice repeats it
+	run_for(2000);
+	CHECK(udp_catch.count == 1);
+	// a step goes to the radio core; the reply is where the radio was, the move comes as a notice
+	int steps = req_steps;
+	udp_to_radio(host, 50600, NET_RADIO_UDP_PORT, "step?channel=1");
+	pump();
+	CHECK(req_steps == steps + 1 && udp_catch.count == 2 && strstr(last, "\"pos\":0,") && !strstr(last, "err"));
+	fake_view.zone_pos = 1;
+	run_for(150);
+	CHECK(udp_catch.count == 3 && udp_catch.from_port == NET_RADIO_UDP_PORT && strstr(last, "\"pos\":1,") &&
+	      !strstr(last, "lease"));
+	// zone steps, and a zone and position
+	udp_to_radio(host, 50600, NET_RADIO_UDP_PORT, "step?zone=1");
+	pump();
+	CHECK(req_zone == 2);
+	run_for(1100);
+	udp_to_radio(host, 50600, NET_RADIO_UDP_PORT, "select?zone=0&pos=2");
+	pump();
+	CHECK(req_zone == 0 && req_zone_pos == 2 && !strstr(last, "err"));
+	run_for(100);
+	// Refused: still where the radio is, and why. Out of range, not a request, too long; the current zone's size is
+	// the view's, another zone's position goes to the radio, which ignores one past the end
+	static const char *const bad[] = { "select?zone=3", "select?zone=1&pos=2", "step?channel=0", "step?channel=101",
+					   "step", "selectx", "zone=1", "select?zone=1&pos=1&padding=xxxxxxxxxxxxxxxxxxxx" };
+	for (unsigned i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+		int c = udp_catch.count;
+		udp_to_radio(host, 50600, NET_RADIO_UDP_PORT, bad[i]);
+		pump();
+		CHECK(udp_catch.count == c + 1 && strstr(last, "\"zone\":1,") && strstr(last, ",\"err\":400}\n"));
+	}
+	int zn = req_zone_n;
+	udp_to_radio(host, 50600, NET_RADIO_UDP_PORT, "select?zone=2&pos=79");
+	pump();
+	CHECK(req_zone_n == zn + 1 && !strstr(last, "err"));
+	run_for(100);
+	// transmitting: 409, nothing asked of the radio
+	fake_view.state = RS_TX;
+	steps = req_step_n;
+	udp_to_radio(host, 50600, NET_RADIO_UDP_PORT, "step?channel=-1");
+	pump();
+	CHECK(req_step_n == steps && strstr(last, ",\"err\":409}\n"));
+	fake_view.state = RS_IDLE;
+	// a heartbeat every 30 s, changed or not
+	run_for(150);
+	int c = udp_catch.count;
+	run_for(31000);
+	CHECK(udp_catch.count == c + 1 && !strstr(last, "lease"));
+	// another program on the link takes the notices over
+	udp_catch.port = 50601;
+	c = udp_catch.count;
+	udp_to_radio(host, 50601, NET_RADIO_UDP_PORT, "select");
+	pump();
+	fake_view.zone_pos = 0;
+	run_for(150);
+	CHECK(udp_catch.count == c + 2 && strstr(last, "\"pos\":0,"));
+	// the lease ends 120 s after the last request
+	run_for(121000);
+	c = udp_catch.count;
+	fake_view.zone_pos = 1;
+	run_for(300);
+	CHECK(udp_catch.count == c);
+	// notify=0 cancels: lease 0, no notices
+	udp_to_radio(host, 50601, NET_RADIO_UDP_PORT, "select");
+	pump();
+	udp_to_radio(host, 50601, NET_RADIO_UDP_PORT, "select?notify=0");
+	pump();
+	CHECK(strstr(last, ",\"lease\":0}\n"));
+	c = udp_catch.count;
+	fake_view.zone_pos = 0;
+	run_for(300);
+	CHECK(udp_catch.count == c);
+	udp_catch.port = 0;
+}
+
 void tests_run(void)
 {
 	test_kiss();
@@ -1472,4 +1569,5 @@ void tests_run(void)
 	test_aprsis();
 	test_fuzz();
 	test_radio_api();	// last: its waits move the clock the others' checks expect
+	test_radio_udp();
 }

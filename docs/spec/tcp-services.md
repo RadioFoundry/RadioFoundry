@@ -22,6 +22,7 @@ Sources: RFC 9293 (TCP), RFC 6298 (retransmission timer), RFC 5681 3.1 (one segm
 | `CONFIG_NET_RADIO_NOTIFY` | = NET_RADIO_API | its change notices over UDP (5.2) |
 | `CONFIG_NET_RADIO_ZONES` | = NET_RADIO_API | its zone channel lists, `/api/zone` (5.2) |
 | `CONFIG_NET_RADIO_DUMP` | = NET_RADIO_ZONES | the whole codeplug in one reply, `/api/zones` (5.2) |
+| `CONFIG_NET_RADIO_UDP` | = DMR_IP_GATEWAY | zone and channel control over UDP, port 4191, with no TCP or HTTP (`core/net/radio_udp.c`, section 5.3) |
 | `CONFIG_NET_RIGCTL` | = NET_TCP | Hamlib's network rig control, port 4532 (`core/net/rigctld.c`, section 6) |
 | `CONFIG_NET_APRSIS` | = NET_TCP and APRS | the radio's own APRS-IS client (`core/net/aprsis.c`, section 7) |
 
@@ -318,9 +319,44 @@ A channel in `/api/zone`'s items and `/api/zones`' channels (and the structure a
   stands, the zone too, until the knob is turned; then the knob's position is taken again ([ui.md](ui.md) 3).
 - Selecting the current zone's position reads no flash (its size is in the radio's view); another zone's reads its
   record once.
-- Debug link view keys: `http.radio_lists radio_selects radio_steps radio_refused` count requests;
-  `http.radio_notify` is the subscribed port (0 none), `http.radio_notices` the notices sent and
-  `http.radio_notice_busy` the sends the link refused.
+- The control is `core/net/radio_ctl.c`, shared with the UDP requests (5.3): one subscriber for both, the last to
+  subscribe.
+- Debug link view keys: `http.radio_lists` counts zone pages and dumps; `radio_ctl.selects steps refused` count
+  requests over HTTP and UDP; `radio_ctl.notify` is the subscriber's port (0 none), `radio_ctl.notices` the notices
+  sent and `radio_ctl.notice_busy` the sends the link refused.
+
+### 5.3 Zone and channel control over UDP (port 4191)
+
+The requests of 5.2 without TCP or HTTP, for a radio short of RAM (`CONFIG_NET_RADIO_UDP`, `core/net/radio_udp.c`).
+A tight build can leave out `NET_TCP`, and with it HTTP, web control, rigctld and KISS over TCP, and still be
+controlled. Each request is one datagram to the radio's port 4191; each is answered with one datagram.
+
+| Request | |
+|---|---|
+| `select` | where the radio is |
+| `select?zone=Z` / `select?zone=Z&pos=P` | to zone Z, its first channel or position P, leaving the VFO |
+| `step?channel=N` / `step?zone=N` | N channels or zones on, negative back, wrapping, -100 to 100 |
+| `select?notify=0` | no more notices |
+
+- ASCII, at most 40 bytes; a trailing newline is ignored (`echo select \| nc -u`).
+- The reply goes from port 4191 to the request's source address and port: the `/api/select` JSON (5.2) with
+  `"lease":120` (0 after `notify=0`) and, when refused, `"err":400` (malformed, out of range, too long) or `"err":409`
+  (transmitting or hotspot mode), as the HTTP status codes.
+- The reply is where the radio is when the request comes. A select or step moves it a little later: the notice brings
+  that.
+- Every request makes its source address and port the subscriber, for 120 s. Notices as 5.2's, from port 4191: at
+  once on a change, every 30 s as a heartbeat. A reply counts as a notice: none repeats it. A client renews with
+  `select` about every 60 s, which also reads where the radio is.
+- From the link only: the port is bound with `ipGatewayUdpBind`, never the air's. Whoever is on the USB network or
+  PPP link is the radio's operator, so there is no host check and no 403.
+- Not reliable, by design. A lost step is not sent again: the user steps again. Where the radio is comes in every
+  reply, every notice and the heartbeat, so a client that lost one learns it from the next.
+- A position in the current zone is checked against its size (in the view); another zone's isn't read (no zone in
+  RAM), and the radio ignores a position past its end, staying on the zone's first channel.
+- RAM: no buffer of its own. The request is parsed from a 41 byte copy on the stack, and the reply and notices are
+  written into the IP gateway's frame buffer. Static state is the subscriber, the pending requests and counters, under
+  100 bytes, shared with 5.2.
+- Debug link view keys: `radio_udp.requests bad reply_busy`, with `radio_ctl.*` (5.2).
 
 ## 6. rigctld (port 4532)
 
@@ -432,6 +468,9 @@ send a packet from the radio's address to any destination through the host's MAC
   the host, 400 for a bad address), the login line, logresp verified / unverified and the waits, the engine's 'G'
   lines to the server and nothing else, server lines to the engine without comments, a silent server dropped and
   tried again, a callsign change, turned off. `netSvcTest.pcap` is checked by tshark.
+- Host, UDP control (`netSvcCases.c`, `test_radio_udp`): the reply and its lease, no notice repeating a reply, a
+  step and its notice, zone steps and selects, 400 for each malformed or out of range request, 409 while
+  transmitting, the heartbeat, a second client taking the notices over, the lease ending, `notify=0`.
 - HIL: `tests/hil/test_tcp_services.py` (opt-in, below).
 - The host OS stack is the other end in the HIL tests (curl, nc); a tap / utun test on the host would need root and
   is not done.

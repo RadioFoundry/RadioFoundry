@@ -140,6 +140,9 @@ static const char features[] =
 #if CONFIG_NET_RADIO_DUMP
 	"NET_RADIO_DUMP,"
 #endif
+#if CONFIG_NET_RADIO_UDP
+	"NET_RADIO_UDP,"
+#endif
 #if CONFIG_NET_RIGCTL
 	"NET_RIGCTL,"
 #endif

@@ -283,7 +283,7 @@ def test_zone_channel_api(net):
     finally:
         _get(ip, f"/api/select?zone={start['zone']}&pos={start['pos']}")
         assert _wait_at(ip, *here) == here
-    assert int(_net_view(link)["http.radio_steps"]) >= 0
+    assert int(_net_view(link)["radio_ctl.steps"]) >= 0
 
 
 @pytest.mark.feature("net_radio_notify")
@@ -329,13 +329,13 @@ def test_zone_channel_notify(net):
         link.channel_step(-1)
         back = notice(1.0)
         assert _at(back) == _at(start), back
-        assert int(_net_view(link)["http.radio_notify"]) == port
+        assert int(_net_view(link)["radio_ctl.notify"]) == port
     finally:
         try:
             _get(ip, "/api/select?notify=0")
         finally:
             rx.close()
-    assert int(_net_view(link)["http.radio_notify"]) == 0
+    assert int(_net_view(link)["radio_ctl.notify"]) == 0
     assert _at(_where(ip)) == _at(start)
 
 
