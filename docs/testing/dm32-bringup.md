@@ -196,7 +196,8 @@ The HR_C7000 copies its FM receive audio to the CPU (`modem-hrc7000.md` 8.5). AP
 ## NXDN Scrambler interoperability
 
 Manual on-air testing with firmware commit `e6e2799f` confirmed scrambled NXDN voice between Baofeng DM-32UV
-radios and between a DM-32UV and Kenwood 5000-series radios. See [NXDN Scrambler](../spec/nxdn.md).
+radios and between a DM-32UV and Kenwood 5000-series radios. The revised firmware (local test build `21bf5df8`)
+passed the same manual on-air interoperability checks with those radios. See [NXDN Scrambler](../spec/nxdn.md).
 
 ## Open items to settle on the bench
 
