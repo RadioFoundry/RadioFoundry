@@ -497,7 +497,7 @@ DMR mode (the HR_C6000 needs the raw 4FSK baseband):
 |---|---|
 | 0x40 = 0x0031 | undocumented; bit 0 set passes low-frequency audio (needed for 4FSK) |
 | 0x15 = 0x1100 | IF tuning |
-| 0x32 = 0x4495 | AGC target |
+| 0x32 = 0x4490 | AGC target 18 (bits 11:6, 2 dB units); bits 2:0 clear (below) |
 | 0x3A = 0x00C3 | no mic input to the AT1846S modulator |
 | 0x3C = 0x1B34 | pk_det_th |
 | 0x3F = 0x29D1 | rssi3_th |
@@ -524,9 +524,30 @@ bit errors a frame and the share of frames received, at -103 dBm with the transm
 
 0x07EF keeps every frame from x0.8 to x1.2, so a transmitter under deviation (common on hotspots) and one over both
 decode; the over-deviated side costs corrected bits, never frames. The gain also sets how far off frequency a
-transmitter can be: full gain clips first and has the narrowest window (5.13). On strong signals (-50 dBm) about a bit a
-frame stays at every gain and offset: that is the AGC (0x32), not this gain. `test_dmr_audio_rx_deviation` (tests/hil)
-checks x0.85 and x1.15 at -100 dBm.
+transmitter can be: full gain clips first and has the narrowest window (5.13). `test_dmr_audio_rx_deviation`
+(tests/hil) checks x0.85 and x1.15 at -100 dBm.
+
+DMR receive AGC. A simplex transmitter keys one 30 ms burst every 60 ms, so the AGC sees the carrier come and go with
+every burst. With 0x32 bits 2:0 at 2 or more (the 12.5 kHz table's 0x4495 has 5) the start of each burst is overloaded:
+about a bit a frame from -85 to -40 dBm, however strong the signal, and bad frames now and then. A repeater's
+continuous carrier hides it: the same call as a repeater outbound at -65 dBm corrected nothing, as simplex bursts 1.67
+bits a frame. The datasheet names only bits 11:6 (agc_target_pwr); bits 2:0 are undocumented. Bit 15 doesn't take a
+write (reads 0). Voice bit errors a frame, speech at the standard's deviation, simplex (SDR bench, conducted,
+`tools/dmr_rx_sweep.py --reg 0:0x32 --field 2:0`):
+
+| Level at the radio | 0x4490 | 0x4491 | 0x4492 | 0x4493 | 0x4494 | 0x4495 | 0x4496 | 0x4497 | 0x4498 |
+|---|---|---|---|---|---|---|---|---|---|
+| -45 dBm | 0.00 | 0.00 | 0.33 | 1.35 | 1.43 | 1.26 | 1.15 | 0.86 | 0.00 |
+| -65 dBm | 0.01 | 0.00 | 0.64 | 1.07 | 1.38 | 1.01 | 0.98 | 0.88 | 0.00 |
+| -75 dBm | 0.01 | 0.02 | 0.39 | 0.69 | 0.61 | 1.51 | 1.24 | 1.29 | 0.01 |
+| -87 dBm | 0.00 | 0.00 | 0.22 | 0.18 | 0.54 | 0.65 | 0.61 | 0.67 | 0.00 |
+
+Bits 2:0 cost nothing near sensitivity: 0x4490 and 0x4495 are within a run's spread of each other from -107 to
+-126 dBm at x0.85, x1.0 and x1.15 (0.01 at -107 dBm, 0.03-0.05 at -120, 0.3-0.4 at -123, 0.8-0.9 at -126, every frame
+received). With bits 2:0 clear, bits 15:12 make no difference (0x0490 to 0x7490 all clean at -45 and -75 dBm). With
+them at 5, a higher AGC target (20 to 31) only moved the errors to stronger signals, and no 0x33 ("AGC number") value
+removed them (0x44FF read the signal some 30 dB weaker). The DMR table writes 0x4490; FM keeps the bandwidth table's
+0x4495 (a continuous carrier). `test_dmr_audio_rx_strong` (tests/hil) checks simplex speech at -75 and -55 dBm.
 
 ### 5.6 Frequency setting
 
@@ -716,11 +737,8 @@ The VHF offset was measured at full gain, inside the overload (voice bit errors 
 It is not measured again at 0x07EF yet. `test_dmr_audio_rx_offset_wide` (tests/hil) checks a carrier 2.5 kHz below
 and above the channel at -100 dBm.
 
-Bursts keyed through idle write the transmit frequency, so the offset doesn't reach the transmitter. A direct burst
-(section 6, UHF only) keys from the receive frequency and takes any offset back in whole MOD1 steps toward zero (about
-74 Hz each mid-band: for an offset of 875 Hz, 11 put the carrier about 5 Hz high, 12 about 85 Hz high); every burst
-decodes, the first within 20 Hz of the rest. With the UHF offset at 0 there is nothing to take back. The MD-UV380 has
-the same two chips and is not measured on its own.
+Bursts keyed through idle write the transmit frequency, so the receive offset doesn't reach the transmitter. Direct
+bursts (an SFR, section 6) don't write it: they take the receive offset back out in MOD1 steps.
 
 ---
 
@@ -745,19 +763,22 @@ Ordering:
 - Burst-by-burst DMR TX (the PA follows the bursts), keyed 1 ms after the RF TX interrupt (it comes about 1.28 ms
   before the slot boundary; keyed at once, the PA cut the end of the inbound burst an SFR receives in the other slot).
   Two sequences:
-  - Direct, when the synthesizer already holds the receive frequency of a simplex channel (SFR, simplex) and the band
-    is UHF: reg 0x30 straight from RX to DMR TX, HR_C6000 4:0x04 (MOD1 offset) = calibrated value + 42, plus the DMR
-    receive offset in MOD1 steps (5.13), both RX supplies off, then the PA. Back to
+  - Through idle, the normal one: reg 0x30 receiver off, the TX frequency, reg 0x30 DMR TX, both RX supplies off, then
+    the PA. Back to RX, the PA enables low, reg 0x30 receiver off, the RX frequency if it differs, the RX supply for
+    the band, reg 0x30 RX on. Going straight back to RX after a burst entered from idle leaves the receiver about 3 kHz
+    off.
+  - Direct, only while an SFR repeats (a channel's or the VFO's role, or the hotspot's SFR mode;
+    the board asks at each burst: `hal_radio_t.dmr_direct_query`), on a simplex UHF channel whose receive frequency the
+    synthesizer already holds: reg 0x30 straight from RX to DMR TX, HR_C6000 4:0x04 (MOD1 offset) =
+    calibrated value + 42, plus the DMR receive offset in MOD1 steps (5.13), both RX supplies off, then the PA. Back to
     RX: the PA enables low, 4:0x04 = calibrated value, the RX supply, reg 0x30 RX on. RX straight to TX puts the
-    carrier about 3.07 kHz low, and a frequency write can't correct it (the AT1846S applies one only coming out of
-    idle); 42 steps of about 75 Hz put it back (measured near 461 MHz: +16..+60 Hz). The idle step that the other
-    sequence takes every slot makes the synthesizer settle again, and an SFR lost the first and last frames of its
-    inbound bursts to it: about 190 bit errors and 5-10 lost frames per 72 repeated frames, against about 60 and none
-    direct (SDR bench, 2026-10-19).
-  - Through idle, otherwise (VHF, where 3.07 kHz is more steps than the register holds; RX and TX frequencies that
-    differ): reg 0x30 receiver off, the TX frequency, reg 0x30 DMR TX, both RX supplies off, then the PA. Back to RX,
-    the PA enables low, reg 0x30 receiver off, the RX frequency if it differs, the RX supply for the band, reg 0x30 RX
-    on. Going straight back to RX after a burst entered from idle leaves the receiver about 3 kHz off.
+    carrier about 3.07 kHz low and a frequency write can't correct it (the AT1846S applies one only coming out of
+    idle); 42 steps of about 75 Hz put it back on the board measured near 461 MHz (+16..+60 Hz). On two other DM-1701s
+    at 433.45 MHz the same correction left the DMR carrier 178 Hz and 449-554 Hz below the FM carrier, enough for an
+    MMDVM hotspot to reject the call, and through idle they measured +36 and +41 Hz (on an SDR). That is
+    why direct keying is kept to the SFR: there the idle step, which makes the synthesizer settle again each slot, lost
+    the first and last frames of the inbound bursts, about 190 bit errors and 5-10 lost frames per 72 repeated frames
+    against about 60 and none direct (on an SDR). A per-radio correction would make it right everywhere.
 
   The receiver must work between bursts (an SFR's inbound slot, `sfr.md` 3). Dropping the PA earlier than the next
   timeslot interrupt (28.5-30 ms after the RF TX interrupt) did not reduce the inbound errors. The "transmitting" state of the radio must therefore be taken from the HR_C6000 slot state, not from the PA
@@ -1105,8 +1126,8 @@ PD8 (PC6 on Plus 10 W), active high. Dimming: a 101-entry table of 32-bit words 
 request, circular, 100 transfers) to the port's BSRR register: entry 0 sets the pin, entry N resets it, all others are
 0, so the duty is N %. 0 % and 100 % stop the DMA and drive the pin directly.
 
-RadioFoundry dims at 40 kHz with two one-word DMA writes per cycle instead (`boards/uv380_family/backlight_uvf.h`):
-TIM1 counts 1800 per cycle, its update request (DMA2 Stream5 channel 6) writes the set bit and its CC1 request (DMA2
+RadioFoundry uses two one-word DMA writes per PWM cycle (`boards/uv380_family/backlight_uvf.h`):
+At 40 kHz TIM1 counts 1800 per cycle, its update request (DMA2 Stream5 channel 6) writes the set bit and its CC1 request (DMA2
 Stream1 channel 6) the reset bit, so CCR1 is the duty at any percent, 80,000 transfers a second. The ripple of the
 switched backlight current reaches the FM transmit audio. Measured on a DM-1701, Brightness 10 %, 50 mW, FM
 demodulated from a separate receiver, peak deviation:
@@ -1115,7 +1136,88 @@ demodulated from a separate receiver, peak deviation:
 |---|---|---|---|---|
 | 101 Hz, the 100-entry table | 8 Hz | 15 Hz | 13-15 Hz | (it is the 101 Hz line: an audible buzz, #330) |
 | 10 kHz (tried) | 0.5 Hz | 1.9 Hz | 1.1 Hz | 470 Hz: sidebands about 33 dB down at ±10 kHz, in the adjacent 12.5 kHz channel |
-| 40 kHz | 0.6-0.7 Hz | 1.6-2.3 Hz | 1.6 Hz | 99-206 Hz: sidebands 52-58 dB down at ±40 kHz |
+| 40 kHz | 0.6-0.7 Hz | 1.6-2.3 Hz | 1.6 Hz | The conducted measurement below supersedes the over-the-air estimate for this line |
+
+The panel's backlight driver doesn't follow 40 kHz: Brightness 20 % looked close to full, and the idle dim step (a
+fifth) hardly showed. At 2 kHz it dims as set. The PWM uses 2 kHz while idle and 40 kHz while transmitting or while FM or DMR receive audio is open.
+The receive selection follows the audio route even at zero volume, when FM still feeds APRS.
+
+A conducted DM-1701 UHF measurement through 60 dB of attenuation found at most 4.4 Hz deviation at 40 kHz over
+5–90 % pin duty, with sidebands at or below -85 dBc. At 2 kHz and 50 % brightness, an unmodulated -88 dBm carrier
+put a tone in the FM receive audio 14 dB below a 1 kHz tone at 1 kHz deviation. With 40 kHz PWM the same bin was
+48 dB lower. The receiver's local oscillator picks up the backlight ripple with the squelch open.
+
+Earlier over-the-air DM-1701 measurements, FM, 50 mW, deviation in the demodulated transmit audio:
+
+| Backlight PWM during FM transmit | 2 kHz | 4 kHz | 40 kHz |
+|---|---|---|---|
+| 2 kHz (not switched; test build) | 210 Hz | 185 Hz | 96 Hz |
+| switched to 40 kHz | 3-7 Hz | 0.4-2 Hz | 70-100 Hz |
+| 40 kHz always (before) | 4.3 Hz | 1.4 Hz | 88 Hz |
+
+With the switch, transmit is the same as with 40 kHz always, at every brightness (10-100 % stepped during one
+transmission): the 2 kHz and 40 kHz lines that remain don't change with the brightness, not even at 100 %, where the
+pin is steady, so they aren't the backlight's.
+
+**Why no single rate does both.** PWM rate swept 2-40 kHz at 50 % duty, one 2 s FM transmission per rate (50 mW,
+433.450 MHz, HackRF), TIM1's period and compare written over the debug link (`DL_CMD_CHIP_REG`), with bursts at a
+steady backlight as the reference:
+
+| PWM rate | FM deviation at the rate | Steady backlight, same frequency | First RF sideband |
+|---|---|---|---|
+| 2 kHz | 220 Hz | 4.8 Hz | -30 dBc |
+| 5 kHz | 269 Hz | 1.4 Hz | -36 dBc |
+| 10 kHz | 173 Hz | 1.7 Hz | -46 dBc |
+| 12.5 kHz | 88 Hz | 1.6 Hz | -54 dBc |
+| 15 kHz | 33 Hz | 2.4 Hz | -64 dBc |
+| 18 kHz | 8 Hz | 2.7 Hz | -73 dBc |
+| 20, 22, 25, 30 kHz | 3.3-5.7 Hz | 2.9-6.3 Hz | -76 to -78 dBc (the floor) |
+
+From about 18 kHz up the backlight leaves no trace in transmit. Only 2 kHz lands in the voice band (300-3400 Hz).
+This over-the-air sweep used 50 % pin duty. The conducted sweep above measured both the transmit and receive paths.
+
+The backlight stage behind the pin has a turn-off tail: after the pin falls the LEDs stay at full current for about
+22 us, then fall over about 34 us, 38 us of full light in all, the same at any rate. Two independent measurements on
+DM-1701 A:
+
+- **RF harmonic nulls.** FM transmit at 2987 Hz with the set duty stepped 10-70 % (2 % steps, 1.5 s each, HackRF). The
+  leak path is linear and fixed per frequency, so harmonic n of the light waveform shows as a line at n x 2987 Hz in
+  proportion to its Fourier coefficient, and vanishes where the effective duty makes whole cycles of it (n = 2 at 1/2,
+  n = 3 at 1/3 and 2/3, n = 4 at 1/4, 1/2, 3/4). Every null sits about 11.5 points below its no-tail duty:
+
+  | Harmonic | No-tail null | Measured null (set duty) | Tail |
+  |---|---|---|---|
+  | 2 | 50.0 % | 38.5 % | 38.6 us |
+  | 3 | 33.3 % | 21.8 % | 38.7 us |
+  | 3 | 66.7 % | 55.1 % | 38.6 us |
+  | 4 | 25.0 % | 13.7 % | 37.9 us |
+  | 4 | 50.0 % | 38.5 % | 38.5 us |
+  | 4 | 75.0 % | 63.8 % | 37.4 us |
+
+  A waveform model (instant rise, full current for the pulse plus d, then a linear fall over r) fitted to harmonics 1-4
+  at once: d = 21.5 +- 0.4 us, r = 33.8 +- 0.7 us, full-light tail d + r/2 = 38.4 us.
+  Closed loop: the same sweep with 2736 counts (38 us) taken off each compare, as `uvf_bl_compare` does, puts the nulls
+  at 50.0, 33.1, 66.2, 24.9 and 49.9 % of the requested brightness (expected 50, 33.3, 66.7, 25, 50 %), residuals
+  0.1-1.4 us. The split between d and r moves between runs (25.1 and 26.5 us there); their total, which sets the
+  brightness, repeats (38.3 us).
+- **The 3.3 V rail.** Vrefint (ADC1 IN17) is read against VDDA, so the backlight's load raises the reading (about 1.1
+  counts fully on). One injected conversion per PWM cycle, triggered at a chosen count (TIM1 OC4REF as TRGO, falling
+  edge, 144-cycle sample), averaged and stepped through the cycle, traces the rail's waveform: when the pin rises the
+  load appears at once; when it falls the load holds about 22 us, then falls over about 30 us.
+
+That tail is why 40 kHz (a 25 us period) can't dim at all, why at 15 kHz and 50 % (33 us off) the LEDs never go dark,
+and why 2 kHz lit Brightness 10 % at about 18 %. Clean transmit needs about 18 kHz or more and dimming a few kHz or
+less, so the rate switches. The compare is shortened by the tail (`UVF_BL_TAIL`, 38 us, 2736 counts), so a pulse plus
+the tail is the brightness: at 2 kHz and Brightness 20 % the pin is high for 62 us and the light ends at 100 us of the
+500 us cycle. A level too low for the tail keeps one count, the least the rate allows: about 8 % at 2 kHz (the idle
+dim floor of 5 % lights at that). At 40 kHz every level below 100 % is the one count and the panel is fully lit, as
+before; transmit then measured 5.5, 2.5, 1.8 and 7.0 Hz at 2, 4, 6 and 8 kHz, the same as above.
+
+Caveats: the rail shows the regulator's response as well as the load (a sag at turn-on, an overshoot at turn-off,
+each settling over 100-200 us), so averaging the rail over a cycle doesn't give the duty; only the time of each edge
+is read from it. The tail was measured on one DM-1701, at room temperature; the stage's parts aren't identified (no inductor near the
+display connector in the FCC photos, so a switch, not a boost driver). For sampling over the debug link, avoid rates on
+whole kHz: its USB frames are 1 ms apart, so the samples lock to the PWM phase and the average is biased.
 
 
 ---

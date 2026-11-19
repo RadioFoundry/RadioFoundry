@@ -95,6 +95,9 @@ static struct {
 	volatile uint8_t rf_page;	// AT1846S page last written to reg 0x7F, 0xFF unknown
 	volatile int8_t rf_ref;		// calibrated HR_C6000 MOD1 offset (4:0x04) for the RX frequency
 	volatile bool rf_direct;	// this burst was keyed without the idle step: 4:0x04 raised, the receiver not retuned
+	bool (*sfr_repeats)(void);	// asked at each burst: an SFR repeats now, direct keying allowed (dmr_direct_query)
+	volatile bool keyed_direct;	// the last burst went straight from RX (hal_radio_t.dmr_keying)
+	volatile uint32_t keyed_n[2];	// bursts keyed through idle [0] and straight from RX [1] since boot
 	volatile bool rf_key_pending;	// TIM7 runs this burst's key-up points
 	pa_keyup_point_t key_pt[PA_KEYUP_POINTS];	// the transmission's, earliest first, set before it is armed
 	pa_keyup_step_t key_st[PA_KEYUP_POINTS_MAX];	// and as TIM7's steps (pa_keyup_steps)
@@ -444,7 +447,9 @@ static bool rf_key(void)
 	uint32_t hz = r.dmr_tx_hz;
 	r.rf_isr_dirty = true;
 	int8_t ref;
-	if (!r.rf_rx_pending && hz == r.rx_hz && r.rf_tuned_hz == r.rx_tune_hz &&
+	// Direct only for an SFR role: its fixed MOD1 correction left the carrier 178-554 Hz low on two DM-1701s at 433.45
+	// MHz (measured on an SDR), enough for a hotspot to reject the call; through idle the carrier is right
+	if ((r.sfr_repeats != NULL) && r.sfr_repeats() && !r.rf_rx_pending && hz == r.rx_hz && r.rf_tuned_hz == r.rx_tune_hz &&
 	    uvf_direct_tx_ref(hz, r.rf_ref, (int32_t)(r.rx_tune_hz - hz), &ref)) {	// the DMR receive offset
 		// Direct (SFR, simplex): the receiver on the TX frequency goes straight to DMR TX, which puts the carrier
 		// about 3.07 kHz low; the raised MOD1 offset puts it back (uvf_direct_tx_ref)
@@ -454,12 +459,16 @@ static bool rf_key(void)
 		}
 		(void)hrc_write(&r.modem, 4, 0x04, (uint8_t)ref);
 		r.rf_direct = true;
+		r.keyed_direct = true;
+		r.keyed_n[1]++;
 		goto pa;
 	}
 	// Otherwise tune with the receiver off, then straight to TX (gotchas 3.5): a frequency write applies only coming
 	// out of idle. The extra writes cost about 0.25 ms per burst
 	uint32_t word = at1846s_freq_word(hz);
 	r.rf_tuned_hz = 0;
+	r.keyed_direct = false;
+	r.keyed_n[0]++;
 	bool ok = rf_isr_write(0x30, at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_IDLE))
 		&& rf_isr_write(0x29, (uint16_t)((word >> 16) & 0x3FFFu))
 		&& rf_isr_write(0x2A, (uint16_t)(word & 0xFFFFu));
@@ -710,6 +719,7 @@ static void speaker_apply(void)
 	bool pcm = pcm_wanted;
 	bool fm = audio_wanted && !pcm;
 	bool on = (fm || pcm) && !volume_zero;
+	uvf_backlight_rx(fm || pcm);	// volume zero still feeds FM audio to APRS
 	// The FM feed-through also gates the FM audio on the I2S stream that APRS receive reads (hardware-dm1701.md
 	// 21.3.1), so it follows the core's request, not the knob: at volume zero only the amp is off
 	count(hrc6000_fm_audio(&r.modem, fm));	// FM feed-through only for FM; PCM comes from the codec DAC
@@ -822,6 +832,7 @@ static void set_mode(radio_mode_t mode)
 			stm32_hrc_dmr_leave();
 			rf_resync();	// retunes only after DMR bursts; rx_retune below otherwise
 			r.tx_on = false;
+			uvf_backlight_tx(false);
 		}
 		count(at1846s_set_mode(&r.rf, AT1846S_MODE_FM));
 		rx_retune();
@@ -961,6 +972,7 @@ static bool rx_set(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone, bool ke
 		stm32_hrc_dmr_rx_restart();
 	}
 	r.tx_on = false;
+	uvf_backlight_tx(false);
 	return true;
 }
 
@@ -1016,6 +1028,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		__DMB();
 		r.dmr_armed = true;
 		r.tx_on = true;
+		uvf_backlight_tx(true);
 		return true;
 	}
 
@@ -1043,6 +1056,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	count(at1846s_set_freq(&r.rf, (uint32_t)((int32_t)hz + offset)));
 	count(at1846s_set_state(&r.rf, AT1846S_STATE_FM_TX));
 
+	uvf_backlight_tx(true);	// the TX rate before the PA comes on
 	apc_set(drive);
 	PIN_WRITE(PIN_PA_EN1, true);
 	PIN_WRITE(PIN_PA_BAND, uhf);
@@ -1070,6 +1084,7 @@ static void tx_end(bool keep)
 	count(at1846s_set_state(&r.rf, AT1846S_STATE_IDLE));
 	count(hrc6000_set_mode_fm_rx(&r.modem));
 	r.tx_on = false;
+	uvf_backlight_tx(false);
 }
 
 static void tx_off(void)
@@ -1281,6 +1296,19 @@ static void rx_sleep(bool sleep)
 	}
 }
 
+// SFR only (hal_radio_t.dmr_direct_query): rf_key asks at each burst whether it may key straight from RX
+static void dmr_direct_query(bool (*sfr_repeats)(void))
+{
+	r.sfr_repeats = sfr_repeats;
+}
+
+static void dmr_keying(hal_dmr_keying_t *k)
+{
+	k->last_direct = r.keyed_direct;
+	k->direct = r.keyed_n[1];
+	k->idle = r.keyed_n[0];
+}
+
 const hal_radio_t uvf_radio = {
 	.init = init,
 	.set_mode = set_mode,
@@ -1303,6 +1331,8 @@ const hal_radio_t uvf_radio = {
 #if CONFIG_REF_TRIM
 	.ref_trim = ref_trim,
 #endif
+	.dmr_direct_query = dmr_direct_query,
+	.dmr_keying = dmr_keying,
 	.tx_drive_level = tx_drive_level,
 	.tx_drive = tx_drive,
 };

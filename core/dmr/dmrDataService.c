@@ -55,6 +55,8 @@ _Static_assert(DMR_DATA_IP_PREAMBLES == DMR_DATA_SMS_PREAMBLES, "IP packets keep
 // The preambles, the header, the blocks of a confirmed packet of the air MTU (10 octets each) and the terminator
 _Static_assert(IP_PREAMBLES + 1 + ((DMR_DATA_IP_MTU + 4 + 9) / 10) + 1 <= DMR_DATA_MAX_BURSTS,
 				"a confirmed packet of the air MTU goes in one transmission");
+// With data privacy its header takes the place of one of those preambles (ipCnfPreambles)
+_Static_assert(IP_PREAMBLES >= 2, "a preamble to spare for the privacy header");
 // DMR_DATA_TX_PREAMBLES preamble CSBKs ahead of a text or IP packet where the buffer has room (fewer, down to
 // IP_PREAMBLES, for the longest). BrandMeister's data services ignore packets with 1 or 2 and answer the same packet
 // with 15 or 16, as MOTOTRBO radios send them (docs/spec/dmr-data.md 5.1.1). About 0.8 s more on air per try; the ACK
@@ -281,6 +283,13 @@ static bool queueTx(int count, uint8_t kind)
 	{
 		return false;
 	}
+	// The one place every list passes: data the channel's privacy can't protect isn't sent (dmrData.h)
+	if (!dmrDataPrivacyAllows(txBursts, count))
+	{
+		stats.txPrivacyBlocked++;
+		return false;
+	}
+	stats.txPrivacy += dmrDataPrivacyEncrypted(txBursts, count) ? 1 : 0;// not CSBKs and responses: never encrypted
 
 	txBurstCount = count;
 	txPendingSince = now;
@@ -317,6 +326,12 @@ static void queueReply(int count)
 	{
 		txIsReply = true;
 	}
+}
+
+// The preamble CSBKs of a confirmed IP packet: one fewer with the privacy header, so the air MTU still fits
+static int ipCnfPreambles(void)
+{
+	return IP_PREAMBLES - dmrDataPrivacyBursts();
 }
 
 static bool sendUDP(bool group, uint32_t dst, uint16_t srcPort, uint16_t dstPort, const uint8_t *payload, int length, uint8_t blockType,
@@ -631,13 +646,13 @@ static void ipTransmit(void)
 	{
 		// One burst kept for the terminator
 		count = dmrDataBuildConfirmed(ipx.sap, ipx.dst, channel.ownId, pdu, n, ipConfirmedRate, ipx.ns, ipx.firstTry,
-										(ipx.blocks != 0) ? ipx.blocks : ~0ULL, IP_PREAMBLES, txBursts, DMR_DATA_MAX_BURSTS - 1);
+										(ipx.blocks != 0) ? ipx.blocks : ~0ULL, ipCnfPreambles(), txBursts, DMR_DATA_MAX_BURSTS - 1);
 		if ((count == 0) && (ipx.tries == 0))
 		{
 			stats.ipCnfTooLong++;// longer than one confirmed packet can carry: as it would go without the setting
 			ipx.confirmed = false;
 		}
-		count = widenPreambles(false, ipx.dst, count, IP_PREAMBLES, DMR_DATA_MAX_BURSTS - 1);
+		count = widenPreambles(false, ipx.dst, count, ipCnfPreambles(), DMR_DATA_MAX_BURSTS - 1);
 		if ((count > 0) && !channel.rmo)
 		{
 			terminatorLC(ipx.dst, channel.ownId, ipx.firstTry, ipx.ns, &txBursts[count++]);
@@ -1138,6 +1153,10 @@ static bool smsTransmit(void)
 	count = widenPreambles(sms.group, sms.dst, count, DMR_DATA_SMS_PREAMBLES, DMR_DATA_MAX_BURSTS);
 	if (!queueTx(count, TXK_SMS))
 	{
+		if (count > 0)
+		{
+			smsFinish(DMR_REQ_FAILED);// built, but the channel's privacy can't protect it: no try will go
+		}
 		return false;
 	}
 	sms.tries++;
@@ -2058,6 +2077,7 @@ void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *ch)
 	{
 		channel = *ch;
 	}
+	dmrDataSetPrivacy(&channel.privacy);
 
 	takeMailbox();
 
@@ -2343,6 +2363,18 @@ static void handlePacket(const dmrDataPacket_t *packet)
 		queueReplyEntry(&reply);
 		return;
 	}
+	// Encrypted with a scheme or key we don't have: nothing in it can be read. Confirmed data is still acknowledged
+	// (its CRCs passed, the sender would retry), as a radio without the key does
+	if (packet->privacy.encrypted && !packet->decrypted)
+	{
+		stats.rxPrivacyDropped++;
+		if (forUs && (reply.response != 0))
+		{
+			queueReplyEntry(&reply);
+		}
+		return;
+	}
+	stats.rxPrivacy += packet->decrypted ? 1 : 0;
 	if (env.packet)
 	{
 		env.packet(packet, env.ctx);

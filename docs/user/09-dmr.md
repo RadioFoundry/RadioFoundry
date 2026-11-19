@@ -32,6 +32,9 @@ played" and treats the channel as busy while it lasts.
 
 Transmitting keeps the channel's color code even while listening on any color code.
 
+Unless digital monitor is on, a repeater channel hears only its own timeslot. A call the radio joins partway
+through shows that call's caller and talkgroup, never those of a call on the other timeslot or of an earlier call.
+
 ## Who you talk to
 
 **PTT** sends to, in this order:
@@ -277,6 +280,11 @@ been checked against another radio yet ([Radio reference](23-radios.md)).
 - The radio plays an encrypted call only when it has the matching key. Without the key the call shows as
   "Encrypted: not played".
 - Calls with stronger encryption (they send a PI header) are never played.
+- Text messages and other data follow the key too. With a Motorola key they are scrambled the same way, and the
+  radio reads scrambled data sent with its key. Messages in the **ETSI short** format can't be scrambled, so they
+  fail with a Motorola key: use **ETSI** or **Motorola** ([Messages](10-messages-and-signaling.md)). Anytone basic privacy has no form for data, so with an Anytone key
+  the radio sends no text messages or other data: a message you send fails. Scrambled data the radio can't read is
+  not shown.
 - **\***, **6** turns privacy on for your calls ("Privacy on for now"). Home shows "Priv". **Back** on Home turns it
   off again.
 
@@ -381,8 +389,8 @@ In the Codeplug Editor ([Programming](04-programming.md#digital-modes-and-system
 
 1. On the **Systems** tab add a system of type DMR Tier III Trunking. Enter its network model, NET, category and color
    code, and its channels with **Control** ticked on the control channels. The system's operator has these values.
-2. Make a channel, set its **Mode** to DMR Tier III Trunking and pick the system. Its contact is who you talk to; its
-   RX group list is the talkgroups you hear.
+2. Make a channel, set its **Mode** to DMR Tier III Trunking and pick the system. Set **TX Contact** to the default
+   call destination and **RX Group List** to the talkgroups you want to follow.
 3. Put the channel in a zone, with any other channels.
 
 | Setting | Does |

@@ -67,9 +67,7 @@ void debuglink_view_reset(dl_text_t *t)
 
 static bool on_air(void)
 {
-	radio_view_t v;
-	radio_get_view(&v);
-	return v.state == RS_TX;
+	return radio_get_state() == RS_TX;	// the state alone: a view copy is ~800 B of the host task's stack
 }
 
 size_t debuglink_cmd_crash(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)

@@ -213,6 +213,9 @@ encoder's bits as they are), on RX before the voice sink (after the FEC decode, 
 loaded our calls carry FID 0x10 and the privacy service option (0x40), and received calls with the privacy service
 option (or PI) are descrambled. Without a key such bursts are never played; they count as `rx_enc_dropped`.
 
+The same key covers packet data where its scheme defines a data form (Motorola BP encrypts it, Anytone BP blocks
+data TX): [dmr-data.md](dmr-data.md) 13.
+
 The key is set over the debug link (RADIO op 19, `radio_req_dmr_privacy`). The radio core saves it in settings slot 1
 and loads the active slot at boot (`settings-store.md` 3.1); the open-firmware codeplug has no key storage, so qdmr can't
 set it.
@@ -252,6 +255,24 @@ codec bits.
 * Each board's codec mapping is on its `codec-<id>.md` page ("Encode flags"). Boards with an AMBE+2 host share
   `drivers/vocoder/ambe2_flags.h`.
 
+### 6.1 A tone in place of the microphone
+
+`ambeVoiceTxTone` (`ambeVoice.h`, radio task) hands the audio callback a tone sequence of up to `SIG_AIR_STEPS` steps (`SIG_STEPS` and a guard of silence, `SIG_AIR_GUARD_MS`)
+([radio-features.md](radio-features.md) 4.3). From the next block of a transmission (the first, if it has not started)
+the encoder gets the generated tone instead of the microphone, after the mic gain. While it plays the encode options are
+`VOCODER_OPT_TONE_FRAMES` set and `VOCODER_OPT_NOISE_REDUCTION` cleared, and the options in force come back after it.
+
+* The encoder waits for room in its queue (`AMBE_VOICE_QUEUE`) before each block of the tone, instead of letting the
+  queue overflow, so a tone longer than the headers' time is not cut.
+* `final`: the microphone stays muted after the tone until the transmission ends.
+* `dmr_voice_source_t.busy` tells the call stack the tone's frames are not all pulled yet. After PTT is let go the stack
+  then goes on at each superframe boundary, for at most `DMR_CALL_TX_TAIL_HOLDS` superframes, before it ends the over
+  with the terminator. A time-out ends it at once.
+* `ambeVoiceTxToneCancel` drops a request, and the source's `end` does it too: a request for a transmission that never
+  went on air is not played in the next one. `busy` is false while no transmission runs.
+* The tone's amplitude is fixed (`TONE_AMP_Q15`). It is not checked on air, nor how other makes of radio play a tone
+  frame.
+
 ## 7. Observing it
 
 Debug link (`debuglink.md`): the `core` view's `mode` and `vfo`, the `dmr` view's `dmr.cc`, `dmr.ts`, `dmr.target_id`,
@@ -277,12 +298,17 @@ keeps its window centered on the channel. Where a board's window was measured is
 
 | Tool | What it does |
 |---|---|
-| `tools/dmr_rx_sweep.py` | Steps a chip register (debug link CHIP_REG) through values while the SDR bench sends speech, over bench levels, deviations and carrier offsets (`--detune` makes the offset by tuning the radio away instead); ranks the values by their worst cell. About three minutes a grid |
+| `tools/dmr_rx_sweep.py` | Steps a chip register (debug link CHIP_REG), or one bit field of it (`--field HI:LO`), through values while the SDR bench sends speech, over bench levels, deviations and carrier offsets (`--detune` makes the offset by tuning the radio away instead); ranks the values by their worst cell. About three minutes a grid |
+| `test_dmr_audio_rx_strong` | The bench's simplex speech at -75 and -55 dBm at the radio: 95 % of the frames and at most 0.2 corrected bits a frame at each (a level the bench can't reach is left out) |
 | `test_dmr_audio_rx_deviation` | The bench's speech at 0.85 and 1.15 of the standard deviation, at -100 dBm at the radio: 95 % of the frames and at most 0.8 corrected bits a frame, both ways |
 | `test_dmr_audio_rx_offset_wide` | The bench's speech with its carrier 2.5 kHz below and above the channel, at -100 dBm at the radio: 90 % of the frames and at most 2 corrected bits a frame, both ways |
 
-Measure near sensitivity (-90 to -105 dBm at the radio): with a strong signal other limits (the AGC) dominate and a
-setting barely shows. Use speech or another varied recording, never AMBE silence: its errors land in bits with no FEC.
+Measure near sensitivity (-90 to -105 dBm at the radio) for the level window: there a fraction of a dB shows. Measure
+strong simplex signals too (-75 to -45 dBm): a simplex transmitter keys one 30 ms burst every 60 ms, so the receiver's
+AGC sees the carrier come and go with every burst, and one that settles too slowly overloads the start of each burst.
+That costs a bit or more a frame however strong the signal, and only on simplex: a repeater's continuous carrier
+hides it. A clean receiver corrects almost nothing at those levels. Use speech or another varied recording, never
+AMBE silence: its errors land in bits with no FEC.
 Let the radio drop the last call before the next one starts (about 2 s): a call that begins while it still follows the
 last one's slot timing can be decoded at that timing to its end.
 

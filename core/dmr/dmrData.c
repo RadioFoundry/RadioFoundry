@@ -136,6 +136,146 @@ static void setBurst(dmrBurst_t *burst, uint8_t dataType, const uint8_t *payload
 	memcpy(burst->payload, payload, length);
 }
 
+// --- Packet data privacy (dmrData.h) ---
+
+#if CONFIG_DMR_PRIVACY
+static dmrDataPrivacy_t privacy;		// the channel's (radio task)
+#endif
+
+static bool txEncrypts(void)
+{
+#if CONFIG_DMR_PRIVACY
+	return (privacy.mode == DMR_DATA_PRIVACY_ENCRYPT) && (privacy.crypt != NULL);
+#else
+	return false;
+#endif
+}
+
+void dmrDataSetPrivacy(const dmrDataPrivacy_t *p)
+{
+#if CONFIG_DMR_PRIVACY
+	if (p != NULL)
+	{
+		privacy = *p;
+	}
+	else
+	{
+		memset(&privacy, 0, sizeof(privacy));
+	}
+#else
+	(void)p;
+#endif
+}
+
+int dmrDataPrivacyBursts(void)
+{
+	return txEncrypts() ? 1 : 0;
+}
+
+static bool isPrivacyHeader(const uint8_t *h)
+{
+	// An MFID 0x10 second header with SAP 1 is another kind (a network header), not a privacy header
+	return ((h[0] & 0x0F) == DMR_DPF_PROPRIETARY) && (h[1] == DMR_DATA_PRIVACY_MFID) && ((h[0] >> 4) != 1);
+}
+
+// h NULL: none. Read without CONFIG_DMR_PRIVACY too: an encrypted packet is then marked so and dropped, never taken
+// as clear
+static void parsePrivacyHeader(const uint8_t *h, dmrDataPrivacyHeader_t *ph)
+{
+	memset(ph, 0, sizeof(*ph));
+	if ((h == NULL) || !isPrivacyHeader(h))
+	{
+		return;
+	}
+	ph->present = true;
+	ph->encrypted = (h[2] & 0x0F) == 1;
+	ph->sap = h[0] >> 4;
+	ph->alg = (h[2] >> 4) & 0x07;
+	ph->keyId = h[3];
+	ph->mi = ((uint32_t)h[6] << 24) | ((uint32_t)h[7] << 16) | ((uint32_t)h[8] << 8) | h[9];
+}
+
+bool dmrDataPrivacyEncrypted(const dmrBurst_t *bursts, int count)
+{
+	for (int i = 0; i < count; i++)
+	{
+		if ((bursts[i].dataType == DMR_TYPE_DATA_HEADER) && isPrivacyHeader(bursts[i].payload))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+bool dmrDataPrivacyAllows(const dmrBurst_t *bursts, int count)
+{
+#if CONFIG_DMR_PRIVACY
+	if (privacy.mode == DMR_DATA_PRIVACY_CLEAR)
+	{
+		return true;
+	}
+	for (int i = 0; i < count; i++)
+	{
+		uint8_t dpf = bursts[i].payload[0] & 0x0F;
+
+		if ((bursts[i].dataType != DMR_TYPE_DATA_HEADER) || (dpf == DMR_DPF_RESPONSE) || (dpf == DMR_DPF_PROPRIETARY))
+		{
+			continue;
+		}
+		// A data packet's first header: with a scheme that encrypts data, the privacy header must follow it
+		if (!txEncrypts() || ((i + 1) >= count) || (bursts[i + 1].dataType != DMR_TYPE_DATA_HEADER) ||
+				!isPrivacyHeader(bursts[i + 1].payload))
+		{
+			return false;
+		}
+	}
+#else
+	(void)bursts;
+	(void)count;
+#endif
+	return true;
+}
+
+// Adds the privacy header after a first header with this SAP (out points past it) and encrypts the user data when the
+// channel's privacy encrypts data; returns the bursts added. Static keystream schemes have no message indicator, and
+// their key is set on each radio, not named on air: both 0
+static int txPrivacy(uint8_t sap, dmrBurst_t *out, uint8_t *data, int length)
+{
+#if CONFIG_DMR_PRIVACY
+	if (txEncrypts())
+	{
+		uint8_t buf[12];
+
+		memset(buf, 0, sizeof(buf));
+		buf[0] = (sap << 4) | DMR_DPF_PROPRIETARY;
+		buf[1] = DMR_DATA_PRIVACY_MFID;
+		buf[2] = ((privacy.alg & 0x07) << 4) | 0x01;// algorithm, encrypted
+		addCRC16(buf, 0xCC);
+		setBurst(out, DMR_TYPE_DATA_HEADER, buf, 12);
+		privacy.crypt(privacy.ctx, privacy.alg, 0, data, length);
+		return 1;
+	}
+#else
+	(void)sap;
+	(void)out;
+	(void)data;
+	(void)length;
+#endif
+	return 0;
+}
+
+// A received packet whose CRC-32 passed: its user data decrypted when the channel's scheme takes its algorithm
+static void rxDecrypt(dmrDataPacket_t *p)
+{
+	p->decrypted = false;
+#if CONFIG_DMR_PRIVACY
+	if (p->privacy.encrypted && (privacy.crypt != NULL))
+	{
+		p->decrypted = privacy.crypt(privacy.ctx, p->privacy.alg, p->privacy.mi, p->data, p->length);
+	}
+#endif
+}
+
 int dmrDataBuildCSBK(const uint8_t csbk[10], dmrBurst_t *out)
 {
 	uint8_t buf[12];
@@ -226,11 +366,13 @@ int dmrDataPacketBursts(int length, uint8_t blockType)
 	}
 	int blocks = (length + 4 + blockLen - 1) / blockLen;
 
-	if ((((blocks * blockLen) - 4 - length) > 31) || (blocks > 127) || ((blocks * blockLen) > DMR_DATA_MAX_PACKET))
+	int extra = dmrDataPrivacyBursts();
+
+	if ((((blocks * blockLen) - 4 - length) > 31) || ((blocks + extra) > 127) || ((blocks * blockLen) > DMR_DATA_MAX_PACKET))
 	{
 		return 0;
 	}
-	return 1 + blocks;
+	return 1 + extra + blocks;
 }
 
 // Unconfirmed packet of Rate 1/2, Rate 3/4 or Rate 1 blocks, preceded by preamble CSBKs
@@ -246,27 +388,30 @@ int dmrDataBuildPacket(uint8_t dpf, uint8_t sap, bool group, uint32_t dst, uint3
 
 	int blocks = (length + 4 + blockLen - 1) / blockLen;
 	int padOctets = (blocks * blockLen) - 4 - length;
-	int bursts = preambles + 1 + blocks;
+	int extra = dmrDataPrivacyBursts();
+	int bursts = preambles + 1 + extra + blocks;
 	uint8_t buf[12];
 
-	if ((length <= 0) || (padOctets > 31) || (blocks > 127) || (bursts > maxBursts) || ((blocks * blockLen) > DMR_DATA_MAX_PACKET))
+	if ((length <= 0) || (padOctets > 31) || ((blocks + extra) > 127) || (bursts > maxBursts) ||
+			((blocks * blockLen) > DMR_DATA_MAX_PACKET))
 	{
 		return 0;
 	}
 
-	out += dmrDataBuildPreambles(group, dst, src, preambles, 1 + blocks, out);
+	out += dmrDataBuildPreambles(group, dst, src, preambles, 1 + extra + blocks, out);
 
 	// Figure 8.3, unconfirmed data header
 	buf[0] = (group ? 0x80 : 0x00) | ((padOctets & 0x10) ? 0x10 : 0x00) | (dpf & 0x0F);
 	buf[1] = (sap << 4) | (padOctets & 0x0F);
 	putId(&buf[2], dst);
 	putId(&buf[5], src);
-	buf[8] = 0x80 | blocks;// Full message
+	buf[8] = 0x80 | (blocks + extra);// Full message; the privacy header is one of the blocks to follow
 	buf[9] = 0x00;// FSN: unconfirmed single fragment
 	addCRC16(buf, 0xCC);
 	setBurst(out++, DMR_TYPE_DATA_HEADER, buf, 12);
 
 	memcpy(txPacket, data, length);
+	out += txPrivacy(sap, out, txPacket, length);// the CRC-32 below is over the encrypted octets
 	memset(&txPacket[length], 0, padOctets);
 	uint32_t crc = dmrDataCRC32(txPacket, length + padOctets);
 	uint8_t *crcPos = &txPacket[length + padOctets];
@@ -801,10 +946,11 @@ int dmrDataBuildConfirmed(uint8_t sap, uint32_t dst, uint32_t src, const uint8_t
 	}
 
 	int padOctets = (total * dataLen) - 4 - length;
-	int bursts = preambles + 1 + count;
+	int extra = dmrDataPrivacyBursts();
+	int bursts = preambles + 1 + extra + count;
 	uint8_t buf[DMR_BURST_PAYLOAD_MAX];
 
-	if ((count == 0) || (padOctets > 31) || (bursts > maxBursts))
+	if ((count == 0) || (padOctets > 31) || ((count + extra) > 127) || (bursts > maxBursts))
 	{
 		return 0;
 	}
@@ -826,12 +972,13 @@ int dmrDataBuildConfirmed(uint8_t sap, uint32_t dst, uint32_t src, const uint8_t
 	buf[1] = (sap << 4) | (padOctets & 0x0F);
 	putId(&buf[2], dst);
 	putId(&buf[5], src);
-	buf[8] = (firstTry ? 0x80 : 0x00) | count;
+	buf[8] = (firstTry ? 0x80 : 0x00) | (count + extra);// the privacy header (every try) is one of the blocks
 	buf[9] = ((ns & 0x07) << 4) | 0x08;
 	addCRC16(buf, 0xCC);
 	setBurst(out++, DMR_TYPE_DATA_HEADER, buf, 12);
 
 	memmove(txPacket, pdu, length);
+	out += txPrivacy(sap, out, txPacket, length);// the CRC-32 and CRC-9s below are over the encrypted octets
 	memset(&txPacket[length], 0, padOctets);
 	uint32_t crc = dmrDataCRC32(txPacket, length + padOctets);
 	uint8_t *crcPos = &txPacket[length + padOctets];
@@ -1246,6 +1393,7 @@ static struct
 	uint8_t arrived;					// data blocks in this transmission so far
 	uint64_t good;						// blocks received with a good CRC-9
 	uint64_t filled;					// blocks with data in place (a bad CRC-9 on the first try is kept: the CRC-32 decides)
+	dmrDataPrivacyHeader_t privacy;		// the first try's privacy header (a retry's says the same)
 } cnf;
 static uint32_t crc9Mismatches;
 
@@ -1270,6 +1418,7 @@ static void confirmedHeader(const dmrDataPacket_t *p)
 		cnf.padOctets = p->padOctets;
 		cnf.good = 0;
 		cnf.filled = 0;
+		memset(&cnf.privacy, 0, sizeof(cnf.privacy));
 	}
 	cnf.held = true;
 	cnf.retry = retry;
@@ -1300,6 +1449,8 @@ static dmrDataRxResult_t confirmedFinish(dmrDataPacket_t *p)
 			p->padOctets = cnf.padOctets;
 			p->blocksToFollow = cnf.total;
 			p->dataType = cnf.dataType;
+			p->privacy = cnf.privacy;
+			rxDecrypt(p);
 			return DMR_DATA_RX_PACKET;
 		}
 		if (cnf.good == cnfAll())
@@ -1403,6 +1554,8 @@ static bool parseHeader(const uint8_t *h, dmrDataPacket_t *p)
 	p->padBits = 0;
 	p->response = 0;
 	p->firstTry = false;
+	memset(&p->privacy, 0, sizeof(p->privacy));
+	p->decrypted = false;
 
 	switch (p->dpf)
 	{
@@ -1453,9 +1606,38 @@ dmrDataRxResult_t dmrDataRxBurst(const dmrBurst_t *burst)
 			return ((burst->payload[0] & 0x3F) == DMR_CSBKO_PREAMBLE) ? DMR_DATA_RX_NONE : DMR_DATA_RX_CSBK;
 
 		case DMR_TYPE_DATA_HEADER:
-			// SAP 9 in the first header means a proprietary second header follows, it counts as one of the blocks to follow
-			if (rxCollecting && (rxBlocksReceived == 0) && (p->sap == DMR_SAP_PROPRIETARY))
+			// A proprietary second header (DPF 15) after the first: SAP 9 in the first header announces it, but a privacy
+			// header may follow a first header with the user data's SAP. It counts as one of the blocks to follow
+			if (rxCollecting && (rxBlocksReceived == 0) &&
+					((p->sap == DMR_SAP_PROPRIETARY) || ((burst->payload[0] & 0x0F) == DMR_DPF_PROPRIETARY)))
 			{
+				bool crcOk = checkCRC16(burst->payload, 0xCC);
+				dmrDataPrivacyHeader_t ph;
+
+				// A selective retry's second header says what the first try's did (kept): a bad CRC there costs
+				// nothing, while dropping it would drop the blocks held from the first try
+				if (!crcOk && !((p->dpf == DMR_DPF_CONFIRMED) && cnf.retry))
+				{
+					rxCollecting = false;
+					cnf.held = false;
+					return DMR_DATA_RX_ERROR;
+				}
+				parsePrivacyHeader(crcOk ? burst->payload : NULL, &ph);
+				if (ph.present && (p->sap == DMR_SAP_PROPRIETARY) && (ph.sap != DMR_SAP_PROPRIETARY))
+				{
+					p->sap = ph.sap;// the user data's SAP is in the second header
+				}
+				if (p->dpf == DMR_DPF_CONFIRMED)
+				{
+					if (!cnf.retry)
+					{
+						cnf.privacy = ph;
+					}
+				}
+				else
+				{
+					p->privacy = ph;
+				}
 				if ((p->dpf == DMR_DPF_CONFIRMED) && !cnf.retry && (cnf.total > 0))
 				{
 					cnf.total--;// the second header is one of the blocks to follow
@@ -1546,6 +1728,7 @@ dmrDataRxResult_t dmrDataRxBurst(const dmrBurst_t *burst)
 				}
 
 				p->length = rxBytes - 4 - p->padOctets;
+				rxDecrypt(p);
 				return DMR_DATA_RX_PACKET;
 			}
 

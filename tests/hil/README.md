@@ -43,7 +43,8 @@ frame counter can check. Without `--allow-rf`, a radio or the SDR bench, these t
 `DMR AUDIO NOT CHECKED`: such a run hasn't checked DMR audio. With the radio and the bench there, nothing else skips
 them: no recording, no vocoder, no DMR channel on `MHZ` or firmware without the view keys fails. The exceptions are
 `test_dmr_audio_rx_deviation` and `test_dmr_audio_rx_offset_wide`, which skip on a bench board that can't scale its
-deviation (info feature `dev_scale`) or bring the radio near -100 dBm (`power_dbm`). Run only the smoke with
+deviation (info feature `dev_scale`) or bring the radio near -100 dBm (`power_dbm`), and `test_dmr_audio_rx_strong`,
+which skips when the bench can't bring the radio near -75 or -55 dBm (coupled too loosely). Run only the smoke with
 `-m audio_smoke`.
 
 ### Opt-in flags
@@ -257,7 +258,7 @@ uses. A test with none of these markers needs no bench. The `sdr_bench` fixture 
 |---|---|---|
 | `sdr_rx` | the board's receiver only | the radio transmits and the SDR measures it: `test_fm_tx.py`, `test_audio_probe.py` (the FM TX probes), `test_mic_gain.py`, `test_hotspot_cwid.py`, `test_usrp_fm_tx`, `test_split_tx_half_off_air`, `test_split_tx_half_voice`, the three `test_aprs_on_air_*`, `test_dmr_repeater_keyup` (a real repeater answers the radio) |
 | `bench_modem` | the board's transmitter only (it transmits to the radio, listens to it or runs as a repeater) | `test_dmr_rx.py`, `test_dmr_voice.py`, `test_dmr_call_features.py`, `test_dmr_data.py`, `test_dmr_emergency.py`, `test_dmr_ip.py`, `test_dmr_ip_burst.py`, `test_control_station.py`, `test_roaming.py` (the bench repeater), `test_dmr_gps_tx`, `test_dmr_tx_split_repeater` (its repeater is required, the SDR's view of the radio is optional), `test_dmr_repeater_slots` (the bench repeater only), `test_aprs_dmr_position`, `test_split_rx_half_labels`, `test_net_split_rx_half_labels`, `test_usrp_dmr_rx`, the four scan / battery-save tests in `test_radio_features.py` |
-| `bench_modem` and `sdr_rx` | both | `test_dmr_tx_off_air` (the SDR's waveform and the modem's decode), `test_sfr_repeats_bench_call` (the modem sends the call, the SDR sees the repeat), `test_dmr_repeater_burst_offset` (the bench repeater; the SDR times both sides) |
+| `bench_modem` and `sdr_rx` | both | `test_dmr_tx_off_air` (the SDR's waveform and the modem's decode), `test_sfr_repeats_bench_call` (the modem sends the call, the SDR sees the repeat), `test_dmr_repeater_burst_offset` (the bench repeater; the SDR times both sides), `test_dmr_repeater_inbound_fec` (the bench repeater; the SDR decodes the radio's inbound voice) |
 | `sdr_or_modem` | either one; the test accepts what one of them heard | `test_dmr_tx_talker_alias`, `test_dmr_privacy_tx` |
 | none (radio only) | neither | everything else |
 
@@ -439,7 +440,9 @@ the frames sent; `voice.rx_peak` at least 1000; `voice.rx_repeats` at most the r
 + 2 + 2 % of the frames; FEC corrections at most 2 bits a frame on average. The same near -100 dBm at the radio: with
 the carrier 2.5 kHz below and above the channel (`test_dmr_audio_rx_offset_wide`), and from a transmitter at 0.85 and
 1.15 of the standard's deviation with at least 95 % of the frames and at most 0.8 bits a frame
-(`test_dmr_audio_rx_deviation`). TX: the radio made one call of at least 30
+(`test_dmr_audio_rx_deviation`). Simplex speech near -75 and -55 dBm with at least 95 % of the frames and at most 0.2
+bits a frame at each (`test_dmr_audio_rx_strong`: a receiver AGC that overloads the start of every burst corrects a bit
+or more). TX: the radio made one call of at least 30
 frames a second of PTT with at most 10 % `voice.tx_repeats`; the bench heard a call from the radio's ID with at least
 as many frames, at most 15 % of them the AMBE silence frame, at most 10 % equal to the frame before and at least a
 tenth distinct (the test signal repeats its cycle); played back to the radio, the RX criteria without the FEC limit (the recording carries what the bench heard).

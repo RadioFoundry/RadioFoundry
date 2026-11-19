@@ -21,7 +21,9 @@ transmission (from its first voice LC header, by source ID):
   warning). When the capture still clips (1 % or more of
   the samples at the ADC rails) the waveform checks (sync family, A-F order, spacing, on-time, ramps, overlaps, power
   steps, stray carrier) are reported as not judged, with a warning; the decoded content stays strict.
-- radio: the call stack counted one TX call (call.tx_calls + 1), no TX underruns.
+- radio: the call stack counted one TX call (call.tx_calls + 1), no TX underruns, and where the board reports it the
+  bursts were keyed through idle (dmr.keyed_direct 0, and no dmr.keyed_direct_n added during the call), not
+  straight from RX as an SFR does.
 - talker alias: when the channel sends one (dmr.tx_alias not empty), the alias assembled from the embedded talker
   alias LCs (FLCO 4-7) on air equals it.
 
@@ -134,6 +136,7 @@ def test_dmr_tx_off_air(radio, sdr_bench, pytestconfig):
     floor_db = _sound_carrier(radio, sdr_bench, rdir, freq, cc)
     radio.reset_counters()
     _, before = radio.counters()
+    k0 = radio.view(["dmr"])
     # waveform: check_tx judges burst on-time, keying ramps, power steps, overlaps and clipping
     with sdr_bench.lease():
         watch = sdr_bench.dmr_watch_start(rdir, freq, PTT_S + 8, cc, waveform=True, floor_db=floor_db)
@@ -144,6 +147,14 @@ def test_dmr_tx_off_air(radio, sdr_bench, pytestconfig):
         sdr_bench.dmr_watch_wait(watch)
     sdr = sdr_bench.dmr_watch_result(watch)
     _, after = radio.counters()
+    # An ordinary call keys every burst through idle, never straight from RX (hal_radio_t.dmr_keying; boards
+    # without it don't report the key)
+    k = radio.view(["dmr"])
+    assert k.get("dmr.keyed_direct") in (None, "0"), "an ordinary DMR call keyed its bursts straight from RX (dmr.keyed_direct=1)"
+    if "dmr.keyed_direct_n" in k:	# every burst of the call, not only the last
+        direct = int(k["dmr.keyed_direct_n"]) - int(k0["dmr.keyed_direct_n"])
+        idle = int(k["dmr.keyed_idle_n"]) - int(k0["dmr.keyed_idle_n"])
+        assert direct == 0 and idle > 0, f"ordinary call: {direct} bursts keyed straight from RX, {idle} through idle"
     _report(_tx_checks(sdr, heard, own, target, private, cc, before, after, d.get("dmr.tx_alias", ""), pytestconfig,
                        _limits(radio)), sdr_bench, rdir)
 

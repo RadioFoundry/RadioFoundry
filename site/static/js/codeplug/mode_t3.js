@@ -174,6 +174,7 @@ export const t3Kind = {
 	id: 1,
 	systemType: 1,
 	contacts: true,		// the talk target is the record's contact, the groups followed its RX group list
+	recordFields: ["contact", "rxList"],
 	ownFreqs: false,	// the record holds the system's first control channel
 	defaultTx: true,	// a site grants every transmission
 	fallback: true,
