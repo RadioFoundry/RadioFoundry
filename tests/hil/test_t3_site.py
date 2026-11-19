@@ -339,7 +339,7 @@ def test_t3_camp(trunk, pytestconfig):
 
 
 def monitor_key(radio, want):
-    """Press and release the monitor key (a DMR channel's digital monitor toggles on the release) until the hear-all
+    """Press and release the monitor key (a DMR channel's digital monitor toggles on the press) until the hear-all
     latch reads want"""
     L = radio.link
     if L.view(["dmr"]).get("dmr.hear_all_latch") != ("1" if want else "0"):
