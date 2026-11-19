@@ -1180,6 +1180,9 @@ static const char *contact_name(uint32_t id, bool group)
 
 static radio_view_t view;
 static uint32_t serial;
+#if CONFIG_SATELLITE_TLE
+static radio_satellite_view_t satellite_view;
+#endif
 static channel_t ch_saved;	// the channel as stored (temporary changes are on view.ch)
 static uint32_t temp_target;	// temporary talk target (0 = channel default)
 static bool temp_private;
@@ -2276,30 +2279,29 @@ bool ui_svc_satellite_track(bool enabled, uint8_t index)
 	if (index >= ui_svc_satellite_count())
 		return false;
 	sim_satellite_selected = index;
-	view.satellite_tracking = enabled;
-	view.satellite_index = index;
-	view.satellite_status = enabled ? (sim_satellite_path_pending || sim_satellite_future_pass ? 2u : 3u) : 0u;
-	view.satellite_nominal_rx_hz = enabled ? 145000000u : 0u;
-	view.satellite_nominal_tx_hz = enabled ? 435000000u : 0u;
-	view.satellite_rx_offset_hz = enabled ? -1200 : 0;
-	view.satellite_tx_offset_hz = enabled ? 3600 : 0;
+	satellite_view.tracking.tracking = enabled;
+	satellite_view.tracking.index = index;
+	satellite_view.tracking.status = enabled ? (sim_satellite_path_pending || sim_satellite_future_pass ? 2u : 3u) : 0u;
+	satellite_view.tracking.nominal_rx_hz = enabled ? 145000000u : 0u;
+	satellite_view.tracking.nominal_tx_hz = enabled ? 435000000u : 0u;
+	satellite_view.tracking.rx_offset_hz = enabled ? -1200 : 0;
+	satellite_view.tracking.tx_offset_hz = enabled ? 3600 : 0;
 	return true;
 }
 
-bool ui_svc_satellite_pass_view(radio_satellite_pass_view_t *pass)
+bool ui_svc_satellite_view(radio_satellite_view_t *pass)
 {
 	if (pass == NULL)
 		return false;
-	*pass = (radio_satellite_pass_view_t){
-		.valid = view.satellite_tracking && !sim_satellite_path_pending,
-		.visible_now = view.satellite_tracking && !sim_satellite_path_pending && !sim_satellite_future_pass,
-		.los_known = view.satellite_tracking && !sim_satellite_los_pending,
-		.aos_in_s = view.satellite_tracking && sim_satellite_future_pass ? 61u : 0u,
-		.los_in_s = view.satellite_tracking ? (sim_satellite_future_pass ? 121u :
-			sim_satellite_los_pending ? 0u : 5500u) : 0u,
-		.maximum_elevation_tenths = view.satellite_tracking ? 360u : 0u,
-		.elevation_tenths = view.satellite_tracking ? 330 : 0,
-	};
+	*pass = satellite_view;
+	pass->valid = satellite_view.tracking.tracking && !sim_satellite_path_pending;
+	pass->visible_now = satellite_view.tracking.tracking && !sim_satellite_path_pending && !sim_satellite_future_pass;
+	pass->los_known = satellite_view.tracking.tracking && !sim_satellite_los_pending;
+	pass->aos_in_s = satellite_view.tracking.tracking && sim_satellite_future_pass ? 61u : 0u;
+	pass->los_in_s = satellite_view.tracking.tracking ? (sim_satellite_future_pass ? 121u :
+			sim_satellite_los_pending ? 0u : 5500u) : 0u;
+	pass->maximum_elevation_tenths = satellite_view.tracking.tracking ? 360u : 0u;
+	pass->elevation_tenths = satellite_view.tracking.tracking ? 330 : 0;
 	return true;
 }
 
@@ -2337,7 +2339,7 @@ bool ui_svc_satellite_path(satellite_path_view_t *path)
 	if (path == NULL)
 		return false;
 	memset(path, 0, sizeof(*path));
-	if (!view.satellite_tracking || sim_satellite_path_pending)
+	if (!satellite_view.tracking.tracking || sim_satellite_path_pending)
 		return false;
 	const uint16_t points[] = {
 		satellite_path_pack(180u, 0u), satellite_path_pack(160u, 8u),

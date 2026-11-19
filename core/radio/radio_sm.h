@@ -564,7 +564,7 @@ typedef struct {
 	subtone_t satellite_saved_rx_tone, satellite_saved_tx_tone;
 	uint16_t satellite_profile_tx_tone_tenths;
 	uint32_t satellite_restore_rx_hz, satellite_restore_tx_hz;
-	uint32_t satellite_nominal_rx_hz, satellite_nominal_tx_hz;
+	radio_satellite_tracking_view_t satellite_view;
 	uint32_t satellite_applied_rx_hz, satellite_applied_tx_hz;
 	uint32_t satellite_pending_rx_hz, satellite_pending_tx_hz;
 #if CONFIG_FM_TX_TONES

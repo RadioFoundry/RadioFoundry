@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+#include <string.h>
 #include "../ui/ui_svc.h"
 #include "../ui/ui_nav.h"
 #include "satellite/tracking.h"
@@ -43,12 +44,28 @@ bool ui_svc_satellite_get(uint8_t index, satellite_record_t *record)
 
 bool ui_svc_satellite_summary(uint8_t index, satellite_record_brief_t *summary)
 {
-	return radio_get_satellite_pass_summary(index, summary);
+	if (summary == NULL)
+		return false;
+	satellite_record_summary_t record;
+	if (!satellite_store_summary_get(index, &record))
+		return false;
+	memset(summary, 0, sizeof(*summary));
+	summary->catalog_id = record.catalog_id;
+	summary->epoch = record.epoch;
+	uint8_t length = record.name_length;
+	if (length > SATELLITE_RECORD_BRIEF_NAME_MAX) {
+		length = SATELLITE_RECORD_BRIEF_NAME_MAX;
+		while (length > 0u && ((uint8_t)record.name[length] & 0xC0u) == 0x80u)
+			length--;
+	}
+	summary->name_length = length;
+	memcpy(summary->name, record.name, length);
+	return true;
 }
 
 uint32_t ui_svc_satellite_generation(void)
 {
-	return satellite_store_generation();
+	return radio_get_satellite_generation();
 }
 
 bool ui_svc_satellite_tle_age(uint32_t epoch, uint16_t *age_days)
@@ -136,9 +153,9 @@ bool ui_svc_satellite_pass_summary(uint8_t record_index, satellite_record_brief_
 	return radio_get_satellite_pass_summary(record_index, summary);
 }
 
-bool ui_svc_satellite_pass_view(radio_satellite_pass_view_t *view)
+bool ui_svc_satellite_view(radio_satellite_view_t *view)
 {
-	return radio_get_satellite_pass_view(view);
+	return radio_get_satellite_view(view);
 }
 
 bool ui_svc_satellite_path(satellite_path_view_t *path)

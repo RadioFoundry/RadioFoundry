@@ -142,9 +142,9 @@ WEAK bool ui_svc_satellite_pass_summary(uint8_t record_index, satellite_record_b
 	return false;
 }
 
-WEAK bool ui_svc_satellite_pass_view(radio_satellite_pass_view_t *view)
+WEAK bool ui_svc_satellite_view(radio_satellite_view_t *view)
 {
-	if (view != NULL) *view = (radio_satellite_pass_view_t){0};
+	if (view != NULL) *view = (radio_satellite_view_t){0};
 	return false;
 }
 

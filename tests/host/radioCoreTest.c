@@ -946,8 +946,8 @@ static void test_satellite_override(void)
 	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
 				 true, nominal_rx + 10u, nominal_tx + 10u,
 				 10, 10, now);
-	CHECK(sm.view.satellite_tracking);
-	CHECK(sm.view.satellite_nominal_rx_hz == nominal_rx && sm.view.satellite_nominal_tx_hz == nominal_tx);
+	CHECK(sm.satellite_view.tracking);
+	CHECK(sm.satellite_view.nominal_rx_hz == nominal_rx && sm.satellite_view.nominal_tx_hz == nominal_tx);
 	CHECK(sm.view.ch.rx_hz == nominal_rx + 10u && sm.view.ch.tx_hz == nominal_tx + 10u);
 	CHECK(sm.view.ch.mode == RADIO_MODE_FM && sm.view.ch.bw == RADIO_BW_12K5);
 	CHECK(sm.view.ch.tx_tone.type == TONE_CTCSS && sm.view.ch.tx_tone.value == 670u);
@@ -972,12 +972,12 @@ static void test_satellite_override(void)
 	CHECK(sm.view.ch.rx_hz == nominal_rx + 20u && sm.view.ch.tx_hz == nominal_tx + 20u);
 	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
 				 true, 100000000u, 100000000u, 0, 0, now + 30u);
-	CHECK(sm.view.satellite_status == 1u);
+	CHECK(sm.satellite_view.status == 1u);
 	CHECK(sm.view.ch.rx_hz == nominal_rx && sm.view.ch.tx_hz == nominal_tx);
 	req(RREQ_PTT, 1);
 	CHECK(sm.view.state == RS_TX);
 	radio_sm_satellite_update(&sm, false, 0u, 0u, 0u, 0u, 0u, false, 0u, 0u, 0, 0, now + 40u);
-	CHECK(!sm.view.satellite_tracking);
+	CHECK(!sm.satellite_view.tracking);
 	CHECK(sm.view.ch.rx_hz == nominal_rx && sm.view.ch.tx_hz == nominal_tx);
 	CHECK(sm.view.ch.bw == RADIO_BW_12K5);
 	req(RREQ_PTT, 0);
@@ -993,7 +993,7 @@ static void test_so50_arm(void)
 	start();
 	radio_sm_satellite_update(&sm, true, 2u, 3u, 436795000u, 145850000u, 670u,
 				 true, 436795000u, 145850000u, 0, 0, now);
-	CHECK(sm.view.satellite_tracking);
+	CHECK(sm.satellite_view.tracking);
 	int tx_calls = hw.tx_calls;
 	req(RREQ_PTT, 1);
 	CHECK(hw.tx_tone.type == TONE_CTCSS && hw.tx_tone.value == 670u);

@@ -63,9 +63,8 @@ typedef struct {
 	uint32_t next_tracking_ms;
 
 	uint32_t scan_results[SATELLITE_SERVICE_SCAN_MAX_RECORDS];
-	uint16_t scan_aos_offset_min[SATELLITE_SERVICE_SCAN_MAX_RECORDS];
-	satellite_record_brief_t scan_summaries[SATELLITE_SERVICE_SCAN_MAX_RECORDS];
-	uint16_t scan_summary_valid;
+	char scan_summary_names[SATELLITE_SERVICE_SCAN_MAX_RECORDS][SATELLITE_RECORD_BRIEF_NAME_MAX];
+	uint32_t scan_tle_epoch;
 	int64_t scan_start_utc_s;
 	uint32_t scan_start_ms;
 	int32_t scan_latitude_e7;
@@ -75,12 +74,10 @@ typedef struct {
 	uint8_t scan_completed;
 	uint8_t scan_total;
 	uint8_t scan_result_count;
-	uint8_t scan_record_index;
 	bool scan_search_started;
 	uint32_t scan_completed_ms;
 	uint32_t next_scan_ms;
 	uint32_t store_generation;
-	bool store_generation_valid;
 	bool scan_cache_valid;
 } satellite_service_t;
 

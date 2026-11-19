@@ -56,56 +56,45 @@ static void satellite_capture_channel(satellite_service_t *service,
 	service->channel_number = channel->channel_number;
 }
 
-static void satellite_refresh_summaries(satellite_service_t *service)
+static void satellite_refresh_inventory(satellite_service_t *service)
 {
-	memset(service->scan_summaries, 0, sizeof(service->scan_summaries));
-	service->scan_summary_valid = 0u;
 	service->scan_total = satellite_store_count();
-	if (service->scan_total == 0u)
-		return;
+	memset(service->scan_summary_names, 0, sizeof(service->scan_summary_names));
+	service->scan_tle_epoch = 0u;
 	for (uint8_t i = 0u; i < service->scan_total; i++) {
 		satellite_record_summary_t summary;
 		if (!satellite_store_summary_get(i, &summary)) {
-			memset(service->scan_summaries, 0, sizeof(service->scan_summaries));
-			service->scan_summary_valid = 0u;
+			memset(service->scan_summary_names, 0, sizeof(service->scan_summary_names));
 			return;
 		}
-		satellite_record_brief_t *cached = &service->scan_summaries[i];
-		cached->catalog_id = summary.catalog_id;
-		cached->epoch = summary.epoch;
 		uint8_t length = summary.name_length;
 		if (length > SATELLITE_RECORD_BRIEF_NAME_MAX) {
 			length = SATELLITE_RECORD_BRIEF_NAME_MAX;
 			while (length > 0u && ((uint8_t)summary.name[length] & 0xC0u) == 0x80u)
 				length--;
 		}
-		cached->name_length = length;
-		memcpy(cached->name, summary.name, length);
-		cached->name[length] = '\0';
-		service->scan_summary_valid |= (uint16_t)(1u << i);
+		memcpy(service->scan_summary_names[i], summary.name, length);
+		if (i == 0u)
+			service->scan_tle_epoch = summary.epoch;
 	}
 }
 
 static bool satellite_refresh_store_if_changed(satellite_service_t *service)
 {
 	uint32_t generation = satellite_store_generation();
-	if (service->store_generation_valid && generation == service->store_generation)
+	if (generation == service->store_generation)
 		return false;
 	service->store_generation = generation;
-	service->store_generation_valid = true;
 	service->scan_cache_valid = false;
 	service->scan_status = SATELLITE_SERVICE_SCAN_IDLE;
 	service->scan_completed = 0u;
 	service->scan_total = 0u;
 	service->scan_result_count = 0u;
-	service->scan_record_index = 0u;
 	service->scan_search_started = false;
 	memset(service->scan_results, 0, sizeof(service->scan_results));
-	memset(service->scan_aos_offset_min, 0, sizeof(service->scan_aos_offset_min));
-	satellite_refresh_summaries(service);
+	satellite_refresh_inventory(service);
 	return true;
 }
-
 void satellite_service_init(satellite_service_t *service)
 {
 	if (service == NULL)
@@ -114,8 +103,7 @@ void satellite_service_init(satellite_service_t *service)
 	service->scan_status = SATELLITE_SERVICE_SCAN_IDLE;
 	satellite_tracking_stop(&service->tracking);
 	service->store_generation = satellite_store_generation();
-	service->store_generation_valid = true;
-	satellite_refresh_summaries(service);
+	satellite_refresh_inventory(service);
 }
 
 void satellite_service_tracking_request(satellite_service_t *service, bool enabled, uint8_t record_index,
@@ -194,12 +182,10 @@ bool satellite_service_scan_request(satellite_service_t *service, bool enabled, 
 	service->scan_search_started = false;
 
 	service->scan_start_ms = now_ms;
-	service->scan_record_index = 0u;
-	memset(service->scan_aos_offset_min, 0, sizeof(service->scan_aos_offset_min));
 	service->scan_completed = 0u;
 	service->scan_result_count = 0u;
 	if (!store_changed)
-		satellite_refresh_summaries(service);
+		satellite_refresh_inventory(service);
 	if (service->scan_total == 0u) {
 		satellite_scan_finish(service, now_ms);
 		return stopped_tracking;
@@ -243,14 +229,8 @@ static void satellite_scan_add_result(satellite_service_t *service, uint8_t inde
 	uint32_t packed = satellite_pass_summary_pack(index, eta_minutes, (uint8_t)maximum_elevation,
 						      pass->visible_now);
 	int64_t aos_offset_s = pass->aos_s - service->scan_start_utc_s;
-	if (aos_offset_s > 0) {
-		int64_t offset_minutes = (aos_offset_s + 59) / 60;
-		service->scan_aos_offset_min[index] = offset_minutes > UINT16_MAX ?
-			UINT16_MAX : (uint16_t)offset_minutes;
+	if (aos_offset_s > 0)
 		packed = satellite_pass_summary_set_aos_remainder(packed, (uint8_t)(aos_offset_s % 60));
-	} else {
-		service->scan_aos_offset_min[index] = 0u;
-	}
 	satellite_pass_summary_insert(service->scan_results, &service->scan_result_count,
 				      SATELLITE_SERVICE_SCAN_MAX_RECORDS, packed);
 }
@@ -259,7 +239,6 @@ static void satellite_scan_advance_record(satellite_service_t *service)
 {
 	if (service->scan_completed < service->scan_total)
 		service->scan_completed++;
-	service->scan_record_index++;
 	service->scan_search_started = false;
 }
 #endif
@@ -270,12 +249,12 @@ __attribute__((noinline)) void satellite_service_scan_step(satellite_service_t *
 	    (int32_t)(now_ms - service->next_scan_ms) < 0)
 		return;
 	if (!service->scan_search_started) {
-		if (service->scan_record_index >= service->scan_total) {
+		if (service->scan_completed >= service->scan_total) {
 			satellite_scan_finish(service, now_ms);
 			return;
 		}
 #if CONFIG_POSITION
-		if (!satellite_tracking_start_scan(&service->tracking, service->scan_record_index)) {
+		if (!satellite_tracking_start_scan(&service->tracking, service->scan_completed)) {
 			satellite_scan_advance_record(service);
 			service->next_scan_ms = now_ms + SERVICE_TICK_MS;
 			return;
@@ -305,7 +284,7 @@ __attribute__((noinline)) void satellite_service_scan_step(satellite_service_t *
 	if (pass_status == SATELLITE_PASS_PENDING)
 		return;
 	if (pass_status == SATELLITE_PASS_COMPLETE && service->tracking.pass_search.pass_valid)
-		satellite_scan_add_result(service, service->scan_record_index, &service->tracking.pass_search.pass);
+		satellite_scan_add_result(service, service->scan_completed, &service->tracking.pass_search.pass);
 	satellite_scan_advance_record(service);
 #endif
 }
@@ -406,9 +385,11 @@ bool satellite_service_scan_result(const satellite_service_t *service, uint8_t r
 	uint8_t index = satellite_pass_summary_index(*packed);
 	if (index >= service->scan_total)
 		return false;
-	uint32_t aos_minutes = service->scan_aos_offset_min[index];
+	uint16_t aos_minutes = satellite_pass_summary_aos_minutes(*packed);
 	uint8_t remainder_s = satellite_pass_summary_aos_remainder(*packed);
-	int64_t offset_s = (int64_t)aos_minutes * 60 - (remainder_s == 0u ? 0 : 60 - remainder_s);
+	if (remainder_s != 0u && aos_minutes > 0u)
+		aos_minutes--;
+	int64_t offset_s = (int64_t)aos_minutes * 60 + remainder_s;
 	*aos_s = service->scan_start_utc_s + offset_s;
 	return true;
 }
@@ -417,8 +398,13 @@ bool satellite_service_summary(const satellite_service_t *service, uint8_t recor
 			       satellite_record_brief_t *summary)
 {
 	if (service == NULL || summary == NULL || record_index >= service->scan_total ||
-	    (service->scan_summary_valid & (uint16_t)(1u << record_index)) == 0u)
+	    service->scan_summary_names[record_index][0] == '\0')
 		return false;
-	*summary = service->scan_summaries[record_index];
+	memset(summary, 0, sizeof(*summary));
+	summary->epoch = record_index == 0u ? service->scan_tle_epoch : 0u;
+	memcpy(summary->name, service->scan_summary_names[record_index], SATELLITE_RECORD_BRIEF_NAME_MAX);
+	while (summary->name_length < SATELLITE_RECORD_BRIEF_NAME_MAX &&
+	       summary->name[summary->name_length] != '\0')
+		summary->name_length++;
 	return true;
 }

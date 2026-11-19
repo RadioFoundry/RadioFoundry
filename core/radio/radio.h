@@ -25,11 +25,19 @@ typedef struct {
 	bool visible_now;
 } radio_satellite_pass_t;
 typedef struct {
+	bool tracking;
+	uint8_t index;
+	uint8_t status;
+	uint32_t nominal_rx_hz, nominal_tx_hz;
+	int64_t rx_offset_hz, tx_offset_hz;
+} radio_satellite_tracking_view_t;
+typedef struct {
+	radio_satellite_tracking_view_t tracking;
 	bool valid, visible_now, los_known, horizon_clipped;
 	uint32_t aos_in_s, los_in_s;
 	uint16_t maximum_elevation_tenths;
 	int16_t elevation_tenths;
-} radio_satellite_pass_view_t;
+} radio_satellite_view_t;
 #endif
 #include "radio/radio_p25.h"
 #include "radio/radio_nxdn.h"
@@ -409,13 +417,6 @@ typedef struct {
 	uint8_t leds;		// RADIO_LED_* bits: what the radio core drives its LEDs to (board.power->led)
 	bool vfo;		// tuning a frequency by hand rather than a channel
 	uint8_t vfo_index;	// which VFO: 0, or 1 the second (dual watch gives each channel its own)
-#if CONFIG_SATELLITE_TLE
-	bool satellite_tracking;	// tracking was selected, even when required inputs are unavailable
-	uint8_t satellite_index;	// installed TLE record index
-	uint8_t satellite_status;	// satellite_tracking_status_t, kept numeric to avoid a UI/radio dependency
-	uint32_t satellite_nominal_rx_hz, satellite_nominal_tx_hz;
-	int64_t satellite_rx_offset_hz, satellite_tx_offset_hz;
-#endif
 	uint16_t zone_index;
 	uint16_t zone_pos;	// position in the zone, 0-based
 	uint16_t zone_size;
@@ -528,11 +529,12 @@ void radio_get_view(radio_view_t *v);
 void radio_get_channel_profile(channel_t *ch);
 #if CONFIG_SATELLITE_TLE
 bool radio_get_satellite_path(satellite_path_view_t *path);
-bool radio_get_satellite_pass_view(radio_satellite_pass_view_t *view);
+bool radio_get_satellite_view(radio_satellite_view_t *view);
 void radio_req_satellite_scan(bool enabled);
 void radio_get_satellite_scan(uint8_t *status, uint8_t *completed, uint8_t *total, uint8_t *passes);
 bool radio_get_satellite_pass(uint8_t rank, radio_satellite_pass_t *pass);
 bool radio_get_satellite_pass_summary(uint8_t record_index, satellite_record_brief_t *summary);
+uint32_t radio_get_satellite_generation(void);
 #endif
 // Just the view's state, for a caller short of stack (the view is some 0.7 KB)
 radio_state_t radio_get_state(void);

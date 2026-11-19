@@ -25,18 +25,19 @@
 #define SAT_PENDING		(SAT_COMMIT | 0x80000000u)
 #define SAT_STAGE_MAGIC		0x31475453u
 #define SAT_VERSION		4u
+#define SAT_ENTRY_ID_MASK	0x1FFFFu
+#define SAT_ENTRY_OFFSET_SHIFT	17u
+#if SAT_MAX_DATA > (1u << SAT_ENTRY_OFFSET_SHIFT)
+#error "Satellite store offsets exceed the compact entry format"
+#endif
 typedef struct {
-	uint32_t catalog_id;
+	uint32_t catalog_offset;
 	uint32_t epoch;
-	uint16_t offset;
-	uint16_t length;
 } sat_entry_t;
 
 typedef struct {
 	uint32_t generation;
 	uint32_t crc;
-	uint32_t profile_ids[SATELLITE_PROFILE_MAX];
-	satellite_frequency_profile_t profiles[SATELLITE_PROFILE_MAX];
 	uint16_t length;
 	uint8_t header_size;
 	uint8_t count;
@@ -58,11 +59,35 @@ static bool transaction_profiles_staged;
 static bool transaction_profile_chunk_active;
 static uint8_t transaction_profile_count;
 static uint8_t transaction_profile_staged_count;
-static satellite_frequency_profile_t transaction_profiles[SATELLITE_PROFILE_MAX];
-static sat_entry_t transaction_entries[SAT_MAX_RECORDS];
 static sat_entry_t active_entries[SAT_MAX_RECORDS];
 static sat_bank_t current;
 static uint8_t io_buf[SAT_MAX_RECORD_BYTES];
+
+static bool satellite_store_frequency_profiles_get_locked(uint8_t *count,
+							   satellite_frequency_profile_t profiles[SATELLITE_PROFILE_MAX]);
+
+static uint32_t sat_entry_id(const sat_entry_t *entry)
+{
+	return entry->catalog_offset & SAT_ENTRY_ID_MASK;
+}
+
+static uint16_t sat_entry_offset(const sat_entry_t *entry)
+{
+	return (uint16_t)(entry->catalog_offset >> SAT_ENTRY_OFFSET_SHIFT);
+}
+
+static void sat_entry_set_offset(sat_entry_t *entry, uint16_t offset)
+{
+	entry->catalog_offset = (entry->catalog_offset & SAT_ENTRY_ID_MASK) |
+		((uint32_t)offset << SAT_ENTRY_OFFSET_SHIFT);
+}
+
+static uint16_t sat_entry_length(const sat_entry_t *entries, uint8_t index, uint8_t count, uint16_t total_length)
+{
+	uint16_t end = index + 1u < count ? sat_entry_offset(&entries[index + 1u]) : total_length;
+	return (uint16_t)(end - sat_entry_offset(&entries[index]));
+}
+
 static uint16_t get16(const uint8_t *p)
 {
 	return (uint16_t)((uint16_t)p[0] | (uint16_t)((uint16_t)p[1] << 8));
@@ -208,7 +233,7 @@ static bool validate_record(const uint8_t *p, uint16_t len, sat_entry_t *entry)
 	if (!satellite_orbit_init(&orbit, &record)) {
 		return false;
 	}
-	entry->catalog_id = id;
+	entry->catalog_offset = id;
 	entry->epoch = (uint32_t)orbit.epoch_s;
 	return true;
 }
@@ -258,24 +283,108 @@ static bool valid_profiles(uint8_t count, const uint32_t *ids)
 	return true;
 }
 
+static bool valid_profile_values(uint32_t catalog_id, uint32_t rx_hz, uint32_t tx_hz, uint16_t tone_tenths)
+{
+	return catalog_id != 0u && rx_hz != 0u && rx_hz < 1000000000u && tx_hz != 0u &&
+	       tx_hz < 1000000000u &&
+	       (tone_tenths == 0u || (tone_tenths >= 600u && tone_tenths <= 2600u)) &&
+	       (board_band_count() == 0u || (board_in_band(rx_hz, false) && board_in_band(tx_hz, true)));
+}
+
 static bool valid_frequency_profiles(uint8_t count, const satellite_frequency_profile_t *profiles)
 {
 	if (count > SATELLITE_PROFILE_MAX || (count != 0u && profiles == NULL))
 		return false;
 	for (uint8_t i = 0u; i < count; i++) {
 		const satellite_frequency_profile_t *profile = &profiles[i];
-		if (profile->catalog_id == 0u || profile->rx_hz == 0u || profile->rx_hz >= 1000000000u ||
-		    profile->tx_hz == 0u || profile->tx_hz >= 1000000000u ||
-		    (profile->tx_tone_tenths != 0u &&
-		     (profile->tx_tone_tenths < 600u || profile->tx_tone_tenths > 2600u)) ||
-		    (board_band_count() != 0u &&
-		     (!board_in_band(profile->rx_hz, false) || !board_in_band(profile->tx_hz, true))))
+		if (!valid_profile_values(profile->catalog_id, profile->rx_hz, profile->tx_hz,
+					  profile->tx_tone_tenths))
 			return false;
 		for (uint8_t j = 0u; j < i; j++)
 			if (profile->catalog_id == profiles[j].catalog_id)
 				return false;
 	}
 	return true;
+}
+
+static bool valid_profile_data(const uint8_t *data)
+{
+	uint8_t count = data[0];
+	if (count > SATELLITE_PROFILE_MAX)
+		return false;
+	for (uint8_t i = 0u; i < count; i++) {
+		const uint8_t *profile = data + 1u + (uint16_t)i * 14u;
+		uint32_t catalog_id = get32(profile);
+		if (!valid_profile_values(catalog_id, get32(profile + 4u), get32(profile + 8u),
+					  get16(profile + 12u)))
+			return false;
+		for (uint8_t j = 0u; j < i; j++) {
+			const uint8_t *previous = data + 1u + (uint16_t)j * 14u;
+			if (catalog_id == get32(previous))
+				return false;
+		}
+	}
+	return true;
+}
+
+static void profile_data_from_structs(uint8_t count, const satellite_frequency_profile_t *profiles,
+				      uint8_t data[SAT_PROFILE_BYTES])
+{
+	memset(data, 0, SAT_PROFILE_BYTES);
+	data[0] = count;
+	for (uint8_t i = 0u; i < count; i++) {
+		uint8_t *profile = data + 1u + (uint16_t)i * 14u;
+		put32(profile, profiles[i].catalog_id);
+		put32(profile + 4u, profiles[i].rx_hz);
+		put32(profile + 8u, profiles[i].tx_hz);
+		put16(profile + 12u, profiles[i].tx_tone_tenths);
+	}
+}
+
+static bool profiles_from_data(const uint8_t data[SAT_PROFILE_BYTES], uint8_t *count,
+			       satellite_frequency_profile_t profiles[SATELLITE_PROFILE_MAX])
+{
+	if (count == NULL || profiles == NULL || !valid_profile_data(data))
+		return false;
+	memset(profiles, 0, SATELLITE_PROFILE_MAX * sizeof(profiles[0]));
+	*count = data[0];
+	for (uint8_t i = 0u; i < *count; i++) {
+		const uint8_t *stored = data + 1u + (uint16_t)i * 14u;
+		satellite_frequency_profile_t *profile = &profiles[i];
+		profile->catalog_id = get32(stored);
+		(void)catalog_profile(profile->catalog_id, profile);
+		profile->rx_hz = get32(stored + 4u);
+		profile->tx_hz = get32(stored + 8u);
+		profile->tx_tone_tenths = get16(stored + 12u);
+	}
+	return true;
+}
+
+static bool write_profile_data(const hal_flash_map_t *m, uint8_t bank, uint8_t count,
+			       const satellite_frequency_profile_t *profiles)
+{
+	if (!valid_frequency_profiles(count, profiles))
+		return false;
+	profile_data_from_structs(count, profiles, io_buf);
+	return flash_write(bank_addr(m, bank) + SAT_PROFILE_OFFSET, io_buf, SAT_PROFILE_BYTES);
+}
+
+static bool write_default_profile_data(const hal_flash_map_t *m, uint8_t bank)
+{
+	uint8_t count = (uint8_t)(sizeof(default_profile_ids) / sizeof(default_profile_ids[0]));
+	memset(io_buf, 0, SAT_PROFILE_BYTES);
+	io_buf[0] = count;
+	for (uint8_t i = 0u; i < count; i++) {
+		satellite_frequency_profile_t profile;
+		if (!catalog_profile(default_profile_ids[i], &profile))
+			return false;
+		uint8_t *stored = io_buf + 1u + (uint16_t)i * 14u;
+		put32(stored, profile.catalog_id);
+		put32(stored + 4u, profile.rx_hz);
+		put32(stored + 8u, profile.tx_hz);
+		put16(stored + 12u, profile.tx_tone_tenths);
+	}
+	return flash_write(bank_addr(m, bank) + SAT_PROFILE_OFFSET, io_buf, SAT_PROFILE_BYTES);
 }
 
 static bool read_record(uint32_t base, uint16_t header_size, uint16_t offset, uint16_t total,
@@ -333,12 +442,11 @@ static bool check_bank(const hal_flash_map_t *m, uint8_t bank, sat_bank_t *info,
 		uint16_t n;
 		if (!read_record(base, header_size, offset, length, io_buf, &n) ||
 		    !validate_record(io_buf, n, &entries[i]) ||
-		    entries[i].catalog_id <= previous) {
+		    sat_entry_id(&entries[i]) <= previous) {
 			return true;
 		}
-		entries[i].offset = offset;
-		entries[i].length = n;
-		previous = entries[i].catalog_id;
+		sat_entry_set_offset(&entries[i], offset);
+		previous = sat_entry_id(&entries[i]);
 		offset = (uint16_t)(offset + n);
 	}
 	if (offset != length) {
@@ -354,21 +462,7 @@ static bool check_bank(const hal_flash_map_t *m, uint8_t bank, sat_bank_t *info,
 	info->profile_count = h[SAT_PROFILE_OFFSET];
 	if (info->profile_count > SATELLITE_PROFILE_MAX)
 		return true;
-	for (uint8_t i = 0u; i < SATELLITE_PROFILE_MAX; i++) {
-		const uint8_t *p = h + SAT_PROFILE_OFFSET + 1u + (uint16_t)i * 14u;
-		info->profiles[i].catalog_id = get32(p);
-		info->profiles[i].rx_hz = get32(p + 4u);
-		info->profiles[i].tx_hz = get32(p + 8u);
-		info->profiles[i].tx_tone_tenths = get16(p + 12u);
-		info->profiles[i].name = NULL;
-		info->profile_ids[i] = info->profiles[i].catalog_id;
-		if (info->profiles[i].catalog_id != 0u) {
-			satellite_frequency_profile_t catalog;
-			if (catalog_profile(info->profiles[i].catalog_id, &catalog))
-				info->profiles[i].name = catalog.name;
-		}
-	}
-	if (!valid_frequency_profiles(info->profile_count, info->profiles))
+	if (!valid_profile_data(h + SAT_PROFILE_OFFSET))
 		return true;
 	*valid = true;
 	return true;
@@ -429,15 +523,13 @@ static bool stage_entries(const hal_flash_map_t *m)
 	uint32_t previous = 0;
 	for (uint16_t i = 0; i < transaction_count; i++) {
 		uint16_t n;
+		sat_entry_t entry;
 		if (!read_record(bank_addr(m, transaction_bank), SAT_HEADER_SIZE, offset, transaction_length,
 				 io_buf, &n) ||
-		    !validate_record(io_buf, n, &transaction_entries[i]) ||
-		    transaction_entries[i].catalog_id <= previous) {
+		    !validate_record(io_buf, n, &entry) || sat_entry_id(&entry) <= previous) {
 			return false;
 		}
-		transaction_entries[i].offset = offset;
-		transaction_entries[i].length = n;
-		previous = transaction_entries[i].catalog_id;
+		previous = sat_entry_id(&entry);
 		offset = (uint16_t)(offset + n);
 	}
 	return offset == transaction_length;
@@ -455,16 +547,20 @@ static bool copy_record(uint32_t src, uint16_t src_header_size, uint16_t src_off
 }
 
 static bool commit_transaction(const hal_flash_map_t *m, int active, const sat_bank_t *old_info,
-			       uint8_t profile_count, const satellite_frequency_profile_t *profiles,
-			       bool replace_records)
+			       uint8_t profile_bank, uint8_t profile_count, bool replace_records)
 {
-	if (!stage_entries(m) || !valid_frequency_profiles(profile_count, profiles)) {
+	if (!stage_entries(m)) {
 		return false;
 	}
 	uint8_t old_count = active >= 0 && !replace_records ? old_info->count : 0u;
 	uint8_t old_i = 0, new_i = 0, result_count = 0;
 	uint32_t out_crc = 0;
 	uint16_t out_len = 0;
+	uint16_t staged_offset = 0u;
+	uint16_t staged_entry_offset = 0u;
+	uint16_t staged_entry_length = 0u;
+	sat_entry_t staged_entry;
+	bool staged_entry_loaded = false;
 	uint8_t target = 0xFFu;
 	for (uint8_t i = 0; i < 3u; i++) {
 		if ((int)i != active && i != transaction_bank) {
@@ -484,28 +580,39 @@ static bool commit_transaction(const hal_flash_map_t *m, int active, const sat_b
 		return false;
 	}
 	while (old_i < old_count || new_i < transaction_count) {
-		bool take_new = new_i < transaction_count &&
-			(old_i == old_count || transaction_entries[new_i].catalog_id <= active_entries[old_i].catalog_id);
-		const sat_entry_t *entry = take_new ? &transaction_entries[new_i] : &active_entries[old_i];
-		if (!take_new && new_i < transaction_count && transaction_entries[new_i].catalog_id == entry->catalog_id) {
-			old_i++;
-			continue;
+		if (new_i < transaction_count && !staged_entry_loaded) {
+			uint16_t length;
+			if (!read_record(new_base, SAT_HEADER_SIZE, staged_offset, transaction_length, io_buf, &length) ||
+			    !validate_record(io_buf, length, &staged_entry)) {
+				return false;
+			}
+			staged_entry_offset = staged_offset;
+			staged_entry_length = length;
+			staged_offset = (uint16_t)(staged_offset + length);
+			staged_entry_loaded = true;
 		}
-		if (result_count >= SAT_MAX_RECORDS || out_len > SAT_MAX_DATA - entry->length) {
+		bool take_new = new_i < transaction_count &&
+			(old_i == old_count || sat_entry_id(&staged_entry) <= sat_entry_id(&active_entries[old_i]));
+		const sat_entry_t *entry = take_new ? &staged_entry : &active_entries[old_i];
+		uint16_t entry_offset = take_new ? staged_entry_offset : sat_entry_offset(entry);
+		uint16_t entry_length = take_new ? staged_entry_length :
+			sat_entry_length(active_entries, old_i, old_count, old_info->length);
+		if (result_count >= SAT_MAX_RECORDS || out_len > SAT_MAX_DATA - entry_length) {
 			return false;
 		}
 		uint32_t src = take_new ? new_base : old_base;
 		uint16_t src_header_size = take_new ? SAT_HEADER_SIZE : old_info->header_size;
-		if (!copy_record(src, src_header_size, entry->offset, target_base, out_len, entry->length, &out_crc)) {
+		if (!copy_record(src, src_header_size, entry_offset, target_base, out_len, entry_length, &out_crc)) {
 			return false;
 		}
-		out_len = (uint16_t)(out_len + entry->length);
+		out_len = (uint16_t)(out_len + entry_length);
 		result_count++;
 		if (take_new) {
-			if (old_i < old_count && active_entries[old_i].catalog_id == entry->catalog_id) {
+			if (old_i < old_count && sat_entry_id(&active_entries[old_i]) == sat_entry_id(entry)) {
 				old_i++;
 			}
 			new_i++;
+			staged_entry_loaded = false;
 		} else {
 			old_i++;
 		}
@@ -518,22 +625,17 @@ static bool commit_transaction(const hal_flash_map_t *m, int active, const sat_b
 	put32(h + 8, active >= 0 ? old_info->generation + 1u : 1u);
 	put32(h + 12, out_crc);
 	put32(h + 16, 0u);
-	uint8_t profile_data[SAT_PROFILE_BYTES] = { 0 };
-	profile_data[0] = profile_count;
-	for (uint8_t i = 0u; i < profile_count; i++) {
-		uint8_t *p = profile_data + 1u + (uint16_t)i * 14u;
-		put32(p, profiles[i].catalog_id);
-		put32(p + 4u, profiles[i].rx_hz);
-		put32(p + 8u, profiles[i].tx_hz);
-		put16(p + 12u, profiles[i].tx_tone_tenths);
+	if (!flash_read(bank_addr(m, profile_bank) + SAT_PROFILE_OFFSET, io_buf, SAT_PROFILE_BYTES) ||
+	    !valid_profile_data(io_buf) || io_buf[0] != profile_count) {
+		return false;
 	}
-	uint32_t profile_crc = storage_crc32(0u, profile_data, sizeof(profile_data));
+	uint32_t profile_crc = storage_crc32(0u, io_buf, SAT_PROFILE_BYTES);
 	static const uint8_t committed[4] = { (uint8_t)SAT_COMMIT, (uint8_t)(SAT_COMMIT >> 8),
 					      (uint8_t)(SAT_COMMIT >> 16), (uint8_t)(SAT_COMMIT >> 24) };
 	uint8_t profile_crc_bytes[4];
 	put32(profile_crc_bytes, profile_crc);
 	if (!flash_write(target_base, h, sizeof(h)) ||
-	    !flash_write(target_base + SAT_PROFILE_OFFSET, profile_data, sizeof(profile_data)) ||
+	    !flash_write(target_base + SAT_PROFILE_OFFSET, io_buf, SAT_PROFILE_BYTES) ||
 	    !flash_write(target_base + SAT_PROFILE_CRC_OFFSET, profile_crc_bytes, sizeof(profile_crc_bytes)) ||
 	    !flash_write(target_base + 20u, committed, sizeof(committed))) {
 		return false;
@@ -558,13 +660,9 @@ static bool satellite_store_read(uint8_t index, satellite_record_t *record, sate
 	if (!active_bank(m, &active) || active < 0 || index >= current.count) {
 		goto done;
 	}
-	bool valid;
-	if (!check_bank(m, (uint8_t)active, &current, active_entries, &valid) || !valid) {
-		goto done;
-	}
 	sat_entry_t *entry = &active_entries[index];
 	uint16_t length;
-	if (!read_record(bank_addr(m, (uint8_t)active), current.header_size, entry->offset, current.length,
+	if (!read_record(bank_addr(m, (uint8_t)active), current.header_size, sat_entry_offset(entry), current.length,
 			  io_buf, &length) ||
 	    !validate_record(io_buf, length, entry)) {
 		goto done;
@@ -572,7 +670,7 @@ static bool satellite_store_read(uint8_t index, satellite_record_t *record, sate
 	uint8_t name_length = io_buf[4];
 	if (record != NULL) {
 		memset(record, 0, sizeof(*record));
-		record->catalog_id = entry->catalog_id;
+		record->catalog_id = sat_entry_id(entry);
 		record->epoch = entry->epoch;
 		record->name_length = name_length;
 		memcpy(record->name, io_buf + 5u, name_length);
@@ -582,7 +680,7 @@ static bool satellite_store_read(uint8_t index, satellite_record_t *record, sate
 	}
 	if (summary != NULL) {
 		memset(summary, 0, sizeof(*summary));
-		summary->catalog_id = entry->catalog_id;
+		summary->catalog_id = sat_entry_id(entry);
 		summary->epoch = entry->epoch;
 		summary->name_length = name_length;
 		memcpy(summary->name, io_buf + 5u, name_length);
@@ -640,8 +738,13 @@ static bool satellite_store_profiles_get_locked(uint8_t *count, uint32_t ids[SAT
 		memcpy(ids, default_profile_ids, sizeof(default_profile_ids));
 		return true;
 	}
-	*count = current.profile_count;
-	memcpy(ids, current.profile_ids, sizeof(current.profile_ids));
+	if (!flash_read(bank_addr(m, (uint8_t)active) + SAT_PROFILE_OFFSET, io_buf, SAT_PROFILE_BYTES) ||
+	    !valid_profile_data(io_buf))
+		return false;
+	*count = io_buf[0];
+	memset(ids, 0, SATELLITE_PROFILE_MAX * sizeof(ids[0]));
+	for (uint8_t i = 0u; i < *count; i++)
+		ids[i] = get32(io_buf + 1u + (uint16_t)i * 14u);
 	return true;
 #else
 	(void)count;
@@ -665,9 +768,9 @@ static bool satellite_store_frequency_profiles_get_locked(uint8_t *count,
 		*count = (uint8_t)(sizeof(default_profile_ids) / sizeof(default_profile_ids[0]));
 		return default_frequency_profiles(profiles);
 	}
-	*count = current.profile_count;
-	memcpy(profiles, current.profiles, sizeof(current.profiles));
-	return true;
+	if (!flash_read(bank_addr(m, (uint8_t)active) + SAT_PROFILE_OFFSET, io_buf, SAT_PROFILE_BYTES))
+		return false;
+	return profiles_from_data(io_buf, count, profiles);
 #else
 	(void)count;
 	(void)profiles;
@@ -738,9 +841,11 @@ static bool satellite_store_frequency_profiles_set_locked(uint8_t count,
 		transaction_crc = storage_crc32(transaction_crc, io_buf, n);
 		offset = (uint16_t)(offset + n);
 	}
+	if (!write_profile_data(m, transaction_bank, count, profiles))
+		return false;
 	transaction_offset = transaction_length;
 	transaction_active = true;
-	bool result = commit_transaction(m, active, &current, count, profiles, false);
+	bool result = commit_transaction(m, active, &current, transaction_bank, count, false);
 	transaction_active = false;
 	return result;
 #else
@@ -824,7 +929,7 @@ static bool satellite_store_replace_locked(uint8_t index, const char *line1, con
 	}
 	uint16_t length;
 	const sat_entry_t *old = &active_entries[index];
-	if (!read_record(bank_addr(m, (uint8_t)active), current.header_size, old->offset, current.length,
+	if (!read_record(bank_addr(m, (uint8_t)active), current.header_size, sat_entry_offset(old), current.length,
 			  io_buf, &length))
 		return false;
 	uint8_t name_length = io_buf[4];
@@ -856,7 +961,7 @@ static bool satellite_store_replace_locked(uint8_t index, const char *line1, con
 	put32(marker, SAT_STAGE_MAGIC);
 	bool result = flash_write(bank_addr(m, bank), marker, sizeof(marker)) &&
 		flash_write(bank_addr(m, bank) + SAT_HEADER_SIZE, io_buf, length) &&
-		commit_transaction(m, active, &current, current.profile_count, current.profiles, false);
+		commit_transaction(m, active, &current, (uint8_t)active, current.profile_count, false);
 	transaction_active = false;
 	return result;
 #else
@@ -893,7 +998,7 @@ bool satellite_store_list(uint16_t start, uint8_t limit, satellite_record_summar
 		for (uint8_t i = 0u; i < number; i++) {
 			sat_entry_t *entry = &active_entries[start + i];
 			uint16_t length;
-			if (!read_record(bank_addr(m, (uint8_t)active), current.header_size, entry->offset,
+			if (!read_record(bank_addr(m, (uint8_t)active), current.header_size, sat_entry_offset(entry),
 					 current.length, io_buf, &length) ||
 			    !validate_record(io_buf, length, entry)) {
 				result = false;
@@ -901,7 +1006,7 @@ bool satellite_store_list(uint16_t start, uint8_t limit, satellite_record_summar
 			}
 			satellite_record_summary_t *summary = &records[i];
 			memset(summary, 0, sizeof(*summary));
-			summary->catalog_id = entry->catalog_id;
+			summary->catalog_id = sat_entry_id(entry);
 			summary->epoch = entry->epoch;
 			summary->name_length = io_buf[4];
 			memcpy(summary->name, io_buf + 5u, summary->name_length);
@@ -935,7 +1040,7 @@ bool satellite_store_list_ids(uint16_t start, uint8_t limit, satellite_record_id
 		uint16_t remaining = (uint16_t)(current.count - start);
 		uint8_t number = remaining < limit ? (uint8_t)remaining : limit;
 		for (uint8_t i = 0u; i < number; i++) {
-			records[i].catalog_id = active_entries[start + i].catalog_id;
+			records[i].catalog_id = sat_entry_id(&active_entries[start + i]);
 			records[i].epoch = active_entries[start + i].epoch;
 			(*count)++;
 		}
@@ -976,16 +1081,50 @@ bool satellite_store_available(void)
 #endif
 }
 
-static bool transfer_profiles_match_records(uint8_t count, const satellite_frequency_profile_t *profiles)
+static bool transfer_profiles_match_records(const hal_flash_map_t *m, uint8_t count,
+					    const satellite_frequency_profile_t *profiles)
 {
+	uint16_t offset = 0u;
 	for (uint8_t i = 0u; i < transaction_count; i++) {
+		uint16_t length;
+		sat_entry_t entry;
+		if (!read_record(bank_addr(m, transaction_bank), SAT_HEADER_SIZE, offset, transaction_length,
+				 io_buf, &length) ||
+		    !validate_record(io_buf, length, &entry))
+			return false;
 		bool found = false;
 		for (uint8_t j = 0u; j < count; j++)
-			found = found || transaction_entries[i].catalog_id == profiles[j].catalog_id;
+			found = found || sat_entry_id(&entry) == profiles[j].catalog_id;
 		if (!found)
 			return false;
+		offset = (uint16_t)(offset + length);
 	}
-	return true;
+	return offset == transaction_length;
+}
+
+static bool transfer_profile_data_match_records(const hal_flash_map_t *m, const uint8_t *data)
+{
+	uint8_t count = data[0];
+	uint32_t profile_ids[SATELLITE_PROFILE_MAX];
+	for (uint8_t i = 0u; i < count; i++)
+		profile_ids[i] = get32(data + 1u + (uint16_t)i * 14u);
+
+	uint16_t offset = 0u;
+	for (uint8_t i = 0u; i < transaction_count; i++) {
+		uint16_t length;
+		sat_entry_t entry;
+		if (!read_record(bank_addr(m, transaction_bank), SAT_HEADER_SIZE, offset, transaction_length,
+				 io_buf, &length) ||
+		    !validate_record(io_buf, length, &entry))
+			return false;
+		bool found = false;
+		for (uint8_t j = 0u; j < count; j++)
+			found = found || sat_entry_id(&entry) == profile_ids[j];
+		if (!found)
+			return false;
+		offset = (uint16_t)(offset + length);
+	}
+	return offset == transaction_length;
 }
 
 satellite_store_transfer_status_t satellite_store_transfer_begin(uint16_t count, uint16_t bytes, uint32_t crc,
@@ -1099,12 +1238,12 @@ satellite_store_transfer_status_t satellite_store_transfer_profiles(
 	    transaction_profiles_staged || id != transaction_id || m == NULL || !stage_entries(m))
 		goto done;
 	if (count != transaction_count || !valid_frequency_profiles(count, profiles) ||
-	    !transfer_profiles_match_records(count, profiles)) {
+	    !transfer_profiles_match_records(m, count, profiles)) {
 		result = SATELLITE_STORE_TRANSFER_BAD_ARG;
 		goto done;
 	}
-	memset(transaction_profiles, 0, sizeof(transaction_profiles));
-	memcpy(transaction_profiles, profiles, (size_t)count * sizeof(profiles[0]));
+	if (!write_profile_data(m, transaction_bank, count, profiles))
+		goto done;
 	transaction_profile_count = count;
 	transaction_profiles_staged = true;
 	result = SATELLITE_STORE_TRANSFER_OK;
@@ -1139,20 +1278,50 @@ satellite_store_transfer_status_t satellite_store_transfer_profiles_chunk(
 		storage_unlock();
 		return SATELLITE_STORE_TRANSFER_BAD_ARG;
 	}
+	if (!valid_frequency_profiles(count, profiles)) {
+		storage_unlock();
+		return SATELLITE_STORE_TRANSFER_BAD_ARG;
+	}
 	if (!transaction_profile_chunk_active) {
 		transaction_profile_chunk_active = true;
 		transaction_profile_count = total;
 		transaction_profile_staged_count = 0u;
+		io_buf[0] = total;
+		if (!flash_write(bank_addr(m, transaction_bank) + SAT_PROFILE_OFFSET, io_buf, 1u)) {
+			storage_unlock();
+			return SATELLITE_STORE_TRANSFER_REFUSED;
+		}
 	}
-	memcpy(transaction_profiles + start, profiles, (size_t)count * sizeof(profiles[0]));
+	for (uint8_t i = 0u; i < count; i++) {
+		uint8_t *stored = io_buf + (uint16_t)i * 14u;
+		put32(stored, profiles[i].catalog_id);
+		put32(stored + 4u, profiles[i].rx_hz);
+		put32(stored + 8u, profiles[i].tx_hz);
+		put16(stored + 12u, profiles[i].tx_tone_tenths);
+	}
+	if (!flash_write(bank_addr(m, transaction_bank) + SAT_PROFILE_OFFSET + 1u + (uint16_t)start * 14u,
+			 io_buf, (uint32_t)count * 14u)) {
+		storage_unlock();
+		return SATELLITE_STORE_TRANSFER_REFUSED;
+	}
 	transaction_profile_staged_count = (uint8_t)(transaction_profile_staged_count + count);
 	satellite_store_transfer_status_t result = SATELLITE_STORE_TRANSFER_OK;
 	if (transaction_profile_staged_count == transaction_profile_count) {
-		if (!valid_frequency_profiles(transaction_profile_count, transaction_profiles) ||
-		    !transfer_profiles_match_records(transaction_profile_count, transaction_profiles))
+		if (!flash_read(bank_addr(m, transaction_bank) + SAT_PROFILE_OFFSET, io_buf, SAT_PROFILE_BYTES) ||
+		    !valid_profile_data(io_buf) || !transfer_profile_data_match_records(m, io_buf)) {
 			result = SATELLITE_STORE_TRANSFER_BAD_ARG;
-		else
+		} else if (!flash_read(bank_addr(m, transaction_bank) + SAT_PROFILE_OFFSET, io_buf, SAT_PROFILE_BYTES)) {
+			result = SATELLITE_STORE_TRANSFER_REFUSED;
+		} else {
+			uint8_t used = (uint8_t)(1u + (uint16_t)transaction_profile_count * 14u);
+			memset(io_buf + used, 0, SAT_PROFILE_BYTES - used);
+			if (!flash_write(bank_addr(m, transaction_bank) + SAT_PROFILE_OFFSET, io_buf, SAT_PROFILE_BYTES)) {
+				result = SATELLITE_STORE_TRANSFER_REFUSED;
+				storage_unlock();
+				return result;
+			}
 			transaction_profiles_staged = true;
+		}
 	}
 	storage_unlock();
 	return result;
@@ -1189,26 +1358,21 @@ satellite_store_transfer_status_t satellite_store_transfer_commit(uint16_t id, u
 	if (transaction_offset != transaction_length || actual_crc != transaction_crc || crc != transaction_crc ||
 	    !stage_entries(m))
 		goto done;
-	uint8_t old_count = active >= 0 ? current.count : 0u;
-	uint8_t merged = transaction_replace ? (uint8_t)transaction_count : old_count;
-	if (!transaction_replace) {
-		for (uint8_t i = 0u; i < transaction_count; i++) {
-			bool found = false;
-			for (uint8_t j = 0u; j < old_count; j++)
-				found = found || transaction_entries[i].catalog_id == active_entries[j].catalog_id;
-			if (!found)
-				merged++;
-		}
+	uint8_t profile_count;
+	uint8_t profile_bank;
+	if (transaction_profiles_staged) {
+		profile_count = transaction_profile_count;
+		profile_bank = transaction_bank;
+	} else if (active >= 0) {
+		profile_count = current.profile_count;
+		profile_bank = (uint8_t)active;
+	} else {
+		profile_count = (uint8_t)(sizeof(default_profile_ids) / sizeof(default_profile_ids[0]));
+		if (!write_default_profile_data(m, transaction_bank))
+			goto done;
+		profile_bank = transaction_bank;
 	}
-	satellite_frequency_profile_t defaults[SATELLITE_PROFILE_MAX] = { 0 };
-	if (active < 0 && !default_frequency_profiles(defaults))
-		goto done;
-	uint8_t profile_count = transaction_profiles_staged ? transaction_profile_count : active >= 0 ?
-		current.profile_count : (uint8_t)(sizeof(default_profile_ids) / sizeof(default_profile_ids[0]));
-	const satellite_frequency_profile_t *profiles = transaction_profiles_staged ? transaction_profiles :
-		active >= 0 ? current.profiles : defaults;
-	if (merged > SAT_MAX_RECORDS ||
-	    !commit_transaction(m, active, &current, profile_count, profiles, transaction_replace))
+	if (!commit_transaction(m, active, &current, profile_bank, profile_count, transaction_replace))
 		goto done;
 	transaction_active = false;
 	transaction_replace = false;

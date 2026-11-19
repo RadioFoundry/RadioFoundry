@@ -15,12 +15,30 @@
 static uint8_t selected;
 static char edit_line1[SATELLITE_TLE_LINE_LENGTH + 1u];
 static char edit_line2[SATELLITE_TLE_LINE_LENGTH + 1u];
-static satellite_record_brief_t pass_record;
+typedef struct {
+	uint32_t catalog_id;
+	uint32_t epoch;
+	char name[SATELLITE_RECORD_BRIEF_NAME_MAX];
+} satellite_ui_record_t;
+static satellite_ui_record_t pass_record;
 static uint16_t pass_tle_age_days;
 static bool pass_tle_age_available;
 static uint32_t pass_tle_age_generation;
 static uint32_t stale_warning_generation;
 static uint16_t stale_warning_mask;
+
+static void satellite_cache_record(const satellite_record_brief_t *summary)
+{
+	pass_record.catalog_id = summary->catalog_id;
+	pass_record.epoch = summary->epoch;
+	memcpy(pass_record.name, summary->name, sizeof(pass_record.name));
+}
+
+static void satellite_copy_record_name(char name[SATELLITE_RECORD_BRIEF_NAME_MAX + 1u])
+{
+	memcpy(name, pass_record.name, sizeof(pass_record.name));
+	name[sizeof(pass_record.name)] = '\0';
+}
 
 static void satellite_warn_stale_tle(uint8_t record_index)
 {
@@ -139,47 +157,50 @@ static uint32_t satellite_target_hz(uint32_t nominal_hz, int64_t offset_hz)
 	return (uint32_t)target_hz;
 }
 
-static void satellite_frequency_rows(int *y, char *value, size_t value_len, const radio_view_t *view)
+static void satellite_frequency_rows(int *y, char *value, size_t value_len, const radio_view_t *view,
+				     const radio_satellite_tracking_view_t *satellite)
 {
 	sbuf_t b;
 	sb_init(&b, value, value_len);
-	sb_freq(&b, satellite_target_hz(view->satellite_nominal_rx_hz, view->satellite_rx_offset_hz));
+	sb_freq(&b, satellite_target_hz(satellite->nominal_rx_hz, satellite->rx_offset_hz));
 	sb_str(&b, " MHz");
 	row(y, "RX", value, ui_col.fg);
 	sb_init(&b, value, value_len);
 	uint32_t tx_hz = view->state == RS_TX ? view->ch.tx_hz :
-		satellite_target_hz(view->satellite_nominal_tx_hz, view->satellite_tx_offset_hz);
+		satellite_target_hz(satellite->nominal_tx_hz, satellite->tx_offset_hz);
 	sb_freq(&b, tx_hz);
 	sb_str(&b, " MHz");
 	row(y, "TX", value, ui_col.fg);
 }
 
-static void satellite_small_status_row(int *y, const radio_view_t *view, bool selected_tracking)
+static void satellite_small_status_row(int *y, const radio_satellite_tracking_view_t *satellite,
+				       bool selected_tracking)
 {
 	char status_fit[40];
-	const char *status = !view->satellite_tracking ? TR(VALUE_OFF, "Off") :
+	const char *status = !satellite->tracking ? TR(VALUE_OFF, "Off") :
 		!selected_tracking ? TR(OTHER_SATELLITE_2, "Other satellite") :
-		view->satellite_status == SATELLITE_TRACKING_VISIBLE ? TR(VISIBLE_2, "Visible") :
-		view->satellite_status == SATELLITE_TRACKING_BELOW_HORIZON ? TR(BELOW_HORIZON_2, "Below horizon") :
+		satellite->status == SATELLITE_TRACKING_VISIBLE ? TR(VISIBLE_2, "Visible") :
+		satellite->status == SATELLITE_TRACKING_BELOW_HORIZON ? TR(BELOW_HORIZON_2, "Below horizon") :
 		TR(WAITING_FOR_POSITION_TIME_2, "Waiting for position/time");
 	gfx_text_fit(ui_layout.small, status, gfx_width() - ui_layout.small->w,
 		     status_fit, sizeof(status_fit));
-	color_t status_color = selected_tracking && view->satellite_status == SATELLITE_TRACKING_VISIBLE ?
-		ui_col.rx : view->satellite_tracking ? ui_col.warn : ui_col.dim;
+	color_t status_color = selected_tracking && satellite->status == SATELLITE_TRACKING_VISIBLE ?
+		ui_col.rx : satellite->tracking ? ui_col.warn : ui_col.dim;
 	gfx_text(ui_layout.small, 0, *y, status_fit, status_color);
 	*y += ui_layout.row_h;
 }
 
-static void satellite_small_frequency_row(int *y, const radio_view_t *view)
+static void satellite_small_frequency_row(int *y, const radio_view_t *view,
+					  const radio_satellite_tracking_view_t *satellite)
 {
 	char rx[32], tx[32], rx_fit[32], tx_fit[32];
 	sbuf_t b;
 	sb_init(&b, rx, sizeof(rx));
 	sb_str(&b, "RX ");
-	sb_freq(&b, satellite_target_hz(view->satellite_nominal_rx_hz, view->satellite_rx_offset_hz));
+	sb_freq(&b, satellite_target_hz(satellite->nominal_rx_hz, satellite->rx_offset_hz));
 	sb_str(&b, " MHz");
 	uint32_t tx_hz = view->state == RS_TX ? view->ch.tx_hz :
-		satellite_target_hz(view->satellite_nominal_tx_hz, view->satellite_tx_offset_hz);
+		satellite_target_hz(satellite->nominal_tx_hz, satellite->tx_offset_hz);
 	sb_init(&b, tx, sizeof(tx));
 	sb_str(&b, "TX ");
 	sb_freq(&b, tx_hz);
@@ -194,7 +215,7 @@ static void satellite_small_frequency_row(int *y, const radio_view_t *view)
 	*y += font->h;
 }
 
-static void satellite_small_countdown_row(int *y, const radio_satellite_pass_view_t *pass)
+static void satellite_small_countdown_row(int *y, const radio_satellite_view_t *pass)
 {
 	char rise_value[24], set_value[24], text[64], fit[64];
 	if (!pass->valid) {
@@ -342,7 +363,7 @@ static void path_horizon_arc_circle(int cx, int cy, int radius, int mark_x, int 
 	}
 }
 
-static void draw_path(int y, const radio_satellite_pass_view_t *pass, const satellite_path_view_t *path)
+static void draw_path(int y, const radio_satellite_view_t *pass, const satellite_path_view_t *path)
 {
 	int width = gfx_width() - 16;
 	int plot_y = y;
@@ -425,6 +446,7 @@ static void satellite_update_pass_tle_age(void)
 	if (generation != pass_tle_age_generation) {
 		pass_tle_age_generation = generation;
 		pass_tle_age_available = false;
+		pass_record.catalog_id = 0u;
 	}
 	if (pass_tle_age_available)
 		return;
@@ -483,10 +505,14 @@ static void satellite_pass_item(uint16_t row_index, ui_item_t *item)
 	}
 	row_index--;
 	radio_satellite_pass_t pass;
+	satellite_record_brief_t summary;
 	if (row_index >= passes || !ui_svc_satellite_pass((uint8_t)row_index, &pass) ||
-	    !ui_svc_satellite_pass_summary(pass.record_index, &pass_record))
+	    !ui_svc_satellite_pass_summary(pass.record_index, &summary))
 		return;
-	str_copy(item->label, sizeof(item->label), pass_record.name);
+	satellite_cache_record(&summary);
+	char name[SATELLITE_RECORD_BRIEF_NAME_MAX + 1u];
+	satellite_copy_record_name(name);
+	str_copy(item->label, sizeof(item->label), name);
 	sbuf_t b;
 	sb_init(&b, item->value, sizeof(item->value));
 	if (pass.visible_now) {
@@ -539,96 +565,108 @@ static void satellite_draw(void)
 	char value[40];
 	sbuf_t b;
 	bool compact = gfx_height() < 150;
+	uint32_t generation = ui_svc_satellite_generation();
+	if (generation != pass_tle_age_generation) {
+		pass_tle_age_generation = generation;
+		pass_tle_age_available = false;
+		pass_record.catalog_id = 0u;
+	}
 	uint8_t count = ui_svc_satellite_count();
 	if (selected >= count && count != 0u)
 		selected = 0u;
-	satellite_record_brief_t record;
-	bool have_record = count != 0u && ui_svc_satellite_summary(selected, &record);
+	if (count != 0u && pass_record.catalog_id == 0u) {
+		satellite_record_brief_t summary;
+		if (ui_svc_satellite_summary(selected, &summary))
+			satellite_cache_record(&summary);
+	}
+	bool have_record = count != 0u && pass_record.catalog_id != 0u;
+	char record_name[SATELLITE_RECORD_BRIEF_NAME_MAX + 1u];
+	satellite_copy_record_name(record_name);
 	const radio_view_t *view = ui_view();
-	radio_satellite_pass_view_t pass_view = {0};
-	ui_svc_satellite_pass_view(&pass_view);
+	radio_satellite_view_t satellite = {0};
+	ui_svc_satellite_view(&satellite);
 	satellite_path_view_t path = {0};
-	if (view->satellite_tracking && view->satellite_index == selected && gfx_height() > 64)
+	if (satellite.tracking.tracking && satellite.tracking.index == selected && gfx_height() > 64)
 		ui_svc_satellite_path(&path);
 	gfx_clear(ui_col.bg);
-	int y = ui_draw_top(view, &ui_st, TR(SATELLITE_2, "Satellite"), have_record ? record.name : "") + 2;
+	int y = ui_draw_top(view, &ui_st, TR(SATELLITE_2, "Satellite"), have_record ? record_name : "") + 2;
 	if (!have_record) {
 		gfx_text(ui_layout.small, 0, y, TR(SATELLITE_NO_TLE_LOAD_SITE, "No TLEs: load from site"), ui_col.warn);
 	} else if (compact && gfx_height() <= 64) {
-		bool selected_tracking = view->satellite_tracking && view->satellite_index == selected;
-		satellite_small_status_row(&y, view, selected_tracking);
+		bool selected_tracking = satellite.tracking.tracking && satellite.tracking.index == selected;
+		satellite_small_status_row(&y, &satellite.tracking, selected_tracking);
 		if (selected_tracking) {
-			satellite_small_frequency_row(&y, view);
-			satellite_small_countdown_row(&y, &pass_view);
+			satellite_small_frequency_row(&y, view, &satellite.tracking);
+			satellite_small_countdown_row(&y, &satellite);
 		}
 	} else if (compact) {
-		if (view->satellite_tracking && view->satellite_index == selected) {
-			const char *status = view->satellite_status == SATELLITE_TRACKING_VISIBLE ? TR(VISIBLE_2, "Visible") :
-				view->satellite_status == SATELLITE_TRACKING_BELOW_HORIZON ? TR(BELOW_HORIZON_2, "Below horizon") :
+		if (satellite.tracking.tracking && satellite.tracking.index == selected) {
+			const char *status = satellite.tracking.status == SATELLITE_TRACKING_VISIBLE ? TR(VISIBLE_2, "Visible") :
+				satellite.tracking.status == SATELLITE_TRACKING_BELOW_HORIZON ? TR(BELOW_HORIZON_2, "Below horizon") :
 				TR(WAITING_FOR_POSITION_TIME_2, "Waiting for position/time");
-			row(&y, TR(TRACKING_4, "Tracking"), status, view->satellite_status == SATELLITE_TRACKING_VISIBLE ?
+			row(&y, TR(TRACKING_4, "Tracking"), status, satellite.tracking.status == SATELLITE_TRACKING_VISIBLE ?
 			     ui_col.rx : ui_col.warn);
-			satellite_frequency_rows(&y, value, sizeof(value), view);
-			if (pass_view.valid && !pass_view.visible_now) {
-				uint32_t minutes = satellite_eta_minutes_from_seconds(pass_view.aos_in_s);
+			satellite_frequency_rows(&y, value, sizeof(value), view, &satellite.tracking);
+			if (satellite.valid && !satellite.visible_now) {
+				uint32_t minutes = satellite_eta_minutes_from_seconds(satellite.aos_in_s);
 				sb_init(&b, value, sizeof(value));
 				satellite_eta_minutes(&b, minutes);
 				row(&y, TR(SATELLITE_LABEL_RISE, GLYPH_UP " in"), value, ui_col.fg);
 			}
-			draw_path(y, &pass_view, &path);
+			draw_path(y, &satellite, &path);
 		} else {
-			row(&y, TR(TRACKING_4, "Tracking"), view->satellite_tracking ? TR(OTHER_SATELLITE_2, "Other satellite") : TR(VALUE_OFF, "Off"), ui_col.dim);
+			row(&y, TR(TRACKING_4, "Tracking"), satellite.tracking.tracking ? TR(OTHER_SATELLITE_2, "Other satellite") : TR(VALUE_OFF, "Off"), ui_col.dim);
 		}
 	} else {
 		sb_init(&b, value, sizeof(value));
 		sb_str(&b, "NORAD ");
-		sb_u32(&b, record.catalog_id, 1);
+		sb_u32(&b, pass_record.catalog_id, 1);
 		row(&y, TR(CATALOG, "Catalog"), value, ui_col.fg);
-		if (view->satellite_tracking && view->satellite_index == selected) {
-			const char *status = view->satellite_status == SATELLITE_TRACKING_VISIBLE ? TR(VISIBLE_2, "Visible") :
-				view->satellite_status == SATELLITE_TRACKING_BELOW_HORIZON ? TR(BELOW_HORIZON_2, "Below horizon") :
+		if (satellite.tracking.tracking && satellite.tracking.index == selected) {
+			const char *status = satellite.tracking.status == SATELLITE_TRACKING_VISIBLE ? TR(VISIBLE_2, "Visible") :
+				satellite.tracking.status == SATELLITE_TRACKING_BELOW_HORIZON ? TR(BELOW_HORIZON_2, "Below horizon") :
 				TR(WAITING_FOR_POSITION_TIME_2, "Waiting for position/time");
-			row(&y, TR(TRACKING_4, "Tracking"), status, view->satellite_status == SATELLITE_TRACKING_VISIBLE ?
+			row(&y, TR(TRACKING_4, "Tracking"), status, satellite.tracking.status == SATELLITE_TRACKING_VISIBLE ?
 			     ui_col.rx : ui_col.warn);
-			satellite_frequency_rows(&y, value, sizeof(value), view);
-			if (pass_view.valid) {
+			satellite_frequency_rows(&y, value, sizeof(value), view, &satellite.tracking);
+			if (satellite.valid) {
 				if (gfx_width() < 220) {
-					if (pass_view.visible_now) {
+					if (satellite.visible_now) {
 						row(&y, TR(NEXT_PASS, "Next pass"), TR(VISIBLE_NOW, "Visible now"), ui_col.rx);
 					} else {
-						uint32_t minutes = satellite_eta_minutes_from_seconds(pass_view.aos_in_s);
+						uint32_t minutes = satellite_eta_minutes_from_seconds(satellite.aos_in_s);
 						sb_init(&b, value, sizeof(value));
 						satellite_eta_minutes(&b, minutes);
 						row(&y, TR(NEXT_PASS, "Next pass"), value, ui_col.fg);
 					}
 				}
 				char rise_value[40], set_value[40];
-				if (pass_view.visible_now) {
+				if (satellite.visible_now) {
 					str_copy(rise_value, sizeof(rise_value), TR(NOW, "Now"));
 				} else {
-					uint32_t minutes = satellite_eta_minutes_from_seconds(pass_view.aos_in_s);
+					uint32_t minutes = satellite_eta_minutes_from_seconds(satellite.aos_in_s);
 					sb_init(&b, rise_value, sizeof(rise_value));
 					satellite_eta_minutes(&b, minutes);
 				}
-				if (!pass_view.los_known) {
+				if (!satellite.los_known) {
 					str_copy(set_value, sizeof(set_value), TR(CALCULATING, "Calculating"));
-				} else if (pass_view.horizon_clipped) {
+				} else if (satellite.horizon_clipped) {
 					str_copy(set_value, sizeof(set_value),
 						 TR(SATELLITE_STATE_BEYOND_FORECAST, "Beyond forecast"));
 				} else {
-					uint32_t minutes = satellite_eta_minutes_from_seconds(pass_view.los_in_s);
+					uint32_t minutes = satellite_eta_minutes_from_seconds(satellite.los_in_s);
 					sb_init(&b, set_value, sizeof(set_value));
 					satellite_eta_minutes(&b, minutes);
 				}
 				satellite_countdown_pair(&y, rise_value, set_value);
 			}
-			draw_path(y, &pass_view, &path);
+			draw_path(y, &satellite, &path);
 		} else {
-			row(&y, TR(TRACKING_4, "Tracking"), view->satellite_tracking ? TR(OTHER_SATELLITE_2, "Other satellite") : TR(VALUE_OFF, "Off"), ui_col.dim);
+			row(&y, TR(TRACKING_4, "Tracking"), satellite.tracking.tracking ? TR(OTHER_SATELLITE_2, "Other satellite") : TR(VALUE_OFF, "Off"), ui_col.dim);
 		}
 	}
-	bool so50_active = have_record && record.catalog_id == 27607u && view->satellite_tracking &&
-		view->satellite_index == selected;
+	bool so50_active = have_record && pass_record.catalog_id == 27607u && satellite.tracking.tracking &&
+		satellite.tracking.index == selected;
 	ui_draw_bottom(&ui_st, so50_active ? TR(UP_DOWN_SATELLITE_OK_TRACK, "Up Down satellite  OK track  Hold OK arm  # TLE  Back") :
 		TR(UP_DOWN_SATELLITE_OK_TRACK_2, "Up Down satellite  OK track  # TLE  Back"));
 	ui_draw_banner(&ui_st);
@@ -640,9 +678,11 @@ static bool satellite_key(const input_event_t *ev)
 	if (ev->action == ACT_ENC_STEP) {
 		dir = ev->value > 0 ? 1 : ev->value < 0 ? -1 : 0;
 	} else if (ev->gesture == GESTURE_LONG && ev->action == ACT_SELECT) {
-		const radio_view_t *view = ui_view();
-		if (view->satellite_tracking && view->satellite_index == selected &&
-		    ui_svc_satellite_summary(selected, &pass_record) && pass_record.catalog_id == 27607u) {
+		radio_satellite_view_t satellite = {0};
+		ui_svc_satellite_view(&satellite);
+		satellite_record_brief_t summary;
+		if (satellite.tracking.tracking && satellite.tracking.index == selected &&
+		    ui_svc_satellite_summary(selected, &summary) && summary.catalog_id == 27607u) {
 			ui_svc_satellite_arm();
 			ui_toast(TR(SO_50_ARM_REQUESTED, "SO-50 arm requested"));
 			return true;
@@ -656,8 +696,9 @@ static bool satellite_key(const input_event_t *ev)
 			satellite_edit();
 			return true;
 		} else if (ev->gesture == GESTURE_PRESS && ev->action == ACT_SELECT) {
-			const radio_view_t *view = ui_view();
-			bool active = view->satellite_tracking && view->satellite_index == selected;
+			radio_satellite_view_t satellite = {0};
+			ui_svc_satellite_view(&satellite);
+			bool active = satellite.tracking.tracking && satellite.tracking.index == selected;
 			if (!ui_svc_satellite_track(!active, selected))
 				ui_toast(TR(SATELLITE_UNAVAILABLE_4, "Satellite unavailable"));
 			ui_dirty();
@@ -668,6 +709,7 @@ static bool satellite_key(const input_event_t *ev)
 		return false;
 	uint8_t count = ui_svc_satellite_count();
 	if (count != 0u) {
+		pass_record.catalog_id = 0u;
 		selected = (uint8_t)((selected + count + dir) % count);
 		ui_svc_satellite_select(selected);
 		ui_dirty();
@@ -680,6 +722,7 @@ static void satellite_enter(void)
 	selected = ui_svc_satellite_selected();
 	if (selected == SETTINGS_UNSET8)
 		selected = 0u;
+	pass_record.catalog_id = 0u;
 }
 
 const ui_scr_def_t ui_satellite_screen = {

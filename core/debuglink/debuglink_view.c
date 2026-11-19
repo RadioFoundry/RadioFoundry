@@ -100,11 +100,11 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "am=%u\nbcast=%u\nbcast_fault=%u\nbcast_khz=%u\n", v->am, v->bcast, v->bcast_fault, (unsigned)v->bcast_khz);
 	dl_text(t, "vfo=%u\nvfo_index=%u\n", v->vfo, v->vfo_index);
 #if CONFIG_SATELLITE_TLE
-	radio_satellite_pass_view_t satellite_pass;
-	bool have_satellite_pass = radio_get_satellite_pass_view(&satellite_pass);
+	radio_satellite_view_t satellite;
+	bool have_satellite = radio_get_satellite_view(&satellite);
 	dl_text(t, "satellite.tracking=%u\nsatellite.index=%u\nsatellite.status=%u\nsatellite.pass_valid=%u\n",
-		v->satellite_tracking, v->satellite_index, v->satellite_status,
-		have_satellite_pass && satellite_pass.valid);
+		satellite.tracking.tracking, satellite.tracking.index, satellite.tracking.status,
+		have_satellite && satellite.valid);
 #endif
 	dl_text(t, "zone_index=%u\nzone_pos=%u\nzone_size=%u\nzone_count=%u\n", v->zone_index, v->zone_pos, v->zone_size,
 		(unsigned)codeplug_zone_count());
