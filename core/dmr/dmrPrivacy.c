@@ -276,7 +276,9 @@ bool dmrPrivacyKeyIsValid(dmrPrivacyType_t type, uint16_t key)
 {
 	const privacyScheme_t *s = scheme(type);
 
-	return (type != DMR_PRIVACY_OFF) && (key >= s->keyMin) && (key <= s->keyMax);
+	// scheme() maps an unknown type to Off's entry, whose range would take key 0
+	return (type != DMR_PRIVACY_OFF) && ((unsigned)type < DMR_PRIVACY_NUM_TYPES) && (key >= s->keyMin) &&
+			(key <= s->keyMax);
 }
 
 uint16_t dmrPrivacyKeyMax(dmrPrivacyType_t type)

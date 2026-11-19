@@ -289,7 +289,7 @@ static bool queueTx(int count, uint8_t kind)
 		stats.txPrivacyBlocked++;
 		return false;
 	}
-	stats.txPrivacy += dmrDataPrivacyBursts() ? 1 : 0;
+	stats.txPrivacy += dmrDataPrivacyEncrypted(txBursts, count) ? 1 : 0;// not CSBKs and responses: never encrypted
 
 	txBurstCount = count;
 	txPendingSince = now;

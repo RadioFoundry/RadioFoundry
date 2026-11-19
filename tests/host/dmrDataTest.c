@@ -1180,6 +1180,7 @@ static void testPrivacy(void)
 	dumpBursts("privacy-unconfirmed", b, n);
 	CHECK(dmrDataPrivacyAllows(b, n));
 	CHECK(!dmrDataPrivacyAllows(plain, np));// the same packet without the header is held back
+	CHECK(dmrDataPrivacyEncrypted(b, n) && !dmrDataPrivacyEncrypted(plain, np));
 
 	// Received with the key: decrypted, the SAP the first header's
 	cryptCalls = 0;
@@ -1235,18 +1236,27 @@ static void testPrivacy(void)
 	CHECK(feed(b, n) == DMR_DATA_RX_RETRY);
 	dmrDataRxRetryFlags(flags);
 	CHECK(flags[0] == 0xFB);
-	n = dmrDataBuildConfirmed(DMR_SAP_IP, 100, 10005, big, sizeof(big), DMR_TYPE_RATE_3_4, 2, false, 1ULL << 2, 0, b,
-								DMR_DATA_MAX_BURSTS);
-	CHECK(n == 3 && (b[0].payload[8] & 0x7F) == 2 && b[1].payload[0] == 0x4F && ((b[2].payload[0] >> 1) == 2));
+	dmrBurst_t retry[3];
+	n = dmrDataBuildConfirmed(DMR_SAP_IP, 100, 10005, big, sizeof(big), DMR_TYPE_RATE_3_4, 2, false, 1ULL << 2, 0, retry,
+								3);
+	CHECK(n == 3 && (retry[0].payload[8] & 0x7F) == 2 && retry[1].payload[0] == 0x4F && ((retry[2].payload[0] >> 1) == 2));
 	dmrDataRxReset();
-	CHECK(dmrDataRxBurst(&b[0]) == DMR_DATA_RX_NONE && dmrDataRxBurst(&b[1]) == DMR_DATA_RX_NONE);
-	CHECK(dmrDataRxBurst(&b[2]) == DMR_DATA_RX_PACKET);
+	CHECK(dmrDataRxBurst(&retry[0]) == DMR_DATA_RX_NONE && dmrDataRxBurst(&retry[1]) == DMR_DATA_RX_NONE);
+	CHECK(dmrDataRxBurst(&retry[2]) == DMR_DATA_RX_PACKET);
 	CHECK(dmrDataRxPacket.length == sizeof(big) && dmrDataRxPacket.decrypted &&
 	      memcmp(dmrDataRxPacket.data, big, sizeof(big)) == 0);
+	// A retry's second header with a bad CRC: the blocks held from the first try are kept, the packet completes
+	CHECK(feed(b, 9) == DMR_DATA_RX_RETRY);
+	retry[1].payload[5] ^= 1;
+	dmrDataRxReset();
+	CHECK(dmrDataRxBurst(&retry[0]) == DMR_DATA_RX_NONE && dmrDataRxBurst(&retry[1]) == DMR_DATA_RX_NONE);
+	CHECK(dmrDataRxBurst(&retry[2]) == DMR_DATA_RX_PACKET);
+	CHECK(dmrDataRxPacket.decrypted && memcmp(dmrDataRxPacket.data, big, sizeof(big)) == 0);
 
 	// What may go out: responses and CSBKs always; UDT can't carry the header; nothing with data under a blocking scheme
 	dmrBurst_t r[2], u[8];
 	CHECK(dmrDataBuildResponse(DMR_SAP_IP, 10005, 100, DMR_RESPONSE_ACK(2), NULL, r) >= 1);
+	CHECK(!dmrDataPrivacyEncrypted(r, 1));
 	dmrDataLocation_t loc;
 	memset(&loc, 0, sizeof(loc));
 	int nu = dmrDataBuildUDTLocation(false, 100, 10005, &loc, 1, u, 8);

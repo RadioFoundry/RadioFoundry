@@ -172,19 +172,18 @@ int dmrDataPrivacyBursts(void)
 	return txEncrypts() ? 1 : 0;
 }
 
-#if CONFIG_DMR_PRIVACY
 static bool isPrivacyHeader(const uint8_t *h)
 {
 	// An MFID 0x10 second header with SAP 1 is another kind (a network header), not a privacy header
 	return ((h[0] & 0x0F) == DMR_DPF_PROPRIETARY) && (h[1] == DMR_DATA_PRIVACY_MFID) && ((h[0] >> 4) != 1);
 }
-#endif
 
+// h NULL: none. Read without CONFIG_DMR_PRIVACY too: an encrypted packet is then marked so and dropped, never taken
+// as clear
 static void parsePrivacyHeader(const uint8_t *h, dmrDataPrivacyHeader_t *ph)
 {
 	memset(ph, 0, sizeof(*ph));
-#if CONFIG_DMR_PRIVACY
-	if (!isPrivacyHeader(h))
+	if ((h == NULL) || !isPrivacyHeader(h))
 	{
 		return;
 	}
@@ -194,9 +193,18 @@ static void parsePrivacyHeader(const uint8_t *h, dmrDataPrivacyHeader_t *ph)
 	ph->alg = (h[2] >> 4) & 0x07;
 	ph->keyId = h[3];
 	ph->mi = ((uint32_t)h[6] << 24) | ((uint32_t)h[7] << 16) | ((uint32_t)h[8] << 8) | h[9];
-#else
-	(void)h;
-#endif
+}
+
+bool dmrDataPrivacyEncrypted(const dmrBurst_t *bursts, int count)
+{
+	for (int i = 0; i < count; i++)
+	{
+		if ((bursts[i].dataType == DMR_TYPE_DATA_HEADER) && isPrivacyHeader(bursts[i].payload))
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 bool dmrDataPrivacyAllows(const dmrBurst_t *bursts, int count)
@@ -358,11 +366,13 @@ int dmrDataPacketBursts(int length, uint8_t blockType)
 	}
 	int blocks = (length + 4 + blockLen - 1) / blockLen;
 
-	if ((((blocks * blockLen) - 4 - length) > 31) || (blocks > 127) || ((blocks * blockLen) > DMR_DATA_MAX_PACKET))
+	int extra = dmrDataPrivacyBursts();
+
+	if ((((blocks * blockLen) - 4 - length) > 31) || ((blocks + extra) > 127) || ((blocks * blockLen) > DMR_DATA_MAX_PACKET))
 	{
 		return 0;
 	}
-	return 1 + dmrDataPrivacyBursts() + blocks;
+	return 1 + extra + blocks;
 }
 
 // Unconfirmed packet of Rate 1/2, Rate 3/4 or Rate 1 blocks, preceded by preamble CSBKs
@@ -1601,15 +1611,18 @@ dmrDataRxResult_t dmrDataRxBurst(const dmrBurst_t *burst)
 			if (rxCollecting && (rxBlocksReceived == 0) &&
 					((p->sap == DMR_SAP_PROPRIETARY) || ((burst->payload[0] & 0x0F) == DMR_DPF_PROPRIETARY)))
 			{
-				if (!checkCRC16(burst->payload, 0xCC))
+				bool crcOk = checkCRC16(burst->payload, 0xCC);
+				dmrDataPrivacyHeader_t ph;
+
+				// A selective retry's second header says what the first try's did (kept): a bad CRC there costs
+				// nothing, while dropping it would drop the blocks held from the first try
+				if (!crcOk && !((p->dpf == DMR_DPF_CONFIRMED) && cnf.retry))
 				{
 					rxCollecting = false;
 					cnf.held = false;
 					return DMR_DATA_RX_ERROR;
 				}
-				dmrDataPrivacyHeader_t ph;
-
-				parsePrivacyHeader(burst->payload, &ph);
+				parsePrivacyHeader(crcOk ? burst->payload : NULL, &ph);
 				if (ph.present && (p->sap == DMR_SAP_PROPRIETARY) && (ph.sap != DMR_SAP_PROPRIETARY))
 				{
 					p->sap = ph.sap;// the user data's SAP is in the second header

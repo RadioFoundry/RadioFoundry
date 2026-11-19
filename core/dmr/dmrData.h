@@ -231,6 +231,8 @@ void dmrDataSetPrivacy(const dmrDataPrivacy_t *privacy);
 bool dmrDataPrivacyAllows(const dmrBurst_t *bursts, int count);
 // The bursts the privacy header adds to a packet with the privacy set: 0 or 1
 int dmrDataPrivacyBursts(void);
+// Whether a burst list carries a privacy header (a packet in it goes encrypted)
+bool dmrDataPrivacyEncrypted(const dmrBurst_t *bursts, int count);
 uint8_t dmrDataGetUdpCompression(void);
 // True when a datagram between these ports may go compressed under the current mode (false when built without it).
 // The mode decides by the ports only: a packet whose addresses aren't its IDs' CAI addresses still goes with the full

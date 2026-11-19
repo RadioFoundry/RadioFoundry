@@ -267,7 +267,8 @@ static void testData(void)
 	// The key ranges and names come from the same table
 	CHECK(dmrPrivacyKeyIsValid(DMR_PRIVACY_MOTOROLA_BP, 255) && !dmrPrivacyKeyIsValid(DMR_PRIVACY_MOTOROLA_BP, 256) &&
 	      dmrPrivacyKeyIsValid(DMR_PRIVACY_ANYTONE_BP, 0) && !dmrPrivacyKeyIsValid(DMR_PRIVACY_OFF, 0) &&
-	      !dmrPrivacyKeyIsValid(DMR_PRIVACY_NUM_TYPES, 1), "key ranges");
+	      !dmrPrivacyKeyIsValid(DMR_PRIVACY_NUM_TYPES, 1) && !dmrPrivacyKeyIsValid(DMR_PRIVACY_NUM_TYPES, 0),
+	      "key ranges");
 	CHECK(dmrPrivacyKeyMax(DMR_PRIVACY_MOTOROLA_BP) == 255 && dmrPrivacyKeyMax(DMR_PRIVACY_ANYTONE_BP) == 0xFFFF,
 	      "key max");
 	CHECK(strcmp(dmrPrivacyTypeName(DMR_PRIVACY_MOTOROLA_BP), "Moto BP") == 0 &&
