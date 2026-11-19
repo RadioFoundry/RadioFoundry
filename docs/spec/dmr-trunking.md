@@ -335,7 +335,9 @@ without sending, and the call's late-entry grants don't bring it back.
 A C_AHOY or P_AHOY to the radio's ID (or to the followed talkgroup, on the payload channel; or a radio check of a
 talkgroup the radio follows, on the TSCC) is answered with C_ACKU or P_ACKU on the inbound slot after the next CACH of
 the slot it came on, without random access. The answer's target is the AHOY's source, its additional address the
-radio's ID, also when a talkgroup was addressed (table 6.28).
+radio's ID, also when a talkgroup was addressed (table 6.28). Its Response_Info (table 7.41) is G/I 0 (the target is
+an individual or gateway ID) and the 6-bit Response_Check of the TSCC's C_SYScode (section 4), except for a status
+poll, whose Response_Info is the radio's status.
 
 | AHOY | Answer |
 |---|---|

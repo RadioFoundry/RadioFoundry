@@ -740,6 +740,8 @@ static void test_group_heard(void)
 	CHECK(nsent == 1 && sent[0].op == T3_OP_P_ACKU && sent[0].u.ack.reason == T3_RC_MS_ACCEPTED &&
 	      sent[0].u.ack.dst == T3_ID_TSI && sent[0].u.ack.src == OWN && sent_act[0].payload &&
 	      sent_act[0].slot == 1, "P_ACKU to a talkgroup radio check");
+	CHECK(sent[0].u.ack.info == t3_response_check(ours), "P_ACKU Response_Info: G/I 0 (the target is TSI) + "
+	      "Response_Check, got 0x%02x", sent[0].u.ack.info);
 	h = ahoy(T3_SK_REGISTRATION, true, TG_OTHER, T3_ID_TSI);
 	rx(&ms, 1, &h);
 	frames(&ms, 1);
@@ -936,6 +938,9 @@ static void test_ahoy(void)
 	frames(&ms, 1);
 	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKU && sent[0].u.ack.reason == T3_RC_MS_ACCEPTED &&
 	      sent[0].u.ack.dst == T3_ID_TSI && sent[0].u.ack.src == OWN, "radio check answered");
+	// Table 7.41: G/I 0 (an individual target), then Response_Check, the low NET + SITE bits of the TSCC's C_SYScode
+	CHECK(t3_response_check(ours) != 0 && sent[0].u.ack.info == t3_response_check(ours),
+	      "Response_Info: G/I 0 + Response_Check 0x%02x, got 0x%02x", t3_response_check(ours), sent[0].u.ack.info);
 	h = ahoy(T3_SK_REGISTRATION, false, OWN, T3_ID_AUTHI);
 	rx(&ms, 1, &h);
 	frames(&ms, 1);
