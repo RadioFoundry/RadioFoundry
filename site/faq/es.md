@@ -12,7 +12,7 @@ La radio no está en su gestor de arranque, o el cable USB solo carga. Apaga la 
 
 ## Al programar la radio, el selector de puerto serie no se abre o no muestra mi radio
 
-Cierra cualquier otro programa que pueda tener el puerto abierto (un CPS, qdmr, un programa de hotspot, otra pestaña del navegador). Comprueba que el ordenador muestra el puerto como puerto serie (en Windows, en el Administrador de dispositivos). Una radio en modo de red USB no aparece: usa Cambiar la radio a USB serie en la página, que la pone en modo serie hasta que se reinicie. Funcionan los cables con chips FTDI, CH340, CP210x y Prolific originales. El controlador de Prolific para Windows desactiva los chips falsificados, y muchos cables vendidos en internet para estas radios los llevan. [Más](../../docs/user/20-troubleshooting.md#everyday-use)
+Cierra cualquier otro programa que pueda tener el puerto abierto (un CPS, qdmr, un programa de hotspot, otra pestaña del navegador). Comprueba que el ordenador muestra el puerto como puerto serie (en Windows, en el Administrador de dispositivos). Una radio en modo de red USB no aparece: usa Cambiar la radio a USB serie en la página, que la pone en modo serie hasta que se reinicie. Los cables con chips FTDI, CP210x y Prolific originales son los que mejor funcionan. Los cables CH340 pueden fallar en copias de seguridad e instalaciones, y el instalador avisa de ellos. El controlador de Prolific para Windows desactiva los chips falsificados, y muchos cables vendidos en internet para estas radios los llevan. [Más](../../docs/user/20-troubleshooting.md#everyday-use)
 
 ## La pantalla queda apagada tras instalar
 
@@ -36,7 +36,7 @@ RadioFoundry usa la calibración de frecuencia de fábrica de tu radio, y los ho
 
 ## ¿RadioFoundry hace modos de datos?
 
-Sí. Además de packet analógico (APRS y un TNC KISS), RadioFoundry envía datos DMR nativos: mensajes de texto compatibles con radios Motorola y datos IP con las cabeceras UDP comprimidas de ETSI. El complemento gratuito takRF para ATAK te pone en el aire en segundos con tu cable de programación y un cable USB OTG económico para tu teléfono o tableta. [Más](https://takrf.com/dmr)
+Sí. Además de packet analógico (APRS y un TNC KISS), RadioFoundry envía datos DMR nativos: mensajes de texto compatibles con radios DMR comerciales y datos IP con las cabeceras UDP comprimidas de ETSI. El complemento gratuito takRF para ATAK te pone en el aire en segundos con tu cable de programación y un cable USB OTG económico para tu teléfono o tableta. [Más](https://takrf.com/dmr)
 
 ## ¿Qué cables necesito para datos DMR?
 
@@ -44,11 +44,11 @@ Solo el cable de programación de tu radio. Para conectarlo a un teléfono o tab
 
 ## El trunking DMR Tier III no me funciona
 
-Funciona en los sistemas con los que podemos probar y en repetidores basados en hotspot y MMDVMHost. Abre una incidencia con los detalles: el sistema, sus canales de control y de tráfico, los ajustes del sistema en tu codeplug y lo que muestra la radio, con la información de soporte de la página Soporte. [Más](../../docs/user/09-dmr.md#trunked-systems)
+Se ha probado con repetidores Tier III reales de RadioFoundryGateway, hotspots dúplex y simuladores de software, con las implementaciones del protocolo comparadas y validadas con capturas de paquetes de sistemas Tier III comerciales. Abre una incidencia con los detalles: el sistema, sus canales de control y de tráfico, los ajustes del sistema en tu codeplug y lo que muestra la radio, con la información de soporte de la página Soporte. [Más](../../docs/user/09-dmr.md#trunked-systems)
 
 ## ¿RadioFoundry admitirá P25 Fase 2?
 
-No. Los chips DMR de estas radios no pueden hacer el TDMA y la modulación que necesita la Fase 2. Lo mismo vale para TETRA. [Más](../../docs/feature-matrix.md)
+No. Los componentes del transceptor de RF de estas radios no pueden emitir ni recibir la modulación de la Fase 2 (H-CPM y H-DQPSK). Lo mismo vale para TETRA. [Más](../../docs/user/07-channels-zones-vfo.md#p25-trunked-channels)
 
 ## ¿Puede una radio solo FM hacer DMR u otros modos digitales?
 

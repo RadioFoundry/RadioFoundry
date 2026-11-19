@@ -12,7 +12,7 @@
 
 ## 写频时，串口选择框不弹出或没有列出我的电台
 
-关闭其他可能占用该端口的程序（写频软件、qdmr、热点程序、其他浏览器标签页）。确认电脑把该端口识别为串口（Windows 上在设备管理器中查看）。处于 USB 网络模式的电台不会列出：使用页面上的“将电台切换为 USB 串口”，电台会保持串口模式直到重启。使用 FTDI、CH340、CP210x 和正品 Prolific 芯片的线缆均可使用。Prolific 的 Windows 驱动会禁用仿冒芯片，而网上出售的许多此类电台线缆使用的正是仿冒芯片。 [详情](../../docs/user/20-troubleshooting.md#everyday-use)
+关闭其他可能占用该端口的程序（写频软件、qdmr、热点程序、其他浏览器标签页）。确认电脑把该端口识别为串口（Windows 上在设备管理器中查看）。处于 USB 网络模式的电台不会列出：使用页面上的“将电台切换为 USB 串口”，电台会保持串口模式直到重启。使用 FTDI、CP210x 和正品 Prolific 芯片的线缆效果最好。CH340 线缆在备份和安装时可能不可靠，安装程序会对其给出警告。Prolific 的 Windows 驱动会禁用仿冒芯片，而网上出售的许多此类电台线缆使用的正是仿冒芯片。 [详情](../../docs/user/20-troubleshooting.md#everyday-use)
 
 ## 安装后屏幕一直是黑的
 
@@ -36,7 +36,7 @@ RadioFoundry 使用电台的原厂频率校准，而热点对频率非常敏感�
 
 ## RadioFoundry 支持数据模式吗？
 
-支持。除模拟分组（APRS 和 KISS TNC）外，RadioFoundry 还支持原生 DMR 数据：与摩托罗拉电台兼容的短信，以及使用 ETSI 压缩 UDP 头的 IP 数据。免费的 ATAK 插件 takRF 只需写频线和一根便宜的 USB OTG 线连接手机或平板，几秒钟即可上线。 [详情](https://takrf.com/dmr)
+支持。除模拟分组（APRS 和 KISS TNC）外，RadioFoundry 还支持原生 DMR 数据：与商用 DMR 电台兼容的短信，以及使用 ETSI 压缩 UDP 头的 IP 数据。免费的 ATAK 插件 takRF 只需写频线和一根便宜的 USB OTG 线连接手机或平板，几秒钟即可上线。 [详情](https://takrf.com/dmr)
 
 ## 使用 DMR 数据需要什么线缆？
 
@@ -44,11 +44,11 @@ RadioFoundry 使用电台的原厂频率校准，而热点对频率非常敏感�
 
 ## DMR Tier III 集群无法使用
 
-它在我们能测试的系统以及基于热点和 MMDVMHost 的中继上可以工作。请提交问题并附上详情：系统、控制信道和业务信道、码表中的系统设置和电台显示的内容，以及“支持”页面下载的支持信息。 [详情](../../docs/user/09-dmr.md#trunked-systems)
+它已在真实的 RadioFoundryGateway Tier III 中继、双工热点和软件模拟器上测试过，协议实现也已与商用 Tier III 系统的数据包抓包进行比对和验证。请提交问题并附上详情：系统、控制信道和业务信道、码表中的系统设置和电台显示的内容，以及“支持”页面下载的支持信息。 [详情](../../docs/user/09-dmr.md#trunked-systems)
 
 ## RadioFoundry 会支持 P25 第二阶段吗？
 
-不会。这些电台的 DMR 芯片无法实现第二阶段所需的 TDMA 和调制方式。TETRA 也是如此。 [详情](../../docs/feature-matrix.md)
+不会。这些电台的射频收发器件无法发送或接收第二阶段的调制方式（H-CPM 和 H-DQPSK）。TETRA 也是如此。 [详情](../../docs/user/07-channels-zones-vfo.md#p25-trunked-channels)
 
 ## 只有 FM 的电台能用 DMR 或其他数字模式吗？
 

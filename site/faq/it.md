@@ -12,7 +12,7 @@ La radio non è nel bootloader, oppure il cavo USB serve solo a caricare. Spegni
 
 ## Quando programmo la radio, la scelta della porta seriale non si apre o non elenca la mia radio
 
-Chiudi ogni altro programma che possa avere la porta aperta (un CPS, qdmr, un programma per hotspot, un'altra scheda del browser). Verifica che il computer elenchi la porta come porta seriale (su Windows, in Gestione dispositivi). Una radio in modalità rete USB non compare: usa Passa la radio a USB seriale nella pagina, che la mette in modalità seriale fino al riavvio. Funzionano i cavi con chip FTDI, CH340, CP210x e Prolific originali. Il driver Prolific per Windows disattiva i chip contraffatti, e molti cavi venduti online per queste radio li usano. [Altro](../../docs/user/20-troubleshooting.md#everyday-use)
+Chiudi ogni altro programma che possa avere la porta aperta (un CPS, qdmr, un programma per hotspot, un'altra scheda del browser). Verifica che il computer elenchi la porta come porta seriale (su Windows, in Gestione dispositivi). Una radio in modalità rete USB non compare: usa Passa la radio a USB seriale nella pagina, che la mette in modalità seriale fino al riavvio. I cavi con chip FTDI, CP210x e Prolific originali funzionano meglio. I cavi CH340 possono essere inaffidabili per backup e installazioni, e l'installer avvisa quando li trova. Il driver Prolific per Windows disattiva i chip contraffatti, e molti cavi venduti online per queste radio li usano. [Altro](../../docs/user/20-troubleshooting.md#everyday-use)
 
 ## Lo schermo resta spento dopo l'installazione
 
@@ -36,7 +36,7 @@ RadioFoundry usa la calibrazione di frequenza di fabbrica della radio, e gli hot
 
 ## RadioFoundry supporta i modi dati?
 
-Sì. Oltre al packet analogico (APRS e un TNC KISS), RadioFoundry invia dati DMR nativi: messaggi di testo compatibili con le radio Motorola e dati IP con le intestazioni UDP compresse ETSI. Il plug-in gratuito takRF per ATAK ti mette in aria in pochi secondi con il cavo di programmazione e un economico cavo USB OTG per telefono o tablet. [Altro](https://takrf.com/dmr)
+Sì. Oltre al packet analogico (APRS e un TNC KISS), RadioFoundry invia dati DMR nativi: messaggi di testo compatibili con le radio DMR commerciali e dati IP con le intestazioni UDP compresse ETSI. Il plug-in gratuito takRF per ATAK ti mette in aria in pochi secondi con il cavo di programmazione e un economico cavo USB OTG per telefono o tablet. [Altro](https://takrf.com/dmr)
 
 ## Quali cavi servono per i dati DMR?
 
@@ -44,11 +44,11 @@ Solo il cavo di programmazione della radio. Per collegarlo a un telefono o table
 
 ## Il trunking DMR Tier III non mi funziona
 
-Funziona sui sistemi su cui possiamo provarlo e sui ripetitori basati su hotspot e MMDVMHost. Apri una segnalazione con i dettagli: il sistema, i suoi canali di controllo e di traffico, le impostazioni del sistema nel codeplug e cosa mostra la radio, con le informazioni di supporto dalla pagina Supporto. [Altro](../../docs/user/09-dmr.md#trunked-systems)
+È stato provato con veri ripetitori Tier III RadioFoundryGateway, hotspot duplex e simulatori software, con le implementazioni del protocollo confrontate e convalidate su catture di pacchetti di sistemi Tier III commerciali. Apri una segnalazione con i dettagli: il sistema, i suoi canali di controllo e di traffico, le impostazioni del sistema nel codeplug e cosa mostra la radio, con le informazioni di supporto dalla pagina Supporto. [Altro](../../docs/user/09-dmr.md#trunked-systems)
 
 ## RadioFoundry supporterà P25 Fase 2?
 
-No. I chip DMR di queste radio non possono gestire il TDMA e la modulazione richiesti dalla Fase 2. Lo stesso vale per TETRA. [Altro](../../docs/feature-matrix.md)
+No. I componenti del ricetrasmettitore RF di queste radio non possono trasmettere né ricevere la modulazione della Fase 2 (H-CPM e H-DQPSK). Lo stesso vale per TETRA. [Altro](../../docs/user/07-channels-zones-vfo.md#p25-trunked-channels)
 
 ## Una radio solo FM può fare DMR o gli altri modi digitali?
 

@@ -24,8 +24,9 @@ The radio isn't in its bootloader, or the USB cable is charge-only. Turn the rad
 - Check that the computer lists the port as a serial port (on Windows, in Device Manager).
 - A radio in USB network mode isn't listed. Use **Switch the radio to USB serial** on the page: it puts the radio in
   serial mode until it restarts.
-- Cables with FTDI, CH340, CP210x and genuine Prolific chips work. The Prolific Windows driver disables counterfeit
-  chips, and many cables sold online for these radios have them.
+- Cables with FTDI, CP210x and genuine Prolific chips work best. CH340 cables can be unreliable for backups and
+  installs, and the installer warns about them. The Prolific Windows driver disables counterfeit chips, and many
+  cables sold online for these radios have them.
 
 [More](../../docs/user/20-troubleshooting.md#everyday-use)
 
@@ -51,7 +52,7 @@ RadioFoundry uses your radio's factory frequency calibration, and hotspots are v
 
 ## Does RadioFoundry do data modes?
 
-Yes. Besides analog packet (APRS and a KISS TNC), RadioFoundry sends native DMR data: text messages compatible with Motorola radios, and IP data with ETSI's compressed UDP headers. The free takRF plug-in for ATAK gets you on the air in seconds with your programming cable and an inexpensive USB OTG cable for your phone or tablet. [More](https://takrf.com/dmr)
+Yes. Besides analog packet (APRS and a KISS TNC), RadioFoundry sends native DMR data: text messages compatible with commercial DMR radios, and IP data with ETSI's compressed UDP headers. The free takRF plug-in for ATAK gets you on the air in seconds with your programming cable and an inexpensive USB OTG cable for your phone or tablet. [More](https://takrf.com/dmr)
 
 ## What cables do I need for DMR data?
 
@@ -59,11 +60,11 @@ Only your radio's programming cable. To connect it to an Android phone or tablet
 
 ## Tier III DMR trunking isn't working for me
 
-It works on the systems we can test against, and on hotspot and MMDVMHost based repeaters. Open an issue with the specifics: the system, its control and traffic channels, the system's settings in your codeplug and what the radio shows, with the support info from the Support page. [More](../../docs/user/09-dmr.md#trunked-systems)
+It has been tested against real RadioFoundryGateway Tier III repeaters, duplex hotspots and software simulators, with the protocol implementations compared and validated against packet captures from commercial Tier III systems. Open an issue with the specifics: the system, its control and traffic channels, the system's settings in your codeplug and what the radio shows, with the support info from the Support page. [More](../../docs/user/09-dmr.md#trunked-systems)
 
 ## Will RadioFoundry support P25 Phase 2?
 
-No. The DMR chips in these radios can't do the TDMA and modulation Phase 2 needs. The same goes for TETRA. [More](../../docs/feature-matrix.md)
+No. The RF transceiver components in these radios can't send or receive Phase 2's modulation (H-CPM and H-DQPSK). The same goes for TETRA. [More](../../docs/user/07-channels-zones-vfo.md#p25-trunked-channels)
 
 ## Can an FM-only radio do DMR or the other digital modes?
 

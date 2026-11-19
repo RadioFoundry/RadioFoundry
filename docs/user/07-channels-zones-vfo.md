@@ -364,8 +364,8 @@ on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)). A 
   says "RX only".
 - Calls to other talkgroups are followed only when the channel is set to follow every group of the system.
 - Calls to one unit and emergency are not there yet.
-- Phase 2 (TDMA) voice channels are not followed, and are unlikely ever to be: the radios' DMR chips can't do the
-  TDMA and modulation Phase 2 needs.
+- Phase 2 (TDMA) voice channels are not followed, and are unlikely ever to be: the radios' RF transceiver components
+  can't send or receive Phase 2's modulation (H-CPM, H-DQPSK).
 - Scan skips these channels and dual watch doesn't take them: a trunked channel follows its system instead.
 - This has run against a test control channel only, not yet on a working system.
 
