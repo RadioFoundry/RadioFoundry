@@ -2138,6 +2138,11 @@ msgid "Tone burst"
 msgstr "Tonalité d'appel"
 
 #: core/ui/ui_menus.c
+msgctxt "CHAN_AES_KEY"
+msgid "AES key"
+msgstr "Clé AES"
+
+#: core/ui/ui_menus.c
 msgctxt "CHAN_LABEL_COLOR_CODE"
 msgid "Color code"
 msgstr "Code couleur"
@@ -4541,6 +4546,11 @@ msgstr "TX arrêtée par le système"
 msgctxt "DENY_WHY_NO_TX_FREQ"
 msgid "No TX frequency set"
 msgstr "Freq TX non déf."
+
+#: core/ui/ui_screens.c
+msgctxt "WHY_AES_KEY"
+msgid "AES key or TX disabled"
+msgstr "Clé AES ou TX désactivé"
 
 #: core/ui/ui_screens.c
 msgctxt "WHY_MODE_NOT_IN_BUILD"

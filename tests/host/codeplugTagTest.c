@@ -577,8 +577,32 @@ static void test_systems(void)
 	CHECK(r.fb_check == codeplug_name_check(get(12).name));
 }
 
+#if CONFIG_DMR_AES
+static void test_aes_reference(void)
+{
+	fresh();
+	channel_t c = make("AES", RADIO_MODE_DMR, false);
+	c.kind = CODEPLUG_KIND_DMR_AES;
+	c.system = 2;
+	c.aes_ref = 256;
+	CHECK(codeplug_set_channel(10, &c));
+	c = get(10);
+	CHECK(c.kind == CODEPLUG_KIND_DMR_AES && c.aes_ref == 256 && !c.rx_only);
+	strcpy(c.name, "Renamed");
+	c.aes_ref = 1;
+	CHECK(codeplug_set_channel(10, &c));
+	CHECK(get(10).aes_ref == 1);
+	c.kind = CODEPLUG_KIND_NONE;
+	CHECK(codeplug_set_channel(10, &c));
+	CHECK(get(10).kind == CODEPLUG_KIND_NONE && !get(10).rx_only);
+}
+#endif
+
 int main(void)
 {
+#if CONFIG_DMR_AES
+	test_aes_reference();
+#endif
 	test_name_check();
 	test_tag();
 	test_live_rule();

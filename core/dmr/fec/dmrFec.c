@@ -489,6 +489,23 @@ uint32_t dmrFecRcEncode(uint8_t command)
 	return field;
 }
 
+uint32_t dmrFecPrivacyField(uint8_t alg, uint8_t keyId)
+{
+	uint16_t info = (uint16_t)(((uint16_t)keyId << 3) | (alg & 0x07u));
+	uint16_t h15 = dmrFecHamming15113Encode(info);
+	uint16_t row = (uint16_t)((h15 << 1) | (popcount32(h15) & 1));
+	uint32_t field = 0;
+
+	for (int j = 0; j < 16; j++)
+	{
+		uint32_t bit = (row >> (15 - j)) & 1u;
+
+		field |= bit << (31 - ((2 * j * 17) % 32));
+		field |= bit << (31 - (((2 * j + 1) * 17) % 32));
+	}
+	return field;
+}
+
 int dmrFecRcDecode(uint32_t field, uint8_t *command)
 {
 	// 16 codewords at least 12 bits apart: the nearest within 3, so noise is seldom taken for a command

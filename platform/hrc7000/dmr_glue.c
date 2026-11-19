@@ -432,6 +432,7 @@ static int8_t tx_fill(const dmr_tx_burst_t *b) { return AIR_ON() ? -1 : hrc7000_
 static void tx_end(void) { if (!AIR_ON()) hrc7000_dmr_tx_end(&eng); }
 static void tx_abort(void) { if (!AIR_ON()) hrc7000_dmr_tx_abort(&eng); }
 static void set_embedded_lc(const uint8_t lc[9]) { if (!AIR_ON()) hrc7000_dmr_set_embedded_lc(&eng, lc); }
+static void set_burst_f(const uint8_t field[4]) { if (!AIR_ON()) hrc7000_dmr_set_burst_f(&eng, field); }
 static void set_cc_filter(int8_t cc) { if (!AIR_ON()) hrc7000_dmr_set_cc_filter(&eng, cc); }
 static bool is_transmitting(void) { return !AIR_ON() && hrc7000_dmr_is_transmitting(&eng); }
 
@@ -499,7 +500,7 @@ const hal_dmr_modem_t hrc_dmr = {
 	.start = start, .stop = stop, .configure = configure, .rx_restart = rx_restart, .rx_lock_slot = rx_lock_slot,
 	.tx_begin = tx_begin, .tx_queue = tx_queue, .tx_queue_space = tx_queue_space, .tx_listen = tx_listen, .tx_end = tx_end,
 	.tx_listen_split = tx_listen_split,
-	.tx_abort = tx_abort, .set_embedded_lc = set_embedded_lc, .set_cc_filter = set_cc_filter,
+	.tx_abort = tx_abort, .set_embedded_lc = set_embedded_lc, .set_burst_f = set_burst_f, .set_cc_filter = set_cc_filter,
 	.is_transmitting = is_transmitting, .tx_fill = tx_fill, .health = health,
 	.tx_rate34_bad = true,	// modem-hrc7000.md 6.4
 	.tx_listen_gaps = true,	// modem-hrc7000.md 5.4

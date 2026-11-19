@@ -2138,6 +2138,11 @@ msgid "Tone burst"
 msgstr "Tono di apertura"
 
 #: core/ui/ui_menus.c
+msgctxt "CHAN_AES_KEY"
+msgid "AES key"
+msgstr "Chiave AES"
+
+#: core/ui/ui_menus.c
 msgctxt "CHAN_LABEL_COLOR_CODE"
 msgid "Color code"
 msgstr "Color code"
@@ -4541,6 +4546,11 @@ msgstr "TX interrotta dal sistema"
 msgctxt "DENY_WHY_NO_TX_FREQ"
 msgid "No TX frequency set"
 msgstr "Nessuna freq. TX impostata"
+
+#: core/ui/ui_screens.c
+msgctxt "WHY_AES_KEY"
+msgid "AES key or TX disabled"
+msgstr "Chiave AES o TX assente"
 
 #: core/ui/ui_screens.c
 msgctxt "WHY_MODE_NOT_IN_BUILD"

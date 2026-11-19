@@ -166,6 +166,9 @@ endif
 ifeq ($(CONFIG_DMR_PRIVACY),y)
 APP_SRC += core/dmr/dmrPrivacy.c
 endif
+ifeq ($(CONFIG_DMR_AES),y)
+APP_SRC += core/dmr/dmrAes.c
+endif
 # DMR data (SMS, ARS, LRRP, CSBK signaling)
 ifeq ($(CONFIG_DMR_DATA_CORE),y)
 APP_SRC += core/dmr/dmrData.c core/dmr/dmrDataService.c core/dmr/dmrLrrp.c

@@ -121,6 +121,11 @@ static struct {
 	bool pi_pending;
 	uint32_t pi_pending_ms;
 	uint8_t pi_pending_alg, pi_pending_key;
+	uint32_t pi_pending_mi;
+	// where the call's bursts sit in the PI header's keystream (dmr_crypt_fn)
+	bool crypt_have;	// crypt_n is known
+	uint32_t crypt_n;	// the last burst played, counted from burst A of superframe 0
+	uint32_t crypt_pi_ms;	// the PI header heard
 
 	// repeater outbound
 	uint32_t rpt_last_ms;
@@ -166,6 +171,10 @@ static struct {
 	uint8_t tx_ta_n;	// LCs in the rotation (alias and GPS)
 	uint8_t tx_gps_at;	// tx_ta index of the GPS Info, 0xFF none
 	uint8_t tx_sf;		// superframes started in this transmission
+	bool tx_pi;		// a PI header still to send (tx_crypt_alg)
+	bool tx_crypt;		// this over is encrypted with tx_mi
+	uint32_t tx_mi;
+	uint32_t tx_crypt_n;	// voice bursts queued in this over
 	uint8_t tx_emb_cur;	// what the modem spreads now: 0 the voice LC, 1 + n rotation LC n
 	bool tx_gps_set;	// dmr_call_set_tx_gps
 	dmr_gps_t tx_gps;
@@ -643,12 +652,20 @@ static void rx_lc(const uint8_t lc[DMR_LC_BYTES], const dmr_burst_t *b, bool lat
 	memcpy(c->alias, s.ta.text, sizeof(c->alias));
 	c->alias_complete = s.ta.complete;
 	if (!continuing) {
-		c->pi_header = false;
-		c->pi_alg = c->pi_key = 0;
+		// A resumed call keeps its PI header: the talker sends one per over, and the keystream runs on from it
+		if (!resumed) {
+			c->pi_header = false;
+			c->pi_alg = c->pi_key = 0;
+			c->pi_mi = 0;
+			s.crypt_have = false;
+		}
 		if (s.pi_pending && !elapsed(now, s.pi_pending_ms, true, fade_ms())) {
 			c->pi_header = true;	// heard just before the call was acquired
 			c->pi_alg = s.pi_pending_alg;
 			c->pi_key = s.pi_pending_key;
+			c->pi_mi = s.pi_pending_mi;
+			s.crypt_pi_ms = s.pi_pending_ms;
+			s.crypt_have = false;
 			c->encrypted = true;
 		}
 #if CONFIG_SFR
@@ -703,6 +720,45 @@ static void rx_recheck(uint32_t now)
 	s.dirty = true;
 }
 
+// The burst number (from burst A of superframe 0, the one after the PI header) of burst i about to play: the next one
+// with that index, plus whole superframes when the slot counter (2 slots a burst) or the time (60 ms a burst) says some
+// went by unheard. The first burst after the PI header is placed by the time since it, to the nearest burst with its
+// index (a late entry starts a superframe or two in)
+static void crypt_advance(uint8_t i, uint32_t now, uint32_t slot)
+{
+	int32_t est;
+	uint32_t n;
+
+	if (!s.crypt_have) {
+		est = (int32_t)((now - s.crypt_pi_ms) / VOICE_PERIOD_MS) - 1;
+		n = i;
+		while ((int32_t)n + 3 <= est)
+			n += 6;
+	} else {
+		uint8_t d = (uint8_t)((i + 6 - s.crypt_n % 6) % 6);
+
+		if (d == 0)
+			d = 6;	// the same index again and not a repeat: a whole superframe went by
+		est = slot != 0 && s.last_voice_slot != 0
+			? (int32_t)((slot - s.last_voice_slot) / 2)
+			: (int32_t)((now - s.last_voice_ms + VOICE_PERIOD_MS / 2) / VOICE_PERIOD_MS);
+		n = s.crypt_n + d;
+		while ((int32_t)(n - s.crypt_n) + 3 <= est)
+			n += 6;
+	}
+	s.crypt_n = n;
+	s.crypt_have = true;
+}
+
+static bool crypt_rx(uint8_t v[DMR_VOICE_BYTES], uint8_t i)
+{
+	const dmr_caller_t *c = &s.view.caller;
+	struct dmr_crypt_pos pos = { .alg = c->pi_alg, .key_id = c->pi_key, .mi = c->pi_mi,
+				     .superframe = s.crypt_n / 6, .voice_index = i };
+
+	return s.cfg.crypt(v, &pos, false, s.cfg.crypt_ctx);
+}
+
 // slot: the modem's slot counter for the burst (0 = none). Bursts may arrive in batches, so a repeat is told by the
 // burst index and the slot counter, never by arrival time (that is only the fallback for a modem without a counter)
 static void rx_play(const dmr_burst_t *b, uint32_t now, uint32_t slot)
@@ -727,6 +783,8 @@ static void rx_play(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 		}
 		sink_lost((uint8_t)(missing * DMR_AMBE_FRAMES_PER_BURST));
 	}
+	if (s.view.caller.pi_header)
+		crypt_advance(i, now, slot);
 	s.next_index = (uint8_t)((i + 1) % 6);
 	s.have_index = true;
 	s.last_voice_ms = now;
@@ -739,18 +797,19 @@ static void rx_play(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 		stats.rx_encrypted_calls++;
 		s.dirty = true;
 	}
-	// No key, or a PI header: an MI-based scheme the static key hook can't undo (docs/spec/gotchas.md 6.4)
-	if (enc && (!s.cfg.privacy || s.view.caller.pi_header)) {
-		stats.rx_enc_dropped++;
-		TR_WHAT('e');
-		sink_lost(DMR_AMBE_FRAMES_PER_BURST);	// no key: never play the scrambled voice
-		return;
-	}
-
 	uint8_t v[DMR_VOICE_BYTES];
+	bool pi = s.view.caller.pi_header;
 
 	memcpy(v, b->payload, DMR_VOICE_BYTES);
-	if (enc)
+	// A PI header: an MI-based scheme (docs/spec/gotchas.md 6.4) the static key hook can't undo, the crypt hook may.
+	// No key: never play the scrambled voice
+	if (enc && (pi ? !s.cfg.crypt || !crypt_rx(v, i) : !s.cfg.privacy)) {
+		stats.rx_enc_dropped++;
+		TR_WHAT('e');
+		sink_lost(DMR_AMBE_FRAMES_PER_BURST);
+		return;
+	}
+	if (enc && !pi)
 		s.cfg.privacy(v, i, false, s.cfg.privacy_ctx);
 	stats.rx_voice_bursts++;
 	TR_WHAT('p');
@@ -963,9 +1022,15 @@ static void rx_embedded(const dmr_burst_t *b, uint32_t now)
 }
 
 // A PI header (data type 0, TS 102 361-1 7.1.2): 80 bits of privacy information and a CRC-CCITT masked 0x6969. It
-// marks the call as protected; the octets are kept for the screens and the debug link but not interpreted (the
-// static key schemes need none, MI-based ones would, docs/spec/gotchas.md 6.4). It comes between the voice LC header
-// and burst A, so the call it belongs to is usually running; if not (header missed), it is held for the late entry
+// marks the call as protected. Its octets are read in the DMRA layout (alg, 0x10, key ID, 32-bit MI, 3 more,
+// docs/spec/dmr-voice.md 5.1) for the screens, the debug link and the MI-based schemes (dmr_crypt_fn); the static key
+// schemes need none of it. It comes between the voice LC header and burst A, so the call it belongs to is usually
+// running; if not (header missed), it is held for the late entry
+static uint32_t pi_mi(const uint8_t *p)
+{
+	return ((uint32_t)p[3] << 24) | ((uint32_t)p[4] << 16) | ((uint32_t)p[5] << 8) | p[6];
+}
+
 static void rx_pi_header(const dmr_burst_t *b, uint32_t now)
 {
 	bool ok = b->crc_ok;
@@ -975,14 +1040,15 @@ static void rx_pi_header(const dmr_burst_t *b, uint32_t now)
 
 		ok = b->payload[10] == (uint8_t)(crc >> 8) && b->payload[11] == (uint8_t)crc;
 	}
-	if (!ok || b->len < 2)
+	if (!ok || b->len < 10)
 		return;
 	stats.rx_pi_headers++;
 	if (s.rx == RXC_NONE) {
 		s.pi_pending = true;
 		s.pi_pending_ms = now;
 		s.pi_pending_alg = b->payload[0];
-		s.pi_pending_key = b->payload[1];
+		s.pi_pending_key = b->payload[2];
+		s.pi_pending_mi = pi_mi(b->payload);
 		return;
 	}
 
@@ -992,8 +1058,11 @@ static void rx_pi_header(const dmr_burst_t *b, uint32_t now)
 		stats.rx_encrypted_calls++;
 	c->pi_header = true;
 	c->pi_alg = b->payload[0];
-	c->pi_key = b->payload[1];
+	c->pi_key = b->payload[2];
+	c->pi_mi = pi_mi(b->payload);
 	c->encrypted = true;
+	s.crypt_have = false;	// a new MI: superframe 0 starts at the next burst A
+	s.crypt_pi_ms = now;
 	s.dirty = true;
 }
 
@@ -1294,6 +1363,29 @@ static bool tx_tail_hold(void)
 	       s.source->busy(s.source->ctx);
 }
 
+// Our PI header (docs/spec/dmr-voice.md 5.1): algorithm, 0x10, key ID, MI, then the destination ID (the stock radios
+// sent 00 00 01 on a call to TG 1; unconfirmed whether it is the destination or a constant), the CRC masked 0x6969
+static void tx_pi_header(uint8_t pi[12])
+{
+	uint32_t dst = s.tx_target_used.id & DMR_ID_MAX;
+
+	pi[0] = s.cfg.tx_crypt_alg;
+	pi[1] = 0x10;
+	pi[2] = s.cfg.tx_crypt_key_id;
+	pi[3] = (uint8_t)(s.tx_mi >> 24);
+	pi[4] = (uint8_t)(s.tx_mi >> 16);
+	pi[5] = (uint8_t)(s.tx_mi >> 8);
+	pi[6] = (uint8_t)s.tx_mi;
+	pi[7] = (uint8_t)(dst >> 16);
+	pi[8] = (uint8_t)(dst >> 8);
+	pi[9] = (uint8_t)dst;
+
+	uint16_t crc = (uint16_t)(dmr_crc_ccitt(pi, 10) ^ DMR_CRC_MASK_PI);
+
+	pi[10] = (uint8_t)(crc >> 8);
+	pi[11] = (uint8_t)crc;
+}
+
 static void tx_fill(uint32_t now)
 {
 	while (s.tx == TX_ON) {
@@ -1308,6 +1400,16 @@ static void tx_fill(uint32_t now)
 			if (!tx_put(DMR_BURST_VOICE_LC_HEADER, 0, true, full, sizeof(full)))
 				return;
 			s.headers_left--;
+			continue;
+		}
+		if (s.tx_pi) {
+			uint8_t pi[12];
+
+			tx_pi_header(pi);
+			if (!tx_put(DMR_BURST_PI_HEADER, 0, true, pi, sizeof(pi)))
+				return;
+			s.tx_pi = false;
+			stats.tx_pi_headers++;
 			continue;
 		}
 		if (s.stop_req && s.voice_index == 0 && !tx_tail_hold()) {
@@ -1330,10 +1432,22 @@ static void tx_fill(uint32_t now)
 		uint8_t v[DMR_VOICE_BYTES];
 
 		memcpy(v, s.stage, DMR_VOICE_BYTES);
-		if (s.cfg.privacy && (s.cfg.tx_svc & DMR_SVC_PRIVACY))
+		if (s.tx_crypt) {
+			struct dmr_crypt_pos pos = { .alg = s.cfg.tx_crypt_alg, .key_id = s.cfg.tx_crypt_key_id,
+						     .mi = s.tx_mi, .superframe = s.tx_crypt_n / 6,
+						     .voice_index = s.voice_index };
+
+			if (!s.cfg.crypt || !s.cfg.crypt(v, &pos, true, s.cfg.crypt_ctx)) {
+				// The key went away under the over: never send the voice in the clear
+				for (int f = 0; f < DMR_AMBE_FRAMES_PER_BURST; f++)
+					memcpy(&v[f * DMR_AMBE_FRAME_BYTES], dmr_ambe_silence, DMR_AMBE_FRAME_BYTES);
+			}
+		} else if (s.cfg.privacy && (s.cfg.tx_svc & DMR_SVC_PRIVACY)) {
 			s.cfg.privacy(v, s.voice_index, true, s.cfg.privacy_ctx);
+		}
 		if (!tx_put(DMR_BURST_VOICE, s.voice_index, false, v, DMR_VOICE_BYTES))
 			return;	// keep the staged frames for the next try
+		s.tx_crypt_n++;
 		s.stage_n = 0;
 		if (s.voice_index == 0 && s.tx_sf < 255)
 			s.tx_sf++;
@@ -1365,6 +1479,15 @@ static void tx_start_voice(uint32_t now)
 	// SFR's hang (idle bursts on its outbound slot) is the same
 	dmr_access_t access = s.cfg.rmo || sfr_user() ? DMR_ACCESS_IMPOLITE : s.cfg.access;
 
+	if (s.modem->set_burst_f != NULL) {
+		// An encrypted over repeats its ALG / key ID in every burst F, as stock does: a receiver reads it there
+		// (a stock receiver played the first superframe and then noise without it). Given before tx_begin, which sets it up
+		bool crypt = s.cfg.tx_crypt_alg != 0 && s.cfg.crypt != NULL && s.cfg.crypt_mi != NULL;
+		uint32_t f = dmrFecPrivacyField(s.cfg.tx_crypt_alg, s.cfg.tx_crypt_key_id);
+		uint8_t field[4] = { (uint8_t)(f >> 24), (uint8_t)(f >> 16), (uint8_t)(f >> 8), (uint8_t)f };
+
+		s.modem->set_burst_f(crypt ? field : NULL);
+	}
 	if (!s.modem->tx_begin(timing, (int8_t)s.cfg.ts, access)) {
 		tx_deny(DMR_TX_ERR_REJECTED);
 		return;
@@ -1392,6 +1515,10 @@ static void tx_start_voice(uint32_t now)
 #endif
 	s.queue_cap = s.modem->tx_queue_space();
 	s.headers_left = DMR_CALL_TX_HEADERS;
+	s.tx_crypt = s.cfg.tx_crypt_alg != 0 && s.cfg.crypt != NULL && s.cfg.crypt_mi != NULL;
+	s.tx_pi = s.tx_crypt;
+	s.tx_mi = s.tx_crypt ? s.cfg.crypt_mi(now, s.cfg.crypt_ctx) : 0;
+	s.tx_crypt_n = 0;
 	s.voice_index = 0;
 	s.queued = s.started = 0;
 	s.stop_req = false;
@@ -1922,7 +2049,8 @@ static void modem_apply(void)
 void dmr_call_configure(const dmr_call_config_t *cfg)
 {
 	bool rf_change = !s.configured || cfg->cc != s.cfg.cc || cfg->ts != s.cfg.ts || cfg->rmo != s.cfg.rmo ||
-			 cfg->access != s.cfg.access ||
+			 cfg->access != s.cfg.access || cfg->crypt_ctx != s.cfg.crypt_ctx ||
+			 cfg->tx_crypt_alg != s.cfg.tx_crypt_alg || cfg->tx_crypt_key_id != s.cfg.tx_crypt_key_id ||
 			 cfg->own_id != s.cfg.own_id || cfg->sfr_user != s.cfg.sfr_user || cfg->tx_sync != s.cfg.tx_sync ||
 			 cfg->rx_sync != s.cfg.rx_sync || cfg->sfr_rx != s.cfg.sfr_rx || cfg->cc2 != s.cfg.cc2 ||
 			 cfg->both_slots != s.cfg.both_slots;

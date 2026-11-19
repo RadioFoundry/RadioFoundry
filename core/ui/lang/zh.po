@@ -2140,6 +2140,11 @@ msgid "Tone burst"
 msgstr "突发音"
 
 #: core/ui/ui_menus.c
+msgctxt "CHAN_AES_KEY"
+msgid "AES key"
+msgstr "AES 密钥"
+
+#: core/ui/ui_menus.c
 msgctxt "CHAN_LABEL_COLOR_CODE"
 msgid "Color code"
 msgstr "色码"
@@ -4543,6 +4548,11 @@ msgstr "系统已停止发射"
 msgctxt "DENY_WHY_NO_TX_FREQ"
 msgid "No TX frequency set"
 msgstr "未设发射频率"
+
+#: core/ui/ui_screens.c
+msgctxt "WHY_AES_KEY"
+msgid "AES key or TX disabled"
+msgstr "无 AES 密钥或已禁用发射"
 
 #: core/ui/ui_screens.c
 msgctxt "WHY_MODE_NOT_IN_BUILD"
