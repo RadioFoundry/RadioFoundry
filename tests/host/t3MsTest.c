@@ -401,6 +401,44 @@ static void test_nosig(void)
 	CHECK(ms.state != T3_CAMPED, "short LCs alone don't");
 }
 
+// The screen names another system heard while hunting (t3_ms_other): from its Aloha with PAR, from two alike short
+// LCs without; for T3_OTHER_MS; never once camped
+static void test_other(void)
+{
+	setup();
+	t3_ms_t ms;
+	uint16_t code = 0;
+	t3_ms_start(&ms, &cfg, T);
+	poll_all(&ms);
+	CHECK(!t3_ms_other(&ms, T, &code), "nothing heard yet");
+	adv(&ms, 100);
+	t3_syscode_t s = { T3_MODEL_LARGE, 13, 7, T3_PAR_B };
+	uint16_t other = t3_syscode_join(&s);
+	aloha(&ms, CC, other, true);
+	CHECK(ms.state == T3_HUNT && t3_ms_other(&ms, T, &code) && code == other, "Aloha: 0x%04x", code);
+	adv(&ms, T3_OTHER_MS - 100);
+	CHECK(t3_ms_other(&ms, T, &code), "still shown before T3_OTHER_MS");
+	adv(&ms, 200);
+	CHECK(!t3_ms_other(&ms, T, &code), "gone after T3_OTHER_MS");
+
+	// Two alike short LCs: the code without PAR
+	t3_sysparms_t sp = { true, s.model, (uint16_t)(t3_syscode_14(other) & 0xFFF), true, 5 };
+	t3_ms_slc(&ms, T, t3_sysparms_build(&sp));
+	poll_all(&ms);
+	CHECK(!t3_ms_other(&ms, T, &code), "one short LC isn't trusted");
+	adv(&ms, 60);
+	t3_ms_slc(&ms, T, t3_sysparms_build(&sp));
+	poll_all(&ms);
+	CHECK(t3_ms_other(&ms, T, &code) && code == (other & ~3u), "short LC: 0x%04x", code);
+
+	// Camping on ours clears it, and another system's Aloha heard while camped is not shown
+	setup();
+	hunt_to_ours(&ms);
+	CHECK(ms.state == T3_CAMPED && !t3_ms_other(&ms, T, &code), "camped: not shown");
+	aloha(&ms, CC, theirs, true);
+	CHECK(!t3_ms_other(&ms, T, &code), "camped: another system's Aloha not shown");
+}
+
 static void test_slc(void)
 {
 	setup();
@@ -753,6 +791,7 @@ int main(void)
 	test_payload();
 	test_nosig();
 	test_slc();
+	test_other();
 	test_learn();
 	test_monitor_emergency();
 	test_adjacent();
