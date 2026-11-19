@@ -43,7 +43,7 @@
 // Task layout (see core/app/app.c for the whole picture)
 #define RADIO_TASK_PRIORITY	4
 #if CONFIG_DMR
-#define RADIO_TASK_STACK	768	// words: the DMR call stack and the AMBE FEC run here
+#define RADIO_TASK_STACK	776	// words: the DMR call stack and the AMBE FEC run here (the deepest maximal build: 2744 B + margin)
 #else
 #define RADIO_TASK_STACK	512	// words
 #endif
@@ -606,6 +606,20 @@ void radio_get_settings(radio_settings_t *s)
 	}
 	xSemaphoreTake(view_lock, portMAX_DELAY);
 	*s = settings_published == settings_sent ? shared_settings : pending_settings;
+	xSemaphoreGive(view_lock);
+}
+
+void radio_get_sfr_settings(uint8_t *rx, uint8_t *cwid)
+{
+	*rx = 0;		// the defaults (radio_settings_default), before the task runs
+	*cwid = 0;
+	if (view_lock == NULL) {
+		return;
+	}
+	xSemaphoreTake(view_lock, portMAX_DELAY);
+	const radio_settings_t *p = settings_published == settings_sent ? &shared_settings : &pending_settings;
+	*rx = p->sfr_rx;
+	*cwid = p->sfr_cwid;
 	xSemaphoreGive(view_lock);
 }
 

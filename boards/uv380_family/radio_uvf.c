@@ -719,6 +719,7 @@ static void speaker_apply(void)
 	bool pcm = pcm_wanted;
 	bool fm = audio_wanted && !pcm;
 	bool on = (fm || pcm) && !volume_zero;
+	uvf_backlight_rx(fm || pcm);	// volume zero still feeds FM audio to APRS
 	// The FM feed-through also gates the FM audio on the I2S stream that APRS receive reads (hardware-dm1701.md
 	// 21.3.1), so it follows the core's request, not the knob: at volume zero only the amp is off
 	count(hrc6000_fm_audio(&r.modem, fm));	// FM feed-through only for FM; PCM comes from the codec DAC
@@ -831,6 +832,7 @@ static void set_mode(radio_mode_t mode)
 			stm32_hrc_dmr_leave();
 			rf_resync();	// retunes only after DMR bursts; rx_retune below otherwise
 			r.tx_on = false;
+			uvf_backlight_tx(false);
 		}
 		count(at1846s_set_mode(&r.rf, AT1846S_MODE_FM));
 		rx_retune();
@@ -970,6 +972,7 @@ static bool rx_set(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone, bool ke
 		stm32_hrc_dmr_rx_restart();
 	}
 	r.tx_on = false;
+	uvf_backlight_tx(false);
 	return true;
 }
 
@@ -1025,6 +1028,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		__DMB();
 		r.dmr_armed = true;
 		r.tx_on = true;
+		uvf_backlight_tx(true);
 		return true;
 	}
 
@@ -1052,6 +1056,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	count(at1846s_set_freq(&r.rf, (uint32_t)((int32_t)hz + offset)));
 	count(at1846s_set_state(&r.rf, AT1846S_STATE_FM_TX));
 
+	uvf_backlight_tx(true);	// the TX rate before the PA comes on
 	apc_set(drive);
 	PIN_WRITE(PIN_PA_EN1, true);
 	PIN_WRITE(PIN_PA_BAND, uhf);
@@ -1079,6 +1084,7 @@ static void tx_end(bool keep)
 	count(at1846s_set_state(&r.rf, AT1846S_STATE_IDLE));
 	count(hrc6000_set_mode_fm_rx(&r.modem));
 	r.tx_on = false;
+	uvf_backlight_tx(false);
 }
 
 static void tx_off(void)

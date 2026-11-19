@@ -1126,8 +1126,8 @@ PD8 (PC6 on Plus 10 W), active high. Dimming: a 101-entry table of 32-bit words 
 request, circular, 100 transfers) to the port's BSRR register: entry 0 sets the pin, entry N resets it, all others are
 0, so the duty is N %. 0 % and 100 % stop the DMA and drive the pin directly.
 
-RadioFoundry dims at 40 kHz with two one-word DMA writes per cycle instead (`boards/uv380_family/backlight_uvf.h`):
-TIM1 counts 1800 per cycle, its update request (DMA2 Stream5 channel 6) writes the set bit and its CC1 request (DMA2
+RadioFoundry uses two one-word DMA writes per PWM cycle (`boards/uv380_family/backlight_uvf.h`):
+At 40 kHz TIM1 counts 1800 per cycle, its update request (DMA2 Stream5 channel 6) writes the set bit and its CC1 request (DMA2
 Stream1 channel 6) the reset bit, so CCR1 is the duty at any percent, 80,000 transfers a second. The ripple of the
 switched backlight current reaches the FM transmit audio. Measured on a DM-1701, Brightness 10 %, 50 mW, FM
 demodulated from a separate receiver, peak deviation:
@@ -1136,7 +1136,88 @@ demodulated from a separate receiver, peak deviation:
 |---|---|---|---|---|
 | 101 Hz, the 100-entry table | 8 Hz | 15 Hz | 13-15 Hz | (it is the 101 Hz line: an audible buzz, #330) |
 | 10 kHz (tried) | 0.5 Hz | 1.9 Hz | 1.1 Hz | 470 Hz: sidebands about 33 dB down at ±10 kHz, in the adjacent 12.5 kHz channel |
-| 40 kHz | 0.6-0.7 Hz | 1.6-2.3 Hz | 1.6 Hz | 99-206 Hz: sidebands 52-58 dB down at ±40 kHz |
+| 40 kHz | 0.6-0.7 Hz | 1.6-2.3 Hz | 1.6 Hz | The conducted measurement below supersedes the over-the-air estimate for this line |
+
+The panel's backlight driver doesn't follow 40 kHz: Brightness 20 % looked close to full, and the idle dim step (a
+fifth) hardly showed. At 2 kHz it dims as set. The PWM uses 2 kHz while idle and 40 kHz while transmitting or while FM or DMR receive audio is open.
+The receive selection follows the audio route even at zero volume, when FM still feeds APRS.
+
+A conducted DM-1701 UHF measurement through 60 dB of attenuation found at most 4.4 Hz deviation at 40 kHz over
+5–90 % pin duty, with sidebands at or below -85 dBc. At 2 kHz and 50 % brightness, an unmodulated -88 dBm carrier
+put a tone in the FM receive audio 14 dB below a 1 kHz tone at 1 kHz deviation. With 40 kHz PWM the same bin was
+48 dB lower. The receiver's local oscillator picks up the backlight ripple with the squelch open.
+
+Earlier over-the-air DM-1701 measurements, FM, 50 mW, deviation in the demodulated transmit audio:
+
+| Backlight PWM during FM transmit | 2 kHz | 4 kHz | 40 kHz |
+|---|---|---|---|
+| 2 kHz (not switched; test build) | 210 Hz | 185 Hz | 96 Hz |
+| switched to 40 kHz | 3-7 Hz | 0.4-2 Hz | 70-100 Hz |
+| 40 kHz always (before) | 4.3 Hz | 1.4 Hz | 88 Hz |
+
+With the switch, transmit is the same as with 40 kHz always, at every brightness (10-100 % stepped during one
+transmission): the 2 kHz and 40 kHz lines that remain don't change with the brightness, not even at 100 %, where the
+pin is steady, so they aren't the backlight's.
+
+**Why no single rate does both.** PWM rate swept 2-40 kHz at 50 % duty, one 2 s FM transmission per rate (50 mW,
+433.450 MHz, HackRF), TIM1's period and compare written over the debug link (`DL_CMD_CHIP_REG`), with bursts at a
+steady backlight as the reference:
+
+| PWM rate | FM deviation at the rate | Steady backlight, same frequency | First RF sideband |
+|---|---|---|---|
+| 2 kHz | 220 Hz | 4.8 Hz | -30 dBc |
+| 5 kHz | 269 Hz | 1.4 Hz | -36 dBc |
+| 10 kHz | 173 Hz | 1.7 Hz | -46 dBc |
+| 12.5 kHz | 88 Hz | 1.6 Hz | -54 dBc |
+| 15 kHz | 33 Hz | 2.4 Hz | -64 dBc |
+| 18 kHz | 8 Hz | 2.7 Hz | -73 dBc |
+| 20, 22, 25, 30 kHz | 3.3-5.7 Hz | 2.9-6.3 Hz | -76 to -78 dBc (the floor) |
+
+From about 18 kHz up the backlight leaves no trace in transmit. Only 2 kHz lands in the voice band (300-3400 Hz).
+This over-the-air sweep used 50 % pin duty. The conducted sweep above measured both the transmit and receive paths.
+
+The backlight stage behind the pin has a turn-off tail: after the pin falls the LEDs stay at full current for about
+22 us, then fall over about 34 us, 38 us of full light in all, the same at any rate. Two independent measurements on
+DM-1701 A:
+
+- **RF harmonic nulls.** FM transmit at 2987 Hz with the set duty stepped 10-70 % (2 % steps, 1.5 s each, HackRF). The
+  leak path is linear and fixed per frequency, so harmonic n of the light waveform shows as a line at n x 2987 Hz in
+  proportion to its Fourier coefficient, and vanishes where the effective duty makes whole cycles of it (n = 2 at 1/2,
+  n = 3 at 1/3 and 2/3, n = 4 at 1/4, 1/2, 3/4). Every null sits about 11.5 points below its no-tail duty:
+
+  | Harmonic | No-tail null | Measured null (set duty) | Tail |
+  |---|---|---|---|
+  | 2 | 50.0 % | 38.5 % | 38.6 us |
+  | 3 | 33.3 % | 21.8 % | 38.7 us |
+  | 3 | 66.7 % | 55.1 % | 38.6 us |
+  | 4 | 25.0 % | 13.7 % | 37.9 us |
+  | 4 | 50.0 % | 38.5 % | 38.5 us |
+  | 4 | 75.0 % | 63.8 % | 37.4 us |
+
+  A waveform model (instant rise, full current for the pulse plus d, then a linear fall over r) fitted to harmonics 1-4
+  at once: d = 21.5 +- 0.4 us, r = 33.8 +- 0.7 us, full-light tail d + r/2 = 38.4 us.
+  Closed loop: the same sweep with 2736 counts (38 us) taken off each compare, as `uvf_bl_compare` does, puts the nulls
+  at 50.0, 33.1, 66.2, 24.9 and 49.9 % of the requested brightness (expected 50, 33.3, 66.7, 25, 50 %), residuals
+  0.1-1.4 us. The split between d and r moves between runs (25.1 and 26.5 us there); their total, which sets the
+  brightness, repeats (38.3 us).
+- **The 3.3 V rail.** Vrefint (ADC1 IN17) is read against VDDA, so the backlight's load raises the reading (about 1.1
+  counts fully on). One injected conversion per PWM cycle, triggered at a chosen count (TIM1 OC4REF as TRGO, falling
+  edge, 144-cycle sample), averaged and stepped through the cycle, traces the rail's waveform: when the pin rises the
+  load appears at once; when it falls the load holds about 22 us, then falls over about 30 us.
+
+That tail is why 40 kHz (a 25 us period) can't dim at all, why at 15 kHz and 50 % (33 us off) the LEDs never go dark,
+and why 2 kHz lit Brightness 10 % at about 18 %. Clean transmit needs about 18 kHz or more and dimming a few kHz or
+less, so the rate switches. The compare is shortened by the tail (`UVF_BL_TAIL`, 38 us, 2736 counts), so a pulse plus
+the tail is the brightness: at 2 kHz and Brightness 20 % the pin is high for 62 us and the light ends at 100 us of the
+500 us cycle. A level too low for the tail keeps one count, the least the rate allows: about 8 % at 2 kHz (the idle
+dim floor of 5 % lights at that). At 40 kHz every level below 100 % is the one count and the panel is fully lit, as
+before; transmit then measured 5.5, 2.5, 1.8 and 7.0 Hz at 2, 4, 6 and 8 kHz, the same as above.
+
+Caveats: the rail shows the regulator's response as well as the load (a sag at turn-on, an overshoot at turn-off,
+each settling over 100-200 us), so averaging the rail over a cycle doesn't give the duty; only the time of each edge
+is read from it. The tail was measured on one DM-1701, at room temperature; the stage's parts aren't identified (no inductor near the
+display connector in the FCC photos, so a switch, not a boost driver). For sampling over the debug link, avoid rates on
+whole kHz: its USB frames are 1 ms apart, so the samples lock to the PWM phase and the average is biased.
 
 
 ---

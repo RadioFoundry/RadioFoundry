@@ -134,6 +134,9 @@ static uint16_t tone_row_key(uint8_t id)
 		id == UI_SET_BATTERY_TONE ? CODEPLUG_KEY_BATTERY_TONE : CODEPLUG_KEY_TX_DENY_TONE;
 }
 static bool tone_post(uint16_t key, bool on);
+#if CONFIG_SIG_TONES
+static bool sig_post(uint8_t id, int32_t value);	// a job: the record's write is the housekeeping task's
+#endif
 #if CONFIG_DMR_DATA_CORE
 // The menu row of a setting kept as a key of the settings area (radio_keys.h), else 0
 static uint16_t data_row_key(uint8_t id)
@@ -143,15 +146,11 @@ static uint16_t data_row_key(uint8_t id)
 static bool data_id_post(uint16_t key, uint32_t id);	// a job too: the key's write is the housekeeping task's
 #endif
 
-int32_t ui_svc_setting_get(uint8_t id)
+// The settings the radio core holds (radio_get_settings), apart from those read from flash below: two functions, so
+// the settings_t of the latter is not on the stack under ui_svc_reply_shown (the static stack check). INT32_MIN: not one of these
+static __attribute__((noinline)) int32_t setting_get_radio(uint8_t id)
 {
 	radio_settings_t rs;
-	settings_t st;
-#if CONFIG_KEY_ASSIGN
-	if (id >= UI_SET_KEY_FIRST && id <= UI_SET_KEY_LAST) {
-		return key_get(id);
-	}
-#endif
 	switch (id) {
 	case UI_SET_KEY_TONES:
 	case UI_SET_TONE_VOLUME:
@@ -169,26 +168,6 @@ int32_t ui_svc_setting_get(uint8_t id)
 			return rs.backlight_off_s == 0 && rs.backlight_dim_s != 0 ? -(int32_t)rs.backlight_dim_s
 										    : rs.backlight_dim_s;
 		return rs.rx_save != 0;
-	case UI_SET_VOLUME:
-		settings_read(&st);
-		return radio_volume_step(st.volume);
-	case UI_SET_KNOB_WHEN_LOCKED:
-		settings_read(&st);
-		return (st.sound_flags & SETTINGS_KNOB_LOCK) == 0;	// stored as the lock, shown as the knob working
-	case UI_SET_BRIGHTNESS:
-		settings_read(&st);
-		return st.brightness >= 10 && st.brightness <= 100 ? st.brightness : 100;
-	case UI_SET_SQUELCH:
-		settings_read(&st);
-		return st.squelch <= 9 ? st.squelch : ui_svc_ram_get(id);
-#if CONFIG_RX_EXT
-	case UI_SET_RX_EXT:
-		settings_read(&st);
-		return (st.cp_flags & SETTINGS_CP_RX_EXT) != 0;
-#endif
-	case UI_SET_HOTSPOT_AUTO:
-		settings_read(&st);
-		return st.hotspot_allowed != 0;
 	case UI_SET_REPLY_S:
 		radio_get_settings(&rs);
 		return ui_svc_reply_shown(&rs);
@@ -212,6 +191,72 @@ int32_t ui_svc_setting_get(uint8_t id)
 		radio_get_settings(&rs);
 		return rs.bcast_step == RADIO_BCAST_STEP_100 ? 100 : 200;
 #endif
+	case UI_SET_TALK_PERMIT:
+	case UI_SET_SCAN_TONE:
+		radio_get_settings(&rs);
+		return id == UI_SET_TALK_PERMIT ? rs.talk_permit : rs.scan_beep;
+#if CONFIG_SIG_TONES
+	case UI_SET_SIG_DMR ... UI_SET_SIG_DMR_LAST:
+		radio_get_settings(&rs);
+		return rs.sig_dmr[id - UI_SET_SIG_DMR];
+	case UI_SET_SIG_FM ... UI_SET_SIG_FM_LAST:
+		radio_get_settings(&rs);
+		return rs.sig_fm[id - UI_SET_SIG_FM];
+	case UI_SET_SIG_HZ ... UI_SET_SIG_HZ_LAST:
+		radio_get_settings(&rs);
+		return rs.sig_hz[(id - UI_SET_SIG_HZ) / SIG_STEPS][(id - UI_SET_SIG_HZ) % SIG_STEPS];
+	case UI_SET_SIG_MS ... UI_SET_SIG_MS_LAST:
+		radio_get_settings(&rs);
+		return (int32_t)rs.sig_ms[(id - UI_SET_SIG_MS) / SIG_STEPS][(id - UI_SET_SIG_MS) % SIG_STEPS] * 10;
+#endif
+	case UI_SET_CALL_END_TONE:
+	case UI_SET_TOT_WARN_TONE:
+	case UI_SET_BATTERY_TONE:
+	case UI_SET_TX_DENY_TONE: {
+		// The keys' bits come from the radio core (no flash read here, which sat on the radio and UI tasks' deepest
+		// paths)
+		radio_get_settings(&rs);
+		int row = radio_tone_row(tone_row_key(id));
+		return row < 0 || (rs.tones_off >> row & 1u) == 0;
+	}
+#if CONFIG_DMR_ROAMING
+	case UI_SET_ROAM_SURVEY:
+	case UI_SET_ROAM_BEACON_S:
+	case UI_SET_ROAM_BEACON_LEN:
+	case UI_SET_ROAM_PROBE:
+		radio_get_settings(&rs);
+		return id == UI_SET_ROAM_SURVEY ? rs.roam_survey : id == UI_SET_ROAM_BEACON_S ? rs.roam_beacon_s :
+			id == UI_SET_ROAM_BEACON_LEN ? rs.roam_beacon_len_s : rs.roam_probe;
+#endif
+	default:
+		return INT32_MIN;
+	}
+}
+
+static __attribute__((noinline)) int32_t setting_get_flash(uint8_t id)
+{
+	settings_t st;
+	switch (id) {
+	case UI_SET_VOLUME:
+		settings_read(&st);
+		return radio_volume_step(st.volume);
+	case UI_SET_KNOB_WHEN_LOCKED:
+		settings_read(&st);
+		return (st.sound_flags & SETTINGS_KNOB_LOCK) == 0;	// stored as the lock, shown as the knob working
+	case UI_SET_BRIGHTNESS:
+		settings_read(&st);
+		return st.brightness >= 10 && st.brightness <= 100 ? st.brightness : 100;
+	case UI_SET_SQUELCH:
+		settings_read(&st);
+		return st.squelch <= 9 ? st.squelch : ui_svc_ram_get(id);
+#if CONFIG_RX_EXT
+	case UI_SET_RX_EXT:
+		settings_read(&st);
+		return (st.cp_flags & SETTINGS_CP_RX_EXT) != 0;
+#endif
+	case UI_SET_HOTSPOT_AUTO:
+		settings_read(&st);
+		return st.hotspot_allowed != 0;
 	case UI_SET_MIC_GAIN:
 		settings_read(&st);
 		return st.mic_gain <= 10 ? st.mic_gain : 5;
@@ -286,20 +331,6 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_AUTO_OFF_MIN:
 		settings_read(&st);
 		return st.auto_off_min;
-	case UI_SET_TALK_PERMIT:
-	case UI_SET_SCAN_TONE:
-		radio_get_settings(&rs);
-		return id == UI_SET_TALK_PERMIT ? rs.talk_permit : rs.scan_beep;
-	case UI_SET_CALL_END_TONE:
-	case UI_SET_TOT_WARN_TONE:
-	case UI_SET_BATTERY_TONE:
-	case UI_SET_TX_DENY_TONE: {
-		// The keys' bits come from the radio core (no flash read here, which sat on the radio and UI tasks' deepest
-		// paths)
-		radio_get_settings(&rs);
-		int row = radio_tone_row(tone_row_key(id));
-		return row < 0 || (rs.tones_off >> row & 1u) == 0;
-	}
 	case UI_SET_EMERGENCY_TONE: {
 		dmr_emergency_settings_t es;
 		dmr_emergency_get_settings(&es);
@@ -323,15 +354,6 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_MIC_AGC:
 		settings_read(&st);
 		return (st.accent & SETTINGS_AUDIO_AGC) != 0;
-#if CONFIG_DMR_ROAMING
-	case UI_SET_ROAM_SURVEY:
-	case UI_SET_ROAM_BEACON_S:
-	case UI_SET_ROAM_BEACON_LEN:
-	case UI_SET_ROAM_PROBE:
-		radio_get_settings(&rs);
-		return id == UI_SET_ROAM_SURVEY ? rs.roam_survey : id == UI_SET_ROAM_BEACON_S ? rs.roam_beacon_s :
-			id == UI_SET_ROAM_BEACON_LEN ? rs.roam_beacon_len_s : rs.roam_probe;
-#endif
 #if CONFIG_DMR_PRIVACY
 	case UI_SET_PRIVACY_TYPE:
 		settings_read(&st);
@@ -401,6 +423,17 @@ int32_t ui_svc_setting_get(uint8_t id)
 	}
 }
 
+int32_t ui_svc_setting_get(uint8_t id)
+{
+#if CONFIG_KEY_ASSIGN
+	if (id >= UI_SET_KEY_FIRST && id <= UI_SET_KEY_LAST) {	// not under setting_get_flash's settings_t: key_apply is deep
+		return key_get(id);
+	}
+#endif
+	int32_t val = setting_get_radio(id);
+	return val != INT32_MIN ? val : setting_get_flash(id);
+}
+
 bool ui_svc_setting_set(uint8_t id, int32_t value)
 {
 	settings_t *st;
@@ -418,6 +451,9 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 	case UI_SET_REPLY_S:
 	case UI_SET_TALK_PERMIT:
 	case UI_SET_SCAN_TONE:
+#if !CONFIG_SIG_TONES
+	case UI_SET_SIG_DMR ... UI_SET_SIG_STEP:	// nothing to set in this build (the menu has no row)
+#endif
 #if CONFIG_SFR
 	case UI_SET_SFR_RX:
 #endif
@@ -634,6 +670,10 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 	case UI_SET_ARS_SERVER:
 	case UI_SET_IP_GATEWAY:
 		return data_id_post(data_row_key(id), (uint32_t)value);
+#endif
+#if CONFIG_SIG_TONES
+	case UI_SET_SIG_DMR ... UI_SET_SIG_STEP:
+		return sig_post(id, value);
 #endif
 	case UI_SET_CALL_END_TONE:
 	case UI_SET_TOT_WARN_TONE:
@@ -957,6 +997,93 @@ static bool tone_post(uint16_t key, bool on)
 	job.temp = on ? 1u : 0u;
 	return storage_job_post(tone_job, NULL);
 }
+
+#if CONFIG_SIG_TONES
+// A signaling tone setting (Settings > Signaling tones), set as every keyed setting is (docs/spec/codeplug-settings.md
+// 5.2): the event's record is written when the settings area can be, and the radio core takes the change into its
+// settings, which it saves as the radio's own. Refused only when the codeplug has the key and it couldn't be updated.
+// The setting's id in job.channel, the value in job.id
+
+// The event a setting belongs to, or SIG_EV_COUNT
+static sig_event_t sig_event_of(uint8_t id, int32_t value)
+{
+	unsigned ev = SIG_EV_COUNT;
+	if (id >= UI_SET_SIG_DMR && id <= UI_SET_SIG_DMR_LAST)
+		ev = id - UI_SET_SIG_DMR;
+	else if (id >= UI_SET_SIG_FM && id <= UI_SET_SIG_FM_LAST)
+		ev = id - UI_SET_SIG_FM;
+	else if (id >= UI_SET_SIG_HZ && id <= UI_SET_SIG_HZ_LAST)
+		ev = (id - UI_SET_SIG_HZ) / SIG_STEPS;
+	else if (id >= UI_SET_SIG_MS && id <= UI_SET_SIG_MS_LAST)
+		ev = (id - UI_SET_SIG_MS) / SIG_STEPS;
+	else if (id == UI_SET_SIG_STEP && ((uint32_t)value >> 19 & 15u) < SIG_STEPS)
+		ev = (uint32_t)value >> 23 & 3u;
+	return ev < SIG_EV_COUNT ? (sig_event_t)ev : SIG_EV_COUNT;
+}
+
+// The setting's change in its event's record
+static void sig_change(sig_rec_t *r, uint8_t id, int32_t value)
+{
+	uint32_t x = (uint32_t)value;
+	if (id >= UI_SET_SIG_DMR && id <= UI_SET_SIG_DMR_LAST) {
+		r->dmr = (uint8_t)(x > 255u ? 255u : x);
+	} else if (id >= UI_SET_SIG_FM && id <= UI_SET_SIG_FM_LAST) {
+		r->fm = (uint8_t)(x > 255u ? 255u : x);
+	} else if (id >= UI_SET_SIG_HZ && id <= UI_SET_SIG_HZ_LAST) {
+		r->hz[(id - UI_SET_SIG_HZ) % SIG_STEPS] = (uint16_t)(x > 0xFFFFu ? 0xFFFFu : x);
+	} else if (id >= UI_SET_SIG_MS && id <= UI_SET_SIG_MS_LAST) {
+		r->ms10[(id - UI_SET_SIG_MS) % SIG_STEPS] = (uint8_t)(x / SIG_MS_UNIT > 255u ? 255u : x / SIG_MS_UNIT);
+	} else if (id == UI_SET_SIG_STEP) {
+		unsigned k = x >> 19 & 15u;
+		r->hz[k] = (uint16_t)(x & 0xFFFu);
+		r->ms10[k] = (uint8_t)(x >> 12 & 0x7Fu);
+	}
+}
+
+static void sig_job(void *ctx)
+{
+	(void)ctx;
+	radio_settings_t rs;
+	sig_event_t ev = sig_event_of((uint8_t)job.channel, (int32_t)job.id);
+	if (ev == SIG_EV_COUNT)
+		return;
+	radio_get_settings(&rs);
+	sig_rec_t was, now;
+	uint8_t a[SIG_REC_LEN], b[SIG_REC_LEN];
+	radio_sig_get(&rs, ev, &was);
+	now = was;
+	sig_change(&now, (uint8_t)job.channel, (int32_t)job.id);
+	sig_rec_encode(&was, a);
+	sig_rec_encode(&now, b);
+	if (!codeplug_keys_write_record((uint16_t)(CODEPLUG_KEY_SIG_BEGIN + ev), a, b, SIG_REC_LEN)) {
+		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
+		return;
+	}
+	// Read again after the write (a flash write can take a while): only this event's record changes
+	radio_get_settings(&rs);
+	radio_sig_put(&rs, ev, &now);
+	radio_set_settings(&rs);
+}
+
+static bool sig_post(uint8_t id, int32_t value)
+{
+	radio_settings_t rs;
+	sig_rec_t r;
+	uint8_t b[SIG_REC_LEN];
+	sig_event_t ev = sig_event_of(id, value);
+	if (ev == SIG_EV_COUNT || job_busy())
+		return false;
+	radio_get_settings(&rs);
+	radio_sig_get(&rs, ev, &r);
+	sig_change(&r, id, value);
+	sig_rec_encode(&r, b);
+	if (!sig_rec_decode(b, SIG_REC_LEN, ev, &r))
+		return false;	// a value the setting can't take
+	job.channel = id;
+	job.id = (uint32_t)value;
+	return storage_job_post(sig_job, NULL);
+}
+#endif
 
 static channel_t job_ch;	// the job's working copy of the stored channel
 

@@ -15,7 +15,7 @@
 #if CONFIG_NET_PPP
 #include "hostlink/hostlink_ppp.h"
 #endif
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 #include "hrc_afsk.h"
 #endif
 
@@ -84,7 +84,7 @@ const board_t board = {
 	.baseband = &hrc_baseband,
 #endif
 #endif
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	.afsk = &hrc_afsk,	// through the HR_C7000 (hardware-rt10.md 7.2)
 #endif
 #if CONFIG_HOSTLINK

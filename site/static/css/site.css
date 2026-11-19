@@ -645,6 +645,40 @@ dialog.editor-dialog { max-width: 52rem; max-height: calc(100vh - 4rem); overflo
 .form-table .ed-actions .btn { padding: 0 0.45em; min-width: 1.9rem; }
 .form-table > .btn { margin-top: 2px; padding-left: 0; }
 .ed-radio-form { max-width: 60rem; }
+/* Signaling tones in the Radio tab: a card per event with its outputs and a table of steps */
+.ed-radio-form + h3 { margin-top: var(--space-6); }
+.sig-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); margin: var(--space-3) 0 var(--space-5); align-items: start; }
+.sig-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-4); display: grid; gap: var(--space-3); align-content: start; box-shadow: var(--shadow); }
+.sig-card.sig-off { background: var(--surface-2); box-shadow: none; }
+.sig-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.sig-title { margin: 0; font-size: var(--h3); flex: 1 1 auto; }
+.sig-state { flex: 1 0 100%; order: 3; }
+.sig-outs { display: grid; grid-template-columns: 1fr; gap: var(--space-3); }
+.sig-outs > *, .sig-card { min-width: 0; }
+.sig-outs select { width: 100%; min-width: 0; box-sizing: border-box; }
+.sig-steps { width: 100%; table-layout: fixed; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.sig-steps th, .sig-steps td { padding: var(--space-1) var(--space-2); text-align: left; border-bottom: 1px solid var(--border); font-size: var(--text-sm); }
+.sig-steps thead th { color: var(--muted); font-weight: 600; }
+.sig-steps tbody th, .sig-steps thead th:first-child { color: var(--muted); font-weight: 400; width: 3.2rem; }
+.sig-steps input { width: 100%; min-width: 0; box-sizing: border-box; font: inherit; padding: var(--space-1) var(--space-2); }
+.sig-steps input.sig-bad { border-color: var(--bad); background: var(--bad-soft); }
+.sig-steps tr.sig-dim { opacity: 0.45; }
+.sig-total { margin: 0; }
+.sig-head > :nth-child(2) { margin-left: auto; }
+.sig-body { display: grid; grid-template-columns: minmax(15rem, 2fr) minmax(0, 3fr); gap: var(--space-5); align-items: start; }
+.sig-side { display: grid; gap: var(--space-3); min-width: 0; }
+.sig-tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: var(--space-4); min-width: 0; }
+.sig-outs { grid-template-columns: minmax(0, 1fr); }
+@media (max-width: 52rem) { .sig-body { grid-template-columns: minmax(0, 1fr); } }
+.sig-roll { line-height: 0; }
+.sig-roll svg { width: 100%; height: 4.5rem; display: block; }
+.sig-r-bg { fill: var(--surface-2); }
+.sig-r-grid { stroke: var(--border); stroke-width: 1; vector-effect: non-scaling-stroke; stroke-dasharray: 3 4; }
+.sig-r-bar { fill: var(--accent); }
+.sig-r-over { fill: var(--bad); opacity: 0.7; }
+.sig-r-pause { fill: var(--muted); opacity: 0.6; }
+.sig-steps tbody tr:last-child th, .sig-steps tbody tr:last-child td { border-bottom: 0; }
+
 .members { display: grid; grid-template-columns: 1fr auto 1fr; gap: var(--space-3); align-items: start; }
 .members h3 { font-size: var(--text-sm); margin-bottom: var(--space-1); }
 .members input[type="search"] { width: 100%; margin-bottom: var(--space-1); }

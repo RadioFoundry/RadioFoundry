@@ -10,6 +10,8 @@
 #include "dmr/dmrDataService.h"
 #include "codeplug/codeplug_keys.h"
 #include "radio/beep.h"
+#include "radio/radio.h"
+#include "radio/sigtone.h"
 
 static const codeplug_key_row_t radio_keys[] = {
 	CODEPLUG_KEY_ROW(CODEPLUG_KEY_ARS_SERVER, CODEPLUG_T_ID, CONFIG_DMR_ARS, dmrDataSettings_t, arsServer, 0,
@@ -90,5 +92,30 @@ static inline bool radio_tone_off(uint8_t tones_off, uint8_t b)
 	}
 	return false;
 }
+
+
+#if CONFIG_SIG_TONES
+// The signaling tones' records (sigtone.h sig_rec_t), one key per event: CODEPLUG_KEY_SIG_BEGIN + sig_event_t. The radio's
+// own copy is radio_settings_t.sig_*, so these two turn it into the record and back
+static inline void radio_sig_get(const radio_settings_t *s, sig_event_t ev, sig_rec_t *r)
+{
+	r->dmr = s->sig_dmr[ev];
+	r->fm = s->sig_fm[ev];
+	for (unsigned i = 0; i < SIG_STEPS; i++) {
+		r->hz[i] = s->sig_hz[ev][i];
+		r->ms10[i] = s->sig_ms[ev][i];
+	}
+}
+
+static inline void radio_sig_put(radio_settings_t *s, sig_event_t ev, const sig_rec_t *r)
+{
+	s->sig_dmr[ev] = r->dmr;
+	s->sig_fm[ev] = r->fm;
+	for (unsigned i = 0; i < SIG_STEPS; i++) {
+		s->sig_hz[ev][i] = r->hz[i];
+		s->sig_ms[ev][i] = r->ms10[i];
+	}
+}
+#endif
 
 #endif
