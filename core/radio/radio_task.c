@@ -43,7 +43,7 @@
 // Task layout (see core/app/app.c for the whole picture)
 #define RADIO_TASK_PRIORITY	4
 #if CONFIG_DMR
-#define RADIO_TASK_STACK	768	// words: the DMR call stack and the AMBE FEC run here
+#define RADIO_TASK_STACK	776	// words: the DMR call stack and the AMBE FEC run here (the deepest maximal build: 2744 B + margin)
 #else
 #define RADIO_TASK_STACK	512	// words
 #endif

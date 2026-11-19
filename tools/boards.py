@@ -583,6 +583,13 @@ def not_written_problems(bid, b):
     return out
 
 
+def listed_off_problems(bid, listed, built):
+    """A switch in BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN (listed) that the default build still builds (built: switch ->
+    "y"/"n"): the list alone doesn't turn it off, and the site then shows the feature as there."""
+    return ["boards/%s: %s is in BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN but built by default: add CONFIG_%s ?= n "
+            "next to the config.mk line that lists it" % (bid, s, s) for s in listed if built.get(s) == "y"]
+
+
 def default_off_problems(bid, b, built):
     """config.mk's BOARD_DEFAULT_OFF of a board (built: switch -> "y"/"n"): each switch has the reason users read, is
     off by default and can be chosen, so it is in neither list of what can't be."""
@@ -1012,7 +1019,7 @@ def hardware_switches(root=ROOT):
 def hardware_problems(bid, unsupported, unconfirmed, built, hw):
     """A board's hardware switches that read "off by default": each must be built (built: switch -> "y"/"n"), listed in
     BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN (unsupported: both, with their reasons), or, while the fact is unknown, in
-    board.toml [hardware] unconfirmed. One in either list must also be off by default."""
+    board.toml [hardware] unconfirmed. That one in either list is also off by default is listed_off_problems' check."""
     out = []
     for s, what in sorted(hw.items()):
         on, gone = built.get(s) == "y", s in unsupported
@@ -1020,9 +1027,6 @@ def hardware_problems(bid, unsupported, unconfirmed, built, hw):
             if on or gone:
                 out.append("boards/%s/board.toml: hardware.unconfirmed %s, but the board %s: drop the entry"
                            % (bid, s, "builds it" if on else "lists it in BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN"))
-        elif on and gone:
-            out.append("boards/%s: %s is in BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN (it needs %s) but built by default: "
-                       "add CONFIG_%s ?= n to its config.mk" % (bid, s, what, s))
         elif not on and not gone:
             out.append("boards/%s: %s needs %s and is off by default: build it (config.mk CONFIG_%s ?= y) if the "
                        "radio has it and the code is written; BOARD_NOT_WRITTEN += %s  # <what isn't written> if "
@@ -1160,21 +1164,20 @@ def check(root=ROOT):
                 problems.append("boards/%s/config.mk: BOARD_UNSUPPORTED %s has no reason: one switch a line, "
                                 "BOARD_UNSUPPORTED += %s  # <reason>" % (bid, s, s))
         problems += not_written_problems(bid, b)
-        if b.default_off:
+        # not written yet counts as left off on purpose, as unsupported does
+        listed = {**b.unsupported, **b.not_written}
+        names = sorted(set(listed) | set(b.default_off) | set(hw))
+        if names:
             try:
-                problems += default_off_problems(bid, b, {k[len("CONFIG_"):]: v for k, v in make_vars(
-                    root, bid, ["CONFIG_" + s for s in b.default_off]).items()})
+                built = {k[len("CONFIG_"):]: v for k, v in make_vars(root, bid, ["CONFIG_" + s for s in names]).items()}
             except RegistryError as e:
                 problems.append(str(e))
-        if hw:
-            try:
-                built = {s: v for s, v in ((k[len("CONFIG_"):], v) for k, v in
-                                           make_vars(root, bid, ["CONFIG_" + s for s in hw]).items())}
-                # not written yet counts as left off on purpose, as unsupported does
-                problems += hardware_problems(bid, {**b.unsupported, **b.not_written},
-                                              d["hardware"].get("unconfirmed", {}), built, hw)
-            except RegistryError as e:
-                problems.append(str(e))
+            else:
+                problems += listed_off_problems(bid, listed, built)
+                if b.default_off:
+                    problems += default_off_problems(bid, b, built)
+                if hw:
+                    problems += hardware_problems(bid, listed, d["hardware"].get("unconfirmed", {}), built, hw)
         for k, p in d["docs"].items():
             if not os.path.isfile(os.path.join(root, p)):
                 bad("docs.%s %s doesn't exist" % (k, p))
@@ -1845,6 +1848,8 @@ def self_test():
     probs = default_off_problems("t", fake, {"A": "n", "B": "n", "C": "n", "D": "y"})
     ok(len(probs) == 3 and "B has no reason" in probs[0] and "C is in" in probs[1] and "D is in" in probs[2],
        "default_off_problems: a reason, choosable, off by default")
+    probs = listed_off_problems("t", ["A", "B", "C"], {"A": "n", "B": "y"})
+    ok(len(probs) == 1 and "B is in" in probs[0], "listed_off_problems: a listed switch built by default")
     shutil.rmtree(tmpm)
     for bad, what in (({"hil": {"battery_mv": "5V"}}, "a [hil] value of the wrong type"),
                       ({"hil": {"no_such": 1}}, "an unknown [hil] key"),
@@ -1903,8 +1908,8 @@ def self_test():
        "hardware switches: unconfirmed on a switch the board builds fails")
     ok(len(hp("x", {}, {"FONT_BIG": "?"}, {"VIBRATE": "y", "NAND_STORAGE": "y"}, hw)) == 1,
        "hardware switches: unconfirmed on a switch that isn't a hardware switch fails")
-    ok(len(hp("x", {"NAND_STORAGE": "NOR"}, {}, {"VIBRATE": "y", "NAND_STORAGE": "y"}, hw)) == 1,
-       "hardware switches: in BOARD_UNSUPPORTED but built by default fails")
+    ok(len(listed_off_problems("x", {"NAND_STORAGE": "NOR"}, {"VIBRATE": "y", "NAND_STORAGE": "y"})) == 1,
+       "hardware switches: in BOARD_UNSUPPORTED but built by default fails (listed_off_problems)")
     ok(hp("x", {"NAND_STORAGE": "the driver isn't written"}, {}, {"VIBRATE": "y", "NAND_STORAGE": "n"}, hw) == [],
        "hardware switches: one in BOARD_NOT_WRITTEN (check() passes both lists) passes off by default")
 
