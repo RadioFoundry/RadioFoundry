@@ -319,6 +319,7 @@
  "screen.gps_signal": "GPS signal bars",
  "screen.gps_grid": "Grid locator",
  "screen.quick_cc_editor": "Color code",
+ "screen.home_nxdn_scrambled": "NXDN, receiving a scrambled call",
  "screen.quick_vfo_cc_editor": "VFO color code",
  "screen.quick_vfo_dmr": "Quick settings, DMR VFO",
  "screen.home_vfo_split_dmr": "VFO, DMR, with a split TX frequency",

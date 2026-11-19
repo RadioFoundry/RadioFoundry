@@ -174,6 +174,12 @@
     "VFO_DMR"
    ]
   },
+  "home_nxdn_scrambled": {
+   "group": "home",
+   "needs": [
+    "NXDN_SCRAMBLER"
+   ]
+  },
   "quick_vfo_cc_editor": {
    "group": "home",
    "needs": [

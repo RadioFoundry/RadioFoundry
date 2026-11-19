@@ -319,6 +319,7 @@
  "screen.gps_signal": "GPS 信号格",
  "screen.gps_grid": "网格定位符",
  "screen.quick_cc_editor": "色码",
+ "screen.home_nxdn_scrambled": "NXDN，正在接收加扰呼叫",
  "screen.quick_vfo_cc_editor": "VFO 色码",
  "screen.quick_vfo_dmr": "快捷设置，DMR VFO",
  "screen.home_vfo_split_dmr": "VFO，DMR，收发异频",
