@@ -1185,6 +1185,11 @@ class SdrBench:
             os.makedirs(ambe_dir, exist_ok=True)    # a write failing in the reader thread would lose the job's output
             job["ambe_out"] = os.path.basename(job["ambe_out"])
         board = self.api_rx if rx else self.api
+        max_key = ((self._api_info(rx).get("tx") or {}).get("max_key_s")) if expect_s and not rx else None
+        if max_key is not None and float(expect_s) > float(max_key):
+            # The board refuses a key-up longer than this; a test asking for one needs a shorter job, not a skip
+            raise RuntimeError(f"{tool} asks for {float(expect_s):g} s, longer than this bench's max_key_s {max_key} s "
+                               "(info.tx)")
         req = {"op": "run", "job": job, "label": self.label or tool,
                "wait_max": self.wait_max}
         if board == self.api:           # the lease's session is the TX board's; another board has none of ours
@@ -1202,6 +1207,11 @@ class SdrBench:
             # Still queued (or the board never said started): a test going on now would judge a radio with nothing sent
             p.kill()
             raise RuntimeError(f"the bench board never started {tool} {job.get('cmd', '')}: {''.join(p.lines)[-400:]}")
+        if wait_start and expect_s and p.req.done.wait(0.2) and p.wait(5) not in (None, 0):
+            # Said started, then ended at once (a board that checks max_key_s only after starting): nothing is on
+            # air, and a test going on would judge the radio against a silent bench
+            raise RuntimeError(f"the bench board ended {tool} {job.get('cmd', '')} right after starting it "
+                               f"(exit {p.returncode}): {''.join(p.lines)[-400:]}")
         return p
 
     # ── a bench board's transmitter (the line protocol's tx op, the gateway's bench-api.md 14.6) ──

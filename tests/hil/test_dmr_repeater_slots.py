@@ -318,7 +318,7 @@ def test_dmr_repeater_burst_offset(radio, sdr_bench, pytestconfig, backup_dir):
                 skip("bench", f"the bench board can't decode bursts on {f} MHz (outside its window)")
         # The board's idle outbound is the reference (a half-duplex board runs no repeater), and the radio's bursts
         # are judged by the SDR alone
-        s.rpt, s.outbound = s.bench.outbound_start(s.freq, s.cc, 40), True
+        s.rpt, s.outbound = s.bench.outbound_start(s.freq, s.cc, 20), True   # a bench keys 20 s at most
         s.wait_up()
         ins = s.bench.bursts_start(s.split, 14, cc=s.cc)
         outs = s.bench.bursts_start(s.freq, 14, cc=s.cc)
@@ -363,7 +363,7 @@ def test_dmr_repeater_inbound_fec(radio, sdr_bench, pytestconfig, backup_dir):
             skip("bench", f"the bench board can't decode bursts on {s.split} MHz (outside its window)")
         # The outbound is up all along, so a radio that listens between its bursts (tx_listen_split) does so for the
         # whole call: what it sends must be as clean as on a simplex channel
-        s.rpt, s.outbound = s.bench.outbound_start(s.freq, s.cc, 30), True
+        s.rpt, s.outbound = s.bench.outbound_start(s.freq, s.cc, 20), True   # a bench keys 20 s at most
         s.wait_up()
         _, before = radio.counters()
         ins = s.bench.bursts_start(s.split, 12, cc=s.cc)
