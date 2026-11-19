@@ -2022,6 +2022,12 @@ void ui_apply_setting(uint8_t id, int32_t v)
 	dirty = true;
 }
 
+bool ui_app_key_while_dark(const input_event_t *ev)
+{
+	// PTT and Monitor are live keys; Emergency sends only its long press, so a dark screen must not eat it
+	return ev->action == ACT_PTT || ev->action == ACT_MONITOR || ev->action == ACT_EMERGENCY;
+}
+
 static bool emergency_key(const input_event_t *ev)
 {
 	if (ev->action != ACT_EMERGENCY || ev->gesture != GESTURE_LONG)
