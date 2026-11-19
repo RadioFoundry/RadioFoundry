@@ -28,6 +28,10 @@
 #endif
 #if CONFIG_DMR_PRIVACY
 #include "dmr/dmrPrivacy.h"
+#if CONFIG_DMR_AES
+#include "dmr/dmrAes.h"
+#include "codeplug/codeplug_records.h"
+#endif
 #endif
 #include "radio/beep.h"	// beep_t (beep_play only with CONFIG_BEEP)
 #include "radio/sigtone.h"
@@ -628,6 +632,8 @@ static bool parked(const channel_t *ch)
 	if (!codeplug_kind_built(ch->kind)) {
 		return true;
 	}
+	if (ch->kind == CODEPLUG_KIND_DMR_AES)
+		return ch->mode != RADIO_MODE_DMR;
 	return ch->kind != CODEPLUG_KIND_DMR_TRUNK && ch->mode != RADIO_MODE_P25 && ch->mode != RADIO_MODE_NXDN;
 }
 
@@ -1234,6 +1240,13 @@ static bool key_tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *t
 	return board.radio->tx(hz, bw, power, tone);
 }
 
+#if CONFIG_DMR_AES
+static dmrAesState_t channel_keys;
+static uint16_t channel_key_ref;
+static uint8_t channel_key_system;
+static bool channel_tx_allowed;
+#endif
+
 static uint8_t tx_check(const radio_sm_t *sm)
 {
 	const channel_t *ch = &sm->view.ch;
@@ -1255,6 +1268,11 @@ static uint8_t tx_check(const radio_sm_t *sm)
 	if (parked(ch)) {
 		return TXDENY_MODE;	// before receive only: the record underneath says so, the mode is the reason
 	}
+#if CONFIG_DMR_AES
+	if (ch->kind == CODEPLUG_KIND_DMR_AES &&
+	    (!ch->aes_ref || channel_key_ref != ch->aes_ref || channel_key_system != ch->system || !channel_tx_allowed))
+		return TXDENY_AES_KEY;
+#endif
 	if (trunk) {
 		// Its tag's receive only, the system's listen only, or no follower with a transmit side (p25-trunking.md 7)
 #if CONFIG_P25_TRUNK
@@ -1565,7 +1583,7 @@ static void dmr_configure(radio_sm_t *sm)
 #endif
 	bool privacy = false;
 #if CONFIG_DMR_PRIVACY
-	privacy = sm->privacy_type != DMR_PRIVACY_OFF;
+	privacy = ch->kind != CODEPLUG_KIND_DMR_AES && sm->privacy_type != DMR_PRIVACY_OFF;
 	if (privacy) {
 		privacy_key.type = (dmrPrivacyType_t)sm->privacy_type;
 		privacy_key.key = sm->privacy_key;
@@ -1573,6 +1591,39 @@ static void dmr_configure(radio_sm_t *sm)
 		cfg.privacy_ctx = &privacy_key;
 		cfg.tx_fid = dmrPrivacyFID(privacy_key.type, cfg.tx_fid);
 		cfg.tx_svc = dmrPrivacyServiceOptions(privacy_key.type, cfg.tx_svc);
+	}
+#endif
+#if CONFIG_DMR_AES
+	// An AES channel: calls with a PI header under its system's traffic key, and our overs (docs/spec/dmr-voice.md 5.1)
+	dmrAesState_t *keys = NULL;
+	if (ch->kind == CODEPLUG_KIND_DMR_AES) {
+		codeplug_system_t sys;
+		uint8_t block[CODEPLUG_SYS_HDR], key[DMR_AES_KEY_BYTES];
+		uint8_t id = (uint8_t)(ch->aes_ref - 1);
+		channel_tx_allowed = false;
+		channel_key_ref = 0;
+		channel_key_system = ch->system;
+		dmrAesSetKey(&channel_keys, 0, 0, 0, NULL);
+		if (ch->aes_ref && ch->aes_ref <= 256 && codeplug_system(ch->system, &sys, block, 0) >= 0 &&
+		    sys.type == CODEPLUG_SYSTYPE_DMR_AES &&
+		    codeplug_traffic_key(ch->system, DMR_AES_ALG_AES256, id, key, sizeof key) == sizeof key) {
+			dmrAesSetKey(&channel_keys, 0, DMR_AES_ALG_AES256, id, key);
+			dmrAesSetTx(&channel_keys, 0);
+			channel_key_ref = ch->aes_ref;
+			channel_tx_allowed = (sys.flags & CODEPLUG_SYS_TX) != 0;
+			keys = &channel_keys;
+		}
+		memset(key, 0, sizeof key);
+	}
+	if (keys && dmrAesHasKeys(keys)) {
+		cfg.crypt = dmrAesCallHook;
+		cfg.crypt_ctx = keys;
+		if (dmrAesTxKey(keys, &cfg.tx_crypt_alg, &cfg.tx_crypt_key_id)) {
+			cfg.crypt_mi = dmrAesNewMi;
+			cfg.tx_fid = DMR_PRIVACY_FID;
+			cfg.tx_svc |= DMR_PRIVACY_SERVICE_OPTION;
+			privacy = true;
+		}
 	}
 #endif
 #if CONFIG_DMR_EMERGENCY
@@ -2453,6 +2504,8 @@ static void data_rx(const dmr_burst_t *b, uint32_t now_ms, void *ctx)
 // frequency. An FM VFO is out by the mode
 static bool data_can_send(const radio_sm_t *sm)
 {
+	if (sm->view.ch.kind == CODEPLUG_KIND_DMR_AES)
+		return false;
 	bool roaming = false;
 #if CONFIG_DMR_ROAMING
 	roaming = roam_searching(&sm->roam);	// never on a site being looked at
@@ -9252,6 +9305,10 @@ void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 {
 	sm->led_now = now_ms;
 	if (codeplug_kv_serial() != kv_seen) {
+#if CONFIG_DMR_AES
+		if (sm->dmr_running && sm->view.ch.kind == CODEPLUG_KIND_DMR_AES)
+			dmr_configure(sm);
+#endif
 		kv_load(sm, now_ms);	// a key written (menu, debug link): its value only, without a codeplug reload
 #if CONFIG_DMR_TRUNK
 		t3_kv_retry(sm);

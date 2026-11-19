@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import { CodeplugImage } from "../static/js/codeplug/image.js";
 import { decodeArea, getValue, setValue, putArea, KV_ADDR, KV_SIZE } from "../static/js/codeplug/kv.js";
 import { decode, encode, empty, newChannel, newContact, remove, validate, numberAll } from "../static/js/codeplug/model.js";
-import { MODE_KEY, decodeTag, encodeTag, newSystem, setKind, syncModes, decodeSystemRecord, identityKey } from "../static/js/codeplug/channelmodes.js";
+import { withoutSecrets, MODE_KEY, decodeTag, encodeTag, newSystem, setKind, syncModes, decodeSystemRecord, identityKey } from "../static/js/codeplug/channelmodes.js";
 import { KINDS, SYSTEM_TYPES, offeredKinds, offeredTypes, kindName } from "../static/js/codeplug/modes.js";
 import { nameCheck } from "../static/js/codeplug/modebytes.js";
 import { decodeConv, encodeConv, decodeUnit, decodeTsys, p25System, NAC_ANY } from "../static/js/codeplug/mode_p25.js";
@@ -495,4 +495,28 @@ test("NXDN: offered with the radio's feature; group, unit and channel ID ranges"
 	a.contact.id = 7;
 	a.dmrId = 3101276;
 	assert.ok(has(validate(m, { features: "FM,DMR,NXDN" }), "nxdn_unit_range", a));
+});
+
+test("AES keys round-trip by system and ID, stripped exports retain the protected channel", () => {
+	const m = empty(), c = newChannel({ name: "Voice" });
+	m.channels.push(c);
+	for (const name of ["North", "South"]) m.systems.push(newSystem(m, 5, name));
+	numberAll(m);
+	m.systems[0].trafficKeys = [{ id: 0, key: "12".repeat(32) }, { id: 255, key: "34".repeat(32) }];
+	m.systems[1].trafficKeys = [{ id: 0, key: "56".repeat(32) }];
+	setKind(m, c, 5);
+	c.params.id = 0;
+	const img = encode(m), again = decode(img);
+	assert.deepEqual(again.systems.map((s) => s.trafficKeys), m.systems.map((s) => s.trafficKeys));
+	assert.equal(again.channels[0].params.id, 0);
+	assert.equal(again.channels[0].rxOnly, true);
+	again.systems[0].trafficKeys.shift();
+	const updated = round(again);
+	assert.deepEqual(updated.systems[0].trafficKeys, m.systems[0].trafficKeys.slice(1));
+	assert.deepEqual(updated.systems[1].trafficKeys, m.systems[1].trafficKeys);
+	withoutSecrets(img.bytes);
+	const stripped = decode(img);
+	assert.equal(stripped.channels[0].kind, 5);
+	assert.equal(stripped.channels[0].params.id, 0);
+	assert.ok(stripped.systems.every((s) => s.trafficKeys.length === 0));
 });

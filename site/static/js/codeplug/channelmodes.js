@@ -15,6 +15,7 @@
 // fields, raw}], secret (the module's fields, {raw} for a type without, null for none), flagsRaw, raw}.
 // m.modeSettings: {kind id: the module's fields}.
 
+import { AES_KIND, trafficRecord, readTraffic, writeTraffic } from "./mode_aes.js";
 import { decodeArea, getValue, setValue, deleteValue, dedupe, putArea, KV_ADDR, KV_SIZE, KV_HDR, KEYS } from "./kv.js";
 import { getName, putName } from "./fields.js";
 import { KINDS, kindRow, typeRow, radioRuns } from "./modes.js";
@@ -121,6 +122,10 @@ export function decodeModes(m, b) {
 			fields: mod ? mod.decode(h.block) : null, entries: [],
 			secret: sec ? (mod?.secret?.decode(sec) ?? { raw: sec }) : null, raw,
 		});
+	}
+	for (const s of m.systems) if (s.type === AES_KIND) {
+		s.trafficKeys = entries.filter((e) => inFamily(e.key, 0x1900, 1024) && trafficRecord(e.value) &&
+			e.value[0] === s.number - 1).map((e) => readTraffic(e.value));
 	}
 	const fam = entries.filter((e) => inFamily(e.key, MODE_KEY.entry, MODE_LIMITS.entries)).sort((a, b) => a.key - b.key);
 	for (const { value } of fam) {
@@ -277,6 +282,23 @@ export function modeEntries(m, entries, baseNames = () => new Map()) {
 	};
 	const systems = (m.systems ?? []).filter((s) => s.number >= 1 && s.number <= MODE_LIMITS.systems);
 
+	// Retain unrelated algorithms, unknown records, flags and existing slots. A stripped image keeps its channel references.
+	const previous = out.filter((e) => inFamily(e.key, 0x1900, 1024) && trafficRecord(e.value) &&
+		decodeSystemRecord(getValue(entries, MODE_KEY.system + e.value[0]))?.type === AES_KIND);
+	for (const e of previous) {
+		const owner = systems.find((s) => s.number === e.value[0] + 1 && s.type === AES_KIND);
+		if (!owner?.trafficKeys?.some((k) => k.id === e.value[2])) del(e.key);
+	}
+	for (const s of systems.filter((s) => s.type === AES_KIND)) for (const item of s.trafficKeys ?? []) {
+		const old = previous.find((e) => e.value[0] === s.number - 1 && e.value[2] === item.id);
+		let slot = old?.key;
+		if (slot == null) {
+			slot = 0x1900;
+			while (slot < 0x1D00 && getValue(out, slot)) slot++;
+			if (slot === 0x1D00) throw new Error("Traffic key area is full");
+		}
+		set(slot, writeTraffic(s.number - 1, item, old?.value));
+	}
 	for (let n = 0; n < MODE_LIMITS.systems; n++) {
 		const key = MODE_KEY.system + n, prev = getValue(out, key);
 		const s = systems.find((x) => x.number === n + 1);

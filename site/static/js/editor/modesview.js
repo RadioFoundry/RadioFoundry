@@ -45,7 +45,7 @@ export function systemsTab(api, features) {
 				h("td", {}, t(`editor.modes.tx${!s.tx ? 0 : mod?.noRegField && s.fields?.[mod.noRegField] ? 2 : 1}_short`)),
 				h("td", {}, t(`editor.modes.share${s.sharing <= 2 ? s.sharing : 0}`)),
 				h("td", {}, String(s.entries.filter((e) => e.control).length)),
-				h("td", {}, s.secret ? t("editor.modes.secret_set") : t("editor.modes.secret_none")),
+				h("td", {}, (s.secret || s.trafficKeys?.length) ? t("editor.modes.secret_set") : t("editor.modes.secret_none")),
 				h("td", {}, String(used)),
 				h("td", {}, h("div", { class: "ed-actions" }, ...actions,
 					button(t("editor.delete"), () => deleteSystem(api, s), { quiet: true, danger: true }))));
@@ -74,6 +74,38 @@ function deleteSystem(api, s) {
 }
 
 // --- A system's header and its type's fields ---
+
+function aesKeysField(api, s) {
+	const { h, t, button } = api;
+	const rows = [], list = h("div", {});
+	function add(id, key) {
+		const number = h("input", { type: "number", min: 0, max: 255, "aria-label": t("editor.aes.id") });
+		const secret = h("input", { type: "password", autocomplete: "off", "aria-label": "AES-256" });
+		number.value = id;
+		secret.value = key;
+		const row = { number, secret };
+		rows.push(row);
+		const el = h("div", { class: "ed-actions" }, number, secret, button("−", () => {
+			rows.splice(rows.indexOf(row), 1);
+			el.remove();
+		}, { quiet: true }));
+		list.append(el);
+	}
+	for (const k of s.trafficKeys ?? []) add(k.id, k.key);
+	return { type: "custom", key: "aes.keys", render: () => h("div", {}, list,
+		button(t("editor.aes.add"), () => add("", ""), { quiet: true })), parse: (work) => {
+		const items = [];
+		for (const { number, secret } of rows) {
+			const id = Number(number.value), key = secret.value.replace(/[\s:-]/g, "").toUpperCase();
+			if (!number.value || !Number.isInteger(id) || id < 0 || id > 255 || items.some((k) => k.id === id))
+				return [t("editor.aes.bad_id")];
+			if (!/^[0-9A-F]{64}$/.test(key)) return [t("editor.err.hex_bytes", { n: 32 })];
+			items.push({ id, key });
+		}
+		work.trafficKeys = items;
+		return [];
+	} };
+}
 
 function systemDialog(api, s, isNew) {
 	const { model: m, t } = api;
@@ -130,6 +162,7 @@ function systemDialog(api, s, isNew) {
 	const share = at("sharing");
 	fields.splice(share < 0 ? fields.length : share, 0, ...opt.flatMap((x) => x.fields));
 	// the key, when the type has one: blank = none
+	if (mod.feature === "DMR_AES") fields.push({ group: t("editor.aes.keys") }, aesKeysField(api, s));
 	const sec = mod.secret;
 	if (sec) {
 		const keyHolder = { get: (r) => r.secret ?? sec.empty(), put: (r, key, v) => (r.secret = { ...(r.secret ?? sec.empty()), [key]: v }) };

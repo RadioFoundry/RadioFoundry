@@ -28,6 +28,7 @@
 #include "storage/storage.h"
 #include "codeplug/codeplug_kv.h"
 #include "dmr/dmrPrivacy.h"
+#include "dmr/dmrAes.h"
 #include "dmr/dmrData.h"
 #include "sim/sim_flash.h"
 #include "sim/codeplug_copy_stub.h"
@@ -3108,6 +3109,46 @@ static void test_dmr_voice_features(void)
 	tx_once();
 	air_lc(first, &l);
 	CHECK(l.fid == 0 && l.svc == 0);
+
+#if CONFIG_DMR_AES
+	// AES: a codeplug channel bound to a system's traffic key. Without the key PTT is refused; with it our overs carry
+	// the privacy FID and option and a PI header with the channel's key ID; a short key record refuses PTT again
+	uint16_t check = codeplug_name_check(chans[4].name);
+	uint8_t tag[] = { CODEPLUG_KIND_DMR_AES, 2, (uint8_t)check, (uint8_t)(check >> 8), CODEPLUG_TAG_TX, 0x25, 0 };
+	uint8_t sys[CODEPLUG_SYS_HDR + 1] = { CODEPLUG_SYSTYPE_DMR_AES, CODEPLUG_SYS_TX };
+	uint8_t traffic[CODEPLUG_TRAFFIC_HDR + 32] = { 2, 0x25, 0, 0, 0, 1, 2, 3 };
+	bool pi;
+
+	chans[4].rx_only = true;
+	kv_t3_set(CODEPLUG_KEY_SYSTEM + 2, sys, sizeof sys);
+	kv_t3_set(CODEPLUG_KEY_CH_TAG + 3, tag, sizeof tag);
+	reload_channel();
+	first = sim.air_count;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_AES_KEY && sim.air_count == first);
+	req(RREQ_PTT, 0);
+	kv_t3_set(CODEPLUG_KEY_TRAFFIC, traffic, sizeof traffic);
+	reload_channel();
+	CHECK(d->privacy);
+	first = sim.air_count;
+	tx_once();
+	air_lc(first, &l);
+	CHECK(l.fid == 0x10 && l.svc == DMR_SVC_PRIVACY);
+	pi = false;
+	for (unsigned i = first; i < sim.air_count; i++)
+		if (sim.air[i].kind == DMR_BURST_PI_HEADER && sim.air[i].payload[0] == 0x25 && sim.air[i].payload[2] == 0)
+			pi = true;
+	CHECK(pi);
+	kv_t3_set(CODEPLUG_KEY_TRAFFIC, traffic, sizeof traffic - 1);
+	run(50);
+	first = sim.air_count;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_AES_KEY && sim.air_count == first);
+	req(RREQ_PTT, 0);
+	kv_t3_clear();
+	chans[4].rx_only = false;
+	reload_channel();
+#endif
 }
 
 // ---- DMR emergency in the radio core (docs/spec/dmr-emergency.md): the hot mic keys a call with the emergency service

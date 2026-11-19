@@ -240,7 +240,7 @@
    ],
    "category": "DMR",
    "scope": "user",
-   "definition": "A DMR header that announces encryption with a changing key. RadioFoundry never plays such calls.",
+   "definition": "A DMR privacy header that identifies the algorithm, key ID and message indicator for an encrypted call.",
    "link": "",
    "preview": true
   },

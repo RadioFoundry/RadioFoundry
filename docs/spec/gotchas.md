@@ -418,8 +418,10 @@ A; it is unverified on the HR_C5000 and HR_C7000.
 
 **6.3 ISR-safe contact lookup.** The privacy contact's ID must come from a cache that is safe to read in the modem ISR.
 
-**6.4 PI headers are dropped by the receive path.** MI-based schemes need the modem to send and receive a PI header
-(data type 0); late entry in burst F is an open risk. Research note, privacy feasibility.
+**6.4 PI headers carry the MI.** MI-based schemes need the modem to send and receive a PI header (data type 0). The
+call stack receives them and keeps the algorithm, key ID and MI; such a call plays only through the crypt hook with a
+key for them (dmr-voice.md 5, 5.1). On receive, a call joined late, PI header missed, is not played until the next
+PI header: reading the late-entry MI from the voice bursts is not implemented. Our overs send both (dmr-voice.md 5.1).
 
 ## 7. ARS, TMS, LRRP, UDT
 

@@ -8,6 +8,8 @@
 
 # Encryption that hides the meaning of a message isn't allowed on the amateur bands in most countries
 CONFIG_DMR_PRIVACY ?= n
+# AES-256 voice encryption, for the same reason
+CONFIG_DMR_AES ?= n
 # Motorola text message format: business radio fleets and dispatch software
 CONFIG_DMR_TMS ?= n
 # Registration with a presence server: dispatch systems

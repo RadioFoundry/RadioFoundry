@@ -313,6 +313,10 @@ embedded LC fragments correctly is unverified; follow the datasheet.
 "CRC good" for a deframed burst = bits 30:24 all zero. Data blocks and MBC continuation blocks have no CRC-16, so do
 not drop them on these flags; check CRC-9/CRC-32 (the MBC's CRC-16 in its last block) in software. RX_INFO (0x394): b24:16 trunking multiframe number, b10:0 received RC.
 
+b17 (pi) clear on an encrypted call does not mean a misread. A stock radio's AES-256 simplex calls, recorded on the SDR
+bench and their EMBs decoded in software (2026-11-18, 270 voice bursts B-F, color code and LCSS all as expected), had PI
+0 on every burst: that sender marks privacy only in the service options and the PI header.
+
 ### 2.8 Buffer layouts
 
 **TX RAM (0x16000000)**, datasheet table 52: 0x00–0x0B the current control burst (PI header 10 + 2 CRC, LC header / terminator

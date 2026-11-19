@@ -1264,6 +1264,7 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 	case TXDENY_TIMEOUT: sb_str(&b, TR(DENY_WHY_TIMEOUT, "TX time-out reached")); break;
 	case TXDENY_CEASED: sb_str(&b, TR(DENY_WHY_SYSTEM_STOPPED, "System stopped TX")); break;
 	case TXDENY_NO_FREQ: sb_str(&b, TR(DENY_WHY_NO_TX_FREQ, "No TX frequency set")); break;
+	case TXDENY_AES_KEY: sb_str(&b, TR(WHY_AES_KEY, "AES key or TX disabled")); break;
 	case TXDENY_MODE: sb_str(&b, TR(WHY_MODE_NOT_IN_BUILD, "Mode: not in this build")); break;
 	case TXDENY_NO_CODEC: sb_str(&b, TR(WHY_NO_CODEC, "No codec: voice off")); break;
 	case TXDENY_NO_DMR: sb_str(&b, TR(DENY_WHY_MODEM_NOT_RUNNING, "DMR modem not running")); break;
