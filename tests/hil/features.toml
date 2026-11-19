@@ -102,6 +102,12 @@ source = ["core/dmr/call", "core/dmr/ambe", "core/dmr/fec", "drivers/modem", "ha
 switch = "DMR_PRIVACY"
 spec = "docs/spec/dmr-voice.md"
 
+[feature.dmr_data_privacy]
+requires = "DMR_PRIVACY"
+# Packet data under a privacy key: the privacy header, the user data encrypted, or held back
+spec = "docs/spec/dmr-data.md"
+source = ["core/dmr/dmrData.c", "core/dmr/dmrDataService.c", "core/dmr/dmrPrivacy.c"]
+
 [feature.dmr_talker_alias]
 switch = "DMR_TALKER_ALIAS"
 spec = "docs/spec/dmr-voice.md"

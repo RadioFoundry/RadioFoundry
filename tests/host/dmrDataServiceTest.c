@@ -2476,6 +2476,82 @@ static void testNoRate34(void)
 	CHECK(dmrDataServiceIpConfirmedRate() == DMR_TYPE_RATE_3_4);
 }
 
+#if CONFIG_DMR_TMS && CONFIG_DMR_PRIVACY
+// A 16-bit XOR keystream over the user data, as a static key scheme gives (core/dmr/dmrPrivacy.c has the real ones)
+static bool serviceCrypt(const void *ctx, uint8_t alg, uint32_t mi, uint8_t *data, int length)
+{
+	uint16_t k = *(const uint16_t *)ctx;
+
+	if (alg != DMR_DATA_ALG_BASIC)
+	{
+		return false;
+	}
+	for (int i = 0; i < length; i++)
+	{
+		data[i] ^= (i & 1) ? (k & 0xFF) : (k >> 8);
+	}
+	return true;
+}
+
+// The channel's privacy reaches every data list (docs/spec/dmr-data.md 13)
+static void testPrivacy(void)
+{
+	static const uint16_t key = 0x2503;
+	static const dmrDataPrivacy_t clear = { DMR_DATA_PRIVACY_CLEAR, 0, NULL, NULL };
+	const dmrDataPrivacy_t encrypt = { DMR_DATA_PRIVACY_ENCRYPT, DMR_DATA_ALG_BASIC, serviceCrypt, &key };
+	const dmrDataPrivacy_t block = { DMR_DATA_PRIVACY_BLOCK, 0, NULL, NULL };
+	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
+	int count, heard;
+
+	// A scheme with no data form: the text never goes out, and fails
+	reset();
+	ch.privacy = block;
+	CHECK(sms_send(RADIO_A, false, "secret", true, DMR_SMS_FORMAT_TMS));
+	runMainTask(SMS_TRIES * SMS_ACK_MS + 1000);
+	CHECK(sentCount == 0);
+	CHECK(stats.txPrivacyBlocked >= 1);
+	CHECK(sms_send_state() == DMR_REQ_FAILED);
+
+	// Encrypted: the privacy header follows the data header, and the receiver with the key reads the text
+	reset();
+	ch.privacy = encrypt;
+	uint32_t before = stats.txPrivacy;
+	CHECK(sms_send(RADIO_A, false, "secret", false, DMR_SMS_FORMAT_TMS));
+	runMainTask(200);
+	CHECK((sentCount == 1) && (sent[0].kind == 'S') && (sent[0].dst == RADIO_A));
+	CHECK(stats.txPrivacy == before + 1);
+	const dmrBurst_t *h = txHeader();
+	CHECK((h != NULL) && (h < &lastTx[lastTxCount - 1]) && (h[1].dataType == DMR_TYPE_DATA_HEADER) &&
+		  ((h[1].payload[0] & 0x0F) == 15) && (h[1].payload[1] == DMR_DATA_PRIVACY_MFID));
+	CHECK(dmrDataPrivacyAllows(lastTx, lastTxCount));
+
+	// Received encrypted, with the key: passed on
+	heard = packetsHeard;
+	before = stats.rxPrivacy;
+	dmrDataSetPrivacy(&encrypt);
+	count = dmrDataBuildTMS(false, OUR_ID, RADIO_B, "for us", 1, true, DMR_TYPE_RATE_1_2, 1, bursts, DMR_DATA_MAX_BURSTS);
+	CHECK(count > 0);
+	rxBursts(bursts, count);
+	CHECK(packetsHeard == heard + 1);
+	CHECK(stats.rxPrivacy == before + 1);
+
+	// Received encrypted, without a key: dropped, nothing of it passed on
+	heard = packetsHeard;
+	uint32_t dropped = stats.rxPrivacyDropped;
+	ch.privacy = clear;
+	runMainTask(100);
+	dmrDataSetPrivacy(&encrypt);
+	count = dmrDataBuildTMS(false, OUR_ID, RADIO_B, "not for you", 2, true, DMR_TYPE_RATE_1_2, 1, bursts, DMR_DATA_MAX_BURSTS);
+	dmrDataSetPrivacy(&clear);
+	rxBursts(bursts, count);
+	CHECK(packetsHeard == heard);
+	CHECK(stats.rxPrivacyDropped == dropped + 1);
+
+	ch.privacy = clear;
+	reset();
+}
+#endif
+
 int main(void)
 {
 	testNoRate34();
@@ -2516,6 +2592,11 @@ int main(void)
 #endif
 #if DMR_DATA_UDP_API
 	testUdpSend();
+#endif
+#if CONFIG_DMR_TMS && CONFIG_DMR_PRIVACY
+	ipSettings(DMR_UDPC_AUTO, DMR_IPC_OFF, 0, 0, 0);
+	testPrivacy();
+	ipSettings(DMR_UDPC_AUTO, DMR_IPC_RULES, 0, 0, 0);
 #endif
 #if !CONFIG_DMR_TMS
 	testTmsOff();

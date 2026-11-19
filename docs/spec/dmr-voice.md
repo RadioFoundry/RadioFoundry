@@ -213,6 +213,9 @@ encoder's bits as they are), on RX before the voice sink (after the FEC decode, 
 loaded our calls carry FID 0x10 and the privacy service option (0x40), and received calls with the privacy service
 option (or PI) are descrambled. Without a key such bursts are never played; they count as `rx_enc_dropped`.
 
+The same key covers packet data where its scheme defines a data form (Motorola BP encrypts it, Anytone BP blocks
+data TX): [dmr-data.md](dmr-data.md) 13.
+
 The key is set over the debug link (RADIO op 19, `radio_req_dmr_privacy`). The radio core saves it in settings slot 1
 and loads the active slot at boot (`settings-store.md` 3.1); the open-firmware codeplug has no key storage, so qdmr can't
 set it.
