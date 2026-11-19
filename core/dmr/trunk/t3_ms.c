@@ -981,8 +981,10 @@ static void on_ack(t3_ms_t *ms, uint32_t now, const t3_ack_t *a)
 		} else if (svc == T3_SVC_DEREGISTER) {
 			ms->reg = T3_REG_NEEDED;
 			ms->deregistered = true;
-		} else if (is_voice(svc) && a->reason == T3_RC_MS_ALERTING) {
-			// The called radio rings: the call goes on
+		} else if (is_voice(svc) && a->reason != T3_RC_CALLBACK) {
+			// A voice call ends in a grant or a refusal; Callback is the one acknowledgement that ends it (the
+			// called radio calls back). Any other goes on toward the grant: MS_Alerting (the called radio rings), or
+			// Message_Accepted, which some systems send to a request for a call already set up. TP_Timer
 			ms->ax.state = T3_AX_ACKED;
 			ms->ax.ack_deadline = now + T3_TP_MS;
 			break;

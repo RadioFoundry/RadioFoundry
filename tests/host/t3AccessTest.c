@@ -868,6 +868,25 @@ static void test_private_call(void)
 	rx(&ms, 1, &a);
 	CHECK(ms.ax.result == T3_RES_DONE, "call back: done");
 
+	// Message_Accepted to a group call request: not an answer that ends it; the grant still comes
+	CHECK(t3_ms_request(&ms, T, TG_A, true, false), "group call");
+	frames(&ms, 2);
+	a = ack(T3_OP_C_ACKD, T3_RC_MESSAGE_ACCEPTED, OWN, TG_A);
+	rx(&ms, 1, &a);
+	CHECK(ms.ax.state == T3_AX_ACKED && ms.state == T3_CAMPED, "message accepted: still waiting for the grant");
+	g = grant(T3_OP_TV_GRANT, 999, 2, TG_A, OWN);
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_FOLLOW && ms.call.ours && ms.ax.result == T3_RES_GRANTED, "then granted: follows");
+	t3_ms_end_call(&ms, T);
+	frames(&ms, 6);
+	// ... and with no grant, TP_Timer ends it as unanswered
+	CHECK(t3_ms_request(&ms, T, TG_A, true, false), "group call again");
+	frames(&ms, 2);
+	rx(&ms, 1, &a);
+	frames(&ms, (int)(T3_TP_MS / 60u) + 20);
+	CHECK(ms.ax.state == T3_AX_IDLE && ms.ax.result != T3_RES_DONE && ms.ax.result != T3_RES_GRANTED,
+	      "message accepted, no grant: not done, result %s", t3_res_name(ms.ax.result));
+
 	// TP_Timer after a wait
 	CHECK(t3_ms_request(&ms, T, CALLER, false, false), "again");
 	frames(&ms, 2);
