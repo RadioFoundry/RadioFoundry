@@ -321,7 +321,7 @@ function iapRadio({ corrupt = false } = {}) {
 	const got = { erase: null, pages: [] };
 	let phase = "banner", want = 0, sum = 0;
 	const pipe = new Pipe((b, p) => {
-		// the read-only request: the version string, one page and its checksum (hardware-db25d.md 7); phase is unchanged
+		// the read-only request: the version string, one page and its checksum; phase is unchanged
 		if (b.length === 19 && new TextDecoder().decode(b.subarray(0, 11)) === "Flash Read ") {
 			got.reads = (got.reads || 0) + 1;
 			p.push(concat(new TextEncoder().encode("Read_2M_V1.08BZSRJun 30 2023"), new Uint8Array(2048).fill(0xA5),
@@ -488,7 +488,7 @@ test("USMART: a build's own stub window and hijack word are used, and checked ag
 	assert.deepEqual(stubTarget(null), { window: STUB_WINDOW, hijack: HIJACK });
 	for (const b of [...BUILDS, UNKNOWN_BUILD]) assert.ok(stubTarget(b), b.date);
 	// the stub image fits every build's window, and an unproven build's window is never the default one, which is
-	// inside their heap (hardware-db25d.md 7.1)
+	// inside their heap
 	const stubLen = stubImages(json("c7000-stub.json")).image.length;
 	for (const b of [...BUILDS, UNKNOWN_BUILD]) assert.ok(stubLen <= stubTarget(b).window[1], b.date);
 	for (const b of BUILDS.filter((x) => !x.stub)) assert.ok(b.window && b.window[0] > STUB_WINDOW[0], b.date);

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // FD6818 single-chip VHF/UHF transceiver: chip driver, independent of the board
-// (docs/spec/hardware-dm32.md 8). No datasheet exists; register values are the ones the working firmware uses.
+//. No datasheet exists; register values are the ones the working firmware uses.
 //
 // The chip has a three-wire serial port; the board gives the driver its register bus (rf/rfbus/rfbus.h, rfbus_3w_t),
 // whose frames run inside the board's critical section so that the modem interrupts (DMR per-burst RX/TX switching)
@@ -101,7 +101,7 @@ typedef struct {
 #define FD6818_REG_RSSI		0x67
 #define FD6818_REG_TONE1	0x71
 
-// 0x30 states: always through idle between RX and TX (8.3). RX and TX are requests to fd6818_set_state: the variant's
+// 0x30 states: always through idle between RX and TX. RX and TX are requests to fd6818_set_state: the variant's
 // sequence ends in these words but may write more before them. dev->state holds the last word written
 #define FD6818_STATE_IDLE	0x0000u
 #define FD6818_STATE_RX		0xBFF1u
@@ -115,10 +115,10 @@ typedef struct {
 
 // 0x47 AF output words. Bits 11:8 pick the demodulator whose audio the output carries, as on the BK4819 class of chips
 // (docs/spec/airband-and-broadcast.md 3.3): type 1 is FM, type 7 is AM. FD6818_AF_FM is the word the FM and DMR tables
-// write (checked on the radio). FD6818_AF_AM is the radio's own air band word (hardware-dm32.md 8.7)
+// write (checked on the radio). FD6818_AF_AM is the radio's own air band word
 #define FD6818_AF_FM		0x0140u
 #define FD6818_AF_AM		0x6740u
-// The rest of the radio's own AM set-up (hardware-dm32.md 8.7): 0x13 at full gain (the top of the gain loop's table)
+// The rest of the radio's own AM set-up: 0x13 at full gain (the top of the gain loop's table)
 // and 0x4A
 #define FD6818_GAIN_AM_FULL	0x03FFu
 #define FD6818_AM_4A		0x5450u
@@ -130,8 +130,7 @@ typedef enum { FD6818_TONE_NONE, FD6818_TONE_CTCSS, FD6818_TONE_DCS, FD6818_TONE
 
 // Band select words (0x1A, 0x40) for a frequency in 10 Hz units; false below 16 MHz (nothing is written then)
 bool fd6818_band_words(uint32_t freq_10hz, uint16_t *r1a, uint16_t *r40);
-// CTCSS frequency register: subaudio_ctcss_word(), rounded (the old port truncated the tone to whole tens of Hz first,
-// hardware-dm32.md 16 #3)
+// CTCSS frequency register: subaudio_ctcss_word(), rounded (the old port truncated the tone to whole tens of Hz first)
 // Whether a 0x0C reading shows the tone the receiver was set up for (none: always true)
 bool fd6818_tone_found(uint16_t r0c, fd6818_tone_t type);
 // RSSI raw value from reg 0x67 (bits 8:0, halved: 1 dB steps)
@@ -140,7 +139,7 @@ static inline uint16_t fd6818_rssi_raw(uint16_t r67) { return (uint16_t)((r67 & 
 // already taken off by the chip)
 static inline int16_t fd6818_rssi_dbm(uint16_t r67) { return (int16_t)((int16_t)fd6818_rssi_raw(r67) - 160); }
 // A board's RSSI correction: the guide's formula reads 20-40 dB high behind a radio's front end, by an amount that
-// changes with frequency (hardware-dm1801pro.md 5.4). Points by frequency, sorted, one band after the other
+// changes with frequency. Points by frequency, sorted, one band after the other
 typedef struct {
 	uint16_t mhz;
 	int8_t db;	// added to fd6818_rssi_dbm
@@ -190,7 +189,7 @@ bool fd6818_pll_locked(fd6818_t *dev, uint32_t timeout_ms);
 #define FD6818_DETECT_RETRY	3u
 uint8_t fd6818_detect(fd6818_t *dev, rfbus_t *bus, const fd6818_variant_t *const *v, uint8_t n, uint32_t hz,
 		      uint32_t timeout_ms);
-// Analog TX preparation writes (0x3F, 0x40, 0x37) before switching to TX (8.3, FM only)
+// Analog TX preparation writes (0x3F, 0x40, 0x37) before switching to TX (FM only)
 void fd6818_fm_tx_prepare(fd6818_t *dev);
 // TX CTCSS from the FD6818 (hz_x10 = 0: sub-audio off)
 void fd6818_set_tx_ctcss(fd6818_t *dev, uint16_t hz_x10);
@@ -200,7 +199,7 @@ void fd6818_set_tx_ctcss(fd6818_t *dev, uint16_t hz_x10);
 void fd6818_set_rx_tone(fd6818_t *dev, fd6818_tone_t type, uint16_t value);
 bool fd6818_rx_tone_ok(fd6818_t *dev, fd6818_tone_t type);
 #if CONFIG_AM_RX
-// The air band AM set-up (true) or back to FM (false), the radio's own sequence (hardware-dm32.md 8.7). On: 0x47 to
+// The air band AM set-up (true) or back to FM (false), the radio's own sequence. On: 0x47 to
 // the AM output, 0x13 to full gain, 0x4A to its AM word and the gain loop reset. The caller tunes as for FM receive
 // with FD6818_BW_AM in 0x43, calls this on every FM-mode tune (am false outside the air band), and fd6818_am_status on
 // each status reading. Off (from AM): 0x47 to the FM word, 0x13 and 0x4A to what they were before AM; outside AM it
@@ -227,7 +226,7 @@ static inline bool fd6818_am_on(const fd6818_t *dev)
 // 1 to 9 dB above it takes the gain down one entry; 10 dB or more takes it down at once by the excess less 8 dB. A
 // reading 6 dB or more below it raises the gain one entry per reading once FD6818_AGC_HOLD readings have passed since
 // the last cut or the last reading 6 dB under or above. A steady station settles 0-7 dB under the target (0x67
-// 129-143); without the one-entry cut it sat 3-8 dB over, where the AM demodulator is overdriven (hardware-dm32.md 8.7).
+// 129-143); without the one-entry cut it sat 3-8 dB over, where the AM demodulator is overdriven.
 // An empty channel reads up to about 8 dB over the target at full gain, so noise takes a few dB off; the squelch
 // doesn't use 0x67 (fd6818_am_noise)
 #define FD6818_AGC_TARGET	142u
@@ -249,11 +248,11 @@ static inline uint8_t fd6818_am_noise_offset(uint16_t r4f)
 	return th < FD6818_SQL_OPEN_L1 ? (uint8_t)(FD6818_SQL_OPEN_L1 - th) : 0u;
 }
 static inline uint8_t fd6818_am_noise(uint16_t r65, uint8_t offset) { return fd6818_noise_plus(r65, offset); }
-// Receiver power saving (8.8, the radio's own sequence): sleep = idle, then 0x37 to its low-power word (FM 0x1D11,
+// Receiver power saving (the radio's own sequence): sleep = idle, then 0x37 to its low-power word (FM 0x1D11,
 // DMR 0x1D00); wake = 0x37 back to the receive word (0x1F1F, then 0x1F0F) with the state still idle: the caller
 // retunes and sets the RX state next (fd6818_set_freq, fd6818_set_state)
 void fd6818_rx_sleep(fd6818_t *dev, bool sleep, fd6818_mode_t mode);
-// From an interrupt: idle then TX, or idle then RX with the bandwidth (DMR per-burst switching, 8.5); a variant with
+// From an interrupt: idle then TX, or idle then RX with the bandwidth (DMR per-burst switching); a variant with
 // burst tables writes only those
 void fd6818_dmr_burst(fd6818_t *dev, bool tx, uint16_t rx_bw);
 // The same switch for a split channel (RX and TX frequencies differ, a repeater or duplex hotspot): the synthesizer is

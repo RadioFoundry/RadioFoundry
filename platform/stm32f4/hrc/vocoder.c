@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The stock AMBE+2 codec run in place from flash (vocoder.h; the calls: docs/spec/codec-dm1701.md, "Codec state init
-// and calls"). The code reaches its tables through absolute addresses, which the merge keeps; where it moves the code it
+// The stock AMBE+2 codec run in place from flash (vocoder.h). The code reaches its tables through absolute addresses, which the merge keeps; where it moves the code it
 // rewrites what points into it. Without a valid descriptor and codec, present() is false and the radio is FM only.
 //
 // Not reentrant: one task (the audio task, through the audio block callback) makes all calls. The codec needs about
@@ -27,7 +26,7 @@
 // CCM: CPU only, which is all the codec needs; not zeroed by the start-up code (enc_start() and dec_start() clear it).
 // One block holds the encoder's state or the decoder's, never both: DMR and NXDN voice are simplex, so a call only
 // encodes or only decodes (core/dmr/ambe/ambeVoice.c decodes nothing while a transmission runs). Each init touches only
-// its own block (codec-dm1701.md, "State sizes"), so the first encode after decoding, or the first decode after
+// its own block, so the first encode after decoding, or the first decode after
 // encoding, builds its half fresh, as reset() did at the start of every call. Saves the 2 KB a second block took
 static uint32_t state[STATE_BYTES / 4] __attribute__((section(".ccmram"), aligned(8)));
 static uint32_t fec_state[FEC_STATE_BYTES / 4] __attribute__((section(".ccmram"), aligned(8)));
@@ -83,7 +82,7 @@ static bool present(void)
 	return presence == 1;
 }
 
-// The init sequence (codec-dm1701.md, "Init") in its two halves, each on the shared block: the encoder's steps, or the
+// The init sequence in its two halves, each on the shared block: the encoder's steps, or the
 // decoder's (with its first decode). The codec touches no fixed RAM address, so the halves don't depend on each other
 static void enc_start(void)
 {

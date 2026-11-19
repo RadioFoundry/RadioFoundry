@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // Codeplug files for the editor: what a file holds and the image in it (a codeplug image, a radio backup bundle, the
 // USB network codeplug.bin), and the draft the page keeps in the browser between visits. A file in another layout (a
-// stock TYT-family codeplug, docs/spec/codeplug-stock-tyt.md, or a stock DM-32UV one, dm32-stock-codeplug.md) is
+// stock TYT-family codeplug, or a stock DM-32UV one) is
 // converted, or reported as foreign.
 
 import { CodeplugImage, CODEPLUG_SPAN, TFTP_SIZE } from "../codeplug/image.js";

@@ -15,18 +15,15 @@ order = 6
 aprs_tocall = "U"
 
 [docs]
-hardware = "docs/spec/hardware-mduv380.md"
-codec = "docs/spec/codec-mduv380.md"
 install = "docs/user/02-installing.md"
-bringup = "docs/testing/mduv380-bringup.md"
 
-# One-line summaries for the site and the generated tables; the facts are in docs.hardware
+# One-line summaries for the site and the generated tables
 [hardware]
 bands = "136-174 / 400-480 MHz"
 power = "1 / 2 / 5 W (Plus: 10 W)"
 display = "1.77\" color, 160 × 128"
 gallery = "160x128"
-clock = { rtc = "unknown", note = "STM32 RTC on a 32.768 kHz crystal, as on the UV380 family; no backup supply known (docs/spec/hardware-mduv380.md)" }
+clock = { rtc = "unknown", note = "STM32 RTC on a 32.768 kHz crystal, as on the UV380 family; no backup supply known" }
 
 [status]
 level = "supported"
@@ -35,7 +32,7 @@ Built on the UV380 family code, with the MD-UV380's keys, display, power tables 
 Run on radios by community testers."""
 release = "stable"
 
-# The Plus 10 W swaps two pins and has its own power tables (hardware-mduv380.md 3, 7), a build choice (board.mk POWER).
+# The Plus 10 W swaps two pins and has its own power tables, a build choice (board.mk POWER).
 # The first value is the default build; ci and the release build the other one too. board_name: what the radio
 # reports as board= on the debug link
 [[build_options]]
@@ -103,13 +100,13 @@ notice = "MD-UV390 Plus 10 W owners: choose the 10 W image, and everyone else th
 mem = "secreg"
 start = 0x0
 end = 0x200
-what = "factory calibration in security registers 1 and 2 (hardware-mduv380.md 8)"
+what = "factory calibration in security registers 1 and 2"
 
 [[flash.protect]]
 mem = "secreg"
 start = 0x200
 end = 0x300
-what = "factory flags in security register 3: power class, panel type, band limits (hardware-mduv380.md 4, 11)"
+what = "factory flags in security register 3: power class, panel type, band limits"
 
 # No hold yet: the drawing puts SK1 below PTT, the steps say the key just above it (issue #203)
 [flash.bootloader]
@@ -121,7 +118,7 @@ steps = [
 ]
 
 # The TYT bootloader takes the same DFU protocol and sector order as the other STM32 radios', with its own key
-# (hardware-mduv380.md 11; the MD-UV390 and the MD-2017 use the same key)
+# (the MD-UV390 and the MD-2017 use the same key)
 [flash.dfu]
 vid = 0x0483
 pid = 0xDF11
@@ -137,7 +134,7 @@ id = 5
 tested = false
 spi = { bus = 1, mode = 0, hz = 4500000 }
 
-# The codec where the merge puts it (docs/spec/codec-placement.md): tables at their stock address, the code after them
+# The codec where the merge puts it: tables at their stock address, the code after them
 # (or at the start of sector 10 when it doesn't fit there) and the descriptor, all in sectors 10 and 11. stock lists the SHA-256 of each stock file rfoundry merges the codec
 # from (tools/rfoundry/rfoundry/stockfw.py PROFILES)
 [codec]

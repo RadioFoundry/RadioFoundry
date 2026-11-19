@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// MD-9600 vocoder: the radio's own stock AMBE+2 codec, run from flash (docs/spec/codec-md9600.md). Every TYT and Retevis
+// MD-9600 vocoder: the radio's own stock AMBE+2 codec, run from flash. Every TYT and Retevis
 // build of the codec that has a map is accepted (the profiles below, one per original firmware file: 03.28, 03.29,
 // 04.03, 06.03, 06.09, 06.24, 16.24, 16.45, 26.38, 26.41, 26.42, 26.45, 26.57 and 126.61, each in the CSV, CSV-GPS, REC and
 // GPS-REC variants it exists in); the codec is board-independent, so any of them serves every revision. The calls are

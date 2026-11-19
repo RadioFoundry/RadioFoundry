@@ -22,7 +22,7 @@ sector, so "keep the radio's codec" can never be undone by the image itself.
 
 The image is one range, the application at the board's base. (Releases made while the DM-1701's codec code sat in
 sectors 7 and 8 carried its read-only data in sector 9 as a second range; they also name the codec profile from before
-the codec moved, "dm1701-v0206-csv", so verify() refuses them: docs/spec/codec-placement.md.)
+the codec moved, "dm1701-v0206-csv", so verify() refuses them.)
 """
 import hashlib
 import json

@@ -65,7 +65,7 @@ reads the codec back over the debug link (every time, even with a copy saved bef
 it goes now. Where the radio can't be read, only a copy saved from the same radio is used, else `--stock`. With
 neither, or with `--codec keep`, the install is refused and nothing is written. An install that stops halfway is
 finished by running it again (through the bootloader route if the radio now starts in its bootloader); rfoundry says
-which copy or file finishes it ([codec-placement.md](../../docs/spec/codec-placement.md), "Moving to a new layout").
+which copy or file finishes it (codec-placement.md, "Moving to a new layout").
 
 If rfoundry keeps a codec that turns out not to be there, nothing breaks: the firmware checks the codec before it
 uses it, so the radio runs FM only and shows "No codec: voice off". Flash again with `--stock`.

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // DM-32UV radio: FD6818 RF transceiver (bit-banged), the HR_C7000 baseband for FM and DMR, LNA / PA selects and the
-// PA drive on DAC channel B (docs/spec/hardware-dm32.md 3.8, 8, 9, 11.3; modem-hrc7000.md 4, 5.1, 8).
+// PA drive on DAC channel B (modem-hrc7000.md 4, 5.1, 8).
 //
 // The FD6818 is also driven from the DMR interrupts (the per-burst TX / RX switch), so every FD6818 frame runs with
 // interrupts off (the bus's crit_enter); a frame takes about 50 us.
@@ -19,9 +19,9 @@
 
 #define DAC_C_INIT		0x06E2u
 
-#define UHF_FROM_HZ		280000000u	// PA / LNA band split (8.5)
-#define MIC_GAIN_DB		11u		// GCR_ADCL at init (9.1)
-// DMR bursts on the shared RF-burst task (dmr_rfburst.h), timed from the RF TX interrupt (hardware-dm32.md 8.5). The PA
+#define UHF_FROM_HZ		280000000u	// PA / LNA band split
+#define MIC_GAIN_DB		11u		// GCR_ADCL at init
+// DMR bursts on the shared RF-burst task (dmr_rfburst.h), timed from the RF TX interrupt. The PA
 // keys up from the power cal table (radio/pa_keyup.h): a drive boost sized for the step, then the
 // step's drive. A low step's drive alone took 3-4 ms to full power; with the boost every step is up by the first
 // symbol. The boost charges the control before the PA is selected; the FD6818 goes to TX 0.3 ms before the PA: 1.2 ms
@@ -37,7 +37,7 @@
 // The earliest key-up point: the split's switch still after the task's wake
 #define KEYUP_MAX_AHEAD_US	(RF_TX_LEAD * 100u + HRC_RFBURST_SYMBOL_AFTER_LEAD_US - TASK_WAKE_US - SWITCH_AHEAD_SPLIT_US)
 // The key-up constants (docs/spec/pa-keyup.md), [VHF, UHF]: converted from the constants measured with the rule's
-// earlier form (hardware-dm32.md 8.5) for VHF, and measured with tools/bench/pa_cal.py for UHF, judged by the ramp's
+// earlier form for VHF, and measured with tools/bench/pa_cal.py for UHF, judged by the ramp's
 // shape (every level boosts; the four lower ones within 0.5 dB of their level from the first symbol, the top one's
 // PA creeps its last 2 dB over about 2 ms whatever the drive). The knee goes with pa_us:
 // the control charges less with the PA selected, so a later PA wants a smaller knee (UHF: 1450 with the PA at the
@@ -73,7 +73,7 @@ static const pa_keyup_cfg_t keyup_cfg[2] = {
 #define FM_TX_LIMIT_25K		0x0Fu
 #define FD_REG_NOISE		0x65u
 #define FD_REG_RSSI		0x67u
-// Two RF sections (hardware-dm32.md 8.10): the newer one's FD6818 doesn't lock on the default set-up and takes set-up B,
+// Two RF sections: the newer one's FD6818 doesn't lock on the default set-up and takes set-up B,
 // with these writes on top. Which one the radio has is found at start-up (rf_detect)
 #define RF_PROBE_HZ		145000000u	// in band on both sections
 #define RF_LOCK_MS		20u		// the probe's wait for the lock bit after the tune
@@ -301,7 +301,7 @@ static const hrc_rfburst_board_t rf_board = { .on = burst_on, .off = burst_off, 
 static void dmr_tx_end(void);
 
 // burst_off() puts the FD6818 back on the RX frequency: the slots between our bursts hear a repeater's outbound
-// air_verified: P25 (conventional and trunked) and NXDN at both rates checked both ways (hardware-dm32.md 17.3)
+// air_verified: P25 (conventional and trunked) and NXDN at both rates checked both ways
 static const hrc_dmr_board_t dmr_board = { .burst = &rf_board, .tx_end = dmr_tx_end, .listen_split = true,
 	.air_verified = true };
 
@@ -329,7 +329,7 @@ static const hrc_afsk_board_t afsk_board = {
 
 // ---- hal_radio_t ----
 
-// Which RF section the radio has (hardware-dm32.md 8.10): the default set-up, tuned, locks the classic section's
+// Which RF section the radio has: the default set-up, tuned, locks the classic section's
 // synthesizer and never the newer one's; set-up B locks both, so the default goes first (fd6818_detect). Neither
 // locking leaves the default and blocks transmitting: on the wrong set-up the newer section transmitted 74 MHz off
 static void rf_detect(void)
@@ -390,7 +390,7 @@ static void set_mode(radio_mode_t m)
 	}
 	if (m == RADIO_MODE_DMR && CONFIG_DMR) {
 		fd6818_set_mode(&fd, FD6818_MODE_DMR);
-		hrc_dac_b_power(true);	// FM receive powers DAC B down; DMR needs it (hardware-dm32.md 3.8)
+		hrc_dac_b_power(true);	// FM receive powers DAC B down; DMR needs it
 		hrc7000_dmr_enter(&modem, hrc7000_mod_bias(bf_cal_tx_center(), bf_cal_modcal(rx_hz)), MIC_GAIN_DB);
 		mode = RADIO_MODE_DMR;
 		hrc_dmr_enter();
@@ -436,7 +436,7 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am, 
 		hrc7000_fm_rx(&modem, bw == RADIO_BW_25K);
 		hrc7000_audio_bits(&modem, 0, C7_AUDIO_FM_PLAY);	// FM plays on the analog path (speaker_source)
 		// The FD6818 detects the tone on its own demodulated audio: the C7000's detector gets no audio while the
-		// FD6818 plays FM to the speaker (hardware-dm32.md 8.4)
+		// FD6818 plays FM to the speaker
 		fd6818_set_rx_tone(&fd, fd_tone(tone != NULL ? tone->type : TONE_NONE), tone != NULL ? tone->value : 0);
 		if (rf_b) {
 			// CTCSS one pair, DCS and no tone the other
@@ -463,7 +463,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
 }
 
 #if CONFIG_AM_RX
-// Air band AM (docs/spec/airband-and-broadcast.md 3.3, hardware-dm32.md 8.7): FM receive with the FD6818's AM set-up
+// Air band AM (docs/spec/airband-and-broadcast.md 3.3): FM receive with the FD6818's AM set-up
 // (its narrowest filter, the AF output on the AM demodulator, the gain loop). The speaker plays that output straight,
 // as in FM receive (speaker_source); no sub-audio. The 108-136 MHz signal comes in through the VHF LNA
 static bool rx_am(uint32_t hz, radio_bw_t bw)
@@ -817,7 +817,7 @@ void dm32_radio_diag(dm32_radio_diag_t *d)
 	d->rf_setup = rf_unlocked ? '-' : rf_b ? 'B' : 'A';
 }
 
-// Receiver battery saving (FM receive only, the radio's own sequence: hardware-dm32.md 8.8): FD6818 idle with its
+// Receiver battery saving (FM receive only, the radio's own sequence): FD6818 idle with its
 // low-power 0x37 word and the LNA supply off; waking retunes with rx(). The HR_C7000 keeps its clocks
 static void rx_sleep(bool sleep)
 {
@@ -833,7 +833,7 @@ static void rx_sleep(bool sleep)
 	}
 }
 
-// The debug link's CHIP_REG (board.chip_reg, hardware-dm32.md 8.1): chip 0 is the FD6818, page 0 only, registers
+// The debug link's CHIP_REG (board.chip_reg): chip 0 is the FD6818, page 0 only, registers
 // 0x00-0x7F (bit 7 of the address is the read flag). Straight on the bus: the driver's copies of the state and bandwidth
 // words don't follow a write, and its next set-up overwrites it. A frame is atomic (rfbus.h), so the radio task's
 // frames and this one don't mix

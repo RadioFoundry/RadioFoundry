@@ -4,7 +4,7 @@
 # file is included; recipes use $< (the test, first) and $^ instead, which keep the paths they were given
 HERE := $(dir $(lastword $(MAKEFILE_LIST)))
 
-# The start-up pin levels and the audio route table (hardware-dm1801pro.md 3.1)
+# The start-up pin levels and the audio route table
 TESTS   += dm1801proPinsTest
 dm1801proPinsTest: $(HERE)dm1801proPinsTest.c $(HERE)../boot_pins.h $(HERE)../pins.h $(HERE)../audio_route.h
 	$(CC) $(CFLAGS) -I$(dir $<).. -Wshadow -o $@ $<

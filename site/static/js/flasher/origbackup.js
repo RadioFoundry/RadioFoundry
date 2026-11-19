@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // A backup before the install, through the DFU device of the radio's original firmware or of its bootloader (board.toml
 // [flash.original_backup], flash-boards.json original_backup; docs/dev/web-flasher.md "Backup before the install").
-// What a board's devices answer is in its hardware page (docs/spec/hardware-md9600.md 15.1, 15.2). No DOM here.
+// No DOM here.
 //
 // Every request goes through Guard, an allowlist: GETSTATUS, CLRSTATUS, ABORT, UPLOAD, and DNLOAD block 0 with exactly
 // `A2 ss`, `21` + a 32-bit address, `91 01`, and `91 05` (the original firmware only, where it restarts the radio).

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// DB25-D PRO factory calibration, the stock "TUNE" page (docs/spec/hardware-db25d.md 6.1 - 6.4): PA drive, RX front-end
+// DB25-D PRO factory calibration, the stock "TUNE" page: PA drive, RX front-end
 // tuning, TX center and modulation, TX switching delays, squelch thresholds.
 //
 // Two copies exist, one in NAND and one in program flash. The higher save counter wins, as in the stock firmware, and
@@ -16,7 +16,7 @@
 #define OFF_PA_HIGH		0x045u		// stock power level 1
 #define OFF_PA_LOW		0x056u		// every other level
 #define OFF_MOD			0x067u		// (u8, u8) pairs, the first byte used
-#define OFF_PA_GAIN		0x09Bu		// u8 per point, capped at 15: the FD6818's PA gain (hardware-db25d.md 4.8)
+#define OFF_PA_GAIN		0x09Bu		// u8 per point, capped at 15: the FD6818's PA gain
 #define OFF_TX_DELAY		0x0AEu		// (u16 on, u16 off) pairs in us
 #define OFF_SQUELCH		0x0CFu		// 8 segments x 9 levels x u16
 #define HALF			0x400u		// the VHF half

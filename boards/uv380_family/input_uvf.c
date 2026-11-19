@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// UV380 family keypad, side keys, PTT and encoder (docs/spec/hardware-dm1701.md section 10); the matrix is the board's
+// UV380 family keypad, side keys, PTT and encoder; the matrix is the board's
 // (uvf_key_matrix)
 // The keypad columns are the LCD data lines D0..D7: the shared scan (platform/stm32f4/fsmc_keypad) borrows them.
 #include "uvf.h"

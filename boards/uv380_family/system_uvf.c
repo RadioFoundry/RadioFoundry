@@ -28,7 +28,7 @@ static void ccm_zero(void)
 }
 __attribute__((section(".preinit_array"), used)) static void (*const ccm_zero_entry)(void) = ccm_zero;
 
-// docs/spec/hardware-dm1701.md 1.2. UVF_HSE_XTAL_FIRST (board.mk): the radio's HSE is tried as a crystal first
+// UVF_HSE_XTAL_FIRST (board.mk): the radio's HSE is tried as a crystal first
 #ifndef UVF_HSE_XTAL_FIRST
 #define UVF_HSE_XTAL_FIRST	0
 #endif
@@ -62,7 +62,7 @@ void uvf_lcdbus_unlock(void)
 	}
 }
 
-// docs/spec/hardware-dm1701.md 2.7: levels set before the pins become outputs. The power latch goes high first.
+// Levels set before the pins become outputs. The power latch goes high first.
 static void reset_levels(void)
 {
 	stm32_pin_out(PIN_PORT(PIN_POWER_LATCH), PIN_MASK(PIN_POWER_LATCH), true, false);
@@ -103,7 +103,7 @@ void board_sysboot_prepare(void)
 	reset_levels();
 }
 
-// Transmitter off from any context (board.h, docs/spec/crash-log.md 8; hardware-dm1701.md 6, 7): the TX supply
+// Transmitter off from any context (board.h, docs/spec/crash-log.md 8): the TX supply
 // (PA_EN1), the APC loop (PA_EN2), the band select low as at reset, and the APC DAC to 0 when its clock is on (it holds
 // its value otherwise). Register writes only. The AT1846S and the HR_C6000 are left as they are: they need a bus
 // transaction, and with the TX supply off their output reaches no powered PA. The DMR bursts are keyed from the HR_C6000

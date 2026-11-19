@@ -15,18 +15,15 @@ order = 5
 aprs_tocall = "M"
 
 [docs]
-hardware = "docs/spec/hardware-md380.md"
-codec = "docs/spec/codec-md380.md"
 install = "docs/user/18-moving-from-stock-md380.md"
-bringup = "docs/testing/md380-bringup.md"
 
-# One-line summaries for the site and the generated tables; the facts are in docs.hardware
+# One-line summaries for the site and the generated tables
 [hardware]
 bands = "400-480 MHz or 136-174 MHz (one band per radio)"
 power = "1 / 5 W"
 display = "color, 160 × 128"
 gallery = "160x128"
-clock = { rtc = "unknown", note = "STM32 RTC; the 32.768 kHz crystal is assumed and no backup supply is known (docs/spec/hardware-md380.md)" }
+clock = { rtc = "unknown", note = "STM32 RTC; the 32.768 kHz crystal is assumed and no backup supply is known" }
 
 [status]
 level = "supported"
@@ -59,9 +56,9 @@ backup = { stock = "none", rfoundry = "full", spi_size = 0x1000000 }
 mem = "secreg"
 start = 0x0
 end = 0x200
-what = "factory calibration in security registers 1 and 2 (hardware-md380.md 11.1)"
+what = "factory calibration in security registers 1 and 2"
 
-# hold: SK1 is the upper side key, the one above PTT (hardware-md380.md 9.1 and 14.3, unverified on a radio)
+# hold: SK1 is the upper side key, the one above PTT
 [flash.bootloader]
 hold = ["ptt", "sk1"]
 steps = [
@@ -89,7 +86,7 @@ id = 2
 tested = false
 spi = { bus = 1, mode = 0, hz = 4500000 }
 
-# The codec where the merge puts it (docs/spec/codec-placement.md): the whole codec in sector 11, its code, its table
+# The codec where the merge puts it: the whole codec in sector 11, its code, its table
 # windows (each moved as one block) and the descriptor, from whichever stock file it came. The application has sectors
 # 3-10, so an update leaves sector 11 alone. Releases before this layout kept the codec in sectors 8-11; the flashing
 # tools read it back from there and move it (stockfw.py "former"). stock lists the SHA-256 of each stock file rfoundry
@@ -137,7 +134,7 @@ lens = [30, 30]
 radio_types = [7]
 
 # The stock codeplug in a backup's SPI flash (tools/backup_codeplug.py): the TYT layout at 0x2000-0x3FFFF, decoded by
-# qdmr's md380 driver. It shares the start of the open-firmware image (hardware-md380.md, flash map)
+# qdmr's md380 driver. It shares the start of the open-firmware image
 [stock_codeplug]
 dmrconf = "md380"
 span = [0x2000, 0x40000]

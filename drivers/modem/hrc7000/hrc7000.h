@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // Copyright (c) 2026 Open25-DM32 Authors
 // HR_C7000 baseband (the modem inside the HR_C7000 SoC): register map, power-on set-up, FM modes, sub-audio, audio
-// paths and the internal audio codec (docs/spec/modem-hrc7000.md 2, 4, 5.1, 8; hardware-dm32.md 9).
+// paths and the internal audio codec (docs/spec/modem-hrc7000.md 2, 4, 5.1, 8).
 //
 // The modem is memory mapped: 32-bit registers at 0x11000000, byte buffers at 0x16000000. The driver reaches both
 // through the base pointers given to hrc7000_attach, so host tests can run it on plain arrays. Peripherals outside
@@ -188,14 +188,14 @@ void hrc7000_attach(hrc7000_t *d, volatile uint32_t *regs, volatile uint8_t *buf
 // enter returns the state exit restores, so the lock nests (a caller that already holds it may call in)
 void hrc7000_set_crit(hrc7000_t *d, uint32_t (*enter)(void), void (*exit_fn)(uint32_t state));
 
-// --- Calibration values (hardware-dm32.md 11.3) ---
+// --- Calibration values ---
 // SIG_CENTER: TX I and Q center = the factory TX center byte (128 without calibration)
 static inline uint32_t hrc7000_sig_center(uint8_t tx_center) { return ((uint32_t)tx_center << 24) | ((uint32_t)tx_center << 16); }
 // RF_MOD_BIAS_CTRL: two-point bias from the TX center, modulation balance (b x 0x0101) from the frequency
 static inline uint32_t hrc7000_mod_bias(uint8_t tx_center, uint16_t modcal) { return (((uint32_t)tx_center + 384u) << 16) | modcal; }
 #define HRC7000_MODCAL_DEFAULT	0x4D4Du	// before a TX frequency is known
 // The two-point modulation's DC level from the TX center byte in its exact form, as one stock firmware computes
-// it: round((1.228 + c x 0.422 / 128) x 1023 / 3.3), 381 at 0, 512 at 128 (hardware-db25d.md 6.4). Another's
+// it: round((1.228 + c x 0.422 / 128) x 1023 / 3.3), 381 at 0, 512 at 128. Another's
 // c + 384 above is its straight-line fit
 uint16_t hrc7000_mod_dc(uint8_t tx_center);
 // SIG_CENTER and RF_MOD_BIAS_CTRL with that level: its low byte in both low bytes of SIG_CENTER, all 10 bits in the
@@ -228,7 +228,7 @@ static inline uint8_t hrc7000_mic_db(uint8_t base_db, int8_t offset_db)
 	int v = (int)base_db + offset_db;
 	return (uint8_t)(v < 0 ? 0 : v > (int)HRC7000_MIC_GAIN_MAX_DB ? (int)HRC7000_MIC_GAIN_MAX_DB : v);
 }
-// Speaker line out gain, GCR_DACL bits 5:0: 0..31 = 0..-31 dB, 32..63 = +32..+1 dB (hardware-dm32.md 9.1; the
+// Speaker line out gain, GCR_DACL bits 5:0: 0..31 = 0..-31 dB, 32..63 = +32..+1 dB (the
 // direction checked at bring-up: code 0 and code 48 both louder than code 7). Kept in dac_gain
 void hrc7000_set_dac_gain(hrc7000_t *d, uint8_t code);
 // The GCR_DACL code for a gain in dB, clamped to the register's -31..+32 dB

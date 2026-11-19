@@ -9,7 +9,7 @@ firmware, and a tool merges the codec into their RadioFoundry image on their own
 ## Per radio
 
 Each radio's `codec-<id>.md` ([the spec index](../spec/README.md#codecs)) lists the stock files it accepts, their
-format and where the codec lands. Two hosting schemes exist ([codec-placement.md](../spec/codec-placement.md)):
+format and where the codec lands. Two hosting schemes exist (codec-placement.md):
 
 | Family | Tool | Hosting |
 |---|---|---|

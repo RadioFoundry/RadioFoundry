@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// DM-1701 vocoder: the radio's own AMBE+2 codec run in place from flash (docs/spec/codec-placement.md, "STM32 radios";
-// the codec: docs/spec/codec-dm1701.md, "Codec state init and calls (stock V02.06)").
+// DM-1701 vocoder: the radio's own AMBE+2 codec run in place from flash.
 //
 // The merge on the user's machine (rfoundry, tools/codec_extract.py, the web flasher) writes the codec's tables at
 // their stock address (0x080D19F0..0x080E3A72 from V02.06 CSV, the codec's own data), its code right after them at

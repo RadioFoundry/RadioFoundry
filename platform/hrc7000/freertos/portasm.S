@@ -4,8 +4,7 @@
  * Copyright (c) 2026 The RadioFoundry Authors
  *
  * FreeRTOS context switch and the common interrupt entry for the CK803S in the HR_C7000, adapted from FreeRTOS-Kernel
- * portable/ThirdParty/CDK/T-HEAD_CK802 portasm.S (MIT). Changes: the PIC end-of-interrupt write (0x04 to PIC_COW1,
- * docs/spec/hardware-dm32.md 4.1) at the start of every interrupt; the vector number is zero-extended and bounds
+ * portable/ThirdParty/CDK/T-HEAD_CK802 portasm.S (MIT). Changes: the PIC end-of-interrupt write (0x04 to PIC_COW1) at the start of every interrupt; the vector number is zero-extended and bounds
  * checked; a context switch asked for by a handler (ulPortYieldRequired) is done once at the end of the entry; the
  * yield saves the caller's PSR before interrupts are turned off. Placed in RAM (.ramfunc) with the slot interrupt
  * handlers so the interrupt path never waits for the XIP flash.

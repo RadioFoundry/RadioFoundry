@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// MD-9600 TIM8 PWM outputs besides the backlight (docs/spec/hardware-md9600.md 3, 19.9): CH2 on PC7 is the sub-audio
+// MD-9600 TIM8 PWM outputs besides the backlight: CH2 on PC7 is the sub-audio
 // tone into the modulator, CH3 on PC8 the beep. TIM8 runs for the backlight (display_md9600.c: / 10 / 256, about
 // 28 kHz); these only add a compare channel. A tone or beep generator changes the duty at its sample rate. Duty 0 hands
 // the pin back as a GPIO: the beep low, the tone released (open drain high). The tone line goes to the reference
-// oscillator's modulation input: driven low it pulls the reference far enough that DMR never syncs (2.6, 19.9).
+// oscillator's modulation input: driven low it pulls the reference far enough that DMR never syncs.
 #include <string.h>
 #include "config.h"
 #include "md9600.h"
@@ -42,7 +42,7 @@ void md9600_pwm_out(uint8_t ch, uint8_t duty)
 }
 
 #if MD9600_PWM_AUDIO
-// --- Audio as PWM on PC8 (TIM8 CH3) into the HR_C6000's microphone input (hardware-md9600.md 19.9) ---
+// --- Audio as PWM on PC8 (TIM8 CH3) into the HR_C6000's microphone input ---
 //
 // The beep net reaches MIC_P / MIC_N (test_probe_fm_tx_pin_tone). TIM8's timebase is the backlight's and the sub-audio
 // tone's, so it stays: 225 carrier periods (8 ms at 28125 Hz) take 64 samples at 8 kHz, the duty linearly interpolated

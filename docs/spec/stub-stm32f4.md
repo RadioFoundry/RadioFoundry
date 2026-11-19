@@ -373,7 +373,7 @@ The host knows which flash the firmware owns (`f4stub.BOARDS`, from the board re
 
 Inside an owned range, bytes past the image end become 0xFF, so an older, longer build leaves nothing behind. An image
 merged with the codec (`rfoundry_<board>_codec.bin`) runs to the end of flash; the tool splits it into the application and
-the codec sectors and writes both whole ([codec-placement.md](codec-placement.md), "STM32 radios"). Any other image
+the codec sectors and writes both whole (codec-placement.md, "STM32 radios"). Any other image
 that reaches outside the owned range (the wrong board) is refused before anything is erased.
 
 When a board's owned range grows into sectors an earlier layout gave the codec, a plain image would erase the codec.
@@ -381,7 +381,7 @@ Before it erases anything for an image without the codec, the tool reads the des
 window it names lies in a sector the plan erases, it refuses and writes nothing. Since nothing was erased, the tool
 then resets the radio out of the stub (it starts its firmware as before) and prints the command that leaves the stub
 by hand, `stubtool.py PORT --attach --board <id> --boot reset`, for a reset that did not get through; the web
-flasher restarts the radio the same way. The image merged with the codec in the new layout is what moves it ([codec-placement.md](codec-placement.md), "Moving to a new layout").
+flasher restarts the radio the same way. The image merged with the codec in the new layout is what moves it (codec-placement.md, "Moving to a new layout").
 
 No radio shares a sector between the firmware and the codec. The rule for one that would stays in the code: a sector
 that is rewritten and holds bytes the firmware doesn't own is read back and written again with those bytes unchanged.

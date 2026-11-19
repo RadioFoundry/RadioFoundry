@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-# MD-9600 feature defaults (config/features.mk lists them all). State: docs/spec/hardware-md9600.md 19. Every
+# MD-9600 feature defaults (config/features.mk lists them all). Every
 # board revision is built; V1-V3 is the one checked on a radio. Transmit is refused until the board revision is
 # confirmed (detected on V4A / V5, else set once by a person or the installer) and the PA calibration is plausible. DMR receive is built (the HR_C6000 glue, the radio's own stock codec where the user's
 # machine merged it); DMR transmit is refused like FM. The switches that are off are listed below
@@ -13,7 +13,7 @@ CONFIG_MD9600_V5 ?= y
 ifeq ($(CONFIG_MD9600_V1V3)$(CONFIG_MD9600_V4)$(CONFIG_MD9600_V5),nnn)
 $(error the MD-9600 needs at least one of CONFIG_MD9600_V1V3, CONFIG_MD9600_V4 and CONFIG_MD9600_V5)
 endif
-# Transmit: FM and DMR, both bands, checked off air (docs/spec/hardware-md9600.md 19.8, 19.9). Built, it still needs
+# Transmit: FM and DMR, both bands, checked off air. Built, it still needs
 # the run-time arm for the power cycle, a stored board revision and plausible PA rows. n leaves a receive-only image
 CONFIG_MD9600_TX ?= y
 CONFIG_MD9600_DMR_TX ?= y

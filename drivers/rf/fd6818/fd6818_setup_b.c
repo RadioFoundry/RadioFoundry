@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// FD6818 set-up B (docs/spec/hardware-dm1801pro.md 5, hardware-dm32.md 8.10): the register tables of the FD6818 parts
+// FD6818 set-up B: the register tables of the FD6818 parts
 // whose synthesizer doesn't lock on the default set-up. 0x37 has bit 15 set, the 0x30 sequences an extra 0x0200 step
 // and there is no band-word table. Two variants, which differ only in the DMR receive words; which board takes which
-// is in its radio file. The 12.5 kHz word is the one hardware-dm1801pro.md 5.2 lists second
+// is in its radio file. The 12.5 kHz word is the DMR word
 #include <stddef.h>
 #include "fd6818.h"
 
@@ -32,12 +32,12 @@ static const fd6818_regval_t fm_table[] = {
 };
 
 // 5.3: DMR is these five registers (0x28 is its power-on value, written again), then 0x3F = 0: the radio writes it
-// in every DMR receive set-up and at every burst end (5.4), so in DMR it never has the power-on 07FE
+// in every DMR receive set-up and at every burst end, so in DMR it never has the power-on 07FE
 static const fd6818_regval_t dmr_table[] = {
 	{ 0x47, 0x0140 }, { 0x48, 0xB2F5 }, { 0x7E, 0xB03F }, { 0x2B, 0x0700 }, { 0x28, 0x0A40 }, { 0x3F, 0x0000 },
 };
 
-// The second variant's DMR words (hardware-dm32.md 8.10): on an RF section where the table above gave the modem no DMR
+// The second variant's DMR words: on an RF section where the table above gave the modem no DMR
 // signal (no sync ticks), 0x47 = 6943 and 0x48 = B2FD sync
 static const fd6818_regval_t dmr_table_6943[] = {
 	{ 0x47, 0x6943 }, { 0x48, 0xB2FD }, { 0x7E, 0xB03F }, { 0x2B, 0x0700 }, { 0x28, 0x0A40 }, { 0x3F, 0x0000 },
@@ -47,8 +47,8 @@ static const fd6818_regval_t dmr_table_6943[] = {
 static const fd6818_regval_t rx_seq[] = { { 0x37, 0x9D1F }, { 0x30, 0x0200 }, { 0x30, 0xBFF1 } };
 static const fd6818_regval_t tx_seq[] = { { 0x37, 0x9D1F }, { 0x52, 0x028F }, { 0x30, 0x0200 }, { 0x30, 0xC1FE } };
 
-// DMR bursts switch straight between the two final words (hardware-dm1801pro.md 5.6). Through idle, as the radio's
-// own handlers go (5.4), the first inbound burst after each of ours came back about 400 Hz off and lost sync; 0x37
+// DMR bursts switch straight between the two final words. Through idle, as the radio's
+// own handlers go, the first inbound burst after each of ours came back about 400 Hz off and lost sync; 0x37
 // keeps its 9D1F from the sequences above
 static const fd6818_regval_t burst_rx[] = { { 0x30, 0xBFF1 } };
 static const fd6818_regval_t burst_tx[] = { { 0x52, 0x028F }, { 0x30, 0xC1FE } };
@@ -70,9 +70,9 @@ static bool band_words(uint32_t freq_10hz, uint16_t *r1a, uint16_t *r40)
 	.tx = tx_seq, .tx_n = TBL_N(tx_seq), \
 	.burst_rx = burst_rx, .burst_rx_n = TBL_N(burst_rx), \
 	.burst_tx = burst_tx, .burst_tx_n = TBL_N(burst_tx), \
-	/* Two words only: 12.5 kHz FM shares the DMR word (5.2) */ \
+	/* Two words only: 12.5 kHz FM shares the DMR word */ \
 	.bw_fm_25k = 0x3028u, .bw_fm_12k5 = 0x3048u, .bw_dmr = 0x3048u, \
-	/* hardware-dm32.md 8.10: the receiver's sleep words */ \
+	/* The receiver's sleep words */ \
 	.sleep_fm = 0x9D17u, .sleep_dmr = 0x9D00u, .sleep_wake = 0x9D1Fu, \
 	.band_words = band_words
 

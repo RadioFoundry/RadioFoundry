@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The flasher's stock-side steps for an HR_C7000 radio that does not run RadioFoundry yet, as its radios.json flash data names
-// them (the DB25-D PRO's: docs/spec/hardware-db25d.md 7). The radio is otherwise handled by c7000ui.js (RadioFoundry's stub
+// them. The radio is otherwise handled by c7000ui.js (RadioFoundry's stub
 // hand-over, the first stage's power-on window). Two things are added:
 //
 //   stock    flash.stock_console: the radio runs its original firmware, and the universal stub goes into its RAM
@@ -30,7 +30,7 @@ import { confirmNoCodec } from "./nocodec.js";
 const LISTEN_MS = 180000;	// how long the page waits for update mode
 
 // What each protocol's write step says: an IAP loader checks the whole image by its checksum and starts it; the
-// Baofeng updater acknowledges each block by its CRC and may wait for a power cycle (hardware-dm1801pro.md 6.2)
+// Baofeng updater acknowledges each block by its CRC and may wait for a power cycle
 const TEXTS = {
 	iap: { careful: "flash.iap.careful_text", ok: "flash.iap.ok", restored: "flash.iap.restored", written: "flash.c7.write.verified" },
 	baofeng: { careful: "flash.factory.careful_restart", ok: "flash.factory.ok", restored: "flash.factory.restored", written: "flash.factory.written" },

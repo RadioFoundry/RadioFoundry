@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The stock DM-32UV codeplug (docs/spec/dm32-stock-codeplug.md): the page map, the records, detection, the conversion
+// The stock DM-32UV codeplug: the page map, the records, detection, the conversion
 // into the editing model, and the editor's and the Tools page's handling of such files. Every fixture is built here
 // from the spec; no radio's data.
 

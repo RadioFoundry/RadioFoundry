@@ -1,11 +1,10 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
 # MD-UV380 feature defaults (config/features.mk lists them all). 720 KB for code and read-only data: flash sectors 3-9;
-# the codec sectors 10 and 11 are never linked into (boards/mduv380/memory.ld, docs/spec/codec-placement.md).
+# the codec sectors 10 and 11 are never linked into (boards/mduv380/memory.ld).
 # 160x128 display, every row visible. The fault trace, the large font and LTO follow the platform
 # (platform/stm32f4/config.mk)
 # Safe area: the TYT housing's edge crowds the top row and the two left columns; unconfirmed on this radio
-# (hardware-mduv380.md 4)
 CONFIG_DISPLAY_INSET ?= 0
 CONFIG_DISPLAY_INSET_TOP ?= 1
 CONFIG_DISPLAY_INSET_LEFT ?= 2
@@ -24,7 +23,7 @@ CONFIG_AM_RX ?= n
 BOARD_UNSUPPORTED += AM_RX	# no air band receiver: the AT1846S is FM only (docs/spec/airband-and-broadcast.md)
 CONFIG_BCAST_FM ?= n
 BOARD_UNSUPPORTED += BCAST_FM	# no broadcast receiver (docs/spec/airband-and-broadcast.md)
-BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is a 16 MB SPI NOR (docs/spec/hardware-mduv380.md, the overview)
+BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is a 16 MB SPI NOR
 BOARD_UNSUPPORTED += VIBRATE	# no vibration motor (docs/user/23-radios.md, What the MD-UV380 lacks)
 BOARD_UNSUPPORTED += FAULT_TRACE	# needs a host UART: the host port is USB, and the one UART is the G models' GPS line
 

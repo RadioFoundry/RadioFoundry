@@ -9,7 +9,7 @@
 // placed it (stockfw.forms, "former"), a placed window by its SHA-256 or by taking it back to the stock windows'
 // (stockfw.checkForm). It is checked again when loaded. A copy in a stock or former layout is moved to the current one
 // before it is written (codecSegments). The copy is never deleted: it is what lets an install that stopped halfway, at
-// any step, be run again (docs/spec/codec-placement.md, "Moving to a new layout"). The same rules as rfoundry/codecsave.py.
+// any step, be run again. The same rules as rfoundry/codecsave.py.
 
 import { u32le } from "./bytes.js";
 import { checkForm, forms, fromForm, placedWindows } from "./stockfw.js";

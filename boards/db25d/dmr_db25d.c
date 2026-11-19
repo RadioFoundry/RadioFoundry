@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // DB25-D DMR: the HR_C7000's modem on the shared glue (platform/hrc7000/dmr_glue.c) with the main transceiver (BK4819
-// or FD6818, rfchip_db25d.c) as the RF front end (docs/spec/hardware-db25d.md 4.5, 9).
+// or FD6818, rfchip_db25d.c) as the RF front end.
 //
 // Transmit only with make DB25D_DMR_TX=1 (off by default until checked on air); without it tx() refuses in DMR mode
-// and the glue's RF hooks do nothing. With it the stock firmware's scheme (4.5): the modem's 4FSK goes on the
+// and the glue's RF hooks do nothing. With it the stock firmware's scheme: the modem's 4FSK goes on the
 // reference oscillator, and every burst runs the whole TX sequence of the analog transmitter, keyed from the modem's
 // RF TX interrupt (3.1 ms ahead of the burst) and ended at its RF RX interrupt plus the page's TX-off delay, by the
 // shared RF-burst task (platform/hrc7000/dmr_rfburst.c).
@@ -22,7 +22,7 @@
 #define MIC_GAIN_DB		DB25D_MIC_GAIN_DB
 #define C7_PHASE_OUT		0x128u	// RO: largest / smallest 14-bit AF phase seen (modem-hrc7000.md 2.1)
 
-// The modem's receive mode word as the stock firmware builds it for this board (hardware-db25d.md 4.5): AF receive with
+// The modem's receive mode word as the stock firmware builds it for this board: AF receive with
 // averaging, AF gain 0x4C (4.75; the other HR_C7000 boards' word has 0x26), RX IQ inverted, dynamic sync threshold, dual receive
 // channels, two-point TX. make DB25D_DMR_RF_MODE=0x... replaces it on the bench
 #ifndef DB25D_DMR_RF_MODE
@@ -49,7 +49,7 @@ static const hrc_dmr_board_t dmr_board = {
 };
 
 // The speaker source for the modem's PCM (audio_pcm.c): the ring (prompt FIFO) on, or off. The modem's FM audio path
-// isn't used on this board (the main chip's audio goes by its own route, 3.3), so it stays off. The modem's line out
+// isn't used on this board (the main chip's audio goes by its own route), so it stays off. The modem's line out
 // reaches the speaker amplifier with PTC18 low (radio_db25d.c speaker_pins())
 static void speaker_pcm(bool on)
 {
@@ -96,7 +96,7 @@ uint32_t db25d_dmr_phase(void)
 }
 
 #if DB25D_DMR_TX
-// ---- DMR transmit: the shared RF-burst task (platform/hrc7000/dmr_rfburst.c; hardware-db25d.md 4.5) ----
+// ---- DMR transmit: the shared RF-burst task (platform/hrc7000/dmr_rfburst.c) ----
 
 #define RF_MODE_TX_INVERT	(1u << 7)	// RF_MODE rf_transiq_mode: the symbol-to-deviation mapping inverted
 // Stock: RF_MODE bit 7 clear on this board (the other HR_C7000 boards' value has it set). make DB25D_DMR_TX_INVERT=1 sets it, to

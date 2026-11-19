@@ -96,7 +96,7 @@ A and B can be any channel of any zone, or the VFO ([how the core does it](../sp
 Nothing about this dual watch has been checked on the air on any radio.
 
 The Anytone AT-D578UV is the radio the two-receiver case is for: its hardware has two receiver chips
-([Anytone hardware notes](../spec/hardware-anytone.md)). RadioFoundry has no board for it, so there is no support.
+(Anytone hardware notes). RadioFoundry has no board for it, so there is no support.
 
 ## The volume bar
 
@@ -156,8 +156,8 @@ Follow [Installing](02-installing.md) with these values:
 
 | Item | DM-1701 |
 |---|---|
-| Stock firmware file | Baofeng's `DM-1701(CSV)-V02.06.bin` or `DM-1701(noCSV)-V02.06.bin` (V02.06), or Radioddity's V02.01, V02.02 or V02.03 file (`Firmware-DM-1701(CSV)-V02.01.bin`, `DM-1701(CSV)-V02.02.bin`, `DM-1701(CSV)-V02.03 Only for Radioddity.bin`, `DM-1701-V02.03 Only for Radioddity.bin`). Each gives the bootloader key and the voice codec. An archive of V02.06 is at github.com/daniel5600/BAOFENG-DM1701-Original-Firmware ([the list](../spec/codec-dm1701.md#firmware-files)) |
-| MD-9600 files | Any TYT MD-9600 V16.45 or V06.09 file (`MD9600-CSV(V4)-V16.45.bin` and the rest) gives the voice codec, the one an OpenGD77-family install leaves on the radio. It does not give the bootloader key and is never written back as the radio's firmware: also select a DM-1701 file, or read the radio first (**Another open firmware**, which finds this codec in the radio). [Details](../spec/codec-dm1701.md#md-9600-files) |
+| Stock firmware file | Baofeng's `DM-1701(CSV)-V02.06.bin` or `DM-1701(noCSV)-V02.06.bin` (V02.06), or Radioddity's V02.01, V02.02 or V02.03 file (`Firmware-DM-1701(CSV)-V02.01.bin`, `DM-1701(CSV)-V02.02.bin`, `DM-1701(CSV)-V02.03 Only for Radioddity.bin`, `DM-1701-V02.03 Only for Radioddity.bin`). Each gives the bootloader key and the voice codec. An archive of V02.06 is at github.com/daniel5600/BAOFENG-DM1701-Original-Firmware (the list) |
+| MD-9600 files | Any TYT MD-9600 V16.45 or V06.09 file (`MD9600-CSV(V4)-V16.45.bin` and the rest) gives the voice codec, the one an OpenGD77-family install leaves on the radio. It does not give the bootloader key and is never written back as the radio's firmware: also select a DM-1701 file, or read the radio first (**Another open firmware**, which finds this codec in the radio). Details |
 | `--stock-installed` | The version the radio runs, e.g. `"V02.06 CSV"` |
 | Bootloader keys | Hold **PTT** and **SK1** together while you turn the radio on with the volume knob |
 | Bootloader USB device (Zadig) | "Digital Radio in USB mode" (0483:DF11), [driver steps](02-installing.md#windows-the-bootloader-driver) |
@@ -220,7 +220,7 @@ manual are this size.
 
 - No GPS from the factory. LRRP location requests get "no fix". APRS positions come from a computer or a fixed
   position. If you fit a GPS module yourself, wire its NMEA output to PA10 (STM32 pin 69) and its power enable, if it
-  has one, to PA9. The radio finds it at start-up ([hardware-dm1701.md 14.2](../spec/hardware-dm1701.md#142-gps-module))
+  has one, to PA9. The radio finds it at start-up (hardware-dm1701.md 14.2)
   and powers it only while **Settings > Location > GPS** is on.
 - APRS receive needs the squelch open: the radio hears packets strong enough to open the squelch, not weaker ones.
 - No APRS iGate (passing heard packets to APRS-IS): it doesn't fit in the flash yet.
@@ -332,7 +332,7 @@ A 160 x 128 color screen, every row visible. The controller type is unconfirmed.
 
 Covers the TYT MD-UV380, the MD-UV390, the Retevis RT3S and the MD-UV390 Plus 10 W, with or without GPS. **In
 bring-up: nothing has run on a radio yet.** It is the DM-1701's board design, and the image is built from the
-DM-1701's code with this radio's keys, display, power tables and GPS ([bring-up checklist](../testing/mduv380-bringup.md)).
+DM-1701's code with this radio's keys, display, power tables and GPS (bring-up checklist).
 
 ### Installing on the MD-UV380
 
@@ -340,7 +340,7 @@ Follow [Installing](02-installing.md) with these values.
 
 | Item | MD-UV380 |
 |---|---|
-| Stock firmware file | Any supported TYT or Retevis file: 18.11, 18.16, 19.06, 19.26, 19.74, 219.60 or 219.74 ([the list](../spec/codec-mduv380.md#stock-files)). It gives the bootloader key and the voice codec; the codec is the same in all of them, so any of them works on any of these radios |
+| Stock firmware file | Any supported TYT or Retevis file: 18.11, 18.16, 19.06, 19.26, 19.74, 219.60 or 219.74 (the list). It gives the bootloader key and the voice codec; the codec is the same in all of them, so any of them works on any of these radios |
 | Bootloader keys | Hold **PTT** and the side key just above it (SK1) while you turn the radio on |
 | Images | Two: 5 W (the MD-UV380, MD-UV390 and RT3S) and 10 W (the MD-UV390 Plus). rfoundry takes `--option POWER=10w`. **Pick by the label on the radio or its box**: the two versions swap the transmitter's band select and the backlight pins, and the radio can't yet tell them apart, so a wrong image isn't caught |
 | Bootloader USB device (Zadig) | "Digital Radio in USB mode" (0483:DF11), [driver steps](02-installing.md#windows-the-bootloader-driver) (assumed the same as the DM-1701's) |
@@ -673,7 +673,7 @@ The radio vibrates for messages, call alerts and emergencies (**Settings > Sound
 
 A handheld for 902-928 MHz with a 16-position channel knob, two side keys and no display. FM receive with CTCSS
 and DCS decode, FM transmit, DMR transmit and receive with the radio's own codec, and APRS transmit work on the radio.
-DMR speech to the speaker isn't checked yet ([hardware and bring-up state](../spec/hardware-rt10.md#9-bring-up-state)).
+DMR speech to the speaker isn't checked yet (hardware and bring-up state).
 
 ### Installing on the RT10
 
@@ -681,7 +681,7 @@ The radio has no bootloader of its own: the chip's boot window on the programmin
 
 | Item | RT10 |
 |---|---|
-| Cable | the radio's programming cable on the accessory jack, with an FTDI chip. A CH340 cable that works with other radios got no answer from the RT10 ([cables tried](../spec/hardware-rt10.md#31-the-cable-line)) |
+| Cable | the radio's programming cable on the accessory jack, with an FTDI chip. A CH340 cable that works with other radios got no answer from the RT10 (cables tried) |
 | Keys | none: turn the radio on when the tool asks |
 | Backup | installing replaces the whole original image. Only a full program flash backup taken first puts it back |
 | Board name | `rt10` |
@@ -725,7 +725,7 @@ screen says "Set: Board revision" and the radio won't transmit until you set it 
 Board revision. Receiving works meanwhile. The installers do it for you when they can read the original firmware's
 version (V06.xx is V1-V3, V16.xx is V4), and otherwise ask for it right after the installation. Not sure? Pick V1-V3:
 if the radio then hears nothing on a channel it should hear, pick V4. A revision other than the one the radio runs
-applies from the next start ("Restart to apply"). Only install this if you can go back to the original firmware. The hardware facts are in [hardware-md9600.md](../spec/hardware-md9600.md).
+applies from the next start ("Restart to apply"). Only install this if you can go back to the original firmware. The hardware facts are in hardware-md9600.md.
 
 ### MD-9600 voice codec
 
@@ -741,7 +741,7 @@ accepted:
 | MD-9600 V5 and Retevis RT90 | the file the radio came with: TYT `MD9600-CSV(2571V5)-V26.45.bin` and the other 26.45 files, `MD9600-REC(2571V4)-D26.57.bin`, or Retevis `RT90-CSV(2571V5)-V26.41.bin`, `RT90-REC(2571V5)-D26.38.bin`, `RT90-CSV-GPS(2571V5)-P26.41.bin` and `RT90-GPS-REC(2571V5)-S26.42.bin`, or TYT `MD9600-AES-GPS-REC(2571V5)-S126.61.bin` |
 
 The CSV, CSV-GPS, REC and GPS-REC variants of one version all work. The full list with hashes is in
-[codec-md9600.md](../spec/codec-md9600.md#stock-files). No V5 radio has run these files yet: the checks so far ran their
+codec-md9600.md. No V5 radio has run these files yet: the checks so far ran their
 codec in an emulator on a computer.
 
 ### MD-9600 keys
@@ -790,11 +790,11 @@ models it covers.
 <!-- generated: tools/boards.py docs planned; edit the Port cells of docs/spec/radios.md -->
 | Radio | Status |
 |---|---|
-| Anytone AT-D868UV / AT-D878UV / AT-D878UVII Plus, BTECH DMR-6X2, Alinco DJ-MD5, Radioddity GD-AT10G | In progress ([#291](https://github.com/radiofoundry/radiofoundry/pull/291)). A new platform (GD32F30x) and a new DMR chip (SCT3258, which runs the vocoder itself), so it starts the Anytone family ([hardware-anytone.md](../spec/hardware-anytone.md)). |
+| Anytone AT-D868UV / AT-D878UV / AT-D878UVII Plus, BTECH DMR-6X2, Alinco DJ-MD5, Radioddity GD-AT10G | In progress ([#291](https://github.com/radiofoundry/radiofoundry/pull/291)). A new platform (GD32F30x) and a new DMR chip (SCT3258, which runs the vocoder itself), so it starts the Anytone family (hardware-anytone.md). |
 | Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | In progress ([#111](https://github.com/radiofoundry/radiofoundry/pull/111)). A new platform: a different MCU (NXP MK22FN512), the same HR_C6000 and AT1846S, a 128x64 mono LCD. A DM-1801 bought new today is not v1, and the look-alike DR-1801 is unrelated. |
 | Radioddity GD-88 | In progress ([#132](https://github.com/radiofoundry/radiofoundry/pull/132)). Dual receiver on the HR_C7000 platform (chip count not confirmed yet); should reuse much of the DM-32UV port. |
 | Baofeng DM-36 | In progress ([#607](https://github.com/radiofoundry/radiofoundry/pull/607)). Built on the DM-32UV's platform: FM, the display, keys and programming run; DMR voice on air and power levels open. |
-| Anytone AT-D578UV (mobile) | In progress ([#291](https://github.com/radiofoundry/radiofoundry/pull/291)). The 878's chips in a mobile, with a mid-run MCU change: two platforms ([hardware-anytone.md](../spec/hardware-anytone.md)). |
+| Anytone AT-D578UV (mobile) | In progress ([#291](https://github.com/radiofoundry/radiofoundry/pull/291)). The 878's chips in a mobile, with a mid-run MCU change: two platforms (hardware-anytone.md). |
 | Radioddity DB40-D, Kydera CDR-700UV (mobile) | Planned. Hardware needed. Two HR_C7000-class processors (A and B), like the GD-88, so it follows the GD-88 port. |
 | TYT MD-2017 / Retevis RT82 | Planned. The DM-1701's STM32 and HR_C6000 pair with two receivers, so it should reuse the STM32F4 platform. The hardware can receive two channels at once. |
 | BTECH DMR-6X2 PRO | Planned. Built on the AT-D878UVII Plus, so it should follow the Anytone port. |

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// FreeRTOS for the STM32F4 radios (docs/spec/hardware-dm1701.md 3.1, hardware-md380.md 3: kernel at the lowest
+// FreeRTOS for the STM32F4 radios (kernel at the lowest
 // priority, max syscall 4)
 #ifndef FREERTOS_CONFIG_H
 #define FREERTOS_CONFIG_H

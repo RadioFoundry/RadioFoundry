@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The volume knob power switch read from the battery sense line (core/radio/power_switch.c), with the MD-380's
-// measured readings (docs/spec/hardware-md380.md 10.1: 8.3 V with the knob on, about 7 mV with it off)
+// measured readings (8.3 V with the knob on, about 7 mV with it off)
 #include <stdio.h>
 #include <string.h>
 #include "radio/power_switch.h"

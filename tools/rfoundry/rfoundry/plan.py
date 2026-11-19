@@ -11,13 +11,12 @@ Codec modes (docs/dev/release.md "Codec handling"):
 
 Every sector of the plan is erased before any is written, then the sectors are written, both in the board's sector
 order (the bootloader's, board.toml). A plan that
-moves the codec out of a layout an earlier release used (vector_last, docs/spec/codec-placement.md "Moving to a new
-layout") erases the application's first sector (the vector table) first and writes it last instead (Plan.erase_order,
+moves the codec out of a layout an earlier release used (vector_last) erases the application's first sector (the vector table) first and writes it last instead (Plan.erase_order,
 Plan.write_order): a move stopped anywhere before that sector leaves it blank, so the bootloader stays in its update
 mode and the same install runs again, with no half application started in between.
 
 A written sector is always erased first and written from its start through its last data block (0xFF filling the
-gaps), as one run of 1024-byte blocks numbered from 2: the AnyRoad bootloader's region form (hardware-dm1701.md 15.2).
+gaps), as one run of 1024-byte blocks numbered from 2: the AnyRoad bootloader's region form.
 
 No plan erases a sector that holds a protected region of the board (board.toml [[flash.protect]], protect.py): the
 plan is refused instead.

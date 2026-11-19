@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: MIT */
 /* Copyright (c) 2026 The RadioFoundry Authors */
-/* TYT MD-380 / MD-390 / RT3, STM32F405VGT6, application behind the 48 KB Tytera bootloader (docs/spec/hardware-md380.md
- * 1.3, 13). The bootloader starts the application at 0x0800C000 like the other STM32 radios', so the vector table, stack rule and
+/* TYT MD-380 / MD-390 / RT3, STM32F405VGT6, application behind the 48 KB Tytera bootloader.
+ * The bootloader starts the application at 0x0800C000 like the other STM32 radios', so the vector table, stack rule and
  * start-up are the same (platform/stm32f4/common.ld).
  *
- * Codec (docs/spec/codec-placement.md, "STM32 radios" and "Layouts"): the merge on the user's machine puts the whole
+ * Codec ("STM32 radios" and "Layouts"): the merge on the user's machine puts the whole
  * stock codec in sector 11 (0x080E0000..0x080FFFFF): its code, its table windows, each moved as one block, and the
  * descriptor that says where at 0x080FFF80. The code runs in place.
  *

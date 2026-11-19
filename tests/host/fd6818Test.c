@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // FD6818 driver: band words, CTCSS word, and the bit-banged frames against a fake chip that samples the data line on
-// rising clock edges while CS is low (docs/spec/hardware-dm32.md 8.1-8.4)
+// rising clock edges while CS is low
 #include <stdio.h>
 #include <string.h>
 #include "rf/fd6818/fd6818.h"
@@ -317,7 +317,7 @@ static void test_am(void)
 	// Outside AM, "off" writes nothing
 	fd6818_set_am(&dev, false);
 	CHECK(chip.n == 0);
-	// On: the AM output, full gain, 0x4A's AM word (hardware-dm32.md 8.7). 0x4A isn't in the default tables: its value
+	// On: the AM output, full gain, 0x4A's AM word. 0x4A isn't in the default tables: its value
 	// before AM is read from the chip
 	chip.regs[FD6818_REG_AM_4A] = 0x1234;
 	fd6818_set_am(&dev, true);
@@ -386,7 +386,7 @@ static void test_am(void)
 
 // The AM gain loop: a reading 1-9 dB over the target steps the gain down one entry, 10 dB or more cuts at once by the
 // excess less 8 dB, 6 dB or more under raises one entry per reading after the hold. A steady station settles just under
-// the target (hardware-dm32.md 8.7: over it the AM demodulator is overdriven)
+// the target (over it the AM demodulator is overdriven)
 static int agc_settle(int full_gain_reading)	// the reading a steady station settles at; 2 counts per dB of gain cut
 {
 	fd6818_agc_t a;
@@ -514,7 +514,7 @@ static void test_rx_tones(void)
 	CHECK(fd6818_rx_tone_ok(&dev, FD6818_TONE_NONE));
 }
 
-// The DM-1801 Pro set (docs/spec/hardware-dm1801pro.md 5): its own tables, the 0x0200 step, no 0x1A word
+// The DM-1801 Pro set: its own tables, the 0x0200 step, no 0x1A word
 static void test_dm1801pro(void)
 {
 	fd6818_t dev;
@@ -546,7 +546,7 @@ static void test_dm1801pro(void)
 	fd6818_set_state(&dev, FD6818_STATE_IDLE);
 	CHECK(chip.n == 1 && dev.state == 0);
 
-	// DMR is the five mode registers and 0x3F = 0 (the radio's DMR receive value, 5.4); going back to FM restores 0x48
+	// DMR is the five mode registers and 0x3F = 0 (the radio's DMR receive value); going back to FM restores 0x48
 	// and ends on the 0x2B mode word
 	chip.n = 0;
 	fd6818_set_mode(&dev, FD6818_MODE_DMR);
@@ -635,7 +635,7 @@ static void test_burst_split(void)
 }
 
 // The lock poll (0x0C bit 9) and set-up B's two DMR word sets: the newer DM-32UV RF section's differs from the DM-1801
-// Pro's only in 0x47 / 0x48 (hardware-dm32.md 8.10)
+// Pro's only in 0x47 / 0x48
 static void test_setup_b(void)
 {
 	fd6818_t dev;

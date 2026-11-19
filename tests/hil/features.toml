@@ -541,7 +541,7 @@ hardware = "SPI NAND data flash"
 spec = "docs/spec/nand-sectors.md"
 
 [feature.codec_check]
-spec = "docs/spec/codec-placement.md"
+spec = "docs/dev/codec.md"
 source = ["tools/rfoundry/rfoundry"]
 
 # ── Bench ──

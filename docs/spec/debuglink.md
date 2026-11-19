@@ -166,7 +166,7 @@ does `features=`, and a build without the debug link sends them too, from the st
 `codec=` is the board's own check of the codec in flash, the same one that decides whether DMR voice runs: a
 profile id (`<profile>-s11` on an STM32F4 radio: the descriptor is valid and the signature word and the CRC-32 of
 every codec window match the codec as the merge places it, code in sector 11, as
-[codec-placement.md](codec-placement.md) "STM32 radios" describes;
+codec-placement.md "STM32 radios" describes;
 `<board id>-<build>` on an HR_C7000 radio: the codec slot is valid, and the build is the version of the stock file it
 was carved from), `absent` (the board has a
 vocoder but the check failed: erased, another stock version, damaged), `present` (a valid codec whose board names no
@@ -826,7 +826,7 @@ that register overwrites it.
 | `0xFF`, address u32, value u32 | the value read back u32 |
 
 Chips below `0xFF` are the radio's RF chips, through the board's `board.chip_reg`. The chip and page numbers are the
-board's, listed on its hardware page. A chip, page, register or value the board doesn't offer answers bad argument (2);
+board's, defined by its `chip_reg` hook in `boards/<radio>/`. A chip, page, register or value the board doesn't offer answers bad argument (2);
 a board without the hook answers unavailable (4).
 
 Chip `0xFF` is the SoC: a 32-bit register at a 32-bit address, through the platform's `hal_system_t.reg`. Only aligned

@@ -3,7 +3,7 @@
 // The UV380 board family's shared code: STM32F405 + HR_C6000 + one AT1846S for both bands, 160x128 color LCD on the
 // FSMC, keypad on the LCD data lines, 16 MB SPI NOR. The DM-1701 / RT84 (boards/dm1701) and the MD-UV380 / MD-UV390 /
 // RT3S (boards/mduv380) are this board with different data: those differences are uvf_variant_t below, and everything
-// else is in this directory (docs/spec/hardware-dm1701.md, docs/spec/hardware-mduv380.md 1). A board lists
+// else is in this directory. A board lists
 // boards/uv380_family in BOARD_DIRS and BOARD_INC, and its own board.c defines board, uvf_variant and uvf_key_matrix.
 // uvf_ = UV380 family
 #ifndef UVF_H
@@ -22,26 +22,26 @@ typedef struct {
 	uint16_t frac[2];	// per mille: level 2 from the very low row to the low row, level 3 from the low row to the mid row
 } uvf_power_band_t;
 
-// What the family's radios differ in (hardware-mduv380.md 1), one const table in each board's board.c
+// What the family's radios differ in, one const table in each board's board.c
 typedef struct {
 	// Factory panel type (SPI flash security register 3 byte 0x1D, low two bits) -> the ST7735 type the driver runs
-	// and whether it is driven in RGB order (hardware-dm1701.md 9.2). The visible rows are UVF_LCD_HIDDEN_ROWS (board.mk)
+	// and whether it is driven in RGB order. The visible rows are UVF_LCD_HIDDEN_ROWS (board.mk)
 	uint8_t panel_type[4];
 	bool panel_rgb[4];
-	// Battery sense (hardware-dm1701.md 11.1): mV = raw * bat_mul / bat_div
+	// Battery sense: mV = raw * bat_mul / bat_div
 	uint16_t bat_mul, bat_div;
-	// Volume pot (11.2): raw at the bottom stop, at the taper's break (50 %), at the top stop
+	// Volume pot: raw at the bottom stop, at the taper's break (50 %), at the top stop
 	uint16_t vol_min, vol_break, vol_max;
 	// TX power interpolation fractions (7), per mille, f0..f3, [VHF, UHF]
 	uint16_t frac[2][4];
 	// Five levels in place of the nine from frac, [VHF, UHF], or NULL
 	const uvf_power_band_t *power5;
-	// Factory to working copy power conversion (12.1), per mille, k0..k3 (very low, low, mid, high), [VHF, UHF]
+	// Factory to working copy power conversion, per mille, k0..k3 (very low, low, mid, high), [VHF, UHF]
 	uint16_t cal_k[2][4];
 	// DMR key-up constants (radio/pa_keyup.h), [VHF, UHF], measured on the radio; NULL: the PA keyed at the step's
 	// drive 1 ms after the RF TX interrupt, as before the rule
 	const pa_keyup_cfg_t *keyup;
-	// The channel knob counts the other way: the same pins, the A and B phases swapped on the board (10.3)
+	// The channel knob counts the other way: the same pins, the A and B phases swapped on the board
 	bool enc_reverse;
 	// Board start-up after the shared one (board_init), or NULL: GPS and the radio's own checks
 	void (*init)(void);
@@ -76,15 +76,14 @@ extern const hal_audio_t uvf_audio;
 
 #if CONFIG_AUDIO_PROBE || CONFIG_NET_USRP || CONFIG_APRS_RX
 // The audio tap: FM receive audio on the PCM stream for APRS (CONFIG_APRS_RX) and USRP, FM transmit audio for USRP
-// (CONFIG_NET_USRP), the probe (CONFIG_AUDIO_PROBE, docs/spec/hardware-dm1701.md
-// 21.3). audio_uvf.c; register access and the transmit source switch in radio_uvf.c
+// (CONFIG_NET_USRP), the probe (CONFIG_AUDIO_PROBE). audio_uvf.c; register access and the transmit source switch in radio_uvf.c
 extern const hal_audio_tap_t uvf_audio_tap;
 #endif
 #if CONFIG_NET_USRP
 bool uvf_fm_tx_inject(audio_tap_pull_t pull, audio_tap_mode_t mode);
 void uvf_pwm_audio(audio_tap_pull_t pull);	// PWM audio on PC8: start (pull) or stop (NULL)
 #endif
-// The debug link's CHIP_REG (board.chip_reg): chip 0 the AT1846S, chip 1 the HR_C6000 (hardware-dm1701.md 5.12)
+// The debug link's CHIP_REG (board.chip_reg): chip 0 the AT1846S, chip 1 the HR_C6000
 bool uvf_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write);
 #if CONFIG_AUDIO_PROBE
 bool uvf_modem_reg(uint8_t page, uint8_t reg, uint8_t *val, bool write);
@@ -92,8 +91,7 @@ bool uvf_modem_ram(uint8_t page, uint16_t addr, uint8_t *buf, uint16_t len, bool
 bool uvf_modem_burst(uint8_t page, uint8_t reg, const uint8_t *buf, uint16_t len);
 #endif
 
-// Physical key bits returned by uvf_input.scan(), the family's keys: a radio's matrix (uvf_key_matrix, hardware-dm1701.md
-// 10.1) uses the ones it has (the MD-UV380 has no P1/P2 and no SK3)
+// Physical key bits returned by uvf_input.scan(), the family's keys: a radio's matrix (uvf_key_matrix) uses the ones it has (the MD-UV380 has no P1/P2 and no SK3)
 enum {
 	KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9,
 	KEY_STAR, KEY_HASH, KEY_UP, KEY_DOWN, KEY_GREEN, KEY_RED,
@@ -133,7 +131,7 @@ bool uvf_diag_line(uint8_t i, char *buf, uint8_t len);
 // Zero the counters behind the diagnostics lines (board.diag_reset)
 void uvf_diag_reset(void);
 
-// Factory calibration (calibration_uvf.c, docs/spec/hardware-dm1701.md section 12)
+// Factory calibration (calibration_uvf.c)
 typedef struct {
 	bool valid;
 	uint16_t power_dac[4];	// very low, low, mid, high at the requested frequency (12-bit DAC values)
@@ -153,7 +151,7 @@ bool uvf_cal_load(void);
 // Calibration values interpolated at a frequency (Hz); returns false if no calibration is loaded (safe defaults filled)
 bool uvf_cal_at(uint32_t hz, uvf_cal_point_t *out);
 
-// Direct DMR keying (hardware-dm1701.md 6): the AT1846S switched from RX straight to DMR TX, no idle step, puts the
+// Direct DMR keying: the AT1846S switched from RX straight to DMR TX, no idle step, puts the
 // carrier about 3.07 kHz low, and a frequency write can't fix it (it applies only coming out of idle). The HR_C6000
 // MOD1 reference offset (4:0x04, about 75 Hz a step at 461 MHz) is raised for the burst instead. Measured on a DM-1701
 // near 461 MHz (SDR bench, 2026-10-19): 41 steps -57..-15 Hz, 42 steps +16..+60 Hz, 43 steps +94..+132 Hz; the
@@ -164,8 +162,8 @@ bool uvf_cal_at(uint32_t hz, uvf_cal_point_t *out);
 // register, and the burst then goes through idle
 bool uvf_direct_tx_ref(uint32_t hz, int8_t ref_offset, int32_t rx_offset_hz, int8_t *out);
 
-// DMR receive offset (hardware-dm1701.md 5.13): how far below the channel the AT1846S receives in DMR (62.5 Hz steps).
-// UHF: none. With the receive gain out of overload (5.5) the window of carriers that decode is centered on the channel,
+// DMR receive offset: how far below the channel the AT1846S receives in DMR (62.5 Hz steps).
+// UHF: none. With the receive gain out of overload the window of carriers that decode is centered on the channel,
 // and an offset only moves it: 875 Hz lost transmitters some 2 kHz high. VHF: the value taken inside the overload, not
 // measured again yet. Measured on a DM-1701 (SDR bench); the MD-UV380 has the same two chips, unchecked on its own
 #define UVF_DMR_RX_OFFSET_UHF_HZ	0

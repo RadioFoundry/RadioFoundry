@@ -81,7 +81,7 @@ DMR voice needs each radio's own codec; the process is in [docs/dev](../dev/code
 
 | Spec | Covers |
 |---|---|
-| [codec-placement.md](codec-placement.md) | Where RadioFoundry places the codec on each SoC family, descriptors, slots, codec maps |
+| codec-placement.md | Where RadioFoundry places the codec on each SoC family, descriptors, slots, codec maps |
 | `codec-<id>.md` | One radio's codec: the stock files accepted, their format, the code and table windows, entry points |
 
 ## Migrating from stock
@@ -91,7 +91,7 @@ Reading a vendor codeplug and moving a radio from the vendor firmware. User step
 
 | Spec | Covers |
 |---|---|
-| [codeplug-stock-tyt.md](codeplug-stock-tyt.md) | The vendor codeplug layout of the TYT-family radios in SPI flash: detection and conversion |
+| codeplug-stock-tyt.md | The vendor codeplug layout of the TYT-family radios in SPI flash: detection and conversion |
 | [codeplug-port.md](codeplug-port.md) | Stock codeplug to RadioFoundry: the clean-up, contacts, CPS write shared by the migration tools |
 | `<id>-migration.md` | One radio's flashing and migration procedure, where a migration tool exists |
 | `<id>-stock-cps.md` | One radio's vendor programming protocol, for interoperability |

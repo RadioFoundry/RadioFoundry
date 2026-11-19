@@ -394,7 +394,7 @@ IO_DIPLEX1 = 0x11000038
 SYS_SOFT_RSTN = 0x11000000
 QUAD_ENABLE = 0x1100005C
 LCSFC_BAUDR = 0x11000030            # XIP flash SCLK divider; a soft reset keeps it
-WDT_LOCK = 0x14010000               # watchdog: unlock key, then EN = 0, then lock (hardware-dm32.md 3.5)
+WDT_LOCK = 0x14010000               # watchdog: unlock key, then EN = 0, then lock
 WDT_EN = 0x14010010
 WDT_KEY = 0x5ADA7200
 CRASH_SOFT_MARK = 0x18007EF4        # RadioFoundry's restart-cause words (crash-log.md 1.3): HRC_CRASH_BOOT + 4, crash_boot_t.soft
@@ -418,10 +418,10 @@ FAST_FALLBACK = 30                  # link score at which a raised rate is given
 PROOF_ROUNDS = 4                    # set_baud's full frames each way before a rate is kept
 BAUD_CACHE = os.path.join(os.path.expanduser("~"), ".cache", "rfoundry", "stub-baud.json")
 # memory: (SSI base, SER, GPIO chip-select pin or None, size, name). The data flash's chip select is the GPIO PTA18
-# (hardware-dm32.md 10; dm1801pro-hardware.md 6.1); the SSI's own select is not wired to the flash on its own.
+# (dm1801pro-hardware.md 6.1); the SSI's own select is not wired to the flash on its own.
 MEM = {"progmem": (SSI_PROG, True, None, 0x100000, "program flash"),
        "q128": (SSI_DATA, True, 18, 0x1000000, "data flash"),
-       # the DB25-D's SPI NAND on the same bus and chip select (hardware-db25d.md 6.5): 2 KB pages without the spare
+       # the DB25-D's SPI NAND on the same bus and chip select: 2 KB pages without the spare
        # bytes, read by the universal stub's NAND path (flags bit 2), two pages per 4 KB sector; never written here
        "nand": (SSI_DATA, True, 18, 0x10000000, "NAND")}
 NAND_FLAG = 4
@@ -435,7 +435,7 @@ PAGE = 256
 # The application area of the program flash: an RadioFoundry image is linked for 0x0300C000, which is flash offset 0xC000. The
 # bootloader below it (0..0xC000) is never written, so the radio can always be put in update mode by hand.
 APP_START, APP_END = 0xC000, 0x100000
-ROM_FLAG = b"thd\x0c"                    # the boot ROM's flag at flash 0, followed by the entry address (hardware-rt10.md 2)
+ROM_FLAG = b"thd\x0c"                    # the boot ROM's flag at flash 0, followed by the entry address
 # The first word of RadioFoundry's first stage (boot/README.md), at APP_START on a radio that has one (the DB25-D). Its
 # application is linked for 0x0300D000, so the image written at APP_START is the install image, which starts with it
 STAGE_MAGIC = bytes.fromhex("2c1101c0")
@@ -529,7 +529,7 @@ def check_stub_fits(image, load, size):
                         % (bss0, top, load, load + size))
 
 
-SRAM = (0x10000, 0x58000)               # the HR_C7000's main SRAM, 288 KB (hardware-dm32.md 2; the same on the DB25-D)
+SRAM = (0x10000, 0x58000)               # the HR_C7000's main SRAM, 288 KB (the same on the DB25-D)
 
 
 def stub_univ_image():
@@ -723,7 +723,7 @@ def sum8(b):
 ROM_ACK = b"\x02\x05\x00\x03"
 ROM_HELLO, ROM_REPLY = b"\x02\x24\x00\x03", b"\x02\x14\x00\x03"
 # The boot ROM stops waiting (about 48 ms after its greeting when no answer came) and starts the firmware; its NAK is
-# also how it answers a repeated greeting reply once it took the first one (docs/spec/hardware-dm32.md 13.3)
+# also how it answers a repeated greeting reply once it took the first one
 ROM_GAVE_UP, ROM_NAK = b"\x00\x10\x00\x03", b"\x02\x0a\x00\x03"
 
 
@@ -1231,7 +1231,7 @@ class Radio:
         time.sleep(0.05 + len(frame) * 10 / self.rate())    # close the port before the frame left (the reset never ran)
 
     def reset_chip(self):
-        """Soft-reset the SoC (hardware-dm32.md 1.1: XIP quad off and the reset divider, then SYS_SOFT_RSTN = 0). The boot
+        """Soft-reset the SoC (XIP quad off and the reset divider, then SYS_SOFT_RSTN = 0). The boot
         ROM runs again, offers its serial window briefly, then starts the firmware from flash: the same as a power cycle
         without the cycle. The soft reset keeps the divider, and the ROM can't read flash at RadioFoundry's divider 2. The watchdog
         goes off first: RadioFoundry leaves it running while the stub feeds it, a soft reset may keep it, and the bootloader never
@@ -1267,7 +1267,7 @@ class Radio:
     # ---- flash
     def jedec(self, mem):
         base, ser, cs, _, _ = MEM[mem]
-        if mem == "nand":                       # 0x9F, a dummy byte, then maker and device (hardware-db25d.md 6.5)
+        if mem == "nand":                       # 0x9F, a dummy byte, then maker and device
             return self.spi(base, b"\x9F\x00", 2, ser, cs)
         return self.spi(base, b"\x9F", 3, ser, cs)
 

@@ -8,7 +8,7 @@
 2. 通过电台自带的引导程序（更新模式）刷写 RadioFoundry。
 3. 写回电台频率，以及 DMR ID（呼号）数据库。
 
-网页安装器和电台频率编辑器分两步完成同样的事（[安装](02-installing.md)）。使用本程序可一次运行完成全部。电台上已验证的内容见[电台参考](23-radios.md#baofeng-dm-32uv)，[bring-up 检查表](../testing/dm32-bringup.md)列出尚未完成的项目。请保留宝锋的固件文件（`DM32.01.01.049.bin`），以便回到原厂。
+网页安装器和电台频率编辑器分两步完成同样的事（[安装](02-installing.md)）。使用本程序可一次运行完成全部。电台上已验证的内容见[电台参考](23-radios.md#baofeng-dm-32uv)，bring-up 检查表列出尚未完成的项目。请保留宝锋的固件文件（`DM32.01.01.049.bin`），以便回到原厂。
 
 RadioFoundry 绝不触碰引导程序，因此更新模式始终可用。它也绝不触碰 7 MB 以下的数据闪存。原厂电台频率、出厂校准和原厂联系人数据库都在那里。回到原厂时，你的旧电台频率会原样恢复。
 
@@ -19,7 +19,7 @@ RadioFoundry 绝不触碰引导程序，因此更新模式始终可用。它也�
 | Python 3.8 或更新 | macOS、Linux 和 Windows。仅用文件测试过 |
 | qdmr 0.15 或更新 | 提供读取原厂电台并转换电台频率的 `dmrconf` 命令。macOS：`brew install qdmr`。Linux：发行版的 `qdmr` 包。Windows：dm3mat.darc.de/qdmr 的安装程序 |
 | `pip install pyserial` | 用于线缆 |
-| RadioFoundry 镜像 | 已合并编解码器的 `rfoundry_dm32_codec.bin`，来自测试包或你自己的构建（[bring-up 检查表](../testing/dm32-bringup.md)第 0 步）。不含编解码器的镜像可配合 `--codec-from DM32.01.01.049.bin` 使用 |
+| RadioFoundry 镜像 | 已合并编解码器的 `rfoundry_dm32_codec.bin`，来自测试包或你自己的构建（bring-up 检查表第 0 步）。不含编解码器的镜像可配合 `--codec-from DM32.01.01.049.bin` 使用 |
 | 编程线 | DM-32 的 USB 串口线（CH340、FTDI 或 CP210x）。电台本身没有 USB：原厂 CPS、引导程序和 RadioFoundry 都使用这条线 |
 
 测试包（`dm32_migrate.py package`）是一个文件夹，含脚本、辅助文件、镜像、`README.txt` 和 `requirements.txt`。
@@ -60,7 +60,7 @@ python3 dm32_migrate.py restore --workdir ~/RadioFoundry-DM32-migration/20261011
 
 `--from` 接受用 qdmr 从原厂电台保存的电台频率，可以是 `.dfu`（`dmrconf read --radio dm32uv`）或 `.yaml`。`dm32_migrate.py import --from FILE` 只转换并检查，无需电台。此处不支持宝锋自带 CPS 的文件。请用 qdmr 读取电台并从那里保存电台频率。
 
-网页安装器在从原厂固件安装结束时自行迁移这些内容。没有 qdmr 时，[电台频率编辑器](04-programming.md#the-codeplug-editor)和工具页可直接从数据闪存读取来转换原厂电台频率：原厂固件上由网页安装器取得的备份 `.zip`，或其中的 `data-memory.bin` 或 `original-channels.bin`。它们会迁移带发射联系人的信道、联系人、接收组列表、区域、你的 DMR ID 和启动文字。功率、带宽、亚音、时隙和色码随每个信道迁移。静噪、发射超时和扫描列表保持 RadioFoundry 的默认值，且前 84 个之后的信道尚未读取（[格式](../spec/dm32-stock-codeplug.md)）。qdmr 0.15 不读取原厂发射联系人，因此这是保留它们的方式。
+网页安装器在从原厂固件安装结束时自行迁移这些内容。没有 qdmr 时，[电台频率编辑器](04-programming.md#the-codeplug-editor)和工具页可直接从数据闪存读取来转换原厂电台频率：原厂固件上由网页安装器取得的备份 `.zip`，或其中的 `data-memory.bin` 或 `original-channels.bin`。它们会迁移带发射联系人的信道、联系人、接收组列表、区域、你的 DMR ID 和启动文字。功率、带宽、亚音、时隙和色码随每个信道迁移。静噪、发射超时和扫描列表保持 RadioFoundry 的默认值，且前 84 个之后的信道尚未读取（格式）。qdmr 0.15 不读取原厂发射联系人，因此这是保留它们的方式。
 
 ## 容量
 

@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// MD-9600 front panel: the 4 x 3 key matrix, the channel encoder and the hand mic's PTT (docs/spec/hardware-md9600.md
-// 9). Rows K0-K3 are open-drain outputs, driven low one at a time; columns K6, K5, K4 are inputs with pull-ups, low =
+// MD-9600 front panel: the 4 x 3 key matrix, the channel encoder and the hand mic's PTT. Rows K0-K3 are open-drain outputs, driven low one at a time; columns K6, K5, K4 are inputs with pull-ups, low =
 // pressed. The encoder's two lines interrupt on both edges and feed the shared quadrature decoder. The power key is a
 // matrix position: its state goes to power_md9600.c, not to the key map. The hand mic's keypad is two analog levels
-// (9.3) from the ADC scan, decoded by drivers/input/adckeys; a mic without a keypad leaves both levels idle.
+// from the ADC scan, decoded by drivers/input/adckeys; a mic without a keypad leaves both levels idle.
 #include "md9600.h"
 #include "pins.h"
 #include "hal_time.h"

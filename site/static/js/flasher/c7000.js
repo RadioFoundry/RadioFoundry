@@ -12,7 +12,7 @@
 //   0x0C000 .. slot      the application (stock firmware, or RadioFoundry)
 //   slot .. 0x100000     RadioFoundry's codec slot: a 128-byte header, the radio's own stock codec code and tables, and
 //                        the relocation list: the words the firmware moves when it copies the code to its window
-//                        (platform/hrc7000/codec_slot.h, docs/spec/codec-placement.md)
+//                        (platform/hrc7000/codec_slot.h)
 //
 // The codec is DVSI's and Baofeng's. It only ever moves between the user's radio, files and this browser.
 

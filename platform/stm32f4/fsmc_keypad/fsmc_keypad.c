@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// A key matrix on the FSMC data lines (fsmc_keypad.h; docs/spec/hardware-dm1701.md 10.1)
+// A key matrix on the FSMC data lines (fsmc_keypad.h)
 #include "fsmc_keypad.h"
 #include "hal_time.h"
 
@@ -45,7 +45,7 @@ static void set_mode(GPIO_TypeDef *port, uint16_t mask, uint32_t mode, uint32_t 
 
 static void columns_to_gpio(void)
 {
-	// Discharge first (hardware-dm1701.md 10.1 step 1): leaving FSMC mode can leave charge that reads as phantom keys
+	// Discharge first: leaving FSMC mode can leave charge that reads as phantom keys
 	GPIOD->BSRR = (uint32_t)STM32_FSMC_D0_D3 << 16;
 	GPIOE->BSRR = (uint32_t)STM32_FSMC_D4_D7 << 16;
 	set_mode(GPIOD, STM32_FSMC_D0_D3, MODER_OUTPUT, PUPDR_NONE);

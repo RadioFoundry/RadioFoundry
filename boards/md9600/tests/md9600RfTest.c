@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 RF: the synthesizer and IF receiver drivers (rf/pll1590, rf/lmx2571, rf/ak2365a, the SKY72310 programming
 // sequence) and the board's revision and frequency plan (boards/md9600/rev_md9600.c, rfplan_md9600.c) against the
-// words in docs/spec/hardware-md9600.md 5.3 / 5.4 and the LMX2571 and AK2365 data sheets. Built with every revision
+// words in the LMX2571 and AK2365 data sheets. Built with every revision
 // switched on, and once more with only V4A / V5 (md9600RfTestV5) to check what a single-revision image refuses.
 #include <stdio.h>
 #include <string.h>
@@ -121,7 +121,7 @@ static void test_ak2365a(void)
 {
 	CHECK(AK2365A_CTRL1(7, true, 0, 1) == 0xF1);
 	CHECK(AK2365A_CTRL1(7, false, 2, 1) == 0xE9);
-	// The board's set-up, 25 and 12.5 kHz (hardware-md9600.md 5.4)
+	// The board's set-up, 25 and 12.5 kHz
 	uint16_t w[MD9600_IF_WORDS];
 	CHECK(md9600_if_words(true, w) == 6);
 	CHECK(w[0] == 0x08AA && w[1] == 0x02F1 && w[2] == 0x041D && w[3] == 0x0600 && w[4] == 0x1601 && w[5] == 0x1880);

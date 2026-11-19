@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// MD-9600 speaker routing (boards/md9600/speaker_md9600.h, docs/spec/hardware-md9600.md 6.1): every combination of
+// MD-9600 speaker routing (boards/md9600/speaker_md9600.h): every combination of
 // the FM squelch, PCM, DMR mode, band and the amplifier held warm
 #include <stdio.h>
 #include "speaker_md9600.h"

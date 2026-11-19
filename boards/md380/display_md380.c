@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // MD-380 display: 160x128 TFT on FSMC bank 1 (8-bit on D0-D7, RS on A17), wired as on the other STM32 radios; backlight on PC6
-// with TIM8 CH1 PWM (docs/spec/hardware-md380.md 7).
+// with TIM8 CH1 PWM.
 //
 // The panel type comes from the controller's ID (read display ID, 0x04, after a hardware reset) and, for the
-// orientation, the factory byte in SPI flash security register 3 at 0x1D where it was programmed (hardware-md380.md 7).
+// orientation, the factory byte in SPI flash security register 3 at 0x1D where it was programmed.
 // Every type is driven in RGB order: stock sets the same color order for all of them. MD380_PANEL_TYPE overrides the
 // type and MD380_PANEL_MADCTL_XOR mirrors the picture, both build-time bench knobs. All 128 rows are assumed visible.
 //

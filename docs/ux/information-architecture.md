@@ -189,13 +189,13 @@ Notation: `short / long`. "-" means none. All maps also follow the text-field ru
 | `#` | `CONTEXT` / Recent |
 | 0-9 | digits / speed dial |
 | Channel encoder detent | `ENC_STEP` (Home: channel; editors: value; lists: focus, forward = down) |
-| SK1 (top side key, above PTT; row 2 D5, [hardware-dm1701.md](../spec/hardware-dm1701.md) 20) | `MONITOR` (while held) |
+| SK1 (top side key, above PTT; row 2 D5, hardware-dm1701.md 20) | `MONITOR` (while held) |
 | SK2 (below PTT) | `AB` (dual watch A / B) / Dual watch on/off |
 | SK3 (lowest side key) | Press: power cycle. Hold 1.5 s: `EMERGENCY` where it is built (hold again to cancel), else speak status |
 | P1, P2 | Previous zone, Next zone |
 | PTT | `PTT` |
 
-Notes: the channel knob is a quadrature encoder with detents, not a 16-position switch ([hardware-dm1701.md](../spec/hardware-dm1701.md) 10.3), so
+Notes: the channel knob is a quadrature encoder with detents, not a 16-position switch (hardware-dm1701.md 10.3), so
 zones of any size step through it. No `NAV_LEFT`/`NAV_RIGHT`.
 
 ### 7.2 Baofeng DM-32UV: keypad, channel encoder, volume knob, side keys, color display
@@ -240,7 +240,7 @@ scroll wheel does; Home and editors follow the number. (Until 2026-10-10 the kno
 ### 7.4 TYT MD-9600 (mobile): front panel keys and encoder, hand mic with keypad, 128x64 monochrome
 
 The front panel has Enter (green), Back (red), Up, Down, P1-P4, the orange key, the power key, the channel encoder and
-a volume knob in the audio path; it has no `*`, `#` or digit keys ([hardware-md9600.md](../spec/hardware-md9600.md)
+a volume knob in the audio path; it has no `*`, `#` or digit keys (hardware-md9600.md
 9). The display is the 128x64 class.
 
 | Physical | Logical (short / long) |
@@ -294,7 +294,7 @@ text entry), offers canned messages only, and enlarges Home. Voice prompts are o
 | PTT | `PTT` |
 
 The layouts are the 128x64 ones of section 7.3. Which matrix position is which key isn't known yet
-([hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 9.1).
+(hardware-dm1801pro.md 9.1).
 ---
 
 ## 8. Screen inventory

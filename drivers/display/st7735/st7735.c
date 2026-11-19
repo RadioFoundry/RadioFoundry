@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// ST7735 / HX8353-class TFT driver and the 0xFE/0xEF unlock variant (docs/spec/hardware-dm1701.md 9.2, 9.3)
+// ST7735 / HX8353-class TFT driver and the 0xFE/0xEF unlock variant
 #include "st7735.h"
 
 enum {

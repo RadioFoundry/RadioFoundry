@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// DB25-D RF chips (rfchip_db25d.h; docs/spec/hardware-db25d.md 4.2, 4.8). Both chips sit on one bit-banged 3-wire bus
+// DB25-D RF chips (rfchip_db25d.h). Both chips sit on one bit-banged 3-wire bus
 // with an enable each; every part answers the same frame, so each chip gets an rfbus_3w_t and its driver.
 #include "rfchip_db25d.h"
 #include "db25d.h"
@@ -18,11 +18,11 @@
 
 #define IF_HZ		51550000u
 #define VHF_BELOW_HZ	280000000u	// the band split of the RF paths
-// The band flags, high for VHF: the main chip's carries the TX band, the LO's the RX band (hardware-db25d.md 4.8)
+// The band flags, high for VHF: the main chip's carries the TX band, the LO's the RX band
 #define GPIO_BAND	3u		// FD6818 and AT1141, main and LO
 #define BK_MAIN_BAND	2u		// BK4819 main (PRO)
 #define BK_LO_BAND	1u		// BK4819 LO (PRO). Low, VHF hears nothing
-// The LO's output that follows ADC 7 (hardware-db25d.md 3.3); what it drives is unknown
+// The LO's output that follows ADC 7; what it drives is unknown
 #define GPIO_LO_AUX	4u		// FD6818 and AT1141 LO
 #define BK_LO_AUX	2u		// BK4819 LO (PRO)
 #define ID_TRIES	3u
@@ -62,7 +62,7 @@ static const rfbus_3w_pins_t pins_lo = {
 	.delay_us = hal_delay_us, .crit_enter = hrc_irq_save, .crit_exit = hrc_irq_restore, .delay_ms = hal_delay_ms,
 };
 
-// ---- Detection (4.2) ----
+// ---- Detection ----
 
 static chip_t kind(uint16_t id, bool lo)
 {
@@ -113,7 +113,7 @@ bool db25d_rf_init(void)
 	}
 
 	// The main chip's init, the LO's, then the main chip's analog set, as the stock and the PRO's earlier code. The LO
-	// is above the signal (f + 51.55 MHz): DCS arrives inverted (4.7)
+	// is above the signal (f + 51.55 MHz): DCS arrives inverted
 	main_band = main_chip == CHIP_BK4819 ? BK_MAIN_BAND : GPIO_BAND;
 	lo_band = lo_chip == CHIP_BK4819 ? BK_LO_BAND : GPIO_BAND;
 	lo_aux = lo_chip == CHIP_BK4819 ? BK_LO_AUX : GPIO_LO_AUX;

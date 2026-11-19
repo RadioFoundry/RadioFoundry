@@ -164,12 +164,12 @@ What the records don't hold yet: limits and known problems from the bring-up pag
 | Radio | Known limits and problems | Source |
 |---|---|---|
 | DM-1701 | Not yet checked: split duplex with a real pair of radios, standalone SFR, roaming to a repeater, IP over DMR end to end, VOX with a voice, privacy scrambling against another radio | [on-air-coverage](testing/on-air-coverage.md) |
-| DM-32UV | GPS data seen, no fix yet. The transmit half of a split duplex pair not checked. FM transmit deviation at 12.5 kHz, both slots through a duplex hotspot. A DMR receive fault after hours of uptime (2026-10-16, cause unknown). USB not available | [dm32-bringup](testing/dm32-bringup.md) |
-| DM-1801 Pro | The receive half of a split duplex pair, VHF transmit, VOX and APRS receive not checked | [hardware-dm1801pro](spec/hardware-dm1801pro.md) |
-| DB25-D PRO | The older FD6818 batches (D64, D66, D6T) are driven by the same image, untested on a radio. Split duplex not built. Standalone and MMDVM SFR checked on the SDR bench (experimental). DMR audio from the speaker, a GPS fix and settings kept across power off not confirmed | [hardware-db25d](spec/hardware-db25d.md) |
-| MD-380 | Fully operational (UHF)¹. DCS, the VHF image, tone deviation and data from a DMR VFO not checked. Split duplex and SFR not available (HR_C5000) | [md380-bringup](testing/md380-bringup.md) |
+| DM-32UV | GPS data seen, no fix yet. The transmit half of a split duplex pair not checked. FM transmit deviation at 12.5 kHz, both slots through a duplex hotspot. A DMR receive fault after hours of uptime (2026-10-16, cause unknown). USB not available | dm32-bringup |
+| DM-1801 Pro | The receive half of a split duplex pair, VHF transmit, VOX and APRS receive not checked | hardware-dm1801pro |
+| DB25-D PRO | The older FD6818 batches (D64, D66, D6T) are driven by the same image, untested on a radio. Split duplex not built. Standalone and MMDVM SFR checked on the SDR bench (experimental). DMR audio from the speaker, a GPS fix and settings kept across power off not confirmed | hardware-db25d |
+| MD-380 | Fully operational (UHF)¹. DCS, the VHF image, tone deviation and data from a DMR VFO not checked. Split duplex and SFR not available (HR_C5000) | md380-bringup |
 
-¹ Frequency accuracy depends on each radio's factory calibration: confirm it against an external reference (frequency counter, service monitor, or a hotspot's MMDVMCal BER test). Two MD-380s measured 2-2.5 kHz high, outside an MMDVM hotspot's decode window; Settings > Advanced > Freq trim corrects receive and transmit together ([radio-features](spec/radio-features.md) 6.1, [hardware-md380](spec/hardware-md380.md)). The `ref_trim` row above lists the radios that have the trim.
+¹ Frequency accuracy depends on each radio's factory calibration: confirm it against an external reference (frequency counter, service monitor, or a hotspot's MMDVMCal BER test). Two MD-380s measured 2-2.5 kHz high, outside an MMDVM hotspot's decode window; Settings > Advanced > Freq trim corrects receive and transmit together ([radio-features](spec/radio-features.md) 6.1, hardware-md380). The `ref_trim` row above lists the radios that have the trim.
 
 ## Built by default on each radio
 
@@ -390,7 +390,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Minimal TCP | `NET_TCP` | 16,240 | 15,656 | Includes KISS, HTTP, rigctld, APRS-IS. About 4.5 KB RAM |
 | KISS over TCP, port 8001 | `NET_KISS` | 700 | 752 |  |
 | HTTP status page and JSON, port 80 | `NET_HTTP` | 4,796 | 4,860 |  |
-| HTTP static files stored and served gzip compressed | `NET_HTTP_GZIP` | -19,456 | -18,572 | Negative: saves flash, nearly all of it on web control's files. MD-380: web control follows this switch ([hardware-md380.md](spec/hardware-md380.md) 19) |
+| HTTP static files stored and served gzip compressed | `NET_HTTP_GZIP` | -19,456 | -18,572 | Negative: saves flash, nearly all of it on web control's files. MD-380: web control follows this switch (hardware-md380.md 19) |
 | Web control: the front panel page, keys, status and receive audio over `/ws` | `NET_WEBCTL` | 9,620 | 9,332 | The page and the radio's drawing included (about 6 KB gzip compressed); 1 KB RAM ([tcp-services.md](spec/tcp-services.md) 5.1) |
 | rigctld, port 4532 | `NET_RIGCTL` | 3,852 | 3,728 |  |
 | Audio linking (USRP over UDP, port 34001) | `NET_USRP` | 4,552 | 4,888 | DM-1701: DMR and FM both ways. MD-380: DMR only (FM audio doesn't reach the processor yet). DM-32UV: DMR only until its board code has the FM audio paths |
@@ -450,7 +450,7 @@ Link time optimization is on by default on both radios. The DM-1701 has run with
 passed); `LTO_3P=1` would take another 3 KB or so off by optimizing the third-party code too.
 
 The MD-380's app region is sectors 3-10, 0x0800C000..0x080DFFFF, 868,352 bytes (848 KB). The codec runs in place in
-sector 11 ([codec-md380.md](spec/codec-md380.md)). With link time optimization, its default:
+sector 11 (codec-md380.md). With link time optimization, its default:
 
 | MD-380 build | Flash | Free |
 |---|---:|---:|
@@ -465,7 +465,7 @@ and the hotspot off. Until every codec window moved into sector 11 it was 475,13
 The DM-32UV has 880 KB of code space, so RAM limits it: 165,612 bytes above the stock codec's RAM window and 27,868
 below it (RAM_LO). Its network is PPP on the programming cable (`NET_PPP`), on by default with the IP gateway and
 every service, `TCP_CONNS=3` (`boards/dm32/config.mk`). It fits because the state the core marks `RFOUNDRY_CPU_RAM` lives
-in RAM_LO ([hardware-dm32.md](spec/hardware-dm32.md) 17.1). Measured with csky-elf GCC 14 (bytes of the image, RAM
+in RAM_LO (hardware-dm32.md 17.1). Measured with csky-elf GCC 14 (bytes of the image, RAM
 of the linker's regions; the RTOS heap, 40 KB with every task stack, is inside the used part):
 
 | DM-32UV build | Image | RAM (165,612 B) | RAM_LO (27,868 B) |

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The lost-interrupt test of the GPIO interrupt watch (gpio_watch.c, hardware-dm32.md 6.3), no hardware access (host
+// The lost-interrupt test of the GPIO interrupt watch (gpio_watch.c), no hardware access (host
 // tested). With interrupts on, a pending GPIO interrupt is served within microseconds; one pending on two scans
 // running, 10 ms apart, with no handler entry between them, has not reached the CPU: its PIC source is masked or its
 // vector points elsewhere.

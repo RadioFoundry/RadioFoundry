@@ -197,7 +197,7 @@ int main(void)
 		CHECK(q.illegal == 0);
 	}
 
-	// Why the B-edge decoder miscounted (the reasons in docs/spec/hardware-dm1701.md 10.3):
+	// Why the B-edge decoder miscounted:
 	// 1. A wobble at a detent moves B (on a two-step detent B changes first going one way): every wobble gives a count
 	//    and then a count back, so the screen jumps one row and back
 	legacy_count = 0;

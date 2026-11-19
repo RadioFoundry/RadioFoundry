@@ -66,7 +66,6 @@ site/static/js/flasher/f4stub.js per-radio route or stock format data
 site/static/js/flasher/fake.js per-radio route or stock format data
 site/static/js/flasher/fakec7000.js per-radio route or stock format data
 site/static/js/flasher/iap.js per-radio route or stock format data
-site/static/js/flasher/iapui.js per-radio route or stock format data
 site/static/js/flasher/migrate.js per-radio route or stock format data
 site/static/js/flasher/select.js per-radio route or stock format data
 site/static/js/flasher/stockfw.js per-radio route or stock format data

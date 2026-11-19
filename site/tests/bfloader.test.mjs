@@ -138,7 +138,7 @@ test("Baofeng updater: listening passes over other answers until the loader ackn
 });
 
 test("Baofeng updater: steps 1-3 once per power-on; the instance that did them writes, a new one finds nothing", async () => {
-	// the radio (hardware-dm32.md 13.2): after step 3 it ignores step 1 and waits for step 4 until switched off
+	// the radio: after step 3 it ignores step 1 and waits for step 4 until switched off
 	const { s, fake } = bench();
 	const first = loaderOn(s);
 	assert.deepEqual(await first.listen(1000), { id: fx.id });
@@ -200,7 +200,7 @@ test("practice radio: switched on with its keys held it enters the updater, whic
 	assert.ok(equal(r.progmem.subarray(C.app_start, C.app_start + data.length), data));
 	assert.ok(r.progmem.subarray(C.app_start + data.length + 1024).every((b) => b === 0xFF), "the rest of the area erased");
 	assert.ok(equal(r.progmem.subarray(0, C.app_start), sim.progmem.subarray(0, C.app_start)), "the loader is never written");
-	// the radio starts what was written by itself after the end of transfer, no power cycle (13.2)
+	// the radio starts what was written by itself after the end of transfer, no power cycle
 	await new Promise((ok) => setTimeout(ok, 300));
 	assert.ok(r.events.includes("restart"));
 	assert.equal(r.state, "firmware");

@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// RT10 radio: the FD6818 on its two-wire bus (hardware-rt10.md 7) with the RT10's register set, FM receive and
+// RT10 radio: the FD6818 on its two-wire bus with the RT10's register set, FM receive and
 // transmit. The FD6818 modulates the microphone itself; the PA is keyed through the supply pins and DAC B with the
 // factory calibration's level (calibration_rt10.c). TX is refused without a calibration, outside the band, or with a
 // tone the chip can't send.
 //
-// DMR (CONFIG_DMR, hardware-rt10.md 7.1): the FD6818's digital set, the modem on the shared glue (dmr_rt10.c). tx()
+// DMR (CONFIG_DMR): the FD6818's digital set, the modem on the shared glue (dmr_rt10.c). tx()
 // only arms the transmitter; each burst then runs the FM key-up and key-down from the RF task (rt10_burst_on /
 // rt10_burst_off)
 //
-// APRS (CONFIG_APRS_AFSK, hardware-rt10.md 7.2): the tones take DMR's path onto the reference, the modem's FM transmitter
+// APRS (CONFIG_APRS_AFSK): the tones take DMR's path onto the reference, the modem's FM transmitter
 // playing them on MOD1 with the FD6818's microphone off; receive takes the FD6818's FM audio through the modem
 #include "rt10.h"
 #include "dmr_rt10.h"
@@ -41,7 +41,7 @@
 #define TX_TONE_GAIN	48u	// FM TX tone generator level (0..127)
 #define RX_QUIET_MS	150u	// after an FM key-down the chip reads as a carrier for a moment: the squelch stays shut
 #define SPK_SWITCH_MS	10u	// the AF gate before the amplifier on, after it off
-#define APC_STEPS	180u	// ramp length: 180 steps of 2 us (hardware-rt10.md 5)
+#define APC_STEPS	180u	// ramp length: 180 steps of 2 us
 #define APC_STEP_US	2u
 #define TX_END_US	100u	// key-down: between the PA pins, the receiver's retune and the RX supply
 #define CTCSS_MIN_X10	600u
@@ -49,7 +49,7 @@
 #define DAC_C_INIT	1762u	// DAC channel C at set-up, as on the other HR_C7000 radios
 #define MODEM_MIC_DB	0u	// the modem's ADC gain: the microphone reaches the FD6818, not the modem
 
-// The RT10's power-on set (hardware-rt10.md 7). Page 1 is addressed from 0x80 on this bus
+// The RT10's power-on set. Page 1 is addressed from 0x80 on this bus
 static const rfbus_regval_t rt10_page0[] = {
 	{ 0x17, 0x06E4 }, { 0x19, 0x930F }, { 0x1A, 0x1F80 }, { 0x1F, 0x8258 }, { 0x22, 0x3C14 }, { 0x20, 0x5204 },
 	{ 0x23, 0x9C0F }, { 0x2A, 0x2202 }, { 0x35, 0xF008 }, { 0x37, 0x0601 }, { 0x3A, 0x8000 }, { 0x40, 0x3AD0 },
@@ -72,7 +72,7 @@ static const rfbus_regval_t rt10_after[] = {
 };
 // The receive set-up, written by the analog mode: the RT10's AFC, DC, filter and page-1 words (the
 // microphone gain among them) in place of the driver's. It undoes the digital set; 0x48 goes back to its power-on word,
-// the one FM was measured with (hardware-rt10.md 7)
+// the one FM was measured with
 static const rfbus_regval_t rt10_analog[] = {
 	{ 0x73, 0x4642 }, { 0x04, 0x0300 }, { 0x7E, 0x3425 }, { 0x44, 0x42CC }, { 0x4B, 0x223C }, { 0x48, 0x6C4C },
 	{ 0x35, 0xF008 }, { 0x77, 0x80EF },
@@ -80,12 +80,12 @@ static const rfbus_regval_t rt10_analog[] = {
 	{ 0x1C, 0x076F }, { 0x1D, 0xB9FD }, { 0x27, 0x18DA }, { FD6818SH_REG_PAGE, 0 },
 };
 // 902-928 MHz is one band, the chip's above 600 MHz: 0x1A and 0x40 as the band select writes them.
-// A band word from the chip's lower bands leaves the receiver deaf (hardware-rt10.md 7, gotchas.md 3.17)
+// A band word from the chip's lower bands leaves the receiver deaf (gotchas.md 3.17)
 static const uint16_t rt10_band_edge[] = { 1120 };
 static const uint16_t rt10_band_word[] = { 0x1F80 };
 static const uint8_t rt10_dev_high[] = { 0x3A };
 
-// The digital set (hardware-rt10.md 7.1), the DMR entry, then the digital bandwidth word and the
+// The digital set, the DMR entry, then the digital bandwidth word and the
 // band select's 0x40, which every tune writes. 0x4B = 0xE442 is what puts the demodulated 4FSK
 // on the AF output: without it the modem's AF ADC sees a few millivolts and never syncs. Receive audio 0x4140 goes to
 // the modem; at a burst's TX 0x6740. 0x77 is the DMR word (0x80EF in FM, the analog set)
@@ -157,7 +157,7 @@ static void aprs_listen_route(bool on);
 static void modem_fm(void);
 
 // PCM amplitude per AFSK level step (level 50 is the nominal 3 kHz peak): the reference's modulation slope, set on the
-// SDR bench (hardware-rt10.md 7.2)
+// SDR bench
 static const hrc_afsk_board_t afsk_board = {
 	.tx_route = afsk_tx_route, .listen = aprs_listen_route, .amp_per_level = 55,
 };
@@ -182,7 +182,7 @@ static bool cal_read(uint32_t addr, void *buf, uint32_t len)
 }
 
 // The modem's DC bias: the TX center byte and the step's modulation byte in RF_MOD_BIAS_CTRL, as on the other HR_C7000
-// radios. Its MOD1 level is the TCXO's control voltage, so it sets the frequency of the FD6818 (hardware-rt10.md 4.1);
+// radios. Its MOD1 level is the TCXO's control voltage, so it sets the frequency of the FD6818;
 // unwritten, the radio sat 28 ppm low. Written at start-up and at every receive set-up, for the step's byte
 static void write_bias(uint32_t hz)
 {
@@ -242,7 +242,7 @@ static bool af_on(void)
 	return audio_open || mode == RADIO_MODE_DMR;
 }
 
-// The speaker (hardware-rt10.md 3): the amplifier (PTB8) is on for an open squelch (audio()) or while the modem plays
+// The speaker: the amplifier (PTB8) is on for an open squelch (audio()) or while the modem plays
 // samples (a beep, DMR voice), off while keyed. The FD6818's AF reaches it only through PTB13, high for an open squelch
 // alone, so a beep or a call doesn't come with the receiver's noise. The AF passes
 // 10 ms before the amplifier turns on and stops 10 ms after it turns off, when the caller may wait (the radio task:
@@ -389,7 +389,7 @@ static void apc_ramp(uint16_t target, bool up)
 static void audio_set(bool on, bool may_wait);
 
 #if CONFIG_DMR
-// DMR TX, armed at the key-up (hardware-rt10.md 7.1). The RF stays receiving until the first burst's RF TX interrupt;
+// DMR TX, armed at the key-up. The RF stays receiving until the first burst's RF TX interrupt;
 // the modem's bias gets the step's modulation byte for the TX frequency, the FD6818 the PA gain
 static bool dmr_tx(uint32_t hz, uint8_t power)
 {
@@ -421,7 +421,7 @@ static void dmr_disarm(void)
 	}
 }
 
-// One burst's TX on (hardware-rt10.md 7.1): the key-up delay, the RX supply off, the FD6818 to
+// One burst's TX on: the key-up delay, the RX supply off, the FD6818 to
 // the TX frequency (its TX AF word first) in its TX state, PA select and TX supply on, DAC B ramped up. The key-up
 // delay counts from the RF TX interrupt: the task's wake takes part of it
 void rt10_burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
@@ -454,7 +454,7 @@ void rt10_burst_off(void)
 }
 #endif
 
-// The key-up (hardware-rt10.md 5): the TX words while still receiving, speaker off, PA select and
+// The key-up: the TX words while still receiving, speaker off, PA select and
 // TX supply low; then the calibration's delay, the RX supply off, the chip to f in its TX state, PA select and TX
 // supply on, and DAC B ramped up to the calibration's level
 static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_tone)
@@ -638,7 +638,7 @@ static void status(radio_status_t *st)
 	st->carrier = false;
 	// The chip compares the sub-audio set by set_rx_tone and puts the result on its GPIO0 (fd6818sh.h). A match stays
 	// up after the carrier and through the next one, whatever its tone, until the sub-audio set is written again
-	// (hardware-rt10.md 7): with the chip's squelch (GPIO6) closed and the match up, write it again, which clears it
+	//: with the chip's squelch (GPIO6) closed and the match up, write it again, which clears it
 	bool sq = hrc_pin_read(PIN_RF_SQ), css = hrc_pin_read(PIN_RF_CSS);
 	if (mode != RADIO_MODE_DMR && rx_tone.type != TONE_NONE && !sq && css && !transmitting) {	// 0x51 holds the TX sub-audio while keyed
 		fd6818sh_set_rx_tone(&fd, fd_tone(&rx_tone), rx_tone.value);
@@ -683,7 +683,7 @@ static void modem_fm(void)
 }
 
 // APRS AFSK (hrc_afsk.c). The FD6818 modulates only its microphone, so the tones go the way DMR's 4FSK does: the
-// modem's FM transmitter plays the prompt FIFO on MOD1, the reference's control voltage (hardware-rt10.md 7.1), around
+// modem's FM transmitter plays the prompt FIFO on MOD1, the reference's control voltage, around
 // the receive set-up's bias. The FD6818 keeps the carrier in its tone state with no tone (microphone off), and the
 // modem's own microphone input is muted. False when the radio isn't transmitting FM
 static bool afsk_tx_route(bool on)

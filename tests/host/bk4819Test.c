@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // BK4819 driver: frames on two fake chips that share clock and data and have their own enables (the DB25-D's main
-// and LO transceivers), the init and LO sequences, and the pure helpers (docs/spec/hardware-db25d.md 4)
+// and LO transceivers), the init and LO sequences, and the pure helpers
 #include <stdio.h>
 #include <string.h>
 #include "rf/bk4819/bk4819.h"
@@ -192,7 +192,7 @@ static void test_helpers(void)
 	CHECK(bk4819_rssi_dbm(0x0000) == -160);
 	CHECK(bk4819_rssi_dbm(0x0082) == -95);		// 130 half-dB
 	CHECK(bk4819_rssi_dbm(0xFFFF) == 95);		// bits above 8 ignored
-	// The DB25-D stock squelch: open at -v dBm, close 2 dB lower (hardware-db25d.md 6.4)
+	// The DB25-D stock squelch: open at -v dBm, close 2 dB lower
 	CHECK(bk4819_squelch_rssi(-136, 2) == (48u << 8 | 44u));
 	CHECK(bk4819_squelch_rssi(-120, 2) == (80u << 8 | 76u));
 	CHECK(bk4819_squelch_rssi(-160, 2) == 0x0000);
@@ -492,7 +492,7 @@ static void test_sequences(void)
 	CHECK(chips[0].protocol_errors == 0 && chips[1].protocol_errors == 0);
 }
 
-// DMR receive (hardware-db25d.md 4.5): the stock digital mode set in its order; the end is the stock analog mode set
+// DMR receive: the stock digital mode set in its order; the end is the stock analog mode set
 // plus 0x27 and 0x48 as they were
 static void test_dmr_rx(void)
 {
@@ -538,7 +538,7 @@ static void test_dmr_rx(void)
 	CHECK(chips[0].protocol_errors == 0);
 }
 
-// DMR transmit (4.5): the digital TX words, one burst's retune in the stock order on the main chip (TX on 438.25 MHz,
+// DMR transmit: the digital TX words, one burst's retune in the stock order on the main chip (TX on 438.25 MHz,
 // back to the IF) and the LO's resume, which leaves its frequency alone
 static void test_dmr_tx(void)
 {

@@ -320,6 +320,6 @@ rows without a usable frequency, tones the radio can't hold, and names it shorte
 channels only, since CHIRP has no DMR.
 
 A CHIRP image is one radio's memory, so each radio model needs its own reader and the editor reads only the models it
-lists ([CHIRP images the editor reads](../spec/hardware-uv5r-chirp-image.md)). It imports those channels the same
+lists (CHIRP images the editor reads). It imports those channels the same
 way as a CSV file. For any other radio the editor names the model it found
 and says to export the channels from CHIRP with File > Export to CSV.

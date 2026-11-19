@@ -267,7 +267,7 @@ A board has either `stock`, or `profile` with a linker codec slot. With `stock`,
 stock files' profiles. The files must hold the same codec; each may put its tables at other addresses. The board's
 codec windows are the union of every file's layout. The image must stay out of all of them, and keeping the codec keeps
 all of them. A merge writes and checks the layout of the file it merges
-([codec-placement.md](../spec/codec-placement.md)).
+(codec-placement.md).
 
 ### [cps]
 

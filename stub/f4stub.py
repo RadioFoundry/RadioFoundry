@@ -173,7 +173,7 @@ SRAM_SIZE = 128 * 1024                 # stub/stm32f4/f4stub.ld: .bss and the st
 # tools/boards.py). Everything else in a sector that is rewritten is read back from the radio and written again
 # unchanged (no radio shares a sector with the codec any more, since it moved; the rule stays for one that does).
 # Sectors with no owned byte are never erased, except "codec": the flash from the application's end to the end of
-# flash, the codec's own sectors, written only from an image merged with the codec (docs/spec/codec-placement.md),
+# flash, the codec's own sectors, written only from an image merged with the codec,
 # which carries all of them. The radios: every board whose platform builds this stub.
 #
 # The rest of a profile is the stub's board record (record()), from the registry's [flash.stub] (tools/boards.py
@@ -662,7 +662,7 @@ class F4Radio(stubtool.Radio):
 
     def guard_codec(self, codec, changed, sec):
         """Refuse a plain image that would erase a sector holding the radio's codec, before any erase. The codec's
-        descriptor at the end of the codec flash says where every window is (docs/spec/codec-placement.md); a codec
+        descriptor at the end of the codec flash says where every window is; a codec
         placed by an earlier release can lie in what is now the application's flash. Moving it takes a build merged
         with the codec, which rfoundry and the web flasher make from a copy read back from the radio first."""
         at = codec[1] - DESC_LEN

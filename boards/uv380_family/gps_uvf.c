@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The family's GPS line, through the shared STM32 GPS receiver (platform/stm32f4/gps_uart): NMEA on USART1 RX (PA10),
-// module power on PA9, high = on. A factory module on the MD-UV380 G models (hardware-mduv380.md 9); the DM-1701 has the
-// same two pins and no module, but an owner can fit one there (hardware-dm1701.md 14). Radios with and without a module
+// module power on PA9, high = on. A factory module on the MD-UV380 G models; the DM-1701 has the
+// same two pins and no module, but an owner can fit one there. Radios with and without a module
 // share an image, so the module is powered for the listen window only and switched off again when nothing is heard. A
 // sentence keeps it on, and every sentence goes to the position service (core/position). From then on PA9 follows
 // Settings > Location > GPS (board_t.gps)
@@ -14,7 +14,7 @@
 #if CONFIG_GPS	// off: the driver and its interrupt handler are left out, and the radio has no GPS
 
 // 9600 is the usual default of these modules. The TYT images ask for 14400 from a clock library built for a 12 MHz
-// crystal, which is 9600 on this 8 MHz one (14400 x 8 / 12, hardware-mduv380.md 9). 14400 stays in the hunt until a G
+// crystal, which is 9600 on this 8 MHz one (14400 x 8 / 12). 14400 stays in the hunt until a G
 // model confirms 9600 on the wire
 static const uint32_t rates[] = { 9600, 14400 };
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// AT1846S RF transceiver driver (docs/spec/hardware-dm1701.md section 5; AT1846S datasheet and programming guide)
+// AT1846S RF transceiver driver (AT1846S datasheet and programming guide)
 #include "at1846s.h"
 #include "rf/subaudio/subaudio.h"
 
@@ -93,7 +93,7 @@ static const reg_val_t dmr_regs[] = {
 	{ 0x40, 0x0031 },	// bit 0 set: low-frequency baseband for 4FSK
 	{ 0x15, 0x1100 },
 	// AGC target 18 (bits 11:6) with bits 2:0 clear: at 2 or more the AGC overloads the start of every simplex burst
-	// (30 ms on, 30 off), about a bit a frame from -85 to -40 dBm (hardware-dm1701.md 5.5)
+	// (30 ms on, 30 off), about a bit a frame from -85 to -40 dBm
 	{ 0x32, 0x4490 },
 	{ 0x3A, 0x00C3 },
 	{ 0x3C, 0x1B34 },
@@ -105,7 +105,7 @@ static const reg_val_t dmr_regs[] = {
 	{ 0x58, 0x9CDD },	// audio filters off
 	// Receive audio 1 dB under full (dac_vgain 0xE): the 4FSK level the modem decodes best between transmitters
 	// 15 % under and over the standard's deviation; full gain corrects a bit a frame from one that over-deviates,
-	// and 2 dB under loses sync to one that under-deviates (hardware-dm1701.md 5.5)
+	// and 2 dB under loses sync to one that under-deviates
 	{ 0x44, 0x07EF },
 };
 
@@ -345,7 +345,7 @@ bool at1846s_set_state(at1846s_t *dev, at1846s_state_t state)
 
 // The chip sends the word from its MSB (bit 22) and compares received bits the same way, while DCS puts code bit 0
 // first on air: the register takes the word bit-reversed. The programming guide's own example (023 as 0x0076 / 0x3813)
-// goes out as D023 read backwards, which no other radio accepts (hardware-dm1701.md 5.7)
+// goes out as D023 read backwards, which no other radio accepts
 static bool dcs_code_regs(at1846s_t *dev, uint16_t code)
 {
 	uint32_t golay = subaudio_dcs_word(code), word = 0;

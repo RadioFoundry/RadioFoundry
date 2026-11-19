@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The stock Baofeng DM-32UV codeplug (docs/spec/dm32-stock-codeplug.md): 4 KB pages in the data flash, each tagged
+// The stock Baofeng DM-32UV codeplug: 4 KB pages in the data flash, each tagged
 // with the logical block it holds. Builds the logical image from a data flash read, recognizes a codeplug in it,
 // reads its records, and fills the editing model (model.js) from it as stock_tyt.js does, with the same note codes.
 

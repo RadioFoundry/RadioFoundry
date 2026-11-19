@@ -11,8 +11,7 @@ the stock windows' (stockfw.check_form). The copy is checked again when it is lo
 can't come out of this. A copy in a stock or former layout is moved to the current one before it is written
 (segments). The web flasher does the same (site/static/js/flasher/codecsave.js), keeping its copy in the browser.
 
-The copy is never deleted: it is what lets an install that stopped halfway, at any step, be run again (docs/spec/
-codec-placement.md, "Moving to a new layout").
+The copy is never deleted: it is what lets an install that stopped halfway, at any step, be run again.
 
 There is one copy per radio: its file name carries the radio's chip UID (debuglink.probe "uid"), and a move only ever
 uses the copy saved from the radio being moved (find, strict), so a computer that serves two radios never writes one's

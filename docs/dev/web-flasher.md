@@ -14,7 +14,7 @@ The flasher is plain ES modules. The logic ports rfoundry, and the tests check t
 | `vendorfile.js` | Every vendor file a user picks, on every radio's page (below) | |
 | `explain.js` | Why a vendor file can't be used, as one of six problems, and what an error report says about the file (below) | |
 | `bytes.js` | Byte helpers (hex, CRC, concatenation) shared by the modules | |
-| `codecmap.js` | Codec maps: which words a relocated codec rewrites ([codec-placement.md](../spec/codec-placement.md)) | `rfoundry/codecmap.py` |
+| `codecmap.js` | Codec maps: which words a relocated codec rewrites (codec-placement.md) | `rfoundry/codecmap.py` |
 | `plan.js` | Sector plans: keep, merge, and restore (a whole image put back exactly) | `rfoundry/plan.py` |
 | `manifest.js` | Release manifest checks | `rfoundry/manifest.py` |
 | `decide.js` | Keep or merge the codec | `rfoundry/cli.py` `decide_codec` |
@@ -90,7 +90,7 @@ The best file for the chosen radio is used:
 
 The page lists what each file is: used, for another radio, set aside and why. A codec found by its signature alone is
 never taken. Moving the codec needs that build's map, because its calls into the rest of the vendor firmware differ
-per build ([codec-placement.md](../spec/codec-placement.md)).
+per build (codec-placement.md).
 
 ### When a file can't be used
 
@@ -458,7 +458,7 @@ writes without asking; without one it asks first:
 |---|---|
 | 0. Skip | An update, a move from another open firmware, a board without a memory chip (`backup.spi_size` 0), or a backup from this visit that read every stock family's tables and found none (`channelsWanted`): nothing is read. A radio without a settings region (STORAGE INFO unavailable: a chip too small for the board's flash map) stores no codeplug: the step says so and ends |
 | 1. Read | The codeplug span over the CPS, no further than the radio's chip. The stock codeplug comes from this visit's backup when it holds one (`stockSource`), else from the live read, further on a family whose stock tables reach past the span (`readSpan`) |
-| 2. Recognize | `classify` ([codeplug-stock-tyt.md](../spec/codeplug-stock-tyt.md) 2). A RadioFoundry codeplug, a blank chip or an unknown layout ends the step: nothing is written |
+| 2. Recognize | `classify` (codeplug-stock-tyt.md 2). A RadioFoundry codeplug, a blank chip or an unknown layout ends the step: nothing is written |
 | 3. Convert | `importStock`, the Codeplug Editor's conversion, with its counts and notes. No channels ends the step |
 | 4. Prepare | The settings area is claimed (`prepareStorage`), as before a codeplug restore |
 | 5. Write | The radio's bytes with the converted image over the codeplug's regions (`writeRanges`, as a Codeplug Editor write), in the 4 KB sectors that differ (`codeplugSectors`). The radio's own settings block, the VFO pair, the ID database area, RadioFoundry's own areas and protected data keep the radio's bytes |
@@ -496,7 +496,7 @@ A bundle can hold both codeplugs, the stock one and RadioFoundry's:
 | Codeplug | Where the page reads it |
 |---|---|
 | RadioFoundry's | The Tools page's `backup-to-image` (`codeplug.js`) and the Codeplug Editor's open (`editor/files.js`): the `spi-flash` part, from address 0 |
-| A stock TYT-family codeplug | The same, converted by `codeplug/stock_tyt.js` ([codeplug-stock-tyt.md](../spec/codeplug-stock-tyt.md)) |
+| A stock TYT-family codeplug | The same, converted by `codeplug/stock_tyt.js` (codeplug-stock-tyt.md) |
 | A stock Baofeng codeplug with a spec in `docs/spec/` | The same, converted by `codeplug/stock_baofeng.js` (the first 84 channels) |
 | Any other stock codeplug | Nowhere: no spec in `docs/spec/` describes its records, and only `dmrconf` (GPL, never in the page) decodes it |
 

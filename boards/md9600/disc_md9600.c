@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// MD-9600 receive audio from the discriminator on PC3 (RX_2T_5T, ADC123 IN13, docs/spec/hardware-md9600.md 19.9):
-// voice band with the sub-audio removed. FM receive audio never passes through the HR_C6000 on this radio (6.1), so
+// MD-9600 receive audio from the discriminator on PC3 (RX_2T_5T, ADC123 IN13):
+// voice band with the sub-audio removed. FM receive audio never passes through the HR_C6000 on this radio, so
 // this is the MCU's only copy of it. Two readers share one capture: APRS receive (afsk_md9600.c) and the PCM stream's
 // FM receive tap (c6000_md9600.c). Each keeps its own tail on the ring; the capture runs while either wants it.
 //

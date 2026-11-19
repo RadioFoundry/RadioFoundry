@@ -4,7 +4,7 @@
 """Merge a radio's own stock AMBE+2 codec into a RadioFoundry image, on your machine (the STM32 radios whose
 board.toml says [codec] tool = "codec_extract").
 
-Recipes from each radio's codec page (docs/spec/codec-<radio>.md, "Extraction recipe"):
+The recipe:
   1. check the stock file ("OutSecurityBin" container, one of rfoundry/stockfw.py PROFILES) by SHA-256 and its segment
      table; the file picks the radio. Or take a read of the radio's internal flash made while it ran its stock firmware
      (stub/stubtool.py PORT --progmem FILE): the codec is plain there, found by the code window's SHA-256, no key;
@@ -13,7 +13,7 @@ Recipes from each radio's codec page (docs/spec/codec-<radio>.md, "Extraction re
      way);
   3. check each window's SHA-256 and the code's first word 0x4FF0E92D;
   4. write a new image: the built application from 0x0800C000, then the codec where its profile places it, 0xFF between
-     (docs/spec/codec-placement.md): the tables at their stock address, the code moved as one block (right after
+     (the placement): the tables at their stock address, the code moved as one block (right after
      the tables, or at the start of sector 10 or 11 as the build's profile says), with the addresses the build's
      codec map lists rewritten, and the descriptor at 0x080FFF80 that tells the firmware where the code is.
 
@@ -28,7 +28,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import stm32_dfu  # noqa: E402  (key table and key file check, hardware-dm1701.md 15.3)
+import stm32_dfu  # noqa: E402  (key table and key file check)
 
 # The container, decryption, profiles and merge live in the rfoundry package (one implementation for both tools)
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "rfoundry"))

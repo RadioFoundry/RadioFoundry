@@ -79,7 +79,7 @@ OK、返回、方向键、数字键、**\***、**#**、PTT 和音量保持不变
 
 A 和 B 可以是任意区域的任意信道，或 VFO（[核心的实现方式](../spec/radio-features.md#21-dual-watch)）。此双守候尚未在任何电台上经空中验证。
 
-Anytone AT-D578UV 是双接收机场景的目标机型：其硬件有两颗接收芯片（[Anytone 硬件说明](../spec/hardware-anytone.md)）。RadioFoundry 没有它的板级支持，因此不受支持。
+Anytone AT-D578UV 是双接收机场景的目标机型：其硬件有两颗接收芯片（Anytone 硬件说明）。RadioFoundry 没有它的板级支持，因此不受支持。
 
 ## 从电脑设置音量
 
@@ -124,8 +124,8 @@ Anytone AT-D578UV 是双接收机场景的目标机型：其硬件有两颗接�
 
 | 项目 | DM-1701 |
 |---|---|
-| 原厂固件文件 | 宝锋的 `DM-1701(CSV)-V02.06.bin` 或 `DM-1701(noCSV)-V02.06.bin`（V02.06），或 Radioddity 的 V02.01、V02.02 或 V02.03 文件（`Firmware-DM-1701(CSV)-V02.01.bin`、`DM-1701(CSV)-V02.02.bin`、`DM-1701(CSV)-V02.03 Only for Radioddity.bin`、`DM-1701-V02.03 Only for Radioddity.bin`）。每个都提供引导程序密钥和语音编解码器。V02.06 的归档在 github.com/daniel5600/BAOFENG-DM1701-Original-Firmware（[列表](../spec/codec-dm1701.md#firmware-files)） |
-| MD-9600 文件 | 任何 TYT MD-9600 V16.45 或 V06.09 文件（`MD9600-CSV(V4)-V16.45.bin` 等）提供语音编解码器，即 OpenGD77 系列安装留在电台上的那个。它不提供引导程序密钥，也绝不会作为电台固件写回：还需选择 DM-1701 文件，或先读取电台（**其他开源固件**，会在电台中找到该编解码器）。[详情](../spec/codec-dm1701.md#md-9600-files) |
+| 原厂固件文件 | 宝锋的 `DM-1701(CSV)-V02.06.bin` 或 `DM-1701(noCSV)-V02.06.bin`（V02.06），或 Radioddity 的 V02.01、V02.02 或 V02.03 文件（`Firmware-DM-1701(CSV)-V02.01.bin`、`DM-1701(CSV)-V02.02.bin`、`DM-1701(CSV)-V02.03 Only for Radioddity.bin`、`DM-1701-V02.03 Only for Radioddity.bin`）。每个都提供引导程序密钥和语音编解码器。V02.06 的归档在 github.com/daniel5600/BAOFENG-DM1701-Original-Firmware（列表） |
+| MD-9600 文件 | 任何 TYT MD-9600 V16.45 或 V06.09 文件（`MD9600-CSV(V4)-V16.45.bin` 等）提供语音编解码器，即 OpenGD77 系列安装留在电台上的那个。它不提供引导程序密钥，也绝不会作为电台固件写回：还需选择 DM-1701 文件，或先读取电台（**其他开源固件**，会在电台中找到该编解码器）。详情 |
 | `--stock-installed` | 电台运行的版本，例如 `"V02.06 CSV"` |
 | 引导程序按键 | 用音量旋钮开机时同时按住 **PTT** 和 **SK1** |
 | 引导程序 USB 设备（Zadig） | “Digital Radio in USB mode”（0483:DF11），[驱动步骤](02-installing.md#windows-the-bootloader-driver) |
@@ -179,7 +179,7 @@ Anytone AT-D578UV 是双接收机场景的目标机型：其硬件有两颗接�
 
 ### DM-1701 缺少什么
 
-- 出厂无 GPS。LRRP 位置请求得到“无定位”。APRS 位置来自电脑或固定位置。若自行加装 GPS 模块，请把其 NMEA 输出接到 PA10（STM32 引脚 69）。电台会在启动时发现它（[hardware-dm1701.md 14.2](../spec/hardware-dm1701.md#142-gps-module)）。
+- 出厂无 GPS。LRRP 位置请求得到“无定位”。APRS 位置来自电脑或固定位置。若自行加装 GPS 模块，请把其 NMEA 输出接到 PA10（STM32 引脚 69）。电台会在启动时发现它（hardware-dm1701.md 14.2）。
 - APRS 接收需要静噪打开：电台只能听到强到足以打开静噪的分组，弱分组听不到。
 - 没有 APRS iGate（把听到的分组传给 APRS-IS）：flash 空间还不够。
 - 没有振动马达：镜像中没有**设置 > 声音 > 振动**。
@@ -268,7 +268,7 @@ Anytone AT-D578UV 是双接收机场景的目标机型：其硬件有两颗接�
 
 ## TYT MD-UV380
 
-涵盖 TYT MD-UV380、MD-UV390、Retevis RT3S 和 MD-UV390 Plus 10 W，带或不带 GPS。**处于 bring-up 阶段：尚未在电台上运行任何功能。** 它采用 DM-1701 的板级设计，镜像基于 DM-1701 的代码，使用本机的按键、显示屏、功率表和 GPS（[bring-up 检查表](../testing/mduv380-bringup.md)）。
+涵盖 TYT MD-UV380、MD-UV390、Retevis RT3S 和 MD-UV390 Plus 10 W，带或不带 GPS。**处于 bring-up 阶段：尚未在电台上运行任何功能。** 它采用 DM-1701 的板级设计，镜像基于 DM-1701 的代码，使用本机的按键、显示屏、功率表和 GPS（bring-up 检查表）。
 
 ### 在 MD-UV380 上安装
 
@@ -276,7 +276,7 @@ Anytone AT-D578UV 是双接收机场景的目标机型：其硬件有两颗接�
 
 | 项目 | MD-UV380 |
 |---|---|
-| 原厂固件文件 | 任何受支持的 TYT 或 Retevis 文件：18.11、18.16、19.06、19.26、19.74、219.60 或 219.74（[列表](../spec/codec-mduv380.md#stock-files)）。它提供引导程序密钥和语音编解码器；所有文件中的编解码器相同，因此任一文件都适用于这些电台中的任一款 |
+| 原厂固件文件 | 任何受支持的 TYT 或 Retevis 文件：18.11、18.16、19.06、19.26、19.74、219.60 或 219.74（列表）。它提供引导程序密钥和语音编解码器；所有文件中的编解码器相同，因此任一文件都适用于这些电台中的任一款 |
 | 引导程序按键 | 开机时按住 **PTT** 和其正上方的侧键（SK1） |
 | 镜像 | 两个：5 W（MD-UV380、MD-UV390 和 RT3S）和 10 W（MD-UV390 Plus）。rfoundry 接受 `--option POWER=10w`。**请按电台或其包装上的标签选择**：两个版本交换了发射机的频段选择和背光引脚，电台尚无法区分，因此错误的镜像不会被发现 |
 | 引导程序 USB 设备（Zadig） | “Digital Radio in USB mode”（0483:DF11），[驱动步骤](02-installing.md#windows-the-bootloader-driver)（假定与 DM-1701 相同） |
@@ -530,11 +530,11 @@ GPS 模块在启动时检查：若 5 秒内应答，电台就有 GPS（APRS 位�
 | TYT MD-9600、Retevis RT90（移动台） | 进行中（[#112](https://github.com/radiofoundry/radiofoundry/pull/112)）。使用同一 STM32F405 和 HR_C6000 组合的移动台，带 SKY72310 合成器（较旧板子）和 128x64 单色 LCD。 |
 | Radioddity GD-77、TYT MD-760、GD-77S、宝锋 DM-1801 v1 / DM-860、RD-5R | 进行中（[#111](https://github.com/radiofoundry/radiofoundry/pull/111)）。新平台：不同 MCU（NXP MK22FN512），相同的 HR_C6000 和 AT1846S，128x64 单色 LCD。今天新买的 DM-1801 不是 v1，外观相似的 DR-1801 无关。 |
 | Radioddity GD-88 | 进行中（[#132](https://github.com/radiofoundry/radiofoundry/pull/132)）。HR_C7000 平台上的双接收机（芯片数量尚未确认）；应可复用 DM-32UV 移植的大部分内容。 |
-| Anytone AT-D868UV / AT-D878UV / AT-D878UVII Plus、BTECH DMR-6X2、Alinco DJ-MD5、Radioddity GD-AT10G | 计划中。新平台（GD32F30x）和新 DMR 芯片（SCT3258，自行运行声码器），因此它开启 Anytone 系列（[hardware-anytone.md](../spec/hardware-anytone.md)）。 |
+| Anytone AT-D868UV / AT-D878UV / AT-D878UVII Plus、BTECH DMR-6X2、Alinco DJ-MD5、Radioddity GD-AT10G | 计划中。新平台（GD32F30x）和新 DMR 芯片（SCT3258，自行运行声码器），因此它开启 Anytone 系列（hardware-anytone.md）。 |
 | Radioddity DB40-D、Kydera CDR-700UV（移动台） | 计划中。需要硬件。两颗 HR_C7000 级处理器（A 和 B），与 GD-88 类似，因此跟随 GD-88 移植。 |
 | TYT MD-2017 / Retevis RT82 | 计划中。DM-1701 的 STM32 和 HR_C6000 组合，带两个接收机，因此应可复用 STM32F4 平台。硬件可同时接收两个信道。 |
 | BTECH DMR-6X2 PRO | 计划中。基于 AT-D878UVII Plus，因此应跟随 Anytone 移植。 |
-| Anytone AT-D578UV（移动台） | 计划中。878 的芯片装在移动台中，中途更换过 MCU：两个平台（[hardware-anytone.md](../spec/hardware-anytone.md)）。 |
+| Anytone AT-D578UV（移动台） | 计划中。878 的芯片装在移动台中，中途更换过 MCU：两个平台（hardware-anytone.md）。 |
 | BridgeCom Maverick | 计划中。作为升级版 AT-D878UV 销售，因此很可能跟随 Anytone 移植。 |
 | Retevis RT10（902-928 MHz） | 计划中。902-928 MHz 的 DMR 和 FM 手持台，此处的其他电台都不覆盖该频段；芯片尚未知。 |
 <!-- end generated -->

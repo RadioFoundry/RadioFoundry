@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // Copyright (c) 2026 Open25-DM32 Authors
 // HR_C7000 PCM audio (audio_pcm.h): mic samples from the modem's PCM buffer, speaker samples to its prompt FIFO
-// (docs/spec/hardware-dm32.md 9; modem-hrc7000.md 3, 8.1, 8.4).
+// (modem-hrc7000.md 3, 8.1, 8.4).
 //
 // With AUDIO_CONTROL b4 set the modem fills 80 mic samples at 0x18000000 every 10 ms and raises PCM_wr (PIC 28). The
 // mic interrupt paces everything: two halves make a 20 ms block, the task runs the block callback (never in the ISR)

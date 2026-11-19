@@ -11,7 +11,7 @@ whole move over the programming cable:
 
 The web installer and the Codeplug Editor do the same in two steps ([Installing](02-installing.md)). Use this program
 to do all of it in one run. What has been checked on the radio is in the [Radio reference](23-radios.md#baofeng-dm-32uv),
-and [the bring-up checklist](../testing/dm32-bringup.md) lists what is open. Keep Baofeng's firmware file
+and the bring-up checklist lists what is open. Keep Baofeng's firmware file
 (`DM32.01.01.049.bin`), so you can go back to stock.
 
 RadioFoundry never touches the bootloader, so update mode always works. It never touches the data flash below 7 MB either.
@@ -25,7 +25,7 @@ codeplug as it was.
 | Python 3.8 or newer | macOS, Linux and Windows. Tested on files only |
 | qdmr 0.15 or newer | Brings the `dmrconf` command that reads the stock radio and converts the codeplug. macOS: `brew install qdmr`. Linux: your distribution's `qdmr` package. Windows: the installer from dm3mat.darc.de/qdmr |
 | `pip install pyserial` | For the cable |
-| The RadioFoundry image | `rfoundry_dm32_codec.bin` with the codec merged in, from the tester kit or your own build ([bring-up checklist](../testing/dm32-bringup.md), step 0). An image without the codec works with `--codec-from DM32.01.01.049.bin` |
+| The RadioFoundry image | `rfoundry_dm32_codec.bin` with the codec merged in, from the tester kit or your own build (bring-up checklist, step 0). An image without the codec works with `--codec-from DM32.01.01.049.bin` |
 | The programming cable | The DM-32's USB-serial cable (CH340, FTDI or CP210x). The radio has no USB of its own: the stock CPS, the bootloader and RadioFoundry all use this cable |
 
 A tester kit (`dm32_migrate.py package`) is one folder with the scripts, their helpers, the image, a `README.txt`
@@ -76,7 +76,7 @@ data flash read: the web installer's backup `.zip` taken on the stock firmware, 
 `original-channels.bin` in it. They bring over channels with their TX contact, contacts, RX group lists, zones, your
 DMR ID and the boot text. Power, bandwidth, tones, time slot and color code come with each channel. Squelch, TX
 timeout and scan lists stay at RadioFoundry's defaults, and channels past the first 84 are not read yet
-([the format](../spec/dm32-stock-codeplug.md)). qdmr 0.15 doesn't read the stock TX contacts, so this is the way to keep them.
+(the format). qdmr 0.15 doesn't read the stock TX contacts, so this is the way to keep them.
 
 ### From a web installer backup
 

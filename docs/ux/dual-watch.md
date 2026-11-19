@@ -23,7 +23,7 @@ or the VFO: dual watch is two frequencies, not the two timeslots of one DMR freq
 - A radio with one receiver (every radio today) alternates between A and B, so a call on one can be missed while it
   is on the other. Home doesn't say so: the mode in the strip implies it, and the user guide has the caveat. A radio
   with two receivers (`ui_svc_receivers()` > 1, `ui_svc_dual_rx(pane)`) hears both at once (section 3.1). No radio
-  reports two yet. The AT-D578UV, which has two receiver chips ([hardware-anytone.md](../spec/hardware-anytone.md)),
+  reports two yet. The AT-D578UV, which has two receiver chips (hardware-anytone.md),
   would be the first.
 - What the radio core does with the pair (any zone or the VFO, PTT, retunes) is in
   [radio-features.md 2.1](../spec/radio-features.md#21-dual-watch). The UI refuses only a channel the radio can't

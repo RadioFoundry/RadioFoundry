@@ -31,14 +31,14 @@ static const band_t bands[] = {
 	{ 65000000, 108000000, false },		// the broadcast band, on the RDA5807M (airband-and-broadcast.md 4)
 #endif
 #if CONFIG_RX_EXT
-	// Receive only past the rated bands, while the user turns it on: the FD6818 band table (hardware-dm32.md 8.3). Keep these last
+	// Receive only past the rated bands, while the user turns it on: the FD6818 band table. Keep these last
 	{ 16000000, 65000000, false },
 	{ 174000000, 400000000, false },
 	{ 480000000, 740000000, false },
 #endif
 };
 
-// Five of the power levels 0..8 of hardware-dm32.md 11.3: very low, low, mid, a step above mid, high (radio_dm32.c).
+// Five of the power levels 0..8: very low, low, mid, a step above mid, high (radio_dm32.c).
 // Labels are nominal: the radio is rated 5 W VHF / 4 W UHF at high power; check against a meter at the bring-up
 static const char *const power_names[] = { "L-", "L", "M", "M+", "H" };
 
@@ -148,7 +148,7 @@ void dm32_lcdbus_unlock(void)
 	}
 }
 
-// docs/spec/hardware-dm32.md 5.1: IO mux, pulls, directions and levels. The power latch is driven high before
+// IO mux, pulls, directions and levels. The power latch is driven high before
 // anything else so the radio stays on when the knob's own supply path lets go
 static void io_init(void)
 {
@@ -197,7 +197,7 @@ static void io_init(void)
 	hrc_pin_in(PIN_FD_DATA);
 }
 
-// Transmitter off from any context (board.h, docs/spec/crash-log.md 8; hardware-dm32.md 5): both PA selects and the PA
+// Transmitter off from any context (board.h, docs/spec/crash-log.md 8): both PA selects and the PA
 // drive (DAC B to 0, powered down). RAM code, register writes only. The FD6818 may still be set to transmit (its bus is
 // a bit-banged transaction): with the PA selects off its output reaches no keyed PA, and the next start sets it up again
 HRC_RAMFUNC void board_rf_safe(void)
@@ -213,7 +213,7 @@ void board_early_init(void)
 	io_init();
 }
 
-// Everything the core stores lives above the write floor (hardware-dm32.md 10.1): the open-firmware codeplug's 64 KB
+// Everything the core stores lives above the write floor: the open-firmware codeplug's 64 KB
 // "EEPROM" image at 0x700000, a decoded calibration copy from other firmware left alone at 0x710000, the settings ring
 // and the sector journal after it, the 1 MB open-firmware "flash" image at 0x720000 with room above it for the DMR ID
 // database, the native codeplug in the last 1 MB. The factory calibration is read only, so the open-firmware CPS gets
@@ -232,7 +232,7 @@ static const hal_flash_map_t flash_map = {
 };
 static const hrc_flash_cfg_t flash_cfg = {
 	.cs_pin = PIN_FLASH_CS,
-	.write_floor = 0x700000u,	// hardware-dm32.md 10.1
+	.write_floor = 0x700000u,
 	.map = &flash_map,
 };
 
@@ -247,7 +247,7 @@ static const hrc_gps_cfg_t gps_cfg = {
 #endif
 
 #if CONFIG_BCAST_FM
-// The RDA5807M on PTA25 / PTA26 (hardware-dm32.md 8.7): no enable line is known; its audio is assumed to reach the
+// The RDA5807M on PTA25 / PTA26: no enable line is known; its audio is assumed to reach the
 // amplifier as on the other FD6818 radio (bring-up B4)
 static const hrc_bcast_cfg_t bcast_cfg = {
 	.sda_pin = PIN_BCAST_SDA, .scl_pin = PIN_BCAST_SCL,

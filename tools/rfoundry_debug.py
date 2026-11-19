@@ -39,7 +39,7 @@
     rfoundry_debug.py storage info                   the settings / journal region: ours or foreign, its addresses
     rfoundry_debug.py storage dump --out DIR         the region and the calibration copy (SPI flash) to files outside git
     rfoundry_debug.py storage claim --out DIR        dump first, then let the firmware erase a foreign region and use it
-    rfoundry_debug.py aprobe OP [ARG...]             audio probe (CONFIG_AUDIO_PROBE builds; docs/spec/hardware-dm1701.md 21.3):
+    rfoundry_debug.py aprobe OP [ARG...]             audio probe (CONFIG_AUDIO_PROBE builds):
                                                 status | reg PAGE REG | wreg PAGE REG VAL | start [HZ [AMP [spk]]] |
                                                 stop | samples [-o FILE.raw] | ram PAGE ADDR LEN [-o FILE] |
                                                 wram PAGE ADDR HEXBYTES | watch MS MASK [RAMADDR] |
@@ -2980,7 +2980,7 @@ def main(argv=None):
                        "(docs/spec/debuglink.md 3.23)")
     p.add_argument("ids", nargs="*", type=int)
     p = sub.add_parser("reg", help="a register: read, or write then read back. CHIP is the board's RF chip number "
-                       "(its hardware page) or soc for the SoC's own, REG then a 32-bit address "
+                       "(the board's chip_reg numbering, in its board code) or soc for the SoC's own, REG then a 32-bit address "
                        "(docs/spec/debuglink.md 3.24)")
     p.add_argument("chip", type=lambda x: CHIP_SOC if x == "soc" else int(x, 0))
     p.add_argument("reg", type=lambda x: int(x, 0))

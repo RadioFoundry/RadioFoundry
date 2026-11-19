@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// HR_C7000 vocoder: the radio's own stock AMBE+2 codec, run from RAM in the board's codec window
-// (docs/spec/codec-placement.md, "HR_C7000 radios"; the codec itself: docs/spec/codec-dm32.md, "C. Codec state init
-// tables"). Shared by the HR_C7000 radios that carry this codec build; what differs between them (the slot, the windows)
+// HR_C7000 vocoder: the radio's own stock AMBE+2 codec, run from RAM in the board's codec window.
+// Shared by the HR_C7000 radios that carry this codec build; what differs between them (the slot, the windows)
 // comes from the board.
 //
 // tools/hrc7000_codec.py carves the codec code and its table window out of the user's stock file and writes them into
@@ -39,7 +38,7 @@ extern const uint8_t __codec_run_lo[], __codec_run_hi[], __codec_tab_lo[], __cod
 extern const uint8_t __codec_slot[];
 extern const uint8_t __codec_slot_end[];
 
-// State sizes: at least D 0x1400 and E 0x1900 (codec-dm32.md C, exact sizes open); room to spare
+// State sizes: at least D 0x1400 and E 0x1900 (exact sizes open); room to spare
 #define DEC_STATE_BYTES		0x1800u
 #define ENC_STATE_BYTES		0x1C00u
 #define STATE_BYTES		(ENC_STATE_BYTES > DEC_STATE_BYTES ? ENC_STATE_BYTES : DEC_STATE_BYTES)
@@ -47,7 +46,7 @@ extern const uint8_t __codec_slot_end[];
 
 // One block holds the encoder's state or the decoder's, never both: DMR and NXDN voice are simplex, so a call only
 // encodes or only decodes (core/dmr/ambe/ambeVoice.c decodes nothing while a transmission runs). Each init touches only
-// its own block (codec-dm32.md C), so the first encode after decoding, or the first decode after encoding, builds its
+// its own block, so the first encode after decoding, or the first decode after encoding, builds its
 // half fresh, as reset() did at the start of every call. Saves the 6 KB a second block took
 static uint32_t state[STATE_BYTES / 4] __attribute__((aligned(8)));
 static int16_t bitbuf[72] __attribute__((aligned(4)));	// one bit per halfword
@@ -55,7 +54,7 @@ static int16_t pcmbuf[VOCODER_FRAME_SAMPLES] __attribute__((aligned(4)));
 
 typedef int (*fn2_t)(void *, int);
 typedef int (*fn3_t)(void *, int, int);
-// C-SKY V2 ABI: arguments 5.. on the stack at sp+0, sp+4, ... (codec-dm32.md "Calling convention")
+// C-SKY V2 ABI: arguments 5.. on the stack at sp+0, sp+4, ...
 typedef int (*decode_t)(int16_t *out, int n, int16_t *bits, int r3, int flags, int half, void *d);
 typedef int (*encode_t)(int16_t *bits, int r1, const int16_t *in, int n, int flags, int half, int s8, void *e);
 
@@ -113,7 +112,7 @@ static void *entry(uint32_t off)
 	return (void *)(uintptr_t)(code_ram + off);
 }
 
-// The init sequence (codec-dm32.md C) in its two halves, each on the shared block: the encoder's steps, or the
+// The init sequence in its two halves, each on the shared block: the encoder's steps, or the
 // decoder's (with its first decode)
 static void enc_start(void)
 {

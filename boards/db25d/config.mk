@@ -1,16 +1,16 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-# DB25-D feature defaults (config/features.mk lists them all). Bring-up state (docs/spec/hardware-db25d.md 9): analog FM
+# DB25-D feature defaults (config/features.mk lists them all). Bring-up state: analog FM
 # on the BK4819s and the host link on UART1, settings stored on the SPI NAND, DMR receive and transmit on the shared
 # modem glue with the codec recipe. The open-firmware CPS (qdmr, tools/cps_client.py) runs on the host link over the
-# stored codeplug (hardware-db25d.md 6.6, 9). RAM is the limit, as on the other HR_C7000 boards: RadioFoundry has 216,576 B below the codec
+# stored codeplug. RAM is the limit, as on the other HR_C7000 boards: RadioFoundry has 216,576 B below the codec
 # window (memory.ld). The switches that are off are listed below; USB, PPP and TCP_CONNS follow the platform
 # (platform/hrc7000/config.mk)
-# The core's storage over RadioFoundry's NAND block range (hardware-db25d.md 6.6)
+# The core's storage over RadioFoundry's NAND block range
 CONFIG_NAND_STORAGE ?= y
-# DMR (hardware-db25d.md 4.5, 9): receive and transmit checked on the SDR bench. Voice needs the codec merged (8). With
+# DMR: receive and transmit checked on the SDR bench. Voice needs the codec merged (8). With
 # it the hotspot (the MMDVM host port on UART1) is on: simplex whole calls through the same per-burst TX path as a call
-# (hardware-db25d.md 9). CONFIG_VFO_DMR follows the default (the core's DMR VFO, checked on this radio)
+#. CONFIG_VFO_DMR follows the default (the core's DMR VFO, checked on this radio)
 CONFIG_DMR ?= y
 # USRP voice over UDP needs 8 kHz 16-bit PCM both ways (128 kbit/s plus headers): more than the 115200 baud host port carries.
 # On the radio it filled the link whenever a call was heard and the host link task stopped answering (core/usbaudio/usrp_net.c)
@@ -19,10 +19,9 @@ CONFIG_NET_USRP ?= n
 # would refuse the role, so the 1.8 KB of RAM stays free
 CONFIG_HOTSPOT_SPLIT ?= n
 # The single frequency repeater (CONFIG_SFR, with SFR_DUALPATH_RX and SFR_CWID) follows the default: RX and TX switch
-# every slot on the per-burst retune, with the RF TX interrupt's lead and the TX off timed for it (hardware-db25d.md
-# 4.5), checked on the SDR bench
+# every slot on the per-burst retune, with the RF TX interrupt's lead and the TX off timed for it, checked on the SDR bench
 # With DMR: the platform's linker script with the codec window at the top of SRAM and the modem SRAM table window
-# (memory.ld), its codec host (the profile ids are db25d-2501, db25d-2409, db25d-2405, db25d-2307, db25d-020; hardware-db25d.md 8),
+# (memory.ld), its codec host (the profile ids are db25d-2501, db25d-2409, db25d-2405, db25d-2307, db25d-020),
 # the core's CPU state in .ram_lo and the runtime stub's load span inside the codec window (0x45000..0x58000; the
 # universal stub copies itself to its run address). Without DMR: no codec window, the CPU state in .bss, and the stub
 # in the 128 KB above it (fm_only.ld). Bench knobs (dmr_db25d.c, radio_db25d.c): DB25D_DMR_RF_MODE (the modem's RF_MODE word), DB25D_DMR_AF_GAIN
@@ -37,7 +36,7 @@ MCU_DEFS += -DDB25D_DMR_AF_GAIN=$(DB25D_DMR_AF_GAIN)u
 endif
 DB25D_DMR_SPK_SWITCH ?= 0
 MCU_DEFS += -DDB25D_DMR_SPK_SWITCH=$(DB25D_DMR_SPK_SWITCH)
-# DMR transmit (hardware-db25d.md 4.5), checked on the SDR bench; DB25D_DMR_TX=0 builds receive only. DB25D_DMR_TX_INVERT=1
+# DMR transmit, checked on the SDR bench; DB25D_DMR_TX=0 builds receive only. DB25D_DMR_TX_INVERT=1
 # flips the 4FSK polarity (the modem's RF_MODE bit 7) for a bench check against the stock setting
 DB25D_DMR_TX ?= 1
 DB25D_DMR_TX_INVERT ?= 0
@@ -50,7 +49,7 @@ endif
 # ci's maximal configuration (CONFIG_DMR on) builds the DMR transmitter too
 MAXIMAL_VARS := DB25D_DMR_TX=1
 # Bench sweep of the reference trim: make BOARD=db25d DB25D_TX_CENTER=116 replaces the page's TX center byte (the bias the C7000
-# modem drives into the TCXO, hardware-db25d.md 4.6). Unset: the page's value
+# modem drives into the TCXO). Unset: the page's value
 DB25D_TX_CENTER ?=
 ifneq ($(DB25D_TX_CENTER),)
 MCU_DEFS += -DDB25D_TX_CENTER_OVERRIDE=$(DB25D_TX_CENTER)

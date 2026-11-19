@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // DM-1801 Pro radio: FD6818 RF transceiver (bit-banged, its own register set), the HR_C7000 baseband for analog FM,
-// separate RX and TX band paths and the PA drive on DAC channel B (docs/spec/hardware-dm1801pro.md 5; modem-hrc7000.md
+// separate RX and TX band paths and the PA drive on DAC channel B (modem-hrc7000.md
 // 4, 5.1, 8) for analog FM and DMR. The DMR slot engine, RF-burst task and PCM audio are the shared HR_C7000 glue
 // (platform/hrc7000/dmr_glue.c, audio_pcm.c); this file supplies the per-burst RF switch and the PA key.
 //
@@ -26,24 +26,24 @@
 // about half of the DMR senders (bench, strong and weak signal); with 0x067E it took every burst
 #define DAC_C_INIT		0x067Eu
 
-#define UHF_FROM_HZ		200000000u	// VHF / UHF split of the path selects (5.2)
+#define UHF_FROM_HZ		200000000u	// VHF / UHF split of the path selects
 // Mic gains in GCR_ADCL (dB), before the user's offset: DMR at power-on, DMR entry and DMR TX start, FM at each FM TX
-// start. The other HR_C7000 boards' 11 dB for all three until the SDR bench sets the FM ones (hardware-dm1801pro.md 12: speech on FM
+// start. The other HR_C7000 boards' 11 dB for all three until the SDR bench sets the FM ones (speech on FM
 // gave 1.4 kHz peak, low)
 #define MIC_GAIN_DMR_DB		11u
 #define MIC_GAIN_FM_12K5_DB	11u
 #define MIC_GAIN_FM_25K_DB	11u
-#define RF_BIT_SCALE_US		1u		// 1 us per half clock, still slower than the radio (5.1)
+#define RF_BIT_SCALE_US		1u		// 1 us per half clock, still slower than the radio
 #define PA_RAMP_STEPS		40u		// 5.4
 #define PA_RAMP_STEP_US		50u
-#define FD_REG_TX_AUX		0x50u		// 3B18 after the TX state, before the TX path comes on (5.4)
-#define FD_REG40_BASE		0x3480u		// FM transmit: 0x40 = this + the calibration byte (5.2, 6.4)
+#define FD_REG_TX_AUX		0x50u		// 3B18 after the TX state, before the TX path comes on
+#define FD_REG40_BASE		0x3480u		// FM transmit: 0x40 = this + the calibration byte
 // DMR bursts on the shared RF-burst task (dmr_rfburst.h), timed from the RF TX interrupt. The RF leaves receive 0.6 ms
 // ahead of the lead point, not earlier: an earlier switch cut off the tail of the inbound burst before ours (a clipped
 // SFR header lost the next superframe; at 2.0 ms the frame before ours still carried most of the voice bit errors).
-// Swept 0.4-3.1 ms in hardware-dm1801pro.md 5.6. The interrupt comes 0.5 ms before that, so a late wake of the task
+// Swept 0.4-3.1 ms. The interrupt comes 0.5 ms before that, so a late wake of the task
 // (up to 0.42 ms) doesn't make the switch late. The drive is keyed 0.5 ms before the first symbol (one step unless the key-up below has a boost; it was
-// 0.45 ms before to 0.65 ms after with the glue's PA one-shot, 5.6)
+// 0.45 ms before to 0.65 ms after with the glue's PA one-shot)
 #define RF_TX_LEAD		11u		// 100 us steps (RF_CONTROL b13:8)
 #define RF_SWITCH_LEAD_US	600u		// the RF to TX this long before the lead point
 #define PA_AHEAD_US		1000u		// the drive keyed this long before the first symbol
@@ -53,16 +53,16 @@
 #define KEYUP_MAX_AHEAD_US	(RF_SWITCH_LEAD_US + HRC_RFBURST_SYMBOL_AFTER_LEAD_US - SWITCH_US)
 // No boost: the output follows the drive about 0.65 ms later at every drive, on both bands, so the drive only has to
 // come earlier. At 0.5 ms the first symbol was 5-18 dB low; from 0.8 ms it is within 1 dB and the -3 dB point 0.15 ms
-// before it, at 1.0 ms 0.3 ms before (hardware-dm1801pro.md 5.6)
+// before it, at 1.0 ms 0.3 ms before
 static const pa_keyup_cfg_t keyup_cfg = PA_KEYUP_FIXED(PA_AHEAD_US);
 // TX data advance (hrc7000_t.tx_pre_on) 1.1 ms, not the chip's 0.4 ms: at 0.4 ms the inbound burst came 0.71 ms late
-// against the outbound, about 0.11 ms less per step (hardware-dm1801pro.md 5.6)
+// against the outbound, about 0.11 ms less per step
 #define TX_PRE_ON		11u
 #define FM_TX_LIMIT_12K5	5u	// FM_DEV_COEF b23:16 (hrc7000_t.fm_tx_limit)
 #define FM_TX_LIMIT_25K		0x0Fu
 #define FD_REG_NOISE		0x65u
 #define FD_REG_RSSI		0x67u
-// The RSSI correction (hardware-dm1801pro.md 5.4): another radio as the reference. UHF from the SDR bench's carrier with
+// The RSSI correction: another radio as the reference. UHF from the SDR bench's carrier with
 // both radios side by side on identical dummy loads (2026-10-20, second run): +16 dB at 451.5 MHz, +11 at two test
 // frequencies near 461 MHz, +10 near 467 MHz, the same at every level from -125 to -99 dBm; 400-450 not measured,
 // 451's value carried down. VHF from the floor across the band and a NOAA station (+41 dB), first run
@@ -123,7 +123,7 @@ static const rfbus_3w_pins_t rf_bus_pins = {
 
 // ---- Band paths and PA ----
 
-// A path select drives its VHF-side and UHF-side pins as a complementary pair; both low = off (5.5). The band follows
+// A path select drives its VHF-side and UHF-side pins as a complementary pair; both low = off. The band follows
 // the frequency of that direction, UHF above 200 MHz, as the radio's own band bits do. Receive is checked on both bands
 // and transmit on UHF; VHF transmit follows the radio's code but is unchecked on air
 static void path_pins(uint8_t vhf_pin, uint8_t uhf_pin, uint32_t hz, bool on)
@@ -174,12 +174,12 @@ static fd6818_tone_t fd_tone(uint8_t type)
 // level's. Any task sets it; tx_off clears it
 static volatile uint16_t drive_override;
 
-// The calibration as the radio's own firmware reads it (hardware-dm1801pro.md 6.4): the band's rows at its TX points,
+// The calibration as the radio's own firmware reads it: the band's rows at its TX points,
 // the VHF rows up to 200 MHz and the UHF rows above, as for the TX path select
 uint16_t dm1801pro_pa_drive(uint32_t hz, uint8_t power)
 {
 	// Five levels: 2, 3 and 4 are the low, middle and high rows; 0 and 1 are fractions of the low row's drive
-	// (hardware-dm1801pro.md 5.6: draft values, to be set with a wattmeter)
+	// (draft values, to be set with a wattmeter)
 	static const uint8_t low_pct[2] = { 37, 65 };
 	if (power < 2u) {
 		return (uint16_t)(((uint32_t)bf_cal_tx_byte(hz, BF_ROW_PA_LOW) << 4) * low_pct[power] / 100u);
@@ -189,7 +189,7 @@ uint16_t dm1801pro_pa_drive(uint32_t hz, uint8_t power)
 
 // RF_MOD_BIAS_CTRL: TX center + 384 in the high half, the band's modulation byte x 0x0101 in the low half. The radio
 // multiplies the byte by 1.8 (Wide) or 0.9 (Narrow) on an FM channel; RadioFoundry doesn't, since its FM deviations were set on
-// the bench without the factor (hardware-dm1801pro.md 10)
+// the bench without the factor
 static uint32_t mod_bias(uint32_t hz)
 {
 	uint8_t b = bf_cal_tx_byte(hz, BF_ROW_MOD);
@@ -223,7 +223,7 @@ static bool ref_trim(int16_t ppb)
 // One burst's TX on, from the RF task (dmr_rfburst.h), at the switch point: RX path off, FD6818 straight to TX (no
 // idle) and the TX aux word, TX path on; then the drive ahead of the first symbol (one write: a burst is 27.5 ms long,
 // there is no time for the 2 ms ramp of the analog path). Each path is on only while the FD6818 is in its state, as in
-// the radio's own handlers (5.4) (both points from the RF TX interrupt)
+// the radio's own handlers (both points from the RF TX interrupt)
 static void burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 {
 	(void)wait;
@@ -335,7 +335,7 @@ static void set_mode(radio_mode_t m)
 	}
 	if (m == RADIO_MODE_DMR && CONFIG_DMR) {
 		fd6818_set_mode(&fd, FD6818_MODE_DMR);
-		hrc_dac_b_power(true);	// FM receive powers DAC B down; DMR needs it (hardware-dm32.md 3.8)
+		hrc_dac_b_power(true);	// FM receive powers DAC B down; DMR needs it
 		hrc7000_dmr_enter(&modem, mod_bias(rx_hz), hrc7000_mic_db(MIC_GAIN_DMR_DB, mic_offset_db));
 		mode = RADIO_MODE_DMR;
 		hrc_dmr_enter();
@@ -383,7 +383,7 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am, 
 		hrc7000_fm_rx(&modem, bw == RADIO_BW_25K);
 		hrc7000_audio_bits(&modem, 0, C7_AUDIO_FM_PLAY);	// FM plays on the analog path (speaker_source)
 		// The FD6818 detects the tone on its own demodulated audio: while it plays FM to the speaker (PTB15 high) the
-		// HR_C7000's detector has no input (hardware-dm32.md 8.4)
+		// HR_C7000's detector has no input
 		fd6818_set_rx_tone(&fd, fd_tone(tone != NULL ? tone->type : TONE_NONE), tone != NULL ? tone->value : 0);
 		hrc7000_set_subtone(&modem, false, HRC7000_TONE_NONE, 0);	// the modem's tone bits off (left on by a TX)
 #if CONFIG_AM_RX
@@ -430,7 +430,6 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		return false;
 	}
 	// Levels 0..2 are the factory's low, mid and high rows, as the radio's own power setting picks them
-	// (hardware-dm1801pro.md 6.4)
 	tx_drive = dm1801pro_pa_drive(hz, power);
 	if (drive_override != 0u) {
 		tx_drive = drive_override;
@@ -748,7 +747,7 @@ void dm1801pro_speaker_pcm(bool on)
 #if CONFIG_APRS_AFSK
 // APRS AFSK (hrc_afsk.c): during an FM transmission the tones play through the prompt FIFO (ring play), and the codec
 // mixer puts the DAC's audio on the ADC's output to the modulator with the microphone's input zeroed. Ring play alone
-// (with the mic muted) sent no tones here, unlike the other HR_C7000 boards (hardware-dm1801pro.md 10). False when the radio isn't
+// (with the mic muted) sent no tones here, unlike the other HR_C7000 boards. False when the radio isn't
 // transmitting FM
 static bool afsk_tx_route(bool on)
 {

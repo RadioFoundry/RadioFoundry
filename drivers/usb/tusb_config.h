@@ -3,7 +3,7 @@
 // TinyUSB configuration for every radio that uses it (CFG_TUSB_MCU comes from the platform's make file).
 // Serial mode: one CDC-ACM function. Network mode (CONFIG_USB_NETWORK): one CDC-NCM function, the other configuration
 // (usb_device.c picks the descriptors); ACM and NCM can't both fit the STM32F405's three IN endpoints
-// (docs/spec/hardware-dm1701.md 16).
+//.
 #ifndef RFOUNDRY_TUSB_CONFIG_H
 #define RFOUNDRY_TUSB_CONFIG_H
 

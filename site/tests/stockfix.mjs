@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Stock TYT-family codeplugs built from the spec (docs/spec/codeplug-stock-tyt.md), for the tests that read or convert
+// Stock TYT-family codeplugs built from the spec, for the tests that read or convert
 // one. No radio's data.
 
 import { STOCK } from "../static/js/codeplug/stock_tyt.js";
@@ -23,7 +23,7 @@ export class Stock {
 		this.L = STOCK[format];
 		this.b = new Uint8Array(size).fill(0xFF);
 		const L = this.L;
-		// unused records as the stock software leaves them (3.3-3.6)
+		// unused records as the stock software leaves them
 		for (let i = 0; i < L.nChannels; i++) {
 			const r = this.b.subarray(L.channels + i * 64, L.channels + (i + 1) * 64);
 			r.fill(0, 0, 0x0F);

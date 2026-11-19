@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// UV380 family backlight PWM timing (display_uvf.c, docs/spec/hardware-dm1701.md 9.4). Pure, so the host tests check it.
+// UV380 family backlight PWM timing (display_uvf.c). Pure, so the host tests check it.
 #ifndef BACKLIGHT_UVF_H
 #define BACKLIGHT_UVF_H
 

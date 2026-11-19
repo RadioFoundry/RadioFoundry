@@ -6,7 +6,7 @@
 // firmware's major version follows the revision. The page reads the version before it asks for the bootloader and
 // stores the choice over the debug link's HWOPT (docs/spec/debuglink.md 3.25) once RadioFoundry runs.
 //
-// Read "dfu-info" (docs/spec/hardware-md9600.md 15.1): the original firmware, running normally, is a DFU device with
+// Read "dfu-info": the original firmware, running normally, is a DFU device with
 // the bootloader's USB IDs. Its interface string (original_version.interface) tells it from the bootloader before
 // anything is sent (runsOriginal); only then these requests, none of which changes anything on the radio: GETSTATUS
 // (CLRSTATUS in dfuERROR, ABORT in any other state but dfuIDLE); DNLOAD block 0 `A2 02`; GETSTATUS (dfuDNBUSY);

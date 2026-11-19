@@ -2,11 +2,11 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 # TYT MD-9600 / Retevis RT90 (mobile): STM32F405VG + HR_C6000 + two RF chains (VHF, UHF), each with its own synthesizer
 # (SKY72310 on V1-V3, "PLL1590" on V4, LMX2571 on V4A / V5) and IF receiver (AK2365A on V1-V4) + ST7567 128x64 LCD and
-# 25Q128 flash on SPI2 (docs/spec/hardware-md9600.md). One image for every board revision: the revision is chosen at
+# 25Q128 flash on SPI2. One image for every board revision: the revision is chosen at
 # run time (rfplan_md9600.h); the per-revision drivers are added in config.mk with their switches
 PLATFORM   := stm32f4
 MCU        := stm32f405
-# The 8 MHz crystal; the image starts at sector 3, behind the 48 KB TYT bootloader (hardware-md9600.md 1.3)
+# The 8 MHz crystal; the image starts at sector 3, behind the 48 KB TYT bootloader
 HSE_VALUE  := 8000000U
 APP_BASE   := 0x0800C000
 # The 128x64 panel is 1 bit per pixel (display_md9600.c): 1 KB of frame buffer and 64 rows, not the 40 KB / 160 row

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// PTT on a pin shared with the programming cable's serial line (drivers/input/sharedptt, docs/spec/hardware-dm32.md
-// 6.2): host bytes must never read as a press, a held press must, and the radio's own transmission picked up on the
+// PTT on a pin shared with the programming cable's serial line (drivers/input/sharedptt): host bytes must never read as a press, a held press must, and the radio's own transmission picked up on the
 // line must never key it or keep it keyed
 #include <stdio.h>
 #include "input/sharedptt/shared_ptt.h"

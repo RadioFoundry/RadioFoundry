@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // IAP, a vendor loader's update mode on the programming cable (a board's radios.json flash.update_mode "iap"; the
-// DB25-D PRO's, entered with P1 held at power-on, docs/spec/hardware-db25d.md 7). It writes an image to the
+// DB25-D PRO's, entered with P1 held at power-on). It writes an image to the
 // application area: the recovery route when neither a stock console, RadioFoundry nor the first stage's power-on window answers.
 // The loader starts what it wrote at a power-on when it begins with the board's first stage signature
 // (flash.first_stage, from board.mk BOOT_SIZE and BOOT_SIGNATURE).
@@ -111,7 +111,7 @@ export class Iap {
 	// every power-on)? Asks for one page of a read, which changes nothing, and never sends Erase. Returns {version} when
 	// the loader answers (version is null when only the banner or the checksum was seen), else null.
 	// The stock application answers the same request as the vendor programming software's identify: "Read_2M_" with no
-	// loader version, then its version string as it filled it in at boot (hardware-db25d.md 7). That returns
+	// loader version, then its version string as it filled it in at boot. That returns
 	// {version: null, stock: text}, the reply as text, which still changes nothing; the application then shows
 	// "Flash Read" and waits for the read to go on until it is switched off and on.
 	async probe(timeout = 1500) {

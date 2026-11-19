@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// FD6818 in a superheterodyne: main transceiver and LO (docs/spec/hardware-db25d.md 4.8)
+// FD6818 in a superheterodyne: main transceiver and LO
 #include <stddef.h>
 #include "fd6818sh.h"
 #include "rf/subaudio/subaudio.h"

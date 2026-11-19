@@ -11,7 +11,7 @@ import { CodeplugImage, TFTP_SIZE } from "../codeplug/image.js";
 import { STOCK, RDT_MD380, RDT_UV380 } from "../codeplug/stock_tyt.js";
 import { DM32_STOCK } from "../codeplug/stock_baofeng.js";
 
-// A stock TYT-family codeplug in a dump or memory image (docs/spec/codeplug-stock-tyt.md): its family, or null
+// A stock TYT-family codeplug in a dump or memory image: its family, or null
 const stockLayout = (b) => {
 	const { layout } = classify(b);
 	return STOCK[layout] ? layout : null;

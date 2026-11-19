@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// MD-380 keypad, side keys, PTT and the 16-position channel switch (docs/spec/hardware-md380.md 9).
+// MD-380 keypad, side keys, PTT and the 16-position channel switch.
 //
 // The keypad is the shared scan (platform/stm32f4/fsmc_keypad): rows driven high one at a time, the LCD data lines
-// D0-D7 read back as columns under the LCD bus lock. The matrix positions are those of hardware-mduv380.md 5 (the nearest documented relative); they are
+// D0-D7 read back as columns under the LCD bus lock. The matrix positions are those of the nearest related radio; they are
 // unconfirmed on the MD-380, and md380_input_raw() shows the raw row bits on the diagnostics page so a bench session
 // can correct the table.
 //
 // The channel knob is not a quadrature encoder but a 16-position switch with four code lines. Each scan reads the code,
 // turns it into a position and reports the change as encoder steps, so the core sees the same thing as on the other
-// radios (a step per detent). The code is a Gray code with its own line order, measured on the radio (hardware-md380.md
-// 9.2): one line changes per detent, so a contact that bounces flickers between two neighbors, never far away.
+// radios (a step per detent). The code is a Gray code with its own line order, measured on the radio:
+// one line changes per detent, so a contact that bounces flickers between two neighbors, never far away.
 #include "md380.h"
 #include "pins.h"
 #include "hal_time.h"
@@ -23,7 +23,7 @@
 #define ROW_COUNT	3
 #define NO_KEY		STM32_KEYPAD_NO_KEY
 
-// [row][column D0..D7] (hardware-md380.md 9.1, the positions of hardware-mduv380.md 5: unconfirmed on the MD-380)
+// [row][column D0..D7] (the nearest related radio's positions: unconfirmed on the MD-380)
 static const uint8_t matrix[ROW_COUNT][8] = {
 	{ KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_0, KEY_STAR },
 	{ KEY_GREEN, KEY_UP, KEY_DOWN, KEY_7, KEY_8, KEY_9, KEY_HASH, KEY_RED },
@@ -57,8 +57,7 @@ static uint8_t read_channel_code(void)
 	return MD380_CH_ACTIVE_HIGH ? c : (uint8_t)(~c & 0xFu);
 }
 
-// Position by code, clockwise: the codes read one detent at a time were 0 8 A 2 3 B 9 1 5 D F 7 6 E C 4 (bench,
-// hardware-md380.md 9.2)
+// Position by code, clockwise: the codes read one detent at a time were 0 8 A 2 3 B 9 1 5 D F 7 6 E C 4 (bench)
 static const int8_t code_position[16] = {
 	[0x0] = 0, [0x8] = 1, [0xA] = 2, [0x2] = 3, [0x3] = 4, [0xB] = 5, [0x9] = 6, [0x1] = 7,
 	[0x5] = 8, [0xD] = 9, [0xF] = 10, [0x7] = 11, [0x6] = 12, [0xE] = 13, [0xC] = 14, [0x4] = 15,
@@ -139,5 +138,5 @@ void md380_input_raw(uint8_t rows[3], uint8_t *channel_code)
 	*channel_code = ch_code;
 }
 
-// The channel knob is a 16-position switch with end stops (hardware-md380.md)
+// The channel knob is a 16-position switch with end stops
 const hal_input_t md380_input = { .init = init, .scan = scan, .encoder = encoder, .encoder_limited = true };

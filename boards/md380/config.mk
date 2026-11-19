@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
 # MD-380 feature defaults (config/features.mk lists them all). 848 KB for code and read-only data: flash sectors 3-10;
-# the codec sector 11 is never linked into (boards/md380/memory.ld, docs/spec/codec-placement.md).
+# the codec sector 11 is never linked into (boards/md380/memory.ld).
 # 160x128 display. The case edge crowds the top row and the two left columns (seen on the radio, 2026-10-16);
-# right and bottom are close but usable (hardware-md380.md 7). The fault trace, the large font and LTO follow the
+# right and bottom are close but usable. The fault trace, the large font and LTO follow the
 # platform (platform/stm32f4/config.mk)
 CONFIG_DISPLAY_INSET ?= 0
 CONFIG_DISPLAY_INSET_TOP ?= 1
@@ -26,7 +26,7 @@ CONFIG_HOTSPOT_SPLIT ?= n
 LTO_3P ?= 1
 # Stored uncompressed, web control's page and drawing take about 18.5 KB more flash, more than this image has free:
 # it would run into the codec sectors. So web control goes with the compression: CONFIG_NET_HTTP_GZIP=n builds the
-# plain status page instead (hardware-md380.md 19). Asking for CONFIG_NET_WEBCTL=y as well still fails in the linker
+# plain status page instead. Asking for CONFIG_NET_WEBCTL=y as well still fails in the linker
 CONFIG_NET_WEBCTL ?= $(CONFIG_NET_HTTP_GZIP)
 # What the radio's hardware can't do, one switch per line with the reason (tools/boards.py checks there is one;
 # docs/build-config.md, "Unsupported, not written, unconfirmed"): ci's maximal configuration leaves these off
@@ -39,7 +39,7 @@ CONFIG_AM_RX ?= n
 BOARD_UNSUPPORTED += AM_RX	# no air band receiver (docs/spec/airband-and-broadcast.md)
 CONFIG_BCAST_FM ?= n
 BOARD_UNSUPPORTED += BCAST_FM	# no broadcast receiver (docs/spec/airband-and-broadcast.md)
-BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is a SPI NOR (docs/spec/hardware-md380.md 12)
+BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is a SPI NOR
 BOARD_UNSUPPORTED += VIBRATE	# no vibration motor (docs/user/23-radios.md, What the MD-380 lacks)
 BOARD_UNSUPPORTED += FAULT_TRACE	# needs a host UART: the host port is USB, the one UART the G models' GPS line
 # What the hardware can do but this radio's driver or glue doesn't yet, the same way: off by default, and off in ci's
@@ -62,9 +62,9 @@ BOARD_NOT_WRITTEN += RX_EXT	# no receive range in its chip documents (a PLL and 
 # there is no room for a 16 px line, and the CJK face must not be built in (docs/build-config.md)
 BOARD_UNSUPPORTED += LANG_ZH	# a Chinese line needs 16 px; this layout draws its words in a smaller font
 BOARD_UNSUPPORTED += LANG_DEFAULT_ZH	# needs LANG_ZH
-# P25 and NXDN transmit on the HR_C5000's physical layer mode (board.air, hardware-md380.md 4.11), but receive isn't
+# P25 and NXDN transmit on the HR_C5000's physical layer mode (board.air), but receive isn't
 # written: the chip gives no physical layer records, and NXDN's receive needs a flat discriminator copy, which this
 # radio isn't known to give the MCU (same section). Off until receive works
-BOARD_NOT_WRITTEN += P25	# receive isn't written (hardware-md380.md 4.11)
+BOARD_NOT_WRITTEN += P25	# receive isn't written
 BOARD_NOT_WRITTEN += P25_TRUNK	# needs P25
-BOARD_NOT_WRITTEN += NXDN	# receive isn't written (hardware-md380.md 4.11)
+BOARD_NOT_WRITTEN += NXDN	# receive isn't written

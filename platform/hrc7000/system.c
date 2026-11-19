@@ -13,7 +13,7 @@
 
 #define WDT_KEY			0x5ADA7200u
 #define WDT_FEED		0x55AADD22u
-// The restart's watchdog (hardware-dm32.md 3.5, counting up to 2^35 at the 24 MHz crystal): 1 ms to the overflow, then
+// The restart's watchdog (counting up to 2^35 at the 24 MHz crystal): 1 ms to the overflow, then
 // RST_LOAD's reset value, about 22 ms, before the reset; the next start's timeout is the flash stub's 32 s
 // (watchdog.md 3.2), far more than any loader takes
 #define RESET_WDT_NOW		((1ull << 35) - 24000u)
@@ -99,8 +99,8 @@ HRC_RAMFUNC void hrc_rf_safe(void)
 	hrc_barrier();
 }
 
-// The restart is a watchdog reset (hardware-dm32.md 3.5). A soft reset (SYS_SOFT_RSTN) turns the watchdog off and keeps
-// some of the chip's state (the clock manager, LCSFC_BAUDR; 1.1), so a start that hung after one left the radio dead
+// The restart is a watchdog reset. A soft reset (SYS_SOFT_RSTN) turns the watchdog off and keeps
+// some of the chip's state (the clock manager, LCSFC_BAUDR), so a start that hung after one left the radio dead
 // until a power cycle. The watchdog keeps its enable and loads through its own reset, so it guards
 // the start that follows until main() takes it over, and a start that hangs is reset again. The counter starts from
 // the 1 ms load, for a quick reset; the load written after it, which the next start counts from, has to cover the boot
@@ -131,7 +131,7 @@ HRC_RAMFUNC void hrc_restart(void)
 	}
 }
 
-// Only a normal reset: the ROM serial loader needs an FTDI cable and Dahua's tool (hardware-dm32.md 13.3), and the
+// Only a normal reset: the ROM serial loader needs an FTDI cable and Dahua's tool, and the
 // Baofeng update mode needs PTT + SK1 held at power-on, which software can't do
 static bool reboot(uint8_t mode)
 {
@@ -142,7 +142,7 @@ static bool reboot(uint8_t mode)
 }
 
 #if CONFIG_STUB_ENTRY
-// Runtime RAM-monitor entry (docs/spec/hardware-dm32.md 17.2): the stock-codec RAM window. A radio that hosts its
+// Runtime RAM-monitor entry: the stock-codec RAM window. A radio that hosts its
 // codec runs it there, so the codec stops first (bench 2026-10-15: the upload overwrote the running codec and hung the
 // radio on a DMR channel)
 static uint8_t *stub_region(uint32_t *size)

@@ -2,7 +2,7 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 """A fake AnyRoad bootloader with a model of the STM32F405 flash, for tests and rfoundry's --simulate.
 
-It answers the DFU requests of hardware-dm1701.md 15.2, decrypts each block with the key, and programs a 1 MB flash
+It answers the DFU requests, decrypts each block with the key, and programs a 1 MB flash
 image the way the chip does: erase sets a whole sector to 0xFF, programming can only clear bits (writing over
 programmed bytes is recorded as a violation). Tests check what ends up in flash, which sectors were erased, and that
 the codec sectors kept their bytes.
@@ -171,7 +171,7 @@ class Stall(Exception):
 
 class FakeOriginalFirmware:
     """A radio's original firmware running normally, as origversion.py's dfu-info read sees it: a DFU device with the
-    bootloader's USB IDs (docs/spec/hardware-md9600.md 15.1). answer: the 4 bytes UPLOAD block 0 returns after `A2 02`,
+    bootloader's USB IDs. answer: the 4 bytes UPLOAD block 0 returns after `A2 02`,
     or None for a device that stalls that command (a bootloader). A request the read must never send fails the test;
     every request is kept in `requests`."""
     iManufacturer, iProduct, iSerialNumber = 2, 3, 4

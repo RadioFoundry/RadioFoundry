@@ -353,7 +353,7 @@ export class F4Stub extends Stub {
 	}
 
 	// Refuse a plain image that would erase a sector holding the radio's codec (f4stub.py guard_codec). The descriptor at
-	// the end of the codec flash says where every codec window is (docs/spec/codec-placement.md); a codec placed by an
+	// the end of the codec flash says where every codec window is; a codec placed by an
 	// earlier release can lie in what is now the application's flash. Moving it takes the build merged with the codec
 	// (withCodec), made from a copy read back from the radio first
 	async guardCodec(codec, changed) {

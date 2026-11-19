@@ -15,16 +15,13 @@ order = 20
 aprs_tocall = "R"
 debuglink_aliases = []
 
-[docs]
-hardware = "docs/spec/hardware-rt10.md"
-
-# One-line summaries for the site and the generated tables; the facts are in docs.hardware
+# One-line summaries for the site and the generated tables
 [hardware]
 bands = "902-928 MHz"
 power = "L / H"
 display = "none"
 gallery = "128x64"
-clock = { rtc = "unbacked", note = "the SoC RTC, with no coin cell or backup capacitor on the board (docs/spec/hardware-rt10.md 1)" }
+clock = { rtc = "unbacked", note = "the SoC RTC, with no coin cell or backup capacitor on the board" }
 
 [status]
 level = "supported"
@@ -35,7 +32,7 @@ NXDN at 4800 bit/s on stored channels, and APRS transmit work on the radio."""
 release = "stable"
 
 # No vendor loader: the boot ROM's serial window on the accessory jack is the way in at every power-on
-# (hardware-rt10.md 2). RadioFoundry replaces the whole program flash image; a full backup puts the original back
+#. RadioFoundry replaces the whole program flash image; a full backup puts the original back
 [flash]
 family = "boot-rom"
 keep_codec = true
@@ -47,7 +44,7 @@ backup = { stock = "full", rfoundry = "full", spi_size = 0x200000 }
 mem = "data"
 start = 0x1FE000
 end = 0x200000
-what = "the activation block (0x1FE000) and the factory calibration (0x1FF000) (hardware-rt10.md 4)"
+what = "the activation block (0x1FE000) and the factory calibration (0x1FF000)"
 
 # The boot ROM's serial window: tools wait for it, so the radio is switched on only when they ask
 [flash.bootloader]
@@ -66,7 +63,7 @@ hold_power = false
 progmem = 0x200000
 rom_entry = 0x0300C000
 tested = false
-# the factory calibration: the data flash's sector at 0x1FF000 (hardware-rt10.md 4)
+# the factory calibration: the data flash's sector at 0x1FF000
 calibration = { data = 0x1FF000 }
 
 # The codec slot and windows come from boards/rt10/memory.ld (__codec_*). The codec comes from the radio's own program flash

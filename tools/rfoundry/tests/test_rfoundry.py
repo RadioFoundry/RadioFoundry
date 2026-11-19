@@ -557,7 +557,7 @@ class Manifests(unittest.TestCase):
 
 
 class SingleImage(unittest.TestCase):
-    """The DM-1701 image is one range, sectors 3-9 (docs/spec/codec-placement.md); a release from before the codec
+    """The DM-1701 image is one range, sectors 3-9; a release from before the codec
     moved (two ranges, the old codec profile) is refused by rfoundry and by the old route."""
 
     def run_release(self, d, size=30000, name="rfoundry_dm1701"):
@@ -709,8 +709,7 @@ class NoCodecFile(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("RFOUNDRY_NOCODEC_FILE", "").endswith(".bin"), "set RFOUNDRY_NOCODEC_FILE (the .bin)")
     def test_real_file(self):
-        """The file holds neither the codec's code nor its tables (docs/spec/codec-dm1701.md "Files without the
-        codec"): where it expects the code, a code window's length is blank, and it ends before the stock tables"""
+        """The file holds neither the codec's code nor its tables: where it expects the code, a code window's length is blank, and it ends before the stock tables"""
         data = open(os.environ["RFOUNDRY_NOCODEC_FILE"], "rb").read()
         self.assertEqual(stockfw.sha256(data), self.REAL)
         self.assertIsNotNone(stockfw.no_codec(data))
@@ -1206,7 +1205,7 @@ class FirmwareProfiles(unittest.TestCase):
 
 class Dm1701Builds(unittest.TestCase):
     """The DM-1701's stock files: V02.06 CSV, and V02.01, V02.02 and V02.03 CSV, which hold one codec 0x40 below
-    V02.06's (codec-dm1701.md "Firmware files"): one map and one placement for the three. V02.06 and V02.03 noCSV hold
+    V02.06's: one map and one placement for the three. V02.06 and V02.03 noCSV hold
     it higher up, its code 0x1C bytes shorter: a map and a placement each."""
 
     V0206 = "0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"
@@ -1339,7 +1338,6 @@ class Dm1701Builds(unittest.TestCase):
             self.assertEqual(a["outside_refs"], [])
             # groups by object index: the same, but for objects 6 and 7, which the CSV builds keep together because the
             # second starts where the first ends; in noCSV 0x7C bytes the codec doesn't use lie between them
-            # (docs/spec/codec-dm1701.md, "Codec in the V02.06 CSV file")
             def groups(m):
                 index = {o["start"]: i for i, o in enumerate(m["objects"])}
                 return sorted(tuple(index[s] for s in g) for g in m["groups"])
@@ -1410,7 +1408,7 @@ class Rt10Map(unittest.TestCase):
 
 
 class Md9600Files(unittest.TestCase):
-    """The TYT MD-9600 files as codec sources for the DM-1701 (codec-dm1701.md "MD-9600 files"): an open-firmware
+    """The TYT MD-9600 files as codec sources for the DM-1701: an open-firmware
     install leaves their codec on the radio. They give the codec only, encrypted with the MD-9600's key; the merge
     moves the codec's table window with the code into sector 10, since its stock address is the application's."""
 
@@ -2068,7 +2066,7 @@ class CodecRelayout(unittest.TestCase):
     """A radio whose codec is where an earlier release put it (stockfw "former": the MD-380's in sectors 8-11, the
     MD-9600's tables in sector 9), in flash this release's application uses: read back and checked before any erase,
     saved, moved by the install; an install cut at any step is finished by running it again from the saved copy, and
-    the bootloader is never written (docs/spec/codec-placement.md, "Moving to a new layout")."""
+    the bootloader is never written."""
 
     BOARDS = (("md380", None), ("md9600", None))
 

@@ -55,7 +55,7 @@ Rules:
   open-firmware one goes. Its bytes can pass the per-record checks by chance (an in-use bit set, frequencies that are
   valid BCD), so the radio decides for the whole codeplug at every index (start-up and `codeplug_reload()` after a
   CPS write). It counts good and bad records by the web editor's open-firmware evidence rule
-  ([codeplug-stock-tyt.md](codeplug-stock-tyt.md) 2, step 1; the same thresholds, and `site/static/js/codeplug/detect.js`
+  (codeplug-stock-tyt.md 2, step 1; the same thresholds, and `site/static/js/codeplug/detect.js`
   is the reference implementation), on the channels, zones and RX group lists only. It leaves out the contacts and the
   general settings: another firmware's contacts left beside a codeplug edited on the radio must not hide it, and the
   checks cost flash. With bad records and fewer than four good ones for each bad one,

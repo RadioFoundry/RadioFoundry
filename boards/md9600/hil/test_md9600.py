@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-"""MD-9600 bring-up checks (docs/spec/hardware-md9600.md 19), radio only, never transmits. They read the debug link's
-`board` view section (19.6), which only this radio has: the board revision record, the clock that started, the data
+"""MD-9600 bring-up checks, radio only, never transmits. They read the debug link's
+`board` view section, which only this radio has: the board revision record, the clock that started, the data
 flash map and the record sector beside it, the calibration and option blocks, idle keys, the ADC scan, the
 synthesizer and the transmitter switches held off. The display, the build features and the data flash's JEDEC ID are
 the generic health checks' (tests/hil/test_health.py, from board.toml [hil]). A board's own test: skipped other_board
@@ -37,7 +37,7 @@ def test_board_view_keys(md9600):
 
 @pytest.mark.feature("settings_store", optional=True)
 def test_ak2365_read_test(md9600):
-    """The start-up AK2365A read test (hardware-md9600.md 19.3) agrees with the revision and the hardware option: no
+    """The start-up AK2365A read test agrees with the revision and the hardware option: no
     chip is V4A / V5, detected and confirmed, the option hidden; a chip is V1-V3 or V4, the option shown, asking until a
     record confirms it. Receive side only: it ran at the last start."""
     b = board_view(md9600)
@@ -49,7 +49,7 @@ def test_ak2365_read_test(md9600):
         assert opt["state"] == "hidden"
         return
     if ak == "unknown":
-        skip("state", "the read test gave no verdict on this radio (hardware-md9600.md 19.3)")
+        skip("state", "the read test gave no verdict on this radio")
     assert b["rev"] in ("V1-V3", "V4"), f"an AK2365A answered, but the radio runs {b['rev']}"
     assert opt["state"] in ("ok", "ask", "restart")
     # asking exactly while transmit waits for a confirmed revision (a restart due is said instead)
@@ -68,7 +68,7 @@ def test_transmitter_held_off(md9600):
 @pytest.mark.feature("diag", optional=True)
 def test_clock(md9600):
     """USB works only on the PLL; the debug link answering over USB already says the PLL runs. Which source it took
-    settles hardware-md9600.md 17 #18 (crystal or oscillator)."""
+    settles crystal or oscillator."""
     b = board_view(md9600)
     assert b["clock"] in ("crystal", "bypass"), f"clock {b['clock']}: the 8 MHz HSE did not start"
     assert int(b["sysclk_hz"]) == 72000000

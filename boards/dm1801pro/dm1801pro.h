@@ -19,7 +19,7 @@ extern const hal_radio_t dm1801pro_radio;
 extern const hal_power_t dm1801pro_power;
 
 // Physical key bits returned by dm1801pro_input.scan(); the matrix positions and the four direct pins are in
-// input_dm1801pro.c (hardware-dm1801pro.md 9.1)
+// input_dm1801pro.c
 enum {
 	KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9,
 	KEY_STAR, KEY_HASH, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_MENU, KEY_BACK, KEY_VFO_MR, KEY_AB,
@@ -29,7 +29,7 @@ enum {
 
 // Raw key state for the diagnostics page: matrix keys as a bit per strobe * 4 + input, the direct pins in bits 20-23
 uint32_t dm1801pro_key_raw(void);
-// Key scans with the PTT pin low that were ignored as host serial data (hardware-dm1801pro.md 9.1)
+// Key scans with the PTT pin low that were ignored as host serial data
 uint32_t dm1801pro_input_ptt_ignored(void);
 
 uint16_t dm1801pro_battery_raw(void);	// the last ADC channel C reading
@@ -46,7 +46,7 @@ typedef struct {
 } dm1801pro_radio_diag_t;
 void dm1801pro_radio_diag(dm1801pro_radio_diag_t *d);
 // DAC B drive for a TX frequency and power level 0..2 (L, M, H; above 2 is H) from the factory calibration, as tx()
-// uses it; 0 without calibration (hardware-dm1801pro.md 6.4)
+// uses it; 0 without calibration
 uint16_t dm1801pro_pa_drive(uint32_t hz, uint8_t power);
 uint8_t dm1801pro_codec_byte(uint8_t reg);	// the HR_C7000's internal codec, byte registers 0x00-0x3F
 // DMR PCM to the speaker instead of the FM path (the speaker_pcm hook of hrc_audio_pcm)

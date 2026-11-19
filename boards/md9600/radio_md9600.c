@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 radio: the hal_radio_t on top of the RF sequencer (rfseq_md9600.c), for every board revision
-// (docs/spec/hardware-md9600.md 5, 6, 16, 19).
+//.
 //
 // Each band has its own synthesizer, RX and TX VCOs, IF receiver and supplies; the HR_C6000 isn't in the FM receive
 // path (the IF chip's discriminator feeds the audio switches). This file maps the sequencer's lines to pins, its buses
@@ -187,7 +187,7 @@ static bool op_if_read(void *ctx, uint8_t band, uint8_t addr, bool pull_up, uint
 {
 	(void)ctx;
 	uint32_t v = 0;
-	// R/W 1 and the 6-bit address: 7 bits (hardware-md9600.md 5.4)
+	// R/W 1 and the 6-bit address: 7 bits
 	bool ok = stm32_wire3_read((void *)&if_wire, band, 0x40u | (addr & 0x3Fu), 7, pull_up, IF_READ_SETTLE_US,
 				   MD9600_IF_READ_BITS, &v);
 	*bits = (uint16_t)v;
@@ -241,7 +241,7 @@ void md9600_radio_diag(md9600_radio_diag_t *d)
 	d->rx_hz = rf.rx_hz;
 }
 
-// --- DMR transmit: the per-burst RF switching (hardware-md9600.md 5.5, 19.8) ---
+// --- DMR transmit: the per-burst RF switching ---
 //
 // tx() in DMR only arms. The glue's tx_prepare (at tx_begin under the modem lock, or in the timeslot interrupt for an
 // aligned start) puts the TX VCO on the carrier without the waits; tx_wait_lock (task level) waits the synthesizer's
@@ -264,7 +264,7 @@ static volatile bool dmr_rx_early;	// ... done at the last burst's PA drop (md96
 // Swept on air (V1-V3, UHF, 2026-11-03): 3.0 ms lead and the 2 ms settle cut the end of the inbound burst (its third
 // voice frame took most of the corrected bits); 1.5 ms with 0.6 ms repeats every burst and leaves the third frame clean
 #define SFR_TX_LEAD	15u	// RF_TX_INTER 1.5 ms ahead of the slot: the retune, the lock, T5 (0.5 ms) and the ramp
-#define SFR_SETTLE_US	600u	// the synthesizer's lock from the receive LO to the carrier (no lock detect, 5.3)
+#define SFR_SETTLE_US	600u	// the synthesizer's lock from the receive LO to the carrier (no lock detect)
 static bool dmr_lead;		// the lead is set for this transmission
 static uint32_t dmr_rx_bursts;	// receive set-ups between bursts
 #endif
@@ -277,14 +277,14 @@ static volatile bool key_pending;
 static uint32_t key_step;
 static bool key_timer_ready;
 
-// The burst's key-up by the key-up rule (radio/pa_keyup.h, hardware-md9600.md 19.8): its points, in time order from
+// The burst's key-up by the key-up rule (radio/pa_keyup.h): its points, in time order from
 // the same timer. The loop closes at the first drive MD9600_BURST_T5_US ahead of the PA's point, and the PA's point
 // is the band's transmitter supply: the PA comes up 0.42 ms after its supply, one clean rise. The other way round (the
 // supply first, the loop at the PA's point, as the stepped ramp keys) the PA passed the carrier at a fixed -5 dBm for
 // those 0.42 ms, 31 dB under the lowest level: a step and a hook ahead of its rise (SDR bench, UHF). The RF TX interrupt
 // comes KEYUP_INT_AHEAD_US before the burst's first symbol. [VHF, UHF]: neither PA has a knee (every level comes up a
 // fixed time after its supply, whatever the drive, on a conducted path), so no boost: one point per band, each level's
-// -3 dB point about 0.25 ms before the first symbol (hardware-md9600.md 19.8)
+// -3 dB point about 0.25 ms before the first symbol
 #define KEYUP_INT_AHEAD_US	2550u
 #define KEYUP_MAX_AHEAD_US	(KEYUP_INT_AHEAD_US - MD9600_BURST_T5_US - 50u)	// the loop's point after the interrupt
 static const pa_keyup_cfg_t keyup_cfg[2] = {
@@ -302,7 +302,7 @@ static uint32_t key_delay_us = MD9600_BURST_KEY_DELAY_US;	// the stepped ramp's 
 // The burst's PA drop from the same timer, KEY_HOLD_US after the RF TX interrupt: the ramp down starts at the last
 // symbol's end and the carrier is off inside the slot's guard. The modem's interrupt for the burst's end comes 1.85 ms
 // after the last symbol: dropped there, the carrier was at full power 0.6 ms into the slot after. An SFR keeps the
-// drop at that interrupt (ended earlier, its receiver lost more of the inbound voice: hardware-md9600.md 19.8)
+// drop at that interrupt (ended earlier, its receiver lost more of the inbound voice)
 #define KEY_HOLD_US		(KEYUP_INT_AHEAD_US + 27500u)
 static volatile bool key_drop;		// the timer's next update is the PA drop
 static bool key_timed;			// this burst's drop is the timer's
@@ -535,7 +535,7 @@ bool md9600_rf_dmr_key(bool tx)
 // while the repeater was down ended in no_repeater. On simplex too: the receive LO is an IF away from the carrier, and
 // a confirmed data response comes in the next frame, 30 ms after our last burst, before the radio task's tx_off() and
 // rx() get here (a radio that returns that late misses nearly every one). Without the waits, as between an SFR's bursts
-// (hardware-md9600.md 19.8): the listen that follows is far longer than the lock. Not per burst outside an SFR.
+//: the listen that follows is far longer than the lock. Not per burst outside an SFR.
 // True when the receiver is back on the RX frequency (the glue's tx_done)
 bool md9600_rf_dmr_done(void)
 {

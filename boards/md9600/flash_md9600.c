@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// MD-9600 data flash: a 25Q128-class SPI NOR (16 MB) on SPI2 with the LCD, chip select PB12 (docs/spec/hardware-md9600.md
-// 12), through the shared driver (platform/stm32f4/spi_flash) under the board's SPI2 lock. The map and the board's
+// MD-9600 data flash: a 25Q128-class SPI NOR (16 MB) on SPI2 with the LCD, chip select PB12, through the shared driver (platform/stm32f4/spi_flash) under the board's SPI2 lock. The map and the board's
 // record sector are in store_md9600.c. The security registers hold the factory calibration (1-2) and the hardware
 // options (3) and are only read.
 #include "md9600.h"
@@ -17,8 +16,8 @@ static const stm32_spi_flash_cfg_t cfg = {
 	.cs_port = PIN_PORT(PIN_FLASH_CS),
 	.cs_pin = PIN_MASK(PIN_FLASH_CS),
 	.cpol = true, .cpha = true,		// mode 3, as the LCD on the same bus
-	.br = 0,				// APB1 36 MHz / 2 = 18 MHz (hardware-md9600.md 12.1)
-	// No assumption about the maker: any part that answers with a size (hardware-md9600.md 12.1)
+	.br = 0,				// APB1 36 MHz / 2 = 18 MHz
+	// No assumption about the maker: any part that answers with a size
 	.device = 0, .device_mask = 0,
 	.map = &md9600_flash_map,
 	.bus_take = md9600_spi2_lock,

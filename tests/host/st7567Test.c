@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // ST7567 driver: the init stream, bus begin / end pairing, and the page transposition of a 1 bpp frame buffer
-// (docs/spec/hardware-dm1801pro.md 3)
+//
 #include <stdio.h>
 #include <string.h>
 #include "display/st7567/st7567.h"

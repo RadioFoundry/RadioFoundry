@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // STM32F4 system services (hal_system.h): chip identity and option bytes, memory reads, SoC registers, reboot, and the
-// software entry to the MCU's ROM bootloader (docs/spec/hardware-dm1701.md "Software entry to a bootloader").
+// software entry to the MCU's ROM bootloader.
 //
 // ROM DFU entry: the request stores a flag in an RTC backup register (kept through a system reset, unlike RAM, which
 // the stock bootloader runs in before the application) and resets. The stock bootloader then starts the application

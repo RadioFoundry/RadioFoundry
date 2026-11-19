@@ -13,7 +13,7 @@ contacts, RX group lists and your DMR ID, and adding the DMR ID (callsign) datab
 
 Every command takes --dry-run: offline steps (file conversion, image checks) run, nothing touches the radio.
 
-How the codeplug gets there (docs/spec/dm32-migration.md): qdmr's command line tool dmrconf (an external program,
+How the codeplug gets there: qdmr's command line tool dmrconf (an external program,
 installed separately) reads the stock radio with its DM-32UV driver and turns the codeplug into qdmr's YAML, then
 encodes it offline for qdmr's open firmware family (OpenUV380), the open-firmware layout RadioFoundry's CPS shim serves. dmrconf
 can't write that to the DM-32 itself: RadioFoundry keeps the open-firmware image at +0x700000 in the radio's data flash and its
@@ -47,9 +47,9 @@ import codeplug_port as cp  # noqa: E402  (next to this script)
 STOCK_DRIVER = "dm32uv"       # dmrconf --radio for the stock radio
 RFOUNDRY_DRIVER = "openuv380"      # dmrconf --radio for the open-firmware layout RadioFoundry serves (open-firmware-cps.md 7)
 CPS_OFFSET = 0x700000         # RadioFoundry's open-firmware image in the DM-32 data flash (boards/dm32/flash_dm32.c)
-WRITE_FLOOR = 0x700000        # RadioFoundry never writes below this (hardware-dm32.md 10.1)
+WRITE_FLOOR = 0x700000        # RadioFoundry never writes below this
 FLASH_SIZE = 0x1000000
-STOCK_PAGES = (0x000000, 0x0C9000)     # stock codeplug pages and the factory calibration page (hardware-dm32.md 10.1)
+STOCK_PAGES = (0x000000, 0x0C9000)     # stock codeplug pages and the factory calibration page
 NAME_MAX = 16                 # names in the open-firmware layout (open-firmware-cps.md 7.3)
 BANDS = ((136000000, 174000000), (400000000, 480000000))     # boards/dm32/board.c
 CPS_BLOCK = 32                # bytes per CPS request, as qdmr
@@ -95,7 +95,7 @@ image_to_dfu = cp.image_to_dfu
 
 
 def find_cal_page(img, base=0):
-    """Address of the stock factory calibration page (hardware-dm32.md 11.1: the first 4 KB page from 0x1000 whose
+    """Address of the stock factory calibration page (the first 4 KB page from 0x1000 whose
     byte +0xFFF is 2) in a data flash dump starting at `base`, or None."""
     for a in range(max(0x1000, base), min(0xC9000, base + len(img)), 0x1000):
         if img[a - base + 0xFFF] == 2:
@@ -665,8 +665,6 @@ stops and says how to go on; 'restore --workdir DIR' continues after the flash.
 Flash only (no codeplug):   python3 serial_loader.py {image}
 Back to stock:              python3 serial_loader.py --stock DM32.01.01.049.bin
   (the stock codeplug is still in the radio; backup-stock.dfu can be written with dmrconf write --radio dm32uv)
-Bring-up checklist (what to look at on the first boot): dm32-bringup.md if included, else docs/testing/dm32-bringup.md
-in the source.
 """
 
 
@@ -677,9 +675,6 @@ def cmd_package(sess, args):
                    "hrc7000_codec.py"):
         files[os.path.join(HERE, helper)] = helper
     files.update(cp.kit_package_files())
-    bringup = os.path.join(os.path.dirname(HERE), "docs", "testing", "dm32-bringup.md")
-    if os.path.isfile(bringup):
-        files[bringup] = "dm32-bringup.md"
     for img in args.image:
         files[os.path.abspath(img)] = os.path.basename(img)
     for extra in args.include or []:

@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// MD-380 vocoder: the radio's own AMBE+2 codec run in place from flash (docs/spec/codec-placement.md, "STM32
-// radios"; the codec: docs/spec/codec-md380.md, "State init and calls").
+// MD-380 vocoder: the radio's own AMBE+2 codec run in place from flash.
 //
 // The merge on the user's machine (rfoundry, tools/codec_extract.py, the web flasher) puts the whole codec in sector 11
-// (docs/spec/codec-placement.md, "Layouts"): its code from 0x080E0000, then its main table window, then its small
+//: its code from 0x080E0000, then its main table window, then its small
 // table windows, each moved as one block, and the descriptor at the end of the sector (platform/stm32f4/codec_desc.h).
 // The merge rewrites every address in the codec that points into a moved window (the codec map): the code's references
 // to itself and to its tables, and the calls from the code that stock keeps in the table window back into the code.
@@ -55,7 +54,7 @@ static const stm32_codec_profile_t d2032 = {
 };
 
 // The 35.14 builds as the merge places them (stockfw.py, "placed"); the entry offsets are the UV380 family's
-// (codec-mduv380.md). Not used: encode ECC +0x4E8 and FEC decode +0xB78
+//. Not used: encode ECC +0x4E8 and FEC decode +0xB78
 #define UV_ENTRIES { .encode = 0x130, .decode = 0x5D8, .enc_init = 0x284, .fec_init = 0x4CC, .dec_init = 0x6D0, \
 		.enc_params = 0x848, .enc_set = 0x1C0, .dec_set = 0x688 }
 

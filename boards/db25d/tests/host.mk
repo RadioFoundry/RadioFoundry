@@ -4,7 +4,7 @@
 # file is included; recipes use $< (the test, first) and $^ instead, which keep the paths they were given
 HERE := $(dir $(lastword $(MAKEFILE_LIST)))
 
-# The factory calibration page (hardware-db25d.md 6)
+# The factory calibration page
 TESTS   += db25dCalTest
 db25dCalTest: $(HERE)db25dCalTest.c $(HERE)../calibration_db25d.c $(HERE)../db25d.h $(CORE)/radio/cal_curve.h \
 		$(ROOT)/platform/hrc7000/dmr_rfburst_timing.h

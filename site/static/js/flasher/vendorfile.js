@@ -9,7 +9,7 @@
 //      tells which radio it is for, and the decrypted application is searched for the codec's signature word;
 //   3. a C-SKY radio's stock file or readout, by the codec's own hashes wherever the file holds it (c7000.js);
 //   4. an STM32 program flash readout, by the codec windows' hashes (stockfw.fromFlash): named, not used.
-// The signature alone never makes a codec usable: moving the codec needs that build's map (docs/spec/codec-placement.md),
+// The signature alone never makes a codec usable: moving the codec needs that build's map,
 // so a build without one is reported as "has the codec, no recipe for this build", not taken.
 
 import { sha256, u32le, startsWith } from "./bytes.js";

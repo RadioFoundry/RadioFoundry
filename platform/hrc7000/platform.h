@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // Copyright (c) 2026 Open25-DM32 Authors
 // HR_C7000 (Dahua DH4570) SoC with a C-SKY CK803S core: register map and platform services for boards built on it
-// (docs/spec/hardware-dm32.md 1-4). The modem / baseband registers are the driver's (drivers/modem/hrc7000).
+//. The modem / baseband registers are the driver's (drivers/modem/hrc7000).
 #ifndef PLATFORM_HRC7000_H
 #define PLATFORM_HRC7000_H
 
@@ -20,7 +20,7 @@
 #define HRC_XTAL_HZ		24000000u
 #include "clock_math.h"
 
-// --- System / modem block (hardware-dm32.md 1.1, 5.1) ---
+// --- System / modem block ---
 #define SYS_BASE		0x11000000u
 #define SYS_SOFT_RSTN		REG32(SYS_BASE + 0x000)
 #define CLK_MGR_CTRL		REG32(SYS_BASE + 0x004)	// b0/b1 PLL resets, b2/b3 clock source, b30 switch done, b31 lock
@@ -40,7 +40,7 @@
 #define IOMGR_REN2		REG32(SYS_BASE + 0x048)
 #define QUAD_ENABLE		REG32(SYS_BASE + 0x05C)
 
-// --- APB peripherals (hardware-dm32.md 3) ---
+// --- APB peripherals ---
 #define TIMER_BASE		0x14000000u	// timer n (1..6) at + 0x14 * (n - 1)
 #define WDT_BASE		0x14010000u
 #define GPIOA_BASE		0x14020000u
@@ -58,7 +58,7 @@
 #define PIC_BASE		0x17000000u
 #define CACHE_BASE		0xE000F000u
 
-// DAC (3 channels, 12 bit; hardware-dm32.md 3.8). Its pins: IO_DIPLEX2_DAC_*
+// DAC (3 channels, 12 bit). Its pins: IO_DIPLEX2_DAC_*
 #define DAC_PD_CTRL		REG32(DAC_BASE + 0x00)	// bit n = 1 powers channel n down
 #define DAC_PD_MODE_EN		REG32(DAC_BASE + 0x04)
 #define DAC_DATA_A		REG32(DAC_BASE + 0x08)
@@ -80,7 +80,7 @@
 #define TMR_CTRL_INT_MASK	0x04u	// 1 = interrupt masked
 
 // Timer allocation: 1 = RTOS tick, 2 = free-running microsecond clock (no interrupt), 3 = DMR PA one-shot (as
-// stock; hardware-dm32.md 8.6), 4 = AFSK, 5 = the board's own, 6 = PCM FIFO check / deferred write
+// stock), 4 = AFSK, 5 = the board's own, 6 = PCM FIFO check / deferred write
 #define TIMER_TICK		1
 #define TIMER_CLOCK		2
 #define TIMER_PA		3
@@ -88,7 +88,7 @@
 #define TIMER_BOARD		5	// a board's one-shot (e.g. the waits of a board's own DMR burst sequence)
 #define TIMER_PCM		6	// speaker FIFO check / settled write, independent of blocking voice decoders
 
-// --- PIC: source s is CPU vector s + 32 (hardware-dm32.md 4) ---
+// --- PIC: source s is CPU vector s + 32 ---
 #define PIC_MODE		REG32(PIC_BASE + 0x00)
 #define PIC_PO			REG32(PIC_BASE + 0x04)
 #define PIC_MASK		REG32(PIC_BASE + 0x08)
@@ -160,7 +160,7 @@ static inline void hrc_barrier(void)
 	__asm__ volatile ("sync" : : : "memory");
 }
 
-// --- GPIO: pin index 0-95 = bank A 0-31, B 32-63, C 64-95 (hardware-dm32.md 3.9) ---
+// --- GPIO: pin index 0-95 = bank A 0-31, B 32-63, C 64-95 ---
 #define GPIO_DR			0x00u
 #define GPIO_DDR		0x04u
 #define GPIO_INTEN		0x30u
@@ -197,7 +197,7 @@ void hrc_pin_irq(uint8_t pin, bool on, bool both, bool rising);
 uint32_t hrc_gpio_pending(uint32_t bank);
 void hrc_gpio_ack(uint32_t bank, uint32_t bits);
 
-// The GPIO interrupt watch (gpio_watch.c, hardware-dm32.md 6.3), for one bank interrupt a board's input depends on.
+// The GPIO interrupt watch (gpio_watch.c), for one bank interrupt a board's input depends on.
 // hrc_gpio_watch_register points the source at a counting wrapper around isr and leaves it masked, as hrc_irq_register
 // does. hrc_gpio_watch_scan, from the board's input scan, finds the bits pending but not taken on two scans running,
 // keeps the state the first time, serves the bank (isr) and enables the source again. hrc_gpio_watch_stats fills the
@@ -299,7 +299,7 @@ uint32_t hrc_micros(void);
 // leaves the watchdog guarding the next start (system.c; docs/spec/watchdog.md 3). Does not return
 void hrc_restart(void) __attribute__((noreturn));
 
-// Runtime RAM-monitor (stub) entry (CONFIG_STUB_ENTRY, docs/spec/hardware-dm32.md 17.2). The host loads the stub here
+// Runtime RAM-monitor (stub) entry (CONFIG_STUB_ENTRY). The host loads the stub here
 // and RadioFoundry jumps to it without a power cycle. The span is the codec window at the top of SRAM, which RadioFoundry never links
 // anything into (boards/dm32/memory.ld: 0x43A00..0x58000); the codec is parked before the load, so the whole window is free. Base is
 // 4 KB aligned inside it. The universal stub copies itself to 0x30000 (RadioFoundry's RAM, dead by then), clear of this span. A
@@ -311,7 +311,7 @@ void hrc_restart(void) __attribute__((noreturn));
 
 // Crash log (CONFIG_CRASH_LOG, crash_hrc.c): the record lives at the top of the SRAM shared with the modem, which the
 // codec's tables (from 0x18000800, at most to 0x18004F90 in any stock image) and the microphone PCM (0x18000000)
-// don't reach (hardware-dm32.md 2: free for software). Main SRAM is the bootloader's and the start-up's
+// don't reach (free for software). Main SRAM is the bootloader's and the start-up's
 #define HRC_CRASH_STORE		0x18007F00u	// 256 bytes to the end, 0x18008000
 #define HRC_CRASH_BOOT		0x18007EF0u	// the restart cause's words (crash_boot_t), just below the record; stub/
 						// stubtool.py's --boot reset writes .soft (CRASH_SOFT_MARK) by this address
@@ -392,8 +392,7 @@ void hrc_uart_rx_irq(uint32_t base, bool on);
 void hrc_uart_rx_clear(uint32_t base);	// drain the RX FIFO, clear line status and busy-detect
 uint32_t hrc_uart_rx_isr(uint32_t base, void (*rx)(uint8_t c, bool flagged));
 
-// A GPS module's NMEA output on one of the UARTs, 9600 8N1, receive only (gps_hrc.c; hardware-dm32.md 12, hardware-db25d.md
-// 3.1). The module is powered and listened for for 5 s at start-up; one checksum-valid sentence makes it present (and
+// A GPS module's NMEA output on one of the UARTs, 9600 8N1, receive only (gps_hrc.c). The module is powered and listened for for 5 s at start-up; one checksum-valid sentence makes it present (and
 // every sentence then goes to the position service, core/position), nothing heard powers it off and stops the UART
 typedef struct {
 	uint32_t uart_base;	// UART0_BASE ... UART2_BASE

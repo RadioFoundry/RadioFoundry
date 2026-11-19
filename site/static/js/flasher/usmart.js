@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // USMART, the debug console a stock firmware answers on the programming cable (a board's radios.json
-// flash.stock_console "usmart"; the DB25-D PRO's, docs/spec/hardware-db25d.md 7). It reads and writes single words of
+// flash.stock_console "usmart"; the DB25-D PRO's). It reads and writes single words of
 // memory, which is enough to put the universal stub (stub.js) into a free stretch of RAM and start it. The stub then
 // reads and writes the program flash as on every other HR_C7000 radio. The console writes RAM only, never flash. The
 // stock builds it knows are below (BUILDS); their versions are the board's flash.stock_versions.
@@ -18,7 +18,7 @@ export const FLASH_BASE = 0x03000000, FLASH_SIZE = 0x200000;
 const APP_END = 0x0310C000;
 
 // ---------------------------------------------------------------------------------------------------------------
-// The protocol (hardware-db25d.md 7, Stub from stock). A command is one frame: "@AT", one filler byte, the text, CR LF.
+// The protocol (Stub from stock). A command is one frame: "@AT", one filler byte, the text, CR LF.
 // The console times every byte at 20 ms, so a frame goes out in a single write; anything unframed is ignored. Replies:
 //   read_addr(0x0300c000)        -> "read_addr(0X300C000)=0XC001112C;"
 //   write_addr(0x00054000,0x1)   -> "write_addr(0X54000,0X1);" (the function returns nothing; the echo is the reply)
@@ -32,7 +32,7 @@ const FRAME = "@AT ";
 export const STUB_WINDOW = [0x54000, 0x4000];		// [load address, size]
 export const HIJACK = 0x18000848;
 export const APP_SIG = [0x0300C000, 0xC001112C];		// the application's first word: 2C 11 01 C0
-// Every vendor build known (hardware-db25d.md 7, USMART console): name, its build date, at: the word just below
+// Every vendor build known (USMART console): name, its build date, at: the word just below
 // "EARSAB.0NN" in its program flash (four words cover it: how the build is told), ram: the version string's copy in
 // RAM, where the firmware writes the RF chips it found at boot (the hardware variant; the flash holds a placeholder).
 // stub: the stub load through this build's console is proven on a radio (its free RAM and command table measured);
@@ -42,7 +42,7 @@ export const APP_SIG = [0x0300C000, 0xC001112C];		// the application's first wor
 export const BUILDS = [
 	{ name: "018", date: "2025-01-21", at: 0x03079F3C, ram: 0x18000AF4, stub: true },
 	{ name: "020", date: "2026-01-10", at: 0x0307DCCC, ram: 0x18000B74, stub: true },
-	// from static analysis (hardware-db25d.md 7.1): the heap ends above 0x54000 in these, so each has a window above it;
+	// from static analysis: the heap ends above 0x54000 in these, so each has a window above it;
 	// the 2022-2023 command table has no pad word, so cmd_rec is its first entry
 	{ name: "018", date: "2024-09-23", at: 0x03079C64, ram: 0x18000AFC, stub: false, window: [0x55000, 0x3000] },
 	{ name: "018", date: "2024-05-09", at: 0x030797A0, ram: 0x18000AF8, stub: false, window: [0x55000, 0x3000] },
@@ -87,7 +87,7 @@ export const hex8 = (n) => (n >>> 0).toString(16).padStart(8, "0");
 const writable = (a, { window, hijack }) => a === hijack || (a >= window[0] && a + 4 <= window[0] + window[1]);
 
 // Where a build takes the stub: its own window and hijack word, else the proven builds'. A window must lie in the
-// SoC's SRAM (0x10000-0x57FFF, hardware-db25d.md 2) clear of where the stub runs (0x30000-0x38000), and the hijack
+// SoC's SRAM (0x10000-0x57FFF) clear of where the stub runs (0x30000-0x38000), and the hijack
 // word inside the console's command table
 const SRAM = [0x10000, 0x58000];
 const STUB_RUN = [0x30000, 0x38000];

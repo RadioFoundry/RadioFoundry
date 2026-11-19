@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // The HR_C7000's READ_MEM windows (docs/spec/debuglink.md 3.10), no hardware access (host tested). Memory reads have no
 // side effects: main SRAM, the SRAM shared with the modem, the program flash through XIP. Register blocks only where
-// every register is plain read-write or read-only, with no read-to-clear bit and no FIFO (hardware-dm32.md 3, 4.1):
+// every register is plain read-write or read-only, with no read-to-clear bit and no FIFO:
 // the system block's clock and IO mux registers, the three GPIO banks (DesignWare APB GPIO: EOI is write-only) and
 // the PIC (its request record clears on a write of 1, not on a read). Never the timers or watchdog (their EOI
 // registers clear on read), UARTs, SPI, I2C, the modem registers or its buffer RAM (FIFOs, read-to-clear status).
@@ -27,7 +27,7 @@ static inline bool hrc_mem_window_for(unsigned i, hal_mem_window_t *w, uint32_t 
 		{ 0x14020000u, 0x1402007Fu, true },	// GPIO A
 		{ 0x14100000u, 0x1410007Fu, true },	// GPIO B
 		{ 0x14110000u, 0x1411007Fu, true },	// GPIO C
-		// PIC, only the registers hardware-dm32.md 4.1 documents (what the gaps hold is unknown): mode, polarity,
+		// PIC, only the documented registers (what the gaps hold is unknown): mode, polarity,
 		// mask, vector, EOI, priorities; fast select; the request record; the _1 set
 		{ 0x17000000u, 0x17000033u, true },
 		{ 0x1700003Cu, 0x1700003Fu, true },
@@ -53,7 +53,7 @@ static inline bool hrc_reg_allowed(uint32_t addr)
 		uint32_t lo, hi;	// inclusive
 	} win[] = {
 		{ 0x11000000u, 0x1100005Fu },	// system block
-		{ 0x14000000u, 0x14000077u },	// timers 1-6, 0x14 bytes each (hardware-dm32.md 3.4)
+		{ 0x14000000u, 0x14000077u },	// timers 1-6, 0x14 bytes each
 		{ 0x14020000u, 0x1402007Fu },	// GPIO A
 		{ 0x14100000u, 0x1410007Fu },	// GPIO B
 		{ 0x14110000u, 0x1411007Fu },	// GPIO C

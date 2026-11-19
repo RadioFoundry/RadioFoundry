@@ -355,7 +355,7 @@ compiler barrier.
 verify the codec region by hash or signature at boot and at build time; never ship an image with the codec, never commit one.
 
 **4.6 Codec placement is per board.** The merge tool moves the codec to where the board's memory map puts it and
-rewrites the absolute addresses inside it ([codec-placement.md](codec-placement.md)), so a position copied from a
+rewrites the absolute addresses inside it (codec-placement.md), so a position copied from a
 vendor image is wrong for a RadioFoundry build. The real flash budget is the gap before the codec, not the linker's
 percent used. Each radio must use the codec from its own vendor firmware.
 

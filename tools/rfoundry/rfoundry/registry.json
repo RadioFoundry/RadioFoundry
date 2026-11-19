@@ -47,25 +47,25 @@
      "mem": "progmem",
      "start": 2088960,
      "end": 2093056,
-     "what": "factory calibration, the program flash copy (hardware-db25d.md 6, 6.1)"
+     "what": "factory calibration, the program flash copy"
     },
     {
      "mem": "nand",
      "start": 0,
      "end": 131072,
-     "what": "the stock firmware's bad-block table in physical block 0 (hardware-db25d.md 6.5; its place inferred from the shared stock NAND driver)"
+     "what": "the stock firmware's bad-block table in physical block 0"
     },
     {
      "mem": "nand",
      "start": 2621440,
      "end": 3014656,
-     "what": "factory calibration, the NAND copy (logical 0x280000): blocks 20-22, block 21 with no bad block below it, one up for each (hardware-db25d.md 6, 6.5; remapped by the stock bad-block table, inferred from the shared driver)"
+     "what": "factory calibration, the NAND copy (logical 0x280000): blocks 20-22, block 21 with no bad block below it, one up for each, remapped by the bad-block table"
     },
     {
      "mem": "nand",
      "start": 261881856,
      "end": 268435456,
-     "what": "the stock firmware's reserve pool, the top 10 good blocks: blocks 1998-2047 hold them with up to 40 bad blocks (hardware-db25d.md 6.6)"
+     "what": "the stock firmware's reserve pool, the top 10 good blocks: blocks 1998-2047 hold them with up to 40 bad blocks"
     }
    ],
    "keep_codec_supported": false,
@@ -224,13 +224,13 @@
      "mem": "secreg",
      "start": 0,
      "end": 512,
-     "what": "factory calibration in security registers 1 and 2 (hardware-dm1701.md 12.1, 13.2)"
+     "what": "factory calibration in security registers 1 and 2"
     },
     {
      "mem": "secreg",
      "start": 512,
      "end": 768,
-     "what": "factory flags in security register 3: power class, panel type, band limits (hardware-dm1701.md 13.2)"
+     "what": "factory flags in security register 3: power class, panel type, band limits"
     }
    ],
    "keep_codec_supported": true,
@@ -365,7 +365,7 @@
      "mem": "data",
      "start": 4096,
      "end": 823296,
-     "what": "factory calibration: the stock codeplug area's 4 KB page tagged 2, which can be any page of it (hardware-dm1801pro.md 6.4)"
+     "what": "factory calibration: the stock codeplug area's 4 KB page tagged 2, which can be any page of it"
     }
    ],
    "keep_codec_supported": false,
@@ -487,13 +487,13 @@
      "mem": "data",
      "start": 4096,
      "end": 823296,
-     "what": "factory calibration: the stock codeplug area's 4 KB page tagged 2, which can be any page of it (hardware-dm32.md 10.1, 11.1)"
+     "what": "factory calibration: the stock codeplug area's 4 KB page tagged 2, which can be any page of it"
     },
     {
      "mem": "data",
      "start": 7405568,
      "end": 7409664,
-     "what": "a decoded calibration copy an earlier firmware left, the fallback when no factory page is found (hardware-dm32.md 10.1, 17)"
+     "what": "a decoded calibration copy an earlier firmware left, the fallback when no factory page is found"
     }
    ],
    "keep_codec_supported": false,
@@ -653,7 +653,7 @@
      "mem": "secreg",
      "start": 0,
      "end": 512,
-     "what": "factory calibration in security registers 1 and 2 (hardware-md380.md 11.1)"
+     "what": "factory calibration in security registers 1 and 2"
     }
    ],
    "keep_codec_supported": true,
@@ -1041,13 +1041,13 @@
      "mem": "secreg",
      "start": 0,
      "end": 512,
-     "what": "factory calibration in security registers 1 and 2 (hardware-mduv380.md 8)"
+     "what": "factory calibration in security registers 1 and 2"
     },
     {
      "mem": "secreg",
      "start": 512,
      "end": 768,
-     "what": "factory flags in security register 3: power class, panel type, band limits (hardware-mduv380.md 4, 11)"
+     "what": "factory flags in security register 3: power class, panel type, band limits"
     }
    ],
    "keep_codec_supported": true,
@@ -1214,7 +1214,7 @@
      "mem": "data",
      "start": 2088960,
      "end": 2097152,
-     "what": "the activation block (0x1FE000) and the factory calibration (0x1FF000) (hardware-rt10.md 4)"
+     "what": "the activation block (0x1FE000) and the factory calibration (0x1FF000)"
     }
    ],
    "keep_codec_supported": true,

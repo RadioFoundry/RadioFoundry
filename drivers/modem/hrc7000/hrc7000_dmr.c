@@ -452,7 +452,7 @@ static void arm(hrc7000_dmr_t *e, const dmr_tx_burst_t *b)
 		}
 	}
 	w(e, C7_LAYER2_TXRX_CTRL, TXRX_TX);
-	e->ops->pa_arm(e->ops->ctx);	// every arming starts the PA one-shot (hardware-dm32.md 8.6)
+	e->ops->pa_arm(e->ops->ctx);	// every arming starts the PA one-shot
 	e->last_kind = kind;
 	e->tx_last_arm = e->tick;
 	e->tx_any = true;

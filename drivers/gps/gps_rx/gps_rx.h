@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // A GPS module's NMEA output on a receive-only UART, the part every board shares: the interrupt puts bytes in a ring,
-// the board's task drains it through nmea_line and learns whether a module is there at all (hardware-md380.md 13,
-// hardware-dm32.md 12). Generic and pure: no UART, no RTOS. One writer each way: the interrupt calls gps_rx_byte and
+// the board's task drains it through nmea_line and learns whether a module is there at all. Generic and pure: no UART, no RTOS. One writer each way: the interrupt calls gps_rx_byte and
 // gps_rx_error, one task calls gps_rx_poll.
 #ifndef GPS_RX_H
 #define GPS_RX_H

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// RT10 power latch and switch, battery on ADC channel 2, status LEDs (docs/spec/hardware-rt10.md 3, 5). The volume
+// RT10 power latch and switch, battery on ADC channel 2, status LEDs. The volume
 // knob is on the audio path, not read by the MCU, so volume() is -1. The power switch reads high when off (measured);
 // switch_on() turns false after SWITCH_SAMPLES polls in a row read off (app.c polls every 100 ms: 500 ms in
 // all), and app.c then lets go of the latch. battery_mv() is the ADC count times BAT_MV_PER_COUNT

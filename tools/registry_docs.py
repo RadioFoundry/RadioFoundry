@@ -107,16 +107,23 @@ def pr_link(n):
 
 # ── the board side ──────────────────────────────────────────────────────────
 
+RADIOS_PAGE = "docs/user/23-radios.md"
+
+
 def board_page(b):
-    """The page a board's rows link to: its bring-up checklist when it has one, else its hardware page."""
-    return b.data["docs"].get("bringup") or b.data["docs"]["hardware"]
+    """Where a board's rows link to: its section of the radio reference ("## <maker> <model>"), by GitHub's heading
+    id."""
+    d = b.data
+    anchor = re.sub(r"[^\w\- ]", "", ("%s %s" % (d["maker"], d["model"])).lower()).replace(" ", "-")
+    return "%s#%s" % (RADIOS_PAGE, anchor)
 
 
 def board_title(b, dst_dir):
     """A board's name, linked to its page, then the names it is also sold as (the maker left off where it repeats)
     and "(mobile)" for a mobile radio."""
     d = b.data
-    link = "[%s](%s)" % (d["name"], os.path.relpath(board_page(b), dst_dir or "."))
+    page, anchor = board_page(b).split("#")
+    link = "[%s](%s#%s)" % (d["name"], os.path.relpath(page, dst_dir or "."), anchor)
     return link + "".join(", " + a for a in also_names(b)) + (" (mobile)" if d["kind"] == "mobile" else "")
 
 
@@ -148,8 +155,9 @@ def survey_table(text):
 
 def port_cell(b):
     """The survey's Port cell of a board's row."""
-    return "%s ([%s](%s))" % (LEVEL_WORD[b.data["status"]["level"]], os.path.basename(board_page(b)),
-                              os.path.relpath(board_page(b), os.path.dirname(SURVEY)))
+    page, anchor = board_page(b).split("#")
+    return "%s ([radio reference](%s#%s))" % (LEVEL_WORD[b.data["status"]["level"]],
+                                              os.path.relpath(page, os.path.dirname(SURVEY)), anchor)
 
 
 def survey(root, boards):

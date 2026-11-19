@@ -248,7 +248,7 @@ CONFIG_BCAST_FM ?= y
 # so, off by default, never transmit (docs/spec/radio-features.md). Off where the chip documents give no range
 CONFIG_RX_EXT ?= y
 # audio path probe: debug link command 0x10 to read / write the audio chip's registers and watch the PCM stream's
-# levels, for the USB audio feasibility tests on the bench (docs/spec/hardware-dm1701.md 21.3; needs DEBUGLINK and DMR, whose
+# levels, for the USB audio feasibility tests on the bench (needs DEBUGLINK and DMR, whose
 # PCM stream it borrows). A diagnostic, never for a release
 CONFIG_AUDIO_PROBE ?= n
 # runtime RAM-monitor entry: command 0x1A on the host port loads the host's flash-access stub into free RAM and jumps

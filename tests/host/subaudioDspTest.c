@@ -15,7 +15,7 @@ static int failures;
 
 #define CHECK(cond) do { if (!(cond)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); failures++; } } while (0)
 
-#define FS	2613u		// the MD-380's ADC rate per channel (hardware-md380.md 6.4)
+#define FS	2613u		// the MD-380's ADC rate per channel
 #define PI	3.14159265358979
 
 static uint32_t rng = 12345;

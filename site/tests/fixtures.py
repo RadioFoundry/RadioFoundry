@@ -251,7 +251,7 @@ def main(out):
 	feats = repo.features()
 	variants = repo.variants()
 	radios, _ = repo.boards([f["name"] for f in feats], [v["id"] for v in variants])
-	# the synthetic codecs' maps go into the flash-boards data, as a real build's would (docs/spec/codec-placement.md)
+	# the synthetic codecs' maps go into the flash-boards data, as a real build's would
 	test_maps = {**c7000(out, rng), **db25d(out, rng)}
 	bfloader(out)
 	codeplug(out)

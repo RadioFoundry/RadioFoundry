@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // UV380 family APRS AFSK (hal_afsk.h, docs/spec/aprs.md 5.2): the AT1846S FM TX tone generator as the voice source (as for
-// the roger beep), retuned at every symbol boundary by the TIM6 interrupt (hardware-dm1701.md 3.1, 3.3: TIM6 is the
+// the roger beep), retuned at every symbol boundary by the TIM6 interrupt (3.3: TIM6 is the
 // AFSK bit clock, priority 5). One AT1846S register write per tone change (reg 0x35, about 0.1 ms on I2C3 at
 // 400 kHz) out of an 833 us symbol; the radio core keeps the I2C3 bus free meanwhile (status() returns its cached
 // reading while r.afsk is set).
 //
-// No receive path of its own (rx_start NULL): the HR_C6000 puts FM receive audio on the I2S stream (hardware-dm1701.md
-// 21.3.1), so APRS takes it from there through the audio tap's AUDIO_TAP_FM_RX (aprs.md 5.3).
+// No receive path of its own (rx_start NULL): the HR_C6000 puts FM receive audio on the I2S stream, so APRS takes it from there through the audio tap's AUDIO_TAP_FM_RX (aprs.md 5.3).
 //
 // Unverified on the bench: whether the tone generator's phase stays continuous across a retune, the deviation the
 // level gives, and the flatness of mark vs space (aprs.md 13 HIL steps).
@@ -16,7 +15,7 @@
 #include "uvf.h"
 #include "stm32f4xx_hal.h"
 
-#define AFSK_IRQ_PRIORITY	5	// hardware-dm1701.md 3.1 (no RTOS calls from the handler)
+#define AFSK_IRQ_PRIORITY	5	// no RTOS calls from the handler
 
 static const uint8_t *volatile tones;
 static volatile uint16_t nbits;

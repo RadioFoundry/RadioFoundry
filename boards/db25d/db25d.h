@@ -17,8 +17,7 @@ extern const hal_radio_t db25d_radio;
 extern const hal_power_t db25d_power;
 extern const hal_audio_t db25d_audio;	// radio_db25d.c: the platform's PCM audio and the amplifier hang
 
-// Physical key bits returned by db25d_input.scan(): the front keys (matrix positions found on the radio,
-// hardware-db25d.md 3.3) and the hand mic's 16 keys (3.4)
+// Physical key bits returned by db25d_input.scan(): the front keys (matrix positions found on the radio) and the hand mic's 16 keys
 enum {
 	KEY_P1, KEY_P2, KEY_P3, KEY_VOL, KEY_TONE, KEY_BE, KEY_ENC_PUSH,
 	KEY_MIC_0, KEY_MIC_1, KEY_MIC_2, KEY_MIC_3, KEY_MIC_4, KEY_MIC_5, KEY_MIC_6, KEY_MIC_7, KEY_MIC_8, KEY_MIC_9,
@@ -40,7 +39,7 @@ typedef struct {
 } db25d_radio_diag_t;
 void db25d_radio_diag(db25d_radio_diag_t *d);
 
-// --- Factory calibration (calibration_db25d.c, hardware-db25d.md 6) ---
+// --- Factory calibration (calibration_db25d.c) ---
 #define DB25D_CAL_LEN		0x800u
 #define DB25D_CAL_POINTS	8u
 #define DB25D_CAL_FLASH_ADDR	0x031FE000u	// the program-flash copy, memory-mapped
@@ -81,7 +80,7 @@ uint16_t db25d_apc_level(uint16_t target, uint16_t step);
 // Squelch open threshold for level 0..9, in dB below 0 dBm at the main chip (bk4819_squelch_rssi(-v, 2))
 uint8_t db25d_cal_squelch_db(uint32_t hz, uint8_t level);
 
-// --- DMR burst timing (hardware-db25d.md 4.5; the arithmetic is platform/hrc7000/dmr_rfburst_timing.h) ---
+// --- DMR burst timing (the arithmetic is platform/hrc7000/dmr_rfburst_timing.h) ---
 // The PA's point (pa_us, the key-up rule's) comes after the TX on sequence: the main chip's tune and the LO off end
 // up to DB25D_DMR_TUNE_US after the RF TX interrupt (the task's wake, 50 us, the RF bus writes), or at the page's
 // TX-on delay if that is later, then 200 us to the TX supply. The lead has the sequence done by the PA's point, so the
@@ -95,7 +94,7 @@ uint8_t db25d_cal_squelch_db(uint32_t hz, uint8_t level);
 // The PA's point before the first symbol with no boost: the ramp (0.72 ms) and the loop have the PA within 1 dB
 // 0.2 ms ahead of it at 1.8 W and up (4.5)
 #define DB25D_DMR_PA_UP_US		1000u
-// The VHF PA comes up faster (4.5)
+// The VHF PA comes up faster
 #define DB25D_DMR_PA_UP_VHF_US		1250u
 static inline uint8_t db25d_dmr_rf_tx_lead(uint16_t pa_us, uint16_t on_us)
 {
@@ -107,8 +106,8 @@ static inline uint32_t db25d_dmr_off_at_us(uint8_t lead)
 	return hrc_rfburst_off_at_us(lead);
 }
 
-// --- SPI NAND (nand_db25d.c, hardware-db25d.md 6.5) ---
-// RadioFoundry's own block range, the only blocks it programs or erases (hardware-db25d.md 6.6): 32 blocks (4 MB) from block
+// --- SPI NAND (nand_db25d.c) ---
+// RadioFoundry's own block range, the only blocks it programs or erases: 32 blocks (4 MB) from block
 // 1920, far above every stock area and below the stock firmware's scratch blocks at the top of the chip
 #define DB25D_NAND_RFOUNDRY_FIRST	1920u
 #define DB25D_NAND_RFOUNDRY_BLOCKS	32u
@@ -124,7 +123,7 @@ void db25d_nand_unlock(void);
 extern const nand_dev_t db25d_nand_dev;
 uint32_t db25d_nand_program_fails(void);
 
-// --- Data flash (flash_db25d.c, hardware-db25d.md 6.6; CONFIG_NAND_STORAGE): the core's storage as 4 KB sectors
+// --- Data flash (flash_db25d.c; CONFIG_NAND_STORAGE): the core's storage as 4 KB sectors
 // over RadioFoundry's NAND range ---
 extern hal_flash_t db25d_flash;
 // Mount the sector layer (after db25d_nand_init). False leaves db25d_flash with size 0: nothing is stored
@@ -139,7 +138,7 @@ uint8_t db25d_mic_lines(uint16_t *a9_changes, uint16_t *c11_changes);
 void db25d_mic_lines_reset(void);
 uint32_t db25d_input_ptt_ignored(void);	// key scans with PTA9 low that the shared-line gate took for serial data
 bool db25d_radio_transmitting(void);	// the radio is keyed (the shared PTT line's gate)
-bool db25d_input_mic_armed(void);	// PTC11 has read high since power-on: a mic is in the front jack (3.3)
+bool db25d_input_mic_armed(void);	// PTC11 has read high since power-on: a mic is in the front jack
 // The hand mic's key held now (its key number, 0xFF for none; mic_db25d.c)
 uint8_t db25d_mic_key(void);
 // The hand mic's frames as the host UART receives them (miccap_db25d.c, CONFIG_DIAG builds)

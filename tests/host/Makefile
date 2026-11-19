@@ -575,7 +575,7 @@ gpsPowerTest: gpsPowerTest.c $(ROOT)/drivers/gps/gps_rx/gps_power.c $(ROOT)/driv
 	$(CC) $(CFLAGS) -Wshadow -o $@ gpsPowerTest.c $(ROOT)/drivers/gps/gps_rx/gps_power.c
 
 # The STM32 codec descriptor (platform/stm32f4/codec_desc.h): its checks, and codec sectors 10 and 11 as
-# tools/codec_extract.py merges them (docs/spec/codec-placement.md)
+# tools/codec_extract.py merges them
 TESTS   += codecDescTest
 
 codecDescTest: codecDescTest.c $(ROOT)/platform/stm32f4/codec_desc.h
@@ -605,7 +605,7 @@ run-chips: sky72310Test hrc5000Test nmeaLineTest gpsRxTest gpsBaudTest gpsPowerT
 .PHONY: run-chips
 
 # Sub-audio: the DCS Golay word, and the software CTCSS / DCS detector and tone generators for radios without a sub-audio chip
-# (docs/spec/hardware-md380.md 6.4), on synthetic signals
+#, on synthetic signals
 TESTS   += subaudioDspTest
 SUBAUDIO_ALL := $(wildcard $(ROOT)/drivers/rf/subaudio/*.c)
 
@@ -1182,7 +1182,7 @@ run-drivers: fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPtt
 	python3 -I $(ROOT)/tools/hrc7000_codec.py --self-test
 .PHONY: run-drivers
 
-# The BK4819 driver: main and LO chips on one shared three-wire bus (docs/spec/hardware-db25d.md 4)
+# The BK4819 driver: main and LO chips on one shared three-wire bus
 TESTS   += bk4819Test
 
 # The AT1141 LO (a superhet's local oscillator on the same bus kind): divider plan, PLL word, init and tune order
@@ -1246,7 +1246,7 @@ hrc7000IrqStallTest: hrc7000IrqStallTest.c $(ROOT)/platform/hrc7000/irq_stall.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000IrqStallTest.c
 
 # The HR_C7000 codec slot (platform/hrc7000/codec_slot.h): versions 1 and 2, the move, the refusals, and the slot
-# tools/hrc7000_codec.py writes (docs/spec/codec-placement.md)
+# tools/hrc7000_codec.py writes
 TESTS   += hrc7000CodecSlotTest
 
 hrc7000CodecSlotTest: hrc7000CodecSlotTest.c $(ROOT)/platform/hrc7000/codec_slot.h

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// AT1846S RF transceiver: chip driver, independent of the board (docs/spec/hardware-dm1701.md section 5).
+// AT1846S RF transceiver: chip driver, independent of the board.
 // The board supplies a bus (one 16-bit register write / read, I2C on the STM32 radios); this driver handles the
 // register page (reg 0x7F) and keeps a per-page cache of the values written so unchanged writes are skipped.
 // A driver instance is not reentrant: call it from one task (or guard it). The pure helpers have no state.
@@ -20,7 +20,7 @@ typedef struct {
 typedef enum { AT1846S_BW_12K5, AT1846S_BW_25K } at1846s_bw_t;
 typedef enum { AT1846S_MODE_FM, AT1846S_MODE_DMR } at1846s_mode_t;
 
-// Reg 0x30 states (5.3)
+// Reg 0x30 states
 typedef enum {
 	AT1846S_STATE_OFF,	// receiver off at power-down
 	AT1846S_STATE_IDLE,	// RX and TX off, the state for a frequency write
@@ -31,7 +31,7 @@ typedef enum {
 
 typedef enum { AT1846S_TONE_NONE, AT1846S_TONE_CTCSS, AT1846S_TONE_DCS, AT1846S_TONE_DCS_INV } at1846s_tone_t;
 
-// Reg 0x1C flag bits (5.7)
+// Reg 0x1C flag bits
 #define AT1846S_FLAG_SQ		0x0001u
 #define AT1846S_FLAG_DCS_INV	0x0040u
 #define AT1846S_FLAG_DCS	0x0080u
@@ -54,9 +54,9 @@ typedef struct {
 
 // --- Pure helpers (no chip access) ---
 
-// Synthesizer word for a frequency: 1/16 kHz units, rounded (5.6). 0x29 takes bits 29:16, 0x2A bits 15:0
+// Synthesizer word for a frequency: 1/16 kHz units, rounded. 0x29 takes bits 29:16, 0x2A bits 15:0
 uint32_t at1846s_freq_word(uint32_t hz);
-// Reg 0x30 value for a state at a bandwidth (5.3)
+// Reg 0x30 value for a state at a bandwidth
 uint16_t at1846s_state_value(at1846s_bw_t bw, at1846s_state_t state);
 // Reg 0x5B match / unmatch threshold byte for a CTCSS register value (Hz x 100)
 uint8_t at1846s_ctcss_threshold(uint16_t tone_reg);
@@ -85,21 +85,21 @@ void at1846s_cache_clear(at1846s_t *dev);
 bool at1846s_init(at1846s_t *dev);
 // The last init step, run after the modem chip has been initialized (5.2 step 36)
 bool at1846s_init_finish(at1846s_t *dev);
-// Bandwidth table (5.4); no-op when already applied. Leaves the chip idle (call at1846s_set_state after)
+// Bandwidth table; no-op when already applied. Leaves the chip idle (call at1846s_set_state after)
 bool at1846s_set_bandwidth(at1846s_t *dev, at1846s_bw_t bw);
-// FM or DMR mode table (5.5); no-op when already applied. Bandwidth and mode tables both reset reg 0x3A, so set the
+// FM or DMR mode table; no-op when already applied. Bandwidth and mode tables both reset reg 0x3A, so set the
 // RX tone again after either
 bool at1846s_set_mode(at1846s_t *dev, at1846s_mode_t mode);
 // Tune with the receiver off (5.6 steps 1-5). Leaves the chip idle; set the state after
 bool at1846s_set_freq(at1846s_t *dev, uint32_t hz);
 bool at1846s_set_state(at1846s_t *dev, at1846s_state_t state);
-// Sub-audio (5.7). value: CTCSS Hz x 10, DCS the 9-bit code (octal digits as 3-bit groups, 023 -> 0x13)
+// Sub-audio. value: CTCSS Hz x 10, DCS the 9-bit code (octal digits as 3-bit groups, 023 -> 0x13)
 bool at1846s_set_tx_tone(at1846s_t *dev, at1846s_tone_t type, uint16_t value);
-// The DCS turn-off tail (5.7), while transmitting DCS: on switches TX sub-audio from CDCSS to CTCSS, which sends 0x4A's
+// The DCS turn-off tail, while transmitting DCS: on switches TX sub-audio from CDCSS to CTCSS, which sends 0x4A's
 // 134.4 Hz (the DCS bit rate) as a tone; off goes back to the code. False with no DCS set (nothing written)
 bool at1846s_tx_tail(at1846s_t *dev, bool on);
 bool at1846s_set_rx_tone(at1846s_t *dev, at1846s_tone_t type, uint16_t value);
-// Reg 0x1B: rssi_db (high byte) and noise_db (low byte), 1 dB units, chip scale (5.9)
+// Reg 0x1B: rssi_db (high byte) and noise_db (low byte), 1 dB units, chip scale
 bool at1846s_read_signal(at1846s_t *dev, uint8_t *rssi_db, uint8_t *noise_db);
 // Reg 0x1C flags (AT1846S_FLAG_*)
 bool at1846s_read_flags(at1846s_t *dev, uint16_t *flags);

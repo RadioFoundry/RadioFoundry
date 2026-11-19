@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// What layout a codeplug image or SPI flash dump holds (docs/spec/codeplug-stock-tyt.md 2): the open-firmware layout
-// (open-firmware-cps.md 7), a stock TYT-family codeplug, a stock DM-32UV one (dm32-stock-codeplug.md 3), nothing
+// What layout a codeplug image or SPI flash dump holds: the open-firmware layout
+// (open-firmware-cps.md 7), a stock TYT-family codeplug, a stock DM-32UV one, nothing
 // (blank), or something else. Decided from the
 // records each layout marks as in use, so stock bytes RadioFoundry hasn't overwritten yet don't hide a RadioFoundry codeplug.
 

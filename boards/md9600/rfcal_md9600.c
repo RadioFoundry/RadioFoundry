@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// MD-9600 calibration as the RF code uses it (md9600.h; docs/spec/hardware-md9600.md 11, 19.8): the PA drive per power
+// MD-9600 calibration as the RF code uses it (md9600.h): the PA drive per power
 // level and the squelch thresholds, on top of the row reader (cal_md9600.h). The layout is unverified, so a row group
 // counts only when it looks plausible: PA drive present at every point and rising with the level, squelch thresholds
 // present and level 1 apart from level 9. Anything else refuses transmit or leaves the noise reading unscaled.
@@ -11,8 +11,7 @@ static const md9600_cal_row_t pa_row[MD9600_FACTORY_PA_ROWS] = {
 	MD9600_CAL_POWER_LOW, MD9600_CAL_POWER_MID_LOW, MD9600_CAL_POWER_MID, MD9600_CAL_POWER_HIGH,
 };
 
-// The power levels from a wattmeter on one V1-V3 radio, two frequencies per band, cold and warm (hardware-md9600.md
-// 5.6). Below about 10 W the output follows the absolute drive, the same at every frequency of a band, so the three
+// The power levels from a wattmeter on one V1-V3 radio, two frequencies per band, cold and warm. Below about 10 W the output follows the absolute drive, the same at every frequency of a band, so the three
 // low levels are fixed drives, each at least 20 counts over the drive where the power loop loses control (the PA
 // jumps to about 10 W there). Above, the output moves with frequency as the factory rows do: 25 W lies between the
 // rows by the watts they gave, the top level a fixed step over the top row

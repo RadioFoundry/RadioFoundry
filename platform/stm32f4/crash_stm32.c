@@ -4,7 +4,7 @@
 // from the stack the CPU pushed it on (MSP or a task's PSP), moves to a stack of its own (the old one may be the
 // problem) and fills the record with the frame, r4-r11 and the fault status registers. The record lives in the 4 KB
 // backup SRAM: a system reset leaves the backup domain alone, and the stock bootloader, which runs in main RAM before
-// the application, doesn't look at it (hardware-dm1701.md 15.4: the RTC backup register the ROM DFU entry uses
+// the application, doesn't look at it (the RTC backup register the ROM DFU entry uses
 // survives it the same way). It is lost when the supply goes (no backup battery confirmed on these boards).
 #include "config.h"
 

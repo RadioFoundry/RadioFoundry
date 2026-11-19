@@ -5,8 +5,8 @@
 Status: research, 2026-10-10. This page collects the main chips of every radio RadioFoundry supports or plans to support, plus
 close relatives, from public sources only. It also says which RadioFoundry platforms and drivers each radio could reuse and
 suggests an order for the ports. Register-level facts live in the per-radio specs
-([hardware-dm1701.md](hardware-dm1701.md), [hardware-dm32.md](hardware-dm32.md),
-[hardware-md380.md](hardware-md380.md), [hardware-mduv380.md](hardware-mduv380.md), [hardware-gd88.md](hardware-gd88.md), [hardware-db25d.md](hardware-db25d.md), [hardware-dm1801pro.md](hardware-dm1801pro.md), [hardware-anytone.md](hardware-anytone.md)). This page is the overview.
+(hardware-dm1701.md, hardware-dm32.md,
+hardware-md380.md, hardware-mduv380.md, hardware-gd88.md, hardware-db25d.md, hardware-dm1801pro.md, hardware-anytone.md). This page is the overview.
 
 Facts are not copyrightable. Claims come from public sources (manufacturer pages, FCC filings, datasheets, retailer
 listings) or from measurements on the radio. A value marked `(unverified)` is reported by a retailer, review or forum
@@ -31,24 +31,24 @@ on the radio`, any of the three. The README marks each ◐ until the board merge
 
 | Radio (and rebadges) | MCU | DMR chip | RF | Display | Ext. memory | GPS | Update path | Port |
 |---|---|---|---|---|---|---|---|---|
-| Baofeng DM-1701, Retevis RT84 | STM32F405VG (measured) | HR_C6000 (measured) | AT1846S (measured) | 160x128 color, 8080 bus (measured) | 16 MB SPI NOR (measured) | none from the factory; owners fit one on PA10 ([hardware-dm1701.md](hardware-dm1701.md) 14.2) | USB DFU on the MCU, wrapped images | Supported ([hardware-dm1701.md](hardware-dm1701.md)) |
-| Anytone AT-D868UV / AT-D878UV / AT-D878UVII Plus, BTECH DMR-6X2, Alinco DJ-MD5, Radioddity GD-AT10G | GD32F303VGT6; early 868UVs GD32F303VET6 (unverified) | SCT3258 with built-in AMBE+2 (unverified) | AT1846S (unverified) | 160x128 color (unverified) | 1-2 Gbit SPI NAND (unverified) | 878: yes (unverified) | USB CDC update mode (unverified) | In progress, #291. A new platform (GD32F30x) and a new DMR chip (SCT3258, which runs the vocoder itself), so it starts the Anytone family ([hardware-anytone.md](hardware-anytone.md)) |
-| TYT MD-UV380 / MD-UV390, Retevis RT3S | STM32F405VG | HR_C6000 | AT1846S | 160x128 color, HX8302A (unverified) | 25Q128FV, 16 MB (unverified) | optional, JS-H210 (unverified) | USB DFU on the MCU, XOR-keyed images | Supported ([mduv380-bringup.md](../testing/mduv380-bringup.md)) |
-| TYT MD-9600, Retevis RT90 (mobile) | STM32F405VG | HR_C6000 | 2x SKY72310 (V1-V3), "PLL1590" (V4), LMX2571 (V4A/V5, unverified) PLLs; AK2365A IF x2 on V1-V4 | 128x64 mono, ST7567 | 25Q128FV, 16 MB | optional, JS-M710 (unverified) | USB DFU on the MCU | Supported ([hardware-md9600.md](hardware-md9600.md)) |
-| TYT MD-380 / MD-390, Retevis RT3 | STM32F405VGT6 (unverified) | HR_C5000 (unverified) | SKY72310 PLL + GT3136 receiver (unverified) | 160x128 color, HX8302A (unverified, controller ?) | W25Q128FV 16 MB; some early VHF 1 MB (unverified) | optional "G" models (unverified, module ?) | USB DFU, encrypted images (unverified) | Supported ([md380-bringup.md](../testing/md380-bringup.md)) |
+| Baofeng DM-1701, Retevis RT84 | STM32F405VG (measured) | HR_C6000 (measured) | AT1846S (measured) | 160x128 color, 8080 bus (measured) | 16 MB SPI NOR (measured) | none from the factory; owners fit one on PA10 (hardware-dm1701.md 14.2) | USB DFU on the MCU, wrapped images | Supported ([radio reference](../user/23-radios.md#baofeng-dm-1701)) |
+| Anytone AT-D868UV / AT-D878UV / AT-D878UVII Plus, BTECH DMR-6X2, Alinco DJ-MD5, Radioddity GD-AT10G | GD32F303VGT6; early 868UVs GD32F303VET6 (unverified) | SCT3258 with built-in AMBE+2 (unverified) | AT1846S (unverified) | 160x128 color (unverified) | 1-2 Gbit SPI NAND (unverified) | 878: yes (unverified) | USB CDC update mode (unverified) | In progress, #291. A new platform (GD32F30x) and a new DMR chip (SCT3258, which runs the vocoder itself), so it starts the Anytone family (hardware-anytone.md) |
+| TYT MD-UV380 / MD-UV390, Retevis RT3S | STM32F405VG | HR_C6000 | AT1846S | 160x128 color, HX8302A (unverified) | 25Q128FV, 16 MB (unverified) | optional, JS-H210 (unverified) | USB DFU on the MCU, XOR-keyed images | Supported ([radio reference](../user/23-radios.md#tyt-md-uv380)) |
+| TYT MD-9600, Retevis RT90 (mobile) | STM32F405VG | HR_C6000 | 2x SKY72310 (V1-V3), "PLL1590" (V4), LMX2571 (V4A/V5, unverified) PLLs; AK2365A IF x2 on V1-V4 | 128x64 mono, ST7567 | 25Q128FV, 16 MB | optional, JS-M710 (unverified) | USB DFU on the MCU | Supported ([radio reference](../user/23-radios.md#tyt-md-9600)) |
+| TYT MD-380 / MD-390, Retevis RT3 | STM32F405VGT6 (unverified) | HR_C5000 (unverified) | SKY72310 PLL + GT3136 receiver (unverified) | 160x128 color, HX8302A (unverified, controller ?) | W25Q128FV 16 MB; some early VHF 1 MB (unverified) | optional "G" models (unverified, module ?) | USB DFU, encrypted images (unverified) | Supported ([radio reference](../user/23-radios.md#tyt-md-380)) |
 | Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | NXP MK22FN512 (unverified) | HR_C6000 (unverified) | AT1846S (unverified) | 128x64 mono, UC1701 (unverified) | 25Q80BV 1 MB + AT24C512 64 KB EEPROM (unverified) | none (unverified) | USB HID bootloader, .sgl files (unverified) | In progress, #111, builds, host tests, on the radio. A new platform: a different MCU (NXP MK22FN512), the same HR_C6000 and AT1846S, a 128x64 mono LCD. A DM-1801 bought new today is not v1, and the look-alike DR-1801 is unrelated |
 | Radioddity GD-88 | HR_C7000 class SoC (unverified) | HR_C7000 (unverified) | ? (two transceivers, unverified) | 2" color TFT, controller ? | ? | yes, module ? | Radioddity updater over K-plug cable | In progress, #132, builds, host tests. Dual receiver on the HR_C7000 platform (chip count not confirmed yet); should reuse much of the DM-32UV port |
-| Baofeng DM-32UV | HR_C7000 SoC, C-SKY CK803S core (unverified) | HR_C7000 (unverified) | FD6818 (unverified) | 240x320 color, ST7789 class | 16 MB data flash (unverified); program flash size ? | yes, ATGM336H | Baofeng bootloader over UART cable (unverified) | Supported ([dm32-bringup.md](../testing/dm32-bringup.md)) |
+| Baofeng DM-32UV | HR_C7000 SoC, C-SKY CK803S core (unverified) | HR_C7000 (unverified) | FD6818 (unverified) | 240x320 color, ST7789 class | 16 MB data flash (unverified); program flash size ? | yes, ATGM336H | Baofeng bootloader over UART cable (unverified) | Supported ([radio reference](../user/23-radios.md#baofeng-dm-32uv)) |
 | Baofeng DM-36 | HR_C7000 SoC (photo) | HR_C7000 | FD6818B (photo) | 2.0" 240x320 color, ST7789 class | 16 MB data flash | no | Boot ROM serial stub over the cable | In progress, #607. Built on the DM-32UV's platform: FM, the display, keys and programming run; DMR voice on air and power levels open |
-| Baofeng DM-1801 Pro, DM-1801 (current) | HR_C7000 class SoC (the HR_C7000 from the FCC photo; the MCU part ?) | HR_C7000 (FCC photo) | ? | 1.77", type and controller ? | ? | none | ? | Supported ([dm1801pro-bringup.md](../testing/dm1801pro-bringup.md)) |
+| Baofeng DM-1801 Pro, DM-1801 (current) | HR_C7000 class SoC (the HR_C7000 from the FCC photo; the MCU part ?) | HR_C7000 (FCC photo) | ? | 1.77", type and controller ? | ? | none | ? | Supported ([radio reference](../user/23-radios.md#baofeng-dm-1801-pro)) |
 | Baofeng DR-1801 / DR-1801UV | ? (inside the AM6102 module ?) | Auctus AM6102 module (FCC photo) | ? | ? | ? | ? | ? | Not planned. Looks like a DM-1801 |
-| Radioddity DB25-D / DB25-D PRO, Retevis RT73, Kydera CDR-300UV (mobile) | HR_C7000 SoC (FCC photo) | HR_C7000 | 2x BK4819 on the PRO; FD6818 on earlier batches | 1.77" color TFT, ST7735S class, serial bus | 2 Gbit SPI NAND, Kioxia TC58CVG1S3 (FCC photo) | yes, module ? | Vendor IAP loader over a UART cable, plain images | Supported ([hardware-db25d.md](hardware-db25d.md)) |
+| Radioddity DB25-D / DB25-D PRO, Retevis RT73, Kydera CDR-300UV (mobile) | HR_C7000 SoC (FCC photo) | HR_C7000 | 2x BK4819 on the PRO; FD6818 on earlier batches | 1.77" color TFT, ST7735S class, serial bus | 2 Gbit SPI NAND, Kioxia TC58CVG1S3 (FCC photo) | yes, module ? | Vendor IAP loader over a UART cable, plain images | Supported ([radio reference](../user/23-radios.md#radioddity-db25-d-pro)) |
 | Radioddity DB40-D, Kydera CDR-700UV (mobile) | two processors "A" and "B", likely two HR_C7000 (two, from the photos; ? for the part) | HR_C7000 | ? (separate VHF and UHF chains and PA modules) | 2.4" color TFT, controller ? | SPI NAND, TC58 family | yes, module ? | Vendor IAP loader over RJ-45 only, two plain images | Planned, hardware needed. Two HR_C7000-class processors (A and B), like the GD-88, so it follows the GD-88 port |
 | TYT MD-2017 / Retevis RT82 | STM32 (unverified) | HR_C6000 (unverified) | two RF transceiver ICs (unverified) | ? | ? | ? | ? | Planned. The DM-1701's STM32 and HR_C6000 pair with two receivers, so it should reuse the STM32F4 platform. The hardware can receive two channels at once |
 | BTECH DMR-6X2 PRO | ? | ? | ? | ? | ? | yes | ? (built on the AT-D878UVII Plus, unverified, [miklor](https://miklor.com/COM/Review_DMR6X2.php)) | Planned. Built on the AT-D878UVII Plus, so it should follow the Anytone port |
-| Anytone AT-D578UV (mobile) | GD32F303VKT6; AT32F435/437 after 2022-07, with separate firmware (unverified) | SCT3258 (unverified) | 4x QA4818N, AT1846S-compatible; true dual receive (unverified) | ? | ? | ? | as the 878 (unverified) | In progress, #291. The 878's chips in a mobile, with a mid-run MCU change: two platforms ([hardware-anytone.md](hardware-anytone.md)) |
+| Anytone AT-D578UV (mobile) | GD32F303VKT6; AT32F435/437 after 2022-07, with separate firmware (unverified) | SCT3258 (unverified) | 4x QA4818N, AT1846S-compatible; true dual receive (unverified) | ? | ? | ? | as the 878 (unverified) | In progress, #291. The 878's chips in a mobile, with a mid-run MCU change: two platforms (hardware-anytone.md) |
 | BridgeCom Maverick | ? | ? | ? | ? | ? | yes | ? (sold as an upgraded 878, takes the 868/878 battery, F, [BridgeCom](https://www.bridgecomsystems.com/products/bridgecom-maverick-dual-band-dmr-analog-ham-radio)) | Planned. Sold as an upgraded AT-D878UV, so it likely follows the Anytone port |
-| Retevis RT10 (902-928 MHz) | HR_C7000 SoC (board photos) | HR_C7000 | FD6818, on a two-wire bus | none | 2 MB SPI NOR data flash, 2 MB program flash | none | the SoC's boot ROM over the UART cable | Supported ([hardware-rt10.md](hardware-rt10.md)) |
+| Retevis RT10 (902-928 MHz) | HR_C7000 SoC (board photos) | HR_C7000 | FD6818, on a two-wire bus | none | 2 MB SPI NOR data flash, 2 MB program flash | none | the SoC's boot ROM over the UART cable | Supported ([radio reference](../user/23-radios.md#retevis-rt10)) |
 
 ## Per-radio notes
 
@@ -60,10 +60,10 @@ on the radio`, any of the three. The README marks each ◐ until the board merge
 - FCC ID 2AJGM-DM1701, granted 2018-12-22. Internal photos exist but are too low resolution to read parts
   ([fccid.io](https://fccid.io/2AJGM-DM1701)).
 - STM32F405 + HR_C6000 + AT1846S + 160x128 color LCD + 16 MB SPI NOR: confirmed by our own bring-up
-  ([hardware-dm1701.md](hardware-dm1701.md)). No public teardown names the DM-1701's chips. Public sources only say
+  (hardware-dm1701.md). No public teardown names the DM-1701's chips. Public sources only say
   it shares the MD-UV380 platform (unverified) ([w0chp supported radios](https://w0chp.radio/ogd77-webcpsd/supported-radios/)).
 - Programming: USB D+/D- on the K-plug straight to the MCU. D+ and D- are swapped compared with the RT3S cable (unverified).
-- Vendor images are wrapped (the format is in [hardware-dm1701.md](hardware-dm1701.md)).
+- Vendor images are wrapped (the format is in hardware-dm1701.md).
 - Reuses `platform/stm32f4`, `drivers/modem/hrc6000`, `drivers/rf/at1846s`, `drivers/display/st7735`,
   `drivers/flash/spi_nor`, `drivers/input/keymatrix`.
 
@@ -81,28 +81,28 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
 - The MD-UV390 is the same radio in a waterproof case. GPS is a hardware option; GPS firmware doesn't add GPS to a
   non-GPS radio (unverified).
 - FCC IDs POD-MDUV380 (granted 2018-10-19) and POD-MDUV390 (unverified).
-- DFU entry: hold PTT and the button above it at power-on, see [hardware-mduv380.md](hardware-mduv380.md).
+- DFU entry: hold PTT and the button above it at power-on, see hardware-mduv380.md.
 - A repair-guide snippet claims the dual-band radios use an NXP MK22. That contradicts every other source and is
   almost certainly wrong.
-- **RadioFoundry:** the same board family as the DM-1701 ([hardware-mduv380.md](hardware-mduv380.md) lists every difference).
+- **RadioFoundry:** the same board family as the DM-1701 (hardware-mduv380.md lists every difference).
   It needs a key map, no LCD row offset and its own panel-type table, battery and volume ADC scaling, power tables
   (5 W and Plus 10 W, whose PA band select and backlight pins are swapped), its own DFU key and GPS on USART1 (PA10,
   power PA9; an earlier note here said USART3, which is the MD-380's). No new drivers.
 - Codec: the TYT and Retevis files from 18.11 to 219.74 (V/D non-GPS, P/S GPS) carry the same codec library as the
-  DM-1701, with the same entry offsets, placed in the same flash sectors ([codec-mduv380.md](codec-mduv380.md)). The
+  DM-1701, with the same entry offsets, placed in the same flash sectors (codec-mduv380.md). The
   RT3S takes the TYT key.
 
 ### TYT MD-9600 / Retevis RT90
 
 - STM32F405VG, HR_C6000 (bit-banged SPI), two SKY72310 PLLs (one VHF, one UHF) with a 16.8 MHz TCXO "at least in the
   older models", ST7567 128x64 mono LCD sharing SPI2 with a W25Q128 flash, calibration in the flash security
-  registers, from the reference port ([hardware-md9600.md](hardware-md9600.md)).
+  registers, from the reference port (hardware-md9600.md).
 - Several PLL and IF chips were used in production. Board versions V2 (the first V1 boards were labeled V2), V3, V4,
   V4A (same as V5) and V5 exist, and a build for the wrong version boots but won't transmit or receive (unverified). A retailer ties V4/V5 to "PLL 2571" (unverified)
   ([passion-radio](https://www.passion-radio.com/mobile/md9600-505.html)). The reference port's register writes give: V1-V3
   SKY72310 x2 with AK2365A IF chips, V4 a "PLL1590" synthesizer (TYT's V4 firmware folder name; exact part ?) with AK2365A, V4A/V5 the LMX2571 register
-  set (unverified) and no programmable IF chip. Details, pin map and per-revision programming: [hardware-md9600.md](hardware-md9600.md);
-  codec: [codec-md9600.md](codec-md9600.md) (V26.45 is the radio's own donor).
+  set (unverified) and no programmable IF chip. Details, pin map and per-revision programming: hardware-md9600.md;
+  codec: codec-md9600.md (V26.45 is the radio's own donor).
 - Front 4x3 key matrix, channel encoder, and hand-mic keys read as analog levels. The mic has 16 keys on an RJ-45
   jack (unverified).
 - 136–174 / 400–480 MHz (unverified). Spec power is 50 W VHF and 45 W UHF; the same retailer page also says 40 W UHF (unverified).
@@ -131,12 +131,12 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
 - FCC ID PODMD-380, granted 2015-07-22, with an 8-page internal-photos exhibit (unverified)
   ([fccid.io](https://fccid.io/PODMD-380/Internal-Photos/Internal-Photos-2688727)).
 - **RadioFoundry:** `boards/md380` builds (UHF and VHF images), passes its host tests and has run on a radio
-  ([hardware-md380.md](hardware-md380.md), [md380-bringup.md](../testing/md380-bringup.md)). It reuses
+  (hardware-md380.md, md380-bringup.md). It reuses
   `platform/stm32f4`, `drivers/flash/spi_nor` and `drivers/display/st7735` (HX8302A assumed compatible, ?). The
   HR_C5000 is a variant of `drivers/modem/hrc6000` (a chip flag selects the register differences). New:
   `drivers/rf/sky72310` (shared with the MD-9600 later), `drivers/gps/nmea_line`, run-time GPS detection
   (`board_t.gps`). DMR voice uses the codec of the vendor D002.032, D35.14 or S35.14 file, merged at build time
-  and run in place ([codec-md380.md](codec-md380.md)); untested on a radio.
+  and run in place (codec-md380.md); untested on a radio.
 
 ### Radioddity GD-77 family
 
@@ -168,12 +168,12 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
 - "2 separate transceivers both usable at same time, even on same band"
   ([Radioddity blog](https://www.radioddity.com/blogs/all/radioddity-gd-88-review)).
 - Uses "the new C7000, DMR and combined CPU chip" (unverified).
-  No public source confirms two HR_C7000 chips ([hardware-gd88.md](hardware-gd88.md)). The RF chip and display controller aren't confirmed; the FCC internal
+  No public source confirms two HR_C7000 chips (hardware-gd88.md). The RF chip and display controller aren't confirmed; the FCC internal
   photos are the next thing to read.
 - Shares a CPS with the Retevis RT73 / Kydera CDR-300UV / Radioddity DB25-D and DB40-D, which points to one OEM
   platform (unverified) ([codeplugs.rats.net](https://codeplugs.rats.net/help/cps)).
 - Programming and updates go over a USB-serial cable (FTDI-class chip in the cable) into the K1 jack, to SoC A's
-  UART1 at 115200. The radio has no USB port ([hardware-gd88.md](hardware-gd88.md)).
+  UART1 at 115200. The radio has no USB port (hardware-gd88.md).
 - **RadioFoundry:** reuses `platform/hrc7000` and `drivers/modem/hrc7000` from the DM-32UV. New: the RF chip(s), the display,
   and core support for two simultaneous receivers if the hardware really has two independent DMR paths.
 
@@ -188,10 +188,10 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
 - The HR_C7000 integrates a CK803S MCU, according to a vendor quote about a different radio (unverified).
 - PCB revisions DM32_UV_V1.2 (2024-08) and V1.4 (2024-12). Factory firmware 048/049 (unverified)
   ([M7OCM/DM-32UV](https://github.com/M7OCM/DM-32UV)). Update mode is PTT + SK1 at power-on (unverified).
-- Flash: [hardware-dm32.md](hardware-dm32.md) has a 1 MB XIP program flash and a 16 MB data flash. A forum snippet
+- Flash: hardware-dm32.md has a 1 MB XIP program flash and a 16 MB data flash. A forum snippet
   names a 25Q16 (2 MB) and a 25Q128 (16 MB) as the chips reported for it (unverified). **The program
   flash part and size are unconfirmed**.
-- FD6818 RF, ST7789-class 240x320 panel and ATGM336H GPS are in [hardware-dm32.md](hardware-dm32.md). No public teardown ties them to the radio.
+- FD6818 RF, ST7789-class 240x320 panel and ATGM336H GPS are in hardware-dm32.md. No public teardown ties them to the radio.
 
 ### Baofeng DM-1801 Pro and DM-1801 (current)
 
@@ -224,7 +224,7 @@ Two listings sold new in 2026 under the DM-1801 name. Neither is the DM-1801 v1 
   reliable check; the case alone isn't (see the DR-1801 below).
 - **RadioFoundry:** reuses `platform/hrc7000`, `drivers/modem/hrc7000`, the FD6818 driver (own register set) and the shared
   factory calibration reader. New: the ST7567 display driver and the board. The hardware is in
-  [hardware-dm1801pro.md](hardware-dm1801pro.md); the radio is not yet run on a bench. Needs: the key map, the update
+  hardware-dm1801pro.md; the radio is not yet run on a bench. Needs: the key map, the update
   path and the codec's location.
 
 ### Baofeng DR-1801 / DR-1801UV
@@ -253,7 +253,7 @@ One firmware image covers the DB25-D and the DB25-D PRO (readme in the
 The Retevis RT73 is reported as the same radio (unverified) ([kydera-ham forum](https://kydera-ham.boards.net/thread/315/thoughts-radioddity-db25-mini-mobile)). No RT73 FCC ID was found.
 
 - **MCU and DMR:** one HR_C7000, marked "HR_C7000 D56323MP1" (FCC photo). The HR_C7000 integrates a C-SKY CK803S
-  core, as on the DM-32UV ([hardware-dm32.md](hardware-dm32.md)). The vendor's update guide is on [radioddity.com](https://radioddity.com/products/radioddity-db25d).
+  core, as on the DM-32UV (hardware-dm32.md). The vendor's update guide is on [radioddity.com](https://radioddity.com/products/radioddity-db25d).
   Program flash part: ?. It's larger than 1 MB: the firmware keeps data above 0x0310C000.
 - **RF:** the PRO's RF board has **two Beken BK4819** transceivers with a TCXO (FCC photo). The receiver IF is
   51.550 MHz ([extended manual v3.4](https://radioddity.s3.amazonaws.com/2025-05-01_Extended_manual_for_Radioddity_DB25-D_PRO_-_DB40-D_-_GD-88_-_v3.4.pdf),
@@ -262,7 +262,7 @@ The Retevis RT73 is reported as the same radio (unverified) ([kydera-ham forum](
   appears in the 2024-05-09 build, so older vendor images must not be loaded on a PRO. Both chips share one
   3-wire bus with separate enables.
   The FD6818 batches pair an FD6818 main transceiver with a 0x7813 (D64), FD6818 (D66) or AT1141 (D6T) LO;
-  RadioFoundry drives all four from one image, the FD6818 ones untested ([hardware-db25d.md](hardware-db25d.md) 4.8).
+  RadioFoundry drives all four from one image, the FD6818 ones untested (hardware-db25d.md 4.8).
 - **Bands and power:** 136–174 / 400–480 MHz, 20 W or 5 W, 13.8 V ([radioddity.com](https://radioddity.com/products/radioddity-db25d)).
   The FCC grant lists 19.7 W conducted. The PA is a discrete RF MOSFET on the TX board (photo). PA power is set
   by DAC B with a ramp at each burst, as on the DM-32.
@@ -283,7 +283,7 @@ The Retevis RT73 is reported as the same radio (unverified) ([kydera-ham forum](
   [Elnec](https://www.elnec.com/en/device/KIOXIA/TC58CVG1S3HRAIJ+%5BWSON8%5D)). The firmware's storage code is
   NAND with a bad-block table on SPI0. **Calibration** is a 2 KB page at NAND byte address 0x280000 with a
   second copy in program flash; the firmware repairs one from the other at boot. The layout is decoded
-  ([hardware-db25d.md](hardware-db25d.md) 6).
+  (hardware-db25d.md 6).
 - **Other:** RDA5802N FM broadcast receiver (FCC photo). GPS: built in, SMA antenna port, module ?. Bluetooth:
   none on the DB25-D per the product page. The PRO's board name says "BT", but no module was fitted in the FCC
   unit. Coin-cell RTC backup (photo).
@@ -293,15 +293,15 @@ The Retevis RT73 is reported as the same radio (unverified) ([kydera-ham forum](
   FTDI cables work since firmware 909E.D4.EARSAB.018 (release notes). A ".flash" file mode updates the IAP loader
   itself (manual 14.6).
 - **Image format:** raw code with no header, checksum or encryption, linked at 0x0300C000 behind a 48 KB loader, as on
-  the DM-32. The PC link and the debug output are both UART1 at 115200 ([hardware-db25d.md](hardware-db25d.md)).
+  the DM-32. The PC link and the debug output are both UART1 at 115200 (hardware-db25d.md).
 - **Codec:** the AMBE+2 vocoder is software on the CK803S core, and no vocoder chip shows in the photos. The
   per-radio codec model of the DM-32UV carries over: the codec comes from the user's own DB25-D file, at a different
-  address in every image, so each file needs its own recipe ([hardware-db25d.md](hardware-db25d.md) 8). AMBE frames
+  address in every image, so each file needs its own recipe (hardware-db25d.md 8). AMBE frames
   pass through the CPU.
 - **Codeplug tools:** qdmr's support request has been open since 2021 ([qdmr #165](https://github.com/hmatuschek/qdmr/issues/165)).
 - **Not DMR:** the DB25-G, DB20-G, DB40-G and DB35-G GMRS mobiles and the "DB25 Pro" (no D) are analog FM radios
   ([radioddity.com DB25-G](https://radioddity.com/products/radioddity-db25g)). They aren't RadioFoundry targets.
-- **RadioFoundry:** bring-up started, `make BOARD=db25d` ([hardware-db25d.md](hardware-db25d.md) 9): FM receive, nothing run
+- **RadioFoundry:** bring-up started, `make BOARD=db25d` (hardware-db25d.md 9): FM receive, nothing run
   on a radio yet. It reuses `platform/hrc7000` (shared with the DM-32), the `st7735` driver on a bit-banged serial
   bus, `drivers/rf/bk4819` for both chips (receiver and LO synthesizer), the shared calibration curve, and
   `drivers/flash/spi_nand` (read side) for the NAND. The calibration reader takes the newer of the NAND and
@@ -349,8 +349,8 @@ The Retevis RT73 is reported as the same radio (unverified) ([kydera-ham forum](
 | Ailunce HD1 (v1) | MK22FN512, HR_C6000, AT1846S, 160x128 color, GPS (unverified) | GD-77 port + 160x128 class | Out of production, so used units only. Encrypted vendor firmware (unverified) |
 | Connect Systems CS7000-M17 | STM32F405VG, HR_C6000, SKY72310, HX8302A, 25Q128FV (unverified) | stm32f4, hrc6000, SKY72310 driver from the MD-9600 / MD-380 | Free once the SKY72310 driver exists. The Plus model has an STM32H743 |
 | TYT MD-9800 | HR_C7000 (unverified) | hrc7000 platform and modem | Relation to the Kydera platform unverified. The RT73 / CDR-300UV / DB25-D and the DB40-D have their own sections above. The GD-73 is a handheld, not part of that family |
-| Anytone AT-D868UV / AT-D878UV / 878UVII, BTECH DMR-6X2, Alinco DJ-MD5, Radioddity GD-AT10G | GD32F303VGT6; early 868UVs GD32F303VET6 (512 KB, 64 KB RAM) (unverified), **SCT3258 DMR baseband with built-in AMBE+2, not an HR_C6000** (unverified), AT1846S, TLV320AIC3204 codec, 1-2 Gbit SPI NAND, 160x128 color (unverified) ([VK7ZJA mods guide](https://pnwdigital.net/wp-content/files/documents/Anytone/Mods_868_878_878-II_information_VK7ZJA(sk)-4-2-23_.pdf)) | at1846s | Native USB CDC update mode; encryption and signing not documented, images not examined (unverified). SWD with no read-out protection on documented units (unverified). The SCT3258 runs DMR layers 1-2 and the vocoder, so the MCU never sees AMBE bits (no privacy or hotspot voice unless a bypass exists) and needs a Sicomm boot block at every reset. New: a GD32F30x platform, an SCT3258 driver, SPI NAND. Details: [hardware-anytone.md](hardware-anytone.md). The 878 and DMR-6X2 are the same hardware (unverified) |
-| Anytone AT-D578UV (mobile) | GD32F303VKT6, AT32F435/437 after 2022-07 (separate firmware per MCU), SCT3258, 4x QA4818N (AT1846S-compatible), true dual receive (unverified) | as the 878 | MCU change mid-run: two platforms. [hardware-anytone.md](hardware-anytone.md) |
+| Anytone AT-D868UV / AT-D878UV / 878UVII, BTECH DMR-6X2, Alinco DJ-MD5, Radioddity GD-AT10G | GD32F303VGT6; early 868UVs GD32F303VET6 (512 KB, 64 KB RAM) (unverified), **SCT3258 DMR baseband with built-in AMBE+2, not an HR_C6000** (unverified), AT1846S, TLV320AIC3204 codec, 1-2 Gbit SPI NAND, 160x128 color (unverified) ([VK7ZJA mods guide](https://pnwdigital.net/wp-content/files/documents/Anytone/Mods_868_878_878-II_information_VK7ZJA(sk)-4-2-23_.pdf)) | at1846s | Native USB CDC update mode; encryption and signing not documented, images not examined (unverified). SWD with no read-out protection on documented units (unverified). The SCT3258 runs DMR layers 1-2 and the vocoder, so the MCU never sees AMBE bits (no privacy or hotspot voice unless a bypass exists) and needs a Sicomm boot block at every reset. New: a GD32F30x platform, an SCT3258 driver, SPI NAND. Details: hardware-anytone.md. The 878 and DMR-6X2 are the same hardware (unverified) |
+| Anytone AT-D578UV (mobile) | GD32F303VKT6, AT32F435/437 after 2022-07 (separate firmware per MCU), SCT3258, 4x QA4818N (AT1846S-compatible), true dual receive (unverified) | as the 878 | MCU change mid-run: two platforms. hardware-anytone.md |
 
 Not DMR candidates: the BK4819 and BK4829 are analog FM transceivers, and the BK4829 adds only an FSK modem
 ([datasheet listing](https://www.alldatasheet.net/datasheet-pdf/pdf/2171272/BEKEN/BK4829.html)). The Radtel RT-4D does
@@ -393,7 +393,7 @@ By effort, then by how many radios a port unlocks and how popular they are:
 3. **TYT MD-9600 / RT90.** STM32 + HR_C6000 again. New are the SKY72310 driver, the ST7567 display (shared work with
    the GD-77's mono driver) and the board-version problem. Effort: weeks, and the V4/V5 PLL needs identifying first.
 4. **TYT MD-380 / MD-390 / RT3.** Builds now, with the SKY72310 driver the MD-9600 can reuse, and runs the vendor
-   D002.032 or 35.14 codec in place for DMR voice ([codec-md380.md](codec-md380.md)); it needs a radio for bring-up.
+   D002.032 or 35.14 codec in place for DMR voice (codec-md380.md); it needs a radio for bring-up.
 5. **HR_C7000 family after the DM-32UV is on air**: the DM-1801 Pro (air band and broadcast like the DM-32UV, chip
    list still open), then the DB25-D (one HR_C7000, but a new RF
    chip and SPI NAND), then the GD-88, then the DB40-D (two SoCs, reusing the GD-88's A/B work). All four are wish

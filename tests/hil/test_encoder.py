@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-"""The channel knob (docs/spec/hardware-dm1701.md 10.3, drivers/input/quadrature).
+"""The channel knob (drivers/input/quadrature).
 
 test_knob_direction runs unattended: detents injected over the debug link go through the same UI code as the knob's,
 so it checks the directions (forward = next channel on Home, next row down in a list). test_knob_counts_detents needs

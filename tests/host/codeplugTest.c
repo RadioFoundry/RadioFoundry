@@ -305,7 +305,7 @@ static void check_empty(void)
 #endif
 }
 
-// Another firmware's codeplug where the open-firmware one goes (codeplug-stock-tyt.md 2): its in-use bits and BCD
+// Another firmware's codeplug where the open-firmware one goes: its in-use bits and BCD
 // frequencies pass by chance, its names and the rest don't. The radio shows no codeplug and keeps the bytes
 static void test_foreign(void)
 {

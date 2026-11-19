@@ -160,7 +160,8 @@ BOARD_SCHEMA = {
     # also lists the radios in that body (each one of the board's also too)
     "looks": _opt(("list", {"id": _req(str), "name": _req(str), "also": _opt(STR_LIST)})),
     "debuglink_aliases": _opt(STR_LIST),
-    "docs": _req({"hardware": _req(str), "codec": _opt(str), "install": _opt(str), "bringup": _opt(str)}),
+    # docs: the user manual's install page for the radio, when it isn't the generic one
+    "docs": _opt({"install": _opt(str)}),
     # unconfirmed: a hardware switch (tests/hil/features.toml hardware) that is neither built nor in
     # BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN because no source says yet whether the radio has the part: switch ->
     # what is missing (docs/build-config.md, "Unsupported, not written, unconfirmed")
@@ -1080,9 +1081,8 @@ def protect_problems(entries, mems, owned=()):
         if not (bounds(lo) and bounds(hi)):
             out.append("%s: start and end must be on the %s's erase boundaries (%s)" % (
                 tag, PROTECT_MEMS[m], "0x%X" % step if isinstance(step, int) else "its sectors"))
-        if not p["what"].strip() or not re.search(r"\(.*\d.*\)", p["what"]):
-            out.append("%s: what names the data and cites the spec section, e.g. \"factory calibration "
-                       "(hardware-<radio>.md 6.1)\"" % tag)
+        if not p["what"].strip():
+            out.append("%s: what names the data, e.g. \"factory calibration\"" % tag)
         for q in entries[:i]:
             if q["mem"] == m and q["start"] < hi and lo < q["end"]:
                 out.append("%s overlaps the entry for %s 0x%X-0x%X" % (tag, m, q["start"], q["end"]))
@@ -1175,7 +1175,7 @@ def check(root=ROOT):
                                               d["hardware"].get("unconfirmed", {}), built, hw)
             except RegistryError as e:
                 problems.append(str(e))
-        for k, p in d["docs"].items():
+        for k, p in d.get("docs", {}).items():
             if not os.path.isfile(os.path.join(root, p)):
                 bad("docs.%s %s doesn't exist" % (k, p))
         variant_problems(bid, d, boards, bad)
@@ -1554,7 +1554,7 @@ def site_view(boards, root=ROOT):
             "id": bid, "name": d["name"], "maker": d["maker"], "model": d["model"], "also": list(d["also"]),
             "kind": d["kind"], "order": d["order"], "level": d["status"]["level"], "release": d["status"]["release"],
             "summary": d["status"]["summary"], "bands": hw["bands"], "power": hw["power"],
-            "cpu": b.cpu, "display": hw["display"], "gallery": hw["gallery"], "docs": dict(d["docs"]), "flash": flash,
+            "cpu": b.cpu, "display": hw["display"], "gallery": hw["gallery"], "docs": dict(d.get("docs", {})), "flash": flash,
             "backup": dict(fl["backup"]), "frame": json.loads(json.dumps(d["frame"])), "codeplug": b.codeplug(),
             "looks": json.loads(json.dumps(d.get("looks", []))),
             "unsupported": dict(b.unsupported), "not_written": dict(b.not_written),
@@ -1808,7 +1808,7 @@ def self_test():
     geo = {"progmem": (0x100000, [0, 0x4000, 0x8000, 0x10000, 0x20000, 0x100000])}
     owned = [("progmem", 0xC000, 0xE8000, "the application")]
 
-    def pe(mem, start, end, what="factory calibration (hardware-x.md 6.1)"):
+    def pe(mem, start, end, what="factory calibration"):
         return {"mem": mem, "start": start, "end": end, "what": what}
     ok(protect_problems([pe("progmem", 0xFE000, 0xFF000), pe("data", 0x1000, 0xC9000), pe("secreg", 0, 0x200)],
                         mems, owned) == [], "protect: aligned entries inside their memories pass")
@@ -1821,7 +1821,7 @@ def self_test():
             ([pe("data", 0x1000, 0x3000), pe("data", 0x2000, 0x4000)], mems, "overlaps the entry"),
             ([pe("progmem", 0xE0000, 0xF0000)], mems, "every install writes"),
             ([pe("secreg", 0x80, 0x100)], mems, "erase boundaries"),
-            ([pe("data", 0, 0x1000, "calibration")], mems, "cites the spec")):
+            ([pe("data", 0, 0x1000, " ")], mems, "names the data")):
         got = protect_problems(ents, ms, owned)
         ok(len(got) == 1 and want in got[0], "protect refuses: %s %r" % (want, got))
     ok(protect_problems([pe("progmem", 0x8000, 0x10000)], geo) == [], "protect: on a geometry's sector boundaries")
@@ -1911,8 +1911,7 @@ def self_test():
     # the survey's Port cells (check 5) and the floor, on a fixture survey
     class Stub:
         def __init__(self, bid, model, level="supported"):
-            self.id, self.data = bid, {"model": model, "status": {"level": level},
-                                       "docs": {"hardware": "docs/spec/hardware-%s.md" % bid}}
+            self.id, self.data = bid, {"maker": "Maker", "model": model, "status": {"level": level}}
     tmps = tempfile.mkdtemp(prefix="rfoundry-boards-survey-")
     try:
         os.makedirs(os.path.join(tmps, "docs", "spec"))
@@ -2006,7 +2005,7 @@ def self_test():
         os.makedirs(os.path.dirname(os.path.join(tmp, UI_SIM)))
         shutil.copy(os.path.join(ROOT, UI_SIM), os.path.join(tmp, UI_SIM))
         for b in board_dirs(ROOT):
-            for p in _tomllib().load(open(os.path.join(ROOT, "boards", b, "board.toml"), "rb"))["docs"].values():
+            for p in _tomllib().load(open(os.path.join(ROOT, "boards", b, "board.toml"), "rb")).get("docs", {}).values():
                 os.makedirs(os.path.dirname(os.path.join(tmp, p)), exist_ok=True)
                 open(os.path.join(tmp, p), "w").close()
         ok(check(tmp) == [], "the copied registry is consistent: %s" % check(tmp)[:3])
@@ -2024,7 +2023,8 @@ def self_test():
         broken("new_key = 1\n" + good, "an unknown key", "unknown key")	# first: the file may end in a table
         broken(good.replace('id = "%s"' % one, 'id = "other"', 1), "an id that isn't the directory", "directory name")
         broken(re.sub(r'(?m)^family = ".*"$', 'family = "usb-dfu"', good), "a family's missing table", "needs flash.dfu")
-        broken(good.replace('hardware = "', 'hardware = "missing/', 1), "a missing docs page", "doesn't exist")
+        broken(good.replace('install = "', 'install = "missing/', 1) if 'install = "' in good
+               else good + '\n[docs]\ninstall = "missing/x.md"\n', "a missing docs page", "doesn't exist")
         broken(re.sub(r'(?m)^gallery = ".*"$', 'gallery = "200x100"', good), "a display class the gallery lacks",
                "sim_geoms")
         broken(re.sub(r"(?m)^hold_power = .*$", "", good), "a missing stub key", "needs hold_power")

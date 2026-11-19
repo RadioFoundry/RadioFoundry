@@ -14,8 +14,8 @@ sys.path.insert(0, os.path.dirname(HERE))
 from rfoundry import boards, protect  # noqa: E402
 
 ROOT = os.path.normpath(os.path.join(HERE, "..", "..", ".."))
-CAL = {"mem": "progmem", "start": 0x1FE000, "end": 0x1FF000, "what": "factory calibration (hardware-x.md 6.1)"}
-NAND = {"mem": "nand", "start": 0x280000, "end": 0x2E0000, "what": "calibration copy (hardware-x.md 6.5)"}
+CAL = {"mem": "progmem", "start": 0x1FE000, "end": 0x1FF000, "what": "factory calibration"}
+NAND = {"mem": "nand", "start": 0x280000, "end": 0x2E0000, "what": "calibration copy"}
 
 
 class Check(unittest.TestCase):
@@ -28,7 +28,7 @@ class Check(unittest.TestCase):
         with self.assertRaises(protect.ProtectedError) as e:
             protect.check([CAL], "progmem", 0x1FD000, 0x1FE001)
         self.assertIn("0x1FE000-0x1FF000", str(e.exception))
-        self.assertIn("factory calibration (hardware-x.md 6.1)", str(e.exception))
+        self.assertIn("factory calibration", str(e.exception))
         self.assertEqual(e.exception.regions, [CAL])
 
     def test_absolute_addresses(self):

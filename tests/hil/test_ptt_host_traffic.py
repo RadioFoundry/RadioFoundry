@@ -5,7 +5,7 @@
 On radios whose PTT pin is also the programming cable's host-to-radio serial line, every 0 bit the host sends pulls
 the pin low. The firmware ignores the pin while bytes arrive and for 50 ms after, and then needs it low for 20 ms
 (drivers/input/sharedptt, docs/spec/gotchas.md 16.2). The test polls the radio in bursts whose gaps fall on both sides
-of the 50 ms gate, the pattern that keyed a radio during PPP (2026-10-22, hardware-dm32.md 6.2), with some requests back to back. The
+of the 50 ms gate, the pattern that keyed a radio during PPP, with some requests back to back. The
 engine's PTT press count (`input.ptt_downs`) must not move and the radio must never show `tx`. TX inhibit is on for
 the run (RAM, put back after), so a press, if one came, transmits nothing. On a radio with no shared pin the test
 passes trivially, so it runs on every board.
@@ -15,7 +15,7 @@ import time
 
 from rfoundry_hil import skip
 
-POLL_S = 30.0               # the owner's first gate check was 30 s of polling (hardware-db25d.md); the PPP
+POLL_S = 30.0               # the owner's first gate check was 30 s of polling; the PPP
                             # failure made about one press a minute
 GAP_MIN_S, GAP_MAX_S = 0.040, 0.120     # around the 50 ms gate
 BACK_TO_BACK = 0.15         # share of requests sent with no gap

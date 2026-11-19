@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// MD-9600 power: the power key, "off" as standby, the supply reading and the ADC1 scan (docs/spec/hardware-md9600.md
-// 10).
+// MD-9600 power: the power key, "off" as standby, the supply reading and the ADC1 scan.
 //
 // A mobile on a fixed 13.8 V supply: no battery (CAP_NO_BATTERY), and the MCU runs whenever DC is applied; Power_Control
 // (PD15) only switches the RF and audio sections. So "off" is a standby: the radio saves, writes a flag to an RTC
@@ -19,7 +18,7 @@
 #define STANDBY_MAGIC		0x5B1E9600u	// in RTC_BKP18R: switched off, wait for the power key
 #define SCANS			8u
 
-// Supply divider (hardware-md9600.md 10.3, unverified): tenths of a volt = raw / 21.3
+// Supply divider (unverified): tenths of a volt = raw / 21.3
 #define SUPPLY_COUNTS_X10	213u
 
 // Rank order of the MD9600_ADC_ enum
@@ -135,7 +134,7 @@ static bool switch_on(void)
 	return pwrkey_on(&pwrkey, key_down);
 }
 
-// No LED lines are known (hardware-md9600.md 8)
+// No LED lines are known
 static void led(uint8_t which, bool on)
 {
 	(void)which;

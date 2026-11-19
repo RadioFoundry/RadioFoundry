@@ -8,7 +8,7 @@
 #include "hal_dmr_modem.h"
 #if !defined(CONFIG_DMR) || CONFIG_DMR
 #include "dmr/ambe/ambeFec.h"
-#define HRC5000_TICK_RX	1	// received voice read at the ticks (4.9); the AMBE code is only built with DMR
+#define HRC5000_TICK_RX	1	// received voice read at the ticks; the AMBE code is only built with DMR
 #else
 #define HRC5000_TICK_RX	0
 #endif
@@ -72,7 +72,7 @@ enum {
 #define CODEC_CTL	0x8C
 #define HP_OUT		0x44
 // While a received DMR call plays the codec takes 0x0D = 0x9C (Switch2 on) and 0x0E = 0x4C (LineOutEn on, HPoutEn still
-// off), and the idle values back at the end: the speaker amplifier is fed from LINEOUT, not HPOUT (hardware-md380.md 4.10).
+// off), and the idle values back at the end: the speaker amplifier is fed from LINEOUT, not HPOUT.
 // -DHRC5000_SPK_VOICE=0 leaves them out, to compare
 #define CODEC_CTL_VOICE	0x9C
 #define HP_OUT_VOICE	0x4C
@@ -129,7 +129,7 @@ static bool dmr_enter(hrc_t *dev, uint8_t mod2, uint8_t mod1, uint8_t mic_gain)
 
 #if HRC5000_TICK_RX
 // The voice RAM (32 bytes, a longer read wraps) holds a received burst as its three 72-bit AMBE+2 air frames
-// (hardware-md380.md 4.8), once the decoder runs (rx_decode). The port changes at every tick, the other slot's
+//, once the decoder runs (rx_decode). The port changes at every tick, the other slot's
 // included, so the C0 words say which reads are a call's bursts
 static int rx_voice_read(hrc_t *dev, uint8_t out[27])
 {
@@ -168,7 +168,7 @@ static const hrc_chip_t chip = {
 	.voice_lcss = voice_lcss,
 	.set_mic_gain = set_mic_gain,
 	.dmr_enter = dmr_enter,
-	.tap_addr = { 0x30, 0 },	// one area, 264 bits, no CACH (hardware-md380.md 4.9.1)
+	.tap_addr = { 0x30, 0 },	// one area, 264 bits, no CACH
 	.tap_field = 0,
 #if HRC5000_TICK_RX
 	.rx_voice_read = rx_voice_read,

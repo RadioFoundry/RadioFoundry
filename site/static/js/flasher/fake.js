@@ -222,7 +222,7 @@ export class FakeRadio {
 	}
 
 	// The original firmware running normally and the bootloader, as far as the version read and the backup before the
-	// install use them (origversion.js, origbackup.js; docs/spec/hardware-md9600.md 15): a mode byte that 91 01 raises
+	// install use them (origversion.js, origbackup.js): a mode byte that 91 01 raises
 	// to program mode (0x30) and the bootloader's 91 31 to 0x40; UPLOAD of block 2 and up answers the internal flash
 	// from 0x08000000 below program mode (block number ignored) and the SPI flash in it (the bootloader's first 1 MB
 	// only, a stale buffer above); 91 05 restarts the original firmware before it answers. A request outside the

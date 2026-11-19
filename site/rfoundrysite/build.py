@@ -53,7 +53,7 @@ SITE_URL = "https://radiofoundry.org/"
 COMMUNITY_URL = "https://www.facebook.com/groups/radiofoundry/"
 BOARD_ORDER = {"supported": 0, "testing": 1, "in_progress": 2, "planned": 3}
 # a radio page's documentation links (board.toml [docs]), in this order
-DOC_ORDER = ("hardware", "install", "codec", "bringup")
+DOC_ORDER = ("install",)
 
 
 class Site:
@@ -622,7 +622,7 @@ class Site:
 			     % (b["id"], html.escape(self.t(lang, "radio.screens_all"))))
 		docs_links = "".join('<li><a href="{{home}}%s">%s</a></li>'
 				     % (docsmod.site_path(p), html.escape(self.t(lang, "radio.doc." + k)))
-				     for k, p in sorted(b["docs"].items(), key=lambda kv: DOC_ORDER.index(kv[0])))
+				     for k, p in sorted(b.get("docs", {}).items(), key=lambda kv: DOC_ORDER.index(kv[0])))
 		fl = b["flash"]
 		can_flash = ((fl["backend"] == "anyroad-dfu" and bool(self.flash["boards"].get(fl["board"], {}).get("key_sha256")))
 			     or (fl["backend"] == "c7000-stub" and fl["board"] in self.flash["c7000"]["boards"]))

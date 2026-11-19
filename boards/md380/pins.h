@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// TYT MD-380 pin map (docs/spec/hardware-md380.md section 2). The port has run on a radio, but not every pin here is
+// TYT MD-380 pin map. The port has run on a radio, but not every pin here is
 // checked on one: the sources are public schematic notes and pin tables, one of which warns that its schematic is wrong in places. Pins marked
-// (?) disagree between sources or are guesses; the bring-up checklist (docs/testing/md380-bringup.md) confirms them.
+// (?) disagree between sources or are guesses; a bring-up confirms them.
 #ifndef MD380_PINS_H
 #define MD380_PINS_H
 
@@ -47,7 +47,7 @@
 #define PIN_MIC_POWER		GPIOA, GPIO_PIN_14	// MICPWR_SW; SWCLK: driving it breaks SWD
 #define PIN_SPK_MUTE		GPIOB, GPIO_PIN_8	// SPK_C, high = muted (speaker anti-pop)
 #define PIN_AMP_EN		GPIOB, GPIO_PIN_9	// AFCO, high = audio amplifier on
-#define PIN_FM_MUTE		GPIOE, GPIO_PIN_13	// FM receive audio: high = through, low = muted (bench, hardware-md380.md 6.1)
+#define PIN_FM_MUTE		GPIOE, GPIO_PIN_13	// FM receive audio: high = through, low = muted (bench)
 #define PIN_LED_GREEN		GPIOE, GPIO_PIN_0	// RX LED
 #define PIN_LED_RED		GPIOE, GPIO_PIN_1	// TX LED
 #define PIN_CTCSS_PWM		GPIOC, GPIO_PIN_7	// CTC/DCS_OUT, TIM3_CH2 (AF2) PWM while a sub-audio tone is sent (subtone_md380.c), else released

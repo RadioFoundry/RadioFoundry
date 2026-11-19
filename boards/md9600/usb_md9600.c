@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// MD-9600 USB identity (docs/spec/hardware-md9600.md 15): the STM32F4 radios' IDs and serial number (platform.h), so
+// MD-9600 USB identity: the STM32F4 radios' IDs and serial number (platform.h), so
 // the host tools (qdmr, the open-firmware CPS, tools/rfoundry_debug.py) find it the same way
 #include "config.h"
 #if CONFIG_USB	// the whole file

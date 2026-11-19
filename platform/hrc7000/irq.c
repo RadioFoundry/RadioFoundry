@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Vector table and PIC (docs/spec/hardware-dm32.md 4). The CPU takes vector = PIC source + 32 from the table at VBR.
+// Vector table and PIC. The CPU takes vector = PIC source + 32 from the table at VBR.
 // Every user vector goes to the common entry (freertos/portasm.S), which acks the PIC and calls hrc_irq_table[source];
 // the CPU exceptions go to hrc_fault_entry. The table is in RAM, 1 KB aligned (VBR), filled at start-up.
 #include "config.h"
@@ -186,7 +186,7 @@ void hrc_irq_init(void)
 {
 	// Filled before the first interrupt can use it: main runs on its own stack (crt0.S)
 	irq_stack_fill(__irq_stack_bottom, IRQ_STACK_WORDS);
-	// PIC: everything masked, level triggered, high active, old requests cleared (hardware-dm32.md 4.1; both banks,
+	// PIC: everything masked, level triggered, high active, old requests cleared (both banks,
 	// unlike the old port, which wrote PIC_MASK twice)
 	PIC_MASK = 0xFFFFFFFFu;
 	PIC_MASK_1 = 0xFFFFFFFFu;

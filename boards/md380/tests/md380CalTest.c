@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The MD-380's calibration reader (boards/md380/calibration_md380.c, hardware-md380.md 11) on a synthetic table with a
+// The MD-380's calibration reader (boards/md380/calibration_md380.c) on a synthetic table with a
 // real radio's frequency list: the points from the band ends, the odd points filled in, the interpolation, the DAC
 // scaling, and the default band when the ends are unreadable
 #include <stdio.h>

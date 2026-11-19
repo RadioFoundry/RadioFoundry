@@ -2,7 +2,6 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // DB25-D PRO factory calibration (boards/db25d/calibration_db25d.c) on synthetic "TUNE" pages: the choice between the
 // two copies, band halves, interpolation and its edges, the PA and delay limits, squelch segments
-// (docs/spec/hardware-db25d.md 6)
 #include <stdio.h>
 #include <string.h>
 #include "db25d.h"
@@ -246,7 +245,7 @@ static void test_apc(void)
 	CHECK(db25d_apc_level(4095, 1) < 4 && db25d_apc_level(4095, 179) > 4095 - 4);
 }
 
-// DMR burst timing (4.5): the shortest lead that has the TX on sequence (the tune, or the page's TX-on delay if later,
+// DMR burst timing: the shortest lead that has the TX on sequence (the tune, or the page's TX-on delay if later,
 // and the supply's wait) done by the PA's point, pa_us before the first symbol, 0.85 ms after the lead; the ramp down at the last symbol, 27.5 ms later, whatever woke the TX-off. A
 // trigger after that point ramps at once and counts as late
 static void test_dmr_timing(void)

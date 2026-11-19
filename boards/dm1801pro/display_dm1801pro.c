@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // DM-1801 Pro display: 128x64 monochrome ST7567-class LCD on a write-only serial bus bit-banged on bank C (chip select
-// PTC3, clock PTC4, data/command PTC6, data PTC8, reset PTC2; docs/spec/hardware-dm1801pro.md 3.2, 7). The backlight is
+// PTC3, clock PTC4, data/command PTC6, data PTC8, reset PTC2). The backlight is
 // on PTA15, which is also the SoC's PWM0 output: set_backlight() dims it.
 #include "dm1801pro.h"
 #include "config.h"
@@ -71,7 +71,7 @@ static const st7567_bus_t bus = {
 };
 
 // Column offset 4 and the page order are the ones the radio uses; the orientation (columns reversed, rows not) was
-// checked on the radio. Bias, regulator and contrast are the controller's common values (hardware-dm1801pro.md 7)
+// checked on the radio. Bias, regulator and contrast are the controller's common values
 static const st7567_t panel = {
 	.bus = &bus,
 	.col_offset = 4,

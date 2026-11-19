@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The MD-380's panel type choice (boards/md380/panel_md380.c, hardware-md380.md 7): the controller from its ID, the
+// The MD-380's panel type choice (boards/md380/panel_md380.c): the controller from its ID, the
 // orientation from the factory byte where it was programmed
 #include <stdio.h>
 #include <string.h>

@@ -4,12 +4,12 @@
 """Flash a plain application image to a TYT/Baofeng/Retevis STM32 radio (DM-1701, RT84, MD-UV380/390, MD-2017,
 MD-380, MD-9600) through the stock AnyRoad DFU bootloader.
 
-Written from docs/spec/hardware-dm1701.md section 15:
-  15.1  the radio enumerates as VID 0x0483 PID 0xDF11 (string 1 "AnyRoad Technology") when powered on with
+The protocol:
+  1. the radio enumerates as VID 0x0483 PID 0xDF11 (string 1 "AnyRoad Technology") when powered on with
         PTT + side key 1 held;
-  15.2  wait idle, vendor commands 0x91 0x01 and 0x91 0x31, erase the sector list, write each region as 1024-byte
+  2. wait idle, vendor commands 0x91 0x01 and 0x91 0x31, erase the sector list, write each region as 1024-byte
         blocks numbered from 2, pad the last block with 0xFF, exit with set-address 0x08000000 + zero-length DNLOAD;
-  15.3  the image is XORed with a 1024-byte per-model key, indexed from the image start (0x0800C000).
+  3. the image is XORed with a 1024-byte per-model key, indexed from the image start (0x0800C000).
 
 The key is never stored in this repository. You supply it as a 1024-byte file and the tool checks its SHA-256
 against the table below before using it.
@@ -43,7 +43,7 @@ FLASH_END = RFOUNDRY_BOARDS[0].flash_end
 assert all([(s.addr, s.size) for s in b.sectors] == REGIONS and (b.app_base, b.flash_end) == (APP_BASE, FLASH_END)
            and b.dfu_ids == (DFU_VID, DFU_PID) for b in RFOUNDRY_BOARDS), "the registry's DFU boards disagree on the flash map"
 
-# Per-model key identity (15.3). The key bytes are not reproduced; only their hash and first four bytes. The RadioFoundry
+# Per-model key identity. The key bytes are not reproduced; only their hash and first four bytes. The RadioFoundry
 # boards' come from the registry ([flash.dfu]); STOCK_ONLY are radios with this bootloader and no RadioFoundry board yet
 # (planned, docs/spec/radios.md), for flashing their stock firmware back.
 STOCK_ONLY = {
@@ -57,7 +57,7 @@ ALIASES = dict({b.id: b.id for b in RFOUNDRY_BOARDS}, **{
     "md9600": "md9600",
 })
 
-# Where a merged image holds the codec (docs/spec/codec-placement.md: the tables at their stock address, the code moved
+# Where a merged image holds the codec (the tables at their stock address, the code moved
 # into the top sector), and where its code starts: the board's codec windows (the union over its stock files) and the
 # code address of each stock file's placement. An image that reaches into a window must carry a merged codec,
 # recognized by its first word at one of those addresses.

@@ -108,7 +108,7 @@ The manifest (`format` `rfoundry-release/1`, written and checked by `tools/rfoun
 offer the release to a build that isn't one. Manifests from before it have none; the site's build then looks the
 commit up in its clone. `ranges` says where the `.bin` goes: one range, the application at the board's base. `sectors` are the flash sectors
 the image covers. `codec.windows` are where the merge puts the codec: on an STM32F4 radio the code, the tables and the
-descriptor ([codec-placement.md](../spec/codec-placement.md), "STM32 radios"). `codec.profile` is the id the firmware
+descriptor (codec-placement.md, "STM32 radios"). `codec.profile` is the id the firmware
 reports for a matching codec (`codec=` in the debug link's VERSION, [debuglink.md](../spec/debuglink.md) 3.1).
 
 ## Sector maps
@@ -126,8 +126,8 @@ hold the codec. Whether an update can leave the codec alone (keep) depends on th
 
 | Family | Application | Codec | Keep |
 |---|---|---|---|
-| STM32F4 | The sectors from the application's start to the codec sectors | The tables stay at their stock address, the code moves into the last sectors, a descriptor says where ([codec-placement.md](../spec/codec-placement.md) "STM32 radios") | Yes: the update writes only the application's sectors |
-| HR_C7000 | From the application base to the slot | A slot at the end of the region ([codec-placement.md](../spec/codec-placement.md) "HR_C7000 radios") | Per route: through the stub yes (it writes only the image's sectors), through an updater that erases the whole area no |
+| STM32F4 | The sectors from the application's start to the codec sectors | The tables stay at their stock address, the code moves into the last sectors, a descriptor says where (codec-placement.md "STM32 radios") | Yes: the update writes only the application's sectors |
+| HR_C7000 | From the application base to the slot | A slot at the end of the region (codec-placement.md "HR_C7000 radios") | Per route: through the stub yes (it writes only the image's sectors), through an updater that erases the whole area no |
 
 The exact map of a radio is in its hardware spec (`hardware-<id>.md`) and in `tools/rfoundry/rfoundry/registry.json`.
 
@@ -136,7 +136,7 @@ sector 3 (the vector table) is the first one written back: an update cut off bef
 Cut off later, the radio may boot half an application: a crash, never a brick. Enter the bootloader by hand (the
 board's key combination at power on) and flash again.
 
-An install that moves the codec out of a former layout ([codec-placement.md](../spec/codec-placement.md), "Moving to a
+An install that moves the codec out of a former layout (codec-placement.md, "Moving to a
 new layout") erases sector 3 first and writes it last instead (`vector_last` in rfoundry's `plan.py`, `vectorLast` in
 the web flasher's `plan.js`). Cut off anywhere before that last sector, sector 3 is blank, the bootloader stays in DFU
 and the same install, run again, finishes the move from the saved copy; no half application runs in between.
@@ -160,7 +160,7 @@ over the bootloader (the radio is at RDP level 1), so rfoundry needs another way
    windows at their placed addresses). If it reports the board's codec profile (`codec.id` in the registry), keep is safe. If it reports
    the id of an earlier layout (the profiles' `former` entries, the registry's `codec_former`), the codec sits where this
    release's image goes: rfoundry reads it back over the debug link, checks it and merges it in the new layout
-   ([codec-placement.md](../spec/codec-placement.md), "Moving to a new layout").
+   (codec-placement.md, "Moving to a new layout").
    The answer is remembered for 30 minutes (rfoundry's settings directory), because the debug link is gone once the
    radio is in its bootloader. A build from before the codec moved reports the profile without `-s11`: its codec code is in
    sectors the update overwrites, so keep is not safe.
@@ -186,7 +186,7 @@ works, DMR calls show "No codec: voice off", and the debug link reports `codec=a
 **Merge.** The user supplies the stock firmware file (`--stock`). rfoundry checks it by SHA-256 against the codec
 profile, decrypts the two windows, checks their SHA-256 and the signature (`rfoundry/stockfw.py`, the same library
 `tools/codec_extract.py` uses), places them as the board's codec map says and writes the descriptor
-([codec-placement.md](../spec/codec-placement.md), "STM32 radios"). The image's sectors and the codec sectors are erased and written. The merged codec exists only in memory on the user's machine and in the radio.
+(codec-placement.md, "STM32 radios"). The image's sectors and the codec sectors are erased and written. The merged codec exists only in memory on the user's machine and in the radio.
 
 **Getting the stock file.** rfoundry only reads a file the user downloaded; it doesn't fetch vendor firmware.
 
@@ -244,7 +244,7 @@ itself; it calls the tools that do:
 `tools/hrc7000_codec.py` recognizes it by the code window's SHA-256 and builds the slot. The release package never
 carries the codec, so the first install of a release through update mode needs it. Later updates through the stub keep
 the slot. Each radio's route, slot and keep rule are in its hardware spec (`hardware-<id>.md`,
-[codec-placement.md](../spec/codec-placement.md) "HR_C7000 radios"), and the open items in its bring-up record under
+codec-placement.md "HR_C7000 radios"), and the open items in its bring-up record under
 [docs/testing/](../testing/README.md). Host tests (`tools/rfoundry/tests/test_serialflash.py`) run `write_image` against
 stubtool's simulated radio and the update mode protocol against serial_loader's simulated loader.
 

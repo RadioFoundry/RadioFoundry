@@ -40,7 +40,7 @@ static const band_t bands[] = {
 #endif
 };
 
-// The factory calibration holds PA drive points for three power levels (hardware-dm1801pro.md 6.4): low, middle, high.
+// The factory calibration holds PA drive points for three power levels: low, middle, high.
 // Two more under the low one are fractions of its drive (radio_dm1801pro.c)
 static const char *const power_names[] = { "L--", "L-", "L", "M", "H" };
 
@@ -110,7 +110,7 @@ const board_t board = {
 #if CONFIG_DMR
 	.dmr = &hrc_dmr,
 	.audio = &hrc_audio_pcm,
-	.vocoder = &hrc_vocoder,	// the radio's own codec in the slot (codec-dm1801pro.md 4); without it, no voice
+	.vocoder = &hrc_vocoder,	// the radio's own codec in the slot; without it, no voice
 #if CONFIG_AIR
 	.air = &hrc_air,		// the physical layer and the receive copy (modem-hrc7000.md 10)
 	.baseband = &hrc_baseband,
@@ -132,7 +132,7 @@ const board_t board = {
 };
 
 // IO mux: only the fields this firmware needs are changed; the rest stay as the boot loader left them. Bit = 1 makes a
-// pin a GPIO, 0 gives it to its peripheral (hardware-dm1801pro.md 4)
+// pin a GPIO, 0 gives it to its peripheral
 #define DIPLEX1_SPI0		(0x3Fu << 3)	// SPI0 SCLK / MOSI / MISO
 #define DIPLEX2_ADC_BC		((1u << 20) | (1u << 21))	// ADC channels B and C analog
 
@@ -151,7 +151,7 @@ static void io_init(void)
 	hrc_pin_in(PIN_POWER_KEY);
 }
 
-// Everything the core stores lives above the write floor (hardware-dm1801pro.md 6.1): the data flash holds the radio's
+// Everything the core stores lives above the write floor: the data flash holds the radio's
 // own data below 0x700000 (settings, contacts, fonts, voice prompts, recordings), so the open-firmware codeplug's 64 KB
 // "EEPROM" image sits at 0x700000, the settings ring and the sector journal after it, the 1 MB open-firmware "flash"
 // image at 0x720000 (where the DMR ID database is read too) and the native codeplug in the last 1 MB. The factory
@@ -174,10 +174,10 @@ static const hrc_flash_cfg_t flash_cfg = {
 	.map = &flash_map,
 };
 
-// A short pulse tells the user the radio is on (hardware-dm1801pro.md 8)
+// A short pulse tells the user the radio is on
 #define POWER_ON_PULSE_MS	300
 
-// Transmitter off from any context (board.h, docs/spec/crash-log.md 8; hardware-dm1801pro.md 5.5): both TX path
+// Transmitter off from any context (board.h, docs/spec/crash-log.md 8): both TX path
 // selects and the PA drive (DAC B to 0, powered down). RAM code, register writes only. The FD6818 may still be set to
 // transmit (its bus is a bit-banged transaction): with the TX path off its output reaches no keyed PA, and the next
 // start sets it up again
@@ -195,7 +195,7 @@ void board_early_init(void)
 }
 
 #if CONFIG_BCAST_FM
-// The broadcast tuner (hardware-dm1801pro.md 7): RDA5807 class on PTA25 / PTA26, enabled by PTA29 low (from the order
+// The broadcast tuner: RDA5807 class on PTA25 / PTA26, enabled by PTA29 low (from the order
 // of the stock start and stop code, not measured). Its audio needs the speaker amplifier, which the channel shares
 static void bcast_audio(bool on)
 {
