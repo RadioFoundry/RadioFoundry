@@ -24,8 +24,8 @@ msgstr "Redémarrer pr sortir"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_VALUE_SOURCE_OFFICIAL"
-msgid "RadioFoundry release build"
-msgstr "Version officielle RadioFoundry"
+msgid "RadioFoundry CI build"
+msgstr "Build CI RadioFoundry"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_VALUE_SOURCE_SERVICE"

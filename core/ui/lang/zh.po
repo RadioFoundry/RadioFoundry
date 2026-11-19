@@ -26,8 +26,8 @@ msgstr "断电重启退出"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_VALUE_SOURCE_OFFICIAL"
-msgid "RadioFoundry release build"
-msgstr "RadioFoundry 正式版本"
+msgid "RadioFoundry CI build"
+msgstr "RadioFoundry CI 构建"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_VALUE_SOURCE_SERVICE"
