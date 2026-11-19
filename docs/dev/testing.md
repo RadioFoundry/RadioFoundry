@@ -86,19 +86,9 @@ entry in the `gallery[]` table at the top of `tests/host/uiSim.c`.
 The HIL tests drive a radio through the [debug link](debug-link.md): they press keys, read the radio's state and take
 screenshots. Each test leaves the radio as it found it. Without a radio they all skip.
 
-Opt-in flags allow what changes the radio or the air around it.
-
-| Flag | Allows |
-|---|---|
-| none | Radio-only tests. Nothing transmits |
-| `--allow-rf` | Transmitting, from the radio or the SDR bench |
-| `--allow-service-stop` | Accepted and ignored: a bench board stops nothing |
-| `--allow-usb-switch` | Switching the radio to USB network mode and back |
-| `--allow-codeplug-write` | Writing the codeplug over CPS (backed up and restored) |
-| `--allow-reboot` | Restarting the radio |
-
-The full list, the options and the rig assumptions are in [tests/hil/README.md](../../tests/hil/README.md);
-"Writing a test" there has the fixtures.
+Without flags, nothing transmits and nothing in the radio's storage changes. Opt-in flags allow each test that
+transmits, writes the codeplug, restarts the radio or switches its USB mode. How to run the tests, the flags, the rig's
+options and the fixtures for a new test are in [tests/hil/README.md](../../tests/hil/README.md#opt-in-flags).
 
 A skip is not a pass. Every skip names its kind, and a bring-up run (`tools/bringup.py run --radio <id>`) runs a
 radio's feature checklist, fails a required test that skips for a reason its feature doesn't declare, and records the

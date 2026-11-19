@@ -1,36 +1,44 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
+
 # Task flows
 
-Step-by-step flows for the 26 most frequent or most important tasks, with press counts per radio class. Keys use the logical names from `information-architecture.md`; the reference mapping is `SELECT` = green/Menu, `BACK` = red/Back, `QUICK` = `*`, `CONTEXT` = `#`, `TALK_TARGET` = SK2, `MONITOR` = SK1.
+This page gives step-by-step flows for the most frequent or most important tasks, with press counts per radio class.
+Keys use the logical names from [Information architecture](information-architecture.md). The reference mapping is
+`SELECT` = green or Menu, `BACK` = red or Back, `QUICK` = `*`, `CONTEXT` = `#`, `TALK_TARGET` = long `#` on a DMR
+channel, and `MONITOR` = SK1. `tests/host/uiFlowTest.c` runs the flows and checks their budgets.
 
 ## Radio classes
 
-| Class | Example radios | Input | Display |
+| Class | Key set | Input | Display |
 |---|---|---|---|
-| **K** | DM-1701, MD-UV380, DM-32UV | keypad, channel knob or encoder, 2 side keys | color |
-| **M** | GD-77 | keypad, no knob/encoder, 2 side keys | 128x64 mono |
-| **V** | MD-9600 (mobile) | front panel keys (P1-P4) and encoder; mic keypad + mic function keys | 128x64 mono |
-| **F** | few-key radios | Up/Down/Select/Back, knob, PTT, no keypad | any |
+| **K** | [7.1, 7.2](information-architecture.md#7-key-sets) | Keypad, channel knob or encoder, 2 side keys | Color |
+| **M** | [7.3, 7.6](information-architecture.md#7-key-sets) | Keypad, no knob or encoder, 2 side keys | 128x64 mono |
+| **V** | [7.4](information-architecture.md#7-key-sets) | Mobile: front panel keys (P1-P4) and encoder; microphone keys | 128x64 mono |
+| **F** | [7.5](information-architecture.md#7-key-sets) | Up, Down, Select, Back, knob, PTT; no keypad | Any |
+
+For which radio is in which class, see [Radio reference, Key roles](../user/23-radios.md#key-roles).
 
 ## Counting rules
 
 - One press = one short or long key press, or one knob/encoder detent. PTT counts as a press.
-- "+n" means "plus n navigation presses that depend on list position". Budgets assume the target is in the first 5 items or found by typing.
+- "+n" means "plus n navigation presses that depend on list position". Budgets assume the target is in the first 5 items
+  or found by typing.
 - Text typing counts each key press (T9 predictive: one press per letter).
 - Budget = the target maximum (P1). A flow that needs more is a design bug.
 
 ## Caller actions (opened by `CONTEXT` on Home)
 
-Numbered, so a digit picks directly:
+The actions are numbered, so a digit picks directly:
 
 1. Talk to (their TG, or them privately if the call was private)
 2. Private call
 3. Message
 4. Radio check
 5. Call alert
-6. Position (request or show)
+6. Position (shown dimmed)
 7. Save as contact
-8. Speak status
+8. Speak status (shown dimmed)
 9. Save to channel (shown only when the channel has temporary changes)
 
 ---
@@ -40,7 +48,7 @@ Numbered, so a digit picks directly:
 - K: turn the channel knob (on radios with an encoder, `CAP_ENCODER`, one detent per channel). Or `NAV_UP`/`NAV_DOWN`.
 - M, V: `NAV_UP`/`NAV_DOWN` (V: or front encoder).
 - By number or name (all keypad classes): type digits or T9 letters on Home, Find shows matches, `SELECT`.
-- Feedback: Home redraws the channel name within 50 ms; voice prompt says "Channel 4, County fire".
+- Feedback: Home redraws the channel name within 50 ms.
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
@@ -52,9 +60,11 @@ Numbered, so a digit picks directly:
 1. `SELECT` (Hub).
 2. `4` (Zones). The zone list opens with the current zone focused.
 3. `NAV_UP`/`NAV_DOWN` to the zone (or type its first letters).
-4. `SELECT`: the radio switches to that zone (on the knob's channel, or channel 1 on encoder radios) and returns to Home. `CONTEXT` on a zone instead opens its channel list to pick a different channel.
+4. `SELECT`: the radio switches to that zone (on the knob's channel, or channel 1 on encoder radios) and returns to
+   Home. `CONTEXT` on a zone instead opens its channel list to pick a different channel.
 
-Shortcut: type the zone name on Home (Find lists zones too). Assignable side-key function "Zone picker" makes it 1 + n + 1.
+Shortcut: type the zone name on Home (Find lists zones too). Assignable side-key function "Zone picker" makes it 1 + n +
+1.
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
@@ -64,9 +74,11 @@ Shortcut: type the zone name on Home (Find lists zones too). Assignable side-key
 
 One-shot (this transmission and its replies):
 
-1. `TALK_TARGET`: picker opens. Order: Channel default, Reply to last heard, the channel's listen list, recent talkgroups, speed dials, "Type a number".
+1. `TALK_TARGET`: picker opens. Order: Channel default, Reply to last heard, the channel's listen list, recent
+   talkgroups, speed dials, "Type a number".
 2. `NAV_DOWN` to TG 91 (or type `9`,`1`).
-3. `PTT`: transmits to TG 91. Home shows "PTT → TG 91 (reply 10 s)" and reverts to the channel default after the reply window.
+3. `PTT`: transmits to TG 91. Home shows "PTT → TG 91 (reply 10 s)" and reverts to the channel default after the reply
+   window.
 
 Temporary (until channel change): step 3 is `SELECT` instead of PTT. Home shows "Temporary TG 91 · Back to revert".
 
@@ -74,7 +86,8 @@ Permanent: step 3 is long `SELECT`. Banner "TG 91 is now the default for County 
 
 Without the side key: `QUICK`, `8` opens the same picker.
 
-TG not in the codeplug: on Home type `3`,`1`,`0`,`0`; Find's first result is "Talk to TG 3100"; `PTT` (one-shot) or `SELECT` (temporary).
+TG not in the codeplug: on Home type `3`,`1`,`0`,`0`; Find's first result is "Talk to TG 3100"; `PTT` (one-shot) or
+`SELECT` (temporary).
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
@@ -84,14 +97,14 @@ TG not in the codeplug: on Home type `3`,`1`,`0`,`0`; Find's first result is "Ta
 
 ## 4. Call back the last station heard
 
-During the reply window (default 10 s): just `PTT`. Home already shows "Reply → TG 91" or "Reply → Q1AAA (private)".
+During the reply window (default 10 s): `PTT` alone. Home already shows "Reply → TG 91" or "Reply → Q1AAA (private)".
 
 After the window:
 
 1. `CONTEXT` (`#`): caller actions for the last heard.
 2. `1` (Talk to): sets their TG (or them privately) as the temporary talk target; or `PTT` directly with item 1 focused.
 
-Older station: `SELECT`, `3` opens Recent, `NAV_DOWN` to the station, `PTT`. (Long `CONTEXT` was Recent until #18 gave it the talk target picker.)
+Older station: `SELECT`, `3` opens Recent, `NAV_DOWN` to the station, `PTT`.
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
@@ -104,11 +117,13 @@ Older station: `SELECT`, `3` opens Recent, `NAV_DOWN` to the station, `PTT`. (Lo
 By name:
 
 1. On Home type T9 letters (`5`,`6`,`3` for "Joe"). Find lists Joe Smith Q1AAA first.
-2. `CONTEXT`: contact actions. `2` (Private call) or simply `PTT` with "Private call" focused.
+2. `CONTEXT`: contact actions. `2` (Private call), or `PTT` with "Private call" focused.
 
-Shortcut: in Find, focus the contact and press `PTT`: talk target choice for a person is private call, for a TG group call.
+Shortcut: in Find, focus the contact and press `PTT`: talk target choice for a person is private call, for a TG group
+call.
 
-By ID: type the ID (`3`,`1`,`0`,`1`,`2`,`3`,`4`); Find shows "Private call 9991234" (name from the ID database if present) and "Talk to TG 9991234"; focus the private call line and `PTT`.
+By ID: type the ID (`3`,`1`,`0`,`1`,`2`,`3`,`4`); Find shows "Private call 9991234" (name from the ID database if
+present) and "Talk to TG 9991234"; focus the private call line and `PTT`.
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
@@ -118,21 +133,22 @@ By ID: type the ID (`3`,`1`,`0`,`1`,`2`,`3`,`4`); Find shows "Private call 99912
 ## 6. Send a text message
 
 1. Pick the recipient: `CONTEXT` (last caller) or Find by name, then `CONTEXT`.
-2. `3` (Message): the composer opens with Canned messages listed first ("OK", "On my way", "Call me", "QSY TG 91", user-defined), then "Write…".
+2. `3` (Message): the composer opens with Canned messages listed first ("OK", "On my way", "Call me", "QSY TG 91",
+   user-defined), then "Write…".
 3. Canned: `NAV_DOWN` to it, `SELECT` = Send. Written: `NAV_DOWN` to "Write…", `SELECT`, type (T9), `SELECT` = Send.
-4. Status strip shows "Sending…", then "Delivered" (if confirmed data) or "Sent, no confirmation" with what to do on failure ("No answer from Q1AAA. Retry with Select, or Back to keep in Drafts").
-
-Long `BACK` from the composer keeps the text as a draft (P4).
+4. The status strip shows "Sending…", then "Delivered" (with confirmed data). A failure says what to do.
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
 | Canned reply to last caller | 4 (`#`,`3`,`↓`,`SELECT`) | 4 | 4 | 5 | 4 |
-| Canned to contact by name | 6 (3 letters, `#`,`3`,`SELECT`) | 6 | 6 (driving: canned only) | 3+n | 6 |
-| Written, 10 letters | 15 | 15 | locked while driving | n/a | - |
+| Canned to contact by name | 6 (3 letters, `#`,`3`,`SELECT`) | 6 | 6 | 3+n | 6 |
+| Written, 10 letters | 15 | 15 | - | n/a | - |
 
 ## 7. Read a new message
 
-Banner is up (8 s): `CONTEXT` opens it. Banner gone: the status strip shows an envelope with the count; `SELECT`, `2` opens Messages with the newest unread focused; `SELECT` opens it. In the message: `CONTEXT` = Reply (canned first), Call, Delete (with Undo), Save sender.
+Banner is up (8 s): `CONTEXT` opens it. Banner gone: the status strip shows an envelope with the count; `SELECT`, `2`
+opens Messages with the newest unread focused; `SELECT` opens it. In the message: the replies (canned first), Call,
+Delete, and Full message for a long text.
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
@@ -142,7 +158,8 @@ Banner is up (8 s): `CONTEXT` opens it. Banner gone: the status strip shows an e
 ## 8. Radio check
 
 1. Pick the target (last caller: `CONTEXT`; contact: Find, `CONTEXT`).
-2. `4` (Radio check). Status strip "Checking Q1AAA…"; tone and banner "Q1AAA answered (0.8 s)" or "No answer from Q1AAA after 3 tries. They may be off, out of range, or on another channel."
+2. `4` (Radio check). Status strip "Checking Q1AAA…"; tone and banner "Q1AAA answered (0.8 s)" or "No answer from Q1AAA
+   after 3 tries. They may be off, out of range, or on another channel."
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
@@ -151,9 +168,11 @@ Banner is up (8 s): `CONTEXT` opens it. Banner gone: the status strip shows an e
 
 ## 9. Adjust volume, squelch and power
 
-- Volume: the volume knob (analog on the reference radios). If the board reports the volume position, Home shows a volume bar for 1 s. No presses in firmware.
-- Squelch (FM): `QUICK`, `2`, `NAV_UP`/`NAV_DOWN` (live: hear it change), `QUICK` or `BACK` to close. Temporary; long `SELECT` saves.
-- Power: `QUICK`, `1` cycles levels (Low, Mid, High; each press advances, voice "Power high"). `BACK` closes.
+- Volume: the volume knob (analog on the reference radios). If the board reports the volume position, Home shows a
+  volume bar for 1 s. No presses in firmware.
+- Squelch (FM): `QUICK`, `2`, `NAV_UP`/`NAV_DOWN` (live: hear it change), `QUICK` or `BACK` to close. Temporary; long
+  `SELECT` saves.
+- Power: `QUICK`, `1` cycles the levels (each press advances). `BACK` closes.
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
@@ -162,9 +181,12 @@ Banner is up (8 s): `CONTEXT` opens it. Banner gone: the status strip shows an e
 
 ## 10. Enable privacy
 
-DMR channel: `QUICK`, `6` toggles Privacy. If the channel or contact has no key: the tile says "No key for this channel. Add one in Settings > Privacy or in qdmr" and stays off. Home shows a privacy icon and the talk target chip "Private" (blue + icon, P5). Making it permanent: long `SELECT` on the tile.
+DMR channel: `QUICK`, `6` toggles Privacy. If the channel or contact has no key: the tile says "No key for this channel.
+Add one in Settings > Privacy or in qdmr" and stays off. Home shows a privacy icon and the talk target chip "Private"
+(blue + icon, P5). Making it permanent: long `SELECT` on the tile.
 
-Per-contact key: privacy follows the talk target automatically when the contact has a key; Home shows the icon whenever the next transmission will be encrypted.
+Per-contact key: privacy follows the talk target automatically when the contact has a key; Home shows the icon whenever
+the next transmission will be encrypted.
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
@@ -172,9 +194,15 @@ Per-contact key: privacy follows the talk target automatically when the contact 
 
 ## 11. Scan
 
-Start: Tools > Scan (`SELECT`, `6`, `1`), or a side key set to Scan. Quick tile 7 and a long `TALK_TARGET` are dual watch instead ([dual-watch.md](dual-watch.md)); if it is running, the scan stops it, staying on the selected channel. Home shows "Scanning: Zone Local" in the status strip and the channel name updating; when a channel stops the scan, Activity shows it.
+Start: Tools > Scan (`SELECT`, `6`, `1`), or a side key set to Scan. Quick tile 7 and a long `TALK_TARGET` are dual
+watch instead ([dual-watch.md](dual-watch.md)); if it is running, the scan stops it, staying on the selected channel.
+Home shows "Scanning: Zone Local" in the status strip and the channel name updating; when a channel stops the scan,
+Activity shows it.
 
-While scanning (Home keys): `PTT` talks on the channel that last stopped (or the start channel if none, setting); `NAV_UP`/`NAV_DOWN` skip ahead; `CONTEXT` on a stopped channel gives "Skip channel for now" (nuisance delete), "Stay here" (stop scan on this channel), "Always skip" (edit scan list, permanent). `BACK` stops scanning and returns to the start channel.
+While scanning (Home keys): `PTT` talks on the channel that last stopped (or the start channel if none, setting);
+`NAV_UP`/`NAV_DOWN` skip ahead; `CONTEXT` on a stopped channel gives "Skip channel for now" (nuisance delete), "Stay
+here" (stop scan on this channel), "Always skip" (edit scan list, permanent). `BACK` stops scanning and returns to the
+start channel.
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
@@ -184,11 +212,19 @@ While scanning (Home keys): `PTT` talks on the channel that last stopped (or the
 
 ### 11b. Dual watch
 
-Two channels, A and B (any channel of any zone, or the VFO); `PTT` talks on the selected one. The behavior, screens and per-radio keys are in [dual-watch.md](dual-watch.md).
+Two channels, A and B (any channel of any zone, or the VFO); `PTT` talks on the selected one. The behavior, screens and
+per-radio keys are in [dual-watch.md](dual-watch.md).
 
-Start: `QUICK`, `7` (tile 7, Dual watch; long `TALK_TARGET` does the same). The first time the B picker opens: a channel number, then `SELECT`. For a B in another zone or the VFO: `UP` to the Zone row, `SELECT`, pick the zone (or the VFO), `SELECT`, then the channel. Later starts use the last B (kept across power off) and take two presses. `QUICK`, `7` again stops it.
+Start: `QUICK`, `7` (tile 7, Dual watch; long `TALK_TARGET` does the same). The first time the B picker opens: a channel
+number, then `SELECT`. For a B in another zone or the VFO: `UP` to the Zone row, `SELECT`, pick the zone (or the VFO),
+`SELECT`, then the channel. Later starts use the last B (kept across power off) and take two presses. `QUICK`, `7` again
+stops it.
 
-While it runs (Home keys): `PTT` talks on the selected channel and the watch goes on; `CONTEXT`, `1` talks on the other channel (an `A/B` side key or `NAV_LEFT`/`NAV_RIGHT`: one press); `NAV_UP`/`NAV_DOWN` and the knob move the selected channel; `CONTEXT` also changes A or B and shows the last caller. With Settings > Talk > Dual watch talk back on, a call that ends on the other channel selects it for 10 s so `PTT` answers there; `CONTEXT`, `1` goes back. `BACK` stops, staying on the selected channel.
+While it runs (Home keys): `PTT` talks on the selected channel and the watch goes on; `CONTEXT`, `1` talks on the other
+channel (an `A/B` side key or `NAV_LEFT`/`NAV_RIGHT`: one press); `NAV_UP`/`NAV_DOWN` and the knob move the selected
+channel; `CONTEXT` also changes A or B and shows the last caller. With Settings > Talk > Dual watch talk back on, a call
+that ends on the other channel selects it for 10 s so `PTT` answers there; `CONTEXT`, `1` goes back. `BACK` stops,
+staying on the selected channel.
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
@@ -200,13 +236,19 @@ While it runs (Home keys): `PTT` talks on the selected channel and the watch goe
 | Stop | 1 (`BACK`) | 1 | 1 | 1 | 1 |
 | Talk back on (Settings > Talk) | 10 | 10 | 10 | 10 | 10 |
 
-The budgets are the ones `tests/host/uiFlowTest.c` checks ("11 dual watch ..."). Zone scan starts in 3 (Tools > Scan: `SELECT`, `6`, `1`).
+The budgets are the ones `tests/host/uiFlowTest.c` checks ("11 dual watch ..."). Zone scan starts in 3 (Tools > Scan:
+`SELECT`, `6`, `1`).
 
 ## 12. Enter a VFO frequency
 
-Enter VFO: `SELECT`, `4`, VFO is the first row in Zones: `SELECT`. (Or type "VFO" in Find.) Home shows the frequency large.
+Enter VFO: `SELECT`, `4`, VFO is the first row in Zones: `SELECT`. (Or type "VFO" in Find.) Home shows the frequency
+large.
 
-On Home in VFO, digits enter a frequency directly: `4`,`4`,`6`,`0`,`0`,`0` is 446.000 MHz (the decimal point is implied after the band's MHz digits; `*` inserts it explicitly). Preview shows "446.000 MHz" as you type, out-of-band digits are refused as you type with a hint ("UHF 400-480"). `SELECT` tunes, and so does `CONTEXT` while digits are typed. `NAV_UP`/`NAV_DOWN` step by the step size (Settings › Talk › VFO step; Auto follows the width). Mode and tone are quick tiles 4 and 3. "Save as channel" is in `CONTEXT`.
+On Home in VFO, digits enter a frequency directly: `4`,`4`,`6`,`0`,`0`,`0` is 446.000 MHz (the decimal point is implied
+after the band's MHz digits; `*` inserts it explicitly). The preview shows "446.000 MHz" while you type, and out-of-band
+digits are refused as you type, with a hint ("UHF 400-480"). `SELECT` tunes, and so does `CONTEXT` while digits are
+typed. `NAV_UP`/`NAV_DOWN` step by the step size (Settings › Talk › VFO step; Auto follows the width). Mode and tone are
+quick tiles 4 and 3.
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
@@ -218,7 +260,8 @@ From a channel, the same digits on Home open Find, whose first row (after a chan
 
 ## 13. Lock and unlock keys
 
-Lock: long `QUICK` (`*`). Banner "Keys locked. Hold * to unlock." PTT, monitor, volume and emergency stay active (configurable). Any other press shows the hint with the invalid tone. Unlock: long `*` again.
+Lock: long `QUICK` (`*`). Banner "Keys locked. Hold * to unlock." PTT, monitor, volume and emergency stay active
+(configurable). Any other press shows the hint with the invalid tone. Unlock: long `*` again.
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
@@ -226,7 +269,9 @@ Lock: long `QUICK` (`*`). Banner "Keys locked. Hold * to unlock." PTT, monitor, 
 
 ## 14. Check GPS
 
-Status strip shows a GPS icon: hollow = searching, solid = fix, crossed = off. Details: `SELECT`, `6`, `2` (Tools > Position): fix state, satellites, lat/long, altitude; Up / Down turn to the sky plot, the signal bars and the grid locator (ui.md 2.3). `CONTEXT` there: Send position now, Turn GPS off. Position of another station: caller actions `6`.
+Status strip shows a GPS icon: hollow = searching, solid = fix, crossed = off. Details: `SELECT`, `6`, `2` (Tools >
+Position): fix state, satellites, lat/long, altitude; Up / Down turn to the sky plot, the signal bars and the grid
+locator (ui.md 2.3). `CONTEXT` there: Send position now. Position of another station: caller actions `6`.
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
@@ -238,9 +283,9 @@ Status strip shows a GPS icon: hollow = searching, solid = fix, crossed = off. D
 2. `SELECT`, `6` (Tools), `3` (Hotspot) or `4` (USB network).
 3. `SELECT` = Start. Screen shows link state (host connected, mode, frequency, TS/CC, traffic and the current talker).
 
-Option (Connections): "Start hotspot when a hotspot host connects", default off. When on, a banner says "Hotspot started by host. OK stops it."
-
-While active: `BACK` goes Home; the hotspot keeps running and Home's status strip shows "HOTSPOT" with the traffic. Stop: `SELECT` = Stop on the hotspot screen or `CONTEXT` on Home > "Stop hotspot". PTT on the radio while in hotspot mode explains "Hotspot mode: the radio relays network traffic. Stop hotspot to talk locally."
+While active: `BACK` goes Home; the hotspot keeps running and Home's status strip shows "HOTSPOT" with the traffic.
+Stop: `SELECT` = Stop on the hotspot screen or `CONTEXT` on Home > "Stop hotspot". PTT on the radio in hotspot mode
+shows "Hotspot mode: PTT off".
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
@@ -249,7 +294,10 @@ While active: `BACK` goes Home; the hotspot keeps running and Home's status stri
 
 ## 16. See who is talking
 
-No presses: on RX the Activity region shows, in order of what's known: name (contact, else ID database), callsign, talker alias (as it arrives), DMR ID, TG and TS, RSSI, distance and bearing if a position is known. On 128x64, the two most important lines (name or callsign, TG) are shown and `CONTEXT` > Speak status or the RX detail view (`CONTEXT`, then `SELECT` on the header) shows the rest. Outside Home, the status strip shows "RX TG 91 · Q1AAA".
+No presses: on RX the Activity region shows, in order of what's known: name (contact, else ID database), callsign,
+talker alias (as it arrives), DMR ID, TG and TS, RSSI, distance and bearing if a position is known. On 128x64, the two
+most important lines (name or callsign, TG) are shown, and the RX detail view (`CONTEXT`, then `SELECT` on the header)
+shows the rest. Outside Home, the status strip shows "RX TG 91 · Q1AAA".
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
@@ -258,7 +306,9 @@ No presses: on RX the Activity region shows, in order of what's known: name (con
 
 ## 17. Emergency (if enabled in the codeplug)
 
-Hold `EMERGENCY` (top/orange key) 1.5 s. A rising tone during the hold, then "EMERGENCY" full screen in red with a word label, the radio sends the alarm and (per codeplug) opens the mic. Cancel: hold the same key 1.5 s. If emergency is not configured, the hold gives a hint "Emergency is not set up on this radio" instead of nothing. On radios without a top key it is an assignable long press only, never on `PTT` or a key used for typing.
+Hold `EMERGENCY` (top/orange key) 1.5 s. A rising tone during the hold, then "EMERGENCY" full screen in red with a word
+label, the radio sends the alarm and (per codeplug) opens the mic. Cancel: hold the same key 1.5 s. On radios without a
+top key it is an assignable long press only, never on `PTT` or a key used for typing.
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
@@ -266,9 +316,16 @@ Hold `EMERGENCY` (top/orange key) 1.5 s. A rising tone during the hold, then "EM
 
 ## 18. Copy a channel to the VFO, switch the VFO's mode
 
-On a channel: `QUICK`, `4` ("To VFO"). What is in effect on the channel now (frequencies and offset, mode, bandwidth, power, tones, color code, timeslot and talk target, temporary changes included) becomes the VFO's own settings, the VFO opens on Home and the toast says "Copied to VFO". The channel is unchanged; the VFO's values are kept like its other settings (no dot). A channel the VFO can't hold (a mode this build's VFO lacks, a frequency outside the radio's bands) is refused with a toast and nothing changes. The same is on a key: Settings > Keys > Copy to VFO, or the VFO/MR key's long press where a radio has one. In the VFO "Already in VFO". The full rules are in `dmr-voice.md` 2.2.
+On a channel: `QUICK`, `4` ("To VFO"). What is in effect on the channel now (frequencies and offset, mode, bandwidth,
+power, tones, color code, timeslot and talk target, temporary changes included) becomes the VFO's own settings, the VFO
+opens on Home and the toast says "Copied to VFO". The channel is unchanged; the VFO's values are kept like its other
+settings (no dot). A channel the VFO can't hold (a mode this build's VFO lacks, a frequency outside the radio's bands)
+is refused with a toast and nothing changes. The same is on a key: Settings > Keys > Copy to VFO, or the VFO/MR key's
+long press where a radio has one. In the VFO "Already in VFO". The full rules are in `dmr-voice.md` 2.2.
 
-In the VFO: `QUICK`, `4` ("Mode") switches the VFO FM / DMR on its frequency, kept (no dot): FM → DMR uses the VFO's color code (1 at first), slot and talk target (talkgroup 9 at first); change them with quick tiles 2, 3 and 8. Home's mode chip changes color and word. A channel has no temporary mode change.
+In the VFO: `QUICK`, `4` ("Mode") switches the VFO FM / DMR on its frequency, kept (no dot): FM → DMR uses the VFO's
+color code (1 at first), slot and talk target (talkgroup 9 at first); change them with quick tiles 2, 3 and 8. Home's
+mode chip changes color and word. A channel has no temporary mode change.
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
@@ -276,8 +333,10 @@ In the VFO: `QUICK`, `4` ("Mode") switches the VFO FM / DMR on its frequency, ke
 
 ## 19. Monitor and hear all
 
-- `MONITOR`. FM: hold it, the squelch opens. DMR: press it, digital monitor (hear all: all TGs on this frequency and timeslot) goes on; press again for off (#19).
-- Latched from quick settings: `QUICK`, `5`. Home shows "DMon" (DMR) or "Mon" (FM) until turned off or the channel changes.
+- `MONITOR`. FM: hold it, the squelch opens. DMR: press it, digital monitor (hear all: all TGs on this frequency and
+  timeslot) goes on; press again for off.
+- Latched from quick settings: `QUICK`, `5`. Home shows "DMon" (DMR) or "Mon" (FM) until turned off or the channel
+  changes.
 - While hear all is on, every call shows its TG; the reply window lets you answer on it with `PTT`.
 
 | | K | M | V | F | Budget |
@@ -290,7 +349,6 @@ In the VFO: `QUICK`, `4` ("Mode") switches the VFO FM / DMR on its frequency, ke
 - Timeslot: `QUICK`, `2` (toggles 1/2), `BACK`.
 - Color code: `QUICK`, `3`, type the code (`7`) or `NAV_UP`/`NAV_DOWN`, `SELECT`.
 - Both temporary with a dot on Home; long `SELECT` in quick settings or `CONTEXT` > 9 on Home saves to the channel.
-- Hearing traffic on the other timeslot or CC with hear all on shows a hint "Heard on TS2 CC3. Press # to switch" (`CONTEXT` > "Use TS2 CC3").
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
@@ -308,14 +366,15 @@ In the VFO: `QUICK`, `4` ("Mode") switches the VFO FM / DMR on its frequency, ke
    PL / DCS tone, color code, time-out) open a spinner: turn the knob (or `NAV_UP`/`NAV_DOWN`) to the value, `SELECT`
    keeps it; frequencies and the ID take digits; the name opens text entry; the TX contact opens a
    picker.
-4. Long `SELECT` saves. Changed rows show a dot until then; `BACK` with changes asks "Discard the changes to this channel?".
+4. Long `SELECT` saves. Changed rows show a dot until then; `BACK` with changes asks "Discard the changes to this
+   channel?".
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
 | Timeslot of the channel in use, saved | 5+n | 5+n | 5+n | 5+n | 6+n |
 | TX contact by name ("WCRA": 9 2 7 2) | 9+n | 9+n | 9+n | 7+n+m | 10+n |
 
-Changing the channel in use for now is shorter from quick settings (flow 20). This flow is for saved changes, other
+Changing the channel in use temporarily is shorter from quick settings (flow 20). This flow is for saved changes, other
 channels and rows quick settings don't have.
 
 ---
@@ -325,7 +384,7 @@ channels and rows quick settings don't have.
 1. `SELECT`, `5`, `NAV_UP` to the first row, "New from current", `SELECT`: an unsaved copy of the channel in
    use (with its temporary changes) or of the VFO, at the lowest free number.
 2. Change what differs (flow 21, step 3), for example the name and the TX contact.
-3. Long `SELECT` saves it. It is in no zone yet: add it from a zone's list (flow 25), or make the copy with Copy here
+3. Long `SELECT` saves it. It is in no zone: add it from a zone's list (flow 25), or make the copy with Copy here
    instead (flow 24), which puts it in the zone right after its source.
 
 | | K | M | V | F | Budget |
@@ -364,7 +423,7 @@ channels and rows quick settings don't have.
 
 1. `SELECT`, `4`, `CONTEXT`: the zone's list (flow 23, step 1).
 2. The first row is "Add channel": `NAV_UP` to it, or type `2` (its first letter). `SELECT` opens the picker: every
-   stored channel the zone doesn't hold yet, by number and name, filtered by typing.
+   stored channel the zone doesn't hold, by number and name, filtered by typing.
 3. Type the number or the name, `SELECT`: the channel goes in after the channel in use (when this is the zone in use)
    or at the end. "Zone full" when it holds 80 (16 on a codeplug with the old layout).
 
@@ -443,4 +502,5 @@ on a talkgroup: the name (`SELECT`, text entry, `SELECT`), `NAV_DOWN`, the ID (`
 | TS / CC | 3 / 4 | yes |
 | Create a contact (typed ID / last caller / Contacts) | 11 / 3 / 5+n | yes |
 
-Every task except typed entries (IDs, frequencies, free text) and deleting a zone (its confirmation, P7) completes in six presses or fewer, inside the NHTSA six-input guideline.
+Every task except typed entries (IDs, frequencies, free text) and deleting a zone (its confirmation, P7) completes in
+six presses or fewer, inside the NHTSA six-input guideline.

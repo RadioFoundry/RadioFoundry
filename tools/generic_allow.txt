@@ -10,7 +10,6 @@ docs/spec/* a radio's own pages cite the radio a fact was compared with; to link
 
 # Docs with per-radio notes and examples: to move per-radio values into docs/user/23-radios.md and hardware pages.
 docs/ux/* the UX research and wireframes name the radio each screen size was drawn for
-docs/testing/* test plans and bring-up pages compare with the radio a case was first run on
 README.md the front page's text around the generated radio table names the radios
 boot/README.md the first-stage index describes the one board with a first stage (to generate from boot/<id>/)
 stub/README.md the stub guide's per-radio entry steps (to move into each radio's hardware page)
@@ -112,7 +111,6 @@ tests/host/subaudioDspTest.c uses one radio's recorded data
 tests/host/uiFlowTest.c uses one radio's recorded data
 
 # HIL tests: per-radio skips and bench notes. tests/hil is outside this change; to move per-radio skips into board.toml [features].
-tests/hil/README.md per-radio skip reasons and bench notes
 tests/hil/test_aprs.py per-radio skip reasons and bench notes
 tests/hil/test_audio_probe.py per-radio skip reasons and bench notes
 tests/hil/test_boot.py per-radio skip reasons and bench notes

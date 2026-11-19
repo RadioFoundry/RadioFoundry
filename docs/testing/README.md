@@ -1,186 +1,106 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
-# Testing
+# Testing overview
 
-How to run every test of RadioFoundry, from the host tests to the radio on the SDR bench. Each tier is
-repeatable and skips cleanly what it can't reach. What each level is for and where a new test goes:
-[docs/dev/testing.md](../dev/testing.md).
+This page tells you how to run each level of RadioFoundry testing, from the host tests to a radio on the SDR bench.
+Each level is repeatable, and each skips what it can't reach. For what each level is for and where a new test goes,
+see [Testing](../dev/testing.md).
 
-| Tier | Needs | Command | Where it is described |
+| Level | Needs | Command | Details |
 |---|---|---|---|
-| Release gate (host tests, build matrix, license checks) | a Mac or Linux host with the ARM toolchain | `tools/ci.sh` | this page, section 1 |
-| Coverage, sanitizers, fuzzing | the host (gcovr for coverage) | `tools/coverage.sh`, `make -C tests/host SANITIZE=1` | [docs/dev/ci.md](../dev/ci.md#coverage) |
-| Hardware in the loop, radio only | the radio on USB | `python3 -m pytest tests/hil -v -rs` | `tests/hil/README.md` |
-| Hardware in the loop, on air | the radio and the SDR bench | the same with opt-in flags | `tests/hil/README.md`, section 3 here |
-| Manual bench cases | the bench board, a person at the radio | `tools/bench/bench_line.py HOST run bench_tx ARGS` | `docs/testing/dmr-bench.md` |
-| DM-32UV first hardware test | a DM-32UV on its programming cable, a dummy load | step by step | `docs/testing/dm32-bringup.md` |
-| MD-380 first hardware test | an MD-380 / MD-390 / RT3 on USB, a dummy load, an SDR or signal generator | step by step | `docs/testing/md380-bringup.md` |
-| MD-9600 first hardware test | an MD-9600 / RT90 on USB, DC supply, a dummy load, a signal source | step by step | `docs/testing/md9600-bringup.md` |
+| Release gate | A Mac or Linux host with the Arm toolchain | `JOBS=8 tools/ci.sh` | [Run the release gate](#run-the-release-gate) |
+| Coverage, sanitizers, fuzzing | The host; gcovr for coverage | `tools/coverage.sh`, `make -C tests/host SANITIZE=1` | [Coverage](../dev/ci.md#coverage) |
+| User interface | The host | `make -C tests/host run-ui` | [Test the user interface without a radio](#test-the-user-interface-without-a-radio) |
+| Hardware in the loop, radio only | A radio on USB | `python3 -m pytest tests/hil -v -rs` | [Test on a radio](#test-on-a-radio) |
+| Hardware in the loop, on air | A radio and the SDR bench | The same command with opt-in flags | [Test on the air](#test-on-the-air) |
+| Manual bench cases | The bench board and a person at the radio | `tools/bench/bench_line.py HOST run bench_tx ARGS` | [DMR bench cases](dmr-bench.md) |
+| Transmit power | A radio, a wattmeter, and a dummy load | `tools/power_cal.py` | [Power calibration](power-calibration.md) |
+| Backlight | A radio built with `CONFIG_BACKLIGHT_TEST=y` | On the radio | [Backlight curve](backlight-curve.md) |
 
-## 1. The release gate: `tools/ci.sh`
+## Run the release gate
 
-```
-tools/ci.sh                    # everything below
-tools/ci.sh --quick            # each board's default and maximal builds (no feature matrix)
-tools/ci.sh --board <b>        # one board, for example dm1701
-tools/ci.sh --matrix           # only the feature matrix (no default builds)
-tools/ci.sh --steps host,python   # only some steps: host, python, firmware, licenses, similarity
-JOBS=8 tools/ci.sh             # parallel make jobs (default: the CPU count)
-RFOUNDRY_CI_PRUNE=0 tools/ci.sh     # keep every build tree (by default each is dropped once its size is recorded and it built clean)
-RFOUNDRY_CI_SANITIZE=1 tools/ci.sh  # the host step also runs the host tests under ASan and UBSan
-```
+`tools/ci.sh` runs everything a pull request must pass that needs no radio: the host tests, the Python checks, every
+board's feature matrix with zero warnings, and the license checks.
 
-The CI workflows run these pieces per push and nightly ([docs/dev/ci.md](../dev/ci.md)).
+1. Run the script from the top of the tree:
 
-It runs, and reports each as ok / FAIL / skip (exit status 0 only when nothing failed):
-
-1. **Host tests**: `make -C tests/host` (the same as `make test`), built with no warnings. They need only the host's
-   C compiler. Their binaries, `.dSYM` bundles and outputs stay in `tests/host/` and are ignored by git
-   (`tests/host/.gitignore` tracks only sources); `make -C tests/host clean` removes them.
-2. **Python**: every tool and HIL test parses, and pytest collects `tests/hil` (skipped without pytest:
-   `pip install pytest pyserial`). Every HIL skip names its kind (`tools/check_hil_skips.py`), and the feature
-   checklist is consistent (`tools/bringup.py check` and the bring-up mode tests, [ci.md](../dev/ci.md)). The flashing tools' tests run: `tools/rfoundry/tests` (sector planning, manifests,
-   the codec library and key derivation, the codec decision, whole flashes against a fake bootloader with a flash
-   model; [release.md](../dev/release.md)) and the `--self-test` of `tools/codec_extract.py`, `tools/stm32_dfu.py`,
-   `tools/md380_migrate.py`, `tools/serial_loader.py` (against a simulated Baofeng bootloader) and
-   `tools/dm32_migrate.py` (DfuSe files, the conversion report, CPS writes against a simulated DM-32 shim), and the
-   stack check's (`tools/stack_check.py`). `tools/check_doc_links.py` checks that every relative link, image and anchor in the Markdown resolves. `tools/check_keys.py` checks that the codeplug settings area's keys agree in the spec, the firmware and the Codeplug Editor.
-3. **Firmware, every board with the feature matrix**. For each `boards/<b>/board.mk` whose compiler is installed:
-   - `default`: the board's defaults;
-   - `no-<FEATURE>`: every switch that is on by default, turned off alone (its sub-features follow it,
-     `docs/build-config.md`);
-   - `fm-minimal`: FM only, without DMR, USB, VFO, diagnostics and sub-audio tones;
-   - `maximal`: every switch on, except the board's `BOARD_UNSUPPORTED`, `BOARD_NOT_WRITTEN` and `MAXIMAL_SKIP`,
-     with its `MAXIMAL_VARS` (for example `LTO=1` on the DM-1701);
-   - `vhf`: the MD-380's VHF image (MD-380 only).
-
-   Every configuration must build with zero compiler and linker warnings. The default and maximal ones must also pass
-   the stack check: every task's deepest call chain fits its stack ([docs/dev/stack-check.md](../dev/stack-check.md)).
-   A board without its compiler (the DM-32's
-   csky GCC comes from `tools/build-csky-toolchain.sh` or the Docker image, [docs/dev/ci-runners.md](../dev/ci-runners.md#the-csky-elf-image))
-   is skipped with a notice. Build trees are `build/ci/<board>-<config>/`, each
-   with its log next to it. The sizes go to `build/ci/size-report.md`: image bytes, the change against the board's
-   default, and the space left in the linker's application region (the codec windows lie outside it, so "free" is
-   what code can still grow into).
-4. **Licenses**: `tools/license_grep.sh` (markers of code that must not be here, `docs/CLEANROOM.md`) and
-   `reuse lint`. Without `reuse` installed the lint is skipped with a notice; install it with `pipx install reuse`
-   (or `pip install --user reuse`).
-5. **Similarity scan**, only when `RFOUNDRY_SIMILARITY_REFS` names the reference trees (space separated). The reference
-   trees are never part of this repository or of public CI; the project lead runs it against the aftermarket firmware trees
-   before a release:
-
-   ```
-   RFOUNDRY_SIMILARITY_REFS="/path/to/aftermarket-tree /path/to/other-tree" tools/ci.sh
-   tools/similarity_scan.py /path/to/aftermarket-tree                    # the scan alone, every region with lines
-   tools/similarity_scan.py --ids --report scan.txt /path/to/tree   # also finds copies with renamed identifiers
+   ```sh
+   JOBS=8 tools/ci.sh
    ```
 
-   Each reported region gives our file and lines and the reference file and line it shares a run of 25 tokens with.
-   Every region is reviewed by hand; `#include` blocks and generic idioms are expected noise. Options:
-   `tools/similarity_scan.py --help`.
+2. Read the last line. A clean run ends with `all checks passed`.
+3. Remove `build/ci` when you move on to other work.
 
-### The firmware version
+For the steps, the options, and the build configurations, see
+[Running the pieces locally](../dev/ci.md#running-the-pieces-locally). For the version string that each image
+carries, see [The firmware version](../dev/building.md#the-firmware-version).
 
-The image carries the commit it was built from (`RFOUNDRY_GIT`, shown on the splash screen, in the debug link's VERSION
-and in the MMDVM GET_VERSION description) with `-dirty` appended when tracked files differ from that commit or untracked
-sources sit in the built directories. The build prints it on the image line (`image ...: N bytes, version
-c1544f29-dirty`). An image for anyone else is built from a clean, committed tree. A clean build of a release tag also
-carries the release name (`RFOUNDRY_RELEASE`, [release.md](../dev/release.md#release-names)): the splash screen shows it
-in place of the commit, About and the debug link's VERSION (`release=`) show both.
+## Test the user interface without a radio
 
-### The UI without a radio
+The UI runs unchanged on the host. `make -C tests/host run-ui` replays every task flow against its press budget and
+crawls every screen. After a UI change, run `make -C tests/host ui-gallery` and commit the PNGs you meant to change.
+For the simulator, the gallery, and the display classes, see
+[The UI simulator and the gallery](../dev/testing.md#the-ui-simulator-and-the-gallery).
 
-The UI's host tests (`make -C tests/host run-ui`, part of the host tests above) replay every task flow of
-`docs/ux/task-flows.md` against the press budgets of `docs/ux/usability-tests.md` on four display and key map pairs,
-and crawl every screen for the rules that hold everywhere (`docs/spec/ui.md` 7). `make -C tests/host ui-gallery`
-renders every screen at every display class into `docs/ux/screens/`; run it after a UI change and commit the PNGs
-with it, so the review shows what changed. `tests/host/uiSim` renders one screen after a key script, to PNG.
+## Test on a radio
 
-## 2. Hardware in the loop, radio only
+The hardware-in-the-loop (HIL) tests drive a radio over its debug link. Without flags, nothing transmits.
 
-```
-python3 -m pytest tests/hil -v -rs
-```
+1. Flash firmware built with `CONFIG_DEBUGLINK`, which is on by default.
+2. Connect the radio to the host over USB.
+3. Run the radio-only tests:
 
-The radio on USB with firmware built with `CONFIG_DEBUGLINK` (the default). Nothing transmits: version and features,
-screenshots, injected keys, FM receive on NOAA weather, MMDVM requests. Without a radio every test is skipped with
-the reason, which starts with the skip's kind (`[bench]`). Every test file, rig assumptions and pass criteria:
-`tests/hil/README.md`. A radio's feature checklist run is `tools/bringup.py run --radio <id>` (its "Bring-up mode").
+   ```sh
+   python3 -m pytest tests/hil -v -rs
+   ```
 
-The USB network tests (`test_usb_network*.py`, `test_tcp_services.py`, `test_net_services.py`, `test_snmp.py`) switch
-the radio to the network personality and back, so they need `--allow-usb-switch`. On macOS a missed NCM carrier can
-leave the radio a network adapter until it is power cycled ([docs/dev/ci-runners.md](../dev/ci-runners.md#hil-runner), "Gotchas").
+4. Read the skip reasons. Each starts with its kind, such as `[opt_in]` or `[bench]`. A skip isn't a pass.
 
-CPS and settings (`test_cps.py`): the radio-only tests read the codeplug twice over the open-firmware CPS protocol and
-compare, and check a channel change is saved. Two opt-in flags change the radio but don't transmit:
+For the flags that let a test change the radio (`--allow-codeplug-write`, `--allow-reboot`, `--allow-usb-switch`),
+the options, and every test file, see [Hardware-in-the-loop tests](../../tests/hil/README.md).
 
-```
-python3 -m pytest tests/hil -v -rs -s -k cps --allow-codeplug-write   # backs up, renames a channel, restores
-python3 -m pytest tests/hil -v -rs -s -k cps --allow-reboot           # channel position survives a restart
-```
+## Test on the air
 
-The write test saves the backup in its tmp directory and prints the path. If the restore fails, the path and the
-`tools/cps_client.py write` command are in the failure message.
+On-air tests need the SDR bench and `--allow-rf`. A test runs only when the run allows everything it needs.
 
-The UI controls (`test_ui.py`): the Quick tiles drive the radio core with injected keys and read it back (timeslot,
-color code and mode for now, hear all, monitor latch, VOX), the picker hands its focus row to the radio core, Settings
-reach the input layer (long press time) and the UI (auto lock, about 35 s). The DMR tests need a DMR channel, the
-monitor and VOX tests an FM channel; the others skip. Three change the radio and are opt-in:
+1. Give the rig's values (test frequencies, color code, talkgroup, callsign, the transmit frequency list) on the
+   command line or in the rig's `hil.toml` file. For the keys, see
+   [The rig's configuration](../../tests/hil/README.md#the-rigs-configuration).
+2. Give the bench board with `--bench-api HOST[:PORT]` or `RFOUNDRY_BENCH_API`.
+3. Run the default bench pass:
 
-```
-python3 -m pytest tests/hil/test_ui.py -v -rs -k save --allow-codeplug-write          # timeslot saved to the channel and back
-RFOUNDRY_HIL_DELETE_MESSAGE=1 python3 -m pytest tests/hil/test_ui.py -v -rs -k delete      # deletes the newest inbox message
-RFOUNDRY_HIL_FACTORY_RESET=1 python3 -m pytest tests/hil/test_ui.py -v -rs -k factory --allow-reboot   # erases all settings
-```
+   ```sh
+   python3 -m pytest tests/hil -v -rs -s --allow-rf --ambe SPEECH.ambe --dmr-freq MHZ
+   ```
 
-Factory reset puts every setting back to its default (brightness, privacy keys, radio settings, the channel position)
-and erases the native area; the codeplug and calibration stay. Note the settings before running it.
+4. Check that the output has no `DMR AUDIO NOT CHECKED` skip.
 
-## 3. Hardware in the loop, on air (opt-in)
+For when to run the default bench pass, the opt-in flags, and the pass criteria, see
+[Default bench pass](../../tests/hil/README.md#default-bench-pass).
 
-Each flag allows one more kind of action, and a test runs only when all it needs is allowed:
+## Find what was checked on each radio
 
-| Flag | Allows |
+These sources say which features have HIL tests and what the last run found:
+
+| Source | Holds |
 |---|---|
-| `--allow-rf` | anything that transmits: the SDR bench's modem, the radio itself |
-| `--allow-service-stop` | accepted and ignored: a bench board stops nothing |
-| `--allow-usb-switch`, `--allow-codeplug-write`, `--allow-reboot` | as in section 2 (no RF) |
+| [Feature matrix, Checked on each radio](../feature-matrix.md#checked-on-each-radio) | Each feature's status on each radio, generated from the bring-up records |
+| [`tests/hil/features.toml`](../../tests/hil/features.toml) | The feature checklist: each feature's switch, spec, and manual steps. Each test names its feature with a marker |
+| [Bring-up records](results/README.md) | The run records, the seed records, and how a status is derived |
+| `tools/bringup.py status` | Every radio and feature, with the status of each |
 
-```
-python3 -m pytest tests/hil -v -rs -s --allow-rf --ambe SPEECH.ambe --dmr-freq MHZ   # the default bench pass, DMR audio smoke included
-python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop                  # DMR RX / voice, DMR TX, FM TX
-python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k "dmr_tx or fm_tx"
-python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k dmr_data   # DMR data services
-python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k aprs   # APRS on --aprs-test-mhz, as --callsign
-RFOUNDRY_SPLIT_VARIANT=0 python3 -m pytest tests/hil/test_split_duplex.py -v -rs -s --allow-rf --allow-service-stop
-```
+To record a run on a radio, use `tools/bringup.py run --radio <id>`. For details, see
+[Bring-up mode](../../tests/hil/README.md#bring-up-mode).
 
-| Test | What is checked |
+## Split duplex without hardware
+
+`make -C tests/host` runs the split duplex repeater's host tests:
+
+| Test | Checks |
 |---|---|
-| `test_dmr_rx`, `test_dmr_voice` | the bench modem sends calls; the radio's counters show every burst, every voice frame reaches the speaker path |
-| `test_dmr_audio_smoke` | DMR audio both ways, which no counter shows: the bench's speech decodes to audio on the radio, frames not repeated; the radio's test signal reaches the air as distinct, non-silent frames that decode to audio when played back. Part of every bench pass on every radio with DMR (`tests/hil/README.md`, Default bench pass); a run without it prints `DMR AUDIO NOT CHECKED` |
-| `test_dmr_tx` | the radio keys 3 s; the receive board's burst records and envelope and the bench modem's listener check source ID, talkgroup, color code, headers / voice / terminator, slot timing, ramps, carrier offset |
-| `test_fm_tx` | the radio's FM VFO keys with CTCSS 100.0 Hz, DCS D023N, at 12.5 and 25 kHz, the 1750 Hz burst, the roger beep, three power levels; the bench board demodulates, and the test checks its tones, sub-audio and deviations |
-| `test_aprs` | APRS at the lowest power on the rig's amateur simplex test frequency (`--aprs-test-mhz`, never an APRS frequency, no path): position, status and message decoded off air by the bench board, with the deviation, twist and TX delay; positions over DMR (LRRP, UDT) decoded from the bench modem |
-| `test_dmr_data` | the bench sends data, a text message, a call alert and radio checks to the radio, which answers (its `dmr_data` counters, the answers heard by the bench modem); the radio sends a call alert, a radio check and a text message the bench modem hears (`docs/spec/dmr-data.md`) |
-| `test_split_duplex` | a `CONFIG_HOTSPOT_SPLIT=y` build: the 0xD6 protocol (no RF); the TX half's continuous BS outbound at the lowest power checked off air with the CACH decode of the BS framing experiment (variant from `RFOUNDRY_SPLIT_VARIANT`); the RX half labeling bench calls, the label flipping with the epoch (`docs/spec/split-duplex.md` 10) |
-| `test_radio_features` (rf) | the zone scan, VFO scan and dual watch holding on a bench call; battery save waking for it |
+| `splitDuplexTest` | The CACH and short LC against the standard's tables, the outbound buffer, the epoch, and both roles through the MMDVM core |
+| `hrc6000BsTest` | The HR_C6000 BS outbound engine on a simulated chip |
+| `sim/splitPairTest.py` | Two radios' cores in lockstep virtual time with drift, a clock wrap, and USB jitter, and a repeated call end to end |
 
-Which feature is covered on air, and what the last run found: [on-air-coverage.md](on-air-coverage.md). On this
-bench the radio overloads both receivers even at 50 mW; `tests/hil/README.md` ("On this bench") says what the tests
-do about it.
-
-The bench board comes from `--bench-api HOST[:PORT]` or `RFOUNDRY_BENCH_API` (`docs/testing/dmr-bench.md` section 1).
-
-## 4. Manual bench cases
-
-`docs/testing/dmr-bench.md`: the DMR test cases that need a person at the radio (reading the display), sent as bench
-board jobs with `tools/bench/bench_line.py`. `docs/testing/mmdvm-audit.md`: the MMDVM protocol audit of the hotspot. `docs/testing/dm32-bringup.md`: the
-DM-32UV port's first test on a radio, in order, with what to change when a step fails; `docs/testing/md380-bringup.md`
-is the same for the MD-380.
-
-The split duplex repeater has no hardware-free gap: `make -C tests/host` runs `splitDuplexTest` (the CACH and short
-LC against the standard's tables, the outbound buffer, the epoch, both roles through the MMDVM core),
-`hrc6000BsTest` (the HR_C6000 BS outbound engine on a fake chip) and `sim/splitPairTest.py` (two radios' cores in
-lockstep virtual time with drift, a clock wrap and USB jitter, a repeated call end to end); the bench steps are
-`docs/spec/split-duplex.md` 10.
+For the bench steps, see [Split duplex, Tests](../spec/split-duplex.md#10-tests).
