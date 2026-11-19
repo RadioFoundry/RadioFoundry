@@ -208,6 +208,8 @@ static const flow_t flows[] = {
 #if CONFIG_LANG_ES
 	{ "6 preset sends in selected language", "ok 7 2 up ok down ok long:back", "5 6 3 ctx 3 down ok",
 	  "sent=1 text=En_camino", 7, false },
+	{ "21 text entry in the selected language", "ok 7 2 up ok down ok long:back", "ok 5 ok ok",
+	  "screen=text shows=Nombre", 4, false },
 #endif
 	{ "7 read message, banner up", "msg:9991234,Meet_at_the_north_lot", "ctx", "screen=message", 1, false },
 	{ "7 read message later", "msg:9991234,Meet_at_the_north_lot wait:9000", "ok 2 ok", "screen=message", 3, false },
