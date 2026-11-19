@@ -198,6 +198,11 @@ spec = "docs/spec/radio-features.md"
 switch = "BEEP"
 spec = "docs/spec/radio-features.md"
 
+[feature.signaling_tones]
+switch = "SIG_TONES"
+spec = "docs/spec/radio-features.md"
+source = ["core/radio/sigtone.c", "core/radio/sigtone.h", "core/radio/beep.c", "core/radio/radio_sm.c"]
+
 [feature.vibrate]
 switch = "VIBRATE"
 hardware = "a vibration motor"

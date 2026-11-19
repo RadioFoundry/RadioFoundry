@@ -210,6 +210,11 @@ void hrc7000_audio_bits(hrc7000_t *d, uint32_t set, uint32_t clear)
 	}
 }
 
+void hrc7000_tx_tone_side(hrc7000_t *d, bool on)
+{
+	hrc7000_audio_bits(d, on ? C7_AUDIO_SIDETONE : 0, on ? 0 : C7_AUDIO_SIDETONE);
+}
+
 void hrc7000_fm_rx_audio_irq(hrc7000_t *d, bool on)
 {
 	uint32_t m = hrc7000_rd(d, C7_SYS_INTERP_MASK);

@@ -43,7 +43,8 @@ frame counter can check. Without `--allow-rf`, a radio or the SDR bench, these t
 `DMR AUDIO NOT CHECKED`: such a run hasn't checked DMR audio. With the radio and the bench there, nothing else skips
 them: no recording, no vocoder, no DMR channel on `MHZ` or firmware without the view keys fails. The exceptions are
 `test_dmr_audio_rx_deviation` and `test_dmr_audio_rx_offset_wide`, which skip on a bench board that can't scale its
-deviation (info feature `dev_scale`) or bring the radio near -100 dBm (`power_dbm`). Run only the smoke with
+deviation (info feature `dev_scale`) or bring the radio near -100 dBm (`power_dbm`), and `test_dmr_audio_rx_strong`,
+which skips when the bench can't bring the radio near -75 or -55 dBm (coupled too loosely). Run only the smoke with
 `-m audio_smoke`.
 
 ### Opt-in flags
@@ -442,7 +443,9 @@ the frames sent; `voice.rx_peak` at least 1000; `voice.rx_repeats` at most the r
 + 2 + 2 % of the frames; FEC corrections at most 2 bits a frame on average. The same near -100 dBm at the radio: with
 the carrier 2.5 kHz below and above the channel (`test_dmr_audio_rx_offset_wide`), and from a transmitter at 0.85 and
 1.15 of the standard's deviation with at least 95 % of the frames and at most 0.8 bits a frame
-(`test_dmr_audio_rx_deviation`). TX: the radio made one call of at least 30
+(`test_dmr_audio_rx_deviation`). Simplex speech near -75 and -55 dBm with at least 95 % of the frames and at most 0.2
+bits a frame at each (`test_dmr_audio_rx_strong`: a receiver AGC that overloads the start of every burst corrects a bit
+or more). TX: the radio made one call of at least 30
 frames a second of PTT with at most 10 % `voice.tx_repeats`; the bench heard a call from the radio's ID with at least
 as many frames, at most 15 % of them the AMBE silence frame, at most 10 % equal to the frame before and at least a
 tenth distinct (the test signal repeats its cycle); played back to the radio, the RX criteria without the FEC limit (the recording carries what the bench heard).

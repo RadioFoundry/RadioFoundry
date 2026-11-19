@@ -174,8 +174,8 @@ typedef struct {
 	uint8_t slc_seen;
 	uint8_t slc_last[5];
 	uint8_t cc_cur;		// receive code; LOCAL_CC uses cfg.cc during TX
-	bool emb_pending;	// late entry: an embedded LC waits for the next voice burst
-	uint8_t emb_rx[9];
+	uint8_t emb_pending;	// bit n: embedded LC waiting for chip slot n
+	uint8_t emb_rx[2][9];
 	// Transmit
 	uint8_t tx_state;
 	uint8_t tx_timing;

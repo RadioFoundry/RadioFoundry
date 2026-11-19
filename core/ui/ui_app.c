@@ -890,6 +890,8 @@ static void entry_commit(void)
 // --- input helpers ---
 
 #if CONFIG_DMR
+static bool dmon_at_press;	// the hear all latch when the monitor key went down (ui_app_key)
+
 // Digital monitor (the DMR hear all latch: every talkgroup on the slot and color code)
 static inline const char *dmon_text(bool on)
 {
@@ -2091,11 +2093,14 @@ void ui_app_key(const input_event_t *ev)
 	}
 	// The monitor key on DMR: a short press toggles digital monitor (the radio core does it on the release; the
 	// view follows). Its hold function (value 1 on the long press) runs on DMR only: on FM holding the key is the
-	// squelch break (#19)
+	// squelch break (#19). The radio task outranks this one and gets the edge first, so the view at the release
+	// may already be toggled: the toast inverts the latch as it was at the press, when the core leaves it alone
 #if CONFIG_DMR
+	if (ev->action == ACT_MONITOR && ev->gesture == GESTURE_DOWN)
+		dmon_at_press = view->dmr.hear_all_latch;
 	if (ev->action == ACT_MONITOR && ev->gesture == GESTURE_UP && ev->value == 0 &&
 	    view->ch.mode == RADIO_MODE_DMR && !view->monitor)
-		ui_toast(dmon_text(!view->dmr.hear_all_latch));
+		ui_toast(dmon_text(!dmon_at_press));
 #endif
 	if (ev->gesture == GESTURE_LONG && ev->value != 0 && view->ch.mode != RADIO_MODE_DMR)
 		return;

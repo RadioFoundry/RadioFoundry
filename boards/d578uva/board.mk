@@ -14,11 +14,11 @@ BOARD_T_NAME := AT-D578UV-AT32
 D578UV_DEFS ?=
 MCU_DEFS   += $(D578UV_DEFS)
 # The deepest chains here end in a NAND read's lock, under which a kernel assert would capture the crash
-# (crash_assert: its 88 bytes and the kernel's 136): the radio task's (a TFTP ID database write through the NAND
-# sectors) is 2960 bytes, the host task's (a debug link key store) 2712, the UI's (a message row's contact name) 1824
-# and the start task's (a Tier III system's codeplug records read at boot) 2320.
-# With make stack-check's overhead and margin that's 824, 762, 540 and 664 words, 0 to 8 bytes to spare
-MCU_DEFS   += -DRADIO_TASK_STACK=824 -DHOSTLINK_TASK_STACK=762 -DUI_TASK_STACK_WORDS=540 -DSTART_TASK_STACK=664
+# (crash_assert: its 88 bytes and the kernel's 136). In the maximal build the radio task's (a settings reload that
+# releases PTT and polls the DMR call into its data receive) is 3112 bytes, the host task's (a debug link command)
+# 2784, the UI's (a message row's contact name) 1824 and the start task's (the first zone's channel at boot) 2328.
+# With make stack-check's overhead and margin that's 864, 782, 540 and 668 words, 0 to 8 bytes to spare
+MCU_DEFS   += -DRADIO_TASK_STACK=864 -DHOSTLINK_TASK_STACK=782 -DUI_TASK_STACK_WORDS=540 -DSTART_TASK_STACK=668
 BOARD_DIRS := boards/d578uva boards/d578uv drivers/display/st7735 drivers/flash/spi_nand drivers/input/quadrature \
               drivers/modem/sct drivers/rf/rfbus drivers/rf/subaudio drivers/rf/qa4818 drivers/gps/nmea_line \
               drivers/gps/gps_rx platform/at32f43x/gps_uart drivers/bcast/ktamfm drivers/bcast/rda5807m drivers/bus/i2c_gpio

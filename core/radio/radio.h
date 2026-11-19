@@ -66,6 +66,16 @@ typedef struct {
 	bool talk_permit;	// DMR: the talk permit tone when the voice goes on air (channels without no_beep)
 	uint8_t tones_off;	// Settings > Sound tones off, bit n for radio_tone_rows[n] (radio_keys.h); a key of the
 				// codeplug's settings area holds over it (docs/spec/codeplug-settings.md 5.2)
+	// Signaling tones (sigtone.h), by sig_event_t: where each sounds in DMR and FM (sig_out_t), 0 = the radio's own
+	// tone for the event (talk permit, call end, roger beep); and each event's chain of up to 10 steps, a frequency in
+	// Hz (a multiple of 10) and a length in 10 ms (a step of length 0 ends it; no step = the event's standard sound).
+// Only in a build with CONFIG_SIG_TONES: radio_settings_t has four static copies and copies on task stacks
+#if CONFIG_SIG_TONES
+	uint8_t sig_dmr[3];
+	uint8_t sig_fm[3];
+	uint16_t sig_hz[3][10];
+	uint8_t sig_ms[3][10];
+#endif
 	// VOX (CONFIG_VOX)
 	uint8_t vox;		// radio_vox_t
 	uint8_t vox_level;	// sensitivity 1 (needs a loud voice) .. 10
@@ -709,6 +719,8 @@ uint8_t radio_beep_level(uint8_t cap, int16_t volume_percent);
 void radio_settings_default(radio_settings_t *s);
 void radio_set_settings(const radio_settings_t *s);
 void radio_get_settings(radio_settings_t *s);
+// Two of its fields, without a copy of all of it on the caller's stack: the SFR rx mode and the CW ID interval
+void radio_get_sfr_settings(uint8_t *rx, uint8_t *cwid);
 // view.power_off without copying the view (the housekeeping task polls it)
 bool radio_power_off_wanted(void);
 // Switching off: the radio core sends what has to go out first (the ARS deregistration). radio_power_off_busy() is

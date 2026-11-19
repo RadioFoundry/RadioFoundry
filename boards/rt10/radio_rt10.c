@@ -9,7 +9,7 @@
 // only arms the transmitter; each burst then runs the FM key-up and key-down from the RF task (rt10_burst_on /
 // rt10_burst_off)
 //
-// APRS (CONFIG_APRS, hardware-rt10.md 7.2): the tones take DMR's path onto the reference, the modem's FM transmitter
+// APRS (CONFIG_APRS_AFSK, hardware-rt10.md 7.2): the tones take DMR's path onto the reference, the modem's FM transmitter
 // playing them on MOD1 with the FD6818's microphone off; receive takes the FD6818's FM audio through the modem
 #include "rt10.h"
 #include "dmr_rt10.h"
@@ -27,7 +27,7 @@
 #if CONFIG_DMR
 #include "dmr_glue.h"
 #endif
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 #include "hrc_afsk.h"
 #include "audio_pcm.h"
 #include "fm_rx_audio.h"
@@ -149,7 +149,7 @@ static bool tx_wide;		// the FM transmission is at 25 kHz (the modem's deviation
 static uint32_t tx_hz;		// the armed transmission's frequency
 static void dmr_disarm(void);
 #endif
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 static bool afsk_tx;		// APRS tones on the reference (afsk_tx_route)
 static bool aprs_listen;	// APRS takes the FD6818's FM audio through the modem (aprs_listen_route)
 static bool afsk_tx_route(bool on);
@@ -208,7 +208,7 @@ static void init(void)
 #endif
 	hrc_pin_in(PIN_RF_CSS);
 	hrc_pin_in(PIN_RF_SQ);
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	// Before the FD6818 check: board.afsk is hrc_afsk either way, and its receive start calls these hooks
 	hrc_fm_rx_attach(&modem);
 	modem.fm_tx_limit[0] = modem.fm_tx_limit[1] = 0x0Fu;	// the default 4 caps the tones near 1.65 kHz (modem-hrc7000.md 8.4)
@@ -234,7 +234,7 @@ static void init(void)
 // the modem's copy for the demodulator, both whatever the squelch does
 static bool af_on(void)
 {
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	if (aprs_listen) {
 		return true;
 	}
@@ -300,7 +300,7 @@ static void set_mode(radio_mode_t m)
 		DAC_DATA_C = DAC_C_INIT;
 		fd6818sh_analog_mode(&fd);
 		mode = RADIO_MODE_FM;
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 		modem_fm();	// leaving DMR left the modem idle
 #endif
 	}
@@ -511,7 +511,7 @@ static bool tx_stop(void)
 	if (!transmitting) {
 		return false;
 	}
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	if (afsk_tx) {
 		hrc_afsk.tx_stop();	// the core stops the tones first; this is the safety net
 	}
@@ -667,7 +667,7 @@ static void audio(bool on)
 	audio_set(on, true);
 }
 
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 // The modem in FM: receiving while APRS listens (its FM playback off), else idle. DMR keeps the modem's own state
 static void modem_fm(void)
 {

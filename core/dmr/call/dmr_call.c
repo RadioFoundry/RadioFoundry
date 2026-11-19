@@ -141,6 +141,8 @@ static struct {
 	uint8_t queue_cap;	// the modem's free queue space right after tx_begin
 	bool stop_req;
 	bool tot_hit;
+	uint8_t tail_holds;		// superframe boundaries passed with the source's tail still to send (voice_source_t.busy)
+	bool tail_read;		// the source had a tail after the release: read to the over's end (silence after a final tone)
 	bool ceased;		// the reverse channel stopped this over (rc_heard)
 	uint32_t rc_cease_ms;	// the last cease heard, | 1 (0: none)
 	uint8_t stage[DMR_AMBE_FRAMES_PER_BURST][DMR_AMBE_FRAME_BYTES];
@@ -1292,6 +1294,19 @@ static void tx_superframe_lc(void)
 		stats.tx_alias_lcs++;
 }
 
+// After PTT was let go: the source still has a tail (an end tone) to send. A time-out ends the over at once
+static bool tx_source_tail(void)
+{
+	return !s.tot_hit && s.source && s.source->busy && s.source->busy(s.source->ctx);
+}
+
+// At a superframe boundary after PTT was let go: whether the tail goes on first. A tail that doesn't end is cut after
+// DMR_CALL_TX_TAIL_HOLDS boundaries
+static bool tx_tail_hold(void)
+{
+	return s.tail_holds < DMR_CALL_TX_TAIL_HOLDS && tx_source_tail();
+}
+
 // PTT release or the time-out: the call ends at the next superframe boundary and carries silence until then
 static void tx_stop(void)
 {
@@ -1327,17 +1342,21 @@ static void tx_fill(uint32_t now)
 			s.headers_left--;
 			continue;
 		}
-		if (s.stop_req && s.voice_index == 0) {
+		if (s.stop_req && s.voice_index == 0 && !tx_tail_hold()) {
 			tx_terminate(now, inflight);	// superframe boundary
 			return;
 		}
-		// Once the call is ending, what the encoder held at the release, then silence: nothing said after it goes out
-		while (!s.stop_req && s.stage_n < DMR_AMBE_FRAMES_PER_BURST && s.source && s.source->next &&
-		       s.source->next(s.stage[s.stage_n], s.source->ctx))
-			s.stage_n++;
+		// Once the call is ending, what the encoder held at the release, then silence: nothing said after it goes out.
+		// A source with a tail to send (an end tone, tx_tail_hold) is read on to the end: it mutes the mic after it
 		while (s.stop_req && s.stage_n < DMR_AMBE_FRAMES_PER_BURST && s.tail_at < s.tail_n)
 			memcpy(s.stage[s.stage_n++], s.tail[s.tail_at++], DMR_AMBE_FRAME_BYTES);
-		if (!s.stop_req && s.stage_n < DMR_AMBE_FRAMES_PER_BURST && inflight > 1)
+		if (s.stop_req && !s.tail_read && tx_source_tail())
+			s.tail_read = true;
+		bool from_source = !s.stop_req || s.tail_read;
+		while (from_source && s.stage_n < DMR_AMBE_FRAMES_PER_BURST && s.source && s.source->next &&
+		       s.source->next(s.stage[s.stage_n], s.source->ctx))
+			s.stage_n++;
+		if (from_source && s.stage_n < DMR_AMBE_FRAMES_PER_BURST && inflight > 1)
 			return;	// not due yet: wait for the encoder
 		while (s.stage_n < DMR_AMBE_FRAMES_PER_BURST) {
 			memcpy(s.stage[s.stage_n++], dmr_ambe_silence, DMR_AMBE_FRAME_BYTES);
@@ -1358,6 +1377,8 @@ static void tx_fill(uint32_t now)
 		s.stage_n = 0;
 		if (s.voice_index == 0 && s.tx_sf < 255)
 			s.tx_sf++;
+		if (s.voice_index == 0 && s.stop_req)
+			s.tail_holds++;		// a superframe sent for the source's tail (tx_tail_hold)
 		s.voice_index = (uint8_t)((s.voice_index + 1) % 6);
 	}
 }
@@ -1416,6 +1437,9 @@ static void tx_start_voice(uint32_t now)
 	s.stop_req = false;
 	s.view.tx_released = false;
 	s.tot_hit = false;
+	s.tail_holds = 0;
+	s.tail_n = s.tail_at = 0;	// a cease (rc_cease) ends the over without tx_stop
+	s.tail_read = false;
 	s.ceased = false;
 	s.rc_cease_ms = 0;
 	s.stage_n = 0;
