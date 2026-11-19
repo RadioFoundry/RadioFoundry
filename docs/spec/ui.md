@@ -1,17 +1,19 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # The user interface
 
-How `core/ui` implements the first-principles UX in `docs/ux` (`principles.md`, `information-architecture.md`,
-`task-flows.md`, `wireframes/`, `usability-tests.md`). The UX documents say what the radio does; this page says how
-the code is laid out, who owns the data behind each screen, and how the UI is tested without a radio.
+This page covers how `core/ui` implements the UX design in `docs/ux` (`principles.md`,
+`information-architecture.md`, `task-flows.md`, `wireframes/`, `usability-tests.md`). The UX documents say what the
+radio does. This page says how the code is laid out, who owns the data behind each screen, and how the UI is tested
+without a radio.
 
 | Contents | |
 |---|---|
 | 1, 2 | File layout, screens and the stack |
 | 3 | Key meanings and key assignment |
 | 4, 5, 6 | Data other packages own, build switches, debug link |
-| 7, 8 | Host simulator and tests, decisions and open points |
+| 7, 8 | Host simulator and tests, design decisions |
 
 ## 1. Layout
 
@@ -114,8 +116,8 @@ A record a row costs a flash read a row, about 0.2-0.3 ms each on a radio with p
 (every contact, every channel) give two more callbacks. `raw_each` gives every row's label in one pass, a block of
 records a read (`codeplug_contacts_each`, `codeplug_channel_names_each`); with no key typed only which rows exist
 counts, and a list of channels then reads nothing (the in-use map is in RAM). `raw_used` says whether a row exists
-without its label, for the cursor's steps. With 1024 channels a key took 0.34 s before, 0.11 s after; opening the list
-0.29 s before, under 10 ms after. A list without them reads its rows one by one.
+without its label, for the cursor's steps. With 1024 channels a key takes 0.11 s, and opening the list takes under
+10 ms. A list without them reads its rows one by one.
 
 | Screen | Name | Reached by |
 |---|---|---|
@@ -357,8 +359,7 @@ The name starts as the target's name, else "TG 3100" for a talkgroup or the ID f
 - After a save the editor closes. From actions they show again, "In contacts" and under the new name; from Contacts
   the list shows again and lists the contact once the job has written it; from Find the radio goes Home, since Find's
   rows are the number's.
-- Editing or deleting a stored contact is not built yet (#74). A CPS write afterwards replaces contacts made on the
-  radio.
+- A CPS write afterwards replaces contacts made on the radio.
 
 ### 2.5 Languages
 
@@ -392,14 +393,14 @@ The same on every screen (information-architecture.md, key maps 7.1 to 7.5):
 | QUICK | Quick settings (closes them again) | lock / unlock the keys |
 | CONTEXT | the focused item's actions; a banner's target while one is up | Recent |
 | TALK_TARGET | the talk target picker | |
-| digits | Find on Home, numbered rows in lists, T9 letters in filters; nothing while PTT keys the radio; on FM the input task gives them, \* and # to the radio core as DTMF and the UI never sees them (`radio-features.md` 3.7) | speed dial (a toast for now); nothing while PTT keys the radio |
+| digits | Find on Home, numbered rows in lists, T9 letters in filters; nothing while PTT keys the radio; on FM the input task gives them, \* and # to the radio core as DTMF and the UI never sees them (`radio-features.md` 3.7) | speed dial (a toast); nothing while PTT keys the radio |
 | PTT | talk to the focused person or talkgroup once (one-shot), else the channel's target | |
 
 Radios without some keys fall back as the key maps say (few-key map F in the tests). Up / Down on Home change the
 channel (Settings > Keys > Up/Down on Home: or the zone, or on a DMR channel the talk target, stepping through the
 channel's contact and its listen list; the arrow keys only: the channel knob, ENC_STEP, always steps the channel or the
-VFO frequency, #25), USER_1 / USER_4 the zone, USER_3 the power, long USER_3 speaks the status (a
-toast until voice prompts exist).
+VFO frequency), USER_1 / USER_4 the zone, USER_3 the power, long USER_3 gives the status (a toast: there are no
+voice prompts).
 
 A channel switch read as a position (`hal_input_t.position`, `drivers/input/chswitch`) isn't a step: the input task
 selects that position in the zone (`radio_req_zone_pos`), at power-on too, so the channel is always the one the knob
@@ -407,7 +408,7 @@ points at, and again after a zone change (a new zone starts on its first channel
 on it, so a turn during a transmission, in hotspot mode or before the codeplug is loaded takes effect afterward; a
 position past the end of the zone changes nothing. Once on it, the knob is left alone until it moves or the zone
 changes, so a scan stands. Its position is `input.switch_pos` in the debug link view
-(-1: no switch, or not settled). A radio's hardware page says which kind of knob it has.
+(-1: no switch, or not settled).
 
 VFO_TOGGLE goes between the channel and the VFO, "VFO" and "Back to channels" (in dual watch, on the selected side).
 It is the VFO / MR key's short press, and any side key can send it with the VFO/Channel function (3.1). The VFO / MR
@@ -419,7 +420,7 @@ EMERGENCY is hold-to-activate (principles P2): a key whose long action is EMERGE
 whatever the long press time (`input_long_threshold`, core/input). Which key carries it is the board's key map
 (`board.keymap`): for example a side key's long action in builds with `CONFIG_DMR_EMERGENCY` (else long USER_3 as above), or a dedicated SOS key; the short press stays USER_3. A hold toggles:
 "EMERGENCY sent: hold again to cancel", "Emergency canceled" (`ui_svc_emergency_active` reads the radio core's state,
-so a cancel from elsewhere counts). A board whose key map has no EMERGENCY entry has no emergency key (for example a board whose third side key isn't located yet).
+so a cancel from elsewhere counts). A board whose key map has no EMERGENCY entry has no emergency key.
 
 PTT while the keys are locked works unless Settings > Key lock > PTT when locked is off: the UI then tells the input
 layer (`ui_svc_ptt_block`, `input_set_ptt_block`), which keeps PTT DOWN from the radio core (UP always passes), and the
@@ -516,7 +517,7 @@ The UI asks through `ui_svc.h`. Each call has a weak definition in `ui_svc_stub.
 build" (screens dim what isn't there and say why on SELECT); the owning package's strong definition replaces it at
 link time. `ui_svc_features()` ORs the bits each package reports.
 
-| Calls | Owner | State in this branch |
+| Calls | Owner | Implementation |
 |---|---|---|
 | `ui_svc_talk_to` temporary / default | dmr-voice (radio core) | `ui_svc_radio.c`: `radio_req_dmr_target`, `radio_req_dmr_target_clear` |
 | `ui_svc_talk_to` permanent (`ui_svc_save_talk_target`), `ui_svc_save_channel`, `ui_svc_setting_get/set`, `ui_svc_feat_storage` | storage-cps | `ui_svc_storage.c`: the channel is rewritten with `codeplug_set_channel` (power, bandwidth, tones; a temporary squelch goes to the default squelch preference); settings are read from where they are kept: the radio core's settings (`radio_get_settings`, saved by the radio core), `settings_t` (brightness, default squelch, hotspot allowed), the data service's answers (`dmr_data_get_settings`); the reply window, mic gain, the reference trim (`ref_trim_ppb`), mic AGC and mic noise reduction (`accent` bits 6-7), auto lock, long press and repeat times, the GPS options, theme, Up/Down on Home, talkgroup name first (`updown_home` bit 7), low battery level, auto power off and the `ui_flags` bits (large text, hint row, message tone, talker alias, PTT when locked, hear all by default, vibrate as an off bit) have `settings_t` fields (appended, settings-store.md); the talk permit and scan stop tones are the radio core's (`radio_settings_t.talk_permit`, `scan_beep`), the emergency tone the emergency service's (`rx_tone`); the call end, TOT warning, battery and TX denied tones are the radio core's (`radio_settings_t.tones_off`), each with a key of the codeplug's settings area that holds over it (`radio_tone_rows`, [codeplug-settings.md](codeplug-settings.md) 3); a set follows the keyed-setting rule (5.2) as a storage job, like the data service's IDs; the privacy key type and key (Settings > Privacy) are key slot 1 of the key store (`privacy_type[0]`, `privacy_key[0]`, `privacy_active`), and a change while privacy is on goes to the radio core at once (`radio_req_dmr_privacy`); only the ones without a field stay in RAM (voice prompts). Both saves run as a storage job on the housekeeping task (`storage_job_post`), not on the UI task: the change takes effect for now at once, the temporary mark goes when the write lands, and a failed write raises `UI_EV_SAVE_FAILED` ("Couldn't save: still for now only"). Save to channel also writes the temporary mode, color code and timeslot |
@@ -538,7 +539,7 @@ link time. `ui_svc_features()` ORs the bits each package reports.
 | `ui_svc_msg_*`, `ui_svc_radio_check`, `ui_svc_call_alert`, `ui_svc_poll`, `ui_svc_feat_data` | dmr-data | `ui_svc_data.c` on `dmr_data_api.h`; `ui_svc_msg_delete` is `sms_inbox_delete` |
 | `ui_svc_position` | the position service (`ui_svc_position.c`, `position_gps`): the board GPS's last fix and satellite count, false while it is off or silent for a minute | stub (no `CONFIG_GPS`): "No GPS, or it is off"; the GPS settings are dimmed with "No GPS on this radio" on boards without `CAP_GPS` or whose module wasn't heard at start-up |
 | USB mode (Tools > USB network) | hostlink | `hostlink_network_mode`, `hostlink_request_usb_network` (with `CONFIG_USB_NETWORK` and `CONFIG_HOSTLINK`) |
-| talker alias, private call start | dmr-voice | read from `radio_view_t.dmr`; `UI_EV_PRIVATE_CALL` is not raised by anyone yet |
+| talker alias, private call start | dmr-voice | read from `radio_view_t.dmr`; no package raises `UI_EV_PRIVATE_CALL` |
 
 A request to save channel changes reports the reason when it cannot start: the VFO keeps its settings
 automatically, hotspot mode must end first, a stored channel must be selected, or another storage job must finish.
@@ -574,7 +575,7 @@ A zone share offer's banner has no timer (`ui_banner_t.hold`): it stays over eve
 | `CONFIG_UI_COLOR` | y (n on a board with a monochrome panel) | Settings > Display has no Theme, Highlight color or Filled status bar row and the screen keeps the dark theme's colors (about 600 B). For radios whose only screen is monochrome |
 
 Screens for features that are off (`CONFIG_DMR`, `CONFIG_HOTSPOT`, `CONFIG_VFO_FM`, `CONFIG_VFO_DMR`, `CONFIG_SCAN`, data features) are
-left out or dimmed with the feature. Some radios' default images have only a few KB free (`docs/feature-matrix.md`); the UI was about 50 KB when last measured (`gfx` + fonts about 11 KB, screens and behavior the rest). The frame buffer (40 KB by default) bounds the display: 240x320 at
+left out or dimmed with the feature. Some radios' default images have only a few KB free (`docs/feature-matrix.md`); the UI is about 50 KB (`gfx` + fonts about 11 KB, screens and behavior the rest). The frame buffer (40 KB by default) bounds the display: 240x320 at
 16 bpp renders only in the simulator, which overrides `GFX_FB_BYTES` and `GFX_MAX_ROWS`. Every color board builds the 16-color frame buffer instead
 (`GFX_INDEXED`, bpp 4): 37.5 KB at 240x320, 9.6 KB at 160x120 and 10 KB at 160x128, against 150, 37.5 and 40 KB at
 16 bpp. A mono board sizes the buffer to its panel (128x64 at 1 bpp is 1 KB). Drawing still takes RGB565 colors, and
@@ -664,13 +665,13 @@ checked.
 
 HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences on the radio over the debug link.
 
-## 8. Decisions and open points
+## 8. Design decisions
 
 - Task flow 12 budgets 3 presses into the VFO, but flow 2 opens Zones on the current zone (so a zone two away is
-  2 presses); the VFO row is first, so entering it takes 4 (OK 4 Up OK). The test uses 4; the owner decides.
+  2 presses). The VFO row is first, so entering it takes 4 (OK 4 Up OK), and the test uses 4.
 - Power on radios with many levels: the Quick tile cycles three presets (low, the board's default, highest); the full
   list is in Settings.
-- Long BACK on Home no longer opens diagnostics (P3: one meaning per key); they are in Tools 7. The firmware boots
+- Long BACK on Home doesn't open diagnostics (P3: one meaning per key); they are in Tools 7. The firmware boots
   into Home.
 - The long-press and key-repeat times are stored in `settings_t` and handed to the input layer (`input_set_timing`,
   clamped to 200..3000 ms and 40..1000 ms); auto lock locks the keys after its time without a key press (counted on
@@ -681,8 +682,8 @@ HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences o
   "AGC", is dimmed, OK says "Mic AGC sets the level"
   and the gain is step 5, the board's levels (FM too on a radio whose board sets the gain).
 - Mic gain acts on FM and DMR where the board sets it in its audio path (`hal_radio_t.mic_gain`), else on DMR only,
-  in software before the vocoder (radio-features.md 3.6). The
-  GPS options are stored but act on nothing (no GPS owner); they are dimmed on boards without `CAP_GPS`.
+  in software before the vocoder (radio-features.md 3.6). The GPS options are dimmed on boards without `CAP_GPS`;
+  [position.md](position.md) says what they do.
 - Freq trim (Advanced, the last row: Up from the top) is shown only on a radio whose board has `hal_radio_t.ref_trim`
   (`UI_FEAT_REF_TRIM`). The row shows the trim in ppm and opens the Freq Trim page (`freq-trim`, section 2).
 - Voice prompts are dimmed ("Voice prompts aren't built yet: no recorded speech").
@@ -710,8 +711,8 @@ HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences o
 - Compose offers canned texts only ("OK", "On my way", "Call me", "Can't talk now"), sent in the language in use (2.5); free text is dimmed.
 - Deleting a message has no undo (`sms_inbox_delete` removes it from the RAM inbox).
 - Save to channel and the permanent talk target write the codeplug as a storage job on the housekeeping task, so the
-  UI no longer stalls for the flash write. A permanent target must be a stored contact: a typed ID is set for now at
-  once and the job then says "Not a stored contact: for now only".
+  UI doesn't stall for the flash write. A permanent target must be a stored contact: a typed ID is set as a temporary
+  target at once and the job then says "Not a stored contact: for now only".
 - One-shot PTT: the row with the focus in the picker or a list is handed to the radio core (`radio_req_dmr_focus`);
   PTT then talks to it once, and the radio follows it for a reply window (the reply time setting, else the
   codeplug's hang time) before going back to the channel's talk target. A channel change, the call ending outside

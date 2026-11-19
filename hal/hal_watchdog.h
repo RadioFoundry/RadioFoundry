@@ -22,7 +22,7 @@ bool hal_watchdog_stop(void);
 uint32_t hal_watchdog_timeout_ms(void);
 // The bench: the platform's raw registers (up to HAL_WATCHDOG_REGS words) for the debug link; returns how many
 uint8_t hal_watchdog_regs(uint32_t *out);
-// The bench: re-arm with a raw load in the hardware's own units, to measure its clock (docs/spec/watchdog.md 5).
+// The bench: re-arm with a raw load in the hardware's own units, to measure its clock (docs/spec/watchdog.md 6.2).
 // arg[0..2] are platform defined (HR_C7000: OT_LOAD_H, OT_LOAD_L, RST_LOAD or 0xFFFFFFFF to leave it). False where
 // the platform has no such test. arg NULL only asks whether it has
 bool hal_watchdog_test_load(const uint32_t arg[3]);

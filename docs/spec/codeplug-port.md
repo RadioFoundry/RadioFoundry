@@ -4,8 +4,8 @@
 
 How the migration tools turn a radio's vendor codeplug into RadioFoundry's and write it. Every radio's tool does it the
 same way, in `tools/codeplug_port.py`; the radio tool only reads its vendor codeplug (its own dmrconf driver or a CPS
-file), flashes, and gives the CPS shim's address offset. Each radio's procedure is in its `<id>-migration.md`
-([index](README.md#migrating-from-stock)).
+file), flashes, and gives the CPS shim's address offset. The user steps are in
+[docs/user](../user/README.md).
 
 dmrconf (qdmr) is GPL and runs as an external program; the module contains none of its code. Facts marked (T) were
 measured with dmrconf 0.15.1; (R) on a radio running RadioFoundry.

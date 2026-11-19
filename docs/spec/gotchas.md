@@ -1,15 +1,16 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # Gotchas: DMR modem and radio bring-up
 
-What goes wrong when a radio is brought up, and what code has to do so it doesn't. Each entry gives the symptom, the
-cause, the rule for new code and the chips it applies to. Entry numbers are referenced from code and other pages, so
-they stay fixed.
+This page lists what goes wrong when a radio is brought up, and what code does so it doesn't. Each entry gives the
+symptom, the cause, the rule for new code, and the chips it applies to. Code and other pages cite entries by number,
+so the numbers stay fixed.
 
 Entries name the chips they apply to: HR_C6000 with the AT1846S (STM32F405 or MK22 hosts), HR_C5000 (STM32F405, single
-band) and HR_C7000 (C-SKY CK803S SoC). Which radios carry which chips is in [radios.md](radios.md), and what has been
-checked on each is in [feature-matrix.md](../feature-matrix.md). A fact about one radio is on its hardware page.
-Status words: "on air" means verified with an SDR or a second radio; "built" means compiled and host tested only.
+band) and HR_C7000 (C-SKY CK803S SoC). Which radios carry which chips is in [radios.md](radios.md), and what each
+radio supports is in the [feature matrix](../feature-matrix.md). "On air" in an entry means seen with an SDR or a
+second radio.
 
 | Section | Topic |
 |---|---|
@@ -43,8 +44,7 @@ Radios: HR_C6000 confirmed on air; the HR_C7000 hook applies the same 45 ms rule
 **1.3 Voice burst numbering lives in the low 3 bits.**
 Symptom: after tightening the voice filter to data types 1-6, no RF voice reached the host at all. Cause: real voice
 bursts are reported with bit 3 set (0x9-0xE). Rule: take the burst position (A-F = 1-6) from the low 3 bits, and filter
-duplicates by timing (rule 1.2), not by the high bit. Radios: HR_C6000; HR_C5000 numbering (1-6 or 0-5) still unknown
-on air.
+duplicates by timing (rule 1.2), not by the high bit. Radios: HR_C6000.
 
 **1.4 The decoded LC at the first header is still the previous call's.**
 Symptom: calls went up to the network under the last talker's IDs. Cause: the chip's LC buffer is only refreshed once
@@ -76,14 +76,14 @@ reg 0x21 = 0xA2 makes the chip polite to our color code, and it rejects the send
 interrupt). Rule: decide politeness explicitly per transmission (regs 0x20 / 0x21); repeater transmissions and replies
 in a repeater's hang time must be impolite.
 
-**1.4a The embedded LC reaches page 2 after F's first report (working conclusion, unconfirmed).**
+**1.4a The embedded LC reaches page 2 after F's first report.**
 Symptom: a late entry with a new talker (an LC different from the chip's sticky one) was taken a superframe late, at
-the second F (13 of 36 bursts played instead of 18-19; HIL 2026-10-10 on c8c9b23). Cause, as far as one run shows: the
-driver reads page 2 at F's first report (the EMB one) and page 2 still held the old LC then. Rule: until a reception
-has its LC, look at page 2 again at the next burst A (and at F's repeated report and the post-access interrupt); the
-driver logs every look (`dle` lines, `lt` diagnostics line) so the next HIL run shows exactly when the LC appeared.
-An unchanged page 2 at that A, after a whole superframe of this reception with a good F, is this call's LC: the same
-talker again (HIL 2026-11-14 on the HR_C5000: held back to the second F, 8 bursts played instead of 12; traced `Av`).
+the second F (13 of 36 bursts played instead of 18-19). Cause: the driver read page 2 at F's first report (the EMB
+one), and page 2 still held the old LC then. Rule: until a reception has its LC, look at page 2 again at the next
+burst A (and at F's repeated report and the post-access interrupt); the driver logs every look (`dle` lines, `lt`
+diagnostics line). An unchanged page 2 at that A, after a whole superframe of this reception with a good F, is this
+call's LC: the same talker again (on the HR_C5000 without this, held back to the second F, 8 bursts played instead
+of 12; traced `Av`).
 Radios: HR_C6000, HR_C5000.
 
 **1.4b Page 2 isn't per slot.**
@@ -93,7 +93,7 @@ assembled last, of either slot, so at one call's F it held the other's, and the 
 keep each slot's call LC and check every embedded LC against both before handing it over; only voice LCs (FLCO 0, 3)
 become a slot's call LC, and alias and GPS blocks wait while the other slot is busy. While a slot's call goes on,
 never hand over another LC beside a call that may go on: page 2 can hold a mix of both that passes the 5-bit
-checksum, steady for as long as both talk (bench, the same day). Forget the slots on a new
+checksum, steady for as long as both talk. Forget the slots on a new
 frequency or channel. Rules: [modem-hrc6000.md](modem-hrc6000.md) 5.2. Radios: HR_C6000, HR_C5000.
 
 **1.9 Restore reg 0x10 to the driver's value, not the init value.**
@@ -104,7 +104,7 @@ broke subsequent operation. Rule: save and restore modem mode registers around a
 Symptom: through a duplex repeater, the slot lock built from the TC (0x52 bit 2) resynced on its own while the
 outbound was steady, and a lock that was right was thrown away. Cause: once locked, the driver closes the other slot,
 so every later compare reads the TC after a slot not received. On the HR_C6000 those reads agreed with the lock 43% of
-the time (5485 reads), against 557 of 557 for reads after two received slots (bench, 2026-10-28). The HR_C5000 has
+the time (5485 reads), against 557 of 557 for reads after two received slots. The HR_C5000 has
 the same weakness in another form: its TC stops changing while a slot is closed (`tc_last_rx`). Rule: compare only
 when the slot that ended and the one before it were both opened for receive; after our own transmission, a closed
 slot or a lock, skip the first read. Radios: HR_C6000, HR_C5000.
@@ -180,7 +180,7 @@ powered; to switch on again, clear the RX FIFO and status (`hrc_uart_rx_clear`) 
 
 The host port can't wait for a quiet line: it is set up at every boot, and after a reset the host may still be
 sending (the next request of a test run). On a board whose host port is a UART, a reset with the host polling left the debug link
-deaf until a power cycle (bench 2026-10-22; quiet resets came back every time): the divisor write was dropped and the
+deaf until a power cycle (quiet resets came back every time): the divisor write was dropped and the
 low divisor byte went out as data. So every HR_C7000 UART set-up (`platform/hrc7000/uart_format.h`) drains the RX FIFO, writes,
 reads LCR, DLL and DLH back, and tries again until they stick (about 100 ms at most).
 
@@ -289,12 +289,12 @@ burst taken (`dmr-voice.md` 2). Radios: all; seen with the HR_C5000. Tests: `tes
 
 **3.13 A crash or a reset must not leave the PA keyed.** A radio faulted while transmitting; the crash capture
 soft-reset the chip, the radio came back stopped before the display was lit and drew about 15 W with the PA keyed
-until a power cycle (2026-10-21). Neither the fault path nor the reset turned the transmitter off, and the board's
+until a power cycle. Neither the fault path nor the reset turned the transmitter off, and the board's
 pin set-up ran after the clock set-up. Rule: every fault handler, crash hook, software reset and stub jump calls
 `board_rf_safe()` first, and so does `main()` before the clocks ([crash-log.md](crash-log.md) 8). A new board must
 provide it, and a new reset or jump path must call it.
 
-**3.14 No receive set-up at the end of a DMR transmission.** Symptom: a MOTOTRBO portable's link ACK to our confirmed
+**3.14 No receive set-up at the end of a DMR transmission.** Symptom: a commercial portable's link ACK to our confirmed
 data, which comes one frame after our terminator in our own timeslot, was missed on every try on several radios. Cause: the board's `tx_off()` set the receiver up again
 (idle, synthesizer, receive) just as the answer came in; the per-burst switch had already left the receiver on the
 channel. Each radio that had fixed it did so with its own check in `rx()`. Rule: the radio core ends a DMR
@@ -341,7 +341,7 @@ that assumes a frame layout. Radios: STM32 boards; MK22 likewise.
 **4.2 HR_C7000: inline asm with unbound register variables.** Same class of bug: replaced by calls through C function
 pointers at fixed offsets from the codec base (entry 0, encode 0x260, ECC 0x1E34 from 0x03061000).
 
-**4.3 De-interleave table error (arr2[12] = 45 should be 46).** One entry duplicated another, so bit 46 (the MSB of
+**4.3 De-interleave table error (arr2[12] = 45 instead of 46).** One entry duplicated another, so bit 46 (the MSB of
 the C1 Golay(23,12) codeword) was never written and the decoder ran on uninitialized stack; Golay hid it at the cost of
 one of C1's three correctable errors. Rule: build the 72-bit AMBE+2 de-interleave from ETSI / mbelib and test that the
 tables cover all 72 codeword bits exactly once. Radios: all.
@@ -355,9 +355,9 @@ compiler barrier.
 verify the codec region by hash or signature at boot and at build time; never ship an image with the codec, never commit one.
 
 **4.6 Codec placement is per board.** The merge tool moves the codec to where the board's memory map puts it and
-rewrites the absolute addresses inside it (codec-placement.md), so a position copied from a
-vendor image is wrong for a RadioFoundry build. The real flash budget is the gap before the codec, not the linker's
-percent used. Each radio must use the codec from its own vendor firmware.
+rewrites the absolute addresses inside it ([codec.md](../dev/codec.md)), so the codec's position in the file it comes
+from is wrong for a RadioFoundry build. The real flash budget is the gap before the codec, not the linker's percent
+used. Each radio uses the codec from its own model's firmware file.
 
 **4.7 MK22 .sgl container truncation.** The old bin2sgl header (from 3.1.8) stops at 0x77001 bytes and cuts off
 the end of the codec section (to 0x7C090); the V4.3.6 header allows 0x78801.
@@ -388,7 +388,7 @@ old code compared with the preamble's count and stopped after the header (blocks
 complete or 180 ms after its last frame, max 64 bursts (`DMR_DATA_MAX_BURSTS`); frames that can't be sent are NAKed, not silently ACKed.
 
 **5.6 TMS ACK sequence number is 7 bits.** The ACK carried only the low 5 bits, so senders numbering past 31 never
-matched. Bytes must equal what MOTOTRBO radios and BrandMeister send (00 04 BF 00 9E 60 for s/n 126; header 0xBF,
+matched. Bytes must equal what commercial radios and BrandMeister send (00 04 BF 00 9E 60 for s/n 126; header 0xBF,
 not 0x9F: the 0x20 bit is set in every TMS header), sent as its own transmission after the ETSI response, with
 preambles. Confirmed data from BrandMeister has N(S) 0 every time: a repeat must match the data too, not only N(S).
 
@@ -403,9 +403,9 @@ new one.
 **5.9 BrandMeister ignores data with few preambles.** Confirmed TMS sent with 2 preamble CSBKs reached BrandMeister
 intact and got nothing back: no link ACK, no NACK. The same packet with 16 got its link ACK in under a second. Text and
 IP packets go with 16 where the burst list has room ([dmr-data.md](dmr-data.md) 12.6.4). The hotspot reaches
-BrandMeister over UDP, often on Wi-Fi, so a single unanswered packet may just be lost; the preamble rule rests on 10
+BrandMeister over UDP, often on Wi-Fi, so a single unanswered packet may be lost; the preamble rule rests on 10
 unanswered sends in a row and one identical pair. The TMS ACK goes with 16 too, 1.5 s after our link ACK, and confirmed,
-as MOTOTRBO radios send it: BrandMeister ignored an unconfirmed one with 16 preambles twice ([dmr-data.md](dmr-data.md) 5.1).
+as commercial radios send it: BrandMeister ignored an unconfirmed one with 16 preambles twice ([dmr-data.md](dmr-data.md) 5.1).
 
 ## 6. Privacy
 
@@ -414,19 +414,19 @@ BP) XOR the 49 AMBE+2 parameter bits by superframe position: on TX when the burs
 the vocoder, after the FEC decode. The privacy voice LC uses FID 0x10 and service options 0x40.
 
 **6.2 Burst numbering must be right for privacy.** A wrong A-F numbering (1-6 vs 0-5) breaks decryption and voice frame
-A; it is unverified on the HR_C5000 and HR_C7000.
+A.
 
 **6.3 ISR-safe contact lookup.** The privacy contact's ID must come from a cache that is safe to read in the modem ISR.
 
 **6.4 PI headers are dropped by the receive path.** MI-based schemes need the modem to send and receive a PI header
-(data type 0); late entry in burst F is an open risk. Research note, privacy feasibility.
+(data type 0).
 
 ## 7. ARS, TMS, LRRP, UDT
 
 **7.1 ARS has no standard destination.** Every system programs its own "ARS Radio ID"; with none set, send nothing.
 Registration and deregistration are unconfirmed private IPv4/UDP 4005 at Rate 1/2 with two preambles.
 
-**7.2 Bounded retries.** MOTOTRBO retries forever, which floods a channel with no server. Retry 30 s, 1, 2, 4, 8 min
+**7.2 Bounded retries.** A commercial radio's ARS retries forever, which floods a channel with no server. Retry 30 s, 1, 2, 4, 8 min
 (6 tries), then wait for a change.
 
 **7.3 ARS response details.** A response with the ACK/NAK bit (0x40) set is a refusal. The octet after the header is the
@@ -624,19 +624,19 @@ synced to a VM within the same second as a build linked stale objects (1 s mtime
 objects from being rebuilt. Rule: version string generated every build, dependency files, clean CI builds; pass
 GITVERSION explicitly where there is no .git.
 
-**13.3 Case-insensitive file systems.** Make's built-in .S to .s rule deleted an assembly source on APFS. Disable
-built-in suffix rules. Build note.
+**13.3 Case-insensitive file systems.** Make's built-in .S to .s rule deleted an assembly source on APFS. Rule:
+disable built-in suffix rules.
 
-**13.4 Reproducible images.** Pinning the version string and build date made byte-for-byte comparisons of refactors
-possible (build_all --compare). Keep that ability.
+**13.4 Reproducible images.** Pinning the version string and build date makes byte-for-byte comparisons of refactors
+possible (build_all --compare). Rule: keep the build reproducible.
 
 **13.5 One hardware version needed main.c unoptimized** in one configuration; one image per board version;
 the wrong build is harmless but deaf.
 
 **13.6 Compile features out with switches, never by commenting.** The HR_C7000 base shipped its hotspot disabled by
 eleven commented-out blocks (request handler, reply queue, GET_VERSION, RAM placement), and the port's global rename of
-chip-prefixed names leaked into other platforms' types. Satellite / APRS were later made compile-time switches with
-no-op entry points (about 27 KB).
+chip-prefixed names leaked into other platforms' types. Rule: a feature that can be left out gets a compile-time switch
+with no-op entry points, as GPS satellites and APRS have (about 27 KB).
 
 **13.7 A GPS power pin that is a flash chip select elsewhere.** On non-GPS units the GPS power pin may be a flash chip select: drive it only after
 NMEA has been heard (listen 5 s at power on). A UART framing or noise error stops DMA reception for good unless the
@@ -644,11 +644,11 @@ error path restarts it; accept any NMEA talker and an 82-character line plus CR 
 
 **13.8 Canceled menu edits must re-apply hardware state** (GPS and USB modes) after restoring the old values.
 
-**13.9 No git stash in a worktree with symlinked submodules.** In an agent worktree whose `third_party/*` are symlinks
+**13.9 No git stash in a worktree with symlinked submodules.** In a worktree whose `third_party/*` are symlinks
 to another checkout, `git stash` (to build a baseline for a size comparison) took the symlinks away for the stash's
 duration: the baseline build failed on `FreeRTOS.h`, and git refuses most operations on the paths ("expected submodule
-path not to be a symbolic link"). The pop put them back. Build a baseline from `git archive HEAD` into a scratch
-directory with its own `third_party` symlinks instead, and delete it afterwards.
+path not to be a symbolic link"). The pop put them back. Rule: build a baseline from `git archive HEAD` into a
+scratch directory with its own `third_party` symlinks, and delete it afterwards.
 
 **13.10 Link order changes LTO code.** `$(wildcard)` returns files in an order that depends on the make: GNU make 4.3
 (CI) sorts it, macOS's make 3.81 doesn't. With LTO the object order on the link line steers partitioning and
@@ -663,7 +663,7 @@ STM32F4's 4, and keeps only the top 3 of each priority byte. FreeRTOS checks at 
 boot, before the display or USB came up: a black screen that only the update mode survives. Rule: keep
 `configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY` even (`platform/stm32f4/main.c` asserts it at build time), and don't
 let correctness depend on two interrupts one apart (4 and 5, 6 and 7) preempting each other: on the clone they are
-one level. STM32F4 boards; built, not run on a clone.
+one level. STM32F4 boards.
 
 **13.12 No double or 64-bit division in firmware code.** No core has a double-precision FPU; the Cortex-M4F's is
 single precision, the C-SKY core has none. A `double` constant, `sqrt()` or `cos()` pulls in soft-float calls and
@@ -697,8 +697,8 @@ cleared). The raw 264-bit RX RAM areas (0x30 / 0x60) only held a fill pattern in
 receive and transmit, the end of each burst (the engine's `rf(false)`) retunes to the receive LO without waiting, and
 the RF TX interrupt retunes to the carrier and waits for the lock before the PA. RF_TX_INTER's advance (0x12 bits
 5-0, 100 us steps) gives that time; it is set only while the transmission listens (`tx_listen`) and cleared after.
-Too much lead cuts the end of the inbound burst: its last voice frame takes the errors (`sfr.rx_fec_pos`). The
-board's hardware page has the values.
+Too much lead cuts the end of the inbound burst: its last voice frame takes the errors (`sfr.rx_fec_pos`). The board
+sets the values.
 
 **14.7 SFR channels never switch to repeater mode on BS sync.** RMO slot lock needs a CACH every slot and an SFR sends
 none. On an MK22 board the repeater ends its own burst at the RF RX interrupt once the PA has been on 20 ms.
@@ -712,7 +712,6 @@ between our bursts must be written "receive" (0x41 = 0x50), not 0x00; the AT1846
 through receiver off (reg 0x30 idle), the RX frequency, the band's RX supply, then RX on (one write straight from DMR TX
 to RX on heard 6-36 of a call's bursts, varying run to run; the RX supply goes off while the PA is up); and a gap in
 the inbound call leaves our slot empty, never an idle burst (14.4: one missed burst then cascaded into DMR_LOST).
-HIL 2026-10-12.
 
 **14.10 Repeat latency and header runs.** The runner keeps two outbound slots queued in the modem; in a call's gap
 those are placeholders, and a burst heard next queued behind them went out 210 ms after the inbound one instead of
@@ -720,7 +719,7 @@ those are placeholders, and a burst heard next queued behind them went out 210 m
 identical copies: the own-echo rule (same kind and payload within 250 ms) dropped 6 of the bench's 8 headers. Rule:
 in an open inbound call, voice headers and terminators are never echo-checked (the SFR glue never did).
 
-**14.11 HR_C7000 SFR (on the SDR bench 2026-10-16).** Four things, each lost the call or part of it:
+**14.11 HR_C7000 SFR (on the SDR bench).** Four things, each lost the call or part of it:
 - Writing LAYER2_CONTROL to key up (0xC3, or 0xC4 for TX slots that follow the receiver) left the receiver without slot
   sync for about 1 s: 5 of the bench's 8 headers and the first 10 voice bursts were never heard. Rule: leave it passive
   and start the TX slot from the receive slot (LAYER2_SLOTON b5), then send in the slot numbered for our TS
@@ -732,18 +731,18 @@ in an open inbound call, voice headers and terminators are never echo-checked (t
 - Every terminator heard while keyed came with the chip's RS flag and was dropped in the driver. Rule: while sending,
   the driver passes headers and terminators on with `crc_ok` false and the runner checks them itself (14.1).
 
-**14.12 An HR_C6000 SFR user hears one copy of a call (SDR bench, 2026-10-19).** In direct mode the chip
+**14.12 An HR_C6000 SFR user hears one copy of a call (SDR bench).** In direct mode the chip
 decodes the voice stream of the slot it locked onto. Reports for the other slot during the call are stale status
 (class 0, the same values again and again), not the other copy. So the user modes "First copy" and "Dual-path RX" only fall
 over from one copy to the other between calls or after a loss, never take frames from both. Not timing (the repeat
 sat 0.13 ms off the talker's slot grid) and not the repeat's sync (clean TS2 voice sync); a stronger repeat made it
 worse. Rule: don't count on both copies from an HR_C6000; hearing both needs the raw RX RAM path (sfr.md 3).
 
-**14.13 The HR_C7000 repeat carries bit errors (SDR bench, 2026-10-19).** The repeater's own receiver takes errors while it switches
+**14.13 The HR_C7000 repeat carries bit errors (SDR bench).** The repeater's own receiver takes errors while it switches
 TX/RX every burst: on air 212 of 216 repeated voice frames needed Golay corrections and 4 were uncorrectable, where
 the talker's direct copy was clean. It plays, but it is the reason a user would want the direct copy (sfr.md 4).
 
-**14.14 An AT1846S SFR keys straight from RX (SDR bench, 2026-10-19).** For any radio with an AT1846S and an HR_C6000
+**14.14 An AT1846S SFR keys straight from RX (SDR bench).** For any radio with an AT1846S and an HR_C6000
 ([feature-matrix.md](../feature-matrix.md)):
 - Going through idle (reg 0x30) at every switch (14.9) makes the synthesizer settle again each slot. The repeat then
   lost 5-10 of 72 inbound frames, with about 190 bit errors. With RX and TX on one frequency, switching 0x30 straight
@@ -752,19 +751,17 @@ the talker's direct copy was clean. It plays, but it is the reason a user would 
   HR_C6000 MOD1 offset (4:0x04, about 75 Hz a step at 461 MHz) for the burst and restores it for RX: 42 steps over the
   calibrated value on the board measured near 461 MHz (41: -57..-15 Hz, 42: +16..+60 Hz). On two other units of the
   same radio at 433.45 MHz it missed by 178 and 449-554 Hz, so only the SFR keys this way; everything else goes
-  through idle (each board's hardware page has its keying sequences). Measure the correction per radio and frequency
-  before using it more widely.
+  through idle, with the board's own keying sequences. The correction differs per radio and frequency.
 - Key 1 ms after the RF TX interrupt, which comes about 1.28 ms before the slot. 0.6-1.2 ms all did the same; keying
   at the interrupt lost frames. Dropping the PA earlier (28.5-30 ms) changed nothing.
-- VHF and split frequencies keep the idle sequence (not measured).
+- VHF and split frequencies keep the idle sequence.
 
 **14.15 An HR_C7000 SFR user needs the voice-access flag on both slots.** The chip writes the voice RAM only for a
 slot decided with TXRX_CTRL 0x8040; with 0x40 the burst is reported, but its voice RAM still holds the last burst
 decoded. The driver gave the flag to the chip slot of the last voice burst only. A user hearing both copies gets voice
 on both slots in turn, so the flag was always on the other slot, and every burst read the same stale bytes: the
 listener played the call's first decoded burst over and over while every counter looked clean (frames, bursts, no
-loss). That is the hand test of 2026-10-20 (an HR_C7000 repeater and two users, 1 clean call of about
-30). Rule: each chip slot with a voice header or voice burst in the last 390 ms gets the flag; a terminator clears its
+loss). With an HR_C7000 repeater and two users, 1 call in about 30 was clean. Rule: each chip slot with a voice header or voice burst in the last 390 ms gets the flag; a terminator clears its
 own slot (`hrc7000DmrTest` test_rx_sfr_both_copies). The frame counters can't show this: an HIL check has to look at
 the payloads (or the audio) the listener plays.
 
@@ -777,19 +774,19 @@ follows the last voice burst and on the old polarity.
 then (`HRC7000_RX_NEXT_SLOT_XOR` 0), not the one after it. With the flag on the other slot the chip never writes the
 voice RAM, and every frame of every call reads the same stale bytes: silence (`voice.rx_peak` about 6), exactly 3 bit
 errors a frame, every other counter clean. Two boards found it and set 0 in their board config; a third kept the driver's
-old default of 1 and played every DMR call silent (2026-10-22, bench speech: peak 6 with 1, 32768 with 0). Rule: 0 is the driver default; `test_dmr_voice_speech` checks the peak, a frame counter can't.
+old default of 1 and played every DMR call silent (bench speech: peak 6 with 1, 32768 with 0). Rule: 0 is the driver default; `test_dmr_voice_speech` checks the peak, a frame counter can't.
 
 ## 15. Testing practice
 
-- An SDR with a burst analyzer (timing, sync, color code, frequency offset) caught every timing bug above; host tests
-  against independent decoders caught the protocol ones. Keep both.
-- On-air debug counters readable over the host protocol, plus runtime switches, let the SFR work go through 17 test
-  rounds without reflashing for each experiment.
+- An SDR with a burst analyzer (timing, sync, color code, frequency offset) catches the timing bugs above, and host
+  tests against independent decoders catch the protocol ones. Rule: keep both.
+- On-air debug counters readable over the host protocol, plus runtime switches, let an experiment run without a
+  reflash. Rule: give new radio work counters in the debug link view.
 
 ## 16. Input
 
 **16.1 Rotary encoder counted on the edges of one line.**
-Symptom: on a board with a rotary encoder the knob sometimes skipped a step, counted two, or stepped back (RadioFoundry, 2026-10-10). Cause: one
+Symptom: on a board with a rotary encoder the knob sometimes skipped a step, counted two, or stepped back. Cause: one
 count per edge of B with A read in the interrupt; a knob leaving a detent and settling back counts a step and a step
 back, and bounce edges merged by the single pending flag count twice. Rule: interrupt on both lines (or poll both fast)
 and decode with a table that counts only whole detents at a rest state and ignores samples where both lines changed
@@ -797,15 +794,15 @@ and decode with a table that counts only whole detents at a rest state and ignor
 when the UI's event queue is full, carry the detents over to the next scan instead of dropping them.
 
 **16.2 PTT on the programming cable's serial line.**
-Symptom: a debug link host polling the radio started DMR transmissions on its own (RadioFoundry, 2026-10-15). Cause: the
+Symptom: a debug link host polling the radio started DMR transmissions on its own. Cause: the
 two-pin K-type programming jack carries the host's serial data on the same line as PTT, so every 0 bit pulls the PTT
 pin low, and two low key scans pass the debounce. Rule: on a radio whose PTT shares the host's RX line, count the pin
 low as PTT only after a quiet time with no good UART byte (`drivers/input/sharedptt`). A real press holds the line
 low, which the UART reads as a break, never a good byte. Radios: every board with a K-type jack wired this way; three
 are confirmed. A filter of three low scans in a row still let debug link polling key one of them: hundreds of PTT
-presses, each with a key beep, in one SFR test session (2026-10-19). Many handhelds wire the K-type jack this way, so
+presses, each with a key beep, in one SFR test session. Many handhelds wire the K-type jack this way, so
 check every new radio (adding-a-radio.md, bring-up order). The gate alone still leaked during PPP, hands off: 2
-presses in 100 s (2026-10-22). A key scan that ran late caught up with two scans in the same millisecond, and both
+presses in 100 s. A key scan that ran late caught up with two scans in the same millisecond, and both
 read the low bits of the first byte of a burst 65 ms after the last one, before the UART had reported it. Rule:
 debounce the shared pin by time, not by scan count. The pin must read low, and not gated, for 20 ms
 (`SHARED_PTT_HOLD_MS`). `tests/hil/test_ptt_host_traffic.py` checks it on the radio. The radio's own transmission,
@@ -824,7 +821,7 @@ the transmit timeout ends it, and with TX timeout Off nothing does until power-o
 radio with a mic jack: power on with the jack empty and watch the raw PTT pin (adding-a-radio.md, bring-up order).
 
 **16.4 Encoder interrupt lost for good.**
-Symptom: the encoder stopped after a while; every key still worked (RadioFoundry, 2026-10-30). Cause: not found. The
+Symptom: the encoder stopped after a while; every key still worked. Cause: not found. The
 GPIO bank had both encoder bits pending, enabled and unmasked, and the handler never ran, so the interrupt controller
 had most likely masked the source; a fallback handler that masks a source it has no handler for is one way. Rule: on a
 board whose encoder runs on one level interrupt, the key scan checks that a pending encoder interrupt is taken. Pending
@@ -841,7 +838,7 @@ didn't lift it, and a full SoC reset by the watchdog didn't release it. PPP isn'
 back to back, without waiting for the answers, did it within 15 ms. Request and answer in turn (the debug link, CPS)
 never did. Rule: on such a radio a host port write waits until the line has been quiet for a few milliseconds
 (`HRC_HOST_TX_IDLE_MS`, `platform/hrc7000/uart_idle.h`), and PPP, whose host sends at any time, stays off. The wait
-can't stop a host that starts sending during the radio's answer; MMDVM and KISS hosts do that too, unchecked. A latched
+can't stop a host that starts sending during the radio's answer, as MMDVM and KISS hosts can. A latched
 line reads as a held PTT, and a chip reset would start a new press, so a press on the shared line needs the pin to have
 read high since start-up and since the last good byte, and not to have gone low within 20 ms of the radio's own serial
 send (`drivers/input/sharedptt`). The start-up key guard can't catch it: the first scan reports nothing during the
@@ -869,12 +866,12 @@ greeting `02 24 00 03` came in as `70 80 70 00 7c` and its sign-off `00 c0 00 03
 about 307200), so neither was recognized and the page listened for its full 3 minutes. Rule: the boot ROM wait also
 knows the two frames by their shape, two bursts of a few bytes 25 to 300 ms apart and then a quiet line with no
 greeting in them (`rom-garbled` in `stub.js`), and the page shows the cable fault at once. With that cable in, the radio also flashed its stuck-line
-pattern (16.5) and stopped when it was pulled out; whether a cable that sends does that too is not measured.
+pattern (16.5) and stopped when it was pulled out.
 
 ## 17. Scan
 
 **17.1 Scanning DMR direct mode: the carrier is on air every other slot.**
-Symptom: the zone scan never held on a DMR call already in progress (HIL 2026-10-10). Cause: the noise reading follows
+Symptom: the zone scan never held on a DMR call already in progress. Cause: the noise reading follows
 the 30 ms bursts, so the reading at the end of the dwell, or any poll of the probe, often fell between two bursts and
 the probe ended at once; and a 700 ms probe was shorter than a late entry that has to wait for a second superframe's LC
 (about 1.1 s from the retune). Rule: a carrier seen in the last 150 ms counts; bursts with the channel's color code
@@ -891,14 +888,14 @@ outlasts it, only later; without one, the stop ends at the dwell on every visit 
 the stack runs.
 
 **17.3 A noise reading that doesn't follow a DMR carrier.**
-Symptom: with 17.2 fixed, the same radio still never held on a DMR call: on the radio (2026-11-01) the noise reading
+Symptom: with 17.2 fixed, the same radio still never held on a DMR call: on the radio the noise reading
 stayed at its idle 65-103 during a call at -41 dBm, where the signal strength rose from -117 dBm. The DMR scan probed
 only on the noise reading, so it never saw a carrier within the dwell. Rule: on a DMR channel the scan also counts the
 signal strength, past the settle, against its own squelch scale (`RADIO_DMR_SQL_L1_DBM`, 3 dB a level: -100 dBm at the
 default level), so a stop probes whichever reading shows the signal (`test_scan_dmr_noise_deaf`).
 
 **17.4 A strength reading above the DMR scale with no signal.**
-Symptom: on one radio (2026-11-14) the zone scan never reached the DMR test channel during a 7 s call. Its strength
+Symptom: on one radio the zone scan never reached the DMR test channel during a 7 s call. Its strength
 reading isn't calibrated and read -89 to -93 dBm on every empty channel, above the 17.3 scale (-100 dBm at the default
 level), so every stop counted a carrier and probed for 700 ms instead of the 150 ms dwell: a sweep of its 14 channels
 took about 12 s. Rule: the scale also sits above the floor the scan reads, the lowest strength past the settle on the

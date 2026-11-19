@@ -26,9 +26,9 @@ Sources (all public, read for the formats only; no implementation was used as a 
 - The KISS TNC protocol (Chepponis and Karn, 1987): framing, escapes, the command bytes.
 - aprs-is.net: "IGate Design", "q Construct", "Connecting to APRS-IS" (login, passcode, filters).
 - SmartBeaconing as published by Tony Arnerich KD7TA and Steve Bragg KA9MVA (HamHUD), released for anyone to use.
-- BrandMeister's APRS documentation: the location service IDs (the retired 5050-5059 and the MCC999 gateway) that turn Motorola (LRRP) and
-  Hytera position reports into APRS positions ("Position reports of Hytera and Motorola radios can be forwarded to
-  APRS", wiki.brandmeister.network/index.php/APRS, last edited 2020-07-03).
+- BrandMeister's APRS documentation (wiki.brandmeister.network/index.php/APRS): the location service IDs (the retired
+  5050-5059 and the MCC999 gateway) that turn commercial radios' position reports, LRRP among them, into APRS
+  positions.
 - Bell 202: 1200 baud, mark 1200 Hz, space 2200 Hz, NRZI (a 0 bit is a tone change).
 
 Black-box oracles (never read for code): Direwolf decodes the WAV that `aprsTest --wav` writes
@@ -43,7 +43,7 @@ aprx can stand in.
 | FM AFSK receive, station list, digipeater, messages to us | `CONFIG_APRS_RX` and receive audio: `board.afsk->rx_*`, or FM receive audio on the PCM stream (`AUDIO_TAP_FM_RX`) (5.3) |
 | Positions over DMR (LRRP / UDT) | `CONFIG_APRS_DMR`, on a DMR channel |
 | KISS TNC on the host port (UDP 3334 and TCP 8001 in network mode) | `CONFIG_APRS_AFSK` (TX path; RX frames only with RX) |
-| iGate | RX for RF -> IS; IS -> RF messages only once RX exists |
+| iGate | RX for RF -> IS and for IS -> RF messages |
 | Position | the position service ([position.md](position.md)): the board GPS, host NMEA or the fixed position |
 
 What a board provides:
@@ -55,9 +55,6 @@ What a board provides:
 | No tone path written | None (DMR positions still work) | None | `CAP_GPS` |
 
 [feature-matrix.md](../feature-matrix.md) shows which radios have AFSK transmit (`APRS`) and receive (`APRS_RX`).
-
-Everything is host tested. On the SDR bench (section 13): positions over DMR (LRRP and UDT) decode, and FM AFSK
-decodes with a valid FCS.
 
 ## 2. Model
 
@@ -150,10 +147,10 @@ meters away gets a true bearing. The longitude difference is wrapped to the shor
 ### 4.2 Tocall
 
 Destination `APRDF?`. The [APRS device identifier list](https://github.com/aprsorg/aprs-deviceid) allocates `APRDF?`
-to RadioFoundry as one entry, so APRS apps and aprs.fi name the firmware, not yet the radio. The sixth character tells
+to RadioFoundry as one entry, so APRS apps and aprs.fi name the firmware, not the radio. The sixth character tells
 the radios apart: each board's `board.toml` sets it (`aprs_tocall`, [board-registry.md](../dev/board-registry.md)), and
-`tools/boards.py check` keeps it unique. A character stays with its radio for good, so the list can later name the
-model per character. `0` is no radio: the host tests build without a board. The debug link shows the tocall in use as `aprs.tocall`.
+`tools/boards.py check` keeps it unique. A character stays with its radio for good, so the list can name the model per
+character. `0` is no radio: the host tests build without a board. The debug link shows the tocall in use as `aprs.tocall`.
 
 ### 4.3 Received (RX builds)
 
@@ -181,9 +178,10 @@ on RF for the iGate rules (section 9.1).
 The radio core keys the transmitter in FM, then the board switches the tone at each symbol boundary (a timer at the
 baud rate), with phase continuity where the hardware allows, and keeps the RTOS out of its symbol interrupt. While
 AFSK runs, the radio core leaves the transmitter alone (`status()` returns its cached reading). The level (0-100, 50
-default) sets the deviation around the board's nominal (about 3 kHz peak at 25 kHz bandwidth). `tests/hil/test_aprs.py` measures on air the phase continuity across a tone change, the deviation the level
-gives, the mark / space flatness and the TX delay (section 13). Each board's tone path is on its hardware page (the table in
-section 1).
+default) sets the deviation around the board's nominal (about 3 kHz peak at 25 kHz bandwidth). Each board sets its
+tone level so the peak deviation stays near 3 kHz; a transmitter limits at 5.1 kHz peak. `tests/hil/test_aprs.py`
+measures on air the phase continuity across a tone change, the deviation the level gives, the mark / space flatness,
+and the TX delay (section 13). Section 1 lists the kinds of tone path.
 
 ### 5.3 Receive
 
@@ -239,9 +237,6 @@ Squelch gated audio loses the start of a transmission until the squelch opens; t
 the frame) covers that. The debug link's `aprs.rx_peak`, `rx_bits` and HDLC counters
 tell missing audio from a demodulator that finds no frame.
 
-A possible later step on an HR_C6000 board: its RX RAM carries the same audio ungated so packets
-below the squelch could be decoded. That needs a board receive path (1 above) reading the RAM 31 times a second.
-
 ## 6. RF transmission
 
 The radio core's APRS block (`radio_sm.c`, `aprs_*`): when a frame waits (`aprs_rf_pending`) and the radio is idle
@@ -288,7 +283,7 @@ Triggers (`aprs_beacon.c`), all under the hard minimum:
 | Manual | | "Send position now" (UI, debug link) |
 | Boot | off | the first position after power-up |
 
-Without a known speed SmartBeaconing falls back to the interval. The defaults are an open decision (section 14).
+Without a known speed SmartBeaconing falls back to the interval.
 
 ## 8. Positions over DMR
 
@@ -296,25 +291,24 @@ Built with `CONFIG_APRS_DMR`. Send via (AFSK / DMR / Both; DMR always in a build
 positions go out when the radio is on a DMR channel with the call stack running,
 as a private data call to the destination ID (default 310999). BrandMeister's APRS gateway is a private ID
 "MCC999", with MCC replaced by the master's MCC (310999 for US masters, 204999 for a Dutch one). 310999 works from any master; your own master's prefix
-(`<MCC>999`) is recommended. The old 5057 was
-retired on 2019-03-01 (<https://news.brandmeister.network/gps-5057-destination/>,
-<https://wiki.brandmeister.network/index.php/APRS>). A radio that already saved its APRS settings keeps the stored
+(`<MCC>999`) is the better choice. The old 5057 is retired
+(<https://news.brandmeister.network/gps-5057-destination/>, <https://wiki.brandmeister.network/index.php/APRS>). A radio that already saved its APRS settings keeps the stored
 value: run `aprs set dmr_dst <MCC>999` (US: `aprs set dmr_dst 310999`).
 
-- Motorola LRRP triggered location report (the default): UDP port 4001, built by `dmrLrrp.c`.
-- ETSI UDT location (`dmr_udt` on): `dmrDataBuildUDTLocation`. BrandMeister forwards the position reports of Motorola
-  (LRRP) and Hytera radios to APRS, so use LRRP, not UDT, for BrandMeister.
+- LRRP triggered location report (the default): UDP port 4001, built by `dmrLrrp.c`.
+- ETSI UDT location (`dmr_udt` on): `dmrDataBuildUDTLocation`. BrandMeister forwards LRRP reports to APRS, not UDT, so
+  use LRRP for BrandMeister.
 - The position in either report has the ambiguity setting applied (`position_blur`, [position.md](position.md) 3), as
   the AX.25 packets and the other DMR reports do.
 
 ### 8.1 LRRP details
 
 An unsolicited report carries request ID 00000001 (no request came). BrandMeister's gateway accepts it with no ARS
-registration. Checked on master 3102 through a hotspot: each report to 310999 appeared on APRS-IS as
+registration. Through a hotspot on a BrandMeister master, each report to 310999 appears on APRS-IS as
 `<callsign>-7>APBM1D,<callsign>,DMR*,qAR,<callsign>:=<lat>/<lon>[<name> D` (SSID and comment from the BrandMeister
 profile, tocall APBM1D).
-The retired 5050-5059 IDs chose the SSID and icon; whether MCC999 does is unverified (HIL step, section 13). The APRS settings
-on BrandMeister's self care page set the comment.
+The retired 5050-5059 IDs chose the SSID and icon. The APRS settings on BrandMeister's self care page set the
+comment.
 
 ### 8.2 Positions heard over DMR
 
@@ -322,12 +316,12 @@ Some radios of other makes send their DMR APRS position as an NMEA sentence over
 header, SAP 3), as a private data call or to a talkgroup, usually to the APRS gateway's ID (BrandMeister's <MCC>999,
 e.g. 310999). As on FM, where every station heard goes into the list, the data service hands each one heard on the
 channel to the radio core whoever it is addressed to (only control station passthrough, our own repeated back and a
-compressed header for a host behind the radio, DAID 1, are left out; `dmr-data.md` 3; the stock radio sends DAID 0).
+compressed header for a host behind the radio, DAID 1, are left out; `dmr-data.md` 3; such a radio sends DAID 0).
 The core parses it with `nmea_parse_unchecked` and puts a position with a fix into the station list through
 `aprs_dmr_heard`, as a caller's GPS Info. The packet has no callsign and a data call no talker alias, so the station
 is named by the DMR ID database (`dmr_iddb_lookup`: its callsign, the record's first word) when the ID is in it,
 else by the DMR ID. BrandMeister names the same report on APRS-IS by the callsign registered for the ID, with the
-SSID set in SelfCare; no SSID is made up here. What one stock radio sent on air:
+SSID set in SelfCare; no SSID is made up here. What one such radio sends on air:
 `$GPRMC,...,3000.0000,N,8700.0000\0,W,...,A` with no `*hh` checksum, a NUL before `,W`, a NUL from the pad after the
 sentence, and the longitude with 4 integer digits. The checksum is optional here (the packet's CRC-32 covered it,
 but one that is given is checked), NULs are skipped, and the coordinates are read as numbers, so 8700.0000 is 87
@@ -405,7 +399,7 @@ is evicted, the screen says "No longer in list" and Message still addresses the 
 and the saved callsign are guarded by `CONFIG_APRS_RX`; the engine storage is unchanged.
 
 The rest (symbol, comment, digital destination, ambiguity, iGate, digipeater, fixed altitude) is set over the
-debug link (`rfoundry_debug.py aprs set`) and later by qdmr through the native codeplug.
+debug link (`rfoundry_debug.py aprs set`).
 
 ## 11. Settings
 
@@ -416,8 +410,8 @@ to APRS-IS), `aprs_region`, `aprs_ssid`, `aprs_freq_hz`, `aprs_dmr_dst`, `aprs_i
 `aprs_txdelay`, `aprs_misc` bits 0-3 (via, digipeater). The position fields in the same record (`aprs_lat`,
 `aprs_lon`, `aprs_alt_m`, `aprs_pos_src`, the DMR GPS Info flag, `aprs_misc` bits 4-7) are the position service's
 ([position.md](position.md) 5): APRS never changes them, and its save keeps them. The codeplug's APRS record 1 (EEPROM 0x1588,
-64 bytes each) gives the SSID, path, symbol, comment and ambiguity when present; its fixed position and frequency
-encodings are unknown and not used. Of these the radio takes the comment, the path and the SSID.
+64 bytes each) gives the SSID, path, symbol, comment and ambiguity when present. The radio takes the comment, the
+path, and the SSID; it doesn't use the record's fixed position and frequency fields.
 
 The path and the SSID live in both places, and the one changed last wins, each on its own:
 
@@ -473,28 +467,8 @@ saved and put back once the queued frames and message retries have gone out on t
    channel and from the FM VFO.
 2. Digital: on the DMR test channel the position goes to `--aprs-dmr-dst` as an LRRP report and as a UDT location;
    the bench modem's listener hears the header and blocks, the test checks the CRCs, the IPv4 / UDP 4001 / LRRP or
-   UDT NMEA layers and the position (within 2e-5 degree). Passed on air (a 70 cm DMR channel, color code 2, 50 mW).
-3. Still manual: BrandMeister (`aprs set via dmr` through a BrandMeister repeater or hotspot; the position on aprs.fi
-   with the SSID BrandMeister assigns, and the LRRP request ID question, 8.1) and KISS (`aprs set kiss 1`,
+   UDT NMEA layers and the position (within 2e-5 degree).
+3. By hand: BrandMeister (`aprs set via dmr` through a BrandMeister repeater or hotspot; the position on aprs.fi with
+   the SSID BrandMeister assigns, 8.1) and KISS (`aprs set kiss 1`,
    `tools/aprs_gate.py --port PORT --kiss-tcp 8001`, or in USB network mode the radio's own KISS port 8001; a position
    from APRSdroid / Xastir goes out on RF).
-
-Results (SDR bench): DMR LRRP and UDT pass. AFSK decodes off air with a valid FCS on each kind of board with a tone
-path, with twist under 1.5 dB and continuous phase (about 6 to 15 degrees residual); the tone level is set per board so
-the peak deviation stays near 3 kHz (a transmitter limits at 5.1 kHz peak). `test_aprs.py` on the 2 m amateur band
-is still to run on the HR_C7000 boards. Per-radio levels and results are in the hardware specs.
-
-## 14. Open decisions
-
-- Default triggers: SmartBeaconing on with a 10 min interval fallback, after-PTT and boot off.
-- The LRRP request ID and token for unsolicited reports to BrandMeister; whether LRRP answers should use the APRS
-  position when there is no GPS; whether Settings > Location > Send position should drive APRS.
-- The codeplug APRS record's fixed position and frequency encodings.
-- Receive from the HR_C6000's ungated RX RAM (5.3).
-- Settings and debug link section / command numbers may need renumbering when merged with other branches.
-
-Future, not done:
-
-- 9600 baud APRS (G3RUH FSK, scrambled NRZI direct FM): needs a flat (discriminator / modulator direct) audio path
-  and an FSK modem; a tone generator path can't do it. Not planned for now.
-- Settings > Location tied to APRS; GPS Info in the hotspot's own transmissions.

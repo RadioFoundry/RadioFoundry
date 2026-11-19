@@ -1,13 +1,22 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # Everyday radio features
 
-Scan, the FM transmit extras, beeps and power management in the radio core. Code: `core/radio/scan.c` (the scan
-engine, pure), `core/radio/beep.c` (beep patterns and synthesis), `core/radio/vibe.c` (vibration patterns),
-`core/radio/battery.c` (battery levels, the backlight helper), all glued into `core/radio/radio_sm.c`; board hooks in
-`hal/hal_radio.h` (`tx_tone`, `tx_dtmf`, `rx_sleep`, `mic_gain`, `ref_trim`) and `hal/hal_power.h` (`mic_level`, `vibrate`). Build switches: `docs/build-config.md`. Debug link: the `features` view section
-and RADIO ops 20-24 (`docs/spec/debuglink.md` 3.7, 3.8). Host tests: `tests/host/radioFeaturesTest.c`; HIL tests:
-`tests/hil/test_radio_features.py`.
+This page covers the radio core's settings, scan and dual watch, the FM transmit extras, beeps, volume, and power
+management.
+
+| Part | Where |
+|---|---|
+| Scan engine (pure) | `core/radio/scan.c` |
+| Beep patterns and synthesis | `core/radio/beep.c` |
+| Vibration patterns | `core/radio/vibe.c` |
+| Battery levels, the backlight helper | `core/radio/battery.c` |
+| Glue | `core/radio/radio_sm.c` |
+| Board hooks | `hal/hal_radio.h` (`tx_tone`, `tx_dtmf`, `rx_sleep`, `mic_gain`, `ref_trim`), `hal/hal_power.h` (`mic_level`, `vibrate`) |
+| Build switches | [build-config.md](../build-config.md) |
+| Debug link | the `features` view section and RADIO ops 20-24 ([debuglink.md](debuglink.md) 3.7, 3.8) |
+| Tests | `tests/host/radioFeaturesTest.c`, `tests/hil/test_radio_features.py` (7) |
 
 ## 1. Settings
 
@@ -49,8 +58,8 @@ quick changes therefore never reads back a value from before its own last change
 | `backlight_dim_s`, `backlight_off_s` | 30, 120 | for the UI's backlight policy (`radio_backlight_pct`, 5.3) |
 
 TX time-out: one implementation for FM and DMR. A channel's codeplug `tot_s` wins; 0 there means the radio's
-`tot_s`. The value in effect is `tot_s` in the core view, and the DMR call stack gets the same value. Open-firmware
-codeplugs that wrote 0 for "no time-out" now get the radio's.
+`tot_s`. The value in effect is `tot_s` in the core view, and the DMR call stack gets the same value. An
+open-firmware codeplug that wrote 0 for "no time-out" gets the radio's.
 
 ## 2. Scan (CONFIG_SCAN)
 
@@ -132,7 +141,7 @@ VFO during the watch copies into a VFO the other channel isn't on: the one last 
 | PTT | Tunes the selected channel first if the receiver is on the other, and transmits there. The watch goes on: after the transmission (DMR: after its tail) the selected channel waits (`dual_delay_ms`, with looks at the other), and a reply holds it |
 | Monitor down | Tunes the selected channel first if the receiver is on the other, then acts as without the watch (FM: squelch open; DMR: digital monitor on the release). The watch pauses there while the key is held |
 | Power, squelch, Clear changes, a talk target or hear all (`RREQ_POWER`, `_SQUELCH`, `_CLEAR_TEMP`, `_DMR_TARGET`, `_DMR_CONTACT`, `_DMR_CALL_BACK`, `_DMR_TARGET_CLEAR`, `_DMR_HEAR_ALL`) | Tunes the selected channel first if the receiver is on the other, then applies the change there. The watch goes on |
-| Each hop | The channel the receiver leaves keeps its changes for now (power, squelch, bandwidth, mode, color code, timeslot, tones, the manual talk target, hear all; `dual_keep[]`), and the channel it tunes gets its own back. A pair with a new channel drops that channel's; a stop drops both |
+| Each hop | The channel the receiver leaves keeps its temporary changes (power, squelch, bandwidth, mode, color code, timeslot, tones, the manual talk target, hear all; `dual_keep[]`), and the channel it tunes gets its own back. A pair with a new channel drops that channel's; a stop drops both |
 | A channel, zone, VFO, tone, bandwidth, mode, timeslot or color code change | Ends the watch on the selected channel, then applies the change there. The UI then asks for the watch again with the new channel (dual-watch.md 5) |
 | Hotspot mode | Ends it where the receiver is |
 | `radio_req_scan` stop, cancel or toggle (the debug link) | Ends it on the selected channel and counts it in the view's `dual_stops`: the UI takes it as the user's stop and doesn't start the watch again. The radio has stopped already, so the UI asks for nothing and takes on a watch started right after it at once |
@@ -154,7 +163,7 @@ start. The panes name the mode and show no tone or bandwidth for it, and don't s
 
 ### 2.2 A second receiver
 
-A board with a second receiver sets `board.rx2` (`hal/hal_rx2.h`; the GD-88's second SoC, over the link in
+A board with a second receiver sets `board.rx2` (`hal/hal_rx2.h`; a receiver on a second SoC uses the link in
 [rx2-link.md](rx2-link.md)). In dual watch the main receiver then stays on the selected channel and the second one gets
 the other. Nothing alternates, and the scan's hold and resume timing aren't used. It takes FM and DMR only: when the
 channel not selected is P25 or NXDN, the main receiver alternates as in 2.1. The view's `rx2` is 1 while this is
@@ -206,10 +215,9 @@ keys up if needed and sends 1750 Hz until `false` or until `max_ms` has passed (
 the view. The debug link always gives a limit (at most `INPUT_INJECT_MAX_MS`), so a lost "off" unkeys as the "off"
 would; 0 means no limit but the TX time-out. A board without
 `tx_tone` gets neither.
-The debug link's `DL_OP_TONE_BURST` now gives the error beep when refused on a DMR channel, in hotspot mode or
-without `tx_tone`, instead of silently doing nothing.
-A debug-link burst requested during the roger beep tail after PTT release now re-keys, cancels the roger beep and
-owns the transmission until burst off, the host deadline or the TX time-out.
+The debug link's `DL_OP_TONE_BURST` gives the error beep when refused on a DMR channel, in hotspot mode, or without
+`tx_tone`. A debug link burst requested during the roger beep tail after PTT release re-keys, cancels the roger beep,
+and owns the transmission until burst off, the host deadline, or the TX time-out.
 
 The **Tone burst** side-key press function sends raw down/up requests (`radio_req_tone_burst_key`). The core starts
 1750 Hz on down and holds it for at least `RADIO_BURST_MIN_MS` (1000 ms). A tap releases at that minimum; a longer
@@ -236,8 +244,7 @@ after 200-400 ms, and some decoders need 500 ms; a 1 s minimum exceeds both. Onc
 carrier through its hang time, so one burst opens a contact.
 
 The board restores the microphone path on `tx_tone(0)` and on every return to receive. An AT1846S board makes the
-tone with the voice source select (tone 1, tone 2 or both) in place of the microphone. Verified on air on an HR_C6000 + AT1846S board (HIL 2026-10-10): the burst, the roger beep and APRS
-AFSK (`docs/testing/on-air-coverage.md`).
+tone with the voice source select (tone 1, tone 2 or both) in place of the microphone.
 
 ### 3.3a DCS turn-off tail (CONFIG_SUBTONE)
 
@@ -253,12 +260,12 @@ of the carrier dropping.
 
 The board maps the hook to its chip; the core owns the timing.
 
-| Chip | Tail | Measured (SDR bench, D023N, 12.5 kHz) |
+| Chip | Tail | On air (SDR bench, D023N, 12.5 kHz) |
 |---|---|---|
 | BK4819 | 0x52 bit 15 | 134.4 Hz for 0.30 s |
-| HR_C7000 | FM_PTT off with FM_MOD b9 (`modem-hrc7000.md` 8.2) | 134.4 Hz for 0.20 s, then 0.10 s of carrier without modulation (one board measured) |
-| AT1846S | TX select from CDCSS to CTCSS, 0x4A already 134.4 Hz | not yet measured |
-| software (PWM), HR_C5000 boards | the generator's 134.4 Hz sine (`subaudio_tx_tail`) | not yet measured |
+| HR_C7000 | FM_PTT off with FM_MOD b9 (`modem-hrc7000.md` 8.2) | 134.4 Hz for 0.20 s, then 0.10 s of carrier without modulation |
+| AT1846S | TX select from CDCSS to CTCSS, 0x4A already 134.4 Hz | |
+| software (PWM), HR_C5000 boards | the generator's 134.4 Hz sine (`subaudio_tx_tail`) | |
 
 `tools/sdr_fm_check.py` reports the tail on every DCS segment ("sub-audio tail: 134.4 Hz for 0.30 s, ...");
 `test_fm_tx_dcs` requires at least 0.15 s.
@@ -273,29 +280,28 @@ VOX. Boards put their reading on the hal's scale with `miclevel_log()` in `drive
 steps per bit, about 0.72 dB per step), so a threshold `100 - 8 x vox_level` sits `(8 x vox_level) x 0.72` dB below
 the top of the scale: about 6 dB at sensitivity 1, 29 dB at 5, 58 dB at 10.
 
-| Board kind | Where the level comes from | Checked |
-|---|---|---|
-| STM32 boards with an analog level tap | an ADC channel on the microphone level, 12 bits, passed straight in | in silence only (`test_vox_quiet`) |
-| HR_C7000 boards | the codec ADC's mic PCM, 80 samples every 10 ms (`platform/hrc7000/audio_pcm.c`, `drivers/audio/miclevel`): the peak of each half from its mean, 100 = a full-scale 16-bit peak; the level follows a louder half at once and falls 4 steps per half. These radios have no analog level tap. The first `mic_level()` call starts the meter (AUDIO_CONTROL b4 and the PCM interrupt, shared with the PCM stream) and returns 0; 1 s without a call stops it. The meter's interrupt clears b4 itself, so every AUDIO_CONTROL update in the driver (FM receive, transmit and idle, DMR entry) runs with interrupts off (`hrc7000_set_crit`, set by `hrc_audio_pcm_attach`). Needs `CONFIG_DMR` (the PCM stream); without it there is no hook | not on the bench |
+| Board kind | Where the level comes from |
+|---|---|
+| STM32 boards with an analog level tap | an ADC channel on the microphone level, 12 bits, passed straight in |
+| HR_C7000 boards | the codec ADC's mic PCM, 80 samples every 10 ms (`platform/hrc7000/audio_pcm.c`, `drivers/audio/miclevel`): the peak of each half from its mean, 100 = a full-scale 16-bit peak; the level follows a louder half at once and falls 4 steps per half. These radios have no analog level tap. The first `mic_level()` call starts the meter (AUDIO_CONTROL b4 and the PCM interrupt, shared with the PCM stream) and returns 0; 1 s without a call stops it. The meter's interrupt clears b4 itself, so every AUDIO_CONTROL update in the driver (FM receive, transmit and idle, DMR entry) runs with interrupts off (`hrc7000_set_crit`, set by `hrc_audio_pcm_attach`). Needs `CONFIG_DMR` (the PCM stream); without it there is no hook |
 
 The debug link's `vox.level` (features section) calls the hook on FM channels outside hotspot mode, so the level can
 be read with VOX off.
 
 The Quick VOX tile (FM) turns the `vox` setting to all or off; `vox_on` in the view says whether VOX is armed on
-the current channel. On a board without the hook the tile refuses to turn it on ("VOX: not on this radio yet")
-rather than show "VOX on" for a VOX that never keys.
+the current channel. On a board without the hook the tile refuses to turn it on, with a toast, rather than show
+"VOX on" for a VOX that never keys.
 
 ### 3.5 Squelch tail elimination
 
-No reverse burst or tone-loss signal from the other station is acted on yet; closing early on CTCSS loss conflicts
-with the tone debounce (8 polls) that keeps fades from chopping audio.
+The radio doesn't act on a reverse burst or a tone-loss signal from the other station: closing early on CTCSS loss
+conflicts with the tone debounce (8 polls) that keeps fades from chopping audio.
 
 The noise squelch shortens the tail itself. It closes after `RADIO_SQL_CLOSE_POLLS` (2) polls over the close line
 (open threshold + `RADIO_SQL_HYST_DB`), 50 ms, but after one poll when the noise is `RADIO_SQL_FAST_CLOSE_DB` (12 dB)
 or more over it: a carrier that goes takes the noise far over the line at once, while a fade crosses it by a little.
-Squelch level 0 (always open) and the APRS hold (`RADIO_SQL_CLOSE_POLLS_APRS`) keep their own timing. On one board
-(BK4819 receiver) the tail at the speaker went from 55 ms to 15-35 ms in three calls (measured,
-`test_fm_rx_speaker`); what is left is the poll and the chip's noise reading lag.
+Squelch level 0 (always open) and the APRS hold (`RADIO_SQL_CLOSE_POLLS_APRS`) keep their own timing. With a BK4819
+receiver the tail at the speaker is 15-35 ms (`test_fm_rx_speaker`): the poll and the chip's noise reading lag.
 
 ### 3.6 Mic gain
 
@@ -314,7 +320,7 @@ the mic gain also moves the VOX level. Without `CONFIG_DMR` and without the hook
 
 ### 3.7 DTMF transmit (CONFIG_DTMF)
 
-Touch tones on FM while PTT is held (#54, step 1: manual digits). Stored DTMF codes and DTMF decode are not built.
+Touch tones on FM, sent from the keys while PTT is held.
 
 **Keys.** With PTT held on an FM channel, 0-9, \* and # (the QUICK and CONTEXT keys on keypad radios) send their DTMF
 pair for as long as the key is held. A key map entry names its digit (`keymap_entry_t.dtmf`); a digit key's is its
@@ -361,13 +367,13 @@ again); false when the board can't (not in FM TX). The pairs (`hal/hal_dtmf.h`, 
 | HR_C7000 | the DTMF sender as for `tx_tone` (`modem-hrc7000.md` 8.3): the low tone's step in FM_TONE1's high half, the high tone's in FM_TONE3's, digit "1" sent; TONE_SEND_CTRL b6 = 0 mutes the microphone | SUBVOICE_COEF b15:8 as for the 1750 Hz burst (`hrc7000_dtmf_dev`) |
 | AT1846S | tone1 = low, tone2 = high, voice_sel 011 (both tones), the HR_C6000 microphone input muted | reg 0x59 bits 15:6 = `DTMF_DEV` |
 | BK4819 | tone 1 and tone 2 on (0x70), frequencies in 0x71 / 0x72, microphone ADC off | levels 0x70 = 0x9090, 0x40 = 0x348A |
-| HR_C5000 boards | none: no FM TX tone path yet | |
+| HR_C5000 boards | none: no `tx_dtmf` | |
 
 **Twist** (the high tone's level over the low tone's) is judged on the audio a receiver hears, after its de-emphasis
 (6 dB per octave, 750 us), where the usual DTMF receiver limits apply: the high tone -8 to +4 dB from the low one (the
 North American telephone criteria; other countries' are similar or wider). A tone that goes through the transmitter's
-pre-emphasis reads 3 to 7 dB higher on the carrier than it is received. Measured on the SDR bench (2026-10-21 and -22,
-12.5 and 25 kHz; `sdr_fm_check.py --dtmf` prints both; digits 1, #, 5, D, 0):
+pre-emphasis reads 3 to 7 dB higher on the carrier than it is received. On the SDR bench (12.5 and 25 kHz;
+`sdr_fm_check.py --dtmf` prints both; digits 1, #, 5, D, 0):
 
 | Chip | On the carrier | Received | Why |
 |---|---|---|---|
@@ -483,7 +489,7 @@ hook; `hal_power_t.volume()` says where the level comes from (`radio_volume_src_
 | Override | `radio_req_volume_override(step)` (`RREQ_VOLUME_OVERRIDE`) holds a level over the knob until `-1`; RAM only, so a restart gives the knob back. Without a knob there is nothing to override, and the request changes nothing |
 | Hold | `radio_req_volume_hold(true)` (`RREQ_VOLUME_HOLD`, from the UI's key lock through `ui_svc_volume_hold`) keeps the level in force and ignores the knob; `false` follows the knob again, and its level goes out at once. RAM only; ignored without a knob or under an override |
 | Knob position | `radio_view_t.volume_knob`: the knob's 0..100 % with the same 2 % filter, in force or not (also while held), -1 without a knob the MCU reads. While held, a change shows the unlock hint, as a key does. `radio_volume_knob()` (`UI_FEAT_VOLUME_KNOB`) says whether the board has such a knob; Settings > Key lock > Knob when locked (`UI_SET_KNOB_WHEN_LOCKED`) is shown only then |
-| Beeps | Key and status tones keep their own level (Tone volume, 4) and are mixed at the board's speaker path as before |
+| Beeps | Key and status tones keep their own level (Tone volume, 4) and are mixed at the board's speaker path |
 
 **Debug link.** RADIO op 30 (`debuglink.md` 3.8) sets a step 0..16, or `0xFF` for "back to the knob". On a `soft` radio
 it stores the step as the UI does (`0xFF` stores the default); on a `knob` radio it sets the override; on a radio with
@@ -496,7 +502,7 @@ toast). Up, Down and the encoder change the step by one and save it on each step
 and so does 3 s without a key. The screen shows the step as a large number over a bar of 16 segments (7 px pitch at
 the smallest display, 5 px filled). On the radio without the feature the setting is left out of Settings.
 
-**The knob's bar** (#354). On a `knob` radio, when the level the radio core passed on changes (`radio_view_t.volume`,
+**The knob's bar.** On a `knob` radio, when the level the radio core passed on changes (`radio_view_t.volume`,
 with `volume_src` `knob` before and after), the UI shows the same 16-segment bar, the label and the step over whatever
 screen is open, for 3 s after the last change (`VOLUME_MS`); no screen is pushed, so a call or a menu goes on. It
 takes a row no screen puts its content in: the hint row's place when the frame drew a hint row (`ui_hint_draws`),
@@ -570,9 +576,8 @@ core waits for it, at most `DMR_END_WAIT_MS` (400 ms), and then plays it whole.
 
 The radio core reads `battery_mv` every second (not while transmitting nor for 3 s after: the sag under TX is not the
 battery's state) and shows `battery_mv`, `battery_pct` (the board's) and `battery` (ok / low / critical). Thresholds
-are per board (`board.battery_low_mv`, `battery_critical_mv`; 0 means no warnings; values in each radio's hardware
-page). Three readings in a row
-below a threshold lower the level; it goes back up 200 mV above it.
+are per board (`board.battery_low_mv`, `battery_critical_mv`; 0 means no warnings). Three readings in a row below a
+threshold lower the level; it goes back up 200 mV above it.
 
 A board with `CAP_NO_BATTERY` (a mobile on a fixed supply) has no battery monitor. The core never reads
 `battery_mv`, the level stays ok, `battery_pct` and `battery_mv` stay 0, and nothing warns or refuses a transmission
@@ -583,8 +588,8 @@ ok(1) without ever sending rfoundryLowBattery.
 
 Such a board may measure its DC input instead: it sets `hal_power_t.supply_mv`, and `board_volts()` (`hal/board.h`)
 says `BOARD_VOLTS_SUPPLY`. The radio core reads it once a second, outside transmissions like the battery, into the
-view's `supply_mv`. Nothing acts on it: no level, percentage, warning, TX refusal or power off, since no supply
-thresholds are defined yet. The UI's last tool is then Supply, showing the reading in volts (13.8 V), with no battery
+view's `supply_mv`. Nothing acts on it: there are no supply thresholds, so no level, percentage, warning, TX refusal,
+or power off. The UI's last tool is then Supply, showing the reading in volts (13.8 V), with no battery
 settings. The debug link has `supply_mv` in place of `battery_pct` and `battery_mv`, `/status` has `supply_mv`, and
 SNMP reports as for no battery. The feature matrix and the web site show each radio's reading: Battery, Supply or
 None.
@@ -629,9 +634,9 @@ last transmission began, so an unattended one can be placed afterwards (debuglin
 On an idle FM channel after `rx_save_idle_s` without activity (keys, requests, receptions, PTT), the receiver sleeps
 200 / 400 / 800 ms and listens 100 ms (`rx_sleeping` in the view). Any signal in the listen window keeps it awake;
 anything else (a key, a request, MONITOR, scan, VOX, DMR channel, hotspot, a channel with the codeplug "no eco" flag,
-APRS receive listening on the APRS frequency, `aprs.md` 5.3) stops it. The board's `rx_sleep` hook turns the receiver off and back on. A board that sets `rx_sleep_dmr` also lets a
-trunked system's power save use it on a DMR channel (`dmr-trunking.md` 7.13). On air
-on an AT1846S board since 2026-10-10 (`test_battery_save*`: cycles when idle, MONITOR and a call wake it); the setting stays off by default.
+APRS receive listening on the APRS frequency, `aprs.md` 5.3) stops it. The board's `rx_sleep` hook turns the receiver
+off and back on. A board that sets `rx_sleep_dmr` also lets a trunked system's power save use it on a DMR channel
+(`dmr-trunking.md` 7.13).
 
 ### 5.5 Power switch
 
@@ -658,8 +663,7 @@ LRRP reports. A fixed position carries none, and the reports leave the time out 
 
 Some radios have a real-time clock, and some keep it running through power-off. `board.toml` `[hardware] clock`
 records which, with its source (`backed`, `unbacked`, `none`, or `unknown`), and the feature matrix and the site show
-it. A clock driver arrives behind a hardware switch (`CONFIG_RTC`, `hardware` in `tests/hil/features.toml`). Until GPS,
-the network or the user sets it, the radio shows "no time", and records keep using uptime or mark the time unknown.
+it. The firmware doesn't read the clock.
 
 ### 5.7 LEDs
 
@@ -678,9 +682,9 @@ calling `outputs()` while a signal runs, so it keeps time when nothing else chan
 
 ## 6. TX power, calibration, band limits
 
-Checked, unchanged: the board clamps the power level, uses the calibration table's drive value for the band and level,
-and refuses a TX frequency outside the board's bands (`tx_deny=band`). Without a calibration the board either drives
-a low fixed value or refuses to transmit; the board's hardware page says which. While a hardware option is pending
+The board clamps the power level, uses the calibration table's drive value for the band and level, and refuses a TX
+frequency outside the board's bands (`tx_deny=band`). Without a calibration the board either drives a low fixed value
+or refuses to transmit. While a hardware option is pending
 (`board_hwopt_pending`, `hal/hal_hwopt.h`: unset, or stored and waiting for a restart) the core refuses PTT itself with
 `tx_deny=hwopt` (the screen names the option), before the board is asked: a board may still key while a restart is
 due. When the board's `tx` refuses a frequency inside its bands, the reason is `tx_deny=hwopt` while an option is
@@ -706,7 +710,7 @@ board starts at 0, so a start-up with no trim calls nothing). The debug link's S
 
 | Board | Trim |
 |---|---|
-| with a reference control (`hal_radio_t.ref_trim` sets it) | adds the trim to the control its calibration sets, at every tune; its hardware page gives the scale |
+| with a reference control (`hal_radio_t.ref_trim` sets it) | adds the trim, at the board's scale, to the control its calibration sets, at every tune |
 | with synthesizers only (`hal_radio_t.ref_trim` keeps the value) | programs each RF chip at f x (1 + trim) instead of f, at every tune and burst (`ref_trim_tune_hz`). A superhet's LO takes f x (1 + trim) + IF and its IF stays as it is: both chips run from one reference, so the IF's share of the error cancels |
 | without the hook, or built with `CONFIG_REF_TRIM=n` | the row is hidden; nothing changes |
 
@@ -734,17 +738,18 @@ A board may list receive-only ranges past its rated bands: the last `board_t.rx_
 | Modes | FM only, as in any receive-only band: the channel editor refuses DMR there. |
 | Turning it off | The radio core reloads. A VFO past the table returns to a band; a channel there stays stored and doesn't tune. |
 
-A board's ranges come from its receiver chip's documents. Nothing past the rated bands is
-measured: front-end filters may cut sensitivity well inside the chip's range, and spurs aren't specified.
-A radio's ranges are on its hardware page.
+A board's ranges come from its receiver chip's documents. Past the rated bands, front-end filters may cut sensitivity
+well inside the chip's range, and spurs aren't specified. For which radios have ranges, see the
+[feature matrix](../feature-matrix.md).
 
-## 7. Verification status
+## 7. Tests
 
-Host-tested (`radioFeaturesTest`): scan engine and glue (zone, skip flags, nuisance, resume modes,
-priority, dual watch with its wait and looks and the debug link's requests during it, VFO band scan, mixed FM / DMR, a DMR call already in progress with a direct mode carrier and a
-late entry at every superframe phase, PTT and retune behavior), battery levels and power off, beep
-patterns and mixing, vibration patterns and their timing through the radio core, TOT warning, BCL, inhibit, roger beep, burst, DTMF timing and refusals (`inputTest` for the key routing), VOX, battery save, DMR permit / call-end beeps.
-On the radio (`docs/testing/on-air-coverage.md`, HIL 2026-10-10): zone scan stopping for DMR calls, VFO scan, dual
-watch, the battery saver, the 1750 Hz burst and the roger beep on air; TX inhibit and the TOT warning on the radio's
-state; VOX only in silence (the `mic_level` hook is unverified); whether PCM beeps play in FM mode is still open
-(`beep.no_stream` / `beep.blocks` answer that).
+The host tests (`radioFeaturesTest`) cover the scan engine and glue (zone, skip flags, nuisance, resume modes,
+priority, dual watch with its wait and looks and the debug link's requests during it, VFO band scan, mixed FM and DMR,
+a DMR call already in progress with a direct mode carrier and a late entry at every superframe phase, PTT and retune
+behavior), battery levels and power off, beep patterns and mixing, vibration patterns and their timing through the
+radio core, the TOT warning, BCL, inhibit, the roger beep, the burst, DTMF timing and refusals (`inputTest` for the
+key routing), VOX, battery save, and the DMR permit and call end beeps.
+
+The HIL tests (`test_radio_features.py` and the on-air tests) check scan, dual watch, the battery saver, the 1750 Hz
+burst, the roger beep, TX inhibit, and the TOT warning on the radio.
