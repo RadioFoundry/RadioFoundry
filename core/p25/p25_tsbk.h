@@ -169,7 +169,6 @@ typedef struct {
 	uint8_t opcode, mfid;
 	bool known;		// a layout decoded here (the three above, MFID 0)
 	uint8_t svc;		// voice request: service options
-	bool emergency;		// affiliation request
 	uint32_t wacn;		// registration request
 	uint16_t sysid;		// registration and affiliation requests
 	uint16_t tg;		// voice and affiliation requests

@@ -270,6 +270,9 @@ With a key loaded, the radio's calls carry FID 0x10 and the privacy service opti
 received calls with the privacy service option (or PI). Without a key, such bursts never play; they count as
 `rx_enc_dropped`. The radio doesn't support enhanced privacy.
 
+The same key covers packet data where its scheme defines a data form (Motorola BP encrypts it, Anytone BP blocks
+data TX): [dmr-data.md](dmr-data.md) 13.
+
 The key is set over the debug link (RADIO op 19, `radio_req_dmr_privacy`). The radio core saves it in settings slot 1
 and loads the active slot at boot ([settings-store.md](settings-store.md) 3.1). The open-firmware codeplug has no key
 storage, so qdmr can't set it.

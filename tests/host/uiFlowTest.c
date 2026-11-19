@@ -848,6 +848,16 @@ static const flow_t flows[] = {
 	{ "T Home on a trunked channel: the system and Ready", "t3 dlpos:3", "", "screen=home shows=County shows=Ready hides=CC",
 	  0, false },
 	{ "T Home while hunting", "t3 dlpos:3 t3state:hunt", "", "screen=home shows=Searching", 0, false },
+	{ "T Home hearing another system says so", "t3 dlpos:3 t3state:other", "",
+	  "screen=home shows=Other_system hides=Searching", 0, false },
+	{ "T PTT refused for another system says so", "t3 dlpos:3 t3state:denyother", "",
+	  "shows=Another_system_heard shows=Check_system_settings", 0, false },
+	{ "T Home after a refused registration says so", "t3 dlpos:3 t3state:regrefused", "",
+	  "screen=home shows=Reg._refused hides=Searching", 0, false },
+	{ "T PTT refused for a refused registration says so", "t3 dlpos:3 t3state:denyreg", "",
+	  "shows=Registration_refused shows=Ask_to_add_your_ID", 0, false },
+	{ "T PTT refused for a grant on an unlisted channel names it", "t3 dlpos:3 t3state:denyunmapped", "",
+	  "shows=Unknown_channel_311 shows=Check_system_settings", 0, false },
 	{ "T Home on the fallback channel", "t3 dlpos:3 t3state:fallback", "", "screen=home shows=Fallback", 0, false },
 	{ "T back on the system", "t3 dlpos:3 t3state:fallback", "t3state:back", "screen=home toast=Back_on_County", 0, false },
 	{ "T Home on a channel without its system", "t3 dlpos:5", "", "screen=home shows=System_not_set_up", 0, false },
@@ -1651,6 +1661,31 @@ static void call_screen_checks(void)
 	}
 }
 
+#if CONFIG_DMR_TRUNK
+// Searching a trunked system and hearing only another one, at every display class: the chips say Other system, and
+// a Home with an activity area names what was heard (dmr-trunking.md 12.4)
+static void t3_other_checks(void)
+{
+	char err[300], buf[200];
+	for (int g = 0; g < sim_geom_count; g++) {
+		sim_reset(&sim_geoms[g], SIM_MAP_K);
+		snprintf(buf, sizeof buf, "t3 dlpos:3 t3state:other");
+		bool ok = sim_run(buf, err, sizeof err);
+		if (ok) {
+			bool two = ui_layout.activity_h >= 2 * ui_layout.small->h;
+			snprintf(buf, sizeof buf, ui_layout.activity_h < ui_layout.small->h ? "expect:shows=Other_system" : two ?
+				 "expect:shows=Other_system expect:shows=Heard:_Huge,_net_0 expect:shows=site_83" :
+				 "expect:shows=Other_system expect:shows=Heard:_Huge,_net_0");
+			ok = sim_run(buf, err, sizeof err);
+		}
+		if (!ok) {
+			printf("FAIL another system heard [%s]: %s\n", sim_geoms[g].name, err);
+			fails++;
+		}
+	}
+}
+#endif
+
 // Tools > APRS > Stations heard, at every display class: a station with a position shows how far and which way it is
 // from ours, beside the longest call there is, kept whole. No position of ours, or none of the station's: the row is
 // the call and its age, as before.
@@ -1968,6 +2003,9 @@ int main(void)
 	printf("# %d flows run\n", flows_run);
 	about_checks();
 	call_screen_checks();
+#if CONFIG_DMR_TRUNK
+	t3_other_checks();
+#endif
 	heard_checks();
 	station_checks();
 	vfo_split_dmr_checks();

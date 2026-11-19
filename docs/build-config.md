@@ -49,12 +49,12 @@ so the docs never understate what a radio can do.
 | ● | Written, built, not yet checked on the radio | no list: on by default. The bring-up records and `board.toml` `[status]` hold its test state | |
 
 Both `config.mk` lists take one switch a line with the reason in its comment (`tools/boards.py check` fails on one
-without a reason, or on a switch in both). Either one turns the switch off by default (`CONFIG_X ?= n` next to it),
-keeps it out of ci's maximal configuration, and satisfies a hardware switch's check. A platform's `config.mk` can
-list switches for all of its radios. `config/features.mk` lists the ones a build rules out by itself: `FONT_BIG` on a
-panel under 220 px wide, with the width taken from the `hardware.gallery` class in `board.toml`, so a new small-panel
-board needs no line for it. The feature matrix and the web site show the mark. Record test state in bring-up records
-and pull requests, never in `config.mk`.
+without a reason, or on a switch in both). Either one turns the switch off by default (the Makefile does it, so no
+`CONFIG_X ?= n` line is needed), keeps it out of ci's maximal configuration, and satisfies a hardware switch's check.
+A platform's `config.mk` can list switches for all of its radios. `config/features.mk` lists the ones a build rules
+out by itself: `FONT_BIG` on a panel under 220 px wide, with the width taken from the `hardware.gallery` class in
+`board.toml`, so a new small-panel board needs no line for it. The feature matrix and the web site show the mark.
+Record test state in bring-up records and pull requests, never in `config.mk`.
 
 ## Variants
 

@@ -134,9 +134,30 @@ static void send_udt(t3_ms_t *ms, uint8_t slot)
 static void finish(t3_ms_t *ms, uint32_t now, t3_res_t r);
 static bool is_voice(t3_svc_t s);
 
+// A programmed row numbered n: the plan table's (table false: t3_plan_lookup looked there already), else a control
+// channel's
+static bool row_lookup(const t3_cfg_t *c, uint16_t n, bool table, t3_chan_t *out)
+{
+	for (uint16_t i = 0; table && i < c->plan.ntable; i++) {
+		if (c->plan.table[i].lcn == n) {
+			*out = c->plan.table[i];
+			return true;
+		}
+	}
+	for (uint8_t i = 0; i < c->nctrl; i++) {
+		if (c->ctrl[i].lcn == n && c->ctrl[i].rx_hz != 0) {
+			*out = c->ctrl[i];
+			return true;
+		}
+	}
+	return false;
+}
+
 // A logical channel's frequencies: the plan (learned, table, fixed), else a programmed control channel with that
 // number. A one-carrier site grants its own carrier's other slot, which a radio with only the control channel
-// programmed (no plan, no Chan_Freq heard yet) knows that way
+// programmed (no plan, no Chan_Freq heard yet) knows that way.
+// Site tools and scanners often count each timeslot as a channel: (LPCN << 1 | slot bit) + 1, so LPCN 311 is their
+// 623 and 624. A row no LPCN matches is tried under that numbering last, either slot (both share the carrier)
 static bool chan_lookup(const t3_ms_t *ms, uint16_t lcn, t3_chan_t *out)
 {
 	const t3_cfg_t *c = ms->cfg;
@@ -146,13 +167,16 @@ static bool chan_lookup(const t3_ms_t *ms, uint16_t lcn, t3_chan_t *out)
 	if (lcn == T3_LPCN_NULL || lcn > T3_LPCN_MAX) {
 		return false;
 	}
-	for (uint8_t i = 0; i < c->nctrl; i++) {
-		if (c->ctrl[i].lcn == lcn && c->ctrl[i].rx_hz != 0) {
-			*out = c->ctrl[i];
-			return true;
-		}
+	if (row_lookup(c, lcn, false, out)) {
+		return true;
 	}
-	return false;
+	uint16_t per_slot = (uint16_t)(2u * lcn + 1u);
+	if (per_slot >= T3_LPCN_MAX ||
+	    !(row_lookup(c, per_slot, true, out) || row_lookup(c, (uint16_t)(per_slot + 1u), true, out))) {
+		return false;
+	}
+	out->lcn = lcn;		// the channel as the TS names it, for comparing calls and TSCCs
+	return true;
 }
 
 // ---- Hunting (6.3.2.1, Annex D) ----
@@ -468,6 +492,9 @@ static void on_grant(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_cha
 		   !chan_lookup(ms, p->u.grant.lpcn, &c)) {
 		ms->st.unmapped++;
 		ms->st.last_unmapped = p->u.grant.lpcn;
+		if (ms->ax.state != T3_AX_IDLE && is_me(ms, p->u.grant.src)) {
+			finish(ms, now, T3_RES_UNMAPPED);	// our call can't be followed: say so now, not at TP_Timer
+		}
 		return;
 	}
 	if (ms->state == T3_FOLLOW) {
@@ -603,6 +630,7 @@ const char *t3_res_name(t3_res_t r)
 	case T3_RES_LOST: return "lost";
 	case T3_RES_CANCELED: return "canceled";
 	case T3_RES_DIVERTED: return "diverted";
+	case T3_RES_UNMAPPED: return "unmapped";
 	}
 	return "?";
 }
@@ -937,6 +965,7 @@ static void registered(t3_ms_t *ms, uint32_t now)
 	ms->reg = ms->reg_stale ? T3_REG_NEEDED : T3_REG_OK;	// stale: the list sent is no longer ours
 	ms->reg_stale = false;
 	ms->reg_area = reg_area(ms, ms->syscode);
+	ms->refused_area = 0;
 	ms->awake_until = now + or_default(ms->cfg->awake_ms, T3_AWAKE_MS);
 }
 
@@ -980,8 +1009,10 @@ static void on_ack(t3_ms_t *ms, uint32_t now, const t3_ack_t *a)
 		} else if (svc == T3_SVC_DEREGISTER) {
 			ms->reg = T3_REG_NEEDED;
 			ms->deregistered = true;
-		} else if (is_voice(svc) && a->reason == T3_RC_MS_ALERTING) {
-			// The called radio rings: the call goes on
+		} else if (is_voice(svc) && a->reason != T3_RC_CALLBACK) {
+			// A voice call ends in a grant or a refusal; Callback is the one acknowledgement that ends it (the
+			// called radio calls back). Any other goes on toward the grant: MS_Alerting (the called radio rings), or
+			// Message_Accepted, which some systems send to a request for a call already set up. TP_Timer
 			ms->ax.state = T3_AX_ACKED;
 			ms->ax.ack_deadline = now + T3_TP_MS;
 			break;
@@ -1009,7 +1040,8 @@ static void on_ack(t3_ms_t *ms, uint32_t now, const t3_ack_t *a)
 			ms->ps_offset = 0;
 			finish(ms, now, T3_RES_DONE);
 		} else if (svc == T3_SVC_REGISTER && a->reason == T3_RC_REG_REFUSED) {
-			// Look for another TSCC; this one is tried again when the hunt comes back to it
+			// Look for another TSCC; this one is tried again when the hunt comes back to it. The screen says so
+			ms->refused_area = (uint16_t)(reg_area(ms, ms->syscode) + 1u);
 			finish(ms, now, T3_RES_REFUSED);
 			enter_hunt(ms, now, false);
 		} else {
@@ -1601,6 +1633,15 @@ static bool authorized(t3_ms_t *ms, uint16_t code)
 	return t3_authorize(&ms->auth, code) == T3_AUTH_OK;
 }
 
+// Another system's control channel heard while hunting: kept for the screen, which names what was heard (t3_ms_other)
+static void heard_other(t3_ms_t *ms, uint32_t now, uint16_t code)
+{
+	if (ms->state == T3_HUNT) {
+		ms->other_code = code;
+		ms->other_ms = now != 0 ? now : 1u;
+	}
+}
+
 static void confirm(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t3_aloha_t *a)
 {
 	if (ms->state == T3_HUNT && ms->hunt_strict && ms->cfg->leave_dbm != 0 && ms->level_dbm != 0 &&
@@ -1613,6 +1654,7 @@ static void confirm(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t
 		ms->state = T3_CAMPED;
 		ms->tscc = ms->tuned;
 		ms->tscc.cc = cc;
+		ms->other_ms = 0;
 	}
 	if (ms->syscode != 0 && ms->syscode != a->syscode) {
 		// Another network: what was learned belongs to the old one. A site change of one network keeps it
@@ -1835,6 +1877,7 @@ static void on_tscc(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t
 	if (p->op == T3_OP_C_ALOHA) {
 		if (!authorized(ms, p->u.aloha.syscode)) {
 			ms->st.foreign++;
+			heard_other(ms, now, p->u.aloha.syscode);
 			if (ms->state == T3_HUNT) {
 				hunt_next(ms, now);
 			}
@@ -2364,6 +2407,7 @@ void t3_ms_slc(t3_ms_t *ms, uint32_t now, uint32_t slc)
 		ms->slc_foreign = (uint32_t)code + 1u;
 		if (again && ms->state == T3_HUNT) {
 			ms->slc_foreign = 0;
+			heard_other(ms, now, (uint16_t)(code & ~3u));	// PAR 0: the short LC doesn't carry it
 			hunt_next(ms, now);
 		}
 		return;
@@ -2854,6 +2898,23 @@ bool t3_ms_deregister(t3_ms_t *ms, uint32_t now)
 	}
 	start_access(ms, now, T3_SVC_DEREGISTER, 0, false);
 	return true;
+}
+
+bool t3_ms_other(const t3_ms_t *ms, uint32_t now, uint16_t *code)
+{
+	if (ms->state != T3_HUNT || ms->other_ms == 0 || since(now, ms->other_ms, T3_OTHER_MS)) {
+		return false;
+	}
+	*code = ms->other_code;
+	return true;
+}
+
+bool t3_ms_reg_refused(const t3_ms_t *ms)
+{
+	if (ms->refused_area == 0 || ms->reg == T3_REG_OK || ms->reg == T3_REG_NOT_NEEDED) {
+		return false;
+	}
+	return ms->state == T3_HUNT || (uint16_t)(reg_area(ms, ms->syscode) + 1u) == ms->refused_area;
 }
 
 bool t3_ms_can_talk(const t3_ms_t *ms)
