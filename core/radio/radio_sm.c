@@ -2969,6 +2969,13 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 		h = (h ^ vals[i]) * 16777619u;
 	}
 	c.channelKey = h;
+#if CONFIG_DMR_PRIVACY
+	// The voice key is the data key: data is encrypted or held back as the scheme says
+	static dmrPrivacyKey_t data_key;	// the data layer's crypt context points here (radio task only)
+	data_key.type = (dmrPrivacyType_t)sm->privacy_type;
+	data_key.key = sm->privacy_key;
+	dmrPrivacyDataConfig(&data_key, &c.privacy);
+#endif
 #if CONFIG_DMR_IP_GATEWAY
 	// Control station passthrough while the PC can take the packets (docs/spec/usb-network.md 5.2)
 	dmrDataServiceSetPassthrough(hostlink_net_passthrough_active());

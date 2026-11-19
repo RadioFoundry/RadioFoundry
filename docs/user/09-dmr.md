@@ -280,6 +280,11 @@ been checked against another radio yet ([Radio reference](23-radios.md)).
 - The radio plays an encrypted call only when it has the matching key. Without the key the call shows as
   "Encrypted: not played".
 - Calls with stronger encryption (they send a PI header) are never played.
+- Text messages and other data follow the key too. With a Motorola key they are scrambled the same way, and the
+  radio reads scrambled data sent with its key. Messages in the **ETSI short** format can't be scrambled, so they
+  fail with a Motorola key: use **ETSI** or **Motorola** ([Messages](10-messages-and-signaling.md)). Anytone basic privacy has no form for data, so with an Anytone key
+  the radio sends no text messages or other data: a message you send fails. Scrambled data the radio can't read is
+  not shown.
 - **\***, **6** turns privacy on for your calls ("Privacy on for now"). Home shows "Priv". **Back** on Home turns it
   off again.
 
