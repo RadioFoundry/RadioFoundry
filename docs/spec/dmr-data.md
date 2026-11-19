@@ -365,7 +365,7 @@ that form, and it confirms delivery. Motorola TMS ("Motorola") is the format for
 ## 7. LRRP
 
 - Immediate location requests to us are answered; triggered requests (periodic, distance) start a trigger (2 at
-  most, reports at most every 5 s) with a start response, then reports.
+  most, reports 30 s to 1 day apart, whatever the requester asks) with a start response, then reports.
 - The position is the position service's ([position.md](position.md)), through the `ownPosition` hook the radio
   core sets (`position_report`: the board GPS, the host's NMEA or the fixed position, ambiguity applied). It needs no
   APRS and no GPS receiver: `CONFIG_DMR_LRRP` builds the service, and `hasGps` is set in every such build.

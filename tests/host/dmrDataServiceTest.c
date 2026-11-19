@@ -580,6 +580,32 @@ static void testLrrp(void)
 	CHECK(countLrrp(0x0D) == 0);
 	CHECK(dmrDataServiceLrrpTriggerCount() == 0);
 
+	// A period under 30 s (1 s asked): reports 30 s apart, the first after 5 s
+	sentCount = 0;
+	receiveLrrp("0909220411223344343101");
+	runMainTask(8000);
+	CHECK(countLrrp(0x0B) == 1);
+	CHECK(countLrrp(0x0D) == 1);
+	runMainTask(25000);
+	CHECK(countLrrp(0x0D) == 1);
+	runMainTask(5000);
+	CHECK(countLrrp(0x0D) == 2);
+	receiveLrrp("0f06220411223344");
+	runMainTask(3000);
+	CHECK(dmrDataServiceLrrpTriggerCount() == 0);
+
+	// A period past what milliseconds hold in 32 bits (4294968 s): capped at a day, not a period of a few hundred ms
+	sentCount = 0;
+	receiveLrrp("090c220411223344343182869238");
+	runMainTask(8000);
+	CHECK(countLrrp(0x0B) == 1);
+	CHECK(countLrrp(0x0D) == 1);
+	runMainTask(120000);
+	CHECK(countLrrp(0x0D) == 1);
+	receiveLrrp("0f06220411223344");
+	runMainTask(3000);
+	CHECK(dmrDataServiceLrrpTriggerCount() == 0);
+
 	// Distance 500 m checked every 30 s: the first report, then only once it has moved 500 m
 	sentCount = 0;
 	receiveLrrp("090922015534311e788374");

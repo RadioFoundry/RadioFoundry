@@ -140,4 +140,5 @@ off. The screen shows the registration: Registering, Registered, Refused or No a
 codeplug, so the [Codeplug Editor](04-programming.md) can set it too.
 
 LRRP answers location requests from a dispatcher. A radio without GPS ([Radio reference](23-radios.md)) answers "no
-fix". **Settings > Location > Answer GPS requests** turns the answers off.
+fix". Periodic reports go 30 s to 1 day apart, whatever the dispatcher asks. **Settings > Location > Answer GPS
+requests** turns the answers off.

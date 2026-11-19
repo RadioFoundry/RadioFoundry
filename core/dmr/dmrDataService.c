@@ -1652,7 +1652,8 @@ dmrArsState_t dmrDataServiceArsState(void)
 // position source (settings.hasGps false: a radio without GPS) every answer says "no fix" and no trigger is started
 #define LRRP_QUEUE_SIZE				3		// one slot kept free
 #define LRRP_TRIGGERS_MAX			2
-#define LRRP_MIN_INTERVAL_S			5
+#define LRRP_MIN_INTERVAL_S			30		// each report is a transmission: a shorter period is stretched
+#define LRRP_MAX_INTERVAL_S			86400	// one day: a longer period is capped (its milliseconds fit 32 bits)
 #define LRRP_DISTANCE_CHECK_S		30
 #define LRRP_FIRST_REPORT_MS		5000	// a new trigger's first report, after its start response
 
@@ -1812,6 +1813,11 @@ static bool lrrpHandleRequest(const lrrpPendingRequest_t *pending)
 				if (interval < LRRP_MIN_INTERVAL_S)
 				{
 					interval = LRRP_MIN_INTERVAL_S;
+				}
+				// The requester picks the period; ours runs in milliseconds
+				if (interval > LRRP_MAX_INTERVAL_S)
+				{
+					interval = LRRP_MAX_INTERVAL_S;
 				}
 
 				memset(t, 0, sizeof(*t));
