@@ -850,10 +850,14 @@ void p25_follow_tsbk(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 void p25_follow_unit(p25_follow_t *f, const p25_rx_unit_t *u, uint32_t now)
 {
 	uint8_t blk[P25_TSBK_BYTES];
+	uint32_t wacn;
 
 	if (f->tuning || f->view.state == P25_FOLLOW_OFF)
 		return;
 	view_begin(f);
+	// A voice channel's link control may carry the network status broadcast: $BEE00 there blocks as it does here
+	if (p25_unit_net_wacn(u, &wacn) && wacn == P25_WACN_NO_TX)
+		wacn_block(f);
 	switch (u->duid) {
 	case P25_DUID_TSDU: {
 		uint8_t n = u->nsyms <= p25_blocks_syms(1) ? 1 : u->nsyms <= p25_blocks_syms(2) ? 2 : 3;

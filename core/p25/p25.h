@@ -123,6 +123,9 @@ typedef struct {
 	uint16_t nsyms;
 	const uint8_t *air;	// the unit as received, valid during the callback
 } p25_rx_unit_t;
+// The WACN an LDU1's or TDULC's link control names when it is the network status broadcast (TIA-102.AABF-D 7.3.17,
+// 7.3.28: LCO 36 or 41, standard format, not protected). False: another unit or link control, or undecodable
+bool p25_unit_net_wacn(const p25_rx_unit_t *u, uint32_t *wacn);
 
 typedef struct {
 	uint16_t nac;		// units of another NAC are not ours; P25_NAC_ANY takes all
@@ -172,6 +175,7 @@ typedef struct {
 
 typedef struct {
 	uint32_t units, voice, voice_bad, voice_bits, lc_fail, es_fail, calls;
+	uint32_t wacn_no_tx;	// LDU1s and TDULCs whose link control names WACN P25_WACN_NO_TX (p25_unit_net_wacn)
 } p25_call_stats_t;
 
 typedef struct {

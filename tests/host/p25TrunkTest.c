@@ -1365,6 +1365,68 @@ static void testWacnExtended(void)
 	p25_follow_end(&f);
 }
 
+// A voice unit (LDU1 or TDULC) whose link control is the network status broadcast naming wacn (LCO 36)
+static void lc_net(p25_follow_t *f, uint8_t duid, uint32_t wacn)
+{
+	static uint8_t air[P25_UNIT_BYTES_MAX];
+	uint8_t raw[P25_LC_BYTES] = { 0x40 | 36, 0, (uint8_t)(wacn >> 12), (uint8_t)(wacn >> 4),
+				      (uint8_t)((wacn & 0x0F) << 4 | SYSID >> 8), (uint8_t)SYSID, 0x10, 0x04, 0x70 };
+	p25_rx_unit_t u = { .duid = duid, .nac = NAC, .nsyms = duid == P25_DUID_LDU1 ? P25_LDU_SYMS : P25_TDULC_SYMS,
+			    .air = air };
+
+	p25_unit_begin(air, u.nsyms, NAC, duid, P25_SS_IDLE);
+	if (duid == P25_DUID_LDU1)
+		p25_ldu_lc_put(air, raw);
+	else
+		p25_tdulc_put(air, raw);
+	p25_follow_unit(f, &u, now_ms);
+}
+
+// The network status broadcast in a voice channel's link control names $BEE00: blocked as on the control channel
+static void testWacnLinkControl(void)
+{
+	static const p25_follow_cc_t cc[] = { { .hz = HZ_CC1, .chan = 0x1004, .site = 3 } };
+	static const p25_follow_iden_t iden[P25_FOLLOW_IDENS] = {
+		[1] = { .base_hz = 851006250u, .spacing_hz = 6250, .tx_off_hz = -45000000 } };
+	static p25_follow_t f;
+	p25_follow_cfg_t cfg = { .wacn = P25_FOLLOW_WACN_ANY, .sysid = SYSID, .nac = NAC, .flags = P25_FOLLOW_TX,
+				 .unit_id = OUR_UNIT, .talk_group = 100, .ncc = 1, .cc = cc, .iden_set = 1u << 1, .iden = iden };
+	uint8_t b[P25_TSBK_BYTES];
+	static const uint8_t duids[] = { P25_DUID_LDU1, P25_DUID_TDULC };
+
+	for (unsigned d = 0; d < 2; d++) {
+		ntunes = nsends = 0;
+		now_ms = 60000 + d * 60000;
+		cc_wacn = WACN;
+		cc_alive = true;
+		p25_follow_begin(&f, &cfg, &ahooks, NULL, now_ms);
+		retune(&f);
+		site_ident_w(&f, WACN, 3);
+		run_ms(&f, 300);
+		answer_reg(&f, P25_RV_ACCEPT);
+		run_ms(&f, 200);
+		answer_aff(&f, P25_RV_ACCEPT, 100);
+		CHECK(view(&f).reg == P25_REG_READY && nsends == 2, "%u: ready", d);
+		// Another unit's call of our group: followed; its link control names $BEE00
+		mk_grant(b, P25_OP_GRP_V_GRANT, 0, 0x100A, 100, 4444);
+		p25_follow_tsbk(&f, b, NAC, now_ms);
+		retune(&f);
+		CHECK(view(&f).state == P25_FOLLOW_VOICE, "%u: following", d);
+		lc_net(&f, P25_DUID_LDU1, WACN);
+		CHECK(view(&f).reg == P25_REG_READY, "%u: another WACN in link control: nothing changes", d);
+		lc_net(&f, duids[d], P25_WACN_NO_TX);
+		CHECK(view(&f).reg == P25_REG_BLOCKED, "%u: $BEE00 in link control: blocked (reg %u)", d, view(&f).reg);
+		if (tune_pending)
+			retune(&f);
+		p25_follow_ptt(&f, true, now_ms);
+		run_ms(&f, 5000);
+		CHECK(nsends == 2 && p25_follow_can_talk(&f.view, cfg.flags) == P25_TALK_BLOCKED, "%u: silent (%u)", d, nsends);
+		p25_follow_ptt(&f, false, now_ms);
+		p25_follow_end(&f);
+	}
+	cc_alive = false;
+}
+
 static void testFollowOptions(void)
 {
 	static const uint16_t groups[] = { 200 };
@@ -2046,6 +2108,7 @@ int main(void)
 	testAccessEarlyAnswers();
 	testWacnBlocked();
 	testWacnExtended();
+	testWacnLinkControl();
 	testFuzz();
 	testAirSystem();
 	testAirLoss();

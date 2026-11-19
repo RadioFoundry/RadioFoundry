@@ -180,6 +180,42 @@ static void testLc(void)
 	CHECK(p25_lc_parse(raw, &got) && got.dst == 0xABCDEF && got.src == 0x123456, "unit LC back");
 	raw[1] = 0x90;
 	CHECK(!p25_lc_parse(raw, &got) && got.mfid == 0x90, "a manufacturer's LC");
+
+	// The network status broadcast in link control (TIA-102.AABF-D 7.3.17, 7.3.28), in an LDU1 and a TDULC
+	{
+		static uint8_t unit[P25_UNIT_BYTES_MAX];
+		p25_rx_unit_t u = { .air = unit };
+		uint32_t wacn;
+
+		// LCO 36: reserved octet, WACN 20 bits, system 12, channel, service class
+		memset(raw, 0, sizeof raw);
+		raw[0] = 0x40 | 36;
+		raw[2] = 0xBE; raw[3] = 0xE0; raw[4] = 0x02; raw[5] = 0xF3;
+		p25_unit_begin(unit, P25_TDULC_SYMS, 0x293, P25_DUID_TDULC, P25_SS_IDLE);
+		p25_tdulc_put(unit, raw);
+		u.duid = P25_DUID_TDULC;
+		CHECK(p25_unit_net_wacn(&u, &wacn) && wacn == 0xBEE00, "TDULC, LCO 36: %05x", wacn);
+		// LCO 41: WACN 20 bits right after the opcode
+		memset(raw, 0, sizeof raw);
+		raw[0] = 0x40 | 41;
+		raw[1] = 0xA4; raw[2] = 0xC2; raw[3] = 0x12; raw[4] = 0xF3;
+		p25_unit_begin(unit, P25_LDU_SYMS, 0x293, P25_DUID_LDU1, P25_SS_IDLE);
+		p25_ldu_lc_put(unit, raw);
+		u.duid = P25_DUID_LDU1;
+		CHECK(p25_unit_net_wacn(&u, &wacn) && wacn == 0xA4C21, "LDU1, LCO 41: %05x", wacn);
+		// Not a network status: protected, the manufacturer's format bit clear, another opcode, an LDU2
+		raw[0] = 0xC0 | 41;
+		p25_ldu_lc_put(unit, raw);
+		CHECK(!p25_unit_net_wacn(&u, &wacn), "protected LC");
+		raw[0] = 41;
+		p25_ldu_lc_put(unit, raw);
+		CHECK(!p25_unit_net_wacn(&u, &wacn), "SF clear");
+		raw[0] = 0x40 | 35;
+		p25_ldu_lc_put(unit, raw);
+		CHECK(!p25_unit_net_wacn(&u, &wacn), "another LCO");
+		u.duid = P25_DUID_LDU2;
+		CHECK(!p25_unit_net_wacn(&u, &wacn), "an LDU2 has no link control");
+	}
 }
 
 static void testVoice(void)

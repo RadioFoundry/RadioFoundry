@@ -92,10 +92,11 @@ static bool trunk;			// the engine runs a trunked channel
 static radio_p25_trunk_view_t tview;	// the radio task's copy, for any task
 static uint8_t twhy;			// RADIO_P25T_WHY_* of the last PTT refused or request failed
 static bool ttx;			// the follower's transmit side is on
+#endif
 
-// Control channels of systems heard naming P25_WACN_NO_TX since power on (RAM only, cleared by radio_p25_init): a
-// trunked channel with any of them starts with its transmit side blocked (P25_FOLLOW_BLOCKED). With the table full,
-// every trunked channel does
+// Frequencies of systems heard naming P25_WACN_NO_TX since power on (RAM only, cleared by radio_p25_init): a
+// trunked channel with any of them as a control channel starts with its transmit side blocked (P25_FOLLOW_BLOCKED),
+// a conventional channel on one refuses PTT. With the table full, every P25 channel does
 #define NOGO_MAX	32u
 static uint32_t nogo_hz[NOGO_MAX];
 static uint8_t nogo_n;
@@ -120,6 +121,24 @@ static void nogo_add(uint32_t hz)
 	nogo_hz[nogo_n++] = hz;
 }
 
+static uint32_t conv_hz;		// a conventional channel's frequency
+
+// The call layer heard link control naming P25_WACN_NO_TX on this conventional channel: its frequency in the table
+static void conv_keep(void)
+{
+	if (mem->eng.rx.stats.wacn_no_tx != 0)
+		nogo_add(conv_hz);
+}
+
+static bool p25_no_tx(void)
+{
+	if (mem == NULL || radio_p25_trunked())
+		return false;
+	conv_keep();
+	return nogo_full || nogo_has(conv_hz);
+}
+
+#if CONFIG_P25_TRUNK
 // The follower blocked this system: its programmed control channels and the one held, for the rest of this power on
 static void nogo_keep(p25_trunk_t *t)
 {
@@ -134,10 +153,8 @@ void radio_p25_init(const hal_audio_t *audio)
 {
 	set = defaults;
 	mem = NULL;
-#if CONFIG_P25_TRUNK
 	nogo_n = 0;
 	nogo_full = false;
-#endif
 #if CONFIG_IMBE
 	p25VoiceInit(audio);
 #else
@@ -609,6 +626,7 @@ bool radio_p25_begin(const channel_t *ch, uint16_t number, uint32_t own_id)
 	p25VoiceBegin(&mem->voice);
 	hooks = p25VoiceHooks();
 #endif
+	conv_hz = ch->rx_hz;
 #if CONFIG_P25_TRUNK
 	if (trunk) {
 		p25_trunk_t *t = &mem->trunk;
@@ -688,6 +706,8 @@ void radio_p25_end(void)
 	p25_engine_end(&mem->eng);	// the provider calls nothing after its close
 	p25_engine_view(&mem->eng, &ev);
 	count(&ev);
+	if (!radio_p25_trunked())
+		conv_keep();
 #if CONFIG_P25_TRUNK
 	if (trunk) {
 		p25_follow_end(&mem->trunk.f);
@@ -831,7 +851,7 @@ bool radio_p25_tx_prepare(void)
 #if CONFIG_P25_TRUNK
 	// On a trunked channel only on the voice channel granted to us
 	if (trunk) {
-		if (tview.v.req != P25_REQ_TALK) {
+		if (tview.v.req != P25_REQ_TALK || tview.v.reg == P25_REG_BLOCKED) {
 			return false;
 		}
 		trunk_tx_nac(mem);
@@ -879,7 +899,7 @@ void radio_p25_tx_clear(void)
 }
 
 const radio_air_ops_t radio_p25_air = {
-	radio_p25_running, NULL, radio_p25_tx_prepare, radio_p25_tx_go, radio_p25_tx_stop, radio_p25_tx_abort,
+	radio_p25_running, p25_no_tx, radio_p25_tx_prepare, radio_p25_tx_go, radio_p25_tx_stop, radio_p25_tx_abort,
 	radio_p25_tx_state, radio_p25_tx_clear,
 };
 

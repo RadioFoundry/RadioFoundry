@@ -313,6 +313,7 @@ static struct {
 	uint8_t out_reps;
 	uint8_t grant_after;		// a queued request: units until its grant
 	uint32_t wacn;			// the WACN its network status names, 0: TS_WACN
+	uint32_t lc_wacn;		// not 0: a conventional repeater instead, its terminators' link control naming it
 } site;
 enum { SITE_ANS_ACCEPT, SITE_ANS_DENY, SITE_ANS_NONE, SITE_ANS_QUEUE };
 static void site_chunk(uint8_t *syms);
@@ -7228,6 +7229,17 @@ static void site_unit(void)
 	unsigned n = 0;
 
 	site.units++;
+	if (site.lc_wacn != 0) {
+		// The network status broadcast in link control (LCO 36): reserved, WACN, system, channel, service class
+		uint8_t raw[P25_LC_BYTES] = { 0x40 | 36, 0, (uint8_t)(site.lc_wacn >> 12), (uint8_t)(site.lc_wacn >> 4),
+					      (uint8_t)((site.lc_wacn & 0x0F) << 4 | TS_SYSID >> 8), (uint8_t)TS_SYSID, 0x10, 0x01,
+					      0x70 };
+		site.unit_syms = P25_TDULC_SYMS;
+		p25_unit_begin(site.unit, site.unit_syms, TS_NAC, P25_DUID_TDULC, P25_SS_IDLE);
+		p25_tdulc_put(site.unit, raw);
+		site.unit_at = 0;
+		return;
+	}
 	if (site.grant_after != 0 && --site.grant_after == 0) {
 		p25_tsbk_t m = { .kind = P25_TSBK_GRANT, .opcode = P25_OP_GRP_V_GRANT };
 		m.u.grant.ch = 0x100A;
@@ -7752,6 +7764,61 @@ static void test_p25_trunk_wacn_nogo(void)
 	site.on = false;
 }
 
+
+// A conventional channel whose repeater names WACN $BEE00 in its link control: PTT refused there until power off
+static void test_p25_conv_wacn_nogo(void)
+{
+	setup_codeplug_p25();
+	add(3, "P25 rpt", TS_CC1, RADIO_MODE_P25, false, 2);
+	stored_p25[3] = (p25_conv_cfg_t){ .conv = { TS_NAC, TS_NAC, P25_SQUELCH_SELECTIVE }, .unit_id = 1234567 };
+	memset(&site, 0, sizeof site);
+	site.cc_hz = TS_CC1;
+	site.voice_hz = TS_VOICE;
+	site.lc_wacn = TS_WACN;
+	site.on = true;
+	start();
+	p25_defaults();
+
+	req(RREQ_ZONE_POS, 2);
+	run(1000);
+	site.on = false;
+	run(300);
+	req(RREQ_PTT, 1);
+	run(400);
+	CHECK(sm.view.state == RS_TX && hw.keyed);	// another WACN: as before
+	req(RREQ_PTT, 0);
+	run(500);
+	site.lc_wacn = P25_WACN_NO_TX;
+	site.on = true;
+	run(1000);
+	site.on = false;
+	run(300);
+	int keyed = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_AIR_NO_TX && !hw.keyed && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	// Left and taken again, nothing heard there since: still refused
+	req(RREQ_ZONE_POS, 0);
+	run(300);
+	req(RREQ_ZONE_POS, 2);
+	run(1000);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_AIR_NO_TX && !hw.keyed && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	req(RREQ_ZONE_POS, 0);
+	// Power on again: forgotten
+	start();
+	p25_defaults();
+	req(RREQ_ZONE_POS, 2);
+	run(1000);
+	req(RREQ_PTT, 1);
+	run(400);
+	CHECK(sm.view.state == RS_TX && hw.keyed);
+	req(RREQ_PTT, 0);
+	run(500);
+	req(RREQ_ZONE_POS, 0);
+}
+
 #endif
 
 static void test_p25(void)
@@ -7760,6 +7827,7 @@ static void test_p25(void)
 	test_p25_trunk();
 	test_p25_trunk_tx();
 	test_p25_trunk_wacn_nogo();
+	test_p25_conv_wacn_nogo();
 #endif
 	test_p25_rx();
 	test_p25_stored();
