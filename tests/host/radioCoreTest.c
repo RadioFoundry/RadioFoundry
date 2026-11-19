@@ -8858,8 +8858,6 @@ static void test_t3_one_carrier(void)
 		}
 		t3_csbk_rx(&p, 2);
 		run(60);
-		if (i % 10 == 0) {
-		}
 	}
 	CHECK(radio_t3v.state == T3_FOLLOW && sm.view.state == RS_TX && radio_t3v.returns == 0);
 	CHECK(ts2_voice() - v0 > 20);
@@ -9034,6 +9032,13 @@ static void test_t3_pdata(void)
 		CHECK((unsigned)hdr + 1u < sim.air_count && sim.air[hdr + 1].kind == DMR_BURST_RATE_12_DATA);
 	}
 	CHECK(sms_send_state() == DMR_REQ_OK);
+	// PTT on a call the radio may not talk on: the reason is that call's, not the last request's (granted)
+	int keyed = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	run(200);
+	CHECK(sm.view.tx_deny == TXDENY_TRUNK && radio_t3v.why == RADIO_TRUNK_WHY_DENIED && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	run(100);
 	t3_csbk_t c = { .lb = true, .op = T3_OP_P_CLEAR };
 	c.u.clear.dst = 1000001u;
 	t3_csbk_rx(&c, 2);

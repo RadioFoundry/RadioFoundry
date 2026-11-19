@@ -134,10 +134,11 @@ static void send_udt(t3_ms_t *ms, uint8_t slot)
 static void finish(t3_ms_t *ms, uint32_t now, t3_res_t r);
 static bool is_voice(t3_svc_t s);
 
-// A programmed row (plan table or control channel) numbered n
-static bool row_lookup(const t3_cfg_t *c, uint16_t n, t3_chan_t *out)
+// A programmed row numbered n: the plan table's (table false: t3_plan_lookup looked there already), else a control
+// channel's
+static bool row_lookup(const t3_cfg_t *c, uint16_t n, bool table, t3_chan_t *out)
 {
-	for (uint16_t i = 0; i < c->plan.ntable; i++) {
+	for (uint16_t i = 0; table && i < c->plan.ntable; i++) {
 		if (c->plan.table[i].lcn == n) {
 			*out = c->plan.table[i];
 			return true;
@@ -166,11 +167,12 @@ static bool chan_lookup(const t3_ms_t *ms, uint16_t lcn, t3_chan_t *out)
 	if (lcn == T3_LPCN_NULL || lcn > T3_LPCN_MAX) {
 		return false;
 	}
-	if (row_lookup(c, lcn, out)) {
+	if (row_lookup(c, lcn, false, out)) {
 		return true;
 	}
 	uint16_t per_slot = (uint16_t)(2u * lcn + 1u);
-	if (per_slot >= T3_LPCN_MAX || !(row_lookup(c, per_slot, out) || row_lookup(c, (uint16_t)(per_slot + 1u), out))) {
+	if (per_slot >= T3_LPCN_MAX ||
+	    !(row_lookup(c, per_slot, true, out) || row_lookup(c, (uint16_t)(per_slot + 1u), true, out))) {
 		return false;
 	}
 	out->lcn = lcn;		// the channel as the TS names it, for comparing calls and TSCCs
@@ -2900,7 +2902,7 @@ bool t3_ms_deregister(t3_ms_t *ms, uint32_t now)
 
 bool t3_ms_other(const t3_ms_t *ms, uint32_t now, uint16_t *code)
 {
-	if (ms->state != T3_HUNT || ms->other_ms == 0 || (int32_t)(now - ms->other_ms) >= (int32_t)T3_OTHER_MS) {
+	if (ms->state != T3_HUNT || ms->other_ms == 0 || since(now, ms->other_ms, T3_OTHER_MS)) {
 		return false;
 	}
 	*code = ms->other_code;

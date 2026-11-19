@@ -3895,7 +3895,11 @@ static bool t3_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		changed(sm);
 		return true;
 	}
-	t3_deny(sm, dst == 0 && t3m.state == T3_CAMPED ? RADIO_TRUNK_WHY_OFF : t3_why_now(now_ms, t3m.ax.result));
+	// Only a result this refusal set: an earlier request's (granted, unmapped, lost) says nothing of this PTT.
+	// Following a call the radio may not talk on (a broadcast, P_PROTECT): the system's rule
+	uint8_t res = t3m.state != T3_CAMPED ? T3_RES_NOT_ALLOWED
+					      : t3m.ax.state == T3_AX_IDLE ? t3m.ax.result : T3_RES_PENDING;
+	t3_deny(sm, dst == 0 && t3m.state == T3_CAMPED ? RADIO_TRUNK_WHY_OFF : t3_why_now(now_ms, res));
 #else
 	t3_deny(sm, RADIO_TRUNK_WHY_OFF);	// a build that never transmits on a trunked system
 #endif
@@ -9234,16 +9238,13 @@ static void sfr_rpt_tick(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_DMR_TRUNK
 // A key written while the channel is a trunked one whose system couldn't be used: select it again. Systems are keys,
 // written apart from the channels; one that lands after the channel was selected (an editor writing the channel
-// first) would otherwise stay "not set up" until another channel is selected, which a zone of one never allows
-static void t3_kv_retry(radio_sm_t *sm, uint32_t now_ms)
+// first) would otherwise stay "not set up" until another channel is selected, which a zone of one never allows.
+// Through the reload a codeplug write takes (radio_sm_poll): it waits out a transmission, the hotspot or a zone write
+static void t3_kv_retry(radio_sm_t *sm)
 {
-	if (!sm->t3_tagged || !radio_t3v.unavail || sm->view.vfo || !sm->have_channels ||
-	    sm->view.zone_pos >= sm->zone.count) {
-		return;
+	if (sm->t3_tagged && radio_t3v.unavail && !sm->view.vfo && sm->have_channels) {
+		sm->reload_pending = true;
 	}
-	select_position(sm, sm->view.zone_index, sm->zone.channels[sm->view.zone_pos], sm->view.zone_pos);
-	tune(sm, now_ms);
-	changed(sm);
 }
 #endif
 
@@ -9253,7 +9254,7 @@ void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 	if (codeplug_kv_serial() != kv_seen) {
 		kv_load(sm, now_ms);	// a key written (menu, debug link): its value only, without a codeplug reload
 #if CONFIG_DMR_TRUNK
-		t3_kv_retry(sm, now_ms);
+		t3_kv_retry(sm);
 #endif
 	}
 #if CONFIG_FM_TX_TONES
