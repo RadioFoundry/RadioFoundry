@@ -29,7 +29,7 @@ export function latinName(b, off, len) {
 	return { text, ok };
 }
 
-// Good and bad in-use records of the open-firmware layout (spec section 2, step 1)
+// Good and bad in-use records of the open-firmware layout (docs/spec/codeplug-port.md 5)
 export function openfwEvidence(b) {
 	let good = 0, bad = 0;
 	const named = (n) => (n.ok && n.text ? good++ : bad++);
@@ -98,7 +98,7 @@ export function classify(bytes) {
 	if (ev.good && ev.bad * 4 <= ev.good) {
 		// A radio put back on its stock firmware after RadioFoundry keeps RadioFoundry's records where the stock codeplug
 		// doesn't reach, but both layouts keep their general settings in the chip's first sectors: a stock DMR ID beside
-		// none of RadioFoundry's means the stock software wrote last (spec section 2, step 1)
+		// none of RadioFoundry's means the manufacturer's software wrote last (docs/spec/codeplug-port.md 5)
 		const back = !(bytes.length >= GENERAL + 12 && getBcdId(bytes, GENERAL + 8)) && stockDmrId(sb) ? stock() : null;
 		return back || { layout: "openfw", ...ev };
 	}
