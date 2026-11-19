@@ -1223,10 +1223,15 @@ static bool sfr_repeats_now(void)
 }
 #endif
 
-// Every keying of the transmitter goes through here: the test TX limit (tx_limit.h) refuses what it doesn't allow, as
-// a board that can't key there would
-static bool key_tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
+// Every keying of the transmitter goes through here. What holds for the whole radio, whatever keys it (PTT, a reply,
+// trunking, the hotspot, a CW ID, a beacon), is checked here and not only by each path: TX inhibit, a hardware option
+// still pending, a critical battery. The test TX limit (tx_limit.h) refuses what it doesn't allow, as a board that
+// can't key there would
+static bool key_tx(const radio_sm_t *sm, uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 {
+	if (sm->set.tx_inhibit || board_hwopt_pending() != NULL || sm->batt.level == BATT_CRITICAL) {
+		return false;
+	}
 	if (!tx_limit_allows(hz)) {
 		tx_limit_refused(hz);
 		return false;
@@ -1814,7 +1819,7 @@ static bool sfr_rpt_begin(radio_sm_t *sm)
 			     SFR_RPT_RESUMING(sm), 0)) {	// the beacon schedule starts at the first poll
 		return false;
 	}
-	sm->dmr_keyed = key_tx(ch->tx_hz, RADIO_BW_12K5, sm->view.power, &none);
+	sm->dmr_keyed = key_tx(sm, ch->tx_hz, RADIO_BW_12K5, sm->view.power, &none);
 	if (!sm->dmr_keyed) {
 		radio_sfr_stop();	// the board refused the keying: no repeater that can't send
 		return false;
@@ -2346,7 +2351,7 @@ static void dmr_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 	}
 	if (!sm->dmr_keyed) {
 		static const subtone_t none = { TONE_NONE, 0 };
-		if (!key_tx(ch->tx_hz, (radio_bw_t)ch->bw, sm->view.power, &none)) {
+		if (!key_tx(sm, ch->tx_hz, (radio_bw_t)ch->bw, sm->view.power, &none)) {
 			deny(sm, board_refusal());
 			return;
 		}
@@ -2473,7 +2478,7 @@ static bool data_send(radio_sm_t *sm, const dmrBurst_t *bursts, int count)
 	if (!sm->dmr_keyed) {
 		static const subtone_t none = { TONE_NONE, 0 };
 		const channel_t *ch = &sm->view.ch;
-		if (!key_tx(ch->tx_hz, (radio_bw_t)ch->bw, sm->view.power, &none)) {
+		if (!key_tx(sm, ch->tx_hz, (radio_bw_t)ch->bw, sm->view.power, &none)) {
 			return false;
 		}
 		sm->dmr_keyed = true;
@@ -3123,7 +3128,7 @@ static void t3_send(radio_sm_t *sm, const t3_act_t *a, uint32_t now_ms)
 	}
 	if (!sm->dmr_keyed) {
 		static const subtone_t none = { TONE_NONE, 0 };
-		if (!key_tx(sm->view.ch.tx_hz, (radio_bw_t)sm->view.ch.bw, sm->view.power, &none)) {
+		if (!key_tx(sm, sm->view.ch.tx_hz, (radio_bw_t)sm->view.ch.bw, sm->view.power, &none)) {
 			radio_t3v.send_fail++;
 			t3_ms_sent(&t3m, now_ms, false);
 			return;
@@ -5286,7 +5291,7 @@ static bool roam_probe(radio_sm_t *sm)
 	}
 	if (!sm->dmr_keyed) {
 		static const subtone_t none = { TONE_NONE, 0 };
-		if (!key_tx(ch->tx_hz, (radio_bw_t)ch->bw, sm->view.power, &none)) {
+		if (!key_tx(sm, ch->tx_hz, (radio_bw_t)ch->bw, sm->view.power, &none)) {
 			return false;
 		}
 		sm->dmr_keyed = true;
@@ -5618,7 +5623,7 @@ static void aprs_rf_service(radio_sm_t *sm, const radio_status_t *st, uint32_t n
 		changed(sm);
 		// APRS's own power level when it has one, else the radio's current one (a temporary change included), as for
 		// PTT. The settings' default (the board's default power) ignored a lowered level
-		if (!key_tx(sm->aprs_job.hz, sm->aprs_job.narrow ? RADIO_BW_12K5 : RADIO_BW_25K,
+		if (!key_tx(sm, sm->aprs_job.hz, sm->aprs_job.narrow ? RADIO_BW_12K5 : RADIO_BW_25K,
 				     aprs_tx_power(sm->view.power), &none)) {
 			aprs_rf_end(sm, APRS_RF_NO_KEY, now_ms);
 		}
@@ -6266,7 +6271,7 @@ static void air_key(radio_sm_t *sm, uint32_t now_ms, uint32_t hz)
 	sm->view.tx_elapsed_ms = 0;
 	sm->tx_start_ms = now_ms;
 	outputs(sm);
-	if (!key_tx(hz, RADIO_BW_12K5, sm->view.power, &none)) {
+	if (!key_tx(sm, hz, RADIO_BW_12K5, sm->view.power, &none)) {
 		o->tx_abort();
 		deny(sm, board_refusal());
 		return;
@@ -6336,7 +6341,7 @@ static void p25t_burst(radio_sm_t *sm, uint32_t hz)
 		return;
 	}
 	sm->air_tx = true;
-	if (!key_tx(hz, RADIO_BW_12K5, sm->view.power, &none)) {
+	if (!key_tx(sm, hz, RADIO_BW_12K5, sm->view.power, &none)) {
 		radio_p25_tx_abort();		// AIR_TX_DONE follows: air_tick clears it
 		return;
 	}
@@ -6575,7 +6580,7 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 	sm->tx_start_ms = now_ms;
 	outputs(sm);
 	const channel_t *ch = &sm->view.ch;
-	if (!key_tx(ch->tx_hz, (radio_bw_t)ch->bw, sm->view.power, &ch->tx_tone)) {
+	if (!key_tx(sm, ch->tx_hz, (radio_bw_t)ch->bw, sm->view.power, &ch->tx_tone)) {
 		deny(sm, board_refusal());
 		return;
 	}
@@ -6714,7 +6719,11 @@ static void hotspot_arm(radio_sm_t *sm)
 		return;		// armed again when the CW ID ends
 	}
 #endif
-	sm->dmr_keyed = key_tx(sm->hs_tx_hz, RADIO_BW_12K5, sm->hs_power, &none);
+	bool was = sm->dmr_keyed;
+	sm->dmr_keyed = key_tx(sm, sm->hs_tx_hz, RADIO_BW_12K5, sm->hs_power, &none);
+	if (was && !sm->dmr_keyed) {
+		board.radio->rx(sm->hs_rx_hz, RADIO_BW_12K5, &none);	// refused now (TX inhibit): not left armed
+	}
 }
 
 #if RADIO_SM_CW
@@ -6806,7 +6815,7 @@ static uint8_t cw_begin(radio_sm_t *sm, uint32_t hz, uint8_t power, const char *
 	sm->board_mode = RADIO_MODE_FM;
 	board.radio->set_mode(RADIO_MODE_FM);
 	sm->cw_phase = CW_KEYING;	// before tx(): cw_restore and outputs see it
-	if (!key_tx(hz, RADIO_BW_12K5, power, &none) || !board.radio->tx_tone(sm->cw_tone_hz)) {
+	if (!key_tx(sm, hz, RADIO_BW_12K5, power, &none) || !board.radio->tx_tone(sm->cw_tone_hz)) {
 		cw_restore(sm);
 		cw_ended(sm, false, 0);
 		return 0;
@@ -7056,7 +7065,7 @@ static void bench_key(radio_sm_t *sm, uint16_t max_ms, uint32_t now_ms)
 	if (!sm->air_bench || sm->bench_keyed || board.air == NULL || max_ms == 0 || tx_check(sm) != TXDENY_NONE) {
 		return;
 	}
-	if (!key_tx(sm->view.ch.tx_hz, RADIO_BW_12K5, 0, &none)) {	// level 0: the board's lowest (bench signals)
+	if (!key_tx(sm, sm->view.ch.tx_hz, RADIO_BW_12K5, 0, &none)) {	// level 0: the board's lowest (bench signals)
 		return;
 	}
 	if (!board.air->tx_begin()) {
@@ -7558,6 +7567,7 @@ static void radio_to_settings(const radio_settings_t *s, uint32_t now_ms)
 static void use_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t now_ms)
 {
 #if CONFIG_DMR
+	bool inhibit_changed = s->tx_inhibit != sm->set.tx_inhibit;
 	bool reply_changed = s->reply_s != sm->set.reply_s || s->sfr_rx != sm->set.sfr_rx ||
 		s->talk_permit != sm->set.talk_permit	// the permit hold (permit_before_key)
 #if CONFIG_SIG_TONES
@@ -7575,6 +7585,9 @@ static void use_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t now
 #endif
 	activity(sm, now_ms);
 #if CONFIG_DMR
+	if (inhibit_changed) {
+		hotspot_arm(sm);	// the hotspot's keying stays armed between bursts: dropped or armed again
+	}
 	if (reply_changed && sm->dmr_running) {
 		dmr_configure(sm);	// the reply window, an SFR user's copies, the talk permit
 	}
