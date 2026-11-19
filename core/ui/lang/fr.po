@@ -4633,6 +4633,11 @@ msgid "Another system heard"
 msgstr "Autre système entendu"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_WHY_TRUNK_REG_REFUSED"
+msgid "Registration refused"
+msgstr "Enregistrement refusé"
+
+#: core/ui/ui_screens.c
 msgctxt "DENY_WHY_NOT_ALLOWED"
 msgid "Not allowed here"
 msgstr "Interdit ici"
@@ -4703,6 +4708,11 @@ msgid "Check system settings"
 msgstr "Vérifiez les réglages du système"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_FIX_ASK_TO_ADD_ID"
+msgid "Ask to add your ID"
+msgstr "Faites ajouter votre ID"
+
+#: core/ui/ui_screens.c
 msgctxt "TRUNK_WORD_PHONE_LINE"
 msgid "Phone line"
 msgstr "Ligne téléphonique"
@@ -4746,6 +4756,11 @@ msgstr "Secours"
 msgctxt "TRUNK_STATE_OTHER_SYSTEM"
 msgid "Other system"
 msgstr "Autre système"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_REG_REFUSED"
+msgid "Reg. refused"
+msgstr "Enreg. refusé"
 
 #: core/ui/ui_screens.c
 msgctxt "TRUNK_STATE_SEARCHING"

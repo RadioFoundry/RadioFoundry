@@ -3616,6 +3616,7 @@ void radio_sm_t3_brief(radio_sm_t *sm)
 	b->polls = x->polls;
 	b->poll_fails = x->poll_fails;
 	b->other = x->other;
+	b->refused = x->refused;
 	b->why = x->why;
 }
 
@@ -3849,7 +3850,13 @@ static uint8_t t3_why_now(uint32_t now_ms, uint8_t result)
 {
 	uint16_t code;
 	if (t3m.state == T3_HUNT) {
-		return t3_ms_other(&t3m, now_ms, &code) ? RADIO_TRUNK_WHY_OTHER_SYS : RADIO_TRUNK_WHY_NO_CC;
+		if (t3_ms_other(&t3m, now_ms, &code)) {
+			return RADIO_TRUNK_WHY_OTHER_SYS;
+		}
+		return t3_ms_reg_refused(&t3m) ? RADIO_TRUNK_WHY_REG_REFUSED : RADIO_TRUNK_WHY_NO_CC;
+	}
+	if (t3_ms_reg_refused(&t3m)) {
+		return RADIO_TRUNK_WHY_REG_REFUSED;
 	}
 	if (t3m.reg != T3_REG_OK && t3m.reg != T3_REG_NOT_NEEDED) {
 		return t3m.reg == T3_REG_LISTEN ? RADIO_TRUNK_WHY_OFF : RADIO_TRUNK_WHY_NOT_REG;
@@ -4085,6 +4092,7 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 	t3_poll_tick(sm);
 	uint16_t other;
 	radio_t3v.other = t3_ms_other(&t3m, now_ms, &other) ? other : 0u;
+	radio_t3v.refused = t3_ms_reg_refused(&t3m);
 	t3_publish(sm);
 }
 #endif

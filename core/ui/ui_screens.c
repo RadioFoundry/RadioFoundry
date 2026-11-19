@@ -1288,6 +1288,7 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 		case RADIO_TRUNK_WHY_NO_ANSWER: sb_str(&b, TR(DENY_WHY_P25T_NO_ANSWER, "No answer from system")); break;
 		case RADIO_TRUNK_WHY_NO_CHAN: sb_str(&b, TR(DENY_WHY_P25T_NO_CHAN, "Voice channel unusable")); break;
 		case RADIO_TRUNK_WHY_OTHER_SYS: sb_str(&b, TR(DENY_WHY_TRUNK_OTHER_SYS, "Another system heard")); break;
+		case RADIO_TRUNK_WHY_REG_REFUSED: sb_str(&b, TR(DENY_WHY_TRUNK_REG_REFUSED, "Registration refused")); break;
 		default: sb_str(&b, TR(DENY_WHY_RX_ONLY, "This channel is RX only")); break;
 		}
 		break;
@@ -1322,6 +1323,8 @@ static const char *deny_action(const radio_view_t *v)
 	case TXDENY_TRUNK:
 		if (trunk_why(v) == RADIO_TRUNK_WHY_OTHER_SYS)
 			return TR(DENY_FIX_CHECK_SYSTEM, "Check system settings");
+		if (trunk_why(v) == RADIO_TRUNK_WHY_REG_REFUSED)
+			return TR(DENY_FIX_ASK_TO_ADD_ID, "Ask to add your ID");	// the system doesn't know it
 		return TR(DENY_FIX_RELEASE_AND_RETRY, "Release PTT, try again");
 #endif
 	default: return TR(DENY_FIX_PICK_ANOTHER_CHANNEL, "Pick another channel");
@@ -1600,6 +1603,8 @@ static const char *t3_state_word(const radio_view_t *v, bool *warn)
 		return TR(TRUNK_STATE_FALLBACK, "Fallback");
 	if (v->t3.on && v->t3.state == T3_HUNT && v->t3.other != 0)
 		return TR(TRUNK_STATE_OTHER_SYSTEM, "Other system");	// Home's activity says which (draw_t3_other)
+	if (v->t3.on && v->t3.refused)	// hunting for another TSCC, or registering again where it was refused
+		return TR(TRUNK_STATE_REG_REFUSED, "Reg. refused");
 	if (!v->t3.on || v->t3.state == T3_HUNT)
 		return TR(TRUNK_STATE_SEARCHING, "Searching");
 	if (v->t3.state == T3_FOLLOW) {

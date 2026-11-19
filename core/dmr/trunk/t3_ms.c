@@ -937,6 +937,7 @@ static void registered(t3_ms_t *ms, uint32_t now)
 	ms->reg = ms->reg_stale ? T3_REG_NEEDED : T3_REG_OK;	// stale: the list sent is no longer ours
 	ms->reg_stale = false;
 	ms->reg_area = reg_area(ms, ms->syscode);
+	ms->refused_area = 0;
 	ms->awake_until = now + or_default(ms->cfg->awake_ms, T3_AWAKE_MS);
 }
 
@@ -1009,7 +1010,8 @@ static void on_ack(t3_ms_t *ms, uint32_t now, const t3_ack_t *a)
 			ms->ps_offset = 0;
 			finish(ms, now, T3_RES_DONE);
 		} else if (svc == T3_SVC_REGISTER && a->reason == T3_RC_REG_REFUSED) {
-			// Look for another TSCC; this one is tried again when the hunt comes back to it
+			// Look for another TSCC; this one is tried again when the hunt comes back to it. The screen says so
+			ms->refused_area = (uint16_t)(reg_area(ms, ms->syscode) + 1u);
 			finish(ms, now, T3_RES_REFUSED);
 			enter_hunt(ms, now, false);
 		} else {
@@ -2875,6 +2877,14 @@ bool t3_ms_other(const t3_ms_t *ms, uint32_t now, uint16_t *code)
 	}
 	*code = ms->other_code;
 	return true;
+}
+
+bool t3_ms_reg_refused(const t3_ms_t *ms)
+{
+	if (ms->refused_area == 0 || ms->reg == T3_REG_OK || ms->reg == T3_REG_NOT_NEEDED) {
+		return false;
+	}
+	return ms->state == T3_HUNT || (uint16_t)(reg_area(ms, ms->syscode) + 1u) == ms->refused_area;
 }
 
 bool t3_ms_can_talk(const t3_ms_t *ms)

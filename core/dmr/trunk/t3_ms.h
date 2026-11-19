@@ -300,6 +300,7 @@ typedef struct {
 	uint32_t slc_foreign;	// the last foreign C_SYS_Parms code + 1 (0: none): two alike leave a candidate
 	uint16_t other_code;	// C_SYScode of the last other system heard while hunting (PAR 0: from a short LC)
 	uint32_t other_ms;	// when (0: none since the hunt began): the screen names it (t3_ms_other)
+	uint16_t refused_area;	// reg_area + 1 of the last Reg_Refused, 0 none: until a registration is accepted
 	bool retry_tscc;	// the lost TSCC is tried before the list
 	uint8_t hunt_idx;	// next candidate: the adjacent sites' TSCCs, then ctrl[]
 	uint32_t hunt_deadline;
@@ -579,6 +580,9 @@ bool t3_ms_can_talk(const t3_ms_t *ms);
 // Hunting, and another system's control channel heard in the last T3_OTHER_MS: *code is its C_SYScode (PAR 0 when only
 // its short LC was heard). The usual cause is the system's model, network or color code set wrong in the codeplug
 bool t3_ms_other(const t3_ms_t *ms, uint32_t now, uint16_t *code);
+// The system refused this radio's registration (Reg_Refused, 6.4.4.1) and none has been accepted since: hunting, or
+// back on that area and not registered. The usual cause is the radio's ID missing from the system's records
+bool t3_ms_reg_refused(const t3_ms_t *ms);
 // A talkgroup DGNA assigned (6.6.8)
 bool t3_ms_is_dgna(const t3_ms_t *ms, uint32_t tg);
 // Power save: the receiver may sleep now (t3_ms_poll decides; the radio wakes it the moment this goes false)

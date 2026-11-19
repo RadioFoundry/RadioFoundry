@@ -563,8 +563,19 @@ static void test_refused_denied(void)
 	n = ack(T3_OP_C_ACKD, T3_RC_REG_REFUSED, OWN, T3_ID_REGI);
 	rx(&ms, 1, &n);
 	CHECK(ms.reg == T3_REG_NEEDED && ms.state == T3_HUNT && ms.ax.result == T3_RES_REFUSED, "refused: hunt");
+	CHECK(t3_ms_reg_refused(&ms), "refused: shown while hunting");
 	frames(&ms, 600);
 	CHECK(ms.state == T3_CAMPED && ms.reg == T3_REG_NEEDED, "refused: back, still needed");
+	CHECK(t3_ms_reg_refused(&ms), "refused: shown while registering again");
+	nsent = 0;
+	for (int i = 0; i < 2000 && nsent == 0; i++) {
+		frame(&ms);
+	}
+	CHECK(nsent > 0 && sent[nsent - 1].op == T3_OP_C_RAND && sent[nsent - 1].u.rand.kind == T3_SK_REGISTRATION,
+	      "refused: asks again");
+	n = ack(T3_OP_C_ACKD, T3_RC_REG_ACCEPTED, OWN, T3_ID_REGI);
+	rx(&ms, 1, &n);
+	CHECK(ms.reg == T3_REG_OK && !t3_ms_reg_refused(&ms), "accepted: no longer shown, reg %s", t3_reg_name(ms.reg));
 }
 
 static void test_permission(void)

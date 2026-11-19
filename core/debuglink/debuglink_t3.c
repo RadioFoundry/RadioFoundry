@@ -366,7 +366,7 @@ static void t3_roam(const radio_t3_view_t *x, void *ctx)
 	dl_text(t, "t3.sys=%u\nt3.unavail=%u\nt3.fallback=%u\nt3.fallbacks=%u\nt3.backs=%u\n", x->sys, x->unavail,
 		x->fallback, (unsigned)x->fallbacks, (unsigned)x->backs);
 	// Searching and hearing only another system: its C_SYScode (0: none); the last refused PTT's RADIO_TRUNK_WHY_*
-	dl_text(t, "t3.other=0x%04x\nt3.why=%u\n", x->other, x->why);
+	dl_text(t, "t3.other=0x%04x\nt3.why=%u\nt3.refused=%u\n", x->other, x->why, (unsigned)x->refused);
 	// Each: RX Hz, the 14 system code bits, confirmed and adjacent priority, the level and age of its last sample
 	for (uint8_t i = 0; i < x->nadj && i < sizeof x->adj / sizeof x->adj[0]; i++) {
 		dl_text(t, "t3.adj%u=%u,0x%04x,%u,%u,%d,%d\n", i, (unsigned)x->adj[i].rx_hz, x->adj[i].sys14,

@@ -916,20 +916,26 @@ channel for `T3_REG_TG_DELAY_MS` (1 s), so turning the knob through channels reg
 **On screen.** A zone or channel list names a trunked channel's system after its name, in place of the frequency.
 An unavailable one is dimmed: OK on it says "System not set up" and stays, and channel stepping passes it. On a
 trunked channel Home's chips row shows the system's name and its state in place of slot and color code: Ready,
-Registering, Searching, Other system, In call, Refused, Fallback (12.5) or System not set up, then the power.
+Registering, Searching, Other system, Reg. refused, In call, Refused, Fallback (12.5) or System not set up, then the power.
 
 **Other system.** Searching while the hunt hears only another system's control channel (`t3_ms_other`, 6.1). Home's
 activity area names it in place of the last call: "Heard: Huge, net 0" and "site 83", with ", category A only" or
 ", category B only" when its PAR allows one category; the first line alone where the area has room for one. The user compares it with the system's model and network
 (12.1). A wrong color code shows as Searching: the radio decodes nothing on the channel.
 
+**Reg. refused.** The system answered the registration with Reg_Refused (6.4.4.1): it doesn't accept this radio, most
+often because its ID isn't in the system's records. The radio hunts and asks again when it comes back to the same
+TSCC (`t3_ms_reg_refused`). The state shows while hunting and while registering again there, and clears once a
+registration is accepted. Refused is Reg_Denied: barred from the area, never asked again.
+
 **PTT refused** on a trunked channel says why (`TXDENY_TRUNK`, the reasons P25 trunking shares):
 
 | State | Shown |
 |---|---|
 | searching, another system heard | Another system heard / Check system settings |
+| registration refused (Reg_Refused) | Registration refused / Ask to add your ID |
 | searching | No control channel |
-| not registered: registering, or the registration refused | Not registered yet |
+| not registered: registering, or the registration denied | Not registered yet |
 | the system listen only here, or no talk target | This channel is RX only |
 | the system refused the call, or the radio is stunned | System denied the call |
 | no answer, a timeout | No answer from system |

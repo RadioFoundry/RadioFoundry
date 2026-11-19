@@ -254,6 +254,7 @@ typedef struct {
 	uint16_t polls, poll_fails;	// short data polls from the menus, and those refused or unanswered
 	uint16_t other;		// searching: C_SYScode of another system heard (t3_ms_other), 0 none
 	uint8_t why;		// RADIO_TRUNK_WHY_* of the last PTT refused (TXDENY_TRUNK)
+	bool refused;		// the system refused the registration (t3_ms_reg_refused)
 } radio_t3_brief_t;
 
 // ... and all of it, for the debug link: radio_get_t3_view, one copy (the view itself is copied by every task)
@@ -269,6 +270,7 @@ typedef struct {
 	uint16_t polls, poll_fails;	// as radio_t3_brief_t's: kept over a restart of the engine
 	uint16_t other;		// as radio_t3_brief_t's
 	uint8_t why;		// as radio_t3_brief_t's
+	bool refused;		// as radio_t3_brief_t's
 	bool ip_gw;		// off-net IP goes to the system's IP gateway (IPI), not the conventional off-net ID
 	bool ip_advised;	// the system took the radio's IP address at registration (6.4.11)
 	bool confirmed;
