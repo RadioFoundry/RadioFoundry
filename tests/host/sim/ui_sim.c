@@ -2987,6 +2987,7 @@ static bool run_token(char *t, char *err, size_t len)
 	if (strcmp(t, "t3ring") == 0 && arg != NULL) {
 		view.t3.ring_src = (uint32_t)atoi(arg);
 		serial++;
+		advance(100);
 		return true;
 	}
 	if (strcmp(t, "t3cli") == 0) {		// the next call from the PSTN gateway gives this caller's number
