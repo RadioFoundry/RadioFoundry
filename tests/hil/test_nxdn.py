@@ -470,8 +470,9 @@ def test_nxdn_rx_speech(radio, sdr_bench, pytestconfig, rate):
         f"decoded speech peaks at {peak} (silent output: wrong bits into the decoder?): {d}"
 
 
-SCAN_CALLS = 4          # calls the bench sends while the scan comes round to the NXDN channel
+SCAN_CALLS = 3          # keyings the bench sends while the scan comes round to the NXDN channel
 SCAN_VOICE_FRAMES = 120 # 2.4 s a call: longer than a scan's round of a short zone
+SCAN_KEY_S = 8.0        # each repeats the call this long: a round of a 16-channel zone with two probes takes 5-6 s
 
 
 @pytest.mark.feature("nxdn")
@@ -529,22 +530,26 @@ def test_nxdn_scan_from_bench(radio, sdr_bench, backup_dir, pytestconfig, kind):
                     data = f.read()
                 n = len(data) * 4
                 assert n <= FSK4_HEX_MAX, f"the call holds {n} symbols, past {FSK4_HEX_MAX}"
+                # The call repeats for a zone round or more (a stop mid-call takes it as a late entry), inside the
+                # board's key-up
+                key_s = min(SCAN_KEY_S, sdr_bench.max_key_s(SCAN_KEY_S + 2) - 2)
+                reps = max(1, int(key_s * baud / n))
                 for _ in range(SCAN_CALLS):
-                    tx = sdr_bench.tx_start("fsk4", mhz, None, max_s=n / baud + 2, symbols=n, hex=data.hex(),
-                                            shape="rrc", baud=baud, dev_hz=dev, clip_hz=4064)
+                    tx = sdr_bench.tx_start("fsk4", mhz, None, max_s=reps * n / baud + 1, symbols=n, hex=data.hex(),
+                                            shape="rrc", baud=baud, dev_hz=dev, clip_hz=4064, repeat=reps)
                     while held is None and not tx.req.done.is_set():
                         x = radio.link.view(["core", "features", "nxdn"])
                         stop = x.get("scan_phase") == "hold" or (x.get("dual.both") == "1" and
                                                                as_int(x.get("nxdn.rx_calls"), 0) > calls0)
                         if stop and x.get("channel_number") == str(number):
                             held = x
-                    tx.wait(n / baud + 30)
+                    tx.wait(reps * n / baud + 30)
                     if held is not None:
                         break
         finally:
             radio.link.scan("cancel")
             radio.wait_for(lambda x: x.get("scan") == "off", 3.0, sections=("features",), what="scan off")
-    assert held is not None, f"the {kind} scan never held on channel {number} in {SCAN_CALLS} calls"
+    assert held is not None, f"the {kind} scan never held on channel {number} in {SCAN_CALLS} keyings"
     print(f"\n{kind} scan held on channel {number}: {held.get('nxdn.src')} -> {held.get('nxdn.dst')}, "
           f"RAN {held.get('nxdn.ran')}")
     assert held.get("nxdn.dst") in ("1", "0"), held        # 0: held before the call's addresses were read

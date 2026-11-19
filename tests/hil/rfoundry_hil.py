@@ -1149,6 +1149,11 @@ class SdrBench:
             setattr(self, key, L.request(L.address(self.api_rx if rx else self.api), {"op": "info"}))
         return getattr(self, key)
 
+    def max_key_s(self, default):
+        """The TX board's longest single key-up (its info's tx.max_key_s); default when it states none"""
+        v = (self._api_info().get("tx") or {}).get("max_key_s")
+        return default if v is None else float(v)
+
     def has(self, feature):
         """Whether the TX board says it can do feature (its info's features, e.g. "dev_scale")"""
         return feature in (self._api_info().get("features") or {})

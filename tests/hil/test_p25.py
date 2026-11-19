@@ -503,7 +503,8 @@ def test_p25_rx_from_bench(radio, sdr_bench, pytestconfig):
         assert grew("p25v.frames") > 0, "no voice frame played"
 
 
-SCAN_CALLS = 4          # calls the bench sends while the scan comes round to the P25 channel
+SCAN_CALLS = 3          # keyings the bench sends while the scan comes round to the P25 channel
+SCAN_KEY_S = 8.0        # each repeats the call this long: a round of a 16-channel zone with two probes takes 5-6 s
 
 
 @pytest.mark.feature("p25")
@@ -556,22 +557,26 @@ def test_p25_scan_from_bench(radio, sdr_bench, backup_dir, pytestconfig, kind):
                     n = json.load(f)["total_syms"]
                 with open(path, "rb") as f:
                     data = f.read()
+                # A 1.6 s call is on air for less than a zone round: the scan meets it only by luck. The call
+                # repeats for a round or more (a stop mid-call takes it as a late entry), inside the board's key-up
+                key_s = min(SCAN_KEY_S, sdr_bench.max_key_s(SCAN_KEY_S + 2) - 2)
+                reps = max(1, int(key_s * 4800 / n))
                 for _ in range(SCAN_CALLS):
-                    tx = sdr_bench.tx_start("fsk4", mhz, None, max_s=n / 4800 + 2, symbols=n, hex=data.hex(),
-                                            shape="c4fm", clip_hz=4064)
+                    tx = sdr_bench.tx_start("fsk4", mhz, None, max_s=reps * n / 4800 + 1, symbols=n, hex=data.hex(),
+                                            shape="c4fm", clip_hz=4064, repeat=reps)
                     while held is None and not tx.req.done.is_set():
                         v = radio.link.view(["core", "features", "p25"])
                         stop = v.get("scan_phase") == "hold" or (v.get("dual.both") == "1" and
                                                                as_int(v.get("p25.rx_calls"), 0) > calls0)
                         if stop and v.get("channel_number") == str(number):
                             held = v
-                    tx.wait(n / 4800 + 30)
+                    tx.wait(reps * n / 4800 + 30)
                     if held is not None:
                         break
         finally:
             radio.link.scan("cancel")
             radio.wait_for(lambda x: x.get("scan") == "off", 3.0, sections=("features",), what="scan off")
-    assert held is not None, f"the {kind} scan never held on channel {number} in {SCAN_CALLS} calls"
+    assert held is not None, f"the {kind} scan never held on channel {number} in {SCAN_CALLS} keyings"
     print(f"\n{kind} scan held on channel {number}: {held.get('p25.src')} -> {held.get('p25.dst')}")
     assert held.get("p25.dst") in (str(RX_TG), "0"), held     # 0: held before the link control was read
 
