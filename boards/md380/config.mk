@@ -65,6 +65,8 @@ BOARD_UNSUPPORTED += LANG_DEFAULT_ZH	# needs LANG_ZH
 # P25 and NXDN transmit on the HR_C5000's physical layer mode (board.air, hardware-md380.md 4.11), but receive isn't
 # written: the chip gives no physical layer records, and NXDN's receive needs a flat discriminator copy, which this
 # radio isn't known to give the MCU (same section). Off until receive works
+CONFIG_P25 ?= n
+CONFIG_NXDN ?= n
 BOARD_NOT_WRITTEN += P25	# receive isn't written (hardware-md380.md 4.11)
 BOARD_NOT_WRITTEN += P25_TRUNK	# needs P25
 BOARD_NOT_WRITTEN += NXDN	# receive isn't written (hardware-md380.md 4.11)

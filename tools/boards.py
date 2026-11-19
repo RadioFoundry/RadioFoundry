@@ -583,6 +583,13 @@ def not_written_problems(bid, b):
     return out
 
 
+def listed_off_problems(bid, listed, built):
+    """A switch in BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN (listed) that the default build still builds (built: switch ->
+    "y"/"n"): the list alone doesn't turn it off, and the site then shows the feature as there."""
+    return ["boards/%s: %s is in BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN but built by default: add CONFIG_%s ?= n "
+            "next to it in config.mk" % (bid, s, s) for s in listed if built.get(s) == "y"]
+
+
 def default_off_problems(bid, b, built):
     """config.mk's BOARD_DEFAULT_OFF of a board (built: switch -> "y"/"n"): each switch has the reason users read, is
     off by default and can be chosen, so it is in neither list of what can't be."""
@@ -1160,6 +1167,13 @@ def check(root=ROOT):
                 problems.append("boards/%s/config.mk: BOARD_UNSUPPORTED %s has no reason: one switch a line, "
                                 "BOARD_UNSUPPORTED += %s  # <reason>" % (bid, s, s))
         problems += not_written_problems(bid, b)
+        listed = list(b.unsupported) + list(b.not_written)
+        if listed:
+            try:
+                problems += listed_off_problems(bid, listed, {k[len("CONFIG_"):]: v for k, v in make_vars(
+                    root, bid, ["CONFIG_" + s for s in listed]).items()})
+            except RegistryError as e:
+                problems.append(str(e))
         if b.default_off:
             try:
                 problems += default_off_problems(bid, b, {k[len("CONFIG_"):]: v for k, v in make_vars(
@@ -1845,6 +1859,8 @@ def self_test():
     probs = default_off_problems("t", fake, {"A": "n", "B": "n", "C": "n", "D": "y"})
     ok(len(probs) == 3 and "B has no reason" in probs[0] and "C is in" in probs[1] and "D is in" in probs[2],
        "default_off_problems: a reason, choosable, off by default")
+    probs = listed_off_problems("t", ["A", "B", "C"], {"A": "n", "B": "y"})
+    ok(len(probs) == 1 and "B is in" in probs[0], "listed_off_problems: a listed switch built by default")
     shutil.rmtree(tmpm)
     for bad, what in (({"hil": {"battery_mv": "5V"}}, "a [hil] value of the wrong type"),
                       ({"hil": {"no_such": 1}}, "an unknown [hil] key"),
