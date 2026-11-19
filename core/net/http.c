@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // An HTTP/1.0 status server on port 80 (RFC 1945; docs/spec/tcp-services.md 5): static files (http_assets.h), the
-// radio's state as JSON, the debug link's view sections as JSON, the screen as a BMP, the zones and channels and
-// requests to select them (http_radio.c). GET and HEAD, one request per
+// radio's state as JSON, the debug link's view sections as JSON, the screen as a BMP. GET and HEAD, one request per
 // connection (Connection: close), no keep-alive, no chunking. With CONFIG_NET_WEBCTL, GET /ws upgrades to a WebSocket
 // (RFC 6455 4.2) and the connection is handed to webctl.c. Responses are streamed into TCP as its buffer frees up:
 // the files from flash, the screen straight from the frame buffer, JSON from one shared buffer (a second JSON request
@@ -47,7 +46,7 @@
 #define USB_SWITCH_MS	500u	// /api/usb: the answer goes out and the connection closes before the link goes away
 
 enum { H_FREE, H_REQ, H_WAIT, H_SEND, H_WS };	// H_WS: webctl.c has the connection
-enum { SRC_NONE, SRC_MEM, SRC_BUF, SRC_BMP, SRC_GEN };	// SRC_GEN: buf refilled by http_radio_more
+enum { SRC_NONE, SRC_MEM, SRC_BUF, SRC_BMP };
 
 typedef struct {
 	uint8_t state;
@@ -100,6 +99,26 @@ static void put32le(uint8_t *p, uint32_t v)
 
 // ---- JSON ----
 
+static void json_str(dl_text_t *t, const char *s)
+{
+	char tmp[8];
+
+	dl_text(t, "\"");
+	for (; *s != '\0'; s++) {
+		unsigned char ch = (unsigned char)*s;
+
+		if ((ch == '"') || (ch == '\\')) {
+			dl_text(t, "\\%c", ch);
+		} else if (ch < 0x20) {
+			dl_fmt(tmp, sizeof(tmp), "\\u%04x", ch);
+			dl_text(t, "%s", tmp);
+		} else {
+			dl_text(t, "%c", ch);
+		}
+	}
+	dl_text(t, "\"");
+}
+
 static const char *bool_s(bool b)
 {
 	return b ? "true" : "false";
@@ -112,15 +131,14 @@ void http_status_json(dl_text_t *t)
 	const channel_t *ch = &v->ch;
 	const char *pw = board_power_name(v->power, v->ch.tx_hz);
 	dl_text(t, "{\"radio\":");
-	net_json_str(t, board.name);
-	dl_text(t, ",\"version\":\"%s\",\"uptime_s\":%u,\"state\":\"%s\",\"vfo\":%s,\"zone\":%u,\"zone_pos\":%u,"
-		"\"zone_size\":%u,\"channel_number\":%u,\"channel\":", RFOUNDRY_GIT, (unsigned)(hal_millis() / 1000u),
-		(v->state < 4) ? states[v->state] : "?", bool_s(v->vfo), v->zone_index, v->zone_pos, v->zone_size,
-		v->channel_number);
-	net_json_str(t, ch->name);
+	json_str(t, board.name);
+	dl_text(t, ",\"version\":\"%s\",\"uptime_s\":%u,\"state\":\"%s\",\"vfo\":%s,\"zone\":%u,\"channel_number\":%u,"
+		"\"channel\":", RFOUNDRY_GIT, (unsigned)(hal_millis() / 1000u), (v->state < 4) ? states[v->state] : "?",
+		bool_s(v->vfo), v->zone_index, v->channel_number);
+	json_str(t, ch->name);
 	dl_text(t, ",\"rx_hz\":%u,\"tx_hz\":%u,\"mode\":\"%s\",\"bw\":\"%s\",\"power\":", (unsigned)ch->rx_hz,
 		(unsigned)ch->tx_hz, (ch->mode == RADIO_MODE_DMR) ? "dmr" : "fm", (ch->bw == RADIO_BW_25K) ? "25" : "12.5");
-	net_json_str(t, pw);
+	json_str(t, pw);
 	dl_text(t, ",\"rssi_dbm\":%d,\"squelch\":%u", v->rssi_dbm, v->squelch);
 	if (board_has_battery()) {	// a radio without a battery leaves both fields out
 		dl_text(t, ",\"battery_pct\":%u,\"battery_mv\":%u", v->battery_pct, v->battery_mv);
@@ -220,12 +238,12 @@ static bool view_json(dl_text_t *t, const char *query)
 			memcpy(val, eq + 1, vn);
 			val[vn] = '\0';
 			dl_text(t, "%s", first ? "" : ",");
-			net_json_str(t, key);
+			json_str(t, key);
 			dl_text(t, ":");
 			if (is_number(val, vn)) {
 				dl_text(t, "%s", val);
 			} else {
-				net_json_str(t, val);
+				json_str(t, val);
 			}
 			first = false;
 		}
@@ -257,15 +275,10 @@ static void respond_enc(int c, int code, const char *type, uint8_t src, const vo
 {
 	hconn_t *h = &hc[c];
 
-	char cl[28] = "";
-
-	if (src != SRC_GEN) {	// a generated body's length isn't known: the close ends it (RFC 1945 7.2.2)
-		dl_fmt(cl, sizeof(cl), "Content-Length: %u\r\n", (unsigned)len);
-	}
 	h->hlen = (uint16_t)dl_fmt(h->hdr, sizeof(h->hdr),
-				   "HTTP/1.0 %d %s\r\nContent-Type: %s\r\n%s%sConnection: close\r\n"
+				   "HTTP/1.0 %d %s\r\nContent-Type: %s\r\n%sContent-Length: %u\r\nConnection: close\r\n"
 				   "Cache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\n\r\n",
-				   code, reason(code), type, gz ? "Content-Encoding: gzip\r\n" : "", cl);
+				   code, reason(code), type, gz ? "Content-Encoding: gzip\r\n" : "", (unsigned)len);
 	h->hoff = 0;
 	h->src = src;
 	h->body = body;
@@ -491,13 +504,7 @@ static void dispatch(int c)
 	bool setp = false;
 #endif
 
-#if CONFIG_NET_RADIO_API
-	bool radiop = strncmp(path, "/api/", 5) == 0 && !viewp && !setp;	// zones and channels (http_radio.c)
-#else
-	bool radiop = false;
-#endif
-
-	if (!status && !viewp && !setp && !radiop) {
+	if (!status && !viewp && !setp) {
 		fail(c, 404);
 		return;
 	}
@@ -517,22 +524,6 @@ static void dispatch(int c)
 	dl_text_init(&t, buf, BUF_MAX);
 	if (status) {
 		http_status_json(&t);
-#if CONFIG_NET_RADIO_API
-	} else if (radiop) {
-		int code = http_radio(path, query, tcp_remote_ip(c), h->head, &t);
-
-#if CONFIG_NET_RADIO_DUMP
-		if (code == HTTP_RADIO_STREAM) {
-			respond(c, 200, "application/json", SRC_GEN, buf, (uint32_t)t.len);	// buf stays ours to the end
-			return;
-		}
-#endif
-		if (code != 200) {
-			buf_owner = -1;
-			fail(c, (code == 0) ? 404 : code);
-			return;
-		}
-#endif
 	} else if (viewp) {
 #if CONFIG_DEBUGLINK
 		ok = view_json(&t, query);
@@ -576,25 +567,6 @@ static void send_more(int c)
 			h->hoff = (uint16_t)(h->hoff + n);
 			continue;
 		}
-#if CONFIG_NET_RADIO_DUMP
-		if ((h->boff >= h->blen) && (h->src == SRC_GEN) && !h->head) {
-			dl_text_t t;
-			int more;
-
-			dl_text_init(&t, buf, BUF_MAX);
-			more = http_radio_more(&t);
-			if (more < 0) {
-				tcp_abort(c);	// the codeplug changed under it: a cut reply, not a mixed one
-				release(c);
-				return;
-			}
-			if (more > 0) {
-				h->blen = (uint32_t)t.len;
-				h->boff = 0;
-				continue;
-			}
-		}
-#endif
 		if (h->boff >= h->blen) {
 #if CONFIG_NET_WEBCTL
 			if (h->ws) {
@@ -804,9 +776,6 @@ void http_view(dl_text_t *t)
 		(unsigned)st.requests, (unsigned)st.ok, (unsigned)st.not_found, (unsigned)st.bad, (unsigned)st.busy_waits);
 #if CONFIG_NET_WEBCTL
 	webctl_view(t);
-#endif
-#if CONFIG_NET_RADIO_API
-	http_radio_view(t);
 #endif
 }
 

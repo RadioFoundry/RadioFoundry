@@ -15,15 +15,11 @@
 #define NET_HTTP_PORT		80
 #define NET_RIGCTL_PORT		4532	// Hamlib's rigctld
 
-#if CONFIG_NET_HTTP || CONFIG_NET_RIGCTL || CONFIG_NET_RADIO_CTL
+#if CONFIG_NET_HTTP || CONFIG_NET_RIGCTL || CONFIG_NET_RADIO_UDP
 // The radio core's view, fetched now into the host link task's one copy (hostlink_view.h; the services all run in
 // that task)
 #include "radio/radio.h"
 const radio_view_t *net_radio_view(void);
-#endif
-#if CONFIG_NET_HTTP || CONFIG_NET_RADIO_CTL
-// A string as a JSON string, quotes included
-void net_json_str(dl_text_t *t, const char *s);
 #endif
 
 #if CONFIG_NET_KISS
@@ -53,22 +49,11 @@ void http_status_json(dl_text_t *t);
 bool http_screen_ok(void);
 #endif
 
-#if CONFIG_NET_RADIO_API
-// Zone and channel control on the status server (http_radio.c): the reply's HTTP status for path, its JSON in t when
-// 200 (0: not one of its paths). from_ip: the client's, control only from the host. head: answer, change nothing
-int http_radio(const char *path, const char *query, uint32_t from_ip, bool head, dl_text_t *t);
-#if CONFIG_NET_RADIO_DUMP
-#define HTTP_RADIO_STREAM	1	// http_radio: 200, t has the start, http_radio_more the rest
-// The streamed reply's next part into t: 1 more, 0 done (t empty), -1 the codeplug changed (cut the connection)
-int http_radio_more(dl_text_t *t);
-#endif
-void http_radio_view(dl_text_t *t);
-#endif
-
 #if CONFIG_NET_RADIO_UDP
-// Zone and channel control over UDP (radio_udp.c): binds its port
+// Zone and channel control over UDP (radio_udp.c): binds its port; passes on held requests and sends the notices
 #define NET_RADIO_UDP_PORT	4191
 void radio_udp_start(void);
+void radio_udp_poll(uint32_t now);
 void radio_udp_view(dl_text_t *t);
 #endif
 

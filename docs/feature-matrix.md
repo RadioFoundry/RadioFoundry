@@ -121,10 +121,6 @@ is `tools/bringup.py list --radio <id>`.
 | `net_http` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | off |
 | `net_http_gzip` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
 | `net_webctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
-| `net_radio_api` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
-| `net_radio_notify` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
-| `net_radio_zones` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
-| `net_radio_dump` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
 | `net_rigctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | off |
 | `net_usrp` | not recorded | not recorded | not recorded | not written | not recorded | not recorded | pass, needs re-run | not written |
 | `net_aprsis` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | off |
@@ -216,10 +212,6 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `NET_HTTP` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `NET_HTTP_GZIP` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `NET_WEBCTL` | ● | ● | ● | ● | ● | ● | ● | ○ |
-| `NET_RADIO_API` | ● | ● | ● | ● | ● | ● | ● | ○ |
-| `NET_RADIO_NOTIFY` | ● | ● | ● | ● | ● | ● | ● | ○ |
-| `NET_RADIO_ZONES` | ● | ● | ● | ● | ● | ● | ● | ○ |
-| `NET_RADIO_DUMP` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `NET_RIGCTL` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `NET_APRSIS` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `NET_USRP` | ● | ● | ● | … | ● | ● | ● | … |
@@ -397,10 +389,6 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | HTTP status page and JSON, port 80 | `NET_HTTP` | 4,796 | 4,860 |  |
 | HTTP static files stored and served gzip compressed | `NET_HTTP_GZIP` | -19,456 | -18,572 | Negative: saves flash, nearly all of it on web control's files. MD-380: web control follows this switch ([hardware-md380.md](spec/hardware-md380.md) 19) |
 | Web control: the front panel page, keys, status and receive audio over `/ws` | `NET_WEBCTL` | 9,620 | 9,332 | The page and the radio's drawing included (about 6 KB gzip compressed); 1 KB RAM ([tcp-services.md](spec/tcp-services.md) 5.1) |
-| Zone and channel control: where the radio is and select or step zone and channel (`/api/select`, `/api/step`) | `NET_RADIO_API` | 1,456 | 1,528 | What takRF's radio controls use; the sizes include none of the three below ([tcp-services.md](spec/tcp-services.md) 5.2) |
-| Zone and channel change notices to a subscribed program (UDP) | `NET_RADIO_NOTIFY` | 616 | 636 | Nothing is sent without a subscriber |
-| Zone channel lists, `/api/zone` | `NET_RADIO_ZONES` | 928 | 936 | Channel names, frequencies and talkgroups in pages |
-| The whole codeplug in one reply, `/api/zones` | `NET_RADIO_DUMP` | 972 | 944 | Only for a web page or script that operates the radio over the API |
 | rigctld, port 4532 | `NET_RIGCTL` | 3,852 | 3,728 |  |
 | Audio linking (USRP over UDP, port 34001) | `NET_USRP` | 4,552 | 4,888 | DM-1701: DMR and FM both ways. MD-380: DMR only (FM audio doesn't reach the processor yet). DM-32UV: DMR only until its board code has the FM audio paths |
 | APRS-IS client | `NET_APRSIS` | 2,856 | 2,720 | Needs NAT on the host |

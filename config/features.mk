@@ -79,24 +79,10 @@ CONFIG_NET_HTTP_GZIP ?= $(CONFIG_NET_HTTP)
 # web control on the status server: /ws (WebSocket) for the radio's front panel page, keys, status and receive audio
 # (needs NET_HTTP; core/net/ws.c, docs/spec/tcp-services.md 5)
 CONFIG_NET_WEBCTL ?= $(CONFIG_NET_HTTP)
-# zone and channel control for a device or program on the computer (USB network or PPP): /api/select says where the
-# radio is (zone, channel, talkgroup) and selects a zone and channel, /api/step steps them as a knob would; what takRF's
-# radio controls use (needs NET_HTTP; core/net/http_radio.c, docs/spec/tcp-services.md 5.2)
-CONFIG_NET_RADIO_API ?= $(CONFIG_NET_HTTP)
-# zone and channel change notices: a small UDP message to a program on the computer that subscribed, when the zone,
-# channel or talkgroup changes, so it needn't keep asking; nothing is sent without a subscriber (needs NET_RADIO_API)
-CONFIG_NET_RADIO_NOTIFY ?= $(CONFIG_NET_RADIO_API)
-# zone channel lists for zone and channel control: /api/zone gives a zone's channels with their frequencies, modes and
-# talkgroups, so a program can show a channel's name before the radio is on it (needs NET_RADIO_API)
-CONFIG_NET_RADIO_ZONES ?= $(CONFIG_NET_RADIO_API)
-# the whole codeplug in one reply (/api/zones): every zone and channel, only for a web page or script that operates the
-# radio over the API (a remote control page); not needed by takRF or to select zones and channels (needs
-# NET_RADIO_ZONES)
-CONFIG_NET_RADIO_DUMP ?= $(CONFIG_NET_RADIO_ZONES)
-# zone and channel control over UDP, port 4191 from the computer only (USB network or PPP), with no TCP or HTTP: the
-# same requests and JSON as /api/select and /api/step, each answered with one datagram, and change notices to the
-# sender; what takRF uses on a radio short of RAM (needs DMR_IP_GATEWAY; core/net/radio_udp.c,
-# docs/spec/tcp-services.md 5.3)
+# zone and channel control over UDP, port 4191 from the computer only (USB network or PPP), with no TCP or HTTP:
+# where the radio is, select or step a zone and channel as a knob would, each answered with one datagram, and change
+# notices to the sender; what takRF's radio controls use (needs DMR_IP_GATEWAY; core/net/radio_udp.c,
+# docs/spec/tcp-services.md 8)
 CONFIG_NET_RADIO_UDP ?= $(CONFIG_DMR_IP_GATEWAY)
 # Hamlib rigctld on port 4532: frequency, mode, PTT, S meter for loggers and SDR programs (needs NET_TCP;
 # core/net/rigctld.c)
@@ -342,7 +328,7 @@ CONFIG_P25_TRUNK ?= $(CONFIG_P25)
 CONFIG_GPS_SKY ?= $(CONFIG_GPS)
 
 
-FEATURES := USB_SERIAL_REQUEST FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_TRUNK DMR_TRUNK_TX DMR_TRUNK_SUPL DMR_TRUNK_GW VOICE_CAPTURE DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RADIO_API NET_RADIO_NOTIFY NET_RADIO_ZONES NET_RADIO_DUMP NET_RADIO_UDP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB IDDB_COMPACT DMR_CONTROL_STATION SNMP SFR SFR_DUALPATH_RX SFR_CWID TASK_STACKS \
+FEATURES := USB_SERIAL_REQUEST FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_TRUNK DMR_TRUNK_TX DMR_TRUNK_SUPL DMR_TRUNK_GW VOICE_CAPTURE DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RADIO_UDP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB IDDB_COMPACT DMR_CONTROL_STATION SNMP SFR SFR_DUALPATH_RX SFR_CWID TASK_STACKS \
 	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW CPS_FAST VFO VFO_FM VFO_DMR DIAG BACKLIGHT_TEST FONT_XL FONT_AA FONT_BIG LANG_ES LANG_IT LANG_FR LANG_ZH LANG_DEFAULT_ES LANG_DEFAULT_IT LANG_DEFAULT_FR LANG_DEFAULT_ZH UI_COLOR UI_SETTINGS SCAN DUAL_WATCH BEEP FM_TX_TONES DTMF \
 	RX_EXT VOX REF_TRIM BATTERY_SAVE VIBRATE GPS AUDIO_PROBE STUB_ENTRY NAND_STORAGE CRASH_LOG CRASH_SCREEN CRASH_REPORT WATCHDOG FAULT_TRACE AM_RX BCAST_FM APRS APRS_AFSK APRS_DMR APRS_RX APRS_IGATE GPS_SKY KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT ZONE_EDIT CONTACT_EDIT VOLUME_BAR P25 P25_TRUNK NXDN AIR_RAW
 
@@ -457,9 +443,7 @@ ifneq ($(call feature_on,NET_TCP),)
   endif
 endif
 $(foreach f,USB_SERIAL_REQUEST,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,USB_NETWORK),,x)),$(error CONFIG_$(f)=y needs CONFIG_USB_NETWORK=y)))
-$(foreach f,NET_HTTP_GZIP NET_WEBCTL NET_RADIO_API,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,NET_HTTP),,x)),$(error CONFIG_$(f)=y needs CONFIG_NET_HTTP=y)))
-$(foreach f,NET_RADIO_NOTIFY NET_RADIO_ZONES,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,NET_RADIO_API),,x)),$(error CONFIG_$(f)=y needs CONFIG_NET_RADIO_API=y)))
-$(foreach f,NET_RADIO_DUMP,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,NET_RADIO_ZONES),,x)),$(error CONFIG_$(f)=y needs CONFIG_NET_RADIO_ZONES=y)))
+$(foreach f,NET_HTTP_GZIP NET_WEBCTL,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,NET_HTTP),,x)),$(error CONFIG_$(f)=y needs CONFIG_NET_HTTP=y)))
 $(foreach f,NET_HTTP NET_RIGCTL,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,NET_TCP),,x)),$(error CONFIG_$(f)=y needs CONFIG_NET_TCP=y)))
 $(foreach f,NET_KISS NET_APRSIS,$(if $(call feature_on,$(f)),$(if $(and $(call feature_on,NET_TCP),$(call feature_on,APRS_AFSK)),,$(error CONFIG_$(f)=y needs CONFIG_NET_TCP=y and CONFIG_APRS_AFSK=y))))
 $(foreach f,MDNS TFTP NET_USRP NET_RADIO_UDP,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR_IP_GATEWAY),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR_IP_GATEWAY=y)))

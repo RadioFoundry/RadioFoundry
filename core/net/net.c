@@ -18,41 +18,16 @@
 #if CONFIG_NET_TCP || CONFIG_NET_RADIO_UDP
 #include "net/net_svc.h"
 #endif
-#if CONFIG_NET_RADIO_CTL
-#include "net/radio_ctl.h"
-#endif
 
 static bool was_up;
 
-#if CONFIG_NET_HTTP || CONFIG_NET_RIGCTL || CONFIG_NET_RADIO_CTL
+#if CONFIG_NET_HTTP || CONFIG_NET_RIGCTL || CONFIG_NET_RADIO_UDP
 #include "hostlink/hostlink_view.h"
 
 const radio_view_t *net_radio_view(void)
 {
 	radio_get_view(&hostlink_view);
 	return &hostlink_view;
-}
-#endif
-
-#if CONFIG_NET_HTTP || CONFIG_NET_RADIO_CTL
-void net_json_str(dl_text_t *t, const char *s)
-{
-	char tmp[8];
-
-	dl_text(t, "\"");
-	for (; *s != '\0'; s++) {
-		unsigned char ch = (unsigned char)*s;
-
-		if ((ch == '"') || (ch == '\\')) {
-			dl_text(t, "\\%c", ch);
-		} else if (ch < 0x20) {
-			dl_fmt(tmp, sizeof(tmp), "\\u%04x", ch);
-			dl_text(t, "%s", tmp);
-		} else {
-			dl_text(t, "%c", ch);
-		}
-	}
-	dl_text(t, "\"");
 }
 #endif
 
@@ -230,8 +205,8 @@ void net_poll(uint32_t now_ms, bool link_up)
 		return;
 	}
 	was_up = true;
-#if CONFIG_NET_RADIO_CTL
-	radio_ctl_poll(now_ms);	// requests held back by the rate limit, and the change notices
+#if CONFIG_NET_RADIO_UDP
+	radio_udp_poll(now_ms);	// requests held back by the rate limit, and the change notices
 #endif
 #if CONFIG_NET_APRSIS
 	aprsis_poll(now_ms);
@@ -273,9 +248,6 @@ void net_view(dl_text_t *t)
 #endif
 #if CONFIG_NET_APRSIS
 	aprsis_view(t);
-#endif
-#if CONFIG_NET_RADIO_CTL
-	radio_ctl_view(t);
 #endif
 #if CONFIG_NET_RADIO_UDP
 	radio_udp_view(t);
