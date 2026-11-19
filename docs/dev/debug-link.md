@@ -1,20 +1,21 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# Debug Link
+# Debug link tool
 
-A small framed protocol on the radio's host port for bench automation and debugging. The full spec, with every
-command's payload, is [docs/spec/debuglink.md](../spec/debuglink.md).
+The debug link is a small framed protocol on the radio's host port for bench automation and debugging. This page
+covers the host tool, `tools/rfoundry_debug.py`, and where the code lives. For the frame format, every command's
+payload, and the limits the firmware enforces, see [debuglink.md](../spec/debuglink.md).
 
-## What it does
+With the debug link, you can do the following:
 
-Read the version, the diagnostics counters, the radio's state and a log ring; reset counters; take screenshots; press
-keys; key PTT with a firmware time-out; send radio requests (channel, zone, VFO, frequency, power, privacy key, USB
-mode and network settings); send DMR data and emergencies; APRS and SNMP settings and tests; the split duplex view;
-read the chip's identity and read-only memories; inspect the settings region; reboot.
+- Read the version, the diagnostics counters, the radio's state, and a log ring, and reset the counters.
+- Take screenshots, press keys, and key PTT with a firmware time-out.
+- Send radio requests: channel, zone, VFO, frequency, power, privacy key, USB mode, and network settings.
+- Send DMR data and emergencies, run the APRS and SNMP settings and tests, and read the split duplex view.
+- Read the chip's identity and read-only memories, inspect the settings region, and restart the radio.
 
-It shares the port with the MMDVM hotspot and the CPS shim (`core/hostlink` dispatches on the first byte) and never
-changes the port's mode. A debug frame starts with `A5 5A`, then command, sequence number, a 16-bit length, the
-payload and a CRC-16/CCITT-FALSE. Requests carry at most 64 bytes, replies at most 1024.
+The debug link shares the host port with the MMDVM hotspot and the CPS shim (`core/hostlink` dispatches on the first
+byte) and never changes the port's mode.
 
 | Part | Where |
 |---|---|
@@ -27,8 +28,9 @@ payload and a CRC-16/CCITT-FALSE. Requests carry at most 64 bytes, replies at mo
 
 ## tools/rfoundry_debug.py
 
-Needs Python 3 and pyserial. It finds the radio by its USB ID (1FC9:0094); `--port` or `$RFOUNDRY_PORT` picks one when
-there are several. `rfoundry_debug.py --help` and the module docstring list everything. The commands used most:
+The tool needs Python 3 and pyserial. It finds the radio by its USB ID (1FC9:0094); `--port` or `$RFOUNDRY_PORT`
+picks one when there are several. `rfoundry_debug.py --help` and the module docstring list every command. The
+following are the ones used most.
 
 | Command | Does |
 |---|---|
@@ -46,23 +48,26 @@ there are several. `rfoundry_debug.py --help` and the module docstring list ever
 | `rfoundry_debug.py storage info` | Whether the settings region is ours or foreign |
 | `rfoundry_debug.py reboot` | Restart (needs the chip's UID as a token; refused while transmitting) |
 
-`chip` and `dump` read the chip's identity, option bytes and read-only memories. Dumps are written outside any git
-tree: the stock bootloader is proprietary.
+`chip` and `dump` read the chip's identity, option bytes, and read-only memories. Write dumps outside any git tree:
+the bootloader is proprietary, and dumps never go in the repository (see [Contributing](contributing.md#rules)
+rule 2).
 
 The HIL tests use the `DebugLink` class from the same module.
 
 ## Safety limits
 
-Injected PTT ends after 10 s at most, and the radio's own transmit checks still apply. One injected key at a time,
-each held at most 10 s, 40 ms apart. Radio requests are rate limited. Nothing in the debug link writes internal flash
-or option bytes. See [debuglink.md](../spec/debuglink.md) section 4.
+The firmware limits what the debug link can do: injected PTT ends after 10 s at most, injected keys and radio
+requests are rate limited, and nothing in the debug link writes internal flash or option bytes. The radio's own
+transmit checks still apply. For the limits, see [debuglink.md](../spec/debuglink.md) 4.
 
 ## Adding a command
+
+To add a debug link command, follow these steps:
 
 1. Add the number to `core/debuglink/debuglink_proto.h`.
 2. Add a handler in `core/debuglink/debuglink.c`, or a `debuglink_<area>.c` for a family of operations: short,
    non-blocking, reply at most 1024 bytes.
-3. Add a row to the command table in [debuglink.md](../spec/debuglink.md) section 3, and a section for it.
+3. Add a row to the command table in [debuglink.md](../spec/debuglink.md) 3, and a section for it.
 4. Add a method and a subcommand to `tools/rfoundry_debug.py`.
 5. Add a case to `tests/host/debuglinkTest.c`.
 

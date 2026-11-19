@@ -1,6 +1,10 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # Build configuration
+
+This page covers the feature switches, the values, the release variants, and the hardware build options. For the
+toolchains and the make targets, see [Building](dev/building.md).
 
 Features that cost flash, and values that differ per radio, are chosen at build time. Defaults live in
 `config/features.mk`. A platform changes them for every radio on it in `platform/<p>/config.mk`, a board changes them
@@ -29,11 +33,8 @@ first. Bench diagnostics such as `CONFIG_AUDIO_PROBE` stay off.
 A feature that needs a part only some radios have (a vibration motor, a GPS receiver, SPI NAND) is a hardware switch:
 `hardware = "..."` on its entry in `tests/hil/features.toml`. Each board then builds it, lists it in
 `BOARD_UNSUPPORTED` or `BOARD_NOT_WRITTEN`, or names it in `board.toml` `[hardware] unconfirmed`, and
-`tools/boards.py check` enforces that.
-The accelerometer is the next one: today its driver (`drivers/sensor/lis3dh`) only feeds a board's
-diagnostics page under `CONFIG_DIAG`, so it has no switch. The first feature that uses motion brings a hardware
-switch with it. A real-time clock driver is the same: none exists yet, and it arrives as `CONFIG_RTC`, a hardware
-switch ([radio-features.md](spec/radio-features.md) 5.6).
+`tools/boards.py check` enforces that. A driver that only feeds a board's diagnostics page under `CONFIG_DIAG`, such
+as the accelerometer driver (`drivers/sensor/lis3dh`), has no switch of its own.
 
 ### Unsupported, not written, unconfirmed
 
@@ -50,10 +51,10 @@ so the docs never understate what a radio can do.
 Both `config.mk` lists take one switch a line with the reason in its comment (`tools/boards.py check` fails on one
 without a reason, or on a switch in both). Either one turns the switch off by default (`CONFIG_X ?= n` next to it),
 keeps it out of ci's maximal configuration, and satisfies a hardware switch's check. A platform's `config.mk` can
-list switches for all of its radios, and `config/features.mk` lists the ones a build rules out by itself: `FONT_BIG` on a
-panel under 220 px wide, the width taken from the `hardware.gallery` class in `board.toml`, so a new small-panel board
-needs no line for it. The feature matrix and the web site show the mark. Say "untested" in bring-up
-records and pull requests, never in `config.mk`.
+list switches for all of its radios. `config/features.mk` lists the ones a build rules out by itself: `FONT_BIG` on a
+panel under 220 px wide, with the width taken from the `hardware.gallery` class in `board.toml`, so a new small-panel
+board needs no line for it. The feature matrix and the web site show the mark. Record test state in bring-up records
+and pull requests, never in `config.mk`.
 
 ## Variants
 
@@ -74,13 +75,28 @@ make BOARD=<id> VARIANT=commercial       # build/<id>-commercial/
 | `commercial` | the MMDVM hotspot (and split duplex), APRS (and KISS, APRS-IS) |
 
 Each variant file starts with `## title:` and `## summary:` lines, and the comment above each switch says why it is
-left out; the site shows both. The lists are a draft for the project lead to settle.
+left out. The site shows both.
 
-The firmware version (`RFOUNDRY_GIT`) is the commit plus `-dirty` when the tree differs from it (tracked changes, or
-untracked sources in the built directories). The release name (`RFOUNDRY_RELEASE`, for example `v26.11`) is the
-release tag on that commit, empty for a dirty tree or an untagged commit; `make RELEASE=<tag>` sets it and `RELEASE=`
-leaves it out ([dev/release.md](dev/release.md#release-names)). Only the few files that use either are rebuilt when it
-changes.
+For the firmware version and the release name a build carries, see
+[The firmware version](dev/building.md#the-firmware-version).
+
+## Hardware build options
+
+Some radios come in hardware versions that one image can't serve, such as a UHF and a VHF board. Each such choice is a
+build option. Prefer one image that detects the hardware at run time when that's possible. Build options choose
+hardware; [variants](#variants) choose features.
+
+| Where | What it holds |
+|---|---|
+| `boards/<b>/board.mk` | `BUILD_OPTIONS` names the options. `<NAME>_VALUES` lists each one's values, the default first (`BAND_VALUES := uhf vhf`) |
+| `boards/<b>/board.toml` `[[build_options]]` | The words people read: a title and help for the option, and a title, a text, and the reported board name for each value. `tools/boards.py check` fails when its values differ from `board.mk` |
+| C | `RFOUNDRY_<NAME>_<VALUE>` is 1 for the chosen value and 0 for the others (`#if RFOUNDRY_BAND_VHF`) |
+
+`make BOARD=<b> BAND=vhf` builds the VHF image. A value the board doesn't list stops the build and prints the list. A
+non-default value is part of the build directory and the image name (`build/<b>-vhf/rfoundry_<b>-vhf.bin`), and of
+the release file (`rfoundry-<b>-vhf-<version>.bin`). `tools/ci.sh` builds every value, and the release manifest records
+the values (`build_options`). rfoundry takes them from the board name a running radio reports (`<name> VHF`), or from
+`--option BAND=vhf`, and refuses an image built for other hardware than the radio's.
 
 ## Switches
 
@@ -95,7 +111,7 @@ below are for an STM32F4 radio.
 | `CONFIG_DTMF` | = FM (n where the tone path isn't written) | DTMF digits sent from the keys while PTT is held on FM (`docs/spec/radio-features.md` 3.7) |
 | `CONFIG_VOX` | = FM (n where the mic level hook isn't written) | voice-operated transmit on FM, from the microphone level (`hal_power_t.mic_level`; `docs/spec/radio-features.md` 3.4) |
 | `CONFIG_BATTERY_SAVE` | = FM | receiver duty cycling on an idle FM channel (`docs/spec/radio-features.md` 5.4) |
-| `CONFIG_VIBRATE` | n (radios with a vibration motor: y) | vibration alerts on the board's motor (`hal_power_t.vibrate`) for messages, call alerts, private calls and emergencies, and Settings > Sound > Vibrate (`docs/spec/radio-features.md` 4.1). No radio on main has a motor yet; a board without one shows the row dimmed |
+| `CONFIG_VIBRATE` | n (radios with a vibration motor: y) | vibration alerts on the board's motor (`hal_power_t.vibrate`) for messages, call alerts, private calls and emergencies, and Settings > Sound > Vibrate (`docs/spec/radio-features.md` 4.1). A board without a motor shows the row dimmed |
 | `CONFIG_GPS` | y (radios without a GPS receiver: n) | the GPS receiver: the board's module driver and its NMEA input (`drivers/gps`, `platform/*/gps*`, `CAP_GPS`). Off, the radio has no GPS; DMR GPS Info, LRRP and APRS send the fixed position when one is set (`docs/spec/position.md`) |
 | `CONFIG_APRS` | = FM | APRS (`core/aprs`, `docs/spec/aprs.md`): the engine: our position sent by the beacon triggers, its settings and its page. It needs at least one of the two backends below. Transmit stays off until the user turns it on. About 2.8 KB RAM with both |
 | `CONFIG_APRS_AFSK` | = APRS and FM | APRS on FM: position, status and message packets as AX.25 / Bell 202 AFSK through `board.afsk`, a KISS TNC on the host port. Off, APRS goes over DMR only and nothing of AX.25 is built |
@@ -137,7 +153,7 @@ below are for an STM32F4 radio.
 | `CONFIG_DMR_CONTROL_STATION` | = DMR_IP_GATEWAY | control station mode for PC dispatch software: passthrough (the PC is the endpoint of the radio's own IP data while the link is up; the link layer stays on the radio) and the fixed link pair 192.168.10.1 / .2 instead of the address by DMR ID (`docs/spec/usb-network.md` 5). The power-on network setting belongs to `CONFIG_USB_NETWORK` |
 | `CONFIG_SNMP` | = DMR_IP_GATEWAY | the SNMPv2c agent on UDP 161 over the USB network and over the air, the RadioFoundry MIB, notifications to the host and an RF manager (`core/snmp`, `docs/spec/snmp.md`). Management over the air read-only and RF notifications off by default. About 3.2 KB RAM |
 | `CONFIG_P25` | = DMR | P25 Phase 1 conventional voice (`docs/spec/p25.md`), the one switch for all of it: the air interface (symbols with time stamps between a board's modem hardware and the core, the framer, the soft modem, the shared FEC; `docs/spec/air-interface.md`), the engine and the P25 channel mode in the radio core, which runs it in memory the DMR vocoder lends where the platform has it, the full-rate voice decoder and encoder in integers on the MBE core (`core/mbe`), and the codec of P25 channels in the codeplug (`core/p25/p25_codeplug.c`, `docs/spec/p25-codeplug.md`). Needs `DMR` (talk groups are the codeplug's contacts) and a board with `board_t.air` to run: a board without one lists it in `BOARD_NOT_WRITTEN` |
-| `CONFIG_P25_TRUNK` | = P25 | P25 trunked: the codec of its systems and channels (`docs/spec/p25-codeplug.md` 3), the control channel's signaling decoded, its control channel hunted and held, voice channel grants for the chosen talk groups followed, and where the system allows transmit: registration, affiliation, voice requests and transmit on the granted channel (`docs/spec/p25-trunking.md`). The radio core runs it on a trunked channel. Host tested, and run on a radio against a control channel the SDR bench plays, not on a live system. Needs P25 |
+| `CONFIG_P25_TRUNK` | = P25 | P25 trunked: the codec of its systems and channels (`docs/spec/p25-codeplug.md` 3), the control channel's signaling decoded, its control channel hunted and held, voice channel grants for the chosen talk groups followed, and where the system allows transmit: registration, affiliation, voice requests and transmit on the granted channel (`docs/spec/p25-trunking.md`). The radio core runs it on a trunked channel. Needs P25 |
 | `CONFIG_NXDN` | = DMR | NXDN conventional voice at 4800 and 9600 bit/s (`docs/spec/nxdn.md`): the frame codec, receive, the call layer and its engine, and the air interface under them. The radio core's NXDN mode (the VFO's mode tile, a temporary mode change, the debug link), RAM settings, the home screen; NXDN conventional channels in the codeplug (`docs/spec/nxdn-codeplug.md`); voice through the DMR side's vocoder path. Needs `DMR`. With P25 on and no lending vocoder it shares P25's engine memory |
 | `CONFIG_AIR_RAW` | n | diagnostics: debug link commands that open an air interface session and move raw symbols and tap samples, for bench tests (`docs/spec/debuglink.md`). Needs P25 or NXDN (an air-framed mode) and DEBUGLINK |
 | `CONFIG_SFR` | = DMR (n where the modem can't) | single frequency repeater: MMDVM SFR (the hotspot, duplex with RX = TX) and Standalone SFR (the repeater and user roles of a channel, `docs/spec/sfr.md`) |
@@ -150,7 +166,7 @@ below are for an STM32F4 radio.
 | `CONFIG_HOSTLINK` | = USB (y on a radio whose host port is a UART) | the host link (`core/hostlink`) on the board's host port: USB CDC, or the programming cable's UART on radios without USB |
 | `CONFIG_USB_SERIAL_REQUEST` | = USB_NETWORK | the two requests that take a radio in network mode back to the serial port at run time, for a web page: a vendor request on endpoint 0 and `GET /api/usb?mode=serial` on the HTTP server (`docs/spec/usb-network.md` 1). Off: the radio is switched on its screen or with debug link op 25 |
 | `CONFIG_USB_NETWORK` | = USB and HOSTLINK | USB network adapter personality: CDC-NCM, switched with the serial one at run time (debug link op 25) or chosen at power-on by the stored setting (`docs/spec/usb-network.md` 1) |
-| `CONFIG_NET_PPP` | n (= HOSTLINK and DMR on a radio whose only IP link is the cable; off with `CONFIG_DMR_IP_GATEWAY=n`) | IPv4 over PPP on the serial host port into the IP gateway and its services (`core/net/ppp.c`, `core/hostlink/hostlink_ppp.c`, `docs/spec/ppp.md`): for radios whose only host link is a USB-serial cable, and a fallback on the USB serial port. The host link enters it on pppd's first LCP frame or debug link radio op 28. Needs HOSTLINK and DMR_IP_GATEWAY, and turns the gateway (with its services) on by default. Which radios it was checked on: [feature-matrix.md](feature-matrix.md). About 3.9 KB flash and 90 B RAM on its own (it borrows the adapter's receive buffer); with the gateway about 10.7 KB flash and 4.1 KB RAM on an HR_C7000 radio (`docs/spec/ppp.md` 7). On by default where it is the radio's only IP link ([feature-matrix.md](feature-matrix.md)) |
+| `CONFIG_NET_PPP` | n (= HOSTLINK and DMR on a radio whose only IP link is the cable; off with `CONFIG_DMR_IP_GATEWAY=n`) | IPv4 over PPP on the serial host port into the IP gateway and its services (`core/net/ppp.c`, `core/hostlink/hostlink_ppp.c`, `docs/spec/ppp.md`): for radios whose only host link is a USB-serial cable, and a fallback on the USB serial port. The host link enters it on pppd's first LCP frame or debug link radio op 28. Needs HOSTLINK and DMR_IP_GATEWAY, and turns the gateway (with its services) on by default. For the radios it was checked on, see the [feature matrix](feature-matrix.md). About 3.9 KB flash and 90 B RAM on its own (it borrows the adapter's receive buffer); with the gateway about 10.7 KB flash and 4.1 KB RAM on an HR_C7000 radio (`docs/spec/ppp.md` 7). On by default where it is the radio's only IP link ([feature-matrix.md](feature-matrix.md)) |
 | `CONFIG_HOTSPOT` | = DMR and HOSTLINK | MMDVM modem / hotspot over the host port |
 | `CONFIG_HOTSPOT_SPLIT` | = HOTSPOT (n where the glue isn't written) | split duplex repeater: two radios, each an MMDVM modem, as one duplex repeater (the TX half sends the continuous BS outbound with the CACH, the RX half labels both inbound slots from the TX half's slot clock); the vendor command 0xD6 and the version suffix " SPLIT1", roles only after SET_ROLE, the HR_C6000 BS outbound engine, the debug link's SPLIT command (`docs/spec/split-duplex.md`). Needs `CONFIG_HOTSPOT`. Off, the image is unchanged. About 2.1 KB RAM |
 | `CONFIG_DEBUGLINK` | = HOSTLINK | debug link for bench automation on the host port: diagnostics, screenshots, key / PTT injection, log ring (`docs/spec/debuglink.md`) |
@@ -185,7 +201,7 @@ below are for an STM32F4 radio.
 | `CONFIG_LANG_ES` | y | Spanish on the radio: Settings > Display > Language (`docs/spec/ui.md` 2.5, `core/ui/lang/es.po`). The first language also brings the accented letters of every font (`CONFIG_LANG_ANY`); each further language adds only its text. Off: Spanish is listed but dimmed. One switch per language, [translating.md](dev/translating.md) |
 | `CONFIG_LANG_IT` | n | Italian on the radio (`core/ui/lang/it.po`), as `CONFIG_LANG_ES`. Off: Italian is listed but dimmed |
 | `CONFIG_LANG_FR` | n | French on the radio (`core/ui/lang/fr.po`), as `CONFIG_LANG_ES`. Off: French is listed but dimmed |
-| `CONFIG_LANG_ZH` | n | Chinese on the radio (`core/ui/lang/zh.po`), as `CONFIG_LANG_ES`, plus what Chinese needs and the Latin-1 languages do not: a 16x16 glyph for every character its catalog uses (`core/ui/cjk_font_data.c`, built by `tools/cjkfont.py`; 480 characters, 15.4 KB) and UTF-8 text the text layer decodes (`core/ui/gfx.c`). 32,856 bytes with Spanish on (measured 2026-11-04). **A line must be at least 16 px high**: the glyph is the height of the 8x16 font. A 240 px color radio draws its words in 8x16 (and its text pages move up to it in a CJK build), so Chinese shows on every screen; a layout that draws its words in the 5x8 or 6x12 font (a 128x64 display, and the 160x128 class) has no room for 16 px lines, so Chinese must stay off there. Off: Chinese is listed but dimmed |
+| `CONFIG_LANG_ZH` | n | Chinese on the radio (`core/ui/lang/zh.po`), as `CONFIG_LANG_ES`, plus what Chinese needs and the Latin-1 languages do not: a 16x16 glyph for every character its catalog uses (`core/ui/cjk_font_data.c`, built by `tools/cjkfont.py`; 480 characters, 15.4 KB) and UTF-8 text the text layer decodes (`core/ui/gfx.c`). About 32 KB with Spanish on. **A line must be at least 16 px high**: the glyph is the height of the 8x16 font. A 240 px color radio draws its words in 8x16 (and its text pages move up to it in a CJK build), so Chinese shows on every screen; a layout that draws its words in the 5x8 or 6x12 font (a 128x64 display, and the 160x128 class) has no room for 16 px lines, so Chinese must stay off there. Off: Chinese is listed but dimmed |
 | `CONFIG_LANG_DEFAULT_ES` | n | The radio starts in Spanish until the user picks a language (an empty language setting means the build's default). Needs `CONFIG_LANG_ES`. Off, for every `CONFIG_LANG_DEFAULT_*`: English. With more than one on, the first in `config/features.mk` wins. No flash cost |
 | `CONFIG_LANG_DEFAULT_IT` | n | The radio starts in Italian, as `CONFIG_LANG_DEFAULT_ES`. Needs `CONFIG_LANG_IT` |
 | `CONFIG_LANG_DEFAULT_FR` | n | The radio starts in French, as `CONFIG_LANG_DEFAULT_ES`. Needs `CONFIG_LANG_FR` |
@@ -196,17 +212,19 @@ below are for an STM32F4 radio.
 
 Derived (not set by hand): `CONFIG_DMR_DATA_CORE`, the shared packet data / CSBK code, on when any data feature is;
 `CONFIG_DMR_AIR_QUEUE`, the data service's TX queue (`docs/spec/dmr-data.md` 12.6), on with `CONFIG_DMR_IP_GATEWAY` or
-`CONFIG_ZONE_SHARE`. `CONFIG_AIR` (the air interface) is on with `CONFIG_P25` or `CONFIG_NXDN`; `CONFIG_IMBE` and `CONFIG_MBE`
-(the full-rate voice decoder, the MBE core) follow `CONFIG_P25`; a command line or a board's `config.mk` that sets one stops the build. `CONFIG_ZONE_SHARE_MODES`: zone sharing carries channels of a kind and their systems
-(`docs/spec/zone-share.md` 4.2), on with `CONFIG_ZONE_SHARE` and `CONFIG_P25`, `CONFIG_NXDN` or `CONFIG_DMR_TRUNK`. `CONFIG_LANG_ANY`
-(`core/config.h`): on when any `CONFIG_LANG_*` is, the translation lookup and the fonts' Latin-1 glyphs.
+`CONFIG_ZONE_SHARE`. `CONFIG_AIR` (the air interface) is on with `CONFIG_P25` or `CONFIG_NXDN`; `CONFIG_IMBE` and
+`CONFIG_MBE` (the full-rate voice decoder, the MBE core) follow `CONFIG_P25`; a command line or a board's `config.mk`
+that sets one stops the build. `CONFIG_ZONE_SHARE_MODES`: zone sharing carries channels of a kind and their systems
+(`docs/spec/zone-share.md` 4.2), on with `CONFIG_ZONE_SHARE` and `CONFIG_P25`, `CONFIG_NXDN` or `CONFIG_DMR_TRUNK`.
+`CONFIG_LANG_ANY` (`core/config.h`): on when any `CONFIG_LANG_*` is, the translation lookup and the fonts' Latin-1
+glyphs.
 
 ## Values
 
 | Value | Default | Meaning |
 |---|---|---|
 | `CONFIG_DMR_AIR_QUEUE_BYTES` | 2048 | octets in the data service's TX queue: each queued packet takes its length plus a 36-octet record header, rounded up to 4 (`docs/spec/dmr-data.md` 12.6.1). At least 1296 (two longest packets) |
-| `CONFIG_DMR_DATA_TX_GUARD_MS` | 250 | the gap the data service leaves after our own transmission before it starts another that isn't a reply. A workaround for receivers that lose a packet sent right after ours ended; the cause is open (`docs/spec/dmr-data.md` 12.6.3). 0 turns it off |
+| `CONFIG_DMR_DATA_TX_GUARD_MS` | 250 | the gap the data service leaves after our own transmission before it starts another that isn't a reply. A workaround for receivers that lose a packet sent right after ours ended (`docs/spec/dmr-data.md` 12.6.3). 0 turns it off |
 | `CONFIG_DISPLAY_INSET` | 0 (a board sets its own) | pixels hidden by the bezel or lens at each edge; the UI draws inside them. A board may set the top and bottom to 0 when only the sides are covered |
 | `CONFIG_DISPLAY_INSET_TOP` / `_BOTTOM` / `_LEFT` / `_RIGHT` | = `CONFIG_DISPLAY_INSET` | one edge |
 
@@ -217,8 +235,8 @@ Not feature switches: they pick the hardware variant or set bench knobs, and `pr
 | Variable | Board | Meaning |
 |---|---|---|
 | `BAND` | boards with a band option | A build option (`board.toml` `[[build_options]]`, `board.mk` `BUILD_OPTIONS`): a band such as `uhf` (the default) or `vhf`, which picks the band table, the frequency plan and the board name. Given on the command line, it adds its value to the build directory (`build/<id>-vhf`) |
-| bench defines | a board's `board.mk` | A board may take extra `-D` defines for the bench (panel type, switch polarity, battery divider, keeping the debug pins); they are listed in its bring-up page under [docs/testing](testing/README.md) |
-| `LTO` | 0 (STM32F4 platform: 1) | link time optimization (`-flto=auto` at compile and link): about 17 KB smaller (20 KB with `LTO_3P=1`). The STM32F4 boards needed it while their application areas were small; since the codec moved (codec-placement.md) they have 464 KB or more, and it stays on for the smaller image. The csky builds don't use it |
+| bench defines | a board's `board.mk` | A board may take extra `-D` defines for the bench (panel type, switch polarity, battery divider, keeping the debug pins), listed in its `board.mk` |
+| `LTO` | 0 (STM32F4 platform: 1) | link time optimization (`-flto=auto` at compile and link): about 17 KB smaller (20 KB with `LTO_3P=1`). It stays on for the STM32F4 boards for the smaller image. The csky builds don't use it |
 | `LTO_3P` | 0 (a board turns it on to fit) | with `LTO=1`, the third-party code too (HAL, CMSIS, FreeRTOS, TinyUSB): about 3 KB more. FreeRTOS marks what its port's assembly reaches `portDONT_DISCARD`; the vectors are referenced from the assembly start-up. `LTO_EXCLUDE` lists files kept out (file-scope assembly: `platform/stm32f4/codec_call.c`) |
 | `TCP_CONNS` | HR_C7000 platform | TCP connections in all states (`core/net/tcp.h`, 4 elsewhere): 3 by default on the HR_C7000 platform, about 1.5 KB RAM each across TCP, HTTP and rigctld |
 | `MAXIMAL_VARS` | a board's own | set in a board's `config.mk`: make variables `tools/ci.sh` adds to that board's maximal build (`make print-maximal-vars`) |
@@ -240,22 +258,23 @@ make BOARD=<id> print-unsupported       # what the hardware can't do
 make BOARD=<id> print-not-written       # what is not written yet
 ```
 
-[feature-matrix.md](feature-matrix.md) shows the result for every radio ("Built by default on each radio") and its
-notes give the reasons; a radio's hardware spec (`hardware-<id>.md`) holds the facts behind them. The switches off on
-most boards are `CONFIG_AUDIO_PROBE` (a bench diagnostic) and the ones that need a part the radio lacks.
+[feature-matrix.md](feature-matrix.md) shows the result for every radio ("Built by default on each radio") and its notes
+give the reasons. The switches off on most boards are `CONFIG_AUDIO_PROBE` (a bench diagnostic) and the ones that need a
+part the radio lacks.
 
 ## Adding a feature
 
 1. Add the switch with a comment and its default to `config/features.mk`, to `FEATURES`, and to the dependency checks.
 2. Add the default and the checks to `core/config.h`.
 3. Guard the code, and leave a directory out in the Makefile when the whole directory belongs to the feature.
-4. Add a row here and in [feature-matrix.md](feature-matrix.md) (the web site takes the feature's group, title and
-   size from it; `site/build.py --strict` fails without the row), and check the build links with the switch off (`make BOARD=<b> CONFIG_X=n BUILD=build/test-x`).
-   `tools/ci.sh` builds every board with each default-on switch off alone, an FM-minimal and a maximal
-   configuration, all with zero warnings, and reports the image sizes (`docs/testing/README.md`). The maximal
-   configuration leaves out the switches a board lists in `BOARD_UNSUPPORTED` (its `config.mk`: what its hardware
-   can't do, such as SFR on a modem chip lacking what the glue uses) or `BOARD_NOT_WRITTEN` (what its code doesn't do yet). Leaving the not-written switches out keeps the maximal build to code that
-   runs on the radio: built on, they can fill a radio's memory (one radio's maximal build reached 99% of its CCM
-   RAM), and any shared addition would then fail CI on unrelated pull requests.
-   A switch that needs a left-out one is off too: `tools/ci.sh` drops each switch the checks in `config/features.mk`
-   name until the set passes them (DMR not written takes all of DMR's family with it).
+4. Add a row here and in [feature-matrix.md](feature-matrix.md) (the web site takes the feature's group, title and size
+   from it; `site/build.py --strict` fails without the row). Check that the build links with the switch off: `make
+   BOARD=<b> CONFIG_X=n BUILD=build/test-x`. `tools/ci.sh` builds every board with each default-on switch off alone, an
+   FM-minimal and a maximal configuration, all with zero warnings, and reports the image sizes (see [Continuous
+   integration](dev/ci.md)). The maximal configuration leaves out the switches a board lists in `BOARD_UNSUPPORTED` (its
+   `config.mk`: what its hardware can't do, such as SFR on a modem chip lacking what the glue uses) or
+   `BOARD_NOT_WRITTEN` (what its code doesn't do). Leaving the not-written switches out keeps the maximal build to code
+   that runs on the radio: built on, they can fill a radio's memory (one radio's maximal build reached 99% of its CCM
+   RAM), and any shared addition would then fail CI on unrelated pull requests. A switch that needs a left-out one is
+   off too: `tools/ci.sh` drops each switch the checks in `config/features.mk` name until the set passes them (DMR not
+   written takes all of DMR's family with it).

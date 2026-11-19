@@ -3,29 +3,23 @@
 
 # Review instructions
 
-The full rules are in [AGENTS.md](../AGENTS.md) and [docs/dev/contributing.md](../docs/dev/contributing.md). When you
-review a pull request, check these first.
+When you review a pull request, check it against each rule in
+[Contributing, Rules](../docs/dev/contributing.md#rules). Then look for the following problems, which the rules don't
+spell out.
 
 ## Tests
 
-- Code that adds or changes behavior comes with host tests in `tests/host/` that fail without the change. Flag
-  new code with no test.
-- A bug fix comes with the test that would have caught it. Flag a fix without one.
+- Flag new or changed behavior with no host test in `tests/host/` that fails without the change.
+- Flag a bug fix without the test that would have caught it.
 - Look for branches the tests skip: error paths, the other mode (DMR and FM), empty or full lists, a feature switch
-  turned off, and keys or screens that exist on one radio only. Ask for a test for each, or for the reason it can't
-  be reached from the host.
-- A change the host tests can't reach (a register write, a board's wiring) must say so, test the logic around it, and
-  add a HIL test when one can be scripted.
-- A UI change regenerates the gallery and commits only the PNGs it meant to change.
-- A parser of outside input has a fuzz loop.
-- The pull request names the tests it adds. Flag a description that claims coverage the diff doesn't show.
+  turned off, and keys or screens that only some radios have. Ask for a test for each, or for the reason the host
+  tests can't reach it.
+- Flag a change the host tests can't reach (a register write, a board's wiring) when the pull request doesn't say so,
+  doesn't test the logic around it, or skips a HIL test that could be scripted.
+- Flag a pull request description that claims coverage the diff doesn't show.
 
-## Other checks
+## Code
 
-- Clean room: no code, names or comments that came from another radio firmware or GPL source.
-- Every new file has the SPDX header in its neighbors' style.
-- `core/` includes no board or platform header and tests no radio define.
-- A feature that adds real code size sits behind a `CONFIG_` switch, and the build stays clean with it off.
-- Zero warnings in every configuration `tools/ci.sh` builds.
-- A behavior change updates `docs/spec/`, and `docs/user/` when users see it.
-- US English in code, comments, docs and commit messages.
+- Flag code, names, or comments that look copied from another radio firmware or from GPL source.
+- Flag a definition guarded by a narrower condition than its callers.
+- Flag a UI change that commits gallery PNGs it didn't mean to change.

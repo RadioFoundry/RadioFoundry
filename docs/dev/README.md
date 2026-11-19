@@ -1,65 +1,50 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
-# Developer Documentation
+# Contributor guide
 
-The contributor guide: how RadioFoundry is built, tested, released and extended. These pages describe process and
-tooling and link the specs for behavior; they don't repeat them. Users read [docs/user](../user/README.md).
+These pages cover how to build, test, release, and extend RadioFoundry. They describe process and tooling, and link
+to the [specifications](../spec/README.md) for behavior. For the full list of pages, see the
+[documentation map](../README.md).
 
-## Reading order
+## Start
 
-| Step | Page | What it covers |
-|---|---|---|
-| 1. Rules | [Contributing](contributing.md) | Branches, pull requests, clean-room rules, code, tests and docs a change needs |
-| 2. Layout | [Architecture](architecture.md) | The layers (core, hal, drivers, platform, boards), the tasks, where each feature lives |
-| 3. Build | [Building](building.md) | Toolchains, make targets, feature switches, build options, image size, flashing your own build |
-| 4. Test | [Testing](testing.md) | Host tests, the UI simulator and gallery, sanitizers, fuzzing, HIL and the SDR bench |
-| 5. CI | [CI](ci.md) | The workflows per push, per pull request and nightly; running each piece locally; coverage |
-| | [CI runners and images](ci-runners.md) | The Gitea and GitHub runners, the csky-elf image, the HIL runner |
-| | [Stack check](stack-check.md) | The static worst-case stack depth of every task |
-| 6. Add a radio | [Adding a radio](adding-a-radio.md) | The files a board needs, `board_t`, the key map, bring-up order and records |
-| | [The board registry](board-registry.md) | `board.toml` and `platform.toml` field by field, what is derived, `tools/boards.py` |
-| | [Adding a mode](adding-a-mode.md) | A digital mode in the codeplug, the firmware, the Codeplug Editor and zone sharing |
-| 7. Codec | [The codec](codec.md) | How a radio's codec is merged and hosted, and what a merge tool must do |
-| 8. Release | [Releases](release.md) | The checklist, artifacts and manifests, sector maps, codec handling, the release workflow |
-| | [The user manual PDF](manual-pdf.md) | Building the manual and its workflow |
-| 9. Web site | [The web site](website.md) | The generated site, data sources, templates, translating, radio images, error logging |
-| | [The web flasher](web-flasher.md) | The browser installer: modules, backends, backups, restore, version links |
-| | [The Codeplug Editor](codeplug-editor.md) | The browser codeplug editor |
-| | [Translating](translating.md) | Adding a language to the radio and the site: catalogs, build switches, checks |
-
-## Reference
-
-| Page | What it covers |
+| To | Read |
 |---|---|
-| [Debug link](debug-link.md) | The host-port debug protocol and `tools/rfoundry_debug.py` |
-| [CPS, codeplug and settings](cps-and-codeplug.md) | Where the CPS shim, the codeplug layout and the settings store are specified |
-| [Using RadioFoundry in your project](../../FORKING.md) | What the MIT license asks of forks and other projects, and contributing a feature instead |
-| [Developer glossary](glossary.md) | Terms of the specs, generated from `docs/glossary.json` |
+| Learn the rules every change follows | [Contributing](contributing.md), [Clean-room rules](../CLEANROOM.md) |
+| Find your way around the code | [Architecture](architecture.md) |
+| Write or edit documentation | [Documentation style](doc-style.md) |
 
-## Common tasks
+## Build and test
 
-| To | See |
+| To | Read |
 |---|---|
-| Build a radio | [Building](building.md) |
-| Run everything a pull request must pass | `JOBS=8 tools/ci.sh`, which ends with "all checks passed" ([CI](ci.md#running-the-pieces-locally)) |
-| Add a feature switch | [build-config.md, "Adding a feature"](../build-config.md#adding-a-feature), then the matrix ([feature-matrix.md](../feature-matrix.md)) |
-| Add a host test | [Testing, "Host tests"](testing.md#host-tests) |
-| Add a HIL test | [tests/hil/README.md](../../tests/hil/README.md), "Writing a test" |
-| Change the UI | [docs/ux](../ux/), [ui.md](../spec/ui.md), then `make -C tests/host ui-gallery` ([Testing](testing.md#the-ui-simulator-and-the-gallery)) |
-| Add a radio | [Adding a radio](adding-a-radio.md) |
-| Move a radio from stock firmware | The migration tools and specs are listed in the [spec index](../spec/README.md#migrating-from-stock) |
-| Cut a release | [Releases, "Checklist"](release.md#checklist) |
-| Preview the web site | `python3 site/build.py --serve` ([The web site](website.md)) |
-| Install RadioFoundry or edit a codeplug (as a user) | [Installing](../user/02-installing.md) |
+| Build a radio's image and flash it | [Building](building.md) |
+| Turn a feature on or off, or add a feature switch | [Build configuration](../build-config.md) |
+| Add a host test or a HIL test | [Testing](testing.md) |
+| Run everything a pull request must pass (`JOBS=8 tools/ci.sh`) | [Continuous integration](ci.md) |
+| Set up a CI runner or a toolchain image | [CI runners](ci-runners.md) |
+| Check a task's stack depth | [Stack check](stack-check.md) |
+| Drive a radio from a script | [Debug link tool](debug-link.md) |
+| Change the UI | [User interface spec](../spec/ui.md), then regenerate the gallery as [Testing](testing.md) describes |
 
-## Elsewhere
+## Add to the firmware
 
-| Directory | Contents |
+| To | Read |
 |---|---|
-| [docs/spec](../spec/README.md) | Behavior, protocols, the DMR modems, each radio's hardware |
-| [docs/ux](../ux/) | The UI design: principles, information architecture, task flows, wireframes, screens |
-| [docs/testing](../testing/README.md) | How to run every test tier, on-air coverage, bench procedures, bring-up records |
-| [docs/build-config.md](../build-config.md) | Every build switch and value |
-| [docs/feature-matrix.md](../feature-matrix.md) | Every feature's flash cost and which radios build it |
-| [docs/CLEANROOM.md](../CLEANROOM.md) | The clean-room rules |
-| [AGENTS.md](../../AGENTS.md) | The short version of the rules for coding agents |
+| Port RadioFoundry to a new radio | [Adding a radio](adding-a-radio.md), [Board registry](board-registry.md) |
+| Add a digital mode | [Adding a mode](adding-a-mode.md) |
+| Change how the codec reaches a radio | [The AMBE codec](codec.md) |
+| Translate the radio or the site | [Translating](translating.md) |
+
+## Ship
+
+| To | Read |
+|---|---|
+| Cut a release | [Releases](release.md) |
+| Build the user manual PDF | [Manual PDF](manual-pdf.md) |
+| Change the web site | [Web site](website.md) |
+| Change the browser installer | [Web flasher](web-flasher.md) |
+| Change the browser codeplug editor or the CPS shim | [Codeplug editor](codeplug-editor.md) |
+
+Terms used in the code and specs are in the [developer glossary](glossary.md).

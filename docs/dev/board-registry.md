@@ -1,18 +1,20 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
-# The Board Registry
+# Board registry
 
-The registry holds every fact about a radio that the build itself doesn't need: its identity, status, build options,
-flashing route, codec route and the web site's data. The tools, CI, the docs and the site read it. The build reads no
-TOML: make keeps its own facts in `board.mk`, `config.mk` and `memory.ld`, and the registry reads those through
-make.
+The board registry holds every fact about a radio that the build itself doesn't need: its identity, status, build
+options, flashing route, codec route, and the web site's data. The tools, CI, the docs, and the site read it. The build
+reads no TOML: make keeps its own facts in `board.mk`, `config.mk`, and `memory.ld`, and the registry reads those
+through make.
 
-`tools/boards.py` loads and checks the registry. It needs Python 3.11 or later (`tomllib`); scripts find one with
+`tools/boards.py` loads and checks the registry. It needs Python 3.11 or later (`tomllib`). Scripts find one with
 `tools/rfoundry_python.sh`.
 
 ## Where each fact lives
 
-Each fact is in one file. A value another file already holds is derived from it, never typed twice.
+Each fact is in one file, as the following table shows. A value that another file already holds is derived from it,
+never typed twice.
 
 | File | Holds |
 |---|---|
@@ -23,7 +25,7 @@ Each fact is in one file. A value another file already holds is derived from it,
 | `boards/<id>/*.c` | The `board_t` `.name` values: the names the debug link reports |
 | `boards/<id>/pins.h` | The pins the stub uses: the power latch and key (HR_C7000), the SPI flash's `PIN_FLASH_SCK`, `_MISO`, `_MOSI`, `_CS` and the `idle_cs` pins (STM32F4), each as `GPIOx, GPIO_PIN_n` on STM32F4 |
 
-Derived values:
+The registry derives the following values.
 
 | Value | From |
 |---|---|
@@ -41,8 +43,8 @@ Derived values:
 
 ## board.toml
 
-The schema in `tools/boards.py` (`BOARD_SCHEMA`) lists every key; `check` refuses an unknown or missing one. Copy a
-neighbor on the same platform.
+The schema in `tools/boards.py` (`BOARD_SCHEMA`) lists every key, and `check` refuses an unknown or missing one. To
+start a new board, copy a neighbor on the same platform.
 
 ### Identity
 
@@ -53,33 +55,27 @@ neighbor on the same platform.
 | `maker`, `model` | string | The two parts of the name |
 | `also` | list of strings | The same radio sold under other names |
 | `kind` | `handheld` or `mobile` | |
-| `aprs_tocall` | one character, `1`-`9` or `A`-`Z` | The sixth character of the radio's APRS tocall `APRDF?` ([aprs.md](../spec/aprs.md) 4.2). Unique; `0` is the host tests'. Never change or reuse one: it is meant to name the radio's model in the device identifier list |
+| `aprs_tocall` | one character, `1`-`9` or `A`-`Z` | The sixth character of the radio's APRS tocall `APRDF?` ([aprs.md](../spec/aprs.md) 4.2). Unique; `0` is the host tests'. Never change or reuse one: it names the radio's model in the device identifier list |
 | `part_of` | string, optional | Another board this one is a build of |
 | `debuglink_aliases` | list, optional | Names older firmware reported on the debug link |
 | `looks` | list of tables, optional | Other bodies the board ships in that look too different to share its picture: `{ id, name, also }`. Each is its own radio card on the site, drawn in `site/static/img/radios/src/<id>-<look id>.svg` (the site build refuses a missing drawing), and links to the board's page. `name` and every entry of `also` (the radios in that body) must be in the board's `also`; the board's own card lists the rest |
 
 ### [docs]
 
-| Key | Meaning |
-|---|---|
-| `hardware` | The hardware spec, `docs/spec/hardware-<id>.md` |
-| `codec` | Optional: the codec spec |
-| `install` | Optional: the user manual's page for moving from stock firmware |
-| `bringup` | Optional: the bring-up checklist |
-
-`check` fails when a page doesn't exist. The README's radio table links the board to its `bringup` page, else its
-`hardware` page.
+`[docs]` is optional and has one key, `install`: the user manual page that tells how to install RadioFoundry on the
+radio, such as a chapter on moving from the original firmware. The web site links it from the radio's page. `check`
+fails when the page doesn't exist.
 
 ### [hardware]
 
-One-line summaries for the site and the generated tables; the facts stay in `docs.hardware`.
+One-line summaries for the site and the generated tables.
 
 | Key | Meaning |
 |---|---|
 | `cpu` | Optional: overrides the platform's CPU in the tables |
 | `bands`, `power`, `display` | Short text |
 | `gallery` | The display class (`160x128`); `check` requires the UI gallery to have it, and the frame buffer in `board.mk` (`GFX_FB_BYTES`, `GFX_MAX_ROWS`, `GFX_INDEXED`) to hold it |
-| `unconfirmed` | Optional: hardware switches (`hardware` in `tests/hil/features.toml`) the board neither builds nor lists in `BOARD_UNSUPPORTED` or `BOARD_NOT_WRITTEN` ([the rule](../build-config.md#unsupported-not-written-unconfirmed)), because no source says yet whether the radio has the part: switch to what is unknown. `check` fails on any other hardware switch that is off by default, and on an entry for a switch the board builds or lists. The feature matrix shows it as ? |
+| `unconfirmed` | Optional: hardware switches (`hardware` in `tests/hil/features.toml`) the board neither builds nor lists in `BOARD_UNSUPPORTED` or `BOARD_NOT_WRITTEN` ([the rule](../build-config.md#unsupported-not-written-unconfirmed)), because no source says whether the radio has the part: switch to what is unknown. `check` fails on any other hardware switch that is off by default, and on an entry for a switch the board builds or lists. The feature matrix shows it as ? |
 | `clock` | `{ rtc, note }`: the real-time clock. `rtc` is `backed` (keeps time through power-off), `unbacked` (only while on), `none` or `unknown`; `note` gives the source. The feature matrix and the site show it |
 | `variants` | Optional: the hardware variants sold under the model, as `[[hardware.variants]]` tables (below) |
 | `variant_pattern` | With `variants`: a regular expression over the stock firmware's version text whose first group is the variant code |
@@ -93,11 +89,11 @@ A variant is `{ code, name, level, notice, runs }`:
 | `name` | Short text: what sets this hardware apart |
 | `runs` | `{ board, options }`: the image it runs. `board` is this board when variants share an image, another board id when the variant needs its own. `options` names build option values of that board (`[[build_options]]`) the image must be built with. No `runs`: not supported, and no `level` or `notice` |
 | `level` | With `runs`: `bring-up`, `testing` or `supported`, as in `[status]` |
-| `notice` | Required below `supported`: what doesn't work yet. The flasher shows it as a warning when it reads or the user picks the variant |
+| `notice` | Required below `supported`: what doesn't work on the variant. The flasher shows it as a warning when it reads or the user picks the variant |
 
-The web flasher reads the code before it writes (the stock console, the vendor identify reply) or asks the user, and
-refuses an image the variant doesn't run (`site/static/js/flasher/variant.js`). `check` requires a supported board
-to have a supported variant that runs its own image.
+The web flasher reads the code before it writes, or asks the user, and refuses an image the variant doesn't run
+(`site/static/js/flasher/variant.js`). `check` requires a supported board to have a supported variant that runs its
+own image.
 
 ### [status]
 
@@ -121,7 +117,8 @@ example). `board.mk` holds the build's side: `BUILD_OPTIONS := BAND` and `BAND_V
 
 The Makefile defines `RFOUNDRY_<NAME>_<VALUE>` as 1 or 0 for every value. A value other than the default adds `-<value>`
 to the build directory and the image: `make BOARD=<id> BAND=vhf` writes `build/<id>-vhf/rfoundry_<id>-vhf.bin`.
-[Building](building.md#hardware-build-options) has the user side.
+For how to build with an option, see
+[Build configuration](../build-config.md#hardware-build-options).
 
 ### [ci]
 
@@ -147,27 +144,25 @@ to the build directory and the image: `make BOARD=<id> BAND=vhf` writes `build/<
 |---|---|
 | `steps` | How to enter the bootloader, one step per item, for the web flasher and the manual |
 | `keys` | Optional: the short form the tools print |
-| `hold` | Optional: the keys held to enter it, by key name (the board's `KEY_*` in lower case, `["ptt", "sk1"]`). The web flasher marks them on the radio's picture and names them under it; `steps` stays the instructions. Each must be a key of the board (`tools/boards.py check`) and tagged in its drawing or listed in `data-undrawn` ([Radio images](website.md#radio-images)) |
+| `hold` | Optional: the keys held to enter it, by key name (the board's `KEY_*` in lowercase, `["ptt", "sk1"]`). The web flasher marks them on the radio's picture. Each must be a key of the board and tagged in its drawing or listed in `data-undrawn` ([Radio images](website.md#radio-images)) |
 | `id` | Optional: the string the loader answers, also the magic of its files (`serial-loader`) |
 | `sign` | Optional: what the radio shows in the bootloader |
 
 `[flash.dfu]` (`usb-dfu`): `vid`, `pid`, `string1`, `product` (the USB identity) and `key_sha256`, `key_prefix` (the
-per-model XOR key's hash and first bytes, never the key). Optional `layout`: the bootloader's alt 0 interface string,
-added only once it was read on a radio in its bootloader. The flashers then accept no other device. Without it they
-refuse a layout that shows only the bootloader's sectors (from 0x08000000, at most 48 KB): that is the radio's own
-firmware switched on normally, which has the bootloader's IDs and strings but whose erase can reach the bootloader.
+per-model XOR key's hash and first bytes, never the key). Optional `layout` is the bootloader's alt 0 interface
+string, as read on a radio in its bootloader; the flashers then accept no other device. For what the flashers refuse
+without it, see [Web flasher](web-flasher.md).
 
 #### Original firmware version
 
 `[flash.original_version]` (optional): a hardware option (`board_t.hwopts`, [debuglink.md](../spec/debuglink.md#325-hwopt))
 that RadioFoundry can't detect but that the version of the radio's original firmware settles, such as a board revision
-when the manufacturer ships one firmware line per revision. The installers read that version before they ask for the
-bootloader, and store the choice over the debug link once RadioFoundry runs (rfoundry's `origversion.py`, the web
-flasher's `origversion.js`; [web-flasher.md](web-flasher.md#the-original-firmware-version)).
+when the manufacturer ships one firmware line per revision. For how the installers use it, see
+[The original firmware version](web-flasher.md#the-original-firmware-version).
 
 | Key | Meaning |
 |---|---|
-| `read` | How the version is read. `dfu-info`: the original firmware, running normally, is a DFU device with the bootloader's USB IDs (`[flash.dfu]` required); block 0 command `A2 02`, then UPLOAD, answers the version (first byte 0x56; the bootloader answers 0x54). The request sequence is in the radio's hardware page |
+| `read` | How the version is read. `dfu-info`: the original firmware, running normally, is a DFU device with the bootloader's USB IDs (`[flash.dfu]` required) and answers the version to an info request |
 | `interface` | The DFU interface string the original firmware shows while it runs (spaces not counted). The installers send the read only to a device showing it, and refuse to write to one |
 | `hwopt` | The option's name, as `hal_hwopt_t` names it |
 | `major` | The choice for each major version: `{ "06" = "<choice>", ... }`, two digits each, every choice one of the option's labels |
@@ -178,8 +173,8 @@ major isn't listed settles nothing: the radio then uses its own fallback.
 #### Backup before the install
 
 `[flash.original_backup]` (optional, with `[flash.original_version]`): what the web flasher backs up through the
-original firmware's or the bootloader's DFU device before an install (`origbackup.js`,
-[web-flasher.md](web-flasher.md#backup-before-the-install)). The commands are in the radio's hardware page.
+original firmware's or the bootloader's DFU device before an install (`origbackup.js`; see
+[Backup before the install](web-flasher.md#backup-before-the-install)).
 
 | Key | Meaning |
 |---|---|
@@ -190,8 +185,9 @@ original firmware's or the bootloader's DFU device before an install (`origbacku
 | `loader_interface` | The bootloader's DFU interface string (spaces not counted), which tells it from the original firmware |
 | `loader_spi` | The SPI bytes the bootloader reads |
 
-`[flash.stub]` (a board on a platform with `board_stub`): `id` (the board id the stub echoes, unique per stub; 0xFE is reserved for the stub tools' test profiles) and
-`tested` (flashed through the stub on a radio), then the keys the platform's `board_stub` names:
+`[flash.stub]` is for a board on a platform with `board_stub`. It holds `id` (the board ID the stub echoes, unique per
+stub; 0xFE is reserved for the stub tools' test profiles), `tested` (flashed through the stub on a radio), and the keys
+the platform's `board_stub` names:
 
 | Platform stub | Required | Optional |
 |---|---|---|
@@ -200,46 +196,44 @@ original firmware's or the bootloader's DFU device before an install (`origbacku
 
 A key of another platform's stub fails the check.
 
-The HR_C7000 stub's LED pins come from `pins.h`, not `[flash.stub]`. The stub drives its LED pins from its first
-instruction, so the tools write the board's pins into the stub image's parameter block before they send it, and send
-them again in CONFIG. The stub's built-in pins (PTB1 red, PTB0 green) can be other signals on another board. A board
-without `PIN_LED_RED` or `PIN_LED_GREEN` gets 255 (no LED) for it.
+The HR_C7000 stub's LED pins come from `pins.h`, not `[flash.stub]`. The tools write them into the stub image's
+parameter block before they send it. A board without `PIN_LED_RED` or `PIN_LED_GREEN` gets 255 (no LED) for it.
 
 #### Protected regions
 
-`[[flash.protect]]` lists flash that no tool erases or writes: factory data that can't be made again, the calibration
-first. One table per region:
+`[[flash.protect]]` lists flash that no tool erases or writes: factory data that can't be made again, such as the
+calibration. Each region gets one table:
 
 ```toml
 [[flash.protect]]
 mem = "data"
 start = 0x1000
 end = 0xC9000
-what = "factory calibration: the page tagged 2 in the stock codeplug area (hardware-<radio>.md 6.4)"
+what = "factory calibration in security registers 1 and 2"
 ```
 
 | Key | Meaning |
 |---|---|
 | `mem` | The memory: `progmem` (the MCU's program flash), `data` (the SPI NOR data flash), `nand` (the SPI NAND's main area, without spare bytes) or `secreg` (the SPI NOR flash's security registers) |
 | `start`, `end` | The range, `end` exclusive, as offsets in that memory: `progmem` from the platform's `flash_base`, `data` and `nand` from 0, `secreg` 256 bytes per register from register 1 at 0 |
-| `what` | What lies there, with the spec section that establishes it in parentheses |
+| `what` | What lies there |
 
-`tools/boards.py check` refuses an entry:
+`tools/boards.py check` refuses an entry that has any of these problems:
 
-- whose memory the board doesn't have (`data` and `secreg` need `backup.spi_size` and no NAND; `nand` needs a
-  `spi_nand_t` in the board's sources)
-- that runs past the memory's end
-- that isn't on the memory's erase boundaries: the platform's sectors (or 4 KB) for `progmem`, 4 KB for `data`, a
-  block for `nand`, a register for `secreg`
-- that overlaps another entry, the application or the codec slot
-- whose `what` cites no section
+- Its memory isn't on the board (`data` and `secreg` need `backup.spi_size` and no NAND; `nand` needs a `spi_nand_t`
+  in the board's sources).
+- It runs past the memory's end.
+- It isn't on the memory's erase boundaries: the platform's sectors (or 4 KB) for `progmem`, 4 KB for `data`, a block
+  for `nand`, a register for `secreg`.
+- It overlaps another entry, the application, or the codec slot.
+- Its `what` is empty.
 
 A region whose place moves (remapped by a bad-block table, for example) is protected over every place it can be. The
 registry carries the list as `protect` (`registry.json`, `radios.json` `flash`, `flash-boards.json` `boards`, `c7000`
 and `f4stub`).
 
-What the tools do with it. `tools/rfoundry/rfoundry/protect.py` and `site/static/js/flasher/protect.js` hold the one
-check each language uses:
+`tools/rfoundry/rfoundry/protect.py` and `site/static/js/flasher/protect.js` hold the one check each language uses.
+The following table shows what the tools do with a protected region.
 
 | Write | Behavior |
 |---|---|
@@ -258,16 +252,16 @@ firmware keeps its own rules for what it writes (the CPS shim refuses its areas,
 | Key | Meaning |
 |---|---|
 | `tool` | The tool that extracts or merges it: `codec_extract` or `hrc7000_codec` |
-| `stock` | A list of SHA-256 digests: the stock files rfoundry merges the codec from (stock-file placement) |
+| `stock` | A list of SHA-256 digests: the manufacturer files rfoundry merges the codec from |
 | `profile` | The codec id the firmware reports, for a codec in a linker slot |
 | `sources` | Where a slot codec comes from, for messages |
-| `installed` | Stock versions that leave exactly this codec in place |
+| `installed` | Original firmware versions that leave exactly this codec in place |
 
 A board has either `stock`, or `profile` with a linker codec slot. With `stock`, the profile and sources come from the
-stock files' profiles. The files must hold the same codec; each may put its tables at other addresses. The board's
-codec windows are the union of every file's layout. The image must stay out of all of them, and keeping the codec keeps
-all of them. A merge writes and checks the layout of the file it merges
-(codec-placement.md).
+files' profiles. The files must hold the same codec, and each can put its tables at other addresses. The board's codec
+windows are the union of every file's layout. The image must stay out of all of them, and keeping the codec keeps all
+of them. A merge writes and checks the layout of the file it merges. For keep and merge, see
+[The AMBE codec](codec.md).
 
 ### [cps]
 
@@ -333,7 +327,7 @@ every build.
 ### The build view
 
 `tools/boards.py json --for build` gives a tool that builds images from a checkout everything it needs, with nothing
-from outside the tree. It is a stable interface: a change that breaks a reader changes `format`.
+from outside the tree. It's a stable interface: a change that breaks a reader changes `format`.
 
 | Key | Contents |
 |---|---|
@@ -344,7 +338,7 @@ from outside the tree. It is a stable interface: a change that breaks a reader c
 | `boards.<id>.build_options` | A list of `{ name, default, values }` |
 | `boards.<id>.builds` | One entry per combination of option values, the all-default one first |
 
-Each build:
+Each build has the following keys.
 
 | Key | Example (a board `<id>` with `BAND=vhf`) |
 |---|---|
@@ -362,14 +356,15 @@ make's `BUILD` and `TARGET` with the view for every build.
 
 ## Radio names
 
-AGENTS.md rule 4 says only a radio's own files carry its name. `tools/check_generic.py` (run by
-`tools/boards.py check`) enforces it. The names come from the registry: each board's id, `model` and `also`, matched
-without regard to case, hyphens or a letter suffix (`XR-100UV`, `XR100`, `xr100`). A maker's word in front is dropped.
+Only a radio's own files carry its name ([Contributing](contributing.md#rules), rule 4). `tools/check_generic.py`, which
+`tools/boards.py check` runs, enforces this. The names come from the registry: each board's id, `model` and `also`,
+matched without regard to case, hyphens or a letter suffix (`XR-100UV`, `XR100`, `xr100`). A maker's word in front is
+dropped.
 
 | Allowed place | What it covers |
 |---|---|
 | `boards/<id>/` | The radio's own code, tests and data |
-| The radio's pages | A `docs/` path with the id in it (`hardware-<id>.md`, `<id>-bringup.md`, `results/<id>/`), a `[docs]` page no other board shares, and any directory named `<id>` (`codec_maps/<id>/`) |
+| The radio's pages | A `docs/` path with the ID in it (`results/<id>/`), a `[docs]` page no other board shares, and any directory named `<id>` (`codec_maps/<id>/`) |
 | List pages | `docs/spec/radios.md`, `docs/user/23-radios.md`, `docs/feature-matrix.md` |
 | Generated blocks | Between the markers `tools/boards.py docs` writes, in every marker style, and `registry.json` |
 | File references | A path or a file name in the text points to the radio's own page |
@@ -377,11 +372,11 @@ without regard to case, hyphens or a letter suffix (`XR-100UV`, `XR100`, `xr100`
 
 Everything else fails, tests included, and so does a file whose own path names a radio. Fix it by naming the
 function, the chip or the platform, or by reading the value from the board. The allowlist holds the debt from before
-the check; don't add new code to it.
+the check. Don't add new code to it.
 
 ## Changing the registry
 
-- A new key goes in the schema, in this page and in the reader that needs it. If the build already knows the value,
+- A new key goes in the schema, on this page, and in the reader that needs it. If the build already knows the value,
   derive it instead.
 - Run `tools/boards.py check` and `make registry`, and commit the regenerated `registry.json` with the change.
-- A new board: [Adding a radio](adding-a-radio.md).
+- To add a board, see [Adding a radio](adding-a-radio.md).

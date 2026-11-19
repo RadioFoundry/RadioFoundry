@@ -1,9 +1,10 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
-# The User Manual PDF
+# Manual PDF
 
-How the user manual becomes the PDF a release carries. The manual is the Markdown in [docs/user/](../user/README.md);
-`tools/build_manual.sh` turns it into one PDF:
+This page covers how the user manual becomes the PDF a release carries. The manual is the Markdown in
+[docs/user/](../user/README.md), and `tools/build_manual.sh` turns it into one PDF:
 
 ```
 tools/build_manual.sh                         # build/manual/RadioFoundry-manual-<git describe>.pdf
@@ -18,10 +19,10 @@ tools/build_manual.sh --typ-only              # stop after the typst source, for
 | `tools/manual/manual.lua` | pandoc filter: turns `<img width>` into images, maps links between chapters to PDF links, turns links into the repository into web links (with `RFOUNDRY_REPO_URL`) or plain text |
 | `tools/manual/manual.typ` | typst template: title page, contents, numbered chapters, page footer, tables |
 
-Chapter files are numbered (`01-introduction.md`, ...); a new chapter is a new numbered file plus a line in
-[docs/user/README.md](../user/README.md). Images are `<img src="../ux/screens/160x120i5/NAME.png" width="200" alt="...">`,
-which GitHub and the PDF both show. A missing image is left out of the PDF with a warning. The PDF goes to `build/`,
-which git ignores: never commit it.
+Chapter files are numbered (`01-introduction.md`, ...). A new chapter is a new numbered file plus a line in
+[docs/user/README.md](../user/README.md). Images use the following form, which GitHub and the PDF both show:
+`<img src="../ux/screens/160x120i5/NAME.png" width="200" alt="...">`. A missing image is left out of the PDF with a
+warning. The PDF goes to `build/`, which git ignores; never commit it.
 
 Set `RFOUNDRY_REPO_URL` (for example `https://github.com/OWNER/RadioFoundry/blob/v26.11`) to make links to files
 outside the manual into web links. `$PANDOC` and `$TYPST` choose the binaries.
@@ -35,8 +36,9 @@ outside the manual into web links. `$PANDOC` and `$TYPST` choose the binaries.
 | mdBook, MkDocs | Built for web sites; their PDF output goes through a browser anyway |
 | pandoc with typst | Two single static binaries (about 30 MB each), seconds per build, page layout in one readable template, fonts bundled with typst |
 
-pandoc reads GitHub Markdown, so the files stay readable on GitHub. typst lays out the pages. Versions in use:
-pandoc 3.6.4 and typst 0.13.1 in CI (`.github/workflows/manual.yml`); `tools/build_manual.sh` needs pandoc 3.1.12 and typst 0.12 or later. Install them:
+pandoc reads GitHub Markdown, so the files stay readable on GitHub, and typst lays out the pages. CI uses pandoc 3.6.4
+and typst 0.13.1 (`.github/workflows/manual.yml`). `tools/build_manual.sh` needs pandoc 3.1.12 and typst 0.12 or
+later. To install them, use the command for your system:
 
 | System | Command |
 |---|---|
@@ -46,7 +48,7 @@ pandoc 3.6.4 and typst 0.13.1 in CI (`.github/workflows/manual.yml`); `tools/bui
 
 ## The manual workflow
 
-`.github/workflows/manual.yml`, independent of the firmware build:
+`.github/workflows/manual.yml` builds the manual independently of the firmware build:
 
 | Trigger | Does |
 |---|---|

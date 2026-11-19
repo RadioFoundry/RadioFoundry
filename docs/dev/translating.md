@@ -1,11 +1,15 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # Translating
 
 RadioFoundry has two sets of text to translate: the radio's (firmware) and the web site's (flasher, Codeplug Editor,
-tools). They are separate catalogs with separate tools; a language can have one without the other. English is the
-source of both. This page is the how-to; the rules are in [ui.md 2.5](../spec/ui.md#25-languages) (radio) and
-[website.md, Translating](website.md#translating) (site).
+tools). They're separate catalogs with separate tools, so a language can have one without the other. English is the
+source of both. This page covers how to translate. For the radio's language rules, see
+[UI spec 2.5](../spec/ui.md#25-languages). For how the site serves its languages, see
+[Web site, Languages](website.md#languages).
+
+The two sets differ as follows:
 
 | | Radio | Web site |
 |---|---|---|
@@ -16,12 +20,12 @@ source of both. This page is the how-to; the rules are in [ui.md 2.5](../spec/ui
 | Missing string | Shown in English; fails CI | Shown in English; fails CI |
 | Characters | ASCII and Latin-1 (U+00A0 to U+00FF) | Any Unicode |
 
-## Translating the radio
+## Translate the radio
 
 ### How it works
 
-The source is English. A string the radio shows is marked where it is written, with a key that names it and its
-English:
+The source is English. A string the radio shows is marked where it's written, with a key that names it and its
+English. The marks are the following:
 
 | Mark | Where | Meaning |
 |---|---|---|
@@ -38,7 +42,7 @@ static const tr_id_t modes[] = { TRN(VALUE_OFF, "Off"), TRN(VALUE_AUTO, "Auto"),
 sb_str(&b, tr(modes[i]));                             // stored first, shown later: TRN or TRX, then tr()
 ```
 
-`TR` cannot be used in a `static const` initializer: it is a function call, and which language is in use is known only
+You can't use `TR` in a `static const` initializer: it's a function call, and which language is in use is known only
 when the text is shown. That is what `TRN` is for. `TRX` exists because every entry of such an array is a `tr_id_t`,
 so text that is never translated needs one too.
 
@@ -48,7 +52,7 @@ catalog entry is the key's (its `msgctxt`), and the tool reads the English from 
 
 #### Key names
 
-A key says where the text is shown and what it is for, not what the English says: `AREA_ROLE_MEANING`
+A key says where the text is shown and what it's for, not what the English says: `AREA_ROLE_MEANING`
 (`ZONE_TOAST_RENAMED`, `CHAN_LABEL_BANDWIDTH`, `DENY_FIX_ADD_CODEC`). The English can then change without the name
 going stale, and a translator who reads the key in a catalog knows what kind of text it is.
 
@@ -91,41 +95,45 @@ English text itself and costs nothing. Code compiles the same either way.
 `tools/i18n.py` reads the marks, keeps the catalogs in step and turns them into the tables the build links in: the
 English of every key, and each language's translations by key.
 
-### Adding a language
+### Add a language
 
-1. Start the catalog: `python3 tools/i18n.py --new <code> <name>`. `<code>` is the ISO 639-1 code (`fr`), `<name>`
-   the language's own name (`Français`). This writes `core/ui/lang/<code>.po` with every marked string, untranslated.
-   A CJK language adds its Latin name: `python3 tools/i18n.py --new zh 中文 Chinese` ([below](#chinese-and-other-cjk-languages)).
+To add a language to the radio, do the following:
+
+1. Start the catalog: `python3 tools/i18n.py --new <code> <name>`. `<code>` is the ISO 639-1 code (`fr`), `<name>` the
+   language's own name (`Français`). This writes `core/ui/lang/<code>.po` with every marked string, untranslated. A CJK
+   language adds its Latin name: `python3 tools/i18n.py --new zh 中文 Chinese`
+   ([below](#chinese-and-other-cjk-languages)).
 2. Add the build switches: `CONFIG_LANG_FR` builds the language in, `CONFIG_LANG_DEFAULT_FR` makes it the one the
    radio starts in (for `fr`):
 
-   | File | Change |
-   |---|---|
-   | `config/features.mk` | `CONFIG_LANG_FR ?= n` and `CONFIG_LANG_DEFAULT_FR ?= n`, next to the others; both in `FEATURES`; the `$(error CONFIG_LANG_DEFAULT_FR=y needs CONFIG_LANG_FR=y)` line, as the other languages have |
-   | `core/config.h` | The `#ifndef` defaults (0) of both, and `CONFIG_LANG_FR` added to `CONFIG_LANG_ANY` |
-   | `docs/build-config.md` | A row for each in the user interface table |
-   | `docs/feature-matrix.md` | A row for each in the user interface table, with the measured bytes (the default costs none) |
-   | `tests/hil/features.toml` | `[feature.lang_fr]`, `switch = "LANG_FR"`, and `[feature.lang_default_fr]`, `switch = "LANG_DEFAULT_FR"` |
+   | File | Change | |---|---| | `config/features.mk` | `CONFIG_LANG_FR ?= n` and `CONFIG_LANG_DEFAULT_FR ?= n`, next to
+   the others; both in `FEATURES`; the `$(error CONFIG_LANG_DEFAULT_FR=y needs CONFIG_LANG_FR=y)` line, as the other
+   languages have | | `core/config.h` | The `#ifndef` defaults (0) of both, and `CONFIG_LANG_FR` added to
+   `CONFIG_LANG_ANY` | | `docs/build-config.md` | A row for each in the user interface table | |
+   `docs/feature-matrix.md` | A row for each in the user interface table, with the measured bytes (the default costs
+   none) | | `tests/hil/features.toml` | `[feature.lang_fr]`, `switch = "LANG_FR"`, and `[feature.lang_default_fr]`,
+   `switch = "LANG_DEFAULT_FR"` |
 
    `python3 tools/boards.py docs` then adds the switches to the generated tables of the feature matrix.
 
    `tools/i18n.py --check` fails until every one of these is there.
-3. Translate (below), then run `python3 tools/i18n.py --check` and the host tests (`make -C tests/host`).
-4. Look at it: build the gallery in your language (below), or flash a build and pick it in Settings > Display >
-   Language.
+3. Translate the catalog ([Translate the catalog](#translate-the-catalog)), then run `python3 tools/i18n.py --check` and
+   the host tests (`make -C tests/host`).
+4. Check the result: build the gallery in your language ([Check the result](#check-the-result)), or flash a build and
+   pick it in Settings > Display > Language.
 
-A new language is off by default. It is turned on by default only when it is widely used and the radios have the
-flash for it ([build-config.md](../build-config.md)): Spanish is, Italian isn't. A language that is off is still listed on the
-radio, dimmed, and the web flasher offers to turn it on for a visitor whose browser asks for it. The web flasher also
-asks which language the radio starts in (preset to the page's when the build has it) and sets
-`CONFIG_LANG_DEFAULT_<CODE>` from it. A language picked there is built in: its `CONFIG_LANG_<CODE>` goes on with it.
+A new language is off by default. It's on by default only when it is widely used and the radios have the flash for it
+([build-config.md](../build-config.md)): Spanish is, Italian isn't. A language that is off is still listed on the radio,
+dimmed, and the web flasher offers to turn it on for a visitor whose browser asks for it. The web flasher also asks
+which language the radio starts in (preset to the page's when the build has it) and sets `CONFIG_LANG_DEFAULT_<CODE>`
+from it. A language picked there is built in: its `CONFIG_LANG_<CODE>` goes on with it.
 
-### Translating the catalog
+### Translate the catalog
 
 Each entry is the English (`msgid`) and its translation (`msgstr`). Fill in the empty `msgstr` lines with any `.po`
 editor (Poedit, Lokalize) or a text editor. An empty one shows the English, so the radio works with a catalog partly
 done, but CI fails until every string is translated ([When the source changes](#when-the-source-changes)). In a text
-editor, write a double quote inside a string as `\"`, as the `msgid` does.
+editor, write a double quote inside a string as `\"`, as the `msgid` does. An entry looks like this:
 
 ```
 #: core/ui/ui_menus.c
@@ -145,11 +153,11 @@ msgstr "Retroiluminación"
 
 Some strings are joined in English word order, a number or name before or after a piece of text (`"14m"` + `" ago"`).
 Translate the piece so the joined text reads well ("14m atrás"), even when the usual phrase puts the words the other
-way round.
+way around.
 
 To see where a string goes, search for its key (the `msgctxt` line) in the file its `#:` line names: `grep -n
-'BACKLIGHT,' core/ui/ui_menus.c`. The comments next to a `TR()` often say more. A string with a leading or trailing space is
-always such a piece.
+'BACKLIGHT,' core/ui/ui_menus.c`. The comments next to a `TR()` often say more. A string with a leading or trailing
+space is always such a piece.
 
 ### Chinese and other CJK languages
 
@@ -161,13 +169,13 @@ above: one catalog, one switch, the same checks.
 | The catalog | `tools/i18n.py --new zh 中文 Chinese` writes it with an `X-Glyphs: utf8` header and an `X-Language-Name-Latin` one. A catalog with that header holds UTF-8: ASCII, `font.h`'s glyphs, and characters the CJK face has. Two-byte characters (Latin-1 letters with an accent) are not allowed: the text layer decodes only three-byte sequences, so that Latin-1 names, messages and the Spanish catalog keep working in a build with the CJK face. `--check` lists every character it rejects or the face lacks |
 | The list | A build without the CJK face (`CONFIG_LANG_ZH` off) still lists the language, dimmed: it shows `X-Language-Name-Latin` ("Chinese"), because the Latin font would draw the UTF-8 name as boxes |
 | The face | `tools/cjkfont.py` rasterizes every character the catalogs use into a 16x16 one-bit glyph and writes the table the firmware links. 480 characters are 15.4 KB; with the text, Chinese costs 32,856 bytes. Run it whenever a translation adds a character (`--check` fails until it does) and commit both |
-| The font | One whose license allows embedding bitmaps: an SIL OFL font such as Noto Sans CJK SC or Source Han Sans. The generated file carries the font's copyright, its full OFL text and the font file's SHA-256, because that data is under the font's license, not MIT (see the header of `core/ui/cjk_font_data.c`). Do not use a vendor font that forbids it |
+| The font | One whose license allows embedding bitmaps: an SIL OFL font such as Noto Sans CJK SC or Source Han Sans. The generated file carries the font's copyright, its full OFL text and the font file's SHA-256, because that data is under the font's license, not MIT (see the header of `core/ui/cjk_font_data.c`). Don't use a font whose license forbids it |
 | Size | A CJK character is 16 px wide and 16 tall, the height of the 8x16 font: 8 characters a line on a 128 px screen, 10 on a 160 px one, 15 on a 240 px one. **A line must be at least 16 px high.** A 240 px color radio draws its words in 8x16 (a CJK build moves its text pages up to that font too) and shows Chinese everywhere; a layout whose words use the 5x8 or 6x12 font (a 128x64 display, and the 160x128 class) has no room for 16 px lines, so those boards list `LANG_ZH` and `LANG_DEFAULT_ZH` in `BOARD_UNSUPPORTED`, and CI's maximal build and the flasher leave the language out there |
 | Cutting | A string too long for its space is cut at the end, whole characters only (`gfx_text_fit_end` for a line that keeps its start, `gfx_text_fit` for a middle cut), because Chinese has no spaces to cut at a middle. A line wraps after any CJK character (`wrap_line`); Latin words inside it still wrap at their spaces |
 | Switch | `CONFIG_LANG_ZH` is off by default. Measure it like any switch and put the bytes in [the feature matrix](../feature-matrix.md) |
 
 The table in this tree comes from Noto Sans CJK SC 2.004 ([noto-cjk](https://github.com/notofonts/noto-cjk)), rendered
-with Pillow 12.1. Rebuild it with:
+with Pillow 12.1. To rebuild it, run the following command:
 
 ```
 python3 tools/cjkfont.py --font NotoSansCJK-Regular.ttc --font-index 2 --weight 0 \
@@ -199,7 +207,7 @@ translations right, so a key whose English changed while a translation stayed th
 request, not a failure (`tools/i18n_changes.py`): the old and new English and each language's text. Say in the pull
 request whether each language still fits. When the meaning changes, use a new key: its entry starts untranslated.
 
-#### Renaming a key
+#### Rename a key
 
 The tool matches a catalog entry by its key alone, so a key renamed only at the mark looks like a new key: `--sync`
 drops the old entry with its translations and adds an empty one. Rename with the tool, which changes the marks and
@@ -224,7 +232,7 @@ untranslated, `python3 tools/i18n.py --check --allow-pending` skips them; CI doe
 
 `python3 tools/i18n.py --stats` shows how much of each catalog is translated.
 
-### Marking text in new code
+### Mark text in new code
 
 | Text | Mark |
 |---|---|
@@ -236,18 +244,17 @@ untranslated, `python3 tools/i18n.py --check --allow-pending` skips them; CI doe
 | Canned text messages | Marked: the radio sends them in the language in use, so keep them short and plain |
 | Search words (the second string of a settings row) | Not marked: Find matches the English words and the shown name |
 
-A mark's text is one C literal, or literals and the `font.h` glyph macros (`GLYPH_ELLIPSIS`, `TEXT_ALT_OPEN`, ...)
-next to each other. Not a variable, no `\n` (write the line break with `sb_chr`). A macro whose value is a
-`TRN(...)` is found like any other. Name a new key by [Key names](#key-names); a key in use is reused for the
-same text where the meaning is the same. `TR_<KEY>` must not be a name the source already uses (the tool says so). `python3 tools/i18n.py --rewrite [FILE]`
-gives a mark written without a key, `TR("...")`, one made from its English (the same English gets the key it already
-has); rename it before the commit (`--rename`, below).
-A text that travels between tasks (an event) travels as its `tr_id_t`, not as text. Build text from pieces
-with `sbuf_t`, not `strcpy`/`strcat`: a translation can be longer than the English, and `str_copy` and `sb_str`
-cut it safely. Don't compare shown text with `strcmp`; compare the state it came from. After marking, run
-`--sync` and commit the catalogs.
+A mark's text is one C literal, or literals and the `font.h` glyph macros (`GLYPH_ELLIPSIS`, `TEXT_ALT_OPEN`, ...) next
+to each other. Not a variable, no `\n` (write the line break with `sb_chr`). A macro whose value is a `TRN(...)` is
+found like any other. Name a new key by [Key names](#key-names); a key in use is reused for the same text where the
+meaning is the same. `TR_<KEY>` must not be a name the source already uses (the tool says so). `python3 tools/i18n.py
+--rewrite [FILE]` gives a mark written without a key, `TR("...")`, one made from its English (the same English gets the
+key it already has); rename it before the commit ([Rename a key](#rename-a-key)). A text that travels between tasks (an
+event) travels as its `tr_id_t`, not as text. Build text from pieces with `sbuf_t`, not `strcpy`/`strcat`: a translation
+can be longer than the English, and `str_copy` and `sb_str` cut it safely. Don't compare shown text with `strcmp`;
+compare the state it came from. After marking, run `--sync` and commit the catalogs.
 
-### Looking at the result
+### Check the result
 
 `make -C tests/host ui-gallery` renders the screens in English. To see a language, build the simulator with that
 language in (`UI_LANG` on the `make` line turns its `CONFIG_LANG_<CODE>` on, for a language that is off by default),
@@ -268,16 +275,21 @@ an offset per 8 keys) and the Latin-1 glyphs of every font. Each further languag
 of the catalog's translations, and an offset per 8 keys. Measure a language like any switch
 ([building.md](building.md)) and put the bytes in the feature matrix.
 
-## Translating the web site
+## Translate the web site
+
+To add a language to the site, do the following:
 
 1. Copy `site/i18n/en.json` to `site/i18n/<code>.json` and translate the values. Keep its format (one space of
-   indent, UTF-8 as is: `json.dumps(data, ensure_ascii=False, indent=1)`). A key left out shows the English, but CI
-   fails until every key is there (`python3 -m rfoundrysite.i18n` from `site/` lists them).
+   indent, UTF-8 as is: `json.dumps(data, ensure_ascii=False, indent=1)`). Leave a string out rather than copy the
+   English. A key left out shows the English, but CI fails until every key is there (`python3 -m rfoundrysite.i18n`
+   from `site/` lists them).
 2. Add the language to `site/i18n/languages.json` (`code`, `name`, `dir`, `locale`), and its catalog to
    `tools/generic_allow.txt` next to `en.json`: it carries the same per-radio texts.
 3. If its plural rule differs from English's, add it to `PLURAL_RULES` in `site/rfoundrysite/i18n.py`.
-4. `python3 site/build.py --strict` checks the catalog. `python3 site/build.py --serve` and
-   `http://localhost:8000/<code>/` shows it.
+4. Check the catalog with `python3 site/build.py --strict`. To see it, run `python3 site/build.py --serve` and open
+   `http://localhost:8000/<code>/`.
+
+Follow these rules in a site catalog:
 
 | Rule | Why |
 |---|---|
@@ -285,11 +297,24 @@ of the catalog's translations, and an offset per 8 keys. Measure a language like
 | Plural keys (`key.one`, `key.other`, ...): give your language's forms. Most European languages need `.one` and `.other`; `PLURAL_RULES` lists the others | Picked by the count; `.other` is the fallback |
 | Keep product and protocol names (RadioFoundry, DMR, DFU, CPS) and radio model names | They are names |
 
-What the site leaves in English (radio data, error details, logs) is listed in
-[website.md, What stays English](website.md#what-stays-english). Translated documentation pages go in
-`docs/i18n/<code>/`.
+A translated documentation page goes in `docs/i18n/<code>/<path under docs>`.
+
+### What stays English
+
+The site leaves the following text in English:
+
+| Text | Why |
+|---|---|
+| Radio facts from `board.toml`: bootloader key steps, build options, notices, bands, variant checks | Repository data, one per radio. A catalog can translate a radio's summary (`radio.note.<radio>`) |
+| A variant's reason for leaving a feature out (`config/variants/*.mk`) | Repository data |
+| Error messages from the protocol modules (`stub.js`, `dfu.js`, `link.js`, ...) shown after a translated explanation | The exact words for the technical details and the bug report. The page maps the common ones to catalog strings (`errorText` in `flasher/app.js`) |
+| The flasher's log box and diagnostic notes | Technical log, read with a bug report |
+| `README.txt` of the manual install kit and of a backup bundle | Files that go with the tool, like the documentation |
+| Glossary definitions | `docs/glossary.json`, part of the documentation |
 
 ## Checks
+
+The following checks cover both sets of text:
 
 | Check | Runs |
 |---|---|

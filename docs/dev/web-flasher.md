@@ -1,12 +1,14 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
-# The Web Flasher
+# Web flasher
 
-The browser tool that backs up, installs, updates and restores a radio, from `site/static/js/flasher/`. For users it is the
-recommended way to install RadioFoundry ([Installing](../user/02-installing.md)); this page is for people who change it.
-The site that hosts it is described in [website.md](website.md).
+The web flasher is the browser tool that backs up, installs, updates, and restores a radio. Its code is in
+`site/static/js/flasher/`. Users install RadioFoundry with it ([Installing](../user/02-installing.md)); this page is for
+people who change it. For the site that hosts it, see [Web site](website.md).
 
-The flasher is plain ES modules. The logic ports rfoundry, and the tests check the two agree:
+The flasher is plain ES modules. Its logic ports rfoundry, and the tests check that the two agree. The modules are the
+following:
 
 | Module | Does | Ported from |
 |---|---|---|
@@ -14,7 +16,7 @@ The flasher is plain ES modules. The logic ports rfoundry, and the tests check t
 | `vendorfile.js` | Every vendor file a user picks, on every radio's page (below) | |
 | `explain.js` | Why a vendor file can't be used, as one of six problems, and what an error report says about the file (below) | |
 | `bytes.js` | Byte helpers (hex, CRC, concatenation) shared by the modules | |
-| `codecmap.js` | Codec maps: which words a relocated codec rewrites (codec-placement.md) | `rfoundry/codecmap.py` |
+| `codecmap.js` | Codec maps: which words a relocated codec rewrites ([codec maps](codec.md#codec-maps)) | `rfoundry/codecmap.py` |
 | `plan.js` | Sector plans: keep, merge, and restore (a whole image put back exactly) | `rfoundry/plan.py` |
 | `manifest.js` | Release manifest checks | `rfoundry/manifest.py` |
 | `decide.js` | Keep or merge the codec | `rfoundry/cli.py` `decide_codec` |
@@ -44,24 +46,24 @@ The flasher is plain ES modules. The logic ports rfoundry, and the tests check t
 | `app.js` | The page: the tasks, the shared steps and the `anyroad-dfu` backend | |
 
 Add `#sim=<radio>-stock` to the flasher's address to run every step against a simulated radio on its stock firmware,
-`#sim=<radio>` against one that runs RadioFoundry (an STM32F4 radio updates through the STM32F4 loader, an HR_C7000 radio
-through the loader hand-over). `#sim` alone is the first radio on stock firmware. The fake comes from the radio's data
-(`fakeC7000Options()` and `c7000Simulation()` in `fakec7000.js`, `simulation()` in `fake.js`): a radio with a stock
+`#sim=<radio>` against one that runs RadioFoundry (an STM32F4 radio updates through the STM32F4 loader, an HR_C7000
+radio through the loader hand-over). `#sim` alone is the first radio on stock firmware. The fake comes from the radio's
+data (`fakeC7000Options()` and `c7000Simulation()` in `fakec7000.js`, `simulation()` in `fake.js`): a radio with a stock
 console gets one, with its first stock version. `#sim=<radio>-romfail` is an HR_C7000 radio on stock firmware whose boot
-ROM refuses the load, to practice the factory update mode; `#sim=<radio>-slowcable` one on a cable too slow for the
-boot ROM's 48 ms window, to check that the page's answer sent ahead gets through; `#sim=<radio>-deafcable` one on a
-cable that carries the radio's data and none of the page's; a radio with the Baofeng updater enters it when switched on
-with "Hold the Keys and Turn On".
+ROM refuses the load, to practice the factory update mode; `#sim=<radio>-slowcable` one on a cable too slow for the boot
+ROM's 48 ms window, to check that the page's answer sent ahead gets through; `#sim=<radio>-deafcable` one on a cable
+that carries the radio's data and none of the page's; a radio with the Baofeng updater enters it when switched on with
+"Hold the Keys and Turn On".
 
 ## The beta notice
 
-The page opens a dialog (`templates/partials/beta_notice.html`, opened by `beta.js`) before anything else: what can
-go wrong, that the radio can always be recovered, where to get help, and common questions folded into accordions
-(testing, damage, channels and settings, fixes, feedback). It shows once per browser session and again once 12 hours
-have passed since it was closed, so a tab left open still sees it (`sessionStorage` key `rfoundry.betaNoticeSeen`
-holds the time of the last close, set on any close); where storage is blocked it shows on every visit. The installation count
-in `flash.beta.lead` is written by hand: total successful installations from the backend's `flashes` table plus about
-50 development installs, rounded down. Raise it now and then.
+The page opens a dialog (`templates/partials/beta_notice.html`, opened by `beta.js`) before anything else: what can go
+wrong, that the radio can always be recovered, where to get help, and common questions folded into accordions (testing,
+damage, channels and settings, fixes, feedback). It shows once per browser session and again once 12 hours have passed
+since it was closed, so a tab left open still sees it (`sessionStorage` key `rfoundry.betaNoticeSeen` holds the time of
+the last close, set on any close); where storage is blocked it shows on every visit. The installation count in
+`flash.beta.lead` is written by hand: total successful installations from the backend's `flashes` table plus about 50
+development installs, rounded down. Raise it now and then.
 
 ## Vendor files
 
@@ -89,8 +91,8 @@ The best file for the chosen radio is used:
 3. then the first by name.
 
 The page lists what each file is: used, for another radio, set aside and why. A codec found by its signature alone is
-never taken. Moving the codec needs that build's map, because its calls into the rest of the vendor firmware differ
-per build (codec-placement.md).
+never taken. Moving the codec needs that build's map, because its calls into the rest of the firmware differ
+per build ([codec maps](codec.md#codec-maps)).
 
 ### When a file can't be used
 
@@ -139,9 +141,9 @@ On a board `openfw.js` supports, **Another open firmware** also offers **Check t
 recognized the radio (`S.now.radioType`, `git`), the backup below. **Other / Not sure** doesn't: its route is the stock
 file.
 
-The browser's own USB and serial errors (`NetworkError`, `InvalidStateError`, a failed `fetch`) say little. `errorText()`
-puts what to do in front of them: close the program that holds the port, check the cable, the Windows driver or the
-Linux device permission, reload the page.
+The browser's own USB and serial errors (`NetworkError`, `InvalidStateError`, a failed `fetch`) say little.
+`errorText()` puts what to do in front of them: close the program that holds the port, check the cable, the Windows
+driver or the Linux device permission, reload the page.
 
 ### Sending a file
 
@@ -160,8 +162,8 @@ text asks for the manufacturer's original file only. The file goes to the backen
 - an optional note (it asks where the file came from). For `internal`, the page's message is added to it.
 
 The backend (`POST /v1/samples`, raw body, the rest as query parameters) checks the header (or a dump's bootloader ID)
-and the size itself. It rate-limits per address and per day, caps the total storage, keeps one copy per SHA-256 and never serves a file back.
-Simulations don't offer it.
+and the size itself. It rate-limits per address and per day, caps the total storage, keeps one copy per SHA-256 and
+never serves a file back. Simulations don't offer it.
 
 ### What an error report says about the file
 
@@ -398,19 +400,20 @@ a radio, such as another bootloader protocol or a stock firmware's own read-back
 A radio without a backend the page knows gets `none`, so a family can come before its module. The
 contract tests are in `site/tests/backends.test.mjs`.
 
-Bulk reads for a backup go through readers (`readers.js`). `backup.js` `readRadio` reads the small parts only the
-debug link has (radio info, security registers) first. It then tries the readers it is given, in order, and the debug
-link reads the memories when none opens. A reader may also have `security()`, the security registers or null: the
-STM32F4 loader's SREAD (stub-stm32f4.md 6.2), each register checked against the CRC the loader sends. A reader has `open(progress)` (false: not possible now, nothing changed),
-`used`, `read(mem, addr, n)` giving `{data, complete}`, `close()` and `abort()`. A new read-back protocol is a reader,
-and the bundle format and the backup step stay as they are.
+Bulk reads for a backup go through readers (`readers.js`). `backup.js` `readRadio` reads the small parts only the debug
+link has (radio info, security registers) first. It then tries the readers it is given, in order, and the debug link
+reads the memories when none opens. A reader may also have `security()`, the security registers or null: the STM32F4
+loader's SREAD (stub-stm32f4.md 6.2), each register checked against the CRC the loader sends. A reader has
+`open(progress)` (false: not possible now, nothing changed), `used`, `read(mem, addr, n)` giving `{data, complete}`,
+`close()` and `abort()`. A new read-back protocol is a reader, and the bundle format and the backup step stay as they
+are.
 
 ## Backup bundles (`rfoundry-backup/1`)
 
-A zip the user keeps: `backup.json` (the radio, its chip UID, the firmware when the backup was taken and before RadioFoundry,
-each part's address, size, SHA-256 and whether the read completed), `internal-flash.bin` (from the application
-base; the bootloader is never read or written), `spi-flash.bin`, `security-registers.bin` (the factory calibration),
-`radio-info.bin`, and `stock-firmware.bin` when the user gave one.
+A zip the user keeps: `backup.json` (the radio, its chip UID, the firmware when the backup was taken and before
+RadioFoundry, each part's address, size, SHA-256 and whether the read completed), `internal-flash.bin` (from the
+application base; the bootloader is never read or written), `spi-flash.bin`, `security-registers.bin` (the factory
+calibration), `radio-info.bin`, and `stock-firmware.bin` when the user gave one.
 
 `spi-flash.bin` is the radio's own memory chip: `backup.spi_size`, or less when the radio reports a smaller chip
 (`spiBytes`: the radio info's flash part id, or the loader's SPI flash size from HELLO). Some radios of a model came
@@ -430,8 +433,8 @@ from its measured speeds (stub-stm32f4.md 11) plus the hand-over and the restart
 | Firmware and calibration | The internal flash and the security registers |
 | Codeplug and calibration | The codeplug span of the SPI flash (emulated EEPROM to the end of the open-firmware image) and the security registers |
 
-Reads ask for 32 KB at a time. RadioFoundry answers that much (open-firmware-cps.md 2.1); older builds answer 2045 bytes, and
-the reader takes what comes back.
+Reads ask for 32 KB at a time. RadioFoundry answers that much (open-firmware-cps.md 2.1); older builds answer 2045
+bytes, and the reader takes what comes back.
 
 What can be read depends on the firmware running:
 
@@ -458,7 +461,7 @@ writes without asking; without one it asks first:
 |---|---|
 | 0. Skip | An update, a move from another open firmware, a board without a memory chip (`backup.spi_size` 0), or a backup from this visit that read every stock family's tables and found none (`channelsWanted`): nothing is read. A radio without a settings region (STORAGE INFO unavailable: a chip too small for the board's flash map) stores no codeplug: the step says so and ends |
 | 1. Read | The codeplug span over the CPS, no further than the radio's chip. The stock codeplug comes from this visit's backup when it holds one (`stockSource`), else from the live read, further on a family whose stock tables reach past the span (`readSpan`) |
-| 2. Recognize | `classify` (codeplug-stock-tyt.md 2). A RadioFoundry codeplug, a blank chip or an unknown layout ends the step: nothing is written |
+| 2. Recognize | `classify` ([codeplug port spec](../spec/codeplug-port.md#5-codeplugs-from-a-backup)). A RadioFoundry codeplug, a blank chip or an unknown layout ends the step: nothing is written |
 | 3. Convert | `importStock`, the Codeplug Editor's conversion, with its counts and notes. No channels ends the step |
 | 4. Prepare | The settings area is claimed (`prepareStorage`), as before a codeplug restore |
 | 5. Write | The radio's bytes with the converted image over the codeplug's regions (`writeRanges`, as a Codeplug Editor write), in the 4 KB sectors that differ (`codeplugSectors`). The radio's own settings block, the VFO pair, the ID database area, RadioFoundry's own areas and protected data keep the radio's bytes |
@@ -496,14 +499,14 @@ A bundle can hold both codeplugs, the stock one and RadioFoundry's:
 | Codeplug | Where the page reads it |
 |---|---|
 | RadioFoundry's | The Tools page's `backup-to-image` (`codeplug.js`) and the Codeplug Editor's open (`editor/files.js`): the `spi-flash` part, from address 0 |
-| A stock TYT-family codeplug | The same, converted by `codeplug/stock_tyt.js` (codeplug-stock-tyt.md) |
+| A stock TYT-family codeplug | The same, converted by `codeplug/stock_tyt.js` ([codeplug port spec](../spec/codeplug-port.md#51-the-stock-codeplug-ported)) |
 | A stock Baofeng codeplug with a spec in `docs/spec/` | The same, converted by `codeplug/stock_baofeng.js` (the first 84 channels) |
 | Any other stock codeplug | Nowhere: no spec in `docs/spec/` describes its records, and only `dmrconf` (GPL, never in the page) decodes it |
 
 `tools/backup_codeplug.py` extracts both offline, from any data flash part, at the board's `openfw_eeprom` and through
-the board's `[stock_codeplug]` page layout, and decodes them with `dmrconf` ([codeplug-port.md](../spec/codeplug-port.md)
-5). The Codeplug Editor opens the YAML it writes. For a stock layout with no spec yet, that is the only way; doing it in
-the page needs a clean-room spec of the layout first (issue #228).
+the board's `[stock_codeplug]` page layout, and decodes them with `dmrconf`
+([codeplug-port.md](../spec/codeplug-port.md) 5). The Codeplug Editor opens the YAML it writes. For a layout without a
+spec in `docs/spec/`, that's the only way: the page decodes only a layout that a clean-room spec describes.
 
 ## Another open firmware (`openfw.js`)
 
@@ -526,8 +529,6 @@ current-firmware step offers a full backup before the install, and the install t
 | After the install | The settings area is claimed (`prepareStorage()`), as after any full backup |
 | Practice mode | `#sim=<board>-openfw`: `fake.js` state `openfw` (2045-byte clip, VFO overlay, unbounded area 5, silent area 10, hangs); `#sim=<board>-openfw-nocodec`: the same without the codec, for the stock-file fallback |
 
-Not yet tested on a real radio.
-
 ## Restore
 
 | Target | Writes | Limits |
@@ -535,7 +536,7 @@ Not yet tested on a real radio.
 | Exactly as backed up (backup taken on RadioFoundry) | The internal flash image through the bootloader (every sector erased and rewritten), then the codeplug areas that differ through CPS writes | The CPS refuses RadioFoundry's own areas and the calibration window |
 | Codeplug only (any backup that holds the codeplug span) | The codeplug areas that differ, through CPS writes; the firmware is not touched | As above |
 | Previous open firmware (backup taken on another open firmware) | That firmware's internal flash image through the bootloader (`planInternal`) | The SPI flash is not written back, as for stock: that firmware's own CPS writes its codeplug from `spi-flash.bin` |
-| Back to stock | The stock application from the user's stock file, codec included, through the bootloader. Any file for this radio that its key opens can be used, mapped or not: no codec is taken from it | The SPI flash stays as it is: writing it back whole needs a firmware command that doesn't exist yet (a gated STORAGE write, like CLAIM). Until then the flasher says so, and the stock codeplug goes back with the vendor CPS |
+| Back to stock | The stock application from the user's stock file, codec included, through the bootloader. Any file for this radio that its key opens can be used, mapped or not: no codec is taken from it | The SPI flash stays as it is: RadioFoundry has no command that writes it back whole (a gated STORAGE write, like CLAIM). The flasher says so, and the stock codeplug goes back with the manufacturer's CPS |
 
 The stock file's resource segment (SPI flash 0x60000) is not written back: how the vendor updater writes it is not
 documented, and RadioFoundry doesn't overwrite it unless an ID database is uploaded.
@@ -560,14 +561,14 @@ erased before the check.
 ## HR_C7000 radios (the boot stub)
 
 Radios whose backend is `c7000-stub` (the `serial-loader`, `serial-iap` and `boot-rom` families; a board with a first
-stage or one the boot ROM starts directly adds a section below) are flashed over their
-programming cable with Web Serial, through the boot stub ([stub/README.md](../../stub/README.md),
-[debuglink.md](../spec/debuglink.md) 3.18), or through the radio's factory update mode when the stub can't be loaded
-(below). No loader in the radio is ever written. The install has its own steps:
+stage or one the boot ROM starts directly adds a section below) are flashed over their programming cable with Web
+Serial, through the boot stub ([flash stubs](../../stub/README.md#the-universal-stub), [stub entry
+spec](../spec/stub-entry.md), [debug link spec](../spec/debuglink.md) 3.18), or through the radio's factory update mode
+when the stub can't be loaded (below). No loader in the radio is ever written. The install has its own steps:
 
 | Step | What happens |
 |---|---|
-| Connect | The page looks for a stub that still runs, then for RadioFoundry. RadioFoundry with `CONFIG_STUB_ENTRY` hands over to the stub (command 0x1A); RadioFoundry without it is restarted with its CPS reboot, which passes the boot ROM's serial window (not yet tried on a radio). Otherwise the page asks the user to switch the radio off and on and catches the boot ROM. The stub image sent carries the board's LED pins in its parameter block (`stubFor()` in `c7000ui.js`), so the stub drives no other pin before CONFIG. The radio model is then checked by the bootloader's ID string, and the page sends the stub the board's profile (CONFIG: clocks, UART, pins, board id) and checks the echo; the stub refuses writes until then |
+| Connect | The page looks for a stub that still runs, then for RadioFoundry. RadioFoundry with `CONFIG_STUB_ENTRY` hands over to the stub (command 0x1A); RadioFoundry without it is restarted with its CPS reboot, which passes the boot ROM's serial window. Otherwise the page asks the user to switch the radio off and on and catches the boot ROM. The stub image sent carries the board's LED pins in its parameter block (`stubFor()` in `c7000ui.js`), so the stub drives no other pin before CONFIG. The radio model is then checked by the bootloader's ID string, and the page sends the stub the board's profile (CONFIG: clocks, UART, pins, board id) and checks the echo; the stub refuses writes until then |
 | Back up and check | A first install reads the whole program memory (required) and the calibration area; the whole data memory only if asked (off by default: many minutes at 115200 baud). Each choice shows its time: the stub's sector sums count the blank sectors first (no data moved, `c7000.js` `blankCount`, at most 8 s per memory, windows spread over the range), and `readSeconds` turns the used share into wire bytes, plus the radio's own time per sector where it is slower (a NAND), pessimistically: every used sector whole (no credit for LZ4), 13 bytes a record, at 9000 B/s or the rate measured on this radio, never above the 11,520 B/s of the line; without a count every sector is taken as used ("up to"). The page keeps the program memory in IndexedDB and downloads a backup bundle. A first install can skip the program memory read, before or during it, and take the codec from the stock file instead: only the codec slot is read, and the firmware is reported as not read. An update reads only the codec slot. The page then decides the codec |
 | Write | Only sectors whose CRC differs are written. The first application sector goes last, each sector is read back right away (three tries), and a final pass checks every sector. A board the boot ROM starts directly then gets its flag sector ([below](#a-board-the-boot-rom-starts-directly)) |
 | Check | The stub resets the chip; the page asks RadioFoundry's VERSION for the build and the codec |
@@ -603,7 +604,7 @@ after the greeting arrived failed often on the first try, so every wait for the 
 says where it went): `waitForRom({ repeat: ROM_REPEAT })` sends the answer every 30 ms, and on for 150 ms after the
 greeting, so one leaves within 30 ms of it whatever the cable's latency. The page then waits for the line to go quiet
 (the ROM NAKs the extra answers) before block 0. The firmware of a radio left on gets the answers too: RadioFoundry
-ignores them, stock firmware is untested. So on a radio not known to run RadioFoundry the sending starts only after the
+ignores them, and other firmware may not. So on a radio not known to run RadioFoundry the sending starts only after the
 user selects "Radio Is Off"; RadioFoundry's soft reset and a power cycle of a radio it found running RadioFoundry start
 at once. When the load fails, the factory update mode is the main action. `stubtool.py --slow-cable` does the same.
 
@@ -643,9 +644,7 @@ answers steps 1-3 once per power-on, so the session keeps the `BfLoader` that fo
 write and the next try; after a write started, a try waits for update mode again. After the end of transfer the radio
 starts RadioFoundry by itself, so the done step's first check waits 20 s before it asks for a power cycle.
 
-`bfloader.js` and `c7000.js` have installed a radio this way from Node, over an FTDI cable (the radio's hardware page
-has the figures). The page around them is checked only in practice mode, and the route is untested on the other
-radios on this loader.
+`site/tests/bfloader.test.mjs` and `site/tests/iapui.test.mjs` run this route against the simulated radio.
 
 ### A board the boot ROM starts directly
 
@@ -706,16 +705,17 @@ false). The dialog says DMR voice calls won't work and offers **Go Back and Add 
 file is selected) and **Install Anyway**. Escape stays on the step. A bootloader route without a codec step before
 the write (an update) offers only **Install Anyway**. A retry after a failed write doesn't ask again.
 
-The page never sends a STUB command to RadioFoundry except right before it enters the stub: any STUB command parks RadioFoundry's codec
-until the next restart.
+The page never sends a STUB command to RadioFoundry except right before it enters the stub: any STUB command parks
+RadioFoundry's codec until the next restart.
 
 The build writes the layout and the codec profiles to `data/flash-boards.json` (`c7000`, from `stub/stubtool.py`,
-`tools/hrc7000_codec.py` and `tools/serial_loader.py`) and the universal stub image (with its load address, run address and RAM end) to `data/c7000-stub.json`. Bundle parts:
+`tools/hrc7000_codec.py` and `tools/serial_loader.py`) and the universal stub image (with its load address, run address
+and RAM end) to `data/c7000-stub.json`. Bundle parts:
 
-Each board's `[flash.stub]` in `board.toml` says what there is to back up: the program memory's size (`progmem`), whether
-the data memory is SPI NOR flash or an SPI NAND (from the board's NAND driver: the stub's `nand` flag), and where the
-factory calibration is (`calibration`, required). The page lists the same three choices for every radio from that data:
-the program memory, the calibration and the whole data memory, each with its size and time.
+Each board's `[flash.stub]` in `board.toml` says what there is to back up: the program memory's size (`progmem`),
+whether the data memory is SPI NOR flash or an SPI NAND (from the board's NAND driver: the stub's `nand` flag), and
+where the factory calibration is (`calibration`, required). The page lists the same three choices for every radio from
+that data: the program memory, the calibration and the whole data memory, each with its size and time.
 
 | `calibration` | Where | What the calibration choice reads |
 |---|---|---|
@@ -745,17 +745,18 @@ The calibration choice is on by default. Choosing the whole data memory includes
 back from the application start up; the data memory is not written.
 
 Without a backup, the original firmware comes back from its vendor file. The restore task takes the file in place of a
-bundle (`vendorRestore`) once `vendorfile.js` identifies it for this radio, mapped or not. `c7.progmemFromFile()` takes a
-whole program memory readout as it is. A firmware file it lays out as a program memory read holds it: the application
+bundle (`vendorRestore`) once `vendorfile.js` identifies it for this radio, mapped or not. `c7.progmemFromFile()` takes
+a whole program memory readout as it is. A firmware file it lays out as a program memory read holds it: the application
 after the file's header (256 bytes for a `BFUV32-V2` file, none for a plain one) at the application start, everything
-else erased. The stub or update mode then writes it as it writes a backup. A file larger than the application area is refused as `internal`.
+else erased. The stub or update mode then writes it as it writes a backup. A file larger than the application area is
+refused as `internal`.
 
 ## STM32F4 radios (the loader route)
 
-An STM32F4 radio on stock firmware always installs through its bootloader (`dfu.js`): that is the only way into a
-stock radio. Once it runs RadioFoundry, an update can skip the bootloader. When the "current firmware" step finds RadioFoundry, the page
-asks for the STUB offer (command 0x1A op 0; on the STM32 it only reports the staging buffer and parks nothing). The
-loader route is used when all of these hold:
+An STM32F4 radio on stock firmware always installs through its bootloader (`dfu.js`): that is the only way into a stock
+radio. Once it runs RadioFoundry, an update can skip the bootloader. When the "current firmware" step finds
+RadioFoundry, the page asks for the STUB offer (command 0x1A op 0; on the STM32 it only reports the staging buffer and
+parks nothing). The loader route is used when all of these hold:
 
 | Condition | Why |
 |---|---|
@@ -763,18 +764,18 @@ loader route is used when all of these hold:
 | RadioFoundry reports the radio's codec, or one where an earlier release kept it (`board.codec.former`) | the loader writes only the firmware's own flash, so the codec is either in place or moves with the install: from the copy kept in IndexedDB, else from the stock file the write step asks for (`stubSegments`; a copy only in the page is never used for a move, `decide.js` `savedKept`) |
 | the image has no codec in it, and no mode was forced under Advanced | a merge or a forced mode goes through the bootloader |
 
-There is no codec step; only a codec move without a kept copy asks for the stock file (which also gives the key), on the write step. The write step sends the embedded stub (`data/f4-stub.json`, from
-`stub/f4stub.py`), finds it on the same port or, if it enumerated again, on the granted port with the same serial
-number (one click picks it when the browser didn't keep the grant), and sends it the radio's board record
-([stub-stm32f4.md](../spec/stub-stm32f4.md) 5.2: SPI flash bus, mode and pins, chip select, chip selects held high,
-crystal, the bootloader's end). It reads HELLO again and goes on only when the echo is the record byte for byte, the
-configured flag is set and the application base is 0x0800C000. Then it installs in the order of
-[stub-stm32f4.md](../spec/stub-stm32f4.md) 7: sector 3 erased first and its first word written last. A sector that
-also holds bytes the firmware doesn't own (no radio has one since the codec moved) is downloaded as a file before
-anything is erased, and those bytes are written back unchanged. The bootloader route stays on the same step, folded,
-and opens by itself when the loader can't finish. For a codec move the codec segments are built before the radio is
-handed to the loader (`stubSegments`): with no source the install is refused and the radio is not touched. An install
-cut short leaves the radio in its bootloader at the next power-on, which that route finishes.
+There is no codec step; only a codec move without a kept copy asks for the stock file (which also gives the key), on the
+write step. The write step sends the embedded stub (`data/f4-stub.json`, from `stub/f4stub.py`), finds it on the same
+port or, if it enumerated again, on the granted port with the same serial number (one click picks it when the browser
+didn't keep the grant), and sends it the radio's board record ([STM32F4 stub spec](../spec/stub-stm32f4.md) 5.2). It
+reads HELLO again and goes on only when the echo is the record byte for byte, the configured flag is set and the
+application base is 0x0800C000. Then it installs in the order of [stub-stm32f4.md](../spec/stub-stm32f4.md) 7: sector 3
+erased first and its first word written last. A sector that also holds bytes the firmware doesn't own (no radio has one
+since the codec moved) is downloaded as a file before anything is erased, and those bytes are written back unchanged.
+The bootloader route stays on the same step, folded, and opens by itself when the loader can't finish. For a codec move
+the codec segments are built before the radio is handed to the loader (`stubSegments`): with no source the install is
+refused and the radio is not touched. An install cut short leaves the radio in its bootloader at the next power-on,
+which that route finishes.
 
 | Loader answer | What the page does |
 |---|---|
@@ -787,12 +788,12 @@ cut short leaves the radio in its bootloader at the next power-on, which that ro
 | Protocol 2 (an older loader still running from an earlier session) | No CONFIG: accepted only for a board whose record matches the wiring built into it (`v2_wiring`) |
 | A backup through the loader whose record is refused | The page restarts the radio into RadioFoundry before it reports the error |
 
-`data/flash-boards.json` carries per board (`f4stub`, from the board registry's `[flash.stub]` through `stub/f4stub.py` `BOARDS` and `config_record()`): the
-owned flash, the stub's board id, the 24-byte record as hex, and `v2_wiring`, with the protocol version and record
-length at the top. `data/f4-stub.json` gives the image and its protocol. The page sends the record as it is and never
-builds one, so the page and `stubtool.py` can't drift; `site/tests/f4stub.test.mjs` checks the records and the HELLO
-layout against `f4stub.py`'s simulated stub (`f4-vectors.json`, written by `site/tests/fixtures.py`), and a board
-with other SPI wiring against f4stub's test profile.
+`data/flash-boards.json` carries per board (`f4stub`, from the board registry's `[flash.stub]` through `stub/f4stub.py`
+`BOARDS` and `config_record()`): the owned flash, the stub's board id, the 24-byte record as hex, and `v2_wiring`, with
+the protocol version and record length at the top. `data/f4-stub.json` gives the image and its protocol. The page sends
+the record as it is and never builds one, so the page and `stubtool.py` can't drift; `site/tests/f4stub.test.mjs` checks
+the records and the HELLO layout against `f4stub.py`'s simulated stub (`f4-vectors.json`, written by
+`site/tests/fixtures.py`), and a board with other SPI wiring against f4stub's test profile.
 
 ## Firmware images and custom builds
 
@@ -846,7 +847,9 @@ https://<site>/flash/?version=feature/my_radio
 | `#radio=` | Picks the radio, as on any flasher link. |
 | A beta | When the site offers a newer pre-release (`site.json` `beta`), the start page and the first install step link to `?version=<beta tag>` ([release.md](release.md#release-names)). The beta is never installed without that link. |
 
-Without a link, a radio with no release is built from `main`. On a preview of another branch (`data/site.json` `branch`, from `CF_PAGES_BRANCH` or the checked-out branch), it is built from that branch instead, so a radio that exists only there can be tried.
+Without a link, a radio with no release is built from `main`. On a preview of another branch (`data/site.json` `branch`,
+from `CF_PAGES_BRANCH` or the checked-out branch), it is built from that branch instead, so a radio that exists only
+there can be tried.
 
 The feature list comes from the site's own release data. A commit with other feature names makes the build fail with
 the service's error.
@@ -895,10 +898,10 @@ launcher, `requirements.txt` and the license. The zip is reproducible: sorted en
 | `makeKit(o)` | Fetches and checks the tool zip, adds `README.txt` (CRLF), `firmware/<base>.bin` and `.json` (`<base>`: the manifest's `image.file`, else `rfoundry_<board>`), `stock/<file>` |
 | `kitPanel`, `kitLine` | The panel `render()` draws in place of a step `missingApi` names, with the stock file picker when the kit has none; the line under a failure |
 
-The stock file is `S.stock` (the inner file of a vendor zip), else the file the C7000 codec step took
-(`S.vendorPick`); a file with a problem is left out. The line sits under a failed bootloader connect (not a cancelled
-chooser) or write, and under the C7000 connect's failed boot ROM wait or load (`ctx.manualKitLine` in `c7000ui.js`). Practice
-mode never offers a kit: its image is random bytes. Tests: `site/tests/manual.test.mjs`. Untested with a radio.
+The stock file is `S.stock` (the inner file of a vendor zip), else the file the C7000 codec step took (`S.vendorPick`);
+a file with a problem is left out. The line sits under a failed bootloader connect (not a cancelled chooser) or write,
+and under the C7000 connect's failed boot ROM wait or load (`ctx.manualKitLine` in `c7000ui.js`). Practice mode never
+offers a kit: its image is random bytes. Tests: `site/tests/manual.test.mjs`.
 
 The README's setup (`kitSetup()`) names Python `PYTHON_MIN` and each package of `PACKAGES`; the test checks both
 against `tools/rfoundry/pyproject.toml` and the zip's `requirements.txt`. The packages are not bundled: pip picks the

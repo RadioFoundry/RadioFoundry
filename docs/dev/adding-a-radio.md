@@ -1,15 +1,16 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
-# Adding a Radio
+# Adding a radio
 
 A new radio is a new `boards/<b>/` directory, drivers for any chip the tree doesn't have yet, and a platform if its SoC
 is new. The core doesn't change. If it seems to need a change, the difference belongs in `board_t` or a `hal_*`
 interface instead, used through a field that other radios leave at its default.
 
-Before writing code, the facts go into a hardware spec, `docs/spec/hardware-<b>.md`, written by the spec side under
-the [clean-room rules](contributing.md#clean-room). Use the hardware spec of a radio on the same platform (`hardware-<id>.md`, [radios.md](../spec/radios.md)) as the model: MCU and memory map, pins, chips, keys, display, power,
-bootloader and image format, calibration, codec location. Start from the radio's entry in
-[radios.md](../spec/radios.md): its chip list and which RadioFoundry drivers it can reuse.
+Before you write code, the spec side collects the radio's hardware facts under the
+[clean-room rules](../CLEANROOM.md): MCU and memory map, pins, chips, keys, display, power, bootloader and image format,
+calibration, and codec location. Start from the radio's entry in [radios.md](../spec/radios.md): its chip list and
+which RadioFoundry drivers it can reuse.
 
 ## The files
 
@@ -20,19 +21,19 @@ in `BOARD_DIRS`. The board then keeps only its wiring and what its chips leave t
 
 | Subdirectory | For |
 |---|---|
-| `platform/stm32f4/hrc` | an HR_C6000 or HR_C5000: DMR glue, I2S audio, the chip's ports, the stock codec host |
+| `platform/stm32f4/hrc` | an HR_C6000 or HR_C5000: DMR glue, I2S audio, the chip's ports, the codec host |
 | `platform/stm32f4/spi_flash` | the data flash on SPI NOR, with its security registers. A flash that shares its bus with another device takes the board's bus lock (`bus_take`, `bus_give`) instead of the driver's own mutex |
 | `platform/stm32f4/fsmc_keypad` | a key matrix on the LCD data lines |
 | `platform/stm32f4/gps_uart` | a GPS module on a USART |
 
-The board's own files:
+The board has its own files:
 
 | File | Contents |
 |---|---|
 | `boards/<b>/board.mk` | `PLATFORM`, `APP_BASE` (where the image starts: the first byte the bootloader runs), `BOARD_DIRS` (the board directory and each driver it uses) and any `MCU_DEFS` of its own. STM32: `MCU` (the part, which picks the CMSIS define and start-up file) and `HSE_VALUE` (the crystal in Hz); optional `BOARD_HAL_MODULES` (HAL modules beyond the platform's, such as `hal_i2c`) |
 | `boards/<b>/board.toml` | The board registry entry: identity, status, flashing, codec route, the site's data. `tools/boards.py check` validates it against `board.mk`, the linker script and `board_t`. Every key is in [The board registry](board-registry.md). Copy a neighbor on the same platform |
 | `boards/<b>/config.mk` | Feature defaults where this radio differs from `platform/<p>/config.mk`, with `?=` (for example `CONFIG_USB ?= n` on a radio without USB, `CONFIG_DISPLAY_INSET`), each with the reason. Also `BOARD_UNSUPPORTED` (switches its hardware can't do, one a line with the reason: `BOARD_UNSUPPORTED += AM_RX  # no air band receiver`), `BOARD_NOT_WRITTEN` (the same form: the hardware can, the driver or glue isn't written yet, with `CONFIG_X ?= n`; ci.sh's maximal build leaves both lists off, [the rule](../build-config.md#unsupported-not-written-unconfirmed)), `BOARD_REQUIRED` (switches it can't build without; ci.sh skips their `no-` build) and `MAXIMAL_VARS` (make variables for that build, e.g. `LTO=1`) |
-| `boards/<b>/memory.ld` | The memory map: the codec symbols, then `MEMORY` (the application's `FLASH` region from `__app_start`, which the Makefile defines from `APP_BASE`, and the RAM regions), then `INCLUDE common.ld`, the platform's sections. Keep the region's end below the codec. Keep the application out of every flash sector the codec touches (not only the codec bytes), so rfoundry can update the firmware without erasing the codec. The flashing tools read the region and the codec symbols from it, and derive the erasable sectors and the protected range ([release.md](release.md#sector-maps)) |
+| `boards/<b>/memory.ld` | The memory map: the codec symbols, then `MEMORY` (the application's `FLASH` region from `__app_start`, which the Makefile defines from `APP_BASE`, and the RAM regions), then `INCLUDE common.ld`, the platform's sections. Keep the region's end below the codec. Keep the application out of every flash sector the codec touches (not only the codec bytes), so rfoundry can update the firmware without erasing the codec. The flashing tools read the region and the codec symbols from it, and derive the erasable sectors and the protected range ([release.md](codec.md#sector-maps)) |
 | `boards/<b>/freertos_board.h` | Optional: RTOS settings that differ from `platform/<p>/FreeRTOSConfig.h` (the heap size, for example), read before its defaults |
 | `boards/<b>/board.c` | The `board_t` descriptor, the key map, bands, power level names |
 | `boards/<b>/pins.h`, `<b>.h` | Pin assignments and the board's private declarations. The registry reads the pins the flash stub uses from `pins.h` (`[flash.stub]` in [The board registry](board-registry.md#boardtoml)) |
@@ -58,7 +59,7 @@ Look at the boards on your platform for a model (`tools/boards.py list --platfor
 
 ## board_t
 
-[hal/board.h](../../hal/board.h) defines it. The fields:
+[hal/board.h](../../hal/board.h) defines `board_t`. Fill in its fields as follows.
 
 | Field | Fill with |
 |---|---|
@@ -81,7 +82,7 @@ Optional hooks may be NULL; the core checks them.
 
 ## The key map
 
-Each `keymap_entry_t` (`hal/hal_input.h`) maps one bit of the board's key scan to logical actions:
+Each `keymap_entry_t` (`hal/hal_input.h`) maps one bit of the board's key scan to logical actions.
 
 | Field | Meaning |
 |---|---|
@@ -90,10 +91,11 @@ Each `keymap_entry_t` (`hal/hal_input.h`) maps one bit of the board's key scan t
 | `raw_edges` | Report down and up instead of press and hold (PTT, monitor) |
 | `repeat` | Repeat while held (Up, Down) |
 
-Map keys to the logical actions of `input_action_t` (`ACT_SELECT`, `ACT_BACK`, `ACT_QUICK`, `ACT_CONTEXT`, `ACT_USER_1` to `ACT_USER_4`, `ACT_MONITOR`, `ACT_TALK_TARGET`, ...)
-so the five key rules of [docs/ux/principles.md](../ux/principles.md) hold on the new radio. A radio without a keypad
-or with fewer keys must still reach every task; [docs/spec/ui.md](../spec/ui.md) section 3 says how. Give some key
-`ACT_EMERGENCY` if the radio has one.
+Map keys to the logical actions of `input_action_t` (`ACT_SELECT`, `ACT_BACK`, `ACT_QUICK`, `ACT_CONTEXT`, `ACT_USER_1`
+to `ACT_USER_4`, `ACT_MONITOR`, `ACT_TALK_TARGET`, ...) so the five key rules of
+[docs/ux/principles.md](../ux/principles.md) hold on the new radio. A radio without a keypad or with fewer keys must
+still reach every task; [docs/spec/ui.md](../spec/ui.md) section 3 says how. Give some key `ACT_EMERGENCY` if the radio
+has one.
 
 ## The display
 
@@ -101,21 +103,21 @@ The UI draws for a display class (size, color depth, insets). If the new display
 changes in the UI. A new class needs a gallery entry and a key map pair in the UI host tests (see
 [Testing](testing.md)); ask before adding one, since every class multiplies the screens to review.
 
-The frame buffer is sized to the panel in `board.mk` `MCU_DEFS`: `GFX_FB_BYTES` (width times height times bits per pixel,
-over 8), `GFX_MAX_ROWS` (the height) and `GFX_INDEXED=1` for a 16-color panel. Without them the build reserves the
-40 KB RGB565 default. `boards.py check` requires the buffer to hold the board's `hardware.gallery` class.
+The frame buffer is sized to the panel in `board.mk` `MCU_DEFS`: `GFX_FB_BYTES` (width times height times bits per
+pixel, over 8), `GFX_MAX_ROWS` (the height) and `GFX_INDEXED=1` for a 16-color panel. Without them the build reserves
+the 40 KB RGB565 default. `boards.py check` requires the buffer to hold the board's `hardware.gallery` class.
 
 ## The drawing
 
 The site, the web control page and the web flasher's update mode steps show the radio as a drawing,
-`site/static/img/radios/src/<b>.svg`; until it has one, a generic drawing from `board.toml` `[frame]` stands in. Its rules are in
-[Radio images](website.md#radio-images). Once the board's key enum is written, run `tools/svg_keys.py tag <b>`: it tags
-the keys it finds by their labels and prints the rest. Tag those by hand, with `data-edge` on side and top keys, or
-list them in `data-undrawn`. `tools/svg_keys.py check <b>` must pass; the site build fails CI otherwise. Run `tag`
-again after any redraw, so the tags follow the new shapes.
+`site/static/img/radios/src/<b>.svg`; until it has one, a generic drawing from `board.toml` `[frame]` stands in. Its
+rules are in [Radio images](website.md#radio-images). Once the board's key enum is written, run `tools/svg_keys.py tag
+<b>`: it tags the keys it finds by their labels and prints the rest. Tag those by hand, with `data-edge` on side and top
+keys, or list them in `data-undrawn`. `tools/svg_keys.py check <b>` must pass; the site build fails CI otherwise. Run
+`tag` again after any redraw, so the tags follow the new shapes.
 
 The keys held to enter the bootloader go in `board.toml` `[flash.bootloader] hold` by key name (`["ptt", "sk1"]`),
-beside the prose `steps`, and only from a documented source (the radio's hardware page). The web flasher rings them on
+beside the prose `steps`, and only from a documented source. The web flasher rings them on
 the drawing and names them in a caption, so tag those keys in the drawing when it shows them, and add a
 `flash.key.<name>` label to `site/i18n/en.json` for a key no other radio holds. `tools/boards.py check` and
 `site/tests/radio_images_test.py` fail a key the board doesn't have, one in neither the drawing nor `data-undrawn`, or
@@ -132,58 +134,57 @@ one without a label.
    `tests/hil/test_ptt_host_traffic.py`: host polling must make no PTT press.
    If PTT also comes through a mic jack, power on with the jack empty and watch the raw pin. If it reads low, count it
    only once it has read high (`drivers/input/plugptt`, [gotchas.md](../spec/gotchas.md) 16.3).
-4. Flash, settings and calibration reads. Check the foreign-region guard on a radio that still runs the vendor firmware
+4. Flash, settings and calibration reads. Check the foreign-region guard on a radio that still runs its manufacturer
+   firmware
    ([settings-store.md](../spec/settings-store.md) 5).
 5. RF chip: FM receive, then FM transmit into a dummy load.
 6. DMR modem and the codec: receive, then transmit, checked on the SDR bench.
    Then the DMR PA key-up on every band with its own PA: `tools/bench/pa_cal.py`
    ([pa-keyup.md](../spec/pa-keyup.md) 6).
 7. The air interface, where the modem chip has a physical layer mode ([air-interface.md](../spec/air-interface.md)):
-   point `air` and `baseband` at the platform glue's provider (above); on a platform whose receive tap is optional, set the glue's `air_tap` once the tap is wired. The glue reports each mode's fit with
-   `AIR_FIT_UNTESTED` until the board sets the glue's `air_verified`, which it does only after P25 and NXDN were
-   checked on air both ways: `tests/hil/test_p25.py` (`test_p25_rx_from_bench`, `test_p25_tx_off_air`) and
-   `tests/hil/test_nxdn.py` (`test_nxdn_rx_speech`, `test_nxdn_tx_off_air`, both rates). Check DMR voice right after
-   each: P25 runs in memory the DMR vocoder lends where the platform has that (`hal_vocoder_t.lend`). A mode the
-   provider can't fit stays in `BOARD_NOT_WRITTEN` with the reason.
+   point `air` and `baseband` at the platform glue's provider (above); on a platform whose receive tap is optional, set
+   the glue's `air_tap` once the tap is wired. The glue reports each mode's fit with `AIR_FIT_UNTESTED` until the board
+   sets the glue's `air_verified`, which it does only after P25 and NXDN were checked on air both ways:
+   `tests/hil/test_p25.py` (`test_p25_rx_from_bench`, `test_p25_tx_off_air`) and `tests/hil/test_nxdn.py`
+   (`test_nxdn_rx_speech`, `test_nxdn_tx_off_air`, both rates). Check DMR voice right after each: P25 runs in memory the
+   DMR vocoder lends where the platform has that (`hal_vocoder_t.lend`). A mode the provider can't fit stays in
+   `BOARD_NOT_WRITTEN` with the reason.
 8. CPS, so qdmr can program it.
 9. Flashing from where an owner starts:
-   - Find every stock build an owner's radio may run before RadioFoundry: every firmware version the vendor and its
-     rebadgers have shipped, for every model the board is sold as (`also`, `looks`). Give each a codec map and a
+   - Find every manufacturer build an owner's radio may run before RadioFoundry: every firmware version the maker and
+     its rebadgers have shipped, for every model the board is sold as (`also`, `looks`). Give each a codec map and a
      `[codec] stock` entry, so the web flasher and rfoundry find the codec in whatever file or readout the
      owner has.
    - For each of those models, check the bootloader's USB identity, entry keys and key against `[flash]`.
    - Walk the web flasher through each starting point:
-     - the vendor's download as the owner gets it (a zip or a `.bin`);
+     - the maker's download as the owner gets it (a zip or a `.bin`);
      - a readout of the radio;
      - an update of a radio already running RadioFoundry.
-10. The stock codeplug, so the install keeps the owner's channels. Map the vendor layout clean room
+10. The manufacturer's codeplug, so the install keeps the owner's channels. Map its layout under the clean-room rules
     ([CLEANROOM.md](../CLEANROOM.md)), from data only: compare reads of the radio's memory with `dmrconf decode` of the
-    same codeplug, then confirm each field with reads taken before and after one change in the stock menu. Write it up
-    as the radio's `<id>-stock-codeplug.md` and convert it in `site/static/js/codeplug/`. The Codeplug Editor, the
+    same codeplug, then confirm each field with reads taken before and after one change in the radio's own menu.
+    Convert it in `site/static/js/codeplug/`. The Codeplug Editor, the
     Tools page and the install's channel step share the converter.
     - If a channel record holds no talkgroup or TX contact, look for a separate table indexed by channel number: a
       few bytes per channel, in channel order, holding the contact's number in the contact table. One supported radio
       keeps its TX contacts this way, and dmrconf 0.15 doesn't decode that table, so an empty TX contact in its output
       doesn't mean the codeplug has none. Change one channel's talkgroup on the radio and diff the reads to find it.
-      Other vendors' radios (AnyTone's among them) likely do the same.
-
-A bring-up page under [docs/testing/](../testing/README.md) is this list made concrete for one radio.
 
 ## Bring-up records
 
-What the docs claim for a radio comes from its records, so each step above ends with a recorded run.
+What the docs claim for a radio comes from its records, so each step above ends with a recorded run. To record a
+bring-up, follow these steps:
 
-1. Add `boards/<b>/board.toml` with `[status] level = "bring-up"`, a `summary` and `[docs] hardware`. A bring-up page
-   (`docs/testing/<b>-bringup.md`, `[docs] bringup`) is optional; with one, the README links the radio to it.
+1. Add `boards/<b>/board.toml` with `[status] level = "bring-up"` and a `summary`.
 2. `tools/bringup.py list --radio <b>` shows the checklist: every feature of
    [tests/hil/features.toml](../../tests/hil/features.toml) the board builds, `n/a` for its `BOARD_UNSUPPORTED`
    switches and `not written` for its `BOARD_NOT_WRITTEN` ones. Each needs a reason in `config.mk`; a feature built
-   but known not to work yet gets a `[features]` entry in `board.toml` (`state = "unsupported"`), and so does a
+   but known not to work gets a `[features]` entry in `board.toml` (`state = "unsupported"`), and so does a
    feature without a switch that the hardware rules out (`state = "n/a"`).
 3. As a step works, `tools/bringup.py run --radio <b> --feature F -- <pytest options>` runs its tests under the
    radio lock and writes `docs/testing/results/<b>/<date>-<commit>.json`. Commit the record with the change it
    checks; a record with failures is the to-do list ([HIL bring-up mode](../../tests/hil/README.md#bring-up-mode)).
-4. A check made before the radio had records (a bench log, a hand test written up in the hardware page) can go in
+4. A check made before the radio had records (a bench log, a hand test) can go in
    the board's seed record, `docs/testing/results/<b>/seed.json`
    ([format](../testing/results/README.md#seed-record)). A run replaces a seed row.
 5. Raise `[status] level` to `testing`, then `supported`, as the records cover the radio, update `summary`, and run

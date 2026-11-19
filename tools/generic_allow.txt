@@ -36,7 +36,6 @@ tools/hrc7000_codec.py per-radio stock codec slot layouts; to move into codec_ma
 tools/stm32_dfu.py per-radio DFU keys and bootloader strings; to move into board.toml
 tools/rfoundry/README.md per-radio flash routes, stock formats and their tests; to read from registry.json
 tools/rfoundry/rfoundry/cli.py per-radio flash routes, stock formats and their tests; to read from registry.json
-tools/rfoundry/rfoundry/codec_maps/README.md per-radio flash routes, stock formats and their tests; to read from registry.json
 tools/rfoundry/rfoundry/codecsave.py per-radio flash routes, stock formats and their tests; to read from registry.json
 tools/rfoundry/rfoundry/manifest.py per-radio flash routes, stock formats and their tests; to read from registry.json
 tools/rfoundry/rfoundry/serialflash.py per-radio flash routes, stock formats and their tests; to read from registry.json

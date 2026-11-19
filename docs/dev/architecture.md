@@ -1,12 +1,15 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # Architecture
 
-One radio-independent core runs on every radio. Each radio adds a board directory that describes it and drives its
-chips. The core never includes a board or platform header and never tests a radio define: what differs by radio
-reaches it at run time through the board descriptor, `board_t` in [hal/board.h](../../hal/board.h).
+One radio-independent core runs on every radio. Each radio adds a board directory that describes the radio and drives
+its chips. The core never includes a board or platform header and never tests a radio define. What differs by radio
+reaches the core at run time through the board descriptor, `board_t` in [hal/board.h](../../hal/board.h).
 
 ## Layers
+
+The following diagram shows the layers, from the core down to the third-party code.
 
 ```
  core/        DMR stack, radio core, UI, codeplug, settings, storage, hotspot, host link, CPS, debug link,
@@ -25,32 +28,38 @@ reaches it at run time through the board descriptor, `board_t` in [hal/board.h](
  third_party/ FreeRTOS, TinyUSB, ST HAL and CMSIS (submodules, permissive licenses)
 ```
 
+The following table gives the rule for each layer.
+
 | Layer | Rule |
 |---|---|
-| `core/` | Portable C. Tests every radio difference through `board` (bands, power levels, display geometry and insets, key map, optional hooks that may be NULL). Host tests compile it unchanged |
+| `core/` | Portable C. Tests every radio difference through `board` (bands, power levels, display geometry and insets, key map, optional hooks that can be NULL). Host tests compile it unchanged |
 | `hal/` | Headers only: structs of function pointers and the data types between core and board |
 | `drivers/` | One chip each, no knowledge of the radio it sits in beyond what its init call is given. Also header-only helpers the boards share, such as `audio/miclevel` (the VOX level) and `power/battery` (the battery average and charge estimate) |
 | `boards/` | The only place that knows the radio. Fills in `board_t`; maps physical keys to logical actions |
 | `platform/` | The SoC, shared by every radio on it (the STM32F405 radios share `platform/stm32f4`), and in subdirectories the glue for a chip on that SoC that several radios share (`platform/stm32f4/hrc`, `gps_uart`, `spi_flash`, `fsmc_keypad`), built for the boards that list it in `BOARD_DIRS`. Also the build defaults: `platform.mk` (compiler, part defines, HAL modules), `config.mk` (feature defaults), `common.ld` (the memory layout), `FreeRTOSConfig.h`. A board's files list only how it differs |
 
-Besides `board_t`, every board provides three functions (`hal/board.h`): `board_early_init` (pins and clocks before
-the RTOS), `board_init` (from the first task) and `board_rf_safe` (transmitter off with register writes only). The
-platform calls `board_rf_safe` first in `main()`, in its fault handlers and before every software reset or jump out
-of the application; the crash capture in `core/crash` calls it too. It must work with interrupts off, without the
-RTOS and before the clocks are set up ([crash-log.md](../spec/crash-log.md) 8).
+Besides `board_t`, every board provides three functions (`hal/board.h`):
 
-RF chip drivers share three interfaces in `drivers/rf`:
+- `board_early_init`: pins and clocks, before the RTOS starts.
+- `board_init`: called from the first task.
+- `board_rf_safe`: turns the transmitter off with register writes only.
+
+The platform calls `board_rf_safe` first in `main()`, in its fault handlers, and before every software reset or jump
+out of the application. The crash capture in `core/crash` calls it too. It must work with interrupts off, without the
+RTOS, and before the clocks are set up ([crash-log.md](../spec/crash-log.md) 8).
+
+RF chip drivers share three interfaces in `drivers/rf`, as the following table shows.
 
 | Interface | What it is |
 |---|---|
-| `rfbus` | A chip's register bus: write, read, a millisecond wait and a write count. `rfbus_3w_t` is the bit-banged 3-wire bus; a board fills its pin functions. A driver takes an `rfbus_t *` and never touches pins |
+| `rfbus` | A chip's register bus: write, read, a millisecond wait, and a write count. `rfbus_3w_t` is the bit-banged 3-wire bus; a board fills in its pin functions. A driver takes an `rfbus_t *` and never touches pins |
 | `subaudio` | The CTCSS, tone and DCS words every chip family uses, rounded or truncated as the caller needs |
 | `superhet` | The two roles of a superheterodyne: main transceiver and LO, as tables of ops. A driver that can fill a role exports its ops; the board detects its chips, binds each to its ops and calls only those. Steps that depend on the board (band pins, calibration lookups) stay in the board |
 
 ## Tasks
 
-FreeRTOS tasks, created by [core/app/app.c](../../core/app/app.c) (its header comment has the priorities and stack
-sizes):
+[core/app/app.c](../../core/app/app.c) creates the FreeRTOS tasks in the following table. Its header comment has the
+priorities and stack sizes.
 
 | Task | Owner | Does |
 |---|---|---|
@@ -65,9 +74,12 @@ sizes):
 | gps | board | NMEA from the GPS module, on radios that have one |
 
 Other tasks talk to the radio core through requests (`radio_req_*`, queued, never waiting) and read a copy of its
-state (`radio_view_t`). The UI never calls the RTOS from its behavior code, so the host simulator runs it unchanged.
+state (`radio_view_t`). The UI never calls the RTOS from its behavior code, so the host simulator runs that code
+unchanged.
 
 ## The core, by directory
+
+The following table lists each core directory, the spec that describes it, and what it holds.
 
 | Directory | Spec | Contents |
 |---|---|---|
@@ -80,7 +92,7 @@ state (`radio_view_t`). The UI never calls the RTOS from its behavior code, so t
 | `core/snmp` | [snmp](../spec/snmp.md) | SNMPv2c agent, the RadioFoundry MIB, notifications |
 | `core/aprs` | [aprs](../spec/aprs.md) | The APRS engine and its two backends: AX.25 / AFSK (beacons, messages, KISS TNC, iGate rules) and positions over DMR |
 | `core/position` | [position](../spec/position.md) | Where the radio is (board GPS, host NMEA, fixed position) for DMR GPS Info, LRRP and APRS; NMEA parsing |
-| `core/usbaudio` | [usb-audio](../spec/usb-audio.md) | USRP and the jitter buffer (host tested, not in an image yet) |
+| `core/usbaudio` | [usb-audio](../spec/usb-audio.md) | USRP and the jitter buffer |
 | `core/hostlink` | [cps-protocol](../spec/cps-protocol.md) 1 | Dispatch of the host port by first byte; the USB network side |
 | `core/cps` | [cps-protocol](../spec/cps-protocol.md) | The open-firmware CPS shim |
 | `core/codeplug` | [open-firmware-cps](../spec/open-firmware-cps.md), [codeplug-native](../spec/codeplug-native.md) | Codeplug reading and editing, the DMR ID database |
@@ -92,16 +104,38 @@ state (`radio_view_t`). The UI never calls the RTOS from its behavior code, so t
 
 ## The UI's seams
 
-The UI asks for data other packages own through `core/ui/ui_svc.h`. Each call has a weak "not in this build" stub in
-`ui_svc_stub.c`; the owning package's strong definition replaces it at link time. A screen whose feature is missing is
-dimmed and says why. See [ui.md](../spec/ui.md) section 4.
+The UI asks for data that other packages own through `core/ui/ui_svc.h`. Each call has a weak "not in this build"
+stub in `ui_svc_stub.c`, and the owning package's strong definition replaces it at link time. A screen whose feature
+is missing is dimmed and says why. For details, see [ui.md](../spec/ui.md) 4.
 
 ## Build switches
 
 Features that cost flash sit behind `CONFIG_` switches (`config/features.mk`, `core/config.h`). Code tests them with
-`#if CONFIG_X`; whole directories drop out in the Makefile. See [Building](building.md).
+`#if CONFIG_X`, and the Makefile leaves out whole directories. For every switch, see
+[Build configuration](../build-config.md).
 
 ## Gotchas
 
-[docs/spec/gotchas.md](../spec/gotchas.md) collects the lessons from earlier firmware work, by subsystem: modem
-timing, hotspot buffering, data retries, storage. Read the section for the subsystem you touch.
+[Gotchas](../spec/gotchas.md) collects the lessons from earlier firmware work, by subsystem: modem timing, hotspot
+buffering, data retries, and storage. Read the section for the subsystem you touch.
+
+## Source tree
+
+The following table lists the top-level directories.
+
+| Path | What |
+|---|---|
+| `core/` | Radio-independent code: the DMR stack (`core/dmr`), the radio state machine (`core/radio`), the UI (`core/ui`), the hotspot, the host link, the codeplug, settings, CPS, and the debug link |
+| `hal/` | The interfaces the core uses (modem, RF, audio, codec, flash, display, input), and the `board_t` descriptor |
+| `drivers/` | Chip drivers shared across radios |
+| `platform/` | Per-SoC start-up, clocks, interrupts, and RTOS glue (`stm32f4`, `hrc7000`) |
+| `boards/` | One directory per radio: the board descriptor, pins, feature defaults, linker script, and codec hosting |
+| `boot/` | First stages in front of the application, for radios whose loader starts it directly |
+| `config/` | Build-time feature switches |
+| `third_party/` | Permissively licensed upstream code, as submodules (FreeRTOS, ST HAL and CMSIS, TinyUSB) |
+| `tools/` | Flashing (`rfoundry`), release packaging, codec merge, the CPS client, the debug link client (`rfoundry_debug.py`), CI, and SDR bench tools |
+| `stub/` | The flash stubs and `stubtool.py` |
+| `tests/host/` | Unit and SIL tests, and the UI simulator (`tests/host/sim`) |
+| `tests/hil/` | HIL tests: pytest against a radio and the SDR bench |
+| `site/` | The web site, the web flasher, and the Codeplug Editor |
+| `docs/` | The documentation; [the documentation map](../README.md) lists every page |

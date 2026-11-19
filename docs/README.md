@@ -24,8 +24,8 @@ The manual is built to the web site and to a PDF in file-name order.
 
 | Page | Owns |
 |---|---|
-| [Contents](user/README.md) | Table of contents and the conventions the manual uses |
-| [Introduction](user/01-introduction.md) | What the firmware does, the AMBE codec in brief, how to read the manual |
+| [Contents](user/README.md) | Table of contents and a quick reference |
+| [Introduction](user/01-introduction.md) | What the firmware does, the reading order, the AMBE codec in brief, and the conventions |
 | [Installing](user/02-installing.md) | Installing, updating, backing up, and going back to the original firmware |
 | [First boot](user/03-first-boot.md) | What the radio shows the first time it starts |
 | [Programming](user/04-programming.md) | Programming channels and contacts from a computer |
@@ -57,21 +57,21 @@ The manual is built to the web site and to a PDF in file-name order.
 | [Clean-room rules](CLEANROOM.md) | What sources you can and can't use, and how to show it |
 | [Documentation style](dev/doc-style.md) | How to write and organize these documents |
 | [Architecture](dev/architecture.md) | The layers, the tasks, and the source tree |
-| [Building](dev/building.md) | Toolchains, make targets, flashing your own build |
-| [Build configuration](build-config.md) | Every build switch, value, variant, and board default |
-| [Feature matrix](feature-matrix.md) | Each feature's flash cost and per-radio default |
+| [Building](dev/building.md) | Toolchains, make targets, the firmware version, flashing your own build |
+| [Build configuration](build-config.md) | Every build switch, value, variant, hardware build option, and board default |
+| [Feature matrix](feature-matrix.md) | Each feature's flash cost, its default on each radio, and what was checked on each radio |
 | [Board registry](dev/board-registry.md) | The fields of `boards/<id>/board.toml` |
 | [Adding a radio](dev/adding-a-radio.md) | Porting RadioFoundry to a new radio |
 | [Adding a mode](dev/adding-a-mode.md) | Adding a digital mode beside DMR |
 | [Testing](dev/testing.md) | Test levels, where a new test goes, host tests |
-| [Continuous integration](dev/ci.md) | `tools/ci.sh`, the workflows, coverage, and sanitizers |
-| [CI runners](dev/ci-runners.md) | Self-hosted runners and the toolchain images |
+| [Continuous integration](dev/ci.md) | The workflows, the steps and options of `tools/ci.sh`, coverage, and sanitizers |
+| [CI runners](dev/ci-runners.md) | Where the workflows run, and the toolchain images |
 | [Stack check](dev/stack-check.md) | Static stack-depth analysis for each task |
 | [Debug link tool](dev/debug-link.md) | Using `tools/rfoundry_debug.py` with a radio |
-| [The AMBE codec](dev/codec.md) | How the codec reaches each radio without being in the repository |
+| [The AMBE codec](dev/codec.md) | How the codec reaches each radio: merge tools, codec maps, keep and merge |
 | [Releases](dev/release.md) | Version names, the release checklist, and release artifacts |
 | [Web flasher](dev/web-flasher.md) | How the browser installer works |
-| [Codeplug editor](dev/codeplug-editor.md) | How the browser codeplug editor works, and the other ways to program |
+| [Codeplug editor](dev/codeplug-editor.md) | The ways to program a radio, and how the browser codeplug editor works |
 | [Web site](dev/website.md) | The site generator, hosting, and error reports |
 | [Manual PDF](dev/manual-pdf.md) | Building the user manual as a PDF |
 | [Translating](dev/translating.md) | Translating the radio, the site, and the manual |
