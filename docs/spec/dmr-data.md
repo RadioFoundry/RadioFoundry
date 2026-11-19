@@ -887,7 +887,7 @@ computed over the ciphertext, so a receiver without the key still checks and ack
   outside 4000-4099, SAP 4 for 4007). The vectors come from `tests/host/dmr_ip_vectors.py` (polynomial division from
   the standard's text, apart from the C code).
 - Privacy (13): `tests/host/dmrDataTest.c` (testPrivacy: the privacy header octet for octet, the keystream and clear
-  pad, the CRC over the ciphertext, RX with the right, wrong and no key, SAP 9, a bad header CRC, the MNIS header,
+  pad, the CRC over the ciphertext, RX with the right, wrong and no key, SAP 9, a bad header CRC, a network header (MFID 0x10, SAP 1),
   confirmed with a retry, what `dmrDataPrivacyAllows` lets through), `tests/host/dmrPrivacyTest.c` (testData: the
   modes per scheme, the BP key words), `tests/host/dmrDataServiceTest.c` (testPrivacy: a refused SMS fails with
   nothing on air, an encrypted SMS out and in, an encrypted packet without the key dropped).
