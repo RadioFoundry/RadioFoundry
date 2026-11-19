@@ -4638,6 +4638,11 @@ msgid "Registration refused"
 msgstr "Registrazione rifiutata"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_WHY_TRUNK_UNMAPPED"
+msgid "Unknown channel "
+msgstr "Canale sconosciuto "
+
+#: core/ui/ui_screens.c
 msgctxt "DENY_WHY_NOT_ALLOWED"
 msgid "Not allowed here"
 msgstr "Non permesso qui"

@@ -1024,6 +1024,46 @@ static void test_receive_rules(void)
 	CHECK(ms.aloha.backoff == 11, "C_BCAST backoff kept");
 }
 
+// A one-carrier site whose control channel row was typed with a site tool's number: tools that count each timeslot as
+// a channel call LPCN 311 "623" (slot 1) and "624" (slot 2). The grant names 311; the row is found under that
+// numbering, either slot. A row that matches neither way: the radio's own call ends at once as unmapped, not at
+// TP_Timer, and says which channel the grant named
+static void test_per_slot_lcn(void)
+{
+	static const uint16_t rows[] = { 624, 623 };
+	for (unsigned i = 0; i < sizeof rows / sizeof rows[0]; i++) {
+		t3_ms_t ms;
+		setup(T3_OPT_PRIVATE, true);
+		cfg.plan.fixed.base_hz = 0;
+		cfg.ctrl[0].lcn = rows[i];
+		camp_registered(&ms);
+		CHECK(t3_ms_request(&ms, T, TG_A, true, false), "row %u: group call request", rows[i]);
+		frames(&ms, 2);
+		t3_csbk_t g = grant(T3_OP_TV_GRANT, 311, 2, TG_A, OWN);
+		rx(&ms, 1, &g);
+		CHECK(ms.state == T3_FOLLOW && ms.call.ours && ms.ax.result == T3_RES_GRANTED && ms.st.unmapped == 0,
+		      "row %u: grant to LPCN 311 followed", rows[i]);
+		CHECK(tuned.payload && tuned.slot == 2 && tuned.chan.rx_hz == RX(TSCC_LCN) && tuned.chan.lcn == 311,
+		      "row %u: the control channel's carrier, named 311", rows[i]);
+	}
+
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE, true);
+	cfg.plan.fixed.base_hz = 0;
+	cfg.ctrl[0].lcn = 600;
+	camp_registered(&ms);
+	// Someone else's call on an unknown channel: counted, nothing else
+	t3_csbk_t g = grant(T3_OP_TV_GRANT, 311, 2, TG_A, CALLER);
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_CAMPED && ms.st.unmapped == 1 && ms.st.last_unmapped == 311, "unmapped: counted");
+	CHECK(t3_ms_request(&ms, T, TG_A, true, false), "group call request");
+	frames(&ms, 2);
+	g = grant(T3_OP_TV_GRANT, 311, 2, TG_A, OWN);
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_CAMPED && ms.ax.state == T3_AX_IDLE && ms.ax.result == T3_RES_UNMAPPED &&
+	      ms.st.last_unmapped == 311, "our grant unmapped: ends now, result %s", t3_res_name(ms.ax.result));
+}
+
 // The gateway's one-carrier site: the TSCC on TS1, its payload channel on TS2 of the same carrier. The radio knows
 // only the control channel (with its LCN), no plan and no Chan_Freq yet. It registers with its talk group and gets
 // Reg_Subscription (0x65); a group call is granted on the TSCC's own LCN, slot 2; the payload slot starts with idles
@@ -3116,6 +3156,7 @@ int main(void)
 	test_deregister();
 	test_receive_rules();
 	test_one_carrier_site();
+	test_per_slot_lcn();
 	printf("t3AccessTest: %d checks, %d failures\n", checks, failures);
 	return failures != 0;
 }

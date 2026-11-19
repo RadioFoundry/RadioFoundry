@@ -3617,6 +3617,7 @@ void radio_sm_t3_brief(radio_sm_t *sm)
 	b->poll_fails = x->poll_fails;
 	b->other = x->other;
 	b->refused = x->refused;
+	b->unmapped = x->last_unmapped;
 	b->why = x->why;
 }
 
@@ -3865,6 +3866,7 @@ static uint8_t t3_why_now(uint32_t now_ms, uint8_t result)
 	case T3_RES_REFUSED:
 	case T3_RES_NOT_ALLOWED: return RADIO_TRUNK_WHY_DENIED;
 	case T3_RES_LOST: return RADIO_TRUNK_WHY_NO_CC;
+	case T3_RES_UNMAPPED: return RADIO_TRUNK_WHY_UNMAPPED;
 	default: return RADIO_TRUNK_WHY_NO_ANSWER;
 	}
 }

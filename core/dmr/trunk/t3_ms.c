@@ -134,9 +134,29 @@ static void send_udt(t3_ms_t *ms, uint8_t slot)
 static void finish(t3_ms_t *ms, uint32_t now, t3_res_t r);
 static bool is_voice(t3_svc_t s);
 
+// A programmed row (plan table or control channel) numbered n
+static bool row_lookup(const t3_cfg_t *c, uint16_t n, t3_chan_t *out)
+{
+	for (uint16_t i = 0; i < c->plan.ntable; i++) {
+		if (c->plan.table[i].lcn == n) {
+			*out = c->plan.table[i];
+			return true;
+		}
+	}
+	for (uint8_t i = 0; i < c->nctrl; i++) {
+		if (c->ctrl[i].lcn == n && c->ctrl[i].rx_hz != 0) {
+			*out = c->ctrl[i];
+			return true;
+		}
+	}
+	return false;
+}
+
 // A logical channel's frequencies: the plan (learned, table, fixed), else a programmed control channel with that
 // number. A one-carrier site grants its own carrier's other slot, which a radio with only the control channel
-// programmed (no plan, no Chan_Freq heard yet) knows that way
+// programmed (no plan, no Chan_Freq heard yet) knows that way.
+// Site tools and scanners often count each timeslot as a channel: (LPCN << 1 | slot bit) + 1, so LPCN 311 is their
+// 623 and 624. A row no LPCN matches is tried under that numbering last, either slot (both share the carrier)
 static bool chan_lookup(const t3_ms_t *ms, uint16_t lcn, t3_chan_t *out)
 {
 	const t3_cfg_t *c = ms->cfg;
@@ -146,13 +166,15 @@ static bool chan_lookup(const t3_ms_t *ms, uint16_t lcn, t3_chan_t *out)
 	if (lcn == T3_LPCN_NULL || lcn > T3_LPCN_MAX) {
 		return false;
 	}
-	for (uint8_t i = 0; i < c->nctrl; i++) {
-		if (c->ctrl[i].lcn == lcn && c->ctrl[i].rx_hz != 0) {
-			*out = c->ctrl[i];
-			return true;
-		}
+	if (row_lookup(c, lcn, out)) {
+		return true;
 	}
-	return false;
+	uint16_t per_slot = (uint16_t)(2u * lcn + 1u);
+	if (per_slot >= T3_LPCN_MAX || !(row_lookup(c, per_slot, out) || row_lookup(c, (uint16_t)(per_slot + 1u), out))) {
+		return false;
+	}
+	out->lcn = lcn;		// the channel as the TS names it, for comparing calls and TSCCs
+	return true;
 }
 
 // ---- Hunting (6.3.2.1, Annex D) ----
@@ -468,6 +490,9 @@ static void on_grant(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_cha
 		   !chan_lookup(ms, p->u.grant.lpcn, &c)) {
 		ms->st.unmapped++;
 		ms->st.last_unmapped = p->u.grant.lpcn;
+		if (ms->ax.state != T3_AX_IDLE && is_me(ms, p->u.grant.src)) {
+			finish(ms, now, T3_RES_UNMAPPED);	// our call can't be followed: say so now, not at TP_Timer
+		}
 		return;
 	}
 	if (ms->state == T3_FOLLOW) {
@@ -603,6 +628,7 @@ const char *t3_res_name(t3_res_t r)
 	case T3_RES_LOST: return "lost";
 	case T3_RES_CANCELED: return "canceled";
 	case T3_RES_DIVERTED: return "diverted";
+	case T3_RES_UNMAPPED: return "unmapped";
 	}
 	return "?";
 }

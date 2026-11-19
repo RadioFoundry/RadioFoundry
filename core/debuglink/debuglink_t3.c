@@ -291,7 +291,7 @@ static const char *const t3_regs[] = { "unknown", "not_needed", "listen", "neede
 static const char *const t3_svcs[] = { "none", "register", "deregister", "group", "individual", "cancel",
 				       "status", "sdata", "pdata", "divert", "sdpoll" };
 static const char *const t3_results[] = { "none", "pending", "granted", "done", "refused", "no_answer", "timeout",
-					  "not_allowed", "lost", "canceled", "diverted" };
+					  "not_allowed", "lost", "canceled", "diverted", "unmapped" };
 static const char *const t3_axs[] = { "idle", "wait_slot", "wait_resp", "acked" };
 
 static const char *word(uint8_t v, const char *const *names, uint8_t count)

@@ -856,6 +856,8 @@ static const flow_t flows[] = {
 	  "screen=home shows=Reg._refused hides=Searching", 0, false },
 	{ "T PTT refused for a refused registration says so", "t3 dlpos:3 t3state:denyreg", "",
 	  "shows=Registration_refused shows=Ask_to_add_your_ID", 0, false },
+	{ "T PTT refused for a grant on an unlisted channel names it", "t3 dlpos:3 t3state:denyunmapped", "",
+	  "shows=Unknown_channel_311 shows=Check_system_settings", 0, false },
 	{ "T Home on the fallback channel", "t3 dlpos:3 t3state:fallback", "", "screen=home shows=Fallback", 0, false },
 	{ "T back on the system", "t3 dlpos:3 t3state:fallback", "t3state:back", "screen=home toast=Back_on_County", 0, false },
 	{ "T Home on a channel without its system", "t3 dlpos:5", "", "screen=home shows=System_not_set_up", 0, false },

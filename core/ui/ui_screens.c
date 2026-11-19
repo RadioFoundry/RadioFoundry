@@ -1289,6 +1289,13 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 		case RADIO_TRUNK_WHY_NO_CHAN: sb_str(&b, TR(DENY_WHY_P25T_NO_CHAN, "Voice channel unusable")); break;
 		case RADIO_TRUNK_WHY_OTHER_SYS: sb_str(&b, TR(DENY_WHY_TRUNK_OTHER_SYS, "Another system heard")); break;
 		case RADIO_TRUNK_WHY_REG_REFUSED: sb_str(&b, TR(DENY_WHY_TRUNK_REG_REFUSED, "Registration refused")); break;
+#if CONFIG_DMR_TRUNK
+		case RADIO_TRUNK_WHY_UNMAPPED:
+			// The channel number the grant named, as the codeplug's System channels table needs it
+			sb_str(&b, TR(DENY_WHY_TRUNK_UNMAPPED, "Unknown channel "));
+			sb_u32(&b, v->t3.unmapped, 1);
+			break;
+#endif
 		default: sb_str(&b, TR(DENY_WHY_RX_ONLY, "This channel is RX only")); break;
 		}
 		break;
@@ -1321,7 +1328,7 @@ static const char *deny_action(const radio_view_t *v)
 	case TXDENY_BENCH: return TR(DENY_FIX_END_BENCH_ON_PC, "End the bench on the PC");
 #if CONFIG_P25_TRUNK || CONFIG_DMR_TRUNK
 	case TXDENY_TRUNK:
-		if (trunk_why(v) == RADIO_TRUNK_WHY_OTHER_SYS)
+		if (trunk_why(v) == RADIO_TRUNK_WHY_OTHER_SYS || trunk_why(v) == RADIO_TRUNK_WHY_UNMAPPED)
 			return TR(DENY_FIX_CHECK_SYSTEM, "Check system settings");
 		if (trunk_why(v) == RADIO_TRUNK_WHY_REG_REFUSED)
 			return TR(DENY_FIX_ASK_TO_ADD_ID, "Ask to add your ID");	// the system doesn't know it

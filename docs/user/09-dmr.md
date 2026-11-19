@@ -418,6 +418,11 @@ Select the channel. Home shows the system's name and what the radio is doing the
 | Fallback | No control channel found: on the fallback channel |
 | System not set up | The channel's system is missing, has no control channel or lacks its key. The channel is receive only |
 
+If PTT says **Unknown channel N**, the system granted your call on channel N and the system's channel list doesn't
+have it. Add channel N with its frequencies; on a site with one carrier, give the control channel the number N. The
+number is the one the control channel sends. A site tool or scanner that counts each timeslot as a channel shows
+2 × N + 1 and 2 × N + 2 instead (623 and 624 for 311); the radio takes those too.
+
 Hold **PTT**: the radio asks the system for a channel and talks once the system grants it. When the system refuses or
 doesn't answer, PTT is refused, and the screen says why: no control channel, another system heard, not registered yet,
 denied by the system, or no answer. The talk target is the channel's contact, or one you pick as on any DMR channel

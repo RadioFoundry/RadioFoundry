@@ -115,8 +115,16 @@ A grant names a logical physical channel number (LPCN, 1-4094). `t3_plan_lookup`
    the duplex split, or plus it when the plan says the MS transmits low. Separation codes 0-7: 5, 6.25, 10, 12.5, 15,
    20, 25, 30 kHz.
 
+Then the programmed control channels (`chan_lookup`): a one-carrier site grants its own carrier's other slot.
+
+Site tools and scanners often count each timeslot as a channel: (LPCN << 1 | slot bit) + 1, so LPCN 311 is their 623
+(slot 1) and 624 (slot 2). A codeplug row typed with such a number would never match. When no source knows the LPCN,
+the programmed rows (table, then control channels) are tried as 2 x LPCN + 1 and 2 x LPCN + 2, either slot since both
+share the carrier. A match is used under the LPCN the grant named, so calls and TSCCs compare by it.
+
 A grant whose channel nothing resolves is not followed. The engine counts it (`unmapped`) and keeps the last such
-LPCN, so the user can see which channel is missing from the plan.
+LPCN, so the user can see which channel is missing from the plan. When it is the radio's own call
+(`T3_RES_UNMAPPED`), the request ends at once, not at TP_Timer, and PTT says which channel.
 
 ## 6. The receive engine
 
@@ -940,6 +948,7 @@ registration is accepted. Refused is Reg_Denied: barred from the area, never ask
 | the system refused the call, or the radio is stunned | System denied the call |
 | no answer, a timeout | No answer from system |
 | the control channel lost during the request | No control channel |
+| the radio's call granted on a channel the codeplug doesn't list | Unknown channel N / Check system settings |
 
 At power-on the radio restores the channel it was on, so a trunked channel starts its system. Keys written while a
 system runs are taken at the next selection of a channel.

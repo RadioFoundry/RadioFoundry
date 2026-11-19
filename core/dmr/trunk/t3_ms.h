@@ -212,6 +212,7 @@ typedef enum {
 	T3_RES_LOST,		// the TSCC was lost meanwhile
 	T3_RES_CANCELED,	// withdrawn before anything was sent
 	T3_RES_DIVERTED,	// the called party's calls are diverted: divert_to (6.6.1.3 a 2)
+	T3_RES_UNMAPPED,	// granted on a channel no plan or row knows (st.last_unmapped)
 } t3_res_t;
 
 typedef enum { T3_AX_IDLE, T3_AX_WAIT_SLOT, T3_AX_WAIT_RESP, T3_AX_ACKED } t3_ax_state_t;

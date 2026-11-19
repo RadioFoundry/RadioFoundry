@@ -2989,7 +2989,8 @@ static bool run_token(char *t, char *err, size_t len)
 		return true;
 	}
 	// hunt, other (hunting, another system heard), denyother (PTT refused for it), regrefused,
-	// denyreg (PTT refused for it), follow, refused, fallback, back
+	// denyreg (PTT refused for it), denyunmapped (PTT: the grant named channel 311, which no row lists), follow,
+	// refused, fallback, back
 	if (strcmp(t, "t3state") == 0 && arg != NULL && view.t3.sys != 0) {
 		view.t3.on = true;
 		view.t3.fallback = 0;
@@ -3016,6 +3017,11 @@ static bool run_token(char *t, char *err, size_t len)
 				view.tx_deny = TXDENY_TRUNK;
 				view.t3.why = RADIO_TRUNK_WHY_REG_REFUSED;
 			}
+		} else if (strcmp(arg, "denyunmapped") == 0) {
+			view.state = RS_TX_DENIED;
+			view.tx_deny = TXDENY_TRUNK;
+			view.t3.why = RADIO_TRUNK_WHY_UNMAPPED;
+			view.t3.unmapped = 311;
 		} else if (strcmp(arg, "follow") == 0) {
 			view.t3.state = T3_FOLLOW;
 		} else if (strcmp(arg, "refused") == 0) {

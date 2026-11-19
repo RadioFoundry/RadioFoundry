@@ -255,6 +255,7 @@ typedef struct {
 	uint16_t other;		// searching: C_SYScode of another system heard (t3_ms_other), 0 none
 	uint8_t why;		// RADIO_TRUNK_WHY_* of the last PTT refused (TXDENY_TRUNK)
 	bool refused;		// the system refused the registration (t3_ms_reg_refused)
+	uint16_t unmapped;	// the channel (LPCN) of the last grant no plan or row knew, 0 none
 } radio_t3_brief_t;
 
 // ... and all of it, for the debug link: radio_get_t3_view, one copy (the view itself is copied by every task)

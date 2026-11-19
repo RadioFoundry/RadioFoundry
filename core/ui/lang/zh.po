@@ -4640,6 +4640,11 @@ msgid "Registration refused"
 msgstr "注册已拒绝"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_WHY_TRUNK_UNMAPPED"
+msgid "Unknown channel "
+msgstr "无此信道 "
+
+#: core/ui/ui_screens.c
 msgctxt "DENY_WHY_NOT_ALLOWED"
 msgid "Not allowed here"
 msgstr "此处不允许"
