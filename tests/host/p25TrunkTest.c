@@ -328,7 +328,7 @@ static void testChannels(void)
 #define HZ_CC1		851031250u	// iden 1 channel 4
 #define HZ_CC2		851050000u	// programmed only by frequency
 #define HZ_VA		851068750u	// iden 1 channel 10
-#define WACN		0xBEE00u
+#define WACN		0xA4C21u
 #define SYSID		0x2F3u
 #define NAC		0x293u
 #define OUR_UNIT	10001u
@@ -400,6 +400,7 @@ static void unit_duid(p25_follow_t *f, uint8_t duid)
 	p25_follow_unit(f, &u, now_ms);
 }
 static bool cc_alive;	// the control channel keeps sending (a network status block every 200 ms)
+static uint32_t cc_wacn = WACN;	// ... naming this WACN
 static void run_ms(p25_follow_t *f, uint32_t ms)
 {
 	for (uint32_t end = now_ms + ms; now_ms < end;) {
@@ -407,7 +408,7 @@ static void run_ms(p25_follow_t *f, uint32_t ms)
 		if (cc_alive && now_ms % 200 == 0 && f->view.state == P25_FOLLOW_CONTROL) {
 			uint8_t b[P25_TSBK_BYTES];
 
-			mk_net(b, WACN, SYSID);
+			mk_net(b, cc_wacn, SYSID);
 			p25_follow_tsbk(f, b, NAC, now_ms);
 		}
 		p25_follow_tick(f, now_ms);
@@ -1092,6 +1093,146 @@ static void testAccess(void)
 	cc_alive = false;
 }
 
+// Nothing goes out on a control channel before its network status broadcast verified the WACN and system ID
+// (TIA-102.AABD-B 5), and nothing at all on a system whose WACN is $BEE00: not registration, not a request, and no
+// answer or later broadcast lifts it until the follower restarts
+static void site_ident_w(p25_follow_t *f, uint32_t wacn, uint8_t site)
+{
+	uint8_t b[P25_TSBK_BYTES];
+
+	mk_net(b, wacn, SYSID);
+	p25_follow_tsbk(f, b, NAC, now_ms);
+	mk_rfss(b, P25_TSBK_RFSS, SYSID, site, 0x1004);
+	p25_follow_tsbk(f, b, NAC, now_ms);
+}
+
+static void testWacnBlocked(void)
+{
+	static const p25_follow_cc_t cc[] = { { .hz = HZ_CC1, .chan = 0x1004, .site = 3 } };
+	static const p25_follow_iden_t iden[P25_FOLLOW_IDENS] = {
+		[1] = { .base_hz = 851006250u, .spacing_hz = 6250, .tx_off_hz = -45000000 } };
+	static p25_follow_t f;
+	p25_follow_cfg_t cfg = { .wacn = P25_FOLLOW_WACN_ANY, .sysid = SYSID, .nac = NAC, .flags = P25_FOLLOW_TX,
+				 .unit_id = OUR_UNIT, .talk_group = 100, .ncc = 1, .cc = cc, .iden_set = 1u << 1, .iden = iden };
+	uint8_t b[P25_TSBK_BYTES];
+	p25_follow_view_t v;
+	unsigned n;
+
+	// The site's RFSS status alone holds the control channel (any WACN) but sends nothing, PTT included
+	ntunes = nsends = 0;
+	now_ms = 20000;
+	cc_alive = false;
+	p25_follow_begin(&f, &cfg, &ahooks, NULL, now_ms);
+	retune(&f);
+	p25_follow_ptt(&f, true, now_ms);
+	for (unsigned k = 0; k < 20; k++) {
+		mk_rfss(b, P25_TSBK_RFSS, SYSID, 3, 0x1004);
+		p25_follow_tsbk(&f, b, NAC, now_ms);
+		run_ms(&f, 200);
+	}
+	v = view(&f);
+	CHECK(v.state == P25_FOLLOW_CONTROL && nsends == 0 && !v.sys_ok && v.reg == P25_REG_IDLE &&
+	      p25_follow_can_talk(&v, cfg.flags) == P25_TALK_NO_CC, "no network status: silent (%u sent, reg %u)", nsends, v.reg);
+	p25_follow_ptt(&f, false, now_ms);
+	// The network status broadcast verifies it: registration, affiliation, ready
+	site_ident_w(&f, WACN, 3);
+	cc_alive = true;
+	run_ms(&f, 300);
+	CHECK(nsends == 1 && last_isp().opcode == P25_ISP_U_REG_REQ && view(&f).sys_ok, "verified: registers (%u)", nsends);
+	answer_reg(&f, P25_RV_ACCEPT);
+	run_ms(&f, 200);
+	answer_aff(&f, P25_RV_ACCEPT, 100);
+	CHECK(view(&f).reg == P25_REG_READY && nsends == 2, "ready");
+
+	// The control channel held turns to $BEE00: blocked, a request in hand dropped, answers and PTT change nothing
+	p25_follow_ptt(&f, true, now_ms);
+	hold_request(&f);
+	n = nsends;
+	cc_wacn = P25_WACN_NO_TX;
+	mk_net(b, cc_wacn, SYSID);
+	p25_follow_tsbk(&f, b, NAC, now_ms);
+	v = view(&f);
+	CHECK(v.reg == P25_REG_BLOCKED && v.req == P25_REQ_IDLE && !v.sys_ok && p25_follow_can_talk(&v, cfg.flags) == P25_TALK_BLOCKED,
+	      "$BEE00: blocked (reg %u req %u)", v.reg, v.req);
+	run_ms(&f, 15000);
+	answer_reg(&f, P25_RV_ACCEPT);
+	answer_aff(&f, P25_RV_ACCEPT, 100);
+	p25_follow_ptt(&f, false, now_ms);
+	p25_follow_ptt(&f, true, now_ms);
+	run_ms(&f, 5000);
+	CHECK(nsends == n && view(&f).reg == P25_REG_BLOCKED, "blocked: nothing sent (%u)", nsends - n);
+	// Another WACN later, the control channel lost and found again: still blocked until a restart
+	cc_wacn = WACN;
+	run_ms(&f, 1000);
+	cc_alive = false;
+	run_ms(&f, P25_FOLLOW_CC_LOST_MS + 50);
+	retune(&f);
+	site_ident_w(&f, WACN, 4);
+	cc_alive = true;
+	run_ms(&f, 3000);
+	v = view(&f);
+	CHECK(nsends == n && v.reg == P25_REG_BLOCKED && p25_follow_can_talk(&v, cfg.flags) == P25_TALK_BLOCKED,
+	      "latched until restart (%u sent)", nsends - n);
+	p25_follow_ptt(&f, false, now_ms);
+	p25_follow_end(&f);
+
+	// Requests without registration: $BEE00 heard first, nothing goes out
+	cfg.flags = P25_FOLLOW_TX | P25_FOLLOW_NO_REG;
+	nsends = 0;
+	cc_wacn = P25_WACN_NO_TX;
+	p25_follow_begin(&f, &cfg, &ahooks, NULL, now_ms);
+	retune(&f);
+	site_ident_w(&f, P25_WACN_NO_TX, 3);
+	p25_follow_ptt(&f, true, now_ms);
+	run_ms(&f, 5000);
+	v = view(&f);
+	CHECK(nsends == 0 && v.reg == P25_REG_BLOCKED && v.req == P25_REQ_IDLE && p25_follow_can_talk(&v, cfg.flags) == P25_TALK_BLOCKED,
+	      "no registration, $BEE00: silent (%u)", nsends);
+	p25_follow_ptt(&f, false, now_ms);
+	p25_follow_end(&f);
+
+	// The system programmed as $BEE00: blocked before a block is heard, and on its control channel
+	cfg.flags = P25_FOLLOW_TX;
+	cfg.wacn = P25_WACN_NO_TX;
+	p25_follow_begin(&f, &cfg, &ahooks, NULL, now_ms);
+	v = view(&f);
+	CHECK(v.reg == P25_REG_BLOCKED && p25_follow_can_talk(&v, cfg.flags) == P25_TALK_BLOCKED, "programmed $BEE00: blocked");
+	retune(&f);
+	site_ident_w(&f, P25_WACN_NO_TX, 3);
+	p25_follow_ptt(&f, true, now_ms);
+	run_ms(&f, 5000);
+	CHECK(view(&f).state == P25_FOLLOW_CONTROL && nsends == 0 && view(&f).reg == P25_REG_BLOCKED,
+	      "programmed $BEE00: followed, silent (%u)", nsends);
+	p25_follow_ptt(&f, false, now_ms);
+	p25_follow_end(&f);
+
+	// Started blocked by the caller (the system named $BEE00 since power on): silent though the WACN is another now
+	cfg.wacn = P25_FOLLOW_WACN_ANY;
+	cfg.flags = P25_FOLLOW_TX | P25_FOLLOW_BLOCKED;
+	cc_wacn = WACN;
+	p25_follow_begin(&f, &cfg, &ahooks, NULL, now_ms);
+	retune(&f);
+	site_ident_w(&f, WACN, 3);
+	p25_follow_ptt(&f, true, now_ms);
+	run_ms(&f, 5000);
+	v = view(&f);
+	CHECK(nsends == 0 && v.reg == P25_REG_BLOCKED && p25_follow_can_talk(&v, cfg.flags) == P25_TALK_BLOCKED,
+	      "started blocked: silent (%u)", nsends);
+	p25_follow_ptt(&f, false, now_ms);
+	p25_follow_end(&f);
+
+	// A restart on another system: registers as usual
+	cfg.flags = P25_FOLLOW_TX;
+	cc_wacn = WACN;
+	p25_follow_begin(&f, &cfg, &ahooks, NULL, now_ms);
+	retune(&f);
+	site_ident_w(&f, WACN, 3);
+	run_ms(&f, 300);
+	CHECK(nsends == 1 && last_isp().opcode == P25_ISP_U_REG_REQ, "restart, another system: registers (%u)", nsends);
+	p25_follow_end(&f);
+	cc_alive = false;
+}
+
 static void testFollowOptions(void)
 {
 	static const uint16_t groups[] = { 200 };
@@ -1771,6 +1912,7 @@ int main(void)
 	testFollowOptions();
 	testAccess();
 	testAccessEarlyAnswers();
+	testWacnBlocked();
 	testFuzz();
 	testAirSystem();
 	testAirLoss();

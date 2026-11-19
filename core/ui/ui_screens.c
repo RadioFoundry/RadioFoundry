@@ -1027,6 +1027,9 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treq == P25_REQ_DENIED) {
 			sb_str(&b, TR(HOME_STATE_P25T_DENIED, "Denied"));
 			c = ui_col.warn;
+		} else if (txs && v->p25.treg == P25_REG_BLOCKED) {
+			sb_str(&b, TR(HOME_STATE_P25T_WACN_BLOCKED, "WACN blocked"));
+			c = ui_col.warn;
 		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treg == P25_REG_DENIED) {
 			sb_str(&b, TR(HOME_STATE_P25T_REG_DENIED, "Reg. denied"));
 			c = ui_col.warn;
@@ -1271,6 +1274,7 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 		case RADIO_P25T_WHY_DENIED: sb_str(&b, TR(DENY_WHY_P25T_DENIED, "System denied the call")); break;
 		case RADIO_P25T_WHY_NO_ANSWER: sb_str(&b, TR(DENY_WHY_P25T_NO_ANSWER, "No answer from system")); break;
 		case RADIO_P25T_WHY_NO_CHAN: sb_str(&b, TR(DENY_WHY_P25T_NO_CHAN, "Voice channel unusable")); break;
+		case RADIO_P25T_WHY_BLOCKED: sb_str(&b, TR(DENY_WHY_P25T_WACN_BLOCKED, "WACN BEE00: no TX")); break;
 		default: sb_str(&b, TR(DENY_WHY_RX_ONLY, "This channel is RX only")); break;
 		}
 		break;

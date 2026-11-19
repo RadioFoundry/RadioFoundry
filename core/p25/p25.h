@@ -35,6 +35,9 @@
 #define P25_NAC_ANY		0xF7E	// a receiver set to it takes every NAC
 #define P25_NAC_REPEAT_ANY	0xF7F	// a repeater set to it takes every NAC and sends it on as received
 
+// A system whose WACN is this gets no transmission from the radio, of any kind, however it is heard or programmed
+#define P25_WACN_NO_TX		0xBEE00u
+
 // Status symbols (table 8-2). A subscriber sends only P25_SS_TALKAROUND or P25_SS_UNKNOWN
 #define P25_SS_BUSY		1	// 01: the inbound channel is busy (a repeater says)
 #define P25_SS_TALKAROUND	0	// 00

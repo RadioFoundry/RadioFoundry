@@ -312,6 +312,7 @@ static struct {
 	uint8_t out[P25_TSBK_BYTES];	// an answer, sent as the first block of the next out_reps units
 	uint8_t out_reps;
 	uint8_t grant_after;		// a queued request: units until its grant
+	uint32_t wacn;			// the WACN its network status names, 0: TS_WACN
 } site;
 enum { SITE_ANS_ACCEPT, SITE_ANS_DENY, SITE_ANS_NONE, SITE_ANS_QUEUE };
 static void site_chunk(uint8_t *syms);
@@ -7212,7 +7213,7 @@ static void test_p25_stored(void)
 
 #if CONFIG_P25_TRUNK
 // ---- P25 trunked (docs/spec/p25-trunking.md 7): a site on the fake air (site above), the far radio its voice ----
-#define TS_WACN		0xBEE00u
+#define TS_WACN		0xA4C21u
 #define TS_SYSID	0x2F3u
 #define TS_NAC		0x293u
 #define TS_BASE		451000000u	// identifier 1: 12.5 kHz channels from here
@@ -7253,7 +7254,7 @@ static void site_unit(void)
 		case 0:
 			m.kind = P25_TSBK_NET;
 			m.u.net.lra = 1;
-			m.u.net.wacn = TS_WACN;
+			m.u.net.wacn = site.wacn != 0 ? site.wacn : TS_WACN;
 			m.u.net.sysid = TS_SYSID;
 			m.u.net.ch = 0x1001;
 			break;
@@ -7428,7 +7429,7 @@ static void test_p25_trunk(void)
 	CHECK(v->trunk == RADIO_P25_TRUNK_CONTROL && hw.rx_hz == TS_CC1 && sm.view.state == RS_IDLE);
 	p25t_view_text(buf, sizeof buf);
 	CHECK(strstr(buf, "p25t.built=1\np25t.on=1\np25t.state=2\np25t.cc=0\n") != NULL);
-	CHECK(strstr(buf, "p25t.nac=659\np25t.wacn=781824\np25t.sysid=755\np25t.rfss=1\np25t.site=7\n") != NULL);
+	CHECK(strstr(buf, "p25t.nac=659\np25t.wacn=674849\np25t.sysid=755\np25t.rfss=1\np25t.site=7\n") != NULL);
 	CHECK(strstr(buf, "p25t.blocks=0\n") == NULL && strstr(buf, "p25t.crc_fail=0\n") != NULL);
 	p25_view_text(buf, sizeof buf);
 	CHECK(strstr(buf, "p25.run.rx_nac=659\n") != NULL && strstr(buf, "p25.run.unit_id=4321\n") != NULL);
@@ -7689,6 +7690,68 @@ static void test_p25_trunk_tx(void)
 	site.on = false;
 }
 
+// A system heard naming WACN $BEE00 gets nothing from the radio until power off: not on this visit, not when the
+// channel is left and taken again, not when the site later names another WACN. Power on again forgets it
+static void test_p25_trunk_wacn_nogo(void)
+{
+	const radio_p25_view_t *v = &sm.view.p25;
+	int keyed;
+
+	setup_codeplug_p25();
+	add(3, "P25T sys", TS_CC1, RADIO_MODE_DMR, false, 2);
+	chans[3].kind = CODEPLUG_KIND_P25_TRUNK;
+	chans[3].system = 0;
+	memset(&stored_trunk, 0, sizeof stored_trunk);
+	stored_trunk.sys = (p25_tsys_t){ .wacn = P25_CP_WACN_ANY, .sysid = TS_SYSID, .cc_nac = TS_NAC };
+	stored_trunk.unit_id = 4321;
+	stored_trunk.ctl_count = 1;
+	stored_trunk.ctl[0] = (p25_ctl_t){ .chan = 0x1001, .rx_hz = TS_CC1 };
+	stored_trunk.ctl_site[0] = 7;
+	stored_trunk.iden_set = 1u << 1;
+	stored_trunk.iden[1] = (p25_iden_t){ .base_hz = TS_BASE, .spacing_hz = 12500, .tx_offset_hz = TS_OFFSET,
+					     .type = P25_IDEN_FDMA };
+	stored_trunk.talk_group = 201;
+	memset(&site, 0, sizeof site);
+	site.cc_hz = TS_CC1;
+	site.cc_in_hz = TS_CC1 + TS_OFFSET;
+	site.voice_hz = TS_VOICE;
+	site.ans_reg = site.ans_aff = site.ans_req = SITE_ANS_ACCEPT;
+	site.wacn = P25_WACN_NO_TX;
+	site.on = true;
+	start();
+	p25_defaults();
+
+	req(RREQ_ZONE_POS, 2);
+	keyed = hw.tx_calls;
+	run(4000);
+	CHECK(v->trunk == RADIO_P25_TRUNK_CONTROL && v->treg == P25_REG_BLOCKED && site.reg_rx == 0 && hw.tx_calls == keyed);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_P25T_WHY_BLOCKED &&
+	      hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	run(1000);
+	// Left and taken again, the site naming another WACN now: still nothing
+	site.wacn = TS_WACN;
+	req(RREQ_ZONE_POS, 0);
+	run(500);
+	req(RREQ_ZONE_POS, 2);
+	run(P25_ACC_RETRY_MS + 4000);
+	CHECK(v->trunk == RADIO_P25_TRUNK_CONTROL && v->treg == P25_REG_BLOCKED && site.reg_rx == 0 &&
+	      hw.tx_calls == keyed && !hw.keyed);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_P25T_WHY_BLOCKED && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	req(RREQ_ZONE_POS, 0);
+	// Power on again: forgotten, it registers
+	start();
+	p25_defaults();
+	req(RREQ_ZONE_POS, 2);
+	run(4000);
+	CHECK(site.reg_rx >= 1 && v->treg == P25_REG_READY);
+	req(RREQ_ZONE_POS, 0);
+	site.on = false;
+}
+
 #endif
 
 static void test_p25(void)
@@ -7696,6 +7759,7 @@ static void test_p25(void)
 #if CONFIG_P25_TRUNK
 	test_p25_trunk();
 	test_p25_trunk_tx();
+	test_p25_trunk_wacn_nogo();
 #endif
 	test_p25_rx();
 	test_p25_stored();

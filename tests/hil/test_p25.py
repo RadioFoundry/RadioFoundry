@@ -652,7 +652,7 @@ def test_p25_trunk_follow(radio, pytestconfig):
 
 # --- A trunked channel with transmit on, against a control channel the bench plays (p25-trunking.md 5, 8) ---
 
-SITE_NAC, SITE_WACN, SITE_SYSID = "293", "BEE00", "2F3"
+SITE_NAC, SITE_WACN, SITE_SYSID = "293", "A4C21", "2F3"
 SPACING_HZ = 6250
 PLAY_S = 7.0                # one keying of the bench's control channel: inside a bench board's key time
 TRUNK_PTT_S = 2.0

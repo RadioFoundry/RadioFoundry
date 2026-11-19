@@ -38,6 +38,7 @@ typedef struct {
 	// PTT and the end of our transmission, for the follower at the radio task's next turn inside it
 	bool ptt, talk_end;
 	uint8_t ptt_seq, ptt_done;
+	bool nogo_kept;			// this system's control channels are in nogo_hz
 } p25_trunk_t;
 _Static_assert(P25_CP_IDEN_MAX == P25_FOLLOW_IDENS, "one identifier plan size");
 _Static_assert(RADIO_P25_TRUNK_HUNT == P25_FOLLOW_HUNT && RADIO_P25_TRUNK_CONTROL == P25_FOLLOW_CONTROL &&
@@ -91,12 +92,52 @@ static bool trunk;			// the engine runs a trunked channel
 static radio_p25_trunk_view_t tview;	// the radio task's copy, for any task
 static uint8_t twhy;			// RADIO_P25T_WHY_* of the last PTT refused or request failed
 static bool ttx;			// the follower's transmit side is on
+
+// Control channels of systems heard naming P25_WACN_NO_TX since power on (RAM only, cleared by radio_p25_init): a
+// trunked channel with any of them starts with its transmit side blocked (P25_FOLLOW_BLOCKED). With the table full,
+// every trunked channel does
+#define NOGO_MAX	32u
+static uint32_t nogo_hz[NOGO_MAX];
+static uint8_t nogo_n;
+static bool nogo_full;
+
+static bool nogo_has(uint32_t hz)
+{
+	for (uint8_t i = 0; i < nogo_n; i++)
+		if (nogo_hz[i] == hz)
+			return true;
+	return false;
+}
+
+static void nogo_add(uint32_t hz)
+{
+	if (hz == 0 || nogo_has(hz))
+		return;
+	if (nogo_n == NOGO_MAX) {
+		nogo_full = true;
+		return;
+	}
+	nogo_hz[nogo_n++] = hz;
+}
+
+// The follower blocked this system: its programmed control channels and the one held, for the rest of this power on
+static void nogo_keep(p25_trunk_t *t)
+{
+	for (uint8_t i = 0; i < t->cfg.ncc; i++)
+		nogo_add(t->cc[i].hz);
+	nogo_add(tview.v.cc_hz);
+	t->nogo_kept = true;
+}
 #endif
 
 void radio_p25_init(const hal_audio_t *audio)
 {
 	set = defaults;
 	mem = NULL;
+#if CONFIG_P25_TRUNK
+	nogo_n = 0;
+	nogo_full = false;
+#endif
 #if CONFIG_IMBE
 	p25VoiceInit(audio);
 #else
@@ -322,6 +363,12 @@ static void trunk_params(p25_trunk_t *t, const p25_trunk_cfg_t *l, bool tx, p25_
 						  .tdma = l->iden[i].type == P25_IDEN_TDMA };
 	c->iden = t->iden;
 	c->hold_ms = (uint32_t)l->sys.hold_s * 1000u;	// 0: no hold
+	t->nogo_kept = false;
+	if (nogo_full)
+		c->flags |= P25_FOLLOW_BLOCKED;
+	for (uint8_t i = 0; i < c->ncc; i++)
+		if (nogo_has(t->cc[i].hz))
+			c->flags |= P25_FOLLOW_BLOCKED;
 
 	memset(cfg, 0, sizeof(*cfg));
 	cfg->silence = SILENCE;
@@ -382,6 +429,8 @@ static void trunk_service(p25_mem_t *m)
 	p25_follow_view(&t->f, &tview.v);
 	__atomic_signal_fence(__ATOMIC_SEQ_CST);
 	tview.seq++;
+	if (tview.v.reg == P25_REG_BLOCKED && !t->nogo_kept)
+		nogo_keep(t);
 }
 
 void radio_p25_trunk_view(radio_p25_trunk_view_t *out)
@@ -411,7 +460,9 @@ bool radio_p25_trunk_tx(void)
 
 uint8_t radio_p25_trunk_ptt(bool down)
 {
-	static const uint8_t WHY[] = { RADIO_P25T_WHY_NONE, RADIO_P25T_WHY_OFF, RADIO_P25T_WHY_NO_CC, RADIO_P25T_WHY_NOT_REG };
+	// By P25_TALK_*
+	static const uint8_t WHY[] = { RADIO_P25T_WHY_NONE, RADIO_P25T_WHY_OFF, RADIO_P25T_WHY_NO_CC, RADIO_P25T_WHY_NOT_REG,
+				       RADIO_P25T_WHY_BLOCKED };
 	p25_trunk_t *t;
 	uint8_t why = RADIO_P25T_WHY_OFF;
 
@@ -458,8 +509,9 @@ uint8_t radio_p25_trunk_talk(uint32_t *hz)
 		twhy = RADIO_P25T_WHY_NO_ANSWER;
 		break;
 	default:
-		// Not taken (the follower lost the control channel or the registration meanwhile)
-		twhy = tview.v.state == P25_FOLLOW_HUNT ? RADIO_P25T_WHY_NO_CC : RADIO_P25T_WHY_NOT_REG;
+		// Not taken (the follower lost the control channel or the registration meanwhile, or blocked the system)
+		twhy = tview.v.reg == P25_REG_BLOCKED ? RADIO_P25T_WHY_BLOCKED :
+		       tview.v.state == P25_FOLLOW_HUNT ? RADIO_P25T_WHY_NO_CC : RADIO_P25T_WHY_NOT_REG;
 		break;
 	}
 	return RADIO_P25T_FAIL;

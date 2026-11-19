@@ -4468,6 +4468,11 @@ msgid "Denied"
 msgstr "Negato"
 
 #: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_WACN_BLOCKED"
+msgid "WACN blocked"
+msgstr "WACN bloccato"
+
+#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_P25T_REG_DENIED"
 msgid "Reg. denied"
 msgstr "Reg. negata"
@@ -4626,6 +4631,11 @@ msgstr "Sistema non risponde"
 msgctxt "DENY_WHY_P25T_NO_CHAN"
 msgid "Voice channel unusable"
 msgstr "Canale voce inutilizzabile"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_P25T_WACN_BLOCKED"
+msgid "WACN BEE00: no TX"
+msgstr "WACN BEE00: no TX"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_NOT_ALLOWED"

@@ -4468,6 +4468,11 @@ msgid "Denied"
 msgstr "Refusé"
 
 #: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_WACN_BLOCKED"
+msgid "WACN blocked"
+msgstr "WACN bloqué"
+
+#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_P25T_REG_DENIED"
 msgid "Reg. denied"
 msgstr "Enreg. refusé"
@@ -4626,6 +4631,11 @@ msgstr "Pas de réponse système"
 msgctxt "DENY_WHY_P25T_NO_CHAN"
 msgid "Voice channel unusable"
 msgstr "Canal voix inutilisable"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_P25T_WACN_BLOCKED"
+msgid "WACN BEE00: no TX"
+msgstr "WACN BEE00 : TX interdit"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_NOT_ALLOWED"

@@ -4470,6 +4470,11 @@ msgid "Denied"
 msgstr "已拒绝"
 
 #: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_WACN_BLOCKED"
+msgid "WACN blocked"
+msgstr "WACN 已禁止"
+
+#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_P25T_REG_DENIED"
 msgid "Reg. denied"
 msgstr "注册已拒绝"
@@ -4628,6 +4633,11 @@ msgstr "网络无应答"
 msgctxt "DENY_WHY_P25T_NO_CHAN"
 msgid "Voice channel unusable"
 msgstr "话音信道不可用"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_P25T_WACN_BLOCKED"
+msgid "WACN BEE00: no TX"
+msgstr "WACN BEE00：禁止发射"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_NOT_ALLOWED"

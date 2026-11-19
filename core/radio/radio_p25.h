@@ -55,6 +55,7 @@ enum {
 	RADIO_P25T_WHY_DENIED,		// the system denied the request
 	RADIO_P25T_WHY_NO_ANSWER,	// no grant came
 	RADIO_P25T_WHY_NO_CHAN,		// granted on a channel this radio can't transmit on
+	RADIO_P25T_WHY_BLOCKED,		// the system's WACN is P25_WACN_NO_TX: never transmitted on
 };
 
 // The radio view's part (radio_view_t.p25): the call heard now, or the last one

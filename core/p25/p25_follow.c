@@ -364,6 +364,17 @@ static void acc_drop(p25_follow_t *f)
 	f->acc.sent = false;
 }
 
+// P25_WACN_NO_TX: the transmit side goes silent until p25_follow_begin, whatever is heard or answered later
+static void wacn_block(p25_follow_t *f)
+{
+	f->blocked = true;
+	f->view.sys_ok = false;
+	f->view.reg = P25_REG_BLOCKED;
+	if (f->view.req == P25_REQ_WAIT || f->view.req == P25_REQ_QUEUED)
+		f->view.req = P25_REQ_IDLE;
+	acc_drop(f);
+}
+
 static void denied(p25_follow_t *f, uint8_t svc, uint8_t reason)
 {
 	f->view.deny_svc = svc;
@@ -404,6 +415,7 @@ static void acc_lost(p25_follow_t *f)
 
 	a->site_heard = false;
 	a->cc_chan = 0;
+	f->view.sys_ok = false;	// (the next control channel is verified again)
 	f->view.rfss = f->view.site = 0xFF;
 	if (f->view.req == P25_REQ_WAIT || f->view.req == P25_REQ_QUEUED)
 		f->view.req = P25_REQ_TIMEOUT;
@@ -419,7 +431,7 @@ static void acc_site(p25_follow_t *f)
 	uint8_t r = f->view.reg;
 
 	a->site_heard = true;
-	if (r == P25_REG_OFF || r == P25_REG_IDLE || r == P25_REG_NO_TX)
+	if (f->blocked || r == P25_REG_OFF || r == P25_REG_IDLE || r == P25_REG_NO_TX)
 		return;
 	if (a->reg_site == 0xFF) {
 		// Registration began before the site was heard: it is this one
@@ -443,6 +455,13 @@ static void acc_send(p25_follow_t *f, uint32_t now)
 	uint8_t blk[P25_TSBK_BYTES];
 	p25_isp_t m;
 
+	// (acc_tick sends nothing in either case; this is the last door before the air)
+	if (f->blocked) {
+		acc_drop(f);
+		return;
+	}
+	if (!f->view.sys_ok)
+		return;
 	if (!hz) {
 		if (a->pend == P25_ISP_GRP_V_REQ)
 			f->view.req = P25_REQ_NO_CHAN;
@@ -489,10 +508,10 @@ static void acc_tick(p25_follow_t *f, uint32_t now)
 {
 	p25_follow_acc_t *a = &f->acc;
 
-	if (!tx_on(f))
+	if (!tx_on(f) || f->blocked)
 		return;
 	if (!(f->cfg->flags & P25_FOLLOW_NO_REG)) {
-		if (f->view.reg == P25_REG_IDLE && (a->site_heard || elapsed(now, a->t_cc, P25_ACC_SITE_MS))) {
+		if (f->view.reg == P25_REG_IDLE && f->view.sys_ok && (a->site_heard || elapsed(now, a->t_cc, P25_ACC_SITE_MS))) {
 			reg_start(f, now);
 		} else if (f->view.reg == P25_REG_RETRY && elapsed(now, a->t_sent, a->backoff)) {
 			a->backoff = a->backoff * 2 > P25_ACC_RETRY_MAX ? P25_ACC_RETRY_MAX : a->backoff * 2;
@@ -515,7 +534,8 @@ static void acc_tick(p25_follow_t *f, uint32_t now)
 		return;
 	}
 	// Sent only after a block of this channel was heard since the tune, so its status symbols are known
-	if ((int32_t)(now - a->t_next) < 0 || !a->heard)
+	// ... and, on this control channel, after its network status broadcast verified the system (TIA-102.AABD-B 5)
+	if ((int32_t)(now - a->t_next) < 0 || !a->heard || !f->view.sys_ok)
 		return;
 	if (a->busy) {
 		count8(&f->view.inb_busy);
@@ -538,6 +558,8 @@ static void acc_block(p25_follow_t *f, const p25_tsbk_t *m, uint32_t now)
 	const p25_follow_cfg_t *c = f->cfg;
 	p25_follow_acc_t *a = &f->acc;
 
+	if (f->blocked)
+		return;
 	switch (m->kind) {
 	case P25_TSBK_REG_RSP:
 		if (m->u.reg.id != c->unit_id || f->view.reg != P25_REG_WAIT || !acc_asked(f, P25_ISP_U_REG_REQ))
@@ -694,6 +716,10 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 			hunt_start(f, now);
 			return;
 		}
+		if (m.u.net.wacn == P25_WACN_NO_TX)
+			wacn_block(f);
+		else if (!f->blocked)
+			f->view.sys_ok = true;
 		f->view.wacn = m.u.net.wacn;
 		f->view.sysid = m.u.net.sysid;
 		f->acc.cc_chan = m.u.net.ch;
@@ -781,6 +807,10 @@ void p25_follow_begin(p25_follow_t *f, const p25_follow_cfg_t *cfg, const p25_fo
 	if (!f->acc.rng)
 		f->acc.rng = 1;
 	f->view.reg = !tx_on(f) || (cfg->flags & P25_FOLLOW_NO_REG) ? P25_REG_OFF : P25_REG_IDLE;
+	if (cfg->wacn == P25_WACN_NO_TX || (cfg->flags & P25_FOLLOW_BLOCKED)) {
+		f->blocked = true;
+		f->view.reg = P25_REG_BLOCKED;
+	}
 	f->view.deny_svc = 0xFF;
 	f->seq = 1;
 	hunt_start(f, now);
@@ -965,7 +995,9 @@ uint8_t p25_follow_can_talk(const p25_follow_view_t *v, uint8_t flags)
 {
 	if (!(flags & P25_FOLLOW_TX) || v->reg == P25_REG_NO_TX)
 		return P25_TALK_OFF;
-	if (v->state != P25_FOLLOW_CONTROL && v->state != P25_FOLLOW_VOICE)
+	if (v->reg == P25_REG_BLOCKED)
+		return P25_TALK_BLOCKED;
+	if ((v->state != P25_FOLLOW_CONTROL && v->state != P25_FOLLOW_VOICE) || !v->sys_ok)
 		return P25_TALK_NO_CC;
 	if (!(flags & P25_FOLLOW_NO_REG) && v->reg != P25_REG_READY)
 		return P25_TALK_NOT_REG;
