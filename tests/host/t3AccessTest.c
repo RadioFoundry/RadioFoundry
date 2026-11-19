@@ -563,8 +563,19 @@ static void test_refused_denied(void)
 	n = ack(T3_OP_C_ACKD, T3_RC_REG_REFUSED, OWN, T3_ID_REGI);
 	rx(&ms, 1, &n);
 	CHECK(ms.reg == T3_REG_NEEDED && ms.state == T3_HUNT && ms.ax.result == T3_RES_REFUSED, "refused: hunt");
+	CHECK(t3_ms_reg_refused(&ms), "refused: shown while hunting");
 	frames(&ms, 600);
 	CHECK(ms.state == T3_CAMPED && ms.reg == T3_REG_NEEDED, "refused: back, still needed");
+	CHECK(t3_ms_reg_refused(&ms), "refused: shown while registering again");
+	nsent = 0;
+	for (int i = 0; i < 2000 && nsent == 0; i++) {
+		frame(&ms);
+	}
+	CHECK(nsent > 0 && sent[nsent - 1].op == T3_OP_C_RAND && sent[nsent - 1].u.rand.kind == T3_SK_REGISTRATION,
+	      "refused: asks again");
+	n = ack(T3_OP_C_ACKD, T3_RC_REG_ACCEPTED, OWN, T3_ID_REGI);
+	rx(&ms, 1, &n);
+	CHECK(ms.reg == T3_REG_OK && !t3_ms_reg_refused(&ms), "accepted: no longer shown, reg %s", t3_reg_name(ms.reg));
 }
 
 static void test_permission(void)
@@ -857,6 +868,25 @@ static void test_private_call(void)
 	rx(&ms, 1, &a);
 	CHECK(ms.ax.result == T3_RES_DONE, "call back: done");
 
+	// Message_Accepted to a group call request: not an answer that ends it; the grant still comes
+	CHECK(t3_ms_request(&ms, T, TG_A, true, false), "group call");
+	frames(&ms, 2);
+	a = ack(T3_OP_C_ACKD, T3_RC_MESSAGE_ACCEPTED, OWN, TG_A);
+	rx(&ms, 1, &a);
+	CHECK(ms.ax.state == T3_AX_ACKED && ms.state == T3_CAMPED, "message accepted: still waiting for the grant");
+	g = grant(T3_OP_TV_GRANT, 999, 2, TG_A, OWN);
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_FOLLOW && ms.call.ours && ms.ax.result == T3_RES_GRANTED, "then granted: follows");
+	t3_ms_end_call(&ms, T);
+	frames(&ms, 6);
+	// ... and with no grant, TP_Timer ends it as unanswered
+	CHECK(t3_ms_request(&ms, T, TG_A, true, false), "group call again");
+	frames(&ms, 2);
+	rx(&ms, 1, &a);
+	frames(&ms, (int)(T3_TP_MS / 60u) + 20);
+	CHECK(ms.ax.state == T3_AX_IDLE && ms.ax.result != T3_RES_DONE && ms.ax.result != T3_RES_GRANTED,
+	      "message accepted, no grant: not done, result %s", t3_res_name(ms.ax.result));
+
 	// TP_Timer after a wait
 	CHECK(t3_ms_request(&ms, T, CALLER, false, false), "again");
 	frames(&ms, 2);
@@ -992,6 +1022,46 @@ static void test_receive_rules(void)
 	b.u.bcast.backoff = 11;
 	rx(&ms, 1, &b);
 	CHECK(ms.aloha.backoff == 11, "C_BCAST backoff kept");
+}
+
+// A one-carrier site whose control channel row was typed with a site tool's number: tools that count each timeslot as
+// a channel call LPCN 311 "623" (slot 1) and "624" (slot 2). The grant names 311; the row is found under that
+// numbering, either slot. A row that matches neither way: the radio's own call ends at once as unmapped, not at
+// TP_Timer, and says which channel the grant named
+static void test_per_slot_lcn(void)
+{
+	static const uint16_t rows[] = { 624, 623 };
+	for (unsigned i = 0; i < sizeof rows / sizeof rows[0]; i++) {
+		t3_ms_t ms;
+		setup(T3_OPT_PRIVATE, true);
+		cfg.plan.fixed.base_hz = 0;
+		cfg.ctrl[0].lcn = rows[i];
+		camp_registered(&ms);
+		CHECK(t3_ms_request(&ms, T, TG_A, true, false), "row %u: group call request", rows[i]);
+		frames(&ms, 2);
+		t3_csbk_t g = grant(T3_OP_TV_GRANT, 311, 2, TG_A, OWN);
+		rx(&ms, 1, &g);
+		CHECK(ms.state == T3_FOLLOW && ms.call.ours && ms.ax.result == T3_RES_GRANTED && ms.st.unmapped == 0,
+		      "row %u: grant to LPCN 311 followed", rows[i]);
+		CHECK(tuned.payload && tuned.slot == 2 && tuned.chan.rx_hz == RX(TSCC_LCN) && tuned.chan.lcn == 311,
+		      "row %u: the control channel's carrier, named 311", rows[i]);
+	}
+
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE, true);
+	cfg.plan.fixed.base_hz = 0;
+	cfg.ctrl[0].lcn = 600;
+	camp_registered(&ms);
+	// Someone else's call on an unknown channel: counted, nothing else
+	t3_csbk_t g = grant(T3_OP_TV_GRANT, 311, 2, TG_A, CALLER);
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_CAMPED && ms.st.unmapped == 1 && ms.st.last_unmapped == 311, "unmapped: counted");
+	CHECK(t3_ms_request(&ms, T, TG_A, true, false), "group call request");
+	frames(&ms, 2);
+	g = grant(T3_OP_TV_GRANT, 311, 2, TG_A, OWN);
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_CAMPED && ms.ax.state == T3_AX_IDLE && ms.ax.result == T3_RES_UNMAPPED &&
+	      ms.st.last_unmapped == 311, "our grant unmapped: ends now, result %s", t3_res_name(ms.ax.result));
 }
 
 // The gateway's one-carrier site: the TSCC on TS1, its payload channel on TS2 of the same carrier. The radio knows
@@ -3086,6 +3156,7 @@ int main(void)
 	test_deregister();
 	test_receive_rules();
 	test_one_carrier_site();
+	test_per_slot_lcn();
 	printf("t3AccessTest: %d checks, %d failures\n", checks, failures);
 	return failures != 0;
 }
