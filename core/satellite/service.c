@@ -11,6 +11,25 @@
 #define SERVICE_TICK_MS 10u
 #define SERVICE_TRACKING_PERIOD_MS 1000u
 
+static void (*service_lock)(bool locked);
+
+void satellite_service_set_lock(void (*set_locked)(bool locked))
+{
+	service_lock = set_locked;
+}
+
+static void lock(void)
+{
+	if (service_lock != NULL)
+		service_lock(true);
+}
+
+static void unlock(void)
+{
+	if (service_lock != NULL)
+		service_lock(false);
+}
+
 static void satellite_stop(satellite_service_t *service, satellite_service_update_t *update)
 {
 	service->tracking_requested = false;
@@ -56,34 +75,55 @@ static void satellite_capture_channel(satellite_service_t *service,
 	service->channel_number = channel->channel_number;
 }
 
-static void satellite_refresh_inventory(satellite_service_t *service)
+static bool satellite_refresh_inventory(satellite_service_t *service, uint32_t generation)
 {
-	service->scan_total = satellite_store_count();
+	uint8_t count = satellite_store_count();
+	lock();
+	service->scan_total = 0u;
 	memset(service->scan_summary_names, 0, sizeof(service->scan_summary_names));
 	service->scan_tle_epoch = 0u;
-	for (uint8_t i = 0u; i < service->scan_total; i++) {
+	unlock();
+	for (uint8_t i = 0u; i < count; i++) {
 		satellite_record_summary_t summary;
-		if (!satellite_store_summary_get(i, &summary)) {
-			memset(service->scan_summary_names, 0, sizeof(service->scan_summary_names));
-			return;
-		}
+		if (!satellite_store_summary_get(i, &summary))
+			goto unavailable;
 		uint8_t length = summary.name_length;
 		if (length > SATELLITE_RECORD_BRIEF_NAME_MAX) {
 			length = SATELLITE_RECORD_BRIEF_NAME_MAX;
 			while (length > 0u && ((uint8_t)summary.name[length] & 0xC0u) == 0x80u)
 				length--;
 		}
+		lock();
 		memcpy(service->scan_summary_names[i], summary.name, length);
 		if (i == 0u)
 			service->scan_tle_epoch = summary.epoch;
+		unlock();
 	}
+	if (satellite_store_generation() != generation)
+		goto unavailable;
+	lock();
+	service->scan_total = count;
+	unlock();
+	return true;
+
+unavailable:
+	lock();
+	memset(service->scan_summary_names, 0, sizeof(service->scan_summary_names));
+	service->scan_tle_epoch = 0u;
+	service->scan_total = count;
+	service->scan_cache_valid = false;
+	service->scan_status = SATELLITE_SERVICE_SCAN_UNAVAILABLE;
+	unlock();
+	return false;
 }
 
-static bool satellite_refresh_store_if_changed(satellite_service_t *service)
+static bool satellite_refresh_store_if_changed(satellite_service_t *service, bool *inventory_ok)
 {
 	uint32_t generation = satellite_store_generation();
+	*inventory_ok = true;
 	if (generation == service->store_generation)
 		return false;
+	lock();
 	service->store_generation = generation;
 	service->scan_cache_valid = false;
 	service->scan_status = SATELLITE_SERVICE_SCAN_IDLE;
@@ -92,18 +132,24 @@ static bool satellite_refresh_store_if_changed(satellite_service_t *service)
 	service->scan_result_count = 0u;
 	service->scan_search_started = false;
 	memset(service->scan_results, 0, sizeof(service->scan_results));
-	satellite_refresh_inventory(service);
+	unlock();
+	*inventory_ok = satellite_refresh_inventory(service, generation);
 	return true;
 }
 void satellite_service_init(satellite_service_t *service)
 {
 	if (service == NULL)
 		return;
+	lock();
 	memset(service, 0, sizeof(*service));
 	service->scan_status = SATELLITE_SERVICE_SCAN_IDLE;
 	satellite_tracking_stop(&service->tracking);
-	service->store_generation = satellite_store_generation();
-	satellite_refresh_inventory(service);
+	unlock();
+	uint32_t generation = satellite_store_generation();
+	lock();
+	service->store_generation = generation;
+	unlock();
+	(void)satellite_refresh_inventory(service, generation);
 }
 
 void satellite_service_tracking_request(satellite_service_t *service, bool enabled, uint8_t record_index,
@@ -112,33 +158,41 @@ void satellite_service_tracking_request(satellite_service_t *service, bool enabl
 {
 	if (service == NULL || update == NULL)
 		return;
-	(void)satellite_refresh_store_if_changed(service);
+	bool inventory_ok;
+	(void)satellite_refresh_store_if_changed(service, &inventory_ok);
+	lock();
 	service->scan_search_started = false;
 	if (service->scan_status == SATELLITE_SERVICE_SCAN_RUNNING)
 		service->scan_status = SATELLITE_SERVICE_SCAN_IDLE;
-	if (!enabled) {
+	if (!enabled || !inventory_ok) {
 		satellite_stop(service, update);
+		unlock();
 		return;
 	}
-	satellite_tracking_stop(&service->tracking);
+	satellite_stop(service, update);
+	unlock();
 	satellite_record_summary_t record;
 	satellite_frequency_profile_t profile;
 	if (!satellite_store_summary_get(record_index, &record) ||
-	    !satellite_store_profile_get(record.catalog_id, &profile)) {
-		satellite_stop(service, update);
+	    !satellite_store_profile_get(record.catalog_id, &profile) ||
+	    !satellite_store_get(record_index, &service->tracking.record_scratch) ||
+	    satellite_store_generation() != service->store_generation)
 		return;
-	}
-	service->tracking_requested = true;
+	lock();
 	service->record_index = record_index;
 	if (channel != NULL)
 		satellite_capture_channel(service, channel);
-	(void)satellite_tracking_start(&service->tracking, record_index, profile.rx_hz, profile.tx_hz);
-	if (channel == NULL || channel->hotspot || channel->scan != 0u) {
+	if (channel == NULL || channel->hotspot || channel->scan != 0u ||
+	    !satellite_tracking_start_record(&service->tracking, record_index, profile.rx_hz, profile.tx_hz,
+					     &service->tracking.record_scratch)) {
 		satellite_stop(service, update);
+		unlock();
 		return;
 	}
+	service->tracking_requested = true;
 	satellite_update(service, SATELLITE_TRACKING_UNAVAILABLE, profile.tx_tone_tenths, update);
 	service->next_tracking_ms = now_ms;
+	unlock();
 }
 
 static void satellite_scan_finish(satellite_service_t *service, uint32_t now_ms)
@@ -153,8 +207,10 @@ bool satellite_service_scan_request(satellite_service_t *service, bool enabled, 
 {
 	if (service == NULL)
 		return false;
-	bool store_changed = satellite_refresh_store_if_changed(service);
+	bool inventory_ok;
+	bool store_changed = satellite_refresh_store_if_changed(service, &inventory_ok);
 	bool stopped_tracking = false;
+	lock();
 	if (store_changed && service->tracking_requested) {
 		if (update != NULL)
 			satellite_stop(service, update);
@@ -168,11 +224,18 @@ bool satellite_service_scan_request(satellite_service_t *service, bool enabled, 
 		service->scan_search_started = false;
 		if (service->scan_status == SATELLITE_SERVICE_SCAN_RUNNING)
 			service->scan_status = SATELLITE_SERVICE_SCAN_IDLE;
+		unlock();
+		return stopped_tracking;
+	}
+	if (!inventory_ok) {
+		unlock();
 		return stopped_tracking;
 	}
 	if (satellite_pass_cache_fresh(service->scan_cache_valid, now_ms, service->scan_completed_ms) ||
-	    service->scan_status == SATELLITE_SERVICE_SCAN_RUNNING)
+	    service->scan_status == SATELLITE_SERVICE_SCAN_RUNNING) {
+		unlock();
 		return stopped_tracking;
+	}
 	stopped_tracking = stopped_tracking || service->tracking_requested;
 	if (stopped_tracking && update != NULL)
 		satellite_stop(service, update);
@@ -184,12 +247,21 @@ bool satellite_service_scan_request(satellite_service_t *service, bool enabled, 
 	service->scan_start_ms = now_ms;
 	service->scan_completed = 0u;
 	service->scan_result_count = 0u;
+	service->scan_status = SATELLITE_SERVICE_SCAN_RUNNING;
+	unlock();
 	if (!store_changed)
-		satellite_refresh_inventory(service);
-	if (service->scan_total == 0u) {
-		satellite_scan_finish(service, now_ms);
+		(void)satellite_refresh_inventory(service, service->store_generation);
+	lock();
+	if (service->scan_status == SATELLITE_SERVICE_SCAN_UNAVAILABLE) {
+		unlock();
 		return stopped_tracking;
 	}
+	if (service->scan_total == 0u) {
+		satellite_scan_finish(service, now_ms);
+		unlock();
+		return stopped_tracking;
+	}
+	unlock();
 
 	position_fix_t fix;
 	uint32_t date_ddmmyy, utc_hms;
@@ -199,7 +271,9 @@ bool satellite_service_scan_request(satellite_service_t *service, bool enabled, 
 	if (source == POSITION_SRC_NONE || fix.alt_m == POSITION_ALT_NONE ||
 	    !position_utc_fields(&date_ddmmyy, &utc_hms, now_ms) ||
 	    !satellite_utc_from_fields(date_ddmmyy, utc_hms, &utc_s)) {
+		lock();
 		service->scan_status = SATELLITE_SERVICE_SCAN_UNAVAILABLE;
+		unlock();
 		return stopped_tracking;
 	}
 #else
@@ -207,15 +281,19 @@ bool satellite_service_scan_request(satellite_service_t *service, bool enabled, 
 	(void)date_ddmmyy;
 	(void)utc_hms;
 	(void)utc_s;
+	lock();
 	service->scan_status = SATELLITE_SERVICE_SCAN_UNAVAILABLE;
+	unlock();
 	return stopped_tracking;
 #endif
+	lock();
 	service->scan_start_utc_s = utc_s;
 	service->scan_latitude_e7 = fix.lat;
 	service->scan_longitude_e7 = fix.lon;
 	service->scan_altitude_m = (int16_t)fix.alt_m;
 	service->scan_status = SATELLITE_SERVICE_SCAN_RUNNING;
 	service->next_scan_ms = now_ms;
+	unlock();
 	return stopped_tracking;
 }
 
@@ -248,15 +326,34 @@ __attribute__((noinline)) void satellite_service_scan_step(satellite_service_t *
 	if (service == NULL || service->scan_status != SATELLITE_SERVICE_SCAN_RUNNING ||
 	    (int32_t)(now_ms - service->next_scan_ms) < 0)
 		return;
+	bool have_record = true;
+#if CONFIG_POSITION
+	if (!service->scan_search_started && service->scan_completed < service->scan_total) {
+		have_record = satellite_store_get(service->scan_completed, &service->tracking.record_scratch);
+		if (satellite_store_generation() != service->store_generation) {
+			lock();
+			service->scan_cache_valid = false;
+			service->scan_result_count = 0u;
+			service->scan_status = SATELLITE_SERVICE_SCAN_UNAVAILABLE;
+			unlock();
+			return;
+		}
+	}
+#endif
+	lock();
 	if (!service->scan_search_started) {
 		if (service->scan_completed >= service->scan_total) {
 			satellite_scan_finish(service, now_ms);
+			unlock();
 			return;
 		}
 #if CONFIG_POSITION
-		if (!satellite_tracking_start_scan(&service->tracking, service->scan_completed)) {
+		if (!have_record ||
+		    !satellite_tracking_start_record(&service->tracking, service->scan_completed, 0u, 0u,
+						     &service->tracking.record_scratch)) {
 			satellite_scan_advance_record(service);
 			service->next_scan_ms = now_ms + SERVICE_TICK_MS;
+			unlock();
 			return;
 		}
 		service->tracking.enabled = false;
@@ -266,13 +363,17 @@ __attribute__((noinline)) void satellite_service_scan_step(satellite_service_t *
 						 service->scan_altitude_m)) {
 			satellite_scan_advance_record(service);
 			service->next_scan_ms = now_ms + SERVICE_TICK_MS;
+			unlock();
 			return;
 		}
 		service->scan_search_started = true;
 		service->next_scan_ms = now_ms + SERVICE_TICK_MS;
+		unlock();
 		return;
 #else
+		(void)have_record;
 		service->scan_status = SATELLITE_SERVICE_SCAN_UNAVAILABLE;
+		unlock();
 		return;
 #endif
 	}
@@ -281,12 +382,15 @@ __attribute__((noinline)) void satellite_service_scan_step(satellite_service_t *
 		&service->tracking.orbit, service->scan_latitude_e7, service->scan_longitude_e7,
 		service->scan_altitude_m, SATELLITE_PASS_SCAN_SAMPLES_PER_STEP);
 	service->next_scan_ms = now_ms + SERVICE_TICK_MS;
-	if (pass_status == SATELLITE_PASS_PENDING)
+	if (pass_status == SATELLITE_PASS_PENDING) {
+		unlock();
 		return;
+	}
 	if (pass_status == SATELLITE_PASS_COMPLETE && service->tracking.pass_search.pass_valid)
 		satellite_scan_add_result(service, service->scan_completed, &service->tracking.pass_search.pass);
 	satellite_scan_advance_record(service);
 #endif
+	unlock();
 }
 
 bool satellite_service_tick(satellite_service_t *service, uint32_t now_ms,
@@ -294,19 +398,24 @@ bool satellite_service_tick(satellite_service_t *service, uint32_t now_ms,
 {
 	if (service == NULL || update == NULL || !service->tracking_requested)
 		return false;
+	lock();
 	if (!satellite_channel_matches(service, channel) || channel->hotspot || channel->scan != 0u) {
 		satellite_stop(service, update);
+		unlock();
 		return true;
 	}
 	if (service->tracking.enabled && service->tracking.pass_search_started &&
 	    service->tracking.pass_search.status == SATELLITE_PASS_PENDING)
 		satellite_tracking_forecast_step(&service->tracking);
-	if ((int32_t)(now_ms - service->next_tracking_ms) < 0)
+	if ((int32_t)(now_ms - service->next_tracking_ms) < 0) {
+		unlock();
 		return false;
+	}
 	service->next_tracking_ms = now_ms + SERVICE_TRACKING_PERIOD_MS;
 	satellite_tracking_status_t status = service->tracking.enabled ?
 		satellite_tracking_tick(&service->tracking, now_ms, 10u) : SATELLITE_TRACKING_UNAVAILABLE;
 	satellite_update(service, status, 0u, update);
+	unlock();
 	return true;
 }
 
@@ -315,6 +424,8 @@ void satellite_service_live_view(const satellite_service_t *service, satellite_s
 	if (service == NULL || view == NULL)
 		return;
 	memset(view, 0, sizeof(*view));
+	if (!service->tracking_requested)
+		return;
 	const satellite_tracking_t *tracking = &service->tracking;
 	const satellite_pass_t *next_pass = satellite_tracking_next_pass(tracking);
 	view->pass_valid = service->tracking_requested && tracking->enabled && next_pass != NULL;

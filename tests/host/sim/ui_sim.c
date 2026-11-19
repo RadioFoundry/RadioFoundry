@@ -2224,6 +2224,7 @@ bool ui_svc_satellite_get(uint8_t index, satellite_record_t *record)
 		return false;
 	memset(record, 0, sizeof(*record));
 	record->catalog_id = sim_satellite_catalog_ids[index];
+	record->flags = index == 2u ? SATELLITE_RECORD_NEEDS_ARM : 0u;
 	strcpy(record->name, sim_satellite_names[index]);
 	record->name_length = (uint8_t)strlen(record->name);
 	return true;
@@ -2236,6 +2237,7 @@ bool ui_svc_satellite_summary(uint8_t index, satellite_record_brief_t *summary)
 	memset(summary, 0, sizeof(*summary));
 	summary->catalog_id = sim_satellite_catalog_ids[index] +
 		(sim_satellite_tle_age_days >= 14u ? sim_satellite_test_id_offset : 0u);
+	summary->flags = index == 2u ? SATELLITE_RECORD_NEEDS_ARM : 0u;
 	summary->epoch = 0u;
 	summary->name_length = (uint8_t)strlen(sim_satellite_names[index]);
 	memcpy(summary->name, sim_satellite_names[index], summary->name_length);
@@ -2355,9 +2357,9 @@ bool ui_svc_satellite_path(satellite_path_view_t *path)
 	return true;
 }
 
-bool ui_svc_satellite_replace(uint8_t index, const char *line1, const char *line2)
+bool ui_svc_satellite_replace(uint8_t index, const satellite_tle_lines_t *lines)
 {
-	return index == 0u && line1 != NULL && line2 != NULL;
+	return index == 0u && lines != NULL;
 }
 
 bool ui_svc_satellite_update_busy(void)

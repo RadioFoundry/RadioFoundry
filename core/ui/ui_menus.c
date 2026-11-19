@@ -2102,11 +2102,7 @@ uint8_t ui_menus_zones_moved(ui_frame_t *stack, uint8_t sp, uint32_t from, uint3
 static char *text_target;
 static void (*text_done)(void);		// called once the text is kept (NULL: none)
 static uint8_t text_max;
-#if CONFIG_SATELLITE_TLE
-static char text_name_buf[SATELLITE_TLE_LINE_LENGTH + 1u];
-#else
 static char text_name_buf[CODEPLUG_NAME_LEN + 1];
-#endif
 static char *text_buf;
 static uint8_t text_len;
 static int8_t text_key = -1;		// the key that typed the last character, -1 = none to cycle
@@ -2124,6 +2120,8 @@ static void text_open(char *target, uint8_t max, uint8_t screen)
 	text_done = NULL;
 	text_buf = screen == SCR_MESSAGE_TEXT ? message_buffer : text_name_buf;
 #if CONFIG_SATELLITE_TLE
+	if (screen == SCR_SATELLITE_TEXT)
+		text_buf = target;
 	text_max = screen == SCR_SATELLITE_TEXT ? max :
 		(screen == SCR_MESSAGE_TEXT ? max : (max < CODEPLUG_NAME_LEN ? max : CODEPLUG_NAME_LEN));
 #else

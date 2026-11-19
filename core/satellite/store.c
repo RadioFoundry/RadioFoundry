@@ -27,7 +27,9 @@
 #define SAT_VERSION		4u
 #define SAT_ENTRY_ID_MASK	0x1FFFFu
 #define SAT_ENTRY_OFFSET_SHIFT	17u
-#if SAT_MAX_DATA > (1u << SAT_ENTRY_OFFSET_SHIFT)
+#define SAT_ENTRY_OFFSET_MASK	0x3FFFu
+#define SAT_ENTRY_NEEDS_ARM	0x80000000u
+#if SAT_MAX_DATA > (SAT_ENTRY_OFFSET_MASK + 1u)
 #error "Satellite store offsets exceed the compact entry format"
 #endif
 typedef struct {
@@ -73,12 +75,12 @@ static uint32_t sat_entry_id(const sat_entry_t *entry)
 
 static uint16_t sat_entry_offset(const sat_entry_t *entry)
 {
-	return (uint16_t)(entry->catalog_offset >> SAT_ENTRY_OFFSET_SHIFT);
+	return (uint16_t)((entry->catalog_offset >> SAT_ENTRY_OFFSET_SHIFT) & SAT_ENTRY_OFFSET_MASK);
 }
 
 static void sat_entry_set_offset(sat_entry_t *entry, uint16_t offset)
 {
-	entry->catalog_offset = (entry->catalog_offset & SAT_ENTRY_ID_MASK) |
+	entry->catalog_offset = (entry->catalog_offset & (SAT_ENTRY_ID_MASK | SAT_ENTRY_NEEDS_ARM)) |
 		((uint32_t)offset << SAT_ENTRY_OFFSET_SHIFT);
 }
 
@@ -233,7 +235,7 @@ static bool validate_record(const uint8_t *p, uint16_t len, sat_entry_t *entry)
 	if (!satellite_orbit_init(&orbit, &record)) {
 		return false;
 	}
-	entry->catalog_offset = id;
+	entry->catalog_offset = id | (satellite_frequency_needs_arm(id) ? SAT_ENTRY_NEEDS_ARM : 0u);
 	entry->epoch = (uint32_t)orbit.epoch_s;
 	return true;
 }
@@ -673,6 +675,7 @@ static bool satellite_store_read(uint8_t index, satellite_record_t *record, sate
 		record->catalog_id = sat_entry_id(entry);
 		record->epoch = entry->epoch;
 		record->name_length = name_length;
+		record->flags = (entry->catalog_offset & SAT_ENTRY_NEEDS_ARM) ? SATELLITE_RECORD_NEEDS_ARM : 0u;
 		memcpy(record->name, io_buf + 5u, name_length);
 		const uint8_t *line1 = io_buf + 5u + name_length;
 		memcpy(record->line1, line1, SAT_TLE_LINE);
@@ -683,6 +686,7 @@ static bool satellite_store_read(uint8_t index, satellite_record_t *record, sate
 		summary->catalog_id = sat_entry_id(entry);
 		summary->epoch = entry->epoch;
 		summary->name_length = name_length;
+		summary->flags = (entry->catalog_offset & SAT_ENTRY_NEEDS_ARM) ? SATELLITE_RECORD_NEEDS_ARM : 0u;
 		memcpy(summary->name, io_buf + 5u, name_length);
 	}
 	result = true;
@@ -1009,6 +1013,7 @@ bool satellite_store_list(uint16_t start, uint8_t limit, satellite_record_summar
 			summary->catalog_id = sat_entry_id(entry);
 			summary->epoch = entry->epoch;
 			summary->name_length = io_buf[4];
+			summary->flags = (entry->catalog_offset & SAT_ENTRY_NEEDS_ARM) ? SATELLITE_RECORD_NEEDS_ARM : 0u;
 			memcpy(summary->name, io_buf + 5u, summary->name_length);
 			(*count)++;
 		}

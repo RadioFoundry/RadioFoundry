@@ -63,6 +63,7 @@ static radio_view_t shared_view;	// the published copy, under view_lock
 #if CONFIG_SATELLITE_TLE
 static radio_satellite_view_t shared_satellite_view;
 static satellite_service_t satellite_service;
+static SemaphoreHandle_t satellite_lock;
 #endif
 #if CONFIG_P25
 static radio_p25_settings_t pending_p25;	// radio_req_p25_settings -> the radio task, under view_lock
@@ -135,6 +136,10 @@ static void hs_post(const radio_req_t *req, bool must)
 
 static void publish(void)
 {
+#if CONFIG_SATELLITE_TLE
+	satellite_service_live_view_t satellite_live;
+	satellite_service_live_view(&satellite_service, &satellite_live);
+#endif
 	xSemaphoreTake(view_lock, portMAX_DELAY);
 #if CONFIG_DMR_TRUNK
 	radio_sm_t3_brief(&sm);
@@ -142,8 +147,6 @@ static void publish(void)
 #endif
 	shared_view = sm.view;
 #if CONFIG_SATELLITE_TLE
-	satellite_service_live_view_t satellite_live;
-	satellite_service_live_view(&satellite_service, &satellite_live);
 	shared_satellite_view.tracking = sm.satellite_view;
 	shared_satellite_view.valid = sm.satellite_view.tracking && satellite_live.pass_valid;
 	shared_satellite_view.visible_now = shared_satellite_view.valid && satellite_live.pass_visible_now;
@@ -224,18 +227,14 @@ static void satellite_request(bool enabled, uint8_t record_index, uint32_t now_m
 {
 	satellite_service_update_t update;
 	satellite_service_channel_t channel = satellite_channel();
-	xSemaphoreTake(view_lock, portMAX_DELAY);
 	satellite_service_tracking_request(&satellite_service, enabled, record_index, now_ms, &channel, &update);
-	xSemaphoreGive(view_lock);
 	satellite_apply_update(&update, now_ms);
 }
 
 static void satellite_scan_request(bool enabled, uint32_t now_ms)
 {
 	satellite_service_update_t update;
-	xSemaphoreTake(view_lock, portMAX_DELAY);
 	bool changed = satellite_service_scan_request(&satellite_service, enabled, now_ms, &update);
-	xSemaphoreGive(view_lock);
 	if (changed)
 		satellite_apply_update(&update, now_ms);
 }
@@ -244,10 +243,8 @@ static void satellite_run(uint32_t now_ms)
 {
 	satellite_service_channel_t channel = satellite_channel();
 	satellite_service_update_t update;
-	xSemaphoreTake(view_lock, portMAX_DELAY);
 	satellite_service_scan_step(&satellite_service, now_ms);
 	bool changed = satellite_service_tick(&satellite_service, now_ms, &channel, &update);
-	xSemaphoreGive(view_lock);
 	if (changed)
 		satellite_apply_update(&update, now_ms);
 }
@@ -350,6 +347,16 @@ static void copy_lock(void) { vTaskSuspendAll(); }
 static void copy_unlock(void) { (void)xTaskResumeAll(); }
 #endif
 
+#if CONFIG_SATELLITE_TLE
+static void satellite_set_locked(bool locked)
+{
+	if (locked)
+		xSemaphoreTake(satellite_lock, portMAX_DELAY);
+	else
+		xSemaphoreGive(satellite_lock);
+}
+#endif
+
 void radio_core_start(void)
 {
 #if CONFIG_APRS
@@ -367,6 +374,11 @@ void radio_core_start(void)
 	view_lock = xSemaphoreCreateMutex();
 	requests = xQueueCreate(RADIO_QUEUE_LEN, sizeof(radio_req_t));
 	configASSERT(view_lock != NULL && requests != NULL);
+#if CONFIG_SATELLITE_TLE
+	satellite_lock = xSemaphoreCreateMutex();
+	configASSERT(satellite_lock != NULL);
+	satellite_service_set_lock(satellite_set_locked);
+#endif
 #if CONFIG_ZONE_WRITE
 	// A zone add or delete a power cut interrupted: the saved zone indexes match the zones before the radio core reads
 	// them. Here, not in radio_sm_init: its frame isn't live under the settings save down to the flash driver
@@ -432,13 +444,13 @@ bool radio_get_satellite_path(satellite_path_view_t *path)
 {
 	if (path == NULL)
 		return false;
-	if (view_lock == NULL) {
+	if (satellite_lock == NULL) {
 		memset(path, 0, sizeof(*path));
 		return false;
 	}
-	xSemaphoreTake(view_lock, portMAX_DELAY);
+	xSemaphoreTake(satellite_lock, portMAX_DELAY);
 	satellite_service_path_view(&satellite_service, path);
-	xSemaphoreGive(view_lock);
+	xSemaphoreGive(satellite_lock);
 	return true;
 }
 
@@ -466,23 +478,23 @@ void radio_req_satellite_scan(bool enabled)
 
 void radio_get_satellite_scan(uint8_t *status, uint8_t *completed, uint8_t *total, uint8_t *passes)
 {
-	if (view_lock == NULL) {
+	if (satellite_lock == NULL) {
 		if (status != NULL) *status = RADIO_SAT_SCAN_IDLE;
 		if (completed != NULL) *completed = 0u;
 		if (total != NULL) *total = 0u;
 		if (passes != NULL) *passes = 0u;
 		return;
 	}
-	xSemaphoreTake(view_lock, portMAX_DELAY);
+	xSemaphoreTake(satellite_lock, portMAX_DELAY);
 	satellite_service_scan_state(&satellite_service, status, completed, total, passes, NULL, NULL);
-	xSemaphoreGive(view_lock);
+	xSemaphoreGive(satellite_lock);
 }
 
 bool radio_get_satellite_pass(uint8_t rank, radio_satellite_pass_t *pass)
 {
-	if (pass == NULL || view_lock == NULL)
+	if (pass == NULL || satellite_lock == NULL)
 		return false;
-	xSemaphoreTake(view_lock, portMAX_DELAY);
+	xSemaphoreTake(satellite_lock, portMAX_DELAY);
 	uint32_t packed;
 	int64_t aos_s;
 	int64_t scan_start_utc_s;
@@ -490,7 +502,7 @@ bool radio_get_satellite_pass(uint8_t rank, radio_satellite_pass_t *pass)
 	satellite_service_scan_state(&satellite_service, NULL, NULL, NULL, NULL,
 				    &scan_start_utc_s, &scan_start_ms);
 	if (!satellite_service_scan_result(&satellite_service, rank, &packed, &aos_s)) {
-		xSemaphoreGive(view_lock);
+		xSemaphoreGive(satellite_lock);
 		return false;
 	}
 	uint32_t now_ms = hal_millis();
@@ -499,27 +511,27 @@ bool radio_get_satellite_pass(uint8_t rank, radio_satellite_pass_t *pass)
 	pass->aos_minutes = satellite_pass_eta_minutes(aos_s, now_utc_s);
 	pass->maximum_elevation_deg = satellite_pass_summary_maximum_elevation(packed);
 	pass->visible_now = satellite_pass_summary_visible_now(packed);
-	xSemaphoreGive(view_lock);
+	xSemaphoreGive(satellite_lock);
 	return true;
 }
 
 bool radio_get_satellite_pass_summary(uint8_t record_index, satellite_record_brief_t *summary)
 {
-	if (summary == NULL || view_lock == NULL)
+	if (summary == NULL || satellite_lock == NULL)
 		return false;
-	xSemaphoreTake(view_lock, portMAX_DELAY);
+	xSemaphoreTake(satellite_lock, portMAX_DELAY);
 	bool valid = satellite_service_summary(&satellite_service, record_index, summary);
-	xSemaphoreGive(view_lock);
+	xSemaphoreGive(satellite_lock);
 	return valid;
 }
 
 uint32_t radio_get_satellite_generation(void)
 {
-	if (view_lock == NULL)
+	if (satellite_lock == NULL)
 		return satellite_store_generation();
-	xSemaphoreTake(view_lock, portMAX_DELAY);
+	xSemaphoreTake(satellite_lock, portMAX_DELAY);
 	uint32_t generation = satellite_service.store_generation;
-	xSemaphoreGive(view_lock);
+	xSemaphoreGive(satellite_lock);
 	return generation;
 }
 #endif

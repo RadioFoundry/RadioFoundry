@@ -53,7 +53,7 @@
 // words: MMDVM frames on the stack; debug link replies format diagnostics lines. The deepest chain (a hotspot frame
 // on air > the radio view copied, with the trunked system's view in it) reads 2608 bytes with the macOS toolchain on
 // the deepest board; the CI's reads up to 16 deeper, and stack-check.md's overhead and margin come on top. Four words
-// more than before the signaling outputs were added to radio_settings_t, which the chain copies
+// more than it was: radio_settings_t holds the signaling tones' two outputs and steps, and the chain copies it
 #define HOSTLINK_TASK_STACK	745
 #else
 #define HOSTLINK_TASK_STACK	512	// words: MMDVM frames are built on the stack

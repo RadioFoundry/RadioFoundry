@@ -154,11 +154,10 @@ WEAK bool ui_svc_satellite_path(satellite_path_view_t *path)
 		*path = (satellite_path_view_t){0};
 	return false;
 }
-WEAK bool ui_svc_satellite_replace(uint8_t index, const char *line1, const char *line2)
+WEAK bool ui_svc_satellite_replace(uint8_t index, const satellite_tle_lines_t *lines)
 {
 	(void)index;
-	(void)line1;
-	(void)line2;
+	(void)lines;
 	return false;
 }
 WEAK bool ui_svc_satellite_update_busy(void) { return false; }

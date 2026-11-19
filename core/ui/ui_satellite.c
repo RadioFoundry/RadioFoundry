@@ -13,12 +13,12 @@
 #include "satellite/tracking.h"
 
 static uint8_t selected;
-static char edit_line1[SATELLITE_TLE_LINE_LENGTH + 1u];
-static char edit_line2[SATELLITE_TLE_LINE_LENGTH + 1u];
+static satellite_tle_lines_t edit_lines;
 typedef struct {
 	uint32_t catalog_id;
 	uint32_t epoch;
 	char name[SATELLITE_RECORD_BRIEF_NAME_MAX];
+	uint8_t flags;
 } satellite_ui_record_t;
 static satellite_ui_record_t pass_record;
 static uint16_t pass_tle_age_days;
@@ -31,6 +31,7 @@ static void satellite_cache_record(const satellite_record_brief_t *summary)
 {
 	pass_record.catalog_id = summary->catalog_id;
 	pass_record.epoch = summary->epoch;
+	pass_record.flags = summary->flags;
 	memcpy(pass_record.name, summary->name, sizeof(pass_record.name));
 }
 
@@ -58,11 +59,11 @@ static void satellite_warn_stale_tle(uint8_t record_index)
 
 static void satellite_line2_kept(void)
 {
-	if (strlen(edit_line2) != SATELLITE_TLE_LINE_LENGTH) {
+	if (strlen(edit_lines.line2) != SATELLITE_TLE_LINE_LENGTH) {
 		ui_toast(TR(TLE_UPDATE_FAILED_2, "TLE update failed"));
 		return;
 	}
-	if (ui_svc_satellite_replace(selected, edit_line1, edit_line2))
+	if (ui_svc_satellite_replace(selected, &edit_lines))
 		ui_toast(TR(TLE_UPDATE_QUEUED, "TLE update queued"));
 	else
 		ui_toast(TR(SATELLITE_UNAVAILABLE_4, "Satellite unavailable"));
@@ -70,12 +71,12 @@ static void satellite_line2_kept(void)
 
 static void satellite_line1_kept(void)
 {
-	if (strlen(edit_line1) != SATELLITE_TLE_LINE_LENGTH) {
+	if (strlen(edit_lines.line1) != SATELLITE_TLE_LINE_LENGTH) {
 		ui_toast(TR(TLE_UPDATE_FAILED_2, "TLE update failed"));
 		return;
 	}
-	edit_line2[0] = '\0';
-	ui_menus_satellite_text(edit_line2, 2u, satellite_line2_kept);
+	edit_lines.line2[0] = '\0';
+	ui_menus_satellite_text(edit_lines.line2, 2u, satellite_line2_kept);
 }
 
 static void satellite_edit(void)
@@ -84,9 +85,9 @@ static void satellite_edit(void)
 		ui_toast(TR(SATELLITE_UNAVAILABLE_4, "Satellite unavailable"));
 		return;
 	}
-	edit_line1[0] = '\0';
-	edit_line2[0] = '\0';
-	ui_menus_satellite_text(edit_line1, 1u, satellite_line1_kept);
+	edit_lines.line1[0] = '\0';
+	edit_lines.line2[0] = '\0';
+	ui_menus_satellite_text(edit_lines.line1, 1u, satellite_line1_kept);
 }
 
 static void row(int *y, const char *label, const char *value, color_t value_color)
@@ -665,9 +666,9 @@ static void satellite_draw(void)
 			row(&y, TR(TRACKING_4, "Tracking"), satellite.tracking.tracking ? TR(OTHER_SATELLITE_2, "Other satellite") : TR(VALUE_OFF, "Off"), ui_col.dim);
 		}
 	}
-	bool so50_active = have_record && pass_record.catalog_id == 27607u && satellite.tracking.tracking &&
+	bool arm_active = have_record && (pass_record.flags & SATELLITE_RECORD_NEEDS_ARM) && satellite.tracking.tracking &&
 		satellite.tracking.index == selected;
-	ui_draw_bottom(&ui_st, so50_active ? TR(UP_DOWN_SATELLITE_OK_TRACK, "Up Down satellite  OK track  Hold OK arm  # TLE  Back") :
+	ui_draw_bottom(&ui_st, arm_active ? TR(UP_DOWN_SATELLITE_OK_TRACK, "Up Down satellite  OK track  Hold OK arm  # TLE  Back") :
 		TR(UP_DOWN_SATELLITE_OK_TRACK_2, "Up Down satellite  OK track  # TLE  Back"));
 	ui_draw_banner(&ui_st);
 }
@@ -682,7 +683,7 @@ static bool satellite_key(const input_event_t *ev)
 		ui_svc_satellite_view(&satellite);
 		satellite_record_brief_t summary;
 		if (satellite.tracking.tracking && satellite.tracking.index == selected &&
-		    ui_svc_satellite_summary(selected, &summary) && summary.catalog_id == 27607u) {
+		    ui_svc_satellite_summary(selected, &summary) && (summary.flags & SATELLITE_RECORD_NEEDS_ARM)) {
 			ui_svc_satellite_arm();
 			ui_toast(TR(SO_50_ARM_REQUESTED, "SO-50 arm requested"));
 			return true;

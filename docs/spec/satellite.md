@@ -126,6 +126,8 @@ continues to show the live Doppler target; the newest target is applied when tra
 While tracking SO-50, a long press of OK on its detail screen explicitly sends the 74.4 Hz CTCSS timer-arm signal for
 two seconds. The radio uses its normal transmit checks and the active Doppler-adjusted uplink. The action does not
 change the profile's normal 67.0 Hz tone, and PTT release never starts an arm transmission.
+The store derives the arm capability from the catalog ID when it validates a TLE; the UI uses that capability rather
+than identifying the satellite by name or number. This does not change the stored TLE format.
 
 Manual channel and VFO operation remain unchanged when tracking is off. Leaving the Satellite screen does not stop an
 active session; use OK on the active satellite to stop and restore the nominal pair. Starting another satellite replaces
@@ -159,6 +161,8 @@ fields and age, then creates a schema-v3 bundle or
 pushes TLE and frequency data over Web Serial/WebUSB. A direct browser connection requires a supported browser and a
 secure context (HTTPS or localhost). TLE IDs and profile IDs must match exactly. `tools/satellite_tle.py install`
 supports the same schema-v3 bundle. Unselected installed TLEs disappear from the radio's satellite-tracking inventory.
+After a verified install or update, the web flasher offers the page when the reported or installed image's feature
+list includes `SATELLITE_TLE`; it does not send a separate satellite capability command.
 
 The commands `catalog --source amsat|ariss` browse a provider, `sync --source amsat|ariss --id <catalog ID>` fetches
 and installs only the selected IDs, and `read` queries the radio's installed inventory. When no IDs are supplied to

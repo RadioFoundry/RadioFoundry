@@ -28,7 +28,7 @@ import { radioPicture, holdKeys, hasNoScreen } from "./radiotop.js";
 import { validRef, refShort, defaultRef, firmwareName, betaLink } from "./version.js";
 import { verify, segments, forDevBuild } from "./manifest.js";
 import { Dfu, DfuError, NormalModeError, WebUsbTransport, checkKey, usbSupported } from "./dfu.js";
-import { Link, LinkError, CableError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, satelliteTleAvailable, whyNoAnswer, noAnswerKey, serialSupported, serialApi, browserErrorKey, noDeviceChosen, knownRadioPort } from "./link.js";
+import { Link, LinkError, CableError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, whyNoAnswer, noAnswerKey, serialSupported, serialApi, browserErrorKey, noDeviceChosen, knownRadioPort } from "./link.js";
 import { readRadio, makeBundle, openBundle, bundleFolder, notBundle, bundleName, describeFirmware, CODEPLUG_SPAN } from "./backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug, codeplugLayout } from "./restore.js";
 import { Selection } from "./select.js";
@@ -2564,7 +2564,7 @@ function doneView() {
 			notice(good ? t("flash.done.ready") : t("flash.done.no_codec"), good ? "ok" : "bad"), ...(good ? [] : [helpLink(), reportLine()]));	// the DOM writes a null as "null"
 			if ((S.task === "install" || S.task === "update") && !S.sim) {
 				const features = new Set([...String(p.features || "").split(","), ...String(S.firmware?.manifest?.features || "").split(",")]);
-				if (features.has("SATELLITE_TLE") || await satelliteTleAvailable(link))
+				if (features.has("SATELLITE_TLE"))
 					status.append(h("div", { class: "notice info" }, h("p", {}, t("flash.done.satellite_tle_offer")),
 						h("div", { class: "actions" }, button(t("flash.done.satellite_tle_load"), async () => {
 							await dropSerial();
@@ -2721,7 +2721,7 @@ async function bringChannels(status, { finish }) {
 	if (copy) return run();
 	// no backup: the user decides, knowing the original codeplug is not saved anywhere
 	say(h("p", {}, t("flash.channels.found", { counts: counts(conv.counts) })), notes, notice(t("flash.channels.no_backup"), "warn"));
-	S.forward([button(t("flash.nav.finish_no_channels"), () => S.forward(finish()), { quiet: true }),
+	S.forward([button(t("flash.nav.finish_no_channels"), () => reset(), { quiet: true }),
 		button(t("flash.channels.go"), run, { primary: true })]);
 }
 

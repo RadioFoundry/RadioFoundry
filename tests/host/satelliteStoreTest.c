@@ -616,6 +616,28 @@ static void test_custom_frequency_profiles(void)
 	CHECK(satellite_frequency_profile(99001u, &readback) && readback.rx_hz == profile.rx_hz);
 }
 
+static void test_arm_capability(void)
+{
+	sim_flash_create(FLASH_SIZE, &map);
+	CHECK(storage_init());
+	uint8_t data[2 * TEST_RECORD_MAX];
+	uint16_t first = make_record(data, 25544u, "ISS", "26315.50000000");
+	uint16_t second = make_record(data + first, 27607u, "CUSTOM NAME", "26315.50000000");
+	CHECK(install(data, (uint16_t)(first + second), 2u, false, false, false));
+	satellite_record_t record;
+	satellite_record_summary_t summaries[2];
+	uint8_t count = 0u;
+	CHECK(satellite_store_list(0u, 2u, summaries, &count) && count == 2u);
+	CHECK(summaries[0].flags == 0u && summaries[1].flags == SATELLITE_RECORD_NEEDS_ARM);
+	CHECK(satellite_store_get(1u, &record) && record.flags == SATELLITE_RECORD_NEEDS_ARM &&
+	      strcmp(record.name, "CUSTOM NAME") == 0);
+	sim_flash_power_on();
+	CHECK(storage_init());
+	CHECK(satellite_store_summary_get(1u, &summaries[1]) &&
+	      summaries[1].flags == SATELLITE_RECORD_NEEDS_ARM);
+	CHECK(satellite_store_get(0u, &record) && record.flags == 0u);
+}
+
 static void test_first_install_recovery(void)
 {
 	sim_flash_create(FLASH_SIZE, &map);
@@ -665,6 +687,7 @@ int main(void)
 	test_commit_power_cuts();
 	test_replace_power_cuts();
 	test_custom_frequency_profiles();
+	test_arm_capability();
 	test_first_install_recovery();
 	CHECK(sim_flash_violations() == 0);
 	sim_flash_free();

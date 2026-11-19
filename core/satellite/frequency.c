@@ -48,3 +48,8 @@ bool satellite_frequency_profile(uint32_t catalog_id, satellite_frequency_profil
 		}
 	return true;
 }
+
+bool satellite_frequency_needs_arm(uint32_t catalog_id)
+{
+	return catalog_id == 27607u;
+}

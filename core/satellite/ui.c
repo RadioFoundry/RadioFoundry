@@ -11,8 +11,7 @@
 #include "ui/i18n.h"
 #include "ui/fmt.h"
 
-static const char *pending_line1;
-static const char *pending_line2;
+static const satellite_tle_lines_t *pending_lines;
 static uint8_t pending_index;
 static uint8_t scan_last_status, scan_last_completed, scan_last_total, scan_last_passes;
 static bool scan_state_known;
@@ -20,14 +19,13 @@ static bool scan_state_known;
 static void satellite_replace_job(void *ctx)
 {
 	(void)ctx;
-	if (!satellite_store_replace(pending_index, pending_line1, pending_line2)) {
+	if (!satellite_store_replace(pending_index, pending_lines->line1, pending_lines->line2)) {
 		ui_event_t ev = { 0 };
 		ev.kind = UI_EV_SAVE_FAILED;
 		str_copy(ev.text, sizeof(ev.text), TR(SATELLITE_ERR_TLE_SAVE, "Couldn't save satellite TLE"));
 		ui_notify(&ev);
 	}
-	pending_line1 = NULL;
-	pending_line2 = NULL;
+	pending_lines = NULL;
 }
 
 uint8_t ui_svc_satellite_count(void)
@@ -52,6 +50,7 @@ bool ui_svc_satellite_summary(uint8_t index, satellite_record_brief_t *summary)
 	memset(summary, 0, sizeof(*summary));
 	summary->catalog_id = record.catalog_id;
 	summary->epoch = record.epoch;
+	summary->flags = record.flags;
 	uint8_t length = record.name_length;
 	if (length > SATELLITE_RECORD_BRIEF_NAME_MAX) {
 		length = SATELLITE_RECORD_BRIEF_NAME_MAX;
@@ -163,16 +162,14 @@ bool ui_svc_satellite_path(satellite_path_view_t *path)
 	return radio_get_satellite_path(path);
 }
 
-bool ui_svc_satellite_replace(uint8_t index, const char *line1, const char *line2)
+bool ui_svc_satellite_replace(uint8_t index, const satellite_tle_lines_t *lines)
 {
-	if (line1 == NULL || line2 == NULL || index >= satellite_store_count() || storage_job_busy())
+	if (lines == NULL || index >= satellite_store_count() || storage_job_busy())
 		return false;
 	pending_index = index;
-	pending_line1 = line1;
-	pending_line2 = line2;
+	pending_lines = lines;
 	if (!storage_job_post(satellite_replace_job, NULL)) {
-		pending_line1 = NULL;
-		pending_line2 = NULL;
+		pending_lines = NULL;
 		return false;
 	}
 	return true;

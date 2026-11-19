@@ -45,6 +45,8 @@ Position source (setting: Auto, GPS, Computer, Fixed):
   altitude-bearing fixed position if that source is unavailable. It obtains date and UTC independently from a fresh
   GPS or host NMEA stream. RMC date and GGA/RMC time components are retained even when a sentence reports no position
   fix, so a saved fixed coordinate can be used while the receiver acquires a fix.
+- Host fixes and their UTC are not saved across a restart. The host must send fresh position, altitude and date/time
+  sentences again; a fixed position still needs fresh UTC for satellite prediction.
 - **Save GPS position** in Settings > Location copies the current fresh board fix into the fixed-position settings.
   In Auto, that saved coordinate is used after fresh GPS and host fixes are unavailable, including while GPS acquires
   a fix after startup. Saving requires a current GPS fix and does not change the selected source.

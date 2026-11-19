@@ -17,11 +17,18 @@
 #define SATELLITE_PROFILE_TX_MIN_HZ 10000000u
 #define SATELLITE_PROFILE_TX_MAX_HZ 1000000000u
 #define SATELLITE_PROFILE_TONE_MAX_TENTHS 2600u
+#define SATELLITE_RECORD_NEEDS_ARM 0x01u
+
+typedef struct {
+	char line1[SATELLITE_TLE_LINE_LENGTH + 1u];
+	char line2[SATELLITE_TLE_LINE_LENGTH + 1u];
+} satellite_tle_lines_t;
 
 typedef struct {
 	uint32_t catalog_id;
 	uint32_t epoch;
 	uint8_t name_length;
+	uint8_t flags;
 	char name[SATELLITE_NAME_MAX + 1u];
 	char line1[SATELLITE_TLE_LINE_LENGTH + 1u];
 	char line2[SATELLITE_TLE_LINE_LENGTH + 1u];
@@ -31,6 +38,7 @@ typedef struct {
 	uint32_t catalog_id;
 	uint32_t epoch;
 	uint8_t name_length;
+	uint8_t flags;
 	char name[SATELLITE_NAME_MAX + 1u];
 } satellite_record_summary_t;
 
@@ -39,6 +47,7 @@ typedef struct {
 	uint32_t catalog_id;
 	uint32_t epoch;
 	uint8_t name_length;
+	uint8_t flags;
 	char name[SATELLITE_RECORD_BRIEF_NAME_MAX + 1u];
 } satellite_record_brief_t;
 

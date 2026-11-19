@@ -17,5 +17,6 @@ typedef struct {
 uint8_t satellite_frequency_profile_catalog_count(void);
 bool satellite_frequency_profile_catalog_get(uint8_t index, satellite_frequency_profile_t *profile);
 bool satellite_frequency_profile(uint32_t catalog_id, satellite_frequency_profile_t *profile);
+bool satellite_frequency_needs_arm(uint32_t catalog_id);
 
 #endif

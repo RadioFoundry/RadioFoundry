@@ -18,6 +18,7 @@ For a browser workflow, open **Tools > Satellite TLE Update** on the RadioFoundr
 or browse for a TLE file, then choose up to 10 FM satellites by name. Non-FM objects are not shown. ISS, SO-50 and
 AO-91 start selected when present. The page can push the selection directly over USB/serial or create a JSON bundle
 for the PC utility. Direct push requires a supported browser and a secure context (HTTPS or localhost).
+After an install or update, the web flasher offers this page when the installed build reports satellite support.
 
 Install only the catalog IDs you choose. Repeat `--id` or separate IDs with commas:
 
@@ -72,7 +73,8 @@ TLE available while entering it.
 Open **OK**, **6** (Tools), then choose **Satellite**. The radio uses the selected position source for coordinates
 and altitude, and fresh GPS or computer NMEA for UTC, to predict passes for the installed TLEs. A saved fixed position
 can therefore provide the observer location while the GPS is acquiring its first fix, once the receiver provides
-current date and time. The list is ordered by time to AOS and shows each pass's maximum elevation. Up and Down
+current date and time. Computer fixes and UTC do not survive a restart: send fresh NMEA again, including altitude and
+date/time. The list is ordered by time to AOS and shows each pass's maximum elevation. Up and Down
 select a pass; **OK** opens its details and starts tracking. The selected satellite is remembered across power cycles.
 The firmware image contains no TLEs. Load selected records into the radio's flash store from the site's Satellite TLE
 Update page or with `tools/satellite_tle.py sync`. With an empty store, Satellite shows **No TLEs: load from site**.

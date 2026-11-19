@@ -252,7 +252,7 @@ bool ui_svc_satellite_pass(uint8_t rank, radio_satellite_pass_t *pass);
 bool ui_svc_satellite_pass_summary(uint8_t record_index, satellite_record_brief_t *summary);
 bool ui_svc_satellite_view(radio_satellite_view_t *view);
 bool ui_svc_satellite_path(satellite_path_view_t *path);
-bool ui_svc_satellite_replace(uint8_t index, const char *line1, const char *line2);
+bool ui_svc_satellite_replace(uint8_t index, const satellite_tle_lines_t *lines);
 bool ui_svc_satellite_update_busy(void);
 #endif
 // One satellite for the GPS screen's sky plot and signal bars

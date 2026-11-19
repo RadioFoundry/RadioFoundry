@@ -75,12 +75,13 @@ typedef struct {
 	uint8_t scan_total;
 	uint8_t scan_result_count;
 	bool scan_search_started;
+	bool scan_cache_valid;
 	uint32_t scan_completed_ms;
 	uint32_t next_scan_ms;
 	uint32_t store_generation;
-	bool scan_cache_valid;
 } satellite_service_t;
 
+void satellite_service_set_lock(void (*set_locked)(bool locked));
 void satellite_service_init(satellite_service_t *service);
 void satellite_service_tracking_request(satellite_service_t *service, bool enabled, uint8_t record_index,
 					uint32_t now_ms, const satellite_service_channel_t *channel,

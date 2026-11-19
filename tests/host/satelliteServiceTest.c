@@ -9,8 +9,11 @@ static int failures, checks;
 static bool fix_available, time_available, record_available, summary_available;
 static uint8_t installed_count;
 static uint32_t summary_reads, list_reads, store_generation;
+static bool change_generation_on_summary, change_generation_on_record;
 static satellite_record_t stored_record;
 static satellite_record_summary_t stored_summary;
+static bool service_locked;
+static satellite_service_t *store_reader;
 static const satellite_frequency_profile_t stored_profile = {
 	.catalog_id = 5u, .rx_hz = 145800000u, .tx_hz = 437800000u,
 };
@@ -24,35 +27,64 @@ static const satellite_frequency_profile_t stored_profile = {
 		}                                                                                                  \
 	} while (0)
 
+static void set_service_locked(bool locked)
+{
+	CHECK(service_locked != locked);
+	service_locked = locked;
+}
+
 bool satellite_store_get(uint8_t index, satellite_record_t *record)
 {
+	CHECK(!service_locked);
 	if (index != 0u || !record_available || record == NULL)
 		return false;
 	*record = stored_record;
+	if (change_generation_on_record) {
+		change_generation_on_record = false;
+		store_generation++;
+	}
+	if (store_reader != NULL) {
+		satellite_path_view_t path;
+		satellite_service_live_view_t live;
+		set_service_locked(true);
+		satellite_service_path_view(store_reader, &path);
+		satellite_service_live_view(store_reader, &live);
+		set_service_locked(false);
+		CHECK(path.count == 0u);
+		CHECK(!live.pass_valid && live.elevation_tenths == 0);
+	}
 	return true;
 }
 
 bool satellite_store_summary_get(uint8_t index, satellite_record_summary_t *summary)
 {
+	CHECK(!service_locked);
 	summary_reads++;
 	if (index != 0u || !summary_available || summary == NULL)
 		return false;
 	*summary = stored_summary;
+	if (change_generation_on_summary) {
+		change_generation_on_summary = false;
+		store_generation++;
+	}
 	return true;
 }
 
 uint8_t satellite_store_count(void)
 {
+	CHECK(!service_locked);
 	return installed_count;
 }
 
 uint32_t satellite_store_generation(void)
 {
+	CHECK(!service_locked);
 	return store_generation;
 }
 
 bool satellite_store_list(uint16_t start, uint8_t limit, satellite_record_summary_t *records, uint8_t *count)
 {
+	CHECK(!service_locked);
 	list_reads++;
 	if (count == NULL || (limit != 0u && records == NULL))
 		return false;
@@ -66,6 +98,7 @@ bool satellite_store_list(uint16_t start, uint8_t limit, satellite_record_summar
 
 bool satellite_store_profile_get(uint32_t catalog_id, satellite_frequency_profile_t *profile)
 {
+	CHECK(!service_locked);
 	if (catalog_id != stored_profile.catalog_id || profile == NULL)
 		return false;
 	*profile = stored_profile;
@@ -135,6 +168,7 @@ static void test_tracking_request_lifecycle(void)
 	satellite_service_update_t update;
 	satellite_service_channel_t channel = { .channel_number = 1u };
 	satellite_service_init(&service);
+	store_reader = &service;
 	record_available = true;
 	summary_available = true;
 	satellite_service_tracking_request(&service, true, 0u, 100u, &channel, &update);
@@ -148,6 +182,7 @@ static void test_tracking_request_lifecycle(void)
 	channel.channel_number++;
 	CHECK(satellite_service_tick(&service, 2100u, &channel, &update));
 	CHECK(!update.tracking && update.status == SATELLITE_TRACKING_OFF);
+	store_reader = NULL;
 	summary_available = false;
 	satellite_service_tracking_request(&service, true, 0u, 2200u, &channel, &update);
 	CHECK(!update.tracking && update.status == SATELLITE_TRACKING_OFF);
@@ -240,6 +275,60 @@ static void test_store_generation_invalidates_cached_inventory(void)
 	CHECK(summary.catalog_id == 0u && strcmp(summary.name, "ISS") == 0);
 }
 
+static void test_inventory_failure_and_generation_race(void)
+{
+	satellite_service_t service;
+	installed_count = 1u;
+	summary_available = true;
+	fix_available = true;
+	time_available = true;
+	satellite_service_init(&service);
+	store_generation++;
+	summary_available = false;
+	CHECK(!satellite_service_scan_request(&service, true, 100u, NULL));
+	CHECK(service.scan_status == SATELLITE_SERVICE_SCAN_UNAVAILABLE && service.scan_total == 1u);
+
+	summary_available = true;
+	CHECK(!satellite_service_scan_request(&service, true, 200u, NULL));
+	CHECK(service.scan_status == SATELLITE_SERVICE_SCAN_RUNNING && service.scan_total == 1u);
+	CHECK(!satellite_service_scan_request(&service, false, 201u, NULL));
+	store_generation++;
+	change_generation_on_summary = true;
+	CHECK(!satellite_service_scan_request(&service, true, 300u, NULL));
+	CHECK(service.scan_status == SATELLITE_SERVICE_SCAN_UNAVAILABLE && service.scan_total == 1u);
+	CHECK(!satellite_service_scan_request(&service, true, 400u, NULL));
+	CHECK(service.scan_status == SATELLITE_SERVICE_SCAN_RUNNING && service.scan_total == 1u);
+	record_available = true;
+	change_generation_on_record = true;
+	store_reader = &service;
+	satellite_service_scan_step(&service, 400u);
+	store_reader = NULL;
+	CHECK(service.scan_status == SATELLITE_SERVICE_SCAN_UNAVAILABLE && service.scan_result_count == 0u);
+}
+
+static void test_tracking_rejects_bad_record(void)
+{
+	satellite_service_t service;
+	satellite_service_update_t update;
+	satellite_service_channel_t channel = { .channel_number = 1u };
+	installed_count = 1u;
+	summary_available = true;
+	record_available = true;
+	satellite_service_init(&service);
+	char original = stored_record.line1[0];
+	stored_record.line1[0] = 'X';
+	store_reader = &service;
+	satellite_service_tracking_request(&service, true, 0u, 100u, &channel, &update);
+	store_reader = NULL;
+	stored_record.line1[0] = original;
+	CHECK(!service.tracking_requested && !update.tracking && update.status == SATELLITE_TRACKING_OFF);
+	change_generation_on_record = true;
+	satellite_service_tracking_request(&service, true, 0u, 200u, &channel, &update);
+	CHECK(!service.tracking_requested && !update.tracking);
+	satellite_service_tracking_request(&service, true, 0u, 300u, &channel, &update);
+	CHECK(service.tracking_requested && update.tracking);
+}
+
 static void test_scan_result_keeps_rank_and_record_index_together(void)
 {
 	satellite_service_t service = { 0 };
@@ -262,11 +351,14 @@ static void test_scan_result_keeps_rank_and_record_index_together(void)
 
 int main(void)
 {
+	satellite_service_set_lock(set_service_locked);
 	setup_record();
 	test_service_init_caches_summaries();
 	test_tracking_request_lifecycle();
 	test_scan_cache_and_summary();
 	test_store_generation_invalidates_cached_inventory();
+	test_inventory_failure_and_generation_race();
+	test_tracking_rejects_bad_record();
 	test_scan_result_keeps_rank_and_record_index_together();
 	if (failures != 0) {
 		printf("satelliteServiceTest FAILED (%d checks, %d failures)\n", checks, failures);

@@ -771,8 +771,6 @@ static uint8_t net_burst(int8_t ts, uint8_t control, const uint8_t *frame, dmr_t
 	const uint8_t *lc = NULL;
 
 	memset(&b, 0, sizeof(b));
-	*burst = b;
-	*lc_out = lc;
 	if (c & MMDVM_DMR_SYNC_DATA) {
 		uint8_t dt = c & 0x0F;
 

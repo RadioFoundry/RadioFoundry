@@ -4192,6 +4192,18 @@ static void test_position(void)
 	      ui_svc_setting_get(UI_SET_POS_SOURCE) == POSITION_AUTO);
 	settings_init();
 	boot();
+#if CONFIG_POSITION_HOST
+	position_nmea(rmc, strlen(rmc), false, now);
+	position_nmea(gga, strlen(gga), false, now);
+	CHECK(position_fix(&saved_fix, now) == POSITION_SRC_HOST && saved_fix.alt_m == 545);
+	boot();
+	CHECK(position_fix(&saved_fix, now) == POSITION_SRC_NONE);
+	position_nmea(rmc, strlen(rmc), false, now);
+	CHECK(position_fix(&saved_fix, now) == POSITION_SRC_HOST && saved_fix.alt_m == POSITION_ALT_NONE);
+	position_nmea(gga, strlen(gga), false, now);
+	CHECK(position_fix(&saved_fix, now) == POSITION_SRC_HOST && saved_fix.alt_m == 545 &&
+	      saved_fix.date == 230394u && saved_fix.utc_hms == 123519u);
+#endif
 }
 
 static void test_ui_glue(void)

@@ -17,7 +17,7 @@
 
 import { h, t, HOME, notice, button, panel, progressBar, logBox, download, filePicker, localTime, partNames } from "./dom.js";
 import { hex, sha256, sleep } from "./bytes.js";
-import { SerialStream, Link, CableError, probe, satelliteTleAvailable, serialSupported, serialApi, knownRadioPort, grantedPorts } from "./link.js";
+import { SerialStream, Link, CableError, probe, serialSupported, serialApi, knownRadioPort, grantedPorts } from "./link.js";
 import { Stub, stubImages, univForBoard, StubError, DONE_LED, MEM, ROM_REPEAT, hasRomFlag } from "./stub.js";
 import * as c7 from "./c7000.js";
 import { openVendorFile, describe as describeVendorFile, analysisCandidate, whyNot } from "./vendorfile.js";
@@ -1343,7 +1343,7 @@ export function doneView() {
 			h("p", { class: "small muted" }, t(hasStubEntry() ? "flash.c7.done.next_time" : "flash.c7.done.next_time_power")));
 		if (["install", "update"].includes(S().task) && !S().fakeC7) {
 			const features = new Set([...String(p.features || "").split(","), ...String(S().firmware?.manifest?.features || "").split(",")]);
-			if (features.has("SATELLITE_TLE") || await satelliteTleAvailable(new Link(c.stream, { timeout: 1000 })))
+			if (features.has("SATELLITE_TLE"))
 				status.append(h("div", { class: "notice info" }, h("p", {}, t("flash.done.satellite_tle_offer")),
 					h("div", { class: "actions" }, button(t("flash.done.satellite_tle_load"), async () => {
 						await dropC7();
