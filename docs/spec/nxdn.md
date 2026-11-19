@@ -1,6 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
 <!-- Copyright (c) 2026 The RadioFoundry Authors -->
-<!-- Copyright (c) 2026 dB-SPL -->
 
 # NXDN
 
@@ -22,7 +21,7 @@ State:
 | Dual watch | written, host tested: a stored NXDN channel on either side, the receiver alternating onto it ([radio-features.md](radio-features.md) 2.1); not checked on a radio |
 | Channel editor on the radio | written, host tested: RAN, rate, group, unit ID ([ui.md](ui.md) 2.1) |
 | On air | transmit checked off air on a radio at both rates (`test_nxdn_tx_off_air`); receive checked at both rates with a bench transmitter, speech frames through the vocoder included (`test_nxdn_rx_from_bench`, `test_nxdn_rx_speech`); the sound at the speaker is not checked (8) |
-| Scramble encryption, 4800 and 9600 EHR | implemented and host tested; [checked on air](../feature-matrix.md) against another radio running RadioFoundry and a commercial portable |
+| NXDN Scrambler, 4800 and 9600 EHR | implemented and host tested; [checked on air](../feature-matrix.md) against another radio running RadioFoundry and a commercial portable |
 | 9600 bit/s full-rate voice (EFR), data, trunking, DES and AES | not written (10). Unsupported encrypted calls are recognized and not played |
 
 ## 1. On air
@@ -293,7 +292,7 @@ An over checked off air: the radio in NXDN on a test frequency, the SDR bench's 
 ## 9. Unconfirmed
 
 Facts the frame format and channel coding documents leave open, and what the code assumes. The frame codec checks
-its CRC and frame whitening against the clauses. The separate voice scrambler uses the published vectors in section 8.
+its CRC and frame whitening against the clauses. The NXDN Scrambler uses the published vectors in section 8.
 
 | Item | Assumed | Where |
 |---|---|---|

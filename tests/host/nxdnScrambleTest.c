@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 dB-SPL
 #include <stdio.h>
 #include <string.h>
 #include "nxdn/nxdn_scramble.h"

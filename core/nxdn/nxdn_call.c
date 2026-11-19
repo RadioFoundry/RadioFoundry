@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 dB-SPL
 // A conventional NXDN voice call (nxdn.h): on receive, the frames of nxdn_rx.c become a call with its fields and its
 // voice frames in order; on transmit, the frames are built and released symbol by symbol. Section numbers are NXDN
 // TS 1-B's (Basic Operation) where the text says so, else TS 1-A's.

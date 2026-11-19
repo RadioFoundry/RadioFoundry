@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-# Copyright (c) 2026 dB-SPL
 ## Feature switches (y / n). Precedence: the make command line, then boards/<board>/config.mk, then the defaults here.
 ##
 ##   make BOARD=<radio> CONFIG_DMR=n         an FM-only build

@@ -155,14 +155,15 @@ channel.
 | P25 unit ID | Your P25 ID. Blank: the DMR ID |
 | NXDN unit ID | Your NXDN ID, 1-65519. Blank: the DMR ID if it is 65519 or less, else 1 |
 
-#### NXDN voice scrambling
+#### NXDN Scrambler
 
-NXDN uses a 15-bit voice scrambler with 32,767 possible keys. It deters casual listening and provides no dependable
-security. The receiver cannot verify who sent a scrambled call or whether it used the right seed. Use scrambling
-only in licensed services that permit it. Most countries prohibit scrambling that obscures the meaning of amateur
-radio messages. The Amateur firmware variant disables NXDN scrambling.
+The NXDN Scrambler is a 15-bit algorithm with 32,767 possible keys. The NXDN standard defines it for voice and
+data calls, but RadioFoundry currently supports it for conventional voice calls only. It deters casual listening,
+but does not provide dependable security, and the receiver cannot verify who sent a scrambled call. Use scrambling
+only in licensed services that permit it. Most countries prohibit using codes or ciphers that obscure the meaning of amateur
+radio messages. The Amateur firmware variant disables the NXDN Scrambler.
 
-Use firmware with NXDN scrambler support.
+To use the NXDN scrambler:
 
 1. In **Systems**, choose **Add System** and set the type to **NXDN Conventional**. Leave **Radio ID on this system**
    blank to use the **NXDN unit ID** from the **Radio** tab on channels without their own **Own ID**.

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 dB-SPL
 // NXDN conventional on a channel, the radio core's side (radio_nxdn.h)
 #include "config.h"
 #if CONFIG_NXDN	// the whole file

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 dB-SPL
 // NXDN conventional voice on a channel (nxdn_engine.h).
 #include "nxdn_engine.h"
 #include "config.h"

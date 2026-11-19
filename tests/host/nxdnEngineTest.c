@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 dB-SPL
 // The NXDN engine (core/nxdn/nxdn_engine.c) and the air interface session under it: two engines on two made-up
 // providers whose transmit queues feed each other's receivers a chunk at a time. A call from one is heard by the
 // other with its fields and its voice in order; an encoder that stalls is covered with silence and never underruns

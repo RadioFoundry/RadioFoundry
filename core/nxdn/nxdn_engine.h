@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 dB-SPL
 // NXDN conventional voice on a channel (docs/spec/nxdn.md 7): the call layer (nxdn.h) on an air interface session
 // (core/air/air_session.h). The radio core begins it on an NXDN channel and ends it on leaving; in between it
 // receives calls, hands their voice frames to a sink, and transmits when the radio core says so. No RTOS call: the

@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-# Copyright (c) 2026 dB-SPL
 """NXDN conventional on the radio (docs/spec/nxdn.md 6).
 
 test_nxdn_mode_switch: the channel on view becomes NXDN by a temporary mode change (the debug link's mode request,

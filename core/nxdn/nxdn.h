@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 dB-SPL
 // NXDN conventional voice (docs/spec/nxdn.md): the frame and its channels, the framer's table for the mode, and a
 // voice call on top of them. Section numbers are NXDN TS 1-A's (Common Air Interface) unless another part is named.
 //

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 dB-SPL
 // NXDN TS 1-D 5.3.1 and 5.4.4.1: scramble the 49 vocoder bits of one EHR VCH.
 #ifndef RFOUNDRY_NXDN_SCRAMBLE_H
 #define RFOUNDRY_NXDN_SCRAMBLE_H
