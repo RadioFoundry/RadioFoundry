@@ -467,7 +467,7 @@ static size_t alt_expand(const char *s, int level, char *out, size_t cap, bool *
 	return n;
 }
 
-#if CONFIG_LANG_ZH
+#if CONFIG_LANG_ZH || CONFIG_LANG_RU
 #define ALT_TEXT_MAX	160	// a CJK alternative takes 3 bytes a character, so the 96 a Latin-1 catalog needs are not enough
 #else
 #define ALT_TEXT_MAX	96
@@ -478,7 +478,7 @@ size_t gfx_text_alt(const char *s, int level, char *out, size_t cap, bool *more)
 	return alt_expand(s, level, out, cap, more);
 }
 
-#if CONFIG_LANG_ZH
+#if CONFIG_LANG_ZH || CONFIG_LANG_RU
 // A CJK catalog's text is UTF-8 (tools/i18n.py), so the text layer steps a character at a time. Only a three-byte
 // sequence is UTF-8: a Chinese catalog has nothing below U+0800, so every other byte is one character the Latin font
 // draws (ASCII, one of font.h's glyphs, or a Latin-1 letter: a channel name, a received message and the Spanish and
@@ -487,6 +487,13 @@ size_t gfx_text_alt(const char *s, int level, char *out, size_t cap, bool *more)
 uint32_t gfx_utf8_next(const char *s, int *len)
 {
 	const uint8_t *b = (const uint8_t *)s;
+#if CONFIG_LANG_RU
+	if (b[0] == CYRILLIC_PREFIX && b[1] >= 0xa0 && b[1] < 0xa0 + CYRILLIC_COUNT) {
+		*len = 2;
+		return CYRILLIC_BASE + b[1] - 0xa0u;
+	}
+#endif
+#if CONFIG_LANG_ZH
 	if ((b[0] & 0xF0) == 0xE0 && (b[1] & 0xC0) == 0x80 && (b[2] & 0xC0) == 0x80) {
 		uint32_t cp = ((uint32_t)(b[0] & 0x0Fu) << 12) | ((uint32_t)(b[1] & 0x3Fu) << 6) | (uint32_t)(b[2] & 0x3Fu);
 		if (cp >= 0x800) {	// not an overlong form
@@ -494,6 +501,7 @@ uint32_t gfx_utf8_next(const char *s, int *len)
 			return cp;
 		}
 	}
+#endif
 	*len = 1;			// ASCII, a glyph byte (0x80..0x85), or Latin-1 text
 	return b[0];
 }
@@ -501,7 +509,7 @@ uint32_t gfx_utf8_next(const char *s, int *len)
 // How far a character moves the pen in a font: its Latin cell, or a CJK glyph's 16 (a missing one is a box as wide)
 static int char_w(const font_t *f, uint32_t cp)
 {
-	return cp > 0xFF ? CJK_FONT_W : f->w;
+	return cp >= 0x800 ? CJK_FONT_W : f->w;
 }
 
 static int text_w(const font_t *f, const char *s)
@@ -529,7 +537,7 @@ static int text(const font_t *f, int x, int y, const char *s, color_t fg, bool o
 	const char *s0 = s;
 	int x0 = x;
 #endif
-#if CONFIG_LANG_ZH
+#if CONFIG_LANG_ZH || CONFIG_LANG_RU
 	while (*s) {
 		int seq;
 		uint32_t cp = gfx_utf8_next(s, &seq);
@@ -546,8 +554,12 @@ static int text(const font_t *f, int x, int y, const char *s, color_t fg, bool o
 			gfx_fill(x, y, adv, f->h, bg);
 		const uint8_t *g;
 		int top = 0, rows = 0;
-		if (cp > 0xFF) {
+		if (cp >= 0x800) {
+#if CONFIG_LANG_ZH
 			g = cjk_font_glyph(cp);
+#else
+			g = NULL;
+#endif
 			top = f->h - CJK_FONT_H;	// the bottom of the cell: on the Latin baseline
 			rows = CJK_FONT_H;
 			if (top < 0) {			// a cell shorter than the glyph (a layout that must not hold Chinese): clip it to the cell
@@ -558,20 +570,24 @@ static int text(const font_t *f, int x, int y, const char *s, color_t fg, bool o
 			}
 			if (g == NULL)
 				gfx_rect(x + 1, y + 1, adv - 2, f->h - 2, fg);	// no glyph: a box
+#if CONFIG_LANG_RU
+		} else if (cp >= CYRILLIC_BASE) {
+			g = font_cyrillic(f, cp - CYRILLIC_BASE, &top, &rows);
+#endif
 		} else {
 			g = font_glyph(f, (uint8_t)cp, &top, &rows);
 			if (g == NULL)
 				fallback_glyph(f, x, y, (uint8_t)cp, fg);
 		}
 		if (g != NULL) {
-			int bytes = cp > 0xFF ? CJK_FONT_ROW_BYTES : (f->w * f->bpp + 7) / 8;
+			int bytes = cp >= 0x800 ? CJK_FONT_ROW_BYTES : (f->w * f->bpp + 7) / 8;
 			for (int r = 0; r < rows; r++, g += bytes) {
 				int yy = py + top + r;
 				if (yy < clip_y0 || yy >= clip_y1)
 					continue;
 				for (int col = 0; col < adv; col++) {
 #if CONFIG_FONT_AA
-					unsigned a = (cp <= 0xFF && f->bpp == 2) ?
+					unsigned a = (cp < 0x800 && f->bpp == 2) ?
 						     (g[col >> 2] >> (6 - 2 * (col & 3))) & 3u :
 						     (g[col >> 3] & (0x80u >> (col & 7))) ? 3u : 0;
 #else
@@ -652,7 +668,7 @@ int gfx_text_bg(const font_t *f, int x, int y, const char *s, color_t fg, color_
 
 int gfx_text_width(const font_t *f, const char *s)
 {
-#if CONFIG_LANG_ZH
+#if CONFIG_LANG_ZH || CONFIG_LANG_RU
 	char first[ALT_TEXT_MAX];
 	if (strchr(s, TEXT_ALT_OPEN[0])) {
 		bool more;
@@ -693,9 +709,9 @@ static void fit_latin(const font_t *f, const char *s, int max_w, char *out, size
 	out[fit] = 0;
 }
 
-#if CONFIG_LANG_ZH
-// True when the text holds a character only the CJK face can draw
-static bool has_wide(const char *s)
+#if CONFIG_LANG_ZH || CONFIG_LANG_RU
+// Multi-byte glyphs must stay whole when cutting text.
+static bool has_multibyte(const char *s)
 {
 	while (*s) {
 		int seq;
@@ -706,17 +722,21 @@ static bool has_wide(const char *s)
 	return false;
 }
 
-// The CJK cut: at the end, one whole character at a time, never inside one (docs/spec/ui.md 2.5). Chinese has no spaces
-// to cut at the middle, and the start of a short line carries its meaning
-static void fit_cjk(const font_t *f, const char *s, int max_w, char *out, size_t out_len)
+// The multibyte cut keeps the start and advances by whole glyphs.
+static void fit_multibyte(const font_t *f, const char *s, int max_w, char *out, size_t out_len)
 {
 	size_t n = strlen(s);
 	size_t cap = out_len - 1;
 	if (text_w(f, s) <= max_w) {
-		if (n > cap) {			// a buffer too small for the whole text: cut whole characters
-			n = cap;
-			while (n > 0 && ((uint8_t)s[n] & 0xC0u) == 0x80u)
-				n--;
+		if (n > cap) {
+			n = 0;
+			while (n < cap) {
+				int seq;
+				gfx_utf8_next(s + n, &seq);
+				if (n + (size_t)seq > cap)
+					break;
+				n += (size_t)seq;
+			}
 		}
 		memcpy(out, s, n);
 		out[n] = 0;
@@ -751,8 +771,8 @@ void gfx_text_fit_end(const font_t *f, const char *s, int max_w, char *out, size
 {
 	if (out_len == 0)
 		return;
-	if (has_wide(s)) {
-		fit_cjk(f, s, max_w, out, out_len);
+	if (has_multibyte(s)) {
+		fit_multibyte(f, s, max_w, out, out_len);
 #ifdef GFX_FIT_TRACE
 		if (strcmp(s, out) != 0)
 			gfx_fit_trace(s, out);
@@ -801,7 +821,7 @@ void gfx_text_fit(const font_t *f, const char *src, int max_w, char *out, size_t
 			alt_expand(src, level, alt, sizeof alt, &next);
 			more = next;
 			// It has to fit the space and the buffer: out_len - 1 bytes, whatever their width
-#if CONFIG_LANG_ZH
+#if CONFIG_LANG_ZH || CONFIG_LANG_RU
 			if (text_w(f, alt) <= max_w && strlen(alt) <= out_len - 1)
 #else
 			if ((int)strlen(alt) * f->w <= max_w && strlen(alt) <= out_len - 1)
@@ -810,10 +830,10 @@ void gfx_text_fit(const font_t *f, const char *src, int max_w, char *out, size_t
 		}
 		s = alt;
 	}
-#if CONFIG_LANG_ZH
-	// A line with Chinese is cut at the end; a line of Latin keeps the middle cut every other language has
-	if (has_wide(s))
-		fit_cjk(f, s, max_w, out, out_len);
+#if CONFIG_LANG_ZH || CONFIG_LANG_RU
+	// Multibyte text uses the whole-glyph end cut.
+	if (has_multibyte(s))
+		fit_multibyte(f, s, max_w, out, out_len);
 	else
 #endif
 		fit_latin(f, s, max_w, out, out_len);

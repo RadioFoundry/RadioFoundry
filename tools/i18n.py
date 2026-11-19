@@ -50,6 +50,8 @@ BYTE_TO_TEXT = {b: t for b, t in MACROS.values()}
 TEXT_TO_BYTE = {t: b for b, t in MACROS.values()}
 # Catalog-only letters in the byte range reserved by FONT_LATIN_EXTENDED_FIRST in core/ui/font.h.
 EXTENDED_LATIN = {char: byte for byte, char in enumerate("ĞğİıŞş", 0x90)}
+CYRILLIC = {char: bytes((0x9F, slot)) for slot, char in enumerate(
+    "".join(chr(cp) for cp in range(0x410, 0x450)) + "Ёё", 0xA0)}
 MAX_BYTES = 255
 
 
@@ -116,6 +118,8 @@ def text_to_bytes(text, where):
             out.append(TEXT_TO_BYTE[ch])
         elif ch in EXTENDED_LATIN:
             out.append(EXTENDED_LATIN[ch])
+        elif ch in CYRILLIC:
+            out += CYRILLIC[ch]
         elif 0x20 <= ord(ch) < 0x7F or 0xA0 <= ord(ch) <= 0xFF:
             out.append(ord(ch))
         else:
@@ -878,8 +882,10 @@ def generate(out_path, found=None):
     # A CJK language names itself in its own script; a build without the CJK face would draw those bytes as boxes in
     # Settings > Display > Language, so it lists the Latin name instead
     for code, name, wide_name, latin_name, sw, pairs, blob, offs, wide in built:
-        if not wide:
+        if not wide and code != "ru":
             continue
+        if code == "ru":
+            latin_name = "Russian"
         lines.append("#if %s" % sw)
         lines.append("#define LANG_%s_NAME\t%s" % (code.upper(), c_bytes(wide_name)))
         lines.append("#else")
@@ -891,7 +897,7 @@ def generate(out_path, found=None):
     lines.append("\t{ \"en\", \"English\", true, false, NULL }, \\")
     for code, name, wide_name, latin_name, sw, pairs, blob, offs, wide in built:
         lines.append("\t{ \"%s\", %s, %s, %s, LANG_%s_TABLE }, \\" % (
-            code, "LANG_%s_NAME" % code.upper() if wide else c_bytes(wide_name), sw,
+            code, "LANG_%s_NAME" % code.upper() if wide or code == "ru" else c_bytes(wide_name), sw,
             "true" if wide else "false", code.upper()))
     lines.append("}")
     lines.append("// The language an empty setting means: the first CONFIG_LANG_DEFAULT_<CODE> on, else English")
@@ -979,7 +985,8 @@ def main():
                     errs.append("%s: no %s header (the name a build without the CJK face lists, e.g. \"Chinese\")"
                                 % (rel, LATIN_NAME_HEADER))
                 if not wide:
-                    bad = [c for _, _, s, _ in entries for c in s if ord(c) > 0xFF and c not in TEXT_TO_BYTE]
+                    bad = [c for _, _, s, _ in entries for c in s if ord(c) > 0xFF and c not in TEXT_TO_BYTE
+                           and c not in EXTENDED_LATIN and c not in CYRILLIC]
                     if bad:
                         errs.append("%s: %r can't be drawn by the Latin fonts: give the catalog a \"%s: utf8\" "
                                     "header and build the CJK font with tools/cjkfont.py" % (rel, bad[0], WIDE_HEADER))

@@ -163,6 +163,16 @@ Regenerate the supplemental font data with
 The source tags are Spleen 2.1.0 and JetBrains Mono v2.304. The committed
 anti-aliased data was generated with Pillow 12.1.1 and FreeType 2.14.1.
 
+### Russian
+
+The Russian menu catalog uses the 66 Russian Cyrillic letterforms, including Ё
+and ё. The catalog compiler encodes each as the reserved byte 0x9F followed by
+its glyph index plus 0xA0. Each letter occupies one cell of the current font.
+The renderer keeps both bytes together when wrapping and fitting labels.
+
+Regenerate the Russian bitmaps with `tools/cyrillicfont.py` using the public
+domain X11 5x8 fixed BDF and the Spleen and JetBrains Mono sources listed above.
+
 ### Chinese and other CJK languages
 
 The Latin fonts have no glyph for Chinese, so such a catalog is UTF-8 and brings its own face. Everything else works as

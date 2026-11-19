@@ -2924,7 +2924,7 @@ static int list_bottom(const ui_state_t *s)
 // word longer than the line, never shortening), returns where the next line starts
 static const char *wrap_line(const font_t *f, const char *t, int max_w, char *line, size_t cap)
 {
-#if CONFIG_LANG_ZH
+#if CONFIG_LANG_ZH || CONFIG_LANG_RU
 	// A character at a time: a CJK character may end a line as well as a space, and the width is measured on whole
 	// characters, so a line never holds half of one
 	int n = 0, cut = 0;
@@ -2941,7 +2941,7 @@ static const char *wrap_line(const font_t *f, const char *t, int max_w, char *li
 			line[n] = 0;
 			break;
 		}
-		if (t[n - seq] == ' ' || cp > 0xFF)
+		if (t[n - seq] == ' ' || cp >= 0x800)
 			cut = n;
 	}
 	bool fits_all = t[n] == 0 || t[n] == '\n';
@@ -3075,7 +3075,7 @@ int ui_draw_text_page(const radio_view_t *v, const ui_state_t *s, const char *ti
 // message), where the start is what matters
 static void fit_end(const font_t *f, const char *s, int max_w, char *out, size_t len)
 {
-#if CONFIG_LANG_ZH
+#if CONFIG_LANG_ZH || CONFIG_LANG_RU
 	// Chinese has no spaces to break at, and a character is not one byte: a line with a wide character is cut by whole
 	// characters at the end; Latin text keeps the word cut below
 	gfx_text_fit_end(f, s, max_w, out, len);

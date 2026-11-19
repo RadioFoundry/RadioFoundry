@@ -44,6 +44,9 @@ typedef struct {
 	// bytes, MSB = left (the blank rows above and below aren't stored). index: where each glyph starts in bits
 	const uint8_t *bits;
 	const uint16_t *index;
+#if CONFIG_LANG_RU
+	const uint8_t *cyrillic;
+#endif
 #if CONFIG_FONT_LATIN_EXTENDED
 	const uint8_t *latin_extended;
 #endif
@@ -88,5 +91,13 @@ extern const font_t font_9x18;
 const uint8_t *font_glyph(const font_t *f, uint8_t c, int *top, int *rows);
 // A supported Latin letter as plain ASCII, without its accent ("\xF3" is 'o'); other bytes pass through.
 char font_fold(char c);
+
+#if CONFIG_LANG_RU
+// The catalog encoder uses 0x9f followed by 0xa0 plus the glyph index.
+#define CYRILLIC_PREFIX 0x9fu
+#define CYRILLIC_BASE 0x100u
+#define CYRILLIC_COUNT 66u
+const uint8_t *font_cyrillic(const font_t *f, unsigned glyph, int *top, int *rows);
+#endif
 
 #endif

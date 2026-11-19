@@ -183,6 +183,10 @@ below are for an STM32F4 radio.
 | `CONFIG_FONT_AA` | n (y on a color radio) | the fonts from 6x12 up anti-aliased (JetBrains Mono Bold, 2 bits a pixel) on color panels instead of the bitmap ones; a mono panel would draw them as plain ink, so mono radios leave it off. Glyphs: 15.6 KB with `FONT_XL` (8.2 KB without) in place of 9.2 KB (5.3 KB) of bitmap ones (`core/ui/fonts.c`). On a 4 bpp panel (every color board) the edge grays share the 16 palette entries with the screen's own colors; a screen that already uses many colors loses some of them, and some font sizes or colors can then be slightly harder to read (`docs/spec/ui.md` 5) |
 | `CONFIG_FONT_BIG` | n (y on a 240 px color radio) | larger text on 240 px and wider color panels: lists, labels, the status strip and hints in a 9x18 font instead of 8x16 (24 characters a line instead of 27 on a 240 px panel; the 8x16 one takes the small print). Needs `FONT_AA`; 3.5 KB of flash. Unsupported on a panel under 220 px wide (the board's `hardware.gallery`), and so off in its maximal build |
 | `CONFIG_FONT_LATIN_EXTENDED` | n | Turkish letterforms in the fixed-cell fonts for monochrome and color screens |
+| `CONFIG_LANG_TR` | n | Turkish menus. Enables the extended Latin font. |
+| `CONFIG_LANG_RU` | n | Russian menus and fixed-cell Cyrillic glyphs. |
+| `CONFIG_LANG_DEFAULT_TR` | n | Starts in Turkish when the user has no saved language. Requires `CONFIG_LANG_TR`. |
+| `CONFIG_LANG_DEFAULT_RU` | n | Starts in Russian when the user has no saved language. Requires `CONFIG_LANG_RU`. |
 | `CONFIG_LANG_ES` | y | Spanish on the radio: Settings > Display > Language (`docs/spec/ui.md` 2.5, `core/ui/lang/es.po`). The first language also brings the accented letters of every font (`CONFIG_LANG_ANY`); each further language adds only its text. Off: Spanish is listed but dimmed. One switch per language, [translating.md](dev/translating.md) |
 | `CONFIG_LANG_IT` | n | Italian on the radio (`core/ui/lang/it.po`), as `CONFIG_LANG_ES`. Off: Italian is listed but dimmed |
 | `CONFIG_LANG_FR` | n | French on the radio (`core/ui/lang/fr.po`), as `CONFIG_LANG_ES`. Off: French is listed but dimmed |

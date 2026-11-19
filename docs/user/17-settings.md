@@ -51,8 +51,8 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 
 ### Display (key 2)
 
-Custom firmware builds can include Turkish letter shapes through
-`FONT_LATIN_EXTENDED`. Available menu languages depend on the installed catalogs.
+Custom firmware builds can include **Türkçe** and **Русский**. Use **Language**
+to switch between the installed menus.
 
 | Setting | Values | Default | What it does | Status |
 |---|---|---|---|---|

@@ -499,6 +499,22 @@ spec = "docs/spec/ui.md"
 switch = "FONT_LATIN_EXTENDED"
 spec = "docs/spec/ui.md"
 
+[feature.lang_tr]
+switch = "LANG_TR"
+spec = "docs/spec/ui.md"
+
+[feature.lang_ru]
+switch = "LANG_RU"
+spec = "docs/spec/ui.md"
+
+[feature.lang_default_tr]
+switch = "LANG_DEFAULT_TR"
+spec = "docs/spec/ui.md"
+
+[feature.lang_default_ru]
+switch = "LANG_DEFAULT_RU"
+spec = "docs/spec/ui.md"
+
 [feature.lang_es]
 switch = "LANG_ES"
 spec = "docs/spec/ui.md"

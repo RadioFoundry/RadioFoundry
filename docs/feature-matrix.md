@@ -144,6 +144,10 @@ is `tools/bringup.py list --radio <id>`.
 | `font_aa` | not recorded | off | off | off | off | off | ✕ | ✕ |
 | `font_big` | not recorded | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `font_latin_extended` | off | off | off | off | off | off | off | off |
+| `lang_tr` | off | off | off | off | off | off | off | off |
+| `lang_ru` | off | off | off | off | off | off | off | off |
+| `lang_default_tr` | off | off | off | off | off | off | off | off |
+| `lang_default_ru` | off | off | off | off | off | off | off | off |
 | `lang_es` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off | ✕ |
 | `lang_it` | off | off | off | off | off | off | off | ✕ |
 | `lang_fr` | off | off | off | off | off | off | off | off |
@@ -245,6 +249,10 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `FONT_XL` | ● | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `FONT_AA` | ● | ○ | ○ | ○ | ○ | ○ | ✕ | ✕ |
 | `FONT_BIG` | ● | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
+| `LANG_TR` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
+| `LANG_RU` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
+| `LANG_DEFAULT_TR` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
+| `LANG_DEFAULT_RU` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `LANG_ES` | ● | ● | ● | ● | ● | ● | ○ | ✕ |
 | `LANG_IT` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ✕ |
 | `LANG_FR` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |

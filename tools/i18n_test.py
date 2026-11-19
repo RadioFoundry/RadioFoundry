@@ -71,6 +71,10 @@ class Marks(unittest.TestCase):
                          bytes.fromhex("90 91 92 93 94 95 c7 e7 d6 f6 dc fc"))
         self.assertEqual(i18n.text_to_bytes("Işık", "TEST"), b"I\x95\x93k")
 
+    def test_russian_catalog_letters_use_prefixed_cells(self):
+        self.assertEqual(i18n.text_to_bytes("АЯаяЁё", "TEST"),
+                         bytes.fromhex("9f a0 9f bf 9f c0 9f df 9f e0 9f e1"))
+
     def test_old_form_is_an_error(self):
         with self.assertRaisesRegex(i18n.I18nError, "takes a key"):
             scan('x = TR("Zone");\n')

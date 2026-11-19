@@ -16,9 +16,26 @@
 #define LATIN_EXTENDED(n)
 #endif
 
+#if CONFIG_LANG_RU
+#include "fonts/cyrillic_small.inc"
+#include "fonts/cyrillic_spleen.inc"
+#include "fonts/cyrillic_jbmono.inc"
+#define CYRILLIC(n) , n##_cyrillic
+
+const uint8_t *font_cyrillic(const font_t *f, unsigned glyph, int *top, int *rows)
+{
+	unsigned stride = (f->w * f->bpp + 7u) / 8u;
+	*top = 0;
+	*rows = f->h;
+	return f->cyrillic + glyph * stride * f->h;
+}
+#else
+#define CYRILLIC(n)
+#endif
+
 #define FONT(var, n, N, bpp) \
 	const font_t var = { N##_W, N##_H, N##_ASCENT, N##_MISSING, bpp, FONT_LATIN1 && N##_LATIN1, \
-		n##_bits, n##_index LATIN_EXTENDED(n) }
+		n##_bits, n##_index CYRILLIC(n) LATIN_EXTENDED(n) }
 
 #include "fonts/spleen_5x8.inc"
 FONT(font_5x8, spleen_5x8, SPLEEN_5X8, 1);
