@@ -1036,9 +1036,10 @@ receiving and the UI keeps running while a host reads it.
 `hw.<part>` keys are `mcu`, `flash`, `display`, `dmr`, `rf` and `board`, with the values About shows
 ([support-info.md](support-info.md) 2). The hardware options are in HWOPT LIST (3.25).
 
-HASH hashes the next 32 KB of the image per request. A host repeats it until `image.state=done`; a full image takes
-about 20 requests. The result is kept until the next start-up, so later requests, and About, answer at once. Bad
-argument (2) for any other operation or a longer payload.
+HASH hashes the next 32 KB of the image per request, less when 5 ms runs out first, and nothing while About's step
+is running. A host repeats it until `image.state=done` and shows `image.done` as progress; a full image takes about
+20 requests or more. It is the same hash About steps, and its result is kept until the next start-up, so later
+requests answer at once. Bad argument (2) for any other operation or a longer payload.
 
 `rfoundry_debug.py support` prints both.
 

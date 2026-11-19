@@ -50,15 +50,14 @@ static void info(dl_text_t *t)
 
 static void hash(dl_text_t *t)
 {
-	static image_hash_t h;
 	uint8_t d[SHA256_LEN];
 	uint32_t addr, len;
 	if (!image_hash_span(&addr, &len)) {
 		dl_text(t, "image.state=none\n");
 		return;
 	}
-	if (!image_hash_step(&h, IMAGE_HASH_STEP_LINK, d)) {
-		dl_text(t, "image.state=pending\nimage.done=%u\nimage.size=%u\n", (unsigned)h.done, (unsigned)len);
+	if (!image_hash_step(IMAGE_HASH_LINK, IMAGE_HASH_STEP_LINK, d)) {
+		dl_text(t, "image.state=pending\nimage.done=%u\nimage.size=%u\n", (unsigned)image_hash_done(), (unsigned)len);
 		return;
 	}
 	dl_text(t, "image.state=done\nimage.size=%u\nimage.sha256=", (unsigned)len);

@@ -2,6 +2,8 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 """The support info on the radio (docs/spec/support-info.md, debuglink.md 3.29): VERSION's source=, SUPPORT INFO's
 hardware lines, and the image hash a step per request while the radio keeps answering. Read only."""
+import time
+
 import pytest
 
 from rfoundry_debug import DebugLinkError
@@ -38,13 +40,23 @@ def test_support_info_lines(radio):
 
 @pytest.mark.feature("support_info")
 def test_image_hash_steps_and_is_kept(radio):
-    """The hash comes a step at a time with the radio answering between steps; asked again, it answers at once with
-    the same digest."""
+    """The hash comes a step at a time with the radio answering between steps, each step short (5 ms of hashing on
+    the radio, support-info.md 3); asked again, it answers at once with the same digest."""
     support(radio)
-    steps = []
-    digest = radio.link.image_hash(progress=lambda done, size: (steps.append(done), radio.link.ping()))
+    steps, gaps = [], []
+    last = [time.monotonic()]
+
+    def step(done, size):
+        gaps.append(time.monotonic() - last[0])
+        steps.append(done)
+        radio.link.ping()
+        last[0] = time.monotonic()
+
+    digest = radio.link.image_hash(progress=step)
     assert digest and len(digest) == 64 and int(digest, 16) >= 0, digest
     assert steps == sorted(steps)
+    # a request's round trip with its step: the link's own latency plus the 5 ms, far under this on any link
+    assert not gaps or max(gaps) < 0.25, "slowest HASH step %.0f ms" % (max(gaps) * 1000)
     again = []
     assert radio.link.image_hash(progress=lambda done, size: again.append(done)) == digest
     assert again == []

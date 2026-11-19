@@ -23,6 +23,14 @@ static int failures;
 #define IMAGE_LEN	100003u		// not a multiple of a step or a read
 static uint8_t image[IMAGE_LEN];
 static uint32_t reads;			// bytes read() returned
+static uint32_t now, ms_per_read;	// the fake clock (hal_millis), moved on by each read()
+static bool preempt;			// the next read() is cut into by the debug link's step, as its task would
+static bool preempt_ran;		// that step returned at once, reading nothing
+
+uint32_t hal_millis(void)
+{
+	return now;
+}
 
 static bool chip(hal_chip_t *c)
 {
@@ -36,6 +44,14 @@ static void sys_read(uint32_t addr, void *dst, size_t n)
 {
 	memcpy(dst, image + (addr - IMAGE_BASE), n);
 	reads += (uint32_t)n;
+	now += ms_per_read;
+	if (preempt) {
+		preempt = false;
+		uint8_t d[SHA256_LEN];
+		uint32_t before = reads, done = image_hash_done();
+		preempt_ran = !image_hash_step(IMAGE_HASH_LINK, IMAGE_HASH_STEP_LINK, d) && reads == before &&
+			image_hash_done() == done;
+	}
 }
 
 static void sys_image(uint32_t *addr, uint32_t *len)
@@ -130,7 +146,7 @@ static void sha_tests(void)
 
 static uint8_t want[SHA256_LEN];	// the image's SHA-256 at once
 
-// After link_hash_steps finished it: the digest is the image's, and it is kept, so another caller has it at once
+// After hash_steps finished it: the digest is the image's, and it is kept, so another caller has it at once
 // with no read
 static void image_tests(void)
 {
@@ -138,11 +154,9 @@ static void image_tests(void)
 	uint32_t addr, len;
 	CHECK(image_hash_span(&addr, &len) && addr == IMAGE_BASE && len == IMAGE_LEN);
 	CHECK(image_hash_known(got) && memcmp(got, want, SHA256_LEN) == 0);
-	image_hash_t other;
-	memset(&other, 0, sizeof other);
 	memset(got, 0, sizeof got);
 	reads = 0;
-	CHECK(image_hash_step(&other, 1u, got) && reads == 0 && memcmp(got, want, SHA256_LEN) == 0);
+	CHECK(image_hash_step(IMAGE_HASH_UI, 1u, got) && reads == 0 && memcmp(got, want, SHA256_LEN) == 0);
 }
 
 // ---- The hardware lines ----
@@ -219,9 +233,10 @@ static void link_tests(void)
 	CHECK(debuglink_cmd_support(&op, 1, out, sizeof out) == 1 && out[0] == DL_ST_BAD_ARG);
 }
 
-// A fresh hash over the link: pending a step at a time (image.done growing, no request reading more than its step),
-// then done with the image's digest. image_hash keeps its result for the run, so this runs before anything finishes one
-static void link_hash_steps(void)
+// A fresh hash, by both callers in turn: one hash, so each carries on where the other stopped. A step ends at its
+// byte limit or after IMAGE_HASH_STEP_MS, and a step from the other task while one runs does nothing. image_hash keeps
+// its result for the run, so this runs before anything finishes one
+static void hash_steps(void)
 {
 	uint8_t got[SHA256_LEN];
 	CHECK(!image_hash_known(got));
@@ -229,14 +244,22 @@ static void link_hash_steps(void)
 	size_t n = cmd(DL_SUPPORT_OP_HASH);
 	CHECK(n > 1 && out[0] == DL_ST_OK && has("image.state=pending\nimage.done=32768\nimage.size=100003\n"));
 	CHECK(reads == IMAGE_HASH_STEP_LINK);
-	unsigned steps = 1;
-	while (!has("image.state=done") && steps < 10) {
-		reads = 0;
-		cmd(DL_SUPPORT_OP_HASH);
-		CHECK(reads <= IMAGE_HASH_STEP_LINK);
-		steps++;
-	}
-	CHECK(steps == 4);	// 32 KB a request: 32768, 65536, 98304, then the end
+	// A slow read: the step ends on time, after 5 reads of 256 bytes
+	ms_per_read = 1;
+	reads = 0;
+	cmd(DL_SUPPORT_OP_HASH);
+	CHECK(reads == IMAGE_HASH_STEP_MS * 256u && has("image.done=34048\n"));
+	ms_per_read = 0;
+	// About's step, cut into by the debug link's: that one waits, About's goes on from the link's progress
+	preempt = true;
+	preempt_ran = false;
+	reads = 0;
+	CHECK(!image_hash_step(IMAGE_HASH_UI, IMAGE_HASH_STEP_UI, got));
+	CHECK(preempt_ran && reads == IMAGE_HASH_STEP_UI && image_hash_done() == 34048u + IMAGE_HASH_STEP_UI);
+	// The link finishes it: the rest of the image, then done with its digest
+	reads = 0;
+	cmd(DL_SUPPORT_OP_HASH);
+	CHECK(reads == IMAGE_LEN - 34048u - IMAGE_HASH_STEP_UI && has("image.state=done\n"));
 	char h[2 * SHA256_LEN + 1], line[100];
 	hex(want, h);
 	snprintf(line, sizeof line, "image.sha256=%s\n", h);
@@ -253,7 +276,7 @@ int main(void)
 	sha256_update(&s, image, IMAGE_LEN);
 	sha256_final(&s, want);
 	sha_tests();
-	link_hash_steps();
+	hash_steps();
 	image_tests();
 	line_tests();
 	link_tests();

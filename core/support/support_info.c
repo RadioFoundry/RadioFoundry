@@ -37,7 +37,7 @@ tr_id_t support_source_text(support_source_t s)
 {
 	switch (s) {
 	case SUPPORT_SRC_OFFICIAL:
-		return TRN(ABOUT_VALUE_SOURCE_OFFICIAL, "RadioFoundry release build");
+		return TRN(ABOUT_VALUE_SOURCE_OFFICIAL, "RadioFoundry CI build");
 	case SUPPORT_SRC_SERVICE:
 		return TRN(ABOUT_VALUE_SOURCE_SERVICE, "RadioFoundry build service");
 	case SUPPORT_SRC_PR:

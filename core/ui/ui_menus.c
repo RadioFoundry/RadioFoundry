@@ -5374,8 +5374,7 @@ static uint16_t about_max;	// the largest first line (from the last draw)
 	(CONFIG_SUPPORT_INFO ? 448u : 0u))
 
 #if CONFIG_SUPPORT_INFO
-static image_hash_t about_hash;		// the image hash, a step per redraw while About is open (image_hash.h)
-static bool about_hashing;		// a step is still to come: the UI redraws About at its fast rate
+static bool about_hashing;		// the image hash (image_hash.h) has a step still to come: the UI redraws About at its fast rate
 
 bool ui_about_busy(void)
 {
@@ -5400,7 +5399,7 @@ static void about_support(sbuf_t *b)
 	about_hashing = false;
 	if (image_hash_span(&addr, &len)) {
 		sb_str(b, TR(ABOUT_LABEL_IMAGE, "Image: "));
-		if (image_hash_step(&about_hash, IMAGE_HASH_STEP_UI, d)) {
+		if (image_hash_step(IMAGE_HASH_UI, IMAGE_HASH_STEP_UI, d)) {
 			for (uint8_t i = 0; i < 8; i++) {
 				sb_chr(b, "0123456789abcdef"[d[i] >> 4]);
 				sb_chr(b, "0123456789abcdef"[d[i] & 15u]);

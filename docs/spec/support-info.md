@@ -20,7 +20,7 @@ and `RFOUNDRY_GIT_REPO`; About shows it as "Source", and VERSION as `source=` an
 
 | `source` | When | About |
 |---|---|---|
-| `official` | Our CI (GitHub Actions in RadioFoundry/RadioFoundry), not a pull request: the images the web site installs | RadioFoundry release build |
+| `official` | Our CI (GitHub Actions in RadioFoundry/RadioFoundry), not a pull request: main, nightly and release builds alike; only the image hash (3) tells a release | RadioFoundry CI build |
 | `service` | Our build service (`make BUILD_SOURCE=service`) | RadioFoundry build service |
 | `pr` | Our CI building a pull request | Pull request build, and the repository |
 | `local` | A clone whose `origin` is our repository | Built locally, and the repository |
@@ -57,9 +57,11 @@ its initialized data, the same bytes as the `.bin` a release ships (`_install.bi
 The platform reports the span with `board.system->image` (the linker's `__app_base` and `__image_end`) and reads it
 with `board.system->read`.
 
-The hash runs in steps so the radio never stalls. About hashes 64 KB a redraw and redraws at its fast rate until it
-is done; it shows "checking" until then, then the first 16 hex digits. SUPPORT HASH hashes 32 KB a request. The first
-result is kept until the next start-up, so the other caller has it at once. Closing About mid-way stops the work.
+The hash runs in steps so the radio never stalls. About hashes up to 64 KB a redraw and redraws at its fast rate until
+it is done; it shows "checking" until then, then the first 16 hex digits. SUPPORT HASH hashes up to 32 KB a request.
+Either step also ends after 5 ms, so a slow flash read or a slow core makes the hash take longer, not the UI stall.
+About and SUPPORT step the same hash: each carries on where the other stopped, and a step that would run while the
+other's is running does nothing. The result is kept until the next start-up. Closing About mid-way stops the work.
 
 A host matches the hash against the `sha256` of every image in the site's `releases.json` for that board. A match
 means the radio runs one of our release images, whatever its source line says. No match means a fork, a local build,

@@ -719,7 +719,7 @@ class DebugLink:
         return parse_kv(self.request(SUPPORT, bytes([SUPPORT_OP_INFO]))[1].decode("ascii", "replace"))
 
     def image_hash(self, progress=None):
-        """The firmware image's SHA-256 as hex, a 32 KB step per request (the radio carries on between them); None
+        """The firmware image's SHA-256 as hex, a step of up to 32 KB per request (the radio carries on between them); None
         where the platform reports no image span. progress(done, size) after each pending step."""
         for _ in range(4096):
             kv = parse_kv(self.request(SUPPORT, bytes([SUPPORT_OP_HASH]))[1].decode("ascii", "replace"))
