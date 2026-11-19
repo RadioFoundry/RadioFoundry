@@ -4400,6 +4400,11 @@ msgid "Waiting for position/time"
 msgstr "等待位置/时间"
 
 #: core/ui/ui_satellite.c
+msgctxt "NOW"
+msgid "Now"
+msgstr "当前"
+
+#: core/ui/ui_satellite.c
 msgctxt "PREDICTING_PASSES_2"
 msgid "Predicting passes"
 msgstr "正在预测过境"
@@ -4423,11 +4428,6 @@ msgstr "GPS/时间不可用"
 msgctxt "NO_PASSES_IN_NEXT_24H"
 msgid "No passes in next 24h"
 msgstr "未来 24 小时无过境"
-
-#: core/ui/ui_satellite.c
-msgctxt "NOW"
-msgid "Now"
-msgstr "当前"
 
 #: core/ui/ui_satellite.c
 msgctxt "NEXT_PASSES"

@@ -2292,11 +2292,13 @@ static bool text_key_fn(const input_event_t *ev)
 }
 
 // The title carries the mode, so it shows however long the name is: "Name Â· ABC"
+#if CONFIG_CHANNEL_EDIT || CONFIG_APRS_AFSK
 static const char *text_title(void)
 {
 	static const char *const modes[TEXT_MODES] = { "ABC", "123", "abc" };
 	return modes[text_mode];
 }
+#endif
 
 #if CONFIG_CHANNEL_EDIT
 static const ui_scr_def_t text_screen = {
@@ -6238,7 +6240,7 @@ void ui_crash_tick(uint32_t now_ms)
 // ======================= Tools =======================
 
 // Every tool keeps its number on every radio and build, so a key path (OK 6 7: Diagnostics; tests/hil/test_ui.py and the
-// user guide) is the same everywhere. A build without diagnostics skips 7.
+// user guide) is the same everywhere. A build without diagnostics skips 7, and one without satellite skips 9.
 enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_ROAM, T_DIAG, T_APRS, T_SATELLITE, T_ZONE_OFFER, T_COUNT };
 
 // A tool this build doesn't have is left out of the list
@@ -7222,9 +7224,9 @@ static void group_select(uint16_t i, bool hold)
 		case SA_LANGUAGE: ui_push(SCR_LANGUAGE, 0); break;
 #if DATA_IDS
 		case SA_DATA_SERVICES: ui_push(SCR_DATA_SERVICES, 0); break;
-#endif
 #if CONFIG_BACKLIGHT_TEST
 		case SA_BL_TEST: ui_push(SCR_BL_TEST, 0); break;
+#endif
 #endif
 #if CONFIG_CRASH_SCREEN
 		case SA_CRASH: ui_push(SCR_CRASH, 0); break;

@@ -4398,6 +4398,11 @@ msgid "Waiting for position/time"
 msgstr "Esperando posición/hora"
 
 #: core/ui/ui_satellite.c
+msgctxt "NOW"
+msgid "Now"
+msgstr "Ahora"
+
+#: core/ui/ui_satellite.c
 msgctxt "PREDICTING_PASSES_2"
 msgid "Predicting passes"
 msgstr "Calculando pasos"
@@ -4421,11 +4426,6 @@ msgstr "GPS/hora no disponible"
 msgctxt "NO_PASSES_IN_NEXT_24H"
 msgid "No passes in next 24h"
 msgstr "Sin pasos en las próximas 24 h"
-
-#: core/ui/ui_satellite.c
-msgctxt "NOW"
-msgid "Now"
-msgstr "Ahora"
 
 #: core/ui/ui_satellite.c
 msgctxt "NEXT_PASSES"

@@ -142,6 +142,11 @@ static void test_sgp4_reference_vectors(void)
 		{ -2543092, -6454421, 1740216 },
 		{ 1254184, 6290291, 3160757 },
 	};
+	static const int32_t iss_high_drag_m[3][3] = {
+		{ 1899939, 6527508, -193309 },
+		{ 2730303, 6204851, -548542 },
+		{ 4104022, 5252472, -1351052 },
+	};
 	check_sgp4_reference(
 		"1 00005U 58002B   00179.78495062  .00000023  00000-0  28098-4 0  4753",
 		"2 00005  34.2682 348.7242 1859667 331.7664  19.3264 10.82419157413667",
@@ -154,6 +159,13 @@ static void test_sgp4_reference_vectors(void)
 		"1 28057U 03049A   06177.78615833  .00000060  00000-0  35940-4 0  1836",
 		"2 28057  98.4283 247.6961 0000884  88.1964 271.9322 14.35478080140550",
 		28057u, cbers_2_m);
+	/* CelesTrak ISS TLE (fetched 2026-11-18, B* = 2.3055e-4); SGP4 vectors use python-sgp4 2.27:
+	 * https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=TLE
+	 */
+	check_sgp4_reference(
+		"1 25544U 98067A   26322.30200954  .00012483  00000+0  23055-3 0  9993",
+		"2 25544  51.6316 257.4339 0007387  38.9132 321.2387 15.49454822595647",
+		25544u, iss_high_drag_m);
 }
 
 static void test_keplerian_propagation(void)

@@ -63,9 +63,9 @@ typedef struct {
 	uint32_t next_tracking_ms;
 
 	uint32_t scan_results[SATELLITE_SERVICE_SCAN_MAX_RECORDS];
-	int64_t scan_aos_s[SATELLITE_SERVICE_SCAN_MAX_RECORDS];
-	satellite_record_summary_t scan_summaries[SATELLITE_SERVICE_SCAN_MAX_RECORDS];
-	bool scan_summary_valid[SATELLITE_SERVICE_SCAN_MAX_RECORDS];
+	uint16_t scan_aos_offset_min[SATELLITE_SERVICE_SCAN_MAX_RECORDS];
+	satellite_record_brief_t scan_summaries[SATELLITE_SERVICE_SCAN_MAX_RECORDS];
+	uint16_t scan_summary_valid;
 	int64_t scan_start_utc_s;
 	uint32_t scan_start_ms;
 	int32_t scan_latitude_e7;
@@ -79,6 +79,8 @@ typedef struct {
 	bool scan_search_started;
 	uint32_t scan_completed_ms;
 	uint32_t next_scan_ms;
+	uint32_t store_generation;
+	bool store_generation_valid;
 	bool scan_cache_valid;
 } satellite_service_t;
 
@@ -92,11 +94,12 @@ void satellite_service_scan_step(satellite_service_t *service, uint32_t now_ms);
 bool satellite_service_tick(satellite_service_t *service, uint32_t now_ms,
 			    const satellite_service_channel_t *channel, satellite_service_update_t *update);
 void satellite_service_live_view(const satellite_service_t *service, satellite_service_live_view_t *view);
+void satellite_service_path_view(const satellite_service_t *service, satellite_path_view_t *path);
 void satellite_service_scan_state(const satellite_service_t *service, uint8_t *status, uint8_t *completed,
 				  uint8_t *total, uint8_t *passes, int64_t *start_utc_s, uint32_t *start_ms);
 bool satellite_service_scan_result(const satellite_service_t *service, uint8_t rank, uint32_t *packed,
 				   int64_t *aos_s);
 bool satellite_service_summary(const satellite_service_t *service, uint8_t record_index,
-			       satellite_record_summary_t *summary);
+			       satellite_record_brief_t *summary);
 
 #endif

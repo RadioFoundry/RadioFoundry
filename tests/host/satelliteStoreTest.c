@@ -38,10 +38,24 @@ const board_t board = { .name = "satellite-test", .flash = &sim_flash };
 
 static uint8_t output[256];
 static bool channel_sync_result = true;
+static satellite_channels_sync_status_t channel_sync_status;
 
 bool satellite_channels_sync(void)
 {
 	return channel_sync_result;
+}
+
+bool satellite_channels_sync_schedule(void)
+{
+	if (channel_sync_status == SATELLITE_CHANNELS_SYNC_RUNNING)
+		return false;
+	channel_sync_status = SATELLITE_CHANNELS_SYNC_RUNNING;
+	return true;
+}
+
+satellite_channels_sync_status_t satellite_channels_sync_status(void)
+{
+	return channel_sync_status;
 }
 
 static uint16_t get16(const uint8_t *p)
@@ -299,7 +313,7 @@ static bool install_replace_profile_chunks(const uint8_t *data, uint16_t data_le
 static void test_inventory_transactions(void)
 {
 	uint8_t req[9] = { DL_SAT_OP_INFO };
-	CHECK(command(req, 1) == 6 && output[0] == DL_ST_OK && output[1] == 6 && get16(output + 2) == 10 &&
+	CHECK(command(req, 1) == 6 && output[0] == DL_ST_OK && output[1] == 7 && get16(output + 2) == 10 &&
 	      get16(output + 4) == 0);
 	uint8_t profile_req = DL_SAT_OP_PROFILE_GET;
 	CHECK(command(&profile_req, 1u) == 14u && output[0] == DL_ST_OK && output[1] == 3u &&
@@ -308,7 +322,13 @@ static void test_inventory_transactions(void)
 	uint8_t sync_req = DL_SAT_OP_SYNC_CHANNELS;
 	CHECK(command(&sync_req, 1u) == 1u && output[0] == DL_ST_OK);
 	channel_sync_result = false;
-	CHECK(command(&sync_req, 1u) == 1u && output[0] == DL_ST_REFUSED);
+	uint8_t sync_status_req = DL_SAT_OP_SYNC_CHANNELS_STATUS;
+	CHECK(command(&sync_status_req, 1u) == 2u && output[0] == DL_ST_OK &&
+	      output[1] == SATELLITE_CHANNELS_SYNC_RUNNING);
+	channel_sync_status = channel_sync_result ? SATELLITE_CHANNELS_SYNC_COMPLETE :
+		SATELLITE_CHANNELS_SYNC_FAILED;
+	CHECK(command(&sync_status_req, 1u) == 2u && output[0] == DL_ST_OK &&
+	      output[1] == SATELLITE_CHANNELS_SYNC_FAILED);
 	channel_sync_result = true;
 
 	uint8_t data[10 * TEST_RECORD_MAX];
@@ -344,7 +364,7 @@ static void test_inventory_transactions(void)
 	invalid_profiles[1] = 20580u;
 	CHECK(!satellite_store_profiles_set(2u, invalid_profiles));
 
-	char replacement_line1[70], replacement_line2[70];
+	char replacement_line1[70] = {0}, replacement_line2[70] = {0};
 	make_line((uint8_t *)replacement_line1, '1', satellite.catalog_id, "26316.50000000");
 	make_line((uint8_t *)replacement_line2, '2', satellite.catalog_id, "00000.00000000");
 	CHECK(satellite_store_replace(0u, replacement_line1, replacement_line2));

@@ -28,7 +28,7 @@ import { radioPicture, holdKeys, hasNoScreen } from "./radiotop.js";
 import { validRef, refShort, defaultRef, firmwareName, betaLink } from "./version.js";
 import { verify, segments, forDevBuild } from "./manifest.js";
 import { Dfu, DfuError, NormalModeError, WebUsbTransport, checkKey, usbSupported } from "./dfu.js";
-import { Link, LinkError, CableError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, whyNoAnswer, noAnswerKey, serialSupported, serialApi, browserErrorKey, noDeviceChosen, knownRadioPort } from "./link.js";
+import { Link, LinkError, CableError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, satelliteTleAvailable, whyNoAnswer, noAnswerKey, serialSupported, serialApi, browserErrorKey, noDeviceChosen, knownRadioPort } from "./link.js";
 import { readRadio, makeBundle, openBundle, bundleFolder, notBundle, bundleName, describeFirmware, CODEPLUG_SPAN } from "./backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug, codeplugLayout } from "./restore.js";
 import { Selection } from "./select.js";
@@ -2543,21 +2543,7 @@ function stubPanel(fallback, onDone, what, stockPicked = () => {}) {
 function doneView() {
 	const box = h("div", { class: "flasher" });
 	const status = h("div");
-	let satelliteTleOfferShown = false;
-	const finish = () => {
-		if ((S.task !== "install" && S.task !== "update") || S.sim || satelliteTleOfferShown
-			|| !String(S.firmware?.manifest?.features || "").split(",").includes("SATELLITE_TLE"))
-			return button(t("flash.nav.finish"), () => reset(), { primary: true });
-		satelliteTleOfferShown = true;
-		status.append(notice(t("flash.done.satellite_tle_offer"), "info"));
-		return [
-			button(t("flash.nav.finish"), () => reset(), { quiet: true }),
-			button(t("flash.done.satellite_tle_load"), async () => {
-				await dropSerial();
-				location.assign(`${HOME}tools/satellite/index.html`);
-			}, { primary: true }),
-		];
-	};
+	const finish = () => button(t("flash.nav.finish"), () => reset(), { primary: true });
 	const check = button(t("flash.done.check"), async () => {
 		check.disabled = true;
 		status.replaceChildren(h("p", { class: "muted" }, t("flash.now.connecting")));
@@ -2576,6 +2562,15 @@ function doneView() {
 				h("dt", {}, t("flash.now.firmware")), h("dd", {}, firmwareName(p)),
 				h("dt", {}, t("flash.now.codec")), h("dd", {}, codecText(p.codec))),
 			notice(good ? t("flash.done.ready") : t("flash.done.no_codec"), good ? "ok" : "bad"), ...(good ? [] : [helpLink(), reportLine()]));	// the DOM writes a null as "null"
+			if ((S.task === "install" || S.task === "update") && !S.sim) {
+				const features = new Set([...String(p.features || "").split(","), ...String(S.firmware?.manifest?.features || "").split(",")]);
+				if (features.has("SATELLITE_TLE") || await satelliteTleAvailable(link))
+					status.append(h("div", { class: "notice info" }, h("p", {}, t("flash.done.satellite_tle_offer")),
+						h("div", { class: "actions" }, button(t("flash.done.satellite_tle_load"), async () => {
+							await dropSerial();
+							location.assign(`${HOME}tools/satellite/index.html`);
+						}, { primary: true }))));
+			}
 			const learnedNote = await storeLearned(link);
 			if (learnedNote) status.append(learnedNote);
 			// what the radio still needs from a person goes first, where the eye lands

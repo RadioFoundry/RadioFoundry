@@ -58,6 +58,8 @@ uint32_t satellite_pass_summary_pack(uint8_t record_index, uint16_t aos_minutes,
 				    uint8_t maximum_elevation_deg, bool visible_now);
 uint8_t satellite_pass_summary_index(uint32_t summary);
 uint16_t satellite_pass_summary_aos_minutes(uint32_t summary);
+uint32_t satellite_pass_summary_set_aos_remainder(uint32_t summary, uint8_t remainder_s);
+uint8_t satellite_pass_summary_aos_remainder(uint32_t summary);
 uint8_t satellite_pass_summary_maximum_elevation(uint32_t summary);
 bool satellite_pass_summary_visible_now(uint32_t summary);
 void satellite_pass_summary_insert(uint32_t *summaries, uint8_t *count, uint8_t capacity, uint32_t summary);

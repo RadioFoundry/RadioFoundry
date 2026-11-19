@@ -102,7 +102,7 @@ WEAK bool ui_svc_satellite_get(uint8_t index, satellite_record_t *record)
 	(void)record;
 	return false;
 }
-WEAK bool ui_svc_satellite_summary(uint8_t index, satellite_record_summary_t *summary)
+WEAK bool ui_svc_satellite_summary(uint8_t index, satellite_record_brief_t *summary)
 {
 	(void)index;
 	(void)summary;
@@ -114,6 +114,7 @@ WEAK bool ui_svc_satellite_tle_age(uint32_t epoch, uint16_t *age_days)
 	(void)age_days;
 	return false;
 }
+WEAK uint32_t ui_svc_satellite_generation(void) { return 0u; }
 WEAK uint8_t ui_svc_satellite_selected(void) { return SETTINGS_UNSET8; }
 WEAK bool ui_svc_satellite_select(uint8_t index) { (void)index; return false; }
 WEAK bool ui_svc_satellite_track(bool enabled, uint8_t index) { (void)enabled; (void)index; return false; }
@@ -134,10 +135,16 @@ WEAK bool ui_svc_satellite_pass(uint8_t rank, radio_satellite_pass_t *pass)
 	return false;
 }
 
-WEAK bool ui_svc_satellite_pass_summary(uint8_t record_index, satellite_record_summary_t *summary)
+WEAK bool ui_svc_satellite_pass_summary(uint8_t record_index, satellite_record_brief_t *summary)
 {
 	(void)record_index;
-	if (summary != NULL) *summary = (satellite_record_summary_t){0};
+	if (summary != NULL) *summary = (satellite_record_brief_t){0};
+	return false;
+}
+
+WEAK bool ui_svc_satellite_pass_view(radio_satellite_pass_view_t *view)
+{
+	if (view != NULL) *view = (radio_satellite_pass_view_t){0};
 	return false;
 }
 

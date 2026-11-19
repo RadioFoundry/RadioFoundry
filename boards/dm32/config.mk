@@ -26,6 +26,10 @@ CONFIG_VOX ?= n
 # every switch but USB and USB_NETWORK (platform/hrc7000/config.mk), and NAND_STORAGE (below), and keeps about
 # 2 KB free
 BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is SPI NOR, GD25Q128 class (docs/spec/hardware-dm32.md 10)
+# The 330 B voice-capture ring and task-stack reporting do not fit together with every other maximal feature.
+# The normal config keeps task-stack reporting enabled; maximal leaves it off to fit in RAM.
+MAXIMAL_SKIP += VOICE_CAPTURE
+MAXIMAL_VARS += CONFIG_TASK_STACKS=n
 # What the hardware can do but this radio's driver or glue doesn't yet (docs/build-config.md, "Unsupported, not
 # written, unconfirmed"): off by default, and off in ci's maximal configuration too
 BOARD_NOT_WRITTEN += VOX	# no hal_power_t.mic_level hook yet

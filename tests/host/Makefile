@@ -303,7 +303,7 @@ RCP25   := $(RCORE) $(CORE)/radio/radio_p25.c $(CORE)/p25/p25_engine.c $(CORE)/a
 radioCoreTestP25: $(RCP25) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                   $(CORE)/ui/ui_svc.h $(wildcard $(CORE)/p25/*.h) $(wildcard $(CORE)/air/*.h)
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
-		-DCONFIG_P25=1 -DCONFIG_AIR_RAW=1 -DHAL_VOCODER_LEND_BYTES=0x4000 -o $@ $(RCP25) -lm
+		-DCONFIG_P25=1 -DCONFIG_AIR_RAW=1 -DCONFIG_SATELLITE_TLE=1 -DHAL_VOCODER_LEND_BYTES=0x4000 -o $@ $(RCP25) -lm
 
 # The same with P25 trunking (CONFIG_P25_TRUNK): a trunked site on the fake air, the follower in the radio core
 TESTS   += radioCoreTestP25T

@@ -164,6 +164,9 @@ too long for the reply drops only itself. Older builds send neither. All three c
 does `features=`, and a build without the debug link sends them too, from the stub entry's listener
 ([stub-entry.md](stub-entry.md) 2).
 
+When enabled, `SATELLITE_TLE` is included in `features=`. The web flasher also probes the satellite `INFO` operation
+so it can recognize older builds that do not report this feature.
+
 `codec=` is the board's own check of the codec in flash, the same one that decides whether DMR voice runs: a
 profile id (`<profile>-s11` on an STM32F4 radio: the descriptor is valid and the signature word and the CRC-32 of
 every codec window match the codec as the merge places it, code in sector 11, as

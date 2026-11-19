@@ -52,11 +52,7 @@
 #if CONFIG_DEBUGLINK
 // MMDVM frames and debug link replies are built on the stack. The deepest hotspot-view chain reads 2608 bytes with the
 // macOS toolchain on the deepest board; CI reads up to 16 bytes deeper. stack-check.md's overhead and margin leave 4.
-#if CONFIG_SATELLITE_TLE
-#define HOSTLINK_TASK_STACK	896	// words; includes the satellite channel-sync call chain
-#else
 #define HOSTLINK_TASK_STACK	741
-#endif
 #else
 #define HOSTLINK_TASK_STACK	512	// words: MMDVM frames are built on the stack
 #endif

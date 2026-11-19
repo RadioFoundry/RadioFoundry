@@ -238,7 +238,8 @@ bool ui_svc_position_save_gps(void);	// save the current fresh board fix as the 
 #if CONFIG_SATELLITE_TLE
 uint8_t ui_svc_satellite_count(void);
 bool ui_svc_satellite_get(uint8_t index, satellite_record_t *record);
-bool ui_svc_satellite_summary(uint8_t index, satellite_record_summary_t *summary);
+bool ui_svc_satellite_summary(uint8_t index, satellite_record_brief_t *summary);
+uint32_t ui_svc_satellite_generation(void);
 bool ui_svc_satellite_tle_age(uint32_t epoch, uint16_t *age_days);
 uint8_t ui_svc_satellite_selected(void);
 bool ui_svc_satellite_select(uint8_t index);
@@ -248,7 +249,8 @@ bool ui_svc_satellite_scan(bool enabled);
 void ui_svc_satellite_poll(void);
 void ui_svc_satellite_scan_state(uint8_t *status, uint8_t *completed, uint8_t *total, uint8_t *passes);
 bool ui_svc_satellite_pass(uint8_t rank, radio_satellite_pass_t *pass);
-bool ui_svc_satellite_pass_summary(uint8_t record_index, satellite_record_summary_t *summary);
+bool ui_svc_satellite_pass_summary(uint8_t record_index, satellite_record_brief_t *summary);
+bool ui_svc_satellite_pass_view(radio_satellite_pass_view_t *view);
 bool ui_svc_satellite_path(satellite_path_view_t *path);
 bool ui_svc_satellite_replace(uint8_t index, const char *line1, const char *line2);
 bool ui_svc_satellite_update_busy(void);

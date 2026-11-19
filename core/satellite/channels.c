@@ -7,6 +7,7 @@
 #include "satellite/channels.h"
 #include "satellite/frequency.h"
 #include "satellite/store.h"
+#include "storage/storage.h"
 
 #define SATELLITE_ZONE_NAME "Satellites"
 
@@ -122,4 +123,30 @@ bool satellite_channels_sync(void)
 			return false;
 	}
 	return true;
+}
+
+static volatile uint8_t sync_status;
+
+static void satellite_channels_sync_job(void *ctx)
+{
+	(void)ctx;
+	sync_status = satellite_channels_sync() ? SATELLITE_CHANNELS_SYNC_COMPLETE :
+		SATELLITE_CHANNELS_SYNC_FAILED;
+}
+
+bool satellite_channels_sync_schedule(void)
+{
+	if (sync_status == SATELLITE_CHANNELS_SYNC_RUNNING)
+		return false;
+	sync_status = SATELLITE_CHANNELS_SYNC_RUNNING;
+	if (!storage_job_post(satellite_channels_sync_job, NULL)) {
+		sync_status = SATELLITE_CHANNELS_SYNC_IDLE;
+		return false;
+	}
+	return true;
+}
+
+satellite_channels_sync_status_t satellite_channels_sync_status(void)
+{
+	return (satellite_channels_sync_status_t)sync_status;
 }

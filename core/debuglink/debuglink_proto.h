@@ -105,7 +105,8 @@ enum {
 	DL_SAT_OP_REPLACE_BEGIN,	// count u16, bytes u16, CRC-32 u32 -> transaction ID u16; replace full TLE inventory
 	DL_SAT_OP_PROFILE_STAGE,	// transaction ID u16, count u8, then (ID, RX Hz, TX Hz u32, tone tenths u16); replacement only
 	DL_SAT_OP_PROFILE_VALUES_GET,	// -> count u8, then (ID, RX Hz, TX Hz u32, tone tenths u16) records
-	DL_SAT_OP_PROFILE_STAGE_CHUNK	// transaction ID u16, total u8, offset u8, count u8, then profile records
+	DL_SAT_OP_PROFILE_STAGE_CHUNK,	// transaction ID u16, total u8, offset u8, count u8, then profile records
+	DL_SAT_OP_SYNC_CHANNELS_STATUS	// -> satellite_channels_sync_status_t
 };
 
 // DL_CMD_HWOPT operations (first payload byte; docs/spec/debuglink.md 3.25)

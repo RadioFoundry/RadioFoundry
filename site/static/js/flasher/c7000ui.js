@@ -17,7 +17,7 @@
 
 import { h, t, HOME, notice, button, panel, progressBar, logBox, download, filePicker, localTime, partNames } from "./dom.js";
 import { hex, sha256, sleep } from "./bytes.js";
-import { SerialStream, Link, CableError, probe, serialSupported, serialApi, knownRadioPort, grantedPorts } from "./link.js";
+import { SerialStream, Link, CableError, probe, satelliteTleAvailable, serialSupported, serialApi, knownRadioPort, grantedPorts } from "./link.js";
 import { Stub, stubImages, univForBoard, StubError, DONE_LED, MEM, ROM_REPEAT, hasRomFlag } from "./stub.js";
 import * as c7 from "./c7000.js";
 import { openVendorFile, describe as describeVendorFile, analysisCandidate, whyNot } from "./vendorfile.js";
@@ -1294,21 +1294,6 @@ export function doneView() {
 	const quiet = h("p", { class: "small muted" }, t("report.something_wrong"), " ", reportButton());
 	const box = panel(t("flash.done.title"), h("div", { class: "c7-grid" }, h("div", {}, h("p", {}, t("flash.c7.done.lead")), status, quiet), top.el));
 	let tries = 0;
-	let satelliteTleOfferShown = false;
-	const finish = () => {
-		if (!["install", "update"].includes(S().task) || S().fakeC7 || satelliteTleOfferShown
-			|| !String(S().firmware?.manifest?.features || "").split(",").includes("SATELLITE_TLE"))
-			return S().forward(button(t("flash.nav.finish"), () => ctx.reset(), { primary: true }));
-		satelliteTleOfferShown = true;
-		status.append(notice(t("flash.done.satellite_tle_offer"), "info"));
-		S().forward([
-			button(t("flash.nav.finish"), () => ctx.reset(), { quiet: true }),
-			button(t("flash.done.satellite_tle_load"), async () => {
-				await dropC7();
-				location.assign(`${HOME}tools/satellite/index.html`);
-			}, { primary: true }),
-		]);
-	};
 	// The user left this step (Start over, Back) while a check still runs: it must not draw into the step that replaced
 	// it (as connectPanel's gone())
 	let attached = false;
@@ -1356,9 +1341,18 @@ export function doneView() {
 			c.backupSaved ? h("p", { class: "small muted" }, t(c.rfoundry ? "flash.c7.done.backup_kept_rfoundry" : "flash.c7.done.backup_kept")) : null,
 			// not asked of the radio: any STUB command parks RadioFoundry's codec until the next restart (platform stub_region, core/stubentry)
 			h("p", { class: "small muted" }, t(hasStubEntry() ? "flash.c7.done.next_time" : "flash.c7.done.next_time_power")));
+		if (["install", "update"].includes(S().task) && !S().fakeC7) {
+			const features = new Set([...String(p.features || "").split(","), ...String(S().firmware?.manifest?.features || "").split(",")]);
+			if (features.has("SATELLITE_TLE") || await satelliteTleAvailable(new Link(c.stream, { timeout: 1000 })))
+				status.append(h("div", { class: "notice info" }, h("p", {}, t("flash.done.satellite_tle_offer")),
+					h("div", { class: "actions" }, button(t("flash.done.satellite_tle_load"), async () => {
+						await dropC7();
+						location.assign(`${HOME}tools/satellite/index.html`);
+					}, { primary: true }))));
+		}
 		if (good) await bringChannels(c, status, left);
 		if (left()) return;
-		finish();
+		S().forward(button(t("flash.nav.finish"), () => ctx.reset(), { primary: true }));
 		await dropC7();
 	};
 	check();

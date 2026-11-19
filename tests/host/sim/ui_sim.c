@@ -2218,7 +2218,7 @@ bool ui_svc_satellite_get(uint8_t index, satellite_record_t *record)
 	return true;
 }
 
-bool ui_svc_satellite_summary(uint8_t index, satellite_record_summary_t *summary)
+bool ui_svc_satellite_summary(uint8_t index, satellite_record_brief_t *summary)
 {
 	if (index >= ui_svc_satellite_count() || summary == NULL)
 		return false;
@@ -2231,7 +2231,7 @@ bool ui_svc_satellite_summary(uint8_t index, satellite_record_summary_t *summary
 	return true;
 }
 
-bool ui_svc_satellite_pass_summary(uint8_t record_index, satellite_record_summary_t *summary)
+bool ui_svc_satellite_pass_summary(uint8_t record_index, satellite_record_brief_t *summary)
 {
 	return ui_svc_satellite_summary(record_index, summary);
 }
@@ -2243,6 +2243,11 @@ bool ui_svc_satellite_tle_age(uint32_t epoch, uint16_t *age_days)
 		return false;
 	*age_days = sim_satellite_tle_age_days;
 	return true;
+}
+
+uint32_t ui_svc_satellite_generation(void)
+{
+	return sim_satellite_test_id_offset;
 }
 
 uint8_t ui_svc_satellite_selected(void)
@@ -2270,14 +2275,23 @@ bool ui_svc_satellite_track(bool enabled, uint8_t index)
 	view.satellite_nominal_tx_hz = enabled ? 435000000u : 0u;
 	view.satellite_rx_offset_hz = enabled ? -1200 : 0;
 	view.satellite_tx_offset_hz = enabled ? 3600 : 0;
-	view.satellite_pass_valid = enabled && !sim_satellite_path_pending;
-	view.satellite_pass_visible_now = enabled && !sim_satellite_path_pending && !sim_satellite_future_pass;
-	view.satellite_los_known = enabled && !sim_satellite_los_pending;
-	view.satellite_aos_in_s = enabled && sim_satellite_future_pass ? 61u : 0u;
-	view.satellite_los_in_s = enabled ? (sim_satellite_future_pass ? 121u :
-		sim_satellite_los_pending ? 0u : 5500u) : 0u;
-	view.satellite_max_elevation_tenths = enabled ? 360u : 0u;
-	view.satellite_elevation_tenths = enabled ? 330 : 0;
+	return true;
+}
+
+bool ui_svc_satellite_pass_view(radio_satellite_pass_view_t *pass)
+{
+	if (pass == NULL)
+		return false;
+	*pass = (radio_satellite_pass_view_t){
+		.valid = view.satellite_tracking && !sim_satellite_path_pending,
+		.visible_now = view.satellite_tracking && !sim_satellite_path_pending && !sim_satellite_future_pass,
+		.los_known = view.satellite_tracking && !sim_satellite_los_pending,
+		.aos_in_s = view.satellite_tracking && sim_satellite_future_pass ? 61u : 0u,
+		.los_in_s = view.satellite_tracking ? (sim_satellite_future_pass ? 121u :
+			sim_satellite_los_pending ? 0u : 5500u) : 0u,
+		.maximum_elevation_tenths = view.satellite_tracking ? 360u : 0u,
+		.elevation_tenths = view.satellite_tracking ? 330 : 0,
+	};
 	return true;
 }
 

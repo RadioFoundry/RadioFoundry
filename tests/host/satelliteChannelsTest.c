@@ -9,6 +9,7 @@
 #include "satellite/channels.h"
 #include "satellite/frequency.h"
 #include "satellite/store.h"
+#include "storage/storage.h"
 
 static satellite_record_t records[SATELLITE_STORE_MAX_RECORDS];
 static uint8_t record_count;
@@ -18,6 +19,9 @@ static channel_t channels[16];
 static bool channel_used[16];
 static uint16_t channel_writes;
 static channel_t profile;
+static storage_job_fn pending_job;
+static void *pending_job_ctx;
+static bool block_job_post;
 static unsigned checks, failures;
 
 #define CHECK(condition) do { \
@@ -27,6 +31,15 @@ static unsigned checks, failures;
 		printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #condition); \
 	} \
 } while (0)
+
+bool storage_job_post(storage_job_fn fn, void *ctx)
+{
+	if (block_job_post || pending_job != NULL)
+		return false;
+	pending_job = fn;
+	pending_job_ctx = ctx;
+	return true;
+}
 
 uint8_t satellite_store_count(void)
 {
@@ -170,11 +183,43 @@ static void reset(void)
 	memset(channel_used, 0, sizeof(channel_used));
 	zone_count = record_count = 0u;
 	channel_writes = 0u;
+	pending_job = NULL;
+	pending_job_ctx = NULL;
+	block_job_post = false;
 	memset(&profile, 0, sizeof(profile));
 	profile.rx_hz = 145000000u;
 	profile.tx_hz = 146000000u;
 	profile.mode = RADIO_MODE_DMR;
 	profile.contact = 4u;
+}
+
+static void test_sync_job_reports_completion_and_failure(void)
+{
+	reset();
+	CHECK(satellite_channels_sync_status() == SATELLITE_CHANNELS_SYNC_IDLE);
+	CHECK(satellite_channels_sync_schedule());
+	CHECK(satellite_channels_sync_status() == SATELLITE_CHANNELS_SYNC_RUNNING);
+	CHECK(pending_job != NULL);
+	storage_job_fn job = pending_job;
+	void *ctx = pending_job_ctx;
+	pending_job = NULL;
+	job(ctx);
+	CHECK(satellite_channels_sync_status() == SATELLITE_CHANNELS_SYNC_COMPLETE);
+
+	reset();
+	add_record(25544u, "ISS");
+	zone_count = sizeof(zones) / sizeof(zones[0]);
+	CHECK(satellite_channels_sync_schedule());
+	job = pending_job;
+	ctx = pending_job_ctx;
+	pending_job = NULL;
+	job(ctx);
+	CHECK(satellite_channels_sync_status() == SATELLITE_CHANNELS_SYNC_FAILED);
+
+	reset();
+	block_job_post = true;
+	CHECK(!satellite_channels_sync_schedule());
+	CHECK(satellite_channels_sync_status() == SATELLITE_CHANNELS_SYNC_IDLE);
 }
 
 static void test_sync_creates_zone_and_safe_editable_channels(void)
@@ -239,6 +284,7 @@ int main(void)
 	test_sync_creates_zone_and_safe_editable_channels();
 	test_repeat_sync_preserves_channel_edits_and_adds_new_records();
 	test_sync_reuses_existing_channel();
+	test_sync_job_reports_completion_and_failure();
 	printf("satelliteChannelsTest: %u checks, %u failures\n", checks, failures);
 	return failures != 0u;
 }

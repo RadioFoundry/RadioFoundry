@@ -8,7 +8,7 @@
 static int failures, checks;
 static bool fix_available, time_available, record_available, summary_available;
 static uint8_t installed_count;
-static uint32_t summary_reads, list_reads;
+static uint32_t summary_reads, list_reads, store_generation;
 static satellite_record_t stored_record;
 static satellite_record_summary_t stored_summary;
 static const satellite_frequency_profile_t stored_profile = {
@@ -44,6 +44,11 @@ bool satellite_store_summary_get(uint8_t index, satellite_record_summary_t *summ
 uint8_t satellite_store_count(void)
 {
 	return installed_count;
+}
+
+uint32_t satellite_store_generation(void)
+{
+	return store_generation;
 }
 
 bool satellite_store_list(uint16_t start, uint8_t limit, satellite_record_summary_t *records, uint8_t *count)
@@ -152,10 +157,12 @@ static void test_service_init_caches_summaries(void)
 {
 	satellite_service_t service;
 	installed_count = 1u;
+	summary_available = true;
+	summary_reads = 0u;
 	list_reads = 0u;
 	satellite_service_init(&service);
-	CHECK(service.scan_total == 1u && list_reads == 1u);
-	satellite_record_summary_t summary;
+	CHECK(service.scan_total == 1u && summary_reads == 1u && list_reads == 0u);
+	satellite_record_brief_t summary;
 	CHECK(satellite_service_summary(&service, 0u, &summary));
 	CHECK(summary.catalog_id == stored_summary.catalog_id && strcmp(summary.name, "ISS") == 0);
 	installed_count = 0u;
@@ -165,6 +172,9 @@ static void test_scan_cache_and_summary(void)
 {
 	satellite_service_t service;
 	installed_count = 0u;
+	summary_available = true;
+	summary_reads = 0u;
+	list_reads = 0u;
 	satellite_service_init(&service);
 	uint8_t status, completed, total, passes;
 	int64_t start_utc_s;
@@ -176,8 +186,8 @@ static void test_scan_cache_and_summary(void)
 	CHECK(!satellite_service_scan_request(&service, true, 1000u, NULL));
 	satellite_service_scan_state(&service, &status, &completed, &total, &passes, &start_utc_s, &start_ms);
 	CHECK(status == SATELLITE_SERVICE_SCAN_UNAVAILABLE && total == 1u);
-	CHECK(list_reads == 1u);
-	satellite_record_summary_t summary;
+	CHECK(list_reads == 0u && summary_reads == 1u);
+	satellite_record_brief_t summary;
 	CHECK(satellite_service_summary(&service, 0u, &summary));
 	CHECK(summary.catalog_id == stored_summary.catalog_id && strcmp(summary.name, "ISS") == 0);
 
@@ -197,15 +207,62 @@ static void test_scan_cache_and_summary(void)
 	CHECK(!satellite_service_scan_request(&service, true, 302001u, NULL));
 	satellite_service_scan_state(&service, &status, &completed, &total, &passes, NULL, NULL);
 	CHECK(status == SATELLITE_SERVICE_SCAN_RUNNING && total == 1u);
-	CHECK(list_reads == 1u && summary_reads == 0u);
+	CHECK(list_reads == 0u && summary_reads == 1u);
 	CHECK(satellite_service_summary(&service, 0u, &summary));
 	CHECK(summary.catalog_id == stored_summary.catalog_id && strcmp(summary.name, "ISS") == 0);
-	CHECK(summary_reads == 0u);
+	CHECK(summary_reads == 1u);
 	satellite_service_scan_step(&service, 302001u);
 	CHECK(service.scan_search_started);
 	CHECK(!satellite_service_scan_request(&service, false, 302002u, NULL));
 	satellite_service_scan_state(&service, &status, NULL, NULL, NULL, NULL, NULL);
 	CHECK(status == SATELLITE_SERVICE_SCAN_IDLE);
+}
+
+static void test_store_generation_invalidates_cached_inventory(void)
+{
+	satellite_service_t service;
+	installed_count = 0u;
+	store_generation = 0u;
+	summary_available = true;
+	fix_available = true;
+	time_available = true;
+	list_reads = 0u;
+	summary_reads = 0u;
+	satellite_service_init(&service);
+	CHECK(!satellite_service_scan_request(&service, true, 100u, NULL));
+	CHECK(service.scan_cache_valid && service.scan_total == 0u);
+
+	installed_count = 1u;
+	store_generation++;
+	CHECK(!satellite_service_scan_request(&service, true, 200u, NULL));
+	CHECK(service.scan_status == SATELLITE_SERVICE_SCAN_RUNNING && service.scan_total == 1u);
+	satellite_record_brief_t summary;
+	CHECK(satellite_service_summary(&service, 0u, &summary));
+	CHECK(summary.catalog_id == stored_summary.catalog_id);
+	CHECK(list_reads == 0u && summary_reads == 1u);
+}
+
+static void test_scan_result_keeps_rank_and_record_index_together(void)
+{
+	satellite_service_t service = { 0 };
+	service.scan_total = 2u;
+	service.scan_result_count = 2u;
+	service.scan_results[0] = satellite_pass_summary_pack(1u, 34u, 40u, false);
+	service.scan_results[1] = satellite_pass_summary_pack(0u, 17u, 50u, false);
+	uint32_t packed;
+	int64_t aos_s;
+	service.scan_results[0] = satellite_pass_summary_set_aos_remainder(service.scan_results[0], 20u);
+	service.scan_results[1] = satellite_pass_summary_set_aos_remainder(service.scan_results[1], 40u);
+	service.scan_aos_offset_min[1] = 34u;
+	service.scan_aos_offset_min[0] = 17u;
+	CHECK(satellite_service_scan_result(&service, 0u, &packed, &aos_s));
+	CHECK(satellite_pass_summary_index(packed) == 1u && aos_s == 2000);
+	CHECK(satellite_service_scan_result(&service, 1u, &packed, &aos_s));
+	CHECK(satellite_pass_summary_index(packed) == 0u && aos_s == 1000);
+	service.scan_results[0] = satellite_pass_summary_set_aos_remainder(
+		satellite_pass_summary_pack(1u, 1440u, 40u, false), 30u);
+	service.scan_aos_offset_min[1] = 2880u;
+	CHECK(satellite_service_scan_result(&service, 0u, &packed, &aos_s) && aos_s == 172770);
 }
 
 int main(void)
@@ -214,6 +271,8 @@ int main(void)
 	test_service_init_caches_summaries();
 	test_tracking_request_lifecycle();
 	test_scan_cache_and_summary();
+	test_store_generation_invalidates_cached_inventory();
+	test_scan_result_keeps_rank_and_record_index_together();
 	if (failures != 0) {
 		printf("satelliteServiceTest FAILED (%d checks, %d failures)\n", checks, failures);
 		return 1;

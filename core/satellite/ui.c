@@ -41,21 +41,31 @@ bool ui_svc_satellite_get(uint8_t index, satellite_record_t *record)
 	return satellite_store_get(index, record);
 }
 
-bool ui_svc_satellite_summary(uint8_t index, satellite_record_summary_t *summary)
+bool ui_svc_satellite_summary(uint8_t index, satellite_record_brief_t *summary)
 {
 	return radio_get_satellite_pass_summary(index, summary);
+}
+
+uint32_t ui_svc_satellite_generation(void)
+{
+	return satellite_store_generation();
 }
 
 bool ui_svc_satellite_tle_age(uint32_t epoch, uint16_t *age_days)
 {
 	if (age_days == NULL)
 		return false;
+#if !CONFIG_POSITION
+	(void)epoch;
+	return false;
+#else
 	uint32_t date_ddmmyy, utc_hms;
 	int64_t utc_s;
 	if (!position_utc_fields(&date_ddmmyy, &utc_hms, hal_millis()) ||
 	    !satellite_utc_from_fields(date_ddmmyy, utc_hms, &utc_s))
 		return false;
 	return satellite_tle_age_days(epoch, utc_s, age_days);
+#endif
 }
 
 uint8_t ui_svc_satellite_selected(void)
@@ -121,9 +131,14 @@ bool ui_svc_satellite_pass(uint8_t rank, radio_satellite_pass_t *pass)
 	return radio_get_satellite_pass(rank, pass);
 }
 
-bool ui_svc_satellite_pass_summary(uint8_t record_index, satellite_record_summary_t *summary)
+bool ui_svc_satellite_pass_summary(uint8_t record_index, satellite_record_brief_t *summary)
 {
 	return radio_get_satellite_pass_summary(record_index, summary);
+}
+
+bool ui_svc_satellite_pass_view(radio_satellite_pass_view_t *view)
+{
+	return radio_get_satellite_pass_view(view);
 }
 
 bool ui_svc_satellite_path(satellite_path_view_t *path)

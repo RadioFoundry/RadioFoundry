@@ -6440,8 +6440,7 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 static void satellite_arm(radio_sm_t *sm, uint32_t now_ms)
 {
 	if (!sm->satellite_session || !sm->view.satellite_tracking ||
-	    sm->satellite_nominal_rx_hz != 436795000u || sm->satellite_nominal_tx_hz != 145850000u ||
-	    sm->satellite_profile_tx_tone_tenths != 670u || sm->view.ch.mode != RADIO_MODE_FM ||
+	    sm->view.ch.mode != RADIO_MODE_FM ||
 	    sm->view.state == RS_TX || sm->view.state == RS_TX_DENIED || sm->ptt || sm->hotspot || sm->host_audio ||
 	    sm->view.scan != 0u || board.radio->tx_tone == NULL) {
 		beep(sm, BEEP_ERROR);

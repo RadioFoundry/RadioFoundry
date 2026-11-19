@@ -61,12 +61,8 @@ static radio_settings_t shared_settings;	// the published copy, under view_lock
 static uint32_t settings_sent, settings_taken, settings_published;
 static radio_view_t shared_view;	// the published copy, under view_lock
 #if CONFIG_SATELLITE_TLE
-static satellite_path_view_t shared_satellite_path;
+static radio_satellite_pass_view_t shared_satellite_pass_view;
 static satellite_service_t satellite_service;
-static uint32_t shared_satellite_scan_results[SATELLITE_SERVICE_SCAN_MAX_RECORDS];
-static int64_t shared_satellite_scan_aos_s[SATELLITE_SERVICE_SCAN_MAX_RECORDS];
-static satellite_record_summary_t shared_satellite_scan_summaries[SATELLITE_SERVICE_SCAN_MAX_RECORDS];
-static bool shared_satellite_scan_summary_valid[SATELLITE_SERVICE_SCAN_MAX_RECORDS];
 static int64_t shared_satellite_scan_start_utc_s;
 static uint32_t shared_satellite_scan_start_ms;
 static uint8_t shared_satellite_scan_status, shared_satellite_scan_completed, shared_satellite_scan_total;
@@ -152,29 +148,19 @@ static void publish(void)
 #if CONFIG_SATELLITE_TLE
 	satellite_service_live_view_t satellite_live;
 	satellite_service_live_view(&satellite_service, &satellite_live);
-	shared_view.satellite_pass_valid = sm.view.satellite_tracking && satellite_live.pass_valid;
-	shared_view.satellite_pass_visible_now = shared_view.satellite_pass_valid &&
-		satellite_live.pass_visible_now;
-	shared_view.satellite_los_known = shared_view.satellite_pass_valid && satellite_live.pass_los_known;
-	shared_view.satellite_pass_horizon_clipped = shared_view.satellite_pass_valid &&
-		satellite_live.pass_horizon_clipped;
-	shared_view.satellite_aos_in_s = satellite_live.aos_in_s;
-	shared_view.satellite_los_in_s = satellite_live.los_in_s;
-	shared_view.satellite_max_elevation_tenths = satellite_live.maximum_elevation_tenths;
-	shared_view.satellite_elevation_tenths = satellite_live.elevation_tenths;
-	shared_satellite_path = satellite_live.path;
+	shared_satellite_pass_view.valid = sm.view.satellite_tracking && satellite_live.pass_valid;
+	shared_satellite_pass_view.visible_now = shared_satellite_pass_view.valid && satellite_live.pass_visible_now;
+	shared_satellite_pass_view.los_known = shared_satellite_pass_view.valid && satellite_live.pass_los_known;
+	shared_satellite_pass_view.horizon_clipped =
+		shared_satellite_pass_view.valid && satellite_live.pass_horizon_clipped;
+	shared_satellite_pass_view.aos_in_s = satellite_live.aos_in_s;
+	shared_satellite_pass_view.los_in_s = satellite_live.los_in_s;
+	shared_satellite_pass_view.maximum_elevation_tenths = satellite_live.maximum_elevation_tenths;
+	shared_satellite_pass_view.elevation_tenths = satellite_live.elevation_tenths;
 	satellite_service_scan_state(&satellite_service, &shared_satellite_scan_status,
 				    &shared_satellite_scan_completed, &shared_satellite_scan_total,
 				    &shared_satellite_scan_result_count, &shared_satellite_scan_start_utc_s,
 				    &shared_satellite_scan_start_ms);
-	for (uint8_t i = 0u; i < SATELLITE_SERVICE_SCAN_MAX_RECORDS; i++) {
-		shared_satellite_scan_summary_valid[i] =
-			satellite_service_summary(&satellite_service, i, &shared_satellite_scan_summaries[i]);
-	}
-	for (uint8_t i = 0u; i < shared_satellite_scan_result_count; i++) {
-		(void)satellite_service_scan_result(&satellite_service, i, &shared_satellite_scan_results[i],
-						    &shared_satellite_scan_aos_s[i]);
-	}
 #endif
 	dtmf_ready = sm.view.dtmf_ready;
 	radio_sm_shown_view(&sm, &shared_view);	// a roaming survey visit: the screens keep the site it left
@@ -245,23 +231,31 @@ static void satellite_request(bool enabled, uint8_t record_index, uint32_t now_m
 {
 	satellite_service_update_t update;
 	satellite_service_channel_t channel = satellite_channel();
+	xSemaphoreTake(view_lock, portMAX_DELAY);
 	satellite_service_tracking_request(&satellite_service, enabled, record_index, now_ms, &channel, &update);
+	xSemaphoreGive(view_lock);
 	satellite_apply_update(&update, now_ms);
 }
 
 static void satellite_scan_request(bool enabled, uint32_t now_ms)
 {
 	satellite_service_update_t update;
-	if (satellite_service_scan_request(&satellite_service, enabled, now_ms, &update))
+	xSemaphoreTake(view_lock, portMAX_DELAY);
+	bool changed = satellite_service_scan_request(&satellite_service, enabled, now_ms, &update);
+	xSemaphoreGive(view_lock);
+	if (changed)
 		satellite_apply_update(&update, now_ms);
 }
 
 static void satellite_run(uint32_t now_ms)
 {
-	satellite_service_scan_step(&satellite_service, now_ms);
 	satellite_service_channel_t channel = satellite_channel();
 	satellite_service_update_t update;
-	if (satellite_service_tick(&satellite_service, now_ms, &channel, &update))
+	xSemaphoreTake(view_lock, portMAX_DELAY);
+	satellite_service_scan_step(&satellite_service, now_ms);
+	bool changed = satellite_service_tick(&satellite_service, now_ms, &channel, &update);
+	xSemaphoreGive(view_lock);
+	if (changed)
 		satellite_apply_update(&update, now_ms);
 }
 #endif
@@ -450,7 +444,21 @@ bool radio_get_satellite_path(satellite_path_view_t *path)
 		return false;
 	}
 	xSemaphoreTake(view_lock, portMAX_DELAY);
-	*path = shared_satellite_path;
+	satellite_service_path_view(&satellite_service, path);
+	xSemaphoreGive(view_lock);
+	return true;
+}
+
+bool radio_get_satellite_pass_view(radio_satellite_pass_view_t *view)
+{
+	if (view == NULL)
+		return false;
+	if (view_lock == NULL) {
+		memset(view, 0, sizeof(*view));
+		return false;
+	}
+	xSemaphoreTake(view_lock, portMAX_DELAY);
+	*view = shared_satellite_pass_view;
 	xSemaphoreGive(view_lock);
 	return true;
 }
@@ -485,31 +493,30 @@ bool radio_get_satellite_pass(uint8_t rank, radio_satellite_pass_t *pass)
 	if (pass == NULL || view_lock == NULL)
 		return false;
 	xSemaphoreTake(view_lock, portMAX_DELAY);
-	if (rank >= shared_satellite_scan_result_count) {
+	uint32_t packed;
+	int64_t aos_s;
+	if (rank >= shared_satellite_scan_result_count ||
+	    !satellite_service_scan_result(&satellite_service, rank, &packed, &aos_s)) {
 		xSemaphoreGive(view_lock);
 		return false;
 	}
-	uint32_t packed = shared_satellite_scan_results[rank];
-	uint8_t record_index = satellite_pass_summary_index(packed);
 	uint32_t now_ms = hal_millis();
 	int64_t now_utc_s = shared_satellite_scan_start_utc_s +
 		(uint32_t)(now_ms - shared_satellite_scan_start_ms) / 1000u;
 	pass->record_index = satellite_pass_summary_index(packed);
-	pass->aos_minutes = satellite_pass_eta_minutes(shared_satellite_scan_aos_s[record_index], now_utc_s);
+	pass->aos_minutes = satellite_pass_eta_minutes(aos_s, now_utc_s);
 	pass->maximum_elevation_deg = satellite_pass_summary_maximum_elevation(packed);
 	pass->visible_now = satellite_pass_summary_visible_now(packed);
 	xSemaphoreGive(view_lock);
 	return true;
 }
 
-bool radio_get_satellite_pass_summary(uint8_t record_index, satellite_record_summary_t *summary)
+bool radio_get_satellite_pass_summary(uint8_t record_index, satellite_record_brief_t *summary)
 {
 	if (summary == NULL || view_lock == NULL || record_index >= SATELLITE_SERVICE_SCAN_MAX_RECORDS)
 		return false;
 	xSemaphoreTake(view_lock, portMAX_DELAY);
-	bool valid = shared_satellite_scan_summary_valid[record_index];
-	if (valid)
-		*summary = shared_satellite_scan_summaries[record_index];
+	bool valid = satellite_service_summary(&satellite_service, record_index, summary);
 	xSemaphoreGive(view_lock);
 	return valid;
 }

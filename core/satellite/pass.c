@@ -11,6 +11,8 @@
 #define SUMMARY_ETA_MASK 0x7FFu
 #define SUMMARY_ELEVATION_SHIFT 15u
 #define SUMMARY_VISIBLE_BIT (1u << 22)
+#define SUMMARY_AOS_REMAINDER_SHIFT 23u
+#define SUMMARY_AOS_REMAINDER_MASK 0x3Fu
 
 bool satellite_pass_cache_fresh(bool cache_valid, uint32_t now_ms, uint32_t completed_ms)
 {
@@ -38,6 +40,19 @@ uint8_t satellite_pass_summary_index(uint32_t summary)
 uint16_t satellite_pass_summary_aos_minutes(uint32_t summary)
 {
 	return (uint16_t)((summary >> SUMMARY_ETA_SHIFT) & SUMMARY_ETA_MASK);
+}
+
+uint32_t satellite_pass_summary_set_aos_remainder(uint32_t summary, uint8_t remainder_s)
+{
+	if (remainder_s >= 60u)
+		remainder_s = 0u;
+	return (summary & ~(SUMMARY_AOS_REMAINDER_MASK << SUMMARY_AOS_REMAINDER_SHIFT)) |
+		((uint32_t)remainder_s << SUMMARY_AOS_REMAINDER_SHIFT);
+}
+
+uint8_t satellite_pass_summary_aos_remainder(uint32_t summary)
+{
+	return (uint8_t)((summary >> SUMMARY_AOS_REMAINDER_SHIFT) & SUMMARY_AOS_REMAINDER_MASK);
 }
 
 uint8_t satellite_pass_summary_maximum_elevation(uint32_t summary)

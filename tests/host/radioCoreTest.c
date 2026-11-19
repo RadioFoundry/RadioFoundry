@@ -35,6 +35,7 @@
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
 #include "debuglink/dl_fmt.h"
+#include "hostlink/build_info.h"
 #include "radio/tx_limit.h"
 #include "radio/battery.h"
 #if CONFIG_DMR_TRUNK_TX
@@ -988,8 +989,17 @@ static void test_so50_arm(void)
 
 	setup_codeplug();
 	start();
-	radio_sm_satellite_update(&sm, true, 1u, 3u, 435000000u, 145990000u, 670u,
+	radio_sm_satellite_update(&sm, true, 1u, 3u, 435000000u, 145990000u, 885u,
 				 true, 435000000u, 145990000u, 0, 0, now);
+	tx_calls = hw.tx_calls;
+	req(RREQ_SATELLITE_ARM, 1);
+	CHECK(sm.view.state == RS_TX && sm.satellite_arm_active);
+	CHECK(hw.tx_calls == tx_calls + 1);
+	CHECK(hw.tx_hz == 145990000u);
+	CHECK(hw.tx_tone.type == TONE_CTCSS && hw.tx_tone.value == 744u);
+
+	setup_codeplug();
+	start();
 	tx_calls = hw.tx_calls;
 	req(RREQ_SATELLITE_ARM, 1);
 	CHECK(sm.view.state != RS_TX && !sm.satellite_arm_active);
@@ -7170,6 +7180,9 @@ static void test_p25_stored(void)
 	CHECK(sm.view.tx_deny == TXDENY_MODE && hw.tx_calls == keyed);
 	req(RREQ_PTT, 0);
 	CHECK(strstr(build_modes_now(), "P25,") == NULL && build_features_now()[0] != '\0');
+#if CONFIG_P25 && CONFIG_SATELLITE_TLE
+	CHECK(strstr(build_features_now(), "SATELLITE_TLE,") != NULL);
+#endif
 	air_nofit = false;
 
 	// The VFO takes the radio-wide unit ID, then the DMR ID

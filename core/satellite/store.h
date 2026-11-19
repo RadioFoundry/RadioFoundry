@@ -34,6 +34,19 @@ typedef struct {
 	char name[SATELLITE_NAME_MAX + 1u];
 } satellite_record_summary_t;
 
+#define SATELLITE_RECORD_BRIEF_NAME_MAX 16u
+typedef struct {
+	uint32_t catalog_id;
+	uint32_t epoch;
+	uint8_t name_length;
+	char name[SATELLITE_RECORD_BRIEF_NAME_MAX + 1u];
+} satellite_record_brief_t;
+
+typedef struct {
+	uint32_t catalog_id;
+	uint32_t epoch;
+} satellite_record_id_t;
+
 typedef enum {
 	SATELLITE_STORE_TRANSFER_OK,
 	SATELLITE_STORE_TRANSFER_BAD_ARG,
@@ -47,6 +60,8 @@ bool satellite_store_get(uint8_t index, satellite_record_t *record);
 bool satellite_store_summary_get(uint8_t index, satellite_record_summary_t *summary);
 uint8_t satellite_store_count(void);
 bool satellite_store_list(uint16_t start, uint8_t limit, satellite_record_summary_t *records, uint8_t *count);
+bool satellite_store_list_ids(uint16_t start, uint8_t limit, satellite_record_id_t *records, uint8_t *count);
+uint32_t satellite_store_generation(void);
 // Replace the selected record's TLE without changing its catalog ID or name. The validated inventory commits atomically.
 bool satellite_store_replace(uint8_t index, const char *line1, const char *line2);
 bool satellite_store_profiles_get(uint8_t *count, uint32_t ids[SATELLITE_PROFILE_MAX]);

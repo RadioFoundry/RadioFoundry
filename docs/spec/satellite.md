@@ -179,8 +179,9 @@ Every entry is validated before any install begins. Duplicate IDs, malformed ent
 omits or adds an ID reject the complete batch.
 
 Install uses debug-link command `0x25` (`SATELLITE`) and is available only when capability operation `INFO` succeeds.
-Its protocol-v6 operations are `INFO=0`, `LIST=1`, `BEGIN=2`, `DATA=3`, `COMMIT=4`, `ABORT=5`,
-`SYNC_CHANNELS=6`, `PROFILE_GET=7`, `PROFILE_SET=8`, and `REPLACE_BEGIN=9`. `INFO` reports
+Protocol-v7 adds `SYNC_CHANNELS_STATUS=13` to the operations: `INFO=0`, `LIST=1`, `BEGIN=2`, `DATA=3`,
+`COMMIT=4`, `ABORT=5`, `SYNC_CHANNELS=6`, `PROFILE_GET=7`, `PROFILE_SET=8`, `REPLACE_BEGIN=9`,
+`PROFILE_STAGE=10`, `PROFILE_VALUES_GET=11`, `PROFILE_STAGE_CHUNK=12`, and `SYNC_CHANNELS_STATUS=13`. `INFO` reports
 protocol version, record capacity (`10`) and installed count as `u8, u16, u16`; it is unavailable when the feature is
 off or the board has no valid dedicated satellite-data flash area. `LIST` takes a start index `u16` and returns
 a count `u8`, then that many `(catalog ID u32, epoch Unix seconds u32)` pairs. The radio advertises a capacity of
@@ -217,15 +218,17 @@ operation remains explicit and is not part of PC install. Removing a TLE from th
 the tracking list without changing user channel data. The persistent satellite-bank format remains independently
 versioned.
 
-The separate `SYNC_CHANNELS` operation, when explicitly requested, ensures a `Satellites` codeplug zone contains one
-channel for each installed TLE, reusing an existing same-name channel when possible. A missing channel is created from
-the current channel profile with its name set to the TLE name (truncated to the codeplug's 16-character limit), FM
-mode, and transmit enabled. For FM satellites in the radio's built-in AMSAT frequency table, the new channel uses the
-listed downlink for receive, uplink for transmit, and listed uplink CTCSS tone. Other new channels copy the current
-channel's frequencies. Existing channel frequencies, tones and other settings are not overwritten. PC installs do not
-request this operation. The frequency table is a snapshot of AMSAT's page updated October 31, 2026; operating status
-can change, so check the live page before transmitting. SO-50 requires a 2-second 74.4 Hz CTCSS transmission to arm
-its timer before use; its normal uplink tone is 67.0 Hz.
+The separate `SYNC_CHANNELS` operation, when explicitly requested, queues work on the housekeeping task and returns
+`BUSY` if another storage job is active. Poll `SYNC_CHANNELS_STATUS` for `IDLE=0`, `RUNNING=1`, `COMPLETE=2`, or
+`FAILED=3`. It ensures a `Satellites` codeplug zone contains one channel for each installed TLE, reusing an existing
+same-name channel when possible. A missing channel is created from the current channel profile with its name set to the
+TLE name (truncated to the codeplug's 16-character limit), FM mode, and transmit enabled. For FM satellites in the
+radio's built-in AMSAT frequency table, the new channel uses the listed downlink for receive, uplink for transmit, and
+listed uplink CTCSS tone. Other new channels copy the current channel's frequencies. Existing channel frequencies,
+tones and other settings are not overwritten. PC installs do not request this operation. The frequency table is a
+snapshot of AMSAT's page updated October 31, 2026; operating status can change, so check the live page before
+transmitting. SO-50 requires a 2-second 74.4 Hz CTCSS transmission to arm its timer before use; its normal uplink tone
+is 67.0 Hz.
 
 The radio's dedicated `hal_flash_map_t.satellite_*` area is separate from codeplug and update staging. It uses three
 4 KiB sectors: the active snapshot, the incoming transfer and the next committed snapshot. Each committed snapshot

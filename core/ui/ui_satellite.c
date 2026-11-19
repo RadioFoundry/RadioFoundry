@@ -15,20 +15,26 @@
 static uint8_t selected;
 static char edit_line1[SATELLITE_TLE_LINE_LENGTH + 1u];
 static char edit_line2[SATELLITE_TLE_LINE_LENGTH + 1u];
-static satellite_record_summary_t pass_record;
+static satellite_record_brief_t pass_record;
 static uint16_t pass_tle_age_days;
 static bool pass_tle_age_available;
-static uint32_t stale_warning_ids[SATELLITE_STORE_MAX_RECORDS];
-static uint8_t stale_warning_next;
+static uint32_t pass_tle_age_generation;
+static uint32_t stale_warning_generation;
+static uint16_t stale_warning_mask;
 
-static void satellite_warn_stale_tle(uint32_t catalog_id)
+static void satellite_warn_stale_tle(uint8_t record_index)
 {
-	for (uint8_t i = 0u; i < SATELLITE_STORE_MAX_RECORDS; i++) {
-		if (stale_warning_ids[i] == catalog_id)
-			return;
+	uint32_t generation = ui_svc_satellite_generation();
+	if (generation != stale_warning_generation) {
+		stale_warning_generation = generation;
+		stale_warning_mask = 0u;
 	}
-	stale_warning_ids[stale_warning_next] = catalog_id;
-	stale_warning_next = (uint8_t)((stale_warning_next + 1u) % SATELLITE_STORE_MAX_RECORDS);
+	if (record_index >= SATELLITE_STORE_MAX_RECORDS)
+		return;
+	uint16_t bit = (uint16_t)(1u << record_index);
+	if ((stale_warning_mask & bit) != 0u)
+		return;
+	stale_warning_mask |= bit;
 	ui_toast(TR(SATELLITE_TLE_STALE, "TLE is 14+ days old; refresh from site"));
 }
 
@@ -188,25 +194,25 @@ static void satellite_small_frequency_row(int *y, const radio_view_t *view)
 	*y += font->h;
 }
 
-static void satellite_small_countdown_row(int *y, const radio_view_t *view)
+static void satellite_small_countdown_row(int *y, const radio_satellite_pass_view_t *pass)
 {
 	char rise_value[24], set_value[24], text[64], fit[64];
-	if (!view->satellite_pass_valid) {
+	if (!pass->valid) {
 		str_copy(rise_value, sizeof(rise_value), "--");
 		str_copy(set_value, sizeof(set_value), "--");
 	} else {
-		if (view->satellite_pass_visible_now) {
+		if (pass->visible_now) {
 			str_copy(rise_value, sizeof(rise_value), TR(NOW, "Now"));
 		} else {
-			uint32_t minutes = satellite_eta_minutes_from_seconds(view->satellite_aos_in_s);
+			uint32_t minutes = satellite_eta_minutes_from_seconds(pass->aos_in_s);
 			sbuf_t b;
 			sb_init(&b, rise_value, sizeof(rise_value));
 			satellite_eta_minutes(&b, minutes);
 		}
-		if (!view->satellite_los_known || view->satellite_pass_horizon_clipped) {
+		if (!pass->los_known || pass->horizon_clipped) {
 			str_copy(set_value, sizeof(set_value), "--");
 		} else {
-			uint32_t minutes = satellite_eta_minutes_from_seconds(view->satellite_los_in_s);
+			uint32_t minutes = satellite_eta_minutes_from_seconds(pass->los_in_s);
 			sbuf_t b;
 			sb_init(&b, set_value, sizeof(set_value));
 			satellite_eta_minutes(&b, minutes);
@@ -270,18 +276,6 @@ static int satellite_isin(int deg)
 	int i = deg / 6, remainder = deg % 6;
 	int value = q[i] + (i < 15 ? (q[i + 1] - q[i]) * remainder / 6 : 0);
 	return sign * value;
-}
-
-static void path_ellipse(int cx, int cy, int radius_x, int radius_y, color_t color)
-{
-	int previous_x = cx + radius_x, previous_y = cy;
-	for (int azimuth = 3; azimuth <= 360; azimuth += 3) {
-		int x = cx + radius_x * satellite_isin(azimuth) / 256;
-		int y = cy - radius_y * satellite_isin(azimuth + 90) / 256;
-		path_line(previous_x, previous_y, x, y, color);
-		previous_x = x;
-		previous_y = y;
-	}
 }
 
 static void path_circle(int cx, int cy, int radius, color_t color)
@@ -348,42 +342,24 @@ static void path_horizon_arc_circle(int cx, int cy, int radius, int mark_x, int 
 	}
 }
 
-static void path_horizon_arc_ellipse(int cx, int cy, int radius_x, int radius_y,
-				     int mark_x, int mark_y, color_t color)
-{
-	for (uint16_t azimuth = 0u; azimuth < 360u; azimuth += 2u) {
-		int x, y;
-		path_sky_xy(azimuth, 0u, cx, cy, radius_x, radius_y, &x, &y);
-		int dx = x - mark_x, dy = y - mark_y;
-		if (dx * dx + dy * dy <= 25)
-			gfx_pixel(x, y, color);
-	}
-}
-
-static void draw_path(int y, const radio_view_t *view, const satellite_path_view_t *path, bool compact)
+static void draw_path(int y, const radio_satellite_pass_view_t *pass, const satellite_path_view_t *path)
 {
 	int width = gfx_width() - 16;
 	int plot_y = y;
-	bool tiny = compact && gfx_height() <= 64;
-	if (!view->satellite_pass_valid && !tiny) {
+	if (!pass->valid) {
 		gfx_text(ui_layout.small, 8, y, TR(PREDICTING_PASSES_2, "Predicting passes"), ui_col.dim);
 		plot_y += ui_layout.small->h + 2;
 	}
 	int available = ui_layout.hint_y - plot_y - 2;
 	int side = width < available ? width : available;
-	int radius_y = (tiny ? available : side) / 2 - 1;
-	int radius_x = tiny ? width / 2 - 1 : radius_y;
+	int radius_y = side / 2 - 1;
+	int radius_x = radius_y;
 	if (radius_x < 5 || radius_y < 5)
 		return;
 	int cx = gfx_width() / 2;
 	int cy = plot_y + radius_y;
-	if (tiny) {
-		path_ellipse(cx, cy, radius_x, radius_y, ui_col.line);
-		path_ellipse(cx, cy, radius_x / 2, radius_y / 2, ui_col.line);
-	} else {
-		path_circle(cx, cy, radius_y, ui_col.line);
-		path_circle(cx, cy, radius_y / 2, ui_col.line);
-	}
+	path_circle(cx, cy, radius_y, ui_col.line);
+	path_circle(cx, cy, radius_y / 2, ui_col.line);
 	gfx_hline(cx - radius_x, cy, 2 * radius_x + 1, ui_col.line);
 	gfx_vline(cx, cy - radius_y, 2 * radius_y + 1, ui_col.line);
 	if (path->count == 1u) {
@@ -414,16 +390,11 @@ static void draw_path(int y, const radio_view_t *view, const satellite_path_view
 			    &start_x, &start_y);
 		path_sky_xy(satellite_path_azimuth(path->points[path->count - 1u]), 0u, cx, cy,
 			    radius_x, radius_y, &end_x, &end_y);
-		if (tiny) {
-			path_horizon_arc_ellipse(cx, cy, radius_x, radius_y, start_x, start_y, ui_col.rx);
-			path_horizon_arc_ellipse(cx, cy, radius_x, radius_y, end_x, end_y, ui_col.tx);
-		} else {
-			path_horizon_arc_circle(cx, cy, radius_y, start_x, start_y, ui_col.rx);
-			path_horizon_arc_circle(cx, cy, radius_y, end_x, end_y, ui_col.tx);
-		}
+		path_horizon_arc_circle(cx, cy, radius_y, start_x, start_y, ui_col.rx);
+		path_horizon_arc_circle(cx, cy, radius_y, end_x, end_y, ui_col.tx);
 	}
-	if (view->satellite_pass_visible_now) {
-		int elevation = view->satellite_elevation_tenths / 10;
+	if (pass->visible_now) {
+		int elevation = pass->elevation_tenths / 10;
 		if (elevation < 0)
 			elevation = 0;
 		if (elevation > 90)
@@ -434,10 +405,6 @@ static void draw_path(int y, const radio_view_t *view, const satellite_path_view
 		gfx_fill(current_x - 1, current_y - 1, 3, 3, ui_col.warn);
 	}
 	gfx_text(ui_layout.tiny, cx + 2, cy - radius_y, "N", ui_col.dim);
-	if (tiny) {
-		gfx_text(ui_layout.tiny, cx - radius_x - ui_layout.tiny->w, cy, "W", ui_col.dim);
-		gfx_text(ui_layout.tiny, cx + radius_x + 1, cy, "E", ui_col.dim);
-	}
 }
 
 static uint16_t satellite_pass_count(void)
@@ -454,14 +421,19 @@ static uint16_t satellite_pass_count(void)
 
 static void satellite_update_pass_tle_age(void)
 {
+	uint32_t generation = ui_svc_satellite_generation();
+	if (generation != pass_tle_age_generation) {
+		pass_tle_age_generation = generation;
+		pass_tle_age_available = false;
+	}
 	if (pass_tle_age_available)
 		return;
-	satellite_record_summary_t summary;
+	satellite_record_brief_t summary;
 	if (ui_svc_satellite_pass_summary(0u, &summary) &&
 	    ui_svc_satellite_tle_age(summary.epoch, &pass_tle_age_days)) {
 		pass_tle_age_available = true;
 		if (pass_tle_age_days >= 14u)
-			satellite_warn_stale_tle(summary.catalog_id);
+			satellite_warn_stale_tle(0u);
 	}
 }
 
@@ -524,7 +496,7 @@ static void satellite_pass_item(uint16_t row_index, ui_item_t *item)
 	}
 	sb_chr(&b, ' ');
 	sb_u32(&b, pass.maximum_elevation_deg, 1);
-	sb_str(&b, "deg");
+	sb_str(&b, GLYPH_DEGREE);
 }
 
 static void satellite_pass_select(uint16_t row_index, bool hold)
@@ -570,9 +542,11 @@ static void satellite_draw(void)
 	uint8_t count = ui_svc_satellite_count();
 	if (selected >= count && count != 0u)
 		selected = 0u;
-	satellite_record_summary_t record;
+	satellite_record_brief_t record;
 	bool have_record = count != 0u && ui_svc_satellite_summary(selected, &record);
 	const radio_view_t *view = ui_view();
+	radio_satellite_pass_view_t pass_view = {0};
+	ui_svc_satellite_pass_view(&pass_view);
 	satellite_path_view_t path = {0};
 	if (view->satellite_tracking && view->satellite_index == selected && gfx_height() > 64)
 		ui_svc_satellite_path(&path);
@@ -585,7 +559,7 @@ static void satellite_draw(void)
 		satellite_small_status_row(&y, view, selected_tracking);
 		if (selected_tracking) {
 			satellite_small_frequency_row(&y, view);
-			satellite_small_countdown_row(&y, view);
+			satellite_small_countdown_row(&y, &pass_view);
 		}
 	} else if (compact) {
 		if (view->satellite_tracking && view->satellite_index == selected) {
@@ -595,13 +569,13 @@ static void satellite_draw(void)
 			row(&y, TR(TRACKING_4, "Tracking"), status, view->satellite_status == SATELLITE_TRACKING_VISIBLE ?
 			     ui_col.rx : ui_col.warn);
 			satellite_frequency_rows(&y, value, sizeof(value), view);
-			if (view->satellite_pass_valid && !view->satellite_pass_visible_now) {
-				uint32_t minutes = satellite_eta_minutes_from_seconds(view->satellite_aos_in_s);
+			if (pass_view.valid && !pass_view.visible_now) {
+				uint32_t minutes = satellite_eta_minutes_from_seconds(pass_view.aos_in_s);
 				sb_init(&b, value, sizeof(value));
 				satellite_eta_minutes(&b, minutes);
 				row(&y, TR(SATELLITE_LABEL_RISE, GLYPH_UP " in"), value, ui_col.fg);
 			}
-			draw_path(y, view, &path, compact);
+			draw_path(y, &pass_view, &path);
 		} else {
 			row(&y, TR(TRACKING_4, "Tracking"), view->satellite_tracking ? TR(OTHER_SATELLITE_2, "Other satellite") : TR(VALUE_OFF, "Off"), ui_col.dim);
 		}
@@ -617,38 +591,38 @@ static void satellite_draw(void)
 			row(&y, TR(TRACKING_4, "Tracking"), status, view->satellite_status == SATELLITE_TRACKING_VISIBLE ?
 			     ui_col.rx : ui_col.warn);
 			satellite_frequency_rows(&y, value, sizeof(value), view);
-			if (view->satellite_pass_valid) {
+			if (pass_view.valid) {
 				if (gfx_width() < 220) {
-					if (view->satellite_pass_visible_now) {
+					if (pass_view.visible_now) {
 						row(&y, TR(NEXT_PASS, "Next pass"), TR(VISIBLE_NOW, "Visible now"), ui_col.rx);
 					} else {
-						uint32_t minutes = satellite_eta_minutes_from_seconds(view->satellite_aos_in_s);
+						uint32_t minutes = satellite_eta_minutes_from_seconds(pass_view.aos_in_s);
 						sb_init(&b, value, sizeof(value));
 						satellite_eta_minutes(&b, minutes);
 						row(&y, TR(NEXT_PASS, "Next pass"), value, ui_col.fg);
 					}
 				}
 				char rise_value[40], set_value[40];
-				if (view->satellite_pass_visible_now) {
+				if (pass_view.visible_now) {
 					str_copy(rise_value, sizeof(rise_value), TR(NOW, "Now"));
 				} else {
-					uint32_t minutes = satellite_eta_minutes_from_seconds(view->satellite_aos_in_s);
+					uint32_t minutes = satellite_eta_minutes_from_seconds(pass_view.aos_in_s);
 					sb_init(&b, rise_value, sizeof(rise_value));
 					satellite_eta_minutes(&b, minutes);
 				}
-				if (!view->satellite_los_known) {
+				if (!pass_view.los_known) {
 					str_copy(set_value, sizeof(set_value), TR(CALCULATING, "Calculating"));
-				} else if (view->satellite_pass_horizon_clipped) {
+				} else if (pass_view.horizon_clipped) {
 					str_copy(set_value, sizeof(set_value),
 						 TR(SATELLITE_STATE_BEYOND_FORECAST, "Beyond forecast"));
 				} else {
-					uint32_t minutes = satellite_eta_minutes_from_seconds(view->satellite_los_in_s);
+					uint32_t minutes = satellite_eta_minutes_from_seconds(pass_view.los_in_s);
 					sb_init(&b, set_value, sizeof(set_value));
 					satellite_eta_minutes(&b, minutes);
 				}
 				satellite_countdown_pair(&y, rise_value, set_value);
 			}
-			draw_path(y, view, &path, compact);
+			draw_path(y, &pass_view, &path);
 		} else {
 			row(&y, TR(TRACKING_4, "Tracking"), view->satellite_tracking ? TR(OTHER_SATELLITE_2, "Other satellite") : TR(VALUE_OFF, "Off"), ui_col.dim);
 		}

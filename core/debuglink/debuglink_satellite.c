@@ -10,9 +10,7 @@
 #if CONFIG_SATELLITE_TLE
 #define SAT_MAX_RECORDS SATELLITE_STORE_MAX_RECORDS
 #define SAT_PROFILE_CHUNK_MAX 4u
-#define SAT_PROTOCOL_VERSION 6u
-
-static satellite_record_summary_t list_records[SAT_MAX_RECORDS];
+#define SAT_PROTOCOL_VERSION 7u
 
 static uint16_t get16(const uint8_t *p)
 {
@@ -69,6 +67,58 @@ static void read_profile(const uint8_t *p, satellite_frequency_profile_t *profil
 	profile->tx_tone_tenths = get16(p + 12u);
 	profile->name = NULL;
 }
+
+static __attribute__((noinline)) size_t satellite_list(const uint8_t *req, uint16_t len, uint8_t *out,
+						       size_t cap)
+{
+	if (len != 3u || cap < 2u)
+		return status(out, DL_ST_BAD_ARG);
+	satellite_record_id_t list_ids[SAT_MAX_RECORDS];
+	uint8_t count;
+	if (!satellite_store_list_ids(get16(req + 1u), SAT_MAX_RECORDS, list_ids, &count) ||
+	    cap < 2u + (size_t)count * 8u)
+		return status(out, DL_ST_REFUSED);
+	out[0] = DL_ST_OK;
+	out[1] = count;
+	for (uint8_t i = 0u; i < count; i++) {
+		put32(out + 2u + (size_t)i * 8u, list_ids[i].catalog_id);
+		put32(out + 6u + (size_t)i * 8u, list_ids[i].epoch);
+	}
+	return 2u + (size_t)count * 8u;
+}
+
+static __attribute__((noinline)) size_t satellite_profile_stage(const uint8_t *req, uint16_t len,
+								uint8_t *out)
+{
+	if (len < 4u || req[3] > SATELLITE_PROFILE_MAX ||
+	    len != 4u + (uint16_t)req[3] * 14u)
+		return status(out, DL_ST_BAD_ARG);
+	satellite_frequency_profile_t profiles[SATELLITE_PROFILE_MAX] = { 0 };
+	for (uint8_t i = 0u; i < req[3]; i++)
+		read_profile(req + 4u + (uint16_t)i * 14u, &profiles[i]);
+	return status(out, transfer_status(satellite_store_transfer_profiles(
+		get16(req + 1u), req[3], profiles)));
+}
+
+static __attribute__((noinline)) size_t satellite_profile_values_get(uint8_t *out, size_t cap)
+{
+	uint8_t count;
+	satellite_frequency_profile_t profiles[SATELLITE_PROFILE_MAX];
+	if (!satellite_store_frequency_profiles_get(&count, profiles))
+		return status(out, DL_ST_REFUSED);
+	if (cap < 2u + (size_t)count * 14u)
+		return status(out, DL_ST_BAD_ARG);
+	out[0] = DL_ST_OK;
+	out[1] = count;
+	for (uint8_t i = 0u; i < count; i++) {
+		uint8_t *p = out + 2u + (uint16_t)i * 14u;
+		put32(p, profiles[i].catalog_id);
+		put32(p + 4u, profiles[i].rx_hz);
+		put32(p + 8u, profiles[i].tx_hz);
+		put16(p + 12u, profiles[i].tx_tone_tenths);
+	}
+	return 2u + (size_t)count * 14u;
+}
 #endif
 
 size_t debuglink_cmd_satellite(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
@@ -90,21 +140,8 @@ size_t debuglink_cmd_satellite(const uint8_t *req, uint16_t len, uint8_t *out, s
 		put16(out + 4u, satellite_store_count());
 		return 6u;
 	}
-	case DL_SAT_OP_LIST: {
-		if (len != 3u || cap < 2u)
-			return status(out, DL_ST_BAD_ARG);
-		uint8_t count;
-		if (!satellite_store_list(get16(req + 1u), SAT_MAX_RECORDS, list_records, &count) ||
-		    cap < 2u + (size_t)count * 8u)
-			return status(out, DL_ST_REFUSED);
-		out[0] = DL_ST_OK;
-		out[1] = count;
-		for (uint8_t i = 0u; i < count; i++) {
-			put32(out + 2u + (size_t)i * 8u, list_records[i].catalog_id);
-			put32(out + 6u + (size_t)i * 8u, list_records[i].epoch);
-		}
-		return 2u + (size_t)count * 8u;
-	}
+	case DL_SAT_OP_LIST:
+		return satellite_list(req, len, out, cap);
 	case DL_SAT_OP_BEGIN:
 	case DL_SAT_OP_REPLACE_BEGIN: {
 		if (len != 9u || cap < 3u)
@@ -132,16 +169,8 @@ size_t debuglink_cmd_satellite(const uint8_t *req, uint16_t len, uint8_t *out, s
 		put16(out + 1u, next_offset);
 		return 3u;
 	}
-	case DL_SAT_OP_PROFILE_STAGE: {
-		if (len < 4u || req[3] > SATELLITE_PROFILE_MAX ||
-		    len != 4u + (uint16_t)req[3] * 14u)
-			return status(out, DL_ST_BAD_ARG);
-		satellite_frequency_profile_t profiles[SATELLITE_PROFILE_MAX] = { 0 };
-		for (uint8_t i = 0u; i < req[3]; i++)
-			read_profile(req + 4u + (uint16_t)i * 14u, &profiles[i]);
-		return status(out, transfer_status(satellite_store_transfer_profiles(
-			get16(req + 1u), req[3], profiles)));
-	}
+	case DL_SAT_OP_PROFILE_STAGE:
+		return satellite_profile_stage(req, len, out);
 	case DL_SAT_OP_PROFILE_STAGE_CHUNK: {
 		if (len < 20u || req[3] == 0u || req[3] > SATELLITE_PROFILE_MAX ||
 		    req[5] == 0u || req[5] > SAT_PROFILE_CHUNK_MAX || len != 6u + (uint16_t)req[5] * 14u ||
@@ -164,7 +193,7 @@ size_t debuglink_cmd_satellite(const uint8_t *req, uint16_t len, uint8_t *out, s
 	case DL_SAT_OP_SYNC_CHANNELS:
 		if (len != 1u)
 			return status(out, DL_ST_BAD_ARG);
-		return status(out, satellite_channels_sync() ? DL_ST_OK : DL_ST_REFUSED);
+		return status(out, satellite_channels_sync_schedule() ? DL_ST_OK : DL_ST_BUSY);
 	case DL_SAT_OP_PROFILE_GET: {
 		if (len != 1u || cap < 2u + SATELLITE_PROFILE_MAX * 4u)
 			return status(out, DL_ST_BAD_ARG);
@@ -187,24 +216,14 @@ size_t debuglink_cmd_satellite(const uint8_t *req, uint16_t len, uint8_t *out, s
 			ids[i] = get32(req + 2u + (uint16_t)i * 4u);
 		return status(out, satellite_store_profiles_set(req[1], ids) ? DL_ST_OK : DL_ST_REFUSED);
 	}
-	case DL_SAT_OP_PROFILE_VALUES_GET: {
-		uint8_t count;
-		satellite_frequency_profile_t profiles[SATELLITE_PROFILE_MAX];
-		if (!satellite_store_frequency_profiles_get(&count, profiles))
-			return status(out, DL_ST_REFUSED);
-		if (cap < 2u + (size_t)count * 14u)
+	case DL_SAT_OP_PROFILE_VALUES_GET:
+		return satellite_profile_values_get(out, cap);
+	case DL_SAT_OP_SYNC_CHANNELS_STATUS:
+		if (len != 1u || cap < 2u)
 			return status(out, DL_ST_BAD_ARG);
 		out[0] = DL_ST_OK;
-		out[1] = count;
-		for (uint8_t i = 0u; i < count; i++) {
-			uint8_t *p = out + 2u + (uint16_t)i * 14u;
-			put32(p, profiles[i].catalog_id);
-			put32(p + 4u, profiles[i].rx_hz);
-			put32(p + 8u, profiles[i].tx_hz);
-			put16(p + 12u, profiles[i].tx_tone_tenths);
-		}
-		return 2u + (size_t)count * 14u;
-	}
+		out[1] = (uint8_t)satellite_channels_sync_status();
+		return 2u;
 	default:
 		return status(out, DL_ST_BAD_ARG);
 	}
