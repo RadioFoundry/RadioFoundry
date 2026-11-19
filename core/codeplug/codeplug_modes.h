@@ -77,6 +77,12 @@ static inline bool codeplug_kind_built(uint8_t kind)
 	}
 }
 
+// A kind whose channel follows its system (a control channel, the grants): never a scan stop or a dual watch channel
+static inline bool codeplug_kind_trunked(uint8_t kind)
+{
+	return kind == CODEPLUG_KIND_DMR_TRUNK || kind == CODEPLUG_KIND_P25_TRUNK;
+}
+
 static inline bool codeplug_systype_built(uint8_t type)
 {
 	switch (type) {
