@@ -1340,7 +1340,7 @@ bool stm32_hrc_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		put_kv(&o, " same", m->tr_miss_same);
 		put_kv(&o, " bad", m->tr_miss_bad);
 		break;
-	case 21:	// the split duplex TX half's BS outbound (split-duplex.md 11.6)
+	case 21:	// the split duplex TX half's BS outbound (split-duplex.md 11)
 #if CONFIG_HOTSPOT_SPLIT
 		put_kv(&o, "bs sl", bs.st.slots);
 		put_kv(&o, " b", bs.st.bursts);

@@ -656,7 +656,7 @@
    ],
    "category": "Vendor terms",
    "scope": "dev",
-   "definition": "A MOTOTRBO single-site trunking mode in which the radios share a pool of repeater channels.",
+   "definition": "A commercial single-site DMR trunking mode in which the radios share a pool of repeater channels.",
    "link": "",
    "preview": true
   },
@@ -665,7 +665,7 @@
    "aliases": [],
    "category": "Vendor terms",
    "scope": "dev",
-   "definition": "A MOTOTRBO multi-site trunking system with a central controller.",
+   "definition": "A commercial multi-site DMR trunking system with a central controller.",
    "link": "",
    "preview": true
   },
@@ -676,7 +676,7 @@
    ],
    "category": "Vendor terms",
    "scope": "dev",
-   "definition": "A MOTOTRBO system of several Capacity Plus sites joined by a network.",
+   "definition": "A commercial DMR system of several Capacity Plus sites joined by a network.",
    "link": "",
    "preview": true
   },

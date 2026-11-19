@@ -29,7 +29,7 @@
 #define HRC7000_BS_Q		3	// bursts queued per slot (the core keeps two ahead)
 #define HRC7000_BS_CACH_METHOD	DMR_BS_CACH_OURS
 #define HRC7000_BS_RAW_BYTES	36	// one slot: CACH (24 bits) and burst (264)
-#define HRC7000_BS_AIR_DELAY_US	4600	// a slot boundary to that slot on air (SDR bench 2026-10-21, split-duplex.md 11)
+#define HRC7000_BS_AIR_DELAY_US	4600	// a slot boundary to that slot on air (split-duplex.md 11)
 
 #define HRC7000_BS_V_CONTINUOUS	0x01u
 #define HRC7000_BS_V_AUTOTEST	0x02u

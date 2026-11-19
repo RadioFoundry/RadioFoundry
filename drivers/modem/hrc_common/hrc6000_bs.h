@@ -28,7 +28,7 @@
 #define HRC6000_BS_VARIANT_CHIP	1	// the chip's layer 2 framing (its CACH is empty)
 #define HRC6000_BS_VARIANT_RAW	255
 #define HRC6000_BS_RAW_BYTES	36	// one slot: CACH (24 bits) and burst (264)
-#define HRC6000_BS_AIR_DELAY_US	2200	// a slot boundary to that slot on air (SDR bench 2026-10-21, split-duplex.md 11)
+#define HRC6000_BS_AIR_DELAY_US	2200	// a slot boundary to that slot on air (split-duplex.md 11)
 
 // Builds one slot (core/dmr/bsOutbound.h bsOutboundRawSlot, passed by the board; NULL: the chip's framing). False:
 // the burst couldn't be coded and the idle message is in its place

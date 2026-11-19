@@ -83,8 +83,7 @@ static uint32_t fl_base = DEFAULT_FLASH_BASE;
 #define GEN_GROUP_HANG	0x18u	// offsets in the block
 #define GEN_PRIV_HANG	0x19u
 #define GEN_CLEAR	0x1Au	// the bytes up to the hang times: what the radio reads of the block
-#define GEN_HANG_UNIT_MS 500u	// assumed, not confirmed: no unit in the interop spec, the ref notes or the vendor
-				// guide (docs/spec/dmr-voice.md 8); check with the vendor CPS on the bench
+#define GEN_HANG_UNIT_MS 500u	// assumed: the interop spec gives no unit (docs/spec/dmr-voice.md 8)
 
 // Contacts (7.3.5) and RX group lists (7.3.6), flash image
 #define CONTACT_BASE	FL(0x87620u)
