@@ -48,6 +48,19 @@ static void put(uint8_t *b, unsigned at, unsigned n, uint32_t v)
 	}
 }
 
+// The packet CRC by the formula of TIA-102.BAAA-A 6.3.3, x^32 M(x) mod GM(x) inverted, bit by bit
+static uint32_t pkt_crc_hand(const uint8_t *b, unsigned n)
+{
+	uint64_t r = 0;
+
+	for (unsigned i = 0; i < n * 8 + 32; i++) {
+		r = r << 1 | (i < n * 8 ? (b[i / 8] >> (7 - i % 8)) & 1u : 0u);
+		if (r >> 32)
+			r ^= 0x104C11DB7ull;
+	}
+	return (uint32_t)r ^ 0xFFFFFFFFu;
+}
+
 static void blk_hand(uint8_t b[P25_TSBK_BYTES], uint8_t op0, uint8_t mfid)
 {
 	memset(b, 0, P25_TSBK_BYTES);
@@ -222,6 +235,49 @@ static void testLayouts(void)
 		h.sap = 0;	// a packet of another service
 		p25_mbt_make(&h, b);
 		CHECK(!p25_mbt_parse(b, &g), "not a trunking packet");
+	}
+
+	// The network status broadcast, extended format (TIA-102.AABC-D 6.2.11.2): LRA and system in the header, WACN,
+	// channel (T), channel (R) and service class in the one data block, which ends in the packet CRC
+	{
+		uint8_t d[P25_TSBK_BYTES], h2[P25_TSBK_BYTES], d2[P25_TSBK_BYTES];
+		uint32_t crc;
+
+		memset(b, 0, sizeof b);
+		b[0] = 0x20 | P25_PDU_FMT_AMBTC;	// outbound
+		b[1] = 0xC0 | 61;
+		b[3] = 0x05;				// LRA
+		b[4] = 0x02; b[5] = 0xF3;		// system
+		b[6] = 0x80 | 1;
+		b[7] = P25_OP_NET_STS_BCST;
+		p25_tsbk_seal(b);
+		memset(d, 0, sizeof d);
+		put(d, 0, 20, 0x92A3D);
+		d[3] = 0x10; d[4] = 0x04;		// channel (T)
+		d[5] = 0x18; d[6] = 0x04;		// channel (R)
+		d[7] = 0x70;
+		crc = pkt_crc_hand(d, 8);
+		d[8] = (uint8_t)(crc >> 24); d[9] = (uint8_t)(crc >> 16); d[10] = (uint8_t)(crc >> 8); d[11] = (uint8_t)crc;
+		CHECK(p25_packet_crc(d, 8) == crc, "packet CRC: %08x, by hand %08x", p25_packet_crc(d, 8), crc);
+		CHECK(p25_mbt_net_parse(b, d, &m) && m.kind == P25_TSBK_NET && m.u.net.lra == 5 && m.u.net.wacn == 0x92A3D &&
+		      m.u.net.sysid == 0x2F3 && m.u.net.ch == 0x1004 && m.u.net.ch_r == 0x1804 && m.u.net.ssc == 0x70,
+		      "extended net: wacn %05x sys %03x ch %04x/%04x", m.u.net.wacn, m.u.net.sysid, m.u.net.ch, m.u.net.ch_r);
+		p25_mbt_net_make(&m, h2, d2);
+		CHECK(!memcmp(b, h2, P25_TSBK_BYTES) && !memcmp(d, d2, P25_TSBK_BYTES), "extended net made back");
+		d2[1] ^= 0x10;	// a bit wrong in the WACN: the packet CRC fails
+		CHECK(!p25_mbt_net_parse(h2, d2, &m), "extended net: packet CRC failed");
+		memcpy(d2, d, sizeof d2);
+		h2[7] = P25_OP_ADJ_STS_BCST;
+		p25_tsbk_seal(h2);
+		CHECK(!p25_mbt_net_parse(h2, d2, &m), "another opcode: not a network status");
+		memcpy(h2, b, sizeof h2);
+		h2[2] = 0x90;	// another manufacturer's
+		p25_tsbk_seal(h2);
+		CHECK(!p25_mbt_net_parse(h2, d2, &m), "another manufacturer's: not a network status");
+		memcpy(h2, b, sizeof h2);
+		h2[6] = 0x80 | 2;
+		p25_tsbk_seal(h2);
+		CHECK(!p25_mbt_net_parse(h2, d2, &m), "two data blocks: not this layout");
 	}
 }
 
@@ -1233,6 +1289,82 @@ static void testWacnBlocked(void)
 	cc_alive = false;
 }
 
+// A packet of the extended network status broadcast through the unit entry; bad: its data block damaged
+static void pdu_net(p25_follow_t *f, uint32_t wacn, bool bad)
+{
+	static uint8_t air[P25_UNIT_BYTES_MAX];
+	uint8_t hdr[P25_TSBK_BYTES], data[P25_TSBK_BYTES];
+	p25_tsbk_t m = { .kind = P25_TSBK_NET, .u.net = { .lra = 1, .wacn = wacn, .sysid = SYSID, .ch = 0x1004, .ch_r = 0x1004 } };
+	p25_rx_unit_t u = { .duid = P25_DUID_PDU, .nac = NAC, .nsyms = p25_blocks_syms(2), .air = air };
+
+	p25_mbt_net_make(&m, hdr, data);
+	if (bad)
+		data[8] ^= 0x01;	// (a packet CRC bit: the trellis decodes it as sent)
+	p25_unit_begin(air, u.nsyms, NAC, P25_DUID_PDU, P25_SS_IDLE);
+	p25_block_put(air, 0, hdr);
+	p25_block_put(air, 1, data);
+	p25_follow_unit(f, &u, now_ms);
+}
+
+// The extended network status broadcast verifies a control channel as the abbreviated one does, and names $BEE00
+static void testWacnExtended(void)
+{
+	static const p25_follow_cc_t cc[] = { { .hz = HZ_CC1, .chan = 0x1004, .site = 3 } };
+	static const p25_follow_iden_t iden[P25_FOLLOW_IDENS] = {
+		[1] = { .base_hz = 851006250u, .spacing_hz = 6250, .tx_off_hz = -45000000 } };
+	static p25_follow_t f;
+	p25_follow_cfg_t cfg = { .wacn = P25_FOLLOW_WACN_ANY, .sysid = SYSID, .nac = NAC, .flags = P25_FOLLOW_TX,
+				 .unit_id = OUR_UNIT, .talk_group = 100, .ncc = 1, .cc = cc, .iden_set = 1u << 1, .iden = iden };
+	uint8_t b[P25_TSBK_BYTES];
+	p25_follow_view_t v;
+	unsigned n;
+
+	// A site that sends only the extended form: verified by it, registers
+	ntunes = nsends = 0;
+	now_ms = 40000;
+	cc_alive = false;
+	p25_follow_begin(&f, &cfg, &ahooks, NULL, now_ms);
+	retune(&f);
+	for (unsigned k = 0; k < 10; k++) {
+		mk_rfss(b, P25_TSBK_RFSS, SYSID, 3, 0x1004);
+		p25_follow_tsbk(&f, b, NAC, now_ms);
+		pdu_net(&f, WACN, true);	// damaged: not taken
+		run_ms(&f, 200);
+	}
+	v = view(&f);
+	CHECK(v.state == P25_FOLLOW_CONTROL && !v.sys_ok && nsends == 0, "damaged packets only: silent (%u)", nsends);
+	pdu_net(&f, WACN, false);
+	run_ms(&f, 300);
+	v = view(&f);
+	CHECK(v.sys_ok && v.wacn == WACN && nsends == 1 && last_isp().opcode == P25_ISP_U_REG_REQ,
+	      "extended form: verified, registers (%u)", nsends);
+	// ... and names $BEE00 later: blocked
+	n = nsends;
+	pdu_net(&f, P25_WACN_NO_TX, false);
+	for (unsigned k = 0; k < 20; k++) {
+		mk_rfss(b, P25_TSBK_RFSS, SYSID, 3, 0x1004);
+		p25_follow_tsbk(&f, b, NAC, now_ms);
+		run_ms(&f, 200);
+	}
+	v = view(&f);
+	CHECK(v.reg == P25_REG_BLOCKED && nsends == n && p25_follow_can_talk(&v, cfg.flags) == P25_TALK_BLOCKED,
+	      "extended $BEE00: blocked (reg %u)", v.reg);
+	p25_follow_end(&f);
+
+	// While hunting, the extended form alone is the system's identity: held, and blocked at once
+	nsends = 0;
+	p25_follow_begin(&f, &cfg, &ahooks, NULL, now_ms);
+	retune(&f);
+	pdu_net(&f, P25_WACN_NO_TX, false);
+	p25_follow_ptt(&f, true, now_ms);
+	run_ms(&f, 3000);
+	v = view(&f);
+	CHECK(v.reg == P25_REG_BLOCKED && v.wacn == P25_WACN_NO_TX && nsends == 0, "hunt, extended $BEE00: state %u reg %u",
+	      v.state, v.reg);
+	p25_follow_ptt(&f, false, now_ms);
+	p25_follow_end(&f);
+}
+
 static void testFollowOptions(void)
 {
 	static const uint16_t groups[] = { 200 };
@@ -1913,6 +2045,7 @@ int main(void)
 	testAccess();
 	testAccessEarlyAnswers();
 	testWacnBlocked();
+	testWacnExtended();
 	testFuzz();
 	testAirSystem();
 	testAirLoss();
