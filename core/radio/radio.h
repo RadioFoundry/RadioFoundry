@@ -252,6 +252,7 @@ typedef struct {
 	uint8_t state;		// t3_state_t
 	uint8_t reg;		// t3_reg_t
 	uint16_t polls, poll_fails;	// short data polls from the menus, and those refused or unanswered
+	bool ringing;		// an incoming private call awaits PTT to answer
 } radio_t3_brief_t;
 
 // ... and all of it, for the debug link: radio_get_t3_view, one copy (the view itself is copied by every task)

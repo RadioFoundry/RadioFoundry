@@ -9001,6 +9001,57 @@ static uint8_t t3_rand_status(const t3_csbk_t *q)
 	return (uint8_t)(((q->u.rand.options & 0x1Fu) << 2) | (q->u.rand.extra & 3u));
 }
 
+static void test_t3_incoming_foacsu(void)
+{
+	const uint32_t caller = 1000001u;
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_IND_VOICE;
+	h.u.ahoy.kind_flag = true;
+	h.u.ahoy.src = caller;
+	h.u.ahoy.dst = T3_OWN;
+	unsigned from = sim.air_count;
+	t3_csbk_rx(&h, 1);
+	t3_site_run(300);
+	radio_sm_t3_brief(&sm);
+	CHECK(sm.view.t3.ringing);
+	bool alerted = false;
+	for (unsigned i = from; i < sim.air_count; i++) {
+		t3_csbk_t a;
+		if (sim.air[i].kind == DMR_BURST_CSBK && t3_csbk_parse(sim.air[i].payload, &a) &&
+		    a.op == T3_OP_C_ACKU && a.u.ack.reason == T3_RC_MS_ALERTING && a.u.ack.dst == caller) {
+			alerted = true;
+		}
+	}
+	CHECK(alerted);
+
+	from = sim.air_count;
+	req(RREQ_PTT, 1);
+	req(RREQ_PTT, 0);
+	t3_site_run(600);
+	t3_csbk_t q;
+	CHECK(t3_rand_since(from, T3_SK_ANSWER, &q) && q.u.rand.dst == caller);
+	radio_sm_t3_brief(&sm);
+	CHECK(!sm.view.t3.ringing);
+
+	t3_csbk_t g = { .lb = true, .op = T3_OP_PV_GRANT };
+	g.u.grant.lpcn = 1;
+	g.u.grant.slot = 2;
+	g.u.grant.dst = T3_OWN;
+	g.u.grant.src = caller;
+	t3_csbk_rx(&g, 1);
+	run(200);
+	CHECK(radio_t3v.state == T3_FOLLOW && radio_t3v.ax_result == T3_RES_GRANTED);
+	CHECK(!sm.ptt && !sm.dmr_keyed && sm.view.state != RS_TX);
+
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
 static void test_t3_foacsu_ptt_release(void)
 {
 	const uint32_t called = 1000001u;
@@ -10265,6 +10316,7 @@ int main(void)
 	test_t3_at();
 	test_t3_talk();
 	test_t3_foacsu_ptt_release();
+	test_t3_incoming_foacsu();
 	test_t3_sdata();
 	test_t3_radio_check();
 	test_t3_clear_slot();
