@@ -14,6 +14,9 @@ import { usbSerialChip } from "./adapter.js";
 export { serialApi };
 
 export const RFOUNDRY_USB = { usbVendorId: 0x1FC9, usbProductId: 0x0094 };
+// USB-serial chips found in programming cables (tools/serial_loader.py USB_SERIAL), for the port chooser on radios
+// that talk over their programming cable
+export const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ usbVendorId }));
 // The same radio as a USB network adapter (CDC-NCM, docs/spec/usb-network.md 1): no serial port, and the OS network
 // driver owns the interfaces, so a page can only see that it is there (WebUSB lists it without claiming it) and ask
 // it for the serial port (netmode.js)
@@ -388,7 +391,7 @@ export class Link {
 		}
 	}
 
-	// SUPPORT HASH: the firmware image's SHA-256 (hex), 32 KB a request so the radio carries on between them;
+	// SUPPORT HASH: the firmware image's SHA-256 (hex), at most 32 KB a request so the radio carries on between them;
 	// progress(done, size) after each step. null when the radio has no image span or no SUPPORT command
 	async imageHash(progress = () => {}) {
 		for (let i = 0; i < 4096; i++) {

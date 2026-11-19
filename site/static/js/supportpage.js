@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The Support page's "Download support info": reads the radio over its USB port and saves a text report (support.js,
-// docs/spec/support-info.md). Only reads: VERSION, INFO_CHIP, SUPPORT, HWOPT LIST, then the image hash a step per
+// The Support page's "Download support info": reads the radio over its USB port or programming cable and saves a text
+// report (support.js, docs/spec/support-info.md). Only reads: VERSION, INFO_CHIP, SUPPORT, HWOPT LIST, then the image hash a step per
 // request, so the radio keeps receiving while it runs. Nothing is sent anywhere: the file stays on the computer.
 
-import { Link, SerialStream, serialSupported, serialApi, RFOUNDRY_USB, knownRadioPort, noDeviceChosen } from "./flasher/link.js";
+import { Link, SerialStream, serialSupported, serialApi, RFOUNDRY_USB, CABLES, knownRadioPort, noDeviceChosen } from "./flasher/link.js";
 import { toSerial, CLICK_WAIT_MS } from "./flasher/netmode.js";
 import { h, t, ROOT, download } from "./flasher/dom.js";
 import { supportReport } from "./support.js";
@@ -44,8 +44,8 @@ go?.addEventListener("click", async () => {
 		// a radio in USB network mode is asked for its serial port first; the wait is short, the chooser below must
 		// still open in this click
 		await toSerial({ http: false, ms: CLICK_WAIT_MS });
-		const known = await knownRadioPort([RFOUNDRY_USB]);
-		stream = known?.stream || await SerialStream.open(await serialApi().requestPort({ filters: [RFOUNDRY_USB] }));
+		const known = await knownRadioPort([RFOUNDRY_USB, ...CABLES]);
+		stream = known?.stream || await SerialStream.open(await serialApi().requestPort({ filters: [RFOUNDRY_USB, ...CABLES] }));
 		say(t("support.dl.reading"));
 		const data = await collect(new Link(stream));
 		const text = supportReport({ ...data, site: document.querySelector('meta[name="generator"]')?.content || "",

@@ -6,7 +6,7 @@
 
 import { h, t, ROOT, HOME, button, notice, download, progressBar, num as fmtNum, date as fmtDate } from "../flasher/dom.js";
 import { equal } from "../flasher/bytes.js";
-import { SerialStream, serialSupported, serialApi, RFOUNDRY_USB, browserErrorKey, noDeviceChosen, knownRadioPort } from "../flasher/link.js";
+import { SerialStream, serialSupported, serialApi, RFOUNDRY_USB, CABLES, browserErrorKey, noDeviceChosen, knownRadioPort } from "../flasher/link.js";
 import { CodeplugImage, IDDB_HEADER, EDITOR_REGIONS } from "../codeplug/image.js";
 import { decode, encode, empty, remove, validate, newChannel, newContact, numberAll, assignNumbers } from "../codeplug/model.js";
 import { LIMITS, decodeGeneral } from "../codeplug/records.js";
@@ -29,7 +29,6 @@ import * as diag from "../diag.js";
 import { initReporting, reportedLine } from "../report.js";
 import { updateFor } from "../flasher/version.js";
 
-const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ usbVendorId }));
 const TABS = ["radio", "channels", "zones", "contacts", "rxLists", "dtmfContacts", "aprs", "systems", "iddb", "problems"];
 const TABLE_MAX = { channels: LIMITS.channels, zones: LIMITS.zones, contacts: LIMITS.contacts, rxLists: LIMITS.rxLists, dtmfContacts: LIMITS.dtmfContacts, aprs: LIMITS.aprs };
 

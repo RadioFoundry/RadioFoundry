@@ -8,7 +8,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { releaseMatch, supportReport } from "../static/js/support.js";
-import { Link, LinkError, CMD } from "../static/js/flasher/link.js";
+import { readFileSync } from "node:fs";
+
+import { Link, LinkError, CMD, CABLES } from "../static/js/flasher/link.js";
 
 const SHA = "ab".repeat(32);
 const releases = [
@@ -82,4 +84,15 @@ test("SUPPORT: firmware without it (unknown command, not built in) gives null; o
 	assert.equal(await fakeLink([4]).imageHash(), null);
 	assert.equal(await fakeLink(["image.state=none\n"]).imageHash(), null);
 	await assert.rejects(fakeLink([3]).support(), LinkError);
+});
+
+test("the download's port chooser offers the programming cables, from the one list in link.js", () => {
+	const src = readFileSync(new URL("../static/js/supportpage.js", import.meta.url), "utf8");
+	assert.match(src, /knownRadioPort\(\[RFOUNDRY_USB, \.\.\.CABLES\]\)/);
+	assert.match(src, /requestPort\(\{ filters: \[RFOUNDRY_USB, \.\.\.CABLES\] \}\)/);
+	// tools/serial_loader.py USB_SERIAL names the cable chips; every vendor there is offered
+	const py = readFileSync(new URL("../../tools/serial_loader.py", import.meta.url), "utf8");
+	const list = py.slice(py.indexOf("USB_SERIAL = ["), py.indexOf("]", py.indexOf("USB_SERIAL = [")));
+	const vendors = new Set([...list.matchAll(/\(0x([0-9A-Fa-f]{4}),/g)].map((m) => parseInt(m[1], 16)));
+	assert.deepEqual([...vendors].sort(), CABLES.map((c) => c.usbVendorId).sort());
 });
