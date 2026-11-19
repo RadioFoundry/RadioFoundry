@@ -844,7 +844,8 @@ computed over the ciphertext, so a receiver without the key still checks and ack
 
 - TX: `queueTx` is the one place every list passes (`dmrDataPrivacyAllows`). With an encrypting scheme every data
   header except responses and proprietary headers must be followed by a privacy header. With a blocking scheme any
-  data header is refused. CSBKs (call alert, radio check, emergency alarm) and responses still go. A refused SMS
+  data header is refused. ETSI defined short data (5.2) has no privacy header, so it is refused under an encrypting
+  scheme. CSBKs (call alert, radio check, emergency alarm) and responses still go. A refused SMS
   fails at once; other requests fail or time out as when the channel is busy.
 - Confirmed IP sends one preamble fewer with the privacy header, so the air MTU (12.8) still fits in 64 bursts.
 - RX: a packet with a privacy header is decrypted when the key's scheme takes its algorithm. Otherwise (no key, an
