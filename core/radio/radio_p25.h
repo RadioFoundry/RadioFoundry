@@ -46,15 +46,19 @@ typedef struct {
 #define RADIO_P25_TRUNK_CONTROL	2	// on the control channel, waiting for a call it follows
 #define RADIO_P25_TRUNK_VOICE	3	// on a voice channel, following a call (or talking on the one granted to us)
 
-// Why PTT on a trunked channel did not get a voice channel (radio_p25_view_t.twhy, TXDENY_TRUNK)
+// Why PTT on a trunked channel, P25 or DMR Tier III, did not get a voice channel (TXDENY_TRUNK; the reason is in
+// radio_p25_view_t.twhy or radio_t3_brief_t.why)
 enum {
-	RADIO_P25T_WHY_NONE,
-	RADIO_P25T_WHY_OFF,		// the transmit side is off (listen only, receive only, no unit ID or talk group)
-	RADIO_P25T_WHY_NO_CC,		// no control channel held
-	RADIO_P25T_WHY_NOT_REG,		// not registered and affiliated (yet, or denied)
-	RADIO_P25T_WHY_DENIED,		// the system denied the request
-	RADIO_P25T_WHY_NO_ANSWER,	// no grant came
-	RADIO_P25T_WHY_NO_CHAN,		// granted on a channel this radio can't transmit on
+	RADIO_TRUNK_WHY_NONE,
+	RADIO_TRUNK_WHY_OFF,		// the transmit side is off (listen only, receive only, no unit ID or talk group)
+	RADIO_TRUNK_WHY_NO_CC,		// no control channel held
+	RADIO_TRUNK_WHY_NOT_REG,	// not registered (yet, or denied); P25: and affiliated
+	RADIO_TRUNK_WHY_DENIED,		// the system denied the request
+	RADIO_TRUNK_WHY_NO_ANSWER,	// no grant came
+	RADIO_TRUNK_WHY_NO_CHAN,	// granted on a channel this radio can't transmit on
+	RADIO_TRUNK_WHY_OTHER_SYS,	// no control channel held; another system's heard (Tier III: model, network or CC)
+	RADIO_TRUNK_WHY_REG_REFUSED,	// the system refused the radio's registration (Tier III Reg_Refused: ID not known)
+	RADIO_TRUNK_WHY_UNMAPPED,	// granted on a channel the codeplug doesn't list (Tier III: radio_t3_brief_t.unmapped)
 };
 
 // The radio view's part (radio_view_t.p25): the call heard now, or the last one
@@ -65,7 +69,7 @@ typedef struct {
 	uint16_t rx_nac;	// the NAC received (the settings' rx_nac; 0xF7E: any)
 	uint8_t trunk;		// RADIO_P25_TRUNK_*
 	uint8_t treg, treq;	// a trunked channel's registration and voice request (P25_REG_*, P25_REQ_* of p25_follow.h)
-	uint8_t twhy;		// RADIO_P25T_WHY_* of the last PTT refused or request failed
+	uint8_t twhy;		// RADIO_TRUNK_WHY_* of the last PTT refused or request failed
 	uint32_t src;		// the caller's unit ID, 0 not known yet
 	uint32_t dst;		// the talk group or the unit called
 	uint32_t talk;		// what PTT calls (the settings' tx_dst): a talk group, or a unit with RADIO_P25_TALK_UNIT
@@ -103,7 +107,7 @@ void radio_p25_trunk_view(radio_p25_trunk_view_t *out);
 
 // Transmitting on a trunked channel (radio task; docs/spec/p25-trunking.md 7). The follower's transmit side is on
 bool radio_p25_trunk_tx(void);
-// PTT pressed or released: pressed, RADIO_P25T_WHY_NONE when a voice request goes out, else why not
+// PTT pressed or released: pressed, RADIO_TRUNK_WHY_NONE when a voice request goes out, else why not
 uint8_t radio_p25_trunk_ptt(bool down);
 // After PTT: RADIO_P25T_WAIT while the request waits, GO when the grant is in and the receiver on the voice channel
 // (*hz: where to transmit), FAIL when it won't come (the view's twhy says why)

@@ -26,8 +26,8 @@ typedef enum {
 // settings. BATTERY: the battery is critical. AM: the channel is received in AM (the air band, CONFIG_AM_RX): receive
 // only, the radio never transmits there. BCAST: the same for the broadcast band (CONFIG_BCAST_FM). The board refused to
 // key in band: HWOPT while a hardware option still needs a person's answer (board_hwopt_pending, hal_hwopt.h),
-// otherwise REFUSED. BENCH: the debug link's air interface bench holds the modem (CONFIG_AIR_RAW). TRUNK: a trunked P25
-// channel gave no voice channel (radio_p25_view_t.twhy says why). AIR_NO_TX: the board's air interface receives this
+// otherwise REFUSED. BENCH: the debug link's air interface bench holds the modem (CONFIG_AIR_RAW). TRUNK: a trunked
+// channel gave no voice channel (RADIO_TRUNK_WHY_* in radio_p25_view_t.twhy or radio_t3_brief_t.why says why). AIR_NO_TX: the board's air interface receives this
 // mode's profile but can't transmit it (NXDN at a rate the provider only receives)
 typedef enum {
 	TXDENY_NONE, TXDENY_RX_ONLY, TXDENY_BAND, TXDENY_TIMEOUT, TXDENY_NO_FREQ, TXDENY_MODE,
@@ -66,6 +66,16 @@ typedef struct {
 	bool talk_permit;	// DMR: the talk permit tone when the voice goes on air (channels without no_beep)
 	uint8_t tones_off;	// Settings > Sound tones off, bit n for radio_tone_rows[n] (radio_keys.h); a key of the
 				// codeplug's settings area holds over it (docs/spec/codeplug-settings.md 5.2)
+	// Signaling tones (sigtone.h), by sig_event_t: where each sounds in DMR and FM (sig_out_t), 0 = the radio's own
+	// tone for the event (talk permit, call end, roger beep); and each event's chain of up to 10 steps, a frequency in
+	// Hz (a multiple of 10) and a length in 10 ms (a step of length 0 ends it; no step = the event's standard sound).
+// Only in a build with CONFIG_SIG_TONES: radio_settings_t has four static copies and copies on task stacks
+#if CONFIG_SIG_TONES
+	uint8_t sig_dmr[3];
+	uint8_t sig_fm[3];
+	uint16_t sig_hz[3][10];
+	uint8_t sig_ms[3][10];
+#endif
 	// VOX (CONFIG_VOX)
 	uint8_t vox;		// radio_vox_t
 	uint8_t vox_level;	// sensitivity 1 (needs a loud voice) .. 10
@@ -242,6 +252,10 @@ typedef struct {
 	uint8_t state;		// t3_state_t
 	uint8_t reg;		// t3_reg_t
 	uint16_t polls, poll_fails;	// short data polls from the menus, and those refused or unanswered
+	uint16_t other;		// searching: C_SYScode of another system heard (t3_ms_other), 0 none
+	uint8_t why;		// RADIO_TRUNK_WHY_* of the last PTT refused (TXDENY_TRUNK)
+	bool refused;		// the system refused the registration (t3_ms_reg_refused)
+	uint16_t unmapped;	// the channel (LPCN) of the last grant no plan or row knew, 0 none
 } radio_t3_brief_t;
 
 // ... and all of it, for the debug link: radio_get_t3_view, one copy (the view itself is copied by every task)
@@ -255,6 +269,9 @@ typedef struct {
 	uint8_t state;		// t3_state_t
 	uint8_t reg;		// t3_reg_t
 	uint16_t polls, poll_fails;	// as radio_t3_brief_t's: kept over a restart of the engine
+	uint16_t other;		// as radio_t3_brief_t's
+	uint8_t why;		// as radio_t3_brief_t's
+	bool refused;		// as radio_t3_brief_t's
 	bool ip_gw;		// off-net IP goes to the system's IP gateway (IPI), not the conventional off-net ID
 	bool ip_advised;	// the system took the radio's IP address at registration (6.4.11)
 	bool confirmed;
@@ -692,6 +709,8 @@ uint8_t radio_beep_level(uint8_t cap, int16_t volume_percent);
 void radio_settings_default(radio_settings_t *s);
 void radio_set_settings(const radio_settings_t *s);
 void radio_get_settings(radio_settings_t *s);
+// Two of its fields, without a copy of all of it on the caller's stack: the SFR rx mode and the CW ID interval
+void radio_get_sfr_settings(uint8_t *rx, uint8_t *cwid);
 // view.power_off without copying the view (the housekeeping task polls it)
 bool radio_power_off_wanted(void);
 // Switching off: the radio core sends what has to go out first (the ARS deregistration). radio_power_off_busy() is

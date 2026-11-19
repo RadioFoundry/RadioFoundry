@@ -18,6 +18,8 @@ use it too. Both are plain ES modules that also run in Node. The user's view is 
 | `codeplug/model.js` | The editing model. References are the records themselves, so a delete or renumber can't leave one pointing at the wrong record. `encode()` rewrites only changed records: an unedited codeplug round-trips byte for byte. `validate()` returns the Problems list |
 | `codeplug/iddb.js` | The DMR ID database, format N (7.5): area 1, then area 2 up to the radio's end |
 | `codeplug/csv.js` | Tables as CSV (RFC 4180): fixed English headers, references by name, import matched by number then name |
+| `codeplug/chirp.js` | CHIRP's CSV channel list to the model and back: FM channels only, replacing the channels and zones |
+| `codeplug/chirp_img.js` | A CHIRP `.img` of one radio model: the memory layout learned from an image and the CSV CHIRP wrote from it, never from CHIRP's source. Gives rows to the CSV reader. A model is added by learning its layout the same way; the footer names the model, and any other is refused ([layout](../spec/hardware-uv5r-chirp-image.md)) |
 | `codeplug/yaml.js` | The YAML subset qdmr writes: block and flow maps and lists, quoted values, `!default` tags, comments. Anchors are refused |
 | `codeplug/qdmr.js` | qdmr YAML to the model and back ([qdmr-yaml.md](../spec/qdmr-yaml.md)), with notes on what each side can't hold |
 | `codeplug/detect.js`, `codeplug/stock_tyt.js` | Telling the open-firmware layout from a vendor codeplug, and converting that to the editing model ([codeplug-stock-tyt.md](../spec/codeplug-stock-tyt.md)) |
@@ -37,7 +39,7 @@ use it too. Both are plain ES modules that also run in Node. The user's view is 
 | `editor/modesview.js`, `modefields.js` | The Systems tab, its dialogs (system, entries, key) and the Radio tab's mode settings; the fields a mode module declares turned into form fields |
 | `editor/files.js` | What an opened file holds (codeplug image, backup bundle, `codeplug.bin`), and the draft in IndexedDB |
 | `editor/extensions.js`, `parts.js` | Optional parts register their Save items, table actions, text file openers and DMR ID Database views. `parts.js` lists them, so a part is added without touching `app.js` |
-| `editor/csvpart.js`, `qdmrpart.js`, `contactspart.js` | The CSV, qdmr YAML and RadioID parts |
+| `editor/csvpart.js`, `qdmrpart.js`, `chirppart.js`, `contactspart.js` | The CSV, qdmr YAML, CHIRP CSV and RadioID parts |
 
 Add `#sim` to the page's address to read and write a simulated radio (`fakecps.js`), `#sim-compact` for one that
 reads format C ID databases, `#sim-modes` for one whose features report every channel mode in the registry. Append `&release=vYY.M` for a radio that runs that release, or `&git_time=N` for a build
@@ -103,8 +105,9 @@ data is in the repository or on the site: `regions.js` holds only country and st
 
 `site/tests/codeplug.test.mjs` checks the decoder and encoder against the radio's own codeplug code: `fixtures.py`
 builds `tests/host/cpsSim`, stores a populated codeplug, and records what the radio reads back (`--detail`). The JS
-decode must match it, and the encode must store what the radio then reads. `csv.test.mjs` covers the CSV round trips
-and import problems; `sources.test.mjs` covers the RadioID parser, the API client against a fake `fetch` (the key
-never sent through the proxy), templates and outputs. `qdmr.test.mjs` covers the YAML parser, the mapping, round
-trips and the converters; when `dmrconf` (qdmr's command line tool) is installed it also encodes an exported file.
-Nothing reaches the network.
+decode must match it, and the encode must store what the radio then reads. `csv.test.mjs` covers the CSV round trips and
+import problems; `sources.test.mjs` covers the RadioID parser, the API client against a fake `fetch` (the key never sent
+through the proxy), templates and outputs. `chirp.test.mjs` covers the CHIRP CSV mapping, its round trip and what it
+can't read, and the CHIRP image reader: a made-up image in the documented layout, other radios, cut short images and
+receive-only channels. `qdmr.test.mjs` covers the YAML parser, the mapping, round trips and the converters; when
+`dmrconf` (qdmr's command line tool) is installed it also encodes an exported file. Nothing reaches the network.

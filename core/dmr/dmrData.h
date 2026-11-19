@@ -93,6 +93,29 @@ typedef struct
 #define DMR_UDP_PORT_ETSI_TEXT		5016		// ETSI IP text (TS 102 361-3 5.7.1; compressed port ID 1)
 #define DMR_UDP_PORT_NMEA			10110		// NMEA over UDP: the DMR APRS position some radios send (docs/spec/dmr-data.md 3)
 
+// The privacy header: a proprietary second header (TS 102 361-1 8.2.1.4, DPF 15) with the Motorola MFID after the
+// first data header, marking the packet's user data encrypted (docs/spec/dmr-data.md, privacy). Octet 0 SAP | DPF 15,
+// octet 1 MFID 0x10, octet 2 algorithm (bits 6-4) and the encrypted flag (bits 3-0, 1), octet 3 key ID, octets 4-5 0,
+// octets 6-9 the message indicator (big endian), then the header CRC. It counts as one of the first header's blocks to
+// follow. The keystream covers the user data from its first octet: the pad octets and the CRC-32 stay clear, and the
+// CRC-32 (and a confirmed block's CRC-9) is over the encrypted octets
+#define DMR_DATA_ALG_BASIC			0			// static keystream (basic privacy)
+#define DMR_DATA_ALG_RC4			1
+#define DMR_DATA_ALG_DES			2
+#define DMR_DATA_ALG_AES128			4
+#define DMR_DATA_ALG_AES256			5
+#define DMR_DATA_PRIVACY_MFID		0x10
+
+typedef struct
+{
+	bool     present;						// a privacy header came with the packet
+	bool     encrypted;						// ... with the encrypted flag
+	uint8_t  sap;							// its SAP (the user data's when the first header says SAP 9)
+	uint8_t  alg;							// DMR_DATA_ALG_*
+	uint8_t  keyId;
+	uint32_t mi;							// message indicator
+} dmrDataPrivacyHeader_t;
+
 typedef struct
 {
 	uint8_t  dpf;
@@ -109,6 +132,8 @@ typedef struct
 	uint8_t  response;						// response packets: class (7-6), type (5-3), status (2-0)
 	uint8_t  dataType;						// DT of the blocks
 	bool     firstTry;						// confirmed: the header's F (full message) flag
+	dmrDataPrivacyHeader_t privacy;			// the privacy header, when one came
+	bool     decrypted;						// the user data was encrypted and is now clear (else still encrypted)
 	uint16_t length;						// user data length
 	uint8_t  data[DMR_DATA_MAX_PACKET];
 } dmrDataPacket_t;
@@ -178,6 +203,36 @@ int dmrDataBuildIP(bool group, uint32_t dst, uint32_t src, uint8_t protocol, con
 #define DMR_APP_PORT_FIRST			4000
 #define DMR_APP_PORT_LAST			4099
 void dmrDataSetUdpCompression(uint8_t mode);
+
+// --- Packet data privacy (CONFIG_DMR_PRIVACY; docs/spec/dmr-data.md 13) ---
+// What the channel's privacy scheme does with data. This layer knows no scheme: the scheme's code fills this in
+// (dmrPrivacyDataConfig, core/dmr/dmrPrivacy.h)
+#define DMR_DATA_PRIVACY_CLEAR		0			// no privacy: data goes as it is
+#define DMR_DATA_PRIVACY_ENCRYPT	1			// packets get the privacy header and the scheme's keystream
+#define DMR_DATA_PRIVACY_BLOCK		2			// the scheme has no data form: no data packet is sent
+
+typedef struct dmrDataPrivacy_s
+{
+	uint8_t mode;							// DMR_DATA_PRIVACY_*
+	uint8_t alg;							// ENCRYPT: the privacy header's algorithm (DMR_DATA_ALG_*)
+	// XORs the keystream of algorithm alg with message indicator mi onto a packet's user data (encrypts or decrypts):
+	// false when the scheme can't (another algorithm), the data left as it is
+	bool (*crypt)(const void *ctx, uint8_t alg, uint32_t mi, uint8_t *data, int length);
+	const void *ctx;						// the scheme's key, for crypt
+} dmrDataPrivacy_t;
+
+// The channel's data privacy (copied; NULL or mode CLEAR: off). With ENCRYPT every unconfirmed and confirmed packet we
+// build gets the privacy header and the keystream; received packets with a privacy header are decrypted when crypt
+// takes their algorithm. Without CONFIG_DMR_PRIVACY it is always off
+void dmrDataSetPrivacy(const dmrDataPrivacy_t *privacy);
+// Whether a burst list may go out with the privacy set: with a scheme that encrypts data, only data packets that carry
+// the privacy header (a UDT or short data packet can't); with one that has no data form, no data packet at all.
+// Responses and CSBKs always may: they are never encrypted
+bool dmrDataPrivacyAllows(const dmrBurst_t *bursts, int count);
+// The bursts the privacy header adds to a packet with the privacy set: 0 or 1
+int dmrDataPrivacyBursts(void);
+// Whether a burst list carries a privacy header (a packet in it goes encrypted)
+bool dmrDataPrivacyEncrypted(const dmrBurst_t *bursts, int count);
 uint8_t dmrDataGetUdpCompression(void);
 // True when a datagram between these ports may go compressed under the current mode (false when built without it).
 // The mode decides by the ports only: a packet whose addresses aren't its IDs' CAI addresses still goes with the full

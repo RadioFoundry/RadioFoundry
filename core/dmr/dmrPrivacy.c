@@ -19,6 +19,7 @@
 
 #include <string.h>
 #include "dmr/dmrPrivacy.h"
+#include "dmr/dmrData.h"
 #include "dmr/ambe/ambeFec.h"
 
 #define FRAMES_PER_SUPERFRAME  18
@@ -62,37 +63,6 @@ static const uint16_t MOTOROLA_BP_KEYS[256] = {
 
 // The AMBE+2 silence frame, which Anytone leaves in the clear (DSD-FME dsd_mbe.c)
 static const uint8_t AMBE_SILENCE[7] = { 0xF8, 0x01, 0xA9, 0x9F, 0x8C, 0xE0, 0x80 };
-
-bool dmrPrivacyKeyIsValid(dmrPrivacyType_t type, uint16_t key)
-{
-	switch (type)
-	{
-		case DMR_PRIVACY_MOTOROLA_BP:
-			return ((key >= 1) && (key <= 255));
-		case DMR_PRIVACY_ANYTONE_BP:
-			return true;
-		default:
-			return false;
-	}
-}
-
-uint16_t dmrPrivacyKeyMax(dmrPrivacyType_t type)
-{
-	return ((type == DMR_PRIVACY_ANYTONE_BP) ? 0xFFFF : 255);
-}
-
-const char *dmrPrivacyTypeName(dmrPrivacyType_t type)
-{
-	switch (type)
-	{
-		case DMR_PRIVACY_MOTOROLA_BP:
-			return "Moto BP";
-		case DMR_PRIVACY_ANYTONE_BP:
-			return "Anytone BP";
-		default:
-			return "Off";
-	}
-}
 
 uint8_t dmrPrivacyServiceOptions(dmrPrivacyType_t type, uint8_t serviceOptions)
 {
@@ -236,42 +206,102 @@ static bool frameIsClearForAnytone(const uint8_t *bits)
 	return (isSilence || isZeroed);
 }
 
-static void applyFrame(dmrPrivacyType_t type, uint16_t key, uint8_t *bits, int frameIndex)
+static void motorolaVoiceFrame(uint16_t key, uint8_t *bits, int frameIndex)
 {
-	switch (type)
+	uint64_t k = MOTOROLA_BP_KEYS[key & 0xFF];
+
+	(void)frameIndex;
+	k = ((k & 0xFF0F) << 32) | (k << 16) | k; // 48 bits, the last parameter bit stays clear
+
+	for (int i = 0; i < 48; i++)
 	{
-		case DMR_PRIVACY_MOTOROLA_BP:
-			{
-				uint64_t k = MOTOROLA_BP_KEYS[key & 0xFF];
-
-				k = ((k & 0xFF0F) << 32) | (k << 16) | k; // 48 bits, the last parameter bit stays clear
-
-				for (int i = 0; i < 48; i++)
-				{
-					bits[i] ^= (k >> (47 - i)) & 1;
-				}
-			}
-			break;
-
-		case DMR_PRIVACY_ANYTONE_BP:
-			if (frameIsClearForAnytone(bits) == false)
-			{
-				// Nibbles 1 and 3 inverted, 2 and 4 plus 8, the 16 bits repeated through the superframe
-				uint16_t k = (~key & 0xF0F0) | ((((key >> 8) + 8) & 0x0F) << 8) | ((key + 8) & 0x0F);
-				int position = frameIndex * DMR_PRIVACY_AMBE_FRAME_BITS;
-
-				for (int i = 0; i < DMR_PRIVACY_AMBE_FRAME_BITS; i++, position++)
-				{
-					bits[i] ^= (k >> (15 - (position & 15))) & 1;
-				}
-			}
-			break;
-
-		default:
-			break;
+		bits[i] ^= (k >> (47 - i)) & 1;
 	}
 }
 
+static void anytoneVoiceFrame(uint16_t key, uint8_t *bits, int frameIndex)
+{
+	if (frameIsClearForAnytone(bits) == false)
+	{
+		// Nibbles 1 and 3 inverted, 2 and 4 plus 8, the 16 bits repeated through the superframe
+		uint16_t k = (~key & 0xF0F0) | ((((key >> 8) + 8) & 0x0F) << 8) | ((key + 8) & 0x0F);
+		int position = frameIndex * DMR_PRIVACY_AMBE_FRAME_BITS;
+
+		for (int i = 0; i < DMR_PRIVACY_AMBE_FRAME_BITS; i++, position++)
+		{
+			bits[i] ^= (k >> (15 - (position & 15))) & 1;
+		}
+	}
+}
+
+// Motorola Basic Privacy on data: the key's 16-bit value repeated over the octets, high octet first, from the first
+// user data octet of the packet (no message indicator, no restart per block)
+static void motorolaData(uint16_t key, uint32_t mi, uint8_t *data, int length)
+{
+	uint16_t k = MOTOROLA_BP_KEYS[key & 0xFF];
+
+	(void)mi;
+	for (int i = 0; i < length; i++)
+	{
+		data[i] ^= (i & 1) ? (k & 0xFF) : (k >> 8);
+	}
+}
+
+// The schemes, by dmrPrivacyType_t. dataCrypt is set for DMR_DATA_PRIVACY_ENCRYPT only. A new scheme is an entry here
+typedef struct
+{
+	const char *name;
+	uint16_t keyMin;
+	uint16_t keyMax;
+	void (*voiceFrame)(uint16_t key, uint8_t *bits, int frameIndex);	// XOR the keystream onto one frame's 49 bits
+	uint8_t dataMode;													// DMR_DATA_PRIVACY_* (dmrData.h)
+	uint8_t dataAlg;													// the data privacy header's algorithm ID
+	void (*dataCrypt)(uint16_t key, uint32_t mi, uint8_t *data, int length);
+} privacyScheme_t;
+
+static const privacyScheme_t SCHEMES[DMR_PRIVACY_NUM_TYPES] = {
+	[DMR_PRIVACY_OFF] = { "Off", 0, 0, NULL, DMR_DATA_PRIVACY_CLEAR, 0, NULL },
+	[DMR_PRIVACY_MOTOROLA_BP] = { "Moto BP", 1, 255, motorolaVoiceFrame, DMR_DATA_PRIVACY_ENCRYPT, DMR_DATA_ALG_BASIC,
+									motorolaData },
+	// No data form is defined for this scheme: data would go in the clear, so none is sent
+	[DMR_PRIVACY_ANYTONE_BP] = { "Anytone BP", 0, 0xFFFF, anytoneVoiceFrame, DMR_DATA_PRIVACY_BLOCK, 0, NULL },
+};
+
+static const privacyScheme_t *scheme(dmrPrivacyType_t type)
+{
+	return ((unsigned)type < DMR_PRIVACY_NUM_TYPES) ? &SCHEMES[type] : &SCHEMES[DMR_PRIVACY_OFF];
+}
+
+bool dmrPrivacyKeyIsValid(dmrPrivacyType_t type, uint16_t key)
+{
+	const privacyScheme_t *s = scheme(type);
+
+	// scheme() maps an unknown type to Off's entry, whose range would take key 0
+	return (type != DMR_PRIVACY_OFF) && ((unsigned)type < DMR_PRIVACY_NUM_TYPES) && (key >= s->keyMin) &&
+			(key <= s->keyMax);
+}
+
+uint16_t dmrPrivacyKeyMax(dmrPrivacyType_t type)
+{
+	return scheme(type)->keyMax;
+}
+
+const char *dmrPrivacyTypeName(dmrPrivacyType_t type)
+{
+	return scheme(type)->name;
+}
+
+bool dmrPrivacyDataCrypt(const dmrPrivacyKey_t *key, uint8_t alg, uint32_t mi, uint8_t *data, int length)
+{
+	const privacyScheme_t *s = (key != NULL) ? scheme(key->type) : NULL;
+
+	if ((s == NULL) || (s->dataCrypt == NULL) || (s->dataAlg != alg) || !dmrPrivacyKeyIsValid(key->type, key->key))
+	{
+		return false;
+	}
+	s->dataCrypt(key->key, mi, data, length);
+	return true;
+}
 void dmrPrivacyApplyBurst(dmrPrivacyType_t type, uint16_t key, uint8_t *ambe, uint8_t voiceSequence, bool correctErrors)
 {
 	if ((type == DMR_PRIVACY_OFF) || (type >= DMR_PRIVACY_NUM_TYPES) || (voiceSequence >= (FRAMES_PER_SUPERFRAME / DMR_PRIVACY_AMBE_BURST_FRAMES)))
@@ -293,7 +323,7 @@ void dmrPrivacyApplyBurst(dmrPrivacyType_t type, uint16_t key, uint8_t *ambe, ui
 			dmrPrivacyAmbeExtract(frame, bits);
 		}
 
-		applyFrame(type, key, bits, (voiceSequence * DMR_PRIVACY_AMBE_BURST_FRAMES) + f);
+		scheme(type)->voiceFrame(key, bits, (voiceSequence * DMR_PRIVACY_AMBE_BURST_FRAMES) + f);
 		dmrPrivacyAmbeEncode(bits, frame);
 	}
 }
@@ -306,4 +336,24 @@ void dmrPrivacyCallHook(uint8_t *ambe27, uint8_t voiceIndex, bool tx, void *ctx)
 	{
 		dmrPrivacyApplyBurst(k->type, k->key, ambe27, voiceIndex, !tx);
 	}
+}
+
+static bool dataCrypt(const void *ctx, uint8_t alg, uint32_t mi, uint8_t *data, int length)
+{
+	return dmrPrivacyDataCrypt((const dmrPrivacyKey_t *)ctx, alg, mi, data, length);
+}
+
+void dmrPrivacyDataConfig(const dmrPrivacyKey_t *key, dmrDataPrivacy_t *out)
+{
+	memset(out, 0, sizeof(*out));
+	if ((key == NULL) || !dmrPrivacyKeyIsValid(key->type, key->key))
+	{
+		return;// clear
+	}
+	const privacyScheme_t *s = scheme(key->type);
+
+	out->mode = s->dataMode;
+	out->alg = s->dataAlg;
+	out->crypt = (s->dataCrypt != NULL) ? dataCrypt : NULL;
+	out->ctx = key;
 }

@@ -3637,6 +3637,21 @@ msgctxt "SET_VALUE_SFR_RX_DUAL_PATH"
 msgid "Dual-path RX"
 msgstr "RX double voie"
 
+#: core/ui/ui_menus.c
+msgctxt "SIG_VALUE_SPEAKER"
+msgid "Speaker"
+msgstr "Haut-parleur"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_VALUE_ON_AIR"
+msgid "On air"
+msgstr "Émission"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_VALUE_SPEAKER_AIR"
+msgid "Speaker + air"
+msgstr "HP + émission"
+
 #: core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "TITLE_VOLUME"
 msgid "Volume"
@@ -3701,6 +3716,51 @@ msgstr "Bip de message"
 msgctxt "SET_LABEL_VIBRATE"
 msgid "Vibrate"
 msgstr "Vibration"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_ROW_DMR_START_TONE"
+msgid "DMR start tone"
+msgstr "Tonalité début DMR"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_ROW_DMR_END_TONE"
+msgid "DMR end tone"
+msgstr "Tonalité fin DMR"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_ROW_DMR_IDLE_TONE"
+msgid "DMR idle tone"
+msgstr "Tonalité repos DMR"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_ROW_FM_START_TONE"
+msgid "FM start tone"
+msgstr "Tonalité début FM"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_ROW_FM_END_TONE"
+msgid "FM end tone"
+msgstr "Tonalité fin FM"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_ROW_FM_IDLE_TONE"
+msgid "FM idle tone"
+msgstr "Tonalité repos FM"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_ROW_START_STEPS"
+msgid "Start steps"
+msgstr "Étapes de début"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_ROW_END_STEPS"
+msgid "End steps"
+msgstr "Étapes de fin"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_ROW_IDLE_STEPS"
+msgid "Idle steps"
+msgstr "Étapes de repos"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_LABEL_BRIGHTNESS"
@@ -4033,6 +4093,16 @@ msgid "My radio"
 msgstr "Ma radio"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_ROW_SIGNALING_TONES"
+msgid "Signaling tones"
+msgstr "Tonalités de signalisation"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_TITLE_SIGNALING_TONES"
+msgid "Signaling Tones"
+msgstr "Tonalités de signalisation"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_ROW_ADVANCED"
 msgid "Advanced"
 msgstr "Avancé"
@@ -4041,6 +4111,71 @@ msgstr "Avancé"
 msgctxt "HINT_0_9_OPEN_BACK"
 msgid "0-9 open  Back"
 msgstr "0-9 ouvrir  Retour"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "HOME_LABEL_STEP"
+msgid "Step "
+msgstr "Pas "
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_VALUE_STANDARD_SOUND"
+msgid "Standard sound"
+msgstr "Son standard"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_LABEL_LENGTH"
+msgid "Length: "
+msgstr "Durée: "
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_TITLE_START_TONE"
+msgid "Start Tone"
+msgstr "Tonalité de début"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_TITLE_END_TONE"
+msgid "End Tone"
+msgstr "Tonalité de fin"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_TITLE_IDLE_TONE"
+msgid "Idle Tone"
+msgstr "Tonalité de repos"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_TOAST_NOT_CHANGED"
+msgid "Not changed: "
+msgstr "Inchangé : "
+
+#: core/ui/ui_menus.c
+msgctxt "SET_TOAST_RANGE_TO"
+msgid " to "
+msgstr " à "
+
+#: core/ui/ui_menus.c
+msgctxt "SET_TOAST_STEPS_OF"
+msgid ", steps of "
+msgstr ", pas de "
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_HINT_TYPE_OK_NEXT_BACK"
+msgid "0-9 type  OK next  Back"
+msgstr "0-9 saisir  OK suiv.  Retour"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_VALUE_STANDARD"
+msgid "Standard"
+msgstr "Standard"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_UNIT_STEP"
+msgid " step"
+msgstr " étape"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_UNIT_STEPS"
+msgid " steps"
+msgstr " étapes"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_PERMIT_TONE_NOT_IN_BUILD"
@@ -4121,21 +4256,6 @@ msgstr "Diag. non supporté"
 msgctxt "SET_TOAST_SAVED_AS_YOU_CHANGE"
 msgid "Settings are saved as you change them"
 msgstr "Sauvegarde auto param"
-
-#: core/ui/ui_menus.c
-msgctxt "SET_TOAST_NOT_CHANGED"
-msgid "Not changed: "
-msgstr "Inchangé : "
-
-#: core/ui/ui_menus.c
-msgctxt "SET_TOAST_RANGE_TO"
-msgid " to "
-msgstr " à "
-
-#: core/ui/ui_menus.c
-msgctxt "SET_TOAST_STEPS_OF"
-msgid ", steps of "
-msgstr ", pas de "
 
 #: core/ui/ui_menus.c core/ui/ui_position.c
 msgctxt "HINT_OK_CHANGE_BACK"
@@ -4328,11 +4448,6 @@ msgid "ROAM"
 msgstr "RMNG"
 
 #: core/ui/ui_screens.c
-msgctxt "HOME_LABEL_STEP"
-msgid "Step "
-msgstr "Pas "
-
-#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_P25T_HUNT"
 msgid "Finding system"
 msgstr "Recherche système"
@@ -4513,6 +4628,21 @@ msgid "Voice channel unusable"
 msgstr "Canal voix inutilisable"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_WHY_TRUNK_OTHER_SYS"
+msgid "Another system heard"
+msgstr "Autre système entendu"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_TRUNK_REG_REFUSED"
+msgid "Registration refused"
+msgstr "Enregistrement refusé"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_TRUNK_UNMAPPED"
+msgid "Unknown channel "
+msgstr "Canal inconnu "
+
+#: core/ui/ui_screens.c
 msgctxt "DENY_WHY_NOT_ALLOWED"
 msgid "Not allowed here"
 msgstr "Interdit ici"
@@ -4578,6 +4708,16 @@ msgid "End the bench on the PC"
 msgstr "Arrêter le banc sur PC"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_FIX_CHECK_SYSTEM"
+msgid "Check system settings"
+msgstr "Vérifiez les réglages du système"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_FIX_ASK_TO_ADD_ID"
+msgid "Ask to add your ID"
+msgstr "Faites ajouter votre ID"
+
+#: core/ui/ui_screens.c
 msgctxt "TRUNK_WORD_PHONE_LINE"
 msgid "Phone line"
 msgstr "Ligne téléphonique"
@@ -4616,6 +4756,16 @@ msgstr "Modem DMR inactif"
 msgctxt "TRUNK_STATE_FALLBACK"
 msgid "Fallback"
 msgstr "Secours"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_OTHER_SYSTEM"
+msgid "Other system"
+msgstr "Autre système"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_REG_REFUSED"
+msgid "Reg. refused"
+msgstr "Enreg. refusé"
 
 #: core/ui/ui_screens.c
 msgctxt "TRUNK_STATE_SEARCHING"
@@ -4671,6 +4821,51 @@ msgstr "DMon"
 msgctxt "HOME_CHIP_PRIVACY"
 msgid "Priv"
 msgstr "Priv"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_MODEL_TINY"
+msgid "Tiny"
+msgstr "Minuscule"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_MODEL_SMALL"
+msgid "Small"
+msgstr "Petit"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_MODEL_LARGE"
+msgid "Large"
+msgstr "Grand"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_MODEL_HUGE"
+msgid "Huge"
+msgstr "Très grand"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_HEARD"
+msgid "Heard: "
+msgstr "Entendu : "
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_NET"
+msgid ", net "
+msgstr ", réseau "
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_SITE"
+msgid "site "
+msgstr "site "
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_CAT_A"
+msgid ", category A only"
+msgstr ", catégorie A seule"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_CAT_B"
+msgid ", category B only"
+msgstr ", catégorie B seule"
 
 #: core/ui/ui_screens.c
 msgctxt "CALL_BODY_PRIVATE_ID"

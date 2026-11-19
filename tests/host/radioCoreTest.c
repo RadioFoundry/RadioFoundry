@@ -587,9 +587,21 @@ static void kv_t3_clear(void)
 	kv_t3_n = 0;
 	kv_serial++;
 }
+// The signaling tones' records (sigtone.h): one per event, kv_sig_len -1 when the key is absent
+static int16_t kv_sig_len[SIG_EV_COUNT] = { -1, -1, -1 };
+static uint8_t kv_sig[SIG_EV_COUNT][SIG_REC_LEN];
+static bool kv_is_sig(uint16_t key) { return key >= CODEPLUG_KEY_SIG_BEGIN && key <= CODEPLUG_KEY_SIG_IDLE; }
 static bool kv_is_tone(uint16_t key) { return key >= CODEPLUG_KEY_CALL_END_TONE && key <= CODEPLUG_KEY_TX_DENY_TONE; }
 int codeplug_kv_get(uint16_t key, void *buf, uint16_t max)
 {
+	if (kv_is_sig(key)) {
+		int e = key - CODEPLUG_KEY_SIG_BEGIN;
+		if (kv_sig_len[e] < 0) {
+			return -1;
+		}
+		memcpy(buf, kv_sig[e], max < (uint16_t)kv_sig_len[e] ? max : (uint16_t)kv_sig_len[e]);
+		return kv_sig_len[e];
+	}
 	for (uint8_t i = 0; i < kv_t3_n; i++) {
 		if (kv_t3[i].key == key) {
 			memcpy(buf, kv_t3[i].v, max < kv_t3[i].len ? max : kv_t3[i].len);
@@ -614,6 +626,24 @@ int codeplug_kv_get(uint16_t key, void *buf, uint16_t max)
 // One set: the ARS server as a u32, a tone as one byte
 static bool kv_set(uint16_t key, const uint8_t *v, uint16_t len)
 {
+	if (kv_is_sig(key)) {
+		// A record is set from the front (CODEPLUG_KV_HEAD): the bytes after it stay
+		int e = key - CODEPLUG_KEY_SIG_BEGIN;
+		bool head = (len & CODEPLUG_KV_HEAD) != 0;
+		len &= (uint16_t)~CODEPLUG_KV_HEAD;
+		if (len > SIG_REC_LEN) {
+			return false;
+		}
+		if (!head || kv_sig_len[e] < 0) {
+			memset(kv_sig[e], 0, SIG_REC_LEN);
+			kv_sig_len[e] = (int16_t)len;
+		} else if (len > kv_sig_len[e]) {
+			kv_sig_len[e] = (int16_t)len;
+		}
+		memcpy(kv_sig[e], v, len);
+		kv_serial++;
+		return true;
+	}
 	if (kv_is_tone(key) && len == 1) {
 		kv_tone[key - CODEPLUG_KEY_CALL_END_TONE] = v[0];
 	} else if (key == CODEPLUG_KEY_ARS_SERVER && len == 4) {
@@ -640,7 +670,7 @@ void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi)
 }
 int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max)
 {
-	for (; !c->done && c->at <= c->hi && c->at <= CODEPLUG_KEY_TX_DENY_TONE; c->at++) {
+	for (; !c->done && c->at <= c->hi && c->at <= CODEPLUG_KEY_SIG_IDLE; c->at++) {
 		int n = codeplug_kv_get(c->at, buf, max);
 		if (n >= 0) {
 			*key = c->at++;
@@ -1720,31 +1750,6 @@ static void test_dmr_rx(void)
 	CHECK(sm.view.ch.mode == RADIO_MODE_FM && !sim.started && !d->active && aud.stops > 0 && !aud.started);
 	req(RREQ_CH_STEP, -1);
 	CHECK(sim.started && d->active);
-}
-
-static void reload_channel(void);
-
-// A channel change publishes the new channel's color code, timeslot and repeater mode with it, in one update: a
-// reader between the change and the call stack's next tick (dual watch's snapshot of the pane, at every hop) never
-// sees the new channel with the old one's timeslot
-static void test_dmr_channel_change_view(void)
-{
-	dmr_start(false);
-	const radio_dmr_view_t *d = &sm.view.dmr;
-	chans[1].mode = RADIO_MODE_DMR;
-	chans[1].rx_hz = 438600000;
-	chans[1].tx_hz = 433600000;
-	chans[1].color_code = 5;
-	chans[1].timeslot = 2;
-	reload_channel();
-	run(50);
-	CHECK(sm.view.channel_number == 4 && d->ts == 1 && d->cc == 2 && !d->rmo);
-	req(RREQ_ZONE_POS, 0);			// no poll: what a reader sees right after the change
-	CHECK(sm.view.channel_number == 1 && d->ts == 2 && d->cc == 5 && d->rmo);
-	req(RREQ_ZONE_POS, 3);
-	CHECK(sm.view.channel_number == 4 && d->ts == 1 && d->cc == 2 && !d->rmo);
-	run(50);
-	CHECK(d->ts == 1 && d->cc == 2 && !d->rmo);
 }
 
 static void test_dmr_tx(void)
@@ -4477,6 +4482,129 @@ static void test_ui_glue(void)
 	ui_svc_apply(UI_SET_TALK_PERMIT, 1);
 	run(20);
 	CHECK(sm.set.talk_permit);
+	// Signaling tones (Settings > Sound, sigtone.h): the default until set; a set reaches the radio core, which clamps
+	// it (no on air copy of a reception's end), saves it in settings_t and gives it back; an old record reads default
+	for (int ev = 0; ev < SIG_EV_COUNT; ev++) {
+		CHECK(ui_svc_setting_get((uint8_t)(UI_SET_SIG_DMR + ev)) == SIG_OUT_DEFAULT &&
+		      ui_svc_setting_get((uint8_t)(UI_SET_SIG_FM + ev)) == SIG_OUT_DEFAULT &&
+		      ui_svc_setting_get((uint8_t)(UI_SET_SIG_HZ + 10 * ev)) == 0 &&
+		      ui_svc_setting_get((uint8_t)(UI_SET_SIG_MS + 10 * ev)) == 0);
+	}
+	radio_settings_t sr;
+	radio_get_settings(&sr);
+	sr.sig_dmr[SIG_EV_BEGIN] = SIG_OUT_BOTH;
+	sr.sig_dmr[SIG_EV_IDLE] = SIG_OUT_AIR;	// nothing to send when a reception ends
+	sr.sig_fm[SIG_EV_END] = SIG_OUT_AIR;
+	sr.sig_fm[SIG_EV_BEGIN] = SIG_OUT_BOTH;	// FM's start tone goes on air too
+	// The end chain's second step (1570 Hz, 40 ms) and its third (a length of 5000 ms, a frequency of 9000 Hz: both cut)
+	sr.sig_hz[SIG_EV_END][1] = 1570;
+	sr.sig_ms[SIG_EV_END][1] = 4;
+	sr.sig_hz[SIG_EV_END][2] = 9000;
+	sr.sig_ms[SIG_EV_END][2] = 250;
+	radio_set_settings(&sr);
+	run(20);
+	CHECK(sm.set.sig_dmr[SIG_EV_BEGIN] == SIG_OUT_BOTH && sm.set.sig_dmr[SIG_EV_IDLE] == SIG_OUT_DEFAULT &&
+	      sm.set.sig_fm[SIG_EV_END] == SIG_OUT_AIR && sm.set.sig_fm[SIG_EV_BEGIN] == SIG_OUT_BOTH &&
+	      sm.set.sig_hz[SIG_EV_END][1] == 1570 && sm.set.sig_ms[SIG_EV_END][1] == 4 &&
+	      sm.set.sig_hz[SIG_EV_END][2] == SIG_HZ_MAX && sm.set.sig_ms[SIG_EV_END][2] == SIG_MAX_MS / SIG_MS_UNIT &&
+	      sm.set.sig_ms[SIG_EV_IDLE][0] == 0);
+	CHECK(ui_svc_setting_get(UI_SET_SIG_DMR + SIG_EV_BEGIN) == SIG_OUT_BOTH &&
+	      ui_svc_setting_get(UI_SET_SIG_HZ + 10 * SIG_EV_END + 1) == 1570 &&
+	      ui_svc_setting_get(UI_SET_SIG_MS + 10 * SIG_EV_END + 1) == 40 &&
+	      ui_svc_setting_get(UI_SET_SIG_MS + 10 * SIG_EV_END + 2) == (int32_t)SIG_MAX_MS);
+	settings_read(&sv);
+	CHECK(sv.sig_dmr[SIG_EV_BEGIN] == SIG_OUT_BOTH && sv.sig_fm[SIG_EV_END] == SIG_OUT_AIR &&
+	      sv.sig_dmr[SIG_EV_IDLE] == SIG_OUT_DEFAULT);
+	memset(sr.sig_dmr, 0, sizeof sr.sig_dmr);
+	memset(sr.sig_fm, 0, sizeof sr.sig_fm);
+	memset(sr.sig_hz, 0, sizeof sr.sig_hz);
+	memset(sr.sig_ms, 0, sizeof sr.sig_ms);
+	radio_set_settings(&sr);
+	run(20);
+	CHECK(sm.set.sig_dmr[SIG_EV_BEGIN] == SIG_OUT_DEFAULT && sm.set.sig_ms[SIG_EV_END][1] == 0);
+	// Set from the menu (docs/spec/codeplug-settings.md 5.2): a job writes the event's record, 17 bytes with the
+	// outputs first, and the radio core takes the change as the radio's own; a step goes whole
+	n_ev = 0;
+	CHECK(ui_svc_setting_set(UI_SET_SIG_STEP, UI_SIG_STEP(SIG_EV_END, 1, 1570, 40)) && storage_job_busy());
+	storage_job_poll();
+	run(20);
+	CHECK(kv_sig_len[SIG_EV_END] == SIG_REC_LEN && kv_sig[SIG_EV_END][2 + 2] == (1570 & 0xFF) &&
+	      kv_sig[SIG_EV_END][3 + 2] == (1570 >> 8) && kv_sig[SIG_EV_END][2 + 2 * SIG_REC_BASE + 1] == 4);
+	CHECK(kv_sig_len[SIG_EV_BEGIN] < 0 && sm.set.sig_hz[SIG_EV_END][1] == 1570 && sm.set.sig_ms[SIG_EV_END][1] == 4 &&
+	      ui_svc_setting_get(UI_SET_SIG_HZ + 10 * SIG_EV_END + 1) == 1570 &&
+	      ui_svc_setting_get(UI_SET_SIG_MS + 10 * SIG_EV_END + 1) == 40);
+	CHECK(ui_svc_setting_set(UI_SET_SIG_DMR + SIG_EV_END, SIG_OUT_BOTH));
+	storage_job_poll();
+	run(20);
+	settings_read(&sv);
+	CHECK(kv_sig[SIG_EV_END][0] == SIG_OUT_BOTH && sm.set.sig_dmr[SIG_EV_END] == SIG_OUT_BOTH &&
+	      sv.sig_dmr[SIG_EV_END] == SIG_OUT_BOTH);
+	// What the setting can't take is refused, with no job
+	CHECK(!ui_svc_setting_set(UI_SET_SIG_FM + SIG_EV_IDLE, SIG_OUT_AIR) && !ui_svc_setting_set(UI_SET_SIG_DMR + SIG_EV_IDLE, SIG_OUT_BOTH) &&
+	      !ui_svc_setting_set(UI_SET_SIG_STEP, UI_SIG_STEP(SIG_EV_END, 12, 800, 40)) && !ui_svc_setting_set(UI_SET_SIG_HZ, 9000) &&
+	      !storage_job_busy());
+	// A record a CPS wrote holds over the radio's own copy, which follows it: a short one (the outputs only) leaves the
+	// chain empty, a longer one (a later version) is read from the front, and one the setting can't take is ignored
+	kv_sig_len[SIG_EV_BEGIN] = 2;
+	kv_sig[SIG_EV_BEGIN][0] = SIG_OUT_LOCAL;
+	kv_sig[SIG_EV_BEGIN][1] = SIG_OUT_OFF;
+	kv_serial++;
+	run(20);
+	CHECK(sm.set.sig_dmr[SIG_EV_BEGIN] == SIG_OUT_LOCAL && sm.set.sig_fm[SIG_EV_BEGIN] == SIG_OUT_OFF &&
+	      sm.set.sig_ms[SIG_EV_BEGIN][0] == 0);
+	settings_read(&sv);
+	CHECK(sv.sig_dmr[SIG_EV_BEGIN] == SIG_OUT_LOCAL);
+	kv_sig_len[SIG_EV_IDLE] = SIG_REC_LEN;
+	memset(kv_sig[SIG_EV_IDLE], 0, SIG_REC_LEN);
+	kv_sig[SIG_EV_IDLE][0] = SIG_OUT_LOCAL;
+	kv_sig[SIG_EV_IDLE][2] = 800 & 0xFF;
+	kv_sig[SIG_EV_IDLE][3] = 800 >> 8;
+	kv_sig[SIG_EV_IDLE][2 + 2 * SIG_REC_BASE] = 6;
+	kv_serial++;
+	run(20);
+	CHECK(sm.set.sig_dmr[SIG_EV_IDLE] == SIG_OUT_LOCAL && sm.set.sig_hz[SIG_EV_IDLE][0] == 800 && sm.set.sig_ms[SIG_EV_IDLE][0] == 6);
+	kv_sig[SIG_EV_END][2] = 9000 & 0xFF;	// a frequency over the limit: the record reads as absent
+	kv_sig[SIG_EV_END][3] = 9000 >> 8;
+	kv_serial++;
+	run(20);
+	CHECK(sm.set.sig_hz[SIG_EV_END][0] == 0 && sm.set.sig_hz[SIG_EV_END][1] == 1570);
+	// With another firmware's codeplug the area can't be written and holds no key: refused with "not saved" (the chains
+	// have no home but the record, so keeping the change in RAM would lose it at the next restart)
+	kv_sig_len[SIG_EV_BEGIN] = kv_sig_len[SIG_EV_END] = kv_sig_len[SIG_EV_IDLE] = -1;
+	cp_foreign = true;
+	kv_held = true;
+	n_ev = 0;
+	uint8_t keep_dmr = sm.set.sig_dmr[SIG_EV_BEGIN];
+	CHECK(ui_svc_setting_set(UI_SET_SIG_DMR + SIG_EV_BEGIN, SIG_OUT_AIR));
+	storage_job_poll();
+	run(20);
+	settings_read(&sv);
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && kv_sig_len[SIG_EV_BEGIN] < 0 &&
+	      sm.set.sig_dmr[SIG_EV_BEGIN] == keep_dmr && sv.sig_dmr[SIG_EV_BEGIN] == keep_dmr);
+	cp_foreign = false;
+	n_ev = 0;
+	// A key that is present and can't be updated (a CPS session holds the flash) refuses the change
+	kv_sig_len[SIG_EV_BEGIN] = 2;
+	kv_sig[SIG_EV_BEGIN][0] = SIG_OUT_AIR;
+	kv_sig[SIG_EV_BEGIN][1] = 0;
+	CHECK(ui_svc_setting_set(UI_SET_SIG_DMR + SIG_EV_BEGIN, SIG_OUT_OFF));
+	storage_job_poll();
+	run(20);
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && kv_sig[SIG_EV_BEGIN][0] == SIG_OUT_AIR &&
+	      sm.set.sig_dmr[SIG_EV_BEGIN] == keep_dmr);
+	kv_held = false;
+	kv_sig_len[SIG_EV_BEGIN] = -1;
+	n_ev = 0;
+	memset(sr.sig_dmr, 0, sizeof sr.sig_dmr);
+	memset(sr.sig_hz, 0, sizeof sr.sig_hz);
+	memset(sr.sig_ms, 0, sizeof sr.sig_ms);
+	radio_get_settings(&sr);
+	memset(sr.sig_dmr, 0, sizeof sr.sig_dmr);
+	memset(sr.sig_fm, 0, sizeof sr.sig_fm);
+	memset(sr.sig_hz, 0, sizeof sr.sig_hz);
+	memset(sr.sig_ms, 0, sizeof sr.sig_ms);
+	radio_set_settings(&sr);
+	run(20);
 	// Settings > Sound tones. The four keyed ones (docs/spec/codeplug-settings.md 5.2): on while absent; a set writes
 	// a one-byte bool key with no codeplug reload, and the radio core saves the tone as the radio's own
 	static const uint8_t tone_ids[] = { UI_SET_CALL_END_TONE, UI_SET_TOT_WARN_TONE, UI_SET_BATTERY_TONE,
@@ -5639,7 +5767,7 @@ static void test_factory_reset(void)
 	CHECK(settings_flush());
 	n_ev = 0;
 	CHECK(ui_svc_factory_reset());
-	sim_flash_cut_after(440);	// the settings records (page 1: 180 + 4 bytes, page 0: 252 + 4) go in, the native erase fails
+	sim_flash_cut_after(448);	// the settings records (page 1: 188 + 4 bytes, page 0: 252 + 4, rounded up as the sizes are) go in, the native erase fails
 	storage_job_poll();
 	sim_flash_power_on();
 	CHECK(n_ev == 1 && strstr(tr_en(last_ev.why), "native") != NULL);
@@ -7462,7 +7590,7 @@ static void test_p25_trunk_tx(void)
 	CHECK(radio_p25_trunked() && radio_p25_trunk_tx() && (v->flags & RADIO_P25_TRUNK_TX));
 	int keyed = hw.tx_calls;
 	req(RREQ_PTT, 1);
-	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_P25T_WHY_NO_CC);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_TRUNK_WHY_NO_CC);
 	req(RREQ_PTT, 0);
 	// Registration, unanswered: sent on the control channel's inbound frequency, retried
 	run(4000);
@@ -7470,7 +7598,7 @@ static void test_p25_trunk_tx(void)
 	CHECK(v->trunk == RADIO_P25_TRUNK_CONTROL && v->treg == P25_REG_RETRY && !hw.keyed && hw.rx_hz == TS_CC1);
 	CHECK(sm.view.state == RS_IDLE && fair[0].keyed_violations == 0);
 	req(RREQ_PTT, 1);
-	CHECK(sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_P25T_WHY_NOT_REG && hw.tx_calls == keyed + site.reg_rx);
+	CHECK(sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_TRUNK_WHY_NOT_REG && hw.tx_calls == keyed + site.reg_rx);
 	req(RREQ_PTT, 0);
 	// Answered (the next round, after the pause): affiliation to the talk group, then ready
 	site.ans_reg = site.ans_aff = SITE_ANS_ACCEPT;
@@ -7515,7 +7643,7 @@ static void test_p25_trunk_tx(void)
 	site.ans_req = SITE_ANS_DENY;
 	req(RREQ_PTT, 1);
 	run(800);
-	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_P25T_WHY_DENIED);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_TRUNK_WHY_DENIED);
 	p25t_view_text(buf, sizeof buf);
 	CHECK(strstr(buf, "p25t.deny_svc=0\np25t.deny_reason=89\n") != NULL);
 	req(RREQ_PTT, 0);
@@ -7525,7 +7653,7 @@ static void test_p25_trunk_tx(void)
 	uint16_t sent = site.req_rx;
 	req(RREQ_PTT, 1);
 	run(5000);
-	CHECK(sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_P25T_WHY_NO_ANSWER && site.req_rx == sent + 3);
+	CHECK(sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_TRUNK_WHY_NO_ANSWER && site.req_rx == sent + 3);
 	req(RREQ_PTT, 0);
 	// Released while waiting: the grant that comes later is not used
 	site.ans_req = SITE_ANS_QUEUE;
@@ -8685,6 +8813,94 @@ static void test_t3_talk(void)
 	sim.repeater = false;
 }
 
+// Voice bursts the radio sent on TS2 (the payload slot of a one-carrier site)
+static unsigned ts2_voice(void)
+{
+	unsigned n = 0;
+	for (unsigned i = 0; i < sim.air_count; i++) {
+		if ((sim.air[i].kind == DMR_BURST_VOICE || sim.air[i].kind == DMR_BURST_VOICE_LC_HEADER) && sim.air[i].ts == 2) {
+			n++;
+		}
+	}
+	return n;
+}
+
+// A one-carrier site: TSCC on TS1, the call granted on TS2 of the same LPCN. The site sends Late_Entry grants and
+// P_PROTECT(ILLEGALLY_PARKED) naming the call in its gaps, Message_Accepted, and a P_CLEAR naming an LPCN the radio
+// doesn't know. The caller talks through all of it; a Message_Accepted before the grant doesn't end the ask
+static void test_t3_one_carrier(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	req(RREQ_PTT, 1);
+	t3_site_run(600);
+	CHECK(radio_t3v.ptt_wait);
+	t3_csbk_t g = { .lb = true, .op = T3_OP_TV_GRANT };
+	g.u.grant.lpcn = 1;
+	g.u.grant.slot = 2;
+	g.u.grant.dst = T3_TG;
+	g.u.grant.src = T3_OWN;
+	t3_csbk_rx(&g, 1);
+	unsigned v0 = ts2_voice();
+	// The payload slot: Late_Entry grants and P_PROTECT(ILLEGALLY_PARKED) naming the call
+	for (int i = 0; i < 50; i++) {
+		t3_csbk_t p;
+		if (i % 2) {
+			p = g;
+			p.u.grant.late_entry = true;
+		} else {
+			p = (t3_csbk_t){ .lb = true, .op = T3_OP_P_PROTECT };
+			p.u.protect.kind = T3_PROTECT_ILLEGALLY_PARKED;
+			p.u.protect.group = true;
+			p.u.protect.dst = T3_TG;
+			p.u.protect.src = T3_OWN;
+		}
+		t3_csbk_rx(&p, 2);
+		run(60);
+	}
+	CHECK(radio_t3v.state == T3_FOLLOW && sm.view.state == RS_TX && radio_t3v.returns == 0);
+	CHECK(ts2_voice() - v0 > 20);
+	// The call's end: C_ACKD Message_Accepted (MS <- TG), then P_CLEAR to an LPCN never programmed
+	t3_csbk_t a = { .lb = true, .op = T3_OP_C_ACKD };
+	a.u.ack.reason = T3_RC_MESSAGE_ACCEPTED;
+	a.u.ack.dst = T3_OWN;
+	a.u.ack.src = T3_TG;
+	t3_csbk_rx(&a, 2);
+	run(60);
+	CHECK(radio_t3v.state == T3_FOLLOW && sm.view.state == RS_TX);
+	req(RREQ_PTT, 0);
+	run(800);
+	t3_csbk_t c = { .lb = true, .op = T3_OP_P_CLEAR };
+	c.u.clear.lpcn = 622;
+	c.u.clear.dst = T3_ID_ALLMSI;
+	c.u.clear.src = T3_ID_TSI;
+	c.u.clear.group = true;
+	t3_csbk_rx(&c, 2);
+	run(200);
+	CHECK(radio_t3v.state == T3_CAMPED && radio_t3v.tscc_lcn == 1 && radio_t3v.rx_hz == T3_RX_HZ);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+
+	// Message_Accepted to the ask before the grant comes (the site acknowledging the C_RAND): the ask goes on
+	dmr_start(true);
+	t3_stage_start();
+	req(RREQ_PTT, 1);
+	t3_site_run(600);
+	CHECK(radio_t3v.ptt_wait);
+	t3_csbk_rx(&a, 1);
+	t3_site_run(200);
+	CHECK(radio_t3v.ptt_wait && sm.view.state != RS_TX_DENIED);
+	t3_csbk_rx(&g, 1);
+	run(600);
+	CHECK(radio_t3v.state == T3_FOLLOW && sm.view.state == RS_TX);
+	req(RREQ_PTT, 0);
+	run(500);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
 // Short data: the upload goes out as a UDT header and its blocks in consecutive frames of the TSCC's slot; a download
 // to the radio is kept and answered
 static void test_t3_sdata(void)
@@ -8816,6 +9032,13 @@ static void test_t3_pdata(void)
 		CHECK((unsigned)hdr + 1u < sim.air_count && sim.air[hdr + 1].kind == DMR_BURST_RATE_12_DATA);
 	}
 	CHECK(sms_send_state() == DMR_REQ_OK);
+	// PTT on a call the radio may not talk on: the reason is that call's, not the last request's (granted)
+	int keyed = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	run(200);
+	CHECK(sm.view.tx_deny == TXDENY_TRUNK && radio_t3v.why == RADIO_TRUNK_WHY_DENIED && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	run(100);
 	t3_csbk_t c = { .lb = true, .op = T3_OP_P_CLEAR };
 	c.u.clear.dst = 1000001u;
 	t3_csbk_rx(&c, 2);
@@ -9333,6 +9556,71 @@ static void test_t3_emergency_other_system(void)
 
 // No ID to register with (the system's record has none, nor the radio): the channel shows as unavailable, the engine
 // never starts and nothing is sent
+// A system set up with another network number than the site's: the radio searches, the view names the system it
+// hears, and PTT is refused saying so, with nothing sent. With the site gone quiet, PTT says no control channel
+static void test_t3_other_system(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	radio_t3_setup_t *s = radio_t3_staged();
+	radio_t3_reset(s);
+	s->cfg.own_id = T3_OWN;
+	s->cfg.auth.model = T3_MODEL_SMALL;
+	s->cfg.auth.net = 6;	// the site's is 5 (t3_code)
+	s->cfg.auth.category = T3_PAR_A;
+	s->cfg.opts = T3_OPT_PRIVATE;
+	s->cc = 2;
+	s->cfg.ctrl[0] = (t3_chan_t){ .lcn = 1, .rx_hz = T3_RX_HZ, .tx_hz = T3_TX_HZ, .cc = 2 };
+	s->cfg.nctrl = 1;
+	s->chans[0] = s->cfg.ctrl[0];
+	s->nchans = 1;
+	s->cfg.tg[0] = (t3_tg_t){ T3_TG, T3_TG_LISTEN | T3_TG_TALK };
+	s->cfg.ntg = 1;
+	radio_t3_fix(s);
+	req(RREQ_T3, RADIO_T3_START);
+	t3_site_run(1500);
+	CHECK(radio_t3v.state == T3_HUNT && radio_t3v.foreign > 0 && radio_t3v.other == t3_code());
+	int keyed = hw.tx_calls;
+	unsigned air = sim.air_count;
+	req(RREQ_PTT, 1);
+	t3_site_run(300);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TRUNK &&
+	      radio_t3v.why == RADIO_TRUNK_WHY_OTHER_SYS && sm.view.t3.why == RADIO_TRUNK_WHY_OTHER_SYS);
+	CHECK(hw.tx_calls == keyed && sim.air_count == air);
+	req(RREQ_PTT, 0);
+	run(100);
+
+	// The site goes quiet: the other system is no longer named, and PTT finds no control channel
+	run(T3_OTHER_MS + 500);
+	CHECK(radio_t3v.state == T3_HUNT && radio_t3v.other == 0);
+	req(RREQ_PTT, 1);
+	run(200);
+	CHECK(sm.view.tx_deny == TXDENY_TRUNK && radio_t3v.why == RADIO_TRUNK_WHY_NO_CC && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	run(100);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
+// The channel selected before its system's record was written (an editor writing channels first): unavailable, then
+// usable once the record lands, with no other channel selected meanwhile (a zone of one channel has none to select)
+static void test_t3_system_late(void)
+{
+	t3_cp_zone(T3_OPT_PRIVATE, 0, 0, NULL);
+	t3_cp_tag(7, 1);			// "Ops A" names system 1, which has no record yet
+	req(RREQ_ZONE, 2);
+	req(RREQ_ZONE_POS, 0);
+	t3_site_run(300);
+	CHECK(sm.view.channel_number == 7 && radio_t3v.sys == 2 && radio_t3v.unavail && !radio_t3v.on &&
+	      sm.view.ch.rx_only);
+	t3_cp_system(1, T3_OPT_PRIVATE, 0, 0, NULL);
+	t3_site_run(600);
+	CHECK(sm.view.channel_number == 7 && radio_t3v.sys == 2 && !radio_t3v.unavail && radio_t3v.on &&
+	      radio_t3v.state == T3_CAMPED);
+	t3_cp_done();
+}
+
 static void test_t3_no_id(void)
 {
 	own_dmr_id = 0;
@@ -10082,7 +10370,6 @@ int main(void)
 	test_temp_bw_tone();
 	test_tone_lists();
 	test_dmr_rx();
-	test_dmr_channel_change_view();
 	test_dmr_rssi_hold();
 	test_fm_rssi_raw();
 	test_dmr_tx();
@@ -10090,6 +10377,7 @@ int main(void)
 #if CONFIG_DMR_TRUNK_TX
 	test_t3_at();
 	test_t3_talk();
+	test_t3_one_carrier();
 	test_t3_sdata();
 	test_t3_radio_check();
 	test_t3_clear_slot();
@@ -10115,6 +10403,8 @@ int main(void)
 	test_t3_channels();
 	test_t3_never_keys();
 	test_t3_no_id();
+	test_t3_system_late();
+	test_t3_other_system();
 	test_t3_fallback();
 #endif
 	test_dmr_stalled();

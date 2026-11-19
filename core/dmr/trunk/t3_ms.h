@@ -65,6 +65,7 @@
 #define T3_AWAKE_MS		2000	// T_Awake, 0.1-60 s: power save, awake this long after traffic for the radio
 #define T3_NOSIG_MS		5000	// T_Nosig, 1-15 s: no valid TSCC PDU this long, hunt again
 #define T3_DWELL_MS		700	// hunting: time on a candidate (12 TSCC slots and two short LCs)
+#define T3_OTHER_MS		10000	// hunting: another system heard this recently is shown (t3_ms_other)
 #define T3_SETTLE_MS		60	// after a retune: what is heard before this belongs to the old channel
 #define T3_INACTIVE_MS		2500	// TV_Inactive, 0-20 s: nothing on the followed slot this long, return
 #define T3_CALL_MAX_MS		300000	// a followed call ends by this at the latest
@@ -211,6 +212,7 @@ typedef enum {
 	T3_RES_LOST,		// the TSCC was lost meanwhile
 	T3_RES_CANCELED,	// withdrawn before anything was sent
 	T3_RES_DIVERTED,	// the called party's calls are diverted: divert_to (6.6.1.3 a 2)
+	T3_RES_UNMAPPED,	// granted on a channel no plan or row knows (st.last_unmapped)
 } t3_res_t;
 
 typedef enum { T3_AX_IDLE, T3_AX_WAIT_SLOT, T3_AX_WAIT_RESP, T3_AX_ACKED } t3_ax_state_t;
@@ -297,6 +299,9 @@ typedef struct {
 
 	// hunting
 	uint32_t slc_foreign;	// the last foreign C_SYS_Parms code + 1 (0: none): two alike leave a candidate
+	uint16_t other_code;	// C_SYScode of the last other system heard while hunting (PAR 0: from a short LC)
+	uint32_t other_ms;	// when (0: none since the hunt began): the screen names it (t3_ms_other)
+	uint16_t refused_area;	// reg_area + 1 of the last Reg_Refused, 0 none: until a registration is accepted
 	bool retry_tscc;	// the lost TSCC is tried before the list
 	uint8_t hunt_idx;	// next candidate: the adjacent sites' TSCCs, then ctrl[]
 	uint32_t hunt_deadline;
@@ -573,6 +578,12 @@ void t3_ms_groups_changed(t3_ms_t *ms, uint32_t now);
 // May the user talk on the payload channel now: a voice call, not a broadcast or all-call another radio made, PTT not
 // disabled by P_PROTECT
 bool t3_ms_can_talk(const t3_ms_t *ms);
+// Hunting, and another system's control channel heard in the last T3_OTHER_MS: *code is its C_SYScode (PAR 0 when only
+// its short LC was heard). The usual cause is the system's model, network or color code set wrong in the codeplug
+bool t3_ms_other(const t3_ms_t *ms, uint32_t now, uint16_t *code);
+// The system refused this radio's registration (Reg_Refused, 6.4.4.1) and none has been accepted since: hunting, or
+// back on that area and not registered. The usual cause is the radio's ID missing from the system's records
+bool t3_ms_reg_refused(const t3_ms_t *ms);
 // A talkgroup DGNA assigned (6.6.8)
 bool t3_ms_is_dgna(const t3_ms_t *ms, uint32_t tg);
 // Power save: the receiver may sleep now (t3_ms_poll decides; the radio wakes it the moment this goes false)

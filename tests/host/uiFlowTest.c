@@ -208,6 +208,8 @@ static const flow_t flows[] = {
 #if CONFIG_LANG_ES
 	{ "6 preset sends in selected language", "ok 7 2 up ok down ok long:back", "5 6 3 ctx 3 down ok",
 	  "sent=1 text=En_camino", 7, false },
+	{ "21 text entry in the selected language", "ok 7 2 up ok down ok long:back", "ok 5 ok ok",
+	  "screen=text shows=Nombre", 4, false },
 #endif
 	{ "7 read message, banner up", "msg:9991234,Meet_at_the_north_lot", "ctx", "screen=message", 1, false },
 	{ "7 read message later", "msg:9991234,Meet_at_the_north_lot wait:9000", "ok 2 ok", "screen=message", 3, false },
@@ -493,19 +495,23 @@ static const flow_t flows[] = {
 	{ "21 keep editing", "ok 5 ok down down down down down down down down ok back", "ok", "screen=channel", 1, false },
 	{ "21 discard goes back to Channels", "ok 5 ok down down down down down down down down ok back", "down ok", "screen=channels", 2, false },
 	{ "21 the name opens text entry", "ok 5 ok", "ok", "screen=text", 1, false },
+	{ "21 text entry counts the characters", "ok 5 ok", "ok", "screen=text shows=10/16 hides=010", 1, false },
+	{ "21 a long message wraps", "5 6 3 ctx 3 down down down down ok ctx",
+	  "1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1",
+	  "screen=message-text shows=31/143 hides=1234567890123456789012345678901", 31, false },
 	// Back deletes in text entry, and leaves once the field is empty (principles 4's one exception)
-	{ "21 Back deletes in text entry", "ok 5 ok ok 4 6", "back", "screen=text focus=COUNTY_DMRG", 1, false },
+	{ "21 Back deletes in text entry", "ok 5 ok ok 4 6", "back", "screen=text shows=COUNTY_DMRG", 1, false },
 	{ "21 Back on an empty name leaves", "ok 5 ok ok", "back back back back back back back back back back back",
 	  "screen=channel", 11, false },
 	// Text entry (ui.md 2.1): * deletes, multi-tap letters move on with another key, # cycles ABC -> 123 -> abc
-	{ "21 * deletes the name", "ok 5 ok ok", "quick quick quick quick quick quick quick quick quick quick long:7", "focus=7 screen=text", 11, false },
-	{ "21 a name by multi-tap", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "9 2 2 2 7 7 7 2", "focus=WCRA", 8, false },
-	{ "21 # to digits", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "ctx 3 1 3", "focus=313", 4, false },
-	{ "21 # twice to lower case", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "ctx ctx 4 4 4", "focus=i", 5, false },
-	{ "21 more presses: digit, then lower case", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "2 2 2 2 2", "focus=a", 5, false },
-	{ "21 1 cycles punctuation", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "1 1 1 1", "focus=,", 4, false },
-	{ "21 a slow * deletes, no key lock", "ok 5 ok ok 4 6", "long:quick", "focus=COUNTY_DMRG locked=0", 1, false },
-	{ "21 a held digit types itself", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "long:7", "focus=7", 1, false },
+	{ "21 * deletes the name", "ok 5 ok ok", "quick quick quick quick quick quick quick quick quick quick long:7", "showsraw=7_ screen=text", 11, false },
+	{ "21 a name by multi-tap", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "9 2 2 2 7 7 7 2", "showsraw=WCRA_", 8, false },
+	{ "21 # to digits", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "ctx 3 1 3", "showsraw=313_", 4, false },
+	{ "21 # twice to lower case", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "ctx ctx 4 4 4", "showsraw=i_", 5, false },
+	{ "21 more presses: digit, then lower case", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "2 2 2 2 2", "showsraw=a_", 5, false },
+	{ "21 1 cycles punctuation", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "1 1 1 1", "showsraw=,_", 4, false },
+	{ "21 a slow * deletes, no key lock", "ok 5 ok ok 4 6", "long:quick", "shows=COUNTY_DMRG locked=0", 1, false },
+	{ "21 a held digit types itself", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "long:7", "showsraw=7_", 1, false },
 	{ "22 new from current settings, saved", "", "ok 5 up up up ok long:ok",
 	  "writes=1 toast=Saved_as_channel_41", 7, true },
 	// The channel editor's rules (ui.md 2.1). Channel 1 is an FM repeater (146.940, TX 600 kHz below), channel 3 DMR
@@ -718,6 +724,28 @@ static const flow_t flows[] = {
 	{ "S mic AGC on", "", "ok 7 3 down down down down down ok", "set71=1 shows=AGC", 9, false },
 	{ "S mic gain while AGC is on", "ok 7 3 down down down down down ok", "up ok", "toast=Mic_AGC_sets set13=5", 2, false },
 	{ "S message tone", "", "msg:9991234,Hi", "beep=2", 0, false },
+	// Settings > Signaling tones (the group before Advanced): six outputs, then a row per event that opens its steps
+	// (screen sig-chain). Start 1 is set100 (Hz) and set130 (ms), step 2 set101 and set131. A step: OK, the frequency,
+	// OK, the length, OK; a value off the 10 steps or past the range is refused with what fits
+	{ "S signaling tones group opens", "", "ok 7 up up ok down down down down down down",
+	  "screen=group shows=Start_steps", 11, false },
+	// An action row's id is a number of its own: with Mic AGC on, "Idle steps" (id 13) must not show Mic gain's "AGC"
+	{ "S signaling tones with Mic AGC on: no AGC on the steps rows", "ok 7 3 down down down down down ok back back back back",
+	  "ok 7 up up ok down down down down down down down down", "screen=group shows=Idle_steps hides=AGC", 14, false },
+	{ "S signaling tones: a chain's steps open", "ok 7 up up ok down down down down down down", "ok",
+	  "screen=sig-chain shows=Step_1", 1, false },
+	{ "S signaling tones: a step typed and saved", "ok 7 up up ok down down down down down down ok down",
+	  "ok 1 5 7 0 ok 4 0 ok", "set101=1570 set131=40 shows=1570_Hz__40_ms", 9, false },
+	{ "S signaling tones: BACK from the steps goes to the group", "ok 7 up up ok down down down down down down ok",
+	  "ok 1 5 7 0 ok 4 0 ok back", "set100=1570 set130=40 screen=group", 10, false },
+	{ "S signaling tones: a new step starts at 40 ms", "ok 7 up up ok down down down down down down ok down down",
+	  "ok 0 ok 0 ok ok 9 5 0 ok ok", "set102=950 set132=40", 12, false },
+	{ "S signaling tones: BACK leaves the step as it was", "ok 7 up up ok down down down down down down ok",
+	  "ok 1 5 7 0 ok 4 0 ok ok 1 2 3 back", "set100=1570 screen=sig-chain", 15, false },
+	{ "S signaling tones: a value off the steps is refused", "ok 7 up up ok down down down down down down ok down down down",
+	  "ok 4 5 ok", "set103=0 toast=Not_changed screen=sig-chain", 4, false },
+	{ "S signaling tones: Up and Down step the value", "ok 7 up up ok down down down down down down ok down down down down",
+	  "ok 5 0 0 up up ok 6 0 down ok", "set104=520 set134=50", 12, false },
 	// The own DMR ID (Settings > My radio, set76, the codeplug's): digits type it, OK saves, BACK takes the last digit
 	// back and with none typed leaves it; 0 is refused
 	{ "S DMR ID opens", "", "ok 7 0 ok", "screen=dmr-id shows=DMR_ID", 4, false },
@@ -826,6 +854,16 @@ static const flow_t flows[] = {
 	{ "T Home on a trunked channel: the system and Ready", "t3 dlpos:3", "", "screen=home shows=County shows=Ready hides=CC",
 	  0, false },
 	{ "T Home while hunting", "t3 dlpos:3 t3state:hunt", "", "screen=home shows=Searching", 0, false },
+	{ "T Home hearing another system says so", "t3 dlpos:3 t3state:other", "",
+	  "screen=home shows=Other_system hides=Searching", 0, false },
+	{ "T PTT refused for another system says so", "t3 dlpos:3 t3state:denyother", "",
+	  "shows=Another_system_heard shows=Check_system_settings", 0, false },
+	{ "T Home after a refused registration says so", "t3 dlpos:3 t3state:regrefused", "",
+	  "screen=home shows=Reg._refused hides=Searching", 0, false },
+	{ "T PTT refused for a refused registration says so", "t3 dlpos:3 t3state:denyreg", "",
+	  "shows=Registration_refused shows=Ask_to_add_your_ID", 0, false },
+	{ "T PTT refused for a grant on an unlisted channel names it", "t3 dlpos:3 t3state:denyunmapped", "",
+	  "shows=Unknown_channel_311 shows=Check_system_settings", 0, false },
 	{ "T Home on the fallback channel", "t3 dlpos:3 t3state:fallback", "", "screen=home shows=Fallback", 0, false },
 	{ "T back on the system", "t3 dlpos:3 t3state:fallback", "t3state:back", "screen=home toast=Back_on_County", 0, false },
 	{ "T Home on a channel without its system", "t3 dlpos:5", "", "screen=home shows=System_not_set_up", 0, false },
@@ -1307,7 +1345,7 @@ static const flow_t flows_f[] = {
 	  "writes=1 toast=Saved_channel_3", 1, true },
 #endif
 	// No programmable keys: the Keys group ends at its three general rows (ui.md 3.1)
-	{ "F no key rows without keys", "ok up ok up up up up ok", "down down down", "focus=Long hides=Key_1", 3, false },
+	{ "F no key rows without keys", "ok up ok up up up up up ok", "down down down", "focus=Long hides=Key_1", 3, false },
 #if CONFIG_ZONE_EDIT
 	// No CONTEXT: long OK opens a zone's list in Zones and Channel actions in the list (information-architecture 7.5)
 	{ "F 23 move the channel in use down", "", "ok down down down down ok long:ok long:ok down ok",
@@ -1629,6 +1667,31 @@ static void call_screen_checks(void)
 	}
 }
 
+#if CONFIG_DMR_TRUNK
+// Searching a trunked system and hearing only another one, at every display class: the chips say Other system, and
+// a Home with an activity area names what was heard (dmr-trunking.md 12.4)
+static void t3_other_checks(void)
+{
+	char err[300], buf[200];
+	for (int g = 0; g < sim_geom_count; g++) {
+		sim_reset(&sim_geoms[g], SIM_MAP_K);
+		snprintf(buf, sizeof buf, "t3 dlpos:3 t3state:other");
+		bool ok = sim_run(buf, err, sizeof err);
+		if (ok) {
+			bool two = ui_layout.activity_h >= 2 * ui_layout.small->h;
+			snprintf(buf, sizeof buf, ui_layout.activity_h < ui_layout.small->h ? "expect:shows=Other_system" : two ?
+				 "expect:shows=Other_system expect:shows=Heard:_Huge,_net_0 expect:shows=site_83" :
+				 "expect:shows=Other_system expect:shows=Heard:_Huge,_net_0");
+			ok = sim_run(buf, err, sizeof err);
+		}
+		if (!ok) {
+			printf("FAIL another system heard [%s]: %s\n", sim_geoms[g].name, err);
+			fails++;
+		}
+	}
+}
+#endif
+
 // Tools > APRS > Stations heard, at every display class: a station with a position shows how far and which way it is
 // from ours, beside the longest call there is, kept whole. No position of ours, or none of the station's: the row is
 // the call and its age, as before.
@@ -1946,6 +2009,9 @@ int main(void)
 	printf("# %d flows run\n", flows_run);
 	about_checks();
 	call_screen_checks();
+#if CONFIG_DMR_TRUNK
+	t3_other_checks();
+#endif
 	heard_checks();
 	station_checks();
 	vfo_split_dmr_checks();
