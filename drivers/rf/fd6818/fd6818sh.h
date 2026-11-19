@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // FD6818 in a superheterodyne: the main transceiver (receives at the IF, transmits on the channel) and the local
-// oscillator, an FD6818 or its 0x7813 sibling (docs/spec/hardware-db25d.md 4.8). Independent of the board.
+// oscillator, an FD6818 or its 0x7813 sibling. Independent of the board.
 //
 // This is the chip's register map with the state at 0x03 and a page select at 0x7F, as its datasheet lays it out;
 // fd6818.h drives the same part through another map. Frequency in 0x38 / 0x39 (10 Hz units) with a band word in 0x1A,

@@ -38,11 +38,11 @@ line, add the user's copyright below ours, never in place of it, and tell the us
    bug on one radio is fixed in the shared layer for all, after checking every board on that path. If a board needs
    to differ, extend the shared interface, don't fork the logic.
 
-   **Generic docs** never name a radio or its pins. They are `docs/spec/*` other than `hardware-*`, `docs/user/*`
-   other than `23-radios.md`, `docs/build-config.md` and `docs/dev/*`. Describe what a board provides (`CAP_*`,
-   `board_t` fields) and link [docs/feature-matrix.md](docs/feature-matrix.md) for which radios have it. A radio's
-   facts go only on its own hardware, bring-up or radio-reference page, and those pages link to the shared spec, not
-   to another radio's page. `tools/check_generic.py` checks this. Its allowlist names the generic docs not yet
+   **Generic docs** never name a radio or its pins. They are `docs/spec/*`, `docs/user/*` other than
+   `23-radios.md`, `docs/build-config.md` and `docs/dev/*`. Describe what a board provides (`CAP_*`, `board_t` fields)
+   and link [docs/feature-matrix.md](docs/feature-matrix.md) for which radios have it. A radio's user-facing facts go
+   only in its section of `docs/user/23-radios.md`; its wiring and chip facts stay in `boards/<radio>/` code
+   comments and `board.toml`. No per-radio hardware, bring-up or codec pages in `docs/`. `tools/check_generic.py` checks this. Its allowlist names the generic docs not yet
    rewritten, one path each; don't add one.
 5. **Flash costs go behind a switch.** A feature that adds real code size gets a `CONFIG_` switch in
    `config/features.mk` and `core/config.h` ([docs/build-config.md](docs/build-config.md)). The build must stay
@@ -71,8 +71,8 @@ as skipped when it's missing.
 
 ## Where things are
 
-The source tree is in [README.md, Layout](README.md#layout). The layers and the core's directories are in
-[docs/dev/architecture.md](docs/dev/architecture.md).
+The source tree, the layers, and the core's directories are in [docs/dev/architecture.md](docs/dev/architecture.md)
+([Source tree](docs/dev/architecture.md#source-tree)).
 
 ## How to work here
 
@@ -81,8 +81,11 @@ The source tree is in [README.md, Layout](README.md#layout). The layers and the 
   the radio, add one, opt-in as the README describes. Anything a HIL test needs to see goes in a debug link view key
   (`core/debuglink/debuglink_view*.c`). HIL skips use `rfoundry_hil.skip(kind, reason)`, a new feature gets an entry
   in `tests/hil/features.toml`, and its HIL tests a `@pytest.mark.feature("<id>")` marker.
-- A behavior change updates its spec in `docs/spec/`. If users see it, it also updates `docs/user/`. Run
-  `python3 tools/check_doc_links.py` after editing docs.
+- A behavior change updates its spec in `docs/spec/`. If users see it, it also updates `docs/user/`. Write and edit
+  docs by [docs/dev/doc-style.md](docs/dev/doc-style.md): one home per fact (the map is
+  [docs/README.md](docs/README.md); a new page gets a row there), Google developer style, no status notes
+  ("untested", "not confirmed", "planned": those are GitHub issues). Run `python3 tools/check_doc_links.py` after
+  editing docs.
 - A UI change regenerates the gallery and commits only the PNGs it meant to change.
 - A new screen gets a `uiFlowTest` flow that opens it and checks `screen=<name>`. The crawl doesn't reach every
   screen, and one never drawn in a test can crash the radio. A screen without its own `draw` is drawn as a list and
@@ -107,7 +110,6 @@ The source tree is in [README.md, Layout](README.md#layout). The layers and the 
   description (`- [ ] translations: es, it`). CI fails on a missing translation, so they are done before the merge.
   English you changed with a translation left the same is a CI warning (`tools/i18n_changes.py`): say in the PR
   whether each language still fits.
-- Docs read like technical documentation: short sentences, tables, no filler.
 
 ## Git
 

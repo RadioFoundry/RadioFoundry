@@ -1,43 +1,44 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # Air band AM receive and broadcast FM receive
 
-Status: written, not yet tested on a radio (2026-10-22). What the radios RadioFoundry supports can do on the aeronautical
-VHF band (AM, 108-137 MHz) and FM broadcast (65-108 MHz), and how RadioFoundry does it on any radio that has the hardware.
-Both are receive only and need no menu: the frequency decides. An FM channel or the VFO in the air band is received
-in AM; one in the broadcast band plays on the broadcast receiver.
+This page covers reception on the aeronautical VHF band (AM, 108-137 MHz) and the FM broadcast band (65-108 MHz) on
+any radio that has the hardware. Both are receive only, and neither has a menu: the frequency decides. An FM channel
+or the VFO in the air band is received in AM. One in the broadcast band plays on the broadcast receiver.
 
 ## 1. Which radios
 
 A radio has air band receive when its build has `CONFIG_AM_RX` and its board sets `CAP_AM_RX` and `rx_am`, and
 broadcast receive when it has `CONFIG_BCAST_FM` and sets `CAP_BCAST_FM` and `board.bcast`. Which radios do is in
-[feature-matrix.md](../feature-matrix.md) (`am_rx`, `bcast_fm`), generated from the boards. A radio's own facts (pins,
-audio path, open questions, bring-up checks) are on its hardware and bring-up pages.
+[feature-matrix.md](../feature-matrix.md) (`am_rx`, `bcast_fm`), generated from the boards. A board's pins and audio
+path are in its own files under `boards/`.
 
 ## 2. Chips
 
 | Chip | Air band AM | Notes |
 |---|---|---|
-| FD6818 | yes (inferred) | BK4819 class: the AF output type in 0x47 bits 11:8, type 7 = AM on the BK4819 (Apache-2.0 UV-K5 firmware). Unconfirmed on the FD6818 until a radio's bring-up |
-| BK4819 | yes | the same register, documented |
+| FD6818 | yes | BK4819 class: the AF output type in 0x47 bits 11:8, type 7 = AM (3.3) |
+| BK4819 | yes | the same register, documented in permissively licensed (Apache-2.0) UV-K5 firmware |
 | AT1846S | no | FM and the DMR baseband modes only (datasheet, our driver) |
 
 | Broadcast tuner | Driver |
 |---|---|
 | RDA5807M | `drivers/bcast/rda5807m` (4.2) |
-| RDA5802N | none checked yet; the RDA5807M driver may serve it after a bring-up check |
 
 ## 3. Air band AM
 
 ### 3.1 Representation: derived from the frequency, codeplug unchanged
 
-The open-firmware CPS codeplug has no AM modulation, and RadioFoundry keeps the standard format as long as possible. So AM is not
-stored: **an FM channel or the VFO tuned inside 108-137 MHz is received in AM** on a radio that can. This is how
-most radios with an air band behave, it needs no CPS change, and qdmr can program air channels today (as FM
-channels in that range). The band is an ITU allocation, the same everywhere, so the range is a core constant
-(`RADIO_AM_LO_HZ` / `RADIO_AM_HI_HZ` in `core/radio/radio_am.h`), not a board value. A DMR channel in the range is
-received in AM too: `tune()` sets `view.ch.mode` to FM in the air band and the broadcast range (`radio_listen_band()` in
-`core/radio/radio_bands.h`), the VFO's own mode with it, and RREQ_MODE refuses DMR there. The codeplug keeps the stored mode. Against a stored AM flag: it would need the native codeplug first, and an AM
+The open-firmware CPS codeplug has no AM modulation, and RadioFoundry keeps that format. So AM isn't stored: **an FM
+channel or the VFO tuned inside 108-137 MHz is received in AM** on a radio that can. Most radios with an air band
+behave this way. It needs no CPS change, and qdmr programs air channels as FM channels in that range. The band is an
+ITU allocation, the same everywhere, so the range is a core constant (`RADIO_AM_LO_HZ` / `RADIO_AM_HI_HZ` in
+`core/radio/radio_am.h`), not a board value.
+
+A DMR channel in the range is received in AM too. `tune()` sets `view.ch.mode` to FM in the air band and the
+broadcast range (`radio_listen_band()` in `core/radio/radio_bands.h`), and the VFO's own mode with it. RREQ_MODE
+refuses DMR there. The codeplug keeps the stored mode. A stored AM flag would need the native codeplug, and an AM
 channel outside the air band has no use on these radios.
 
 The Codeplug Editor follows the same rule (`listenBand()` in `site/static/js/codeplug/model.js`, with the air band and
@@ -80,14 +81,13 @@ On an FD6818 (`fd6818_set_am`, `fd6818_am_status`, `fd6818_am_noise`):
 | 0x4A | 0x5450 | its value before AM, written back |
 | Squelch value | 0x65 bits 7:0 (noise_sq, 1 dB/step) + an offset that puts level 1 at the chip's own noise_sq_th_in, 0x4F bits 6:0 as the board's tables set it (`fd6818_am_noise_offset`: 64 - th_in; 17 with 0x4F = 0x302F); each level 3 dB lower | 0x65 bits 7:0 + 25 |
 
-The gain loop runs at the core's status poll (`RADIO_POLL_MS`). These are the air band settings an FD6818 radio's own
-firmware uses (its hardware page has them); the loop's tick there isn't known. `rx()` and `set_mode()` end AM.
+The gain loop runs at the core's status poll (`RADIO_POLL_MS`). `rx()` and `set_mode()` end AM.
 
-Why the squelch stays on noise_sq: the chip's own squelch (programming guide, squelch section) needs both RSSI 0x67 over
-0x78 and noise_sq under 0x4F. In AM the gain loop holds 0x67 near its target whether or not a signal is there, so only
-noise_sq tells them apart: on the bench it read 59 to 72 on empty channels and fell as a carrier rose (about 61, 53,
-45 and 31 for carriers 5 dB apart, 14 to 19 for a strong one). Level 1 opens where the chip's own squelch does
-(under 0x4F's noise_sq_th_in).
+The squelch uses noise_sq because the chip's own squelch (programming guide, squelch section) needs both RSSI 0x67
+over 0x78 and noise_sq under 0x4F. In AM the gain loop holds 0x67 near its target whether or not a signal is there,
+so only noise_sq tells them apart. On the bench, noise_sq reads 59 to 72 on empty channels and falls as a carrier
+rises: about 61, 53, 45, and 31 for carriers 5 dB apart, and 14 to 19 for a strong one. Level 1 opens where the chip's
+own squelch does (under 0x4F's noise_sq_th_in).
 
 ## 4. Broadcast FM
 
@@ -122,7 +122,7 @@ push-pull SCL, no clock stretching).
 | When | `CONFIG_BCAST_FM`, the board has `CAP_BCAST_FM` and `board.bcast`, and the channel's or the VFO's RX frequency is in the receiver's range, whatever its stored mode (3.1). `view.bcast` says the broadcast receiver plays |
 | Tuning | the receiver is powered and tuned to the nearest point of its grid (`radio_bcast_khz`). Leaving the range powers it off. If the chip doesn't answer, `view.bcast_fault` is set and the radio stays idle |
 | Transmit | refused with `TXDENY_BCAST` whenever `view.bcast`, and for any TX frequency in the range on a radio with the receiver (split channels, DMR channels, the VFO, the hotspot's frequencies) |
-| Squelch | on the receiver's RSSI (about dBuV): noise = 97 - RSSI on the FM noise scale, so level 5 opens above 45 dBuV, 1 above 33, 9 above 57. Set from a receiver without an antenna (2026-10-22): empty frequencies read 22 to 37, stations 50 and up. The signal meter shows RSSI - 107 dBm. Only a scan uses it (to stop on stations): otherwise the state stays RX, the LED stays off (a station isn't a call), the screen shows the level and the audio plays whatever the signal (`bcast_listening()`) |
+| Squelch | on the receiver's RSSI (about dBuV): noise = 97 - RSSI on the FM noise scale, so level 5 opens above 45 dBuV, 1 above 33, 9 above 57. Set from a receiver without an antenna: empty frequencies read 22 to 37, stations 50 and up. The signal meter shows RSSI - 107 dBm. Only a scan uses it (to stop on stations): otherwise the state stays RX, the LED stays off (a station isn't a call), the screen shows the level and the audio plays whatever the signal (`bcast_listening()`) |
 | Sub-audio | ignored (`tone_needed()` is false) |
 | Volume | the radio's own volume where it has one (`radio_volume_soft`), mapped onto the receiver's 0-15; a fixed 12 where a knob after the amplifier sets the level |
 | Steps | the VFO's step is always the broadcast step setting (4.4), whatever Settings › Talk › VFO step says: a fixed step for the other bands doesn't apply here |
@@ -147,8 +147,8 @@ Either way any frequency can be typed in: 90.2 is tuned and heard as entered.
 
 The HR_C7000 boards share one composition, `platform/hrc7000/bcast_hrc.c` (`hrc_bcast_init`): the RDA5807M driver on
 a bit-banged I2C bus (open-drain SDA) on the board's two pins, an optional enable pin and level, and the board's
-audio path callback. A board fills in `hrc_bcast_cfg_t` and sets `board.bcast = &rda5807m_hal`; its pins and audio path
-are on its hardware page.
+audio path callback. A board fills in `hrc_bcast_cfg_t` with its pins and audio path, and sets
+`board.bcast = &rda5807m_hal`.
 
 The board decides how the broadcast reaches the speaker. The core keeps the channel receiver's audio off while the
 broadcast plays, so the two never ask for the speaker at once (hal_bcast.h `audio`).
@@ -160,8 +160,8 @@ broadcast plays, so the two never ask for the speaker at once (hal_bcast.h `audi
 | `CONFIG_AM_RX` | on with FM; off where the receiver has no AM | `radio_am.c` in the radio core, RREQ_VFO_STEP_SIZE; needs FM |
 | `CONFIG_BCAST_FM` | on; off where there is no broadcast receiver | `radio_bcast.c` in the radio core, the board's tuner glue, the step setting |
 
-The board must also set the capability bits; without them the code does nothing at run time. Per-board defaults:
-[feature-matrix.md](../feature-matrix.md).
+The board must also set the capability bits. Without them, the code does nothing at run time. For the default on each
+board, see the [feature matrix](../feature-matrix.md).
 
 ## 6. Tests
 

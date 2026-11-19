@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Watchdog, PLL, peripheral clocks and the XIP flash cache (docs/spec/hardware-dm32.md 1.1, 1.3, 3.5).
+// Watchdog, PLL, peripheral clocks and the XIP flash cache.
 //
 // The Baofeng bootloader starts us with the chip already running (it drives a display and the UART) on the 168 MHz PLL.
 // The PLL steps run only when the system clock still comes from the 24 MHz oscillator (CLK_MGR_CTRL bits 3:2 set), or
@@ -143,7 +143,7 @@ HRC_RAMFUNC void hrc_clock_init(void)
 	CLK_MGR_GATES = 0xFFFFFFFFu;	// all peripheral clocks on
 	IO_DIPLEX2 &= ~0x3u;		// CLK_OUT pin = PLLA (1.1 step 12)
 
-	// Flash cache (1.3): invalidate, write-back 4-way I + D, region 0x03000000 / 8 MB, enable. SRAM is outside the
+	// Flash cache: invalidate, write-back 4-way I + D, region 0x03000000 / 8 MB, enable. SRAM is outside the
 	// region, so invalidating never loses data
 	CACHE_INV = 0x1;
 	CACHE_CTRL = 0x04;

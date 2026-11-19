@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// MD-9600 board revisions and frequency plan (docs/spec/hardware-md9600.md 5, 16). Pure: no pins and no RTOS, so the
+// MD-9600 board revisions and frequency plan. Pure: no pins and no RTOS, so the
 // host tests (tests/host/md9600RfplanTest.c) run it unchanged.
 //
 // One image serves every board revision. The revision decides the synthesizer (SKY72310 on V1-V3, the 24-bit

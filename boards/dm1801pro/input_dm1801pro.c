@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // DM-1801 Pro keys: a 5 x 4 matrix (strobes PTB18-PTB22 driven low one at a time, inputs PTB3-PTB6 low = closed) and
-// four direct inputs (docs/spec/hardware-dm1801pro.md 9.1). The table was read off the radio, one key at a time; each
+// four direct inputs. The table was read off the radio, one key at a time; each
 // strobe is one keypad column (9 3 6 #, 8 2 5 0, 7 1 4 *) or half of the navigation keys.
 #include "dm1801pro.h"
 #include "pins.h"
@@ -30,7 +30,7 @@ static const struct {
 };
 
 static uint32_t last_raw, stable, raw_matrix;
-static shared_ptt_t ptt_gate;	// the PTT pin is also the cable's serial line (9.1)
+static shared_ptt_t ptt_gate;	// the PTT pin is also the cable's serial line
 
 static uint8_t read_inputs_low(void)
 {

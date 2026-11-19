@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// UV380 family backlight PWM timing (display_uvf.c, docs/spec/hardware-dm1701.md 9.4). Pure, so the host tests check it.
+// UV380 family backlight PWM timing (display_uvf.c). Pure, so the host tests check it.
 #ifndef BACKLIGHT_UVF_H
 #define BACKLIGHT_UVF_H
 
@@ -8,7 +8,7 @@
 #include <stdint.h>
 
 // The backlight pin has no timer channel. TIM1's update sets it and its CC1 match clears it, each through a one-word
-// DMA write to the port's BSRR: two writes per cycle at any duty. Two rates (hardware-dm1701.md 9.4):
+// DMA write to the port's BSRR: two writes per cycle at any duty. Two rates:
 // - During TX or open receive audio, 40 kHz keeps the backlight ripple out of the signal. At
 //   101 Hz it was an audible buzz in FM transmit, at 10 kHz sidebands about 33 dB down in the adjacent channel (#330).
 // - Otherwise 2 kHz: the backlight driver doesn't follow 40 kHz, so the panel barely dimmed (Brightness 20 % looked
@@ -21,7 +21,7 @@
 #define UVF_BL_IDLE_PERIOD	(UVF_BL_TIMER_HZ / UVF_BL_IDLE_HZ)	// (36000)
 
 // The backlight stage keeps the LEDs lit after the pin falls: about 22 us at full current, then a fall of about 34 us,
-// 38 us of full light in all, at any rate (hardware-dm1701.md 9.4: RF harmonic nulls and the 3.3 V rail agree). That
+// 38 us of full light in all, at any rate (RF harmonic nulls and the 3.3 V rail agree). That
 // tail is why 40 kHz can't dim (the period is 25 us) and why 2 kHz lit Brightness 10 % at about 18 %. The compare is
 // shortened by it.
 #define UVF_BL_TAIL_US		38u

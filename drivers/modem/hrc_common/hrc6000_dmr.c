@@ -60,7 +60,7 @@
 // The CACH TC read at the timeslot interrupt: 1 = it gives the number of the slot now starting, 0 = of the slot that
 // just ended. 0 on the HR_C6000: read as the slot starting, a radio through a full duplex repeater heard outbound
 // TS2 as TS1 and transmitted its TS1 under outbound TS2, one slot off both ways (2026-10-27; aligned timing,
-// ETSI TS 102 361-1 5.1.1 table 5.1). The HR_C5000 sets tc_last_rx instead (hardware-md380.md).
+// ETSI TS 102 361-1 5.1.1 table 5.1). The HR_C5000 sets tc_last_rx instead.
 #ifndef HRC6000_DMR_TC_IS_SLOT_NOW
 #define HRC6000_DMR_TC_IS_SLOT_NOW	0
 #endif
@@ -102,7 +102,7 @@
 #define SLOT_LC_OTHER_TICKS	2000u	// its voice not taken, a slot's call may go on this long after its header or LC (60 s)
 #define SLOT_LC_AGAIN_TICKS	8u	// an LC neither call had counts when read again this much later (the next superframe)
 #define SLOT_LC_ADOPT_READS	8u	// reads at F showing only the other slot's LC: this slot's call has the same one
-// Voice read at the ticks (chips with rx_voice_read, hardware-md380.md 4.8)
+// Voice read at the ticks (chips with rx_voice_read)
 #define TR_FIND_TICKS		40u	// reads to find the call's slot in (1.2 s) before the call counts as none
 #define TR_END_MISSES		6u	// reads on the call's slot in a row without a new burst (360 ms): the call is over
 #define TR_LOCK_FRAMES		2	// frames of three with a clean C0 word that make a read a burst while searching
@@ -1564,7 +1564,7 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 	hrc6000_dmr_vstate_t *vs = &e->vs[vph];
 	hrc6000_dmr_held_t *hd = &e->held[vph];
 	// The chip deframes only bursts of the color code in 0x1F (modem-hrc6000.md 5.4): voice it reports under the CC
-	// filter is ours. 0x52 is not reliable for voice (A has no CC on air; bench 2026-10-10 on 90ce091: CC 5 in 0x52
+	// filter is ours. 0x52 is not reliable for voice (A has no CC on air; on the bench: CC 5 in 0x52
 	// for every voice burst of a CC 2 call, reports late in the slot)
 	bool cc_fix = voice && e->cc_filter >= 0;
 	if (voice) {
@@ -1698,7 +1698,7 @@ static void tr_begin(hrc6000_dmr_t *e, bool late)
 	e->st.tr_calls++;
 }
 
-// A burst is in the port one tick after its slot's report (hardware-md380.md 4.9): the read at tick t is the burst
+// A burst is in the port one tick after its slot's report: the read at tick t is the burst
 // reported at t - 1, so it is named and counted from t - 1, and its phase is the tick's own. Learned from the first read
 // that checked, this relation took the other call's bursts for ours with traffic on both slots (issue 279)
 static void tr_tick(hrc6000_dmr_t *e)
@@ -1789,7 +1789,7 @@ uint8_t hrc_tick_snap[2][HRC_SNAP_LEN];
 static uint8_t tick_t_count;
 
 // Interrupt context. A tick reads the voice port too: whether the HR_C5000 leaves a burst there for the MCU, and at
-// which tick (hardware-md380.md 4.8)
+// which tick
 static void tick_log(hrc6000_dmr_t *e, char kind, uint8_t flags, uint8_t r42, uint32_t dt, bool voice)
 {
 	if (!hrc_tick_armed || hrc_tick_n >= HRC_TICK_LOG_N) {
@@ -1847,7 +1847,7 @@ void hrc6000_dmr_isr_timeslot(hrc6000_dmr_t *e)
 		uint32_t lead = t - e->t_pa_on;
 		e->st.pa_lead_us = (uint16_t)(lead > 0xFFFFu ? 0xFFFFu : lead);
 	}
-	// PA off first: our burst of the slot that just ended (hardware-dm1701.md 6, gotchas 3.4)
+	// PA off first: our burst of the slot that just ended (gotchas 3.4)
 	if (e->pa_on && (uint32_t)(t - e->t_pa_on) > PA_MIN_ON_US) {
 		pa_drop(e, t);
 	}

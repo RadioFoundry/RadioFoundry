@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // MD-380 sub-audio: CTCSS / DCS decode in software from QT_DQT_IN (PA2, ADC1 IN2, one rank of the board's scan) and
-// encode as PWM on CTC/DCS_OUT (PC7, TIM3 CH2) for the modulator (docs/spec/hardware-md380.md 6.4). The DSP is
+// encode as PWM on CTC/DCS_OUT (PC7, TIM3 CH2) for the modulator. The DSP is
 // drivers/rf/subaudio; this file is the sampling and PWM glue. Nothing here has run on a radio.
 #include "config.h"
 
@@ -12,9 +12,9 @@
 #include "rf/subaudio/subaudio_rx.h"
 #include "rf/subaudio/subaudio_tx.h"
 
-// Bench knobs (docs/testing/md380-bringup.md): the tone's share of the PWM swing, and whether the analog path inverts
+// Bench knobs: the tone's share of the PWM swing, and whether the analog path inverts
 // the waveform (DCS polarity only: a CTCSS tone does not care). The transmit path inverts: PC7 enters the oscillator's
-// tuning amplifier on its inverting input (hardware-md380.md 5.2), and D023N went out as D023I on air (2026-11-02).
+// tuning amplifier on its inverting input, and D023N went out as D023I on air (2026-11-02).
 // 30 % gives 0.60 kHz of CTCSS deviation and about 0.72 kHz of DCS (2026-11-02)
 #ifndef MD380_SUBTONE_PERCENT
 #define MD380_SUBTONE_PERCENT	30

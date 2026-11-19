@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// MD-9600 hardware options (hal_hwopt.h): the board revision (docs/spec/hardware-md9600.md 16, 19.3). Start-up tells
+// MD-9600 hardware options (hal_hwopt.h): the board revision. Start-up tells
 // V4A / V5 from the older boards by the AK2365A read test, and the option is hidden then; on V1-V4 a person or the
 // installer tells V1-V3 from V4, stored in the board's record sector
 #include <stddef.h>

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 HR_C6000: power-up, the DMR receive path, the PCM audio stream and the speaker routing
-// (docs/spec/hardware-md9600.md 4, 6). The chip and its glue are the shared STM32 code: the configuration and voice
+//. The chip and its glue are the shared STM32 code: the configuration and voice
 // ports (platform/stm32f4/hrc/hrc_bus.c; MOSI is PE5 and MISO PE4 here, the voice port SPI1), the slot engine and its
 // three interrupt lines (dmr_glue.c, PC0-PC2), the I2S3 PCM stream (i2s_pcm.c) and the codec host (vocoder.c).
 //
@@ -50,13 +50,13 @@
 #define SAFE_GAIN		0x80u	// modulation gain without a calibration value
 #define VOICE_SPI_PINS		(GPIO_PIN_3 | GPIO_PIN_4 | GPIO_PIN_5)	// PB3 SCK, PB4 MISO, PB5 MOSI (AF5)
 
-// DMR modulation pair in the calibration (hardware-md9600.md 11.2, unverified): I at 0x130 (UHF, 9 points) and 0x139
+// DMR modulation pair in the calibration (unverified): I at 0x130 (UHF, 9 points) and 0x139
 // (VHF, 5 points), Q at 0x140 and 0x149
 #define CAL_DMR_I_UHF		0x130u
 #define CAL_DMR_I_VHF		0x139u
 #define CAL_DMR_Q_UHF		0x140u
 #define CAL_DMR_Q_VHF		0x149u
-// FM modulation pair: I at 0x170 / 0x179, Q at 0x180 / 0x189 (hardware-md9600.md 11.2, unverified)
+// FM modulation pair: I at 0x170 / 0x179, Q at 0x180 / 0x189 (unverified)
 #define CAL_FM_I_UHF		0x170u
 #define CAL_FM_I_VHF		0x179u
 #define CAL_FM_Q_UHF		0x180u
@@ -86,7 +86,7 @@ static void count(bool ok)
 
 // --- calibration ---
 
-// The calibration point nearest hz of a UHF / VHF row pair (hardware-md9600.md 11.3 point spacing); SAFE_GAIN when
+// The calibration point nearest hz of a UHF / VHF row pair; SAFE_GAIN when
 // the byte is blank
 static uint8_t cal_gain(uint16_t uhf_row, uint16_t vhf_row, uint32_t hz)
 {
@@ -265,7 +265,7 @@ bool md9600_c6000_afsk_tone(uint16_t hz)
 #if MD9600_FM_TX_INJECT
 // Host audio on PC8 in place of the microphone (hal_audio_tap_t.fm_tx_inject): full scale to the whole PWM range. At
 // the FM mic gain, linear to about 950 Hz peak deviation for half scale at 1 kHz, the limiter near 1.4 kHz peak (UHF,
-// 12.5 kHz; bench 2026-11-05, hardware-md9600.md 19.9). The mic gain register isn't monotonic, so it stays
+// 12.5 kHz; bench 2026-11-05). The mic gain register isn't monotonic, so it stays
 #define INJECT_AMP		127
 #define INJECT_NOMINAL_PEAK	26000	// about 1.5 kHz peak deviation at 1 kHz
 static bool injecting;
@@ -420,7 +420,7 @@ static const stm32_hrc_dmr_board_t dmr_board = {
 	.tx_end = md9600_dmr_tx_end,
 #endif
 #if CONFIG_AIR
-	// the chip demodulates the IF itself, so its FM copy is the discriminator (hardware-md9600.md 19.11)
+	// the chip demodulates the IF itself, so its FM copy is the discriminator
 	.air_tap = true,
 #endif
 };
@@ -440,14 +440,14 @@ void md9600_c6000_init(void)
 	count(hrc6000_power_on_init(&modem, DMR_MIC_GAIN));
 	fm_rx_setup();
 	count(hrc6000_set_rx_gain(&modem, RX_GAIN_DB));
-	count(hrc6000_tones_off(&modem));	// with the init's 0x80 the chip never syncs on DMR (hardware-md9600.md 4.2)
+	count(hrc6000_tones_off(&modem));	// with the init's 0x80 the chip never syncs on DMR
 	diag.up = hrc_read(&modem, 4, 0x10, &diag.r10);
 	stm32_hrc_dmr_init(&modem, &dmr_board);
 	speaker_apply();
 }
 
 #if CONFIG_DMR
-// The receive I/Q order follows the first LO's side (hardware-md9600.md 4.2, 5.2): above the signal on VHF, which
+// The receive I/Q order follows the first LO's side: above the signal on VHF, which
 // inverts the IF, and below it on UHF. Swapped on VHF, straight on UHF
 static bool iq_swap(uint32_t hz)
 {
@@ -591,7 +591,7 @@ static bool probe_burst(uint8_t page, uint8_t reg, const uint8_t *buf, uint16_t 
 	return hrc_write_burst(&modem, page, reg, buf, len);
 }
 
-// PC8 (the beep PWM net, hardware-md9600.md 2.3): where it goes is unknown. A square wave on it while keyed shows
+// PC8 (the beep PWM net): where it goes is unknown. A square wave on it while keyed shows
 // whether it reaches the transmit audio (test_audio_probe.py). TIM7's interrupt toggles the pin as a GPIO, so TIM8
 // keeps its timebase for the backlight and the sub-audio tone
 void TIM7_IRQHandler(void)

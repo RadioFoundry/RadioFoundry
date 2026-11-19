@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Codeplug: an open-firmware codeplug in the board's data flash (docs/spec/open-firmware-cps.md 7,
-// docs/spec/hardware-dm1701.md 13.2), or a small built-in set of simplex FM channels when there is none.
+// Codeplug: an open-firmware codeplug in the board's data flash (docs/spec/open-firmware-cps.md 7), or a small built-in set of simplex FM channels when there is none.
 // Records are read from flash on demand; RAM holds only an in-use bitmap of the channels and the used zone slots.
 // Edits rewrite records through the sector journal (core/storage) and keep every byte the model doesn't own.
 #include <string.h>
@@ -84,8 +83,7 @@ static uint32_t fl_base = DEFAULT_FLASH_BASE;
 #define GEN_GROUP_HANG	0x18u	// offsets in the block
 #define GEN_PRIV_HANG	0x19u
 #define GEN_CLEAR	0x1Au	// the bytes up to the hang times: what the radio reads of the block
-#define GEN_HANG_UNIT_MS 500u	// assumed, not confirmed: no unit in the interop spec, the ref notes or the vendor
-				// guide (docs/spec/dmr-voice.md 8); check with the vendor CPS on the bench
+#define GEN_HANG_UNIT_MS 500u	// assumed: the interop spec gives no unit (docs/spec/dmr-voice.md 8)
 
 // Contacts (7.3.5) and RX group lists (7.3.6), flash image
 #define CONTACT_BASE	FL(0x87620u)
@@ -106,7 +104,7 @@ static uint32_t fl_base = DEFAULT_FLASH_BASE;
 
 static codeplug_source_t source = CODEPLUG_NONE;
 static uint32_t serial;
-// Open-firmware evidence (codeplug-stock-tyt.md 2, step 1), which codeplug_foreign() decides from (no flag of its own:
+// Open-firmware evidence (step 1), which codeplug_foreign() decides from (no flag of its own:
 // RAM is tight on some radios)
 static uint16_t ev_good, ev_bad;
 static uint8_t accept;	// codeplug_accept_t: the owner's "Use anyway", which turns the verdict off; | ACCEPT_UNSTORED
@@ -314,7 +312,7 @@ static void set_used(uint16_t number, bool on)
 	}
 }
 
-// A Latin-1 name field (codeplug-stock-tyt.md 2): printable text (0x20-0x7E, 0xA0-0xFE) up to the first 0x00 or
+// A Latin-1 name field: printable text (0x20-0x7E, 0xA0-0xFE) up to the first 0x00 or
 // 0xFF, only 0x00 or 0xFF after it. A UTF-16 name fails: its second byte is 0x00 and printable bytes follow
 static bool latin_name(const uint8_t *p, unsigned len, bool *empty)
 {
@@ -445,7 +443,7 @@ static void index_zones(void)
 	}
 }
 
-// The rest of the open-firmware evidence (codeplug-stock-tyt.md 2, step 1, the web editor's rule in
+// The rest of the open-firmware evidence (step 1, the web editor's rule in
 // site/static/js/codeplug/detect.js) for what the radio shows from the codeplug: the zones and the RX group lists. Not
 // the contacts or the general settings: another firmware's contacts left beside a codeplug edited on the radio
 // mustn't hide it, and the checks cost flash

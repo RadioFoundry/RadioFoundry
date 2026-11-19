@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Internal interfaces between the MD-380 board files (docs/spec/hardware-md380.md)
+// Internal interfaces between the MD-380 board files
 #ifndef MD380_H
 #define MD380_H
 
@@ -40,7 +40,7 @@ enum { MD380_ADC_VOLUME, MD380_ADC_BATTERY, MD380_ADC_MIC, MD380_ADC_RSSI, MD380
 	MD380_ADC_COUNT };
 uint16_t md380_adc_raw(uint8_t ch);
 
-// Sub-audio (subtone_md380.c, docs/spec/hardware-md380.md 6.4): software CTCSS / DCS decode from the ADC and PWM encode
+// Sub-audio (subtone_md380.c): software CTCSS / DCS decode from the ADC and PWM encode
 #if CONFIG_SUBTONE
 // Called from the ADC DMA interrupt (power_md380.c) with each raw QT_DQT_IN sample, at md380_adc_scan_rate_hz()
 void md380_subtone_sample(uint16_t raw);
@@ -60,7 +60,7 @@ uint32_t md380_subtone_samples(void);
 int16_t md380_temperature_c10(void);
 
 
-// Physical key bits returned by md380_input.scan() (matrix positions in docs/spec/hardware-md380.md 9.1)
+// Physical key bits returned by md380_input.scan()
 enum {
 	KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9,
 	KEY_STAR, KEY_HASH, KEY_UP, KEY_DOWN, KEY_GREEN, KEY_RED,
@@ -73,7 +73,7 @@ void md380_input_raw(uint8_t rows[3], uint8_t *channel_code);
 // SPI flash (flash_md380.c, then stm32_spi_flash): its security registers hold the factory calibration in 1-2
 bool md380_flash_init(void);
 
-// Factory calibration (calibration_md380.c, docs/spec/hardware-md380.md 11)
+// Factory calibration (calibration_md380.c)
 typedef struct {
 	bool valid;
 	uint16_t power_dac[2];	// low, high at the requested frequency (12-bit DAC values)

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
 """serial_loader: write a firmware image through a radio's own update loader (update mode at power-on), over the
-programming cable. The protocol is docs/spec/hardware-dm32.md 13.2. Every radio that speaks it is a board with
+programming cable. Every radio that speaks it is a board with
 [flash.bootloader] id in its board.toml (the ID string its loader answers, also the magic of its firmware files);
 --model picks one.
 

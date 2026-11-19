@@ -2,7 +2,6 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // RT10 factory calibration (boards/rt10/calibration_rt10.c) on a synthetic sector: the frequency steps and their
 // edges, the high and low TX plans, the PA gain limits, unfilled entries, an erased or foreign sector, a failed read
-// (docs/spec/hardware-rt10.md 4)
 #include <stdio.h>
 #include <string.h>
 #include "rt10.h"
@@ -132,7 +131,7 @@ static void test_no_calibration(void)
 	CHECK(!rt10_cal_tx_plan(927500000u, false, &p));
 }
 
-// DMR burst timing (hardware-rt10.md 7.1): the shortest lead that has the PA up (2.7 ms + the plan's key-up delay)
+// DMR burst timing: the shortest lead that has the PA up (2.7 ms + the plan's key-up delay)
 // when the first symbol goes out 0.85 ms after the lead
 static void test_dmr_lead(void)
 {

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 /* Copyright (c) 2026 The RadioFoundry Authors */
-/* Retevis RT10, HR_C7000 (CK803S), started by the boot ROM (docs/spec/hardware-rt10.md 2).
+/* Retevis RT10, HR_C7000 (CK803S), started by the boot ROM.
  *
  * Program flash (XIP, 2 MB at 0x03000000): the boot ROM's flag sector at 0x03000000 (its entry word names
  * 0x0300C000), 0x03001000..0x0300C000 unused, the application from 0x0300C000 (board.mk APP_BASE), the codec slot
@@ -8,7 +8,7 @@
  *
  * SRAM (288 KB at 0x10000): RadioFoundry's region from 0x10000 and the codec window 0x43A00..0x58000 at the top. The
  * runtime stub (CONFIG_STUB_ENTRY) loads into that window (platform.h HRC_STUB_BASE). The modem SRAM window the codec's
- * tables are copied to, 0x1800420C..0x18007184 (hardware-rt10.md 8), is reserved.
+ * tables are copied to, 0x1800420C..0x18007184, is reserved.
  *
  * The layout is the platform's (platform/hrc7000/common.ld). */
 

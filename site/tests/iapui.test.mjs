@@ -129,7 +129,7 @@ test("factory update mode: on the page, Cancel stops the listening and offers th
 });
 
 test("factory update mode: a loader that identified itself is kept for the next try, never listened for again", async () => {
-	// the radio answers steps 1-3 once per power-on (hardware-dm32.md 13.2)
+	// the radio answers steps 1-3 once per power-on
 	const { state, forwards, calls, routes } = route();
 	const box = routes.iapRestoreView(backup(), null, () => {});
 	box.isConnected = true;

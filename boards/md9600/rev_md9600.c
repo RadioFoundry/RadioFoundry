@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 board revisions: the descriptor table, the stored record, the AK2365A read test's verdict and the choice
-// between detection, record, probe and build default (rfplan_md9600.h; docs/spec/hardware-md9600.md 16)
+// between detection, record, probe and build default (rfplan_md9600.h)
 #include <stddef.h>
 #include "rfplan_md9600.h"
 #include "config.h"

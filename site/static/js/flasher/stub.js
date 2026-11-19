@@ -75,7 +75,7 @@ const SIGN_OFF_QUIET = 30;
 const BURST_GAP = 15, GROUP_QUIET = 300, GARBLED_MIN = 2, GARBLED_APART = [25, 300];
 // Slow cable mode: the greeting reply goes out this often while the radio is switched on, and on for ROM_REPEAT_AFTER
 // ms once the greeting is seen: the ROM drops what reaches it before its greeting, so only the answers sent after that
-// count, and the ROM's 48 ms must be covered however late the greeting shows here (hardware-dm32.md 13.3)
+// count, and the ROM's 48 ms must be covered however late the greeting shows here
 export const ROM_REPEAT = 30, ROM_REPEAT_AFTER = 150;
 // How long a wait for a quiet line lasts at most, in ms (Stub.drain)
 export const limits = { drain: 8000 };
@@ -113,7 +113,7 @@ function find(buf, pat) {
 	return -1;
 }
 
-export const SRAM = [0x10000, 0x58000];	// the HR_C7000's main SRAM (hardware-dm32.md 2)
+export const SRAM = [0x10000, 0x58000];	// the HR_C7000's main SRAM
 
 // The universal stub from data/c7000-stub.json: the image, its power-on load address, and the RAM it runs in
 export function stubImages(json) {
@@ -333,7 +333,7 @@ export class Stub {
 	}
 
 	// Answer the ROM's greeting at once (it waits only about 48 ms), load the stub at `load` and start it. answered:
-	// waitForRom's slow cable mode answered already. The ROM has no timeout once it took the answer (hardware-dm32.md 13.3)
+	// waitForRom's slow cable mode answered already. The ROM has no timeout once it took the answer
 	async loadThroughRom(image, load, progress = () => {}, { answered = false } = {}) {
 		univFits(image, load);
 		this.repeated = answered;

@@ -23,7 +23,7 @@ at most 2 bits a frame on average (the stale RAM signature is exactly 3 a frame)
 
 test_dmr_audio_rx_offset: the same call with the bench carrier OFFSET_HZ below and above the channel, one call each,
 and the same pass criteria. A receiver whose DMR decoding falls off on one side of its channel fails here (the UV380
-family's receive gain and offset, docs/spec/hardware-dm1701.md 5.5 and 5.13).
+family's receive gain and offset).
 
 test_dmr_audio_rx_deviation: the same call from a transmitter DEV_LOW and DEV_HIGH of the standard's deviation, near
 the receiver's sensitivity (the bench level set so the radio reads about RSSI_DBM; deviation is a level at the

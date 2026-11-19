@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // UV380 family data flash: W25Q128 on SPI1 (PB3 SCK, PB4 MISO, PB5 MOSI, AF5), mode 0, APB2/16, chip select PD7
-// (docs/spec/hardware-dm1701.md 13), through the shared driver (platform/stm32f4/spi_flash).
+//, through the shared driver (platform/stm32f4/spi_flash).
 #include "uvf.h"
 #include "pins.h"
 #include "spi_flash/spi_flash_board.h"
 
-// docs/spec/hardware-dm1701.md 13.2. The open-firmware codeplug stays where the CPS tools expect it; our own areas sit
+// The open-firmware codeplug stays where the CPS tools expect it; our own areas sit
 // in the gap between the calibration copy and the open-firmware flash image (0x011000..0x01FFFF, which no CPS address
 // maps to) and above the 14 MB mark that qdmr's DMR ID database may reach
 static const hal_flash_map_t map = {

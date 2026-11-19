@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// MD-9600 factory calibration and hardware option block: what the radio code may ask (docs/spec/hardware-md9600.md
-// 11). Both are read once at start-up from the SPI flash security registers (calibration: registers 1-2, 512 bytes;
+// MD-9600 factory calibration and hardware option block: what the radio code may ask. Both are read once at start-up from the SPI flash security registers (calibration: registers 1-2, 512 bytes;
 // options: register 3, 64 bytes) and never written. The layout is unverified, so every accessor says when it has no
 // value, and the caller keeps its safe default then. Pure apart from md9600_cal_load's flash read: the host test
 // (tests/host/md9600CalTest.c) runs it on synthetic blocks.

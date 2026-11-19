@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// MD-9600 debug link view keys (the `board` section, docs/spec/debuglink.md 3.7; key list in
-// docs/spec/hardware-md9600.md 19.6): what a first power-up and a HIL test need to see without a screen. The board
+// MD-9600 debug link view keys (the `board` section, docs/spec/debuglink.md 3.7): what a first power-up and a HIL test need to see without a screen. The board
 // revision and where it came from, the clock that started, the flash, the calibration and option blocks, the key
 // matrix, the ADC scan and the levels the radio code drives on the supply and transmitter switches.
 #include "config.h"

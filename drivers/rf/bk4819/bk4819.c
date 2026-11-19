@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// BK4819 transceiver driver (docs/spec/hardware-db25d.md 4)
+// BK4819 transceiver driver
 #include <stddef.h>
 #include "bk4819.h"
 #include "rf/subaudio/subaudio.h"

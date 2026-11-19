@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // AMBE+2 vocoder as a platform service. The vocoder itself is the radio's own stock-firmware codec, merged on the
-// user's machine and never shipped (README, docs/spec/codec-*.md). Frames here are the 49 voice parameter bits; the
+// user's machine and never shipped (README). Frames here are the 49 voice parameter bits; the
 // AMBE+2 3600x2450 FEC and interleaving to and from the 72-bit air frame are done in core/dmr.
 #ifndef HAL_VOCODER_H
 #define HAL_VOCODER_H
@@ -39,8 +39,7 @@ typedef struct {
 	// task as encode(), so one frame is always encoded with one set of options
 	uint32_t (*options)(void);
 	void (*set_options)(uint32_t opts);
-	// Optional: the codec's own word for the options in force, for the debug link only (its meaning is per codec,
-	// docs/spec/codec-*.md)
+	// Optional: the codec's own word for the options in force, for the debug link only (its meaning is per codec)
 	uint32_t (*encode_flags)(void);
 	// Optional: the codec's working memory, lent while no DMR voice runs (another voice path, P25's decoder, uses it
 	// then). Returns it (8-byte aligned) and its size in *len; the codec's next call rebuilds its own state, so the

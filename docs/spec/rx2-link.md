@@ -1,10 +1,16 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
+
 # The second receiver's link
 
-A radio with two SoCs, each with its own receiver (the GD-88), runs RadioFoundry on both. The main SoC (A) has the UI, PTT and
-the transmitter; the other (B) is a second receiver. They talk over a UART with this protocol (`core/rx2/rx2_link.c`).
-The radio core sees B as `board.rx2` ([radio-features.md 2.2](radio-features.md#22-a-second-receiver)).
+A radio with two SoCs, each with its own receiver, runs RadioFoundry on both. The main SoC (A) has the UI, PTT and the
+transmitter; the other (B) is a second receiver. They talk over a UART with this protocol (`core/rx2/rx2_link.c`). The
+radio core sees B as `board.rx2` ([radio-features.md 2.2](radio-features.md#22-a-second-receiver)). The
+[feature matrix](../feature-matrix.md) lists which radios have a second receiver.
 
 ## 1. Frames
+
+Every frame has this layout:
 
 ```
 A5 5A  len  type  seq  payload[len]  crc_hi crc_lo
@@ -27,7 +33,7 @@ A5 5A  len  type  seq  payload[len]  crc_hi crc_lo
 | 0x04 | `AUDIO` | A | u8 on, u8 volume (percent) |
 | 0x05 | `STUB` | A | u32 0x53545542. B enters the flash stub on the link UART |
 | 0x06 | `RESET` | A | u32 0x53545542. B restarts |
-| 0x07 | `LED` | A | u8: the LEDs on B's SoC that are on (bit 0 LED 1, bit 1 LED 2). On the GD-88 A's status LEDs are wired to B. A sends it on a change and again when B comes back; B turns them off at `HELLO_REQ` |
+| 0x07 | `LED` | A | u8: the LEDs on B's SoC that are on (bit 0 LED 1, bit 1 LED 2), for a radio whose status LEDs are wired to B. A sends it on a change and again when B comes back; B turns them off at `HELLO_REQ` |
 | 0x81 | `HELLO` | B | u8 protocol version (1), u8 flags (bit 0: B decodes DMR), then B's firmware version as text |
 | 0x82 | `STATUS` | B | 13 bytes (2.2) |
 | 0x83 | `ACK` | B | u8 the `TUNE`'s seq, u8 result (0 = on it, else refused) |
@@ -45,19 +51,20 @@ A5 5A  len  type  seq  payload[len]  crc_hi crc_lo
 | 8 | 2 | RX tone value (`subtone_t.value`) |
 | 10 | 1 | DMR color code |
 | 11 | 1 | DMR timeslot (1, 2) |
-| 12 | 4 | our DMR ID |
+| 12 | 4 | the radio's DMR ID |
 | 16 | 4 | the channel's talk group, 0 = none |
 | 20 | 1 | n, the RX group list's groups (0 to 16) |
 | 21 | 4 | reserved, 0 |
 | 25 | 4 n | the groups |
 
-On DMR, B decodes the calls itself. It plays a call to one of the groups, to the talk group, or a private call to our ID.
+On DMR, B decodes the calls itself. It plays a call to one of the groups, to the talk group, or a private call to the
+radio's ID.
 
 ### 2.2 STATUS
 
 | Offset | Size | Field |
 |---|---|---|
-| 0 | 1 | bit 0 on its settings, 1 active (FM: squelch open with the right tone; DMR: a call for us), 2 DMR, 3 a group call, 4 heard (active and its audio on) |
+| 0 | 1 | bit 0 on its settings, 1 active (FM: squelch open with the right tone; DMR: a call for the radio), 2 DMR, 3 a group call, 4 heard (active and its audio on) |
 | 1 | 2 | RSSI (dBm, signed) |
 | 3 | 1 | noise |
 | 4 | 4 | DMR source ID |
@@ -68,6 +75,8 @@ B sends one on every change, and at least every 500 ms.
 
 ## 3. Timing
 
+A keeps the link up with these rules:
+
 - A sends `HELLO_REQ` every second until B answers.
 - A counts B as down after 1.5 s without a frame. The core then alternates A's receiver.
 - A sends a `TUNE` again when it has no good `ACK` after 300 ms.
@@ -76,18 +85,18 @@ B sends one on every change, and at least every 500 ms.
 
 ## 4. Updating B
 
-B has no USB or PC connector of its own. Its first install goes through its IAP loader. Later ones go through A:
+B has no USB or PC connector of its own. Its first install goes through its IAP loader. Later installs go through A:
 
 1. The host asks A's debug link for the bridge (`DL_CMD_RX2` BRIDGE, [debuglink.md](debuglink.md) 3.22).
-2. After the reply, A sends `STUB`. B writes `STAY` (0x53544159) at 0x0004FFF8 and jumps to its first stage at
-   0x0300C000 ([boot/README.md](../../boot/README.md)).
-3. A copies bytes between the PC cable (UART1) and the link (UART3) both ways. Its transmitter stays off, and it feeds
+2. After the reply, A sends `STUB`. B writes the stay flag `STAY` (0x53544159) where its first stage reads it, and jumps
+   to its first stage ([boot/README.md](../../boot/README.md)).
+3. A copies bytes between the PC cable's UART and the link's UART both ways. Its transmitter stays off, and it feeds
    its watchdog.
 4. B's first stage sees `STAY` and offers the boot ROM's handshake on the link for up to a minute. The host answers
-   through A and loads the stub, which is told to stay on UART3.
+   through A and loads the stub, which is told to stay on the link's UART.
 5. The host writes B's image and restarts B (`--boot reset`).
 6. A restarts 10 s after the host's last byte, or after 90 s if the host never sends one. It finds B again with
    `HELLO_REQ`. Bytes from B don't count: its handshake offers go on until the host answers.
 
-The link stays at 115200 baud through the bridge: the host does not switch speed. `stubtool.py --board gd88b`
-does steps 1, 4 and 5. Without a host, B's first stage starts B's application again after the minute, and A restarts.
+The link stays at 115200 baud through the bridge: the host doesn't switch speed. `stubtool.py` with B's board ID does
+steps 1, 4 and 5. Without a host, B's first stage starts B's application again after the minute, and A restarts.

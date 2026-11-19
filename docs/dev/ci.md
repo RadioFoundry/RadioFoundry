@@ -1,12 +1,14 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
-# Continuous Integration
+# Continuous integration
 
-What runs automatically, when, and how to run each piece by hand. The runners and the container image are in
-[ci-runners.md](ci-runners.md). Every CI job calls the same
-scripts a developer runs locally (`tools/ci.sh`, `tools/coverage.sh`), so the YAML holds only setup and triggers.
-The workflows are in `.github/workflows/`; Gitea Actions runs them from there too (there is no `.gitea/workflows`),
-so one set serves the self-hosted Gitea runner and GitHub.
+This page covers what runs automatically, when it runs, and how to run each piece by hand: the workflows, and the
+steps and options of `tools/ci.sh`. For the runners and the container images, see [CI runners](ci-runners.md).
+
+Every CI job calls the same scripts a developer runs locally (`tools/ci.sh`, `tools/coverage.sh`), so the YAML holds
+only setup and triggers. The workflows are in `.github/workflows/`. Gitea Actions runs them from there too (there's
+no `.gitea/workflows`), so one set serves the self-hosted Gitea runner and GitHub.
 
 | Workflow | Runs on | When | What |
 |---|---|---|---|
@@ -14,7 +16,7 @@ so one set serves the self-hosted Gitea runner and GitHub.
 | `pr-tests.yml` | `ubuntu-24.04` | every pull request; a fork's after a maintainer approves the run | `ci.yml`'s jobs and the manual check, for the files the pull request changes; `PR checks` gates the merge. A branch's only CI |
 | `nightly.yml` | `ubuntu-24.04` | 07:17 UTC daily when a file the firmware builds read changed since the last pass; by hand | the feature matrix of every board, `reuse lint` |
 | `site.yml` | `ubuntu-24.04` | a published release; by hand | asks Cloudflare Pages to build `main` again, for the new release's images. Pages itself builds every push ([website.md](website.md)); pull requests also build the site in the unit tests job |
-| `hil.yml` | `rfoundry-hil` (the bench Mac) | by hand; nightly only when `RFOUNDRY_HIL_SCHEDULE=true` | `tests/hil` against the radio and the SDR bench |
+| `hil.yml` | `rfoundry-hil` (the machine with the radio) | by hand; nightly only when `RFOUNDRY_HIL_SCHEDULE=true` | `tests/hil` against the radio and the SDR bench |
 | `ui-gallery.yml` | `ubuntu-24.04` | a pull request that changes the UI (`core/ui/`, the simulator, `uiSim`) | renders the screen gallery at the base and at the pull request, and makes the side-by-side artifact |
 | `ui-gallery-comment.yml` | `ubuntu-24.04` | when `ui-gallery.yml` finishes on a pull request | posts the pull request's gallery comment with the changed screens attached |
 | `beep-reel.yml` | `ubuntu-24.04` | a pull request that changes the beeps (`core/radio/beep.c`, `beep.h`, the reel) | makes the beep reel with the base's beeps and with the pull request's, and uploads both videos and the changed beeps |
@@ -27,16 +29,16 @@ private copy, hosted runners use paid minutes). On Gitea they always run.
 Every job on GitHub runs on GitHub's hosted runners; only `hil.yml` has a runner of its own
 ([runners](ci-runners.md)).
 
-Each change is checked once. A branch is tested through its pull request (`pr-tests.yml`), and `main` again after
-the merge (`ci.yml`). The unit tests run once per check, with the coverage counters and the sanitizers in the same
-build. The unit tests job's Python step builds the site and runs the flasher's tests, and the release gate runs for a tag.
+Each change is checked once. A branch is tested through its pull request (`pr-tests.yml`), and `main` again after the
+merge (`ci.yml`). The unit tests run once per check, with the coverage counters and the sanitizers in the same build.
+The unit tests job's Python step builds the site and runs the flasher's tests, and the release gate runs for a tag.
 
 ## On main: `ci.yml`
 
 Triggered by changes under `boards/`, `config/`, `core/`, `drivers/`, `hal/`, `platform/`, `tests/`, `tools/`,
-`third_party/` (submodule bumps), the `Makefile`, `AUTHORS` (the About page), `.gitmodules`, `LICENSES/`,
-`REUSE.toml`, `.github/actions/` or the workflow itself, pushed to `main`; by hand (Actions, CI, Run workflow) on any branch. A docs-only
-push runs only the manual workflow. A newer push cancels the run in progress (`concurrency`).
+`third_party/` (submodule bumps), the `Makefile`, `AUTHORS` (the About page), `.gitmodules`, `LICENSES/`, `REUSE.toml`,
+`.github/actions/` or the workflow itself, pushed to `main`; by hand (Actions, CI, Run workflow) on any branch. A
+docs-only push runs only the manual workflow. A newer push cancels the run in progress (`concurrency`).
 
 | Job | Command |
 |---|---|
@@ -55,19 +57,19 @@ goes in the matrices of `ci.yml`, `pr-tests.yml`, `nightly.yml` and `release.yml
 toolchain action ([below](#toolchains)). The jobs run in parallel.
 
 Each firmware job builds with zero warnings, writes the size report (image bytes and free space in the linker's
-application region, also put in the job summary on GitHub) and fails when the application region overflows. The
-images and logs are workflow artifacts (`firmware-arm`, `firmware-csky`), as are the unit test logs with the screen gallery
+application region, also put in the job summary on GitHub) and fails when the application region overflows. The images
+and logs are workflow artifacts (`firmware-arm`, `firmware-csky`), as are the unit test logs with the screen gallery
 (`host-logs`) and the coverage report (`coverage-report`).
 
-`reuse lint` is part of the `checks` job only when the repository variable `RFOUNDRY_CI_REUSE` is `true`; it doesn't pass on
-the current tree yet (run it to see the files), and the nightly reports it as a warning meanwhile.
+`reuse lint` is part of the `checks` job only when the repository variable `RFOUNDRY_CI_REUSE` is `true`. The
+nightly runs it and reports a failure as a warning.
 
 ## Submodules
 
 The jobs that build firmware check out without submodules, then run `tools/checkout-submodules.sh`. On a runner with
 bare clones of the `third_party/` repositories (`RFOUNDRY_GIT_CACHE`) the script borrows their objects
 (`git submodule update --reference`); GitHub's runners have none and take a plain network checkout. Each submodule
-gets three tries, so one dropped connection to GitHub no longer fails the job.
+gets three tries, so one dropped connection to GitHub doesn't fail the job.
 
 The nested submodules of FreeRTOS-Kernel (its partner and community ports) aren't checked out: no build uses them,
 since the CK803 port is in `platform/hrc7000/freertos/`. After a submodule bump, rebuild the runner image to bring the
@@ -120,42 +122,41 @@ A pull request that touches the UI (`core/ui/`, `core/radio/tones.c`, `core/code
 before and after, side by side. It's advisory: no required check waits on it.
 
 1. `ui-gallery.yml` (`pull_request`) builds `uiSim` from the base commit and from the pull request's merge commit,
-   renders `--gallery` for both, and writes `tools/ui_gallery_compare.py`'s output: for each display class with a changed
-   screen, one composite per eight rows, stacked as before | after pairs (2x, or 1x for a class whose widest row would
-   pass 1800 px; labels with both commit ids; a screen that's new or gone gets a gray panel), plus `manifest.json`. A class with no change
-   gets no picture. Classes are ordered monochrome first, then color, each by resolution, and the comment groups them
-   under those headings. The render is deterministic, so an unchanged screen never shows up.
+   renders `--gallery` for both, and writes `tools/ui_gallery_compare.py`'s output: for each display class with a
+   changed screen, one composite per eight rows, stacked as before | after pairs (2x, or 1x for a class whose widest row
+   would pass 1800 px; labels with both commit ids; a screen that's new or gone gets a gray panel), plus
+   `manifest.json`. A class with no change gets no picture. Classes are ordered monochrome first, then color, each by
+   resolution, and the comment groups them under those headings. The render is deterministic, so an unchanged screen
+   never shows up.
 
    The gallery's color pages are drawn once more in each highlight color the workflow's `UI_GALLERY_COLORS` names
    (`env` at the top of `ui-gallery.yml`: one line, in double quotes, any of `red orange yellow teal light_blue purple
-   pink`; three for now). Theme pages are also drawn in the light and high-contrast themes (`<screen>__light`,
+   pink`). Theme pages are also drawn in the light and high-contrast themes (`<screen>__light`,
    `<screen>__high_contrast`). When a color page or any of its color or theme shots changed, the comparison shows the
    whole set as one row of the composite: a column per shot, the page first, then its colors in the list's order and
    its themes, before above after, the unchanged ones marked so. Such a row counts as two of the eight.
    `make -C tests/host ui-gallery` reads the same line, so the committed gallery shows the same colors. Changing the
    list is a pull request that changes the workflow and regenerates the gallery.
 2. `ui-gallery-comment.yml` (`workflow_run`, from main's copy) downloads that artifact and checks it as data (no links,
-   file names and sizes, PNG signatures, the pull request and commit it names). It pushes each
-   composite to the `ui-previews` branch (made on first use, one `pr-N/` folder per pull request holding its newest commit) and
-   linked with `blob/...?raw=true` URLs, which render for signed-in viewers of a private repository (`gh --attach` needs a
-   user session, not the job's token). The branch never grows: every run rebuilds it as one parentless commit and force-pushes it (it holds only
-   pictures that can be regenerated), leased on the commit it fetched: a run that loses the race to another pull request's
-   fetches again and rebuilds. It keeps the open pull requests, the newest 5 closed without a merge and the newest
-   20 merged, among those that have pictures; older folders are dropped, and GitHub collects their objects. A pull
-   request's folder holds only its newest commit: the pictures of its earlier commits are removed. It then edits the
-   pull request's comment in place, so it stays where it was near the top of the conversation; only if the edit fails
-   does it post a new comment and delete the old one. Pictures of a pull request that fell out of the window no longer
-   load. A composite of more than 3 rows is folded in a `<details>` block under its list of changed screens. The
-   comment is found by its marker line (`<!-- rfoundry-ui-gallery -->`) and carries the commit, the UTC time of the update
-   and the base commit. A run for a commit the pull request has already moved past posts nothing.
+   file names and sizes, PNG signatures, the pull request and commit it names). It pushes each composite to the
+   `ui-previews` branch (made on first use, one `pr-N/` folder per pull request holding its newest commit) and linked
+   with `blob/...?raw=true` URLs (`gh --attach` needs a user session, not the job's token). The branch never grows:
+   every run rebuilds it as one parentless commit and force-pushes it (it holds only pictures that can be regenerated),
+   leased on the commit it fetched: a run that loses the race to another pull request's fetches again and rebuilds. It
+   keeps the open pull requests, the newest 5 closed without a merge and the newest 20 merged, among those that have
+   pictures; older folders are dropped, and GitHub collects their objects. A pull request's folder holds only its newest
+   commit: the pictures of its earlier commits are removed. It then edits the pull request's comment in place, so it
+   stays where it was near the top of the conversation; only if the edit fails does it post a new comment and delete the
+   old one. Pictures of a pull request that fell out of the window no longer load. A composite of more than 3 rows is
+   folded in a `<details>` block under its list of changed screens. The comment is found by its marker line (`<!--
+   rfoundry-ui-gallery -->`) and carries the commit, the UTC time of the update and the base commit. A run for a commit
+   the pull request has already moved past posts nothing.
 
-Only the comment job has write permissions (`pull-requests: write`, and `contents: write` for `ui-previews` alone). It runs no code from the pull request or the
-artifact, the same split `pr-tests.yml` keeps for its status job. An artifact with more than 40 pictures fails the check.
+Only the comment job has write permissions (`pull-requests: write`, and `contents: write` for `ui-previews` alone). It
+runs no code from the pull request or the artifact, the same split `pr-tests.yml` keeps for its status job. An artifact
+with more than 40 pictures fails the check.
 
-Nothing else is needed: no branch, no host. Attachments on a private repository are visible to the people who can
-see the pull request; the first run on a UI pull request confirms that and that `gh` accepts the attachments with the
-job's token. `workflow_run` runs only from the default branch's copy of the workflow, and Gitea Actions may not
-support it, so check the first run on the Gitea runner before relying on the comment there.
+`workflow_run` runs only from the default branch's copy of the workflow.
 
 ## Beep reel: `beep-reel.yml`
 
@@ -181,17 +182,17 @@ The job summary lists the changed beeps. A video is about 240 KB; a beep's WAV 2
 |---|---|
 | `matrix (Arm)` | `tools/ci.sh --matrix --steps firmware --toolchain arm`: for each board, each switch off alone, fm-minimal, maximal |
 | `matrix (C-SKY)` | the same for every board built with csky-elf GCC, in the csky-elf image unless the runner has csky-elf GCC |
-| `reuse` | `reuse lint`, a warning until it passes |
+| `reuse` | `reuse lint`, reported as a warning |
 
 The maximal build turns on every switch except the board's `BOARD_UNSUPPORTED` (the hardware can't),
-`BOARD_NOT_WRITTEN` (the code isn't written for the radio yet) and `MAXIMAL_SKIP` lists, and `CONFIG_AUDIO_PROBE`
+`BOARD_NOT_WRITTEN` (the code isn't written for the radio), and `MAXIMAL_SKIP` lists, and `CONFIG_AUDIO_PROBE`
 ([build-config.md](../build-config.md#unsupported-not-written-unconfirmed)). Not-written switches stay off because
 they add code that doesn't run on the radio but still takes its flash and RAM, so a shared addition could push one
 radio over and fail CI on unrelated pull requests.
 
-One job per toolchain runs its boards one after another (artifacts `matrix-arm`, `matrix-csky`). A job per board would finish each board sooner, but it
-repeats the checkout, the submodules and the toolchain set-up for every board, and a 4-core runner is kept busy by
-one board's builds anyway. Nobody waits on the nightly, so the fewer jobs win.
+One job per toolchain runs its boards one after another (artifacts `matrix-arm`, `matrix-csky`). A job per board would
+finish each board sooner, but it repeats the checkout, the submodules and the toolchain set-up for every board, and a
+4-core runner is kept busy by one board's builds anyway. Nobody waits on the nightly, so the fewer jobs win.
 
 `--matrix` leaves out the default builds the per-push run already made. Each build tree is removed once its size is
 recorded and it built clean (the logs and images stay; a configuration that failed keeps its tree), so a run holds one
@@ -209,7 +210,7 @@ commit. A scheduled run restores the newest such entry and diffs the default bra
 The check costs one short job. It works the same on Gitea and GitHub without an API token or comparing commit
 times against the schedule, and catches up after nights the runner was off. A failing commit is never saved, so
 the next night still diffs against the last pass and builds again until the failure is fixed. If the cache evicts
-an entry, or holds only entries from before this scheme, the cost is one repeated run. A manual run (Actions,
+an entry, the cost is one repeated run. A manual run (Actions,
 Nightly, Run workflow, or `gh workflow run nightly.yml`) always builds.
 
 ## Running the pieces locally
@@ -226,7 +227,13 @@ make BOARD=<id> stack-check                  # the stack check alone, after a bu
 tools/ci.sh --matrix --steps firmware --toolchain arm    # a nightly matrix job
 tools/coverage.sh                             # build/coverage/index.html
 tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board <id>   # on a host with the image
+JOBS=8 tools/ci.sh                            # parallel make jobs (default: the CPU count)
+RFOUNDRY_CI_PRUNE=0 tools/ci.sh               # keep every build tree
+RFOUNDRY_CI_SANITIZE=1 tools/ci.sh            # the host step also runs the host tests under ASan and UBSan
 ```
+
+`tools/ci.sh` reports each step as ok, FAIL, or skip, and exits with status 0 only when nothing failed. A full run ends
+with "all checks passed".
 
 `--steps` takes any of these, comma separated (default all):
 
@@ -254,12 +261,59 @@ The `python` step also checks the HIL tests without a radio:
 | Feature checklist (`tools/bringup.py check`) | a switch has no entry in `tests/hil/features.toml`, a test's feature marker names a feature that has none, a `manual` test has no owner action, an `n/a` or `unsupported` state has no reason, a record in `docs/testing/results/` doesn't parse or lacks a key (a missing or stale record never fails) |
 | Bring-up mode tests (`tests/hil/test_bringup.py`) | a fake radio lacking a feature doesn't fail a bring-up run |
 
-`tools/bringup.py check` finds its Python through `tools/rfoundry_python.sh` like the other steps. Comparing the docs'
-support claims with the records is not checked yet.
+`tools/bringup.py check` finds its Python through `tools/rfoundry_python.sh` like the other steps.
 
 `--board` takes board ids, `--platform` platform ids and `--toolchain` toolchain ids (each a comma separated list).
 `--board` excludes the other two; `--platform` and `--toolchain` together select the boards that match both. An
 unknown id fails with exit status 2, so a typo in a workflow never passes with nothing built.
+
+### The firmware step
+
+For each board whose compiler is installed, the `firmware` step builds these configurations:
+
+| Configuration | What |
+|---|---|
+| `default` | The board's defaults |
+| `<value>` | Each build option value but the default (`board.toml` `[[build_options]]`, such as a band) |
+| `<extra>` | Each `board.toml` `[ci] extra` configuration, such as a bench diagnostic with the variables it needs |
+| `no-<FEATURE>` | Each switch that's on by default, turned off alone (its sub-features follow it; see [Build configuration](../build-config.md)) |
+| `fm-minimal` | FM only, without DMR, USB, the VFO, diagnostics, sub-audio tones, and the extra-large font |
+| `maximal` | Every switch on, except the board's `BOARD_UNSUPPORTED`, `BOARD_NOT_WRITTEN`, and `MAXIMAL_SKIP` lists, with its `MAXIMAL_VARS` (such as `LTO=1`) |
+
+Every configuration builds with zero compiler and linker warnings. The default and maximal ones also pass the stack
+check: every task's deepest call chain fits its stack (see [Stack check](stack-check.md)). A board without its
+compiler is skipped with a notice. The build trees are `build/ci/<board>-<config>/`, each with its log next to it.
+
+The sizes go to `build/ci/size-report.md`: the image bytes, the change against the board's default, and the space
+left in the linker's application region. The codec windows lie outside that region, so "free" is what code can still
+grow into.
+
+### The licenses and similarity steps
+
+The `licenses` step runs `tools/license_grep.sh`, which finds markers of code that must not be here (see
+[Clean-room rules](../CLEANROOM.md)), and `reuse lint`. Without `reuse`, the lint is skipped with a notice. To install
+it, run `pipx install reuse` or `pip install --user reuse`.
+
+The `similarity` step runs only when `RFOUNDRY_SIMILARITY_REFS` names the reference trees, separated by spaces. The
+reference trees are never part of this repository or of public CI. The project lead runs the scan before a release:
+
+```
+RFOUNDRY_SIMILARITY_REFS="/path/to/tree /path/to/other-tree" tools/ci.sh
+tools/similarity_scan.py /path/to/tree                           # the scan alone
+tools/similarity_scan.py --ids --report scan.txt /path/to/tree   # also finds copies with renamed identifiers
+```
+
+Each reported region gives the file and lines here, and the reference file and line it shares a run of 25 tokens
+with. Review every region by hand; `#include` blocks and generic idioms are expected noise. For the options, run
+`tools/similarity_scan.py --help`.
+
+### Host tests
+
+The `host` step runs `make -C tests/host` (the same as `make test`), built with no warnings. The host tests need only
+the host's C compiler. Their binaries, `.dSYM` bundles, and outputs stay in `tests/host/`, and git ignores them;
+`make -C tests/host clean` removes them.
+
+### The Arm toolchain
 
 `tools/install-arm-toolchain.sh` installs the pinned Arm toolchain on Linux x86_64 the way CI does, trimmed to the
 Cortex-M4 multilib (215 MB instead of 1 GB; `FULL=1` for all of it).
@@ -276,11 +330,10 @@ workflow types a version. Platforms that share a toolchain id must pin the same 
 | `arm` | `tools/install-arm-toolchain.sh` copies the pinned toolchain into `~/opt` out of `[toolchain] image` (public on ghcr.io, pinned by digest, made by `tools/docker/toolchains/build-arm-ci.sh`), or downloads Arm's checksummed release when that fails; every time (no cache). A runner that has it already skips both. The build runs on the runner |
 | `csky` | csky-elf GCC on `PATH` when the runner has it; otherwise the csky-elf image (`[toolchain] image`, public on ghcr.io, or `RFOUNDRY_CSKY_IMAGE`): logged in to only when a workflow passes a registry (`RFOUNDRY_CSKY_REGISTRY`, for a private copy), pulled, then the job runs its build through `tools/docker/csky-toolchain/run.sh` (the action's `run` output) |
 
-No workflow builds csky-elf GCC from source. The image is built by `tools/docker/csky-toolchain/build.sh`
-([The csky-elf image](ci-runners.md#the-csky-elf-image)). Neither is cached
-(Pull request checks, above). When the image isn't available (`run.sh` exit status 3), a CI or nightly job ends with a notice
-and the release job fails. A new toolchain gets a branch in the action's first step and an entry in each firmware
-matrix.
+No workflow builds csky-elf GCC from source. The image is built by `tools/docker/csky-toolchain/build.sh` ([The csky-elf
+image](ci-runners.md#the-csky-elf-image)). Neither is cached (Pull request checks, above). When the image isn't
+available (`run.sh` exit status 3), a CI or nightly job ends with a notice and the release job fails. A new toolchain
+gets a branch in the action's first step and an entry in each firmware matrix.
 
 ## Coverage
 
@@ -290,30 +343,28 @@ annotated), `coverage.xml` (Cobertura), `summary.txt` and `summary.md` (the tota
 uncovered lines; CI adds it to the job summary). It works with GCC (`gcov`) and with clang, Apple's included
 (`xcrun llvm-cov gcov`, picked automatically). Install gcovr with `pip install gcovr`, `pipx install gcovr` or the
 `gcovr` package (Ubuntu 24.04's 7.0 is new enough). `COVERAGE_FAIL_UNDER=85 tools/coverage.sh` also fails below a
-line percentage; CI doesn't set a threshold yet.
+line percentage. CI sets no threshold.
 
 Counted are the `core/`, `drivers/`, `hal/`, `boards/` and `platform/` sources a host test compiles; the tests,
 `third_party/` and generated headers are not. A file no host test builds isn't in the report at all, so the
 percentage is of the code under host test, not of the whole firmware. The same file built into several tests with
 different switches is merged (`--merge-mode-functions=separate`).
 
-The report lists the files with the most uncovered lines. Not built into any host test: the debug link commands
-(except the protocol and split parts), `hostlink.c`, `net_services.c`, the RTOS task wrappers, the USB device and NCM drivers,
+The report lists the files with the most uncovered lines. Not built into any host test: the debug link commands (except
+the protocol and split parts), `hostlink.c`, `net_services.c`, the RTOS task wrappers, the USB device and NCM drivers,
 the display drivers and the SFR glue. The HIL tests cover most of these on the radio.
 
-Coverage on the radio itself (gcov counters read out over the debug link after a HIL run) is not set up. Hosted coverage
-services (Codecov, Coveralls) are not used: the repository is private, and the HTML artifact serves the same purpose.
+The HTML report (the `coverage-report` artifact) is the coverage record; CI uses no hosted coverage service.
 
 ### Sanitizers and fuzzing
 
-`make -C tests/host SANITIZE=1` builds every host test with AddressSanitizer and UndefinedBehaviorSanitizer (Apple
-clang and GCC; UBSan stops at the first report). CI's unit tests job builds the tests this way and with coverage at
-once (`SANITIZE=1 tools/coverage.sh`; leak checks off: job containers may not allow ptrace), `RFOUNDRY_CI_SANITIZE=1
-tools/ci.sh` runs it in the host step; build from clean when
-switching (`make -C tests/host clean`). It isn't optimized, like the plain build: with `__OPTIMIZE__` glibc's headers
-switch on extern inline and fortified functions, which don't build with the host flags' `__attribute__` override.
-The parsers of untrusted input (SNMP, TFTP, mDNS, the gateway's Ethernet
-input, KISS / HTTP / rigctld, LRRP, AX.25 / APRS, DMR data) have seeded mutation fuzz loops (`tests/host/fuzz.h`)
-that feed exact-size heap buffers, so a read past the end is an ASan report; `RFOUNDRY_FUZZ_ITERS=<n>` replaces the small
-default counts and `RFOUNDRY_FUZZ_SEED=<n>` varies the seed, e.g. `RFOUNDRY_FUZZ_ITERS=1000000 make -C tests/host SANITIZE=1`
-for a long run by hand.
+`make -C tests/host SANITIZE=1` builds every host test with AddressSanitizer and UndefinedBehaviorSanitizer (Apple clang
+and GCC; UBSan stops at the first report). CI's unit tests job builds the tests this way and with coverage at once
+(`SANITIZE=1 tools/coverage.sh`; leak checks off: job containers may not allow ptrace), `RFOUNDRY_CI_SANITIZE=1
+tools/ci.sh` runs it in the host step; build from clean when switching (`make -C tests/host clean`). It isn't optimized,
+like the plain build: with `__OPTIMIZE__` glibc's headers switch on extern inline and fortified functions, which don't
+build with the host flags' `__attribute__` override. The parsers of untrusted input (SNMP, TFTP, mDNS, the gateway's
+Ethernet input, KISS / HTTP / rigctld, LRRP, AX.25 / APRS, DMR data) have seeded mutation fuzz loops
+(`tests/host/fuzz.h`) that feed exact-size heap buffers, so a read past the end is an ASan report;
+`RFOUNDRY_FUZZ_ITERS=<n>` replaces the small default counts and `RFOUNDRY_FUZZ_SEED=<n>` varies the seed, for example
+`RFOUNDRY_FUZZ_ITERS=1000000 make -C tests/host SANITIZE=1` for a long run by hand.

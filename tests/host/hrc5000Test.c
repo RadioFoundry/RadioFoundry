@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The HR_C5000 driver (drivers/modem/hrc5000; docs/spec/hardware-md380.md 4) on its own with the shared code, no
+// The HR_C5000 driver (drivers/modem/hrc5000) on its own with the shared code, no
 // HR_C6000 driver linked: the set-ups' register traffic, and the slot engine on this chip (configuration page 0, the
 // registers that differ, the chip-made CRCs), against a fake configuration port that logs every transfer by the page
 // on the wire
@@ -514,7 +514,7 @@ static void test_tx_listen_rc_field(void)
 	CHECK(st.rc_tap_changed == 4);	// the empty area first, then each field
 }
 
-// Received voice on the HR_C5000 (hardware-md380.md 4.8): no report per burst. A call's header starts the decoder
+// Received voice on the HR_C5000: no report per burst. A call's header starts the decoder
 // (0x22 DecodeStart); the voice port is read at every tick, the slot whose reads carry valid AMBE+2 frames is locked,
 // its bursts come out A to F, and once the port stops changing the decoder is stopped (DecodeStop)
 static void burst(uint8_t seed, bool good)
@@ -702,7 +702,7 @@ static void tr_report(uint8_t flags, uint8_t r51)
 
 // A silent talker's bursts are the same bytes every time (one AMBE+2 silence frame sent throughout), so comparing the
 // port with this slot's last read took every burst after the first for a lost one, and the call ended after six. The
-// port changes at the other slot's ticks as well (hardware-md380.md 4.9): an unchanged read is lost only if the port
+// port changes at the other slot's ticks as well: an unchanged read is lost only if the port
 // has not moved since the last tick. Once the call stops, the port keeps its last burst and the call must still end
 static void test_tick_rx_same_bursts(void)
 {
@@ -1024,7 +1024,7 @@ static void test_repeater_slot(void)
 	drain();
 }
 
-// Traffic on both slots of a duplex hotspot (issue 279), the channel on TS1. The chip as measured (4.9, and the tests
+// Traffic on both slots of a duplex hotspot (issue 279), the channel on TS1. The chip as measured (and the tests
 // above): receive stays open in both slots, the TC bit alternates, a slot's header is reported in the next slot, and
 // its voice is in the port one tick after that, so the port holds a burst of one call or the other at every tick.
 // TS1 starts at the even ticks (rep_ts_starting): its headers are reported after the odd ticks and its voice is read

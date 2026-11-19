@@ -74,7 +74,7 @@ is no stored "off" for a simplex frequency: a zeroed record is automatic, which 
 
 ### 2.3 Writing from the radio
 
-A P25 channel the radio saves (a VFO in P25 stored as a channel, a mode changed for now made permanent) is written as
+A P25 channel the radio saves (a VFO in P25 stored as a channel, a temporary mode change made permanent) is written as
 [channel-modes.md](channel-modes.md) 2.4 gives: the base record as the safe stand-in, then a new tag of kind 2 with no
 system, transmit allowed from the channel and a full parameter block: the RX and TX NAC, and the squelch selective
 where the settings name a talk group to hear, else normal. Its contact is the stored contact of the talk target, if

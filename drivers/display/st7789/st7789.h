@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// ST7789-class 240x320 color TFT controller on an 8-bit 8080 bus (docs/spec/hardware-dm32.md 7). Generic: the board
+// ST7789-class 240x320 color TFT controller on an 8-bit 8080 bus. Generic: the board
 // supplies the bus and the panel's orientation. The frame buffer is RGB565 or 16 colors (4 bits a pixel, with a
 // palette), and may be smaller than the panel by an integer factor: every pixel is then sent as a scale x scale block.
 #ifndef ST7789_H

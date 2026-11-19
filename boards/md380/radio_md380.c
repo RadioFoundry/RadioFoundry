@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // MD-380 radio: SKY72310 synthesizer + GT3136 receiver + HR_C5000 (the HR_C6000 driver in its C5000 variant) + RF path
-// GPIOs + the two DACs + calibration (docs/spec/hardware-md380.md 4-8, 11). Nothing here has run on a radio.
+// GPIOs + the two DACs + calibration. Nothing here has run on a radio.
 //
 // Unlike the other STM32 radios there is no RF transceiver chip: the MCU tunes the synthesizer itself, selects the receive or
 // transmit VCO, switches the receiver and transmitter supplies, and drives the PA power loop from DAC1 (which tunes
 // the receiver front end while receiving). The HR_C5000 does the FM and DMR modulation (two-point, MOD1 to the VCO,
 // MOD2 to the reference) and takes the receiver's IF for DMR.
 //
-// The frequency plan (hardware-md380.md 5.3, unconfirmed): a 16.8 MHz TCXO; receive on a 49.95 MHz first IF with the
+// The frequency plan (unconfirmed): a 16.8 MHz TCXO; receive on a 49.95 MHz first IF with the
 // UHF LO below the signal and the VHF VCO at twice the LO above it; transmit with the VCO on the carrier (UHF) or at
 // twice it (VHF). MD380_IF_HZ, MD380_RX_LO_ABOVE and MD380_VCO_MULT hold the plan for each band.
 //
-// DMR (modem-hrc6000.md 4.3 with the HR_C5000 notes of hardware-md380.md 4): the synthesizer is moved to the TX
+// DMR (modem-hrc6000.md 4.3): the synthesizer is moved to the TX
 // frequency at the first burst of a transmission (from the RF TX interrupt, without waiting for lock: the interrupt
 // comes some milliseconds before the burst). Between bursts only the PA supply and loop are switched; the end of the
 // transmission puts the receiver back on the RX frequency at once (rf_dmr_tx_done), simplex too. Each burst's PA is dropped
@@ -33,7 +33,7 @@
 #include "task.h"
 #include "semphr.h"
 
-// Frequency plan (hardware-md380.md 5.3, all ?)
+// Frequency plan (all ?)
 #ifndef MD380_TCXO_HZ
 #define MD380_TCXO_HZ		16800000u
 #endif
@@ -49,13 +49,13 @@
 #endif
 
 // TX carrier correction (Hz, added to the TX frequency). One radio needed -1900 for a hotspot to decode it
-// (hardware-md380.md 5.2): no default until a second radio shows whether it is the unit or the reference tune
+//: no default until a second radio shows whether it is the unit or the reference tune
 #ifndef MD380_TX_OFFSET_HZ
 #define MD380_TX_OFFSET_HZ	0
 #endif
 
 // Reference trim (hal_radio_t.ref_trim): DAC2 moves the reference about 36.1 ppb a count, higher = higher (16.2 Hz a
-// count at 448.7 MHz, hardware-md380.md 5.2), added to the calibration's tune
+// count at 448.7 MHz), added to the calibration's tune
 #define REF_PPB_X10_PER_COUNT	361
 
 #define DAC_MAX			4095u
@@ -94,11 +94,11 @@ static const pa_keyup_cfg_t keyup_cfg = { .dead_pm = 563, .knee_us = 91, .slope_
 #define LISTEN_LEAD_US		(LISTEN_LEAD_STEPS * 100u)
 #define LISTEN_LOCK_MAX_US	2000u
 
-// Voice SPI2 (hardware-md380.md 4.4): PB13 SCK, PB14 MISO, PB15 MOSI (AF5), chip select PIN_C5000_VCS
+// Voice SPI2: PB13 SCK, PB14 MISO, PB15 MOSI (AF5), chip select PIN_C5000_VCS
 #define VOICE_SPI_PINS		(GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15)
 #define VOICE_SPI_TIMEOUT_MS	2
 
-// RSSI and noise from the ADC (hardware-md380.md 5.5): placeholders until a bench measurement gives the curves
+// RSSI and noise from the ADC: placeholders until a bench measurement gives the curves
 #define RSSI_FLOOR_DBM		(-130)
 #define RSSI_SPAN_DB		90	// full ADC scale above the floor (?)
 #define CARRIER_DBM		(-118)
@@ -199,7 +199,7 @@ static const hrc_bus_t modem_bus = {
 	.voice = voice_xfer,
 };
 
-// --- DACs and RF path pins (hardware-md380.md 5.4, 5.6) ---
+// --- DACs and RF path pins ---
 
 static void dac_setup(void)
 {
@@ -621,7 +621,7 @@ static void dmr_enter(void)
 	stm32_hrc_dmr_enter();
 }
 
-// --- Speaker (hardware-md380.md 6) ---
+// --- Speaker ---
 //
 // FM receive audio reaches the amplifier through FM_MUTE and FM_SW from the FM receiver, DMR voice PCM through the
 // HR_C5000's codec DAC (set by hrc5000_dmr_path) and DMR_SW (?). The volume is the analog knob after the amplifier
@@ -653,7 +653,7 @@ static void speaker_apply(void)
 }
 
 #ifdef MD380_I2S_PROBE
-// Bench knob (docs/testing/md380-bringup.md): edges on the I2S clock (PC10) and word select (PA15), read from the input
+// Bench knob: edges on the I2S clock (PC10) and word select (PA15), read from the input
 // registers while the pins stay on I2S, 20000 samples once a second, logged with the audio block count and the mode
 #include <string.h>
 #include "debuglink/dlog.h"
@@ -746,7 +746,7 @@ static void audio(bool on)
 }
 
 // The HR_C5000's I2S clocks run for the length of a PCM stream (audio_md380.c, the stream's clock hook). Its set-ups leave them off, and the
-// STM32 is only the slave (hardware-md380.md 6.2)
+// STM32 is only the slave
 void md380_i2s_clock(bool on)
 {
 	count(hrc5000_i2s_clock(&r.modem, on));
@@ -780,13 +780,13 @@ static void init(void)
 #endif
 	}
 	stm32_pin_in(PIN_PORT(PIN_C5000_MISO), PIN_MASK(PIN_C5000_MISO), GPIO_PULLUP);
-	stm32_pin_in(PIN_PORT(PIN_PLL_LD), PIN_MASK(PIN_PLL_LD), GPIO_PULLUP);	// open collector (hardware-md380.md 5.2)
+	stm32_pin_in(PIN_PORT(PIN_PLL_LD), PIN_MASK(PIN_PLL_LD), GPIO_PULLUP);	// open collector
 	PIN_WRITE(PIN_C5000_CS, true);
 	PIN_WRITE(PIN_PLL_CS, true);
 	PIN_WRITE(PIN_PLL_CLK, true);
 	PIN_WRITE(PIN_C5000_CLK, false);
 #ifndef MD380_KEEP_SWD
-	// The SWD pins become the IF bandwidth switch and the microphone supply (hardware-md380.md 2.6)
+	// The SWD pins become the IF bandwidth switch and the microphone supply
 	stm32_pin_out(PIN_PORT(PIN_WIDE), PIN_MASK(PIN_WIDE), false, false);
 	stm32_pin_out(PIN_PORT(PIN_MIC_POWER), PIN_MASK(PIN_MIC_POWER), true, false);
 #endif
@@ -908,7 +908,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 // level's. Any task sets it; tx_off clears it
 static volatile uint16_t drive_override;
 
-// Board power level -> DAC1 value (hardware-md380.md 5.6). Five levels: 2 and 4 are the calibration's 1 W and 5 W
+// Board power level -> DAC1 value. Five levels: 2 and 4 are the calibration's 1 W and 5 W
 // rows, 0 and 1 fractions of the 1 W row's drive, 3 between the rows. Draft values, to be set with a wattmeter
 static uint32_t power_to_dac(const md380_cal_point_t *cal, uint8_t level)
 {
@@ -982,14 +982,14 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	r.tx_on = true;
 #if CONFIG_SUBTONE
 	if (tx_tone != NULL) {
-		md380_subtone_tx_start(tx_tone);	// PWM on PC7 into the modulator (hardware-md380.md 6.4)
+		md380_subtone_tx_start(tx_tone);	// PWM on PC7 into the modulator
 	}
 #endif
 	return true;
 }
 
 #if CONFIG_SUBTONE
-// The DCS turn-off tail from the PWM generator (hardware-md380.md 6.4); the core holds the carrier for it
+// The DCS turn-off tail from the PWM generator; the core holds the carrier for it
 static bool tx_tail(bool on)
 {
 	return r.tx_on && r.mode == RADIO_MODE_FM && md380_subtone_tx_tail(on);

@@ -107,7 +107,7 @@ void hrc7000_power_on_init(hrc7000_t *d, uint8_t tx_center, uint8_t mic_gain_db)
 	hrc7000_wr(d, C7_FM_BANDWIDTH, 0x5F);
 	hrc7000_wr(d, C7_FM_DEV_COEF, 0x33500);
 
-	// Internal audio codec: reset pulse (released by the 0x190 write below), then its set-up (hardware-dm32.md 9.1)
+	// Internal audio codec: reset pulse (released by the 0x190 write below), then its set-up
 	hrc7000_wr(d, C7_SYS_SOFT_RSTN, hrc7000_rd(d, C7_SYS_SOFT_RSTN) & ~0x10u);
 	spin(CODEC_RESET_SPINS);
 	hrc7000_codec_wr(d, C7_CODEC_AICR_DAC, 0xC0);

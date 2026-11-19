@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// USB port glue for TinyUSB on the STM32F4 OTG_FS core (Synopsys DWC2), docs/spec/hardware-dm1701.md section 16:
+// USB port glue for TinyUSB on the STM32F4 OTG_FS core (Synopsys DWC2):
 // device only, embedded PHY on PA11 (DM) / PA12 (DP), VBUS sensing off, OTG_FS interrupt at priority 6.
 // The 48 MHz USB clock is PLL Q (e.g. 144 / 3), set up with the system clock.
 #include "config.h"
@@ -11,7 +11,7 @@
 #include "usb/usb_port.h"
 #include "tusb.h"
 
-#define OTG_FS_PRIORITY		6	// docs/spec/hardware-dm1701.md 3.1 (at or below the RTOS max syscall level 4)
+#define OTG_FS_PRIORITY		6	// at or below the RTOS max syscall level 4
 
 void usb_port_init(void)
 {

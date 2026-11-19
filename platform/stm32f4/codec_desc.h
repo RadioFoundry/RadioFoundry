@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The STM32 codec descriptor: where the merge put the radio's stock codec in internal flash (docs/spec/codec-placement.md,
-// "STM32 radios"). 128 bytes at the end of sector 11, written with the codec by the merge tools
+// The STM32 codec descriptor: where the merge put the radio's stock codec in internal flash.
+// 128 bytes at the end of sector 11, written with the codec by the merge tools
 // (tools/rfoundry/rfoundry/stockfw.py, the web flasher's stockfw.js); keep the three in step. The codec runs in place
 // from flash, so the firmware only needs to know where its code is and that the bytes there are what the merge wrote.
 // No hardware here: the host tests run it (tests/host/codecDescTest.c).

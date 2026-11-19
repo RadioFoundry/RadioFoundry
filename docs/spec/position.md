@@ -48,7 +48,7 @@ Position source (setting: Auto, GPS, Computer, Fixed):
 - The same setting goes to the board (`hal_gps_t.enable`, at start-up and on each change): the module is powered and
   listened to at start-up whatever it says, so the radio knows whether it has one, and once heard its supply and
   receive path follow the setting within one poll (`drivers/gps/gps_rx/gps_power`). A board whose module shares a
-  supply it can't cut stops only the receive path (its hardware page says so).
+  supply it can't cut stops only the receive path.
 - In a build without the host half, Computer is not offered and a stored Computer counts as Auto.
 
 ## 3. What a reader gets

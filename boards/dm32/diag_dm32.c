@@ -148,7 +148,7 @@ bool dm32_diag_line(uint8_t i, char *buf, uint8_t len)
 #endif
 		break;
 	}
-	case 9:	// key scans with the PTT pin low taken for host serial data (hardware-dm32.md 6.2)
+	case 9:	// key scans with the PTT pin low taken for host serial data
 		put(&o, "ptt ign ");
 		put_u(&o, dm32_input_ptt_ignored());
 		break;

@@ -1,29 +1,70 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# The Codeplug Editor
+# Codeplug editor
 
-The browser tool for editing a codeplug, hosted on the site ([website.md](website.md)). For users it is the recommended
-way to edit a codeplug ([Programming the radio](../user/04-programming.md)); this page is for people who change it.
+This page covers the ways to program a radio, how the radio keeps its codeplug and settings, and the browser Codeplug
+Editor, for people who change them. For the user's view, see [Programming the radio](../user/04-programming.md).
 
-`site/templates/codeplug.html` and `site/static/js/editor/` make the page (`codeplug/index.html`).
-`site/static/js/codeplug/` holds what doesn't depend on the page, so the Tools page, the flasher and the tests can
-use it too. Both are plain ES modules that also run in Node. The user's view is in
-[Programming the radio](../user/04-programming.md#the-codeplug-editor).
+## Ways to program a radio
+
+A radio is programmed in three ways. All three use the codeplug layout qdmr writes
+([open-firmware-cps.md](../spec/open-firmware-cps.md)).
+
+| Way | How it reaches the radio |
+|---|---|
+| The Codeplug Editor in the browser (recommended) | The debug link's fast codeplug protocol ([cps-fast.md](../spec/cps-fast.md)), or the CPS shim |
+| qdmr | The CPS shim, which speaks the open-firmware CPS protocol qdmr already supports ([cps-protocol.md](../spec/cps-protocol.md)) |
+| `tools/cps_client.py`, for scripts | The CPS shim. It transfers the same regions qdmr does, so it stands in for qdmr in tests |
+
+The CPS shim is built from these parts:
+
+| Part | Where |
+|---|---|
+| Protocol engine (no RTOS, no USB) | `core/cps/cps_openfw.c` |
+| Hook to the host link and reboot | `core/cps/cps_port.c` |
+| Dispatch on the host port | `core/hostlink` (first byte: `0xE0` MMDVM, `A5 5A` debug link, other bytes CPS) |
+| Switch | `CONFIG_CPS_OPENFW` |
+| Host tests | `tests/host/cpsTest.c`, and `tests/host/cpsSim`, which serves the engine on stdin and stdout |
+| Test client | `tools/cps_client.py` (`info`, `read`, `write`, `verify`) |
+
+To read a radio's codeplug, or to run the client against the simulator, use these commands:
+
+```
+python3 tools/cps_client.py read backup.bin
+python3 tools/cps_client.py --exec "tests/host/cpsSim --populate" info
+```
+
+## The codeplug and settings on the radio
+
+The radio reads the open-firmware layout in place (`core/codeplug`): zones, channels, contacts, talkgroup lists, and
+the DMR ID database. Edits made on the radio (saving a temporary change, renaming, adding a contact) go through the
+editing model in [codeplug-native.md](../spec/codeplug-native.md) 2, and the housekeeping task writes them as storage
+jobs. Channels of other digital modes, their systems, and their keys are keyed records beside the layout (see
+[channel-modes.md](../spec/channel-modes.md) and [Adding a mode](adding-a-mode.md)).
+
+Radio settings, which aren't part of the codeplug, live in a ring of records with a sector journal for power-safe
+writes ([settings-store.md](../spec/settings-store.md)). A new setting is appended to the record, gets a default, and
+goes into the user manual's [settings reference](../user/17-settings.md).
+
+## The editor's modules
+
+`site/templates/codeplug.html` and `site/static/js/editor/` make the page (`codeplug/index.html`) on the
+[web site](website.md). `site/static/js/codeplug/` holds what doesn't depend on the page, so the Tools page, the
+flasher, and the tests can use it too. Both are plain ES modules that also run in Node.
 
 | Module | Does |
 |---|---|
 | `codeplug/image.js` | The codeplug as one flat image, file offset = the STM32 wire address ([open-firmware-cps.md](../spec/open-firmware-cps.md) 7.1), as `tools/cps_client.py` and backups store it. Keeps every byte the editor doesn't decode |
 | `codeplug/fields.js` | Field encodings: BCD frequencies, IDs and tones, 0xFF-padded names, 24-bit locations |
-| `codeplug/records.js` | Each record decoded into a plain object and encoded back. An encoder writes only the fields it owns, so vendor bytes survive an edit |
+| `codeplug/records.js` | Each record decoded into a plain object and encoded back. An encoder writes only the fields it owns, so bytes it doesn't know survive an edit |
 | `codeplug/model.js` | The editing model. References are the records themselves, so a delete or renumber can't leave one pointing at the wrong record. `encode()` rewrites only changed records: an unedited codeplug round-trips byte for byte. `validate()` returns the Problems list |
-| `codeplug/iddb.js` | The DMR ID database, format N (7.5): area 1, then area 2 up to the radio's end |
 | `codeplug/csv.js` | Tables as CSV (RFC 4180): fixed English headers, references by name, import matched by number then name |
 | `codeplug/chirp.js` | CHIRP's CSV channel list to the model and back: FM channels only, replacing the channels and zones |
-| `codeplug/chirp_img.js` | A CHIRP `.img` of one radio model: the memory layout learned from an image and the CSV CHIRP wrote from it, never from CHIRP's source. Gives rows to the CSV reader. A model is added by learning its layout the same way; the footer names the model, and any other is refused ([layout](../spec/hardware-uv5r-chirp-image.md)) |
+| `codeplug/chirp_img.js` | A CHIRP `.img` of one radio model: the memory layout learned from an image and the CSV CHIRP wrote from it, never from CHIRP's source. Gives rows to the CSV reader. A model is added by learning its layout the same way; the footer names the model, and any other is refused (layout) |
 | `codeplug/yaml.js` | The YAML subset qdmr writes: block and flow maps and lists, quoted values, `!default` tags, comments. Anchors are refused |
 | `codeplug/qdmr.js` | qdmr YAML to the model and back ([qdmr-yaml.md](../spec/qdmr-yaml.md)), with notes on what each side can't hold |
-| `codeplug/detect.js`, `codeplug/stock_tyt.js` | Telling the open-firmware layout from a vendor codeplug, and converting that to the editing model ([codeplug-stock-tyt.md](../spec/codeplug-stock-tyt.md)) |
-| `codeplug/stock_baofeng.js` | The same for a paged vendor codeplug in an HR_C7000 radio's data flash (spec in the radio's own `<id>-stock-codeplug.md`) |
+| `codeplug/detect.js`, `codeplug/stock_tyt.js` | Telling the open-firmware layout from a manufacturer codeplug, and converting that to the editing model |
+| `codeplug/stock_baofeng.js` | The same for a paged manufacturer codeplug in an `hrc7000` radio's data flash |
 | `codeplug/channelmodes.js` | The channel-mode layer ([channel-modes.md](../spec/channel-modes.md)): channel tags, systems and their entries and secrets, radio-wide mode settings, their validation. Knows no mode: records of a kind, type, class or setting it doesn't know are kept byte for byte |
 | `codeplug/modes.js` | The registry of kinds and system types, the same rows as `core/codeplug/codeplug_modes.h` (`tools/check_modes.py`), each with its mode module and the firmware feature that runs it |
 | `codeplug/mode_t3.js`, `mode_p25.js` | Mode modules: a kind's parameter block, a type's block, entry classes and secret, as fields the forms show ([adding-a-mode.md](adding-a-mode.md)) |
@@ -31,7 +72,7 @@ use it too. Both are plain ES modules that also run in Node. The user's view is 
 | `codeplug/transport.js` | How the page reaches a radio (below) |
 | `codeplug/fakecps.js` | A simulated RadioFoundry radio: VERSION, CPS reads, sector writes and `C 5`, writes refused outside the codeplug as the radio refuses them |
 | `codeplug/fastlink.js` | The fast codeplug protocol ([cps-fast.md](../spec/cps-fast.md)): block CRCs, LZ4 reads and pipelined writes |
-| `codeplug/iddb.js` | The DMR ID database in format N and format C ([iddb-compact.md](../spec/iddb-compact.md)): write, read, convert, size |
+| `codeplug/iddb.js` | The DMR ID database in format N ([open-firmware-cps.md](../spec/open-firmware-cps.md) 7.5: area 1, then area 2 up to the radio's end) and format C ([iddb-compact.md](../spec/iddb-compact.md)): write, read, convert, size |
 | `codeplug/sources/` | Contacts sources: `radioid.js` (RadioID.net's `user.csv` and API), `regions.js` (generated region names), `output.js` (users to the ID database or contacts) |
 | `editor/app.js` | The page: tabs, the file menu, radio read and write, the draft |
 | `editor/grid.js`, `views.js` | The table (in-place edit, sort, filter, selection, keyboard) and each record kind's columns, form and membership editor |
@@ -41,9 +82,14 @@ use it too. Both are plain ES modules that also run in Node. The user's view is 
 | `editor/extensions.js`, `parts.js` | Optional parts register their Save items, table actions, text file openers and DMR ID Database views. `parts.js` lists them, so a part is added without touching `app.js` |
 | `editor/csvpart.js`, `qdmrpart.js`, `chirppart.js`, `contactspart.js` | The CSV, qdmr YAML, CHIRP CSV and RadioID parts |
 
-Add `#sim` to the page's address to read and write a simulated radio (`fakecps.js`), `#sim-compact` for one that
-reads format C ID databases, `#sim-modes` for one whose features report every channel mode in the registry. Append `&release=vYY.M` for a radio that runs that release, or `&git_time=N` for a build
-of a commit from that time, which brings up the update notice when `releases.json` lists a newer one.
+To read and write a simulated radio (`fakecps.js`), add one of these to the page's address:
+
+- `#sim`: a RadioFoundry radio.
+- `#sim-compact`: a radio that reads format C ID databases.
+- `#sim-modes`: a radio whose features report every channel mode in the registry.
+
+Append `&release=vYY.M` for a radio that runs that release, or `&git_time=N` for a build of a commit from that time.
+Either brings up the update notice when `releases.json` lists a newer release.
 
 After a read, the radio is offered the newest release for its board from `releases.json` when that is newer
 (`updateFor` in `flasher/version.js`). A radio that runs a release (`release=` in VERSION) is compared by release name,
@@ -56,22 +102,23 @@ per tab for each radio, running release and new release, after the compact datab
 ## Transports
 
 A transport has `identify(radios)`, `read({iddb, progress, signal})`, `write(image, current, {progress, signal})` and
-`close()`. Addresses are image addresses; the transport adds the radio's base on the wire. `cps-serial` is the only one
-today: the open-firmware CPS ([cps-protocol.md](../spec/cps-protocol.md) 2) over the radio's USB serial port or the
-programming cable (Web Serial). It identifies the radio by the board name the debug link reports, matched against
+`close()`. Addresses are image addresses; the transport adds the radio's base on the wire. The transport is
+`cps-serial`: the open-firmware CPS ([cps-protocol.md](../spec/cps-protocol.md) 2) over the radio's USB serial port or
+the programming cable (Web Serial). It identifies the radio by the board name the debug link reports, matched against
 `codeplug.names` in `data/radios.json`. The registry (`tools/boards.py` `Board.codeplug()`) fills that entry from the
-board's flash map: the base (the CPS address offset, nonzero on some radios), the end of the room for the codeplug and ID database, and whether
-the radio has a TFTP staging area. The radio can say it has less room: the fast protocol's image end, or a memory
-chip smaller than the board's usual one (the radio info's flash part id, `flashBytes`); `tr.end` is the smallest of
-the three, and the ID database is sized for it. A radio whose STORAGE INFO answers unavailable has no settings region
-(a chip too small for the board's flash map): it stores no codeplug and refuses every codeplug write, so `identify`
-stops with `no_storage`, which says so, before anything is read. A read takes the ID database's header first
+board's flash map: the base (the CPS address offset, nonzero on some radios), the end of the room for the codeplug and
+ID database, and whether the radio has a TFTP staging area. The radio can say it has less room: the fast protocol's
+image end, or a memory chip smaller than the board's usual one (the radio info's flash part id, `flashBytes`); `tr.end`
+is the smallest of the three, and the ID database is sized for it. A radio whose STORAGE INFO answers unavailable has no
+settings region (a chip too small for the board's flash map): it stores no codeplug and refuses every codeplug write, so
+`identify` stops with `no_storage`, which says so, before anything is read. A read takes the ID database's header first
 (`readIddbHeader`), then the codeplug's regions and the database in one pass, so one progress bar covers it. The
-database's size and the last read's speed (a guess on a radio's first read) give its time: at `IDDB_ASK` (20 s) or
-more the editor asks before reading. A skipped database stays out of the model (its header erased there, kept in `S.conn.image`), so no write
-touches it; the DMR ID Database tab reads it later into the model. A write compares with the
-radio and sends only the changed bytes inside the codeplug's regions, never whole sectors, since a sector can hold the
-radio's own settings (0x6000). It verifies, then ends with `C 5` so the radio reloads the codeplug without a restart.
+database's size and the last read's speed (a guess on a radio's first read) give its time: at `IDDB_ASK` (20 s) or more
+the editor asks before reading. A skipped database stays out of the model (its header erased there, kept in
+`S.conn.image`), so no write touches it; the DMR ID Database tab reads it later into the model. A write compares with
+the radio and sends only the changed bytes inside the codeplug's regions, never whole sectors, since a sector can hold
+the radio's own settings (0x6000). It verifies, then ends with `C 5` so the radio reloads the codeplug without a
+restart.
 
 The radio's bytes a write compares with (`S.conn.image`) belong to one radio. A programming cable stays open while the
 radio on it is swapped, so before every read and write the page asks `who(radios)`: the board again and the chip UID
@@ -79,8 +126,8 @@ radio on it is swapped, so before every read and write the page asks `who(radios
 copies the radio's name, DMR ID and boot text (`IDENTITY`) into the image it writes, for one codeplug written to
 several radios.
 
-A browser can't reach the radio's UDP port or its http server (see USB network mode above), so for a radio in USB
-network mode the editor saves `codeplug.bin` for `tftp put` instead.
+A browser can't reach the radio's UDP port or its HTTP server, so for a radio in USB network mode, the editor saves
+`codeplug.bin` for `tftp put` instead.
 
 A radio that lists `CPS_FAST` in its features is read and written with the fast protocol (`fastlink.js`) on the
 same port: SUMS compares 4 KB blocks by CRC, so a read with a cached image moves only blocks that differ, and a
@@ -95,7 +142,7 @@ C database written to a radio that doesn't is converted to N, with a warning whe
 ## RadioID.net
 
 RadioID.net's API sends no CORS headers. `radioid.js` tries a request directly, then through a public CORS proxy
-(`PROXIES`), until RadioID allows the site's origin. The user's own API key (optional) is sent only on direct requests
+(`PROXIES`). The user's own API key (optional) is sent only on direct requests
 (`X-API-Token`), never through a proxy, and is kept in the browser's `localStorage` with the user's choices. Pages
 come 200 users at a time, one request after another. Larger selections use a `user.csv` the user downloads. No user
 data is in the repository or on the site: `regions.js` holds only country and state names

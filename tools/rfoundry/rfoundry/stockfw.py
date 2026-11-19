@@ -2,8 +2,7 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 """TYT/Baofeng stock firmware files as a library: container, decryption, codec extraction and merge, key derivation.
 
-Recipes from docs/spec/codec-dm1701.md ("Container and encryption", "Extraction recipe (V02.06 CSV)") and
-docs/spec/codec-md380.md ("Extraction recipe"). Used by rfoundry (merge from a stock file) and by
+Used by rfoundry (merge from a stock file) and by
 tools/codec_extract.py (the command line merge tool).
 
 The codec is DVSI's and the radio maker's, not ours: nothing here stores it; it is read from the user's file on the
@@ -24,20 +23,20 @@ KEY_LEN = 1024
 HEADER_LEN = 0x100
 MAGIC = b"OutSecurityBin"
 CODEC_SIG = 0x4FF0E92D
-# The descriptor the merge writes at the end of sector 11 (platform/stm32f4/codec_desc.h; docs/spec/codec-placement.md)
+# The descriptor the merge writes at the end of sector 11 (platform/stm32f4/codec_desc.h)
 DESC_ADDR = 0x080FFF80
 DESC_LEN = 0x80
 DESC_MAGIC = 0x43534544      # "DESC"
 DESC_VERSION = 1
 DESC_WINDOWS = 5
 
-# DM-1701 bootloader key identity (docs/spec/hardware-dm1701.md 15.3); the key bytes are never stored here
+# DM-1701 bootloader key identity; the key bytes are never stored here
 DM1701_KEY_SHA256 = "d983ce95fbc19fc78b913d9afc0381e3ba4ffedb480798865292d05a2fb3deff"
-# MD-380 / MD-390 / RT3 (docs/spec/hardware-md380.md 14.2, as tools/stm32_dfu.py's md380 model)
+# MD-380 / MD-390 / RT3 (as tools/stm32_dfu.py's md380 model)
 MD380_KEY_SHA256 = "5254139c6b596d9413d106e6b7c0685ec245d69555cb28df98f061d6b879c4cd"
-# MD-UV380 / MD-UV390 / RT3S (docs/spec/hardware-mduv380.md 11, as tools/stm32_dfu.py's mduv380 model)
+# MD-UV380 / MD-UV390 / RT3S (as tools/stm32_dfu.py's mduv380 model)
 MDUV380_KEY_SHA256 = "739ce35cc8db6e72f95598effac1a01ae71dbe2a5792c1a69acaee5dbf634991"
-# TYT MD-9600 (docs/spec/codec-md9600.md, "Container and encryption"): its files are codec sources for the DM-1701 only
+# TYT MD-9600: its files are codec sources for the DM-1701 only
 MD9600_KEY_SHA256 = "c3d665b297651b52310ec098e87440b147136241359c1154d474e517b048c9ae"
 # The id the firmware reports for a placed codec, one per radio: every build the radio's firmware accepts (each by its
 # descriptor tag) reports it, so a radio keeps its codec across updates whichever build it came from. That holds going
@@ -55,13 +54,12 @@ MD9600_CODEC_S11 = "md9600-s11"		# the MD-9600 layout before the application too
 # The count word of the single-segment container form (the MD-380 D002.032 file: one segment, count 0xFFFFFFFF)
 SINGLE_SEGMENT = 0xFFFFFFFF
 
-# One profile per supported stock file, keyed by its SHA-256 (codec-dm1701.md and codec-md380.md, "Stock files" and
-# "Codec in the stock image"). Window = (flash address, length, SHA-256 of the decrypted bytes): "code" (its first word
+# One profile per supported stock file, keyed by its SHA-256. Window = (flash address, length, SHA-256 of the decrypted bytes): "code" (its first word
 # is CODEC_SIG), "tables", and "extra" for profiles whose codec has further small table windows. "codec_profile" is
 # the id the firmware reports (debug link VERSION codec=) and the release manifests carry; "board" the radio it is
 # for; "key_sha256" the identity of the key the file is encrypted with, which is that radio's bootloader key unless
 # "file_radio" names another radio the file is for (a codec source only, never the key). "placement"
-# (docs/spec/codec-placement.md): where the merge puts the code ("code"), how much of the table window it keeps
+#: where the merge puts the code ("code"), how much of the table window it keeps
 # ("tables_len": the codec's own data, from the codec map; the tables stay at their stock address) or where the
 # tables move to ("tables": the window is the codec's own data and moves as one block, codecmap.move_window) and the
 # descriptor's tag; "placed": the CRC-32 and SHA-256 of the code and tables as placed (the code's self references and
@@ -70,7 +68,7 @@ SINGLE_SEGMENT = 0xFFFFFFFF
 # A placement with "extra" moves every window as its own block (codecmap.relocate): "tables" and each "extra" address
 # say where; its "placed" SHA-256s are None, and a copy is checked by taking it back to the stock windows' SHA-256s
 # (unplace). "former": the placements earlier releases wrote, each with the codec id they reported, so a radio that
-# still holds one is recognized and its codec read back from there and moved (docs/spec/codec-placement.md, "Layouts").
+# still holds one is recognized and its codec read back from there and moved.
 PROFILES = {
     "0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d": {
         "name": "DM-1701(CSV)-V02.06.bin",
@@ -88,8 +86,7 @@ PROFILES = {
         "placed": {"code": (0x485BFC13, "d88c93ba5c3eac043558d05b182fe824a25aa373f84c48a341b369c0cc942e8c"),
                    "tables": (0xC1EEFA8B, "9ed939d23dd7b20f633d084f4713c35277d0227821070c551990caf8df409215")},
     },
-    # DM-1701 V02.01, V02.02 and V02.03 CSV: byte-identical code and table windows, 0x40 below V02.06's (codec-dm1701.md
-    # "Firmware files"), so one codec map (dm1701-v0203-csv) and one placement: the tables at their stock address cut
+    # DM-1701 V02.01, V02.02 and V02.03 CSV: byte-identical code and table windows, 0x40 below V02.06's, so one codec map (dm1701-v0203-csv) and one placement: the tables at their stock address cut
     # to the codec's data (which ends at 0x080E3A32), the code right after them, word aligned. The three files put the
     # same bytes at the same addresses, so they share one descriptor tag
     "cd9ff4bdb7ba1c464299f3e366bfe72f2e948f3505a8fe54ac19047bff4d6713": {
@@ -135,7 +132,7 @@ PROFILES = {
                    "tables": (0x811EC3C0, "a6045020e11c0d2c9cccff08074d5b259c6023dc9d3e968da13e3a91f813fe35")},
     },
     # DM-1701 V02.06 and V02.03 noCSV: a larger application (0xDC000), the codec 0x29DC (code) and 0x2DA4 (tables)
-    # above the CSV file's of the same version, its code 0x1C bytes shorter (codec-dm1701.md "Firmware files"). Each
+    # above the CSV file's of the same version, its code 0x1C bytes shorter. Each
     # has its own map and placement: the tables at their stock address cut to the codec's data, the code right after
     # them, word aligned. Tag bit 16 marks noCSV; V02.03 noCSV is V02.06 noCSV 0x40 lower, as for CSV
     "4230c8d0aabf15f3f165c29a118a5f8f9b906a2d9b7d215c1d8a7bc0e3978bd9": {
@@ -166,7 +163,7 @@ PROFILES = {
         "placed": {"code": (0x96264D90, "238692b07a37e97964e72bd9c0569aaf4555ff877ab8307fa4cd32da3375e96f"),
                    "tables": (0x217E610A, "32c75144218f0e95541bfc375d1330f248ed66cccf09a02fe2a00e4e92628f2e")},
     },
-    # TYT MD-9600 files as codec sources for the DM-1701 (codec-dm1701.md "MD-9600 files"; their codec: codec-md9600.md).
+    # TYT MD-9600 files as codec sources for the DM-1701.
     # An open-firmware install on the DM-1701 starts from the MD-9600 V4 firmware, so its radios carry this codec. It is
     # the DM-1701's codec in function (the same entries, state and calls), linked elsewhere. These files give the codec
     # only: they are encrypted with the MD-9600's key ("file_radio" names the radio they are for), never the
@@ -519,7 +516,7 @@ PROFILES = {
                        "tables": (0x2A5C9EE1, "8c704a9606ec19fbe4af275de4fbd1ded64e2ab644e0115ec34bff86cb3d21a9"),
                        "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]}}],
     },
-    # TYT MD-UV380 / MD-UV390 19.26, the four builds (codec-mduv380.md). One codec, placed as the DM-1701's: the tables
+    # TYT MD-UV380 / MD-UV390 19.26, the four builds. One codec, placed as the DM-1701's: the tables
     # at their stock address cut to the codec's data, the code right after them in sector 11, word aligned
     # (boards/mduv380/vocoder_mduv380.c). Each build keeps both at its own addresses, so each has its own tag
     "75e4d470b451cb5d191a647c0836c71801433b826cc4a7fe2c48d750036bd98e": {
@@ -1772,7 +1769,7 @@ PROFILES = {
                        "tables": (0x55648D6B, "2a388c51ec726f26514152efab7d3d5a572c5842be625f1f16f4ddfd55ecd635"),
                        "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]}}],
     },
-    # TYT MD-9600 original firmware files for the MD-9600 itself (docs/spec/codec-md9600.md): 06.09 CSV (V1-V3 boards) and
+    # TYT MD-9600 original firmware files for the MD-9600 itself: 06.09 CSV (V1-V3 boards) and
     # 16.45 CSV (V4) first, then every other build with a map. The same files are codec sources for the DM-1701 above
     # (one file, two placements), so these are keyed "<sha>@md9600" (profile_key) and found by
     # find_profile(board="md9600"). The codec is board independent, so any file serves every board revision, and all
@@ -2380,8 +2377,7 @@ PROFILES = {
     },
 }
 
-# Stock files that are not codec donors but are known DM-1701 files: the key can be derived from them (any of them;
-# codec-dm1701.md "Stock files"), and they tell the user which version they hold
+# Stock files that are not codec donors but are known DM-1701 files: the key can be derived from them (any of them), and they tell the user which version they hold
 KNOWN_FILES = {
     "0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d": "DM-1701 V02.06 CSV",
     "4230c8d0aabf15f3f165c29a118a5f8f9b906a2d9b7d215c1d8a7bc0e3978bd9": "DM-1701 V02.06 noCSV",
@@ -2481,7 +2477,7 @@ KNOWN_FILES = {
 }
 
 # Files known to hold no codec at all, by SHA-256: named so the user is told why, never taken as a codec source or a
-# stock file (no key, no restore). Not listed as supported anywhere. codec-dm1701.md "Files without the codec"
+# stock file (no key, no restore). Not listed as supported anywhere.
 NO_CODEC_FILES = {
     "a09ab4d364d199853204ebdf068ba0886d7e7bb99689f08437aae52104474a7e": {
         "board": "dm1701", "name": "a DM-1701 open-firmware build",
@@ -2503,7 +2499,7 @@ def parse_container(data):
         raise StockError("not a TYT/Baofeng OutSecurityBin firmware file (no \"OutSecurityBin\" header)")
     count = struct.unpack_from("<I", data, 0x7C)[0]
     if count == SINGLE_SEGMENT:
-        count = 1	# the TYT MD-380 files (docs/spec/hardware-md380.md 14.1): one segment in the first table entry
+        count = 1	# the TYT MD-380 files: one segment in the first table entry
     if not 1 <= count <= 15:
         raise StockError("implausible segment count %d" % count)
     segs = [struct.unpack_from("<II", data, 0x80 + 8 * i) for i in range(count)]
@@ -3030,7 +3026,7 @@ def _refine(pairs, cands, key, seed_columns, strict, rounds=8):
 def derive_key(stock, want_sha256=DM1701_KEY_SHA256, max_alternatives=2, candidates=24):
     """Recover the 1024-byte bootloader key from a stock file, checked against its published SHA-256.
 
-    The payload is plain XOR key[i mod 1024] (codec-dm1701.md "Container and encryption"). In a DM-1701 image the
+    The payload is plain XOR key[i mod 1024]. In a DM-1701 image the
     most common plain byte in every key column is 0x00, so the most common cipher byte of column j is key[j] for
     nearly every j, and the few columns where that guess is wrong are found by trying the next most common bytes in the
     least confident columns until the SHA-256 matches. The MD-380 image is far less zero-dominated (a third of the

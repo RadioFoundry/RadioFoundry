@@ -150,7 +150,7 @@
  "feature.GPS.title": "GPS 接收机：模块驱动及其 NMEA 输入（Settings > Location > GPS）",
  "feature.GPS.help": "GPS 接收机：板子的模块驱动及其 NMEA 解析（drivers/gps、platform/*/gps*、CAP_GPS）。关闭时电台没有 GPS：DMR_GPS、LRRP 和 APRS 使用固定位置并回答“无定位”。没有 GPS 的电台关闭",
  "feature.AUDIO_PROBE.title": "音频路径探测（调试链路 0x10）",
- "feature.AUDIO_PROBE.help": "音频路径探测：调试链路命令 0x10，用于读写音频芯片寄存器并观察 PCM 流电平，供台架上的 USB 音频可行性测试（docs/spec/hardware-dm1701.md 21.3；需要 DEBUGLINK 和 DMR，借用其 PCM 流）。诊断用途，绝不进入发行版",
+ "feature.AUDIO_PROBE.help": "音频路径探测：调试链路命令 0x10，用于读写音频芯片寄存器并观察 PCM 流电平，供台架上的 USB 音频可行性测试（需要 DEBUGLINK 和 DMR，借用其 PCM 流）。诊断用途，绝不进入发行版",
  "feature.STUB_ENTRY.title": "加载器交接（stub 入口，命令 0x1A）",
  "feature.STUB_ENTRY.help": "运行时 RAM 监视入口：主机口上的命令 0x1A 将主机的闪存访问 stub 载入空闲 RAM 并跳转过去，无需断电重启，因此更新时不必在开机时按组合键（刷机页、stub/stubtool.py、rfoundry；core/stubentry，docs/spec/stub-entry.md）。独立功能：关闭调试链路时，它由自己的小型监听器应答（PING、VERSION、STUB）。需要 HOSTLINK（拥有该端口的任务）和支持 hal_system_t.enter_stub 的平台：HR_C7000，以及带 8 KB 暂存缓冲的 STM32F4（docs/spec/stub-stm32f4.md）。主机链路存在处均开启；板子只有给出理由时才在 config.mk 中关闭",
  "feature.NAND_STORAGE.title": "SPI NAND 上的设置与电台频率存储",

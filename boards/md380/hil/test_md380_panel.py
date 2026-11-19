@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-"""MD-380 panel detection (docs/spec/hardware-md380.md 7), radio only, never transmits. At start-up the display driver
+"""MD-380 panel detection radio only, never transmits. At start-up the display driver
 reads the controller's ID (0x04, and 0xDA-0xDC) after a hardware reset and the factory byte (SPI flash security
 register 3, 0x1D), and picks the st7735 driver's type from them (boards/md380/panel_md380.c). The link section shows
 what it found: display.panel_raw, panel_id, panel_id_reg, panel_controller, panel_source and panel_type. Checks: the

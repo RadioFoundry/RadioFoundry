@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Codec maps in the web flasher: a port of tools/rfoundry/rfoundry/codecmap.py (docs/spec/codec-placement.md, "Codec
+// Codec maps in the web flasher: a port of tools/rfoundry/rfoundry/codecmap.py ("Codec
 // maps"). The maps come from that package through data/flash-boards.json ("codec_maps"), already normalized (every
 // address a number). Moving a codec rewrites the words that hold addresses inside it; both ports must give the same
 // bytes (the shared vectors in tools/rfoundry/tests/codecmap_vectors.json).
@@ -271,7 +271,7 @@ export function relocations(m) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Layouts: every codec window moved as its own block (docs/spec/codec-placement.md, "Layouts")
+// Layouts: every codec window moved as its own block
 
 // The index of the window [[addr, length]] an address lies in, or -1
 const windowOf = (wins, addr) => wins.findIndex(([a, n]) => a <= addr && addr < a + n);

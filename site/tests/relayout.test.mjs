@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// A codec moving to a new layout in the web flasher (docs/spec/codec-placement.md, "Moving to a new layout"): every board
+// A codec moving to a new layout in the web flasher: every board
 // whose profiles name a "former" layout, against the simulated radio (fake.js) holding its codec where an earlier
 // release put it. The codec is found there and moved (stockfw.js fromFlash, codecsave.js), the decision merges it from
 // the copy read back, else the stock file, else refuses (decide.js), the bootloader route writes it where it goes now,

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// DM-1801 Pro pin map by GPIO pin index (0-31 bank A, 32-63 B, 64-95 C; docs/spec/hardware-dm1801pro.md 3). Pins marked
+// DM-1801 Pro pin map by GPIO pin index (0-31 bank A, 32-63 B, 64-95 C). Pins marked
 // provisional are inferred and not yet confirmed on a board
 #ifndef DM1801PRO_PINS_H
 #define DM1801PRO_PINS_H
@@ -34,7 +34,7 @@
 #define PIN_VIBRATION		0x38	// PTB24 vibration motor, high = on (checked on the radio)
 #define PIN_PTB16		0x30	// output, role unknown: the stock firmware drives it low at start-up and never again
 
-// The four direct key inputs, low = pressed (checked on the radio, hardware-dm1801pro.md 9.1)
+// The four direct key inputs, low = pressed (checked on the radio)
 #define PIN_KEY_D0		0x2B	// PTB11 PTT
 #define PIN_KEY_D1		0x2C	// PTB12 SOS (top key)
 #define PIN_KEY_D2		0x3A	// PTB26 SK1 (upper side key; with PTT at power-on: update mode)

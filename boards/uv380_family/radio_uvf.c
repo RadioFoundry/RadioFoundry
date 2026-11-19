@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // UV380 family radio: AT1846S (I2C3) + HR_C6000 (bit-banged config SPI, voice SPI2) + RF path GPIOs + APC DAC +
-// calibration. FM receive and transmit (docs/spec/hardware-dm1701.md 4-8, 12; docs/spec/modem-hrc6000.md 3, 8), and the
-// RF side of DMR (modem-hrc6000.md 3.1, 4.3; hardware-dm1701.md 5.3, 6): set_mode(DMR) puts both chips in DMR and starts
+// calibration. FM receive and transmit (docs/spec/modem-hrc6000.md 3, 8), and the
+// RF side of DMR (modem-hrc6000.md 3.1, 4.3): set_mode(DMR) puts both chips in DMR and starts
 // the slot engine (platform/stm32f4/hrc/dmr_glue.c); tx() in DMR only arms the per-burst keying (TX frequency and PA drive) and the PA
 // then follows the bursts from the modem interrupts through uvf_rf_dmr_switch(), which writes AT1846S reg 0x30
 // directly over I2C3 (never through the task-level driver and its cache, which is resynced when DMR TX ends).
@@ -58,7 +58,7 @@
 // The key-up constants (docs/spec/pa-keyup.md): every level keyed at its drive 1 ms after the interrupt
 static const pa_keyup_cfg_t keyup_cfg = PA_KEYUP_FIXED(DMR_KEY_INT_AHEAD_US - 1000u);
 
-// Voice SPI2 (hardware-dm1701.md 4.3): PB13 SCK, PB14 MISO, PB15 MOSI (AF5), chip select PIN_C6000_VCS
+// Voice SPI2: PB13 SCK, PB14 MISO, PB15 MOSI (AF5), chip select PIN_C6000_VCS
 #define VOICE_SPI_PINS		(GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15)
 
 
@@ -125,7 +125,7 @@ static void count(bool ok)
 	}
 }
 
-// --- AT1846S bus: I2C3 (hardware-dm1701.md 5.1) ---
+// --- AT1846S bus: I2C3 ---
 
 static void i2c_setup(void)
 {
@@ -259,7 +259,7 @@ static bool rf_read(void *ctx, uint8_t reg, uint16_t *val)
 
 static const at1846s_bus_t rf_bus = { .write = rf_write, .read = rf_read, .delay_ms = hal_delay_ms, .ctx = NULL };
 
-// --- HR_C6000 bus: bit-banged config SPI on PE2-PE5 (hardware-dm1701.md 4.2) ---
+// --- HR_C6000 bus: bit-banged config SPI on PE2-PE5 ---
 
 // The configuration port on PE2-PE5 and the voice port on SPI2 (PB13-PB15, AF5, chip select PIN_C6000_VCS): mode 2,
 // PCLK1 / 8 = 4.5 MHz. The shared transfers (platform/stm32f4/hrc/hrc_bus.c) mask the modem interrupts around each
@@ -278,7 +278,7 @@ static void voice_spi_setup(void)
 	stm32_hrc_bus_init(&modem_cfg, &modem_bus);
 }
 
-// --- APC DAC and RF path GPIOs (hardware-dm1701.md 6, 7) ---
+// --- APC DAC and RF path GPIOs ---
 
 static void dac_setup(void)
 {
@@ -316,7 +316,7 @@ static int32_t lerp(int32_t a, int32_t b, uint16_t per_mille)
 	return a + (b - a) * (int32_t)per_mille / 1000;
 }
 
-// Board power level -> DAC value from the four calibrated curves (hardware-dm1701.md 7, the radio's fractions)
+// Board power level -> DAC value from the four calibrated curves (the radio's fractions)
 // The PA drive set over the debug link for the next transmission (power calibration; hal_radio_t.tx_drive), 0 = the
 // level's. Any task sets it; tx_off clears it
 static volatile uint16_t drive_override;
@@ -393,7 +393,7 @@ static void apply_rx_tone(void)
 	count(at1846s_set_rx_tone(&r.rf, type, value));
 }
 
-// --- DMR per-burst RF switching (modem-hrc6000.md 4.3, hardware-dm1701.md 6): modem ISR context ---
+// --- DMR per-burst RF switching (modem-hrc6000.md 4.3): modem ISR context ---
 
 // Back to RX after a burst. A direct burst comes back the same way: 4:0x04 to the calibrated value and the receiver
 // straight on, no idle step (the synthesizer still holds the frequency, and an idle step makes it settle again, which
@@ -482,7 +482,7 @@ static bool rf_key(void)
 	}
 pa:
 	r.rf_rx_pending = false;
-	rx_supply(false, false);	// the RX pre-amps off while the PA is up (hardware-dm1701.md 6)
+	rx_supply(false, false);	// the RX pre-amps off while the PA is up
 	apc_set(r.key_apc);
 	PIN_WRITE(PIN_PA_EN1, true);
 	PIN_WRITE(PIN_PA_BAND, r.dmr_uhf);
@@ -631,9 +631,9 @@ static const stm32_hrc_dmr_board_t dmr_board = {
 	.tx_end = dmr_tx_end,
 #if CONFIG_AIR
 	// The AT1846S's DMR set-up gives the HR_C6000 the low-frequency baseband with its audio filters off
-	// (hardware-dm1701.md, Air interface)
+	// (Air interface)
 	.air_tap = true,
-	// P25 and NXDN checked on air both ways on a radio of the family (hardware-dm1701.md, Air interface): the same
+	// P25 and NXDN checked on air both ways on a radio of the family (Air interface): the same
 	// chips and code on every one
 	.air_verified = true,
 #endif
@@ -720,8 +720,8 @@ static void speaker_apply(void)
 	bool fm = audio_wanted && !pcm;
 	bool on = (fm || pcm) && !volume_zero;
 	uvf_backlight_rx(fm || pcm);	// volume zero still feeds FM audio to APRS
-	// The FM feed-through also gates the FM audio on the I2S stream that APRS receive reads (hardware-dm1701.md
-	// 21.3.1), so it follows the core's request, not the knob: at volume zero only the amp is off
+	// The FM feed-through also gates the FM audio on the I2S stream that APRS receive reads,
+	// so it follows the core's request, not the knob: at volume zero only the amp is off
 	count(hrc6000_fm_audio(&r.modem, fm));	// FM feed-through only for FM; PCM comes from the codec DAC
 	if (on) {
 		if (pcm) {
@@ -765,7 +765,7 @@ static void init(void)
 	if (i2c_lock == NULL) {
 		i2c_lock = xSemaphoreCreateMutex();
 	}
-	PIN_WRITE(PIN_MIC_POWER, true);		// kept on in RX and TX (4.5: some speaker-mics see false PTT without bias)
+	PIN_WRITE(PIN_MIC_POWER, true);		// kept on in RX and TX (some speaker-mics see false PTT without bias)
 	rx_supply(false, false);
 	dac_setup();
 	pa_off();
@@ -797,7 +797,7 @@ static void init(void)
 #endif
 }
 
-// The AT1846S receive frequency for a channel on hz in the current mode: DMR receives below it (5.13)
+// The AT1846S receive frequency for a channel on hz in the current mode: DMR receives below it
 static uint32_t rx_tune(uint32_t hz)
 {
 	return (uint32_t)((int32_t)hz + (r.mode == RADIO_MODE_DMR ? uvf_dmr_rx_offset_hz(hz) : 0));
@@ -861,7 +861,7 @@ static void tone_restore(void)
 }
 
 #if CONFIG_NET_USRP
-// FM TX audio from the MCU (hardware-dm1701.md 21.3.1, "PWM audio on PC8"): PWM on PC8 reaches the HR_C6000's
+// FM TX audio from the MCU ("PWM audio on PC8"): PWM on PC8 reaches the HR_C6000's
 // differential microphone input, so MIC_P / MIC_N (4:0xE0 bits 1-2) go on and the microphone (LINEIN1, bit 6) off.
 // The chip's FM chain does the rest as for the microphone: pre-emphasis, limiter, sub-audio tone. The mode tables
 // rewrite 0xE0 at the next rx(), which ends the injection (inject_stop)
@@ -916,7 +916,7 @@ static bool ref_trim(int16_t ppb)
 }
 #endif
 
-// Enter RX (hardware-dm1701.md 6): PA off first, RX supply for the band, AT1846S to RX, then the HR_C6000. keep (the
+// Enter RX: PA off first, RX supply for the band, AT1846S to RX, then the HR_C6000. keep (the
 // end of a DMR transmission, dmr_tx_end): the burst switch already put the AT1846S in RX; on the same channel (registers
 // as the driver's cache has them) its frequency and state stay as they are
 static bool rx_set(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone, bool keep)
@@ -966,7 +966,7 @@ static bool rx_set(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone, bool ke
 	if (r.mode == RADIO_MODE_FM) {
 		count(hrc6000_set_mode_fm_rx(&r.modem));
 	} else if (!same) {
-		// New channel: the DMR modulation pair for it, and the receiver searches again (5.1). Back from our own
+		// New channel: the DMR modulation pair for it, and the receiver searches again. Back from our own
 		// transmission on the same channel the engine has already restarted it, or kept a repeater's timing
 		count(hrc_set_mod_gain(&r.modem, cal.dmr_i, cal.dmr_q));
 		stm32_hrc_dmr_rx_restart();
@@ -981,7 +981,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 	return rx_set(hz, bw, rx_tone, false);
 }
 
-// Enter FM TX (hardware-dm1701.md 6): RX supplies off, HR_C6000 FM TX, AT1846S tuned with the receiver off and
+// Enter FM TX: RX supplies off, HR_C6000 FM TX, AT1846S tuned with the receiver off and
 // switched straight to TX, APC drive, then PA enable 1, band select, PA enable 2
 static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_tone)
 {
@@ -1133,7 +1133,7 @@ static void status(radio_status_t *st)
 	r.diag.rssi = rssi;
 	r.diag.noise = noise;
 	r.diag.flags = flags;
-	// Field calibration constants (hardware-dm1701.md 5.9)
+	// Field calibration constants
 	st->rssi_dbm = r.rx_uhf ? (int16_t)(rssi - 151) : (int16_t)(-164 + rssi * 32 / 27);
 	st->noise = noise;
 	st->carrier = (flags & AT1846S_FLAG_SQ) != 0;
@@ -1141,7 +1141,7 @@ static void status(radio_status_t *st)
 	r.last_status = *st;
 }
 
-// Soft volume (hardware-dm1701.md 11.2, 17): the knob's 0..100 % maps linearly to -31..+31 dB of HR_C6000 RX gain
+// Soft volume: the knob's 0..100 % maps linearly to -31..+31 dB of HR_C6000 RX gain
 static void volume(uint8_t percent)
 {
 	// At the bottom the amp is off (speaker_apply), so the gain stays at unity: the I2S copy of the FM audio that
@@ -1161,9 +1161,9 @@ static void volume(uint8_t percent)
 // DTMF deviation, reg 0x59 bits 15:6, for the two tones together (radio-features.md 3.7)
 #define DTMF_DEV	0x1Cu
 
-// FM TX tone (hardware-dm1701.md 5.8): the AT1846S tone generator as the voice source with the HR_C6000 microphone
+// FM TX tone: the AT1846S tone generator as the voice source with the HR_C6000 microphone
 // input muted (4:0xE0 bit 6 cleared). The AT1846S modulates it as it does its CTCSS (seen on the SDR bench) once
-// The DCS turn-off tail (hardware-dm1701.md 5.7); the core holds the carrier for it. The sub-audio selection
+// The DCS turn-off tail; the core holds the carrier for it. The sub-audio selection
 // (reg 0x4E), apart from the tone generator tone_start() uses
 static bool tx_tail(bool on)
 {
@@ -1231,7 +1231,7 @@ static bool tx_dtmf(char digit)
 }
 #endif
 
-// Morse keying of the FM TX tone (hardware-dm1701.md 5.8): the tone deviation (reg 0x59 bits 15:6) to 0 for key up,
+// Morse keying of the FM TX tone: the tone deviation (reg 0x59 bits 15:6) to 0 for key up,
 // back to the tone value for key down. The tone generator stays the voice source and the HR_C6000 microphone input
 // stays muted, so the gaps are silent. Unverified on the bench, like tx_tone
 static bool tx_tone_key(bool down)
@@ -1344,7 +1344,7 @@ void uvf_radio_diag(uvf_radio_diag_t *d)
 	d->bus_clears = r.bus_clears;
 }
 
-// The debug link's CHIP_REG (board.chip_reg, hardware-dm1701.md 5.12): chip 0 is the AT1846S, page 0, registers
+// The debug link's CHIP_REG (board.chip_reg): chip 0 is the AT1846S, page 0, registers
 // 0x00-0x7E (0x7F selects the page, which the driver owns); chip 1 is the HR_C6000, pages 1 and 4 (2 and 3 are the
 // data and vocoder FIFOs, which a read would drain). Straight on the bus, as the probe's access: a write goes into the
 // AT1846S driver's cache, so its own cached writes don't skip the register, but its next set-up overwrites it. From

@@ -640,7 +640,7 @@ def test_ptt_when_locked_off(home, pytestconfig):
 @pytest.mark.feature("usb_network")
 def test_usb_network_switch_row(home):
     """Tools > USB network: the info page has the one "Switch USB to network" row. The test backs out without
-    switching (switching drops the serial link; see the HIL steps in docs/user/14-usb-network.md)."""
+    switching (switching drops the serial link; tests/hil/test_usb_network.py covers the switch)."""
     r = home
     r.press("ok")
     wait_screen(r, "hub")

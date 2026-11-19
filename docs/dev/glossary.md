@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 <!-- Generated from docs/glossary.json by tools/glossary.py. Edit the data file, not this page. -->
 <!-- glossary: off -->
 
@@ -126,12 +127,12 @@ Protocol, hardware and firmware terms of the specs and developer docs. Terms the
 | Term | Meaning |
 |---|---|
 | <a id="t-cai"></a>CAI | Common air interface: Motorola's name for the DMR air interface, also the name of its IP addressing on the air. |
-| <a id="t-capacity-plus"></a>Capacity Plus (Cap+) | A MOTOTRBO single-site trunking mode in which the radios share a pool of repeater channels. |
-| <a id="t-connect-plus"></a>Connect Plus | A MOTOTRBO multi-site trunking system with a central controller. |
+| <a id="t-capacity-plus"></a>Capacity Plus (Cap+) | A commercial single-site DMR trunking mode in which the radios share a pool of repeater channels. |
+| <a id="t-connect-plus"></a>Connect Plus | A commercial multi-site DMR trunking system with a central controller. |
 | <a id="t-dcdm"></a>DCDM | Dual Capacity Direct Mode: Motorola's direct mode that carries two calls on one frequency, one per timeslot. |
 | <a id="t-erdm"></a>ERDM | Motorola's style of single frequency repeater, with different inbound and outbound color codes. |
 | <a id="t-ipsc"></a>IPSC | IP Site Connect: Motorola's linking of repeaters over IP. |
-| <a id="t-linked-capacity-plus"></a>Linked Capacity Plus (LCP) | A MOTOTRBO system of several Capacity Plus sites joined by a network. |
+| <a id="t-linked-capacity-plus"></a>Linked Capacity Plus (LCP) | A commercial DMR system of several Capacity Plus sites joined by a network. |
 | <a id="t-xnl"></a>XNL (XCMP) | A Motorola radio control protocol; XCMP commands travel over it. Neither is part of the standard. |
 
 ## Amateur and network

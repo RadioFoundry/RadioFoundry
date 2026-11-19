@@ -41,7 +41,7 @@ static void put_x(out_t *o, uint32_t v, int digits)
 	}
 }
 
-// "L/M/H 1616/2544/3408": the drive tx() would use at hz (hardware-dm1801pro.md 6.4), or "L/M/H none"
+// "L/M/H 1616/2544/3408": the drive tx() would use at hz, or "L/M/H none"
 static void put_drive(out_t *o, uint32_t hz)
 {
 	put(o, "L/M/H ");
@@ -76,7 +76,7 @@ bool dm1801pro_diag_line(uint8_t i, char *buf, uint8_t len)
 		put(&o, "keys ");
 		put_x(&o, dm1801pro_key_raw(), 6);	// matrix bit = strobe * 4 + input; direct pins in bits 20-23
 		put(&o, " ptt ign ");
-		put_u(&o, dm1801pro_input_ptt_ignored());	// PTT lows taken for host serial data (hardware-dm1801pro.md 9.1)
+		put_u(&o, dm1801pro_input_ptt_ignored());	// PTT lows taken for host serial data
 		break;
 	case 1:
 		put(&o, "bat ");
@@ -110,7 +110,7 @@ bool dm1801pro_diag_line(uint8_t i, char *buf, uint8_t len)
 		break;
 	case 7:
 	case 8: {
-		// The factory's L / M / H drive at a VHF and a UHF frequency (hardware-dm1801pro.md 6.4)
+		// The factory's L / M / H drive at a VHF and a UHF frequency
 		uint32_t hz = i == 7 ? 145000000u : 435000000u;
 		put(&o, i == 7 ? "pa 145 " : "pa 435 ");
 		put_drive(&o, hz);
@@ -118,7 +118,7 @@ bool dm1801pro_diag_line(uint8_t i, char *buf, uint8_t len)
 	}
 	case 9:
 		// The frequency of the last transmission (the RX frequency before one) and the drive it used, then the
-		// L / M / H drive there: the L and M spacing on air can be compared with these (hardware-dm1801pro.md 6.4)
+		// L / M / H drive there: the L and M spacing on air can be compared with these
 		dm1801pro_radio_diag(&d);
 		put(&o, "pa ");
 		put_u(&o, d.pa_hz / 1000u);

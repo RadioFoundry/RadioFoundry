@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The AnyRoad (TYT / Baofeng STM32) DFU bootloader over WebUSB. Protocol: docs/spec/hardware-dm1701.md 15.1-15.3, as
+// The AnyRoad (TYT / Baofeng STM32) DFU bootloader over WebUSB. Protocol as
 // tools/rfoundry/rfoundry/dfu.py drives it: only the plan's sectors are erased and written, each 1024-byte block
 // XORed with the model key (every sector starts a multiple of 1024 bytes after the application base, so each block
 // starts at key index 0). The bootloader can't read flash back (the radios are at read protection level 1).
@@ -125,7 +125,7 @@ export class Dfu {
 // WebUSB
 
 // The radio's own firmware, switched on normally, is a DFU device with the bootloader's IDs and strings, but erasing
-// or writing through it can reach the bootloader's sectors (hardware-dm1701.md 15.1). names: the DFU interface strings,
+// or writing through it can reach the bootloader's sectors. names: the DFU interface strings,
 // alt 0 first. A board with a declared bootloader layout (dfu_layout) accepts only that; any other refuses a layout
 // that shows only the bootloader's sectors (from 0x08000000, at most BOOT_AREA bytes), as every original firmware's
 // does. A bootloader shows the application area, so one that listed the whole flash would still pass. The same rule

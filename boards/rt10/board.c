@@ -22,7 +22,7 @@ static const band_t bands[] = {
 	{ 902000000, 928000000, true },
 };
 
-// Power levels (hardware-rt10.md 5)
+// Power levels
 static const char *const power_names[] = { "L", "H" };
 
 static const keymap_entry_t keymap[] = {
@@ -66,7 +66,7 @@ const board_t board = {
 #endif
 #endif
 #if CONFIG_APRS_AFSK
-	.afsk = &hrc_afsk,	// through the HR_C7000 (hardware-rt10.md 7.2)
+	.afsk = &hrc_afsk,	// through the HR_C7000
 #endif
 #if CONFIG_HOSTLINK
 	.host_port = &hrc_host_uart_stream,
@@ -78,7 +78,7 @@ const board_t board = {
 	.chip_reg = rt10_chip_reg,
 };
 
-// hardware-rt10.md 3: the boot ROM's reset-default IO mux is kept (UART0, JTAG); SPI0 to the data flash. The power
+// The boot ROM's reset-default IO mux is kept (UART0, JTAG); SPI0 to the data flash. The power
 // latch goes high before anything else so the radio stays on
 static void io_init(void)
 {
@@ -127,7 +127,7 @@ void board_early_init(void)
 
 // Everything the core stores lives in the upper half of the data flash, above the original firmware's data (0x1300 up)
 // and below the activation block (0x1FE000) and the factory calibration (0x1FF000), which are never written
-// (hardware-rt10.md 4)
+//
 static const hal_flash_map_t flash_map = {
 	.settings_addr = 0x100000u,
 	.settings_size = 0x008000u,	// 8 sectors

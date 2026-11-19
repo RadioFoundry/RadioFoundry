@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// RT10 DMR (dmr_rt10.c, CONFIG_DMR; docs/spec/hardware-rt10.md 7.1): what the board files share
+// RT10 DMR (dmr_rt10.c, CONFIG_DMR): what the board files share
 #ifndef RT10_DMR_H
 #define RT10_DMR_H
 
@@ -14,7 +14,7 @@
 #define RT10_DMR_MIC_DB		23u
 #endif
 // DAC C in DMR: the bias of the modem's AF ADC (its N input), which sets where the FD6818's 4FSK sits in the ADC's
-// range. 1850 gave the fewest AMBE bits corrected (hardware-rt10.md 7.1); 1762, the set-up level, corrects about
+// range. 1850 gave the fewest AMBE bits corrected; 1762, the set-up level, corrects about
 // one per frame. make RT10_DMR_DAC_C=N replaces it on the bench
 #ifndef RT10_DMR_DAC_C
 #define RT10_DMR_DAC_C		1850u

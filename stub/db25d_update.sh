@@ -9,7 +9,7 @@
 # command works from a build with or without CONFIG_DMR and installs either kind (stub/README.md). Needs stubtool.py
 # (this directory) and the debug link tool (tools/rfoundry_debug.py, or RFOUNDRY_DEBUG=path).
 # Radio stuck (no RadioFoundry answering)? Power-on recovery: `stubtool.py PORT --wait 120 --board db25d --write-app IMAGE`, then
-# turn the radio off and on (the first stage takes the universal stub at 0x10000; hardware-db25d.md 7). With the legacy
+# turn the radio off and on (the first stage takes the universal stub at 0x10000). With the legacy
 # stub instead: `--legacy-stub --load-base 0x30000`.
 set -e
 IMG=${1:?install image}

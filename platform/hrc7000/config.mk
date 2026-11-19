@@ -16,6 +16,6 @@ TCP_CONNS ?= 3
 MCU_DEFS += -DTCP_CONNS=$(TCP_CONNS)
 # What no radio on the platform has, one switch per line with the reason (docs/build-config.md, "Unsupported, not
 # written, unconfirmed"): ci's maximal configuration leaves these off. The SoC has a USB controller, but no radio
-# wires it to a connector (docs/spec/hardware-dm32.md 3.11)
+# wires it to a connector
 BOARD_UNSUPPORTED += USB	# no USB data port: the host link runs on the programming cable's UART
 BOARD_UNSUPPORTED += USB_NETWORK	# no USB data port for the network adapter: PPP on the host UART stands in

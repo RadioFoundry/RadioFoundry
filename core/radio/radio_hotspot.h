@@ -5,7 +5,8 @@
 // requests, publishes the state machine's hotspot state after every pass and runs the orphan watch.
 //
 // Every op only posts a request and reads what the radio task last published, so the host link's MMDVM replies are
-// never held up by the radio core (docs/testing/mmdvm-audit.md A-15).
+// never held up by the radio core: a status reply is due within tens of milliseconds
+// (docs/spec/mmdvm-protocol.md 2.4).
 #ifndef RADIO_HOTSPOT_H
 #define RADIO_HOTSPOT_H
 

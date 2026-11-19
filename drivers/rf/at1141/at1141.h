@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // AT1141 PLL / VCO synthesizer (chip ID 0x1100), used as a superhet's local oscillator: chip driver, independent of
-// the board (docs/spec/hardware-db25d.md 4.8). No datasheet exists; register values are the ones the working firmware
+// the board. No datasheet exists; register values are the ones the working firmware
 // uses.
 //
 // The chip sits on the same three-wire bus as a BK4819 (8-bit address, bit 7 = read, 16-bit data): the board passes its

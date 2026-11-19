@@ -4,14 +4,10 @@
 # Zone sharing over DMR data
 
 One radio sends a zone, or one channel, to another radio or to a talkgroup over DMR data. The receiver shows it as an
-offer and imports it only when the user says so. Status: built and host-tested (`zoneShareTest`, `zoneShareSvcTest`,
-`zoneImportTest`, the UI flow tests; the modes part in `zoneShareModesTest` and `zoneImportModesTest`, untested on a
-radio). On a radio, sending one channel has been checked against the SDR bench; sending
-a zone, offers and the import are untested there. The opt-in HIL test is `tests/hil/test_zone_share.py` (feature
-`zone_share`).
+offer and imports it only when the user says so.
 
 Sources: ETSI TS 102 361-3 (packet data, the UDP/IP bearer), RFC 768 (UDP), [dmr-data.md](dmr-data.md) 11 and 12 (IP
-over DMR, the TX queue). The record format is ours.
+over DMR, the TX queue). The record format is RadioFoundry's own.
 
 ## 1. Switches and files
 
@@ -50,11 +46,11 @@ Every message starts with the version (1) and the type. Multi-octet fields are b
   with the full IPv4 and UDP headers (`ZS_MSG_MAX` = `DMR_DATA_IP_MTU` - 28: 568 octets, a 562-octet chunk,
   [dmr-data.md](dmr-data.md) 12.8). That limit grows with the air MTU. A record in 128-octet chunks takes 8 fragments,
   the most a transfer may have.
-- We still send 322: the first builds take only that chunk size and messages of at most 328 octets, and would drop
-  larger fragments. Every build since takes chunks up to 562, so the sender can move up to 562 (2 fragments for a
-  full record) once the first builds are no longer in use. A build whose air MTU is larger takes larger chunks, but
-  must not send them while builds that take only 562 are in use. `zoneShareTest` checks our fragments against the
-  first builds' rules.
+- Senders send 322-octet chunks. The first builds take only that chunk size and messages of at most 328 octets, and
+  drop larger fragments. Every later build takes chunks up to 562, so a sender can move up to 562 (2 fragments for a
+  full record) once no first build is in use. A build whose air MTU is larger takes larger chunks, but must not send
+  them while builds that take only 562 are in use. `zoneShareTest` checks the sender's fragments against the first
+  builds' rules.
 - Every fragment but the last is full, and its offset is index x its length. The last fragment's offset is a whole
   number of chunks of a size the receiver takes, and it is no longer than one. Every fragment of a transfer must give the
   same chunk size. A fragment that breaks a rule is dropped (`zs.rx_bad`).
@@ -94,8 +90,8 @@ Every message starts with the version (1) and the type. Multi-octet fields are b
 - Contacts come first, then channels. The record must end exactly where its length says.
 - The decoder checks every length, count, reference and value before use. A record that fails one check is refused
   whole.
-- Zone ID: the sender's choice, the same each time it sends the same zone. Ours is an FNV-1a hash of the zone name and
-  the flags.
+- Zone ID: the sender's choice, the same each time it sends the same zone. RadioFoundry uses an FNV-1a hash of the
+  zone name and the flags.
 
 ### 4.1 What a send holds
 
@@ -107,9 +103,9 @@ codeplug is sent: no scan lists, no RX group lists, no privacy keys.
 
 Channels of a kind ([channel-modes.md](channel-modes.md)) go with their tags and the systems they are on. Builds with
 a mode that has channels of a kind carry them (`CONFIG_ZONE_SHARE_MODES`, on with `CONFIG_ZONE_SHARE` and `CONFIG_P25`
-or `CONFIG_DMR_TRUNK`). A record holds
-the part only when it has such a channel, so a share of plain channels is the same as before. Every length is one
-octet. Kinds' and system types' bytes are opaque here: their mode modules read them.
+or `CONFIG_DMR_TRUNK`). A record holds the part only when it has such a channel, so a share of plain channels has
+no modes part and bit 1 clear. Every length is one octet. Kinds' and system types' bytes are opaque here: their mode
+modules read them.
 
 | Part | Octets | Fields |
 |---|---|---|
@@ -125,10 +121,10 @@ What a sender carries of a system follows its sharing level ([channel-modes.md](
 |---|---|
 | Off | nothing: its channels' tags say 0xFF |
 | Identity only | type, flags, name and the identity |
-| Whole system with key | the block and every entry too, and the secret only when the sender turns keys on for that share. A radio has no such switch yet and never sends a secret. A system whose block or entries pass the limits goes as its identity |
+| Whole system with key | the block and every entry too, and the secret only when the sender turns keys on for that share. The radio has no such switch and never sends a secret. A system whose block or entries pass the limits goes as its identity |
 
 Never carried: the radio's own ID on a system, a system's or a channel's fallback channel. Targets
-([channel-modes.md](channel-modes.md) 5.2) are not carried yet: no kind in this tree refers to them.
+([channel-modes.md](channel-modes.md) 5.2) aren't carried: no kind refers to them.
 
 A channel whose tag's parameter block passes 64 octets is left out. Without the modes part a sender leaves every
 channel of a kind out: its record is a stand-in that a receiver would take for a plain channel.
@@ -213,21 +209,27 @@ The offer counts the channels that will come in unavailable, and the banner afte
 
 ## 6. Directory requests
 
-A radio may ask a directory service for the zone of the repeater or hotspot its request went through
+A radio can ask a directory service for the zone of the repeater or hotspot its request went through
 (`zone_share_request`, type 2). The answer is a record, taken as an offer even with offers Off (the user asked), or
-a refusal (3.3). An answer later than 60 s is not taken. No screen sends requests yet.
+a refusal (3.3). An answer later than 60 s isn't taken. No screen sends requests.
 
 ## 7. Sending
 
 In a zone's channel list, **#** opens "Share zone to..." and "Share channel to..." (the focused channel). With the
 zone editor (`CONFIG_ZONE_EDIT`), **#** on a channel opens its Channel actions, where "Share channel to..." is item 5,
 and "Share zone to..." is item 3 of Zone options ([ui.md](ui.md) 2.2). The channel editor has "Share channel to..."
-after "Tune to this ch" ([ui.md](ui.md) 2.1); it sends the stored channel, so unsaved changes must be saved first. The rows
-carry a share icon, and the offer's title and banner a download icon. Then the contact list (Share To): a private contact gets confirmed packets, a talkgroup unconfirmed ones. Digits that make an ID add two rows after the contacts,
-"Private ID 9991234" and "TG 9991234", so a station that isn't a contact can be sent to. The send works only on a DMR
-channel: on another, OK says "Go to a DMR channel to send" and sends nothing. The send's toast names the frequency:
-"Sending to Q1AAA Joe via 442.375" ("Sending via 442.375" where that doesn't fit). It is the channel's receive frequency, which on a repeater is its output.
-The banner says "Sent to <name>" or "Not sent to <name>". One send at a time.
+after "Tune to this ch" ([ui.md](ui.md) 2.1); it sends the stored channel, so unsaved changes must be saved first.
+The rows carry a share icon, and the offer's title and banner a download icon.
+
+Next comes the contact list (Share To): a private contact gets confirmed packets, a talkgroup unconfirmed ones. Digits
+that make an ID add two rows after the contacts, "Private ID 9991234" and "TG 9991234", so a station that isn't a
+contact can be sent to.
+
+- The send works only on a DMR channel. On another channel, OK says "Go to a DMR channel to send" and sends nothing.
+- The send's toast names the frequency: "Sending to Q1AAA Joe via 442.375" ("Sending via 442.375" where that doesn't
+  fit). It is the channel's receive frequency, which on a repeater is its output.
+- The banner says "Sent to <name>" or "Not sent to <name>".
+- One send runs at a time.
 
 ## 8. Limits
 

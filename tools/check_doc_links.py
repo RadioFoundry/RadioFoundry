@@ -10,7 +10,11 @@ For each Markdown link [text](target), image ![alt](target) and HTML <img src=".
   - a relative path must name a file or directory that exists in the working tree;
   - an anchor (#heading or file.md#heading) must match a heading of that file, using GitHub's heading ids
     (lower case, punctuation dropped, spaces to hyphens, -1 / -2 for repeats).
-Links with a scheme (https:, mailto:) are not fetched. Exit status 0 when everything resolves, 1 otherwise.
+Links with a scheme (https:, mailto:) are not fetched.
+
+On a whole-tree run it also checks the documentation map (docs/README.md, docs/dev/doc-style.md): every Markdown page
+must be linked from the map, so each page has a stated scope. Translations (docs/i18n/), GitHub's own files (.github/)
+and agent entry points (CLAUDE.md) are exempt. Exit status 0 when everything resolves, 1 otherwise.
 """
 import os
 import re
@@ -112,14 +116,40 @@ def tracked_markdown():
     return [f for f in files if os.path.isfile(f) and not os.path.relpath(f, ROOT).startswith("third_party/")]
 
 
+DOC_MAP = os.path.join(ROOT, "docs", "README.md")
+MAP_EXEMPT = ("docs/i18n/", ".github/", "CLAUDE.md", "docs/README.md")
+
+
+def unmapped(files):
+    """The pages of files that the documentation map doesn't link to."""
+    if not os.path.isfile(DOC_MAP):
+        return ["docs/README.md: the documentation map is missing"]
+    here = os.path.dirname(DOC_MAP)
+    linked = set()
+    for _, line in lines_outside_code(DOC_MAP):
+        for target in MD_LINK.findall(line) + HTML_LINK.findall(line):
+            file_part = target.partition("#")[0]
+            if file_part and not re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", file_part):
+                dest = os.path.normpath(os.path.join(here, file_part))
+                linked.add(os.path.join(dest, "README.md") if os.path.isdir(dest) else dest)
+    out = []
+    for f in files:
+        rel = os.path.relpath(f, ROOT)
+        if not rel.startswith(MAP_EXEMPT) and rel != "CLAUDE.md" and f not in linked:
+            out.append(f"{rel}: not in the documentation map (docs/README.md): add a row with its scope")
+    return out
+
+
 def main(argv):
     files = [os.path.abspath(f) for f in argv] if argv else tracked_markdown()
     errors = []
     for f in files:
         errors += check(f)
+    if not argv:
+        errors += unmapped(files)
     for e in errors:
         print(e)
-    print(f"check_doc_links: {len(files)} files, {len(errors)} broken links")
+    print(f"check_doc_links: {len(files)} files, {len(errors)} problems")
     return 1 if errors else 0
 
 

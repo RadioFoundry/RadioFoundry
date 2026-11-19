@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # DMR Tier III trunking (mobile station)
 
@@ -19,7 +20,7 @@ it. The radio core runs the engine on a system from the codeplug (section 12) or
 | 7 | Access (7.5 status, 7.6 short data) |
 | 8 | Timers and constants |
 | 9 | Tests |
-| 10 | Not done yet |
+| 10 | Limits |
 | 11 | On the radio |
 | 12 | In the codeplug |
 
@@ -164,7 +165,7 @@ LCs). After a loss, the lost TSCC is tried first.
   carry it), until the radio camps. A system set up with the wrong model or network is heard this way, and the screen
   names what it heard (12.4).
 
-**Camped.** Every valid PDU from the TSCC (CRC good, our color code; Alohas and broadcasts also with our system code)
+**Camped.** Every valid PDU from the TSCC (CRC good, the TSCC's color code; Alohas and broadcasts also with the system's code)
 restarts T_Nosig. When it runs out, the engine hunts again. Short LCs don't restart it: every channel of the site
 carries them. The registration state follows the latest Aloha or broadcast Reg flag:
 
@@ -364,7 +365,7 @@ to an MS or a talkgroup, or polls an MS, by random access (C_RAND, Service_Kind 
 | Service_Options | G/I (bit 6), SUPED_SV 0, the status's 5 most significant bits |
 | the 4 service-dependent bits | SUPED_VAL 0, then the status's 2 least significant bits |
 
-The TSCC's C_AHOY to the called party with our status as the source is progress (TNP_Timer); C_WACKD and C_QACKD are
+The TSCC's C_AHOY to the called party with the radio's status as the source is progress (TNP_Timer); C_WACKD and C_QACKD are
 too. C_ACKD ends it (`T3_RES_DONE`): MS_Accepted mirrored for an MS, Message_Accepted for a talkgroup, Accepted for
 the Status Polling Service for a poll, with the polled status in Response_Info (`ax.info`). C_NACKD refuses it. A poll
 to a talkgroup or a status past 127 isn't started (`T3_RES_NOT_ALLOWED`). The last status sent is the radio's own,
@@ -728,13 +729,13 @@ if it hears an Aloha or broadcast of that site's system code there, and then mov
 
 | Priorities radiated (table 6.81) | Moves when |
 |---|---|
-| Adjacent higher than ours | its level is at or above the threshold |
-| Adjacent lower than ours | ours is below the threshold, and it is 6 dB stronger and above the threshold |
+| Adjacent higher than the current site's | its level is at or above the threshold |
+| Adjacent lower than the current site's | the current site is below the threshold, and the adjacent site is 6 dB stronger and above the threshold |
 | None, or equal | it is 6 dB stronger and at or above the threshold |
 
 A move keeps the radio there unconfirmed until its Aloha (which registers again in a new SYS_AREA, 7.2); the TSCC
 left becomes an adjacent site. Otherwise the radio returns, its level kept and the time away not counted in T_Nosig.
-A site sampled isn't sampled again for 30 s unless ours is weak. `T3_OPT_NO_ROAM` turns sampling and the next rule off.
+A site sampled isn't sampled again for 30 s unless the current site is weak. `T3_OPT_NO_ROAM` turns sampling and the next rule off.
 
 **Leaving a weak TSCC.** Camped, idle, below the threshold for 5 s, and with another candidate: the radio hunts from
 the adjacent sites, and for one pass confirms only a TSCC at or above the threshold (the hunting threshold of
@@ -762,7 +763,7 @@ the adjacent sites, and for one pass confirms only a TSCC at or above the thresh
 | Sample again | 30 s | |
 | Weak before leaving | 5 s | |
 
-These values are fixed, but for four the debug link may set (section 11; 0 keeps the default): T_Awake (power
+These values are fixed, except four that the debug link can set (section 11; 0 keeps the default): T_Awake (power
 save), T_ALS, T_ALS_E and the Vote Now sample time.
 
 ## 9. Tests
@@ -804,16 +805,18 @@ alive on its voice, and never camps on another system or on a control channel th
 debug link (`DL_CMD_CPKV`). `t3ViewTest` checks that each Tier III debug link view section fits one reply with every
 field at its widest. `radioCoreTest` runs the radio core with the engine: start, follow, PTT, fallback, the kill.
 
-## 10. Not done yet
+## 10. Limits
 
-| Item | Needs |
-|---|---|
-| CACH short LC reception on modems that don't report it yet (`hrc_chip_t.slc_rx_addr` 0) | the location of the chip's short LC |
-| A late veto of a random access whose slot turned busy | slot-timed transmit in the modem drivers |
-| Duplex calls (voice, packet data) | not planned: the radios are simplex |
-| Power save: the receiver off while asleep on boards without `rx_sleep_dmr` | each board's `rx_sleep` on a DMR channel |
-| The interrupted talker's side on radios that can't receive between their bursts on a split channel (6.4.15.2) | the modem's `tx_listen_split` on those boards |
-| A P_CLEAR sent while the radio is still talking on the payload channel is missed; on a slot whose carrier stays keyed (idle bursts count for TV_Inactive) the radio stays until the call ceiling | a rule for leaving a slot that carries only idle bursts after the radio's own over |
+- The radio is simplex: it answers a duplex availability check with MS_Duplex_Not_Supported and never follows a
+  duplex grant (section 7.4).
+- A random access isn't withdrawn once queued, even if its slot turns busy before it goes on air.
+- The radio misses a P_CLEAR sent while it is still talking on the payload channel. On a slot whose carrier stays keyed
+  (idle bursts count for TV_Inactive), it then stays until the call ceiling.
+- On a modem that doesn't report the CACH short LC (`hrc_chip_t.slc_rx_addr` 0), the radio has no common slot counter:
+  it never sleeps (7.13), and it detects a lent composite TSCC slot from voice bursts (6.1).
+- On a board without `rx_sleep_dmr`, the receiver stays on while the engine sleeps (7.13).
+- On a board that can't receive between its bursts on a split channel, the interrupted talker doesn't decode the
+  reverse channel (7.17).
 
 ## 11. On the radio
 
@@ -984,7 +987,7 @@ system's sharing level allows:
 
 Never carried: the radio's ID on the system, a system's or a channel's fallback channel, kill or stun state,
 registration, the short data poll setting (12.7), the supplementary data (12.8). The key goes only when the sender turns
-keys on for that share, which a radio can't yet ([dmr-trunking-codeplug.md](dmr-trunking-codeplug.md) 6).
+keys on for that share; the radio has no control for that ([dmr-trunking-codeplug.md](dmr-trunking-codeplug.md) 6).
 
 A receiver matches a shared system to one of its own by type and identity. A match is used as it is: the share
 changes nothing in it. With no match, a share with the whole system adds it at the lowest free system number; one

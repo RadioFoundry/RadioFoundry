@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// MD-9600 display: 128x64 monochrome ST7567 on SPI2, shared with the data flash (chip select PD14, A0 PD13, reset PD12;
-// docs/spec/hardware-md9600.md 7), and the backlight PWM on TIM8 CH1 (PC6).
+// MD-9600 display: 128x64 monochrome ST7567 on SPI2, shared with the data flash (chip select PD14, A0 PD13, reset PD12), and the backlight PWM on TIM8 CH1 (PC6).
 #include "md9600.h"
 #include "config.h"
 #include "pins.h"
@@ -11,7 +10,7 @@
 // TIM8 on APB2 (72 MHz): / 10 / 256 = 28 kHz PWM
 #define BL_PSC		9u
 #define BL_ARR		255u
-// The LEDs light between about 16 % and 19.3 % duty and are fully on above (hardware-md9600.md 7.3, unverified):
+// The LEDs light between about 16 % and 19.3 % duty and are fully on above (unverified):
 // 1-99 % maps into that window
 #define BL_DIM_MIN	41u
 #define BL_DIM_MAX	49u
@@ -56,7 +55,7 @@ static const st7567_bus_t bus = {
 	.delay_ms = hal_delay_ms,
 };
 
-// Segments reversed, COM normal, bias 1/9, regulator ratio 4, electronic volume 0x28 (hardware-md9600.md 7.2). The
+// Segments reversed, COM normal, bias 1/9, regulator ratio 4, electronic volume 0x28. The
 // first boot with segments normal and COM reversed showed the picture upside down (2026-11-02). With the segments
 // reversed the panel's 128 columns are the controller's last 128 of 132, hence the offset of 4
 static const st7567_t panel = {
@@ -75,7 +74,7 @@ void md9600_backlight(uint8_t percent)
 	if (percent == 0) {
 		duty = 0;
 	} else if (percent >= 100 || md9600_opt_backlight_switched()) {
-		// 100 %, or a radio whose option block says its backlight can't be dimmed (hardware-md9600.md 7.3): a duty
+		// 100 %, or a radio whose option block says its backlight can't be dimmed: a duty
 		// in the dimming window would leave it dark or flickering there
 		duty = BL_ARR + 1u;	// always high
 	} else {

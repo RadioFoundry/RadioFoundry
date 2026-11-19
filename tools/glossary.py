@@ -93,7 +93,7 @@ def check(data):
 def render(data, scope):
 	"""The Markdown of one generated page."""
 	title, intro = HEADER[scope]
-	out = ["<!-- SPDX-License-Identifier: MIT -->",
+	out = ["<!-- SPDX-License-Identifier: MIT -->", "<!-- Copyright (c) 2026 The RadioFoundry Authors -->",
 	       "<!-- Generated from docs/glossary.json by tools/glossary.py. Edit the data file, not this page. -->",
 	       "<!-- glossary: off -->", "", "# " + title, "", intro, ""]
 	for cat in data["categories"]:

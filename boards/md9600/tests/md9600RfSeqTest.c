@@ -1003,7 +1003,7 @@ static void test_cal(void)
 	// Front end, PA rising with the level, squelch rows
 	cal_put(0x30, 100, 9);
 	cal_put(0x39, 50, 5);
-	// The factory PA rows as one radio has them (hardware-md9600.md 5.6): about 10, 14, 25 and 40 W on UHF
+	// The factory PA rows as one radio has them: about 10, 14, 25 and 40 W on UHF
 	const uint16_t pa_u[4] = { 0x20, 0x1A0, 0x190, 0x10 }, pa_v[4] = { 0x29, 0x1A9, 0x199, 0x19 };
 	const uint8_t row_u[4] = { 51, 58, 77, 110 }, row_v[4] = { 62, 67, 71, 110 };
 	for (int l = 0; l < 4; l++) {

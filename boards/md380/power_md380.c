@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// MD-380 power latch, battery, LEDs and the ADC (docs/spec/hardware-md380.md section 10).
+// MD-380 power latch, battery, LEDs and the ADC.
 // ADC1 scans the volume knob position, battery, mic level, RSSI, the noise level and the temperature sensor
 // continuously; DMA2 Stream4 keeps the last SCANS results in a circular buffer, so a reading is a short average with
 // no interrupt and no locking. The volume knob sets the loudness in analog hardware, so hal volume() is -1.
@@ -28,7 +28,7 @@ enum { CH_VOLUME = MD380_ADC_VOLUME, CH_BATTERY = MD380_ADC_BATTERY, CH_MIC = MD
 #define SETTLE_MS		1500		// readings settle after power-up (experience on the other STM32 radios)
 #define FILTER_MS		10000		// time constant of the displayed battery voltage
 
-// Battery divider (hardware-md380.md 10.2, ?): raw counts per 0.1 V, x 10
+// Battery divider (?): raw counts per 0.1 V, x 10
 #ifndef MD380_BATT_COUNTS_X10
 #define MD380_BATT_COUNTS_X10	403
 #endif
@@ -181,7 +181,7 @@ static int8_t volume(void)
 	return -1;
 }
 
-// The volume knob switch breaks the battery sense line while the latch holds the supply (hardware-md380.md 10.1):
+// The volume knob switch breaks the battery sense line while the latch holds the supply:
 // a few low readings in a row mean the user switched off
 static bool switch_on(void)
 {

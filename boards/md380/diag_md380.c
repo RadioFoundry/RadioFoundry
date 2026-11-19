@@ -83,7 +83,7 @@ bool md380_diag_line(uint8_t i, char *buf, uint8_t len)
 		put_i(&o, md380_temperature_c10() / 10);
 		put(&o, "C");
 		break;
-	case 2:		// receiver readings for the RSSI / squelch curves (hardware-md380.md 5.5)
+	case 2:		// receiver readings for the RSSI / squelch curves
 		put(&o, "rssi ");
 		put_u(&o, md380_adc_raw(MD380_ADC_RSSI));
 		put(&o, " busy ");
@@ -123,7 +123,7 @@ bool md380_diag_line(uint8_t i, char *buf, uint8_t len)
 		put(&o, " rx ");
 		put_x(&o, md380_cal_byte(0x030), 2);
 		break;
-	case 7: {	// raw keypad rows and the channel switch code (key positions, hardware-md380.md 9.1)
+	case 7: {	// raw keypad rows and the channel switch code (key positions)
 		uint8_t rows[3], code;
 		md380_input_raw(rows, &code);
 		put(&o, "keys ");

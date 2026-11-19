@@ -3,7 +3,7 @@
 // The radio as a USB device, on TinyUSB: descriptors from the board's IDs (usb_port.h), the device stack task, and
 // the serial mode's CDC-ACM port as a hal_stream_t for the host link.
 //
-// One personality at a time (docs/spec/hardware-dm1701.md 16): serial (CDC-ACM), or with CONFIG_USB_NETWORK network
+// One personality at a time: serial (CDC-ACM), or with CONFIG_USB_NETWORK network
 // (CDC-NCM, usb_ncm.h), a second set of descriptors with its own PID. The F405's three IN endpoints can't hold both
 // functions (ACM and NCM need two each), so a composite device isn't possible there; switching re-enumerates.
 #ifndef RFOUNDRY_USB_DEVICE_H
@@ -33,7 +33,7 @@ usb_mode_t usb_device_mode(void);
 bool usb_device_take_serial_request(void);
 #endif
 
-// Configured by the host (the reduced-power clock must not be used meanwhile, docs/spec/hardware-dm1701.md 1.3)
+// Configured by the host (the reduced-power clock must not be used meanwhile)
 bool usb_device_configured(void);
 
 // The CDC-ACM port. start() brings the stack up (its task included)

@@ -1380,7 +1380,7 @@ static void quick_unavailable(uint8_t kind)
 	case QT_SCAN: ui_toast(TR(WHY_SCAN_NOT_IN_BUILD, "Scan: not in this build")); break;
 	case QT_MODE: ui_toast(TR(WHY_VFO_ONE_MODE_IN_BUILD, "VFO: one mode in this build")); break;
 	case QT_TO_VFO: ui_toast(TR(WHY_VFO_NOT_IN_BUILD, "VFO: not in this build")); break;
-	case QT_VOX: ui_toast(TR(WHY_VOX_NOT_ON_RADIO_YET, "VOX: not on this radio yet")); break;
+	case QT_VOX: ui_toast(TR(WHY_VOX_NOT_ON_RADIO, "VOX: not on this radio")); break;
 	default: ui_toast(TR(WHY_NOT_IN_BUILD, "Not in this build")); break;
 	}
 }

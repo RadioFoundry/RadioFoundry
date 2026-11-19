@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// DM-1801 Pro outputs and their levels at start-up (hardware-dm1801pro.md 3.1), applied in order by board.c io_init()
+// DM-1801 Pro outputs and their levels at start-up, applied in order by board.c io_init()
 // after the power latch and the IO mux. A table so the host test (tests/dm1801proPinsTest.c) can check it
 #ifndef DM1801PRO_BOOT_PINS_H
 #define DM1801PRO_BOOT_PINS_H

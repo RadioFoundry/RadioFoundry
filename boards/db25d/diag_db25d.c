@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// DB25-D diagnostics page lines: what the bring-up needs to see (docs/spec/hardware-db25d.md 10): the RF chips' IDs,
+// DB25-D diagnostics page lines: what the bring-up needs to see: the RF chips' IDs,
 // the raw key scan (to place the keys), the ADC channels (the supply voltage), the host UART's overruns, the
 // calibration page found and the PA values it gives, the NAND's ID, the storage on it and the settings it holds
 #include <stddef.h>
@@ -75,7 +75,7 @@ bool db25d_diag_line(uint8_t i, char *buf, uint8_t len)
 		put(&o, " lo ");
 		put_x(&o, d.lo_id, 4);
 		put(&o, " ");
-		put(&o, d.variant);	// the batch code the pair gives (hardware-db25d.md 4.8)
+		put(&o, d.variant);	// the batch code the pair gives
 		break;
 	case 1:
 		// 0x67's 9 bits, 0x65's 7 and the sub-audio status 0x0C (b10 CTCSS, b14 DCS, b15 inverted DCS)
@@ -183,7 +183,7 @@ bool db25d_diag_line(uint8_t i, char *buf, uint8_t len)
 	case 12:
 	case 13:
 	case 14: {
-		// The storage layer over RadioFoundry's NAND range (hardware-db25d.md 6.6): blocks in use, free and bad; then records
+		// The storage layer over RadioFoundry's NAND range: blocks in use, free and bad; then records
 		// written, block erases, blocks emptied by garbage collection and pages that read back wrong since boot;
 		// then torn pages the mount set aside, blocks retired since boot and the next sequence number
 		nand_sectors_stats_t st;
@@ -288,7 +288,7 @@ bool db25d_diag_line(uint8_t i, char *buf, uint8_t len)
 		}
 #if DB25D_DMR_TX
 		if (i == DIAG_DMR_FIRST + HRC_DMR_DIAG_LINES + 1) {
-			// DMR TX bursts (4.5): TX-on and TX-off sequences run, RF RX interrupts seen, what woke the last TX-off
+			// DMR TX bursts: TX-on and TX-off sequences run, RF RX interrupts seen, what woke the last TX-off
 			// (R: RF RX interrupt, T: slot tick, A: abort), and how many ramp downs started late, the last by how much
 			hrc_rfburst_stats_t t;
 			hrc_rfburst_stats(&t);

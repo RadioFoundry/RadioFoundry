@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 <!-- Read docs/dev/contributing.md and docs/CLEANROOM.md first. Delete what doesn't apply. -->
 
 ## What and why
@@ -26,19 +27,19 @@ end generated
 
 ## Checklist
 
-- [ ] Branch named `<type>/<area>-<short-description>`, title `<Area>: <what changed>`
-      ([contributing.md](https://github.com/radiofoundry/radiofoundry/blob/main/docs/dev/contributing.md#branches-and-pull-requests)).
-- [ ] Host unit tests cover the change (code changes), named in Testing above.
-- [ ] Clean room: written from `docs/spec/`, datasheets, public standards or permissively licensed code. Nothing
-      copied, translated or paraphrased from other firmware, GPL code, vendor SDKs or disassembly
-      ([CLEANROOM.md](https://github.com/radiofoundry/radiofoundry/blob/main/docs/CLEANROOM.md)).
-- [ ] This is my own work, or I have the right to submit it, and I license it under the project's MIT license
-      ([contributing.md](https://github.com/radiofoundry/radiofoundry/blob/main/docs/dev/contributing.md#license-of-contributions)).
-- [ ] No AMBE codec, stock firmware, bootloader keys, flash or memory dumps or audio recordings in the diff.
-- [ ] SPDX header on every new file.
-- [ ] `core/` stays radio independent: no board headers, no radio defines.
-- [ ] Code that costs flash is behind a `CONFIG_` switch, and the build is clean with it off.
-- [ ] Zero warnings in every configuration `tools/ci.sh` builds.
-- [ ] A behavior change updates its spec in `docs/spec/`; if users see it, `docs/user/` too.
-- [ ] A UI change regenerates the gallery and commits only the PNGs it meant to change.
-- [ ] US English in code, comments, docs and commit messages.
+<!-- The numbers are the rules in docs/dev/contributing.md#rules. -->
+
+- [ ] Branch `<type>/<area>-<short-description>`, title `<Area>: <what changed>`
+      ([branch names](https://github.com/radiofoundry/radiofoundry/blob/main/docs/dev/contributing.md#branch-names)).
+- [ ] I wrote this, or have the right to submit it, and license it under the project's MIT license
+      ([license of contributions](https://github.com/radiofoundry/radiofoundry/blob/main/docs/dev/contributing.md#license-of-contributions)).
+- [ ] 1. Clean room ([CLEANROOM.md](https://github.com/radiofoundry/radiofoundry/blob/main/docs/CLEANROOM.md)).
+- [ ] 2. No codec, firmware images, keys, dumps, or recordings in the diff.
+- [ ] 3. SPDX header on every new file.
+- [ ] 4. `core/` stays radio independent.
+- [ ] 5. Flash costs behind a `CONFIG_` switch; the build is clean with it off.
+- [ ] 6. Zero warnings in every configuration `tools/ci.sh` builds.
+- [ ] 7. US English.
+- [ ] 8. Host tests cover the change, named in Testing above; a UI change commits only the PNGs it meant to change.
+- [ ] 9. Specs in `docs/spec/` and, if users see it, `docs/user/` updated.
+- [ ] 10. New text marked for translation; translations done or listed as open tasks.

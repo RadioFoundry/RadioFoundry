@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// FD6818 transceiver driver (docs/spec/hardware-dm32.md 8)
+// FD6818 transceiver driver
 #include <stddef.h>
 #include "fd6818.h"
 #include "rf/subaudio/subaudio.h"

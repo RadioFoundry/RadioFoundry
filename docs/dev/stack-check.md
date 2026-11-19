@@ -1,13 +1,14 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
-# Stack Check
+# Stack check
 
 `make BOARD=<b> stack-check` computes the worst-case stack depth of every FreeRTOS task in a build and fails when a
 task's deepest call chain doesn't fit its stack. `tools/ci.sh` runs it on each board's default and maximal
 configuration, `--quick` too, so every pull request's firmware jobs check both. It exists because an overflow is
 invisible elsewhere: the host tests run the same code on large pthread stacks, and on the radio FreeRTOS' overflow
 hook spins without a word. A 768-byte buffer in `codeplug_contact_find` once overflowed the start task at boot; the
-check reported that chain 424 bytes over.
+check reports that chain 424 bytes over.
 
 On the radio, the debug link's `tasks` view section shows what each task has really used: its least free stack since
 it started ([debuglink.md](../spec/debuglink.md) 3.7, `CONFIG_TASK_STACKS`), and `tests/hil/test_task_stacks.py`
@@ -67,13 +68,13 @@ hide a deeper chain: add it to the table.
 | `extern NAME BYTES` | Code outside the build, a target written `@NAME` (the codec) |
 | `recursion FUNCTION...` | Recursion known to be bounded |
 
-The AMBE+2 codec runs on the audio task's stack: 4046 bytes measured on an STM32F4 radio (`codec-<id>.md`), so
-`stm32_codec_call` counts 4104 with the veneer. The HR_C7000 builds call the same library by address with 4096 bytes
-assumed (not measured on C-SKY).
+The AMBE+2 codec runs on the audio task's stack: 4046 bytes measured on an `stm32f4` radio, so
+`stm32_codec_call` counts 4104 with the veneer. The `hrc7000` builds call the same library by address with 4096 bytes
+assumed.
 
-A few C library paths need arguments RadioFoundry never passes and are cut with `lib` lines: newlib's `strstr` for needles of
-32 characters or more, and the floating point conversions of `printf`. Check the comment in the table before adding a
-call that breaks the assumption (a long `strstr` needle, `%f`).
+A few C library paths need arguments RadioFoundry never passes and are cut with `lib` lines: newlib's `strstr` for
+needles of 32 characters or more, and the floating point conversions of `printf`. Check the comment in the table before
+adding a call that breaks the assumption (a long `strstr` needle, `%f`).
 
 ## Reading the report
 
@@ -97,13 +98,14 @@ stack check <b>: every task fits, the least free: prvIdleTask 176 bytes
 
 ## Limits
 
-* Recursion is counted once and listed. RadioFoundry has no deep recursion; the cycles found are mutual calls through callbacks
-  (the network stack's `n_*`, the audio mixer).
+* Recursion is counted once and listed. RadioFoundry has no deep recursion; the cycles found are mutual calls through
+  callbacks (the network stack's `n_*`, the audio mixer).
 * Interrupt handlers on the main stack (STM32) aren't checked: they nest, and the stack has no size of its own (it may
-  grow down to the end of `.bss`). Its canary and `tasks.irq_free` watch it on the radio instead. Where they have a stack of their own and run one at a
-  time (HR_C7000), the platform's `STACK_IRQ` names that stack (its size, or the two linker symbols at its ends so the
-  size is the one linked) and the function that installs a handler: every function passed to it is a root, and the
-  deepest plus the margin must fit (the `irq` line). A handler installed any other way is missed. The interrupt stack's canary and `tasks.irq_free` catch what the check misses on the radio.
+  grow down to the end of `.bss`). Its canary and `tasks.irq_free` watch it on the radio instead. Where they have a
+  stack of their own and run one at a time (HR_C7000), the platform's `STACK_IRQ` names that stack (its size, or the two
+  linker symbols at its ends so the size is the one linked) and the function that installs a handler: every function
+  passed to it is a root, and the deepest plus the margin must fit (the `irq` line). A handler installed any other way
+  is missed. The interrupt stack's canary and `tasks.irq_free` catch what the check misses on the radio.
 * The code before the scheduler starts (`main`) runs on the main stack and isn't checked.
 * A pointer call whose target is computed at run time (an address from a table the sources don't spell) needs a table
   line.

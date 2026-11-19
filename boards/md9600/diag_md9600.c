@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 diagnostics page lines: the board revision in use and where it came from, then raw readings for the first
-// power-up (docs/spec/hardware-md9600.md 19): calibration and option blocks, band edges, the synthesizer's last LO,
+// power-up: calibration and option blocks, band edges, the synthesizer's last LO,
 // ADC channels, keys, flash. The debug link's board view (view_md9600.c) carries the same and more
 #include <stddef.h>
 #include "md9600.h"
@@ -80,7 +80,7 @@ bool md9600_diag_line(uint8_t i, char *buf, uint8_t len)
 		put(&o, md9600_opt_backlight_switched() ? " bl on/off" : "");
 		break;
 	case 5:
-	case 6: {	// the band edges from the option block (hardware-md9600.md 11.1)
+	case 6: {	// the band edges from the option block
 		md9600_band_edges_t e;
 		put(&o, i == 5 ? "VHF " : "UHF ");
 		if (!md9600_opt_band_edges(&e)) {
@@ -100,7 +100,7 @@ bool md9600_diag_line(uint8_t i, char *buf, uint8_t len)
 		put(&o, " x");
 		put_u(&o, rd.refused);
 		break;
-	case 8:		// receiver readings for the RSSI / squelch curves (hardware-md9600.md 5.7)
+	case 8:		// receiver readings for the RSSI / squelch curves
 	case 9:
 		put(&o, i == 8 ? "U rssi " : "V rssi ");
 		put_u(&o, md9600_adc_raw(i == 8 ? MD9600_ADC_RSSI_U : MD9600_ADC_RSSI_V));
@@ -113,7 +113,7 @@ bool md9600_diag_line(uint8_t i, char *buf, uint8_t len)
 		put(&o, "mV r");
 		put_u(&o, md9600_adc_raw(MD9600_ADC_SUPPLY));
 		break;
-	case 11:	// the hand-mic keypad ladder and the mic level (hardware-md9600.md 9.3)
+	case 11:	// the hand-mic keypad ladder and the mic level
 		put(&o, "mic r");
 		put_u(&o, md9600_adc_raw(MD9600_ADC_MICKEY_ROW));
 		put(&o, " c");

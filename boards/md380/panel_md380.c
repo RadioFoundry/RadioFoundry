@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// MD-380 panel type: the st7735 driver's type from the controller's ID and the factory byte (hardware-md380.md 7).
+// MD-380 panel type: the st7735 driver's type from the controller's ID and the factory byte.
 // No hardware access, so the host tests run it (boards/md380/tests/md380PanelTest.c)
 #include "panel_md380.h"
 

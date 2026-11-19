@@ -36,7 +36,7 @@ bool rt10_radio_transmitting(void);	// the radio is keyed (the shared PTT line's
 bool rt10_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write);
 bool rt10_diag_line(uint8_t i, char *buf, uint8_t len);
 
-// --- Factory calibration (calibration_rt10.c, hardware-rt10.md 4) ---
+// --- Factory calibration (calibration_rt10.c) ---
 #define RT10_CAL_STEPS		15u	// 10 MHz steps from the sector's base
 #define RT10_CAL_BASE_MIN	80u	// the base's plausible range, / 10 MHz
 #define RT10_CAL_BASE_MAX	95u
@@ -59,7 +59,7 @@ bool rt10_cal_tx_plan(uint32_t hz, bool high, rt10_tx_plan_t *p);
 uint8_t rt10_cal_tx_center(void);
 uint8_t rt10_cal_mod(uint32_t hz);
 
-// --- DMR burst timing (hardware-rt10.md 7.1; the arithmetic is platform/hrc7000/dmr_rfburst_timing.h) ---
+// --- DMR burst timing (the arithmetic is platform/hrc7000/dmr_rfburst_timing.h) ---
 // After the RF TX interrupt plus the plan's key-up delay, the TX on sequence has the PA within 1 dB at 2.53-2.66 ms and
 // its ramp done at 3.0-3.12 ms (SDR bench and the radio's own count). 2.9 ms puts the 1 dB point at least 0.24 ms
 // ahead of the first symbol: margin for the first burst of a transmission, whose interrupt can come late (later

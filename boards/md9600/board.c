@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // TYT MD-9600 / Retevis RT90: board descriptor, clocks, reset-time pin levels, key map, the SPI2 lock
-// (docs/spec/hardware-md9600.md)
 #include "board.h"
 #include "config.h"
 #include "md9600.h"
@@ -33,14 +32,14 @@ static void ccm_zero(void)
 }
 __attribute__((section(".preinit_array"), used)) static void (*const ccm_zero_entry)(void) = ccm_zero;
 
-// Both bands on every revision (hardware-md9600.md 5.1, unverified). Transmit stays refused in radio_md9600.c until
+// Both bands on every revision (unverified). Transmit stays refused in radio_md9600.c until
 // the revision is confirmed and the PA calibration is read
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
 	{ 400000000, 480000000, true },
 };
 
-// The power levels, per band (hardware-md9600.md 5.6: measured with a wattmeter). The same steps on both bands, the
+// The power levels, per band (measured with a wattmeter). The same steps on both bands, the
 // lowest and the top differ
 static const char *const power_names[] = { "100mW", "1W", "5W", "25W", "45W" };
 static const char *const power_names_vhf[] = { "250mW", "1W", "5W", "25W", "50W" };
@@ -49,9 +48,9 @@ static const board_power_band_t power_bands[] = {
 	{ 400000000u, 480000000u, power_names },
 };
 
-// docs/ux/information-architecture.md 7.4 on the front panel (hardware-md9600.md 9.1): Enter and Back, P1 / P2 as
+// docs/ux/information-architecture.md 7.4 on the front panel: Enter and Back, P1 / P2 as
 // QUICK / CONTEXT, Up / Down, P3 monitor, P4 talk target, the orange key a user key. The encoder sends ENC_STEP. The
-// power key isn't in the map: power_md9600.c watches it. The hand mic's keypad (9.3): digits, * and # as QUICK and
+// power key isn't in the map: power_md9600.c watches it. The hand mic's keypad: digits, * and # as QUICK and
 // CONTEXT, its up / down as the panel's, A and B user keys, C monitor, D talk target, A/B between channel and VFO (the
 // roles of A-D and A/B are a proposal, unverified)
 static const keymap_entry_t keymap[] = {
@@ -172,7 +171,7 @@ const board_t board = {
 	.hwopt_count = MD9600_HWOPT_COUNT,
 };
 
-// hardware-md9600.md 1.2: an 8 MHz HSE; SYSCLK 72 MHz from a 2 MHz PLL input (M 4, N 72, P 2), USB 48 MHz (Q 3),
+// An 8 MHz HSE; SYSCLK 72 MHz from a 2 MHz PLL input (M 4, N 72, P 2), USB 48 MHz (Q 3),
 // APB1 36 MHz, APB2 72 MHz: the platform's usual plan
 static const stm32_clock_t clock_crystal = {
 	.hse_hz = 8000000,
@@ -206,7 +205,7 @@ void md9600_spi2_unlock(void)
 	}
 }
 
-// SPI2 for the flash and the LCD: mode 3, PCLK1 36 MHz / 2 = 18 MHz (hardware-md9600.md 12.1). Both chip selects high
+// SPI2 for the flash and the LCD: mode 3, PCLK1 36 MHz / 2 = 18 MHz. Both chip selects high
 // first
 void md9600_spi2_init(void)
 {
@@ -222,7 +221,7 @@ void md9600_spi2_init(void)
 	stm32_spi_master_init(SPI2, true, true, 0);
 }
 
-// Levels before anything else runs (hardware-md9600.md 2.6): every transmitter supply, the PA loop and the receivers
+// Levels before anything else runs: every transmitter supply, the PA loop and the receivers
 // off, the HR_C6000 powered down, chip selects high, the amplifier muted. Power_Control (the RF and audio sections)
 // stays off until the radio code powers the receivers. PE15 (the AK2365A reset on V1-V4, unknown on V5) is left an
 // input until the revision is known; PA13 / PA14 (SWD) are taken by radio_md9600.c
@@ -257,7 +256,7 @@ static void reset_levels(void)
 	PIN_OUT(PIN_FM_MUTE, false);
 	PIN_OUT(PIN_FM_SW, false);
 	PIN_OUT(PIN_AF_BAND, false);
-	// The tone line released (open drain high): driven low it pulls the reference oscillator (hardware-md9600.md 2.6)
+	// The tone line released (open drain high): driven low it pulls the reference oscillator
 	stm32_pin_out(PIN_PORT(PIN_TONE_PWM), PIN_MASK(PIN_TONE_PWM), true, true);
 	PIN_OUT(PIN_BEEP_PWM, false);
 	PIN_OUT(PIN_BACKLIGHT, false);
@@ -275,7 +274,7 @@ void board_sysboot_prepare(void)
 	reset_levels();
 }
 
-// Transmitter off from any context (board.h, docs/spec/crash-log.md 8; hardware-md9600.md 2.6): the PA power loop
+// Transmitter off from any context (board.h, docs/spec/crash-log.md 8): the PA power loop
 // (APC_EN) and both transmitter supplies (T5_V, T5_U) off, both receive VCOs selected, and the PA reference DAC (DAC2)
 // to 0 when its clock is on. Register writes only. The synthesizers and the HR_C6000 are left as they are (a bus
 // transaction each); with T5 off their output reaches no powered PA. The backlight and the rest stay, so the stub's
@@ -296,7 +295,7 @@ void board_early_init(void)
 {
 	reset_levels();
 	if (!stm32_clock_init(&clock_crystal)) {
-		// A crystal is the expected part (hardware-md9600.md 1.2); an oscillator fed in needs bypass mode. Try that
+		// A crystal is the expected part; an oscillator fed in needs bypass mode. Try that
 		// before staying on HSI (no USB there)
 		stm32_clock_t bypass = clock_crystal;
 		bypass.hse_bypass = true;

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// DB25-D display: 1.77" 160x128 ST7735S-class TFT on a 4-wire serial bus (docs/spec/hardware-db25d.md 3.1, 5). ADC 2
+// DB25-D display: 1.77" 160x128 ST7735S-class TFT on a 4-wire serial bus. ADC 2
 // is a board strap: 50 or more, the bus is bit-banged with data on PTC7; below 50, it's the SPI2 controller with data on
 // PTC8. Clock (PTC4), CS, D/C and reset are the same on both. The backlight is PWM1 on PTA16 and needs PTA15 high.
 #include "db25d.h"
@@ -152,7 +152,7 @@ static void flush(const void *fb, const uint16_t *palette, uint16_t y0, uint16_t
 	}
 }
 
-// The stock recipe (hardware-db25d.md 5): PWM1 at 1 kHz, CFG bits 5, 8 and 9, repeat 5
+// The stock recipe: PWM1 at 1 kHz, CFG bits 5, 8 and 9, repeat 5
 static const hrc_backlight_t backlight = { .ch = 1, .cfg = 0x320u, .rpt = 5u, .period = 24000u };
 
 static void set_backlight(uint8_t percent)

@@ -2,7 +2,7 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 """The AnyRoad (TYT/Baofeng STM32) DFU bootloader: finding it and running a sector plan.
 
-Protocol from docs/spec/hardware-dm1701.md 15.1-15.3 (the same steps tools/stm32_dfu.py drives), with one change:
+Protocol: the same steps tools/stm32_dfu.py drives, with one change:
 only the sectors in the plan are erased and written, instead of every application sector. Each block is XORed with
 the 1024-byte model key; every sector starts a multiple of 1024 bytes after 0x0800C000, so every block starts at key
 index 0 whichever sectors are skipped.
@@ -222,8 +222,8 @@ def region(name):
 
 
 def normal_mode(interfaces, board=None):
-    """True when the DFU device is the radio's own firmware switched on normally, not its bootloader
-    (hardware-dm1701.md 15.1). The normal-mode firmware has the bootloader's USB IDs and strings, but erasing or writing
+    """True when the DFU device is the radio's own firmware switched on normally, not its bootloader.
+    The normal-mode firmware has the bootloader's USB IDs and strings, but erasing or writing
     through it can reach the bootloader's sectors. A board that declares its bootloader's layout ([flash.dfu] layout)
     accepts only that alt 0 string; any other board refuses a layout that shows only the bootloader's sectors (from
     0x08000000, at most BOOT_AREA bytes), as every original firmware's does. A bootloader shows the application area,

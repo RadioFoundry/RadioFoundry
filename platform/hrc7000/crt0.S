@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 /* Copyright (c) 2026 The RadioFoundry Authors */
-/* HR_C7000 / CK803S start-up (docs/spec/hardware-dm32.md 1.2, 2). The Baofeng bootloader jumps to the first byte of
+/* HR_C7000 / CK803S start-up. The Baofeng bootloader jumps to the first byte of
  * the application at 0x0300C000 (no header, no vector table there), so Reset_Handler is linked first. It runs from
  * XIP flash with whatever the bootloader left: interrupts off, supervisor mode, our stack, the RAM sections copied,
  * .bss cleared, then C. Vectors are set up later from C (irq.c) because the table lives in RAM. */
@@ -11,7 +11,7 @@
 	.type	Reset_Handler, @function
 Reset_Handler:
 	psrclr	ie
-	lrw	r0, 0x80000100		/* supervisor, exceptions enabled, interrupts off (hardware-dm32.md 1.2) */
+	lrw	r0, 0x80000100		/* supervisor, exceptions enabled, interrupts off */
 	mtcr	r0, psr
 	lrw	r0, __stack_top
 	mov	sp, r0

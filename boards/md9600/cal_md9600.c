@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// MD-9600 factory calibration and hardware option block (cal_md9600.h, docs/spec/hardware-md9600.md 11). Both blocks
+// MD-9600 factory calibration and hardware option block (cal_md9600.h). Both blocks
 // are kept whole as read (drivers/cal/calblock), so the bytes nobody has decoded yet are there for the diagnostics and
 // for a later layout; only the rows the spec lists are read, each only when it isn't blank. Transmit stays refused
 // (radio_md9600.c) until the PA rows are checked on a radio, whatever they hold.
@@ -19,7 +19,7 @@
 #define SAFE_RX_DAC		2048u
 #define CURVE			(CAL_CURVE_ROUND | CAL_CURVE_EXTEND)
 
-// Fixed offsets (11.2)
+// Fixed offsets
 #define OFF_RSSI_M120		0x04u
 #define OFF_RSSI_M70		0x05u
 #define OFF_REF_UHF		0x09u
@@ -28,7 +28,7 @@
 #define OPT_FLAGS		0x1Du
 #define OPT_BACKLIGHT_SWITCHED	0x10u
 
-// First byte of each row, UHF and VHF (11.2)
+// First byte of each row, UHF and VHF
 static const uint16_t row_offset[MD9600_CAL_ROW_COUNT][2] = {
 	[MD9600_CAL_RX_TUNE] = { 0x030, 0x039 },
 	[MD9600_CAL_POWER_LOW] = { 0x020, 0x029 },

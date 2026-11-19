@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// MD-9600 frequency plan: band, LO and the synthesizer and IF words per board revision (rfplan_md9600.h;
-// docs/spec/hardware-md9600.md 5.2-5.4). Each revision's synthesizer code is built only with its switch.
+// MD-9600 frequency plan: band, LO and the synthesizer and IF words per board revision (rfplan_md9600.h). Each revision's synthesizer code is built only with its switch.
 #include <stddef.h>
 #include "rfplan_md9600.h"
 #include "config.h"
@@ -18,7 +17,7 @@
 #include "rf/ak2365a/ak2365a.h"
 #endif
 
-// Bands (hardware-md9600.md 5.1, unverified)
+// Bands (unverified)
 #define VHF_LO_HZ	136000000u
 #define VHF_HI_HZ	174000000u
 #define UHF_LO_HZ	400000000u

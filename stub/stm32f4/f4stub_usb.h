@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The flash stub's USB device: a polled CDC-ACM serial port on the STM32F4 OTG_FS core (no interrupts, no DMA), with
-// the endpoints RadioFoundry uses (docs/spec/hardware-dm1701.md 16: bulk OUT 0x01 / IN 0x81, 64 bytes; interrupt IN 0x82).
+// the endpoints RadioFoundry uses (bulk OUT 0x01 / IN 0x81, 64 bytes; interrupt IN 0x82).
 #ifndef F4STUB_USB_H
 #define F4STUB_USB_H
 

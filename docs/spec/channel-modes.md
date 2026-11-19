@@ -6,10 +6,10 @@
 The open-firmware channel record ([open-firmware-cps.md](open-firmware-cps.md)) says FM or DMR. Every other digital
 mode, and every channel that needs more than that record holds (a trunked channel, a channel on a system), is stored
 as an ordinary record plus keyed records in the codeplug settings area ([codeplug-settings.md](codeplug-settings.md)).
-This spec is the generic layer: where each kind of data lives, how a mode claims its part, and the rules every reader
+This page is the generic layer: where each kind of data lives, how a mode claims its part, and the rules every reader
 and writer keeps. It defines no mode's fields; a mode's own layout is in its own spec, linked from the registry (4).
 
-What a mode needs, by category, and where it lives:
+This table lists what a mode needs, by category, and where it lives:
 
 | Need | Home | Section |
 |---|---|---|
@@ -39,7 +39,7 @@ What a mode needs, by category, and where it lives:
 
 ## 2. Channel tags
 
-Key 0x0400 + channel - 1, one per channel number (1-1024).
+Key `0x0400` + channel - 1, one per channel number (1-1024).
 
 ### 2.1 Layout
 
@@ -191,9 +191,7 @@ addresses uses.
 **Editor.** The contact picker of a channel asks the kind's module which list it offers: contacts, its targets, or
 both. A target's address is edited by the kind's module; the name and call type are generic fields.
 
-**Sharing.** Zone sharing does not carry targets yet: no kind in this tree refers to one. When one does, a shared
-channel is to carry every target its parameter block refers to: name, kind, flags and address; the receiver uses a
-target of the same kind and address it has, else adds one, and rewrites the reference. Targets are never secret.
+**Sharing.** Zone sharing doesn't carry targets, because no kind refers to one. Targets are never secret.
 
 ### 5.3 Target lists
 
@@ -232,11 +230,10 @@ writer keeps one it finds.
 ## 6. Radio behavior
 
 A channel of a kind the radio doesn't run (any kind not built, a built one the board can't carry, and ids it doesn't
-know) is **parked**: the radio
-tunes its receive frequency with the DMR modem off, the squelch never opens, PTT is refused as a mode not in this
-build, scan and dual watch skip it, roaming doesn't take it as a repeater and it can't be copied to the VFO (the VFO
-holds plain FM and DMR only). Its mode word is the kind's short name (`?` for an unknown id), and Home says the mode
-is not in this build. A built kind's mode module takes the channel instead.
+know) is **parked**: the radio tunes its receive frequency with the DMR modem off, the squelch never opens, PTT is
+refused as a mode not in this build, scan and dual watch skip it, roaming doesn't take it as a repeater, and it can't be
+copied to the VFO (the VFO holds plain FM and DMR only). Its mode word is the kind's short name (`?` for an unknown id),
+and Home says the mode is not in this build. A built kind's mode module takes the channel instead.
 
 The firmware applies tags when it reads a channel (`codeplug_channel`), so every caller sees the kind. A codeplug with
 no tag pays one walk of the tag range per change of the area.

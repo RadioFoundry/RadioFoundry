@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // HR_C7000 DMR modem glue (dmr_glue.h): the slot engine (drivers/modem/hrc7000/hrc7000_dmr.c) on the SoC's modem
 // interrupts, the DMR PA one-shot on Timer 3, and the deferred event task that calls the DMR stack (docs/spec/dmr-modem.md
-// 6, modem-hrc7000.md 3, hardware-dm32.md 8.5, 8.6).
+// 6, modem-hrc7000.md 3).
 //
 // What runs where (all interrupts at one level, never nested; this file and the engine run from RAM,
 // the board's linker script, but for the task-side code marked HRC_FLASHFUNC):
@@ -820,7 +820,7 @@ HRC_FLASHFUNC bool hrc_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		put_kv(&o, " u", m.txa_rx_us);
 		break;
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
-	case 12:	// the split duplex TX half's BS outbound (split-duplex.md 11.6), as the HR_C6000 radios' "bs" line
+	case 12:	// the split duplex TX half's BS outbound (split-duplex.md 11), as the HR_C6000 radios' "bs" line
 		put_kv(&o, "bs sl", bs.st.slots);
 		put_kv(&o, " b", bs.st.bursts);
 		put_kv(&o, " u", bs.st.underruns);

@@ -48,7 +48,7 @@
    ],
    "category": "DMR",
    "scope": "user",
-   "definition": "A number from 0 to 15 a DMR channel uses. Radios only hear calls with their color code.",
+   "definition": "A number from 0 to 15 that a DMR channel uses. A radio hears only calls with its channel's color code.",
    "link": "",
    "preview": true
   },
@@ -208,7 +208,7 @@
    ],
    "category": "DMR",
    "scope": "user",
-   "definition": "A DMR request another radio answers automatically, to show it is on and in range.",
+   "definition": "A DMR request that another radio answers automatically, to show that it's on and in range.",
    "link": "",
    "preview": true
   },
@@ -217,7 +217,7 @@
    "aliases": [],
    "category": "DMR",
    "scope": "user",
-   "definition": "DMR packet data the receiving radio acknowledges. What didn't arrive is sent again.",
+   "definition": "DMR packet data that the receiving radio acknowledges. The sender sends again what didn't arrive.",
    "link": "",
    "preview": true
   },
@@ -358,7 +358,7 @@
    ],
    "category": "DMR",
    "scope": "user",
-   "definition": "DVSI's voice codec used by DMR. Not part of RadioFoundry. Taken from each radio's stock firmware.",
+   "definition": "DVSI's voice codec that DMR uses. It isn't part of RadioFoundry: RadioFoundry takes it from each radio's original firmware file.",
    "link": "dev/codec.md",
    "preview": true
   },
@@ -421,7 +421,7 @@
    "aliases": [],
    "category": "RF and hardware",
    "scope": "user",
-   "definition": "The level a received signal must exceed before the radio plays it.",
+   "definition": "The level that a received signal must exceed before the radio plays it.",
    "link": "",
    "preview": false
   },
@@ -448,7 +448,7 @@
    "aliases": [],
    "category": "RF and hardware",
    "scope": "user",
-   "definition": "Transmitting on one frequency and receiving on another at the same time. Repeaters do, and so does the duplex hotspot setup.",
+   "definition": "Transmitting on one frequency and receiving on another at the same time. Repeaters do this, and so does the duplex hotspot setup.",
    "link": "spec/split-duplex.md",
    "preview": true
   },
@@ -457,7 +457,7 @@
    "aliases": [],
    "category": "RF and hardware",
    "scope": "user",
-   "definition": "Single frequency repeater. It repeats a call from one timeslot on the other timeslot of the same frequency. In MMDVM SFR the hotspot repeats, turned on by its host. In standalone SFR a channel set up in the codeplug repeats on its own, or talks through one.",
+   "definition": "Single frequency repeater: a call on one timeslot is repeated on the other timeslot of the same frequency. In MMDVM SFR, the hotspot repeats, turned on by its host. In standalone SFR, a channel set up in the codeplug repeats on its own, or talks through such a repeater.",
    "link": "spec/sfr.md",
    "preview": true
   },
@@ -466,7 +466,7 @@
    "aliases": [],
    "category": "Amateur and network",
    "scope": "user",
-   "definition": "A station's callsign sent in Morse code. A standalone SFR repeater channel sends one in FM every few minutes after traffic (Settings > Talk & listen > SFR CW ID).",
+   "definition": "A station's callsign sent in Morse code. A standalone SFR repeater channel sends one on FM every few minutes after traffic (Settings > Talk & listen > SFR CW ID).",
    "link": "user/14-hotspot.md",
    "preview": true
   },
@@ -520,7 +520,7 @@
    "aliases": [],
    "category": "RF and hardware",
    "scope": "user",
-   "definition": "Voice-operated transmit.",
+   "definition": "Voice-operated transmit: the radio transmits when you speak.",
    "link": "",
    "preview": true
   },
@@ -538,7 +538,7 @@
    "aliases": [],
    "category": "RF and hardware",
    "scope": "user",
-   "definition": "Listening on two channels, A and B, and talking on the selected one. With one receiver the radio alternates between them.",
+   "definition": "Listening on two channels, A and B, and talking on the selected one. With one receiver, the radio alternates between them.",
    "link": "",
    "preview": true
   },
@@ -594,7 +594,7 @@
    "aliases": [],
    "category": "RF and hardware",
    "scope": "user",
-   "definition": "Universal Serial Bus. The radio uses it for the debug link, the network mode and firmware updates.",
+   "definition": "Universal Serial Bus. The radio uses it for the debug link, the network mode, and firmware updates.",
    "link": "",
    "preview": false
   },
@@ -645,7 +645,7 @@
    "aliases": [],
    "category": "Vendor terms",
    "scope": "user",
-   "definition": "Motorola's DMR product line. Its extensions (ARS, TMS, LRRP, Capacity Plus) are not in the ETSI standard.",
+   "definition": "A commercial DMR product line. Its extensions (ARS, TMS, LRRP, Capacity Plus) aren't in the ETSI standard.",
    "link": "",
    "preview": true
   },
@@ -656,7 +656,7 @@
    ],
    "category": "Vendor terms",
    "scope": "dev",
-   "definition": "A MOTOTRBO single-site trunking mode in which the radios share a pool of repeater channels.",
+   "definition": "A commercial single-site DMR trunking mode in which the radios share a pool of repeater channels.",
    "link": "",
    "preview": true
   },
@@ -665,7 +665,7 @@
    "aliases": [],
    "category": "Vendor terms",
    "scope": "dev",
-   "definition": "A MOTOTRBO multi-site trunking system with a central controller.",
+   "definition": "A commercial multi-site DMR trunking system with a central controller.",
    "link": "",
    "preview": true
   },
@@ -676,7 +676,7 @@
    ],
    "category": "Vendor terms",
    "scope": "dev",
-   "definition": "A MOTOTRBO system of several Capacity Plus sites joined by a network.",
+   "definition": "A commercial DMR system of several Capacity Plus sites joined by a network.",
    "link": "",
    "preview": true
   },
@@ -685,7 +685,7 @@
    "aliases": [],
    "category": "Vendor terms",
    "scope": "user",
-   "definition": "Automatic Registration Service: a radio tells a presence server it is on the air.",
+   "definition": "Automatic Registration Service: a radio tells a presence server that it's on the air.",
    "link": "",
    "preview": true
   },
@@ -694,7 +694,7 @@
    "aliases": [],
    "category": "Vendor terms",
    "scope": "user",
-   "definition": "Text message service: Motorola's text message format on DMR. The standard's own short data uses other formats.",
+   "definition": "Text message service: a commercial text message format on DMR. The standard's own short data uses other formats.",
    "link": "",
    "preview": true
   },
@@ -705,7 +705,7 @@
    ],
    "category": "Vendor terms",
    "scope": "user",
-   "definition": "Location Request and Response Protocol: a dispatcher asks a radio for its position. Motorola's position format; the standard has LIP.",
+   "definition": "Location Request and Response Protocol: a dispatcher asks a radio for its position. A commercial position format; the standard has LIP.",
    "link": "",
    "preview": true
   },
@@ -718,7 +718,7 @@
    ],
    "category": "Vendor terms",
    "scope": "user",
-   "definition": "A fixed voice scrambling from Motorola and Anytone radios. Not encryption.",
+   "definition": "A fixed voice scrambling that many commercial DMR radios offer. It isn't encryption.",
    "link": "",
    "preview": true
   },
@@ -727,7 +727,7 @@
    "aliases": [],
    "category": "Vendor terms",
    "scope": "user",
-   "definition": "Customer programming software: the program that writes the codeplug. RadioFoundry uses qdmr.",
+   "definition": "Customer programming software: the program that writes the codeplug. With RadioFoundry, use the Codeplug Editor or qdmr.",
    "link": "user/04-programming.md",
    "preview": true
   },
@@ -747,7 +747,7 @@
    ],
    "category": "Vendor terms",
    "scope": "user",
-   "definition": "A radio a dispatch program on a computer uses to reach the fleet over the air.",
+   "definition": "A radio that a dispatch program on a computer uses to reach the fleet over the air.",
    "link": "",
    "preview": true
   },
@@ -909,8 +909,8 @@
    ],
    "category": "RadioFoundry and firmware",
    "scope": "user",
-   "definition": "The radio's programming: channels, zones, contacts, talkgroup lists, DMR ID.",
-   "link": "dev/cps-and-codeplug.md",
+   "definition": "The radio's programming: channels, zones, contacts, talkgroup lists, and DMR ID.",
+   "link": "user/04-programming.md",
    "preview": true
   },
   {
@@ -940,7 +940,7 @@
    ],
    "category": "RadioFoundry and firmware",
    "scope": "user",
-   "definition": "A person in the codeplug: name and DMR ID.",
+   "definition": "A person in the codeplug: a name and a DMR ID.",
    "link": "",
    "preview": false
   },
@@ -962,7 +962,7 @@
    ],
    "category": "RadioFoundry and firmware",
    "scope": "user",
-   "definition": "Where PTT goes: a talkgroup, a person or all call.",
+   "definition": "Where PTT goes: a talkgroup, a person, or all call.",
    "link": "",
    "preview": true
   },
@@ -991,7 +991,7 @@
    ],
    "category": "RadioFoundry and firmware",
    "scope": "user",
-   "definition": "A change that lasts until the channel changes or you press Back on Home. Hold OK to keep it.",
+   "definition": "A change that lasts until the channel changes or you press Back on Home. To keep it, hold OK.",
    "link": "",
    "preview": true
   },
@@ -1000,7 +1000,7 @@
    "aliases": [],
    "category": "RadioFoundry and firmware",
    "scope": "user",
-   "definition": "Opening the squelch (FM) or hearing all talkgroups (DMR) while a key is held.",
+   "definition": "Opening the squelch (FM), or hearing all talkgroups (DMR), while a key is held.",
    "link": "",
    "preview": false
   },
@@ -1018,7 +1018,7 @@
    "aliases": [],
    "category": "RadioFoundry and firmware",
    "scope": "user",
-   "definition": "RadioFoundry's list of stations heard and calls made.",
+   "definition": "The list of stations heard and calls made.",
    "link": "",
    "preview": false
   },
@@ -1125,7 +1125,7 @@
    "aliases": [],
    "category": "RadioFoundry and firmware",
    "scope": "user",
-   "definition": "The firmware a radio shipped with, before RadioFoundry. Each RadioFoundry radio takes its voice codec from it.",
+   "definition": "The firmware that a radio shipped with, before RadioFoundry. RadioFoundry takes the voice codec from its file.",
    "link": "",
    "preview": false
   },
@@ -1435,7 +1435,7 @@
    "aliases": [],
    "category": "RadioFoundry and firmware",
    "scope": "user",
-   "definition": "User interface: the screen, keys and menus.",
+   "definition": "User interface: the screen, keys, and menus.",
    "link": "",
    "preview": false
   },
@@ -1534,7 +1534,7 @@
    "aliases": [],
    "category": "RF and hardware",
    "scope": "user",
-   "definition": "Amplitude modulation: speech varies the carrier's strength. Airband uses it.",
+   "definition": "Amplitude modulation: speech varies the carrier's strength. The air band uses it.",
    "link": "",
    "preview": false
   },
@@ -1731,7 +1731,7 @@
    "aliases": [],
    "category": "RadioFoundry and firmware",
    "scope": "user",
-   "definition": "RadioFoundry, this firmware.",
+   "definition": "This firmware.",
    "link": "",
    "preview": false
   },

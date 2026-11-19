@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// UV380 family display: 160x128 TFT on FSMC bank 1 (8-bit on D0-D7), PWM backlight (docs/spec/hardware-dm1701.md 2.4,
-// 2.5, 3.2, 3.3, 9, 10.1). The DM-1701's lens hides 8 rows, the MD-UV380 shows all 128 (hardware-mduv380.md 4): board.mk
+// UV380 family display: 160x128 TFT on FSMC bank 1 (8-bit on D0-D7), PWM backlight. The DM-1701's lens hides 8 rows, the MD-UV380 shows all 128: board.mk
 // says how many with UVF_LCD_HIDDEN_ROWS. The backlight pin is the board's (PD8, or PC6 on the 10 W radio)
 //
 // The LCD data lines D0-D7 are also the keypad columns. Every LCD burst holds uvf_lcdbus_lock(), and starts by
@@ -277,7 +276,7 @@ static void init(void)
 	if (!stm32_spi_flash_read_security(3, 0x1D, &type, 1)) {
 		type = 0;
 	}
-	// hardware-dm1701.md 9.2: what each factory type means is the radio's (the DM-1701 runs its type 2 as type 3 in RGB
+	// What each factory type means is the radio's (the DM-1701 runs its type 2 as type 3 in RGB
 	// order, the MD-UV380 keeps every type and is always RGB)
 	panel.type = uvf_variant.panel_type[type & 3] & 3;
 	panel.force_rgb = uvf_variant.panel_rgb[type & 3];

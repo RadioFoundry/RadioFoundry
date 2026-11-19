@@ -19,8 +19,8 @@ the stock codeplug is read with dmrconf's TyT MD-390 driver (the MD-380, MD-390 
 turned into qdmr's radio-independent YAML, cleaned of RX group lists RadioFoundry doesn't need, encoded with the driver for
 qdmr's open firmware family (OpenUV380), which is the layout RadioFoundry's CPS compatibility layer serves, and written through
 that layer with cps_client.py. The codeplug steps are shared with the other radios' migration tools
-(codeplug_port.py, docs/spec/codeplug-port.md). docs/spec/md380-migration.md has the details,
-docs/user/18-moving-from-stock-md380.md the user guide.
+(codeplug_port.py, docs/spec/codeplug-port.md). The user guide is
+docs/user/18-moving-from-stock.md, with the MD-380 values in docs/user/23-radios.md.
 
 Needs Python 3.8+, dmrconf (qdmr 0.12 or newer) on PATH, pyusb with libusb (flashing) and pyserial (talking to the
 radio once it runs RadioFoundry). The flash and debug link helpers (stm32_dfu.py, rfoundry_debug.py), codeplug_port.py and
@@ -57,8 +57,7 @@ RDT_SIZE = RDT_HEADER + CODEPLUG_SIZE + RDT_TRAILER
 STOCK_DRIVER = "md390"        # dmrconf --radio for the stock codeplug (MD-380, MD-390, RT3)
 RFOUNDRY_DRIVER = "openuv380"      # dmrconf --radio for RadioFoundry (open-firmware-cps.md 4: radio type 7, OpenUV380 family)
 
-# The DMR ID database on a data flash under 16 MB, where RadioFoundry's flash image ends at 0x100000 (image 0xE0000;
-# hardware-md380.md 12.2): area 1 at image 0x50000 holds 256 KB less the 12-byte header, area 2 runs from image
+# The DMR ID database on a data flash under 16 MB, where RadioFoundry's flash image ends at 0x100000 (image 0xE0000): area 1 at image 0x50000 holds 256 KB less the 12-byte header, area 2 runs from image
 # 0xD8000 to the image end (open-firmware-cps.md 7.5). openuv380 records are 27 bytes (32-character text)
 IDDB_RECORD = 27
 IDDB_SMALL_IMAGE_END = 0x100000 - 0x20000
@@ -77,7 +76,7 @@ SECTION_NAMES = cp.SECTION_NAMES
 APP_BASE = 0x0800C000
 FLASH_END = 0x08100000
 CODEC_SIG = 0x4FF0E92D
-CODEC_SIG_ADDR = 0x080E0000   # first word of the D002.032 codec code where the merge puts it (codec-placement.md)
+CODEC_SIG_ADDR = 0x080E0000   # first word of the D002.032 codec code where the merge puts it
 CONTAINER_MAGIC = b"OutSecurityBin"
 CONTAINER_HEADER = 0x100
 MD380_KEY_SHA256 = "5254139c6b596d9413d106e6b7c0685ec245d69555cb28df98f061d6b879c4cd"
@@ -208,8 +207,8 @@ def classify_image(data):
 
 def container_stream(data, segs):
     """The encrypted stream the bootloader takes, straight out of a TYT updater file. The file's payload is XORed with
-    the key indexed from the payload start, and the bootloader stream with the key indexed from 0x0800C000
-    (hardware-md380.md 14.2-14.3), so when the segments start at 0x0800C000 and are contiguous the payload is sent as
+    the key indexed from the payload start, and the bootloader stream with the key indexed from 0x0800C000,
+    so when the segments start at 0x0800C000 and are contiguous the payload is sent as
     it is, without the key."""
     if segs[0][0] != APP_BASE:
         raise MigrateError("the updater file starts at 0x%08X, not 0x%08X: not an MD-380 application file"
@@ -687,7 +686,7 @@ EXIT_WATCH_S = 6    # after the bootloader's exit request: long enough for the r
 def flash_result(stock, loader_back):
     """What to say after the write and the exit request. stock: a TYT updater file was written, not RadioFoundry.
     loader_back: a device 0483:DF11 is on USB when the watch ends. RadioFoundry never uses that ID, so there it is the
-    bootloader; the stock firmware in programming mode uses it too (docs/spec/md380-migration.md 3), so there only the
+    bootloader; the stock firmware in programming mode uses it too, so there only the
     screen tells."""
     what = "the stock firmware" if stock else "RadioFoundry"
     off_on = "switch the radio off and on (take the battery off and refit it if the switch does nothing)"

@@ -2,8 +2,8 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // The Baofeng factory calibration decoder (drivers/cal/baofeng) on a synthetic factory page in a fake data flash:
 // page search, the three pieces, BCD frequency tables, K values, modulation balance, PA drive interpolation and
-// power levels, the L / M / H diagnostics text, and the fallbacks (docs/spec/hardware-dm32.md 11); the DM-1801 Pro's
-// own row lookup at its TX points (hardware-dm1801pro.md 6.4)
+// power levels, the L / M / H diagnostics text, and the fallbacks; the DM-1801 Pro's
+// own row lookup at its TX points
 #include <stdio.h>
 #include <string.h>
 #include "cal/baofeng/baofeng_cal.h"
@@ -125,7 +125,7 @@ static void test_values(void)
 	test_drive_text();
 }
 
-// The DM-1801 Pro's own lookup (bf_cal_tx_byte, hardware-dm1801pro.md 6.4) on a page with TX point lists that differ
+// The DM-1801 Pro's own lookup (bf_cal_tx_byte) on a page with TX point lists that differ
 // from the even steps (155.5 MHz, not 155), clamping to the band limits and the three-byte register 0x40 row
 static void test_tx_byte(void)
 {

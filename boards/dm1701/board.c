@@ -19,37 +19,37 @@
 #include "hostlink/hostlink_ppp.h"
 #endif
 
-// Matrix positions, [row][column D0..D7] (hardware-dm1701.md 10.1, DM-1701 / RT84 table; side keys: section 20)
+// Matrix positions, [row][column D0..D7] (DM-1701 / RT84 table; side keys: section 20)
 const uint8_t uvf_key_matrix[3][8] = {
 	{ KEY_1, KEY_4, KEY_7, KEY_STAR, KEY_UP, KEY_FN_RIGHT, KEY_FN_LEFT, STM32_KEYPAD_NO_KEY },
 	{ KEY_2, KEY_5, KEY_8, KEY_0, KEY_DOWN, KEY_RED, KEY_GREEN, STM32_KEYPAD_NO_KEY },
 	{ KEY_3, KEY_6, KEY_9, KEY_HASH, STM32_KEYPAD_NO_KEY, KEY_SK1, KEY_SK3, KEY_SK2 },
 };
 
-// DMR key-up (docs/spec/pa-keyup.md, hardware-dm1701.md 7). UHF: the fit of tools/bench/pa_cal.py, judged by the
+// DMR key-up (docs/spec/pa-keyup.md). UHF: the fit of tools/bench/pa_cal.py, judged by the
 // ramp's shape; on a cable levels 1-3 come up 0.32-0.49 ms before the first symbol with at most 0.7 dB of overshoot,
 // the lowest within 1.6 dB of its level at the first symbol across the band, the top 1.6-2.5 dB short (its PA point
 // is the SFR limit below). VHF:
 // set by hand on a cable (the tool's fit comes out late): levels 0-3 up 0.10-0.17 ms before the first symbol with at
 // most 1.1 dB of overshoot, the top level at it (its boost is capped). The lowest level is far too slow on its own
 // drive, so every level is boosted from the board's earliest point (2.5 ms) until 0.6 ms before the first symbol; the
-// knee sets how much more the low levels get (hardware-dm1701.md 7). The PA 0.8 ms (VHF) and 1.0 ms
+// knee sets how much more the low levels get. The PA 0.8 ms (VHF) and 1.0 ms
 // (UHF) after the RF TX interrupt: 0.6 ms cut the end of the burst an SFR repeater receives just before
 static const pa_keyup_cfg_t keyup[2] = {
 	{ .dead_pm = 1, .knee_us = 638, .slope_us = 2398, .window_us = 2500, .settle_us = 600, .pa_us = 1730 },
 	{ .dead_pm = 349, .knee_us = 247, .slope_us = 1248, .window_us = 1530, .settle_us = 800, .pa_us = 1530 },
 };
 
-// The power levels (hardware-dm1701.md 7): draft drives from the SDR bench's relative levels with the high row taken
+// The power levels: draft drives from the SDR bench's relative levels with the high row taken
 // as 5 W; not yet measured with a wattmeter
 static const uvf_power_band_t power5[2] = {
 	{ .low = { 517, 800 }, .frac = { 723, 791 } },
 	{ .low = { 339, 620 }, .frac = { 838, 809 } },
 };
 
-// hardware-dm1701.md: 9.2 (type 2 is "vertically flipped; treated as type 3 with RGB order": the bench radio reports 2,
-// and the type 2 MADCTL showed the picture mirrored top to bottom), 11.1 (raw / 37.5 per 0.1 V), 11.2 (measured on the
-// bench: 26 at the bottom, 2063 at the top; spec 29..2075), 7 and 12.1 (the DM-1701 rows)
+// Display type 2 is "vertically flipped; treated as type 3 with RGB order": the bench radio reports 2, and the type 2
+// MADCTL showed the picture mirrored top to bottom. Battery: raw / 37.5 per 0.1 V. Volume knob ADC: 26 at the bottom,
+// 2063 at the top (29..2075 specified)
 const uvf_variant_t uvf_variant = {
 	.panel_type = { 0, 1, 3, 3 },
 	.panel_rgb = { false, false, true, false },
@@ -60,7 +60,7 @@ const uvf_variant_t uvf_variant = {
 	.keyup = keyup,
 	.power5 = power5,
 #if CONFIG_GPS
-	.init = uvf_gps_init,	// an owner-fitted module on PA10 / PA9 (hardware-dm1701.md 14.2)
+	.init = uvf_gps_init,	// an owner-fitted module on PA10 / PA9
 #endif
 };
 
@@ -82,7 +82,7 @@ static const band_t bands[] = {
 static const char *const power_names[] = { "100mW", "500mW", "1W", "2.5W", "5W" };
 
 // The side keys are SK1 (above PTT, row 2 D5; held with PTT at power-on it is the bootloader combination, which the
-// running firmware never sees), SK2 and SK3 (below PTT), top to bottom (hardware-dm1701.md 20). SK3: short = power
+// running firmware never sees), SK2 and SK3 (below PTT), top to bottom. SK3: short = power
 // level; held 1.5 s = emergency where it is built (information-architecture.md 7.1), else speak status
 #if CONFIG_DMR_EMERGENCY
 #define SK3_LONG	ACT_EMERGENCY
@@ -122,7 +122,7 @@ static const char *const side_key_names[] = { "SK1", "SK2", "SK3", "P1", "P2" };
 
 #if CONFIG_CPS_OPENFW
 // open-firmware-cps.md 4: type 8 is the DM-1701 with a BGR panel, 10 with an RGB one (the factory panel type 2 is
-// driven in RGB order, hardware-dm1701.md 9.2)
+// driven in RGB order)
 static uint32_t cps_radio_type(void)
 {
 	uint8_t type = 0;
@@ -193,7 +193,7 @@ const board_t board = {
 #if CONFIG_GPS
 	.gps = &stm32_gps,
 #endif
-	// hardware-dm1701.md 11.1: low battery 6.2 V (back above 6.4 V); critical 6.0 V (3.0 V a cell) is our choice, the
+	// Low battery 6.2 V (back above 6.4 V); critical 6.0 V (3.0 V a cell) is our choice, the
 	// spec gives none (below 5.5 V the board reads as switched off)
 	.battery_low_mv = 6200,
 	.battery_critical_mv = 6000,

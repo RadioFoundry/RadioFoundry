@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// DB25-D RF chips, whichever the radio has (docs/spec/hardware-db25d.md 4.2, 4.8). One image serves every batch: the
+// DB25-D RF chips, whichever the radio has. One image serves every batch: the
 // main transceiver is a BK4819 (PRO) or an FD6818 (older batches), the LO a BK4819, an FD6818, the 0x7813 part or an
 // AT1141. rfchip_db25d.c reads register 0 of each chip at start-up and drives the pair it finds; radio_db25d.c and
 // dmr_db25d.c only call the functions below.
@@ -27,7 +27,7 @@ uint32_t db25d_rf_writes(void);
 
 void db25d_main_idle(void);
 void db25d_main_rx_state(void);
-// The main chip's band flag (the TX band) for hz (hardware-db25d.md 4.8)
+// The main chip's band flag (the TX band) for hz
 void db25d_main_band(uint32_t hz);
 // Idle, then the 51.55 MHz IF (receive)
 void db25d_main_to_if(void);
@@ -62,7 +62,7 @@ void db25d_main_burst(uint32_t hz, bool tx);
 void db25d_lo_tune(uint32_t hz);
 void db25d_lo_off(void);
 void db25d_lo_resume(void);
-// The LO's output that follows ADC 7 (hardware-db25d.md 3.3); the chip writes it only when it changes
+// The LO's output that follows ADC 7; the chip writes it only when it changes
 void db25d_lo_aux(bool high);
 
 #endif

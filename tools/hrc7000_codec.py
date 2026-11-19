@@ -4,8 +4,7 @@
 """Merge an HR_C7000 radio's own stock AMBE+2 codec into a RadioFoundry image, on your machine.
 
 The radios differ only in where things are (BOARDS: the slot and the windows its linker script reserves; PROFILES: where
-a stock file keeps the codec). The recipe, for the DM-32UV from docs/spec/codec-dm32.md ("Where the codec is",
-"Recommended hosting"), for the DB25-D from docs/spec/hardware-db25d.md 8 and for the RT10 from docs/spec/hardware-rt10.md 8:
+a stock file keeps the codec). The recipe:
   1. check the stock file by SHA-256 (DM-32UV: Baofeng DM32.01.01.049.bin or DM32.00.01.046HRVocoder.bin, "BFUV32-V2"
      header; DB25-D PRO: a plain 909E.D6x.EARSAB.018 image of 2024-05-09 or later);
   2. carve the codec code window and the codec table window (file offset = address - 0x0300C000 + the file's header);
@@ -13,8 +12,7 @@ a stock file keeps the codec). The recipe, for the DM-32UV from docs/spec/codec-
   4. write a new raw image: the built image from 0x0300C000 (the DB25-D's includes its first stage), 0xFF padding,
      then the codec slot at 0x030E8000: a 128-byte header (platform/hrc7000/codec_slot.h, codec_slot_t), the code, the
      tables and the relocation list. The code and tables are the stock bytes. At boot the firmware copies the code to
-     the start of the board's codec window and moves the words the list names (the build's codec map, self_refs:
-     docs/spec/codec-placement.md), and copies the tables to their stock modem SRAM address.
+     the start of the board's codec window and moves the words the list names (the build's codec map, self_refs), and copies the tables to their stock modem SRAM address.
 
 The codec is DVSI's and Baofeng's, not ours: it is never stored in this repository or in a release. This tool reads
 your stock file and writes the merged image to a file you choose (by default next to the built image, in build/, which
@@ -41,7 +39,7 @@ CODEC_SIG = (0x152514D8, 0x74C776CD)
 
 # Per radio, from the board registry (the __codec_* symbols of the board's linker script, its [flash.stub]): the codec
 # slot in program flash, the codec window at the top of SRAM (the slot's code runs at its start; sized for the largest
-# code among the board's maps), the modem SRAM table window (docs/spec/codec-placement.md), and what the web flasher
+# code among the board's maps), the modem SRAM table window, and what the web flasher
 # needs beyond the codec (site/rfoundrysite/repo.py c7000_flash): the program flash size, whether the SPI0 chip select the
 # data flash sits on has one (not on a radio with the SPI NAND there), and where a NAND radio keeps its calibration
 # copies. The image starts at app_base.
@@ -52,12 +50,12 @@ BOARDS = {b.id: {"slot": b.codec_slot, "run": b.codec_run, "tables": b.codec_tab
           for b in boards.BOARDS.values() if b.codec_tool == "hrc7000_codec"}
 PROGMEM_BASE = 0x03000000   # a program flash dump starts here
 
-# Entry points, offsets from the codec start (codec-dm32.md "Entry points"); fec_init differs per version
+# Entry points, offsets from the codec start; fec_init differs per version
 ENTRIES = ("decode", "encode", "dec_init", "dec_set", "enc_init", "enc_set", "fec_init")
 
 # The 049 entry points: every DM-32UV stock build from 032 to 049, and NRFB 050, carries the same codec code, byte for
 # byte, except for its table pointers (the NRF and fanti builds' tables sit 8 bytes higher, NRFB's 0x18 higher) and
-# stock code that lies inside the window but isn't codec (codec-dm32.md "Stock versions")
+# stock code that lies inside the window but isn't codec
 ENTRIES_049 = {"decode": 0x0, "encode": 0x260, "dec_init": 0xB4, "dec_set": 0x84, "enc_init": 0x314,
                "enc_set": 0x2E4, "fec_init": 0x1BF8}
 
@@ -171,7 +169,6 @@ PROFILES = {
     },
     # DM32.NRFB.01.050, known only from a program flash read: the key is the code window's SHA-256. Its codec is the
     # 049 one (tables 10684c33...); the table pointers sit 0x10 above the NRF builds' and the tables end at 0x18003E38
-    # (docs/spec/codec-dm32.md)
     "8d7f57eb84147dc6fc85d7ca4dd80fe6f2256cfb2cfe5b822bae07088a642db7": {
         "name": "DM32.NRFB.01.050 program flash", "board": "dm32", "kind": "progmem", "tag": 50,
         "size": 0x100000,
@@ -183,7 +180,6 @@ PROFILES = {
     },
     # A whole program flash dump (1 MB from 0x03000000, e.g. stub/stubtool.py --progmem) holds the radio's own data
     # besides the firmware, so it's known by the SHA-256 of the code window (the key) and of the table window
-    # (docs/spec/codec-dm1801pro.md 1)
     "8f7641b69a5cdfc946507ec48ddb67febe91d964520d5522bebd707f363f1a42": {
         "name": "DM-1801 Pro program flash (049 codec)", "board": "dm1801pro", "kind": "progmem", "tag": 49,
         "size": 0x100000,
@@ -196,7 +192,7 @@ PROFILES = {
     },
 }
 
-# DB25-D PRO stock images: plain, linked at 0x0300C000, no container (hardware-db25d.md 8). Code: 0x12B20 bytes at the
+# DB25-D PRO stock images: plain, linked at 0x0300C000, no container. Code: 0x12B20 bytes at the
 # signature, run at 0x1CEB0 (the stock start-up copies the RAM block from 0x030B4DA8-class addresses to 0x10000, which puts
 # the codec at 0x1CEB0 in the three newest; the 2023-07-06 build's is at 0x1795C, its tables at 0x180010B4, the lowest). Tables: one 0x2D50 window (two object groups, 4 bytes apart) in the modem SRAM
 # image, run at 0x180014AC + the build's shift. fec_init is +0x1DCC in all three
@@ -240,7 +236,7 @@ PROFILES.update({
     },
     # 020: a different compile of the same codec (other function order, run at 0x180B8, its own entry offsets; the tables
     # are byte for byte 018's, at 0x18001610). No vendor file is published, so it is known by its code window in a program
-    # flash read, as the DM-1801 Pro's (hardware-db25d.md 8)
+    # flash read, as the DM-1801 Pro's
     "a9e67fb713b56c89b6571ee01b6d49fd605fb723ee2668d0b6afc09962bd8b90": {
         "name": "DB25-D PRO 909E.D6x.EARSAB.020 (program flash read)", "board": "db25d", "kind": "progmem", "tag": 20,
         "size": 0x100000,
@@ -254,7 +250,7 @@ PROFILES.update({
 })
 # Retevis RT10 V1.1.2: no vendor file, only a program flash read. 020's compile with one function inside the window
 # 20 bytes shorter, so the codec code after it and fec_init sit 20 bytes lower; it runs from RAM at 0x16DD8 (the
-# RAM block is at 0x10400). The tables are byte for byte 018's, at 0x1800420C (hardware-rt10.md 8)
+# RAM block is at 0x10400). The tables are byte for byte 018's, at 0x1800420C
 PROFILES.update({
     "3f3b8740df14c81b44f53f984e4e570a609ec467233341729157f5c176cc3c15": {
         "name": "Retevis RT10 V1.1.2 (program flash read)", "board": "rt10", "kind": "progmem", "tag": 112,
@@ -282,7 +278,7 @@ examples:
   %(prog)s --self-test
 
 then:  tools/serial_loader.py --model dm32 build/dm32/rfoundry_dm32_codec.bin --wrap build/dm32/rfoundry_dm32_codec_BFUV32.bin
-       and load that file with the Baofeng updater (docs/testing/dm32-bringup.md)
+       and load that file with the Baofeng updater
 """
 
 

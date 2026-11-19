@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // DB25-D PRO SPI NAND: Kioxia TC58CVG1S3HRAIJ (2 Gbit) on SPI0, chip select PTA18 by GPIO, set up as the stock firmware
-// does (docs/spec/hardware-db25d.md 3.2, 6.5). The factory calibration copy is read at boot; with CONFIG_NAND_STORAGE
-// the core's storage lives in RadioFoundry's own block range (6.6, flash_db25d.c), the only blocks the driver will program or
+// does. The factory calibration copy is read at boot; with CONFIG_NAND_STORAGE
+// the core's storage lives in RadioFoundry's own block range (flash_db25d.c), the only blocks the driver will program or
 // erase. One recursive mutex serializes every NAND transaction once the scheduler runs: the storage layer holds it
 // across a whole read-modify-program sequence, which uses the chip's page buffer.
 #include "db25d.h"

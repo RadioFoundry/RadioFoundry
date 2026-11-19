@@ -10,7 +10,6 @@ docs/spec/* a radio's own pages cite the radio a fact was compared with; to link
 
 # Docs with per-radio notes and examples: to move per-radio values into docs/user/23-radios.md and hardware pages.
 docs/ux/* the UX research and wireframes name the radio each screen size was drawn for
-docs/testing/* test plans and bring-up pages compare with the radio a case was first run on
 README.md the front page's text around the generated radio table names the radios
 boot/README.md the first-stage index describes the one board with a first stage (to generate from boot/<id>/)
 stub/README.md the stub guide's per-radio entry steps (to move into each radio's hardware page)
@@ -36,7 +35,6 @@ tools/hrc7000_codec.py per-radio stock codec slot layouts; to move into codec_ma
 tools/stm32_dfu.py per-radio DFU keys and bootloader strings; to move into board.toml
 tools/rfoundry/README.md per-radio flash routes, stock formats and their tests; to read from registry.json
 tools/rfoundry/rfoundry/cli.py per-radio flash routes, stock formats and their tests; to read from registry.json
-tools/rfoundry/rfoundry/codec_maps/README.md per-radio flash routes, stock formats and their tests; to read from registry.json
 tools/rfoundry/rfoundry/codecsave.py per-radio flash routes, stock formats and their tests; to read from registry.json
 tools/rfoundry/rfoundry/manifest.py per-radio flash routes, stock formats and their tests; to read from registry.json
 tools/rfoundry/rfoundry/serialflash.py per-radio flash routes, stock formats and their tests; to read from registry.json
@@ -66,7 +64,6 @@ site/static/js/flasher/f4stub.js per-radio route or stock format data
 site/static/js/flasher/fake.js per-radio route or stock format data
 site/static/js/flasher/fakec7000.js per-radio route or stock format data
 site/static/js/flasher/iap.js per-radio route or stock format data
-site/static/js/flasher/iapui.js per-radio route or stock format data
 site/static/js/flasher/migrate.js per-radio route or stock format data
 site/static/js/flasher/select.js per-radio route or stock format data
 site/static/js/flasher/stockfw.js per-radio route or stock format data
@@ -114,7 +111,6 @@ tests/host/subaudioDspTest.c uses one radio's recorded data
 tests/host/uiFlowTest.c uses one radio's recorded data
 
 # HIL tests: per-radio skips and bench notes. tests/hil is outside this change; to move per-radio skips into board.toml [features].
-tests/hil/README.md per-radio skip reasons and bench notes
 tests/hil/test_aprs.py per-radio skip reasons and bench notes
 tests/hil/test_audio_probe.py per-radio skip reasons and bench notes
 tests/hil/test_boot.py per-radio skip reasons and bench notes
@@ -140,6 +136,3 @@ site/tests/stocklayouts.test.mjs a build named by its stock file in a comment
 # Generic docs that still name radios (AGENTS.md, generic docs). Exact paths only: a glob can't excuse a generic doc.
 # Each is to rewrite: say what a board provides (CAP_*, board_t) and link feature-matrix.md; move the radio's facts to
 # its own page.
-
-# One section of a generic doc that names radios on purpose (owner-approved): path#anchor, that section only.
-docs/spec/sfr.md#6-known-issues-by-radio the per-radio known issues of the experimental standalone SFR

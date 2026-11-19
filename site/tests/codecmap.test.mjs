@@ -87,7 +87,7 @@ test("the code and its table window move as two blocks, and the move is read bac
 	}
 });
 
-// Every window moved as its own block (relocate, docs/spec/codec-placement.md "Layouts"): for the code and one table
+// Every window moved as its own block (relocate): for the code and one table
 // window it is the two-block move rfoundry's vectors give, and it goes back the same way, from any layout to any other
 test("relocating window by window gives the two-block move's bytes, both ways, and checks every site", async () => {
 	const W = V.window;

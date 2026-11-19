@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // DB25-D radio: the main transceiver and the LO on one bit-banged 3-wire bus, the superhet's RX paths and analog FM
-// receive (docs/spec/hardware-db25d.md 3.2, 4). The chips are the PRO's two BK4819 or an older batch's FD6818 with its
-// LO (4.8); rfchip_db25d.c drives whichever pair the radio has, the sequences here are the same for all.
+// receive. The chips are the PRO's two BK4819 or an older batch's FD6818 with its
+// LO; rfchip_db25d.c drives whichever pair the radio has, the sequences here are the same for all.
 //
 // Receive on f: the LO synthesizes f + 51.55 MHz, the main chip receives and demodulates at the 51.55 MHz IF, and DAC
-// A tunes the front end from the calibration page (6.4).
+// A tunes the front end from the calibration page.
 //
 // Analog FM transmit: the main chip is tuned to f itself and modulates the microphone (the stock firmware never uses
-// the C7000's FM modulator, 4.1), the LO chip is switched off, and the PA is keyed through the RF switch pins and DAC B
-// with its drive from the page (3.2, 6.4). TX is refused without a valid page, outside the bands, or with a tone other
+// the C7000's FM modulator), the LO chip is switched off, and the PA is keyed through the RF switch pins and DAC B
+// with its drive from the page. TX is refused without a valid page, outside the bands, or with a tone other
 // than CTCSS. A chip that identifies as none of the known parts isn't driven at all.
 //
-// DMR transmit (make DB25D_DMR_TX=1 with CONFIG_DMR, 4.5): tx() only arms it. The modem's 4FSK goes on the reference
+// DMR transmit (make DB25D_DMR_TX=1 with CONFIG_DMR): tx() only arms it. The modem's 4FSK goes on the reference
 // oscillator, the main chip sends a carrier with its deviation off, and the whole TX sequence above runs once per burst
 // (db25d_burst_on / db25d_burst_off, from the RF task in dmr_db25d.c).
 #include "db25d.h"
@@ -47,14 +47,14 @@
 // Speaker volume steps 1..RADIO_VOLUME_MAX -> the AF DAC gain nibble (register 0x48 bits 3:0): the nibble rises with
 // the step, step 1 = 0 up to DB25D_VOL_GAIN_TOP at the top step; with 16 steps and TOP 15 that is nibble = step - 1.
 // The other fields of 0x48 stay at the stock value. Step 0 is mute. The stock firmware leaves the nibble at 3 after
-// its init and has no volume of its own that was found (hardware-db25d.md 3.3). The dB per nibble step is not
+// its init and has no volume of its own that was found. The dB per nibble step is not
 // measured (INF): lower DB25D_VOL_GAIN_TOP if the top steps distort at the speaker
 #ifndef DB25D_VOL_GAIN_TOP
 #define DB25D_VOL_GAIN_TOP	15u
 #endif
 #define DB25D_VOL_GAIN_DEFAULT	3u
 // The same steps on the PCM path (DMR voice, beeps), which leaves the modem's codec line out and never passes the
-// main chip's AF gain (4.5): the line out gain, 0 dB at the default step as before the volume reached it, 3 dB a step
+// main chip's AF gain: the line out gain, 0 dB at the default step as before the volume reached it, 3 dB a step
 // below and up to this many dB at the top step (hrc7000_volume_db). Not measured at the speaker (INF)
 #ifndef DB25D_PCM_VOL_TOP_DB
 #define DB25D_PCM_VOL_TOP_DB	12
@@ -66,10 +66,10 @@ _Static_assert(TX_SUPPLY_US == DB25D_DMR_SUPPLY_US, "the DMR lead counts the sam
 #define TX_END_PATH_US		300u		// 3.2: PA select off and PTA23 high, then this long before the receiver is retuned
 #define TX_END_RX_US		200u		// after the RX path is switched on again
 // TX data advance (hrc7000_t.tx_pre_on) 0.6 ms, not the chip's 0.4 ms: at 0.4 ms the inbound burst came 0.17 ms late
-// against the outbound (4.5)
+// against the outbound
 #define TX_PRE_ON		6u
 #define BIAS_DEFAULT_HZ		450000000u	// the modulation balance's frequency before one is known
-// ADC 7 below the low mark sets the LO's aux output, above the high mark clears it, in between it stays (3.3)
+// ADC 7 below the low mark sets the LO's aux output, above the high mark clears it, in between it stays
 #define ADC7_CH			7u
 #define ADC7_LOW		465u
 #define ADC7_HIGH		527u
@@ -120,7 +120,7 @@ static void dmr_disarm(void);
 static radio_mode_t mode = RADIO_MODE_FM;	// DMR only with CONFIG_DMR (transmit with DB25D_DMR_TX, dmr_db25d.c)
 static uint16_t last_rssi_raw, last_noise_raw, last_css_raw;
 
-// ---- RF paths (3.2) ----
+// ---- RF paths ----
 
 static void tx_paths_off(void)
 {
@@ -175,7 +175,7 @@ static bool ref_trim(int16_t ppb)
 }
 #endif
 
-// The C7000 modem's DC bias, as the stock firmware writes it at every receive set-up, in FM too (4.6): the TX center byte
+// The C7000 modem's DC bias, as the stock firmware writes it at every receive set-up, in FM too: the TX center byte
 // of the page in SIG_CENTER and the two-point bias level with the modulation balance in RF_MOD_BIAS_CTRL. It is the
 // voltage on the TCXO's control pin, so it sets the frequency of both RF chips (the factory's tune; the user's trim
 // retunes instead: synth_hz)
@@ -225,7 +225,7 @@ static void volume_apply(void);
 static volatile bool pcm_on;	// the modem plays CPU samples (a beep, DMR voice): db25d_speaker_pcm()
 static volatile bool warm_on;	// the core's amplifier hang (hal_audio_t.speaker_warm): the amplifier on, the source muted
 
-// PTC18 picks what the speaker amplifier hears (3.3): high for the main chip's AF (FM), low for the modem's line out
+// PTC18 picks what the speaker amplifier hears: high for the main chip's AF (FM), low for the modem's line out
 // (DMR voice and beeps, as the stock firmware's call start and beeps do)
 static void speaker_source(void)
 {
@@ -236,7 +236,7 @@ static void speaker_source(void)
 // squelch path (the radio core leaves the speaker to the PCM stream), so without the PCM term a call played silently.
 // Volume step 0 keeps the amplifier off: the line out's least gain (-31 dB) isn't silent.
 // Off: the amplifier first, so the source switch isn't heard; on: the source first. Warm (the amplifier hang) keeps
-// the amplifier on with the source muted: its enable pops (3.3), so within the hang a beep or call adds no pop
+// the amplifier on with the source muted: its enable pops, so within the hang a beep or call adds no pop
 static void speaker_pins(void)
 {
 	bool allowed = !(transmitting && mode != RADIO_MODE_DMR) && !vol_muted;
@@ -336,7 +336,7 @@ static bool rx_set(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in, bool
 	tuned_ppb = trim_ppb;
 	db25d_lo_tune(synth_hz(hz) + IF_HZ);	// the LO carries the trim; the main chip stays on the IF
 	db25d_main_to_if();
-	if (mode != RADIO_MODE_DMR) {	// DMR: the bandwidth and sub-audio are the digital set's (4.5)
+	if (mode != RADIO_MODE_DMR) {	// DMR: the bandwidth and sub-audio are the digital set's
 		db25d_main_bandwidth(bw);
 		db25d_main_rx_tone(rx_tone.type, rx_tone.value);
 	}
@@ -346,7 +346,7 @@ static bool rx_set(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in, bool
 		hal_delay_us(TX_END_PATH_US);	// stock TX end: the retune, this long, then the RX path
 	}
 	rx_paths(hz, true);
-	db25d_main_band(hz);	// every receive set-up; TX prepare sets the transmit band's (4.3)
+	db25d_main_band(hz);	// every receive set-up; TX prepare sets the transmit band's
 	db25d_main_rx_state();
 	if (from_tx) {
 		hal_delay_us(TX_END_RX_US);
@@ -361,7 +361,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 
 static void audio(bool on);
 
-// A power level's PA drive (hardware-db25d.md, power levels): five levels from the calibration's two tables. Level 2
+// A power level's PA drive: five levels from the calibration's two tables. Level 2
 // is the low table and level 4 the high one (the calibration page's table 0x045); levels 0 and 1 are fractions of the
 // low table's drive, level 3 is halfway between the tables. Draft values, to be set with a wattmeter
 static bool level_plan(uint32_t hz, uint8_t power, db25d_tx_plan_t *p)
@@ -382,7 +382,7 @@ static bool level_plan(uint32_t hz, uint8_t power, db25d_tx_plan_t *p)
 }
 
 #if CONFIG_DMR && DB25D_DMR_TX
-// DMR TX, armed at the key-up (4.5). The RF stays as it is, receiving, until the first burst's RF TX interrupt; the
+// DMR TX, armed at the key-up. The RF stays as it is, receiving, until the first burst's RF TX interrupt; the
 // modem's bias gets the modulation level for the TX frequency, the main chip the digital TX words (deviation off)
 static bool dmr_tx(uint32_t hz, uint8_t power)
 {
@@ -428,11 +428,11 @@ static void dmr_disarm(void)
 	}
 }
 
-// One burst, the stock TX on (3.2, 4.4 steps 2-7 without the audio): RX paths off, 50 us, main chip to f and the LO
+// One burst, the stock TX on (steps 2-7 without the audio): RX paths off, 50 us, main chip to f and the LO
 // off, the page's TX-on delay, the RX supply off, 200 us, the band's TX supply, the ramp up. The PA select goes on
 // DB25D_DMR_SELECT_US ahead of the first drive, not with the RX supply off: selected, the PA passes
 // the carrier 15-31 dB under the level before any drive, a step that from the sequence's end put the lowest level on
-// the air in the slot before and a knee into every level's rise (hardware-db25d.md 4.5)
+// the air in the slot before and a knee into every level's rise
 void db25d_burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 {
 	hrc_pin_write(PIN_RX_FRONT_END, false);
@@ -465,7 +465,7 @@ void db25d_burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 // TX off after a burst, after the RF task's hold to its last symbol: the ramp down,
 // supplies and PA selects off with PTA23 high, the main chip back to the IF and the LO on again, the RX path of the
 // band. The stock's waits between these steps (300, 300 and 200 us) are left out: they kept the receiver off for the
-// start of the next slot's burst, which an SFR repeater has to hear (hardware-db25d.md 4.5)
+// start of the next slot's burst, which an SFR repeater has to hear
 void db25d_burst_off(void)
 {
 	apc_ramp(tx_pa, false);
@@ -505,7 +505,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	// Deviation and sub-audio words go in while the chip is still receiving, as the stock firmware does
 	db25d_main_tx_prepare(tone.type, tone.value, hz, bw);
 
-	// Receive audio muted at the chip before any audio pin moves, then the stock "audio off" pin state (3.3): with
+	// Receive audio muted at the chip before any audio pin moves, then the stock "audio off" pin state: with
 	// PTB14 raised here instead, the speaker popped at every key-up. That the microphone still reaches the chip is unchecked
 	db25d_main_af(DB25D_AF_MUTE);
 	hrc_pin_write(PIN_SPK_SOURCE, true);
@@ -538,7 +538,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	return true;
 }
 
-// End of a transmission without going back to receive (the stock order, 3.2): the main chip to its RX state first
+// End of a transmission without going back to receive (the stock order): the main chip to its RX state first
 // (still on the TX frequency), the page's delay, the ramp down, supply and PA select off, PTA23 high. True when there
 // was one; rx() then retunes and waits the stock's 300 and 200 us
 static bool tx_stop(void)
@@ -597,7 +597,7 @@ static bool tx_drive(uint16_t drive)
 }
 
 // The PA drive sweep (radio/pa_sweep.h): the drive at once during an FM transmission; the PA stays where the sweep
-// leaves it until the transmission ends. The marker steps the modem's bias, the TCXO's control voltage (4.6), by one
+// leaves it until the transmission ends. The marker steps the modem's bias, the TCXO's control voltage, by one
 // TX center step (a few ppm, so the carrier moves a few kHz); 0 writes back what rx() wrote
 static uint16_t tx_drive_top(void)
 {
@@ -658,7 +658,7 @@ static bool tx_dtmf(char digit)
 }
 #endif
 
-// The DCS turn-off tail (4.7); the core holds the carrier for it
+// The DCS turn-off tail; the core holds the carrier for it
 static bool tx_tail(bool on)
 {
 	if (!transmitting || mode != RADIO_MODE_FM) {
@@ -685,7 +685,7 @@ static void status(radio_status_t *st)
 		st->tone_ok = false;
 		return;
 	}
-	// Every poll, transmitting too: ADC 7 falls below the low mark within seconds of a key-up (3.3)
+	// Every poll, transmitting too: ADC 7 falls below the low mark within seconds of a key-up
 	uint16_t a7 = hrc_adc_read(ADC7_CH);
 	if (a7 < ADC7_LOW) {
 		db25d_lo_aux(true);
@@ -702,7 +702,7 @@ static void status(radio_status_t *st)
 	st->tone_ok = db25d_main_tone_heard(last_css_raw, rx_tone.type);
 }
 
-// The stock audio-on and audio-off steps (hardware-db25d.md 3.3) with the body speaker only. The mic speaker stays off:
+// The stock audio-on and audio-off steps with the body speaker only. The mic speaker stays off:
 // its pin low also darkens the backlight
 static void audio(bool on)
 {
@@ -712,7 +712,7 @@ static void audio(bool on)
 	}
 	if (supported) {
 		// In DMR the modem samples the chip's audio whether or not the speaker is on, so the output stays on, with the
-		// stock digital word (4.5)
+		// stock digital word
 		if (mode == RADIO_MODE_DMR) {
 			db25d_main_af(DB25D_AF_DMR);
 		} else {
@@ -724,7 +724,7 @@ static void audio(bool on)
 
 // The speaker volume (the radio core passes the step as a percent, no knob here): the chip's AF DAC gain, register 0x48 bits
 // 3:0, stepping with DB25D_VOL_GAIN_TOP. Step 0 closes the chip output as well, as the gain alone isn't known to be
-// silent. DMR: the chip's output is the modem's input (4.5), so it keeps the stock gain; the volume comes back with FM.
+// silent. DMR: the chip's output is the modem's input, so it keeps the stock gain; the volume comes back with FM.
 // The PCM path's gain (vol_dac) is set in volume() in every mode
 static void volume_apply(void)
 {

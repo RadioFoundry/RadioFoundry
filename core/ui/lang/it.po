@@ -418,9 +418,9 @@ msgid "VFO: one mode in this build"
 msgstr "VFO: un solo modo in questa build"
 
 #: core/ui/ui_app.c
-msgctxt "WHY_VOX_NOT_ON_RADIO_YET"
-msgid "VOX: not on this radio yet"
-msgstr "VOX: non ancora su questa radio"
+msgctxt "WHY_VOX_NOT_ON_RADIO"
+msgid "VOX: not on this radio"
+msgstr "VOX: non su questa radio"
 
 #: core/ui/ui_app.c
 msgctxt "QUICK_TOAST_BANDWIDTH_25_KHZ"

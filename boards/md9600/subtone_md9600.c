@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// MD-9600 sub-audio receive: CTCSS / DCS decode in software from QT_DQT_IN on PA2 (ADC2 IN2, docs/spec/hardware-md9600.md
-// 19.9). ADC2 converts continuously into a circular DMA buffer (DMA2 stream 3, channel 1);
+// MD-9600 sub-audio receive: CTCSS / DCS decode in software from QT_DQT_IN on PA2 (ADC2 IN2). ADC2 converts continuously into a circular DMA buffer (DMA2 stream 3, channel 1);
 // each half-transfer interrupt sums groups of DECIM conversions into one sample for drivers/rf/subaudio, the DSP.
 // Transmit (CONFIG_MD9600_TX): the tone as PWM on PC7 (TIM8 CH2, the backlight's 28 kHz timebase) into the reference
 // oscillator's modulation input; TIM8's update interrupt takes the generator's next duty every TX_DIV periods.

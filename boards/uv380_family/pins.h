@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// UV380 family pin map (docs/spec/hardware-dm1701.md section 2), the same on every radio of the family but the MD-UV390
-// Plus 10 W, which swaps PC6 and PD8 (hardware-mduv380.md 3: the mduv380 board's POWER=10w build). Each board's own
+// UV380 family pin map, the same on every radio of the family but the MD-UV390
+// Plus 10 W, which swaps PC6 and PD8. Each board's own
 // pins.h includes this one
 #ifndef UVF_PINS_H
 #define UVF_PINS_H
@@ -28,7 +28,7 @@
 // Power, audio, LEDs
 #define PIN_POWER_LATCH		GPIOA, GPIO_PIN_7
 #define PIN_MIC_POWER		GPIOA, GPIO_PIN_13	// SWDIO: driving it needs connect-under-reset for SWD
-#define PIN_GPS_POWER		GPIOA, GPIO_PIN_9	// high = on (hardware-mduv380.md 9, hardware-dm1701.md 14.2)
+#define PIN_GPS_POWER		GPIOA, GPIO_PIN_9	// high = on
 #define PIN_GPS_RX		GPIOA, GPIO_PIN_10	// USART1 RX (AF7), the module's NMEA output
 #define PIN_SPK_MUTE		GPIOB, GPIO_PIN_8	// high = muted
 #define PIN_AMP_EN		GPIOB, GPIO_PIN_9	// high = on

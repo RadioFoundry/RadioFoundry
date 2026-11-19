@@ -59,7 +59,7 @@ _Static_assert(IP_PREAMBLES + 1 + ((DMR_DATA_IP_MTU + 4 + 9) / 10) + 1 <= DMR_DA
 _Static_assert(IP_PREAMBLES >= 2, "a preamble to spare for the privacy header");
 // DMR_DATA_TX_PREAMBLES preamble CSBKs ahead of a text or IP packet where the buffer has room (fewer, down to
 // IP_PREAMBLES, for the longest). BrandMeister's data services ignore packets with 1 or 2 and answer the same packet
-// with 15 or 16, as MOTOTRBO radios send them (docs/spec/dmr-data.md 5.1.1). About 0.8 s more on air per try; the ACK
+// with 15 or 16, as commercial DMR radios send them (docs/spec/dmr-data.md 5.1.1). About 0.8 s more on air per try; the ACK
 // waits start when it has gone
 _Static_assert(DMR_DATA_TX_PREAMBLES >= IP_PREAMBLES, "more preambles where they fit, never fewer");
 // Confirmed data to us whose blocks stopped coming before the count in its header: lost bursts, asked for again
@@ -124,7 +124,7 @@ static uint8_t smsSeq = 0;
 // arriving back to back each get theirs (gotcha 5.7)
 #define REPLY_QUEUE_SIZE		5		// one slot is kept free: 4 replies
 #define REPLY_QUEUE_MAX_AGE_MS	5000	// a reply still queued after this is dropped: the sender has given up
-// Our TMS ACK waits this long after the link ACK we sent before it (confirmed data), as MOTOTRBO radios leave about
+// Our TMS ACK waits this long after the link ACK we sent before it (confirmed data), as commercial DMR radios leave about
 // 1.4 s. Two link ACKs of ours with the TMS ACK 0.3 s behind got no reaction from BrandMeister, three with nothing
 // behind did (few samples, a lost packet on the hotspot's path not ruled out: docs/spec/dmr-data.md 5.1.1)
 #define TMS_ACK_GAP_MS			1500

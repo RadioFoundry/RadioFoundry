@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Baofeng HR_C7000 factory calibration: TX I/Q center, modulation balance and PA drive (docs/spec/hardware-dm32.md 11).
-// Every Baofeng HR_C7000 radio keeps it in the same page with the same field offsets (hardware-dm1801pro.md 6.4).
+// Baofeng HR_C7000 factory calibration: TX I/Q center, modulation balance and PA drive.
+// Every Baofeng HR_C7000 radio keeps it in the same page with the same field offsets.
 // bf_cal_tx_byte reads a row the stock firmware's way, at the page's own TX points, not at even steps.
 //
 // The factory data is the 4 KB page of the stock codeplug area (0x1000..0xC8000) whose last byte is 2. Three pieces
@@ -16,7 +16,7 @@
 #define CAL_PAGE_SIZE		0x1000u
 #define CAL_PAGE_MARKER		2u		// logical block ID in the last byte of the page
 
-// Offsets in the working image (11.2)
+// Offsets in the working image
 #define OFF_HEADER		0x000u
 #define OFF_TX_CENTER		0x016u
 #define OFF_UHF_MOD		0x017u

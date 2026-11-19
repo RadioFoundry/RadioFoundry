@@ -590,7 +590,7 @@ def test_dmr_privacy_tx(radio, sdr_bench, pytestconfig):
 
 
 # The vocoder's encode options (VOCODER_OPT_*: 0x1 noise reduction, 0x2 tone frames, 0x4 AGC) and the flags word the
-# AMBE+2 hosts pass the codec for each (docs/spec/codec-md380.md "Encode flags")
+# AMBE+2 hosts pass the codec for each
 ENC_CASES = ((0x3, 0x1840),     # the default: Mic noise reduction on
              (0x0, 0x800),      # no options: what the hosts sent before encode options existed
              (0x2, 0x1800),     # Mic noise reduction off

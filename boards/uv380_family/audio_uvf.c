@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// UV380 family PCM audio: the shared I2S3 stream to the HR_C6000's built-in codec (platform/stm32f4/hrc/i2s_pcm.c,
-// docs/spec/hardware-dm1701.md 3.2, 4.4, 8) with the board's speaker routing, the FM transmit audio for USRP and the
+// UV380 family PCM audio: the shared I2S3 stream to the HR_C6000's built-in codec (platform/stm32f4/hrc/i2s_pcm.c) with the board's speaker routing, the FM transmit audio for USRP and the
 // audio probe.
 #include "uvf.h"
 #include "config.h"
@@ -84,7 +83,7 @@ const hal_audio_t uvf_audio = { .start = start, .stop = stm32_i2s_pcm_stop, .spe
 				.stream_stats = stm32_i2s_pcm_stream_stats };
 
 #if CONFIG_NET_USRP
-// --- FM transmit audio: PWM on PC8 into the HR_C6000's microphone input (hardware-dm1701.md 21.3.1, "PWM audio") ---
+// --- FM transmit audio: PWM on PC8 into the HR_C6000's microphone input ("PWM audio") ---
 //
 // PC8 (the stock beep PWM, TIM8 CH3 on AF3) reaches MIC_P / MIC_N; radio_uvf.c switches those inputs on and the
 // microphone (LINEIN1) off. The chip's codec samples at 8 kHz behind its own filter, so a carrier of 72 kHz (nine

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// RT10 side keys, PTT and channel knob (docs/spec/hardware-rt10.md 6). Direct inputs, low = pressed. The PTT pin is
+// RT10 side keys, PTT and channel knob. Direct inputs, low = pressed. The PTT pin is
 // also the accessory jack's serial line, so a low read while host bytes arrive is serial data (shared_ptt.h). The knob
 // is a 16-position switch read as a position: it picks the zone's channel by where it points (chswitch.h)
 #include "rt10.h"
@@ -14,7 +14,7 @@
 #define KNOB_SETTLE_MS	150u
 
 // Position by code, from the counterclockwise stop: the codes read one position at a time were
-// 6 2 9 C 5 1 A E F 7 0 8 D 4 3 B (measured, hardware-rt10.md 6)
+// 6 2 9 C 5 1 A E F 7 0 8 D 4 3 B (measured)
 static const int8_t knob_position[16] = {
 	[0x6] = 0, [0x2] = 1, [0x9] = 2, [0xC] = 3, [0x5] = 4, [0x1] = 5, [0xA] = 6, [0xE] = 7,
 	[0xF] = 8, [0x7] = 9, [0x0] = 10, [0x8] = 11, [0xD] = 12, [0x4] = 13, [0x3] = 14, [0xB] = 15,

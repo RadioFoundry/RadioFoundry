@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// ST7567 monochrome LCD driver (docs/spec/hardware-dm1801pro.md 3)
+// ST7567 monochrome LCD driver
 #include "st7567.h"
 
 // Command set of the ST7567 / UC1701 family

@@ -14,7 +14,7 @@ import * as protect from "../static/js/flasher/protect.js";
 const DIR = process.env.RFOUNDRY_SITE_FIXTURES || "build/site-tests";
 const json = (n) => JSON.parse(readFileSync(join(DIR, n), "utf8"));
 const registry = JSON.parse(readFileSync("tools/rfoundry/rfoundry/registry.json", "utf8")).boards;
-const CAL = { mem: "progmem", start: 0x1FE000, end: 0x1FF000, what: "factory calibration (hardware-x.md 6.1)" };
+const CAL = { mem: "progmem", start: 0x1FE000, end: 0x1FF000, what: "factory calibration" };
 
 test("check refuses an overlap, names the region and its reason", () => {
 	protect.check([CAL], "progmem", 0xC000, 0x1FE000);

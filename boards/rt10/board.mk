@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
 # Retevis RT10: HR_C7000 SoC (C-SKY CK803S + DMR modem) + FD6818 on a two-wire bus, no display, a 16-position channel
-# knob (docs/spec/hardware-rt10.md). The PC link is UART0 on the accessory jack
+# knob. The PC link is UART0 on the accessory jack
 PLATFORM   := hrc7000
-# No vendor loader: the boot ROM starts the image its flag at flash 0 names (hardware-rt10.md 2). RadioFoundry's flag
+# No vendor loader: the boot ROM starts the image its flag at flash 0 names. RadioFoundry's flag
 # names 0x0300C000, so the image sits where it does on the other HR_C7000 radios
 APP_BASE   := 0x0300C000
 # 2 MB program flash (GD25Q16): the debug link's READ_MEM window over it (platform/hrc7000/mem_window.h)
@@ -14,5 +14,5 @@ BOARD_DIRS := boards/rt10 drivers/rf/rfbus drivers/rf/fd6818 drivers/modem/hrc70
 # No display: the core still draws into a 128x64 1 bpp frame buffer (display_rt10.c), read only by the debug link
 MCU_DEFS   += -DGFX_FB_BYTES=1024u -DGFX_MAX_ROWS=64u
 # PTT shares UART0's RX line, and the radio sending while the host still sends latched that line low until a power
-# cycle (hardware-rt10.md 3.1): a host port write waits for 2 ms of quiet first (platform/hrc7000/uart_idle.h)
+# cycle: a host port write waits for 2 ms of quiet first (platform/hrc7000/uart_idle.h)
 MCU_DEFS   += -DHRC_HOST_TX_IDLE_MS=2u

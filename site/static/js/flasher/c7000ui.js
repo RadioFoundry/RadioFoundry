@@ -428,7 +428,7 @@ function connectPanel(onReady, { onUpdateMode = null, restart = false } = {}) {
 	// Wait for the boot ROM while the user switches the radio off and on. The boot ROM waits only about 48 ms for the
 	// answer to its greeting, and a slow cable or USB hub can take longer than that, so the page sends the answer every
 	// ROM_REPEAT ms all along (stub.js waitForRom repeat). The firmware of a radio still on gets it too: RadioFoundry
-	// ignores it (hardware-dm32.md 13.3), other firmware might not, so on any other radio the sending starts only once
+	// ignores it, other firmware might not, so on any other radio the sending starts only once
 	// the user says the radio is off
 	const powerCycle = (why = null) => (c.rfoundry ? listen(why, true) : turnOff(why));
 	const turnOff = (why) => {
@@ -1307,10 +1307,9 @@ export function doneView() {
 		top.set({ led: "off", screen: "off" });
 		fill(status, h("p", { class: "muted c7-big" }, t("flash.c7.done.restarting")));
 		// After the stub's reset RadioFoundry boots, but its host link often stays silent until a power cycle (DM-32UV every
-		// time, DM-1801 Pro most times; dm32-bringup.md open items). So the first check waits only a little past the
+		// time, DM-1801 Pro most times). So the first check waits only a little past the
 		// boot and then asks for the power cycle; a check after one allows for the boot it starts. After the Baofeng
-		// updater's end of transfer the radio starts RadioFoundry by itself with its link up (DM-32UV, hardware-dm32.md
-		// 13.2), so the first check there waits as long, and the power cycle is only the fallback.
+		// updater's end of transfer the radio starts RadioFoundry by itself with its link up (DM-32UV), so the first check there waits as long, and the power cycle is only the fallback.
 		await sleep(Math.max(0, (c.resetAt || 0) + (S().fakeC7 ? 1500 : BOOT_MS) - Date.now()));
 		const restartsItself = viaIap() && flash().update_mode === "baofeng";
 		const until = Date.now() + (tries++ || restartsItself ? 20000 : 6000);

@@ -2,9 +2,8 @@
  "format": 1,
  "kind": "seed",
  "board": "db25d",
- "source": "docs/spec/hardware-db25d.md",
  "date": "2026-10-22",
- "note": "From the docs' evidence before the first recorded run: docs/spec/hardware-db25d.md and its row in docs/feature-matrix.md",
+ "note": "From the docs' evidence before the first recorded run: the board's row in docs/feature-matrix.md",
  "features": {
   "fm": {
    "result": "pass"
@@ -44,7 +43,6 @@
   },
   "ref_trim": {
    "result": "pass",
-   "source": "docs/spec/hardware-db25d.md",
    "note": "test_ref_trim.py: +-5 ppm moved FM on the UHF test frequency +2309 / -2311 Hz"
   }
  }

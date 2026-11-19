@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// RT10 diagnostics page: raw input and ADC readings (docs/spec/hardware-rt10.md 3)
+// RT10 diagnostics page: raw input and ADC readings
 #include <stdio.h>
 #include "rt10.h"
 #include "pins.h"
@@ -48,7 +48,7 @@ bool rt10_diag_line(uint8_t i, char *buf, uint8_t len)
 		return hrc_dmr_stats_line((uint8_t)(i - DIAG_DMR_FIRST), buf, len);
 	}
 	if (i == DIAG_DMR_FIRST + HRC_DMR_DIAG_LINES) {
-		// DMR TX bursts (hardware-rt10.md 7.1): TX-on and TX-off sequences run, RF RX interrupts seen, what woke the
+		// DMR TX bursts: TX-on and TX-off sequences run, RF RX interrupts seen, what woke the
 		// last TX-off (R: RF RX interrupt, T: slot tick, A: abort), the ramp downs that started late and the last by
 		// how much; then the codec in the slot
 		hrc_rfburst_stats_t t;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // DM-32UV display: 240x320 ST7789-class TFT on the SoC's i8080 LCD controller, backlight on GPIO 0x0F / PWM0
-// (docs/spec/hardware-dm32.md 3.6, 3.10, 7). Full resolution in 16 colors: the core's frame buffer holds a palette
+//. Full resolution in 16 colors: the core's frame buffer holds a palette
 // index per pixel (37.5 KB; RGB565 would take 150 KB), and each row goes out as RGB565 through the palette.
 //
 // The LCD data lines DB0-DB4 are also the keypad rows. Every LCD burst holds dm32_lcdbus_lock() and hands the bus
@@ -25,7 +25,7 @@
 
 static bool ready;
 
-// The port needed a few cycles after each byte (3.10)
+// The port needed a few cycles after each byte
 static inline void byte_gap(void)
 {
 	for (volatile uint32_t i = 0; i < 4; i++) {

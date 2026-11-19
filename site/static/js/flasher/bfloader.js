@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The Baofeng serial updater, a radio's own update mode on the programming cable (a board's radios.json
-// flash.update_mode "baofeng"; entered by holding the board's flash.bootloader keys at power-on). The protocol is
-// docs/spec/hardware-dm32.md 13.2; this is a port of tools/serial_loader.py's Flasher, byte for byte the same on the
+// flash.update_mode "baofeng"; entered by holding the board's flash.bootloader keys at power-on). This is a port of tools/serial_loader.py's Flasher, byte for byte the same on the
 // wire (site/tests/bfloader.test.mjs compares the two). The loader erases the whole application area, the codec slot
 // included, before it takes the first block, and never writes itself, so update mode stays whatever is written.
 
@@ -76,7 +75,7 @@ export class BfLoader {
 		this.retries = retries;
 		this.poll = poll;
 		// steps 1-3 done: the loader waits for step 4. It answers them once per power-on and then ignores step 1 until it
-		// is switched off (hardware-dm32.md 13.2), so this instance, not a new one, must go on to the write
+		// is switched off, so this instance, not a new one, must go on to the write
 		this.ready = false;
 		this.identity = null;
 	}

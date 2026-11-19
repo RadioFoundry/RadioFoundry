@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Internal interfaces between the MD-9600 board files (docs/spec/hardware-md9600.md)
+// Internal interfaces between the MD-9600 board files
 #ifndef MD9600_H
 #define MD9600_H
 
@@ -36,10 +36,10 @@ void md9600_standby_check(void);
 // Backlight on TIM8 CH1 (display_md9600.c), 0..100 %
 void md9600_backlight(uint8_t percent);
 
-// Physical key bits returned by md9600_input.scan() (matrix positions in docs/spec/hardware-md9600.md 9.1)
+// Physical key bits returned by md9600_input.scan()
 enum {
 	KEY_P1, KEY_P2, KEY_P3, KEY_P4, KEY_ALARM, KEY_BACK, KEY_ENTER, KEY_UP, KEY_DOWN, KEY_POWER, KEY_PTT,
-	// The hand mic's keypad (9.3, input_md9600.c)
+	// The hand mic's keypad (input_md9600.c)
 	KEY_MIC_0, KEY_MIC_1, KEY_MIC_2, KEY_MIC_3, KEY_MIC_4, KEY_MIC_5, KEY_MIC_6, KEY_MIC_7, KEY_MIC_8, KEY_MIC_9,
 	KEY_MIC_STAR, KEY_MIC_HASH, KEY_MIC_A, KEY_MIC_B, KEY_MIC_C, KEY_MIC_D, KEY_MIC_AB, KEY_MIC_UP, KEY_MIC_DOWN,
 	KEY_COUNT
@@ -56,14 +56,14 @@ bool md9600_flash_read_security(uint8_t reg, uint32_t offset, void *buf, uint32_
 md9600_rev_t md9600_flash_rev_load(void);
 bool md9600_flash_rev_store(md9600_rev_t rev);
 
-// Factory calibration and the hardware option block: cal_md9600.h (docs/spec/hardware-md9600.md 11)
+// Factory calibration and the hardware option block: cal_md9600.h
 #include "cal_md9600.h"
 // What the RF code takes from it (rfcal_md9600.c): PA drive per power level and the squelch thresholds, each used
 // only when its rows look plausible (md9600_cal_rf_rows). The power levels: UHF 100 mW, 1 W, 5 W, 25 W, 45 W; VHF
-// 250 mW, 1 W, 5 W, 25 W, 50 W (hardware-md9600.md 5.6)
+// 250 mW, 1 W, 5 W, 25 W, 50 W
 #define MD9600_POWER_LEVELS	5u
 #define MD9600_FACTORY_PA_ROWS	4u		// the calibration's PA rows (labeled 5, 10, 25, 40 W; they aren't)
-#define MD9600_APC_MAX		3500u		// the most drive a power level gets: the top level stops here (5.6)
+#define MD9600_APC_MAX		3500u		// the most drive a power level gets: the top level stops here
 #define MD9600_APC_DAC_MAX	4095u		// the APC DAC's full scale (12 bit): the debug link override's only bound
 enum { MD9600_CALOK_RX = 1u << 0, MD9600_CALOK_PA = 1u << 1, MD9600_CALOK_SQL = 1u << 2 };
 bool md9600_cal_apc(uint32_t hz, uint8_t power, uint16_t *dac);	// false: no plausible PA rows

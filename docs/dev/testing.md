@@ -1,22 +1,23 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # Testing
 
-From a laptop with no radio to a radio on the SDR bench. The commands, flags and pass criteria are in
-[docs/testing/README.md](../testing/README.md) and [tests/hil/README.md](../../tests/hil/README.md); this page says
-what each level is for and where a new test goes.
+This page covers what each test level is for and where a new test goes, from a laptop with no radio to a radio on the
+SDR bench. For the commands, flags, and pass criteria, see the [testing overview](../testing/README.md) and
+[tests/hil/README.md](../../tests/hil/README.md).
 
 | Level | Runs on | Command | Catches |
 |---|---|---|---|
 | Unit | the host | `make -C tests/host` | Wrong math, encoders, parsers, the settings format |
 | Software in the loop | the host | `make -C tests/host` | Whole features against simulated chips: calls, data, hotspot, CPS, storage, the UI |
 | Hardware in the loop | a radio on USB | `python3 -m pytest tests/hil -v -rs` | The real chips and timing; with flags, transmit and receive on air |
-| Manual bench cases | the bench board and a person | `tools/bench/bench_line.py HOST run bench_tx ARGS` | What can't be scripted yet ([dmr-bench.md](../testing/dmr-bench.md)) |
+| Manual bench cases | the bench board and a person | `tools/bench/bench_line.py HOST run bench_tx ARGS` | What can't be scripted ([dmr-bench.md](../testing/dmr-bench.md)) |
 | Release gate | the host | `JOBS=8 tools/ci.sh` | Everything above that needs no radio, plus every board's feature matrix with zero warnings, doc links and the license checks |
 
-`tools/ci.sh` must pass before every merge ([Contributing](contributing.md)); what it runs step by step is in
-[docs/testing/README.md](../testing/README.md) section 1. The CI workflows run its pieces per push and nightly
-([CI](ci.md)).
+`tools/ci.sh` must pass before every merge (see [Contributing](contributing.md#rules)). For its steps and options, see
+[Running the pieces locally](ci.md#running-the-pieces-locally). The CI workflows run its pieces per push and nightly
+(see [Continuous integration](ci.md)).
 
 | Also | Command | Details |
 |---|---|---|
@@ -42,9 +43,9 @@ what each level is for and where a new test goes.
 The Makefile groups the tests into `run-*` targets (`run-core`, `run-ui`, `run-call`, `run-mmdvm`, `run-settings`,
 `run-cps`, ...); `make -C tests/host` runs them all. Each test compiles the firmware's own sources with the host
 compiler, so a test exercises the code that ships. Test vectors come from the standards or are recorded from real
-radios and the stock codec, never from other firmware.
+radios, never from other firmware.
 
-To add a test: write `tests/host/<area>Test.c`, add its rule and a `run-<area>` target to `tests/host/Makefile`, and
+To add a test, write `tests/host/<area>Test.c`, add its rule and a `run-<area>` target to `tests/host/Makefile`, and
 hook it into `run` (`run: run-<area>`). Groups are named by the area or directory they test, never by a radio or
 platform. `make -C tests/host check-run` (part of `run`) fails when a test in `TESTS` has no `./<test>` line in any
 group; a program a test script drives (a simulated peer) goes in `HELPERS` instead. Build without warnings; ci.sh
@@ -52,14 +53,15 @@ fails on any. A parser of bytes from outside (USB, the air, the network) also ge
 
 A test of one board's own code (its calibration reader, its pin tables, its first stage) lives with the board, in
 `boards/<b>/tests/`. Its `host.mk` adds the test to `TESTS` and to the `run-boards::` target. `tests/host` includes
-every `boards/*/tests/host.mk`; a fragment names its own files through `HERE := $(dir $(lastword $(MAKEFILE_LIST)))`
-in its prerequisites, and its recipes use `$<` and `$^`, since `HERE` changes with the next fragment. The binaries are built in `tests/host/` like the rest.
-The firmware build only compiles the `*.c` directly in a board's directory, so these never reach an image. A driver
-or platform test stays in `tests/host/`, named by what it tests, even when one radio needed it first.
+every `boards/*/tests/host.mk`; a fragment names its own files through `HERE := $(dir $(lastword $(MAKEFILE_LIST)))` in
+its prerequisites, and its recipes use `$<` and `$^`, since `HERE` changes with the next fragment. The binaries are
+built in `tests/host/` like the rest. The firmware build only compiles the `*.c` directly in a board's directory, so
+these never reach an image. A driver or platform test stays in `tests/host/`, named by what it tests, even when one
+radio needed it first.
 
 ## The UI simulator and the gallery
 
-The UI runs unchanged on the host. Three tools use it:
+The UI runs unchanged on the host. These tools use it:
 
 | Command | Does |
 |---|---|
@@ -84,19 +86,9 @@ entry in the `gallery[]` table at the top of `tests/host/uiSim.c`.
 The HIL tests drive a radio through the [debug link](debug-link.md): they press keys, read the radio's state and take
 screenshots. Each test leaves the radio as it found it. Without a radio they all skip.
 
-Opt-in flags allow what changes the radio or the air around it:
-
-| Flag | Allows |
-|---|---|
-| none | Radio-only tests. Nothing transmits |
-| `--allow-rf` | Transmitting, from the radio or the SDR bench |
-| `--allow-service-stop` | Accepted and ignored: a bench board stops nothing |
-| `--allow-usb-switch` | Switching the radio to USB network mode and back |
-| `--allow-codeplug-write` | Writing the codeplug over CPS (backed up and restored) |
-| `--allow-reboot` | Restarting the radio |
-
-The full list, the options and the rig assumptions are in [tests/hil/README.md](../../tests/hil/README.md);
-"Writing a test" there has the fixtures.
+Without flags, nothing transmits and nothing in the radio's storage changes. Opt-in flags allow each test that
+transmits, writes the codeplug, restarts the radio or switches its USB mode. How to run the tests, the flags, the rig's
+options and the fixtures for a new test are in [tests/hil/README.md](../../tests/hil/README.md#opt-in-flags).
 
 A skip is not a pass. Every skip names its kind, and a bring-up run (`tools/bringup.py run --radio <id>`) runs a
 radio's feature checklist, fails a required test that skips for a reason its feature doesn't declare, and records the
@@ -104,9 +96,10 @@ result in `docs/testing/results/` ([tests/hil/README.md](../../tests/hil/README.
 
 ## The SDR bench
 
-A second station for on-air tests: one or two boards that serve the bench line protocol (`tools/bench/bench_line.py`).
-They send calls, texts and data to the radio and check what the radio transmits (IDs, color code, slot timing, ramps, carrier
-offset, FM tones and deviation). A board's address comes from `--bench-api` or `RFOUNDRY_BENCH_API`, never from files
-in the repository. Setup and the manual cases: [docs/testing/dmr-bench.md](../testing/dmr-bench.md).
+The SDR bench is a second station for on-air tests: one or two boards that serve the bench line protocol
+(`tools/bench/bench_line.py`). They send calls, texts and data to the radio and check what the radio transmits (IDs,
+color code, slot timing, ramps, carrier offset, FM tones and deviation). A board's address comes from `--bench-api` or
+`RFOUNDRY_BENCH_API`, never from files in the repository. Setup and the manual cases:
+[docs/testing/dmr-bench.md](../testing/dmr-bench.md).
 
-A bug found on the bench should end as a host test, so it stays fixed without the bench.
+Turn a bug found on the bench into a host test, so it stays fixed without the bench.

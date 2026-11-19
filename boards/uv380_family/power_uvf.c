@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// UV380 family power latch, battery, volume knob, LEDs (docs/spec/hardware-dm1701.md sections 10.4 and 11).
+// UV380 family power latch, battery, volume knob, LEDs.
 // ADC1 scans volume, battery, mic level and the temperature sensor continuously; DMA2 Stream4 keeps the last
 // SCANS results in a circular buffer, so a reading is a short average with no interrupt and no locking.
 #include "uvf.h"

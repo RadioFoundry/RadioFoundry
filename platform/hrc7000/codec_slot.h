@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The HR_C7000 codec slot: its header, its checks and the code's move to the board's codec window
-// (docs/spec/codec-placement.md, "HR_C7000 radios"). No hardware here, so the host tests run it
+//. No hardware here, so the host tests run it
 // (tests/host/hrc7000CodecSlotTest.c); platform/hrc7000/vocoder.c does the copies.
 //
 // tools/hrc7000_codec.py and the web flasher (c7000.js) write the slot; keep the three in step.

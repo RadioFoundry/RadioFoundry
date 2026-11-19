@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The MD-380's bit-banged RF bus (boards/md380/rfbus_md380.c, built against the real pins.h and a stub platform.h)
-// against fake chips wired as the hardware is (hardware-md380.md 4.2, 5.2): an HR_C5000 on C13 / E5 / E3 / E2 and a
+// against fake chips wired as the hardware is: an HR_C5000 on C13 / E5 / E3 / E2 and a
 // SKY72310 on E4 / E5 / D11. The wiring below is written out here, not taken from pins.h, so a wrong pin in pins.h or a
 // wrong edge in the bit-bang code fails the test (issue #3: the clock on PE3, MISO on PE4, the SKY clock never toggled).
 // This checks the code against the documented wiring, not the wiring itself: the HIL test (test_md380_rfbus.py) does that

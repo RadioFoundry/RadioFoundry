@@ -1,12 +1,12 @@
 <!-- SPDX-License-Identifier: MIT -->
 <!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
-# Adding a Mode
+# Adding a mode
 
-How a digital mode beyond FM and DMR gets into the codeplug, the firmware, the Codeplug Editor and zone sharing. The
-format is [channel-modes.md](../spec/channel-modes.md); this page is the order of work. A mode is a **kind** (what a
-channel is) and, when its channels share a network or an identity, a **system type**. The generic layer never reads a
-mode's bytes: the mode's own module does, in the firmware and in the editor.
+This page covers how a digital mode beyond FM and DMR gets into the codeplug, the firmware, the Codeplug Editor, and
+zone sharing, in the order of the work. For the format, see [channel-modes.md](../spec/channel-modes.md). A mode is a
+**kind** (what a channel is) and, when its channels share a network or an identity, a **system type**. The generic layer
+never reads a mode's bytes: the mode's own module does, in the firmware and in the editor.
 
 ## 1. Plan the records
 
@@ -23,7 +23,8 @@ the table at the top of [channel-modes.md](../spec/channel-modes.md), "What a mo
 | An authentication secret, traffic keys | The system secret (7.4), traffic keys (5.4) with algorithm ids |
 | Whether a new channel or system may transmit by default | The tag's flag bit 0, the system's flag bit 1 (listen only) |
 
-Every value must read safely when zeroed or short, and unverified standard values stay out of the spec.
+Every value must read safely when zeroed or short. Put a value from a standard in the spec only when you checked it
+against the standard.
 
 ## 2. Claim the ids
 
@@ -48,7 +49,7 @@ mode module.
 ## 4. Codeplug Editor
 
 Add `site/static/js/codeplug/mode_<mode>.js` and name it in the registry row, with the feature the radio's probe
-reports for the mode. A kind module gives:
+reports for the mode. A kind module gives the following members.
 
 | Member | Meaning |
 |---|---|

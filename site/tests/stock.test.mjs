@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Stock TYT-family codeplugs (docs/spec/codeplug-stock-tyt.md): telling the layouts apart, reading the stock records,
+// Stock TYT-family codeplugs: telling the layouts apart, reading the stock records,
 // the conversion into the editing model, and the editor's and the Tools page's handling of such files. Every fixture
 // is built here from the spec; no radio's data.
 

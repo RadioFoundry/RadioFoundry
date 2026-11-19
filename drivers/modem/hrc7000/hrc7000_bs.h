@@ -29,7 +29,7 @@
 #define HRC7000_BS_Q		3	// bursts queued per slot (the core keeps two ahead)
 #define HRC7000_BS_CACH_METHOD	DMR_BS_CACH_OURS
 #define HRC7000_BS_RAW_BYTES	36	// one slot: CACH (24 bits) and burst (264)
-#define HRC7000_BS_AIR_DELAY_US	4600	// a slot boundary to that slot on air (SDR bench 2026-10-21, split-duplex.md 11)
+#define HRC7000_BS_AIR_DELAY_US	4600	// a slot boundary to that slot on air (split-duplex.md 11)
 
 #define HRC7000_BS_V_CONTINUOUS	0x01u
 #define HRC7000_BS_V_AUTOTEST	0x02u
@@ -97,7 +97,7 @@ bool hrc7000_bs_queue_at(hrc7000_dmr_t *e, uint32_t counter, int8_t ts, const dm
 			 const dmr_cach_t *cach, const uint8_t *emb_lc);
 // Not keyed: the slot clock restarts with a boundary at the next t_us + k x 30 ms at least 2 ms ahead (waits for it,
 // up to 32 ms), setting up slot ts there (hal_dmr_modem.h bs_restart). Own TX timing off (passive), then on again at
-// that time: the chip's slot timer starts from the write (bench 2026-10-21, modem-hrc7000.md 2.10); the first boundary
+// that time: the chip's slot timer starts from the write (modem-hrc7000.md 2.10); the first boundary
 // then comes about 1.2 ms before the time asked for, which the core learns
 bool hrc7000_bs_restart(hrc7000_dmr_t *e, uint32_t t_us, int8_t ts);
 uint8_t hrc7000_bs_space(const hrc7000_dmr_t *e, int8_t ts);

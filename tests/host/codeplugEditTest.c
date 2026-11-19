@@ -645,7 +645,7 @@ static void test_quick_keys(void)
 	CHECK(sim_flash_data[EE + 0x7523] == 0xFF && sim_flash_data[EE + 0x7538] == 0xFF);	// nothing around them
 }
 
-// Another firmware's codeplug where the open-firmware images go (codeplug-stock-tyt.md 2): pseudo-random bytes over
+// Another firmware's codeplug where the open-firmware images go: pseudo-random bytes over
 // both images, clear of the settings, the journal and the calibration. Its first 16 channels are stock-style: in use,
 // valid BCD frequencies (438.5 MHz), UTF-16 names, which the radio reads as channels once the owner accepts them
 static void foreign_image(void)

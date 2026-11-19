@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The network personality's frames (CDC-NCM on TinyUSB, usb_device.c; docs/spec/hardware-dm1701.md 16): Ethernet
+// The network personality's frames (CDC-NCM on TinyUSB, usb_device.c): Ethernet
 // frames to and from the host, for the IP gateway (core/dmr/ipGateway.c through core/hostlink/hostlink_net.c).
 // Built with CONFIG_USB_NETWORK; every call is safe from any task (the USB stack's own work is deferred to its task).
 #ifndef RFOUNDRY_USB_NCM_H
@@ -23,7 +23,7 @@ bool usbNcmSendFrame(const uint8_t *frame, int length);
 int usbNcmReceive(uint8_t *buf, int max);
 
 // Housekeeping from the consumer's task every few ms: a pending frame to the host is retried, and the macOS cold boot
-// quirk (no traffic from a configured host: re-enumerate once, hardware-dm1701.md 16)
+// quirk (no traffic from a configured host: re-enumerate once)
 void usbNcmTick(uint32_t now_ms);
 
 // The two MAC addresses: the host's adapter (the descriptor's iMACAddress) and the radio's side of the link

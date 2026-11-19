@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // TYT MD-380 / MD-390 / Retevis RT3: board descriptor, clocks, reset-time pin levels, key map
-// (docs/spec/hardware-md380.md)
 #include "board.h"
 #include "config.h"
 #include "md380.h"
@@ -33,7 +32,7 @@ static void ccm_zero(void)
 }
 __attribute__((section(".preinit_array"), used)) static void (*const ccm_zero_entry)(void) = ccm_zero;
 
-// One band per radio (hardware-md380.md 5.1), chosen at build time (board.mk BAND)
+// One band per radio, chosen at build time (board.mk BAND)
 #if RFOUNDRY_BAND_VHF
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
@@ -46,11 +45,11 @@ static const band_t bands[] = {
 #define BOARD_NAME	"MD-380"
 #endif
 
-// The stock radio has two power levels, about 1 W and 5 W (hardware-md380.md 5.6)
+// The stock radio has two power levels, about 1 W and 5 W
 static const char *const power_names[] = { "100mW", "500mW", "1W", "2.5W", "5W" };
 
 // docs/ux/information-architecture.md 7.1 on a radio without function or top keys (a few-key map): the
-// zone and power are reached from the menus. Matrix positions are unconfirmed (hardware-md380.md 9.1)
+// zone and power are reached from the menus. Matrix positions are unconfirmed
 static const keymap_entry_t keymap[] = {
 	{ KEY_GREEN, ACT_SELECT, ACT_SELECT, false, false, 0 },
 	{ KEY_RED, ACT_BACK, ACT_BACK, false, false, 0 },
@@ -94,7 +93,7 @@ static const hal_cps_t cps = {
 
 const board_t board = {
 	.name = BOARD_NAME,
-	// CAP_GPS: the G models; board_t.gps says whether this one has the module (hardware-md380.md 13). No
+	// CAP_GPS: the G models; board_t.gps says whether this one has the module. No
 	// CAP_VOLUME_POT: the knob sets the volume in the analog path, the MCU only sees its position. CAP_ENCODER: the
 	// channel knob is a 16-position switch, reported to the core as steps (input_md380.c)
 	.caps = CAP_KEYPAD | CAP_ENCODER | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0),
@@ -121,7 +120,7 @@ const board_t board = {
 #if CONFIG_DMR
 	.dmr = &stm32_hrc_dmr,
 #if CONFIG_AIR
-	// The HR_C5000's physical layer mode through the shared provider (hrc6000_air.c; hardware-md380.md, Air interface).
+	// The HR_C5000's physical layer mode through the shared provider (hrc6000_air.c, Air interface).
 	// No board.baseband: no FM receive RAM is known on this chip, and the discriminator audio on PC3 isn't known to
 	// reach the low frequencies a 4-level mode needs
 	.air = &stm32_hrc_air,
@@ -138,7 +137,7 @@ const board_t board = {
 #endif
 #endif
 	.system = &stm32_system,
-	// 2S Li-ion as the other STM32 radios (hardware-md380.md 10.1): low 6.2 V, critical 6.0 V (our choice)
+	// 2S Li-ion as the other STM32 radios: low 6.2 V, critical 6.0 V (our choice)
 	.battery_low_mv = 6200,
 	.battery_critical_mv = 6000,
 #if CONFIG_CPS_OPENFW
@@ -149,7 +148,7 @@ const board_t board = {
 #endif
 };
 
-// hardware-md380.md 1.2: 8 MHz HSE, 72 MHz system clock, APB1 36 MHz, APB2 72 MHz, USB 48 MHz from PLL Q
+// 8 MHz HSE, 72 MHz system clock, APB1 36 MHz, APB2 72 MHz, USB 48 MHz from PLL Q
 static const stm32_clock_t clock_crystal = {
 	.hse_hz = 8000000,
 	.hse_bypass = false,
@@ -180,7 +179,7 @@ void md380_lcdbus_unlock(void)
 	}
 }
 
-// Levels set before the pins become outputs (hardware-md380.md 2.6). The power latch goes high first; the transmitter
+// Levels set before the pins become outputs. The power latch goes high first; the transmitter
 // supply, PA loop and synthesizer stay off; the GPS power pin is left alone (it may be a flash chip select)
 static void reset_levels(void)
 {
@@ -198,7 +197,7 @@ static void reset_levels(void)
 	stm32_pin_out(PIN_PORT(PIN_LED_RED), PIN_MASK(PIN_LED_RED), false, false);
 
 	// SAVE enables the 5C regulator (U404), which powers the synthesizer's 3.3 V (U602) and part of the receive chain;
-	// the stock firmware drives it high too (hardware-md380.md 5.7)
+	// the stock firmware drives it high too
 	stm32_pin_out(PIN_PORT(PIN_SAVE), PIN_MASK(PIN_SAVE), true, false);
 	stm32_pin_out(PIN_PORT(PIN_TX_5V), PIN_MASK(PIN_TX_5V), false, false);
 	stm32_pin_out(PIN_PORT(PIN_APC_EN), PIN_MASK(PIN_APC_EN), false, false);
@@ -215,12 +214,12 @@ static void reset_levels(void)
 	stm32_pin_out(PIN_PORT(PIN_FM_MUTE), PIN_MASK(PIN_FM_MUTE), false, false);
 	stm32_pin_out(PIN_PORT(PIN_LCD_BACKLIGHT), PIN_MASK(PIN_LCD_BACKLIGHT), false, false);
 	stm32_pin_out(PIN_PORT(PIN_FLASH_CS), PIN_MASK(PIN_FLASH_CS), true, false);
-	// CTC/DCS_OUT feeds the reference oscillator's tuning amplifier (hardware-md380.md 5.2): released (open drain,
+	// CTC/DCS_OUT feeds the reference oscillator's tuning amplifier: released (open drain,
 	// high) whenever no tone is sent. Held low it pulled the reference about 4.5 ppm high
 	stm32_pin_out(PIN_PORT(PIN_CTCSS_PWM), PIN_MASK(PIN_CTCSS_PWM), true, true);
 	stm32_pin_out(PIN_PORT(PIN_BEEP_PWM), PIN_MASK(PIN_BEEP_PWM), false, false);
 	// PA13 (W/N_SW) and PA14 (mic power) are the SWD pins: radio_md380.c takes them over later, unless built with
-	// MD380_KEEP_SWD for debugging (hardware-md380.md 2.6)
+	// MD380_KEEP_SWD for debugging
 }
 
 // Before the ROM bootloader entry (stm32_sysboot_check): the same safe levels as at power-up
@@ -229,7 +228,7 @@ void board_sysboot_prepare(void)
 	reset_levels();
 }
 
-// Transmitter off from any context (board.h, docs/spec/crash-log.md 8; hardware-md380.md 5.6): the PA power loop
+// Transmitter off from any context (board.h, docs/spec/crash-log.md 8): the PA power loop
 // (APC_EN) and the transmitter supply (5TC) off, the receive VCO selected, and the APC DAC to 0 when its clock is on.
 // Register writes only. The synthesizer and the HR_C5000 are left as they are (a bus transaction each); with 5TC off
 // their output reaches no powered PA. The backlight and the rest stay, so the stub's "PC Loader Connected" banner stays
@@ -248,7 +247,7 @@ void board_early_init(void)
 {
 	reset_levels();		// latch the power before anything slow
 	if (!stm32_clock_init(&clock_crystal)) {
-		// A crystal is what the public notes describe (hardware-md380.md 1.2); an external clock fed in would need
+		// A crystal is what the public notes describe; an external clock fed in would need
 		// bypass mode, as on the other STM32 radios. Try that before staying on HSI (no USB there)
 		stm32_clock_t bypass = clock_crystal;
 		bypass.hse_bypass = true;

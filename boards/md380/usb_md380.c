@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// MD-380 USB identity (docs/spec/hardware-md380.md 15): the STM32F4 radios' IDs and serial number (platform.h)
+// MD-380 USB identity: the STM32F4 radios' IDs and serial number (platform.h)
 #include "config.h"
 #if CONFIG_USB	// the whole file
 #include "platform.h"

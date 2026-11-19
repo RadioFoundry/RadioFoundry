@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// MD-UV380 vocoder: the radio's own AMBE+2 codec run in place from flash (docs/spec/codec-placement.md, "STM32 radios";
-// the codec: docs/spec/codec-mduv380.md). Any build listed below can be the donor (TYT and Retevis, 18.11 to 219.74);
+// MD-UV380 vocoder: the radio's own AMBE+2 codec run in place from flash. Any build listed below can be the donor (TYT and Retevis, 18.11 to 219.74);
 // they hold the same codec at their own addresses. The merge on the user's machine (rfoundry, tools/codec_extract.py,
 // the web flasher) writes the codec's tables at their address in that build (cut to the codec's own data), its code
 // right after them, word aligned, or at the start of sector 10 when it doesn't fit there, and the descriptor at the end
@@ -23,7 +22,7 @@
 // forward only: a release older than the one that added a build's profile doesn't know its tag and finds no codec
 #define CODEC_ID		"mduv380-1926-s11"
 
-// Entry offsets from the code start: the UV380 family's codec, the same in every build (codec-mduv380.md). Not used:
+// Entry offsets from the code start: the UV380 family's codec, the same in every build. Not used:
 // encode ECC +0x4E8 and FEC decode (+0xB54, +0xB68 or +0xB78 by build). The air frame FEC is ours (core/dmr/ambe)
 // and matches the radio's own
 #define CODEC_ENTRIES { .encode = 0x130, .decode = 0x5D8, .enc_init = 0x284, .fec_init = 0x4CC, .dec_init = 0x6D0, \

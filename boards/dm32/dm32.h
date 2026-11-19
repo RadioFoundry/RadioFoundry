@@ -20,7 +20,7 @@ extern hal_flash_t hrc_flash_spi0;
 // Ops each board file provides
 extern const hal_display_t dm32_display;
 extern const hal_input_t dm32_input;
-// Key scans with the PTT pin low that were ignored as host serial data (hardware-dm32.md 6.2)
+// Key scans with the PTT pin low that were ignored as host serial data
 uint32_t dm32_input_ptt_ignored(void);
 bool dm32_radio_transmitting(void);	// the radio is keyed (the shared PTT line's gate)
 extern const hal_radio_t dm32_radio;
@@ -28,7 +28,7 @@ extern const hal_radio_t dm32_radio;
 bool dm32_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write);
 extern const hal_power_t dm32_power;
 
-// Physical key bits returned by dm32_input.scan() (matrix in docs/spec/hardware-dm32.md 6.1, 6.2)
+// Physical key bits returned by dm32_input.scan()
 enum {
 	KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9,
 	KEY_STAR, KEY_HASH, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_GREEN, KEY_RED,
@@ -54,7 +54,7 @@ typedef struct {
 	uint16_t rssi_raw, noise_raw;	// FD6818 0x67 / 0x65 from the last status poll
 	uint16_t fm_noise;		// HR_C7000 FM_SQL
 	uint32_t fd_writes;
-	char rf_setup;			// the RF section (hardware-dm32.md 8.10): A classic, B newer, - neither locked
+	char rf_setup;			// the RF section: A classic, B newer, - neither locked
 } dm32_radio_diag_t;
 void dm32_radio_diag(dm32_radio_diag_t *d);
 bool dm32_diag_line(uint8_t i, char *buf, uint8_t len);

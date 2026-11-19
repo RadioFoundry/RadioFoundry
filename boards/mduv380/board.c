@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // TYT MD-UV380 / MD-UV390 / Retevis RT3S, and the MD-UV390 Plus 10 W (POWER=10w): board descriptor, key map and what sets
-// the radio apart in the UV380 family (boards/uv380_family/uvf.h, docs/spec/hardware-mduv380.md 1)
+// the radio apart in the UV380 family (boards/uv380_family/uvf.h)
 #include "board.h"
 #include "config.h"
 #include "../uv380_family/uvf.h"
@@ -20,7 +20,7 @@
 #include "hostlink/hostlink_ppp.h"
 #endif
 
-// The Plus 10 W check (hardware-mduv380.md 4): security register 3 byte 0x1C is said to read 0xF4 on that radio, but the
+// The Plus 10 W check: security register 3 byte 0x1C is said to read 0xF4 on that radio, but the
 // TYT images never read it, so the marker is unconfirmed. A 5 W image refuses to transmit on a radio that has it (it would
 // drive the PA band select through the backlight pin); a 10 W image doesn't require it, or a Plus without the marker
 // could never transmit. 0 skips the check (a bench knob, board.mk MDUV380_DEFS)
@@ -29,7 +29,7 @@
 #endif
 #define MARK_10W		0xF4u
 
-// Matrix positions, [row][column D0..D7] (hardware-mduv380.md 5): no P1/P2, no top key, no third side key
+// Matrix positions, [row][column D0..D7]: no P1/P2, no top key, no third side key
 const uint8_t uvf_key_matrix[3][8] = {
 	{ KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_0, KEY_STAR },
 	{ KEY_GREEN, KEY_UP, KEY_DOWN, KEY_7, KEY_8, KEY_9, KEY_HASH, KEY_RED },
@@ -57,14 +57,14 @@ static void init(void)
 		mark_10w = 0xFF;
 	}
 #if CONFIG_GPS
-	uvf_gps_init();	// the G models' module (hardware-mduv380.md 9)
+	uvf_gps_init();	// the G models' module
 #endif
 }
 
-// hardware-mduv380.md: 4 (every factory type kept, always RGB order), 6 (raw / 40.3 per 0.1 V; the volume pot ends of
-// the MD-UV380 22..2070 and the RT3S 23..2020, break 309 / 317, which one image can't tell apart: the higher bottom plus
-// 7 counts of margin, where the RT3S reads unsteadily, the lower top so both reach 100 %, the break between), 7 and 8
-// (the 5 W rows; the Plus 10 W's: its pot 19..2054 / 308 and its own rows)
+// Every factory display type is kept, always RGB order. Battery: raw / 40.3 per 0.1 V. Volume pot ends of the MD-UV380
+// 22..2070 and the RT3S 23..2020, break 309 / 317, which one image can't tell apart: the higher bottom plus
+// 7 counts of margin, where the RT3S reads unsteadily, the lower top so both reach 100 %, the break between. These are
+// the 5 W rows; the Plus 10 W's pot is 19..2054 / 308 with its own rows
 const uvf_variant_t uvf_variant = {
 	.panel_type = { 0, 1, 2, 3 },
 	.panel_rgb = { true, true, true, true },
@@ -97,7 +97,7 @@ static const band_t bands[] = {
 #endif
 };
 
-// The UV380 family's nine levels; the Plus 10 W's top four are 2, 3, 5 and 10 W (hardware-mduv380.md 7)
+// The UV380 family's nine levels; the Plus 10 W's top four are 2, 3, 5 and 10 W
 #if RFOUNDRY_POWER_10W
 static const char *const power_names[] = { "50mW", "250mW", "500mW", "750mW", "1W", "2W", "3W", "5W", "10W" };
 #define BOARD_NAME	"MD-UV380 10W"
@@ -108,7 +108,7 @@ static const char *const power_names[] = { "50mW", "250mW", "500mW", "750mW", "1
 
 // docs/ux/information-architecture.md 7.1 on a radio without function or top keys (a few-key map): the zone and power
 // are reached from the menus. SK1 is the upper side key (held with PTT at power-on it is the bootloader combination,
-// which the running firmware never sees), SK2 the lower one (hardware-mduv380.md 5)
+// which the running firmware never sees), SK2 the lower one
 static const keymap_entry_t keymap[] = {
 	{ KEY_GREEN, ACT_SELECT, ACT_SELECT, false, false, 0 },
 	{ KEY_RED, ACT_BACK, ACT_BACK, false, false, 0 },
@@ -136,7 +136,7 @@ static const uint8_t side_keys[] = { KEY_SK1, KEY_SK2 };
 static const char *const side_key_names[] = { "SK1", "SK2" };
 
 #if CONFIG_CPS_OPENFW
-// open-firmware-cps.md 4: type 6 is the MD-UV380 family, every panel and power version (hardware-mduv380.md 10)
+// open-firmware-cps.md 4: type 6 is the MD-UV380 family, every panel and power version
 static uint32_t cps_radio_type(void)
 {
 	return 6;
@@ -152,7 +152,7 @@ static const hal_cps_t cps = {
 
 const board_t board = {
 	.name = BOARD_NAME,
-	// CAP_GPS: the G models; board_t.gps says whether this one has the module (hardware-mduv380.md 9)
+	// CAP_GPS: the G models; board_t.gps says whether this one has the module
 	.caps = CAP_KEYPAD | CAP_ENCODER | CAP_VOLUME_POT | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
@@ -202,7 +202,7 @@ const board_t board = {
 #if CONFIG_GPS
 	.gps = &stm32_gps,
 #endif
-	// The family's thresholds (hardware-mduv380.md 6): low battery 6.2 V, critical 6.0 V
+	// The family's thresholds: low battery 6.2 V, critical 6.0 V
 	.battery_low_mv = 6200,
 	.battery_critical_mv = 6000,
 #if CONFIG_CPS_OPENFW

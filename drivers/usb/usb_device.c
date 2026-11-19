@@ -29,7 +29,7 @@ enum { ITF_CDC_COMM, ITF_CDC_DATA, ITF_COUNT };
 #define REATTACH_RETRY_MS	4000	// a reattach no host took is made again this much later
 #define REATTACH_TRIES		15	// for about a minute
 
-// docs/spec/hardware-dm1701.md 16: interrupt IN 0x82 (8 bytes), bulk OUT 0x01 / IN 0x81 (64 bytes)
+// Interrupt IN 0x82 (8 bytes), bulk OUT 0x01 / IN 0x81 (64 bytes)
 #define EP_CDC_NOTIFY		0x82
 #define EP_CDC_OUT		0x01
 #define EP_CDC_IN		0x81
@@ -113,7 +113,7 @@ static const uint8_t config_serial[CONFIG_SERIAL_LEN] = {
 };
 
 #if CONFIG_USB_NETWORK
-// docs/spec/hardware-dm1701.md 16: notification IN 0x82 (16 bytes, 16 ms), bulk OUT 0x01 / IN 0x81 (64 bytes)
+// Notification IN 0x82 (16 bytes, 16 ms), bulk OUT 0x01 / IN 0x81 (64 bytes)
 enum { ITF_NCM_COMM, ITF_NCM_DATA, ITF_NCM_COUNT };
 #define EP_NCM_NOTIFY		0x82
 #define EP_NCM_OUT		0x01

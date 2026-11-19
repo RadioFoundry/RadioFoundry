@@ -3,8 +3,8 @@
 
 # Backlight curve
 
-How to measure a PWM backlight and set the board's levels for the core's brightness settings (off, 10 % to 100 %) so
-each step looks even. It needs the radio, its owner's eyes and a build with `CONFIG_BACKLIGHT_TEST=y`
+This procedure measures a PWM backlight and sets the board's levels for the core's brightness settings (off, 10 % to
+100 %) so that each step looks even. You need the radio, your eyes, and a build with `CONFIG_BACKLIGHT_TEST=y`
 (**Settings > Advanced > Backlight tests**, [build-config.md](../build-config.md)). The board provides the display's
 optional backlight hooks (`hal_display_t` `set_backlight_raw`, `backlight_raw`, `set_backlight_rate`); the levels go in
 the board's backlight table, which its `set_backlight` maps a percent through.
@@ -43,7 +43,7 @@ rate = \frac{f_{timer}}{(prescaler + 1)(reload + 1)}, \qquad duty = \frac{CV}{re
 ```
 
 Changing only the prescaler changes the rate and leaves duty for a given CV the same, which is how the rate page
-works there.
+works on that radio.
 
 ## What to find
 
@@ -53,7 +53,7 @@ works there.
 | Warm-up | the on-time a pulse needs before any light shows | 2 |
 | Hang | how long the light stays on after the output turns off | 3 |
 | Rate | the PWM rate: as slow as the eye allows without flicker, clear of RF interference | 4 |
-| Floor | the level for 10 %: the dimmest a user should get, not where the light goes out | 5 |
+| Floor | the level for 10 %: the dimmest a user gets, not where the light goes out | 5 |
 | Curve | the eight levels between floor and full | 6 |
 
 ## The test pages
@@ -68,10 +68,10 @@ works there.
 
 ## 1. Check full
 
-- Find, in the PWM hardware's datasheet, what setting holds the output on through the whole period, and what setting
+- Find in the PWM hardware's datasheet what setting holds the output on through the whole period, and what setting
   holds it off. Full must be the first, with no table entry: a setting one step short leaves a short gap every
   period.
-- A light driven from a complementary or inverted output: check its polarity on the radio first.
+- For a light driven from a complementary or inverted output, check its polarity on the radio first.
 
 **Example: AT-D878UV.** The GD32F30x user manual (16.1, output PWM function) gives, in PWM mode 0, an output always
 active with the compare value above the reload value, and always inactive at 0. Full is 4096; the old 100 % of
@@ -79,12 +79,12 @@ active with the compare value above the reload value, and always inactive at 0. 
 
 ## 2. Warm-up: the first glow
 
-Page 1, room light kept the same throughout. At each of several rates (**\***), fastest to slowest:
+On page 1, keep the room light the same throughout. At each of several rates (**\***), fastest to slowest:
 
 1. From CV 0, **Up** until any glow shows, then **Down** once.
-2. Knob up until the glow first shows. At that level the screen can't be read: press **Up** twice, read the value and
-   take off 100. With the debug link connected, the value can be read there instead.
-3. Optional: from 50 above, knob down until the glow goes, for the other edge.
+2. Turn the knob up until the glow first shows. At that level you can't read the screen: press **Up** twice, read the
+   value, and take off 100. With the debug link connected, you can read the value there instead.
+3. Optional: from 50 above, turn the knob down until the glow goes, for the other edge.
 
 Read the on-time page 1 shows for each value and look across the rates:
 
@@ -112,8 +112,9 @@ takes the first 46 % of duty.
 
 ## 3. Hang: the first dip
 
-Page 1. Hold **OK** for full, hold it again to come back, then step down from the top (**Down** coarse, knob fine),
-holding **OK** to compare with full. Find the highest value that looks dimmer than full, and read its off-time.
+1. On page 1, hold **OK** for full, and hold it again to come back.
+2. Step down from the top (**Down** coarse, knob fine), holding **OK** to compare with full.
+3. Find the highest value that looks dimmer than full, and read its off-time.
 
 | Seen at two rates | Meaning |
 |---|---|
@@ -134,14 +135,14 @@ at 7324 Hz.
 
 ## 5. Set the floor
 
-Page 1 at the chosen rate: stop where the screen is as dim as anyone should want. Light below it is no reason to move
+On page 1 at the chosen rate, stop where the screen is as dim as anyone wants. Light below it is no reason to move
 it down.
 
 **Example: AT-D878UV.** CV 2137 (52 %) at 7324 Hz, still lit well below it.
 
 ## 6. Fit the curve
 
-Generate the levels from floor to full once, store them as constants, and look at each neighboring pair on page 2.
+Generate the levels from floor to full once, store them as constants, and compare each neighboring pair on page 2.
 Start from a power curve:
 
 ```latex
@@ -162,4 +163,4 @@ full. At 7324 Hz, 10 % and 20 % looked close: the warm-up, not γ.
 ## 7. Record it
 
 - The table and its comment in the board's backlight header, with a host test of the floor, full and the formula.
-- Warm-up, hang, rate, floor and curve, with the date, temperature and panel variant, in the radio's bring-up record.
+- Warm-up, hang, rate, floor, and curve, with the temperature and panel variant, in the radio's bring-up record.

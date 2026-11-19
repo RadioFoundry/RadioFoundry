@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// UV380 family factory calibration reader (docs/spec/hardware-dm1701.md section 12).
+// UV380 family factory calibration reader.
 // Read only: the working copy at 0x010000 is used when it carries the marker, otherwise the factory table in the
 // SPI flash security registers 1-2 is converted in RAM the way a working copy would be. Nothing is ever written.
 #include <string.h>
@@ -18,7 +18,7 @@
 
 enum { BAND_VHF, BAND_UHF, BAND_COUNT };
 
-// Row offsets in the 512-byte table (12.2): UHF rows have 9 points, VHF rows 5
+// Row offsets in the 512-byte table: UHF rows have 9 points, VHF rows 5
 typedef struct {
 	uint16_t at[BAND_COUNT];
 } row_t;
@@ -34,13 +34,13 @@ static const row_t ROW_FM_Q = { { 0x189, 0x180 } };
 static const uint16_t REF_TUNE[BAND_COUNT] = { 0x00C, 0x009 };
 static const uint8_t POINTS[BAND_COUNT] = { 5, 9 };
 
-// Interpolation grids (12.3), in 10 Hz units
+// Interpolation grids, in 10 Hz units
 static const uint32_t POWER_FIRST[BAND_COUNT] = { 13500000u, 40000000u };
 static const uint32_t POWER_STEP[BAND_COUNT] = { 1000000u, 1000000u };
 static const uint32_t GAIN_FIRST[BAND_COUNT] = { 13600000u, 40000000u };
 static const uint32_t GAIN_STEP[BAND_COUNT] = { 950000u, 1000000u };
 
-// Working-copy conversion of the factory power rows (12.1), the radio's factors per mille (uvf_variant.cal_k):
+// Working-copy conversion of the factory power rows, the radio's factors per mille (uvf_variant.cal_k):
 // very low = low x k0, low x= k1, mid x= k2, high x= k3
 #define K_VLOW(band)	(uvf_variant.cal_k[band][0])
 #define K_LOW(band)	(uvf_variant.cal_k[band][1])
@@ -126,7 +126,7 @@ static uint8_t scale(uint8_t v, uint16_t per_mille)
 	return r > 255u ? 255u : (uint8_t)r;
 }
 
-// The factory table has no very-low row and different power units: derive both in RAM (12.1)
+// The factory table has no very-low row and different power units: derive both in RAM
 static void derive_working(void)
 {
 	for (int band = 0; band < BAND_COUNT; band++) {
@@ -207,7 +207,7 @@ bool uvf_cal_load(void)
 	return source != CAL_NONE;
 }
 
-// Linear over an even grid of points (12.3, radio/cal_curve.h): clamped below the first point, extended past the
+// Linear over an even grid of points (radio/cal_curve.h): clamped below the first point, extended past the
 // last, truncated. Kept out of line: power_at and gain_at would each carry a copy
 __attribute__((noinline))
 static int32_t interpolate(const uint8_t *p, uint8_t n, uint32_t first, uint32_t step, uint32_t f10, int32_t mul)

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // HR_C6000 DMR / FM baseband chip driver (docs/spec/radios.md): its power-on set-up and FM modes
-// (docs/spec/modem-hrc6000.md, docs/spec/hardware-dm1701.md 4 and 12). The register access and the DMR slot engine
+// (docs/spec/modem-hrc6000.md). The register access and the DMR slot engine
 // are shared with the HR_C5000 (drivers/modem/hrc_common); the HR_C5000 has its own driver (drivers/modem/hrc5000).
 #ifndef HRC6000_H
 #define HRC6000_H
@@ -11,7 +11,7 @@
 // Which tone deviation register 0xA0 gets during FM TX
 typedef enum { HRC6000_TONE_NONE, HRC6000_TONE_CTCSS, HRC6000_TONE_DCS } hrc6000_tone_t;
 
-// FM TX deviation coefficients (hardware-dm1701.md 12.5, modem-hrc6000.md 8)
+// FM TX deviation coefficients (modem-hrc6000.md 8)
 typedef struct {
 	uint8_t voice;	// 4:0x35
 	uint8_t ctcss;	// 4:0xA0 with CTCSS
@@ -59,7 +59,7 @@ bool hrc6000_set_mode_fm_rx(hrc_t *dev);
 bool hrc6000_set_mode_fm_tx(hrc_t *dev, const hrc6000_fm_tx_t *cfg);
 // FM receive audio feed-through to the line out (4:0x36): on, or muted
 bool hrc6000_fm_audio(hrc_t *dev, bool on);
-// Reference oscillator offset (hardware-dm1701.md 12.4). fm_tx: the FM TX form (0x48 = 0)
+// Reference oscillator offset. fm_tx: the FM TX form (0x48 = 0)
 bool hrc6000_set_ref_offset(hrc_t *dev, int8_t offset, bool fm_tx);
 // 4:0xA1 = 0x00 (modem-hrc6000.md 8). The power-on init leaves 0x80, whose bit 7 the manual marks reserved, must be 0.
 // The other boards receive DMR with it; on a board that feeds the chip a 450 kHz IF it stops every DMR sync

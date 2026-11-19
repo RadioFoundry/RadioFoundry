@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Beken BK4819 VHF/UHF transceiver: chip driver, independent of the board (docs/spec/hardware-db25d.md 4).
+// Beken BK4819 VHF/UHF transceiver: chip driver, independent of the board.
 //
 // One instance per chip. A superhet radio can have two on one 3-wire bus with separate enables: the "main" chip receives at
 // the 51.55 MHz IF and transmits, the "LO" chip runs as the superhet's local oscillator. Register meanings are the
@@ -125,7 +125,7 @@ uint16_t bk4819_squelch_rssi(int16_t open_dbm, uint8_t hyst_db);
 // stock's own, Hz x 10.3244 truncated (bk4819_tone_start)
 #define BK4819_TONE_GAIN_MAX	127u
 
-// 0x36 for output level 0..15: 0 is off, anything else level x 63 / 15 with bit 7 set (the LO's formula, 4.3)
+// 0x36 for output level 0..15: 0 is off, anything else level x 63 / 15 with bit 7 set (the LO's formula)
 uint16_t bk4819_pa_reg(uint8_t level);
 
 // --- Register access (one frame each, inside the critical section) ---
@@ -134,7 +134,7 @@ void bk4819_attach(bk4819_t *dev, rfbus_t *bus);
 void bk4819_write(bk4819_t *dev, uint8_t reg, uint16_t val);
 uint16_t bk4819_read(bk4819_t *dev, uint8_t reg);
 
-// --- Sequences (hardware-db25d.md 4.3) ---
+// --- Sequences ---
 
 // Main chip: soft reset and the power-on table; ends idle with the audio muted. Task level
 void bk4819_init_main(bk4819_t *dev);
@@ -156,7 +156,7 @@ void bk4819_set_af(bk4819_t *dev, uint16_t af);
 void bk4819_gpio(bk4819_t *dev, uint8_t pin, bool high);
 // AF DAC gain 0..15 (the received audio level)
 void bk4819_set_af_gain(bk4819_t *dev, uint8_t gain);
-// DMR receive (hardware-db25d.md 4.5): the stock firmware's digital mode set for the main chip, written when it enters a
+// DMR receive: the stock firmware's digital mode set for the main chip, written when it enters a
 // digital channel: 0x2A, 0x51 = 0, AFC off, 0x52, 0x47, 0x7E, 0x43, 0x40 = 0, 0x27, 0x2B, 0x48, then the AF output on
 // with the digital bit (0x47 = 0x6143). The modem samples the chip's AF output, so the output stays on in DMR. Idle the
 // chip first; the caller tunes and sets the state. End: the stock analog mode set (AFC on, AF muted), 0x27 and 0x48 as
@@ -168,7 +168,7 @@ void bk4819_dmr_rx_end(bk4819_t *dev);
 // stays on, as the stock firmware leaves it in TX. A tune to the frequency the chip already has doesn't rewrite it
 void bk4819_lo_tune(bk4819_t *dev, uint32_t hz);
 void bk4819_lo_off(bk4819_t *dev);
-// TX, as the stock firmware does it (hardware-db25d.md 4.4). Prepare, while the chip is still in RX: the deviation
+// TX, as the stock firmware does it. Prepare, while the chip is still in RX: the deviation
 // word (0x40) and the sub-audio: 0x51, with CTCSS its word in 0x07 (value = Hz x 10), with DCS the rate in 0x07 and
 // the code's Golay word in 0x08 (value = the 9-bit code)
 void bk4819_tx_prepare(bk4819_t *dev, bk4819_tone_t type, uint16_t value);
@@ -178,7 +178,7 @@ void bk4819_tx_tune(bk4819_t *dev, uint32_t hz);
 // End of TX: tone and sub-audio generators off, then the main chip back to its RX state (still on the TX frequency, so
 // the PA can ramp down before it moves). The caller sets up receive next
 void bk4819_tx_end(bk4819_t *dev);
-// DCS turn-off (hardware-db25d.md 4.7), still transmitting: tail_start sets 0x52 bit 15 and the chip sends the 134.4 Hz
+// DCS turn-off, still transmitting: tail_start sets 0x52 bit 15 and the chip sends the 134.4 Hz
 // tail in place of the code; tail_end (or bk4819_tx_end) writes 0x52 back. False, and nothing written, when the
 // transmission sends no DCS
 bool bk4819_tx_tail_start(bk4819_t *dev);
@@ -192,13 +192,13 @@ void bk4819_tone_start(bk4819_t *dev, uint16_t hz, uint8_t gain);
 void bk4819_tone_key(bk4819_t *dev, bool down);
 // Tone off and the microphone back (TX state 0xC3FE, 0x40 as with CTCSS). No-op without a tone
 void bk4819_tone_stop(bk4819_t *dev);
-// A DTMF pair during the TX state, the stock DTMF sequence (hardware-db25d.md 4.4): tone 1 at low, tone 2 at high,
+// A DTMF pair during the TX state, the stock DTMF sequence: tone 1 at low, tone 2 at high,
 // both at the stock DTMF gain (0x70 = 0x9090), 0x40 = 0x348A, the microphone ADC off. A second start retunes; stop
 // with bk4819_tone_stop. low = 0 is a stop
 void bk4819_dtmf_start(bk4819_t *dev, uint16_t low_hz, uint16_t high_hz);
 #define BK4819_DTMF_CTRL	0x9090u		// 0x70: tone 1 and tone 2 on, gain 0x10 each (stock)
 #define BK4819_TX_DEV_DTMF	0x348Au		// 0x40 while DTMF sounds (stock)
-// --- DMR transmit (hardware-db25d.md 4.5): the modem's 4FSK goes on the reference oscillator (single-point
+// --- DMR transmit: the modem's 4FSK goes on the reference oscillator (single-point
 // modulation), so the main chip sends a plain carrier, retuned for every burst ---
 
 // The digital channel's TX words, written while the chip still receives: deviation off (0x40 = 0) and no sub-audio

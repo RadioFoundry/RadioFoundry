@@ -364,7 +364,7 @@ def c7000_flash():
 		"slot_magic": dc.SLOT_MAGIC, "slot_version": dc.SLOT_VERSION,
 		"slot_header": dc.HEADER_LEN, "slot_rel_max": dc.REL_MAX,
 		"codec_sig": list(dc.CODEC_SIG), "boards": boards, "profiles": profiles,
-		# the C-SKY builds' codec maps (docs/spec/codec-placement.md): which words a slot lists
+		# the C-SKY builds' codec maps: which words a slot lists
 		"codec_maps": {pid: m for pid, m in dc.codecmap.load_maps().items() if m["isa"] == "csky"}}
 
 

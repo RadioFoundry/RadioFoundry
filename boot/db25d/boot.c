@@ -56,7 +56,7 @@ static inline void jump(uint32_t a)
 #define GPIOA		0x14020000u	// DR +0, DDR +4
 #define GPIOB		0x14100000u
 #define LATCH		(1u << 13)	// PTB13 keeps the radio on once the power key is let go
-// The transmitter's pins (hardware-db25d.md 3.2, boards/db25d/pins.h): PTA26 UHF PA select, PTA27 TX supply A, PTB2 TX
+// The transmitter's pins (boards/db25d/pins.h): PTA26 UHF PA select, PTA27 TX supply A, PTB2 TX
 // supply B, PTB3 VHF PA select, all low = off; PTA23 high = receive. A soft reset can leave them as they were, and the
 // stage may wait here for a host, so they go off before anything that takes time (docs/spec/crash-log.md 8)
 #define TX_OFF_A	((1u << 26) | (1u << 27))

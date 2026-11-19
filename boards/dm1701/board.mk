@@ -4,7 +4,7 @@
 # code; this directory the radio's own data)
 PLATFORM   := stm32f4
 MCU        := stm32f405
-# The 8 MHz crystal; the image starts at sector 3, where the bootloader starts it (hardware-dm1701.md 1.4)
+# The 8 MHz crystal; the image starts at sector 3, where the bootloader starts it
 HSE_VALUE  := 8000000U
 APP_BASE   := 0x0800C000
 BOARD_DIRS := boards/dm1701 boards/uv380_family platform/stm32f4/hrc platform/stm32f4/spi_flash platform/stm32f4/fsmc_keypad drivers/rf/at1846s drivers/rf/subaudio drivers/modem/hrc6000 drivers/modem/hrc_common drivers/display/st7735 drivers/flash/spi_nor \

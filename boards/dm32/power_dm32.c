@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// DM-32UV power latch and switch, battery on ADC channel C, status LEDs (docs/spec/hardware-dm32.md 3.7, 6.4, 6.5).
+// DM-32UV power latch and switch, battery on ADC channel C, status LEDs.
 // The volume knob isn't read by any firmware seen (it is on the audio amplifier), so volume() is -1.
 #include "dm32.h"
 #include "pins.h"
@@ -9,7 +9,7 @@
 #include "power/battery/battery.h"
 
 // 2S Li-ion: raw / 8.32 = volts x 10. The port's raw / 8.2 read 8.21 V where a meter on the pack read 8.09 V (radio
-// on vs. off, about 30 mV of load), so 8.32 (hardware-dm32.md 3.7). 6.4 V is where the old port warned
+// on vs. off, about 30 mV of load), so 8.32. 6.4 V is where the old port warned
 #define BAT_RAW_PER_10V		832u		// ADC counts per 10 V
 #define BAT_FULL_MV		8200u
 #define BAT_EMPTY_MV		6400u

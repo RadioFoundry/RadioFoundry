@@ -3,14 +3,14 @@
 /* STM32F4 application layout, INCLUDEd by each board's memory.ld after its MEMORY (FLASH, RAM, CCMRAM). The image
  * starts with the vector table at ORIGIN(FLASH) (board.mk APP_BASE, where the bootloader starts the application).
  *
- * The board's FLASH region ends where the codec's first flash sector starts (docs/spec/codec-placement.md, "STM32
+ * The board's FLASH region ends where the codec's first flash sector starts ("STM32
  * radios"): whole sectors stay free of our code, so the flashing tool can update the firmware without erasing the
  * codec. The flashing tools read the region from memory.ld (tools/boards.py). */
 
 ENTRY(Reset_Handler)
 
-/* The initial stack pointer: the top of the board's RAM region. One stock bootloader rejects SP = top of RAM
- * (hardware-dm1701.md 18 (1)), so the regions end 4 bytes short */
+/* The initial stack pointer: the top of the board's RAM region. One stock bootloader rejects SP = top of RAM,
+ * so the regions end 4 bytes short */
 _estack = ORIGIN(RAM) + LENGTH(RAM);
 _Min_Heap_Size = 0x1000;
 _Min_Stack_Size = 0x800;	/* main stack: start-up and interrupts (at least this much RAM stays free for it) */

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // RT10 DMR: the HR_C7000's modem on the shared glue (platform/hrc7000/dmr_glue.c) with the FD6818 as the RF front end
-// (docs/spec/hardware-rt10.md 7.1). The modem's 4FSK goes on the reference oscillator (its MOD1 output is the TCXO's
-// control voltage, 4.1), and every burst runs the whole RF key-up and key-down of the analog transmitter, keyed from
+//. The modem's 4FSK goes on the reference oscillator (its MOD1 output is the TCXO's
+// control voltage), and every burst runs the whole RF key-up and key-down of the analog transmitter, keyed from
 // the modem's RF TX interrupt by the shared RF-burst task (platform/hrc7000/dmr_rfburst.c); the sequences are
 // rt10_burst_on / rt10_burst_off in radio_rt10.c.
 //
@@ -19,7 +19,7 @@
 
 #define C7_PHASE_OUT		0x128u		// RO: largest / smallest 14-bit AF phase seen (modem-hrc7000.md 2.1)
 
-// The modem's receive mode word on this radio (hardware-rt10.md 7.1), with the TX
+// The modem's receive mode word on this radio, with the TX
 // symbol mapping not inverted (bit 7 clear). make RT10_DMR_RF_MODE=0x... replaces it on the bench
 #ifndef RT10_DMR_RF_MODE
 #define RT10_DMR_RF_MODE	0x034C9860u
@@ -30,7 +30,7 @@ static hrc7000_t *modem;
 // DMR transmit keys the whole RF per burst on the shared RF-burst task (dmr_rfburst.c), which keys the PA too
 static const hrc_rfburst_board_t rf_board = { .on = rt10_burst_on, .off = rt10_burst_off };
 
-// air_verified: P25 and NXDN at 4800 bit/s checked both ways on air (hardware-rt10.md 7.3)
+// air_verified: P25 and NXDN at 4800 bit/s checked both ways on air
 static const hrc_dmr_board_t dmr_board = { .burst = &rf_board, .tx_end = rt10_dmr_tx_end, .air_verified = true };
 
 // The speaker source for the modem's PCM (audio_pcm.c): the ring (prompt FIFO) on, or off. The modem's FM audio path

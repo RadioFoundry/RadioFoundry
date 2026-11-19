@@ -78,7 +78,7 @@ codeplug_source_t codeplug_init(void);
 codeplug_source_t codeplug_source(void);
 // The open-firmware area holds records in use that aren't an open-firmware codeplug: another firmware's own
 // codeplug, left there when RadioFoundry was installed over it. Decided at every index (start-up, codeplug_reload) by
-// the rule the web editor uses (docs/spec/codeplug-stock-tyt.md 2, step 1), unless the owner accepted it (below). The
+// the rule the web editor uses (step 1), unless the owner accepted it (below). The
 // radio then shows no codeplug (the built-in set, source CODEPLUG_BUILTIN) and writes nothing there: every edit fails
 // until codeplug_start_new or codeplug_accept (the UI asks which first)
 bool codeplug_foreign(void);

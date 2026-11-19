@@ -2,11 +2,11 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 # RT10 feature defaults (config/features.mk lists them all). The host link runs on the accessory jack's UART0; USB, PPP
 # and TCP_CONNS follow the platform (platform/hrc7000/config.mk)
-# DMR (hardware-rt10.md 7.1): the TCXO-modulation scheme on the shared RF-burst task; voice needs the codec merged (8)
+# DMR: the TCXO-modulation scheme on the shared RF-burst task; voice needs the codec merged (8)
 CONFIG_DMR ?= y
 CONFIG_HOTSPOT_SPLIT ?= n
 # PPP's host sends at any time, and the radio sending while the host sends latched the cable line low until a power
-# cycle (hardware-rt10.md 3.1): off, and the IP gateway and its services with it. It builds, for a check with
+# cycle: off, and the IP gateway and its services with it. It builds, for a check with
 # another cable
 CONFIG_NET_PPP ?= n
 BOARD_DEFAULT_OFF += NET_PPP	# Off by default on this radio due to a hardware flaw: if the computer and the radio send at the same time, the cable's PTT and serial line can lock up until the radio is switched off and on.
@@ -69,7 +69,7 @@ BOARD_UNSUPPORTED += ZONE_SHARE	# no display: an offered zone can't be shown or 
 BOARD_UNSUPPORTED += DIAG	# no display: the diagnostics page is a screen
 BOARD_UNSUPPORTED += CRASH_SCREEN	# no display: the debug link reads the crash log
 BOARD_UNSUPPORTED += CRASH_REPORT	# sent from the crash log's screen
-BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is SPI NOR, GD25Q16 class (docs/spec/hardware-rt10.md 4)
+BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is SPI NOR, GD25Q16 class
 BOARD_UNSUPPORTED += VIBRATE	# no vibration motor
 BOARD_UNSUPPORTED += AM_RX	# no air band receive path
 BOARD_UNSUPPORTED += BCAST_FM	# no broadcast receiver

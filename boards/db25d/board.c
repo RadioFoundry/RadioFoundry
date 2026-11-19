@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Radioddity DB25-D PRO: board descriptor, IO mux and reset-time pin levels, key map (docs/spec/hardware-db25d.md)
+// Radioddity DB25-D PRO: board descriptor, IO mux and reset-time pin levels, key map
 #include "board.h"
 #include "config.h"
 #include "db25d.h"
@@ -178,7 +178,7 @@ static void io_init(void)
 }
 
 #if CONFIG_GPS
-// The GPS module on UART2 (hardware-db25d.md 3.1). Its RXD pad is PTA11, a GPIO until IO_DIPLEX0 bit 11 is cleared
+// The GPS module on UART2. Its RXD pad is PTA11, a GPIO until IO_DIPLEX0 bit 11 is cleared
 // (HR_C7000 user guide 4.4.4.4); the stock firmware's mux for it hasn't been traced
 static const hrc_gps_cfg_t gps_cfg = {
 	.uart_base = UART2_BASE,
@@ -189,7 +189,7 @@ static const hrc_gps_cfg_t gps_cfg = {
 };
 #endif
 
-// Transmitter off from any context (board.h, docs/spec/crash-log.md 8; hardware-db25d.md 3.2): both TX supplies, both
+// Transmitter off from any context (board.h, docs/spec/crash-log.md 8): both TX supplies, both
 // PA selects and the PA drive (DAC B to 0, powered down), with PTA23 (RX_SUPPLY) high as in receive. RAM code, register
 // writes only. The main BK4819 may still be set to transmit (its 3-wire bus is a slow bit-banged transaction): with the
 // supplies and the PA selects off its output reaches no powered PA, and the next start sets it up again
@@ -215,11 +215,11 @@ void board_init(void)
 #if CONFIG_GPS
 	hrc_gps_init(&gps_cfg);
 #endif
-	// Both calibration copies, the higher save counter wins (hardware-db25d.md 6.1). Without the NAND, the flash copy
+	// Both calibration copies, the higher save counter wins. Without the NAND, the flash copy
 	bool nand = db25d_nand_init();
 	db25d_cal_load((const uint8_t *)DB25D_CAL_FLASH_ADDR, nand ? db25d_nand_read : NULL);
 #if CONFIG_NAND_STORAGE
-	// The core's storage (hardware-db25d.md 6.6): mounted before storage_init reads it. Without it the radio runs on
+	// The core's storage: mounted before storage_init reads it. Without it the radio runs on
 	// the default settings, as before
 	db25d_flash.init();
 #endif

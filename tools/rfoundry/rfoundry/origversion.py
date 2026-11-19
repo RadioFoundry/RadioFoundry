@@ -10,7 +10,7 @@ docs/spec/debuglink.md 3.25) and the option's choice for each major version (`ma
 before it asks for the bootloader and stores the choice over the debug link once RadioFoundry runs. A version not in
 the table, or no answer, settles nothing: the radio then uses its own fallback.
 
-Read "dfu-info" (docs/spec/hardware-md9600.md 15.1): the original firmware, running normally, is a DFU device with the
+Read "dfu-info": the original firmware, running normally, is a DFU device with the
 bootloader's USB IDs. Its interface string tells it from the bootloader without a request, so nothing is sent to a
 device whose strings aren't the original firmware's. Then these requests, all on the DFU interface, none of which
 changes anything on the radio:

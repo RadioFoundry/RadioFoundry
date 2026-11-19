@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 /* Copyright (c) 2026 The RadioFoundry Authors */
 /* HR_C7000 (CK803S) application layout with a codec slot, INCLUDEd by each board's memory.ld after its codec symbols
- * and its MEMORY (docs/spec/codec-placement.md).
+ * and its MEMORY.
  *
  * Program flash (XIP at 0x03000000): the factory loader below the image (never written), the application from
  * ORIGIN(FLASH) (board.mk APP_BASE, after the first stage when there is one), then the codec slot __codec_slot ..

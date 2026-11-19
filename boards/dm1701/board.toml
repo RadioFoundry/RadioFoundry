@@ -15,17 +15,15 @@ order = 2
 aprs_tocall = "7"
 
 [docs]
-hardware = "docs/spec/hardware-dm1701.md"
-codec = "docs/spec/codec-dm1701.md"
 install = "docs/user/02-installing.md"
 
-# One-line summaries for the site and the generated tables; the facts are in docs.hardware
+# One-line summaries for the site and the generated tables
 [hardware]
 bands = "136-174 / 400-480 MHz"
 power = "1 / 2 / 5 W"
 display = "1.77\" color, 160 × 128"
 gallery = "160x120i5"
-clock = { rtc = "unknown", note = "STM32 RTC on a 32.768 kHz crystal; no backup supply confirmed (docs/spec/hardware-dm1701.md, VBAT unverified)" }
+clock = { rtc = "unknown", note = "STM32 RTC on a 32.768 kHz crystal; no backup supply known" }
 
 [status]
 level = "supported"
@@ -53,13 +51,13 @@ backup = { stock = "none", rfoundry = "full", spi_size = 0x1000000 }
 mem = "secreg"
 start = 0x0
 end = 0x200
-what = "factory calibration in security registers 1 and 2 (hardware-dm1701.md 12.1, 13.2)"
+what = "factory calibration in security registers 1 and 2"
 
 [[flash.protect]]
 mem = "secreg"
 start = 0x200
 end = 0x300
-what = "factory flags in security register 3: power class, panel type, band limits (hardware-dm1701.md 13.2)"
+what = "factory flags in security register 3: power class, panel type, band limits"
 
 [flash.bootloader]
 hold = ["ptt", "sk1"]
@@ -70,7 +68,7 @@ steps = [
 	"Release the keys.",
 ]
 
-# The AnyRoad DFU bootloader (hardware-dm1701.md 15): its USB identity and the identity of its per-model XOR key (the
+# The AnyRoad DFU bootloader: its USB identity and the identity of its per-model XOR key (the
 # key itself is never in the repository)
 [flash.dfu]
 vid = 0x0483
@@ -89,7 +87,7 @@ id = 1
 tested = false
 spi = { bus = 1, mode = 0, hz = 4500000 }
 
-# The codec where the merge puts it (docs/spec/codec-placement.md): tables at their stock address, the code after them
+# The codec where the merge puts it: tables at their stock address, the code after them
 # and the descriptor, all in sectors 10 and 11. stock lists the SHA-256 of each stock file rfoundry merges the codec
 # from (tools/rfoundry/rfoundry/stockfw.py PROFILES); stock firmware keeps its code in sectors 7 and 8, which are the
 # application's now, so no stock version leaves it in place and rfoundry merges it from the stock file. V02.01 to V02.03

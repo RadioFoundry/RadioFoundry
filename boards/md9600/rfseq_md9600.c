@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// MD-9600 RF sequencing (rfseq_md9600.h; docs/spec/hardware-md9600.md 5.5, 19.8)
+// MD-9600 RF sequencing (rfseq_md9600.h)
 #include <stddef.h>
 #include "rfseq_md9600.h"
 #include "config.h"
@@ -420,7 +420,7 @@ md9600_rf_err_t md9600_rf_pa_burst(md9600_rf_t *rf, bool on)
 {
 	const md9600_rf_ops_t *o = rf->ops;
 	if (!on) {
-		// The ramp down, the loop open, then the transmitter supply off (2.5: per burst T5 and the loop toggle)
+		// The ramp down, the loop open, then the transmitter supply off (per burst T5 and the loop toggle)
 		if (rf->pa_on) {
 			uint32_t span = (uint32_t)(rf->apc - rf->apc_floor);
 			for (uint32_t i = 1; i <= MD9600_BURST_RAMP_STEPS; i++) {
@@ -614,7 +614,7 @@ md9600_rev_t md9600_rf_probe(const md9600_rf_ops_t *o, uint32_t hz, uint16_t thr
 
 // --- AK2365A read test ---
 
-#define IF_SOFT_RESET	0x08AAu		// register 4 = 0xAA: every register back to its default (hardware-md9600.md 5.4)
+#define IF_SOFT_RESET	0x08AAu		// register 4 = 0xAA: every register back to its default
 
 md9600_if_t md9600_rf_if_detect(const md9600_rf_ops_t *o)
 {
@@ -645,7 +645,7 @@ md9600_if_t md9600_rf_if_detect(const md9600_rf_ops_t *o)
 
 // --- Readings ---
 
-// hardware-md9600.md 5.7: dBm = floor + raw8 / 2 (V4A / V5: / 1.95), raw8 = the 12-bit average >> 4. A fit, unverified
+// dBm = floor + raw8 / 2 (V4A / V5: / 1.95), raw8 = the 12-bit average >> 4. A fit, unverified
 #define RSSI_FLOOR_V		(-135)
 #define RSSI_FLOOR_U		(-145)
 #define RSSI_FLOOR_V5		(-155)

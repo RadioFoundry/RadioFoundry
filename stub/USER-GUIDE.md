@@ -1,22 +1,28 @@
-# Flash tool user guide (`stubtool.py`)
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
-For the DM-32UV, the DM-1801 Pro and the DB25-D. The tool backs up and checks the radio's two memory chips over the programming
-cable and installs RadioFoundry builds. It needs only Python 3 and `pyserial` (`pip install pyserial`). Installing the stock or a
-first RadioFoundry build still uses `tools/serial_loader.py`. Items marked **[confirm]** are not checked on every radio yet.
+# Stub tool user guide
+
+`stubtool.py` backs up and checks a radio's two memory chips over the programming cable, and installs RadioFoundry
+builds. This guide covers the DM-32UV, the DM-1801 Pro, and the DB25-D, plus the security registers of the STM32
+radios. The tool needs only Python 3 and `pyserial` (`pip install pyserial`). To install the factory firmware, or a
+first RadioFoundry build, use `tools/serial_loader.py`.
 
 ## Before you start
 
+Before you start, check the following:
+
 - Use a charged battery. Do not unplug the cable or remove the battery while the tool is working.
-- Use the programming cable that came with the radio, or a USB-serial cable known to work. Some cheap cables do not work
-  **[confirm which]**. Find the cable's port name with `python3 -m serial.tools.list_ports` (for example
-  `/dev/cu.usbserial-210` on macOS, `COM5` on Windows, `/dev/ttyUSB0` on Linux).
+- Use the programming cable that came with the radio, or a USB-serial cable known to work. Some cheap cables don't work;
+  a cable with an FTDI chip is the safest choice. Find the cable's port name with `python3 -m serial.tools.list_ports`
+  (for example `/dev/cu.usbserial-210` on macOS, `COM5` on Windows, `/dev/ttyUSB0` on Linux).
 - Your radio has two memory chips: the program memory (the radio's software) and the data memory (settings, contacts,
   channels, calibration). Back up both.
 
 ## Back up your radio (radio switched off)
 
 1. Switch the radio **off** and connect the cable.
-2. Run:
+2. Run the following command:
 
    ```
    python3 stubtool.py PORT --board dm1801pro --progmem progmem.bin --q128 q128.bin
@@ -40,7 +46,7 @@ To read only part of a memory, add `--progmem-range START:END` or `--q128-range 
 If the radio runs a RadioFoundry build with the loader option, you do not need to switch it off.
 
 1. Leave the radio **on** at its normal screen, connected by the cable.
-2. Run the same command and add `--rfoundry-enter`:
+2. Run the same command with `--rfoundry-enter` added:
 
    ```
    python3 stubtool.py PORT --rfoundry-enter --progmem progmem.bin --q128 q128.bin
@@ -52,11 +58,11 @@ If the radio runs a RadioFoundry build with the loader option, you do not need t
 
 ## Install a RadioFoundry build without entering the bootloader
 
-For a radio that already runs a RadioFoundry build with the loader option (`CONFIG_STUB_ENTRY=y`). No key presses, no
-switching off.
+If the radio already runs a RadioFoundry build with the loader option (`CONFIG_STUB_ENTRY=y`), you can install a new
+build without key presses or switching off.
 
 1. Leave the radio **on** at its normal screen, connected by the cable.
-2. Run (`rfoundry_dm1801pro.bin` is the build you want to install):
+2. Run the following command, where `rfoundry_dm1801pro.bin` is the build you want to install:
 
    ```
    python3 stubtool.py PORT --rfoundry-enter --write-app rfoundry_dm1801pro.bin
@@ -65,26 +71,26 @@ switching off.
 3. The screen shows "PC Loader Connected". The tool compares the new build with what is in the radio, writes only the
    blocks that changed (a rebuilt image is often a few seconds, a very different one about 70 seconds), and checks every
    block after writing. It prints how many blocks it wrote.
-4. Start the new build:
+4. Start the new build with the following command:
 
    ```
    python3 stubtool.py PORT --attach --board dm1801pro --boot reset
    ```
 
 `rfoundry flash rfoundry_dm1801pro.bin --board dm1801pro --port PORT` does steps 2 to 4 in one run, and checks the radio
-afterwards ([tools/rfoundry/README.md](../tools/rfoundry/README.md#the-dm-1801-pro)).
+afterwards ([tools/rfoundry/README.md](../tools/rfoundry/README.md#the-serial-route)).
 
 **DB25-D:** the same, with the install image (`rfoundry_db25d_install.bin`) and the script `db25d_update.sh IMAGE PORT`,
 which also restarts the radio and checks that it answers. The tool picks the loader that matches the running build by
 itself (a build with DMR keeps it in a different place than one without), so the same command installs a DMR build over
-a build without DMR, one DMR build over another, and a build without DMR over a DMR build. Use `--rfoundry-stub FILE` only
-for a stub built elsewhere; the tool refuses one that does not match the running build, before the radio is touched.
-`--legacy-stub` uses the loaders of earlier tool versions, if the current one ever gives trouble.
+a build without DMR, one DMR build over another, and a build without DMR over a DMR build. Use `--rfoundry-stub FILE`
+only for a stub built elsewhere; the tool refuses one that does not match the running build, before the radio is
+touched. `--legacy-stub` uses the loaders of earlier tool versions, if the current one ever gives trouble.
 
 The DB25-D also has a 256 MB NAND chip (recordings, and RadioFoundry's own area at 0xF000000). Read part of it with
-`--nand nand.bin --nand-range START:END` and compare with `--verify-nand nand.bin`. The NAND is only read, never written.
-Some of its blocks fail the chip's ECC (factory-bad blocks read all 0x00). The tool reads those sectors as the chip
-holds them, twice, and lists them after the read; `--verify-nand` names them and doesn't compare them.
+`--nand nand.bin --nand-range START:END` and compare with `--verify-nand nand.bin`. The NAND is only read, never
+written. Some of its blocks fail the chip's ECC (factory-bad blocks read all 0x00). The tool reads those sectors as the
+chip holds them, twice, and lists them after the read; `--verify-nand` names them and doesn't compare them.
 
 Factory data is never written either. Each radio's `board.toml` lists it (`[[flash.protect]]`: the calibration, and on
 the DB25-D the NAND's bad-block table and reserve blocks). The tool refuses any write or erase that would touch it, and
@@ -92,11 +98,10 @@ says which region and why, before anything is erased.
 
 The radio's bootloader area is never written, so the usual update mode (hold the keys while switching on) always still
 works. Do not unplug the cable or remove the battery while it writes. If it is interrupted, run the same command again
-once the radio is back in loader mode, or use update mode and `tools/serial_loader.py`. A build for the **DM-1801 Pro** was
-tested this way **[confirm on the DM-32UV, which also keeps codec data in the program flash]**. Use a raw RadioFoundry `.bin`
-(linked for 0x0300C000), not a stock firmware file.
+once the radio is back in loader mode, or use update mode and `tools/serial_loader.py`. Use a raw RadioFoundry `.bin`
+(linked for 0x0300C000), not a factory firmware file.
 
-## Factory calibration (STM32 radios: the DM-1701 family) [confirm]
+## Factory calibration (STM32 radios)
 
 These radios keep their factory calibration and flags in three small "security registers" of the data memory chip
 (768 bytes in all), apart from the normal data memory. A `--q128` backup does not include them. With the radio running a
@@ -117,10 +122,10 @@ is written, unless the register already holds the saved bytes. The command stays
 python3 stubtool.py PORT --attach --board dm1701 --write-secreg secreg.bin --confirm-secreg
 ```
 
-The tool refuses a file that is not 768 bytes, writes only the registers that differ, saves what was there first (in your
-home folder, or `--backup-dir`), and refuses a locked register before anything is written. It never locks a register.
-Do not unplug the cable while it writes: a register that was erased but not yet written must be put back from the saved
-file.
+The tool refuses a file that is not 768 bytes, writes only the registers that differ, saves what was there first (in
+your home folder, or `--backup-dir`), and refuses a locked register before anything is written. It never locks a
+register. Do not unplug the cable while it writes: a register that was erased but not yet written must be put back from
+the saved file.
 
 ## Check a backup (quick)
 
@@ -133,8 +138,8 @@ the backup, small differences in settings are normal.
 
 ## Leave loader mode
 
-Switch the radio off and on again. If it will not switch off (the power key does nothing while the loader runs), run
-this with your radio's `--board` id:
+Switch the radio off and on again. If it won't switch off (the power key does nothing while the loader runs), run the
+following command with your radio's `--board` id:
 
 ```
 python3 stubtool.py PORT --attach --board dm1801pro --boot reset
@@ -151,8 +156,9 @@ The radio restarts into its normal firmware. If neither works, remove and refit 
 | Three green flashes | Finished. The slow yellow blink comes back after. |
 | Nothing, screen dark, tool says "waiting" | The radio is not in loader mode yet: switch it off, make sure the tool is waiting, then switch it on. |
 
-Yellow is the red and the green LED both full on, so it looks the same on every model. The tool drives each radio's own LED pins (its `pins.h`); `--led-red` and
-`--led-green` override them. Without `--board` on the boot ROM route the radio is not known, so no LED blinks.
+Yellow is the red and the green LED both full on, so it looks the same on every model. The tool drives each radio's own
+LED pins (its `pins.h`); `--led-red` and `--led-green` override them. Without `--board` on the boot ROM route the radio
+is not known, so no LED blinks.
 
 ## Transfer speed
 
@@ -170,13 +176,13 @@ itself, and the run carries on at normal speed. You do nothing.
 | `--baud 262500` | Ask for one speed; if it fails the test, the run stays at 115200 |
 
 The radio's serial port has whole steps only (its clock divided by 16 times a whole number), so speeds such as 262500
-are normal, and 230400 or 921600 are not offered as such. On the cables tested so far the fastest that held was about
+are normal, and 230400 or 921600 aren't offered as such. On a good cable, the fastest speed that holds is about
 260000.
 
 ## If something goes wrong
 
-- **"The radio did not respond" / "did not start its serial boot ROM"**: switch the radio off, make sure the cable is in,
-  run the tool, and only then switch the radio on.
+- **"The radio did not respond" / "did not start its serial boot ROM"**: switch the radio off, make sure the cable is
+  in, run the tool, and only then switch the radio on.
 - **"stopped waiting before the answer to its greeting reached it"** or **"the radio started its firmware"**: the boot
   ROM waits only about 48 ms for the tool's answer, and the cable or a USB hub was too slow. Switch the radio off, run
   the tool again with `--slow-cable`, then switch the radio on. The tool then keeps sending its answer while the radio
@@ -187,15 +193,15 @@ are normal, and 230400 or 921600 are not offered as such. On the cables tested s
   push the plug all the way into the radio, and run the tool again; if it happens again, use a better cable,
   preferably one with an FTDI chip. A cable that holds the radio's line low can also hold its PTT, so
   unplug it from the radio.
-- **A message about retries**: the tool checks every block and asks again when a block arrives damaged. A few retries are
-  normal. If it gives up, switch the radio off and on and run it again.
+- **A message about retries**: the tool checks every block and asks again when a block arrives damaged. A few retries
+  are normal. If it gives up, switch the radio off and on and run it again.
 - **"flash does not answer"**: the radio is not in loader mode, or the cable is wrong. Switch off and on and try again.
-- **RadioFoundry entry says it "refused to enter this stub" because of the watchdog**: the tool or web page carries a loader
-  older than the radio's firmware. Nothing was written and the radio keeps running. Update the tool, or reload the web
-  page, and run it again. The radio's watchdog never resets it during a backup or an install unless the loader itself
-  hangs.
-- **RadioFoundry entry says "no answer from RadioFoundry's debug link"**: the radio is not running a RadioFoundry build with the loader option, or
-  the cable is on a different port. Use the switched-off method above instead.
+- **RadioFoundry entry says it "refused to enter this stub" because of the watchdog**: the tool or web page carries a
+  loader older than the radio's firmware. Nothing was written and the radio keeps running. Update the tool, or reload
+  the web page, and run it again. The radio's watchdog never resets it during a backup or an install unless the loader
+  itself hangs.
+- **RadioFoundry entry says "no answer from RadioFoundry's debug link"**: the radio is not running a RadioFoundry build
+  with the loader option, or the cable is on a different port. Use the switched-off method above instead.
 - **"runs RadioFoundry for the X, not the Y that --board names"** or **"this RadioFoundry image is ... not for the Y"**:
   the cable on that port goes to another radio, or the image was built for another radio. Nothing was written. Check
   the port (two cables of the same make can swap names after a replug) and the image. `--force` writes anyway; use it

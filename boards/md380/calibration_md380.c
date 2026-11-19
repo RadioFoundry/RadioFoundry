@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// MD-380 factory calibration reader (docs/spec/hardware-md380.md section 11).
+// MD-380 factory calibration reader.
 // The radio is single band: the table in SPI flash security registers 1-2 (512 bytes) holds one band. The reader is
 // read only, checks every row before use, and the radio refuses to transmit when the table is not accepted.
 #include <string.h>
@@ -10,7 +10,7 @@
 #define CAL_SIZE	512u
 #define POINTS		9u
 
-// Row offsets (hardware-md380.md 11.2)
+// Row offsets
 #define REF_TUNE	0x009u	// reference oscillator tune byte
 #define ROW_HIGH	0x010u	// TX power, high (5 W)
 #define ROW_LOW		0x020u	// TX power, low (1 W)

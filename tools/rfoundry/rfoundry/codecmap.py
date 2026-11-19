@@ -2,7 +2,7 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 """Codec maps: where each supported stock build keeps its AMBE+2 codec, and which words in it hold addresses.
 
-docs/spec/codec-placement.md ("Codec maps"). One JSON file per stock build in codec_maps/<board>/<profile>.json,
+One JSON file per stock build in codec_maps/<board>/<profile>.json,
 format "rfoundry-codec-map/1". A map holds addresses, lengths, offsets and hashes, never codec bytes. The merge tools use it
 to move the codec as one block: a word that held an address inside the old block gets the same offset in the new one.
 
@@ -451,7 +451,7 @@ def relocations(m):
 
 
 # ---------------------------------------------------------------------------------------------------------------
-# Layouts: every codec window moved as its own block (docs/spec/codec-placement.md, "Layouts")
+# Layouts: every codec window moved as its own block
 
 def _window_of(wins, addr):
     """The index of the stock window [(addr, length)] an address lies in, or None"""

@@ -729,7 +729,7 @@ test("factory calibration: the first page of the stock codeplug area with the pr
 	assert.equal(c7.findCalibration(new FakeC7000({ progmem: new Uint8Array(0x100000) }).q128, lay), 0x7C000);
 });
 
-// Slots (docs/spec/codec-placement.md): the same bytes as hrc7000_codec.py, read back; a version 1 slot from before the
+// Slots: the same bytes as hrc7000_codec.py, read back; a version 1 slot from before the
 // code moved, and a build without a codec map, are refused
 test("a codec with a map gets hrc7000_codec.py's slot; a version 1 slot or a build without a map is refused", async () => {
 	const fx = json("c7000.json").v2;

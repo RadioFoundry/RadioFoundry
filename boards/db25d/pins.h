@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// DB25-D pin map by GPIO pin index (0-31 bank A, 32-63 B, 64-95 C; docs/spec/hardware-db25d.md 3)
+// DB25-D pin map by GPIO pin index (0-31 bank A, 32-63 B, 64-95 C)
 #ifndef DB25D_PINS_H
 #define DB25D_PINS_H
 
 #define PIN_MIC_RXD		0x09	// UART1 RXD; the mic's PTT pulls it low
-#define PIN_SPK_MIC		0x0F	// mic speaker, low = on. Also must stay high for the LCD backlight (hardware-db25d.md 3)
+#define PIN_SPK_MIC		0x0F	// mic speaker, low = on. Also must stay high for the LCD backlight
 #define PIN_NAND_CS		0x12	// SPI NAND chip select, low = selected
 #define PIN_BCAST_AUDIO		0x13	// FM broadcast audio enable
 #define PIN_RX_SUPPLY		0x17	// high in RX, low in TX
@@ -16,7 +16,7 @@
 #define PIN_PARK_A17		0x11	// unused, the stock firmware parks it high
 #define PIN_TX_SUPPLY_A		0x1B	// low in RX, raised 200 us into TX
 
-#define PIN_LED_GREEN		0x20	// status LEDs (3.3)
+#define PIN_LED_GREEN		0x20	// status LEDs
 #define PIN_LED_RED		0x21
 #define PIN_TX_SUPPLY_B		0x22
 #define PIN_VHF_TX		0x23
@@ -31,7 +31,7 @@
 #define PIN_RF_CLK		0x30	// BK4819 serial clock (both chips)
 #define PIN_GPS_POWER		0x31
 // The level that powers the GPS module. The stock firmware clears PTB17 at GPS init and at power-off and sets it when GPS is
-// switched on, so high = on (hardware-db25d.md 3.1; confirmed on the radio)
+// switched on, so high = on (confirmed on the radio)
 #define GPS_POWER_ON_LEVEL	true
 #define PIN_RF_DATA		0x38	// BK4819 serial data, bidirectional
 #define PIN_RF_SEN_MAIN		0x39	// main BK4819 enable, low = selected

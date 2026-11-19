@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The stock AMBE+2 codec run in place from flash, shared by the STM32F4 radios (docs/spec/codec-placement.md, "STM32
-// radios"; docs/spec/codec-dm1701.md, codec-md380.md, codec-md9600.md). It is one library in every TYT / Baofeng
+// The stock AMBE+2 codec run in place from flash, shared by the STM32F4 radios. It is one library in every TYT / Baofeng
 // STM32 image, linked at other addresses: the init sequence, the arguments and the state sizes are the same, only the
 // entry offsets and the placement differ. A board describes the builds it accepts (stm32_codec_profile_t) and defines
 // stm32_codec_profiles; vocoder.c gives the hal_vocoder_t. The merge on the user's machine writes the codec and its

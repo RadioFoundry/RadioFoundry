@@ -3,7 +3,8 @@
 // The radio core's task: a request queue in front of the state machine (radio_sm.c), a status poll every
 // RADIO_POLL_MS, the DMR call stack every RADIO_TICK_MS, and a snapshot of the view that other tasks copy under a
 // mutex. It also implements the hotspot's radio operations (hotspot_radio_ops_t): they post requests and never wait,
-// so the host link's MMDVM replies stay fast (docs/testing/mmdvm-audit.md A-15).
+// so the host link's MMDVM replies stay fast: a status reply is due within tens of milliseconds
+// (docs/spec/mmdvm-protocol.md 2.4).
 #include <string.h>
 #include "radio/radio.h"
 #include "radio/radio_sm.h"

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The GPIO interrupt watch (hardware-dm32.md 6.3): a board whose input depends on one GPIO bank interrupt (the rotary
+// The GPIO interrupt watch: a board whose input depends on one GPIO bank interrupt (the rotary
 // encoder) registers its handler here. A wrapper counts the entries, and the board's 10 ms input scan checks that a
 // pending interrupt was taken. One left pending on two scans running with no entry between them has been lost (seen on
 // a radio: the bank pending, its PIC source quiet for good). The first time, the PIC and bank state is kept for the

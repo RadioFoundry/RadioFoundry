@@ -87,12 +87,12 @@ export function fakeC7000Options(radio, fb) {
 		loaderId: radio.flash.update_mode === "baofeng" ? fb.c7000.boards[radio.id].bootloader_id : null };
 }
 
-// The radio side of the Baofeng updater (docs/spec/hardware-dm32.md 13.2), a port of tools/serial_loader.py's
+// The radio side of the Baofeng updater, a port of tools/serial_loader.py's
 // FakeBootloader: checks every step, the header CRC, each block's number (with the 0xFF -> 0x00 wrap), complement and
 // CRC. send(bytes, delayMs) carries its answers to the host. Faults: corrupt, block numbers whose first transfer
 // arrives damaged (the radio NAKs); silent, never answers; badStep2, a wrong answer at step 2; eraseMs, how long the
 // erase takes before step 7's answer; onEnd(), the end of transfer acknowledged. After step 3 it ignores step 1 (0x52) and waits for step 4, until the radio is
-// switched off (a new FakeBfLoader at the next power-on), as the radio does (hardware-dm32.md 13.2). onErase() and onBlock(k, data) (k from 0) let a radio model keep what is written.
+// switched off (a new FakeBfLoader at the next power-on), as the radio does. onErase() and onBlock(k, data) (k from 0) let a radio model keep what is written.
 export class FakeBfLoader {
 	constructor({ id, send, corrupt = [], silent = false, badStep2 = false, eraseMs = 0, onErase = () => {}, onBlock = () => {}, onEnd = () => {} }) {
 		this.magic = new TextEncoder().encode(id);
@@ -259,7 +259,7 @@ export async function c7000Simulation(cReal, boardId, seed = 7000, radio = null)
 	c.profiles = c.profiles.filter((p) => p.board !== boardId);
 	c.profiles.push({ ...real, name: `simulated ${real.name}`, code_sha256: await sha256(code), tables_sha256: await sha256(tables),
 		tables_head_crc: crc32(tables.subarray(0, 64)), stock_file: null });
-	// its codec map (docs/spec/codec-placement.md), as a real build has one
+	// its codec map, as a real build has one
 	const id = `sim-${boardId}`;
 	c.codec_maps = { ...(c.codec_maps || {}), [id]: { format: "rfoundry-codec-map/1", profile: id, board: boardId, isa: "csky",
 		code: { flash: 0, len: code.length, run: real.run, sha256: await sha256(code) }, entries: {},
@@ -292,7 +292,7 @@ export class FakeC7000 {
 		this.q128 = new Uint8Array(dataSize).fill(0xFF);
 		this.q128.set(randomBytes(rng(5), 0x40000), 0x1000);
 		// the stock codeplug's pages carry their logical ID in the last byte; the calibration is ID 2, at 0x7C000 as on
-		// the DM-1801 Pro examined (hardware-dm1801pro.md 6.4)
+		// the DM-1801 Pro examined
 		for (let p = 0x1000; p < 0x41000; p += 0x1000) this.q128[p + 0xFFF] = 0x10 + (p >> 12);
 		this.q128.set(randomBytes(rng(6), 0xFFF), 0x7C000);
 		this.q128[0x7CFFF] = 2;
@@ -317,7 +317,7 @@ export class FakeC7000 {
 		this.bootTime = bootTime;
 		// flip: chance per stub frame of a damaged byte; misplace: sector addresses whose record, once, carries the next
 		// sector's data (as a record left over from an earlier request would); silentAfterReset: after the stub's soft
-		// reset RadioFoundry runs but its host link stays silent until a power cycle, as on the real radios (dm32-bringup.md);
+		// reset RadioFoundry runs but its host link stays silent until a power cycle, as on the real radios;
 		// romEcho: the cable sends every byte the host writes to the boot ROM back to it, ahead of the ROM's answer;
 		// romNak: the boot ROM answers the load's frames with something other than its acknowledgement; slowCable: ms the
 		// cable takes to carry what the host writes (longer than romWindow: the answer to the greeting comes too late);
@@ -428,7 +428,7 @@ export class FakeC7000 {
 	}
 
 	// The Baofeng updater: its erase and writes go to the program flash model (the loader below 0xC000 is never written).
-	// After the end of transfer the radio starts what was written by itself, its link up (hardware-dm32.md 13.2)
+	// After the end of transfer the radio starts what was written by itself, its link up
 	updateMode() {
 		this.state = "bfloader";
 		this.inb = new Uint8Array(0);
@@ -472,7 +472,7 @@ export class FakeC7000 {
 		const ib = this.inb;
 		if (ib.length < 4) return 0;
 		if (ib[0] === 0x02 && ib[1] === 0x14 && ib[2] === 0 && ib[3] === 3) {
-			// the first answer starts the load; one more after it is NAKed, as on the radio (hardware-dm32.md 13.3)
+			// the first answer starts the load; one more after it is NAKed, as on the radio
 			if (this.state === "romload") this.send(new Uint8Array([0x02, BADSUM, 0x00, 0x03]));
 			this.state = "romload";
 			this.inb = ib.slice(4);

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Stock TYT-family codeplugs (docs/spec/codeplug-stock-tyt.md): the MD-UV380 family (DM-1701, RT84, MD-UV380/390,
+// Stock TYT-family codeplugs: the MD-UV380 family (DM-1701, RT84, MD-UV380/390,
 // RT3S, MD-2017) and the MD-380 family, as they sit in the radio's SPI flash. Recognizes one, reads its records, and
 // fills the editing model (model.js) from it the way a qdmr import does (qdmr.js), with the same note codes.
 
@@ -9,7 +9,7 @@ import { LIMITS, POWER_NAMES } from "./records.js";
 
 const GENERAL = { boot1: 0x2040, boot2: 0x2054, bootLen: 10, dmrId: 0x2084, name: 0x20B0, nameLen: 16 };
 
-// Table addresses and counts per family (3.2)
+// Table addresses and counts per family
 export const STOCK = {
 	"tyt-uv380": {
 		channels: 0x110000, nChannels: 3000, contacts: 0x140000, nContacts: 10000, lists: 0xEC20, nLists: 250,
@@ -68,7 +68,7 @@ export function utf16(b, off, n) {
 	return { text, ok };
 }
 
-// The text of a valid name; "" for an erased or broken one (RadioFoundry's settings area overlaps the lists and zones, 3.2)
+// The text of a valid name; "" for an erased or broken one (RadioFoundry's settings area overlaps the lists and zones)
 function okText(b, off, n) {
 	const t = utf16(b, off, n);
 	return t.ok ? t.text : "";

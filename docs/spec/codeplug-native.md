@@ -1,43 +1,51 @@
 <!-- SPDX-License-Identifier: MIT -->
 <!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
-# Native codeplug (draft)
+# Native codeplug
 
-Status: **draft**. Today the radio stores the open-firmware layout (`open-firmware-cps.md` 7), so qdmr and the open-firmware CPS
-work unchanged. This page sets out the model the core already uses, which stays when the storage changes, and the
-plan for a native format. Nothing in section 4 is built yet.
+The radio stores its codeplug in the open-firmware layout ([open-firmware-cps.md](open-firmware-cps.md) 7), so qdmr
+and the open-firmware CPS work unchanged. This page describes the editing model the core uses on top of that layout,
+and the flash area reserved for a native format.
 
-## 1. Goals
+| Part | Where |
+|---|---|
+| Editing model | `core/codeplug/codeplug.h`, `core/codeplug/codeplug.c` |
+| Native area and its factory reset | `core/storage/storage.h` (`STORAGE_NATIVE_MAGIC`, `storage_native_erase`) |
+| Area in the flash map | `hal_flash_map_t.native_addr`, `native_size` (`hal/hal_flash.h`) |
+| Tests | `tests/host/codeplugEditTest.c`, `tests/host/uiFlowTest.c`, `tests/hil/test_cps.py` |
 
-- One editing model for the radio's own menus, the open-firmware CPS shim and a future native CPS protocol.
-- Edits on the radio are safe against power cuts (`settings-store.md` 4) and cost one sector rewrite each, not a
-  whole-image rewrite.
-- The open-firmware layout keeps working for as long as qdmr and the open-firmware CPS are the tools people have.
-- The native format carries what the open-firmware one can't: per-channel privacy key slot, more zones, longer names, and
-  per-channel features without overloading vendor flag bits.
-- Radio-wide state, keys included, lives in the settings store, not in the codeplug. A codeplug file can be shared
+Section numbers are identifiers: code and other pages cite them. Removed sections leave gaps.
+
+## 1. Design
+
+- One editing model serves the radio's own menus and the open-firmware CPS shim.
+- Edits on the radio are safe against power cuts ([settings-store.md](settings-store.md) 4) and cost one sector
+  rewrite each, not a whole-image rewrite.
+- Radio-wide state, keys included, lives in the settings store, not in the codeplug. You can share a codeplug file
   without leaking keys or the owner's last channel.
+- Radio-wide settings that the open-firmware layout has no field for are keys in the codeplug settings area
+  ([codeplug-settings.md](codeplug-settings.md)).
 
-## 2. The editing model (built)
+## 2. The editing model
 
 `core/codeplug/codeplug.h` is the model. Callers see records and never touch addresses:
 
 | Record | Read | Edit |
 |---|---|---|
-| channel 1..1024 (`channel_t`) | `codeplug_channel` | `codeplug_set_channel`, `codeplug_delete_channel`, `codeplug_free_channel` |
-| zone 0..67 (`zone_t`, up to 80 channels) | `codeplug_zone`, `codeplug_zone_count`, `codeplug_zones_stored` | `codeplug_set_zone`, `codeplug_delete_zone` |
-| contact 1..1024 (`contact_t`) | `codeplug_contact`, `codeplug_contact_find` | `codeplug_set_contact`, `codeplug_delete_contact` |
+| Channel 1..1024 (`channel_t`) | `codeplug_channel` | `codeplug_set_channel`, `codeplug_delete_channel`, `codeplug_free_channel` |
+| Zone 0..67 (`zone_t`, up to 80 channels) | `codeplug_zone`, `codeplug_zone_count`, `codeplug_zones_stored` | `codeplug_set_zone`, `codeplug_delete_zone` |
+| Contact 1..1024 (`contact_t`) | `codeplug_contact`, `codeplug_contact_find` | `codeplug_set_contact`, `codeplug_delete_contact` |
 | RX group list 1..76 (`listen_list_t`) | `codeplug_listen_list` | `codeplug_set_listen_list`, `codeplug_delete_listen_list` |
-| radio name, own DMR ID, hang times | `codeplug_radio_name`, `codeplug_dmr_id`, `codeplug_dmr_settings` | `codeplug_set_radio_name`, `codeplug_set_dmr_id` |
+| Radio name, own DMR ID, hang times | `codeplug_radio_name`, `codeplug_dmr_id`, `codeplug_dmr_settings` | `codeplug_set_radio_name`, `codeplug_set_dmr_id` |
 
-Rules:
+The model follows these rules:
 
-- **Every call takes `storage_lock`**, so any task may call. An edit costs one journaled sector rewrite (about
+- **Every call takes `storage_lock`**, so any task can call. An edit costs one journaled sector rewrite (about
   100 ms on the W25Q128). A new record also rewrites its bitmap's sector: the record goes first, then its in-use bit.
 - **Fields the model doesn't own are kept.** An edit reads the stored record, changes the bytes the model knows and
-  writes it back. Vendor bytes and flags that no field covers survive a radio-side edit.
+  writes it back. Bytes and flags that no field covers survive a radio-side edit.
 - **`codeplug_serial()`** goes up on every change. That covers edits and `codeplug_reload()` after the CPS shim
-  wrote the image underneath. The radio core polls it and re-reads its zone and channel (`RREQ_RELOAD`). It falls
+  writes the image underneath. The radio core polls it and re-reads its zone and channel (`RREQ_RELOAD`). It falls
   back to the saved zone position when the saved channel number is gone. It also forgets the contact names it looked
   up for IDs (a "no name" answer is cached too), so a contact added after its ID was heard or called shows by name.
 - **The built-in set.** With no codeplug stored (blank flash, `codeplug=builtin`), the radio has a small built-in
@@ -55,8 +63,8 @@ Rules:
   open-firmware one goes. Its bytes can pass the per-record checks by chance (an in-use bit set, frequencies that are
   valid BCD), so the radio decides for the whole codeplug at every index (start-up and `codeplug_reload()` after a
   CPS write). It counts good and bad records by the web editor's open-firmware evidence rule
-  ([codeplug-stock-tyt.md](codeplug-stock-tyt.md) 2, step 1; the same thresholds, and `site/static/js/codeplug/detect.js`
-  is the reference implementation), on the channels, zones and RX group lists only. It leaves out the contacts and the
+  ([codeplug-port.md](codeplug-port.md) 5, step 1; the same thresholds, with `site/static/js/codeplug/detect.js` as
+  the reference implementation), on the channels, zones, and RX group lists only. It leaves out the contacts and the
   general settings: another firmware's contacts left beside a codeplug edited on the radio must not hide it, and the
   checks cost flash. With bad records and fewer than four good ones for each bad one,
   `codeplug_foreign()` is true. The radio then shows no codeplug: the built-in set, `codeplug=builtin`, no zones,
@@ -70,7 +78,7 @@ Rules:
   | Choice | What happens |
   |---|---|
   | Cancel (the default; also Back or leaving the screen) | Nothing is written. Toast "Not saved" |
-  | Start new | `codeplug_start_new()`: clears the general settings up to the hang times (radio name, DMR ID and hang times, 0x00E0-0x00F9: 0xFF), the boot text (0xFF), the quick-key slots (0), the 1024 contact records (0xFF, seven sector rewrites) and the codeplug settings area (0xFF, [codeplug-settings.md](codeplug-settings.md) 5.2), then materializes as for a blank flash. The held write then goes on. The codeplug made is a clean one, which the next start-up finds ours |
+  | Start new | `codeplug_start_new()`: clears the general settings up to the hang times (radio name, DMR ID and hang times, 0x00E0-0x00F9: 0xFF), the boot text (0xFF), the quick-key slots (0), the 1024 contact records (0xFF, seven sector rewrites) and the codeplug settings area (0xFF, [codeplug-settings.md](codeplug-settings.md) 5.2), then materializes as for a blank flash. The held write then goes on. The codeplug made is a clean one, which the next start-up takes as the radio's own |
   | Use anyway | `codeplug_accept(true)` and a reload: nothing is erased and the verdict is off, so the radio shows that codeplug's records. The held write is dropped (it was made against the built-in set); toast "Old codeplug kept: edit again" |
 
   The acceptance belongs to the codeplug stored when it was given. It is kept in the settings (`cp_flags` bit 0,
@@ -91,56 +99,15 @@ Rules:
 `codeplug_openfw_decode()` and `codeplug_openfw_encode()` expose the 56-byte channel record conversion for the CPS
 shim's VFO handling (`cps-protocol.md` 2.3).
 
-## 3. The native channel record (plan)
+## 4. The native area
 
-The fields `channel_t` holds today, plus what the open-firmware record can't hold:
+The board's flash map can reserve an area for a native codeplug format: `hal_flash_map_t.native_addr` and
+`native_size`, above anything an open-firmware tool writes (`openfw_end`). The open-firmware CPS shim never writes it,
+and nothing in the firmware writes a native codeplug there. A board without the area sets the size to 0.
 
-| Field | Size | Notes |
-|---|---|---|
-| name | 16 | UTF-8, NUL padded (open-firmware: 16 ASCII, 0xFF padded) |
-| rx_hz, tx_hz | 4 + 4 | Hz, binary (open-firmware: BCD of 10 Hz) |
-| mode, bw, power, flags | 4 | flags: rx_only, dmo, ... |
-| rx_tone, tx_tone | 2 + 2 | type in the top 2 bits, value |
-| color_code, timeslot | 2 | |
-| contact, listen_list | 2 + 2 | indices |
-| dmr_id | 4 | 0 = the radio's |
-| tot_s | 2 | 0 = the radio's |
-| alias_tx | 1 | `CODEPLUG_ALIAS_*` bits |
-| **privacy_slot** | 1 | 0 = the radio-wide choice (`settings.privacy_active`), 1..4 = that key slot of the settings store (`settings-store.md` 3.1), 0xFF = privacy off on this channel |
-| reserved | to 64 bytes | 0, append only |
-
-The privacy key itself is never in the codeplug. A channel names a slot. The open-firmware layout has no field for it, so
-until the native format exists every channel uses the radio-wide slot.
-
-## 4. Storage plan (not built)
-
-- **Area.** `hal_flash_map_t.native_addr` / `native_size`, set by the board: 1 MB above anything an open-firmware tool
-  writes (`openfw_end`). The CPS shim refuses writes there. Each radio's flash map is in its hardware spec.
-- **Layout.** A header sector (magic, format version, table offsets, CRC) then fixed-size tables (channels, zones,
-  contacts, lists) with a used bitmap each, sector-aligned so an edit rewrites one sector through the journal.
-  The magic is the header's first word, `STORAGE_NATIVE_MAGIC` 0x4E52444F (bytes 4F 44 52 4E in memory order), already fixed
-  because factory reset keys on it.
-- **Factory reset (built).** `storage_native_erase()` erases the native area only when it starts with the magic
-  (non-blank sectors from the end, the header sector last, so a power cut leaves the magic in place and the next
-  reset finishes the job), reports it blank when it is all 0xFF, and otherwise leaves it alone as
-  foreign (another firmware's data). It never touches the open-firmware image, the calibration or a foreign-guarded region.
-- **Switching.** `codeplug_init()` prefers a valid native header and otherwise uses the open-firmware image. A one-way
-  "convert" (UI or CPS) writes the native area from the open-firmware image. The open-firmware image is left as it was, so a
-  firmware downgrade still finds it.
-- **Open-firmware tools after conversion.** Two options, open: (a) the open-firmware CPS shim keeps reading and writing the open-firmware
-  image and a commit triggers a re-import into the native area, or (b) the shim serves an open-firmware view generated from
-  the native records. (a) is simpler; (b) never lets the two drift apart.
-- **Settings without a record.** Radio-wide settings the open-firmware layout has no field for are keys in the
-  codeplug settings area ([codeplug-settings.md](codeplug-settings.md)), built now in the open-firmware image. The
-  native format carries the same key space: one record in the same entry format, the same key numbers and value
-  encodings, so a conversion copies the entries as they are and no key is ever translated (codeplug-settings.md 8).
-- **Native protocol.** `cps-protocol.md` 3 drafts the record-level protocol a native CPS (and qdmr, if it adds a
-  driver) would use: read and write records by type and index, no addresses.
-
-## 5. Open decisions
-
-1. Where the native area goes on radios whose board has no flash map yet, and whether 1 MB is the right size.
-2. Re-import (4a) or generated open-firmware view (4b).
-3. Whether the radio-side editor should be allowed while a CPS session is open. Today edits fail cleanly while the
-   CPS holds a pending sector, and otherwise interleave with CPS commits at sector granularity.
-4. UTF-8 names: the font has to cover them first.
+- **Magic.** A native area's header sector starts with `STORAGE_NATIVE_MAGIC`, `0x4E52444F` (bytes `4F 44 52 4E` in
+  memory order). The magic is fixed because the factory reset keys on it.
+- **Factory reset.** `storage_native_erase()` erases the native area only when it starts with the magic. It erases
+  the non-blank sectors from the end and the header sector last, so a power cut leaves the magic in place and the next
+  reset finishes the job. It reports the area blank when it's all `0xFF`, and otherwise leaves it alone as foreign
+  (another firmware's data). It never touches the open-firmware image, the calibration, or a foreign-guarded region.

@@ -121,7 +121,7 @@ static void test_pure(void)
 	CHECK(hrc7000_mod_bias_dc(128, 45) == (512u << 16 | 45u));
 	CHECK(hrc7000_mod_bias_dc(255, 0x4D4D) == (641u << 16 | 0x4D4Du));
 	// The DB25-D owner's page: TX center 106 = 1.577 V = 489 (0x1E9), modulation balance 0x21 at the test frequency: the two
-	// words the stock firmware writes at every receive set-up (hardware-db25d.md 4.6)
+	// words the stock firmware writes at every receive set-up
 	CHECK(hrc7000_mod_dc(106) == 489);
 	CHECK(hrc7000_sig_center_dc(106) == 0x6A6AE9E9u);
 	CHECK(hrc7000_mod_bias_dc(106, 0x21) == 0x01E90021u);

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Generic SPI NAND flash (docs/spec/hardware-db25d.md 6.5: the Kioxia TC58CVG1S3HRAIJ data sheet and the sequence a
-// stock firmware uses on it)
+// Generic SPI NAND flash (the Kioxia TC58CVG1S3HRAIJ data sheet command set)
 #include <stddef.h>
 #include "spi_nand.h"
 #include "hal_time.h"

@@ -18,19 +18,16 @@ aprs_tocall = "3"
 debuglink_aliases = ["DM-32"]
 
 [docs]
-hardware = "docs/spec/hardware-dm32.md"
-codec = "docs/spec/codec-dm32.md"
-install = "docs/user/19-moving-from-stock-dm32.md"
-bringup = "docs/testing/dm32-bringup.md"
+install = "docs/user/18-moving-from-stock.md"
 
-# One-line summaries for the site and the generated tables; the facts are in docs.hardware
+# One-line summaries for the site and the generated tables
 [hardware]
 bands = "136-174 / 400-480 MHz"
 power = "1 / 5 W"
 display = "color, 240 × 320"
 gallery = "240x320i10x5"
-clock = { rtc = "backed", note = "the SoC RTC on a 32.768 kHz crystal with a coin cell (docs/spec/hardware-dm32.md 1, 3.3)" }
-unconfirmed = { VIBRATE = "reported online to have a vibration motor; the part and its drive pin are not confirmed (docs/spec/hardware-dm32.md)" }
+clock = { rtc = "backed", note = "the SoC RTC on a 32.768 kHz crystal with a coin cell" }
+unconfirmed = { VIBRATE = "reported online to have a vibration motor; the part and its drive pin are not confirmed" }
 
 [status]
 level = "supported"
@@ -39,7 +36,7 @@ FM and DMR voice both ways, CTCSS/DCS, APRS both ways, GPS data, the hotspot and
 Open: FM deviation at 12.5 kHz and an outdoor GPS fix."""
 release = "stable"
 
-# The Baofeng serial updater erases the whole application area before it writes (hardware-dm32.md 13.2 step 7), so
+# The Baofeng serial updater erases the whole application area before it writes, so
 # the codec can't be kept across an update: every flash merges it again. The platform's two "sectors", the application
 # and the codec slot (boards/dm32/memory.ld), let manifests say where the codec goes
 [flash]
@@ -54,13 +51,13 @@ backup = { stock = "full", rfoundry = "full", spi_size = 0x1000000 }
 mem = "data"
 start = 0x1000
 end = 0xC9000
-what = "factory calibration: the stock codeplug area's 4 KB page tagged 2, which can be any page of it (hardware-dm32.md 10.1, 11.1)"
+what = "factory calibration: the stock codeplug area's 4 KB page tagged 2, which can be any page of it"
 
 [[flash.protect]]
 mem = "data"
 start = 0x710000
 end = 0x711000
-what = "a decoded calibration copy an earlier firmware left, the fallback when no factory page is found (hardware-dm32.md 10.1, 17)"
+what = "a decoded calibration copy an earlier firmware left, the fallback when no factory page is found"
 
 # Baofeng's update mode: keys is the short form tools print, steps the web flasher's and the manual's, id the string
 # the loader answers (also the magic of its firmware files), sign what the radio shows in update mode
@@ -85,7 +82,7 @@ id = 1
 hold_power = false
 progmem = 0x100000
 tested = true
-# the factory calibration: the 4 KB page of the stock codeplug area whose last byte is 2 (hardware-dm32.md 11.1)
+# the factory calibration: the 4 KB page of the stock codeplug area whose last byte is 2
 calibration = { area = 0xC9000, page_id = 2 }
 # stubtool --write-test erases and programs these 16 KB: the gap between the sector journal and the open-firmware
 # flash image in board.c's flash map, which nothing stores in
@@ -119,7 +116,7 @@ battery_mv = [5500, 8800]
 codec = ["049", "046"]
 
 # The stock codeplug in a data flash backup (tools/backup_codeplug.py): the pages of its translation layer, each with
-# its logical block in its last byte (docs/spec/hardware-dm32.md 10.1), decoded by qdmr's dm32uv driver
+# its logical block in its last byte, decoded by qdmr's dm32uv driver
 [stock_codeplug]
 dmrconf = "dm32uv"
 span = [0x1000, 0xC9000]

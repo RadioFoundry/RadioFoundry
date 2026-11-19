@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// RT10 factory calibration: the data flash's last sector (docs/spec/hardware-rt10.md 4). Byte tables of 15 entries,
+// RT10 factory calibration: the data flash's last sector. Byte tables of 15 entries,
 // one per 10 MHz step from a base the sector names (90: 900-909 MHz is step 0). Copied into RAM once,
 // at start-up; nothing is ever written back.
 #include <string.h>

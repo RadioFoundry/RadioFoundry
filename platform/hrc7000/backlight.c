@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// LCD backlight on a PWM channel whose output pin doubles as a GPIO (docs/spec/hardware-dm32.md 3.6). Most boards
-// wire it to PTA15 / PWM0; one with another channel passes its hrc_backlight_t (docs/spec/hardware-db25d.md 5).
+// LCD backlight on a PWM channel whose output pin doubles as a GPIO. Most boards
+// wire it to PTA15 / PWM0; one with another channel passes its hrc_backlight_t.
 #include "platform.h"
 
 #define PWM_CH(ch, off)		REG32(PWM_BASE + (uint32_t)(ch) * 0x20u + (off))
@@ -38,7 +38,7 @@ void hrc_backlight_pwm(const hrc_backlight_t *bl, uint8_t percent)
 	PWM_CFG(bl->ch) = bl->cfg | CFG_LOAD | CFG_EN;
 }
 
-// The default: PWM0, PER 200 (hardware-dm32.md 3.6)
+// The default: PWM0, PER 200
 void hrc_backlight(uint8_t percent)
 {
 	static const hrc_backlight_t pwm0 = { .ch = 0, .cfg = 0x328u, .rpt = 0, .period = 200u };

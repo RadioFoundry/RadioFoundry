@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // DB25-D data flash for the core (hal_flash_t): 4 KB sectors with NOR semantics over RadioFoundry's own NAND block range
-// (drivers/flash/nand_sectors, docs/spec/nand-sectors.md; hardware-db25d.md 6.6). Every call holds the NAND's mutex
+// (drivers/flash/nand_sectors, docs/spec/nand-sectors.md). Every call holds the NAND's mutex
 // for the whole operation: a rewrite reads the old pages, then moves them inside the chip.
 #include "db25d.h"
 #include "config.h"
 
 #if CONFIG_NAND_STORAGE
 
-// The logical device (hardware-db25d.md 6.6), laid out as the STM32 radios' SPI NOR so the open-firmware codeplug
+// The logical device, laid out as the STM32 radios' SPI NOR so the open-firmware codeplug
 // images sit at the addresses the core's defaults use: the 64 KB "EEPROM" image at 0, the settings ring and the
 // sector journal in the gap after it, the 1 MB "flash" image at 0x20000, then the native codeplug and the staging
 // area. The factory calibration is read only (it stays in the stock NAND page), so there is no calibration window

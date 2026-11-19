@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // ST7789 driver: reset and init command stream (MADCTL after 0x35, inversion, clear, display on), bus begin / end
-// pairing, and frame buffer rows sent at 2x scale and from a 16-color frame buffer (docs/spec/hardware-dm32.md 7)
+// pairing, and frame buffer rows sent at 2x scale and from a 16-color frame buffer
 #include <stdio.h>
 #include <string.h>
 #include "display/st7789/st7789.h"
@@ -111,7 +111,7 @@ static void test_init(void)
 	CHECK(ra == ca + 1 && log_e[ra].data[2] == 0x01 && log_e[ra].data[3] == 0x3F);	// rows 0..319
 	CHECK(wr == ra + 1 && log_e[wr].n_px == 240u * 320u && log_e[wr].first_px == 0 && log_e[wr].last_px == 0);
 	CHECK(log_e[n_e - 1].cmd == 0x29);	// display on last
-	// The stream table is well formed: 14 entries (hardware-dm32.md 7 rows 2-16 less MADCTL), then command 0
+	// The stream table is well formed: 14 entries (15 rows less MADCTL), then command 0
 	uint32_t i = 0, entries = 0;
 	while (st7789_init_seq[i] != 0 && i < 256) {
 		i += 2u + st7789_init_seq[i + 1];

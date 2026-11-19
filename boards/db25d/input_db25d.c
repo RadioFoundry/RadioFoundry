@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// DB25-D front keys, encoder and the mic's PTT (docs/spec/hardware-db25d.md 3.3).
+// DB25-D front keys, encoder and the mic's PTT.
 //
 // Five drive lines and three sense lines make a 15-position matrix. The front keys' positions were found on the radio
 // by pressing each one with the diagnostics page's raw scan running; the other positions report as spares. The mic's PTT pulls
@@ -9,7 +9,7 @@
 // and the line then has to read low on three scans in a row (INF: the pad level is assumed readable while the pin is
 // the UART's). The hand mic's PTT is PTC11, low while held (found on the radio), as the stock firmware reads it.
 // With no mic in the front jack PTC11 rests low from power-on, so it counts only once it has read high, a mic
-// plugged in (drivers/input/plugptt, 3.3).
+// plugged in (drivers/input/plugptt).
 #include "db25d.h"
 #include "config.h"
 #include "pins.h"
@@ -24,7 +24,7 @@
 #define PTT_SCANS	3
 
 // [drive][sense]: drive lines PTB18, PTB20, PTB21, PTB22, PTB23; sense lines PTB9, PTB10, PTB11. No front key uses
-// the first two drive lines or the direct positions (the stock firmware's codes for them, 3.3)
+// the first two drive lines or the direct positions (the stock firmware's codes for them)
 static const uint8_t map[KEY_DRIVES * KEY_SENSES] = {
 	N, N, N,
 	N, N, N,
@@ -34,7 +34,7 @@ static const uint8_t map[KEY_DRIVES * KEY_SENSES] = {
 };
 static const uint8_t direct[KEY_SENSES] = { N, N, N };
 
-// The hand mic's key numbers (3.4): 0-9 the digits, 10 *, 11 #, 12-14 P4-P6, 18 P7
+// The hand mic's key numbers: 0-9 the digits, 10 *, 11 #, 12-14 P4-P6, 18 P7
 static uint8_t mic_bit(uint8_t code)
 {
 	if (code <= 9) {
@@ -106,7 +106,7 @@ static void gpiob_isr(void)
 	}
 }
 
-// The interrupt watch serves the bank from the scan if the interrupt is ever lost (hardware-db25d.md 3.3)
+// The interrupt watch serves the bank from the scan if the interrupt is ever lost
 static const hrc_gpio_watch_t enc_watch = {
 	.bank = GPIOB_BASE,
 	.bits = (1u << (PIN_ENC_A & 31u)) | (1u << (PIN_ENC_B & 31u)),

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // Factory calibration of the Baofeng HR_C7000 radios (docs/spec/radios.md): where it is, what it holds and the
-// values derived from it (docs/spec/hardware-dm32.md 11, hardware-dm1801pro.md 6.4). Never writes.
+// values derived from it. Never writes.
 #ifndef BAOFENG_CAL_H
 #define BAOFENG_CAL_H
 
@@ -23,9 +23,9 @@ uint8_t bf_cal_tx_center(void);		// 128 without calibration
 uint16_t bf_cal_modcal(uint32_t hz);
 // PA drive points for a TX frequency in Hz; false without calibration
 bool bf_cal_power(uint32_t hz, bf_cal_power_points_t *p);
-// DAC value for a power level 0..8 (hardware-dm32.md 11.3), clamped to 4095; the uncalibrated fallback when false
+// DAC value for a power level 0..8, clamped to 4095; the uncalibrated fallback when false
 uint16_t bf_cal_power_level(uint32_t hz, uint8_t level);
-// A calibration row read the way the stock firmware reads it (hardware-dm1801pro.md 6.4): the band by the
+// A calibration row read the way the stock firmware reads it: the band by the
 // TX frequency (UHF above 200 MHz), the frequency clamped to the band limits (0x00 / 0xCC), the five TX points (0x314 /
 // 0x33C) and linear interpolation truncated toward the lower point's byte. REG40 has three bytes, at TX points 0, 2
 // and 4. 0 without calibration

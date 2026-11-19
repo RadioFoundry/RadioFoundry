@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// RT10 pin map by GPIO pin index (0-31 bank A, 32-63 B, 64-95 C; docs/spec/hardware-rt10.md 3)
+// RT10 pin map by GPIO pin index (0-31 bank A, 32-63 B, 64-95 C)
 #ifndef RT10_PINS_H
 #define RT10_PINS_H
 

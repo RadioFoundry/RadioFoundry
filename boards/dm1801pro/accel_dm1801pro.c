@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // DM-1801 Pro accelerometer: a LIS3DH-class sensor (address 0x19) on a bit-banged I2C bus on PTB2 / PTB23
-// (hardware-dm1801pro.md 8). Nothing in the radio uses motion yet; the diagnostics page shows the reading so the chip
+//. Nothing in the radio uses motion yet; the diagnostics page shows the reading so the chip
 // and its orientation can be checked on the bench, so the code is built with CONFIG_DIAG only.
 #include "dm1801pro.h"
 #include "config.h"

@@ -6,8 +6,7 @@
 // The engine is board independent. The board wires the modem interrupts (system 61, TX timeslot 62, RX timeslot 63,
 // RF TX 64) to hrc7000_dmr_isr_*(), runs a task that drains the engine's events (hrc7000_dmr_pop) into the DMR
 // stack, and supplies the ops: the per-burst RF switch (FD6818 idle -> TX at the RF TX interrupt; PA off and back to
-// RX after the burst), the PA one-shot (armed with every burst, it keys the PA "DMR PA" ms later: hardware-dm32.md
-// 8.6), a microsecond clock, a lock that keeps the modem interrupts out, and "wake the task".
+// RX after the burst), the PA one-shot (armed with every burst, it keys the PA "DMR PA" ms later), a microsecond clock, a lock that keeps the modem interrupts out, and "wake the task".
 //
 // Timing model (modem-hrc7000.md 3, 3.1): at every timeslot interrupt the CPU decides what the chip does in the coming
 // slot: LAYER2_TXRX_CTRL = 0x80 sends the burst whose payload and LAYER2_SEND_TYPE were just written, 0x40 receives,

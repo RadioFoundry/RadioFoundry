@@ -976,7 +976,7 @@ static void test_settings(void)
 	CHECK(nand.violations == 0);
 }
 
-// --- The open-firmware CPS on the layer: the DB25-D's codeplug write (docs/spec/hardware-db25d.md 6.6, 9) ---
+// --- The open-firmware CPS on the layer: the DB25-D's codeplug write ---
 //
 // The logical map of boards/db25d/flash_db25d.c up to the end of the open-firmware flash image (no native codeplug or
 // staging: the CPS never writes them), on a bigger layer than the tests above use. hal_flash_t.replace is the DB25-D's

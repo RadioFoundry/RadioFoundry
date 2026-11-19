@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 RF sequencing: the order of supply, VCO, synthesizer, IF and PA steps for receive, transmit and the way back,
-// per board revision (docs/spec/hardware-md9600.md 5.5, 19.8). Pure: the lines, both three-wire buses, the DAC, the
+// per board revision. Pure: the lines, both three-wire buses, the DAC, the
 // ADC, the calibration and the delays come in through md9600_rf_ops_t, so the host test (tests/host/md9600RfSeqTest.c)
 // logs every step. radio_md9600.c wires it to the pins.
 //
@@ -108,7 +108,7 @@ typedef enum { MD9600_RF_OFF, MD9600_RF_RX, MD9600_RF_TX } md9600_rf_state_t;
 // -13 dB (measured off air). That leak counts as on air: the supply on at the interrupt made every burst 31.7-31.9 ms
 // long (bench, 2026-11-06; the bench allows 27-31.5 ms). The key-up starts MD9600_BURST_KEY_DELAY_US after the
 // interrupt, from a timer (md9600_rf_pa_step), and reaches full power about 0.2 ms after the slot boundary, inside the
-// guard ahead of the payload (hardware-md9600.md 19.8)
+// guard ahead of the payload
 #define MD9600_BURST_KEY_DELAY_US	700u
 #define MD9600_BURST_T5_US		500u
 #define MD9600_BURST_RAMP_STEPS		4u
@@ -224,7 +224,7 @@ const char *md9600_rf_err_name(uint8_t err);
 
 // --- Receiver readings ---
 
-// RSSI from the band's 12-bit average (hardware-md9600.md 5.7, a fit, unverified)
+// RSSI from the band's 12-bit average (a fit, unverified)
 int16_t md9600_rf_rssi_dbm(md9600_rev_t rev, uint8_t band, uint16_t raw12);
 // The noise reading on the core's squelch scale (1 dB steps, larger = more noise; core/radio/radio_sm.h). With the
 // calibration's squelch thresholds (raw readings where level 1 and level 9 open), raw maps linearly so level 1 opens
@@ -234,13 +234,13 @@ int16_t md9600_rf_rssi_dbm(md9600_rev_t rev, uint8_t band, uint16_t raw12);
 uint8_t md9600_rf_noise(uint16_t raw12, uint16_t l1_open, uint16_t l9_open);
 
 // The calibration's squelch thresholds are for the 12.5 kHz filter. Under the same signal the noise line reads about
-// twice as high through the 25 kHz one (hardware-md9600.md 5.7), so a 25 kHz FM channel scales them,
+// twice as high through the 25 kHz one, so a 25 kHz FM channel scales them,
 // no further than an empty UHF channel allows
 #define MD9600_SQL_WIDE_NUM	3
 #define MD9600_SQL_WIDE_DEN	2
 uint16_t md9600_rf_sql_wide(uint16_t open12);
 
-// The squelch's noise window (hardware-md9600.md 5.7). The noise line follows the modulation: under a strong carrier it
+// The squelch's noise window. The noise line follows the modulation: under a strong carrier it
 // reads about 100 counts in a pause and peaks over 1000 in speech for tens of ms, while an empty channel holds
 // 1700-1900. The squelch gets the lowest reading over the last MD9600_NOISE_BUCKETS buckets of MD9600_NOISE_BUCKET_MS,
 // so speech peaks don't close it. RSSI holds steady through the modulation and falls about 11 dB within one poll when
