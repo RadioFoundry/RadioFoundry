@@ -1,115 +1,139 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
+
 # DMR emergency
 
-What the emergency key does, and what the radio shows when it hears someone else's emergency. Status: built and
-host-tested (`dmrDataChainTest`, `dmrCallTest`, `radioCoreTest`); the alarm and the emergency call, in and out, on
-air against the SDR bench (`tests/hil/test_dmr_emergency.py`, `docs/testing/on-air-coverage.md` for the radios and results).
+This page describes what the emergency key does, and what the radio shows when it hears another radio's emergency.
 
-Sources: ETSI TS 102 361-2 (the service options octet of the voice LC, 7.2.1: bit 7 emergency), TS 102 361-1 (CSBK
-layout and CRC), the public descriptions of Motorola's emergency alarm (a CSBK with the Motorola FID 0x10 that the
-receiving radio does not acknowledge on a conventional channel). Code: `core/dmr/dmr_emergency.{h,c}` (the state
-machine and the alerts), `core/dmr/dmrDataService.c` (the alarm CSBK), `core/radio/radio_sm.c` (the keying, the
-call stack options, the tone, the settings), `core/ui/ui_svc_emergency.c` (the UI's key and banner).
+Sources:
+
+- ETSI TS 102 361-2: the service options octet of the voice LC (7.2.1: bit 7 emergency).
+- ETSI TS 102 361-1: CSBK layout and CRC.
+- The public descriptions of the commercial emergency alarm: a CSBK with the manufacturer FID 0x10 that the receiving
+  radio doesn't acknowledge on a conventional channel.
+
+| Code | Role |
+|---|---|
+| `core/dmr/dmr_emergency.{h,c}` | The state machine and the alerts |
+| `core/dmr/dmrDataService.c` | The alarm CSBK |
+| `core/radio/radio_sm.c` | The keying, the call stack options, the tone, the settings |
+| `core/ui/ui_svc_emergency.c` | The UI's key and banner |
 
 ## 1. Switch
 
-`CONFIG_DMR_EMERGENCY` (default: follows `CONFIG_DMR`). It brings in the packet data core
-(`CONFIG_DMR_DATA_CORE`), because the alarm is a CSBK sent by the data service. Off: `dmr_emergency.h` is inline
-no-ops, the UI's emergency key says "Emergency is not set up on this radio" (the weak `ui_svc_emergency`), a heard
-emergency call is still marked (`call.emergency`, the call screen's warning color) but raises no alert.
+`CONFIG_DMR_EMERGENCY` (default: follows `CONFIG_DMR`). It brings in the packet data core (`CONFIG_DMR_DATA_CORE`),
+because the alarm is a CSBK sent by the data service. With the switch off:
+
+- `dmr_emergency.h` is inline no-ops.
+- The UI's emergency key says "Emergency is not set up on this radio" (the weak `ui_svc_emergency`).
+- A heard emergency call is still marked (`call.emergency`, the call screen's warning color) but raises no alert.
 
 ## 2. The emergency alarm (CSBK)
 
 | Octet | Value |
 |---|---|
 | 0 | 0x80 \| 0x27 (last block, opcode 0x27) |
-| 1 | FID: 0x10 (Motorola, the default) or 0x00 (ETSI form, setting `etsi_fid`) |
-| 2 | bit 7: the target is a radio (individual), else a talkgroup |
+| 1 | FID: 0x10 (the default) or 0x00 (ETSI form, setting `etsi_fid`) |
+| 2 | Bit 7: the target is a radio (individual), else a talkgroup |
 | 3 | 0 |
-| 4-6 | the target (talkgroup or radio) |
-| 7-9 | the radio in emergency |
+| 4-6 | The target (talkgroup or radio) |
+| 7-9 | The radio in emergency |
 | 10-11 | CRC-CCITT, CSBK mask 0xA5A5 |
 
-- Ours: sent `alarm_tries` times (default 3), at least `DMR_DATA_EMERGENCY_GAP_MS` (1 s) apart, each after the data
-  service's usual channel-clear check (dmr-data.md 8). No acknowledgement is defined for the
-  conventional alarm that we could verify, so none is waited for: event `EMERGENCY_SENT` when all tries have gone,
-  `EMERGENCY_FAILED` when one couldn't be sent.
-- Heard: an alarm to us, to all call (0xFFFFFF), or to a talkgroup we listen to (the channel's talk target, the
-  listen list) posts the event `EMERGENCY_ALARM` and raises an alert (section 4). One to another
-  group is only counted (`emergencyAlarmsHeard`). Our own alarm repeated back is ignored. Both FIDs are accepted.
-  Nothing is sent back.
+The opcode, the use of octet 2 and the absence of an acknowledgment follow the public descriptions. The ETSI form
+(FID 0x00) is the same CSBK with the ETSI FID.
 
-Open: the opcode, the use of octet 2 and the absence of an acknowledgement follow public descriptions, not a
-standard text we have; to be checked against a commercial radio on the bench. The ETSI form (FID 0x00) is an
-assumption.
+- Sending: the radio sends the alarm `alarm_tries` times (default 3), at least `DMR_DATA_EMERGENCY_GAP_MS` (1 s)
+  apart, each after the data service's usual channel-clear check ([dmr-data.md](dmr-data.md) 8). The conventional
+  alarm has no acknowledgment, so the radio waits for none. Event `EMERGENCY_SENT` follows when all tries have gone,
+  and `EMERGENCY_FAILED` when one couldn't be sent.
+- Receiving: an alarm to the radio, to all call (0xFFFFFF), or to a talkgroup the radio listens to (the channel's talk
+  target, the listen list) posts the event `EMERGENCY_ALARM` and raises an alert (section 4). An alarm to another
+  group is only counted (`emergencyAlarmsHeard`). The radio ignores its own alarm repeated back. It accepts both FIDs
+  and sends nothing back.
 
 ## 3. The emergency key
 
-`dmr_emergency_start()` (UI: hold the emergency key, `ui_svc_emergency(true)`; debug link DMR_DATA op 7). Per the
-mode:
+`dmr_emergency_start()` starts an emergency. The UI calls it when the user holds the emergency key
+(`ui_svc_emergency(true)`); the debug link's DMR_DATA op 7 calls it too. What follows depends on the mode:
 
 | Mode | What happens |
 |---|---|
-| `alarm` | the alarm, then the radio stays in emergency |
-| `alarm_call` (default) | the alarm, then the emergency call |
-| `call` | the emergency call at once |
+| `alarm` | The alarm, then the radio stays in emergency |
+| `alarm_call` (default) | The alarm, then the emergency call |
+| `call` | The emergency call at once |
 
-The emergency call: with `hot_mic_s` > 0 (default 10 s) the radio keys itself ("hot mic") for that long, as the
-1750 Hz burst keys the transmitter; a PTT press meanwhile takes the transmission over (it ends on release, not when
-the hot mic runs out). With 0 the user keys it.
+The emergency call: with `hot_mic_s` > 0 (default 10 s), the radio keys itself ("hot mic") for that long, as the
+1750 Hz burst keys the transmitter. A PTT press meanwhile takes the transmission over: it ends on release, not when
+the hot mic runs out. With 0, the user keys it.
 
-While in emergency (states `alarm`, `hot_mic`, `active`, until `dmr_emergency_cancel()`): every call carries the
-emergency service option (LC octet 1 bit 7, in the headers, the embedded LC and the terminator), goes to the
-emergency target (`dst`, or the channel's talk target when 0, following channel changes), and uses impolite channel
-access. The radio core reconfigures the call stack when the emergency starts, ends or the target changes
-(`dmr_emergency_config_serial`); it takes effect at the next call.
+While in emergency (states `alarm`, `hot_mic`, `active`, until `dmr_emergency_cancel()`), every call:
 
-It can't start (state `failed`, until the next start) when the channel is not a DMR channel we may transmit on (the
-data service's rule: not RX only, in band, not in hotspot mode, an own ID; a DMR VFO counts) or there is no target.
+- Carries the emergency service option (LC octet 1 bit 7, in the headers, the embedded LC and the terminator).
+- Goes to the emergency target (`dst`, or the channel's talk target when 0, following channel changes).
+- Uses impolite channel access.
 
-On a Tier III trunked system the alarm and its cancel are statuses 126 and 124, and the call is an emergency request
+The radio core reconfigures the call stack when the emergency starts or ends, or the target changes
+(`dmr_emergency_config_serial`). The change takes effect at the next call.
+
+An emergency can't start (state `failed`, until the next start) when there is no target, or when the channel isn't a
+DMR channel the radio can transmit on. The data service's rule decides: not RX only, in band, not in hotspot mode, an
+own ID set; a DMR VFO counts.
+
+On a Tier III trunked system, the alarm and its cancel are statuses 126 and 124, and the call is an emergency request
 ([dmr-trunking.md](dmr-trunking.md) 7.8).
 
 ## 4. Alerts heard
 
-An alarm (section 2) or a voice call with the emergency option that is played (to us or a group we listen to)
-raises an alert: `dmr_emergency_alert()` gives the newest (kind alarm / call, source, destination, group, the
-number not yet dismissed), and with `rx_tone` on the radio core plays `BEEP_EMERGENCY` (a 1500 / 900 Hz warble,
-about 1 s). The UI gets `UI_EV_EMERGENCY` (from `ui_svc_poll`), opens the emergency screen and, on a radio
-with a vibration motor, vibrates (`radio-features.md` 4.1). The same radio's
-emergency again within `DMR_EMERGENCY_REALERT_MS` (30 s) of its last activity (the repeated alarms, the call that
-follows, the next over) adds no alert, dismissed or not. `dmr_emergency_dismiss()` clears the banner.
+An alarm (section 2), or a played voice call with the emergency option (to the radio or a group it listens to),
+raises an alert:
+
+- `dmr_emergency_alert()` gives the newest alert: kind (alarm or call), source, destination, group, and the number not
+  yet dismissed.
+- With `rx_tone` on, the radio core plays `BEEP_EMERGENCY` (a 1500 / 900 Hz warble, about 1 s).
+- The UI gets `UI_EV_EMERGENCY` (from `ui_svc_poll`) and opens the emergency screen. On a radio with a vibration motor,
+  it vibrates ([radio-features.md](radio-features.md) 4.1).
+- The same radio's emergency again within `DMR_EMERGENCY_REALERT_MS` (30 s) of its last activity (the repeated
+  alarms, the call that follows, the next over) adds no alert, dismissed or not.
+- `dmr_emergency_dismiss()` clears the banner.
 
 ## 5. Settings
 
-Kept in the settings store (`settings_t em_*`, `settings-store.md` 3); the radio core saves a change made through
-`dmr_emergency_set_settings` (or the debug link's op 8). Not in the codeplug yet.
+The settings store keeps the settings (`settings_t em_*`, [settings-store.md](settings-store.md) 3). The radio core
+saves a change made through `dmr_emergency_set_settings` or the debug link's op 8. The codeplug has no emergency
+settings.
 
 | Setting | Default | Range |
 |---|---|---|
 | `mode` | `alarm_call` | alarm, alarm_call, call |
-| `dst` / `dst_private` | 0 (the channel's talk target) | a talkgroup or a radio |
+| `dst` / `dst_private` | 0 (the channel's talk target) | A talkgroup or a radio |
 | `alarm_tries` | 3 | 1-10 |
 | `hot_mic_s` | 10 | 0 (off) - 60 |
-| `etsi_fid` | off (Motorola FID 0x10) | |
+| `etsi_fid` | off (FID 0x10) | |
 | `rx_tone` | on | Settings > Sound > Emergency tone |
 
-The hot mic default (10 s) and keying it at all are owner decisions (`docs/ux/principles.md`: no transmission the
-user didn't ask for; holding the emergency key is that request).
+The hot mic keys the radio without PTT. This follows the rule of no transmission the user didn't ask for
+([principles.md](../ux/principles.md)): holding the emergency key is that request.
 
 ## 6. Observing it
 
-Debug link view section `dmr_ext` (`debuglink.md` 3.7): `em.state em.mode em.dst ...`, the newest alert
+Debug link view section `dmr_ext` ([debuglink.md](debuglink.md) 3.7): `em.state em.mode em.dst ...`, the newest alert
 `em.alert*`, the counters `em.started ... em.tones`, and `data.emergency_alarms_heard / received / sent`.
-`rfoundry_debug.py data emergency start|cancel|dismiss`, `rfoundry_debug.py data em-settings alarm|alarm_call|call [DST]
-[private] [etsi] [no-tone] [tries=N] [hot=S]`.
+
+Commands:
+
+```sh
+rfoundry_debug.py data emergency start|cancel|dismiss
+rfoundry_debug.py data em-settings alarm|alarm_call|call [DST] [private] [etsi] [no-tone] [tries=N] [hot=S]
+```
 
 ## 7. Tests
 
-- `dmrCallTest` `test_emergency_tx`: the service option in the headers, the embedded LC and the terminator, impolite
+- `dmrCallTest` `test_emergency_tx`: the service option in the headers, the embedded LC and the terminator; impolite
   access.
-- `dmrDataChainTest`: alarms in (alert once for repeats, another group only counted, our own ignored, nothing sent)
-  and out (3 CSBKs, opcode, FID, IDs, at least 1 s apart, `EMERGENCY_SENT`, state active, cancel).
-- `radioCoreTest` `test_dmr_emergency`: the hot mic keys a call with the option to the talk target, released after
-  the hot mic, the user's own calls keep the option until canceled, PTT takes the hot mic over, a set target, an
-  emergency call heard raises one alert and one tone, `UI_EV_EMERGENCY`, the UI's key.
-- HIL (opt-in RF): `tests/hil/test_dmr_emergency.py`, pass criteria in `tests/hil/README.md`.
+- `dmrDataChainTest`: alarms in (alert once for repeats, another group only counted, the radio's own ignored, nothing
+  sent) and out (3 CSBKs, opcode, FID, IDs, at least 1 s apart, `EMERGENCY_SENT`, state active, cancel).
+- `radioCoreTest` `test_dmr_emergency`: the hot mic keys a call with the option to the talk target and releases after
+  the hot mic; the user's own calls keep the option until canceled; PTT takes the hot mic over; a set target; an
+  emergency call heard raises one alert and one tone, `UI_EV_EMERGENCY`; the UI's key.
+- HIL (opt-in RF): `tests/hil/test_dmr_emergency.py`; pass criteria in [tests/hil/README.md](../../tests/hil/README.md).

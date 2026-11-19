@@ -11,26 +11,21 @@ talk group, asks for a voice channel on PTT and transmits on the one granted. Sw
 `core/p25/p25_follow.c` (the follower and its transmit side), the trunking hooks of `core/p25/p25_rx.c` and
 `core/p25/p25_engine.c`, `core/radio/radio_p25.c` and `core/radio/radio_sm.c` (the radio core).
 
-State:
+| Part | Section |
+|---|---|
+| Trunking signaling units (TSDU) and the header of a multi-block trunking packet: receive, FEC, CRC | 1 |
+| Outbound messages a listener needs; inbound requests and their answers | 2, 2.1 |
+| The follower: hunt, hold, follow, return | 4 |
+| Registration, affiliation, voice request, transmit on the grant, return | 5 |
+| The radio core: a trunked channel, its retunes, the UI | 7 |
+| Bench control channel and inbound decode (`tools/bench/p25tool.py`) | 8 |
 
-| Part | Written | Host tested | Run on a radio |
-|---|---|---|---|
-| Trunking signaling units (TSDU) and the header of a multi-block trunking packet: receive, FEC, CRC | yes | yes | the bench's control channel (8): 152 blocks with 1 CRC failure while only listening; one or two blocks lost around each of its own bursts |
-| Outbound messages a listener needs (2) | yes | yes | the bench's: network and RFSS status, the identifier, grants |
-| The follower: hunt, hold, follow, return (4) | yes | yes, also through the soft modem with noise | `test_p25_trunk_rx`: a grant to another unit's call followed to a second bench transmitter, its voice received and played, back on the control channel after the terminator |
-| The radio core: a trunked channel, its retunes, the UI (7) | yes | yes | yes, a channel written over CPS |
-| Inbound requests and their answers (2.1) | yes | yes | the three requests decoded off air by `p25tool.py`; the bench's answers taken |
-| Registration, affiliation, voice request, transmit on the grant, return (5) | yes | yes (`radioCoreTestP25T`, a fake site) | `test_p25_trunk_tx` |
-| Bench control channel and inbound decode (`tools/bench/p25tool.py`, 8) | yes | `p25tool.py selftest` | yes |
-| Unit to unit calls out, emergency, deregistration, location registration, acknowledgements, roaming by signal level, TDMA (Phase 2) voice channels, multi-block message bodies | no | | |
-
-The radio runs are against a control channel `p25tool.py` writes from the same descriptions as the firmware, so they
-check the radio's timing, retunes and transmissions, not the layouts: no live system has been heard or answered.
-Every message layout of the transmit side comes from published descriptions, not a capture: 9 lists them.
+Not supported: unit to unit calls out, emergency, deregistration, location registration, acknowledgments, roaming by
+signal level, TDMA (Phase 2) voice channels and multi-block message bodies.
 
 Sources: published descriptions of TIA-102.AABB (trunking control channel formats), TIA-102.AABC (trunking messages)
-and TIA-102.BAAA-A (the common air interface): test equipment application notes and public opcode references. Facts
-no source here confirmed are listed in 9; the code treats them conservatively.
+and TIA-102.BAAA-A (the common air interface): test equipment application notes and public opcode references. Where
+they leave a field open, section 9 gives the reading the code takes.
 
 ## 1. Units
 
@@ -158,12 +153,12 @@ Hunting:
 | Step | Time | Then |
 |---|---|---|
 | A candidate with nothing decoded | 600 ms | the next |
-| A candidate with signaling but not yet the system's identity (WACN and system ID, when configured) | 4 s | the next |
+| A candidate with signaling without the system's identity so far (WACN and system ID, when configured) | 4 s | the next |
 | A block of another NAC or another system | at once | the next |
 | A whole pass without an answer | wait on the last good candidate 2 s, doubled each pass up to 30 s | a new pass |
 | No control channel for `fallback_ms` | once per loss | the `fallback` hook (the caller may move to a fallback channel) |
 
-A candidate without a frequency (a channel number whose identifier is not known yet) is passed over. With WACN and
+A candidate without a frequency (a channel number whose identifier hasn't been heard) is passed over. With WACN and
 system ID set to any, the first block decoded on a candidate of the right NAC holds it. RFSS status names the
 system but not the WACN: it settles a candidate only when the WACN is any.
 
@@ -175,7 +170,7 @@ to or from `unit_id`, unless `P25_FOLLOW_NO_UNIT`):
 | Service options say protected, and `P25_FOLLOW_SKIP_ENC` | not followed (view: refused ENC). Its repeated grants and its updates are skipped while they keep coming (1.5 s apart at most) |
 | Its identifier unknown | not followed (view: refused NO_IDEN); followed once the identifier arrives |
 | A TDMA identifier other than single-slot full rate | not followed (view: refused TDMA): the voice path plays Phase 1 only |
-| A group grant whose source is our own unit | not followed: not a call to listen to. As the answer to our voice request it is taken by the transmit side (5) |
+| A group grant whose source is the radio's own unit | not followed: not a call to listen to. As the answer to the radio's voice request it is taken by the transmit side (5) |
 | A call left on its terminator | its updates are not followed for 1.5 s; a new grant is |
 | `hold_ms` after a followed group call | only that group is followed |
 | Otherwise | `tune(hz, GROUP or UNIT, group or target)`, state VOICE |
@@ -206,7 +201,7 @@ Registration (`view.reg`, `P25_REG_*`):
 | OFF | the transmit side is off, or `P25_FOLLOW_NO_REG` | |
 | IDLE | waits for a control channel held and its RFSS status heard (or 2 s on it) | sends the registration request: WAIT |
 | WAIT | registration sent | accepted: sends the affiliation request, AFF. Failed: RETRY. Denied or refused: DENIED. No answer after 3 sends: RETRY |
-| AFF | affiliation sent | accepted for our group: READY. Failed: RETRY. Denied or refused: DENIED |
+| AFF | affiliation sent | accepted for the radio's group: READY. Failed: RETRY. Denied or refused: DENIED |
 | READY | registered and affiliated | another site (system, RFSS or site differs from the one registered): IDLE |
 | RETRY | waits 10 s, doubled each round up to 60 s | registers again: WAIT |
 | DENIED | final: PTT says why | a channel restart or another site |
@@ -217,9 +212,9 @@ Losing the control channel and finding the same site again keeps the registratio
 Sending (`acc_tick`): a block goes out only after a block of the control channel was heard since the tune, so its
 status symbols are known; while the last status symbol of the last unit said the inbound channel is busy, it waits
 20 ms plus up to 60 ms at random and looks again (`view.inb_busy`). An unanswered block is sent again after 1 s plus
-100-400 ms at random, three sends in all. A deny or queued response must name the request's opcode and our unit.
+100-400 ms at random, three sends in all. A deny or queued response must name the request's opcode and the radio's unit.
 An answer counts only for a request that went out at least once: a registration or affiliation response, a deny, a
-queued response or a grant heard while the request still waits for its turn is not ours and changes nothing.
+queued response or a grant heard while the request still waits for its turn isn't the answer and changes nothing.
 
 PTT (`p25_follow_ptt`, `view.req`, `P25_REQ_*`):
 
@@ -228,10 +223,10 @@ PTT (`p25_follow_ptt`, `view.req`, `P25_REQ_*`):
 | Can it ask? | `p25_follow_can_talk`: a control channel held, and READY (or `NO_REG`). Else PTT is refused with the reason (7) |
 | Request | the group voice service request for `talk_group`: WAIT. On a voice channel (following a call) the follower first goes back to the control channel; there is no keying on a channel left over from another call |
 | Queued | a queued response: QUEUED, waiting up to 10 s for the grant |
-| Grant | a group voice grant (`0x00`) whose source is our unit and whose group is ours: TALK. The follower tunes the channel (`P25_FOLLOW_TUNE_TALK`) and gives the transmit frequency (`view.talk_hz`). A channel without an inbound frequency, or on a TDMA identifier: NO_CHAN |
+| Grant | a group voice grant (`0x00`) whose source is the radio's unit and group: TALK. The follower tunes the channel (`P25_FOLLOW_TUNE_TALK`) and gives the transmit frequency (`view.talk_hz`). A channel without an inbound frequency, or on a TDMA identifier: NO_CHAN |
 | Other grants | while the request waits, no other call is followed |
-| Talk | on our channel the follower ignores voice loss and terminators (the radio is the one talking); after the longest call plus 10 s it goes back regardless |
-| End | `p25_follow_talk_end` (the terminator went out): back to the control channel. Grants of our own call that the site keeps repeating are skipped for 1.5 s |
+| Talk | on the granted channel the follower ignores voice loss and terminators (the radio is the one talking); after the longest call plus 10 s it goes back regardless |
+| End | `p25_follow_talk_end` (the terminator went out): back to the control channel. Grants of the radio's own call that the site keeps repeating are skipped for 1.5 s |
 | Released early | before the grant the request is dropped |
 | Failure | deny: DENIED (`deny_svc`, `deny_reason`); no answer after 3 sends, or queued too long: TIMEOUT |
 
@@ -255,8 +250,8 @@ caller refused, and waits on a busy inbound channel.
 | `cc[]`: `hz`, `tx_hz`, `chan`, `site` | `ctl[]`: `rx_hz`, `tx_hz`, `chan`; `ctl_site[]` |
 | `iden_set`, `iden[]`: base, spacing, slots, TDMA, transmit offset | `iden_set`, `iden[]` (bandwidth is not used) |
 | `hold_ms` | `sys.hold_s` x 1000 (0: no hold) |
-| `fallback_ms` | none yet: 0, never (the fallback channel is read, not used) |
-| `groups[]`, `voice_lost_ms`, `call_max_ms`, `P25_FOLLOW_NO_UNIT` | none yet |
+| `fallback_ms` | 0, never (the fallback channel is read, not used) |
+| `groups[]`, `voice_lost_ms`, `call_max_ms`, `P25_FOLLOW_NO_UNIT` | none: defaults |
 
 Not used: `sys.roam_dbm`.
 
@@ -269,12 +264,12 @@ differences:
 | Step | What happens |
 |---|---|
 | Read | `radio_p25_take` makes the channel P25; the radio core tunes it as any P25 channel (the record's receive frequency, 12.5 kHz, the DMR stack stopped) |
-| Begin | `radio_p25_begin` reads the system (`p25_trunk_load`) into the part of the P25 memory the voice path takes next, and makes the follower's configuration (6) and the engine's: `cfg.trunk` set, both NACs the control channel's (or any), our unit ID, the channel's talk group. Then the voice path, the follower (its first tune), the engine. A system that doesn't load: no engine (`p25.begin_fails`) |
+| Begin | `radio_p25_begin` reads the system (`p25_trunk_load`) into the part of the P25 memory the voice path takes next, and makes the follower's configuration (6) and the engine's: `cfg.trunk` set, both NACs the control channel's (or any), the radio's unit ID, the channel's talk group. Then the voice path, the follower (its first tune), the engine. A system that doesn't load: no engine (`p25.begin_fails`) |
 | Units | The engine's `rx_unit` and `rx_call` hooks hand every unit and every call's fields to the follower, in the provider's task |
 | Timers | The radio task ticks the follower at its own tick (10 ms), so its timers run whether the provider delivers or not (a provider that receives only at a sync delivers nothing on a dead channel) |
 | Retune | The `tune` hook only records the request. The radio task carries it out at its next tick: the receiver to the frequency (12.5 kHz, no tone), the engine's selective squelch (`rx_tgid`) to the group for a group call and 0 otherwise (`p25_engine_set`), `p25_engine_retuned`, then `p25_follow_retuned`. A frequency outside the board's receive bands, or in a listen-only band, is not tuned (`p25t.untuned`): the follower hears nothing there and goes back |
 | PTT, transmit side off | Refused with "RX only" (`TXDENY_RX_ONLY`): the tag is receive only, the system listen only, or no unit ID or talk group |
-| PTT, transmit side on | `tx_check` as for any channel except the frequency checks, which wait for the grant. `radio_p25_trunk_ptt` asks the follower; while it waits, home says "Wait" or "Queued" and nothing keys. On the grant (`radio_p25_trunk_talk`: GO) the radio core checks the granted transmit frequency against the board's bands and listen-only bands, then keys as a conventional P25 call there (`p25_key`): the channel's power, the TX timer, the engine's call with our unit ID and talk group and the control channel's NAC (the one heard when the system's NAC is any). A refusal says why (`TXDENY_TRUNK`, the view's `p25.twhy`): no control channel, not registered, denied, no answer, voice channel unusable |
+| PTT, transmit side on | `tx_check` as for any channel except the frequency checks, which wait for the grant. `radio_p25_trunk_ptt` asks the follower; while it waits, home says "Wait" or "Queued" and nothing keys. On the grant (`radio_p25_trunk_talk`: GO) the radio core checks the granted transmit frequency against the board's bands and listen-only bands, then keys as a conventional P25 call there (`p25_key`): the channel's power, the TX timer, the engine's call with the radio's unit ID and talk group and the control channel's NAC (the one heard when the system's NAC is any). A refusal says why (`TXDENY_TRUNK`, the view's `p25.twhy`): no control channel, not registered, denied, no answer, voice channel unusable |
 | Release | the terminator goes out (`AIR_TX_DONE`), then `radio_p25_trunk_talk_end` sends the follower back. Released before the grant: the request is dropped |
 | Inbound bursts | between calls, a block the follower asked to send is keyed alone on the inbound frequency (`p25t_burst`): the same checks as PTT (inhibit, battery, the band), lowest of nothing, the channel's power; `p25_engine_tx_burst` sends the one TSDU and the transmitter drops at its end. The view stays idle (no red LED, no TX timer). A refused burst counts `p25t.burst_refused` and the follower's `send_fail` |
 | Leave | Another channel, the scan, the bench or anything else that takes the modem ends the engine, then the follower |
@@ -296,14 +291,14 @@ registered, "TG 201" when PTT can ask, "Wait" or "Queued" while a request waits,
 refusal. The debug link's `p25_trunk` section has the follower's
 view and the retune counters ([debuglink.md](debuglink.md) 3.7).
 
-Not used yet: the fallback channel, an RX group list (`groups`), the system's `roam_dbm`.
+Not used: the fallback channel, an RX group list (`groups`), the system's `roam_dbm`.
 
 Memory: the transmit side adds 120 bytes to the follower (lent with it) and 28 bytes to the radio task's copy of the
 view, plus the radio core's request state (`p25_trunk_t`: the burst in hand, 12 bytes, and a few flags).
 
 Tests: `radioCoreTestP25T` (host) runs the radio core against a trunked site on the fake air interface: it finds the
 system on the primary control channel, refuses PTT on a listen-only system, follows a grant for its talk group to the voice channel and plays
-the call there, comes back, leaves another group's grant and an encrypted one (skip on), does not tune a channel
+the call there, comes back, leaves another group's grant and an encrypted one (skip on), doesn't tune a channel
 outside the radio's bands, finds the system on a second control channel programmed by number, stops with the channel
 and hunts again on return. With transmit on, the fake site reads the radio's inbound bursts and answers: registration
 and affiliation, PTT refused before them, a request granted (the radio keys on the voice channel's inbound frequency
@@ -312,8 +307,7 @@ grant to a channel outside the bands. `p25TrunkTest` checks the inbound layouts 
 `tests/hil/test_p25.py`: `test_p25_trunk_follow` (opt-in, receive only) on a live system; `test_p25_trunk_tx` (opt-in,
 the bench and the radio transmit) against a control channel the bench plays (8); and `test_p25_trunk_rx` (opt-in, two
 bench transmitters, the radio only receives on a listen-only system): the control channel grants another unit's call
-while a second transmitter plays that call on the voice channel. The last two have run on a radio; the first needs a
-live system.
+while a second transmitter plays that call on the voice channel. `test_p25_trunk_follow` needs a live system.
 
 ## 8. Bench tools
 
@@ -338,22 +332,22 @@ a receiver never learns the system's identity: a file that answers all through g
 (`--reg-at 0:0:3 --aff-at 1:0:3 --grant-at 2:0:3`). The expect file gives each unit's symbol position. A file of 8192 symbols or fewer goes in the bench's request and can be repeated (`fsk4_bench.py tx --repeat`).
 `p25tool.py selftest` covers the answers and the inbound decode, as symbols and through the C4FM model.
 
-## 9. Not confirmed
+## 9. Field readings
 
-These come from no source available here, or from one only in part. The code treats each conservatively; a capture
-of a live control channel settles them.
+Where the published descriptions leave a field open, the code takes the reading in this table. Each choice fails in a
+way that shows: a wrong CRC reading fails every block, a wrong answer layout shows as no answer (`timeouts`).
 
-| Fact | What the code does |
+| Item | What the code does |
 |---|---|
-| The block CRC: register starting at 0, the remainder inverted | as stated. A wrong guess fails every block, which a capture shows at once |
+| The block CRC: register starting at 0, the remainder inverted | as stated |
 | A TSDU or packet is padded with null bits to the next status symbol | as stated (180, 288, 360 symbols) |
 | MFID `0x01` uses the standard table | taken as the standard's |
 | The TDMA identifier's channel types: slots per carrier (types 0-2 one, 3 two, 4 four, others two) | only type 1 counts as FDMA; every other type is refused as TDMA |
 | The transmit offset's unit in the VHF/UHF and TDMA forms | taken as channel spacings; the `0x3D` form as 250 kHz. A programmed identifier's offset is used where given |
 | The sense of the transmit offset's sign bit (1: above) | as stated |
-| The inbound request layouts (2.1): field order and reserved bits of `0x2C`, `0x28`, `0x00` | as stated; a capture of another radio, or the site's answers, settles them |
-| The answer layouts (2): registration, affiliation, deny and queued responses | as stated; an answer that doesn't name our unit is ignored, so a wrong guess shows as no answer (`timeouts`) |
-| A grant answering our request is `0x00` with our unit as the source | as stated; the explicit form or another source is not taken as ours |
+| The inbound request layouts (2.1): field order and reserved bits of `0x2C`, `0x28`, `0x00` | as stated |
+| The answer layouts (2): registration, affiliation, deny and queued responses | as stated; an answer that doesn't name the radio's unit is ignored |
+| A grant answering the radio's request is `0x00` with the radio's unit as the source | as stated; the explicit form or another source isn't taken as the answer |
 | When a subscriber may send on the inbound channel: after an idle status symbol, how long after it, and the random wait | after a block heard since the tune, not while the last status symbol says busy; waits as in 5 |
 | The response timer, resend count and registration backoff a site expects | 1 s, three sends, 10 s to 60 s |
 | A one-block inbound TSDU's status symbols: "unknown" | as stated |

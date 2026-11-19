@@ -3,10 +3,10 @@
 
 # DMR Tier III in the codeplug
 
-The stored records of a DMR Tier III trunked system and its channels, on the generic layer of
+This page gives the stored records of a DMR Tier III trunked system and its channels, on the generic layer of
 [channel-modes.md](channel-modes.md): kind 1 and system type 1. A build with `CONFIG_DMR_TRUNK` reads them
 (`core/radio/radio_trunk_cp.c`); what the radio does with them is in [dmr-trunking.md](dmr-trunking.md) 12. The
-Codeplug Editor writes them and zone sharing carries them. Little endian throughout. Host test:
+Codeplug Editor writes them, and zone sharing carries them. All fields are little endian. Host test:
 `tests/host/t3CodeplugTest.c`.
 
 The radio runs the Tier III systems numbered 0 to `RADIO_T3_SYSTEMS` - 1 (0 to 7). A Tier III system record at a
@@ -41,12 +41,12 @@ The type's block:
 | 16 | 4 | Fixed plan: duplex split Hz |
 | 20 | 1 | Weak below this dBm (signed; 0 = the radio's roaming threshold) |
 | 21 | 1 | Power save asked for at registration: 0 off, 1-7 = 1:2 to 1:128 |
-| 22 | 1 | Sites the radio may use: how many, 0 = any |
+| 22 | 1 | Sites the radio can use: how many, 0 = any |
 | 23 | 16 | Those site values, u16 each, 8 at most |
 
 A system is **usable** when its block holds at least the 23 octets up to the site count, it has a control channel
 and, if flag bit 0 is set, a key. A block that ends inside the site values names the sites it holds. Option bits a
-codeplug may not set (the debug link's, and the reserved ones) are read as 0.
+codeplug can't set (the debug link's, and the reserved ones) are read as 0.
 
 ## 2. System channels
 
@@ -90,6 +90,6 @@ Key 0x0800 + n: system n's short data poll setting: UDT format (1), blocks to as
 ## 6. Sharing
 
 A system's sharing level ([channel-modes.md](channel-modes.md) 7.1, [zone-share.md](zone-share.md)): identity only
-carries the type, flags and identity; the whole system carries the block, the control channels and the key, the key
-only when the sender turns keys on for that share (a radio has no such switch yet: [zone-share.md](zone-share.md)).
-Never carried: the own ID, the poll setting and the supplementary data.
+carries the type, flags and identity. The whole system carries the block, the control channels and the key; the key
+goes only when the sender turns keys on for that share, and the radio has no control for that
+([zone-share.md](zone-share.md) 4.2). Never carried: the own ID, the poll setting and the supplementary data.

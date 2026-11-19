@@ -1,13 +1,16 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # DMR repeater roaming
 
 A user radio on a wide-area system of conventional DMR repeaters (Tier II, repeater mode) keeps a list of repeater
-sites that carry the same talkgroups. While idle it watches how well it hears the site it is on and, when the
-repeaters send idle beacons, surveys the other sites in the beacon window. When its site gets weak it moves to the
+sites that carry the same talkgroups. While idle, it watches how well it hears the site it is on and, when the
+repeaters send idle beacons, surveys the other sites in the beacon window. When its site gets weak, it moves to the
 strongest one it can use, from the survey data when that is fresh, else after a search. The user can lock the radio
-to the site it is on, or ask for a search at once. Switch: `CONFIG_DMR_ROAMING`, a child of `CONFIG_DMR`, on by
-default (`docs/build-config.md`). Roaming itself is off until the user turns it on for a zone.
+to the site it is on, or ask for a search at once.
+
+Switch: `CONFIG_DMR_ROAMING`, a child of `CONFIG_DMR`, on by default ([build-config.md](../build-config.md)). Roaming
+itself is off until the user turns it on for a zone.
 
 | Section | Topic |
 |---|---|
@@ -15,24 +18,23 @@ default (`docs/build-config.md`). Roaming itself is off until the user turns it 
 | 4 | Behavior |
 | 5, 6 | Storage, interfaces |
 | 7, 8 | Repeater beacons, timings and constants |
-| 9, 10 | Tests, open decisions |
+| 9 | Tests |
 
 ## 1. Legal and standards position
 
 ETSI TS 102 361-1..4 define no roaming procedure for Tier II conventional operation: a repeater neither announces its
 neighbors nor tells a radio to move. Tier III (trunking, TS 102 361-4) has its own registration and hunting
-procedures, which do not apply to conventional repeaters. Roaming between conventional repeaters is therefore a
-radio-side feature, and this one uses only:
+procedures, which don't apply to conventional repeaters. Roaming between conventional repeaters is therefore a
+radio-side feature, and this one uses only these inputs:
 
-- the received signal strength the RF chip reports (`hal_radio_t.status`),
-- the presence of the repeater's outbound: base station (BS) sourced sync with the expected color code, which the
-  call stack already tracks for its own repeater handling (`dmr_call_view_t.repeater_up`),
-- optionally the standard BS downlink activation CSBK (BS_Dwn_Act, TS 102 361-2), the same burst the radio sends
-  before every transmission through a repeater that is not up, to wake a silent site for a measurement.
+- The received signal strength the RF chip reports (`hal_radio_t.status`).
+- The presence of the repeater's outbound: base station (BS) sourced sync with the expected color code, which the
+  call stack tracks for its own repeater handling (`dmr_call_view_t.repeater_up`).
+- Optionally, the standard BS downlink activation CSBK (BS_Dwn_Act, TS 102 361-2), to wake a silent site for a
+  measurement. It is the same burst the radio sends before every transmission through a repeater that isn't up.
 
-It does not implement, imitate or interoperate with any vendor's multi-site signaling: no Motorola IP Site Connect,
-Capacity Plus or Linked Capacity Plus site beacons, rest channel or site announcements, no Hytera XPT, and no
-proprietary CSBK or data opcodes. Picking the strongest of several programmed
+It doesn't implement, imitate or interoperate with any manufacturer's multi-site signaling: no proprietary site
+beacons, rest channel or site announcements, and no proprietary CSBK or data opcodes. Picking the strongest of several programmed
 channels by signal strength, and waking a repeater with the standard activation burst, are generic radio behavior
 that predates those systems (scan with priority, "strongest signal" selection in analog trunked and conventional
 radios).
@@ -44,18 +46,18 @@ burst) with the site's color code. It measures it as it measures traffic (sectio
 (section 4.8). It decodes nothing proprietary from it: no site or neighbor lists, no rest channel, no vendor
 CSBK or data. Listening to a repeater at the time it is known to transmit is generic receiver behavior, as is a
 periodic look at other programmed channels (scan with priority). The survey (section 4.9) and the periodic search
-(section 4.2) only listen. Our own repeater roles can send such a beacon (section 7): idle bursts on the outbound,
-nothing else.
+(section 4.2) only listen. RadioFoundry's own repeater roles can send such a beacon (section 7): idle bursts on the
+outbound, nothing else.
 
 ## 2. The roam list (sites)
 
 A **site** is a channel in the current zone that:
 
-- is DMR, not RX-only, and a repeater channel (TX frequency set and different from RX, not "force DMO"),
-- has its RX frequency inside one of the board's bands,
-- talks to the same talk target as the channel the user picked (the resolved contact ID and call type; two channels
-  with no contact both talk to the default talkgroup 9),
-- and, when any channel of the zone has the open-firmware **Roaming** flag set (section 5.2), has that flag set too.
+- Is DMR, not RX-only, and a repeater channel (TX frequency set and different from RX, not "force DMO").
+- Has its RX frequency inside one of the board's bands.
+- Talks to the same talk target as the channel the user picked (the resolved contact ID and call type; two channels
+  with no contact both talk to the default talkgroup 9).
+- Has the open-firmware **Roaming** flag set (section 5.2), when any channel of the zone has it set.
 
 The sites are the first `ROAM_SITES_MAX` (16) such channels in zone order. Roaming is **active** when the zone is a
 roaming zone (section 5.1), the radio is on one of its sites (not the VFO, not an FM channel, not a channel that fails
@@ -66,18 +68,17 @@ channel, zone or VFO change by the user (keys, Find, the debug link, a CPS write
 channel home and restarts the minimum dwell. The roaming moves themselves are remembered like any channel change, so
 the radio powers up on the site it was on.
 
-Why a zone and not a new list: the open-firmware codeplug layout that qdmr and the open-firmware CPS write
-(`open-firmware-cps.md` 7) has no roaming list or roaming zone record, and the native codeplug
-(`codeplug-native.md`) is a draft. A zone whose channels share their talkgroups is what a user of a multi-site
-system already programs, so it is the natural roam list; the per-channel Roaming flag the open-firmware layout does have
-narrows it when a zone mixes sites with other channels. When the native codeplug is built, the zone record gets a
-"roaming zone" flag and the threshold values (section 10, decision 1), and the settings store bits become its default.
+Why a zone and not a separate list: the open-firmware codeplug layout that qdmr and the open-firmware CPS write
+([open-firmware-cps.md](open-firmware-cps.md) 7) has no roaming list or roaming zone record. A zone whose channels
+share their talkgroups is what a user of a multi-site system already programs, so it is the natural roam list. The
+per-channel Roaming flag that the open-firmware layout does have narrows it when a zone mixes sites with other
+channels.
 
 ## 3. What the radio measures
 
 - **Site heard**: `dmr_call_view()->repeater_up`: a burst with BS sync and the channel's color code within the last
   300 ms (`DMR_CALL_REPEATER_HOLD_MS`). Bursts with another color code are dropped by the call stack before they
-  count, so a co-channel repeater with another color code is never taken for ours.
+  count, so a co-channel repeater with another color code is never taken for the radio's site.
 - **Signal**: `hal_radio_t.status().rssi_dbm`, read every poll (25 ms) while the site is heard. The board picks the
   source: the receiver's RSSI, not the DMR modem's.
 - **Current site average**: an exponential average of those readings (weight 1/8 per reading), restarted on every
@@ -85,22 +86,21 @@ narrows it when a zone mixes sites with other channels. When the native codeplug
   average until it is too old (`ROAM_FRESH_MS`, 60 s): then the site's signal is **unknown**.
 - **Candidate measurement**: during a search, the strongest reading taken while the candidate is heard, after the
   settle time.
-
 - **Survey measurement**: during a survey visit (section 4.9), the mean of up to `ROAM_SURVEY_READINGS` (4)
   readings taken while the site is heard, after `ROAM_SURVEY_SETTLE_MS` (420 ms: the call stack's 300 ms hold of
   the last site's outbound, then about 120 ms for the PLL, the modem's sync and the receiver's RSSI filter). The
   site's survey average is the mean of its last two survey measurements; a site missed in two visits made while the
   beacons were on the air ("live": its own site or another one was heard in that window) counts as not heard.
-- **Traffic**: a call or data on our slot (`RS_RX`, or the call stack not idle) while a site is heard. A keyup that
+- **Traffic**: a call or data on the radio's slot (`RS_RX`, or the call stack not idle) while a site is heard. A keyup that
   carries traffic is never taken for a beacon.
 
 Why 420 ms per visit and not less: all sites share the color code, and the call stack keeps a repeater "up" for 300
 ms after its last burst, so the first 300 ms after a retune can't tell the new site from the old one. A visit could
 be about 250 ms if the stack forgot the last site on a retune, but then a PTT that ends a visit would always go
-through a repeater wake-up on the way back (section 4.9). A board's receiver RSSI and modem sync acquisition
-should need well under 100 ms on a continuous BS outbound (a burst every 30 ms); four 25 ms readings follow.
+through a repeater wake-up on the way back (section 4.9). The remaining 120 ms covers a board's receiver RSSI and
+modem sync acquisition on a continuous BS outbound (a burst every 30 ms); four 25 ms readings follow.
 
-A conventional repeater only transmits while it carries traffic (plus its hang time), when it beacons, or when
+A conventional repeater transmits only while it carries traffic (plus its hang time), when it beacons, or when
 something wakes it. Passive measurement therefore only sees sites that are busy or beaconing; section 4.5 covers
 silent ones.
 
@@ -146,7 +146,7 @@ reason ends the visit at once):
 | `hotspot` | the host link owns the modem |
 | `scan` | a scan runs (the user's scan wins) |
 | `tx` | PTT held, transmitting, a refusal still shown, or the data service sending (`dmr_call_data_busy`) |
-| `call` | a call heard on our slot (played or not), or the squelch state RX; during a survey visit, a call heard on the visited site (back home at once: a networked call is likely on our own site too) |
+| `call` | a call heard on the radio's slot (played or not), or the squelch state RX; during a survey visit, a call heard on the visited site (back home at once: a networked call is likely on the radio's own site too) |
 | `reply` | the reply window or a one-shot target is running |
 | `quiet` | less than `ROAM_QUIET_MS` (3 s) since the last reception or transmission ended: the repeater's hang time and the other side's answer |
 | `override` | a temporary change on the channel (power, CC, TS, mode...), a talk target chosen for now, hear all latched, monitor held |
@@ -330,22 +330,21 @@ Appended to `settings_t`, layout 1:
 | `roam_beacon_s` (u16) | the repeaters' beacon interval, 0 = none, else 10 .. 600 s | 60 |
 | `roam_beacon_len_s` (u8) | beacon duration, 1 .. 10 s | 4 |
 | `roam_survey` (u8) | 0 off, 1 synced, 2 per site | 1 |
-| `rpt_beacon` (u8) | our repeater roles send an idle beacon (section 7) | 0 |
+| `rpt_beacon` (u8) | the radio's repeater roles send an idle beacon (section 7) | 0 |
 
 The last four are appended after `reserved5` (payload 168 -> 176 bytes, then `reserved6[3]`). A record written
 before them is shorter: the loader keeps the defaults for the missing bytes (`settings-store.md` 3), so an
 upgraded radio gets the survey on with 60 s / 4 s and the repeater beacon off.
 
 The values reach the radio core as `radio_settings_t.roam_*`. The zone bits are written by the radio core when the
-user turns roaming on or off for the current zone. They follow the zone index, so a CPS write that reorders or
-deletes zones moves the flags with the indices (section 10, decision 2).
+user turns roaming on or off for the current zone. They follow the zone index: after a CPS write that reorders or
+deletes zones, each flag stays with its index, not with its zone.
 
 ### 5.2 Open-firmware codeplug
 
 The open-firmware channel record's flag 1 bit 0 "Roaming" (`open-firmware-cps.md` 7, offset 0x26) is read into
 `channel_t.roam`. It is never written by the radio (the encoder keeps the bit as read). When any channel of a roaming
-zone has it, only those channels are sites. Whether qdmr exposes this bit for the open-firmware layout is open
-(section 10, decision 3).
+zone has it, only those channels are sites.
 
 ## 6. Interfaces
 
@@ -399,19 +398,18 @@ window start (-1 unknown). RADIO op 26 `cmd u8` = `radio_req_roam`; settings 21 
 complement), 22 `roam_hyst_db`, 23 `roam_probe`, 24 `roam_check_s`, 25 `roam_beacon_s`, 26 `roam_beacon_len_s`, 27
 `roam_survey`, 28 `rpt_beacon` through op 24.
 
-## 7. Our repeaters' beacons
+## 7. RadioFoundry repeater beacons
 
-The SFR runner (`docs/spec/sfr.md`: MMDVM SFR today; Standalone SFR's repeater roles are not built) can send
-the beacon itself: with `rpt_beacon` on (debug link setting 28, off by default by P7), the runner keys its outbound with idle bursts for
-`roam_beacon_len_s` every `roam_beacon_s` while it carries nothing (`sfrRunnerSetBeacon`, counted in
-`sfr.tx_beacons` in the debug link's `sfr` section). Traffic always has priority: a beacon due during a call is skipped, and a call that starts during a
-beacon takes the outbound over. The beacon is standard idle bursts with the repeater's color code, nothing else.
+The SFR runner ([sfr.md](sfr.md), MMDVM SFR) can send the beacon itself. With `rpt_beacon` on (debug link setting 28,
+off by default by P7), the runner keys its outbound with idle bursts for `roam_beacon_len_s` every `roam_beacon_s`
+while it carries nothing (`sfrRunnerSetBeacon`, counted in `sfr.tx_beacons` in the debug link's `sfr` section).
+Traffic always has priority: a beacon due during a call is skipped, and a call that starts during a beacon takes the
+outbound over. The beacon is standard idle bursts with the repeater's color code, nothing else.
 
 The radio keeps no network time, so its beacon starts at its own phase (the first one when the role starts) and is
-**not** in a network's shared window: a radio surveying such a system in the synced mode learns the window from
-the other repeaters and finds ours only through traffic or a discovery visit; the per-site mode handles it. Aligning
-it would need a time source: the hotspot host's clock (the MMDVM host knows the network time) could send the phase
-later. MMDVM duplex hosts send their own beacons (the host's setting), not through this setting.
+**not** in a network's shared window. A radio surveying such a system in the synced mode learns the window from the
+other repeaters, and finds this one only through traffic or a discovery visit; the per-site mode handles it. MMDVM
+duplex hosts send their own beacons (the host's setting), not through this setting.
 
 ## 8. Timings and constants
 
@@ -461,25 +459,8 @@ later. MMDVM duplex hosts send their own beacons (the host's setting), not throu
   round trip, the zone toggle and back, a passive roam now on the current zone (ends on one of its sites, nothing
   sent), lock and roam now ending it; with `--allow-rf --allow-service-stop --roam-rx --roam-tx`: the bench board runs
   a `bench_repeater` job as a second site and the radio, started on a dead site with the wake probe on, wakes it and
-  moves there. A passive variant (the bench repeater carrying a bench call while the radio searches) needs the bench
-  to transmit through its own repeater and is left for later. Beacons (`-k beacon`, a `bench_repeater` job with `--beacon
+  moves there. Beacons (`-k beacon`, a `bench_repeater` job with `--beacon
   --beacon-len`, defaults from `--roam-beacon 20 --roam-beacon-len 3`): the survey settings round trip (radio
   only); the bench site as home beaconing, the radio learns the window (`roam.win_conf`, `roam.beacons`); the bench
   site as the other site, the radio surveys it in the window (`surv.<i>` fresh).
 
-## 10. Open decisions
-
-1. The roaming zone flag and the thresholds as per-zone fields of the native zone record (when it exists), instead
-   of radio-wide settings plus zone index bits.
-2. Zone bits keyed by index break when a CPS reorders zones. A name hash would survive reordering but not renaming.
-3. Whether qdmr exposes the open-firmware Roaming bit; if not, a qdmr extension or a radio-side channel editor field.
-4. Wake probing in the UI (Settings > Talk & listen) and whether a probe should use the lowest power level.
-5. Whether a move should be announced by a beep, a voice prompt or nothing (today a short beep with key beeps on).
-6. Talk target matching: by resolved contact ID (today) or also by listen list, for systems where sites carry the
-   same talkgroups on different timeslots.
-7. The survey costs about 5.8 KB of flash; a `CONFIG_DMR_ROAMING_SURVEY` sub-switch could drop it on tight radios.
-8. Whether Home should show a survey visit at all (today it doesn't; the debug link does).
-9. The "repeater up" from the CACH (slot toggle) is not color-code checked; on a system where a neighbor with
-   another color code shares the frequency, a survey reading could count it.
-10. Aligning our repeater's beacon with a network window (section 7) from the hotspot host's time.
-11. A PTT after a visit to a silent site, once the 300 ms hold expired, goes through a wake-up on the own site.

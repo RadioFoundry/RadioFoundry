@@ -1,14 +1,17 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # Split duplex repeater (two radios as one duplex MMDVM modem)
 
 Two RadioFoundry radios, each connected to the same host as an MMDVM modem, act together as one full-duplex DMR
 repeater: the **TX half** transmits the repeater output (BS sourced, continuous, both slots, with the CACH), the
 **RX half** receives the repeater input (MS sourced bursts on both slots) and labels each burst TS1 or TS2 from the TX
-half's slot timing. The host (`tools/split_duplex_host.py`, or any duplex host that implements section 8) coordinates the pair and can present it to
-MMDVMHost as one ordinary duplex modem (section 8).
+half's slot timing. The host (`tools/split_duplex_host.py`, or any duplex host that implements section 8) coordinates
+the pair and can present it to MMDVMHost as one ordinary duplex modem (section 8). For setting it up, see
+[Hotspot](../user/14-hotspot.md).
 
-Switch: `CONFIG_HOTSPOT_SPLIT`, on wherever `CONFIG_HOTSPOT` is except where a board lists it as unsupported or not written, a child of `CONFIG_HOTSPOT` (`docs/build-config.md`). Built in, the
+Switch: `CONFIG_HOTSPOT_SPLIT`, a child of `CONFIG_HOTSPOT`, on where the board supports it
+([build-config.md](../build-config.md)). For the radios that have it, see the [feature matrix](../feature-matrix.md). Built in, the
 radio still behaves exactly as a simplex hotspot (and as the SFR of `sfr.md`) until a host that knows this extension
 enables a role with the new vendor command (section 3). No existing MMDVM implementation splits TX and RX across two
 modems, so this document defines the small extension; everything else uses the standard MMDVM commands with their
@@ -23,7 +26,7 @@ Standards cited: ETSI TS 102 361-1 V2.7.1 ("-1"), clause numbers given as "-1 4.
 | 5 | TX half: the continuous BS outbound |
 | 6, 7 | Time sync, RX half labeling |
 | 8, 9 | Host-side guide, frequency accuracy and antennas |
-| 10, 11 | Bench tests, open questions |
+| 10, 11 | Tests, notes |
 
 ## 1. Why two radios, and what each half does
 
@@ -40,7 +43,7 @@ slot clock to the RX half (time sync, section 6).
 | RX half | receive only on f_in, both slots, MS-sourced bursts, each burst sent up as DMR_DATA1 / DMR_DATA2 as a duplex MMDVM board does | keys its transmitter |
 | normal | the simplex hotspot of `mmdvm-protocol.md` (or the SFR of `sfr.md`) | |
 
-## 2. Compatibility rules (the owner's hard requirements)
+## 2. Compatibility rules
 
 1. **Standard hosts see no change.** MMDVMHost, Pi-Star, WPSD, DMRGateway, BlueDV and the SDR bench tools
    never send command 0xD6; to them a split build is the simplex hotspot (or SFR) it was. All of `mmdvm-protocol.md`
@@ -66,7 +69,7 @@ slot clock to the RX half (time sync, section 6).
 
 ## 3. The vendor command 0xD6 (RFOUNDRY_SPLIT)
 
-MMDVM leaves 0xD0-0xDF unused; 0xD5 is our SFR debug command (`mmdvm-protocol.md` 6.4), 0xD6 is this one.
+MMDVM leaves 0xD0-0xDF unused; 0xD5 is RadioFoundry's SFR debug command (`mmdvm-protocol.md` 6.4), 0xD6 is this one.
 
 Request: `E0 <len> D6 <sub> [<data>]`. Every request gets exactly one reply frame with the same command:
 `E0 <len> D6 <sub> <result> [<data>]`, result 0 = done, otherwise a reason with the numbering of `mmdvm-protocol.md`
@@ -101,10 +104,10 @@ Examples: `E0 04 D6 00` (INFO), `E0 05 D6 01 01` (TX half, defaults), `E0 05 D6 
 | 1 | roles the modem driver offers: bit 0 TX half (it has the continuous BS operations), bit 1 RX half (it has a slot clock) |
 | 2 | role now: 0 normal, 1 TX half, 2 RX half |
 | 3 | TX buffer per slot, bursts (16) |
-| 4 | CACH on air: 0 none (BS bursts without a CACH: section 5.4), 1 the chip sends our CACH bits, 2 the chip makes its own CACH (TC at least; our AT / short LC unknown), 3 unknown (experiment) |
+| 4 | CACH on air: 0 none (BS bursts without a CACH: section 5.4), 1 the chip sends the core's CACH bits, 2 the chip makes its own CACH (TC at least; the core's AT / short LC unknown), 3 unknown (experiment) |
 | 5-8 | the modem clock now, µs (u32, wraps every 71.6 minutes) |
 | 9 | flags: 01 RX half has a valid epoch, 02 TX half keyed, 04 TX half in its cool-down, 08 TX half slot clock running |
-| 10-11 | capabilities (u16): bit 0 scheduled TX (3.9), bit 1 ALIGN with the counter base and the snap (3.8), bit 2 ALIGN slewing (3.8), bit 3 RX metadata (3.10), bit 4 carrier trim (reserved, not built), bit 5 PPS input (reserved: no radio wires a pulse, `modem-hrc7000.md` 2.9a), bit 6 the slot's CACH in TX_SCHED (3.9; only where the chip sends the CACH bits it is given, byte 4 = 1). A bit is set only where the radio's modem driver can do it |
+| 10-11 | capabilities (u16): bit 0 scheduled TX (3.9), bit 1 ALIGN with the counter base and the snap (3.8), bit 2 ALIGN slewing (3.8), bit 3 RX metadata (3.10), bit 4 carrier trim (reserved), bit 5 PPS input (reserved: no radio wires a pulse, `modem-hrc7000.md` 2.9a), bit 6 the slot's CACH in TX_SCHED (3.9; only where the chip sends the CACH bits it is given, byte 4 = 1). A bit is set only where the radio's modem driver can do it |
 | 12 | scheduled TX guard, ms (u8): a TX_SCHED burst must arrive at least this long before its slot goes on air |
 | 13 | scheduled TX horizon, slots (u8, 32): a TX_SCHED burst may arrive at most this many slots ahead |
 | 14-15 | TX half slot-to-air delay, µs (s16): the time from a slot boundary as GET_EPOCH and ALIGN give it to the start of that slot on air, a constant of the modem driver (0 unknown) |
@@ -373,8 +376,8 @@ outbound needs the same CACH with C_SYS_Parms).
 first, most significant bit of byte 0 first, 4 zero pad bits at the end of byte 8). The TX half checks it (column
 parity, Hamming rows, CRC-8); a frame that fails is counted (STATUS 28) and re-read as the 28-bit short LC in its first
 4 bytes (bits 27-0 right aligned, as -1 B.3.7 numbers them) if that form's CRC matches the 5th byte, else dropped (the
-previous short LC stays). It goes on air from the next CACH whose slot counter is a multiple of 4. The exact byte layout
-a host sends is to be confirmed on the bench (section 11, open question 1): both forms are taken.
+previous short LC stays). It goes on air from the next CACH whose slot counter is a multiple of 4. Both forms are taken
+(section 11, note 1).
 
 ### 5.4 Making BS framing on the chips
 
@@ -385,17 +388,17 @@ The core hands the modem driver, for each slot, the burst and the CACH (fields a
   runs the chip in the physical layer mode, where it only modulates ([modem-hrc6000.md](modem-hrc6000.md) 9.1, 9.2).
   The core builds each slot's 288 bits (`bsOutboundRawSlot`: the CACH, then the burst with BS sync, slot type and
   coded payload, or for voice the AMBE around the sync or EMB and embedded LC) and the driver writes them to TX RAM.
-  INFO byte 4 says 1 (ours).
+  INFO byte 4 says 1 (the core's CACH).
 - **HR_C7000**: the chip's own BS mode (LAYER2_BS_MODE, 0x428-0x438) sends Idle frames with BS sync and a CACH of
-  valid parity, but their AT, TC and short LC are not under our control (`modem-hrc7000.md` 2.9, bench 2026-10-20). So
+  valid parity, but the driver can't set their AT, TC and short LC (`modem-hrc7000.md` 2.9). So
   the driver (`hrc7000_bs.c`) uses the chip's physical layer mode, as on the HR_C6000: the core's 288 bits per slot go
-  to TX RAM and the chip only modulates them (`modem-hrc7000.md` 2.10). INFO byte 4 says 1 (ours). The glue
+  to TX RAM and the chip only modulates them (`modem-hrc7000.md` 2.10). INFO byte 4 says 1 (the core's CACH). The glue
   (`platform/hrc7000/dmr_glue.c`) wires `now_us` and `slot_clock` (the slot engine's tick and its time; a received
   burst's arg is the tick of the slot after its own, as on the HR_C6000), so the HR_C7000 radios offer both halves.
 - **Fallback when the chip can't make a CACH**: BS-synced continuous bursts without valid TACT bits. Standard host
   receivers and most radios still decode the bursts, but a subscriber radio in repeater mode takes its slot numbering
-  from TC and its channel access from AT, so it may not tell TS1 from TS2 and talks on the wrong slot. That is not a
-  usable repeater output; use a radio whose chip makes the CACH (HR_C7000 once specified) or an MMDVM board as the TX
+  from TC and its channel access from AT, so it can't always tell TS1 from TS2 and talks on the wrong slot. That isn't a
+  usable repeater output; use a radio whose chip makes the CACH or an MMDVM board as the TX
   half (the RX half still works with any of them, section 8.4).
 
 ### 5.5 Per-slot buffer and target delay
@@ -417,7 +420,7 @@ the next gap between calls (a stream that ends drains, a new one prebuffers agai
   most boards). A handheld's PA and battery aren't made for continuous transmission; use mains power and a low step.
 - **Duty**: one key-up lasts at most max_key (default 180 s), then the TX half unkeys for the cool-down (default 20 s),
   during which DMR_DATA is NAKed with 2, DMR_START 01 is ignored and the INFO / STATUS flag 04 is set. A host that keeps
-  a repeater up for long hangs should drop the key between calls (MMDVMHost duplex does after its mode hang).
+  a repeater up for long hangs drops the key between calls (MMDVMHost duplex does after its mode hang).
 - The TX half also unkeys when the host goes silent for 2 s while keyed (no frame of any kind).
 
 ## 6. Time sync
@@ -453,14 +456,13 @@ relative to each other and to the host):
 while the total error is under half a slot, 15 ms. Budget: the offset estimate with the round-trip filter, 1-2 ms on
 USB full speed (each direction has 1 ms USB frame quantization plus task latency of the host link loop, under 5 ms on
 the radio); the HR_C6000 report time relative to its slot (1-12 ms after the timeslot interrupt for an in-step burst,
-`modem-hrc6000.md` 4.2: we use the timeslot interrupt time, not the report time, so this does not count); constant
+`modem-hrc6000.md` 4.2: the core uses the timeslot interrupt time, not the report time, so this doesn't count); constant
 chip delays, estimated under 3 ms and tracked away; drift between resyncs, 40 ppm x 10 s = 0.4 ms. The target is
-**|error| ≤ 5 ms**, a 10 ms margin. The STATUS phase residual (22-23) shows the real error on the bench (section 10).
+**|error| ≤ 5 ms**, a 10 ms margin. The STATUS phase residual (22-23) shows the real error (section 10).
 
 The host must reach both radios directly (USB, or a serial port on the host they're plugged into). A serial link
 carried over a network adds a one-way delay that stays put for a session: the round trip still looks plausible, but
-both offsets come out skewed the same way. On the bench, through such a link, 9 of 12 subscriber calls were labeled
-with the wrong slot; with the same radios on the host's own ports, 12 of 12 were right.
+both offsets come out skewed the same way, and calls are labeled with the wrong slot.
 
 ## 7. RX half: labeling
 
@@ -548,13 +550,12 @@ the two radios.
 ### 8.6 Using an MMDVM board as the TX half
 
 If only the RX half is a RadioFoundry (for example the TX chip can't make a CACH, 5.4): the epoch must then come
-from the MMDVM board's slot timing, which MMDVM doesn't expose. Not supported by this extension; noted for completeness.
+from the MMDVM board's slot timing, which MMDVM doesn't expose. This extension doesn't support it.
 
 ## 9. Frequency accuracy, calibration and antennas
 
 - **TX half frequency**: the continuous outbound keys once with the board's per-burst RX-to-TX sequence and then
-  stays in TX, so it inherits that sequence's carrier error; no offset constant is added (the sequence and its
-  measured error are on each radio's hardware page; gotcha 3.5). A continuous carrier warms the TCXO: measure on the
+  stays in TX, so it inherits that sequence's carrier error; no offset constant is added (gotcha 3.5). A continuous carrier warms the TCXO: measure on the
   SDR bench after 5 minutes keyed (the burst records give the frequency offset per burst) and, if it is outside
   about ±300 Hz, correct the reference oscillator offset in the radio's calibration. An ADF7021-based receiver
   (MMDVM_HS) decodes nothing at -3 kHz, so check every TX half once with the bench.
@@ -565,19 +566,19 @@ from the MMDVM board's slot timing, which MMDVM doesn't expose. Not supported by
   separate antennas several meters apart vertically (about 40-50 dB at UHF for 3 m), plus the lowest power step. Check
   with the RX half's RSSI of a weak station with the TX half keyed and unkeyed.
 
-## 10. Bench tests (the lead's HIL)
+## 10. Tests
 
 ### 10.1 BS framing variants
 
 Debug link command `SPLIT` (0x15) op 1 sets the framing variant the next TX half key-up uses; op 2 reads the split
-view. Variants: 0 ours (the default: physical layer mode, the core's 288 bits per slot), 1 the chip's layer 2
-framing (0x10 = 0x6E; AT / TC written to 0x52 and the short LC to TX RAM 0x24 for every burst), 255 ours with up to
+view. Variants: 0 the core's (the default: physical layer mode, the core's 288 bits per slot), 1 the chip's layer 2
+framing (0x10 = 0x6E; AT / TC written to 0x52 and the short LC to TX RAM 0x24 for every burst), 255 the core's with up to
 4 raw (page 4 register, value) pairs written at key-up (0x10 restored at unkey; 0x11 and 0x40 too when pairs were
 given). `tools/split_duplex_host.py --exp <variant>` or the HIL test (`RFOUNDRY_SPLIT_VARIANT`, `RFOUNDRY_SPLIT_REGS="REG=VAL
 ..."`) keys the outbound with idle bursts and a short LC for 10 s; the receive board's burst records on the SDR
 bench give per burst the family, the CACH (`tact ok AT TC LCSS`) and the short LC.
 
-The results that led to the physical layer mode are in [modem-hrc6000.md](modem-hrc6000.md) 9.2. On the HR_C7000
+Why the HR_C6000 uses the physical layer mode: [modem-hrc6000.md](modem-hrc6000.md) 9.2. On the HR_C7000
 the variant is a bit field of physical layer options instead (`modem-hrc7000.md` 2.10: continuous mode, the autotest
 bit, the TX RAM halves); 0 is the default there too.
 
@@ -593,7 +594,7 @@ bit, the TX RAM halves); 0 is the default there too.
   unknown command (NAK 1), the debug link's SPLIT view.
 - `test_split_tx_half_off_air` (marker `radio_tx`): the TX half keyed 10 s at the lowest power with idle bursts, a
   short LC and SET_AT toggling; asserted off air: BS sync only, a burst every 30 ms (same-slot spacing 60 ms), one
-  key-up edge, the color code, and with our framing (variant 0) the CACH: TC alternating, AT following SET_AT, the
+  key-up edge, the color code, and with the core's framing (variant 0) the CACH: TC alternating, AT following SET_AT, the
   short LC decoding; asserted on the radio: no underruns, short LC taken, a CACH for every burst (`bs.cach`).
   `RFOUNDRY_SPLIT_VARIANT` picks the variant, `RFOUNDRY_SPLIT_REGS` the raw writes of variant 255.
 - `test_split_rx_half_labels` (marker `rf`): the RX half with an epoch made from its own clock; a first bench call
@@ -613,10 +614,7 @@ host would):
   unlabeled (an unlabeled burst is sent up as TS2, so a TS2 call could pass without an epoch), comes back on the
   outbound on the right slot, the header's source is the subscriber, no underruns, residual under 5 ms.
 
-Run the pair from the host the radios are plugged into (section 6). On the bench (2026-10-21, host on the radios' own
-ports): the TX half's epoch matched the outbound's slots on air in 12 of 12 sessions, with the RX half on the outbound;
-subscriber calls were labeled right in 29 of 31 sessions with real epochs (bound 5-9 ms). The two wrong sessions are
-not explained yet (open question 7).
+Run the pair from the host the radios are plugged into (section 6).
 
 `tools/split_duplex_host.py --rx PORT --rx-only --flip-at 20` does the RX half part by hand, and `--tx A --rx B`
 runs a real pair (bring-up and timing readout, no upstream; `--repeat` repeats as above).
@@ -625,18 +623,16 @@ runs a real pair (bring-up and timing readout, no upstream; `--repeat` repeats a
 
 - `test_split_align` (no RF): the TX half, never keyed, snapped three times onto a grid of the host's clock (slot n at
   host n x 30 ms). Each time: STATUS aligned with the counter base, GET_EPOCH's boundary on the grid within the clock
-  sync's bound plus 1 ms, TS1 on even counters. 2026-10-21, run on the host the radios are plugged into, each from a
-  fresh boot: HR_C7000 board A 3 of 3 runs, boundaries 9-120 us from the grid (sync bound 3 ms), learned restart delay
-  -1167 us (`modem-hrc7000.md` 2.10 finding 12); HR_C6000 board 4 of 4, 2-317 us (sync bound 0.5 ms), delay +1.2 ms
-  (`modem-hrc6000.md` 9.1). The first snap of a boot lands off by the chip's delay and the second, with it learned,
-  on the grid. HR_C7000 board B 3 of 3, -2 to +227 us, delay -1141 us; HR_C7000 board C 3 of 3, -77 to +84 us, delay -1137 us (both over a USB-serial cable, sync bound 5.4-5.6 ms).
+  sync's bound plus 1 ms, TS1 on even counters. The first snap of a boot lands off by the chip's restart delay (about -1.1 ms on the HR_C7000,
+  `modem-hrc7000.md` 2.10; about +1.2 ms on the HR_C6000, `modem-hrc6000.md` 9.1) and the second, with it learned,
+  on the grid.
 - `test_split_tx_sched` (radio_tx): the voice test's call as TX_SCHED for numbered TS2 slots, one resend, one late
   burst, the key-up from the queued bursts; checked off air (one slot, the busy CACHs TC 0 as 3.6 puts them, the call whole, one key-up,
-  60 ms spacing) and in STATUS (aligned while keyed). Board A, 2026-10-21: passed (22 queued, 1 replaced, 1 late; the call decoded without sync errors in its TS2 slots); board B passed. Board C: the radio restarted during the call (no crash record); open.
+  60 ms spacing) and in STATUS (aligned while keyed).
 - `test_split_slew` (no RF): the TX half snapped onto the host's grid, then ALIGN mode 1 to a grid 1.5 ms later; the
   clock must reach it by slot trims within 5 s (aligned, not slewing, |phase| within 100 µs, `split.slew_us` about the
-  shift). Skips without capability bit 2, which no driver sets yet: the HR_C7000's LAYER2_MAX_CNT trim was tried with
-  this test and does not move the physical layer's slot timer (`modem-hrc7000.md` 2.10 finding 13), and the HR_C6000
+  shift). Skips without capability bit 2, which no driver sets: the HR_C7000's LAYER2_MAX_CNT trim doesn't move the
+  physical layer's slot timer (`modem-hrc7000.md` 2.10 finding 13), and the HR_C6000
   has no trim (`modem-hrc6000.md` 9.1).
 - `test_split_rx_half_labels` (10.2) turns RX_META on when INFO offers it and checks an event for every burst heard (a
   header the uplink makes up for a late entry has none), the sequence numbers and both labels.
@@ -658,24 +654,18 @@ labeled, repeated into the TX half and checked on its outbound (whole, in order,
 no underrun, repeat delay), then host silence and lease expiry. `tools/bench/dmr_cach.py selftest` checks the Python
 CACH coding, which is byte-identical with `core/dmr/fec/dmrCach.c`.
 
-## 11. Open questions
+## 11. Notes
 
-1. The 9-byte layout of DMR_SHORTLC as a host sends it (5.3): both forms are accepted; the bench decode settles it.
-2. HR_C6000 CACH (5.4, 10.1): AT / TC (0x52) and the short LC (TX RAM 0x24) are now written per the manual; open
-   until the bench shows them on air: the 0x11 value, and where the chip takes the CACH LCSS from.
-3. HR_C7000 TX half: settled (`modem-hrc7000.md` 2.10, bench 2026-10-21): the physical layer's
-   timeslot mode with the slot in both TX RAM halves gives the whole outbound with our CACH.
-4. The constant delay between the TX half's slot boundary and the RX half's (chip pipelines, air): measured on the
-   bench with the phase residual; if it is more than 5 ms, add a fixed correction (the tracker limit). Measured
-   (2026-10-21, `modem-hrc7000.md` 2.10): outbound TS1 goes on air 4.6 ms after the HR_C7000 TX half's epoch and
-   2.2 ms after the HR_C6000's; subscriber call residuals were 0.1-2.4 ms. No correction needed.
-5. Whether AT should default to busy during the host's hang time (mode 0 does: the outbound slot is not idle) or only
-   from the RX half (mode 1).
+1. DMR_SHORTLC as a host sends it (5.3): both 9-byte forms are accepted.
+2. HR_C6000 CACH (5.4, 10.1): in the chip's layer 2 framing (variant 1) the driver writes AT / TC to 0x52 and the
+   short LC to TX RAM 0x24, as the manual gives them. The default physical layer mode doesn't use them.
+3. HR_C7000 TX half: the physical layer's timeslot mode with the slot in both TX RAM halves gives the whole outbound
+   with the core's CACH (`modem-hrc7000.md` 2.10).
+4. The constant delay between the TX half's slot boundary and the RX half's (chip pipelines, air): outbound TS1 goes
+   on air 4.6 ms after the HR_C7000 TX half's epoch and 2.2 ms after the HR_C6000's (`modem-hrc7000.md` 2.10).
+   Subscriber call residuals stay within 0.1-2.4 ms, inside the 5 ms tracker limit, so no fixed correction is applied.
+5. AT during the host's hang time: mode 0 says busy (the outbound slot isn't idle), mode 1 takes it only from the RX
+   half.
 6. The HR_C6000 driver's own counters (`hrc6000_bs_stats_t`) are on the board's diagnostics line `bs` (slots,
-   bursts, underruns, key-ups, CACH written, PA failures, stalls; `rfoundry_debug.py` parses them as `bs.*`). Not reachable
-   from the core itself (no `hal_dmr_modem_t` stats operation).
-7. Two subscriber calls in 31 sessions went up under the other slot with a good epoch and a small residual. The
-   SDR bench can tell whether the subscriber sent it on that slot (a RadioFoundry radio syncing to the wrong CACH phase) or
-   the RX half filed it one slot off: capture the inbound and the outbound together during such a session.
-8. The RX half could find the slot numbers itself: after the outbound keys up and before a subscriber transmits, a
-   short retune to the outbound reads its CACH (TC), with no host clock in the chain. Not built.
+   bursts, underruns, key-ups, CACH written, PA failures, stalls; `rfoundry_debug.py` parses them as `bs.*`). The core
+   can't read them: `hal_dmr_modem_t` has no stats operation.

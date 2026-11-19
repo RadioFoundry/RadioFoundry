@@ -5,13 +5,14 @@
 
 The air interface carries channel symbols with time stamps between a radio's modem hardware and the core. It knows
 no mode. A digital mode the core frames itself (P25, [p25.md](p25.md)) describes what it needs as a profile, and
-every layer below works from that profile. Built with the modes on it: `CONFIG_P25`, `CONFIG_NXDN` ([nxdn.md](nxdn.md),
-[build-config.md](../build-config.md); `CONFIG_AIR` is derived from them). Which
-radios have a provider: [feature-matrix.md](../feature-matrix.md).
+every layer below works from that profile.
 
-State: host tested. The HR_C6000 provider is also checked on air both ways with C4FM
-([modem-hrc6000.md](modem-hrc6000.md) 10.5). A provider answers a fit with `AIR_FIT_UNTESTED` until its board says
-it has been checked.
+The air interface is built with the modes on it: `CONFIG_P25` and `CONFIG_NXDN` ([nxdn.md](nxdn.md),
+[build-config.md](../build-config.md); `CONFIG_AIR` is derived from them). For the radios that have a provider, see
+the [feature matrix](../feature-matrix.md).
+
+A provider answers a fit with `AIR_FIT_UNTESTED` (section 4) until its board marks the provider as checked on air
+(the modem glue's `air_verified`).
 
 ## 1. Layers
 
@@ -119,9 +120,9 @@ Receive:
 | Step | Rule |
 |---|---|
 | Search | the last 24 symbols against every pattern of the profile, each within its error limit |
-| Levels | with soft values, a least squares fit of the pattern's levels gives the signal's level and offset; a match that does not lie on a line is noise. The frame's symbols are sliced again with those levels |
+| Levels | with soft values, a least squares fit of the pattern's levels gives the signal's level and offset; a match that doesn't lie on a line is noise. The frame's symbols are sliced again with those levels |
 | Head | a mode with units of different lengths gives a head hook: it sees the first symbols behind a sync, confirms the unit (or says it is none: the search goes on, replaying what it held) and gives its length |
-| Frames | a frame is handed over whole, or in pieces when it is longer than the mode's buffer. A pattern may sit inside its frame (a negative start offset): the framer keeps history for it |
+| Frames | a frame is handed over whole, or in pieces when it is longer than the mode's buffer. A pattern can sit inside its frame (a negative start offset): the framer keeps history for it |
 | Coasting | a frame whose sync is missed is placed by counting, up to the mode's limit; then the mode is told the signal is lost |
 | Gaps | a chunk that says symbols were lost, or no signal, ends the lock |
 
@@ -148,11 +149,11 @@ down to a hundredth of it).
 | Output | symbols leave from the far end of a delay line 26 symbols long, sampled on the latest sync's timing and scaled by its level and offset, so a sync is sampled on the timing it gave |
 | Level | a tap of known scale starts at the profile's deviation. A tap of unknown scale follows the input's average magnitude until the first sync gives the level. The averages start fast and slow down; when a 16-sample average of the magnitude is off the slow one by half or double (a signal after an unmodulated carrier, which leaves the discriminator quiet), both start fast again |
 
-Between syncs the timing, level and offset hold. Two crystal clocks do not move a fifth of a symbol in a second, so
+Between syncs the timing, level and offset hold. Two crystal clocks don't move a fifth of a symbol in a second, so
 a mode whose syncs recur gets every frame on fresh timing. Chunks say `AIR_CHUNK_FREE_RUN` when no sync was seen
 within the profile's spacing, and `AIR_CHUNK_GAP` after a hole in the samples (the modem starts over).
 
-Cost: 3.3 KB of code and about 370 bytes of state, which the provider places. No transmit half is written: a
+Cost: 3.3 KB of code and about 370 bytes of state, which the provider places. The soft modem has no transmit half: a
 provider with a tap for receive only sends through its chip.
 
 The work is per filtered sample, 24,000 a second at 4800 symbols, so that path decides the load. Its rules are in
@@ -166,11 +167,10 @@ steps, 64-bit products for the voice codecs), each in plain C and with a core's 
 | The input history written twice, a filter's length apart | the interpolator reads its samples as one run, so a core with paired 16 x 16 multiply-accumulates takes them two at a time |
 | The fit behind the gate | it was nine tenths of the work |
 
-Measured on the `hrc7000` platform (no paired multiplies, no long multiply without its HI/LO unit) with an 8 kHz
-tap and the P25 profile, receiving noise: 8.5 % of the CPU (`rx_load`), against 33 % with the fit at every sample,
-a 64-bit gain product and ring indexes by `%`. The HI/LO unit's multiply-accumulate would save one instruction in
-eight of the dot product and is not used: the context switch does not save HI and LO. Open: a provider that knows
-the channel is empty (`AIR_CHUNK_NO_SIGNAL`) could stop feeding the modem.
+On the `hrc7000` platform (no paired multiplies, no long multiply without its HI/LO unit), with an 8 kHz tap and
+the P25 profile, receiving noise costs 8.5 % of the CPU (`rx_load`), against 33 % with the fit at every sample, a
+64-bit gain product and ring indexes by `%`. The HI/LO unit's multiply-accumulate would save one instruction in eight
+of the dot product and isn't used: the context switch doesn't save HI and LO.
 
 ## 7. The session
 
@@ -194,13 +194,13 @@ before anything is queued: `tx_deny=air_no_tx` ("This mode: receive only").
 
 ## 8. Users
 
-| User | State |
+| User | Use of the air interface |
 |---|---|
-| P25 Phase 1 conventional voice | written, host tested ([p25.md](p25.md)) |
-| NXDN conventional voice, 4800 and 9600 bit/s | written, host tested, in the radio core ([nxdn.md](nxdn.md) 6) |
-| A DMR engine on symbols | not written. The interface carries TDMA (slot length, slot events, the slot clock, per-slot transmit chunks, syncs inside the burst); today's DMR runs on the modem chip's own layer 2 |
-| 2-level modes | carried (the dibit map, the soft modem's fit) |
-| AFSK (APRS) | not a symbol mode: its tones ride the audio band. The sample taps can feed a demodulator for it; nothing uses them for that yet |
+| P25 Phase 1 voice | A mode on the session ([p25.md](p25.md)) |
+| NXDN conventional voice, 4800 and 9600 bit/s | A mode on the session, in the radio core ([nxdn.md](nxdn.md) 6) |
+| DMR | None: DMR runs on the modem chip's own layer 2. The interface carries TDMA (slot length, slot events, the slot clock, per-slot transmit chunks, syncs inside the burst) |
+| 2-level modes | Carried (the dibit map, the soft modem's fit) |
+| AFSK (APRS) | None: AFSK isn't a symbol mode; its tones ride the audio band |
 
 ## 9. Bench access
 

@@ -66,7 +66,7 @@ this radio. RAN squelch plays every call of the RAN.
 
 ### 2.2 Writing from the radio
 
-An NXDN channel the radio saves (the VFO in NXDN stored as a channel, a mode changed for now made permanent) is
+An NXDN channel the radio saves (the VFO in NXDN stored as a channel, a temporary mode change made permanent) is
 written as [channel-modes.md](channel-modes.md) 2.4 gives: the base record as the safe stand-in, then a new tag of
 kind 4 with no system, transmit allowed from the channel and a full parameter block from the NXDN settings: the rate,
 the RX and TX RAN, and the squelch selective where the settings name a group to hear, else RAN. Its contact is the
