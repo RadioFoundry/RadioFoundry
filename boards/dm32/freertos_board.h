@@ -7,8 +7,9 @@
 // The RTOS heap holds every task stack and queue. Main RAM is this radio's limit (config.mk), and the platform's 40 KB
 // leaves about 13 KB of it unused: the ten tasks' stacks are 22.8 KB (make stack-check), their control blocks about
 // 1.1 KB, the FM receive ring 2 KB and the queues and locks about 1.3 KB, 27.3 KB in all, and a zone share send takes
-// 1 KB for a moment (core/ui/ui_svc_zone.c). 32.5 KB keeps about 4.2 KB spare at the most, twice the 2 KB
-// tests/hil/test_task_stacks.py asks for, and gives the rest to main RAM (the air MTU's 64-burst lists took the last
+// 1 KB for a moment (core/ui/ui_svc_zone.c). 32.5 KB keeps about 4.2 KB spare at the most; satellite tracking uses
+// about 0.6 KB more from that heap when enabled. The remaining estimate exceeds the 2 KB
+// tests/hil/test_task_stacks.py asks for (the air MTU's 64-burst lists took the last
 // 1 KB from 34, the talk permit before keying 0.5 KB from 33). The debug link's tasks view reports the least free since
 // start (tasks.heap_min_free)
 #define configTOTAL_HEAP_SIZE	(32 * 1024 + 512)

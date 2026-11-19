@@ -59,6 +59,10 @@ plot, with elevation mapped from the horizon at the rim to the zenith at the cen
 replaced by a compact row with the AOS and LOS countdowns. AOS and LOS endpoints are interpolated to the horizon, and
 adjacent projected samples are smoothly connected across azimuth wrap. The live position is marked separately.
 
+The radio task allocates its satellite service workspace from the RTOS heap at startup and retains it while running.
+Allocation failure triggers the normal RTOS assertion. The task-stack hardware test checks the heap's minimum free
+space; this must be measured with the feature enabled as well as disabled.
+
 Once the pass path is predicted, retain that arc for the pass. While the satellite is visible, update only its live
 position marker; do not restart the path for observer-position drift. Resume prediction after the pass ends so the next
 upcoming arc can be shown.
