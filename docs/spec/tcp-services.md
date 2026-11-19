@@ -367,7 +367,7 @@ Notices:
   while a client is subscribed.
 - RAM: no buffer of its own. The request is parsed from a 41 byte copy on the stack; the reply and notices are written
   into the IP gateway's frame buffer. Static state is the subscriber, the pending requests and the counters.
-- Debug link view keys (`net`): `radio_udp.requests bad refused selects steps`, `radio_udp.notify` (the subscriber's
+- Debug link view keys (`net_svc`): `radio_udp.requests bad refused selects steps`, `radio_udp.notify` (the subscriber's
   port, 0 none), `radio_udp.notices`, `radio_udp.busy` (sends the link refused).
 
 ## 9. Changes in the IP gateway

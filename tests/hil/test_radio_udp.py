@@ -55,7 +55,7 @@ class _Ctl:
 
 
 @pytest.fixture(scope="module")
-def ctl(radio, request):
+def udp_ctl(radio, request):
     if not request.config.getoption("--allow-usb-switch"):
         skip("opt_in", "needs --allow-usb-switch")
     if "NET_RADIO_UDP" not in radio.features():
@@ -74,8 +74,8 @@ def ctl(radio, request):
 
 @pytest.mark.feature("net_radio_udp")
 @pytest.mark.usb_switch
-def test_radio_udp(ctl):
-    c, link = ctl
+def test_radio_udp(udp_ctl):
+    c, link = udp_ctl
     start = c.ask("select")
     assert start["lease"] == 120 and "err" not in start, start
     if start["vfo"]:
@@ -102,7 +102,7 @@ def test_radio_udp(ctl):
     finally:
         c.ask(f"select?zone={start['zone']}&pos={start['pos']}")
         assert c.wait_at(*here) == here
-    v = link.view(["net"])
+    v = link.view(["net_svc"])
     assert int(v["radio_udp.notify"]) != 0 and int(v["radio_udp.bad"]) >= 1, v
     assert c.ask("select?notify=0")["lease"] == 0
-    assert int(link.view(["net"])["radio_udp.notify"]) == 0
+    assert int(link.view(["net_svc"])["radio_udp.notify"]) == 0

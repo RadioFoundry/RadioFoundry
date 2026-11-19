@@ -249,9 +249,6 @@ void net_view(dl_text_t *t)
 #if CONFIG_NET_APRSIS
 	aprsis_view(t);
 #endif
-#if CONFIG_NET_RADIO_UDP
-	radio_udp_view(t);
-#endif
 }
 
 #endif	// CONFIG_NET_LOCAL
