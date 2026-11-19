@@ -409,6 +409,7 @@ Select the channel. Home shows the system's name and what the radio is doing the
 | Home shows | Meaning |
 |---|---|
 | Searching | Looking for the system's control channel |
+| Other system | Looking for the system, and hearing only another one. The line below names what was heard ("Heard: Huge, net 0, site 83"): compare it with the system's network model and network number in the editor |
 | Registering | Found; registering with the system |
 | Ready | On the control channel. Hold **PTT** to call |
 | In call | On a channel the system granted, in a call |
@@ -417,7 +418,8 @@ Select the channel. Home shows the system's name and what the radio is doing the
 | System not set up | The channel's system is missing, has no control channel or lacks its key. The channel is receive only |
 
 Hold **PTT**: the radio asks the system for a channel and talks once the system grants it. When the system refuses or
-doesn't answer, PTT is refused. The talk target is the channel's contact, or one you pick as on any DMR channel
+doesn't answer, PTT is refused, and the screen says why: no control channel, another system heard, not registered yet,
+denied by the system, or no answer. The talk target is the channel's contact, or one you pick as on any DMR channel
 ([Choosing a talk target](#choosing-a-talk-target)).
 
 Zone and channel lists name a trunked channel's system where the frequency would be. A channel whose system isn't set

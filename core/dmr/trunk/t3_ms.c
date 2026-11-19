@@ -1601,6 +1601,15 @@ static bool authorized(t3_ms_t *ms, uint16_t code)
 	return t3_authorize(&ms->auth, code) == T3_AUTH_OK;
 }
 
+// Another system's control channel heard while hunting: kept for the screen, which names what was heard (t3_ms_other)
+static void heard_other(t3_ms_t *ms, uint32_t now, uint16_t code)
+{
+	if (ms->state == T3_HUNT) {
+		ms->other_code = code;
+		ms->other_ms = now != 0 ? now : 1u;
+	}
+}
+
 static void confirm(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t3_aloha_t *a)
 {
 	if (ms->state == T3_HUNT && ms->hunt_strict && ms->cfg->leave_dbm != 0 && ms->level_dbm != 0 &&
@@ -1613,6 +1622,7 @@ static void confirm(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t
 		ms->state = T3_CAMPED;
 		ms->tscc = ms->tuned;
 		ms->tscc.cc = cc;
+		ms->other_ms = 0;
 	}
 	if (ms->syscode != 0 && ms->syscode != a->syscode) {
 		// Another network: what was learned belongs to the old one. A site change of one network keeps it
@@ -1835,6 +1845,7 @@ static void on_tscc(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t
 	if (p->op == T3_OP_C_ALOHA) {
 		if (!authorized(ms, p->u.aloha.syscode)) {
 			ms->st.foreign++;
+			heard_other(ms, now, p->u.aloha.syscode);
 			if (ms->state == T3_HUNT) {
 				hunt_next(ms, now);
 			}
@@ -2364,6 +2375,7 @@ void t3_ms_slc(t3_ms_t *ms, uint32_t now, uint32_t slc)
 		ms->slc_foreign = (uint32_t)code + 1u;
 		if (again && ms->state == T3_HUNT) {
 			ms->slc_foreign = 0;
+			heard_other(ms, now, (uint16_t)(code & ~3u));	// PAR 0: the short LC doesn't carry it
 			hunt_next(ms, now);
 		}
 		return;
@@ -2853,6 +2865,15 @@ bool t3_ms_deregister(t3_ms_t *ms, uint32_t now)
 		finish(ms, now, T3_RES_CANCELED);
 	}
 	start_access(ms, now, T3_SVC_DEREGISTER, 0, false);
+	return true;
+}
+
+bool t3_ms_other(const t3_ms_t *ms, uint32_t now, uint16_t *code)
+{
+	if (ms->state != T3_HUNT || ms->other_ms == 0 || (int32_t)(now - ms->other_ms) >= (int32_t)T3_OTHER_MS) {
+		return false;
+	}
+	*code = ms->other_code;
 	return true;
 }
 

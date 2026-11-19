@@ -7590,7 +7590,7 @@ static void test_p25_trunk_tx(void)
 	CHECK(radio_p25_trunked() && radio_p25_trunk_tx() && (v->flags & RADIO_P25_TRUNK_TX));
 	int keyed = hw.tx_calls;
 	req(RREQ_PTT, 1);
-	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_P25T_WHY_NO_CC);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_TRUNK_WHY_NO_CC);
 	req(RREQ_PTT, 0);
 	// Registration, unanswered: sent on the control channel's inbound frequency, retried
 	run(4000);
@@ -7598,7 +7598,7 @@ static void test_p25_trunk_tx(void)
 	CHECK(v->trunk == RADIO_P25_TRUNK_CONTROL && v->treg == P25_REG_RETRY && !hw.keyed && hw.rx_hz == TS_CC1);
 	CHECK(sm.view.state == RS_IDLE && fair[0].keyed_violations == 0);
 	req(RREQ_PTT, 1);
-	CHECK(sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_P25T_WHY_NOT_REG && hw.tx_calls == keyed + site.reg_rx);
+	CHECK(sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_TRUNK_WHY_NOT_REG && hw.tx_calls == keyed + site.reg_rx);
 	req(RREQ_PTT, 0);
 	// Answered (the next round, after the pause): affiliation to the talk group, then ready
 	site.ans_reg = site.ans_aff = SITE_ANS_ACCEPT;
@@ -7643,7 +7643,7 @@ static void test_p25_trunk_tx(void)
 	site.ans_req = SITE_ANS_DENY;
 	req(RREQ_PTT, 1);
 	run(800);
-	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_P25T_WHY_DENIED);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_TRUNK_WHY_DENIED);
 	p25t_view_text(buf, sizeof buf);
 	CHECK(strstr(buf, "p25t.deny_svc=0\np25t.deny_reason=89\n") != NULL);
 	req(RREQ_PTT, 0);
@@ -7653,7 +7653,7 @@ static void test_p25_trunk_tx(void)
 	uint16_t sent = site.req_rx;
 	req(RREQ_PTT, 1);
 	run(5000);
-	CHECK(sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_P25T_WHY_NO_ANSWER && site.req_rx == sent + 3);
+	CHECK(sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_TRUNK_WHY_NO_ANSWER && site.req_rx == sent + 3);
 	req(RREQ_PTT, 0);
 	// Released while waiting: the grant that comes later is not used
 	site.ans_req = SITE_ANS_QUEUE;
@@ -9461,6 +9461,53 @@ static void test_t3_emergency_other_system(void)
 
 // No ID to register with (the system's record has none, nor the radio): the channel shows as unavailable, the engine
 // never starts and nothing is sent
+// A system set up with another network number than the site's: the radio searches, the view names the system it
+// hears, and PTT is refused saying so, with nothing sent. With the site gone quiet, PTT says no control channel
+static void test_t3_other_system(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	radio_t3_setup_t *s = radio_t3_staged();
+	radio_t3_reset(s);
+	s->cfg.own_id = T3_OWN;
+	s->cfg.auth.model = T3_MODEL_SMALL;
+	s->cfg.auth.net = 6;	// the site's is 5 (t3_code)
+	s->cfg.auth.category = T3_PAR_A;
+	s->cfg.opts = T3_OPT_PRIVATE;
+	s->cc = 2;
+	s->cfg.ctrl[0] = (t3_chan_t){ .lcn = 1, .rx_hz = T3_RX_HZ, .tx_hz = T3_TX_HZ, .cc = 2 };
+	s->cfg.nctrl = 1;
+	s->chans[0] = s->cfg.ctrl[0];
+	s->nchans = 1;
+	s->cfg.tg[0] = (t3_tg_t){ T3_TG, T3_TG_LISTEN | T3_TG_TALK };
+	s->cfg.ntg = 1;
+	radio_t3_fix(s);
+	req(RREQ_T3, RADIO_T3_START);
+	t3_site_run(1500);
+	CHECK(radio_t3v.state == T3_HUNT && radio_t3v.foreign > 0 && radio_t3v.other == t3_code());
+	int keyed = hw.tx_calls;
+	unsigned air = sim.air_count;
+	req(RREQ_PTT, 1);
+	t3_site_run(300);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TRUNK &&
+	      radio_t3v.why == RADIO_TRUNK_WHY_OTHER_SYS && sm.view.t3.why == RADIO_TRUNK_WHY_OTHER_SYS);
+	CHECK(hw.tx_calls == keyed && sim.air_count == air);
+	req(RREQ_PTT, 0);
+	run(100);
+
+	// The site goes quiet: the other system is no longer named, and PTT finds no control channel
+	run(T3_OTHER_MS + 500);
+	CHECK(radio_t3v.state == T3_HUNT && radio_t3v.other == 0);
+	req(RREQ_PTT, 1);
+	run(200);
+	CHECK(sm.view.tx_deny == TXDENY_TRUNK && radio_t3v.why == RADIO_TRUNK_WHY_NO_CC && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	run(100);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
 static void test_t3_no_id(void)
 {
 	own_dmr_id = 0;
@@ -10242,6 +10289,7 @@ int main(void)
 	test_t3_channels();
 	test_t3_never_keys();
 	test_t3_no_id();
+	test_t3_other_system();
 	test_t3_fallback();
 #endif
 	test_dmr_stalled();

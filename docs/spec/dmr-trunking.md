@@ -152,6 +152,9 @@ LCs). After a loss, the lost TSCC is tried first.
 - An Aloha of another system moves the hunt to the next candidate at once.
 - Two C_SYS_Parms of another system in a row do the same. One alone is not trusted: the short LC CRC is 8 bits, and
   corrupt words pass now and then.
+- Either keeps the other system's code for `T3_OTHER_MS` (10 s; `t3_ms_other`; PAR 0 from a short LC, which doesn't
+  carry it), until the radio camps. A system set up with the wrong model or network is heard this way, and the screen
+  names what it heard (12.4).
 
 **Camped.** Every valid PDU from the TSCC (CRC good, our color code; Alohas and broadcasts also with our system code)
 restarts T_Nosig. When it runs out, the engine hunts again. Short LCs don't restart it: every channel of the site
@@ -913,7 +916,24 @@ channel for `T3_REG_TG_DELAY_MS` (1 s), so turning the knob through channels reg
 **On screen.** A zone or channel list names a trunked channel's system after its name, in place of the frequency.
 An unavailable one is dimmed: OK on it says "System not set up" and stays, and channel stepping passes it. On a
 trunked channel Home's chips row shows the system's name and its state in place of slot and color code: Ready,
-Registering, Searching, In call, Refused, Fallback (12.5) or System not set up, then the power.
+Registering, Searching, Other system, In call, Refused, Fallback (12.5) or System not set up, then the power.
+
+**Other system.** Searching while the hunt hears only another system's control channel (`t3_ms_other`, 6.1). Home's
+activity area names it in place of the last call: "Heard: Huge, net 0" and "site 83", with ", category A only" or
+", category B only" when its PAR allows one category; the first line alone where the area has room for one. The user compares it with the system's model and network
+(12.1). A wrong color code shows as Searching: the radio decodes nothing on the channel.
+
+**PTT refused** on a trunked channel says why (`TXDENY_TRUNK`, the reasons P25 trunking shares):
+
+| State | Shown |
+|---|---|
+| searching, another system heard | Another system heard / Check system settings |
+| searching | No control channel |
+| not registered: registering, or the registration refused | Not registered yet |
+| the system listen only here, or no talk target | This channel is RX only |
+| the system refused the call, or the radio is stunned | System denied the call |
+| no answer, a timeout | No answer from system |
+| the control channel lost during the request | No control channel |
 
 At power-on the radio restores the channel it was on, so a trunked channel starts its system. Keys written while a
 system runs are taken at the next selection of a channel.

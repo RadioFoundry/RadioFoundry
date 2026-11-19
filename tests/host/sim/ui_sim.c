@@ -2988,13 +2988,24 @@ static bool run_token(char *t, char *err, size_t len)
 		snprintf(t3_cli_digits, sizeof t3_cli_digits, "%s", arg != NULL ? arg : "");
 		return true;
 	}
-	if (strcmp(t, "t3state") == 0 && arg != NULL && view.t3.sys != 0) {	// hunt, follow, refused, fallback, back
+	// hunt, other (hunting, another system heard), denyother (PTT refused for it), follow, refused, fallback, back
+	if (strcmp(t, "t3state") == 0 && arg != NULL && view.t3.sys != 0) {
 		view.t3.on = true;
 		view.t3.fallback = 0;
 		view.t3.state = T3_CAMPED;
 		view.t3.reg = T3_REG_OK;
+		view.t3.other = 0;
 		if (strcmp(arg, "hunt") == 0) {
 			view.t3.state = T3_HUNT;
+		} else if (strcmp(arg, "other") == 0 || strcmp(arg, "denyother") == 0) {
+			t3_syscode_t c = { T3_MODEL_HUGE, 0, 83, T3_PAR_AB };
+			view.t3.state = T3_HUNT;
+			view.t3.other = t3_syscode_join(&c);
+			if (arg[0] == 'd') {
+				view.state = RS_TX_DENIED;
+				view.tx_deny = TXDENY_TRUNK;
+				view.t3.why = RADIO_TRUNK_WHY_OTHER_SYS;
+			}
 		} else if (strcmp(arg, "follow") == 0) {
 			view.t3.state = T3_FOLLOW;
 		} else if (strcmp(arg, "refused") == 0) {

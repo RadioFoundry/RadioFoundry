@@ -3615,6 +3615,8 @@ void radio_sm_t3_brief(radio_sm_t *sm)
 	b->reg = x->reg;
 	b->polls = x->polls;
 	b->poll_fails = x->poll_fails;
+	b->other = x->other;
+	b->why = x->why;
 }
 
 // RADIO_T3_START: the debug link's staged system, on whatever channel the radio is on
@@ -3833,6 +3835,34 @@ static void t3_request(radio_sm_t *sm, uint8_t cmd, uint32_t now_ms)
 	}
 }
 
+// PTT refused on a trunked system: TXDENY_TRUNK, and why for the screen
+static void t3_deny(radio_sm_t *sm, uint8_t why)
+{
+	radio_t3v.why = why;
+	sm->view.t3.why = why;	// the brief is made before the view goes out, but not before deny publishes it
+	deny(sm, TXDENY_TRUNK);
+}
+
+#if CONFIG_DMR_TRUNK_TX
+// Why the engine can't ask for a channel now (PTT pressed, or a request that ended without one)
+static uint8_t t3_why_now(uint32_t now_ms, uint8_t result)
+{
+	uint16_t code;
+	if (t3m.state == T3_HUNT) {
+		return t3_ms_other(&t3m, now_ms, &code) ? RADIO_TRUNK_WHY_OTHER_SYS : RADIO_TRUNK_WHY_NO_CC;
+	}
+	if (t3m.reg != T3_REG_OK && t3m.reg != T3_REG_NOT_NEEDED) {
+		return t3m.reg == T3_REG_LISTEN ? RADIO_TRUNK_WHY_OFF : RADIO_TRUNK_WHY_NOT_REG;
+	}
+	switch (result) {
+	case T3_RES_REFUSED:
+	case T3_RES_NOT_ALLOWED: return RADIO_TRUNK_WHY_DENIED;
+	case T3_RES_LOST: return RADIO_TRUNK_WHY_NO_CC;
+	default: return RADIO_TRUNK_WHY_NO_ANSWER;
+	}
+}
+#endif
+
 // PTT on a trunked system. True: handled here (a request on the control channel; PTT stays held while it runs)
 static bool t3_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 {
@@ -3856,8 +3886,10 @@ static bool t3_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		changed(sm);
 		return true;
 	}
+	t3_deny(sm, dst == 0 && t3m.state == T3_CAMPED ? RADIO_TRUNK_WHY_OFF : t3_why_now(now_ms, t3m.ax.result));
+#else
+	t3_deny(sm, RADIO_TRUNK_WHY_OFF);	// a build that never transmits on a trunked system
 #endif
-	deny(sm, TXDENY_NO_DMR);
 	return true;
 }
 
@@ -4043,7 +4075,7 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 		} else if (t3m.ax.state == T3_AX_IDLE && t3m.ax.result != T3_RES_PENDING &&
 			   t3m.ax.result != T3_RES_GRANTED) {
 			sm->t3_ptt_wait = false;	// refused, no answer, timed out
-			deny(sm, TXDENY_NO_DMR);
+			t3_deny(sm, t3_why_now(now_ms, t3m.ax.result));
 		}
 	}
 #endif
@@ -4051,6 +4083,8 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 	t3_keep_kill(sm, now_ms);
 	t3_sd_inbox(sm);
 	t3_poll_tick(sm);
+	uint16_t other;
+	radio_t3v.other = t3_ms_other(&t3m, now_ms, &other) ? other : 0u;
 	t3_publish(sm);
 }
 #endif
@@ -6304,7 +6338,7 @@ static void air_apply(radio_sm_t *sm)
 static void p25t_ptt(radio_sm_t *sm)
 {
 	uint8_t why = radio_p25_trunk_ptt(true);
-	if (why != RADIO_P25T_WHY_NONE) {
+	if (why != RADIO_TRUNK_WHY_NONE) {
 		sm->view.p25.twhy = why;	// (the next poll keeps it)
 		deny(sm, TXDENY_TRUNK);
 		return;
