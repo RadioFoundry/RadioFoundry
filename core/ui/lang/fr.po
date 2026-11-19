@@ -418,8 +418,8 @@ msgid "VFO: one mode in this build"
 msgstr "VFO: mode unique"
 
 #: core/ui/ui_app.c
-msgctxt "WHY_VOX_NOT_ON_RADIO_YET"
-msgid "VOX: not on this radio yet"
+msgctxt "WHY_VOX_NOT_ON_RADIO"
+msgid "VOX: not on this radio"
 msgstr "VOX : non disponible"
 
 #: core/ui/ui_app.c

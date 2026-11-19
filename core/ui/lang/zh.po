@@ -420,9 +420,9 @@ msgid "VFO: one mode in this build"
 msgstr "VFO：本版本仅一种模式"
 
 #: core/ui/ui_app.c
-msgctxt "WHY_VOX_NOT_ON_RADIO_YET"
-msgid "VOX: not on this radio yet"
-msgstr "VOX：本机尚未支持"
+msgctxt "WHY_VOX_NOT_ON_RADIO"
+msgid "VOX: not on this radio"
+msgstr "VOX：本机不支持"
 
 #: core/ui/ui_app.c
 msgctxt "QUICK_TOAST_BANDWIDTH_25_KHZ"
