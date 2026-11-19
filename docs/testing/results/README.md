@@ -68,7 +68,7 @@ A feature's status never understates the board. For a feature the board builds, 
 |---|---|
 | `pass`, `fail` | The newest run record that ran the feature passed or failed it |
 | `partial` | That run had excused skips, and no seed row covers the feature |
-| `needs re-run` | The feature's `source` paths (`tests/hil/features.toml`, else the files its switch builds) differ in the tree (tracked files, uncommitted changes included) from the record's `sources` ids. Staleness is by content, not by commit ancestry. The `spec` is hashed too but not compared: a doc edit doesn't change what ran. The mark isn't downgraded; the feature needs a run |
+| `needs re-run` | The feature's `source` paths (`tests/hil/features.toml`, else the files its switch builds) differ in the tree (tracked files, uncommitted changes included) from the record's `sources` ids. A change only to comments in C sources (`.c`, `.h`, `.S`, `.ld`) doesn't count: the firmware that ran is the same. Staleness is by content, not by commit ancestry. The `spec` is hashed too but not compared: a doc edit doesn't change what ran. The mark isn't downgraded; the feature needs a run |
 | `pass (seed)`, `fail (seed)` | No run passed or failed the feature, and the seed record has a row for it |
 | `built, not yet recorded` | No record covers the feature, or the feature has no HIL test |
 

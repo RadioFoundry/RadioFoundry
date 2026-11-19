@@ -20,8 +20,8 @@ A radio's state for a feature is resolved, never typed:
 The rule for the two config.mk lists: docs/build-config.md, "Unsupported, not written, unconfirmed". A test skips a
 feature that isn't built as not_built (n/a and not written alike: the firmware leaves it out).
 A required feature's status never understates it. The newest run record that ran it decides: pass, fail, partial
-(excused skips) or "needs re-run" (its source paths differ in the tree from the hashes the record keeps; its spec
-may change freely).
+(excused skips) or "needs re-run" (its source paths differ in the tree from the hashes the record keeps, beyond
+comments in C sources; its spec may change freely).
 Without one, the board's seed record (<board>/seed.json, the evidence from before its first run) decides, marked as a
 seed. With neither the feature is "built, not yet recorded". Only a failing record shows a failure.
 
@@ -320,7 +320,68 @@ def stale(hashes, e):
     now = source_hashes(e)
     code = {p.rstrip("/") for p in feature_paths(e)[1:]}
     doc_only = {e["spec"].rstrip("/")} - code
-    return sorted(p for p in set(now) | set(hashes) if p not in doc_only and now.get(p) != hashes.get(p))
+    return sorted(p for p in set(now) | set(hashes)
+                  if p not in doc_only and now.get(p) != hashes.get(p) and not same_code(p, hashes.get(p), now.get(p)))
+
+
+# C-family sources whose comments can be told apart from code without a compiler
+C_LIKE = (".c", ".h", ".S", ".ld")
+_C_TOKEN = re.compile(r'"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'|//[^\n]*|/\*.*?\*/', re.S)
+
+
+def code_text(src):
+    """C source without its comments and with whitespace runs folded (to one newline where a run held one, else one
+    space). String and character literals stay as they are."""
+    out, at = [], 0
+    for m in _C_TOKEN.finditer(src):
+        out.append(src[at:m.start()])
+        out.append(m.group() if m.group()[0] in "\"'" else " ")
+        at = m.end()
+    out.append(src[at:])
+    parts = re.split(r'("(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\')', "".join(out))
+    for i in range(0, len(parts), 2):
+        parts[i] = re.sub(r"\s+", lambda w: "\n" if "\n" in w.group() else " ", parts[i])
+    return "".join(parts).strip()
+
+
+_SAME_CODE = {}
+
+
+def same_code(path, old, new):
+    """True when two git objects (blobs, or trees, of the source path) differ only in the comments of C-family files:
+    the firmware that ran is the same, so the record stands. Any other difference, a file added or removed, or a file
+    of another kind that changed, counts."""
+    if not old or not new:
+        return False
+    if (path, old, new) not in _SAME_CODE:
+        _SAME_CODE[(path, old, new)] = _same_code(path, old, new)
+    return _SAME_CODE[(path, old, new)]
+
+
+def _objects(path, oid):
+    """file path -> blob id: every file under a tree, or the one file a blob is."""
+    if git("cat-file", "-t", oid, check=False).stdout.strip() != "tree":
+        return {path: oid}
+    out = {}
+    for line in git("ls-tree", "-r", oid, check=False).stdout.splitlines():
+        meta, _, name = line.partition("\t")
+        out[path + "/" + name] = meta.split()[2]
+    return out
+
+
+def _same_code(path, old, new):
+    a, b = _objects(path, old), _objects(path, new)
+    if set(a) != set(b):
+        return False
+    for f in a:
+        if a[f] == b[f]:
+            continue
+        if not f.endswith(C_LIKE):
+            return False
+        x, y = (git("cat-file", "-p", o, check=False) for o in (a[f], b[f]))
+        if x.returncode or y.returncode or code_text(x.stdout) != code_text(y.stdout):
+            return False
+    return True
 
 
 NOT_RECORDED = "built, not yet recorded"

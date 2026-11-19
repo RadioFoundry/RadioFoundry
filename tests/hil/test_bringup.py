@@ -505,3 +505,51 @@ print(json.dumps({b: bringup.resolve(b, e)[0] for b in bringup._BOARDS}))
                 assert row["state"] == own[req], (board, row["id"], row["state"], req, own[req])
                 checked += 1
     print(f"{checked} real board rows checked")
+
+
+def test_a_comment_edit_stales_nothing(tmp_path):
+    """A record stays current when its C sources changed only in comments (the firmware that ran is the same); a code
+    change, a changed string, a file added to a directory or a changed file of another kind still stales it."""
+    py = python311()
+    fake = r"""
+import json, os, subprocess, sys
+sys.path.insert(0, sys.argv[1])
+import bringup
+repo = sys.argv[2]
+bringup.ROOT = repo
+def git(*a):
+    return subprocess.run(["git", "-C", repo, *a], capture_output=True, text=True, check=True).stdout.strip()
+git("init", "-q")
+def put(files):
+    for path, text in files.items():
+        os.makedirs(os.path.dirname(os.path.join(repo, path)) or repo, exist_ok=True)
+        with open(os.path.join(repo, path), "w") as f:
+            f.write(text)
+    git("add", "-A")
+    git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "x")
+    return {p: git("rev-parse", "HEAD:" + p) for p in ("src", "src/a.c", "gen.py")}
+base = put({"src/a.c": 'int a = 1; // one\nconst char *s = "x // y";\n', "gen.py": "n = 7 // 2  # half\n"})
+cases = {
+    "comment": {"src/a.c": 'int a = 1;\n/* one,\n   reworded */\nconst char *s = "x // y";\n'},
+    "code": {"src/a.c": 'int a = 2; // one\nconst char *s = "x // y";\n'},
+    "string": {"src/a.c": 'int a = 1; // one\nconst char *s = "x // z";\n'},
+    "added": {"src/b.h": "// a new header\n"},
+    "python": {"gen.py": "n = 7 // 2  # a half\n"},
+}
+out = {}
+for name, files in cases.items():
+    git("reset", "-q", "--hard", git("rev-list", "--max-parents=0", "HEAD"))
+    git("clean", "-qfd")
+    now = put(files)
+    out[name] = {p: bringup.same_code(p, base[p], now[p]) for p in base if base[p] != now[p]}
+print(json.dumps(out, sort_keys=True))
+"""
+    r = subprocess.run([py, "-c", fake, os.path.join(ROOT, "tools"), str(tmp_path)], capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert json.loads(r.stdout) == {
+        "comment": {"src": True, "src/a.c": True},
+        "code": {"src": False, "src/a.c": False},
+        "string": {"src": False, "src/a.c": False},
+        "added": {"src": False},
+        "python": {"gen.py": False},
+    }, r.stdout
