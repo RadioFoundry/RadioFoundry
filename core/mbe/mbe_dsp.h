@@ -8,11 +8,16 @@
 #include <stdint.h>
 
 extern const int16_t mbe_sin_tab[257];		// sin(pi/2 * i / 256), Q15, one quarter wave
+extern const int16_t mbe_cos_tab[1024];		// cos(2 pi i / 1024), Q15: the quarter wave unfolded
 extern const uint16_t mbe_exp2_tab[65];		// 2^(14 + i/64)
 extern const uint16_t mbe_log2_tab[65];		// 32768 * log2(1 + i/64)
 
+// Always inlined: -Os otherwise makes both calls, and the oscillators' per-sample loop then spilled its registers
+// around them (a third of that loop's instructions on the C-SKY build)
+#define MBE_INLINE static inline __attribute__((always_inline))
+
 // sin(2 pi i / 1024), Q15, from the quarter wave
-static inline int32_t mbe_sin_idx(uint32_t i)
+MBE_INLINE int32_t mbe_sin_idx(uint32_t i)
 {
 	uint32_t q = i & 255u;
 	int32_t v = mbe_sin_tab[(i & 256u) ? 256u - q : q];
@@ -20,7 +25,7 @@ static inline int32_t mbe_sin_idx(uint32_t i)
 	return (i & 512u) ? -v : v;
 }
 // cos of a phase, 2^32 = one turn, Q15, nearest of 1024 steps (the oscillators' per-sample lookup)
-static inline int32_t mbe_cos(uint32_t ph) { return mbe_sin_idx(((ph + 0x200000u) >> 22) + 256u); }
+MBE_INLINE int32_t mbe_cos(uint32_t ph) { return mbe_cos_tab[(ph + 0x200000u) >> 22]; }
 // the same with linear interpolation, for the dequantizers and windows (a few hundred calls per frame)
 int32_t mbe_cos_i(uint32_t ph);
 
