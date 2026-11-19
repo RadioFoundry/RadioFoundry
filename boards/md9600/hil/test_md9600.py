@@ -141,12 +141,13 @@ def test_receiver_tuned(md9600):
 
 @pytest.mark.feature("fm", optional=True)
 def test_pa_calibration(md9600):
-    """The PA drive per power level at the receive frequency (calibration rows 11.2): the calibration refuses all four
-    or none, and each level drives harder than the one below. Printed for the power-per-level check (19.8)."""
+    """The factory PA rows at the receive frequency (calibration rows 11.2), as stored: each the row's byte x 16, 0
+    where the row holds no value near the frequency. Rows are read one by one: a power level is refused only where a
+    row it is built from has none (test_tx_drive_op checks the levels rise). Printed for the power-per-level check
+    (19.8)."""
     b = board_view(md9600)
     pa = [int(x) for x in b["cal.pa"].split("/")]
     print(f"PA drive (APC DAC) 5/10/25/40 W at {int(b['lo_hz'])} Hz LO: {pa}, last transmission {b['apc']}")
     if not any(pa):
-        skip("state", "the calibration's PA rows are refused here: transmit is refused too")
-    assert all(pa), f"some levels refused, others not: {pa}"
-    assert all(pa[i] < pa[i + 1] for i in range(3)), f"a higher level doesn't drive harder: {pa}"
+        skip("state", "no factory PA row holds a value here")
+    assert len(pa) == 4 and all(p % 16 == 0 and p < 4096 for p in pa), f"not a row byte x 16: {pa}"

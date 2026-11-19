@@ -94,11 +94,8 @@ bool md9600_cal_valid(void)
 	return calblock_ok(&cal);
 }
 
-bool md9600_cal_row(md9600_cal_row_t row, uint32_t hz, int32_t *value)
+static calblock_row_t row_desc(md9600_cal_row_t row, uint32_t hz)
 {
-	if ((unsigned)row >= MD9600_CAL_ROW_COUNT) {
-		return false;
-	}
 	bool vhf = hz < MD9600_BAND_SPLIT_HZ;
 	calblock_row_t r = {
 		.offset = row_offset[row][vhf ? 1 : 0],
@@ -107,6 +104,35 @@ bool md9600_cal_row(md9600_cal_row_t row, uint32_t hz, int32_t *value)
 		.first_hz = vhf ? VHF_FIRST_HZ : UHF_FIRST_HZ,
 		.step_hz = vhf ? VHF_STEP_HZ : UHF_STEP_HZ,
 	};
+	return r;
+}
+
+bool md9600_cal_row(md9600_cal_row_t row, uint32_t hz, int32_t *value)
+{
+	if ((unsigned)row >= MD9600_CAL_ROW_COUNT) {
+		return false;
+	}
+	calblock_row_t r = row_desc(row, hz);
+	return calblock_row_at(&cal, &r, hz, value);
+}
+
+bool md9600_cal_row_near(md9600_cal_row_t row, uint32_t hz, int32_t *value)
+{
+	if ((unsigned)row >= MD9600_CAL_ROW_COUNT) {
+		return false;
+	}
+	calblock_row_t r = row_desc(row, hz);
+	// The segment the value is read from: below the first point, its first two; past the last, its last two
+	uint32_t i = hz <= r.first_hz ? 0u : (hz - r.first_hz) / r.step_hz;
+	if (i + 1u >= r.points) {
+		i = r.points - 2u;
+	}
+	for (uint32_t k = i; k < i + 2u; k++) {
+		uint8_t b = calblock_byte(&cal, (uint16_t)(r.offset + k));
+		if (b == 0xFFu || b == 0x00u) {
+			return false;
+		}
+	}
 	return calblock_row_at(&cal, &r, hz, value);
 }
 
