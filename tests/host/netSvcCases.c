@@ -100,6 +100,20 @@ static void test_kiss(void)
 	pump();
 	CHECK(ring_n == 0 && a.rxn == 10 * (int)sizeof(big));
 
+	// A web page's request (its body holding a frame), or a client from beyond the host: dropped, the first client
+	// kept, no frame taken
+	static peer_t w;
+	static const char post[] = "POST / HTTP/1.1\r\nHost: 12.255.255.254:8001\r\nContent-Type: text/plain\r\n\r\n"
+				   "\xC0\x00" "ABC\xC0";
+	int frames = got_frames;
+	CHECK(peer_connect(&w, 0xC0000201u, 50010, NET_KISS_PORT) == false || w.reset);
+	CHECK(!a.reset && got_frames == frames);
+	CHECK(peer_connect(&w, net_test_host_ip(), 50011, NET_KISS_PORT));
+	peer_send(&w, post, sizeof(post) - 1);
+	run_for(20);
+	CHECK(w.reset && got_frames == frames && !net_tnc_taken());
+	CHECK(peer_connect(&a, net_test_host_ip(), 50012, NET_KISS_PORT));
+
 	// A second client replaces the first
 	CHECK(peer_connect(&b, net_test_host_ip(), 50002, NET_KISS_PORT));
 	CHECK(a.reset && b.established);
@@ -251,6 +265,20 @@ static void test_http(void)
 	CHECK(http_get(&a, 51005, "GET /api/view HTTP/1.0\r\n\r\n") > 0);
 	CHECK(strstr(body_of(&a), "{\"sections\":[\"core\",\"net\"]}") != NULL);
 	CHECK(http_get(&a, 51006, "GET /api/view?section=nope HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 404 "));
+	// Any page may read the status; nothing else is shared with other pages
+	CHECK(http_get(&a, 51130, "GET /status HTTP/1.0\r\n\r\n") > 0 &&
+	      strstr((char *)a.rx, "\r\nAccess-Control-Allow-Origin: *\r\n"));
+	CHECK(http_get(&a, 51131, "GET /api/view?section=core HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 ") &&
+	      !strstr((char *)a.rx, "Access-Control"));
+	CHECK(http_get(&a, 51132, "GET / HTTP/1.0\r\n\r\n") > 0 && !strstr((char *)a.rx, "Access-Control"));
+	// At a name that isn't the radio's (a page that pointed its own name at it): the page's files, nothing else
+	CHECK(http_get(&a, 51133, "GET /status HTTP/1.1\r\nHost: radio.example.com\r\n\r\n") > 0 &&
+	      strstr((char *)a.rx, " 403 "));
+	CHECK(http_get(&a, 51134, "GET /api/view HTTP/1.1\r\nhost: radio.example.com:80\r\n\r\n") > 0 &&
+	      strstr((char *)a.rx, " 403 "));
+	CHECK(http_get(&a, 51135, "GET / HTTP/1.1\r\nHost: radio.example.com\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 "));
+	CHECK(http_get(&a, 51136, "GET /status HTTP/1.1\r\nHost: 12.0.39.20:80\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 "));
+	CHECK(http_get(&a, 51137, "GET /status HTTP/1.1\r\nHost: 1.2.3\r\n\r\n") > 0 && strstr((char *)a.rx, " 403 "));
 
 	// The screen as a BMP, straight from the frame buffer
 	for (int i = 0; i < 160 * 128; i++) {
@@ -424,6 +452,17 @@ static void test_rigctl(void)
 	CHECK(strcmp(rig(&a, "M USB 2400\n"), "RPRT -1\n") == 0);
 	CHECK(strcmp(rig(&a, "+m\n"), "get_mode:\nMode: FM\nPassband: 12500\nRPRT 0\n") == 0);
 
+	// A web page's POST, its body a PTT command: the connection is dropped at the request line, nothing runs
+	static peer_t w;
+	static const char post[] = "POST / HTTP/1.1\r\nHost: 12.255.255.254:4532\r\nContent-Type: text/plain\r\n"
+				   "Content-Length: 8\r\n\r\nF 1\nT 1\n";
+	int vfo_sets = req_vfo_set;
+	CHECK(peer_connect(&w, net_test_host_ip(), 52010, NET_RIGCTL_PORT));
+	peer_send(&w, post, sizeof(post) - 1);
+	run_for(20);
+	CHECK(w.fin && !req_ptt && req_vfo_set == vfo_sets);
+	peer_close(&w);
+
 	// PTT: keyed, released, rate limited, released when the client goes
 	CHECK(strcmp(rig(&a, "t\n"), "0\n") == 0);
 	CHECK(strcmp(rig(&a, "T 1\n"), "RPRT 0\n") == 0 && req_ptt);
@@ -527,6 +566,13 @@ static void test_aprsis(void)
 	// Set from beyond the host: refused; from the host: stored, the client connects and logs in
 	CHECK(http_get_from(&far, 0xC0000201u, 53000, "GET /api/aprsis?server=192.0.2.10 HTTP/1.0\r\n\r\n") > 0);
 	CHECK(strstr((char *)far.rx, " 403 ") && settings.aprsis_ip == 0);
+	// From the host, but sent by another site's page in a browser there: refused
+	CHECK(http_get(&h, 53040, "GET /api/aprsis?server=192.0.2.10 HTTP/1.1\r\nSec-Fetch-Site: cross-site\r\n\r\n") > 0);
+	CHECK(strstr((char *)h.rx, " 403 ") && settings.aprsis_ip == 0);
+	CHECK(http_get(&h, 53041, "GET /api/aprsis?server=192.0.2.10 HTTP/1.1\r\nOrigin: http://example.com\r\n\r\n") > 0);
+	CHECK(strstr((char *)h.rx, " 403 ") && settings.aprsis_ip == 0);
+	CHECK(http_get(&h, 53042, "GET /api/aprsis?server=999.0.2.10 HTTP/1.1\r\nSec-Fetch-Site: same-origin\r\n\r\n") > 0);
+	CHECK(strstr((char *)h.rx, " 400 "));	// past the check: the address is what is wrong
 	CHECK(http_get(&h, 53001, "GET /api/aprsis?server=999.0.2.10 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)h.rx, " 400 "));
 	CHECK(http_get(&h, 53002, "GET /api/aprsis?server=192.0.2.10%3A14580&range=50 HTTP/1.0\r\n\r\n") > 0);
 	CHECK(strstr(body_of(&h), "\"server\":\"192.0.2.10:14580\"") && strstr(body_of(&h), "\"range_km\":50"));
@@ -833,7 +879,7 @@ static bool ws_find(peer_t *p, int *at, const char *needle, char *out, int max)
 static bool ws_open(peer_t *p, uint32_t ip, uint16_t port, const char *extra)
 {
 	char req[300];
-	snprintf(req, sizeof req, "GET /ws HTTP/1.1\r\nHost: radio\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+	snprintf(req, sizeof req, "GET /ws HTTP/1.1\r\nHost: 12.255.255.254\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
 		 "sec-WebSocket-KEY:  dGhlIHNhbXBsZSBub25jZQ==\r\n%sSec-WebSocket-Version: 13\r\n\r\n", extra);
 	if (!peer_connect(p, ip, port, NET_HTTP_PORT)) {
 		return false;
@@ -985,6 +1031,20 @@ static void test_webctl(void)
 	CHECK(strstr((char *)b.rx, "HTTP/1.0 503 Service Unavailable"));
 	CHECK(http_get(&b, 53003, "GET /ws HTTP/1.1\r\n\r\n") > 0 && strstr((char *)b.rx, " 400 "));
 	CHECK(http_get(&b, 53004, "GET /ws HTTP/1.1\r\nSec-WebSocket-Key: short==\r\n\r\n") > 0 && strstr((char *)b.rx, " 400 "));
+	// Only the radio's own page: another page's Origin (a name, another address, none it can name) is refused before
+	// the client count; the radio's own address or a client that sends no Origin gets that far (503 here)
+	static const char *const foreign[] = { "Origin: http://example.com\r\n", "Origin: http://192.0.2.1\r\n",
+		"Origin: null\r\n", "Origin: https://12.255.255.254\r\n", "Origin: http://12.255.255.254.example.com\r\n",
+		"Host: radio.example.com\r\n" };
+	char rq[200];
+	for (size_t i = 0; i < sizeof foreign / sizeof foreign[0]; i++) {
+		snprintf(rq, sizeof rq, "GET /ws HTTP/1.1\r\n%sSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n", foreign[i]);
+		CHECK(http_get(&b, (uint16_t)(53120 + i), rq) > 0 && strstr((char *)b.rx, " 403 "));
+	}
+	CHECK(http_get(&b, 53130, "GET /ws HTTP/1.1\r\nHost: 12.255.255.254\r\nOrigin: http://12.255.255.254\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n") > 0 &&
+	      strstr((char *)b.rx, " 503 "));
+	CHECK(http_get(&b, 53131, "GET /ws HTTP/1.1\r\nOrigin: http://12.255.255.254:80\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n") > 0 &&
+	      strstr((char *)b.rx, " 503 "));
 
 	// Keys: down holds (capped by the input task), up releases; one at a time; keys not on the radio refused
 	ws_text(&a, "d3");
