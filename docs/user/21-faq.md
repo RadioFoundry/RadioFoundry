@@ -48,6 +48,12 @@ you add a feature, we'd be glad to have it here, credited to you, on every radio
 [discussion](https://github.com/radiofoundry/radiofoundry/discussions) or send a pull request. For details, see
 [Using RadioFoundry in your project](../../FORKING.md).
 
+### Was this project AI-generated?
+
+No. This project is the result of thousands of hours of combined human effort from several contributors, spent on
+radio teardowns, reverse engineering, software architecture, and testing. AI served as a pair programmer to speed up
+support for more radios and to make the project's scope possible and sustainable.
+
 ## Installing and the codec
 
 ### Why doesn't the release include the codec?

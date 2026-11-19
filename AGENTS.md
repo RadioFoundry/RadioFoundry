@@ -71,8 +71,8 @@ as skipped when it's missing.
 
 ## Where things are
 
-The source tree is in [README.md, Layout](README.md#layout). The layers and the core's directories are in
-[docs/dev/architecture.md](docs/dev/architecture.md).
+The source tree, the layers, and the core's directories are in [docs/dev/architecture.md](docs/dev/architecture.md)
+([Source tree](docs/dev/architecture.md#source-tree)).
 
 ## How to work here
 
