@@ -22,6 +22,8 @@ class FakeLink {
 		this.calls = [];
 		this.recordBytes = new Uint8Array(0);
 		this.profiles = [];
+		this.reportedEpoch = 1794545852 - 8 * 86400;
+		this.keepOldEpoch = false;
 	}
 
 	async request(command, payload) {
@@ -40,7 +42,7 @@ class FakeLink {
 			const view = new DataView(reply.buffer);
 			this.records.forEach((item, index) => {
 				view.setUint32(1 + index * 8, item.catalog_id, true);
-				view.setUint32(5 + index * 8, 1, true);
+				view.setUint32(5 + index * 8, this.reportedEpoch, true);
 			});
 			return reply;
 		}
@@ -54,6 +56,7 @@ class FakeLink {
 			return new Uint8Array([next.length & 0xFF, next.length >> 8]);
 		}
 		case 4:
+			if (!this.keepOldEpoch) this.reportedEpoch = 1794545852;
 			return new Uint8Array(0);
 		case 6:
 			return new Uint8Array(0);
@@ -111,6 +114,7 @@ test("pushes, commits, verifies, and synchronizes a full replacement", async () 
 	const chunks = link.calls.filter((call) => call[0] === 3);
 	assert.deepEqual(chunks.map((call) => [call[3] | call[4] << 8, call.length]), [[0, 64], [59, 64], [118, 46]]);
 	assert.deepEqual(progress, ["writing", "committing", "verifying", "done"]);
+	assert.equal(link.reportedEpoch, 1794545852);
 	assert.equal(satelliteCrc32(link.recordBytes), new DataView(Uint8Array.from(link.calls[1]).buffer).getUint32(5, true));
 });
 
@@ -120,6 +124,16 @@ test("supports consecutive full replacements without resetting the link", async 
 	await pushSatelliteBundle(link, bundle);
 	assert.deepEqual(link.calls.map((call) => call[0]), [0, 9, 3, 3, 3, 10, 4, 1, 11, 0, 9, 3, 3, 3, 10, 4, 1, 11]);
 	assert.equal(link.recordBytes.length, encodeSatelliteRecords(bundle.records).length);
+});
+
+test("refuses success when an existing satellite still has an old epoch", async () => {
+	const link = new FakeLink();
+	link.keepOldEpoch = true;
+	const progress = [];
+	await assert.rejects(() => pushSatelliteBundle(link, bundle, (step) => progress.push(step)),
+		/epoch readback does not match NORAD 99001/);
+	assert.ok(!progress.includes("done"));
+	assert.equal(link.calls.at(-1)[0], 1);
 });
 
 test("stages ten profiles in bounded protocol-v6 chunks", async () => {

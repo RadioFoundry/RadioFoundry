@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 
+import { tleEpochMilliseconds } from "./satellite-tle.js";
+
 const COMMAND = 0x25;
 const OP = Object.freeze({ INFO: 0, LIST: 1, DATA: 3, COMMIT: 4, ABORT: 5,
 	REPLACE_BEGIN: 9, PROFILE_STAGE: 10, PROFILE_VALUES_GET: 11, PROFILE_STAGE_CHUNK: 12 });
@@ -139,6 +141,11 @@ export async function pushSatelliteBundle(link, bundle, onProgress = () => {}) {
 		const expected = bundle.records.map(({ catalog_id }) => catalog_id);
 		if (installed.some((id, index) => id !== expected[index]))
 			throw new Error("Radio TLE inventory readback does not match the selection");
+		for (let index = 0; index < bundle.records.length; index++) {
+			const record = bundle.records[index];
+			if (get32(listView, 5 + index * 8) !== Math.floor(tleEpochMilliseconds(record.line1, record.catalog_id) / 1000))
+				throw new Error(`Radio TLE epoch readback does not match NORAD ${record.catalog_id}`);
+		}
 
 		const values = await link.request(COMMAND, new Uint8Array([OP.PROFILE_VALUES_GET]));
 		if (values.length < 1 || values[0] !== bundle.profiles.length || values.length !== 1 + values[0] * 14)

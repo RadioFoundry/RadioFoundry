@@ -24,9 +24,11 @@ const profileById = new Map(SATELLITES.map((satellite) => [satellite.id, satelli
 const RADIO_PORT_FILTERS = [RFOUNDRY_USB, ...[0x0403, 0x1A86, 0x10C4, 0x067B]
 	.map((usbVendorId) => ({ usbVendorId }))];
 let catalog = null;
+let usingAmsat = false;
+const selected = new Set(DEFAULT_SELECTED_IDS);
 
 function selectedIds() {
-	return [...options.querySelectorAll("input:checked")].map((checkbox) => Number(checkbox.value));
+	return [...selected];
 }
 
 function profileValues(selected) {
@@ -37,11 +39,11 @@ function profileValues(selected) {
 	});
 }
 
-function makeBundle() {
+function makeBundle(source = catalog) {
 	const provider = new URL(providerInput.value.trim());
 	if (provider.protocol !== "https:" || provider.username || provider.password || provider.hash)
 		throw new Error("Catalog URL must use HTTPS and contain no credentials or fragment");
-	return buildTleBundle(catalog, selectedIds(), { provider: provider.href, profiles: profileValues(selectedIds()) });
+	return buildTleBundle(source, selectedIds(), { provider: provider.href, profiles: profileValues(selectedIds()) });
 }
 
 function showReadyState() {
@@ -70,11 +72,10 @@ function showReadyState() {
 	}
 }
 
-function renderOptions(selected = DEFAULT_SELECTED_IDS) {
+function renderOptions() {
 	const records = filterFmSatellites(catalog || SATELLITES.map((satellite) => ({
 		catalog_id: satellite.id, name: satellite.name,
 	})));
-	const selectedSet = new Set(selected);
 	const query = searchInput.value.trim().toLocaleLowerCase();
 	const matching = records.filter((record) => `${record.name} ${record.catalog_id}`.toLocaleLowerCase().includes(query));
 	for (const record of matching) {
@@ -86,12 +87,15 @@ function renderOptions(selected = DEFAULT_SELECTED_IDS) {
 		checkbox.type = "checkbox";
 		checkbox.value = String(record.catalog_id);
 		checkbox.id = `tle-satellite-${record.catalog_id}`;
-		checkbox.checked = selectedSet.has(record.catalog_id);
+		checkbox.checked = selected.has(record.catalog_id);
 		checkbox.addEventListener("change", () => {
-			if (selectedIds().length > MAX_SELECTED_PROFILES) {
+			if (checkbox.checked && selected.size >= MAX_SELECTED_PROFILES) {
 				checkbox.checked = false;
 				status.textContent = t("tools.satellite.status.limit");
+				return;
 			}
+			if (checkbox.checked) selected.add(record.catalog_id);
+			else selected.delete(record.catalog_id);
 			showReadyState();
 		});
 		const name = document.createElement("label");
@@ -113,49 +117,68 @@ function renderOptions(selected = DEFAULT_SELECTED_IDS) {
 	}
 }
 
-async function loadText(text, provider) {
-	const selected = selectedIds();
+function loadText(text, provider, fromAmsat) {
 	catalog = parseTleCatalog(text);
+	usingAmsat = fromAmsat;
 	providerInput.value = provider;
+	const available = new Set(filterFmSatellites(catalog).map((record) => record.catalog_id));
+	for (const id of selected) if (!available.has(id)) selected.delete(id);
 	options.replaceChildren();
-	renderOptions(selected);
+	renderOptions();
 	showReadyState();
+}
+
+async function fetchAmsatText() {
+	let response;
+	try {
+		response = await fetch("/api/amsat-tle", { cache: "no-store", headers: { Accept: "text/plain" } });
+	} catch (error) {
+		throw new Error(t("tools.satellite.status.fetch_failed", { status: error.message }));
+	}
+	if (!response.ok) {
+		throw new Error(response.status === 404
+			? t("tools.satellite.status.api_not_found")
+			: t("tools.satellite.status.fetch_failed", { status: response.status }));
+	}
+	const text = await response.text();
+	if (new TextEncoder().encode(text).length > 1000000)
+		throw new Error(t("tools.satellite.status.too_large"));
+	return text;
+}
+
+async function refreshAmsat() {
+	if (!usingAmsat) return;
+	status.textContent = t("tools.satellite.status.fetching");
+	const refreshed = parseTleCatalog(await fetchAmsatText());
+	makeBundle(refreshed);
+	catalog = refreshed;
 }
 
 function setPushProgress(step) {
 	status.textContent = t(`tools.satellite.status.radio_${step}`);
 }
 
+function setBusy(busy) {
+	for (const control of [amsatButton, fileInput, providerInput, searchInput, buildButton, pushButton,
+		...options.querySelectorAll("input")])
+		control.disabled = busy;
+}
+
 amsatButton.addEventListener("click", async () => {
-	amsatButton.disabled = true;
+	setBusy(true);
 	status.textContent = t("tools.satellite.status.fetching");
 	try {
-		const response = await fetch("/api/amsat-tle", { headers: { Accept: "text/plain" } });
-		if (!response.ok) {
-			catalog = null;
-			buildButton.disabled = true;
-			pushButton.disabled = true;
-			status.textContent = response.status === 404
-				? t("tools.satellite.status.api_not_found")
-				: t("tools.satellite.status.fetch_failed", { status: response.status });
-			return;
-		}
-		const text = await response.text();
-		if (new TextEncoder().encode(text).length > 1000000) {
-			catalog = null;
-			buildButton.disabled = true;
-			pushButton.disabled = true;
-			status.textContent = t("tools.satellite.status.too_large");
-			return;
-		}
-		await loadText(text, AMSAT_BULLETIN);
+		loadText(await fetchAmsatText(), AMSAT_BULLETIN, true);
 	} catch (error) {
 		catalog = null;
 		buildButton.disabled = true;
 		pushButton.disabled = true;
-		status.textContent = t("tools.satellite.status.fetch_failed", { status: error.message });
+		status.textContent = error.message;
 	} finally {
-		amsatButton.disabled = false;
+		setBusy(false);
+		const result = status.textContent;
+		showReadyState();
+		status.textContent = result;
 	}
 });
 
@@ -165,22 +188,26 @@ fileInput.addEventListener("change", async () => {
 	if (file.size > 1000000) {
 		catalog = null;
 		buildButton.disabled = true;
+		pushButton.disabled = true;
 		status.textContent = t("tools.satellite.status.too_large");
 		return;
 	}
 	try {
-		await loadText(await file.text(), providerInput.value.trim() || AMSAT_BULLETIN);
+		loadText(await file.text(), providerInput.value.trim() || AMSAT_BULLETIN, false);
 	} catch (error) {
 		catalog = null;
 		buildButton.disabled = true;
+		pushButton.disabled = true;
 		status.textContent = t("tools.satellite.status.read_failed", { error: error.message });
 	}
 });
 
 providerInput.addEventListener("input", showReadyState);
 
-buildButton.addEventListener("click", () => {
+buildButton.addEventListener("click", async () => {
+	setBusy(true);
 	try {
+		await refreshAmsat();
 		const bundle = makeBundle();
 		const filename = `satellites-${new Date().toISOString().slice(0, 10)}.json`;
 		const url = URL.createObjectURL(new Blob([`${JSON.stringify(bundle, null, 2)}\n`], { type: "application/json" }));
@@ -190,6 +217,11 @@ buildButton.addEventListener("click", () => {
 		status.textContent = t("tools.satellite.status.done", { name: filename });
 	} catch (error) {
 		status.textContent = t("tools.satellite.status.invalid", { error: error.message });
+	} finally {
+		setBusy(false);
+		const result = status.textContent;
+		showReadyState();
+		status.textContent = result;
 	}
 });
 
@@ -198,15 +230,13 @@ renderOptions();
 pushButton.addEventListener("click", async () => {
 	let stream;
 	let succeeded = false;
-	pushButton.disabled = true;
-	buildButton.disabled = true;
-	for (const control of [amsatButton, fileInput, providerInput, searchInput, ...options.querySelectorAll("input")])
-		control.disabled = true;
+	setBusy(true);
 	try {
-		const bundle = makeBundle();
 		setPushProgress("connecting");
 		if (!serialSupported()) throw new Error(t("flash.err.no_serial"));
 		const port = await serialApi().requestPort({ filters: RADIO_PORT_FILTERS });
+		await refreshAmsat();
+		const bundle = makeBundle();
 		stream = await SerialStream.open(port);
 		const link = new Link(stream);
 		setPushProgress("checking");
@@ -220,8 +250,7 @@ pushButton.addEventListener("click", async () => {
 		});
 	} finally {
 		if (stream) await stream.close();
-		for (const control of [amsatButton, fileInput, providerInput, searchInput, ...options.querySelectorAll("input")])
-			control.disabled = false;
+		setBusy(false);
 		if (succeeded) {
 			buildButton.disabled = false;
 			pushButton.disabled = false;
@@ -234,8 +263,7 @@ pushButton.addEventListener("click", async () => {
 });
 showReadyState();
 searchInput.addEventListener("input", () => {
-	const selected = selectedIds();
 	options.replaceChildren();
-	renderOptions(selected);
+	renderOptions();
 	showReadyState();
 });

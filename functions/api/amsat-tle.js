@@ -7,6 +7,7 @@ const MAX_BYTES = 1000000;
 export async function onRequestGet() {
 	try {
 		const upstream = await fetch(BULLETIN_URL, {
+			cache: "no-store",
 			headers: { Accept: "text/plain", "User-Agent": "RadioFoundry site TLE updater" },
 		});
 		if (!upstream.ok) return new Response("AMSAT bulletin is temporarily unavailable", { status: 502 });
@@ -15,7 +16,7 @@ export async function onRequestGet() {
 		return new Response(body, {
 			headers: {
 				"Content-Type": "text/plain; charset=utf-8",
-				"Cache-Control": "public, max-age=3600",
+				"Cache-Control": "no-store",
 				"X-Content-Type-Options": "nosniff",
 			},
 		});

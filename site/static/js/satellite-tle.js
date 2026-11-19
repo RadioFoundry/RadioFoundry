@@ -79,6 +79,17 @@ function checksumValid(line) {
 	return sum % 10 === Number(line[68]);
 }
 
+export function tleEpochMilliseconds(line1, id) {
+	const match = /^(\d{2})(\d{3})\.(\d{8})$/.exec(line1.slice(18, 32));
+	if (!match) throw new Error(`NORAD ${id}: invalid TLE epoch`);
+	const shortYear = Number(match[1]);
+	const year = shortYear >= 57 ? 1900 + shortYear : 2000 + shortYear;
+	const dayOfYear = Number(match[2]);
+	const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+	if (dayOfYear < 1 || dayOfYear > (leap ? 366 : 365)) throw new Error(`NORAD ${id}: invalid TLE epoch day`);
+	return Date.UTC(year, 0, 1) + (dayOfYear - 1 + Number(`0.${match[3]}`)) * DAY_MS;
+}
+
 function validateRecord(record, now) {
 	const { catalog_id: id, name, line1, line2 } = record;
 	if (!Number.isInteger(id) || id < 1 || id > 99999 || !name || /[\x00-\x1f\x7f]/.test(name) ||
@@ -100,15 +111,7 @@ function validateRecord(record, now) {
 		!/^(?: *\d{1,3}\.\d{4})$/.test(line2.slice(43, 51)) ||
 		!/^(?:\d{2}| \d)\.\d{8}$/.test(line2.slice(52, 63)) || !/^ *\d{1,5}$/.test(line2.slice(63, 68)))
 		throw new Error(`NORAD ${id}: malformed TLE line 2`);
-	const epoch = line1.slice(18, 32);
-	const match = /^(\d{2})(\d{3})\.(\d{8})$/.exec(epoch);
-	if (!match) throw new Error(`NORAD ${id}: invalid TLE epoch`);
-	const shortYear = Number(match[1]);
-	const year = shortYear >= 57 ? 1900 + shortYear : 2000 + shortYear;
-	const dayOfYear = Number(match[2]);
-	const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-	if (dayOfYear < 1 || dayOfYear > (leap ? 366 : 365)) throw new Error(`NORAD ${id}: invalid TLE epoch day`);
-	const epochMs = Date.UTC(year, 0, 1) + (dayOfYear - 1 + Number(`0.${match[3]}`)) * DAY_MS;
+	const epochMs = tleEpochMilliseconds(line1, id);
 	const ageDays = (now - epochMs) / DAY_MS;
 	if (ageDays < -1 || ageDays > MAX_AGE_DAYS) throw new Error(`NORAD ${id}: TLE is outside the 30-day age limit`);
 	const angles = [line2.slice(8, 16), line2.slice(17, 25), line2.slice(34, 42), line2.slice(43, 51)].map(Number);

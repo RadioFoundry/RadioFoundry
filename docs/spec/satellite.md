@@ -160,9 +160,12 @@ never installed wholesale. For ID-based provider requests, the returned ID set m
 The site Tools page links to a standalone Satellite TLE page. It lists IDs in the curated FM frequency catalog and
 allows up to 10 profiles. Non-FM TLE objects are omitted. The AMSAT
 button loads the fixed daily bulletin through a same-origin site endpoint; Browse remains available for another local
-source. The daily TLE bulletin itself contains no frequency data. The page validates selected IDs, checksums, orbital
+source. When AMSAT is selected, the page fetches the bulletin again without caching before each radio push or bundle
+download. A failed refresh stops the operation; a local file is used as supplied. Checked selections persist across
+searches. The daily TLE bulletin itself contains no frequency data. The page validates selected IDs, checksums, orbital
 fields and age, then creates a schema-v3 bundle or
-pushes TLE and frequency data over Web Serial/WebUSB. A direct browser connection requires a supported browser and a
+pushes TLE and frequency data over Web Serial/WebUSB. It verifies the installed IDs and epochs against the selected
+TLEs before reporting success, including when a selected ID was already installed. A direct browser connection requires a supported browser and a
 secure context (HTTPS or localhost). TLE IDs and profile IDs must match exactly. `tools/satellite_tle.py install`
 supports the same schema-v3 bundle. Unselected installed TLEs disappear from the radio's satellite-tracking inventory.
 After a verified install or update, the web flasher offers the page when the reported or installed image's feature
