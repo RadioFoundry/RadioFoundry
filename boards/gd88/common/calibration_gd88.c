@@ -141,13 +141,14 @@ uint16_t gd88_cal_pa(uint32_t hz, bool high)
 	return v > 0 && v <= (int32_t)DAC_MAX ? (uint16_t)v : 0;
 }
 
-// The power levels, [VHF, UHF]. Approximate, from the SDR bench (about +-2 dB): change a drive
-// here when a wattmeter says otherwise. zero: the drive where the output reaches about 20 mW. VHF at 146 MHz: 100 mW
-// 700, 500 mW 929, 1 W 1098; 2.5 W 1471 and 5 W 1988 between the rows 1371 (2.2 W) and 2960. UHF at 445 MHz: 100 mW
-// 426, 500 mW 651, 1 W 846; 2.5 W 1374 and 5 W 2515 between the rows 1177 (2.1 W) and 3024 (5.6 W)
+// The power levels, [VHF, UHF]. The low three from a drive sweep through fixed pads into an SDR, scaled to a wattmeter
+// read at the top levels (within about 0.5 dB; an inline diode meter reads far low under 1 W, so not from one there).
+// zero: the drive where the output reaches about 20 mW. VHF at 146 MHz: 100 mW 710, 500 mW 959, 1 W 1144; 2.5 W
+// (2.2 W) 1471 and 5 W (4.5 W) 1988 between the rows 1371 and 2960. UHF at 445 MHz: 100 mW 487, 500 mW 748, 1 W 970;
+// 2.5 W (2.2 W) 1375 and 5 W (5.8 W) 2514 between the rows 1177 and 3024
 const gd88_power_band_t gd88_tx_levels[2] = {
-	{ .zero = 575, .fixed = { 700, 929, 1098 }, .frac = { 63, 388 } },
-	{ .zero = 330, .fixed = { 426, 651, 846 }, .frac = { 107, 724 } },
+	{ .zero = 575, .fixed = { 710, 959, 1144 }, .frac = { 63, 388 } },
+	{ .zero = 330, .fixed = { 487, 748, 970 }, .frac = { 107, 724 } },
 };
 
 uint16_t gd88_power_drive(const gd88_power_band_t *b, uint8_t level, uint16_t low_row, uint16_t high_row)
