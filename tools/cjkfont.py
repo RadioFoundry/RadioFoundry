@@ -38,8 +38,8 @@ import os
 import re
 import sys
 
-from PIL import Image, ImageDraw, ImageFont
-
+# Pillow is only needed to render glyphs (main), not to read the tables the checks inspect. Import it where it is
+# used so this module imports without Pillow installed: CI's checks job and the rfoundry OS jobs don't install it.
 CELL = 16				# pixels square; the height of the 8x16 Latin font
 BITS_PER_ROW = CELL
 ROW_BYTES = (BITS_PER_ROW + 7) // 8
@@ -51,6 +51,7 @@ EM_REF = "\u56fd"			# 国
 
 # A variable font needs its weight picked: the default instance is too thin at 12-16 px, where a stroke is one pixel
 def load_font(path, size, weight, index):
+    from PIL import ImageFont
     f = ImageFont.truetype(path, size, index=index)
     if weight:
         try:
@@ -118,6 +119,7 @@ def em_box(font, size):
 
 def rasterize(font, ch, window, threshold):
     """One character as a CELL x CELL 1-bit image, drawn on the font's em square and shrunk to the cell."""
+    from PIL import Image, ImageDraw
     x0, y0, x1, y1 = window
     side = x1 - x0
     pad = side				# room around the square for an outline that reaches past it
@@ -145,6 +147,7 @@ def c_bytes(ch):
 
 
 def write_preview(glyphs, path, zoom=3, gap=3):
+    from PIL import Image, ImageDraw
     cols = 16
     step = CELL * zoom + gap
     nrows = (len(glyphs) + cols - 1) // cols
