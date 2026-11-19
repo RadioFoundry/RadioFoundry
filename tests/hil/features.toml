@@ -495,6 +495,10 @@ spec = "docs/spec/ui.md"
 switch = "FONT_BIG"
 spec = "docs/spec/ui.md"
 
+[feature.font_latin_extended]
+switch = "FONT_LATIN_EXTENDED"
+spec = "docs/spec/ui.md"
+
 [feature.lang_es]
 switch = "LANG_ES"
 spec = "docs/spec/ui.md"

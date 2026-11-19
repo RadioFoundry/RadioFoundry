@@ -30,6 +30,9 @@
 #define GLYPH_EXTRA_COUNT	4	// the extras a font can hold; the icons after them are drawn from lines only
 #define FONT_LATIN1_FIRST	0xA0u
 #define FONT_LATIN1		CONFIG_LANG_ANY
+// Single-byte encodings for Ğ, ğ, İ, ı, Ş, ş, in that order. Keep tools/i18n.py in step.
+#define FONT_LATIN_EXTENDED_FIRST	0x90u
+#define FONT_LATIN_EXTENDED_COUNT	6u
 
 typedef struct {
 	uint8_t w, h;		// cell size in pixels; every glyph advances w
@@ -41,6 +44,9 @@ typedef struct {
 	// bytes, MSB = left (the blank rows above and below aren't stored). index: where each glyph starts in bits
 	const uint8_t *bits;
 	const uint16_t *index;
+#if CONFIG_FONT_LATIN_EXTENDED
+	const uint8_t *latin_extended;
+#endif
 } font_t;
 
 extern const font_t font_5x8, font_6x12, font_8x16, font_12x24;
@@ -80,7 +86,7 @@ extern const font_t font_9x18;
 // Rows of a glyph from row *top of the cell, *rows of them (0 for a space), or NULL for a byte the font can't draw
 // (shown as a box) or a missing extra
 const uint8_t *font_glyph(const font_t *f, uint8_t c, int *top, int *rows);
-// A Latin-1 byte (0xA0..0xFF) as plain ASCII, the letter without its accent ("\xF3" is 'o'); any other byte as it is
+// A supported Latin letter as plain ASCII, without its accent ("\xF3" is 'o'); other bytes pass through.
 char font_fold(char c);
 
 #endif

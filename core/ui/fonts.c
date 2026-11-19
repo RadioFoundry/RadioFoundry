@@ -8,8 +8,17 @@
 // catalogs themselves.
 #include "font.h"
 
+#if CONFIG_FONT_LATIN_EXTENDED
+#include "fonts/latin_extended_jbmono.inc"
+#include "fonts/latin_extended_spleen.inc"
+#define LATIN_EXTENDED(n) , n##_extended
+#else
+#define LATIN_EXTENDED(n)
+#endif
+
 #define FONT(var, n, N, bpp) \
-	const font_t var = { N##_W, N##_H, N##_ASCENT, N##_MISSING, bpp, FONT_LATIN1 && N##_LATIN1, n##_bits, n##_index }
+	const font_t var = { N##_W, N##_H, N##_ASCENT, N##_MISSING, bpp, FONT_LATIN1 && N##_LATIN1, \
+		n##_bits, n##_index LATIN_EXTENDED(n) }
 
 #include "fonts/spleen_5x8.inc"
 FONT(font_5x8, spleen_5x8, SPLEEN_5X8, 1);
@@ -64,11 +73,36 @@ static const char fold[] = " !cLoY|S ca<--r-o+23'uP.,1o>///?"
 
 char font_fold(char c)
 {
-	return (uint8_t)c >= FONT_LATIN1_FIRST ? fold[(uint8_t)c - FONT_LATIN1_FIRST] : c;
+	uint8_t byte = (uint8_t)c;
+	if (byte >= FONT_LATIN_EXTENDED_FIRST && byte < FONT_LATIN_EXTENDED_FIRST + FONT_LATIN_EXTENDED_COUNT)
+		return "GgIiSs"[byte - FONT_LATIN_EXTENDED_FIRST];
+	return byte >= FONT_LATIN1_FIRST ? fold[byte - FONT_LATIN1_FIRST] : c;
 }
 
 const uint8_t *font_glyph(const font_t *f, uint8_t c, int *top, int *rows)
 {
+#if CONFIG_FONT_LATIN_EXTENDED
+	if (f == &font_5x8 && c >= FONT_LATIN1_FIRST) {
+		static const uint8_t tiny[] = {0xc7, 0xe7, 0xd6, 0xf6, 0xdc, 0xfc};
+		for (unsigned i = 0; i < sizeof(tiny); ++i) {
+			if (c == tiny[i]) {
+				*top = 0;
+				*rows = 8;
+				return spleen_5x8_turkish_latin1 + i * 8;
+			}
+		}
+	}
+#endif
+	if (c >= FONT_LATIN_EXTENDED_FIRST && c < FONT_LATIN_EXTENDED_FIRST + FONT_LATIN_EXTENDED_COUNT) {
+#if CONFIG_FONT_LATIN_EXTENDED
+		unsigned stride = (f->w * f->bpp + 7u) / 8u;
+		*top = 0;
+		*rows = f->h;
+		return f->latin_extended + (c - FONT_LATIN_EXTENDED_FIRST) * stride * f->h;
+#else
+		c = (uint8_t)font_fold((char)c);
+#endif
+	}
 	unsigned slot;
 	if (c >= 0x20 && c < 0x7F) {
 		slot = c - 0x20u;

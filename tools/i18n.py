@@ -48,6 +48,8 @@ MACROS = {
 }
 BYTE_TO_TEXT = {b: t for b, t in MACROS.values()}
 TEXT_TO_BYTE = {t: b for b, t in MACROS.values()}
+# Catalog-only letters in the byte range reserved by FONT_LATIN_EXTENDED_FIRST in core/ui/font.h.
+EXTENDED_LATIN = {char: byte for byte, char in enumerate("ĞğİıŞş", 0x90)}
 MAX_BYTES = 255
 
 
@@ -112,11 +114,14 @@ def text_to_bytes(text, where):
     for ch in text:
         if ch in TEXT_TO_BYTE:
             out.append(TEXT_TO_BYTE[ch])
+        elif ch in EXTENDED_LATIN:
+            out.append(EXTENDED_LATIN[ch])
         elif 0x20 <= ord(ch) < 0x7F or 0xA0 <= ord(ch) <= 0xFF:
             out.append(ord(ch))
         else:
+            glyphs = " ".join([*TEXT_TO_BYTE, *EXTENDED_LATIN])
             raise I18nError("%s: %r (U+%04X) can't be drawn: use ASCII, Latin-1 (U+00A0-U+00FF) or one of %s"
-                    % (where, ch, ord(ch), " ".join(TEXT_TO_BYTE)))
+                    % (where, ch, ord(ch), glyphs))
     return bytes(out)
 
 

@@ -14,7 +14,7 @@ source of both. This page is the how-to; the rules are in [ui.md 2.5](../spec/ui
 | Tool | `tools/i18n.py` | `python3 -m rfoundrysite.i18n` (from `site/`) |
 | Build switch | `CONFIG_LANG_<CODE>`, one per language; `CONFIG_LANG_DEFAULT_<CODE>` to start in it | None: every language is on the site |
 | Missing string | Shown in English; fails CI | Shown in English; fails CI |
-| Characters | ASCII and Latin-1 (U+00A0 to U+00FF) | Any Unicode |
+| Characters | ASCII, Latin-1, and supported [Extended Latin letters](#extended-latin-letters) | Any Unicode |
 
 ## Translating the radio
 
@@ -138,7 +138,7 @@ msgstr "Retroiluminación"
 | Keep it short. Most screens are 128 or 160 pixels wide: about 21 characters in the small font, 16 in the list font | A row too long is cut with an ellipsis; a toast or hint is cut |
 | Keep leading and trailing spaces, and the colon at the end | The code glues a number or a name to the text: `"Volume "` + `"5"` |
 | Keep `{a\|b}` groups as groups, with the same number of choices | A text alternate: the radio shows the first choice that fits, longest first. Write each choice shorter than the one before |
-| Use only ASCII and Latin-1 letters (á é í ó ú ñ ü ç ß ...) and `… · → ° ⤒ ⤓` | The radio draws one byte a character; `--check` rejects anything else. A CJK catalog is the exception, and says so ([below](#chinese-and-other-cjk-languages)) |
+| Use ASCII, Latin-1 letters, [the supported Extended Latin letters](#extended-latin-letters), and `… · → ° ⤒ ⤓` | The radio draws one byte a character. A CJK catalog uses UTF-8 ([below](#chinese-and-other-cjk-languages)) |
 | Start every hint group that names the Back key with exactly your translation of `"Back"` | Hints keep the Back group at the right edge by matching that word: change it and every Back group must change with it |
 | Status strip words (IDLE, NO TX, SCAN, DUAL, ROAM) and chips (Lock, DMon, Priv) no longer than the English; keep the English when nothing fits | They sit in fixed slots of the status strip |
 | Don't translate the standard abbreviations the source leaves unmarked (TG, TS, CC, RX, TX, VFO, DMR, FM) | Radio operators know them; they aren't in the catalog |
@@ -150,6 +150,18 @@ way round.
 To see where a string goes, search for its key (the `msgctxt` line) in the file its `#:` line names: `grep -n
 'BACKLIGHT,' core/ui/ui_menus.c`. The comments next to a `TR()` often say more. A string with a leading or trailing space is
 always such a piece.
+
+### Extended Latin letters
+
+Single-byte catalogs can use Ğ, ğ, İ, ı, Ş, and ş. The catalog compiler maps
+them to six reserved byte values. Set `CONFIG_FONT_LATIN_EXTENDED=y` to draw
+the glyphs in the existing fixed-size cells. With the option off, they draw as
+G, g, I, i, S, and s. The option also supplies Ç, ç, Ö, ö, Ü, and ü in the 5x8 font.
+
+Regenerate the supplemental font data with
+`python3 tools/latinfont.py SPLEEN_SOURCE JETBRAINS_MONO_SOURCE core/ui/fonts`.
+The source tags are Spleen 2.1.0 and JetBrains Mono v2.304. The committed
+anti-aliased data was generated with Pillow 12.1.1 and FreeType 2.14.1.
 
 ### Chinese and other CJK languages
 
