@@ -1761,6 +1761,29 @@ run-httpassets: httpAssetsTest httpAssetsTestPlain
 	python3 -I $(ROOT)/tools/gen_http_assets.py --check out/http_plain $(HTTP_ASSETS)
 .PHONY: run-httpassets
 
+# core/dsp/fxp.h's products from 16-bit halves (what a C-SKY build without HI/LO runs) against the 64-bit ones, as the
+# host builds it and as that core does (-DFXP_SPLIT16); and the full-rate codec's output the same either way
+TESTS   += fxpHalvesTest fxpHalvesSplitTest mbeExactTest mbeExactSplitTest
+fxpHalvesTest: fxpHalvesTest.c $(CORE)/dsp/fxp.h
+	$(CC) $(CFLAGS) -Wshadow -O1 -o $@ fxpHalvesTest.c
+
+fxpHalvesSplitTest: fxpHalvesTest.c $(CORE)/dsp/fxp.h
+	$(CC) $(CFLAGS) -Wshadow -O1 -DFXP_SPLIT16 -o $@ fxpHalvesTest.c
+
+mbeExactTest: mbeExactTest.c $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ mbeExactTest.c $(MBE) -lm
+
+mbeExactSplitTest: mbeExactTest.c $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
+	$(CC) $(CFLAGS) -Wshadow -DFXP_SPLIT16 -o $@ mbeExactTest.c $(MBE) -lm
+
+run: run-mbe-halves
+run-mbe-halves: fxpHalvesTest fxpHalvesSplitTest mbeExactTest mbeExactSplitTest
+	./fxpHalvesTest | tail -1
+	./fxpHalvesSplitTest | tail -1
+	./mbeExactTest | tail -1
+	./mbeExactSplitTest | tail -1
+.PHONY: run-mbe-halves
+
 # Each board's own host tests (boards/<id>/tests/host.mk): a fragment adds its tests to TESTS and a run-boards:: rule
 # that builds and runs them. Sources stay in the board directory; the binaries are built here like the rest
 run: run-boards
