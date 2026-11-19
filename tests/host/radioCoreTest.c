@@ -9001,6 +9001,53 @@ static uint8_t t3_rand_status(const t3_csbk_t *q)
 	return (uint8_t)(((q->u.rand.options & 0x1Fu) << 2) | (q->u.rand.extra & 3u));
 }
 
+static void test_t3_foacsu_ptt_release(void)
+{
+	const uint32_t called = 1000001u;
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	req(RREQ_DMR_TARGET, (int32_t)((1u << 24) | called));
+
+	unsigned from = sim.air_count;
+	req(RREQ_PTT, 1);
+	t3_site_run(600);
+	t3_csbk_t q;
+	CHECK(t3_rand_since(from, T3_SK_IND_VOICE, &q) && q.u.rand.dst == called);
+
+	t3_csbk_t a = { .lb = true, .op = T3_OP_C_ACKD };
+	a.u.ack.reason = T3_RC_MS_ALERTING;
+	a.u.ack.dst = T3_OWN;
+	a.u.ack.src = called;
+	t3_csbk_rx(&a, 1);
+	t3_site_run(100);
+	CHECK(radio_t3v.ptt_wait);
+
+	from = sim.air_count;
+	req(RREQ_PTT, 0);
+	t3_site_run(300);
+	CHECK(radio_t3v.ptt_wait && !sm.ptt);
+	CHECK(!t3_rand_since(from, T3_SK_CANCEL, &q));
+
+	t3_csbk_t g = { .lb = true, .op = T3_OP_PV_GRANT };
+	g.u.grant.lpcn = 1;
+	g.u.grant.slot = 2;
+	g.u.grant.dst = called;
+	g.u.grant.src = T3_OWN;
+	t3_csbk_rx(&g, 1);
+	run(200);
+	CHECK(radio_t3v.state == T3_FOLLOW && radio_t3v.can_talk && !radio_t3v.ptt_wait);
+	CHECK(!sm.ptt && sm.view.state != RS_TX && !sm.dmr_keyed);
+
+	req(RREQ_PTT, 1);
+	run(200);
+	CHECK(sm.view.state == RS_TX && sm.view.ch.timeslot == 2);
+	req(RREQ_PTT, 0);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
 // A radio check on a trunked system goes as a status poll (6.6.6.2): the poll's acknowledgement is the check's answer;
 // a refusal fails it at once, without the conventional retries
 static void test_t3_radio_check(void)
@@ -10217,6 +10264,7 @@ int main(void)
 #if CONFIG_DMR_TRUNK_TX
 	test_t3_at();
 	test_t3_talk();
+	test_t3_foacsu_ptt_release();
 	test_t3_sdata();
 	test_t3_radio_check();
 	test_t3_clear_slot();

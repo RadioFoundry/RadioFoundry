@@ -698,6 +698,7 @@ static void start_access(t3_ms_t *ms, uint32_t now, t3_svc_t svc, uint32_t dst, 
 	ms->ax.dst = dst;
 	ms->ax.emergency = emergency;
 	ms->ax.als = false;
+	ms->ax.alerting = false;
 	ms->ax.resume = false;
 	ms->ax.ip = 0;
 	ms->ax.ip_inform = false;
@@ -982,6 +983,7 @@ static void on_ack(t3_ms_t *ms, uint32_t now, const t3_ack_t *a)
 			ms->deregistered = true;
 		} else if (is_voice(svc) && a->reason == T3_RC_MS_ALERTING) {
 			// The called radio rings: the call goes on
+			ms->ax.alerting = svc == T3_SVC_IND_VOICE;
 			ms->ax.state = T3_AX_ACKED;
 			ms->ax.ack_deadline = now + T3_TP_MS;
 			break;

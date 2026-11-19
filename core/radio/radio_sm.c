@@ -3844,6 +3844,10 @@ static bool t3_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		return false;	// on the payload channel: the stack sends the voice
 	}
 #if CONFIG_DMR_TRUNK_TX
+	if (sm->t3_ptt_wait) {
+		sm->ptt = true;	// PTT pressed again while the called user is ringing
+		return true;
+	}
 	bool group;
 	uint32_t dst = t3_talk_id(sm, &group);
 	bool emergency = false;
@@ -3867,7 +3871,8 @@ static void t3_ptt_up(radio_sm_t *sm, uint32_t now_ms)
 		return;
 	}
 #if CONFIG_DMR_TRUNK_TX
-	if (sm->t3_ptt_wait) {
+	// Once a private call is ringing, releasing PTT only releases the mic.
+	if (sm->t3_ptt_wait && !t3m.ax.alerting) {
 		sm->t3_ptt_wait = false;
 		if (t3m.ax.state != T3_AX_IDLE) {
 			t3_ms_cancel(&t3m, now_ms);
@@ -4037,9 +4042,10 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 	if (sm->t3_ptt_wait) {
 		if (t3_ms_can_talk(&t3m) && t3m.state == T3_FOLLOW) {
 			sm->t3_ptt_wait = false;
-			sm->t3_talking = true;
-			sm->ptt = false;	// ptt_down runs again on the payload channel
-			ptt_down(sm, now_ms);
+			if (sm->ptt) {
+				sm->ptt = false;	// ptt_down runs again on the payload channel
+				ptt_down(sm, now_ms);
+			}
 		} else if (t3m.ax.state == T3_AX_IDLE && t3m.ax.result != T3_RES_PENDING &&
 			   t3m.ax.result != T3_RES_GRANTED) {
 			sm->t3_ptt_wait = false;	// refused, no answer, timed out

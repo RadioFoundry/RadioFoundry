@@ -490,7 +490,7 @@ typedef struct {
 	uint32_t t3_probe_ms;		// on the fallback channel: when to look next; probing: until when
 	channel_t t3_fb_ch;
 	bool t3_both;			// on a control channel: both slots
-	bool t3_ptt_wait;		// PTT held on the TSCC: waiting for our grant
+	bool t3_ptt_wait;		// waiting for our grant after a PTT-initiated call request
 	bool t3_als_keyed;		// keyed by an Ambient Listening call (6.6.2.6), not by the user
 	uint32_t t3_als_quiet_ms;	// unkeyed at T_ALS: the call ends once the terminator is out
 	uint8_t t3_stun_kept;		// settings t3_stun as last written for the system in use (0: not stunned)
