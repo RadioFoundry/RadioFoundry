@@ -489,7 +489,8 @@ uint32_t p25_packet_crc(const uint8_t *b, unsigned n)
 }
 
 // Header: the alternate format, a trunking SAP, MFID 0, one data block, the opcode; LRA in octet 3, the system in
-// the low 12 bits of octets 4-5. Data: WACN 20 bits, 4 reserved, channel (T), channel (R), service class, packet CRC
+// the low 12 bits of octets 4-5. Data: WACN 20 bits, 4 reserved, channel (T), channel (R) (not kept), service class,
+// packet CRC
 bool p25_mbt_net_parse(const uint8_t hdr[P25_TSBK_BYTES], const uint8_t data[P25_TSBK_BYTES], p25_tsbk_t *m)
 {
 	p25_mbt_t h;
@@ -506,7 +507,6 @@ bool p25_mbt_net_parse(const uint8_t hdr[P25_TSBK_BYTES], const uint8_t data[P25
 	m->u.net.sysid = (uint16_t)((hdr[4] & 0x0F) << 8 | hdr[5]);
 	m->u.net.wacn = (uint32_t)data[0] << 12 | (uint32_t)data[1] << 4 | data[2] >> 4;
 	m->u.net.ch = (uint16_t)(data[3] << 8 | data[4]);
-	m->u.net.ch_r = (uint16_t)(data[5] << 8 | data[6]);
 	m->u.net.ssc = data[7];
 	return true;
 }
@@ -528,8 +528,6 @@ void p25_mbt_net_make(const p25_tsbk_t *m, uint8_t hdr[P25_TSBK_BYTES], uint8_t 
 	data[2] = (uint8_t)((m->u.net.wacn & 0x0F) << 4);
 	data[3] = (uint8_t)(m->u.net.ch >> 8);
 	data[4] = (uint8_t)m->u.net.ch;
-	data[5] = (uint8_t)(m->u.net.ch_r >> 8);
-	data[6] = (uint8_t)m->u.net.ch_r;
 	data[7] = m->u.net.ssc;
 	crc = p25_packet_crc(data, 8);
 	data[8] = (uint8_t)(crc >> 24);

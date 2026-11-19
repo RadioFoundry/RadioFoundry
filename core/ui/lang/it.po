@@ -4468,11 +4468,6 @@ msgid "Denied"
 msgstr "Negato"
 
 #: core/ui/ui_screens.c
-msgctxt "HOME_STATE_P25T_WACN_BLOCKED"
-msgid "WACN blocked"
-msgstr "WACN bloccato"
-
-#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_P25T_REG_DENIED"
 msgid "Reg. denied"
 msgstr "Reg. negata"

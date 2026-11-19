@@ -1027,9 +1027,6 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treq == P25_REQ_DENIED) {
 			sb_str(&b, TR(HOME_STATE_P25T_DENIED, "Denied"));
 			c = ui_col.warn;
-		} else if (txs && v->p25.treg == P25_REG_BLOCKED) {
-			sb_str(&b, TR(HOME_STATE_P25T_WACN_BLOCKED, "WACN blocked"));
-			c = ui_col.warn;
 		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treg == P25_REG_DENIED) {
 			sb_str(&b, TR(HOME_STATE_P25T_REG_DENIED, "Reg. denied"));
 			c = ui_col.warn;

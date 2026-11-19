@@ -119,7 +119,6 @@ typedef struct {
 			uint16_t sysid;
 			uint16_t ch;		// the primary control channel (the extended form's channel (T))
 			uint8_t ssc;
-			uint16_t ch_r;		// the extended form's channel (R); 0 in the abbreviated
 		} net;
 		struct {
 			uint8_t lra, flags;	// the 4 bits ahead of the system ID
