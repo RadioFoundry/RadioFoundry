@@ -55,6 +55,7 @@ typedef struct
 	bool     rmo;							// through a repeater
 	bool     canTransmit;					// a DMR channel we may send on now: not RX only, in band, no hotspot
 	uint32_t channelKey;					// changes with the frequency, slot or color code (ARS registers again)
+	dmrDataPrivacy_t privacy;				// the channel's data privacy (dmrData.h): data encrypted or held back
 } dmrDataChannel_t;
 
 // The service's user settings. Only committed settings, never an edit in progress (gotcha 3.7)
@@ -150,6 +151,10 @@ typedef struct
 	uint32_t rxPackets;						// complete packets
 	uint32_t rxForUs;						// ... addressed to us (or a group we listen to)
 	uint32_t rxConfirmed;					// ... confirmed data to us
+	uint32_t rxPrivacy;						// packets decrypted with the channel's privacy key
+	uint32_t rxPrivacyDropped;				// encrypted packets dropped: another scheme, or no key
+	uint32_t txPrivacy;						// lists sent with the privacy header (encrypted data)
+	uint32_t txPrivacyBlocked;				// lists not sent: data the channel's privacy can't protect
 	uint32_t smsReceived;					// text messages kept
 	uint32_t smsDuplicates;					// a sender's retry: ACKed, not kept
 	uint32_t smsSent;						// SMS lists sent
