@@ -145,6 +145,14 @@ SKIP_KINDS = {
 }
 
 
+TEMP_STEPPED = 0x03        # view temp bits Radio.restore() puts back by stepping: power and squelch (radio.h)
+
+
+def _temp_bits(text):
+    """The view's temp key ("0x81") as an int; 0 when it's missing."""
+    return int(text, 0) if text else 0
+
+
 def skip_reason(kind, reason):
     """The reason text of a skip of this kind: "[kind] reason". ValueError for an unknown kind or an empty reason."""
     if kind not in SKIP_KINDS:
@@ -692,8 +700,12 @@ class Radio:
                 self._req_until(lambda: L.zone_pos(int(snap["zone_pos"])),
                                 lambda v: v.get("zone_pos") == snap["zone_pos"], "channel restored")
         cur = self.core()
-        if snap["temp"] in ("0x00", "0") and cur.get("temp") not in ("0x00", "0"):
+        # The power and squelch steps below put those two back as temporary changes, so a snapshot holding only
+        # them (a run at the lowest power is temp 0x01) still clears what the test added, such as the mode
+        before, now = _temp_bits(snap["temp"]), _temp_bits(cur.get("temp"))
+        if now != before and not before & ~TEMP_STEPPED:
             self._req_until(L.clear_temporary, lambda v: v.get("temp") in ("0x00", "0"), "temporary changes undone")
+            cur = self.core()
         self._step_to("power", L.power_step, snap["power"], int(cur.get("power_count") or 9), wraps=True)
         self._step_to("squelch", L.squelch_step, snap["squelch"], 10, wraps=False)
 
