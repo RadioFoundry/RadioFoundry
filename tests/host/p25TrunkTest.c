@@ -439,9 +439,16 @@ static void testInbound(void)
 	      b[6] == 0x34 && b[7] == 0xAB && b[8] == 0xCD && b[9] == 0xEF && p25_tsbk_crc(b) == (uint16_t)(b[10] << 8 | b[11]),
 	      "voice request layout");
 	CHECK(p25_isp_parse(b, &g) && g.known && g.svc == 0x04 && g.tg == 0x1234 && g.src == 0xABCDEF, "voice request back");
-	m = (p25_isp_t){ .opcode = P25_ISP_GRP_AFF_REQ, .emergency = true, .sysid = SYSID, .tg = 201, .src = OUR_UNIT };
+	// Layout by hand: 12 reserved bits, system, group, unit ID. A control channel read the group and unit ID one octet
+	// early when they were packed at bits 16 and 32.
+	m = (p25_isp_t){ .opcode = P25_ISP_GRP_AFF_REQ, .sysid = 0x13B, .tg = 0x01F9, .src = 0x00235C };
 	p25_isp_make(&m, b);
-	CHECK(p25_isp_parse(b, &g) && g.emergency && g.sysid == SYSID && g.tg == 201 && g.src == OUR_UNIT, "affiliation request");
+	CHECK(b[0] == (P25_TSBK_LB | 0x28) && b[1] == 0 && b[2] == 0x00 && b[3] == 0x01 && b[4] == 0x3B && b[5] == 0x01 &&
+	      b[6] == 0xF9 && b[7] == 0x00 && b[8] == 0x23 && b[9] == 0x5C && p25_tsbk_crc(b) == (uint16_t)(b[10] << 8 | b[11]),
+	      "affiliation request layout");
+	m = (p25_isp_t){ .opcode = P25_ISP_GRP_AFF_REQ, .sysid = SYSID, .tg = 201, .src = OUR_UNIT };
+	p25_isp_make(&m, b);
+	CHECK(p25_isp_parse(b, &g) && g.sysid == SYSID && g.tg == 201 && g.src == OUR_UNIT, "affiliation request");
 	m = (p25_isp_t){ .opcode = P25_ISP_U_REG_REQ, .wacn = WACN, .sysid = SYSID, .src = OUR_UNIT };
 	p25_isp_make(&m, b);
 	CHECK(p25_isp_parse(b, &g) && g.wacn == WACN && g.sysid == SYSID && g.src == OUR_UNIT && g.opcode == 0x2C,

@@ -389,8 +389,8 @@ In the Codeplug Editor ([Programming](04-programming.md#digital-modes-and-system
 
 1. On the **Systems** tab add a system of type DMR Tier III Trunking. Enter its network model, NET, category and color
    code, and its channels with **Control** ticked on the control channels. The system's operator has these values.
-2. Make a channel, set its **Mode** to DMR Tier III Trunking and pick the system. Its contact is who you talk to; its
-   RX group list is the talkgroups you hear.
+2. Make a channel, set its **Mode** to DMR Tier III Trunking and pick the system. Set **TX Contact** to the default
+   call destination and **RX Group List** to the talkgroups you want to follow.
 3. Put the channel in a zone, with any other channels.
 
 | Setting | Does |
