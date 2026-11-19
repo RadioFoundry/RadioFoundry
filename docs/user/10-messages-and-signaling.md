@@ -1,16 +1,18 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
-# Messages, Call Alert and Radio Check
+# Messages, call alert, and radio check
 
-DMR text messages, call alert and radio check work on DMR channels. APRS text messages can also be sent over FM on
-builds with an AFSK transmit path. The [Radio reference](23-radios.md) says which radios have each path verified.
-None of them needs the codec. DMR sending needs a DMR channel you may transmit on and your DMR ID; APRS sending
-needs a valid callsign in **Settings > My radio**, an amateur APRS frequency and a board with AFSK transmit.
+DMR text messages, call alert, and radio check work on DMR channels. On builds with an AFSK transmit path, the radio
+also sends APRS text messages over FM. For which radios have each path, see the [feature matrix](../feature-matrix.md).
+None of them needs the codec. DMR sending needs a DMR channel that you're allowed to transmit on, and your DMR ID.
+APRS sending needs a valid callsign in **Settings > My radio**, an amateur APRS frequency, and a board with AFSK
+transmit.
 
 ## Receiving a message
 
-When a message arrives, the radio shows a banner with the sender and the first words for 8 s. Press **#** while the
-banner is up to open the message. The radio plays a short three-note tone with the banner unless **Settings > Sound >
+When a message arrives, the radio shows a banner with the sender and the first words for 8 seconds. To open the message,
+press **#** while the banner is up. The radio plays a short three-note tone with the banner unless **Settings > Sound >
 Message tone** is off. On a radio with a vibration motor it also vibrates twice, unless **Settings > Sound > Vibrate**
 is off. A call alert or a private call to you gives one long vibration, an emergency four.
 
@@ -54,8 +56,8 @@ The radio keeps DMR and APRS messages in memory. They are lost when the radio tu
 
 <img src="../ux/screens/160x120i5/compose.png" width="200" alt="The message composer">
 
-The radio shows "Sending to ..." and returns to Home. A message to a person asks for a confirmation. When none comes, the radio tries again, in every format. The result
-comes as a banner:
+The radio shows "Sending to ..." and returns to Home. A message to a person asks for a confirmation. When none comes,
+the radio tries again, in every format. The result comes as a banner:
 
 | Banner | Meaning |
 |---|---|
@@ -63,16 +65,16 @@ comes as a banner:
 | "No answer from ...", with "Not delivered: send it again" | No confirmation came. The message isn't kept for a retry. Send it again from the actions |
 | "Sent to ..." | A message to a talkgroup has gone out. Talkgroup messages have no confirmation |
 
-With confirmed IP data turned off (`tools/rfoundry_debug.py data ip-settings auto off`), ETSI messages to a person also go
-once, with "Sent to".
+With confirmed IP data turned off (`tools/rfoundry_debug.py data ip-settings auto off`), ETSI messages to a person also
+go once, with "Sent to".
 
 In **Write...**, use the number keys to enter letters, **#** to switch between ABC, 123 and abc, and **Back** to
 delete. A DMR message can hold up to 143 characters. Messages you send aren't stored in the radio.
 
 ### Sending over APRS
 
-1. Open **Messages > New APRS message** when APRS is built and your callsign is set. You can also open **Stations heard**,
-   select a station and choose **Message** to fill its callsign.
+1. Open **Messages > New APRS message** when APRS is built and your callsign is set. You can also open **Stations
+   heard**, select a station and choose **Message** to fill its callsign.
 2. Select **To callsign** and enter the recipient's callsign, with an optional
    SSID (for example, `K1ABC-9`). Press **OK** to keep it.
 3. Choose **Request acknowledgment** and **Include position** if needed, then pick a preset or **Write...** and press
@@ -98,7 +100,7 @@ formats, whatever the setting. A reply to a DMR inbox message uses DMR.
 |---|---|
 | ETSI (default) | The standard DMR text message (ETSI IP text). Radios and dispatch software set to "DMR standard" text read it. Delivery to a person is confirmed |
 | ETSI short | Radios that only show ETSI short data messages. Delivery is confirmed |
-| Motorola | MOTOTRBO radios and dispatch software set to Motorola text messages (TMS). Delivery is confirmed. Not in builds made without Motorola TMS support |
+| Motorola | Commercial DMR radios and dispatch software set to Motorola text messages (TMS). Delivery is confirmed. Not in builds made without Motorola TMS support |
 
 If your radio was set up before ETSI became the default and its data settings were saved, it keeps sending Motorola
 messages until you change the setting.
@@ -134,10 +136,10 @@ An answer is a short transmission the radio makes without you pressing PTT; turn
 
 ## Registration (ARS) and location (LRRP)
 
-ARS registers the radio with a presence server at power-up and after a channel change. It is off until a server ID is
-set: **Settings > Connections > Data services > ARS server**. Type the server's DMR ID and press **OK**; 0 turns ARS
-off. The screen shows the registration: Registering, Registered, Refused or No answer. The ID is saved in the
-codeplug, so the [Codeplug Editor](04-programming.md) can set it too.
+ARS registers the radio with a presence server at power-up and after a channel change. It's off until you set a server
+ID: **Settings > Connections > Data services > ARS server**. Type the server's DMR ID and press **OK**; 0 turns ARS off.
+The screen shows the registration: Registering, Registered, Refused or No answer. The ID is saved in the codeplug, so
+the [Codeplug Editor](04-programming.md) can set it too.
 
 LRRP answers location requests from a dispatcher. A radio without GPS ([Radio reference](23-radios.md)) answers "no
 fix". **Settings > Location > Answer GPS requests** turns the answers off.

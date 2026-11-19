@@ -1,17 +1,18 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
-# Scan and Dual Watch
+# Scan and dual watch
 
-Which radios have scan and dual watch verified is in the [Radio reference](23-radios.md).
+For which radios have scan and dual watch, see the [feature matrix](../feature-matrix.md).
 
 ## Starting and stopping
 
 | Start | Stop |
 |---|---|
 | **OK**, **6** (Tools), **1** (Scan) | **Back** on Home |
-| A side key set to **Scan** (Settings > Keys) | The same key again |
+| A side key set to **Scan** (**Settings > Keys**) | The same key again |
 
-On a channel the radio scans the current zone ("Scanning this zone"). In the VFO it sweeps the band the VFO frequency
+On a channel, the radio scans the current zone ("Scanning this zone"). In the VFO, it sweeps the band the VFO frequency
 is in ("Scanning the band"). The status line shows SCAN, and the channel name changes as the scan moves.
 
 A scan needs at least one other channel to go to. It doesn't run in hotspot mode or while you transmit.
@@ -48,14 +49,14 @@ The scan actions:
 |---|---|---|
 | 1 | Skip channel for now | Skips the channel until the scan stops ("Skipped until the scan stops") |
 | 2 | Stay here | Stops the scan on this channel |
-| 3 | Always skip | Not built yet. Edit scan lists in qdmr |
+| 3 | Always skip | Always dimmed. Edit scan lists in qdmr |
 
 ## Dual watch
 
 Dual watch listens on two channels, A and B, and you talk on one of them. Each can be any channel of any zone, or the
 VFO. It is two frequencies, not the two timeslots of one DMR frequency.
 
-- **A** is the channel you are on when you start. **B** is the one you add. The first time, B is the next channel of
+- **A** is the channel you're on when you start. **B** is the one you add. The first time, B is the next channel of
   the zone.
 - One of them is **selected**. **PTT** talks on it. Up, Down, the knob, the quick settings, the talk target and the
   menus act on it, as they do on the normal Home, even while the radio is listening to the other channel. Dual watch
@@ -63,8 +64,8 @@ VFO. It is two frequencies, not the two timeslots of one DMR frequency.
 - Each channel keeps its changes for now (power, squelch, tones, talk target and the like) while the radio goes back
   and forth between them.
 - The radio has one receiver, so it alternates between A and B. A call on one can be missed while the radio is on the
-  other. A radio with two receivers would hear both and show a call on each channel at once. No radio has that yet
-  ([Radio reference](23-radios.md#dual-watch-on-each-radio)).
+  other. A radio with two receivers would hear both and show a call on each channel at once. For each radio, see
+  [Dual watch on each radio](23-radios.md#dual-watch-on-each-radio).
 - A or B can be a P25 or NXDN channel, but not a trunked P25 channel. On a radio with two receivers, the second one
   doesn't take P25 or NXDN: the radio alternates when the channel not selected is one.
 
@@ -88,8 +89,9 @@ If you stop dual watch with B selected, the radio stays on B. The next start wat
 Select B (**A/B** key, or **#**, **1**) and change its channel the way you do on Home: **Up**, **Down**, the
 knob, digits, Find, Zones, or the **VFO** key. The same goes for A.
 
-Or press **#**, **3** (Change B) for the picker. The list shows the channels of the zone you are in, with their frequency and mode. Press a channel's number, type part
-of its name, or move to it and press **OK**. The channel you are on is dimmed with "A": it can't be B.
+Or press **#**, **3** (Change B) for the picker. The list shows the channels of the zone you're in, with their frequency
+and mode. Press a channel's number, type part of its name, or move to it and press **OK**. The channel you're on is
+dimmed with "A": it can't be B.
 
 <img src="../ux/screens/160x120i5/dual_pick.png" width="200" alt="Pick B: the channels of a zone">
 
@@ -122,22 +124,24 @@ By default a call on the other channel never moves **PTT**. You choose.
 
 The radio has one receiver, so it switches between A and B. When a call ends, it stays on that channel for 1 s so it
 hears the reply. While it waits, it takes short looks at the other channel. A call there shows **Busy** but doesn't
-interrupt: when the wait ends, the radio goes to it. Change the wait with **Settings > Talk > Dual watch delay**
-(0.5 s to 5 s). Shorter finds the other channel sooner; longer keeps more of a reply that starts late.
+interrupt: when the wait ends, the radio goes to it. Change the wait with **Settings > Talk & listen > Dual watch
+delay** (0.5 s to 5 s). Shorter finds the other channel sooner; longer keeps more of a reply that starts late.
 
 ### Talk back
 
-Turn on **Settings > Talk > Dual watch talk back** (off by default) and **PTT** follows the call. When a call ends on
-the other channel, that channel becomes the selected one ("Talk back on B"), so **PTT** answers there. The 10 s timer
-starts over with each reply and each call there. After it, the selection goes back ("Talking on A"). **#**, **1**, the
-**A/B** key or **Left** / **Right** go back at once. While it is on, the hint row says "# 1 back to A  Back stop".
+Turn on **Settings > Talk & listen > Dual watch talk back** (off by default) and **PTT** follows the call. When a call
+ends on the other channel, that channel becomes the selected one ("Talk back on B"), so **PTT** answers there. The 10 s
+timer starts over with each reply and each call there. After it, the selection goes back ("Talking on A"). **#**, **1**,
+the **A/B** key or **Left** / **Right** go back at once. While it is on, the hint row says "# 1 back to A  Back stop".
 
 <img src="../ux/screens/240x320/home_dual_talk_back.png" width="200" alt="Talk back on B">
 
 ### Talk on B
 
-Press **#**, **1** ("Talk on B"). B is now the selected channel. On a radio with a Left / Right pair, **Right** selects B and **Left** selects A. A press of the **A/B** key
-switches, and so does any side key set to **A/B** (Settings > Keys). With dual watch off, the **A/B** key only says "Turn on dual watch first". Hold **PTT** to talk. The watch goes on after you let go.
+Press **#**, **1** ("Talk on B"). B is now the selected channel. On a radio with a Left / Right pair, **Right** selects
+B and **Left** selects A. A press of the **A/B** key switches, and so does any side key set to **A/B** (Settings >
+Keys). With dual watch off, the **A/B** key only says "Turn on dual watch first". Hold **PTT** to talk. The watch goes
+on after you let go.
 
 <img src="../ux/screens/160x120i5/home_dual_on_b.png" width="200" alt="Dual watch Home with B selected">
 
@@ -175,8 +179,8 @@ the same, and the knob still steps the channel.
 ### Stop it
 
 Press **Back** twice on Home. The first press says "Press Back again to stop dual watch", so a stray press doesn't stop
-it. If you entered a frequency or changed a setting for now, **Back** clears that first. The radio stays on the
-selected channel ("Dual watch off: on B"). These stop it too: **\***, **7**; holding the **A/B** key; **#**, **5**; and a side
+it. If you entered a frequency or changed a setting for now, **Back** clears that first. The radio stays on the selected
+channel ("Dual watch off: on B"). These stop it too: **\***, **7**; holding the **A/B** key; **#**, **5**; and a side
 key set to **Dual watch**. Starting a scan (**OK**, **6**, **1**, or the **Scan** key) stops it, staying on the selected
 channel. Nothing else stops it. If the radio can't go on with a channel (it was deleted, for example), Home says where
 the radio is: "Dual watch off: on COUNTY DMR".
@@ -196,9 +200,7 @@ the radio is: "Dual watch off: on COUNTY DMR".
 | **VFO** | The selected channel to the VFO, and back |
 | **Back**, twice | Stops, staying on the selected channel |
 
-Starting dual watch stops a zone scan. With **Large text** on (Settings > Display) Home shows one line per channel, the selected one
-marked with an arrow.
+Starting dual watch stops a zone scan. With **Large text** on (Settings > Display) Home shows one line per channel, the
+selected one marked with an arrow.
 
 [Design and layouts for every display](../ux/dual-watch.md)
-
-The radio core can also scan a VFO range set by two frequencies. There is no menu item for that yet.

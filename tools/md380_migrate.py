@@ -20,7 +20,7 @@ turned into qdmr's radio-independent YAML, cleaned of RX group lists RadioFoundr
 qdmr's open firmware family (OpenUV380), which is the layout RadioFoundry's CPS compatibility layer serves, and written through
 that layer with cps_client.py. The codeplug steps are shared with the other radios' migration tools
 (codeplug_port.py, docs/spec/codeplug-port.md). The user guide is
-docs/user/18-moving-from-stock-md380.md.
+docs/user/18-moving-from-stock.md, with the MD-380 values in docs/user/23-radios.md.
 
 Needs Python 3.8+, dmrconf (qdmr 0.12 or newer) on PATH, pyusb with libusb (flashing) and pyserial (talking to the
 radio once it runs RadioFoundry). The flash and debug link helpers (stm32_dfu.py, rfoundry_debug.py), codeplug_port.py and

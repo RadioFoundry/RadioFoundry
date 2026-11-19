@@ -1,9 +1,10 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # DMR
 
-The [Radio reference](23-radios.md) says which radios have DMR verified. DMR voice needs the codec
-([Installing](02-installing.md)) and a DMR ID in the codeplug.
+DMR voice needs the codec ([Installing](02-installing.md)) and a DMR ID in the codeplug. For which radios have DMR,
+see the [feature matrix](../feature-matrix.md).
 
 ## Terms
 
@@ -22,10 +23,10 @@ The [Radio reference](23-radios.md) says which radios have DMR verified. DMR voi
 
 The radio plays a group call when one of these is true:
 
-- its talkgroup is the talk target's talkgroup, or the call is an all call;
-- its talkgroup is in the channel's listen list;
-- it is the reply target during the reply window ([below](#replying));
-- digital monitor is on.
+- Its talkgroup is the talk target's talkgroup, or the call is an all call.
+- Its talkgroup is in the channel's listen list.
+- It's the reply target during the reply window ([Replying](#replying)).
+- Digital monitor is on.
 
 The radio plays a private call addressed to your DMR ID. It shows every other call on the slot as "Other TG: not
 played" and treats the channel as busy while it lasts.
@@ -108,8 +109,8 @@ number, or "Phone line" when the system didn't send one.
 ## Replying
 
 After a call the radio played, the reply window opens. During the window **PTT** answers the call. A group call is
-answered on the same talkgroup, a private call to the caller. After your own call, **PTT** goes to the same target again. Home shows "Reply→" with
-the target and a countdown.
+answered on the same talkgroup, a private call to the caller. After your own call, **PTT** goes to the same target
+again. Home shows "Reply→" with the target and a countdown.
 
 <img src="../ux/screens/160x120i5/home_reply.png" width="200" alt="Home during the reply window">
 
@@ -131,13 +132,14 @@ On Home, **#** opens the actions for the current or last caller. A digit picks a
 | 3 | Message | Opens the message composer ([Messages](10-messages-and-signaling.md)) |
 | 4 | Radio check | Checks that their radio is on and in range |
 | 5 | Call alert | Pages their radio |
-| 6 | Position | Not built yet |
+| 6 | Position | Always dimmed |
 | 7 | Save as contact | Opens New Contact with their ID and name ([Contacts](#contacts)). "In contacts" when they are one |
-| 8 | Speak status | Not built yet |
+| 8 | Speak status | Always dimmed |
 | 9 | Save to channel | Shown only when the channel has temporary changes |
 | last | Poll short data | Shown only on a trunked channel. Asks their radio for its short data; the answer arrives as a message. "Poll: no short data" when none comes |
 
-For a talkgroup the actions are Talk to, Make channel default and Message, and 4 Save as contact when it isn't a contact.
+For a talkgroup the actions are Talk to, Make channel default and Message, and 4 Save as contact when it isn't a
+contact.
 
 Without anyone heard yet, **#** shows "No calls heard yet".
 
@@ -155,10 +157,9 @@ it permanent. **#** opens its actions.
 ## Contacts
 
 **OK**, **1** lists the codeplug's contacts and talkgroups, all of them. Type letters of the name, or digits of the ID,
-to filter. Contacts are for the talkgroups and people you call; the [ID database](04-programming.md#dmr-id-database-and-contacts-from-radioidnet)
-names everyone else.
-**OK** talks to the focused entry for now. Holding **OK** makes it the channel's default. **PTT** talks to it once.
-**#** opens its actions.
+to filter. Contacts are for the talkgroups and people you call; the [ID
+database](04-programming.md#dmr-id-database-and-contacts-from-radioidnet) names everyone else. **OK** talks to the
+focused entry for now. Holding **OK** makes it the channel's default. **PTT** talks to it once. **#** opens its actions.
 
 <img src="../ux/screens/160x120i5/contacts.png" width="200" alt="Contacts">
 <img src="../ux/screens/160x120i5/contact_actions.png" width="200" alt="Actions for a contact">
@@ -183,8 +184,8 @@ Make a contact on the radio from Contacts, a number or a call:
 | Timeslot | Channel's, TS 1 or TS 2 |
 | Save | Saves it. Holding **OK** on any row saves too |
 
-The radio refuses a contact that is already there ("Already a contact: ..."). Editing or deleting a stored contact is
-not built yet: use qdmr. A codeplug write from a CPS replaces the contacts you made on the radio, so read the codeplug
+The radio refuses a contact that is already there ("Already a contact: ..."). The radio doesn't edit or delete a stored
+contact: use qdmr. A codeplug write from a CPS replaces the contacts you made on the radio, so read the codeplug
 into the CPS first.
 
 ## Private calls
@@ -208,7 +209,7 @@ On a DMR channel, **\*** opens these tiles:
 | **1** | Power | Steps through the radio's lowest level, its default and its highest ([power levels](16-battery-and-power.md#transmit-power)) |
 | **2** | Slot | Switches between timeslot 1 and 2, for now |
 | **3** | Color | Opens the color code editor |
-| **4** | Mode | Shows DMR. Press it to listen and talk in FM on the same frequencies, for now |
+| **4** | To VFO | Copies the channel to the VFO ([Copy a channel to the VFO](07-channels-zones-vfo.md#copy-a-channel-to-the-vfo)) |
 | **5** | DMon | Digital monitor on or off |
 | **6** | Privacy | Privacy on or off. In the VFO this tile is TX freq ([Split](07-channels-zones-vfo.md#split-repeater-offset)) |
 | **7** | Dual | Dual watch on or off |
@@ -217,17 +218,16 @@ On a DMR channel, **\*** opens these tiles:
 | **0** | | Opens Settings |
 
 To change the color code, press **\***, **3**. Press **Up** or **Down**, or type the code (0 to 15). Press **OK** to
-apply it. The new
-color code takes effect when the editor closes.
+apply it. The new color code takes effect when the editor closes.
 
 <img src="../ux/screens/160x120i5/quick_cc_editor.png" width="200" alt="Editing the color code">
 
-Timeslot and color code are temporary. They can't be changed while transmitting. Hold **OK**
-to save them to the channel. In the VFO they are the VFO's own settings and are kept ([the VFO](07-channels-zones-vfo.md#dmr-in-the-vfo)).
+Timeslot and color code are temporary. You can't change them while you transmit. Hold **OK** to save them to the
+channel. In the VFO they are the VFO's own settings and are kept ([the VFO](07-channels-zones-vfo.md#dmr-in-the-vfo)).
 
 ## Waking a repeater
 
-A repeater that is idle may need a wake-up before it carries your call. On a repeater channel (TX and RX frequencies
+A repeater that's idle might need a wake-up before it carries your call. On a repeater channel (TX and RX frequencies
 differ) the radio sends the wake-up when you press **PTT** and then waits for the repeater to answer. A short press is
 enough: let go of **PTT** and the radio keeps trying, up to the usual number of attempts.
 
@@ -262,7 +262,8 @@ when it differs from the channel's ("TS2 CC7"). To talk to them, set the channel
 (**\***, **2** and **\***, **3**).
 
 - Press **Monitor** on a DMR channel (a short press; it acts when you let go). The radio shows "Digital monitor on" and
-  the chips show "DMon". Press it again to turn it off. On an FM channel the same key opens the squelch while you hold it.
+  the chips show "DMon". Press it again to turn it off. On an FM channel the same key opens the squelch while you hold
+  it.
 - Or **\***, **5**.
 
 Digital monitor stays on until you turn it off, change the channel or the mode, or press **Back** on Home. A
@@ -273,9 +274,8 @@ the other timeslot, the channel counts as busy.
 
 ## Privacy
 
-RadioFoundry has two kinds of basic privacy: Motorola basic privacy (keys 1 to 255) and Anytone 16-bit basic privacy. Basic
-privacy is a fixed scrambling of the voice. It keeps casual listeners out but isn't encryption. The scrambling hasn't
-been checked against another radio yet ([Radio reference](23-radios.md)).
+RadioFoundry has two kinds of basic privacy: Motorola basic privacy (keys 1 to 255) and Anytone 16-bit basic privacy.
+Basic privacy is a fixed scrambling of the voice. It keeps casual listeners out but isn't encryption.
 
 - The radio plays an encrypted call only when it has the matching key. Without the key the call shows as
   "Encrypted: not played".
@@ -289,8 +289,8 @@ To set the key on the radio, open **Settings > Privacy** (**OK**, **7**, **4**).
 2. On **Key**, press **OK**. Type the key in decimal with the number keys (Motorola 1 to 255, Anytone 0 to 65535).
    Press **OK** again.
 
-The radio keeps the key across restarts. Setting the type back to Off removes the key and turns privacy off. The codeplug
-can't hold privacy keys yet. Developers can also load a key over USB with the debug tool:
+The radio keeps the key across restarts. Setting the type back to Off removes the key and turns privacy off. The
+codeplug doesn't hold privacy keys. Developers can also load a key over USB with the debug tool:
 
 ```
 tools/rfoundry_debug.py radio privacy moto 5          # Motorola basic privacy, key 5
@@ -315,9 +315,9 @@ and one of these asks for it:
 | **Settings > Location > Send in DMR calls** (off by default) | every DMR call |
 | The codeplug: a channel's talker alias setting for its timeslot set to APRS or Both | calls on that channel |
 
-The codeplug setting is the one to use when radios are programmed from a computer: nothing has to be set on the radio. This works on a radio without APRS, and on a radio
-without a GPS when you set a fixed position. Every other superframe carries it, taking turns with your
-talker alias.
+The codeplug setting is the one to use when radios are programmed from a computer: nothing has to be set on the radio.
+This works on a radio without APRS, and on a radio without a GPS when you set a fixed position. Every other superframe
+carries it, taking turns with your talker alias.
 
 ## Talker alias
 
@@ -349,25 +349,26 @@ A toast says "Moved to" and the new channel's name.
 | Beacon length | How long each beacon lasts: 1 to 10 s (4 s by default) |
 | Wake probe | On: the radio briefly keys up a quiet repeater to measure it. This transmits. Off by default |
 
-Many repeater systems make every repeater transmit briefly while idle. This is a "beacon", for example 4 s every
-minute, all at the same moment. The radio learns when its repeater's beacons come. During each beacon it hops to a few of
-the other sites for under a second each, measures them and comes back. The screens keep showing your repeater. A key
-press, **PTT** or a call on the visited site brings it straight back. A call that starts on your repeater while the
-radio is away is joined up to about 3 s late, so the radio skips the survey for a while after traffic. When your
-repeater gets weak, the radio checks the best site it measured at the next beacon and moves there, usually within a
-minute. Set **Beacon interval** and **Beacon length** to match the system (ask its operator). If each repeater beacons
-on its own schedule, pick **Per site**. If they don't beacon, pick **None**: the radio then relies on calls it hears.
-The screen says "Beacons: learning" until the radio knows the schedule, then "Beacons: surveying".
+Many repeater systems make every repeater transmit briefly while idle. This is a "beacon", for example 4 s every minute,
+all at the same moment. The radio learns when its repeater's beacons come. During each beacon it hops to a few of the
+other sites for under a second each, measures them and comes back. The screens keep showing your repeater. A key press,
+**PTT** or a call on the visited site brings it straight back. A call that starts on your repeater while the radio is
+away is joined up to about 3 s late, so the radio skips the survey for a while after traffic. When your repeater gets
+weak, the radio checks the best site it measured at the next beacon and moves there, usually within a minute. Set
+**Beacon interval** and **Beacon length** to match the system (ask its operator). If each repeater beacons on its own
+schedule, pick **Per site**. If they don't beacon, pick **None**: the radio then relies on calls it hears. The screen
+says "Beacons: learning" until the radio knows the schedule, then "Beacons: surveying".
 
 A site is a repeater channel in the zone (TX and RX frequencies differ) with the same contact as the channel you
 picked. When any channel in the zone has the codeplug's Roaming flag set, only flagged channels are sites. You need
 at least two sites. Changing channel or zone yourself makes the new channel home.
 
 The threshold (default -105 dBm), the hysteresis (6 dB) and the optional periodic search of the other sites are set
-over the debug link for now ([dmr-roaming](../spec/dmr-roaming.md) section 5.1). The debug link also sets the idle
+over the debug link ([dmr-roaming](../spec/dmr-roaming.md) section 5.1). The debug link also sets the idle
 beacon that a hotspot running MMDVM SFR can send for roaming radios (`rpt_beacon`, off by default).
 
-Polite channel access waits for recent activity to expire before transmitting. A quiet channel becomes available again even if no further bursts arrive.
+Polite channel access waits for recent activity to expire before transmitting. A quiet channel becomes available again
+even if no further bursts arrive.
 
 ## Trunked systems
 
@@ -375,8 +376,7 @@ A DMR Tier III trunked system gives out a channel for each call. The radio stays
 registers there, and goes to the channel the system grants. The system sets the frequency, slot and color code of each
 call, so a trunked channel has none of its own.
 
-What has been checked on each radio is in the
-[feature matrix](../feature-matrix.md#checked-on-each-radio).
+For which radios run trunking, see the [feature matrix](../feature-matrix.md).
 
 ### Setting one up
 

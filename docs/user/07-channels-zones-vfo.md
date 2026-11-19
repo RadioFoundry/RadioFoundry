@@ -1,9 +1,11 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
-# Channels, Zones and the VFO
+# Channels, zones, and the VFO
 
-A **channel** is a saved frequency with its mode (FM, DMR, or P25 and NXDN where the radio runs them) and settings. A **zone** is a named list of channels.
-The **VFO** tunes any frequency by hand. Channels and zones come from the codeplug ([Programming the radio](04-programming.md)).
+A **channel** is a saved frequency with its mode (FM, DMR, or P25 and NXDN where the radio runs them) and settings. A
+**zone** is a named list of channels. The **VFO** tunes any frequency by hand. Channels and zones come from the
+codeplug ([Programming the radio](04-programming.md)).
 
 ## Changing the channel
 
@@ -15,7 +17,7 @@ The **VFO** tunes any frequency by hand. Channels and zones come from the codepl
 
 <img src="../ux/screens/160x120i5/zone_channels.png" width="200" alt="A zone's channels">
 
-Changing the channel ends temporary changes, the reply window, digital monitor and a scan.
+Changing the channel ends temporary changes, the reply window, digital monitor, and a scan.
 
 ## Changing the zone
 
@@ -31,19 +33,21 @@ The Zones list shows the VFO first, then every zone with its number of channels.
 
 ## Making a zone
 
-**OK**, **4** (Zones), then the last row, **Create New Zone**. Type the name and press **OK**. The radio saves the empty zone
-and focuses it in the list. Press **#** to open it and add channels with **Add channel**. A channel's own page can
-also put it in zones (**Zones** row, [Editing a channel](#editing-a-channel)).
+1. Press **OK**, **4** (Zones), then pick the last row, **Create New Zone**.
+2. Type the name and press **OK**. The radio saves the empty zone and focuses it in the list.
+3. Press **#** to open the zone, and add channels with **Add channel**.
+
+A channel's own page can also put the channel in zones (the **Zones** row, see [Editing a channel](#editing-a-channel)).
 
 ## Editing a zone
 
-A zone's list (**OK**, **4**, focus the zone, **#**) also edits the zone. Each change is saved at once: there is
+A zone's list (**OK**, **4**, focus the zone, **#**) also edits the zone. The radio saves each change at once: there's
 nothing to save or discard. On a radio without **#**, hold **OK** wherever this section says **#**.
 
 <img src="../ux/screens/160x120i5/zone_actions.png" width="200" alt="Channel actions in a zone">
 
 - **Add channel** (the first row) lists every channel the zone doesn't hold. Type letters or digits to filter it and
-  press **OK** on one. It goes after the channel you are on, or at the end of a zone you are not using.
+  press **OK** on one. It goes after the channel you're on, or at the end of a zone you're not using.
 - **#** on a channel opens its actions:
 
   | Key | Action | Does |
@@ -66,18 +70,17 @@ nothing to save or discard. On a radio without **#**, hold **OK** wherever this 
 
 <img src="../ux/screens/160x120i5/zone_options.png" width="200" alt="Zone options">
 
-Moving, adding and removing keep the radio on its channel. Removing the channel you are on moves the radio to the
+Moving, adding and removing keep the radio on its channel. Removing the channel you're on moves the radio to the
 next channel in the zone. A zone holds a channel once, and the radio refuses a channel past the zone's size ("Zone
 full"). A radio whose codeplug has no zones shows one zone, "All channels"; the first change saves it as a real zone.
 
 Deleting the zone you are using moves the radio to the zone that comes after it in the list (or the one before, when
 it was last). Dual watch keeps watching a channel from a deleted zone when another zone holds it, and otherwise
-stops. A zone marked for roaming loses the mark when it is deleted; the other marks stay on their zones.
+stops. A zone marked for roaming loses the mark when you delete it; the other marks stay on their zones.
 
 ## Sharing a zone
 
-You can send a zone, or one channel, to another radio or a talkgroup over DMR. Status: sending one channel works on a
-radio; sending a whole zone and receiving are tested only in the host tests so far.
+You can send a zone, or one channel, to another radio or a talkgroup over DMR.
 
 **Send:**
 
@@ -87,25 +90,27 @@ radio; sending a whole zone and receiving are tested only in the host tests so f
    channel's settings. For the whole zone: pick **Zone options** (the last row), then **3 Share zone to...**.
 4. Pick a contact or talkgroup and press **OK**. For a station that isn't a contact, type its ID: "Private ID ..."
    and "TG ..." appear under the contacts. The radio says where it sends: "Sending to ... via 442.375" (on a
-   repeater, its output frequency). A banner says "Sent to ..." when it is out.
+   repeater, its output frequency). A banner says "Sent to ..." when the send is done.
 
 A zone too big for one send goes in part, and the radio says how much ("Sending 40 of 60 channels"). Scan lists,
 group lists and privacy keys are never sent.
 
-**Receive:** **Settings > Connections > Accept zone shares** is **On** at first. Nothing is imported until you
-say so. Set it to **Off** to ignore what others send.
+**Receive:** **Settings > Connections > Accept zone shares** is **On** by default. Nothing is imported until you say
+so. To ignore what others send, set it to **Off**.
 
 <img src="../ux/screens/160x120i5/zone_offer.png" width="200" alt="Zone Share Received: Import, Preview, Reject">
 
-1. A banner says "Zone from ...". It stays until you press **#** to open it or **Back** to hide it. The offer also waits under **Tools > Zones/Chs Received** for 10 minutes. The screen is titled **Zone Share Received**, or **Channel Share Received** for one channel.
+1. A banner says "Zone from ...". It stays until you press **#** to open it or **Back** to hide it. The offer also
+   waits under **Tools > Zones/Chs Received** for 10 minutes. The screen is titled **Zone Share Received**, or
+   **Channel Share Received** for one channel.
 2. The offer shows the zone's name, its channels, the sender and how many channels are outside your radio's bands.
 3. Pick **Preview** to see the channels, **Import** to add them, or **Reject**.
 
 What an import does:
 
 - The zone is added after your zones. If you have a zone with that name, it gets " 2".
-- Only channels your radio can receive come in. Every one is **receive only**: turn transmit on per channel when
-  you know you may use it.
+- Only channels your radio can receive come in. Every one is **receive only**: turn transmit on for each
+  channel when you know you're allowed to use it.
 - Talkgroups and contacts you already have are used with your names. Missing ones are added.
 - The same zone sent again by the same radio updates your copy instead of adding another. It replaces only the
   channels from the earlier import that you left as they were. Channels you added to the zone or changed stay,
@@ -118,7 +123,7 @@ At most 6 offers an hour are shown, one at a time. The format is in [zone-share.
 
 **OK**, **5** (Channels) lists every channel in the codeplug by number and name, whichever zones hold it. Each
 row ends with the RX frequency and the talkgroup (DMR) or FM. A long name stays whole and the row shortens the rest:
-"TG" goes first, then the frequency. The channel you are on is marked. Type letters to filter the list.
+"TG" goes first, then the frequency. The channel you're on is marked. Type letters to filter the list.
 
 <img src="../ux/screens/160x120i5/channels.png" width="200" alt="Channels: every channel by number">
 
@@ -129,8 +134,8 @@ row ends with the RX frequency and the talkgroup (DMR) or FM. A long name stays 
 
 ## Editing a channel
 
-The channel's page lists every setting: name, mode, RX and TX frequency, power, RX only, then bandwidth, tones,
-VOX and tone burst on FM, or color code, timeslot, TX contact, RX group list, own ID, direct mode, talk permit beeps and talker
+The channel's page lists every setting: name, mode, RX and TX frequency, power, RX only, then bandwidth, tones, VOX and
+tone burst on FM, or color code, timeslot, TX contact, RX group list, own ID, direct mode, talk permit beeps and talker
 alias on DMR, then TX time-out, scan, battery saver and the zones that hold it. The list scrolls.
 
 <img src="../ux/screens/160x120i5/channel.png" width="200" alt="A channel's settings">
@@ -153,15 +158,15 @@ Focus a row and press **OK**:
 A changed row is marked until you save. **Hold OK** anywhere on the page to save, or pick the **Save** row. The radio
 writes the channel in the background and says "Saved channel 3". **Back** with unsaved changes asks whether to
 discard them; the answer starts on "No, keep editing". Saving any channel drops the quick-settings changes on the
-channel you are on: the radio reloads it from the codeplug.
+channel you're on: the radio reloads it from the codeplug.
 
 The radio won't save a channel without a name, with RX outside its bands, with TX where it can't transmit (set RX only
 instead), a DMR channel in the broadcast band or in the air band (on a radio that receives AM there), or a DMR channel
-without a TX contact, unless it is RX only. It says which. A DMR channel where the radio receives but can't transmit
-saves when it is RX only.
+without a TX contact, unless it's RX only. It says which. A DMR channel where the radio receives but can't transmit
+saves when it's RX only.
 
-**Save as new channel** stores the edited copy at the lowest free number and leaves the original as it was.
-**Tune to this ch** tunes the channel and **Share channel to...** sends it to another radio ([Sharing a zone](#sharing-a-zone));
+**Save as new channel** stores the edited copy at the lowest free number and leaves the original as it was. **Tune to
+this ch** tunes the channel and **Share channel to...** sends it to another radio ([Sharing a zone](#sharing-a-zone));
 save or discard your changes first.
 
 ### Text entry
@@ -183,10 +188,11 @@ name.
 
 ### New channel from current settings
 
-**OK**, **5**, then the first row, **New from current**. It opens an unsaved copy of the channel you are on, with any
+**OK**, **5**, then the first row, **New from current**. It opens an unsaved copy of the channel you're on, with any
 quick-settings changes, or of the VFO, at the lowest free channel number. The name gets " 2" added (from the VFO, the
-frequency). Change what differs, then hold **OK** to save it. A new channel is in no zone yet: add it to one with **Add channel** in the
-zone's list ([Editing a zone](#editing-a-zone)), or use **Copy here** there to make the copy and add it in one step.
+frequency). Change what differs, then hold **OK** to save it. A new channel is in no zone yet: add it to one with **Add
+channel** in the zone's list ([Editing a zone](#editing-a-zone)), or use **Copy here** there to make the copy and add it
+in one step.
 
 ## Saving changes to a channel
 
@@ -202,7 +208,7 @@ The VFO is an FM VFO or, on a radio with DMR, a DMR VFO. It keeps its mode like 
 the VFO (mode, color code, timeslot, talk target) is kept, also when you go to a channel and come back, and after a
 restart.
 
-1. **OK**, **4** (Zones). The VFO is the first row.
+1. Press **OK**, then **4** (**Zones**). The VFO is the first row.
 2. Press **OK**. Home shows the frequency large, and the radio says "VFO: type a frequency".
 
 On a radio with a **VFO/MR** key, press it instead: it goes between the channel and the VFO. **Settings > Keys** can
@@ -254,14 +260,14 @@ what you typed as you go.
 
 ### Stepping
 
-**Up**, **Down** and the channel knob change the VFO frequency by its step. The step is **Settings > Talk > VFO step**. Its
-default, **Auto**, follows the width: 25 kHz at 25K (and in AM) and 12.5 kHz at 12.5K. In the broadcast band the step
-is always the FM broadcast step, whatever the VFO step. The step is in the status strip.
+**Up**, **Down** and the channel knob change the VFO frequency by its step. The step is **Settings > Talk & listen > VFO
+step**. Its default, **Auto**, follows the width: 25 kHz at 25K (and in AM) and 12.5 kHz at 12.5K. In the broadcast band
+the step is always the FM broadcast step, whatever the VFO step. The step is in the status strip.
 
 ### Split (repeater offset)
 
-In the VFO, **\***, **5** (**\***, **6** in the DMR VFO) is **TX freq** (the split): TX against RX, "Off" or the offset ("+600k",
-"-5M").
+In the VFO, **\***, **5** (**\***, **6** in the DMR VFO) is **TX freq** (the split): TX against RX, "Off" or the offset
+("+600k", "-5M").
 
 <img src="../ux/screens/160x120i5/quick_vfo_split.png" width="200" alt="Typing a TX frequency in TX freq">
 
@@ -279,7 +285,8 @@ In the VFO, **\***, **5** (**\***, **6** in the DMR VFO) is **TX freq** (the spl
   so far ("TX 147.02___").
 - Any other split (a custom one): type the TX frequency as you type a VFO frequency (**1 4 7 0 0** is 147.000) and
   press **OK**. **Back** takes the last digit back. Any frequency the radio can transmit on is accepted.
-- A new RX frequency keeps the offset within the same band. A move to another band (UHF to VHF, say) makes the VFO simplex.
+- A new RX frequency keeps the offset within the same band. A move to another band (UHF to VHF, say) makes the VFO
+  simplex.
 - Monitor stays on its key in the VFO, and privacy is for channels.
 - Home shows the TX frequency: on FM after **PTT→**; on DMR in the top row ("TX 147.120"), or as the offset beside the
   power on displays without that row. While you transmit, the large frequency turns red and shows the TX frequency
@@ -289,8 +296,9 @@ In the VFO, **\***, **5** (**\***, **6** in the DMR VFO) is **TX freq** (the spl
 
 ### DMR in the VFO
 
-**\***, **4** in the VFO switches it between FM and DMR on the same frequency ("VFO: DMR"), and to P25 and NXDN after DMR on a
-radio that runs them ([P25 in the VFO](#p25-in-the-vfo), [NXDN in the VFO](#nxdn-in-the-vfo)). In DMR the quick settings are the DMR ones:
+**\***, **4** in the VFO switches it between FM and DMR on the same frequency ("VFO: DMR"), and to P25 and NXDN after
+DMR on a radio that runs them ([P25 in the VFO](#p25-in-the-vfo), [NXDN in the VFO](#nxdn-in-the-vfo)). In DMR the quick
+settings are the DMR ones:
 
 | Key | Tile | What it does in the DMR VFO |
 |---|---|---|
@@ -300,8 +308,8 @@ radio that runs them ([P25 in the VFO](#p25-in-the-vfo), [NXDN in the VFO](#nxdn
 
 <img src="../ux/screens/160x120i5/quick_vfo_dmr.png" width="200" alt="Quick settings in the DMR VFO">
 
-- Pick the color code and timeslot of the repeater or the simplex frequency you use. The radio talks to talkgroup 9 until
-  you pick another target, with your own DMR ID.
+- Pick the color code and timeslot of the repeater or the simplex frequency you use. The radio talks to talkgroup 9
+  until you pick another target, with your own DMR ID.
 - The VFO has no listen list. It plays calls to its talk target, all calls and private calls to you. Other talkgroups
   show as "Other TG: not played". To hear everything on the slot, turn on digital monitor.
 - Home shows the frequency, the talk target, the timeslot and the color code. Changes here don't show a dot and
@@ -312,25 +320,25 @@ radio that runs them ([P25 in the VFO](#p25-in-the-vfo), [NXDN in the VFO](#nxdn
 
 ### P25 in the VFO
 
-On a radio that runs P25 ([feature matrix](../feature-matrix.md)), P25 is one of the VFO's modes: **\***, **4** goes FM, DMR, P25, then FM again
-("VFO: P25"). The VFO keeps the mode when the radio is switched off.
+On a radio that runs P25 ([feature matrix](../feature-matrix.md)), P25 is one of the VFO's modes: **\***, **4** goes FM,
+DMR, P25, then FM again ("VFO: P25"). The VFO keeps the mode when you turn the radio off.
 
 - It hears clear P25 voice calls on network access code 293, to every talkgroup. Encrypted calls stay silent.
 - PTT sends a P25 voice call to talkgroup 1 from your P25 unit ID, or your DMR ID when the codeplug has none.
 - Home shows "P25", what PTT calls ("TG 1") and the network access code ("NAC 293"). During a call it shows who calls
   and where ("ID 3101234 > TG 7"), or why the call isn't played ("Encrypted: not played", "Other TG: not played").
   FM's tone and width tiles say "FM only: this is a P25 channel".
-- The code, talkgroup and talkaround can be changed only from a computer for now (`rfoundry_debug.py radio p25`), and the
-  change lasts until the radio is switched off.
+- You can change the code, talkgroup, and talkaround only from a computer (`rfoundry_debug.py radio p25`), and the
+  change lasts until you turn the radio off.
 
 ### P25 channels
 
-A P25 channel comes from a codeplug written on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)), a zone shared by another radio, the VFO (in P25, open
-**Channels**, **New channel from current settings** and save it), or any channel: press **OK** on its Mode until it
-says P25, set the NAC and save. A channel made P25 starts with NAC 293. The channel keeps the network access codes, the
-talkgroup (when a contact has that talkgroup; else talkgroup 1) and talkaround. A shared one comes in receive only, as
-every shared channel does: turn RX only off in its settings. On a radio without P25 the channel shows as P25 and stays
-silent.
+A P25 channel comes from a codeplug written on a computer ([P25 and NXDN in the
+editor](04-programming.md#p25-and-nxdn)), a zone shared by another radio, the VFO (in P25, open **Channels**, **New
+channel from current settings** and save it), or any channel: press **OK** on its Mode until it says P25, set the NAC
+and save. A channel made P25 starts with NAC 293. The channel keeps the network access codes, the talkgroup (when a
+contact has that talkgroup; else talkgroup 1) and talkaround. A shared one comes in receive only, as every shared
+channel does: turn RX only off in its settings. On a radio without P25 the channel shows as P25 and stays silent.
 
 - Home shows it as in the VFO. It hears its talkgroup, calls to everyone and calls to your ID, unless the codeplug
   says to hear every call.
@@ -339,16 +347,18 @@ silent.
 - **NAC** sets the network access code both ways. Type its hex digits; **Up** and **Down** step the last digit
   through 0-9 and A-F, so for 1A5 type 1, 9, **Up**, 5. F7E receives every NAC. The talk group is **TX contact**, your
   unit ID **Own ID**.
-- **OK** on Mode steps to NXDN (on a radio that runs it), FM, DMR, then back to P25 with its settings as they were, so
-  a slip costs nothing. Saving the channel as another mode removes its P25 settings: the radio asks first ("Save as
-  FM?", "Save as DMR?", or "Unsaved Changes" for NXDN), and "No, keep editing" is the default. **Save as new channel** leaves the P25 channel as it is.
+- **OK** on Mode steps to NXDN (on a radio that runs it), FM, DMR, then back to P25 with its settings as they were, so a
+  slip costs nothing. Saving the channel as another mode removes its P25 settings: the radio asks first ("Save as FM?",
+  "Save as DMR?", or "Unsaved Changes" for NXDN), and "No, keep editing" is the default. **Save as new channel** leaves
+  the P25 channel as it is.
 - Scan stops on P25 channels and holds on a call you would hear there. Dual watch takes one as A or B.
 
 ### P25 trunked channels
 
 On a radio that runs P25 trunking, a channel can belong to a P25 trunked system (Phase 1 voice channels). The system
-(its control channels, its identity, your unit ID) and its channels (one talkgroup each) come from a codeplug written
-on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)). A new system is listen only. The channel's settings show "P25T" as the mode.
+(its control channels, its identity, your unit ID) and its channels (one talkgroup each) come from a codeplug written on
+a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)). A new system is listen only. The channel's
+settings show "P25T" as the mode.
 
 | Home says | What the radio is doing |
 |---|---|
@@ -357,15 +367,14 @@ on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)). A 
 | Following TG 201 | On the voice channel of a call. It goes back to the control channel when the call ends |
 | Registering | Transmit is on: registering with the system and joining the talkgroup |
 | TG 201 | Registered. PTT asks the system for a voice channel |
-| Wait, Queued | PTT is held and the request is with the system. Talk when home shows the transmission |
+| Wait, Queued | PTT is held and the request is with the system. Talk when Home shows the transmission |
 | Denied, Reg. denied | The system refused the request or the registration |
 
 - A system set to listen only, a channel set to RX only, or one without a unit ID or talkgroup never transmits: PTT
   says "RX only".
 - Calls to other talkgroups are followed only when the channel is set to follow every group of the system.
-- Calls to one unit, emergency and Phase 2 (TDMA) voice channels are not there yet.
+- The radio doesn't follow calls to one unit, emergency calls, or Phase 2 (TDMA) voice channels.
 - Scan skips these channels and dual watch doesn't take them: a trunked channel follows its system instead.
-- This has run against a test control channel only, not yet on a working system.
 
 ### NXDN in the VFO
 
@@ -376,16 +385,17 @@ is NXDN conventional voice at 9600 bit/s (12.5 kHz) or 4800 bit/s (6.25 kHz), th
 - PTT sends a voice call to group 1 with RAN 1 at 9600 bit/s, as unit 1 until a computer sets another ID.
 - Home shows "NXDN", what PTT calls ("TG 1"), the RAN sent and the rate ("RAN 1 9600"). During a call it shows who
   calls and where, or why the call isn't played. FM's tone and width tiles say "FM only: this is NXDN".
-- The rate, the RANs, the unit ID and the group can be changed only from a computer for now
-  (`rfoundry_debug.py radio nxdn`), and the change lasts until the radio is switched off.
+- You can change the rate, the RANs, the unit ID, and the group only from a computer
+  (`rfoundry_debug.py radio nxdn`), and the change lasts until you turn the radio off.
 - Some radios only transmit NXDN or only receive it ([feature matrix](../feature-matrix.md)). One that only receives
   says "This mode: receive only" on PTT.
 
 ### NXDN channels
 
-An NXDN channel comes from a codeplug written on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)), a zone shared by another radio, the VFO (in NXDN,
-open **Channels**, **New channel from current settings** and save it), or any channel: press **OK** on its Mode until
-it says NXDN, set the RAN and rate, and save. A channel made NXDN starts with RAN 1 at 9600 bit/s. The channel keeps the rate, the RANs, the
+An NXDN channel comes from a codeplug written on a computer ([P25 and NXDN in the
+editor](04-programming.md#p25-and-nxdn)), a zone shared by another radio, the VFO (in NXDN, open **Channels**, **New
+channel from current settings** and save it), or any channel: press **OK** on its Mode until it says NXDN, set the RAN
+and rate, and save. A channel made NXDN starts with RAN 1 at 9600 bit/s. The channel keeps the rate, the RANs, the
 squelch and the group (when a contact has that group; else group 1).
 
 - Home shows it as in the VFO. The channel's settings show "NXDN" as the mode.
@@ -420,12 +430,12 @@ programmed on the frequency in the codeplug works too, even one stored as DMR. B
 "Air band: receive only" or "Broadcast: receive only" and the radio doesn't transmit. Sub-audio tones are ignored.
 
 In the Codeplug Editor, a channel whose RX frequency is in one of these bands is set to **RX Only** when you type the
-frequency, its TX frequency follows RX, and its mode shows as "AM (air band)" or "FM broadcast". The Problems list warns about a channel there that
-isn't RX Only or is DMR.
+frequency, its TX frequency follows RX, and its mode shows as "AM (air band)" or "FM broadcast". The Problems list warns
+about a channel there that isn't RX Only or is DMR.
 
 In the air band the squelch works as on any FM channel. A broadcast station plays whatever the squelch level, so a
-fading station isn't cut, and the screen shows it is receiving. The LED stays off: a station isn't a call. The squelch only stops a scan on a station:
-while a scan runs, the broadcast band is quiet between stations.
+fading station isn't cut, and the screen shows it is receiving. The LED stays off: a station isn't a call. The squelch
+only stops a scan on a station: while a scan runs, the broadcast band is quiet between stations.
 
 In the broadcast band the knob and **Up** / **Down** step 200 kHz, landing on the odd tenths (88.1, 88.3 ... 107.9)
 where stations are in the Americas. For 100 kHz steps set **Settings > Talk & listen > FM broadcast step** to 100 kHz.

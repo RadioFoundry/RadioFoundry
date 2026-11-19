@@ -18,7 +18,7 @@ aprs_tocall = "3"
 debuglink_aliases = ["DM-32"]
 
 [docs]
-install = "docs/user/19-moving-from-stock-dm32.md"
+install = "docs/user/18-moving-from-stock.md"
 
 # One-line summaries for the site and the generated tables
 [hardware]

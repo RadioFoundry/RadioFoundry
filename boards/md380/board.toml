@@ -15,7 +15,7 @@ order = 5
 aprs_tocall = "M"
 
 [docs]
-install = "docs/user/18-moving-from-stock-md380.md"
+install = "docs/user/18-moving-from-stock.md"
 
 # One-line summaries for the site and the generated tables
 [hardware]

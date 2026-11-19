@@ -90,7 +90,7 @@
 
 | 术语 | 含义 |
 |---|---|
-| <a id="t-codeplug"></a>电台频率（Codeplug） | 电台的编程数据：信道、区域、联系人、通话组列表、DMR ID。[更多](../dev/cps-and-codeplug.md) |
+| <a id="t-codeplug"></a>电台频率（Codeplug） | 电台的编程数据：信道、区域、联系人、通话组列表、DMR ID。[更多](04-programming.md) |
 | <a id="t-contact"></a>联系人（Contact） | 电台频率中的一个人：名称和 DMR ID。 |
 | <a id="t-csv"></a>CSV | 逗号分隔值：以纯文本表示表格，编程软件导出时使用。 |
 | <a id="t-digital-monitor"></a>数字监听（Digital monitor） | 播放时隙上的所有通话组（混杂模式；旧版 RadioFoundry 中称为“hear all”）。 |

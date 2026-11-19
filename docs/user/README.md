@@ -1,81 +1,78 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
-# RadioFoundry User Manual
+# RadioFoundry user manual
 
-How to install RadioFoundry and use it on the radio. The chapters describe what RadioFoundry does on every radio. The
-[Radio reference](23-radios.md) lists what differs from radio to radio: the keys, power levels, battery, power switch
-and display, and what has been checked on each. Each release also carries this manual as a PDF, built from these files
-(`tools/build_manual.sh`, in file name order).
+This manual describes how to install RadioFoundry and use it on the radio. The chapters describe what RadioFoundry
+does on every radio. The [Radio reference](23-radios.md) lists what differs from radio to radio: the keys, power
+levels, battery, power switch, and display. Each release also carries this manual as a PDF, built from these files in
+file-name order.
 
-Start on the web site, [radiofoundry.org](https://radiofoundry.org): the **web installer** installs, updates, backs up
-and restores a radio, and the **Codeplug Editor** edits channels, zones and contacts. Both run in a Chromium browser.
-The chapters below name the command line tools as alternatives.
+Start on the web site, [radiofoundry.org](https://radiofoundry.org). The **web installer** installs, updates, backs up,
+and restores a radio. The **Codeplug Editor** edits channels, zones, and contacts. Both run in a Chromium-based
+browser. The chapters name the command-line tools as alternatives.
 
 <img src="../ux/screens/160x120i5/home_dmr.png" width="200" alt="Home screen on a DMR channel">
 <img src="../ux/screens/160x120i5/quick_dmr.png" width="200" alt="Quick settings">
 <img src="../ux/screens/160x120i5/hub.png" width="200" alt="The hub">
 
-## Reading order
+## Contents
+
+For which chapter to read first, see [How to use this manual](01-introduction.md#how-to-use-this-manual).
 
 ### Get started
 
-1. [Introduction](01-introduction.md): what RadioFoundry is, project status, conventions
-2. [Installing](02-installing.md): the web installer first, then the advanced rfoundry command line; updating, backups, going back
-3. [First boot](03-first-boot.md): built-in channels, the first checks
-4. [Programming the radio](04-programming.md): the Codeplug Editor (P25 and NXDN channels, trunked systems), qdmr, RadioID contacts
+1. [Introduction](01-introduction.md): what RadioFoundry does, the AMBE codec, conventions.
+2. [Installing](02-installing.md): installing and updating with the web installer, backups, going back.
+3. [First boot](03-first-boot.md): the built-in channels and the first checks.
+4. [Programming the radio](04-programming.md): the Codeplug Editor, qdmr, files, and RadioID.net contacts.
 
 ### Use the radio
 
-5. [Keys and navigation](05-keys-and-navigation.md): the five key rules, Find, temporary changes, key lock
-6. [The Home screen](06-home-screen.md): what each region shows, receiving, transmitting
-7. [Channels, zones and the VFO](07-channels-zones-vfo.md): P25, P25 trunked and NXDN channels too
-8. [FM](08-fm.md): squelch, monitor, tones, bandwidth, VOX, touch tones
-9. [DMR](09-dmr.md): talk targets, replying, Recent, contacts, timeslot and color code, privacy, roaming, trunked systems
-10. [Messages, call alert and radio check](10-messages-and-signaling.md)
-11. [Emergency](11-emergency.md)
-12. [Scan and dual watch](12-scan.md)
-13. [APRS](13-aprs.md): positions on FM and over DMR, beacons, KISS and iGate with a computer
-14. [Hotspot mode](14-hotspot.md): MMDVMHost and Pi-Star, SFR, two radios as a duplex repeater
-15. [USB network mode](15-usb-network.md): IP over DMR, the status page, rig control, KISS, TFTP, SNMP, control station
-16. [Battery and power](16-battery-and-power.md)
+5. [Keys and navigation](05-keys-and-navigation.md): the five key rules, Find, temporary changes, key lock.
+6. [The Home screen](06-home-screen.md): what each region shows while you receive and transmit.
+7. [Channels, zones, and the VFO](07-channels-zones-vfo.md): including P25 and NXDN channels.
+8. [FM](08-fm.md): squelch, monitor, tones, bandwidth, VOX, touch tones.
+9. [DMR](09-dmr.md): talk targets, replies, Recent, contacts, privacy, roaming, trunked systems.
+10. [Messages, call alert, and radio check](10-messages-and-signaling.md).
+11. [Emergency](11-emergency.md).
+12. [Scan and dual watch](12-scan.md).
+13. [APRS](13-aprs.md): positions on FM and over DMR, beacons, KISS and iGate with a computer.
+14. [Hotspot mode](14-hotspot.md): MMDVMHost, single-frequency repeaters, two radios as a duplex repeater.
+15. [USB network mode](15-usb-network.md): IP over DMR and the services the radio offers to a computer.
+16. [Battery and power](16-battery-and-power.md).
 
 ### Reference
 
-17. [Settings](17-settings.md): every setting, its default and status
-20. [Troubleshooting](20-troubleshooting.md)
-21. [FAQ](21-faq.md)
-22. [Glossary](22-glossary.md)
-23. [Radio reference](23-radios.md): keys, power levels, battery, power switch, display, install values, programming and
-    status of each radio
-
-### Moving from the stock firmware
-
-These chapters are for a radio that still runs the manufacturer's firmware and has a codeplug worth keeping. One
-program installs RadioFoundry and carries the codeplug over. Without a chapter, install with the web installer and open
-its backup in the Codeplug Editor ([Installing](02-installing.md#install-with-the-web-installer)).
-
-The [Radio reference](23-radios.md) links the chapter from the radio's "Installing" section.
+17. [Settings](17-settings.md): every setting and its default.
+18. [Moving from the original firmware](18-moving-from-stock.md): carrying a codeplug over from the manufacturer's
+    firmware.
+20. [Troubleshooting](20-troubleshooting.md): symptoms and fixes, including installer errors.
+21. [FAQ](21-faq.md).
+22. [Glossary](22-glossary.md).
+23. [Radio reference](23-radios.md): keys, power levels, battery, power switch, display, and install values for each
+    radio.
 
 ## Quick reference
 
-Keys are named by their job. [Key roles](23-radios.md#key-roles) shows which key does each job on your radio.
+Keys are named by their job. For which key does each job on your radio, see [Key roles](23-radios.md#key-roles).
 
 | To | Press |
 |---|---|
 | Change channel | Channel knob, or **Up** / **Down** |
-| Change zone | **Previous zone** / **Next zone**, or **OK**, **4**, pick a zone |
-| Quick settings | **\*** |
+| Change zone | **Previous zone** / **Next zone**, or **OK**, **4**, then pick a zone |
+| Open quick settings | **\*** |
 | Open the menu (hub) | **OK** |
 | Act on the last caller | **#** |
-| Recent calls | **OK**, **3** |
+| Open Recent | **OK**, **3** |
 | Talk to another talkgroup or ID | Hold **#** |
 | Choose who to talk to | **Talk target** (DMR), or **\***, **8** |
 | Monitor | Hold **Monitor** |
-| Dual watch on / off | Hold **Talk target**, or **\***, **7** |
-| Scan on / off | **OK**, **6**, **1** |
+| Turn dual watch on or off | Hold **A/B**, or **\***, **7** |
+| Turn scan on or off | **OK**, **6**, **1** |
 | Undo temporary changes | **Back** on Home |
 | Save changes to the channel | Hold **OK** |
-| Back to Home | Hold **Back** |
-| Lock / unlock keys | Hold **\*** |
+| Go back to Home | Hold **Back** |
+| Lock or unlock the keys | Hold **\*** |
 
-Developers: see the [developer documentation](../dev/README.md).
+For contributor documentation, see the [developer documentation](../dev/README.md).

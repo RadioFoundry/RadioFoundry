@@ -1,109 +1,111 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # FAQ
 
-**Why allow commercial use?**
+For symptoms and their fixes, see [Troubleshooting](20-troubleshooting.md).
+
+## About the project
+
+### Why allow commercial use?
 
 Commercial use is the reason $40 DMR radios exist. If everything DMR were ham-only, a decent radio would still cost
-$500. The project authors don't make money from RadioFoundry, so nobody loses when someone else uses it in a product. The
-project doesn't sell DMR firmware. The goal is a decent firmware that everyone can use.
+$500. The project authors don't make money from RadioFoundry, so nobody loses when someone else uses it in a product.
+The project doesn't sell DMR firmware. The goal is a decent firmware that everyone can use.
 
-**Why reinvent the wheel?**
+### Why reinvent the wheel?
 
-RadioFoundry covers most of these radios with one core under a license that lets anyone use it, so work on one
-radio helps every other.
+RadioFoundry covers most of these radios with one core under a license that lets anyone use it, so work on one radio
+helps every other.
 
-**Why another radio firmware?**
+### Why another radio firmware?
 
-DMR has many features that inexpensive radios rarely implement. They are useful for commercial applications and for
+DMR has many features that inexpensive radios rarely implement. They're useful for commercial applications and for
 amateur use.
 
-**How can I help?**
+### How can I help?
 
 Any way you can:
 
-- **Test and report.** Run RadioFoundry on your radio and [report what breaks](https://github.com/radiofoundry/radiofoundry/issues/new?template=bug_report.yml). If the radio restarted,
-  include the crash log from **Settings > Advanced > Crash log** ([settings](17-settings.md#crash-log)).
+- **Test and report.** Run RadioFoundry on your radio and
+  [report what breaks](https://github.com/radiofoundry/radiofoundry/issues/new?template=bug_report.yml). If the radio
+  restarted, include the crash log from **Settings > Advanced > Crash log** ([Settings](17-settings.md#crash-log)).
 - **Help others.** Answer questions and share what works in the
   [community group](https://www.facebook.com/groups/radiofoundry/) on Facebook.
-- **Ask.** [Request a feature](https://github.com/radiofoundry/radiofoundry/issues/new?template=feature_request.yml) or [a radio](https://github.com/radiofoundry/radiofoundry/issues/new?template=radio_request.yml) you'd like supported.
-- **Contribute.** Send pull requests for code or docs ([contributing](../dev/contributing.md)).
-- **Donate or lend a radio.** This helps the most, especially older models that are hard to find now, because every
+- **Ask.** Request a
+  [feature](https://github.com/radiofoundry/radiofoundry/issues/new?template=feature_request.yml) or a
+  [radio](https://github.com/radiofoundry/radiofoundry/issues/new?template=radio_request.yml) that you'd like
+  supported.
+- **Contribute.** Send pull requests for code or docs ([Contributing](../dev/contributing.md)).
+- **Donate or lend a radio.** This helps the most, especially with older models that are hard to find, because every
   port needs the hardware on the bench.
 
-**Can I use RadioFoundry in my own project?**
+### Can I use RadioFoundry in my own project?
 
-Yes, including commercial and closed-source products. The license has one condition: keep our copyright and
-license notices in the code you copy and with the firmware you ship. We also ask that you give your project its
-own name. If you're adding a feature, we'd be glad to have it here, credited to you, on every radio whose
-hardware can run it: start a [discussion](https://github.com/radiofoundry/radiofoundry/discussions) or send a pull
-request. Details: [using RadioFoundry in your project](../../FORKING.md).
+Yes, including in commercial and closed-source products. The license has one condition: keep our copyright and license
+notices in the code you copy and with the firmware you ship. We also ask that you give your project its own name. If
+you add a feature, we'd be glad to have it here, credited to you, on every radio whose hardware can run it. Start a
+[discussion](https://github.com/radiofoundry/radiofoundry/discussions) or send a pull request. For details, see
+[Using RadioFoundry in your project](../../FORKING.md).
 
-**The web flasher or the Codeplug Editor failed. How do I report it?**
+## Installing and the codec
 
-On radiofoundry.org most errors are reported automatically: the message says so and gives a reference. Type what you
-were doing in the box under it and click **Send Details**; the developers review every report and work on the
-underlying problem. To send more, or where reporting is off or blocked, use **Report a Problem**.
+### Why doesn't the release include the codec?
 
-Click **Report a Problem** under the error message, describe what you were doing, and download the report. It's a zip
-file with the steps the page took, the errors and your browser's details. Email it to the developers, attach it to a
-GitHub issue or share it in the [community group](https://www.facebook.com/groups/radiofoundry/). If the problem is reading or writing a codeplug, tick the box that includes it: a codeplug holds your
-callsign, DMR ID and contacts, so it's left out unless you add it. Developers can also open the browser's console
-(F12): every error is printed there with its details.
+DMR voice needs DVSI's AMBE+2 codec, and RadioFoundry can't distribute it. Your radio already has the codec, in its
+original firmware. The installer leaves the codec in place when it's already there, or takes it from your radio's
+original firmware file on your own computer. For details, see [Installing](02-installing.md).
 
-**Writing a codeplug fails with "The radio refused to write the codeplug". What now?**
+### Can I use RadioFoundry without the codec?
 
-If the radio came straight from its original firmware, choose **Write to Radio** again: the editor offers **Prepare
-Radio**, which erases the original firmware's data from the area RadioFoundry keeps its settings in. Without that, the radio
-refuses every write and forgets its settings when it's turned off. If the error comes back after that, use **Report a
-Problem**.
-
-**Why doesn't the release include the codec?**
-
-The AMBE+2 codec DMR voice needs is DVSI's, and RadioFoundry can't distribute it. Your radio already has it, in its stock
-firmware. rfoundry leaves it in place when it's already there, or takes it from your radio's stock firmware file on
-your own computer ([Installing](02-installing.md)).
-
-**Can I use RadioFoundry without the codec?**
-
-Yes. FM works and DMR calls show on the screen. DMR data (messages, call alert, radio check) and hotspot mode work.
+Yes. FM works, and DMR calls show on the screen. DMR data (messages, call alert, radio check) and hotspot mode work.
 DMR voice is off.
 
-**Will RadioFoundry damage my radio?**
+### Will RadioFoundry damage my radio?
 
-Flashing writes only the processor's application and codec sectors. The bootloader and the factory calibration are
-never written, so you can go back to stock ([Installing](02-installing.md#going-back-to-the-stock-firmware)). RadioFoundry is early software.
-Test it before you depend on it, and transmit only where you are licensed to.
+Flashing writes only the processor's application and codec sectors. The installer never writes the bootloader or the
+factory calibration, so you can go back to the original firmware
+([Installing](02-installing.md#going-back-to-the-original-firmware)). Test RadioFoundry before you depend on it, and
+transmit only where you're licensed to.
 
-**Does qdmr work with RadioFoundry?**
+### How do I report a problem with the web installer or the Codeplug Editor?
+
+See [Reporting a problem](20-troubleshooting.md#reporting-a-problem).
+
+## Programming
+
+### Does qdmr work with RadioFoundry?
 
 Yes, through a compatibility layer. qdmr's open-firmware driver reads and writes the codeplug
-([Programming the radio](04-programming.md)). On a radio whose codeplug sits where qdmr's driver can't write, use the Codeplug Editor ([Radio reference](23-radios.md#programming)).
+([Programming the radio](04-programming.md)). On a radio whose codeplug sits where qdmr's driver can't write, use the
+Codeplug Editor ([Radio reference](23-radios.md#programming)).
 
-**Can I program the radio without installing anything?**
+### Can I program the radio without installing anything?
 
 Yes. The Codeplug Editor on the project's web site reads and writes the radio from a Chromium-based browser (Chrome,
-Edge, Opera) and builds the DMR ID database from RadioID.net
-([The Codeplug Editor](04-programming.md#the-codeplug-editor)).
+Edge, Opera), and builds the DMR ID database from RadioID.net. For details, see
+[The Codeplug Editor](04-programming.md#the-codeplug-editor).
 
-**Can I use a phone?**
+### Can I use a phone?
 
-Android, yes: Chrome on Android runs the web installer and the Codeplug Editor. Plug the radio's USB cable or the
+On Android, yes: Chrome on Android runs the web installer and the Codeplug Editor. Plug the radio's USB cable or the
 programming cable into the phone through a USB OTG adapter.
 
-**Do not switch to another app or let the screen time out while a radio transfer is active.** Android slows a page in the
-background, and a backup or an install then takes much longer and can fail. The pages keep the screen on while the
+**Don't switch to another app or let the screen time out while a radio transfer is running.** Android slows a page in
+the background, so a backup or an installation takes much longer and can fail. The pages keep the screen on while the
 radio is connected.
 
 | Point | Why |
 |---|---|
-| Cables with an FTDI chip and radios with their own USB port work. Other USB-serial cables (CH340, CP210x, PL2303) don't yet | Chrome on Android reaches USB serial devices only through WebUSB, and the page brings its own driver for each kind |
-| Accept Android's "Allow Chrome to access ..." prompt after picking the radio or cable in Chrome's list | Without it the page can't open the device |
-| Close any app that opens when the radio or cable is plugged in, and don't pick it in Android's "open with" prompt | An app holding the cable takes the radio's replies; the page then reports that the radio didn't answer |
-| Keep Chrome in front and the screen on (above) | Android slows a page in the background to about one step a second |
+| Cables with an FTDI chip and radios with their own USB port work. Other USB-serial cables (CH340, CP210x, PL2303) don't | Chrome on Android reaches USB serial devices only through WebUSB, and the page brings its own driver for each kind |
+| After you pick the radio or cable in Chrome's list, accept Android's "Allow Chrome to access ..." prompt | Without it, the page can't open the device |
+| Close any app that opens when you plug in the radio or cable, and don't pick it in Android's "open with" prompt | An app that holds the cable takes the radio's replies, and the page then reports that the radio didn't answer |
+| Keep Chrome in front and the screen on | Android slows a page in the background to about one step a second |
 
-iPhone and iPad: no. iOS has no WebUSB or Web Serial.
+On iPhone and iPad, no: iOS has no WebUSB or Web Serial.
 
-**Is basic privacy secure?**
+## Privacy
+
+### Is basic privacy secure?
 
 No. Basic privacy scrambles voice with a fixed key. It keeps casual listeners out, nothing more.

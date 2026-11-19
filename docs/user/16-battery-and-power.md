@@ -1,36 +1,38 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
-# Battery and Power
+# Battery and power
 
-The battery, power level and power switch values depend on the radio. The [Radio reference](23-radios.md) has them
+The battery, power level, and power switch values depend on the radio. The [Radio reference](23-radios.md) has them
 for each radio. A radio without a battery (a mobile on a fixed supply) has none of the battery items in this chapter:
-no battery icon or percentage, no Tools > Battery page, no Battery saver or Low battery warning setting, and no
-battery warnings.
+no battery icon or percentage, no **Tools > Battery** page, no **Battery saver** or **Low battery warning** setting,
+and no battery warnings.
 
 ## Battery level
 
-The status line shows the battery as an icon and a percentage. On a small screen a page's title takes over the
-status line, so the battery shows on Home and on the larger screens' pages. The percentage turns to the warning color at the low
-battery warning level and below. The level is set in **Settings > Power saving > Low battery warning** (15 % by default).
+The status line shows the battery as an icon and a percentage. On a small screen, a page's title takes over the
+status line, so the battery shows on Home and on the larger screens' pages. The percentage turns to the warning color
+at the low battery warning level and below. Set the level in **Settings > Power saving > Low battery warning** (15% by
+default).
 
-**OK**, **6**, **9** opens Tools > Battery, which shows the level. At the warning level and below it also shows "charge
-soon".
+**OK**, **6**, **9** opens **Tools > Battery**, which shows the level. At the warning level and below, it also shows
+"charge soon".
 
-The radio reads the battery once a second. It doesn't read it while transmitting or for 3 s after, because the
+The radio reads the battery once a second. It doesn't read it while transmitting or for 3 seconds after, because the
 voltage sags under transmit.
 
 ## Low and critical battery
 
-At the low battery warning level the radio shows the banner "Battery 15%: charge soon" (with the actual percentage)
+At the low battery warning level, the radio shows the banner "Battery 15%: charge soon" (with the actual percentage)
 and plays the low battery beep. The warning repeats every 5 minutes while the battery stays at or below that level.
-It stops once the battery is 3 % above the level (charged).
+It stops once the battery is 3% above the level (charged).
 
 Most radios also have two voltage thresholds. Whichever warning comes first applies.
 
 | Level | What the radio does |
 |---|---|
-| Low | Low battery beep (800 Hz, then 600 Hz), again every 2 minutes. The backlight is limited to 30 % |
-| Critical | Critical beep (600 Hz three times), again every 30 s. Every transmission is refused |
+| Low | Low battery beep (800 Hz, then 600 Hz), again every 2 minutes. The backlight is limited to 30% |
+| Critical | Critical beep (600 Hz three times), again every 30 seconds. The radio refuses every transmission |
 
 Three readings in a row below a threshold change the level. The level goes back up when the battery is 0.2 V above
 the threshold. A radio without voltage thresholds has the percentage warning only.
@@ -42,10 +44,10 @@ the radio's default level.
 
 | Way to change it | Levels |
 |---|---|
-| **\***, **1** | Three steps: the radio's lowest level, its default, its highest |
-| **Power level** key on Home | All of the radio's levels, one per press (radios with that key only) |
+| **\***, **1** | Three steps: the radio's lowest level, its default, and its highest |
+| **Power level** key on Home | All of the radio's levels, one for each press (radios with that key only) |
 
-Both changes are temporary. Hold **OK** to save the level to the channel.
+Both changes are temporary. To save the level to the channel, hold **OK**.
 
 Power levels use the radio's factory calibration. Use the lowest power that reaches the other station.
 
@@ -54,8 +56,8 @@ Power levels use the radio's factory calibration. Use the lowest power that reac
 **Settings > Display > Brightness** sets the backlight level. Quick settings has it too (**\***, **9**).
 
 **Settings > Display > Backlight Dim/Off** sets two times: when the backlight dims to a fifth of the brightness, and
-when it goes off. `30s/2m` dims after 30 s and goes off after 2 minutes. `30s/dim` dims after 30 s and stays on,
-readable at a glance (on a desk or a bench), at the cost of some battery. Any key brings it back.
+when it goes off. `30s/2m` dims after 30 seconds and goes off after 2 minutes. `30s/dim` dims after 30 seconds and stays
+on, readable at a glance (on a desk or a bench), at the cost of some battery. Any key brings it back.
 
 The backlight also comes on for what needs you:
 
@@ -68,28 +70,28 @@ The backlight also comes on for what needs you:
 
 ## Battery saver
 
-**Settings > Power saving > Battery saver** puts the receiver to sleep on an idle FM channel. After 10 s without activity the
-receiver sleeps and wakes for 100 ms at a time to listen. Any signal in a listening window wakes it fully. It is off
-by default.
+**Settings > Power saving > Battery saver** puts the receiver to sleep on an idle FM channel. After 10 seconds without
+activity, the receiver sleeps and wakes for 100 ms at a time to listen. Any signal in a listening window wakes it fully.
+It's off by default.
 
 These stop the battery saver:
 
-- a key press, monitor, scan or VOX;
-- a DMR channel, or hotspot mode;
-- a channel the codeplug marks "no battery saving".
+- A key press, monitor, scan, or VOX.
+- A DMR channel, or hotspot mode.
+- A channel that the codeplug marks "no battery saving".
 
 ## Auto power off
 
-**Settings > Power saving > Auto power off** switches the radio off after a time without use: Off, 30 min, 1 h or 2 h (Off by
-default). A key press, a call received or sent, a scan and hotspot mode count as use. One minute before, the radio
+**Settings > Power saving > Auto power off** turns the radio off after a time without use: Off, 30 min, 1 h, or 2 h (Off
+by default). A key press, a call received or sent, a scan, and hotspot mode count as use. One minute before, the radio
 beeps and shows "Switching off in 1 min / Any key keeps it on". Any key cancels it.
 
 On a radio with the power switch on its volume knob, the knob is still on when auto power off acts. Whether each
 radio can cut its own power then is in the [Radio reference](23-radios.md). A radio that can't cut it comes back up
-after 2 s, shows "Couldn't switch off / Turn the knob off", and keeps running as before.
+after 2 seconds, shows "Couldn't switch off / Turn the knob off", and keeps running as before.
 
 ## Turning off
 
-Turn the radio off with its power switch. On the handhelds this is the volume knob, turned counterclockwise until it
-clicks. Where the radio sees the switch, it finishes what it is doing (an ARS deregistration, at most 3 s), saves its
-settings and switches off. The [Radio reference](23-radios.md) describes the power switch of each radio.
+Turn the radio off with its power switch. On the handhelds, this is the volume knob: turn it counterclockwise until it
+clicks. Where the radio sees the switch, it finishes what it's doing (an ARS deregistration, at most 3 seconds), saves
+its settings, and turns off. The [Radio reference](23-radios.md) describes the power switch of each radio.
