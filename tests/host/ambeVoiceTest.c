@@ -15,6 +15,14 @@ static int failures, checks;
 static audio_block_cb_t cb;
 static int starts, stops, speaker_on, speaker_calls;
 static bool fake_start(audio_block_cb_t c, void *ctx) { (void)ctx; cb = c; starts++; return true; }
+// The tone is asked for, playing, or its frames are not yet pulled by the call stack (the source's busy: the over is
+// held open for it after PTT)
+static bool ambeVoiceTxToneBusy(void)
+{
+	const dmr_voice_source_t *s = ambeVoiceSource();
+	return s->busy != NULL && s->busy(s->ctx);
+}
+
 static void fake_stop(void) { stops++; cb = NULL; }
 static void fake_speaker(bool on) { speaker_on = on; speaker_calls++; }
 static const hal_audio_t audio = { .start = fake_start, .stop = fake_stop, .speaker_pcm = fake_speaker };
@@ -560,6 +568,142 @@ static void testCapture(void)
 }
 #endif
 
+// A vocoder that keeps the PCM it was handed and the options in force for each encode
+static int16_t cap_pcm[64][160];
+static uint32_t cap_opts[64];
+static int ncap;
+static void cap_encode(const int16_t pcm[VOCODER_FRAME_SAMPLES], uint8_t bits[VOCODER_BITS])
+{
+	if (ncap < 64) {
+		memcpy(cap_pcm[ncap], pcm, sizeof cap_pcm[0]);
+		cap_opts[ncap] = opt_last_set;
+	}
+	ncap++;
+	fake_encode(pcm, bits);
+}
+static const hal_vocoder_t cap_vocoder = {
+	.present = fake_present, .reset = fake_reset, .encode = cap_encode, .decode = fake_decode,
+	.options = opt_options, .set_options = opt_set, .encode_flags = opt_encode_flags,
+};
+
+static int zeroCrossings(const int16_t *p, int n)
+{
+	int c = 0;
+	for (int i = 1; i < n; i++)
+		c += (p[i - 1] < 0) != (p[i] < 0);
+	return c;
+}
+
+static bool isMic(const int16_t *p)
+{
+	for (int i = 0; i < 160; i++)
+		if (p[i] != 5000)
+			return false;
+	return true;
+}
+
+// A tone sequence in place of the mic (ambeVoiceTxTone): from the first block, as a tone frame with the noise reduction
+// off, then the mic again; paced by the queue; final mutes the rest; busy until the call stack has the frames; a
+// cancelled or unused request does not leak into the next transmission
+static void testTxTone(void)
+{
+	ambeVoiceInit(&audio, &cap_vocoder);
+	ambeVoiceSetEncodeOptions(VOCODER_OPT_DEFAULT);
+	const dmr_voice_source_t *src = ambeVoiceSource();
+	uint8_t frame[9];
+	for (int i = 0; i < 160; i++)
+		mic[i] = 5000;
+	// the request comes before the transmission: it is for the first blocks
+	beep_seg_t one[] = { { 1000, 40 } };
+	ncap = 0;
+	ambeVoiceTxTone(one, 1, false);
+	CHECK(!ambeVoiceTxToneBusy(), "no transmission: nothing to wait for");
+	src->begin(src->ctx);
+	CHECK(ambeVoiceTxToneBusy(), "asked for: busy");
+	for (int n = 0; n < 4; n++)
+		block();
+	CHECK(ncap == 4, "four blocks encoded (%d)", ncap);
+	int c = zeroCrossings(cap_pcm[0] + 16, 128);
+	CHECK(!isMic(cap_pcm[0]) && c >= 2 * 1000 * 128 / 8000 - 2 && c <= 2 * 1000 * 128 / 8000 + 2, "block 0 is the 1 kHz tone (%d)", c);
+	CHECK(!isMic(cap_pcm[1]), "block 1 is the tone's second half");
+	CHECK(isMic(cap_pcm[2]) && isMic(cap_pcm[3]), "the mic again after the tone");
+	CHECK((cap_opts[0] & VOCODER_OPT_TONE_FRAMES) && !(cap_opts[0] & VOCODER_OPT_NOISE_REDUCTION), "tone frame, no noise reduction (%#x)", (unsigned)cap_opts[0]);
+	CHECK(cap_opts[2] == VOCODER_OPT_DEFAULT, "the options back after it (%#x)", (unsigned)cap_opts[2]);
+	CHECK(ambeVoiceTxToneBusy(), "frames not pulled: busy");
+	int got = 0;
+	while (src->next(frame, src->ctx))
+		got++;
+	CHECK(got == 4 && !ambeVoiceTxToneBusy(), "all pulled: not busy (%d)", got);
+	src->end(src->ctx);
+	block();
+
+	// paced: 200 ms is ten frames and the queue holds eight; none is lost to an overflow
+	ambeVoiceResetStats();
+	beep_seg_t ten[] = { { 1500, 200 } };
+	ncap = 0;
+	ambeVoiceTxTone(ten, 1, false);
+	src->begin(src->ctx);
+	for (int n = 0; n < 14; n++)
+		block();
+	ambe_voice_stats_t st;
+	ambeVoiceGetStats(&st);
+	CHECK(ncap == AMBE_VOICE_QUEUE && st.tx_overflows == 0, "waits for room: %d encoded, %u overflows", ncap, st.tx_overflows);
+	got = 0;
+	for (int n = 0; n < 6; n++) {
+		while (src->next(frame, src->ctx))
+			got++;
+		block();
+		block();
+		block();
+	}
+	CHECK(got >= 10, "the whole tone comes out (%d)", got);
+	bool allTone = true;
+	for (int n = 0; n < 10; n++)
+		allTone = allTone && !isMic(cap_pcm[n]);
+	CHECK(allTone && ncap >= 10, "ten blocks of tone");
+	src->end(src->ctx);
+	block();
+
+	// final: the mic is muted after the tone until the transmission ends
+	ncap = 0;
+	src->begin(src->ctx);
+	block();
+	ambeVoiceTxTone(one, 1, true);
+	for (int n = 0; n < 4; n++)
+		block();
+	CHECK(isMic(cap_pcm[0]) && !isMic(cap_pcm[1]) && !isMic(cap_pcm[2]), "mic, then the tone");
+	bool muted = true;
+	for (int i = 0; i < 160; i++)
+		muted = muted && cap_pcm[3][i] == 0 && cap_pcm[4][i] == 0;
+	CHECK(muted, "muted after a final tone");
+	while (src->next(frame, src->ctx))
+		;
+	CHECK(!ambeVoiceTxToneBusy(), "pulled: not busy");
+	src->end(src->ctx);
+	block();
+
+	// a request for a transmission that never started does not play in the next one
+	ambeVoiceTxTone(ten, 1, false);
+	src->begin(src->ctx);
+	src->end(src->ctx);		// the stack's end of the over cancels it
+	ncap = 0;
+	src->begin(src->ctx);
+	block();
+	block();
+	CHECK(ncap == 2 && isMic(cap_pcm[0]) && isMic(cap_pcm[1]) && !ambeVoiceTxToneBusy(), "no stale tone");
+	// cancelled while it plays
+	ambeVoiceTxTone(ten, 1, false);
+	block();
+	ambeVoiceTxToneCancel();
+	block();
+	CHECK(!isMic(cap_pcm[2]) && isMic(cap_pcm[3]), "the tone stops when cancelled");
+	while (src->next(frame, src->ctx))
+		;
+	src->end(src->ctx);
+	block();
+	ambeVoiceInit(&audio, &vocoder);
+}
+
 int main(void)
 {
 	ambeVoiceInit(&audio, &vocoder);
@@ -569,6 +713,7 @@ int main(void)
 	testMicStats();
 	testFlagsMap();
 	testEncodeOptions();
+	testTxTone();
 	testRepeats();
 #if CONFIG_VOICE_CAPTURE
 	testCapture();

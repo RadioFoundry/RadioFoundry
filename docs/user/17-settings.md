@@ -199,6 +199,54 @@ When the keys lock by themselves and what still works while they are locked ([Ke
 
 <img src="../ux/screens/160x120i5/settings_advanced.png" width="200" alt="Settings, Advanced">
 
+## Signaling tones
+
+**Settings > Signaling tones** has three events, each with its own tone: the **start** of your transmission, its **end**,
+and the **idle** moment when a reception ends and the channel is free again. DMR and FM are set separately. For each you
+pick where the tone sounds, and you build the tone yourself, step by step.
+
+**Where it sounds** (DMR start tone, DMR end tone, DMR idle tone, FM start tone, FM end tone, FM idle tone):
+
+| Output | The tone sounds |
+|---|---|
+| Default | As before: the talk permit and the call end tone, with their switches in Settings > Sound, and the FM roger beep, which has no menu row yet (a developer turns it on over the debug link, and it is off otherwise). The default is not a fifth place: it means "leave this event as it was before this setting existed" |
+| Off | Never, the radio's own tone for that event included |
+| Speaker | On your speaker only |
+| On air | In your transmission, so the other stations hear it. DMR sends it as voice; FM as a tone on the carrier |
+| Speaker + air | Both |
+
+The idle tone has no On air choice: nothing is sent at that moment. An FM start tone on air plays right after the radio keys, before your voice goes out; let go of PTT and it stops.
+
+**The tone itself** is a chain of up to ten steps per event, like the Frequency and Period rows of a CPS alert tone
+page. The rows **Start steps**, **End steps** and **Idle steps** show how many steps each chain has
+("Standard" when it has none) and open its ten steps:
+
+| Step | Shown as | Values |
+|---|---|---|
+| Frequency | `1570 Hz` | 0 to 3400, in steps of 10. 0 is a pause |
+| Length | `40 ms` | 0 to 900, in steps of 10. 0 ends the chain: later steps are ignored |
+
+To set a step, press **OK** on it, type the frequency with the keypad (`1 5 7 0`) or step it with Up and Down, press
+**OK**, then do the same for the length and press **OK** again. **Back** leaves the step as it was. A number off the
+steps or out of the range is refused and the message says what fits. A step that was off starts at 40 ms. The whole
+chain is cut at 900 ms; the line above the steps shows the length so far. With no step the event plays its **standard
+sound** (the permit beep at the start, the call end beep at the end and when idle). The FM end tone is how you get a roger beep from the menu: set it to On air (or Speaker + air); to match the roger beep exactly, set End steps to 1200 Hz 100 ms and 900 Hz 100 ms. To copy a CPS call tone of 0, 1570,
+1050, 1570 and 1320 Hz at 40 ms each, set Start steps 1 to 5 to those pairs. A five tone or ZVEI-style selective call of up to ten tones fits the same way: one step per tone, for example 70 ms each.
+
+- The tones are also saved in the codeplug, so the Codeplug Editor shows them under **Radio > Signaling tones**, and a
+  codeplug written to the radio sets them. In the editor each event is **Not set** (the radio keeps its own setting) or
+  **Set**, with the two outputs and the ten steps. A change from the radio's menu is written to the codeplug as well.
+- The start tone on air goes in front of your voice, which starts a little later. The end tone on air goes after you
+  let go of **PTT**, and the radio stays on the air for it (up to about one second) before it ends the transmission.
+- A channel with **Talk permit beeps** off has none of these tones.
+- The tone is sent as a tone frame of the voice codec. A steady tone passes well; fast sequences may sound rough, and
+  other makes of radio may play them differently. Try it with a second radio before you rely on it.
+- An end tone on air counts in the transmit time-out.
+- On a radio that cannot beep while it transmits, the DMR start tone on the speaker plays just before the radio keys.
+  The FM start tone on the speaker comes from the radio's own tone sidetone where it has one: you hear the tone that
+  goes on air, as it goes. Without that, such a radio has no FM start tone on the speaker.
+- Output Default always plays the radio's own tone, whatever the chain says: pick Speaker, On air or both to use it.
+
 ## Factory reset
 
 **Settings > Advanced > Factory reset** asks "Reset all settings to factory defaults? Channels stay. This can't be

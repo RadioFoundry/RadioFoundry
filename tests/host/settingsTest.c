@@ -925,8 +925,12 @@ static void test_settings_layout(void)
 		{ offsetof(settings_t, t3_stun), 396 },
 		{ offsetof(settings_t, t3_kill), 397 },
 		{ offsetof(settings_t, satellite_index), 398 },
+		{ offsetof(settings_t, reserved10), 399 },
+		{ offsetof(settings_t, sig_dmr), 400 },
+		{ offsetof(settings_t, sig_fm), 403 },
+		{ offsetof(settings_t, reserved11), 406 },
 	};
-	CHECK(sizeof(settings_t) == 400);
+	CHECK(sizeof(settings_t) == 408);
 	for (unsigned i = 0; i < sizeof(offs) / sizeof(offs[0]); i++) {
 		if (offs[i].got != offs[i].want) {
 			printf("FAIL settings_t field %u at %zu, layout 1 has it at %zu\n", i, offs[i].got, offs[i].want);

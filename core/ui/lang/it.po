@@ -3667,6 +3667,21 @@ msgctxt "SET_VALUE_SFR_RX_DUAL_PATH"
 msgid "Dual-path RX"
 msgstr "RX doppia via"
 
+#: core/ui/ui_menus.c
+msgctxt "SIG_VALUE_SPEAKER"
+msgid "Speaker"
+msgstr "Altoparlante"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_VALUE_ON_AIR"
+msgid "On air"
+msgstr "In onda"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_VALUE_SPEAKER_AIR"
+msgid "Speaker + air"
+msgstr "Altoparlante + onda"
+
 #: core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "TITLE_VOLUME"
 msgid "Volume"
@@ -3731,6 +3746,51 @@ msgstr "Tono messaggio"
 msgctxt "SET_LABEL_VIBRATE"
 msgid "Vibrate"
 msgstr "Vibrazione"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_ROW_DMR_START_TONE"
+msgid "DMR start tone"
+msgstr "Tono inizio DMR"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_ROW_DMR_END_TONE"
+msgid "DMR end tone"
+msgstr "Tono fine DMR"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_ROW_DMR_IDLE_TONE"
+msgid "DMR idle tone"
+msgstr "Tono libero DMR"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_ROW_FM_START_TONE"
+msgid "FM start tone"
+msgstr "Tono inizio FM"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_ROW_FM_END_TONE"
+msgid "FM end tone"
+msgstr "Tono fine FM"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_ROW_FM_IDLE_TONE"
+msgid "FM idle tone"
+msgstr "Tono libero FM"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_ROW_START_STEPS"
+msgid "Start steps"
+msgstr "Passi inizio"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_ROW_END_STEPS"
+msgid "End steps"
+msgstr "Passi fine"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_ROW_IDLE_STEPS"
+msgid "Idle steps"
+msgstr "Passi libero"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_LABEL_BRIGHTNESS"
@@ -4068,6 +4128,16 @@ msgid "My radio"
 msgstr "Mia radio"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_ROW_SIGNALING_TONES"
+msgid "Signaling tones"
+msgstr "Toni di segnalazione"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_TITLE_SIGNALING_TONES"
+msgid "Signaling Tones"
+msgstr "Toni di Segnalazione"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_ROW_ADVANCED"
 msgid "Advanced"
 msgstr "Avanzate"
@@ -4076,6 +4146,71 @@ msgstr "Avanzate"
 msgctxt "HINT_0_9_OPEN_BACK"
 msgid "0-9 open  Back"
 msgstr "0-9 apri  Indietro"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "HOME_LABEL_STEP"
+msgid "Step "
+msgstr "Passo "
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_VALUE_STANDARD_SOUND"
+msgid "Standard sound"
+msgstr "Suono standard"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_LABEL_LENGTH"
+msgid "Length: "
+msgstr "Durata: "
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_TITLE_START_TONE"
+msgid "Start Tone"
+msgstr "Tono di Inizio"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_TITLE_END_TONE"
+msgid "End Tone"
+msgstr "Tono di Fine"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_TITLE_IDLE_TONE"
+msgid "Idle Tone"
+msgstr "Tono Libero"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_TOAST_NOT_CHANGED"
+msgid "Not changed: "
+msgstr "Non cambiato: "
+
+#: core/ui/ui_menus.c
+msgctxt "SET_TOAST_RANGE_TO"
+msgid " to "
+msgstr " a "
+
+#: core/ui/ui_menus.c
+msgctxt "SET_TOAST_STEPS_OF"
+msgid ", steps of "
+msgstr ", passi di "
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_HINT_TYPE_OK_NEXT_BACK"
+msgid "0-9 type  OK next  Back"
+msgstr "0-9 digita  OK avanti  Indietro"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_VALUE_STANDARD"
+msgid "Standard"
+msgstr "Standard"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_UNIT_STEP"
+msgid " step"
+msgstr " passo"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_UNIT_STEPS"
+msgid " steps"
+msgstr " passi"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_PERMIT_TONE_NOT_IN_BUILD"
@@ -4166,21 +4301,6 @@ msgstr "Nessun fix GPS attuale"
 msgctxt "SET_TOAST_SAVED_AS_YOU_CHANGE"
 msgid "Settings are saved as you change them"
 msgstr "Le impostazioni si salvano al cambio"
-
-#: core/ui/ui_menus.c
-msgctxt "SET_TOAST_NOT_CHANGED"
-msgid "Not changed: "
-msgstr "Non cambiato: "
-
-#: core/ui/ui_menus.c
-msgctxt "SET_TOAST_RANGE_TO"
-msgid " to "
-msgstr " a "
-
-#: core/ui/ui_menus.c
-msgctxt "SET_TOAST_STEPS_OF"
-msgid ", steps of "
-msgstr ", passi di "
 
 #: core/ui/ui_menus.c core/ui/ui_position.c
 msgctxt "HINT_OK_CHANGE_BACK"
@@ -4506,11 +4626,6 @@ msgstr "SCAN"
 msgctxt "TOP_CHIP_ROAM"
 msgid "ROAM"
 msgstr "ROAM"
-
-#: core/ui/ui_screens.c
-msgctxt "HOME_LABEL_STEP"
-msgid "Step "
-msgstr "Passo "
 
 #: core/ui/ui_screens.c
 msgctxt "HOME_STATE_P25T_HUNT"

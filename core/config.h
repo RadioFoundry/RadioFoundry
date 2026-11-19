@@ -241,6 +241,12 @@
 #ifndef CONFIG_BEEP
 #define CONFIG_BEEP			1
 #endif
+#ifndef CONFIG_SIG_TONES
+#define CONFIG_SIG_TONES		CONFIG_BEEP
+#endif
+#if CONFIG_SIG_TONES && !CONFIG_BEEP
+#error "CONFIG_SIG_TONES needs CONFIG_BEEP"
+#endif
 #ifndef CONFIG_FM_TX_TONES
 #define CONFIG_FM_TX_TONES		CONFIG_FM
 #endif

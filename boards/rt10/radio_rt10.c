@@ -9,7 +9,7 @@
 // only arms the transmitter; each burst then runs the FM key-up and key-down from the RF task (rt10_burst_on /
 // rt10_burst_off)
 //
-// APRS (CONFIG_APRS, hardware-rt10.md 7.2): the tones take DMR's path onto the reference, the modem's FM transmitter
+// APRS (CONFIG_APRS_AFSK, hardware-rt10.md 7.2): the tones take DMR's path onto the reference, the modem's FM transmitter
 // playing them on MOD1 with the FD6818's microphone off; receive takes the FD6818's FM audio through the modem
 #include "rt10.h"
 #include "dmr_rt10.h"
