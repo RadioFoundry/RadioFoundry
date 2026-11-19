@@ -7,7 +7,7 @@
 was built, which chips the radio has (a model can ship with more than one), and whether the image is one of ours.
 About shows it ([17-settings.md](../user/17-settings.md)); the debug link's SUPPORT command gives it to a host
 ([debuglink.md](debuglink.md) 3.29), and the web site's support download collects it. Code: `core/support/`,
-`core/debuglink/debuglink_support.c`, `tools/build_source.py`. Off: About and VERSION keep the source line (1), and
+`core/debuglink/debuglink_support.c`, `tools/build_source.py`. Off: VERSION keeps `source=` and `repo=` (1), About shows none of it, and
 SUPPORT answers status 4.
 
 Nothing is read at start-up. The radio does the work only when asked: About when it opens, a host when it sends
@@ -16,15 +16,16 @@ SUPPORT. Every value but the image hash is one the board already holds, so neith
 ## 1. Source
 
 `tools/build_source.py` stamps each build with where it came from. The Makefile passes it as `RFOUNDRY_GIT_SOURCE`
-and `RFOUNDRY_GIT_REPO`; About shows it as "Source", and VERSION as `source=` and `repo=`.
+and `RFOUNDRY_GIT_REPO`. About shows the source as "Source", RF short for RadioFoundry, without the repository; VERSION
+and SUPPORT give `source=` and `repo=`.
 
 | `source` | When | About |
 |---|---|---|
-| `official` | Our CI (GitHub Actions in RadioFoundry/RadioFoundry), not a pull request: main, nightly and release builds alike; only the image hash (3) tells a release | RadioFoundry CI build |
-| `service` | Our build service (`make BUILD_SOURCE=service`) | RadioFoundry build service |
-| `pr` | Our CI building a pull request | Pull request build, and the repository |
-| `local` | A clone whose `origin` is our repository | Built locally, and the repository |
-| `fork` | Another repository's CI, or a clone of one | Fork, and the repository |
+| `official` | Our CI (GitHub Actions in RadioFoundry/RadioFoundry), not a pull request: main, nightly and release builds alike; only the image hash (3) tells a release | RF CI |
+| `service` | Our build service (`make BUILD_SOURCE=service`) | RF build service |
+| `pr` | Our CI building a pull request | RF pull request |
+| `local` | A clone whose `origin` is our repository | Local build |
+| `fork` | Another repository's CI, or a clone of one | Fork |
 | `unknown` | No git, or no `origin` | Unknown |
 
 `repo` is GitHub's owner/name, or host/path for another host, never with credentials. `BUILD_SOURCE=` and
@@ -58,7 +59,7 @@ The platform reports the span with `board.system->image` (the linker's `__app_ba
 with `board.system->read`.
 
 The hash runs in steps so the radio never stalls. About hashes up to 64 KB a redraw and redraws at its fast rate until
-it is done; it shows "checking" until then, then the first 16 hex digits. SUPPORT HASH hashes up to 32 KB a request.
+it is done; it shows "checking" until then, then the first 8 hex digits, enough to tell a release image. SUPPORT HASH hashes up to 32 KB a request.
 Either step also ends after 5 ms, so a slow flash read or a slow core makes the hash take longer, not the UI stall.
 About and SUPPORT step the same hash: each carries on where the other stopped, and a step that would run while the
 other's is running does nothing. The result is kept until the next start-up. Closing About mid-way stops the work.

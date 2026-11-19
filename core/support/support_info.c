@@ -37,13 +37,13 @@ tr_id_t support_source_text(support_source_t s)
 {
 	switch (s) {
 	case SUPPORT_SRC_OFFICIAL:
-		return TRN(ABOUT_VALUE_SOURCE_OFFICIAL, "RadioFoundry CI build");
+		return TRN(ABOUT_VALUE_SOURCE_OFFICIAL, "RF CI");
 	case SUPPORT_SRC_SERVICE:
-		return TRN(ABOUT_VALUE_SOURCE_SERVICE, "RadioFoundry build service");
+		return TRN(ABOUT_VALUE_SOURCE_SERVICE, "RF build service");
 	case SUPPORT_SRC_PR:
-		return TRN(ABOUT_VALUE_SOURCE_PR, "Pull request build");
+		return TRN(ABOUT_VALUE_SOURCE_PR, "RF pull request");
 	case SUPPORT_SRC_LOCAL:
-		return TRN(ABOUT_VALUE_SOURCE_LOCAL, "Built locally");
+		return TRN(ABOUT_VALUE_SOURCE_LOCAL, "Local build");
 	case SUPPORT_SRC_FORK:
 		return TRN(ABOUT_VALUE_SOURCE_FORK, "Fork");
 	default:

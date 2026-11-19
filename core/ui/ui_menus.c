@@ -5369,9 +5369,11 @@ static uint16_t about_first;	// first line shown
 static uint16_t about_max;	// the largest first line (from the last draw)
 
 // The text's bytes: the two lists make generated, this build's font lines, and 296 for the rest (the version lines,
-// the labels, and 35 for a translation's longer ones). A fixed size cut the last lines off where the lists are long
+// the labels, and 35 for a translation's longer ones). A fixed size cut the last lines off where the lists are long.
+// The support info: the source and image lines and six hardware lines of a label and up to 30 characters
+// (a board with more loses the last license lines, not the support info)
 #define ABOUT_TEXT_MAX (296u + RFOUNDRY_ABOUT_LIST_BYTES + (CONFIG_FONT_AA ? 32u : 0u) + (CONFIG_LANG_ZH ? 48u : 0u) + \
-	(CONFIG_SUPPORT_INFO ? 448u : 0u))
+	(CONFIG_SUPPORT_INFO ? 352u : 0u))
 
 #if CONFIG_SUPPORT_INFO
 static bool about_hashing;		// the image hash (image_hash.h) has a step still to come: the UI redraws About at its fast rate
@@ -5381,18 +5383,14 @@ bool ui_about_busy(void)
 	return about_hashing;
 }
 
-// What a support request needs (docs/spec/support-info.md): where the build came from, the image's hash (the first
-// 16 digits of its SHA-256, worked out while the page is open), then the hardware identity. Values the board already
-// holds: nothing here waits for a chip
+// What a support request needs (docs/spec/support-info.md): where the build came from (ours or not; the repository
+// is left to the debug link), the image's hash (the first 8 digits of its SHA-256, enough to match a release, worked
+// out while the page is open), then the hardware identity. Values the board already holds: nothing here waits for a
+// chip
 static void about_support(sbuf_t *b)
 {
-	support_source_t src = support_source();
 	sb_str(b, TR(ABOUT_LABEL_SOURCE, "Source: "));
-	sb_str(b, tr(support_source_text(src)));
-	if (src != SUPPORT_SRC_OFFICIAL && src != SUPPORT_SRC_SERVICE && support_repo()[0] != '\0') {
-		sb_str(b, ", ");
-		sb_str(b, support_repo());
-	}
+	sb_str(b, tr(support_source_text(support_source())));
 	sb_chr(b, '\n');
 	uint8_t d[SHA256_LEN];
 	uint32_t addr, len;
@@ -5400,7 +5398,7 @@ static void about_support(sbuf_t *b)
 	if (image_hash_span(&addr, &len)) {
 		sb_str(b, TR(ABOUT_LABEL_IMAGE, "Image: "));
 		if (image_hash_step(IMAGE_HASH_UI, IMAGE_HASH_STEP_UI, d)) {
-			for (uint8_t i = 0; i < 8; i++) {
+			for (uint8_t i = 0; i < 4; i++) {
 				sb_chr(b, "0123456789abcdef"[d[i] >> 4]);
 				sb_chr(b, "0123456789abcdef"[d[i] & 15u]);
 			}

@@ -24,22 +24,22 @@ msgstr "Redémarrer pr sortir"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_VALUE_SOURCE_OFFICIAL"
-msgid "RadioFoundry CI build"
-msgstr "Build CI RadioFoundry"
+msgid "RF CI"
+msgstr "RF CI"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_VALUE_SOURCE_SERVICE"
-msgid "RadioFoundry build service"
-msgstr "Service de compilation RadioFoundry"
+msgid "RF build service"
+msgstr "Service de compilation RF"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_VALUE_SOURCE_PR"
-msgid "Pull request build"
-msgstr "Build de pull request"
+msgid "RF pull request"
+msgstr "Pull request RF"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_VALUE_SOURCE_LOCAL"
-msgid "Built locally"
+msgid "Local build"
 msgstr "Compilé localement"
 
 #: core/support/support_info.c

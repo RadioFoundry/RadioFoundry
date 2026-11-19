@@ -26,22 +26,22 @@ msgstr "断电重启退出"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_VALUE_SOURCE_OFFICIAL"
-msgid "RadioFoundry CI build"
-msgstr "RadioFoundry CI 构建"
+msgid "RF CI"
+msgstr "RF CI"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_VALUE_SOURCE_SERVICE"
-msgid "RadioFoundry build service"
-msgstr "RadioFoundry 构建服务"
+msgid "RF build service"
+msgstr "RF 构建服务"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_VALUE_SOURCE_PR"
-msgid "Pull request build"
-msgstr "PR 构建"
+msgid "RF pull request"
+msgstr "RF PR 构建"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_VALUE_SOURCE_LOCAL"
-msgid "Built locally"
+msgid "Local build"
 msgstr "本地构建"
 
 #: core/support/support_info.c
