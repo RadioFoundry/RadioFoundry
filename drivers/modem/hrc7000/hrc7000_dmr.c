@@ -275,7 +275,7 @@ static void chip_rx_restart(hrc7000_dmr_t *e)
 	e->tc_slot[0] = e->tc_slot[1] = 0;
 	e->tc_agree = 0;
 	e->at_flags[0] = e->at_flags[1] = 0;
-	e->emb_pending = false;
+	e->emb_pending = 0;
 	// What was heard is gone with the slot timing. Kept, the polite check went on seeing a busy channel: an empty
 	// channel gives no timeslot interrupts after the restart, so rx_resync never aged it out, and every PTT after a
 	// data response was refused until the radio left DMR (on the SDR bench, 2026-11-03)
@@ -300,7 +300,7 @@ static void rx_hold(hrc7000_dmr_t *e)
 	e->voice_slots = 0;
 	e->tc_slot[0] = e->tc_slot[1] = 0;
 	e->tc_agree = 0;
-	e->emb_pending = false;
+	e->emb_pending = 0;
 	e->rx_any = false;	// the polite check's busy window starts again, as after a restart
 	e->t_resync = now(e);
 	e->resync_pending = true;
@@ -692,6 +692,8 @@ static void tx_tick(hrc7000_dmr_t *e)
 
 // --- Receive ---
 
+static void emb_drop(hrc7000_dmr_t *e, uint8_t cs) { e->emb_pending &= (uint8_t)~(1u << cs); }
+
 static int8_t slot_ts(hrc7000_dmr_t *e, const hrc7000_rx_status_t *s)
 {
 	switch (s->sync) {
@@ -720,6 +722,7 @@ static void rx_tick(hrc7000_dmr_t *e)
 	for (uint8_t cs = 0; cs < 2; cs++) {
 		if ((e->voice_slots & (1u << cs)) && (uint32_t)(e->tick - e->voice_slot_tick[cs]) > VOICE_LOST_TICKS) {
 			e->voice_slots &= (uint8_t)~(1u << cs);
+			emb_drop(e, cs);	// a call that faded after its LC: the next headerless caller must not show it
 		}
 	}
 	rx_resync(e);
@@ -760,12 +763,16 @@ static void rx_burst(hrc7000_dmr_t *e)
 	e->st.rx_hist = (e->st.rx_hist << 4) | ((uint32_t)s.tc << 3) | ((uint32_t)s.chip_slot << 2) |
 			((r(e, C7_LAYER2_STATUS) >> 30) & 3u);
 	if (e->lock_ts != 0 && ts != e->lock_ts) {
+		emb_drop(e, s.chip_slot);
 		return;
 	}
 	// An MBC continuation is a block with no CRC of its own (the last one carries the whole MBC's), so the chip's flag
 	// says nothing about it: it goes up and the caller checks the MBC
 	bool header = s.kind != DMR_BURST_VOICE && s.kind != DMR_BURST_RATE_12_DATA && s.kind != DMR_BURST_RATE_34_DATA &&
 		      s.kind != DMR_BURST_RATE_1_DATA && s.kind != DMR_BURST_MBC_CONT;
+	if (header) {
+		emb_drop(e, s.chip_slot);	// no voice call in progress on this slot, even with a bad CRC
+	}
 	if (!s.crc_ok) {
 		e->st.rx_crc_err++;
 		// Headers and CSBKs with a bad CRC are dropped (dmr-modem.md 2.2), except while we send: the chip's verdict
@@ -794,10 +801,10 @@ static void rx_burst(hrc7000_dmr_t *e)
 		for (uint8_t i = 0; i < DMR_VOICE_BYTES; i++) {
 			b->payload[i] = e->dev->buf[C7_VOICE_RAM + i];
 		}
-		if (e->emb_pending) {
-			memcpy(b->lc, e->emb_rx, 9);
+		if (e->emb_pending & (1u << s.chip_slot)) {
+			memcpy(b->lc, e->emb_rx[s.chip_slot], 9);
 			b->lc_valid = true;
-			e->emb_pending = false;
+			emb_drop(e, s.chip_slot);
 		}
 		e->voice_chip_slot = (int8_t)s.chip_slot;
 		e->voice_tick = e->tick;
@@ -900,13 +907,17 @@ void hrc7000_dmr_isr_sys(hrc7000_dmr_t *e)
 			resync_arm(e);
 		}
 		if (list & SYS_LATE_LC) {
-			// Embedded LC assembled from a superframe: in the RX RAM (2.8), handed over with the next voice burst
+			// RX RAM is shared: keep the LC for the reporting chip slot, not the next slot heard (issue 495)
 			e->st.late_entry++;
-			if ((r(e, C7_RX_TYPE_INFO) & RTI_CS) == 0) {
+			uint32_t info = r(e, C7_RX_TYPE_INFO);
+			hrc7000_rx_status_t s;
+			hrc7000_dmr_decode(info, &s);
+			emb_drop(e, s.chip_slot);
+			if ((info & RTI_CS) == 0) {
 				for (uint8_t i = 0; i < 9; i++) {
-					e->emb_rx[i] = e->dev->buf[C7_RX_RAM + i];
+					e->emb_rx[s.chip_slot][i] = e->dev->buf[C7_RX_RAM + i];
 				}
-				e->emb_pending = true;
+				e->emb_pending |= (uint8_t)(1u << s.chip_slot);
 			}
 		}
 		if (list & SYS_DEFRAME) {
@@ -1127,7 +1138,12 @@ void hrc7000_dmr_rx_restart(hrc7000_dmr_t *e)
 
 void hrc7000_dmr_rx_lock_slot(hrc7000_dmr_t *e, int8_t ts)
 {
+	lock(e);
+	if (ts != e->lock_ts) {
+		e->emb_pending = 0;
+	}
 	e->lock_ts = ts;
+	unlock(e);
 }
 
 bool hrc7000_dmr_tx_begin(hrc7000_dmr_t *e, dmr_timing_t timing, int8_t ts, dmr_access_t access)

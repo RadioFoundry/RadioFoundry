@@ -169,8 +169,12 @@ typedef struct {
 	void (*begin)(void *ctx);	// optional: the transmission was granted, start encoding
 	bool (*next)(uint8_t ambe72[DMR_AMBE_FRAME_BYTES], void *ctx);
 	void (*end)(void *ctx);		// optional: stop encoding
+	// Optional: voice still to send after PTT is let go (an end of transmission tone, ambeVoiceTxTone). While it
+	// returns true the over goes on at each superframe boundary, up to DMR_CALL_TX_TAIL_HOLDS of them
+	bool (*busy)(void *ctx);
 	void *ctx;
 } dmr_voice_source_t;
+#define DMR_CALL_TX_TAIL_HOLDS	3	// superframes (360 ms each) the over is held open for the source's tail
 
 typedef enum { DMR_CALL_STATE_IDLE, DMR_CALL_STATE_RX, DMR_CALL_STATE_TX } dmr_call_state_t;
 

@@ -719,6 +719,28 @@ static const flow_t flows[] = {
 	{ "S mic AGC on", "", "ok 7 3 down down down down down ok", "set71=1 shows=AGC", 9, false },
 	{ "S mic gain while AGC is on", "ok 7 3 down down down down down ok", "up ok", "toast=Mic_AGC_sets set13=5", 2, false },
 	{ "S message tone", "", "msg:9991234,Hi", "beep=2", 0, false },
+	// Settings > Signaling tones (the group before Advanced): six outputs, then a row per event that opens its steps
+	// (screen sig-chain). Start 1 is set100 (Hz) and set130 (ms), step 2 set101 and set131. A step: OK, the frequency,
+	// OK, the length, OK; a value off the 10 steps or past the range is refused with what fits
+	{ "S signaling tones group opens", "", "ok 7 up up ok down down down down down down",
+	  "screen=group shows=Start_steps", 11, false },
+	// An action row's id is a number of its own: with Mic AGC on, "Idle steps" (id 13) must not show Mic gain's "AGC"
+	{ "S signaling tones with Mic AGC on: no AGC on the steps rows", "ok 7 3 down down down down down ok back back back back",
+	  "ok 7 up up ok down down down down down down down down", "screen=group shows=Idle_steps hides=AGC", 14, false },
+	{ "S signaling tones: a chain's steps open", "ok 7 up up ok down down down down down down", "ok",
+	  "screen=sig-chain shows=Step_1", 1, false },
+	{ "S signaling tones: a step typed and saved", "ok 7 up up ok down down down down down down ok down",
+	  "ok 1 5 7 0 ok 4 0 ok", "set101=1570 set131=40 shows=1570_Hz__40_ms", 9, false },
+	{ "S signaling tones: BACK from the steps goes to the group", "ok 7 up up ok down down down down down down ok",
+	  "ok 1 5 7 0 ok 4 0 ok back", "set100=1570 set130=40 screen=group", 10, false },
+	{ "S signaling tones: a new step starts at 40 ms", "ok 7 up up ok down down down down down down ok down down",
+	  "ok 0 ok 0 ok ok 9 5 0 ok ok", "set102=950 set132=40", 12, false },
+	{ "S signaling tones: BACK leaves the step as it was", "ok 7 up up ok down down down down down down ok",
+	  "ok 1 5 7 0 ok 4 0 ok ok 1 2 3 back", "set100=1570 screen=sig-chain", 15, false },
+	{ "S signaling tones: a value off the steps is refused", "ok 7 up up ok down down down down down down ok down down down",
+	  "ok 4 5 ok", "set103=0 toast=Not_changed screen=sig-chain", 4, false },
+	{ "S signaling tones: Up and Down step the value", "ok 7 up up ok down down down down down down ok down down down down",
+	  "ok 5 0 0 up up ok 6 0 down ok", "set104=520 set134=50", 12, false },
 	// The own DMR ID (Settings > My radio, set76, the codeplug's): digits type it, OK saves, BACK takes the last digit
 	// back and with none typed leaves it; 0 is refused
 	{ "S DMR ID opens", "", "ok 7 0 ok", "screen=dmr-id shows=DMR_ID", 4, false },
@@ -1308,7 +1330,7 @@ static const flow_t flows_f[] = {
 	  "writes=1 toast=Saved_channel_3", 1, true },
 #endif
 	// No programmable keys: the Keys group ends at its three general rows (ui.md 3.1)
-	{ "F no key rows without keys", "ok up ok up up up up ok", "down down down", "focus=Long hides=Key_1", 3, false },
+	{ "F no key rows without keys", "ok up ok up up up up up ok", "down down down", "focus=Long hides=Key_1", 3, false },
 #if CONFIG_ZONE_EDIT
 	// No CONTEXT: long OK opens a zone's list in Zones and Channel actions in the list (information-architecture 7.5)
 	{ "F 23 move the channel in use down", "", "ok down down down down ok long:ok long:ok down ok",

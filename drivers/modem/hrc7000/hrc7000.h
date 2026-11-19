@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Open25-DM32 Authors
 // HR_C7000 baseband (the modem inside the HR_C7000 SoC): register map, power-on set-up, FM modes, sub-audio, audio
 // paths and the internal audio codec (docs/spec/modem-hrc7000.md 2, 4, 5.1, 8; hardware-dm32.md 9).
 //
@@ -129,6 +130,7 @@
 #define C7_AUDIO_RING_PLAY	(1u << 7)
 #define C7_AUDIO_FM_PLAY	(1u << 6)
 #define C7_AUDIO_PCM_SPK	(1u << 5)	// CPU-fed speaker PCM
+#define C7_AUDIO_SIDETONE	(1u << 3)	// the modem's tone generator to the codec: the transmitted tone on the speaker
 #define C7_AUDIO_PCM_MIC	(1u << 4)	// mic PCM to the CPU
 #define C7_AUDIO_I2S_SLAVE	(1u << 1)
 
@@ -281,6 +283,8 @@ bool hrc7000_subtone_ok(hrc7000_t *d);
 // sub-audio deviation and the default DTMF steps back. tx_tone_key: the tone off (a silent carrier) and on again
 void hrc7000_tx_tone(hrc7000_t *d, uint16_t hz, uint8_t dev);
 void hrc7000_tx_tone_key(hrc7000_t *d, bool down);
+// The sidetone (AUDIO_CONTROL b3, modem-hrc7000.md 8.3): the tone being sent is heard in the codec
+void hrc7000_tx_tone_side(hrc7000_t *d, bool on);
 // Two tones the same way: low in FM_TONE1's high half, high in FM_TONE3's, digit "1" sent. low = 0: as tx_tone(0)
 void hrc7000_tx_pair(hrc7000_t *d, uint16_t low_hz, uint16_t high_hz, uint8_t dev);
 // A DTMF digit ('0'-'9', '*', '#', 'A'-'D'; hal_dtmf.h) with tx_pair, 0 = the microphone again. False: not a digit
@@ -290,8 +294,8 @@ uint8_t hrc7000_dtmf_dev(uint32_t hz, bool wide);
 // --- Prompt FIFO (8.4) ---
 
 // Push one chunk (C7_PROMPT_CHUNK samples, low byte first) when the FIFO has room; false when it is full. Written at
-// once, a chunk can land in the half being played (8.4): callers push through the platform's wrapper, which waits
-// after the half switch (platform/hrc7000/prompt_fifo.h). Inline: the AFSK interrupt uses it through that wrapper
+// once, a chunk can land in the half being played (8.4): callers must observe the platform's settling interval after
+// room is seen, either by deferring the write or through the blocking wrapper (platform/hrc7000/prompt_fifo.h).
 static inline bool hrc7000_prompt_push(hrc7000_t *d, const int16_t *s)
 {
 	if ((hrc7000_rd(d, C7_AUDIO_CONTROL) & C7_AUDIO_RING_FULL) != 0) {

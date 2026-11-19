@@ -139,3 +139,25 @@ bool codeplug_keys_store(const codeplug_key_row_t *rows, uint8_t n, const void *
 	}
 	return true;
 }
+
+bool codeplug_keys_store_record(uint16_t key, const void *was, const void *now, uint16_t len)
+{
+	if (memcmp(was, now, len) == 0) {
+		return true;
+	}
+	codeplug_kv_op_t op = { key, (uint16_t)(len | CODEPLUG_KV_HEAD), now };
+	if (codeplug_kv_write(&op, 1)) {
+		return true;
+	}
+	uint8_t v[1];
+	return codeplug_kv_get(key, v, sizeof(v)) < 0;
+}
+
+bool codeplug_keys_write_record(uint16_t key, const void *was, const void *now, uint16_t len)
+{
+	if (memcmp(was, now, len) == 0) {
+		return true;
+	}
+	codeplug_kv_op_t op = { key, (uint16_t)(len | CODEPLUG_KV_HEAD), now };
+	return codeplug_kv_write(&op, 1);
+}
