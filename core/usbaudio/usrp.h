@@ -3,7 +3,7 @@
 /*
  * The "USRP" voice-over-UDP framing that AllStarLink's USRP channel driver, DVSwitch Analog_Bridge and their clients
  * exchange, and the radio side's link state (docs/spec/usb-audio.md 4.2). Hardware independent, host tested
- * (tests/host/usrpTest.c); not built into the firmware yet (phase 2 of the plan).
+ * (tests/host/usrpTest.c); built with CONFIG_NET_USRP.
  *
  * A datagram is a 32-byte header and an optional payload:
  *
@@ -18,8 +18,8 @@
  *  32  .. payload: VOICE = 160 signed 16-bit samples at 8 kHz (20 ms), VOICE_ULAW = 160 G.711 mu-law bytes
  *
  * The header words are big endian; the voice samples are little endian (the byte order every known peer, all on
- * little endian hosts, puts on the wire). Both orders are taken from the public descriptions of the format and must be
- * confirmed against a live peer on the bench (spec 4.2, owner question 6); USRP_SAMPLES_BIG_ENDIAN flips the samples.
+ * little endian hosts, puts on the wire). Both orders are taken from the public descriptions of the format (spec 4.2);
+ * USRP_SAMPLES_BIG_ENDIAN flips the samples.
  */
 #ifndef RFOUNDRY_USRP_H
 #define RFOUNDRY_USRP_H

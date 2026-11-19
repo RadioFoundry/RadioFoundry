@@ -124,7 +124,7 @@ index, see [Specifications](spec/README.md).
 | [TFTP](spec/tftp.md) | Codeplug access over TFTP |
 | [mDNS](spec/mdns.md) | mDNS and DNS-SD |
 | [SNMP](spec/snmp.md) | The SNMP agent |
-| [USB audio](spec/usb-audio.md) | Analog and DMR voice over USB |
+| [USB audio](spec/usb-audio.md) | FM and DMR voice to a computer over USB or the network |
 | [Open-firmware codeplug](spec/open-firmware-cps.md) | The codeplug format qdmr writes |
 | [qdmr YAML](spec/qdmr-yaml.md) | qdmr's YAML file and how the editor maps it |
 | [Native codeplug](spec/codeplug-native.md) | The codeplug editing model |
