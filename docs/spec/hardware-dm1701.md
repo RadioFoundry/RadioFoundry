@@ -1830,8 +1830,9 @@ across the family.
 3. The bootloader leaves HSE/PLL running: switch to HSI before reprogramming HSE/PLL.
 4. CCM RAM is not zeroed or initialized by default startup code and is invisible to DMA. RadioFoundry puts the RTOS heap (every
    task stack), the slot engine, the radio state machine and the big CPU-only buffers there; `.ccmbss`
-   (`RFOUNDRY_CPU_RAM`) is zeroed before `main` by a `.preinit_array` entry in `board.c`, `.ccmram` (`RFOUNDRY_CPU_RAM_NOINIT`)
-   is not. DMA buffers stay static in main SRAM, and each stream's set-up checks that (`DMA_RAM_OK`).
+   (`RFOUNDRY_CPU_RAM`) is zeroed and `.ccmdata` (`RFOUNDRY_CPU_DATA`) copied from flash before `main` by a
+   `.preinit_array` entry in `platform/stm32f4/ccm.c`, `.ccmram` (`RFOUNDRY_CPU_RAM_NOINIT`) is not. The heap is the rest of
+   the CCM. DMA buffers stay static in main SRAM, and each stream's set-up checks that (`DMA_RAM_OK`).
 5. The codec must be at exactly 0x0807537C; the code budget is the space below it. Keep large constant tables above the
    codec end if the code grows.
 6. PA13 is SWDIO; driving it as mic power breaks SWD (use connect-under-reset).

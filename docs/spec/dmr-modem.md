@@ -109,6 +109,28 @@ decoded activity on our slot. In direct mode, "busy" is decoded activity with ou
 A data or voice transmission that waits for the channel must time out (a few seconds, configurable) rather than wait
 forever.
 
+### 1.8 Soft decision decoding of BPTC(196,96) (`core/dmr/fec/dmrSoftBptc.h`)
+
+A receiver that has a reliability for each bit (a sample tap through the soft modem, or a modem's soft symbols) can
+decode bursts the hard decoder gives up on. The hard decoder (`dmrFecBptcDecode`) corrects one error per row and column, columns and rows at once on the packed matrix (one 16-bit word a row, the column syndromes as four XOR sums); the soft decoder
+weighs each bit by how sure the receiver is of it.
+
+| Item | Rule |
+|---|---|
+| Input | One LLR per info bit in burst order (bits 0-97, then 166-263), positive for a 1, in eighths of a natural log ratio, clamped to +-127 |
+| Scale | Exact only for true LLRs: the caller scales by its own noise estimate. For 4FSK sliced at +-2 with noise variance s2 (symbol levels +-1, +-3): the first bit of a symbol v has LLR -2v / s2, the second -2(2 - abs(v)) / s2 |
+| First step | The hard decisions go to the hard decoder. A burst that decodes and passes accept costs no soft work (returns 0) |
+| Iterations | Each one decodes every row (Hamming(15,11)) and then every column (Hamming(13,9), shortened), soft in and soft out, exactly over the 16 words of the code's dual (Hartmann-Rudolph). The extrinsic LLRs of one pass feed the other |
+| Stop | After each iteration the decisions go to the hard decoder; its payload ends the decoding once accept takes it. Default 4 iterations at most (`DMR_SOFT_BPTC_ITERS`: on Gaussian noise 98 % of what 20 decode) |
+| Accept | The payload's own check (CRC-CCITT with the data type's mask, or the LC's Reed-Solomon). Required: after the first iteration, a codeword the hard decoder reaches is often wrong |
+| R(3)-R(0) | R(3) is outside every codeword and comes from its own decision; R(2)-R(0) sit in row 0's codeword and are read from the final decisions |
+| Arithmetic | Fixed point, no divide: tanh(L / 2) from a table in Q31, products in Q31 through `fxp_mulhr` (`core/dsp/fxp.h`: one instruction on a core with a 32 x 32 multiply), sums in Q27, the log ratio from a log2 table. Q15 is not enough: for a row of sure bits that disagree, the two sums cancel to 1e-4 or less |
+| Cost | A row or column: the 15 dual-code words' products by groups of four columns (63 products, no branches), one 16-point Walsh-Hadamard transform for every bit's sums, then one product and two table logs a bit. On a 72 MHz Cortex-M4: about 1,900 cycles a row and 1,700 a column, 81,000 for a hard try, one iteration and a hard try; 282,000 for 4 iterations that fail. Work memory 588 bytes, owned by the caller |
+| Memory | The tables (about 0.6 KB) go to CPU-only RAM where the platform has some (`RFOUNDRY_CPU_DATA`, `core/config.h`); the work memory should too (`RFOUNDRY_CPU_RAM`). Built `-O2` (`HOT_SRC` in the Makefile) |
+
+Gain over the hard decoder on Gaussian noise (the host test, 1000 bursts at sigma 0.85 on +-1): hard decoding 3 %,
+soft decoding 75 % with 4 iterations at most, no wrong payload accepted.
+
 ---
 
 ## 2. Mobile station states

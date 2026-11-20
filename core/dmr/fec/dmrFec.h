@@ -28,6 +28,16 @@ void dmrFecBptcEncode(const uint8_t *payload, uint8_t *burst);
 // corrected, or -1 when errors remain that the code can't fix (the payload is then the best guess).
 int dmrFecBptcDecode(const uint8_t *burst, uint8_t *payload);
 
+// The same with the reserved bits R(3)-R(0) (361-1 B.1.1), as r bits 3-0. The standard sends them 0; some systems set
+// them, and a codeword re-encoded to compare with what was received needs them as sent. rbits holds R(3) in bit 3
+// down to R(0) in bit 0; the decode's may be NULL
+void dmrFecBptcEncodeR(const uint8_t *payload, uint8_t rbits, uint8_t *burst);
+int dmrFecBptcDecodeR(const uint8_t *burst, uint8_t *payload, uint8_t *rbits);
+
+// The same from the code matrix: rows[r] is row r (0-12), column 0 in bit 14; the reserved bit R(3) is not in it. The
+// rows are corrected in place
+int dmrFecBptcDecodeRows(uint16_t *rows, uint8_t *payload);
+
 // Hamming codewords as unsigned integers, codeword bit 0 (the first transmitted, data bit 0) in the most significant
 // position: (15,11,3) is 15 bits wide, 11 data then 4 parity; (13,9,3) is 13 bits, 9 data then 4 parity.
 uint16_t dmrFecHamming15113Encode(uint16_t data);
