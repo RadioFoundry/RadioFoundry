@@ -16,7 +16,7 @@ and what has been checked on it.
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
 | [TYT MD-UV380](#tyt-md-uv380) | TYT MD-UV390, Retevis RT3S, TYT MD-UV390 Plus 10 W | Built on the UV380 family code, with the MD-UV380's keys, display, power tables and GPS. Run on radios by community testers. |
 | [TYT MD-9600](#tyt-md-9600) | Retevis RT90 | One image serves every board revision. On a V1-V3 radio, FM and DMR on both bands, DMR voice and data, text messages, roaming, scan, dual watch, APRS, the hotspot, each split duplex half and the USB network services work on air, with every power level checked on a wattmeter on both bands. V4A/V5 boards are detected; on older boards the radio asks for the revision once. Open: V4 and V4A/V5 boards have not run on a radio, and SFR loses inbound voice frames. |
-| [Radioddity GD-88](#radioddity-gd-88) | Kydera DR-880UV | Runs on the radio: analog FM, DMR voice and data, P25 and NXDN voice, dual watch on the second SoC, transmit through that SoC's PA, settings on the SPI NAND and the host link. Open: a wattmeter check of the power levels. |
+| [Radioddity GD-88](#radioddity-gd-88) | Kydera DR-880UV | Analog FM, DMR voice and data, P25 and NXDN voice, dual watch on the second receiver, transmit, saved settings and the host link work on the radio. Open: a wattmeter check of the power levels. |
 | [Retevis RT10](#retevis-rt10) |  | Boots from the boot ROM with the host link, stub entry, the watchdog and the crash log. FM receive with CTCSS/DCS decode, FM transmit, DMR transmit and receive with the radio's own codec, P25 (conventional, and trunked transmit) and NXDN at 4800 bit/s on stored channels, and APRS transmit work on the radio. |
 <!-- end generated -->
 
@@ -786,20 +786,21 @@ A 128 x 64 monochrome screen.
 ## Radioddity GD-88
 
 A dual band handheld (136-174 and 400-480 MHz) with a 320x240 color display. It has two HR_C7000 chips. The first
-runs the display, keys, PTT, transmitter, GPS and FM broadcast receiver. The second is a second receiver that listens
-at the same time as the first, so both VFOs can receive at once. **In development:** RadioFoundry doesn't run on this radio
-yet and there is no release for it.
+runs the display, keys, PTT, transmitter, GPS and FM broadcast receiver. The second chip is a second receiver that
+listens at the same time as the first, so both VFOs can receive at once. **In development:** there is no release for
+this radio yet.
 
-When it is ready, the web installer will build both chips' images together and install them in one step, on the same
-programming cable: the first chip's image, then the second's, with no further choices in between. The first time, the
-second chip still runs its original firmware, so the installer asks for the radio's update mode (`IAP_B`) for that
-part. After that it goes through the first chip by itself.
+Once there is a release, the web installer builds the firmware for both chips and installs it in one step over the
+programming cable, first chip then second. The first time, the second chip still runs its original firmware, so the
+installer installs both chips through the radio's update mode and tells you when to switch from `IAP_A` to `IAP_B`.
+Later updates reach the second chip through the first, without the switch.
 
-To start the radio's update mode, turn it off and connect the programming cable. Hold **SK1** (the side key above **PTT**) and turn the radio
-on with the volume knob. When the LED lights red and the top line shows `IAP_A` or `IAP_B`, release **SK1**. Hold **SK1** to
-switch between them. `IAP_A` updates the first chip and `IAP_B` the second. The radio ignores a long press while it
-answers the installer, so the installer waits before the second chip. Hold **SK1** until the top line shows `IAP_B`,
-then select **Continue**.
+To start the radio's update mode, turn the radio off and connect the programming cable. Hold **SK1** (the side key
+above **PTT**) and turn the radio on with the volume knob. When the LED lights red and the top line shows `IAP_A` or
+`IAP_B`, release **SK1**. `IAP_A` updates the first chip and `IAP_B` the second. To switch between them, hold **SK1**
+until the top line changes. The radio doesn't respond to **SK1** while the installer is talking to it, so after the
+first chip the installer pauses and asks you to hold **SK1** until the top line shows `IAP_B`, then select
+**Continue**.
 
 ### GD-88 keys
 
@@ -810,7 +811,7 @@ then select **Continue**.
 | Green | **A/B** |
 | Red | **VFO** |
 | Up, Down | **Up**, **Down** |
-| SK1 (the side key above **PTT**) | **A/B**: press to switch A / B in dual watch, hold for dual watch on or off. Held at power-on, it starts the update mode |
+| SK1 (the side key above **PTT**) | **A/B**: press to switch A / B in dual watch, hold for dual watch on or off. Hold it while turning the radio on to start update mode |
 | SK2 (the side key below **PTT**) | **Monitor** |
 | **#** | **#**. Hold it for the talk target picker |
 | SOS (the orange top key) | User key 3 |
@@ -818,9 +819,9 @@ then select **Continue**.
 
 ### GD-88 beeps
 
-Beeps don't get quieter with the volume knob: they play at **Settings > Sound > Tone volume** at any knob position
-except all the way down, which silences them too. Tone volume 1 is quiet, about volume 6 of 16 on the knob; 10 is about
-20 dB louder. Tone volume 0 turns beeps off.
+Beeps don't follow the volume knob. They play at the level set in **Settings > Sound > Tone volume** at any knob
+position except all the way down, which silences them too. Tone volume 1 is quiet, about as loud as volume 6 of 16 on
+the knob, and tone volume 10 is about 20 dB louder. Tone volume 0 turns beeps off.
 
 ## Planned radios
 
