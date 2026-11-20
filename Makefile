@@ -143,6 +143,11 @@ APP_DIRS := $(CORE_DIRS) $(PLATFORM_DIRS) $(BOARD_DIRS)
 # Sorted: the link order steers LTO's code, and $(wildcard)'s order depends on the make (gotchas 13.10)
 APP_SRC := $(foreach d,$(APP_DIRS),$(sort $(wildcard $(d)/*.c)))
 APP_ASM := $(foreach d,$(APP_DIRS),$(sort $(wildcard $(d)/*.S)))
+# D-STAR's voice codec codes its frame with the DMR full-rate frame's Golay and whitening (core/dmr/ambe/ambeFec.c),
+# which the core/dmr/ambe glob brings in only with DMR
+ifeq ($(CONFIG_DSTAR)$(CONFIG_DMR),yn)
+APP_SRC += core/dmr/ambe/ambeFec.c
+endif
 # The stub entry without the debug link: its listener uses the debug link's framing (dl_frame.c, no RTOS or board)
 ifeq ($(CONFIG_STUB_ENTRY)$(CONFIG_DEBUGLINK),yn)
 APP_SRC += core/debuglink/dl_frame.c
