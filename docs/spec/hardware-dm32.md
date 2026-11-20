@@ -1242,6 +1242,22 @@ For the USB audio design ([usb-audio.md](usb-audio.md) 2). Not measured.
   ([modem-hrc7000.md](modem-hrc7000.md) 8.5); APRS receive uses it. APRS transmit sends its tones as PCM through the
   prompt FIFO into the modulator ([modem-hrc7000.md](modem-hrc7000.md) 8.4).
 
+### 9.3 Flat paths for data modems (planned, not measured)
+
+For D-STAR ([dstar-modem.md](dstar-modem.md) 1.2). None of this is written or checked on this radio yet.
+
+- **Transmit**: the HR_C7000's TX RAM as the FM transmit source (AUDIO_CONTROL b0 = 1), FM_BANDWIDTH b6 and b4 clear,
+  and the FD6818's transmit audio filter bypass bits, register 0x2B bits 2:0, set (0xC007 instead of the FM value
+  0xC000). Another project measured the prompt FIFO route on this radio with those settings: about a 290 Hz
+  first-order high-pass remained, and changing 0x7E (0x302E to 0x3006) didn't remove it. The TX RAM route's response
+  and deviation scale are unmeasured.
+- **Receive**: GPIO 0x2F = 0 so the HR_C7000 hears the FD6818's AF output (9), FD6818 0x2B = 0x0700 (the receive
+  high-pass, low-pass and de-emphasis bypassed, bits 10:8 by the BK4819 layout; the stock firmware writes this value
+  for DMR), FM_BANDWIDTH b6 clear, the RX RAM copy at 8 kHz ([modem-hrc7000.md](modem-hrc7000.md) 8.5).
+- **Polarity**: RF_MODE b15 (RX IQ invert) differs between the two RF board set-ups; whether the RX RAM copy follows it
+  is unknown. The D-STAR receiver finds the polarity from the sync either way.
+- Nothing has been tried on set-up B.
+
 ---
 
 ## 10. Data flash (16 MB)
