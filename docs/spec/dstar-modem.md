@@ -83,7 +83,7 @@ sides of the engine (without it the switch adds nothing: gc-sections drops the u
 | Stack | about 500 B at the deepest: the header decoder (268 B) called from the demodulator through the deframer |
 | Sample buffers | none new: receive reads the RX RAM halves the APRS ring already copies (one consumer runs at a time), transmit writes the TX RAM halves in modem memory |
 | CPU | estimated from operation counts, not measured: about 1-2 % of 168 MHz receiving (a 64-bit divide per bit for the interpolation and one per zero crossing; the deframer's pattern checks are an XOR and a bit count), under 1 % transmitting, plus an interrupt every 32 ms each way. The header's Viterbi decoder is about 40 k cycles once per transmission |
-| Voice codec | not counted. A software AMBE codec needs state of the order of the DMR vocoder's (13 KB on these radios) and only one mode runs at a time, so the two can share it |
+| Voice codec | not counted. A software AMBE codec needs memory of the order of the DMR vocoder's (13 KB on the fork this was measured on, 7 KB on main since its encoder and decoder share one block) and only one mode runs at a time, so the two can share it |
 
 The default image of that radio uses 98.71 % of its RAM; with the engine 99.01 % (2,088 B left). A voice codec does not
 fit without reclaiming RAM: 1.5 lists what could go.
@@ -95,7 +95,7 @@ part, the screens, the debug link and the board's flat paths), measured 2026-11-
 |---|---|
 | Flash | 47,882 B: the codec 27.3 KB (quantizer and its tables 14.5 KB, analysis 4.0 KB, the shared fixed-point tables 4.8 KB, synthesis 2.7 KB, frame FEC 0.8 KB), the modem, framing and engine 5.8 KB, the radio core's part 5.2 KB, the debug link 2.3 KB, the screens 1.2 KB, the board's flat paths 1.1 KB, the rest in the radio core, Home's drawing and the translations |
 | RAM, static | 2,592 B: the radio core's part 1,244 B (the engine 632 B, two voice rings of 16 frames, the view), the copies of the view in the tasks that keep one, the screens 121 B, the board 47 B |
-| Codec state | 8,380 B, not static: in the DMR vocoder's 13 KB of state, which it lends while DMR is off (`hal_vocoder_t.lend`). Without the loan D-STAR runs without voice |
+| Codec memory | not static: its 5,304 B of working memory in the DMR vocoder's state block, which it lends while DMR voice is off (`hal_vocoder_t.lend`, 7,168 B on the HR_C7000), and its 3,168 B of state in the radio core's mode area beside the engine (the whole codec, 8.4 KB, doesn't fit the loan). Without the loan D-STAR runs without voice |
 | Stack | the encoder 1,288 B and the decoder 336 B on the audio task (1,452 B deepest with the port overhead, of the 6,144 B sized for the stock codec's call: [dstar-codec.md](dstar-codec.md) 6); the receive path's 256 B buffer and the engine on the radio task; the transmit pull on the interrupt stack |
 | Settings | 40 B more in every build (the station and the bench's calibration, [settings-store.md](settings-store.md)), so the full image of that radio grew by 280 B of RAM (the copies of `settings_t`) without D-STAR in it |
 
@@ -179,11 +179,11 @@ The largest single users of RAM, for scale: the frame buffer 38,400 B, the RTOS 
 queue), the DMR vocoder's encoder and decoder states 7,168 + 6,144 B, the APRS state 7,124 B, a 4,096 B buffer, the
 TCP connections 3,444 B.
 
-Only one mode runs at a time, so per-mode state can share one region: the DMR vocoder's 13 KB with a D-STAR (or
+Only one mode runs at a time, so per-mode state can share one region: the DMR vocoder's state block with a D-STAR (or
 other) codec's, the DMR data and hotspot rings with the D-STAR engine, the APRS receive ring with the D-STAR
-receiver's input. Two of these are done: the codec borrows the vocoder's state (`hal_vocoder_t.lend`, 1.3), and the
-D-STAR and Fusion engines share one area the radio core lends to the mode that runs (`core/radio/radio_mode_ram.c`,
-`ysf-modem.md` 1.4).
+receiver's input. Two of these are done: the codec's working memory is the vocoder's state block (`hal_vocoder_t.lend`,
+1.3), and D-STAR's engine and codec state sit in one area the radio core lends to the mode that runs
+(`core/radio/radio_mode_ram.c`), which the next modes on the flat paths share.
 
 ## 2. The modem
 
@@ -332,7 +332,7 @@ significant bit first). The framing never looks inside a frame. Without a codec 
 lost-packet frame (`9E 8D 32 88 26 1A 3F 61 E8`, JARL 6.6) as silence.
 
 A board fills `dstar_vocoder_t` with a codec. `dstar_codec.c` is a software AMBE 3600x2400 codec that does
-(`dstar_codec_vocoder`): integer only, one 8,380 B state shared by both directions, 1.3 KB of stack, about 27 KB of
+(`dstar_codec_vocoder`): integer only, 3,168 B of state and 5,304 B of working memory, each shared by both directions, 1.3 KB of stack, about 27 KB of
 flash, an estimated 32 MHz (35 at worst) of a C-SKY CK803S to encode and 14 MHz (30 at worst) to decode. Its structure, cost,
 quality, limits and provenance are in [dstar-codec.md](dstar-codec.md). It reads the lost-packet frame back as near
 silence, and that frame, decoding with no Golay corrections, is what proves the air bit order above
@@ -368,8 +368,8 @@ narrow FM without sub-audio and hands it over.
 | Receive | `fm_rx_flat_start` after `rx()`; the radio task reads the board's ring every poll (25 ms) into `dstar_engine_rx`. A header, or a late entry the deframer confirmed, is the squelch (`RS_RX`); the end pattern or a lost carrier closes it. Voice frames go into a ring of 16; the audio task decodes one per 20 ms block once four are queued (the halves come every 32 ms, the poll every 25 ms, so up to 57 ms can pass between deliveries) |
 | Transmit | PTT keys as FM (`tx()`), then `fm_tx_inject(pull, AUDIO_TAP_FLAT)`: the board's interrupt pulls samples from `dstar_engine_tx`, whose voice source is a ring of 16 frames the audio task encodes into from the microphone. A frame the encoder hasn't made yet goes out as the silence frame. 128 bits of preamble (twice the standard's minimum) cover the key-up. PTT release lets the ring play out, then the end pattern; the core unkeys `tx_latency_ms` (the board's buffers) after the last sample, or `RADIO_DSTAR_DRAIN_MS` plus that after the release if the board stops pulling. PTT pressed again before the end cuts the over (no end pattern) and starts from receive |
 | The header | flag 1 via a repeater from the channel; RPT2, RPT1 from the channel (blank: `DIRECT`, what other radios send on a simplex over); UR: a one-over gateway command, else a choice for now, else the channel's; MY and suffix: set on the radio, else the codeplug's record, else the radio name. PTT is refused without a MY (`TXDENY_NO_CALL`) |
-| The calibration | `dstar_path_t` from the board's `flat_cal`, with the settings' `flat_*` over it (the bench, [debuglink.md](debuglink.md) 3.26) |
-| The codec's RAM | `hal_vocoder_t.lend` at the start, `give_back` when leaving the channel |
+| The calibration | `dstar_path_t` from the board's `flat_cal`, with the settings' `flat_*` over it (the bench, [debuglink.md](debuglink.md) 3.29) |
+| The codec's RAM | its working memory from `hal_vocoder_t.lend` at the start (nothing is given back: the vocoder rebuilds its own state at its next call, and the radio core starts DMR only after D-STAR stopped), its state in the mode area |
 | Beeps | mixed into the D-STAR stream (`beep_mix`), as into DMR's |
 | Left out | Scans and dual watch skip D-STAR channels (a dwell is too short to start the engine and judge); APRS takes the receiver only off a D-STAR channel (one consumer of the ring), and a beacon stops D-STAR for its job; the hotspot stops it |
 
