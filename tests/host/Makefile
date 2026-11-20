@@ -1466,6 +1466,23 @@ run: run-nxdncp
 run-nxdncp: nxdnCodeplugTest
 	./nxdnCodeplugTest
 .PHONY: run-nxdncp
+# D-STAR in the codeplug (core/dstar/dstar_codeplug.c): the shared vectors, the field filter, a channel's fields from
+# its tag, the radio-wide record, the editor's writer; built with CONFIG_DSTAR off as well, where only the registry and
+# the parked channel are checked
+TESTS   += dstarCodeplugTest dstarCodeplugOffTest
+DSTARCP := $(CPTAG) $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug_records.c $(CORE)/dstar/dstar_codeplug.c
+
+dstarCodeplugTest: dstarCodeplugTest.c $(DSTARCP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/dstar/*.h) ../vectors/channel-modes.txt
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_DSTAR=1 -o $@ dstarCodeplugTest.c $(DSTARCP)
+
+dstarCodeplugOffTest: dstarCodeplugTest.c $(DSTARCP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/dstar/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_DSTAR=0 -o $@ dstarCodeplugTest.c $(DSTARCP)
+
+run: run-dstarcp
+run-dstarcp: dstarCodeplugTest dstarCodeplugOffTest
+	./dstarCodeplugTest
+	./dstarCodeplugOffTest
+.PHONY: run-dstarcp
 
 # Zone editing (core/codeplug/zone_edit.c) on the real codeplug over a simulated flash: add, move, remove, copy,
 # rename, delete, a new channel added in one step, the limits

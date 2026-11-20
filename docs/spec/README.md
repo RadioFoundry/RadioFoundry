@@ -73,6 +73,7 @@ Past bugs, by subsystem: [gotchas.md](gotchas.md). Contributors read [docs/dev](
 | [dmr-trunking-codeplug.md](dmr-trunking-codeplug.md) | DMR Tier III systems and trunked channels in the codeplug |
 | [p25-codeplug.md](p25-codeplug.md) | P25 conventional and trunked channels and systems in the codeplug |
 | [nxdn-codeplug.md](nxdn-codeplug.md) | NXDN conventional channels in the codeplug |
+| [dstar-codeplug.md](dstar-codeplug.md) | D-STAR DV channels and the radio-wide callsign and message in the codeplug |
 | [settings-store.md](settings-store.md) | Settings store and safe flash writes |
 | [nand-sectors.md](nand-sectors.md) | NOR-like 4 KB sectors over NAND, for the settings store on NAND radios |
 

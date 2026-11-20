@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The channel-mode layer of the Codeplug Editor (docs/spec/channel-modes.md): static/js/codeplug/channelmodes.js, the
-// registry (modes.js) and the DMR Tier III and P25 modules, against the shared vectors (tests/vectors/channel-modes.txt)
+// registry (modes.js) and the DMR Tier III, P25 and D-STAR modules, against the shared vectors (tests/vectors/channel-modes.txt)
 // the C host tests read too. Run with node --test site/tests/ (site/tests/run.sh).
 
 import { test } from "node:test";
@@ -16,6 +16,7 @@ import { KINDS, SYSTEM_TYPES, offeredKinds, offeredTypes, kindName } from "../st
 import { nameCheck } from "../static/js/codeplug/modebytes.js";
 import { decodeConv, encodeConv, decodeUnit, decodeTsys, p25System, NAC_ANY } from "../static/js/codeplug/mode_p25.js";
 import { t3System, OPTS as T3_OPTS } from "../static/js/codeplug/mode_t3.js";
+import { decodeChan, encodeChan, decodeStation, encodeStation, dstarKind } from "../static/js/codeplug/mode_dstar.js";
 
 const VECTORS = new URL("../../tests/vectors/channel-modes.txt", import.meta.url);
 const bytes = (s) => (s === "-" ? null : Uint8Array.from(s.match(/../g) ?? [], (x) => parseInt(x, 16)));
@@ -67,6 +68,106 @@ test("vectors: P25 trunked system block and identifier plan rows", () => {
 		const e = plan.decode(bytes(b));
 		assert.deepEqual([e.baseHz, e.spacingHz, e.txOffsetHz >>> 0, e.bwHz, e.tdma ? 1 : 0, e.tdma ? e.slots : 1], [base, sp, off, bw, type, slots], l);
 	}
+});
+
+// A vector's text field: "_" a space, "-" empty; the model holds fields without their trailing spaces
+const text = (s) => (s === "-" ? "" : s.replace(/_/g, " "));
+
+test("vectors: D-STAR channel block and radio-wide record", () => {
+	const chan = vectors("dstarchan"), enc = vectors("dstarenc"), st = vectors("dstarstation");
+	assert.ok(chan.length >= 8 && enc.length >= 5 && st.length >= 5);
+	for (const l of chan) {
+		const [b, ur, rpt1, rpt2, f] = l.split(" ");
+		assert.deepEqual(decodeChan(bytes(b)), { ur: text(ur).trimEnd(), rpt1: text(rpt1).trimEnd(), rpt2: text(rpt2).trimEnd(), viaRepeater: f === "1" }, l);
+	}
+	for (const l of enc) {
+		const [ur, rpt1, rpt2, f, b] = l.split(" ");
+		assert.equal(hexOf(encodeChan({ ur: text(ur), rpt1: text(rpt1), rpt2: text(rpt2), viaRepeater: (parseInt(f, 16) & 1) === 1 })), b, l);
+	}
+	for (const l of st) {
+		const [b, my, suffix, msg] = l.split(" ");
+		assert.deepEqual(decodeStation(bytes(b)), { my: text(my).trimEnd(), suffix: text(suffix).trimEnd(), msg: text(msg).trimEnd() }, l);
+	}
+	// what decodes, encodes back to the same fields
+	for (const l of chan) {
+		const p = decodeChan(bytes(l.split(" ")[0]));
+		assert.deepEqual(decodeChan(encodeChan(p)), p, l);
+	}
+	// an all-blank radio-wide record is none; one with bytes past what the editor knows keeps them
+	assert.equal(encodeStation({ my: "", suffix: "", msg: "" }), null);
+	const long = new Uint8Array(34).fill(0x20);
+	long.set([0xAB, 0xCD], 32);
+	assert.deepEqual([...encodeStation({ my: "", suffix: "", msg: "" }, long).subarray(32)], [0xAB, 0xCD]);
+});
+
+test("D-STAR: a channel and the radio-wide record round-trip, byte for byte unedited; reserved bits kept", () => {
+	const m = empty();
+	const c = newChannel({ name: "DV Rpt", rxHz: 439412500, txHz: 431812500, rxOnly: false });
+	const d2 = newChannel({ name: "DV Simplex", rxHz: 438625000, txHz: 438625000, rxOnly: false });
+	m.channels.push(c, d2);
+	numberAll(m);
+	setKind(m, c, 5);
+	setKind(m, d2, 5);
+	assert.equal(c.tagTx, true, "D-STAR: transmit allowed on a new channel");
+	assert.deepEqual(d2.params, { ur: "CQCQCQ", rpt1: "", rpt2: "", viaRepeater: false });
+	c.params = { ur: "CQCQCQ", rpt1: "n0call b", rpt2: "N0CALL G", viaRepeater: true };
+	m.modeSettings[5] = { my: "N0CALL", suffix: "MOBL", msg: "Hello from the bench" };
+	const img = encode(m);
+	const d = decode(img);
+	const by = (n) => d.channels.find((x) => x.name === n);
+	assert.equal(by("DV Rpt").kind, 5);
+	assert.equal(by("DV Rpt").mode, "dmr");
+	assert.equal(by("DV Rpt").rxOnly, true, "the record is the stand-in");
+	assert.equal(by("DV Rpt").tagTx, true);
+	assert.deepEqual(by("DV Rpt").params, { ur: "CQCQCQ", rpt1: "N0CALL B", rpt2: "N0CALL G", viaRepeater: true });
+	assert.deepEqual(by("DV Simplex").params, { ur: "CQCQCQ", rpt1: "", rpt2: "", viaRepeater: false });
+	assert.deepEqual(d.modeSettings[5], { my: "N0CALL", suffix: "MOBL", msg: "Hello from the bench" });
+	assert.deepEqual(encode(d).bytes, img.bytes);
+	const e = area(img);
+	const tag = decodeTag(getValue(e, MODE_KEY.tag + by("DV Rpt").number - 1));
+	assert.deepEqual([tag.kind, tag.system, tag.flags], [5, 0xFF, 0x01]);
+	assert.equal(hexOf(tag.params), "4351435143512020" + "4E3043414C4C2042" + "4E3043414C4C2047" + "01");
+	assert.equal(hexOf(getValue(e, MODE_KEY.setting + 5)), "4E3043414C4C20204D4F424C48656C6C6F2066726F6D207468652062656E6368");
+	// a block with reserved flag bits and bytes past what the module knows: an edit keeps them
+	const key = MODE_KEY.tag + by("DV Rpt").number - 1;
+	const stored = getValue(e, key);
+	const longer = Uint8Array.from([...stored.subarray(0, stored.length - 1), 0x81, 0x12, 0x34]);
+	putArea(img.bytes, setValue(area(img), key, longer));
+	const d3 = decode(img);
+	d3.channels.find((x) => x.name === "DV Rpt").params.ur = "REF030CL";
+	const t = decodeTag(getValue(area(encode(d3)), key));
+	assert.deepEqual([...t.params.subarray(-3)], [0x81, 0x12, 0x34]);
+	assert.equal(decodeChan(t.params).ur, "REF030CL");
+	// offered: on a radio that reports it
+	assert.deepEqual(offeredKinds(empty(), "FM,DMR,DSTAR").map((k) => k.id), [5]);
+});
+
+test("D-STAR validation: callsign length and characters, message, via a repeater without RPT1", () => {
+	const problems = (fn) => {
+		const out = [];
+		fn({ err: (f, code, p) => out.push(["err", f, code, p?.max]), warn: (f, code) => out.push(["warn", f, code]) });
+		return out;
+	};
+	assert.deepEqual(problems((pr) => dstarKind.validate({}, { ur: "cqcqcq", rpt1: "N0CALL B", rpt2: "N0CALL G", viaRepeater: true }, pr)), []);
+	assert.deepEqual(problems((pr) => dstarKind.validate({}, { ur: "       U", rpt1: "", rpt2: "", viaRepeater: false }, pr)), []);
+	assert.deepEqual(problems((pr) => dstarKind.validate({}, { ur: "TOOLONGCALL", rpt1: "N0-CALL", rpt2: "", viaRepeater: true }, pr)),
+		[["err", "ur", "dstar_call_long", 8], ["err", "rpt1", "dstar_call_chars", undefined]]);
+	assert.deepEqual(problems((pr) => dstarKind.validate({}, { ur: "CQCQCQ", rpt1: " ", rpt2: "", viaRepeater: true }, pr)), [["warn", "rpt1", "dstar_rpt_blank"]]);
+	const st = dstarKind.settings;
+	assert.deepEqual(problems((pr) => st.validate({ my: "N0CALL/P", suffix: "mobl", msg: "Hello, world! (73)" }, pr)), []);
+	assert.deepEqual(problems((pr) => st.validate({ my: "N0CALL/PX", suffix: "ABCDE", msg: "x".repeat(21) }, pr)),
+		[["err", "my", "dstar_call_long", 8], ["err", "suffix", "dstar_call_long", 4], ["err", "msg", "dstar_msg_long", 20]]);
+	assert.deepEqual(problems((pr) => st.validate({ my: "", suffix: "", msg: "café" }, pr)), [["err", "msg", "dstar_msg_chars", undefined]]);
+	// through the model: the problem names the channel
+	const m = empty();
+	const c = newChannel({ name: "DV" });
+	m.channels.push(c);
+	numberAll(m);
+	setKind(m, c, 5);
+	c.params = { ...c.params, rpt2: "N0*CALL" };
+	assert.ok(validate(m).some((x) => x.code === "dstar_call_chars" && x.item === c));
+	assert.ok(validate(m, { features: "FM,DMR" }).some((x) => x.code === "mode_not_in_radio" && x.item === c));
+	assert.ok(!validate(m, { features: "FM,DMR,DSTAR" }).some((x) => x.code === "mode_not_in_radio"));
 });
 
 test("registry: unique ids, names, a module each", () => {
