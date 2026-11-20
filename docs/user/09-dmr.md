@@ -409,15 +409,23 @@ Select the channel. Home shows the system's name and what the radio is doing the
 | Home shows | Meaning |
 |---|---|
 | Searching | Looking for the system's control channel |
+| Other system | Looking for the system, and hearing only another one. The line below names what was heard ("Heard: Huge, net 0, site 83"): compare it with the system's network model and network number in the editor |
 | Registering | Found; registering with the system |
+| Reg. refused | The system doesn't accept this radio, most often because your DMR ID isn't in its records. Ask the system's administrator to add it. The radio keeps asking. PTT says "Registration refused" |
 | Ready | On the control channel. Hold **PTT** to call |
 | In call | On a channel the system granted, in a call |
 | Refused | The system refused the registration. PTT is refused |
 | Fallback | No control channel found: on the fallback channel |
 | System not set up | The channel's system is missing, has no control channel or lacks its key. The channel is receive only |
 
+If PTT says **Unknown channel N**, the system granted your call on channel N and the system's channel list doesn't
+have it. Add channel N with its frequencies; on a site with one carrier, give the control channel the number N. The
+number is the one the control channel sends. A site tool or scanner that counts each timeslot as a channel shows
+2 × N + 1 and 2 × N + 2 instead (623 and 624 for 311); the radio takes those too.
+
 Hold **PTT**: the radio asks the system for a channel and talks once the system grants it. When the system refuses or
-doesn't answer, PTT is refused. The talk target is the channel's contact, or one you pick as on any DMR channel
+doesn't answer, PTT is refused, and the screen says why: no control channel, another system heard, not registered yet,
+denied by the system, or no answer. The talk target is the channel's contact, or one you pick as on any DMR channel
 ([Choosing a talk target](#choosing-a-talk-target)).
 
 Zone and channel lists name a trunked channel's system where the frequency would be. A channel whose system isn't set
