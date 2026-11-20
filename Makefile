@@ -401,6 +401,12 @@ ifneq ($(BOOT_STAGE),)
 include boot/boot.mk
 endif
 
+# Hot code builds $(OPT_HOT) where the rest is $(OPT): DSP and FEC kernels that run per sample or per burst, where
+# unrolling and scheduling pay for their flash. LTO keeps each function's level
+OPT_HOT ?= -O2
+HOT_SRC := core/dmr/fec/dmrFec.c core/dmr/fec/dmrSoftBptc.c
+$(filter $(HOT_SRC:%.c=$(BUILD)/%.o),$(APP_OBJ)): CFLAGS_APP += $(OPT_HOT)
+
 $(filter %.o,$(APP_SRC:%.c=$(BUILD)/%.o)): $(BUILD)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS_APP) -c $< -o $@
