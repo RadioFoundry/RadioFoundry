@@ -695,3 +695,14 @@ abbr.gl:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; bo
 	background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm);
 	box-shadow: 0 4px 16px rgb(0 0 0 / 0.2); font-size: var(--text-sm); line-height: var(--line); }
 .gl-pop[hidden] { display: none; }
+/* an install of both SoCs through update mode (iapui.js iapBothView): two numbered steps, the current one marked */
+.both-step { border-left: 3px solid var(--border); padding: var(--space-2) 0 var(--space-2) var(--space-4); margin: var(--space-4) 0; }
+.both-step.active { border-color: var(--accent); }
+.both-step.done { border-color: var(--ok); }
+.both-step.waiting { opacity: 0.6; }
+.both-head { display: flex; align-items: baseline; gap: var(--space-2); font-size: 1.15rem; margin: 0 0 var(--space-2); }
+.both-n { display: inline-grid; place-items: center; flex: none; width: 1.7em; height: 1.7em; border-radius: 50%; background: var(--border); font-size: 0.9rem; }
+.both-step.active .both-n { background: var(--accent); color: #fff; }
+.both-step.done .both-n { background: var(--ok); color: #fff; font-size: 0; }
+.both-step.done .both-n::before { content: "\2713"; font-size: 0.9rem; }
+.both-body:empty { display: none; }

@@ -62,6 +62,7 @@ end = 0x10000000
 what = "SoC B: the spare pool, the top 10 usable blocks: blocks 1998-2047 hold them with up to 40 unusable blocks (spi-nand-lut.md)"
 
 [flash.bootloader]
+banner = false	# its loader prints nothing in update mode, as the radio's
 steps = [
 	"Turn the radio off and connect the programming cable.",
 	"Hold SK1 and turn the radio on with the volume knob. When the LED lights red and the top line shows IAP_A or IAP_B, release SK1. It can take more than one try.",

@@ -47,14 +47,18 @@ export function keyMarks(radio, names) {
 // radio shows there is in its steps' words, not in the data), or null without one. keys: names of keys to mark on it
 // (holdKeys), each ringed where the picture shows it, and named in a caption. The marks are decoration: the caption
 // and the steps say the same in words.
-export function radioPicture(radio, { keys = [] } = {}) {
+// screen: a picture of what the screen shows meanwhile (radios.json flash.update_screen), laid over the picture's screen
+export function radioPicture(radio, { keys = [], screen = null } = {}) {
 	const src = pictureSrc(radio);
 	if (!src) return null;
+	const pct = radio?.frame_geometry?.screen_pct;
+	const shown = screen && pct && !hasNoScreen(radio) ? h("div", { class: "rt-screen", style: `left:${pct.left}%;top:${pct.top}%;width:${pct.width}%;height:${pct.height}%` },
+		h("img", { src: ROOT + screen, alt: "", class: "rt-shot" })) : null;
 	const marks = keyMarks(radio, keys).map((m) => h("span", { class: "rt-key", "aria-hidden": "true",
 		"data-key": m.name, style: `left:${m.left}%;top:${m.top}%;width:${m.width}%;height:${m.height}%` }));
 	const caption = keys.length ? h("figcaption", { class: "rt-caption" }, h("span", {}, holdCaption(keys))) : null;
 	return h("figure", { class: "radio-top radio-pic" },
-		h("div", { class: "rt-pic", style: shapeStyle(radio) }, h("img", { src: ROOT + src, alt: radio.name || "", class: "rt-img" }), ...marks), caption);
+		h("div", { class: "rt-pic", style: shapeStyle(radio) }, h("img", { src: ROOT + src, alt: radio.name || "", class: "rt-img" }), shown, ...marks), caption);
 }
 
 // What RadioFoundry's own screens look like on this radio: the UI gallery's picture of a screen for the radio's display
@@ -62,7 +66,10 @@ export function radioPicture(radio, { keys = [] } = {}) {
 // serves it: static/img/screens/, scaled up, site/rfoundrysite/shots.py), so the picture shows the radio's real boot
 // screen and the stub entry's splash, at any display size
 const SCREEN_SHOTS = { rfoundry: "boot", loader: "stub_entry" };
-const screenShot = (radio, sc) => (radio?.gallery && SCREEN_SHOTS[sc] ? `${ROOT}static/img/screens/${radio.gallery}/${SCREEN_SHOTS[sc]}.png` : null);
+// Another firmware's screen, where the radio has a drawing of it: its original firmware (flash.stock_screen)
+const OTHER_SHOTS = { on: "stock_screen" };
+const screenShot = (radio, sc) => (radio?.gallery && SCREEN_SHOTS[sc] ? `${ROOT}static/img/screens/${radio.gallery}/${SCREEN_SHOTS[sc]}.png`
+	: radio?.flash?.[OTHER_SHOTS[sc]] ? ROOT + radio.flash[OTHER_SHOTS[sc]] : null);
 
 // led: off | wait (slow yellow) | busy (fast yellow) | done (three green flashes) | green (steady)
 // screen: off (dark: a power-on stub load or the factory loader) | loader (RadioFoundry handed over to the stub: its

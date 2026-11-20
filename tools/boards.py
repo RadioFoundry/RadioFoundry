@@ -203,8 +203,8 @@ BOARD_SCHEMA = {
         # key-<name> ids), for the web flasher's picture; steps stays the instructions
         "bootloader": _req({"keys": _opt(str), "steps": _req(STR_LIST), "id": _opt(str), "sign": _opt(str),
                             "hold": _opt(STR_LIST),
-                            # false: the loader prints no banner when it starts in update mode; the web flasher lists
-                            # the steps first and writes when Install is selected, without listening for one
+                            # false: the loader prints no banner when it starts in update mode; the web flasher asks
+                            # it with a read-only request until it answers, instead of listening for one
                             "banner": _opt(bool)}),
         # layout: the bootloader's alt 0 interface string, only once read from a radio in its bootloader. The
         # flashers then accept no other device; without it they refuse a layout of only the bootloader's sectors
@@ -1622,6 +1622,11 @@ def _site_flash(b):
         flash["led_hints"] = False
     if fl["bootloader"].get("banner") is False:
         flash["update_banner"] = False
+    # what the screen shows, drawn for the web flasher's picture: in update mode (site/static/img/update/<board>.svg) and
+    # with the original firmware running (site/static/img/normal/<board>.svg)
+    for key, d in (("update_screen", "update"), ("stock_screen", "normal")):
+        if os.path.isfile(os.path.join(ROOT, "site/static/img", d, f"{b.id}.svg")):
+            flash[key] = f"static/img/{d}/{b.id}.svg"
     if stub:
         flash["stub_tested"] = stub["tested"]
     return flash

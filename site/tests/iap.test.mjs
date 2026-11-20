@@ -14,7 +14,7 @@ import * as c7 from "../static/js/flasher/c7000.js";
 import { Usmart, HIJACK, UsmartError, stockVersion, stockName, BUILDS, STUB_WINDOW, stubTarget, UNKNOWN_BUILD, versionOf, buildsFor } from "../static/js/flasher/usmart.js";
 import {
 	Iap, iapPlan, readPacket, checkInstallImage as checkInstall, checkRestoreImage as checkRestore, trimTail, erasePacket,
-	IapError,
+	IapError, socPages,
 } from "../static/js/flasher/iap.js";
 
 const DIR = process.env.RFOUNDRY_SITE_FIXTURES || "build/site-tests";
@@ -345,7 +345,7 @@ test("USMART: a radio whose application does not start with the stock entry is r
 
 // ---- IAP
 
-function iapRadio({ corrupt = false } = {}) {
+function iapRadio({ corrupt = false, fill = 0xA5, lose = 0 } = {}) {
 	const got = { erase: null, pages: [] };
 	let phase = "banner", want = 0, sum = 0, reading = -1;
 	const enc = (x) => new TextEncoder().encode(x);
@@ -359,8 +359,13 @@ function iapRadio({ corrupt = false } = {}) {
 			return;
 		}
 		if (reading >= 0 && b.length === 4 && new TextDecoder().decode(b) === "Read") {
-			if (reading-- > 0) p.push(new Uint8Array(2048).fill(0xA5));
-			else p.push(concat(enc("ChecksumR"), be32(2048 * 0xA5), enc("IAPReady")));
+			// a second SoC's loader: some "Read"s are not answered (lose: how many)
+			if (lose > 0) {
+				lose--;
+				return;
+			}
+			if (reading-- > 0) p.push(new Uint8Array(2048).fill(fill));
+			else p.push(concat(enc("ChecksumR"), be32(2048 * fill), enc("IAPReady")));
 			return;
 		}
 		// an Erase while a read still waits for its "Read": the loader fails it (seen on a radio)
@@ -445,6 +450,21 @@ test("IAP: a radio stuck in update mode at power-on answers the read-only probe,
 	assert.equal(got.pages.length, Math.floor(img.length / 2048) + 1);
 	// a radio that is off, or runs something else, does not answer
 	assert.equal(await iapOn(new Pipe(() => {})).probe(200), null);
+});
+
+test("IAP: which SoC answers, from its own NAND pages; a Read left unanswered is sent again", async () => {
+	const pages = socPages({ nand: 0x280000 });
+	assert.deepEqual(pages, [0, 0x280000, 0x2A0000, 0x2C0000]);
+	const a = await iapOn(iapRadio({ fill: 0x11 }).pipe).whose(pages);
+	const b = iapRadio({ fill: 0x22, lose: 2 });
+	const bWho = await iapOn(b.pipe).whose(pages);
+	assert.ok(a && bWho);
+	assert.notEqual(a, bWho);
+	assert.equal(await iapOn(iapRadio({ fill: 0x11, lose: 1 }).pipe).whose(pages), a, "the same SoC reads the same");
+	// the reads end cleanly: an install follows on the same loader
+	await iapOn(b.pipe).write(installImage());
+	assert.ok(!b.got.failedErase);
+	assert.equal(await iapOn(new Pipe(() => {})).whose(pages, 200), null);
 });
 
 test("IAP: a checksum that differs is reported, and silence after the erase stops before any data", async () => {

@@ -31,7 +31,7 @@ import { makeStockRoutes, variantVerdict, noCodecNotice } from "./iapui.js";
 import { confirmNoCodec } from "./nocodec.js";
 import { versionText, writable } from "./variant.js";
 import { Usmart, stockVersion, stockName } from "./usmart.js";
-import { Iap, checkInstallImage } from "./iap.js";
+import { Iap, socPages, checkInstallImage } from "./iap.js";
 import { BfLoader } from "./bfloader.js";
 import { errorNotice, reportLine, reportButton } from "../report.js";
 import * as diag from "../diag.js";
@@ -579,7 +579,11 @@ function connectPanel(onReady, { onUpdateMode = null, restart = false } = {}) {
 		}
 		// the loader's update mode answers a read-only probe: a radio whose application won't start stays in it
 		c.iapReady = false;
-		const um = stuckMode() && await iap(c).probe();
+		// a radio with two SoCs: the read is ended, and the main SoC's NAND pages read through its own application, so the
+		// update mode install can tell its loader from the second SoC's (Iap.whose)
+		const two = !!flash().second;
+		const um = stuckMode() && await iap(c).probe(1500, 0, { all: two });
+		if (two && um?.stock) c.mainPrint = await iap(c).whose(socPages(C().boards[boardId()].calibration));
 		// the stock application answered as it answers the vendor software: its console is silent or missing
 		const version = um?.stock ? versionText(S().radio, um.stock) : null;
 		if (um) diag.note(um.stock ? "identify answered" : "update mode loader", { version: um.stock ? version : um.version });
@@ -1436,6 +1440,11 @@ export async function restoreWrite(stub, c, board, pm, onSector = () => {}) {
 // own step's view into the one card of both (chainSlots)
 export function writeView() {
 	chainStart();
+	// both SoCs through update mode: one card of its own (iapui.js iapBothView), no stages in between
+	if (viaIap() && flash().second && S().firmware?.second && !S().radio.second_of) {
+		S().chain = null;
+		return routes.iapBothView();
+	}
 	const view = inChain("connect") ? connectView() : inChain("check") ? checkView() : writeOne();
 	return view;
 }

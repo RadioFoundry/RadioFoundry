@@ -151,9 +151,13 @@ to the build directory and the image: `make BOARD=<id> BAND=vhf` writes `build/<
 | `steps` | How to enter the bootloader, one step per item, for the web flasher and the manual |
 | `keys` | Optional: the short form the tools print |
 | `hold` | Optional: the keys held to enter it, by key name (the board's `KEY_*` in lower case, `["ptt", "sk1"]`). The web flasher marks them on the radio's picture and names them under it; `steps` stays the instructions. Each must be a key of the board (`tools/boards.py check`) and tagged in its drawing or listed in `data-undrawn` ([Radio images](website.md#radio-images)) |
-| `banner` | Optional, default `true`. `false`: the radio's loader prints nothing when it starts in update mode. The web flasher then lists the update mode steps first and writes as soon as Install is selected, without listening for a banner |
+| `banner` | Optional, default `true`. `false`: the radio's loader prints nothing when it starts in update mode. The web flasher then asks it with a read-only request until it answers, instead of listening for a banner |
 | `id` | Optional: the string the loader answers, also the magic of its files (`serial-loader`) |
 | `sign` | Optional: what the radio shows in the bootloader |
+
+The web flasher's radio picture can show what the screen looks like: `site/static/img/update/<board>.svg` in update mode,
+`site/static/img/normal/<board>.svg` with the original firmware running (320 × 240 or the display's size). `tools/boards.py`
+lists them in radios.json (`flash.update_screen`, `flash.stock_screen`) when the file exists.
 
 `[flash.dfu]` (`usb-dfu`): `vid`, `pid`, `string1`, `product` (the USB identity) and `key_sha256`, `key_prefix` (the
 per-model XOR key's hash and first bytes, never the key). Optional `layout`: the bootloader's alt 0 interface string,
