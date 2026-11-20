@@ -770,6 +770,9 @@ static uint8_t net_burst(int8_t ts, uint8_t control, const uint8_t *frame, dmr_t
 	dmr_tx_burst_t b;
 	const uint8_t *lc = NULL;
 
+	// Every return says "no LC" unless a burst carries one: tx_sched copies *lc_out for an idle that carries the
+	// slot's CACH, which returns NET_SKIP before the end of this function, and an unset pointer there was read
+	*lc_out = NULL;
 	memset(&b, 0, sizeof(b));
 	if (c & MMDVM_DMR_SYNC_DATA) {
 		uint8_t dt = c & 0x0F;
