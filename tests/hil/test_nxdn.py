@@ -101,6 +101,14 @@ def settings_of(v):
             "emergency": v.get("nxdn.tx_emergency") == "1"}
 
 
+@pytest.mark.feature("nxdn_scrambler")
+def test_nxdn_scrambler_built(radio):
+    """The advertised feature is present alongside the NXDN engine; no key or radio state is changed."""
+    if "NXDN_SCRAMBLER" not in radio.features():
+        skip("not_built", "built without CONFIG_NXDN_SCRAMBLER")
+    assert radio.view(["nxdn"]).get("nxdn.built") == "1"
+
+
 @pytest.mark.feature("nxdn")
 def test_nxdn_mode_switch(radio):
     v = nxdn_view(radio)

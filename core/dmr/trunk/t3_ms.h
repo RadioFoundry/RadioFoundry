@@ -51,8 +51,8 @@
 #define T3_OPT_LISTEN_ONLY	0x0001	// never transmit (and so never register)
 #define T3_OPT_ALLCALL		0x0002	// follow all-calls (ALLMSID, ALLMSIDL, ALLMSIDZ)
 #define T3_OPT_EMERGENCY_ANY	0x0004	// follow emergency grants on any talkgroup
-#define T3_OPT_MONITOR		0x0008	// follow every talkgroup grant (a scanner's view; listen-only)
-#define T3_OPT_LEARN_SYSCODE	0x0010	// take the first system heard as ours (model/net unset)
+#define T3_OPT_MONITOR		0x0008	// follow every talkgroup grant (a scanner's view; the radio core's digital monitor)
+#define T3_OPT_LEARN_SYSCODE	0x0010	// take the first system heard as ours: its model and net replace cfg->auth's
 #define T3_OPT_PRIVATE		0x0020	// follow private calls to the radio's ID (on by default)
 #define T3_OPT_REG_TG		0x0040	// register with the talk group (subscription) rather than the system code
 #define T3_OPT_ALS		0x0080	// accept Ambient Listening (6.6.2.6): the radio transmits by itself when called so
@@ -316,6 +316,8 @@ typedef struct {
 	// MBC assembly, per slot
 	struct {
 		bool open;
+		bool has_intermediate;
+		uint8_t intermediate[T3_CSBK_BYTES];
 		t3_csbk_t hdr;
 		uint32_t ms;
 	} mbc[2];
