@@ -96,15 +96,20 @@ int ambeGolay24Decode(uint32_t cw, uint16_t *data)
 	return golaySearch(d, (cw & 0xFFFu) ^ (ambeGolay24Encode(d) & 0xFFFu), true, data);
 }
 
-uint32_t ambeC1Mask(uint16_t c0_data)
+uint32_t ambeWhitening(uint16_t c0_data, unsigned n)
 {
 	uint32_t x = 16u * (c0_data & 0xFFFu);
 	uint32_t mask = 0;
-	for (int k = 1; k <= 23; k++) {
+	for (unsigned k = 1; k <= n; k++) {
 		x = (173u * x + 13849u) & 0xFFFFu;
 		mask = (mask << 1) | (x >> 15);
 	}
-	return mask;	// first sequence bit on C1's most significant bit (bit 22)
+	return mask;	// first sequence bit on the most significant (bit n - 1)
+}
+
+uint32_t ambeC1Mask(uint16_t c0_data)
+{
+	return ambeWhitening(c0_data, 23);	// first sequence bit on C1's most significant bit (bit 22)
 }
 
 uint8_t ambeAirBitOfSeq(uint8_t n)
