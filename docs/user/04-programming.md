@@ -106,6 +106,14 @@ mode shows that mode's fields under **Mode settings**; a trunked channel takes i
 whose firmware doesn't run a channel's mode shows the mode's short name, receives nothing on it and doesn't transmit.
 The [feature matrix](../feature-matrix.md) lists which builds run which mode.
 
+A **D-STAR** channel (short name `DV`) has three callsign fields and a switch. **UR** is the station called: blank
+calls CQ, and a reflector link such as `REF030CL` goes here too. **RPT1** is the repeater's callsign with its module
+letter in the 8th place, **RPT2** the same callsign with `G` there to go beyond the repeater; tick **Via a repeater**
+for a repeater channel and leave both blank for a direct one. Callsign fields take `A`-`Z`, `0`-`9`, spaces and `/`, up
+to 8 characters; lower case is stored as upper case. The radio-wide fields are on the **Radio** tab: your **D-STAR
+callsign** (blank uses the radio's DMR callsign), a **suffix** of up to 4 characters and a **message** of up to 20,
+sent with every over. A new D-STAR channel may transmit; tick **RX Only** to stop it.
+
 The **Systems** tab adds a system of a type. One form holds all of it, in sections: the system's identity, its
 control channels (a row per frequency, **+** to add one, **−** to remove it, tried top to bottom), this radio
 (**Transmit**, **Radio ID on this system**), calls, fallback, the key and wireless sharing. Sections few systems need (sites and
