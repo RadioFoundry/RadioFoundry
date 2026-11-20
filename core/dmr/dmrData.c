@@ -1926,7 +1926,14 @@ bool dmrDataDecodeTMS(const uint8_t *payload, int length, dmrDataTMS_t *tms)
 			c = ' ';
 		}
 
-		tms->text[n++] = (c < 0x100) ? c : '?';
+		// Drop the control characters (C0, DEL and the C1 range) the same way the ETSI and UTF-16 paths do: the UI
+		// font takes 0x80-0x9F as its own glyphs, so a sender's U+0082 would otherwise draw an arrow. latin1() sits
+		// outside this CONFIG_DMR_TMS block, maps a code point to Latin-1, and returns 0 for a control to be dropped.
+		char ch = latin1(c);
+		if (ch != 0)
+		{
+			tms->text[n++] = ch;
+		}
 	}
 	tms->text[n] = 0;
 
