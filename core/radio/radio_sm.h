@@ -483,6 +483,7 @@ typedef struct {
 	bool t3_pending;		// a trunked channel was selected: start its system (t3s) at the next t3_tick
 	bool t3_tagged;			// the channel is a trunked one (channel_t.kind)
 	bool t3_ch_rx;			// and receive only (its tag): the system runs listen only from it
+	bool t3_monitor_set;		// the loaded system's own T3_OPT_MONITOR; digital monitor adds it while on (t3_monitor)
 	uint8_t t3_kv;			// codeplug_kv_serial() when t3s was loaded from the codeplug
 	uint8_t t3_fb;			// fallback (dmr-trunking.md 12): 0 off, 1 on the fallback channel, 2 probing
 	uint16_t t3_fb_number;		// the fallback channel, 0: none

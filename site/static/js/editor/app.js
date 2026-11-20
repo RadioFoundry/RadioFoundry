@@ -1201,11 +1201,17 @@ function reportContext() {
 }
 
 // What the user may add to a report: the codeplug being edited and the one last read from the radio
+function reportCodeplug(image) {
+	const copy = image.clone();
+	withoutSecrets(copy.bytes);
+	return saveBytes(copy);
+}
+
 function reportFiles() {
 	const out = [];
-	if (S.model) out.push({ name: "codeplug-edited.bin", label: t("report.attach_codeplug"), data: () => saveBytes(encode(S.model)) });
+	if (S.model) out.push({ name: "codeplug-edited.bin", label: t("report.attach_codeplug"), data: () => reportCodeplug(encode(S.model)) });
 	const radio = S.conn?.image || S.lastRadioImage;
-	if (radio) out.push({ name: "codeplug-radio.bin", label: t("report.attach_radio"), data: () => saveBytes(radio) });
+	if (radio) out.push({ name: "codeplug-radio.bin", label: t("report.attach_radio"), data: () => reportCodeplug(radio) });
 	return out;
 }
 

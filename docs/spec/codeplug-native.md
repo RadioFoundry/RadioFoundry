@@ -15,8 +15,9 @@ plan for a native format. Nothing in section 4 is built yet.
 - The open-firmware layout keeps working for as long as qdmr and the open-firmware CPS are the tools people have.
 - The native format carries what the open-firmware one can't: per-channel privacy key slot, more zones, longer names, and
   per-channel features without overloading vendor flag bits.
-- Radio-wide state, keys included, lives in the settings store, not in the codeplug. A codeplug file can be shared
-  without leaking keys or the owner's last channel.
+- Radio-wide state and DMR Basic Privacy slots live in the settings store. Per-system traffic keys live in the
+  codeplug settings area ([channel-modes.md](channel-modes.md) 5.4). The editor omits these secrets from exports by
+  default, and the owner's last channel stays in the settings store.
 
 ## 2. The editing model (built)
 
@@ -109,7 +110,7 @@ The fields `channel_t` holds today, plus what the open-firmware record can't hol
 | **privacy_slot** | 1 | 0 = the radio-wide choice (`settings.privacy_active`), 1..4 = that key slot of the settings store (`settings-store.md` 3.1), 0xFF = privacy off on this channel |
 | reserved | to 64 bytes | 0, append only |
 
-The privacy key itself is never in the codeplug. A channel names a slot. The open-firmware layout has no field for it, so
+The DMR Basic Privacy key itself stays in the settings store. A channel names a slot. The open-firmware layout has no field for it, so
 until the native format exists every channel uses the radio-wide slot.
 
 ## 4. Storage plan (not built)

@@ -156,6 +156,7 @@ Ids are only appended and never reused. A kind and a system type that belong tog
 | 1 | DMR Tier III system | T3 | `CONFIG_DMR_TRUNK` | [dmr-trunking-codeplug.md](dmr-trunking-codeplug.md) |
 | 2 | Reserved: P25 conventional system (identity and keys) | | | |
 | 3 | P25 trunked system | P25T | `CONFIG_P25_TRUNK` | [p25-codeplug.md](p25-codeplug.md) |
+| 4 | NXDN conventional system | NXDN | `CONFIG_NXDN` | [nxdn-codeplug.md](nxdn-codeplug.md) |
 
 A mode claims an id by adding a row to all three in one change, with its spec: the parameter block, the type's
 system block and channel tail, its targets' address format, its traffic keys' algorithm ids and its radio-wide
@@ -255,7 +256,7 @@ Key 0x0100 + n, n = 0-254 (0xFF is "none" in a tag).
 | 0 | 1 | System type (4). 0 and 0xFF: no system |
 | 1 | 1 | Flags (below) |
 | 2 | 1 | Sharing: 0 off, 1 identity only, 2 whole system with key (8) |
-| 3 | 1 | Identity length L: the first L octets of the type's block say which system this is (a network and system ID). Two records of one type and the same identity are the same system |
+| 3 | 1 | Identity length L: the first L octets of the type's block say which system this is (a network and system ID). Two records of one type and the same nonempty identity are the same system. L = 0 leaves the system without an identity for matching |
 | 4 | 4 | This radio's ID on the system, little endian; 0 = the kind's radio-wide one (5.5). Never shared |
 | 8 | 2 | Fallback channel, 0 = none |
 | 10 | 2 | Its name check (2.2) |
@@ -299,8 +300,8 @@ when the system goes.
 ### 7.3 Channels on a system
 
 A channel names its system in its tag (2.1). Its own talk target is the record's contact or a target (5.2), its
-receive groups the record's RX group list or a target list (5.3). A channel's fallback (2.1) overrides the system's
-(7.1); a fallback channel is an ordinary channel the radio moves to when the system can't be used.
+receive groups the record's RX group list or a target list (5.3). For modes with fallback, a channel's fallback (2.1)
+overrides the system's (7.1). A fallback channel is an ordinary channel the radio moves to when the system can't be used.
 
 ### 7.4 System secret
 
@@ -312,7 +313,8 @@ Key 0x0300 + n: system n's own secret (an authentication key), the type's layout
 System secrets (7.4) and traffic keys (5.4) are **secrets**.
 
 - The Codeplug Editor shows a secret only as set or not set until the user asks to see it, and leaves secrets out of
-  a file export unless the user turns secrets on for that export and confirms it.
+  a file export unless the user turns secrets on for that export and confirms it. Codeplug attachments in diagnostic
+  reports omit secrets.
 - Zone and channel sharing carries a system's secrets only at the system's "whole system with key" level, and only
   when the sender turns keys on for that share ([zone-share.md](zone-share.md)).
 - A firmware reads them only for the mode module that uses them; the debug link never shows one.
