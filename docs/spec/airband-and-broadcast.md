@@ -168,8 +168,9 @@ RBDS uses the same groups) and shows what the station sends.
 | PS | Group 0A / 0B, 2 characters per segment, 4 segments. Shown once all 4 are confirmed; later confirmed segments update it in place (a scrolling PS changes with them) |
 | RadioText | Group 2A (4 characters, 64 in all) or 2B (2, 32 in all). Shown once every segment up to 0x0D (or the last) is confirmed. A new A/B flag, or 2A turning to 2B, clears it at once |
 | Characters | 0x20-0x7E as ASCII; controls (a line feed) as a space; 0x7F and up (the standard's accented letters) as `?`: the fonts have no glyphs for them |
+| RAM | The decoder (about 170 B) lives in the radio core; what it shows is published once beside the view (`radio_with_rds`, under the view's lock), not in `radio_view_t`, which every reading task copies. RadioText heard once is kept as a check byte per segment, not as text |
 | Cleared | on a new frequency (a tune, or a seek reporting another one), when the receiver goes off, and on a new PI |
-| Screen | Home: the PS after the "Broadcast FM" chip where it fits, in the receive color. RadioText on the activity line under the meter ("Receiving" otherwise); on a panel with one activity line, instead of the meter. Text longer than the line is shown in parts broken at spaces, a new part every 3 s |
+| Screen | Home: the PS after the "Broadcast FM" chip where it fits, in the receive color. RadioText on the activity line under the meter ("Receiving" otherwise); on a panel with one activity line, instead of the meter. Text longer than the line is shown in parts broken at spaces, from its first part when it changes, a new part every 3 s |
 | Debug link | view section `rds` (39): `rds.pi` (hex, 0000 none) `rds.pty rds.tp rds.ta rds.groups rds.ps rds.rt` ([debuglink.md](debuglink.md)) |
 
 Program type (PTY) is kept but not shown: its names differ between RDS and RBDS. Clock time (4A), alternative

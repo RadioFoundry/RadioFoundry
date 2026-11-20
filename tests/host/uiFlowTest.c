@@ -65,6 +65,12 @@ static const flow_t flows[] = {
 #if CONFIG_BCAST_RDS
 	// Broadcast FM with RDS (airband-and-broadcast.md 4.6): the station's name beside the chip, RadioText under the meter
 	{ "Broadcast home: RDS name and RadioText", "rdsrx:WXYZ_FM,Now_playing", "", "screen=home shows=Broadcast_FM shows=WXYZ_FM shows=Now_playing hides=Receiving", 0, false },
+	// A RadioText longer than the line: in parts broken at spaces, from its first, the next one 3 s later (the screen
+	// refreshes once a second)
+	{ "Broadcast home: long RadioText in parts", "rdsrx:WXYZ_FM,Traffic_news:_the_ring_road_is_closed_between_junctions_four_and_nine", "",
+	  "screen=home shows=Traffic hides=nine", 0, false },
+	{ "Broadcast home: long RadioText, a later part", "rdsrx:WXYZ_FM,Traffic_news:_the_ring_road_is_closed_between_junctions_four_and_nine wait:5000", "",
+	  "screen=home hides=Traffic shows=closed", 0, false },
 #endif
 	// A P25 channel (the debug link's mode): named P25 in the strip; FM's tiles say why they are off
 	{ "P25 channel shows its mode", "dlmode:p25", "", "mode=p25 screen=home shows=P25 hides=No_tone hides=12.5k hides=25k hides=SQ5", 0, false },

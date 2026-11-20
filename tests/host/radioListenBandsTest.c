@@ -602,7 +602,7 @@ static void test_bcast_rds(void)
 	req(RREQ_ZONE_POS, 6);	// WXYZ 101.100
 	run(50);
 	CHECK(sm.view.bcast && bc.on && bc.rds_on);
-	CHECK(sm.view.rds.pi == 0 && sm.view.rds.ps[0] == 0);
+	CHECK(sm.rds.info.pi == 0 && sm.rds.info.ps[0] == 0);
 	for (int k = 0; k < 2; k++) {
 		for (unsigned seg = 0; seg < 4; seg++)
 			rds_ps(0x1234u, seg, "WXYZ FM ");
@@ -610,15 +610,15 @@ static void test_bcast_rds(void)
 	uint32_t serial = sm.serial;
 	run(400);	// one group a poll
 	CHECK(bc.rds_next == 8);
-	CHECK(sm.view.rds.pi == 0x1234u && strcmp(sm.view.rds.ps, "WXYZ FM") == 0 && sm.view.rds.tp);
-	CHECK(sm.view.rds_groups == 8 && sm.serial != serial);
+	CHECK(sm.rds.info.pi == 0x1234u && strcmp(sm.rds.info.ps, "WXYZ FM") == 0 && sm.rds.info.tp);
+	CHECK(sm.rds.info.groups == 8 && sm.serial != serial);
 	// A 2 m channel and back: nothing of the station stays
 	req(RREQ_ZONE_POS, 2);
 	run(50);
-	CHECK(!bc.on && sm.view.rds.pi == 0 && sm.view.rds.ps[0] == 0 && sm.view.rds_groups == 0);
+	CHECK(!bc.on && sm.rds.info.pi == 0 && sm.rds.info.ps[0] == 0 && sm.rds.info.groups == 0);
 	req(RREQ_ZONE_POS, 6);
 	run(50);
-	CHECK(bc.on && bc.rds_on && sm.view.rds.ps[0] == 0);
+	CHECK(bc.on && bc.rds_on && sm.rds.info.ps[0] == 0);
 }
 
 // The broadcast step: 200 kHz between odd tenths of a MHz, from on or off that grid, or 100 kHz

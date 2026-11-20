@@ -52,22 +52,50 @@ static bool put_text(char *out, size_t cap, const char *in, size_t n)
 	return true;
 }
 
-// A segment of n characters heard: confirmed when the same text arrived the time before. True when the confirmed
-// text changed
-static bool take(char *heard, char *conf, uint16_t *heard_mask, uint16_t *conf_mask, unsigned seg, const char *c,
-		 unsigned n)
+// The confirmed text of a segment of n characters, once it arrived the same twice in a row (again). True when it
+// changed
+static bool confirm(char *conf, uint16_t *conf_mask, unsigned seg, const char *c, unsigned n, bool again)
 {
 	uint16_t bit = (uint16_t)(1u << seg);
-	char *h = heard + seg * n;
-	bool again = (*heard_mask & bit) != 0 && memcmp(h, c, n) == 0;
-	memcpy(h, c, n);
-	*heard_mask |= bit;
 	if (!again || ((*conf_mask & bit) != 0 && memcmp(conf + seg * n, c, n) == 0)) {
 		return false;
 	}
 	memcpy(conf + seg * n, c, n);
 	*conf_mask |= bit;
 	return true;
+}
+
+// PS: the last text heard is kept whole (8 bytes)
+static bool take_ps(rds_t *r, unsigned seg, const char *c)
+{
+	uint16_t bit = (uint16_t)(1u << seg);
+	char *h = r->ps_heard + seg * 2;
+	bool again = (r->ps_heard_mask & bit) != 0 && memcmp(h, c, 2) == 0;
+	memcpy(h, c, 2);
+	r->ps_heard_mask |= bit;
+	return confirm(r->ps_conf, &r->ps_conf_mask, seg, c, 2, again);
+}
+
+// A segment's check byte: each character rotated by its place, so a swap or a changed character shows. A wrong segment
+// that matches the last one's byte by chance (1 in 256) is taken; the next good pair puts it right
+static uint8_t check_byte(const char *c, unsigned n)
+{
+	uint8_t h = 0x5Au;
+	for (unsigned i = 0; i < n; i++) {
+		h = (uint8_t)(((h << 3) | (h >> 5)) ^ (uint8_t)c[i]);
+	}
+	return h;
+}
+
+// RadioText: the last text heard is kept as a check byte per segment
+static bool take_rt(rds_t *r, unsigned seg, const char *c, unsigned n)
+{
+	uint16_t bit = (uint16_t)(1u << seg);
+	uint8_t h = check_byte(c, n);
+	bool again = (r->rt_heard_mask & bit) != 0 && r->rt_heard[seg] == h;
+	r->rt_heard[seg] = h;
+	r->rt_heard_mask |= bit;
+	return confirm(r->rt_conf, &r->rt_conf_mask, seg, c, n, again);
 }
 
 static bool ps_update(rds_t *r)
@@ -139,7 +167,7 @@ bool rds_group(rds_t *r, const uint16_t blk[4], uint8_t err_a, uint8_t err_b)
 	if (err_a <= RDS_ERR_SMALL && !take_pi(r, blk[0], &changed)) {
 		return changed;
 	}
-	r->groups++;
+	r->info.groups++;
 	uint16_t b = blk[1];
 	bool tp = B_TP(b) != 0;
 	if (tp != r->info.tp || B_PTY(b) != r->info.pty) {
@@ -155,7 +183,7 @@ bool rds_group(rds_t *r, const uint16_t blk[4], uint8_t err_a, uint8_t err_b)
 			changed = true;
 		}
 		const char c[2] = { (char)(blk[3] >> 8), (char)blk[3] };
-		if (take(r->ps_heard, r->ps_conf, &r->ps_heard_mask, &r->ps_conf_mask, B_PS_SEG(b), c, 2)) {
+		if (take_ps(r, B_PS_SEG(b), c)) {
 			changed = ps_update(r) || changed;
 		}
 		break;
@@ -183,7 +211,7 @@ bool rds_group(rds_t *r, const uint16_t blk[4], uint8_t err_a, uint8_t err_b)
 			c[3] = (char)blk[3];
 			n = 4;
 		}
-		if (take(r->rt_heard, r->rt_conf, &r->rt_heard_mask, &r->rt_conf_mask, B_RT_SEG(b), c, n)) {
+		if (take_rt(r, B_RT_SEG(b), c, n)) {
 			changed = rt_update(r) || changed;
 		}
 		break;

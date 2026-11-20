@@ -28,19 +28,20 @@ typedef struct {
 	bool ta;			// traffic announcement now
 	char ps[RDS_PS_LEN + 1];
 	char rt[RDS_RT_LEN + 1];
+	uint16_t groups;		// groups taken from this station (wraps), for the debug link
 } rds_info_t;
 
 typedef struct {
 	rds_info_t info;
-	uint32_t groups;		// groups taken since the last reset
 	// Program identification: a new one must arrive twice in a row before it replaces the current one
 	uint16_t pi_cand;
 	// PS: per segment (2 characters), the last text heard and the text confirmed
 	char ps_heard[RDS_PS_LEN];
 	char ps_conf[RDS_PS_LEN];
 	uint16_t ps_heard_mask, ps_conf_mask;
-	// RadioText: per segment (4 characters in 2A, 2 in 2B), the same
-	char rt_heard[RDS_RT_LEN];
+	// RadioText: per segment (4 characters in 2A, 2 in 2B), a check byte of the last text heard (RAM: the whole text
+	// would cost 64 bytes) and the text confirmed
+	uint8_t rt_heard[RDS_RT_LEN / 4];
 	char rt_conf[RDS_RT_LEN];
 	uint16_t rt_heard_mask, rt_conf_mask;
 	int8_t rt_ab;			// the text A/B flag of the text being built, -1 = none yet

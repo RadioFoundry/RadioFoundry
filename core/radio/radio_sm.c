@@ -748,26 +748,19 @@ static uint8_t air_heard(const radio_sm_t *sm);
 // RDS from the last station forgotten: a new frequency, or the receiver off (airband-and-broadcast.md 4.6)
 static void rds_clear(radio_sm_t *sm)
 {
-	bool shown = sm->view.rds.pi != 0 || sm->view.rds_groups != 0;
+	bool shown = sm->rds.info.pi != 0 || sm->rds.info.ps[0] != 0 || sm->rds.info.rt[0] != 0;
 	rds_reset(&sm->rds);
-	memset(&sm->view.rds, 0, sizeof(sm->view.rds));
-	sm->view.rds_groups = 0;
 	if (shown) {
 		changed(sm);
 	}
 }
 
-// The group the receiver decoded since the last status, if any, into the decoder and the view
+// The group the receiver decoded since the last status, if any, into the decoder; published with the view
+// (radio_with_rds). A redraw only when what is shown changed, not for the group count alone
 static void rds_poll(radio_sm_t *sm)
 {
 	bcast_rds_t g;
-	if (board.bcast->rds_group == NULL || !board.bcast->rds_group(&g)) {
-		return;
-	}
-	bool news = rds_group(&sm->rds, g.blk, g.err_a, g.err_b);
-	sm->view.rds_groups = sm->rds.groups;	// the debug link's count; not worth a redraw alone
-	if (news) {
-		sm->view.rds = sm->rds.info;
+	if (board.bcast->rds_group != NULL && board.bcast->rds_group(&g) && rds_group(&sm->rds, g.blk, g.err_a, g.err_b)) {
 		changed(sm);
 	}
 }

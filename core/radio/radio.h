@@ -468,11 +468,6 @@ typedef struct {
 	bool bcast;
 	bool bcast_fault;
 	uint32_t bcast_khz;		// what the receiver reports it is tuned to, for the debug link (0 = not playing)
-#if CONFIG_BCAST_RDS
-	// RDS from the station playing (airband-and-broadcast.md 4.6): all zero until received, cleared on a new frequency
-	rds_info_t rds;
-	uint32_t rds_groups;		// RDS groups taken from this station, for the debug link
-#endif
 #if CONFIG_DMR
 	radio_dmr_view_t dmr;
 #endif
@@ -517,6 +512,12 @@ bool radio_get_zone_pos(uint16_t *zone, uint16_t *pos, uint16_t *size);
 // Runs fn on the whole trunking view as published with the view, under its lock (no copy: the view is 0.5 KB); fn
 // must be short and take no other lock
 void radio_with_t3_view(void (*fn)(const radio_t3_view_t *x, void *ctx), void *ctx);
+#endif
+#if CONFIG_BCAST_RDS
+// Runs fn on the RDS of the broadcast station playing (airband-and-broadcast.md 4.6), as published with the view, under
+// its lock: all zero until received, cleared on a new frequency. Kept out of the view, which has a copy in every task
+// that reads it. fn must be short and take no other lock
+void radio_with_rds(void (*fn)(const rds_info_t *r, void *ctx), void *ctx);
 #endif
 // Bumped on every visible change, so the UI can redraw only when needed
 uint32_t radio_view_serial(void);

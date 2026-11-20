@@ -82,15 +82,22 @@ static void tone(dl_text_t *t, const char *key, const subtone_t *s)
 }
 
 // RDS from the broadcast station playing: its own section, the core one being near the reply's size
-static void rds_section(const radio_view_t *v, dl_text_t *t)
+#if CONFIG_BCAST_RDS
+static void rds_keys(const rds_info_t *r, void *ctx)
+{
+	dl_text_t *t = ctx;
+	dl_text(t, "rds.built=1\nrds.pi=%04X\nrds.pty=%u\nrds.tp=%u\nrds.ta=%u\nrds.groups=%u\n", (unsigned)r->pi,
+		(unsigned)r->pty, (unsigned)r->tp, (unsigned)r->ta, (unsigned)r->groups);
+	dl_text_kv_str(t, "rds.ps", r->ps);
+	dl_text_kv_str(t, "rds.rt", r->rt);
+}
+#endif
+
+static void rds_section(dl_text_t *t)
 {
 #if CONFIG_BCAST_RDS
-	dl_text(t, "rds.built=1\nrds.pi=%04X\nrds.pty=%u\nrds.tp=%u\nrds.ta=%u\nrds.groups=%u\n", (unsigned)v->rds.pi,
-		(unsigned)v->rds.pty, (unsigned)v->rds.tp, (unsigned)v->rds.ta, (unsigned)v->rds_groups);
-	dl_text_kv_str(t, "rds.ps", v->rds.ps);
-	dl_text_kv_str(t, "rds.rt", v->rds.rt);
+	radio_with_rds(rds_keys, t);
 #else
-	(void)v;
 	dl_text(t, "rds.built=0\n");
 #endif
 }
@@ -740,7 +747,7 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		debuglink_view_nxdn(v, t);
 		break;
 	case DL_VIEW_RDS:
-		rds_section(v, t);
+		rds_section(t);
 		break;
 	case DL_VIEW_USRP:
 #if CONFIG_NET_USRP

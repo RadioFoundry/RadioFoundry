@@ -57,6 +57,9 @@ static radio_settings_t shared_settings;	// the published copy, under view_lock
 // settings are the ones in force soon, so radio_get_settings answers with them
 static uint32_t settings_sent, settings_taken, settings_published;
 static radio_view_t shared_view;	// the published copy, under view_lock
+#if CONFIG_BCAST_RDS
+static rds_info_t shared_rds;		// sm.rds.info published with it (radio_with_rds)
+#endif
 #if CONFIG_P25
 static radio_p25_settings_t pending_p25;	// radio_req_p25_settings -> the radio task, under view_lock
 #endif
@@ -134,6 +137,9 @@ static void publish(void)
 	shared_t3 = radio_t3v;
 #endif
 	shared_view = sm.view;
+#if CONFIG_BCAST_RDS
+	shared_rds = sm.rds.info;
+#endif
 	dtmf_ready = sm.view.dtmf_ready;
 	radio_sm_shown_view(&sm, &shared_view);	// a roaming survey visit: the screens keep the site it left
 	shared_serial = sm.serial;
@@ -319,6 +325,19 @@ void radio_with_t3_view(void (*fn)(const radio_t3_view_t *x, void *ctx), void *c
 	}
 	xSemaphoreTake(view_lock, portMAX_DELAY);
 	fn(&shared_t3, ctx);
+	xSemaphoreGive(view_lock);
+}
+#endif
+
+#if CONFIG_BCAST_RDS
+void radio_with_rds(void (*fn)(const rds_info_t *r, void *ctx), void *ctx)
+{
+	if (view_lock == NULL) {
+		fn(&shared_rds, ctx);	// all zero: the radio task hasn't started
+		return;
+	}
+	xSemaphoreTake(view_lock, portMAX_DELAY);
+	fn(&shared_rds, ctx);
 	xSemaphoreGive(view_lock);
 }
 #endif

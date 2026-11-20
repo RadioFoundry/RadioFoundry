@@ -77,7 +77,7 @@ static void test_ps(void)
 	CHECK(ps(&r, PI, 0, "NEWS    ", 0) && strcmp(r.info.ps, "NEDIO 2") == 0);
 	// The traffic announcement flag
 	CHECK(ps(&r, PI, 2, "NEWS    ", 1) && r.info.ta);
-	CHECK(r.groups == 17);
+	CHECK(r.info.groups == 17);
 }
 
 static void test_errors(void)
@@ -89,7 +89,7 @@ static void test_errors(void)
 	uint16_t g[4] = { PI, blk_b(0, 0, 0), 0, ('X' << 8) | 'Y' };
 	CHECK(!rds_group(&r, g, RDS_ERR_NONE, RDS_ERR_LARGE));
 	CHECK(!rds_group(&r, g, RDS_ERR_NONE, RDS_ERR_BAD));
-	CHECK(r.groups == 4 && r.ps_heard[0] == 'A');
+	CHECK(r.info.groups == 4 && r.ps_heard[0] == 'A');
 	// Block A bad: the rest is still read (the PI is all it carries)
 	uint16_t g2[4] = { 0x1234u, blk_b(0, 0, 3), 0, ('G' << 8) | 'H' };
 	CHECK(rds_group(&r, g2, RDS_ERR_BAD, RDS_ERR_SMALL) == false && r.info.pi == PI);
@@ -157,6 +157,15 @@ static void test_rt(void)
 			rt2b(&r, 0, seg, t2b);
 	}
 	CHECK(strcmp(r.info.rt, "Version B text") == 0);
+	// A wrong block C or D heard once never shows; the text heard twice does
+	rds_reset(&r);
+	rt2a(&r, 0, 0, "Xbcd\r   ");
+	rt2a(&r, 0, 0, "abcd\r   ");
+	rt2a(&r, 0, 1, "abcd\r   ");
+	rt2a(&r, 0, 1, "abcd\r   ");
+	CHECK(r.info.rt[0] == 0);
+	CHECK(rt2a(&r, 0, 0, "abcd\r   ") && strcmp(r.info.rt, "abcd") == 0);
+	CHECK(r.info.groups == 5);
 	// A line feed shows as a space
 	rds_reset(&r);
 	rt2a_all(&r, 0, "AB\nC\r   ", 2);

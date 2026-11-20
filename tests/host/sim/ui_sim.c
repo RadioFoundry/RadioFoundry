@@ -1238,6 +1238,10 @@ static uint32_t check_due, check_id;
 
 const radio_view_t *sim_view(void) { return &view; }
 void radio_get_view(radio_view_t *v) { *v = view; }
+#if CONFIG_BCAST_RDS
+static rds_info_t sim_rds;	// rdsrx; cleared with the rest at a reset
+void radio_with_rds(void (*fn)(const rds_info_t *r, void *ctx), void *ctx) { fn(&sim_rds, ctx); }
+#endif
 uint32_t radio_view_serial(void) { return serial; }
 static int32_t sim_step;	// UI_SET_VFO_STEP: 0 auto (the width's), else 10 Hz units
 static void changed(void)
@@ -2361,6 +2365,9 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	gfx_invalidate();
 	ui_layout_init();
 	memset(&view, 0, sizeof view);
+#if CONFIG_BCAST_RDS
+	memset(&sim_rds, 0, sizeof sim_rds);
+#endif
 	memset(&sim_rec, 0, sizeof sim_rec);
 	vfo_mode = RADIO_MODE_FM;	// a fresh VFO
 	vfo_cc = vfo_ts = 1;
@@ -3145,17 +3152,17 @@ static bool run_token(char *t, char *err, size_t len)
 			snprintf(err, len, "bad %s", t);
 			return false;
 		}
-		memset(&view.rds, 0, sizeof(view.rds));
+		memset(&sim_rds, 0, sizeof(sim_rds));
 		size_t n = (size_t)(comma - arg);
-		snprintf(view.rds.ps, sizeof view.rds.ps, "%.*s", (int)n, arg);
-		snprintf(view.rds.rt, sizeof view.rds.rt, "%s", comma + 1);
-		for (char *p = view.rds.ps; *p; p++)
+		snprintf(sim_rds.ps, sizeof sim_rds.ps, "%.*s", (int)n, arg);
+		snprintf(sim_rds.rt, sizeof sim_rds.rt, "%s", comma + 1);
+		for (char *p = sim_rds.ps; *p; p++)
 			if (*p == '_')
 				*p = ' ';
-		for (char *p = view.rds.rt; *p; p++)
+		for (char *p = sim_rds.rt; *p; p++)
 			if (*p == '_')
 				*p = ' ';
-		view.rds.pi = 0x1234u;
+		sim_rds.pi = 0x1234u;
 		view.ch.mode = RADIO_MODE_FM;	// what the core makes of any channel in the broadcast band
 		view.bcast = true;
 		view.state = RS_RX;

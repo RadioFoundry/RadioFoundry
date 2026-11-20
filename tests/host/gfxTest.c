@@ -13,6 +13,15 @@
 #include "ui/ui_svc.h"
 #include "ui/cjk_font.h"
 
+#if CONFIG_BCAST_RDS
+// Home asks the radio core for the broadcast station's RDS: none here
+void radio_with_rds(void (*fn)(const rds_info_t *r, void *ctx), void *ctx)
+{
+	static const rds_info_t none;
+	fn(&none, ctx);
+}
+#endif
+
 static int fails;
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); fails++; } } while (0)
 
