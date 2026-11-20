@@ -450,6 +450,10 @@ static void t3_ra(const radio_t3_view_t *x, void *ctx)
 	// The TX to RX turnaround
 	dl_text(t, "t3.turns=%u\nt3.turn_ms=%u\nt3.turn_max_ms=%u\nt3.turn_slow=%u\n", (unsigned)x->turns, x->turn_ms,
 		x->turn_max_ms, (unsigned)x->turn_slow);
+	// Why sends were refused or failed (t3.send_fail in the t3 section counts them all; no room there)
+	dl_text(t, "t3.send_held=%u\nt3.send_slot=%u\nt3.send_talk=%u\nt3.send_limit=%u\nt3.send_key=%u\n"
+		"t3.send_stack=%u\nt3.send_data_busy=%u\nt3.send_err=%u\n", x->send_held, x->send_slot, x->send_talk,
+		x->send_limit, x->send_key, x->send_stack, x->send_data_busy, x->send_err);
 }
 
 // The messages heard, a section of their own: in t3_svc they outgrew a reply (truncated=1 before t3.supl_*)

@@ -91,12 +91,14 @@ configured frequency and any blocking reason. Received APRS messages appear in M
 
 ## Message formats
 
-**Settings > Connections > Message format** picks the encoding of new DMR messages. The radio reads all three DMR
-formats, whatever the setting. A reply to a DMR inbox message uses DMR.
+**Settings > Connections > Message format** picks the encoding of new DMR messages. The setting does not affect
+reception. Canned inbox replies use the received format where available. Text sent from the composer uses the
+selected setting.
 
 | Format | Use it for |
 |---|---|
-| ETSI (default) | The standard DMR text message (ETSI IP text). Radios and dispatch software set to "DMR standard" text read it. Delivery to a person is confirmed |
+| Automatic (default) | Uses Tier III control-channel short data for up to 23 characters on a Tier III channel without data privacy. Longer messages and messages on other channels use ETSI IP text. |
+| ETSI | The standard DMR text message (ETSI IP text). Radios and dispatch software set to "DMR standard" text read it. Delivery to a person is confirmed |
 | ETSI short | Radios that only show ETSI short data messages. Delivery is confirmed |
 | Motorola | MOTOTRBO radios and dispatch software set to Motorola text messages (TMS). Delivery is confirmed. Not in builds made without Motorola TMS support |
 

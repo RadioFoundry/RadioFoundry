@@ -73,7 +73,8 @@ int main(void)
 	section(debuglink_view_t3_roam, text, &full);
 	CHECK(!full);
 	section(debuglink_view_t3_ra, text, &full);
-	CHECK(!full && has(text, "t3.ra3=") && has(text, "t3.turn_slow="));
+	CHECK(!full && has(text, "t3.ra3=") && has(text, "t3.turn_slow=") && has(text, "t3.send_held=") &&
+	      has(text, "t3.send_err="));
 	section(debuglink_view_t3_svc, text, &full);
 	CHECK(!full && has(text, "t3.ip_advised="));
 	section(debuglink_view_t3_msg, text, &full);

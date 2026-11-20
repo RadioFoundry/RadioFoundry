@@ -3618,6 +3618,11 @@ msgid "Channel"
 msgstr "Canale"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_VALUE_MSGFMT_AUTOMATIC"
+msgid "Automatic"
+msgstr "Automatico"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_VALUE_MSGFMT_ETSI_SHORT"
 msgid "ETSI short"
 msgstr "ETSI breve"

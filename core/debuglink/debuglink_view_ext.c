@@ -38,7 +38,8 @@ void debuglink_view_dmr_ext(dl_text_t *t)
 	dmrDataServiceGetStats(&s);
 	dmr_data_get_settings(&set);
 	dl_text(t, "data.sms_format=%s\ndata.radio_check_etsi=%u\ndata.tms_built=%u\n",
-		set.smsFormat == DMR_SMS_FORMAT_ETSI ? "etsi" : set.smsFormat == DMR_SMS_FORMAT_ETSI_IP ? "etsi_ip" : "tms",
+		set.smsFormat == DMR_SMS_FORMAT_DEFAULT ? "auto" : set.smsFormat == DMR_SMS_FORMAT_ETSI ? "etsi" :
+		set.smsFormat == DMR_SMS_FORMAT_ETSI_IP ? "etsi_ip" : "tms",
 		set.radioCheckEtsi, (unsigned)CONFIG_DMR_TMS);
 	dl_text(t, "data.etsi_sms_received=%u\ndata.etsi_sms_sent=%u\ndata.etsi_responses=%u\n",
 		(unsigned)s.etsiSmsReceived, (unsigned)s.etsiSmsSent, (unsigned)s.etsiResponsesReceived);

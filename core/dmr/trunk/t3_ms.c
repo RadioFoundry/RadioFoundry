@@ -1096,9 +1096,11 @@ static void answer_info(t3_ms_t *ms, uint8_t slot, bool payload, uint8_t reason,
 	ms->tx.udt = false;
 }
 
+// Response_Info for every reason but a poll's (table 7.41): G/I (bit 6) 0, as the target is the AHOY's source, an
+// individual or gateway ID, never a talkgroup; then Response_Check from the TSCC's C_SYScode
 static void answer(t3_ms_t *ms, uint8_t slot, bool payload, uint8_t reason, uint32_t to, bool then_return)
 {
-	answer_info(ms, slot, payload, reason, 0, to, then_return);
+	answer_info(ms, slot, payload, reason, t3_response_check(ms->syscode), to, then_return);
 }
 
 // A status delivered by C_AHOY (6.6.6.1.1.4): Service_Options_Mirror holds its 5 most significant bits, Appended_Blocks
@@ -2376,8 +2378,20 @@ void t3_ms_rx(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t dt, uint8_t cc, c
 		if (!have) {
 			return;
 		}
+		bool fid08 = ms->mbc[si].hdr.fid == T3_FID_08;
+		if (fid08 && d[0] == T3_OP_PD_GRANT && !ms->mbc[si].has_intermediate) {
+			// The FID 0x08 grant puts its absolute channel in the first of two continuations.
+			memcpy(ms->mbc[si].intermediate, d, T3_CSBK_BYTES);
+			ms->mbc[si].has_intermediate = true;
+			ms->mbc[si].open = true;
+			ms->mbc[si].ms = now;
+			return;
+		}
 		t3_cdef_t c;
-		if (!t3_crc_ok(d, 0) || !t3_cdef_parse(d, ms->mbc[si].hdr.op, &c)) {
+		bool valid = fid08 ?
+			ms->mbc[si].has_intermediate && t3_fid08_pd_cdef_parse(ms->mbc[si].intermediate, d, &c) :
+			t3_crc_ok(d, 0) && t3_cdef_parse(d, ms->mbc[si].hdr.op, &c);
+		if (!valid) {
 			ms->st.crc_bad++;
 			return;
 		}
@@ -2395,12 +2409,13 @@ void t3_ms_rx(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t dt, uint8_t cc, c
 		// Any good CSBK on the call's slot keeps it alive, one with another FID included
 		ms->last_act_ms = now;
 	}
-	if (!known || p.fid != 0) {
+	if (!known || (p.fid != 0 && dt != T3_DT_MBC_HDR)) {
 		return;
 	}
 	if (dt == T3_DT_MBC_HDR) {
 		// The header of a multi-block PDU: wait for its continuation
 		ms->mbc[si].open = true;
+		ms->mbc[si].has_intermediate = false;
 		ms->mbc[si].hdr = p;
 		ms->mbc[si].ms = now;
 		return;

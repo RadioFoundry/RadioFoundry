@@ -1604,6 +1604,9 @@ static void dmr_configure(radio_sm_t *sm)
 	if (sm->t3_on) {
 		cfg.own_id = t3s.cfg.own_id;	// the system's ID: calls to it, and the source of ours
 		cfg.both_slots = sm->t3_both;
+		// Digital monitor follows every grant (t3_monitor), not every burst: the call plays on its own slot and the
+		// system's color code, while the other slot carries another call
+		cfg.listen.any_cc = cfg.listen.both_ts = false;
 		if (t3m.state == T3_FOLLOW) {
 			const t3_call_t *c = &t3m.call;
 			cfg.listen.hear_all = true;
@@ -2395,6 +2398,7 @@ static struct {
 #if CONFIG_DMR_TRUNK_TX
 	// A Tier III system: list waits while the engine gets a packet data channel for it (data_t3_tick)
 	bool t3_wait;
+	bool t3_sms;		// waiting for a short data result
 	bool t3_asked;
 	bool t3_group;
 	uint32_t t3_dst;
@@ -2590,6 +2594,23 @@ static void data_t3_fail(uint8_t err)
 	dmrDataServiceTxDone(err);
 }
 
+// Tier III UDT uses UTF-16BE without a BOM or terminator. The editor supplies Latin-1.
+static bool data_t3_sms(uint32_t dst, bool group, const char *text, uint32_t now_ms, void *ctx)
+{
+	const radio_sm_t *sm = ctx;
+	uint8_t utf16[T3_UDT_MAX];
+	size_t len = strlen(text);
+	if (!sm->t3_on || sm->ptt || t3m.state != T3_CAMPED || len > sizeof utf16 / 2u) {
+		return false;
+	}
+	(void)dmrDataLatin1ToUtf16BE(text, utf16, len);
+	if (!t3_ms_sdata(&t3m, now_ms, dst, group, T3_UDTF_UTF16, utf16, (uint8_t)(2 * len))) {
+		return false;
+	}
+	data_tx.t3_sms = true;
+	return true;
+}
+
 // From t3_tick: ask for the channel, send once on it, or give the list back failed
 static void data_t3_tick(radio_sm_t *sm, uint32_t now_ms)
 {
@@ -2597,6 +2618,11 @@ static void data_t3_tick(radio_sm_t *sm, uint32_t now_ms)
 		// The single item (and any confirmed retries) is over: so is the radio's data call (dmr-trunking.md 7.7)
 		data_tx.t3_sent = false;
 		t3_ms_data_done(&t3m, now_ms, dmrDataServiceIpFailures() == data_tx.t3_failures);
+	}
+	if (data_tx.t3_sms && (t3m.ax.svc != T3_SVC_SDATA || t3m.ax.state == T3_AX_IDLE)) {
+		bool ok = t3m.ax.svc == T3_SVC_SDATA && t3m.ax.result == T3_RES_DONE;
+		data_tx.t3_sms = false;
+		dmrDataServiceTxDone(ok ? DMR_TX_OK : DMR_TX_ERR_NO_REPEATER);
 	}
 	if (!data_tx.t3_wait) {
 		return;
@@ -2765,8 +2791,8 @@ static void data_save_settings(uint32_t now_ms)
 	st->ds_flags = (uint8_t)((cur.radioCheckReply ? SETTINGS_DS_RADIO_CHECK_REPLY : 0) |
 				 (cur.callAlertAck ? SETTINGS_DS_CALL_ALERT_ACK : 0) |
 				 (cur.lrrpReply ? SETTINGS_DS_LRRP_REPLY : 0) |
-				 (cur.smsFormat == DMR_SMS_FORMAT_ETSI ? SETTINGS_DS_SMS_ETSI : 0) |
-				 (cur.smsFormat == DMR_SMS_FORMAT_ETSI_IP ? SETTINGS_DS_SMS_ETSI_IP : 0) |
+				 (cur.smsFormat == DMR_SMS_FORMAT_ETSI || cur.smsFormat == DMR_SMS_FORMAT_DEFAULT ? SETTINGS_DS_SMS_ETSI : 0) |
+				 (cur.smsFormat == DMR_SMS_FORMAT_ETSI_IP || cur.smsFormat == DMR_SMS_FORMAT_DEFAULT ? SETTINGS_DS_SMS_ETSI_IP : 0) |
 				 (cur.radioCheckEtsi ? SETTINGS_DS_RADIO_CHECK_ETSI : 0) |
 				 (cur.udpCompress == DMR_UDPC_OFF ? SETTINGS_DS_UDPC_OFF : 0) |
 				 (cur.udpCompress == DMR_UDPC_ALL ? SETTINGS_DS_UDPC_ALL : 0));
@@ -2882,6 +2908,9 @@ static void data_init(radio_sm_t *sm)
 	dmrDataEnv_t env = { .txStart = data_tx_start, .channelClear = data_channel_clear,
 			     .inRxGroup = data_in_rx_group, .ctx = sm,
 			     .noRate34 = board.dmr != NULL && board.dmr->tx_rate34_bad };
+#if CONFIG_DMR_TRUNK_TX
+	env.txSmsUdt = data_t3_sms;
+#endif
 #if CONFIG_DMR_AIR_QUEUE
 	airqInit();
 #endif
@@ -2900,7 +2929,7 @@ static void data_init(radio_sm_t *sm)
 	// source
 	// IP packets: compressed headers where the ports allow, confirmed only for the rules the user sets
 	dmrDataSettings_t set = { .arsServer = 0, .radioCheckReply = true, .callAlertAck = true, .lrrpReply = true,
-				  .hasGps = false, .smsFormat = DMR_SMS_FORMAT_ETSI_IP, .udpCompress = DMR_UDPC_AUTO,
+				  .hasGps = false, .smsFormat = DMR_SMS_FORMAT_DEFAULT, .udpCompress = DMR_UDPC_AUTO,
 				  .ipConfirmed = DMR_IPC_RULES, .ipConfirmedTries = DMR_IPC_TRIES_DEFAULT };
 #if CONFIG_DMR_LRRP
 	// The position service answers (data_own_position). A source can come later (a GPS found after start-up, a fixed
@@ -2916,10 +2945,11 @@ static void data_init(radio_sm_t *sm)
 				      (st->ds_flags & SETTINGS_DS_RADIO_CHECK_REPLY) != 0;
 		set.callAlertAck = (st->ds_flags & SETTINGS_DS_CALL_ALERT_ACK) != 0;
 		set.lrrpReply = (st->ds_flags & SETTINGS_DS_LRRP_REPLY) != 0;
-		// A record from before ETSI IP text has neither format bit: TMS, as that firmware sent (only the default
-		// changed, docs/spec/dmr-data.md 8)
-		set.smsFormat = (st->ds_flags & SETTINGS_DS_SMS_ETSI_IP) ? DMR_SMS_FORMAT_ETSI_IP :
-				(st->ds_flags & SETTINGS_DS_SMS_ETSI) ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
+		// Both format bits indicate Automatic. Earlier records have at most one bit set; neither means TMS.
+		uint8_t fmt = st->ds_flags & (SETTINGS_DS_SMS_ETSI | SETTINGS_DS_SMS_ETSI_IP);
+		set.smsFormat = fmt == (SETTINGS_DS_SMS_ETSI | SETTINGS_DS_SMS_ETSI_IP) ? DMR_SMS_FORMAT_DEFAULT :
+				fmt == SETTINGS_DS_SMS_ETSI_IP ? DMR_SMS_FORMAT_ETSI_IP :
+				fmt == SETTINGS_DS_SMS_ETSI ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
 		set.radioCheckEtsi = (st->ds_flags & SETTINGS_DS_RADIO_CHECK_ETSI) != 0;
 		set.udpCompress = (st->ds_flags & SETTINGS_DS_UDPC_OFF) ? DMR_UDPC_OFF :
 				  (st->ds_flags & SETTINGS_DS_UDPC_ALL) ? DMR_UDPC_ALL : DMR_UDPC_AUTO;
@@ -2963,6 +2993,7 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_DMR_TRUNK
 	if (sm->t3_on) {
 		// A trunked system: the call's talkgroup; one registration for the system, whichever channel it is on
+		c.trunked = true;
 		c.talkGroup = t3m.state == T3_FOLLOW && t3m.call.group ? t3m.call.dst : 0;
 		vals[0] = t3s.cfg.own_id;
 		vals[1] = vals[2] = vals[3] = 0;
@@ -3033,12 +3064,20 @@ static bool t3_send_next(dmr_tx_burst_t *out, void *ctx)
 	return true;
 }
 
+static void t3_count8(uint8_t *n)
+{
+	if (*n != UINT8_MAX) {
+		(*n)++;
+	}
+}
+
 static void t3_send_done(uint8_t err, void *ctx)
 {
 	radio_sm_t *sm = ctx;
 	sm->t3_sending = false;
 	if (err != DMR_TX_OK) {
 		radio_t3v.send_fail++;
+		t3_count8(&radio_t3v.send_err);
 	}
 	sm->t3_sent_report = err == DMR_TX_OK ? 1u : 2u;	// to the engine at the next step (t3_ms_sent)
 }
@@ -3114,21 +3153,35 @@ static void t3_tune(radio_sm_t *sm, const t3_act_t *a, uint32_t now_ms)
 	t3_retune(sm, &a->chan, a->slot, now_ms);
 }
 
+// A send refused: counted under its reason and told to the engine, which retries what needs it
+static void t3_send_refused(uint8_t *reason, uint32_t now_ms)
+{
+	radio_t3v.send_fail++;
+	t3_count8(reason);
+	t3_ms_sent(&t3m, now_ms, false);
+}
+
 static void t3_send(radio_sm_t *sm, const t3_act_t *a, uint32_t now_ms)
 {
-	// PTT held while waiting for our grant is the request itself, not talking. A held retune: the engine is
-	// elsewhere already
-	if (sm->t3_tune_held || sm->view.ch.timeslot != (a->slot == 2 ? 2 : 1) || (sm->ptt && !sm->t3_ptt_wait) ||
-	    sm->view.state == RS_TX) {
-		radio_t3v.send_fail++;	// not on the slot asked for, or talking: the engine retries what needs it
-		t3_ms_sent(&t3m, now_ms, false);
+	// A held retune: the engine is elsewhere already
+	if (sm->t3_tune_held) {
+		t3_send_refused(&radio_t3v.send_held, now_ms);
+		return;
+	}
+	if (sm->view.ch.timeslot != (a->slot == 2 ? 2 : 1)) {
+		t3_send_refused(&radio_t3v.send_slot, now_ms);
+		return;
+	}
+	// PTT held while waiting for our grant is the request itself, not talking
+	if ((sm->ptt && !sm->t3_ptt_wait) || sm->view.state == RS_TX) {
+		t3_send_refused(&radio_t3v.send_talk, now_ms);
 		return;
 	}
 	if (!sm->dmr_keyed) {
 		static const subtone_t none = { TONE_NONE, 0 };
 		if (!key_tx(sm->view.ch.tx_hz, (radio_bw_t)sm->view.ch.bw, sm->view.power, &none)) {
-			radio_t3v.send_fail++;
-			t3_ms_sent(&t3m, now_ms, false);
+			t3_send_refused(tx_limit_allows(sm->view.ch.tx_hz) ? &radio_t3v.send_key : &radio_t3v.send_limit,
+					now_ms);
 			return;
 		}
 		sm->dmr_keyed = true;
@@ -3145,8 +3198,10 @@ static void t3_send(radio_sm_t *sm, const t3_act_t *a, uint32_t now_ms)
 				  .tag = "t3" };
 	if (!dmr_call_data_tx(&src)) {
 		sm->t3_send_left = 0;
-		radio_t3v.send_fail++;	// the keying is released by dmr_follow
-		t3_ms_sent(&t3m, now_ms, false);
+		if (dmr_call_data_busy()) {
+			t3_count8(&radio_t3v.send_data_busy);
+		}
+		t3_send_refused(&radio_t3v.send_stack, now_ms);	// the keying is released by dmr_follow
 		return;
 	}
 	sm->t3_sending = true;
@@ -3529,6 +3584,19 @@ static void t3_keep_kill(radio_sm_t *sm, uint32_t now_ms)
 	changed(sm);
 }
 
+// Digital monitor on a trunked channel follows every talkgroup's grant (T3_OPT_MONITOR), as it hears every talkgroup
+// on a conventional one; off, the system's own setting again (t3_monitor_set, taken where t3s is loaded: t3s keeps
+// monitor's bit while the engine stops for the fallback and starts again). The engine reads the option at each grant:
+// a call already followed plays to its end
+static void t3_monitor(radio_sm_t *sm)
+{
+	if (sm->t3_monitor_set || hear_all_on(sm)) {
+		t3s.cfg.opts |= T3_OPT_MONITOR;
+	} else {
+		t3s.cfg.opts &= (uint16_t)~T3_OPT_MONITOR;
+	}
+}
+
 // Start the engine on t3s
 static void t3_begin(radio_sm_t *sm, uint32_t now_ms)
 {
@@ -3579,6 +3647,7 @@ static void t3_begin(radio_sm_t *sm, uint32_t now_ms)
 	sm->t3_hunt_ms = now_ms | 1u;	// hunting from now (the fallback's clock)
 	memset(sm->t3_at, 0, sizeof(sm->t3_at));
 	sm->t3_cc = t3s.cc;
+	t3_monitor(sm);
 	dmr_call_set_rx_tap(t3_tap, sm);
 	// A stun outlasts leaving the system and coming back (6.4.9): it is the network's, so another network's
 	// doesn't carry over
@@ -3632,6 +3701,7 @@ static void t3_start(radio_sm_t *sm, uint32_t now_ms)
 	t3_off(sm);
 	t3s = *radio_t3_staged();
 	radio_t3_fix(&t3s);
+	sm->t3_monitor_set = (t3s.cfg.opts & T3_OPT_MONITOR) != 0;
 	t3_begin(sm, now_ms);
 }
 
@@ -3646,6 +3716,10 @@ static void t3_leave(radio_sm_t *sm)
 #if CONFIG_DMR_DATA_CORE && CONFIG_DMR_TRUNK_TX
 	if (data_tx.t3_wait) {
 		data_t3_fail(DMR_TX_ERR_REJECTED);	// the system went before its channel came
+	}
+	if (data_tx.t3_sms) {
+		data_tx.t3_sms = false;
+		dmrDataServiceTxDone(DMR_TX_ERR_REJECTED);
 	}
 	data_tx.t3_sent = false;	// its data call went with the engine: not the next engine's to end
 #endif
@@ -3717,6 +3791,12 @@ static bool t3_channel(radio_sm_t *sm, uint16_t number, const channel_t *ch)
 		// A receive-only channel never transmits (channel-modes.md 2.1): no registration from it either
 		t3s.cfg.opts |= T3_OPT_LISTEN_ONLY;
 	}
+	if (!(t3s.cfg.opts & T3_OPT_LISTEN_ONLY)) {
+		// The system code learned from the air (dmr-trunking-codeplug.md 1) only for listening: a radio that
+		// transmits registers on the system its codeplug names, never on whichever it heard first
+		t3s.cfg.opts &= (uint16_t)~T3_OPT_LEARN_SYSCODE;
+	}
+	sm->t3_monitor_set = (t3s.cfg.opts & T3_OPT_MONITOR) != 0;
 	radio_t3_talk(ch, &t3s);
 	sm->t3_fb_number = radio_t3_fallback(number, &t3s, &sm->t3_fb_ch);
 	sm->t3_pending = true;		// started by t3_tick, which has the clock
@@ -4004,6 +4084,7 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 	if (!sm->t3_on) {
 		return;
 	}
+	t3_monitor(sm);
 	uint32_t tc = dmr_call_ticks(NULL);
 	uint32_t n = tc - sm->t3_ticks;
 	if (n > 8u) {
@@ -4152,7 +4233,7 @@ static void dmr_end(radio_sm_t *sm) { (void)sm; }
 static bool scan_listens(const channel_t *ch, uint16_t number)
 {
 	(void)number;
-	if (parked(ch) || ch->kind == CODEPLUG_KIND_P25_TRUNK || ch->kind == CODEPLUG_KIND_DMR_TRUNK) {
+	if (parked(ch) || codeplug_kind_trunked(ch->kind)) {
 		return false;
 	}
 #if CONFIG_NXDN
@@ -6794,6 +6875,14 @@ static void hotspot_arm(radio_sm_t *sm)
 		return;		// armed again when the CW ID ends
 	}
 #endif
+	// Already keyed (a new power level while armed): unkey first. A board's tx() starts a keying from receive; called
+	// again under one it reprograms the synthesizer and the RF switches while a burst may hold the PA on (where a
+	// board's RF task sleeps between a burst's PA-on and PA-off, a split frequency's RX word could land mid-burst).
+	// tx_off waits for the burst in flight and the hotspot listens through the gap
+	if (sm->dmr_keyed) {
+		sm->dmr_keyed = false;
+		board.radio->tx_off();
+	}
 	sm->dmr_keyed = key_tx(sm->hs_tx_hz, RADIO_BW_12K5, sm->hs_power, &none);
 }
 
