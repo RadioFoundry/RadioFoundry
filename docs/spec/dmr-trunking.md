@@ -828,7 +828,7 @@ field at its widest. `radioCoreTest` runs the radio core with the engine: start,
 | Slots | Each slot tick from the modem goes to `t3_ms_slot` with its slot number and its CACH AT bit (`DMR_TICK_AT_KNOWN`, `DMR_TICK_AT_BUSY`). A modem that doesn't number slots gets them alternating; one that doesn't read AT gets every slot free. The HR_C6000 and HR_C7000 drivers number them and read AT once locked to the CACH's TC ([modem-hrc7000.md](modem-hrc7000.md) 2.5). |
 | Receive | The stack's receive tap hands CSBKs and MBC blocks to `t3_ms_rx`. Any other burst on a known slot, idle ones excepted, is activity on that slot (`t3_ms_activity`). |
 | Send | A `T3_ACT_SEND` keys one CSBK as a data list, on the action's slot only, and not while the radio is talking. A `T3_ACT_TUNE` that comes while the list is still with the stack waits until it has gone out (at most 500 ms): a new slot or channel would drop it, and an answer before leaving a payload channel (a selective clear's P_ACKU) would never be sent. |
-| PTT | Camped, PTT asks for a call to the system's talk target (the first talkgroup with `T3_TG_TALK` when none is set) and waits with PTT held. The grant puts the radio on the payload slot and keys it. A refusal, no answer or timeout denies TX (`TXDENY_NO_DMR`). Releasing PTT before a grant cancels the request unless the called user is already ringing. Once ringing, the request stays pending and a grant with PTT released leaves the mic closed until the next press. |
+| PTT | Camped, PTT asks for a call to the system's talk target (the first talkgroup with `T3_TG_TALK` when none is set) and waits with PTT held. The grant puts the radio on the payload slot and keys it. A refusal, no answer or timeout denies TX (`TXDENY_NO_DMR`). Releasing PTT before a grant cancels the request unless the called user is already ringing. Once ringing, the request stays pending and a grant with PTT released leaves the mic closed until the next press. The state word shows Calling and Back sends C_RAND Cancel before the grant. |
 | Following | The stack takes the system's ID as its own, hears every call on the slot, and talks to the call's group or to the other party. The radio's own transmission counts as the call's activity: it never hears its own slot, so TV_Inactive would otherwise end the call while it talks. |
 | Status | `RADIO_T3_STATUS` sends the staged status (section 7.5). The last status heard is in the view. |
 | Short data poll | `RADIO_T3_SDPOLL` polls the staged MS (section 7.6). The reply to a poll is staged with the system (`DL_T3_POLL_REPLY`). |
@@ -924,7 +924,7 @@ channel for `T3_REG_TG_DELAY_MS` (1 s), so turning the knob through channels reg
 **On screen.** A zone or channel list names a trunked channel's system after its name, in place of the frequency.
 An unavailable one is dimmed: OK on it says "System not set up" and stays, and channel stepping passes it. On a
 trunked channel Home's chips row shows the system's name and its state in place of slot and color code: Ready,
-Registering, Searching, Other system, Reg. refused, In call, Refused, Fallback (12.5) or System not set up, then the power.
+Registering, Searching, Other system, Reg. refused, Calling, In call, Refused, Fallback (12.5) or System not set up, then the power.
 
 **Other system.** Searching while the hunt hears only another system's control channel (`t3_ms_other`, 6.1). Home's
 activity area names it in place of the last call: "Heard: Huge, net 0" and "site 83", with ", category A only" or

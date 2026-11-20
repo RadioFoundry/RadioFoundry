@@ -294,6 +294,7 @@ void t3_ms_stop(t3_ms_t *ms)
 	ms->nq = 0;
 	ms->tx.count = 0;
 	ms->tx.udt = false;
+	ms->ax.alerting = false;
 	ms->ax.state = T3_AX_IDLE;
 	ms->confirmed = false;
 }
@@ -699,6 +700,7 @@ static void finish(t3_ms_t *ms, uint32_t now, t3_res_t r)
 	t3_svc_t svc = ms->ax.svc;
 	ms->ax.state = T3_AX_IDLE;
 	ms->ax.result = r;
+	ms->ax.alerting = false;
 	if (ms->ax.resume) {
 		// 6.4.14.3.3.2: back to the payload channel whatever the answer; not when the TSCC was lost or an
 		// emergency grant took the radio elsewhere

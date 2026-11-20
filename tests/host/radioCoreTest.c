@@ -9123,6 +9123,26 @@ static void test_t3_foacsu_ptt_release(void)
 	t3_site_run(300);
 	CHECK(radio_t3v.ptt_wait && !sm.ptt);
 	CHECK(!t3_rand_since(from, T3_SK_CANCEL, &q));
+	radio_sm_t3_brief(&sm);
+	CHECK(sm.view.t3.alerting);
+
+	req(RREQ_T3, RADIO_T3_CANCEL);
+	t3_site_run(600);
+	CHECK(t3_rand_since(from, T3_SK_CANCEL, &q) && q.u.rand.dst == called);
+	radio_sm_t3_brief(&sm);
+	CHECK(!sm.view.t3.alerting && !radio_t3v.ptt_wait);
+
+	a.u.ack.reason = T3_RC_MESSAGE_ACCEPTED;
+	t3_csbk_rx(&a, 1);
+	t3_site_run(100);
+	req(RREQ_PTT, 1);
+	t3_site_run(600);
+	a.u.ack.reason = T3_RC_MS_ALERTING;
+	t3_csbk_rx(&a, 1);
+	t3_site_run(100);
+	req(RREQ_PTT, 0);
+	t3_site_run(100);
+	CHECK(radio_t3v.ptt_wait && !sm.ptt);
 
 	t3_csbk_t g = { .lb = true, .op = T3_OP_PV_GRANT };
 	g.u.grant.lpcn = 1;
