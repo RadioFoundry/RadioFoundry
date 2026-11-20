@@ -256,7 +256,7 @@ void ui_draw_hotspot(const radio_view_t *v, const hotspot_view_t *h, const ui_st
 #endif
 #if CONFIG_DMR_TRUNK
 // Incoming private call: the caller and how to answer.
-void ui_draw_incoming_call(const radio_view_t *v, const ui_state_t *s);
+void ui_draw_incoming_call(const radio_view_t *v, const ui_state_t *s, const char *name);
 #endif
 // Received emergency: full screen, the caller, how to acknowledge
 void ui_draw_emergency(const radio_view_t *v, const ui_state_t *s, uint32_t id, const char *name);

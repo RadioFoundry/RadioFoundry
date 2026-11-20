@@ -1600,13 +1600,13 @@ static void draw_talk_dmr(const radio_view_t *v, bool label_first)
 }
 
 #if CONFIG_DMR_TRUNK
-void ui_draw_incoming_call(const radio_view_t *v, const ui_state_t *s)
+void ui_draw_incoming_call(const radio_view_t *v, const ui_state_t *s, const char *name)
 {
 	const ui_layout_t *L = &ui_layout;
 	int w = gfx_width();
 	char id[12], prompt[2][64];
-	static char name[CODEPLUG_NAME_LEN + 1], fit[CODEPLUG_NAME_LEN + 1];
-	bool named = ui_contact_name(v->t3.ring_src, false, name) && name[0] != 0;
+	static char fit[CODEPLUG_NAME_LEN + 1];
+	bool named = name[0] != 0;
 	sbuf_t b;
 	sb_init(&b, id, sizeof id);
 	sb_u32(&b, v->t3.ring_src, 1);

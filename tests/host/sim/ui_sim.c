@@ -1287,6 +1287,12 @@ bool ui_svc_t3_name(uint8_t n, char *name)
 	strcpy(name, names[n]);
 	return true;
 }
+void ui_svc_t3_reject(void)
+{
+	view.t3.ring_src = 0;
+	serial++;
+}
+
 void ui_svc_t3_poll(uint32_t id)
 {
 	(void)id;

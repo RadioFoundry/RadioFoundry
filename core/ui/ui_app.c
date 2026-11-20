@@ -1682,7 +1682,9 @@ bool ui_volume_key(const input_event_t *ev)
 #if CONFIG_DMR_TRUNK
 void ui_incoming_call_draw(void)
 {
-	ui_draw_incoming_call(view, &ui_st);
+	static char name[CODEPLUG_NAME_LEN + 1];
+	(void)ui_contact_name(view->t3.ring_src, false, name);
+	ui_draw_incoming_call(view, &ui_st, name);
 }
 
 bool ui_incoming_call_key(const input_event_t *ev)
@@ -2079,15 +2081,6 @@ static void call_back_key(void)
 
 void ui_app_key(const input_event_t *ev)
 {
-#if CONFIG_DMR_TRUNK
-	if (stack[sp].scr == SCR_INCOMING_CALL && ev->action != ACT_PTT && ev->action != ACT_EMERGENCY &&
-	    !ui_st.locked) {
-		last_key_ms = last_use_ms = now;
-		off_warned = false;
-		ui_scr[SCR_INCOMING_CALL]->key(ev);
-		return;
-	}
-#endif
 	// A programmed home key (P1, P2: board.home_keys): its function on Home, its arrow everywhere else. Home is the
 	// bottom of the stack, not while a frequency is typed there
 	input_event_t home_ev;
@@ -2163,6 +2156,12 @@ void ui_app_key(const input_event_t *ev)
 #if CONFIG_HOTSPOT
 	if (in_hotspot()) {
 		hotspot_key(ev);
+		return;
+	}
+#endif
+#if CONFIG_DMR_TRUNK
+	if (stack[sp].scr == SCR_INCOMING_CALL) {
+		(void)ui_scr[SCR_INCOMING_CALL]->key(ev);
 		return;
 	}
 #endif
