@@ -58,6 +58,9 @@ BOARD_REQUIRED := FM
 # Supported, but the maximal configuration leaves these off too: PPP stands in for the USB network adapter on UART-only
 # radios (docs/spec/ppp.md), and this one has the adapter
 MAXIMAL_SKIP := NET_PPP
+# The 720 KB application region cannot hold the maximal feature set and every language catalog.
+# The board's menu-locales CI build checks both opt-in catalogs with the normal feature set.
+MAXIMAL_SKIP += LANG_TR LANG_RU LANG_DEFAULT_TR LANG_DEFAULT_RU
 # English only (the owner's choice, 2026-11-03)
 CONFIG_LANG_ES ?= n
 CONFIG_RX_EXT ?= n

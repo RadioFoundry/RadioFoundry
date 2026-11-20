@@ -15,6 +15,9 @@ MAXIMAL_VARS := LTO=1
 # Left out of tools/ci.sh's maximal configuration: PPP stands in for the USB network adapter on UART-only radios
 # (docs/spec/ppp.md), and this one has the adapter; the APRS iGate is off by default (above)
 MAXIMAL_SKIP := NET_PPP APRS_IGATE
+# The 720 KB application region cannot hold the maximal feature set and every language catalog.
+# The board's menu-locales CI build checks both opt-in catalogs with the normal feature set.
+MAXIMAL_SKIP += LANG_TR LANG_RU LANG_DEFAULT_TR LANG_DEFAULT_RU
 # What the radio's hardware can't do, one switch per line with the reason (tools/boards.py checks there is one;
 # docs/build-config.md, "Unsupported, not written, unconfirmed"): ci's maximal configuration leaves these off
 BOARD_UNSUPPORTED += FONT_XL	# the 160x120 panel is too small for the large font (it is for 240 px and wider)

@@ -250,6 +250,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `FONT_XL` | ● | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `FONT_AA` | ● | ○ | ○ | ○ | ○ | ○ | ✕ | ✕ |
 | `FONT_BIG` | ● | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
+| `FONT_LATIN_EXTENDED` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `LANG_TR` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `LANG_RU` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `LANG_DEFAULT_TR` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
@@ -303,7 +304,6 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `NXDN` | ● | ● | ● | ● | … | ● | ● | ● |
 | `NXDN_SCRAMBLER` | ● | ● | ● | ● | … | ● | ● | ● |
 | `AIR_RAW` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
-| `FONT_LATIN_EXTENDED` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | Voltage reading (board, no switch) | Battery | Battery | Battery | None | Battery | Battery | Supply | Battery |
 | Clock kept through power-off (board, no switch) | Yes | ? | Yes | ? | ? | ? | ? | No (only while on) |
 <!-- end generated -->
@@ -428,6 +428,8 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Anti-aliased fonts | `FONT_AA` | 3,004* | — | Smooth text on color panels (measured 2026-10-17); the DM-32's image grew 9.5 KB with it and `FONT_XL` |
 | Larger text | `FONT_BIG` | — | — | 9x18 lists and labels on 240 px color panels (needs `FONT_AA`); 3,588 B on the DM-32 (measured 2026-10-17) |
 | Extended Latin glyphs | `FONT_LATIN_EXTENDED` | 2,100 | 0 | Turkish glyphs. Measured on DM-32 against the same build with the switch off |
+| Turkish on the radio | `LANG_TR` | — | — | Opt-in menu catalog. Enables the extended Latin glyphs. On DM-32, enabling Turkish and Russian together adds 80,116 B of flash |
+| Russian on the radio | `LANG_RU` | — | — | Opt-in menu catalog including the bitmap glyphs for Russian Cyrillic |
 | Spanish on the radio | `LANG_ES` | 28,456 | 28,348 | The first language brings the lookup and the accented letters of every font (about 7.5 KB); the rest is its text. Measured 2026-10-31 |
 | Italian on the radio | `LANG_IT` | 17,304 | 17,304 | Off by default; measured with Spanish on (its text, and the hashes of strings Spanish leaves untranslated). Alone it costs about as much as Spanish |
 | French on the radio | `LANG_FR` | 15,540 | 15,528 | Off by default; measured with Spanish on, as Italian |
@@ -436,6 +438,8 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Start in Italian | `LANG_DEFAULT_IT` | 0 | 0 | As `LANG_DEFAULT_ES` (needs `LANG_IT`) |
 | Start in French | `LANG_DEFAULT_FR` | 0 | 0 | As `LANG_DEFAULT_ES` (needs `LANG_FR`) |
 | Start in Chinese | `LANG_DEFAULT_ZH` | 0 | 0 | As `LANG_DEFAULT_ES` (needs `LANG_ZH`) |
+| Start in Turkish | `LANG_DEFAULT_TR` | 0 | 0 | As `LANG_DEFAULT_ES` (needs `LANG_TR`) |
+| Start in Russian | `LANG_DEFAULT_RU` | 0 | 0 | As `LANG_DEFAULT_ES` (needs `LANG_RU`) |
 
 ## Storage
 

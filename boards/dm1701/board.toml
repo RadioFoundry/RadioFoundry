@@ -38,6 +38,7 @@ release = "stable"
 [ci]
 extra = [
 	{ name = "audio-probe", make = ["CONFIG_AUDIO_PROBE=y", "CONFIG_APRS_RX=n", "LTO=1"] },
+	{ name = "menu-locales", make = ["CONFIG_LANG_TR=y", "CONFIG_LANG_RU=y"] },
 ]
 
 [flash]
