@@ -272,6 +272,10 @@ planned_tests = ["tests/hil/test_sfr_standalone.py::test_sfr_user_dualpath_rx"]
 switch = "SFR_CWID"
 spec = "docs/spec/sfr.md"
 
+[feature.dstar]
+switch = "DSTAR"
+spec = "docs/spec/dstar-modem.md"
+
 [feature.aprs]
 switch = "APRS"
 spec = "docs/spec/aprs.md"

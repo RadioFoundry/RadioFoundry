@@ -136,6 +136,10 @@
 #ifndef CONFIG_HOTSPOT_SPLIT
 #define CONFIG_HOTSPOT_SPLIT		0
 #endif
+// D-STAR DV (core/dstar): on here like the rest; off in every firmware build until a board's glue runs it
+#ifndef CONFIG_DSTAR
+#define CONFIG_DSTAR			CONFIG_FM
+#endif
 #ifndef CONFIG_DEBUGLINK
 #define CONFIG_DEBUGLINK		CONFIG_HOSTLINK
 #endif
@@ -448,6 +452,9 @@
 #endif
 #if (CONFIG_SFR_DUALPATH_RX || CONFIG_SFR_CWID) && !CONFIG_SFR
 #error "CONFIG_SFR_DUALPATH_RX and CONFIG_SFR_CWID need CONFIG_SFR"
+#endif
+#if CONFIG_DSTAR && !CONFIG_FM
+#error "CONFIG_DSTAR needs CONFIG_FM"
 #endif
 #if CONFIG_HOTSPOT_SPLIT && !CONFIG_HOTSPOT
 #error "CONFIG_HOTSPOT_SPLIT needs CONFIG_HOTSPOT"

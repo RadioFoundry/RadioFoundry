@@ -247,6 +247,10 @@ CONFIG_BCAST_FM ?= y
 # receive past the band table: a range in board.bands (rx_ext_count) that receives only while Settings > Advanced says
 # so, off by default, never transmit (docs/spec/radio-features.md). Off where the chip documents give no range
 CONFIG_RX_EXT ?= y
+# D-STAR DV (core/dstar, docs/spec/dstar-modem.md): the GMSK modem, the DV framing and the engine that joins them to a
+# board's flat FM audio taps. Off until a board's glue runs the engine (BOARD_NOT_WRITTEN is for written features a
+# board lacks glue for; this one has no glue anywhere yet, so it is off for every board here). Needs FM
+CONFIG_DSTAR ?= n
 # audio path probe: debug link command 0x10 to read / write the audio chip's registers and watch the PCM stream's
 # levels, for the USB audio feasibility tests on the bench (docs/spec/hardware-dm1701.md 21.3; needs DEBUGLINK and DMR, whose
 # PCM stream it borrows). A diagnostic, never for a release
@@ -329,7 +333,7 @@ CONFIG_GPS_SKY ?= $(CONFIG_GPS)
 
 FEATURES := USB_SERIAL_REQUEST FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_TRUNK DMR_TRUNK_TX DMR_TRUNK_SUPL DMR_TRUNK_GW VOICE_CAPTURE DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB IDDB_COMPACT DMR_CONTROL_STATION SNMP SFR SFR_DUALPATH_RX SFR_CWID TASK_STACKS \
 	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW CPS_FAST VFO VFO_FM VFO_DMR DIAG BACKLIGHT_TEST FONT_XL FONT_AA FONT_BIG LANG_ES LANG_IT LANG_FR LANG_ZH LANG_DEFAULT_ES LANG_DEFAULT_IT LANG_DEFAULT_FR LANG_DEFAULT_ZH UI_COLOR UI_SETTINGS SCAN DUAL_WATCH BEEP SIG_TONES FM_TX_TONES DTMF \
-	RX_EXT VOX REF_TRIM BATTERY_SAVE VIBRATE GPS AUDIO_PROBE STUB_ENTRY NAND_STORAGE CRASH_LOG CRASH_SCREEN CRASH_REPORT WATCHDOG FAULT_TRACE AM_RX BCAST_FM APRS APRS_AFSK APRS_DMR APRS_RX APRS_IGATE GPS_SKY KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT ZONE_EDIT CONTACT_EDIT VOLUME_BAR P25 P25_TRUNK NXDN NXDN_SCRAMBLER AIR_RAW
+	RX_EXT VOX REF_TRIM BATTERY_SAVE VIBRATE GPS AUDIO_PROBE STUB_ENTRY NAND_STORAGE CRASH_LOG CRASH_SCREEN CRASH_REPORT WATCHDOG FAULT_TRACE AM_RX BCAST_FM DSTAR APRS APRS_AFSK APRS_DMR APRS_RX APRS_IGATE GPS_SKY KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT ZONE_EDIT CONTACT_EDIT VOLUME_BAR P25 P25_TRUNK NXDN NXDN_SCRAMBLER AIR_RAW
 
 # The panel's width in pixels: the display class the board's board.toml names (hardware.gallery = "160x128", the width
 # first). Empty when it names none, which counts as a narrow panel
@@ -384,6 +388,11 @@ endif
 ifneq ($(call feature_on,HOTSPOT),)
   ifeq ($(call feature_on,HOSTLINK),)
     $(error CONFIG_HOTSPOT=y needs CONFIG_HOSTLINK=y)
+  endif
+endif
+ifneq ($(call feature_on,DSTAR),)
+  ifeq ($(call feature_on,FM),)
+    $(error CONFIG_DSTAR=y needs CONFIG_FM=y)
   endif
 endif
 ifneq ($(call feature_on,HOTSPOT_SPLIT),)
