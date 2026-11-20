@@ -347,13 +347,26 @@ test("USMART: a radio whose application does not start with the stock entry is r
 
 function iapRadio({ corrupt = false } = {}) {
 	const got = { erase: null, pages: [] };
-	let phase = "banner", want = 0, sum = 0;
+	let phase = "banner", want = 0, sum = 0, reading = -1;
+	const enc = (x) => new TextEncoder().encode(x);
 	const pipe = new Pipe((b, p) => {
-		// the read-only request: the version string, one page and its checksum (hardware-db25d.md 7); phase is unchanged
+		// the read-only request: the version string, then one page per "Read" and one more "Read" for the checksum and
+		// "IAPReady" (hardware-db25d.md 7); phase is unchanged
 		if (b.length === 19 && new TextDecoder().decode(b.subarray(0, 11)) === "Flash Read ") {
 			got.reads = (got.reads || 0) + 1;
-			p.push(concat(new TextEncoder().encode("Read_2M_V1.08BZSRJun 30 2023"), new Uint8Array(2048).fill(0xA5),
-				new TextEncoder().encode("ChecksumR"), be32(2048 * 0xA5), new TextEncoder().encode("IAPReady")));
+			reading = (b[15] << 24 | b[16] << 16 | b[17] << 8 | b[18]) >>> 0;
+			p.push("  Read_2M_V1.08BZSRJun 30 2023");
+			return;
+		}
+		if (reading >= 0 && b.length === 4 && new TextDecoder().decode(b) === "Read") {
+			if (reading-- > 0) p.push(new Uint8Array(2048).fill(0xA5));
+			else p.push(concat(enc("ChecksumR"), be32(2048 * 0xA5), enc("IAPReady")));
+			return;
+		}
+		// an Erase while a read still waits for its "Read": the loader fails it (seen on a radio)
+		if (reading >= 0 && phase === "banner") {
+			got.failedErase = true;
+			p.push("ChecksumR\0\0\0\0Flash operation fail!");
 			return;
 		}
 		if (phase === "banner") {
@@ -425,8 +438,10 @@ test("IAP: a radio stuck in update mode at power-on answers the read-only probe,
 	assert.equal(got.erase, null, "the probe never sends Erase");
 	assert.equal(got.pages.length, 0, "and writes no page");
 	// the install that follows starts at once (no waitBanner), as the page does after a probe
+	// the probe ended its read: an Erase sent while one is open fails on the radio
 	const img = installImage();
 	await iap.write(img);
+	assert.ok(!got.failedErase);
 	assert.equal(got.pages.length, Math.floor(img.length / 2048) + 1);
 	// a radio that is off, or runs something else, does not answer
 	assert.equal(await iapOn(new Pipe(() => {})).probe(200), null);

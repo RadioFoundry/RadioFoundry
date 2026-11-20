@@ -15,7 +15,7 @@
 //
 // Neither ever writes the vendor loader, so update mode always remains.
 
-import { h, t, notice, button, panel, progressBar } from "./dom.js";
+import { h, t, notice, button, panel, progressBar, spinner } from "./dom.js";
 import { sleep } from "./bytes.js";
 import * as c7 from "./c7000.js";
 import { Usmart, stockName, buildsFor, mayTry, UNKNOWN_BUILD } from "./usmart.js";
@@ -170,16 +170,22 @@ export function makeStockRoutes(host) {
 	function noBackup({ show, act, onUpdateMode, onAgain }, version, vd, { tryAnyway = null, failed = null } = {}) {
 		// the builds whose console takes the stub, by the board's names for them
 		const versions = buildsFor(S().radio.flash.stock_versions).filter((b) => b.stub).map((b) => `${stockName(S().radio.flash, b.name)} (${b.date})`).join(" or ");
+		const ways = [
+			tryAnyway ? [h("b", {}, t("flash.variant.try_title")), " ", t("flash.variant.try")] : null,
+			versions ? [h("b", {}, t("flash.variant.update_first_title")), " ", t("flash.variant.update_first", { versions })] : null,
+			onUpdateMode ? [h("b", {}, t("flash.variant.direct_title")), " ", t("flash.variant.direct")] : null].filter(Boolean);
+		// one way on is no choice: the notice doesn't ask for one, and the way is a paragraph, not a list of one
+		const one = ways.length === 1;
+		const lead = failed ? (one ? "flash.variant.try_failed_one" : "flash.variant.try_failed")
+			: tryAnyway ? (one ? "flash.variant.no_backup_known_one" : "flash.variant.no_backup_known")
+			: one ? "flash.variant.no_backup_one" : "flash.variant.no_backup";
 		show({ led: "off", screen: "on" },
 			h("p", { class: "c7-big" }, h("b", {}, t("flash.usmart.found"))),
 			version ? h("dl", { class: "kv-list" }, h("dt", {}, t("flash.usmart.version")), h("dd", {}, version)) : null,
 			variantNote(vd),
-			failed ? notice(t("flash.variant.try_failed"), "info") : notice(t(tryAnyway ? "flash.variant.no_backup_known" : "flash.variant.no_backup"), "info"),
+			notice(t(lead), "info"),
 			failed ? h("details", { class: "small" }, h("summary", {}, t("flash.problem.details")), h("pre", { class: "log" }, failed)) : null,
-			h("ol", { class: "steps" },
-				tryAnyway ? h("li", {}, h("b", {}, t("flash.variant.try_title")), " ", t("flash.variant.try")) : null,
-				versions ? h("li", {}, h("b", {}, t("flash.variant.update_first_title")), " ", t("flash.variant.update_first", { versions })) : null,
-				onUpdateMode ? h("li", {}, h("b", {}, t("flash.variant.direct_title")), " ", t("flash.variant.direct")) : null),
+			one ? h("p", {}, ...ways[0]) : h("ol", { class: "steps" }, ...ways.map((w) => h("li", {}, ...w))),
 			howToCheck(), reportLine());
 		act(tryAnyway ? button(t("flash.variant.try_go"), tryAnyway, { primary: true }) : null,
 			onUpdateMode ? button(t("flash.variant.direct_go"), onUpdateMode, { primary: !tryAnyway, quiet: !!tryAnyway }) : null,
@@ -393,27 +399,46 @@ export function makeStockRoutes(host) {
 		const prog = progressBar();
 		const status = h("div");
 		const steps = S().radio.flash.bootloader || [];
-		// a loader that prints no banner (flash.update_banner false): the radio is put in update mode first, and Install
-		// writes at once
+		// a loader that prints no banner (flash.update_banner false): the page asks it with the read-only probe instead
 		const silent = S().radio.flash.update_banner === false;
-		const stepGo = h("li", {}, t(silent ? "flash.iap.step_go_silent" : restore ? "flash.iap.restore_step_go" : "flash.iap.step_go"));
+		const stepGo = h("li", {}, t(restore ? "flash.iap.restore_step_go" : "flash.iap.step_go"));
 		const go = button(t(restore ? "flash.iap.restore_go" : "flash.iap.go"), async () => { if (!confirm || (await confirm())) run(); }, { primary: true });
 		const careful = h("div", { class: "notice" }, h("p", {}, h("b", {}, t("flash.c7.write.careful"))), h("p", {}, t(own(TEXTS[protocol()].careful))));
 		const box = panel(title, cableBanner(),	// a CH340 cable: the warning here too (programming through update mode)
 			rows.length ? h("dl", { class: "kv-list" }, ...rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)])) : null,
 			gate ? gate(go) : null, ...notices,
 			h("p", {}, lead || t(restore ? "flash.iap.restore_lead" : "flash.iap.lead")),
-			withPicture(h("ol", { class: "steps c7-big" }, !silent && stepGo, ...steps.map((x) => h("li", {}, x)), silent && stepGo)),
+			withPicture(h("ol", { class: "steps c7-big" }, stepGo, ...steps.map((x) => h("li", {}, x)))),
 			simKeys(),
 			careful,
 			prog.el, status, h("details", { class: "small" }, h("summary", {}, t("flash.c7.log")), c.log.el));
 		prog.el.hidden = true;
 		S().forward(go);
 
+		// A loader without a banner: ask it with the read-only probe until it answers, so nothing is erased before the
+		// radio is in update mode. The normal firmware answers the same request (its identify) and then stays quiet until
+		// switched off: the radio was switched on without the keys held
+		async function probeUntil(loader, signal) {
+			const until = Date.now() + LISTEN_MS;
+			let normal = false;
+			while (Date.now() < until) {
+				if (signal.aborted) throw new Error("stopped");
+				const um = await loader.probe(1500);
+				if (um?.version) return;
+				if (um?.stock && !normal) {
+					normal = true;
+					diag.note("probe: normal firmware, not update mode");
+					fill(status, notice(t("flash.iap.not_update_mode"), "info"), h("p", { class: "muted c7-big" }, spinner(), " ", t("flash.iap.listening")));
+				}
+				await sleep(500);
+			}
+			throw new Error(t("flash.iap.no_update_mode"));
+		}
+
 		async function run() {
 			go.disabled = true;
 			careful.hidden = false;
-			fill(status, h("p", { class: "muted c7-big" }, t("flash.iap.listening")));
+			fill(status, h("p", { class: "muted c7-big" }, spinner(), " ", t("flash.iap.listening")));
 			prog.el.hidden = true;
 			const stop = new AbortController();
 			S().forward(button(t("flash.c7.connect.cancel"), () => stop.abort(), { quiet: true }));
@@ -431,7 +456,8 @@ export function makeStockRoutes(host) {
 				const loader = c.loader?.ready && c.loader.s === c.stream ? c.loader : (c.loader = makeLoader(c));
 				// a loader that answered the probe is waiting already: its banner was printed before the page asked
 				if (c.iapReady) c.iapReady = false;
-				else if (!loader.ready && !silent) await loader.listen(LISTEN_MS, { signal: stop.signal });
+				else if (!loader.ready && silent) await probeUntil(loader, stop.signal);
+				else if (!loader.ready) await loader.listen(LISTEN_MS, { signal: stop.signal });
 				if (left()) throw new Error("stopped");
 				if (!allowed()) throw new Error(t("flash.variant.nothing_written"));
 				writing = true;

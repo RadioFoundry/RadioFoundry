@@ -828,7 +828,8 @@ function render() {
 	const missing = S.radio && !S.sim && missingApi(S.radio, S.task, step, { usb: usbSupported(), serial: serialSupported(), stub: stubRoute() });
 	const view = (missing && (() => kitView(missing))) || (step === "restore" && bundleBackend(S.bundle)?.views.restore) || (S.radio && backend().views[step])
 		|| { update: updateView, radio: radioView, build: buildView, bundle: bundleView, symptom: symptomView, recover: recoverView, restart: restartView }[step];
-	if (!missing && transferStep()) app.append(h("p", { class: "notice bad" }, h("strong", {}, t("flash.stay_on_page"))));
+	// no page-wide "stay on this page": each progress bar shows it while its transfer runs (dom.js progressBar), so it
+	// appears once, and only when a transfer is under way
 	app.append(view());
 	app.append(h("div", { class: "nav-bar" },
 		h("div", { class: "nav-back" },

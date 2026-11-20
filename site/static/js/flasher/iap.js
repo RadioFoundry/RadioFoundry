@@ -124,7 +124,21 @@ export class Iap {
 		this.s.clear();
 		if (!loader.test(text)) return { version: null, stock: text };
 		const v = /Read_\w+_V\d+\.\d+[A-Z]?/.exec(text);
+		// the loader then waits for one "Read" per page and one for the checksum; a read left open makes the next Erase
+		// fail ("Flash operation fail!"), so the probe ends it before anything else is sent
+		if (v && !/IAPReady/.test(text)) await this.endRead(timeout);
 		return { version: v ? v[0] : null };
+	}
+
+	// Ask for the probe's one page and its checksum, until the loader says IAPReady again
+	async endRead(timeout) {
+		const READ = new TextEncoder().encode("Read");
+		await this.s.write(READ);
+		await this.until((t) => t.length >= PAGE, timeout, 50);
+		this.s.clear();
+		await this.s.write(READ);
+		await this.until((t) => /IAPReady/.test(t), timeout, 50);
+		this.s.clear();
 	}
 
 	// Listen for the banner the loader prints when it starts in update mode

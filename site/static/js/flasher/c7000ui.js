@@ -15,7 +15,7 @@
 // it is written, and a second pass checks them all; a failed or interrupted install is resumed by running it again
 // (only what still differs is written).
 
-import { h, t, notice, button, panel, progressBar, logBox, download, filePicker, localTime, partNames } from "./dom.js";
+import { h, t, notice, button, panel, progressBar, logBox, download, filePicker, localTime, partNames, spinner } from "./dom.js";
 import { hex, sha256, sleep } from "./bytes.js";
 import { SerialStream, Link, CableError, probe, serialSupported, serialApi, knownRadioPort, grantedPorts } from "./link.js";
 import { Stub, stubImages, univForBoard, StubError, DONE_LED, MEM, RX2_F, ROM_REPEAT, hasRomFlag } from "./stub.js";
@@ -64,6 +64,7 @@ const flash = () => S().radio.flash;
 const dataMem = () => (C().boards[boardId()].data_flash === false ? "nand" : "q128");
 const calLayout = () => C().boards[boardId()].calibration || null;
 const hasCal = () => !!calLayout();
+const FIND_MS = 20000;	// the longest the connect step searches before it says nothing answered
 const CONSOLES = { usmart: Usmart };	// flash.stock_console: the console's protocol
 const stockRadio = () => !!CONSOLES[flash().stock_console];
 // flash.update_mode: iap, a vendor IAP loader (iap.js) that a radio without a complete application stays in at every
@@ -438,7 +439,23 @@ function connectPanel(onReady, { onUpdateMode = null, restart = false } = {}) {
 
 	// a stub from an earlier run, then RadioFoundry, then the boot ROM
 	const find = async () => {
-		show({ led: "off", screen: "any", note: t(bridged() ? "flash.second.bridge.cable" : "flash.c7.visual.cable") }, h("p", { class: "muted c7-big" }, t("flash.c7.connect.looking")));
+		const looking = h("p", { class: "muted c7-big" }, spinner(), " ", t("flash.c7.connect.looking"));
+		show({ led: "off", screen: "any", note: t(bridged() ? "flash.second.bridge.cable" : "flash.c7.visual.cable") }, looking);
+		// every probe has its own timeout, but a cable whose reading hangs never ends the search: after FIND_MS the step
+		// says nothing answered, with the same ways on as an empty search. A probe that ends later still draws its result
+		const watchdog = setTimeout(() => {
+			if (!looking.isConnected) return;
+			diag.note("search timed out", { s: FIND_MS / 1000 });
+			if (stockRadio() || stuckMode()) routes.nothing({ show, act, onAgain: () => find(), onPowerOn: () => powerCycle(), onUpdateMode: toIap });
+			else powerCycle();
+		}, FIND_MS);
+		try {
+			await findOnce();
+		} finally {
+			clearTimeout(watchdog);
+		}
+	};
+	const findOnce = async () => {
 		// the first chip's stub from its write a moment ago (an install of both): no restart of the first chip in between
 		if (bridged() && c.main && !c.passing) return passThrough(c.main);
 		try {
