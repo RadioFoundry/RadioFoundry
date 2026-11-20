@@ -1485,6 +1485,81 @@ static void testIpAddresses(void)
 // Confirmed data to us: a bad block asked for again with a selective ACK, the retry completes the packet (passed on
 // once), the same packet again is ACKed but not passed on; lost bursts asked for after CNF_RX_STALL_MS; a CRC-32
 // failure with good blocks NACKed
+static void testDedicatedDownlink(void)
+{
+	reset();
+	ch.dedicatedData = true;
+	runMainTask(10);
+	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
+	uint8_t pdu[] = {
+		0x02, 0x01, 0, 0x28, 0x68, 0x07, 0, 1, 0, 4, 0, 0, 0, 0x11,
+		0, 2, 0, 4, 0, RADIO_A >> 16, (RADIO_A >> 8) & 0xFF, RADIO_A & 0xFF,
+		0, 3, 0, 4, 0, OUR_ID >> 16, (OUR_ID >> 8) & 0xFF, OUR_ID & 0xFF,
+		1, 1, 0, 2, 0, 7, 1, 2, 0, 4, 0, 'O', 0, 'K',
+	};
+	int count = dmrDataBuildDedicatedConfirmed(OUR_ID, T3_ID_PDDI, pdu, sizeof(pdu),
+					       0, true, 0, 0, bursts, DMR_DATA_MAX_BURSTS);
+	CHECK(count > 0);
+	rxBursts(bursts, count);
+	runMainTask(300);
+	dmrDataMessage_t m;
+	CHECK(sms_inbox_get(0, &m) && m.src == RADIO_A && m.dst == OUR_ID &&
+	      m.format == DMR_SMS_FORMAT_ETSI_IP && strcmp(m.text, "OK") == 0);
+	CHECK(sentCount == 1 && sent[0].kind == 'R' && sent[0].dst == T3_ID_PDDI);
+
+	// The gateway uses the same link sequence for consecutive messages with different original senders.
+	const char *sample[] = {
+		"123456789012345678901234567890",
+		"IP FULL RX2 ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789 abcdef",
+	};
+	// The repeater sends a zero-block response request after the proprietary header and payload.
+	const uint8_t airCrc[][2] = {{0xC3, 0x0E}, {0x05, 0x69}};
+	for (unsigned i = 0; i < sizeof(sample) / sizeof(sample[0]); i++)
+	{
+		uint8_t envelope[152];
+		unsigned textLength = 2 * strlen(sample[i]);
+		memcpy(envelope, pdu, 40);
+		envelope[3] = 36 + textLength;
+		envelope[21] = (uint8_t)(RADIO_A + i);
+		envelope[39] = textLength;
+		for (unsigned j = 0; j < textLength / 2u; j++)
+		{
+			envelope[40 + 2u * j] = 0;
+			envelope[41 + 2u * j] = (uint8_t)sample[i][j];
+		}
+		count = dmrDataBuildDedicatedConfirmed(OUR_ID, T3_ID_PDDI, envelope, 40 + textLength,
+						    0, true, 0, 0, bursts, DMR_DATA_MAX_BURSTS);
+		CHECK(count > 0);
+		bursts[0].payload[8] = 0;
+		bursts[0].payload[9] |= 0x80u; // the captured downlink sets the resynchronization bit
+		memcpy(&bursts[0].payload[10], airCrc[i], sizeof(airCrc[i]));
+		CHECK(dmrDataCheckCRC16(bursts[0].payload, 0xCC));
+		int replies = sentCount;
+		bursts[0].flags |= DMR_BURST_FLAG_RX_DEDICATED;
+		bursts[1].flags |= DMR_BURST_FLAG_RX_DEDICATED;
+		rxBursts(bursts, 1); // a response request without a payload must be ignored
+		runMainTask(10);
+		CHECK(sentCount == replies);
+		rxBursts(bursts + 1, count - 1); // model loss of the leading confirmed header
+		runMainTask(10);
+		CHECK(sentCount == replies);
+		rxBursts(bursts, 1);
+		runMainTask(300);
+		CHECK(sms_inbox_get(0, &m) && m.src == RADIO_A + i && strcmp(m.text, sample[i]) == 0);
+	}
+	CHECK(sentCount == 3 && sent[2].kind == 'R' && sent[2].dst == T3_ID_PDDI);
+
+	int previous = sms_inbox_count();
+	pdu[29] ^= 1u;
+	count = dmrDataBuildDedicatedConfirmed(OUR_ID, T3_ID_PDDI, pdu, sizeof(pdu),
+					    1, true, 0, 0, bursts, DMR_DATA_MAX_BURSTS);
+	CHECK(count > 0);
+	rxBursts(bursts, count);
+	runMainTask(300);
+	CHECK(sms_inbox_count() == previous);
+	ch.dedicatedData = false;
+}
+
 static void testConfirmedRx(void)
 {
 	dmrBurst_t b[DMR_DATA_MAX_BURSTS];
@@ -1659,6 +1734,35 @@ static void testIpText(void)
 	CHECK((events[DMR_DATA_EV_SMS_SENT] == 1) && (stats.ipTextSent >= 1));
 	runMainTask(SMS_ACK_MS + 1000);
 	CHECK(sentCount == 1);// never sent again
+	// dedicated PDUI ACKs can carry zero for a confirmed packet with a nonzero sequence.
+	reset();
+	ch.dedicatedData = true;
+	ch.rmo = true;
+	decodeTx = false;
+	CHECK(sms_send(101124, false, "dedicated first", true, DMR_SMS_FORMAT_ETSI_IP));
+	runMainTask(300);
+	th = txHeader();
+	tns = th != NULL ? (th->payload[9] >> 4) & 7 : 0;
+	if (tns == 0)
+	{
+		respond(0xFFFD02, DMR_SAP_PROPRIETARY, DMR_RESPONSE_ACK(0), NULL);
+		CHECK(sms_send_state() == DMR_REQ_OK);
+		CHECK(sms_send(101124, false, "dedicated next", true, DMR_SMS_FORMAT_ETSI_IP));
+		runMainTask(300);
+		th = txHeader();
+		tns = th != NULL ? (th->payload[9] >> 4) & 7 : 0;
+	}
+	CHECK(th != NULL && tns != 0);
+	respond(RADIO_A, DMR_SAP_PROPRIETARY, DMR_RESPONSE_ACK(0), NULL);
+	CHECK(sms_send_state() == DMR_REQ_SENDING);
+	respond(0xFFFD02, DMR_SAP_PROPRIETARY, DMR_RESPONSE_ACK(tns == 1 ? 2 : 1), NULL);
+	CHECK(sms_send_state() == DMR_REQ_SENDING);
+	respond(0xFFFD02, DMR_SAP_PROPRIETARY, DMR_RESPONSE_ACK(0), NULL);
+	CHECK(sms_send_state() == DMR_REQ_OK);
+	decodeTx = true;
+	ch.dedicatedData = false;
+	ch.rmo = false;
+
 	// No response: the IP packet tries, then failed; the gateway's own packets wait meanwhile
 	reset();
 	uint32_t failed = stats.smsFailed;
@@ -2581,6 +2685,7 @@ int main(void)
 	testIpAddresses();
 	testConfirmedRx();
 	testIpText();
+	testDedicatedDownlink();
 	testNmeaPosition();
 	testNotForUsIsolation();
 	testPassthrough();

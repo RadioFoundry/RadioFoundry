@@ -28,11 +28,9 @@ it. The radio core runs the engine on a system from the codeplug (section 12) or
 Everything here comes from ETSI TS 102 361-4 (the Tier III trunking protocol), TS 102 361-1 (the air interface) and
 TS 102 361-2 (voice and generic services). Section and table numbers below are TS 102 361-4's unless marked -1 or -2.
 
-- Only the standard's PDUs and procedures, with the standard feature set ID (FID 0). A CSBK with another FID is
-  counted and ignored.
-- Only the standard's trunking protocol, no proprietary one: FID 0 PDUs with the standard's CRC and framing. A system
-  that sends its control channel with another CRC or framing fails the standard CRC checks and is never confirmed as
-  a TSCC (section 9.2 checks this on recordings).
+- The default system profile uses the standard's PDUs and procedures, with FID 0 and the standard CRC and framing.
+  Systems using the [dedicated packet-data profile](dmr-dedicated-data.md) opt in per codeplug system. The profile
+  recognizes specific FID 0x08 and 0x68 PDUs and uses the standard air-interface framing and CRCs.
 - On a trunked system the radio transmits only the access side (section 7) and the calls it is granted.
 - Authentication only as section 7.10 gives it: with a key K, the radio answers a challenge and checks the TSCC's
   answer to its own; without one, a challenge is answered "not supported".
@@ -57,7 +55,7 @@ the fields, most significant bit first, octets 10-11 the CRC-CCITT.
 |---|---|
 | CSBK | 0xA5A5 |
 | MBC header | 0xAAAA |
-| MBC continuation (last block) | none; the CRC covers the continuation only |
+| MBC continuation (last block) | none. The CRC covers all continuation blocks. |
 
 Decoded opcodes (`t3_csbk_parse`): C_ALOHA, C_BCAST, C_AHOY, C_ACKVIT, C_MOVE, C_RAND, C_ACKD, C_ACKU, P_ACKD, P_ACKU,
 P_CLEAR, P_PROTECT, P_MAINT and the grants PV, TV, BTV, PD, TD (and the duplex and multi-item variants). `t3_csbk_parse`
@@ -385,6 +383,10 @@ and one to the radio again when the answer was lost: the same status from the sa
 
 ### 7.6 UDT short data (6.5, 6.6.4)
 
+Default SMS on a trunked channel carries UTF-16BE text via UDT and waits for the Tier III short-data result.
+One message holds up to 23 characters from the Latin-1 editor. Inbox replies reuse the received message transport.
+A reply to IP text uses a packet data channel.
+
 A message is 1-46 octets in a UDT: a header (data type data header, CRC mask 0xCCCC) and 1-4 rate 1/2 blocks of 12
 octets in consecutive frames of one slot. The blocks hold the data, pad octets, and a CRC-CCITT over all the octets
 before it, unmasked (TS 102 361-1 8.2.2.5).
@@ -481,6 +483,9 @@ The number belongs to a call when the grant from that gateway to the same destin
 
 ### 7.7 Packet data (6.6.3)
 
+With the [dedicated packet-data profile](dmr-dedicated-data.md), the radio also follows FID 0x08 absolute
+packet-data grants when the CRC over both continuations passes.
+
 Packet data uses the conventional data stack ([dmr-data.md](dmr-data.md)) on a payload channel the TSCC grants for
 each transmission. Single slot, single item only.
 
@@ -511,6 +516,8 @@ The availability check for data to the radio (C_AHOY, Service_Kind 0010b) is ans
 (6.6.3.2.6). From IPI the same C_AHOY asks for the IPv4 address while the radio's own call to IPI waits (7.7 above);
 with no such call it is the check, for the network's data to the radio (a reply to its datagram, sent once it is back
 on the TSCC).
+
+Some systems use [dedicated packet-data signaling](dmr-dedicated-data.md) for individual confirmed IP SMS.
 
 **To an IP gateway (multi-part, 6.6.3.2.3).** `t3_ms_pdata_ip` asks for packet data to an IPv4 address outside the
 radio network: the C_RAND targets IPI (0xFFFEC3) with the Proxy Flag 0 (IPv4).

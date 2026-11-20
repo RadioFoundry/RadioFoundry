@@ -6,6 +6,7 @@
 
 #include <string.h>
 #include "dmr/dmrData.h"
+#include "dmr/trunk/t3_pdu.h"
 
 // Motorola CAI network: individual IDs are 12.x.y.z, groups 225.x.y.z
 #define CAI_NETWORK_INDIVIDUAL		0x0C
@@ -21,7 +22,6 @@
 #define UDPC_ID_GROUP_NETWORK		2
 
 DMR_DATA_BUFFER dmrDataPacket_t dmrDataRxPacket;
-
 static uint16_t ipIdentification = 0;
 DMR_DATA_BUFFER static uint8_t txPacket[DMR_DATA_MAX_PACKET];
 
@@ -924,8 +924,8 @@ uint16_t dmrDataCRC9(const uint8_t *data, int length, uint8_t serial)
 	return crc ^ 0x1FF;
 }
 
-int dmrDataBuildConfirmed(uint8_t sap, uint32_t dst, uint32_t src, const uint8_t *pdu, int length, uint8_t blockType,
-						uint8_t ns, bool firstTry, uint64_t blocks, int preambles, dmrBurst_t *out, int maxBursts)
+static int buildConfirmed(uint8_t sap, uint32_t dst, uint32_t src, const uint8_t *pdu, int length, uint8_t blockType,
+						uint8_t ns, bool firstTry, uint64_t blocks, int preambles, dmrBurst_t *out, int maxBursts, bool dedicated)
 {
 	int blockLen = dmrDataBlockLength(blockType);
 	int dataLen = blockLen - 2;
@@ -946,7 +946,7 @@ int dmrDataBuildConfirmed(uint8_t sap, uint32_t dst, uint32_t src, const uint8_t
 	}
 
 	int padOctets = (total * dataLen) - 4 - length;
-	int extra = dmrDataPrivacyBursts();
+	int extra = dedicated ? 1 : dmrDataPrivacyBursts();
 	int bursts = preambles + 1 + extra + count;
 	uint8_t buf[DMR_BURST_PAYLOAD_MAX];
 
@@ -978,7 +978,18 @@ int dmrDataBuildConfirmed(uint8_t sap, uint32_t dst, uint32_t src, const uint8_t
 	setBurst(out++, DMR_TYPE_DATA_HEADER, buf, 12);
 
 	memmove(txPacket, pdu, length);
-	out += txPrivacy(sap, out, txPacket, length);// the CRC-32 and CRC-9s below are over the encrypted octets
+	if (dedicated)
+	{
+		// Captured dedicated uplink: DPF 15, SAP 9, dedicated FID and eight zero octets.
+		static const uint8_t header[10] = {0x9F, 0x68};
+		memcpy(buf, header, sizeof(header));
+		addCRC16(buf, 0xCC);
+		setBurst(out++, DMR_TYPE_DATA_HEADER, buf, 12);
+	}
+	else
+	{
+		out += txPrivacy(sap, out, txPacket, length);// the CRCs are over the encrypted octets
+	}
 	memset(&txPacket[length], 0, padOctets);
 	uint32_t crc = dmrDataCRC32(txPacket, length + padOctets);
 	uint8_t *crcPos = &txPacket[length + padOctets];
@@ -1004,6 +1015,19 @@ int dmrDataBuildConfirmed(uint8_t sap, uint32_t dst, uint32_t src, const uint8_t
 	}
 
 	return bursts;
+}
+
+int dmrDataBuildConfirmed(uint8_t sap, uint32_t dst, uint32_t src, const uint8_t *pdu, int length, uint8_t blockType,
+						uint8_t ns, bool firstTry, uint64_t blocks, int preambles, dmrBurst_t *out, int maxBursts)
+{
+	return buildConfirmed(sap, dst, src, pdu, length, blockType, ns, firstTry, blocks, preambles, out, maxBursts, false);
+}
+
+int dmrDataBuildDedicatedConfirmed(uint32_t dst, uint32_t src, const uint8_t *pdu, int length, uint8_t ns,
+							   bool firstTry, uint64_t blocks, int preambles, dmrBurst_t *out, int maxBursts)
+{
+	return buildConfirmed(DMR_SAP_PROPRIETARY, dst, src, pdu, length, DMR_TYPE_RATE_1_2, ns, firstTry, blocks,
+						  preambles, out, maxBursts, true);
 }
 
 #if CONFIG_DMR_TMS
@@ -1387,6 +1411,7 @@ static struct
 {
 	bool held;
 	bool retry;							// this transmission is a selective retry of the held packet
+	bool orphan;						// dedicated downlink started with its proprietary second header
 	bool unmatched;						// F clear but nothing held to match: a retry of a packet we lost
 	uint32_t src, dst;
 	uint8_t sap, ns, total, padOctets, dataType;
@@ -1400,6 +1425,66 @@ static uint32_t crc9Mismatches;
 static uint64_t cnfAll(void)
 {
 	return (cnf.total >= 64) ? ~0ULL : ((1ULL << cnf.total) - 1);
+}
+
+// The dedicated v2 envelope carries the subscriber IDs separately from the gateway link address.
+int dmrDataEncodeDedicatedText(const uint8_t *udp, int udpLength, uint32_t src, uint32_t dst,
+							 uint16_t packetId, const uint8_t **pdu)
+{
+	static const uint8_t header[] = {
+		0x02, 0x01, 0, 0, 0x68, 0x07,
+		0x00, 0x01, 0x00, 0x04, 0, 0, 0, 0,
+		0x00, 0x02, 0x00, 0x04, 0, 0, 0, 0,
+		0x00, 0x03, 0x00, 0x04, 0, 0, 0, 0,
+		0x01, 0x01, 0x00, 0x02, 0x00, 0x07,
+		0x01, 0x02, 0, 0,
+	};
+	if (udpLength <= 8 || udpLength > DMR_ETSI_TEXT_UDP_MAX)
+	{
+		return 0;
+	}
+	int textLength = udpLength - 8;
+	int length = sizeof(header) + textLength;
+	int contentLength = length - 4;
+	memcpy(txPacket, header, sizeof(header));
+	putU16(txPacket + 2, (uint16_t)contentLength);
+	putU16(txPacket + 12, packetId);
+	putId(txPacket + 19, src);
+	putId(txPacket + 27, dst);
+	putU16(txPacket + 38, (uint16_t)textLength);
+	memcpy(txPacket + sizeof(header), udp + 8, textLength);
+	*pdu = txPacket;
+	return length;
+}
+
+// Decode the v2 envelope that the dedicated gateway returns, including the original sender.
+bool dmrDataDecodeDedicatedText(const dmrDataPacket_t *p, uint32_t *src, char *text, int textSize)
+{
+	const uint8_t *data = p->data;
+	if (p->length < 42 || data[0] != 0x02u || data[1] != 0x01u || data[4] != 0x68u || data[5] != 0x07u ||
+	    ((data[2] << 8) | data[3]) != p->length - 4)
+	{
+		return false;
+	}
+	static const uint8_t idTag[] = {0, 1, 0, 4};
+	static const uint8_t senderTag[] = {0, 2, 0, 4, 0};
+	static const uint8_t recipientTag[] = {0, 3, 0, 4, 0};
+	static const uint8_t textTags[] = {1, 1, 0, 2, 0, 7, 1, 2};
+	if (memcmp(data + 6, idTag, sizeof(idTag)) || memcmp(data + 14, senderTag, sizeof(senderTag)) ||
+	    memcmp(data + 22, recipientTag, sizeof(recipientTag)) || memcmp(data + 30, textTags, sizeof(textTags)))
+	{
+		return false;
+	}
+	int length = (data[38] << 8) | data[39];
+	uint32_t sender = getId(data + 19);
+	uint32_t recipient = getId(data + 27);
+	if (length != p->length - 40 || (length & 1) || recipient != p->dst ||
+	    sender == 0 || sender > T3_ID_USER_MAX || !dmrDataDecodeIPText(data + 40, length, text, textSize))
+	{
+		return false;
+	}
+	*src = sender;
+	return true;
 }
 
 static void confirmedHeader(const dmrDataPacket_t *p)
@@ -1422,6 +1507,7 @@ static void confirmedHeader(const dmrDataPacket_t *p)
 	}
 	cnf.held = true;
 	cnf.retry = retry;
+	cnf.orphan = false;
 	cnf.unmatched = !p->firstTry && !retry;
 	cnf.arrived = 0;
 }
@@ -1469,11 +1555,35 @@ static dmrDataRxResult_t confirmedFinish(dmrDataPacket_t *p)
 	return DMR_DATA_RX_RETRY;
 }
 
+// The first block of a dedicated v2 downlink gives its length even if the receiver missed the
+// preceding confirmed header. Hold the blocks until the repeater sends the ACK request.
+static bool confirmedInferLength(dmrDataPacket_t *p, const dmrBurst_t *burst, int dataLen)
+{
+	const uint8_t *data = &burst->payload[2];
+	if (dataLen < 6 || (burst->payload[0] >> 1) != 0 ||
+	    data[0] != 0x02u || data[1] != 0x01u || data[4] != 0x68u || data[5] != 0x07u)
+	{
+		return false;
+	}
+	int length = 4 + ((data[2] << 8) | data[3]);
+	int blocks = dmrDataConfirmedBlocks(length, burst->dataType);
+	if (length < 42 || blocks <= 0 || blocks * dataLen > DMR_DATA_MAX_PACKET)
+	{
+		return false;
+	}
+	cnf.total = blocks;
+	p->blocksToFollow = blocks;
+	cnf.padOctets = blocks * dataLen - 4 - length;
+	return true;
+}
+
 static dmrDataRxResult_t confirmedBlock(dmrDataPacket_t *p, const dmrBurst_t *burst)
 {
 	int dataLen = burst->length - 2;
 
-	if ((dataLen <= 0) || (dataLen != dmrDataConfirmedBlockData(burst->dataType)) || (cnf.total == 0) ||
+	if ((dataLen <= 0) || (dataLen != dmrDataConfirmedBlockData(burst->dataType)) ||
+			(cnf.orphan && cnf.total == 0 && !confirmedInferLength(p, burst, dataLen)) || (cnf.total == 0) ||
+			(cnf.orphan && rxBlocksReceived >= p->blocksToFollow) ||
 			(cnf.total > DMR_CONFIRMED_MAX_BLOCKS) || ((cnf.total * dataLen) > DMR_DATA_MAX_PACKET) ||
 			(cnf.filled && (burst->dataType != cnf.dataType)))
 	{
@@ -1502,7 +1612,7 @@ static dmrDataRxResult_t confirmedBlock(dmrDataPacket_t *p, const dmrBurst_t *bu
 		}
 	}
 
-	if (++rxBlocksReceived < p->blocksToFollow)
+	if (++rxBlocksReceived < p->blocksToFollow || cnf.orphan)
 	{
 		return DMR_DATA_RX_NONE;
 	}
@@ -1532,6 +1642,11 @@ dmrDataRxResult_t dmrDataRxConfirmedEnd(void)
 		return DMR_DATA_RX_NONE;
 	}
 	rxCollecting = false;
+	if (cnf.orphan)
+	{
+		cnf.held = false;
+		return DMR_DATA_RX_NONE;
+	}
 	return (cnf.dataType != 0) ? confirmedFinish(&dmrDataRxPacket) : DMR_DATA_RX_RETRY;
 }
 
@@ -1609,6 +1724,7 @@ dmrDataRxResult_t dmrDataRxBurst(const dmrBurst_t *burst)
 			// A proprietary second header (DPF 15) after the first: SAP 9 in the first header announces it, but a privacy
 			// header may follow a first header with the user data's SAP. It counts as one of the blocks to follow
 			if (rxCollecting && (rxBlocksReceived == 0) &&
+					!(p->dpf == DMR_DPF_CONFIRMED && cnf.orphan) &&
 					((p->sap == DMR_SAP_PROPRIETARY) || ((burst->payload[0] & 0x0F) == DMR_DPF_PROPRIETARY)))
 			{
 				bool crcOk = checkCRC16(burst->payload, 0xCC);
@@ -1649,10 +1765,49 @@ dmrDataRxResult_t dmrDataRxBurst(const dmrBurst_t *burst)
 				return DMR_DATA_RX_NONE;
 			}
 
-			rxCollecting = false;
-			if (!checkCRC16(burst->payload, 0xCC) || !parseHeader(burst->payload, p))
 			{
-				return DMR_DATA_RX_ERROR;
+				bool orphan = rxCollecting && p->dpf == DMR_DPF_CONFIRMED && cnf.orphan;
+				rxCollecting = false;
+				if (!checkCRC16(burst->payload, 0xCC))
+				{
+					return DMR_DATA_RX_ERROR;
+				}
+				bool dedicated = CONFIG_DMR_TRUNK_DEDICATED_DATA && (burst->flags & DMR_BURST_FLAG_RX_DEDICATED) != 0;
+				if (dedicated && burst->payload[0] == 0x9Fu && burst->payload[1] == T3_FID_68)
+				{
+					// The first header can be lost during TX-to-RX turnaround. Start with the
+					// vendor header and wait for the repeater's zero-block response request.
+					cnf.held = false;
+					p->dpf = DMR_DPF_CONFIRMED;
+					p->firstTry = false;
+					p->sap = DMR_SAP_PROPRIETARY;
+					p->src = T3_ID_PDDI;
+					p->dst = 0;
+					p->sendSeq = 0;
+					p->blocksToFollow = 0;
+					p->padOctets = 0;
+					confirmedHeader(p);
+					cnf.orphan = true;
+					rxBlocksReceived = 0;
+					rxCollecting = true;
+					return DMR_DATA_RX_NONE;
+				}
+				if (!parseHeader(burst->payload, p))
+				{
+					return DMR_DATA_RX_ERROR;
+				}
+				if (dedicated && p->dpf == DMR_DPF_CONFIRMED && p->sap == DMR_SAP_PROPRIETARY &&
+				    p->src == T3_ID_PDDI && !p->group && p->blocksToFollow == 0)
+				{
+					if (orphan && cnf.total != 0 && rxBlocksReceived == cnf.total &&
+					    p->responseRequested && p->padOctets == cnf.padOctets)
+					{
+						cnf.orphan = false;
+						return confirmedFinish(p);
+					}
+					cnf.held = false;
+					return DMR_DATA_RX_NONE;
+				}
 			}
 
 			if (p->blocksToFollow == 0)

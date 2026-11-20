@@ -401,6 +401,7 @@ In the Codeplug Editor ([Programming](04-programming.md#digital-modes-and-system
 |---|---|
 | Transmit | Never (listen only): the radio follows the system and its calls, and never registers or transmits there. Use it until the operator has enabled your radio's ID |
 | Needs its key | For a system that authenticates its radios. Enter the key in the form's **Key** section; without it the channel can't be used |
+| Protocol profile | Standard (ETSI) is the default. Select Hytera on a site that uses a dedicated packet-data gateway for IP SMS. For that site, select ETSI IP text and request confirmed delivery when sending individual messages. The radio shows when the gateway accepts an upload |
 | Radio ID on this system | Your ID there, when it isn't the radio's DMR ID |
 | Fallback channel | A conventional channel to use when the system can't be found (below). A channel can name its own, or none |
 | Follow every talkgroup | Plays calls on all the system's talkgroups, not only the channel's RX group list. Digital monitor does the same while it is on. Off by default |

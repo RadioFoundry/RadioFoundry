@@ -597,3 +597,18 @@ test("Tier III: follow every talk group and learning the system are option bits 
 	assert.ok(fields.some(([k, sec]) => k === "followAll" && sec === "calls"));
 	assert.ok(fields.some(([k, sec]) => k === "learnSystem" && sec === "identity"));
 });
+
+test("Tier III: the protocol profile is per system and defaults to Standard", () => {
+	assert.equal(t3System.newFields().profile, "standard");
+	const legacy = new Uint8Array(39);
+	legacy[6] = 0x40; // a flag outside the profile is kept
+	assert.equal(t3System.decode(legacy).profile, "standard");
+	const hytera = t3System.encode({ ...t3System.decode(legacy), profile: "hytera" }, legacy);
+	assert.equal(hytera[6], 0x60);
+	assert.equal(t3System.decode(hytera).profile, "hytera");
+	const standard = t3System.encode({ ...t3System.decode(hytera), profile: "standard" }, hytera);
+	assert.deepEqual(standard.subarray(5, 7), legacy.subarray(5, 7));
+	const field = t3System.fields().find((f) => f.key === "profile");
+	assert.equal(field.section, "identity");
+	assert.deepEqual(field.options().map(([value]) => value), ["standard", "hytera"]);
+});
