@@ -110,6 +110,12 @@ AIR_PROFILES = {
             "syncs": [{"id": 0, "nsyms": 24, "max_errs": 4, "flags": 0, "frame_at": 0,
                        "syms": bytes([0x55, 0x75, 0xF5, 0xFF, 0x77, 0xFF])}]},
 }
+DSTAR = 0x25                        # D-STAR: calibration, test signals, UR, station (docs/spec/debuglink.md 3.29)
+DSTAR_OP_CAL, DSTAR_OP_TEST, DSTAR_OP_UR, DSTAR_OP_STATION, DSTAR_OP_KNOB, DSTAR_OP_RESET = range(6)
+DSTAR_CAL = {"tx_1khz": 0, "tx_invert": 1, "rx_invert": 2, "tx_hpf": 3, "rx_hpf": 4}
+DSTAR_TESTS = {"off": 0, "tone": 1, "sweep": 2, "square": 3, "dots": 4, "silent": 5}
+DSTAR_UR = {"channel": 0, "cq": 1, "reply": 2, "link": 3, "unlink": 4, "echo": 5, "info": 6}
+DSTAR_STATION = {"my": 0, "suffix": 1, "msg": 2}
 CRASH_TESTS = {"trap": 1, "assert": 2, "hang": 3, "stall": 4}
 CRASH_TOKEN = 0x48535243            # 'CRSH'
 WATCHDOG = 0x1D                     # the hardware watchdog's bench tests (CONFIG_WATCHDOG; docs/spec/debuglink.md 3.21)
@@ -201,7 +207,7 @@ PRESS, LONG, REPEAT, DOWN, UP = range(5)
 VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features", "dmr_data",
                  "storage", "dmr_ext", "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
                  "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc", "net_link", "cps", "board", "audio", "t3",
-                 "t3_svc", "t3_roam", "voice_cap", "t3_msg", "t3_ra", "p25", "p25_trunk", "nxdn"]
+                 "t3_svc", "t3_roam", "voice_cap", "t3_msg", "t3_ra", "p25", "p25_trunk", "nxdn", "dstar"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
     OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_DMR_TARGET, OP_DMR_CONTACT, \
@@ -711,6 +717,33 @@ class DebugLink:
                         "choices": kv.get(f"hwopt.{i}.choices", "").split("|"),
                         "state": kv.get(f"hwopt.{i}.state") or ("ask" if value < 0 else "ok")})
         return out
+
+    def dstar(self):
+        """The dstar view section as a dict (dstar.* keys; dstar.built=0 on a build without D-STAR)"""
+        return self.view(["dstar"])
+
+    def dstar_cal(self, field, value):
+        """A flat path calibration value (DSTAR_CAL names; -1 = the board's for the polarities and high-passes)"""
+        self.request(DSTAR, struct.pack("<BBi", DSTAR_OP_CAL, DSTAR_CAL[field], value))
+
+    def dstar_test(self, kind, hz=1000, level=100):
+        """The signal the next transmissions send in place of D-STAR (DSTAR_TESTS names); BUSY while on air"""
+        self.request(DSTAR, struct.pack("<BBHB", DSTAR_OP_TEST, DSTAR_TESTS[kind], hz, level))
+
+    def dstar_ur(self, mode, ref=""):
+        """UR for the next over or for now (DSTAR_UR names); ref: the reflector and module for link (REF030C)"""
+        self.request(DSTAR, bytes([DSTAR_OP_UR, DSTAR_UR[mode]]) + ref.encode("ascii")[:7])
+
+    def dstar_station(self, field, text):
+        """MY, the suffix or the message set on the radio (DSTAR_STATION names); "" = the codeplug's again"""
+        self.request(DSTAR, bytes([DSTAR_OP_STATION, DSTAR_STATION[field]]) + text.encode("ascii")[:20])
+
+    def dstar_knob(self, index, value):
+        """One of the board's flat path knobs, by its index in the view's dstar.knob.* keys"""
+        self.request(DSTAR, struct.pack("<BBi", DSTAR_OP_KNOB, index, value))
+
+    def dstar_reset(self):
+        self.request(DSTAR, bytes([DSTAR_OP_RESET]))
 
     def hwopt_set(self, option, choice):
         """Store a choice; raises DebugLinkError (status 7) when the board refuses it or the radio transmits."""
@@ -2577,6 +2610,44 @@ def cmd_watchdog(link, a):
                 print(f"{k}={v}")
 
 
+def cmd_dstar(link, a):
+    args = a.args
+    if a.op == "view":
+        for k, v in link.dstar().items():
+            if k.startswith("dstar."):
+                print(f"{k}={v}")
+    elif a.op == "cal":
+        if len(args) != 2 or args[0] not in DSTAR_CAL:
+            print(f"dstar cal: FIELD VALUE, FIELD one of {', '.join(DSTAR_CAL)} (-1: the board's)", file=sys.stderr)
+            return 2
+        link.dstar_cal(args[0], int(args[1], 0))
+    elif a.op == "test":
+        if not args or args[0] not in DSTAR_TESTS:
+            print(f"dstar test: KIND [HZ [LEVEL%]], KIND one of {', '.join(DSTAR_TESTS)}", file=sys.stderr)
+            return 2
+        link.dstar_test(args[0], int(args[1]) if len(args) > 1 else 1000, int(args[2]) if len(args) > 2 else 100)
+    elif a.op == "ur":
+        if not args or args[0] not in DSTAR_UR:
+            print(f"dstar ur: MODE [REFLECTOR+MODULE], MODE one of {', '.join(DSTAR_UR)}", file=sys.stderr)
+            return 2
+        link.dstar_ur(args[0], args[1] if len(args) > 1 else "")
+    elif a.op == "station":
+        if not args or args[0] not in DSTAR_STATION:
+            print(f"dstar station: FIELD [TEXT], FIELD one of {', '.join(DSTAR_STATION)}", file=sys.stderr)
+            return 2
+        link.dstar_station(args[0], " ".join(args[1:]))
+    elif a.op == "knob":
+        kv = link.dstar()
+        names = [k[len("dstar.knob."):] for k in kv if k.startswith("dstar.knob.")]
+        if len(args) != 2 or args[0] not in names:
+            print(f"dstar knob: NAME VALUE, NAME one of {', '.join(names) or '(none on this board)'}", file=sys.stderr)
+            return 2
+        link.dstar_knob(names.index(args[0]), int(args[1], 0))
+    elif a.op == "reset":
+        link.dstar_reset()
+    return 0
+
+
 def cmd_hwopt(link, a):
     opts = link.hwopts()
     if a.option is not None:
@@ -2876,6 +2947,11 @@ def main(argv=None):
     sub.add_parser("wake")
     p = sub.add_parser("ptt")
     p.add_argument("--seconds", type=float, required=True)
+    p = sub.add_parser("dstar", help="D-STAR: view, flat path calibration, test signals, UR, station, board knobs "
+                       "(docs/spec/debuglink.md 3.26, docs/testing/dstar-bench.md)")
+    p.add_argument("op", choices=["view", "cal", "test", "ur", "station", "knob", "reset"])
+    p.add_argument("args", nargs="*", help="cal: FIELD VALUE; test: KIND [HZ [LEVEL%%]]; ur: MODE [REFLECTOR+MODULE]; "
+                   "station: FIELD [TEXT]; knob: NAME VALUE")
     p = sub.add_parser("aprs", help="APRS: send now, status, message, test call, settings, NMEA (docs/spec/aprs.md)")
     p.add_argument("op", choices=["send", "status", "msg", "call", "set", "nmea"])
     p.add_argument("args", nargs="*", help="status: TEXT; msg: CALL TEXT; call: [CALLSIGN]; set: FIELD VALUE "
@@ -3051,6 +3127,8 @@ def main(argv=None):
                 return cmd_hwopt(link, a)
             elif a.cmd == "air":
                 return cmd_air(link, a)
+            elif a.cmd == "dstar":
+                return cmd_dstar(link, a)
             elif a.cmd == "storage":
                 return cmd_storage(link, a)
             elif a.cmd == "rx2":
