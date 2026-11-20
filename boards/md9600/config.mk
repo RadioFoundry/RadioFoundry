@@ -62,3 +62,4 @@ MAXIMAL_SKIP := NET_PPP
 CONFIG_LANG_ES ?= n
 CONFIG_RX_EXT ?= n
 BOARD_NOT_WRITTEN += RX_EXT	# no receive range in its chip documents (a PLL and an IF chain, no single receiver chip)
+BOARD_NOT_WRITTEN += DSTAR	# no flat FM paths in board.audio_tap (docs/spec/dstar-modem.md 1.1)

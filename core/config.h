@@ -136,7 +136,7 @@
 #ifndef CONFIG_HOTSPOT_SPLIT
 #define CONFIG_HOTSPOT_SPLIT		0
 #endif
-// D-STAR DV (core/dstar): on here like the rest; off in every firmware build until a board's glue runs it
+// D-STAR DV (core/dstar, radio_dstar.c): on here like the rest; in firmware only where a board turns it on
 #ifndef CONFIG_DSTAR
 #define CONFIG_DSTAR			CONFIG_FM
 #endif

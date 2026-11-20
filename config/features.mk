@@ -247,9 +247,10 @@ CONFIG_BCAST_FM ?= y
 # receive past the band table: a range in board.bands (rx_ext_count) that receives only while Settings > Advanced says
 # so, off by default, never transmit (docs/spec/radio-features.md). Off where the chip documents give no range
 CONFIG_RX_EXT ?= y
-# D-STAR DV (core/dstar, docs/spec/dstar-modem.md): the GMSK modem, the DV framing and the engine that joins them to a
-# board's flat FM audio taps. Off until a board's glue runs the engine (BOARD_NOT_WRITTEN is for written features a
-# board lacks glue for; this one has no glue anywhere yet, so it is off for every board here). Needs FM
+# D-STAR DV (core/dstar, core/radio/radio_dstar.c, docs/spec/dstar-modem.md): the GMSK modem, the DV framing, the
+# software voice codec and the radio core's D-STAR channels on a board's flat FM audio taps. Off by default: a board
+# whose glue runs it turns it on in its config.mk where it fits (one board so far, without the IP gateway; feature
+# matrix). Needs FM
 CONFIG_DSTAR ?= n
 # audio path probe: debug link command 0x10 to read / write the audio chip's registers and watch the PCM stream's
 # levels, for the USB audio feasibility tests on the bench (docs/spec/hardware-dm1701.md 21.3; needs DEBUGLINK and DMR, whose
