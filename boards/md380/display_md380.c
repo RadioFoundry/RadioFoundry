@@ -203,6 +203,7 @@ static void set_backlight(uint8_t percent)
 	TIM8->CCR1 = md380_bl_cv(percent);
 }
 
+#if CONFIG_BACKLIGHT_TEST
 // The backlight tests: the compare value straight (MD380_BL_PERIOD is on through the whole period)
 static void set_backlight_raw(uint16_t value)
 {
@@ -226,6 +227,7 @@ static uint32_t set_backlight_rate(uint8_t i)
 	TIM8->PSC = md380_bl_div[i] - 1u;
 	return md380_bl_rate_hz(i);
 }
+#endif
 
 // ---- hal_display_t ----
 
@@ -285,11 +287,13 @@ const hal_display_t md380_display = {
 	.init = init,
 	.flush_indexed = flush,
 	.set_backlight = set_backlight,
+#if CONFIG_BACKLIGHT_TEST
 	.backlight_raw_max = MD380_BL_PERIOD,
 	.set_backlight_raw = set_backlight_raw,
 	.backlight_raw = backlight_raw,
 	.backlight_rates = MD380_BL_RATES,
 	.backlight_rate_std = MD380_BL_RATE_STD,
 	.set_backlight_rate = set_backlight_rate,
+#endif
 	.panel = panel_info,
 };

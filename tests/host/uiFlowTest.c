@@ -334,11 +334,11 @@ static const flow_t flows[] = {
 	{ "S no freq trim without the hook", "", "ok 7 up ok", "hides=Freq_trim", 4, false },
 #if CONFIG_BACKLIGHT_TEST
 	// Settings > Advanced > Backlight tests, under Diagnostics. The sim's display has the raw hooks (4096 counts, three
-	// rates, 7324 Hz standard), so the compare value page comes first
-	{ "S backlight tests", "", "ok 7 up ok down down down ok", "screen=bltest shows=CV", 8, false },
-	{ "S backlight tests: digits set the value", "ok 7 up ok down down down ok", "2 1 3 7", "shows=CV_2137", 4, false },
-	{ "S backlight tests: # applies fewer digits", "ok 7 up ok down down down ok", "5 0 ctx", "shows=CV_50", 3, false },
-	{ "S backlight tests: Up steps 50", "ok 7 up ok down down down ok 2 1 3 7", "up", "shows=CV_2187", 1, false },
+	// rates, 7324 Hz standard), so the raw duty page comes first
+	{ "S backlight tests", "", "ok 7 up ok down down down ok", "screen=bltest shows=/4096", 8, false },
+	{ "S backlight tests: digits set the value", "ok 7 up ok down down down ok", "2 1 3 7", "shows=2137/4096 shows=52.1%", 4, false },
+	{ "S backlight tests: # applies fewer digits", "ok 7 up ok down down down ok", "5 0 ctx", "shows=50/4096", 3, false },
+	{ "S backlight tests: Up steps 50", "ok 7 up ok down down down ok 2 1 3 7", "up", "shows=2187/4096", 1, false },
 	{ "S backlight tests: OK to brightness", "ok 7 up ok down down down ok", "ok", "shows=Brightness", 1, false },
 	{ "S backlight tests: OK to the rate", "ok 7 up ok down down down ok", "ok ok", "shows=PWM_rate", 2, false },
 	{ "S backlight tests: BACK leaves", "ok 7 up ok down down down ok", "back", "screen=group", 1, false },

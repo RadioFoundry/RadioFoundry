@@ -5490,7 +5490,7 @@ static const ui_scr_def_t about_screen = {
 #if CONFIG_BACKLIGHT_TEST
 // A bench tool (docs/testing/backlight-curve.md), so its text is untranslated. OK steps through the pages the board
 // has; each draws the boot splash with its reading.
-// 1, the PWM compare value (the board's raw hooks): the knob steps 1; Up / Down 1 on a knob with end stops, else 50;
+// 1, the board's raw duty setting (its raw hooks), 0 off to backlight_raw_max full: the knob steps 1; Up / Down 1 on a knob with end stops, else 50;
 //    digits type a value, applied at as many digits as the maximum has (# applies fewer, BACK takes one back); * the
 //    rate; OK held flips to full and back. Shows the duty and the on and off time a period.
 // 2, the brightness, 0-100 % in 10 % steps: kept as the setting on leaving it (10 % for 0).
@@ -5603,7 +5603,7 @@ static void bt_leave(void)
 
 static void bt_draw(void)
 {
-	char a[24], b[24];
+	char a[24], b[32];
 	sbuf_t sa, sb;
 	sb_init(&sa, a, sizeof a);
 	sb_init(&sb, b, sizeof b);
@@ -5616,42 +5616,45 @@ static void bt_draw(void)
 		sb_u32(&sb, bt_hz, 1);
 		sb_str(&sb, " Hz");
 	} else {
-		// "7324 Hz CV 2137" / "52.1% 71.2/65.3us" (on / off time a period); "CV 21_" while typing; "full" held
+		// "52.1% 7324 Hz" / "2137/4096 71.2/65.3us": the duty and rate, then the board's raw setting over its
+		// maximum and the on / off time a period. "213_/4096" while typing; "full" held
 		uint32_t max = bt_disp()->backlight_raw_max;
 		uint16_t raw = bt_full ? (uint16_t)max : bt_raw;
-		if (bt_hz != 0) {
-			sb_u32(&sa, bt_hz, 1);
-			sb_str(&sa, " Hz ");
-		}
-		sb_str(&sa, "CV ");
-		if (bt_ndig != 0) {
-			sb_u32(&sa, bt_typed, bt_ndig);
-			sb_chr(&sa, '_');
-		} else {
-			sb_u32(&sa, raw, 1);
-		}
 		if (bt_full) {
-			sb_str(&sb, "full");
+			sb_str(&sa, "full");
 		} else {
 			uint32_t pm = (uint32_t)raw * 1000u / max;	// duty, 0.1 %
-			sb_u32(&sb, pm / 10u, 1);
+			sb_u32(&sa, pm / 10u, 1);
+			sb_chr(&sa, '.');
+			sb_u32(&sa, pm % 10u, 1);
+			sb_chr(&sa, '%');
+		}
+		if (bt_hz != 0) {
+			sb_chr(&sa, ' ');
+			sb_u32(&sa, bt_hz, 1);
+			sb_str(&sa, " Hz");
+		}
+		if (bt_ndig != 0) {
+			sb_u32(&sb, bt_typed, bt_ndig);
+			sb_chr(&sb, '_');
+		} else {
+			sb_u32(&sb, raw, 1);
+		}
+		sb_chr(&sb, '/');
+		sb_u32(&sb, max, 1);
+		if (bt_hz != 0 && bt_ndig == 0 && !bt_full) {
+			uint32_t period = 1000000000u / bt_hz;	// ns
+			uint32_t on = (uint32_t)((uint64_t)raw * 1000000000u / ((uint64_t)bt_hz * max));
+			uint32_t off = period > on ? period - on : 0;
+			sb_chr(&sb, ' ');
+			sb_u32(&sb, on / 1000u, 1);
 			sb_chr(&sb, '.');
-			sb_u32(&sb, pm % 10u, 1);
-			sb_chr(&sb, '%');
-			if (bt_hz != 0) {
-				uint32_t period = 1000000000u / bt_hz;	// ns
-				uint32_t on = (uint32_t)((uint64_t)raw * 1000000000u / ((uint64_t)bt_hz * max));
-				uint32_t off = period > on ? period - on : 0;
-				sb_chr(&sb, ' ');
-				sb_u32(&sb, on / 1000u, 1);
-				sb_chr(&sb, '.');
-				sb_u32(&sb, on % 1000u / 100u, 1);
-				sb_chr(&sb, '/');
-				sb_u32(&sb, off / 1000u, 1);
-				sb_chr(&sb, '.');
-				sb_u32(&sb, off % 1000u / 100u, 1);
-				sb_str(&sb, "us");
-			}
+			sb_u32(&sb, on % 1000u / 100u, 1);
+			sb_chr(&sb, '/');
+			sb_u32(&sb, off / 1000u, 1);
+			sb_chr(&sb, '.');
+			sb_u32(&sb, off % 1000u / 100u, 1);
+			sb_str(&sb, "us");
 		}
 	}
 	ui_draw_splash(board.name, RFOUNDRY_RELEASE[0] != '\0' ? RFOUNDRY_RELEASE : RFOUNDRY_GIT, a, b);
