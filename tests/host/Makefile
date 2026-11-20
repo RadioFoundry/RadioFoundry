@@ -866,6 +866,11 @@ hrc6000ToneTest: hrc6000ToneTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc6000ToneTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c \
 		$(CORE)/dmr/fec/dmrFec.c
 
+# The speaker path through the HR_C6000's prompt FIFO in the FM copy (#673): the sample ring and the chip's FIFO writes
+TESTS   += promptFifoTest
+promptFifoTest: promptFifoTest.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(HRCDMR)/hrc.h $(ROOT)/platform/stm32f4/hrc/pcm_ring.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ promptFifoTest.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c
+
 run: run-modem
 run-modem: hrc6000DmrTest hrc6000ToneTest
 	./hrc6000DmrTest
