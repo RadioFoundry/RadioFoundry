@@ -308,13 +308,20 @@ CONFIG_P25 ?= $(CONFIG_DMR)
 # DMR, through the DMR voice path; nothing of the vocoder is in it. Needs DMR
 CONFIG_NXDN ?= $(CONFIG_DMR)
 CONFIG_NXDN_SCRAMBLER ?= $(CONFIG_NXDN)
+# D-STAR DV, the amateur digital voice mode (core/dstar, docs/spec/dstar.md): the radio header and its FEC, voice frames
+# and their slow data (the message, the header sent again, D-PRS text), the call layer and its engine on the air
+# interface, the D-STAR mode in the radio core, and the half-rate vocoder D-STAR carries on the MBE core
+# (core/mbe/ambe*.c), its encoder included: nothing of the board's vocoder is used. A board without an air interface
+# provider (board.air) lists it in BOARD_NOT_WRITTEN
+CONFIG_DSTAR ?= y
 # Derived, never set by hand (a command line or a board's config.mk that sets one stops the build): AIR the air
-# interface, on with any air-framed mode (P25, NXDN); IMBE the full-rate voice decoder and MBE the MBE core, with P25
-$(foreach f,AIR IMBE MBE,$(if $(filter-out undefined,$(origin CONFIG_$(f))),$(error CONFIG_$(f) is derived from CONFIG_P25 \
-	and CONFIG_NXDN ($(origin CONFIG_$(f))): set those instead)))
-CONFIG_AIR := $(if $(filter y,$(CONFIG_P25) $(CONFIG_NXDN)),y,n)
+# interface, on with any air-framed mode (P25, NXDN, D-STAR); IMBE the full-rate voice decoder, with P25; MBE the MBE
+# core, with P25 or D-STAR
+$(foreach f,AIR IMBE MBE,$(if $(filter-out undefined,$(origin CONFIG_$(f))),$(error CONFIG_$(f) is derived from CONFIG_P25, \
+	CONFIG_NXDN and CONFIG_DSTAR ($(origin CONFIG_$(f))): set those instead)))
+CONFIG_AIR := $(if $(filter y,$(CONFIG_P25) $(CONFIG_NXDN) $(CONFIG_DSTAR)),y,n)
 CONFIG_IMBE := $(CONFIG_P25)
-CONFIG_MBE := $(CONFIG_IMBE)
+CONFIG_MBE := $(if $(filter y,$(CONFIG_IMBE) $(CONFIG_DSTAR)),y,n)
 # diagnostics: debug link commands that open an air interface session and move raw symbols, for bench tests (needs an
 # air-framed mode such as P25 or NXDN, and DEBUGLINK; docs/spec/debuglink.md)
 CONFIG_AIR_RAW ?= n
@@ -329,7 +336,7 @@ CONFIG_GPS_SKY ?= $(CONFIG_GPS)
 
 FEATURES := USB_SERIAL_REQUEST FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_TRUNK DMR_TRUNK_TX DMR_TRUNK_SUPL DMR_TRUNK_GW VOICE_CAPTURE DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB IDDB_COMPACT DMR_CONTROL_STATION SNMP SFR SFR_DUALPATH_RX SFR_CWID TASK_STACKS \
 	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW CPS_FAST VFO VFO_FM VFO_DMR DIAG BACKLIGHT_TEST FONT_XL FONT_AA FONT_BIG LANG_ES LANG_IT LANG_FR LANG_ZH LANG_DEFAULT_ES LANG_DEFAULT_IT LANG_DEFAULT_FR LANG_DEFAULT_ZH UI_COLOR UI_SETTINGS SCAN DUAL_WATCH BEEP SIG_TONES FM_TX_TONES DTMF \
-	RX_EXT VOX REF_TRIM BATTERY_SAVE VIBRATE GPS AUDIO_PROBE STUB_ENTRY NAND_STORAGE CRASH_LOG CRASH_SCREEN CRASH_REPORT WATCHDOG FAULT_TRACE AM_RX BCAST_FM APRS APRS_AFSK APRS_DMR APRS_RX APRS_IGATE GPS_SKY KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT ZONE_EDIT CONTACT_EDIT VOLUME_BAR P25 P25_TRUNK NXDN NXDN_SCRAMBLER AIR_RAW
+	RX_EXT VOX REF_TRIM BATTERY_SAVE VIBRATE GPS AUDIO_PROBE STUB_ENTRY NAND_STORAGE CRASH_LOG CRASH_SCREEN CRASH_REPORT WATCHDOG FAULT_TRACE AM_RX BCAST_FM APRS APRS_AFSK APRS_DMR APRS_RX APRS_IGATE GPS_SKY KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT ZONE_EDIT CONTACT_EDIT VOLUME_BAR P25 P25_TRUNK NXDN NXDN_SCRAMBLER DSTAR AIR_RAW
 
 # The panel's width in pixels: the display class the board's board.toml names (hardware.gallery = "160x128", the width
 # first). Empty when it names none, which counts as a narrow panel
@@ -392,7 +399,7 @@ ifneq ($(call feature_on,HOTSPOT_SPLIT),)
   endif
 endif
 $(if $(and $(call feature_on,NXDN_SCRAMBLER),$(if $(call feature_on,NXDN),,x)),$(error CONFIG_NXDN_SCRAMBLER=y needs CONFIG_NXDN=y))
-$(if $(and $(call feature_on,AIR_RAW),$(if $(call feature_on,AIR),,x)),$(error CONFIG_AIR_RAW=y needs CONFIG_P25=y or CONFIG_NXDN=y (an air-framed mode)))
+$(if $(and $(call feature_on,AIR_RAW),$(if $(call feature_on,AIR),,x)),$(error CONFIG_AIR_RAW=y needs CONFIG_P25=y, CONFIG_NXDN=y or CONFIG_DSTAR=y (an air-framed mode)))
 $(if $(and $(call feature_on,P25_TRUNK),$(if $(call feature_on,P25),,x)),$(error CONFIG_P25_TRUNK=y needs CONFIG_P25=y))
 $(if $(and $(call feature_on,P25),$(if $(call feature_on,DMR),,x)),$(error CONFIG_P25=y needs CONFIG_DMR=y (its talk groups are the codeplug's contacts)))
 $(if $(and $(call feature_on,NXDN),$(if $(call feature_on,DMR),,x)),$(error CONFIG_NXDN=y needs CONFIG_DMR=y (its voice is the DMR vocoder's)))

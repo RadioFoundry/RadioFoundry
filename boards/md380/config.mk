@@ -69,3 +69,4 @@ BOARD_NOT_WRITTEN += P25	# receive isn't written (hardware-md380.md 4.11)
 BOARD_NOT_WRITTEN += P25_TRUNK	# needs P25
 BOARD_NOT_WRITTEN += NXDN	# receive isn't written (hardware-md380.md 4.11)
 BOARD_NOT_WRITTEN += NXDN_SCRAMBLER	# needs NXDN
+BOARD_NOT_WRITTEN += DSTAR	# receive isn't written (hardware-md380.md 4.11)

@@ -783,6 +783,12 @@ static const flow_t flows[] = {
 	{ "S radio name typed and saved", "ok 7 0 ok down ok", "2 ok", "screen=dmr-id toast=Saved writes=1 shows=Q0TESTA", 2, true },
 	{ "S boot line 2 typed and saved", "ok 7 0 ok down down down ok", "2 ok", "screen=dmr-id toast=Saved writes=1 shows=Jamie_ThompsonA", 2,
 	  true },
+#if CONFIG_DSTAR
+	// Settings > My radio > D-STAR (its last row): what D-STAR sends, an empty row the default
+	{ "S D-STAR opens", "ok 7 0", "down down ok", "screen=dstar shows=My_callsign shows=Radio_name", 3, false },
+	{ "S D-STAR your call typed and kept", "ok 7 0 down down ok down down ok", "2 ok", "screen=dstar toast=Saved shows=A",
+	  2, false },
+#endif
 	{ "S digits on a name row type no ID", "ok 7 0 ok down", "3 1",
 	  "screen=dmr-id focus=Radio_name toast=No_item_with_that_number", 2, false },
 	// Vibrate (Settings > Sound, radio-features.md 4.1): ui_vibe_t 0 message, 1 call, 2 emergency
@@ -836,6 +842,15 @@ static const flow_t flows[] = {
 	  2, false },
 	{ "S VFO mode: NXDN back to FM", "nxdn ok 4 up ok quick 4 back quick 4 back", "quick 4", "toast=VFO:_FM mode=fm", 2,
 	  false },
+#if CONFIG_DSTAR
+	// D-STAR: after DMR where the radio has neither P25 nor NXDN, then FM; its strip names the repeater
+	{ "S VFO mode: DMR to D-STAR", "dstar ok 4 up ok quick 4 back", "quick 4",
+	  "toast=VFO:_D-STAR mode=dstar temporary=0 vfo=1", 2, false },
+	{ "S VFO mode: D-STAR back to FM", "dstar ok 4 up ok quick 4 back quick 4 back", "quick 4", "toast=VFO:_FM mode=fm",
+	  2, false },
+	{ "S VFO mode: D-STAR shows on the strip", "dstar ok 4 up ok quick 4 back quick 4 back", "",
+	  "mode=dstar screen=home shows=D-STAR shows=Simplex", 0, false },
+#endif
 	{ "S VFO mode: P25 shows on the strip", "p25 ok 4 up ok quick 4 back quick 4 back", "", "mode=p25 screen=home shows=P25",
 	  0, false },
 	{ "S VFO DMR: color code 7", "ok 4 up ok quick 4 back", "quick 3 7 ok", "cc=7 temporary=0", 4, false },

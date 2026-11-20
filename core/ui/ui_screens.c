@@ -1068,6 +1068,11 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 			sb_str(&b, "TG ");
 		sb_u32(&b, v->nxdn.talk, 1);
 #endif
+#if CONFIG_DSTAR
+	} else if (v->ch.mode == RADIO_MODE_DSTAR) {
+		// The same for D-STAR: the companion's callsign (UR), CQCQCQ to all
+		sb_str(&b, v->dstar.talk);
+#endif
 	} else {
 		// " MHz" goes before the frequency is cut (font.h alternates)
 		sb_str(&b, TEXT_ALT_OPEN);
@@ -1132,6 +1137,24 @@ static void draw_chips(const radio_view_t *v, const ui_state_t *s)
 		sb_init(&b, buf, sizeof buf);
 		sb_str(&b, "NAC ");
 		sb_hex(&b, v->p25.rx_nac, 3);
+		if (x + gfx_text_width(f, buf) <= w)
+			gfx_text(f, x, y, buf, ui_col.fg);
+#endif
+		return;
+	}
+	if (v->ch.mode == RADIO_MODE_DSTAR) {
+		// The same for D-STAR: the power, then the repeater PTT goes through (simplex: none)
+		if (pw_temp)
+			x = gfx_text(f, x, y, GLYPH_DOT, ui_col.warn);
+		x = gfx_text(f, x, y, ui_power_name(v->power, v->ch.tx_hz), pw_temp ? ui_col.warn : ui_col.fg) + f->w;
+#if CONFIG_DSTAR
+		sb_init(&b, buf, sizeof buf);
+		if (v->dstar.talk_rpt[0] != '\0') {
+			sb_str(&b, "RPT ");
+			sb_str(&b, v->dstar.talk_rpt);
+		} else {
+			sb_str(&b, TR(HOME_CHIP_DSTAR_SIMPLEX, "Simplex"));
+		}
 		if (x + gfx_text_width(f, buf) <= w)
 			gfx_text(f, x, y, buf, ui_col.fg);
 #endif
@@ -1946,14 +1969,17 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 #endif
 
 #if CONFIG_AIR
-// A P25 or NXDN call coming in (air_call): whether one is heard now, and its fields
+// A P25, NXDN or D-STAR call coming in (air_call): whether one is heard now, and its fields. D-STAR names its
+// callers: their callsigns as text instead of IDs
 typedef struct {
 	bool played, enc, unit;
 	uint32_t src, dst;
+	char text[48];
 } air_call_t;
 
 static bool air_call(const radio_view_t *v, air_call_t *c)
 {
+	c->text[0] = '\0';
 #if CONFIG_P25
 	if (v->ch.mode == RADIO_MODE_P25 && (v->p25.flags & RADIO_P25_RX) != 0) {
 		const radio_p25_view_t *p = &v->p25;
@@ -1962,6 +1988,33 @@ static bool air_call(const radio_view_t *v, air_call_t *c)
 		c->unit = (p->flags & RADIO_P25_UNIT) != 0;
 		c->src = p->src;
 		c->dst = p->dst;
+		return true;
+	}
+#endif
+#if CONFIG_DSTAR
+	if (v->ch.mode == RADIO_MODE_DSTAR && (v->dstar.flags & RADIO_DSTAR_RX) != 0) {
+		const radio_dstar_view_t *d = &v->dstar;
+		sbuf_t b;
+
+		// "K1ABC/RF > CQCQCQ  the message"; before the callsigns are in (joined late), the mode's name
+		memset(c, 0, sizeof *c);
+		c->played = true;
+		sb_init(&b, c->text, sizeof c->text);
+		if ((d->flags & RADIO_DSTAR_HDR) != 0) {
+			sb_str(&b, d->my);
+			if (d->sfx[0] != '\0') {
+				sb_str(&b, "/");
+				sb_str(&b, d->sfx);
+			}
+			sb_str(&b, " " GLYPH_ARROW " ");
+			sb_str(&b, d->ur);
+		} else {
+			sb_str(&b, "D-STAR");
+		}
+		if ((d->flags & RADIO_DSTAR_HAS_MSG) != 0) {
+			sb_str(&b, "  ");
+			sb_str(&b, d->msg);
+		}
 		return true;
 	}
 #endif
@@ -1988,6 +2041,11 @@ static void air_call_line(const air_call_t *c, const font_t *f, int y)
 	char buf[64], fit[48];
 	sbuf_t b;
 
+	if (c->text[0] != '\0') {
+		gfx_text_fit(f, c->text, gfx_width(), fit, sizeof fit);
+		gfx_text(f, 0, y, fit, ui_col.rx);
+		return;
+	}
 	if (!c->played) {
 		gfx_text_fit(f, c->enc ? TR(CALL_WHY_ENCRYPTED, "Encrypted: not played") :
 			TR(CALL_WHY_OTHER_TG, "Other TG: not played"), gfx_width(), fit, sizeof fit);

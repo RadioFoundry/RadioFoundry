@@ -5000,6 +5000,94 @@ static void dmr_id_enter(void)
 #endif
 }
 
+#if CONFIG_DSTAR && CONFIG_CHANNEL_EDIT
+// ======================= D-STAR (Settings > My radio > D-STAR) =======================
+// What D-STAR sends (docs/spec/dstar.md 6.2): one row of text each, typed as a name is; an empty one sends the default,
+// which the row shows. They are the radio core's (RAM): kept until the radio is switched off
+enum { DSR_MY, DSR_SFX, DSR_UR, DSR_RPT1, DSR_RPT2, DSR_MSG, DSR_COUNT };
+static radio_dstar_settings_t dsr_set;
+static uint8_t dsr_row;
+
+static uint16_t dsr_count(void) { return DSR_COUNT; }
+
+static char *dsr_field(uint16_t i, uint8_t *max)
+{
+	switch (i) {
+	case DSR_MY: *max = RADIO_DSTAR_CALL; return dsr_set.my;
+	case DSR_SFX: *max = RADIO_DSTAR_SUFFIX; return dsr_set.sfx;
+	case DSR_UR: *max = RADIO_DSTAR_CALL; return dsr_set.ur;
+	case DSR_RPT1: *max = RADIO_DSTAR_CALL; return dsr_set.rpt1;
+	case DSR_RPT2: *max = RADIO_DSTAR_CALL; return dsr_set.rpt2;
+	default: *max = RADIO_DSTAR_MSG; return dsr_set.msg;
+	}
+}
+
+static void dsr_item(uint16_t i, ui_item_t *it)
+{
+	static const tr_id_t labels[DSR_COUNT] = {
+		[DSR_MY] = TRN(DSTAR_LABEL_MY, "My callsign"), [DSR_SFX] = TRN(DSTAR_LABEL_SUFFIX, "Suffix"),
+		[DSR_UR] = TRN(DSTAR_LABEL_UR, "Your call"), [DSR_RPT1] = TRN(DSTAR_LABEL_RPT1, "Repeater"),
+		[DSR_RPT2] = TRN(DSTAR_LABEL_RPT2, "Gateway"), [DSR_MSG] = TRN(DSTAR_LABEL_MESSAGE, "Message"),
+	};
+	uint8_t max;
+	const char *v = dsr_field(i, &max);
+
+	str_copy(it->label, sizeof it->label, tr(labels[i]));
+	if (v[0] != '\0') {
+		str_copy(it->value, sizeof it->value, v);
+		return;
+	}
+	// what an empty row sends
+	str_copy(it->value, sizeof it->value,
+		 i == DSR_MY ? TR(DSTAR_VALUE_RADIO_NAME, "Radio name") : i == DSR_UR ? "CQCQCQ" :
+		 i == DSR_RPT1 ? TR(DSTAR_VALUE_SIMPLEX, "Simplex") :
+		 i == DSR_RPT2 ? (dsr_set.rpt1[0] != '\0' ? TR(DSTAR_VALUE_AUTO, "Auto") : "-") : TR(VALUE_NONE, "None"));
+}
+
+static void dsr_kept(void)
+{
+	// callsigns in upper case, as on air; the message as typed
+	if (dsr_row != DSR_MSG) {
+		uint8_t max;
+		char *f = dsr_field(dsr_row, &max);
+
+		for (char *c = f; *c != '\0'; c++)
+			if (*c >= 'a' && *c <= 'z')
+				*c = (char)(*c - 'a' + 'A');
+	}
+	if (!ui_svc_dstar_set(&dsr_set)) {
+		ui_toast(TR(TOAST_SAVE_FAILED, "Couldn't save: try again"));
+		return;
+	}
+	ui_toast(TR(TOAST_SAVED, "Saved"));
+}
+
+static void dsr_select(uint16_t i, bool hold)
+{
+	uint8_t max;
+	char *f;
+
+	(void)hold;
+	if (i >= DSR_COUNT)
+		return;
+	dsr_row = (uint8_t)i;
+	f = dsr_field(i, &max);
+	ui_text_open(f, max);
+	text_done = dsr_kept;
+}
+
+static void dsr_enter(void)
+{
+	ui_svc_dstar_get(&dsr_set);
+}
+
+static const ui_scr_def_t dstar_screen = {
+	.name = "dstar", .flags = SF_LIST | SF_FIELD, .prefix = TRN(DSTAR_TITLE, "D-STAR"),
+	.hint = TRN(HINT_OK_EDIT_BACK, "OK edit  Back"),
+	.count = dsr_count, .item = dsr_item, .select = dsr_select, .enter = dsr_enter,
+};
+#endif
+
 static const ui_scr_def_t dmr_id_screen = {
 	.name = "dmr-id", .flags = SF_LIST | SF_FIELD, .prefix = TRN(SET_TITLE_MY_RADIO, "My Radio"),
 #if CONFIG_DMR
@@ -6427,7 +6515,7 @@ static const ui_scr_def_t tools_screen = {
 
 typedef enum { ST_TOGGLE, ST_LIST, ST_NUMBER, ST_ACTION } set_type_t;
 enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_CRASH, SA_LANGUAGE, SA_HARDWARE, SA_FIXED_POS, SA_DATA_SERVICES,
-       SA_BL_TEST,
+       SA_BL_TEST, SA_DSTAR,
        SA_SIG_BEGIN, SA_SIG_END, SA_SIG_IDLE };	// the three: a signaling tone's steps, by sig_event_t
 
 typedef struct {
@@ -6851,6 +6939,10 @@ static const set_item_t s_my_radio[] = {
 	ACTION(TRN(SET_ROW_DMR_ID_AND_NAME, "DMR ID and name"), "callsign", SA_MY_RADIO),
 	// Also in Advanced, where users didn't look for it
 	ACTION(TRN(TITLE_ABOUT, "About"), "firmware version release build date", SA_FIRMWARE),
+#if CONFIG_DSTAR && CONFIG_CHANNEL_EDIT
+	// Last, so the rows above keep their places
+	ACTION(TRN(DSTAR_TITLE, "D-STAR"), "dstar callsign urcall repeater rpt1 rpt2 gateway message", SA_DSTAR),
+#endif
 };
 static const set_item_t s_advanced[] = {
 	ACTION(TRN(TITLE_ABOUT, "About"), "firmware version license authors", SA_FIRMWARE),
@@ -7491,6 +7583,9 @@ static void group_select(uint16_t i, bool hold)
 		case SA_FIRMWARE: ui_push(SCR_ABOUT, 0); break;
 		case SA_CODEPLUG: ui_push(SCR_INFO, INFO_CODEPLUG); break;
 		case SA_MY_RADIO: ui_push(SCR_DMR_ID, 0); break;
+#if CONFIG_DSTAR && CONFIG_CHANNEL_EDIT
+		case SA_DSTAR: ui_push(SCR_DSTAR, 0); break;
+#endif
 		case SA_RESET: ui_push(SCR_CONFIRM, 0); break;
 		case SA_LANGUAGE: ui_push(SCR_LANGUAGE, 0); break;
 #if CONFIG_SIG_TONES
@@ -8048,6 +8143,9 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 #endif
 	[SCR_VOLUME] = &volume_screen, [SCR_LANGUAGE] = &lang_screen,
 	[SCR_DMR_ID] = &dmr_id_screen,
+#if CONFIG_DSTAR && CONFIG_CHANNEL_EDIT
+	[SCR_DSTAR] = &dstar_screen,
+#endif
 	[SCR_CP_FOREIGN] = &cpf_screen,
 #if DATA_IDS
 	[SCR_DATA_SERVICES] = &ds_screen,

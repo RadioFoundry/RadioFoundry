@@ -53,6 +53,7 @@ is `tools/bringup.py list --radio <id>`.
 | `p25_trunk` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | not recorded |
 | `nxdn` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | partial, needs re-run |
 | `nxdn_scrambler` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | not recorded |
+| `dstar` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | not recorded |
 | `dmr_voice` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | partial, needs re-run | partial, needs re-run |
 | `dmr_privacy` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | partial, needs re-run |
 | `dmr_data_privacy` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
@@ -293,6 +294,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `P25_TRUNK` | ● | ● | ● | ● | … | ● | ● | ● |
 | `NXDN` | ● | ● | ● | ● | … | ● | ● | ● |
 | `NXDN_SCRAMBLER` | ● | ● | ● | ● | … | ● | ● | ● |
+| `DSTAR` | ● | ● | ● | ● | … | ● | ● | ● |
 | `AIR_RAW` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | Voltage reading (board, no switch) | Battery | Battery | Battery | None | Battery | Battery | Supply | Battery |
 | Clock kept through power-off (board, no switch) | Yes | ? | Yes | ? | ? | ? | ? | No (only while on) |
@@ -316,6 +318,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | P25 Phase 1 conventional: the air interface (framer, soft modem, shared FEC), the engine, the P25 channel mode and the full-rate voice decoder on the MBE core | `P25` | 43,300* | 24,640* | Needs a board with an air interface provider (`board.air`); without one nothing runs ([air-interface.md](spec/air-interface.md)). Off on the MD-380 until receive is written ([hardware-md380.md](spec/hardware-md380.md) 4.11). Receive and transmit checked on air against the SDR bench on the DM-32UV and the DM-1701, receive, zone scan and dual watch on the MD-9600; the VFO's mode tile, the debug link or a stored P25 channel sets it ([p25.md](spec/p25.md)). RAM: 6,640 B on the DM-1701, 424 B on the MD-380 |
 | NXDN conventional voice, 4800 and 9600 bit/s: the frame codec, receive, the call layer, the engine and the NXDN mode in the radio core | `NXDN` | 27,300* | — | Needs `DMR` (its voice goes through the DMR vocoder path) and a board with an air interface provider (`board.air`); where the provider only receives a rate, PTT is refused at that rate. The VFO's mode tile, the debug link or a stored NXDN channel sets it ([nxdn.md](spec/nxdn.md) 6, [nxdn-codeplug.md](spec/nxdn-codeplug.md)). On the DM-1701 and the DM-32UV transmit is checked off air at both rates and receive with a bench transmitter, speech frames through the vocoder included (DM-1701); the sound at the speaker is untested ([modem-hrc6000.md](spec/modem-hrc6000.md) 10.6). RAM: 2,184 B on the DM-1701; with `P25` also on it shares P25's engine memory (9,464 B flash, 256 B RAM on top of P25) |
 | NXDN Scrambler (15-bit) | `NXDN_SCRAMBLER` | 468 | — | Needs `NXDN`; supports conventional voice calls. The NXDN air interface must support the requested direction. Checked on air against another radio running RadioFoundry and a commercial portable ([bring-up record](testing/dm32-bringup.md#nxdn-scrambler-interoperability)). |
+| D-STAR DV: the header and its FEC, voice frames and slow data (message, the header again, D-PRS text), receive with late entry, the call layer, the engine, the D-STAR mode in the radio core, and the half-rate vocoder D-STAR carries (decoder and encoder) on the MBE core | `DSTAR` | — | — | Needs a board with an air interface provider (`board.air`); its voice is its own, not the board's vocoder. The VFO's mode tile or the debug link sets it; Settings > My radio > D-STAR sets what it sends ([dstar.md](spec/dstar.md) 6). Host tested only: nothing checked on air yet. DM-32UV: 21,080 B flash, 976 B RAM; the engine and the voice path in the memory the DMR vocoder lends |
 | Basic privacy (Motorola / Anytone BP) | `DMR_PRIVACY` | 1,936 | 1,992 |  |
 | Talker alias receive and send | `DMR_TALKER_ALIAS` | 984 | 1,300 |  |
 | ETSI GPS Info in the embedded LC | `DMR_GPS` | 2,208 | 2,152 |  |

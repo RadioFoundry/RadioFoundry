@@ -98,6 +98,14 @@ switch = "NXDN_SCRAMBLER"
 spec = "docs/spec/nxdn.md"
 source = ["core/nxdn/nxdn_scramble.c", "core/nxdn/nxdn_call.c", "core/nxdn/nxdn_engine.c"]
 
+[feature.dstar]
+switch = "DSTAR"
+spec = "docs/spec/dstar.md"
+source = ["core/dstar", "core/air", "core/fec", "core/mbe/ambe.h", "core/mbe/ambe_q.h", "core/mbe/ambe_dec.c",
+          "core/mbe/ambe_enc.c", "core/mbe/ambe_tab.c", "core/mbe/ambe_tab.h", "core/mbe/mbe_est.c",
+          "core/radio/radio_dstar.c", "core/radio/radio_dstar.h", "core/radio/radio_air.h",
+          "core/debuglink/debuglink_view_dstar.c"]
+
 [feature.dmr_voice]
 switch = "DMR"
 spec = "docs/spec/dmr-voice.md"

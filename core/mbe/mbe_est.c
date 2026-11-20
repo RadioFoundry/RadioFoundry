@@ -316,50 +316,80 @@ static int32_t band_threshold(uint32_t c1, int k, int K, int was)
 	return th;
 }
 
-void mbe_est_params(mbe_est_state_t *s, const int32_t *buf, const mbe_est_t *e, mbe_params_t *p, int per, int K)
+int mbe_est_params_map(mbe_est_state_t *s, const int32_t *buf, const mbe_est_t *e, mbe_params_t *p, const uint8_t *band,
+		       int K, const uint8_t *cb, int ncb)
 {
 	uint32_t c1 = p->w0 >> 7;
 	int16_t du[MBE_MAXL];			// each harmonic's unvoiced level less its voiced one
+	uint32_t se[MBE_EST_BANDS_MAX], sr[MBE_EST_BANDS_MAX];
 	uint16_t voiced = 0;
-	int L = p->L, l = 1;
+	int L = p->L, pick = -1;
 	int32_t ex = (int32_t)e->exp * 2048;
 
+	memset(se, 0, sizeof se);
+	memset(sr, 0, sizeof sr);
+	for (int i = 1; i <= L; i++) {
+		harm_t h;
+		int32_t lge, av, au;
+		int k = band[i - 1];
+
+		harmonic(buf, c1, i, &h);
+		se[k] += h.E >> 5;
+		sr[k] += (h.E - h.fit) >> 5;
+		if (!h.E || !h.ww) {
+			p->a[i - 1] = MBE_A_SILENT;
+			du[i - 1] = 0;
+			continue;
+		}
+		lge = mbe_log2_q11(h.E);
+		av = ((lge - (mbe_log2_q11(h.ww) - 15 * 2048)) >> 1) + C_VOICED - ex;
+		au = (lge >> 1) + C_UNVOICED - ex;
+		p->a[i - 1] = (int16_t)fxp_clamp(av, -32767, 32767);
+		du[i - 1] = (int16_t)fxp_clamp(au - av, -32767, 32767);
+	}
 	for (int k = 0; k < K; k++) {
-		int last = k == K - 1 ? L : (k + 1) * per, v;
-		uint32_t se = 0, sr = 0;
-
-		for (int i = l; i <= last; i++) {
-			harm_t h;
-			int32_t lge, av, au;
-
-			harmonic(buf, c1, i, &h);
-			se += h.E >> 5;
-			sr += (h.E - h.fit) >> 5;
-			if (!h.E || !h.ww) {
-				p->a[i - 1] = MBE_A_SILENT;
-				du[i - 1] = 0;
-				continue;
-			}
-			lge = mbe_log2_q11(h.E);
-			av = ((lge - (mbe_log2_q11(h.ww) - 15 * 2048)) >> 1) + C_VOICED - ex;
-			au = (lge >> 1) + C_UNVOICED - ex;
-			p->a[i - 1] = (int16_t)fxp_clamp(av, -32767, 32767);
-			du[i - 1] = (int16_t)fxp_clamp(au - av, -32767, 32767);
+		while (se[k] >= 65536u) {
+			se[k] >>= 1;
+			sr[k] >>= 1;
 		}
-		while (se >= 65536u) {
-			se >>= 1;
-			sr >>= 1;
-		}
-		v = se && e->period4 && (int32_t)((sr << 15) / se) < band_threshold(c1, k, K, (s->vprev >> k) & 1);
-		if (v)
+		if (se[k] && e->period4 &&
+		    (int32_t)((sr[k] << 15) / se[k]) < band_threshold(c1, k, K, (s->vprev >> k) & 1))
 			voiced |= (uint16_t)(1u << k);
-		for (int i = l; i <= last; i++) {
-			p->v[i - 1] = (uint8_t)v;
-			if (!v && p->a[i - 1] != MBE_A_SILENT)
-				p->a[i - 1] = (int16_t)fxp_clamp(p->a[i - 1] + du[i - 1], -32767, 32767);
+	}
+	if (cb != NULL) {
+		// the codebook entry that disagrees with the bands' decisions over the least energy
+		uint32_t best = UINT32_MAX;
+
+		for (int c = 0; c < ncb; c++) {
+			uint32_t miss = 0;
+
+			for (int k = 0; k < K; k++)
+				if ((((unsigned)cb[c] ^ voiced) >> k) & 1u)
+					miss += se[k];
+			if (miss < best) {
+				best = miss;
+				pick = c;
+			}
 		}
-		l = last + 1;
+		voiced = cb[pick];
+	}
+	for (int i = 1; i <= L; i++) {
+		uint8_t v = (uint8_t)((voiced >> band[i - 1]) & 1u);
+
+		p->v[i - 1] = v;
+		if (!v && p->a[i - 1] != MBE_A_SILENT)
+			p->a[i - 1] = (int16_t)fxp_clamp(p->a[i - 1] + du[i - 1], -32767, 32767);
 	}
 	s->vprev = voiced;
 	s->period4 = e->period4;
+	return cb != NULL ? pick : voiced;
+}
+
+void mbe_est_params(mbe_est_state_t *s, const int32_t *buf, const mbe_est_t *e, mbe_params_t *p, int per, int K)
+{
+	uint8_t band[MBE_MAXL];
+
+	for (int i = 0; i < p->L; i++)
+		band[i] = (uint8_t)(i / per < K - 1 ? i / per : K - 1);
+	(void)mbe_est_params_map(s, buf, e, p, band, K, NULL, 0);
 }

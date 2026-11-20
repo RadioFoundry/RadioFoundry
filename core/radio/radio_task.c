@@ -63,6 +63,9 @@ static radio_p25_settings_t pending_p25;	// radio_req_p25_settings -> the radio 
 #if CONFIG_NXDN
 static radio_nxdn_settings_t pending_nxdn;	// radio_req_nxdn_settings -> the radio task, under view_lock
 #endif
+#if CONFIG_DSTAR
+static radio_dstar_settings_t pending_dstar;	// radio_req_dstar_settings -> the radio task, under view_lock
+#endif
 #if CONFIG_AIR_RAW
 static volatile bool bench_held, bench_keyed;	// published sm.air_bench, sm.bench_keyed
 static volatile uint8_t bench_ack;		// published sm.bench_seq
@@ -205,6 +208,15 @@ static void radio_task(void *arg)
 					n = pending_nxdn;
 					xSemaphoreGive(view_lock);
 					radio_nxdn_set_settings(&n);
+					radio_sm_request(&sm, &req, hal_millis());
+#endif
+#if CONFIG_DSTAR
+				} else if (req.type == RREQ_DSTAR_SET) {
+					radio_dstar_settings_t d;
+					xSemaphoreTake(view_lock, portMAX_DELAY);
+					d = pending_dstar;
+					xSemaphoreGive(view_lock);
+					radio_dstar_set_settings(&d);
 					radio_sm_request(&sm, &req, hal_millis());
 #endif
 				} else if (req.type == RREQ_SETTINGS) {
@@ -443,7 +455,7 @@ static void post_pair(uint8_t type, int32_t arg, uint32_t arg2, TickType_t wait)
 	send(&req, wait);
 }
 
-#if CONFIG_DMR || CONFIG_P25 || CONFIG_NXDN
+#if CONFIG_DMR || CONFIG_P25 || CONFIG_NXDN || CONFIG_DSTAR
 void radio_req_mode(uint8_t mode) { post(RREQ_MODE, mode, 0); }
 #endif
 #if CONFIG_P25
@@ -468,6 +480,18 @@ void radio_req_nxdn_settings(const radio_nxdn_settings_t *s)
 	pending_nxdn = *s;
 	xSemaphoreGive(view_lock);
 	post(RREQ_NXDN_SET, 0, pdMS_TO_TICKS(50));
+}
+#endif
+#if CONFIG_DSTAR
+void radio_req_dstar_settings(const radio_dstar_settings_t *s)
+{
+	if (view_lock == NULL) {
+		return;
+	}
+	xSemaphoreTake(view_lock, portMAX_DELAY);
+	pending_dstar = *s;
+	xSemaphoreGive(view_lock);
+	post(RREQ_DSTAR_SET, 0, pdMS_TO_TICKS(50));
 }
 #endif
 

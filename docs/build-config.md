@@ -71,7 +71,7 @@ make BOARD=<id> VARIANT=commercial       # build/<id>-commercial/
 |---|---|
 | (none: full) | nothing |
 | `amateur` | basic privacy, NXDN Scrambler, Motorola TMS, ARS, LRRP, control station mode, SNMP |
-| `commercial` | the MMDVM hotspot (and split duplex), APRS (and KISS, APRS-IS) |
+| `commercial` | the MMDVM hotspot (and split duplex), APRS (and KISS, APRS-IS), D-STAR |
 
 Each variant file starts with `## title:` and `## summary:` lines, and the comment above each switch says why it is
 left out; the site shows both. The lists are a draft for the project lead to settle.

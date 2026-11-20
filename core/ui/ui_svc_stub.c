@@ -30,6 +30,11 @@ WEAK bool ui_svc_dmr_timeslot(uint8_t ts) { (void)ts; return false; }
 WEAK bool ui_svc_dmr_color_code(uint8_t cc) { (void)cc; return false; }
 WEAK bool ui_svc_vfo_sfr(uint8_t a) { (void)a; return false; }
 WEAK bool ui_svc_mode(uint8_t mode) { (void)mode; return false; }
+#if CONFIG_DSTAR
+static radio_dstar_settings_t stub_dstar;	// the simulator's: kept as the radio core keeps them
+WEAK void ui_svc_dstar_get(radio_dstar_settings_t *out) { *out = stub_dstar; }
+WEAK bool ui_svc_dstar_set(const radio_dstar_settings_t *s) { stub_dstar = *s; return true; }
+#endif
 WEAK uint8_t ui_svc_vfo_copy(const radio_view_t *v) { (void)v; return VFO_COPY_NO_VFO; }
 WEAK bool ui_svc_hear_all(bool on) { (void)on; return false; }
 WEAK bool ui_svc_privacy(bool on) { (void)on; return false; }

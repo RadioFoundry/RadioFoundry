@@ -38,6 +38,9 @@ static const char features[] =
 #if CONFIG_NXDN_SCRAMBLER
 	"NXDN_SCRAMBLER,"
 #endif
+#if CONFIG_DSTAR
+	"DSTAR,"
+#endif
 #if CONFIG_FM
 	"FM,"
 #endif

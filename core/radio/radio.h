@@ -11,6 +11,7 @@
 #include "config.h"
 #include "radio/radio_p25.h"
 #include "radio/radio_nxdn.h"
+#include "radio/radio_dstar.h"
 
 typedef enum {
 	RS_IDLE,	// receiving, squelch closed
@@ -483,6 +484,9 @@ typedef struct {
 #if CONFIG_NXDN
 	radio_nxdn_view_t nxdn;	// NXDN conventional (docs/spec/nxdn.md 6): the same
 #endif
+#if CONFIG_DSTAR
+	radio_dstar_view_t dstar;	// D-STAR DV (docs/spec/dstar.md 6): the same, with the callsigns heard
+#endif
 #if CONFIG_DMR_TRUNK
 	radio_t3_brief_t t3;
 #endif
@@ -496,7 +500,7 @@ typedef struct {
 #define RADIO_TEMP_RX_TONE	0x10u
 #define RADIO_TEMP_TS		0x20u	// DMR timeslot (radio_req_dmr_timeslot)
 #define RADIO_TEMP_CC		0x40u	// DMR color code (radio_req_dmr_color_code)
-#define RADIO_TEMP_MODE		0x80u	// FM <-> DMR <-> P25 <-> NXDN (radio_req_mode)
+#define RADIO_TEMP_MODE		0x80u	// FM <-> DMR <-> P25 <-> NXDN <-> D-STAR (radio_req_mode)
 
 // Which tone radio_req_tone sets
 #define RADIO_TONE_TX		0x01u
@@ -564,10 +568,10 @@ void radio_req_reload(void);			// the settings' preferences changed (squelch, ma
 // Refused on DMR channels, while transmitting, and for tones tones_valid() rejects
 void radio_req_bandwidth(radio_bw_t bw);
 void radio_req_tone(uint8_t which, subtone_t tone);	// which: RADIO_TONE_TX, RADIO_TONE_RX or RADIO_TONE_BOTH
-#if CONFIG_DMR || CONFIG_P25 || CONFIG_NXDN
-// The current channel's or the VFO's mode (radio_mode_t): FM, DMR, P25 (CONFIG_P25) or NXDN (CONFIG_NXDN). On a
-// channel a temporary change; in the VFO its own, kept with it (a saved P25 or NXDN VFO comes back in its default
-// mode where the build or the board doesn't run that mode). Refused while transmitting, in hotspot mode, in a listen
+#if CONFIG_DMR || CONFIG_P25 || CONFIG_NXDN || CONFIG_DSTAR
+// The current channel's or the VFO's mode (radio_mode_t): FM, DMR, P25 (CONFIG_P25), NXDN (CONFIG_NXDN) or D-STAR
+// (CONFIG_DSTAR). On a channel a temporary change; in the VFO its own, kept with it (a saved P25, NXDN or D-STAR VFO
+// comes back in its default mode where the build or the board doesn't run that mode). Refused while transmitting, in hotspot mode, in a listen
 // band, and for a mode the build, the board or the VFO doesn't have
 void radio_req_mode(uint8_t mode);
 #endif
@@ -578,6 +582,10 @@ void radio_req_p25_settings(const radio_p25_settings_t *s);
 #if CONFIG_NXDN
 // The NXDN settings (RAM only, radio_nxdn.h): the same
 void radio_req_nxdn_settings(const radio_nxdn_settings_t *s);
+#endif
+#if CONFIG_DSTAR
+// The D-STAR settings (RAM only, radio_dstar.h): the same
+void radio_req_dstar_settings(const radio_dstar_settings_t *s);
 #endif
 #if CONFIG_DMR
 void radio_req_reply_cancel(void);		// BACK on Home: end the DMR reply window

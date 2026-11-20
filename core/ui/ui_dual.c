@@ -218,7 +218,7 @@ static void pane_fill(uint8_t i)
 	p->mode = shown_mode(&ch);
 	p->am = p->mode == RADIO_MODE_FM && radio_am_channel(&ch);	// as the receiver hears it (Home's mode word)
 	p->rx_hz = ch.rx_hz;
-	if (p->mode == RADIO_MODE_P25 || p->mode == RADIO_MODE_NXDN)
+	if (p->mode == RADIO_MODE_P25 || p->mode == RADIO_MODE_NXDN || p->mode == RADIO_MODE_DSTAR)
 		return;	// no tone or slot: the engine's own squelch (the channel's settings say which)
 	sbuf_t b;
 	sb_init(&b, p->detail, sizeof p->detail);
@@ -829,6 +829,8 @@ static const char *signal_word(const ui_dual_pane_t *p, bool dmr)
 		return TR(DUAL_VALUE_P25_CALL, "P25 call");
 	if (p->mode == RADIO_MODE_NXDN)
 		return TR(DUAL_VALUE_NXDN_CALL, "NXDN call");
+	if (p->mode == RADIO_MODE_DSTAR)
+		return TR(DUAL_VALUE_DSTAR_CALL, "D-STAR call");
 	return p->am ? TR(DUAL_VALUE_AM_SIGNAL, "AM signal") : TR(DUAL_VALUE_FM_SIGNAL, "FM signal");
 }
 

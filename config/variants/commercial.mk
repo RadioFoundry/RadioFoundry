@@ -10,3 +10,5 @@
 CONFIG_HOTSPOT ?= n
 # APRS is an amateur radio service; KISS over TCP and the APRS-IS client go with it
 CONFIG_APRS ?= n
+# D-STAR is an amateur radio mode (the JARL standard); no business or public service system uses it
+CONFIG_DSTAR ?= n

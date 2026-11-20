@@ -329,8 +329,12 @@
 #ifndef CONFIG_NXDN_SCRAMBLER
 #define CONFIG_NXDN_SCRAMBLER		0
 #endif
+// D-STAR DV (core/dstar, docs/spec/dstar.md), with the half-rate vocoder on the MBE core
+#ifndef CONFIG_DSTAR
+#define CONFIG_DSTAR			0
+#endif
 #ifndef CONFIG_AIR
-#define CONFIG_AIR			(CONFIG_P25 || CONFIG_NXDN)
+#define CONFIG_AIR			(CONFIG_P25 || CONFIG_NXDN || CONFIG_DSTAR)
 #endif
 // P25 trunked: the codec of its systems and channels (docs/spec/p25-codeplug.md 3), the control channel decoded, voice
 // channel grants followed and, where the system allows it, registration and transmit on a grant (core/p25/p25_follow.c)
@@ -344,7 +348,7 @@
 #define CONFIG_IMBE			CONFIG_P25
 #endif
 #ifndef CONFIG_MBE
-#define CONFIG_MBE			CONFIG_IMBE
+#define CONFIG_MBE			(CONFIG_IMBE || CONFIG_DSTAR)
 #endif
 // Derived: zone sharing carries channels of a kind and their systems (docs/spec/zone-share.md 4.2) in a build with a
 // mode's codec. Without it a share leaves channels of a kind out and refuses a record that has them
@@ -474,7 +478,7 @@
 #error "CONFIG_NET_PPP needs CONFIG_HOSTLINK and CONFIG_DMR_IP_GATEWAY"
 #endif
 #if CONFIG_AIR_RAW && !CONFIG_AIR
-#error "CONFIG_AIR_RAW needs CONFIG_P25 or CONFIG_NXDN (an air-framed mode)"
+#error "CONFIG_AIR_RAW needs CONFIG_P25, CONFIG_NXDN or CONFIG_DSTAR (an air-framed mode)"
 #endif
 #if CONFIG_AIR_RAW && !CONFIG_DEBUGLINK
 #error "CONFIG_AIR_RAW needs CONFIG_DEBUGLINK"

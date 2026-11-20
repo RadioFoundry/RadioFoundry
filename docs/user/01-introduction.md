@@ -2,7 +2,7 @@
 
 # Introduction
 
-RadioFoundry is free, MIT-licensed multi-mode firmware for inexpensive digital radios: DMR, P25, NXDN and FM. It
+RadioFoundry is free, MIT-licensed multi-mode firmware for inexpensive digital radios: DMR, P25, NXDN, D-STAR and FM. It
 replaces the radio's stock firmware. One radio-independent core provides the digital voice stacks, the user interface, the codeplug and the host tools. Each radio adds a
 thin board layer underneath.
 

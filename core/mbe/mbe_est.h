@@ -43,5 +43,12 @@ int mbe_est_mismatch(const int32_t *buf, uint32_t w0);
 // The parameters at p->w0 for p->L harmonics: p->v (bands of `per` harmonics, the K-th taking the rest) and p->a, the
 // log2 amplitudes in PCM units as mbe_synth_frame takes them. Remembers the voicing for the next frame's decisions
 void mbe_est_params(mbe_est_state_t *s, const int32_t *buf, const mbe_est_t *e, mbe_params_t *p, int per, int K);
+// The same with the bands given harmonic by harmonic: band[l - 1] (0..K-1) is harmonic l's, for a codec whose bands
+// are fixed in frequency. With a codebook (cb: ncb masks of K bits, bit k = band k voiced) the voicing is the entry
+// that disagrees with the bands' own decisions over the least energy, and its index is returned; without one
+// (cb NULL) the bands' decisions, as a mask
+#define MBE_EST_BANDS_MAX	16
+int mbe_est_params_map(mbe_est_state_t *s, const int32_t *buf, const mbe_est_t *e, mbe_params_t *p, const uint8_t *band,
+		       int K, const uint8_t *cb, int ncb);
 
 #endif

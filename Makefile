@@ -120,6 +120,9 @@ endif
 ifeq ($(CONFIG_NXDN),y)
 CORE_DIRS += core/nxdn
 endif
+ifeq ($(CONFIG_DSTAR),y)
+CORE_DIRS += core/dstar
+endif
 ifeq ($(CONFIG_MBE),y)
 CORE_DIRS += core/mbe
 endif
@@ -350,7 +353,7 @@ $(shell echo '$(RFOUNDRY_PRESET) $(RFOUNDRY_OFF)' | cmp -s - $(BUILD)/build_info
 ABOUT_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -l rfoundry_about.h $(APP_SRC) 2>/dev/null))
 # A feature built from third-party code adds its own list
 ABOUT_MORE :=
-ifeq ($(CONFIG_IMBE),y)
+ifeq ($(CONFIG_MBE),y)
 ABOUT_MORE += core/mbe/THIRD_PARTY
 endif
 $(shell python3 tools/gen_about.py AUTHORS platform/$(PLATFORM)/THIRD_PARTY $(BUILD)/gen/rfoundry_about.h $(ABOUT_MORE) | grep -q changed \

@@ -33,8 +33,12 @@
 #include "radio/sigtone.h"
 #include "radio/vibe.h"	// vibe_t (vibe_play only with CONFIG_VIBRATE)
 #include "radio/tx_limit.h"	// the test TX limit (radio-features.md 3.1)
-#if CONFIG_P25 || CONFIG_NXDN
+#if CONFIG_AIR
 #include "air/air_session.h"	// air_tx_state_t
+#endif
+#if CONFIG_DSTAR
+#include "radio/radio_dstar.h"	// D-STAR DV (docs/spec/dstar.md 6)
+#include "dstar/dstarVoice.h"
 #endif
 #if CONFIG_P25
 #include "radio/radio_p25.h"	// P25 conventional (docs/spec/p25.md 7)
@@ -120,10 +124,21 @@ static inline bool nxdn_ok(void)
 #endif
 }
 
-// An air-framed mode this build runs (P25, NXDN): the radio core runs it with the board in its digital mode
+// D-STAR on this board: built, and the air interface receives or transmits it
+static inline bool dstar_ok(void)
+{
+#if CONFIG_DSTAR
+	return radio_dstar_fits();
+#else
+	return false;
+#endif
+}
+
+// An air-framed mode this build runs (P25, NXDN, D-STAR): the radio core runs it with the board in its digital mode
 static inline bool air_mode(uint8_t mode)
 {
-	return (CONFIG_P25 && mode == RADIO_MODE_P25) || (CONFIG_NXDN && mode == RADIO_MODE_NXDN);
+	return (CONFIG_P25 && mode == RADIO_MODE_P25) || (CONFIG_NXDN && mode == RADIO_MODE_NXDN) ||
+	       (CONFIG_DSTAR && mode == RADIO_MODE_DSTAR);
 }
 // What a scan stop hears of an air mode's call (air_heard)
 enum { AIR_HEARD_NONE, AIR_HEARD_PENDING, AIR_HEARD_PLAYED, AIR_HEARD_OTHER };
@@ -221,6 +236,9 @@ static inline bool voice_streaming(void)
 #endif
 #if CONFIG_P25 && CONFIG_IMBE
 	on = on || p25VoiceStreaming();
+#endif
+#if CONFIG_DSTAR
+	on = on || dstarVoiceStreaming();
 #endif
 	return on;
 }
@@ -435,6 +453,11 @@ bool radio_view_wakes(const radio_view_t *v)
 			return (v->nxdn.flags & RADIO_NXDN_PLAYED) != 0;
 		}
 #endif
+#if CONFIG_DSTAR
+		if (v->ch.mode == RADIO_MODE_DSTAR) {
+			return (v->dstar.flags & RADIO_DSTAR_RX) != 0;	// every call plays
+		}
+#endif
 		return true;		// FM: the squelch opened, something plays
 	default:
 		return false;
@@ -628,7 +651,8 @@ static bool parked(const channel_t *ch)
 	if (!codeplug_kind_built(ch->kind)) {
 		return true;
 	}
-	return ch->kind != CODEPLUG_KIND_DMR_TRUNK && ch->mode != RADIO_MODE_P25 && ch->mode != RADIO_MODE_NXDN;
+	return ch->kind != CODEPLUG_KIND_DMR_TRUNK && ch->mode != RADIO_MODE_P25 && ch->mode != RADIO_MODE_NXDN &&
+	       ch->mode != RADIO_MODE_DSTAR;
 }
 
 // Channel number from the codeplug as the radio runs it: the mode module of its kind takes it
@@ -664,6 +688,12 @@ static void outputs(radio_sm_t *sm)
 #if CONFIG_NXDN
 	if (sm->view.ch.mode == RADIO_MODE_NXDN && !tx && sm->view.state == RS_RX &&
 	    (sm->view.nxdn.flags & RADIO_NXDN_PLAYED) != 0) {
+		green = true;
+	}
+#endif
+#if CONFIG_DSTAR
+	if (sm->view.ch.mode == RADIO_MODE_DSTAR && !tx && sm->view.state == RS_RX &&
+	    (sm->view.dstar.flags & RADIO_DSTAR_RX) != 0) {
 		green = true;
 	}
 #endif
@@ -1270,7 +1300,7 @@ static uint8_t tx_check(const radio_sm_t *sm)
 		return TXDENY_RX_ONLY;
 	}
 	if (ch->mode == RADIO_MODE_DMR ? !CONFIG_DMR : ch->mode == RADIO_MODE_P25 ? !CONFIG_P25 :
-	    ch->mode == RADIO_MODE_NXDN ? !CONFIG_NXDN : !CONFIG_FM) {
+	    ch->mode == RADIO_MODE_NXDN ? !CONFIG_NXDN : ch->mode == RADIO_MODE_DSTAR ? !CONFIG_DSTAR : !CONFIG_FM) {
 		return TXDENY_MODE;
 	}
 	if (!trunk && !board_in_band(ch->tx_hz, true)) {
@@ -6181,7 +6211,7 @@ static uint32_t p25_own_id(const radio_sm_t *sm)
 
 #endif
 
-#if CONFIG_AIR
+#if CONFIG_P25 || CONFIG_NXDN
 // The stored channel an air mode runs on, 0 in the VFO: its tag gives the parameters (radio_p25_params, radio_nxdn.c)
 static uint16_t air_number(const radio_sm_t *sm)
 {
@@ -6193,6 +6223,35 @@ static uint16_t air_number(const radio_sm_t *sm)
 // --- Air-framed modes (P25, NXDN): their modules (radio_p25.c, radio_nxdn.c) run the engine and the voice; here, when
 // it runs and the transmitter, the same for each (radio_air.h). One runs at a time ---
 
+#if CONFIG_DSTAR
+// D-STAR is the mode whose engine runs, or the channel's when none runs
+static bool dstar_now(const radio_sm_t *sm)
+{
+#if CONFIG_P25
+	if (radio_p25_running()) {
+		return false;
+	}
+#endif
+#if CONFIG_NXDN
+	if (radio_nxdn_running()) {
+		return false;
+	}
+#endif
+	return radio_dstar_running() || sm->view.ch.mode == RADIO_MODE_DSTAR;
+}
+
+// What we send as MY when the settings leave it empty: the callsign in the radio name
+static void dstar_callsign(const radio_sm_t *sm, char out[RADIO_DSTAR_CALL + 1])
+{
+	out[0] = '\0';
+#if CONFIG_DMR
+	(void)radio_cwid_callsign(sm->radio_name, out, RADIO_DSTAR_CALL + 1);
+#else
+	(void)sm;
+#endif
+}
+#endif
+
 #if CONFIG_NXDN
 // NXDN is the mode whose engine runs, or the channel's when none runs
 static bool nxdn_now(const radio_sm_t *sm)
@@ -6202,20 +6261,33 @@ static bool nxdn_now(const radio_sm_t *sm)
 		return false;
 	}
 #endif
+#if CONFIG_DSTAR
+	if (radio_dstar_running()) {
+		return false;
+	}
+#endif
 	return radio_nxdn_running() || sm->view.ch.mode == RADIO_MODE_NXDN;
 }
 #endif
 
 static const radio_air_ops_t *air_ops(const radio_sm_t *sm)
 {
+#if CONFIG_DSTAR
+	if (dstar_now(sm)) {
+		return &radio_dstar_air;
+	}
+#endif
 #if CONFIG_NXDN && CONFIG_P25
 	return nxdn_now(sm) ? &radio_nxdn_air : &radio_p25_air;
 #elif CONFIG_NXDN
 	(void)sm;
 	return &radio_nxdn_air;
-#else
+#elif CONFIG_P25
 	(void)sm;
 	return &radio_p25_air;
+#else
+	(void)sm;
+	return &radio_dstar_air;
 #endif
 }
 
@@ -6228,12 +6300,20 @@ static bool air_running(void)
 #if CONFIG_NXDN
 	on = on || radio_nxdn_running();
 #endif
+#if CONFIG_DSTAR
+	on = on || radio_dstar_running();
+#endif
 	return on;
 }
 
 // The engine's view into the radio view. True when it changed
 static bool air_poll(radio_sm_t *sm)
 {
+#if CONFIG_DSTAR
+	if (dstar_now(sm)) {
+		return radio_dstar_poll(&sm->view.dstar);
+	}
+#endif
 #if CONFIG_NXDN
 	if (nxdn_now(sm)) {
 		return radio_nxdn_poll(&sm->view.nxdn);
@@ -6249,6 +6329,11 @@ static bool air_poll(radio_sm_t *sm)
 // A call on the channel (our NAC or RAN): it shows as a reception, whether or not it plays
 static bool air_rx(const radio_sm_t *sm)
 {
+#if CONFIG_DSTAR
+	if (dstar_now(sm)) {
+		return (sm->view.dstar.flags & RADIO_DSTAR_RX) != 0;
+	}
+#endif
 #if CONFIG_NXDN
 	if (nxdn_now(sm)) {
 		return (sm->view.nxdn.flags & RADIO_NXDN_RX) != 0;
@@ -6267,6 +6352,11 @@ static bool air_rx(const radio_sm_t *sm)
 static uint8_t air_heard(const radio_sm_t *sm)
 {
 	bool rx = false, played = false, pending = false;
+#if CONFIG_DSTAR
+	if (dstar_now(sm)) {
+		rx = played = (sm->view.dstar.flags & RADIO_DSTAR_RX) != 0;	// every call plays
+	} else
+#endif
 #if CONFIG_NXDN
 	if (nxdn_now(sm)) {
 		const radio_nxdn_view_t *v = &sm->view.nxdn;
@@ -6291,6 +6381,16 @@ static uint8_t air_heard(const radio_sm_t *sm)
 // On an air mode's channel, the board in its digital mode and tuned: the engine starts (dmr_end stopped any before)
 static void air_begin(radio_sm_t *sm)
 {
+#if CONFIG_DSTAR
+	if (sm->view.ch.mode == RADIO_MODE_DSTAR) {
+		char call[RADIO_DSTAR_CALL + 1];
+
+		dstar_callsign(sm, call);
+		radio_dstar_begin(&sm->view.ch, call);
+		radio_dstar_poll(&sm->view.dstar);
+		return;
+	}
+#endif
 #if CONFIG_NXDN
 	if (sm->view.ch.mode == RADIO_MODE_NXDN) {
 		radio_nxdn_begin(&sm->view.ch, air_number(sm));
@@ -6314,6 +6414,9 @@ static void air_stop(radio_sm_t *sm)
 #if CONFIG_NXDN
 	radio_nxdn_end();
 #endif
+#if CONFIG_DSTAR
+	radio_dstar_end();
+#endif
 	if (sm->air_keyed) {
 		sm->air_keyed = false;
 		board.radio->tx_off();
@@ -6330,6 +6433,10 @@ static void air_stop(radio_sm_t *sm)
 #if CONFIG_NXDN
 	sm->view.nxdn.flags &= (uint8_t)~(RADIO_NXDN_ON | RADIO_NXDN_RX | RADIO_NXDN_PLAYED);
 	sm->view.nxdn.tx = AIR_TX_IDLE;
+#endif
+#if CONFIG_DSTAR
+	sm->view.dstar.flags = 0;
+	sm->view.dstar.tx = AIR_TX_IDLE;
 #endif
 }
 
@@ -6380,6 +6487,15 @@ static void air_key(radio_sm_t *sm, uint32_t now_ms, uint32_t hz)
 // The settings sent while it transmitted (RREQ_P25_SET, RREQ_NXDN_SET): the engine takes them now
 static void air_apply(radio_sm_t *sm)
 {
+#if CONFIG_DSTAR
+	if (dstar_now(sm)) {
+		char call[RADIO_DSTAR_CALL + 1];
+
+		dstar_callsign(sm, call);
+		radio_dstar_apply(call);
+		return;
+	}
+#endif
 #if CONFIG_NXDN
 	if (nxdn_now(sm)) {
 		radio_nxdn_apply(&sm->view.ch, air_number(sm));
@@ -6640,6 +6756,19 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 	if (sm->view.ch.mode == RADIO_MODE_NXDN && !sm->codec) {
 		deny(sm, TXDENY_NO_CODEC);	// its voice is the DMR vocoder's
 		return;
+	}
+#endif
+#if CONFIG_DSTAR
+	if (sm->view.ch.mode == RADIO_MODE_DSTAR) {
+		radio_dstar_settings_t ds;
+		char call[RADIO_DSTAR_CALL + 1];
+
+		radio_dstar_settings(&ds);
+		dstar_callsign(sm, call);
+		if (ds.my[0] == '\0' && call[0] == '\0') {
+			deny(sm, TXDENY_NO_ID);	// nothing goes on air without our callsign (docs/spec/dstar.md 6.2)
+			return;
+		}
 	}
 #endif
 #if CONFIG_AIR
@@ -7295,7 +7424,8 @@ static void restore_vfo(radio_sm_t *sm, const settings_t *st, uint8_t idx)
 	sm->vfo_ch.mode = v.mode == RADIO_MODE_DMR && CONFIG_VFO_DMR ? RADIO_MODE_DMR :
 		v.mode == RADIO_MODE_FM && CONFIG_VFO_FM ? RADIO_MODE_FM :
 		v.mode == RADIO_MODE_P25 && p25_ok() ? RADIO_MODE_P25 :
-		v.mode == RADIO_MODE_NXDN && nxdn_ok() ? RADIO_MODE_NXDN : VFO_MODE_DEFAULT;
+		v.mode == RADIO_MODE_NXDN && nxdn_ok() ? RADIO_MODE_NXDN :
+		v.mode == RADIO_MODE_DSTAR && dstar_ok() ? RADIO_MODE_DSTAR : VFO_MODE_DEFAULT;
 	if (sm->vfo_ch.mode != v.mode) {
 		sm->view.vfo_drop = (uint8_t)(v.mode + 1u);	// the debug link's vfo_drop: why the VFO came back changed
 	}
@@ -7938,6 +8068,12 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_NXDN
 	radio_nxdn_init();
 #endif
+#if CONFIG_DSTAR
+	radio_dstar_init(pcm_audio());
+#if CONFIG_BEEP
+	dstarVoiceSetMixer(beep_mix);
+#endif
+#endif
 #if CONFIG_P25
 	radio_p25_init(pcm_audio());
 #if CONFIG_IMBE && CONFIG_BEEP
@@ -8439,13 +8575,14 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		// Not on a channel of a kind: its mode is the kind's (channel-modes.md 6)
 		if (busy || sm->view.ch.kind != CODEPLUG_KIND_NONE ||
 				(req->arg != RADIO_MODE_FM && req->arg != RADIO_MODE_DMR && req->arg != RADIO_MODE_P25 &&
-				 req->arg != RADIO_MODE_NXDN) ||
+				 req->arg != RADIO_MODE_NXDN && req->arg != RADIO_MODE_DSTAR) ||
 				req->arg == sm->view.ch.mode ||
 				(req->arg == RADIO_MODE_FM && !(sm->view.vfo ? CONFIG_VFO_FM : CONFIG_FM)) ||
 				(req->arg == RADIO_MODE_DMR && (radio_listen_band(sm->view.ch.rx_hz) ||
 								(sm->view.vfo && !CONFIG_VFO_DMR))) ||
 				(req->arg == RADIO_MODE_P25 && (!p25_ok() || radio_listen_band(sm->view.ch.rx_hz))) ||
-				(req->arg == RADIO_MODE_NXDN && (!nxdn_ok() || radio_listen_band(sm->view.ch.rx_hz)))) {
+				(req->arg == RADIO_MODE_NXDN && (!nxdn_ok() || radio_listen_band(sm->view.ch.rx_hz))) ||
+				(req->arg == RADIO_MODE_DSTAR && (!dstar_ok() || radio_listen_band(sm->view.ch.rx_hz)))) {
 			break;
 		}
 		sm->view.ch.mode = (uint8_t)req->arg;
@@ -8642,6 +8779,15 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 			air_begin(sm);		// not running at the old rate: perhaps at the new one
 		}
 		radio_nxdn_poll(&sm->view.nxdn);	// the settings in the view now, running or not
+		changed(sm);
+		break;
+#endif
+#if CONFIG_DSTAR
+	case RREQ_DSTAR_SET:
+		// The same for D-STAR: what we send changes (not while transmitting: air_tick applies it after)
+		if (radio_dstar_running()) {
+			air_apply(sm);
+		}
 		changed(sm);
 		break;
 #endif

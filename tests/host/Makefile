@@ -132,7 +132,7 @@ nxdnEngineTest: nxdnEngineTest.c $(CORE)/nxdn/nxdn_engine.c $(NXDN) $(CORE)/nxdn
 	$(CC) $(CFLAGS) -DCONFIG_NXDN_SCRAMBLER=1 -I$(ROOT)/hal -Wshadow -o $@ nxdnEngineTest.c $(CORE)/nxdn/nxdn_engine.c $(NXDN) $(CORE)/nxdn/nxdn_scramble.c $(CORE)/dmr/ambe/ambeFec.c $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(FEC) -lm
 
 # The MBE synthesis core and the full-rate voice decoder on it (core/mbe), against golden vectors
-MBE     := $(wildcard $(CORE)/mbe/*.c)
+MBE     := $(filter-out $(CORE)/mbe/ambe%,$(wildcard $(CORE)/mbe/*.c))
 TESTS   += mbeTest
 mbeTest: mbeTest.c $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ mbeTest.c $(MBE) -lm
@@ -141,6 +141,11 @@ mbeTest: mbeTest.c $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
 TESTS   += imbeEncTest
 imbeEncTest: imbeEncTest.c $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ imbeEncTest.c $(MBE) -lm
+# The half-rate vocoder of D-STAR voice on the same core (core/mbe/ambe*): its FEC, quantizer and encoder
+AMBE    := $(wildcard $(CORE)/mbe/ambe*.c) $(CORE)/fec/golay.c
+TESTS   += ambeTest
+ambeTest: ambeTest.c $(MBE) $(AMBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ ambeTest.c $(MBE) $(AMBE) -lm
 # The receive-only P25 trunking follower (CONFIG_P25_TRUNK): its signaling, and whole systems through the soft modem
 TESTS   += p25TrunkTest
 P25TRUNK := $(CORE)/p25/p25_tsbk.c $(CORE)/p25/p25_follow.c $(CORE)/p25/p25_engine.c $(CORE)/air/air_session.c \
@@ -232,6 +237,7 @@ run: $(TESTS)
 	./fxpTest
 	./mbeTest | tail -1
 	./imbeEncTest | tail -1
+	./ambeTest | tail -1
 	./airSoftmodemTest | tail -1
 	./p25EngineTest
 	./nxdnTest | tail -1
@@ -332,6 +338,23 @@ radioCoreTestNxdn: $(RCNXDN) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dm
                    $(CORE)/ui/ui_svc.h $(wildcard $(CORE)/nxdn/*.h) $(wildcard $(CORE)/air/*.h) $(wildcard $(CORE)/dmr/ambe/*.h)
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
 		-DCONFIG_NXDN=1 -DCONFIG_NXDN_SCRAMBLER=1 -DCONFIG_AIR_RAW=1 -o $@ $(RCNXDN) -lm
+
+# The same with D-STAR (CONFIG_DSTAR), and the vocoder lending its memory as on the HR_C7000 platform: the radio core's
+# D-STAR paths built and every other test run with them in
+TESTS   += radioCoreTestDstar
+DSTAR   := $(CORE)/dstar/dstar_frame.c $(CORE)/dstar/dstar_slow.c $(CORE)/dstar/dstar_call.c
+RCDSTAR := $(RCORE) $(CORE)/radio/radio_dstar.c $(CORE)/dstar/dstar_engine.c $(CORE)/dstar/dstarVoice.c $(DSTAR) \
+           $(MBE) $(wildcard $(CORE)/mbe/ambe*.c) $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(FEC) \
+           $(CORE)/debuglink/debuglink_view_dstar.c $(CORE)/hostlink/build_info.c
+radioCoreTestDstar: $(RCDSTAR) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
+                    $(CORE)/ui/ui_svc.h $(wildcard $(CORE)/dstar/*.h) $(wildcard $(CORE)/air/*.h) $(wildcard $(CORE)/mbe/*.h)
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
+		-DCONFIG_DSTAR=1 -DHAL_VOCODER_LEND_BYTES=0x1C00 -o $@ $(RCDSTAR) -lm
+
+# D-STAR frames, the header's FEC, slow data and calls through the framer (core/dstar)
+TESTS   += dstarTest
+dstarTest: dstarTest.c $(DSTAR) $(wildcard $(CORE)/dstar/*.h) $(CORE)/air/air_framer.c
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ dstarTest.c $(DSTAR) $(CORE)/air/air_framer.c -lm
 
 # P25 and NXDN together, no lending vocoder: one engine at a time, NXDN in the memory P25 keeps for itself
 RCP25NX := $(RCNXDN) $(CORE)/radio/radio_p25.c $(CORE)/p25/p25_engine.c $(P25) $(CORE)/p25/p25Voice.c $(MBE) \
@@ -464,13 +487,15 @@ boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ boardBandTest.c
 
 run: run-core
-run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestP25 radioCoreTestP25T radioCoreTestNxdn radioCoreTestP25Nxdn radioCoreTestAprs radioCoreTestAprsDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest switchFollowTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
+run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestP25 radioCoreTestP25T radioCoreTestNxdn radioCoreTestP25Nxdn radioCoreTestDstar radioCoreTestAprs radioCoreTestAprsDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest switchFollowTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
           rx2LinkTest keyassignTest powerSwitchTest powerKeyTest boardBandTest batteryTest
 	./aprsRadioTest
 	./radioCoreTest
 	./radioCoreTestNoVfoDmr
 	./radioCoreTestP25
 	./radioCoreTestNxdn
+	./radioCoreTestDstar
+	./dstarTest | tail -1
 	./radioCoreTestP25Nxdn
 	./radioCoreTestP25T
 	./radioCoreTestAprs
@@ -674,7 +699,7 @@ UIDEPS  := $(UIAPP) $(ABOUT_H) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fo
 TESTS   += uiFlowTest uiFlowTestNoColor uiSim
 
 uiFlowTest: uiFlowTest.c $(UIDEPS)
-	$(CC) $(UIFLAGS) -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -DCONFIG_NXDN=1 -o $@ uiFlowTest.c $(UIAPP) -lz
+	$(CC) $(UIFLAGS) -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -DCONFIG_NXDN=1 -DCONFIG_DSTAR=1 -o $@ uiFlowTest.c $(UIAPP) -lz
 
 # The same flows built as a radio with only a monochrome screen builds them (CONFIG_UI_COLOR=n): no color rows;
 # without a translation (CONFIG_LANG_ES=n): the Language screen dims Spanish; and with the backlight tests

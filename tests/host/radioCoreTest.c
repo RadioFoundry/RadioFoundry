@@ -257,7 +257,10 @@ static const hal_hwopt_t fake_hwopts[] = {
 	{ "Revision", 2, fake_hwopt_choices, fake_hwopt_get, fake_hwopt_set, true, fake_hwopt_state },
 };
 
-#if CONFIG_AIR
+// The fake air interface and the far end's engines are P25's and NXDN's (a D-STAR build runs the rest with them out)
+#define RCT_AIR	(CONFIG_P25 || CONFIG_NXDN)
+
+#if RCT_AIR
 // ---- fake air interface: board.air (0) and a far radio's provider (1), each the other's far end. A chunk every 30
 // ms (run), as a modem chip's records come ----
 #include "air/air_syms.h"
@@ -493,7 +496,7 @@ const board_t board = {
 	.dmr = &sim_modem,
 	.audio = &fake_audio,
 	.vocoder = &fake_vocoder,
-#if CONFIG_AIR
+#if RCT_AIR
 	.air = &fake_air0,
 #endif
 	.flash = &sim_flash,		// no map until test_factory_reset: RAM only, as on a radio without one
@@ -996,7 +999,7 @@ static void test_parked_kind(void)
 	chans[6].mode = RADIO_MODE_DMR;
 	chans[6].kind = CODEPLUG_KIND_P25;		// not run: no P25 in this build, or a board that can't carry it
 	chans[6].rx_only = false;			// its tag allows TX: the build still refuses
-#if CONFIG_AIR
+#if RCT_AIR
 	air_nofit = true;
 #endif
 	start();
@@ -1030,7 +1033,7 @@ static void test_parked_kind(void)
 	CHECK(sm.view.tx_deny == TXDENY_MODE && hw.tx_calls == 0);
 	req(RREQ_PTT, 0);
 	rx_signal(120, true);
-#if CONFIG_AIR
+#if RCT_AIR
 	air_nofit = false;
 #endif
 	setup_codeplug();
@@ -1583,7 +1586,7 @@ static void run(uint32_t ms)
 		}
 		if (now % 30 == 0) {
 			sim_slot();
-#if CONFIG_AIR
+#if RCT_AIR
 			air_step();
 #endif
 		}
@@ -2028,7 +2031,12 @@ static void test_vfo_dmr(void)
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 1, 0xFF, 0 }, 3) == DL_ST_OK);
 	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && sim.started && !radio_nxdn_running());
 #endif
-	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 4, 0xFF, 0 }, 3) == DL_ST_BAD_ARG);
+#if !CONFIG_DSTAR
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ RADIO_MODE_DSTAR, 0xFF, 0 }, 3) ==
+	      DL_ST_UNAVAILABLE);
+#endif
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ RADIO_MODE_DSTAR + 1, 0xFF, 0 }, 3) ==
+	      DL_ST_BAD_ARG);
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0xFF, 16, 0 }, 3) == DL_ST_BAD_ARG);
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0xFF, 0xFF, 3 }, 3) == DL_ST_BAD_ARG);
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0xFF, 0xFF }, 2) == DL_ST_BAD_ARG);
@@ -3610,6 +3618,13 @@ void radio_req_nxdn_settings(const radio_nxdn_settings_t *s)
 {
 	radio_nxdn_set_settings(s);
 	req(RREQ_NXDN_SET, 0);
+}
+#endif
+#if CONFIG_DSTAR
+void radio_req_dstar_settings(const radio_dstar_settings_t *s)
+{
+	radio_dstar_set_settings(s);
+	req(RREQ_DSTAR_SET, 0);
 }
 #endif
 // Not under test here: debuglink_view_radio.c, linked for the volume operation, refers to them
@@ -6251,7 +6266,7 @@ static void test_volume_step_of(void)
 	}
 }
 
-#if CONFIG_AIR && CONFIG_SCAN
+#if RCT_AIR && CONFIG_SCAN
 // Run the scan (or dual watch) for up to ms: the stops it makes on channel number (visits), and whether it holds there.
 // Returns at the hold
 static bool scan_holds_on(uint16_t number, uint32_t ms, uint16_t *visits)
@@ -8688,7 +8703,7 @@ static void test_nxdn(void)
 }
 #endif
 
-#if CONFIG_AIR
+#if RCT_AIR
 static void air_step(void)
 {
 	air_step1(0);

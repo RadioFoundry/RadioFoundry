@@ -2,7 +2,8 @@
 
 # Channels, Zones and the VFO
 
-A **channel** is a saved frequency with its mode (FM, DMR, or P25 and NXDN where the radio runs them) and settings. A **zone** is a named list of channels.
+A **channel** is a saved frequency with its mode (FM, DMR, or P25 and NXDN where the radio runs them) and settings. D-STAR
+runs in the VFO ([D-STAR in the VFO](#d-star-in-the-vfo)). A **zone** is a named list of channels.
 The **VFO** tunes any frequency by hand. Channels and zones come from the codeplug ([Programming the radio](04-programming.md)).
 
 ## Changing the channel
@@ -380,6 +381,27 @@ is NXDN conventional voice at 9600 bit/s (12.5 kHz) or 4800 bit/s (6.25 kHz), th
   (`rfoundry_debug.py radio nxdn`), and the change lasts until the radio is switched off.
 - Some radios only transmit NXDN or only receive it ([feature matrix](../feature-matrix.md)). One that only receives
   says "This mode: receive only" on PTT.
+
+### D-STAR in the VFO
+
+On a radio that runs D-STAR ([feature matrix](../feature-matrix.md)), D-STAR is one of the VFO's modes, after NXDN
+("VFO: D-STAR"). It is D-STAR digital voice (DV), the amateur mode, with its own voice codec: it doesn't need the DMR
+codec.
+
+- It plays every D-STAR voice call on the frequency. Home shows the caller's callsign and suffix, who they call
+  ("K1ABC/RF → CQCQCQ") and their message. A call joined after its start shows "D-STAR" until the callsigns come
+  again in the call's data.
+- PTT sends a voice call from your callsign (the callsign at the start of the radio name, **Settings**, **My radio**,
+  **DMR ID and name**) to CQCQCQ, simplex. Without a callsign PTT is refused.
+- **Settings**, **My radio**, **D-STAR** sets what PTT sends: **My callsign** (empty: the one in the radio name),
+  **Suffix**, **Your call** (empty: CQCQCQ), **Repeater** (empty: simplex), **Gateway** and **Message**. For a
+  repeater, set **Repeater** to its callsign with the module letter in the 8th place ("W1ABC  B"); **Gateway**
+  then fills in itself ("W1ABC  G"). Set **Your call** to a callsign to call a station, or to a reflector command
+  your repeater takes. The radio's text entry takes messages of up to 16 characters.
+- Home shows "D-STAR", what PTT calls ("CQCQCQ"), and the repeater ("RPT W1ABC  B") or "Simplex".
+- These settings last until the radio is switched off. D-STAR channels can't be saved in the codeplug yet.
+- D-STAR hasn't been checked on air yet: try it with a nearby radio or repeater, and see
+  [D-STAR](../spec/dstar.md) for what isn't known yet.
 
 ### NXDN channels
 

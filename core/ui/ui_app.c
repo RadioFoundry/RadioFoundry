@@ -1374,6 +1374,7 @@ static void quick_unavailable(uint8_t kind)
 			TR(QUICK_WHY_FM_ONLY_DMR_CHANNEL, "FM only: this is a DMR channel") :
 			view->ch.mode == RADIO_MODE_P25 ? TR(QUICK_WHY_FM_ONLY_P25_CHANNEL, "FM only: this is a P25 channel") :
 			view->ch.mode == RADIO_MODE_NXDN ? TR(QUICK_WHY_FM_ONLY_NXDN_CHANNEL, "FM only: this is NXDN") :
+			view->ch.mode == RADIO_MODE_DSTAR ? TR(QUICK_WHY_FM_ONLY_DSTAR, "FM only: this is D-STAR") :
 			TR(WHY_NOT_IN_BUILD, "Not in this build"));
 		break;
 	case QT_PRIVACY: ui_toast(TR(WHY_PRIVACY_NOT_IN_BUILD, "Privacy: not in this build")); break;
@@ -1419,13 +1420,15 @@ static void quick_activate(int tile)
 		ui_st.quick_edit = true;	// the hint row says what Up / Down and the digits do
 		break;
 	case QT_MODE: {
-		// FM, DMR, P25, NXDN in turn: P25 and NXDN where the board runs them (the view may change at once: the
-		// host simulator)
+		// FM, DMR, P25, NXDN, D-STAR in turn: P25, NXDN and D-STAR where the board runs them (the view may change
+		// at once: the host simulator)
 		uint32_t feat = ui_svc_features();
-		bool p25 = (feat & UI_FEAT_P25) != 0, nxdn = (feat & UI_FEAT_NXDN) != 0;
-		uint8_t to = view->ch.mode == RADIO_MODE_FM ? RADIO_MODE_DMR :
-			view->ch.mode == RADIO_MODE_DMR && p25 ? RADIO_MODE_P25 :
-			(view->ch.mode == RADIO_MODE_DMR || view->ch.mode == RADIO_MODE_P25) && nxdn ? RADIO_MODE_NXDN :
+		bool p25 = (feat & UI_FEAT_P25) != 0, nxdn = (feat & UI_FEAT_NXDN) != 0, dstar = CONFIG_DSTAR && (feat & UI_FEAT_DSTAR) != 0;
+		uint8_t m = view->ch.mode;
+		uint8_t to = m == RADIO_MODE_FM ? RADIO_MODE_DMR :
+			m == RADIO_MODE_DMR && p25 ? RADIO_MODE_P25 :
+			(m == RADIO_MODE_DMR || m == RADIO_MODE_P25) && nxdn ? RADIO_MODE_NXDN :
+			(m == RADIO_MODE_DMR || m == RADIO_MODE_P25 || m == RADIO_MODE_NXDN) && dstar ? RADIO_MODE_DSTAR :
 			RADIO_MODE_FM;
 		static char msg[12];	// the toast keeps the pointer
 		sbuf_t b;

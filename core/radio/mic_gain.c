@@ -8,6 +8,9 @@
 #if CONFIG_P25 && CONFIG_IMBE
 #include "p25/p25Voice.h"
 #endif
+#if CONFIG_DSTAR
+#include "dstar/dstarVoice.h"
+#endif
 
 static volatile uint8_t mic_step = MIC_GAIN_UNITY;
 
@@ -27,6 +30,9 @@ void radio_set_mic_gain(uint8_t step)
 #endif
 #if CONFIG_P25 && CONFIG_IMBE
 	p25VoiceSetMicGain(hw ? (uint8_t)MIC_GAIN_UNITY : step);
+#endif
+#if CONFIG_DSTAR
+	dstarVoiceSetMicGain(hw ? (uint8_t)MIC_GAIN_UNITY : step);
 #endif
 }
 

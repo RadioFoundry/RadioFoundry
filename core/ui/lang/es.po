@@ -402,6 +402,11 @@ msgctxt "QUICK_WHY_FM_ONLY_NXDN_CHANNEL"
 msgid "FM only: this is NXDN"
 msgstr "Solo FM: es NXDN"
 
+#: core/ui/ui_app.c
+msgctxt "QUICK_WHY_FM_ONLY_DSTAR"
+msgid "FM only: this is D-STAR"
+msgstr "Solo FM: es D-STAR"
+
 #: core/ui/ui_app.c core/ui/ui_menus.c
 msgctxt "WHY_NOT_IN_BUILD"
 msgid "Not in this build"
@@ -1111,6 +1116,11 @@ msgstr "Llamada P25"
 msgctxt "DUAL_VALUE_NXDN_CALL"
 msgid "NXDN call"
 msgstr "Llamada NXDN"
+
+#: core/ui/ui_dual.c
+msgctxt "DUAL_VALUE_DSTAR_CALL"
+msgid "D-STAR call"
+msgstr "Llamada D-STAR"
 
 #: core/ui/ui_dual.c
 msgctxt "DUAL_VALUE_AM_SIGNAL"
@@ -2968,6 +2978,61 @@ msgid "Typing: not in this build"
 msgstr "Teclado: no disponible"
 
 #: core/ui/ui_menus.c
+msgctxt "DSTAR_LABEL_MY"
+msgid "My callsign"
+msgstr "Mi indicativo"
+
+#: core/ui/ui_menus.c
+msgctxt "DSTAR_LABEL_SUFFIX"
+msgid "Suffix"
+msgstr "Sufijo"
+
+#: core/ui/ui_menus.c
+msgctxt "DSTAR_LABEL_UR"
+msgid "Your call"
+msgstr "Destino"
+
+#: core/ui/ui_menus.c
+msgctxt "DSTAR_LABEL_RPT1"
+msgid "Repeater"
+msgstr "Repetidor"
+
+#: core/ui/ui_menus.c
+msgctxt "DSTAR_LABEL_RPT2"
+msgid "Gateway"
+msgstr "Pasarela"
+
+#: core/ui/ui_menus.c
+msgctxt "DSTAR_LABEL_MESSAGE"
+msgid "Message"
+msgstr "Mensaje"
+
+#: core/ui/ui_menus.c
+msgctxt "DSTAR_VALUE_RADIO_NAME"
+msgid "Radio name"
+msgstr "Nombre de radio"
+
+#: core/ui/ui_menus.c
+msgctxt "DSTAR_VALUE_SIMPLEX"
+msgid "Simplex"
+msgstr "Símplex"
+
+#: core/ui/ui_menus.c
+msgctxt "DSTAR_VALUE_AUTO"
+msgid "Auto"
+msgstr "Auto"
+
+#: core/ui/ui_menus.c
+msgctxt "DSTAR_TITLE"
+msgid "D-STAR"
+msgstr "D-STAR"
+
+#: core/ui/ui_menus.c
+msgctxt "HINT_OK_EDIT_BACK"
+msgid "OK edit  Back"
+msgstr "OK editar  Atrás"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_TITLE_MY_RADIO"
 msgid "My Radio"
 msgstr "Mi radio"
@@ -2976,11 +3041,6 @@ msgstr "Mi radio"
 msgctxt "HINT_TYPE_OK_EDIT_SAVE_BACK"
 msgid "0-9 type  OK edit/save  Back"
 msgstr "0-9  OK guardar  Atrás"
-
-#: core/ui/ui_menus.c
-msgctxt "HINT_OK_EDIT_BACK"
-msgid "OK edit  Back"
-msgstr "OK editar  Atrás"
 
 #: core/ui/ui_menus.c
 msgctxt "DATA_LABEL_ARS_SERVER"
@@ -4496,6 +4556,11 @@ msgstr "Sin frecuencia TX"
 msgctxt "HOME_CHIP_BROADCAST_FM"
 msgid "Broadcast FM"
 msgstr "FM comercial"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_CHIP_DSTAR_SIMPLEX"
+msgid "Simplex"
+msgstr "Símplex"
 
 #: core/ui/ui_screens.c
 msgctxt "HW_BODY_RESTART_TO_APPLY"

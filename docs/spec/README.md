@@ -32,6 +32,15 @@ Past bugs, by subsystem: [gotchas.md](gotchas.md). Contributors read [docs/dev](
 | [sfr.md](sfr.md) | Single frequency repeater |
 | [split-duplex.md](split-duplex.md) | Two radios as one duplex MMDVM modem |
 
+## Other digital modes
+
+| Spec | Covers |
+|---|---|
+| [air-interface.md](air-interface.md) | The air interface the modes below run on: profiles, providers, the framer, the soft modem |
+| [p25.md](p25.md) | P25 Phase 1 conventional |
+| [nxdn.md](nxdn.md) | NXDN conventional voice |
+| [dstar.md](dstar.md) | D-STAR digital voice: the header, slow data, the half-rate vocoder |
+
 ## DMR modem chips
 
 | Spec | Covers |

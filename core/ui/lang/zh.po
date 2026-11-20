@@ -404,6 +404,11 @@ msgctxt "QUICK_WHY_FM_ONLY_NXDN_CHANNEL"
 msgid "FM only: this is NXDN"
 msgstr "仅 FM：这是 NXDN"
 
+#: core/ui/ui_app.c
+msgctxt "QUICK_WHY_FM_ONLY_DSTAR"
+msgid "FM only: this is D-STAR"
+msgstr "仅 FM：这是 D-STAR"
+
 #: core/ui/ui_app.c core/ui/ui_menus.c
 msgctxt "WHY_NOT_IN_BUILD"
 msgid "Not in this build"
@@ -1113,6 +1118,11 @@ msgstr "P25 通话"
 msgctxt "DUAL_VALUE_NXDN_CALL"
 msgid "NXDN call"
 msgstr "NXDN 通话"
+
+#: core/ui/ui_dual.c
+msgctxt "DUAL_VALUE_DSTAR_CALL"
+msgid "D-STAR call"
+msgstr "D-STAR 通话"
 
 #: core/ui/ui_dual.c
 msgctxt "DUAL_VALUE_AM_SIGNAL"
@@ -2970,6 +2980,61 @@ msgid "Typing: not in this build"
 msgstr "输入：本版本无"
 
 #: core/ui/ui_menus.c
+msgctxt "DSTAR_LABEL_MY"
+msgid "My callsign"
+msgstr "我的呼号"
+
+#: core/ui/ui_menus.c
+msgctxt "DSTAR_LABEL_SUFFIX"
+msgid "Suffix"
+msgstr "尾码"
+
+#: core/ui/ui_menus.c
+msgctxt "DSTAR_LABEL_UR"
+msgid "Your call"
+msgstr "对方呼号"
+
+#: core/ui/ui_menus.c
+msgctxt "DSTAR_LABEL_RPT1"
+msgid "Repeater"
+msgstr "中继台"
+
+#: core/ui/ui_menus.c
+msgctxt "DSTAR_LABEL_RPT2"
+msgid "Gateway"
+msgstr "网关"
+
+#: core/ui/ui_menus.c
+msgctxt "DSTAR_LABEL_MESSAGE"
+msgid "Message"
+msgstr "消息"
+
+#: core/ui/ui_menus.c
+msgctxt "DSTAR_VALUE_RADIO_NAME"
+msgid "Radio name"
+msgstr "电台名称"
+
+#: core/ui/ui_menus.c
+msgctxt "DSTAR_VALUE_SIMPLEX"
+msgid "Simplex"
+msgstr "直通"
+
+#: core/ui/ui_menus.c
+msgctxt "DSTAR_VALUE_AUTO"
+msgid "Auto"
+msgstr "自动"
+
+#: core/ui/ui_menus.c
+msgctxt "DSTAR_TITLE"
+msgid "D-STAR"
+msgstr "D-STAR"
+
+#: core/ui/ui_menus.c
+msgctxt "HINT_OK_EDIT_BACK"
+msgid "OK edit  Back"
+msgstr "OK 编辑  返回"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_TITLE_MY_RADIO"
 msgid "My Radio"
 msgstr "我的电台"
@@ -2978,11 +3043,6 @@ msgstr "我的电台"
 msgctxt "HINT_TYPE_OK_EDIT_SAVE_BACK"
 msgid "0-9 type  OK edit/save  Back"
 msgstr "0-9 输入  OK 编辑/保存  返回"
-
-#: core/ui/ui_menus.c
-msgctxt "HINT_OK_EDIT_BACK"
-msgid "OK edit  Back"
-msgstr "OK 编辑  返回"
 
 #: core/ui/ui_menus.c
 msgctxt "DATA_LABEL_ARS_SERVER"
@@ -4498,6 +4558,11 @@ msgstr "无发射频率"
 msgctxt "HOME_CHIP_BROADCAST_FM"
 msgid "Broadcast FM"
 msgstr "调频广播"
+
+#: core/ui/ui_screens.c
+msgctxt "HOME_CHIP_DSTAR_SIMPLEX"
+msgid "Simplex"
+msgstr "直通"
 
 #: core/ui/ui_screens.c
 msgctxt "HW_BODY_RESTART_TO_APPLY"
