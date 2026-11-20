@@ -593,7 +593,11 @@ fallback to a local copy, then a fixed drive (1408).
 ## 12. Memory and RAM limits
 
 **12.1 CCM RAM isn't zeroed at startup.** Buffers placed in the STM32 CCM must be initialized explicitly. A linker script
-may not map CCM at all: placing data in an unmapped .ccmram section is silently wrong.
+may not map CCM at all: placing data in an unmapped .ccmram section is silently wrong. RadioFoundry's start-up
+(`platform/stm32f4/ccm.c`) copies `.ccmdata` and zeroes `.ccmbss` before `main`; `.ccmram` keeps whatever was there. An
+initialized section must also be in the Makefile's `BIN_SECTIONS`: without it the image ends before the section's flash
+copy, the start-up copies erased flash, and every table reads 0xFF (a decoder benchmark then looks faster while its
+decodes fail).
 
 **12.2 Zero-initialized buffers in .data waste flash.** 25 MK22 buffers in a .data section stored 39.5 KB of zeros in
 flash; putting them in a .bss section of the same RAM bank saved 34.5 KB.
