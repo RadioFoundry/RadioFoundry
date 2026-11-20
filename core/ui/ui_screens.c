@@ -1600,6 +1600,42 @@ static void draw_talk_dmr(const radio_view_t *v, bool label_first)
 }
 
 #if CONFIG_DMR_TRUNK
+void ui_draw_incoming_call(const radio_view_t *v, const ui_state_t *s, const char *name)
+{
+	const ui_layout_t *L = &ui_layout;
+	int w = gfx_width();
+	char id[12], prompt[2][64];
+	static char fit[CODEPLUG_NAME_LEN + 1];
+	bool named = name[0] != 0;
+	sbuf_t b;
+	sb_init(&b, id, sizeof id);
+	sb_u32(&b, v->t3.ring_src, 1);
+	const char *title = TR(TRUNK_TITLE_INCOMING_CALL, "Incoming private call");
+	const font_t *title_font = gfx_text_width(L->medium, title) <= w - 4 ? L->medium : L->small;
+	int lines = wrap_lines(L->small, TR(TRUNK_HINT_PTT_ANSWER, "Press PTT to answer"),
+			       w - 4, 2, prompt, false);
+
+	gfx_clear(ui_col.bg);
+	int top = ui_draw_top(v, s, NULL, NULL);
+	int labels = (lines + named) * L->small->h;
+	int height = title_font->h + L->large->h + labels;
+	const font_t *id_font = height + 4 <= gfx_height() - top ? L->large : L->medium;
+	height = title_font->h + id_font->h + labels;
+	int gap = (gfx_height() - top - height) / 4;
+	int y = top + gap;
+	ui_draw_title(title_font, 2, y, w - 4, title, NULL, ui_col.fg);
+	y += title_font->h + gap;
+	if (named) {
+		gfx_text_fit(L->small, name, w - 4, fit, sizeof fit);
+		gfx_text(L->small, (w - gfx_text_width(L->small, fit)) / 2, y, fit, ui_col.fg);
+		y += L->small->h;
+	}
+	gfx_text(id_font, (w - gfx_text_width(id_font, id)) / 2, y, id, ui_col.fg);
+	y += id_font->h + gap;
+	for (int i = 0; i < lines; i++, y += L->small->h)
+		gfx_text(L->small, (w - gfx_text_width(L->small, prompt[i])) / 2, y, prompt[i], ui_col.fg);
+}
+
 // What the radio is doing on the trunked channel's system (dmr-trunking.md 12.4); *warn: something the user should see
 static const char *t3_state_word(const radio_view_t *v, bool *warn)
 {
@@ -1614,6 +1650,8 @@ static const char *t3_state_word(const radio_view_t *v, bool *warn)
 		return TR(TRUNK_STATE_REG_REFUSED, "Reg. refused");
 	if (!v->t3.on || v->t3.state == T3_HUNT)
 		return TR(TRUNK_STATE_SEARCHING, "Searching");
+	if (v->t3.ringing)
+		return TR(ACT_ROW_PRIVATE_CALL, "Private call");
 	if (v->t3.state == T3_FOLLOW) {
 		*warn = false;
 		return TR(TRUNK_STATE_IN_CALL, "In call");

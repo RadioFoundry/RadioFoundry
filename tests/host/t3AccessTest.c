@@ -214,6 +214,49 @@ static void camp_registered(t3_ms_t *ms)
 	nsent = 0;
 }
 
+static void test_foacsu_pages(void)
+{
+	t3_ms_t ms;
+	t3_csbk_t h = ahoy(T3_SK_IND_VOICE, false, OWN, CALLER);
+	h.u.ahoy.kind_flag = true;
+
+	setup(0, false);
+	camp(&ms);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKU && sent[0].u.ack.reason == T3_RC_MS_NOT_SUPPORTED &&
+	      ms.ring_src == 0, "private calls disabled: refuse the page");
+
+	setup(T3_OPT_PRIVATE, false);
+	camp(&ms);
+	CHECK(t3_ms_request(&ms, T, TG_A, true, false), "start an outgoing access");
+	rx(&ms, 1, &h);
+	frames(&ms, 2);
+	bool busy = false;
+	for (int i = 0; i < nsent; i++)
+		busy |= sent[i].op == T3_OP_C_ACKU && sent[i].u.ack.reason == T3_RC_EQUIP_BUSY;
+	CHECK(busy && ms.ring_src == 0, "outgoing access: answer busy");
+
+	setup(T3_OPT_PRIVATE, false);
+	camp(&ms);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKU && sent[0].u.ack.reason == T3_RC_MS_ALERTING &&
+	      sent[0].u.ack.info == t3_response_check(ms.syscode) && ms.ring_src == CALLER,
+	      "the page rings with the system response check");
+	uint32_t expiry = ms.ring_until;
+	rx(&ms, 1, &h);
+	CHECK(ms.ring_until == T + T3_ANSWER_CALL_MS && ms.ring_until > expiry, "repeated page restarts T_AnswerCall");
+	frames(&ms, 1);
+	h.u.ahoy.src = CALLER + 1u;
+	expiry = ms.ring_until;
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nsent == 3 && sent[2].op == T3_OP_C_ACKU && sent[2].u.ack.reason == T3_RC_EQUIP_BUSY &&
+	      sent[2].u.ack.dst == CALLER + 1u && ms.ring_src == CALLER && ms.ring_until == expiry,
+	      "a different caller gets busy without changing the first ring");
+}
+
 static void test_register(void)
 {
 	t3_ms_t ms;
@@ -3168,6 +3211,7 @@ static void test_other_slot(void)
 int main(void)
 {
 	test_register();
+	test_foacsu_pages();
 	test_reg_list();
 	test_no_answer();
 	test_ra_log();
