@@ -2,6 +2,7 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 """The support info on the radio (docs/spec/support-info.md, debuglink.md 3.29): VERSION's source=, SUPPORT INFO's
 hardware lines, and the image hash a step per request while the radio keeps answering. Read only."""
+import hashlib
 import time
 
 import pytest
@@ -60,3 +61,17 @@ def test_image_hash_steps_and_is_kept(radio):
     again = []
     assert radio.link.image_hash(progress=lambda done, size: again.append(done)) == digest
     assert again == []
+
+
+@pytest.mark.feature("support_info")
+def test_image_hash_matches_the_flashed_image(radio, pytestconfig):
+    """The digest is the flashed .bin's SHA-256 (support-info.md 3), the comparison a support report makes against
+    releases.json: the same bytes, the same span. Needs --firmware-image."""
+    path = pytestconfig.getoption("--firmware-image")
+    if not path:
+        rfoundry_hil.skip("bench", "give --firmware-image FILE (the .bin the radio was flashed with)")
+    with open(path, "rb") as f:
+        image = f.read()
+    kv = support(radio)
+    assert int(kv.get("image.size", "0")) == len(image), (kv.get("image.size"), len(image), path)
+    assert radio.link.image_hash() == hashlib.sha256(image).hexdigest(), path
