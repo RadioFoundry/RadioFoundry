@@ -394,8 +394,11 @@ In the Codeplug Editor ([Programming](04-programming.md#digital-modes-and-system
 3. Put the channel in a zone, with any other channels.
 
 When a Tier III private call rings, you can release **PTT** while the other person answers. If the system grants
-the call while **PTT** is released, press it again to speak. When an incoming private call rings, press **PTT**
-to answer. The radio beeps every two seconds while the call rings. Release it, then press again to speak once the system grants the call.
+the call while **PTT** is released, press it again to speak. The screen shows **Calling** while the
+other radio rings. Press **Back** to cancel the pending call.
+
+For an incoming private call, the radio beeps every two seconds. Press **PTT** to answer. Release it, then
+press again to speak once the system grants the call.
 
 | Setting | Does |
 |---|---|
