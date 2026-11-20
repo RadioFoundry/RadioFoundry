@@ -1523,8 +1523,10 @@ initializer (both are `NOLOAD`: an initial value would be dropped).
 `.modem_bss` is a separate region (`MODEM_BSS` in `boards/dm32/memory.ld`) in the SRAM shared with the modem. It holds
 only cold task-side buffers, never one an interrupt, the audio, the modem or the codec touches, and no stack. It starts
 at 0x18004F90, 4,440 B past the codec table window's end (0x18003E38), as a margin for state the codec might keep past
-its tables. TODO-RESULT The linker fails the build when the region overlaps the table window, the
-PCM buffers or the crash log, or overflows.
+its tables. On the radio with the 047 codec, a known pattern in 0x18003E38..0x18007EF0 stayed whole through a soft
+reset, the start-up and DMR voice receive and transmit, and the table window didn't change either. The only words in
+modem SRAM that changed were the microphone PCM buffer and the restart cause's uptime word. The linker fails the
+build when the region overlaps the table window, the PCM buffers or the crash log, or overflows.
 
 The image sizes and the RAM left in each build are in [feature-matrix.md](../feature-matrix.md), "Whole images".
 

@@ -204,5 +204,7 @@ How RadioFoundry runs it ([codec-placement.md](codec-placement.md), "HR_C7000 ra
 
 * On the radio (2026-10-19) the 049 codec in the window decodes on-air speech with every frame (234 of 234, 78 of 78
   bursts) (measured). Audio quality against the vendor firmware has not been compared.
-* Exact sizes of the D/E state blocks; whether the codec writes to its modem RAM tables (the boot copy covers
-  both cases).
+* Exact sizes of the D/E state blocks.
+* The 047 codec writes neither its modem RAM tables nor anything above them during voice receive and transmit (a
+  pattern fill of 0x18003E38..0x18007EF0 and a dump of the table window, unchanged after both; hardware-dm32.md
+  17.1). Other builds are not checked; the boot copy covers a codec that does write its tables.
