@@ -1913,6 +1913,24 @@ ifneq ($(PYTHON),)
 endif
 .PHONY: run-ysfvw
 
+# The radio core with D-STAR and Fusion built together, as the multimode firmware has them, and the vocoder lending its
+# 7 KB state block as the HR_C7000's does: radioCoreTest's own tests plus test_mode_switch, which goes back and forth
+# between DMR, D-STAR, Fusion and FM and checks who holds the modes' shared area (core/radio/radio_mode_ram.c) and the
+# vocoder's lent block, and that each mode still works after the others. Every other radio core build has the two
+# modes off (CORE_HAL)
+TESTS   += radioCoreTestModes
+RCMODES := $(sort $(RCORE) $(CORE)/radio/radio_dstar.c $(CORE)/radio/radio_ysf.c $(CORE)/radio/radio_ysf_vw.c $(MBE) \
+           $(CORE)/radio/radio_mode_ram.c $(CORE)/radio/radio_flat.c $(DSTARCD) $(CORE)/dstar/dstar_gmsk.c \
+           $(CORE)/dstar/dstar_engine.c $(CORE)/dstar/dstar_codeplug.c $(YSFMD) $(CORE)/ysf/ysf_codeplug.c)
+radioCoreTestModes: $(RCMODES) $(wildcard $(CORE)/radio/*.h $(CORE)/dstar/*.h $(CORE)/ysf/*.h $(CORE)/dmr/call/*.h) \
+                    $(CORE)/dmr/dmrDataService.h $(CORE)/ui/ui_svc.h $(ROOT)/hal/hal_audio_tap.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
+		-DCONFIG_DSTAR=1 -DCONFIG_YSF=1 -DHAL_VOCODER_LEND_BYTES=0x1C00 -o $@ $(RCMODES) -lm
+run: run-modes
+run-modes: radioCoreTestModes
+	./radioCoreTestModes
+.PHONY: run-modes
+
 
 run: run-boards
 run-boards::

@@ -49,6 +49,11 @@
 #include "position/position.h"
 #include "radio/beep.h"
 
+#if CONFIG_DSTAR || CONFIG_YSF
+#include "radio/radio_mode_ram.h"
+#include "codeplug/codeplug_tag.h"
+#endif
+
 static int failures;
 static int checks;
 #define CHECK(c) do { checks++; if (!(c)) { failures++; printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); } } while (0)
@@ -178,11 +183,21 @@ static const hal_audio_t fake_audio = { .start = a_start, .stop = a_stop, .speak
 static bool codec_present;
 static bool v_present(void) { return codec_present; }
 static void v_reset(void) {}
-static void v_encode(const int16_t *pcm, uint8_t *bits) { (void)pcm; memset(bits, 0, VOCODER_BITS); }
+#if CONFIG_DSTAR
+// DMR's vocoder called while D-STAR's codec works in its lent state block (radioCoreTestModes): never, or the two would
+// write over each other (main's lend has no give-back: the vocoder rebuilds its state at its next call, so the radio
+// core must not call it until D-STAR has stopped)
+static uint32_t voc_clashes;
+#define VOC_CLASH()	do { if (radio_dstar_running()) voc_clashes++; } while (0)
+#else
+#define VOC_CLASH()	do { } while (0)
+#endif
+static void v_encode(const int16_t *pcm, uint8_t *bits) { (void)pcm; VOC_CLASH(); memset(bits, 0, VOCODER_BITS); }
 // Each frame the decoder is given, to a test that looks (the NXDN voice path's check)
 static void (*v_decode_hook)(const uint8_t *bits);
 static void v_decode(const uint8_t *bits, int16_t *pcm)
 {
+	VOC_CLASH();
 	if (v_decode_hook != NULL) {
 		v_decode_hook(bits);
 	}
@@ -468,6 +483,74 @@ static void air_step(void);	// with the far radio's engine, below
 static bool far_on_air(void) { return false; }
 #endif
 
+#if CONFIG_FM_FLAT
+// ---- fake flat FM paths (hal_audio_tap.h), for D-STAR and Fusion: what the transmit interrupt pulls is collected, and
+// the receive ring hands it back when a test plays it in (flat.loop), 8 samples a millisecond as the board's would ----
+#define FLAT_MAX	(8000u * 8u)	// 8 s
+static struct {
+	int16_t buf[FLAT_MAX];
+	uint32_t captured, rx_pos, rx_avail;
+	uint32_t ms;		// since the last transmit interrupt (one a 32 ms half, 256 samples)
+	audio_tap_pull_t pull;
+	bool rx_on, loop;
+} flat;
+static bool f_inject(audio_tap_pull_t pull, audio_tap_mode_t mode)
+{
+	if (pull != NULL && mode != AUDIO_TAP_FLAT) {
+		return false;
+	}
+	flat.pull = pull;
+	return true;
+}
+// Refused while on already, as the board's is (its flat receive owns the ring)
+static bool f_rx_start(void)
+{
+	if (flat.rx_on) {
+		return false;
+	}
+	flat.rx_on = true;
+	return true;
+}
+static void f_rx_stop(void) { flat.rx_on = false; }
+static uint16_t f_rx_read(int16_t *out, uint16_t max)
+{
+	uint32_t end = flat.rx_avail < flat.captured ? flat.rx_avail : flat.captured;
+	uint32_t n = end > flat.rx_pos ? end - flat.rx_pos : 0;
+	if (!flat.rx_on || !flat.loop) {
+		return 0;
+	}
+	if (n > max) {
+		n = max;
+	}
+	memcpy(out, &flat.buf[flat.rx_pos], n * sizeof(int16_t));
+	flat.rx_pos += n;
+	return (uint16_t)n;
+}
+static audio_tap_flat_cal_t flat_cal_v = { .tx_1khz = 9000, .tx_latency_ms = 64 };
+static const audio_tap_flat_cal_t *f_cal(void) { return &flat_cal_v; }
+static const hal_audio_tap_t fake_tap = {
+	.caps = AUDIO_TAP_FM_RX_RAW | AUDIO_TAP_FM_TX_FLAT, .fm_tx_inject = f_inject, .fm_rx_flat_rate_hz = 8000,
+	.fm_rx_flat_start = f_rx_start, .fm_rx_flat_read = f_rx_read, .fm_rx_flat_stop = f_rx_stop, .flat_cal = f_cal,
+};
+// run()'s 5 ms: the ring fills, and the transmit interrupt pulls its halves while a mode injects
+static void flat_step(void)
+{
+	flat.rx_avail += 40;
+	flat.ms += 5;
+	while (flat.ms >= 32) {
+		flat.ms -= 32;
+		if (flat.pull != NULL) {
+			int16_t half[256];
+			flat.pull(half, 256);
+			if (flat.captured + 256u <= FLAT_MAX) {
+				memcpy(&flat.buf[flat.captured], half, sizeof half);
+				flat.captured += 256u;
+			}
+		}
+	}
+}
+#endif
+
 const board_t board = {
 	.name = "fake",
 	.hwopts = fake_hwopts,
@@ -493,6 +576,9 @@ const board_t board = {
 	.dmr = &sim_modem,
 	.audio = &fake_audio,
 	.vocoder = &fake_vocoder,
+#if CONFIG_FM_FLAT
+	.audio_tap = &fake_tap,
+#endif
 #if CONFIG_AIR
 	.air = &fake_air0,
 #endif
@@ -707,7 +793,8 @@ bool codeplug_set_dmr_id(uint32_t id)
 	return true;
 }
 void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_NAME_LEN + 1]) { line1[0] = line2[0] = 0; }
-void codeplug_radio_name(char out[CODEPLUG_NAME_LEN + 1]) { out[0] = 0; }
+static const char *radio_name = "";	// the station D-STAR and Fusion fall back to (test_mode_switch sets one)
+void codeplug_radio_name(char out[CODEPLUG_NAME_LEN + 1]) { strcpy(out, radio_name); }
 #if CONFIG_APRS_AFSK
 // APRS (radioCoreTestAprs): no APRS channel in the codeplug
 bool codeplug_aprs(uint8_t n, codeplug_aprs_t *out) { memset(out, 0, sizeof(*out)); return false; }
@@ -1587,6 +1674,9 @@ static void run(uint32_t ms)
 			air_step();
 #endif
 		}
+#if CONFIG_FM_FLAT
+		flat_step();
+#endif
 		if (aud.feed && aud.started && aud.cb != NULL && now % 20 == 0) {
 			static const int16_t mic[AUDIO_BLOCK_SAMPLES];
 			int16_t spk[AUDIO_BLOCK_SAMPLES];
@@ -3592,6 +3682,10 @@ static void test_ui_requests(void)
 // requests go straight into the state machine here instead of through radio_task.c's queue ----
 
 uint32_t hal_millis(void) { return now; }
+#if CONFIG_YSF_VW
+// Fusion's VW timing counters read the microsecond clock (radio_ysf.c): the fake millisecond clock in microseconds
+uint32_t hal_micros(void) { return now * 1000u; }
+#endif
 void hal_delay_ms(uint32_t ms) { now += ms; }	// the PA sweep op's wait
 void radio_get_view(radio_view_t *v) { *v = sm.view; }
 uint32_t radio_view_serial(void) { return sm.serial; }
@@ -10555,6 +10649,245 @@ static void test_t3_stun(void)
 }
 #endif
 
+
+#if CONFIG_DSTAR && CONFIG_YSF && defined(HAL_VOCODER_LEND_BYTES)
+// ---- Mode switches (radioCoreTestModes): DMR, D-STAR, Fusion and FM back and forth through the real radio core, with
+// the modes' real engines and codecs on the fake flat paths. The loans are checked at every step: the mode area
+// (radio_mode_ram.h), held by the one of D-STAR and Fusion that runs and by nobody otherwise, with D-STAR's codec state
+// and Fusion's VW state in it; and the DMR vocoder's state block (main's hal_vocoder_t.lend, 7 KB here as on the
+// HR_C7000), which D-STAR's codec works in while D-STAR runs. Main's lend has no give-back, so the guard is that the
+// vocoder is never called while D-STAR holds it (voc_clashes), that D-STAR borrows it at each start, and that DMR and
+// Fusion (which use the vocoder itself) work after it. After each switch the mode that runs is made to work: DMR hears
+// a call, FM opens and keys, and D-STAR and Fusion send an over and hear it back through the receive path. The fork's
+// test also swept the spectrum scope between them; the scope is not in this tree ----
+enum { M_DMR, M_DSTAR, M_YSF, M_FM };
+#define POS_FM		0	// zone "Local": channel 1
+#define POS_DSTAR	2	// channel 3
+#define POS_DMR		3	// channel 4
+#define POS_YSF		4	// channel 5
+
+static uint32_t dstar_overs(void)
+{
+	radio_dstar_stats_t s;
+	radio_dstar_stats(&s);
+	return s.rx_overs;
+}
+
+static uint32_t ysf_overs(void)
+{
+	radio_ysf_stats_t s;
+	radio_ysf_stats(&s);
+	return s.rx_overs;
+}
+
+// Who holds what while each mode runs
+static void check_loans(int m, int line)
+{
+	bool dstar = m == M_DSTAR, ysf = m == M_YSF;
+	radio_mode_ram_owner_t want = dstar ? RADIO_MODE_RAM_DSTAR : ysf ? RADIO_MODE_RAM_YSF : RADIO_MODE_RAM_FREE;
+	int f = failures;
+	CHECK(radio_mode_ram_owner() == want);
+	CHECK(voc_clashes == 0);
+	CHECK(radio_dstar_running() == dstar && sm.view.dstar.on == dstar);
+	CHECK(radio_ysf_running() == ysf && sm.view.ysf.on == ysf);
+	CHECK(!dstar || sm.view.dstar.voice_off == RDSTAR_VOICE_OK);	// the codec bound to the lent block
+	CHECK(flat.rx_on == (dstar || ysf));
+	CHECK(flat.pull == NULL);
+	if (failures != f) {
+		printf("  (loans for mode %d, from line %d)\n", m, line);
+	}
+}
+
+// One over on the channel, then what went out played back into the receive path
+static void loop_over(void)
+{
+	flat.captured = flat.rx_pos = 0;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == sm.view.ch.tx_hz && flat.pull != NULL);
+	run(1000);
+	req(RREQ_PTT, 0);
+	run(1500);
+	CHECK(sm.view.state == RS_IDLE && flat.pull == NULL && flat.captured > 8000u);
+	flat.rx_pos = flat.rx_avail = 0;
+	flat.loop = true;
+	run(flat.captured / 8u + 1500u);
+	flat.loop = false;
+}
+
+static void use_mode(int m, int line)
+{
+	int f = failures;
+	switch (m) {
+	case M_DMR: {
+		req(RREQ_ZONE_POS, POS_DMR);
+		run(100);
+		check_loans(m, line);
+		CHECK(hw_mode == RADIO_MODE_DMR && sm.dmr_running && sm.view.dmr.codec);
+		hear_call(true, 201, 9991234, 2, 1, true);
+		CHECK(sm.view.dmr.last.src == 9991234 && sm.view.state == RS_IDLE);
+		break;
+	}
+	case M_FM:
+		req(RREQ_ZONE_POS, POS_FM);
+		run(100);
+		check_loans(m, line);
+		CHECK(hw_mode == RADIO_MODE_FM && hw.rx_hz == 146520000u);
+		rx_signal(10, true);
+		run(50);
+		CHECK(sm.view.state == RS_RX && hw.audio);
+		rx_signal(120, true);
+		run(500);
+		req(RREQ_PTT, 1);
+		CHECK(sm.view.state == RS_TX && hw.tx_hz == 146520000u);
+		req(RREQ_PTT, 0);
+		run(100);
+		CHECK(sm.view.state == RS_IDLE);
+		break;
+	case M_DSTAR: {
+		uint32_t lent = lends;
+		req(RREQ_ZONE_POS, POS_DSTAR);
+		run(100);
+		check_loans(m, line);
+		CHECK(lends == lent + 1);	// borrowed afresh at the start, whatever ran before
+		uint32_t heard = dstar_overs();
+		loop_over();
+		CHECK(dstar_overs() > heard && sm.view.dstar.heard && strcmp(sm.view.dstar.my, "Q1RAD") == 0);
+		check_loans(m, line);
+		break;
+	}
+	case M_YSF: {
+		req(RREQ_ZONE_POS, POS_YSF);
+		run(100);
+		check_loans(m, line);
+		CHECK(sm.view.ysf.codec && sm.view.ysf.fault == RYSF_OK && !sm.view.ysf.no_call);
+		uint32_t heard = ysf_overs();
+		loop_over();
+		CHECK(ysf_overs() > heard && sm.view.ysf.heard && strcmp(sm.view.ysf.src, "Q1RAD") == 0);
+		check_loans(m, line);
+		break;
+	}
+	}
+	if (failures != f) {
+		printf("  (in mode %d, from line %d)\n", m, line);
+	}
+}
+
+// PTT pressed again while the last D-STAR or Fusion over still sends its queued voice and end after the release (the
+// core stays in RS_TX until the module is done). Refused (here the TX inhibit set in between): the refusal shows, and
+// the transmitter is unkeyed and stays so through the release. Allowed: a fresh over on air, ended by its own release.
+// A refusal there once left the transmitter keyed with the state idle, so no time-out ever ended it
+static void dv_repress(int pos)
+{
+	req(RREQ_ZONE_POS, pos);
+	run(100);
+	radio_settings_t set = sm.set;
+	for (int refused = 1; refused >= 0; refused--) {
+		set.tx_inhibit = false;
+		radio_sm_set_settings(&sm, &set, now);
+		req(RREQ_PTT, 1);
+		CHECK(sm.view.state == RS_TX && hw.keyed && flat.pull != NULL);
+		run(600);
+		req(RREQ_PTT, 0);
+		run(40);
+		CHECK(sm.view.state == RS_TX && hw.keyed);	// still sending what was queued
+		if (refused) {
+			set.tx_inhibit = true;
+			radio_sm_set_settings(&sm, &set, now);
+		}
+		req(RREQ_PTT, 1);
+		if (refused) {
+			CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_INHIBIT);
+			CHECK(!hw.keyed && flat.pull == NULL);
+			run(3000);
+			CHECK(!hw.keyed && flat.pull == NULL);
+		} else {
+			CHECK(sm.view.state == RS_TX && hw.keyed && flat.pull != NULL);
+			run(600);
+			CHECK(sm.view.state == RS_TX && hw.keyed && flat.pull != NULL);
+		}
+		req(RREQ_PTT, 0);
+		run(1500);
+		CHECK(sm.view.state == RS_IDLE && !hw.keyed && flat.pull == NULL);
+	}
+	set.tx_inhibit = false;
+	radio_sm_set_settings(&sm, &set, now);
+}
+
+// A reference trim stepped during a D-STAR or Fusion over: the retune waits for the over's end (retune_pending), and
+// that tune starts the mode again before the module goes back to receive. The receiver must be its own still: the
+// module once started the board's flat receive a second time there, took the board's refusal as its answer and read
+// nothing more, Fusion then refusing PTT for a fault it did not have
+static void dv_retune_tail(int pos, int m)
+{
+	req(RREQ_ZONE_POS, pos);
+	run(100);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX);
+	req(RREQ_RETUNE, 0);
+	run(RADIO_RETUNE_SETTLE_MS + 200);
+	CHECK(sm.view.state == RS_TX && sm.retune_pending);
+	req(RREQ_PTT, 0);
+	run(1500);
+	CHECK(sm.view.state == RS_IDLE && !sm.retune_pending && flat.rx_on && !hw.keyed);
+	CHECK(m == M_DSTAR ? sm.view.dstar.fault == RDSTAR_OK : sm.view.ysf.fault == RYSF_OK);
+	use_mode(m, __LINE__);		// an over sent and heard back through the receiver
+}
+
+static void test_mode_switch(void)
+{
+	// One area, the size of the larger of what the two modes keep there: D-STAR's engine and codec state, Fusion's
+	// engine and VW state
+	size_t big = sizeof(radio_dstar_area_t) > sizeof(radio_ysf_area_t) ? sizeof(radio_dstar_area_t) :
+		sizeof(radio_ysf_area_t);
+	CHECK(radio_mode_ram_size() >= big && radio_mode_ram_size() < big + 8);
+	// The codec's working memory fits the 7 KB the vocoder lends, which the whole codec no longer does
+	CHECK(sizeof(dstar_codec_scratch_t) <= HAL_VOCODER_LEND_BYTES && sizeof(dstar_codec_t) +
+	      sizeof(dstar_codec_scratch_t) > HAL_VOCODER_LEND_BYTES);
+	setup_codeplug();
+	add(3, "DV simplex", 145375000, RADIO_MODE_FM, false, CODEPLUG_POWER_DEFAULT);
+	chans[3].kind = CODEPLUG_KIND_DSTAR;
+	add(5, "C4FM simplex", 145600000, RADIO_MODE_FM, false, CODEPLUG_POWER_DEFAULT);
+	chans[5].kind = CODEPLUG_KIND_YSF;
+	radio_name = "Q1RAD";
+	codec_present = true;
+	voc_clashes = 0;
+	start();
+	aud.feed = true;
+	check_loans(M_FM, __LINE__);
+	static const int seq[] = {
+		M_DMR, M_DSTAR, M_YSF, M_FM, M_DSTAR, M_YSF, M_DSTAR, M_DMR, M_YSF, M_DSTAR,
+		M_FM, M_YSF, M_DMR, M_YSF, M_DSTAR, M_DMR, M_DSTAR, M_FM,
+	};
+	for (unsigned i = 0; i < sizeof seq / sizeof seq[0]; i++) {
+		use_mode(seq[i], __LINE__);
+	}
+	// A take out of turn is refused, never granted by stealing: Fusion asks while D-STAR holds the area
+	use_mode(M_DSTAR, __LINE__);
+	CHECK(radio_mode_ram_take(RADIO_MODE_RAM_YSF, 1) == NULL && radio_mode_ram_owner() == RADIO_MODE_RAM_DSTAR);
+	radio_mode_ram_give(RADIO_MODE_RAM_YSF);	// not its to give: nothing
+	CHECK(radio_mode_ram_owner() == RADIO_MODE_RAM_DSTAR);
+	use_mode(M_FM, __LINE__);
+	// No block to lend (a vocoder that can't now): D-STAR runs without voice, says so, and DMR still works after
+	lend_refuse = true;
+	req(RREQ_ZONE_POS, POS_DSTAR);
+	run(100);
+	CHECK(radio_dstar_running() && sm.view.dstar.voice_off == RDSTAR_VOICE_NO_RAM);
+	lend_refuse = false;
+	use_mode(M_DMR, __LINE__);
+	dv_repress(POS_DSTAR);
+	check_loans(M_DSTAR, __LINE__);
+	dv_repress(POS_YSF);
+	check_loans(M_YSF, __LINE__);
+	dv_retune_tail(POS_DSTAR, M_DSTAR);
+	dv_retune_tail(POS_YSF, M_YSF);
+	use_mode(M_FM, __LINE__);
+	printf("# mode switches: %u lends to D-STAR, no vocoder call during one\n", (unsigned)lends);
+	radio_name = "";
+	codec_present = false;
+	aud.feed = false;
+}
+#endif
+
 int main(void)
 {
 	test_tx_limit_op();
@@ -10670,6 +11003,9 @@ int main(void)
 #endif
 #if CONFIG_NXDN
 	test_nxdn();
+#endif
+#if CONFIG_DSTAR && CONFIG_YSF && defined(HAL_VOCODER_LEND_BYTES)
+	test_mode_switch();	// first of the last: it runs the audio stream and the modes' engines
 #endif
 	test_dmr_data_glue();	// (last: the data service's state carries over)
 	test_factory_reset();
