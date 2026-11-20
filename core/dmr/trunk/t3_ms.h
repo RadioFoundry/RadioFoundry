@@ -391,6 +391,7 @@ typedef struct {
 		bool ip_inform;		// T3_SVC_REGISTER: IP_Inform set, the address goes up when IPI asks (6.4.11)
 		uint32_t divert_to;	// T3_RES_DIVERTED: the address the TSCC gave
 		bool divert_group;
+		bool alerting;		// the called user is ringing during individual voice setup
 		bool als;		// T3_SVC_IND_VOICE: Ambient Listening asked for
 		bool supl;		// supplementary user data offered (SUPED_SV), uploaded when SUPLI asks
 		bool resume;		// T3_SVC_STATUS: back to the call left for it once answered (a payload interrupt)

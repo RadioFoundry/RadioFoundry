@@ -4783,6 +4783,11 @@ msgid "In call"
 msgstr "En llamada"
 
 #: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_CALLING"
+msgid "Calling"
+msgstr "Llamando"
+
+#: core/ui/ui_screens.c
 msgctxt "TRUNK_STATE_REFUSED"
 msgid "Refused"
 msgstr "Rechazado"

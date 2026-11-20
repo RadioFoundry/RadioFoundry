@@ -294,6 +294,7 @@ void t3_ms_stop(t3_ms_t *ms)
 	ms->nq = 0;
 	ms->tx.count = 0;
 	ms->tx.udt = false;
+	ms->ax.alerting = false;
 	ms->ax.state = T3_AX_IDLE;
 	ms->confirmed = false;
 }
@@ -699,6 +700,7 @@ static void finish(t3_ms_t *ms, uint32_t now, t3_res_t r)
 	t3_svc_t svc = ms->ax.svc;
 	ms->ax.state = T3_AX_IDLE;
 	ms->ax.result = r;
+	ms->ax.alerting = false;
 	if (ms->ax.resume) {
 		// 6.4.14.3.3.2: back to the payload channel whatever the answer; not when the TSCC was lost or an
 		// emergency grant took the radio elsewhere
@@ -726,6 +728,7 @@ static void start_access(t3_ms_t *ms, uint32_t now, t3_svc_t svc, uint32_t dst, 
 	ms->ax.dst = dst;
 	ms->ax.emergency = emergency;
 	ms->ax.als = false;
+	ms->ax.alerting = false;
 	ms->ax.resume = false;
 	ms->ax.ip = 0;
 	ms->ax.ip_inform = false;
@@ -1013,6 +1016,7 @@ static void on_ack(t3_ms_t *ms, uint32_t now, const t3_ack_t *a)
 			// A voice call ends in a grant or a refusal; Callback is the one acknowledgement that ends it (the
 			// called radio calls back). Any other goes on toward the grant: MS_Alerting (the called radio rings), or
 			// Message_Accepted, which some systems send to a request for a call already set up. TP_Timer
+			ms->ax.alerting = svc == T3_SVC_IND_VOICE && a->reason == T3_RC_MS_ALERTING;
 			ms->ax.state = T3_AX_ACKED;
 			ms->ax.ack_deadline = now + T3_TP_MS;
 			break;
