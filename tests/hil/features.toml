@@ -275,6 +275,7 @@ spec = "docs/spec/sfr.md"
 [feature.dstar]
 switch = "DSTAR"
 spec = "docs/spec/dstar-modem.md"
+manual = "the first radio session's plan, docs/testing/dstar-bench.md: an Icom radio's over received, the transmit path on the SDR (tools/dstar_bench.py txpath), our over decoded by an Icom radio, the echo reflector"
 
 [feature.aprs]
 switch = "APRS"

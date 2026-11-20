@@ -392,7 +392,7 @@ recordings are never committed (AGENTS.md).
 
 ## 7. First tests on air
 
-The plan for the first session, scripted where it can be, is `docs/testing/dstar-bench.md`. In
+The plan for the first session, scripted where it can be, is [testing/dstar-bench.md](../testing/dstar-bench.md). In
 short: into a dummy load, the SDR beside it, lowest power, a simplex amateur frequency:
 
 1. Receive first, no transmitter of ours involved: an Icom radio sends a short DV over; the debug log shows the header

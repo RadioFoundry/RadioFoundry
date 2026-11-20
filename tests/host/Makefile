@@ -1807,6 +1807,7 @@ run-dstar: dstarTest dstarModemTest dstarCodecTest dstarCodecQualityTest radioDs
 	./radioDstarTest
 ifneq ($(PYTHON),)
 	$(PYTHON) -B $(ROOT)/tools/dstar_ref.py --self-test
+	$(PYTHON) -B $(ROOT)/tools/dstar_bench.py --self-test
 	@$(PYTHON) -B $(ROOT)/tools/dstar_ref.py vectors | cmp -s - ../vectors/dstar.txt || \
 		{ echo "tests/vectors/dstar.txt differs from tools/dstar_ref.py vectors"; exit 1; }
 endif
