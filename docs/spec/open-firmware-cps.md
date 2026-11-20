@@ -475,7 +475,8 @@ SFR bytes (ours; the CPS doesn't know them and leaves them as read). The SFR fie
 | A | 5 | Inbound slot: 1 = TS2, 0 = TS1. The outbound slot is the other one |
 | A | 7-6 | Hang time index: 1 s, 2 s, 4 s, none |
 | B (0x2A) | 7 | Outbound color code set |
-| B | 6 | FM: the 1750 Hz tone burst at each PTT key-up ([radio-features.md](radio-features.md) 3.3). Read and written without the SFR flag. A byte of 0xFF reads as off (a writer that fills bytes it doesn't know); setting the bit on such a byte writes 0xCF (the unused bits 5-4 cleared), never 0xFF |
+| B | 6 | FM: the 1750 Hz tone burst at each PTT key-up ([radio-features.md](radio-features.md) 3.3). Read and written without the SFR flag. A byte of 0xFF reads as off (a writer that fills bytes it doesn't know) |
+| B | 5-4 | Accept invalid CRC ([dmr-trunking.md](dmr-trunking.md), [p25-trunking.md](p25-trunking.md)): 2 = on, any other value off, so 0xFF and 0xBF read as off. Read and written without the SFR flag. Bits 5-4 are always written (2 or 0), so the byte is never 0xFF |
 | B | 3-0 | That color code (else the channel's) |
 
 The repeater's timeout is the channel TOT, or 180 s when the TOT is 0.

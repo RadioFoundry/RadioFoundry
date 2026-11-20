@@ -773,14 +773,13 @@ static void rx_burst(hrc7000_dmr_t *e)
 	if (header) {
 		emb_drop(e, s.chip_slot);	// no voice call in progress on this slot, even with a bad CRC
 	}
+	// Every burst goes up, a bad CRC flagged (dmr-modem.md 2.2): the receivers check what they take, and a channel set to
+	// accept an invalid CRC takes one that repeats. A bad LC changes no call state, except while we send: the chip's
+	// verdict is wrong at times then, and the caller checks the LC itself or rebuilds it from the call's (gotchas 14.1;
+	// an SFR lost every terminator heard while keyed to an RS flag)
+	bool trust = s.crc_ok || e->tx_state != TXS_IDLE;
 	if (!s.crc_ok) {
 		e->st.rx_crc_err++;
-		// Headers and CSBKs with a bad CRC are dropped (dmr-modem.md 2.2), except while we send: the chip's verdict
-		// is wrong at times then, and the caller checks them itself or rebuilds them from the call's LC (gotchas 14.1;
-		// an SFR lost every terminator heard while keyed to an RS flag)
-		if (header && e->tx_state == TXS_IDLE) {
-			return;
-		}
 	}
 	hrc7000_dmr_evslot_t *slot = ev_alloc(e);
 	if (slot == NULL) {
@@ -818,7 +817,10 @@ static void rx_burst(hrc7000_dmr_t *e)
 		switch (s.kind) {
 		case DMR_BURST_VOICE_LC_HEADER:
 			memcpy(b->lc, b->payload, 9);
-			b->lc_valid = true;
+			b->lc_valid = trust;
+			if (!trust) {
+				break;
+			}
 			e->listen_voice = e->tx_state != TXS_IDLE;
 			// The call's voice follows on this slot: burst A gets the flag too (stock sets it from the call's start)
 			e->voice_slots |= (uint8_t)(1u << s.chip_slot);
@@ -827,7 +829,10 @@ static void rx_burst(hrc7000_dmr_t *e)
 			break;
 		case DMR_BURST_TERMINATOR_LC:
 			memcpy(b->lc, b->payload, 9);
-			b->lc_valid = true;
+			b->lc_valid = trust;
+			if (!trust) {
+				break;
+			}
 			if (e->voice_chip_slot == (int8_t)s.chip_slot) {
 				e->voice_chip_slot = -1;
 			}

@@ -1538,6 +1538,7 @@ static void dmr_configure(radio_sm_t *sm)
 	cfg.listen.any_cc = cfg.listen.both_ts = cfg.listen.hear_all;
 	cfg.listen.groups = sm->listen;
 	cfg.listen.group_count = sm->listen_count;
+	cfg.listen.accept_bad_crc = ch->accept_bad_crc;
 	// The channel's TX time-out when it has one, else the radio's
 	cfg.tot_s = sm->view.tot_s;	// apply_tot: the channel's, else the radio's
 	if (sm->set.reply_s <= 30u) {
@@ -3397,9 +3398,11 @@ static void t3_publish(radio_sm_t *sm)
 #endif
 	v->ptt_wait = sm->t3_ptt_wait;
 	v->can_talk = t3_ms_can_talk(m);
+	v->unverified = m->unverified;
 	v->ticks = sm->t3_ticks;
 	v->csbk = m->st.csbk;
 	v->crc_bad = m->st.crc_bad;
+	v->crc_taken = m->st.crc_taken;
 	v->grants = m->st.grants;
 	v->followed = m->st.followed;
 	v->unmapped = m->st.unmapped;
@@ -3760,6 +3763,9 @@ static bool t3_channel(radio_sm_t *sm, uint16_t number, const channel_t *ch)
 		t3s.cfg.opts &= (uint16_t)~T3_OPT_LEARN_SYSCODE;
 	}
 	sm->t3_monitor_set = (t3s.cfg.opts & T3_OPT_MONITOR) != 0;
+	if (ch->accept_bad_crc) {
+		t3s.cfg.opts |= T3_OPT_ACCEPT_BAD_CRC;	// for this channel only: the system record's opts don't carry it
+	}
 	radio_t3_talk(ch, &t3s);
 	sm->t3_fb_number = radio_t3_fallback(number, &t3s, &sm->t3_fb_ch);
 	sm->t3_pending = true;		// started by t3_tick, which has the clock

@@ -144,6 +144,14 @@ calls the HAL.
 Actions wait in a queue of three, oldest first. A SEND goes out before a retune queued after it; a new retune drops a
 retune not yet taken and what was queued after it.
 
+**A bad CRC.** A CSBK or MBC block whose CRC fails the standard check (TS 102 361-1 B.3.12) is dropped and counted.
+With the channel's Accept invalid CRC (`channel_t.accept_bad_crc`, [open-firmware-cps.md](open-firmware-cps.md)
+7.3.3; the radio core sets `T3_OPT_ACCEPT_BAD_CRC`) it is taken when the same 12 octets failed among the last four
+failures (`core/fec/rx_seen.h`): a system whose control channel fails the check on every PDU repeats its PDUs, and one
+damaged on the air rarely decodes the same twice. An MBC counts as failed when its header or its continuation failed.
+While the last PDU taken failed its check, the engine is listen-only (`t3_ms_t.unverified`, `may_send`): it doesn't
+register, answer, ask or send anything, and a call it follows is heard only. The next PDU that passes ends that.
+
 ### 6.1 States
 
 | State | The radio |
@@ -227,7 +235,7 @@ answer with valid PDUs.
 
 ### 6.2 Counters
 
-`t3_ms_t.st`: CSBKs with a good CRC, CRC failures, grants heard while camped, calls followed, grants to unmapped
+`t3_ms_t.st`: CSBKs with a good CRC, CRC failures dropped, CRC failures taken (Accept invalid CRC), grants heard while camped, calls followed, grants to unmapped
 channels (and the last such LPCN), returns, hunts, foreign Alohas and broadcasts, foreign short LCs, learned channels,
 CSBKs sent and random access tries.
 

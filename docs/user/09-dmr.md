@@ -455,3 +455,16 @@ stun**, **Accept a kill**).
 
 On a system without a key a stun is taken as sent, from any transmitter that sends one: leave **Accept a stun** off
 there.
+
+## Accept invalid CRC
+
+Some systems send their control messages and call headers with a checksum (CRC) the standard doesn't accept. The radio
+drops those: a trunked channel stays on **Searching**, and calls on a DMR channel may not be heard. To listen to such
+a system, turn on **Accept Invalid CRC** for its channels in the Codeplug Editor's channel settings. It works on DMR,
+DMR trunked and P25 trunked channels, and is off on a new channel.
+
+- The radio takes a message that fails its checksum only when the same message failed shortly before. These systems
+  repeat their messages; a message damaged on the air rarely comes out the same twice.
+- On a trunked channel the radio doesn't register, answer or call while the last control message it took failed its
+  checksum. On a system whose messages all fail, it only listens, and PTT is refused.
+- Leave it off on systems the radio hears normally.

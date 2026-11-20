@@ -286,11 +286,12 @@ typedef struct {
 	uint8_t ax_svc, ax_result, ax_reason, ax_state;
 	bool ptt_wait;		// PTT held, waiting for the grant
 	bool can_talk;
+	bool unverified;	// the last PDU taken failed its CRC (the channel's Accept invalid CRC): listen-only
 	uint8_t last_rx_op, last_rx_slot;	// the last CSBK heard: opcode, slot
 	uint8_t last_tx_op;	// the last CSBK sent (0xFF none)
 	uint32_t last_rx_ms, last_tx_ms;
 	uint32_t ticks;		// slot ticks handed to the engine
-	uint32_t csbk, crc_bad, grants, followed, unmapped, returns, hunts, foreign, learned, sent, ra_tries;
+	uint32_t csbk, crc_bad, crc_taken, grants, followed, unmapped, returns, hunts, foreign, learned, sent, ra_tries;
 	uint32_t lent;		// short LCs saying the TSCC's slot is lent to a call (composite TSCC)
 	uint32_t lent_calls;	// call bursts on the TSCC's slot taken as lent, no short LC heard (t3_ms_call_burst)
 	// Roaming (the t3_roam section)

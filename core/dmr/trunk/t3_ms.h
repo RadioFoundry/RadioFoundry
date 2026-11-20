@@ -27,6 +27,7 @@
 #include "dmr/trunk/t3_pdu.h"
 #include "dmr/trunk/t3_sys.h"
 #include "dmr/trunk/t3_plan.h"
+#include "fec/rx_seen.h"
 
 // Data types of the slot type (TS 102 361-1 9.3.6) the engine looks at
 #define T3_DT_CSBK		3
@@ -59,6 +60,10 @@
 #define T3_OPT_KILL		0x0100	// accept an authenticated kill (6.4.10); the radio core keeps it in the settings (t3_kill)
 #define T3_OPT_NO_ROAM		0x0200	// stay on a TSCC whatever its signal: no Vote Now sampling, no leaving a weak one
 #define T3_OPT_STUN		0x0400	// accept a stun or revive (6.4.9): authenticated first with K, else as sent
+// The channel's Accept invalid CRC (channel_t.accept_bad_crc): a CSBK or MBC block that fails its CRC is taken when the
+// same block failed recently (fec/rx_seen.h), so a system whose PDUs all fail the standard check can be listened to. While the
+// last PDU taken failed it the radio is listen-only (may_send): it never answers or asks on the strength of one
+#define T3_OPT_ACCEPT_BAD_CRC	0x0800
 
 // Timers and limits (TS 102 361-4 Annex A ranges in the comments). Fixed, but for the few t3_cfg_t overrides
 // (T_Awake, T_ALS, T_ALS_E, the Vote Now sample)
@@ -239,7 +244,8 @@ typedef struct {
 #define T3_RA_NONE	0xFFu
 typedef struct {
 	uint32_t csbk;		// CSBKs with a good CRC
-	uint32_t crc_bad;	// CSBKs / MBC headers with a bad CRC
+	uint32_t crc_bad;	// CSBKs / MBC headers with a bad CRC, dropped
+	uint32_t crc_taken;	// ... taken anyway, seen before (T3_OPT_ACCEPT_BAD_CRC)
 	uint32_t grants;	// grants heard while camped
 	uint32_t followed;
 	uint32_t unmapped;	// grants to a channel no plan knows
@@ -315,9 +321,12 @@ typedef struct {
 	// MBC assembly, per slot
 	struct {
 		bool open;
+		bool bad;	// the header was taken with a failed CRC (T3_OPT_ACCEPT_BAD_CRC)
 		t3_csbk_t hdr;
 		uint32_t ms;
 	} mbc[2];
+	bool unverified;	// the last PDU taken failed its CRC (T3_OPT_ACCEPT_BAD_CRC): listen-only until a good one
+	rx_seen_t seen;		// the PDUs that failed it lately
 
 	t3_call_t call;
 	bool protect_dis;	// P_PROTECT DIS_PTT in force on the payload channel

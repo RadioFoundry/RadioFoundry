@@ -127,7 +127,7 @@ typedef struct {
 	uint32_t rx_csbk;	// CSBK, MBC
 	uint32_t rx_data;	// PI header, data headers and rate 1/2, 3/4, 1, USBD blocks
 	uint32_t rx_idle;
-	uint32_t rx_crc_err;	// delivered with a CRC error (data blocks and voice) or dropped for one (headers, CSBK)
+	uint32_t rx_crc_err;	// delivered with a CRC error flagged: the receivers check headers and CSBKs themselves
 	uint32_t rx_dup;	// second report for one burst (the EMB report, extra reports), dropped
 	uint32_t rx_dup_slot;	// ... of those: a second report in the same tick
 	uint32_t rx_dup_extra;	// ... the same voice number again in the next slot (beyond the 45 ms window)

@@ -83,7 +83,7 @@ typedef struct {
 	uint32_t ticks;		// timeslot interrupts that ticked the engine
 	uint32_t ts_tx_ints, ts_rx_ints, sys_ints, rftx_ints;
 	uint32_t rx_voice, rx_lc_header, rx_terminator, rx_csbk, rx_data, rx_idle;
-	uint32_t rx_crc_err;	// delivered with a bad flag (voice, blocks) or dropped (headers, CSBK)
+	uint32_t rx_crc_err;	// delivered with a bad flag: the receivers check what they take
 	uint32_t rx_unusable;	// RC or no type: dropped
 	uint32_t late_entry;	// system interrupt bit 2
 	uint32_t slot_abnormal;	// bits 5, 6, 16
