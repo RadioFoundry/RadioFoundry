@@ -57,6 +57,10 @@ export const readPacket = (addr, pages) => concat(new TextEncoder().encode("Flas
 // The NAND pages whose checksums tell one SoC from the other (Iap.whose): the factory block map and the first page of
 // the calibration's block and the two after it (where it moves past unusable blocks). cal: the board's calibration
 export const socPages = (cal) => [0, ...(cal?.nand != null ? [0, 1, 2].map((k) => cal.nand + k * 0x20000) : [])];
+
+// Whether a print (Iap.whose) can tell its SoC from the other: one calibration page at least holds data, neither erased
+// (2048 × 0xFF) nor zero. Page 0 doesn't count: both SoCs may hold the same there
+export const telling = (print) => !!print && print.split(".").slice(1).some((s) => s !== hex8(0) && s !== hex8(2048 * 0xFF));
 export const erasePacket = (n) => concat(new TextEncoder().encode("Erase      "), be32(0), be32(n));
 
 // What the loader takes: the first stage (firstStage.size bytes, starting with its signature so the loader boots it at

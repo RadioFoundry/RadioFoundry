@@ -19,7 +19,7 @@ import { h, t, notice, button, panel, progressBar, spinner } from "./dom.js";
 import { sleep } from "./bytes.js";
 import * as c7 from "./c7000.js";
 import { Usmart, stockName, buildsFor, mayTry, UNKNOWN_BUILD } from "./usmart.js";
-import { trimTail, Iap, socPages } from "./iap.js";
+import { trimTail, Iap, socPages, telling } from "./iap.js";
 import { variantCode, verdict, writable, groups } from "./variant.js";
 import * as diag from "../diag.js";
 import { CodecError } from "./c7000.js";
@@ -377,8 +377,10 @@ export function makeStockRoutes(host) {
 	// The install of a radio with two SoCs (flash.second) through update mode: one card, two numbered steps, each SoC
 	// written by its own loader in turn. The radio stays in update mode after the first; a long press switches it to the
 	// second SoC's loader (flash.both.switch). Before each write the page checks which SoC answers (Iap.whose: each has
-	// its own NAND), so an image never goes to the other SoC: the main SoC's pages come from its application in the
-	// connect step (c.mainPrint) or from the first write. The second step waits for its loader by itself
+	// its own NAND), so an image never goes to the other SoC. The main SoC's pages are always read through its
+	// application, the one thing on the cable that can only be the main SoC: in the connect step (c.mainPrint) or, for a
+	// radio found in update mode, at the first step before any write. Pages that can't tell the SoCs apart stop the
+	// install (Iap telling). The second step waits for its loader by itself
 	function iapBothView() {
 		const c = session();
 		const radio = S().radio, fw = S().firmware, d = c.decision;
@@ -442,27 +444,47 @@ export function makeStockRoutes(host) {
 				variant: fw.variant || fw.manifest.variant || (fw.manifest.dev_build ? "dev" : ""), features: fw.manifest.features || "", build: fw.build || null });
 			let erasing = null;
 			try {
-				// the SoC that answers: this one's pages, or (not known yet) anything but the other's
+				// The SoC that answers. The first step writes only the loader whose pages match the main SoC's, read through its
+				// application (on the cable only the main SoC's application answers): without them yet, it asks for the radio
+				// switched on normally first. The second writes only a loader whose pages differ from the first's. A main SoC
+				// whose pages can't tell it from the other (telling) gets no write at all
+				const same = () => new Error(t("flash.both.same"));
+				if (i === 0 && p.print && !telling(p.print)) throw same();
 				const until = Date.now() + LISTEN_MS;
 				let said = null;
+				const say = (key, why) => {
+					if (said === key) return;
+					said = key;
+					diag.note(`update mode: ${why}`, { step: i + 1 });
+					fill(status, notice(t(key), "info"), h("p", { class: "muted c7-big" }, spinner(), " ", t(key === "flash.both.need_normal" ? "flash.both.listening_normal" : "flash.iap.listening")));
+				};
+				if (i === 0 && !p.print) say("flash.both.need_normal", "the main SoC's pages are not read yet");
 				for (;;) {
 					if (stop.signal.aborted) throw new Error("stopped");
 					if (Date.now() > until) throw new Error(t("flash.iap.no_update_mode"));
-					const um = await loader.probe(1500);
-					if (um?.version) {
+					const needA = i === 0 && !p.print;
+					const um = await loader.probe(1500, 0, { all: needA });
+					if (um?.version && needA) {
+						say("flash.both.need_normal", "a loader answered before the main SoC's pages were read");
+					} else if (um?.version) {
 						const who = await loader.whose(pages);
 						if (who && (p.print ? who === p.print : who !== other.print)) {
 							p.print = who;
 							break;
 						}
-						if (who && said !== "other") {
-							said = "other";
-							diag.note("update mode: the other SoC answers", { step: i + 1 });
-							fill(status, notice(t(i === 0 ? own("flash.both.not_a") : own("flash.both.not_b")), "info"), h("p", { class: "muted c7-big" }, spinner(), " ", t("flash.iap.listening")));
+						if (who) say(i === 0 ? own("flash.both.not_a") : own("flash.both.not_b"), "the other SoC answers");
+					} else if (um?.stock && needA) {
+						const who = await loader.whose(pages);
+						if (who) {
+							if (!telling(who)) throw same();
+							p.print = who;
+							diag.note("update mode: the main SoC's pages read", { step: 1 });
+							// it says what to do next: the application answering on until the radio is off doesn't replace it
+							said = "flash.iap.not_update_mode";
+							fill(status, notice(t("flash.both.read_a"), "ok"), h("p", { class: "muted c7-big" }, spinner(), " ", t("flash.iap.listening")));
 						}
-					} else if (um?.stock && said !== "normal") {
-						said = "normal";
-						fill(status, notice(t("flash.iap.not_update_mode"), "info"), h("p", { class: "muted c7-big" }, spinner(), " ", t("flash.iap.listening")));
+					} else if (um?.stock) {
+						say("flash.iap.not_update_mode", "the application answers");
 					}
 					await sleep(500);
 				}

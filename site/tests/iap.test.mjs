@@ -14,7 +14,7 @@ import * as c7 from "../static/js/flasher/c7000.js";
 import { Usmart, HIJACK, UsmartError, stockVersion, stockName, BUILDS, STUB_WINDOW, stubTarget, UNKNOWN_BUILD, versionOf, buildsFor } from "../static/js/flasher/usmart.js";
 import {
 	Iap, iapPlan, readPacket, checkInstallImage as checkInstall, checkRestoreImage as checkRestore, trimTail, erasePacket,
-	IapError, socPages,
+	IapError, socPages, telling,
 } from "../static/js/flasher/iap.js";
 
 const DIR = process.env.RFOUNDRY_SITE_FIXTURES || "build/site-tests";
@@ -465,6 +465,13 @@ test("IAP: which SoC answers, from its own NAND pages; a Read left unanswered is
 	await iapOn(b.pipe).write(installImage());
 	assert.ok(!b.got.failedErase);
 	assert.equal(await iapOn(new Pipe(() => {})).whose(pages, 200), null);
+	// a print tells its SoC apart only by a calibration page with data: erased or zero pages on both would match
+	assert.ok(telling(a));
+	assert.ok(!telling(await iapOn(iapRadio({ fill: 0xFF }).pipe).whose(pages)), "erased");
+	assert.ok(!telling(await iapOn(iapRadio({ fill: 0 }).pipe).whose(pages)), "zero");
+	assert.ok(!telling(null));
+	assert.ok(!telling("00077880"), "page 0 alone");
+	assert.ok(telling("00077880.000594ab.0007f800.0007ab97"), "a radio's receiver A");
 });
 
 test("IAP: a checksum that differs is reported, and silence after the erase stops before any data", async () => {
