@@ -691,9 +691,17 @@ static void outputs(radio_sm_t *sm)
 		board.bcast->audio((open || bcast_play) && bcast);
 	}
 #endif
-	if (sm->audio_out != (int8_t)(open && !bcast)) {
-		sm->audio_out = (int8_t)(open && !bcast);
-		board.radio->audio(open && !bcast);
+	bool spk = open && !bcast;
+#if CONFIG_APRS
+	// APRS > Mute APRS audio: on the APRS frequency the speaker stays off, the LED and the decoder go on. Monitor
+	// (the squelch held open) still plays it, to listen on purpose
+	if (spk && !sm->view.monitor && fm && sm->view.ch.rx_hz == aprs_mute_hz()) {
+		spk = false;
+	}
+#endif
+	if (sm->audio_out != (int8_t)spk) {
+		sm->audio_out = (int8_t)spk;
+		board.radio->audio(spk);
 	}
 #if CONFIG_DUAL_WATCH
 	// The second receiver has the speaker while the selected channel is quiet: that one's calls always win

@@ -868,6 +868,11 @@ msgid "Stations heard"
 msgstr "Stations reçues"
 
 #: core/ui/ui_aprs.c
+msgctxt "APRS_LABEL_MUTE"
+msgid "Mute APRS audio"
+msgstr "Couper son APRS"
+
+#: core/ui/ui_aprs.c
 msgctxt "APRS_LABEL_NMEA_ON_USB"
 msgid "NMEA on USB"
 msgstr "NMEA sur USB"
@@ -906,6 +911,16 @@ msgstr "Balises activées"
 msgctxt "APRS_TOAST_BEACONS_OFF"
 msgid "Beacons off"
 msgstr "Balises désactivées"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_TOAST_MUTED"
+msgid "APRS audio muted"
+msgstr "Son APRS coupé"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_TOAST_UNMUTED"
+msgid "APRS audio on"
+msgstr "Son APRS actif"
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_WHY_CANT_RECEIVE"

@@ -870,6 +870,11 @@ msgid "Stations heard"
 msgstr "收到的台站"
 
 #: core/ui/ui_aprs.c
+msgctxt "APRS_LABEL_MUTE"
+msgid "Mute APRS audio"
+msgstr "APRS静音"
+
+#: core/ui/ui_aprs.c
 msgctxt "APRS_LABEL_NMEA_ON_USB"
 msgid "NMEA on USB"
 msgstr "USB NMEA"
@@ -908,6 +913,16 @@ msgstr "信标开"
 msgctxt "APRS_TOAST_BEACONS_OFF"
 msgid "Beacons off"
 msgstr "信标关"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_TOAST_MUTED"
+msgid "APRS audio muted"
+msgstr "APRS音频已静音"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_TOAST_UNMUTED"
+msgid "APRS audio on"
+msgstr "APRS音频开"
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_WHY_CANT_RECEIVE"

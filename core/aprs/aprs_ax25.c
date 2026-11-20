@@ -917,6 +917,11 @@ void aprs_rx_stats(aprs_rx_stats_t *out)
 }
 #endif
 
+uint32_t aprs_mute_hz(void)
+{
+	return aprs_s.cfg.mute ? aprs_cfg_freq(&aprs_s.cfg) : 0u;
+}
+
 bool aprs_rx_listening(void)
 {
 #if CONFIG_APRS_RX
