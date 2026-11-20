@@ -22,8 +22,10 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "config.h"
 #include "hrc.h"
 #include "hal_dmr_modem.h"
+#include "dmr/fec/dmrSoftComb.h"
 
 // --- Chip-level helpers (any context that owns the bus; each register write is one atomic transaction) ---
 
@@ -213,6 +215,7 @@ typedef struct {
 	dmr_event_t ev;
 	dmr_burst_t burst;
 	uint8_t dms;		// DMR_EV_BURST_RX: ms after the timeslot interrupt the report came, 255 = unknown / at the tick
+	uint8_t soft_tag;	// DMR_EV_BURST_RX: its soft values staged in soft (dmrSoftCombStage), 0 none
 } hrc6000_dmr_evslot_t;
 
 // A report taken but not yet delivered: a lone voice sync (burst A with nothing before it on its slot) waits for the
@@ -363,6 +366,12 @@ typedef struct {
 	int8_t tr_skip_ph;
 	bool tr_skip_all;
 
+#if CONFIG_DMR
+	// Soft combining of control bursts whose CRC failed (dmr-modem.md 2.2.1): the glue's task sets it while DMR runs,
+	// NULL otherwise. The report stages (soft_pending until the burst is queued), hrc6000_dmr_pop combines
+	dmrSoftComb_t *volatile soft;
+	uint8_t soft_pending;
+#endif
 	hrc6000_dmr_stats_t st;
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
 	struct hrc6000_bs *bs;	// split duplex BS outbound in charge of the chip (hrc6000_bs.c), NULL otherwise

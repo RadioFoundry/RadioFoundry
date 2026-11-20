@@ -501,6 +501,23 @@ silence for the next frame. AMBE silence frame (9 bytes, repeated three times pe
 
 ---
 
+### 5.8 Soft values of the received burst
+
+Not documented (measured). Page 2 from 0xA8 holds the burst just deframed as soft values, one byte per bit, 264 bytes:
+the 68 bits of the middle field first (slot type and sync), then the 196 info bits in burst order (bits 0-97, then
+166-263). The area holds the burst of the report being read, on either slot, and the engine reads the area at the
+report, like the payload.
+
+| Byte | Meaning |
+|---|---|
+| bits 5-0 | the bit's level, two's complement: negative for a 1. The hard bit is 1 when the byte is 32 or more |
+| bits 7-6 | not used |
+
+Value of a bit, positive for a 1: `v = b & 0x3F; v >= 32 ? 64 - v : -v` (`hrc_soft_value`). A clean bit reads about
+24. The HR_C7000 gives the same format ([modem-hrc7000.md](modem-hrc7000.md) 5.4). The engine uses them for soft
+combining ([dmr-modem.md](dmr-modem.md) 2.2.1): `hrc_chip_t.soft_tap` names the address, 0 on a chip without a known
+address (the HR_C5000).
+
 ## 6. Transmit
 
 ### 6.1 Burst set-up

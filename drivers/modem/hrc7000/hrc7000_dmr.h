@@ -32,8 +32,10 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "config.h"
 #include "hrc7000.h"
 #include "hal_dmr_modem.h"
+#include "dmr/fec/dmrSoftComb.h"
 
 // --- Pure helpers ---
 
@@ -125,6 +127,7 @@ typedef struct {
 typedef struct {
 	dmr_event_t ev;
 	dmr_burst_t burst;
+	uint8_t soft_tag;	// the burst's soft values staged in soft (dmrSoftCombStage), 0 none
 } hrc7000_dmr_evslot_t;
 
 typedef struct {
@@ -208,6 +211,11 @@ typedef struct {
 	struct hrc7000_bs *bs;	// split duplex BS outbound in charge of the chip (hrc7000_bs.c), NULL otherwise
 #endif
 
+#if CONFIG_DMR
+	// Soft combining of control bursts whose CRC failed (dmr-modem.md 2.2.1): the glue's task sets it while DMR runs,
+	// NULL otherwise. The receive interrupt stages, hrc7000_dmr_pop combines
+	dmrSoftComb_t *volatile soft;
+#endif
 	hrc7000_dmr_evslot_t evq[HRC7000_DMR_EVQ_DEPTH];
 	volatile uint8_t evq_head, evq_tail;
 

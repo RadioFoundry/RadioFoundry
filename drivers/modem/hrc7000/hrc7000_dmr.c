@@ -4,6 +4,7 @@
 #include <string.h>
 #include "hrc7000_dmr.h"
 #include "dmr/fec/dmrFec.h"
+#include "modem/hrc_common/hrc_soft.h"
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
 #include "hrc7000_bs.h"	// split duplex TX half: the BS outbound takes the chip over (e->bs)
 #define BS_ACTIVE(e)	((e)->bs != NULL)
@@ -736,6 +737,25 @@ static void rx_tick(hrc7000_dmr_t *e)
 	w(e, C7_LAYER2_TXRX_CTRL, (e->voice_slots & (1u << next)) ? TXRX_RX_VOICE : TXRX_RX);
 }
 
+#if CONFIG_DMR
+// The soft values of a control burst whose CRC failed, for hrc7000_dmr_pop to combine (dmr-modem.md 2.2.1). The tap
+// holds the burst just deframed at RX 0x48 (modem-hrc7000.md 5.4); while we send it reads another way, so not then
+#define TAP_SOFT_0	(C7_RX_RAM + 0x48u + HRC_SOFT_INFO_OFS)
+TAP_FLASHFUNC static void soft_stage(hrc7000_dmr_t *e, const dmr_burst_t *b, uint8_t *tag)
+{
+	dmrSoftComb_t *c = e->soft;
+	bool control = b->kind == DMR_BURST_CSBK || b->kind == DMR_BURST_MBC_HEADER || b->kind == DMR_BURST_MBC_CONT ||
+		       b->kind == DMR_BURST_DATA_HEADER;
+	if (c == NULL || b->crc_ok || !control || e->tx_state != TXS_IDLE) {
+		return;
+	}
+	int8_t *v = dmrSoftCombStage(c, tag);
+	for (uint32_t i = 0; i < DMR_SOFT_BITS; i++) {
+		v[i] = hrc_soft_value(e->dev->buf[TAP_SOFT_0 + i]);
+	}
+}
+#endif
+
 static void rx_burst(hrc7000_dmr_t *e)
 {
 	uint32_t rti = r(e, C7_RX_TYPE_INFO);
@@ -853,6 +873,10 @@ static void rx_burst(hrc7000_dmr_t *e)
 			break;
 		}
 	}
+	slot->soft_tag = 0;
+#if CONFIG_DMR
+	soft_stage(e, b, &slot->soft_tag);
+#endif
 	slot->ev.kind = DMR_EV_BURST_RX;
 	slot->ev.ts = ts;
 	slot->ev.flags = 0;
@@ -1068,6 +1092,12 @@ bool hrc7000_dmr_pop(hrc7000_dmr_t *e, dmr_event_t *ev, dmr_burst_t *burst)
 	if (ev->kind == DMR_EV_BURST_RX) {
 		*burst = s->burst;
 		ev->burst = burst;
+#if CONFIG_DMR
+		dmrSoftComb_t *c = e->soft;
+		if (s->soft_tag != 0 && c != NULL) {
+			(void)dmrSoftCombTake(c, s->soft_tag, burst->ts == 2 ? 1u : 0u, burst->payload);
+		}
+#endif
 	} else {
 		ev->burst = NULL;
 	}
