@@ -271,6 +271,10 @@ is on, the reply window lets you answer any call you heard with **PTT**. **PTT**
 timeslot and color code, so a call heard on another one doesn't hear the reply. While digital monitor plays a call on
 the other timeslot, the channel counts as busy.
 
+On a [Tier III trunked channel](#setting-one-up) digital monitor follows calls on every talkgroup of the system, not
+only the channel's RX group list. It still plays only the system's calls, on their own timeslot. While it plays one,
+**PTT** talks on that call, as on any call the radio follows (not on a broadcast or an all-call someone else made).
+
 ## Privacy
 
 RadioFoundry has two kinds of basic privacy: Motorola basic privacy (keys 1 to 255) and Anytone 16-bit basic privacy. Basic
@@ -399,6 +403,8 @@ In the Codeplug Editor ([Programming](04-programming.md#digital-modes-and-system
 | Needs its key | For a system that authenticates its radios. Enter the key in the form's **Key** section; without it the channel can't be used |
 | Radio ID on this system | Your ID there, when it isn't the radio's DMR ID |
 | Fallback channel | A conventional channel to use when the system can't be found (below). A channel can name its own, or none |
+| Follow every talkgroup | Plays calls on all the system's talkgroups, not only the channel's RX group list. Digital monitor does the same while it is on. Off by default |
+| Learn the system from the air | For listening to a system whose model and NET you don't know: the radio takes the first control channel it hears as the system. Only while it listens (Transmit off, or a receive-only channel). Off by default |
 
 A channel that is receive only in the editor stays receive only on the system: the radio listens and refuses PTT.
 
@@ -409,15 +415,23 @@ Select the channel. Home shows the system's name and what the radio is doing the
 | Home shows | Meaning |
 |---|---|
 | Searching | Looking for the system's control channel |
+| Other system | Looking for the system, and hearing only another one. The line below names what was heard ("Heard: Huge, net 0, site 83"): compare it with the system's network model and network number in the editor |
 | Registering | Found; registering with the system |
+| Reg. refused | The system doesn't accept this radio, most often because your DMR ID isn't in its records. Ask the system's administrator to add it. The radio keeps asking. PTT says "Registration refused" |
 | Ready | On the control channel. Hold **PTT** to call |
 | In call | On a channel the system granted, in a call |
 | Refused | The system refused the registration. PTT is refused |
 | Fallback | No control channel found: on the fallback channel |
 | System not set up | The channel's system is missing, has no control channel or lacks its key. The channel is receive only |
 
+If PTT says **Unknown channel N**, the system granted your call on channel N and the system's channel list doesn't
+have it. Add channel N with its frequencies; on a site with one carrier, give the control channel the number N. The
+number is the one the control channel sends. A site tool or scanner that counts each timeslot as a channel shows
+2 × N + 1 and 2 × N + 2 instead (623 and 624 for 311); the radio takes those too.
+
 Hold **PTT**: the radio asks the system for a channel and talks once the system grants it. When the system refuses or
-doesn't answer, PTT is refused. The talk target is the channel's contact, or one you pick as on any DMR channel
+doesn't answer, PTT is refused, and the screen says why: no control channel, another system heard, not registered yet,
+denied by the system, or no answer. The talk target is the channel's contact, or one you pick as on any DMR channel
 ([Choosing a talk target](#choosing-a-talk-target)).
 
 Zone and channel lists name a trunked channel's system where the frequency would be. A channel whose system isn't set

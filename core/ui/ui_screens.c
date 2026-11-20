@@ -1232,6 +1232,22 @@ static const char *hwopt_action(void)
 	return TR(HW_FIX_SETTINGS_PATH, "Settings>Advanced>Hardware");
 }
 
+#if CONFIG_P25_TRUNK || CONFIG_DMR_TRUNK
+// RADIO_TRUNK_WHY_* of a refused trunked PTT: the P25 follower's or the Tier III system's
+static uint8_t trunk_why(const radio_view_t *v)
+{
+#if CONFIG_DMR_TRUNK
+	if (v->t3.on)
+		return v->t3.why;
+#endif
+#if CONFIG_P25_TRUNK
+	return v->p25.twhy;
+#else
+	return RADIO_TRUNK_WHY_NONE;
+#endif
+}
+#endif
+
 static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 {
 	sbuf_t b;
@@ -1263,14 +1279,23 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 	case TXDENY_REFUSED: sb_str(&b, TR(DENY_WHY_RADIO_REFUSED, "Radio refused to send")); break;
 	case TXDENY_BENCH: sb_str(&b, TR(DENY_WHY_AIR_BENCH, "Air bench: PTT off")); break;
 	case TXDENY_AIR_NO_TX: sb_str(&b, TR(DENY_WHY_AIR_NO_TX, "This mode: receive only")); break;
-#if CONFIG_P25_TRUNK
+#if CONFIG_P25_TRUNK || CONFIG_DMR_TRUNK
 	case TXDENY_TRUNK:
-		switch (v->p25.twhy) {
-		case RADIO_P25T_WHY_NO_CC: sb_str(&b, TR(DENY_WHY_P25T_NO_CC, "No control channel")); break;
-		case RADIO_P25T_WHY_NOT_REG: sb_str(&b, TR(DENY_WHY_P25T_NOT_REG, "Not registered yet")); break;
-		case RADIO_P25T_WHY_DENIED: sb_str(&b, TR(DENY_WHY_P25T_DENIED, "System denied the call")); break;
-		case RADIO_P25T_WHY_NO_ANSWER: sb_str(&b, TR(DENY_WHY_P25T_NO_ANSWER, "No answer from system")); break;
-		case RADIO_P25T_WHY_NO_CHAN: sb_str(&b, TR(DENY_WHY_P25T_NO_CHAN, "Voice channel unusable")); break;
+		switch (trunk_why(v)) {
+		case RADIO_TRUNK_WHY_NO_CC: sb_str(&b, TR(DENY_WHY_P25T_NO_CC, "No control channel")); break;
+		case RADIO_TRUNK_WHY_NOT_REG: sb_str(&b, TR(DENY_WHY_P25T_NOT_REG, "Not registered yet")); break;
+		case RADIO_TRUNK_WHY_DENIED: sb_str(&b, TR(DENY_WHY_P25T_DENIED, "System denied the call")); break;
+		case RADIO_TRUNK_WHY_NO_ANSWER: sb_str(&b, TR(DENY_WHY_P25T_NO_ANSWER, "No answer from system")); break;
+		case RADIO_TRUNK_WHY_NO_CHAN: sb_str(&b, TR(DENY_WHY_P25T_NO_CHAN, "Voice channel unusable")); break;
+		case RADIO_TRUNK_WHY_OTHER_SYS: sb_str(&b, TR(DENY_WHY_TRUNK_OTHER_SYS, "Another system heard")); break;
+		case RADIO_TRUNK_WHY_REG_REFUSED: sb_str(&b, TR(DENY_WHY_TRUNK_REG_REFUSED, "Registration refused")); break;
+#if CONFIG_DMR_TRUNK
+		case RADIO_TRUNK_WHY_UNMAPPED:
+			// The channel number the grant named, as the codeplug's System channels table needs it
+			sb_str(&b, TR(DENY_WHY_TRUNK_UNMAPPED, "Unknown channel "));
+			sb_u32(&b, v->t3.unmapped, 1);
+			break;
+#endif
 		default: sb_str(&b, TR(DENY_WHY_RX_ONLY, "This channel is RX only")); break;
 		}
 		break;
@@ -1301,7 +1326,14 @@ static const char *deny_action(const radio_view_t *v)
 	case TXDENY_HWOPT: return hwopt_action();
 	case TXDENY_REFUSED: return TR(DENY_FIX_RELEASE_AND_RETRY, "Release PTT, try again");
 	case TXDENY_BENCH: return TR(DENY_FIX_END_BENCH_ON_PC, "End the bench on the PC");
-	case TXDENY_TRUNK: return TR(DENY_FIX_RELEASE_AND_RETRY, "Release PTT, try again");
+#if CONFIG_P25_TRUNK || CONFIG_DMR_TRUNK
+	case TXDENY_TRUNK:
+		if (trunk_why(v) == RADIO_TRUNK_WHY_OTHER_SYS || trunk_why(v) == RADIO_TRUNK_WHY_UNMAPPED)
+			return TR(DENY_FIX_CHECK_SYSTEM, "Check system settings");
+		if (trunk_why(v) == RADIO_TRUNK_WHY_REG_REFUSED)
+			return TR(DENY_FIX_ASK_TO_ADD_ID, "Ask to add your ID");	// the system doesn't know it
+		return TR(DENY_FIX_RELEASE_AND_RETRY, "Release PTT, try again");
+#endif
 	default: return TR(DENY_FIX_PICK_ANOTHER_CHANNEL, "Pick another channel");
 	}
 }
@@ -1576,6 +1608,10 @@ static const char *t3_state_word(const radio_view_t *v, bool *warn)
 		return TR(TRUNK_WHY_SYSTEM_NOT_SET_UP, "System not set up");
 	if (v->t3.fallback != 0)	// on the system's fallback channel, or looking for the system from it
 		return TR(TRUNK_STATE_FALLBACK, "Fallback");
+	if (v->t3.on && v->t3.state == T3_HUNT && v->t3.other != 0)
+		return TR(TRUNK_STATE_OTHER_SYSTEM, "Other system");	// Home's activity says which (draw_t3_other)
+	if (v->t3.on && v->t3.refused)	// hunting for another TSCC, or registering again where it was refused
+		return TR(TRUNK_STATE_REG_REFUSED, "Reg. refused");
 	if (!v->t3.on || v->t3.state == T3_HUNT)
 		return TR(TRUNK_STATE_SEARCHING, "Searching");
 	if (v->t3.state == T3_FOLLOW) {
@@ -1666,6 +1702,47 @@ static void draw_chips_dmr(const radio_view_t *v, const ui_state_t *s)
 	if ((s->privacy || v->dmr.privacy) && x + gfx_text_width(f, priv) <= gfx_width())
 		gfx_text(f, x, L->chips_y, priv, ui_col.priv);
 }
+
+#if CONFIG_DMR_TRUNK
+// Activity on Home while the radio searches a trunked system and hears only another one: what it heard, to compare
+// with the system's settings (dmr-trunking.md 12.4): "Heard: Huge, net 0" / "site 83" (and the category when the
+// site takes one only), or the first line alone where there is room for one
+static void draw_t3_other(const radio_view_t *v, int y)
+{
+	const font_t *sm = ui_layout.small;
+	int w = gfx_width();
+	char a[48], c[40], fit[48];
+	sbuf_t b;
+	t3_syscode_t sc;
+	t3_syscode_split(v->t3.other, &sc);
+	static const tr_id_t model[4] = {	// the editor's network model names
+		TRN(TRUNK_MODEL_TINY, "Tiny"), TRN(TRUNK_MODEL_SMALL, "Small"), TRN(TRUNK_MODEL_LARGE, "Large"),
+		TRN(TRUNK_MODEL_HUGE, "Huge"),
+	};
+	sb_init(&b, a, sizeof a);
+	sb_str(&b, TR(TRUNK_OTHER_HEARD, "Heard: "));
+	sb_str(&b, tr(model[sc.model & 3u]));
+	sb_str(&b, TR(TRUNK_OTHER_NET, ", net "));
+	sb_u32(&b, sc.net, 1);
+	sb_init(&b, c, sizeof c);
+	sb_str(&b, TR(TRUNK_OTHER_SITE, "site "));
+	sb_u32(&b, sc.site, 1);
+	if (sc.par == T3_PAR_A)
+		sb_str(&b, TR(TRUNK_OTHER_CAT_A, ", category A only"));
+	else if (sc.par == T3_PAR_B)
+		sb_str(&b, TR(TRUNK_OTHER_CAT_B, ", category B only"));
+	if (ui_layout.activity_h >= 2 * sm->h) {
+		gfx_text_fit(sm, a, w, fit, sizeof fit);
+		gfx_text(sm, 0, y, fit, ui_col.warn);
+		gfx_text_fit(sm, c, w, fit, sizeof fit);
+		gfx_text(sm, 0, y + sm->h, fit, ui_col.fg);
+		return;
+	}
+	// One line: the model and network, what a wrong setting usually is
+	gfx_text_fit(sm, a, w, fit, sizeof fit);
+	gfx_text(sm, 0, y + (ui_layout.activity_h - sm->h) / 2, fit, ui_col.warn);
+}
+#endif
 
 // Activity on Home, DMR idle: the last call heard. Two lines where they fit (the caller, then where and when), else
 // one line where the caller's name gives way first: "Joe Smith" / "TG 91, 11s ago", or "Joe Smith  TG 91 11s ago"
@@ -1911,15 +1988,17 @@ static void air_call_line(const air_call_t *c, const font_t *f, int y)
 	char buf[64], fit[48];
 	sbuf_t b;
 
-	if (c->enc || !c->played) {
+	if (!c->played) {
 		gfx_text_fit(f, c->enc ? TR(CALL_WHY_ENCRYPTED, "Encrypted: not played") :
 			TR(CALL_WHY_OTHER_TG, "Other TG: not played"), gfx_width(), fit, sizeof fit);
 		gfx_text(f, 0, y, fit, ui_col.warn);
 		return;
 	}
-	// Too wide: the caller's ID goes first, then the target is cut
+	// Too wide: keep the marker and destination, then cut the destination if needed
 	for (int with_id = c->src != 0; with_id >= 0; with_id--) {
 		sb_init(&b, buf, sizeof buf);
+		if (c->enc)
+			sb_str(&b, "ENC ");
 		if (with_id) {
 			sb_str(&b, "ID ");
 			sb_u32(&b, c->src, 1);
@@ -2039,6 +2118,12 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 			}
 			break;
 		}
+#if CONFIG_DMR_TRUNK
+		if (v->t3.on && v->t3.state == T3_HUNT && v->t3.other != 0) {
+			draw_t3_other(v, y);
+			break;
+		}
+#endif
 #if CONFIG_DMR
 		if (v->ch.mode == RADIO_MODE_DMR && v->dmr.active) {
 			draw_last_heard(v, s, y);	// hear all shows as "All" in the chips and in the hint

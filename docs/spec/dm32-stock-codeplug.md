@@ -60,7 +60,7 @@ Block 0x12: +0x00 the channel count (u16), records of 48 bytes from +0x10, chann
 | 0x19 | Bit 7: wide (25 kHz) FM (D). Bits 2-6: scan list number, 0 none (D, lists 1 and 3 seen). Bits 0-1 unknown |
 | 0x1D | Bit 4: time slot 2 (D). Bits 0-3: color code (D). Bit 5 unknown |
 | 0x1F | RX group list number, 1-based, 0 none (D) |
-| 0x21, 0x23 | RX, TX tone, u16. 0xFFFF or 0 none. CTCSS: 4 BCD digits of 0.1 Hz (0x1035 = 103.5 Hz) (D). DCS: bit 15 set, the code's three digits read as a decimal number in bits 0-11 (0x8114 = D276) (D on three codes, section 5) |
+| 0x21, 0x23 | RX, TX tone, u16. 0xFFFF or 0 none. CTCSS: 4 BCD digits of 0.1 Hz (0x1035 = 103.5 Hz) (D). DCS: bit 15 set, the code's three octal digits as three BCD digits in bits 0-11, like the CTCSS word (0x8073 = D073, 0x8265 = D265) (D: two stock channels, set to D073 and D265 in the stock software, read these words). Bits 12-14 are not read (section 5) |
 | 0x1A, 0x1C, 0x20 | Unknown. Squelch, TX timeout and admit criterion are not mapped |
 
 TX contact (block 0x42): two bytes per channel, channel n at 2 × (n − 1). Byte 1 is the contact number, 1-based, 0
@@ -142,5 +142,5 @@ from the stock area its check step read, or read through RadioFoundry's CPS at p
 - Channels past 84, contacts past 170 and zones past 28: the blocks that hold them (0x13 and up, 0x45 and up,
   0x5D and up) and whether they carry a header. The two codeplugs seen fit in the first block of each.
 - TX contact byte 0, and contact numbers above 255.
-- DCS: two codes read with a digit above 7 (0x8054, 0x8732), which dmrconf shows as D074 and D1742. The polarity bit.
+- DCS: the polarity bit (bits 12-14 are not read).
 - Squelch, TX timeout, RX only, VOX, admit criterion and talkaround.
