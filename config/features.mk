@@ -547,7 +547,10 @@ CONFIG_DMR_DATA_CORE := $(if $(strip $(foreach f,DMR_SMS DMR_ARS DMR_LRRP DMR_SI
 # Derived: the position service (core/position) is built for the GPS and for everything that reports our position
 CONFIG_POSITION := $(if $(strip $(foreach f,GPS APRS DMR_LRRP DMR_GPS,$(call feature_on,$(f)))),y,n)
 
-FEATURE_DEFS := $(foreach f,$(FEATURES) DMR_DATA_CORE POSITION AIR IMBE MBE,-DCONFIG_$(f)=$(if $(call feature_on,$(f)),1,0))
+# The flat FM paths (hal_audio_tap.h AUDIO_TAP_FM_TX_FLAT / AUDIO_TAP_FM_RX_RAW): the board glue every data modem with its
+# own waveform shares, built for any of them
+CONFIG_FM_FLAT := $(if $(strip $(foreach f,DSTAR,$(call feature_on,$(f)))),y,n)
+FEATURE_DEFS := $(foreach f,$(FEATURES) DMR_DATA_CORE POSITION AIR IMBE MBE FM_FLAT,-DCONFIG_$(f)=$(if $(call feature_on,$(f)),1,0))
 
 ## Numeric build values (board config.mk sets the defaults; the command line overrides)
 # Display safe area in pixels: edges hidden by the bezel or lens. CONFIG_DISPLAY_INSET sets all four

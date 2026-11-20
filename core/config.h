@@ -140,6 +140,10 @@
 #ifndef CONFIG_DSTAR
 #define CONFIG_DSTAR			CONFIG_FM
 #endif
+// The flat FM paths' board glue (hal_audio_tap.h), shared by the data modems with a waveform of their own
+#ifndef CONFIG_FM_FLAT
+#define CONFIG_FM_FLAT			(CONFIG_DSTAR)
+#endif
 #ifndef CONFIG_DEBUGLINK
 #define CONFIG_DEBUGLINK		CONFIG_HOSTLINK
 #endif
