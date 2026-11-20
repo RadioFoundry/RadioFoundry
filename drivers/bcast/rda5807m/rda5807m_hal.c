@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The RDA5807M as hal_bcast_t (rda5807m_hal.h)
+#include <string.h>
+#include "config.h"
 #include "rda5807m_hal.h"
 
 #define SETTLE_POLLS		40	// at most 40 x 5 ms for the power-up tune to finish
@@ -10,6 +12,11 @@ static const rda5807m_hal_cfg_t *wiring;
 static rda5807m_t dev;
 static uint32_t last_khz;
 static bool tune_pending;	// the tune that came with the power-up may still be running
+#if CONFIG_BCAST_RDS
+static rda5807m_status_t rds_st;	// RDSR and the error levels from the last status read
+static uint16_t rds_last[4];		// the last group passed on
+static bool rds_have_last;
+#endif
 
 // The chip's random-access mode: a write is register, high byte, low byte; a read sends the register and then reads two
 static bool reg_write(void *ctx, uint8_t reg, uint16_t val)
@@ -121,8 +128,37 @@ static bool hal_status(bcast_status_t *st)
 	if (s.done) {
 		last_khz = s.khz;	// a seek ends on a new frequency; power-up comes back to it
 	}
+#if CONFIG_BCAST_RDS
+	rds_st = s;
+#endif
 	return true;
 }
+
+#if CONFIG_BCAST_RDS
+static void hal_rds_enable(bool on)
+{
+	(void)rda5807m_rds_enable(&dev, on);
+	rds_have_last = false;
+}
+
+static bool hal_rds_group(bcast_rds_t *g)
+{
+	bool ready = rds_st.rds_ready && rds_st.rds_sync;
+	rds_st.rds_ready = false;	// one read per status
+	if (!ready || !rda5807m_rds_read(&dev, g->blk)) {
+		return false;
+	}
+	// The status polls faster than groups arrive (about 11 a second): RDSR can still be up for a group already read
+	if (rds_have_last && memcmp(rds_last, g->blk, sizeof rds_last) == 0) {
+		return false;
+	}
+	memcpy(rds_last, g->blk, sizeof rds_last);
+	rds_have_last = true;
+	g->err_a = rds_st.rds_err_a;
+	g->err_b = rds_st.rds_err_b;
+	return true;
+}
+#endif
 
 static void hal_audio(bool on)
 {
@@ -145,4 +181,8 @@ const hal_bcast_t rda5807m_hal = {
 	.volume = hal_volume,
 	.status = hal_status,
 	.audio = hal_audio,
+#if CONFIG_BCAST_RDS
+	.rds_enable = hal_rds_enable,
+	.rds_group = hal_rds_group,
+#endif
 };

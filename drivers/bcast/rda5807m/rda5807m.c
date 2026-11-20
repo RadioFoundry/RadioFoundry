@@ -40,6 +40,7 @@ void rda5807m_attach(rda5807m_t *dev, const rda5807m_bus_t *bus, const rda5807m_
 	dev->r05 = VOLUME_DEFAULT;
 	dev->band = RDA5807M_BAND_WORLD;
 	dev->on = false;
+	dev->rds = false;
 	dev->writes = 0;
 }
 
@@ -61,6 +62,9 @@ bool rda5807m_power(rda5807m_t *dev, bool on, uint32_t khz)
 		RDA5807M_ENABLE);
 	if (dev->cfg.rclk_direct) {
 		r02 |= RDA5807M_RCLK_DIRECT;
+	}
+	if (dev->rds) {
+		r02 |= RDA5807M_RDS_EN;
 	}
 	bool ok = wr(dev, RDA5807M_REG_CTRL, (uint16_t)(r02 | RDA5807M_SOFT_RESET));
 	if (dev->bus->delay_ms != NULL) {
@@ -146,11 +150,39 @@ bool rda5807m_status(rda5807m_t *dev, rda5807m_status_t *st)
 	st->stereo = (a & RDA5807M_ST) != 0;
 	st->station = (b & RDA5807M_FM_TRUE) != 0;
 	st->rssi = (uint8_t)(b >> RDA5807M_RSSI_SHIFT);
+	st->rds_ready = (a & RDA5807M_RDSR) != 0;
+	st->rds_sync = (a & RDA5807M_RDSS) != 0;
+	st->rds_err_a = (uint8_t)((b >> RDA5807M_BLERA_SHIFT) & 3u);
+	st->rds_err_b = (uint8_t)(b & RDA5807M_BLERB_MASK);
 	if (st->done && (dev->r02 & RDA5807M_SEEK)) {
 		// The chip cleared SEEK; the shadow follows, and keeps the channel it stopped on
 		dev->r02 &= (uint16_t)~RDA5807M_SEEK;
 		dev->r03 = (uint16_t)((dev->r03 & ~(RDA5807M_READCHAN_MASK << RDA5807M_CHAN_SHIFT)) |
 			((a & RDA5807M_READCHAN_MASK) << RDA5807M_CHAN_SHIFT));
+	}
+	return true;
+}
+
+bool rda5807m_rds_enable(rda5807m_t *dev, bool on)
+{
+	dev->rds = on;
+	if (on) {
+		dev->r02 |= RDA5807M_RDS_EN;
+	} else {
+		dev->r02 &= (uint16_t)~RDA5807M_RDS_EN;
+	}
+	return !dev->on || wr(dev, RDA5807M_REG_CTRL, dev->r02);	// SEEK stays set while a seek runs
+}
+
+bool rda5807m_rds_read(rda5807m_t *dev, uint16_t blk[4])
+{
+	if (!dev->on) {
+		return false;
+	}
+	for (uint8_t i = 0; i < 4; i++) {
+		if (!dev->bus->read(dev->bus->ctx, (uint8_t)(RDA5807M_REG_RDSA + i), &blk[i])) {
+			return false;
+		}
 	}
 	return true;
 }

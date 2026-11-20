@@ -32,6 +32,8 @@ static struct {
 	uint16_t log_reg[32], log_val[32];
 	int nlog;
 	bool bus_fail;
+	bool rds_ready, rds_sync;	// RDS: a group waits in 0x0C-0x0F, the decoder is in sync (with RDS_EN)
+	uint8_t bler_a, bler_b;
 } chip;
 
 static uint8_t band_of(void) { return (uint8_t)((chip.reg[3] >> 2) & 3u); }
@@ -111,12 +113,15 @@ static uint16_t chip_read(uint8_t r)
 			chip.reg[2] &= (uint16_t)~RDA5807M_SEEK;	// cleared by the chip
 		}
 		int s = station_at(khz_of(chip.readchan));
+		bool rds = (chip.reg[2] & RDA5807M_RDS_EN) != 0;
 		return (uint16_t)((chip.stc ? RDA5807M_STC : 0) | (chip.sf ? RDA5807M_SF : 0) |
-			(s >= 0 && chip.st_stereo[s] ? RDA5807M_ST : 0) | chip.readchan);
+			(s >= 0 && chip.st_stereo[s] ? RDA5807M_ST : 0) | (rds && chip.rds_ready ? RDA5807M_RDSR : 0) |
+			(rds && chip.rds_sync ? RDA5807M_RDSS : 0) | chip.readchan);
 	}
 	if (r == 0x0B) {
 		int s = station_at(khz_of(chip.readchan));
-		return (uint16_t)(((s >= 0 ? chip.st_rssi : 10u) << 9) | (s >= 0 ? RDA5807M_FM_TRUE : 0) | RDA5807M_FM_READY);
+		return (uint16_t)(((s >= 0 ? chip.st_rssi : 10u) << 9) | (s >= 0 ? RDA5807M_FM_TRUE : 0) | RDA5807M_FM_READY |
+			(chip.bler_a << RDA5807M_BLERA_SHIFT) | chip.bler_b);
 	}
 	return r < 0x10 ? chip.reg[r] : 0;
 }
@@ -565,6 +570,50 @@ static void test_hal(void)
 	CHECK(!brd.enabled);
 }
 
+// RDS through the HAL: RDS_EN kept through power-up, a group read only when the status said RDSR and RDSS, the
+// same group not passed on twice, the error levels with it
+static void test_hal_rds(void)
+{
+	chip_reset();
+	memset(&pin, 0, sizeof(pin));
+	memset(&brd, 0, sizeof(brd));
+	pin.scl = pin.sda_m = pin.sda_s = true;
+	pin.addr = RDA5807M_I2C_ADDR;
+	chip.st_khz[0] = 100000;
+	rda5807m_hal_init(&hal_cfg);
+	const hal_bcast_t *h = &rda5807m_hal;
+	CHECK(h->rds_enable != NULL && h->rds_group != NULL);
+	bcast_status_t st;
+	bcast_rds_t g;
+	CHECK(h->power(true));
+	CHECK(!(chip.reg[2] & RDA5807M_RDS_EN));
+	h->rds_enable(true);
+	CHECK(chip.reg[2] & RDA5807M_RDS_EN);
+	CHECK(h->power(false) && h->power(true) && (chip.reg[2] & RDA5807M_RDS_EN));	// kept through power-up
+
+	chip.reg[0x0C] = 0xC201;
+	chip.reg[0x0D] = 0x0408;
+	chip.reg[0x0E] = 0xE0CD;
+	chip.reg[0x0F] = 0x4142;
+	chip.bler_a = 1;
+	chip.rds_ready = true;
+	CHECK(!h->rds_group(&g));		// nothing until a status read saw RDSR
+	chip.rds_sync = false;
+	CHECK(h->status(&st) && !h->rds_group(&g));	// not in sync: no group
+	chip.rds_sync = true;
+	CHECK(h->status(&st) && h->rds_group(&g));
+	CHECK(g.blk[0] == 0xC201 && g.blk[1] == 0x0408 && g.blk[2] == 0xE0CD && g.blk[3] == 0x4142);
+	CHECK(g.err_a == 1 && g.err_b == 0);
+	CHECK(!h->rds_group(&g));		// one group per status
+	CHECK(h->status(&st) && !h->rds_group(&g));	// RDSR still up for the same group: not again
+	chip.reg[0x0F] = 0x4344;
+	CHECK(h->status(&st) && h->rds_group(&g) && g.blk[3] == 0x4344);
+	h->rds_enable(false);
+	CHECK(!(chip.reg[2] & RDA5807M_RDS_EN));
+	CHECK(h->status(&st) && !h->rds_group(&g));
+	CHECK(h->power(false));
+}
+
 int main(void)
 {
 	test_helpers();
@@ -572,6 +621,7 @@ int main(void)
 	test_seek();
 	test_i2c_gpio();
 	test_hal();
+	test_hal_rds();
 	printf("# rda5807mTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;
 }

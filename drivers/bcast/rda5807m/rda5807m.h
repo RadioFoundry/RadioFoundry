@@ -26,6 +26,7 @@
 #define RDA5807M_REG_R7		0x07u
 #define RDA5807M_REG_STATUS	0x0Au
 #define RDA5807M_REG_RSSI	0x0Bu
+#define RDA5807M_REG_RDSA	0x0Cu	// RDS blocks A to D in 0x0C-0x0F
 
 // 0x02
 #define RDA5807M_DHIZ		0x8000u	// audio outputs driven (0 = high impedance)
@@ -37,6 +38,7 @@
 #define RDA5807M_SEEKUP		0x0200u
 #define RDA5807M_SEEK		0x0100u	// starts a seek; the chip clears it when done
 #define RDA5807M_SKMODE		0x0080u	// 1 = stop at the band edge, 0 = wrap
+#define RDA5807M_RDS_EN		0x0008u	// RDS / RBDS decoding on
 #define RDA5807M_CLK_SHIFT	4	// bits 6:4, reference clock: 0 = 32.768 kHz ... (datasheet table)
 #define RDA5807M_NEW_METHOD	0x0004u
 #define RDA5807M_SOFT_RESET	0x0002u
@@ -59,14 +61,18 @@
 #define RDA5807M_65M_MODE	0x0200u	// band 3 = 65-76 MHz (0 = 50-76 MHz)
 #define RDA5807M_SOFTBLEND	0x0002u
 // 0x0A
+#define RDA5807M_RDSR		0x8000u	// a new RDS group is ready in 0x0C-0x0F
 #define RDA5807M_STC		0x4000u	// seek / tune complete
 #define RDA5807M_SF		0x2000u	// seek failed
+#define RDA5807M_RDSS		0x1000u	// the RDS decoder is synchronized
 #define RDA5807M_ST		0x0400u	// stereo
 #define RDA5807M_READCHAN_MASK	0x03FFu
 // 0x0B
 #define RDA5807M_RSSI_SHIFT	9	// bits 15:9, logarithmic
 #define RDA5807M_FM_TRUE	0x0100u	// the current channel is a station
 #define RDA5807M_FM_READY	0x0080u
+#define RDA5807M_BLERA_SHIFT	2	// bits 3:2, block A's error level: 0 none, 1 1-2, 2 3-5 bits corrected, 3 uncorrectable
+#define RDA5807M_BLERB_MASK	0x0003u	// bits 1:0, block B's
 
 // Bands the driver uses (BAND field values) and the 50 kHz grid
 enum { RDA5807M_BAND_WORLD = 2, RDA5807M_BAND_EAST = 3 };	// 76-108 MHz, 65-76 MHz (with RDA5807M_65M_MODE)
@@ -95,6 +101,7 @@ typedef struct {
 	uint16_t r02, r03, r04, r05, r07;	// shadows (TUNE / SEEK never kept set)
 	uint8_t band;		// band of the last tune
 	bool on;
+	bool rds;		// RDS_EN wanted (kept through power-up)
 	uint32_t writes;	// register writes (diagnostics)
 } rda5807m_t;
 
@@ -105,6 +112,9 @@ typedef struct {
 	bool stereo;
 	bool station;		// FM_TRUE
 	uint8_t rssi;		// 0..127
+	bool rds_ready;		// RDSR: a new RDS group waits in 0x0C-0x0F
+	bool rds_sync;		// RDSS
+	uint8_t rds_err_a, rds_err_b;	// BLERA, BLERB of that group
 } rda5807m_status_t;
 
 // --- Pure helpers ---
@@ -125,5 +135,9 @@ bool rda5807m_seek(rda5807m_t *dev, bool up);
 bool rda5807m_volume(rda5807m_t *dev, uint8_t level);	// 0..15
 bool rda5807m_mute(rda5807m_t *dev, bool mute);
 bool rda5807m_status(rda5807m_t *dev, rda5807m_status_t *st);
+// RDS decoding on or off (0x02 RDS_EN); kept through power-up
+bool rda5807m_rds_enable(rda5807m_t *dev, bool on);
+// Read the RDS group in 0x0C-0x0F (blocks A to D); call when rda5807m_status said rds_ready
+bool rda5807m_rds_read(rda5807m_t *dev, uint16_t blk[4]);
 
 #endif
