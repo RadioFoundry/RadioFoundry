@@ -24,18 +24,18 @@ msgstr "Riavvia per uscire"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_VALUE_SOURCE_OFFICIAL"
-msgid "RF CI"
-msgstr "RF CI"
+msgid "CI build"
+msgstr "Build CI"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_VALUE_SOURCE_SERVICE"
-msgid "RF build service"
-msgstr "Servizio di compilazione RF"
+msgid "Build service"
+msgstr "Servizio di compilazione"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_VALUE_SOURCE_PR"
-msgid "RF pull request"
-msgstr "Pull request RF"
+msgid "Pull request"
+msgstr "Pull request"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_VALUE_SOURCE_LOCAL"

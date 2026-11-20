@@ -24,18 +24,18 @@ msgstr "Redémarrer pr sortir"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_VALUE_SOURCE_OFFICIAL"
-msgid "RF CI"
-msgstr "RF CI"
+msgid "CI build"
+msgstr "Compilation CI"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_VALUE_SOURCE_SERVICE"
-msgid "RF build service"
-msgstr "Service de compilation RF"
+msgid "Build service"
+msgstr "Service de compilation"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_VALUE_SOURCE_PR"
-msgid "RF pull request"
-msgstr "Pull request RF"
+msgid "Pull request"
+msgstr "Pull request"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_VALUE_SOURCE_LOCAL"

@@ -16,14 +16,15 @@ SUPPORT. Every value but the image hash is one the board already holds, so neith
 ## 1. Source
 
 `tools/build_source.py` stamps each build with where it came from. The Makefile passes it as `RFOUNDRY_GIT_SOURCE`
-and `RFOUNDRY_GIT_REPO`. About shows the source as "Source", RF short for RadioFoundry, without the repository; VERSION
+and `RFOUNDRY_GIT_REPO`. About shows the source as "Source", without the repository (a fork's build says "Fork", so the plain words say
+whose build it is); VERSION
 and SUPPORT give `source=` and `repo=`.
 
 | `source` | When | About |
 |---|---|---|
-| `official` | Our CI (GitHub Actions in RadioFoundry/RadioFoundry), not a pull request: main, nightly and release builds alike; only the image hash (3) tells a release | RF CI |
-| `service` | Our build service (`make BUILD_SOURCE=service`) | RF build service |
-| `pr` | Our CI building a pull request | RF pull request |
+| `official` | Our CI (GitHub Actions in RadioFoundry/RadioFoundry), not a pull request: main, nightly and release builds alike; only the image hash (3) tells a release | CI build |
+| `service` | Our build service (`make BUILD_SOURCE=service`) | Build service |
+| `pr` | Our CI building a pull request | Pull request |
 | `local` | A clone whose `origin` is our repository | Local build |
 | `fork` | Another repository's CI, or a clone of one | Fork |
 | `unknown` | No git, or no `origin` | Unknown |

@@ -37,11 +37,11 @@ tr_id_t support_source_text(support_source_t s)
 {
 	switch (s) {
 	case SUPPORT_SRC_OFFICIAL:
-		return TRN(ABOUT_VALUE_SOURCE_OFFICIAL, "RF CI");
+		return TRN(ABOUT_VALUE_SOURCE_OFFICIAL, "CI build");
 	case SUPPORT_SRC_SERVICE:
-		return TRN(ABOUT_VALUE_SOURCE_SERVICE, "RF build service");
+		return TRN(ABOUT_VALUE_SOURCE_SERVICE, "Build service");
 	case SUPPORT_SRC_PR:
-		return TRN(ABOUT_VALUE_SOURCE_PR, "RF pull request");
+		return TRN(ABOUT_VALUE_SOURCE_PR, "Pull request");
 	case SUPPORT_SRC_LOCAL:
 		return TRN(ABOUT_VALUE_SOURCE_LOCAL, "Local build");
 	case SUPPORT_SRC_FORK:

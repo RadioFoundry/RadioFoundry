@@ -26,18 +26,18 @@ msgstr "断电重启退出"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_VALUE_SOURCE_OFFICIAL"
-msgid "RF CI"
-msgstr "RF CI"
+msgid "CI build"
+msgstr "CI 构建"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_VALUE_SOURCE_SERVICE"
-msgid "RF build service"
-msgstr "RF 构建服务"
+msgid "Build service"
+msgstr "构建服务"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_VALUE_SOURCE_PR"
-msgid "RF pull request"
-msgstr "RF PR 构建"
+msgid "Pull request"
+msgstr "PR 构建"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_VALUE_SOURCE_LOCAL"
