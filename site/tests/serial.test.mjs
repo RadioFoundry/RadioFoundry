@@ -260,7 +260,7 @@ test("a cable picked before that sends nothing is reported, not passed over as a
 	const was = { ...limits };
 	Object.assign(limits, { sendCheck: 50 });
 	const nav = Object.getOwnPropertyDescriptor(globalThis, "navigator");
-	t.after(() => { Object.assign(limits, was); Object.defineProperty(globalThis, "navigator", nav); });
+	t.after(() => { Object.assign(limits, was); nav ? Object.defineProperty(globalThis, "navigator", nav) : delete globalThis.navigator; });
 	const dead = new FakeCable(3);
 	Object.defineProperty(globalThis, "navigator", { value: { serial: { getPorts: async () => [dead] } }, configurable: true });
 	await assert.rejects(knownRadioPort([{ usbVendorId: 0x067B }]), (e) => e instanceof CableError && e.code === "stalled");
