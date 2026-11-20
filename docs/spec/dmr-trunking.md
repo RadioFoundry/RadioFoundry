@@ -342,7 +342,7 @@ radio's ID, also when a talkgroup was addressed (table 6.28).
 | radio check (kind registration, from TSI; 6.4.12) | MS_Accepted |
 | voice radio check (P_AHOY kind individual or talkgroup voice, from TSI; tables 6.42, 6.43) | P_ACKU MS_Accepted (6.6.2.3.2.1) |
 | availability check (kind individual voice): OACSU | MS_Accepted |
-| private voice page with Service_Kind_Flag set: FOACSU | MS_Alerting while ringing, then C_RAND Answer on PTT |
+| private voice page with Service_Kind_Flag set: FOACSU | MS_Alerting with the system response check. A repeated page from the same caller restarts T_AnswerCall (20 s). An outgoing access or a different caller gets EquipBusy; disabled private calls get MS_Not_Supported. PTT sends C_RAND Answer (ACCEPT = 0); the engine can also reject (ACCEPT = 1). |
 | availability check (kind individual packet data) | Message_Accepted (section 7.7); EquipBusy_Refused (0x13) while the data service sends; not supported in a build without it |
 | availability check (kind duplex voice or duplex packet data) | MS_Duplex_Not_Supported (0x16): the radio is simplex (6.6.9.2.5, 6.6.10.2.5). It never follows a duplex grant (53, 54), whose bit 15 is Call Direction; their payload channel always uses offset timing (tables 7.10, 7.14) |
 | packet data radio check (P_AHOY kind packet data, from TSI) | P_ACKU Message_Accepted (6.6.3.3.2.1) |
