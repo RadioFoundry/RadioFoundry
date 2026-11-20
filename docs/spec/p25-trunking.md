@@ -206,7 +206,7 @@ Registration (`view.reg`, `P25_REG_*`):
 | State | What it does | Leaves |
 |---|---|---|
 | OFF | the transmit side is off, or `P25_FOLLOW_NO_REG` | |
-| IDLE | waits for a control channel held and verified (below), and its RFSS status heard (or 2 s after the verification) | sends the registration request: WAIT |
+| IDLE | waits for a control channel held and verified by its network status broadcast, and its RFSS status heard (or 2 s after the verification) | sends the registration request: WAIT |
 | WAIT | registration sent | accepted: sends the affiliation request, AFF. Failed: RETRY. Denied or refused: DENIED. No answer after 3 sends: RETRY |
 | AFF | affiliation sent | accepted for our group: READY. Failed: RETRY. Denied or refused: DENIED |
 | READY | registered and affiliated | another site (system, RFSS or site differs from the one registered): IDLE |
@@ -214,12 +214,6 @@ Registration (`view.reg`, `P25_REG_*`):
 | DENIED | final: PTT says why | a channel restart or another site |
 | NO_TX | the control channel has no inbound frequency | |
 | BLOCKED | the system's WACN is BEE00 (`P25_WACN_NO_TX`): nothing is sent, a request in hand is dropped, answers are ignored, PTT says why | a follower restart only; the radio core then starts that system blocked until power off (7) |
-
-Verified system (TIA-102.AABD-B 5): nothing goes out on a control channel until a network status broadcast on it, the
-single block (`0x3B`) or the extended packet (TIA-102.AABC-D 6.2.11.2), has named its WACN and system ID
-(`view.sys_ok`). Each control channel taken after a hunt is verified again. A WACN of BEE00 in that broadcast, in a
-voice channel's link control (LCO 36 or 41, TIA-102.AABF-D 7.3.17 and 7.3.28) or in the system's programming blocks
-the transmit side instead (BLOCKED).
 
 Losing the control channel and finding the same site again keeps the registration. Hunting resets the site to unknown.
 
