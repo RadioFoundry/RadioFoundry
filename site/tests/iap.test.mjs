@@ -474,6 +474,57 @@ test("IAP: which SoC answers, from its own NAND pages; a Read left unanswered is
 	assert.ok(telling("00077880.000594ab.0007f800.0007ab97"), "a radio's receiver A");
 });
 
+test("GD-88 practice radio: each receiver's loader reads its own pages, the stock application reads A's, and a pulled cable ends a wait at once", { timeout: 60000 }, async (t) => {
+	const { FakeC7000, c7000Simulation, fakeC7000Options } = await import("../static/js/flasher/fakec7000.js");
+	const fb = json("flash-boards.json");
+	const gd88 = json("radios.json").radios.find((x) => x.id === "gd88");
+	const sim = await c7000Simulation(C, "gd88", 7000, gd88);
+	const simB = await c7000Simulation(C, gd88.flash.second.board, 7001);
+	const make = (faults = {}) => {
+		const r = new FakeC7000({ progmem: sim.progmem.slice(), speed: 200, romWindow: 50, bootTime: 50,
+			...fakeC7000Options(gd88, fb),
+			rx2: { progmem: simB.progmem.slice(), stock: true } });
+		Object.assign(r.faults, faults);
+		t.after(() => r.stop());
+		return r;
+	};
+	const pages = socPages(C.boards.gd88.calibration);
+	const wait = (ms) => new Promise((ok) => setTimeout(ok, ms));
+	const r = make();
+	// the stock application: its read of the NAND is receiver A's
+	r.powerOn();
+	await wait(200);
+	const um = await iapOn(r.stream).probe(1500, 0, { all: true });
+	assert.ok(um?.stock && !um.version, "the application answers, not a loader");
+	const viaApp = await iapOn(r.stream).whose(pages);
+	assert.ok(telling(viaApp));
+	// update mode: SK1 held at power-on gives IAP_A; a long press switches to IAP_B and back
+	r.powerOff();
+	r.powerOn({ keys: true });
+	await wait(100);
+	assert.equal(r.screen(), "IAP_A");
+	assert.equal(await iapOn(r.stream).whose(pages), viaApp, "IAP_A reads what the application read");
+	r.holdSk1();
+	await wait(50);
+	assert.equal(r.screen(), "IAP_B");
+	const b = await iapOn(r.stream).whose(pages, 300);	// IAP_B drops a Read now and then: sent again
+	assert.ok(telling(b));
+	assert.notEqual(b, viaApp, "receiver B's pages differ");
+	// calibration pages erased on both: nothing tells them apart
+	const blank = make({ iapBlankCal: true });
+	blank.powerOn({ keys: true });
+	await wait(100);
+	assert.ok(!telling(await iapOn(blank.stream).whose(pages)));
+	// the cable pulled out during a wait: the read fails at once with a lost connection, not after its timeout
+	const iap = iapOn(r.stream);
+	const t0 = Date.now();
+	setTimeout(() => r.unplug(), 20);
+	await assert.rejects(iap.until(() => false, 5000), (e) => e.name === "NetworkError");
+	assert.ok(Date.now() - t0 < 1000);
+	r.plug();
+	assert.ok(await iapOn(r.stream).whose(pages, 300), "a new stream after the cable is back");
+});
+
 test("IAP: a checksum that differs is reported, and silence after the erase stops before any data", async () => {
 	const img = installImage();
 	const { pipe } = iapRadio({ corrupt: true });

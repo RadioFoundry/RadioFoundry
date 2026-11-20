@@ -43,6 +43,7 @@ export const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ u
 const CH340 = 0x1A86;
 const ROM_WAIT = 180000;		// how long the page listens for the boot ROM per try
 const BOOT_MS = 9000;			// a soft reset to RadioFoundry answering its debug link (bench 2026-10-15: 8-9 s)
+const CYCLE_WAIT_MS = 180000;	// the user switching the radio off and on after an update mode install, then its boot
 
 let ctx = null;				// from app.js: {S, next, render, fb, flashStarted, flashFinished, flashMark, errorText, analysisOffer,
 					// problemNotice, failureNotice, stubJson, toSecond, stepName}; next and back know the
@@ -105,7 +106,7 @@ const screenNow = () => ({ rfoundry: "loader", usmart: "any" })[session().how] |
 export function init(context) {
 	ctx = { ...context, next: () => chainNext(context), back: (n = 1) => chainBack(context, n) };
 	routes = makeStockRoutes({ S, ctx, C, boardId, session, busy, loader: iap, fill: (el, ...p) => fill(el, ...p), stubImage: boardStub,
-		cableBanner: () => cableBanner() });
+		cableBanner: () => cableBanner(), reopen: async () => { await dropC7(); return openCable(); } });
 }
 
 // The factory update mode route of a radio (radios.json flash.update_mode), or null: its protocol, and what the install
@@ -568,10 +569,29 @@ function connectPanel(onReady, { onUpdateMode = null, restart = false } = {}) {
 	// A radio with a stock console or an update mode that is not RadioFoundry: the original firmware answers its debug console
 	// (the stub goes in through it), or nothing answers (update mode, or the first stage's power-on window for a RadioFoundry
 	// that does not answer)
-	const toIap = onUpdateMode && updateMode() && (() => {
+	// A radio with two SoCs leaves for update mode with its main SoC's NAND pages read (Iap.whose), while its application
+	// still answers on the cable: only it can say which loader is the main SoC's (iapBothView). The read silences a stock
+	// console until the next power-on, so it waits for this choice
+	const toIap = onUpdateMode && updateMode() && (async () => {
 		c.how = "iap";
+		if (flash().second && !c.mainPrint) {
+			show({ led: "off", screen: "on" }, h("p", { class: "muted c7-big" }, spinner(), " ", t("flash.both.reading_a")));
+			act();
+			c.mainPrint = await readMain(c);
+		}
 		onUpdateMode();
 	});
+	// The main SoC's pages through its application, a few tries (a reply lost on the cable); null when the application
+	// doesn't answer (the radio in update mode, off, or RadioFoundry)
+	const readMain = async (c) => {
+		for (let k = 0; k < 3; k++) {
+			const um = await iap(c).probe(1500, 0, { all: true }).catch(() => null);
+			if (!um?.stock) return null;
+			const who = await iap(c).whose(socPages(C().boards[boardId()].calibration)).catch(() => null);
+			if (who) return who;
+		}
+		return null;
+	};
 	const stockOrNothing = async () => {
 		const Console = CONSOLES[flash().stock_console];
 		if (Console && await new Console(c.stream, { log: (l) => c.log.add(l) }).probe()) {
@@ -583,7 +603,7 @@ function connectPanel(onReady, { onUpdateMode = null, restart = false } = {}) {
 		// update mode install can tell its loader from the second SoC's (Iap.whose)
 		const two = !!flash().second;
 		const um = stuckMode() && await iap(c).probe(1500, 0, { all: two });
-		if (two && um?.stock) c.mainPrint = await iap(c).whose(socPages(C().boards[boardId()].calibration));
+		if (two && um?.stock) c.mainPrint = await readMain(c);
 		// the stock application answered as it answers the vendor software: its console is silent or missing
 		const version = um?.stock ? versionText(S().radio, um.stock) : null;
 		if (um) diag.note(um.stock ? "identify answered" : "update mode loader", { version: um.stock ? version : um.version });
@@ -1046,16 +1066,18 @@ export function checkView() {
 	if (skip) refreshSkip();
 	const stopRead = canSkip ? button(t("flash.c7.check.skip_stop"), () => reading?.abort()) : null;
 	if (stopRead) stopRead.hidden = true;
-	const checkLeft = h("div", {}, cableBanner(), h("p", {}, t(viaIap() ? "flash.iap.check_lead" : firstInstall ? "flash.c7.check.lead_first" : "flash.c7.check.lead_update")),
+	// through update mode the step only chooses the codec (nothing can be read): no backup list, no lead
+	const checkLeft = h("div", {}, cableBanner(), viaIap() ? null : h("p", {}, t(firstInstall ? "flash.c7.check.lead_first" : "flash.c7.check.lead_update")),
 		firstInstall && !viaIap() && !S().radio.flash.stock_download ? h("div", { class: "notice action" }, h("p", {}, h("b", {}, t("flash.c7.check.only_copy"))), h("p", {}, t("flash.c7.check.only_copy_text"))) : null,
 		skip, options,
 		checks, prog.el, stopRead, status);
 	const checkSlots = chainSlots(checkLeft);
-	out.append(panel(checkSlots ? t("flash.c7.write.title") : t("flash.c7.check.title"), h("div", { class: "c7-grid" }, checkSlots || checkLeft, top.el)));
+	out.append(panel(checkSlots ? t("flash.c7.write.title") : t(viaIap() ? "flash.iap.codec_title" : "flash.c7.check.title"), h("div", { class: "c7-grid" }, checkSlots || checkLeft, top.el)));
 	// before the reading the choices say what happens; once it starts the progress list takes their place
 	checks.hidden = prog.el.hidden = true;
+	if (viaIap()) options.hidden = true;
 	const started = () => {
-		checks.hidden = prog.el.hidden = false;
+		checks.hidden = prog.el.hidden = viaIap();
 		options.hidden = true;
 		if (skip) skip.hidden = true;
 	};
@@ -1233,8 +1255,10 @@ export function checkView() {
 		// the way to a codec: pick a file, or go on without one. Drawn again, with a fresh picker, under a pick that gave none
 		const action = () => d ? null : h("div", { class: "notice action" }, h("strong", {}, t("flash.c7.codec.action")), h("p", {}, codecActionText()), makePick(),
 			h("p", { class: "small" }, h("a", { href: "#", onclick: async (e) => { e.preventDefault(); S().c7none = true; await decideView(); } }, t("flash.c7.codec.without"))));
-		fill(status, untriedOffer(c), action(),
-			d && d.mode === "none" ? noCodecNotice(c.analysis?.notRead) : null,
+		fill(status, viaIap() && d ? h("p", { class: "c7-big" }, h("b", {}, text)) : null, untriedOffer(c), action(),
+			// through update mode the user chose this a moment ago, on this step: the way back to the file, not the why
+			d && d.mode === "none" ? (viaIap() ? h("p", { class: "small" }, h("a", { href: "#", onclick: async (e) => { e.preventDefault(); S().c7none = false; await decideView(); } }, t("flash.c7.codec.with_file")))
+				: noCodecNotice(c.analysis?.notRead)) : null,
 			c.progmem ? h("p", { class: "small" }, h("a", { href: "#", onclick: (e) => { e.preventDefault(); saveBundle(); } }, t("flash.c7.check.download_again"))) : null,
 			h("details", { class: "small" }, h("summary", {}, t("flash.c7.log")), c.log.el));
 		forward(button(t("flash.nav.to_write"), () => ctx.next(), { primary: true, disabled: !d }));
@@ -1563,12 +1587,16 @@ function writeOne() {
 export function doneView() {
 	const c = session();
 	const top = radioTop(S().radio, { led: "off", screen: "off" }, { hasLed: hasLed() });
-	const status = h("div", {}, h("p", { class: "muted c7-big" }, t("flash.c7.done.restarting")));
+	// a serial update mode loader (flash.update_mode "iap") keeps the radio in update mode after the write, until the user
+	// switches it off: the page says so and waits for RadioFoundry, not for a restart that doesn't come
+	const cycles = viaIap() && flash().update_mode === "iap";
+	const waiting = () => h("p", { class: "muted c7-big" }, spinner(), " ", t(cycles && !tries ? "flash.c7.done.power_cycle" : "flash.c7.done.restarting"));
+	let tries = 0;
+	const status = h("div", {}, waiting());
 	const quiet = h("p", { class: "small muted" }, t("report.something_wrong"), " ", reportButton());
 	const doneLeft = h("div", {}, h("p", {}, t("flash.c7.done.lead")), status, quiet);
 	const parts = chainSlots(doneLeft);
 	const box = panel(t("flash.done.title"), h("div", { class: "c7-grid" }, parts || doneLeft, top.el));
-	let tries = 0;
 	// The user left this step (Start over, Back) while a check still runs: it must not draw into the step that replaced
 	// it (as connectPanel's gone())
 	let attached = false;
@@ -1579,8 +1607,8 @@ export function doneView() {
 	const check = async () => {
 		if (left()) return;
 		S().forward(null);
-		top.set({ led: "off", screen: "off" });
-		fill(status, h("p", { class: "muted c7-big" }, t("flash.c7.done.restarting")));
+		top.set(cycles && !tries ? { led: "off", screen: "off", knob: "cycle" } : { led: "off", screen: "off" });
+		fill(status, waiting());
 		// After the stub's reset RadioFoundry boots, but its host link often stays silent until a power cycle (DM-32UV every
 		// time, DM-1801 Pro most times; dm32-bringup.md open items). So the first check waits only a little past the
 		// boot and then asks for the power cycle; a check after one allows for the boot it starts. After the Baofeng
@@ -1589,7 +1617,8 @@ export function doneView() {
 		// the first: the first restarted right after it, then it reports it
 		await sleep(Math.max(0, (c.resetAt || 0) + (S().fakeC7 ? 1500 : BOOT_MS) - Date.now()));
 		const restartsItself = viaIap() && flash().update_mode === "baofeng";
-		const until = Date.now() + (tries++ || restartsItself ? 20000 : 6000);
+		const until = Date.now() + (cycles && !tries ? CYCLE_WAIT_MS : tries || restartsItself ? 20000 : 6000);
+		tries++;
 		let p = null;
 		while (!p && Date.now() < until) {
 			if (!c.stream) break;
@@ -1600,7 +1629,7 @@ export function doneView() {
 			diag.note("verify: no answer", { tries });
 			top.set({ led: "off", screen: "rfoundry", knob: "cycle" });
 			fill(status, notice(t(noScreen() ? "flash.c7.done.no_answer_noscreen" : "flash.c7.done.no_answer"), tries > 1 ? "bad" : ""),
-				S().fakeC7 ? h("div", { class: "actions" }, button(t("flash.sim.c7_off"), () => S().fakeC7.powerOff()),
+				S().fakeC7 && !S().fakeC7.iap ? h("div", { class: "actions" }, button(t("flash.sim.c7_off"), () => S().fakeC7.powerOff()),
 					button(t("flash.sim.c7_on"), () => S().fakeC7.powerOn())) : null,
 				tries > 1 ? ctx.helpLink() : null, tries > 1 ? reportLine() : null);
 			return S().forward(button(t("flash.c7.done.check"), check, { primary: true }));
@@ -1613,13 +1642,13 @@ export function doneView() {
 		top.set({ led: "off", screen: "rfoundry" });
 		fill(status, 
 			h("dl", { class: "kv-list" }, h("dt", {}, t("flash.now.firmware")), h("dd", {}, p.git)),
-			notice(good ? t("flash.c7.done.ready") : t("flash.c7.done.no_codec"), good ? "ok" : "bad"), good ? null : ctx.helpLink(), good ? null : reportLine(),
+			notice(t(!good ? "flash.c7.done.no_codec" : wantCodec ? "flash.c7.done.ready" : "flash.c7.done.ready_fm"), good ? "ok" : "bad"), good ? null : ctx.helpLink(), good ? null : reportLine(),
 			// a backup taken from a radio that ran RadioFoundry holds that RadioFoundry build, not the original firmware
 			c.backupSaved ? h("p", { class: "small muted" }, t(c.rfoundry ? "flash.c7.done.backup_kept_rfoundry" : "flash.c7.done.backup_kept")) : null,
 			// not asked of the radio: any STUB command parks RadioFoundry's codec until the next restart (platform stub_region, core/stubentry)
 			h("p", { class: "small muted" }, t(hasStubEntry() ? "flash.c7.done.next_time" : "flash.c7.done.next_time_power")),
 			// a radio with a second chip and no image for it (the user's own file for the radio alone)
-			S().radio.flash.second ? notice(t("flash.second.not_installed"), "info") : null);
+			S().radio.flash.second && !c.bothDone ? notice(t("flash.second.not_installed"), "info") : null);
 		if (good) await bringChannels(c, status, left);
 		if (left()) return;
 		S().forward(button(t("flash.nav.finish"), () => ctx.reset(), { primary: true }));
@@ -1956,7 +1985,8 @@ register({
 	id: "c7000-stub",
 	available: (radio, fb) => isC7000(radio, fb),		// install and backup, stock firmware or RadioFoundry
 	steps: (task, { recovering }) => (task === "install" ? (recovering ? RECOVER : INSTALL) : task === "update" ? UPDATE : null),
-	stepLabel: (step, task) => (task !== "backup" && step === "done" ? "c7_done" : step),
+	// through update mode nothing is read or backed up: the check step only chooses the codec
+	stepLabel: (step, task) => (task !== "backup" && step === "done" ? "c7_done" : step === "check" && S().c7 && viaIap() ? "codec" : step),
 	// the second chip's install follows the first's in the same step: no Back into the first chip's steps from there
 	noBack: () => !!S().chain && S().chain.stage !== "write",
 	views: { restart: restartView, connect: connectView, check: checkView, write: writeView, done: doneView, backup: backupView, restore: restoreView },

@@ -29,6 +29,27 @@ import { confirmNoCodec } from "./nocodec.js";
 
 const ERASE_TAU_MS = 4000;	// the erase bar's time constant: about 60 % of its way in 4 s
 const LISTEN_MS = 180000;	// how long the page waits for update mode
+const QUIET_HINT_MS = 8000;	// silence on the cable this long while waiting: the page says what to check
+
+// The main SoC's NAND pages (Iap.whose) of radios installed from this browser, per board: a radio whose main SoC was
+// left without an application (a write that stopped) can't answer through it again, and is still known by them. Only
+// sums of calibration pages; nothing else about the radio is kept
+const MAIN_KEY = "rfoundry.mainPrints";
+export function knownMain(board) {
+	try {
+		return JSON.parse(localStorage.getItem(MAIN_KEY) || "{}")[board] || [];
+	} catch (e) {
+		return [];
+	}
+}
+export function rememberMain(board, print) {
+	if (!print) return;
+	try {
+		const all = JSON.parse(localStorage.getItem(MAIN_KEY) || "{}");
+		all[board] = [print, ...(all[board] || []).filter((x) => x !== print)].slice(0, 8);
+		localStorage.setItem(MAIN_KEY, JSON.stringify(all));
+	} catch (e) { /* no storage: the connect step's read is needed every time */ }
+}
 
 // What each protocol's write step says: an IAP loader checks the whole image by its checksum and starts it; the
 // Baofeng updater acknowledges each block by its CRC and may wait for a power cycle (hardware-dm1801pro.md 6.2)
@@ -82,7 +103,7 @@ function variantNote(vd) {
 // host: what c7000ui.js hands over ({S, ctx, C, boardId, session, busy, loader, fill, stubImage}); loader(session) makes
 // the update mode's protocol object (listen, write)
 export function makeStockRoutes(host) {
-	const { S, ctx, C, boardId, session, busy, loader: makeLoader, fill, stubImage, cableBanner = () => null } = host;
+	const { S, ctx, C, boardId, session, busy, loader: makeLoader, fill, stubImage, cableBanner = () => null, reopen } = host;
 	const protocol = () => S().radio.flash.update_mode;
 	// a text in the radio's own words where en.json has one (<key>_<radio id>, what its update mode shows), else the
 	// common one. A second SoC takes its own board's text first, then its radio's
@@ -333,7 +354,7 @@ export function makeStockRoutes(host) {
 	// The loader answered a read-only probe: the radio is in update mode already (its application is missing or incomplete,
 	// so it stays there at every power-on, white screen and red LED). The install goes straight on; no keys are needed.
 	function alreadyUpdateMode({ show, act, onUpdateMode, onAgain }, version) {
-		show({ led: "off", screen: "on" },
+		show({ led: "off", screen: "update" },
 			h("p", { class: "c7-big" }, h("b", {}, t("flash.iap.um.found"))),
 			version ? h("dl", { class: "kv-list" }, h("dt", {}, t("flash.iap.um.loader")), h("dd", {}, version)) : null,
 			h("p", {}, t(own("flash.iap.um.text"))), h("p", { class: "small muted" }, t("flash.iap.um.safe")),
@@ -376,18 +397,24 @@ export function makeStockRoutes(host) {
 
 	// The install of a radio with two SoCs (flash.second) through update mode: one card, two numbered steps, each SoC
 	// written by its own loader in turn. The radio stays in update mode after the first; a long press switches it to the
-	// second SoC's loader (flash.both.switch). Before each write the page checks which SoC answers (Iap.whose: each has
-	// its own NAND), so an image never goes to the other SoC. The main SoC's pages are always read through its
-	// application, the one thing on the cable that can only be the main SoC: in the connect step (c.mainPrint) or, for a
-	// radio found in update mode, at the first step before any write. Pages that can't tell the SoCs apart stop the
-	// install (Iap telling). The second step waits for its loader by itself
+	// second SoC's loader (flash.both.switch), and the second step starts by itself.
+	//
+	// Which SoC answers is checked before each erase (Iap.whose: each SoC reads its own NAND), so an image never goes to
+	// the other SoC. The main SoC's pages come from its application in the connect step (c.mainPrint: on the cable only the
+	// main SoC's application answers), else from an earlier install on this computer (knownMain). With neither (a radio
+	// found in update mode whose main SoC this page never read) the user confirms what the screen shows. Pages that can't
+	// tell the SoCs apart (Iap telling) stop the install. The second step takes only a loader whose pages differ.
+	//
+	// Every wait says what is wrong and what to do: the normal firmware answering, the other SoC's loader, nothing at all,
+	// the cable pulled out. A write that stops (cable, power, a checksum) offers Install Again, which opens the cable again
+	// if it was lost: the loaders are never written, so both can always be entered again.
 	function iapBothView() {
 		const c = session();
 		const radio = S().radio, fw = S().firmware, d = c.decision;
 		const parts = [
-			{ name: t("flash.both.a"), board: radio.flash.board, firstStage: radio.flash.first_stage, image: fw.image,
+			{ key: "a", board: radio.flash.board, firstStage: radio.flash.first_stage, image: fw.image,
 				steps: radio.flash.bootloader || [], screen: radio.flash.update_screen || null },
-			{ name: t("flash.both.b"), board: radio.flash.second.board, firstStage: radio.flash.second.first_stage, image: fw.second.image,
+			{ key: "b", board: radio.flash.second.board, firstStage: radio.flash.second.first_stage, image: fw.second.image,
 				steps: [t(own("flash.both.switch"))], screen: radio.flash.second.update_screen || null },
 		];
 		try {
@@ -398,115 +425,150 @@ export function makeStockRoutes(host) {
 		const what = d.mode === "none" ? t("flash.c7.codec.none")
 			: t(`flash.c7.codec.from_${d.source}`, { name: d.name || "", tag: String(d.tag ?? "").padStart(3, "0") });
 		const prog = progressBar({ stay: false });	// the careful notice says it
-		const careful = h("div", { class: "notice", hidden: true }, h("p", {}, h("b", {}, t("flash.c7.write.careful"))), h("p", {}, t("flash.both.careful")));
-		const rows = parts.map((p, i) => {
+		const between = h("p", {}, t("flash.both.careful"));	// the first step only: the second follows in the same update mode
+		const careful = h("div", { class: "notice", hidden: true }, h("p", {}, h("b", {}, t("flash.c7.write.careful"))), between);
+		for (const [i, p] of parts.entries()) {
 			p.state = h("span", { class: "small muted" });
 			p.body = h("div", { class: "both-body" });
-			p.el = h("section", { class: "both-step" }, h("h3", { class: "both-head" }, h("span", { class: "both-n" }, String(i + 1)), " ", p.name, " ", p.state), p.body);
-			return p.el;
-		});
+			p.el = h("section", { class: "both-step" }, h("h3", { class: "both-head" }, h("span", { class: "both-n" }, String(i + 1)), " ", t(`flash.both.${p.key}`), " ", p.state), p.body);
+		}
 		const box = panel(t("flash.c7.write.title"), cableBanner(),
 			h("dl", { class: "kv-list" }, h("dt", {}, t("flash.c7.write.firmware")), h("dd", {}, `${fw.source} (${Math.round(fw.image.length / 1024)} KB)`),
 				h("dt", {}, t("flash.c7.write.codec")), h("dd", {}, what)),
-			d.mode === "none" ? noCodecNotice(true) : null,
-			...rows, careful, h("details", { class: "small" }, h("summary", {}, t("flash.c7.log")), c.log.el));
+			...parts.map((p) => p.el), careful, h("details", { class: "small" }, h("summary", {}, t("flash.c7.log")), c.log.el));
 		const left = () => S().c7 !== c || !box.isConnected;
-		const mark = (p, cls, text) => {
+		const mark = (p, cls, text = "") => {
 			p.el.className = `both-step ${cls}`;
 			p.state.textContent = text;
 		};
-		mark(parts[0], "active", "");
-		mark(parts[1], "waiting", t("flash.both.waiting"));
+		// the steps, and under them (beside the picture) what is going on: a status, a button
+		const how = (p, ...under) => withPicture(h("div", {}, h("ol", { class: "steps c7-big" }, ...p.steps.map((x) => h("li", {}, x))), ...under), p.screen);
+		// the spinner's line: waiting, or (while the pages are read, a few seconds) which receiver it is
+		const waitLine = (key = "flash.both.listening") => h("p", { class: "muted c7-big wait-line" }, spinner(), " ", t(key));
+		parts[0].print = c.mainPrint || null;
+		const known = knownMain(radio.flash.board);
+		let confirmed = false;		// the user said the screen shows the main SoC's update mode (no pages to check against)
 		let stop = null;
-		// what the user does now: the first step without the main SoC's pages starts the radio normally (its application
-		// reads them), then enters update mode; only one of the two is shown
-		const needA = (i) => i === 0 && !parts[0].print;
-		const howTo = (i) => needA(i)
-			? withPicture(h("ol", { class: "steps c7-big" }, h("li", {}, t("flash.both.need_normal"))), radio.flash.stock_screen || null)
-			: withPicture(h("ol", { class: "steps c7-big" }, ...parts[i].steps.map((x) => h("li", {}, x))), parts[i].screen);
 
-		// step i: the user's go on the first, by itself on the second
+		// step i: Install on the first, by itself on the second
 		const open = (i) => {
 			const p = parts[i];
-			mark(p, "active", "");
-			const go = i === 0 && button(t("flash.iap.go"), async () => { if (d.mode !== "none" || (await confirmNoCodec(() => { S().c7none = false; ctx.back(); }))) run(i); }, { primary: true });
-			fill(p.body, howTo(i), go ? h("div", { class: "actions" }, go) : null);
+			mark(p, "active");
+			if (i === 1) return run(1);
+			const go = button(t("flash.iap.go"), async () => { if (d.mode !== "none" || (await confirmNoCodec(() => { S().c7none = false; ctx.back(); }))) run(0); }, { primary: true });
+			fill(p.body, how(p, h("div", { class: "actions" }, go)));
 			S().forward(null);
-			if (i === 1) run(1);
 		};
 
-		// wait until the loader of SoC i answers (never the other SoC's), then write it
+		// the cable, opened again when it was pulled out (a lost port: SerialStream.lost)
+		const cable = async () => {
+			if (c.stream && !c.stream.lost) return c.stream;
+			return reopen();
+		};
+
+		// wait until SoC i's loader answers (never the other SoC's), then write it
 		async function run(i) {
 			const p = parts[i], other = parts[1 - i];
-			const status = h("p", { class: "muted c7-big" }, spinner(), " ", t(needA(i) ? "flash.both.listening_normal" : "flash.iap.listening"));
-			fill(p.body, howTo(i), status);
+			const status = h("div", {}, waitLine());
+			fill(p.body, how(p, status));
+			mark(p, "active");
 			stop = new AbortController();
 			S().forward(button(t("flash.c7.connect.cancel"), () => stop.abort(), { quiet: true }));
 			let wrote = false;	// the erase was sent: a try after a failure needs update mode entered again
 			const watch = setInterval(() => { if (!wrote && left()) stop.abort(); }, 250);
-			const loader = new Iap(c.stream, { log: (l) => c.log.add(l), firstStage: p.firstStage, protect: C().boards[p.board].protect });
 			const pages = socPages(C().boards[p.board].calibration);
-			const started = ctx.flashStarted({ task: "install", source: fw.origin || "", radio: p.board, firmware: String(fw.manifest.version || ""),
-				variant: fw.variant || fw.manifest.variant || (fw.manifest.dev_build ? "dev" : ""), features: fw.manifest.features || "", build: fw.build || null });
-			let erasing = null;
+			let started = null, erasing = null;
 			try {
-				// The SoC that answers. The first step writes only the loader whose pages match the main SoC's, read through its
-				// application (on the cable only the main SoC's application answers): without them yet, it asks for the radio
-				// switched on normally first. The second writes only a loader whose pages differ from the first's. A main SoC
-				// whose pages can't tell it from the other (telling) gets no write at all
-				const same = () => new Error(t("flash.both.same"));
-				if (i === 0 && p.print && !telling(p.print)) throw same();
-				const until = Date.now() + LISTEN_MS;
+				let loader = new Iap(await cable(), { log: (l) => c.log.add(l), firstStage: p.firstStage, protect: C().boards[p.board].protect });
+				// what the user is told while the page waits; said again only when it changes
 				let said = null;
-				const say = (key, why) => {
+				// spin: the page is listening (not while the cable is out)
+				const say = (key, extra = null, spin = true) => {
 					if (said === key) return;
 					said = key;
-					diag.note(`update mode: ${why}`, { step: i + 1 });
-					fill(status, notice(t(key), "info"), h("p", { class: "muted c7-big" }, spinner(), " ", t(needA(i) ? "flash.both.listening_normal" : "flash.iap.listening")));
+					diag.note(`update mode wait: ${key}`, { step: i + 1 });
+					fill(status, key ? notice(t(key), "info") : null, extra, spin ? waitLine() : null);
 				};
+				const until = Date.now() + LISTEN_MS;
+				let quietSince = Date.now();
 				for (;;) {
 					if (stop.signal.aborted) throw new Error("stopped");
 					if (Date.now() > until) throw new Error(t("flash.iap.no_update_mode"));
-					const um = await loader.probe(1500, 0, { all: needA(i) });
-					if (um?.version && needA(i)) {
-						say("flash.both.in_update_mode", "a loader answered before the main SoC's pages were read");
-					} else if (um?.version) {
+					if (c.stream?.lost) {
+						// pulled out: the port is gone, and only the user's click may open it again
+						await new Promise((resolve) => {
+							say("flash.both.unplugged", h("div", { class: "actions" }, button(t("flash.both.continue"), resolve, { primary: true })), false);
+							stop.signal.addEventListener("abort", resolve, { once: true });
+						});
+						if (stop.signal.aborted) throw new Error("stopped");
+						try {
+							loader = new Iap(await cable(), { log: (l) => c.log.add(l), firstStage: p.firstStage, protect: C().boards[p.board].protect });
+							said = undefined;	// the plain wait drawn again, in place of the unplugged notice
+							quietSince = Date.now();
+							say(null);
+						} catch (e) {
+							diag.note("update mode wait: cable not opened", { error: ctx.errorText(e) });
+							said = null;
+						}
+						continue;
+					}
+					let um = null;
+					try {
+						um = await loader.probe(1500);
+					} catch (e) {
+						// a port whose device went away refuses writes before its reading ends (link.js SerialStream)
+						if (e?.name !== "NetworkError" && !c.stream?.lost) throw e;
+						if (c.stream) c.stream.lost = true;
+						continue;
+					}
+					if (um?.version) {
+						quietSince = Date.now();
+						status.querySelector(".wait-line")?.replaceWith(waitLine("flash.both.checking"));
 						const who = await loader.whose(pages);
-						if (who && (p.print ? who === p.print : who !== other.print)) {
+						status.querySelector(".wait-line")?.replaceWith(waitLine());
+						if (!who) continue;
+						if (i === 0 && !telling(who)) throw new Error(t("flash.both.same"));
+						const mine = i === 0 ? (p.print ? who === p.print : known.includes(who) || confirmed) : who !== other.print;
+						if (mine) {
 							p.print = who;
 							break;
 						}
-						if (who) say(i === 0 ? own("flash.both.not_a") : own("flash.both.not_b"), "the other SoC answers");
-					} else if (um?.stock && needA(i)) {
-						const who = await loader.whose(pages);
-						if (who) {
-							if (!telling(who)) throw same();
-							p.print = who;
-							diag.note("update mode: the main SoC's pages read", { step: 1 });
-							// it says what to do next: the application answering on until the radio is off doesn't replace it
-							said = "flash.iap.not_update_mode";
-							fill(p.body, howTo(i), status);
-							fill(status, notice(t("flash.both.read_a"), "ok"), h("p", { class: "muted c7-big" }, spinner(), " ", t("flash.iap.listening")));
+						if (i === 0 && !p.print && !known.length) {
+							// nothing to check against: what the screen shows decides, once
+							await new Promise((resolve) => {
+								say(own("flash.both.confirm_a"), h("div", { class: "actions" }, button(t(own("flash.both.confirm_yes")), () => { confirmed = true; say(null); resolve(); }, { primary: true })), false);
+								stop.signal.addEventListener("abort", resolve, { once: true });
+							});
+							said = null;
+							continue;
 						}
+						say(own(i === 0 ? "flash.both.not_a" : "flash.both.not_b"));
 					} else if (um?.stock) {
-						say("flash.iap.not_update_mode", "the application answers");
+						quietSince = Date.now();
+						say("flash.iap.not_update_mode");
+					} else if (Date.now() - quietSince > QUIET_HINT_MS) {
+						say(own(i === 0 ? "flash.both.silent_a" : "flash.both.silent_b"));
 					}
-					await sleep(500);
+					await sleep(400);
 				}
 				diag.note("update mode", { step: i + 1, soc: p.board });
+				if (i === 0) rememberMain(radio.flash.board, p.print);
+				started = ctx.flashStarted({ task: "install", source: fw.origin || "", radio: p.board, firmware: String(fw.manifest.version || ""),
+					variant: fw.variant || fw.manifest.variant || (fw.manifest.dev_build ? "dev" : ""), features: fw.manifest.features || "", build: fw.build || null });
 				wrote = true;
 				await busy(true);
+				between.hidden = i !== 0;
 				careful.hidden = false;
+				S().forward(null);	// nothing stops a write midway safely
 				mark(p, "active", t("flash.iap.erasing"));
-				fill(p.body, prog.el, status);
-				fill(status, h("p", { class: "muted c7-big" }, t("flash.iap.erasing")));
+				prog.set(0, 100);	// not the last step's bar; the heading says what is going on
+				fill(p.body, prog.el);
 				const t0 = Date.now();
-				erasing = setInterval(() => prog.set(90 * (1 - Math.exp(-(Date.now() - t0) / ERASE_TAU_MS)), 100, t("flash.iap.erasing")), 250);
-				await loader.write(p.bytes, { signal: stop.signal, name: `rfoundry_${p.board}.bin`,
+				erasing = setInterval(() => prog.set(90 * (1 - Math.exp(-(Date.now() - t0) / ERASE_TAU_MS)), 100), 250);
+				await loader.write(p.bytes, { name: `rfoundry_${p.board}.bin`,
 					onPhase: (ph) => {
 						if (ph !== "erase") clearInterval(erasing);
 						mark(p, "active", t(ph === "erase" ? "flash.iap.erasing" : "flash.iap.writing"));
-						fill(status);
 					},
 					onPage: (k, n) => { if (k > 0) ctx.flashMark(started, "first_byte"); prog.set(k, n, t("flash.iap.page", { done: k, total: n })); } });
 				ctx.flashMark(started, "last_byte");
@@ -519,15 +581,21 @@ export function makeStockRoutes(host) {
 				if (i === 0) return open(1);
 				finish();
 			} catch (e) {
-				ctx.flashFinished(started, e);
+				if (started) ctx.flashFinished(started, e);
 				await busy(false);
 				careful.hidden = true;
 				if (left()) return;
 				const stopped = e.message === "stopped";
 				mark(p, "active", stopped ? "" : t("flash.both.failed"));
-				fill(p.body, stopped ? notice(t("flash.iap.cancelled"), "info") : errorNotice(t("flash.iap.failed", { error: ctx.errorText(e) })),
-					stopped || !wrote ? null : h("p", {}, t("flash.iap.retry_safe"), " ", t("flash.iap.retry_how")));
-				S().forward(button(t("flash.c7.write.again"), () => run(i), { primary: true }));
+				// what to do before trying again: nothing after a stop or a wait that found no update mode; the update mode
+				// entered again (this SoC's) after a write that stopped
+				const lost = !!c.stream?.lost;
+				const why = lost ? t("flash.both.cable_out") : ctx.errorText(e);
+				fill(p.body, how(p, stopped ? notice(t("flash.iap.cancelled"), "info") : errorNotice(t(`flash.both.failed_${p.key}`, { error: why })),
+					lost && !stopped ? h("p", {}, h("b", {}, t("flash.both.replug"))) : null,
+					wrote && !stopped ? h("p", {}, h("b", {}, t(own(`flash.both.again_${p.key}`)))) : null,
+					wrote && !stopped ? h("p", { class: "small muted" }, t("flash.iap.retry_safe")) : null));
+				S().forward(button(t(stopped ? "flash.iap.go" : "flash.both.again"), () => run(i), { primary: true }));
 			} finally {
 				clearInterval(erasing);
 				clearInterval(watch);
@@ -537,14 +605,12 @@ export function makeStockRoutes(host) {
 		// both written: the radio starts RadioFoundry at the next power-on
 		function finish() {
 			c.resetAt = Date.now();
-			box.append(notice(t("flash.both.finished"), "ok"));
+			c.bothDone = true;	// the verify step then says nothing of a second receiver left out
+			careful.before(notice(t("flash.both.finished"), "ok"));	// under the steps, above the log
 			S().forward(button(t("flash.nav.to_now"), () => ctx.next(), { primary: true }));
 		}
 
-		parts[0].print = null;
-		parts[1].print = null;
-		// the main SoC's pages, read through its application in the connect step: the first step's loader must match them
-		if (c.mainPrint) parts[0].print = c.mainPrint;
+		mark(parts[1], "waiting", t("flash.both.waiting"));
 		open(0);
 		return box;
 	}

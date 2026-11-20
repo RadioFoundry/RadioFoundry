@@ -105,6 +105,8 @@ export class Iap {
 		const t0 = Date.now();
 		let last = Date.now(), n = this.s.buf.length;
 		for (;;) {
+			// a cable pulled out answers nothing more: said at once, not after the timeout
+			if (this.s.lost) throw new DOMException("The device has been lost.", "NetworkError");
 			const now = Date.now();
 			if (this.s.buf.length !== n) {
 				n = this.s.buf.length;
@@ -210,7 +212,7 @@ export class Iap {
 		this.s.clear();
 		await this.s.write(erasePacket(n));
 		const er = await this.until((t) => t.includes("ok"), eraseTimeout);
-		if (!er.includes("ok")) throw new IapError("the radio did not confirm the erase. The application area may be erased: enter update mode again and repeat the install");
+		if (!er.includes("ok")) throw new IapError("the radio did not confirm the erase.");
 		onPhase("write");
 		let sent = 0, reply = "";
 		for (let i = 0; i < pages.length; i++) {
@@ -224,11 +226,13 @@ export class Iap {
 				pageTimeout, 50);
 			onPage(i + 1, pages.length);
 			if (last) break;
+			// nothing at all: switched off, or the cable's data line gone; anything else is the loader refusing the page
+			if (!reply.length) throw new IapError(`the radio stopped answering at part ${i + 1} of the write.`);
 			if (!(reply.includes("Write") || reply.includes("d")) || reply.includes("ok"))
-				throw new IapError(`page ${i}: unexpected reply, stopped. Enter update mode again and repeat the install`);
+				throw new IapError(`the radio gave an unexpected answer at part ${i + 1} of the write.`);
 		}
 		const k = reply.indexOf("ChecksumI");
-		if (k < 0 || reply.length < k + 13) throw new IapError("the radio did not report a checksum after the last page");
+		if (k < 0 || reply.length < k + 13) throw new IapError("the radio did not report a checksum after the last page.");
 		const theirs = ((reply.charCodeAt(k + 9) << 24) | (reply.charCodeAt(k + 10) << 16) | (reply.charCodeAt(k + 11) << 8) | reply.charCodeAt(k + 12)) >>> 0;
 		if (theirs !== sent) throw new IapError(`the radio's checksum 0x${hex8(theirs)} does not match the file's 0x${hex8(sent)}: install again`);
 		if (sent !== sum) throw new IapError("internal checksum error");

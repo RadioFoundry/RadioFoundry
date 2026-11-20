@@ -703,6 +703,10 @@ abbr.gl:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; bo
 .both-head { display: flex; align-items: baseline; gap: var(--space-2); font-size: 1.15rem; margin: 0 0 var(--space-2); }
 .both-n { display: inline-grid; place-items: center; flex: none; width: 1.7em; height: 1.7em; border-radius: 50%; background: var(--border); font-size: 0.9rem; }
 .both-step.active .both-n { background: var(--accent); color: #fff; }
-.both-step.done .both-n { background: var(--ok); color: #fff; font-size: 0; }
-.both-step.done .both-n::before { content: "\2713"; font-size: 0.9rem; }
+.both-step.done .both-n { position: relative; background: var(--ok); color: transparent; }
+.both-step.done .both-n::before { content: "\2713"; position: absolute; inset: 0; display: grid; place-items: center; color: #fff; }
 .both-body:empty { display: none; }
+
+/* Practice mode: the simulated radio's screen and the user's hands (app.js simRadioPanel) */
+.sim-radio { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; margin: 0 0 var(--space-3); }
+.sim-radio .btn { padding: 0.25em 0.75em; font-size: 0.9em; }

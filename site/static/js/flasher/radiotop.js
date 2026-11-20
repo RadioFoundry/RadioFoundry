@@ -68,13 +68,14 @@ export function radioPicture(radio, { keys = [], screen = null } = {}) {
 const SCREEN_SHOTS = { rfoundry: "boot", loader: "stub_entry" };
 // Another firmware's screen, where the radio has a drawing of it: its original firmware (flash.stock_screen)
 const OTHER_SHOTS = { on: "stock_screen" };
-const screenShot = (radio, sc) => (radio?.gallery && SCREEN_SHOTS[sc] ? `${ROOT}static/img/screens/${radio.gallery}/${SCREEN_SHOTS[sc]}.png`
+const screenShot = (radio, sc) => (sc === "update" ? (radio?.flash?.update_screen ? ROOT + radio.flash.update_screen : null)
+	: radio?.gallery && SCREEN_SHOTS[sc] ? `${ROOT}static/img/screens/${radio.gallery}/${SCREEN_SHOTS[sc]}.png`
 	: radio?.flash?.[OTHER_SHOTS[sc]] ? ROOT + radio.flash[OTHER_SHOTS[sc]] : null);
 
 // led: off | wait (slow yellow) | busy (fast yellow) | done (three green flashes) | green (steady)
 // screen: off (dark: a power-on stub load or the factory loader) | loader (RadioFoundry handed over to the stub: its
 // "PC Loader Connected" splash) | rfoundry (RadioFoundry running: its boot screen) | on (another firmware running: lit,
-// no picture of its screens) | any (the state doesn't matter yet: no screen line in the caption)
+// no picture of its screens) | update (the factory update mode: flash.update_screen, where the radio has one) | any (the state doesn't matter yet: no screen line in the caption)
 // knob: null | "cycle" (off, then on) | "on"
 // note: a line for the caption in place of the LED's, while the LED says nothing
 // hasLed false: the chip the cable reaches drives no LED (they are on another SoC): none is drawn and the caption names

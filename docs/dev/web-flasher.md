@@ -51,7 +51,11 @@ console gets one, with its first stock version. `#sim=<radio>-romfail` is an HR_
 ROM refuses the load, to practice the factory update mode; `#sim=<radio>-slowcable` one on a cable too slow for the
 boot ROM's 48 ms window, to check that the page's answer sent ahead gets through; `#sim=<radio>-deafcable` one on a
 cable that carries the radio's data and none of the page's; a radio with the Baofeng updater enters it when switched on
-with "Hold the Keys and Turn On".
+with "Hold the Keys and Turn On". A radio with the serial update mode (`update_mode = "iap"`) gets a row of practice
+controls above the steps: what the screen shows, switching it off and on (with or without the update mode key held), the
+long key press that switches between two receivers' loaders, and pulling the cable out. Each loader reads its own receiver's NAND pages, receiver B's loader drops a
+"Read" now and then, and a pulled cable ends the stream as a lost device does, so every wait and error of the two-step
+install can be tried without a radio.
 
 ## The beta notice
 

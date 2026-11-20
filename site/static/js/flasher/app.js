@@ -803,7 +803,7 @@ function render() {
 	let shown = stepper();
 	app.append(shown);
 	render.stepper = () => { const n = stepper(); shown.replaceWith(n); shown = n; };
-	if (S.sim) app.append(h("p", { class: "small muted sim-line" }, t("flash.sim.banner")));
+	if (S.sim) app.append(h("p", { class: "small muted sim-line" }, t("flash.sim.banner")), ...[simRadioPanel()].filter(Boolean));
 	if (VERSION_REF && S.task === "install") app.append(versionBanner());
 	else if (S.task === "install" && S.step === 0) app.append(...[betaNotice()].filter(Boolean));
 	if (S.radio && S.radio.status !== "supported" && S.step > 0) app.append(prereleaseNotice());
@@ -1595,6 +1595,36 @@ async function ensureFirmware() {
 		return S.firmware;
 	}
 	throw new Error(t("flash.build.no_image"));
+}
+
+// Practice mode, a simulated radio with the serial IAP update mode (fakec7000.js): its screen, and the hands of the user
+// who switches it on and off, holds its keys and pulls the cable, at any step
+function simRadioPanel() {
+	const f = S.fakeC7;
+	if (!f?.iap) return null;
+	const screen = h("b", {});
+	const plugBtn = button("", () => (f.unplugged ? f.plug() : f.unplug()), { quiet: true });
+	const shown = () => {
+		const sc = f.screen();
+		screen.textContent = sc.startsWith("IAP_") ? sc : t(`flash.sim.screen_${sc === "original firmware" ? "normal" : sc === "RadioFoundry" ? "rfoundry" : sc === "blank" ? "blank" : "off"}`);
+		plugBtn.textContent = t(f.unplugged ? "flash.sim.plug" : "flash.sim.unplug");
+	};
+	const el = h("div", { class: "sim-radio" }, h("span", { class: "small" }, t("flash.sim.screen"), " ", screen),
+		button(t("flash.sim.off"), () => f.powerOff(), { quiet: true }),
+		button(t("flash.sim.on"), () => f.powerOn(), { quiet: true }),
+		button(t("flash.sim.on_sk1"), () => f.powerOn({ keys: true }), { quiet: true }),
+		f.rx2 ? button(t("flash.sim.hold_sk1"), () => f.holdSk1(), { quiet: true }) : null,
+		plugBtn);
+	shown();
+	// until the page draws another step (render() replaces it): not yet in the page on the first tick
+	let drawn = false;
+	const tick = setInterval(() => {
+		if (el.isConnected) {
+			drawn = true;
+			shown();
+		} else if (drawn) clearInterval(tick);
+	}, 300);
+	return el;
 }
 
 function slug(text) {
@@ -3386,7 +3416,7 @@ async function main() {
 		const slow = simAsk[2] === "-slowcable";
 		S.fakeC7 = new FakeC7000({ progmem: sim.progmem, speed: 8, stubEntry: true, romWindow: slow ? 48 : 600,
 			faults: { silentAfterReset: true, romNak: simAsk[2] === "-romfail", slowCable: slow ? 80 : 0, deafCable: simAsk[2] === "-deafcable" },
-			...fakeC7000Options(simRadio, S.data.fb), ...(simB ? { rx2: { progmem: simB.progmem, stock: !!simAsk[3] } } : {}) });
+			...fakeC7000Options(simRadio, S.data.fb), ...(simB ? { rx2: { progmem: simB.progmem, stock: !!simAsk[3] || simStock } } : {}) });
 		if (!simStock) {
 			const img = randomBytes(rng(98), 180 * 1024);
 			img.set(new TextEncoder().encode("RadioFoundry"), 0x1000);

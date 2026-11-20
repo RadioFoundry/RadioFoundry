@@ -35,6 +35,16 @@
 // held (powerOn({ keys: true })): FakeBfLoader, the radio side of bfloader.js, erases the application area and writes
 // the blocks it takes into the program flash.
 //
+// A radio with the serial IAP update mode (iap: {} from fakeC7000Options; a board's update_mode "iap") enters it when
+// switched on with its keys held, or by itself when its application area is empty: the main SoC's loader (IAP_A on the
+// screen). holdSk1() switches a radio with two SoCs to the other SoC's loader and back. Each loader answers the read-only
+// request ("Flash Read ", one page per "Read", then ChecksumR and IAPReady) from its own SoC's NAND, whose calibration
+// pages differ between the two (faults.iapBlankCal: erased on both); the second SoC's loader leaves a "Read" unanswered
+// now and then. An Erase sent while a read is open fails as on the radio. Erase, then one acknowledged page after another
+// and the checksum (iap.js write) put the image in that SoC's application area; the radio then stays in update mode.
+// The stock application answers the same read in full for the main SoC (its NAND). unplug() and plug() pull the cable
+// out and put it back: the page's stream is lost, as a real port's is, and a new one is offered.
+//
 // The stock firmware and codec here are random bytes shaped like the real ones: no vendor code is in RadioFoundry.
 
 import { concat, crc32, le32, sha256, sleep, u32le } from "./bytes.js";
@@ -100,7 +110,7 @@ export function fakeC7000Options(radio, fb) {
 	const b = fb.boards[radio.id];
 	return { board: b.debuglink_names[0], codecId: b.codec.id, romEntry: fb.c7000.boards[radio.id].rom_entry ?? null,
 		...(fb.c7000.boards[radio.id].data_flash === false ? { dataSize: 0x200000, nand: { calibration: fb.c7000.boards[radio.id].calibration } } : {}),
-		usmart: consoleBuild(radio),
+		usmart: consoleBuild(radio), iap: radio.flash.update_mode === "iap" ? {} : null,
 		loaderId: radio.flash.update_mode === "baofeng" ? fb.c7000.boards[radio.id].bootloader_id : null };
 }
 
@@ -290,8 +300,9 @@ export class FakeC7000 {
 	// nand.calibration ({progmem, nand, magic}, the board profile's) where its two calibration copies go
 	constructor({ progmem, dataSize = 0x1000000, board = "DM-1801 Pro", codecId = "dm1801pro-049", stubEntry = true, speed = 1,
 		romWindow = 400, bootTime = 1500, faults = {}, stubSpan = [0x17000, 0x18000], usmart = null, loaderId = null,
-		rx2 = false, nand = null, stubWrite = true, stubPass = true, variant = "DBB", romEntry = null } = {}) {
+		rx2 = false, nand = null, stubWrite = true, stubPass = true, variant = "DBB", romEntry = null, iap = null } = {}) {
 		this.rx2 = rx2;
+		this.iap = iap;				// the serial IAP update mode: {} (state "iap", iapSoc "A" or "B")
 		this.stubPass = stubWrite && stubPass;	// protocol 8: op 0x0F (PASS)
 		// a radio the boot ROM starts directly: it runs what the flag at flash 0 names (RadioFoundry's entry: the
 		// application area; any other: the original firmware; no flag: nothing), and the flag sector may be written
@@ -344,7 +355,7 @@ export class FakeC7000 {
 		// badWrite: how many of the next WRITEs (op 0x0E) leave a bit wrong in their sector; writeStatus: the status every
 		// WRITE answers instead (0x0F write protected, 0x0C flash busy too long), 0 = none
 		this.faults = { flip: 0, misplace: [], silentAfterReset: false, romEcho: false, romNak: false, slowCable: 0, deafCable: false, badWrite: 0,
-			writeStatus: 0, nandEcc: [], ...faults };
+			writeStatus: 0, nandEcc: [], iapBlankCal: false, ...faults };
 		this.rand = rng(11);
 		this.state = "off";		// off | rom | booting | firmware | stub | bfloader
 		this.inb = new Uint8Array(0);
@@ -447,6 +458,7 @@ export class FakeC7000 {
 		setTimeout(() => {
 			if (this.gen !== gen || this.state !== "rom") return;
 			if (this.keysHeld && this.loaderId && !this.softReset) return this.updateMode();
+			if (this.iap && !this.softReset && (this.keysHeld || this.firmware() === "empty")) return this.iapEnter("A");
 			// no answer came: the ROM stops waiting, and says what it starts (the address its flash names, or the loader)
 			this.send(this.romEntry !== null && hasRomFlag(this.progmem) ? this.progmem.slice(4, 8) : new Uint8Array([0x00, 0x10, 0x00, 0x03]));
 			this.state = "booting";
@@ -503,6 +515,11 @@ export class FakeC7000 {
 		}
 		if (this.state === "off" || this.state === "booting") return;
 		if (this.state === "bfloader") return this.bf.feed(data);
+		if (this.state === "iap") {
+			this.inb = concat(this.inb, data);
+			while (this.iapFeed());
+			return;
+		}
 		if (this.state === "firmware" && this.softReset && this.faults.silentAfterReset) return;
 		if (this.faults.romEcho && (this.state === "rom" || this.state === "romload")) this.send(data.slice());
 		this.inb = concat(this.inb, data);
@@ -639,11 +656,18 @@ export class FakeC7000 {
 		const fr = text.indexOf("Flash Read ");
 		if (fr >= 0) {
 			if (text.length < fr + 19) return 0;
+			const addr = u32be(this.inb, fr + 11), count = u32be(this.inb, fr + 15);
 			this.inb = this.inb.slice(fr + 19);
 			this.flashRead = true;
+			this.rd = { addr, left: count, soc: "A", loader: false };
 			const build = buildNamed(this.usmart);
 			this.events.push("identify");
 			this.send(new TextEncoder().encode("  Read_2M_\0\0\x03\0\x0e\0P\x008\0\x01\0" + runtimeVersion(build, this.variant) + "\0Jan 21 2025\0\0\x0011:20:46\0+DRS-300UV+136-480MHZ+"));
+			return 1;
+		}
+		if (this.rd && text.startsWith("Read")) {
+			this.inb = this.inb.slice(4);
+			this.readStep();
 			return 1;
 		}
 		const at = text.indexOf("@AT");
@@ -693,6 +717,160 @@ export class FakeC7000 {
 		this.events.push(event);
 		if (this.loaded.length >= 0xC0 && String.fromCharCode(...this.loaded.subarray(0x80, 0x84)) === "UCFG")
 			for (const o of [0xA8, 0xAC]) this.ledPins.add(u32le(this.loaded, o));
+	}
+
+	// ---- the serial IAP update mode
+	iapEnter(soc) {
+		this.state = "iap";
+		this.iapSoc = soc;
+		this.rd = null;
+		this.iapPhase = "ready";
+		this.inb = new Uint8Array(0);
+		this.events.push(`update mode ${soc}`);
+	}
+
+	// A long press of SK1 in update mode: the other SoC's loader, about 1.5 s later; a write under way stops
+	holdSk1() {
+		if (this.state !== "iap" || !this.rx2) return;
+		const gen = this.gen;
+		setTimeout(() => {
+			if (this.gen !== gen || this.state !== "iap") return;
+			this.iapEnter(this.iapSoc === "A" ? "B" : "A");
+		}, 1500 / this.speed);
+	}
+
+	// What the screen shows, for the practice controls
+	screen() {
+		if (this.state === "off") return "off";
+		if (this.state === "iap") return this.iapPhase === "erase" ? `IAP_${this.iapSoc} erasing` : this.iapPhase === "pages" ? `IAP_${this.iapSoc} writing`
+			: this.iapPhase === "done" ? `IAP_${this.iapSoc} Rec Done!` : `IAP_${this.iapSoc}`;
+		if (this.state === "firmware") return this.firmware() === "rfoundry" ? "RadioFoundry" : this.firmware() === "empty" ? "blank" : "original firmware";
+		return this.state;
+	}
+
+	// The program flash of a SoC: the main one's, or the second's (rx2.progmem)
+	socFlash(soc) {
+		return soc === "A" ? this.progmem : this.rx2.progmem;
+	}
+
+	// One 2 KB NAND page of a SoC as its loader reads it: the same at 0 on both, the calibration pages (0x280000 up) its
+	// own, the page between them erased
+	iapPage(soc, addr) {
+		const seed = (n) => randomBytes(rng(n), 0x800);
+		if (addr === 0) return seed(500);
+		if (addr >= 0x280000 && addr < 0x2E0000) {
+			if (this.faults.iapBlankCal || addr === 0x2A0000) return new Uint8Array(0x800).fill(0xFF);
+			const page = seed((soc === "A" ? 600 : 700) + (addr >> 17));
+			if (addr === 0x280000) page.set(new TextEncoder().encode("TUNE"), 0);
+			return page;
+		}
+		return seed((addr >>> 11) ^ (soc === "A" ? 0x1111 : 0x2222));
+	}
+
+	// The read's next "Read": a page while one is left, then ChecksumR (and IAPReady from a loader)
+	readStep() {
+		const r = this.rd;
+		if (r.left > 0) {
+			r.page = this.iapPage(r.soc, r.addr);
+			r.left--;
+			this.send(r.page);
+			return;
+		}
+		const sum = (r.page || []).reduce((a, b) => a + b, 0);
+		this.send(concat(new TextEncoder().encode("ChecksumR"), be32(sum), new TextEncoder().encode(r.loader ? "IAPReady" : "")));
+		this.rd = null;
+	}
+
+	iapFeed() {
+		const ib = this.inb, enc = (x) => new TextEncoder().encode(x);
+		if (this.iapPhase === "erase" || this.iapPhase === "done") {
+			this.inb = new Uint8Array(0);
+			return 0;
+		}
+		if (this.iapPhase === "pages") {
+			if (ib.length < 0x800) return 0;
+			const page = ib.slice(0, 0x800);
+			this.inb = ib.slice(0x800);
+			const w = this.iapWrite;
+			this.socFlash(this.iapSoc).set(page.subarray(0, Math.max(0, Math.min(0x800, this.socFlash(this.iapSoc).length - (0xC000 + w.k * 0x800)))), 0xC000 + w.k * 0x800);
+			for (const b of page) w.sum = (w.sum + b) >>> 0;
+			w.k++;
+			if (w.k < w.want) {
+				this.send(enc("kyd"));
+				return 1;
+			}
+			this.iapPhase = "done";
+			this.fwKind = null;
+			if (this.iapSoc === "B") this.rx2.stock = !this.hasMark(this.rx2.progmem);
+			this.events.push(`written ${this.iapSoc}`);
+			this.send(concat(enc("ChecksumI"), be32(w.sum)));
+			return 0;
+		}
+		const text = String.fromCharCode(...ib.subarray(0, 19));
+		if (text.startsWith("Flash Read ")) {
+			if (ib.length < 19) return 0;
+			this.rd = { addr: u32be(ib, 11), left: u32be(ib, 15), soc: this.iapSoc, loader: true };
+			this.inb = ib.slice(19);
+			this.send(enc("  Read_2M_V1.08BZSRMar 28 202508:43:56"));
+			return 1;
+		}
+		if (text.startsWith("Read")) {
+			this.inb = ib.slice(4);
+			// the second SoC's bytes go through the first: now and then a "Read" doesn't reach its loader
+			this.lostReads = (this.lostReads || 0) + 1;
+			if (this.rd && !(this.iapSoc === "B" && this.lostReads % 5 === 0)) this.readStep();
+			return 1;
+		}
+		if (text.startsWith("Erase")) {
+			if (ib.length < 19) return 0;
+			this.inb = ib.slice(19);
+			if (this.rd) {
+				this.rd = null;
+				this.send(enc("ChecksumR\0\0\0\0Flash operation fail!"));
+				return 1;
+			}
+			const soc = this.iapSoc, gen = this.gen;
+			this.iapWrite = { want: u32be(ib, 15) + 1, k: 0, sum: 0 };
+			this.iapPhase = "erase";
+			this.send(enc("  IAPV1.08BZSRMar 28 202508:43:56"));
+			const flash = this.socFlash(soc);
+			flash.fill(0xFF, 0xC000, Math.min(flash.length, 0x1FD000));
+			if (soc === "A") this.fwKind = null;
+			else this.rx2.stock = true;
+			setTimeout(() => {
+				if (this.gen !== gen || this.state !== "iap" || this.iapSoc !== soc) return;
+				this.iapPhase = "pages";
+				this.send(enc("Erase ok\r\n"));
+			}, 30000 / this.speed);
+			return 1;
+		}
+		if (!ib.length) return 0;
+		this.inb = ib.slice(1);
+		return 1;
+	}
+
+	hasMark(flash) {
+		const app = flash.subarray(0xC000, 0xE8000);
+		for (let i = 0; i + RFOUNDRY_MARK.length < app.length; i++)
+			if (app[i] === RFOUNDRY_MARK[0] && RFOUNDRY_MARK.every((b, k) => app[i + k] === b)) return true;
+		return false;
+	}
+
+	// ---- the cable pulled out and put back
+	unplug() {
+		const s = this.stream;
+		s.lost = true;
+		s.closed = true;
+		s.write = async () => { throw new DOMException("The device has been lost.", "NetworkError"); };
+		this.unplugged = true;
+		this.events.push("unplugged");
+	}
+
+	plug() {
+		if (!this.unplugged) return;
+		this.unplugged = false;
+		this.stream = this.makeStream();
+		this.events.push("plugged in");
 	}
 
 	// A word of the RAM copy of the version string (the build's ram address), else 0
