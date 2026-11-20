@@ -197,7 +197,7 @@ the TSCC. A radio switched on meanwhile camps only at the Aloha: a grant doesn't
 
 | Grant | Followed when |
 |---|---|
-| TV, BTV | the radio is the source (its own call); otherwise, unless it is a late-entry grant for a talkgroup call the user left: the talkgroup is in the system's list with the listen flag, or it is an all-call (ALLMSID, ALLMSIDL, ALLMSIDZ) and all-calls are on, or the grant is an emergency and emergencies on any talkgroup are on, or monitor is on |
+| TV, BTV | the radio is the source (its own call); otherwise, unless it is a late-entry grant for a talkgroup call the user left: the talkgroup is in the system's list with the listen flag, or it is an all-call (ALLMSID, ALLMSIDL, ALLMSIDZ) and all-calls are on, or the grant is an emergency and emergencies on any talkgroup are on, or monitor is on (the system's "follow every talkgroup", or digital monitor while it is on: the radio core sets the option from the hear-all latch at every tick, so it applies from the next grant) |
 | PV | the radio is the source; or the destination is the radio's ID and private calls are on |
 | PD, TD (and the multi-item 55, 56) | as data calls: PD with the radio as source or target; TD with the radio as source, or to a talkgroup it listens to (section 7.7) |
 

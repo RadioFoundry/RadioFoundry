@@ -16,8 +16,9 @@ export const siteMax = (model) => 2 ** (12 - NET_BITS[model & 3]) - 1;
 
 // The options word (1): the bits the editor knows, by field. Others are kept as stored
 export const OPTS = {
-	allCalls: 0x0002, emergencyAny: 0x0004, privateCalls: 0x0020, registerTalkgroups: 0x0040, acceptAls: 0x0080,
-	acceptKill: 0x0100, noRoaming: 0x0200, acceptStun: 0x0400, ipGateway: 0x1000,
+	allCalls: 0x0002, emergencyAny: 0x0004, followAll: 0x0008, learnSystem: 0x0010, privateCalls: 0x0020,
+	registerTalkgroups: 0x0040, acceptAls: 0x0080, acceptKill: 0x0100, noRoaming: 0x0200, acceptStun: 0x0400,
+	ipGateway: 0x1000,
 };
 const OPT_MASK = Object.values(OPTS).reduce((a, b) => a | b, 0);
 
@@ -81,9 +82,11 @@ export const validKey = (k) => /^[0-9A-Fa-f]{32}$/.test(String(k ?? "").replace(
 
 const range = (lo, hi) => ({ type: "int", min: lo, max: hi });
 // Each option's section in the system form, and its help (editor.t3.opt.<key>_help) where it has one
-const OPT_SECTION = { allCalls: "calls", emergencyAny: "calls", privateCalls: "calls", registerTalkgroups: "radio", ipGateway: "radio",
-	acceptAls: "commands", acceptKill: "commands", acceptStun: "commands", noRoaming: "roaming" };
-const OPT_HELP = new Set(["allCalls", "registerTalkgroups", "ipGateway", "acceptAls", "acceptKill", "acceptStun", "noRoaming"]);
+const OPT_SECTION = { learnSystem: "identity", allCalls: "calls", emergencyAny: "calls", followAll: "calls", privateCalls: "calls",
+	registerTalkgroups: "radio", ipGateway: "radio", acceptAls: "commands", acceptKill: "commands", acceptStun: "commands",
+	noRoaming: "roaming" };
+const OPT_HELP = new Set(["learnSystem", "allCalls", "followAll", "registerTalkgroups", "ipGateway", "acceptAls", "acceptKill",
+	"acceptStun", "noRoaming"]);
 const optionFields = (section) => Object.keys(OPTS).filter((k) => OPT_SECTION[k] === section).map((k) =>
 	({ key: k, label: `editor.t3.opt.${k}`, type: "bool", section, help: OPT_HELP.has(k) ? `editor.t3.opt.${k}_help` : undefined }));
 
@@ -113,6 +116,7 @@ export const t3System = {
 		{ key: "net", label: "editor.t3.net", type: "int", min: 0, max: (s) => netMax(s.model), section: "identity", help: "editor.t3.net_help" },
 		{ key: "category", label: "editor.t3.category", type: "select", options: () => [["a", "A"], ["b", "B"]], section: "identity", help: "editor.t3.category_help" },
 		{ key: "colorCode", label: "editor.t3.color_code", type: "select", options: () => [...Array(16).keys()].map((n) => [n, String(n)]), section: "identity", help: "editor.t3.color_code_help" },
+		...optionFields("identity"),
 		...optionFields("radio"),
 		{ key: "powerSave", label: "editor.t3.power_save", type: "select", options: () => [...Array(8).keys()].map((n) => [n, n ? `1:${2 ** n}` : "editor.general.off"]), section: "radio", help: "editor.t3.power_save_help" },
 		...optionFields("calls"),
