@@ -155,6 +155,31 @@ channel.
 | P25 unit ID | Your P25 ID. Blank: the DMR ID |
 | NXDN unit ID | Your NXDN ID, 1-65519. Blank: the DMR ID if it is 65519 or less, else 1 |
 
+#### NXDN Scrambler
+
+The NXDN Scrambler is a 15-bit algorithm with 32,767 possible keys. The NXDN standard defines it for voice and
+data calls, but RadioFoundry currently supports it for conventional voice calls only. It deters casual listening,
+but does not provide dependable security, and the receiver cannot verify who sent a scrambled call. Use scrambling
+only in licensed services that permit it. Most countries prohibit using codes or ciphers that obscure the meaning of amateur
+radio messages. The Amateur firmware variant disables the NXDN Scrambler.
+
+To use the NXDN scrambler:
+
+1. In **Systems**, choose **Add System** and set the type to **NXDN Conventional**. Leave **Radio ID on this system**
+   blank to use the **NXDN unit ID** from the **Radio** tab on channels without their own **Own ID**.
+2. Under **Traffic keys**, select **Add key**. Enter a **Key ID** from 0 to 63 and a **Scrambler seed** from
+   1 to 32767. Use each key ID once per system. Radios exchanging scrambled calls need the same key ID and seed.
+3. Edit an NXDN channel, select the **System**, and choose a **Transmit key**. Choose **Clear** to transmit without
+   scrambling while still receiving scrambled calls with matching system keys. Save the channel and write the
+   codeplug to the radio.
+
+The radio shows **ENC** when it plays scrambled voice. If a scrambled call has no matching receive key, the radio
+shows **Encrypted: not played**. If a channel's selected transmit key is missing, pressing PTT on that channel
+does not transmit.
+
+**Show scrambler seeds** reveals the stored values. File exports omit the keys by default. Zone shares omit them
+as well.
+
 **P25 Trunking system** (Systems tab, type P25 Trunking). A new system is listen only: set **Transmit** to register and
 transmit.
 

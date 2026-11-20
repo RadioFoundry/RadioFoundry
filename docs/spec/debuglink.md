@@ -960,7 +960,7 @@ codeplug tool would. Every op starts with the op u8 and the key u16. Writes go t
 
 | Op | Name | Arguments | Reply |
 |---|---|---|---|
-| 1 | GET | offset u16 (optional, 0) | the value's whole length u16, then its bytes from offset, as many as the reply holds (the first 128 of a longer value). Unavailable: no such key |
+| 1 | GET | offset u16 (optional, 0) | the value's whole length u16, then its bytes from offset, as many as the reply holds (the first 128 of a longer value). Unavailable: no such key, system secret, or traffic key |
 | 2 | SET | offset u16, bytes | none. Offset 0: the value is these bytes. Otherwise they replace the value's from offset, which must be inside a value of at most 128 bytes; the value grows if they run past its end. So a value longer than a request is set in pieces |
 | 3 | REMOVE | none | none |
 

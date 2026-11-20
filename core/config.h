@@ -341,6 +341,9 @@
 #ifndef CONFIG_NXDN
 #define CONFIG_NXDN			0
 #endif
+#ifndef CONFIG_NXDN_SCRAMBLER
+#define CONFIG_NXDN_SCRAMBLER		0
+#endif
 #ifndef CONFIG_AIR
 #define CONFIG_AIR			(CONFIG_P25 || CONFIG_NXDN)
 #endif
@@ -387,6 +390,15 @@
 #define RFOUNDRY_CPU_RAM_NOINIT	__attribute__((section(RFOUNDRY_CPU_RAM_NOINIT_SECTION)))
 #else
 #define RFOUNDRY_CPU_RAM_NOINIT
+#endif
+// Large, cold state can go in RAM the board sets apart that is slower or shared with another bus master, so it costs
+// no main RAM: zeroed at start-up like .bss. Only for buffers task code uses now and then (a flash sector, a request
+// being assembled): never one an interrupt, the audio or the modem touches, a stack, or one on a per-sample path.
+// Without the board's section it is ordinary RAM
+#ifdef RFOUNDRY_COLD_RAM_SECTION
+#define RFOUNDRY_COLD_RAM		__attribute__((section(RFOUNDRY_COLD_RAM_SECTION)))
+#else
+#define RFOUNDRY_COLD_RAM
 #endif
 
 // Derived: the shared packet data / CSBK code
