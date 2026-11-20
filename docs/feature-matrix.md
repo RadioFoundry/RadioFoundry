@@ -94,6 +94,8 @@ is `tools/bringup.py list --radio <id>`.
 | `sfr_dualpath_rx` | not recorded | not recorded | not recorded | not recorded | ✕ | not recorded | not recorded | not recorded |
 | `sfr_cwid` | not recorded | not recorded | not recorded | not recorded | ✕ | not recorded | pass, needs re-run | pass, needs re-run |
 | `dstar` | off | not written | not written | not written | not written | not written | not written | not written |
+| `ysf` | off | not written | not written | not written | not written | not written | not written | not written |
+| `ysf_vw` | off | not written | not written | not written | not written | not written | not written | not written |
 | `aprs` | pass (seed) | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | partial, needs re-run |
 | `aprs_afsk` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial, needs re-run |
 | `aprs_dmr` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial, needs re-run |
@@ -279,6 +281,8 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `AM_RX` | ● | ✕ | ● | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `BCAST_FM` | ● | ✕ | ● | … | ✕ | ✕ | ✕ | ✕ |
 | `DSTAR` | ○ | … | … | … | … | … | … | … |
+| `YSF` | ○ | … | … | … | … | … | … | … |
+| `YSF_VW` | ○ | … | … | … | … | … | … | … |
 | `APRS` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `APRS_AFSK` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `APRS_DMR` | ● | ● | ● | ● | ● | ● | ● | ● |
@@ -319,6 +323,8 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | NXDN conventional voice, 4800 and 9600 bit/s: the frame codec, receive, the call layer, the engine and the NXDN mode in the radio core | `NXDN` | 27,300* | — | Needs `DMR` (its voice goes through the DMR vocoder path) and a board with an air interface provider (`board.air`); where the provider only receives a rate, PTT is refused at that rate. The VFO's mode tile, the debug link or a stored NXDN channel sets it ([nxdn.md](spec/nxdn.md) 6, [nxdn-codeplug.md](spec/nxdn-codeplug.md)). On the DM-1701 and the DM-32UV transmit is checked off air at both rates and receive with a bench transmitter, speech frames through the vocoder included (DM-1701); the sound at the speaker is untested ([modem-hrc6000.md](spec/modem-hrc6000.md) 10.6). RAM: 2,184 B on the DM-1701; with `P25` also on it shares P25's engine memory (9,464 B flash, 256 B RAM on top of P25) |
 | NXDN Scrambler (15-bit) | `NXDN_SCRAMBLER` | 468 | — | Needs `NXDN`; supports conventional voice calls. The NXDN air interface must support the requested direction. Checked on air against another radio running RadioFoundry and a commercial portable ([bring-up record](testing/dm32-bringup.md#nxdn-scrambler-interoperability)). |
 | D-STAR digital voice: GMSK modem, headers, slow data, clean-room AMBE codec | `DSTAR` | — | — | DM-32UV only (flat FM path); on in the multimode variant. Ported, not yet checked on a radio in this tree ([dstar-modem.md](spec/dstar-modem.md), [dstar-codec.md](spec/dstar-codec.md)). The codec borrows the DMR vocoder's RAM |
+| Yaesu System Fusion (C4FM): FICH, callsign data, DN voice with the radio's own codec | `YSF` | — | — | DM-32UV only (flat FM path); on in the multimode variant. Ported, not yet checked on a radio in this tree ([ysf-modem.md](spec/ysf-modem.md)) |
+| Fusion Voice FR (VW): the full-rate frame and layout, played and sent through core/mbe's codec | `YSF_VW` | — | — | With `YSF`; its codec state shares the mode area with D-STAR's. Ported, not yet checked on a radio in this tree ([ysf-modem.md](spec/ysf-modem.md) 4.1) |
 | Basic privacy (Motorola / Anytone BP) | `DMR_PRIVACY` | 1,936 | 1,992 |  |
 | Talker alias receive and send | `DMR_TALKER_ALIAS` | 984 | 1,300 |  |
 | ETSI GPS Info in the embedded LC | `DMR_GPS` | 2,208 | 2,152 |  |
