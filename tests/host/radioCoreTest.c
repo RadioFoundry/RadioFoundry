@@ -66,7 +66,8 @@ static struct {
 	uint32_t tx_hz;
 	uint8_t tx_power;
 	int tx_off_calls;
-	bool keyed;		// between tx() and tx_off()
+	bool keyed;		// between a tx() that keyed and the next tx_off()
+	bool rx_since_tx;	// an rx() since the last tx(): a retune ends a DMR keying (the boards disarm in rx())
 	bool audio;
 	bool led[2];
 	radio_status_t st;
@@ -82,14 +83,23 @@ static bool r_rx(uint32_t hz, radio_bw_t bw, const subtone_t *t)
 	hw.rx_bw = bw;
 	hw.rx_tone = *t;
 	hw.rx_calls++;
+	hw.rx_since_tx = true;
 	return true;
 }
+// tx() while keyed with neither tx_off() nor rx() between, over the whole run (hw is cleared per test): a board then
+// reprograms its synthesizer and RF switches under a PA that a DMR burst may be holding keyed (hal_radio_t.tx is
+// written to start from receive)
+static int rekeys;
 static bool tx_fail;			// the board refuses to key (synthesizer won't lock, PA fault)
 static bool r_tx(uint32_t hz, radio_bw_t bw, uint8_t p, const subtone_t *t)
 {
 	if (tx_fail) {
 		return false;
 	}
+	if (hw.keyed && !hw.rx_since_tx) {
+		rekeys++;
+	}
+	hw.rx_since_tx = false;
 	hw.tx_calls++;
 	hw.tx_hz = hz;
 	hw.tx_bw = bw;
@@ -1798,7 +1808,7 @@ static void test_dmr_tx(void)
 // handled, no tx_off() and no receive set-up, so a reply 30 ms after our terminator is heard; refused, tx_off() as before
 static int tx_end_calls;
 static bool tx_end_ok;
-static bool r_dmr_tx_end(void) { tx_end_calls++; return tx_end_ok; }
+static bool r_dmr_tx_end(void) { tx_end_calls++; if (tx_end_ok) hw.keyed = false; return tx_end_ok; }	// handled: unkeyed
 
 static void test_dmr_tx_end(void)
 {
@@ -2502,8 +2512,12 @@ static void test_hotspot(void)
 	radio_sm_request(&sm, &r, now);
 	CHECK(hw.rx_hz == 438800000 && hw.tx_hz == 438800000 && hw.tx_calls == tx0 + 1 &&
 		hw.tx_power == 1);
+	// A new level re-keys, through tx_off: never a second tx() on a keyed board
+	int rk = rekeys;
 	req(RREQ_HS_POWER, 255);
-	CHECK(hw.tx_calls == tx0 + 2 && hw.tx_power == 2);
+	CHECK(hw.tx_calls == tx0 + 2 && hw.tx_power == 2 && hw.keyed);
+	CHECK(rekeys == rk && hw.tx_off_calls == off0 + 1);
+	off0 = hw.tx_off_calls;
 	r.arg = 121500000;	// refused: the radio stays where it was
 	r.arg2 = 121500000;
 	radio_sm_request(&sm, &r, now);
@@ -10698,6 +10712,7 @@ int main(void)
 	test_dmr_data_glue();	// (last: the data service's state carries over)
 	test_factory_reset();
 	test_volume_step_of();
+	CHECK(rekeys == 0);	// every keying in every test above was ended before the next
 	printf("# radioCoreTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;
 }
