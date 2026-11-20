@@ -1763,6 +1763,20 @@ static void testIpText(void)
 	ch.dedicatedData = false;
 	ch.rmo = false;
 
+	// A dedicated upload awaiting its link ACK must not retry after a switch to the standard profile.
+	reset();
+	ch.dedicatedData = true;
+	ch.rmo = true;
+	decodeTx = false;
+	CHECK(sms_send(RADIO_A, false, "profile changed", true, DMR_SMS_FORMAT_ETSI_IP));
+	runMainTask(300);
+	CHECK(sentCount == 1 && dmrDataServiceIpBusy());
+	ch.dedicatedData = false;
+	runMainTask(DMR_IPC_RESPONSE_MS * 2);
+	CHECK(sentCount == 1 && !dmrDataServiceIpBusy() && sms_send_state() == DMR_REQ_FAILED);
+	ch.rmo = false;
+	decodeTx = true;
+
 	// No response: the IP packet tries, then failed; the gateway's own packets wait meanwhile
 	reset();
 	uint32_t failed = stats.smsFailed;
