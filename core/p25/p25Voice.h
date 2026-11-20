@@ -88,7 +88,7 @@ void p25VoicePoll(void);
 // A transmission starts (the stream starts if it was not running; from the next block the mic is encoded) or ends.
 // Radio task, around the engine's transmit calls
 void p25VoiceTx(bool on);
-// The mic samples' gain step, as ambeVoiceSetMicGain (radio/mic_gain.h). Any task
+// The mic samples' gain step (radio/mic_gain.h: the Mic gain setting; the board's mic_pcm_db is DMR and Fusion DN's only). Any task
 void p25VoiceSetMicGain(uint8_t step);
 // Stop (radio task, after p25_engine_end): the stream stops and mem is free again
 void p25VoiceEnd(void);

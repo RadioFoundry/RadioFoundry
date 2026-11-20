@@ -1005,7 +1005,17 @@ bool dm32_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool 
 	return true;
 }
 
+// Digital gain on the mic PCM before the AMBE+2 encoder, DMR and Fusion DN (hal_radio_t.mic_pcm_db, with the core's
+// limiter). Measured off air: Fusion DN speech from this radio decoded at -31 dBFS (rms of the loudest 30 % of 100 ms
+// blocks) against -18 dBFS for a Yaesu radio's DN decoded the same way, while the encoder itself reaches full scale (a
+// speech clip on DMR). 12 dB brings normal speech to about the Yaesu radio's level. Digital rather than the codec's
+// analogue gain (GCR_ADCL, 11 dB): that register also feeds D-STAR's encoder, which levels its own input and must not
+// change, and VOX's meter; and a 16-bit PCM at -31 dBFS still has 60 dB and more over its quantization, so the analogue
+// gain buys nothing audible. DMR uses the same codec ADC route and gain, so it takes the same lift
+#define MIC_PCM_DB		12
+
 const hal_radio_t dm32_radio = {
+	.mic_pcm_db = MIC_PCM_DB,
 	.init = init,
 	.set_mode = set_mode,
 	.rx = rx,

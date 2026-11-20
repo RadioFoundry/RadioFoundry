@@ -30,6 +30,8 @@
 #include "ysf/ysf_engine.h"
 #include "storage/storage.h"
 #include "settings/settings.h"
+#include "radio/mic_gain.h"
+#include "audio/miclimit/miclimit.h"
 #include "sim/sim_flash.h"
 
 static int failures;
@@ -152,10 +154,13 @@ static const hal_flash_map_t map = {
 	.calibration_addr = 0x10000u, .calibration_size = 0x200u,
 };
 static band_t bands[] = { { 136000000, 174000000, true }, { 400000000, 480000000, true } };
-// No hooks: nothing in Fusion's path reads the board's radio
+// No hooks: only the mic PCM gain (hal_radio_t.mic_pcm_db) is read, by radio/mic_gain.c
 static hal_radio_t radio;
 const board_t board = { .name = "test", .bands = bands, .band_count = 2, .power_count = 9, .flash = &sim_flash,
 		  .audio_tap = &tap, .vocoder = &vocoder, .radio = &radio };
+
+// DMR's half of radio_set_mic_gain: no DMR voice here
+void ambeVoiceSetMicGainQ8(uint16_t q8) { (void)q8; }
 
 // The settings the bench's calibration lives in (radio_flat.c reads them over the board's)
 static settings_t sets;
@@ -551,12 +556,35 @@ static int32_t dn_over(int16_t amp, radio_ysf_stats_t *st)
 	return enc_peak;
 }
 
-// DN's encoder gets the mic samples as the board delivers them, and the stats say what it got
-static void test_dn_mic(void)
+// The mic gain on Fusion DN (radio/mic_gain.h): a quiet mic (-31 dBFS of speech on one radio, 13 dB under a Yaesu radio's DN) lifted by the
+// board's 12 dB and the setting's step, a loud one held under the limiter's ceiling, unity left alone
+static void test_dn_mic_gain(void)
 {
 	radio_ysf_stats_t st;
-	CHECK(dn_over(1300, &st) == 1300, "the samples as delivered");
-	CHECK(st.tx_mic_peak == 1300, "mic peak %u", (unsigned)st.tx_mic_peak);
+	radio.mic_pcm_db = 0;
+	radio_set_mic_gain(MIC_GAIN_UNITY);
+	CHECK(dn_over(1300, &st) == 1300, "unity: the samples as delivered");
+	CHECK(st.tx_mic_peak == 1300 && st.tx_enc_peak == 1300 && st.tx_mic_low_q8 == MICLIMIT_UNITY,
+	      "unity stats: %u %u %u", (unsigned)st.tx_mic_peak, (unsigned)st.tx_enc_peak, (unsigned)st.tx_mic_low_q8);
+
+	radio.mic_pcm_db = 12;
+	int32_t p = dn_over(1300, &st);
+	CHECK(abs(p - 1300 * 1019 / 256) <= 2, "+12 dB: %d, want about %d", p, 1300 * 1019 / 256);
+	CHECK(st.tx_mic_peak == 1300 && st.tx_enc_peak == (uint32_t)p && st.tx_mic_low_q8 == miclimit_db_q8(12),
+	      "+12 dB stats: %u %u %u", (unsigned)st.tx_mic_peak, (unsigned)st.tx_enc_peak, (unsigned)st.tx_mic_low_q8);
+
+	// The setting's step goes on top of the board's: step 0 is 12 - 10 = +2 dB
+	radio_set_mic_gain(0);
+	p = dn_over(1300, &st);
+	CHECK(abs(p - 1300 * 322 / 256) <= 2, "step 0: %d", p);
+	radio_set_mic_gain(MIC_GAIN_UNITY);
+
+	// A shout: 20000 x 4 would clip; the limiter keeps the encoder's input under its ceiling and says it cut
+	p = dn_over(20000, &st);
+	CHECK(p <= MICLIMIT_CEILING && p > MICLIMIT_CEILING - 300, "loud: %d", p);
+	CHECK(st.tx_mic_peak == 20000 && st.tx_mic_low_q8 < miclimit_db_q8(12) && miclimit_q8_db(st.tx_mic_low_q8) <= 3,
+	      "loud stats: %u, lowest %u", (unsigned)st.tx_mic_peak, (unsigned)st.tx_mic_low_q8);
+	radio.mic_pcm_db = 0;
 }
 
 // One over's first 800 ms (preamble, headers, voice) into the independent receiver: the largest sample sent and the
@@ -773,7 +801,7 @@ int main(void)
 	test_stop_mid_tx();
 	test_no_area();
 	test_stats_preempted();
-	test_dn_mic();
+	test_dn_mic_gain();
 	sim_flash_free();
 	printf("%s ysfRadioTest: %d failure(s)\n", failures ? "FAIL" : "ok", failures);
 	return failures ? 1 : 0;

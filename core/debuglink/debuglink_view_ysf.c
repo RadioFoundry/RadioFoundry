@@ -6,6 +6,7 @@
 // filled to its reply size
 #include "config.h"
 #include "debuglink/debuglink.h"
+#include "audio/miclimit/miclimit.h"
 
 void debuglink_view_ysf(const radio_view_t *v, dl_text_t *t)
 {
@@ -35,8 +36,13 @@ void debuglink_view_ysf(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "ysf.tx_overs=%u\nysf.tx_frames=%u\nysf.tx_underruns=%u\nysf.tx_overflows=%u\nysf.tx_samples=%u\n",
 		(unsigned)s.tx_overs, (unsigned)s.tx_frames, (unsigned)s.tx_underruns, (unsigned)s.tx_overflows,
 		(unsigned)s.tx_samples);
-	// DN's mic in the latest over: the board's peak, as the encoder got it
-	dl_text(t, "ysf.tx_mic_peak=%u\n", (unsigned)s.tx_mic_peak);
+	// DN's mic in the latest over: the board's peak, the encoder's after the gain, the limiter's lowest gain
+	dl_text(t, "ysf.tx_mic_peak=%u\nysf.tx_enc_peak=%u\n", (unsigned)s.tx_mic_peak, (unsigned)s.tx_enc_peak);
+	if (s.tx_mic_low_q8 != 0) {
+		dl_text(t, "ysf.tx_mic_low_db=%d\n", miclimit_q8_db((uint16_t)s.tx_mic_low_q8));
+	} else {
+		dl_text(t, "ysf.tx_mic_low_db=-\n");
+	}
 #else
 	(void)v;
 	dl_text(t, "ysf.built=0\n");

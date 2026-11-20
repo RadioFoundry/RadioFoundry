@@ -114,8 +114,9 @@ typedef struct {
 	uint32_t tx_underruns;	// frames the transmitter wanted with none encoded: the silence frame went instead
 	uint32_t tx_overflows;	// encoded frames dropped, the queue full
 	uint32_t tx_samples;	// samples the board pulled
-	// DN's mic in the latest over: the largest sample the board delivered to the encoder
-	uint32_t tx_mic_peak;
+	// DN's mic in the latest over (radio/mic_gain.h): the largest sample the board delivered, the largest the encoder
+	// got after the gain, and the lowest gain the limiter used, Q8 (the set gain when it never cut). Not VW's
+	uint32_t tx_mic_peak, tx_enc_peak, tx_mic_low_q8;
 	uint32_t blocks;	// audio blocks the callback ran
 	// The receiver's (ysf_frame.h ysf_rx_t), kept across overs and brought up to date at each radio poll: what the
 	// first radio tests settle

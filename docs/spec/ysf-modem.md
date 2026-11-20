@@ -329,9 +329,11 @@ vocoder's encoding of a silent block is taken at the first transmission. The aud
 first over is already on air, so until the whole frame is written the transmitter sends 49 zero bits in its place,
 never a frame half written.
 
-The mic samples reach DN's encoder as the board delivers them; `ysf.tx_mic_peak` gives the latest over's peak. On
-one radio DN speech decoded at -31 dBFS against an FT-5D's -18 dBFS: a mic gain before the vocoder's encoder (for DMR
-and DN alike) is a feature of its own, not in this mode.
+The mic samples reach DN's encoder through the mic gain's PCM gain and peak limiter, as DMR's do
+([radio-features.md](radio-features.md) 3.6): the board's `hal_radio_t.mic_pcm_db` plus the Mic gain step where the
+board doesn't take it. Without it one radio's DN speech decoded at -31 dBFS against a Yaesu radio's -18 dBFS at the
+far end. `ysf.tx_mic_peak tx_enc_peak tx_mic_low_db` give the latest over's mic peak, the encoder's peak after the
+gain, and the limiter's lowest gain in dB (`-` before the first over). VW's encoder takes the samples as delivered.
 
 Voice FR (VW) is 4.1. What the modes not built would need:
 

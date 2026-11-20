@@ -9,6 +9,8 @@
 #include "radio/radio.h"
 #include "radio/beep.h"
 #include "radio/radio_mode_ram.h"
+#include "radio/mic_gain.h"
+#include "audio/miclimit/miclimit.h"
 #include "radio/radio_flat.h"
 #include "codeplug/codeplug_modes.h"
 #include "ysf/ysf_engine.h"
@@ -55,6 +57,7 @@ static const hal_audio_tap_t *tap;
 // In the area the radio core lends the mode that runs (radio_mode_ram.h): taken at start, given back at stop, so NULL
 // whenever Fusion isn't running. D-STAR's engine and codec state use the same bytes while a D-STAR channel is tuned
 static radio_ysf_area_t *area;
+static miclimit_t cb_limit;	// DN's mic gain and limiter (radio_mic_pcm_q8; audio callback)
 static ysf_engine_t *eng;
 static ysf_path_t path;
 static bool running, streaming, rx_on;
@@ -403,7 +406,9 @@ static void tx_block(const int16_t *mic)
 #endif
 	if (!cb_tx) {
 		cb_tx = true;
-		stats.tx_mic_peak = 0;
+		miclimit_reset(&cb_limit, radio_mic_pcm_q8());
+		stats.tx_mic_peak = stats.tx_enc_peak = 0;
+		stats.tx_mic_low_q8 = cb_limit.low_q8;
 		if (codec_ok()) {
 			board.vocoder->reset();		// a fresh encoder: the first frame of the over
 			if (!LOAD(silence_ready)) {
@@ -417,11 +422,24 @@ static void tx_block(const int16_t *mic)
 	if (!codec_ok()) {
 		return;		// the pull sends the silence frame
 	}
-	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
-		uint32_t a = (uint32_t)(mic[i] < 0 ? -mic[i] : mic[i]);
-		stats.tx_mic_peak = a > stats.tx_mic_peak ? a : stats.tx_mic_peak;
+	// The mic gain, as DMR's (radio/mic_gain.h): the board's quiet PCM lifted, a peak limiter so a shout doesn't clip.
+	// Without it one radio's DN came out 13 dB under a Yaesu radio's at the far end (measured off air), which its
+	// listeners heard as faint; DMR from the same mic had the same deficit. Skipped at unity, so a board at its own
+	// level encodes the samples as delivered
+	const int16_t *pcm = mic;
+	uint16_t g = radio_mic_pcm_q8();
+	if (g != MICLIMIT_UNITY) {
+		static int16_t lifted[AUDIO_BLOCK_SAMPLES];	// the audio task only (off its stack)
+		miclimit_block(&cb_limit, g, mic, lifted, AUDIO_BLOCK_SAMPLES);
+		pcm = lifted;
+		stats.tx_mic_low_q8 = cb_limit.low_q8;
 	}
-	board.vocoder->encode(mic, bits);
+	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+		uint32_t a = (uint32_t)(mic[i] < 0 ? -mic[i] : mic[i]), e = (uint32_t)(pcm[i] < 0 ? -pcm[i] : pcm[i]);
+		stats.tx_mic_peak = a > stats.tx_mic_peak ? a : stats.tx_mic_peak;
+		stats.tx_enc_peak = e > stats.tx_enc_peak ? e : stats.tx_enc_peak;
+	}
+	board.vocoder->encode(pcm, bits);
 	stats.tx_frames++;
 	uint8_t h = tx_head;
 	if ((uint8_t)(h - LOAD(tx_tail)) >= RADIO_YSF_TX_Q) {
