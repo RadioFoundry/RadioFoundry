@@ -1613,7 +1613,7 @@ static void testIpText(void)
 	dmrDataUDP_t udp;
 
 	// The default (docs/spec/dmr-data.md 8)
-	CHECK(settings.smsFormat == DMR_SMS_FORMAT_ETSI_IP);
+	CHECK(settings.smsFormat == DMR_SMS_FORMAT_DEFAULT);
 
 	// The builder: UTF-16BE, UDP 5016 to 5016, full IPv4 header (SAP 4), unconfirmed
 	int count = dmrDataBuildIPText(false, RADIO_A, OUR_ID, "Hi\xE9", DMR_TYPE_RATE_1_2, 0, bursts, DMR_DATA_MAX_BURSTS);
