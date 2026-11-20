@@ -89,7 +89,7 @@ static uint32_t rx_calls_base, tx_calls_base, filler_base;
 #if CONFIG_P25_TRUNK
 static bool trunk;			// the engine runs a trunked channel
 static radio_p25_trunk_view_t tview;	// the radio task's copy, for any task
-static uint8_t twhy;			// RADIO_P25T_WHY_* of the last PTT refused or request failed
+static uint8_t twhy;			// RADIO_TRUNK_WHY_* of the last PTT refused or request failed
 static bool ttx;			// the follower's transmit side is on
 #endif
 
@@ -411,9 +411,9 @@ bool radio_p25_trunk_tx(void)
 
 uint8_t radio_p25_trunk_ptt(bool down)
 {
-	static const uint8_t WHY[] = { RADIO_P25T_WHY_NONE, RADIO_P25T_WHY_OFF, RADIO_P25T_WHY_NO_CC, RADIO_P25T_WHY_NOT_REG };
+	static const uint8_t WHY[] = { RADIO_TRUNK_WHY_NONE, RADIO_TRUNK_WHY_OFF, RADIO_TRUNK_WHY_NO_CC, RADIO_TRUNK_WHY_NOT_REG };
 	p25_trunk_t *t;
-	uint8_t why = RADIO_P25T_WHY_OFF;
+	uint8_t why = RADIO_TRUNK_WHY_OFF;
 
 	if (!radio_p25_trunked())
 		return why;
@@ -421,13 +421,13 @@ uint8_t radio_p25_trunk_ptt(bool down)
 	if (down) {
 		why = WHY[p25_follow_can_talk(&tview.v, t->cfg.flags)];
 		twhy = why;
-		if (why != RADIO_P25T_WHY_NONE)
+		if (why != RADIO_TRUNK_WHY_NONE)
 			return why;
 	}
 	// The follower takes it at the radio task's next turn inside it (trunk_service)
 	t->ptt = down;
 	t->ptt_seq++;
-	return RADIO_P25T_WHY_NONE;
+	return RADIO_TRUNK_WHY_NONE;
 }
 
 uint8_t radio_p25_trunk_talk(uint32_t *hz)
@@ -449,17 +449,17 @@ uint8_t radio_p25_trunk_talk(uint32_t *hz)
 		*hz = tview.v.talk_hz;
 		return RADIO_P25T_GO;
 	case P25_REQ_DENIED:
-		twhy = RADIO_P25T_WHY_DENIED;
+		twhy = RADIO_TRUNK_WHY_DENIED;
 		break;
 	case P25_REQ_NO_CHAN:
-		twhy = RADIO_P25T_WHY_NO_CHAN;
+		twhy = RADIO_TRUNK_WHY_NO_CHAN;
 		break;
 	case P25_REQ_TIMEOUT:
-		twhy = RADIO_P25T_WHY_NO_ANSWER;
+		twhy = RADIO_TRUNK_WHY_NO_ANSWER;
 		break;
 	default:
 		// Not taken (the follower lost the control channel or the registration meanwhile)
-		twhy = tview.v.state == P25_FOLLOW_HUNT ? RADIO_P25T_WHY_NO_CC : RADIO_P25T_WHY_NOT_REG;
+		twhy = tview.v.state == P25_FOLLOW_HUNT ? RADIO_TRUNK_WHY_NO_CC : RADIO_TRUNK_WHY_NOT_REG;
 		break;
 	}
 	return RADIO_P25T_FAIL;
@@ -569,7 +569,7 @@ bool radio_p25_begin(const channel_t *ch, uint16_t number, uint32_t own_id)
 		t->burst_want = t->burst_done = 0;
 		t->ptt = t->talk_end = false;
 		t->ptt_seq = t->ptt_done = 0;
-		twhy = RADIO_P25T_WHY_NONE;
+		twhy = RADIO_TRUNK_WHY_NONE;
 		t->owed = false;
 		t->in_prov = t->in_radio = 0;
 		memset(&tview, 0, sizeof(tview));
