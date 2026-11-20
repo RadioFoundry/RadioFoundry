@@ -521,7 +521,7 @@ def test_t3_pdata(trunk_tx, pytestconfig, ack):
         raise
 
 
-@pytest.mark.feature("dmr_trunk_tx")
+@pytest.mark.feature("dmr_trunk_dedicated_data")
 @pytest.mark.second_radio
 @pytest.mark.radio_tx
 def test_t3_pdata_pair(pytestconfig):
