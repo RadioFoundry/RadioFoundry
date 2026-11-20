@@ -56,15 +56,14 @@ const okName = (b, off, n) => {
 const u16 = (b, o) => b[o] | (b[o + 1] << 8);
 const u24 = (b, o) => b[o] | (b[o + 1] << 8) | (b[o + 2] << 16);
 
-// A tone word (spec 2.2): "" none, "103.5" CTCSS (BCD tenths), "D023N" DCS (flag 0x8000, the code's three digits as a
-// binary number). A DCS code with a digit above 7 isn't one: null
+// A tone word (spec 2.2): "" none, "103.5" CTCSS (BCD tenths), "D023N" DCS (flag 0x8000, the code's three octal digits
+// as three BCD digits, like the CTCSS word's: 0x8265 is D265). A DCS code with a digit above 7 isn't one: null
 export function dm32Tone(b, off) {
 	const v = u16(b, off);
 	if (v === 0xFFFF || v === 0) return "";
 	if (v & 0x8000) {
-		const n = v & 0x0FFF;
-		const code = String(n).padStart(3, "0");
-		return n <= 777 && /^[0-7]{3}$/.test(code) ? `D${code}N` : null;
+		const d = [(v >> 8) & 0xF, (v >> 4) & 0xF, v & 0xF];
+		return d.every((x) => x <= 7) ? `D${d.join("")}N` : null;
 	}
 	let tenths = 0;
 	for (let i = 3; i >= 0; i--) {
