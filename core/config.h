@@ -326,6 +326,9 @@
 #ifndef CONFIG_NXDN
 #define CONFIG_NXDN			0
 #endif
+#ifndef CONFIG_NXDN_SCRAMBLER
+#define CONFIG_NXDN_SCRAMBLER		0
+#endif
 #ifndef CONFIG_AIR
 #define CONFIG_AIR			(CONFIG_P25 || CONFIG_NXDN)
 #endif

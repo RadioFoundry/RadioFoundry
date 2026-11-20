@@ -7767,7 +7767,19 @@ static bool nf_tx(uint8_t ehr[NXDN_EHR_BYTES], void *ctx)
 	ambeFecEncode(bits, ehr);
 	return true;
 }
-static const nxdn_engine_hooks_t nfar_hooks = { nf_start, nf_update, nf_voice, nf_end, nf_tx };
+#if CONFIG_NXDN_SCRAMBLER
+static uint16_t nf_key(uint8_t system, uint8_t cipher, uint8_t id, void *ctx)
+{
+	(void)ctx;
+	return nxdn_system_key(system, cipher, id);
+}
+#endif
+static const nxdn_engine_hooks_t nfar_hooks = { .rx_start = nf_start, .rx_update = nf_update, .rx_voice = nf_voice,
+	.rx_end = nf_end, .tx_voice = nf_tx,
+#if CONFIG_NXDN_SCRAMBLER
+	.traffic_key = nf_key,
+#endif
+};
 
 // The decoder's frames: how many came in the far radio's order (a repeat to conceal a gap is not counted)
 static uint8_t dec_next;
@@ -8136,6 +8148,19 @@ bool nxdn_conv_load(uint16_t number, const channel_t *ch, nxdn_conv_cfg_t *out)
 	*out = stored_nxdn[number];
 	return true;
 }
+bool nxdn_system_load(uint8_t system, uint16_t *own_id)
+{
+	*own_id = system == 2 ? 3333 : 0;
+	if (system != 2)
+		return false;
+	return true;
+}
+#if CONFIG_NXDN_SCRAMBLER
+uint16_t nxdn_system_key(uint8_t system, uint8_t cipher, uint8_t id)
+{
+	return system == 2 && cipher == NXDN_CIPHER_SCRAMBLE && id == 12 ? 1234 : 0;
+}
+#endif
 // A plain channel in NXDN saved as a stored one: the record and block it was given
 static struct { uint16_t number; channel_t ch; nxdn_conv_t conv; } nxdn_saved;
 bool nxdn_conv_save(uint16_t number, const channel_t *ch, const nxdn_conv_t *conv)
@@ -8588,10 +8613,61 @@ static void test_nxdn_stored(void)
 	memset(stored_nxdn, 0, sizeof(stored_nxdn));
 }
 
+#if CONFIG_NXDN_SCRAMBLER
+static void test_nxdn_system(void)
+{
+	setup_codeplug_nxdn();
+	add(3, "NXDN system", 446100000, RADIO_MODE_DMR, false, 2);
+	chans[3].kind = CODEPLUG_KIND_NXDN;
+	chans[3].system = 2;
+	stored_nxdn[3] = (nxdn_conv_cfg_t){ .conv = { .rate9600 = true, .rx_ran = 7, .tx_ran = 7 },
+					    .unit_id = 4321, .target = 20,
+					    .tx_cipher = NXDN_CIPHER_SCRAMBLE, .tx_key_id = 12 };
+	start();
+	nxdn_defaults();
+	aud.feed = true;
+	req(RREQ_ZONE_POS, 2);
+	nfar_begin(true, 7, 2001, false, 20);
+	nxdn_engine_cfg_t cfg = nfar.cfg;
+	cfg.tx_cipher = NXDN_CIPHER_SCRAMBLE;
+	cfg.tx_key_id = 12;
+	cfg.system = 2;
+	nxdn_engine_set(&nfar, &cfg);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	run(800);
+	CHECK((sm.view.nxdn.flags & (RADIO_NXDN_ENC | RADIO_NXDN_PLAYED)) == (RADIO_NXDN_ENC | RADIO_NXDN_PLAYED));
+	nxdn_engine_tx_stop(&nfar);
+	run(500);
+	req(RREQ_PTT, 1);
+	run(600);
+	CHECK(nfar_heard.starts == 1 && nfar_heard.call.vcall.src == 3333 &&
+	      nfar_heard.call.vcall.cipher == NXDN_CIPHER_SCRAMBLE && nfar_heard.call.vcall.key_id == 12);
+	req(RREQ_PTT, 0);
+	run(500);
+	nfar_stop();
+
+	channel_t override = sm.view.ch;
+	radio_nxdn_settings_t active;
+	override.dmr_id = 4321;
+	radio_nxdn_apply(&override, 3);
+	CHECK(radio_nxdn_in_force(&active) && active.unit_id == 4321);
+
+	stored_nxdn[3].tx_key_id = 13;
+	radio_nxdn_apply(&sm.view.ch, 3);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state != RS_TX && !hw.keyed);
+	req(RREQ_PTT, 0);
+}
+#endif
+
 static void test_nxdn(void)
 {
 	test_nxdn_rx();
 	test_nxdn_tx();
+#if CONFIG_NXDN_SCRAMBLER
+	test_nxdn_system();
+#endif
 	test_nxdn_mode();
 	test_nxdn_stored();
 #if CONFIG_SCAN
