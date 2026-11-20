@@ -1113,6 +1113,11 @@ static void draw_chips(const radio_view_t *v, const ui_state_t *s)
 		// No tone, width or power here: the receiver is fixed. The air band squelch is real, the broadcast one isn't used
 		x = gfx_text(f, x, y, v->am ? TR(HOME_CHIP_AIR_BAND_AM, "Air Band AM") :
 			TR(HOME_CHIP_BROADCAST_FM, "Broadcast FM"), ui_col.fg) + f->w;
+#if CONFIG_BCAST_RDS
+		// The station's name from RDS (airband-and-broadcast.md 4.6), where it fits
+		if (v->bcast && v->rds.ps[0] != 0 && x + gfx_text_width(f, v->rds.ps) <= w)
+			gfx_text(f, x, y, v->rds.ps, ui_col.rx);
+#endif
 		if (v->am) {
 			sb_init(&b, buf, sizeof buf);
 			sb_str(&b, "SQ");
@@ -2016,6 +2021,49 @@ static void air_call_line(const air_call_t *c, const font_t *f, int y)
 }
 #endif
 
+#if CONFIG_BCAST_RDS
+#define RDS_PAGE_MS	3000u	// how long each part of a RadioText too long for the line stays
+
+// RadioText on one line: in parts that fit, broken at a space where there is one, the next part every RDS_PAGE_MS
+static void draw_rds_text(const char *rt, const font_t *f, int y, int w, uint32_t now_ms)
+{
+	char line[RDS_RT_LEN + 1];
+	uint8_t from[RDS_RT_LEN], to[RDS_RT_LEN];
+	size_t len = strlen(rt), i = 0;
+	unsigned n = 0;
+	while (i < len && n < RDS_RT_LEN) {
+		while (i < len && rt[i] == ' ')
+			i++;
+		if (i >= len)
+			break;
+		size_t end = i, space = 0;
+		for (size_t j = i; j < len; j++) {
+			memcpy(line, rt + i, j + 1 - i);
+			line[j + 1 - i] = 0;
+			if (gfx_text_width(f, line) > w)
+				break;
+			end = j + 1;
+			if (rt[j] == ' ')
+				space = j;
+		}
+		if (end == i)
+			end = i + 1;	// a character wider than the line: shown cut rather than never
+		else if (end < len && rt[end] != ' ' && space > i)
+			end = space;	// the word that doesn't fit starts the next part
+		from[n] = (uint8_t)i;
+		to[n] = (uint8_t)end;
+		n++;
+		i = end;
+	}
+	if (n == 0)
+		return;
+	unsigned p = (unsigned)((now_ms / RDS_PAGE_MS) % n);
+	memcpy(line, rt + from[p], (size_t)(to[p] - from[p]));
+	line[to[p] - from[p]] = 0;
+	gfx_text(f, 0, y, line, ui_col.fg);
+}
+#endif
+
 static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 {
 	const ui_layout_t *L = &ui_layout;
@@ -2042,6 +2090,12 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 			break;
 		}
 #endif
+#if CONFIG_BCAST_RDS
+		if (!two && v->bcast && v->rds.rt[0] != 0) {
+			draw_rds_text(v->rds.rt, sm, y, w, s->now_ms);	// one line: what the station says over the meter
+			break;
+		}
+#endif
 		sb_i32(&b, v->rssi_dbm);
 		sb_str(&b, " dBm");
 		int tw = gfx_text_width(big, buf);
@@ -2052,6 +2106,12 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 #if CONFIG_AIR
 		if (air_rx) {
 			air_call_line(&ac, sm, y2);
+			break;
+		}
+#endif
+#if CONFIG_BCAST_RDS
+		if (v->bcast && v->rds.rt[0] != 0) {
+			draw_rds_text(v->rds.rt, sm, y2, w, s->now_ms);
 			break;
 		}
 #endif

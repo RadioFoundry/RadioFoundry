@@ -744,16 +744,53 @@ static uint8_t air_heard(const radio_sm_t *sm);
 #endif
 
 #if CONFIG_BCAST_FM
+#if CONFIG_BCAST_RDS
+// RDS from the last station forgotten: a new frequency, or the receiver off (airband-and-broadcast.md 4.6)
+static void rds_clear(radio_sm_t *sm)
+{
+	bool shown = sm->view.rds.pi != 0 || sm->view.rds_groups != 0;
+	rds_reset(&sm->rds);
+	memset(&sm->view.rds, 0, sizeof(sm->view.rds));
+	sm->view.rds_groups = 0;
+	if (shown) {
+		changed(sm);
+	}
+}
+
+// The group the receiver decoded since the last status, if any, into the decoder and the view
+static void rds_poll(radio_sm_t *sm)
+{
+	bcast_rds_t g;
+	if (board.bcast->rds_group == NULL || !board.bcast->rds_group(&g)) {
+		return;
+	}
+	bool news = rds_group(&sm->rds, g.blk, g.err_a, g.err_b);
+	sm->view.rds_groups = sm->rds.groups;	// the debug link's count; not worth a redraw alone
+	if (news) {
+		sm->view.rds = sm->rds.info;
+		changed(sm);
+	}
+}
+#endif
+
 // The broadcast receiver on or off. Off mutes it first
 static void bcast_power(radio_sm_t *sm, bool on)
 {
 	if (on == sm->bcast_on) {
 		return;
 	}
+#if CONFIG_BCAST_RDS
+	rds_clear(sm);
+#endif
 	if (on) {
 		sm->bcast_on = board.bcast->power(true);
 		sm->bcast_audio_out = -1;
 		sm->bcast_volume_out = -1;
+#if CONFIG_BCAST_RDS
+		if (sm->bcast_on && board.bcast->rds_enable != NULL) {
+			board.bcast->rds_enable(true);
+		}
+#endif
 		return;
 	}
 	board.bcast->audio(false);
@@ -772,6 +809,9 @@ static void bcast_tune(radio_sm_t *sm)
 		return;
 	}
 	bcast_power(sm, true);
+#if CONFIG_BCAST_RDS
+	rds_clear(sm);	// the same receiver on a new frequency
+#endif
 	sm->view.bcast_fault = !sm->bcast_on || !board.bcast->tune(radio_bcast_khz(sm->view.ch.rx_hz));
 }
 
@@ -781,6 +821,14 @@ static void bcast_status(radio_sm_t *sm, radio_status_t *st)
 	bcast_status_t bs;
 	bool got = sm->bcast_on && board.bcast->status(&bs);
 	uint8_t rssi = got ? bs.rssi : 0;
+#if CONFIG_BCAST_RDS
+	if (got && bs.khz != sm->view.bcast_khz && sm->view.bcast_khz != 0) {
+		rds_clear(sm);	// a seek moved on: another station
+	}
+	if (got && !bs.tuning) {
+		rds_poll(sm);
+	}
+#endif
 	sm->view.bcast_khz = got ? bs.khz : 0;
 	st->rssi_dbm = (int16_t)(rssi + RADIO_BCAST_DBUV_DBM);
 	st->noise = radio_bcast_noise(rssi);

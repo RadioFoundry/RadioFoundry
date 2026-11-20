@@ -62,6 +62,10 @@ static const flow_t flows[] = {
 	{ "menu entry skips unavailable GPS", "", "ok 7 5", "screen=group focus=Answer_GPS_requests", 3, false },
 	{ "1 next channel", "", "up", "pos=4", 1, false },
 	{ "1 channel 12 by number", "", "1 2 ok", "pos=12 screen=home", 3, false },
+#if CONFIG_BCAST_RDS
+	// Broadcast FM with RDS (airband-and-broadcast.md 4.6): the station's name beside the chip, RadioText under the meter
+	{ "Broadcast home: RDS name and RadioText", "rdsrx:WXYZ_FM,Now_playing", "", "screen=home shows=Broadcast_FM shows=WXYZ_FM shows=Now_playing hides=Receiving", 0, false },
+#endif
 	// A P25 channel (the debug link's mode): named P25 in the strip; FM's tiles say why they are off
 	{ "P25 channel shows its mode", "dlmode:p25", "", "mode=p25 screen=home shows=P25 hides=No_tone hides=12.5k hides=25k hides=SQ5", 0, false },
 #if CONFIG_NXDN

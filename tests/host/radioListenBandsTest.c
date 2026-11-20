@@ -39,6 +39,9 @@ static struct {
 	uint32_t khz, sig_khz;
 	uint8_t rssi, volume;
 	int power_calls, tune_calls;
+	bool rds_on;		// rds_enable
+	bcast_rds_t rds_q[16];	// groups the receiver will hand over, one a status poll
+	int rds_n, rds_next;
 } bc;
 
 static bool b_power(bool on)
@@ -72,9 +75,28 @@ static bool b_status(bcast_status_t *st)
 	return true;
 }
 static void b_audio(bool on) { bc.audio = on; }
+static void b_rds_enable(bool on) { bc.rds_on = on; }
+static bool b_rds_group(bcast_rds_t *g)
+{
+	if (!bc.on || !bc.rds_on || bc.rds_next >= bc.rds_n) {
+		return false;
+	}
+	*g = bc.rds_q[bc.rds_next++];
+	return true;
+}
+// Group 0A: two characters of the PS at segment seg
+static void rds_ps(uint16_t pi, unsigned seg, const char *ps)
+{
+	bcast_rds_t *g = &bc.rds_q[bc.rds_n++];
+	g->blk[0] = pi;
+	g->blk[1] = (uint16_t)((1u << 10) | seg);
+	g->blk[2] = 0;
+	g->blk[3] = (uint16_t)(((uint8_t)ps[seg * 2] << 8) | (uint8_t)ps[seg * 2 + 1]);
+	g->err_a = g->err_b = 0;
+}
 static const hal_bcast_t fake_bcast = {
 	.lo_khz = 65000, .hi_khz = 108000, .grid_khz = 50, .power = b_power, .tune = b_tune, .seek = b_seek,
-	.volume = b_volume, .status = b_status, .audio = b_audio,
+	.volume = b_volume, .status = b_status, .audio = b_audio, .rds_enable = b_rds_enable, .rds_group = b_rds_group,
 };
 
 static void r_init(void) {}
@@ -572,6 +594,33 @@ static void test_bcast_dead(void)
 	ptt(false);
 }
 
+// RDS (airband-and-broadcast.md 4.6): decoding switched on with the receiver, the station's name in the view once
+// received twice, forgotten on another frequency
+static void test_bcast_rds(void)
+{
+	start();
+	req(RREQ_ZONE_POS, 6);	// WXYZ 101.100
+	run(50);
+	CHECK(sm.view.bcast && bc.on && bc.rds_on);
+	CHECK(sm.view.rds.pi == 0 && sm.view.rds.ps[0] == 0);
+	for (int k = 0; k < 2; k++) {
+		for (unsigned seg = 0; seg < 4; seg++)
+			rds_ps(0x1234u, seg, "WXYZ FM ");
+	}
+	uint32_t serial = sm.serial;
+	run(400);	// one group a poll
+	CHECK(bc.rds_next == 8);
+	CHECK(sm.view.rds.pi == 0x1234u && strcmp(sm.view.rds.ps, "WXYZ FM") == 0 && sm.view.rds.tp);
+	CHECK(sm.view.rds_groups == 8 && sm.serial != serial);
+	// A 2 m channel and back: nothing of the station stays
+	req(RREQ_ZONE_POS, 2);
+	run(50);
+	CHECK(!bc.on && sm.view.rds.pi == 0 && sm.view.rds.ps[0] == 0 && sm.view.rds_groups == 0);
+	req(RREQ_ZONE_POS, 6);
+	run(50);
+	CHECK(bc.on && bc.rds_on && sm.view.rds.ps[0] == 0);
+}
+
 // The broadcast step: 200 kHz between odd tenths of a MHz, from on or off that grid, or 100 kHz
 static void test_bcast_step(void)
 {
@@ -677,6 +726,7 @@ int main(void)
 	test_vfo_steps();
 	test_bcast_channel();
 	test_bcast_dead();
+	test_bcast_rds();
 	test_bcast_step();
 	test_bcast_vfo();
 	printf("# radioListenBandsTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");

@@ -41,6 +41,7 @@
 //   dlmode:fm|dmr|p25   the debug link sets the mode: the channel's for now, the VFO's own in the VFO
 //   dlvfo:<hz>          the debug link tunes the VFO to hz (it opens, as Find's Tune VFO)
 //   chhz:<n>,<hz>       stored channel n is an FM channel on hz (the air band with "am": received in AM)
+//   rdsrx:<ps>,<rt>     broadcast FM plays with RDS (CONFIG_BCAST_RDS): station name ps and RadioText rt (_ = space)
 //   hotspot:on|off      the host link enters / leaves hotspot mode
 //   usbnet:off|on|up    USB a serial port, a network adapter, or a network adapter the computer has brought up
 //   timeout             the TX timeout cuts the transmission off while PTT is still held (shows the timeout deny)
@@ -3134,6 +3135,33 @@ static bool run_token(char *t, char *err, size_t len)
 			return false;
 		}
 		sim_rec.codeplug_writes--;	// the codeplug as found, not a write of the UI's
+		return true;
+	}
+#endif
+#if CONFIG_BCAST_RDS
+	if (strcmp(t, "rdsrx") == 0) {		// broadcast FM with RDS: ps,rt
+		const char *comma = arg != NULL ? strchr(arg, ',') : NULL;
+		if (comma == NULL) {
+			snprintf(err, len, "bad %s", t);
+			return false;
+		}
+		memset(&view.rds, 0, sizeof(view.rds));
+		size_t n = (size_t)(comma - arg);
+		snprintf(view.rds.ps, sizeof view.rds.ps, "%.*s", (int)n, arg);
+		snprintf(view.rds.rt, sizeof view.rds.rt, "%s", comma + 1);
+		for (char *p = view.rds.ps; *p; p++)
+			if (*p == '_')
+				*p = ' ';
+		for (char *p = view.rds.rt; *p; p++)
+			if (*p == '_')
+				*p = ' ';
+		view.rds.pi = 0x1234u;
+		view.ch.mode = RADIO_MODE_FM;	// what the core makes of any channel in the broadcast band
+		view.bcast = true;
+		view.state = RS_RX;
+		view.rssi_dbm = -50;
+		changed();
+		advance(300);
 		return true;
 	}
 #endif

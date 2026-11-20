@@ -58,6 +58,7 @@ enum {
 	DL_VIEW_P25,		// P25 on the channel: the call, settings, engine and voice counters (debuglink_view_p25.c)
 	DL_VIEW_P25_TRUNK,	// a trunked P25 channel's follower: system, channels, call followed, counters (the same file)
 	DL_VIEW_NXDN,		// NXDN on the channel: the call, settings, the provider's fit, engine counters (debuglink_view_nxdn.c)
+	DL_VIEW_RDS,		// RDS from the broadcast station playing (airband-and-broadcast.md 4.6)
 	DL_VIEW_COUNT
 };
 #define DL_VIEW_VERSION		5	// bumped when a key changes meaning or goes away (new keys don't bump it)

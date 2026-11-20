@@ -48,6 +48,7 @@ BOARD_UNSUPPORTED += FONT_XL	# the large font is for 240 px and wider panels; th
 BOARD_UNSUPPORTED += FONT_AA	# a monochrome panel draws anti-aliased fonts as plain ink and gains nothing
 BOARD_UNSUPPORTED += AM_RX	# no air band receiver (docs/spec/airband-and-broadcast.md)
 BOARD_UNSUPPORTED += BCAST_FM	# no broadcast receiver (docs/spec/airband-and-broadcast.md)
+BOARD_UNSUPPORTED += BCAST_RDS	# needs the broadcast receiver (above)
 BOARD_UNSUPPORTED += VIBRATE	# no vibration motor
 BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is SPI NOR
 BOARD_UNSUPPORTED += FAULT_TRACE	# needs a host UART: the host port is USB, and the one UART is the GPS receive line

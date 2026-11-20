@@ -299,6 +299,9 @@ typedef struct {
 	bool bcast_on;			// the broadcast receiver is powered (radio_bcast.h)
 	int8_t bcast_audio_out;		// last board.bcast audio / volume sent, -1 = not yet
 	int8_t bcast_volume_out;
+#if CONFIG_BCAST_RDS
+	rds_t rds;			// the RDS decoder on the broadcast receiver's groups (rds.h)
+#endif
 #endif
 	int8_t green_out;
 	int8_t red_out;

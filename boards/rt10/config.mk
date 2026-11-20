@@ -73,6 +73,7 @@ BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is SPI NOR, GD25Q16 class (do
 BOARD_UNSUPPORTED += VIBRATE	# no vibration motor
 BOARD_UNSUPPORTED += AM_RX	# no air band receive path
 BOARD_UNSUPPORTED += BCAST_FM	# no broadcast receiver
+BOARD_UNSUPPORTED += BCAST_RDS	# needs the broadcast receiver (above)
 BOARD_UNSUPPORTED += GPS	# no GPS module
 BOARD_UNSUPPORTED += GPS_SKY	# no GPS module
 BOARD_NOT_WRITTEN += VOX	# no hal_power_t.mic_level hook yet

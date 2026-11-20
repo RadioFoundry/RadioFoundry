@@ -81,6 +81,20 @@ static void tone(dl_text_t *t, const char *key, const subtone_t *s)
 	dl_text(t, "%s=%s:%u\n", key, s->type < 4 ? types[s->type] : "?", s->value);
 }
 
+// RDS from the broadcast station playing: its own section, the core one being near the reply's size
+static void rds_section(const radio_view_t *v, dl_text_t *t)
+{
+#if CONFIG_BCAST_RDS
+	dl_text(t, "rds.built=1\nrds.pi=%04X\nrds.pty=%u\nrds.tp=%u\nrds.ta=%u\nrds.groups=%u\n", (unsigned)v->rds.pi,
+		(unsigned)v->rds.pty, (unsigned)v->rds.tp, (unsigned)v->rds.ta, (unsigned)v->rds_groups);
+	dl_text_kv_str(t, "rds.ps", v->rds.ps);
+	dl_text_kv_str(t, "rds.rt", v->rds.rt);
+#else
+	(void)v;
+	dl_text(t, "rds.built=0\n");
+#endif
+}
+
 static void core_section(const radio_view_t *v, dl_text_t *t)
 {
 	const char *pw = board_power_name(v->power, v->ch.tx_hz);
@@ -587,7 +601,7 @@ static const char *const section_names[DL_VIEW_COUNT] = { "core", "channel", "dm
 						  "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
 						  "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc",
 						  "net_link", "cps", "board", "audio", "t3", "t3_svc", "t3_roam", "voice_cap", "t3_msg",
-						  "t3_ra", "p25", "p25_trunk", "nxdn" };
+						  "t3_ra", "p25", "p25_trunk", "nxdn", "rds" };
 
 const char *debuglink_view_name(uint8_t section)
 {
@@ -724,6 +738,9 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_NXDN:
 		debuglink_view_nxdn(v, t);
+		break;
+	case DL_VIEW_RDS:
+		rds_section(v, t);
 		break;
 	case DL_VIEW_USRP:
 #if CONFIG_NET_USRP

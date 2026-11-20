@@ -11,6 +11,7 @@
 #include "config.h"
 #include "radio/radio_p25.h"
 #include "radio/radio_nxdn.h"
+#include "radio/rds.h"
 
 typedef enum {
 	RS_IDLE,	// receiving, squelch closed
@@ -467,6 +468,11 @@ typedef struct {
 	bool bcast;
 	bool bcast_fault;
 	uint32_t bcast_khz;		// what the receiver reports it is tuned to, for the debug link (0 = not playing)
+#if CONFIG_BCAST_RDS
+	// RDS from the station playing (airband-and-broadcast.md 4.6): all zero until received, cleared on a new frequency
+	rds_info_t rds;
+	uint32_t rds_groups;		// RDS groups taken from this station, for the debug link
+#endif
 #if CONFIG_DMR
 	radio_dmr_view_t dmr;
 #endif

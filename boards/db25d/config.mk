@@ -82,6 +82,7 @@ BOARD_NOT_WRITTEN += HOTSPOT_SPLIT	# the per-burst TX path has no continuous bas
 BOARD_NOT_WRITTEN += APRS_RX	# FM receive audio isn't taken from the modem's AF ADC as PCM yet (above)
 BOARD_NOT_WRITTEN += APRS_IGATE	# needs APRS receive (above)
 BOARD_NOT_WRITTEN += BCAST_FM	# the RDA5802N broadcast receiver is fitted, its glue isn't written
+BOARD_NOT_WRITTEN += BCAST_RDS	# needs BCAST_FM (above)
 BOARD_NOT_WRITTEN += VOX	# no hal_power_t.mic_level hook yet
 BOARD_NOT_WRITTEN += AUDIO_PROBE	# the probe's audio tap (board.audio_tap) isn't written for this radio
 # DMR needs the codec merged for voice, so FM stays the one mode every configuration needs
