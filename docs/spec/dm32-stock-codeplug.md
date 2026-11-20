@@ -142,5 +142,5 @@ from the stock area its check step read, or read through RadioFoundry's CPS at p
 - Channels past 84, contacts past 170 and zones past 28: the blocks that hold them (0x13 and up, 0x45 and up,
   0x5D and up) and whether they carry a header. The two codeplugs seen fit in the first block of each.
 - TX contact byte 0, and contact numbers above 255.
-- DCS: the polarity bit (bits 12-14 are not read). (An earlier reading took the digits as a decimal number: 0x8073 came out D115 and 0x8265 D613, which is not a code.)
+- DCS: the polarity bit (bits 12-14 are not read).
 - Squelch, TX timeout, RX only, VOX, admit criterion and talkaround.
