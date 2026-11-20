@@ -3033,12 +3033,20 @@ static bool t3_send_next(dmr_tx_burst_t *out, void *ctx)
 	return true;
 }
 
+static void t3_count8(uint8_t *n)
+{
+	if (*n != UINT8_MAX) {
+		(*n)++;
+	}
+}
+
 static void t3_send_done(uint8_t err, void *ctx)
 {
 	radio_sm_t *sm = ctx;
 	sm->t3_sending = false;
 	if (err != DMR_TX_OK) {
 		radio_t3v.send_fail++;
+		t3_count8(&radio_t3v.send_err);
 	}
 	sm->t3_sent_report = err == DMR_TX_OK ? 1u : 2u;	// to the engine at the next step (t3_ms_sent)
 }
@@ -3114,21 +3122,35 @@ static void t3_tune(radio_sm_t *sm, const t3_act_t *a, uint32_t now_ms)
 	t3_retune(sm, &a->chan, a->slot, now_ms);
 }
 
+// A send refused: counted under its reason and told to the engine, which retries what needs it
+static void t3_send_refused(uint8_t *reason, uint32_t now_ms)
+{
+	radio_t3v.send_fail++;
+	t3_count8(reason);
+	t3_ms_sent(&t3m, now_ms, false);
+}
+
 static void t3_send(radio_sm_t *sm, const t3_act_t *a, uint32_t now_ms)
 {
-	// PTT held while waiting for our grant is the request itself, not talking. A held retune: the engine is
-	// elsewhere already
-	if (sm->t3_tune_held || sm->view.ch.timeslot != (a->slot == 2 ? 2 : 1) || (sm->ptt && !sm->t3_ptt_wait) ||
-	    sm->view.state == RS_TX) {
-		radio_t3v.send_fail++;	// not on the slot asked for, or talking: the engine retries what needs it
-		t3_ms_sent(&t3m, now_ms, false);
+	// A held retune: the engine is elsewhere already
+	if (sm->t3_tune_held) {
+		t3_send_refused(&radio_t3v.send_held, now_ms);
+		return;
+	}
+	if (sm->view.ch.timeslot != (a->slot == 2 ? 2 : 1)) {
+		t3_send_refused(&radio_t3v.send_slot, now_ms);
+		return;
+	}
+	// PTT held while waiting for our grant is the request itself, not talking
+	if ((sm->ptt && !sm->t3_ptt_wait) || sm->view.state == RS_TX) {
+		t3_send_refused(&radio_t3v.send_talk, now_ms);
 		return;
 	}
 	if (!sm->dmr_keyed) {
 		static const subtone_t none = { TONE_NONE, 0 };
 		if (!key_tx(sm->view.ch.tx_hz, (radio_bw_t)sm->view.ch.bw, sm->view.power, &none)) {
-			radio_t3v.send_fail++;
-			t3_ms_sent(&t3m, now_ms, false);
+			t3_send_refused(tx_limit_allows(sm->view.ch.tx_hz) ? &radio_t3v.send_key : &radio_t3v.send_limit,
+					now_ms);
 			return;
 		}
 		sm->dmr_keyed = true;
@@ -3145,8 +3167,10 @@ static void t3_send(radio_sm_t *sm, const t3_act_t *a, uint32_t now_ms)
 				  .tag = "t3" };
 	if (!dmr_call_data_tx(&src)) {
 		sm->t3_send_left = 0;
-		radio_t3v.send_fail++;	// the keying is released by dmr_follow
-		t3_ms_sent(&t3m, now_ms, false);
+		if (dmr_call_data_busy()) {
+			t3_count8(&radio_t3v.send_data_busy);
+		}
+		t3_send_refused(&radio_t3v.send_stack, now_ms);	// the keying is released by dmr_follow
 		return;
 	}
 	sm->t3_sending = true;

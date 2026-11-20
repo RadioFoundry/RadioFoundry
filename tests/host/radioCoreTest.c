@@ -8779,6 +8779,29 @@ static void test_t3_at(void)
 	CHECK(t3_at_case(true, 2));
 }
 
+// A refused send is counted under its reason (t3.send_* view keys), nothing goes on the air and send_fail counts every
+// one: here the board refuses to key for each of the engine's tries at a call request
+static void test_t3_send_refused(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	uint32_t fail = radio_t3v.send_fail;
+	unsigned before = t3_sent(T3_OP_C_RAND);
+	tx_fail = true;
+	req(RREQ_PTT, 1);
+	t3_site_run(600);
+	CHECK(radio_t3v.send_key >= 1 && radio_t3v.send_fail >= fail + radio_t3v.send_key);
+	CHECK(radio_t3v.send_limit == 0 && radio_t3v.send_slot == 0 && radio_t3v.send_stack == 0);
+	CHECK(t3_sent(T3_OP_C_RAND) == before);
+	req(RREQ_PTT, 0);
+	run(100);
+	tx_fail = false;
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
 static void test_t3_talk(void)
 {
 	dmr_start(true);
@@ -10484,6 +10507,7 @@ int main(void)
 #if CONFIG_DMR_TRUNK_TX
 	test_t3_at();
 	test_t3_talk();
+	test_t3_send_refused();
 	test_t3_one_carrier();
 	test_t3_sdata();
 	test_t3_radio_check();
