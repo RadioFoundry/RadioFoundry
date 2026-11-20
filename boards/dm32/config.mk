@@ -20,16 +20,18 @@ CONFIG_DISPLAY_INSET_LEFT ?= 10
 CONFIG_DISPLAY_INSET_RIGHT ?= 10
 CONFIG_DISPLAY_INSET_TOP ?= 5
 CONFIG_DISPLAY_INSET_BOTTOM ?= 5
-# D-STAR DV (docs/spec/dstar-modem.md; the flat FM paths in flat_dm32.c): on only where the build leaves the IP gateway
-# out, as the multimode variant does. The default image keeps its RAM for the features it has (about 1.2 KB free), and
-# the gateway's 17 KB is the room D-STAR's engine, buffers and screens take; its codec borrows the DMR vocoder's state
-# RAM. Tested on the switch that makes the room rather than on the variant's name, so a hand-made build without the
-# gateway gets it too (docs/build-config.md, Variants)
+# D-STAR DV and Yaesu System Fusion (docs/spec/dstar-modem.md, ysf-modem.md; both on the flat FM paths in
+# flat_dm32.c): on only where the build leaves the IP gateway out, as the multimode variant does. The default image
+# keeps its RAM for the features it has (about 1.2 KB free), and the gateway's 17 KB is the room the two modes' engine
+# (one, lent to the mode that runs: radio_mode_ram.h), buffers and screens take; D-STAR's codec borrows the DMR
+# vocoder's state RAM, Fusion runs on the vocoder itself. Tested on the switch that makes the room rather than on the
+# variant's name, so a hand-made build without the gateway gets them too (docs/build-config.md, Variants)
 ifeq ($(CONFIG_DMR_IP_GATEWAY),n)
 CONFIG_DSTAR ?= y
+CONFIG_YSF ?= y
 endif
-# ci's maximal build has every switch on, and D-STAR beside the gateway overflows RAM by about 0.5 KB: it leaves the
-# gateway out instead (the default build covers it), so D-STAR is built with everything else
+# ci's maximal build has every switch on, and D-STAR and Fusion beside the gateway overflow RAM: it leaves the gateway
+# out instead (the default build covers it), so both modes are built with everything else
 # USB_SERIAL_REQUEST is left out by hand: with the gateway gone ci.sh's dependency loop drops NET_PPP first, and once it
 # has dropped one switch it can no longer match the first in its list (fixed separately in ci.sh)
 MAXIMAL_VARS := CONFIG_DMR_IP_GATEWAY=n CONFIG_USB_SERIAL_REQUEST=n
