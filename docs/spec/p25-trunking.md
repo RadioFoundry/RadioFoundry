@@ -297,7 +297,8 @@ What the user sees: `p25.trunk` in the radio view (`RADIO_P25_TRUNK_*`: finding 
 following a call). Home's talk line says "Finding system", "Control channel" or "Following TG 201" (the grant's group
 until the call's own fields are in) instead of what PTT calls. With the transmit side on it says "Registering" until
 registered, "TG 201" when PTT can ask, "Wait" or "Queued" while a request waits, "Denied" or "Reg. denied" after a
-refusal. The debug link's `p25_trunk` section has the follower's
+refusal. On the control channel of a blocked system (5, BLOCKED) it says "Blocked System", with the transmit side on
+or off. The debug link's `p25_trunk` section has the follower's
 view and the retune counters ([debuglink.md](debuglink.md) 3.7).
 
 Not used yet: the fallback channel, an RX group list (`groups`), the system's `roam_dbm`.

@@ -4455,6 +4455,11 @@ msgid "Finding system"
 msgstr "搜索中"
 
 #: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_BLOCKED"
+msgid "Blocked System"
+msgstr "系统已禁用"
+
+#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_P25T_WAIT"
 msgid "Wait"
 msgstr "请等待"

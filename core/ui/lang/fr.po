@@ -4453,6 +4453,11 @@ msgid "Finding system"
 msgstr "Recherche système"
 
 #: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_BLOCKED"
+msgid "Blocked System"
+msgstr "Système bloqué"
+
+#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_P25T_WAIT"
 msgid "Wait"
 msgstr "Attente"
