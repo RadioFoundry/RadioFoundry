@@ -145,6 +145,14 @@ SKIP_KINDS = {
 }
 
 
+TEMP_STEPPED = 0x03        # view temp bits Radio.restore() puts back by stepping: power and squelch (radio.h)
+
+
+def _temp_bits(text):
+    """The view's temp key ("0x81") as an int; 0 when it's missing."""
+    return int(text, 0) if text else 0
+
+
 def skip_reason(kind, reason):
     """The reason text of a skip of this kind: "[kind] reason". ValueError for an unknown kind or an empty reason."""
     if kind not in SKIP_KINDS:
@@ -692,8 +700,12 @@ class Radio:
                 self._req_until(lambda: L.zone_pos(int(snap["zone_pos"])),
                                 lambda v: v.get("zone_pos") == snap["zone_pos"], "channel restored")
         cur = self.core()
-        if snap["temp"] in ("0x00", "0") and cur.get("temp") not in ("0x00", "0"):
+        # The power and squelch steps below put those two back as temporary changes, so a snapshot holding only
+        # them (a run at the lowest power is temp 0x01) still clears what the test added, such as the mode
+        before, now = _temp_bits(snap["temp"]), _temp_bits(cur.get("temp"))
+        if now != before and not before & ~TEMP_STEPPED:
             self._req_until(L.clear_temporary, lambda v: v.get("temp") in ("0x00", "0"), "temporary changes undone")
+            cur = self.core()
         self._step_to("power", L.power_step, snap["power"], int(cur.get("power_count") or 9), wraps=True)
         self._step_to("squelch", L.squelch_step, snap["squelch"], 10, wraps=False)
 
@@ -1166,11 +1178,13 @@ class SdrBench:
         w = (r.get("tuned") or {}).get("window") or {}
         self._api_tx_reach = (w.get("tx_lo") or freq, w.get("tx_hi") or freq)
 
-    def _api_job(self, tool, args, expect_s=None, wait_start=True, rx=False):
+    def _api_job(self, tool, args, expect_s=None, wait_start=True, rx=False, key_s=None):
         """A bench_tx / bench_repeater command line as a job on the TX board (rx: the receive board, for a job that
         only listens), started in the background: returns once the board started it (it may have queued behind
         another session's job). The job's records and log lines are in .lines (text, the tool's output) with their
-        arrival in .stamps; wait(), kill(), returncode. The frequency's claim stays on the TX board, the session's."""
+        arrival in .stamps; wait(), kill(), returncode. The frequency's claim stays on the TX board, the session's.
+        key_s: the longest single key-up the job asks for, checked against the board's max_key_s (a repeater's
+        or a listen job's length is not one)."""
         L = self._line()
         if self.api_level is not None and tool in ("bench_tx", "bench_repeater"):
             args = f"--power {self.api_level} {args}"
@@ -1189,6 +1203,11 @@ class SdrBench:
             os.makedirs(ambe_dir, exist_ok=True)    # a write failing in the reader thread would lose the job's output
             job["ambe_out"] = os.path.basename(job["ambe_out"])
         board = self.api_rx if rx else self.api
+        max_key = ((self._api_info(rx).get("tx") or {}).get("max_key_s")) if key_s and not rx else None
+        if max_key is not None and float(key_s) > float(max_key):
+            # The board refuses a key-up longer than this; a test asking for one needs a shorter job, not a skip
+            raise RuntimeError(f"{tool} keys {float(key_s):g} s at once, past this bench's max_key_s {max_key} s "
+                               "(info.tx)")
         req = {"op": "run", "job": job, "label": self.label or tool,
                "wait_max": self.wait_max}
         if board == self.api:           # the lease's session is the TX board's; another board has none of ours
@@ -1206,6 +1225,11 @@ class SdrBench:
             # Still queued (or the board never said started): a test going on now would judge a radio with nothing sent
             p.kill()
             raise RuntimeError(f"the bench board never started {tool} {job.get('cmd', '')}: {''.join(p.lines)[-400:]}")
+        if wait_start and expect_s and p.req.done.wait(0.2) and p.wait(5) not in (None, 0):
+            # Said started, then ended at once (a board that checks max_key_s only after starting): nothing is on
+            # air, and a test going on would judge the radio against a silent bench
+            raise RuntimeError(f"the bench board ended {tool} {job.get('cmd', '')} right after starting it "
+                               f"(exit {p.returncode}): {''.join(p.lines)[-400:]}")
         return p
 
     # ── a bench board's transmitter (the line protocol's tx op, the gateway's bench-api.md 14.6) ──
@@ -1257,6 +1281,15 @@ class SdrBench:
     def fm_transmit(self, freq, program, max_s=10.0, **fields):
         """fm_tx_start, then its done record once the last sample went out"""
         return self.fm_tx_start(freq, program, max_s, **fields).wait(max_s + 15)
+
+    def dmr_bursts(self, freq, cc, bursts, listen_after=0):
+        """DMR bursts built by the test (33 octets each, tools/bench/dmr_burst.py) sent as they are, a burst every
+        60 ms in one key-up (a bench_tx raw job), for what the board's own jobs can't build; returns its JSON records.
+        Needs the lease and --allow-rf."""
+        assert 0 < len(bursts) <= 128, f"{len(bursts)} bursts: a raw job takes 1 to 128"
+        a = f"--listen-after {listen_after} " if listen_after else ""
+        a += "raw --bursts " + ",".join(bytes(b).hex() for b in bursts)
+        return self.transmit(a, freq, cc, expect_s=len(bursts) * 0.06 + listen_after)
 
     # ── a bench board's confirmed data responder (the line protocol's mssim op, the gateway's bench-api.md 14.2) ──
     def mssim_arm(self, freq, cc, profile, seconds=120):
@@ -1614,7 +1647,7 @@ class SdrBench:
             raise RuntimeError("the bench outbound keys up: needs --allow-rf")
         self._need_lease()
         return self._api_job("bench_tx", f"--freq {freq} --cc {cc} outbound "
-                                         f"--seconds {seconds}", seconds)
+                                         f"--seconds {seconds}", seconds, key_s=seconds)
 
 
     # ── DMR bursts decoded on the receive board: no raw I/Q, only one record per burst ──

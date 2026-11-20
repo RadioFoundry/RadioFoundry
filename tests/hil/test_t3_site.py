@@ -77,6 +77,11 @@ Pass criteria:
 - test_t3_cp_unavailable (radio_tx): the same system marked as needing its key, with no key: the channel is
   unavailable (t3.unavail 1, t3.on 0) and PTT is refused: nothing is sent (t3.sent 0) and the radio never transmits
   (core state never tx).
+- test_t3_other_system (radio_tx): the rig's site staged with another network number (the next one the model has):
+  within CAMP_S the radio, still hunting (t3.state hunt), names the site's system code as the other system heard
+  (t3_roam t3.other: the site's code, or without its PAR bits when only its short LC was heard). PTT held for 2 s is
+  refused with RADIO_TRUNK_WHY_OTHER_SYS (t3.why 7): the radio never transmits (core state never tx) and sends
+  nothing (t3.sent unchanged).
 
 The cp tests write codeplug records over the debug link, so they also need --allow-codeplug-write. They leave the
 codeplug as they found it: they refuse a slot, channel record or tag already there, and remove what they wrote after. On a failure every test prints the last t3 view.
@@ -601,6 +606,45 @@ def test_t3_cp_unavailable(trunk_tx, cp_system):
         assert num(t3(trunk_tx), "t3.sent") == sent0, "sent on an unavailable system"
     except AssertionError:
         print("t3 view:", t3(trunk_tx))
+        raise
+
+
+@pytest.mark.feature("dmr_trunk_tx")
+@pytest.mark.radio_tx
+def test_t3_other_system(trunk_tx, pytestconfig):
+    s = site(pytestconfig)
+    if not tx_allowed(None, s["tx"] / 1e6):
+        # Were the refusal broken, PTT could send on the site's inbound: only on a frequency the rig may use
+        skip("opt_in", f"--t3-tx-mhz {s['tx'] / 1e6:.5f} MHz isn't in tx_mhz")
+    nets = (512, 128, 16, 4)[s["model"] & 3]
+    L = trunk_tx.link
+    L.t3("stop")
+    L.t3_reset()
+    L.t3_system(own_id=s["own_id"], model=s["model"], net=(s["net"] + 1) % nets, par="a", opts=OPT_PRIVATE,
+                cc=s["cc"], talk_id=0, talk_private=False)
+    L.t3_ctrl(s["lcn"], s["rx"], s["tx"])
+    L.t3_tg(s["tg"], listen=True, talk=True)
+    L.t3("start")
+    code = syscode(s)
+    try:
+        v = wait_t3(trunk_tx, lambda x: as_int(x.get("t3.other"), 0) in (code, code & ~3), CAMP_S,
+                    "the site named as another system")
+        assert v.get("t3.state") == "hunt", f"camped on another network's site: {v['t3.state']}"
+        sent0 = num(v, "t3.sent")
+        L.ptt(True, 3000)
+        try:
+            end = time.monotonic() + 2.0
+            while time.monotonic() < end:
+                assert str(trunk_tx.core().get("state", "")).lower() != "tx", "PTT keyed with no system found"
+                time.sleep(0.1)
+            v = trunk_tx.link.view([SECTION, "t3_roam"])
+        finally:
+            L.ptt(False)
+        assert num(v, "t3.why") == 7, f"PTT refused for t3.why {v.get('t3.why')}, want 7 (another system heard)"
+        assert num(v, "t3.sent") == sent0, "sent while hunting"
+        print(f"other system heard: {v['t3.other']} (the site's {code:#06x})")
+    except AssertionError:
+        print("t3 view:", trunk_tx.link.view([SECTION, "t3_roam"]))
         raise
 
 

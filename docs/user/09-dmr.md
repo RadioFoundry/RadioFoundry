@@ -280,6 +280,11 @@ been checked against another radio yet ([Radio reference](23-radios.md)).
 - The radio plays an encrypted call only when it has the matching key. Without the key the call shows as
   "Encrypted: not played".
 - Calls with stronger encryption (they send a PI header) are never played.
+- Text messages and other data follow the key too. With a Motorola key they are scrambled the same way, and the
+  radio reads scrambled data sent with its key. Messages in the **ETSI short** format can't be scrambled, so they
+  fail with a Motorola key: use **ETSI** or **Motorola** ([Messages](10-messages-and-signaling.md)). Anytone basic privacy has no form for data, so with an Anytone key
+  the radio sends no text messages or other data: a message you send fails. Scrambled data the radio can't read is
+  not shown.
 - **\***, **6** turns privacy on for your calls ("Privacy on for now"). Home shows "Priv". **Back** on Home turns it
   off again.
 
@@ -384,8 +389,8 @@ In the Codeplug Editor ([Programming](04-programming.md#digital-modes-and-system
 
 1. On the **Systems** tab add a system of type DMR Tier III Trunking. Enter its network model, NET, category and color
    code, and its channels with **Control** ticked on the control channels. The system's operator has these values.
-2. Make a channel, set its **Mode** to DMR Tier III Trunking and pick the system. Its contact is who you talk to; its
-   RX group list is the talkgroups you hear.
+2. Make a channel, set its **Mode** to DMR Tier III Trunking and pick the system. Set **TX Contact** to the default
+   call destination and **RX Group List** to the talkgroups you want to follow.
 3. Put the channel in a zone, with any other channels.
 
 | Setting | Does |
@@ -404,15 +409,23 @@ Select the channel. Home shows the system's name and what the radio is doing the
 | Home shows | Meaning |
 |---|---|
 | Searching | Looking for the system's control channel |
+| Other system | Looking for the system, and hearing only another one. The line below names what was heard ("Heard: Huge, net 0, site 83"): compare it with the system's network model and network number in the editor |
 | Registering | Found; registering with the system |
+| Reg. refused | The system doesn't accept this radio, most often because your DMR ID isn't in its records. Ask the system's administrator to add it. The radio keeps asking. PTT says "Registration refused" |
 | Ready | On the control channel. Hold **PTT** to call |
 | In call | On a channel the system granted, in a call |
 | Refused | The system refused the registration. PTT is refused |
 | Fallback | No control channel found: on the fallback channel |
 | System not set up | The channel's system is missing, has no control channel or lacks its key. The channel is receive only |
 
+If PTT says **Unknown channel N**, the system granted your call on channel N and the system's channel list doesn't
+have it. Add channel N with its frequencies; on a site with one carrier, give the control channel the number N. The
+number is the one the control channel sends. A site tool or scanner that counts each timeslot as a channel shows
+2 × N + 1 and 2 × N + 2 instead (623 and 624 for 311); the radio takes those too.
+
 Hold **PTT**: the radio asks the system for a channel and talks once the system grants it. When the system refuses or
-doesn't answer, PTT is refused. The talk target is the channel's contact, or one you pick as on any DMR channel
+doesn't answer, PTT is refused, and the screen says why: no control channel, another system heard, not registered yet,
+denied by the system, or no answer. The talk target is the channel's contact, or one you pick as on any DMR channel
 ([Choosing a talk target](#choosing-a-talk-target)).
 
 Zone and channel lists name a trunked channel's system where the frequency would be. A channel whose system isn't set

@@ -120,6 +120,9 @@ void debuglink_view_dmr_data(uint8_t part, dl_text_t *t)
 	dl_text(t, "data.ars_server=%u\ndata.radio_check_reply=%u\ndata.call_alert_ack=%u\ndata.lrrp_reply=%u\n",
 		(unsigned)set.arsServer, set.radioCheckReply, set.callAlertAck, set.lrrpReply);
 	dl_text(t, "data.has_gps=%u\ndata.lrrp_triggers=%u\n", set.hasGps, (unsigned)dmrDataServiceLrrpTriggerCount());
+	// Data privacy (dmr-data.md 13): packets decrypted, encrypted ones dropped, lists sent encrypted, lists held back
+	dl_text(t, "data.privacy_rx=%u\ndata.privacy_rx_dropped=%u\ndata.privacy_tx=%u\ndata.privacy_blocked=%u\n",
+		(unsigned)s.rxPrivacy, (unsigned)s.rxPrivacyDropped, (unsigned)s.txPrivacy, (unsigned)s.txPrivacyBlocked);
 	return;
 counters:
 	dl_text(t, "data.rx_bursts=%u\ndata.rx_csbk=%u\ndata.rx_headers=%u\ndata.rx_blocks=%u\n", (unsigned)s.rxBursts,
