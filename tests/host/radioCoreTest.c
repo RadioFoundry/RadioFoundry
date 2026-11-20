@@ -67,7 +67,8 @@ static struct {
 	uint32_t tx_hz;
 	uint8_t tx_power;
 	int tx_off_calls;
-	bool keyed;		// between tx() and tx_off()
+	bool keyed;		// between a tx() that keyed and the next tx_off()
+	bool rx_since_tx;	// an rx() since the last tx(): a retune ends a DMR keying (the boards disarm in rx())
 	bool audio;
 	bool led[2];
 	radio_status_t st;
@@ -83,14 +84,23 @@ static bool r_rx(uint32_t hz, radio_bw_t bw, const subtone_t *t)
 	hw.rx_bw = bw;
 	hw.rx_tone = *t;
 	hw.rx_calls++;
+	hw.rx_since_tx = true;
 	return true;
 }
+// tx() while keyed with neither tx_off() nor rx() between, over the whole run (hw is cleared per test): a board then
+// reprograms its synthesizer and RF switches under a PA that a DMR burst may be holding keyed (hal_radio_t.tx is
+// written to start from receive)
+static int rekeys;
 static bool tx_fail;			// the board refuses to key (synthesizer won't lock, PA fault)
 static bool r_tx(uint32_t hz, radio_bw_t bw, uint8_t p, const subtone_t *t)
 {
 	if (tx_fail) {
 		return false;
 	}
+	if (hw.keyed && !hw.rx_since_tx) {
+		rekeys++;
+	}
+	hw.rx_since_tx = false;
 	hw.tx_calls++;
 	hw.tx_hz = hz;
 	hw.tx_bw = bw;
@@ -1954,7 +1964,7 @@ static void test_dmr_tx(void)
 // handled, no tx_off() and no receive set-up, so a reply 30 ms after our terminator is heard; refused, tx_off() as before
 static int tx_end_calls;
 static bool tx_end_ok;
-static bool r_dmr_tx_end(void) { tx_end_calls++; return tx_end_ok; }
+static bool r_dmr_tx_end(void) { tx_end_calls++; if (tx_end_ok) hw.keyed = false; return tx_end_ok; }	// handled: unkeyed
 
 static void test_dmr_tx_end(void)
 {
@@ -2658,8 +2668,12 @@ static void test_hotspot(void)
 	radio_sm_request(&sm, &r, now);
 	CHECK(hw.rx_hz == 438800000 && hw.tx_hz == 438800000 && hw.tx_calls == tx0 + 1 &&
 		hw.tx_power == 1);
+	// A new level re-keys, through tx_off: never a second tx() on a keyed board
+	int rk = rekeys;
 	req(RREQ_HS_POWER, 255);
-	CHECK(hw.tx_calls == tx0 + 2 && hw.tx_power == 2);
+	CHECK(hw.tx_calls == tx0 + 2 && hw.tx_power == 2 && hw.keyed);
+	CHECK(rekeys == rk && hw.tx_off_calls == off0 + 1);
+	off0 = hw.tx_off_calls;
 	r.arg = 121500000;	// refused: the radio stays where it was
 	r.arg2 = 121500000;
 	radio_sm_request(&sm, &r, now);
@@ -10174,6 +10188,27 @@ static void test_t3_learn_syscode(void)
 	t3_site_code = 0;
 }
 
+#if CONFIG_DUAL_WATCH
+// A Tier III channel is never one of dual watch's two (radio-features.md 2.1): the UI's service refuses it at once on
+// either side, and a request that gets past it starts nothing in the radio core; the system goes on as it was
+static void test_t3_dual(void)
+{
+	t3_cp_zone(T3_OPT_PRIVATE, 0, 0, NULL);
+	req(RREQ_ZONE, 2);			// "Ops A"
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED);
+	const ui_dual_ref_t t3 = { false, 2, 0 }, conv = { false, 0, 0 };
+	const ui_dual_ref_t as_a[2] = { t3, conv }, as_b[2] = { conv, t3 };
+	CHECK(!ui_svc_dual(as_a, 0) && !ui_svc_dual(as_a, 1) && !ui_svc_dual(as_b, 0) && !ui_svc_dual(as_b, 1));
+	CHECK(sm.view.scan == SCAN_OFF && radio_t3v.on);
+	const radio_dual_ref_t r[2] = { { false, 2, 0 }, { false, 0, 0 } };
+	radio_req_dual(r, 1);
+	t3_site_run(300);
+	CHECK(sm.view.scan == SCAN_OFF && sm.view.channel_number == 7 && radio_t3v.state == T3_CAMPED);
+	t3_cp_done();
+}
+#endif
+
 // A trunked channel transmits only when its tag allows it and its system is one the radio runs with a transmit side
 // (channel-modes.md 3 and 4): a receive-only channel and a system without the transmit flag camp and listen, send
 // nothing on the control channel and refuse PTT; a channel that names no system, or one with no record, is unavailable
@@ -10866,6 +10901,9 @@ int main(void)
 	test_t3_fallback();
 	test_t3_follow_all();
 	test_t3_learn_syscode();
+#if CONFIG_DUAL_WATCH
+	test_t3_dual();
+#endif
 #endif
 	test_dmr_stalled();
 	test_dmr_list_talk_target();
@@ -10925,6 +10963,7 @@ int main(void)
 	test_dmr_data_glue();	// (last: the data service's state carries over)
 	test_factory_reset();
 	test_volume_step_of();
+	CHECK(rekeys == 0);	// every keying in every test above was ended before the next
 	printf("# radioCoreTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;
 }

@@ -149,8 +149,9 @@ A P25 or NXDN channel (a stored one, or the VFO in that mode) can be either side
 is one only where the board receives that mode at the channel's rate, never as a trunked channel, and a look there
 starts its engine, probes a carrier for up to 700 ms and holds for a call that plays. The air interface runs one engine
 at a time, so with P25 on one side and NXDN on the other each hop stops one engine and starts the other. The UI
-refuses a trunked channel at once; a mode the board can't receive is refused by the radio core, and the watch doesn't
-start. The panes name the mode and show no tone or bandwidth for it, and don't show the caller of a P25 or NXDN call.
+refuses a trunked channel (P25 or Tier III) at once; a mode the board can't receive is refused by the radio core, and
+the watch doesn't start. The panes name the mode and show no tone or bandwidth for it, and don't show the caller of a
+P25 or NXDN call.
 
 ### 2.2 A second receiver
 

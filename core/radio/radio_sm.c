@@ -4339,7 +4339,7 @@ static void dmr_end(radio_sm_t *sm) { (void)sm; }
 static bool scan_listens(const channel_t *ch, uint16_t number)
 {
 	(void)number;
-	if (parked(ch) || ch->kind == CODEPLUG_KIND_P25_TRUNK || ch->kind == CODEPLUG_KIND_DMR_TRUNK) {
+	if (parked(ch) || codeplug_kind_trunked(ch->kind)) {
 		return false;
 	}
 #if CONFIG_NXDN
@@ -7011,6 +7011,14 @@ static void hotspot_arm(radio_sm_t *sm)
 		return;		// armed again when the CW ID ends
 	}
 #endif
+	// Already keyed (a new power level while armed): unkey first. A board's tx() starts a keying from receive; called
+	// again under one it reprograms the synthesizer and the RF switches while a burst may hold the PA on (where a
+	// board's RF task sleeps between a burst's PA-on and PA-off, a split frequency's RX word could land mid-burst).
+	// tx_off waits for the burst in flight and the hotspot listens through the gap
+	if (sm->dmr_keyed) {
+		sm->dmr_keyed = false;
+		board.radio->tx_off();
+	}
 	sm->dmr_keyed = key_tx(sm->hs_tx_hz, RADIO_BW_12K5, sm->hs_power, &none);
 }
 
