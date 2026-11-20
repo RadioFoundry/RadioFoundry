@@ -1134,7 +1134,25 @@ part's synthesizer never locks: no receive anywhere, and transmit far off freque
 RadioFoundry checks which part is fitted at start-up.
 
 Set-up B rows marked "user" were checked on one user's radio with the newer section; none are yet checked on a
-RadioFoundry test radio.
+RadioFoundry test radio. A second radio with the newer section (below) confirms the rows marked "user, 2".
+
+**A second radio.** A DM-32UV bought new, factory firmware `DM32.NRFB.01.050`, program flash GD (C8 40 14),
+data flash Boya (68 40 18; section 10), factory calibration page at data flash 0xB1000 (inside the scan of section 11).
+Firmware: RadioFoundry 5519a66 with changes outside the set-up B paths (`fd6818_setup_b.c`, `fd6818.c`, `rf_detect` in
+`radio_dm32.c`). The codec was taken from the radio's own program flash. What was checked, on a dummy load or with a second radio
+at low power and an SDR on the frequency:
+
+| Check | Result |
+|---|---|
+| Start-up check | `flash 684018 cal factory rf B` at every boot: set-up A did not lock, set-up B did |
+| FM receive | an FM handheld on 70 cm heard clearly |
+| FM transmit | received by a second radio; the carrier about 0.5 ppm high, measured with an SDR |
+| DMR transmit | a capture of a 6 s over decodes clean: 107 bursts, every LC, RS and CRC good, voice frames with no bit errors |
+| DMR both ways | a private call to a network echo service through a local repeater came back and played: the repeater heard the radio and the radio decoded the repeater, so the DMR 0x47 / 0x48 pair and RF_MODE bit 15 clear are right |
+| Codec | the program flash's code window matched the `DM32.NRFB.01.050 program flash` profile's SHA-256 (`8d7f57eb...`, `codec-dm32.md`): a second radio with this build carries the same code there |
+
+Not checked on this radio: CTCSS or DCS on transmit or receive, battery save (the receiver sleep row), registers 0x3D
+and 0x0C read back by hand, and air band AM (which set-up B doesn't have yet, below).
 
 | | Classic section (set-up A, 8.2-8.8) | Newer section (set-up B) |
 |---|---|---|
@@ -1142,12 +1160,12 @@ RadioFoundry test radio.
 | 0x37 | 0x1D0F / 0x1D1F / 0x1F0F / 0x1F1F | 0x9D1F (bit 15 set) |
 | 0x30 into RX / TX | idle, then 0xBFF1 / 0xC1FE | idle, 0x0200, then 0xBFF1 / 0xC1FE |
 | 0x1A, 0x40 | band words (8.3) | 0x1A not written; 0x40 = 0x34F0, on FM transmit 0x3480 + the calibration byte |
-| DMR 0x47 / 0x48 | 0x0140 / 0xBBBF | 0x6943 / 0xB2FD; the DM-1801 Pro's 0x0140 / 0xB2F5 gave no DMR sync (user) |
+| DMR 0x47 / 0x48 | 0x0140 / 0xBBBF | 0x6943 / 0xB2FD; the DM-1801 Pro's 0x0140 / 0xB2F5 gave no DMR sync (user); 0x6943 / 0xB2FD works both ways (user, 2) |
 | 0x50 around each switch to TX | not written | FM: 0xBB20 before, 0x3B20 after (user: after only); DMR burst: 0x3B18 after (user: 0x3B20) |
 | 0x2E / 0x2F at each receive tune | not written | 0x8608 / 0x1890 with CTCSS, 0x9608 / 0x9890 with DCS or none |
-| HR_C7000 RF_MODE bit 15 (RX IQ invert) | set | clear (user; set: DMR syncs but decodes nothing usable) |
+| HR_C7000 RF_MODE bit 15 (RX IQ invert) | set | clear (user; set: DMR syncs but decodes nothing usable). Clear: DMR decodes (user, 2) |
 | Receiver sleep (8.8) | 0x37 = 0x1D11 / 0x1D00, wake 0x1F1F, 0x1F0F | 0x37 = 0x9D17 (FM) / 0x9D00 (DMR), wake 0x9D1F (user: idle only) |
-| 0x0C bit 9 (synthesizer locked) on set-up A | set at every frequency tried, 136-520 MHz | never set (user) |
+| 0x0C bit 9 (synthesizer locked) on set-up A | set at every frequency tried, 136-520 MHz | never set (user; user, 2: the start-up check chose B) |
 | 0x0C bit 9 on set-up B | set | set |
 | 0x3D | reads 0x2AAB | reads 0 (user) |
 
