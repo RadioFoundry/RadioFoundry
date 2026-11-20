@@ -547,7 +547,7 @@
  "flash.build.self_text": "用此命令构建固件，然后在下方选择文件。",
  "flash.build.image_ready": "就绪：{what}",
  "flash.build.own_image": "固件文件（.bin）",
- "flash.build.building_both": "正在构建两个固件映像：电台的和接收机 B 的……",
+ "flash.build.building_both": "正在构建固件映像……",
  "flash.build.second_differs": "两个固件映像是由不同的版本构建的。请重试。",
  "flash.build.image_ready_both": "就绪：{what}，以及接收机 B 的固件（{second}）。两者一起安装。",
  "flash.build.image_ready_first_only": "就绪：{what}。没有接收机 B 的固件文件，因此只会安装电台自身的固件。要两个都安装，请在下方同时选择接收机 B 的文件。",

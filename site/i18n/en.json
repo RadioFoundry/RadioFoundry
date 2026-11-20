@@ -547,7 +547,7 @@
  "flash.build.self_text": "Build the firmware with this command, then select the file below.",
  "flash.build.image_ready": "Ready: {what}",
  "flash.build.own_image": "Firmware file (.bin)",
- "flash.build.building_both": "Building both firmware images: the radio's and receiver B's…",
+ "flash.build.building_both": "Building firmware images…",
  "flash.build.second_differs": "The two firmware images were built from different versions. Try again.",
  "flash.build.image_ready_both": "Ready: {what}, and receiver B's firmware ({second}). Both are installed together.",
  "flash.build.image_ready_first_only": "Ready: {what}. There is no firmware file for receiver B, so only the radio's own firmware will be installed. To install both, select receiver B's file below too.",
