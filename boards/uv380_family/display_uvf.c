@@ -144,8 +144,8 @@ static bool ready;
 
 // ---- Backlight: TIM1 paces two one-word DMA writes to the backlight port's BSRR (backlight_uvf.h) ----
 // The update (DMA2 Stream5 channel 6) sets the pin, the CC1 match (DMA2 Stream1 channel 6) clears it: duty = CCR1 /
-// period, two transfers per cycle, at 2 kHz idle or 40 kHz during TX or receive audio. 0 % and 100 % stop
-// both and drive the pin steady.
+// period, two transfers per cycle at 2 kHz. 0 %, 100 % and any lit level during TX or receive audio stop both and
+// drive the pin steady.
 
 #define BL_MASK		PIN_MASK(PIN_LCD_BACKLIGHT)
 
@@ -201,7 +201,7 @@ static void bl_init(void)
 
 	TIM1->CR1 = 0;
 	TIM1->PSC = 0;
-	TIM1->ARR = UVF_BL_IDLE_PERIOD - 1;
+	TIM1->ARR = UVF_BL_PERIOD - 1;
 	TIM1->CCR1 = 1;
 	TIM1->CCMR1 = TIM_CCMR1_OC1PE;	// CC1 output compare, frozen, preloaded: a new duty starts at the next cycle
 	TIM1->DIER = TIM_DIER_UDE | TIM_DIER_CC1DE;	// DMA requests on update (set) and CC1 match (clear)
@@ -209,30 +209,24 @@ static void bl_init(void)
 	TIM1->CR1 = TIM_CR1_ARPE | TIM_CR1_CEN;
 }
 
-// The brightness at the rate in use. Interrupts off: called from the backlight's task and from the radio's tx/rx. The
-// period and compare are preloaded, so they take effect at the next cycle; a rate change loads them at once
-// so the fast rate is in effect before the PA or receive audio comes on.
+// The brightness, or fully on during TX or receive audio. Interrupts off: called from the backlight's task and from
+// the radio's tx/rx, where the pin is steady before the PA or receive audio comes on. The compare is preloaded, so a
+// new duty starts at the next cycle.
 static void bl_apply(void)
 {
 	uint32_t primask = __get_PRIMASK();
 	__disable_irq();
-	uint16_t period = uvf_bl_period(bl_tx, bl_rx_audio);
-	uint16_t cmp = uvf_bl_compare(bl_percent, period);
+	uint16_t cmp = uvf_bl_compare(bl_percent, bl_tx || bl_rx_audio);
 
-	if (!ready || cmp == 0 || cmp >= period) {
+	if (!ready || cmp == 0 || cmp >= UVF_BL_PERIOD) {
 		if (bl_running) {
 			bl_dma_stop();
 		}
 		PIN_WRITE(PIN_LCD_BACKLIGHT, cmp > 0);
 	} else {
-		bool rate_changed = TIM1->ARR != period - 1u;
-		TIM1->ARR = period - 1u;
 		TIM1->CCR1 = cmp;
 		if (!bl_running) {
 			bl_dma_start();
-		}
-		if (rate_changed) {
-			TIM1->EGR = TIM_EGR_UG;	// load both preloads before opening the RF or audio path
 		}
 	}
 	__set_PRIMASK(primask);

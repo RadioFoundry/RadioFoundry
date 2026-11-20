@@ -1127,8 +1127,9 @@ request, circular, 100 transfers) to the port's BSRR register: entry 0 sets the 
 0, so the duty is N %. 0 % and 100 % stop the DMA and drive the pin directly.
 
 RadioFoundry uses two one-word DMA writes per PWM cycle (`boards/uv380_family/backlight_uvf.h`):
-At 40 kHz TIM1 counts 1800 per cycle, its update request (DMA2 Stream5 channel 6) writes the set bit and its CC1 request (DMA2
-Stream1 channel 6) the reset bit, so CCR1 is the duty at any percent, 80,000 transfers a second. The ripple of the
+TIM1's update request (DMA2 Stream5 channel 6) writes the set bit and its CC1 request (DMA2
+Stream1 channel 6) the reset bit, so CCR1 is the duty at any percent, two transfers per cycle. The rates below were tried; the PWM now runs at 2 kHz
+(36000 counts per cycle) and stops while transmitting or while receive audio is open. The ripple of the
 switched backlight current reaches the FM transmit audio. Measured on a DM-1701, Brightness 10 %, 50 mW, FM
 demodulated from a separate receiver, peak deviation:
 
@@ -1139,8 +1140,14 @@ demodulated from a separate receiver, peak deviation:
 | 40 kHz | 0.6-0.7 Hz | 1.6-2.3 Hz | 1.6 Hz | The conducted measurement below supersedes the over-the-air estimate for this line |
 
 The panel's backlight driver doesn't follow 40 kHz: Brightness 20 % looked close to full, and the idle dim step (a
-fifth) hardly showed. At 2 kHz it dims as set. The PWM uses 2 kHz while idle and 40 kHz while transmitting or while FM or DMR receive audio is open.
-The receive selection follows the audio route even at zero volume, when FM still feeds APRS.
+fifth) hardly showed. At 2 kHz it dims as set. The PWM runs at 2 kHz while idle. While transmitting or while FM or DMR receive audio is
+open, the pin is held high at any brightness above 0 %. The receive selection follows the audio route even at zero
+volume, when FM still feeds APRS.
+
+An earlier build ran 40 kHz in those states with a one-count pulse (14 ns) for every level below 100 %, expecting the
+stage's tail to fill the period. On a DM-1701 it did: the panel was fully lit. On other DM-1701 and MD-UV380 family
+radios the stage didn't respond to a pulse that short, and the screen went dark during transmit and receive audio
+(#759). A steady pin gives the same light as a 40 kHz rate the stage follows, without depending on its turn-on.
 
 A conducted DM-1701 UHF measurement through 60 dB of attenuation found at most 4.4 Hz deviation at 40 kHz over
 5–90 % pin duty, with sidebands at or below -85 dBc. At 2 kHz and 50 % brightness, an unmodulated -88 dBm carrier
@@ -1207,11 +1214,10 @@ DM-1701 A:
 
 That tail is why 40 kHz (a 25 us period) can't dim at all, why at 15 kHz and 50 % (33 us off) the LEDs never go dark,
 and why 2 kHz lit Brightness 10 % at about 18 %. Clean transmit needs about 18 kHz or more and dimming a few kHz or
-less, so the rate switches. The compare is shortened by the tail (`UVF_BL_TAIL`, 38 us, 2736 counts), so a pulse plus
+less. While transmitting or receiving, the pin is steady, the reference in every measurement above. The compare is shortened by the tail (`UVF_BL_TAIL`, 38 us, 2736 counts), so a pulse plus
 the tail is the brightness: at 2 kHz and Brightness 20 % the pin is high for 62 us and the light ends at 100 us of the
 500 us cycle. A level too low for the tail keeps one count, the least the rate allows: about 8 % at 2 kHz (the idle
-dim floor of 5 % lights at that). At 40 kHz every level below 100 % is the one count and the panel is fully lit, as
-before; transmit then measured 5.5, 2.5, 1.8 and 7.0 Hz at 2, 4, 6 and 8 kHz, the same as above.
+dim floor of 5 % lights at that).
 
 Caveats: the rail shows the regulator's response as well as the load (a sag at turn-on, an overshoot at turn-off,
 each settling over 100-200 us), so averaging the rail over a cycle doesn't give the duty; only the time of each edge
