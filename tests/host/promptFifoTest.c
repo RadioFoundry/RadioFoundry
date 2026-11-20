@@ -106,6 +106,13 @@ int main(void)
 	pcm_ring_reset(&ring);
 	CHECK(pcm_ring_level(&ring) == 0);
 
+	// A ring from the heap starts with garbage indices: the reset puts them on a chunk boundary, so no chunk runs past
+	// the end of s (it once played the memory after the ring)
+	ring.head = ring.tail = 0x12345677u;
+	pcm_ring_reset(&ring);
+	CHECK(ring.head % PCM_RING_CHUNK == 0 && ring.tail % PCM_RING_CHUNK == 0);
+	CHECK(stream(ring.head, 20));
+
 	// --- the chip's FIFO ---
 	hrc6000_attach(&dev, &bus);
 	regs[4][0x06] = 0x20;				// vocoder select as the init leaves it

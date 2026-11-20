@@ -5,7 +5,7 @@
 //
 // The indices run free and wrap at 2^32; the size is a power of two, so index & mask stays continuous across the wrap.
 // Each side writes only its own index, after the samples (producer) or after reading them (consumer). Both stay
-// multiples of PCM_RING_CHUNK (zero at start, whole blocks in), so a chunk never straddles the end of the array.
+// multiples of PCM_RING_CHUNK (zero after pcm_ring_reset, whole blocks in), so a chunk never straddles the end of the array.
 #ifndef PCM_RING_H
 #define PCM_RING_H
 
@@ -25,10 +25,13 @@ typedef struct {
 	volatile uint32_t tail;		// consumer: samples taken
 } pcm_ring_t;
 
-// Empty, with the consumer stopped
+// Empty, both indices at 0, with the consumer stopped (from the producer's side). Not tail = head: a ring from the
+// heap starts with garbage indices, and one off a chunk boundary makes chunks run past the end of s (the feeder then
+// played the memory after the ring, and the producer wrote into it)
 static inline void pcm_ring_reset(pcm_ring_t *r)
 {
-	r->tail = r->head;
+	r->head = 0;
+	r->tail = 0;
 }
 
 static inline uint32_t pcm_ring_level(const pcm_ring_t *r)
@@ -41,8 +44,8 @@ static inline bool pcm_ring_fits(const pcm_ring_t *r, uint32_t n)
 	return PCM_RING_SAMPLES - pcm_ring_level(r) >= n;
 }
 
-// n samples in (a whole block; a multiple of PCM_RING_CHUNK keeps every chunk in one piece). False: no room, nothing
-// written
+// n samples in (a whole block; a multiple of PCM_RING_CHUNK keeps every chunk in one piece), x NULL: silence. False: no
+// room, nothing written
 static inline bool pcm_ring_push(pcm_ring_t *r, const int16_t *x, uint32_t n)
 {
 	if (n > PCM_RING_SAMPLES || !pcm_ring_fits(r, n)) {
@@ -50,8 +53,13 @@ static inline bool pcm_ring_push(pcm_ring_t *r, const int16_t *x, uint32_t n)
 	}
 	uint32_t at = r->head & PCM_RING_MASK;
 	uint32_t first = PCM_RING_SAMPLES - at < n ? PCM_RING_SAMPLES - at : n;
-	memcpy(&r->s[at], x, first * sizeof x[0]);
-	memcpy(&r->s[0], x + first, (n - first) * sizeof x[0]);
+	if (x != NULL) {
+		memcpy(&r->s[at], x, first * sizeof x[0]);
+		memcpy(&r->s[0], x + first, (n - first) * sizeof x[0]);
+	} else {
+		memset(&r->s[at], 0, first * sizeof r->s[0]);
+		memset(&r->s[0], 0, (n - first) * sizeof r->s[0]);
+	}
 	__atomic_thread_fence(__ATOMIC_RELEASE);	// the samples before the index that shows them
 	r->head += n;
 	return true;

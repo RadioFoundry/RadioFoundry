@@ -71,6 +71,7 @@ __attribute__((weak)) void uvf_speaker_pcm(bool on)
 
 static void speaker_pcm(bool on)
 {
+	stm32_i2s_pcm_speaker(on);
 	uvf_speaker_pcm(on);
 }
 

@@ -75,6 +75,9 @@ _Static_assert(PCM_RING_CHUNK == HRC_PROMPT_CHUNK, "a ring chunk is one FIFO wri
 static pcm_ring_t *ring;		// from the heap with the feeder, on the first FIFO use
 static TaskHandle_t feeder;
 static hrc_t *volatile fifo_chip;	// the chip whose FIFO the speaker blocks go to, NULL: none
+static volatile bool fifo_spk;		// the speaker's PCM route is on (stm32_i2s_pcm_speaker)
+#define FIFO_PRIME	(2u * AUDIO_BLOCK_SAMPLES)	// in the ring before the first write: 40 ms in hand
+_Static_assert(FIFO_PRIME + AUDIO_BLOCK_SAMPLES <= PCM_RING_SAMPLES, "a block fits on top of the priming");
 static volatile uint32_t fifo_chunks, fifo_gaps, fifo_full;
 #endif
 
@@ -266,7 +269,9 @@ static void process(uint8_t half)
 		memset(spk, 0, sizeof spk);
 	}
 #if CONFIG_AIR
-	if (fifo_chip != NULL && !pcm_ring_push(ring, spk, AUDIO_BLOCK_SAMPLES)) {
+	// Silence while the PCM route is off: the FIFO goes past the switch that keeps the stream off the amplifier, which
+	// stays on for the hang after a call, so what the stream holds then (not a call) would play
+	if (fifo_chip != NULL && !pcm_ring_push(ring, fifo_spk ? spk : NULL, AUDIO_BLOCK_SAMPLES)) {
 		fifo_full++;
 	}
 #endif
@@ -278,8 +283,8 @@ static void process(uint8_t half)
 }
 
 #if CONFIG_AIR
-// Waits for a block in the ring before the first write of a call, so the FIFO starts with 20 ms in hand; after that a
-// chunk the ring hasn't got is a gap (silence written)
+// Waits for FIFO_PRIME in the ring before the first write, so the FIFO starts with 40 ms in hand (20 ms left a few gaps a
+// call); after that a chunk the ring hasn't got is a gap (silence written)
 static void feeder_task(void *arg)
 {
 	(void)arg;
@@ -293,7 +298,7 @@ static void feeder_task(void *arg)
 			continue;
 		}
 		if (!primed) {
-			primed = pcm_ring_level(ring) >= AUDIO_BLOCK_SAMPLES;
+			primed = pcm_ring_level(ring) >= FIFO_PRIME;
 		}
 		while (primed && fifo_chip == chip && hrc_prompt_room(chip)) {
 			if (!pcm_ring_pop(ring, buf)) {
@@ -337,6 +342,11 @@ static void fifo_follow(void)
 	dlog("i2s: prompt FIFO %s", chip != NULL ? "on" : "off");
 }
 
+void stm32_i2s_pcm_speaker(bool on)
+{
+	fifo_spk = on;
+}
+
 static void fifo_off(void)
 {
 	if (fifo_chip != NULL) {
@@ -346,6 +356,11 @@ static void fifo_off(void)
 	}
 }
 #else
+void stm32_i2s_pcm_speaker(bool on)
+{
+	(void)on;
+}
+
 static void fifo_follow(void) {}
 static void fifo_off(void) {}
 #endif
