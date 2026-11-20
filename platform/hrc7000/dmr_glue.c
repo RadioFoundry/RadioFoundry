@@ -177,9 +177,16 @@ static void isr_pa_timer(void)
 	}
 }
 
+// FM transmit audio uses the system interrupt outside DMR too, as receive audio does (fm_flat_tx.c)
+#if CONFIG_FM_FLAT
+#define FM_TX_HOOKED	(eng.fm_tx != NULL)
+#else
+#define FM_TX_HOOKED	false
+#endif
+
 static void irqs_enable(bool on)
 {
-	hrc_irq_enable(IRQ_MODEM_SYS, on || eng.fm_rx != NULL);	// FM receive audio uses it outside DMR too
+	hrc_irq_enable(IRQ_MODEM_SYS, on || eng.fm_rx != NULL || FM_TX_HOOKED);	// FM audio uses it outside DMR too
 	hrc_irq_enable(IRQ_MODEM_TS_TX, on);
 	hrc_irq_enable(IRQ_MODEM_TS_RX, on);
 	hrc_irq_enable(IRQ_MODEM_RF_TX, on);
@@ -328,9 +335,27 @@ bool hrc_dmr_fm_rx_hook(void (*fn)(void))
 	uint32_t s = hrc_irq_save();
 	eng.fm_rx = fn;
 	hrc_irq_restore(s);
-	hrc_irq_enable(IRQ_MODEM_SYS, active || fn != NULL);
+	hrc_irq_enable(IRQ_MODEM_SYS, active || fn != NULL || FM_TX_HOOKED);
 	return true;
 }
+
+#if CONFIG_FM_FLAT
+// Task level, so in flash: this file is otherwise placed in RAM whole
+HRC_FLASHFUNC bool hrc_dmr_fm_tx_hook(void (*fn)(void))
+{
+	// The flat transmit and an air session (hrc7000_air.c) both take the system interrupt and the TX RAM: one at a
+	// time, as the FM receive hook above. A session opens only in DMR and the flat paths run in FM, so the radio core
+	// never asks for both; refusing keeps a wrong order from corrupting either
+	if (fn != NULL && AIR_ON()) {
+		return false;
+	}
+	uint32_t s = hrc_irq_save();
+	eng.fm_tx = fn;
+	hrc_irq_restore(s);
+	hrc_irq_enable(IRQ_MODEM_SYS, active || fn != NULL || eng.fm_rx != NULL);
+	return true;
+}
+#endif
 
 bool hrc_dmr_tx_end(void)
 {
@@ -513,8 +538,8 @@ const hal_dmr_modem_t hrc_dmr = {
 // The chip from the halted engine to the session or the tap: the engine's queues become their memory
 HRC_FLASHFUNC static bool air_take(void)
 {
-	if (!active || air_on || hrc7000_dmr_is_transmitting(&eng) || eng.fm_rx != NULL) {
-		return false;	// not in DMR, a DMR transmission, or FM receive audio (APRS) holds the copy interrupt
+	if (!active || air_on || hrc7000_dmr_is_transmitting(&eng) || eng.fm_rx != NULL || FM_TX_HOOKED) {
+		return false;	// not in DMR, a DMR transmission, or FM audio (APRS, a flat path) holds the interrupt
 	}
 	hrc7000_dmr_halt(&eng);
 	lock(NULL);
