@@ -850,6 +850,29 @@ static const flow_t flows[] = {
 	{ "S USB network off", "ok 6 4 ok", "ok 6 4 ok", "usbnet=0 toast=USB_is_a_serial", 4, false },
 	{ "S message failed text", "", "", "screen=home", 0, false },
 	// APRS (docs/spec/aprs.md 10): Tools 9, one row each
+#if CONFIG_DSTAR
+	// D-STAR (docs/spec/ui.md 2.6, task-flows.md 28): # on Home opens its page; the shortcuts only set UR and go Home,
+	// where the talk line says what the next over does
+	{ "D D-STAR page from Home", "dstar", "ctx", "screen=dstar focus=Send_to", 1, false },
+	{ "D talk target key opens it too", "dstar", "long:ctx", "screen=dstar", 1, false },
+	{ "D echo test in two presses", "dstar", "ctx 4", "screen=home shows=Echo_test toast=Echo:_talk", 2, false },
+	{ "D echo goes out once", "dstar ctx 4", "ptt", "shows=CQCQCQ hides=Echo_test", 1, false },
+	{ "D unlink in two presses", "dstar", "ctx 6", "screen=home shows=Unlink", 2, false },
+	{ "D link a reflector", "dstar", "ctx 5 7 7 7 3 3 wait:1200 3 3 3 long:0 long:3 long:0 2 2 2 ok",
+	  "screen=home shows=Link_REF030_C", 19, false },
+	{ "D Back on Home: the channel's UR again", "dstar ctx 4", "back", "shows=CQCQCQ toast=Back_to_the", 1, false },
+	{ "D caller and message shown while receiving", "dstar", "dstarrx:M0XYZ,5100,CQCQCQ,Hello_there",
+	  "shows=M0XYZ shows=Hello_there shows=/5100", 0, false },
+	{ "D last caller on Home after the over", "dstar dstarrx:M0XYZ,5100,CQCQCQ,Hello_there", "dstarend",
+	  "screen=home shows=M0XYZ/5100", 0, false },
+	{ "D call the last caller", "dstar dstarrx:M0XYZ,5100,CQCQCQ,Hello dstarend", "ctx 3",
+	  "screen=home shows=M0XYZ_for_now", 2, false },
+	{ "D no callsign: PTT says what to do", "dstar:nocall", "pttdown", "shows=No_callsign_set", 1, false },
+	{ "D my call typed on the radio goes out", "dstar", "ctx 8 6 long:0 2 wait:1200 2 2 wait:1200 9 9 9 9 ok",
+	  "screen=dstar focus=My_call toast=Saved", 12, false },
+	{ "D the typed call is what PTT sends", "dstar ctx 8 6 long:0 2 wait:1200 2 2 wait:1200 9 9 9 9 ok long:back",
+	  "pttdown", "shows=M0ABZ", 1, false },
+#endif
 	{ "A APRS page", "", "ok 6 8", "screen=aprs", 3, false },
 #if CONFIG_DMR_TRUNK
 	// Trunked channels (dmr-trunking.md 12.4): "t3" makes channel 3 a channel of "County" and 5 one of "Metro", not set up

@@ -38,6 +38,8 @@ enum {
 	DL_CMD_T3		= 0x22,	// a Tier III trunked system: stage, select, leave (debuglink_t3.c, 3.26)
 	DL_CMD_CPKV		= 0x23,	// a key of the codeplug settings area: read, write, remove (debuglink_cpkv.c, 3.27)
 	DL_CMD_AIR		= 0x24,	// the air interface on the bench: tap, session, RX, TX (CONFIG_AIR_RAW; debuglink_air.c, 3.28)
+	DL_CMD_DSTAR		= 0x25,	// D-STAR: the flat paths' calibration, test signals, UR, station (CONFIG_DSTAR;
+					// debuglink_dstar.c, 3.29)
 };
 
 // DL_CMD_T3 operations (first payload byte; docs/spec/debuglink.md 3.26). Little endian
@@ -89,6 +91,25 @@ enum {
 	DL_AIR_OP_TX_END	= 10,	// none -> none
 	DL_AIR_OP_TX_ABORT	= 11,	// none -> none
 };
+
+// DL_CMD_DSTAR operations (first payload byte; docs/spec/debuglink.md 3.29). u16 / u32 little endian
+enum {
+	DL_DSTAR_OP_CAL		= 0,	// field u8 (DL_DSTAR_CAL_*), value i32 -> none: stored in the settings, in force at once
+	DL_DSTAR_OP_TEST	= 1,	// kind u8 (radio_dstar_test_t), hz u16, level u8 (% of 1 kHz deviation) -> none; BUSY on air
+	DL_DSTAR_OP_UR		= 2,	// mode u8 (radio_dstar_ur_t), up to 7 characters (the reflector and module) -> none
+	DL_DSTAR_OP_STATION	= 3,	// field u8 (DL_DSTAR_ST_*), text -> none; empty text: the codeplug's again
+	DL_DSTAR_OP_KNOB	= 4,	// index u8, value i32 -> none: a board knob (the view's dstar.knob.* names, in order)
+	DL_DSTAR_OP_RESET	= 5,	// none -> none: the voice path's counters zeroed
+};
+// DL_DSTAR_OP_CAL fields: -1 is the board's own value for the polarities and the high-passes
+enum {
+	DL_DSTAR_CAL_TX_1KHZ	= 0,	// the sample value for 1 kHz deviation, 0 = the board's
+	DL_DSTAR_CAL_TX_INVERT	= 1,	// 0, 1 or -1
+	DL_DSTAR_CAL_RX_INVERT	= 2,
+	DL_DSTAR_CAL_TX_HPF	= 3,	// Hz, 0 = flat, -1
+	DL_DSTAR_CAL_RX_HPF	= 4,
+};
+enum { DL_DSTAR_ST_MY = 0, DL_DSTAR_ST_SUFFIX = 1, DL_DSTAR_ST_MSG = 2 };
 
 // DL_CMD_HWOPT operations (first payload byte; docs/spec/debuglink.md 3.25)
 enum {

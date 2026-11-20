@@ -65,6 +65,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "codeplug/codeplug_modes.h"
 #include "ui_sim.h"
 // The board is changed at run time here (display, key map): this file defines it writable, the UI sees it const
 #define board board_as_declared
@@ -1352,6 +1353,9 @@ static void load_channel(void)
 	view.dmr.ts = view.ch.timeslot;
 	view.dmr.reply_active = false;
 	reply_until = 0;
+#if CONFIG_DSTAR
+	memset(&view.dstar, 0, sizeof view.dstar);	// a channel change leaves D-STAR ("dstar" makes one)
+#endif
 	default_target();
 	changed();
 }
@@ -1532,6 +1536,12 @@ void radio_req_clear_temporary(void)
 	if (view.vfo)
 		return;
 	view.ch = ch_saved;
+#if CONFIG_DSTAR
+	if (view.dstar.on) {
+		view.ch.mode = RADIO_MODE_FM;	// still the D-STAR channel "dstar" made
+		view.ch.kind = CODEPLUG_KIND_DSTAR;
+	}
+#endif
 	view.power = board.power_default;
 	view.squelch = 5;
 	view.temp = 0;
@@ -1575,6 +1585,14 @@ static void ptt(bool down)
 			changed();
 			return;
 		}
+#if CONFIG_DSTAR
+		if (view.dstar.on && view.dstar.no_call) {
+			view.state = RS_TX_DENIED;
+			view.tx_deny = TXDENY_NO_CALL;
+			changed();
+			return;
+		}
+#endif
 		view.state = RS_TX;
 		view.tx_elapsed_ms = 0;
 		if (view.scan != 3)
@@ -1601,10 +1619,142 @@ static void ptt(bool down)
 		view.state = RS_IDLE;
 		view.dmr.state = RDMR_IDLE;
 		view.dtmf_digits[0] = 0;
+#if CONFIG_DSTAR
+		if (view.dstar.on && view.dstar.ur_mode >= RDSTAR_UR_LINK)
+			radio_req_dstar_ur(RDSTAR_UR_CHANNEL, NULL);	// a reflector command goes out once
+#endif
 	}
 	changed();
 }
 void radio_req_ptt(bool down) { ptt(down); }
+
+#if CONFIG_DSTAR
+// D-STAR (radio_dstar.h): a channel made D-STAR by the "dstar" token, the station typed on the radio, UR's choices as
+// the radio core keeps them (for now, one over), and an over heard ("dstarrx")
+static char dstar_station[3][24];
+
+static void dstar_routing(void)
+{
+	radio_dstar_view_t *d = &view.dstar;
+	const char *my = dstar_station[0][0] != '\0' ? dstar_station[0] : "Q1ABC";
+	snprintf(d->tx_my, sizeof d->tx_my, "%.8s", worst ? "Q1WWWW/P" : my);
+	snprintf(d->tx_suffix, sizeof d->tx_suffix, "%.4s", dstar_station[1][0] != '\0' ? dstar_station[1] : "");
+	d->no_call = d->tx_my[0] == '\0';
+}
+
+static void sim_dstar_on(const char *arg)
+{
+	radio_dstar_view_t *d = &view.dstar;
+	memset(d, 0, sizeof *d);
+	d->on = true;
+	view.ch.mode = RADIO_MODE_FM;	// as radio_sm.c's set_channel: FM to the rest of the core
+	view.ch.bw = RADIO_BW_12K5;
+	view.ch.rx_tone = view.ch.tx_tone = (subtone_t){ TONE_NONE, 0 };
+	view.ch.kind = CODEPLUG_KIND_DSTAR;
+	view.dmr.active = false;
+	strcpy(d->tx_ur, "CQCQCQ");
+	if (arg != NULL && strcmp(arg, "rpt") == 0) {
+		d->tx_repeater = true;
+		strcpy(d->tx_rpt1, "Q1RPT  B");
+		strcpy(d->tx_rpt2, "Q1RPT  G");
+	} else {
+		strcpy(d->tx_rpt1, "DIRECT");
+		strcpy(d->tx_rpt2, "DIRECT");
+	}
+	dstar_routing();
+	if (arg != NULL && strcmp(arg, "nocall") == 0) {
+		d->tx_my[0] = '\0';
+		d->no_call = true;
+	}
+	if (arg != NULL && strcmp(arg, "noram") == 0)
+		d->voice_off = RDSTAR_VOICE_NO_RAM;
+	changed();
+}
+
+void radio_req_dstar_ur(uint8_t mode, const char *ref)
+{
+	radio_dstar_view_t *d = &view.dstar;
+	if (!d->on)
+		return;
+	d->ur_mode = mode;
+	switch (mode) {
+	case RDSTAR_UR_REPLY: snprintf(d->tx_ur, sizeof d->tx_ur, "%s", d->my); break;
+	case RDSTAR_UR_LINK: {
+		char r[8] = "       ";
+		size_t n = strlen(ref != NULL ? ref : "");
+		if (n >= 2 && n <= 7) {
+			memcpy(r, ref, n - 1u);
+			r[6] = ref[n - 1u];
+		}
+		snprintf(d->tx_ur, sizeof d->tx_ur, "%.7sL", r);
+		break;
+	}
+	case RDSTAR_UR_UNLINK: strcpy(d->tx_ur, "       U"); break;
+	case RDSTAR_UR_ECHO: strcpy(d->tx_ur, "       E"); break;
+	case RDSTAR_UR_INFO: strcpy(d->tx_ur, "       I"); break;
+	default: strcpy(d->tx_ur, "CQCQCQ"); break;
+	}
+	changed();
+}
+
+void radio_req_dstar_reload(void)
+{
+	dstar_routing();
+	changed();
+}
+
+bool ui_svc_dstar_station(uint8_t field, char *out, uint8_t cap)
+{
+	if (field > 2)
+		return false;
+	snprintf(out, cap, "%s", dstar_station[field]);
+	return true;
+}
+
+bool ui_svc_dstar_station_set(uint8_t field, const char *text)
+{
+	if (field > 2)
+		return false;
+	snprintf(dstar_station[field], sizeof dstar_station[field], "%s", text);
+	radio_req_dstar_reload();
+	return true;
+}
+
+void ui_svc_dstar_ur(uint8_t mode, const char *ref) { radio_req_dstar_ur(mode, ref); }
+
+// "dstarrx:CALL,SUFFIX,UR,MESSAGE" (underscores are spaces): an over heard, playing until dstarend
+static void sim_dstar_rx(char *arg)
+{
+	radio_dstar_view_t *d = &view.dstar;
+	char *f[4] = { arg, NULL, NULL, NULL };
+	for (int i = 1; i < 4 && f[i - 1] != NULL; i++) {
+		char *c = strchr(f[i - 1], ',');
+		if (c != NULL) {
+			*c = 0;
+			f[i] = c + 1;
+		}
+	}
+	for (int i = 0; i < 4; i++) {
+		for (char *p = f[i]; p != NULL && *p != 0; p++) {
+			if (*p == '_')
+				*p = ' ';
+		}
+	}
+	snprintf(d->my, sizeof d->my, "%s", f[0] != NULL ? f[0] : "");
+	snprintf(d->suffix, sizeof d->suffix, "%s", f[1] != NULL ? f[1] : "");
+	snprintf(d->ur, sizeof d->ur, "%s", f[2] != NULL ? f[2] : "CQCQCQ");
+	snprintf(d->msg, sizeof d->msg, "%s", f[3] != NULL ? f[3] : "");
+	strcpy(d->rpt1, d->tx_repeater ? d->tx_rpt1 : "DIRECT");
+	strcpy(d->rpt2, d->tx_repeater ? d->tx_rpt2 : "DIRECT");
+	d->heard = true;
+	d->rx = RDSTAR_RX_HEADER;
+	d->playing = true;
+	d->heard_ms = now_ms != 0 ? now_ms : 1;
+	view.state = RS_RX;
+	view.rssi_dbm = -83;
+	changed();
+}
+#endif
 
 static void rx_start(uint32_t src, uint32_t dst, bool group, const char *alias)
 {
@@ -2809,6 +2959,27 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(1500);
 		return true;
 	}
+#if CONFIG_DSTAR
+	if (strcmp(t, "dstar") == 0) {
+		sim_dstar_on(arg);
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "dstarrx") == 0 && arg != NULL) {
+		sim_dstar_rx(arg);
+		advance(1500);
+		return true;
+	}
+	if (strcmp(t, "dstarend") == 0) {
+		view.dstar.rx = RDSTAR_RX_IDLE;
+		view.dstar.playing = false;
+		view.dstar.heard_ms = now_ms != 0 ? now_ms : 1;
+		view.state = RS_IDLE;
+		changed();
+		advance(200);
+		return true;
+	}
+#endif
 	if (strcmp(t, "aprstx") == 0 || strcmp(t, "aprsend") == 0) {
 		bool on = strcmp(t, "aprstx") == 0;
 		view.state = on ? RS_TX : RS_IDLE;

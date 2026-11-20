@@ -59,6 +59,9 @@ int ambeGolay23Decode(uint32_t cw, uint16_t *data);
 int ambeGolay24Decode(uint32_t cw, uint16_t *data);
 // The 23-bit whitening mask for C1 from C0's 12 data bits
 uint32_t ambeC1Mask(uint16_t c0_data);
+// The same sequence run n steps (1..32), first bit on bit n - 1: ambeC1Mask is n = 23. D-STAR's AMBE 3600x2400 frame
+// (core/dstar/dstar_ambe_frame.c) whitens its second Golay word with 24 steps, the 24th on the overall parity bit
+uint32_t ambeWhitening(uint16_t c0_data, unsigned n);
 
 // Voice burst <-> three frames
 void ambeBurstSplit(const uint8_t burst[AMBE_BURST_BYTES], uint8_t frames[3][AMBE_FRAME_BYTES]);

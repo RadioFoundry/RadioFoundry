@@ -72,7 +72,7 @@ msgctxt "TALK_TOAST_TALKING_TO"
 msgid "Talking to "
 msgstr "Parli con "
 
-#: core/ui/ui_app.c core/ui/ui_menus.c core/ui/ui_screens.c
+#: core/ui/ui_app.c core/ui/ui_dstar.c core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "EMPTY_NO_CALLS_HEARD"
 msgid "No calls heard yet"
 msgstr "Nessuna chiamata ancora"
@@ -137,7 +137,7 @@ msgctxt "HOTSPOT_BANNER_OK_STOPS"
 msgid "OK stops it"
 msgstr "OK lo ferma"
 
-#: core/ui/ui_app.c core/ui/ui_menus.c core/ui/ui_svc_zone.c
+#: core/ui/ui_app.c core/ui/ui_dstar.c core/ui/ui_menus.c core/ui/ui_svc_zone.c
 msgctxt "TOAST_SAVE_FAILED"
 msgid "Couldn't save: try again"
 msgstr "Salvataggio non riuscito: riprova"
@@ -371,6 +371,11 @@ msgstr " è vuota: impostala in qdmr"
 msgctxt "HOME_TOAST_REPLY_ENDED"
 msgid "Reply ended"
 msgstr "Risposta finita"
+
+#: core/ui/ui_app.c core/ui/ui_dstar.c
+msgctxt "DSTAR_TOAST_CHANNEL_UR"
+msgid "Back to the channel's UR"
+msgstr "Torna all'UR del canale"
 
 #: core/ui/ui_app.c
 msgctxt "HOME_TOAST_CHANGES_UNDONE"
@@ -702,7 +707,7 @@ msgctxt "VALUE_30_MIN"
 msgid "30 min"
 msgstr "30 min"
 
-#: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+#: core/ui/ui_aprs.c core/ui/ui_dstar.c core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "VALUE_NONE"
 msgid "None"
 msgstr "Nessuno"
@@ -912,7 +917,7 @@ msgctxt "APRS_WHY_CANT_RECEIVE"
 msgid "This radio can't receive APRS"
 msgstr "Questa radio non riceve APRS"
 
-#: core/ui/ui_aprs.c
+#: core/ui/ui_aprs.c core/ui/ui_dstar.c
 msgctxt "HINT_0_9_PICK_BACK"
 msgid "0-9 pick  Back"
 msgstr "0-9 scegli  Indietro"
@@ -986,6 +991,121 @@ msgstr "Pacchetti"
 msgctxt "HINT_OK_CHOOSE_BACK"
 msgid "OK choose  Back"
 msgstr "OK scegli  Indietro"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_ROW_SEND_TO"
+msgid "Send to"
+msgstr "Invia a"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_ROW_CALL_CQ"
+msgid "Call CQ"
+msgstr "Chiama CQ"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_ROW_CALL_CALLER"
+msgid "Call last caller"
+msgstr "Chiama l'ultimo"
+
+#: core/ui/ui_dstar.c core/ui/ui_screens.c
+msgctxt "DSTAR_ROW_ECHO"
+msgid "Echo test"
+msgstr "Test eco"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_ROW_LINK"
+msgid "Link reflector"
+msgstr "Collega reflector"
+
+#: core/ui/ui_dstar.c core/ui/ui_screens.c
+msgctxt "DSTAR_ROW_UNLINK"
+msgid "Unlink"
+msgstr "Scollega"
+
+#: core/ui/ui_dstar.c core/ui/ui_screens.c
+msgctxt "DSTAR_ROW_INFO"
+msgid "Gateway info"
+msgstr "Info gateway"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_ROW_MY_CALL"
+msgid "My call"
+msgstr "Mio nominativo"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_ROW_SUFFIX"
+msgid "Suffix"
+msgstr "Suffisso"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_ROW_MESSAGE"
+msgid "Message"
+msgstr "Messaggio"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_TOAST_LINK_FORMAT"
+msgid "Reflector and module: REF030C"
+msgstr "Reflector e modulo: REF030C"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_TOAST_LINK"
+msgid "Link: press PTT once"
+msgstr "Collega: premi PTT una volta"
+
+#: core/ui/ui_dstar.c core/ui/ui_menus.c
+msgctxt "TOAST_SAVED"
+msgid "Saved"
+msgstr "Salvato"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_WHY_CHANNELS_ONLY"
+msgid "D-STAR channels only"
+msgstr "Solo canali D-STAR"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_TOAST_CQ"
+msgid "Calling CQ"
+msgstr "Chiamata CQ"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_TOAST_NO_CALLER"
+msgid "No caller heard yet"
+msgstr "Nessuno sentito ancora"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_TOAST_CALLER"
+msgid "Calling the last caller"
+msgstr "Chiamata all'ultimo"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_TOAST_ECHO"
+msgid "Echo: talk, then listen"
+msgstr "Eco: parla, poi ascolta"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_TOAST_UNLINK"
+msgid "Unlink: press PTT once"
+msgstr "Scollega: premi PTT una volta"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_TOAST_INFO"
+msgid "Info: press PTT once"
+msgstr "Info: premi PTT una volta"
+
+#: core/ui/ui_dstar.c
+msgctxt "WHY_DSTAR_NOT_IN_BUILD"
+msgid "D-STAR: not in this build"
+msgstr "D-STAR: non incluso"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_BODY_NOT_HERE"
+msgid "Not a D-STAR channel"
+msgstr "Non è un canale D-STAR"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_BODY_HEARD"
+msgid "Heard "
+msgstr "Sentito "
 
 #: core/ui/ui_dual.c core/ui/ui_screens.c
 msgctxt "HOME_CHIP_AIR_BAND_AM"
@@ -2948,11 +3068,6 @@ msgid "Radio: "
 msgstr "Radio: "
 
 #: core/ui/ui_menus.c
-msgctxt "TOAST_SAVED"
-msgid "Saved"
-msgstr "Salvato"
-
-#: core/ui/ui_menus.c
 msgctxt "MYID_TOAST_IDS_START_AT_1"
 msgid "IDs start at 1"
 msgstr "Gli ID partono da 1"
@@ -4448,6 +4563,61 @@ msgid "ROAM"
 msgstr "ROAM"
 
 #: core/ui/ui_screens.c
+msgctxt "DSTAR_UR_LINK"
+msgid "Link "
+msgstr "Collega "
+
+#: core/ui/ui_screens.c
+msgctxt "DSTAR_UR_NEXT_OVER"
+msgid " next over"
+msgstr " prossimo passo"
+
+#: core/ui/ui_screens.c
+msgctxt "DSTAR_UR_FOR_NOW"
+msgid " for now"
+msgstr " per ora"
+
+#: core/ui/ui_screens.c
+msgctxt "DSTAR_WHY_NO_PATH"
+msgid "D-STAR: radio can't"
+msgstr "D-STAR: radio non può"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_NO_CALLSIGN"
+msgid "No callsign set"
+msgstr "Nessun nominativo"
+
+#: core/ui/ui_screens.c
+msgctxt "DSTAR_CHIP_VIA"
+msgid "via "
+msgstr "via "
+
+#: core/ui/ui_screens.c
+msgctxt "DSTAR_CHIP_DIRECT"
+msgid "Direct"
+msgstr "Diretto"
+
+#: core/ui/ui_screens.c
+msgctxt "DSTAR_WHY_NO_VOICE_RAM"
+msgid "No RAM for voice"
+msgstr "Niente RAM per voce"
+
+#: core/ui/ui_screens.c
+msgctxt "DSTAR_WHY_NO_AUDIO"
+msgid "No audio stream"
+msgstr "Nessun flusso audio"
+
+#: core/ui/ui_screens.c
+msgctxt "DSTAR_WHY_RX_REFUSED"
+msgid "Receiver refused"
+msgstr "Ricevitore rifiutato"
+
+#: core/ui/ui_screens.c
+msgctxt "DSTAR_WHY_NO_CAL"
+msgid "TX not calibrated"
+msgstr "TX non calibrato"
+
+#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_P25T_HUNT"
 msgid "Finding system"
 msgstr "Ricerca sistema"
@@ -4718,6 +4888,11 @@ msgid "Ask to add your ID"
 msgstr "Chiedi di aggiungere l'ID"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_FIX_SET_CALLSIGN"
+msgid "Set it: # then My call"
+msgstr "Imposta: # poi Mio nominativo"
+
+#: core/ui/ui_screens.c
 msgctxt "TRUNK_WORD_PHONE_LINE"
 msgid "Phone line"
 msgstr "Linea telefonica"
@@ -4943,14 +5118,19 @@ msgid "MON: digital monitor"
 msgstr "MON: monitor digitale"
 
 #: core/ui/ui_screens.c
-msgctxt "ACTIVITY_STATE_SQUELCH_OPEN"
-msgid "Squelch open"
-msgstr "Squelch aperto"
-
-#: core/ui/ui_screens.c
 msgctxt "STATE_RECEIVING"
 msgid "Receiving"
 msgstr "Ricezione"
+
+#: core/ui/ui_screens.c
+msgctxt "DSTAR_HINT_ACTIONS"
+msgid "# D-STAR  PTT replies"
+msgstr "# D-STAR  PTT risponde"
+
+#: core/ui/ui_screens.c
+msgctxt "ACTIVITY_STATE_SQUELCH_OPEN"
+msgid "Squelch open"
+msgstr "Squelch aperto"
 
 #: core/ui/ui_screens.c
 msgctxt "STATE_SENDING"

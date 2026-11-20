@@ -407,6 +407,23 @@ on a talkgroup: the name (`SELECT`, text entry, `SELECT`), `NAV_DOWN`, the ID (`
 | Last caller, saved | 3 (`CONTEXT`, `7`, long `SELECT`) | 3 | 3 | 3+n | 3 |
 | New contact in Contacts | 5+n (n: the name and the ID, each with its two `SELECT`s) | 5+n | 5+n | n/a (no keypad) | 5+n |
 
+## 28. D-STAR: an echo test, a reflector, CQ
+
+On a D-STAR channel ([ui.md](../spec/ui.md) 2.6). UR is the talk target; the gateway commands go out once.
+
+1. Echo test: `CONTEXT` (the D-STAR page), `4`. Home says "Echo test next over"; PTT, talk, release, listen.
+2. Link a reflector: `CONTEXT`, `5`, type the reflector and its module (`REF030C`), `SELECT`; PTT once. Unlink:
+   `CONTEXT`, `6`, PTT once.
+3. Call the last caller by callsign: `CONTEXT`, `3`; back to CQ: `BACK` on Home (or `CONTEXT`, `1`).
+
+| | K | M | V | F | Budget |
+|---|---|---|---|---|---|
+| Echo test armed | 2 | 2 | 2 | 2+ (Last caller row in the menu) | 2 |
+| Link REF030C armed | 3+n (n: the letters typed) | 3+n | 3+n | n/a (no keypad) | 3+n |
+| Unlink armed | 2 | 2 | 2 | 2+ | 2 |
+| Call the last caller | 2 | 2 | 2 | 2+ | 2 |
+| Back to the channel's UR | 1 (`BACK` on Home) | 1 | 1 | 1 | 1 |
+
 ---
 
 ## Summary
@@ -438,6 +455,7 @@ on a talkgroup: the name (`SELECT`, text entry, `SELECT`), `NAV_DOWN`, the ID (`
 | New channel from current | 5+n | yes |
 | Move a channel in a zone | 5 | yes |
 | Copy here, saved unchanged | 6 | yes |
+| D-STAR echo test / unlink armed | 2 | yes |
 | Add a channel to a zone (typed number) | 8 | yes |
 | Copy / delete a zone | 5+n / 7+n | yes |
 | TS / CC | 3 / 4 | yes |

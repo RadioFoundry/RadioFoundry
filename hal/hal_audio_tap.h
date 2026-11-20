@@ -6,6 +6,7 @@
  *
  *   - USB / network audio (docs/spec/usb-audio.md): a computer hears the receiver and talks through the transmitter
  *   - APRS / AFSK on FM (core/aprs): the 1200 baud demodulator samples receive audio, the modulator sends tones
+ *   - data modems with their own waveform (D-STAR's GMSK, core/dstar): the flat paths both ways, and their calibration
  *   - later: DTMF / 5-tone decoding in software, voice recording
  *
  * Receive audio rides on the board's one PCM stream (hal_audio_t: 8 kHz, 16-bit, 20 ms blocks): with AUDIO_TAP_FM_RX
@@ -41,6 +42,18 @@ typedef enum {
 // every few ms; must not block
 typedef void (*audio_tap_pull_t)(int16_t *pcm, uint16_t n);
 
+// The flat paths' calibration (AUDIO_TAP_FM_TX_FLAT / AUDIO_TAP_FM_RX_RAW): what a data modem with its own waveform
+// needs to know about them. The board's best values; the core's settings may override each (0 / false = keep)
+typedef struct {
+	int16_t tx_1khz;	// the sample value (flat TX) that deviates the carrier 1 kHz; 0 = unknown
+	bool tx_invert;		// a positive sample lowers the carrier frequency
+	bool rx_invert;		// a higher carrier frequency gives a negative sample
+	uint16_t tx_hpf_hz;	// a first-order high-pass the TX path keeps, 0 = flat to DC
+	uint16_t rx_hpf_hz;	// and the RX path
+	// From a sample pulled to it on air (buffers the board holds): the core keys this much longer after the last one
+	uint16_t tx_latency_ms;
+} audio_tap_flat_cal_t;
+
 typedef struct {
 	uint32_t caps;
 
@@ -55,6 +68,21 @@ typedef struct {
 	// Level of injected TX audio that gives the channel's nominal deviation (60 % of the peak, e.g. 1.5 kHz on a
 	// 12.5 kHz channel), as a 16-bit sample peak; lets the core scale host audio. 0 = unknown
 	int16_t fm_tx_nominal_peak;
+	// Flat receive off the stream (AUDIO_TAP_FM_RX_RAW with fm_rx_flat_rate_hz != 0): the discriminator's samples,
+	// squelch open, while the radio receives FM; the speaker then carries only the stream's PCM (the radio's own FM audio
+	// off it). start after hal_radio_t.rx() in the radio task, false when the board can't now; read: what came since the
+	// last call, at most max, never blocks (task level); stop: back to the radio's own FM audio. NULL without it
+	bool (*fm_rx_flat_start)(void);
+	uint16_t (*fm_rx_flat_read)(int16_t *buf, uint16_t max);
+	void (*fm_rx_flat_stop)(void);
+	// The flat paths' calibration (NULL: unknown). The board's own copy: set_flat_cal replaces it at run time (the
+	// bench's settings, from the board's bring-up records), NULL keeps the board's defaults
+	const audio_tap_flat_cal_t *(*flat_cal)(void);
+	void (*set_flat_cal)(const audio_tap_flat_cal_t *cal);
+	// A board's own bench knobs for the flat paths, as named integers the debug link lists and sets (e.g. "rf_tx_2b",
+	// "fm_play", "dev_coef"): count, then get/set by index (name out). NULL: none
+	uint8_t flat_knob_count;
+	bool (*flat_knob)(uint8_t i, const char **name, int32_t *value, const int32_t *set);
 
 	// --- probe (diagnostics, CONFIG_AUDIO_PROBE; NULL otherwise) ---
 

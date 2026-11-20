@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-# Test vectors of docs/spec/channel-modes.md, p25-codeplug.md and nxdn-codeplug.md, read by the host tests (C) and the Codeplug
-# Editor's tests (JS). One vector a line, fields split on spaces; "-" is no bytes; numbers are hex without 0x.
+# Test vectors of docs/spec/channel-modes.md, p25-codeplug.md, nxdn-codeplug.md and dstar-codeplug.md, read by the host
+# tests (C) and the Codeplug Editor's tests (JS). One vector a line, fields split on spaces; "-" is no bytes; numbers
+# are hex without 0x.
 #
 # check <name check> <name: the rest of the line>
 check 706C
@@ -96,3 +97,33 @@ nxdnunit 3930 3E8 3039
 nxdnunit EFFF 3E8 FFEF
 nxdnunit F0FF 3E8 3E8
 nxdnunit 30 3E8 3E8
+# dstarchan <block> <UR> <RPT1> <RPT2> <flags>: decoding a D-STAR channel's block. The text fields as read, at full
+# length, "_" for a space
+dstarchan - CQCQCQ__ ________ ________ 0
+dstarchan 00000000000000000000000000000000000000000000000000 CQCQCQ__ ________ ________ 0
+dstarchan FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF CQCQCQ__ ________ ________ 0
+dstarchan 43514351435120204E3043414C4C20424E3043414C4C204701 CQCQCQ__ N0CALL_B N0CALL_G 1
+dstarchan 6E3063616C6C20206162316364202062616231636420206700 N0CALL__ AB1CD__B AB1CD__G 0
+dstarchan 41422D432A442E450000000000000000FFFFFFFFFFFFFFFF03 AB_C_D_E ________ ________ 1
+dstarchan 4E30 N0______ ________ ________ 0
+dstarchan 524546303330434C20202020202020202020202020202020FE REF030CL ________ ________ 0
+dstarchan 202020202020205500000000000000000000000000000000 _______U ________ ________ 0
+dstarchan E92F507F41423132000000000000000000000000000000000001AABB _/P_AB12 ________ ________ 0
+#
+# dstarenc <UR> <RPT1> <RPT2> <flags> <block>: encoding fields given as typed ("-" empty, "_" a space; short, lower
+# case, foreign characters, too long)
+dstarenc CQCQCQ - - 0 43514351435120202020202020202020202020202020202000
+dstarenc n0call N0CALL_B N0CALL_G 1 4E3043414C4C20204E3043414C4C20424E3043414C4C204701
+dstarenc ab*c x.y / 3 414220432020202058205920202020202F2020202020202001
+dstarenc REF030CL - - 0 524546303330434C2020202020202020202020202020202000
+dstarenc _______U - - 0 20202020202020552020202020202020202020202020202000
+dstarenc TOOLONGCALL - - FE 544F4F4C4F4E47432020202020202020202020202020202000
+#
+# dstarstation <record> <MY> <suffix> <message>: decoding the radio-wide record, "_" for a space
+dstarstation - ________ ____ ____________________
+dstarstation 0000000000000000000000000000000000000000000000000000000000000000 ________ ____ ____________________
+dstarstation FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF ________ ____ ____________________
+dstarstation 4E3043414C4C20204D4F424C48656C6C6F2066726F6D207468652062656E6368 N0CALL__ MOBL Hello_from_the_bench
+dstarstation 6E3063616C6C2F7061622D314C696E650774776F0000FFFFFFFFFFFFFFFF N0CALL/P AB_1 Line_two____________
+dstarstation 4E30 N0______ ____ ____________________
+dstarstation 4E3043414C4C2020000000006D7367 N0CALL__ ____ msg_________________

@@ -52,6 +52,42 @@
     "DMR"
    ]
   },
+  "home_dstar": {
+   "group": "home",
+   "needs": [
+    "DSTAR"
+   ]
+  },
+  "home_dstar_repeater": {
+   "group": "home",
+   "needs": [
+    "DSTAR"
+   ]
+  },
+  "home_dstar_lastheard": {
+   "group": "home",
+   "needs": [
+    "DSTAR"
+   ]
+  },
+  "home_dstar_echo": {
+   "group": "home",
+   "needs": [
+    "DSTAR"
+   ]
+  },
+  "home_dstar_link": {
+   "group": "home",
+   "needs": [
+    "DSTAR"
+   ]
+  },
+  "home_dstar_noram": {
+   "group": "home",
+   "needs": [
+    "DSTAR"
+   ]
+  },
   "home_vfo": {
    "group": "home",
    "needs": [
@@ -202,6 +238,18 @@
     "DTMF"
    ]
   },
+  "tx_dstar": {
+   "group": "calls",
+   "needs": [
+    "DSTAR"
+   ]
+  },
+  "tx_dstar_nocall": {
+   "group": "calls",
+   "needs": [
+    "DSTAR"
+   ]
+  },
   "rx_group": {
    "group": "calls",
    "needs": [
@@ -212,6 +260,12 @@
    "group": "calls",
    "needs": [
     "DMR"
+   ]
+  },
+  "rx_dstar": {
+   "group": "calls",
+   "needs": [
+    "DSTAR"
    ]
   },
   "caller_actions": {
@@ -230,6 +284,18 @@
    "group": "calls",
    "needs": [
     "VFO_DMR"
+   ]
+  },
+  "dstar": {
+   "group": "calls",
+   "needs": [
+    "DSTAR"
+   ]
+  },
+  "dstar_link_entry": {
+   "group": "calls",
+   "needs": [
+    "DSTAR"
    ]
   },
   "recent": {

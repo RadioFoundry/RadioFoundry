@@ -543,6 +543,12 @@ static bool caller_target(ui_target_t *t)
 
 static void open_caller_actions(void)
 {
+#if CONFIG_DSTAR
+	if (view->dstar.on) {
+		ui_push(SCR_DSTAR, 0);	// a D-STAR caller has a callsign, no ID: their actions are UR's (ui_dstar.c)
+		return;
+	}
+#endif
 	ui_target_t t;
 	if (caller_target(&t))
 		ui_open_actions(&t);
@@ -1202,6 +1208,11 @@ bool ui_home_key(const input_event_t *ev)
 			ui_svc_hear_all(false);
 			ui_st.hear_all = false;
 			ui_toast(dmon_text(false));
+#endif
+#if CONFIG_DSTAR
+		} else if (view->dstar.on && view->dstar.ur_mode != RDSTAR_UR_CHANNEL) {
+			radio_req_dstar_ur(RDSTAR_UR_CHANNEL, NULL);	// UR chosen for now, or the next over's command
+			ui_toast(TR(DSTAR_TOAST_CHANNEL_UR, "Back to the channel's UR"));
 #endif
 		} else if (view->temporary || ui_st.privacy || (CONFIG_DMR && target_manual())) {
 			radio_req_clear_temporary();
@@ -2149,6 +2160,13 @@ void ui_app_key(const input_event_t *ev)
 		return;
 	}
 	if (ev->action == ACT_CONTEXT && ev->gesture == GESTURE_LONG) {
+#if CONFIG_DSTAR
+		if (view->dstar.on) {
+			if (stack[sp].scr != SCR_DSTAR)
+				ui_push(SCR_DSTAR, 0);	// D-STAR's talk target is UR
+			return;
+		}
+#endif
 		if (!CONFIG_DMR || view->ch.mode != RADIO_MODE_DMR)
 			ui_toast(TR(TALK_WHY_DMR_CHANNELS_ONLY, "Talk target: DMR channels only"));
 		else if (stack[sp].scr != SCR_PICKER)
@@ -2156,6 +2174,12 @@ void ui_app_key(const input_event_t *ev)
 		return;
 	}
 	if (ev->action == ACT_TALK_TARGET && (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG)) {
+#if CONFIG_DSTAR
+		if (view->dstar.on) {
+			ui_push(SCR_DSTAR, 0);
+			return;
+		}
+#endif
 		if (CONFIG_DMR && view->ch.mode == RADIO_MODE_DMR)
 			ui_push(SCR_PICKER, 0);
 		else

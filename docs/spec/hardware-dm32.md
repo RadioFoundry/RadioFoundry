@@ -1242,6 +1242,57 @@ For the USB audio design ([usb-audio.md](usb-audio.md) 2). Not measured.
   ([modem-hrc7000.md](modem-hrc7000.md) 8.5); APRS receive uses it. APRS transmit sends its tones as PCM through the
   prompt FIFO into the modulator ([modem-hrc7000.md](modem-hrc7000.md) 8.4).
 
+### 9.3 Flat paths for data modems
+
+For D-STAR ([dstar-modem.md](dstar-modem.md) 1.2): the board's
+`hal_audio_tap_t` with `AUDIO_TAP_FM_TX_FLAT` and `AUDIO_TAP_FM_RX_RAW`, built only with `CONFIG_FM_FLAT` (any mode
+that needs them; `boards/dm32/flat_dm32.c`; the route switches in
+`radio_dm32.c`; the HR_C7000's part in `platform/hrc7000/fm_flat_tx.c` and `fm_rx_audio.c`,
+[modem-hrc7000.md](modem-hrc7000.md) 8.5, 8.6). Written, **not checked on this radio**.
+
+| Path | What the board sets | Undone by |
+|---|---|---|
+| Transmit (`fm_tx_inject(pull, AUDIO_TAP_FLAT)`, between `tx()` and `tx_off()` in FM) | FD6818 0x2B = 0xC007 (FM's 0xC000 with the transmit audio filter bypasses, bits 2:0); HR_C7000 FM_BANDWIDTH b6 and b4 clear, AUDIO_CONTROL b0 = 1 (TX RAM source), b7 clear (FM transmit already holds it clear); FM_DEV_COEF left at FM transmit's unless the bench sets one; mic switch 0x2E = 0, the DMR route, so the microphone reaches the codec ADC's PCM for the voice codec. Both TX RAM halves are pulled at the start, then one per FM TX interrupt (32 ms) | `fm_tx_inject(NULL, ...)`, `tx_off()`, `rx()`, a mode change: 0x2B = 0xC000, b0 clear, the FM_BANDWIDTH bits set again, FM_DEV_COEF and 0x2E = 1 back while still transmitting. The next FM set-up writes FM_BANDWIDTH and FM_DEV_COEF whole |
+| Receive (`fm_rx_flat_start` after `rx()`, read by the radio task, `fm_rx_flat_stop`) | speaker switch 0x2F = 0 whatever the squelch does (the HR_C7000 hears the FD6818's AF output); FD6818 0x2B = 0x0700 (receive high-pass, low-pass and de-emphasis bypassed, bits 10:8; the stock firmware's DMR value); FM_BANDWIDTH b6 clear; AUDIO_CONTROL b6 (FM playback) off, so the speaker plays only the CPU's PCM (the decoded voice through the prompt FIFO); the RX RAM copy at 8 kHz into the APRS receiver's ring (one user at a time: start fails while APRS listens). Every FM receive tune applies it again while it is on, so it outlasts the core's transmissions and retunes; `tx()` puts 0x2B back to 0xC000 first | `fm_rx_flat_stop` (ring freed, 0x2B = 0xC000, a retune), a mode change or an AM tune |
+
+**Bench settings.** Each register choice is a run-time setting (`dm32_flat_bench`), listed and set over the debug link
+through `hal_audio_tap_t.flat_knob`, taken at the next `fm_tx_inject`, receive tune or speaker change:
+
+| Knob | Default | Meaning |
+|---|---|---|
+| `rf_tx_2b` | 0xC007 | FD6818 0x2B on flat transmit |
+| `rf_rx_2b` | 0x0700 | FD6818 0x2B on flat receive |
+| `tx_bw_clr` | 0x50 | FM_BANDWIDTH bits cleared on flat transmit (b6, b4, or a subset) |
+| `rx_bw_clr` | 0x40 | FM_BANDWIDTH bits cleared on flat receive (b6 or none) |
+| `dev_coef` | 0 | FM_DEV_COEF written on flat transmit, 0 = FM transmit's (limiter and TX coefficient) |
+| `fm_play` | 0 | AUDIO_CONTROL b6 on during flat receive (in case the RX RAM copy stops without it; the speaker then also plays FM) |
+| `tx_half` | 0 | 0 = fill the TX RAM half FM_ADDR_SW names, 1 = the other one |
+| `tx_halves`, `tx_misses` | read only | halves filled; FM TX interrupts that named neither half |
+| `rx_halves`, `rx_dropped` | read only | receive halves taken; halves lost to a full ring |
+
+**Calibration** (`flat_cal`, replaced at run time by `set_flat_cal`): `tx_1khz` 1250, a guess from the prompt FIFO route
+(PCM 2750 gave 2.2 kHz on the 1200 Hz tone at 25 kHz, 9.1, with pre-emphasis in that route); no inversion either way;
+no high-pass to compensate either way (the 290 Hz another project measured was the prompt FIFO's: changing 0x7E,
+0x302E to 0x3006, didn't remove it); `tx_latency_ms` 64 (the half playing and the half filled).
+
+**Unverified on the radio** (each needs the SDR bench, [dstar-modem.md](dstar-modem.md) 1.4, 7):
+
+| Item | Why it is open | Bench setting |
+|---|---|---|
+| The TX RAM route reaches the modulator | documented as an FM transmit source; another project's 4FSK went through it, on which radio not known | none: a tone through `pull` on the SDR |
+| Which half to fill | FM_ADDR_SW "names the half": in use, or wanted? | `tx_half`; `tx_misses` counts requests naming neither |
+| The order of the first two halves after b0 sets | unknown; both are primed, so at worst the first 64 ms swap halves (preamble only) | none |
+| The transmit frequency response with 0x2B = 0xC007 and b6, b4 clear | the prompt FIFO route kept a 290 Hz high-pass; this route is unmeasured | `rf_tx_2b`, `tx_bw_clr`, then `tx_hpf_hz` |
+| The deviation scale (`tx_1khz`) | a guess from another route | `set_flat_cal` |
+| FM_DEV_COEF's TX coefficient and limiter on the TX RAM route | the limiter doesn't cap ring play ([modem-hrc7000.md](modem-hrc7000.md) 8.4); for the TX RAM unknown | `dev_coef` |
+| The receive response with 0x2B = 0x0700 and b6 clear | bits 10:8 by the BK4819 layout; the FD6818 has no datasheet | `rf_rx_2b`, `rx_bw_clr`, then `rx_hpf_hz` |
+| The RX RAM copy with FM playback (b6) off | APRS has always run it with b6 following the squelch | `fm_play`; `rx_halves` stops counting if it stops |
+| The speaker with 0x2F = 0 and b6 off plays only the CPU's PCM | the codec line out carries the prompt FIFO; FM leaking through is not ruled out | `fm_play` |
+| Polarity each way, on each RF set-up | RF_MODE b15 (RX IQ invert) is set on set-up A and clear on B (8.10); whether the RX RAM copy and the modulator follow it is unknown | `set_flat_cal` (`rx_invert`, `tx_invert`); the D-STAR receiver finds the polarity from the sync either way |
+| The microphone in the mic PCM during an FM transmission with 0x2E = 0 | the PCM interrupt runs in FM (FM beeps are paced by it), but whether its samples carry the microphone in FM work mode is unchecked (VOX on this radio is not written for the same reason) | none |
+| Turnaround: key-up to the first sample on air, the last sample to the unkey | 64 ms of buffers plus the modulator's own delay, unmeasured | `set_flat_cal` (`tx_latency_ms`) |
+| Every row on set-up B | nothing has been tried there | |
+
 ---
 
 ## 10. Data flash (16 MB)

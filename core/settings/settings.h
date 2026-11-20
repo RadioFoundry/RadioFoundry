@@ -252,6 +252,19 @@ typedef struct {
 	uint8_t sig_dmr[3];
 	uint8_t sig_fm[3];
 	uint8_t reserved11[2];		// 0
+	// D-STAR (CONFIG_DSTAR; docs/spec/dstar-codeplug.md; appended, 40 bytes, so an older record reads none): the station set on the radio, over the codeplug's D-STAR record
+	// (all spaces or NULs = the codeplug's; an older record reads that way). The suffix and message go with MY: set on
+	// the radio, they replace the codeplug's too
+	char dstar_my[8];		// MY callsign as on air, space padded
+	char dstar_suffix[4];
+	char dstar_msg[20];		// the slow data message
+	// The flat FM paths' calibration (hal_audio_tap.h audio_tap_flat_cal_t) set by the bench over the board's own
+	// (docs/testing/dstar-bench.md; 0 = the board's, so an older record changes nothing)
+	uint16_t flat_tx_hpf;		// the transmit path's high-pass to restore, Hz + 1 (1 = flat)
+	uint16_t flat_rx_hpf;		// the receive path's
+	int16_t flat_tx_1khz;		// the sample value for 1 kHz deviation
+	uint8_t flat_flags;		// SETTINGS_FLAT_* bits
+	uint8_t reserved12[1];		// 0; keeps settings_t a multiple of 4 with no tail padding
 } settings_t;
 
 // Pages: settings_t is stored as records of SETTINGS_PAGE_BYTES each (settings-store.md 2.1). Only the pages its size
@@ -267,6 +280,12 @@ typedef struct {
 #define SETTINGS_CP_RX_EXT		0x02u	// receive past the band table is on (not about the codeplug: the free bit here)
 #define SETTINGS_T3_STUN		0x80u	// t3_stun: a stun is kept (bits 0-6 say on which system)
 #define SETTINGS_T3_KILLED		0x01u	// t3_kill: killed
+
+// flat_flags: each polarity is the board's unless its _SET bit is
+#define SETTINGS_FLAT_TX_INV_SET	0x01u
+#define SETTINGS_FLAT_TX_INV		0x02u
+#define SETTINGS_FLAT_RX_INV_SET	0x04u
+#define SETTINGS_FLAT_RX_INV		0x08u
 
 #define SETTINGS_ZONE_JRN_NONE		0u	// zone_jrn_kind
 #define SETTINGS_ZONE_JRN_ADD		1u

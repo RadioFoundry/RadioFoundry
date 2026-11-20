@@ -8,7 +8,9 @@ Privacy key table in core/dmr/dmrPrivacy.c.)
 Copyright (C) 2010 mbelib Author
 
 (mbelib 1.3.0: the source of the full-rate voice decoder's dequantizer and its tables, ported to integers in
-core/mbe/imbe_dec.c and core/mbe/imbe_tab.c.)
+core/mbe/imbe_dec.c and core/mbe/imbe_tab.c; and, from mbelib 9a04ed5, the decoder, tables and synthesizer that
+the D-STAR voice codec in core/dstar restates and ports: dstar_ambe_quant.c, dstar_ambe_tables.inc, the parameter bit
+map in dstar_ambe_frame.c, dstar_mbe_synth.c, dstar_mbe_tables.inc. docs/spec/dstar-codec.md, Provenance.)
 
 Permission to use, copy, modify, and/or distribute this software for any
 purpose with or without fee is hereby granted, provided that the above

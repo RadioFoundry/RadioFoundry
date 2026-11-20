@@ -4,9 +4,12 @@
 // two 256-sample halves of its RX RAM in turn and raises system interrupt bit 14 as each fills (every 32 ms). The DMR
 // glue owns that interrupt and calls half_ready for the bit; it copies the half into the ring. The radio task polls
 // every 25 ms, so the ring holds four halves (128 ms) for a late poll. The ring comes from the RTOS heap only while
-// APRS listens: static RAM is short on these radios.
+// a consumer listens: static RAM is short on these radios.
+//
+// Two consumers read it: the APRS demodulator and a data modem's flat receive (hal_audio_tap_t fm_rx_flat_*, D-STAR).
+// One at a time: start fails while the ring is taken, so the second to ask is refused rather than sharing samples.
 #include "config.h"
-#if CONFIG_APRS_RX
+#if CONFIG_APRS_RX || CONFIG_FM_FLAT
 #include "fm_rx_audio.h"
 #include "dmr_glue.h"
 #include "platform.h"
@@ -82,6 +85,13 @@ uint16_t hrc_fm_rx_read(int16_t *buf, uint16_t max)
 	hrc_barrier();
 	tail = (uint16_t)(t + n);
 	return n;
+}
+
+void hrc_fm_rx_flush(void)
+{
+	if (ring != NULL) {
+		tail = head;
+	}
 }
 
 void hrc_fm_rx_stats(uint32_t *h, uint32_t *d)

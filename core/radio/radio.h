@@ -11,6 +11,7 @@
 #include "config.h"
 #include "radio/radio_p25.h"
 #include "radio/radio_nxdn.h"
+#include "radio/radio_dstar.h"
 
 typedef enum {
 	RS_IDLE,	// receiving, squelch closed
@@ -35,6 +36,7 @@ typedef enum {
 	TXDENY_INHIBIT, TXDENY_BATTERY, TXDENY_AM, TXDENY_BCAST, TXDENY_SFR_RPT, TXDENY_HWOPT, TXDENY_REFUSED,
 	TXDENY_CEASED,	// the system stopped the over (DMR reverse channel)
 	TXDENY_BENCH, TXDENY_TRUNK, TXDENY_AIR_NO_TX,
+	TXDENY_NO_CALL,		// D-STAR: no MY callsign (Settings > My radio > D-STAR, the codeplug, the radio name)
 } tx_deny_t;
 
 // Busy channel lockout (FM): CARRIER refuses PTT while anything is heard on the channel; WRONG_TONE only while a
@@ -486,6 +488,9 @@ typedef struct {
 #if CONFIG_DMR_TRUNK
 	radio_t3_brief_t t3;
 #endif
+#if CONFIG_DSTAR
+	radio_dstar_view_t dstar;	// on a D-STAR channel (radio_dstar.h): what was heard, what PTT sends
+#endif
 } radio_view_t;
 
 // view.temp bits
@@ -646,6 +651,13 @@ void radio_req_t3_poll(uint32_t dst);
 // The digits ("0-9*#", up to 16; "" none) the next call through a dialing gateway sends (dmr-trunking.md 7.6;
 // CONFIG_DMR_TRUNK_GW, else ignored). The system in use only: a new start drops them
 void radio_req_t3_dial(const char *digits);
+#if CONFIG_DSTAR
+// D-STAR (radio_dstar.h): UR for the next over or for now, radio_dstar_ur_t; ref: the reflector and module for
+// RDSTAR_UR_LINK ("REF030C"), else NULL. Taken on a D-STAR channel only
+void radio_req_dstar_ur(uint8_t mode, const char *ref);
+// The station (MY, suffix, message) or the bench's calibration changed in the settings: load them again
+void radio_req_dstar_reload(void);
+#endif
 // A beep (radio/beep.h beep_t) at the settings' level: key beeps only when key_beep is set (CONFIG_BEEP)
 void radio_req_beep(uint8_t beep);
 // The same delay_ms later (0 = now): a speaker test can start on a radio whose cable mutes the speaker, after the

@@ -136,6 +136,14 @@
 #ifndef CONFIG_HOTSPOT_SPLIT
 #define CONFIG_HOTSPOT_SPLIT		0
 #endif
+// D-STAR DV (core/dstar, radio_dstar.c): on here like the rest; in firmware only where a board turns it on
+#ifndef CONFIG_DSTAR
+#define CONFIG_DSTAR			CONFIG_FM
+#endif
+// The flat FM paths' board glue (hal_audio_tap.h), shared by the data modems with a waveform of their own
+#ifndef CONFIG_FM_FLAT
+#define CONFIG_FM_FLAT			(CONFIG_DSTAR)
+#endif
 #ifndef CONFIG_DEBUGLINK
 #define CONFIG_DEBUGLINK		CONFIG_HOSTLINK
 #endif
@@ -448,6 +456,9 @@
 #endif
 #if (CONFIG_SFR_DUALPATH_RX || CONFIG_SFR_CWID) && !CONFIG_SFR
 #error "CONFIG_SFR_DUALPATH_RX and CONFIG_SFR_CWID need CONFIG_SFR"
+#endif
+#if CONFIG_DSTAR && !CONFIG_FM
+#error "CONFIG_DSTAR needs CONFIG_FM"
 #endif
 #if CONFIG_HOTSPOT_SPLIT && !CONFIG_HOTSPOT
 #error "CONFIG_HOTSPOT_SPLIT needs CONFIG_HOTSPOT"

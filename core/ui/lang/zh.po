@@ -74,7 +74,7 @@ msgctxt "TALK_TOAST_TALKING_TO"
 msgid "Talking to "
 msgstr "正在呼叫 "
 
-#: core/ui/ui_app.c core/ui/ui_menus.c core/ui/ui_screens.c
+#: core/ui/ui_app.c core/ui/ui_dstar.c core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "EMPTY_NO_CALLS_HEARD"
 msgid "No calls heard yet"
 msgstr "暂无通话记录"
@@ -139,7 +139,7 @@ msgctxt "HOTSPOT_BANNER_OK_STOPS"
 msgid "OK stops it"
 msgstr "OK 停止"
 
-#: core/ui/ui_app.c core/ui/ui_menus.c core/ui/ui_svc_zone.c
+#: core/ui/ui_app.c core/ui/ui_dstar.c core/ui/ui_menus.c core/ui/ui_svc_zone.c
 msgctxt "TOAST_SAVE_FAILED"
 msgid "Couldn't save: try again"
 msgstr "保存失败：请重试"
@@ -373,6 +373,11 @@ msgstr " 为空：请在 qdmr 设置"
 msgctxt "HOME_TOAST_REPLY_ENDED"
 msgid "Reply ended"
 msgstr "回复已结束"
+
+#: core/ui/ui_app.c core/ui/ui_dstar.c
+msgctxt "DSTAR_TOAST_CHANNEL_UR"
+msgid "Back to the channel's UR"
+msgstr "恢复信道的 UR"
 
 #: core/ui/ui_app.c
 msgctxt "HOME_TOAST_CHANGES_UNDONE"
@@ -704,7 +709,7 @@ msgctxt "VALUE_30_MIN"
 msgid "30 min"
 msgstr "30 分钟"
 
-#: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+#: core/ui/ui_aprs.c core/ui/ui_dstar.c core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "VALUE_NONE"
 msgid "None"
 msgstr "无"
@@ -914,7 +919,7 @@ msgctxt "APRS_WHY_CANT_RECEIVE"
 msgid "This radio can't receive APRS"
 msgstr "本机无法接收 APRS"
 
-#: core/ui/ui_aprs.c
+#: core/ui/ui_aprs.c core/ui/ui_dstar.c
 msgctxt "HINT_0_9_PICK_BACK"
 msgid "0-9 pick  Back"
 msgstr "0-9 选  返回"
@@ -988,6 +993,121 @@ msgstr "数据包"
 msgctxt "HINT_OK_CHOOSE_BACK"
 msgid "OK choose  Back"
 msgstr "OK 选  返回"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_ROW_SEND_TO"
+msgid "Send to"
+msgstr "发往"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_ROW_CALL_CQ"
+msgid "Call CQ"
+msgstr "呼叫 CQ"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_ROW_CALL_CALLER"
+msgid "Call last caller"
+msgstr "呼叫上一呼叫方"
+
+#: core/ui/ui_dstar.c core/ui/ui_screens.c
+msgctxt "DSTAR_ROW_ECHO"
+msgid "Echo test"
+msgstr "回声测试"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_ROW_LINK"
+msgid "Link reflector"
+msgstr "连接中继网"
+
+#: core/ui/ui_dstar.c core/ui/ui_screens.c
+msgctxt "DSTAR_ROW_UNLINK"
+msgid "Unlink"
+msgstr "断开"
+
+#: core/ui/ui_dstar.c core/ui/ui_screens.c
+msgctxt "DSTAR_ROW_INFO"
+msgid "Gateway info"
+msgstr "网关信息"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_ROW_MY_CALL"
+msgid "My call"
+msgstr "我的呼号"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_ROW_SUFFIX"
+msgid "Suffix"
+msgstr "呼号后码"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_ROW_MESSAGE"
+msgid "Message"
+msgstr "消息"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_TOAST_LINK_FORMAT"
+msgid "Reflector and module: REF030C"
+msgstr "格式: REF030C"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_TOAST_LINK"
+msgid "Link: press PTT once"
+msgstr "连接: 按一次 PTT"
+
+#: core/ui/ui_dstar.c core/ui/ui_menus.c
+msgctxt "TOAST_SAVED"
+msgid "Saved"
+msgstr "已保存"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_WHY_CHANNELS_ONLY"
+msgid "D-STAR channels only"
+msgstr "仅限 D-STAR 信道"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_TOAST_CQ"
+msgid "Calling CQ"
+msgstr "正在呼叫 CQ"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_TOAST_NO_CALLER"
+msgid "No caller heard yet"
+msgstr "尚未收到呼叫方"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_TOAST_CALLER"
+msgid "Calling the last caller"
+msgstr "正在呼叫上一呼叫方"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_TOAST_ECHO"
+msgid "Echo: talk, then listen"
+msgstr "回声: 先说后听"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_TOAST_UNLINK"
+msgid "Unlink: press PTT once"
+msgstr "断开: 按一次 PTT"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_TOAST_INFO"
+msgid "Info: press PTT once"
+msgstr "信息: 按一次 PTT"
+
+#: core/ui/ui_dstar.c
+msgctxt "WHY_DSTAR_NOT_IN_BUILD"
+msgid "D-STAR: not in this build"
+msgstr "D-STAR: 未编入"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_BODY_NOT_HERE"
+msgid "Not a D-STAR channel"
+msgstr "不是 D-STAR 信道"
+
+#: core/ui/ui_dstar.c
+msgctxt "DSTAR_BODY_HEARD"
+msgid "Heard "
+msgstr "收到 "
 
 #: core/ui/ui_dual.c core/ui/ui_screens.c
 msgctxt "HOME_CHIP_AIR_BAND_AM"
@@ -2950,11 +3070,6 @@ msgid "Radio: "
 msgstr "电台： "
 
 #: core/ui/ui_menus.c
-msgctxt "TOAST_SAVED"
-msgid "Saved"
-msgstr "已保存"
-
-#: core/ui/ui_menus.c
 msgctxt "MYID_TOAST_IDS_START_AT_1"
 msgid "IDs start at 1"
 msgstr "ID 从 1 开始"
@@ -4450,6 +4565,61 @@ msgid "ROAM"
 msgstr "漫游"
 
 #: core/ui/ui_screens.c
+msgctxt "DSTAR_UR_LINK"
+msgid "Link "
+msgstr "连接 "
+
+#: core/ui/ui_screens.c
+msgctxt "DSTAR_UR_NEXT_OVER"
+msgid " next over"
+msgstr " 下次发射"
+
+#: core/ui/ui_screens.c
+msgctxt "DSTAR_UR_FOR_NOW"
+msgid " for now"
+msgstr " 暂时"
+
+#: core/ui/ui_screens.c
+msgctxt "DSTAR_WHY_NO_PATH"
+msgid "D-STAR: radio can't"
+msgstr "D-STAR: 本机不支持"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_NO_CALLSIGN"
+msgid "No callsign set"
+msgstr "未设置呼号"
+
+#: core/ui/ui_screens.c
+msgctxt "DSTAR_CHIP_VIA"
+msgid "via "
+msgstr "经 "
+
+#: core/ui/ui_screens.c
+msgctxt "DSTAR_CHIP_DIRECT"
+msgid "Direct"
+msgstr "直通"
+
+#: core/ui/ui_screens.c
+msgctxt "DSTAR_WHY_NO_VOICE_RAM"
+msgid "No RAM for voice"
+msgstr "无语音内存"
+
+#: core/ui/ui_screens.c
+msgctxt "DSTAR_WHY_NO_AUDIO"
+msgid "No audio stream"
+msgstr "无音频"
+
+#: core/ui/ui_screens.c
+msgctxt "DSTAR_WHY_RX_REFUSED"
+msgid "Receiver refused"
+msgstr "接收机拒绝"
+
+#: core/ui/ui_screens.c
+msgctxt "DSTAR_WHY_NO_CAL"
+msgid "TX not calibrated"
+msgstr "发射未标定"
+
+#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_P25T_HUNT"
 msgid "Finding system"
 msgstr "搜索中"
@@ -4720,6 +4890,11 @@ msgid "Ask to add your ID"
 msgstr "请添加你的 ID"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_FIX_SET_CALLSIGN"
+msgid "Set it: # then My call"
+msgstr "设置: # 然后我的呼号"
+
+#: core/ui/ui_screens.c
 msgctxt "TRUNK_WORD_PHONE_LINE"
 msgid "Phone line"
 msgstr "电话"
@@ -4945,14 +5120,19 @@ msgid "MON: digital monitor"
 msgstr "MON：数字监听"
 
 #: core/ui/ui_screens.c
-msgctxt "ACTIVITY_STATE_SQUELCH_OPEN"
-msgid "Squelch open"
-msgstr "静噪打开"
-
-#: core/ui/ui_screens.c
 msgctxt "STATE_RECEIVING"
 msgid "Receiving"
 msgstr "接收中"
+
+#: core/ui/ui_screens.c
+msgctxt "DSTAR_HINT_ACTIONS"
+msgid "# D-STAR  PTT replies"
+msgstr "# D-STAR  PTT 回复"
+
+#: core/ui/ui_screens.c
+msgctxt "ACTIVITY_STATE_SQUELCH_OPEN"
+msgid "Squelch open"
+msgstr "静噪打开"
 
 #: core/ui/ui_screens.c
 msgctxt "STATE_SENDING"

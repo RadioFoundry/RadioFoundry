@@ -994,7 +994,7 @@ generator (8.3) needs no PCM, but its deviation field tops out near 1.5 kHz, sho
 The datasheet doesn't document this route. It names two FM transmit audio sources, selected by AUDIO_CONTROL b0 (datasheet 7.2.2.1):
 the codec ADC (0) or the TX RAM (1). As a source, the TX RAM is 0x16000030-0x1600042F, two 512-byte halves of 256
 samples (32 ms at 8 kHz), and FM_ADDR_SW (0x56C) names the half in use (1 low, 2 high); SYS_INTERP b15 is the FM TX
-interrupt. The prompt FIFO is documented only as playback to the codec DAC (datasheet 7.3). LINEOUT_CTRL (0x088) b1 is line
+interrupt. RadioFoundry's driver for it is 8.6. The prompt FIFO is documented only as playback to the codec DAC (datasheet 7.3). LINEOUT_CTRL (0x088) b1 is line
 out 1 and b0 line out 2, the same PWM waveform on both (RadioFoundry sets 0x01). Two-point modulation: SIG_CENTER b31:24
 biases MOD1 (the VC-TCXO) and b23:16 MOD2 (the VCO), 3.3 mV a step; RF_MOD_BIAS b7:0 and b15:8 are the MOD1 and MOD2
 amplitudes; RF_MODE b10 sends a 40 Hz test square. The prompt FIFO path decodes on some boards but not on others,
@@ -1041,7 +1041,44 @@ The audio is not squelched: it carries noise while no signal is present, so a de
 Receiver noise reaches full scale (peak 32767) with the reset AF gain (measured).
 
 RadioFoundry reads it in the system interrupt (`platform/hrc7000/fm_rx_audio.c`): the DMR glue owns that interrupt and calls
-an FM hook for bit 14, in FM too, and the hook copies each half into a 128 ms ring for the APRS demodulator.
+an FM hook for bit 14, in FM too, and the hook copies each half into a 128 ms ring for the APRS demodulator or a data
+modem's flat receive (`hal_audio_tap_t.fm_rx_flat_*`, D-STAR), one at a time: the ring's start fails while the other
+has it. A flat receive also wants the band-pass off (FM_BANDWIDTH b6, `hrc7000_fm_flat_rx`); the RF chip's de-emphasis
+and filters are the board's.
+
+### 8.6 FM transmit audio from the CPU (TX RAM)
+
+The other FM transmit source of AUDIO_CONTROL b0 (datasheet 7.2.2.1): with b0 = 1 the modulator takes its audio from
+the TX RAM instead of the codec ADC. RadioFoundry uses it for a data modem's flat transmit
+(`hal_audio_tap_t.fm_tx_inject` with `AUDIO_TAP_FLAT`, D-STAR); no board has it checked on air yet.
+
+| Item | Value |
+|---|---|
+| Buffer | TX RAM 0x16000030..0x1600042F: two halves of 512 bytes (256 samples, 32 ms at 8 kHz), played in turn |
+| Sample format | 16-bit, high byte at the lower address (as the RX RAM copy, 8.5; datasheet). Not checked on air |
+| Interrupt | SYS_INTERP bit 15 (FM TX) for the next half; its mask bit is off in the power-on mask |
+| Half | FM_ADDR_SW b1:0, 1 the first, 2 the second. Whether it names the half to fill or the one now playing is not settled: the driver fills the half it names, or the other (`hrc7000_fm_tx_audio_due`), a board's choice |
+| Route | in FM transmit: FM_BANDWIDTH b6 (band-pass) and b4 (pre-emphasis) clear, AUDIO_CONTROL b0 set, b7 clear (prompt audio would ride on it, 8.4) |
+| Limiter | whether FM_DEV_COEF's TX coefficient and limiter act on this source is unknown (they don't cap ring play, 8.4) |
+
+Driver (`drivers/modem/hrc7000/hrc7000.h`, `platform/hrc7000/fm_flat_tx.c`):
+
+- `hrc7000_fm_tx_audio_fill` writes a half from the data modem's pull callback in 32-sample chunks through a stack
+  buffer: no half-sized buffer in the CPU's RAM. It runs in the system interrupt, from RAM like the rest of it (9
+  #15); the pull itself is the data modem's code.
+- The DMR glue calls an FM TX hook for bit 15 as it calls the FM receive hook for bit 14 (8.5), in FM too, and
+  keeps the system interrupt enabled outside DMR while either hook is set. The hook and the dispatch exist only in
+  builds with `CONFIG_DSTAR`.
+- Start (task level, in FM transmit): both halves are pulled at once, because which half plays first once b0 sets is
+  unknown, then the route goes on and the mask bit is set. Stop: the codec ADC as the source first, then the mask bit
+  and the hook.
+- The FM_BANDWIDTH bits are cleared and set again rather than saved (`hrc7000_fm_flat_tx`): the next FM set-up writes
+  the register whole.
+- Latency from a pull to the modulator: the half playing (up to 32 ms) and the half just filled (32 ms), 64 ms, before
+  the modulator's own.
+
+Cost per half (estimated from the code, csky-elf-gcc 14 `-Os`, not measured): the write is about 10 instructions per
+sample, some 3-5 k cycles a half with the modem bus's byte writes, every 32 ms; the pull is the data modem's.
 
 ---
 
@@ -1083,7 +1120,7 @@ air (10.4; [feature-matrix.md](../feature-matrix.md) has which radios).
 
 | Item | How |
 |---|---|
-| Ownership | A tap or a session opens only in DMR with no DMR transmission and no FM receive hook (APRS) running. The glue halts the slot engine, and the session lives in the engine's event and TX queues (`_Static_assert`): no RAM of its own. The interrupts go to the session; the modem task polls it instead of the engine. At close the queues are emptied and the engine runs again |
+| Ownership | A tap or a session opens only in DMR with no DMR transmission, no FM receive hook (APRS, a flat receive) and no flat transmit hook (8.6) running, and the flat transmit hook refuses while one is open. The glue halts the slot engine, and the session lives in the engine's event and TX queues (`_Static_assert`): no RAM of its own. The interrupts go to the session; the modem task polls it instead of the engine. At close the queues are emptied and the engine runs again |
 | Interrupts | System (bit 14 copy half, bit 12 PHY_RDY), both timeslot vectors, RF TX. Their handlers run from RAM (9 #15) |
 | Mode changes | Leaving DMR under a session ends any transmission (PA off, `AIR_EV_TX_DONE`) and stops receive; the next DMR entry sets the copy up again |
 | Events | From the interrupts through an 8-entry queue to the modem task, which calls the session's callback. TX_SPACE events in a row merge into one; the last entry is kept for TX_DONE |
