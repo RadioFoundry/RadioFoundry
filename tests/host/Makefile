@@ -1152,6 +1152,12 @@ hrc7000BsTest: hrc7000BsTest.c $(HRC7BS) $(wildcard $(HRC7)/*.h) $(ROOT)/hal/hal
 hrc7000DmrTestSplit: hrc7000DmrTest.c $(HRC7BS) $(wildcard $(HRC7)/*.h) $(ROOT)/hal/hal_dmr_modem.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_HOTSPOT_SPLIT=1 -o $@ hrc7000DmrTest.c $(HRC7BS)
 
+# The HR_C7000 flat FM paths: the TX RAM half writer, the FM TX interrupt's dispatch (built with its hook) and the
+# flat route's bits (modem-hrc7000.md 8.6)
+TESTS   += hrc7000FmTxTest
+hrc7000FmTxTest: hrc7000FmTxTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000_cach.c $(HRC7)/hrc7000.c $(HRC7)/hrc7000_dmr.h $(HRC7)/hrc7000.h $(ROOT)/hal/hal_dmr_modem.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_DSTAR=1 -DCONFIG_FM_FLAT=1 -o $@ hrc7000FmTxTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000_cach.c $(HRC7)/hrc7000.c $(CORE)/dmr/fec/dmrFec.c
+
 # The RDA5807M broadcast receiver driver and the bit-banged I2C master, on a simulated chip (airband-and-broadcast.md 4)
 TESTS   += rda5807mTest
 RDA     := $(ROOT)/drivers/bcast/rda5807m
@@ -1171,9 +1177,10 @@ baofengCalTest: baofengCalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c $(ROO
 
 run: run-drivers
 run-drivers: fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest chswitchTest plugPttTest hrc7000DmrTest hrc7000AirTest baofengCalTest rda5807mTest \
-             lis3dhTest hrc7000BsTest hrc7000DmrTestSplit
+             lis3dhTest hrc7000BsTest hrc7000DmrTestSplit hrc7000FmTxTest
 	./hrc7000BsTest
 	./hrc7000DmrTestSplit
+	./hrc7000FmTxTest
 	./lis3dhTest
 	./rda5807mTest
 	./fd6818Test

@@ -133,6 +133,11 @@
 #define C7_AUDIO_SIDETONE	(1u << 3)	// the modem's tone generator to the codec: the transmitted tone on the speaker
 #define C7_AUDIO_PCM_MIC	(1u << 4)	// mic PCM to the CPU
 #define C7_AUDIO_I2S_SLAVE	(1u << 1)
+#define C7_AUDIO_TX_RAM		(1u << 0)	// the FM (and voice) transmit source: the TX RAM instead of the codec ADC
+
+// FM_BANDWIDTH bits the flat paths clear (8.1)
+#define C7_FM_BW_BANDPASS	(1u << 6)	// the voice band-pass, transmit and receive
+#define C7_FM_BW_PREEMPH	(1u << 4)	// transmit pre-emphasis
 
 // INTERP_CLEAR bits (2.4)
 #define C7_INT_TS_TX		(1u << 0)
@@ -333,6 +338,57 @@ static inline uint16_t hrc7000_fm_rx_audio(hrc7000_t *d, int16_t *out)
 		out[i] = (int16_t)(uint16_t)((uint16_t)p[2u * i] << 8 | p[2u * i + 1u]);
 	}
 	return HRC7000_FM_RX_SAMPLES;
+}
+
+// --- FM transmit audio from the CPU (8.6) ---
+
+// With AUDIO_CONTROL b0 set, the FM modulator takes its audio from two 256-sample halves of the TX RAM (8 kHz, high
+// byte first) instead of the codec ADC, and raises SYS_INTERP bit 15 for the next half; FM_ADDR_SW names one. Whether
+// that is the half to fill or the half now playing is not settled on a radio: the caller picks (other)
+#define C7_SYS_FM_TX		(1u << 15)
+#define C7_FM_TX_AUDIO		(C7_TX_RAM + 0x30u)	// two 512-byte halves, 0x16000030..0x1600042F
+#define HRC7000_FM_TX_SAMPLES	256u
+// Samples per pull while a half is filled: a stack buffer in the interrupt, not a half-sized one in RAM
+#define HRC7000_FM_TX_CHUNK	32u
+// The FM_BANDWIDTH bits each flat path clears by default: no band-pass and no pre-emphasis on transmit, no band-pass on
+// receive (the de-emphasis has no bit here; the board's RF chip bypasses its own)
+#define HRC7000_FM_FLAT_TX_CLR	(C7_FM_BW_BANDPASS | C7_FM_BW_PREEMPH)
+#define HRC7000_FM_FLAT_RX_CLR	C7_FM_BW_BANDPASS
+
+// The SYS_INTERP_MASK bit for it (the power-on mask leaves it off)
+void hrc7000_fm_tx_audio_irq(hrc7000_t *d, bool on);
+// The flat transmit route, in FM transmit: on clears the FM_BANDWIDTH bits in clr (HRC7000_FM_FLAT_TX_CLR or a subset)
+// and makes the TX RAM the source; off sets the same bits again and gives the source back to the codec ADC. clr must be
+// bits the FM set-up sets (hrc7000_fm_tx sets both defaults), or off adds one it never had
+void hrc7000_fm_flat_tx(hrc7000_t *d, uint32_t clr, bool on);
+// The same for FM receive (HRC7000_FM_FLAT_RX_CLR or a subset): only FM_BANDWIDTH
+void hrc7000_fm_flat_rx(hrc7000_t *d, uint32_t clr, bool on);
+
+// The half to fill now (0 the first, 1 the second): the one FM_ADDR_SW names, or the other with other. -1 when it
+// names neither
+static inline int hrc7000_fm_tx_audio_due(hrc7000_t *d, bool other)
+{
+	uint32_t sw = hrc7000_rd(d, C7_FM_ADDR_SW) & 3u;
+	if (sw != 1u && sw != 2u) {
+		return -1;
+	}
+	return (int)((sw - 1u) ^ (other ? 1u : 0u));
+}
+
+// Fill one half (0 or 1) from pull, HRC7000_FM_TX_CHUNK samples a call, high byte first. Inline: it runs in the modem's
+// system interrupt, which runs from RAM. pull has audio_tap_pull_t's shape (hal_audio_tap.h)
+static inline void hrc7000_fm_tx_audio_fill(hrc7000_t *d, uint32_t half, void (*pull)(int16_t *pcm, uint16_t n))
+{
+	int16_t chunk[HRC7000_FM_TX_CHUNK];
+	volatile uint8_t *p = &d->buf[C7_FM_TX_AUDIO + (half & 1u) * HRC7000_FM_TX_SAMPLES * 2u];
+	for (uint32_t i = 0; i < HRC7000_FM_TX_SAMPLES; i += HRC7000_FM_TX_CHUNK) {
+		pull(chunk, HRC7000_FM_TX_CHUNK);
+		for (uint32_t j = 0; j < HRC7000_FM_TX_CHUNK; j++) {
+			uint16_t v = (uint16_t)chunk[j];
+			p[2u * (i + j)] = (uint8_t)(v >> 8);
+			p[2u * (i + j) + 1u] = (uint8_t)v;
+		}
+	}
 }
 
 // FM noise measure (FM_SQL bits 15:0, higher = less signal)
