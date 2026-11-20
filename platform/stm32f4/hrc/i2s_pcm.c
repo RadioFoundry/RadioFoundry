@@ -12,6 +12,13 @@
 //
 // Channels: the microphone is taken from the left channel (unverified which one the chip fills); speaker samples are
 // written to both.
+//
+// The prompt FIFO (cfg->prompt_fifo, CONFIG_AIR): while the FM copy holds the chip (a profile the correlator can't
+// take, such as NXDN), I2S PCM doesn't reach its line out (modem-hrc6000.md 8), so every speaker block also goes into a
+// ring that a feeder task keeps the chip's 64-sample (8 ms) prompt FIFO topped up from. The I2S stream and the FIFO run
+// on the chip's clock, so they never drift. The feeder runs at the top priority (with the RTOS timer task): the DMR
+// glue's copy interrupt reads 512 bytes with interrupts masked every 32 ms, and a feeder below the audio task missed
+// its turn there (8 ms gaps).
 #include "hrc/i2s_pcm.h"
 
 #if CONFIG_DMR	// the whole file: DMR only
@@ -21,6 +28,8 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "debuglink/dlog.h"
+#include "hrc/dmr_glue.h"
+#include "hrc/pcm_ring.h"
 
 // The two-argument pin form the boards' pins.h use
 #define PIN_PORT(...)		PIN_PORT2_(__VA_ARGS__)
@@ -58,6 +67,23 @@ static volatile uint32_t overruns;	// blocks the task did not get to in time
 static volatile uint32_t blocks;	// blocks processed (one per 20 ms while streaming)
 static volatile uint32_t dropped;	// blocks skipped: both halves pending, the older one overwritten
 static const stm32_i2s_pcm_cfg_t *cfg;
+
+#if CONFIG_AIR
+#define FIFO_TASK_PRIORITY	(configMAX_PRIORITIES - 1)
+#define FIFO_TASK_STACK		176	// words: 704 B, the stack check's 336 deepest + 208 port + 128 margin, and a few
+_Static_assert(AUDIO_BLOCK_SAMPLES % PCM_RING_CHUNK == 0, "a block is whole chunks");
+_Static_assert(PCM_RING_CHUNK == HRC_PROMPT_CHUNK, "a ring chunk is one FIFO write");
+static pcm_ring_t *ring;		// from the heap with the feeder, on the first FIFO use
+static TaskHandle_t feeder;
+static hrc_t *volatile fifo_chip;	// the chip whose FIFO the speaker blocks go to, NULL: none
+static volatile bool fifo_spk;		// the speaker's PCM route is on (stm32_i2s_pcm_speaker)
+#define FIFO_PRIME	(2u * AUDIO_BLOCK_SAMPLES)	// in the ring before the first write: 40 ms in hand
+_Static_assert(FIFO_PRIME + AUDIO_BLOCK_SAMPLES <= PCM_RING_SAMPLES, "a block fits on top of the priming");
+static volatile uint32_t fifo_chunks, fifo_gaps, fifo_full;
+// Writes a poll may make: the FIFO's depth in chunks, plus one for what drains meanwhile. A bound, so a chip that never
+// reports full (reset, or the bit read wrong) can't keep the top-priority feeder in a loop that starves every task
+#define FIFO_POLL_CHUNKS	((uint32_t)(HRC_PROMPT_DEPTH / HRC_PROMPT_CHUNK) + 1u)
+#endif
 
 // --- I2S and DMA ---
 
@@ -246,12 +272,116 @@ static void process(uint8_t half)
 	} else {
 		memset(spk, 0, sizeof spk);
 	}
+#if CONFIG_AIR
+	// Silence while the PCM route is off: the FIFO goes past the switch that keeps the stream off the amplifier, which
+	// stays on for the hang after a call, so what the stream holds then (not a call) would play
+	if (fifo_chip != NULL && !pcm_ring_push(ring, fifo_spk ? spk : NULL, AUDIO_BLOCK_SAMPLES)) {
+		fifo_full++;
+	}
+#endif
 	// This half has just gone out (TX runs in step with RX), so it is free until the DMA comes back in 20 ms
 	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
 		out[2 * i] = spk[i];
 		out[2 * i + 1] = spk[i];
 	}
 }
+
+#if CONFIG_AIR
+// Waits for FIFO_PRIME in the ring before the first write, so the FIFO starts with 40 ms in hand (20 ms left a few gaps a
+// call); after that a chunk the ring hasn't got is a gap (silence written)
+static void feeder_task(void *arg)
+{
+	(void)arg;
+	int16_t buf[PCM_RING_CHUNK];
+	bool primed = false;
+	for (;;) {
+		hrc_t *chip = fifo_chip;
+		if (chip == NULL) {
+			primed = false;
+			ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+			continue;
+		}
+		if (!primed) {
+			primed = pcm_ring_level(ring) >= FIFO_PRIME;
+		}
+		// Stops as soon as the copy ends too: the prompt bit stays on until the audio task's next block
+		for (uint32_t n = 0; n < FIFO_POLL_CHUNKS && primed && fifo_chip == chip && stm32_hrc_copy_chip() == chip
+				     && hrc_prompt_room(chip); n++) {
+			if (!pcm_ring_pop(ring, buf)) {
+				fifo_gaps++;
+			}
+			(void)hrc_prompt_write(chip, buf);
+			fifo_chunks++;
+		}
+		vTaskDelay(1);	// the FIFO holds 8 ms: polled every 1 ms, as the chip's manual does
+	}
+}
+
+// The FIFO off. fifo_chip first: the feeder runs above any caller, and one let in between would write page 3 with the
+// prompt bit already clear
+static void fifo_release(void)
+{
+	hrc_t *chip = fifo_chip;
+	fifo_chip = NULL;
+	(void)hrc_prompt_on(chip, false);
+}
+
+// Per block: the speaker to the prompt FIFO too while the FM copy holds the chip
+static void fifo_follow(void)
+{
+	hrc_t *chip = cfg->prompt_fifo ? stm32_hrc_copy_chip() : NULL;
+	if (chip == fifo_chip) {
+		return;
+	}
+	if (chip != NULL && feeder == NULL) {
+		ring = pvPortMalloc(sizeof *ring);
+		if (ring == NULL || xTaskCreate(feeder_task, "fifo", FIFO_TASK_STACK, NULL, FIFO_TASK_PRIORITY,
+						&feeder) != pdPASS) {
+			vPortFree(ring);
+			ring = NULL;
+			feeder = NULL;
+			static bool told;	// tried again each block; said once
+			if (!told) {
+				told = true;
+				dlog("i2s: prompt FIFO: no memory, speaker silent in the FM copy");
+			}
+			return;
+		}
+	}
+	if (fifo_chip != NULL) {
+		fifo_release();
+		vTaskDelay(2);	// the feeder sees it stopped before the ring is reset below
+	}
+	if (chip != NULL) {
+		pcm_ring_reset(ring);
+		(void)hrc_prompt_on(chip, true);
+		fifo_chip = chip;
+		xTaskNotifyGive(feeder);
+	}
+	dlog("i2s: prompt FIFO %s", chip != NULL ? "on" : "off");
+}
+
+void stm32_i2s_pcm_speaker(bool on)
+{
+	fifo_spk = on;
+}
+
+static void fifo_off(void)
+{
+	if (fifo_chip != NULL) {
+		fifo_release();
+		dlog("i2s: prompt FIFO off");
+	}
+}
+#else
+void stm32_i2s_pcm_speaker(bool on)
+{
+	(void)on;
+}
+
+static void fifo_follow(void) {}
+static void fifo_off(void) {}
+#endif
 
 static void audio_task(void *arg)
 {
@@ -276,6 +406,7 @@ static void audio_task(void *arg)
 			if (p == 0 || !running) {
 				break;
 			}
+			fifo_follow();
 			process(half);
 			blocks++;
 		}
@@ -326,6 +457,7 @@ void stm32_i2s_pcm_stop(void)
 	if (task == NULL) {
 		return;		// never started: nothing set up
 	}
+	fifo_off();
 	hw_stop();
 	pending = 0;
 	block_cb = NULL;
@@ -349,6 +481,13 @@ void stm32_i2s_pcm_stream_stats(audio_stream_stats_t *out)
 	out->blocks = blocks;
 	out->late = overruns;
 	out->dropped = dropped;
+#if CONFIG_AIR
+	out->fifo_chunks = fifo_chunks;
+	out->fifo_gaps = fifo_gaps;
+	out->fifo_full = fifo_full;
+#else
+	out->fifo_chunks = out->fifo_gaps = out->fifo_full = 0;
+#endif
 }
 
 void stm32_i2s_pcm_reset_stats(void)
@@ -357,6 +496,11 @@ void stm32_i2s_pcm_reset_stats(void)
 	blocks = 0;
 	overruns = 0;
 	dropped = 0;
+#if CONFIG_AIR
+	fifo_chunks = 0;
+	fifo_gaps = 0;
+	fifo_full = 0;
+#endif
 	taskEXIT_CRITICAL();
 }
 
