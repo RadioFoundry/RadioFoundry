@@ -114,6 +114,13 @@ to 8 characters; lower case is stored as upper case. The radio-wide fields are o
 callsign** (blank uses the radio's DMR callsign), a **suffix** of up to 4 characters and a **message** of up to 20,
 sent with every over. A new D-STAR channel may transmit; tick **RX Only** to stop it.
 
+A **Fusion** channel (short name `YSF`, Yaesu System Fusion, C4FM) has a **Destination** (blank calls `ALL`, a group
+call), the **DG-ID sent** and the **DG-ID heard** (0-99; 0 heard means every DG-ID) and, under the advanced fields,
+**Narrow deviation**. Callsign fields take `A`-`Z`, `0`-`9`, spaces, `/` and `-`, up to 10 characters. The radio-wide
+fields are on the **Radio** tab: your **Fusion callsign** (blank uses the radio name) and a **radio ID** of up to 5
+characters. The radio sends DN (V/D mode 2) voice; it shows VW and data transmissions as heard but doesn't play them.
+A new Fusion channel may transmit; tick **RX Only** to stop it.
+
 The **Systems** tab adds a system of a type. One form holds all of it, in sections: the system's identity, its
 control channels (a row per frequency, **+** to add one, **−** to remove it, tried top to bottom), this radio
 (**Transmit**, **Radio ID on this system**), calls, fallback, the key and wireless sharing. Sections few systems need (sites and

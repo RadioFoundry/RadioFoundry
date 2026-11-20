@@ -151,6 +151,7 @@ Ids are only appended and never reused. A kind and a system type that belong tog
 | 3 | P25 trunked | P25T | `CONFIG_P25_TRUNK` and a board whose air interface receives P25; receive, and transmit where the system allows it ([p25-trunking.md](p25-trunking.md) 5, 7) | [p25-codeplug.md](p25-codeplug.md) |
 | 4 | NXDN conventional | NXDN | `CONFIG_NXDN` and a board whose air interface carries NXDN (`radio_nxdn_fits`) | [nxdn-codeplug.md](nxdn-codeplug.md) |
 | 5 | D-STAR DV | DV | `CONFIG_DSTAR` | [dstar-codeplug.md](dstar-codeplug.md) |
+| 6 | Yaesu System Fusion | YSF | `CONFIG_YSF` | [ysf-codeplug.md](ysf-codeplug.md) |
 
 | System type | Name | Short | Built when | Spec |
 |---|---|---|---|---|

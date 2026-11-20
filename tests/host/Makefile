@@ -1493,6 +1493,23 @@ run-dstarcp: dstarCodeplugTest dstarCodeplugOffTest
 .PHONY: run-dstarcp
 
 # Zone editing (core/codeplug/zone_edit.c) on the real codeplug over a simulated flash: add, move, remove, copy,
+# Yaesu System Fusion in the codeplug (core/ysf/ysf_codeplug.c, docs/spec/ysf-codeplug.md): the shared vectors, the
+# filter, a channel's fields from its tag, the radio-wide record, the writer; with the switch off, the kind parked
+TESTS   += ysfCodeplugTest ysfCodeplugOffTest
+YSFCP   := $(CPTAG) $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug_records.c $(CORE)/ysf/ysf_codeplug.c
+
+ysfCodeplugTest: ysfCodeplugTest.c $(YSFCP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/ysf/*.h) ../vectors/channel-modes.txt
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_YSF=1 -o $@ ysfCodeplugTest.c $(YSFCP)
+
+ysfCodeplugOffTest: ysfCodeplugTest.c $(YSFCP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/ysf/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_YSF=0 -o $@ ysfCodeplugTest.c $(YSFCP)
+
+run: run-ysfcp
+run-ysfcp: ysfCodeplugTest ysfCodeplugOffTest
+	./ysfCodeplugTest
+	./ysfCodeplugOffTest
+.PHONY: run-ysfcp
+
 # rename, delete, a new channel added in one step, the limits
 ZEDIT   := $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c $(CORE)/codeplug/zone_settle.c $(CPEDIT) \
            $(CORE)/settings/settings.c

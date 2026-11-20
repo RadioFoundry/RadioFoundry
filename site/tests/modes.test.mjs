@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The channel-mode layer of the Codeplug Editor (docs/spec/channel-modes.md): static/js/codeplug/channelmodes.js, the
-// registry (modes.js) and the DMR Tier III, P25 and D-STAR modules, against the shared vectors (tests/vectors/channel-modes.txt)
+// registry (modes.js) and the DMR Tier III, P25, D-STAR and Fusion modules, against the shared vectors (tests/vectors/channel-modes.txt)
 // the C host tests read too. Run with node --test site/tests/ (site/tests/run.sh).
 
 import { test } from "node:test";
@@ -17,6 +17,7 @@ import { nameCheck } from "../static/js/codeplug/modebytes.js";
 import { decodeConv, encodeConv, decodeUnit, decodeTsys, p25System, NAC_ANY } from "../static/js/codeplug/mode_p25.js";
 import { t3System, OPTS as T3_OPTS } from "../static/js/codeplug/mode_t3.js";
 import { decodeChan, encodeChan, decodeStation, encodeStation, dstarKind } from "../static/js/codeplug/mode_dstar.js";
+import * as ysf from "../static/js/codeplug/mode_ysf.js";
 
 const VECTORS = new URL("../../tests/vectors/channel-modes.txt", import.meta.url);
 const bytes = (s) => (s === "-" ? null : Uint8Array.from(s.match(/../g) ?? [], (x) => parseInt(x, 16)));
@@ -168,6 +169,64 @@ test("D-STAR validation: callsign length and characters, message, via a repeater
 	assert.ok(validate(m).some((x) => x.code === "dstar_call_chars" && x.item === c));
 	assert.ok(validate(m, { features: "FM,DMR" }).some((x) => x.code === "mode_not_in_radio" && x.item === c));
 	assert.ok(!validate(m, { features: "FM,DMR,DSTAR" }).some((x) => x.code === "mode_not_in_radio"));
+});
+
+test("vectors: Fusion channel block and radio-wide record", () => {
+	const chan = vectors("ysfchan"), enc = vectors("ysfenc"), st = vectors("ysfstation");
+	assert.ok(chan.length >= 8 && enc.length >= 5 && st.length >= 5);
+	for (const l of chan) {
+		const [b, dest, txd, rxd, f] = l.split(" ");
+		assert.deepEqual(ysf.decodeChan(bytes(b)), { dest: text(dest).trimEnd(), txDgid: +txd, rxDgid: +rxd,
+			narrow: (parseInt(f, 16) & 1) === 1, voice: (parseInt(f, 16) & 2) >> 1 }, l);
+	}
+	for (const l of enc) {
+		const [dest, txd, rxd, f, b] = l.split(" ");
+		assert.equal(hexOf(ysf.encodeChan({ dest: text(dest), txDgid: +txd, rxDgid: +rxd, narrow: (parseInt(f, 16) & 1) === 1,
+			voice: (parseInt(f, 16) & 2) >> 1 })), b, l);
+	}
+	for (const l of st) {
+		const [b, call, id] = l.split(" ");
+		assert.deepEqual(ysf.decodeStation(bytes(b)), { call: text(call).trimEnd(), radioId: text(id).trimEnd() }, l);
+	}
+	for (const l of chan) {
+		const p = ysf.decodeChan(bytes(l.split(" ")[0]));
+		assert.deepEqual(ysf.decodeChan(ysf.encodeChan(p)), p, l);
+	}
+	assert.equal(ysf.encodeStation({ call: "", radioId: "" }), null);
+});
+
+test("Fusion: a channel and the radio-wide record round-trip; validation; offered where the radio has it", () => {
+	const m = empty();
+	const c = newChannel({ name: "C4FM Rpt", rxHz: 439412500, txHz: 431812500, rxOnly: false });
+	m.channels.push(c);
+	numberAll(m);
+	setKind(m, c, 6);
+	assert.equal(c.tagTx, true, "Fusion: transmit allowed on a new channel");
+	assert.deepEqual(c.params, { dest: "ALL", txDgid: 0, rxDgid: 0, narrow: false, voice: 0 }, "DN by default");
+	c.params = { dest: "g4xyz", txDgid: 20, rxDgid: 20, narrow: false, voice: 1 };
+	m.modeSettings[6] = { call: "G4XYZ", radioId: "E0123" };
+	const img = encode(m);
+	const d = decode(img);
+	const back = d.channels.find((x) => x.name === "C4FM Rpt");
+	assert.equal(back.kind, 6);
+	assert.equal(back.rxOnly, true, "the record is the stand-in");
+	assert.deepEqual(back.params, { dest: "G4XYZ", txDgid: 20, rxDgid: 20, narrow: false, voice: 1 });
+	assert.deepEqual(d.modeSettings[6], { call: "G4XYZ", radioId: "E0123" });
+	assert.deepEqual(encode(d).bytes, img.bytes);
+	const tag = decodeTag(getValue(area(img), MODE_KEY.tag + back.number - 1));
+	assert.equal(hexOf(tag.params), "473458595A2020202020" + "141402", "VW: flag bit 1");
+	const problems = (fn) => {
+		const out = [];
+		fn({ err: (f, code, p) => out.push(["err", f, code, p?.max]), warn: (f, code) => out.push(["warn", f, code]) });
+		return out;
+	};
+	assert.deepEqual(problems((pr) => ysf.ysfKind.validate({}, { dest: "all", txDgid: 0, rxDgid: 99 }, pr)), []);
+	assert.deepEqual(problems((pr) => ysf.ysfKind.validate({}, { dest: "TOOLONGCALLSIGN", txDgid: 100, rxDgid: 0 }, pr)),
+		[["err", "dest", "ysf_call_long", 10], ["err", "txDgid", "ysf_dgid_range", 99]]);
+	assert.deepEqual(problems((pr) => ysf.ysfKind.settings.validate({ call: "G4*XYZ", radioId: "TOOLONG" }, pr)),
+		[["err", "call", "ysf_call_chars", undefined], ["err", "radioId", "ysf_call_long", 5]]);
+	assert.deepEqual(offeredKinds(empty(), "FM,DMR,YSF").map((k) => k.id), [6]);
+	assert.ok(validate(m, { features: "FM,DMR" }).some((x) => x.code === "mode_not_in_radio" && x.item.name === "C4FM Rpt"));
 });
 
 test("registry: unique ids, names, a module each", () => {
