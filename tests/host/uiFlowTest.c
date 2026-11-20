@@ -208,6 +208,8 @@ static const flow_t flows[] = {
 #if CONFIG_LANG_ES
 	{ "6 preset sends in selected language", "ok 7 2 up ok down ok long:back", "5 6 3 ctx 3 down ok",
 	  "sent=1 text=En_camino", 7, false },
+	{ "21 text entry in the selected language", "ok 7 2 up ok down ok long:back", "ok 5 ok ok",
+	  "screen=text shows=Nombre", 4, false },
 #endif
 	{ "7 read message, banner up", "msg:9991234,Meet_at_the_north_lot", "ctx", "screen=message", 1, false },
 	{ "7 read message later", "msg:9991234,Meet_at_the_north_lot wait:9000", "ok 2 ok", "screen=message", 3, false },
@@ -493,19 +495,23 @@ static const flow_t flows[] = {
 	{ "21 keep editing", "ok 5 ok down down down down down down down down ok back", "ok", "screen=channel", 1, false },
 	{ "21 discard goes back to Channels", "ok 5 ok down down down down down down down down ok back", "down ok", "screen=channels", 2, false },
 	{ "21 the name opens text entry", "ok 5 ok", "ok", "screen=text", 1, false },
+	{ "21 text entry counts the characters", "ok 5 ok", "ok", "screen=text shows=10/16 hides=010", 1, false },
+	{ "21 a long message wraps", "5 6 3 ctx 3 down down down down ok ctx",
+	  "1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1",
+	  "screen=message-text shows=31/143 hides=1234567890123456789012345678901", 31, false },
 	// Back deletes in text entry, and leaves once the field is empty (principles 4's one exception)
-	{ "21 Back deletes in text entry", "ok 5 ok ok 4 6", "back", "screen=text focus=COUNTY_DMRG", 1, false },
+	{ "21 Back deletes in text entry", "ok 5 ok ok 4 6", "back", "screen=text shows=COUNTY_DMRG", 1, false },
 	{ "21 Back on an empty name leaves", "ok 5 ok ok", "back back back back back back back back back back back",
 	  "screen=channel", 11, false },
 	// Text entry (ui.md 2.1): * deletes, multi-tap letters move on with another key, # cycles ABC -> 123 -> abc
-	{ "21 * deletes the name", "ok 5 ok ok", "quick quick quick quick quick quick quick quick quick quick long:7", "focus=7 screen=text", 11, false },
-	{ "21 a name by multi-tap", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "9 2 2 2 7 7 7 2", "focus=WCRA", 8, false },
-	{ "21 # to digits", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "ctx 3 1 3", "focus=313", 4, false },
-	{ "21 # twice to lower case", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "ctx ctx 4 4 4", "focus=i", 5, false },
-	{ "21 more presses: digit, then lower case", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "2 2 2 2 2", "focus=a", 5, false },
-	{ "21 1 cycles punctuation", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "1 1 1 1", "focus=,", 4, false },
-	{ "21 a slow * deletes, no key lock", "ok 5 ok ok 4 6", "long:quick", "focus=COUNTY_DMRG locked=0", 1, false },
-	{ "21 a held digit types itself", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "long:7", "focus=7", 1, false },
+	{ "21 * deletes the name", "ok 5 ok ok", "quick quick quick quick quick quick quick quick quick quick long:7", "showsraw=7_ screen=text", 11, false },
+	{ "21 a name by multi-tap", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "9 2 2 2 7 7 7 2", "showsraw=WCRA_", 8, false },
+	{ "21 # to digits", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "ctx 3 1 3", "showsraw=313_", 4, false },
+	{ "21 # twice to lower case", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "ctx ctx 4 4 4", "showsraw=i_", 5, false },
+	{ "21 more presses: digit, then lower case", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "2 2 2 2 2", "showsraw=a_", 5, false },
+	{ "21 1 cycles punctuation", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "1 1 1 1", "showsraw=,_", 4, false },
+	{ "21 a slow * deletes, no key lock", "ok 5 ok ok 4 6", "long:quick", "shows=COUNTY_DMRG locked=0", 1, false },
+	{ "21 a held digit types itself", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "long:7", "showsraw=7_", 1, false },
 	{ "22 new from current settings, saved", "", "ok 5 up up up ok long:ok",
 	  "writes=1 toast=Saved_as_channel_41", 7, true },
 	// The channel editor's rules (ui.md 2.1). Channel 1 is an FM repeater (146.940, TX 600 kHz below), channel 3 DMR
@@ -848,6 +854,16 @@ static const flow_t flows[] = {
 	{ "T Home on a trunked channel: the system and Ready", "t3 dlpos:3", "", "screen=home shows=County shows=Ready hides=CC",
 	  0, false },
 	{ "T Home while hunting", "t3 dlpos:3 t3state:hunt", "", "screen=home shows=Searching", 0, false },
+	{ "T Home hearing another system says so", "t3 dlpos:3 t3state:other", "",
+	  "screen=home shows=Other_system hides=Searching", 0, false },
+	{ "T PTT refused for another system says so", "t3 dlpos:3 t3state:denyother", "",
+	  "shows=Another_system_heard shows=Check_system_settings", 0, false },
+	{ "T Home after a refused registration says so", "t3 dlpos:3 t3state:regrefused", "",
+	  "screen=home shows=Reg._refused hides=Searching", 0, false },
+	{ "T PTT refused for a refused registration says so", "t3 dlpos:3 t3state:denyreg", "",
+	  "shows=Registration_refused shows=Ask_to_add_your_ID", 0, false },
+	{ "T PTT refused for a grant on an unlisted channel names it", "t3 dlpos:3 t3state:denyunmapped", "",
+	  "shows=Unknown_channel_311 shows=Check_system_settings", 0, false },
 	{ "T Home on the fallback channel", "t3 dlpos:3 t3state:fallback", "", "screen=home shows=Fallback", 0, false },
 	{ "T back on the system", "t3 dlpos:3 t3state:fallback", "t3state:back", "screen=home toast=Back_on_County", 0, false },
 	{ "T Home on a channel without its system", "t3 dlpos:5", "", "screen=home shows=System_not_set_up", 0, false },
@@ -1651,6 +1667,31 @@ static void call_screen_checks(void)
 	}
 }
 
+#if CONFIG_DMR_TRUNK
+// Searching a trunked system and hearing only another one, at every display class: the chips say Other system, and
+// a Home with an activity area names what was heard (dmr-trunking.md 12.4)
+static void t3_other_checks(void)
+{
+	char err[300], buf[200];
+	for (int g = 0; g < sim_geom_count; g++) {
+		sim_reset(&sim_geoms[g], SIM_MAP_K);
+		snprintf(buf, sizeof buf, "t3 dlpos:3 t3state:other");
+		bool ok = sim_run(buf, err, sizeof err);
+		if (ok) {
+			bool two = ui_layout.activity_h >= 2 * ui_layout.small->h;
+			snprintf(buf, sizeof buf, ui_layout.activity_h < ui_layout.small->h ? "expect:shows=Other_system" : two ?
+				 "expect:shows=Other_system expect:shows=Heard:_Huge,_net_0 expect:shows=site_83" :
+				 "expect:shows=Other_system expect:shows=Heard:_Huge,_net_0");
+			ok = sim_run(buf, err, sizeof err);
+		}
+		if (!ok) {
+			printf("FAIL another system heard [%s]: %s\n", sim_geoms[g].name, err);
+			fails++;
+		}
+	}
+}
+#endif
+
 // Tools > APRS > Stations heard, at every display class: a station with a position shows how far and which way it is
 // from ours, beside the longest call there is, kept whole. No position of ours, or none of the station's: the row is
 // the call and its age, as before.
@@ -1968,6 +2009,9 @@ int main(void)
 	printf("# %d flows run\n", flows_run);
 	about_checks();
 	call_screen_checks();
+#if CONFIG_DMR_TRUNK
+	t3_other_checks();
+#endif
 	heard_checks();
 	station_checks();
 	vfo_split_dmr_checks();
