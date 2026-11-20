@@ -216,7 +216,7 @@ The radio core stops the path itself when it tunes away from the APRS frequency 
 the path holds the modem's FM receive copy interrupt, and a P25, NXDN or YSF engine refuses to start while it does
 (`dmr_glue.c` `air_take`); nothing retried the start before the next tune, so a step from the APRS frequency to such a
 channel, or dual watch hopping there, left it with no engine and PTT refused ("NO TX", `TXDENY_REFUSED`) until a
-retune or a power cycle. On a DM-32UV it showed with dual watch between 144.390 and a P25 channel.
+retune or a power cycle.
 
 The receive setting and messaging default to on when the radio can receive (`aprs_can_receive()`: the build has
 `CONFIG_APRS_RX` and one of the two paths exists).
