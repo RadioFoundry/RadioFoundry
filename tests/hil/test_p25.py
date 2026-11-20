@@ -300,6 +300,7 @@ def p25_decode(job, *extra):
 
 
 @pytest.mark.feature("p25")
+@pytest.mark.feature("p25_talk_permit")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.sdr_rx
@@ -324,7 +325,12 @@ def test_p25_tx_off_air(radio, sdr_bench, pytestconfig):
         if src == 0:        # no P25 unit ID set: the radio's DMR ID
             src = as_int(radio.view(["dmr"]).get("dmr.own_id")) or 0
         group = v.get("p25.unit_call") != "1"
+        tones = radio.view(["features"])
+        permit_on = radio.view(["audio"]).get("beep.talk_permit") == "1"
         job, grew = key_over(radio, sdr_bench, mhz, v)
+        if permit_on and tones.get("beep.built") == "1" and int(tones["set.beep_level"]):
+            after = radio.view(["features"])
+            assert int(after["beep.played"]) == int(tones["beep.played"]) + 1, "expected one talk permit tone"
     check_over(p25_decode(job), nac, tg, src, group, grew)
 
 

@@ -63,7 +63,7 @@ typedef struct {
 	// Beeps (CONFIG_BEEP)
 	uint8_t beep_level;	// 0 = silent .. 100: the loudest a beep gets (it follows the volume up to this)
 	bool key_beep;		// radio_req_beep(BEEP_KEY) sounds
-	bool talk_permit;	// DMR: the talk permit tone when the voice goes on air (channels without no_beep)
+	bool talk_permit;	// DMR and P25: the talk permit tone for voice TX (channels without no_beep)
 	uint8_t tones_off;	// Settings > Sound tones off, bit n for radio_tone_rows[n] (radio_keys.h); a key of the
 				// codeplug's settings area holds over it (docs/spec/codeplug-settings.md 5.2)
 	// Signaling tones (sigtone.h), by sig_event_t: where each sounds in DMR and FM (sig_out_t), 0 = the radio's own

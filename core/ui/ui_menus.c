@@ -7318,7 +7318,7 @@ static const char *set_why_not(const set_item_t *s)
 	case UI_SET_VOICE_PROMPTS:
 		return TR(WHY_VOICE_PROMPTS_NOT_IN_BUILD, "Voice prompts: not in this build");
 	case UI_SET_TALK_PERMIT:
-		return CONFIG_DMR && CONFIG_BEEP ? NULL :
+		return (CONFIG_DMR || CONFIG_P25) && CONFIG_BEEP ? NULL :
 			TR(WHY_PERMIT_TONE_NOT_IN_BUILD, "Talk permit tone: not in this build");
 	case UI_SET_CALL_END_TONE:
 		return CONFIG_DMR && CONFIG_BEEP ? NULL : CONFIG_BEEP ?

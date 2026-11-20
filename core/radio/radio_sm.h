@@ -319,6 +319,10 @@ typedef struct {
 	bool air_keyed;			// board.radio->tx() keyed for it (until tx_off)
 #endif
 #if CONFIG_P25
+#if CONFIG_BEEP
+	uint32_t p25_permit_hz;		// voice transmit frequency waiting for the permit tone, or 0
+	uint32_t p25_permit_ms;		// when the tone started
+#endif
 #if CONFIG_P25_TRUNK
 	bool p25_req;			// PTT on a trunked channel: a voice request waits for its grant
 	bool p25_talk;			// the transmission runs on the voice channel granted to us

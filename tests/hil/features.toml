@@ -82,6 +82,11 @@ spec = "docs/spec/p25.md"
 source = ["core/p25", "core/radio/radio_p25.c", "core/radio/radio_p25.h", "core/air", "core/fec", "core/mbe",
           "hal/hal_air.h", "hal/hal_baseband.h"]
 
+[feature.p25_talk_permit]
+switch = "P25"
+spec = "docs/spec/p25.md"
+source = ["core/radio/radio_sm.c", "core/radio/beep.c"]
+
 [feature.p25_trunk]
 switch = "P25_TRUNK"
 spec = "docs/spec/p25-trunking.md"

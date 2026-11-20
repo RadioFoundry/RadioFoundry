@@ -6485,6 +6485,43 @@ static void test_p25_rx(void)
 	aud.feed = false;
 }
 
+#if CONFIG_BEEP
+static void test_p25_permit(void)
+{
+	beep_stats_t before, after;
+
+	setup_codeplug_p25();
+	start();
+	p25_defaults();
+	req(RREQ_ZONE_POS, 2);
+	aud.feed = true;
+	beep_get_stats(&before);
+	req(RREQ_PTT, 1);
+	beep_get_stats(&after);
+	CHECK(after.played == before.played + 1 && hw.tx_calls == 0);
+	req(RREQ_PTT, 0);
+	run(500);
+	CHECK(hw.tx_calls == 0);
+
+	req(RREQ_PTT, 1);
+	CHECK(hw.tx_calls == 0);
+	run(250);
+	CHECK(hw.tx_calls == 1 && hw.keyed && !beep_busy());
+	req(RREQ_PTT, 0);
+	run(500);
+
+	radio_settings_t set = sm.set;
+	set.talk_permit = false;
+	radio_sm_set_settings(&sm, &set, now);
+	beep_get_stats(&before);
+	req(RREQ_PTT, 1);
+	beep_get_stats(&after);
+	CHECK(hw.tx_calls == 2 && hw.keyed && after.played == before.played);
+	req(RREQ_PTT, 0);
+	run(500);
+}
+#endif
+
 static void test_p25_tx(void)
 {
 	radio_p25_stats_t st;
@@ -6496,6 +6533,9 @@ static void test_p25_tx(void)
 	req(RREQ_ZONE_POS, 2);
 	far_begin(P25_NAC_DEFAULT, 1001, false, 1);
 	run(100);
+	radio_settings_t set = sm.set;
+	set.talk_permit = false;	// this test checks the immediate key-up path
+	radio_sm_set_settings(&sm, &set, now);
 
 	// PTT: keyed on the channel's TX frequency at 12.5 kHz, its power, no tone; the provider starts inside the key
 	req(RREQ_PTT, 1);
@@ -6585,6 +6625,7 @@ static void test_p25_denied(void)
 	p25_defaults();
 	req(RREQ_ZONE_POS, 2);
 	tx_fail = true;
+	sm.set.talk_permit = false;
 	req(RREQ_PTT, 1);
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_REFUSED && !hw.keyed && !fair[0].on);
 	run(100);
@@ -6682,6 +6723,7 @@ static void test_p25_leave(void)
 	req(RREQ_MODE, RADIO_MODE_P25);
 	CHECK(radio_p25_running() && fair[0].open && !sm.dmr_running);
 	// A transmission running when the mode changes is refused (no retune while transmitting)
+	sm.set.talk_permit = false;
 	req(RREQ_PTT, 1);
 	CHECK(sm.view.state == RS_TX);
 	req(RREQ_MODE, RADIO_MODE_FM);
@@ -6761,6 +6803,7 @@ static void test_p25_vfo(void)
 	radio_p25_stats(&st);
 	CHECK(st.begins == begins + 1);
 	// PTT in the VFO keys on its TX frequency
+	sm.set.talk_permit = false;
 	req(RREQ_PTT, 1);
 	CHECK(sm.view.state == RS_TX && hw.tx_hz == sm.view.ch.tx_hz && hw.tx_bw == RADIO_BW_12K5);
 	req(RREQ_PTT, 0);
@@ -7069,6 +7112,7 @@ static void test_p25_stored(void)
 	far_begin(0x2A1, 1001, false, 1);
 	run(100);
 	req(RREQ_PTT, 1);
+	run(450);	// the speaker's permit hold precedes key-up
 	CHECK(sm.view.state == RS_TX && hw.tx_hz == 451100000 && hw.tx_bw == RADIO_BW_12K5);
 	run(1000);
 	CHECK(far_heard.starts == 1 && far_heard.call.nac == 0x2A1 && far_heard.call.lc.src == 1234567 &&
@@ -7612,9 +7656,22 @@ static void test_p25_trunk_tx(void)
 
 	// PTT: the request, the grant, the call on the voice channel's transmit frequency, then back
 	site.ans_req = SITE_ANS_ACCEPT;
+	aud.feed = true;
+#if CONFIG_BEEP
+	beep_stats_t before, after;
+	beep_get_stats(&before);
+#endif
 	req(RREQ_PTT, 1);
 	CHECK(sm.view.state == RS_IDLE && sm.p25_req);
+#if CONFIG_BEEP
+	beep_get_stats(&after);
+	CHECK(after.played == before.played);
+#endif
 	run(600);
+#if CONFIG_BEEP
+	beep_get_stats(&after);
+	CHECK(after.played == before.played + 1);
+#endif
 	CHECK(site.req_rx == 1 && site.last.opcode == P25_ISP_GRP_V_REQ && site.last.tg == 201 && site.last.src == 4321);
 	CHECK(sm.view.state == RS_TX && hw.keyed && hw.tx_hz == TS_VOICE + TS_OFFSET && hw.rx_hz == TS_VOICE);
 	CHECK(v->trunk == RADIO_P25_TRUNK_VOICE && v->treq == P25_REQ_TALK);
@@ -7704,6 +7761,9 @@ static void test_p25(void)
 #if CONFIG_DUAL_WATCH
 	test_p25_dual();
 #endif
+#endif
+#if CONFIG_BEEP
+	test_p25_permit();
 #endif
 	test_p25_tx();
 	test_p25_denied();
