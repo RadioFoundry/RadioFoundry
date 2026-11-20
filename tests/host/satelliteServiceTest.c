@@ -12,6 +12,7 @@ static uint32_t summary_reads, list_reads, store_generation;
 static bool change_generation_on_summary, change_generation_on_record;
 static satellite_record_t stored_record;
 static satellite_record_summary_t stored_summary;
+static satellite_record_summary_t second_summary;
 static bool service_locked;
 static satellite_service_t *store_reader;
 static const satellite_frequency_profile_t stored_profile = {
@@ -60,9 +61,9 @@ bool satellite_store_summary_get(uint8_t index, satellite_record_summary_t *summ
 {
 	CHECK(!service_locked);
 	summary_reads++;
-	if (index != 0u || !summary_available || summary == NULL)
+	if (index > 1u || (index == 1u && installed_count < 2u) || !summary_available || summary == NULL)
 		return false;
-	*summary = stored_summary;
+	*summary = index == 0u ? stored_summary : second_summary;
 	if (change_generation_on_summary) {
 		change_generation_on_summary = false;
 		store_generation++;
@@ -199,9 +200,31 @@ static void test_service_init_caches_summaries(void)
 	CHECK(service.scan_total == 1u && summary_reads == 1u && list_reads == 0u);
 	satellite_record_brief_t summary;
 	CHECK(satellite_service_summary(&service, 0u, &summary));
-	CHECK(summary.catalog_id == 0u && summary.epoch == stored_summary.epoch &&
+	uint32_t epoch;
+	CHECK(summary.catalog_id == 0u &&
 	      strcmp(summary.name, "ISS") == 0 && summary_reads == 1u);
+	CHECK(satellite_service_oldest_tle_epoch(&service, &epoch) && epoch == stored_summary.epoch);
 	installed_count = 0u;
+}
+
+static void test_oldest_tle_epoch(void)
+{
+	satellite_service_t service;
+	uint32_t epoch;
+	installed_count = 2u;
+	summary_available = true;
+	second_summary = stored_summary;
+	second_summary.epoch = stored_summary.epoch - 86400u;
+	satellite_service_init(&service);
+	CHECK(satellite_service_oldest_tle_epoch(&service, &epoch) && epoch == second_summary.epoch);
+	second_summary.epoch = stored_summary.epoch + 86400u;
+	store_generation++;
+	satellite_service_scan_request(&service, false, 100u, NULL);
+	CHECK(satellite_service_oldest_tle_epoch(&service, &epoch) && epoch == stored_summary.epoch);
+	installed_count = 0u;
+	store_generation++;
+	satellite_service_scan_request(&service, false, 200u, NULL);
+	CHECK(!satellite_service_oldest_tle_epoch(&service, &epoch));
 }
 
 static void test_scan_cache_and_summary(void)
@@ -225,7 +248,7 @@ static void test_scan_cache_and_summary(void)
 	CHECK(list_reads == 0u && summary_reads == 1u);
 	satellite_record_brief_t summary;
 	CHECK(satellite_service_summary(&service, 0u, &summary));
-	CHECK(summary.epoch == stored_summary.epoch && strcmp(summary.name, "ISS") == 0);
+	CHECK(strcmp(summary.name, "ISS") == 0);
 
 	fix_available = true;
 	time_available = true;
@@ -354,6 +377,7 @@ int main(void)
 	satellite_service_set_lock(set_service_locked);
 	setup_record();
 	test_service_init_caches_summaries();
+	test_oldest_tle_epoch();
 	test_tracking_request_lifecycle();
 	test_scan_cache_and_summary();
 	test_store_generation_invalidates_cached_inventory();

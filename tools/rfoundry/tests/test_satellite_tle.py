@@ -147,7 +147,7 @@ class SatelliteTleTest(unittest.TestCase):
                 rows = [old] if calls.count(satellite_tle.OP_INFO) == 1 else [old, (25544, int(record["epoch"].timestamp())), unexpected]
                 page = rows[start:start + 2]
                 return bytes([len(page)]) + b"".join(struct.pack("<II", *row) for row in page)
-            if operation == satellite_tle.OP_BEGIN:
+            if operation == satellite_tle.OP_REPLACE_BEGIN:
                 return b"\x01\x00"
             if operation == satellite_tle.OP_DATA:
                 return struct.pack("<H", struct.unpack_from("<H", payload, 2)[0] + len(payload) - 4)

@@ -528,6 +528,16 @@ bool radio_get_satellite_pass_summary(uint8_t record_index, satellite_record_bri
 	return valid;
 }
 
+bool radio_get_satellite_oldest_tle_epoch(uint32_t *epoch)
+{
+	if (epoch == NULL || satellite_lock == NULL)
+		return false;
+	xSemaphoreTake(satellite_lock, portMAX_DELAY);
+	bool valid = satellite_service_oldest_tle_epoch(satellite_service, epoch);
+	xSemaphoreGive(satellite_lock);
+	return valid;
+}
+
 uint32_t radio_get_satellite_generation(void)
 {
 	if (satellite_lock == NULL)

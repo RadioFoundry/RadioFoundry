@@ -61,11 +61,13 @@ static const flow_t flows[] = {
 	{ "Satellite asks to load TLEs when the store is empty", "satempty", "ok 6 9",
 	  "screen=satellite-passes shows=No_TLEs:_load_from_site", 4, false },
 	{ "Satellite pass list selects tracking detail", "", "ok 6 9 ok",
-	  "screen=satellite shows=ISS shows=RX shows=TX shows=144.9988_MHz shows=435.0036_MHz hides=TLE_age hides=Path hides=Doppler hides=Predicting_passes hides=Calculating", 13, false },
-	{ "Pass list shows the shared TLE age", "", "ok 6 9",
+	  "screen=satellite shows=ISS shows=RX shows=TX shows=144.9988_MHz shows=435.0036_MHz hides=TLE_age hides=Path hides=Doppler hides=Predicting_passes hides=Calculating hides=Below_horizon", 13, false },
+	{ "Pass list shows the oldest TLE age", "", "ok 6 9",
 	  "screen=satellite-passes shows=TLE_age shows=1d", 13, false },
 	{ "Pass list warns once for stale TLEs", "satagestale", "ok 6 9",
 	  "screen=satellite-passes shows=TLE_age shows=14d toast=TLE_is_14+_days_old;_refresh_from_site", 13, false },
+	{ "Pass list updates the age without a new inventory", "satagestale satagefresh ok 6 9", "satageadvance wait:1100",
+	  "screen=satellite-passes shows=14d toast=TLE_is_14+_days_old;_refresh_from_site", 0, false },
 	{ "SO-50 arm requires long OK while tracking", "", "ok 6 9 down down ok long:ok",
 	  "screen=satellite shows=SO-50 toast=SO-50_arm_requested", 16, false },
 	{ "Arm capability, not catalog number, enables long OK", "satagestale", "ok 6 9 down down ok long:ok",
@@ -74,7 +76,7 @@ static const flow_t flows[] = {
 	  "screen=satellite shows=ISS toast=none", 13, false },
 	{ "Satellite detail shows sky while pass prediction is pending", "satpathpending",
 	  "ok 6 9 ok",
-	  "screen=satellite shows=Below_horizon", 13, false },
+	  "screen=satellite hides=Below_horizon", 13, false },
 	{ "Satellite detail returns to pass list", "", "ok 6 9 ok back",
 	  "screen=satellite-passes shows=Next_passes hides=Predicting_passes", 14, false },
 	{ "Satellite pass list shows prediction progress", "satpredict",
@@ -1167,7 +1169,7 @@ static const flow_t satellite_detail_flows[] = {
 static const flow_t satellite_small_detail_flows[] = {
 	{ "128x64 satellite detail shows AOS and LOS instead of the path", "satfuturepass",
 	  "ok 6 9 ok",
-	  "screen=satellite shows=\x87_0:02 shows=\x88_0:03", 13, false },
+	  "screen=satellite shows=\x87 shows=0:02 shows=\x88 shows=0:03", 13, false },
 };
 #endif
 
@@ -1988,6 +1990,75 @@ static int check_name_is_id(void)
 }
 
 #if CONFIG_SATELLITE_TLE
+static int check_satellite_countdowns(void)
+{
+	static const char *const geoms[] = { "128x64", "160x120i5", "160x128", "240x320", "240x320i10x5" };
+	char err[160] = "";
+	for (unsigned i = 0; i < sizeof geoms / sizeof geoms[0]; i++) {
+		sim_reset(sim_geom_find(geoms[i]), SIM_MAP_K);
+		int up_x, up_y, up_w, up_h, now_x, now_y, now_w, now_h;
+		int down_x, down_y, down_w, down_h, los_x, los_y, los_w, los_h;
+		const char *down = gfx_bpp() == 1 ? GLYPH_DOWN : GLYPH_DOWN " in";
+		if (!sim_run("ok 6 9 ok", err, sizeof err) ||
+		    !sim_text_bounds(GLYPH_UP, &up_x, &up_y, &up_w, &up_h) ||
+		    !sim_text_bounds("Now", &now_x, &now_y, &now_w, &now_h) ||
+		    !sim_text_bounds(down, &down_x, &down_y, &down_w, &down_h) ||
+		    !sim_text_bounds("1:32", &los_x, &los_y, &los_w, &los_h) ||
+		    up_x != 0 || up_y != now_y || now_y != down_y || down_y != los_y ||
+		    now_x <= up_x + up_w || down_x <= now_x + now_w ||
+		    los_x <= down_x + down_w || los_x + los_w != gfx_width() ||
+		    !sim_text_has_color(GLYPH_UP, ui_col.dim) || !sim_text_has_color("Now", ui_col.fg)) {
+			printf("FAIL satellite countdown alignment/colors [%s]: %s\n", geoms[i], err);
+			return 1;
+		}
+		if (gfx_bpp() == 1) {
+			int top, rows;
+			const uint8_t *glyph = font_glyph(ui_layout.small, 'N', &top, &rows);
+			bool thickened = false, checked = false;
+			for (int r = 0; r < rows; r++) {
+				for (int col = 0; col + 1 < ui_layout.small->w; col++) {
+					if ((glyph[r] & (0x80u >> col)) && !(glyph[r] & (0x80u >> (col + 1)))) {
+						checked = true;
+						if (gfx_get_pixel(now_x + col + 1, now_y + top + r) != 0)
+							thickened = true;
+					}
+				}
+			}
+			if (!checked || thickened) {
+				printf("FAIL satellite visible-now normal weight [%s]\n", geoms[i]);
+				return 1;
+			}
+		} else if (sim_text_has_color(GLYPH_UP, ui_col.rx)) {
+			printf("FAIL satellite rise arrow is green [%s]\n", geoms[i]);
+			return 1;
+		}
+		sim_reset(sim_geom_find(geoms[i]), SIM_MAP_K);
+		const char *future_up = gfx_bpp() == 1 ? GLYPH_UP : GLYPH_UP " in";
+		if (!sim_run("satfuturepass ok 6 9 ok", err, sizeof err) ||
+		    !sim_text_bounds(future_up, &up_x, &up_y, &up_w, &up_h) ||
+		    !sim_text_bounds("0:02", &now_x, &now_y, &now_w, &now_h) ||
+		    !sim_text_bounds(down, &down_x, &down_y, &down_w, &down_h) ||
+		    !sim_text_bounds("0:03", &los_x, &los_y, &los_w, &los_h) ||
+		    up_x != 0 || up_y != now_y || now_y != down_y || down_y != los_y ||
+		    now_x <= up_x + up_w || down_x <= now_x + now_w ||
+		    los_x <= down_x + down_w || los_x + los_w != gfx_width() ||
+		    (gfx_bpp() != 1 && sim_text_has_color("0:02", ui_col.rx))) {
+			printf("FAIL satellite future countdowns [%s]: %s\n", geoms[i], err);
+			return 1;
+		}
+		if (gfx_bpp() != 1) {
+			sim_reset(sim_geom_find(geoms[i]), SIM_MAP_K);
+			if (!sim_run("satlospending ok 6 9 ok", err, sizeof err) ||
+			    !sim_text_bounds("Calculating", &los_x, &los_y, &los_w, &los_h) ||
+			    los_x + los_w != gfx_width()) {
+				printf("FAIL satellite pending LOS [%s]: %s\n", geoms[i], err);
+				return 1;
+			}
+		}
+	}
+	return 0;
+}
+
 static int check_satellite_path_endpoint_colors(void)
 {
 	char err[160];
@@ -2022,6 +2093,8 @@ int main(void)
 	if (check_name_is_id() != 0)
 		return 1;
 #if CONFIG_SATELLITE_TLE
+	if (check_satellite_countdowns() != 0)
+		return 1;
 	if (check_satellite_path_endpoint_colors() != 0)
 		return 1;
 #endif

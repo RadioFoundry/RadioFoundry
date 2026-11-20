@@ -668,6 +668,8 @@ def install_records(link, records, profile_ids=None, profiles=None):
         raise SatelliteTleError("install records may contain orbital fields only")
     plain_records = [{key: item[key] for key in ("catalog_id", "name", "line1", "line2")} for item in records]
     validated = validate_records(plain_records)
+    if len(validated) > MAX_PROFILES:
+        raise SatelliteTleError(f"at most {MAX_PROFILES} TLE records can be installed")
     selected_ids = None if profile_ids is None else validate_catalog_profile_ids(profile_ids)
     full_profiles = None if profiles is None else validate_frequency_profiles(profiles)
     if full_profiles is not None:
@@ -689,8 +691,8 @@ def install_records(link, records, profile_ids=None, profiles=None):
                        PROFILE_CHUNK_PROTOCOL_VERSION, SATELLITE_PROTOCOL_VERSION) or \
             capacity == 0 or installed_count > capacity:
         raise SatelliteTleError("radio satellite capability is unsupported or invalid")
-    if selected_ids is not None and version < REPLACE_PROTOCOL_MIN_VERSION:
-        raise SatelliteTleError("this bundle replaces the selected TLE set and requires satellite protocol version 4")
+    if version < REPLACE_PROTOCOL_MIN_VERSION:
+        raise SatelliteTleError("replacing the selected TLE set requires satellite protocol version 4")
     if full_profiles is not None and version < PROFILE_VALUES_PROTOCOL_VERSION:
         raise SatelliteTleError("frequency-valued bundles require satellite protocol version 5")
     if full_profiles is not None and len(full_profiles) > 4 and version < PROFILE_CHUNK_PROTOCOL_VERSION:
@@ -702,13 +704,12 @@ def install_records(link, records, profile_ids=None, profiles=None):
         raise SatelliteTleError("radio satellite inventory does not match its capability report")
 
     record_ids = {item["catalog_id"] for item in validated}
-    expected_count = len(record_ids) if selected_ids is not None else len(record_ids | {catalog_id for catalog_id, _ in before})
+    expected_count = len(record_ids)
     if expected_count > capacity:
-        raise SatelliteTleError(f"radio capacity {capacity} cannot hold {expected_count} selected and preserved records")
+        raise SatelliteTleError(f"radio capacity {capacity} cannot hold {expected_count} selected records")
     stream = _serialize_records(validated)
     checksum = zlib.crc32(stream) & 0xFFFFFFFF
-    begin_op = OP_REPLACE_BEGIN if selected_ids is not None else OP_BEGIN
-    begin = _request(link, begin_op, struct.pack("<HHI", len(validated), len(stream), checksum))
+    begin = _request(link, OP_REPLACE_BEGIN, struct.pack("<HHI", len(validated), len(stream), checksum))
     if len(begin) != 2:
         raise SatelliteTleError("radio returned malformed satellite transaction ID")
     transaction = struct.unpack("<H", begin)[0]
@@ -740,8 +741,7 @@ def install_records(link, records, profile_ids=None, profiles=None):
                                     str(exc)) from exc
 
     after_capacity, after = radio_inventory(link)
-    expected_inventory = {} if selected_ids is not None else dict(before)
-    expected_inventory.update({item["catalog_id"]: int(item["epoch"].timestamp()) for item in validated})
+    expected_inventory = {item["catalog_id"]: int(item["epoch"].timestamp()) for item in validated}
     if after_capacity != capacity or dict(after) != expected_inventory:
         raise SatelliteTleError("radio satellite inventory changed unexpectedly after commit")
     result = {"capacity": capacity, "count": len(after), "installed": sorted(record_ids), "inventory": after}

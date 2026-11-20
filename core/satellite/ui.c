@@ -152,6 +152,11 @@ bool ui_svc_satellite_pass_summary(uint8_t record_index, satellite_record_brief_
 	return radio_get_satellite_pass_summary(record_index, summary);
 }
 
+bool ui_svc_satellite_oldest_tle_epoch(uint32_t *epoch)
+{
+	return radio_get_satellite_oldest_tle_epoch(epoch);
+}
+
 bool ui_svc_satellite_view(radio_satellite_view_t *view)
 {
 	return radio_get_satellite_view(view);

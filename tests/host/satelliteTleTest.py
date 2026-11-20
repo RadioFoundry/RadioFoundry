@@ -391,13 +391,22 @@ def test_protocol_versions():
 def test_install_transaction():
     selected = tle.validate_records([make_record(25544), make_record(20580)])
     old_epoch = int(selected[0]["epoch"].timestamp()) - 1000
-    radio = FakeRadio({99999: old_epoch})
+    radio = FakeRadio({99999: old_epoch, 25544: old_epoch})
     result = tle.install_records(radio, selected)
     expected_inventory = [(20580, int(selected[1]["epoch"].timestamp())),
-                          (25544, int(selected[0]["epoch"].timestamp())), (99999, old_epoch)]
-    check(result == {"capacity": 8, "count": 3, "installed": [20580, 25544],
+                          (25544, int(selected[0]["epoch"].timestamp()))]
+    check(result == {"capacity": 8, "count": 2, "installed": [20580, 25544],
                      "inventory": expected_inventory}, "install reports verified IDs and inventory")
-    check(radio.installed[99999] == old_epoch, "unselected installed satellite is preserved")
+    check(99999 not in radio.installed and radio.installed[25544] != old_epoch,
+          "install removes unselected satellites and updates existing selected epochs")
+    check(any(payload[0] == tle.OP_REPLACE_BEGIN for _, payload in radio.calls),
+          "orbital-only install uses an inventory replacement")
+    too_many = FakeRadio(capacity=20)
+    try:
+        tle.install_records(too_many, [make_record(50000 + i) for i in range(11)])
+        check(False, "more than ten selected TLEs are rejected")
+    except tle.SatelliteTleError:
+        check(not too_many.calls, "more than ten selected TLEs are rejected before contacting the radio")
     check(all(payload[0] != tle.OP_SYNC_CHANNELS for _, payload in radio.calls),
           "TLE install leaves codeplug zones and channels unchanged")
     data_calls = [payload for command, payload in radio.calls if command == tle.SATELLITE_COMMAND and
@@ -447,8 +456,13 @@ def test_install_transaction():
               all(payload[0] != tle.OP_REPLACE_BEGIN for _, payload in old_radio.calls),
               "protocol-v5 radio gets a clear ten-profile limit before transaction")
     legacy_radio = FakeRadio(protocol_version=tle.LEGACY_SATELLITE_PROTOCOL_VERSION)
-    legacy_result = tle.install_records(legacy_radio, selected)
-    check(legacy_result["count"] == 2, "protocol-v2 radio still accepts orbital TLE updates")
+    try:
+        tle.install_records(legacy_radio, selected)
+        check(False, "orbital replacement rejects protocol-v2 before writing")
+    except tle.SatelliteTleError as exc:
+        check("requires satellite protocol version 4" in str(exc) and
+              all(payload[0] not in (tle.OP_BEGIN, tle.OP_REPLACE_BEGIN) for _, payload in legacy_radio.calls),
+              "orbital replacement rejects older radio before starting a transaction")
     try:
         tle.install_records(legacy_radio, selected, selected_profiles)
         check(False, "profile bundle is rejected before modification on protocol-v2 radio")
@@ -472,12 +486,14 @@ def test_install_transaction():
         check(False, "frequency settings rejected from orbital install")
     except tle.SatelliteTleError:
         check(not mixed_config.calls, "frequency settings rejected before radio transaction")
-    failed = FakeRadio(fail_data=True)
+    failed = FakeRadio({99999: old_epoch, 25544: old_epoch}, fail_data=True)
     try:
         tle.install_records(failed, selected)
         check(False, "failed transfer rejected")
     except DebugLinkError:
-        check(any(payload[0] == tle.OP_ABORT for _, payload in failed.calls), "failed transfer abort attempted")
+        check(any(payload[0] == tle.OP_ABORT for _, payload in failed.calls) and
+              failed.installed == {99999: old_epoch, 25544: old_epoch},
+              "failed replacement is aborted and leaves the inventory intact")
 
 
 def main():

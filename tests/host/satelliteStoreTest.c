@@ -295,7 +295,10 @@ static bool install_replace_profile_chunks(const uint8_t *data, uint16_t data_le
 			put16(p + 12u, profiles[start + i].tx_tone_tenths);
 		}
 		uint16_t request_len = (uint16_t)(6u + (uint16_t)chunk * 14u);
+		uint32_t reads_before = sim_flash_reads();
 		CHECK(request_len <= 64u && command(req, request_len) == 1u && output[0] == DL_ST_OK);
+		if (start + chunk == count)
+			CHECK(sim_flash_reads() - reads_before == 4u * count + 1u);
 		if (start == 0u) {
 			req[0] = DL_SAT_OP_COMMIT;
 			put16(req + 1u, transaction);

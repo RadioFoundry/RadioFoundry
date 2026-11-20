@@ -118,11 +118,14 @@ Reacquiring valid inputs may resume tracking only while the same satellite and f
 Tools > Satellite first predicts passes for every locally installed TLE using one current GPS position and UTC
 snapshot. The list is ordered by AOS, shows time to AOS in hours and minutes (`H:MM`) and maximum elevation, and
 reports prediction progress. Missing position, altitude or valid UTC leaves the list unavailable instead of using stale
-inputs. Its AOS countdown updates as time passes from the scan's UTC snapshot. The pass list shows the common age of the
-installed TLE set when UTC is available and warns once when it reaches 14 days. Selecting a pass persists its record,
-starts tracking, and opens that satellite's detail screen with visibility, Doppler offsets, pass countdowns (`↑ in` to
+inputs. Its AOS countdown updates as time passes from the scan's UTC snapshot. The pass list shows the age of the oldest
+stored TLE when UTC is available, updates it as time passes, and warns once per inventory generation when it reaches
+14 days. TLEs fetched together can have different epochs. Selecting a pass persists its record,
+starts tracking, and opens that satellite's detail screen with Doppler offsets, pass countdowns (`↑ in` to
 AOS and `↓ in` to LOS) and the sky path. Countdown minutes round up while time remains. The detail screen's pass data
-continues updating in bounded service steps. The nominal RX/TX pair and optional TX tone come from the selected
+continues updating in bounded service steps. The rise countdown is left-aligned and the set countdown is right-aligned.
+When the satellite is visible, the rise countdown shows `Now` in the normal text style.
+The tracking status row is reserved for unavailable or inactive tracking. The nominal RX/TX pair and optional TX tone come from the selected
 satellite's persisted catalog profile. An active session keeps those nominal
 values even as Doppler targets
 change. While PTT is held, the detail screen shows the applied TX frequency during on-air transmission and otherwise
@@ -218,12 +221,13 @@ The `read` operation treats the radio inventory as authoritative and remembers n
 port if no UID is available). It can show the last synced list on a later read without contacting a provider. A cached
 name is shown only when its catalog ID and epoch still match the radio; changed or unknown entries are not assigned
 guessed names.
-`ABORT` takes a transaction ID `u16` and discards an uncommitted batch. Protocol v2 remains supported for schema-v1
-additive TLE installs. Schema-v2 replacement bundles require protocol v4. Schema-v3 bundles require protocol v5 and
+`ABORT` takes a transaction ID `u16` and discards an uncommitted batch. Firmware continues to support protocol-v2
+additive TLE transfers for older clients. Schema-v2 replacement bundles require protocol v4. Schema-v3 bundles require protocol v5 and
 stage TLEs and frequency values before one commit; protocol v5 supports up to four selected profiles, while protocol
 v6 and later support the full ten. The host reads both back before reporting success. The standalone
 `profiles` command requires protocol v3 or newer. `PROFILE_GET` returns up to 10 catalog IDs and `PROFILE_SET` accepts
-IDs from the built-in catalog for the legacy profile-only workflow. PC TLE synchronization does not invoke
+IDs from the built-in catalog for the legacy profile-only workflow. The PC utility uses replacement for every install
+and sync, including schema-v1 bundles, and requires protocol v4 or later. PC TLE synchronization does not invoke
 `SYNC_CHANNELS` and does not create, modify, or remove codeplug zones or channels. The separate `SYNC_CHANNELS`
 operation remains explicit and is not part of PC install. Removing a TLE from the satellite inventory removes it from
 the tracking list without changing user channel data. The persistent satellite-bank format remains independently
@@ -241,7 +245,8 @@ snapshot of AMSAT's page updated October 31, 2026; operating status can change, 
 transmitting. SO-50 requires a 2-second 74.4 Hz CTCSS transmission to arm its timer before use; its normal uplink tone
 is 67.0 Hz.
 
-The radio's dedicated `hal_flash_map_t.satellite_*` area is separate from codeplug and update staging. It uses three
+The radio's dedicated `hal_flash_map_t.satellite_*` area is separate from the codeplug and reserved from update
+staging. It uses three
 4 KiB sectors: the active snapshot, the incoming transfer and the next committed snapshot. Each committed snapshot
 contains a versioned header, generation, record count, serialized length and CRC-32. The maximum inventory is 10
 records (1,910 serialized bytes at the 48-byte name limit). Firmware validates serialized lengths, catalog identity,
@@ -252,8 +257,8 @@ generation; an erased area means an empty inventory, while invalid non-erased da
 generation remains. A power cut during transfer or commit leaves the previous complete snapshot available.
 
 User-configured nominal frequency pairs and radio mode are separate from TLE data: refreshing orbital elements must
-not change those settings. To Doppler-track from a satellite channel, select that channel before starting tracking;
-tracking uses the current channel or VFO's frequency pair and does not infer frequencies or tones from a TLE.
+not change those settings. Tracking uses the selected satellite's persisted frequency profile, not the current channel
+or VFO's frequency pair, and does not infer frequencies or tones from a TLE.
 
 Before install, the PC tool previews the selected entries and validates each pair: both lines are present, checksums
 and fixed-format fields are valid, the catalog ID matches on both lines, IDs are unique, the epoch is parseable, and
@@ -268,9 +273,9 @@ their epoch; configured frequency pairs remain independent. The host checks the 
 installed IDs and element epochs before reporting success.
 
 The radio stages a complete batch and makes it visible only after validation and commit. A failed transfer, checksum,
-capacity check, disconnect or power loss leaves the previously installed dataset usable. Updating selected IDs
-replaces only those records and preserves unselected satellites; removal is a separate explicit operation. A batch
-with duplicate IDs or any invalid record is rejected as a whole. Firmware without satellite support reports that
+capacity check, disconnect or power loss leaves the previously installed dataset usable. Additive installs replace
+matching records and preserve unselected satellites. Replacement installs make the selected records the entire
+inventory. A batch with duplicate IDs or any invalid record is rejected as a whole. Firmware without satellite support reports that
 capability as unavailable, and the PC tool must not attempt a raw flash fallback.
 
 ## 7. Configuration and feature switch
@@ -282,9 +287,9 @@ in the board map. With the switch off, no satellite parser, propagator, pass ser
 the normal build remains clean. The append-only settings record retains a single unused selection byte so its layout
 stays consistent across feature configurations.
 
-Persist the user's selected TLE index using RadioFoundry's settings interface. The nominal frequency pair is the
-current channel or VFO configuration and is not copied into satellite settings. Treat TLE data as replaceable orbital
-input, not as user frequency configuration. A radio without a GPS
+Persist the user's selected TLE index using RadioFoundry's settings interface. The nominal frequency pair comes from
+the persisted satellite frequency profile, not the current channel or VFO configuration. Treat TLE data as replaceable
+orbital input, not as user frequency configuration. A radio without a GPS
 may use another valid configured position source; a build without any usable observer source may still inspect stored
 satellite data but cannot calculate local passes or Doppler compensation.
 

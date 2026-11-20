@@ -250,6 +250,7 @@ void ui_svc_satellite_poll(void);
 void ui_svc_satellite_scan_state(uint8_t *status, uint8_t *completed, uint8_t *total, uint8_t *passes);
 bool ui_svc_satellite_pass(uint8_t rank, radio_satellite_pass_t *pass);
 bool ui_svc_satellite_pass_summary(uint8_t record_index, satellite_record_brief_t *summary);
+bool ui_svc_satellite_oldest_tle_epoch(uint32_t *epoch);
 bool ui_svc_satellite_view(radio_satellite_view_t *view);
 bool ui_svc_satellite_path(satellite_path_view_t *path);
 bool ui_svc_satellite_replace(uint8_t index, const satellite_tle_lines_t *lines);

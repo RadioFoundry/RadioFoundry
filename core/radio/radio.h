@@ -534,6 +534,7 @@ void radio_req_satellite_scan(bool enabled);
 void radio_get_satellite_scan(uint8_t *status, uint8_t *completed, uint8_t *total, uint8_t *passes);
 bool radio_get_satellite_pass(uint8_t rank, radio_satellite_pass_t *pass);
 bool radio_get_satellite_pass_summary(uint8_t record_index, satellite_record_brief_t *summary);
+bool radio_get_satellite_oldest_tle_epoch(uint32_t *epoch);
 uint32_t radio_get_satellite_generation(void);
 #endif
 // Just the view's state, for a caller short of stack (the view is some 0.7 KB)

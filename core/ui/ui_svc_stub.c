@@ -142,6 +142,12 @@ WEAK bool ui_svc_satellite_pass_summary(uint8_t record_index, satellite_record_b
 	return false;
 }
 
+WEAK bool ui_svc_satellite_oldest_tle_epoch(uint32_t *epoch)
+{
+	(void)epoch;
+	return false;
+}
+
 WEAK bool ui_svc_satellite_view(radio_satellite_view_t *view)
 {
 	if (view != NULL) *view = (radio_satellite_view_t){0};

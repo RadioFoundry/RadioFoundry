@@ -4558,14 +4558,14 @@ msgid "Up Down pick  Back"
 msgstr "Haut Bas choisir  Retour"
 
 #: core/ui/ui_satellite.c
-msgctxt "TRACKING_4"
-msgid "Tracking"
-msgstr "Suivi"
-
-#: core/ui/ui_satellite.c
 msgctxt "CATALOG"
 msgid "Catalog"
 msgstr "Catalogue"
+
+#: core/ui/ui_satellite.c
+msgctxt "TRACKING_4"
+msgid "Tracking"
+msgstr "Suivi"
 
 #: core/ui/ui_satellite.c
 msgctxt "NEXT_PASS"

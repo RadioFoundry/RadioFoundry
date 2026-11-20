@@ -37,8 +37,9 @@ python tools/satellite_tle.py install satellites.json
 ```
 
 The utility checks both TLE lines, their identity and checksums, and element age before transferring the selected set.
-PC synchronization replaces the satellite TLE inventory and selected frequency profiles only. It does not create,
-modify, or remove codeplug zones or channels. Check the [AMSAT live FM satellite list](https://www.amsat.org/live-fm-satellites/)
+The website replaces the satellite TLE inventory and selected frequency profiles. Command-line `sync` and `install`
+also replace the entire TLE inventory with the selected records; an orbital-only bundle leaves frequency profiles
+unchanged. Neither workflow creates, modifies, or removes codeplug zones or channels. Check the [AMSAT live FM satellite list](https://www.amsat.org/live-fm-satellites/)
 for current operating status before transmitting. The built-in frequency snapshot reflects that page's October 31,
 2026 update. SO-50 requires a 2-second 74.4 Hz CTCSS transmission to arm its timer; switch back to its normal
 67.0 Hz uplink tone afterward. Use `read` to inspect installed IDs and epochs:
@@ -49,17 +50,17 @@ python tools/satellite_tle.py read
 
 Frequency profiles are separate from orbital elements. The daily TLE bulletin contains no frequencies; the page uses
 the known entries in AMSAT's live FM table, which currently covers all listed FM satellites. Non-FM objects are omitted.
-A profile list has a maximum of 10 entries. Sync replaces the radio's satellite TLE and frequency tables with the
-selected satellites, so unselected satellites disappear from the tracking list. The codeplug is left unchanged. The
-PC utility also reads or changes the built-in profile ID list directly:
+A profile list has a maximum of 10 entries. A website push replaces the radio's satellite TLE and frequency tables with
+the selected satellites, so unselected satellites disappear from the tracking list. The codeplug is left unchanged.
+The PC utility also reads or changes the built-in profile ID list directly:
 
 ```sh
 python tools/satellite_tle.py profiles
 python tools/satellite_tle.py profiles --id 25544,27607,43017
 ```
 
-Protocol-v2 radios can still install schema-v1 orbital bundles additively. Selected-set replacement requires protocol
-v4; schema-v3 frequency bundles require protocol v5. Protocol v5 supports up to four selected frequency profiles;
+The PC utility requires protocol v4 or later for replacement. Schema-v3 frequency bundles require protocol v5.
+Protocol v5 supports up to four selected frequency profiles;
 protocol v6 supports the full ten. Profile-only ID changes require protocol v3 or newer.
 
 ## Enter a TLE on the radio
@@ -80,8 +81,9 @@ date/time. The list is ordered by time to AOS and shows each pass's maximum elev
 select a pass; **OK** opens its details and starts tracking. The selected satellite is remembered across power cycles.
 The firmware image contains no TLEs. Load selected records into the radio's flash store from the site's Satellite TLE
 Update page or with `tools/satellite_tle.py sync`. With an empty store, Satellite shows **No TLEs: load from site**.
-The pass list shows the common age of the installed TLE set when current UTC is available. At 14 days, it warns once to
-refresh the set from the site and improve prediction accuracy.
+The pass list shows the age of the oldest installed TLE when current UTC is available. Ages can differ even when
+satellites are refreshed together. At 14 days, it warns once per inventory update to refresh the set and improve
+prediction accuracy.
 Pass and Doppler values use an approximate Keplerian orbit model, not SGP4. They can differ from a precision ephemeris,
 especially as the TLE ages, so keep the installed elements current.
 Tracking gets its nominal RX/TX frequencies and optional transmit CTCSS tone from the persisted catalog-ID profile,
@@ -90,10 +92,12 @@ tracking, the radio uses FM and 12.5 kHz bandwidth; stopping restores the prior 
 orbital elements, not communication frequencies. PC synchronization does not touch the codeplug; editing an existing
 channel does not change the runtime profile used for tracking.
 
-The screen reports visibility, receive and transmit Doppler offsets, the current Doppler-adjusted RX and TX frequencies,
+The screen reports receive and transmit Doppler offsets, the current Doppler-adjusted RX and TX frequencies,
 and the next pass's AOS and LOS countdowns. The north-up circular sky plot shows the predicted path from horizon to
 zenith and marks the satellite's current position while it is visible. On 128x64 displays, the detail screen shows the
-AOS and LOS countdowns instead of the plot. During an active transmission, the TX row shows the frequency in use;
+AOS and LOS countdowns instead of the plot. Rise is left-aligned and set is right-aligned. While the satellite is up,
+the rise countdown shows `Now`.
+During an active transmission, the TX row shows the frequency in use;
 tracking continues calculating the latest target in the background and applies it as soon as transmission ends.
 While SO-50 is actively tracked, long-press **OK** on its detail screen to send the 74.4 Hz CTCSS arm signal for two
 seconds. The radio applies its normal transmit checks and uses the active Doppler-adjusted uplink. This does not change

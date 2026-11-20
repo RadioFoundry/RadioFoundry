@@ -165,6 +165,33 @@ int sim_layout_issues(char out[][160], int max)
 	return n;
 }
 
+bool sim_text_has_color(const char *text, uint16_t color)
+{
+	for (int i = 0; i < live_n; i++) {
+		if (strstr(live[i].s, text) == NULL)
+			continue;
+		for (int y = live[i].y0; y < live[i].y1; y++)
+			for (int x = live[i].x0; x < live[i].x1; x++)
+				if (gfx_get_pixel(x, y) == color)
+					return true;
+	}
+	return false;
+}
+
+bool sim_text_bounds(const char *text, int *x, int *y, int *w, int *h)
+{
+	for (int i = 0; i < live_n; i++) {
+		if (strcmp(live[i].s, text) != 0)
+			continue;
+		*x = live[i].x0;
+		*y = live[i].y0;
+		*w = live[i].x1 - live[i].x0;
+		*h = live[i].y1 - live[i].y0;
+		return true;
+	}
+	return false;
+}
+
 void gfx_draw_trace(gfx_trace_kind_t kind, int x, int y, int w, int h, const int clip[4], const char *s)
 {
 	int vw = gfx_width(), vh = gfx_height();
@@ -2249,6 +2276,14 @@ bool ui_svc_satellite_pass_summary(uint8_t record_index, satellite_record_brief_
 	return ui_svc_satellite_summary(record_index, summary);
 }
 
+bool ui_svc_satellite_oldest_tle_epoch(uint32_t *epoch)
+{
+	if (epoch == NULL || sim_satellite_empty)
+		return false;
+	*epoch = 0u;
+	return true;
+}
+
 bool ui_svc_satellite_tle_age(uint32_t epoch, uint16_t *age_days)
 {
 	(void)epoch;
@@ -3616,6 +3651,14 @@ static bool run_token(char *t, char *err, size_t len)
 	if (strcmp(t, "satagestale") == 0) {
 		sim_satellite_tle_age_days = 14u;
 		sim_satellite_test_id_offset++;
+		return true;
+	}
+	if (strcmp(t, "satageadvance") == 0) {
+		sim_satellite_tle_age_days = 14u;
+		return true;
+	}
+	if (strcmp(t, "satagefresh") == 0) {
+		sim_satellite_tle_age_days = 1u;
 		return true;
 	}
 	if (strcmp(t, "satpredict") == 0) {

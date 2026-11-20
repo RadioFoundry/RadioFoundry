@@ -64,7 +64,7 @@ typedef struct {
 
 	uint32_t scan_results[SATELLITE_SERVICE_SCAN_MAX_RECORDS];
 	char scan_summary_names[SATELLITE_SERVICE_SCAN_MAX_RECORDS][SATELLITE_RECORD_BRIEF_NAME_MAX];
-	uint32_t scan_tle_epoch;
+	uint32_t scan_oldest_tle_epoch;
 	int64_t scan_start_utc_s;
 	uint32_t scan_start_ms;
 	int32_t scan_latitude_e7;
@@ -99,5 +99,6 @@ bool satellite_service_scan_result(const satellite_service_t *service, uint8_t r
 				   int64_t *aos_s);
 bool satellite_service_summary(const satellite_service_t *service, uint8_t record_index,
 			       satellite_record_brief_t *summary);
+bool satellite_service_oldest_tle_epoch(const satellite_service_t *service, uint32_t *epoch);
 
 #endif

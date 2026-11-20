@@ -16,7 +16,6 @@ static uint8_t selected;
 static satellite_tle_lines_t edit_lines;
 typedef struct {
 	uint32_t catalog_id;
-	uint32_t epoch;
 	char name[SATELLITE_RECORD_BRIEF_NAME_MAX];
 	uint8_t flags;
 } satellite_ui_record_t;
@@ -30,7 +29,6 @@ static uint16_t stale_warning_mask;
 static void satellite_cache_record(const satellite_record_brief_t *summary)
 {
 	pass_record.catalog_id = summary->catalog_id;
-	pass_record.epoch = summary->epoch;
 	pass_record.flags = summary->flags;
 	memcpy(pass_record.name, summary->name, sizeof(pass_record.name));
 }
@@ -117,34 +115,35 @@ static uint32_t satellite_eta_minutes_from_seconds(uint32_t seconds)
 	return seconds / 60u + (seconds % 60u != 0u ? 1u : 0u);
 }
 
-static void satellite_countdown_pair(int *y, const char *rise_value, const char *set_value)
+static void satellite_countdown_pair(int *y, const char *rise_value, const char *set_value,
+				     bool visible_now, bool short_labels)
 {
 	const font_t *font = ui_layout.small;
-	const char *rise_label = TR(SATELLITE_LABEL_RISE, GLYPH_UP " in");
-	const char *set_label = TR(SATELLITE_LABEL_SET, GLYPH_DOWN " in");
+	const char *rise_label = visible_now || short_labels ? GLYPH_UP : TR(SATELLITE_LABEL_RISE, GLYPH_UP " in");
+	const char *set_label = short_labels ? GLYPH_DOWN : TR(SATELLITE_LABEL_SET, GLYPH_DOWN " in");
 	int width = gfx_width();
-	if (width >= 220) {
-		int half = width / 2;
-		int gap = font->w / 2 + 1;
-		int rise_label_width = gfx_text_width(font, rise_label);
-		int set_label_width = gfx_text_width(font, set_label);
-		if (rise_label_width + gap + gfx_text_width(font, rise_value) <= half &&
-		    set_label_width + gap + gfx_text_width(font, set_value) <= width - half) {
-			gfx_text(font, 0, *y, rise_label, ui_col.dim);
-			gfx_text(font, rise_label_width + gap, *y, rise_value, ui_col.fg);
-			gfx_text(font, half, *y, set_label, ui_col.dim);
-			gfx_text(font, half + set_label_width + gap, *y, set_value, ui_col.fg);
-			*y += ui_layout.row_h;
-			return;
-		}
-	}
+	int gap = font->w / 2 + 1;
+	int rise_label_width = gfx_text_width(font, rise_label);
+	int rise_value_width = gfx_text_width(font, rise_value);
 	int set_label_width = gfx_text_width(font, set_label);
+	int set_value_width = gfx_text_width(font, set_value);
+	int set_x = width - set_label_width - gap - set_value_width;
+	if (rise_label_width + gap + rise_value_width + font->w <= set_x) {
+		gfx_text(font, 0, *y, rise_label, ui_col.dim);
+		gfx_text(font, rise_label_width + gap, *y, rise_value, ui_col.fg);
+		gfx_text(font, set_x, *y, set_label, ui_col.dim);
+		gfx_text(font, width - set_value_width, *y, set_value, ui_col.fg);
+		*y += ui_layout.row_h;
+		return;
+	}
+	char rise_fit[40], set_fit[40];
+	gfx_text_fit(font, rise_value, width / 2 - gap, rise_fit, sizeof(rise_fit));
+	gfx_text_fit(font, set_value, width / 2 - gap, set_fit, sizeof(set_fit));
 	gfx_text(font, 0, *y, rise_label, ui_col.dim);
 	gfx_text(font, width - set_label_width, *y, set_label, ui_col.dim);
 	*y += ui_layout.row_h;
-	int set_value_width = gfx_text_width(font, set_value);
-	gfx_text(font, 0, *y, rise_value, ui_col.fg);
-	gfx_text(font, width - set_value_width, *y, set_value, ui_col.fg);
+	gfx_text(font, 0, *y, rise_fit, ui_col.fg);
+	gfx_text(font, width - gfx_text_width(font, set_fit), *y, set_fit, ui_col.fg);
 	*y += ui_layout.row_h;
 }
 
@@ -218,7 +217,7 @@ static void satellite_small_frequency_row(int *y, const radio_view_t *view,
 
 static void satellite_small_countdown_row(int *y, const radio_satellite_view_t *pass)
 {
-	char rise_value[24], set_value[24], text[64], fit[64];
+	char rise_value[24], set_value[24];
 	if (!pass->valid) {
 		str_copy(rise_value, sizeof(rise_value), "--");
 		str_copy(set_value, sizeof(set_value), "--");
@@ -240,16 +239,7 @@ static void satellite_small_countdown_row(int *y, const radio_satellite_view_t *
 			satellite_eta_minutes(&b, minutes);
 		}
 	}
-	sbuf_t b;
-	sb_init(&b, text, sizeof(text));
-	sb_str(&b, GLYPH_UP " ");
-	sb_str(&b, rise_value);
-	sb_str(&b, "  ");
-	sb_str(&b, GLYPH_DOWN " ");
-	sb_str(&b, set_value);
-	gfx_text_fit(ui_layout.small, text, gfx_width(), fit, sizeof(fit));
-	gfx_text(ui_layout.small, 0, *y, fit, ui_col.fg);
-	*y += ui_layout.row_h;
+	satellite_countdown_pair(y, rise_value, set_value, pass->valid && pass->visible_now, true);
 }
 
 static void path_line(int x0, int y0, int x1, int y1, color_t color)
@@ -449,12 +439,10 @@ static void satellite_update_pass_tle_age(void)
 		pass_tle_age_available = false;
 		pass_record.catalog_id = 0u;
 	}
-	if (pass_tle_age_available)
-		return;
-	satellite_record_brief_t summary;
-	if (ui_svc_satellite_pass_summary(0u, &summary) &&
-	    ui_svc_satellite_tle_age(summary.epoch, &pass_tle_age_days)) {
-		pass_tle_age_available = true;
+	uint32_t epoch;
+	pass_tle_age_available = ui_svc_satellite_oldest_tle_epoch(&epoch) &&
+		ui_svc_satellite_tle_age(epoch, &pass_tle_age_days);
+	if (pass_tle_age_available) {
 		if (pass_tle_age_days >= 14u)
 			satellite_warn_stale_tle(0u);
 	}
@@ -595,43 +583,25 @@ static void satellite_draw(void)
 		gfx_text(ui_layout.small, 0, y, TR(SATELLITE_NO_TLE_LOAD_SITE, "No TLEs: load from site"), ui_col.warn);
 	} else if (compact && gfx_height() <= 64) {
 		bool selected_tracking = satellite.tracking.tracking && satellite.tracking.index == selected;
-		satellite_small_status_row(&y, &satellite.tracking, selected_tracking);
+		if (!selected_tracking || satellite.tracking.status == SATELLITE_TRACKING_UNAVAILABLE)
+			satellite_small_status_row(&y, &satellite.tracking, selected_tracking);
 		if (selected_tracking) {
 			satellite_small_frequency_row(&y, view, &satellite.tracking);
 			satellite_small_countdown_row(&y, &satellite);
 		}
-	} else if (compact) {
-		if (satellite.tracking.tracking && satellite.tracking.index == selected) {
-			const char *status = satellite.tracking.status == SATELLITE_TRACKING_VISIBLE ? TR(VISIBLE_2, "Visible") :
-				satellite.tracking.status == SATELLITE_TRACKING_BELOW_HORIZON ? TR(BELOW_HORIZON_2, "Below horizon") :
-				TR(WAITING_FOR_POSITION_TIME_2, "Waiting for position/time");
-			row(&y, TR(TRACKING_4, "Tracking"), status, satellite.tracking.status == SATELLITE_TRACKING_VISIBLE ?
-			     ui_col.rx : ui_col.warn);
-			satellite_frequency_rows(&y, value, sizeof(value), view, &satellite.tracking);
-			if (satellite.valid && !satellite.visible_now) {
-				uint32_t minutes = satellite_eta_minutes_from_seconds(satellite.aos_in_s);
-				sb_init(&b, value, sizeof(value));
-				satellite_eta_minutes(&b, minutes);
-				row(&y, TR(SATELLITE_LABEL_RISE, GLYPH_UP " in"), value, ui_col.fg);
-			}
-			draw_path(y, &satellite, &path);
-		} else {
-			row(&y, TR(TRACKING_4, "Tracking"), satellite.tracking.tracking ? TR(OTHER_SATELLITE_2, "Other satellite") : TR(VALUE_OFF, "Off"), ui_col.dim);
-		}
 	} else {
-		sb_init(&b, value, sizeof(value));
-		sb_str(&b, "NORAD ");
-		sb_u32(&b, pass_record.catalog_id, 1);
-		row(&y, TR(CATALOG, "Catalog"), value, ui_col.fg);
+		if (!compact) {
+			sb_init(&b, value, sizeof(value));
+			sb_str(&b, "NORAD ");
+			sb_u32(&b, pass_record.catalog_id, 1);
+			row(&y, TR(CATALOG, "Catalog"), value, ui_col.fg);
+		}
 		if (satellite.tracking.tracking && satellite.tracking.index == selected) {
-			const char *status = satellite.tracking.status == SATELLITE_TRACKING_VISIBLE ? TR(VISIBLE_2, "Visible") :
-				satellite.tracking.status == SATELLITE_TRACKING_BELOW_HORIZON ? TR(BELOW_HORIZON_2, "Below horizon") :
-				TR(WAITING_FOR_POSITION_TIME_2, "Waiting for position/time");
-			row(&y, TR(TRACKING_4, "Tracking"), status, satellite.tracking.status == SATELLITE_TRACKING_VISIBLE ?
-			     ui_col.rx : ui_col.warn);
+			if (satellite.tracking.status == SATELLITE_TRACKING_UNAVAILABLE)
+				row(&y, TR(TRACKING_4, "Tracking"), TR(WAITING_FOR_POSITION_TIME_2, "Waiting for position/time"), ui_col.warn);
 			satellite_frequency_rows(&y, value, sizeof(value), view, &satellite.tracking);
 			if (satellite.valid) {
-				if (gfx_width() < 220) {
+				if (!compact && gfx_width() < 220) {
 					if (satellite.visible_now) {
 						row(&y, TR(NEXT_PASS, "Next pass"), TR(VISIBLE_NOW, "Visible now"), ui_col.rx);
 					} else {
@@ -659,7 +629,7 @@ static void satellite_draw(void)
 					sb_init(&b, set_value, sizeof(set_value));
 					satellite_eta_minutes(&b, minutes);
 				}
-				satellite_countdown_pair(&y, rise_value, set_value);
+				satellite_countdown_pair(&y, rise_value, set_value, satellite.visible_now, false);
 			}
 			draw_path(y, &satellite, &path);
 		} else {

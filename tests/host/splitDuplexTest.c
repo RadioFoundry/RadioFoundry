@@ -1709,7 +1709,8 @@ static void test_sched_cach(void)
 	uint32_t c2 = dmrCachBuild(0, 1, DMR_LCSS_LAST, 0x05A5Au);	// before TS2: AT idle
 	unsigned air0 = ssim.air_n;
 	CHECK(sched_cach_cmd(g, 1, 0x43, d, c1) == SPLIT_SCHED_QUEUED);
-	CHECK(sched_cach_cmd(g + 1u, 2, 0x49, idle, c2) == SPLIT_SCHED_QUEUED);	// an idle that carries a CACH
+	CHECK(sched_cach_cmd(g + 1u, 2, 0x43, d, c2) == SPLIT_SCHED_QUEUED);
+	CHECK(sched_cach_cmd(g + 1u, 2, 0x49, idle, c2) == SPLIT_SCHED_REPLACED);	// idle replaces a burst
 	CHECK(sched_cach_cmd(g + 2u, 1, 0x43, d, c2) == 0xE0 + SPLIT_RESULT_INVALID);	// TC names TS2
 	CHECK(sched_cmd(g + 2u, 1, 0x43, d) == SPLIT_SCHED_QUEUED);			// no CACH: the half's own
 	run_ms(600);

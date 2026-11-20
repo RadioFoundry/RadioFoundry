@@ -70,6 +70,8 @@ void sim_worst(bool on);
 // two texts on top of each other, a box drawn over part of a text. Each problem is one line of text
 #define SIM_LAYOUT_MAX	16
 int sim_layout_issues(char out[][160], int max);
+bool sim_text_has_color(const char *text, uint16_t color);
+bool sim_text_bounds(const char *text, int *x, int *y, int *w, int *h);
 
 // State for checks
 typedef struct {

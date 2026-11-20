@@ -81,7 +81,7 @@ static bool satellite_refresh_inventory(satellite_service_t *service, uint32_t g
 	lock();
 	service->scan_total = 0u;
 	memset(service->scan_summary_names, 0, sizeof(service->scan_summary_names));
-	service->scan_tle_epoch = 0u;
+	service->scan_oldest_tle_epoch = 0u;
 	unlock();
 	for (uint8_t i = 0u; i < count; i++) {
 		satellite_record_summary_t summary;
@@ -95,8 +95,8 @@ static bool satellite_refresh_inventory(satellite_service_t *service, uint32_t g
 		}
 		lock();
 		memcpy(service->scan_summary_names[i], summary.name, length);
-		if (i == 0u)
-			service->scan_tle_epoch = summary.epoch;
+		if (i == 0u || summary.epoch < service->scan_oldest_tle_epoch)
+			service->scan_oldest_tle_epoch = summary.epoch;
 		unlock();
 	}
 	if (satellite_store_generation() != generation)
@@ -109,7 +109,7 @@ static bool satellite_refresh_inventory(satellite_service_t *service, uint32_t g
 unavailable:
 	lock();
 	memset(service->scan_summary_names, 0, sizeof(service->scan_summary_names));
-	service->scan_tle_epoch = 0u;
+	service->scan_oldest_tle_epoch = 0u;
 	service->scan_total = count;
 	service->scan_cache_valid = false;
 	service->scan_status = SATELLITE_SERVICE_SCAN_UNAVAILABLE;
@@ -512,10 +512,18 @@ bool satellite_service_summary(const satellite_service_t *service, uint8_t recor
 	    service->scan_summary_names[record_index][0] == '\0')
 		return false;
 	memset(summary, 0, sizeof(*summary));
-	summary->epoch = record_index == 0u ? service->scan_tle_epoch : 0u;
 	memcpy(summary->name, service->scan_summary_names[record_index], SATELLITE_RECORD_BRIEF_NAME_MAX);
 	while (summary->name_length < SATELLITE_RECORD_BRIEF_NAME_MAX &&
 	       summary->name[summary->name_length] != '\0')
 		summary->name_length++;
+	return true;
+}
+
+bool satellite_service_oldest_tle_epoch(const satellite_service_t *service, uint32_t *epoch)
+{
+	if (service == NULL || epoch == NULL || service->scan_total == 0u ||
+	    service->scan_summary_names[0][0] == '\0')
+		return false;
+	*epoch = service->scan_oldest_tle_epoch;
 	return true;
 }

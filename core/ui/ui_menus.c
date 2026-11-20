@@ -6783,25 +6783,32 @@ static const set_item_t s_power[] = {
 #if CONFIG_KEY_ASSIGN
 // Settings > Keys: a row pair per key the board lets the user reassign, named as on the radio ("SK1", "SK1 hold")
 _Static_assert(UI_KEY_ROLES == 9, "KEY_ROWS below");
-static const char *key_name(uint8_t id)
+static char key_label[2 * UI_KEY_ROLES][20];
+static uint8_t key_label_lang = 0xFF;	// the language they were built in: rebuilt when the user picks another
+
+static void key_labels(void)
 {
-	static char label[20];
 	sbuf_t b;
-	uint8_t row = id - UI_SET_KEY_FIRST;
-	uint8_t r = row / 2u;
-	sb_init(&b, label, sizeof label);
-	if (board.side_key_names != NULL && r < board.side_key_count)
-		sb_str(&b, board.side_key_names[r]);
-	else if (board.home_key_names != NULL && r >= board.side_key_count &&
-		 r < board.side_key_count + board.home_key_count)
-		sb_str(&b, board.home_key_names[r - board.side_key_count]);
-	else {
-		sb_str(&b, TR(SET_LABEL_KEY_N, "Key "));
-		sb_i32(&b, r + 1);
+
+	if (key_label_lang == lang_current())
+		return;
+	key_label_lang = lang_current();
+	for (uint8_t r = 0; r < UI_KEY_ROLES; r++) {
+		for (uint8_t h = 0; h < 2; h++) {
+			sb_init(&b, key_label[2 * r + h], sizeof key_label[0]);
+			if (board.side_key_names != NULL && r < board.side_key_count) {
+				sb_str(&b, board.side_key_names[r]);
+			} else if (board.home_key_names != NULL && r >= board.side_key_count &&
+				   r < board.side_key_count + board.home_key_count) {
+				sb_str(&b, board.home_key_names[r - board.side_key_count]);
+			} else {
+				sb_str(&b, TR(SET_LABEL_KEY_N, "Key "));
+				sb_i32(&b, r + 1);
+			}
+			if (h)
+				sb_str(&b, TR(SET_LABEL_KEY_N_HOLD, " hold"));
+		}
 	}
-	if (row & 1u)
-		sb_str(&b, TR(SET_LABEL_KEY_N_HOLD, " hold"));
-	return label;
 }
 #endif
 static const set_item_t s_keys[] = {
@@ -6896,6 +6903,7 @@ static bool set_hidden(const set_item_t *s)
 #endif
 #if CONFIG_KEY_ASSIGN
 	if (s->type != ST_ACTION && s->id >= UI_SET_KEY_FIRST && s->id <= UI_SET_KEY_LAST) {
+		key_labels();
 		// a key this radio doesn't have (side keys, then the keys programmable on Home)
 		return (s->id - UI_SET_KEY_FIRST) / 2 >= board.side_key_count + board.home_key_count;
 	}
@@ -6939,12 +6947,12 @@ uint8_t ui_set_item_count(uint8_t g)
 }
 
 // A row's name in the language in use, or in English (Find matches both). Only a key's row has no key: it is named
-// after the key, built in the language in use, the same text either way. Consume it before the next call.
+// after the key, built in the language in use (by set_hidden, which set_nth asked), the same text either way
 static const char *set_name(const set_item_t *s, bool english)
 {
 #if CONFIG_KEY_ASSIGN
 	if (s->name == TR_NONE)
-		return key_name(s->id);
+		return key_label[s->id - UI_SET_KEY_FIRST];
 #endif
 	return english ? tr_en(s->name) : tr(s->name);
 }

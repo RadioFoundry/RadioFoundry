@@ -1315,12 +1315,12 @@ satellite_store_transfer_status_t satellite_store_transfer_profiles_chunk(
 		if (!flash_read(bank_addr(m, transaction_bank) + SAT_PROFILE_OFFSET, io_buf, SAT_PROFILE_BYTES) ||
 		    !valid_profile_data(io_buf) || !transfer_profile_data_match_records(m, io_buf)) {
 			result = SATELLITE_STORE_TRANSFER_BAD_ARG;
-		} else if (!flash_read(bank_addr(m, transaction_bank) + SAT_PROFILE_OFFSET, io_buf, SAT_PROFILE_BYTES)) {
-			result = SATELLITE_STORE_TRANSFER_REFUSED;
 		} else {
 			uint8_t used = (uint8_t)(1u + (uint16_t)transaction_profile_count * 14u);
-			memset(io_buf + used, 0, SAT_PROFILE_BYTES - used);
-			if (!flash_write(bank_addr(m, transaction_bank) + SAT_PROFILE_OFFSET, io_buf, SAT_PROFILE_BYTES)) {
+			uint8_t padding = (uint8_t)(SAT_PROFILE_BYTES - used);
+			memset(io_buf, 0, padding);
+			if (padding != 0u &&
+			    !flash_write(bank_addr(m, transaction_bank) + SAT_PROFILE_OFFSET + used, io_buf, padding)) {
 				result = SATELLITE_STORE_TRANSFER_REFUSED;
 				storage_unlock();
 				return result;

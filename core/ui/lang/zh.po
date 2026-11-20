@@ -4560,14 +4560,14 @@ msgid "Up Down pick  Back"
 msgstr "返回 上下选择"
 
 #: core/ui/ui_satellite.c
-msgctxt "TRACKING_4"
-msgid "Tracking"
-msgstr "跟踪中"
-
-#: core/ui/ui_satellite.c
 msgctxt "CATALOG"
 msgid "Catalog"
 msgstr "编号"
+
+#: core/ui/ui_satellite.c
+msgctxt "TRACKING_4"
+msgid "Tracking"
+msgstr "跟踪中"
 
 #: core/ui/ui_satellite.c
 msgctxt "NEXT_PASS"
