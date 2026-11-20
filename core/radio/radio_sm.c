@@ -1601,6 +1601,9 @@ static void dmr_configure(radio_sm_t *sm)
 	if (sm->t3_on) {
 		cfg.own_id = t3s.cfg.own_id;	// the system's ID: calls to it, and the source of ours
 		cfg.both_slots = sm->t3_both;
+		// Digital monitor follows every grant (t3_monitor), not every burst: the call plays on its own slot and the
+		// system's color code, while the other slot carries another call
+		cfg.listen.any_cc = cfg.listen.both_ts = false;
 		if (t3m.state == T3_FOLLOW) {
 			const t3_call_t *c = &t3m.call;
 			cfg.listen.hear_all = true;
@@ -3526,6 +3529,19 @@ static void t3_keep_kill(radio_sm_t *sm, uint32_t now_ms)
 	changed(sm);
 }
 
+// Digital monitor on a trunked channel follows every talkgroup's grant (T3_OPT_MONITOR), as it hears every talkgroup
+// on a conventional one; off, the system's own setting again (t3_monitor_set, taken where t3s is loaded: t3s keeps
+// monitor's bit while the engine stops for the fallback and starts again). The engine reads the option at each grant:
+// a call already followed plays to its end
+static void t3_monitor(radio_sm_t *sm)
+{
+	if (sm->t3_monitor_set || hear_all_on(sm)) {
+		t3s.cfg.opts |= T3_OPT_MONITOR;
+	} else {
+		t3s.cfg.opts &= (uint16_t)~T3_OPT_MONITOR;
+	}
+}
+
 // Start the engine on t3s
 static void t3_begin(radio_sm_t *sm, uint32_t now_ms)
 {
@@ -3576,6 +3592,7 @@ static void t3_begin(radio_sm_t *sm, uint32_t now_ms)
 	sm->t3_hunt_ms = now_ms | 1u;	// hunting from now (the fallback's clock)
 	memset(sm->t3_at, 0, sizeof(sm->t3_at));
 	sm->t3_cc = t3s.cc;
+	t3_monitor(sm);
 	dmr_call_set_rx_tap(t3_tap, sm);
 	// A stun outlasts leaving the system and coming back (6.4.9): it is the network's, so another network's
 	// doesn't carry over
@@ -3615,6 +3632,10 @@ void radio_sm_t3_brief(radio_sm_t *sm)
 	b->reg = x->reg;
 	b->polls = x->polls;
 	b->poll_fails = x->poll_fails;
+	b->other = x->other;
+	b->refused = x->refused;
+	b->unmapped = x->last_unmapped;
+	b->why = x->why;
 }
 
 // RADIO_T3_START: the debug link's staged system, on whatever channel the radio is on
@@ -3623,6 +3644,7 @@ static void t3_start(radio_sm_t *sm, uint32_t now_ms)
 	t3_off(sm);
 	t3s = *radio_t3_staged();
 	radio_t3_fix(&t3s);
+	sm->t3_monitor_set = (t3s.cfg.opts & T3_OPT_MONITOR) != 0;
 	t3_begin(sm, now_ms);
 }
 
@@ -3708,6 +3730,12 @@ static bool t3_channel(radio_sm_t *sm, uint16_t number, const channel_t *ch)
 		// A receive-only channel never transmits (channel-modes.md 2.1): no registration from it either
 		t3s.cfg.opts |= T3_OPT_LISTEN_ONLY;
 	}
+	if (!(t3s.cfg.opts & T3_OPT_LISTEN_ONLY)) {
+		// The system code learned from the air (dmr-trunking-codeplug.md 1) only for listening: a radio that
+		// transmits registers on the system its codeplug names, never on whichever it heard first
+		t3s.cfg.opts &= (uint16_t)~T3_OPT_LEARN_SYSCODE;
+	}
+	sm->t3_monitor_set = (t3s.cfg.opts & T3_OPT_MONITOR) != 0;
 	radio_t3_talk(ch, &t3s);
 	sm->t3_fb_number = radio_t3_fallback(number, &t3s, &sm->t3_fb_ch);
 	sm->t3_pending = true;		// started by t3_tick, which has the clock
@@ -3833,6 +3861,41 @@ static void t3_request(radio_sm_t *sm, uint8_t cmd, uint32_t now_ms)
 	}
 }
 
+// PTT refused on a trunked system: TXDENY_TRUNK, and why for the screen
+static void t3_deny(radio_sm_t *sm, uint8_t why)
+{
+	radio_t3v.why = why;
+	sm->view.t3.why = why;	// the brief is made before the view goes out, but not before deny publishes it
+	deny(sm, TXDENY_TRUNK);
+}
+
+#if CONFIG_DMR_TRUNK_TX
+// Why the engine can't ask for a channel now (PTT pressed, or a request that ended without one)
+static uint8_t t3_why_now(uint32_t now_ms, uint8_t result)
+{
+	uint16_t code;
+	if (t3m.state == T3_HUNT) {
+		if (t3_ms_other(&t3m, now_ms, &code)) {
+			return RADIO_TRUNK_WHY_OTHER_SYS;
+		}
+		return t3_ms_reg_refused(&t3m) ? RADIO_TRUNK_WHY_REG_REFUSED : RADIO_TRUNK_WHY_NO_CC;
+	}
+	if (t3_ms_reg_refused(&t3m)) {
+		return RADIO_TRUNK_WHY_REG_REFUSED;
+	}
+	if (t3m.reg != T3_REG_OK && t3m.reg != T3_REG_NOT_NEEDED) {
+		return t3m.reg == T3_REG_LISTEN ? RADIO_TRUNK_WHY_OFF : RADIO_TRUNK_WHY_NOT_REG;
+	}
+	switch (result) {
+	case T3_RES_REFUSED:
+	case T3_RES_NOT_ALLOWED: return RADIO_TRUNK_WHY_DENIED;
+	case T3_RES_LOST: return RADIO_TRUNK_WHY_NO_CC;
+	case T3_RES_UNMAPPED: return RADIO_TRUNK_WHY_UNMAPPED;
+	default: return RADIO_TRUNK_WHY_NO_ANSWER;
+	}
+}
+#endif
+
 // PTT on a trunked system. True: handled here (a request on the control channel; PTT stays held while it runs)
 static bool t3_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 {
@@ -3856,8 +3919,14 @@ static bool t3_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		changed(sm);
 		return true;
 	}
+	// Only a result this refusal set: an earlier request's (granted, unmapped, lost) says nothing of this PTT.
+	// Following a call the radio may not talk on (a broadcast, P_PROTECT): the system's rule
+	uint8_t res = t3m.state != T3_CAMPED ? T3_RES_NOT_ALLOWED
+					      : t3m.ax.state == T3_AX_IDLE ? t3m.ax.result : T3_RES_PENDING;
+	t3_deny(sm, dst == 0 && t3m.state == T3_CAMPED ? RADIO_TRUNK_WHY_OFF : t3_why_now(now_ms, res));
+#else
+	t3_deny(sm, RADIO_TRUNK_WHY_OFF);	// a build that never transmits on a trunked system
 #endif
-	deny(sm, TXDENY_NO_DMR);
 	return true;
 }
 
@@ -3934,6 +4003,7 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 	if (!sm->t3_on) {
 		return;
 	}
+	t3_monitor(sm);
 	uint32_t tc = dmr_call_ticks(NULL);
 	uint32_t n = tc - sm->t3_ticks;
 	if (n > 8u) {
@@ -4043,7 +4113,7 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 		} else if (t3m.ax.state == T3_AX_IDLE && t3m.ax.result != T3_RES_PENDING &&
 			   t3m.ax.result != T3_RES_GRANTED) {
 			sm->t3_ptt_wait = false;	// refused, no answer, timed out
-			deny(sm, TXDENY_NO_DMR);
+			t3_deny(sm, t3_why_now(now_ms, t3m.ax.result));
 		}
 	}
 #endif
@@ -4051,6 +4121,9 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 	t3_keep_kill(sm, now_ms);
 	t3_sd_inbox(sm);
 	t3_poll_tick(sm);
+	uint16_t other;
+	radio_t3v.other = t3_ms_other(&t3m, now_ms, &other) ? other : 0u;
+	radio_t3v.refused = t3_ms_reg_refused(&t3m);
 	t3_publish(sm);
 }
 #endif
@@ -6304,7 +6377,7 @@ static void air_apply(radio_sm_t *sm)
 static void p25t_ptt(radio_sm_t *sm)
 {
 	uint8_t why = radio_p25_trunk_ptt(true);
-	if (why != RADIO_P25T_WHY_NONE) {
+	if (why != RADIO_TRUNK_WHY_NONE) {
 		sm->view.p25.twhy = why;	// (the next poll keeps it)
 		deny(sm, TXDENY_TRUNK);
 		return;
@@ -9187,11 +9260,27 @@ static void sfr_rpt_tick(radio_sm_t *sm, uint32_t now_ms)
 }
 #endif
 
+#if CONFIG_DMR_TRUNK
+// A key written while the channel is a trunked one whose system couldn't be used: select it again. Systems are keys,
+// written apart from the channels; one that lands after the channel was selected (an editor writing the channel
+// first) would otherwise stay "not set up" until another channel is selected, which a zone of one never allows.
+// Through the reload a codeplug write takes (radio_sm_poll): it waits out a transmission, the hotspot or a zone write
+static void t3_kv_retry(radio_sm_t *sm)
+{
+	if (sm->t3_tagged && radio_t3v.unavail && !sm->view.vfo && sm->have_channels) {
+		sm->reload_pending = true;
+	}
+}
+#endif
+
 void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 {
 	sm->led_now = now_ms;
 	if (codeplug_kv_serial() != kv_seen) {
 		kv_load(sm, now_ms);	// a key written (menu, debug link): its value only, without a codeplug reload
+#if CONFIG_DMR_TRUNK
+		t3_kv_retry(sm);
+#endif
 	}
 #if CONFIG_FM_TX_TONES
 	if (sm->burst_timed && !sm->burst_held && now_ms - sm->burst_ms >= RADIO_BURST_MIN_MS) {

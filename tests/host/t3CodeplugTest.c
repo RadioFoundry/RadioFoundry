@@ -153,9 +153,10 @@ static void test_load(void)
 	char name[CODEPLUG_NAME_LEN + 1];
 
 	fresh();
-	// T3_OPT_MONITOR (0x0008) is the debug link's and 0x0001 is reserved (listen only is the header's flag): a
-	// codeplug's options set neither
-	sys_rec(v, "Metro", TX, T3_OPT_PRIVATE | T3_OPT_NO_ROAM | T3_OPT_STUN | T3_OPT_MONITOR | 0x0001, 9, 0x1234);
+	// 0x0001 is reserved (listen only is the header's flag) and 0x0800 too: a codeplug's options set neither. Follow
+	// every talkgroup (0x0008) and learning the system code (0x0010) are a codeplug's
+	sys_rec(v, "Metro", TX, T3_OPT_PRIVATE | T3_OPT_NO_ROAM | T3_OPT_STUN | T3_OPT_MONITOR | T3_OPT_LEARN_SYSCODE |
+		0x0001 | 0x0800, 9, 0x1234);
 	CHECK(codeplug_kv_set(SYS(0), v, sizeof v));
 	// Written out of entry order, with another system's channel among them
 	chan(ENTRY(5), 0, true, 1, 450012500, 455012500);
@@ -166,7 +167,8 @@ static void test_load(void)
 	CHECK(radio_t3_name(0, name) && strcmp(name, "Metro") == 0);
 	CHECK(radio_t3_load(0, &s));
 	CHECK(s.cfg.auth.model == 1 && s.cfg.auth.net == 5 && s.cfg.auth.category == T3_PAR_A && s.cc == 2);
-	CHECK(s.cfg.opts == (T3_OPT_PRIVATE | T3_OPT_NO_ROAM | T3_OPT_STUN) && s.sys == 0 && !s.ip_gw);
+	CHECK(s.cfg.opts == (T3_OPT_PRIVATE | T3_OPT_NO_ROAM | T3_OPT_STUN | T3_OPT_MONITOR | T3_OPT_LEARN_SYSCODE) &&
+	      s.sys == 0 && !s.ip_gw);
 	CHECK(s.fb_hold_s == 45 && s.fb_chan == 9 && s.fb_check == 0x1234 && !s.cfg.auth_key_set);
 	CHECK(s.cfg.own_id == 0 && s.cfg.leave_dbm == -95 && s.cfg.ps_rq == 3);
 	CHECK(s.cfg.auth.nsites == 2 && s.cfg.auth.sites == s.cfg.sites && s.cfg.sites[0] == 1 && s.cfg.sites[1] == 2);

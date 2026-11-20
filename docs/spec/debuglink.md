@@ -941,7 +941,11 @@ in), `vote_on` (sampling an adjacent control channel), `hunt_strict` (hunting aw
 network, authorized sites or category), `sys` (the codeplug system of the channel, n+1; 0: none), `unavail` (that
 system isn't set up: the channel is locked out), `fallback` (0 on the system, 1 on its fallback channel, 2 looking for
 the system from it), `fallbacks`, `backs` (how often it went to the fallback channel and came back; dmr-trunking.md
-12.5), `adjacent` (how many are known), then each as `adjN=rx_hz,sys14,conf_prio,adj_prio,dbm,age_ms`
+12.5), `other` (searching and hearing only another system: that system's C_SYScode in hex, PAR 0 when only its short
+LC was heard; 0: none), `why` (the last refused PTT's reason: 1 transmit off, 2 no control channel, 3 not registered, 4
+denied, 5 no answer, 7 only another system heard, 8 registration refused, 9 granted on a channel the codeplug doesn't
+list: `last_unmapped`), `refused` (1: the system refused the
+registration, `t3_ms_reg_refused`), `adjacent` (how many are known), then each as `adjN=rx_hz,sys14,conf_prio,adj_prio,dbm,age_ms`
 (sys14 the system code's 14 high bits in hex; dbm 0 and age -1: never sampled).
 
 `rfoundry_debug.py t3 setup --model 1 --net 5 --cc 2 --ctrl 1:RX_MHZ:TX_MHZ --tg 1` stages and starts one;

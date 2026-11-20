@@ -15,6 +15,7 @@ import { MODE_KEY, decodeTag, encodeTag, newSystem, setKind, syncModes, decodeSy
 import { KINDS, SYSTEM_TYPES, offeredKinds, offeredTypes, kindName } from "../static/js/codeplug/modes.js";
 import { nameCheck } from "../static/js/codeplug/modebytes.js";
 import { decodeConv, encodeConv, decodeUnit, decodeTsys, p25System, NAC_ANY } from "../static/js/codeplug/mode_p25.js";
+import { t3System, OPTS as T3_OPTS } from "../static/js/codeplug/mode_t3.js";
 
 const VECTORS = new URL("../../tests/vectors/channel-modes.txt", import.meta.url);
 const bytes = (s) => (s === "-" ? null : Uint8Array.from(s.match(/../g) ?? [], (x) => parseInt(x, 16)));
@@ -578,4 +579,21 @@ test("NXDN: traffic keys round-trip, resolve per system, and preserve opaque rec
 	assert.equal(first.system, null);
 	assert.ok(has(validate(decoded), "nxdn_missing_tx_key", first));
 	assert.equal(countSecrets(encode(decoded).bytes), 0);
+});
+
+test("Tier III: follow every talk group and learning the system are option bits 0x0008 and 0x0010; others kept", () => {
+	assert.equal(T3_OPTS.followAll, 0x0008);
+	assert.equal(T3_OPTS.learnSystem, 0x0010);
+	const prev = new Uint8Array(39);
+	prev[6] = 0x08;		// 0x0800, reserved: kept as stored
+	const s = { ...t3System.newFields(), followAll: true, learnSystem: true };
+	const v = t3System.encode(s, prev);
+	assert.equal(v[5] | (v[6] << 8), 0x0800 | 0x0008 | 0x0010 | 0x0020);
+	const d = t3System.decode(v);
+	assert.ok(d.followAll && d.learnSystem && d.privateCalls && !d.allCalls);
+	const off = t3System.encode({ ...d, followAll: false, learnSystem: false }, v);
+	assert.equal(off[5] | (off[6] << 8), 0x0800 | 0x0020);
+	const fields = t3System.fields().map((f) => [f.key, f.section]);
+	assert.ok(fields.some(([k, sec]) => k === "followAll" && sec === "calls"));
+	assert.ok(fields.some(([k, sec]) => k === "learnSystem" && sec === "identity"));
 });
