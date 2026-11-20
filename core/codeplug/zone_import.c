@@ -312,7 +312,7 @@ static uint8_t find_system(const zsSystem_t *s, uint8_t *buf, uint16_t cap)
 	uint16_t key;
 	int len;
 
-	if ((unsigned)CODEPLUG_SYS_HDR + s->idLen > cap) {
+	if (s->idLen == 0 || (unsigned)CODEPLUG_SYS_HDR + s->idLen > cap) {
 		return CODEPLUG_SYSTEM_NONE;
 	}
 	codeplug_kv_begin(&c, CODEPLUG_KEY_SYSTEM, CODEPLUG_KEY_SYSTEM + 0xFEu);
@@ -343,7 +343,9 @@ static uint8_t add_system(const zsSystem_t *s)
 	kv_buf[2] = s->level;		// the sharing level it came with
 	kv_buf[3] = s->idLen;
 	strncpy((char *)&kv_buf[12], s->name, CODEPLUG_NAME_LEN);
-	memcpy(&kv_buf[CODEPLUG_SYS_HDR], s->block, s->blockLen);
+	if (s->blockLen > 0) {	// a shared system can come without a block (NULL)
+		memcpy(&kv_buf[CODEPLUG_SYS_HDR], s->block, s->blockLen);
+	}
 	bool ok = add_key((uint16_t)(CODEPLUG_KEY_SYSTEM + n), kv_buf, (uint16_t)(CODEPLUG_SYS_HDR + s->blockLen));
 
 	if (ok && s->secretLen > 0) {

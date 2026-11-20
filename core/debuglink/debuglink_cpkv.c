@@ -28,6 +28,11 @@ size_t __attribute__((noinline)) debuglink_cmd_cpkv(const uint8_t *req, uint16_t
 	out[0] = DL_ST_OK;
 	switch (req[0]) {
 	case DL_CPKV_GET: {	// key u16, offset u16 -> length u16, the value's bytes from offset
+		if ((key >= CODEPLUG_KEY_SYS_KEY && key < CODEPLUG_KEY_CH_TAG) ||
+		    (key >= CODEPLUG_KEY_TRAFFIC && key < CODEPLUG_KEY_ZONE_TAG)) {
+			out[0] = DL_ST_UNAVAILABLE;	// system and traffic keys are write-only over this interface
+			return 1;
+		}
 		uint16_t off = len >= 5u ? rd16(req + 3) : 0;
 		int n = codeplug_kv_get(key, v, sizeof v);
 		if (n < 0) {
