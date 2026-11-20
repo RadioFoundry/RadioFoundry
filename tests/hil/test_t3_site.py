@@ -69,6 +69,10 @@ Pass criteria:
   sending (call.rc_ceased +1, call.rc_good >= 2: a cease is acted on only when heard twice) though PTT is still held,
   and it doesn't key again while PTT stays held (CEASE_HOLD_S). After the release it is back on the control channel
   within CALL_S (the site may give the channel to the radio that interrupted first).
+- test_t3_follow_all (receive only): listen only with --t3-tg the one talkgroup listened to, digital monitor turned on
+  with the monitor key (dmr.hear_all_latch 1): within FOLLOW_ALL_S the radio follows a group call to another
+  talkgroup (t3.state follow, t3.call_group 1, t3.call_dst not --t3-tg). A site with no such call meanwhile skips.
+  The key again turns it off (dmr.hear_all_latch 0).
 - test_t3_cp_channel (radio_tx): the system from the codeplug instead (dmr-trunking-codeplug.md): a system record in
   slot CP_SYS with --t3-system's identity, its control channel and a tag on the channel in use. Selecting the channel
   starts the system (t3.sys CP_SYS + 1): within CAMP_S + REG_S it camps on --t3-rx-mhz and registers (t3.reg ok).
@@ -140,6 +144,7 @@ PRIME = 3           # AMBE_VOICE_PRIME in core/dmr/ambe/ambeVoice.h
 PEAK_MIN = 1000     # as test_dmr_voice: decoded speech peaks at thousands
 CEASE_S = 4.0       # the command, the site's RC (every 360 ms), two heard, the over ended after its burst F
 CEASE_HOLD_S = 1.5  # PTT held on after the cease: no new over
+FOLLOW_ALL_S = 180.0  # a busy site's next call on another talkgroup
 CP_SYS = 7          # the codeplug system slot the cp tests write (the last: the user's come first)
 CP_CHAN = 0xF0      # the system entry they write (CPKV_SYS_CHAN + it)
 
@@ -180,7 +185,8 @@ def num(v, key):
 
 
 def wait_t3(radio, pred, timeout, what):
-    return radio.wait_for(pred, timeout, interval=0.2, sections=(SECTION, "t3_roam", "core"), what=what)
+    # t3_ra has the t3.send_* reasons, so a timed-out wait shows why sends were refused
+    return radio.wait_for(pred, timeout, interval=0.2, sections=(SECTION, "t3_roam", "t3_ra", "core"), what=what)
 
 
 @pytest.fixture
@@ -336,6 +342,41 @@ def test_t3_camp(trunk, pytestconfig):
     trunk.link.t3("stop")
     v = wait_t3(trunk, lambda x: x.get("t3.on") == "0", 2.0, "stopped")
     assert v.get("t3.state") == "off"
+
+
+def monitor_key(radio, want):
+    """Press and release the monitor key (a DMR channel's digital monitor toggles on the press) until the hear-all
+    latch reads want"""
+    L = radio.link
+    if L.view(["dmr"]).get("dmr.hear_all_latch") != ("1" if want else "0"):
+        L.monitor(True)
+        L.monitor(False)
+    return radio.wait_for(lambda v: v.get("dmr.hear_all_latch") == ("1" if want else "0"), 2.0, interval=0.1,
+                          sections=("dmr",), what=f"digital monitor {'on' if want else 'off'}")
+
+
+@pytest.mark.feature("dmr_trunk")
+def test_t3_follow_all(trunk, pytestconfig):
+    s = site(pytestconfig, tx=False)
+    start(trunk, s, listen_only=True)
+    try:
+        monitor_key(trunk, True)
+        try:
+            v = wait_t3(trunk, lambda x: x.get("t3.state") == "follow" and x.get("t3.call_group") == "1" and
+                        as_int(x.get("t3.call_dst"), s["tg"]) != s["tg"], FOLLOW_ALL_S,
+                        "a call followed on another talkgroup")
+        except AssertionError:
+            v = t3(trunk)
+            if num(v, "t3.grants") == 0:
+                skip("bench", f"the site granted no call in {FOLLOW_ALL_S:.0f} s")
+            raise
+        print(f"followed: talkgroup {v['t3.call_dst']} from {v['t3.call_src']} on slot {v['t3.slot']}, "
+              f"{v['t3.grants']} grants, {v['t3.followed']} followed")
+    except AssertionError:
+        print("t3 view:", t3(trunk))
+        raise
+    finally:
+        monitor_key(trunk, False)
 
 
 @pytest.mark.feature("dmr_trunk_tx")

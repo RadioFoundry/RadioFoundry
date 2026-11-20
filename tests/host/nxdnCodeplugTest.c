@@ -11,6 +11,7 @@
 #include "codeplug/codeplug_tag.h"
 #include "codeplug/codeplug_records.h"
 #include "nxdn/nxdn_codeplug.h"
+#include "nxdn/nxdn.h"
 #include "storage/storage.h"
 #include "sim/sim_flash.h"
 
@@ -296,11 +297,54 @@ static void test_conv_save(void)
 	}
 }
 
+static void test_traffic_keys(void)
+{
+	channel_t ch = make("Scrambled", 453200000, 458200000);
+	nxdn_conv_cfg_t cfg;
+	codeplug_tag_t tag = { .kind = CODEPLUG_KIND_NXDN, .system = 2, .flags = CODEPLUG_TAG_TX };
+	uint8_t params[] = { 0, 3, 0, NXDN_CIPHER_SCRAMBLE, 63 };
+	uint8_t system[CODEPLUG_SYS_HDR] = { CODEPLUG_SYSTYPE_NXDN, CODEPLUG_SYS_TX };
+	uint8_t key[] = { 2, NXDN_CIPHER_SCRAMBLE, 63, 0, 0, 0x34, 0x12 };
+	uint16_t own_id;
+	system[4] = 0x37;
+	system[5] = 0x13;
+
+	CHECK(codeplug_set_channel(35, &ch) && codeplug_tag_write(35, ch.name, &tag, params, sizeof params));
+	CHECK(codeplug_channel(35, &ch) && nxdn_conv_load(35, &ch, &cfg));
+	CHECK(ch.system == 2 && cfg.tx_cipher == NXDN_CIPHER_SCRAMBLE && cfg.tx_key_id == 63);
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_SYSTEM + 2, system, sizeof system));
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_TRAFFIC, key, sizeof key));
+	key[2] = 0;
+	key[5] = 0x78;
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_TRAFFIC + 1, key, sizeof key));
+	key[0] = 1;
+	key[2] = 2;
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_TRAFFIC + 2, key, sizeof key));
+	key[0] = 2;
+	key[1] = 2;
+	key[2] = 3;
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_TRAFFIC + 3, key, sizeof key));
+	key[1] = NXDN_CIPHER_SCRAMBLE;
+	key[2] = 4;
+	key[6] = 0x80;
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_TRAFFIC + 4, key, sizeof key));
+	CHECK(nxdn_system_load(2, &own_id) && own_id == 0x1337);
+	CHECK(nxdn_system_key(2, NXDN_CIPHER_SCRAMBLE, 0) == 0x1278);
+	CHECK(nxdn_system_key(2, NXDN_CIPHER_SCRAMBLE, 63) == 0x1234);
+	for (uint8_t id = 2; id <= 4; id++)
+		CHECK(!nxdn_system_key(2, NXDN_CIPHER_SCRAMBLE, id));
+	system[1] = 0;
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_SYSTEM + 2, system, sizeof system));
+	CHECK(!nxdn_system_load(2, &own_id) && own_id == 0x1337);
+	CHECK(nxdn_system_key(2, NXDN_CIPHER_SCRAMBLE, 63) == 0x1234);
+}
+
 int main(void)
 {
 	test_vectors();
 	test_conv_load();
 	test_conv_save();
+	test_traffic_keys();
 	sim_flash_free();
 	if (failures) {
 		printf("nxdnCodeplugTest: %d failure(s)\n", failures);

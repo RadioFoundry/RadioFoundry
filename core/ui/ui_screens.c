@@ -1992,15 +1992,17 @@ static void air_call_line(const air_call_t *c, const font_t *f, int y)
 	char buf[64], fit[48];
 	sbuf_t b;
 
-	if (c->enc || !c->played) {
+	if (!c->played) {
 		gfx_text_fit(f, c->enc ? TR(CALL_WHY_ENCRYPTED, "Encrypted: not played") :
 			TR(CALL_WHY_OTHER_TG, "Other TG: not played"), gfx_width(), fit, sizeof fit);
 		gfx_text(f, 0, y, fit, ui_col.warn);
 		return;
 	}
-	// Too wide: the caller's ID goes first, then the target is cut
+	// Too wide: keep the marker and destination, then cut the destination if needed
 	for (int with_id = c->src != 0; with_id >= 0; with_id--) {
 		sb_init(&b, buf, sizeof buf);
+		if (c->enc)
+			sb_str(&b, "ENC ");
 		if (with_id) {
 			sb_str(&b, "ID ");
 			sb_u32(&b, c->src, 1);

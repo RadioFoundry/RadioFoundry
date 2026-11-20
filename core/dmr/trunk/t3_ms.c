@@ -1084,9 +1084,11 @@ static void answer_info(t3_ms_t *ms, uint8_t slot, bool payload, uint8_t reason,
 	ms->tx.udt = false;
 }
 
+// Response_Info for every reason but a poll's (table 7.41): G/I (bit 6) 0, as the target is the AHOY's source, an
+// individual or gateway ID, never a talkgroup; then Response_Check from the TSCC's C_SYScode
 static void answer(t3_ms_t *ms, uint8_t slot, bool payload, uint8_t reason, uint32_t to, bool then_return)
 {
-	answer_info(ms, slot, payload, reason, 0, to, then_return);
+	answer_info(ms, slot, payload, reason, t3_response_check(ms->syscode), to, then_return);
 }
 
 // A status delivered by C_AHOY (6.6.6.1.1.4): Service_Options_Mirror holds its 5 most significant bits, Appended_Blocks

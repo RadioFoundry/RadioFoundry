@@ -197,7 +197,7 @@ the TSCC. A radio switched on meanwhile camps only at the Aloha: a grant doesn't
 
 | Grant | Followed when |
 |---|---|
-| TV, BTV | the radio is the source (its own call); otherwise, unless it is a late-entry grant for a talkgroup call the user left: the talkgroup is in the system's list with the listen flag, or it is an all-call (ALLMSID, ALLMSIDL, ALLMSIDZ) and all-calls are on, or the grant is an emergency and emergencies on any talkgroup are on, or monitor is on |
+| TV, BTV | the radio is the source (its own call); otherwise, unless it is a late-entry grant for a talkgroup call the user left: the talkgroup is in the system's list with the listen flag, or it is an all-call (ALLMSID, ALLMSIDL, ALLMSIDZ) and all-calls are on, or the grant is an emergency and emergencies on any talkgroup are on, or monitor is on (the system's "follow every talkgroup", or digital monitor while it is on: the radio core sets the option from the hear-all latch at every tick, so it applies from the next grant) |
 | PV | the radio is the source; or the destination is the radio's ID and private calls are on |
 | PD, TD (and the multi-item 55, 56) | as data calls: PD with the radio as source or target; TD with the radio as source, or to a talkgroup it listens to (section 7.7) |
 
@@ -335,7 +335,9 @@ without sending, and the call's late-entry grants don't bring it back.
 A C_AHOY or P_AHOY to the radio's ID (or to the followed talkgroup, on the payload channel; or a radio check of a
 talkgroup the radio follows, on the TSCC) is answered with C_ACKU or P_ACKU on the inbound slot after the next CACH of
 the slot it came on, without random access. The answer's target is the AHOY's source, its additional address the
-radio's ID, also when a talkgroup was addressed (table 6.28).
+radio's ID, also when a talkgroup was addressed (table 6.28). Its Response_Info (table 7.41) is G/I 0 (the target is
+an individual or gateway ID) and the 6-bit Response_Check of the TSCC's C_SYScode (section 4), except for a status
+poll, whose Response_Info is the radio's status.
 
 | AHOY | Answer |
 |---|---|
