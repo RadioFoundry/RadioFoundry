@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-"""DMR voice path end to end (opt-in RF: --allow-rf --allow-service-stop, and --ambe FILE / $RFOUNDRY_HIL_AMBE): the SDR
-bench sends one call carrying a real speech recording; every frame must reach the speaker path.
+"""DMR voice path end to end (opt-in RF: --allow-rf --allow-service-stop): the SDR bench sends one call carrying speech,
+tests/data/voice/ten_second_countdown.ambe (540 frames, 10.8 s: 30 superframes without a gap) or the --ambe FILE /
+$RFOUNDRY_HIL_AMBE given; every frame must reach the speaker path.
 
 Pass criteria (README.md): the AMBE voice layer takes in every frame the bench sent (the file padded to whole
 superframes), plays at least all but AMBE_VOICE_PRIME (3) of them (a frame can still be queued when the terminator
@@ -17,7 +18,7 @@ import time
 
 import pytest
 
-from rfoundry_hil import counter_deltas, skip
+from rfoundry_hil import counter_deltas, skip, speech_file
 
 PRIME = 3   # AMBE_VOICE_PRIME in core/dmr/ambe/ambeVoice.h
 # Decoded speech peaks at thousands; a decoder fed the wrong bits gave 6 with every counter clean (DB25-D, 2026-10-17)
@@ -29,11 +30,7 @@ PEAK_MIN = 1000
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 def test_dmr_voice_speech(radio, sdr_bench, pytestconfig):
-    ambe = pytestconfig.getoption("--ambe")
-    if not ambe:
-        skip("opt_in", "give --ambe FILE (or $RFOUNDRY_HIL_AMBE): a 9-byte-frame .ambe speech recording")
-    if not os.path.isfile(ambe) or os.path.getsize(ambe) % 9:
-        pytest.fail(f"{ambe}: not a 9-byte-frame .ambe file")
+    ambe = speech_file(pytestconfig, "--ambe", 9, long=True)
     if "DMR" not in radio.features():
         skip("not_built", "built without DMR")
     freq, cc, tg = (pytestconfig.getoption(o) for o in ("--dmr-freq", "--dmr-cc", "--dmr-tg"))

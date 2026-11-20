@@ -172,6 +172,27 @@ def skip(kind, reason, module=False):
     raise e
 
 
+# The test voice set (tests/data/voice/README.md): synthesized speech as the frames each digital mode carries, AMBE+2
+# in 9-byte frames (DMR, NXDN) and full rate in 11-byte frames (P25 Phase 1). A short test transmission (104 frames,
+# 2.08 s) and a countdown for longer overs (540 frames, 10.8 s). The voice tests send these unless --ambe / --imbe
+# names another file
+VOICE_DIR = os.path.join(ROOT, "tests", "data", "voice")
+TEST_SPEECH = {(o, long): os.path.join(VOICE_DIR, f"{name}.{o[2:]}") for o in ("--ambe", "--imbe")
+               for long, name in ((False, "test_transmission"), (True, "ten_second_countdown"))}
+
+
+def speech_file(pytestconfig, option, frame_bytes, long=False):
+    """The speech file a voice test sends: the --ambe or --imbe option's (or its environment variable's), else the
+    test voice set's, the countdown when long. Fails the test when the file is missing or not whole frames of
+    frame_bytes."""
+    __tracebackhide__ = True
+    import pytest
+    path = pytestconfig.getoption(option) or TEST_SPEECH[option, long]
+    if not os.path.isfile(path) or os.path.getsize(path) == 0 or os.path.getsize(path) % frame_bytes:
+        pytest.fail(f"{path}: not a file of {frame_bytes}-byte frames ({option})")
+    return path
+
+
 def need_radio_tx(radio):
     """Skip (not_built) when the radio can't transmit at all: its view's can_tx is 0 (no band may, a transmitter not
     written yet). A test that also checks what the radio received calls this after those checks."""

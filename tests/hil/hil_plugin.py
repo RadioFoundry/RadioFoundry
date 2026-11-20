@@ -25,7 +25,7 @@ def pytest_collection_modifyitems(config, items):
         if ("rf" in item.keywords or "radio_tx" in item.keywords) and not config.getoption("--allow-rf"):
             if "audio_smoke" in item.keywords:
                 item.add_marker(skip_mark("opt_in", "DMR AUDIO NOT CHECKED: transmits; run the bench pass with "
-                                                    "--allow-rf --ambe FILE (README.md, Default bench pass)"))
+                                                    "--allow-rf (README.md, Default bench pass)"))
             else:
                 item.add_marker(skip_mark("opt_in", "transmits: run with --allow-rf"))
         elif "usb_switch" in item.keywords and not config.getoption("--allow-usb-switch"):
