@@ -16,6 +16,7 @@
 #include "hal_time.h"
 #include "display/st7735/st7735.h"
 #include "panel_md380.h"
+#include "backlight_md380.h"
 
 #ifndef MD380_PANEL_MADCTL_XOR
 #define MD380_PANEL_MADCTL_XOR	0
@@ -176,17 +177,15 @@ static void read_panel_id(void)
 	panel_id.id_read = true;
 }
 
-// ---- Backlight: TIM8 CH1 PWM on PC6 (AF3), 40 kHz, 100 steps: far above the FM transmit audio band (#330) ----
-
-#define BL_STEPS	100u
+// ---- Backlight: TIM8 CH1 PWM on PC6 (AF3), 1800 counts a period, 40 kHz standard (backlight_md380.h) ----
 
 static void bl_init(void)
 {
 	__HAL_RCC_TIM8_CLK_ENABLE();
 	stm32_pin_af(PIN_PORT(PIN_LCD_BACKLIGHT), PIN_MASK(PIN_LCD_BACKLIGHT), GPIO_AF3_TIM8, false, GPIO_NOPULL);
 	TIM8->CR1 = 0;
-	TIM8->PSC = 18 - 1;		// APB2 timer clock 72 MHz -> 4 MHz
-	TIM8->ARR = BL_STEPS - 1;	// 40 kHz
+	TIM8->PSC = md380_bl_div[MD380_BL_RATE_STD] - 1u;
+	TIM8->ARR = MD380_BL_PERIOD - 1u;
 	TIM8->CCR1 = 0;
 	TIM8->CCMR1 = (6u << TIM_CCMR1_OC1M_Pos) | TIM_CCMR1_OC1PE;	// PWM mode 1, preload
 	TIM8->CCER = TIM_CCER_CC1E;
@@ -201,7 +200,31 @@ static void set_backlight(uint8_t percent)
 	if (!ready) {
 		return;
 	}
-	TIM8->CCR1 = percent >= BL_STEPS ? BL_STEPS : percent;
+	TIM8->CCR1 = md380_bl_cv(percent);
+}
+
+// The backlight tests: the compare value straight (MD380_BL_PERIOD is on through the whole period)
+static void set_backlight_raw(uint16_t value)
+{
+	if (!ready) {
+		return;
+	}
+	TIM8->CCR1 = value > MD380_BL_PERIOD ? MD380_BL_PERIOD : value;
+}
+
+static uint16_t backlight_raw(void)
+{
+	return (uint16_t)TIM8->CCR1;
+}
+
+// The prescaler is buffered: it takes effect at the next update event, within one period
+static uint32_t set_backlight_rate(uint8_t i)
+{
+	if (i >= MD380_BL_RATES) {
+		i = MD380_BL_RATES - 1u;
+	}
+	TIM8->PSC = md380_bl_div[i] - 1u;
+	return md380_bl_rate_hz(i);
 }
 
 // ---- hal_display_t ----
@@ -262,5 +285,11 @@ const hal_display_t md380_display = {
 	.init = init,
 	.flush_indexed = flush,
 	.set_backlight = set_backlight,
+	.backlight_raw_max = MD380_BL_PERIOD,
+	.set_backlight_raw = set_backlight_raw,
+	.backlight_raw = backlight_raw,
+	.backlight_rates = MD380_BL_RATES,
+	.backlight_rate_std = MD380_BL_RATE_STD,
+	.set_backlight_rate = set_backlight_rate,
 	.panel = panel_info,
 };

@@ -23,7 +23,13 @@ TESTS   += md380CalTest
 md380CalTest: $(HERE)md380CalTest.c $(HERE)../calibration_md380.c $(HERE)../md380.h $(CORE)/radio/cal_curve.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(ROOT)/platform/stm32f4 -I$(dir $<).. -Wshadow -o $@ $(filter %.c,$^)
 
-run-boards:: md380RfbusTest md380PanelTest md380CalTest
+# The backlight's PWM rates and levels (backlight_md380.h)
+TESTS   += md380BacklightTest
+md380BacklightTest: $(HERE)md380BacklightTest.c $(HERE)../backlight_md380.h
+	$(CC) $(CFLAGS) -I$(dir $<).. -o $@ $(filter %.c,$^)
+
+run-boards:: md380RfbusTest md380PanelTest md380CalTest md380BacklightTest
 	./md380RfbusTest
 	./md380PanelTest
 	./md380CalTest
+	./md380BacklightTest

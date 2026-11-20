@@ -846,7 +846,9 @@ sine at the same swing (`subaudio_tx_tail`, with the interrupt held off for the 
 160 x 128 color TFT on the FSMC 8-bit bus (NE1), command at 0x60000000 and data at 0x60040000 (A17 = RS on PD12),
 chip select PD6, reset PD13: the DM-1701's wiring (unverified). The controller differs between radios and is detected (below). RadioFoundry drives it with `drivers/display/st7735` with
 safe-area insets of 1 px at the top and 2 px on the left (the case edge crowds them; right and bottom are close but usable; seen on the radio, 2026-10-16). Backlight: LAMP (PC6), TIM8 CH1
-PWM at 1 kHz (unverified for the pin; PWM ours).
+PWM (unverified for the pin; PWM ours): 1800 counts a period from the 72 MHz timer clock, 40 kHz, the core's percent
+times 18 as the compare value (1800 is full). The backlight test pages (`CONFIG_BACKLIGHT_TEST`) set the compare value
+straight and pick the prescaler from 16 rates, 40 kHz down to 100 Hz (`backlight_md380.h`).
 
 Panel type: `display_md380.c` picks the st7735 driver's type (`drivers/display/st7735/st7735.h`) at start-up, from
 the controller's own ID and the factory byte (`panel_md380.c`):
