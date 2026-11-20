@@ -1361,6 +1361,11 @@ write the result to 0x010000. The firmware never writes the security registers. 
 them back (`stubtool.py --write-secreg`, [stub-stm32f4.md](stub-stm32f4.md) 6.2), refusing a register whose one-time
 lock bit is set; nothing ever writes status register 2.
 
+RadioFoundry reads both copies and writes neither. It takes each band from the working copy when that band passes the
+checks there (no zero power point, very low <= low < high, no erased row), else from the factory table, converted in
+RAM. A working copy with one bad band (a high row wrapped past 255 by a converter that doesn't saturate) still gives
+the other band; the diagnostics page then shows `cal mixed`.
+
 Power conversion when deriving the working copy (empirical): very low = low x k0 (always), and if
 converting: low x= k1, mid x= k2, high x= k3.
 
