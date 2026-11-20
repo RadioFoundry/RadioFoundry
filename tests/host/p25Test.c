@@ -180,6 +180,70 @@ static void testLc(void)
 	CHECK(p25_lc_parse(raw, &got) && got.dst == 0xABCDEF && got.src == 0x123456, "unit LC back");
 	raw[1] = 0x90;
 	CHECK(!p25_lc_parse(raw, &got) && got.mfid == 0x90, "a manufacturer's LC");
+
+	// A blocked system in link control (TIA-102.AABF-D 7.3.16, 7.3.17, 7.3.28), in an LDU1 and a TDULC
+	{
+		static uint8_t unit[P25_UNIT_BYTES_MAX];
+		p25_rx_unit_t u = { .air = unit };
+
+		// LCO 36, network status: reserved octet, WACN 20 bits, system 12, channel, service class
+		memset(raw, 0, sizeof raw);
+		raw[0] = 0x40 | 36;
+		raw[2] = 0xBE; raw[3] = 0xE0; raw[4] = 0x02; raw[5] = 0xF3;
+		p25_unit_begin(unit, P25_TDULC_SYMS, 0x293, P25_DUID_TDULC, P25_SS_IDLE);
+		p25_tdulc_put(unit, raw);
+		u.duid = P25_DUID_TDULC;
+		CHECK(p25_unit_sys_no_tx(&u), "TDULC, LCO 36, WACN BEE00");
+		raw[2] = 0xA4; raw[3] = 0xC2; raw[4] = 0x12;
+		p25_tdulc_put(unit, raw);
+		CHECK(!p25_unit_sys_no_tx(&u), "TDULC, LCO 36, WACN A4C21 system 2F3");
+		raw[4] = 0x10; raw[5] = 0x0A;
+		p25_tdulc_put(unit, raw);
+		CHECK(p25_unit_sys_no_tx(&u), "TDULC, LCO 36, system 00A");
+		// LCO 41, explicit network status: WACN 20 bits right after the opcode, system 12
+		memset(raw, 0, sizeof raw);
+		raw[0] = 0x40 | 41;
+		raw[1] = 0xA4; raw[2] = 0xC2; raw[3] = 0x12; raw[4] = 0xF3;
+		p25_unit_begin(unit, P25_LDU_SYMS, 0x293, P25_DUID_LDU1, P25_SS_IDLE);
+		p25_ldu_lc_put(unit, raw);
+		u.duid = P25_DUID_LDU1;
+		CHECK(!p25_unit_sys_no_tx(&u), "LDU1, LCO 41, WACN A4C21 system 2F3");
+		raw[1] = 0xBE; raw[2] = 0xEF; raw[3] = 0xF2;
+		p25_ldu_lc_put(unit, raw);
+		CHECK(p25_unit_sys_no_tx(&u), "LDU1, LCO 41, WACN BEEFF");
+		raw[1] = 0xA4; raw[2] = 0xC2; raw[3] = 0x10; raw[4] = 0x0A;
+		p25_ldu_lc_put(unit, raw);
+		CHECK(p25_unit_sys_no_tx(&u), "LDU1, LCO 41, system 00A");
+		raw[4] = 0x0B;
+		p25_ldu_lc_put(unit, raw);
+		CHECK(!p25_unit_sys_no_tx(&u), "LDU1, LCO 41, system 00B");
+		// LCO 35, RFSS status: LRA, reserved nibble, system 12 (no WACN)
+		memset(raw, 0, sizeof raw);
+		raw[0] = 0x40 | 35;
+		raw[1] = 0x01; raw[2] = 0xF0; raw[3] = 0x0A;
+		p25_ldu_lc_put(unit, raw);
+		CHECK(p25_unit_sys_no_tx(&u), "LDU1, LCO 35, system 00A (reserved bits set)");
+		raw[3] = 0x09;
+		p25_ldu_lc_put(unit, raw);
+		CHECK(!p25_unit_sys_no_tx(&u), "LDU1, LCO 35, system 009");
+		// Not counted: protected, the manufacturer's format bit clear, another opcode (an adjacent site's status
+		// names another site), an LDU2
+		raw[3] = 0x0A;
+		raw[0] = 0xC0 | 35;
+		p25_ldu_lc_put(unit, raw);
+		CHECK(!p25_unit_sys_no_tx(&u), "protected LC");
+		raw[0] = 35;
+		p25_ldu_lc_put(unit, raw);
+		CHECK(!p25_unit_sys_no_tx(&u), "SF clear");
+		raw[0] = 0x40 | 34;
+		raw[2] = 0x00;
+		p25_ldu_lc_put(unit, raw);
+		CHECK(!p25_unit_sys_no_tx(&u), "adjacent site, system 00A");
+		raw[0] = 0x40 | 35;
+		p25_ldu_lc_put(unit, raw);
+		u.duid = P25_DUID_LDU2;
+		CHECK(!p25_unit_sys_no_tx(&u), "an LDU2 has no link control");
+	}
 }
 
 static void testVoice(void)

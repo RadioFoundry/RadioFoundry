@@ -36,6 +36,8 @@ static void on_unit(const p25_rx_unit_t *u, void *ctx)
 	bool fresh = false, changed = false;
 
 	c->stats.units++;
+	if (p25_unit_sys_no_tx(u))
+		c->stats.sys_no_tx++;
 #if CONFIG_P25_TRUNK
 	if (c->sink->unit)
 		c->sink->unit(u, c->ctx);

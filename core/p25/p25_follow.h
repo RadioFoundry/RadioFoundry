@@ -39,9 +39,10 @@
 #define P25_FOLLOW_NO_UNIT	0x08	// unit to unit calls to or from unit_id are not followed
 #define P25_FOLLOW_TX		0x10	// the transmit side: register, affiliate, ask for voice channels (unit_id set)
 #define P25_FOLLOW_NO_REG	0x20	// ... without registering or affiliating: PTT asks at once
+#define P25_FOLLOW_BLOCKED	0x40	// a blocked system was heard here before: the transmit side starts blocked
 
 // Access timers, ms (docs/spec/p25-trunking.md 5)
-#define P25_ACC_SITE_MS		2000	// on a control channel without its site's identity yet: register anyway
+#define P25_ACC_SITE_MS		2000	// system verified, site's identity not heard yet: register anyway
 #define P25_ACC_ANSWER_MS	1000	// an inbound block without an answer: sent again
 #define P25_ACC_TRIES		3	// sends of one request
 #define P25_ACC_GAP_MS		100	// a resend waits this much plus up to P25_ACC_GAP_MS x 3 at random
@@ -121,6 +122,7 @@ enum {
 	P25_REG_DENIED,		// the system denied or refused registration or affiliation (deny_* say why)
 	P25_REG_RETRY,		// no answer, or a failure: tried again later
 	P25_REG_NO_TX,		// no inbound frequency for this control channel
+	P25_REG_BLOCKED,	// a blocked WACN or system ID: nothing is sent until the follower restarts
 };
 // A voice request (view.req)
 enum {
@@ -133,7 +135,7 @@ enum {
 	P25_REQ_NO_CHAN,	// granted on a channel we can't use (unknown identifier, TDMA, no transmit frequency)
 };
 // p25_follow_can_talk
-enum { P25_TALK_OK, P25_TALK_OFF, P25_TALK_NO_CC, P25_TALK_NOT_REG };
+enum { P25_TALK_OK, P25_TALK_OFF, P25_TALK_NO_CC, P25_TALK_NOT_REG, P25_TALK_BLOCKED };
 
 typedef struct {
 	uint8_t state;		// P25_FOLLOW_*
@@ -143,6 +145,7 @@ typedef struct {
 	uint16_t refused_tg;
 	uint16_t nac;		// of the control channel held
 	uint32_t wacn;		// 0xFFFFFFFF until heard
+	bool sys_ok;		// a network status broadcast verified the control channel held: nothing is sent before
 	uint16_t sysid;		// 0xFFFF until heard
 	uint8_t rfss, site;	// 0xFF until heard
 	uint32_t cc_hz, voice_hz;
@@ -214,6 +217,7 @@ typedef struct {
 	bool left_enc;		// left_ch / left_tg is an encrypted call skipped
 	bool tuning;		// a tune was asked: units are of the old channel until p25_follow_retuned
 	bool have_id;		// the candidate's system identity matched
+	bool blocked;		// a blocked system heard or programmed: transmit side silent until p25_follow_begin
 	volatile uint8_t seq;	// odd while view is written
 	p25_follow_acc_t acc;
 	p25_follow_iden_e iden[P25_FOLLOW_IDENS];
