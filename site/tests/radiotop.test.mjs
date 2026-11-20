@@ -43,7 +43,9 @@ test("every update mode step list marks the keys to hold", () => {
 	const app = readFileSync(new URL("../static/js/flasher/app.js", import.meta.url), "utf8");
 	assert.match(app, /function withPicture\(steps\) \{\n\tconst pic = radioPicture\(S\.radio, \{ keys: holdKeys\(S\.radio\) \}\);/);
 	const iap = readFileSync(new URL("../static/js/flasher/iapui.js", import.meta.url), "utf8");
-	assert.match(iap, /radioPicture\(S\(\)\.radio, \{ keys: holdKeys\(S\(\)\.radio\), screen \}\)/);
+	assert.match(iap, /radioPicture\(S\(\)\.radio, \{ keys: keys \? holdKeys\(S\(\)\.radio\) : \[\], screen \}\)/);
+	// keys are left off only beside a write's progress bar, when nothing is held
+	assert.deepEqual([...iap.matchAll(/withPicture\([^\n]*, false\)/g)].map((m) => m[0]), ["withPicture(prog.el, p.screen, false)"]);
 	const lists = [...iap.matchAll(/\.\.\.steps\.map\(/g)].length;
 	assert.ok(lists >= 1);
 	assert.equal([...iap.matchAll(/withPicture\(h\("ol", \{ class: "steps[^"]*" \},[^\n]*\.\.\.steps\.map\(/g)].length, lists);

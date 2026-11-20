@@ -706,6 +706,16 @@ abbr.gl:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; bo
 .both-step.done .both-n { position: relative; background: var(--ok); color: transparent; }
 .both-step.done .both-n::before { content: "\2713"; position: absolute; inset: 0; display: grid; place-items: center; color: #fff; }
 .both-body:empty { display: none; }
+/* a step with the radio's picture: the picture is level with the step's heading and smaller, so a step of one line
+   doesn't sit above a band of empty space next to a tall radio */
+.both-step .rt-pic { --rt-h: 200px; }
+@media (min-width: 761px) {
+	.both-step:has(.radio-grid) { display: grid; grid-template-columns: minmax(0, 1fr) 220px; grid-template-rows: auto 1fr; column-gap: var(--space-5); align-items: start; }
+	.both-step:has(.radio-grid) > .both-body, .both-step .radio-grid { display: contents; }
+	.both-step:has(.radio-grid) > .both-head { grid-column: 1; grid-row: 1; }
+	.both-step .radio-grid > :first-child { grid-column: 1; grid-row: 2; }
+	.both-step .radio-grid > .radio-top { grid-column: 2; grid-row: 1 / span 2; }
+}
 
 /* Practice mode: the simulated radio's screen and the user's hands (app.js simRadioPanel) */
 .sim-radio { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; margin: 0 0 var(--space-3); }

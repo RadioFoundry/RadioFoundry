@@ -118,7 +118,7 @@ test("install: a write without a codec warns above the button; the write logs it
 	const box = c7ui.writeView();
 	// the warning says why: nothing backed up, no stock file; and that the codec can be added by installing again
 	assert.match(box.textContent, /will not include the DMR voice codec/i);
-	assert.match(box.textContent, /was not backed up and no supported stock firmware file was selected/);
+	assert.match(box.textContent, /was not backed up and no supported manufacturer.s firmware file was selected/);
 	assert.doesNotMatch(box.textContent, /no way back/i);
 	// Install asks once more (nocodec.js): Escape stays, Go Back returns to the check step, Install Anyway writes
 	const dialogs = () => document.body.children.filter((c) => c.tagName === "DIALOG");

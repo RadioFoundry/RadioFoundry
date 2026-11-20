@@ -226,8 +226,9 @@ export function makeStockRoutes(host) {
 
 	// update mode steps beside the radio's picture, the keys to hold marked on it (radiotop.js; app.js does the same)
 	// screen: what the radio's screen shows once there (radios.json flash.update_screen)
-	const withPicture = (steps, screen = S().radio.flash.update_screen || null) => {
-		const pic = radioPicture(S().radio, { keys: holdKeys(S().radio), screen });
+	// keys false: no key marked (the radio is being written, nothing is held)
+	const withPicture = (steps, screen = S().radio.flash.update_screen || null, keys = true) => {
+		const pic = radioPicture(S().radio, { keys: keys ? holdKeys(S().radio) : [], screen });
 		return pic ? h("div", { class: "radio-grid" }, steps, pic) : steps;
 	};
 
@@ -443,7 +444,9 @@ export function makeStockRoutes(host) {
 			p.state.textContent = text;
 		};
 		// the steps, and under them (beside the picture) what is going on: a status, a button
-		const how = (p, ...under) => withPicture(h("div", {}, h("ol", { class: "steps c7-big" }, ...p.steps.map((x) => h("li", {}, x))), ...under), p.screen);
+		// one step is a paragraph, not a numbered list of one
+		const how = (p, ...under) => withPicture(h("div", {}, p.steps.length === 1 ? h("p", { class: "c7-big" }, p.steps[0])
+			: h("ol", { class: "steps c7-big" }, ...p.steps.map((x) => h("li", {}, x))), ...under), p.screen);
 		// the spinner's line: waiting, or (while the pages are read, a few seconds) which receiver it is
 		const waitLine = (key = "flash.both.listening") => h("p", { class: "muted c7-big wait-line" }, spinner(), " ", t(key));
 		parts[0].print = c.mainPrint || null;
@@ -537,6 +540,12 @@ export function makeStockRoutes(host) {
 					}
 					if (um?.version) {
 						quietSince = Date.now();
+						// update mode answered: a hint about the radio not answering, or running its normal firmware, is
+						// out of date
+						if (said) {
+							said = null;
+							fill(status, waitLine());
+						}
 						status.querySelector(".wait-line")?.replaceWith(waitLine("flash.both.checking"));
 						const who = await loader.whose(pages);
 						status.querySelector(".wait-line")?.replaceWith(waitLine());
@@ -586,7 +595,8 @@ export function makeStockRoutes(host) {
 				S().forward(null);	// nothing stops a write midway safely
 				mark(p, "active", t("flash.iap.erasing"));
 				prog.set(0, 100);	// not the last step's bar; the heading says what is going on
-				fill(p.body, prog.el);
+				// the bar takes the steps' place beside the picture: the radio stays where it was, so the page doesn't jump
+				fill(p.body, withPicture(prog.el, p.screen, false));
 				const t0 = Date.now();
 				erasing = setInterval(() => prog.set(90 * (1 - Math.exp(-(Date.now() - t0) / ERASE_TAU_MS)), 100), 250);
 				await loader.write(p.bytes, { name: `rfoundry_${p.board}.bin`,

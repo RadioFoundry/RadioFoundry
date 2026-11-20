@@ -113,11 +113,18 @@ The source tree is in [README.md, Layout](README.md#layout). The layers and the 
   use. Don't copy the clipped style of older strings.
   - Write full sentences with normal connectives (so, then, to, because). Don't join two clauses with a colon to save
     words: "Turn the radio off and on to start RadioFoundry", not "Turn it off and on: it starts RadioFoundry".
+  - Be direct and concise. Lead with what the user cares about, name things by what they do for the user, and put
+    detail in a trailing phrase, not a second clause: "This installation includes the radio's DMR voice codec,
+    previously saved in this browser", not "This browser saved this radio's codec earlier, and the installation uses
+    it". A last step joins with a comma: "Hold SK1 until the screen shows IAP_B, then select Continue".
   - Use active verbs and say who acts. The user gets the imperative ("Select Continue"), and the site calls itself
     "this page". Avoid vague passives and states ("is transferred", "goes on by itself", "keep X as it is").
   - An instruction names the action and when it ends ("Keep the cable plugged in until this page says the installation
     is complete").
   - Keep internal terms out (loader, application area, slot, SoC, probe).
+  - Fit the moment. Say only what the user needs at that point in the flow, from where they are. Don't claim a result
+    before it happens ("FM and DMR voice work" before anything is installed), and don't tell users not to do something
+    they had no reason to do ("You don't need to press any keys").
   - Read each string aloud. If it sounds translated, rewrite it, and check the rest of the flow it appears in.
 
 ## Git
