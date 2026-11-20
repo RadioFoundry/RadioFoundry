@@ -239,7 +239,12 @@ them differently.
 Measured on C-SKY CK803S (csky-elf-gcc 14.2, the firmware's flags: `-Os`, function and data sections, garbage
 collected at the link).
 
-**RAM**: one `dstar_codec_t`, 8,400 B, no other static data. The encoder and decoder share a union:
+**RAM**: one `dstar_codec_t` (the state, 3,168 B) and one `dstar_codec_scratch_t` (each call's working memory, 5,304
+B), no other static data. The encoder and decoder share a union in each. The two are apart because a radio keeps them
+in different places: the working memory fits the DMR vocoder's state RAM, which the HR_C7000 radios lend while DMR is
+off (`hal_vocoder_t.lend`, 7,168 B since the vocoder's encoder and decoder share one block), and the whole codec
+(8.4 KB) doesn't; the state goes in the radio core's mode area (`radio_mode_ram.h`). Nothing in the working memory
+outlives a call, so it needs no saving when DMR takes the block back.
 
 | Part | Encoder (B) | Decoder (B) |
 |---|---:|---:|

@@ -15,9 +15,23 @@ enum { DIR_NONE, DIR_ENCODE, DIR_DECODE };
 // After a concealed frame, one with this many corrections in C0 and C1 together is concealed too (bad_rule)
 #define DOUBTFUL_ERRORS	4u
 
+void dstar_codec_bind(dstar_codec_t *c, dstar_codec_scratch_t *t)
+{
+	c->t = t;
+	if (t == NULL) {
+		c->dir = DIR_NONE;
+	}
+}
+
 void dstar_codec_start(dstar_codec_t *c, bool encode)
 {
+	dstar_codec_scratch_t *t = c->t;
 	memset(c, 0, sizeof(*c));
+	c->t = t;
+	c->errors = DSTAR_CODEC_FAILED;
+	if (t == NULL) {
+		return;
+	}
 	if (encode) {
 		dstar_mbe_ana_init(&c->u.enc.ana);
 		dstar_mbe_level_init(&c->u.enc.level);
@@ -28,7 +42,6 @@ void dstar_codec_start(dstar_codec_t *c, bool encode)
 		dstar_ambe_init(&c->u.dec.q);
 		c->dir = DIR_DECODE;
 	}
-	c->errors = DSTAR_CODEC_FAILED;
 }
 
 bool dstar_codec_encode(void *ctx, const int16_t pcm[DSTAR_VOICE_SAMPLES], uint8_t frame[DSTAR_VOICE_BYTES])
@@ -38,11 +51,11 @@ bool dstar_codec_encode(void *ctx, const int16_t pcm[DSTAR_VOICE_SAMPLES], uint8
 		return false;
 	dstar_codec_enc_t *e = &c->u.enc;
 	uint16_t b[DSTAR_AMBE_FIELDS];
-	dstar_mbe_analyze(&e->ana, &e->t.ana, pcm, &e->p);
+	dstar_mbe_analyze(&e->ana, &c->t->ana, pcm, &e->p);
 	// Before the quantizer, as in the research codec: the quantizer's gain index then codes the leveled frame, and
 	// the frames stay bit for bit the research encoder's (dstar_mbe_level.c)
 	dstar_mbe_level(&e->level, &e->p);
-	dstar_ambe_quantize(&e->q, &e->t.q, &e->p, b, NULL);
+	dstar_ambe_quantize(&e->q, &c->t->q, &e->p, b, NULL);
 	dstar_ambe_pack(b, frame);
 	return true;
 }
@@ -51,9 +64,9 @@ bool dstar_codec_encode(void *ctx, const int16_t pcm[DSTAR_VOICE_SAMPLES], uint8
 // resets, and the parameter memory resets with it, as mbelib's does (mbe_initMbeParms), so the prediction restarts from
 // the same state at both ends of a link that recovers. The prediction memory doesn't advance on a concealed frame, as
 // in mbelib (it decodes, then puts the previous parameters back)
-static void bad_frame(dstar_codec_dec_t *d, int16_t pcm[DSTAR_VOICE_SAMPLES])
+static void bad_frame(dstar_codec_dec_t *d, dstar_codec_scratch_t *t, int16_t pcm[DSTAR_VOICE_SAMPLES])
 {
-	dstar_mbe_synth_bad(&d->synth, &d->t.synth, pcm);
+	dstar_mbe_synth_bad(&d->synth, &t->synth, pcm);
 	if (!d->synth.have_last)
 		dstar_ambe_init(&d->q);
 	d->was_bad = 1;
@@ -93,14 +106,14 @@ bool dstar_codec_decode(void *ctx, const uint8_t frame[DSTAR_VOICE_BYTES], int16
 	dstar_ambe_unpack(frame, b, &fec);
 	if (bad_rule(&fec, d->was_bad)) {
 		c->errors = DSTAR_CODEC_FAILED;
-		bad_frame(d, pcm);
+		bad_frame(d, c->t, pcm);
 		return true;
 	}
 	c->errors = (uint8_t)(fec.c0_errors + (fec.c1_failed ? 4u : fec.c1_errors));
 	d->was_bad = 0;
 	// A tone or reserved frame comes back with L = 0, which the synthesizer plays as silence and a reset
-	dstar_ambe_dequantize(&d->q, &d->t.q, b, &d->p);
-	dstar_mbe_synth_frame(&d->synth, &d->t.synth, &d->p, pcm);
+	dstar_ambe_dequantize(&d->q, &c->t->q, b, &d->p);
+	dstar_mbe_synth_frame(&d->synth, &c->t->synth, &d->p, pcm);
 	return true;
 }
 
@@ -111,7 +124,7 @@ void dstar_codec_lost(dstar_codec_t *c, int16_t pcm[DSTAR_VOICE_SAMPLES])
 		return;
 	}
 	c->errors = DSTAR_CODEC_FAILED;
-	bad_frame(&c->u.dec, pcm);
+	bad_frame(&c->u.dec, c->t, pcm);
 }
 
 void dstar_codec_vocoder(dstar_codec_t *c, dstar_vocoder_t *v)

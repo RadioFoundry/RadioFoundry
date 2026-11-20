@@ -973,6 +973,7 @@ static void test_bit_order(void)
 // --- the codec ---
 
 static dstar_codec_t codec;
+static dstar_codec_scratch_t scratch;
 
 static void test_codec_interface(void)
 {
@@ -983,15 +984,23 @@ static void test_codec_interface(void)
 	CHECK(v.ctx == &codec && v.encode == dstar_codec_encode && v.decode == dstar_codec_decode, "interface");
 	memset(&codec, 0, sizeof(codec));
 	CHECK(!v.encode(v.ctx, pcm, frame) && !v.decode(v.ctx, frame, pcm), "a codec never started works");
+	// Without working memory (a radio that couldn't borrow it) a start leaves the codec stopped, never coding into NULL
+	dstar_codec_start(&codec, true);
+	CHECK(!v.encode(v.ctx, pcm, frame), "encode with no working memory bound");
+	dstar_codec_bind(&codec, &scratch);
 	dstar_codec_start(&codec, true);
 	CHECK(v.encode(v.ctx, pcm, frame), "encode after start(encode)");
 	CHECK(!v.decode(v.ctx, frame, pcm), "decode while encoding");
 	dstar_codec_start(&codec, false);
 	CHECK(!v.encode(v.ctx, pcm, frame), "encode while decoding");
 	CHECK(v.decode(v.ctx, frame, pcm), "decode after start(decode)");
-	printf("  sizeof(dstar_codec_t) %zu B on the host: encoder %zu (analysis %zu + scratch %zu), decoder %zu\n",
-	       sizeof(dstar_codec_t), sizeof(dstar_codec_enc_t), sizeof(dstar_mbe_ana_t), sizeof(dstar_mbe_ana_scratch_t),
-	       sizeof(dstar_codec_dec_t));
+	// Unbinding stops it: the radio takes the working memory back when it leaves the channel
+	dstar_codec_bind(&codec, NULL);
+	CHECK(!v.decode(v.ctx, frame, pcm), "decode after the working memory was taken back");
+	dstar_codec_bind(&codec, &scratch);
+	dstar_codec_start(&codec, false);
+	printf("  sizeof(dstar_codec_t) %zu B on the host (encoder %zu, decoder %zu), working memory %zu\n",
+	       sizeof(dstar_codec_t), sizeof(dstar_codec_enc_t), sizeof(dstar_codec_dec_t), sizeof(dstar_codec_scratch_t));
 }
 
 // A 150 Hz vowel-like tone through the encoder, then the frames through the decoder
@@ -1122,7 +1131,10 @@ static void test_codec_bad_frames(void)
 	for (int f = 0; f < 30; f++)
 		dstar_codec_lost(&codec, pcm);
 	CHECK(energy(pcm) == 0, "a long run of lost frames isn't silent");
+	// Zeroed first: memcmp reads the padding after L too, which dstar_ambe_init leaves as it finds it and which
+	// dstar_codec_start zeroed in the codec (an uninitialized stack copy passed or failed with the stack's history)
 	dstar_ambe_state_t fresh;
+	memset(&fresh, 0, sizeof(fresh));
 	dstar_ambe_init(&fresh);
 	CHECK(memcmp(&fresh, &codec.u.dec.q, sizeof(fresh)) == 0, "the mute didn't reset the prediction memory");
 
@@ -1715,6 +1727,7 @@ static void test_level_onset(void)
 int main(void)
 {
 	printf("dstarCodecTest\n");
+	dstar_codec_bind(&codec, &scratch);
 	test_quant_round_trip();
 	test_quant_agreement();
 	test_tones();

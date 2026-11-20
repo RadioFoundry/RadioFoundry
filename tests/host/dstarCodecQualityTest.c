@@ -44,6 +44,7 @@ static int verbose = 0;
 #define NCEP	14
 
 static dstar_codec_t codec;
+static dstar_codec_scratch_t scratch;
 
 // Input through the encoder, 160 samples at a time, with three frames of silence after it to flush the analysis's
 // look-ahead (the output is 60 ms late). Returns the frames (malloc'd) and their count
@@ -711,6 +712,7 @@ int main(int argc, char **argv)
 {
 	verbose = argc > 1 && strcmp(argv[1], "-v") == 0;
 	printf("dstarCodecQualityTest\n");
+	dstar_codec_bind(&codec, &scratch);
 	measures_init();
 	test_vowels();
 	test_glide();
