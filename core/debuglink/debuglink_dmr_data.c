@@ -217,7 +217,10 @@ size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, si
 		set.radioCheckReply = (a[4] & 1u) != 0;
 		set.callAlertAck = (a[4] & 2u) != 0;
 		set.lrrpReply = (a[4] & 4u) != 0;
-		set.smsFormat = (a[4] & 32u) ? DMR_SMS_FORMAT_ETSI_IP : (a[4] & 8u) ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
+		uint8_t fmt = a[4] & (32u | 8u);
+		set.smsFormat = fmt == (32u | 8u) ? DMR_SMS_FORMAT_DEFAULT :
+				fmt == 32u ? DMR_SMS_FORMAT_ETSI_IP :
+				fmt == 8u ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
 		set.radioCheckEtsi = (a[4] & 16u) != 0;
 		if (!codeplug_keys_store(radio_keys, RADIO_KEYS_N, &was, &set)) {
 			st = DL_ST_BUSY;

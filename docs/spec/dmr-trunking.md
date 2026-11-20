@@ -485,7 +485,8 @@ The number belongs to a call when the grant from that gateway to the same destin
 
 Some Tier III systems send individual packet data grants with FID `0x08` and absolute channel
 number `0xFFF`. The first continuation gives the channel definition. The radio waits for the last
-continuation and verifies the CRC across both continuations before following the grant. The grant was observed on air. End-to-end IP SMS delivery remains unverified.
+continuation and verifies the CRC across both continuations before following the grant. The grant was observed on air.
+End-to-end IP SMS delivery remains unverified.
 
 Packet data uses the conventional data stack ([dmr-data.md](dmr-data.md)) on a payload channel the TSCC grants for
 each transmission. Single slot, single item only.

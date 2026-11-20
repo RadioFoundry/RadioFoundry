@@ -176,7 +176,6 @@ static struct
 	uint32_t dst;
 	bool group;
 	bool ack;
-	bool useUdt;
 	uint8_t format;						// dmr_sms_format_t
 	uint8_t state;						// dmr_req_state_t
 	uint8_t tries;
@@ -1087,7 +1086,7 @@ static bool smsTransmit(void)
 		return false;
 	}
 
-	if (sms.useUdt)
+	if (sms.format == DMR_SMS_FORMAT_T3_UDT)
 	{
 		if (!channel.trunked || channel.privacy.mode != DMR_DATA_PRIVACY_CLEAR || env.txSmsUdt == NULL ||
 			!env.txSmsUdt(sms.dst, sms.group, sms.text, now, env.ctx))
@@ -1221,15 +1220,13 @@ bool dmrDataServiceSendSMSFormat(bool group, uint32_t dst, const char *text, boo
 	{
 		format = DMR_SMS_FORMAT_ETSI_IP;
 	}
-	bool useUdt = format == DMR_SMS_FORMAT_T3_UDT;
-	if (!useUdt && !smsFormatBuilt(format))
+	if (format != DMR_SMS_FORMAT_T3_UDT && !smsFormatBuilt(format))
 	{
 		return false;
 	}
 
 	sms.dst = dst;
 	sms.group = group;
-	sms.useUdt = useUdt;
 	// ETSI IP text has no acknowledgment of its own: an individual one goes as confirmed data, so the ETSI response
 	// confirms delivery, unless confirmed IP data is off; a group one is done once on air
 	sms.ack = ackRequested && !group &&
@@ -1275,7 +1272,7 @@ static void smsTxDone(bool ok)
 	{
 		return;
 	}
-	if (sms.useUdt || !sms.ack)
+	if (sms.format == DMR_SMS_FORMAT_T3_UDT || !sms.ack)
 	{
 		smsFinish(ok ? DMR_REQ_OK : DMR_REQ_FAILED);
 		return;

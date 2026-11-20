@@ -91,8 +91,9 @@ configured frequency and any blocking reason. Received APRS messages appear in M
 
 ## Message formats
 
-**Settings > Connections > Message format** picks the encoding of new DMR messages. The radio reads all three DMR
-formats, whatever the setting. A reply to a DMR inbox message uses DMR.
+**Settings > Connections > Message format** picks the encoding of new DMR messages. The setting does not affect
+reception. Canned inbox replies use the received format where available. Text sent from the composer uses the
+selected setting.
 
 | Format | Use it for |
 |---|---|
