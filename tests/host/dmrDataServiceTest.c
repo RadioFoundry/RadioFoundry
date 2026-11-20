@@ -1768,12 +1768,13 @@ static void testIpText(void)
 	ch.dedicatedData = true;
 	ch.rmo = true;
 	decodeTx = false;
+	int previousLists = txLists;
 	CHECK(sms_send(RADIO_A, false, "profile changed", true, DMR_SMS_FORMAT_ETSI_IP));
 	runMainTask(300);
-	CHECK(sentCount == 1 && dmrDataServiceIpBusy());
+	CHECK(txLists == previousLists + 1 && dmrDataServiceIpBusy());
 	ch.dedicatedData = false;
 	runMainTask(DMR_IPC_RESPONSE_MS * 2);
-	CHECK(sentCount == 1 && !dmrDataServiceIpBusy() && sms_send_state() == DMR_REQ_FAILED);
+	CHECK(txLists == previousLists + 1 && !dmrDataServiceIpBusy() && sms_send_state() == DMR_REQ_FAILED);
 	ch.rmo = false;
 	decodeTx = true;
 
