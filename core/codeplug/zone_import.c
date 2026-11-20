@@ -343,7 +343,9 @@ static uint8_t add_system(const zsSystem_t *s)
 	kv_buf[2] = s->level;		// the sharing level it came with
 	kv_buf[3] = s->idLen;
 	strncpy((char *)&kv_buf[12], s->name, CODEPLUG_NAME_LEN);
-	memcpy(&kv_buf[CODEPLUG_SYS_HDR], s->block, s->blockLen);
+	if (s->blockLen > 0) {	// a shared system can come without a block (NULL)
+		memcpy(&kv_buf[CODEPLUG_SYS_HDR], s->block, s->blockLen);
+	}
 	bool ok = add_key((uint16_t)(CODEPLUG_KEY_SYSTEM + n), kv_buf, (uint16_t)(CODEPLUG_SYS_HDR + s->blockLen));
 
 	if (ok && s->secretLen > 0) {
