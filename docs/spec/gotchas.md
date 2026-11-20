@@ -150,7 +150,7 @@ mode (4:0x10 = 0x80), where I2S PCM doesn't reach the codec's line out ([modem-h
 I2S stream itself keeps running. No codec or system register lets I2S through in FM mode. Fix: while the FM copy holds
 the chip, the I2S stream copies each speaker block into a ring, and a feeder task writes it to the chip's prompt tone
 FIFO, which does reach the line out in FM mode (`platform/stm32f4/hrc/i2s_pcm.c`, `hrc_prompt_*`). Setting 0x06 bit 1
-alone plays nothing: the FIFO needs samples. The feeder runs above every other task. At the audio task's priority it
+alone plays nothing: the FIFO needs samples. The feeder runs at the top task priority. At the audio task's priority it
 missed its 8 ms turn whenever the copy interrupt read its 512 bytes with interrupts masked, which gave a gap every
 32 ms. The FIFO and the I2S stream share the chip's clock, so they never drift. Checked on the SDR bench by ear and by
 microphone: NXDN 4800 speech, every frame played, no gaps. The view keys `audio.fifo_chunks`, `audio.fifo_gaps` and

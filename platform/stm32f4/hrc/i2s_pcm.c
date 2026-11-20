@@ -13,11 +13,12 @@
 // Channels: the microphone is taken from the left channel (unverified which one the chip fills); speaker samples are
 // written to both.
 //
-// The prompt FIFO (cfg->prompt_fifo, CONFIG_AIR): while the FM copy holds the chip (a profile the correlator can't take, such as NXDN), I2S PCM
-// doesn't reach its line out (modem-hrc6000.md 8), so every speaker block also goes into a ring that a feeder task
-// keeps the chip's 64-sample (8 ms) prompt FIFO topped up from. The I2S stream and the FIFO run on the chip's clock,
-// so they never drift. The feeder sits above every other task: the DMR glue's copy interrupt reads 512 bytes with
-// interrupts masked every 32 ms, and a feeder below the audio task missed its turn there (8 ms gaps).
+// The prompt FIFO (cfg->prompt_fifo, CONFIG_AIR): while the FM copy holds the chip (a profile the correlator can't
+// take, such as NXDN), I2S PCM doesn't reach its line out (modem-hrc6000.md 8), so every speaker block also goes into a
+// ring that a feeder task keeps the chip's 64-sample (8 ms) prompt FIFO topped up from. The I2S stream and the FIFO run
+// on the chip's clock, so they never drift. The feeder runs at the top priority (with the RTOS timer task): the DMR
+// glue's copy interrupt reads 512 bytes with interrupts masked every 32 ms, and a feeder below the audio task missed
+// its turn there (8 ms gaps).
 #include "hrc/i2s_pcm.h"
 
 #if CONFIG_DMR	// the whole file: DMR only
@@ -79,6 +80,9 @@ static volatile bool fifo_spk;		// the speaker's PCM route is on (stm32_i2s_pcm_
 #define FIFO_PRIME	(2u * AUDIO_BLOCK_SAMPLES)	// in the ring before the first write: 40 ms in hand
 _Static_assert(FIFO_PRIME + AUDIO_BLOCK_SAMPLES <= PCM_RING_SAMPLES, "a block fits on top of the priming");
 static volatile uint32_t fifo_chunks, fifo_gaps, fifo_full;
+// Writes a poll may make: the FIFO's depth in chunks, plus one for what drains meanwhile. A bound, so a chip that never
+// reports full (reset, or the bit read wrong) can't keep the top-priority feeder in a loop that starves every task
+#define FIFO_POLL_CHUNKS	((uint32_t)(HRC_PROMPT_DEPTH / HRC_PROMPT_CHUNK) + 1u)
 #endif
 
 // --- I2S and DMA ---
@@ -300,7 +304,9 @@ static void feeder_task(void *arg)
 		if (!primed) {
 			primed = pcm_ring_level(ring) >= FIFO_PRIME;
 		}
-		while (primed && fifo_chip == chip && hrc_prompt_room(chip)) {
+		// Stops as soon as the copy ends too: the prompt bit stays on until the audio task's next block
+		for (uint32_t n = 0; n < FIFO_POLL_CHUNKS && primed && fifo_chip == chip && stm32_hrc_copy_chip() == chip
+				     && hrc_prompt_room(chip); n++) {
 			if (!pcm_ring_pop(ring, buf)) {
 				fifo_gaps++;
 			}
@@ -309,6 +315,15 @@ static void feeder_task(void *arg)
 		}
 		vTaskDelay(1);	// the FIFO holds 8 ms: polled every 1 ms, as the chip's manual does
 	}
+}
+
+// The FIFO off. fifo_chip first: the feeder runs above any caller, and one let in between would write page 3 with the
+// prompt bit already clear
+static void fifo_release(void)
+{
+	hrc_t *chip = fifo_chip;
+	fifo_chip = NULL;
+	(void)hrc_prompt_on(chip, false);
 }
 
 // Per block: the speaker to the prompt FIFO too while the FM copy holds the chip
@@ -325,13 +340,17 @@ static void fifo_follow(void)
 			vPortFree(ring);
 			ring = NULL;
 			feeder = NULL;
+			static bool told;	// tried again each block; said once
+			if (!told) {
+				told = true;
+				dlog("i2s: prompt FIFO: no memory, speaker silent in the FM copy");
+			}
 			return;
 		}
 	}
 	if (fifo_chip != NULL) {
-		(void)hrc_prompt_on(fifo_chip, false);
-		fifo_chip = NULL;	// the feeder stops before the ring is reset below
-		vTaskDelay(2);
+		fifo_release();
+		vTaskDelay(2);	// the feeder sees it stopped before the ring is reset below
 	}
 	if (chip != NULL) {
 		pcm_ring_reset(ring);
@@ -350,8 +369,7 @@ void stm32_i2s_pcm_speaker(bool on)
 static void fifo_off(void)
 {
 	if (fifo_chip != NULL) {
-		(void)hrc_prompt_on(fifo_chip, false);
-		fifo_chip = NULL;
+		fifo_release();
 		dlog("i2s: prompt FIFO off");
 	}
 }

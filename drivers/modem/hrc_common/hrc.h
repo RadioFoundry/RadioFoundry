@@ -108,6 +108,7 @@ bool hrc_flush_vocoder(hrc_t *dev);
 // chip's own clock. In FM mode (4:0x10 bit 7) it reaches the line out where I2S PCM doesn't (8). Checked on the
 // HR_C6000; the HR_C5000's is not known
 #define HRC_PROMPT_CHUNK	32	// samples a write
+#define HRC_PROMPT_DEPTH	64	// samples the FIFO holds
 // On or off (4:0x06 bit 1)
 bool hrc_prompt_on(hrc_t *dev, bool on);
 // Room for HRC_PROMPT_CHUNK more samples (4:0x88 bit 0 clear). False when the read fails

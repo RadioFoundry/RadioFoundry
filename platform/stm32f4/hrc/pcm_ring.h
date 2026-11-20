@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // A single producer, single consumer ring of PCM samples between the audio task (whole blocks in) and the prompt FIFO
-// feeder (chunks out), for i2s_pcm.c. Pure, so the host tests run it (tests/host/pcmRingTest.c).
+// feeder (chunks out), for i2s_pcm.c. Pure, so the host tests run it (tests/host/promptFifoTest.c).
 //
 // The indices run free and wrap at 2^32; the size is a power of two, so index & mask stays continuous across the wrap.
 // Each side writes only its own index, after the samples (producer) or after reading them (consumer). Both stay

@@ -872,9 +872,10 @@ promptFifoTest: promptFifoTest.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(HRCDMR)/hr
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ promptFifoTest.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c
 
 run: run-modem
-run-modem: hrc6000DmrTest hrc6000ToneTest
+run-modem: hrc6000DmrTest hrc6000ToneTest promptFifoTest
 	./hrc6000DmrTest
 	./hrc6000ToneTest
+	./promptFifoTest
 .PHONY: run-modem
 
 # The DMR receive chain: a model of the HR_C6000's reports through the slot engine, a batching board task and the call
