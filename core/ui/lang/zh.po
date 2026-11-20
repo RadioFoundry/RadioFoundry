@@ -5305,6 +5305,11 @@ msgid "0 All settings  Hold OK save"
 msgstr "0 所有设置  长按 OK 保存"
 
 #: core/ui/ui_screens.c
+msgctxt "DIAG_VARIANT_MISMATCH"
+msgid "This firmware may be for another version of this radio"
+msgstr "此固件可能用于本电台的其他版本"
+
+#: core/ui/ui_screens.c
 msgctxt "DIAG_HINT"
 msgid "* more  Back"
 msgstr "* 更多  返回"

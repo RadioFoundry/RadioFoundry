@@ -989,9 +989,6 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	if (band == NULL || !band->tx) {
 		return false;
 	}
-	if (uvf_variant.tx_block != NULL && uvf_variant.tx_block() != NULL) {
-		return false;	// an image for another hardware version: its PA band select may be this radio's backlight
-	}
 	bool uhf = hz >= UHF_MIN_HZ;
 	if (board.power_count > 0 && power >= board.power_count) {
 		power = (uint8_t)(board.power_count - 1);

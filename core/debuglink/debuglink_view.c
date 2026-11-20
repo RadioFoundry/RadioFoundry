@@ -548,6 +548,7 @@ static void board_section(dl_text_t *t)
 	char line[80];
 
 	dl_text_kv_str(t, "board.name", board.name);
+	dl_text(t, "board.variant_mismatch=%u\n", board_variant_mismatch() ? 1u : 0u);
 	for (uint8_t i = 0; board.view_line != NULL && i < 0xFFu && !t->full; i++) {
 		if (!board.view_line(i, line, sizeof(line))) {
 			break;

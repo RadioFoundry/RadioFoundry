@@ -5303,6 +5303,11 @@ msgid "0 All settings  Hold OK save"
 msgstr "0 Ajustes  Mant OK guardar"
 
 #: core/ui/ui_screens.c
+msgctxt "DIAG_VARIANT_MISMATCH"
+msgid "This firmware may be for another version of this radio"
+msgstr "Este firmware puede ser para otra versión de esta radio"
+
+#: core/ui/ui_screens.c
 msgctxt "DIAG_HINT"
 msgid "* more  Back"
 msgstr "* más  Atrás"

@@ -1821,6 +1821,9 @@ static void no_battery_checks(void)
 		{ "Tools with a battery", "ok 6 9", "screen=info shows=Battery" },
 		{ "Tools", "nobattery ok 6", "hides=Battery" },
 		{ "Tools keep their numbers", "nobattery ok 6 7", "screen=diag" },
+		// The board's hardware version warning: shown on the diagnostics page, and only when the board raises it
+		{ "Diagnostics: no version warning", "ok 6 7", "screen=diag hides=This_firmware" },
+		{ "Diagnostics: version warning", "variant ok 6 7", "screen=diag shows=This_firmware" },
 		{ "Tools: Roaming is 6", "nobattery ok 6 6", "screen=roaming" },
 		{ "Tools: no Battery to open", "nobattery ok 6 9", "toast=No_item" },
 		{ "Power settings with a battery", "ok 7 7", "shows=Battery_saver shows=Low_battery" },

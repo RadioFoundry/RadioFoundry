@@ -11,7 +11,7 @@ MCU        := stm32f405
 # The 8 MHz reference; the image starts at sector 3, where the bootloader starts it (hardware-mduv380.md 11)
 HSE_VALUE  := 8000000U
 APP_BASE   := 0x0800C000
-# Bench knobs (docs/testing/mduv380-bringup.md), e.g. MDUV380_DEFS="-DMDUV380_10W_CHECK=0"
+# Bench knobs (docs/testing/mduv380-bringup.md): extra defines, MDUV380_DEFS="-DNAME=VALUE"
 MDUV380_DEFS ?=
 MCU_DEFS   += $(MDUV380_DEFS)
 BOARD_DIRS := boards/mduv380 boards/uv380_family platform/stm32f4/hrc platform/stm32f4/spi_flash platform/stm32f4/fsmc_keypad \

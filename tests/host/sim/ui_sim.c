@@ -50,6 +50,7 @@
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
 //   foreign             the codeplug is another firmware's: a channel write asks first (codeplug-foreign)
 //   nobattery           the board has no battery (CAP_NO_BATTERY), until the next reset
+//   variant             the board suspects the image is for another hardware version, until the next reset
 //   supply:<mv>         no battery, and the board measures its DC input, which reads mv (hal_power_t.supply_mv)
 //   contacts:full       every contact number holds a talkgroup ("Long 31" ...), but every third: a list past 128
 //   contacts:<n>        the same up to contact n (a list just past 128 at 220)
@@ -412,6 +413,8 @@ static const band_t bands[] = { { 136000000, 174000000, true }, { 400000000, 480
 				{ 108000000, 136000000, false } };
 // "rxonly": a radio whose transmitter isn't written yet, every band receive only
 static const band_t rx_only_bands[] = { { 136000000, 174000000, false }, { 400000000, 480000000, false } };
+// "variant": the board suspects the image is for another hardware version (board_t.variant_mismatch)
+static bool variant_mismatch_yes(void) { return true; }
 static const char *const power_names[] = { "50mW", "250mW", "500mW", "750mW", "1W", "2W", "3W", "4W", "5W" };
 
 static bool afsk_tx_start(const uint8_t *t, uint16_t n, uint16_t baud, uint16_t mark, uint16_t space, uint8_t level)
@@ -2363,6 +2366,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	board.bands = bands;
 	board.band_count = sizeof bands / sizeof bands[0];
 	power.supply_mv = NULL;
+	board.variant_mismatch = NULL;
 	// The MD-9600's panel names its QUICK and CONTEXT keys in the hints
 	board.quick_label = map == SIM_MAP_P ? "P1" : NULL;
 	board.context_label = map == SIM_MAP_P ? "P2" : NULL;
@@ -3380,6 +3384,10 @@ static bool run_token(char *t, char *err, size_t len)
 	if (strcmp(t, "rxonly") == 0) {	// no band may transmit
 		board.bands = rx_only_bands;
 		board.band_count = sizeof rx_only_bands / sizeof rx_only_bands[0];
+		return true;
+	}
+	if (strcmp(t, "variant") == 0) {
+		board.variant_mismatch = variant_mismatch_yes;
 		return true;
 	}
 	if (strcmp(t, "nobattery") == 0) {

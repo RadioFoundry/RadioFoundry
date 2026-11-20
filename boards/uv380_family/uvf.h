@@ -45,9 +45,6 @@ typedef struct {
 	bool enc_reverse;
 	// Board start-up after the shared one (board_init), or NULL: GPS and the radio's own checks
 	void (*init)(void);
-	// Why the transmitter must stay off on this radio, or NULL to allow it (asked on every tx()): a build for the
-	// wrong hardware version
-	const char *(*tx_block)(void);
 } uvf_variant_t;
 extern const uvf_variant_t uvf_variant;
 // The key matrix, [row PA6, PD2, PD3][column D0..D7], with the key bits below (input_uvf.c)
