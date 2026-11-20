@@ -564,7 +564,7 @@ endian (24 bits used). BUSY: one of the kind is still queued; UNAVAILABLE: built
 | 2 | CALL_ALERT | target u32 | send a call alert (3 tries) |
 | 3 | RADIO_CHECK | target u32 | send a radio check (3 tries) |
 | 4 | SETTINGS | ARS server u32 (0 off), flags u8 (bit 0 answer radio checks, bit 1 acknowledge call alerts, bit 2 answer LRRP, bit 3 text messages in ETSI short data by default, bit 4 radio checks in the ETSI form, bit 5 text messages in ETSI IP text by default; neither bit 3 nor 5: TMS) | the service's settings (the radio core saves them in the settings store) |
-| 5 | INBOX | index u8 (0 newest) | reply: source u32, destination u32, group u8, flags u8 (bit 0 unread, bit 1 received as ETSI short data, bit 2 received as ETSI IP text), the text; UNAVAILABLE when there is no such message |
+| 5 | INBOX | index u8 (0 newest) | reply: source u32, destination u32, group u8, flags u8 (bit 0 unread, bit 1 received as ETSI short data, bit 2 received as ETSI IP text, bit 3 received as Tier III short data), the text; UNAVAILABLE when there is no such message |
 | 6 | MARK_READ | index u8 | mark an inbox message read |
 | 7 | EMERGENCY | u8: 0 cancel, 1 start (the emergency key), 2 dismiss the alert | [dmr-emergency.md](dmr-emergency.md); start answers BUSY while an emergency runs; UNAVAILABLE without `CONFIG_DMR_EMERGENCY` |
 | 8 | EMERGENCY_SETTINGS | mode u8 (0 alarm, 1 alarm then call, 2 call), target u32 (0 the channel's), flags u8 (bit 0 the target is a radio, bit 1 ETSI FID, bit 2 no alert tone), alarm tries u8 (1-10), hot mic s u8 (0-60) | the emergency settings (saved by the radio core); out of range values are clamped |

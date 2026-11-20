@@ -1578,7 +1578,7 @@ class DebugLink:
             raise
         src, dst, group, flags = struct.unpack_from("<IIBB", r)
         return {"src": src, "dst": dst, "group": bool(group), "unread": bool(flags & 1),
-                "format": "etsi_ip" if flags & 4 else "etsi" if flags & 2 else "tms", "text": r[10:].decode("latin-1")}
+                "format": "t3_udt" if flags & 8 else "etsi_ip" if flags & 4 else "etsi" if flags & 2 else "tms", "text": r[10:].decode("latin-1")}
 
     def mark_read(self, index=0):
         self.data_request(DATA_OP_MARK_READ, bytes([index]))

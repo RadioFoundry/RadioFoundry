@@ -249,7 +249,8 @@ size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, si
 		put32(out + 5, m.dst);
 		out[9] = m.group;
 		out[10] = (uint8_t)((m.unread ? 1u : 0u) | (m.format == DMR_SMS_FORMAT_ETSI ? 2u : 0u) |
-				    (m.format == DMR_SMS_FORMAT_ETSI_IP ? 4u : 0u));
+				    (m.format == DMR_SMS_FORMAT_ETSI_IP ? 4u : 0u) |
+				    (m.format == DMR_SMS_FORMAT_T3_UDT ? 8u : 0u));
 		memcpy(out + 11, m.text, tl);
 		return 11u + tl;
 	}
