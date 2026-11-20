@@ -1688,6 +1688,15 @@ static uint8_t sched_cach_cmd(uint32_t counter, uint8_t slot, uint8_t control, c
 	return (r != 0) ? (uint8_t)(0xE0 + r) : split_reply(SPLIT_SUB_TX_SCHED)[9];
 }
 
+// Fills the stack below the caller with a pattern, so a variable read before it is set holds a pointer that faults
+// instead of whatever the last call left there (a bug that crashed on one compiler's stack and not another's)
+static void __attribute__((noinline)) poison_stack(void)
+{
+	volatile uint8_t junk[16384];
+
+	memset((void *)junk, 0xA5, sizeof(junk));
+}
+
 static void test_sched_cach(void)
 {
 	hotspot_split_view_t v;
@@ -1711,11 +1720,13 @@ static void test_sched_cach(void)
 	CHECK(sched_cach_cmd(g, 1, 0x43, d, c1) == SPLIT_SCHED_QUEUED);
 	CHECK(sched_cach_cmd(g + 1u, 2, 0x43, d, c2) == SPLIT_SCHED_QUEUED);
 	CHECK(sched_cach_cmd(g + 1u, 2, 0x49, idle, c2) == SPLIT_SCHED_REPLACED);	// idle replaces a burst
+	poison_stack();		// net_burst's LC out-parameter was left unset on the idle path: tx_sched copied from it
+	CHECK(sched_cach_cmd(g + 3u, 2, 0x49, idle, c2) == SPLIT_SCHED_QUEUED);	// an idle that carries a CACH
 	CHECK(sched_cach_cmd(g + 2u, 1, 0x43, d, c2) == 0xE0 + SPLIT_RESULT_INVALID);	// TC names TS2
 	CHECK(sched_cmd(g + 2u, 1, 0x43, d) == SPLIT_SCHED_QUEUED);			// no CACH: the half's own
 	run_ms(600);
 	hotspot_split_get_view(&v);
-	bool seen1 = false, seen2 = false, seen3 = false;
+	bool seen1 = false, seen2 = false, seen3 = false, seen4 = false;
 	for (unsigned i = air0; i < ssim.air_n; i++) {
 		uint32_t n = ssim.air[i].counter + v.cbase;
 
@@ -1726,15 +1737,17 @@ static void test_sched_cach(void)
 			seen2 = ssim.air[i].b.kind == DMR_BURST_IDLE && ssim.air[i].cach.bits == c2;
 		} else if (n == g + 2u) {
 			seen3 = ssim.air[i].b.kind == DMR_BURST_CSBK && ssim.air[i].cach.bits != c1 && ssim.air[i].cach.tc == 0;
+		} else if (n == g + 3u) {
+			seen4 = ssim.air[i].b.kind == DMR_BURST_IDLE && ssim.air[i].cach.bits == c2;
 		}
 	}
 	for (unsigned i = air0; i < ssim.air_n; i++) {
 		uint32_t n = ssim.air[i].counter + v.cbase;
-		if (n >= g && n <= g + 2u && !(seen1 && seen2 && seen3)) {
+		if (n >= g && n <= g + 3u && !(seen1 && seen2 && seen3 && seen4)) {
 			printf("  slot +%u kind %u bits %06x tc %u at %u pl %05x (c1 %06x c2 %06x)\n", n - g, ssim.air[i].b.kind, ssim.air[i].cach.bits, ssim.air[i].cach.tc, ssim.air[i].cach.at, ssim.air[i].cach.payload, c1, c2);
 		}
 	}
-	CHECK(seen1 && seen2 && seen3);
+	CHECK(seen1 && seen2 && seen3 && seen4);
 	CHECK(ssim.late == 0);
 }
 

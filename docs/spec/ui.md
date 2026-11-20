@@ -230,7 +230,9 @@ Text entry supports both keypad conventions radios use: more presses of the same
 the input mode, with BACK to delete (and to leave once the field is empty). In ABC and abc, keys 2-9 cycle their
 letters, the digit, then the letters in the other case; 1 cycles `. - / , ' & ( ) @ _ ! ? 1`, 0 a space, 0, `+ # *`.
 The same key again within 1 s takes the next character; another key or the pause moves on. The title shows the mode
-("Name ABC"). In 123 a digit types itself, and a held digit types itself in any mode (principles 3).
+("Name ABC"). The text wraps over the lines above the hint, with the count of characters typed and the field's
+limit ("12/16") at the bottom right on a line of its own. Once the text fills those lines, it scrolls so the cursor
+stays on the last one. In 123 a digit types itself, and a held digit types itself in any mode (principles 3).
 CONTEXT (`#`) cycles ABC → 123 → abc (ABC first). BACK deletes the last character and, on an empty field, leaves
 without changing the name (the phone convention, the one exception to P4); QUICK (`*`) and Left delete too, and in
 text entry QUICK doesn't open quick settings. OK keeps the name. Without a keypad (class F): Up / Down step the last character (down past the space deletes it), OK adds the next

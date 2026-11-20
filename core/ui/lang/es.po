@@ -2047,10 +2047,10 @@ msgctxt "LABEL_NAME"
 msgid "Name"
 msgstr "Nombre"
 
-#: core/ui/ui_menus.c
-msgctxt "TEXT_HINT_KEEP"
-msgid "{Back delete  # ABC/123/abc  OK keep|Back del  # mode  OK}"
-msgstr "{Atrás borrar  # ABC/123/abc  OK listo|Atrás borr.  # modo  OK}"
+#: core/ui/ui_menus.c core/ui/ui_satellite.c
+msgctxt "SATELLITE_2"
+msgid "Satellite"
+msgstr "Satélite"
 
 #: core/ui/ui_menus.c
 msgctxt "SATELLITE_TLE_TITLE_LINE1_UPPER"
@@ -2082,10 +2082,10 @@ msgctxt "SATELLITE_TLE_TITLE_LINE2_LOWER"
 msgid "2 abc"
 msgstr "2 abc"
 
-#: core/ui/ui_menus.c core/ui/ui_satellite.c
-msgctxt "SATELLITE_2"
-msgid "Satellite"
-msgstr "Satélite"
+#: core/ui/ui_menus.c
+msgctxt "TEXT_HINT_KEEP"
+msgid "{Back delete  # ABC/123/abc  OK keep|Back del  # mode  OK}"
+msgstr "{Atrás borrar  # ABC/123/abc  OK listo|Atrás borr.  # modo  OK}"
 
 #: core/ui/ui_menus.c
 msgctxt "TEXT_HINT_SEND"
@@ -4808,6 +4808,21 @@ msgid "Voice channel unusable"
 msgstr "Canal de voz inválido"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_WHY_TRUNK_OTHER_SYS"
+msgid "Another system heard"
+msgstr "Se oye otro sistema"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_TRUNK_REG_REFUSED"
+msgid "Registration refused"
+msgstr "Registro rechazado"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_TRUNK_UNMAPPED"
+msgid "Unknown channel "
+msgstr "Canal desconocido "
+
+#: core/ui/ui_screens.c
 msgctxt "DENY_WHY_NOT_ALLOWED"
 msgid "Not allowed here"
 msgstr "No permitido aquí"
@@ -4873,6 +4888,16 @@ msgid "End the bench on the PC"
 msgstr "Termina el banco en el PC"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_FIX_CHECK_SYSTEM"
+msgid "Check system settings"
+msgstr "Revisa los ajustes del sistema"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_FIX_ASK_TO_ADD_ID"
+msgid "Ask to add your ID"
+msgstr "Pide que añadan tu ID"
+
+#: core/ui/ui_screens.c
 msgctxt "TRUNK_WORD_PHONE_LINE"
 msgid "Phone line"
 msgstr "Línea telefónica"
@@ -4911,6 +4936,16 @@ msgstr "Módem DMR apagado"
 msgctxt "TRUNK_STATE_FALLBACK"
 msgid "Fallback"
 msgstr "Respaldo"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_OTHER_SYSTEM"
+msgid "Other system"
+msgstr "Otro sistema"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_REG_REFUSED"
+msgid "Reg. refused"
+msgstr "Reg. rechazado"
 
 #: core/ui/ui_screens.c
 msgctxt "TRUNK_STATE_SEARCHING"
@@ -4966,6 +5001,51 @@ msgstr "DMon"
 msgctxt "HOME_CHIP_PRIVACY"
 msgid "Priv"
 msgstr "Priv"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_MODEL_TINY"
+msgid "Tiny"
+msgstr "Diminuto"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_MODEL_SMALL"
+msgid "Small"
+msgstr "Pequeño"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_MODEL_LARGE"
+msgid "Large"
+msgstr "Grande"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_MODEL_HUGE"
+msgid "Huge"
+msgstr "Enorme"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_HEARD"
+msgid "Heard: "
+msgstr "Oído: "
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_NET"
+msgid ", net "
+msgstr ", red "
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_SITE"
+msgid "site "
+msgstr "sitio "
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_CAT_A"
+msgid ", category A only"
+msgstr ", solo categoría A"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_CAT_B"
+msgid ", category B only"
+msgstr ", solo categoría B"
 
 #: core/ui/ui_screens.c
 msgctxt "CALL_BODY_PRIVATE_ID"
