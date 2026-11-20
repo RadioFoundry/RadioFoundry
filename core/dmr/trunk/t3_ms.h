@@ -71,6 +71,7 @@
 #define T3_NOSIG_MS		5000	// T_Nosig, 1-15 s: no valid TSCC PDU this long, hunt again
 #define T3_DWELL_MS		700	// hunting: time on a candidate (12 TSCC slots and two short LCs)
 #define T3_OTHER_MS		10000	// hunting: another system heard this recently is shown (t3_ms_other)
+#define T3_OTHER_FID_N		2	// hunting: CSBKs with a good CRC and the same nonzero FID that name a non-ETSI system
 #define T3_SETTLE_MS		60	// after a retune: what is heard before this belongs to the old channel
 #define T3_INACTIVE_MS		2500	// TV_Inactive, 0-20 s: nothing on the followed slot this long, return
 #define T3_CALL_MAX_MS		300000	// a followed call ends by this at the latest
@@ -307,6 +308,9 @@ typedef struct {
 	uint32_t slc_foreign;	// the last foreign C_SYS_Parms code + 1 (0: none): two alike leave a candidate
 	uint16_t other_code;	// C_SYScode of the last other system heard while hunting (PAR 0: from a short LC)
 	uint32_t other_ms;	// when (0: none since the hunt began): the screen names it (t3_ms_other)
+	uint8_t other_fid;	// the FID of the last manufacturer CSBKs heard while hunting (t3_ms_other_fid)
+	uint8_t other_fid_n;	// how many in a row with that FID, up to T3_OTHER_FID_N
+	uint32_t other_fid_ms;	// when the last one came (0: none since the hunt began)
 	uint16_t refused_area;	// reg_area + 1 of the last Reg_Refused, 0 none: until a registration is accepted
 	bool retry_tscc;	// the lost TSCC is tried before the list
 	uint8_t hunt_idx;	// next candidate: the adjacent sites' TSCCs, then ctrl[]
@@ -590,6 +594,9 @@ bool t3_ms_can_talk(const t3_ms_t *ms);
 // Hunting, and another system's control channel heard in the last T3_OTHER_MS: *code is its C_SYScode (PAR 0 when only
 // its short LC was heard). The usual cause is the system's model, network or color code set wrong in the codeplug
 bool t3_ms_other(const t3_ms_t *ms, uint32_t now, uint16_t *code);
+// Hunting, and in the last T3_OTHER_MS only CSBKs of one manufacturer's own FID (not 0) heard with a good CRC, no ETSI
+// TSCC: *fid is that FID. A trunking system of another kind uses the channel, one this radio can't join
+bool t3_ms_other_fid(const t3_ms_t *ms, uint32_t now, uint8_t *fid);
 // The system refused this radio's registration (Reg_Refused, 6.4.4.1) and none has been accepted since: hunting, or
 // back on that area and not registered. The usual cause is the radio's ID missing from the system's records
 bool t3_ms_reg_refused(const t3_ms_t *ms);

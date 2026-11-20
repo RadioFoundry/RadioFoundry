@@ -1650,6 +1650,23 @@ static void heard_other(t3_ms_t *ms, uint32_t now, uint16_t code)
 	}
 }
 
+// A CSBK with a manufacturer's FID and a good CRC heard while hunting: several in a row with one FID name a trunking
+// system of another kind (t3_ms_other_fid). An ETSI TSCC may send such CSBKs too: it is confirmed by its Aloha first
+static void heard_fid(t3_ms_t *ms, uint32_t now, uint8_t fid)
+{
+	if (ms->state != T3_HUNT) {
+		return;
+	}
+	if (fid != ms->other_fid || ms->other_fid_ms == 0 || since(now, ms->other_fid_ms, T3_OTHER_MS)) {
+		ms->other_fid = fid;
+		ms->other_fid_n = 0;
+	}
+	if (ms->other_fid_n < T3_OTHER_FID_N) {
+		ms->other_fid_n++;
+	}
+	ms->other_fid_ms = now != 0 ? now : 1u;
+}
+
 static void confirm(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t3_aloha_t *a)
 {
 	if (ms->state == T3_HUNT && ms->hunt_strict && ms->cfg->leave_dbm != 0 && ms->level_dbm != 0 &&
@@ -1663,6 +1680,7 @@ static void confirm(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t
 		ms->tscc = ms->tuned;
 		ms->tscc.cc = cc;
 		ms->other_ms = 0;
+		ms->other_fid_ms = 0;
 	}
 	if (ms->syscode != 0 && ms->syscode != a->syscode) {
 		// Another network: what was learned belongs to the old one. A site change of one network keeps it
@@ -2373,6 +2391,9 @@ void t3_ms_rx(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t dt, uint8_t cc, c
 		// Any CSBK taken on the call's slot keeps it alive, one with another FID included
 		ms->last_act_ms = now;
 	}
+	if (p.fid != 0 && good && dt == T3_DT_CSBK) {
+		heard_fid(ms, now, p.fid);	// taken by CRC only: one repeated with a failed CRC names nothing
+	}
 	if (!known || p.fid != 0) {
 		return;
 	}
@@ -2914,6 +2935,16 @@ bool t3_ms_deregister(t3_ms_t *ms, uint32_t now)
 		finish(ms, now, T3_RES_CANCELED);
 	}
 	start_access(ms, now, T3_SVC_DEREGISTER, 0, false);
+	return true;
+}
+
+bool t3_ms_other_fid(const t3_ms_t *ms, uint32_t now, uint8_t *fid)
+{
+	if (ms->state != T3_HUNT || ms->other_fid_ms == 0 || ms->other_fid_n < T3_OTHER_FID_N ||
+	    since(now, ms->other_fid_ms, T3_OTHER_MS)) {
+		return false;
+	}
+	*fid = ms->other_fid;
 	return true;
 }
 

@@ -415,7 +415,7 @@ Select the channel. Home shows the system's name and what the radio is doing the
 | Home shows | Meaning |
 |---|---|
 | Searching | Looking for the system's control channel |
-| Other system | Looking for the system, and hearing only another one. The line below names what was heard ("Heard: Huge, net 0, site 83"): compare it with the system's network model and network number in the editor |
+| Other system | Looking for the system, and hearing only another one. The line below names what was heard ("Heard: Huge, net 0, site 83"): compare that with the system's network model and network number in the editor. "Incompatible system" means the channel carries another kind of trunking system, which this radio cannot join. No setting changes that |
 | Registering | Found; registering with the system |
 | Reg. refused | The system doesn't accept this radio, most often because your DMR ID isn't in its records. Ask the system's administrator to add it. The radio keeps asking. PTT says "Registration refused" |
 | Ready | On the control channel. Hold **PTT** to call |

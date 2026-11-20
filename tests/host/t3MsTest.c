@@ -501,6 +501,47 @@ static void test_other(void)
 	CHECK(!t3_ms_other(&ms, T, &code), "camped: another system's Aloha not shown");
 }
 
+// A trunking system of another kind (t3_ms_other_fid): its control channel sends CSBKs with its own FID and a good
+// CRC, no ETSI Aloha. Two with one FID name it; a failed CRC, a single one or an Aloha of ours do not
+static void other_fid_csbk(t3_ms_t *ms, uint8_t fid, bool crc_ok)
+{
+	uint8_t d[T3_CSBK_BYTES] = { 0x81, fid, 0x12, 0x13, 0x17, 0x18, 0x1b, 0x00, 0x00, 0x07 };
+	t3_crc_append(d, T3_CRC_MASK_CSBK);
+	d[11] ^= crc_ok ? 0u : 1u;
+	rx(ms, 1, T3_DT_CSBK, CC, d);
+	adv(ms, 60);
+}
+
+static void test_other_fid(void)
+{
+	setup();
+	t3_ms_t ms;
+	uint8_t fid = 0;
+	uint16_t code;
+	t3_ms_start(&ms, &cfg, T);
+	poll_all(&ms);
+	adv(&ms, 100);
+	other_fid_csbk(&ms, 0x06, false);
+	other_fid_csbk(&ms, 0x06, false);
+	CHECK(!t3_ms_other_fid(&ms, T, &fid), "failed CRCs name nothing");
+	other_fid_csbk(&ms, 0x06, true);
+	CHECK(!t3_ms_other_fid(&ms, T, &fid), "one isn't trusted");
+	other_fid_csbk(&ms, 0x10, true);
+	CHECK(!t3_ms_other_fid(&ms, T, &fid), "two FIDs: not one system");
+	other_fid_csbk(&ms, 0x10, true);
+	CHECK(ms.state == T3_HUNT && t3_ms_other_fid(&ms, T, &fid) && fid == 0x10, "FID 0x%02x", fid);
+	CHECK(!t3_ms_other(&ms, T, &code), "no C_SYScode");
+	adv(&ms, T3_OTHER_MS + 100);
+	CHECK(!t3_ms_other_fid(&ms, T, &fid), "gone after T3_OTHER_MS");
+
+	// Our TSCC sending manufacturer CSBKs between its Alohas: camped, not shown
+	setup();
+	hunt_to_ours(&ms);
+	other_fid_csbk(&ms, 0x10, true);
+	other_fid_csbk(&ms, 0x10, true);
+	CHECK(ms.state == T3_CAMPED && !t3_ms_other_fid(&ms, T, &fid), "camped: not shown");
+}
+
 static void test_slc(void)
 {
 	setup();
@@ -855,6 +896,7 @@ int main(void)
 	test_nosig();
 	test_slc();
 	test_other();
+	test_other_fid();
 	test_learn();
 	test_monitor_emergency();
 	test_adjacent();

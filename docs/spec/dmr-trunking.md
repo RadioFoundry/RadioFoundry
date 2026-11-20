@@ -171,6 +171,11 @@ LCs). After a loss, the lost TSCC is tried first.
 - Either keeps the other system's code for `T3_OTHER_MS` (10 s; `t3_ms_other`; PAR 0 from a short LC, which doesn't
   carry it), until the radio camps. A system set up with the wrong model or network is heard this way, and the screen
   names what it heard (12.4).
+- CSBKs with a manufacturer's own FID (not 0) and a good CRC, `T3_OTHER_FID_N` (2) in a row with one FID and no
+  authorized Aloha: a trunking system of another kind uses the channel, one that sends no ETSI TSCC PDUs this radio
+  could camp on. The FID is kept for `T3_OTHER_MS` (`t3_ms_other_fid`, view key `t3.other_fid`), until the radio
+  camps. Only CSBKs that pass the CRC count: one taken by the accept invalid CRC rule names nothing. A TSCC that sends
+  manufacturer CSBKs between its Alohas camps first and is never named this way.
 
 **Camped.** Every valid PDU from the TSCC (CRC good, our color code; Alohas and broadcasts also with our system code)
 restarts T_Nosig. When it runs out, the engine hunts again. Short LCs don't restart it: every channel of the site
@@ -939,7 +944,9 @@ Registering, Searching, Other system, Reg. refused, In call, Refused, Fallback (
 **Other system.** Searching while the hunt hears only another system's control channel (`t3_ms_other`, 6.1). Home's
 activity area names it in place of the last call: "Heard: Huge, net 0" and "site 83", with ", category A only" or
 ", category B only" when its PAR allows one category; the first line alone where the area has room for one. The user compares it with the system's model and network
-(12.1). A wrong color code shows as Searching: the radio decodes nothing on the channel.
+(12.1). A wrong color code shows as Searching: the radio decodes nothing on the channel. A system of another kind
+(`t3_ms_other_fid`, 6.1) also shows as Other system; the activity area says "Incompatible system" and "Cannot
+join". No setting fixes that system.
 
 **Reg. refused.** The system answered the registration with Reg_Refused (6.4.4.1): it doesn't accept this radio, most
 often because its ID isn't in the system's records. The radio hunts and asks again when it comes back to the same
@@ -951,6 +958,7 @@ registration is accepted. Refused is Reg_Denied: barred from the area, never ask
 | State | Shown |
 |---|---|
 | searching, another system heard | Another system heard / Check system settings |
+| searching, a system of another kind heard | Incompatible system / Pick another channel |
 | registration refused (Reg_Refused) | Registration refused / Ask to add your ID |
 | searching | No control channel |
 | not registered: registering, or the registration denied | Not registered yet |

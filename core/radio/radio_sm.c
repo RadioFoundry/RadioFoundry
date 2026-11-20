@@ -3660,6 +3660,7 @@ void radio_sm_t3_brief(radio_sm_t *sm)
 	b->polls = x->polls;
 	b->poll_fails = x->poll_fails;
 	b->other = x->other;
+	b->other_fid = x->other_fid;
 	b->refused = x->refused;
 	b->unmapped = x->last_unmapped;
 	b->why = x->why;
@@ -3905,8 +3906,12 @@ static uint8_t t3_why_now(uint32_t now_ms, uint8_t result)
 {
 	uint16_t code;
 	if (t3m.state == T3_HUNT) {
+		uint8_t fid;
 		if (t3_ms_other(&t3m, now_ms, &code)) {
 			return RADIO_TRUNK_WHY_OTHER_SYS;
+		}
+		if (t3_ms_other_fid(&t3m, now_ms, &fid)) {
+			return RADIO_TRUNK_WHY_OTHER_KIND;
 		}
 		return t3_ms_reg_refused(&t3m) ? RADIO_TRUNK_WHY_REG_REFUSED : RADIO_TRUNK_WHY_NO_CC;
 	}
@@ -4153,6 +4158,8 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 	t3_poll_tick(sm);
 	uint16_t other;
 	radio_t3v.other = t3_ms_other(&t3m, now_ms, &other) ? other : 0u;
+	uint8_t fid;
+	radio_t3v.other_fid = t3_ms_other_fid(&t3m, now_ms, &fid) ? fid : 0u;
 	radio_t3v.refused = t3_ms_reg_refused(&t3m);
 	t3_publish(sm);
 }

@@ -1288,6 +1288,7 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 		case RADIO_TRUNK_WHY_NO_ANSWER: sb_str(&b, TR(DENY_WHY_P25T_NO_ANSWER, "No answer from system")); break;
 		case RADIO_TRUNK_WHY_NO_CHAN: sb_str(&b, TR(DENY_WHY_P25T_NO_CHAN, "Voice channel unusable")); break;
 		case RADIO_TRUNK_WHY_OTHER_SYS: sb_str(&b, TR(DENY_WHY_TRUNK_OTHER_SYS, "Another system heard")); break;
+		case RADIO_TRUNK_WHY_OTHER_KIND: sb_str(&b, TR(DENY_WHY_TRUNK_OTHER_KIND, "Incompatible system")); break;
 		case RADIO_TRUNK_WHY_REG_REFUSED: sb_str(&b, TR(DENY_WHY_TRUNK_REG_REFUSED, "Registration refused")); break;
 #if CONFIG_DMR_TRUNK
 		case RADIO_TRUNK_WHY_UNMAPPED:
@@ -1332,6 +1333,8 @@ static const char *deny_action(const radio_view_t *v)
 			return TR(DENY_FIX_CHECK_SYSTEM, "Check system settings");
 		if (trunk_why(v) == RADIO_TRUNK_WHY_REG_REFUSED)
 			return TR(DENY_FIX_ASK_TO_ADD_ID, "Ask to add your ID");	// the system doesn't know it
+		if (trunk_why(v) == RADIO_TRUNK_WHY_OTHER_KIND)
+			return TR(DENY_FIX_PICK_ANOTHER_CHANNEL, "Pick another channel");	// no setting helps
 		return TR(DENY_FIX_RELEASE_AND_RETRY, "Release PTT, try again");
 #endif
 	default: return TR(DENY_FIX_PICK_ANOTHER_CHANNEL, "Pick another channel");
@@ -1608,7 +1611,7 @@ static const char *t3_state_word(const radio_view_t *v, bool *warn)
 		return TR(TRUNK_WHY_SYSTEM_NOT_SET_UP, "System not set up");
 	if (v->t3.fallback != 0)	// on the system's fallback channel, or looking for the system from it
 		return TR(TRUNK_STATE_FALLBACK, "Fallback");
-	if (v->t3.on && v->t3.state == T3_HUNT && v->t3.other != 0)
+	if (v->t3.on && v->t3.state == T3_HUNT && (v->t3.other != 0 || v->t3.other_fid != 0))
 		return TR(TRUNK_STATE_OTHER_SYSTEM, "Other system");	// Home's activity says which (draw_t3_other)
 	if (v->t3.on && v->t3.refused)	// hunting for another TSCC, or registering again where it was refused
 		return TR(TRUNK_STATE_REG_REFUSED, "Reg. refused");
@@ -1706,7 +1709,8 @@ static void draw_chips_dmr(const radio_view_t *v, const ui_state_t *s)
 #if CONFIG_DMR_TRUNK
 // Activity on Home while the radio searches a trunked system and hears only another one: what it heard, to compare
 // with the system's settings (dmr-trunking.md 12.4): "Heard: Huge, net 0" / "site 83" (and the category when the
-// site takes one only), or the first line alone where there is room for one
+// site takes one only), or the first line alone where there is room for one. A system of another kind (no C_SYScode):
+// "Incompatible system" / "Cannot join"
 static void draw_t3_other(const radio_view_t *v, int y)
 {
 	const font_t *sm = ui_layout.small;
@@ -1714,6 +1718,18 @@ static void draw_t3_other(const radio_view_t *v, int y)
 	char a[48], c[40], fit[48];
 	sbuf_t b;
 	t3_syscode_t sc;
+	if (v->t3.other == 0) {
+		// Only a trunking system of another kind heard (its own FID, no ETSI Aloha): no setting helps
+		gfx_text_fit(sm, TR(TRUNK_OTHER_KIND, "Incompatible system"), w, fit, sizeof fit);
+		if (ui_layout.activity_h >= 2 * sm->h) {
+			gfx_text(sm, 0, y, fit, ui_col.warn);
+			gfx_text_fit(sm, TR(TRUNK_OTHER_KIND_NOTE, "Cannot join"), w, fit, sizeof fit);
+			gfx_text(sm, 0, y + sm->h, fit, ui_col.fg);
+		} else {
+			gfx_text(sm, 0, y + (ui_layout.activity_h - sm->h) / 2, fit, ui_col.warn);
+		}
+		return;
+	}
 	t3_syscode_split(v->t3.other, &sc);
 	static const tr_id_t model[4] = {	// the editor's network model names
 		TRN(TRUNK_MODEL_TINY, "Tiny"), TRN(TRUNK_MODEL_SMALL, "Small"), TRN(TRUNK_MODEL_LARGE, "Large"),
@@ -2119,7 +2135,7 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 			break;
 		}
 #if CONFIG_DMR_TRUNK
-		if (v->t3.on && v->t3.state == T3_HUNT && v->t3.other != 0) {
+		if (v->t3.on && v->t3.state == T3_HUNT && (v->t3.other != 0 || v->t3.other_fid != 0)) {
 			draw_t3_other(v, y);
 			break;
 		}
