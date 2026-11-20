@@ -33,6 +33,10 @@
 //   chkind:<n>,p25|nxdn[,<name>]  a stored P25 or NXDN channel, with an optional name (_ = space)
 //   p25t:<state>[,<tg>] the channel on view is a trunked P25 one (CONFIG_P25_TRUNK builds), its follower in state
 //                       1 finding the system, 2 on the control channel, 3 following talk group tg
+//   ysf                 the channel is a Fusion one (kind 6, DG-ID sent 0), our callsign G4XYZ; ysfnocall: none set
+//   ysfrx:<src>[,dn|vw|vd1[,<dgid>[,<radio id>]]]   a Fusion transmission is heard (DN unless said), from DG-ID 0
+//                       unless given; src - : joined late, no callsigns heard (and no destination), only the radio ID
+//                       if given; ysfrxend ends it. ysfvw: the channel sends VW (after ysf)
 //   rx:<src>,<dst>,g|p[,name]   a DMR call starts (g = group, p = private to us); rxend ends it
 //   call:<src>,<dst>,g|p        a 2 s call, then 1 s of quiet
 //   msg:<src>,<text>    a text message arrives (_ = space); alert:<src>; emergency:<src>; privcall:<src>
@@ -3376,6 +3380,59 @@ static bool run_token(char *t, char *err, size_t len)
 #endif
 	if (strcmp(t, "p25rxend") == 0) {
 		view.p25.flags &= (uint8_t)~(RADIO_P25_RX | RADIO_P25_PLAYED | RADIO_P25_ENC);
+		view.state = RS_IDLE;
+		view.last_rx_ms = now_ms;
+		changed();
+		advance(200);
+		return true;
+	}
+#endif
+#if CONFIG_YSF
+	if (strcmp(t, "ysf") == 0 || strcmp(t, "ysfnocall") == 0) {
+		view.ch.kind = CODEPLUG_KIND_YSF;
+		view.ch.mode = RADIO_MODE_FM;
+		view.ch.bw = RADIO_BW_25K;
+		view.ch.rx_tone = view.ch.tx_tone = (subtone_t){ TONE_NONE, 0 };
+		memset(&view.ysf, 0, sizeof view.ysf);
+		view.ysf.on = true;
+		view.ysf.codec = true;
+		view.ysf.no_call = t[3] != '\0';
+		strcpy(view.ysf.tx_src, view.ysf.no_call ? "" : "G4XYZ");
+		strcpy(view.ysf.tx_dest, "ALL");
+		changed();
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "ysfvw") == 0) {	// the channel sends Voice FR
+		view.ysf.tx_vw = true;
+		changed();
+		advance(100);
+		return true;
+	}
+	if (strcmp(t, "ysfrx") == 0 && arg != NULL) {
+		char src[16] = "", mode[8] = "dn", id[8] = "";
+		unsigned dgid = 0;
+		sscanf(arg, "%15[^,],%7[^,],%u,%7s", src, mode, &dgid, id);
+		bool late = strcmp(src, "-") == 0;
+		view.ysf.rx = RYSF_RX_CALL;
+		view.ysf.heard = true;
+		view.ysf.mode = strcmp(mode, "vw") == 0 ? RYSF_MODE_VW : strcmp(mode, "vd1") == 0 ? RYSF_MODE_VD1 : RYSF_MODE_DN;
+		view.ysf.dgid = (uint8_t)dgid;
+		view.ysf.muted = view.ysf.rx_dgid != 0 && dgid != view.ysf.rx_dgid;
+		view.ysf.playing = (view.ysf.mode != RYSF_MODE_VW || CONFIG_YSF_VW) && !view.ysf.muted;
+		strcpy(view.ysf.src, late ? "" : src);
+		strcpy(view.ysf.dest, late ? "" : "ALL");
+		snprintf(view.ysf.src_id, sizeof view.ysf.src_id, "%.5s", id);
+		view.ysf.heard_ms = now_ms;
+		view.state = RS_RX;
+		view.rssi_dbm = -92;
+		changed();
+		advance(400);
+		return true;
+	}
+	if (strcmp(t, "ysfrxend") == 0) {
+		view.ysf.rx = RYSF_RX_IDLE;
+		view.ysf.playing = false;
 		view.state = RS_IDLE;
 		view.last_rx_ms = now_ms;
 		changed();

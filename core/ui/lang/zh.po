@@ -4620,6 +4620,56 @@ msgid "TX not calibrated"
 msgstr "发射未标定"
 
 #: core/ui/ui_screens.c
+msgctxt "YSF_WHY_VW"
+msgid "VW: not played"
+msgstr "VW：不播放"
+
+#: core/ui/ui_screens.c
+msgctxt "YSF_WHY_DATA"
+msgid "Data: not played"
+msgstr "数据：不播放"
+
+#: core/ui/ui_screens.c
+msgctxt "YSF_WHY_OTHER_DGID"
+msgid "Other DG-ID: not played"
+msgstr "其他 DG-ID：不播放"
+
+#: core/ui/ui_screens.c
+msgctxt "WHY_NO_CODEC"
+msgid "No codec: voice off"
+msgstr "无编解码器：语音关闭"
+
+#: core/ui/ui_screens.c
+msgctxt "YSF_CALLER_ID"
+msgid "ID "
+msgstr "ID "
+
+#: core/ui/ui_screens.c
+msgctxt "YSF_CALLER_LATE"
+msgid "Caller unknown"
+msgstr "呼号未收到"
+
+#: core/ui/ui_screens.c
+msgctxt "YSF_CALLER_UNKNOWN"
+msgid "Fusion"
+msgstr "Fusion"
+
+#: core/ui/ui_screens.c
+msgctxt "YSF_DEST_LATE"
+msgid "unknown"
+msgstr "未收到"
+
+#: core/ui/ui_screens.c
+msgctxt "YSF_WHY_NO_PATH"
+msgid "Fusion: not on this radio"
+msgstr "Fusion：本机不支持"
+
+#: core/ui/ui_screens.c
+msgctxt "YSF_WHY_NO_CAL"
+msgid "Fusion TX not calibrated"
+msgstr "Fusion 发射未标定"
+
+#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_P25T_HUNT"
 msgid "Finding system"
 msgstr "搜索中"
@@ -4663,6 +4713,11 @@ msgstr "监听"
 msgctxt "HOME_STATE_NO_TX_FREQ"
 msgid "No TX frequency"
 msgstr "无发射频率"
+
+#: core/ui/ui_screens.c
+msgctxt "YSF_CHIP_ALL_DGID"
+msgid "Any DG-ID"
+msgstr "所有 DG-ID"
 
 #: core/ui/ui_screens.c
 msgctxt "HOME_CHIP_BROADCAST_FM"
@@ -4718,11 +4773,6 @@ msgstr "未设发射频率"
 msgctxt "WHY_MODE_NOT_IN_BUILD"
 msgid "Mode: not in this build"
 msgstr "模式：本版本无"
-
-#: core/ui/ui_screens.c
-msgctxt "WHY_NO_CODEC"
-msgid "No codec: voice off"
-msgstr "无编解码器：语音关闭"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_MODEM_NOT_RUNNING"
@@ -4890,9 +4940,14 @@ msgid "Ask to add your ID"
 msgstr "请添加你的 ID"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_FIX_CALLSIGN_IN_CODEPLUG"
+msgid "Set it in the codeplug"
+msgstr "请在写频数据中设置"
+
+#: core/ui/ui_screens.c
 msgctxt "DENY_FIX_SET_CALLSIGN"
 msgid "Set it: # then My call"
-msgstr "设置: # 然后我的呼号"
+msgstr "请在写频数据中设置"
 
 #: core/ui/ui_screens.c
 msgctxt "TRUNK_WORD_PHONE_LINE"
@@ -5208,6 +5263,16 @@ msgstr "{返回：信道通话组|返回 默认目标}"
 msgctxt "HOME_HINT_VFO"
 msgid "0-9 freq  * Quick  Up/Dn"
 msgstr "0-9 频率  * 快捷  上下"
+
+#: core/ui/ui_screens.c
+msgctxt "YSF_TITLE_TO"
+msgid "to "
+msgstr "至 "
+
+#: core/ui/ui_screens.c
+msgctxt "YSF_CHIP_NARROW"
+msgid " Narrow"
+msgstr " 低频偏"
 
 #: core/ui/ui_screens.c
 msgctxt "DUAL_BODY_HEARD"

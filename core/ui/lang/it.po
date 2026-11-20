@@ -4618,6 +4618,56 @@ msgid "TX not calibrated"
 msgstr "TX non calibrato"
 
 #: core/ui/ui_screens.c
+msgctxt "YSF_WHY_VW"
+msgid "VW: not played"
+msgstr "VW: non riprodotto"
+
+#: core/ui/ui_screens.c
+msgctxt "YSF_WHY_DATA"
+msgid "Data: not played"
+msgstr "Dati: non riprodotti"
+
+#: core/ui/ui_screens.c
+msgctxt "YSF_WHY_OTHER_DGID"
+msgid "Other DG-ID: not played"
+msgstr "Altro DG-ID: non riprodotto"
+
+#: core/ui/ui_screens.c
+msgctxt "WHY_NO_CODEC"
+msgid "No codec: voice off"
+msgstr "Niente codec: voce off"
+
+#: core/ui/ui_screens.c
+msgctxt "YSF_CALLER_ID"
+msgid "ID "
+msgstr "ID "
+
+#: core/ui/ui_screens.c
+msgctxt "YSF_CALLER_LATE"
+msgid "Caller unknown"
+msgstr "Chiamante sconosciuto"
+
+#: core/ui/ui_screens.c
+msgctxt "YSF_CALLER_UNKNOWN"
+msgid "Fusion"
+msgstr "Fusion"
+
+#: core/ui/ui_screens.c
+msgctxt "YSF_DEST_LATE"
+msgid "unknown"
+msgstr "sconosciuto"
+
+#: core/ui/ui_screens.c
+msgctxt "YSF_WHY_NO_PATH"
+msgid "Fusion: not on this radio"
+msgstr "Fusion: non su questa radio"
+
+#: core/ui/ui_screens.c
+msgctxt "YSF_WHY_NO_CAL"
+msgid "Fusion TX not calibrated"
+msgstr "TX Fusion non calibrato"
+
+#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_P25T_HUNT"
 msgid "Finding system"
 msgstr "Ricerca sistema"
@@ -4661,6 +4711,11 @@ msgstr "Ascolto"
 msgctxt "HOME_STATE_NO_TX_FREQ"
 msgid "No TX frequency"
 msgstr "Nessuna frequenza TX"
+
+#: core/ui/ui_screens.c
+msgctxt "YSF_CHIP_ALL_DGID"
+msgid "Any DG-ID"
+msgstr "Qualsiasi DG-ID"
 
 #: core/ui/ui_screens.c
 msgctxt "HOME_CHIP_BROADCAST_FM"
@@ -4716,11 +4771,6 @@ msgstr "Nessuna freq. TX impostata"
 msgctxt "WHY_MODE_NOT_IN_BUILD"
 msgid "Mode: not in this build"
 msgstr "Modo: non in questa build"
-
-#: core/ui/ui_screens.c
-msgctxt "WHY_NO_CODEC"
-msgid "No codec: voice off"
-msgstr "Niente codec: voce off"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_MODEM_NOT_RUNNING"
@@ -4888,9 +4938,14 @@ msgid "Ask to add your ID"
 msgstr "Chiedi di aggiungere l'ID"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_FIX_CALLSIGN_IN_CODEPLUG"
+msgid "Set it in the codeplug"
+msgstr "Impostalo nel codeplug"
+
+#: core/ui/ui_screens.c
 msgctxt "DENY_FIX_SET_CALLSIGN"
 msgid "Set it: # then My call"
-msgstr "Imposta: # poi Mio nominativo"
+msgstr "Impostalo nel codeplug"
 
 #: core/ui/ui_screens.c
 msgctxt "TRUNK_WORD_PHONE_LINE"
@@ -5206,6 +5261,16 @@ msgstr "{Indietro: gruppo canale|Indietro predef.}"
 msgctxt "HOME_HINT_VFO"
 msgid "0-9 freq  * Quick  Up/Dn"
 msgstr "0-9 freq  * Rapido  Su/Giù"
+
+#: core/ui/ui_screens.c
+msgctxt "YSF_TITLE_TO"
+msgid "to "
+msgstr "a "
+
+#: core/ui/ui_screens.c
+msgctxt "YSF_CHIP_NARROW"
+msgid " Narrow"
+msgstr " Stretta"
 
 #: core/ui/ui_screens.c
 msgctxt "DUAL_BODY_HEARD"

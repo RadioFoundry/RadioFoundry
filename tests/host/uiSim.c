@@ -56,6 +56,11 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "rx_group", "rx:9991234,91,g,Q1ABC_Joe_-_Boston,_MA" },
 	{ "rx_private", "rx:9995678,0,p" },
 	{ "tx", "pttdown" },
+	{ "home_ysf", "ysf" },					// a Fusion channel: the destination it calls
+	{ "home_ysf_rx", "ysf ysfrx:M0ABC" },			// receiving DN: the caller's callsign
+	{ "home_ysf_rx_vw", "ysf ysfrx:JA1YKX,vw,10" },	// VW heard: shown, not played
+	{ "home_ysf_tx", "ysf pttdown" },			// transmitting DN
+	{ "home_ysf_nocall", "ysfnocall" },			// no callsign: what to set
 	{ "tx_aprs", "aprstx" },
 	{ "tx_private", "5 6 3 ok wait:5000 pttdown" },
 	{ "tx_dtmf", "down pttdown dtmf:5551234#" },	// DTMF sent on FM (radio-features.md 3.7)

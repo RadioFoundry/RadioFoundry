@@ -52,6 +52,36 @@
     "DMR"
    ]
   },
+  "home_ysf": {
+   "group": "home",
+   "needs": [
+    "YSF"
+   ]
+  },
+  "home_ysf_rx": {
+   "group": "home",
+   "needs": [
+    "YSF"
+   ]
+  },
+  "home_ysf_rx_vw": {
+   "group": "home",
+   "needs": [
+    "YSF"
+   ]
+  },
+  "home_ysf_tx": {
+   "group": "home",
+   "needs": [
+    "YSF"
+   ]
+  },
+  "home_ysf_nocall": {
+   "group": "home",
+   "needs": [
+    "YSF"
+   ]
+  },
   "home_dstar": {
    "group": "home",
    "needs": [
