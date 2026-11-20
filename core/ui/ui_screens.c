@@ -1614,6 +1614,8 @@ static const char *t3_state_word(const radio_view_t *v, bool *warn)
 		return TR(TRUNK_STATE_REG_REFUSED, "Reg. refused");
 	if (!v->t3.on || v->t3.state == T3_HUNT)
 		return TR(TRUNK_STATE_SEARCHING, "Searching");
+	if (v->t3.ringing)
+		return TR(ACT_ROW_PRIVATE_CALL, "Private call");
 	if (v->t3.state == T3_FOLLOW) {
 		*warn = false;
 		return TR(TRUNK_STATE_IN_CALL, "In call");
