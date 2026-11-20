@@ -256,6 +256,20 @@ static void beep(radio_sm_t *sm, uint8_t b)
 #endif
 }
 
+#if CONFIG_DMR || (CONFIG_P25 && CONFIG_BEEP)
+// Wait for the tone and queued speaker audio to drain before handing the path to the modulator.
+#define PERMIT_HOLD_MIN_MS	40u
+static bool permit_busy(void)
+{
+#if CONFIG_BEEP
+	const hal_audio_t *a = board.audio;
+	return beep_busy() || (a != NULL && a->spk_pending != NULL && a->spk_pending());
+#else
+	return false;
+#endif
+}
+#endif
+
 // --- Signaling tones (sigtone.h, docs/spec/radio-features.md 4.3) ---
 
 _Static_assert(SIG_EV_COUNT == 3, "radio_settings_t.sig_* hold three events");
@@ -1450,22 +1464,8 @@ static uint8_t hang_s(uint16_t ms, uint8_t dflt)
 	return (uint8_t)(s > 30u ? 30u : s);
 }
 
-// The talk permit before keying (CAP_BEEP_NOT_ON_AIR): the hold's minimum covers the beep's start (beep_busy is true
-// from beep_play on); the hold lasts while the beep plays or its audio is still in the board's buffers, so none of it
-// is left to reach the modulator
-#define PERMIT_HOLD_MIN_MS	40u
 // Longest our DMR end tone waits for the audio path to open after the transmission (the engine's last burst)
 #define DMR_END_WAIT_MS		400u
-
-static bool permit_busy(void)
-{
-#if CONFIG_BEEP
-	const hal_audio_t *a = board.audio;
-	return beep_busy() || (a != NULL && a->spk_pending != NULL && a->spk_pending());
-#else
-	return false;
-#endif
-}
 
 // Whether the DMR talk permit sounds on the speaker: the radio's own tone when the setting is the default (and the
 // talk permit is on), else the start of transmission tone's sequence when it is set to sound there
@@ -6319,6 +6319,9 @@ static void air_stop(radio_sm_t *sm)
 		board.radio->tx_off();
 	}
 	sm->air_tx = false;
+#if CONFIG_P25 && CONFIG_BEEP
+	sm->p25_permit_hz = 0;
+#endif
 #if CONFIG_P25_TRUNK
 	sm->p25_req = sm->p25_talk = false;
 #endif
@@ -6375,6 +6378,21 @@ static void air_key(radio_sm_t *sm, uint32_t now_ms, uint32_t hz)
 	}
 	air_poll(sm);			// the engine's transmit state in the view now, not at the next tick
 	changed(sm);
+}
+
+static bool air_ptt(radio_sm_t *sm, uint32_t now_ms, uint32_t hz)
+{
+#if CONFIG_P25 && CONFIG_BEEP
+	if (sm->view.ch.mode == RADIO_MODE_P25 && sm->set.talk_permit && !sm->view.ch.no_beep && beep_level_now(sm) != 0 &&
+	    radio_p25_running()) {
+		sm->p25_permit_hz = hz;
+		sm->p25_permit_ms = now_ms;
+		beep(sm, BEEP_TX_PERMIT_SHORT);
+		return true;
+	}
+#endif
+	air_key(sm, now_ms, hz);
+	return sm->air_tx;
 }
 
 // The settings sent while it transmitted (RREQ_P25_SET, RREQ_NXDN_SET): the engine takes them now
@@ -6458,8 +6476,7 @@ static void __attribute__((noinline)) p25t_tick(radio_sm_t *sm, uint32_t now_ms)
 				deny(sm, TXDENY_BAND);
 			} else {
 				sm->p25_talk = true;
-				air_key(sm, now_ms, hz);
-				if (!sm->air_tx) {
+				if (!air_ptt(sm, now_ms, hz)) {
 					sm->p25_talk = false;	// refused before the engine began: no AIR_TX_DONE to end it
 					radio_p25_trunk_talk_end();
 				}
@@ -6475,7 +6492,7 @@ static void __attribute__((noinline)) p25t_tick(radio_sm_t *sm, uint32_t now_ms)
 			changed(sm);
 		}
 	}
-	if (!sm->air_tx && sm->view.state != RS_TX) {
+	if (!sm->air_tx && !sm->p25_talk && sm->view.state != RS_TX) {
 		uint32_t hz = radio_p25_trunk_burst_hz();
 		if (hz != 0) {
 			p25t_burst(sm, hz);
@@ -6485,6 +6502,32 @@ static void __attribute__((noinline)) p25t_tick(radio_sm_t *sm, uint32_t now_ms)
 #endif
 
 #if CONFIG_AIR
+#if CONFIG_P25 && CONFIG_BEEP
+static void p25_permit_tick(radio_sm_t *sm, uint32_t now_ms)
+{
+	// Bound the wait if the audio stream stalls, as for the DMR permit.
+	enum { P25_PERMIT_MAX_MS = 400 };
+	uint32_t hz = sm->p25_permit_hz;
+	uint32_t elapsed = now_ms - sm->p25_permit_ms;
+	if (hz == 0 || elapsed < PERMIT_HOLD_MIN_MS || (elapsed < P25_PERMIT_MAX_MS && permit_busy())) {
+		return;
+	}
+	sm->p25_permit_hz = 0;
+	uint8_t reason = tx_check(sm);
+	if (reason == TXDENY_NONE) {
+		air_key(sm, now_ms, hz);
+	} else {
+		deny(sm, reason);
+	}
+#if CONFIG_P25_TRUNK
+	if (sm->p25_talk && !sm->air_tx) {
+		sm->p25_talk = false;
+		radio_p25_trunk_talk_end();
+	}
+#endif
+}
+#endif
+
 // Every tick while an air mode's engine runs: its view, the end of a transmission, the receive state
 static void air_tick(radio_sm_t *sm, uint32_t now_ms)
 {
@@ -6493,6 +6536,9 @@ static void air_tick(radio_sm_t *sm, uint32_t now_ms)
 	if (air_poll(sm)) {
 		changed(sm);
 	}
+#if CONFIG_P25 && CONFIG_BEEP
+	p25_permit_tick(sm, now_ms);
+#endif
 	if (sm->air_tx && o->tx_state() == AIR_TX_DONE) {
 		if (sm->air_keyed) {
 			sm->air_keyed = false;
@@ -6651,7 +6697,7 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		}
 #endif
 		if (!sm->air_tx) {
-			air_key(sm, now_ms, sm->view.ch.tx_hz);
+			air_ptt(sm, now_ms, sm->view.ch.tx_hz);
 		}		// else the last transmission is still ending: air_tick keys again once it is done
 		return;
 	}
@@ -6707,6 +6753,17 @@ static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms)
 	}
 	sm->ptt = false;
 	activity(sm, now_ms);
+#if CONFIG_P25 && CONFIG_BEEP
+	if (sm->p25_permit_hz != 0) {
+		sm->p25_permit_hz = 0;
+#if CONFIG_P25_TRUNK
+		if (sm->p25_talk) {
+			sm->p25_talk = false;
+			radio_p25_trunk_talk_end();
+		}
+#endif
+	}
+#endif
 	if (sm->host_audio) {
 		roger = false;		// the host sends its own audio, tones included
 	}
