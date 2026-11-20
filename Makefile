@@ -126,6 +126,9 @@ endif
 ifeq ($(CONFIG_DSTAR),y)
 CORE_DIRS += core/dstar
 endif
+ifeq ($(CONFIG_YSF),y)
+CORE_DIRS += core/ysf
+endif
 ifeq ($(CONFIG_POSITION),y)
 CORE_DIRS += core/position
 endif

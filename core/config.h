@@ -140,9 +140,17 @@
 #ifndef CONFIG_DSTAR
 #define CONFIG_DSTAR			CONFIG_FM
 #endif
+// Yaesu System Fusion (core/ysf): on here like the rest; in firmware only where a board's glue runs it
+#ifndef CONFIG_YSF
+#define CONFIG_YSF			CONFIG_DMR
+#endif
+// Fusion's Voice FR (VW) played and sent: not in this build (VW is recognized and shown as heard, PTT sends DN)
+#ifndef CONFIG_YSF_VW
+#define CONFIG_YSF_VW			0
+#endif
 // The flat FM paths' board glue (hal_audio_tap.h), shared by the data modems with a waveform of their own
 #ifndef CONFIG_FM_FLAT
-#define CONFIG_FM_FLAT			(CONFIG_DSTAR)
+#define CONFIG_FM_FLAT			(CONFIG_DSTAR || CONFIG_YSF)
 #endif
 #ifndef CONFIG_DEBUGLINK
 #define CONFIG_DEBUGLINK		CONFIG_HOSTLINK
@@ -459,6 +467,9 @@
 #endif
 #if CONFIG_DSTAR && !CONFIG_FM
 #error "CONFIG_DSTAR needs CONFIG_FM"
+#endif
+#if CONFIG_YSF && !CONFIG_DMR
+#error "CONFIG_YSF needs CONFIG_DMR"
 #endif
 #if CONFIG_HOTSPOT_SPLIT && !CONFIG_HOTSPOT
 #error "CONFIG_HOTSPOT_SPLIT needs CONFIG_HOTSPOT"

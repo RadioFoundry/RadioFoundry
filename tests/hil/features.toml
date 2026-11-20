@@ -277,6 +277,11 @@ switch = "DSTAR"
 spec = "docs/spec/dstar-modem.md"
 manual = "the first radio session's plan, docs/testing/dstar-bench.md: an Icom radio's over received, the transmit path on the SDR (tools/dstar_bench.py txpath), our over decoded by an Icom radio, the echo reflector"
 
+[feature.ysf]
+switch = "YSF"
+spec = "docs/spec/ysf-modem.md"
+manual = "the first radio tests' plan, docs/testing/ysf-bench.md: our over decoded off the SDR (tools/ysf_bench.py over), a synthesized and a replayed transmission into the radio through attenuation (tools/ysf_bench.py synth, watch), then a visiting Yaesu radio both ways (tools/ysf_bench.py session)"
+
 [feature.aprs]
 switch = "APRS"
 spec = "docs/spec/aprs.md"
