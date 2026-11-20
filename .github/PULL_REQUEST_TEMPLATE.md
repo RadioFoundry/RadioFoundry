@@ -13,6 +13,16 @@ DM-32UV, DM-1701, DM-1801 Pro, DB25-D PRO, MD-380, MD-UV380, MD-9600, RT10
 end generated
 -->
 
+## Size
+
+<!-- Net change against the main this is based on, in bytes, measured (contributing.md, "What a pull request must
+have"). One row per radio the change builds into. "Switch off": the build with this change's CONFIG_ switch off,
+or "no switch". No firmware change: say so and delete the table. -->
+
+| Radio | Flash, default | RAM, default | Flash, switch off | RAM, switch off |
+|---|---:|---:|---:|---:|
+| | | | | |
+
 ## Testing
 
 | Check | Result |
@@ -38,6 +48,7 @@ end generated
 - [ ] SPDX header on every new file.
 - [ ] `core/` stays radio independent: no board headers, no radio defines.
 - [ ] Code that costs flash is behind a `CONFIG_` switch, and the build is clean with it off.
+- [ ] Size above: net flash and RAM per radio, with the switch on and off (or "no firmware change").
 - [ ] Zero warnings in every configuration `tools/ci.sh` builds.
 - [ ] A behavior change updates its spec in `docs/spec/`; if users see it, `docs/user/` too.
 - [ ] A UI change regenerates the gallery and commits only the PNGs it meant to change.

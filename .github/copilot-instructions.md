@@ -26,6 +26,7 @@ review a pull request, check these first.
 - Every new file has the SPDX header in its neighbors' style.
 - `core/` includes no board or platform header and tests no radio define.
 - A feature that adds real code size sits behind a `CONFIG_` switch, and the build stays clean with it off.
+- A pull request states its net flash and RAM change against main per radio, with its switch on and off.
 - Zero warnings in every configuration `tools/ci.sh` builds.
 - A behavior change updates `docs/spec/`, and `docs/user/` when users see it.
 - US English in code, comments, docs and commit messages.
