@@ -22,6 +22,7 @@
 #include "codeplug/codeplug_kv.h"	// the settings area fakes
 #include "fuzz.h"
 #include "ui/ui_svc_aprs.h"
+#include "ui/ui_svc.h"
 
 static int failures;
 static int checks;
@@ -56,6 +57,10 @@ static struct {
 
 static uint32_t now;
 uint32_t hal_millis(void) { return now; }	// ui_svc_aprs.c
+
+static ui_event_t last_ev;
+static int n_ev;
+bool ui_notify(const ui_event_t *ev) { last_ev = *ev; n_ev++; return true; }
 static char frames[8][AX25_TNC2_MAX];	// what went out, decoded from the tones
 static int nframes;
 
@@ -2000,6 +2005,68 @@ static void test_rx_board_only(void)
 }
 #endif
 
+// ui_svc_aprs_msg_poll: fires UI_EV_APRS_MESSAGE on a new inbound message; does not re-fire for the same message;
+// aprs_view_t carries last_msg_ms and last_msg_from after receipt
+#if CONFIG_APRS_RX
+static void test_msg_poll(void)
+{
+	reset();
+	aprs_set_test_call("Q1TST");
+	configure(0, false);
+	n_ev = 0;
+
+	// no message yet: poll is silent
+	ui_svc_aprs_msg_poll();
+	CHECK(n_ev == 0);
+
+	// receive a message addressed to us
+	rx_line("Q1ABC-9>APRS,WIDE1-1::Q1TST-7  :Hello poll{51");
+	CHECK(wait_start(1, 5000));
+	wait_idle();
+	CHECK(aprs_msg_count() == 1);
+
+	// first poll after receipt: fires one event with the right callsign and text
+	ui_svc_aprs_msg_poll();
+	CHECK(n_ev == 1);
+	CHECK(last_ev.kind == UI_EV_APRS_MESSAGE);
+	CHECK(strcmp(last_ev.name, "Q1ABC-9") == 0);
+	CHECK(strcmp(last_ev.text, "Hello poll") == 0);
+
+	// second poll with the same msg_serial: no new event
+	ui_svc_aprs_msg_poll();
+	CHECK(n_ev == 1);
+
+	// the view carries the sender and the timestamp
+	aprs_view_t v;
+	aprs_get_view(&v);
+	CHECK(v.msg_serial == 1);
+	CHECK(v.last_msg_ms != 0);
+	CHECK(strcmp(v.last_msg_from, "Q1ABC-9") == 0);
+
+	// a second message from a different sender: poll fires again with the new message
+	rx_line("Q1XYZ-3>APRS,WIDE1-1::Q1TST-7  :Second message{52");
+	CHECK(wait_start(2, 5000));
+	wait_idle();
+	CHECK(aprs_msg_count() == 2);
+	ui_svc_aprs_msg_poll();
+	CHECK(n_ev == 2);
+	CHECK(last_ev.kind == UI_EV_APRS_MESSAGE);
+	// peek(0) is the newest message in the inbox
+	aprs_msg_t m;
+	CHECK(aprs_msg_peek(0, &m));
+	CHECK(strcmp(last_ev.name, m.from) == 0);
+
+	// duplicate of the second message: msg_serial stays the same, poll stays silent
+	rx_line("Q1XYZ-3>APRS,WIDE1-1::Q1TST-7  :Second message{52");
+	run(500);
+	ui_svc_aprs_msg_poll();
+	CHECK(n_ev == 2);
+
+	aprs_get_view(&v);
+	CHECK(v.msg_serial == 2);
+}
+#endif
+
 int main(void)
 {
 	test_defaults();
@@ -2027,6 +2094,7 @@ int main(void)
 	test_message_replaces_pending();
 #if CONFIG_APRS_RX
 	test_message_rejection();
+	test_msg_poll();
 #endif
 	test_dmr_position();
 	test_gps_setting();
