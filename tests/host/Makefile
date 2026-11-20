@@ -1734,6 +1734,32 @@ run-httpassets: httpAssetsTest httpAssetsTestPlain
 
 # Each board's own host tests (boards/<id>/tests/host.mk): a fragment adds its tests to TESTS and a run-boards:: rule
 # that builds and runs them. Sources stay in the board directory; the binaries are built here like the rest
+# D-STAR DV (core/dstar, docs/spec/dstar-modem.md): the header coding against tools/dstar_ref.py's vectors, the soft
+# Viterbi decoder, slow data, whole transmissions through the deframer
+TESTS   += dstarTest
+DSTARFR := $(CORE)/dstar/dstar_fec.c $(CORE)/dstar/dstar_frame.c
+
+dstarTest: dstarTest.c $(DSTARFR) $(wildcard $(CORE)/dstar/*.h) ../vectors/dstar.txt
+	$(CC) $(CFLAGS) -I. -Wshadow -o $@ dstarTest.c $(DSTARFR)
+
+# The GMSK modem on a simulated radio link (noise, offset, clock error, high-passed paths) and the engine
+TESTS   += dstarModemTest
+DSTARMD := $(DSTARFR) $(CORE)/dstar/dstar_gmsk.c $(CORE)/dstar/dstar_engine.c
+
+dstarModemTest: dstarModemTest.c $(DSTARMD) $(wildcard $(CORE)/dstar/*.h)
+	$(CC) $(CFLAGS) -I. -Wshadow -o $@ dstarModemTest.c $(DSTARMD) -lm
+
+run: run-dstar
+run-dstar: dstarTest dstarModemTest
+	./dstarTest
+	./dstarModemTest
+ifneq ($(PYTHON),)
+	$(PYTHON) -B $(ROOT)/tools/dstar_ref.py --self-test
+	@$(PYTHON) -B $(ROOT)/tools/dstar_ref.py vectors | cmp -s - ../vectors/dstar.txt || \
+		{ echo "tests/vectors/dstar.txt differs from tools/dstar_ref.py vectors"; exit 1; }
+endif
+.PHONY: run-dstar
+
 run: run-boards
 run-boards::
 .PHONY: run-boards
