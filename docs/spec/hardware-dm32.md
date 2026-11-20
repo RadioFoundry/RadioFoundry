@@ -1244,9 +1244,9 @@ For the USB audio design ([usb-audio.md](usb-audio.md) 2). Not measured.
 
 ### 9.3 Flat paths for data modems
 
-For D-STAR ([dstar-modem.md](dstar-modem.md) 1.2): the board's
-`hal_audio_tap_t` with `AUDIO_TAP_FM_TX_FLAT` and `AUDIO_TAP_FM_RX_RAW`, built only with `CONFIG_FM_FLAT` (any mode
-that needs them; `boards/dm32/flat_dm32.c`; the route switches in
+For D-STAR ([dstar-modem.md](dstar-modem.md) 1.2) and Fusion ([ysf-modem.md](ysf-modem.md) 1.2): the board's
+`hal_audio_tap_t` with `AUDIO_TAP_FM_TX_FLAT` and `AUDIO_TAP_FM_RX_RAW`, built only with `CONFIG_FM_FLAT` (either
+mode; `boards/dm32/flat_dm32.c`; the route switches in
 `radio_dm32.c`; the HR_C7000's part in `platform/hrc7000/fm_flat_tx.c` and `fm_rx_audio.c`,
 [modem-hrc7000.md](modem-hrc7000.md) 8.5, 8.6). Written, **not checked on this radio**.
 
@@ -1573,6 +1573,7 @@ Runs on a radio: `docs/testing/dm32-bringup.md` is the bring-up checklist and li
 | Calibration | 11, read only; a decoded copy at 0x710000 as a fallback; UHF below 400 MHz clamps to the first point | `drivers/cal/baofeng/baofeng_cal.c` |
 | Radio | FD6818 bit-banged (each frame with interrupts off: the DMR interrupts switch it per burst); C7000 FM and TX sub-audio, FD6818 RX sub-audio; PA drive on DAC B from the calibration | `radio_dm32.c`, `drivers/rf/fd6818`, `drivers/modem/hrc7000` |
 | DMR | the HR_C7000 slot engine behind `hal_dmr_modem.h` (`modem-hrc7000.md` 3, 5, 6); FD6818 idle -> TX at the RF TX interrupt, PA keyed 28 ms after each burst is armed, off at the first tick 20 ms after the RF TX interrupt | `drivers/modem/hrc7000/hrc7000_dmr.c`, `platform/hrc7000/dmr_glue.c`, `boards/dm32/radio_dm32.c` (the RF and PA hooks) |
+| Flat paths (`CONFIG_FM_FLAT`: D-STAR or Fusion) | Their transmit through the HR_C7000's TX RAM and receive from its RX RAM copy, with the bench's register choices as run-time knobs; not checked on the radio (9.3). Fusion is built where the IP gateway is left out (the multimode variant): 18.4 KB flash and 2.4 KB RAM there ([ysf-modem.md](ysf-modem.md) 1.4) | `boards/dm32/flat_dm32.c`, `radio_dm32.c`, `platform/hrc7000/fm_flat_tx.c`, `fm_rx_audio.c` |
 
 ### 17.1 SRAM layout
 

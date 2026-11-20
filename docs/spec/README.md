@@ -19,6 +19,7 @@ Past bugs, by subsystem: [gotchas.md](gotchas.md). Contributors read [docs/dev](
 | [dstar-modem.md](dstar-modem.md) | D-STAR DV: the GMSK modem, the framing, the path a board needs, the RAM budget |
 | [dstar-codec.md](dstar-codec.md) | The software D-STAR voice codec (AMBE 3600x2400): structure, cost, quality, provenance |
 | [dstar-ambe-frame.md](dstar-ambe-frame.md) | The D-STAR AMBE voice frame: its three words, field map, Golay code, whitening and air interleave, and how the interleave was derived |
+| [ysf-modem.md](ysf-modem.md) | Yaesu System Fusion: the hardware path, the C4FM modem, the framing, what a radio test settles |
 | [position.md](position.md) | The radio's position: sources, settings, who reads it |
 | [ui.md](ui.md) | The user interface as built: screens, keys, the drawing layer ([docs/ux](../ux/) has the design) |
 
@@ -76,6 +77,7 @@ Past bugs, by subsystem: [gotchas.md](gotchas.md). Contributors read [docs/dev](
 | [p25-codeplug.md](p25-codeplug.md) | P25 conventional and trunked channels and systems in the codeplug |
 | [nxdn-codeplug.md](nxdn-codeplug.md) | NXDN conventional channels in the codeplug |
 | [dstar-codeplug.md](dstar-codeplug.md) | D-STAR DV channels and the radio-wide callsign and message in the codeplug |
+| [ysf-codeplug.md](ysf-codeplug.md) | Yaesu System Fusion channels and the radio-wide callsign and radio ID in the codeplug |
 | [settings-store.md](settings-store.md) | Settings store and safe flash writes |
 | [nand-sectors.md](nand-sectors.md) | NOR-like 4 KB sectors over NAND, for the settings store on NAND radios |
 
