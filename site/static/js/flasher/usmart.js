@@ -49,6 +49,9 @@ export const BUILDS = [
 	{ name: "018", date: "2023-07-06", at: 0x03075AAC, ram: 0x18000A74, stub: false, window: [0x55000, 0x3000], hijack: 0x18000840 },
 	{ name: "018", date: "2022-11-23", at: 0x030759EC, ram: 0x18000A64, stub: false, window: [0x56000, 0x2000], hijack: 0x18000840 },
 	{ name: "017", date: "2022-10-21", at: 0x030759E8, ram: 0x18000A60, stub: false, window: [0x56000, 0x2000], hijack: 0x18000840 },
+	// the Retevis RT73's (version D4): the 2021 firmware has no chip detection and never copies its version string,
+	// so ram is the string in its program flash. Its heap ends at 0x55330. The RT73's .007 build has no console
+	{ name: "010", date: "2021-09-23", at: 0x0307AA94, ram: 0x0307AA90, stub: false, window: [0x56000, 0x2000], hijack: 0x18000840 },
 ];
 // A build this page doesn't know: the top 8 KB of SRAM, above the heap of every known build (its highest end:
 // 0x554A0, 2022-11-23), and the newer builds' table layout. The pointer check of an untried load still applies

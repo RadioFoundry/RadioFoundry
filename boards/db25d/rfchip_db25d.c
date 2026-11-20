@@ -3,6 +3,7 @@
 // DB25-D RF chips (rfchip_db25d.h; docs/spec/hardware-db25d.md 4.2, 4.8). Both chips sit on one bit-banged 3-wire bus
 // with an enable each; every part answers the same frame, so each chip gets an rfbus_3w_t and its driver.
 #include "rfchip_db25d.h"
+#include "rfchip_id_db25d.h"
 #include "db25d.h"
 #include "pins.h"
 #include "platform.h"
@@ -29,8 +30,6 @@
 #define ID_RESET_MS	100u		// stock: soft reset, this long, release, this long, read again
 #define REG_ID		0x00
 #define REG_PAGE	0x7F		// the FD6818 family's page select: page 0 before the reset
-
-typedef enum { CHIP_NONE, CHIP_BK4819, CHIP_FD6818, CHIP_7813, CHIP_AT1141 } chip_t;
 
 static rfbus_3w_t bus_main, bus_lo;
 static bk4819_t bk_main, bk_lo;
@@ -64,24 +63,13 @@ static const rfbus_3w_pins_t pins_lo = {
 
 // ---- Detection (4.2) ----
 
-static chip_t kind(uint16_t id, bool lo)
-{
-	switch (id) {
-	case BK4819_ID: return CHIP_BK4819;
-	case FD6818SH_ID: return CHIP_FD6818;
-	case FD6818SH_ID_7813: return lo ? CHIP_7813 : CHIP_NONE;	// seen only as the LO
-	case AT1141_ID: return lo ? CHIP_AT1141 : CHIP_NONE;	// a synthesizer: never the transceiver
-	default: return CHIP_NONE;
-	}
-}
-
 // Register 0; a chip that answers with none of the known IDs gets the stock's soft reset (page 0 first) and a retry
 static uint16_t identify(rfbus_t *bus, bool lo, chip_t *k)
 {
 	uint16_t id = 0;
 	for (unsigned i = 0; i < ID_TRIES; i++) {
 		id = rfbus_read(bus, REG_ID);
-		*k = kind(id, lo);
+		*k = db25d_chip_kind(id, lo);
 		if (*k != CHIP_NONE) {
 			break;
 		}
@@ -159,22 +147,11 @@ bool db25d_rf_init(void)
 uint16_t db25d_rf_main_id(void) { return main_id; }
 uint16_t db25d_rf_lo_id(void) { return lo_id; }
 
-static char letter(chip_t k)
-{
-	switch (k) {
-	case CHIP_BK4819: return 'B';
-	case CHIP_FD6818: return '6';
-	case CHIP_7813: return '4';
-	case CHIP_AT1141: return 'T';
-	default: return '?';
-	}
-}
-
 void db25d_rf_variant(char out[4])
 {
 	out[0] = 'D';
-	out[1] = letter(main_chip);
-	out[2] = letter(lo_chip);
+	out[1] = db25d_chip_letter(main_chip);
+	out[2] = db25d_chip_letter(lo_chip);
 	out[3] = '\0';
 }
 
@@ -220,7 +197,7 @@ void db25d_main_rx_tone(uint8_t type, uint16_t value) { sh_main.ops->rx_tone(sh_
 
 bool db25d_main_tone_heard(uint16_t r0c, uint8_t type)
 {
-	if (main_chip == CHIP_FD6818) {
+	if (db25d_chip_fd6818_family(main_chip)) {
 		// The FD6818 has no status bit for it: its GPIO0 carries the compare result to PTB27
 		return type == TONE_NONE || hrc_pin_read(PIN_RF_CSS);
 	}
