@@ -108,7 +108,7 @@ codec ranges the code differs only in its table pointers. The rest of the differ
 inside the window but isn't codec. Each version links the codec to its own flash addresses, so `tools/hrc7000_codec.py`
 keys each file by its SHA-256 and finds the codec in a program flash read by content, then by address. The NRFB build
 is known only from a program flash read, so its profile is keyed by the SHA-256 of the code window. A second radio's
-read (2026-11-19, `hardware-dm32.md` 8.10) gave the same code window hash.
+read (`hardware-dm32.md` 8.10) gave the same code window hash.
 
 | Build | Code, flash | Tables, flash | Tables, modem RAM | Same code as |
 |---|---|---|---|---|

@@ -1134,12 +1134,10 @@ RadioFoundry checks which part is fitted at start-up.
 Set-up B rows marked "user" were checked on one user's radio with the newer section; none are yet checked on a
 RadioFoundry test radio. A second radio with the newer section (below) confirms the rows marked "user, 2".
 
-**A second radio (2026-11-19).** A DM-32UV bought new, stock `DM32.NRFB.01.050`, program flash GD (C8 40 14),
+**A second radio.** A DM-32UV bought new, factory firmware `DM32.NRFB.01.050`, program flash GD (C8 40 14),
 data flash Boya (68 40 18; section 10), factory calibration page at data flash 0xB1000 (inside the scan of section 11).
-Firmware: a RadioFoundry fork based on 5519a66. Its additions (other modes, a mic gain before the DMR encoder) leave
-the set-up B tables and switching (`fd6818_setup_b.c`, `fd6818.c`, `rf_detect` in `radio_dm32.c`) as at 5519a66. Main
-has not changed the two FD6818 files since; its changes to `radio_dm32.c` (the sidetone, the P25 / NXDN flags) are
-outside the set-up B paths. The codec was taken from the radio's own program flash. What was checked, on a dummy load or with a second radio
+Firmware: RadioFoundry 5519a66 with changes outside the set-up B paths (`fd6818_setup_b.c`, `fd6818.c`, `rf_detect` in
+`radio_dm32.c`). The codec was taken from the radio's own program flash. What was checked, on a dummy load or with a second radio
 at low power and an SDR on the frequency:
 
 | Check | Result |
