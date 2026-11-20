@@ -282,26 +282,30 @@ static const char *dual_mode_word(const ui_dual_pane_t *p)
 uint32_t ui_strip_draws;
 uint32_t ui_hint_draws;
 
-// The GPS icon: a satellite dish, its rim up and to the right, a feed arm with a knob. Hollow while the GPS is off,
-// solid while on, with two waves at the feed once it has a fix; the shape, not a color, tells them apart on every
-// panel. Drawn by hand at the heights the strip fonts give, since a dish drawn from lines muddies below 13 pixels.
-// Bit x of a row is pixel x; the width keeps the waves' room, so the strip doesn't move when a fix comes
+// The GPS icon: a satellite dish, its rim up and to the right. Hollow while the GPS is off, solid while it searches;
+// with a fix the feed arm and two waves join it. The shape, not a color, tells them apart on every panel. Drawn by
+// hand at the heights of the strip's signal bars, since a dish drawn from lines muddies below 13 pixels. Bit x of a
+// row is pixel x; the width keeps the waves' room, so the strip doesn't move when a fix comes
 typedef struct {
 	uint8_t h, w;
-	uint32_t dish[13], waves[13];
+	uint32_t bowl[13], feed[13], waves[13];
 } gps_glyph_t;
 static const gps_glyph_t gps_glyphs[] = {
-	{ 7, 11, { 0x20, 0x10, 0xb, 0x7, 0xf, 0x1f, 0x1e },
+	{ 6, 11, { 0x0, 0x1, 0x3, 0x7, 0xf, 0x1e },
+	  { 0x20, 0x10, 0x8 },
 	  { 0x280, 0x500, 0x500, 0x280 } },
-	{ 9, 13, { 0x80, 0xc0, 0x23, 0x17, 0xf, 0x1f, 0x3f, 0x7e, 0x3c },
-	  { 0xa00, 0x1400, 0x1400, 0x1400, 0xa00 } },
-	{ 11, 16, { 0x600, 0x300, 0x82, 0x47, 0x2f, 0x1f, 0x3f, 0x7f, 0xfe, 0xfc, 0x30 },
-	  { 0x5000, 0xa000, 0xa000, 0xa000, 0xa000, 0x5000 } },
-	{ 13, 19, { 0xc00, 0xe00, 0x302, 0x87, 0x4f, 0x3f, 0x3f, 0x7f, 0xff, 0x1ff, 0x3fe, 0x1fc, 0 },
-	  { 0x12000, 0x24000, 0x24000, 0x48000, 0x24000, 0x24000, 0x12000 } },
+	{ 8, 12, { 0x0, 0x3, 0x7, 0xf, 0x1f, 0x3f, 0x7e, 0x3c },
+	  { 0xc0, 0x20, 0x10 },
+	  { 0xa00, 0x500, 0xa00, 0xa00, 0x500 } },
+	{ 11, 17, { 0x0, 0x0, 0x2, 0x7, 0xf, 0x1f, 0x3f, 0x7f, 0xfe, 0xfc, 0x30 },
+	  { 0x600, 0x300, 0x80, 0x40, 0x20 },
+	  { 0x9000, 0x12000, 0x12000, 0x12000, 0x9000 } },
+	{ 13, 19, { 0x0, 0x0, 0x0, 0x2, 0x7, 0xf, 0x1f, 0x3f, 0x7f, 0xff, 0x1ff, 0x3fe, 0x1fc },
+	  { 0x0, 0xc00, 0xe00, 0x300, 0x80, 0x40, 0x20 },
+	  { 0x0, 0x12000, 0x24000, 0x24000, 0x48000, 0x24000, 0x24000, 0x12000 } },
 };
 
-// The tallest dish no taller than h (the smallest below that)
+// The tallest dish no taller than h, the bars' height, so it keeps the strip's top margin (the smallest below that)
 static const gps_glyph_t *gps_glyph(int h)
 {
 	const gps_glyph_t *g = &gps_glyphs[0];
@@ -311,17 +315,17 @@ static const gps_glyph_t *gps_glyph(int h)
 	return g;
 }
 
-// Hollow: only the dish's edge, the pixels with a side open
+// Hollow: only the bowl's edge, the pixels with a side open
 static void gps_icon(int x, int y, const gps_glyph_t *g, uint8_t state, color_t fg)
 {
 	for (int r = 0; r < g->h; r++) {
-		uint32_t row = g->dish[r];
+		uint32_t row = g->bowl[r];
 		if (state == UI_GPS_OFF) {
-			uint32_t up = r > 0 ? g->dish[r - 1] : 0, down = r + 1 < g->h ? g->dish[r + 1] : 0;
+			uint32_t up = r > 0 ? g->bowl[r - 1] : 0, down = r + 1 < g->h ? g->bowl[r + 1] : 0;
 			row &= ~(up & down & (row << 1) & (row >> 1));
 		}
 		if (state == UI_GPS_FIX)
-			row |= g->waves[r];
+			row |= g->feed[r] | g->waves[r];
 		for (int c = 0; c < g->w; c++)
 			if (row & (1u << c))
 				gfx_pixel(x + c, y + r, fg);
@@ -429,7 +433,7 @@ static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t
 		rx -= sw + f->w / 2;
 		gfx_icon_bars(rx, ty + f->ascent - bh - 1, sw, bh + 1, 4, rssi_bars(v->rssi_dbm), sfg, filled ? ui_col.idle : ui_col.line);
 		if (s->gps != UI_GPS_NONE) {
-			const gps_glyph_t *g = gps_glyph(bh + 2);
+			const gps_glyph_t *g = gps_glyph(bh + 1);
 			rx -= g->w + f->w / 2;
 			gps_icon(rx, ty + f->ascent - g->h, g, s->gps, sfg);
 		}

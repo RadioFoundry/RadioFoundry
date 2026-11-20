@@ -440,12 +440,12 @@ A"). The pill shows RX while data or CSBK bursts arrive on our slot and color co
 (`DMR_CALL_FADE_MS`) after the last one, even with no call running (`dmr_call.c` `data_receiving`). The green LED
 stays for a call being played.
 
-The status strip's GPS icon, left of the signal bars: a satellite dish, rim up and to the right, about one cell high.
-Hollow while Settings > Location > GPS is off; solid while it is on without a fix (silent included); solid with two
-waves at the feed with a fix (one under a minute old, position.md). The shape, not a color, tells them apart. None on
-a radio without a GPS (`board_has_gps`: a module detected after start-up gets it then). The dish is drawn by hand at
-7, 9, 11 and 13 pixels, the tallest that fits the strip font, and always takes the waves' width, so the strip doesn't
-move when a fix comes. On is what the position service was last told
+The status strip's GPS icon, left of the signal bars: a satellite dish, rim up and to the right, as tall as the bars.
+Hollow while Settings > Location > GPS is off; solid while it is on without a fix (silent included); with a fix (one
+under a minute old, position.md) its feed arm and two waves join it. The shape, not a color, tells them apart. None
+on a radio without a GPS (`board_has_gps`: a module detected after start-up gets it then). The dish is drawn by hand
+at 6, 8, 11 and 13 pixels, the tallest no taller than the bars, so it keeps the strip's top margin, and always takes
+the waves' width, so the strip doesn't move when a fix comes. On is what the position service was last told
 (`position_gps_enabled`), so a change from the debug link counts as one from the menu. The UI checks once a second
 (`ui_state_t.gps`, debug link view key `ui.gps`). On a radio without a GPS, Settings > Location > GPS reads Off whatever is stored: the
 stored value stays, as the module is detected after start-up and its driver follows the setting once heard.

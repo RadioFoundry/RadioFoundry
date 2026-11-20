@@ -171,7 +171,7 @@ enum { UI_USB_NET_OFF, UI_USB_NET_WAIT, UI_USB_NET_UP };
 
 // ui_state_t.gps: the status strip's GPS icon, a satellite dish. None on a radio without a GPS (board_has_gps: a module
 // detected after start-up gets it then); hollow while Settings > Location > GPS is off; solid while it is on without a
-// fix, silent included; solid with waves at the feed with a fix
+// fix, silent included; with a fix, solid with its feed arm and two waves
 enum { UI_GPS_NONE, UI_GPS_OFF, UI_GPS_SEARCH, UI_GPS_FIX };
 
 // Colors carry meaning only (P5); every color cue also has a word. On 1 bpp panels everything is ink on paper and
