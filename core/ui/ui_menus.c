@@ -7949,6 +7949,11 @@ static const ui_scr_def_t diag_screen = {
 static const ui_scr_def_t volume_screen = {
 	.name = "volume", .flags = SF_FIELD, .key = ui_volume_key, .draw = ui_volume_draw,
 };
+#if CONFIG_DMR_TRUNK
+static const ui_scr_def_t incoming_call_screen = {
+	.name = "incoming-call", .flags = SF_FIELD, .key = ui_incoming_call_key, .draw = ui_incoming_call_draw,
+};
+#endif
 static const ui_scr_def_t emergency_screen = {
 	.name = "emergency", .flags = SF_FIELD, .key = ui_emergency_key, .draw = ui_emergency_draw,
 };
@@ -8042,6 +8047,9 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_RECENT] = &recent_screen, [SCR_ZONES] = &channels_screen, [SCR_ZONE] = &zone_screen,
 	[SCR_TOOLS] = &tools_screen, [SCR_SETTINGS] = &settings_screen, [SCR_GROUP] = &group_screen,
 	[SCR_PICKER] = &picker_screen, [SCR_INFO] = &info_screen, [SCR_CONFIRM] = &confirm_screen,
+#if CONFIG_DMR_TRUNK
+	[SCR_INCOMING_CALL] = &incoming_call_screen,
+#endif
 	[SCR_DIAG] = &diag_screen, [SCR_EMERGENCY] = &emergency_screen, [SCR_SCAN] = &scan_screen,
 	[SCR_ROAM] = &roam_screen, [SCR_APRS] = &ui_aprs_screen, [SCR_APRS_HEARD] = &ui_aprs_heard_screen,
 	[SCR_APRS_STATION] = &ui_aprs_station_screen,

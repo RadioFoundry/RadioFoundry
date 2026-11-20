@@ -199,6 +199,7 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "dual_actions", "quick 7 ctx 3 5 ok wait:3000 tune:b call:9991234,91,g tune:a call:9997777,3100,g wait:4000 ctx" },
 #endif
 	{ "emergency", "emergency:9991234" },
+	{ "incoming-call", "t3 dlpos:3 t3ring:101125" },
 	{ "volume", "softvol volkey up up" },
 #if CONFIG_VOLUME_BAR
 	// A knob radio: the knob turned, over Home and over a call (#354)

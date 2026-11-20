@@ -258,6 +258,7 @@ typedef struct {
 	bool alerting;		// the called radio is ringing
 	bool refused;		// the system refused the registration (t3_ms_reg_refused)
 	uint16_t unmapped;	// the channel (LPCN) of the last grant no plan or row knew, 0 none
+	uint32_t ring_src;	// caller ID while an incoming private call awaits PTT, or zero
 } radio_t3_brief_t;
 
 // ... and all of it, for the debug link: radio_get_t3_view, one copy (the view itself is copied by every task)

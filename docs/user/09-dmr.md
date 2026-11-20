@@ -401,7 +401,8 @@ When a Tier III private call rings, you can release **PTT** while the other pers
 the call while **PTT** is released, press it again to speak. The screen shows **Calling** while the
 other radio rings. Press **Back** to cancel the pending call.
 
-For an incoming private call, the radio beeps every two seconds. Press **PTT** to answer. Release it, then
+For an incoming private call, the radio beeps every two seconds and shows who is calling. Press **Back** to
+reject or **PTT** to answer. Release it, then
 press again to speak once the system grants the call.
 
 | Setting | Does |

@@ -3678,7 +3678,7 @@ void radio_sm_t3_brief(radio_sm_t *sm)
 	const radio_t3_view_t *x = &radio_t3v;
 	radio_t3_brief_t *b = &sm->view.t3;
 	b->on = x->on;
-	b->ringing = x->on && t3m.ring_src != 0;
+	b->ring_src = x->on ? t3m.ring_src : 0;
 	b->sys = x->sys;
 	b->unavail = x->unavail;
 	b->fallback = x->fallback;
