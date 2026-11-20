@@ -46,6 +46,9 @@ static const struct {
 #if CONFIG_APRS
 	{ TRX(WORD_APRS, "APRS"), "beacon smartbeaconing symbol path kiss tnc gps", SCR_APRS },
 #endif
+#if CONFIG_DSTAR
+	{ TRX(WORD_DSTAR, "D-STAR"), "dstar dv reflector echo link unlink urcall mycall callsign suffix message", SCR_DSTAR },
+#endif
 };
 #define PLACES_N	((uint8_t)(sizeof places / sizeof places[0]))
 

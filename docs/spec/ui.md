@@ -385,6 +385,27 @@ shown as it is. The tables are built by `tools/i18n.py` from the marks and `core
 | Lengths | A translation may be longer than its English. Text goes into fixed buffers through `str_copy` or `sb_str`, which cut it; a row too long for the screen is shortened as any row is (`gfx_text_fit`, text alternates) |
 | Not translated | Search words of the settings (Find matches the English words and the shown name), debug link names and values, protocol text sent off the radio (APRS, the debug link). The canned text messages are the exception: sent in the language in use |
 
+### 2.6 D-STAR
+
+On a channel of the D-STAR kind ([dstar-codeplug.md](dstar-codeplug.md); `CONFIG_DSTAR`), Home and the call screens
+follow the DMR ones, with D-STAR's own talk target, UR ([dstar-modem.md](dstar-modem.md) 3.1). Code: `ui_screens.c`
+(Home, the call screen), `ui_dstar.c` (the page), the radio core's `radio_dstar_view_t` in the view.
+
+| Where | What |
+|---|---|
+| Home, talk line | UR: the channel's (`CQCQCQ`), a choice for now (`M0XYZ for now`) or the next over's gateway command named (`Echo test next over`, `Link REF030 C`), the last two in the warn color; or why PTT can't send (`No callsign set`, `RX only`) |
+| Home, chips | `DV`, the route (`Direct`, or `via` RPT1), power |
+| Home, activity | The last caller with their suffix and when (`M0XYZ/5100 12s ago`), their message in quotes on the second line; `No calls heard yet`; why there is no voice (`No RAM for voice`) or no transmit (`TX not calibrated`) |
+| Call screen, receiving | The caller's callsign large, `/suffix UR ...` (and `late` for a header from the slow data), RPT1 > RPT2 when through a repeater, the message (two lines where they fit), the signal meter; hint `# D-STAR  PTT replies` |
+| Call screen, sending | `TALKING`, UR, the route, our MY/suffix, the time and the time-out |
+| The D-STAR page (`dstar`) | `CONTEXT` on Home and the talk target key (long `CONTEXT`) on a D-STAR channel; Find "D-STAR". Numbered rows: 1 Send to (UR now; `SELECT` back to the channel's), 2 Call CQ, 3 Call last caller (their callsign as UR, for now), 4 Echo test, 5 Link reflector (typed, `REF030C`: the name and the module letter), 6 Unlink, 7 Gateway info, 8 My call, 9 Suffix, 0 Message. Rows 1-7 act only on a D-STAR channel; each sends the user Home with a toast, so the talk line confirms what PTT does. Body: the last over heard and its message. Rows 8-0 open the text editor (`dstar_text`) and keep the value in the settings over the codeplug's record |
+| Lifetimes | As a DMR talk target's (P7): the channel's UR; for now (CQ, the caller) until the channel changes or `BACK` on Home; one over (link, unlink, echo, information), then back. Nothing writes the codeplug |
+| PTT refused | No callsign anywhere (`DENY_WHY_NO_CALLSIGN`, hint "Set it: # then My call"); no deviation scale (`Radio refused to send`) |
+
+Task flows: [task-flows.md](../ux/task-flows.md) 28. Flows in `uiFlowTest` ("D ..."), the gallery's `home_dstar*`,
+`rx_dstar`, `tx_dstar*`, `dstar`, `dstar_link_entry`; the simulator's `dstar`, `dstarrx:CALL,SUFFIX,UR,MESSAGE` and
+`dstarend` tokens.
+
 ## 3. Key meanings
 
 The same on every screen (information-architecture.md, key maps 7.1 to 7.5):

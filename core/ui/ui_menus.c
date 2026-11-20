@@ -51,6 +51,7 @@
 
 extern const ui_scr_def_t ui_find_screen;
 extern const ui_scr_def_t ui_aprs_screen, ui_aprs_heard_screen, ui_aprs_station_screen;	// ui_aprs.c
+extern const ui_scr_def_t ui_dstar_screen;	// ui_dstar.c
 #if CONFIG_POSITION
 extern const ui_scr_def_t ui_fixed_pos_screen;	// ui_position.c
 #endif
@@ -2084,7 +2085,7 @@ uint8_t ui_menus_zones_moved(ui_frame_t *stack, uint8_t sp, uint32_t from, uint3
 }
 #endif
 
-#if CONFIG_CHANNEL_EDIT || CONFIG_APRS_AFSK || CONFIG_DMR_SMS
+#if CONFIG_CHANNEL_EDIT || CONFIG_APRS_AFSK || CONFIG_DMR_SMS || CONFIG_DSTAR
 // ======================= Text entry: keypad letters (ui.md 2.1) =======================
 // Phone keypad: in ABC / abc, 2-9 cycle their letters, the digit, then the letters in the other case (ABC: A B C 2 a b
 // c); 1 cycles punctuation and 0 a space, 0 and a few signs. The same key within 1 s takes the next one, another key
@@ -2098,7 +2099,9 @@ uint8_t ui_menus_zones_moved(ui_frame_t *stack, uint8_t sp, uint32_t from, uint3
 static char *text_target;
 static void (*text_done)(void);		// called once the text is kept (NULL: none)
 static uint8_t text_max;
-static char text_name_buf[CODEPLUG_NAME_LEN + 1];
+// A name, or a field of D-STAR's up to its 20-character message
+#define TEXT_FIELD_MAX	(CODEPLUG_NAME_LEN > 20 ? CODEPLUG_NAME_LEN : 20)
+static char text_name_buf[TEXT_FIELD_MAX + 1];
 static char *text_buf;
 static uint8_t text_len;
 static int8_t text_key = -1;		// the key that typed the last character, -1 = none to cycle
@@ -2114,11 +2117,22 @@ static void text_open(char *target, uint8_t max, uint8_t screen)
 	text_target = target;
 	text_done = NULL;
 	text_buf = screen == SCR_MESSAGE_TEXT ? message_buffer : text_name_buf;
-	text_max = screen == SCR_MESSAGE_TEXT ? max :
-		(max < CODEPLUG_NAME_LEN ? max : CODEPLUG_NAME_LEN);
-	text_prefix = screen == SCR_MESSAGE_TEXT ? TEXT_MESSAGE : screen == SCR_APRS_TO ? TEXT_CALLSIGN : TEXT_NAME;
+	// A D-STAR field (ui_text_field) may be longer than a name: the slow data message is 20 characters
+	uint8_t cap = screen == SCR_DSTAR_TEXT ? TEXT_FIELD_MAX : CODEPLUG_NAME_LEN;
+	text_max = screen == SCR_MESSAGE_TEXT ? max : (max < cap ? max : cap);
+	// D-STAR's fields are callsigns (a reflector, MY, the suffix) but for the message, the one longer than 8
+	text_prefix = screen == SCR_MESSAGE_TEXT ? TEXT_MESSAGE : screen == SCR_APRS_TO ? TEXT_CALLSIGN :
+		screen == SCR_DSTAR_TEXT ? (max > 8 ? TEXT_MESSAGE : TEXT_CALLSIGN) : TEXT_NAME;
 	ui_push(screen, 0);
 }
+
+#if CONFIG_DSTAR
+void ui_text_field(char *target, uint8_t max, void (*done)(void))
+{
+	text_open(target, max, SCR_DSTAR_TEXT);
+	text_done = done;
+}
+#endif
 
 #if CONFIG_DMR_SMS || CONFIG_APRS_AFSK
 static void message_text_kept(void)
@@ -2314,6 +2328,13 @@ static bool text_key_fn(const input_event_t *ev)
 	}
 	return false;
 }
+
+#if CONFIG_DSTAR
+// D-STAR's text fields (ui_text_field: a reflector to link, MY, the suffix, the message) on the shared editor
+static const ui_scr_def_t dstar_text_screen = {
+	.name = "dstar_text", .flags = 0, .key = text_key_fn, .enter = text_enter, .draw = text_draw,
+};
+#endif
 
 #if CONFIG_CHANNEL_EDIT
 static const ui_scr_def_t text_screen = {
@@ -8066,6 +8087,9 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 #endif
 #if CONFIG_DMR_SMS || CONFIG_APRS_AFSK
 	[SCR_MESSAGE_TEXT] = &message_text_screen,
+#endif
+#if CONFIG_DSTAR
+	[SCR_DSTAR] = &ui_dstar_screen, [SCR_DSTAR_TEXT] = &dstar_text_screen,
 #endif
 #if CONFIG_CHANNEL_LIST
 	[SCR_CHANNELS] = &chlist_screen, [SCR_CHANNEL] = &chinfo_screen,
