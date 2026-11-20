@@ -4169,7 +4169,7 @@ static void dmr_end(radio_sm_t *sm) { (void)sm; }
 static bool scan_listens(const channel_t *ch, uint16_t number)
 {
 	(void)number;
-	if (parked(ch) || ch->kind == CODEPLUG_KIND_P25_TRUNK || ch->kind == CODEPLUG_KIND_DMR_TRUNK) {
+	if (parked(ch) || codeplug_kind_trunked(ch->kind)) {
 		return false;
 	}
 #if CONFIG_NXDN

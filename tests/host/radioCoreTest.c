@@ -9929,6 +9929,27 @@ static void test_t3_learn_syscode(void)
 	t3_site_code = 0;
 }
 
+#if CONFIG_DUAL_WATCH
+// A Tier III channel is never one of dual watch's two (radio-features.md 2.1): the UI's service refuses it at once on
+// either side, and a request that gets past it starts nothing in the radio core; the system goes on as it was
+static void test_t3_dual(void)
+{
+	t3_cp_zone(T3_OPT_PRIVATE, 0, 0, NULL);
+	req(RREQ_ZONE, 2);			// "Ops A"
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED);
+	const ui_dual_ref_t t3 = { false, 2, 0 }, conv = { false, 0, 0 };
+	const ui_dual_ref_t as_a[2] = { t3, conv }, as_b[2] = { conv, t3 };
+	CHECK(!ui_svc_dual(as_a, 0) && !ui_svc_dual(as_a, 1) && !ui_svc_dual(as_b, 0) && !ui_svc_dual(as_b, 1));
+	CHECK(sm.view.scan == SCAN_OFF && radio_t3v.on);
+	const radio_dual_ref_t r[2] = { { false, 2, 0 }, { false, 0, 0 } };
+	radio_req_dual(r, 1);
+	t3_site_run(300);
+	CHECK(sm.view.scan == SCAN_OFF && sm.view.channel_number == 7 && radio_t3v.state == T3_CAMPED);
+	t3_cp_done();
+}
+#endif
+
 // A trunked channel transmits only when its tag allows it and its system is one the radio runs with a transmit side
 // (channel-modes.md 3 and 4): a receive-only channel and a system without the transmit flag camp and listen, send
 // nothing on the control channel and refuse PTT; a channel that names no system, or one with no record, is unavailable
@@ -10615,6 +10636,9 @@ int main(void)
 	test_t3_fallback();
 	test_t3_follow_all();
 	test_t3_learn_syscode();
+#if CONFIG_DUAL_WATCH
+	test_t3_dual();
+#endif
 #endif
 	test_dmr_stalled();
 	test_dmr_list_talk_target();
