@@ -141,6 +141,18 @@ mbeTest: mbeTest.c $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
 TESTS   += imbeEncTest
 imbeEncTest: imbeEncTest.c $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ imbeEncTest.c $(MBE) -lm
+
+# The test voice set's full-rate frames (tests/data/voice): the speech through the encoder above. The run checks the
+# committed .imbe still matches; make voice-data writes it again, and the decoded WAV beside it
+VOICE   := $(ROOT)/tests/data/voice
+VOICE_SETS := test_transmission ten_second_countdown
+TESTS   += imbeVoiceGen
+imbeVoiceGen: imbeVoiceGen.c $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ imbeVoiceGen.c $(MBE) -lm
+
+voice-data: imbeVoiceGen
+	for v in $(VOICE_SETS); do ./imbeVoiceGen $(VOICE)/$$v.pcm $(VOICE)/$$v.imbe $(VOICE)/$${v}_imbe_decoded.wav || exit 1; done
+.PHONY: voice-data
 # The receive-only P25 trunking follower (CONFIG_P25_TRUNK): its signaling, and whole systems through the soft modem
 TESTS   += p25TrunkTest
 P25TRUNK := $(CORE)/p25/p25_tsbk.c $(CORE)/p25/p25_follow.c $(CORE)/p25/p25_engine.c $(CORE)/air/air_session.c \
@@ -232,6 +244,7 @@ run: $(TESTS)
 	./fxpTest
 	./mbeTest | tail -1
 	./imbeEncTest | tail -1
+	for v in $(VOICE_SETS); do ./imbeVoiceGen --check $(VOICE)/$$v.pcm $(VOICE)/$$v.imbe || exit 1; done
 	./airSoftmodemTest | tail -1
 	./p25EngineTest
 	./nxdnTest | tail -1
