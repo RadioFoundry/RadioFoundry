@@ -819,13 +819,13 @@ as held, and the transmit time-out ends it.
 Symptom: a radio powered on without its hand mic transmitted at once (RadioFoundry, issue #230). Cause: the mic's PTT
 line has no pull-up the firmware can set, and with nothing in the jack it reads low from power-on, which is a press.
 Rule: on a PTT line that comes through a connector, count a low as a press only once the line has idled high for
-100 ms, something plugged in (`drivers/input/plugptt`). Highs read while the lines settle at start-up don't count:
-a line that reads high on the first scans and then falls to rest low would read as a press held from power-on. Radios
-still keyed at power-on with a mic or a cable in (issue #716). A press is a fall from idle high, the edge a pin
-interrupt sees, never a level found at start-up. Every PTT line on a connector goes through this, a serial line shared with the cable included. Pulling the
-plug while armed still reads as a held press; the transmit timeout ends it, and with TX timeout Off nothing does
-until power-off. Radios: one confirmed. Check every
-radio with a mic jack: power on with the jack empty and watch the raw PTT pin (adding-a-radio.md, bring-up order).
+100 ms, something plugged in (`drivers/input/plugptt`; `drivers/input/sharedptt` for a line shared with the cable's
+serial data). Highs read while the lines settle at start-up don't count: a line that reads high on the first scans
+and then falls to rest low would read as a press held from power-on. Radios still keyed at power-on with a mic or a
+cable in (issue #716). A press is a fall from idle high, the edge a pin interrupt sees, never a level found at
+start-up. Pulling the plug while armed still reads as a held press; the transmit timeout ends it, and with TX
+timeout Off nothing does until power-off. Radios: one confirmed. Check every radio with a mic jack:
+power on with the jack empty and watch the raw PTT pin (adding-a-radio.md, bring-up order).
 
 **16.4 Encoder interrupt lost for good.**
 Symptom: the encoder stopped after a while; every key still worked (RadioFoundry, 2026-10-30). Cause: not found. The
@@ -847,8 +847,8 @@ never did. Rule: on such a radio a host port write waits until the line has been
 (`HRC_HOST_TX_IDLE_MS`, `platform/hrc7000/uart_idle.h`), and PPP, whose host sends at any time, stays off. The wait
 can't stop a host that starts sending during the radio's answer; MMDVM and KISS hosts do that too, unchecked. A latched
 line reads as a held PTT, and a chip reset would start a new press, so a press on the shared line needs the pin to have
-read high since start-up and since the last good byte, and not to have gone low within 20 ms of the radio's own serial
-send (`drivers/input/sharedptt`). The start-up key guard can't catch it: the first scan reports nothing during the
+idled high since start-up (16.3), read high since the last good byte, and not to have gone low within 20 ms of the
+radio's own serial send (`drivers/input/sharedptt`). The start-up key guard can't catch it: the first scan reports nothing during the
 20 ms hold. A line that stays low that way for 2 s flashes the LEDs red and green fast until a power cycle. Don't
 reproduce it more than needed: a latch-up draws current. Radios: one confirmed.
 

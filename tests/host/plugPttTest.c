@@ -80,11 +80,12 @@ int main(void)
 	CHECK(!scan(&p, false, PLUG_PTT_SETTLE_MS + PLUG_PTT_ARM_MS - 10, 20));
 	CHECK(p.armed);
 
-	// Held low from power-on, released later: the release arms it, the next fall keys
+	// The clock wrapping inside the settle time: settles, then arms, on time
 	p = (plug_ptt_t){ 0 };
-	CHECK(!scan(&p, true, 0, 3000));
-	CHECK(!scan(&p, false, 3000, 200));
-	CHECK(plug_ptt_pressed(&p, true, 3200));
+	CHECK(!scan(&p, false, 0xFFFFFF80u, PLUG_PTT_SETTLE_MS + PLUG_PTT_ARM_MS - 10));
+	CHECK(!p.armed);
+	CHECK(!scan(&p, false, 0xFFFFFF80u + PLUG_PTT_SETTLE_MS + PLUG_PTT_ARM_MS - 10, 20));
+	CHECK(p.armed);
 
 	if (failures) {
 		printf("plugPttTest: %d failures\n", failures);
