@@ -211,12 +211,9 @@ at full deviation pushed the AT1846S noise reading over the line for a poll or t
 squelch gated audio cut the packet in pieces: the preamble in one opening, the frame in the next. `aprs_rx_listening()`
 says whether the path runs.
 
-The radio core stops the path itself when it tunes away from the APRS frequency or out of FM (`radio_sm.c` `tune`,
-`aprs_rx_release()`), before the board changes mode, instead of leaving it to the next `rx_service`. On the HR_C7000
-the path holds the modem's FM receive copy interrupt, and a P25, NXDN or YSF engine refuses to start while it does
-(`dmr_glue.c` `air_take`); nothing retried the start before the next tune, so a step from the APRS frequency to such a
-channel, or dual watch hopping there, left it with no engine and PTT refused ("NO TX", `TXDENY_REFUSED`) until a
-retune or a power cycle.
+The radio core stops the path when it tunes away from the APRS frequency or out of FM, before the board changes mode
+(`radio_sm.c` `tune`, `aprs_rx_release()`): on the HR_C7000 a P25, NXDN or YSF engine can't start while the path
+holds the FM receive copy interrupt (`dmr_glue.c` `air_take`).
 
 The receive setting and messaging default to on when the radio can receive (`aprs_can_receive()`: the build has
 `CONFIG_APRS_RX` and one of the two paths exists).
