@@ -1368,9 +1368,9 @@ static void draw_chips(const radio_view_t *v, const ui_state_t *s)
 #endif
 #if CONFIG_YSF
 	if (v->ysf.on) {
-		// Fusion: the mode PTT sends (DN, always), the DG-ID heard (what the channel listens to), the power. No tone,
-		// width or squelch: the receiver is the engine, which opens on a frame sync
-		x = gfx_text(f, x, y, "DN", ui_col.fg) + f->w;
+		// Fusion: the mode PTT sends (DN, or VW where the channel says so), the DG-ID heard (what the channel listens
+		// to), the power. No tone, width or squelch: the receiver is the engine, which opens on a frame sync
+		x = gfx_text(f, x, y, v->ysf.tx_vw ? "VW" : "DN", ui_col.fg) + f->w;
 		sb_init(&b, buf, sizeof buf);
 		if (v->ysf.rx_dgid != 0) {
 			sb_str(&b, "RX DG-ID ");

@@ -282,6 +282,12 @@ switch = "YSF"
 spec = "docs/spec/ysf-modem.md"
 manual = "the first radio tests' plan, docs/testing/ysf-bench.md: our over decoded off the SDR (tools/ysf_bench.py over), a synthesized and a replayed transmission into the radio through attenuation (tools/ysf_bench.py synth, watch), then a visiting Yaesu radio both ways (tools/ysf_bench.py session)"
 
+[feature.ysf_vw]
+switch = "YSF_VW"
+spec = "docs/spec/ysf-modem.md"
+source = ["core/ysf/ysf_vw.c", "core/ysf/ysf_vw.h", "core/radio/radio_ysf_vw.c", "core/radio/radio_ysf_vw.h", "core/mbe/imbe_dec.c", "core/mbe/imbe_enc.c", "tools/ysf_vw_ref.py"]
+manual = "docs/testing/ysf-bench.md part two, steps 5 and 7: a Yaesu radio in VW played on ours (ysf.mode=vw), and ours on a channel set to VW played on the Yaesu (ysf.tx_vw=1)"
+
 [feature.aprs]
 switch = "APRS"
 spec = "docs/spec/aprs.md"

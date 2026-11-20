@@ -281,6 +281,7 @@
  "screen.home_ysf": "Home, Fusion channel",
  "screen.home_ysf_rx": "Home, Fusion, receiving DN",
  "screen.home_ysf_rx_vw": "Home, Fusion, VW heard",
+ "screen.home_ysf_rx_vw_late": "Home, Fusion, VW joined late",
  "screen.home_ysf_tx": "Home, Fusion, transmitting",
  "screen.home_ysf_nocall": "Home, Fusion, no callsign",
  "screen.home_dstar": "Home, D-STAR channel",

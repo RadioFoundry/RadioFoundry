@@ -193,12 +193,14 @@ static const flow_t flows[] = {
 	// VW is shown and said not to play; PTT shows what goes out
 	{ "1 Fusion channel: the destination", "ysf", "", "screen=home shows=ALL", 0, false },
 	{ "1 Fusion caller", "ysf ysfrx:M0ABC", "", "screen=home shows=M0ABC shows=DN", 0, false },
-	{ "1 Fusion VW not played", "ysf ysfrx:JA1YKX,vw,10", "", "screen=home shows=JA1YKX shows=VW:_not_played", 0, false },
 	{ "1 Fusion no callsign", "ysfnocall", "", "screen=home shows=No_callsign_set", 0, false },
 	{ "1 Fusion VW joined late", "ysf ysfrx:-,vw", "", "screen=home shows=Caller_unknown shows=to_unknown hides=to_?", 0, false },
 	{ "1 Fusion VW late, radio ID", "ysf ysfrx:-,vw,0,E0abc", "", "screen=home shows=ID_E0abc hides=Caller_unknown", 0, false },
 	{ "1 Fusion DN late, radio ID", "ysf ysfrx:-,dn,0,E0abc", "", "screen=home shows=ID_E0abc", 0, false },
 	{ "1 Fusion transmit", "ysf pttdown", "", "screen=home shows=G4XYZ_>_ALL shows=DN", 0, false },
+	{ "1 Fusion VW played", "ysf ysfrx:JA1YKX,vw,10", "", "screen=home shows=JA1YKX shows=VW hides=not_played", 0, false },
+	{ "1 Fusion transmit in VW", "ysf ysfvw pttdown", "", "screen=home shows=G4XYZ_>_ALL shows=VW", 0, false },
+	{ "1 Fusion VW channel's chip", "ysf ysfvw", "", "screen=home shows=VW", 0, false },
 #endif
 	{ "1 USB network brought up by the PC: the link arrows", "usbnet:up", "", "shows=IP markafter=IP", 0, false },
 	{ "1 USB serial again: no word", "usbnet:on", "usbnet:off", "hides=IP", 0, false },

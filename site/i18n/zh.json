@@ -281,6 +281,7 @@
  "screen.home_ysf": "主页，Fusion 信道",
  "screen.home_ysf_rx": "主页，Fusion，接收 DN",
  "screen.home_ysf_rx_vw": "主页，Fusion，收到 VW",
+ "screen.home_ysf_rx_vw_late": "主页，Fusion，中途加入 VW",
  "screen.home_ysf_tx": "主页，Fusion，发射中",
  "screen.home_ysf_nocall": "主页，Fusion，无呼号",
  "screen.home_dstar": "主页，D-STAR 信道",

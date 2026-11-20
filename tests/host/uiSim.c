@@ -58,7 +58,8 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "tx", "pttdown" },
 	{ "home_ysf", "ysf" },					// a Fusion channel: the destination it calls
 	{ "home_ysf_rx", "ysf ysfrx:M0ABC" },			// receiving DN: the caller's callsign
-	{ "home_ysf_rx_vw", "ysf ysfrx:JA1YKX,vw,10" },	// VW heard: shown, not played
+	{ "home_ysf_rx_vw", "ysf ysfrx:JA1YKX,vw,10" },	// VW heard: played
+	{ "home_ysf_rx_vw_late", "ysf ysfrx:-,vw" },			// VW joined after its header: no callsign yet
 	{ "home_ysf_tx", "ysf pttdown" },			// transmitting DN
 	{ "home_ysf_nocall", "ysfnocall" },			// no callsign: what to set
 	{ "tx_aprs", "aprstx" },

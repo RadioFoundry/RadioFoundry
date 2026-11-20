@@ -70,6 +70,12 @@
     "YSF"
    ]
   },
+  "home_ysf_rx_vw_late": {
+   "group": "home",
+   "needs": [
+    "YSF_VW"
+   ]
+  },
   "home_ysf_tx": {
    "group": "home",
    "needs": [

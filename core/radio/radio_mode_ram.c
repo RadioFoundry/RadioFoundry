@@ -9,7 +9,7 @@
 #include "radio/radio_dstar.h"
 #endif
 #if CONFIG_YSF
-#include "ysf/ysf_engine.h"
+#include "radio/radio_ysf.h"
 #endif
 
 // Sized and aligned by what each mode keeps there, so a change to either moves the area with it. The uint64_t member
@@ -20,7 +20,7 @@ static union {
 	radio_dstar_area_t dstar;	// D-STAR's engine and its codec's state (the codec's working memory is the lend's)
 #endif
 #if CONFIG_YSF
-	ysf_engine_t ysf;
+	radio_ysf_area_t ysf;		// Fusion's engine and Voice FR's codec state
 #endif
 } area;
 

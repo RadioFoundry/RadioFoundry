@@ -19,6 +19,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "config.h"
+#if CONFIG_YSF
+#include "ysf/ysf_engine.h"
+#include "radio/radio_ysf_vw.h"
+#endif
 #include "codeplug/codeplug.h"
 #include "hal_audio.h"
 
@@ -121,6 +125,17 @@ typedef struct {
 	int32_t ppm, offset_hz;	// the demodulator's symbol clock and carrier offset as it has them
 	bool rx_invert;		// the receiver found the levels inverted
 } radio_ysf_stats_t;
+
+#if CONFIG_YSF
+// What Fusion keeps in the radio core's mode area while it runs (radio_mode_ram.h): its engine, and Voice FR's codec
+// state where the build has VW. D-STAR's engine and codec state use the same bytes while a D-STAR channel is tuned
+typedef struct {
+	ysf_engine_t eng;
+#if CONFIG_YSF_VW
+	radio_ysf_vw_mem_t vw;
+#endif
+} radio_ysf_area_t;
+#endif
 
 #if CONFIG_YSF
 // Once, at start-up: the board's PCM audio (the stream the vocoder runs in)

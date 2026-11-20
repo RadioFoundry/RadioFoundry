@@ -281,6 +281,7 @@
  "screen.home_ysf": "Inicio, canal Fusion",
  "screen.home_ysf_rx": "Inicio, Fusion, recibiendo DN",
  "screen.home_ysf_rx_vw": "Inicio, Fusion, VW recibido",
+ "screen.home_ysf_rx_vw_late": "Inicio, Fusion, VW a mitad",
  "screen.home_ysf_tx": "Inicio, Fusion, transmitiendo",
  "screen.home_ysf_nocall": "Inicio, Fusion, sin indicativo",
  "screen.home_dstar": "Inicio, canal D-STAR",

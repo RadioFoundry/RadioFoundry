@@ -14,6 +14,11 @@
 #include "ysf/ysf_engine.h"
 #include "ysf/ysf_codeplug.h"
 #include "dmr/ambe/ambeFec.h"
+#if CONFIG_YSF_VW
+#include "hal_time.h"
+#include "ysf/ysf_vw.h"
+#include "radio/radio_ysf_vw.h"
+#endif
 
 #if RADIO_YSF_ID != YSF_RADIO_ID_LEN
 #error "RADIO_YSF_ID is CSD3's radio ID field"
@@ -33,7 +38,14 @@
 // A queue slot holds a DN frame or, with VW built, a full-rate frame: its 11 bytes, the corrections its codes made
 // (byte 11) and the kind (byte 12). An over is all one or the other, but the slot says which, so the audio callback
 // never needs to know what the receiver saw when
+#if CONFIG_YSF_VW
+#define SLOT_BYTES	13u
+#define SLOT_ERRS	11u
+#define SLOT_KIND	12u
+#define KIND_FR		1u
+#else
 #define SLOT_BYTES	FRAME_BYTES
+#endif
 #define RX_CHUNK	128u	// samples per read from the board, on the radio task's stack
 #define FLAT_RATE_DEF	8000u
 
@@ -41,7 +53,8 @@ static const hal_audio_t *aud;
 static const hal_audio_tap_t *tap;
 
 // In the area the radio core lends the mode that runs (radio_mode_ram.h): taken at start, given back at stop, so NULL
-// whenever Fusion isn't running. D-STAR's engine uses the same bytes while a D-STAR channel is tuned
+// whenever Fusion isn't running. D-STAR's engine and codec state use the same bytes while a D-STAR channel is tuned
+static radio_ysf_area_t *area;
 static ysf_engine_t *eng;
 static ysf_path_t path;
 static bool running, streaming, rx_on;
@@ -86,11 +99,18 @@ static uint32_t tx_drain_ms;		// when the radio task first saw the release, 0 = 
 static uint8_t cb_rx_seq;
 static bool cb_playing, cb_primed, cb_speaker, cb_mixing, cb_tx;
 static bool cb_fr;		// the over playing is VW: a missing frame is concealed by the full-rate decoder
+#if CONFIG_YSF_VW
+static uint32_t cb_dec_us;	// the full-rate decoder's time in this VW over so far (stats.vw_dec_*)
+#endif
 
 // The channel sends Voice FR (VW) rather than DN: its flag, where VW is built
 static bool tx_vw(void)
 {
+#if CONFIG_YSF_VW
+	return (chan.flags & YSF_CP_VW) != 0;
+#else
 	return false;
+#endif
 }
 
 // --- small helpers ---
@@ -302,6 +322,20 @@ static void on_voice72(void *ctx, const uint8_t frame[9])
 	}
 }
 
+#if CONFIG_YSF_VW
+// Voice FR: the full-rate frame and its corrections, for the audio callback's decoder
+static void on_voice_fr(void *ctx, const uint8_t imbe[YSF_VW_IMBE_BYTES], uint8_t errs)
+{
+	(void)ctx;
+	uint8_t *f = rx_slot();
+	if (f != NULL) {
+		memcpy(f, imbe, YSF_VW_IMBE_BYTES);
+		f[SLOT_ERRS] = errs;
+		f[SLOT_KIND] = KIND_FR;
+		rx_commit();
+	}
+}
+#endif
 
 static void on_end(void *ctx, ysf_end_t why)
 {
@@ -320,6 +354,9 @@ static void engine_rx(void)
 	rx_fold();
 	static const ysf_rx_cb_t cb = { on_frame, on_call, on_voice, on_voice72, on_end, NULL };
 	ysf_engine_rx_start(eng, &path, &cb);
+#if CONFIG_YSF_VW
+	ysf_engine_rx_voice_fr(eng, on_voice_fr);
+#endif
 }
 
 // --- the audio stream (the board's audio task) ---
@@ -341,6 +378,29 @@ static void tx_block(const int16_t *mic)
 		return;
 	}
 	uint8_t bits[YSF_VOICE_BITS];
+	bool first = !cb_tx;
+#if CONFIG_YSF_VW
+	if (tx_vw()) {
+		// Voice FR: the full-rate encoder on the CPU, whatever the board's vocoder; its silence frame is a constant
+		if (first) {
+			cb_tx = true;
+			radio_ysf_vw_tx_start();
+		}
+		uint8_t h = tx_head;
+		const int16_t *pcm = mic;
+		if ((uint8_t)(h - LOAD(tx_tail)) >= RADIO_YSF_TX_Q) {
+			uint8_t drop[YSF_VW_IMBE_BYTES];
+			radio_ysf_vw_encode(pcm, drop);		// keeps the encoder's history
+			stats.tx_frames++;
+			stats.tx_overflows++;
+			return;
+		}
+		radio_ysf_vw_encode(pcm, txq[h & TXQMASK]);
+		stats.tx_frames++;
+		STORE(tx_head, (uint8_t)(h + 1u));
+		return;
+	}
+#endif
 	if (!cb_tx) {
 		cb_tx = true;
 		stats.tx_mic_peak = 0;
@@ -372,6 +432,24 @@ static void tx_block(const int16_t *mic)
 	STORE(tx_head, (uint8_t)(h + 1u));
 }
 
+#if CONFIG_YSF_VW
+// One block of the full-rate decoder timed (stats.vw_dec_*): it runs here, in the audio callback, and a long block
+// holds up the board's speaker output, the stutter a VW over had on the radio before the decoder was made faster
+// (ysf-modem.md 4.3). The counters are the audio task's alone; the debug link reads them as they stand
+static void vw_timed(uint32_t t0)
+{
+	uint32_t us = hal_micros() - t0;
+	cb_dec_us += us;
+	stats.vw_dec_blocks++;
+	stats.vw_dec_avg_us = cb_dec_us / stats.vw_dec_blocks;
+	if (us > stats.vw_dec_max_us) {
+		stats.vw_dec_max_us = us;
+	}
+	if (us > stats.vw_dec_worst_us) {
+		stats.vw_dec_worst_us = us;
+	}
+}
+#endif
 
 static void rx_block(int16_t *spk)
 {
@@ -384,6 +462,11 @@ static void rx_block(int16_t *spk)
 		if (codec_ok() && !cb_tx) {
 			board.vocoder->reset();
 		}
+#if CONFIG_YSF_VW
+		if (!cb_tx) {
+			radio_ysf_vw_rx_start();	// a fresh decoder: also undoes what a transmission's encoder left in it
+		}
+#endif
 	}
 	uint8_t t = rx_tail, n = (uint8_t)(LOAD(rx_head) - t);
 	bool ended = LOAD(rx_end_seq) == seq;
@@ -403,10 +486,38 @@ static void rx_block(int16_t *spk)
 		} else {
 			stats.rx_concealed++;
 			stats.rx_late++;	// mid-over and nothing queued: the receiver hasn't handed the frame in yet
+#if CONFIG_YSF_VW
+			if (cb_fr) {
+				uint32_t t0 = hal_micros();
+				radio_ysf_vw_lost(spk);		// the last good frame repeated, then muted
+				vw_timed(t0);
+				return;
+			}
+#endif
 		}
 		memset(spk, 0, AUDIO_BLOCK_SAMPLES * sizeof(int16_t));
 		return;
 	}
+#if CONFIG_YSF_VW
+	const uint8_t *slot = rxq[t & QMASK];
+	if (slot[SLOT_KIND] == KIND_FR) {
+		if (!cb_fr) {
+			cb_fr = true;		// this over's first VW frame: its own decode times from here
+			cb_dec_us = 0;
+			stats.vw_dec_max_us = stats.vw_dec_avg_us = stats.vw_dec_blocks = 0;
+		}
+		uint32_t t0 = hal_micros();
+		int bad = radio_ysf_vw_decode(slot, slot[SLOT_ERRS], spk);
+		vw_timed(t0);
+		if (bad == 0) {
+			stats.rx_played++;
+		} else {
+			stats.rx_concealed++;
+		}
+		STORE(rx_tail, (uint8_t)(t + 1u));
+		return;
+	}
+#endif
 	uint8_t bits[YSF_VOICE_BITS];
 	unpack(rxq[t & QMASK], bits);
 	if (codec_ok()) {
@@ -484,6 +595,25 @@ static bool voice_pull(void *ctx, uint8_t bits[YSF_VOICE_BITS])
 	return true;
 }
 
+#if CONFIG_YSF_VW
+// The same for Voice FR: the next full-rate frame, or the transmitter's silence frame (false)
+static bool voice_pull_fr(void *ctx, uint8_t imbe[YSF_VW_IMBE_BYTES])
+{
+	(void)ctx;
+	uint8_t t = tx_tail;
+	if (t != LOAD(tx_head)) {
+		memcpy(imbe, txq[t & TXQMASK], YSF_VW_IMBE_BYTES);
+		STORE(tx_tail, (uint8_t)(t + 1u));
+		return true;
+	}
+	if (tx_released) {
+		ysf_engine_tx_stop(eng);
+	} else {
+		stats.tx_underruns++;
+	}
+	return false;
+}
+#endif
 
 static void tx_pull(int16_t *pcm, uint16_t n)
 {
@@ -565,7 +695,8 @@ bool radio_ysf_start(uint16_t number, const channel_t *ch, uint32_t now_ms)
 		view_dirty = true;
 		return false;
 	}
-	eng = radio_mode_ram_take(RADIO_MODE_RAM_YSF, sizeof *eng);
+	area = radio_mode_ram_take(RADIO_MODE_RAM_YSF, sizeof *area);
+	eng = area != NULL ? &area->eng : NULL;
 	if (eng == NULL) {
 		// D-STAR still holds the area: the core starts a mode only after stopping the other, so this is a bug in
 		// that order. Refused rather than taken, since D-STAR's transmit interrupt may still be pulling from it
@@ -576,6 +707,9 @@ bool radio_ysf_start(uint16_t number, const channel_t *ch, uint32_t now_ms)
 	if (path.tx_amp == 0) {
 		view.fault = RYSF_NO_CAL;	// receive still runs: only transmit needs the scale
 	}
+#if CONFIG_YSF_VW
+	radio_ysf_vw_bind(&area->vw);	// before the stream starts: the audio callback runs the codec
+#endif
 	rx_queue_reset();
 	engine_rx();
 	rx_flat_on();
@@ -598,8 +732,12 @@ void radio_ysf_stop(void)
 	if (eng != NULL) {
 		ysf_engine_idle(eng);
 	}
+#if CONFIG_YSF_VW
+	radio_ysf_vw_bind(NULL);	// the stream has stopped: no callback runs the codec now
+#endif
 	radio_mode_ram_give(RADIO_MODE_RAM_YSF);	// after the engine is idle and the board's pull stopped (tx_abort)
 	eng = NULL;
+	area = NULL;
 	running = false;
 	view.on = false;
 	view.rx = RYSF_RX_IDLE;
@@ -678,6 +816,13 @@ bool radio_ysf_tx_start(uint32_t now_ms)
 		memcpy(cfg.silence, silence, sizeof cfg.silence);	// else zeros (the memset), as the pull sends
 	}
 	cfg.pull = voice_pull;
+#if CONFIG_YSF_VW
+	if (tx_vw()) {
+		cfg.vw = true;
+		cfg.pull_fr = voice_pull_fr;
+		memcpy(cfg.silence_fr, radio_ysf_vw_silence, YSF_VW_IMBE_BYTES);
+	}
+#endif
 	tx_released = false;
 	tx_done = false;
 	tx_done_ms = tx_drain_ms = 0;

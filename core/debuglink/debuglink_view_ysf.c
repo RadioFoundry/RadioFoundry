@@ -21,8 +21,8 @@ void debuglink_view_ysf(const radio_view_t *v, dl_text_t *t)
 		y->mode < 5 ? modes[y->mode] : "?", y->dgid, y->muted, y->narrow, y->src, y->dest, y->up, y->down);
 	dl_text(t, "ysf.tx_src=%s\nysf.tx_dest=%s\nysf.tx_dgid=%u\nysf.rx_dgid=%u\nysf.no_call=%u\n", y->tx_src,
 		y->tx_dest, y->tx_dgid, y->rx_dgid, y->no_call);
-	// Voice FR: whether the channel asks PTT to send it (ysf-modem.md 4.1); this build sends DN either way
-	dl_text(t, "ysf.vw_built=0\nysf.tx_vw=%u\n", y->tx_vw);
+	// Voice FR: whether this build plays and sends it, and whether PTT on this channel sends it (ysf-modem.md 4.1)
+	dl_text(t, "ysf.vw_built=%u\nysf.tx_vw=%u\n", (unsigned)CONFIG_YSF_VW, y->tx_vw);
 	dl_text(t, "ysf.syncs=%u\nysf.late=%u\nysf.fich_good=%u\nysf.fich_bad=%u\nysf.csd_good=%u\nysf.csd_bad=%u\n",
 		(unsigned)s.syncs, (unsigned)s.late, (unsigned)s.fich_good, (unsigned)s.fich_bad, (unsigned)s.csd_good,
 		(unsigned)s.csd_bad);

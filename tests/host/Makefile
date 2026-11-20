@@ -1509,16 +1509,23 @@ ysfCodeplugOffTest: ysfCodeplugTest.c $(YSFCP) $(wildcard $(CORE)/codeplug/*.h $
 # is built through ysfRadioSeam.c, which lets the test run the radio task in the middle of a debug link read
 TESTS   += ysfRadioTest
 YSFRT   := $(YSFCP) ysfRadioSeam.c $(CORE)/radio/radio_mode_ram.c $(CORE)/radio/radio_flat.c $(CORE)/ysf/ysf_fec.c \
-           $(CORE)/ysf/ysf_frame.c $(CORE)/ysf/ysf_vw.c $(CORE)/ysf/ysf_c4fm.c $(CORE)/ysf/ysf_engine.c $(CORE)/dmr/ambe/ambeFec.c
+           $(CORE)/ysf/ysf_frame.c $(CORE)/ysf/ysf_vw.c $(CORE)/ysf/ysf_c4fm.c $(CORE)/ysf/ysf_engine.c \
+           $(CORE)/dmr/ambe/ambeFec.c $(CORE)/radio/radio_ysf_vw.c $(MBE)
 
-ysfRadioTest: ysfRadioTest.c $(YSFRT) $(CORE)/radio/radio_ysf.c $(wildcard $(CORE)/radio/radio_ysf*.h $(CORE)/ysf/*.h)
+ysfRadioTest: ysfRadioTest.c $(YSFRT) $(CORE)/radio/radio_ysf.c $(wildcard $(CORE)/radio/radio_ysf*.h $(CORE)/ysf/*.h $(CORE)/mbe/*.h)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_YSF=1 -o $@ ysfRadioTest.c $(YSFRT) -lm
 
+# Fusion's Voice FR in the radio core (radio_ysf_vw.c): ysfRadioTest's fake board, VW received, mixed with DN, sent
+TESTS   += ysfVwRadioTest
+ysfVwRadioTest: ysfVwRadioTest.c ysfRadioTest.c $(YSFRT) $(CORE)/radio/radio_ysf.c $(wildcard $(CORE)/radio/radio_ysf*.h $(CORE)/ysf/*.h $(CORE)/mbe/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_YSF=1 -o $@ ysfVwRadioTest.c $(YSFRT) -lm
+
 run: run-ysfcp
-run-ysfcp: ysfCodeplugTest ysfCodeplugOffTest ysfRadioTest
+run-ysfcp: ysfCodeplugTest ysfCodeplugOffTest ysfRadioTest ysfVwRadioTest
 	./ysfCodeplugTest
 	./ysfCodeplugOffTest
 	./ysfRadioTest
+	./ysfVwRadioTest
 .PHONY: run-ysfcp
 
 # rename, delete, a new channel added in one step, the limits

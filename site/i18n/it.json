@@ -281,6 +281,7 @@
  "screen.home_ysf": "Home, canale Fusion",
  "screen.home_ysf_rx": "Home, Fusion, ricezione DN",
  "screen.home_ysf_rx_vw": "Home, Fusion, VW ricevuto",
+ "screen.home_ysf_rx_vw_late": "Home, Fusion, VW a metà",
  "screen.home_ysf_tx": "Home, Fusion, trasmissione",
  "screen.home_ysf_nocall": "Home, Fusion, nessun nominativo",
  "screen.home_dstar": "Home, canale D-STAR",

@@ -13,7 +13,7 @@ receive), `ysf_vw.c` (Voice FR's frame and layout, 4.1), `ysf_c4fm.c` (modem), `
 board), `ysf_codeplug.c`. The radio core's part is `core/radio/radio_ysf.c` and, for VW's codec, `radio_ysf_vw.c` on
 the full-rate codec `core/mbe`; the screens' `core/ui/ui_screens.c`. Build switches: `CONFIG_YSF` (needs DMR; on a
 board only where its glue runs it and its RAM fits, [build-config.md](../build-config.md)) and `CONFIG_YSF_VW` (VW,
-with YSF by default; until the change that adds it, VW is recognized and shown as heard, and PTT sends DN). Tests: `tests/host/ysfTest.c`, `ysfModemTest.c`, `ysfVwTest.c`, `ysfCodeplugTest.c`,
+with YSF by default). Tests: `tests/host/ysfTest.c`, `ysfModemTest.c`, `ysfVwTest.c`, `ysfCodeplugTest.c`,
 `ysfRadioTest.c`, `ysfVwRadioTest.c`; vectors in `tests/vectors/ysf.txt` and `ysf-vw.txt` from the independent
 references `tools/ysf_ref.py` and `tools/ysf_vw_ref.py` (6).
 

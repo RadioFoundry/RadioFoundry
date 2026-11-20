@@ -6,7 +6,7 @@
 // A channel has one kind, and tune() stops every mode before it starts one, so at most one is ever live. What each
 // keeps here: D-STAR its engine (about 670 B) and its software codec's state from frame to frame (3.2 KB; the codec's
 // working memory is the DMR vocoder's, lent: hal_vocoder_t.lend, 7 KB on the HR_C7000, which the whole codec no
-// longer fits); Fusion its engine (about 970 B). The voice rings, views and statistics stay per mode, since the screens and the debug link read them
+// longer fits); Fusion its engine (about 970 B) and Voice FR's codec state (about 4 KB, where VW is built). The voice rings, views and statistics stay per mode, since the screens and the debug link read them
 // while the mode is off.
 //
 // A take by a mode while the other holds the area is refused, never granted by stealing: the holder may be part way
