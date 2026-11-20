@@ -70,6 +70,11 @@ switch = "BCAST_FM"
 hardware = "a broadcast FM receiver"
 spec = "docs/spec/airband-and-broadcast.md"
 
+[feature.bcast_rds]
+switch = "BCAST_RDS"
+hardware = "a broadcast FM receiver with an RDS decoder"
+spec = "docs/spec/airband-and-broadcast.md"
+
 [feature.rx_ext]
 switch = "RX_EXT"
 hardware = "a receiver chip whose documents give a range past the rated bands"

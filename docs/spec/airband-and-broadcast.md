@@ -109,7 +109,8 @@ From the public datasheet (RDA Microelectronics, rev 1.1; register summary check
 | 0x02 | DHIZ b15, DMUTE b14 (1 = audio), MONO, BASS, RCLK non-calibrate b11, RCLK direct b10, SEEKUP b9, SEEK b8, SKMODE b7 (0 = wrap), CLK_MODE b6:4, RDS_EN b3, NEW_METHOD b2, SOFT_RESET b1, ENABLE b0 |
 | 0x03 | CHAN b15:6, TUNE b4, BAND b3:2 (2 = 76-108, 3 = 65-76 with 0x07 b9), SPACE b1:0 (2 = 50 kHz) |
 | 0x04 / 0x05 / 0x07 | de-emphasis 50 us b11 / INT_MODE, SEEKTH b11:8, LNA port b7:6, VOLUME b3:0 / soft blend threshold, 65M mode b9, soft blend b1 |
-| 0x0A / 0x0B | STC b14, SF b13, ST b10, READCHAN b9:0 / RSSI b15:9, FM_TRUE b8, FM_READY b7 |
+| 0x0A / 0x0B | RDSR b15, STC b14, SF b13, RDSS b12, ST b10, READCHAN b9:0 / RSSI b15:9, FM_TRUE b8, FM_READY b7, BLERA b3:2, BLERB b1:0 |
+| 0x0C-0x0F | RDS blocks A, B, C, D of the group RDSR announces (4.6) |
 
 The driver tunes 65-76 and 76-108 MHz on a 50 kHz grid, keeps shadows so TUNE and SEEK are never written twice, and
 follows the chip's STC. The board supplies the bus; `drivers/bus/i2c_gpio` is a bit-banged master (open-drain SDA,
@@ -153,12 +154,34 @@ are on its hardware page.
 The board decides how the broadcast reaches the speaker. The core keeps the channel receiver's audio off while the
 broadcast plays, so the two never ask for the speaker at once (hal_bcast.h `audio`).
 
+### 4.6 RDS
+
+`CONFIG_BCAST_RDS`. A broadcast receiver with an RDS decoder hands the core its groups (`hal_bcast_t.rds_enable`,
+`rds_group`; both NULL on a receiver without one). The core decodes them (`core/radio/rds.c`, from IEC 62106 / EN 50067;
+RBDS uses the same groups) and shows what the station sends.
+
+| Item | Behavior |
+|---|---|
+| Receiver | `rds_enable(true)` after each power-up. The status poll (`RADIO_POLL_MS`, 25 ms) reads `status()`, then `rds_group()`: one group at most per poll, about 11 groups a second on air. The RDA5807M driver reads 0x0C-0x0F only when the status read showed RDSR and RDSS, and drops a group equal to the last one (RDSR can still be up at the next poll) |
+| Errors | The receiver corrects the blocks and grades A and B (0 none, 1 1-2 bits, 2 3-5 bits, 3 uncorrectable). A group whose block B is graded over 1 is dropped. Block A over 1: the group is used without its PI. C and D are not graded, so a text segment is taken only when the same characters arrive twice in a row |
+| PI | A new PI must arrive twice in a row. Then everything of the old one is dropped: another station on the frequency. A group with another PI before that is ignored |
+| PS | Group 0A / 0B, 2 characters per segment, 4 segments. Shown once all 4 are confirmed; later confirmed segments update it in place (a scrolling PS changes with them) |
+| RadioText | Group 2A (4 characters, 64 in all) or 2B (2, 32 in all). Shown once every segment up to 0x0D (or the last) is confirmed. A new A/B flag, or 2A turning to 2B, clears it at once |
+| Characters | 0x20-0x7E as ASCII; controls (a line feed) as a space; 0x7F and up (the standard's accented letters) as `?`: the fonts have no glyphs for them |
+| Cleared | on a new frequency (a tune, or a seek reporting another one), when the receiver goes off, and on a new PI |
+| Screen | Home: the PS after the "Broadcast FM" chip where it fits, in the receive color. RadioText on the activity line under the meter ("Receiving" otherwise); on a panel with one activity line, instead of the meter. Text longer than the line is shown in parts broken at spaces, a new part every 3 s |
+| Debug link | view section `rds` (39): `rds.pi` (hex, 0000 none) `rds.pty rds.tp rds.ta rds.groups rds.ps rds.rt` ([debuglink.md](debuglink.md)) |
+
+Program type (PTY) is kept but not shown: its names differ between RDS and RBDS. Clock time (4A), alternative
+frequencies (0A block C) and the rest of the groups are not decoded.
+
 ## 5. Build switches
 
 | Switch | Default | Covers |
 |---|---|---|
 | `CONFIG_AM_RX` | on with FM; off where the receiver has no AM | `radio_am.c` in the radio core, RREQ_VFO_STEP_SIZE; needs FM |
 | `CONFIG_BCAST_FM` | on; off where there is no broadcast receiver | `radio_bcast.c` in the radio core, the board's tuner glue, the step setting |
+| `CONFIG_BCAST_RDS` | = `CONFIG_BCAST_FM` | RDS (4.6): `rds.c`, the receiver driver's RDS calls, the poll, Home's name and RadioText, the debug link keys; needs BCAST_FM |
 
 The board must also set the capability bits; without them the code does nothing at run time. Per-board defaults:
 [feature-matrix.md](../feature-matrix.md).
@@ -170,4 +193,8 @@ The board must also set the capability bits; without them the code does nothing 
 | `tests/host/radioListenBandsTest.c` | AM and broadcast channels and VFO, TX refusal, squelch, the steps, a dead receiver |
 | `tests/host/fd6818Test.c` | the AF output word for AM and back to FM |
 | `tests/host/uiFlowTest.c` | the FM broadcast step row on a radio with the receiver; AM in dual watch (a VFO and a channel pane, the signal line) |
-| `tests/hil/test_listen_bands.py` | the VFO at 118.0 MHz gives `am=1`; at 100.1 MHz `bcast=1` and `bcast_fault=0`. Nothing keys |
+| `tests/host/rdsTest.c` | the RDS decoder: PI, PS, RadioText 2A / 2B, the A/B flag, error levels, a wrong block C or D heard once |
+| `tests/host/rda5807mTest.c` | RDS_EN through power-up, a group read only after RDSR and RDSS, the same group not passed twice |
+| `tests/host/radioListenBandsTest.c` | RDS switched on with the receiver, the name in the view, cleared on another channel |
+| `tests/host/uiFlowTest.c` | Home with the RDS name and RadioText |
+| `tests/hil/test_listen_bands.py` | the VFO at 118.0 MHz gives `am=1`; at 100.1 MHz `bcast=1` and `bcast_fault=0`. Nothing keys. With `--rds-mhz`, a station there gives `rds.pi` and `rds.ps` within 20 s, cleared after |

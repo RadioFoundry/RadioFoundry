@@ -87,6 +87,7 @@ skips (kind `opt_in`) and names the three ways to give it. `tests/hil/hil_config
 | `--p25-voice-out-mhz` | where a second bench transmitter (`--bench-api-2`) plays the call the bench's control channel grants (`test_p25_trunk_rx`; the bench transmits) |
 | `--nxdn-mhz` | the NXDN test frequency (the radio's VFO; `test_nxdn_tx_off_air`, `test_nxdn_stored_channel_tx`, and `test_nxdn_rx_from_bench` and `test_nxdn_scan_from_bench`, where the bench transmits) |
 | `--noaa-mhz` | a NOAA weather radio station heard at the rig (`test_fm`, receive only; optional tests) |
+| `--rds-mhz` | a broadcast FM station heard at the rig that sends RDS (`test_listen_bands.py` `test_broadcast_rds`, receive only) |
 | `--vhf-fm-mhz` | a VHF FM frequency the bench transmits on (`test_fm`: receive in the VHF band) |
 | `--aprs-test-mhz` | `test_aprs`'s AFSK frequency: an amateur simplex frequency that is not an APRS one |
 | `--aprs-dmr-dst` | the DMR position's destination ID (`test_aprs`) |

@@ -36,6 +36,8 @@ RIG = {
     "p25-voice-out-mhz": (float, "MHz: where a second bench transmitter plays the call the bench's control channel "
                                  "grants (the voice channel's outbound side; test_p25_trunk_rx)", True),
     "nxdn-mhz": (float, "MHz: the NXDN test frequency (the radio's VFO; test_nxdn_tx_off_air)", True),
+    "rds-mhz": (float, "MHz: a broadcast FM station heard at the rig that sends RDS (test_broadcast_rds; receive "
+                       "only)", False),
     "noaa-mhz": (float, "MHz: a NOAA weather radio station heard at the rig (test_fm; receive only)", False),
     "vhf-fm-mhz": (float, "MHz: a VHF FM frequency the bench transmits on (test_fm: receive in the VHF band)", True),
     "aprs-test-mhz": (float, "MHz: test_aprs's AFSK frequency, an amateur simplex frequency that is not an APRS "

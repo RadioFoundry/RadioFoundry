@@ -432,6 +432,11 @@ where stations are in the Americas. For 100 kHz steps set **Settings > Talk & li
 Either way you can type any frequency, 90.2 for example. In the air band **Auto** steps 25 kHz; set the VFO step to
 8.33 kHz for the narrow channels.
 
+On a radio whose broadcast receiver decodes RDS (RBDS in the Americas), Home shows the station's name after "Broadcast
+FM" and its RadioText (the song, the show) under the signal meter, in parts every 3 seconds when it is longer than the
+line. They appear a second or two after tuning, once the radio has received each part twice, and go when you tune
+away. Accented letters show as `?`.
+
 ## Channels the radio can't use
 
 Channels outside the radio's bands don't transmit ("Outside ..."). Receive-only channels show "RX only" as the talk
