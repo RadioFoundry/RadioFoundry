@@ -32,9 +32,9 @@ bool ui_svc_position(ui_position_t *out)
 }
 
 // The status strip's GPS icon: what the position service was last told, so a change from the debug link counts too
-bool ui_svc_gps_on(void)
+uint8_t ui_svc_gps_power(void)
 {
-	return board_has_gps() && position_gps_enabled();
+	return !board_has_gps() ? UI_GPS_POWER_NONE : position_gps_enabled() ? UI_GPS_POWER_ON : UI_GPS_POWER_OFF;
 }
 
 #if CONFIG_GPS_SKY

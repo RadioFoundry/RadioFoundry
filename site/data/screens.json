@@ -40,6 +40,12 @@
     "FM"
    ]
   },
+  "home_gps_off": {
+   "group": "home",
+   "needs": [
+    "GPS"
+   ]
+  },
   "home_gps_search": {
    "group": "home",
    "needs": [

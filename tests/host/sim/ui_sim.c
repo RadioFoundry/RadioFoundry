@@ -2175,8 +2175,8 @@ static const ui_gps_sat_t sim_sats[] = {
 };
 #define SIM_SATS	(sizeof(sim_sats) / sizeof(sim_sats[0]))
 
-// "gps:none" / "gps:search" / "gps:fix": the GPS setting on, and the board has no GPS or one (CAP_GPS and its hooks),
-// so the status strip shows the GPS icon, with or without a fix. Without the token the board has none and the strip
+// "gps:none" / "gps:off" / "gps:search" / "gps:fix": the board has no GPS or one (CAP_GPS and its hooks), the GPS
+// setting off or on, so the status strip shows the GPS icon hollow, solid, or solid with a fix. Without the token the board has none and the strip
 // none, but the Position screens still read the fix below
 enum { SIM_GPS_NONE, SIM_GPS_SEARCH, SIM_GPS_FIX };
 static uint8_t sim_gps;
@@ -2201,9 +2201,10 @@ bool ui_svc_position(ui_position_t *out)
 }
 
 // The board's GPS and the setting, as stored (the menu's change counts at once)
-bool ui_svc_gps_on(void)
+uint8_t ui_svc_gps_power(void)
 {
-	return sim_gps != SIM_GPS_NONE && ui_svc_setting_get(UI_SET_GPS) != 0;
+	return sim_gps == SIM_GPS_NONE ? UI_GPS_POWER_NONE :
+	       ui_svc_setting_get(UI_SET_GPS) != 0 ? UI_GPS_POWER_ON : UI_GPS_POWER_OFF;
 }
 
 bool ui_svc_gps_sat(uint8_t i, ui_gps_sat_t *out)
@@ -3397,8 +3398,9 @@ static bool run_token(char *t, char *err, size_t len)
 		}
 		return true;
 	}
-	if (strcmp(t, "gps") == 0 && arg != NULL) {	// gps:none, gps:search, gps:fix (above ui_svc_position)
-		ui_svc_setting_set(UI_SET_GPS, 1);	// Settings > Location > GPS on: flows share the store
+	if (strcmp(t, "gps") == 0 && arg != NULL) {	// gps:none, gps:off, gps:search, gps:fix (above ui_svc_position)
+		// Settings > Location > GPS: flows share the store
+		ui_svc_setting_set(UI_SET_GPS, strcmp(arg, "off") != 0);
 		if (strcmp(arg, "none") != 0) {
 			sim_gps = strcmp(arg, "fix") == 0 ? SIM_GPS_FIX : SIM_GPS_SEARCH;
 			board.caps |= CAP_GPS;

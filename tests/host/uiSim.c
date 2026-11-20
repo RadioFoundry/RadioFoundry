@@ -144,8 +144,9 @@ static const struct { const char *name, *script; } gallery[] = {
 #endif
 #endif
 	{ "tools", "ok 6" },
-	{ "home_gps_search", "gps:search" },	// the status strip's GPS icon: on, no fix (hollow)
-	{ "home_gps_fix", "gps:fix" },		// with a fix (filled)
+	{ "home_gps_off", "gps:off" },		// the status strip's GPS dish: off (hollow)
+	{ "home_gps_search", "gps:search" },	// on, no fix (solid)
+	{ "home_gps_fix", "gps:fix" },		// with a fix (waves)
 	{ "position", "ok 6 2" },
 	{ "gps_sky", "ok 6 2 2" },
 	{ "gps_signal", "ok 6 2 3" },

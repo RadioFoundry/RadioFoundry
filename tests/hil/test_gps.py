@@ -16,7 +16,7 @@ view sections of every build with a position service.
   and on again: pos.gps_on follows, no bytes arrive while off, sentences come back once on. Skips without a module.
 - test_gps_fix (--manual: the owner takes the radio where it sees the sky): the board GPS is heard and gets a fix.
 - test_gps_status_icon: the status strip's GPS icon (ui.gps) is none without a module; with one it follows the fix
-  while the setting is on, and goes when it is off. The setting is put back.
+  while the setting is on, and is hollow while it is off. The setting is put back.
 """
 import time
 
@@ -162,9 +162,9 @@ def test_gps_power_switch(radio):
 
 @pytest.mark.feature("gps_icon")
 def test_gps_status_icon(radio):
-    """The status strip's GPS icon (ui.md 3, view key ui.gps: 0 none, 1 searching, 2 a fix): none on a radio
-    without a GPS whatever the setting; with one, searching or fixed as pos.gps_fix says while the setting is on, none
-    within a second or two of it going off."""
+    """The status strip's GPS icon (ui.md 3, view key ui.gps: 0 none, 1 off, 2 searching, 3 a fix): none on a
+    radio without a GPS whatever the setting; with one, searching or fixed as pos.gps_fix says while the setting is
+    on, off within a second or two of it going off."""
     v = _pos(radio)
     if "pos.gps_present" not in v:
         skip("not_built", "built without CONFIG_GPS")
@@ -179,13 +179,14 @@ def test_gps_status_icon(radio):
     was_on = v["pos.gps_on"] == "1"
     try:
         radio.link.setting("gps", 1)
-        radio.wait_for(lambda x: x.get("ui.gps") in ("1", "2"), timeout=3.0, sections=("link",),
+        radio.wait_for(lambda x: x.get("ui.gps") in ("2", "3"), timeout=3.0, sections=("link",),
                            what="the GPS icon with the GPS on")
         fix = _pos(radio).get("pos.gps_fix") == "1"
-        radio.wait_for(lambda x: x.get("ui.gps") == ("2" if fix else "1"), timeout=3.0, sections=("link",),
+        radio.wait_for(lambda x: x.get("ui.gps") == ("3" if fix else "2"), timeout=3.0, sections=("link",),
                            what="the icon as the fix says")
         radio.link.setting("gps", 0)
-        radio.wait_for(lambda x: x.get("ui.gps") == "0", timeout=3.0, sections=("link",), what="no icon with the GPS off")
+        radio.wait_for(lambda x: x.get("ui.gps") == "1", timeout=3.0, sections=("link",),
+                           what="the hollow icon with the GPS off")
     finally:
         radio.link.setting("gps", 1 if was_on else 0)
 

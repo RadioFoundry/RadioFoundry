@@ -2548,13 +2548,14 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 		dirty = true;
 	}
 #if CONFIG_GPS
-	// The GPS icon, once a second: fitted (a module is detected after start-up) and on, as the position service was
-	// last told (the menu, the debug link), then a fix or not (a fix counts for a minute: position.md)
+	// The GPS icon, once a second: fitted (a module is detected after start-up), off or on as the position service
+	// was last told (the menu, the debug link), then a fix or not (a fix counts for a minute: position.md)
 	static uint32_t gps_checked;
 	if (now - gps_checked >= 1000u) {
 		gps_checked = now;
 		ui_position_t p;
-		uint8_t gps = !ui_svc_gps_on() ? UI_GPS_OFF :
+		uint8_t pw = ui_svc_gps_power();
+		uint8_t gps = pw == UI_GPS_POWER_NONE ? UI_GPS_NONE : pw == UI_GPS_POWER_OFF ? UI_GPS_OFF :
 			      ui_svc_position(&p) && p.fix ? UI_GPS_FIX : UI_GPS_SEARCH;
 		if (gps != ui_st.gps) {
 			ui_st.gps = gps;

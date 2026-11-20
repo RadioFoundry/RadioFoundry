@@ -169,10 +169,10 @@ extern ui_layout_t ui_layout;
 // the computer has brought up, so IP over DMR can flow ("IP" and the up and down arrows, usb-network.md 1)
 enum { UI_USB_NET_OFF, UI_USB_NET_WAIT, UI_USB_NET_UP };
 
-// ui_state_t.gps: the status strip's GPS icon. None while the GPS is off (Settings > Location) or the radio has none
-// (board_has_gps: a module detected after start-up gets it then); searching (a hollow ring) while it is on without a
-// fix, silent included; fixed (a filled ring)
-enum { UI_GPS_OFF, UI_GPS_SEARCH, UI_GPS_FIX };
+// ui_state_t.gps: the status strip's GPS icon, a satellite dish. None on a radio without a GPS (board_has_gps: a module
+// detected after start-up gets it then); hollow while Settings > Location > GPS is off; solid while it is on without a
+// fix, silent included; solid with waves at the feed with a fix
+enum { UI_GPS_NONE, UI_GPS_OFF, UI_GPS_SEARCH, UI_GPS_FIX };
 
 // Colors carry meaning only (P5); every color cue also has a word. On 1 bpp panels everything is ink on paper and
 // pills are inverse video

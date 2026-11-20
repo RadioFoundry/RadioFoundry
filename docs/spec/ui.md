@@ -438,12 +438,14 @@ A"). The pill shows RX while data or CSBK bursts arrive on our slot and color co
 (`DMR_CALL_FADE_MS`) after the last one, even with no call running (`dmr_call.c` `data_receiving`). The green LED
 stays for a call being played.
 
-The status strip's GPS icon, left of the signal bars: a ring with a tick at the middle of each side, one cell high.
-Hollow while the GPS is on without a fix (silent included), filled with a fix (one under a minute old, position.md);
-the shape, not a color, tells them apart. None while Settings > Location > GPS is off or the radio has no GPS
-(`board_has_gps`: a module detected after start-up gets it then). On is what the position service was last told
-(`position_gps_enabled`), so a change from the debug link counts as one from the menu. The UI checks once a second (`ui_state_t.gps`,
-debug link view key `ui.gps`). On a radio without a GPS, Settings > Location > GPS reads Off whatever is stored: the
+The status strip's GPS icon, left of the signal bars: a satellite dish, rim up and to the right, about one cell high.
+Hollow while Settings > Location > GPS is off; solid while it is on without a fix (silent included); solid with two
+waves at the feed with a fix (one under a minute old, position.md). The shape, not a color, tells them apart. None on
+a radio without a GPS (`board_has_gps`: a module detected after start-up gets it then). The dish is drawn by hand at
+7, 9, 11 and 13 pixels, the tallest that fits the strip font, and always takes the waves' width, so the strip doesn't
+move when a fix comes. On is what the position service was last told
+(`position_gps_enabled`), so a change from the debug link counts as one from the menu. The UI checks once a second
+(`ui_state_t.gps`, debug link view key `ui.gps`). On a radio without a GPS, Settings > Location > GPS reads Off whatever is stored: the
 stored value stays, as the module is detected after start-up and its driver follows the setting once heard.
 
 Small displays (under 200 px tall) merge a screen's title into the status strip: the state pill shows only when not

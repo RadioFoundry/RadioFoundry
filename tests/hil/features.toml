@@ -219,7 +219,7 @@ hardware = "a GPS receiver"
 spec = "docs/spec/position.md"
 source = ["hal/hal_gps.h", "drivers/gps", "platform/stm32f4/gps_uart", "platform/hrc7000/gps_hrc.c"]
 
-# The status strip's GPS icon: none, searching, a fix (ui.md 3); part of GPS, no switch of its own
+# The status strip's GPS icon: none, off, searching, a fix (ui.md 3); part of GPS, no switch of its own
 [feature.gps_icon]
 requires = "GPS"
 spec = "docs/spec/ui.md"
