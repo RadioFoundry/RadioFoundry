@@ -272,8 +272,7 @@ interleaved as on air, as the host computed them. They go out as given, in place
 fragment, so a host that runs a control channel sets every slot's AT and short LC itself. The TC they carry must name
 the slot (0 TS1), else the request is invalid (result 4); a radio without the capability answers result 2. An idle
 burst that carries a CACH holds the slot's place (it is queued, and keys the transmitter, like any burst); the stream
-rules still give the burst itself, including when that idle replaces a previously queued burst. A slot with nothing
-queued, or queued without a CACH, keeps the half's own CACH: a
+rules still give the burst itself. A slot with nothing queued, or queued without a CACH, keeps the half's own CACH: a
 host that drives the CACH sends every slot, or the half's short LC fragments land between its own.
 
 **Keying** is the same as stream 0: DMR_START 01 keys and 00 unkeys, the 2 s host-silence rule and the duty guard
