@@ -109,6 +109,7 @@ and does not apply a correction. The radio restores ordinary channel frequencies
 context changes, scan or hotspot mode starts, or required inputs become invalid.
 
 Press **OK** again while the active satellite is selected, or leave its detail screen, to stop tracking and restore
-the previous channel or VFO settings. Opening the TLE editor or Quick settings does not stop tracking. If transmitting,
+the previous channel or VFO settings; leaving the screen shows a "Tracking stopped" notice. Opening the TLE editor or
+Quick settings does not stop tracking. If transmitting,
 the radio restores the settings after transmission ends. Starting a different satellite replaces the current tracking
 session. Tracking never bypasses normal transmit band, inhibit or active-transmission rules.

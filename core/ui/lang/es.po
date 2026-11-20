@@ -4607,6 +4607,11 @@ msgctxt "SATELLITE_TOAST_STOP_FAILED"
 msgid "Tracking not stopped"
 msgstr "Seguimiento no detenido"
 
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_TOAST_STOPPED"
+msgid "Tracking stopped"
+msgstr "Seguimiento detenido"
+
 #: core/ui/ui_screens.c
 msgctxt "TOP_STATE_IDLE"
 msgid "IDLE"

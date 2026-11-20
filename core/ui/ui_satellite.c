@@ -723,8 +723,13 @@ static void satellite_enter(void)
 
 static void satellite_leave(void)
 {
+	// The toast only when a session was active: it explains the retune a Back mid-pass just caused
+	radio_satellite_view_t satellite = {0};
+	ui_svc_satellite_view(&satellite);
 	if (!ui_svc_satellite_track(false, selected))
 		ui_toast(TR(SATELLITE_TOAST_STOP_FAILED, "Tracking not stopped"));
+	else if (satellite.tracking.tracking)
+		ui_toast(TR(SATELLITE_TOAST_STOPPED, "Tracking stopped"));
 }
 
 const ui_scr_def_t ui_satellite_screen = {

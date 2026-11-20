@@ -98,11 +98,13 @@ static QueueHandle_t requests;
 
 static volatile uint32_t req_handled, req_dropped;
 
-static void send(const radio_req_t *req, TickType_t wait)
+static bool send(const radio_req_t *req, TickType_t wait)
 {
 	if (xQueueSend(requests, req, wait) != pdTRUE) {
 		req_dropped++;	// the queue was full: the request is lost
+		return false;
 	}
+	return true;
 }
 
 #if CONFIG_DMR
@@ -623,11 +625,7 @@ bool radio_req_satellite_tracking(bool enabled, uint8_t record_index)
 	if (requests == NULL)
 		return false;
 	radio_req_t req = { .type = RREQ_SATELLITE_TRACK, .arg = enabled, .arg2 = record_index };
-	if (xQueueSend(requests, &req, 0) != pdTRUE) {
-		req_dropped++;
-		return false;
-	}
-	return true;
+	return send(&req, 0);
 }
 void radio_req_satellite_arm(void) { post(RREQ_SATELLITE_ARM, 0, 0); }
 #endif
