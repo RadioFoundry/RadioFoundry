@@ -1766,10 +1766,26 @@ DSTARMD := $(DSTARFR) $(CORE)/dstar/dstar_gmsk.c $(CORE)/dstar/dstar_engine.c
 dstarModemTest: dstarModemTest.c $(DSTARMD) $(wildcard $(CORE)/dstar/*.h)
 	$(CC) $(CFLAGS) -I. -Wshadow -o $@ dstarModemTest.c $(DSTARMD) -lm
 
+# The software voice codec (core/dstar/dstar_codec.c and its parts, docs/spec/dstar-codec.md): the quantizer against a
+# reference decoder, analysis and synthesis on synthetic signals, the frame FEC and the bit order, repeat and mute; then
+# the speech quality on generated signals and, when ffmpeg has flite, on its four voices (none written to disk)
+TESTS   += dstarCodecTest dstarCodecQualityTest
+DSTARCD := $(DSTARFR) $(CORE)/dstar/dstar_codec.c $(CORE)/dstar/dstar_ambe_frame.c $(CORE)/dstar/dstar_ambe_quant.c \
+	   $(CORE)/dstar/dstar_mbe_analysis.c $(CORE)/dstar/dstar_mbe_level.c $(CORE)/dstar/dstar_mbe_synth.c \
+	   $(CORE)/dstar/dstar_mbe_fixed.c $(CORE)/dmr/ambe/ambeFec.c
+
+dstarCodecTest: dstarCodecTest.c $(DSTARCD) $(wildcard $(CORE)/dstar/*.h $(CORE)/dstar/*.inc) $(CORE)/dmr/ambe/ambeFec.h
+	$(CC) $(CFLAGS) -I. -Wshadow -o $@ dstarCodecTest.c $(DSTARCD) -lm
+
+dstarCodecQualityTest: dstarCodecQualityTest.c $(DSTARCD) $(wildcard $(CORE)/dstar/*.h $(CORE)/dstar/*.inc)
+	$(CC) $(CFLAGS) -I. -Wshadow -o $@ dstarCodecQualityTest.c $(DSTARCD) -lm
+
 run: run-dstar
-run-dstar: dstarTest dstarModemTest
+run-dstar: dstarTest dstarModemTest dstarCodecTest dstarCodecQualityTest
 	./dstarTest
 	./dstarModemTest
+	./dstarCodecTest
+	./dstarCodecQualityTest
 ifneq ($(PYTHON),)
 	$(PYTHON) -B $(ROOT)/tools/dstar_ref.py --self-test
 	@$(PYTHON) -B $(ROOT)/tools/dstar_ref.py vectors | cmp -s - ../vectors/dstar.txt || \

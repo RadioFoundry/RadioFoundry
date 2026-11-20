@@ -6,12 +6,12 @@
 D-STAR digital voice (DV) on a radio whose only way to the air is an FM modulator and an FM discriminator: the GMSK
 modem, the DV framing (radio header, voice and data frames, slow data, the end pattern) and the engine that joins
 them to a board's flat FM audio taps. The voice codec is outside this layer, behind an interface (4); a software one
-is in `dstar-codec.md`.
+is in [dstar-codec.md](dstar-codec.md).
 
 Code: `core/dstar` (portable, integer only, host tested): `dstar_gmsk.c` (modem), `dstar_fec.c` (header coding),
 `dstar_frame.c` (framing, transmit and receive), `dstar_engine.c` (both joined for a board), `dstar_voice.h` (the codec
 interface), `dstar_codec.c` and the `dstar_ambe_*` and `dstar_mbe_*` files (the software codec,
-`dstar-codec.md`), `dstar_codeplug.c` (the channel kind, [dstar-codeplug.md](dstar-codeplug.md)); the
+[dstar-codec.md](dstar-codec.md)), `dstar_codeplug.c` (the channel kind, [dstar-codeplug.md](dstar-codeplug.md)); the
 radio core's side in `core/radio/radio_dstar.c` (5.3). Build switch: `CONFIG_DSTAR`, off by default and on where a board
 with the glue has room ([build-config.md](../build-config.md), Variants; [feature-matrix.md](../feature-matrix.md)).
 Tests: `tests/host/dstarTest.c`, `tests/host/dstarModemTest.c`, `tests/host/radioDstarTest.c`, vectors in
@@ -96,7 +96,7 @@ part, the screens, the debug link and the board's flat paths), measured 2026-11-
 | Flash | 47,882 B: the codec 27.3 KB (quantizer and its tables 14.5 KB, analysis 4.0 KB, the shared fixed-point tables 4.8 KB, synthesis 2.7 KB, frame FEC 0.8 KB), the modem, framing and engine 5.8 KB, the radio core's part 5.2 KB, the debug link 2.3 KB, the screens 1.2 KB, the board's flat paths 1.1 KB, the rest in the radio core, Home's drawing and the translations |
 | RAM, static | 2,592 B: the radio core's part 1,244 B (the engine 632 B, two voice rings of 16 frames, the view), the copies of the view in the tasks that keep one, the screens 121 B, the board 47 B |
 | Codec state | 8,380 B, not static: in the DMR vocoder's 13 KB of state, which it lends while DMR is off (`hal_vocoder_t.lend`). Without the loan D-STAR runs without voice |
-| Stack | the encoder 1,288 B and the decoder 336 B on the audio task (1,452 B deepest with the port overhead, of the 6,144 B sized for the stock codec's call: `dstar-codec.md` 6); the receive path's 256 B buffer and the engine on the radio task; the transmit pull on the interrupt stack |
+| Stack | the encoder 1,288 B and the decoder 336 B on the audio task (1,452 B deepest with the port overhead, of the 6,144 B sized for the stock codec's call: [dstar-codec.md](dstar-codec.md) 6); the receive path's 256 B buffer and the engine on the radio task; the transmit pull on the interrupt stack |
 | Settings | 40 B more in every build (the station and the bench's calibration, [settings-store.md](settings-store.md)), so the full image of that radio grew by 280 B of RAM (the copies of `settings_t`) without D-STAR in it |
 
 CPU per 20 ms frame, against the 3.36 M cycles a frame of a 168 MHz processor: estimated, not measured. The codec's
@@ -334,9 +334,9 @@ lost-packet frame (`9E 8D 32 88 26 1A 3F 61 E8`, JARL 6.6) as silence.
 A board fills `dstar_vocoder_t` with a codec. `dstar_codec.c` is a software AMBE 3600x2400 codec that does
 (`dstar_codec_vocoder`): integer only, one 8,380 B state shared by both directions, 1.3 KB of stack, about 27 KB of
 flash, an estimated 32 MHz (35 at worst) of a C-SKY CK803S to encode and 14 MHz (30 at worst) to decode. Its structure, cost,
-quality, limits and provenance are in `dstar-codec.md`. It reads the lost-packet frame back as near
+quality, limits and provenance are in [dstar-codec.md](dstar-codec.md). It reads the lost-packet frame back as near
 silence, and that frame, decoding with no Golay corrections, is what proves the air bit order above
-(`dstar-codec.md` 5).
+([dstar-codec.md](dstar-codec.md) 5).
 
 ## 5. The engine
 

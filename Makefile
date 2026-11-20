@@ -361,6 +361,9 @@ ABOUT_MORE :=
 ifeq ($(CONFIG_IMBE),y)
 ABOUT_MORE += core/mbe/THIRD_PARTY
 endif
+ifeq ($(CONFIG_DSTAR),y)
+ABOUT_MORE += core/dstar/THIRD_PARTY
+endif
 $(shell python3 tools/gen_about.py AUTHORS platform/$(PLATFORM)/THIRD_PARTY $(BUILD)/gen/rfoundry_about.h $(ABOUT_MORE) | grep -q changed \
 	&& rm -f $(ABOUT_OBJ))
 # The language tables (tools/i18n.py, core/ui/lang/*.po) and the text keys every file that includes i18n.h needs
