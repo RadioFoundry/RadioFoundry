@@ -483,7 +483,7 @@ The number belongs to a call when the grant from that gateway to the same destin
 
 ### 7.7 Packet data (6.6.3)
 
-The Hytera Tier III site tested sends individual packet data grants with FID `0x08` and absolute channel
+Some Tier III systems send individual packet data grants with FID `0x08` and absolute channel
 number `0xFFF`. The first continuation gives the channel definition. The radio waits for the last
 continuation and verifies the CRC across both continuations before following the grant.
 

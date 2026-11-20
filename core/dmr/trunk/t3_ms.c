@@ -2338,9 +2338,9 @@ void t3_ms_rx(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t dt, uint8_t cc, c
 		if (!have) {
 			return;
 		}
-		bool hytera = ms->mbc[si].hdr.fid == T3_FID_HYTERA;
-		if (hytera && d[0] == T3_OP_PD_GRANT && !ms->mbc[si].has_intermediate) {
-			// The Hytera grant puts its absolute channel in the first of two continuations.
+		bool fid08 = ms->mbc[si].hdr.fid == T3_FID_08;
+		if (fid08 && d[0] == T3_OP_PD_GRANT && !ms->mbc[si].has_intermediate) {
+			// The FID 0x08 grant puts its absolute channel in the first of two continuations.
 			memcpy(ms->mbc[si].intermediate, d, T3_CSBK_BYTES);
 			ms->mbc[si].has_intermediate = true;
 			ms->mbc[si].open = true;
@@ -2348,8 +2348,8 @@ void t3_ms_rx(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t dt, uint8_t cc, c
 			return;
 		}
 		t3_cdef_t c;
-		bool valid = hytera ?
-			ms->mbc[si].has_intermediate && t3_hytera_pd_cdef_parse(ms->mbc[si].intermediate, d, &c) :
+		bool valid = fid08 ?
+			ms->mbc[si].has_intermediate && t3_fid08_pd_cdef_parse(ms->mbc[si].intermediate, d, &c) :
 			t3_crc_ok(d, 0) && t3_cdef_parse(d, ms->mbc[si].hdr.op, &c);
 		if (!valid) {
 			ms->st.crc_bad++;

@@ -8908,6 +8908,81 @@ static void test_t3_sdata(void)
 	dmr_start(true);
 	sim.repeater = true;
 	t3_stage_start();
+	radio_t3_setup_t *s = radio_t3_staged();
+	s->sd_dst = 1000001u;
+	s->sd_group = false;
+	s->sd_format = T3_UDTF_ISO8;
+	memcpy(s->sd_data, "hello trunk world", 17);
+	s->sd_len = 17;
+	unsigned before = t3_sent(T3_OP_C_RAND);
+	req(RREQ_T3, RADIO_T3_SDATA);
+	t3_site_run(600);
+	CHECK(t3_sent(T3_OP_C_RAND) > before && radio_t3v.ax_svc == T3_SVC_SDATA);
+
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_IND_UDT;
+	h.u.ahoy.blocks = 1;
+	h.u.ahoy.dst = T3_OWN;
+	h.u.ahoy.src = T3_ID_SDMI;
+	unsigned from = sim.air_count;
+	t3_csbk_rx(&h, 1);
+	t3_site_run(400);
+	int hdr = -1;
+	for (unsigned i = from; i < sim.air_count; i++) {
+		if (sim.air[i].kind == DMR_BURST_DATA_HEADER) {
+			hdr = (int)i;
+			break;
+		}
+	}
+	CHECK(hdr >= 0 && (unsigned)hdr + 2u < sim.air_count);
+	if (hdr >= 0 && (unsigned)hdr + 2u < sim.air_count) {
+		const sim_air_t *a = &sim.air[hdr];
+		t3_udt_t u;
+		CHECK(t3_udt_parse(a->payload, &u) && u.op == T3_OP_C_UDTHU && u.dst == 1000001u && u.src == T3_OWN &&
+		      u.blocks == 2 && u.format == T3_UDTF_ISO8);
+		CHECK(sim.air[hdr + 1].kind == DMR_BURST_RATE_12_DATA && sim.air[hdr + 2].kind == DMR_BURST_RATE_12_DATA);
+		// One frame apart each: consecutive inbound slots of the TSCC's slot
+		CHECK(sim.air[hdr + 1].slot == a->slot + 2u && sim.air[hdr + 2].slot == a->slot + 4u);
+		uint8_t blk[2][T3_UDT_BLOCK];
+		memcpy(blk[0], sim.air[hdr + 1].payload, T3_UDT_BLOCK);
+		memcpy(blk[1], sim.air[hdr + 2].payload, T3_UDT_BLOCK);
+		CHECK(t3_udt_crc_ok((const uint8_t (*)[T3_UDT_BLOCK])blk, 2) && memcmp(blk, "hello trunk world", 17) == 0);
+	}
+	CHECK(radio_t3v.send_fail == 0);
+
+	// A download to the radio
+	uint8_t blk[T3_UDT_BLOCKS_MAX][T3_UDT_BLOCK], pad, d[T3_CSBK_BYTES];
+	t3_udt_t u = { .op = T3_OP_C_UDTHD, .a = true, .format = T3_UDTF_ISO8, .dst = T3_OWN, .src = 1000001u };
+	u.blocks = t3_udt_pack((const uint8_t *)"hi there", 8, 0xFF, blk, &pad);
+	u.pad = pad;
+	t3_udt_build(&u, d);
+	before = t3_sent(T3_OP_C_ACKU);
+	t3_data_rx(DMR_BURST_DATA_HEADER, d, 1);
+	run(60);
+	t3_data_rx(DMR_BURST_RATE_12_DATA, blk[0], 1);
+	t3_site_run(300);
+	CHECK(radio_t3v.sd_count == 1 && radio_t3v.sd_len == 8 && memcmp(radio_t3v.sd_data, "hi there", 8) == 0 &&
+	      radio_t3v.sd_src == 1000001u);
+	CHECK(t3_sent(T3_OP_C_ACKU) > before);
+	// ... into the message inbox, as a message from the sender
+	int msgs = sms_inbox_count();
+	CHECK(msgs >= 1);
+	if (msgs >= 1) {
+		const dmrDataMessage_t *m = dmrDataServiceMessage(0);
+		CHECK(m->src == 1000001u && !m->group && strcmp(m->text, "hi there") == 0 && m->unread);
+	}
+	while (sms_inbox_count() > 0 && sms_inbox_delete(0)) {
+	}
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
+static void test_t3_udt_sms(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
 	static const uint8_t expected[] = { 0, 'H', 0, 'e', 0, 'l', 0, 'l', 0, 'o', 0, '!' };
 	unsigned before = t3_sent(T3_OP_C_RAND);
 	CHECK(sms_send(1000001u, false, "Hello!", true, DMR_SMS_FORMAT_DEFAULT));
@@ -8982,6 +9057,25 @@ static void test_t3_sdata(void)
 }
 // Packet data (6.6.3): the data service's message waits while the radio asks the TSCC for a data channel, then goes on
 // the granted slot without preambles; data to the radio on a payload channel reaches the data service
+static void test_t3_sms_ip_selection(void)
+{
+	// Automatic falls back on a 24-character message; explicitly configured ETSI IP can send even a short one.
+	for (unsigned i = 0; i < 2; i++) {
+		dmr_start(true);
+		sim.repeater = true;
+		t3_stage_start();
+		if (i != 0)
+			CHECK(ui_svc_setting_set(UI_SET_MSG_FORMAT, DMR_SMS_FORMAT_ETSI_IP));
+		CHECK(sms_send(1000001u, false, i == 0 ? "123456789012345678901234" : "Hello!",
+			       true, DMR_SMS_FORMAT_DEFAULT));
+		t3_site_run(600);
+		CHECK(radio_t3v.ax_svc == T3_SVC_PDATA);
+		req(RREQ_T3, RADIO_T3_STOP);
+		run(100);
+		sim.repeater = false;
+	}
+}
+
 static void test_t3_pdata(void)
 {
 	dmr_start(true);
@@ -10383,6 +10477,8 @@ int main(void)
 	test_t3_talk();
 	test_t3_one_carrier();
 	test_t3_sdata();
+	test_t3_udt_sms();
+	test_t3_sms_ip_selection();
 	test_t3_radio_check();
 	test_t3_clear_slot();
 #if CONFIG_DMR_TRUNK_GW

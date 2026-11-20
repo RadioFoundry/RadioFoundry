@@ -2318,9 +2318,9 @@ static void udt_down(t3_ms_t *ms, uint8_t slot, const t3_udt_t *h, const uint8_t
 	poll_all(ms);
 }
 
-// Hytera FID 0x08 packet grant: the capture has a channel definition and a second continuation.
+// FID 0x08 packet grant: the capture has a channel definition and a second continuation.
 // The backhaul carries ten bytes per block. Rebuild the air CRCs for the simulated bursts.
-static void test_hytera_pdata_grant(void)
+static void test_fid08_pdata_grant(void)
 {
 	t3_ms_t ms;
 	setup(T3_OPT_PRIVATE, true);
@@ -2331,7 +2331,7 @@ static void test_hytera_pdata_grant(void)
 	g.lb = false;
 	uint8_t hdr[T3_CSBK_BYTES];
 	CHECK(t3_csbk_build(&g, T3_CRC_MASK_MBC_HDR, hdr), "build grant header");
-	hdr[1] = T3_FID_HYTERA;
+	hdr[1] = T3_FID_08;
 	t3_crc_append(hdr, T3_CRC_MASK_MBC_HDR);
 	const uint8_t first[T3_CSBK_BYTES] = { 0x33, 0, 0, 0xC0, 0x49, 0x10, 0, 0x12, 0x32, 0xC0 };
 	uint8_t last[T3_CSBK_BYTES] = { 0xB3, 0, 0x20, 0, 0x7F, 0xF8 };
@@ -2358,7 +2358,7 @@ static void test_hytera_pdata_grant(void)
 	T += 60;
 	t3_ms_rx(&ms, T, 1, T3_DT_MBC_CONT, CC, last);
 	CHECK(ms.state == T3_FOLLOW && ms.call.data && ms.call.ours && ms.ax.result == T3_RES_GRANTED,
-	      "follow the validated Hytera grant");
+	      "follow the validated FID 0x08 grant");
 	poll_all(&ms);
 	CHECK(tuned.payload && tuned.slot == 2 && tuned.chan.tx_hz == 145000000u &&
 	      tuned.chan.rx_hz == 145600000u, "tune to the captured absolute channel");
@@ -3200,7 +3200,7 @@ int main(void)
 	test_dial();
 	test_cli_call();
 	test_pdata();
-	test_hytera_pdata_grant();
+	test_fid08_pdata_grant();
 	test_pdata_ip();
 	test_ip_advice();
 	test_deregister();

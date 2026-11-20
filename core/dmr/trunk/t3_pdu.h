@@ -48,7 +48,7 @@
 #define T3_OP_TD_GRANT_MI	56
 #define T3_OP_C_MOVE		57
 
-#define T3_FID_HYTERA		0x08u	// feature ID seen on Hytera absolute packet data grants
+#define T3_FID_08		0x08u	// manufacturer FID used on some absolute packet data grants
 
 // Gateway and special addresses (A.4)
 #define T3_ID_PSTNI		0xFFFEC0u	// PSTN, PABX, line and dispatcher gateways (aligned timing): dialed digits
@@ -314,7 +314,7 @@ bool t3_csbk_parse(const uint8_t pdu[T3_CSBK_BYTES], t3_csbk_t *out);
 bool t3_csbk_build(const t3_csbk_t *in, uint16_t mask, uint8_t pdu[T3_CSBK_BYTES]);
 
 // MBC continuation (last) block holding CdefParms. The CRC over octets 0-9 is unmasked.
-bool t3_hytera_pd_cdef_parse(const uint8_t first[T3_CSBK_BYTES], const uint8_t last[T3_CSBK_BYTES],
+bool t3_fid08_pd_cdef_parse(const uint8_t first[T3_CSBK_BYTES], const uint8_t last[T3_CSBK_BYTES],
 			     t3_cdef_t *out);
 bool t3_cdef_parse(const uint8_t blk[T3_CSBK_BYTES], uint8_t op, t3_cdef_t *out);
 void t3_cdef_build(const t3_cdef_t *in, uint8_t op, uint8_t blk[T3_CSBK_BYTES]);

@@ -12,6 +12,8 @@
 #include "codeplug/codeplug.h"
 #include "hal_time.h"
 
+static dmrDataMessage_t inbox_message;	// shared by the UI task; too big for its stack
+
 uint32_t ui_svc_feat_data(void)
 {
 	return (CONFIG_DMR_SMS ? UI_FEAT_SMS : 0) | (CONFIG_DMR_SIGNALING ? UI_FEAT_SIGNALING : 0) |
@@ -42,16 +44,15 @@ uint16_t ui_svc_msg_unread(void)
 
 bool ui_svc_msg_get(uint16_t i, ui_msg_t *out)
 {
-	static dmrDataMessage_t m;	// too big for the UI task's stack
-	if (!sms_inbox_get(i, &m))
+	if (!sms_inbox_get(i, &inbox_message))
 		return false;
 	memset(out, 0, sizeof *out);
-	out->src = m.src;
-	out->group = m.group;
-	out->unread = m.unread;
-	out->age_ms = hal_millis() - m.receivedAt;
-	contact_name(m.src, false, out->name, sizeof out->name);
-	strncpy(out->text, m.text, UI_MSG_TEXT_MAX);
+	out->src = inbox_message.src;
+	out->group = inbox_message.group;
+	out->unread = inbox_message.unread;
+	out->age_ms = hal_millis() - inbox_message.receivedAt;
+	contact_name(inbox_message.src, false, out->name, sizeof out->name);
+	strncpy(out->text, inbox_message.text, UI_MSG_TEXT_MAX);
 	out->text[UI_MSG_TEXT_MAX] = 0;
 	return true;
 }
@@ -75,8 +76,7 @@ bool ui_svc_msg_send(uint32_t dst, bool group, const char *text)
 
 bool ui_svc_msg_reply(uint16_t i, const char *text)
 {
-	static dmrDataMessage_t m;
-	return sms_inbox_get(i, &m) && sms_send(m.src, false, text, true, (dmr_sms_format_t)m.format);
+	return sms_inbox_get(i, &inbox_message) && sms_send(inbox_message.src, false, text, true, (dmr_sms_format_t)inbox_message.format);
 }
 
 static uint32_t check_sent_ms;

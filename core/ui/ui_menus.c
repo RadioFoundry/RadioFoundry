@@ -6602,13 +6602,14 @@ static const tr_id_t n_autooff[] = { TRN(VALUE_OFF, "Off"), TRN(VALUE_30_MIN, "3
 	TRX(VALUE_2_H, "2 h") };
 #if CONFIG_DMR_SMS
 static const int16_t v_msgfmt[] = {
-	2, 1,	// dmr_sms_format_t: ETSI IP text, ETSI short data, Motorola TMS
+	255, 2, 1,	// dmr_sms_format_t: Automatic, ETSI IP text, ETSI short data, Motorola TMS
 #if CONFIG_DMR_TMS
 	0,
 #endif
 };
 static const tr_id_t n_msgfmt[] = {
-	TRX(SET_VALUE_MSGFMT_ETSI, "ETSI"), TRN(SET_VALUE_MSGFMT_ETSI_SHORT, "ETSI short"),
+	TRN(SET_VALUE_MSGFMT_AUTOMATIC, "Automatic"), TRX(SET_VALUE_MSGFMT_ETSI, "ETSI"),
+	TRN(SET_VALUE_MSGFMT_ETSI_SHORT, "ETSI short"),
 #if CONFIG_DMR_TMS
 	TRX(VALUE_MOTOROLA, "Motorola"),
 #endif

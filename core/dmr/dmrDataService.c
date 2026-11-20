@@ -8,6 +8,7 @@
 #include <string.h>
 #include "config.h"
 #include "dmr/dmrDataService.h"
+#include "dmr/trunk/t3_pdu.h"
 #include "dmr/dmr_data_api.h"
 #if CONFIG_DMR_EMERGENCY
 #include "dmr/dmr_emergency.h"
@@ -71,7 +72,7 @@ _Static_assert(DMR_DATA_TX_PREAMBLES >= IP_PREAMBLES, "more preambles where they
 
 static dmrDataEnv_t env;
 static dmrDataSettings_t settings = { .radioCheckReply = true, .callAlertAck = true, .lrrpReply = true,
-										.smsFormat = DMR_SMS_FORMAT_ETSI_IP, .udpCompress = DMR_UDPC_AUTO,
+										.smsFormat = DMR_SMS_FORMAT_DEFAULT, .udpCompress = DMR_UDPC_AUTO,
 										.ipConfirmed = DMR_IPC_RULES, .ipConfirmedTries = DMR_IPC_TRIES_DEFAULT };
 static bool passthrough;				// control station: IP based packets to us belong to the PC
 static dmrDataChannel_t channel;
@@ -1098,7 +1099,6 @@ static bool smsTransmit(void)
 		txKind = TXK_SMS;
 		txRunning = true;
 		stats.smsSent++;
-		stats.etsiSmsSent++;
 		return true;
 	}
 	if (sms.tries == 0)
@@ -1197,22 +1197,32 @@ static bool smsFormatBuilt(uint8_t format)
 
 bool dmrDataServiceSendSMSFormat(bool group, uint32_t dst, const char *text, bool ackRequested, uint8_t format)
 {
-	bool useUdt = format == DMR_SMS_FORMAT_T3_UDT || (format == DMR_SMS_FORMAT_DEFAULT && channel.trunked);
-	if (useUdt && !channel.trunked)
-	{
-		return false;
-	}
-	if (format == DMR_SMS_FORMAT_DEFAULT)
-	{
-		// A setting this build can't send (TMS stored by a build with it): the standard default instead
-		format = smsFormatBuilt(settings.smsFormat) ? settings.smsFormat : DMR_SMS_FORMAT_ETSI_IP;
-	}
-	if (!useUdt && !smsFormatBuilt(format))
-	{
-		return false;
-	}
 	if (!CONFIG_DMR_SMS || (sms.state == DMR_REQ_QUEUED) || (sms.state == DMR_REQ_SENDING) || (text == NULL) ||
 			(text[0] == '\0') || (dst == 0))
+	{
+		return false;
+	}
+
+	if (format == DMR_SMS_FORMAT_DEFAULT)
+	{
+		format = settings.smsFormat;
+		if (format == DMR_SMS_FORMAT_DEFAULT)
+		{
+			format = channel.trunked && channel.privacy.mode == DMR_DATA_PRIVACY_CLEAR && env.txSmsUdt != NULL ?
+					DMR_SMS_FORMAT_T3_UDT : DMR_SMS_FORMAT_ETSI_IP;
+		}
+		else if (!smsFormatBuilt(format))
+		{
+			// A format stored by another build (such as TMS): use IP text.
+			format = DMR_SMS_FORMAT_ETSI_IP;
+		}
+	}
+	if (format == DMR_SMS_FORMAT_T3_UDT && (!channel.trunked || strlen(text) > T3_UDT_MAX / 2u))
+	{
+		format = DMR_SMS_FORMAT_ETSI_IP;
+	}
+	bool useUdt = format == DMR_SMS_FORMAT_T3_UDT;
+	if (!useUdt && !smsFormatBuilt(format))
 	{
 		return false;
 	}

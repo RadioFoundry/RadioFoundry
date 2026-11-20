@@ -2597,10 +2597,7 @@ static bool data_t3_sms(uint32_t dst, bool group, const char *text, uint32_t now
 	if (!sm->t3_on || sm->ptt || t3m.state != T3_CAMPED || len > sizeof utf16 / 2u) {
 		return false;
 	}
-	for (size_t i = 0; i < len; i++) {
-		utf16[2 * i] = 0;
-		utf16[2 * i + 1] = (uint8_t)text[i];
-	}
+	(void)dmrDataLatin1ToUtf16BE(text, utf16, len);
 	if (!t3_ms_sdata(&t3m, now_ms, dst, group, T3_UDTF_UTF16, utf16, (uint8_t)(2 * len))) {
 		return false;
 	}
@@ -2788,8 +2785,8 @@ static void data_save_settings(uint32_t now_ms)
 	st->ds_flags = (uint8_t)((cur.radioCheckReply ? SETTINGS_DS_RADIO_CHECK_REPLY : 0) |
 				 (cur.callAlertAck ? SETTINGS_DS_CALL_ALERT_ACK : 0) |
 				 (cur.lrrpReply ? SETTINGS_DS_LRRP_REPLY : 0) |
-				 (cur.smsFormat == DMR_SMS_FORMAT_ETSI ? SETTINGS_DS_SMS_ETSI : 0) |
-				 (cur.smsFormat == DMR_SMS_FORMAT_ETSI_IP ? SETTINGS_DS_SMS_ETSI_IP : 0) |
+				 (cur.smsFormat == DMR_SMS_FORMAT_ETSI || cur.smsFormat == DMR_SMS_FORMAT_DEFAULT ? SETTINGS_DS_SMS_ETSI : 0) |
+				 (cur.smsFormat == DMR_SMS_FORMAT_ETSI_IP || cur.smsFormat == DMR_SMS_FORMAT_DEFAULT ? SETTINGS_DS_SMS_ETSI_IP : 0) |
 				 (cur.radioCheckEtsi ? SETTINGS_DS_RADIO_CHECK_ETSI : 0) |
 				 (cur.udpCompress == DMR_UDPC_OFF ? SETTINGS_DS_UDPC_OFF : 0) |
 				 (cur.udpCompress == DMR_UDPC_ALL ? SETTINGS_DS_UDPC_ALL : 0));
@@ -2926,7 +2923,7 @@ static void data_init(radio_sm_t *sm)
 	// source
 	// IP packets: compressed headers where the ports allow, confirmed only for the rules the user sets
 	dmrDataSettings_t set = { .arsServer = 0, .radioCheckReply = true, .callAlertAck = true, .lrrpReply = true,
-				  .hasGps = false, .smsFormat = DMR_SMS_FORMAT_ETSI_IP, .udpCompress = DMR_UDPC_AUTO,
+				  .hasGps = false, .smsFormat = DMR_SMS_FORMAT_DEFAULT, .udpCompress = DMR_UDPC_AUTO,
 				  .ipConfirmed = DMR_IPC_RULES, .ipConfirmedTries = DMR_IPC_TRIES_DEFAULT };
 #if CONFIG_DMR_LRRP
 	// The position service answers (data_own_position). A source can come later (a GPS found after start-up, a fixed
@@ -2942,10 +2939,11 @@ static void data_init(radio_sm_t *sm)
 				      (st->ds_flags & SETTINGS_DS_RADIO_CHECK_REPLY) != 0;
 		set.callAlertAck = (st->ds_flags & SETTINGS_DS_CALL_ALERT_ACK) != 0;
 		set.lrrpReply = (st->ds_flags & SETTINGS_DS_LRRP_REPLY) != 0;
-		// A record from before ETSI IP text has neither format bit: TMS, as that firmware sent (only the default
-		// changed, docs/spec/dmr-data.md 8)
-		set.smsFormat = (st->ds_flags & SETTINGS_DS_SMS_ETSI_IP) ? DMR_SMS_FORMAT_ETSI_IP :
-				(st->ds_flags & SETTINGS_DS_SMS_ETSI) ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
+		// Both format bits indicate Automatic. Earlier records have at most one bit set; neither means TMS.
+		uint8_t fmt = st->ds_flags & (SETTINGS_DS_SMS_ETSI | SETTINGS_DS_SMS_ETSI_IP);
+		set.smsFormat = fmt == (SETTINGS_DS_SMS_ETSI | SETTINGS_DS_SMS_ETSI_IP) ? DMR_SMS_FORMAT_DEFAULT :
+				fmt == SETTINGS_DS_SMS_ETSI_IP ? DMR_SMS_FORMAT_ETSI_IP :
+				fmt == SETTINGS_DS_SMS_ETSI ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
 		set.radioCheckEtsi = (st->ds_flags & SETTINGS_DS_RADIO_CHECK_ETSI) != 0;
 		set.udpCompress = (st->ds_flags & SETTINGS_DS_UDPC_OFF) ? DMR_UDPC_OFF :
 				  (st->ds_flags & SETTINGS_DS_UDPC_ALL) ? DMR_UDPC_ALL : DMR_UDPC_AUTO;
