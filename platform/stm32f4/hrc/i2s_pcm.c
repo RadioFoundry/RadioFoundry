@@ -70,7 +70,7 @@ static const stm32_i2s_pcm_cfg_t *cfg;
 
 #if CONFIG_AIR
 #define FIFO_TASK_PRIORITY	(configMAX_PRIORITIES - 1)
-#define FIFO_TASK_STACK		160	// words
+#define FIFO_TASK_STACK		176	// words: 704 B, the stack check's 336 deepest + 208 port + 128 margin, and a few
 _Static_assert(AUDIO_BLOCK_SAMPLES % PCM_RING_CHUNK == 0, "a block is whole chunks");
 _Static_assert(PCM_RING_CHUNK == HRC_PROMPT_CHUNK, "a ring chunk is one FIFO write");
 static pcm_ring_t *ring;		// from the heap with the feeder, on the first FIFO use
