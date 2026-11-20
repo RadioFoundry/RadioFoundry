@@ -1435,6 +1435,7 @@
  "flash.usmart.codec.version_unknown": "未知",
  "flash.iap.lead": "电台通过其原始加载器的工厂更新模式进行安装。加载器本身绝不会被写入。",
  "flash.iap.step_go": "选择“安装”。电台编程工具随后会监听电台。",
+ "flash.iap.step_go_silent": "当电台按上述步骤显示更新模式后，选择“安装”。写入会立即开始。",
  "flash.iap.go": "安装",
  "flash.iap.careful_text": "安装期间屏幕保持空白，约需几分钟。完成后电台会自动在 RadioFoundry 中开机。",
  "flash.iap.careful_text_gd88": "安装期间更新界面保持显示，约需几分钟。如果完成后电台没有自行启动，请关闭再开机。",

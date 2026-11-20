@@ -202,7 +202,10 @@ BOARD_SCHEMA = {
         # hold: the keys held to enter it, by their key names (the board's KEY_* in lower case, as the drawing's
         # key-<name> ids), for the web flasher's picture; steps stays the instructions
         "bootloader": _req({"keys": _opt(str), "steps": _req(STR_LIST), "id": _opt(str), "sign": _opt(str),
-                            "hold": _opt(STR_LIST)}),
+                            "hold": _opt(STR_LIST),
+                            # false: the loader prints no banner when it starts in update mode; the web flasher lists
+                            # the steps first and writes when Install is selected, without listening for one
+                            "banner": _opt(bool)}),
         # layout: the bootloader's alt 0 interface string, only once read from a radio in its bootloader. The
         # flashers then accept no other device; without it they refuse a layout of only the bootloader's sectors
         # (rfoundry dfu.py normal_mode)
@@ -1617,6 +1620,8 @@ def _site_flash(b):
         flash["notice"] = fl["notice"]
     if fl.get("led_hints") is False:
         flash["led_hints"] = False
+    if fl["bootloader"].get("banner") is False:
+        flash["update_banner"] = False
     if stub:
         flash["stub_tested"] = stub["tested"]
     return flash

@@ -1435,6 +1435,7 @@
  "flash.usmart.codec.version_unknown": "sconosciuta",
  "flash.iap.lead": "La radio si installa tramite la modalità di aggiornamento di fabbrica del suo loader originale. Il loader stesso non viene mai scritto.",
  "flash.iap.step_go": "Scegli Installa. L'utility di programmazione si mette poi in ascolto della radio.",
+ "flash.iap.step_go_silent": "Quando la radio mostra la modalità di aggiornamento come dicono i passi precedenti, scegli Installa. La scrittura inizia subito.",
  "flash.iap.go": "Installa",
  "flash.iap.careful_text": "Lo schermo resta vuoto durante l'installazione, che richiede diversi minuti. La radio si accende da sola in RadioFoundry al termine.",
  "flash.iap.careful_text_gd88": "La schermata di aggiornamento resta accesa durante l'installazione, che richiede diversi minuti. Se al termine la radio non si avvia da sola, spegnila e riaccendila.",

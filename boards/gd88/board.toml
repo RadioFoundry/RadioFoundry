@@ -74,6 +74,7 @@ what = "the spare pool, the top 10 usable blocks: blocks 1998-2047 hold them wit
 
 [flash.bootloader]
 hold = ["sk1"]	# while turning the volume knob on
+banner = false	# the loader prints nothing when it starts in update mode
 steps = [
 	"Turn the radio off and connect the programming cable.",
 	"Hold SK1 and turn the radio on with the volume knob. When the LED lights red and the top line shows IAP_A or IAP_B, release SK1. It can take more than one try.",

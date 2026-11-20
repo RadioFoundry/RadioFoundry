@@ -392,12 +392,16 @@ export function makeStockRoutes(host) {
 		const prog = progressBar();
 		const status = h("div");
 		const steps = S().radio.flash.bootloader || [];
+		// a loader that prints no banner (flash.update_banner false): the radio is put in update mode first, and Install
+		// writes at once
+		const silent = S().radio.flash.update_banner === false;
+		const stepGo = h("li", {}, t(silent ? "flash.iap.step_go_silent" : restore ? "flash.iap.restore_step_go" : "flash.iap.step_go"));
 		const go = button(t(restore ? "flash.iap.restore_go" : "flash.iap.go"), async () => { if (!confirm || (await confirm())) run(); }, { primary: true });
 		const box = panel(title, cableBanner(),	// a CH340 cable: the warning here too (programming through update mode)
 			rows.length ? h("dl", { class: "kv-list" }, ...rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)])) : null,
 			gate ? gate(go) : null, ...notices,
 			h("p", {}, lead || t(restore ? "flash.iap.restore_lead" : "flash.iap.lead")),
-			withPicture(h("ol", { class: "steps c7-big" }, h("li", {}, t(restore ? "flash.iap.restore_step_go" : "flash.iap.step_go")), ...steps.map((x) => h("li", {}, x)))),
+			withPicture(h("ol", { class: "steps c7-big" }, !silent && stepGo, ...steps.map((x) => h("li", {}, x)), silent && stepGo)),
 			simKeys(),
 			h("div", { class: "notice" }, h("p", {}, h("b", {}, t("flash.c7.write.careful"))), h("p", {}, t(own(TEXTS[protocol()].careful)))),
 			prog.el, status, h("details", { class: "small" }, h("summary", {}, t("flash.c7.log")), c.log.el));
@@ -424,7 +428,7 @@ export function makeStockRoutes(host) {
 				const loader = c.loader?.ready && c.loader.s === c.stream ? c.loader : (c.loader = makeLoader(c));
 				// a loader that answered the probe is waiting already: its banner was printed before the page asked
 				if (c.iapReady) c.iapReady = false;
-				else if (!loader.ready) await loader.listen(LISTEN_MS, { signal: stop.signal });
+				else if (!loader.ready && !silent) await loader.listen(LISTEN_MS, { signal: stop.signal });
 				if (left()) throw new Error("stopped");
 				if (!allowed()) throw new Error(t("flash.variant.nothing_written"));
 				writing = true;
