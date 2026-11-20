@@ -718,6 +718,25 @@ static int dropBurst(dmrBurst_t *b, int n, int i)
 
 // Our confirmed packets (TS 102 361-1 9.2.1, 8.2.2.2) byte for byte against the vectors, and the selective retry
 // round trip through the receiver: a bad block, a lost block, a CRC-32 failure with good blocks
+static void testDedicatedConfirmedTx(void)
+{
+	dmrBurst_t bursts[12];
+	const uint8_t pdu[8] = {0x02, 0x01, 0x00, 0x04, 0x68, 0x07, 0x00, 0x01};
+	uint8_t want[12];
+	int n = dmrDataBuildDedicatedConfirmed(0xFFFD02, 101123, pdu, sizeof(pdu), 0, true, 0, 1, bursts, 12);
+	CHECK(n == 5 && bursts[0].dataType == DMR_TYPE_CSBK && bursts[0].payload[3] == 4);
+	hex("4398fffd02018b038308102d", want);
+	CHECK(bursts[1].dataType == DMR_TYPE_DATA_HEADER && memcmp(bursts[1].payload, want, 12) == 0);
+	hex("9f680000000000000000c4fa", want);
+	CHECK(bursts[2].dataType == DMR_TYPE_DATA_HEADER && memcmp(bursts[2].payload, want, 12) == 0);
+	CHECK(bursts[3].dataType == DMR_TYPE_RATE_1_2 && (bursts[3].payload[0] >> 1) == 0 &&
+	      memcmp(&bursts[3].payload[2], pdu, sizeof(pdu)) == 0);
+	CHECK(bursts[4].dataType == DMR_TYPE_RATE_1_2 && (bursts[4].payload[0] >> 1) == 1);
+	n = dmrDataBuildDedicatedConfirmed(0xFFFD02, 101123, pdu, sizeof(pdu), 0, false, 1ULL << 1, 0, bursts, 12);
+	CHECK(n == 3 && bursts[0].payload[8] == 2 &&
+	      memcmp(bursts[1].payload, want, 12) == 0 && (bursts[2].payload[0] >> 1) == 1);
+}
+
 static void testConfirmedTx(void)
 {
 	dmrBurst_t b[DMR_DATA_MAX_BURSTS], r[2];
@@ -1295,6 +1314,7 @@ int main(void)
 	testIpAddresses();
 	testCRC9();
 	testConfirmedTx();
+	testDedicatedConfirmedTx();
 	testAirtime();
 	testFrames();
 	testCodedFrames();

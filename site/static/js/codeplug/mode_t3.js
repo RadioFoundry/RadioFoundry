@@ -20,11 +20,12 @@ export const OPTS = {
 	registerTalkgroups: 0x0040, acceptAls: 0x0080, acceptKill: 0x0100, noRoaming: 0x0200, acceptStun: 0x0400,
 	ipGateway: 0x1000,
 };
-const OPT_MASK = Object.values(OPTS).reduce((a, b) => a | b, 0);
+const DEDICATED_DATA = 0x2000;
+const OPT_MASK = Object.values(OPTS).reduce((a, b) => a | b, DEDICATED_DATA);
 
 export function newT3System() {
 	return {
-		model: 0, net: 0, category: "a", colorCode: 1, ...Object.fromEntries(Object.keys(OPTS).map((k) => [k, k === "privateCalls"])),
+		model: 0, net: 0, category: "a", colorCode: 1, profile: "standard", ...Object.fromEntries(Object.keys(OPTS).map((k) => [k, k === "privateCalls"])),
 		fallbackHold: 0, planBaseHz: 0, planFirstLcn: 0, planSep: 0, planTxLow: false, planNoLearn: false, planSplitHz: 0,
 		leaveDbm: 0, powerSave: 0, sites: [],
 	};
@@ -34,6 +35,7 @@ function decodeBlock(v) {
 	const opts = u16(v, 5);
 	const s = {
 		model: u8(v, 0) & 3, net: u16(v, 1), category: u8(v, 3) === 2 ? "b" : "a", colorCode: u8(v, 4) & 0x0F,
+		profile: (opts & DEDICATED_DATA) ? "hytera" : "standard",
 		fallbackHold: u8(v, 7), planBaseHz: u32(v, 8), planFirstLcn: u16(v, 12), planSep: u8(v, 14) & 7,
 		planTxLow: (u8(v, 15) & 1) !== 0, planNoLearn: (u8(v, 15) & 2) !== 0, planSplitHz: u32(v, 16), leaveDbm: s8(v, 20),
 		powerSave: u8(v, 21) <= 7 ? u8(v, 21) : 0, sites: [],
@@ -49,7 +51,8 @@ function encodeBlock(s, prev) {
 	put16(v, 1, s.net);
 	v[3] = s.category === "b" ? 2 : 1;
 	v[4] = s.colorCode & 0x0F;
-	put16(v, 5, (u16(v, 5) & ~OPT_MASK) | Object.entries(OPTS).reduce((a, [k, bit]) => a | (s[k] ? bit : 0), 0));
+	const profile = s.profile === "hytera" ? DEDICATED_DATA : 0;
+	put16(v, 5, (u16(v, 5) & ~OPT_MASK) | Object.entries(OPTS).reduce((a, [k, bit]) => a | (s[k] ? bit : 0), profile));
 	v[7] = s.fallbackHold & 0xFF;
 	put32(v, 8, s.planBaseHz || 0);
 	put16(v, 12, s.planFirstLcn || 0);
@@ -116,6 +119,9 @@ export const t3System = {
 		{ key: "net", label: "editor.t3.net", type: "int", min: 0, max: (s) => netMax(s.model), section: "identity", help: "editor.t3.net_help" },
 		{ key: "category", label: "editor.t3.category", type: "select", options: () => [["a", "A"], ["b", "B"]], section: "identity", help: "editor.t3.category_help" },
 		{ key: "colorCode", label: "editor.t3.color_code", type: "select", options: () => [...Array(16).keys()].map((n) => [n, String(n)]), section: "identity", help: "editor.t3.color_code_help" },
+		{ key: "profile", label: "editor.t3.profile", type: "select", section: "identity",
+		  options: () => [["standard", "editor.t3.profile.standard"], ["hytera", "editor.t3.profile.hytera"]],
+		  help: "editor.t3.profile_help" },
 		...optionFields("identity"),
 		...optionFields("radio"),
 		{ key: "powerSave", label: "editor.t3.power_save", type: "select", options: () => [...Array(8).keys()].map((n) => [n, n ? `1:${2 ** n}` : "editor.general.off"]), section: "radio", help: "editor.t3.power_save_help" },

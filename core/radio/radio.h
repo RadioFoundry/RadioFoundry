@@ -275,6 +275,7 @@ typedef struct {
 	bool ip_gw;		// off-net IP goes to the system's IP gateway (IPI), not the conventional off-net ID
 	bool ip_advised;	// the system took the radio's IP address at registration (6.4.11)
 	bool confirmed;
+	bool dedicated_data;
 	uint16_t syscode;	// C_SYScode of the confirmed TSCC
 	uint16_t tscc_lcn;
 	uint32_t rx_hz, tx_hz;	// where the radio is tuned

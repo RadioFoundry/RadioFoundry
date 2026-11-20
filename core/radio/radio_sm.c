@@ -2445,6 +2445,11 @@ static void data_rx(const dmr_burst_t *b, uint32_t now_ms, void *ctx)
 	d.flags = b->crc_ok ? 0 : DMR_BURST_FLAG_RX_CRC_ERROR;
 	memcpy(d.payload, b->payload, d.length);
 #if CONFIG_DMR_TRUNK_TX
+	if (t3m.state == T3_FOLLOW && t3_dedicated_data(t3m.cfg) && t3m.call.data && !t3m.call.ours && !t3m.call.group &&
+	    t3m.call.src == T3_ID_PDDI &&
+	    (t3m.call.dst == t3m.cfg->own_id || t3m.call.dst == t3m.cfg->reg_id)) {
+		d.flags |= DMR_BURST_FLAG_RX_DEDICATED;
+	}
 	if (b->kind != DMR_BURST_CSBK) {
 		t3_ms_data_heard(&t3m, now_ms);	// a reply on the radio's data channel holds it a while longer
 	}
@@ -2963,6 +2968,7 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_DMR_TRUNK
 	if (sm->t3_on) {
 		// A trunked system: the call's talkgroup; one registration for the system, whichever channel it is on
+		c.dedicatedData = t3_dedicated_data(t3m.cfg);
 		c.talkGroup = t3m.state == T3_FOLLOW && t3m.call.group ? t3m.call.dst : 0;
 		vals[0] = t3s.cfg.own_id;
 		vals[1] = vals[2] = vals[3] = 0;
@@ -3267,6 +3273,7 @@ static void t3_publish(radio_sm_t *sm)
 	v->state = (uint8_t)m->state;
 	v->reg = (uint8_t)m->reg;
 	v->confirmed = m->confirmed;
+	v->dedicated_data = sm->t3_on && t3_dedicated_data(m->cfg);
 	v->syscode = m->syscode;
 	v->tscc_lcn = m->tscc.lcn;
 	v->rx_hz = sm->view.ch.rx_hz;

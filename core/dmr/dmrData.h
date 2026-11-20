@@ -47,6 +47,7 @@
 
 // Burst flags
 #define DMR_BURST_FLAG_MCU_CRC		0x01		// TX: payload already holds its CRC / mask, the HR-C6000 must send it verbatim
+#define DMR_BURST_FLAG_RX_DEDICATED	0x04		// RX: the burst is on a dedicated packet-data downlink
 #define DMR_BURST_FLAG_RX_CRC_ERROR	0x02		// RX: the HR-C6000 reported a CRC error for this burst
 
 typedef struct
@@ -295,6 +296,12 @@ uint16_t dmrDataCRC9(const uint8_t *data, int length, uint8_t serial);
 // header and the blocks. 0 if it doesn't fit
 int dmrDataBuildConfirmed(uint8_t sap, uint32_t dst, uint32_t src, const uint8_t *pdu, int length, uint8_t blockType,
 						uint8_t ns, bool firstTry, uint64_t blocks, int preambles, dmrBurst_t *out, int maxBursts);
+int dmrDataBuildDedicatedConfirmed(uint32_t dst, uint32_t src, const uint8_t *pdu, int length, uint8_t ns,
+							   bool firstTry, uint64_t blocks, int preambles, dmrBurst_t *out, int maxBursts);
+// The dedicated v2 SMS envelope. The encoder borrows the shared transmit scratch space until the next build.
+int dmrDataEncodeDedicatedText(const uint8_t *udp, int udpLength, uint32_t src, uint32_t dst,
+							  uint16_t packetId, const uint8_t **pdu);
+bool dmrDataDecodeDedicatedText(const dmrDataPacket_t *p, uint32_t *src, char *text, int textSize);
 // The number of blocks a confirmed packet of length octets takes (0: more than DMR_CONFIRMED_MAX_BLOCKS)
 int dmrDataConfirmedBlocks(int length, uint8_t blockType);
 #if CONFIG_DMR_TMS	// Motorola TMS format support (docs/spec/dmr-data.md 5.1)

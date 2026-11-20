@@ -13,6 +13,7 @@
 #include "dmr/dmr_emergency.h"
 #endif
 #include "dmr/call/dmr_lc.h"
+#include "dmr/trunk/t3_pdu.h"
 #if CONFIG_ZONE_SHARE
 #include "dmr/zoneShare.h"
 #endif
@@ -108,6 +109,7 @@ static bool txPending = false;			// waiting for a clear channel
 static bool txRunning = false;			// given to the host, waiting for dmrDataServiceTxDone
 static uint32_t txPendingSince;
 static bool txIsReply;
+static bool txDedicated;
 static uint8_t txKind;
 static uint16_t txGuardMs = DMR_DATA_TX_GUARD_MS;
 static bool txChain = true;
@@ -136,6 +138,7 @@ typedef struct
 	uint8_t sap;
 	bool tms;							// Motorola TMS ACK
 	uint8_t tmsSeq;
+	bool dedicated;
 	bool sack;							// a selective ACK: flags follow
 	uint8_t flags[8];
 } pendingReply_t;
@@ -294,6 +297,7 @@ static bool queueTx(int count, uint8_t kind)
 	txBurstCount = count;
 	txPendingSince = now;
 	txIsReply = false;
+	txDedicated = false;
 	txKind = kind;
 	txPending = true;
 	txGuardCounted = false;
@@ -436,6 +440,7 @@ static struct
 	bool group;
 	bool compress;
 	bool confirmed;
+	bool dedicated;
 	bool sms;							// our own text, ETSI IP or TMS (smsFinish at the end), not the gateway's
 	bool tmsAck;						// our TMS ACK: nothing to report at the end
 	bool firstTry;						// the next transmission is the packet's first (F set, every block)
@@ -633,8 +638,20 @@ static void ipTransmit(void)
 	// Our own address follows the channel's ID (sent from the channel's ID, as the gateway's packets are)
 	uint32_t srcIp = (ipx.srcIp != DMR_DATA_IP_OURS) ? ipx.srcIp : dmrDataIdAddress(false, channel.ownId);
 	uint32_t dstIp = (ipx.dstIp != DMR_DATA_IP_OURS) ? ipx.dstIp : dmrDataIdAddress(ipx.group, ipx.dst);
-	int n = dmrDataEncodeIP(ipx.group, ipx.dst, channel.ownId, dstIp, srcIp, ipx.ttl, ipx.protocol, ipx.l4, ipx.length,
+	bool dedicated = CONFIG_DMR_TRUNK_DEDICATED_DATA && ipx.dedicated;
+	uint32_t linkDst = dedicated ? T3_ID_PDUI : ipx.dst;
+	uint8_t confirmedRate = dedicated ? DMR_TYPE_RATE_1_2 : ipConfirmedRate;
+	int n;
+	if (dedicated)
+	{
+		ipx.sap = DMR_SAP_PROPRIETARY;
+		n = dmrDataEncodeDedicatedText(ipx.l4, ipx.length, channel.ownId, ipx.dst, ipx.ipId, &pdu);
+	}
+	else
+	{
+		n = dmrDataEncodeIP(ipx.group, ipx.dst, channel.ownId, dstIp, srcIp, ipx.ttl, ipx.protocol, ipx.l4, ipx.length,
 							ipx.compress, ipx.ipId, &pdu, &ipx.sap);
+	}
 	int count = 0;
 
 	if (n <= 0)
@@ -645,14 +662,24 @@ static void ipTransmit(void)
 	if (ipx.confirmed)
 	{
 		// One burst kept for the terminator
-		count = dmrDataBuildConfirmed(ipx.sap, ipx.dst, channel.ownId, pdu, n, ipConfirmedRate, ipx.ns, ipx.firstTry,
-										(ipx.blocks != 0) ? ipx.blocks : ~0ULL, ipCnfPreambles(), txBursts, DMR_DATA_MAX_BURSTS - 1);
+		uint64_t blocks = ipx.blocks != 0 ? ipx.blocks : ~0ULL;
+		int preambles = ipCnfPreambles();
+		count = dedicated ?
+				dmrDataBuildDedicatedConfirmed(linkDst, channel.ownId, pdu, n, ipx.ns, ipx.firstTry, blocks, preambles,
+											txBursts, DMR_DATA_MAX_BURSTS - 1) :
+				dmrDataBuildConfirmed(ipx.sap, linkDst, channel.ownId, pdu, n, confirmedRate, ipx.ns, ipx.firstTry, blocks,
+									  preambles, txBursts, DMR_DATA_MAX_BURSTS - 1);
 		if ((count == 0) && (ipx.tries == 0))
 		{
+			if (dedicated)
+			{
+				ipFinish(DMR_REQ_FAILED);
+				return;
+			}
 			stats.ipCnfTooLong++;// longer than one confirmed packet can carry: as it would go without the setting
 			ipx.confirmed = false;
 		}
-		count = widenPreambles(false, ipx.dst, count, ipCnfPreambles(), DMR_DATA_MAX_BURSTS - 1);
+		count = widenPreambles(false, linkDst, count, ipCnfPreambles(), DMR_DATA_MAX_BURSTS - 1);
 		if ((count > 0) && !channel.rmo)
 		{
 			terminatorLC(ipx.dst, channel.ownId, ipx.firstTry, ipx.ns, &txBursts[count++]);
@@ -705,9 +732,10 @@ static void ipTransmit(void)
 		ipFinish(DMR_REQ_FAILED);
 		return;
 	}
+	txDedicated = dedicated;
 	if (ipx.tries == 0)
 	{
-		dmrDataCountIpTx(ipx.sap, pdu, n, ipx.confirmed ? ipConfirmedRate : IP_UNCONFIRMED_RATE, ipx.confirmed);
+		dmrDataCountIpTx(ipx.sap, pdu, n, ipx.confirmed ? confirmedRate : IP_UNCONFIRMED_RATE, ipx.confirmed);
 		stats.ipConfirmed += ipx.confirmed ? 1 : 0;
 	}
 	else
@@ -749,6 +777,7 @@ static void ipDelivered(void)
 		txPending = false;
 	}
 	nsSet(ipx.dst, ipx.ns + 1);
+	ipx.dedicated = false;
 	ipx.sms = false;// the caller ends the message
 	ipx.state = IPX_IDLE;
 }
@@ -972,7 +1001,9 @@ static bool ipResponse(const dmrDataPacket_t *packet)
 	bool late = ((ipx.state == IPX_QUEUED) && (ipx.tries > 0)) ||
 				((ipx.state == IPX_SENDING) && (txKind == TXK_IP) && (txRunning || (txPending && (ipx.tries > 1))));
 
-	if (((ipx.state != IPX_WAITING) && !late) || !ipx.confirmed || (packet->src != ipx.dst) || (packet->sap != ipx.sap))
+	bool dedicated = CONFIG_DMR_TRUNK_DEDICATED_DATA && ipx.dedicated;
+	uint32_t ackSource = dedicated ? T3_ID_PDUI : ipx.dst;
+	if (((ipx.state != IPX_WAITING) && !late) || !ipx.confirmed || (packet->src != ackSource) || (packet->sap != ipx.sap))
 	{
 		return false;
 	}
@@ -986,7 +1017,8 @@ static bool ipResponse(const dmrDataPacket_t *packet)
 	switch (DMR_RESPONSE_CLASS(r))
 	{
 		case 0:
-			if ((DMR_RESPONSE_TYPE(r) != 1) || (status != ipx.ns))
+			// The dedicated uplink gateway can return zero after accepting a nonzero send sequence.
+			if ((DMR_RESPONSE_TYPE(r) != 1) || ((status != ipx.ns) && !(dedicated && status == 0)))
 			{
 				return false;// not the ACK of this packet
 			}
@@ -1119,6 +1151,8 @@ static bool smsTransmit(void)
 		}
 		ipStartOwn(sms.dst, smsL4, n, compress);
 		ipx.sms = true;
+		ipx.dedicated = CONFIG_DMR_TRUNK_DEDICATED_DATA && channel.dedicatedData &&
+						channel.privacy.mode == DMR_DATA_PRIVACY_CLEAR && sms.format == DMR_SMS_FORMAT_ETSI_IP;
 		ipTransmit();
 		if (ipx.state != IPX_SENDING)
 		{
@@ -2075,6 +2109,19 @@ void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *ch)
 	}
 	if (ch != NULL)
 	{
+		if (CONFIG_DMR_TRUNK_DEDICATED_DATA && channel.dedicatedData && !ch->dedicatedData)
+		{
+			// An upload, response or partial reception belongs to the system that started it.
+			dmrDataRxReset();
+			if (txDedicated && txPending)
+			{
+				txPending = false;
+			}
+			if (ipx.dedicated && ipx.state != IPX_IDLE)
+			{
+				ipFinish(DMR_REQ_FAILED);
+			}
+		}
 		channel = *ch;
 	}
 	dmrDataSetPrivacy(&channel.privacy);
@@ -2096,7 +2143,7 @@ void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *ch)
 
 		replyReadIdx = (replyReadIdx + 1) % REPLY_QUEUE_SIZE;
 
-		if ((now - reply.queuedAt) > REPLY_QUEUE_MAX_AGE_MS)
+		if ((now - reply.queuedAt) > REPLY_QUEUE_MAX_AGE_MS || (reply.dedicated && !channel.dedicatedData))
 		{
 			continue;
 		}
@@ -2114,6 +2161,7 @@ void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *ch)
 		{
 			queueReply(dmrDataBuildResponse(reply.sap, reply.dst, channel.ownId, reply.response, reply.sack ? reply.flags : NULL,
 											txBursts));
+			txDedicated = reply.dedicated;
 			stats.responsesSent++;
 		}
 		break;
@@ -2271,6 +2319,8 @@ static void queueReplyEntry(const pendingReply_t *reply)
 	if (next != replyReadIdx)// full: the sender will retry
 	{
 		replyQueue[replyWriteIdx] = *reply;
+		replyQueue[replyWriteIdx].dedicated = CONFIG_DMR_TRUNK_DEDICATED_DATA && channel.dedicatedData &&
+											 reply->dst == T3_ID_PDDI && reply->sap == DMR_SAP_PROPRIETARY;
 		replyWriteIdx = next;
 	}
 }
@@ -2486,6 +2536,7 @@ static void handlePacket(const dmrDataPacket_t *packet)
 	bool isTMS = false;
 #endif
 	uint8_t format = DMR_SMS_FORMAT_TMS;
+	uint32_t messageSrc = packet->src;
 
 	if (toPc && !(isTMS && tms.isAck))
 	{
@@ -2500,6 +2551,20 @@ static void handlePacket(const dmrDataPacket_t *packet)
 		stats.smsAcked++;
 		smsFinish(DMR_REQ_OK);
 		return;
+	}
+
+	// The link ACK still addresses the gateway. The inbox identifies the sender from the envelope.
+	if (CONFIG_DMR_TRUNK_DEDICATED_DATA && CONFIG_DMR_SMS && channel.dedicatedData && confirmed && packet->src == T3_ID_PDDI)
+	{
+		if (!toPc && packet->sap == DMR_SAP_PROPRIETARY &&
+		    dmrDataDecodeDedicatedText(packet, &messageSrc, tms.text, sizeof(tms.text)))
+		{
+			isTMS = true;
+			format = DMR_SMS_FORMAT_ETSI_IP;
+			tms.isAck = false;
+			tms.ackRequested = false;
+			tms.seq = 0;
+		}
 	}
 
 	// ETSI IP text (TS 102 361-3 5.7.1, UDP 5016): into the inbox; no acknowledgment of its own (confirmed data got
@@ -2563,7 +2628,7 @@ static void handlePacket(const dmrDataPacket_t *packet)
 	{
 		const dmrDataMessage_t *m = dmrDataServiceMessage(i);
 
-		if ((m->src == packet->src) && (m->dst == packet->dst) && (m->group == packet->group) &&
+		if ((m->src == messageSrc) && (m->dst == packet->dst) && (m->group == packet->group) &&
 				(m->format == format) &&
 				((now - m->receivedAt) < DUPLICATE_MESSAGE_MS) && (strcmp(m->text, tms.text) == 0))
 		{
@@ -2572,7 +2637,7 @@ static void handlePacket(const dmrDataPacket_t *packet)
 		}
 	}
 
-	inboxStore(packet->src, packet->dst, packet->group, tms.seq, format, tms.text);
+	inboxStore(messageSrc, packet->dst, packet->group, tms.seq, format, tms.text);
 	stats.etsiSmsReceived += (format == DMR_SMS_FORMAT_ETSI) ? 1 : 0;
 	stats.ipTextReceived += (format == DMR_SMS_FORMAT_ETSI_IP) ? 1 : 0;
 }
@@ -2581,7 +2646,7 @@ void dmrDataServiceInboxAdd(uint32_t src, uint32_t dst, bool group, const char *
 {
 	if (CONFIG_DMR_SMS && (text[0] != '\0'))
 	{
-		inboxStore(src, dst, group, 0, DMR_SMS_FORMAT_ETSI, text);
+		inboxStore(src, dst, group, 0, DMR_SMS_FORMAT_ETSI_IP, text);
 	}
 }
 
@@ -2959,7 +3024,7 @@ bool sms_send(uint32_t dst, bool group, const char *text, bool ack_requested, dm
 	bool ok = false;
 
 	if (!CONFIG_DMR_SMS || (text == NULL) || (text[0] == '\0') || (dst == 0) ||
-			(!smsFormatBuilt(format) && (format != DMR_SMS_FORMAT_DEFAULT)))
+			(!smsFormatBuilt(format) && format != DMR_SMS_FORMAT_DEFAULT))
 	{
 		return false;
 	}

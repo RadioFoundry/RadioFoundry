@@ -16,7 +16,7 @@ _Static_assert(RADIO_T3_SYSTEMS == CODEPLUG_SYSTEMS_RUN, "an imported system lan
 // system code takes effect only while the system runs listen only (t3_channel): a radio never registers on a system
 // it only heard
 #define CP_OPTS		(T3_OPT_ALLCALL | T3_OPT_EMERGENCY_ANY | T3_OPT_MONITOR | T3_OPT_LEARN_SYSCODE | T3_OPT_PRIVATE | \
-			 T3_OPT_REG_TG | T3_OPT_ALS | T3_OPT_KILL | T3_OPT_NO_ROAM | T3_OPT_STUN)
+			 T3_OPT_REG_TG | T3_OPT_ALS | T3_OPT_KILL | T3_OPT_NO_ROAM | T3_OPT_STUN | T3_OPT_DEDICATED_DATA)
 #define OPT_IP_GW	0x1000u		// off-net IP through the system's IP gateway (the radio core's, not the engine's)
 
 // The type's block (1): the fields up to the site count, then the sites

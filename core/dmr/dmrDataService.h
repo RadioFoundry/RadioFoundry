@@ -54,6 +54,7 @@ typedef struct
 	uint32_t talkGroup;						// the channel's talkgroup (group data to it is ours); 0: none
 	bool     rmo;							// through a repeater
 	bool     canTransmit;					// a DMR channel we may send on now: not RX only, in band, no hotspot
+	bool     dedicatedData;					// uses the Tier III dedicated packet-data service
 	uint32_t channelKey;					// changes with the frequency, slot or color code (ARS registers again)
 	dmrDataPrivacy_t privacy;				// the channel's data privacy (dmrData.h): data encrypted or held back
 } dmrDataChannel_t;
