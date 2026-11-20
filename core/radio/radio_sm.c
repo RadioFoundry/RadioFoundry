@@ -2395,6 +2395,7 @@ static struct {
 #if CONFIG_DMR_TRUNK_TX
 	// A Tier III system: list waits while the engine gets a packet data channel for it (data_t3_tick)
 	bool t3_wait;
+	bool t3_sms;		// waiting for a short data result
 	bool t3_asked;
 	bool t3_group;
 	uint32_t t3_dst;
@@ -2590,6 +2591,23 @@ static void data_t3_fail(uint8_t err)
 	dmrDataServiceTxDone(err);
 }
 
+// Tier III UDT uses UTF-16BE without a BOM or terminator. The editor supplies Latin-1.
+static bool data_t3_sms(uint32_t dst, bool group, const char *text, uint32_t now_ms, void *ctx)
+{
+	const radio_sm_t *sm = ctx;
+	uint8_t utf16[T3_UDT_MAX];
+	size_t len = strlen(text);
+	if (!sm->t3_on || sm->ptt || t3m.state != T3_CAMPED || len > sizeof utf16 / 2u) {
+		return false;
+	}
+	(void)dmrDataLatin1ToUtf16BE(text, utf16, len);
+	if (!t3_ms_sdata(&t3m, now_ms, dst, group, T3_UDTF_UTF16, utf16, (uint8_t)(2 * len))) {
+		return false;
+	}
+	data_tx.t3_sms = true;
+	return true;
+}
+
 // From t3_tick: ask for the channel, send once on it, or give the list back failed
 static void data_t3_tick(radio_sm_t *sm, uint32_t now_ms)
 {
@@ -2597,6 +2615,11 @@ static void data_t3_tick(radio_sm_t *sm, uint32_t now_ms)
 		// The single item (and any confirmed retries) is over: so is the radio's data call (dmr-trunking.md 7.7)
 		data_tx.t3_sent = false;
 		t3_ms_data_done(&t3m, now_ms, dmrDataServiceIpFailures() == data_tx.t3_failures);
+	}
+	if (data_tx.t3_sms && (t3m.ax.svc != T3_SVC_SDATA || t3m.ax.state == T3_AX_IDLE)) {
+		bool ok = t3m.ax.svc == T3_SVC_SDATA && t3m.ax.result == T3_RES_DONE;
+		data_tx.t3_sms = false;
+		dmrDataServiceTxDone(ok ? DMR_TX_OK : DMR_TX_ERR_NO_REPEATER);
 	}
 	if (!data_tx.t3_wait) {
 		return;
@@ -2765,8 +2788,8 @@ static void data_save_settings(uint32_t now_ms)
 	st->ds_flags = (uint8_t)((cur.radioCheckReply ? SETTINGS_DS_RADIO_CHECK_REPLY : 0) |
 				 (cur.callAlertAck ? SETTINGS_DS_CALL_ALERT_ACK : 0) |
 				 (cur.lrrpReply ? SETTINGS_DS_LRRP_REPLY : 0) |
-				 (cur.smsFormat == DMR_SMS_FORMAT_ETSI ? SETTINGS_DS_SMS_ETSI : 0) |
-				 (cur.smsFormat == DMR_SMS_FORMAT_ETSI_IP ? SETTINGS_DS_SMS_ETSI_IP : 0) |
+				 (cur.smsFormat == DMR_SMS_FORMAT_ETSI || cur.smsFormat == DMR_SMS_FORMAT_DEFAULT ? SETTINGS_DS_SMS_ETSI : 0) |
+				 (cur.smsFormat == DMR_SMS_FORMAT_ETSI_IP || cur.smsFormat == DMR_SMS_FORMAT_DEFAULT ? SETTINGS_DS_SMS_ETSI_IP : 0) |
 				 (cur.radioCheckEtsi ? SETTINGS_DS_RADIO_CHECK_ETSI : 0) |
 				 (cur.udpCompress == DMR_UDPC_OFF ? SETTINGS_DS_UDPC_OFF : 0) |
 				 (cur.udpCompress == DMR_UDPC_ALL ? SETTINGS_DS_UDPC_ALL : 0));
@@ -2882,6 +2905,9 @@ static void data_init(radio_sm_t *sm)
 	dmrDataEnv_t env = { .txStart = data_tx_start, .channelClear = data_channel_clear,
 			     .inRxGroup = data_in_rx_group, .ctx = sm,
 			     .noRate34 = board.dmr != NULL && board.dmr->tx_rate34_bad };
+#if CONFIG_DMR_TRUNK_TX
+	env.txSmsUdt = data_t3_sms;
+#endif
 #if CONFIG_DMR_AIR_QUEUE
 	airqInit();
 #endif
@@ -2900,7 +2926,7 @@ static void data_init(radio_sm_t *sm)
 	// source
 	// IP packets: compressed headers where the ports allow, confirmed only for the rules the user sets
 	dmrDataSettings_t set = { .arsServer = 0, .radioCheckReply = true, .callAlertAck = true, .lrrpReply = true,
-				  .hasGps = false, .smsFormat = DMR_SMS_FORMAT_ETSI_IP, .udpCompress = DMR_UDPC_AUTO,
+				  .hasGps = false, .smsFormat = DMR_SMS_FORMAT_DEFAULT, .udpCompress = DMR_UDPC_AUTO,
 				  .ipConfirmed = DMR_IPC_RULES, .ipConfirmedTries = DMR_IPC_TRIES_DEFAULT };
 #if CONFIG_DMR_LRRP
 	// The position service answers (data_own_position). A source can come later (a GPS found after start-up, a fixed
@@ -2916,10 +2942,11 @@ static void data_init(radio_sm_t *sm)
 				      (st->ds_flags & SETTINGS_DS_RADIO_CHECK_REPLY) != 0;
 		set.callAlertAck = (st->ds_flags & SETTINGS_DS_CALL_ALERT_ACK) != 0;
 		set.lrrpReply = (st->ds_flags & SETTINGS_DS_LRRP_REPLY) != 0;
-		// A record from before ETSI IP text has neither format bit: TMS, as that firmware sent (only the default
-		// changed, docs/spec/dmr-data.md 8)
-		set.smsFormat = (st->ds_flags & SETTINGS_DS_SMS_ETSI_IP) ? DMR_SMS_FORMAT_ETSI_IP :
-				(st->ds_flags & SETTINGS_DS_SMS_ETSI) ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
+		// Both format bits indicate Automatic. Earlier records have at most one bit set; neither means TMS.
+		uint8_t fmt = st->ds_flags & (SETTINGS_DS_SMS_ETSI | SETTINGS_DS_SMS_ETSI_IP);
+		set.smsFormat = fmt == (SETTINGS_DS_SMS_ETSI | SETTINGS_DS_SMS_ETSI_IP) ? DMR_SMS_FORMAT_DEFAULT :
+				fmt == SETTINGS_DS_SMS_ETSI_IP ? DMR_SMS_FORMAT_ETSI_IP :
+				fmt == SETTINGS_DS_SMS_ETSI ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
 		set.radioCheckEtsi = (st->ds_flags & SETTINGS_DS_RADIO_CHECK_ETSI) != 0;
 		set.udpCompress = (st->ds_flags & SETTINGS_DS_UDPC_OFF) ? DMR_UDPC_OFF :
 				  (st->ds_flags & SETTINGS_DS_UDPC_ALL) ? DMR_UDPC_ALL : DMR_UDPC_AUTO;
@@ -2963,6 +2990,7 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_DMR_TRUNK
 	if (sm->t3_on) {
 		// A trunked system: the call's talkgroup; one registration for the system, whichever channel it is on
+		c.trunked = true;
 		c.talkGroup = t3m.state == T3_FOLLOW && t3m.call.group ? t3m.call.dst : 0;
 		vals[0] = t3s.cfg.own_id;
 		vals[1] = vals[2] = vals[3] = 0;
@@ -3683,6 +3711,10 @@ static void t3_leave(radio_sm_t *sm)
 #if CONFIG_DMR_DATA_CORE && CONFIG_DMR_TRUNK_TX
 	if (data_tx.t3_wait) {
 		data_t3_fail(DMR_TX_ERR_REJECTED);	// the system went before its channel came
+	}
+	if (data_tx.t3_sms) {
+		data_tx.t3_sms = false;
+		dmrDataServiceTxDone(DMR_TX_ERR_REJECTED);
 	}
 	data_tx.t3_sent = false;	// its data call went with the engine: not the next engine's to end
 #endif
