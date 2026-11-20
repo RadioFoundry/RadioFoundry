@@ -133,7 +133,7 @@ export function importRows(m, rows, zoneName = "CHIRP", notes = new Map()) {
 			rxTone: t.rx, txTone: t.tx, bw: mode === "NFM" ? 12.5 : 25, rxOnly, allSkip: r.skip === "S",
 			zoneSkip: false, vox: false, squelch: 0, colorCode: 0, timeslot: 1, contact: null, rxList: null, aprs: null,
 			dmrId: 0, noBeep: false, noEco: false, dmo: false, roam: false, aliasTs1: 0, aliasTs2: 0, useLocation: false,
-			lat: 0, lon: 0, sfr: false, sfrA: 0, sfrB: 0, toneBurst: false,
+			lat: 0, lon: 0, sfr: false, sfrA: 0, sfrB: 0, toneBurst: false, acceptBadCrc: false,
 		});
 	}
 	// Nothing to bring in: the codeplug stays as it is rather than losing its channels to an empty list

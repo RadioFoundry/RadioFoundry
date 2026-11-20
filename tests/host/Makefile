@@ -25,6 +25,8 @@ CFLAGS  := -std=gnu99 -Wall -Wextra -Wno-unused-parameter -g $(COVFLAGS) $(SANFL
 
 DATA    := $(CORE)/dmr/dmrData.c
 FRAME   := $(CORE)/hotspot/dmrDataFrame.c $(CORE)/dmr/fec/dmrFec.c
+# Accept invalid CRC's repeat check (core/fec/rx_seen.c): every test of the DMR call, Tier III or P25 trunking
+RXSEEN  := $(CORE)/fec/rx_seen.c
 
 TSHARK  ?= $(firstword $(wildcard /Applications/Wireshark*.app/Contents/MacOS/tshark) $(shell command -v tshark))
 
@@ -93,7 +95,7 @@ lrrpTest: lrrpTest.c fuzz.h $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmrLrrp.h $(CORE)/
 # The air queue on a fake data service (docs/spec/dmr-data.md 12): byte ring, order, wrap, refusals, timing
 # The shared FEC of the modes on the air interface (core/fec) against the standard's matrices, and the framer
 # (core/air) on made-up symbol streams
-FEC     := $(wildcard $(CORE)/fec/*.c)
+FEC     := $(filter-out $(RXSEEN),$(wildcard $(CORE)/fec/*.c))
 TESTS   += fecTest airFramerTest
 fecTest: fecTest.c $(FEC) $(wildcard $(CORE)/fec/*.h)
 	$(CC) $(CFLAGS) -Wshadow -o $@ fecTest.c $(FEC)
@@ -137,7 +139,7 @@ imbeEncTest: imbeEncTest.c $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
 # The receive-only P25 trunking follower (CONFIG_P25_TRUNK): its signaling, and whole systems through the soft modem
 TESTS   += p25TrunkTest
 P25TRUNK := $(CORE)/p25/p25_tsbk.c $(CORE)/p25/p25_follow.c $(CORE)/p25/p25_engine.c $(CORE)/air/air_session.c \
-            $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(P25) $(FEC)
+            $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(P25) $(FEC) $(RXSEEN)
 p25TrunkTest: p25TrunkTest.c $(P25TRUNK) $(wildcard $(CORE)/p25/*.h) $(wildcard $(CORE)/air/*.h) $(ROOT)/hal/hal_air.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_AIR=1 -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -o $@ p25TrunkTest.c $(P25TRUNK) -lm
 
@@ -268,7 +270,7 @@ TESTS   += radioCoreTest inputTest switchFollowTest quadratureTest serialmicTest
 # A Tier III trunked system on the radio (radio_sm.c's trunk block): the engine and what it reads PDUs with
 T3RADIO := $(CORE)/radio/radio_trunk.c $(CORE)/radio/radio_trunk_cp.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug_records.c \
            $(CORE)/dmr/trunk/t3_ms.c $(CORE)/dmr/trunk/t3_pdu.c $(CORE)/dmr/trunk/t3_sys.c \
-           $(CORE)/dmr/trunk/t3_plan.c sim/codeplug_copy_stub.c
+           $(CORE)/dmr/trunk/t3_plan.c sim/codeplug_copy_stub.c $(RXSEEN)
 # With the DMR call stack, the AMBE voice glue and the simulated modem behind board.dmr
 RFEAT   := $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/sigtone.c $(CORE)/radio/battery.c $(CORE)/radio/roam.c $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c \
            $(CORE)/radio/vibe.c $(CORE)/radio/mic_gain.c $(CORE)/radio/ref_trim.c $(CORE)/radio/pa_keyup.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_shift.c \
@@ -832,7 +834,7 @@ run-ambe: ambeFecTest ambeVoiceTest ambeVoiceCaptureTest sigToneTest micGainTest
 .PHONY: run-ambe
 
 # The DMR voice call stack (core/dmr/call) against a simulated modem; LC coding cross-checked with sfr.c and dmrData.c
-CALL    := dmrCallTest.c sim/dmr_sim_modem.c $(CORE)/dmr/call/dmr_call.c $(CORE)/dmr/fec/dmrCach.c $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/sfr.c $(DATA) $(FRAME) \
+CALL    := dmrCallTest.c sim/dmr_sim_modem.c $(CORE)/dmr/call/dmr_call.c $(RXSEEN) $(CORE)/dmr/fec/dmrCach.c $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/sfr.c $(DATA) $(FRAME) \
            $(CORE)/dmr/dmrPrivacy.c $(CORE)/dmr/ambe/ambeFec.c
 TESTS   += dmrCallTest
 
@@ -868,7 +870,7 @@ run-modem: hrc6000DmrTest hrc6000ToneTest
 # The DMR receive chain: a model of the HR_C6000's reports through the slot engine, a batching board task and the call
 # stack to the voice sink (every burst on air out once, in order, nothing concealed)
 TESTS   += dmrRxChainTest
-RXCHAIN := dmrRxChainTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(CORE)/dmr/call/dmr_call.c $(CORE)/dmr/fec/dmrCach.c \
+RXCHAIN := dmrRxChainTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(CORE)/dmr/call/dmr_call.c $(RXSEEN) $(CORE)/dmr/fec/dmrCach.c \
            $(CORE)/dmr/sfr.c $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/ambe/ambeFec.c
 
 dmrRxChainTest: $(RXCHAIN) $(HRCDMR)/hrc6000_dmr.h $(HRCDMR)/hrc.h $(HRC6K)/hrc6000.h $(ROOT)/hal/hal_dmr_modem.h $(wildcard $(CORE)/dmr/call/*.h)
@@ -876,7 +878,7 @@ dmrRxChainTest: $(RXCHAIN) $(HRCDMR)/hrc6000_dmr.h $(HRCDMR)/hrc.h $(HRC6K)/hrc6
 
 # DMR data end to end: chip model -> slot engine -> call stack -> data service, and its answers back out the engine
 TESTS   += dmrDataChainTest
-DCHAIN  := dmrDataChainTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(CORE)/dmr/call/dmr_call.c $(CORE)/dmr/fec/dmrCach.c \
+DCHAIN  := dmrDataChainTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(CORE)/dmr/call/dmr_call.c $(RXSEEN) $(CORE)/dmr/fec/dmrCach.c \
            $(CORE)/dmr/sfr.c \
            $(CORE)/dmr/call/dmr_lc.c $(DATA) $(FRAME) $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrLrrp.c \
            $(CORE)/dmr/dmr_emergency.c $(CORE)/dmr/zoneShare.c $(CORE)/dmr/zoneShareSvc.c $(CORE)/dmr/dmrAirQueue.c $(CORE)/dmr/ambe/ambeFec.c
@@ -1121,7 +1123,7 @@ keymatrixTest: keymatrixTest.c $(ROOT)/drivers/input/keymatrix/keymatrix.c $(ROO
 
 # C7000 receive reports through the same call stack to the vocoder input.
 TESTS += hrc7000RxChainTest
-C7RXCHAIN = hrc7000RxChainTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000_cach.c $(HRC7)/hrc7000.c $(CORE)/dmr/call/dmr_call.c \
+C7RXCHAIN = hrc7000RxChainTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000_cach.c $(HRC7)/hrc7000.c $(CORE)/dmr/call/dmr_call.c $(RXSEEN) \
             $(CORE)/dmr/sfr.c $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/fec/dmrCach.c $(CORE)/dmr/ambe/ambeFec.c
 hrc7000RxChainTest: $(C7RXCHAIN) $(wildcard $(HRC7)/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(ROOT)/hal/hal_dmr_modem.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ $(C7RXCHAIN)
@@ -1547,7 +1549,7 @@ endif
 
 # DMR Tier III PDUs, system identity and channel plans (core/dmr/trunk): the shared vectors, then the rules
 T3PDU   := $(CORE)/dmr/trunk/t3_pdu.c $(CORE)/dmr/trunk/t3_sys.c $(CORE)/dmr/trunk/t3_plan.c $(CORE)/dmr/call/dmr_lc.c \
-           $(CORE)/dmr/fec/dmrCach.c $(CORE)/dmr/fec/dmrFec.c
+           $(CORE)/dmr/fec/dmrCach.c $(CORE)/dmr/fec/dmrFec.c $(RXSEEN)
 TESTS   += t3PduTest
 
 t3PduTest: t3PduTest.c $(T3PDU) $(wildcard $(CORE)/dmr/trunk/*.h) data/t3_vectors.jsonl

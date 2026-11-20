@@ -155,7 +155,9 @@ This is a behavioral diagram, not a structure to copy. The states and what they 
   must not end its next reception on them; use the timeout), or no valid burst on the slot for about 390 ms (13 slot
   ticks), or loss of slot timing.
 - **Data**: CSBK, MBC, data headers and blocks on our slot are passed to the data service. Blocks are taken even with
-  a CRC error (the packet CRC-32 decides); headers and CSBKs with a bad CRC are dropped.
+  a CRC error (the packet CRC-32 decides). Headers and CSBKs with a bad CRC go up flagged too (`crc_ok` false; for a
+  voice LC header or terminator `lc_valid` false, and no call state changes): the receivers drop them, unless the
+  channel is set to accept an invalid CRC ([dmr-trunking.md](dmr-trunking.md) 6, [dmr-voice.md](dmr-voice.md)).
 
 ### 2.3 Repeater mode vs direct mode timing
 

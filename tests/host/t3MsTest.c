@@ -215,6 +215,68 @@ static void test_settle_crc_cc(void)
 	CHECK(ms.state == T3_HUNT, "candidate's color code differs");
 }
 
+// Accept invalid CRC (T3_OPT_ACCEPT_BAD_CRC): a PDU that fails its CRC is taken when the same bytes failed recently,
+// and the radio is listen-only until one passes
+static void test_accept_bad_crc(void)
+{
+	setup();
+	cfg.opts = (uint16_t)((cfg.opts & ~T3_OPT_LISTEN_ONLY) | T3_OPT_ACCEPT_BAD_CRC);
+	t3_ms_t ms;
+	t3_ms_start(&ms, &cfg, T);
+	poll_all(&ms);
+	adv(&ms, T3_SETTLE_MS);
+	uint8_t d[T3_CSBK_BYTES];
+	t3_csbk_t p = { .lb = true, .op = T3_OP_C_ALOHA };
+	p.u.aloha.syscode = ours;
+	p.u.aloha.reg = true;
+	t3_csbk_build(&p, T3_CRC_MASK_CSBK, d);
+	d[10] ^= 0x01;	// the CRC itself: the content stays right
+	rx(&ms, 1, T3_DT_CSBK, CC, d);
+	CHECK(ms.state == T3_HUNT && ms.st.crc_bad == 1 && ms.st.crc_taken == 0, "the first one is dropped: %s",
+	      t3_state_name(ms.state));
+	adv(&ms, 60);
+	rx(&ms, 1, T3_DT_CSBK, CC, d);
+	CHECK(ms.state == T3_CAMPED && ms.st.crc_taken == 1 && ms.st.crc_bad == 1, "the same one again is taken: %s",
+	      t3_state_name(ms.state));
+	CHECK(ms.unverified && ms.reg == T3_REG_LISTEN, "unverified: listen-only, reg %s", t3_reg_name(ms.reg));
+	adv(&ms, 60);
+	aloha(&ms, CC, ours, true);
+	CHECK(!ms.unverified && ms.reg == T3_REG_NEEDED, "a good CRC: may register, reg %s", t3_reg_name(ms.reg));
+
+	// An MBC whose header failed is taken when the whole MBC repeats, unverified though its continuation's CRC passes
+	t3_csbk_t h = { .lb = false, .op = T3_OP_C_BCAST };
+	h.u.bcast.type = T3_ANN_CHAN_FREQ;
+	h.u.bcast.syscode = ours;
+	h.u.bcast.parms2 = 2000;
+	t3_cdef_t c = { 0, 0, 2000, 465000000u, 460000000u };
+	for (int i = 0; i < 2; i++) {
+		adv(&ms, 60);
+		t3_csbk_build(&h, T3_CRC_MASK_MBC_HDR, d);
+		d[11] ^= 0x01;
+		rx(&ms, 1, T3_DT_MBC_HDR, CC, d);
+		adv(&ms, 60);
+		t3_cdef_build(&c, h.op, d);
+		rx(&ms, 1, T3_DT_MBC_CONT, CC, d);
+		CHECK(ms.unverified == (i == 1) && ms.st.crc_taken == 1u + (uint32_t)i && ms.st.crc_bad == 2,
+		      "MBC %d: taken only the second time", i);
+	}
+	adv(&ms, 60);
+	aloha(&ms, CC, ours, true);
+	CHECK(!ms.unverified, "verified again");
+
+	// Without the option the same CSBK is dropped every time
+	setup();
+	t3_ms_start(&ms, &cfg, T);
+	poll_all(&ms);
+	adv(&ms, T3_SETTLE_MS);
+	t3_csbk_build(&p, T3_CRC_MASK_CSBK, d);
+	d[10] ^= 0x01;
+	rx(&ms, 1, T3_DT_CSBK, CC, d);
+	adv(&ms, 60);
+	rx(&ms, 1, T3_DT_CSBK, CC, d);
+	CHECK(ms.state == T3_HUNT && ms.st.crc_bad == 2 && ms.st.crc_taken == 0 && !ms.unverified, "dropped");
+}
+
 static void test_follow(void)
 {
 	setup();
@@ -787,6 +849,7 @@ int main(void)
 {
 	test_hunt();
 	test_settle_crc_cc();
+	test_accept_bad_crc();
 	test_follow();
 	test_payload();
 	test_nosig();

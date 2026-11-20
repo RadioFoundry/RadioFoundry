@@ -3111,9 +3111,60 @@ static void test_other_slot(void)
 	CHECK(nsent == 2 && sent_act[1].slot == 2, "a control slot after its Aloha");
 }
 
+// Accept invalid CRC: an Aloha taken with a failed CRC keeps a registration in force (no second registration once a
+// good one comes), and an MBC whose header failed stays unverified when a good PDU on the other slot comes between
+// its header and its continuation
+static void test_bad_crc_registered(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE | T3_OPT_ACCEPT_BAD_CRC, true);
+	camp_registered(&ms);
+	aloha_on = false;
+	t3_csbk_t p = { .lb = true, .op = T3_OP_C_ALOHA };
+	p.u.aloha = al;
+	uint8_t d[T3_CSBK_BYTES];
+	t3_csbk_build(&p, T3_CRC_MASK_CSBK, d);
+	d[10] ^= 0x01;
+	for (int i = 0; i < 2; i++) {
+		T += 60;
+		t3_ms_rx(&ms, T, 1, T3_DT_CSBK, CC, d);
+		poll_all(&ms);
+	}
+	CHECK(ms.unverified && ms.reg == T3_REG_OK && ms.st.crc_taken == 1, "unverified Aloha: still registered, reg %s",
+	      t3_reg_name(ms.reg));
+	aloha_on = true;
+	frames(&ms, 50);
+	CHECK(!ms.unverified && ms.reg == T3_REG_OK && nsent == 0, "verified again: no new registration, sent %d", nsent);
+
+	t3_csbk_t h = { .lb = false, .op = T3_OP_C_BCAST };
+	h.u.bcast.type = T3_ANN_CHAN_FREQ;
+	h.u.bcast.syscode = ours;
+	h.u.bcast.parms2 = 2000;
+	t3_cdef_t c = { 0, 0, 2000, 465000000u, 460000000u };
+	t3_csbk_build(&h, T3_CRC_MASK_MBC_HDR, d);
+	d[11] ^= 0x01;
+	for (int i = 0; i < 2; i++) {
+		T += 60;
+		t3_ms_rx(&ms, T, 1, T3_DT_MBC_HDR, CC, d);
+	}
+	// A good PDU on the other slot, then the continuation, whose own CRC passes
+	T += 30;
+	t3_csbk_t a = { .lb = true, .op = T3_OP_C_ALOHA };
+	a.u.aloha = al;
+	uint8_t g[T3_CSBK_BYTES];
+	t3_csbk_build(&a, T3_CRC_MASK_CSBK, g);
+	t3_ms_rx(&ms, T, 2, T3_DT_CSBK, CC, g);
+	T += 30;
+	uint8_t cd[T3_CSBK_BYTES];
+	t3_cdef_build(&c, h.op, cd);
+	t3_ms_rx(&ms, T, 1, T3_DT_MBC_CONT, CC, cd);
+	CHECK(ms.unverified, "the MBC's header failed: unverified");
+}
+
 int main(void)
 {
 	test_register();
+	test_bad_crc_registered();
 	test_reg_list();
 	test_no_answer();
 	test_ra_log();
