@@ -57,12 +57,14 @@ static struct {
 	int nneg;
 } man;
 
+// A path too long for the buffer is left empty, so opening it fails and says so, rather than a cut-off path that
+// may name another file. Checking the length is also what GCC 14's -Wformat-truncation asks for: the directory alone
+// can fill the buffer
 static void man_path(char *out, const char *rel)
 {
-	if (rel[0] == '/') {
-		snprintf(out, 512, "%s", rel);
-	} else {
-		snprintf(out, 512, "%s/%s", man.dir, rel);
+	int n = rel[0] == '/' ? snprintf(out, 512, "%s", rel) : snprintf(out, 512, "%s/%s", man.dir, rel);
+	if (n < 0 || n >= 512) {
+		out[0] = '\0';
 	}
 }
 

@@ -87,7 +87,7 @@ python3 -m pytest tests/hil -v -rs --radio-port /dev/cu.usbserial-XXXX -k "healt
 
 ## 4. Data flash and calibration
 
-`diag`: `flash C84018 cal factory` (or `852018` on Puya-flash radios), `txc` not 128, `pa` values not 1408.
+`diag`: `flash C84018 cal factory` (or `852018` on Puya-flash radios, `EF4018` on Winbond-flash radios), `txc` not 128, `pa` values not 1408.
 
 | If | Then |
 |---|---|
