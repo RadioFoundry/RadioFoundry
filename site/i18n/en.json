@@ -280,6 +280,8 @@
  "screen.home_dmr_lastheard": "Home, DMR, last heard",
  "screen.home_dmr": "Home, DMR channel",
  "screen.home_fm": "Home, FM channel",
+ "screen.home_gps_search": "Home, GPS on, searching: a hollow ring by the signal bars",
+ "screen.home_gps_fix": "Home, GPS with a fix: a filled ring",
  "screen.home_large_text": "Home, large text",
  "screen.home_monitor": "Home on FM, Monitor held: squelch open, RX",
  "screen.home_plain": "Home, status bar not filled",

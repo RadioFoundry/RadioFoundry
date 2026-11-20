@@ -280,6 +280,8 @@
  "screen.home_dmr_lastheard": "Home, DMR, ultimi sentiti",
  "screen.home_dmr": "Home, canale DMR",
  "screen.home_fm": "Home, canale FM",
+ "screen.home_gps_search": "Home, GPS acceso, in ricerca: un anello vuoto accanto alle barre del segnale",
+ "screen.home_gps_fix": "Home, GPS con posizione: un anello pieno",
  "screen.home_large_text": "Home, testo grande",
  "screen.home_monitor": "Home su FM, Monitor tenuto: squelch aperto, RX",
  "screen.home_plain": "Home, barra di stato non piena",

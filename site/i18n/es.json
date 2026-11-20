@@ -280,6 +280,8 @@
  "screen.home_dmr_lastheard": "Inicio, DMR, último escuchado",
  "screen.home_dmr": "Inicio, canal DMR",
  "screen.home_fm": "Inicio, canal FM",
+ "screen.home_gps_search": "Inicio, GPS activado, buscando: un anillo hueco junto a las barras de señal",
+ "screen.home_gps_fix": "Inicio, GPS con posición: un anillo relleno",
  "screen.home_large_text": "Inicio, texto grande",
  "screen.home_monitor": "Inicio en FM, Monitor pulsado: squelch abierto, RX",
  "screen.home_plain": "Inicio, barra de estado sin completar",

@@ -110,6 +110,7 @@ typedef struct {
 	bool locked;		// keys locked (long QUICK)
 	bool scanning;
 	uint8_t usb_net;	// UI_USB_NET_*: the status strip's USB network word and link arrows
+	uint8_t gps;		// UI_GPS_*: the status strip's GPS icon
 	bool hints;		// the hint row is shown (Settings > Display)
 	bool large_text;	// Home shows only the channel and the talk target (Settings > Display)
 	bool privacy;		// the next DMR transmission is encrypted
@@ -167,6 +168,11 @@ extern ui_layout_t ui_layout;
 // ui_state_t.usb_net: USB is a serial port, a network adapter waiting for the computer ("IP"), or a network adapter
 // the computer has brought up, so IP over DMR can flow ("IP" and the up and down arrows, usb-network.md 1)
 enum { UI_USB_NET_OFF, UI_USB_NET_WAIT, UI_USB_NET_UP };
+
+// ui_state_t.gps: the status strip's GPS icon. None while the GPS is off (Settings > Location) or the radio has none
+// (board_has_gps: a module detected after start-up gets it then); searching (a hollow ring) while it is on without a
+// fix, silent included; fixed (a filled ring)
+enum { UI_GPS_OFF, UI_GPS_SEARCH, UI_GPS_FIX };
 
 // Colors carry meaning only (P5); every color cue also has a word. On 1 bpp panels everything is ink on paper and
 // pills are inverse video

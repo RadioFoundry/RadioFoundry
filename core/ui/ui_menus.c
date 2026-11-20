@@ -7257,6 +7257,10 @@ static void set_value_text(const set_item_t *s, int32_t v, char *out, size_t len
 	sb_init(&b, out, len);
 	switch (s->type) {
 	case ST_TOGGLE:
+		// GPS reads Off on a radio without one (#349). Only shown so: the stored value stays, as the module is
+		// detected after start-up and the driver follows the setting once it is heard (position.md 2)
+		if (s->id == UI_SET_GPS && !board_has_gps())
+			v = 0;
 		sb_str(&b, v ? TR(VALUE_ON, "On") : TR(VALUE_OFF, "Off"));
 		break;
 	case ST_LIST:

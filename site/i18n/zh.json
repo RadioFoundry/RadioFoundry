@@ -280,6 +280,8 @@
  "screen.home_dmr_lastheard": "主页，DMR，最近通话记录",
  "screen.home_dmr": "主页，DMR 信道",
  "screen.home_fm": "主页，FM 信道",
+ "screen.home_gps_search": "主屏幕，GPS 已开启，正在搜索：信号格旁的空心圆环",
+ "screen.home_gps_fix": "主屏幕，GPS 已定位：实心圆环",
  "screen.home_large_text": "主页，大字体",
  "screen.home_monitor": "FM 主页，按住监听：静噪打开，接收中",
  "screen.home_plain": "主页，状态栏未填满",

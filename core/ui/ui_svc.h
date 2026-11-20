@@ -229,6 +229,7 @@ typedef struct {
 	uint32_t utc_hms;	// hhmmss, 0xFFFFFFFF unknown
 } ui_position_t;
 bool ui_svc_position(ui_position_t *out);	// false: no GPS on this radio (or off)
+bool ui_svc_gps_on(void);	// the radio has a GPS and Settings > Location > GPS is on, however it was set
 // One satellite for the GPS screen's sky plot and signal bars
 enum { UI_GNSS_GPS, UI_GNSS_GLONASS, UI_GNSS_GALILEO, UI_GNSS_BEIDOU, UI_GNSS_QZSS, UI_GNSS_COUNT };
 typedef struct {

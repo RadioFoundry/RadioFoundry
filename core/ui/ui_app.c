@@ -2547,6 +2547,21 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 		ui_st.unread = unread;
 		dirty = true;
 	}
+#if CONFIG_GPS
+	// The GPS icon, once a second: fitted (a module is detected after start-up) and on, as the position service was
+	// last told (the menu, the debug link), then a fix or not (a fix counts for a minute: position.md)
+	static uint32_t gps_checked;
+	if (now - gps_checked >= 1000u) {
+		gps_checked = now;
+		ui_position_t p;
+		uint8_t gps = !ui_svc_gps_on() ? UI_GPS_OFF :
+			      ui_svc_position(&p) && p.fix ? UI_GPS_FIX : UI_GPS_SEARCH;
+		if (gps != ui_st.gps) {
+			ui_st.gps = gps;
+			dirty = true;
+		}
+	}
+#endif
 	bool scanning = v->scan != 0 && v->scan != 3;	// 3: dual watch, which Home shows on its own (ui_dual.c)
 #if CONFIG_DUAL_WATCH
 	if (ui_dual_tick(v, now_ms))
@@ -2710,6 +2725,7 @@ void ui_app_status(ui_app_status_t *s)
 	s->focus = stack[sp].scr == SCR_QUICK ? ui_st.quick_focus : stack[sp].focus;
 	s->count = (d->flags & SF_LIST) && d->count != NULL ? d->count() : 0;
 	s->locked = ui_st.locked;
+	s->gps = ui_st.gps;
 	s->unlock_key = has_quick_key ? "quick" : has_unlock_key ? "back" : "none";
 	s->field_use = (d->flags & SF_FIELD) != 0;
 	s->banner = ui_st.banner.kind != UI_BANNER_NONE ? ui_st.banner.title : "";

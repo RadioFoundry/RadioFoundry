@@ -39,6 +39,7 @@ typedef struct {
 	uint16_t focus;		// focused row / tile
 	uint16_t count;		// rows on a list screen
 	bool locked;
+	uint8_t gps;		// UI_GPS_*: the status strip's GPS icon
 	const char *unlock_key;	// the key held to unlock: "quick", "back", or "none" (auto lock never locks then)
 	bool field_use;		// the screen is tagged "field use" (depth rule, usability-tests.md 2)
 	const char *banner;	// banner title, "" = none

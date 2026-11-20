@@ -2175,10 +2175,17 @@ static const ui_gps_sat_t sim_sats[] = {
 };
 #define SIM_SATS	(sizeof(sim_sats) / sizeof(sim_sats[0]))
 
+// "gps:none" / "gps:search" / "gps:fix": the GPS setting on, and the board has no GPS or one (CAP_GPS and its hooks),
+// so the status strip shows the GPS icon, with or without a fix. Without the token the board has none and the strip
+// none, but the Position screens still read the fix below
+enum { SIM_GPS_NONE, SIM_GPS_SEARCH, SIM_GPS_FIX };
+static uint8_t sim_gps;
+static const hal_gps_t sim_gps_hal;	// every hook NULL: fitted, always on
+
 bool ui_svc_position(ui_position_t *out)
 {
 	memset(out, 0, sizeof(*out));
-	out->fix = true;
+	out->fix = sim_gps != SIM_GPS_SEARCH;
 	out->sats = 9;
 	out->lat_e7 = 423601000;
 	out->lon_e7 = -710589000;
@@ -2191,6 +2198,12 @@ bool ui_svc_position(ui_position_t *out)
 	out->course = 45;
 	out->utc_hms = 123519;
 	return true;
+}
+
+// The board's GPS and the setting, as stored (the menu's change counts at once)
+bool ui_svc_gps_on(void)
+{
+	return sim_gps != SIM_GPS_NONE && ui_svc_setting_get(UI_SET_GPS) != 0;
 }
 
 bool ui_svc_gps_sat(uint8_t i, ui_gps_sat_t *out)
@@ -2349,6 +2362,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	board.side_key_names = maps[map].names;
 	board.side_key_count = maps[map].side_n;
 	board.caps = maps[map].caps;
+	board.gps = NULL;
+	sim_gps = SIM_GPS_NONE;
 	board.bands = bands;
 	board.band_count = sizeof bands / sizeof bands[0];
 	power.supply_mv = NULL;
@@ -2624,6 +2639,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "talk") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.dmr.target_id);
 	else if (strcmp(key, "vol") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_VOLUME));
 	else if (strcmp(key, "locked") == 0) snprintf(got, sizeof got, "%u", s.locked);
+	else if (strcmp(key, "gps") == 0) snprintf(got, sizeof got, "%u", s.gps);	// UI_GPS_*: the strip's icon
 	else if (strcmp(key, "volhold") == 0) snprintf(got, sizeof got, "%u", vol_held);
 	else if (strcmp(key, "query") == 0) snprintf(got, sizeof got, "%s", s.query);
 	else if (strcmp(key, "banner") == 0) { snprintf(got, sizeof got, "%s", s.banner[0] ? s.banner : "none"); prefix = true; }
@@ -3379,6 +3395,17 @@ static bool run_token(char *t, char *err, size_t len)
 				return false;
 			}
 		}
+		return true;
+	}
+	if (strcmp(t, "gps") == 0 && arg != NULL) {	// gps:none, gps:search, gps:fix (above ui_svc_position)
+		ui_svc_setting_set(UI_SET_GPS, 1);	// Settings > Location > GPS on: flows share the store
+		if (strcmp(arg, "none") != 0) {
+			sim_gps = strcmp(arg, "fix") == 0 ? SIM_GPS_FIX : SIM_GPS_SEARCH;
+			board.caps |= CAP_GPS;
+			board.gps = &sim_gps_hal;
+		}
+		for (int i = 0; i <= 1000 / TICK_MS; i++)	// the UI checks the GPS once a second
+			step();
 		return true;
 	}
 	if ((strcmp(t, "knob") == 0 || strcmp(t, "override") == 0) && arg != NULL) {

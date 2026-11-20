@@ -282,6 +282,28 @@ static const char *dual_mode_word(const ui_dual_pane_t *p)
 uint32_t ui_strip_draws;
 uint32_t ui_hint_draws;
 
+// The GPS icon, d square (odd): a ring with a tick at the middle of each side, as a GPS fix is drawn. Hollow while
+// searching, filled with a fix; the shape tells them apart on every panel, color or not. The ring's corners are cut
+// so it reads as round at the smallest size
+static void gps_icon(int x, int y, int d, bool fix, color_t fg, color_t bg)
+{
+	int t = d / 5 > 0 ? d / 5 : 1;		// the ticks' length: the ring's inset
+	int r = d - 2 * t, c = d / 2;		// the ring's size; the middle
+	if (fix) {
+		gfx_round_fill(x + t, y + t, r, r, fg);
+	} else {
+		gfx_fill(x + t, y + t, r, r, bg);
+		gfx_hline(x + t + 1, y + t, r - 2, fg);
+		gfx_hline(x + t + 1, y + t + r - 1, r - 2, fg);
+		gfx_vline(x + t, y + t + 1, r - 2, fg);
+		gfx_vline(x + t + r - 1, y + t + 1, r - 2, fg);
+	}
+	gfx_vline(x + c, y, t, fg);
+	gfx_vline(x + c, y + d - t, t, fg);
+	gfx_hline(x, y + c, t, fg);
+	gfx_hline(x + d - t, y + c, t, fg);
+}
+
 // A word after the mode, with a space either side, where the strip has room for it: measured, since a translation may
 // be longer than the English
 static bool strip_fits(const font_t *f, int lx, int rx, const char *word)
@@ -382,6 +404,11 @@ static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t
 		int sw = bh + 4;
 		rx -= sw + f->w / 2;
 		gfx_icon_bars(rx, ty + f->ascent - bh - 1, sw, bh + 1, 4, rssi_bars(v->rssi_dbm), sfg, filled ? ui_col.idle : ui_col.line);
+		if (s->gps != UI_GPS_OFF) {
+			int gh = bh + 1 + ((bh + 1) % 2 == 0);	// odd, so the ticks stand on the middle
+			rx -= gh + f->w / 2;
+			gps_icon(rx, ty + f->ascent - gh, gh, s->gps == UI_GPS_FIX, sfg, sbg);
+		}
 	}
 	// Icons one cell high, drawn from lines: an envelope with the unread count, a padlock while the keys are locked
 	int ih = f->ascent - 2 < 5 ? 5 : f->ascent - 2, iy = ty + f->ascent - ih;

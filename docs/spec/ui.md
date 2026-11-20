@@ -438,8 +438,16 @@ A"). The pill shows RX while data or CSBK bursts arrive on our slot and color co
 (`DMR_CALL_FADE_MS`) after the last one, even with no call running (`dmr_call.c` `data_receiving`). The green LED
 stays for a call being played.
 
+The status strip's GPS icon, left of the signal bars: a ring with a tick at the middle of each side, one cell high.
+Hollow while the GPS is on without a fix (silent included), filled with a fix (one under a minute old, position.md);
+the shape, not a color, tells them apart. None while Settings > Location > GPS is off or the radio has no GPS
+(`board_has_gps`: a module detected after start-up gets it then). On is what the position service was last told
+(`position_gps_enabled`), so a change from the debug link counts as one from the menu. The UI checks once a second (`ui_state_t.gps`,
+debug link view key `ui.gps`). On a radio without a GPS, Settings > Location > GPS reads Off whatever is stored: the
+stored value stays, as the module is detected after start-up and its driver follows the setting once heard.
+
 Small displays (under 200 px tall) merge a screen's title into the status strip: the state pill shows only when not
-idle, the bars and the battery (icon and percent) give way, so the title is centered across the whole row; the lock
+idle, the bars, the GPS icon and the battery (icon and percent) give way, so the title is centered across the whole row; the lock
 and the unread count stay. Home shows the battery, and the low battery banner warns on any screen. On a radio without
 a battery, `CAP_NO_BATTERY`, the battery is drawn nowhere, and Tools > Battery, Settings > Power saving > Battery saver and Low battery warning are left
 out of their lists, so the other Tools rows move up), and only the name part of the title is
