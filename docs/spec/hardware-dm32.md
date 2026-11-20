@@ -1149,7 +1149,8 @@ RadioFoundry test radio.
 | 0x0C bit 9 on set-up B | set | set |
 | 0x3D | reads 0x2AAB | reads 0 (user) |
 
-The data flash can't tell the sections apart: a Puya part (JEDEC 852018) is fitted with both.
+The data flash can't tell the sections apart: a Puya part (JEDEC 852018) is fitted with both, and a radio with the
+newer section and stock `DM32.NRFB.01.050` has a Boya part (JEDEC 684018; section 10).
 
 Start-up check (`radio_dm32.c` `rf_detect`, `fd6818_detect`): set-up A, tuned to 145 MHz in RX, waits up to 20 ms
 for 0x0C bit 9 to read set three times in a row, 1 ms apart (the bit can read set once while the synthesizer
@@ -1227,9 +1228,9 @@ For the USB audio design ([usb-audio.md](usb-audio.md) 2). Not measured.
 
 | Item | Value |
 |---|---|
-| Chip | GigaDevice GD25Q128 class, 16 MB; later radios use Puya PY25Q128HA |
+| Chip | GigaDevice GD25Q128 class, 16 MB; later radios use Puya PY25Q128HA, and at least one newer-section radio (8.10) a Boya part |
 | Bus | SPI master 0 (0x140A0000), CS on GPIO 0x12 (manual, low active) plus SER |
-| JEDEC ID (0x9F) | GD25Q128: C8 40 18; Puya: 85 20 18 (unverified). The driver accepts only part ID 0x4018, so a Puya radio fails the check |
+| JEDEC ID (0x9F) | GD25Q128: C8 40 18; Puya: 85 20 18 (unverified); Boya: 68 40 18 (measured: the RAM stub's ID reads, the diagnostics line, and a full 16 MB read checked against the chip's sector CRCs, on one radio with stock `DM32.NRFB.01.050`; RadioFoundry's settings and codeplug areas worked on it). The driver sizes any part by its capacity byte (0x18: 16 MB) |
 | Read | 0x03 + 24-bit address |
 | Fast read | 0x0B (not used) |
 | Page program | 0x06 (write enable), then 0x02 + address + up to 256 bytes within one page |
@@ -1497,7 +1498,7 @@ Runs on a radio: `docs/testing/dm32-bringup.md` is the bring-up checklist and li
 | Host link | UART0 115200 (divisor 46): debug link, CPS, MMDVM hotspot, PPP. Receive by interrupt into a 1,024-byte ring, transmit by polling. No USB: the radio has no USB data port (the USB-C socket is on the battery pack and only charges it; 3.11), so `CONFIG_USB=n`, `CONFIG_HOSTLINK=y` | `platform/hrc7000/uart.c` |
 | Display | 240x320 in 16 colors (a 37.5 KB frame buffer of palette indexes); MADCTL 0xC0, inversion on | `boards/dm32/display_dm32.c`, `drivers/display/st7789` |
 | Keys | matrix 5x4 on LCD DB0-DB4 / GPIO 0x31-0x34 under the LCD bus lock; SK1 / SK2 as column-to-ground keys; encoder on the GPIO B interrupt (B edges, acked); every other input without interrupts | `input_dm32.c`, `drivers/input/keymatrix` |
-| Data flash | SPI0 + manual CS; any JEDEC ID with a known capacity (GD25Q128, Puya); writes and erases below 0x700000 refused. The core's areas (`hal_flash_map_t`): open-firmware EEPROM image 0x700000, settings ring 0x711000 (8 sectors), journal 0x719000 (2 sectors), open-firmware flash image 0x720000 to 0xF00000, native codeplug 0xF00000 (1 MB); no calibration window, no TFTP staging area | `flash_dm32.c` |
+| Data flash | SPI0 + manual CS; any JEDEC ID with a known capacity (GD25Q128, Puya, Boya); writes and erases below 0x700000 refused. The core's areas (`hal_flash_map_t`): open-firmware EEPROM image 0x700000, settings ring 0x711000 (8 sectors), journal 0x719000 (2 sectors), open-firmware flash image 0x720000 to 0xF00000, native codeplug 0xF00000 (1 MB); no calibration window, no TFTP staging area | `flash_dm32.c` |
 | Calibration | 11, read only; a decoded copy at 0x710000 as a fallback; UHF below 400 MHz clamps to the first point | `drivers/cal/baofeng/baofeng_cal.c` |
 | Radio | FD6818 bit-banged (each frame with interrupts off: the DMR interrupts switch it per burst); C7000 FM and TX sub-audio, FD6818 RX sub-audio; PA drive on DAC B from the calibration | `radio_dm32.c`, `drivers/rf/fd6818`, `drivers/modem/hrc7000` |
 | DMR | the HR_C7000 slot engine behind `hal_dmr_modem.h` (`modem-hrc7000.md` 3, 5, 6); FD6818 idle -> TX at the RF TX interrupt, PA keyed 28 ms after each burst is armed, off at the first tick 20 ms after the RF TX interrupt | `drivers/modem/hrc7000/hrc7000_dmr.c`, `platform/hrc7000/dmr_glue.c`, `boards/dm32/radio_dm32.c` (the RF and PA hooks) |

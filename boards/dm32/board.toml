@@ -113,7 +113,9 @@ lens = [24, 34]
 display = "240x320x4"
 features = ["HOSTLINK", "DEBUGLINK"]
 no_features = ["USB"]
-flash_jedec = ["C84018", "852018"]
+# GD25Q128, Puya PY25Q128HA, and Boya (68 40 18), which a newer-section radio with stock DM32.NRFB.01.050 reports
+# (hardware-dm32.md 10): it answers the same 16 MB command set, so a Boya radio is no fault
+flash_jedec = ["C84018", "852018", "684018"]
 calibration = true
 battery_mv = [5500, 8800]
 codec = ["049", "046"]
