@@ -27,4 +27,13 @@ void hrc_pin_force(uint8_t pin, bool level);
 
 extern const hal_system_t hrc_system;
 
+// The SoC link's counters (gd88.h's diagnostics struct carries them)
+typedef struct {
+	uint32_t rx_bytes, tx_bytes, overruns, line_errors, tx_stalls;
+} hrc_link_uart_stats_t;
+
+// Interrupt masking: nothing to mask on the host
+static inline uint32_t hrc_irq_save(void) { return 0; }
+static inline void hrc_irq_restore(uint32_t s) { (void)s; }
+
 #endif

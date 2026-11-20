@@ -33,7 +33,15 @@ gd88bBoardTestTx: $(HERE)gd88bBoardTest.c $(ROOT)/boards/gd88b/board.c $(HERE)ho
 	$(CC) $(CFLAGS) -I$(dir $<)hostplat -I$(ROOT)/hal -I$(ROOT)/boards/gd88b -I$(ROOT)/platform/hrc7000 -I$(dir $<)../common $(FMONLY) \
 		-DGD88_TX=0 -DGD88_DMR_TX=1 -Wshadow -Wno-int-to-pointer-cast -o $@ $<
 
-run-boards:: gd88CalTest bootGd88Test bootGd88bTest gd88bBoardTest gd88bBoardTestTx
+# SoC A's audio routing: the microphone's path in the crosspoint chain, held through a transmission, against a
+# recorded chain and the host stand-in for the platform header
+TESTS   += gd88PathsTest
+gd88PathsTest: $(HERE)gd88PathsTest.c $(ROOT)/boards/gd88/paths_gd88.c $(HERE)hostplat/platform.h
+	$(CC) $(CFLAGS) -I$(dir $<)hostplat -I$(ROOT)/hal -I$(ROOT)/boards/gd88 -I$(ROOT)/platform/hrc7000 -I$(dir $<)../common \
+		-Wshadow -o $@ $<
+
+run-boards:: gd88PathsTest gd88CalTest bootGd88Test bootGd88bTest gd88bBoardTest gd88bBoardTestTx
+	./gd88PathsTest
 	./gd88CalTest
 	./bootGd88Test
 	./bootGd88bTest

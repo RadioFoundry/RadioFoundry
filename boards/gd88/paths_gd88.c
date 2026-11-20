@@ -8,11 +8,13 @@
 // - bytes 0 and 1: the loudspeaker and the headset output. Bits 0-3 pick the source, bit 2 * (class - 1) + vfo, where
 //   class 1 is analog FM and 2 DMR, and vfo 0 is A's own receiver, 1 is B's. Bit 5 enables the amplifier. On the radio
 //   A's FM noise plays with bit 0 alone and the modem's beeps with bit 2 alone.
-// - bytes 2-5, bit 4: the receive path in use, one-hot (byte 2 DMR A, 3 DMR B, 4 FM A, 5 FM B).
+// - bytes 2-5, bit 4: the microphone's transmit path, one-hot (byte 2 FM A, 3 FM B, 4 DMR A, 5 DMR B). The chain is
+//   an 8 x 8 analog crosspoint; bit 4 is its microphone input and bytes 2-5 the transmit audio inputs, so the DMR path
+//   is the one that feeds A's codec ADC. It is held all the time, set for A's mode: without it DMR transmits silence.
 // - bytes 0 and 1, bit 6: another source, taken to be the broadcast FM tuner.
-// - bytes 6 and 7: the transmit route, the source bit of the transmitting (class, vfo). Byte 6 is used.
-// TODO(gd88): unknown, needs a radio: byte 6 against byte 7 for the TX route (they differ by a volume range); the
-// headset byte is driven along with the loudspeaker byte; bit 6 as the broadcast tuner's source (inferred: no other bit is left for the tuner)
+// - bytes 6 and 7: the receivers' cross-feed for an A/B repeat, never written for a transmission.
+// TODO(gd88): unknown, needs a radio: the headset byte is driven along with the loudspeaker byte; bit 6 as the
+// broadcast tuner's source (inferred: no other bit is left for the tuner)
 #include "gd88.h"
 #include "pins.h"
 #include "platform.h"
@@ -20,9 +22,8 @@
 
 #define BYTE_SPK		0u
 #define BYTE_HEADSET		1u
-#define BYTE_TX_ROUTE		6u
 #define BIT_AMP			5u
-#define BIT_RX_PATH		4u
+#define BIT_MIC			4u
 #define BIT_BCAST		6u
 #define VFO_A			0u
 #define VFO_B			1u
@@ -33,7 +34,6 @@
 static bool spk_a, spk_b;
 static bool a_dmr, b_dmr;	// the receivers' modes
 static bool a_modem;		// A's speaker source is the modem's line out (DMR voice, beeps)
-static bool receiving;		// A's receive path is on (not transmitting)
 static bool bcast;		// the broadcast FM tuner has the speaker
 static bool muted;		// volume step 0 (gd88_path_mute): the amplifier off, B's speaker switch open
 static volatile bool spk_any;	// the amplifier on: B closes the switch in the speaker's path (gd88_path_speaker_wanted)
@@ -49,9 +49,9 @@ static uint8_t src_bit(bool dmr, uint8_t vfo)
 	return (uint8_t)(2u * (dmr ? 1u : 0u) + vfo);
 }
 
-static uint8_t rx_byte(bool dmr, uint8_t vfo)
+static uint8_t mic_byte(bool dmr, uint8_t vfo)
 {
-	return (uint8_t)((dmr ? 2u : 4u) + vfo);
+	return (uint8_t)((dmr ? 4u : 2u) + vfo);
 }
 
 static void bit(uint8_t byte, uint8_t b, bool on)
@@ -106,14 +106,16 @@ void gd88_path_service(uint32_t now)
 	hrc_irq_restore(s);
 }
 
-// The receive path bit: B's while B has the speaker, else A's
-static void rx_path(bool on)
+// The microphone to A's transmit path for its mode, the other three off. The new path goes on before the old one goes
+// off, so a mode change never leaves the microphone unconnected
+static void mic_path(void)
 {
+	uint8_t on = mic_byte(a_dmr, VFO_A);
+	bit(on, BIT_MIC, true);
 	for (uint8_t byte = 2u; byte <= 5u; byte++) {
-		bit(byte, BIT_RX_PATH, false);
-	}
-	if (on) {
-		bit(spk_b ? rx_byte(b_dmr, VFO_B) : rx_byte(a_dmr, VFO_A), BIT_RX_PATH, true);
+		if (byte != on) {
+			bit(byte, BIT_MIC, false);
+		}
 	}
 }
 
@@ -123,7 +125,8 @@ void gd88_path_init(void)
 	hrc_pin_out(PIN_TX_RX, false);
 	hrc_pin_out(PIN_DIG_AUDIO, false);
 	hrc_pin_out(PIN_SPK_AMP, false);
-	spk_a = spk_b = a_dmr = b_dmr = a_modem = receiving = bcast = spk_any = muted = amp_on = amp_off_pending = false;
+	spk_a = spk_b = a_dmr = b_dmr = a_modem = bcast = spk_any = muted = amp_on = amp_off_pending = false;
+	mic_path();
 }
 
 void gd88_path_rx(uint32_t hz, bool on, bool dmr)
@@ -131,9 +134,10 @@ void gd88_path_rx(uint32_t hz, bool on, bool dmr)
 	uint32_t s = hrc_irq_save();	// A's band switch is the LO chip's GPIOs (radio_gd88.c); hz is for B
 	want_on = on;
 	want_hz = hz;
-	a_dmr = dmr;
-	receiving = on;
-	rx_path(on);
+	if (on) {	// off (the radio's RX stopped) keeps the path of the last mode: a transmission may follow
+		a_dmr = dmr;
+	}
+	mic_path();
 	hrc_irq_restore(s);
 }
 
@@ -151,21 +155,15 @@ bool gd88_path_speaker_wanted(void)
 	return spk_any;
 }
 
-// TX start: PTB2 high, the receive path bits off, the transmitter's route
+// TX start: PTB2 high. The microphone's path is already set for A's mode (mic_path), so nothing in the chain changes
 void gd88_path_rx_front_off(void)
 {
 	hrc_pin_write(PIN_TX_RX, true);
-	receiving = false;
-	rx_path(false);
-	bit(BYTE_TX_ROUTE, src_bit(a_dmr, VFO_A), true);
 }
 
 void gd88_path_tx_off(void)
 {
 	hrc_pin_write(PIN_TX_RX, false);
-	for (uint8_t b = 0; b < 4u; b++) {
-		bit(BYTE_TX_ROUTE, b, false);
-	}
 }
 
 void gd88_path_speaker(bool on, bool from_modem)
@@ -192,7 +190,6 @@ void gd88_audio_b(bool on, bool dmr)
 		spk_b = on;
 		b_dmr = dmr;
 		outputs();
-		rx_path(receiving);
 	}
 	hrc_irq_restore(s);
 }
