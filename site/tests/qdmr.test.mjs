@@ -592,3 +592,29 @@ test("dmrconf reads a file with the radioFoundry block and ignores the block", {
 		rmSync(dir, { recursive: true, force: true });
 	}
 });
+
+// --- The recommended ham systems' templates (docs/spec/ham-trunking.md) ---
+
+import { newHamSystem, identityKey } from "../static/js/codeplug/channelmodes.js";
+
+for (const [file, type] of [["ham-tier3.yaml", 1], ["ham-p25-trunked.yaml", 3]]) {
+	test(`template ${file}: opens without notes, holds the recommended system, validates and encodes`, () => {
+		const m = empty();
+		const r = importQdmr(m, readFileSync(new URL(`../../docs/examples/${file}`, import.meta.url), "utf8"));
+		assert.deepEqual(r.notes, []);
+		const [s] = m.systems;
+		const ctl = s.entries.find((e) => e.control);
+		const want = newHamSystem(m, type, { rxHz: ctl.rxHz, txHz: ctl.txHz, site: 0 });
+		assert.equal(s.type, type);
+		assert.deepEqual(s.fields, want.fields);
+		assert.equal(identityKey(s), identityKey(want));
+		assert.deepEqual([s.tx, s.needsKey], [true, false]);
+		const [c] = m.channels;
+		assert.deepEqual([c.kind, c.system, c.tagTx, c.rxHz, c.txHz], [type, s, true, ctl.rxHz, ctl.txHz]);
+		// every talkgroup is Brandmeister's, and fits P25's 16 bits
+		assert.ok(m.contacts.every((x) => x.id >= 1 && x.id <= 0xFFFF));
+		assert.deepEqual(validate(m).filter((p) => p.level === "error"), []);
+		const d = decode(encode(m));
+		assert.deepEqual(d.systems[0].fields, s.fields);
+	});
+}
