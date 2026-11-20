@@ -17,7 +17,7 @@
 typedef enum {
 	SCR_HOME, SCR_QUICK, SCR_HUB, SCR_FIND, SCR_ACTIONS, SCR_CONTACTS, SCR_MESSAGES, SCR_MESSAGE, SCR_COMPOSE,
 	SCR_RECENT, SCR_ZONES, SCR_ZONE, SCR_TOOLS, SCR_SETTINGS, SCR_GROUP, SCR_PICKER, SCR_INFO, SCR_CONFIRM,
-	SCR_DIAG, SCR_EMERGENCY, SCR_SCAN, SCR_ROAM, SCR_APRS, SCR_APRS_HEARD, SCR_FIXED_POS, SCR_ABOUT,
+	SCR_DIAG, SCR_EMERGENCY, SCR_INCOMING_CALL, SCR_SCAN, SCR_ROAM, SCR_APRS, SCR_APRS_HEARD, SCR_FIXED_POS, SCR_ABOUT,
 	SCR_VOLUME,			// the volume editor (VOL key, radios without a knob)
 	SCR_CHANNELS, SCR_CHANNEL,	// every codeplug channel by number; one channel's settings (arg = its number)
 	SCR_CRASH,			// the crash log's record (arg 1: the prompt after the restart; CONFIG_CRASH_SCREEN)
@@ -227,6 +227,10 @@ void ui_recent_target(const ui_recent_t *r, ui_target_t *t);
 bool ui_contact_name(uint32_t id, bool group, char *out);
 
 // Diagnostics, emergency, banners (ui_app.c)
+#if CONFIG_DMR_TRUNK
+void ui_incoming_call_draw(void);
+bool ui_incoming_call_key(const input_event_t *ev);
+#endif
 void ui_emergency_draw(void);
 bool ui_emergency_key(const input_event_t *ev);
 void ui_diag_draw(void);

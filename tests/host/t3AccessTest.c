@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "dmr/trunk/t3_ms.h"
+#include "dmr/call/dmr_lc.h"
 
 static int failures;
 static int checks;
@@ -211,6 +212,49 @@ static void camp_registered(t3_ms_t *ms)
 	rx(ms, 1, &a);
 	CHECK(ms->reg == T3_REG_OK && ms->ax.result == T3_RES_DONE, "registered, reg %s", t3_reg_name(ms->reg));
 	nsent = 0;
+}
+
+static void test_foacsu_pages(void)
+{
+	t3_ms_t ms;
+	t3_csbk_t h = ahoy(T3_SK_IND_VOICE, false, OWN, CALLER);
+	h.u.ahoy.kind_flag = true;
+
+	setup(0, false);
+	camp(&ms);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKU && sent[0].u.ack.reason == T3_RC_MS_NOT_SUPPORTED &&
+	      ms.ring_src == 0, "private calls disabled: refuse the page");
+
+	setup(T3_OPT_PRIVATE, false);
+	camp(&ms);
+	CHECK(t3_ms_request(&ms, T, TG_A, true, false), "start an outgoing access");
+	rx(&ms, 1, &h);
+	frames(&ms, 2);
+	bool busy = false;
+	for (int i = 0; i < nsent; i++)
+		busy |= sent[i].op == T3_OP_C_ACKU && sent[i].u.ack.reason == T3_RC_EQUIP_BUSY;
+	CHECK(busy && ms.ring_src == 0, "outgoing access: answer busy");
+
+	setup(T3_OPT_PRIVATE, false);
+	camp(&ms);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKU && sent[0].u.ack.reason == T3_RC_MS_ALERTING &&
+	      sent[0].u.ack.info == t3_response_check(ms.syscode) && ms.ring_src == CALLER,
+	      "the page rings with the system response check");
+	uint32_t expiry = ms.ring_until;
+	rx(&ms, 1, &h);
+	CHECK(ms.ring_until == T + T3_ANSWER_CALL_MS && ms.ring_until > expiry, "repeated page restarts T_AnswerCall");
+	frames(&ms, 1);
+	h.u.ahoy.src = CALLER + 1u;
+	expiry = ms.ring_until;
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nsent == 3 && sent[2].op == T3_OP_C_ACKU && sent[2].u.ack.reason == T3_RC_EQUIP_BUSY &&
+	      sent[2].u.ack.dst == CALLER + 1u && ms.ring_src == CALLER && ms.ring_until == expiry,
+	      "a different caller gets busy without changing the first ring");
 }
 
 static void test_register(void)
@@ -2322,6 +2366,54 @@ static void udt_down(t3_ms_t *ms, uint8_t slot, const t3_udt_t *h, const uint8_t
 	poll_all(ms);
 }
 
+// FID 0x08 packet grant: the capture has a channel definition and a second continuation.
+// The backhaul carries ten bytes per block. Rebuild the air CRCs for the simulated bursts.
+static void test_fid08_pdata_grant(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE, true);
+	camp_registered(&ms);
+	CHECK(t3_ms_pdata(&ms, T, CALLER, false) && sent_rand(&ms), "packet data request");
+
+	t3_csbk_t g = grant(T3_OP_PD_GRANT, T3_LPCN_ABSOLUTE, 2, CALLER, OWN);
+	g.lb = false;
+	uint8_t hdr[T3_CSBK_BYTES];
+	CHECK(t3_csbk_build(&g, T3_CRC_MASK_MBC_HDR, hdr), "build grant header");
+	hdr[1] = T3_FID_08;
+	t3_crc_append(hdr, T3_CRC_MASK_MBC_HDR);
+	const uint8_t first[T3_CSBK_BYTES] = { 0x33, 0, 0, 0xC0, 0x49, 0x10, 0, 0x12, 0x32, 0xC0 };
+	uint8_t last[T3_CSBK_BYTES] = { 0xB3, 0, 0x20, 0, 0x7F, 0xF8 };
+	uint8_t crc_data[2 * T3_CSBK_BYTES - 2];
+	memcpy(crc_data, first, sizeof first);
+	memcpy(crc_data + sizeof first, last, sizeof last - 2);
+	uint16_t crc = dmr_crc_ccitt(crc_data, sizeof crc_data);
+	last[10] = (uint8_t)(crc >> 8);
+	last[11] = (uint8_t)crc;
+
+	t3_ms_rx(&ms, T, 1, T3_DT_MBC_HDR, CC, hdr);
+	T += 60;
+	t3_ms_rx(&ms, T, 1, T3_DT_MBC_CONT, CC, first);
+	CHECK(ms.state == T3_CAMPED, "do not follow before the final block");
+	last[11] ^= 1u;
+	T += 60;
+	t3_ms_rx(&ms, T, 1, T3_DT_MBC_CONT, CC, last);
+	CHECK(ms.state == T3_CAMPED, "reject an invalid continuation CRC");
+	last[11] ^= 1u;
+
+	t3_ms_rx(&ms, T, 1, T3_DT_MBC_HDR, CC, hdr);
+	T += 60;
+	t3_ms_rx(&ms, T, 1, T3_DT_MBC_CONT, CC, first);
+	T += 60;
+	t3_ms_rx(&ms, T, 1, T3_DT_MBC_CONT, CC, last);
+	CHECK(ms.state == T3_FOLLOW && ms.call.data && ms.call.ours && ms.ax.result == T3_RES_GRANTED,
+	      "follow the validated FID 0x08 grant");
+	poll_all(&ms);
+	CHECK(tuned.payload && tuned.slot == 2 && tuned.chan.tx_hz == 145000000u &&
+	      tuned.chan.rx_hz == 145600000u, "tune to the captured absolute channel");
+	frames(&ms, 3);
+	CHECK(t3_ms_data_ready(&ms, T), "ready to transmit packet data on the granted slot");
+}
+
 // Packet data (6.6.3): the radio asks for a data channel and follows PD_GRANT / TD_GRANT; to it, the TSCC checks it is
 // there first. The data service sends on the call (the radio side), PTT doesn't
 static void test_pdata(void)
@@ -3119,6 +3211,7 @@ static void test_other_slot(void)
 int main(void)
 {
 	test_register();
+	test_foacsu_pages();
 	test_reg_list();
 	test_no_answer();
 	test_ra_log();
@@ -3156,6 +3249,7 @@ int main(void)
 	test_dial();
 	test_cli_call();
 	test_pdata();
+	test_fid08_pdata_grant();
 	test_pdata_ip();
 	test_ip_advice();
 	test_deregister();

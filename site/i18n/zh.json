@@ -367,6 +367,7 @@
  "screen.roaming": "中继台漫游",
  "screen.rx_group": "正在接收组呼",
  "screen.rx_private": "正在接收个呼",
+ "screen.incoming-call": "来电",
  "screen.scan_actions": "扫描",
  "screen.home_dual": "双守候：A 和 B，PTT 在 A",
  "screen.home_dual_rx_b": "双守候：B 上有来电",

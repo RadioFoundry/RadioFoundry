@@ -367,6 +367,7 @@
  "screen.roaming": "Itinerancia entre repetidores",
  "screen.rx_group": "Recibir una llamada de grupo",
  "screen.rx_private": "Recibir una llamada privada",
+ "screen.incoming-call": "Llamada entrante",
  "screen.scan_actions": "Escaneo",
  "screen.home_dual": "Doble escucha: A y B, PTT en A",
  "screen.home_dual_rx_b": "Doble escucha: una llamada entrando por B",

@@ -305,7 +305,7 @@ CFLAGS_3P += -flto=auto
 endif
 endif
 # Sections copied into the .bin (one contiguous image from the start of the application)
-BIN_SECTIONS ?= .isr_vector .text .rodata .ARM.extab .ARM .preinit_array .init_array .fini_array .data
+BIN_SECTIONS ?= .isr_vector .text .rodata .ARM.extab .ARM .preinit_array .init_array .fini_array .data .ccmdata
 
 APP_OBJ := $(APP_SRC:%.c=$(BUILD)/%.o) $(APP_ASM:%.S=$(BUILD)/%.o)
 TP_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(filter %.c,$(PLATFORM_3P_SRC))) $(patsubst %.s,$(BUILD)/%.o,$(filter %.s,$(PLATFORM_3P_SRC)))
@@ -403,6 +403,12 @@ $(TARGET).bin: $(TARGET).elf
 ifneq ($(BOOT_STAGE),)
 include boot/boot.mk
 endif
+
+# Hot code builds $(OPT_HOT) where the rest is $(OPT): DSP and FEC kernels that run per sample or per burst, where
+# unrolling and scheduling pay for their flash. LTO keeps each function's level
+OPT_HOT ?= -O2
+HOT_SRC := core/dmr/fec/dmrFec.c core/dmr/fec/dmrSoftBptc.c
+$(filter $(HOT_SRC:%.c=$(BUILD)/%.o),$(APP_OBJ)): CFLAGS_APP += $(OPT_HOT)
 
 $(filter %.o,$(APP_SRC:%.c=$(BUILD)/%.o)): $(BUILD)/%.o: %.c
 	@mkdir -p $(dir $@)

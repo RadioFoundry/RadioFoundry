@@ -1321,6 +1321,12 @@ bool ui_svc_t3_name(uint8_t n, char *name)
 	strcpy(name, names[n]);
 	return true;
 }
+void ui_svc_t3_reject(void)
+{
+	view.t3.ring_src = 0;
+	serial++;
+}
+
 void ui_svc_t3_poll(uint32_t id)
 {
 	(void)id;
@@ -2185,6 +2191,10 @@ bool ui_svc_msg_send(uint32_t dst, bool group, const char *text)
 	sim_rec.tx_id = dst;
 	return true;
 }
+bool ui_svc_msg_reply(uint16_t i, const char *text)
+{
+	return i < n_inbox && ui_svc_msg_send(inbox[i].m.src, false, text);
+}
 bool ui_svc_aprs_send_message(const char *to, const char *text, uint8_t flags)
 {
 	if (to[0] == '\0')
@@ -2689,7 +2699,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_STRIP, 1);
 	ui_svc_setting_set(UI_SET_ALIAS_SHOW, 1);
 	ui_svc_setting_set(UI_SET_MESSAGE_TONE, 1);
-	ui_svc_setting_set(UI_SET_MSG_FORMAT, 2);
+	ui_svc_setting_set(UI_SET_MSG_FORMAT, 255);
 	ui_svc_setting_set(UI_SET_VIBRATE, 1);
 	ui_svc_setting_set(UI_SET_PRIVACY_TYPE, 0);
 	ui_svc_setting_set(UI_SET_PRIVACY_KEY, 0);
@@ -3212,6 +3222,12 @@ static bool run_token(char *t, char *err, size_t len)
 		t3_tagged = true;
 		t3_view();
 		serial++;
+		return true;
+	}
+	if (strcmp(t, "t3ring") == 0 && arg != NULL) {
+		view.t3.ring_src = (uint32_t)atoi(arg);
+		serial++;
+		advance(100);
 		return true;
 	}
 	if (strcmp(t, "t3cli") == 0) {		// the next call from the PSTN gateway gives this caller's number

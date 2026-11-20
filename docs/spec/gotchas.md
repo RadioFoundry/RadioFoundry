@@ -143,6 +143,20 @@ key-up's first voice. On the SDR bench, with the wake-up rules of [dmr-modem.md]
 key-ups that failed from 3-9 of 16-24 to 0 of 60. Radios: HR_C5000
 measured; the rule is in the shared engine, so the HR_C6000 has it too.
 
+**1.14 NXDN calls were decoded but the speaker stayed silent.**
+Symptom: every voice frame of a received NXDN call reached the vocoder, with a normal PCM peak, and nothing came out
+of the speaker. Cause: a receive through the FM copy ([modem-hrc6000.md](modem-hrc6000.md) 10.6) puts the chip in FM
+mode (4:0x10 = 0x80), where I2S PCM doesn't reach the codec's line out ([modem-hrc6000.md](modem-hrc6000.md) 8). The
+I2S stream itself keeps running. No codec or system register lets I2S through in FM mode. Fix: while the FM copy holds
+the chip, the I2S stream copies each speaker block into a ring, and a feeder task writes it to the chip's prompt tone
+FIFO, which does reach the line out in FM mode (`platform/stm32f4/hrc/i2s_pcm.c`, `hrc_prompt_*`). Setting 0x06 bit 1
+alone plays nothing: the FIFO needs samples. The feeder runs at the top task priority. At the audio task's priority it
+missed its 8 ms turn whenever the copy interrupt read its 512 bytes with interrupts masked, which gave a gap every
+32 ms. The FIFO and the I2S stream share the chip's clock, so they never drift. Checked on the SDR bench by ear and by
+microphone: NXDN 4800 speech, every frame played, no gaps. The view keys `audio.fifo_chunks`, `audio.fifo_gaps` and
+`audio.fifo_full` count the path. Radios: HR_C6000; the HR_C5000's FIFO is not known, so a board turns the path on
+with `prompt_fifo`.
+
 ## 2. DMR modem timing: HR_C7000
 
 **2.1 The TX interrupts must be hooked.** Without the TX timeslot interrupt (vector 62) and the RF TX interrupt (vector 64) connected, the TX handler is never called and DMR TX never starts. TX states must run on the
@@ -593,7 +607,11 @@ fallback to a local copy, then a fixed drive (1408).
 ## 12. Memory and RAM limits
 
 **12.1 CCM RAM isn't zeroed at startup.** Buffers placed in the STM32 CCM must be initialized explicitly. A linker script
-may not map CCM at all: placing data in an unmapped .ccmram section is silently wrong.
+may not map CCM at all: placing data in an unmapped .ccmram section is silently wrong. RadioFoundry's start-up
+(`platform/stm32f4/ccm.c`) copies `.ccmdata` and zeroes `.ccmbss` before `main`; `.ccmram` keeps whatever was there. An
+initialized section must also be in the Makefile's `BIN_SECTIONS`: without it the image ends before the section's flash
+copy, the start-up copies erased flash, and every table reads 0xFF (a decoder benchmark then looks faster while its
+decodes fail).
 
 **12.2 Zero-initialized buffers in .data waste flash.** 25 MK22 buffers in a .data section stored 39.5 KB of zeros in
 flash; putting them in a .bss section of the same RAM bank saved 34.5 KB.

@@ -367,6 +367,7 @@
  "screen.roaming": "Roaming tra ripetitori",
  "screen.rx_group": "Ricezione di una chiamata di gruppo",
  "screen.rx_private": "Ricezione di una chiamata privata",
+ "screen.incoming-call": "Chiamata in arrivo",
  "screen.scan_actions": "Scansione",
  "screen.home_dual": "Doppio ascolto: A e B, PTT su A",
  "screen.home_dual_rx_b": "Doppio ascolto: una chiamata in arrivo su B",
