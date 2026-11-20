@@ -30,9 +30,11 @@
 // (ui_task > ui_quick_draw > draw_quick_list > ui_draw_list, down to a setting's read) needs 1672 bytes on the STM32
 // radios, the same on macOS and in CI now that the link order is sorted (gotchas 13.10); the quick screen's tiles and
 // the dual Home's layout table (dual_choose) live in frames of their own to stay below it, as a 4 bpp panel's palette
-// lookup adds 48 bytes under every fill. 504 words leave the 208 byte port overhead, the 128 byte margin and 8 bytes.
-// Every word here is RAM on all radios: raise it only by what the check shows
-#define UI_TASK_STACK_WORDS	504
+// lookup adds 48 bytes under every fill. 504 words left the 208 byte port overhead, the 128 byte margin and 8 bytes;
+// 516 since settings_t grew by D-STAR's 40 bytes (a copy sits on this stack: the STM32 radios' deepest chain went to
+// 1720 bytes in the maximal build, 40 past the margin). Every word here is RAM on all radios: raise it only by what
+// the check shows
+#define UI_TASK_STACK_WORDS	516
 
 #define SPLASH_MS		1000
 #define FRAME_MIN_MS		50	// at most 20 redraws a second

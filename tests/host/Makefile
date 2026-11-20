@@ -269,7 +269,8 @@ clean:
 .PHONY: all run clean
 
 # The radio core's state machine and the input gesture engine, against a fake board and codeplug (no RTOS)
-CORE_HAL := -I$(ROOT)/hal -Wshadow
+# D-STAR channels (core/radio/radio_dstar.c) are radioDstarTest's: these build the radio core without them
+CORE_HAL := -I$(ROOT)/hal -Wshadow -DCONFIG_DSTAR=0
 TESTS   += radioCoreTest inputTest switchFollowTest quadratureTest serialmicTest
 
 # A Tier III trunked system on the radio (radio_sm.c's trunk block): the engine and what it reads PDUs with
@@ -1787,12 +1788,23 @@ dstarCodecTest: dstarCodecTest.c $(DSTARCD) $(wildcard $(CORE)/dstar/*.h $(CORE)
 dstarCodecQualityTest: dstarCodecQualityTest.c $(DSTARCD) $(wildcard $(CORE)/dstar/*.h $(CORE)/dstar/*.inc)
 	$(CC) $(CFLAGS) -I. -Wshadow -o $@ dstarCodecQualityTest.c $(DSTARCD) -lm
 
+# D-STAR in the radio core (core/radio/radio_dstar.c): whole overs through the engine and the codec on a fake board's flat
+# paths and audio stream, UR's choices, no codec RAM, the bench's calibration and test signals, the counters' reset. The
+# module is built through radioDstarSeam.c, which lets the test run the audio task in the middle of the reset
+TESTS   += radioDstarTest
+DSTARRC := $(DSTARCD) radioDstarSeam.c $(CORE)/radio/radio_mode_ram.c $(CORE)/radio/radio_flat.c $(CORE)/dstar/dstar_gmsk.c \
+	   $(CORE)/dstar/dstar_engine.c $(CORE)/dstar/dstar_codeplug.c
+radioDstarTest: radioDstarTest.c $(DSTARRC) $(CORE)/radio/radio_dstar.c $(wildcard $(CORE)/dstar/*.h $(CORE)/radio/radio_dstar.h) \
+                $(ROOT)/hal/hal_audio_tap.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_DSTAR=1 -o $@ radioDstarTest.c $(DSTARRC) -lm
+
 run: run-dstar
-run-dstar: dstarTest dstarModemTest dstarCodecTest dstarCodecQualityTest
+run-dstar: dstarTest dstarModemTest dstarCodecTest dstarCodecQualityTest radioDstarTest
 	./dstarTest
 	./dstarModemTest
 	./dstarCodecTest
 	./dstarCodecQualityTest
+	./radioDstarTest
 ifneq ($(PYTHON),)
 	$(PYTHON) -B $(ROOT)/tools/dstar_ref.py --self-test
 	@$(PYTHON) -B $(ROOT)/tools/dstar_ref.py vectors | cmp -s - ../vectors/dstar.txt || \
