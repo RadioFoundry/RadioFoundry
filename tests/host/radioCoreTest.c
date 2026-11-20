@@ -2833,7 +2833,7 @@ static void test_persist(void)
 	// The DMR data service's settings: saved when they change, back after a reboot
 	dmrDataSettings_t ds;
 	dmrDataServiceGetSettings(&ds);
-	CHECK(ds.arsServer == 0 && ds.radioCheckReply && ds.callAlertAck && ds.smsFormat == DMR_SMS_FORMAT_ETSI_IP);
+	CHECK(ds.arsServer == 0 && ds.radioCheckReply && ds.callAlertAck && ds.smsFormat == DMR_SMS_FORMAT_DEFAULT);
 	ds.arsServer = 9990999;
 	ds.radioCheckReply = true;
 	ds.callAlertAck = false;
@@ -2843,12 +2843,12 @@ static void test_persist(void)
 	run(50);
 	settings_read(&cur);
 	CHECK(cur.ds_stored == 1 && cur.ds_ars_server == 9990999 && cur.ds_flags == (SETTINGS_DS_RADIO_CHECK_REPLY |
-											SETTINGS_DS_LRRP_REPLY | SETTINGS_DS_SMS_ETSI_IP));
+											SETTINGS_DS_LRRP_REPLY | SETTINGS_DS_SMS_ETSI_IP | SETTINGS_DS_SMS_ETSI));
 	CHECK(cur.ds_ip_gateway == 9990500);
 	boot();
 	dmrDataServiceGetSettings(&ds);
 	CHECK(ds.arsServer == 9990999 && ds.radioCheckReply && !ds.callAlertAck && ds.lrrpReply);
-	CHECK(ds.ipGatewayId == 9990500);
+	CHECK(ds.ipGatewayId == 9990500 && ds.smsFormat == DMR_SMS_FORMAT_DEFAULT);
 	// Only the ID's 24 bits are read back; a record from before the gateway ID has 0 there: off
 	settings_begin()->ds_ip_gateway = 0xFF000000u | 9990501;
 	settings_end(now);
@@ -2883,7 +2883,7 @@ static void test_persist(void)
 	settings_end(now);
 	boot();
 	dmrDataServiceGetSettings(&ds);
-	CHECK(ds.arsServer == 0 && ds.radioCheckReply && ds.callAlertAck && ds.smsFormat == DMR_SMS_FORMAT_ETSI_IP);
+	CHECK(ds.arsServer == 0 && ds.radioCheckReply && ds.callAlertAck && ds.smsFormat == DMR_SMS_FORMAT_DEFAULT);
 
 	// The codeplug's settings area (docs/spec/codeplug-settings.md 5): a key that is present sets the ARS server, at
 	// start and when the codeplug changes, and the radio's own copy follows it
@@ -9057,32 +9057,16 @@ static void test_t3_udt_sms(void)
 }
 // Packet data (6.6.3): the data service's message waits while the radio asks the TSCC for a data channel, then goes on
 // the granted slot without preambles; data to the radio on a payload channel reaches the data service
-static void test_t3_sms_ip_selection(void)
-{
-	// Automatic falls back on a 24-character message; explicitly configured ETSI IP can send even a short one.
-	for (unsigned i = 0; i < 2; i++) {
-		dmr_start(true);
-		sim.repeater = true;
-		t3_stage_start();
-		if (i != 0)
-			CHECK(ui_svc_setting_set(UI_SET_MSG_FORMAT, DMR_SMS_FORMAT_ETSI_IP));
-		CHECK(sms_send(1000001u, false, i == 0 ? "123456789012345678901234" : "Hello!",
-			       true, DMR_SMS_FORMAT_DEFAULT));
-		t3_site_run(600);
-		CHECK(radio_t3v.ax_svc == T3_SVC_PDATA);
-		req(RREQ_T3, RADIO_T3_STOP);
-		run(100);
-		sim.repeater = false;
-	}
-}
-
-static void test_t3_pdata(void)
+static void test_t3_pdata(bool automatic)
 {
 	dmr_start(true);
 	sim.repeater = true;
 	t3_stage_start();
 	unsigned from = sim.air_count;
-	CHECK(sms_send(1000001u, false, "hello trunk", false, DMR_SMS_FORMAT_ETSI_IP));
+	if (!automatic)
+		CHECK(ui_svc_setting_set(UI_SET_MSG_FORMAT, DMR_SMS_FORMAT_ETSI_IP));
+	CHECK(sms_send(1000001u, false, automatic ? "123456789012345678901234" : "Hello!",
+		       false, DMR_SMS_FORMAT_DEFAULT));
 	t3_site_run(600);
 	CHECK(radio_t3v.pd_wait && radio_t3v.ax_svc == T3_SVC_PDATA);
 	int rand_at = -1;
@@ -10478,13 +10462,13 @@ int main(void)
 	test_t3_one_carrier();
 	test_t3_sdata();
 	test_t3_udt_sms();
-	test_t3_sms_ip_selection();
 	test_t3_radio_check();
 	test_t3_clear_slot();
 #if CONFIG_DMR_TRUNK_GW
 	test_t3_dial();
 #endif
-	test_t3_pdata();
+	test_t3_pdata(true);
+	test_t3_pdata(false);
 	test_t3_emergency();
 #if CONFIG_DMR_EMERGENCY
 	test_t3_emergency_other_system();
