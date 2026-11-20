@@ -211,6 +211,16 @@ export function newSystem(m, type, name) {
 	return { number: null, type, name, sharing: SHARE.identity, ownId: 0, tx: mod.defaultTx, needsKey: false, flagsRaw: 0, fallback: null, fields: mod.newFields(), entries: [], trafficKeys: [], secret: null, raw: null };
 }
 
+// A system of the type's recommended ham setup (the module's ham: docs/spec/ham-trunking.md), with what the user gave:
+// {name, rxHz, txHz (0: as RX), and the setup's asks}. Null when the type has none
+export function newHamSystem(m, type, given) {
+	const ham = typeRow(type)?.module.ham;
+	if (!ham) return null;
+	const s = newSystem(m, type, given.name || ham.name);
+	const a = { ...given, txHz: given.txHz || given.rxHz };
+	return Object.assign(s, { tx: ham.tx, needsKey: false, fields: ham.fields(), entries: ham.entries(a) });
+}
+
 // --- Writing ---
 
 // A fallback reference as stored: number and check. A number as read keeps the check stored with it (was: the
