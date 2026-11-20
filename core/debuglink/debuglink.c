@@ -435,6 +435,17 @@ static size_t cmd_get_view(const uint8_t *req, uint16_t len, uint8_t *out, size_
 		t.full = false;
 		dl_text(&t, "truncated=1\n");
 	}
+	if (len >= 3) {
+		// A page: offset u16, limit u16 (0 or none: the whole reply), a key prefix (3.7). Small replies over the air
+		uint16_t limit = len >= 5 ? (uint16_t)(req[3] | (req[4] << 8)) : 0;
+		if (limit == 0 || limit > cap - 6) {
+			limit = (uint16_t)(cap - 6);
+		} else if (limit < DL_VIEW_PAGE_MIN) {
+			limit = DL_VIEW_PAGE_MIN;	// the section= line and the more= line always fit
+		}
+		t.len = dl_view_page((char *)out + 6, t.len, len > 5 ? (const char *)req + 5 : "", len > 5 ? len - 5u : 0,
+				     (uint16_t)(req[1] | (req[2] << 8)), limit);
+	}
 	return 6 + t.len;
 }
 
@@ -865,6 +876,10 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 	case DL_CMD_AIR:
 		return debuglink_cmd_air(req, len, out, cap);
 #endif
+	case DL_CMD_DETOUR:
+		return debuglink_cmd_detour(req, len, out, cap);
+	case DL_CMD_DMRIP:
+		return debuglink_cmd_dmrip(req, len, out, cap);
 	case DL_CMD_CODEPLUG:
 #if CONFIG_CPS_FAST
 		return cps_fast_cmd(req, len, out, cap, hal_millis());
@@ -876,6 +891,25 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 	}
 }
 
+#if CONFIG_DEBUGLINK_DMRIP
+size_t debuglink_dispatch(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
+{
+	return handle(cmd, req, len, out, cap);
+}
+
+static uint32_t reply_gen;
+
+uint8_t *debuglink_reply_buffer(void)
+{
+	return reply;
+}
+
+uint32_t debuglink_reply_gen(void)
+{
+	return reply_gen;
+}
+#endif
+
 static void write_out(const uint8_t *buf, size_t len)
 {
 	hostlink_write(buf, len);
@@ -883,6 +917,9 @@ static void write_out(const uint8_t *buf, size_t len)
 
 static size_t side_feed(const uint8_t *buf, size_t len, uint32_t now_ms)
 {
+#if CONFIG_DEBUGLINK_DMRIP
+	reply_gen++;		// the over-the-air transport's last reply in reply[] may go
+#endif
 	size_t took = dl_parser_feed(&parser, buf, len, now_ms, handle, write_out, reply);
 	if (reboot_pending) {
 		reboot_now();

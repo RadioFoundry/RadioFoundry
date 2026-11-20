@@ -38,7 +38,13 @@ enum {
 	DL_CMD_T3		= 0x22,	// a Tier III trunked system: stage, select, leave (debuglink_t3.c, 3.26)
 	DL_CMD_CPKV		= 0x23,	// a key of the codeplug settings area: read, write, remove (debuglink_cpkv.c, 3.27)
 	DL_CMD_AIR		= 0x24,	// the air interface on the bench: tap, session, RX, TX (CONFIG_AIR_RAW; debuglink_air.c, 3.28)
+	DL_CMD_DETOUR		= 0x25,	// temporary settings a deadline reverts (CONFIG_DEBUGLINK_DMRIP; dl_dmrip.h, 7.4)
+	DL_CMD_DMRIP		= 0x26,	// the debug link over the air: status, key (CONFIG_DEBUGLINK_DMRIP; 7.5)
 };
+
+// DL_CMD_DMRIP operations (first payload byte; docs/spec/debuglink.md 7.5)
+#define DL_DMRIP_OP_STATUS	0u	// -> port u16, key source u8 (0 none, 1 chip UID, 2 set), counters ( 7.5)
+#define DL_DMRIP_OP_KEY		1u	// key[16] (all zero: back to the chip UID's) -> none. Over the cable only
 
 // DL_CMD_T3 operations (first payload byte; docs/spec/debuglink.md 3.26). Little endian
 enum {

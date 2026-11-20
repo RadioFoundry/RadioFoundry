@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The debug link's printf subset (see dl_fmt.h)
+#include <string.h>
 #include "debuglink/dl_fmt.h"
 
 typedef struct {
@@ -173,4 +174,38 @@ void dl_text_kv_str(dl_text_t *t, const char *key, const char *value)
 	}
 	v[n] = '\0';
 	dl_text(t, "%s=%s\n", key, v);
+}
+
+size_t dl_view_page(char *text, size_t len, const char *prefix, size_t plen, uint16_t offset, uint16_t limit)
+{
+	size_t out = 0, pos = 0, at = 0;
+	size_t room = limit > DL_VIEW_MORE_MAX ? limit - DL_VIEW_MORE_MAX : 0;
+	bool cut = false;
+	while (at < len) {
+		size_t end = at;
+		while (end < len && text[end] != '\n') {
+			end++;
+		}
+		size_t n = (end < len ? end + 1 : end) - at;	// the line with its newline
+		bool head = n >= 8 && memcmp(text + at, "section=", 8) == 0;
+		bool keep = head || plen == 0 || (n >= plen && memcmp(text + at, prefix, plen) == 0);
+		if (keep && !head) {
+			if (pos < offset) {
+				keep = false;
+			} else if (out + n > room) {
+				cut = true;
+				break;
+			}
+			pos += n;
+		}
+		if (keep) {
+			memmove(text + out, text + at, n);	// out <= at: compaction only moves left
+			out += n;
+		}
+		at += n;
+	}
+	if (cut) {
+		out += dl_fmt(text + out, DL_VIEW_MORE_MAX, "more=%u\n", (unsigned)pos);
+	}
+	return out;
 }

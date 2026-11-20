@@ -990,9 +990,18 @@ debuglinkTest: $(DLINK) $(wildcard $(CORE)/debuglink/*.h) $(ROOT)/platform/stm32
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DDLOG_NO_RTOS -o $@ $(DLINK)
 
 run: run-debuglink
-run-debuglink: debuglinkTest
+run-debuglink: debuglinkTest dlDmripTest
 	./debuglinkTest
+	./dlDmripTest
 .PHONY: run-debuglink
+
+# The debug link over the air, its pure parts: SipHash, the datagram and addressing, replay, the air policy, the
+# detour's items and runner (core/debuglink/dl_dmrip.c), GET_VIEW's page (dl_fmt.c)
+TESTS   += dlDmripTest
+dlDmripTest: dlDmripTest.c $(CORE)/debuglink/dl_dmrip.c $(CORE)/debuglink/dl_dmrip.h $(CORE)/debuglink/dl_frame.c \
+		$(CORE)/debuglink/dl_fmt.c
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ dlDmripTest.c $(CORE)/debuglink/dl_dmrip.c $(CORE)/debuglink/dl_frame.c \
+		$(CORE)/debuglink/dl_fmt.c
 
 # The runtime RAM-monitor loader's portable state machine (core/stubentry/stub_load.c, CONFIG_STUB_ENTRY)
 TESTS   += stubEntryTest
