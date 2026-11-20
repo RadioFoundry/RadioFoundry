@@ -38,6 +38,7 @@ release = "stable"
 [ci]
 extra = [
 	{ name = "audio-probe", make = ["CONFIG_AUDIO_PROBE=y", "CONFIG_APRS_RX=n", "LTO=1"] },
+	{ name = "debuglink-dmrip", make = ["CONFIG_DEBUGLINK_DMRIP=y"] },
 ]
 
 [flash]
