@@ -4629,8 +4629,8 @@ msgstr "Canal voix inutilisable"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_P25T_WACN_BLOCKED"
-msgid "WACN BEE00: no TX"
-msgstr "WACN BEE00 : TX interdit"
+msgid "Blocked system: no TX"
+msgstr "Système bloqué : pas de TX"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_TRUNK_OTHER_SYS"

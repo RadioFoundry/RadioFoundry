@@ -42,7 +42,7 @@
 #define P25_FOLLOW_BLOCKED	0x40	// the system was heard naming P25_WACN_NO_TX before: the transmit side starts blocked
 
 // Access timers, ms (docs/spec/p25-trunking.md 5)
-#define P25_ACC_SITE_MS		2000	// on a control channel without its site's identity yet: register anyway
+#define P25_ACC_SITE_MS		2000	// system verified, site's identity not heard yet: register anyway
 #define P25_ACC_ANSWER_MS	1000	// an inbound block without an answer: sent again
 #define P25_ACC_TRIES		3	// sends of one request
 #define P25_ACC_GAP_MS		100	// a resend waits this much plus up to P25_ACC_GAP_MS x 3 at random

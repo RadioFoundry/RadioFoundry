@@ -1287,7 +1287,7 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 		case RADIO_TRUNK_WHY_DENIED: sb_str(&b, TR(DENY_WHY_P25T_DENIED, "System denied the call")); break;
 		case RADIO_TRUNK_WHY_NO_ANSWER: sb_str(&b, TR(DENY_WHY_P25T_NO_ANSWER, "No answer from system")); break;
 		case RADIO_TRUNK_WHY_NO_CHAN: sb_str(&b, TR(DENY_WHY_P25T_NO_CHAN, "Voice channel unusable")); break;
-		case RADIO_TRUNK_WHY_BLOCKED: sb_str(&b, TR(DENY_WHY_P25T_WACN_BLOCKED, "WACN BEE00: no TX")); break;
+		case RADIO_TRUNK_WHY_BLOCKED: sb_str(&b, TR(DENY_WHY_P25T_WACN_BLOCKED, "Blocked system: no TX")); break;
 		case RADIO_TRUNK_WHY_OTHER_SYS: sb_str(&b, TR(DENY_WHY_TRUNK_OTHER_SYS, "Another system heard")); break;
 		case RADIO_TRUNK_WHY_REG_REFUSED: sb_str(&b, TR(DENY_WHY_TRUNK_REG_REFUSED, "Registration refused")); break;
 #if CONFIG_DMR_TRUNK
