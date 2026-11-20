@@ -7,7 +7,12 @@
 
 // The printable run of text around the first match of the radio's variant_pattern ("909E.DBB.EARSAB.020"), or null
 export function versionText(radio, text) {
-	if (!radio?.variant_pattern || !text) return null;
+	if (!text) return null;
+	// a model without variants: the first printable run after the identify reply's "Read_<size>_" and its zero bytes
+	if (!radio?.variant_pattern) {
+		const m = /Read_\w+_\0+([ -~]{8,48})/.exec(text);
+		return m ? m[1].trim() : null;
+	}
 	const m = new RegExp(radio.variant_pattern).exec(text);
 	if (!m) return null;
 	const printable = (c) => c >= " " && c <= "~";
