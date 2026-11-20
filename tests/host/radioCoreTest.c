@@ -66,7 +66,8 @@ static struct {
 	uint32_t tx_hz;
 	uint8_t tx_power;
 	int tx_off_calls;
-	bool keyed;		// between tx() and tx_off()
+	bool keyed;		// between a tx() that keyed and the next tx_off()
+	bool rx_since_tx;	// an rx() since the last tx(): a retune ends a DMR keying (the boards disarm in rx())
 	bool audio;
 	bool led[2];
 	radio_status_t st;
@@ -82,14 +83,23 @@ static bool r_rx(uint32_t hz, radio_bw_t bw, const subtone_t *t)
 	hw.rx_bw = bw;
 	hw.rx_tone = *t;
 	hw.rx_calls++;
+	hw.rx_since_tx = true;
 	return true;
 }
+// tx() while keyed with neither tx_off() nor rx() between, over the whole run (hw is cleared per test): a board then
+// reprograms its synthesizer and RF switches under a PA that a DMR burst may be holding keyed (hal_radio_t.tx is
+// written to start from receive)
+static int rekeys;
 static bool tx_fail;			// the board refuses to key (synthesizer won't lock, PA fault)
 static bool r_tx(uint32_t hz, radio_bw_t bw, uint8_t p, const subtone_t *t)
 {
 	if (tx_fail) {
 		return false;
 	}
+	if (hw.keyed && !hw.rx_since_tx) {
+		rekeys++;
+	}
+	hw.rx_since_tx = false;
 	hw.tx_calls++;
 	hw.tx_hz = hz;
 	hw.tx_bw = bw;
@@ -1798,7 +1808,7 @@ static void test_dmr_tx(void)
 // handled, no tx_off() and no receive set-up, so a reply 30 ms after our terminator is heard; refused, tx_off() as before
 static int tx_end_calls;
 static bool tx_end_ok;
-static bool r_dmr_tx_end(void) { tx_end_calls++; return tx_end_ok; }
+static bool r_dmr_tx_end(void) { tx_end_calls++; if (tx_end_ok) hw.keyed = false; return tx_end_ok; }	// handled: unkeyed
 
 static void test_dmr_tx_end(void)
 {
@@ -2502,8 +2512,12 @@ static void test_hotspot(void)
 	radio_sm_request(&sm, &r, now);
 	CHECK(hw.rx_hz == 438800000 && hw.tx_hz == 438800000 && hw.tx_calls == tx0 + 1 &&
 		hw.tx_power == 1);
+	// A new level re-keys, through tx_off: never a second tx() on a keyed board
+	int rk = rekeys;
 	req(RREQ_HS_POWER, 255);
-	CHECK(hw.tx_calls == tx0 + 2 && hw.tx_power == 2);
+	CHECK(hw.tx_calls == tx0 + 2 && hw.tx_power == 2 && hw.keyed);
+	CHECK(rekeys == rk && hw.tx_off_calls == off0 + 1);
+	off0 = hw.tx_off_calls;
 	r.arg = 121500000;	// refused: the radio stays where it was
 	r.arg2 = 121500000;
 	radio_sm_request(&sm, &r, now);
@@ -2833,7 +2847,7 @@ static void test_persist(void)
 	// The DMR data service's settings: saved when they change, back after a reboot
 	dmrDataSettings_t ds;
 	dmrDataServiceGetSettings(&ds);
-	CHECK(ds.arsServer == 0 && ds.radioCheckReply && ds.callAlertAck && ds.smsFormat == DMR_SMS_FORMAT_ETSI_IP);
+	CHECK(ds.arsServer == 0 && ds.radioCheckReply && ds.callAlertAck && ds.smsFormat == DMR_SMS_FORMAT_DEFAULT);
 	ds.arsServer = 9990999;
 	ds.radioCheckReply = true;
 	ds.callAlertAck = false;
@@ -2843,12 +2857,12 @@ static void test_persist(void)
 	run(50);
 	settings_read(&cur);
 	CHECK(cur.ds_stored == 1 && cur.ds_ars_server == 9990999 && cur.ds_flags == (SETTINGS_DS_RADIO_CHECK_REPLY |
-											SETTINGS_DS_LRRP_REPLY | SETTINGS_DS_SMS_ETSI_IP));
+											SETTINGS_DS_LRRP_REPLY | SETTINGS_DS_SMS_ETSI_IP | SETTINGS_DS_SMS_ETSI));
 	CHECK(cur.ds_ip_gateway == 9990500);
 	boot();
 	dmrDataServiceGetSettings(&ds);
 	CHECK(ds.arsServer == 9990999 && ds.radioCheckReply && !ds.callAlertAck && ds.lrrpReply);
-	CHECK(ds.ipGatewayId == 9990500);
+	CHECK(ds.ipGatewayId == 9990500 && ds.smsFormat == DMR_SMS_FORMAT_DEFAULT);
 	// Only the ID's 24 bits are read back; a record from before the gateway ID has 0 there: off
 	settings_begin()->ds_ip_gateway = 0xFF000000u | 9990501;
 	settings_end(now);
@@ -2883,7 +2897,7 @@ static void test_persist(void)
 	settings_end(now);
 	boot();
 	dmrDataServiceGetSettings(&ds);
-	CHECK(ds.arsServer == 0 && ds.radioCheckReply && ds.callAlertAck && ds.smsFormat == DMR_SMS_FORMAT_ETSI_IP);
+	CHECK(ds.arsServer == 0 && ds.radioCheckReply && ds.callAlertAck && ds.smsFormat == DMR_SMS_FORMAT_DEFAULT);
 
 	// The codeplug's settings area (docs/spec/codeplug-settings.md 5): a key that is present sets the ARS server, at
 	// start and when the codeplug changes, and the radio's own copy follows it
@@ -9087,15 +9101,96 @@ static void test_t3_sdata(void)
 	run(100);
 	sim.repeater = false;
 }
+
+static void test_t3_udt_sms(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	static const uint8_t expected[] = { 0, 'H', 0, 'e', 0, 'l', 0, 'l', 0, 'o', 0, '!' };
+	unsigned before = t3_sent(T3_OP_C_RAND);
+	CHECK(sms_send(1000001u, false, "Hello!", true, DMR_SMS_FORMAT_DEFAULT));
+	t3_site_run(600);
+	CHECK(t3_sent(T3_OP_C_RAND) > before && radio_t3v.ax_svc == T3_SVC_SDATA);
+
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_IND_UDT;
+	h.u.ahoy.blocks = 1;
+	h.u.ahoy.dst = T3_OWN;
+	h.u.ahoy.src = T3_ID_SDMI;
+	unsigned from = sim.air_count;
+	t3_csbk_rx(&h, 1);
+	t3_site_run(400);
+	int hdr = -1;
+	for (unsigned i = from; i < sim.air_count; i++) {
+		if (sim.air[i].kind == DMR_BURST_DATA_HEADER) {
+			hdr = (int)i;
+			break;
+		}
+	}
+	CHECK(hdr >= 0 && (unsigned)hdr + 2u < sim.air_count);
+	if (hdr >= 0 && (unsigned)hdr + 2u < sim.air_count) {
+		const sim_air_t *a = &sim.air[hdr];
+		t3_udt_t u;
+		CHECK(t3_udt_parse(a->payload, &u) && u.op == T3_OP_C_UDTHU && u.dst == 1000001u && u.src == T3_OWN &&
+		      u.blocks == 2 && u.format == T3_UDTF_UTF16);
+		CHECK(sim.air[hdr + 1].kind == DMR_BURST_RATE_12_DATA && sim.air[hdr + 2].kind == DMR_BURST_RATE_12_DATA);
+		// One frame apart each: consecutive inbound slots of the TSCC's slot
+		CHECK(sim.air[hdr + 1].slot == a->slot + 2u && sim.air[hdr + 2].slot == a->slot + 4u);
+		uint8_t blk[2][T3_UDT_BLOCK];
+		memcpy(blk[0], sim.air[hdr + 1].payload, T3_UDT_BLOCK);
+		memcpy(blk[1], sim.air[hdr + 2].payload, T3_UDT_BLOCK);
+		CHECK(t3_udt_crc_ok((const uint8_t (*)[T3_UDT_BLOCK])blk, 2) && memcmp(blk, expected, sizeof expected) == 0);
+	}
+	CHECK(radio_t3v.send_fail == 0);
+	t3_csbk_t ack = { .lb = true, .op = T3_OP_C_ACKD };
+	ack.u.ack.reason = T3_RC_MESSAGE_ACCEPTED;
+	ack.u.ack.dst = T3_OWN;
+	ack.u.ack.src = 1000001u;
+	t3_csbk_rx(&ack, 1);
+	t3_site_run(180);
+	CHECK(sms_send_state() == DMR_REQ_OK);
+
+	// A download to the radio
+	uint8_t blk[T3_UDT_BLOCKS_MAX][T3_UDT_BLOCK], pad, d[T3_CSBK_BYTES];
+	t3_udt_t u = { .op = T3_OP_C_UDTHD, .a = true, .format = T3_UDTF_ISO8, .dst = T3_OWN, .src = 1000001u };
+	u.blocks = t3_udt_pack((const uint8_t *)"hi there", 8, 0xFF, blk, &pad);
+	u.pad = pad;
+	t3_udt_build(&u, d);
+	before = t3_sent(T3_OP_C_ACKU);
+	t3_data_rx(DMR_BURST_DATA_HEADER, d, 1);
+	run(60);
+	t3_data_rx(DMR_BURST_RATE_12_DATA, blk[0], 1);
+	t3_site_run(300);
+	CHECK(radio_t3v.sd_count == 1 && radio_t3v.sd_len == 8 && memcmp(radio_t3v.sd_data, "hi there", 8) == 0 &&
+	      radio_t3v.sd_src == 1000001u);
+	CHECK(t3_sent(T3_OP_C_ACKU) > before);
+	// ... into the message inbox, as a message from the sender
+	int msgs = sms_inbox_count();
+	CHECK(msgs >= 1);
+	if (msgs >= 1) {
+		const dmrDataMessage_t *m = dmrDataServiceMessage(0);
+		CHECK(m->src == 1000001u && !m->group && strcmp(m->text, "hi there") == 0 && m->unread &&
+		      m->format == DMR_SMS_FORMAT_T3_UDT);
+	}
+	while (sms_inbox_count() > 0 && sms_inbox_delete(0)) {
+	}
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
 // Packet data (6.6.3): the data service's message waits while the radio asks the TSCC for a data channel, then goes on
 // the granted slot without preambles; data to the radio on a payload channel reaches the data service
-static void test_t3_pdata(void)
+static void test_t3_pdata(bool automatic)
 {
 	dmr_start(true);
 	sim.repeater = true;
 	t3_stage_start();
 	unsigned from = sim.air_count;
-	CHECK(sms_send(1000001u, false, "hello trunk", false, DMR_SMS_FORMAT_ETSI_IP));
+	if (!automatic)
+		CHECK(ui_svc_setting_set(UI_SET_MSG_FORMAT, DMR_SMS_FORMAT_ETSI_IP));
+	CHECK(sms_send(1000001u, false, automatic ? "123456789012345678901234" : "Hello!",
+		       false, DMR_SMS_FORMAT_DEFAULT));
 	t3_site_run(600);
 	CHECK(radio_t3v.pd_wait && radio_t3v.ax_svc == T3_SVC_PDATA);
 	int rand_at = -1;
@@ -9180,7 +9275,8 @@ static void test_t3_pdata(void)
 	run(500);
 	CHECK(sms_inbox_count() == inbox + 1);
 	dmrDataMessage_t m;
-	CHECK(sms_inbox_get(0, &m) && m.src == 1000001u && strcmp(m.text, "hi radio") == 0);
+	CHECK(sms_inbox_get(0, &m) && m.src == 1000001u && strcmp(m.text, "hi radio") == 0 &&
+	      m.format == DMR_SMS_FORMAT_ETSI_IP);
 	CHECK(sms_inbox_delete(0));	// the inbox as the later tests expect it
 	req(RREQ_T3, RADIO_T3_STOP);
 	run(100);
@@ -9204,6 +9300,73 @@ static bool t3_rand_since(unsigned from, uint8_t kind, t3_csbk_t *q)
 static uint8_t t3_rand_status(const t3_csbk_t *q)
 {
 	return (uint8_t)(((q->u.rand.options & 0x1Fu) << 2) | (q->u.rand.extra & 3u));
+}
+
+static void test_t3_foacsu_ptt_release(void)
+{
+	const uint32_t called = 1000001u;
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	req(RREQ_DMR_TARGET, (int32_t)((1u << 24) | called));
+
+	unsigned from = sim.air_count;
+	req(RREQ_PTT, 1);
+	t3_site_run(600);
+	t3_csbk_t q;
+	CHECK(t3_rand_since(from, T3_SK_IND_VOICE, &q) && q.u.rand.dst == called);
+
+	t3_csbk_t a = { .lb = true, .op = T3_OP_C_ACKD };
+	a.u.ack.reason = T3_RC_MS_ALERTING;
+	a.u.ack.dst = T3_OWN;
+	a.u.ack.src = called;
+	t3_csbk_rx(&a, 1);
+	t3_site_run(100);
+	CHECK(radio_t3v.ptt_wait);
+
+	from = sim.air_count;
+	req(RREQ_PTT, 0);
+	t3_site_run(300);
+	CHECK(radio_t3v.ptt_wait && !sm.ptt);
+	CHECK(!t3_rand_since(from, T3_SK_CANCEL, &q));
+	radio_sm_t3_brief(&sm);
+	CHECK(sm.view.t3.alerting);
+
+	req(RREQ_T3, RADIO_T3_CANCEL);
+	t3_site_run(600);
+	CHECK(t3_rand_since(from, T3_SK_CANCEL, &q) && q.u.rand.dst == called);
+	radio_sm_t3_brief(&sm);
+	CHECK(!sm.view.t3.alerting && !radio_t3v.ptt_wait);
+
+	a.u.ack.reason = T3_RC_MESSAGE_ACCEPTED;
+	t3_csbk_rx(&a, 1);
+	t3_site_run(100);
+	req(RREQ_PTT, 1);
+	t3_site_run(600);
+	a.u.ack.reason = T3_RC_MS_ALERTING;
+	t3_csbk_rx(&a, 1);
+	t3_site_run(100);
+	req(RREQ_PTT, 0);
+	t3_site_run(100);
+	CHECK(radio_t3v.ptt_wait && !sm.ptt);
+
+	t3_csbk_t g = { .lb = true, .op = T3_OP_PV_GRANT };
+	g.u.grant.lpcn = 1;
+	g.u.grant.slot = 2;
+	g.u.grant.dst = called;
+	g.u.grant.src = T3_OWN;
+	t3_csbk_rx(&g, 1);
+	run(200);
+	CHECK(radio_t3v.state == T3_FOLLOW && radio_t3v.can_talk && !radio_t3v.ptt_wait);
+	CHECK(!sm.ptt && sm.view.state != RS_TX && !sm.dmr_keyed);
+
+	req(RREQ_PTT, 1);
+	run(200);
+	CHECK(sm.view.state == RS_TX && sm.view.ch.timeslot == 2);
+	req(RREQ_PTT, 0);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
 }
 
 // A radio check on a trunked system goes as a status poll (6.6.6.2): the poll's acknowledgement is the check's answer;
@@ -9929,6 +10092,27 @@ static void test_t3_learn_syscode(void)
 	t3_site_code = 0;
 }
 
+#if CONFIG_DUAL_WATCH
+// A Tier III channel is never one of dual watch's two (radio-features.md 2.1): the UI's service refuses it at once on
+// either side, and a request that gets past it starts nothing in the radio core; the system goes on as it was
+static void test_t3_dual(void)
+{
+	t3_cp_zone(T3_OPT_PRIVATE, 0, 0, NULL);
+	req(RREQ_ZONE, 2);			// "Ops A"
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED);
+	const ui_dual_ref_t t3 = { false, 2, 0 }, conv = { false, 0, 0 };
+	const ui_dual_ref_t as_a[2] = { t3, conv }, as_b[2] = { conv, t3 };
+	CHECK(!ui_svc_dual(as_a, 0) && !ui_svc_dual(as_a, 1) && !ui_svc_dual(as_b, 0) && !ui_svc_dual(as_b, 1));
+	CHECK(sm.view.scan == SCAN_OFF && radio_t3v.on);
+	const radio_dual_ref_t r[2] = { { false, 2, 0 }, { false, 0, 0 } };
+	radio_req_dual(r, 1);
+	t3_site_run(300);
+	CHECK(sm.view.scan == SCAN_OFF && sm.view.channel_number == 7 && radio_t3v.state == T3_CAMPED);
+	t3_cp_done();
+}
+#endif
+
 // A trunked channel transmits only when its tag allows it and its system is one the radio runs with a transmit side
 // (channel-modes.md 3 and 4): a receive-only channel and a system without the transmit flag camp and listen, send
 // nothing on the control channel and refuse PTT; a channel that names no system, or one with no record, is unavailable
@@ -10584,14 +10768,17 @@ int main(void)
 	test_t3_at();
 	test_t3_talk();
 	test_t3_send_refused();
+	test_t3_foacsu_ptt_release();
 	test_t3_one_carrier();
 	test_t3_sdata();
+	test_t3_udt_sms();
 	test_t3_radio_check();
 	test_t3_clear_slot();
 #if CONFIG_DMR_TRUNK_GW
 	test_t3_dial();
 #endif
-	test_t3_pdata();
+	test_t3_pdata(true);
+	test_t3_pdata(false);
 	test_t3_emergency();
 #if CONFIG_DMR_EMERGENCY
 	test_t3_emergency_other_system();
@@ -10615,6 +10802,9 @@ int main(void)
 	test_t3_fallback();
 	test_t3_follow_all();
 	test_t3_learn_syscode();
+#if CONFIG_DUAL_WATCH
+	test_t3_dual();
+#endif
 #endif
 	test_dmr_stalled();
 	test_dmr_list_talk_target();
@@ -10674,6 +10864,7 @@ int main(void)
 	test_dmr_data_glue();	// (last: the data service's state carries over)
 	test_factory_reset();
 	test_volume_step_of();
+	CHECK(rekeys == 0);	// every keying in every test above was ended before the next
 	printf("# radioCoreTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;
 }

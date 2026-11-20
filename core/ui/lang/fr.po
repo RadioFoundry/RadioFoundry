@@ -3618,6 +3618,11 @@ msgid "Channel"
 msgstr "Canal"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_VALUE_MSGFMT_AUTOMATIC"
+msgid "Automatic"
+msgstr "Automatique"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_VALUE_MSGFMT_ETSI_SHORT"
 msgid "ETSI short"
 msgstr "ETSI court"
@@ -4776,6 +4781,11 @@ msgstr "Recherche"
 msgctxt "TRUNK_STATE_IN_CALL"
 msgid "In call"
 msgstr "En appel"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_CALLING"
+msgid "Calling"
+msgstr "Appel en cours"
 
 #: core/ui/ui_screens.c
 msgctxt "TRUNK_STATE_REFUSED"
