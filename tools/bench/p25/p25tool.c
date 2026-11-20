@@ -723,8 +723,7 @@ static void isp_json(FILE *f, const uint8_t blk[P25_TSBK_BYTES])
 		fprintf(f, ",\"kind\":\"grp_v_req\",\"svc\":%u,\"tg\":%u,\"src\":%u", m.svc, m.tg, m.src);
 		break;
 	case P25_ISP_GRP_AFF_REQ:
-		fprintf(f, ",\"kind\":\"grp_aff_req\",\"emergency\":%s,\"sysid\":%u,\"tg\":%u,\"src\":%u",
-			m.emergency ? "true" : "false", m.sysid, m.tg, m.src);
+		fprintf(f, ",\"kind\":\"grp_aff_req\",\"sysid\":%u,\"tg\":%u,\"src\":%u", m.sysid, m.tg, m.src);
 		break;
 	default:
 		fprintf(f, ",\"kind\":\"u_reg_req\",\"wacn\":%u,\"sysid\":%u,\"src\":%u", m.wacn, m.sysid, m.src);

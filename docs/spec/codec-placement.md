@@ -76,6 +76,15 @@ copy.
 The codec window (in SRAM) is the largest code among the board's maps, and the table window (in modem SRAM) is the
 union of its builds' tables. Both are in the radio's codec page and the board's linker script.
 
+The rest of the modem SRAM has fixed users too: the PCM buffers at its start and the crash log's words at its end
+(0x18007EF0..0x18008000, `platform/hrc7000/platform.h`). A board may give RadioFoundry a part above the table window
+as the linker region `MODEM_BSS` (`__modem_bss_lo`, `__modem_bss_hi` in its `memory.ld`), with a margin past the
+tables' end where it is not known whether the codec writes there. The section `.modem_bss` goes there and crt0 zeroes
+it. It holds the state the core marks `RFOUNDRY_COLD_RAM` (`core/config.h`): large buffers task code uses now and
+then, never one an interrupt, the audio, the modem or the codec touches, and no stack. A board without such a part
+aliases `MODEM_BSS` to its RAM, and the same state is ordinary bss. The linker fails the build when the part overlaps
+the table window, the PCM buffers or the crash log. Which boards have one is in their hardware pages.
+
 Version 2 is the only slot format the firmware and the tools write. A radio with a version 1 slot reports no codec
 (FM works). The web flasher rebuilds such a slot as version 2 when the build has a codec map (`c7000v1.js`, kept
 only until the developer radios are moved); otherwise the codec is installed again from the stock file. The firmware
