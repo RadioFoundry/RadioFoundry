@@ -252,6 +252,7 @@ typedef struct {
 	uint8_t state;		// t3_state_t
 	uint8_t reg;		// t3_reg_t
 	uint16_t polls, poll_fails;	// short data polls from the menus, and those refused or unanswered
+	bool ringing;		// an incoming private call awaits PTT to answer
 	uint16_t other;		// searching: C_SYScode of another system heard (t3_ms_other), 0 none
 	uint8_t why;		// RADIO_TRUNK_WHY_* of the last PTT refused (TXDENY_TRUNK)
 	bool alerting;		// the called radio is ringing
