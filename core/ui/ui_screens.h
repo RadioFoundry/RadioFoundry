@@ -254,10 +254,11 @@ void ui_draw_quick(const radio_view_t *v, const ui_state_t *s);
 // Hotspot mode (hostlink in MMDVM mode): frequencies, color code, TX / RX, last call, how to leave
 void ui_draw_hotspot(const radio_view_t *v, const hotspot_view_t *h, const ui_state_t *s);
 #endif
-// Received emergency: full screen, the caller, how to acknowledge
 #if CONFIG_DMR_TRUNK
+// Incoming private call: the caller and how to answer.
 void ui_draw_incoming_call(const radio_view_t *v, const ui_state_t *s);
 #endif
+// Received emergency: full screen, the caller, how to acknowledge
 void ui_draw_emergency(const radio_view_t *v, const ui_state_t *s, uint32_t id, const char *name);
 // Volume (the VOL key, a radio without a knob): the step 0 (mute) .. RADIO_VOLUME_MAX as a bar and a number
 void ui_draw_volume(const radio_view_t *v, const ui_state_t *s);

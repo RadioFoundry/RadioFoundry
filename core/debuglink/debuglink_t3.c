@@ -291,7 +291,7 @@ static const char *const t3_regs[] = { "unknown", "not_needed", "listen", "neede
 static const char *const t3_svcs[] = { "none", "register", "deregister", "group", "individual", "cancel",
 				       "status", "sdata", "pdata", "divert", "sdpoll" };
 static const char *const t3_results[] = { "none", "pending", "granted", "done", "refused", "no_answer", "timeout",
-					  "not_allowed", "lost", "canceled", "diverted" };
+					  "not_allowed", "lost", "canceled", "diverted", "unmapped" };
 static const char *const t3_axs[] = { "idle", "wait_slot", "wait_resp", "acked" };
 
 static const char *word(uint8_t v, const char *const *names, uint8_t count)
@@ -365,6 +365,8 @@ static void t3_roam(const radio_t3_view_t *x, void *ctx)
 	// The codeplug system the channel belongs to (n+1, 0: none) and its fallback (12.5): 1 on the channel, 2 looking
 	dl_text(t, "t3.sys=%u\nt3.unavail=%u\nt3.fallback=%u\nt3.fallbacks=%u\nt3.backs=%u\n", x->sys, x->unavail,
 		x->fallback, (unsigned)x->fallbacks, (unsigned)x->backs);
+	// Searching and hearing only another system: its C_SYScode (0: none); the last refused PTT's RADIO_TRUNK_WHY_*
+	dl_text(t, "t3.other=0x%04x\nt3.why=%u\nt3.refused=%u\n", x->other, x->why, (unsigned)x->refused);
 	// Each: RX Hz, the 14 system code bits, confirmed and adjacent priority, the level and age of its last sample
 	for (uint8_t i = 0; i < x->nadj && i < sizeof x->adj / sizeof x->adj[0]; i++) {
 		dl_text(t, "t3.adj%u=%u,0x%04x,%u,%u,%d,%d\n", i, (unsigned)x->adj[i].rx_hz, x->adj[i].sys14,

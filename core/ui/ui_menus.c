@@ -2106,6 +2106,8 @@ static uint8_t text_idx;
 static uint32_t text_ms;
 enum { TEXT_UPPER, TEXT_DIGITS, TEXT_LOWER, TEXT_MODES };	// the order # cycles through
 static uint8_t text_mode;
+enum { TEXT_NAME, TEXT_MESSAGE, TEXT_CALLSIGN, TEXT_PREFIXES };
+static uint8_t text_prefix;
 
 static void text_open(char *target, uint8_t max, uint8_t screen)
 {
@@ -2114,6 +2116,7 @@ static void text_open(char *target, uint8_t max, uint8_t screen)
 	text_buf = screen == SCR_MESSAGE_TEXT ? message_buffer : text_name_buf;
 	text_max = screen == SCR_MESSAGE_TEXT ? max :
 		(max < CODEPLUG_NAME_LEN ? max : CODEPLUG_NAME_LEN);
+	text_prefix = screen == SCR_MESSAGE_TEXT ? TEXT_MESSAGE : screen == SCR_APRS_TO ? TEXT_CALLSIGN : TEXT_NAME;
 	ui_push(screen, 0);
 }
 
@@ -2149,17 +2152,6 @@ static void text_enter(void)
 	text_mode = TEXT_UPPER;
 }
 
-static uint16_t text_count(void) { return 1; }
-
-static void text_item(uint16_t i, ui_item_t *it)
-{
-	(void)i;
-	sbuf_t b;
-	sb_init(&b, it->label, sizeof it->label);
-	sb_str(&b, text_len >= sizeof it->label ? text_buf + text_len - sizeof it->label + 2u : text_buf);
-	sb_chr(&b, '_');	// the cursor; the mode is in the title
-}
-
 static char text_case(char c)
 {
 	return text_mode == TEXT_LOWER && c >= 'A' && c <= 'Z' ? (char)(c - 'A' + 'a') : c;
@@ -2191,6 +2183,61 @@ static void text_append(char c)
 	}
 	text_buf[text_len++] = c;
 	text_buf[text_len] = 0;
+}
+
+static void text_draw(void)
+{
+	static const tr_id_t prefixes[TEXT_PREFIXES] = { TRN(LABEL_NAME, "Name"), TRN(WORD_MESSAGE, "Message"),
+		TRN(TEXT_TITLE_CALLSIGN, "Callsign") };
+	static const char *const modes[TEXT_MODES] = { "ABC", "123", "abc" };
+	const ui_layout_t *L = &ui_layout;
+	char linebuf[32];
+	sbuf_t b;
+	uint8_t text_linewidth = gfx_width() / L->small->w;
+	uint8_t line_len;
+
+	gfx_clear(ui_col.bg);
+
+	int y = ui_draw_top(ui_view(), &ui_st, tr(prefixes[text_prefix]), modes[text_mode]) + 2;
+	// The count sits bottom right of the entry area, on a line of its own so the text never runs under it
+	int bottom = L->hint_y - L->small->h;
+	sb_init(&b, linebuf, sizeof linebuf);
+	sb_u32(&b, text_len, 1);
+	sb_chr(&b, '/');
+	sb_u32(&b, text_max, 1);
+	gfx_text(L->small, gfx_width() - gfx_text_width(L->small, linebuf) - 1, bottom, linebuf, ui_col.dim);
+	uint8_t roomy = (bottom - y) / L->small->h;	// number of lines of text we can show
+	uint16_t max_chars = roomy * text_linewidth;
+	uint16_t start_char;
+	if (max_chars >= text_len) {
+		start_char = 0;
+	} else {
+		// Ensure there is room for the "_" at the end of the message being entered
+		start_char = 1 + text_len - max_chars;
+	}
+
+	const font_t *small = L->small;
+	do {
+		line_len = 0;
+		sb_init(&b, linebuf, sizeof linebuf);
+		while (start_char < text_len && line_len < text_linewidth) {
+			sb_chr(&b, text_buf[start_char++]);
+			line_len++;
+		}
+		// Make sure the "_" is displayed, even if it wraps to the next line.
+		if (line_len < text_linewidth && start_char >= text_len) {
+			sb_chr(&b, '_');
+			start_char++;
+		}
+		gfx_text(small, 0, y, linebuf, ui_col.fg);
+		y += L->small->h;
+	} while (start_char < text_len + 1);
+
+	// TRN only marks the text for the catalog: tr() translates it where it is shown (list_draw did this before)
+	if (text_prefix != TEXT_MESSAGE)
+		ui_draw_hint(tr(TRN(TEXT_HINT_KEEP, TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK keep" TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE)), false);
+	else
+		ui_draw_hint(tr(TRN(TEXT_HINT_SEND, TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK send" TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE)), false);
 }
 
 static bool text_key_fn(const input_event_t *ev)
@@ -2268,37 +2315,21 @@ static bool text_key_fn(const input_event_t *ev)
 	return false;
 }
 
-// The title carries the mode, so it shows however long the name is: "Name Â· ABC"
-static const char *text_title(void)
-{
-	static const char *const modes[TEXT_MODES] = { "ABC", "123", "abc" };
-	return modes[text_mode];
-}
-
 #if CONFIG_CHANNEL_EDIT
 static const ui_scr_def_t text_screen = {
-	.name = "text", .flags = SF_LIST, .prefix = TRN(LABEL_NAME, "Name"), .title = text_title,
-	.hint = TRN(TEXT_HINT_KEEP, TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK keep"
-		TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE),
-	.count = text_count, .item = text_item, .key = text_key_fn, .enter = text_enter,
+	.name = "text", .flags = 0, .key = text_key_fn, .enter = text_enter, .draw = text_draw,
 };
 #endif
 
 #if CONFIG_APRS_AFSK
 static const ui_scr_def_t aprs_to_screen = {
-	.name = "aprs-to", .flags = SF_LIST, .prefix = TRN(TEXT_TITLE_CALLSIGN, "Callsign"), .title = text_title,
-	.hint = TRN(TEXT_HINT_KEEP, TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK keep"
-		TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE),
-	.count = text_count, .item = text_item, .key = text_key_fn, .enter = text_enter,
+	.name = "aprs-to", .flags = 0, .key = text_key_fn, .enter = text_enter, .draw = text_draw,
 };
 #endif
 
 #if CONFIG_DMR_SMS || CONFIG_APRS_AFSK
 static const ui_scr_def_t message_text_screen = {
-	.name = "message-text", .flags = SF_LIST, .prefix = TRN(WORD_MESSAGE, "Message"), .title = text_title,
-	.hint = TRN(TEXT_HINT_SEND, TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK send"
-		TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE),
-	.count = text_count, .item = text_item, .key = text_key_fn, .enter = text_enter,
+	.name = "message-text", .flags = 0, .key = text_key_fn, .enter = text_enter, .draw = text_draw,
 };
 #endif
 
@@ -7915,6 +7946,11 @@ static const ui_scr_def_t diag_screen = {
 static const ui_scr_def_t volume_screen = {
 	.name = "volume", .flags = SF_FIELD, .key = ui_volume_key, .draw = ui_volume_draw,
 };
+#if CONFIG_DMR_TRUNK
+static const ui_scr_def_t incoming_call_screen = {
+	.name = "incoming-call", .flags = SF_FIELD, .key = ui_incoming_call_key, .draw = ui_incoming_call_draw,
+};
+#endif
 static const ui_scr_def_t emergency_screen = {
 	.name = "emergency", .flags = SF_FIELD, .key = ui_emergency_key, .draw = ui_emergency_draw,
 };
@@ -8008,6 +8044,9 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_RECENT] = &recent_screen, [SCR_ZONES] = &channels_screen, [SCR_ZONE] = &zone_screen,
 	[SCR_TOOLS] = &tools_screen, [SCR_SETTINGS] = &settings_screen, [SCR_GROUP] = &group_screen,
 	[SCR_PICKER] = &picker_screen, [SCR_INFO] = &info_screen, [SCR_CONFIRM] = &confirm_screen,
+#if CONFIG_DMR_TRUNK
+	[SCR_INCOMING_CALL] = &incoming_call_screen,
+#endif
 	[SCR_DIAG] = &diag_screen, [SCR_EMERGENCY] = &emergency_screen, [SCR_SCAN] = &scan_screen,
 	[SCR_ROAM] = &roam_screen, [SCR_APRS] = &ui_aprs_screen, [SCR_APRS_HEARD] = &ui_aprs_heard_screen,
 	[SCR_APRS_STATION] = &ui_aprs_station_screen,

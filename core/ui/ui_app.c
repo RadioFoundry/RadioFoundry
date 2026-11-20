@@ -1679,6 +1679,20 @@ bool ui_volume_key(const input_event_t *ev)
 	return false;
 }
 
+#if CONFIG_DMR_TRUNK
+void ui_incoming_call_draw(void)
+{
+	ui_draw_incoming_call(view, &ui_st);
+}
+
+bool ui_incoming_call_key(const input_event_t *ev)
+{
+	if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS)
+		ui_svc_t3_reject();
+	return true;
+}
+#endif
+
 void ui_emergency_draw(void)
 {
 	ui_draw_emergency(view, &ui_st, emerg_id, emerg_name);
@@ -2065,6 +2079,15 @@ static void call_back_key(void)
 
 void ui_app_key(const input_event_t *ev)
 {
+#if CONFIG_DMR_TRUNK
+	if (stack[sp].scr == SCR_INCOMING_CALL && ev->action != ACT_PTT && ev->action != ACT_EMERGENCY &&
+	    !ui_st.locked) {
+		last_key_ms = last_use_ms = now;
+		off_warned = false;
+		ui_scr[SCR_INCOMING_CALL]->key(ev);
+		return;
+	}
+#endif
 	// A programmed home key (P1, P2: board.home_keys): its function on Home, its arrow everywhere else. Home is the
 	// bottom of the stack, not while a frequency is typed there
 	input_event_t home_ev;
@@ -2246,6 +2269,12 @@ void ui_app_key(const input_event_t *ev)
 		banner_open();
 		return;
 	}
+#if CONFIG_DMR_TRUNK
+	if (!typing && view->t3.alerting && ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS) {
+		ui_svc_t3_cancel();
+		return;
+	}
+#endif
 	// A banner that waits for the user is over every screen, not just Home: BACK hides it first, wherever it is
 	if (!typing && ui_st.banner.kind != UI_BANNER_NONE && ui_st.banner.hold && ev->action == ACT_BACK &&
 			ev->gesture == GESTURE_PRESS) {
@@ -2415,15 +2444,15 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	ui_crash_tick(now_ms);
 #endif
 #if CONFIG_DMR_TRUNK
+	if (stack[sp].scr == SCR_INCOMING_CALL) {
+		if (v->t3.ring_src == 0)
+			ui_pop();
+	} else if (v->t3.ring_src != 0 && stack[sp].scr != SCR_EMERGENCY) {
+		ui_push(SCR_INCOMING_CALL, 0);
+		wake_req = true;
+	}
 	// Back on the trunked system from its fallback channel (dmr-trunking.md 12.5): the radio beeped, the toast names it
 	static uint32_t backs_seen;
-	static uint32_t ring_seen;
-	if (view->t3.ring_src != ring_seen) {
-		ring_seen = view->t3.ring_src;
-		if (ring_seen != 0)
-			wake_req = true;
-		dirty = true;
-	}
 	if (v->t3.backs != backs_seen) {
 		bool back = v->t3.backs > backs_seen && v->t3.sys != 0;
 		backs_seen = v->t3.backs;
@@ -2651,13 +2680,6 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 
 static bool strip_ok, volbar_top;
 
-#if CONFIG_DMR_TRUNK
-static bool incoming_call_visible(void)
-{
-	return view->t3.ring_src != 0 && stack[sp].scr != SCR_EMERGENCY;
-}
-#endif
-
 static void draw_screen(void);
 
 void ui_app_draw(void)
@@ -2679,12 +2701,6 @@ void ui_app_draw(void)
 
 static void draw_screen(void)
 {
-#if CONFIG_DMR_TRUNK
-	if (incoming_call_visible()) {
-		ui_draw_incoming_call(view, &ui_st);
-		return;
-	}
-#endif
 #if CONFIG_HOTSPOT
 	if (in_hotspot() && !(CONFIG_DIAG && hs_diag)) {
 		hotspot_get_view(&hs_view);
@@ -2725,10 +2741,6 @@ void ui_app_status(ui_app_status_t *s)
 #if CONFIG_HOTSPOT
 	if (in_hotspot())
 		s->screen = "hotspot";
-#endif
-	#if CONFIG_DMR_TRUNK
-	if (incoming_call_visible())
-		s->screen = "incoming-call";
 #endif
 	s->depth = sp;
 	s->focus = stack[sp].scr == SCR_QUICK ? ui_st.quick_focus : stack[sp].focus;
