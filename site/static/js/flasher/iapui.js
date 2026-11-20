@@ -396,7 +396,7 @@ export function makeStockRoutes(host) {
 	// start, asked again once the radio answers; confirm(): asked when go is pressed, false stays on the step
 	function iapPanel({ title, rows, image, restore, report, done, onDone, name, lead = null, gate = null, allowed = () => true, notices = [], confirm = null }) {
 		const c = session();
-		const prog = progressBar();
+		const prog = progressBar({ stay: false })	// the careful notice below says it;
 		const status = h("div");
 		const steps = S().radio.flash.bootloader || [];
 		// a loader that prints no banner (flash.update_banner false): the page asks it with the read-only probe instead

@@ -415,8 +415,9 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 /* flasher: the radio's own picture beside update mode steps, with its screen and LED (radiotop.js); the HR_C7000
    pages' program memory map and checklist (c7000ui.js) */
 .c7-grid, .radio-grid { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: var(--space-5); align-items: start; }
-/* steps beside a picture: centered on it, with no list margin of their own, so neither side leaves a band of space */
-.radio-grid { align-items: center; margin-top: var(--space-3); }
+/* steps beside a picture: level with its top, with no list margin of their own (centered, a short list sat in a band
+   of empty space next to a tall radio), and room below the picture's caption before what follows */
+.radio-grid { align-items: start; margin: var(--space-3) 0 var(--space-4); }
 .radio-grid > ol { margin: 0; }
 @media (max-width: 760px) { .c7-grid, .radio-grid { grid-template-columns: 1fr; } .c7-grid .radio-top, .radio-grid .radio-top { order: -1; max-width: 240px; margin: 0 auto; } .rt-pic, .radio-pic .rt-img { max-width: 170px; } }
 .radio-top { margin: 0; text-align: center; }

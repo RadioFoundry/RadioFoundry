@@ -1275,7 +1275,7 @@
  "flash.c7.write.firmware": "Firmware",
  "flash.c7.write.codec": "Codec",
  "flash.c7.write.range": "Written",
- "flash.c7.write.careful": "Do not disconnect the radio or the cable until the radio programming utility reports completion.",
+ "flash.c7.write.careful": "Keep the radio, the cable and this page as they are until the radio programming utility reports completion: don't disconnect anything, switch to another app or let the screen time out.",
  "flash.c7.write.careful_text": "The LED blinks fast during the installation. Only changed parts are written, and each one is verified. If the installation is interrupted, run it again.",
  "flash.c7.write.careful_text_noled": "The installation takes several minutes. Only changed parts are written, and each one is verified. If the installation is interrupted, run it again.",
  "flash.c7.write.rom_flag": "This radio starts its firmware from the first sector of its start-up area. That sector is written last, after the firmware is verified, so the radio never starts a half-written firmware. If the installation is interrupted, switch the radio off and run it again: the radio's start-up mode still accepts it.",

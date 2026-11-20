@@ -1449,7 +1449,7 @@ function writeOne() {
 	const map = sectorMap(C());
 	// a radio with a second chip: each chip's blocks stay in the card through the stages after its write
 	if (S().chain) S().chain.maps = { ...S().chain.maps, [S().radio.second_of ? "b" : "a"]: map };
-	const prog = progressBar();
+	const prog = progressBar({ stay: false })	// the careful notice says it;
 	const status = h("div");
 	// a variant read on the way here (the stock console) that the chosen image doesn't run: nothing is written (one in
 	// development: app.js shows its notice above the step)

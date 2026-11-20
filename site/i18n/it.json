@@ -1275,7 +1275,7 @@
  "flash.c7.write.firmware": "Firmware",
  "flash.c7.write.codec": "Codec",
  "flash.c7.write.range": "Scritto",
- "flash.c7.write.careful": "Non scollegare la radio né il cavo finché l'utility di programmazione non segnala il completamento.",
+ "flash.c7.write.careful": "Lascia la radio, il cavo e questa pagina come sono finché l'utilità di programmazione della radio non segnala il completamento: non scollegare nulla, non passare a un'altra app e non lasciare che lo schermo si spenga.",
  "flash.c7.write.careful_text": "Il LED lampeggia veloce durante l'installazione. Vengono scritte solo le parti cambiate e ciascuna è verificata. Se l'installazione viene interrotta, eseguila di nuovo.",
  "flash.c7.write.careful_text_noled": "L'installazione richiede diversi minuti. Vengono scritte solo le parti cambiate e ciascuna è verificata. Se l'installazione viene interrotta, eseguila di nuovo.",
  "flash.c7.write.rom_flag": "Questa radio avvia il firmware dal primo settore della sua area di avvio. Quel settore viene scritto per ultimo, dopo la verifica del firmware, quindi la radio non avvia mai un firmware scritto a metà. Se l'installazione si interrompe, spegnere la radio e ripeterla: la modalità di avvio della radio la accetta ancora.",
