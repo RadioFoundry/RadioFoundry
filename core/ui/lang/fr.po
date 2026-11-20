@@ -4602,6 +4602,11 @@ msgctxt "SO_50_ARM_REQUESTED"
 msgid "SO-50 arm requested"
 msgstr "Armement SO-50 demandé"
 
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_TOAST_STOP_FAILED"
+msgid "Tracking not stopped"
+msgstr "Suivi non arrêté"
+
 #: core/ui/ui_screens.c
 msgctxt "TOP_STATE_IDLE"
 msgid "IDLE"

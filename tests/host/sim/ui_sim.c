@@ -2230,6 +2230,8 @@ bool ui_svc_position(ui_position_t *out)
 #if CONFIG_SATELLITE_TLE
 static uint8_t sim_satellite_selected;
 static bool sim_satellite_predicting;
+static bool sim_satellite_no_passes;
+static bool sim_satellite_stop_fails;
 static bool sim_satellite_path_pending;
 static bool sim_satellite_los_pending;
 static bool sim_satellite_future_pass;
@@ -2314,9 +2316,12 @@ bool ui_svc_satellite_select(uint8_t index)
 
 bool ui_svc_satellite_track(bool enabled, uint8_t index)
 {
-	if (index >= ui_svc_satellite_count())
+	if (!enabled && sim_satellite_stop_fails)
 		return false;
-	sim_satellite_selected = index;
+	if (enabled && index >= ui_svc_satellite_count())
+		return false;
+	if (enabled)
+		sim_satellite_selected = index;
 	satellite_view.tracking.tracking = enabled;
 	satellite_view.tracking.index = index;
 	satellite_view.tracking.status = enabled ? (sim_satellite_path_pending || sim_satellite_future_pass ? 2u : 3u) : 0u;
@@ -2358,7 +2363,7 @@ void ui_svc_satellite_scan_state(uint8_t *status, uint8_t *completed, uint8_t *t
 	if (status != NULL) *status = sim_satellite_predicting ? RADIO_SAT_SCAN_RUNNING : RADIO_SAT_SCAN_COMPLETE;
 	if (completed != NULL) *completed = sim_satellite_predicting ? 2u : ui_svc_satellite_count();
 	if (total != NULL) *total = ui_svc_satellite_count();
-	if (passes != NULL) *passes = sim_satellite_predicting ? 0u : ui_svc_satellite_count();
+	if (passes != NULL) *passes = sim_satellite_predicting || sim_satellite_no_passes ? 0u : ui_svc_satellite_count();
 }
 
 bool ui_svc_satellite_pass(uint8_t rank, radio_satellite_pass_t *pass)
@@ -2574,11 +2579,14 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	memset(&sim_rec, 0, sizeof sim_rec);
 #if CONFIG_SATELLITE_TLE
 	sim_satellite_predicting = false;
+	sim_satellite_no_passes = false;
+	sim_satellite_stop_fails = false;
 	sim_satellite_path_pending = false;
 	sim_satellite_los_pending = false;
 	sim_satellite_future_pass = false;
 	sim_satellite_empty = false;
 	sim_satellite_tle_age_days = 1u;
+	memset(&satellite_view, 0, sizeof satellite_view);
 #endif
 	vfo_mode = RADIO_MODE_FM;	// a fresh VFO
 	vfo_cc = vfo_ts = 1;
@@ -2834,6 +2842,9 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "vfo") == 0) snprintf(got, sizeof got, "%u", view.vfo);
 	else if (strcmp(key, "freq") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.ch.rx_hz);
 	else if (strcmp(key, "txfreq") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.ch.tx_hz);
+#if CONFIG_SATELLITE_TLE
+	else if (strcmp(key, "sattracking") == 0) snprintf(got, sizeof got, "%u", satellite_view.tracking.tracking);
+#endif
 	else if (strcmp(key, "mode") == 0) snprintf(got, sizeof got, "%s", view.ch.mode == RADIO_MODE_DMR ? "dmr" :
 								     view.ch.mode == RADIO_MODE_P25 ? "p25" :
 								     view.ch.mode == RADIO_MODE_NXDN ? "nxdn" : "fm");
@@ -3719,6 +3730,27 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "satpredict") == 0) {
 		sim_satellite_predicting = true;
+		return true;
+	}
+	if (strcmp(t, "satdone") == 0) {
+		sim_satellite_predicting = false;
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "satdoneok") == 0) {
+		sim_satellite_predicting = false;
+		input_event_t ev = { ACT_SELECT, GESTURE_PRESS, 0 };
+		presses++;
+		ui_app_key(&ev);
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "satnopasses") == 0) {
+		sim_satellite_no_passes = true;
+		return true;
+	}
+	if (strcmp(t, "satstopfail") == 0) {
+		sim_satellite_stop_fails = true;
 		return true;
 	}
 	if (strcmp(t, "satpathpending") == 0) {

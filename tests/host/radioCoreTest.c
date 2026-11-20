@@ -980,10 +980,59 @@ static void test_satellite_override(void)
 	CHECK(!sm.satellite_view.tracking);
 	CHECK(sm.view.ch.rx_hz == nominal_rx && sm.view.ch.tx_hz == nominal_tx);
 	CHECK(sm.view.ch.bw == RADIO_BW_12K5);
+	radio_sm_satellite_update(&sm, false, 0u, 0u, 0u, 0u, 0u, false, 0u, 0u, 0, 0, now + 41u);
+	CHECK(sm.satellite_pending && sm.satellite_restore_config_pending);
 	req(RREQ_PTT, 0);
 	CHECK(sm.view.ch.rx_hz == restore_rx && sm.view.ch.tx_hz == restore_tx);
 	CHECK(sm.view.ch.bw == RADIO_BW_25K);
 	CHECK(sm.view.ch.tx_tone.type == TONE_CTCSS && sm.view.ch.tx_tone.value == 123u);
+
+	setup_codeplug();
+	start();
+	req(RREQ_VFO, 1);
+	restore_rx = sm.view.ch.rx_hz;
+	restore_tx = sm.view.ch.tx_hz;
+	uint8_t restore_mode = sm.view.ch.mode;
+	uint8_t restore_bw = sm.view.ch.bw;
+	subtone_t restore_rx_tone = sm.view.ch.rx_tone;
+	subtone_t restore_tx_tone = sm.view.ch.tx_tone;
+	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
+				 true, nominal_rx + 10u, nominal_tx + 10u, 10, 10, now);
+	radio_sm_satellite_update(&sm, false, 0u, 0u, 0u, 0u, 0u, false, 0u, 0u, 0, 0, now);
+	CHECK(sm.view.vfo && sm.view.ch.rx_hz == restore_rx && sm.view.ch.tx_hz == restore_tx);
+	CHECK(sm.view.ch.mode == restore_mode && sm.view.ch.bw == restore_bw);
+	CHECK(sm.view.ch.rx_tone.type == restore_rx_tone.type && sm.view.ch.rx_tone.value == restore_rx_tone.value);
+	CHECK(sm.view.ch.tx_tone.type == restore_tx_tone.type && sm.view.ch.tx_tone.value == restore_tx_tone.value);
+
+	setup_codeplug();
+	zones[0].channels[0] = 4;
+	start();
+	restore_rx = sm.view.ch.rx_hz;
+	restore_tx = sm.view.ch.tx_hz;
+	restore_bw = sm.view.ch.bw;
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR);
+	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
+				 true, nominal_rx + 10u, nominal_tx + 10u, 10, 10, now);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM);
+	radio_sm_satellite_update(&sm, false, 0u, 0u, 0u, 0u, 0u, false, 0u, 0u, 0, 0, now);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && sm.view.ch.bw == restore_bw);
+	CHECK(sm.view.ch.rx_hz == restore_rx && sm.view.ch.tx_hz == restore_tx && hw.rx_hz == restore_rx);
+
+	setup_codeplug();
+	start();
+	restore_rx = sm.view.ch.rx_hz;
+	restore_tx = sm.view.ch.tx_hz;
+	restore_mode = sm.view.ch.mode;
+	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
+				 true, nominal_rx + 10u, nominal_tx + 10u, 10, 10, now);
+	req(RREQ_PTT, 1);
+	radio_sm_satellite_update(&sm, false, 0u, 0u, 0u, 0u, 0u, false, 0u, 0u, 0, 0, now);
+	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
+				 true, nominal_rx + 20u, nominal_tx + 20u, 20, 20, now);
+	radio_sm_satellite_update(&sm, false, 0u, 0u, 0u, 0u, 0u, false, 0u, 0u, 0, 0, now);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.ch.rx_hz == restore_rx && sm.view.ch.tx_hz == restore_tx);
+	CHECK(sm.view.ch.mode == restore_mode);
 }
 
 #if CONFIG_FM_TX_TONES

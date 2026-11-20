@@ -823,7 +823,8 @@ static void satellite_apply_pending(radio_sm_t *sm, uint32_t now_ms);
 static void tune(radio_sm_t *sm, uint32_t now_ms)
 {
 	#if CONFIG_SATELLITE_TLE
-	if (sm->satellite_session && !satellite_same_channel(sm)) {
+	if ((sm->satellite_session || (sm->satellite_pending && sm->satellite_restore_config_pending)) &&
+	    !satellite_same_channel(sm)) {
 		sm->satellite_session = false;
 		sm->satellite_pending = false;
 		sm->satellite_view.tracking = false;
@@ -950,7 +951,8 @@ void radio_sm_satellite_update(radio_sm_t *sm, bool enabled, uint8_t record_inde
 			sm->satellite_pending_tx_hz = sm->satellite_restore_tx_hz;
 			sm->satellite_config_pending = true;
 			sm->satellite_restore_config_pending = true;
-		} else {
+		} else if (!sm->satellite_pending || !sm->satellite_restore_config_pending ||
+			   !satellite_same_channel(sm)) {
 			sm->satellite_session = false;
 			sm->satellite_pending = false;
 		}
@@ -971,18 +973,22 @@ void radio_sm_satellite_update(radio_sm_t *sm, bool enabled, uint8_t record_inde
 		return;
 	}
 	if (!sm->satellite_session) {
+		bool restoring = sm->satellite_pending && sm->satellite_restore_config_pending &&
+				 satellite_same_channel(sm);
 		sm->satellite_session = true;
-		sm->satellite_saved_vfo = sm->view.vfo;
-		sm->satellite_saved_vfo_index = sm->view.vfo_index;
-		sm->satellite_saved_zone = sm->view.zone_index;
-		sm->satellite_saved_pos = sm->view.zone_pos;
-		sm->satellite_saved_channel = sm->view.channel_number;
-		sm->satellite_saved_mode = sm->view.ch.mode;
-		sm->satellite_saved_bw = sm->view.ch.bw;
-		sm->satellite_saved_rx_tone = sm->view.ch.rx_tone;
-		sm->satellite_saved_tx_tone = sm->view.ch.tx_tone;
-		sm->satellite_restore_rx_hz = sm->view.ch.rx_hz;
-		sm->satellite_restore_tx_hz = sm->view.ch.tx_hz;
+		if (!restoring) {
+			sm->satellite_saved_vfo = sm->view.vfo;
+			sm->satellite_saved_vfo_index = sm->view.vfo_index;
+			sm->satellite_saved_zone = sm->view.zone_index;
+			sm->satellite_saved_pos = sm->view.zone_pos;
+			sm->satellite_saved_channel = sm->view.channel_number;
+			sm->satellite_saved_mode = sm->view.ch.mode;
+			sm->satellite_saved_bw = sm->view.ch.bw;
+			sm->satellite_saved_rx_tone = sm->view.ch.rx_tone;
+			sm->satellite_saved_tx_tone = sm->view.ch.tx_tone;
+			sm->satellite_restore_rx_hz = sm->view.ch.rx_hz;
+			sm->satellite_restore_tx_hz = sm->view.ch.tx_hz;
+		}
 		sm->satellite_view.nominal_rx_hz = nominal_rx_hz;
 		sm->satellite_view.nominal_tx_hz = nominal_tx_hz;
 		sm->satellite_profile_tx_tone_tenths = tx_tone_tenths;

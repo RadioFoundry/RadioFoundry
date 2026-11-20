@@ -106,8 +106,7 @@ bool ui_svc_satellite_track(bool enabled, uint8_t index)
 {
 	if (enabled && !ui_svc_satellite_select(index))
 		return false;
-	radio_req_satellite_tracking(enabled, index);
-	return true;
+	return radio_req_satellite_tracking(enabled, index);
 }
 
 void ui_svc_satellite_arm(void)

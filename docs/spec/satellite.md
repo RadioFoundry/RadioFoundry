@@ -120,7 +120,8 @@ snapshot. The list is ordered by AOS, shows time to AOS in hours and minutes (`H
 reports prediction progress. Missing position, altitude or valid UTC leaves the list unavailable instead of using stale
 inputs. Its AOS countdown updates as time passes from the scan's UTC snapshot. The pass list shows the age of the oldest
 stored TLE when UTC is available, updates it as time passes, and warns once per inventory generation when it reaches
-14 days. TLEs fetched together can have different epochs. Selecting a pass persists its record,
+14 days. TLEs fetched together can have different epochs. When prediction completes with passes, the first pass is
+focused; returning from details preserves the selected row while the results remain available. Selecting a pass persists its record,
 starts tracking, and opens that satellite's detail screen with Doppler offsets, pass countdowns (`↑ in` to
 AOS and `↓ in` to LOS) and the sky path. Countdown minutes round up while time remains. The detail screen's pass data
 continues updating in bounded service steps. The rise countdown is left-aligned and the set countdown is right-aligned.
@@ -136,10 +137,11 @@ change the profile's normal 67.0 Hz tone, and PTT release never starts an arm tr
 The store derives the arm capability from the catalog ID when it validates a TLE; the UI uses that capability rather
 than identifying the satellite by name or number. This does not change the stored TLE format.
 
-Manual channel and VFO operation remain unchanged when tracking is off. Leaving the Satellite screen does not stop an
-active session; use OK on the active satellite to stop and restore the nominal pair. Starting another satellite replaces
-the previous tracking session. Changing channel/VFO context, entering scan or hotspot mode, or losing required inputs
-stops the session and restores the ordinary frequencies.
+Manual channel and VFO operation remain unchanged when tracking is off. Leaving the Satellite detail screen stops
+tracking and restores the prior channel or VFO frequencies, mode, bandwidth and tones. A temporary screen above it,
+such as the TLE editor or Quick settings, does not stop tracking. OK on the active satellite also stops tracking.
+Restoration waits until an active transmission ends. Starting another satellite replaces the previous tracking session.
+Changing channel/VFO context, entering scan or hotspot mode, or losing required inputs stops the session.
 
 Press **#** on a selected satellite's detail screen to replace its orbital elements on the radio. Enter line 1 and
 line 2 as separate exact 69-character fields with the keypad editor. The catalog ID and name stay unchanged. The radio

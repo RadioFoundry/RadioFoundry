@@ -572,7 +572,7 @@ void radio_req_vfo_tx(uint32_t hz);		// the VFO's TX frequency (split), 0 = simp
 // opens; the channel is unchanged (docs/spec/dmr-voice.md 2.2). Nothing changes when radio_vfo_copy_check refuses
 void radio_req_vfo_copy(void);
 #if CONFIG_SATELLITE_TLE
-void radio_req_satellite_tracking(bool enabled, uint8_t record_index);
+bool radio_req_satellite_tracking(bool enabled, uint8_t record_index);
 void radio_req_satellite_arm(void);
 #endif
 typedef enum {

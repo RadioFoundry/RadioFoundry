@@ -4604,6 +4604,11 @@ msgctxt "SO_50_ARM_REQUESTED"
 msgid "SO-50 arm requested"
 msgstr "已请求启动 SO-50 定时器"
 
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_TOAST_STOP_FAILED"
+msgid "Tracking not stopped"
+msgstr "跟踪未停止"
+
 #: core/ui/ui_screens.c
 msgctxt "TOP_STATE_IDLE"
 msgid "IDLE"

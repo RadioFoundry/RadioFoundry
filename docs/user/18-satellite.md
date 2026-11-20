@@ -77,8 +77,9 @@ Open **OK**, **6** (Tools), then choose **Satellite**. The radio uses the select
 and altitude, and fresh GPS or computer NMEA for UTC, to predict passes for the installed TLEs. A saved fixed position
 can therefore provide the observer location while the GPS is acquiring its first fix, once the receiver provides
 current date and time. Computer fixes and UTC do not survive a restart: send fresh NMEA again, including altitude and
-date/time. The list is ordered by time to AOS and shows each pass's maximum elevation. Up and Down
-select a pass; **OK** opens its details and starts tracking. The selected satellite is remembered across power cycles.
+date/time. The list is ordered by time to AOS and shows each pass's maximum elevation. When prediction finishes, the
+first pass is highlighted. Up and Down select a pass; **OK** opens its details and starts tracking. The selected
+satellite is remembered across power cycles.
 The firmware image contains no TLEs. Load selected records into the radio's flash store from the site's Satellite TLE
 Update page or with `tools/satellite_tle.py sync`. With an empty store, Satellite shows **No TLEs: load from site**.
 The pass list shows the age of the oldest installed TLE when current UTC is available. Ages can differ even when
@@ -107,6 +108,7 @@ pass after LOS. A missing position, altitude, valid UTC, unavailable record or s
 and does not apply a correction. The radio restores ordinary channel frequencies when tracking stops, the channel/VFO
 context changes, scan or hotspot mode starts, or required inputs become invalid.
 
-Press **OK** again while the active satellite is selected to stop tracking and restore the nominal frequencies.
-Leaving the Satellite screen alone does not stop tracking. Starting a different satellite replaces the current
-tracking session. Tracking never bypasses normal transmit band, inhibit or active-transmission rules.
+Press **OK** again while the active satellite is selected, or leave its detail screen, to stop tracking and restore
+the previous channel or VFO settings. Opening the TLE editor or Quick settings does not stop tracking. If transmitting,
+the radio restores the settings after transmission ends. Starting a different satellite replaces the current tracking
+session. Tracking never bypasses normal transmit band, inhibit or active-transmission rules.

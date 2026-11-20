@@ -431,6 +431,24 @@ static uint16_t satellite_pass_count(void)
 	return passes == 0u ? 2u : (uint16_t)passes + 1u;
 }
 
+void ui_satellite_passes_tick(void)
+{
+	ui_frame_t *frame = ui_frame();
+	if (frame->scr != SCR_SATELLITE_PASSES)
+		return;
+	uint8_t status, total, passes;
+	ui_svc_satellite_scan_state(&status, NULL, &total, &passes);
+	if (status == RADIO_SAT_SCAN_COMPLETE && total != 0u && passes != 0u) {
+		if (frame->focus == 0u) {
+			frame->focus = 1u;
+			ui_dirty();
+		}
+	} else if (frame->focus != 0u) {
+		frame->focus = 0u;
+		ui_dirty();
+	}
+}
+
 static void satellite_update_pass_tle_age(void)
 {
 	uint32_t generation = ui_svc_satellite_generation();
@@ -542,11 +560,18 @@ static void satellite_passes_enter(void)
 	ui_svc_satellite_scan(true);
 }
 
+static bool satellite_passes_key(const input_event_t *ev)
+{
+	(void)ev;
+	ui_satellite_passes_tick();
+	return false;
+}
+
 const ui_scr_def_t ui_satellite_passes_screen = {
 	.name = "satellite-passes", .flags = SF_LIST | SF_FIELD, .prefix = TRN(NEXT_PASSES, "Next passes"),
 	.hint = TRN(UP_DOWN_PICK_BACK, "Up Down pick  Back"), .empty = TRN(NO_PASSES_IN_NEXT_24H, "No passes in next 24h"),
 	.count = satellite_pass_count, .item = satellite_pass_item, .select = satellite_pass_select,
-	.enter = satellite_passes_enter,
+	.key = satellite_passes_key, .enter = satellite_passes_enter,
 };
 
 static void satellite_draw(void)
@@ -696,7 +721,14 @@ static void satellite_enter(void)
 	pass_record.catalog_id = 0u;
 }
 
+static void satellite_leave(void)
+{
+	if (!ui_svc_satellite_track(false, selected))
+		ui_toast(TR(SATELLITE_TOAST_STOP_FAILED, "Tracking not stopped"));
+}
+
 const ui_scr_def_t ui_satellite_screen = {
 	.name = "satellite", .flags = SF_FIELD, .draw = satellite_draw, .key = satellite_key, .enter = satellite_enter,
+	.leave = satellite_leave,
 };
 #endif

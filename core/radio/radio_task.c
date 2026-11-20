@@ -618,12 +618,16 @@ void radio_req_vfo(bool on) { post(RREQ_VFO, on, 0); }
 void radio_req_vfo_step(int8_t dir) { post(RREQ_VFO_STEP, dir, 0); }
 void radio_req_vfo_copy(void) { post(RREQ_VFO_COPY, 0, 0); }
 #if CONFIG_SATELLITE_TLE
-void radio_req_satellite_tracking(bool enabled, uint8_t record_index)
+bool radio_req_satellite_tracking(bool enabled, uint8_t record_index)
 {
 	if (requests == NULL)
-		return;
+		return false;
 	radio_req_t req = { .type = RREQ_SATELLITE_TRACK, .arg = enabled, .arg2 = record_index };
-	send(&req, 0);
+	if (xQueueSend(requests, &req, 0) != pdTRUE) {
+		req_dropped++;
+		return false;
+	}
+	return true;
 }
 void radio_req_satellite_arm(void) { post(RREQ_SATELLITE_ARM, 0, 0); }
 #endif
