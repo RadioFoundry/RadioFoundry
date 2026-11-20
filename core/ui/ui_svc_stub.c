@@ -75,7 +75,13 @@ WEAK void ui_svc_vibrate(uint8_t vibe) { (void)vibe; }
 WEAK void ui_svc_ptt_block(bool blocked) { (void)blocked; }
 WEAK void ui_svc_dtmf_block(bool blocked) { (void)blocked; }
 WEAK void ui_svc_volume_hold(bool hold) { (void)hold; }
-WEAK void ui_svc_poll(void) { }
+WEAK void ui_svc_aprs_msg_poll(void) { }
+WEAK void ui_svc_poll(void)
+{
+#if CONFIG_APRS
+	ui_svc_aprs_msg_poll();
+#endif
+}
 WEAK void ui_svc_keys_poll(void) { }
 // Without key assignment no home key sends ACT_HOME_KEY_n: every action is the key map's
 WEAK uint8_t ui_svc_home_key(uint8_t action, uint8_t gesture, bool home) { (void)gesture; (void)home; return action; }

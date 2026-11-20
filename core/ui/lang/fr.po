@@ -148,6 +148,11 @@ msgid "No calls heard yet"
 msgstr "Aucun appel reçu"
 
 #: core/ui/ui_app.c
+msgctxt "APRS_BANNER_MSG_FROM"
+msgid "APRS message from "
+msgstr "Message APRS de "
+
+#: core/ui/ui_app.c
 msgctxt "MSG_BANNER_FROM"
 msgid "Message from "
 msgstr "Message de "
@@ -5291,6 +5296,11 @@ msgstr "Émission impossible"
 msgctxt "ACTIVITY_BODY_TX_WAITS"
 msgid "Transmit waits for it"
 msgstr "Pas de TX avant"
+
+#: core/ui/ui_screens.c
+msgctxt "APRS_ACTIVITY_LAST_MSG"
+msgid "APRS: "
+msgstr "APRS: "
 
 #: core/ui/ui_screens.c
 msgctxt "ACTIVITY_BODY_LAST"

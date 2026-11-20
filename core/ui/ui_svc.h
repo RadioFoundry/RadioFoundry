@@ -282,6 +282,8 @@ bool ui_svc_emergency(bool on);
 bool ui_svc_emergency_active(void);
 // dmr-ext: a new emergency alert heard becomes UI_EV_EMERGENCY (ok: an alarm, else a call); run from ui_svc_poll
 void ui_svc_emergency_poll(void);
+// Every UI pass: fire UI_EV_APRS_MESSAGE when a new message addressed to us arrives (CONFIG_APRS_RX; weak no-op without it)
+void ui_svc_aprs_msg_poll(void);
 // The emergency screen was acknowledged: the received alert is dismissed (weak no-op without dmr-ext)
 void ui_svc_emergency_dismiss(void);
 // The settings back to their defaults and the native codeplug area emptied (never the open-firmware codeplug or the
@@ -498,6 +500,7 @@ typedef enum {
 				// the channels of a kind that can't be used (their system isn't set up here); else why
 				// says why
 	UI_EV_CODEPLUG_FOREIGN,	// a codeplug write is held: ask what to do with another firmware's codeplug
+	UI_EV_APRS_MESSAGE,	// an APRS message addressed to us: name = sender callsign, text = message text
 } ui_event_kind_t;
 
 typedef struct {

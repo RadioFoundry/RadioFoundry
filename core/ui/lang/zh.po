@@ -150,6 +150,11 @@ msgid "No calls heard yet"
 msgstr "暂无通话记录"
 
 #: core/ui/ui_app.c
+msgctxt "APRS_BANNER_MSG_FROM"
+msgid "APRS message from "
+msgstr "APRS 信息来自 "
+
+#: core/ui/ui_app.c
 msgctxt "MSG_BANNER_FROM"
 msgid "Message from "
 msgstr "消息来自 "
@@ -5293,6 +5298,11 @@ msgstr "不能发射"
 msgctxt "ACTIVITY_BODY_TX_WAITS"
 msgid "Transmit waits for it"
 msgstr "设置前不能发射"
+
+#: core/ui/ui_screens.c
+msgctxt "APRS_ACTIVITY_LAST_MSG"
+msgid "APRS: "
+msgstr "APRS: "
 
 #: core/ui/ui_screens.c
 msgctxt "ACTIVITY_BODY_LAST"
