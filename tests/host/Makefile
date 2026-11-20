@@ -120,10 +120,17 @@ p25EngineTest: p25EngineTest.c $(CORE)/p25/p25_engine.c $(CORE)/p25/p25_engine.h
 # NXDN frames, their FEC and calls through the framer (core/nxdn); the engine on two made-up providers
 NXDN    := $(CORE)/nxdn/nxdn_frame.c $(CORE)/nxdn/nxdn_rx.c $(CORE)/nxdn/nxdn_call.c
 TESTS   += nxdnTest nxdnEngineTest
+TESTS   += nxdnScrambleTest
+nxdnScrambleTest: nxdnScrambleTest.c $(CORE)/nxdn/nxdn_scramble.c $(CORE)/nxdn/nxdn_scramble.h $(CORE)/dmr/ambe/ambeFec.c
+	$(CC) $(CFLAGS) -Wshadow -o $@ nxdnScrambleTest.c $(CORE)/nxdn/nxdn_scramble.c $(CORE)/dmr/ambe/ambeFec.c
+run: run-nxdn-scramble
+run-nxdn-scramble: nxdnScrambleTest
+	./nxdnScrambleTest
+.PHONY: run-nxdn-scramble
 nxdnTest: nxdnTest.c $(NXDN) $(wildcard $(CORE)/nxdn/*.h) $(CORE)/air/air_framer.c $(FEC) $(CORE)/dmr/ambe/ambeFec.c
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ nxdnTest.c $(NXDN) $(CORE)/air/air_framer.c $(FEC) $(CORE)/dmr/ambe/ambeFec.c
-nxdnEngineTest: nxdnEngineTest.c $(CORE)/nxdn/nxdn_engine.c $(NXDN) $(wildcard $(CORE)/nxdn/*.h) $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(FEC)
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ nxdnEngineTest.c $(CORE)/nxdn/nxdn_engine.c $(NXDN) $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(FEC) -lm
+nxdnEngineTest: nxdnEngineTest.c $(CORE)/nxdn/nxdn_engine.c $(NXDN) $(CORE)/nxdn/nxdn_scramble.c $(CORE)/dmr/ambe/ambeFec.c $(wildcard $(CORE)/nxdn/*.h) $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(FEC)
+	$(CC) $(CFLAGS) -DCONFIG_NXDN_SCRAMBLER=1 -I$(ROOT)/hal -Wshadow -o $@ nxdnEngineTest.c $(CORE)/nxdn/nxdn_engine.c $(NXDN) $(CORE)/nxdn/nxdn_scramble.c $(CORE)/dmr/ambe/ambeFec.c $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(FEC) -lm
 
 # The MBE synthesis core and the full-rate voice decoder on it (core/mbe), against golden vectors
 MBE     := $(wildcard $(CORE)/mbe/*.c)
@@ -322,12 +329,12 @@ radioCoreTestP25T: $(RCP25T) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dm
 # The same with NXDN conventional (CONFIG_NXDN): the far end is an NXDN engine on the fake board.air; the voice goes
 # through the DMR side's vocoder path. No vocoder lends memory (as on the STM32 platform)
 TESTS   += radioCoreTestNxdn radioCoreTestP25Nxdn
-RCNXDN  := $(RCORE) $(CORE)/radio/radio_nxdn.c $(CORE)/nxdn/nxdn_engine.c $(NXDN) $(CORE)/air/air_session.c \
+RCNXDN  := $(RCORE) $(CORE)/radio/radio_nxdn.c $(CORE)/nxdn/nxdn_engine.c $(CORE)/nxdn/nxdn_scramble.c $(NXDN) $(CORE)/air/air_session.c \
            $(CORE)/air/air_framer.c $(FEC) $(CORE)/debuglink/debuglink_view_nxdn.c $(CORE)/hostlink/build_info.c
 radioCoreTestNxdn: $(RCNXDN) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                    $(CORE)/ui/ui_svc.h $(wildcard $(CORE)/nxdn/*.h) $(wildcard $(CORE)/air/*.h) $(wildcard $(CORE)/dmr/ambe/*.h)
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
-		-DCONFIG_NXDN=1 -DCONFIG_AIR_RAW=1 -o $@ $(RCNXDN) -lm
+		-DCONFIG_NXDN=1 -DCONFIG_NXDN_SCRAMBLER=1 -DCONFIG_AIR_RAW=1 -o $@ $(RCNXDN) -lm
 
 # P25 and NXDN together, no lending vocoder: one engine at a time, NXDN in the memory P25 keeps for itself
 RCP25NX := $(RCNXDN) $(CORE)/radio/radio_p25.c $(CORE)/p25/p25_engine.c $(P25) $(CORE)/p25/p25Voice.c $(MBE) \
@@ -336,7 +343,7 @@ radioCoreTestP25Nxdn: $(RCP25NX) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE
                       $(CORE)/ui/ui_svc.h $(wildcard $(CORE)/nxdn/*.h) $(wildcard $(CORE)/p25/*.h) $(wildcard $(CORE)/air/*.h) \
                       $(wildcard $(CORE)/dmr/ambe/*.h)
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
-		-DCONFIG_P25=1 -DCONFIG_NXDN=1 -DCONFIG_AIR_RAW=1 -o $@ $(RCP25NX) -lm
+		-DCONFIG_P25=1 -DCONFIG_NXDN=1 -DCONFIG_NXDN_SCRAMBLER=1 -DCONFIG_AIR_RAW=1 -o $@ $(RCP25NX) -lm
 
 # The same with APRS: what the data service hears goes into the station list (a DMR APRS position, docs/spec/aprs.md 8.2)
 TESTS   += radioCoreTestAprs
@@ -1494,7 +1501,7 @@ TESTS   += nxdnCodeplugTest
 NXDNCP  := $(CPTAG) $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug_records.c $(CORE)/nxdn/nxdn_codeplug.c
 
 nxdnCodeplugTest: nxdnCodeplugTest.c $(NXDNCP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/nxdn/*.h) ../vectors/channel-modes.txt
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_NXDN=1 -o $@ nxdnCodeplugTest.c $(NXDNCP)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_NXDN=1 -DCONFIG_NXDN_SCRAMBLER=1 -o $@ nxdnCodeplugTest.c $(NXDNCP)
 
 run: run-nxdncp
 run-nxdncp: nxdnCodeplugTest
