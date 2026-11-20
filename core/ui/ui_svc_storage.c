@@ -689,7 +689,7 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 	}
 	case UI_SET_MSG_FORMAT:
 #if CONFIG_DMR_SMS
-		if ((value != DMR_SMS_FORMAT_ETSI_IP) && (value != DMR_SMS_FORMAT_ETSI) &&
+		if ((value != DMR_SMS_FORMAT_DEFAULT) && (value != DMR_SMS_FORMAT_ETSI_IP) && (value != DMR_SMS_FORMAT_ETSI) &&
 		    !(CONFIG_DMR_TMS && (value == DMR_SMS_FORMAT_TMS)))
 			return false;
 		{

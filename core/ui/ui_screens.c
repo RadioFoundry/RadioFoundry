@@ -1621,6 +1621,10 @@ static const char *t3_state_word(const radio_view_t *v, bool *warn)
 		*warn = false;
 		return TR(TRUNK_STATE_IN_CALL, "In call");
 	}
+	if (v->t3.alerting) {
+		*warn = false;
+		return TR(TRUNK_STATE_CALLING, "Calling");
+	}
 	if (v->t3.reg == T3_REG_DENIED)
 		return TR(TRUNK_STATE_REFUSED, "Refused");
 	if (v->t3.reg == T3_REG_NEEDED || v->t3.reg == T3_REG_UNKNOWN)

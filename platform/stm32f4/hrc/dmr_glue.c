@@ -1115,6 +1115,11 @@ const hal_baseband_t stm32_hrc_baseband = {
 	.rx_read = tap_read, .rx_stop = tap_stop, .tx_start = NULL, .tx_write = NULL, .tx_stop = NULL,
 	.now_us = air_now_us, .rx_time_us = tap_time,
 };
+
+hrc_t *stm32_hrc_copy_chip(void)
+{
+	return air_on && AIR->copy ? eng.dev : NULL;
+}
 #endif
 
 // --- Bring-up counters ---

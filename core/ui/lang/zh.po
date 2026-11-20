@@ -3620,6 +3620,11 @@ msgid "Channel"
 msgstr "信道"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_VALUE_MSGFMT_AUTOMATIC"
+msgid "Automatic"
+msgstr "自动"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_VALUE_MSGFMT_ETSI_SHORT"
 msgid "ETSI short"
 msgstr "ETSI 简码"
@@ -4783,6 +4788,11 @@ msgstr "搜索中"
 msgctxt "TRUNK_STATE_IN_CALL"
 msgid "In call"
 msgstr "通话中"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_CALLING"
+msgid "Calling"
+msgstr "正在呼叫"
 
 #: core/ui/ui_screens.c
 msgctxt "TRUNK_STATE_REFUSED"

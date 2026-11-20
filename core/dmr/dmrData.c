@@ -1109,15 +1109,20 @@ int dmrDataBuildEtsiText(bool group, uint32_t dst, uint32_t src, const char *tex
 // ETSI IP text (TS 102 361-3 V1.3.1 5.7.1): the text as UTF-16BE (plane 0; Latin-1 here, one code unit per
 // character, no byte order mark, no terminator) in a UDP datagram from and to port 5016, with the full IPv4 / UDP
 // header (SAP 4, as every receiver of the IP bearer reads it; the compressed header of 5.6 is optional)
+size_t dmrDataLatin1ToUtf16BE(const char *text, uint8_t *out, size_t maxChars)
+{
+	size_t n = 0;
+	for (; n < maxChars && text[n] != '\0'; n++)
+	{
+		out[2 * n] = 0;
+		out[2 * n + 1] = (uint8_t)text[n];
+	}
+	return n;
+}
+
 int dmrDataIPTextUDP(const char *text, uint8_t l4[DMR_ETSI_TEXT_UDP_MAX])
 {
-	int n = 0;
-
-	for (; (text[n] != '\0') && (n < DMR_ETSI_TEXT_MAX); n++)
-	{
-		l4[8 + (2 * n)] = 0x00;
-		l4[8 + (2 * n) + 1] = (uint8_t)text[n];
-	}
+	int n = (int)dmrDataLatin1ToUtf16BE(text, &l4[8], DMR_ETSI_TEXT_MAX);
 	if (n == 0)
 	{
 		return 0;

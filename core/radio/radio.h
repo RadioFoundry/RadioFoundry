@@ -255,6 +255,7 @@ typedef struct {
 	uint16_t other;		// searching: C_SYScode of another system heard (t3_ms_other), 0 none
 	uint8_t other_fid;	// searching: the FID of a non-ETSI trunking system heard (t3_ms_other_fid), 0 none
 	uint8_t why;		// RADIO_TRUNK_WHY_* of the last PTT refused (TXDENY_TRUNK)
+	bool alerting;		// the called radio is ringing
 	bool refused;		// the system refused the registration (t3_ms_reg_refused)
 	uint16_t unmapped;	// the channel (LPCN) of the last grant no plan or row knew, 0 none
 } radio_t3_brief_t;
