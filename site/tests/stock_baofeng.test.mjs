@@ -119,7 +119,7 @@ function sample() {
 	s.channel(1, { name: "Repeater", rx: 146940000, tx: 146340000, wide: true, rxTone: 0x1035, txTone: 0x1035, scan: 1 });
 	s.channel(2, { name: "DMR TS2", rx: 444937500, tx: 449937500, dmr: true, ts: 2, cc: 3, list: 1, contact: 2, power: 1 });
 	s.channel(3, { name: "DMR TS1", rx: 446075000, dmr: true, ts: 1, cc: 1, contact: 4, power: 0 });
-	s.channel(4, { name: "GMRS", rx: 462675000, tx: 467675000, rxTone: 0x8114, txTone: 0x8054 });
+	s.channel(4, { name: "GMRS", rx: 462675000, tx: 467675000, rxTone: 0x8114, txTone: 0x8058 });
 	s.zone(1, "Main", [1, 2, 3]);
 	s.zone(2, "Analog", [4, 1]);
 	return s;
@@ -140,8 +140,15 @@ test("pageMap: one page per block number; a page given up or erased holds none; 
 
 test("dm32Tone: none, CTCSS, DCS; a DCS digit above 7 is not a tone", () => {
 	const t = (v) => dm32Tone(new Uint8Array([v & 0xFF, v >> 8]), 0);
-	assert.deepEqual([t(0xFFFF), t(0), t(0x1035), t(0x0670), t(0x8114), t(0x8017), t(0x8054), t(0x9999)],
-		["", "", "103.5", "67.0", "D276N", "D023N", null, null]);
+	assert.deepEqual([t(0xFFFF), t(0), t(0x1035), t(0x0670), t(0x8114), t(0x8023), t(0x8054), t(0x9999), t(0x8058)],
+		["", "", "103.5", "67.0", "D114N", "D023N", "D054N", null, null]);
+});
+
+// The DCS word holds the code's three digits as BCD, checked on a stock radio's own settings: a channel set to D073
+// reads 0x8073, one set to D265 reads 0x8265. Read as a decimal number they came out D115 and D613 (not a code)
+test("dm32Tone: DCS words read from a stock radio (D073, D265)", () => {
+	const t = (v) => dm32Tone(new Uint8Array([v & 0xFF, v >> 8]), 0);
+	assert.deepEqual([t(0x8073), t(0x8265)], ["D073N", "D265N"]);
 });
 
 // --- Records ---
@@ -153,7 +160,7 @@ test("readStock: channels, TX contacts, contacts, lists, zones, radio ID and boo
 		["Repeater", "fm", 146940000, 146340000, 9, 25, 1, 1, 0, 0, "103.5", "103.5", 1],
 		["DMR TS2", "dmr", 444937500, 449937500, 6, 12.5, 2, 3, 1, 2, "", "", 0],
 		["DMR TS1", "dmr", 446075000, 446075000, 3, 12.5, 1, 1, 0, 4, "", "", 0],
-		["GMRS", "fm", 462675000, 467675000, 9, 12.5, 1, 1, 0, 0, "D276N", null, 0],
+		["GMRS", "fm", 462675000, 467675000, 9, 12.5, 1, 1, 0, 0, "D114N", null, 0],
 	]);
 	assert.deepEqual(s.contacts.map((c) => [c.index, c.name, c.type, c.id]), [[1, "Local", "group", 2], [2, "TAC 311", "group", 311], [4, "Friend", "private", 3100999]]);
 	assert.deepEqual(s.rxLists.map((l) => [l.index, l.name, l.ids]), [[1, "FAV", [2, 311, 4000]], [2, "Empty", []]]);
@@ -202,7 +209,7 @@ test("importStock: the editing model with references kept; list members by ID; D
 	assert.deepEqual([rep.rxTone, rep.bw, rep.contact, rep.power], ["103.5", 25, null, 9]);
 	assert.deepEqual([ts2.timeslot, ts2.colorCode, ts2.contact.name, ts2.rxList.name, ts2.power], [2, 3, "TAC 311", "FAV", 6]);
 	assert.deepEqual([ts1.contact.name, ts1.rxList, ts1.power], ["Friend", null, 3]);
-	assert.deepEqual([gmrs.rxTone, gmrs.txTone], ["D276N", ""]);
+	assert.deepEqual([gmrs.rxTone, gmrs.txTone], ["D114N", ""]);
 	assert.deepEqual(m.zones.map((z) => [z.name, z.channels.map((c) => c.name)]), [["Main", ["Repeater", "DMR TS2", "DMR TS1"]], ["Analog", ["GMRS", "Repeater"]]]);
 	assert.deepEqual([m.general.dmrId, m.general.radioName, m.general.bootLine1, m.general.bootLine2], [3100123, "N0CALL-7", "CALL", "Name"]);
 });
