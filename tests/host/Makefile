@@ -1813,6 +1813,32 @@ ifneq ($(PYTHON),)
 endif
 .PHONY: run-dstar
 
+# Yaesu System Fusion (core/ysf, docs/spec/ysf-modem.md): the coding against tools/ysf_ref.py's vectors, the
+# decoders against errors, whole transmissions through the receiver
+TESTS   += ysfTest
+YSFFR   := $(CORE)/ysf/ysf_fec.c $(CORE)/ysf/ysf_frame.c
+
+ysfTest: ysfTest.c $(YSFFR) $(wildcard $(CORE)/ysf/*.h) ../vectors/ysf.txt
+	$(CC) $(CFLAGS) -I. -Wshadow -o $@ ysfTest.c $(YSFFR)
+
+# The C4FM modem on a simulated radio link (noise, offset, drift, clock error, levels, high-pass) and the engine
+TESTS   += ysfModemTest
+YSFMD   := $(YSFFR) $(CORE)/ysf/ysf_c4fm.c $(CORE)/ysf/ysf_engine.c
+
+ysfModemTest: ysfModemTest.c $(YSFMD) $(wildcard $(CORE)/ysf/*.h)
+	$(CC) $(CFLAGS) -I. -Wshadow -o $@ ysfModemTest.c $(YSFMD) -lm
+
+run: run-ysf
+run-ysf: ysfTest ysfModemTest
+	./ysfTest
+	./ysfModemTest
+ifneq ($(PYTHON),)
+	$(PYTHON) -B $(ROOT)/tools/ysf_ref.py --self-test
+	@$(PYTHON) -B $(ROOT)/tools/ysf_ref.py vectors | cmp -s - ../vectors/ysf.txt || \
+		{ echo "tests/vectors/ysf.txt differs from tools/ysf_ref.py vectors"; exit 1; }
+endif
+.PHONY: run-ysf
+
 run: run-boards
 run-boards::
 .PHONY: run-boards
@@ -1841,6 +1867,7 @@ TESTS   += httpAssetsTestWebctl
 
 gen/webctl/keys.json: $(ROOT)/tools/gen_webctl_assets.py $(WEBCTL_SVGS) $(ROOT)/boards/$(WEBCTL_BOARD)/$(WEBCTL_BOARD).h
 	@python3 -I $(ROOT)/tools/gen_webctl_assets.py $(WEBCTL_BOARD) gen/webctl > /dev/null
+
 gen/webctl/radio.svg gen/webctl/mic.svg: gen/webctl/keys.json
 gen/webctl/http_assets_gen.h: $(WEBCTL_ASSETS) $(ROOT)/tools/gen_http_assets.py
 	@python3 -I $(ROOT)/tools/gen_http_assets.py --gzip $@ $(WEBCTL_ASSETS) > /dev/null
