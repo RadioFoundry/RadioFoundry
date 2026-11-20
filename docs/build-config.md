@@ -72,6 +72,7 @@ make BOARD=<id> VARIANT=commercial       # build/<id>-commercial/
 | (none: full) | nothing |
 | `amateur` | basic privacy, NXDN Scrambler, Motorola TMS, ARS, LRRP, control station mode, SNMP |
 | `commercial` | the MMDVM hotspot (and split duplex), APRS (and KISS, APRS-IS) |
+| `multimode` | everything `amateur` leaves out, plus the IP gateway (PPP and its services), split duplex, zone share and emergency, to make RAM for more digital voice modes, and the translations (`LANG_*`: English only, and so the fonts' accented letters), to make flash for them. |
 
 Each variant file starts with `## title:` and `## summary:` lines, and the comment above each switch says why it is
 left out; the site shows both. The lists are a draft for the project lead to settle.
