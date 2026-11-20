@@ -364,7 +364,7 @@ static void acc_drop(p25_follow_t *f)
 	f->acc.sent = false;
 }
 
-// P25_WACN_NO_TX: the transmit side goes silent until p25_follow_begin, whatever is heard or answered later
+// A WACN p25_wacn_no_tx refuses: the transmit side goes silent until p25_follow_begin, whatever is heard or answered later
 static void wacn_block(p25_follow_t *f)
 {
 	f->blocked = true;
@@ -716,7 +716,7 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 			hunt_start(f, now);
 			return;
 		}
-		if (m.u.net.wacn == P25_WACN_NO_TX)
+		if (p25_wacn_no_tx(m.u.net.wacn))
 			wacn_block(f);
 		else if (!f->blocked)
 			f->view.sys_ok = true;
@@ -807,7 +807,7 @@ void p25_follow_begin(p25_follow_t *f, const p25_follow_cfg_t *cfg, const p25_fo
 	if (!f->acc.rng)
 		f->acc.rng = 1;
 	f->view.reg = !tx_on(f) || (cfg->flags & P25_FOLLOW_NO_REG) ? P25_REG_OFF : P25_REG_IDLE;
-	if (cfg->wacn == P25_WACN_NO_TX || (cfg->flags & P25_FOLLOW_BLOCKED)) {
+	if (p25_wacn_no_tx(cfg->wacn) || (cfg->flags & P25_FOLLOW_BLOCKED)) {
 		f->blocked = true;
 		f->view.reg = P25_REG_BLOCKED;
 	}
@@ -855,8 +855,8 @@ void p25_follow_unit(p25_follow_t *f, const p25_rx_unit_t *u, uint32_t now)
 	if (f->tuning || f->view.state == P25_FOLLOW_OFF)
 		return;
 	view_begin(f);
-	// A voice channel's link control may carry the network status broadcast: $BEE00 there blocks as it does here
-	if (p25_unit_net_wacn(u, &wacn) && wacn == P25_WACN_NO_TX)
+	// A voice channel's link control may carry the network status broadcast: $BEE00..$BEEFF there blocks as it does here
+	if (p25_unit_net_wacn(u, &wacn) && p25_wacn_no_tx(wacn))
 		wacn_block(f);
 	switch (u->duid) {
 	case P25_DUID_TSDU: {

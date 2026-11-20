@@ -94,7 +94,7 @@ static uint8_t twhy;			// RADIO_TRUNK_WHY_* of the last PTT refused or request f
 static bool ttx;			// the follower's transmit side is on
 #endif
 
-// Frequencies of systems heard naming P25_WACN_NO_TX since power on (RAM only, cleared by radio_p25_init): a
+// Frequencies of systems heard naming a blocked WACN (p25_wacn_no_tx) since power on (RAM only, cleared by radio_p25_init): a
 // trunked channel with any of them as a control channel starts with its transmit side blocked (P25_FOLLOW_BLOCKED),
 // a conventional channel on one refuses PTT. With the table full, every P25 channel does
 #define NOGO_MAX	8u
@@ -123,7 +123,7 @@ static void nogo_add(uint32_t hz)
 
 static uint32_t conv_hz;		// a conventional channel's frequency
 
-// The call layer heard link control naming P25_WACN_NO_TX on this conventional channel: its frequency in the table
+// The call layer heard link control naming a blocked WACN on this conventional channel: its frequency in the table
 static void conv_keep(void)
 {
 	if (mem->eng.rx.stats.wacn_no_tx != 0)

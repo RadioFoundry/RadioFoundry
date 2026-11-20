@@ -213,7 +213,7 @@ Registration (`view.reg`, `P25_REG_*`):
 | RETRY | waits 10 s, doubled each round up to 60 s | registers again: WAIT |
 | DENIED | final: PTT says why | a channel restart or another site |
 | NO_TX | the control channel has no inbound frequency | |
-| BLOCKED | the system's WACN is BEE00 (`P25_WACN_NO_TX`): nothing is sent, a request in hand is dropped, answers are ignored, PTT says why | a follower restart only; the radio core then starts that system blocked until power off (7) |
+| BLOCKED | the system's WACN is in BEE00..BEEFF (`p25_wacn_no_tx`): nothing is sent, a request in hand is dropped, answers are ignored, PTT says why | a follower restart only; the radio core then starts that system blocked until power off (7) |
 
 Losing the control channel and finding the same site again keeps the registration. Hunting resets the site to unknown.
 
@@ -281,7 +281,7 @@ differences:
 | Release | the terminator goes out (`AIR_TX_DONE`), then `radio_p25_trunk_talk_end` sends the follower back. Released before the grant: the request is dropped |
 | Inbound bursts | between calls, a block the follower asked to send is keyed alone on the inbound frequency (`p25t_burst`): the same checks as PTT (inhibit, battery, the band), lowest of nothing, the channel's power; `p25_engine_tx_burst` sends the one TSDU and the transmitter drops at its end. The view stays idle (no red LED, no TX timer). A refused burst counts `p25t.burst_refused` and the follower's `send_fail` |
 | Leave | Another channel, the scan, the bench or anything else that takes the modem ends the engine, then the follower |
-| Blocked system | when the follower blocks a system (5, BLOCKED), its programmed control channels and the one held go in a RAM table of 8 frequencies, kept until power off. A trunked channel with one of them starts blocked (`P25_FOLLOW_BLOCKED`). A conventional P25 channel whose link control names BEE00 puts its own frequency there, and PTT on it is refused (`TXDENY_AIR_NO_TX`). With the table full, every P25 channel refuses PTT |
+| Blocked system | when the follower blocks a system (5, BLOCKED), its programmed control channels and the one held go in a RAM table of 8 frequencies, kept until power off. A trunked channel with one of them starts blocked (`P25_FOLLOW_BLOCKED`). A conventional P25 channel whose link control names a WACN in BEE00..BEEFF puts its own frequency there, and PTT on it is refused (`TXDENY_AIR_NO_TX`). With the table full, every P25 channel refuses PTT |
 
 One task at a time runs the follower, without a lock: each task sets its own flag, then looks at the other's. The task
 that finds the other's flag set clears its own and leaves. On one core the task that runs second always sees the

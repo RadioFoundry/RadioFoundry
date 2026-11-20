@@ -901,7 +901,7 @@ P25T_REG_BLOCKED = 8
 @pytest.mark.bench_modem
 @pytest.mark.sdr_rx
 def test_p25_trunk_wacn_bee00(radio, sdr_bench, backup_dir, pytestconfig):
-    """A control channel naming WACN BEE00, the system programmed as any WACN with transmit on: the follower holds it
+    """A control channel naming WACN BEEFF (BEE00..BEEFF are blocked), the system programmed as any WACN with transmit on: the follower holds it
     but blocks its transmit side. No registration goes out, PTT keys nothing, and nothing is heard on the inbound
     frequency (radio_tx: the radio could key there if the block failed)"""
     cc_mhz, in_mhz, voice_mhz = (rig(pytestconfig, k) for k in ("p25-cc-mhz", "p25-cc-in-mhz", "p25-voice-mhz"))
@@ -924,7 +924,7 @@ def test_p25_trunk_wacn_bee00(radio, sdr_bench, backup_dir, pytestconfig):
             skip("state", "the follower's transmit side is off (no unit ID or no talk group)")
         radio.lowest_power()
         with tempfile.TemporaryDirectory() as tmp, sdr_bench.lease():
-            cc = cc_file(tmp, plan, wacn="BEE00")
+            cc = cc_file(tmp, plan, wacn="BEEFF")
             job = sdr_bench.fm_rx_start(in_mhz, KEY_WAIT_S + PLAY_S, bw=16000, streams="disc")
             t0 = time.monotonic()
             tx = play_cc(sdr_bench, cc_mhz, cc[0], cc[1], PLAY_S)
@@ -947,7 +947,7 @@ def test_p25_trunk_wacn_bee00(radio, sdr_bench, backup_dir, pytestconfig):
     if done.get("gap_samples"):
         skip("bench", f"the bench board lost samples (gap_samples {done['gap_samples']})")
     print("\n" + ", ".join(f"{k[5:]} {v1.get(k)}" for k in TRUNK_KEYS))
-    assert v0.get("p25t.wacn") == str(0xBEE00), f"the WACN heard {v0.get('p25t.wacn')}"
+    assert v0.get("p25t.wacn") == str(0xBEEFF), f"the WACN heard {v0.get('p25t.wacn')}"
     assert v1.get("p25t.reg") == str(P25T_REG_BLOCKED), f"registration state {v1.get('p25t.reg')}"
     for k in ("p25t.reg_tx", "p25t.aff_tx", "p25t.req_tx", "p25t.bursts", "p25.tx_calls"):
         assert (as_int(v1.get(k)) or 0) == 0, f"{k} {v1.get(k)}: something was sent"

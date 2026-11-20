@@ -37,7 +37,7 @@ static void on_unit(const p25_rx_unit_t *u, void *ctx)
 	uint32_t wacn;
 
 	c->stats.units++;
-	if (p25_unit_net_wacn(u, &wacn) && wacn == P25_WACN_NO_TX)
+	if (p25_unit_net_wacn(u, &wacn) && p25_wacn_no_tx(wacn))
 		c->stats.wacn_no_tx++;
 #if CONFIG_P25_TRUNK
 	if (c->sink->unit)

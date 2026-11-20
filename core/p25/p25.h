@@ -35,8 +35,12 @@
 #define P25_NAC_ANY		0xF7E	// a receiver set to it takes every NAC
 #define P25_NAC_REPEAT_ANY	0xF7F	// a repeater set to it takes every NAC and sends it on as received
 
-// A system whose WACN is this gets no transmission from the radio, of any kind, however it is heard or programmed
+// A system whose WACN is in BEE00..BEEFF gets no transmission from the radio, of any kind, however it is heard or
+// programmed
 #define P25_WACN_NO_TX		0xBEE00u
+#define P25_WACN_NO_TX_MASK	0xFFF00u
+
+static inline bool p25_wacn_no_tx(uint32_t wacn) { return (wacn & P25_WACN_NO_TX_MASK) == P25_WACN_NO_TX; }
 
 // Status symbols (table 8-2). A subscriber sends only P25_SS_TALKAROUND or P25_SS_UNKNOWN
 #define P25_SS_BUSY		1	// 01: the inbound channel is busy (a repeater says)
@@ -175,7 +179,7 @@ typedef struct {
 
 typedef struct {
 	uint32_t units, voice, voice_bad, voice_bits, lc_fail, es_fail, calls;
-	uint32_t wacn_no_tx;	// LDU1s and TDULCs whose link control names WACN P25_WACN_NO_TX (p25_unit_net_wacn)
+	uint32_t wacn_no_tx;	// LDU1s and TDULCs whose link control names a WACN p25_wacn_no_tx refuses
 } p25_call_stats_t;
 
 typedef struct {

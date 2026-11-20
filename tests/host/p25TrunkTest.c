@@ -1179,6 +1179,10 @@ static void testWacnBlocked(void)
 	p25_follow_view_t v;
 	unsigned n;
 
+	// Every WACN in $BEE00..$BEEFF is blocked, its neighbors and "any" are not
+	CHECK(p25_wacn_no_tx(0xBEE00) && p25_wacn_no_tx(0xBEE5A) && p25_wacn_no_tx(0xBEEFF) && !p25_wacn_no_tx(0xBEDFF) &&
+	      !p25_wacn_no_tx(0xBEF00) && !p25_wacn_no_tx(WACN) && !p25_wacn_no_tx(P25_FOLLOW_WACN_ANY), "blocked WACNs");
+
 	// The site's RFSS status alone holds the control channel (any WACN) but sends nothing, PTT included
 	ntunes = nsends = 0;
 	now_ms = 20000;
@@ -1205,16 +1209,16 @@ static void testWacnBlocked(void)
 	answer_aff(&f, P25_RV_ACCEPT, 100);
 	CHECK(view(&f).reg == P25_REG_READY && nsends == 2, "ready");
 
-	// The control channel held turns to $BEE00: blocked, a request in hand dropped, answers and PTT change nothing
+	// The control channel held turns to $BEEFF: blocked, a request in hand dropped, answers and PTT change nothing
 	p25_follow_ptt(&f, true, now_ms);
 	hold_request(&f);
 	n = nsends;
-	cc_wacn = P25_WACN_NO_TX;
+	cc_wacn = 0xBEEFF;
 	mk_net(b, cc_wacn, SYSID);
 	p25_follow_tsbk(&f, b, NAC, now_ms);
 	v = view(&f);
 	CHECK(v.reg == P25_REG_BLOCKED && v.req == P25_REQ_IDLE && !v.sys_ok && p25_follow_can_talk(&v, cfg.flags) == P25_TALK_BLOCKED,
-	      "$BEE00: blocked (reg %u req %u)", v.reg, v.req);
+	      "$BEEFF: blocked (reg %u req %u)", v.reg, v.req);
 	run_ms(&f, 15000);
 	answer_reg(&f, P25_RV_ACCEPT);
 	answer_aff(&f, P25_RV_ACCEPT, 100);
@@ -1237,24 +1241,24 @@ static void testWacnBlocked(void)
 	p25_follow_ptt(&f, false, now_ms);
 	p25_follow_end(&f);
 
-	// Requests without registration: $BEE00 heard first, nothing goes out
+	// Requests without registration: $BEE5A heard first, nothing goes out
 	cfg.flags = P25_FOLLOW_TX | P25_FOLLOW_NO_REG;
 	nsends = 0;
-	cc_wacn = P25_WACN_NO_TX;
+	cc_wacn = 0xBEE5A;
 	p25_follow_begin(&f, &cfg, &ahooks, NULL, now_ms);
 	retune(&f);
-	site_ident_w(&f, P25_WACN_NO_TX, 3);
+	site_ident_w(&f, cc_wacn, 3);
 	p25_follow_ptt(&f, true, now_ms);
 	run_ms(&f, 5000);
 	v = view(&f);
 	CHECK(nsends == 0 && v.reg == P25_REG_BLOCKED && v.req == P25_REQ_IDLE && p25_follow_can_talk(&v, cfg.flags) == P25_TALK_BLOCKED,
-	      "no registration, $BEE00: silent (%u)", nsends);
+	      "no registration, $BEE5A: silent (%u)", nsends);
 	p25_follow_ptt(&f, false, now_ms);
 	p25_follow_end(&f);
 
 	// The system programmed as $BEE00: blocked before a block is heard, and on its control channel
 	cfg.flags = P25_FOLLOW_TX;
-	cfg.wacn = P25_WACN_NO_TX;
+	cfg.wacn = cc_wacn = P25_WACN_NO_TX;
 	p25_follow_begin(&f, &cfg, &ahooks, NULL, now_ms);
 	v = view(&f);
 	CHECK(v.reg == P25_REG_BLOCKED && p25_follow_can_talk(&v, cfg.flags) == P25_TALK_BLOCKED, "programmed $BEE00: blocked");
@@ -1343,9 +1347,9 @@ static void testWacnExtended(void)
 	v = view(&f);
 	CHECK(v.sys_ok && v.wacn == WACN && nsends == 1 && last_isp().opcode == P25_ISP_U_REG_REQ,
 	      "extended form: verified, registers (%u)", nsends);
-	// ... and names $BEE00 later: blocked
+	// ... and names $BEE80 later: blocked
 	n = nsends;
-	pdu_net(&f, P25_WACN_NO_TX, false);
+	pdu_net(&f, 0xBEE80, false);
 	for (unsigned k = 0; k < 20; k++) {
 		mk_rfss(b, P25_TSBK_RFSS, SYSID, 3, 0x1004);
 		p25_follow_tsbk(&f, b, NAC, now_ms);
@@ -1353,18 +1357,18 @@ static void testWacnExtended(void)
 	}
 	v = view(&f);
 	CHECK(v.reg == P25_REG_BLOCKED && nsends == n && p25_follow_can_talk(&v, cfg.flags) == P25_TALK_BLOCKED,
-	      "extended $BEE00: blocked (reg %u)", v.reg);
+	      "extended $BEE80: blocked (reg %u)", v.reg);
 	p25_follow_end(&f);
 
 	// While hunting, the extended form alone is the system's identity: held, and blocked at once
 	nsends = 0;
 	p25_follow_begin(&f, &cfg, &ahooks, NULL, now_ms);
 	retune(&f);
-	pdu_net(&f, P25_WACN_NO_TX, false);
+	pdu_net(&f, 0xBEE01, false);
 	p25_follow_ptt(&f, true, now_ms);
 	run_ms(&f, 3000);
 	v = view(&f);
-	CHECK(v.reg == P25_REG_BLOCKED && v.wacn == P25_WACN_NO_TX && nsends == 0, "hunt, extended $BEE00: state %u reg %u",
+	CHECK(v.reg == P25_REG_BLOCKED && v.wacn == 0xBEE01 && nsends == 0, "hunt, extended $BEE01: state %u reg %u",
 	      v.state, v.reg);
 	p25_follow_ptt(&f, false, now_ms);
 	p25_follow_end(&f);
@@ -1419,8 +1423,8 @@ static void testWacnLinkControl(void)
 		CHECK(view(&f).state == P25_FOLLOW_VOICE, "%u: following", d);
 		lc_net(&f, P25_DUID_LDU1, WACN);
 		CHECK(view(&f).reg == P25_REG_READY, "%u: another WACN in link control: nothing changes", d);
-		lc_net(&f, duids[d], P25_WACN_NO_TX);
-		CHECK(view(&f).reg == P25_REG_BLOCKED, "%u: $BEE00 in link control: blocked (reg %u)", d, view(&f).reg);
+		lc_net(&f, duids[d], 0xBEEFF);
+		CHECK(view(&f).reg == P25_REG_BLOCKED, "%u: $BEEFF in link control: blocked (reg %u)", d, view(&f).reg);
 		if (tune_pending)
 			retune(&f);
 		p25_follow_ptt(&f, true, now_ms);
@@ -1468,15 +1472,15 @@ static void testWacnNeighbor(void)
 	for (uint32_t t0 = now_ms; view(&f).state != P25_FOLLOW_CONTROL && now_ms - t0 < 20000;) {
 		run_ms(&f, 100);
 		if (!f.tuning && f.view.cc_hz == hz_adj)
-			site_ident_w(&f, P25_WACN_NO_TX, 4);
+			site_ident_w(&f, 0xBEE42, 4);
 	}
-	cc_wacn = P25_WACN_NO_TX;
+	cc_wacn = 0xBEE42;
 	cc_alive = true;
 	p25_follow_ptt(&f, true, now_ms);
 	run_ms(&f, 5000);
 	v = view(&f);
 	CHECK(v.state == P25_FOLLOW_CONTROL && v.cc_hz == hz_adj && v.reg == P25_REG_BLOCKED && nsends == n,
-	      "adjacent site, $BEE00: state %u at %u, reg %u, %u sent", v.state, v.cc_hz, v.reg, nsends - n);
+	      "adjacent site, $BEE42: state %u at %u, reg %u, %u sent", v.state, v.cc_hz, v.reg, nsends - n);
 	p25_follow_ptt(&f, false, now_ms);
 	p25_follow_end(&f);
 	cc_wacn = WACN;

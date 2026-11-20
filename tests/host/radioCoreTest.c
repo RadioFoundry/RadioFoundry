@@ -7702,7 +7702,7 @@ static void test_p25_trunk_tx(void)
 	site.on = false;
 }
 
-// A system heard naming WACN $BEE00 gets nothing from the radio until power off: not on this visit, not when the
+// A system heard naming WACN $BEEFF (blocked as $BEE00 is) gets nothing from the radio until power off: not on this visit, not when the
 // channel is left and taken again, not when the site later names another WACN. Power on again forgets it
 static void test_p25_trunk_wacn_nogo(void)
 {
@@ -7728,7 +7728,7 @@ static void test_p25_trunk_wacn_nogo(void)
 	site.cc_in_hz = TS_CC1 + TS_OFFSET;
 	site.voice_hz = TS_VOICE;
 	site.ans_reg = site.ans_aff = site.ans_req = SITE_ANS_ACCEPT;
-	site.wacn = P25_WACN_NO_TX;
+	site.wacn = 0xBEEFF;
 	site.on = true;
 	start();
 	p25_defaults();
@@ -7765,7 +7765,7 @@ static void test_p25_trunk_wacn_nogo(void)
 }
 
 
-// A conventional channel whose repeater names WACN $BEE00 in its link control: PTT refused there until power off
+// A conventional channel whose repeater names WACN $BEE7F in its link control: PTT refused there until power off
 static void test_p25_conv_wacn_nogo(void)
 {
 	setup_codeplug_p25();
@@ -7788,7 +7788,7 @@ static void test_p25_conv_wacn_nogo(void)
 	CHECK(sm.view.state == RS_TX && hw.keyed);	// another WACN: as before
 	req(RREQ_PTT, 0);
 	run(500);
-	site.lc_wacn = P25_WACN_NO_TX;
+	site.lc_wacn = 0xBEE7F;
 	site.on = true;
 	run(1000);
 	site.on = false;
