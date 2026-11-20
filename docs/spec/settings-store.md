@@ -195,7 +195,8 @@ second confirmation and is not offered.
 
 ### 3.1 Privacy key slots (the hook for DMR basic privacy)
 
-The key store for `core/dmr/dmrPrivacy.c` (`dmr-voice.md` 5). Four slots, each a key value (`privacy_key[i]`,
+The key store for `core/dmr/dmrPrivacy.c` (`dmr-voice.md` 5). System traffic keys use the codeplug settings area
+([channel-modes.md](channel-modes.md) 5.4). Four slots, each a key value (`privacy_key[i]`,
 u32: 16 bits are used today by Motorola and Anytone basic privacy, and the slot is wide enough for a 32-bit key
 later) and a type (`privacy_type[i]`, `dmrPrivacyType_t`). `privacy_active` picks the slot in use radio-wide: 1 to
 4, or 0 for privacy off. Turning privacy off keeps the key in its slot.
