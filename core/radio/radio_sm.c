@@ -142,6 +142,9 @@ static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms);
 #if CONFIG_DMR_TRUNK
 // The engine and the system it runs, in plain RAM (radio_sm_t sits in the CPU-only RAM, which is full on some radios)
 static t3_ms_t t3m;
+#if CONFIG_DMR_TRUNK_TX
+static uint32_t t3_ring_next;
+#endif
 static radio_t3_setup_t t3s;	// the system, copied from the staged one at RADIO_T3_START
 radio_t3_view_t radio_t3v;	// the whole trunking view (view.t3 is its brief: radio_sm_t3_brief); in RAM, not the
 				// CPU-only RAM radio_sm_t may be in
@@ -3678,6 +3681,7 @@ void radio_sm_t3_brief(radio_sm_t *sm)
 	const radio_t3_view_t *x = &radio_t3v;
 	radio_t3_brief_t *b = &sm->view.t3;
 	b->on = x->on;
+	b->ring_src = x->on ? t3m.ring_src : 0;
 	b->sys = x->sys;
 	b->unavail = x->unavail;
 	b->fallback = x->fallback;
@@ -3874,6 +3878,9 @@ static void t3_request(radio_sm_t *sm, uint8_t cmd, uint32_t now_ms)
 			(void)t3_ms_deregister(&t3m, now_ms);
 		}
 		break;
+	case RADIO_T3_REJECT:
+		(void)t3_ms_reject_call(&t3m, now_ms);
+		break;
 	case RADIO_T3_CANCEL:
 		if (t3m.ax.alerting) {
 			sm->t3_ptt_wait = false;
@@ -3981,6 +3988,12 @@ static bool t3_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		return false;	// on the payload channel: the stack sends the voice
 	}
 #if CONFIG_DMR_TRUNK_TX
+	if (t3m.ring_src != 0) {
+		(void)t3_ms_answer_call(&t3m, now_ms);
+		sm->ptt = true;	// consume this press to answer; the mic needs a new press
+		changed(sm);
+		return true;
+	}
 	if (sm->t3_ptt_wait) {
 		sm->ptt = true;	// PTT pressed again while the called user is ringing
 		return true;
@@ -4182,6 +4195,12 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 	}
 #if CONFIG_DMR_TRUNK_TX
 	t3_als_tick(sm, now_ms);
+	if (t3m.ring_src == 0) {
+		t3_ring_next = 0;
+	} else if (t3_ring_next == 0 || (int32_t)(now_ms - t3_ring_next) >= 0) {
+		beep(sm, BEEP_MESSAGE);
+		t3_ring_next = now_ms + 2000u;
+	}
 	// Our grant came while PTT is held: talk now
 	if (sm->t3_ptt_wait) {
 		if (t3_ms_can_talk(&t3m) && t3m.state == T3_FOLLOW) {

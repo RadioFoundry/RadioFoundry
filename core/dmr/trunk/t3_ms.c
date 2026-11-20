@@ -263,6 +263,7 @@ static void enter_hunt(t3_ms_t *ms, uint32_t now, bool retry)
 	if (ms->ax.state != T3_AX_IDLE) {
 		finish(ms, now, T3_RES_LOST);
 	}
+	ms->ring_src = 0;
 	ms->state = T3_HUNT;
 	ms->confirmed = false;
 	ms->slc_here = false;
@@ -296,6 +297,7 @@ void t3_ms_stop(t3_ms_t *ms)
 	ms->nq = 0;
 	ms->tx.count = 0;
 	ms->tx.udt = false;
+	ms->ring_src = 0;
 	ms->ax.alerting = false;
 	ms->ax.state = T3_AX_IDLE;
 	ms->confirmed = false;
@@ -484,7 +486,9 @@ static void on_grant(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_cha
 	if (!wants_grant(ms, p, &group)) {
 		return;
 	}
-	if (ms->ax.state != T3_AX_IDLE && !is_me(ms, p->u.grant.src) && !p->u.grant.emergency) {
+	const bool answered = ms->ax.state != T3_AX_IDLE && ms->ax.answering && p->op == T3_OP_PV_GRANT &&
+	                      p->u.grant.src == ms->ax.dst && is_me(ms, p->u.grant.dst);
+	if (ms->ax.state != T3_AX_IDLE && !answered && !is_me(ms, p->u.grant.src) && !p->u.grant.emergency) {
 		// Asking for a service: someone else's call doesn't take the radio off the TSCC meanwhile
 		return;
 	}
@@ -513,9 +517,10 @@ static void on_grant(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_cha
 		// Only a Late_Entry repeat of the call just left; a set-up grant (Late_Entry 0) is a new call (6.6.2.4.1)
 		return;
 	}
+	ms->ring_src = 0;
 	follow(ms, now, p, &c, group);
-	if (ms->call.ours && ms->ax.state != T3_AX_IDLE &&
-	    (ms->call.data ? ms->ax.svc == T3_SVC_PDATA : is_voice(ms->ax.svc))) {
+	if (answered || (ms->call.ours && ms->ax.state != T3_AX_IDLE &&
+	    (ms->call.data ? ms->ax.svc == T3_SVC_PDATA : is_voice(ms->ax.svc)))) {
 		finish(ms, now, T3_RES_GRANTED);
 	} else if (ms->ax.state != T3_AX_IDLE) {
 		// An emergency call took us off the TSCC: what we were asking for is lost
@@ -554,7 +559,7 @@ static bool ps_may_sleep(const t3_ms_t *ms, uint32_t now)
 {
 	return ms->ps_offset != 0 && ms->state == T3_CAMPED && ms->confirmed && ms->reg == T3_REG_OK &&
 	       ms->csc_valid && ms->ax.state == T3_AX_IDLE && ms->nq == 0 && ms->tx.count == 0 && !ms->tx.udt &&
-	       !ms->udt_rx.open &&
+	       ms->ring_src == 0 && !ms->udt_rx.open &&
 	       !(ms->massreg && (int32_t)(now - ms->massreg_at) >= 0) && (int32_t)(now - ms->awake_until) >= 0 &&
 	       !ps_frame(ms, now);
 }
@@ -735,6 +740,8 @@ static void start_access(t3_ms_t *ms, uint32_t now, t3_svc_t svc, uint32_t dst, 
 	ms->ax.emergency = emergency;
 	ms->ax.als = false;
 	ms->ax.alerting = false;
+	ms->ax.answering = false;
+	ms->ax.rejecting = false;
 	ms->ax.resume = false;
 	ms->ax.ip = 0;
 	ms->ax.ip_inform = false;
@@ -848,6 +855,11 @@ static void build_rand(t3_ms_t *ms, uint8_t out[T3_CSBK_BYTES])
 		break;
 	case T3_SVC_IND_VOICE:
 		// Table 6.40: SUPED_VAL 0, then ALS_SERV
+		if (ms->ax.answering || ms->ax.rejecting) {
+			q->kind = T3_SK_ANSWER;
+			q->extra = ms->ax.rejecting ? 0x2u : 0;	// ACCEPT, followed by one reserved bit
+			break;
+		}
 		q->kind = T3_SK_IND_VOICE;
 		q->options = ms->ax.emergency ? T3_SO_EMERGENCY : 0;
 		q->extra = ms->ax.als ? 0x2u : 0u;
@@ -1018,7 +1030,7 @@ static void on_ack(t3_ms_t *ms, uint32_t now, const t3_ack_t *a)
 		} else if (svc == T3_SVC_DEREGISTER) {
 			ms->reg = T3_REG_NEEDED;
 			ms->deregistered = true;
-		} else if (is_voice(svc) && a->reason != T3_RC_CALLBACK) {
+		} else if (is_voice(svc) && !ms->ax.rejecting && a->reason != T3_RC_CALLBACK) {
 			// A voice call ends in a grant or a refusal; Callback is the one acknowledgement that ends it (the
 			// called radio calls back). Any other goes on toward the grant: MS_Alerting (the called radio rings), or
 			// Message_Accepted, which some systems send to a request for a call already set up. TP_Timer
@@ -1605,6 +1617,12 @@ static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h,
 	} else if (ms->stunned) {
 		return;		// stunned: no user services to answer for
 	} else if (to_me && !payload && h->kind == T3_SK_CANCEL) {
+		if (ms->ring_src == h->src) {
+			ms->ring_src = 0;
+		}
+		if (ms->ax.state != T3_AX_IDLE && ms->ax.answering && ms->ax.dst == h->src) {
+			finish(ms, now, T3_RES_LOST);
+		}
 		answer(ms, slot, false, T3_RC_MS_ACCEPTED, h->src, false);	// the caller gave up (6.6.1.2.2)
 	} else if (to_me && !payload && h->kind == T3_SK_IND_VOICE && h->als) {
 		// An ALS radio check (table 6.46): Message_Accepted, and a private grant from the same caller within
@@ -1616,6 +1634,22 @@ static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h,
 		ms->als_src = h->src;
 		ms->als_until = (now + T3_ALS_REQUEST_MS) | 1u;
 		answer(ms, slot, false, T3_RC_MESSAGE_ACCEPTED, h->src, false);
+	} else if (to_me && !payload && h->kind == T3_SK_IND_VOICE && h->kind_flag) {
+		if (h->src == 0 || h->src > T3_ID_USER_MAX) {
+			return;
+		}
+		uint8_t reason;
+		if (!(ms->cfg->opts & T3_OPT_PRIVATE)) {
+			reason = T3_RC_MS_NOT_SUPPORTED;
+		} else if (ms->state != T3_CAMPED || ms->ax.state != T3_AX_IDLE ||
+			   (ms->ring_src != 0 && ms->ring_src != h->src)) {
+			reason = T3_RC_EQUIP_BUSY;
+		} else {
+			ms->ring_src = h->src;
+			ms->ring_until = now + T3_ANSWER_CALL_MS;
+			reason = T3_RC_MS_ALERTING;
+		}
+		answer_info(ms, slot, false, reason, t3_response_check(ms->syscode), h->src, false);
 	} else if (to_me && !payload && h->kind == T3_SK_IND_VOICE) {
 		answer(ms, slot, false, T3_RC_MS_ACCEPTED, h->src, false);	// availability check: OACSU
 	} else if (payload && h->src == T3_ID_TSI && (h->kind == T3_SK_IND_DATA || h->kind == T3_SK_TG_DATA)) {
@@ -2564,6 +2598,9 @@ void t3_ms_call_burst(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc)
 
 bool t3_ms_poll(t3_ms_t *ms, uint32_t now, t3_act_t *act)
 {
+	if (ms->ring_src != 0 && !before(now, ms->ring_until)) {
+		ms->ring_src = 0;
+	}
 	switch (ms->state) {
 	case T3_OFF:
 		break;
@@ -2692,6 +2729,29 @@ bool t3_ms_request(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, bool eme
 	ms->talk_id = dst;
 	start_access(ms, now, group ? T3_SVC_GROUP_VOICE : T3_SVC_IND_VOICE, dst, emergency);
 	return true;
+}
+
+static bool respond_call(t3_ms_t *ms, uint32_t now, bool reject)
+{
+	if (ms->ring_src == 0 || !before(now, ms->ring_until) || ms->ax.state != T3_AX_IDLE || !may_ask(ms)) {
+		return false;
+	}
+	start_access(ms, now, T3_SVC_IND_VOICE, ms->ring_src, false);
+	ms->ring_src = 0;
+	ms->ax.answering = !reject;
+	ms->ax.rejecting = reject;
+	ms->ax.supl = false;
+	return true;
+}
+
+bool t3_ms_answer_call(t3_ms_t *ms, uint32_t now)
+{
+	return respond_call(ms, now, false);
+}
+
+bool t3_ms_reject_call(t3_ms_t *ms, uint32_t now)
+{
+	return respond_call(ms, now, true);
 }
 
 bool t3_ms_status(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t status)

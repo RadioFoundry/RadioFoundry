@@ -333,6 +333,7 @@
  "screen.roaming": "Repeater roaming",
  "screen.rx_group": "Receiving a group call",
  "screen.rx_private": "Receiving a private call",
+ "screen.incoming-call": "Incoming call",
  "screen.scan_actions": "Scan",
  "screen.home_dual": "Dual watch: A and B, PTT on A",
  "screen.home_dual_rx_b": "Dual watch: a call coming in on B",

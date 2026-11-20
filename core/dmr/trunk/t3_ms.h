@@ -80,6 +80,7 @@
 #define T3_PROTECT_ONE_MS	1000	// EN_PTT_ONE_MS for another radio holds PTT off this long after the last one
 #define T3_TRAND_TC_MS		10000	// TRand_TC, 2-60 s: the longest a random access may take
 #define T3_TP_MS		20000	// TP_Timer: after a progress acknowledgement to a call request
+#define T3_ANSWER_CALL_MS	20000	// T_AnswerCall: restarted by each page from the caller
 #define T3_TNP_MS		10000	// TNP_Timer: after one to a request without a payload channel
 #define T3_ALS_S		30	// T_ALS (A.1: 10-300 s)
 #define T3_ALS_E_S		60	// T_ALS_E (10-14 400 s)
@@ -380,6 +381,8 @@ typedef struct {
 	t3_call_t cleared;
 
 	// Access (CONFIG_DMR_TRUNK_TX)
+	uint32_t ring_src;		// caller of an incoming FOACSU page, or zero
+	uint32_t ring_until;
 	struct {
 		t3_ax_state_t state;
 		t3_svc_t svc;
@@ -404,6 +407,8 @@ typedef struct {
 		bool ip_inform;		// T3_SVC_REGISTER: IP_Inform set, the address goes up when IPI asks (6.4.11)
 		uint32_t divert_to;	// T3_RES_DIVERTED: the address the TSCC gave
 		bool divert_group;
+		bool rejecting;		// C_RAND Answer Call with ACCEPT = 1
+		bool answering;		// FOACSU answer awaiting the caller's private voice grant
 		bool alerting;		// the called user is ringing during individual voice setup
 		bool als;		// T3_SVC_IND_VOICE: Ambient Listening asked for
 		bool supl;		// supplementary user data offered (SUPED_SV), uploaded when SUPLI asks
@@ -583,6 +588,8 @@ bool t3_ms_data_ready(const t3_ms_t *ms, uint32_t now);
 void t3_ms_data_done(t3_ms_t *ms, uint32_t now, bool ok);
 void t3_ms_data_heard(t3_ms_t *ms, uint32_t now);
 // PTT released before the grant: withdraw the request, or cancel it at the TSCC once sent
+bool t3_ms_answer_call(t3_ms_t *ms, uint32_t now);
+bool t3_ms_reject_call(t3_ms_t *ms, uint32_t now);
 void t3_ms_cancel(t3_ms_t *ms, uint32_t now);
 // The user ends the call being followed: P_MAINT when the radio started it or it is individual, then back
 void t3_ms_end_call(t3_ms_t *ms, uint32_t now);

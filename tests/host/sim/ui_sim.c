@@ -1288,6 +1288,12 @@ bool ui_svc_t3_name(uint8_t n, char *name)
 	strcpy(name, names[n]);
 	return true;
 }
+void ui_svc_t3_reject(void)
+{
+	view.t3.ring_src = 0;
+	serial++;
+}
+
 void ui_svc_t3_poll(uint32_t id)
 {
 	(void)id;
@@ -2987,6 +2993,12 @@ static bool run_token(char *t, char *err, size_t len)
 		t3_tagged = true;
 		t3_view();
 		serial++;
+		return true;
+	}
+	if (strcmp(t, "t3ring") == 0 && arg != NULL) {
+		view.t3.ring_src = (uint32_t)atoi(arg);
+		serial++;
+		advance(100);
 		return true;
 	}
 	if (strcmp(t, "t3cli") == 0) {		// the next call from the PSTN gateway gives this caller's number
