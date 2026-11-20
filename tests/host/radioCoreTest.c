@@ -314,6 +314,7 @@ static struct {
 	uint8_t grant_after;		// a queued request: units until its grant
 	uint32_t wacn;			// the WACN its network status names, 0: TS_WACN
 	uint32_t lc_wacn;		// not 0: a conventional repeater instead, its terminators' link control naming it
+	uint16_t lc_sysid;		// ... and this system ID (0: TS_SYSID)
 } site;
 enum { SITE_ANS_ACCEPT, SITE_ANS_DENY, SITE_ANS_NONE, SITE_ANS_QUEUE };
 static void site_chunk(uint8_t *syms);
@@ -7231,8 +7232,9 @@ static void site_unit(void)
 	site.units++;
 	if (site.lc_wacn != 0) {
 		// The network status broadcast in link control (LCO 36): reserved, WACN, system, channel, service class
+		uint16_t sysid = site.lc_sysid != 0 ? site.lc_sysid : TS_SYSID;
 		uint8_t raw[P25_LC_BYTES] = { 0x40 | 36, 0, (uint8_t)(site.lc_wacn >> 12), (uint8_t)(site.lc_wacn >> 4),
-					      (uint8_t)((site.lc_wacn & 0x0F) << 4 | TS_SYSID >> 8), (uint8_t)TS_SYSID, 0x10, 0x01,
+					      (uint8_t)((site.lc_wacn & 0x0F) << 4 | sysid >> 8), (uint8_t)sysid, 0x10, 0x01,
 					      0x70 };
 		site.unit_syms = P25_TDULC_SYMS;
 		p25_unit_begin(site.unit, site.unit_syms, TS_NAC, P25_DUID_TDULC, P25_SS_IDLE);
@@ -7765,7 +7767,8 @@ static void test_p25_trunk_wacn_nogo(void)
 }
 
 
-// A conventional channel whose repeater names WACN $BEE7F in its link control: PTT refused there until power off
+// A conventional channel whose repeater names WACN $BEE7F in its link control: PTT refused there until power off.
+// System ID $00A, under an ordinary WACN, is refused the same way
 static void test_p25_conv_wacn_nogo(void)
 {
 	setup_codeplug_p25();
@@ -7816,6 +7819,17 @@ static void test_p25_conv_wacn_nogo(void)
 	CHECK(sm.view.state == RS_TX && hw.keyed);
 	req(RREQ_PTT, 0);
 	run(500);
+	site.lc_wacn = TS_WACN;
+	site.lc_sysid = P25_SYSID_NO_TX;
+	site.on = true;
+	run(1000);
+	site.on = false;
+	run(300);
+	keyed = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_AIR_NO_TX && !hw.keyed && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	site.lc_sysid = 0;
 	req(RREQ_ZONE_POS, 0);
 }
 

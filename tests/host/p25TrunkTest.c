@@ -1299,11 +1299,11 @@ static void testWacnBlocked(void)
 }
 
 // A packet of the extended network status broadcast through the unit entry; bad: its data block damaged
-static void pdu_net(p25_follow_t *f, uint32_t wacn, bool bad)
+static void pdu_net_sys(p25_follow_t *f, uint32_t wacn, uint16_t sysid, bool bad)
 {
 	static uint8_t air[P25_UNIT_BYTES_MAX];
 	uint8_t hdr[P25_TSBK_BYTES], data[P25_TSBK_BYTES];
-	p25_tsbk_t m = { .kind = P25_TSBK_NET, .u.net = { .lra = 1, .wacn = wacn, .sysid = SYSID, .ch = 0x1004 } };
+	p25_tsbk_t m = { .kind = P25_TSBK_NET, .u.net = { .lra = 1, .wacn = wacn, .sysid = sysid, .ch = 0x1004 } };
 	p25_rx_unit_t u = { .duid = P25_DUID_PDU, .nac = NAC, .nsyms = p25_blocks_syms(2), .air = air };
 
 	p25_mbt_net_make(&m, hdr, data);
@@ -1314,6 +1314,7 @@ static void pdu_net(p25_follow_t *f, uint32_t wacn, bool bad)
 	p25_block_put(air, 1, data);
 	p25_follow_unit(f, &u, now_ms);
 }
+static void pdu_net(p25_follow_t *f, uint32_t wacn, bool bad) { pdu_net_sys(f, wacn, SYSID, bad); }
 
 // The extended network status broadcast verifies a control channel as the abbreviated one does, and names $BEE00
 static void testWacnExtended(void)
@@ -1375,11 +1376,9 @@ static void testWacnExtended(void)
 }
 
 // A voice unit (LDU1 or TDULC) whose link control is the network status broadcast naming wacn (LCO 36)
-static void lc_net(p25_follow_t *f, uint8_t duid, uint32_t wacn)
+static void lc_put(p25_follow_t *f, uint8_t duid, const uint8_t raw[P25_LC_BYTES])
 {
 	static uint8_t air[P25_UNIT_BYTES_MAX];
-	uint8_t raw[P25_LC_BYTES] = { 0x40 | 36, 0, (uint8_t)(wacn >> 12), (uint8_t)(wacn >> 4),
-				      (uint8_t)((wacn & 0x0F) << 4 | SYSID >> 8), (uint8_t)SYSID, 0x10, 0x04, 0x70 };
 	p25_rx_unit_t u = { .duid = duid, .nac = NAC, .nsyms = duid == P25_DUID_LDU1 ? P25_LDU_SYMS : P25_TDULC_SYMS,
 			    .air = air };
 
@@ -1389,6 +1388,13 @@ static void lc_net(p25_follow_t *f, uint8_t duid, uint32_t wacn)
 	else
 		p25_tdulc_put(air, raw);
 	p25_follow_unit(f, &u, now_ms);
+}
+static void lc_net(p25_follow_t *f, uint8_t duid, uint32_t wacn)
+{
+	uint8_t raw[P25_LC_BYTES] = { 0x40 | 36, 0, (uint8_t)(wacn >> 12), (uint8_t)(wacn >> 4),
+				      (uint8_t)((wacn & 0x0F) << 4 | SYSID >> 8), (uint8_t)SYSID, 0x10, 0x04, 0x70 };
+
+	lc_put(f, duid, raw);
 }
 
 // The network status broadcast in a voice channel's link control names $BEE00: blocked as on the control channel
@@ -2155,6 +2161,123 @@ static void testAirLoss(void)
 	rig_end();
 }
 
+// System ID $00A is blocked as the WACNs $BEE00..$BEEFF are, under any WACN: named by the network status broadcast in
+// either form, by the RFSS status broadcast of the control channel held, by voice channel link control (LCO 35, 36,
+// 41) or by the programming. An adjacent site's status naming it blocks nothing here
+static void testSysidBlocked(void)
+{
+	static const p25_follow_cc_t cc[] = { { .hz = HZ_CC1, .chan = 0x1004, .site = 3 } };
+	static const p25_follow_iden_t iden[P25_FOLLOW_IDENS] = {
+		[1] = { .base_hz = 851006250u, .spacing_hz = 6250, .tx_off_hz = -45000000 } };
+	static p25_follow_t f;
+	p25_follow_cfg_t cfg = { .wacn = P25_FOLLOW_WACN_ANY, .sysid = P25_FOLLOW_SYSID_ANY, .nac = NAC,
+				 .flags = P25_FOLLOW_TX, .unit_id = OUR_UNIT, .talk_group = 100, .ncc = 1, .cc = cc,
+				 .iden_set = 1u << 1, .iden = iden };
+	uint8_t b[P25_TSBK_BYTES];
+	p25_follow_view_t v;
+	unsigned n;
+
+	CHECK(p25_sysid_no_tx(0x00A) && !p25_sysid_no_tx(0x009) && !p25_sysid_no_tx(0x00B) && !p25_sysid_no_tx(SYSID) &&
+	      !p25_sysid_no_tx(0x10A), "blocked system IDs");
+
+	// Registered on an ordinary system; an adjacent site naming $00A changes nothing, the RFSS status of the control
+	// channel held naming it blocks, a request in hand dropped
+	ntunes = nsends = 0;
+	now_ms = 300000;
+	cc_wacn = WACN;
+	cc_alive = true;
+	p25_follow_begin(&f, &cfg, &ahooks, NULL, now_ms);
+	retune(&f);
+	site_ident_w(&f, WACN, 3);
+	run_ms(&f, 300);
+	answer_reg(&f, P25_RV_ACCEPT);
+	run_ms(&f, 200);
+	answer_aff(&f, P25_RV_ACCEPT, 100);
+	CHECK(view(&f).reg == P25_REG_READY && nsends == 2, "ready (%u)", nsends);
+	mk_rfss(b, P25_TSBK_ADJ, P25_SYSID_NO_TX, 4, 0x1010);
+	p25_follow_tsbk(&f, b, NAC, now_ms);
+	CHECK(view(&f).reg == P25_REG_READY, "adjacent site, system $00A: not blocked");
+	p25_follow_ptt(&f, true, now_ms);
+	hold_request(&f);
+	n = nsends;
+	mk_rfss(b, P25_TSBK_RFSS, P25_SYSID_NO_TX, 3, 0x1004);
+	p25_follow_tsbk(&f, b, NAC, now_ms);
+	run_ms(&f, 5000);
+	v = view(&f);
+	CHECK(v.reg == P25_REG_BLOCKED && v.req == P25_REQ_IDLE && nsends == n &&
+	      p25_follow_can_talk(&v, cfg.flags) == P25_TALK_BLOCKED, "RFSS status, system $00A: blocked (reg %u, %u sent)",
+	      v.reg, nsends - n);
+	p25_follow_ptt(&f, false, now_ms);
+	p25_follow_end(&f);
+
+	// The network status broadcast names $00A under an ordinary WACN: nothing goes out
+	nsends = 0;
+	p25_follow_begin(&f, &cfg, &ahooks, NULL, now_ms);
+	retune(&f);
+	mk_net(b, WACN, P25_SYSID_NO_TX);
+	p25_follow_tsbk(&f, b, NAC, now_ms);
+	p25_follow_ptt(&f, true, now_ms);
+	run_ms(&f, 5000);
+	v = view(&f);
+	CHECK(v.reg == P25_REG_BLOCKED && nsends == 0, "network status, system $00A: silent (reg %u, %u sent)", v.reg, nsends);
+	p25_follow_ptt(&f, false, now_ms);
+	p25_follow_end(&f);
+
+	// ... and its extended form
+	cc_alive = false;
+	p25_follow_begin(&f, &cfg, &ahooks, NULL, now_ms);
+	retune(&f);
+	pdu_net_sys(&f, WACN, P25_SYSID_NO_TX, false);
+	p25_follow_ptt(&f, true, now_ms);
+	run_ms(&f, 3000);
+	v = view(&f);
+	CHECK(v.reg == P25_REG_BLOCKED && nsends == 0, "extended, system $00A: silent (reg %u, %u sent)", v.reg, nsends);
+	p25_follow_ptt(&f, false, now_ms);
+	p25_follow_end(&f);
+
+	// The system programmed as $00A: blocked from the start
+	cfg.sysid = P25_SYSID_NO_TX;
+	p25_follow_begin(&f, &cfg, &ahooks, NULL, now_ms);
+	v = view(&f);
+	CHECK(v.reg == P25_REG_BLOCKED && p25_follow_can_talk(&v, cfg.flags) == P25_TALK_BLOCKED, "programmed $00A: blocked");
+	p25_follow_end(&f);
+	cfg.sysid = P25_FOLLOW_SYSID_ANY;
+
+	// A voice channel's link control: the RFSS status (LCO 35) and the explicit network status (LCO 41) naming $00A
+	for (unsigned k = 0; k < 2; k++) {
+		static const uint8_t lcs[2][P25_LC_BYTES] = {
+			{ 0x40 | 35, 0x01, 0x00, 0x0A, 0x01, 0x03, 0x10, 0x04, 0x70 },
+			{ 0x40 | 41, 0xA4, 0xC2, 0x10, 0x0A, 0x10, 0x04, 0x10, 0x04 } };
+
+		nsends = 0;
+		now_ms += 60000;
+		cc_wacn = WACN;
+		cc_alive = true;
+		p25_follow_begin(&f, &cfg, &ahooks, NULL, now_ms);
+		retune(&f);
+		site_ident_w(&f, WACN, 3);
+		run_ms(&f, 300);
+		answer_reg(&f, P25_RV_ACCEPT);
+		run_ms(&f, 200);
+		answer_aff(&f, P25_RV_ACCEPT, 100);
+		mk_grant(b, P25_OP_GRP_V_GRANT, 0, 0x100A, 100, 4444);
+		p25_follow_tsbk(&f, b, NAC, now_ms);
+		retune(&f);
+		CHECK(view(&f).state == P25_FOLLOW_VOICE && view(&f).reg == P25_REG_READY, "%u: following, ready", k);
+		lc_put(&f, P25_DUID_LDU1, lcs[k]);
+		CHECK(view(&f).reg == P25_REG_BLOCKED, "%u: LCO %u, system $00A: blocked (reg %u)", k, lcs[k][0] & 0x3Fu,
+		      view(&f).reg);
+		if (tune_pending)
+			retune(&f);
+		p25_follow_ptt(&f, true, now_ms);
+		run_ms(&f, 5000);
+		CHECK(nsends == 2, "%u: silent (%u)", k, nsends);
+		p25_follow_ptt(&f, false, now_ms);
+		p25_follow_end(&f);
+	}
+	cc_alive = false;
+}
+
 int main(void)
 {
 	pulse_init();
@@ -2170,6 +2293,7 @@ int main(void)
 	testWacnExtended();
 	testWacnLinkControl();
 	testWacnNeighbor();
+	testSysidBlocked();
 	testFuzz();
 	testAirSystem();
 	testAirLoss();

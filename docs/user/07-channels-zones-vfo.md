@@ -363,9 +363,9 @@ on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)). A 
 
 - A system set to listen only, a channel set to RX only, or one without a unit ID or talkgroup never transmits: PTT
   says "RX only".
-- A system whose network ID (WACN) is BEE00 through BEEFF never gets a transmission: PTT says "Blocked system: no TX"
-  until the radio is switched off. A P25 conventional channel that announces one of them says "This mode: receive
-  only".
+- A system whose network ID (WACN) is BEE00 through BEEFF, or whose system ID is 00A, never gets a transmission: PTT
+  says "Blocked system: no TX" until the radio is switched off. A P25 conventional channel that announces one of them
+  says "This mode: receive only".
 - Calls to other talkgroups are followed only when the channel is set to follow every group of the system.
 - Calls to one unit, emergency and Phase 2 (TDMA) voice channels are not there yet.
 - Scan skips these channels and dual watch doesn't take them: a trunked channel follows its system instead.

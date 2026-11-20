@@ -701,11 +701,11 @@ def bcd_hz(hz):
     return out
 
 
-def make_p25_trunk(img, number, plan, cc_hz, in_hz, tx=True, wacn=SITE_WACN):
+def make_p25_trunk(img, number, plan, cc_hz, in_hz, tx=True, wacn=SITE_WACN, sysid=SITE_SYSID):
     """Channel number of img made a stored P25 trunked channel: the stand-in record on the control channel pair (the
     frequencies the views show before the follower runs), system 0 with its control channel and one identifier, then
     the channel's tag. tx: transmit on in the system and the tag (off: a listen-only system, the radio never keys).
-    wacn: the system's, hex ("FFFFFF": any)"""
+    wacn, sysid: the system's, hex ("FFFFFF", "FFFF": any)"""
     import cps_client
     base, off, cc, _ = plan
     _, a = cps_client.channel_addr(number)
@@ -717,7 +717,7 @@ def make_p25_trunk(img, number, plan, cc_hz, in_hz, tx=True, wacn=SITE_WACN):
     area = bytes(img[lo:hi])
     # channel-modes.md 7.1: type 3 (P25 trunked), flags, the name, WACN, system ID, NAC
     system = bytes([3, 0x02 if tx else 0, 0, 5]) + bytes(8) + b"HIL P25T".ljust(16, b"\0") \
-        + int(wacn, 16).to_bytes(3, "little") + int(SITE_SYSID, 16).to_bytes(2, "little") \
+        + int(wacn, 16).to_bytes(3, "little") + int(sysid, 16).to_bytes(2, "little") \
         + (0x8000 | int(SITE_NAC, 16)).to_bytes(2, "little") + bytes(3)
     area = area_with(area, KEY_SYSTEM, system)
     # 7.2: system 0's control channel (class 0), then its identifier 0 (class 2)
@@ -730,14 +730,14 @@ def make_p25_trunk(img, number, plan, cc_hz, in_hz, tx=True, wacn=SITE_WACN):
     img[lo:hi] = area_with(area, KEY_CH_TAG + number - 1, tag)
 
 
-def cc_file(tmp, plan, *answers, wacn=SITE_WACN):
+def cc_file(tmp, plan, *answers, wacn=SITE_WACN, sysid=SITE_SYSID):
     """p25tool.py cc: the bench's control channel, answers (cc options) in every unit; at most FSK4_HEX_MAX symbols.
-    wacn: the one its network status names. Returns (path, symbols)"""
+    wacn, sysid: the ones its broadcasts name. Returns (path, symbols)"""
     import p25tool
     base, off, cc, _ = plan
     path, exp = os.path.join(tmp, "cc.dibits"), os.path.join(tmp, "cc.json")
     for units in (27, 24, 20, 16):
-        p25tool.run(["cc", path, exp, "--units", units, "--nac", SITE_NAC, "--wacn", wacn, "--sysid", SITE_SYSID,
+        p25tool.run(["cc", path, exp, "--units", units, "--nac", SITE_NAC, "--wacn", wacn, "--sysid", sysid,
                      "--ch", f"{cc:x}", "--base", base, "--spacing", SPACING_HZ, "--tx-offset", off] + list(answers))
         with open(exp) as f:
             n = json.load(f)["total_syms"]
@@ -900,10 +900,12 @@ P25T_REG_BLOCKED = 8
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 @pytest.mark.sdr_rx
-def test_p25_trunk_wacn_bee00(radio, sdr_bench, backup_dir, pytestconfig):
-    """A control channel naming WACN BEEFF (BEE00..BEEFF are blocked), the system programmed as any WACN with transmit on: the follower holds it
-    but blocks its transmit side. No registration goes out, PTT keys nothing, and nothing is heard on the inbound
-    frequency (radio_tx: the radio could key there if the block failed)"""
+@pytest.mark.parametrize("wacn,sysid", [("BEEFF", SITE_SYSID), (SITE_WACN, "00A")], ids=["wacn_beeff", "sysid_00a"])
+def test_p25_trunk_wacn_bee00(radio, sdr_bench, backup_dir, pytestconfig, wacn, sysid):
+    """A control channel naming a blocked system (WACN BEEFF, of BEE00..BEEFF, or system ID 00A), the system
+    programmed as any WACN and system ID with transmit on: the follower holds it but blocks its transmit side. No
+    registration goes out, PTT keys nothing, and nothing is heard on the inbound frequency (radio_tx: the radio could
+    key there if the block failed)"""
     cc_mhz, in_mhz, voice_mhz = (rig(pytestconfig, k) for k in ("p25-cc-mhz", "p25-cc-in-mhz", "p25-voice-mhz"))
     if "P25_TRUNK" not in radio.features():
         skip("not_built", "built without CONFIG_P25_TRUNK")
@@ -914,7 +916,8 @@ def test_p25_trunk_wacn_bee00(radio, sdr_bench, backup_dir, pytestconfig):
     cc_hz, in_hz, voice_in_hz = (round(m * 1e6) for m in (cc_mhz, in_mhz, voice_mhz))
     plan = site_plan(cc_hz, in_hz, voice_in_hz)
     number, regions = trunk_slot(radio, backup_dir)
-    with codeplug_edited(radio, backup_dir, lambda img: make_p25_trunk(img, number, plan, cc_hz, in_hz, wacn="FFFFFF"),
+    with codeplug_edited(radio, backup_dir,
+                         lambda img: make_p25_trunk(img, number, plan, cc_hz, in_hz, wacn="FFFFFF", sysid="FFFF"),
                          "p25tbee", regions):
         v = radio.wait_for(lambda x: x.get("ch.kind") == str(KIND_P25_TRUNK) and x.get("p25t.on") == "1", 6.0,
                            sections=("core", "channel", "p25", "p25_trunk"), what="the trunked channel running")
@@ -924,7 +927,7 @@ def test_p25_trunk_wacn_bee00(radio, sdr_bench, backup_dir, pytestconfig):
             skip("state", "the follower's transmit side is off (no unit ID or no talk group)")
         radio.lowest_power()
         with tempfile.TemporaryDirectory() as tmp, sdr_bench.lease():
-            cc = cc_file(tmp, plan, wacn="BEEFF")
+            cc = cc_file(tmp, plan, wacn=wacn, sysid=sysid)
             job = sdr_bench.fm_rx_start(in_mhz, KEY_WAIT_S + PLAY_S, bw=16000, streams="disc")
             t0 = time.monotonic()
             tx = play_cc(sdr_bench, cc_mhz, cc[0], cc[1], PLAY_S)
@@ -947,7 +950,8 @@ def test_p25_trunk_wacn_bee00(radio, sdr_bench, backup_dir, pytestconfig):
     if done.get("gap_samples"):
         skip("bench", f"the bench board lost samples (gap_samples {done['gap_samples']})")
     print("\n" + ", ".join(f"{k[5:]} {v1.get(k)}" for k in TRUNK_KEYS))
-    assert v0.get("p25t.wacn") == str(0xBEEFF), f"the WACN heard {v0.get('p25t.wacn')}"
+    assert v0.get("p25t.wacn") == str(int(wacn, 16)) and v0.get("p25t.sysid") == str(int(sysid, 16)), \
+        f"the system heard: WACN {v0.get('p25t.wacn')}, system {v0.get('p25t.sysid')}"
     assert v1.get("p25t.reg") == str(P25T_REG_BLOCKED), f"registration state {v1.get('p25t.reg')}"
     for k in ("p25t.reg_tx", "p25t.aff_tx", "p25t.req_tx", "p25t.bursts", "p25.tx_calls"):
         assert (as_int(v1.get(k)) or 0) == 0, f"{k} {v1.get(k)}: something was sent"

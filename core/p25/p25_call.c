@@ -34,11 +34,10 @@ static void on_unit(const p25_rx_unit_t *u, void *ctx)
 	p25_call_rx_t *c = ctx;
 	uint8_t buf[P25_HDR_BYTES];
 	bool fresh = false, changed = false;
-	uint32_t wacn;
 
 	c->stats.units++;
-	if (p25_unit_net_wacn(u, &wacn) && p25_wacn_no_tx(wacn))
-		c->stats.wacn_no_tx++;
+	if (p25_unit_sys_no_tx(u))
+		c->stats.sys_no_tx++;
 #if CONFIG_P25_TRUNK
 	if (c->sink->unit)
 		c->sink->unit(u, c->ctx);

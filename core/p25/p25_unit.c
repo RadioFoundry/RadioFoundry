@@ -441,7 +441,7 @@ void p25_lc_build(const p25_lc_t *lc, uint8_t raw[P25_LC_BYTES])
 	raw[8] = (uint8_t)lc->src;
 }
 
-bool p25_unit_net_wacn(const p25_rx_unit_t *u, uint32_t *wacn)
+bool p25_unit_sys_no_tx(const p25_rx_unit_t *u)
 {
 	uint8_t raw[P25_LC_BYTES];
 	const uint8_t *w;
@@ -458,6 +458,8 @@ bool p25_unit_net_wacn(const p25_rx_unit_t *u, uint32_t *wacn)
 	if ((raw[0] & 0xC0) != 0x40)
 		return false;
 	switch (raw[0] & 0x3F) {
+	case 35:		// RFSS status: LRA, then the system ID's 12 bits under a reserved nibble
+		return p25_sysid_no_tx((uint16_t)((raw[2] & 0x0F) << 8 | raw[3]));
 	case 36:
 		w = &raw[2];	// (after a reserved octet)
 		break;
@@ -467,6 +469,7 @@ bool p25_unit_net_wacn(const p25_rx_unit_t *u, uint32_t *wacn)
 	default:
 		return false;
 	}
-	*wacn = (uint32_t)w[0] << 12 | (uint32_t)w[1] << 4 | w[2] >> 4;
-	return true;
+	// WACN 20 bits, system ID 12
+	return p25_wacn_no_tx((uint32_t)w[0] << 12 | (uint32_t)w[1] << 4 | w[2] >> 4) ||
+	       p25_sysid_no_tx((uint16_t)((w[2] & 0x0F) << 8 | w[3]));
 }

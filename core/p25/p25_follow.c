@@ -364,8 +364,9 @@ static void acc_drop(p25_follow_t *f)
 	f->acc.sent = false;
 }
 
-// A WACN p25_wacn_no_tx refuses: the transmit side goes silent until p25_follow_begin, whatever is heard or answered later
-static void wacn_block(p25_follow_t *f)
+// A blocked system (p25_wacn_no_tx, p25_sysid_no_tx): the transmit side goes silent until p25_follow_begin, whatever
+// is heard or answered later
+static void sys_block(p25_follow_t *f)
 {
 	f->blocked = true;
 	f->view.sys_ok = false;
@@ -716,8 +717,8 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 			hunt_start(f, now);
 			return;
 		}
-		if (p25_wacn_no_tx(m.u.net.wacn))
-			wacn_block(f);
+		if (p25_wacn_no_tx(m.u.net.wacn) || p25_sysid_no_tx(m.u.net.sysid))
+			sys_block(f);
 		else if (!f->blocked)
 			f->view.sys_ok = true;
 		f->view.wacn = m.u.net.wacn;
@@ -725,6 +726,8 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 		f->acc.cc_chan = m.u.net.ch;
 		break;
 	case P25_TSBK_RFSS:
+		if (p25_sysid_no_tx(m.u.site.sysid))
+			sys_block(f);
 		f->view.sysid = m.u.site.sysid;
 		f->view.rfss = m.u.site.rfss;
 		f->view.site = m.u.site.site;
@@ -807,7 +810,7 @@ void p25_follow_begin(p25_follow_t *f, const p25_follow_cfg_t *cfg, const p25_fo
 	if (!f->acc.rng)
 		f->acc.rng = 1;
 	f->view.reg = !tx_on(f) || (cfg->flags & P25_FOLLOW_NO_REG) ? P25_REG_OFF : P25_REG_IDLE;
-	if (p25_wacn_no_tx(cfg->wacn) || (cfg->flags & P25_FOLLOW_BLOCKED)) {
+	if (p25_wacn_no_tx(cfg->wacn) || p25_sysid_no_tx(cfg->sysid) || (cfg->flags & P25_FOLLOW_BLOCKED)) {
 		f->blocked = true;
 		f->view.reg = P25_REG_BLOCKED;
 	}
@@ -850,14 +853,14 @@ void p25_follow_tsbk(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 void p25_follow_unit(p25_follow_t *f, const p25_rx_unit_t *u, uint32_t now)
 {
 	uint8_t blk[P25_TSBK_BYTES];
-	uint32_t wacn;
 
 	if (f->tuning || f->view.state == P25_FOLLOW_OFF)
 		return;
 	view_begin(f);
-	// A voice channel's link control may carry the network status broadcast: $BEE00..$BEEFF there blocks as it does here
-	if (p25_unit_net_wacn(u, &wacn) && p25_wacn_no_tx(wacn))
-		wacn_block(f);
+	// A voice channel's link control may carry the network or RFSS status broadcast: a blocked system there blocks
+	// as it does here
+	if (p25_unit_sys_no_tx(u))
+		sys_block(f);
 	switch (u->duid) {
 	case P25_DUID_TSDU: {
 		uint8_t n = u->nsyms <= p25_blocks_syms(1) ? 1 : u->nsyms <= p25_blocks_syms(2) ? 2 : 3;

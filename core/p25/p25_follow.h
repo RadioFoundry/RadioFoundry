@@ -39,7 +39,7 @@
 #define P25_FOLLOW_NO_UNIT	0x08	// unit to unit calls to or from unit_id are not followed
 #define P25_FOLLOW_TX		0x10	// the transmit side: register, affiliate, ask for voice channels (unit_id set)
 #define P25_FOLLOW_NO_REG	0x20	// ... without registering or affiliating: PTT asks at once
-#define P25_FOLLOW_BLOCKED	0x40	// the system was heard naming a blocked WACN before: the transmit side starts blocked
+#define P25_FOLLOW_BLOCKED	0x40	// a blocked system was heard here before: the transmit side starts blocked
 
 // Access timers, ms (docs/spec/p25-trunking.md 5)
 #define P25_ACC_SITE_MS		2000	// system verified, site's identity not heard yet: register anyway
@@ -122,7 +122,7 @@ enum {
 	P25_REG_DENIED,		// the system denied or refused registration or affiliation (deny_* say why)
 	P25_REG_RETRY,		// no answer, or a failure: tried again later
 	P25_REG_NO_TX,		// no inbound frequency for this control channel
-	P25_REG_BLOCKED,	// the system's WACN is blocked (p25_wacn_no_tx): nothing is sent until the follower restarts
+	P25_REG_BLOCKED,	// a blocked WACN or system ID: nothing is sent until the follower restarts
 };
 // A voice request (view.req)
 enum {
@@ -217,7 +217,7 @@ typedef struct {
 	bool left_enc;		// left_ch / left_tg is an encrypted call skipped
 	bool tuning;		// a tune was asked: units are of the old channel until p25_follow_retuned
 	bool have_id;		// the candidate's system identity matched
-	bool blocked;		// a blocked WACN heard or programmed: the transmit side stays silent until p25_follow_begin
+	bool blocked;		// a blocked system heard or programmed: transmit side silent until p25_follow_begin
 	volatile uint8_t seq;	// odd while view is written
 	p25_follow_acc_t acc;
 	p25_follow_iden_e iden[P25_FOLLOW_IDENS];
