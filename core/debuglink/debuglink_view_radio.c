@@ -64,10 +64,14 @@ void debuglink_view_audio(dl_text_t *t)
 #endif
 	const hal_audio_t *a = board.audio;
 	if (a != NULL && a->stream_stats != NULL) {
-		audio_stream_stats_t s;
+		audio_stream_stats_t s = { 0 };
 		a->stream_stats(&s);
 		dl_text(t, "audio.blocks=%u\naudio.late=%u\naudio.dropped=%u\n", (unsigned)s.blocks, (unsigned)s.late,
 			(unsigned)s.dropped);
+		if (s.fifo_chunks != 0 || s.fifo_full != 0) {	// only boards with a second speaker path ever count
+			dl_text(t, "audio.fifo_chunks=%u\naudio.fifo_gaps=%u\naudio.fifo_full=%u\n",
+				(unsigned)s.fifo_chunks, (unsigned)s.fifo_gaps, (unsigned)s.fifo_full);
+		}
 	}
 	(void)t;
 }

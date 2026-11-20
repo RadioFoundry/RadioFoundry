@@ -2252,6 +2252,12 @@ void ui_app_key(const input_event_t *ev)
 		banner_open();
 		return;
 	}
+#if CONFIG_DMR_TRUNK
+	if (!typing && view->t3.alerting && ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS) {
+		ui_svc_t3_cancel();
+		return;
+	}
+#endif
 	// A banner that waits for the user is over every screen, not just Home: BACK hides it first, wherever it is
 	if (!typing && ui_st.banner.kind != UI_BANNER_NONE && ui_st.banner.hold && ev->action == ACT_BACK &&
 			ev->gesture == GESTURE_PRESS) {

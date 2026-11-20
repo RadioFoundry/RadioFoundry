@@ -123,13 +123,16 @@ Formats (10 octets before the CRC; octets 4-6 and 7-9 are 24-bit radio IDs):
 
 Three formats. Which one a message goes in: per message (`sms_send(..., DMR_SMS_FORMAT_ETSI_IP / _ETSI / _TMS)`,
 `dmrDataServiceSendSMSFormat`) or the radio's default (`DMR_SMS_FORMAT_DEFAULT`: the setting `smsFormat`, used by
-the UI, Settings > Connections > Message format). A reply uses the received message's format
-(`dmrDataMessage_t.format`). A per-contact format is not stored yet (the codeplug's contact has no field for it).
+the UI, Settings > Connections > Message format). Automatic selects UTF-16BE Tier III control-channel short data
+for up to 23 characters on a clear trunked channel when the UDT sender is available. It uses ETSI IP text otherwise.
+Canned replies use the received message's format (`dmrDataMessage_t.format`) where available; a UDT reply that exceeds
+the short-data limit or is sent on a conventional channel uses ETSI IP text. The message composer uses the selected
+format setting. A per-contact format is not stored yet (the codeplug's contact has no field for it).
 All three are read whatever the setting.
 
 | Format | `dmr_sms_format_t` | Carried as | Delivery confirmed by |
 |---|---|---|---|
-| ETSI IP text (5.3), the default | `ETSI_IP` (2) | UDP 5016, UTF-16BE, full IPv4 header, SAP 4 | individual: the ETSI response to the confirmed packet (12); group: nothing |
+| ETSI IP text (5.3) | `ETSI_IP` (2) | UDP 5016, UTF-16BE, full IPv4 header, SAP 4 | individual: the ETSI response to the confirmed packet (12); group: nothing |
 | ETSI defined short data (5.2) | `ETSI` (1) | DD_HEAD, SAP 10, ISO 8859-1 | the ETSI response (A bit) |
 | Motorola TMS (5.1), `CONFIG_DMR_TMS` | `TMS` (0) | UDP 4007, UTF-16LE with the TMS header | the TMS ACK |
 
