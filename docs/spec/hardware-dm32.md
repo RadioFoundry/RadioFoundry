@@ -777,7 +777,9 @@ Receive sequences, in the radio's own order. CTCSS: 0x07 = the tone word, 0x07 =
 The C7000 does the FM modulation (two-point, `modem-hrc7000.md`) and makes the TX sub-audio. Receive tones come from
 the FD6818: the speaker switch (PTB15) takes the FD6818's audio away from the C7000's ADC in FM receive, so the C7000's
 detector hears nothing. The FD6818 detects on its own demodulated audio. RadioFoundry turns the FD6818's sub-audio off before
-FM TX because 0x51 b15 also enables its transmitter.
+FM TX because 0x51 b15 also enables its transmitter. Entering DMR turns the sub-audio off too (`fd6818_set_mode`), and
+on set-up B puts 0x2E / 0x2F back to the no-tone pair: an FM channel's receive tone left in 0x51 (0x9045) put the tone
+on the 4FSK, and the SDR bench decoded none of the DMR bursts the radio sent and counted (gotchas 3.19).
 
 ### 8.5 TX/RX switching, PA and LNA
 

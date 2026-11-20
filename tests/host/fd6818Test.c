@@ -264,7 +264,9 @@ static void test_sequences(void)
 	fd6818_set_mode(&dev, FD6818_MODE_DMR);
 	int i = find_last(0x43);
 	CHECK(i >= 0 && chip.log[i].val == 0x4048);
-	CHECK(chip.log[chip.n - 1].reg == 0x47 && chip.log[chip.n - 1].val == 0x0140);
+	i = find_last(0x47);
+	CHECK(i >= 0 && chip.log[i].val == 0x0140);
+	CHECK(chip.log[chip.n - 1].reg == 0x51 && chip.log[chip.n - 1].val == 0);	// sub-audio off (test_dmr_tone_off)
 	for (int k = 0; k < chip.n; k++) {
 		CHECK(chip.log[k].reg < 0x80);	// the earlier 0xC7 entry was a read cycle
 	}
@@ -550,10 +552,11 @@ static void test_dm1801pro(void)
 	// and ends on the 0x2B mode word
 	chip.n = 0;
 	fd6818_set_mode(&dev, FD6818_MODE_DMR);
-	CHECK(chip.n == 6 && chip.log[0].reg == 0x47 && chip.log[0].val == 0x0140 && chip.log[1].reg == 0x48 &&
+	CHECK(chip.n == 6 + 3 && chip.log[0].reg == 0x47 && chip.log[0].val == 0x0140 && chip.log[1].reg == 0x48 &&
 		chip.log[1].val == 0xB2F5 && chip.log[2].reg == 0x7E && chip.log[2].val == 0xB03F &&
 		chip.log[3].reg == 0x2B && chip.log[3].val == 0x0700);
 	CHECK(chip.log[5].reg == 0x3F && chip.log[5].val == 0x0000);
+	CHECK(chip.log[8].reg == 0x51 && chip.log[8].val == 0);	// then the sub-audio off
 	chip.n = 0;
 	fd6818_set_mode(&dev, FD6818_MODE_FM);
 	CHECK(chip.n == 6 && chip.log[3].reg == 0x48 && chip.log[3].val == 0xB386 && chip.log[5].reg == 0x2B &&
@@ -567,6 +570,31 @@ static void test_dm1801pro(void)
 	fd6818_dmr_burst(&dev, false, dev.variant->bw_dmr);
 	CHECK(chip.n == 1 && chip.log[0].reg == 0x30 && chip.log[0].val == 0xBFF1);
 	CHECK(chip.protocol_errors == 0);
+}
+
+// Issue 685: an FM channel's receive tone left 0x51 = 0x9045 after the change to DMR. Bit 15 also keys the chip's
+// sub-audio transmitter, so the tone rode on the 4FSK and no burst decoded. Entering DMR turns the sub-audio off on
+// every set-up, whatever tone the FM channel had
+static void test_dmr_tone_off(void)
+{
+	static const fd6818_variant_t *const set_ups[] = { &fd6818_variant_default, &fd6818_variant_b, &fd6818_variant_b_dmr6943 };
+	static const struct { fd6818_tone_t type; uint16_t value; } tones[] = {
+		{ FD6818_TONE_CTCSS, 2336 }, { FD6818_TONE_DCS, 023 }, { FD6818_TONE_DCS_INV, 0754 },
+	};
+	for (size_t v = 0; v < sizeof set_ups / sizeof set_ups[0]; v++) {
+		for (size_t t = 0; t < sizeof tones / sizeof tones[0]; t++) {
+			fd6818_t dev;
+			reset_chip();
+			fd6818_attach_variant(&dev, bus(), set_ups[v]);
+			fd6818_init(&dev);
+			fd6818_set_mode(&dev, FD6818_MODE_FM);
+			fd6818_set_rx_tone(&dev, tones[t].type, tones[t].value);
+			CHECK((chip.regs[0x51] & 0x8000u) != 0);
+			fd6818_set_mode(&dev, FD6818_MODE_DMR);
+			CHECK(chip.regs[0x51] == 0);
+			CHECK(chip.protocol_errors == 0);
+		}
+	}
 }
 
 // A variant with burst tables switches straight between the two states: only the table, no idle, no bandwidth
@@ -732,6 +760,7 @@ int main(void)
 	test_frames();
 	test_sequences();
 	test_rx_tones();
+	test_dmr_tone_off();
 	test_rx_sleep();
 	test_am();
 	test_am_agc();

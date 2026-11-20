@@ -382,6 +382,15 @@ static void wake(void)
 	}
 }
 
+// Set-up B's two receive sub-audio words: CTCSS one pair, DCS and no tone the other
+static void css_words(bool ctcss)
+{
+	if (rf_b) {
+		fd6818_write(&fd, FD_REG_CSS_A, ctcss ? 0x8608u : 0x9608u);
+		fd6818_write(&fd, FD_REG_CSS_B, ctcss ? 0x1890u : 0x9890u);
+	}
+}
+
 static void set_mode(radio_mode_t m)
 {
 	wake();
@@ -389,7 +398,8 @@ static void set_mode(radio_mode_t m)
 		return;
 	}
 	if (m == RADIO_MODE_DMR && CONFIG_DMR) {
-		fd6818_set_mode(&fd, FD6818_MODE_DMR);
+		fd6818_set_mode(&fd, FD6818_MODE_DMR);	// the FM channel's receive tone off (0x51 would key it on the 4FSK)
+		css_words(false);
 		hrc_dac_b_power(true);	// FM receive powers DAC B down; DMR needs it (hardware-dm32.md 3.8)
 		hrc7000_dmr_enter(&modem, hrc7000_mod_bias(bf_cal_tx_center(), bf_cal_modcal(rx_hz)), MIC_GAIN_DB);
 		mode = RADIO_MODE_DMR;
@@ -438,12 +448,7 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am, 
 		// The FD6818 detects the tone on its own demodulated audio: the C7000's detector gets no audio while the
 		// FD6818 plays FM to the speaker (hardware-dm32.md 8.4)
 		fd6818_set_rx_tone(&fd, fd_tone(tone != NULL ? tone->type : TONE_NONE), tone != NULL ? tone->value : 0);
-		if (rf_b) {
-			// CTCSS one pair, DCS and no tone the other
-			bool ctcss = tone != NULL && tone->type == TONE_CTCSS;
-			fd6818_write(&fd, FD_REG_CSS_A, ctcss ? 0x8608u : 0x9608u);
-			fd6818_write(&fd, FD_REG_CSS_B, ctcss ? 0x1890u : 0x9890u);
-		}
+		css_words(tone != NULL && tone->type == TONE_CTCSS);
 #if CONFIG_AM_RX
 		fd6818_set_am(&fd, am);	// every AM tune: full gain again for the new channel; FM: AM off
 #endif

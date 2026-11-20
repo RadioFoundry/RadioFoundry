@@ -345,6 +345,15 @@ usually tuned, never saw it. Rule: the AT1846S DMR mode table writes 0x32 bits 2
 judge a receiver setting at strong simplex levels as well (`dmr-voice.md` 7.1). Radios: AT1846S boards. Test:
 `test_dmr_audio_rx_strong` (tests/hil).
 
+**3.19 Leave no FM sub-audio on in DMR.** Symptom: after a visit to an FM channel with a receive CTCSS tone, every DMR
+over counted as sent (tx_voice reached, call.tx_calls + 1) and the SDR bench decoded none of the bursts. An FM channel
+without a tone left DMR working. Cause: the FD6818's sub-audio register 0x51 still held the FM channel's receive tone
+(0x9045), and its bit 15 also turns the chip's sub-audio transmitter on, so the tone rode on the 4FSK. Rule: the RF
+chip driver turns the sub-audio off when it enters DMR (`fd6818_set_mode`; `fd6818sh_dmr_mode` does the same), not
+each board's tune path; a radio's own counters can't show a transmission that doesn't decode, so a HIL check of a TX
+path asserts what the bench heard. Radios: boards with the FD6818 as the transceiver. Test: `fd6818Test`
+(`test_dmr_tone_off`, tests/host), `test_dmr_tx_after_toned_fm_channel` (tests/hil).
+
 ## 4. AMBE codec calling
 
 **4.1 The STM32 codec glue must be built at -O0.** The codec entry calls were inline assembly that depended on the
