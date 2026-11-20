@@ -780,7 +780,7 @@ async function getKey(board) {
 const NO_TRANSFER = new Set(["radio", "build", "bundle", "symptom", "recover", "done"]);
 const transferStep = () => !!S.task && !NO_TRANSFER.has(stepsFor()[S.step]);
 const trail = stepHistory(window, {
-	busy: () => barsRunning() && transferStep(),
+	busy: () => (barsRunning() || !!S.writing) && transferStep(),
 	show: (place) => {
 		if (!place) return reset();
 		const [task, step] = place.split("/");

@@ -4,6 +4,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { stepHistory } from "../static/js/flasher/stephistory.js";
 
 // A browser's joint history; go() lands at once, as a popstate
@@ -86,4 +87,13 @@ test("an entry from an earlier load of the page is left alone", () => {
 	win.history.go(0);
 	assert.deepEqual(shown, []);
 	assert.equal(win.count(), 2);
+});
+
+// The page's guard: a write counts as a transfer even with no bar moving (an update mode erase reports nothing for
+// half a minute). A Back then once left the write running behind a fresh step, whose Install started a second one
+test("the page holds Back during a write with no moving bar", () => {
+	const app = readFileSync(new URL("../static/js/flasher/app.js", import.meta.url), "utf8");
+	assert.match(app, /busy: \(\) => \(barsRunning\(\) \|\| !!S\.writing\) && transferStep\(\)/);
+	const c7 = readFileSync(new URL("../static/js/flasher/c7000ui.js", import.meta.url), "utf8");
+	assert.match(c7, /async function busy\(on\) \{[\s\S]{0,400}S\(\)\.writing = !!on;/);
 });

@@ -27,6 +27,7 @@ import { errorNotice, reportLine } from "../report.js";
 import { radioPicture, holdKeys } from "./radiotop.js";
 import { confirmNoCodec } from "./nocodec.js";
 
+const ERASE_TAU_MS = 4000;	// the erase bar's time constant: about 60 % of its way in 4 s
 const LISTEN_MS = 180000;	// how long the page waits for update mode
 
 // What each protocol's write step says: an IAP loader checks the whole image by its checksum and starts it; the
@@ -397,19 +398,21 @@ export function makeStockRoutes(host) {
 		const silent = S().radio.flash.update_banner === false;
 		const stepGo = h("li", {}, t(silent ? "flash.iap.step_go_silent" : restore ? "flash.iap.restore_step_go" : "flash.iap.step_go"));
 		const go = button(t(restore ? "flash.iap.restore_go" : "flash.iap.go"), async () => { if (!confirm || (await confirm())) run(); }, { primary: true });
+		const careful = h("div", { class: "notice" }, h("p", {}, h("b", {}, t("flash.c7.write.careful"))), h("p", {}, t(own(TEXTS[protocol()].careful))));
 		const box = panel(title, cableBanner(),	// a CH340 cable: the warning here too (programming through update mode)
 			rows.length ? h("dl", { class: "kv-list" }, ...rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)])) : null,
 			gate ? gate(go) : null, ...notices,
 			h("p", {}, lead || t(restore ? "flash.iap.restore_lead" : "flash.iap.lead")),
 			withPicture(h("ol", { class: "steps c7-big" }, !silent && stepGo, ...steps.map((x) => h("li", {}, x)), silent && stepGo)),
 			simKeys(),
-			h("div", { class: "notice" }, h("p", {}, h("b", {}, t("flash.c7.write.careful"))), h("p", {}, t(own(TEXTS[protocol()].careful)))),
+			careful,
 			prog.el, status, h("details", { class: "small" }, h("summary", {}, t("flash.c7.log")), c.log.el));
 		prog.el.hidden = true;
 		S().forward(go);
 
 		async function run() {
 			go.disabled = true;
+			careful.hidden = false;
 			fill(status, h("p", { class: "muted c7-big" }, t("flash.iap.listening")));
 			prog.el.hidden = true;
 			const stop = new AbortController();
@@ -418,7 +421,7 @@ export function makeStockRoutes(host) {
 			// with its keys later, for anything else, would be erased by a step no longer on the page. Nothing is drawn
 			// then. A write that started runs to its end
 			const left = () => S().c7 !== c || !box.isConnected;
-			let writing = false;
+			let writing = false, erasing = null;
 			const watch = setInterval(() => { if (!writing && left()) stop.abort(); }, 250);
 			const started = ctx.flashStarted(report);
 			try {
@@ -435,8 +438,14 @@ export function makeStockRoutes(host) {
 				await busy(true);
 				fill(status, h("p", { class: "muted c7-big" }, t("flash.iap.erasing")));
 				prog.el.hidden = false;
+				// the erase reports nothing until it ends: the bar creeps toward 90 % meanwhile, so a working radio never sits at 0
+				const t0 = Date.now();
+				erasing = setInterval(() => prog.set(90 * (1 - Math.exp(-(Date.now() - t0) / ERASE_TAU_MS)), 100, t("flash.iap.erasing")), 250);
 				await loader.write(image, { signal: stop.signal, restore, name,
-					onPhase: (p) => fill(status, h("p", { class: "muted c7-big" }, t(p === "erase" ? "flash.iap.erasing" : "flash.iap.writing"))),
+					onPhase: (p) => {
+						if (p !== "erase") clearInterval(erasing);
+						fill(status, h("p", { class: "muted c7-big" }, t(p === "erase" ? "flash.iap.erasing" : "flash.iap.writing")));
+					},
 					onPage: (i, n) => { if (i > 0) ctx.flashMark(started, "first_byte"); prog.set(i, n, t("flash.iap.page", { done: i, total: n })); } });
 				ctx.flashMark(started, "last_byte");
 				prog.set(1, 1, t(TEXTS[protocol()].written));
@@ -460,14 +469,16 @@ export function makeStockRoutes(host) {
 				const cableLoses = c.blockFails >= 2 ? h("div", { class: "notice bad" }, h("p", {}, h("b", {}, t("flash.cable.fault_title"))),
 					h("p", {}, t("flash.cable.blocks_lost", { tries: c.blockFails })), h("p", {}, t("flash.cable.blocks_fix"))) : null;
 				if (cableLoses) diag.note("cable fault", { code: "blocks_lost", tries: c.blockFails, block: e.block });
+				// one notice and one line on what to do: the error notice carries the help links already
+				careful.hidden = true;
 				fill(status, (stopped ? notice(t("flash.iap.cancelled"), "info") : errorNotice(t("flash.iap.failed", { error: ctx.errorText(e) }))), cableLoses,
 					// with the cable at fault, the retry steps come after the cable change the warning asks for
-					stopped ? null : h("div", { class: "notice info" }, h("p", {}, t("flash.iap.retry_safe")), cableLoses ? null : h("p", { class: "small" }, t("flash.iap.retry_how"))),
-					stopped ? null : ctx.helpLink());
+					stopped ? null : h("p", {}, t("flash.iap.retry_safe"), cableLoses ? null : [" ", t("flash.iap.retry_how")]));
 				prog.el.hidden = true;
 				go.disabled = false;
 				S().forward(button(t("flash.c7.write.again"), () => run(), { primary: true }));
 			} finally {
+				clearInterval(erasing);
 				clearInterval(watch);
 			}
 		}

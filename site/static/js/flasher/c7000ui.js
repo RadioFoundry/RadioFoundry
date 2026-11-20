@@ -139,6 +139,9 @@ const boardStub = async () => stubFor(C(), boardId(), (await stubs()).image);
 let wake = null;
 const leaving = (e) => { e.preventDefault(); e.returnValue = ""; };
 async function busy(on) {
+	// a write under way holds the browser's Back button even while no bar moves (an erase that reports nothing until
+	// it ends): a Back then left a write running behind a fresh step, whose Install started a second one
+	S().writing = !!on;
 	if (on) {
 		window.addEventListener("beforeunload", leaving);
 		try { wake = await navigator.wakeLock?.request("screen"); } catch (e) { /* not offered */ }
