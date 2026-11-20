@@ -801,6 +801,14 @@ static void tune(radio_sm_t *sm, uint32_t now_ms)
 	cw_cancel(sm);		// the repeater's ID: the board is set up for the channel below
 #endif
 	end_reception(sm, now_ms);
+#if CONFIG_APRS_RX
+	// Off the APRS frequency (or out of FM): APRS lets go of the FM receive audio before the board changes mode. A
+	// P25, NXDN or YSF engine can't start while it holds it (HR_C7000: air_take), and nothing retries the start until
+	// the next tune: the channel was left with no engine, and PTT refused ("NO TX") until a retune or power cycle
+	if (aprs_rx_listening() && !(sm->view.ch.mode == RADIO_MODE_FM && sm->view.ch.rx_hz == aprs_rx_freq())) {
+		aprs_rx_release();
+	}
+#endif
 	if (radio_listen_band(sm->view.ch.rx_hz)) {
 		// AM or broadcast there, whatever the channel says; the VFO stays FM when it leaves the band. The channel's
 		// own mode follows, so FM there is not a temporary change (dual watch brings a pane back already FM)
