@@ -1655,8 +1655,10 @@ static void testIpText(void)
 	CHECK(dmrDataDecodeEtsiText(&dmrDataRxPacket, text, sizeof(text)) && (strcmp(text, "xyz\xF1") == 0));
 	dmrDataRxReset();
 
+#if CONFIG_DMR_TMS
 	// The same in a Motorola-format TMS message (UTF-16), decoded by dmrDataDecodeTMS: the controls drop, the
 	// Latin-1 letters stay. The string literals are kept separate so a \xNN escape never swallows the next letter.
+	// TMS-only: dmrDataBuildTMS/dmrDataDecodeTMS are compiled out of a CONFIG_DMR_TMS=0 firmware (dmrDataServiceTestNoTms).
 	dmrDataTMS_t tms;
 	count = dmrDataBuildTMS(false, OUR_ID, RADIO_A, "a" "\x82" "\x85" "\x7F" "\x9F" "\xE9" "z", 1, false,
 						   DMR_TYPE_RATE_1_2, 0, bursts, DMR_DATA_MAX_BURSTS);
@@ -1670,6 +1672,7 @@ static void testIpText(void)
 	CHECK(dmrDataGetUDP(&dmrDataRxPacket, &udp) && dmrDataDecodeTMS(udp.payload, udp.length, &tms) &&
 		  (strcmp(tms.text, "a\xE9z") == 0));
 	dmrDataRxReset();
+#endif	// CONFIG_DMR_TMS
 
 	// Ours, individual, in the default format: confirmed data (no ACK of its own), done when the ETSI response ACKs it
 	reset();
