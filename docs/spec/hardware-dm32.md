@@ -112,6 +112,8 @@ Controller at 0xE000F000:
 | 0x18000000 – 0x1800009F | 160 B | Microphone PCM for the encoder (written by hardware) |
 | 0x180000A0 – 0x1800013F | 160 B | Decoded PCM for the speaker (written by the CPU) |
 | 0x18000800 – 0x18007FFF | 30 KB | Free for software; the codec's tables are copied to 0x18000800 (up to 0x18004BFC for the largest) |
+| 0x18004F90 – 0x18007EEF | 12,128 B | RadioFoundry's cold state, `.modem_bss` (17.1) |
+| 0x18007EF0 – 0x18007FFF | 272 B | RadioFoundry's restart cause words and crash record ([crash-log.md](crash-log.md)) |
 | 0xE000F000 | | Cache controller |
 | 0xE000E000 | | C-SKY core timer (not used) |
 
@@ -1149,8 +1151,8 @@ RadioFoundry test radio.
 | 0x0C bit 9 on set-up B | set | set |
 | 0x3D | reads 0x2AAB | reads 0 (user) |
 
-The data flash can't tell the sections apart: a Puya part (JEDEC 852018) is fitted with both, and a radio with the
-newer section and stock `DM32.NRFB.01.050` has a Boya part (JEDEC 684018; section 10).
+The data flash can't tell the sections apart: a Puya part (JEDEC 852018) is fitted with both. One radio has a Boya part
+(JEDEC 684018; section 10), which works like the others.
 
 Start-up check (`radio_dm32.c` `rf_detect`, `fd6818_detect`): set-up A, tuned to 145 MHz in RX, waits up to 20 ms
 for 0x0C bit 9 to read set three times in a row, 1 ms apart (the bit can read set once while the synthesizer
@@ -1228,9 +1230,9 @@ For the USB audio design ([usb-audio.md](usb-audio.md) 2). Not measured.
 
 | Item | Value |
 |---|---|
-| Chip | GigaDevice GD25Q128 class, 16 MB; later radios use Puya PY25Q128HA, and at least one newer-section radio (8.10) a Boya part |
+| Chip | GigaDevice GD25Q128 class, 16 MB; later radios use Puya PY25Q128HA, and at least one radio a Boya part |
 | Bus | SPI master 0 (0x140A0000), CS on GPIO 0x12 (manual, low active) plus SER |
-| JEDEC ID (0x9F) | GD25Q128: C8 40 18; Puya: 85 20 18 (unverified); Boya: 68 40 18 (measured: the RAM stub's ID reads, the diagnostics line, and a full 16 MB read checked against the chip's sector CRCs, on one radio with stock `DM32.NRFB.01.050`; RadioFoundry's settings and codeplug areas worked on it). The driver sizes any part by its capacity byte (0x18: 16 MB) |
+| JEDEC ID (0x9F) | GD25Q128: C8 40 18; Puya: 85 20 18 (unverified); Boya: 68 40 18 (measured: the RAM stub's ID reads, the diagnostics line, and a full 16 MB read checked against the chip's sector CRCs, on one radio; RadioFoundry's settings and codeplug areas worked on it). The driver sizes any part by its capacity byte (0x18: 16 MB) |
 | Read | 0x03 + 24-bit address |
 | Fast read | 0x0B (not used) |
 | Page program | 0x06 (write enable), then 0x02 + address + up to 256 bytes within one page |
@@ -1490,7 +1492,7 @@ Runs on a radio: `docs/testing/dm32-bringup.md` is the bring-up checklist and li
 | Image | linked at 0x0300C000, crt0 (`Reset_Handler`) is the first byte; wrapped with `tools/serial_loader.py --wrap` for the Baofeng updater | `boards/dm32/memory.ld`, `platform/hrc7000/crt0.S` |
 | Program flash | app 0x0300C000..0x030E8000 (880 KB); codec slot 0x030E8000..0x03100000, filled only on the user's machine by `tools/hrc7000_codec.py` | `boards/dm32/memory.ld` |
 | SRAM | one region, 0x10000..0x43A00 (211,456 B): vector table (VBR = 0x10000), RAM code (interrupt entry, clock set-up, the DMR slot engine and the board's DMR glue), `.ram_lo` (the state the core marks `RFOUNDRY_CPU_RAM`, the zeroed state of the radio task, APRS, hotspot rings and DMR data buffers, and the interrupt stack), data, bss (RTOS heap inside, the network buffers) and the start-up stack. 0x43A00..0x58000 (83,456 B) is the codec window and is not linked. See 17.1 | `boards/dm32/memory.ld`, `platform/hrc7000/common.ld` |
-| Modem SRAM | 0x18000000..0x1800013F PCM buffers; 0x18000E48..0x18003E38 the codec's tables (copied at first use) | `platform/hrc7000/audio_pcm.c`, `platform/hrc7000/vocoder.c` |
+| Modem SRAM | 0x18000000..0x1800013F PCM buffers; 0x18000E48..0x18003E38 the codec's tables (copied at first use); 0x18004F90..0x18007EF0 `.modem_bss`, the cold state the core marks `RFOUNDRY_COLD_RAM` (17.1); 0x18007EF0..0x18008000 the crash log | `platform/hrc7000/audio_pcm.c`, `platform/hrc7000/vocoder.c`, `boards/dm32/memory.ld`, `platform/hrc7000/crash_hrc.c` |
 | Clocks | XIP quad mode and divider (1.1 steps 2-3) always; the rest of 1.1 only when the bootloader left the system clock on the oscillator; watchdog off (then `main()` starts it, [watchdog.md](watchdog.md)); cache as 1.3 | `platform/hrc7000/clock.c` |
 | Interrupts | PIC sources 0-63 as vectors 32-95 (assumed vectored), level mode, one level, never nested; EOI by writing 0x04 to 0x17000010 in the common entry | `platform/hrc7000/irq.c`, `freertos/portasm.S` |
 | Timers | 1: RTOS tick (1 kHz); 2: free-running cycle clock (microseconds, `hal_millis`); 3: DMR PA one-shot; 4: APRS AFSK, tops up the prompt FIFO every 2 ms while sending | `platform/hrc7000/time.c`, `platform/hrc7000/dmr_glue.c`, `platform/hrc7000/hrc_afsk.c` |
@@ -1509,14 +1511,23 @@ The application has one RAM region below the codec's window (`boards/dm32/memory
 linker fails the build when it overflows). The codec window 0x43A00..0x58000 (83,456 B) holds the codec code copied
 from the codec slot at boot (`codec-placement.md`); RadioFoundry links nothing there. No DMA reaches SRAM on this
 board, so any buffer can sit anywhere in the region. crt0 (`platform/hrc7000/crt0.S`) copies `.ramfunc` and `.data`
-from flash and zeroes `.bss` and `.ram_lo` before `main`; nothing in `.ram_lo` may have an initializer (it is `NOLOAD`:
-an initial value would be dropped).
+from flash and zeroes `.bss`, `.ram_lo` and `.modem_bss` before `main`; nothing in `.ram_lo` or `.modem_bss` may have an
+initializer (both are `NOLOAD`: an initial value would be dropped).
 
 | Part | Contents |
 |---|---|
 | `.vectors`, `.ramfunc` | the vector table (512 B) and the RAM code: interrupt entry, clock set-up, the DMR slot engine and the board's DMR glue |
 | `.ram_lo` | the `RFOUNDRY_CPU_RAM` state (radio task, APRS, hotspot rings, DMR data) and the 2 KB interrupt stack |
 | `.data`, `.bss` | frame buffer 40 KB, RTOS heap 33 KB (every task stack and queue; `boards/dm32/freertos_board.h`), vocoder states 13 KB, the network buffers (TCP connections, the network personality's packets and frame, the gateway's bursts and frame), 2 KB start-up stack |
+| `.modem_bss` (modem SRAM 0x18004F90..0x18007EF0, 12,128 B) | the `RFOUNDRY_COLD_RAM` state: the storage sector buffer (4 KB) and the open-firmware CPS request (2 KB); 5,984 B left |
+
+`.modem_bss` is a separate region (`MODEM_BSS` in `boards/dm32/memory.ld`) in the SRAM shared with the modem. It holds
+only cold task-side buffers, never one an interrupt, the audio, the modem or the codec touches, and no stack. It starts
+at 0x18004F90, 4,440 B past the codec table window's end (0x18003E38), as a margin for state the codec might keep past
+its tables. On the radio with the 047 codec, a known pattern in 0x18003E38..0x18007EF0 stayed whole through a soft
+reset, the start-up and DMR voice receive and transmit, and the table window didn't change either. The only words in
+modem SRAM that changed were the microphone PCM buffer and the restart cause's uptime word. The linker fails the
+build when the region overlaps the table window, the PCM buffers or the crash log, or overflows.
 
 The image sizes and the RAM left in each build are in [feature-matrix.md](../feature-matrix.md), "Whole images".
 

@@ -276,10 +276,10 @@ export function fallbackOptions(m, t, current, self = null, none = t("editor.mod
 }
 
 // The systems of a type a channel may name; a number as read stays listed
-export function systemOptions(m, t, type, current) {
+export function systemOptions(m, t, type, current, optional = false) {
 	const out = (m.systems ?? []).filter((s) => s.type === type).sort((a, b) => a.number - b.number).map((s) => [s, s.name]);
-	if (current == null) out.unshift([null, t("editor.none")]);
-	else if (typeof current === "number") out.push([current, t("editor.missing", { n: current })]);
+	if (optional || current == null) out.unshift([null, t("editor.none")]);
+	if (typeof current === "number") out.push([current, t("editor.missing", { n: current })]);
 	return out;
 }
 
@@ -299,7 +299,24 @@ export function channelForm(m, t, { features = null } = {}) {
 	for (const k of kinds) {
 		const mod = k.module, on = (r) => r.kind === k.id;
 		const holder = { on, get: (r) => r.params, put: (r, key, v) => (r.params = { ...r.params, [key]: v }) };
-		if (mod.systemType) kindFields.push({ ...sel("system", "editor.modes.system", (r) => systemOptions(m, t, mod.systemType, r.system)), key: `k${k.id}.system`, get: (r) => r.system, set: (r, v) => on(r) && (r.system = v), show: on });
+		if (mod.systemType) kindFields.push({ ...sel("system", "editor.modes.system", (r) => systemOptions(m, t, mod.systemType, r.system, mod.optionalSystem)), key: `k${k.id}.system`, get: (r) => r.system, set: (r, v) => on(r) && (r.system = v), show: on });
+		if (mod.txKeyOptions) kindFields.push(sel(`k${k.id}.txKeyId`, "editor.nxdn.tx_key", (r) => {
+			const ids = mod.txKeyOptions(r);
+			const current = r.params?.txKeyId;
+			return [[null, t("editor.nxdn.tx_clear")], ...ids.map((id) => [id, String(id)]),
+				...(current != null && !ids.includes(current) ? [[current, t("editor.missing", { n: current })]] : [])];
+		}, {
+			dynamicOptions: true, show: on,
+			get: (r) => r.params?.txKeyId ?? null,
+			set: (r, id) => {
+				if (!on(r)) return;
+				const params = { ...r.params };
+				if (id == null) delete params.txKeyId;
+				else params.txKeyId = id;
+				r.params = params;
+			},
+			help: t("editor.nxdn.tx_key_help"),
+		}));
 		for (const flag of Object.keys(mod.flags ?? {})) kindFields.push({ ...chk(`k${k.id}.${flag}`, `editor.modes.flag.${flag}`), get: (r) => r[flag], set: (r, v) => on(r) && (r[flag] = !!v), show: on });
 		if (mod.fallback) {
 			kindFields.push({ ...sel(`k${k.id}.fallback`, "editor.modes.fallback", (r) => fallbackOptions(m, t, r.fallback, r)), get: (r) => r.fallback, set: (r, v) => on(r) && (r.fallback = v), show: (r) => on(r) && !r.noFallback });
@@ -478,6 +495,15 @@ export function formDialog(title, fields, record, t, onSave, opts = {}) {
 				continue;
 			}
 			if (f.type === "select") {
+				if (f.dynamicOptions) {
+					const current = input._opts[input.selectedIndex]?.[0];
+					const options = f.options(work);
+					if (options.length !== input._opts.length || options.some(([v, l], i) => v !== input._opts[i][0] || l !== input._opts[i][1])) {
+						input.replaceChildren(...options.map(([, l], i) => h("option", { value: String(i) }, l)));
+						input.selectedIndex = Math.max(0, options.findIndex(([v]) => v === current));
+						input._opts = options;
+					}
+				}
 				const v = input._opts[input.selectedIndex]?.[0];
 				f.set ? f.set(work, v) : (work[f.key] = v);
 			}
