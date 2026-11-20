@@ -7901,10 +7901,16 @@ static void test_nxdn_rx(void)
 	CHECK(v->src == 2001 && v->dst == 20 && v->ran == 1 && !(v->flags & (RADIO_NXDN_UNIT | RADIO_NXDN_ENC)));
 	CHECK(dec_in_order >= 30);
 	nxdn_engine_tx_stop(&nfar);
-	run(500);
+	// The call's counters are read when its release ends it: the framer stays locked a few frames after, and the
+	// noise there can pass for a frame (a LICH that reads, then coasted ones), counted but no part of the call
+	for (int i = 0; i < 100 && (sm.view.state != RS_IDLE || (v->flags & RADIO_NXDN_RX)); i++) {
+		run(5);
+	}
 	CHECK(sm.view.state == RS_IDLE && !(v->flags & RADIO_NXDN_RX) && v->src == 2001);	// the last call stays
 	radio_nxdn_stats(&st);
 	CHECK(st.rx_calls == 1 && st.voice >= 40 && st.sacch_fail == 0 && st.facch_fail == 0 && st.voice_held == 0);
+	run(500);
+	CHECK(sm.view.state == RS_IDLE && !(v->flags & RADIO_NXDN_RX));
 	v_decode_hook = NULL;
 	nxdn_view_text(buf, sizeof buf);
 	CHECK(strstr(buf, "nxdn.src=2001\nnxdn.dst=20\n") != NULL && strstr(buf, "nxdn.rx_calls=1\n") != NULL);
