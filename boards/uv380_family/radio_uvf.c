@@ -24,6 +24,7 @@
 #include "radio/pa_keyup.h"
 #include "modem/hrc_common/hrc6000_dmr.h"
 #include "hrc/hrc_bus.h"
+#include "hrc/i2s_pcm.h"
 #include "dmr_uvf.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -672,6 +673,13 @@ static void rf_resync(void)
 	count(at1846s_set_state(&r.rf, r.rx_valid ? AT1846S_STATE_RX : AT1846S_STATE_IDLE));	// forced
 }
 
+// The chip in FM receive: its line out plays its own FM audio and no I2S PCM, so a beep goes through its prompt FIFO
+// (i2s_pcm.c, modem-hrc6000.md 8). Off before a DMR set-up or a transmission, on after the FM receive rows
+static void fifo_fm(bool on)
+{
+	stm32_i2s_pcm_fm_chip(on ? &r.modem : NULL);
+}
+
 // HR_C6000 into DMR (modem-hrc6000.md 3.1) with the DMR modulation pair for the frequency, then the slot engine
 static void dmr_enter(void)
 {
@@ -788,6 +796,7 @@ static void init(void)
 	r.mode = RADIO_MODE_FM;
 	count(at1846s_set_mode(&r.rf, AT1846S_MODE_FM));
 	count(hrc6000_set_mode_fm_rx(&r.modem));
+	fifo_fm(true);
 	audio(false);
 	r.diag.c6000_ok = hrc_read(&r.modem, 4, 0x10, &r.diag.c6000_r10);
 	stm32_hrc_dmr_init(&r.modem, &dmr_board);
@@ -817,6 +826,7 @@ static void set_mode(radio_mode_t mode)
 {
 	radio_mode_t prev = r.mode;
 	r.mode = mode;
+	fifo_fm(false);
 	if (r.rx_valid) {
 		r.rx_tune_hz = rx_tune(r.rx_hz);	// the receive offset follows the mode, not only the next rx()
 	}
@@ -838,6 +848,7 @@ static void set_mode(radio_mode_t mode)
 		rx_retune();
 		if (!r.tx_on) {
 			count(hrc6000_set_mode_fm_rx(&r.modem));
+			fifo_fm(true);
 		}
 	}
 	apply_rx_tone();	// the mode table rewrote reg 0x3A
@@ -965,6 +976,7 @@ static bool rx_set(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone, bool ke
 	r.rf_direct = false;
 	if (r.mode == RADIO_MODE_FM) {
 		count(hrc6000_set_mode_fm_rx(&r.modem));
+		fifo_fm(true);
 	} else if (!same) {
 		// New channel: the DMR modulation pair for it, and the receiver searches again (5.1). Back from our own
 		// transmission on the same channel the engine has already restarted it, or kept a repeater's timing
@@ -993,6 +1005,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		return false;	// an image for another hardware version: its PA band select may be this radio's backlight
 	}
 	bool uhf = hz >= UHF_MIN_HZ;
+	fifo_fm(false);		// keyed: no beep from the speaker into the microphone
 	if (board.power_count > 0 && power >= board.power_count) {
 		power = (uint8_t)(board.power_count - 1);
 	}
@@ -1084,6 +1097,7 @@ static void tx_end(bool keep)
 	count(at1846s_set_state(&r.rf, AT1846S_STATE_IDLE));
 	count(hrc6000_set_mode_fm_rx(&r.modem));
 	r.tx_on = false;
+	fifo_fm(r.mode == RADIO_MODE_FM);
 	uvf_backlight_tx(false);
 }
 

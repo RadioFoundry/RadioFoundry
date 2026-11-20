@@ -68,9 +68,9 @@ void debuglink_view_audio(dl_text_t *t)
 		a->stream_stats(&s);
 		dl_text(t, "audio.blocks=%u\naudio.late=%u\naudio.dropped=%u\n", (unsigned)s.blocks, (unsigned)s.late,
 			(unsigned)s.dropped);
-		if (s.fifo_chunks != 0 || s.fifo_full != 0) {	// only boards with a second speaker path ever count
-			dl_text(t, "audio.fifo_chunks=%u\naudio.fifo_gaps=%u\naudio.fifo_full=%u\n",
-				(unsigned)s.fifo_chunks, (unsigned)s.fifo_gaps, (unsigned)s.fifo_full);
+		if (s.fifo_chunks != 0 || s.fifo_full != 0 || s.fifo_fm) {	// only boards with a second speaker path
+			dl_text(t, "audio.fifo_chunks=%u\naudio.fifo_gaps=%u\naudio.fifo_full=%u\naudio.fifo_fm=%u\n",
+				(unsigned)s.fifo_chunks, (unsigned)s.fifo_gaps, (unsigned)s.fifo_full, s.fifo_fm ? 1u : 0u);
 		}
 	}
 	(void)t;
