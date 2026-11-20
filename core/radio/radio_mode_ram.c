@@ -4,14 +4,24 @@
 #include <string.h>
 #include "radio/radio_mode_ram.h"
 
+#if CONFIG_DSTAR || CONFIG_YSF
 #if CONFIG_DSTAR
 #include "radio/radio_dstar.h"
+#endif
+#if CONFIG_YSF
+#include "ysf/ysf_engine.h"
+#endif
 
 // Sized and aligned by what each mode keeps there, so a change to either moves the area with it. The uint64_t member
 // is the alignment the take promises whatever they hold
 static union {
 	uint64_t align;
+#if CONFIG_DSTAR
 	radio_dstar_area_t dstar;	// D-STAR's engine and its codec's state (the codec's working memory is the lend's)
+#endif
+#if CONFIG_YSF
+	ysf_engine_t ysf;
+#endif
 } area;
 
 static volatile uint8_t owner = RADIO_MODE_RAM_FREE;

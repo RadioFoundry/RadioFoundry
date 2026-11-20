@@ -12,6 +12,7 @@
 #include "radio/radio_p25.h"
 #include "radio/radio_nxdn.h"
 #include "radio/radio_dstar.h"
+#include "radio/radio_ysf.h"
 
 typedef enum {
 	RS_IDLE,	// receiving, squelch closed
@@ -36,7 +37,7 @@ typedef enum {
 	TXDENY_INHIBIT, TXDENY_BATTERY, TXDENY_AM, TXDENY_BCAST, TXDENY_SFR_RPT, TXDENY_HWOPT, TXDENY_REFUSED,
 	TXDENY_CEASED,	// the system stopped the over (DMR reverse channel)
 	TXDENY_BENCH, TXDENY_TRUNK, TXDENY_AIR_NO_TX,
-	TXDENY_NO_CALL,		// D-STAR: no MY callsign (Settings > My radio > D-STAR, the codeplug, the radio name)
+	TXDENY_NO_CALL,		// D-STAR, Fusion: no callsign (the mode's radio-wide record, the radio name)
 } tx_deny_t;
 
 // Busy channel lockout (FM): CARRIER refuses PTT while anything is heard on the channel; WRONG_TONE only while a
@@ -490,6 +491,9 @@ typedef struct {
 #endif
 #if CONFIG_DSTAR
 	radio_dstar_view_t dstar;	// on a D-STAR channel (radio_dstar.h): what was heard, what PTT sends
+#endif
+#if CONFIG_YSF
+	radio_ysf_view_t ysf;		// on a Fusion channel (radio_ysf.h): what was heard, what PTT sends
 #endif
 } radio_view_t;
 

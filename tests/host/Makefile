@@ -269,8 +269,9 @@ clean:
 .PHONY: all run clean
 
 # The radio core's state machine and the input gesture engine, against a fake board and codeplug (no RTOS)
-# D-STAR channels (core/radio/radio_dstar.c) are radioDstarTest's: these build the radio core without them
-CORE_HAL := -I$(ROOT)/hal -Wshadow -DCONFIG_DSTAR=0
+# D-STAR and Fusion channels (core/radio/radio_dstar.c, radio_ysf.c) are radioDstarTest's and ysfRadioTest's, each
+# against a board with flat paths: these build the radio core without them
+CORE_HAL := -I$(ROOT)/hal -Wshadow -DCONFIG_DSTAR=0 -DCONFIG_YSF=0
 TESTS   += radioCoreTest inputTest switchFollowTest quadratureTest serialmicTest
 
 # A Tier III trunked system on the radio (radio_sm.c's trunk block): the engine and what it reads PDUs with
@@ -1504,10 +1505,20 @@ ysfCodeplugTest: ysfCodeplugTest.c $(YSFCP) $(wildcard $(CORE)/codeplug/*.h $(CO
 ysfCodeplugOffTest: ysfCodeplugTest.c $(YSFCP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/ysf/*.h)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_YSF=0 -o $@ ysfCodeplugTest.c $(YSFCP)
 
+# Fusion in the radio core (core/radio/radio_ysf.c): a fake board's flat paths and vocoder, the real codeplug. The module
+# is built through ysfRadioSeam.c, which lets the test run the radio task in the middle of a debug link read
+TESTS   += ysfRadioTest
+YSFRT   := $(YSFCP) ysfRadioSeam.c $(CORE)/radio/radio_mode_ram.c $(CORE)/radio/radio_flat.c $(CORE)/ysf/ysf_fec.c \
+           $(CORE)/ysf/ysf_frame.c $(CORE)/ysf/ysf_c4fm.c $(CORE)/ysf/ysf_engine.c $(CORE)/dmr/ambe/ambeFec.c
+
+ysfRadioTest: ysfRadioTest.c $(YSFRT) $(CORE)/radio/radio_ysf.c $(wildcard $(CORE)/radio/radio_ysf*.h $(CORE)/ysf/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_YSF=1 -o $@ ysfRadioTest.c $(YSFRT) -lm
+
 run: run-ysfcp
-run-ysfcp: ysfCodeplugTest ysfCodeplugOffTest
+run-ysfcp: ysfCodeplugTest ysfCodeplugOffTest ysfRadioTest
 	./ysfCodeplugTest
 	./ysfCodeplugOffTest
+	./ysfRadioTest
 .PHONY: run-ysfcp
 
 # rename, delete, a new channel added in one step, the limits
