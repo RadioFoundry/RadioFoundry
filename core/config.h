@@ -144,9 +144,9 @@
 #ifndef CONFIG_YSF
 #define CONFIG_YSF			CONFIG_DMR
 #endif
-// Fusion's Voice FR (VW) played and sent: not in this build (VW is recognized and shown as heard, PTT sends DN)
+// Fusion's Voice FR (VW) with the full-rate codec (core/mbe, ysf_vw.c, radio_ysf_vw.c): with Fusion here too
 #ifndef CONFIG_YSF_VW
-#define CONFIG_YSF_VW			0
+#define CONFIG_YSF_VW			CONFIG_YSF
 #endif
 // The flat FM paths' board glue (hal_audio_tap.h), shared by the data modems with a waveform of their own
 #ifndef CONFIG_FM_FLAT
@@ -357,7 +357,7 @@
 #define CONFIG_AIR_RAW			0
 #endif
 #ifndef CONFIG_IMBE
-#define CONFIG_IMBE			CONFIG_P25
+#define CONFIG_IMBE			(CONFIG_P25 || CONFIG_YSF_VW)
 #endif
 #ifndef CONFIG_MBE
 #define CONFIG_MBE			CONFIG_IMBE
@@ -470,6 +470,9 @@
 #endif
 #if CONFIG_YSF && !CONFIG_DMR
 #error "CONFIG_YSF needs CONFIG_DMR"
+#endif
+#if CONFIG_YSF_VW && !CONFIG_YSF
+#error "CONFIG_YSF_VW needs CONFIG_YSF"
 #endif
 #if CONFIG_HOTSPOT_SPLIT && !CONFIG_HOTSPOT
 #error "CONFIG_HOTSPOT_SPLIT needs CONFIG_HOTSPOT"

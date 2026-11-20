@@ -1509,7 +1509,7 @@ ysfCodeplugOffTest: ysfCodeplugTest.c $(YSFCP) $(wildcard $(CORE)/codeplug/*.h $
 # is built through ysfRadioSeam.c, which lets the test run the radio task in the middle of a debug link read
 TESTS   += ysfRadioTest
 YSFRT   := $(YSFCP) ysfRadioSeam.c $(CORE)/radio/radio_mode_ram.c $(CORE)/radio/radio_flat.c $(CORE)/ysf/ysf_fec.c \
-           $(CORE)/ysf/ysf_frame.c $(CORE)/ysf/ysf_c4fm.c $(CORE)/ysf/ysf_engine.c $(CORE)/dmr/ambe/ambeFec.c
+           $(CORE)/ysf/ysf_frame.c $(CORE)/ysf/ysf_vw.c $(CORE)/ysf/ysf_c4fm.c $(CORE)/ysf/ysf_engine.c $(CORE)/dmr/ambe/ambeFec.c
 
 ysfRadioTest: ysfRadioTest.c $(YSFRT) $(CORE)/radio/radio_ysf.c $(wildcard $(CORE)/radio/radio_ysf*.h $(CORE)/ysf/*.h)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_YSF=1 -o $@ ysfRadioTest.c $(YSFRT) -lm
@@ -1867,7 +1867,7 @@ run-mbe-halves: fxpHalvesTest fxpHalvesSplitTest mbeExactTest mbeExactSplitTest
 # Yaesu System Fusion (core/ysf, docs/spec/ysf-modem.md): the coding against tools/ysf_ref.py's vectors, the
 # decoders against errors, whole transmissions through the receiver
 TESTS   += ysfTest
-YSFFR   := $(CORE)/ysf/ysf_fec.c $(CORE)/ysf/ysf_frame.c
+YSFFR   := $(CORE)/ysf/ysf_fec.c $(CORE)/ysf/ysf_frame.c $(CORE)/ysf/ysf_vw.c
 
 ysfTest: ysfTest.c $(YSFFR) $(wildcard $(CORE)/ysf/*.h) ../vectors/ysf.txt
 	$(CC) $(CFLAGS) -I. -Wshadow -o $@ ysfTest.c $(YSFFR)
@@ -1889,6 +1889,23 @@ ifneq ($(PYTHON),)
 		{ echo "tests/vectors/ysf.txt differs from tools/ysf_ref.py vectors"; exit 1; }
 endif
 .PHONY: run-ysf
+
+# Fusion's Voice FR (core/ysf/ysf_vw.c, docs/spec/ysf-modem.md 4.1): the full-rate frame against tools/ysf_vw_ref.py's
+# vectors, its FEC, VW transmissions through the receiver, and the codec (core/mbe) over the air
+TESTS   += ysfVwTest
+ysfVwTest: ysfVwTest.c $(YSFFR) $(MBE) $(wildcard $(CORE)/ysf/*.h $(CORE)/mbe/*.h) ../vectors/ysf-vw.txt
+	$(CC) $(CFLAGS) -I. -Wshadow -o $@ ysfVwTest.c $(YSFFR) $(MBE) -lm
+
+run: run-ysfvw
+run-ysfvw: ysfVwTest
+	./ysfVwTest
+ifneq ($(PYTHON),)
+	$(PYTHON) -B $(ROOT)/tools/ysf_vw_ref.py --self-test
+	@$(PYTHON) -B $(ROOT)/tools/ysf_vw_ref.py vectors | cmp -s - ../vectors/ysf-vw.txt || \
+		{ echo "tests/vectors/ysf-vw.txt differs from tools/ysf_vw_ref.py vectors"; exit 1; }
+endif
+.PHONY: run-ysfvw
+
 
 run: run-boards
 run-boards::

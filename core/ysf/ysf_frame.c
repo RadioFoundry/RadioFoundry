@@ -4,6 +4,9 @@
 #include <string.h>
 #include "config.h"
 #include "ysf/ysf_frame.h"
+#if CONFIG_YSF_VW
+#include "ysf/ysf_vw.h"
+#endif
 
 uint32_t ysf_fich_pack(const ysf_fich_t *f)
 {
@@ -118,6 +121,16 @@ static void tx_fich(ysf_tx_t *t, uint8_t fi, uint8_t fn)
 	f.fn = fn;
 	f.ft = VD2_FT;		// the header's FT isn't defined; the rolling pattern's is the useful one
 	f.dt = YSF_DT_VD2;
+#if CONFIG_YSF_VW
+	if (t->cfg.vw) {
+		// Voice FR: DT 3 in every frame; the header and terminator FN 0 FT 0, the voice frames ysf_vw_tx_fn's
+		f.dt = YSF_DT_VOICE_FR;
+		f.fn = f.ft = 0;
+		if (fi == YSF_FI_COMM) {
+			ysf_vw_tx_fn(t->fn, &f.fn, &f.ft);
+		}
+	}
+#endif
 	ysf_fich_encode(ysf_fich_pack(&f), air);
 	put_bits(t->frame, FICH_AT, air, 0, YSF_FICH_BITS);
 }
@@ -155,6 +168,12 @@ static void tx_comm(ysf_tx_t *t)
 	memset(t->frame, 0, sizeof(t->frame));
 	put_sync(t->frame);
 	tx_fich(t, YSF_FI_COMM, t->fn);
+#if CONFIG_YSF_VW
+	if (t->cfg.vw) {
+		ysf_vw_tx_comm(t);
+		return;
+	}
+#endif
 	switch (t->fn) {
 	case 0: memcpy(d, c->dest, sizeof(d)); break;
 	case 1: memcpy(d, c->src, sizeof(d)); break;
@@ -245,6 +264,11 @@ int ysf_tx_dibit(void *tx)
 			break;
 		case YSF_TX_VOICE:
 			t->fn = (uint8_t)(t->fn >= VD2_FT ? 0u : t->fn + 1u);
+#if CONFIG_YSF_VW
+			if (t->cfg.vw) {
+				t->fn = (uint8_t)(t->fn > 2u ? 2u : t->fn);	// frames sent, held at 2 (ysf_vw_tx_fn)
+			}
+#endif
 			if (t->stop) {
 				t->state = YSF_TX_TERM;
 			}
@@ -258,6 +282,14 @@ int ysf_tx_dibit(void *tx)
 	// A subframe's voice is pulled as its first voice dibit is due (payload bit 144 s + 40)
 	if (t->state == YSF_TX_VOICE && t->pos >= PAYLOAD_AT / 2u) {
 		uint32_t pb = 2u * t->pos - PAYLOAD_AT;
+#if CONFIG_YSF_VW
+		if (t->cfg.vw) {
+			// A full-rate frame fills its subframe: pulled as the subframe starts
+			if (pb % YSF_SUB_BITS == 0u && pb / YSF_SUB_BITS >= ysf_vw_tx_first_voice(t)) {
+				ysf_vw_tx_voice(t, pb / YSF_SUB_BITS);
+			}
+		} else
+#endif
 		if (pb % YSF_SUB_BITS == 40u) {
 			tx_voice(t, pb / YSF_SUB_BITS);
 		}
@@ -375,6 +407,10 @@ static void rx_payload_done(ysf_rx_t *r)
 				break;
 			}
 		}
+#if CONFIG_YSF_VW
+	} else if (f->dt == YSF_DT_VOICE_FR) {
+		ysf_vw_rx_done(r);
+#endif
 	}
 	if (r->call.have != before && r->cb.call != NULL) {
 		r->cb.call(r->cb.ctx, &r->call);
@@ -419,6 +455,11 @@ static void rx_payload_bit(ysf_rx_t *r, uint32_t b, int8_t s)
 			}
 		}
 	}
+#if CONFIG_YSF_VW
+	else if (f->dt == YSF_DT_VOICE_FR && f->fi == YSF_FI_COMM) {
+		ysf_vw_rx_bit(r, b, s);
+	}
+#endif
 	// Data FR frames (and Voice FR without CONFIG_YSF_VW): recognized by their FICH, their payload not decoded
 }
 
@@ -457,6 +498,11 @@ static void rx_fich_done(ysf_rx_t *r)
 	r->fich_ok = r->misses == 0;
 	if (r->fich_ok) {
 		ysf_fich_t *f = &r->call.fich;
+#if CONFIG_YSF_VW
+		if (f->dt == YSF_DT_VOICE_FR) {
+			ysf_vw_rx_next(f);
+		} else
+#endif
 		if (f->fi == YSF_FI_COMM) {
 			f->fn = (uint8_t)(f->fn >= f->ft ? 0u : f->fn + 1u);
 		} else {
