@@ -96,7 +96,7 @@ static bool ttx;			// the follower's transmit side is on
 
 // Frequencies of systems heard naming P25_WACN_NO_TX since power on (RAM only, cleared by radio_p25_init): a
 // trunked channel with any of them as a control channel starts with its transmit side blocked (P25_FOLLOW_BLOCKED),
-// a conventional channel on one refuses PTT. With the table full, every P25 channel does
+#define NOGO_MAX	8u
 #define NOGO_MAX	8u
 static uint32_t nogo_hz[NOGO_MAX];
 static uint8_t nogo_n;
