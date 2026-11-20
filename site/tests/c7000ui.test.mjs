@@ -229,7 +229,7 @@ test("backup: a backup made through an untried stock build offers its program me
 	forwards.at(-1).click();
 	for (let i = 0; i < 100 && !state.stockRead; i++) await sleep(20);
 	assert.equal(state.stockRead?.name, `program-memory-${radio.id}-909E.DBB.EARSAB.018.bin`);
-	assert.match(box.textContent, /Send the program memory read/);
+	assert.match(box.textContent, /send the program memory read/);
 });
 
 test("backup: a connection lost after the step was drawn goes back to the connect step, which says why", async () => {

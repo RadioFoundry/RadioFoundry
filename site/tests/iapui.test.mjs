@@ -278,7 +278,7 @@ test("stock console: a build without a proven stub load offers the try, then the
 	const { r, rt, seen, parts } = await stockRoute(t, { variant: "DBB" });
 	olderBuild(r);
 	await rt.routes.stockFound(parts);
-	assert.match(seen.shown.textContent, /has not made a backup through this version/);
+	assert.match(seen.shown.textContent, /has not backed up a radio running this version/);
 	assert.match(seen.shown.textContent, /Try the backup anyway/);
 	assert.match(seen.shown.textContent, /Update the original firmware first/);
 	assert.match(seen.shown.textContent, /Install without a backup/);
@@ -296,7 +296,7 @@ test("stock console: the try on an untried build loads the stub and marks the se
 	await rt.routes.stockFound(parts);
 	seen.acts.find((b) => label(b) === "Try Backup Anyway").click();
 	await sleep(50);
-	assert.match(seen.shown.textContent, /new to the radio programming utility/);
+	assert.match(seen.shown.textContent, /is new to this page/);
 	seen.acts.find((b) => label(b) === "Switch to Update Mode").click();
 	for (let i = 0; i < 400 && !loaded; i++) await sleep(50);
 	assert.equal(loaded, 1);
@@ -312,8 +312,8 @@ test("stock console: the try stops before any write when the command table isn't
 	seen.acts.find((b) => label(b) === "Try Backup Anyway").click();
 	await sleep(50);
 	seen.acts.find((b) => label(b) === "Switch to Update Mode").click();
-	for (let i = 0; i < 200 && !/which was expected/.test(seen.shown.textContent); i++) await sleep(50);
-	assert.match(seen.shown.textContent, /which was expected/);
+	for (let i = 0; i < 200 && !/as expected on this version/.test(seen.shown.textContent); i++) await sleep(50);
+	assert.match(seen.shown.textContent, /as expected on this version/);
 	assert.match(seen.shown.textContent, /command table/);
 	assert.ok(!seen.acts.map(label).includes("Try Backup Anyway"), "no second try offered");
 	assert.ok(r.frames.every((f) => f.startsWith("read_addr(")), "nothing written, RAM included");
