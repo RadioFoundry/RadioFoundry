@@ -729,12 +729,17 @@ export class FakeC7000 {
 		this.events.push(`update mode ${soc}`);
 	}
 
-	// A long press of SK1 in update mode: the other SoC's loader, about 1.5 s later; a write under way stops
+	// A long press of SK1 in update mode: the other SoC's loader, about 1.5 s later; a write under way stops. A loader
+	// that gets requests during the press doesn't see it (seen on the radio): nothing changes
 	holdSk1() {
 		if (this.state !== "iap" || !this.rx2) return;
-		const gen = this.gen;
+		const gen = this.gen, pressed = Date.now();
 		setTimeout(() => {
 			if (this.gen !== gen || this.state !== "iap") return;
+			if (this.iapRequestAt > pressed || this.rd) {
+				this.events.push("SK1 not seen: the loader was answering");
+				return;
+			}
 			this.iapEnter(this.iapSoc === "A" ? "B" : "A");
 		}, 1500 / this.speed);
 	}
@@ -783,6 +788,7 @@ export class FakeC7000 {
 
 	iapFeed() {
 		const ib = this.inb, enc = (x) => new TextEncoder().encode(x);
+		if (ib.length) this.iapRequestAt = Date.now();
 		if (this.iapPhase === "erase" || this.iapPhase === "done") {
 			this.inb = new Uint8Array(0);
 			return 0;

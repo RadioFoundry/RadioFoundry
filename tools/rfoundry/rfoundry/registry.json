@@ -87,7 +87,7 @@
     "installed": [],
     "sources": [
      "DB25-D PRO 909E.Dx.EARSAB.018 stock files",
-     "a program flash read of the radio"
+     "a program memory backup of this radio"
     ]
    },
    "codec_code": 51281920,
@@ -385,7 +385,7 @@
     ],
     "installed": [],
     "sources": [
-     "a program flash read of the radio"
+     "a program memory backup of this radio"
     ]
    },
    "codec_code": 51281920,
@@ -659,7 +659,7 @@
     "installed": [],
     "sources": [
      "GD-88 A B49E.D64.EOPSAB.013 to .021 update files",
-     "a program flash read of SoC A"
+     "a program memory backup of receiver A"
     ]
    },
    "codec_code": 51281920,
@@ -802,8 +802,8 @@
     ],
     "installed": [],
     "sources": [
-     "GD-88 A B49E.D64.EOPSAB.013 to .021 update files (the A file, as for SoC A)",
-     "a program flash read of SoC A",
+     "GD-88 A B49E.D64.EOPSAB.013 to .021 update files (receiver B uses receiver A's codec)",
+     "a program memory backup of receiver A",
      "GD-88 B B49C.D64.EHRNAB.005 to .012 update files"
     ]
    },
@@ -1532,7 +1532,7 @@
     ],
     "installed": [],
     "sources": [
-     "a program flash read of the radio"
+     "a program memory backup of this radio"
     ]
    },
    "codec_code": 51281920,

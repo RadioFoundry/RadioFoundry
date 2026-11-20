@@ -131,7 +131,7 @@ calibration = { progmem = 0x1FE000, nand = 0x280000, magic = "TUNE" }
 tool = "hrc7000_codec"
 profile = "db25d-018"
 stock_version = "018 (2024-05-09 or later)"
-sources = ["DB25-D PRO 909E.Dx.EARSAB.018 stock files", "a program flash read of the radio"]
+sources = ["DB25-D PRO 909E.Dx.EARSAB.018 stock files", "a program memory backup of this radio"]
 
 # How the site draws the radio
 [frame]

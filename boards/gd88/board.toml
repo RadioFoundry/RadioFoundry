@@ -100,7 +100,7 @@ calibration = { progmem = 0x1FE000, nand = 0x280000, magic = "TUNE" }
 tool = "hrc7000_codec"
 profile = "gd88-2501"
 stock_version = "B49E.D64.EOPSAB.021 (2025-01-19)"
-sources = ["GD-88 A B49E.D64.EOPSAB.013 to .021 update files", "a program flash read of SoC A"]
+sources = ["GD-88 A B49E.D64.EOPSAB.013 to .021 update files", "a program memory backup of receiver A"]
 
 # How the site draws the radio
 [frame]

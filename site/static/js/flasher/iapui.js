@@ -397,7 +397,8 @@ export function makeStockRoutes(host) {
 
 	// The install of a radio with two SoCs (flash.second) through update mode: one card, two numbered steps, each SoC
 	// written by its own loader in turn. The radio stays in update mode after the first; a long press switches it to the
-	// second SoC's loader (flash.both.switch), and the second step starts by itself.
+	// second SoC's loader (flash.both.switch), and the second step starts when the user selects Continue. The page sends
+	// nothing while the user switches: a loader that is answering requests doesn't see the long press (seen on the radio).
 	//
 	// Which SoC answers is checked before each erase (Iap.whose: each SoC reads its own NAND), so an image never goes to
 	// the other SoC. The main SoC's pages come from its application in the connect step (c.mainPrint: on the cable only the
@@ -450,12 +451,14 @@ export function makeStockRoutes(host) {
 		let confirmed = false;		// the user said the screen shows the main SoC's update mode (no pages to check against)
 		let stop = null;
 
-		// step i: Install on the first, by itself on the second
+		// step i: Install on the first, Continue on the second
 		const open = (i) => {
 			const p = parts[i];
 			mark(p, "active");
-			if (i === 1) return run(1);
-			const go = button(t("flash.iap.go"), async () => { if (d.mode !== "none" || (await confirmNoCodec(() => { S().c7none = false; ctx.back(); }))) run(0); }, { primary: true });
+			// the second step waits for the user's switch before it sends anything: a loader that is answering requests
+			// doesn't see the long key press that switches it
+			const go = i === 1 ? button(t("flash.both.continue"), () => run(1), { primary: true })
+				: button(t("flash.iap.go"), async () => { if (d.mode !== "none" || (await confirmNoCodec(() => { S().c7none = false; ctx.back(); }))) run(0); }, { primary: true });
 			fill(p.body, how(p, h("div", { class: "actions" }, go)));
 			S().forward(null);
 		};
@@ -489,8 +492,19 @@ export function makeStockRoutes(host) {
 					diag.note(`update mode wait: ${key}`, { step: i + 1 });
 					fill(status, key ? notice(t(key), "info") : null, extra, spin ? waitLine() : null);
 				};
-				const until = Date.now() + LISTEN_MS;
+				let until = Date.now() + LISTEN_MS;
 				let quietSince = Date.now();
+				// nothing sent until the user selects Continue (or stops); the wait starts again after it
+				const pause = async (key) => {
+					await new Promise((resolve) => {
+						say(key, h("div", { class: "actions" }, button(t("flash.both.continue"), resolve, { primary: true })), false);
+						stop.signal.addEventListener("abort", resolve, { once: true });
+					});
+					said = undefined;
+					say(null);
+					until = Date.now() + LISTEN_MS;
+					quietSince = Date.now();
+				};
 				for (;;) {
 					if (stop.signal.aborted) throw new Error("stopped");
 					if (Date.now() > until) throw new Error(t("flash.iap.no_update_mode"));
@@ -540,14 +554,24 @@ export function makeStockRoutes(host) {
 								stop.signal.addEventListener("abort", resolve, { once: true });
 							});
 							said = null;
+							until = Date.now() + LISTEN_MS;
 							continue;
 						}
-						say(own(i === 0 ? "flash.both.not_a" : "flash.both.not_b"));
+						// the other receiver's loader: silent until the user switched, since a loader that is answering
+						// requests doesn't see the long key press
+						await pause(own(i === 0 ? "flash.both.not_a" : "flash.both.not_b"));
+						continue;
 					} else if (um?.stock) {
 						quietSince = Date.now();
 						say("flash.iap.not_update_mode");
 					} else if (Date.now() - quietSince > QUIET_HINT_MS) {
-						say(own(i === 0 ? "flash.both.silent_a" : "flash.both.silent_b"));
+						// the second step: the radio may still be on the first loader, which may not answer after its write,
+						// so the page goes quiet while the user checks and switches
+						if (i === 1) {
+							await pause(own("flash.both.silent_b"));
+							continue;
+						}
+						say(own("flash.both.silent_a"));
 					}
 					await sleep(400);
 				}

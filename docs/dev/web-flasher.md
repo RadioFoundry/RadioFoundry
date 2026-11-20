@@ -55,7 +55,10 @@ with "Hold the Keys and Turn On". A radio with the serial update mode (`update_m
 controls above the steps: what the screen shows, switching it off and on (with or without the update mode key held), the
 long key press that switches between two receivers' loaders, and pulling the cable out. Each loader reads its own receiver's NAND pages, receiver B's loader drops a
 "Read" now and then, and a pulled cable ends the stream as a lost device does, so every wait and error of the two-step
-install can be tried without a radio.
+install can be tried without a radio. A loader that gets a request during the long key press doesn't switch, as on the
+radio. So the page sends nothing while the user switches loaders: the second step starts on Continue, and a wait that
+finds the other receiver's loader, or in the second step no answer for a few seconds, stops until the user checks the
+radio and selects Continue again.
 
 ## The beta notice
 

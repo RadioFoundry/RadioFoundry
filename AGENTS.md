@@ -108,6 +108,17 @@ The source tree is in [README.md, Layout](README.md#layout). The layers and the 
   English you changed with a translation left the same is a CI warning (`tools/i18n_changes.py`): say in the PR
   whether each language still fits.
 - Docs read like technical documentation: short sentences, tables, no filler.
+- **Text a user reads** (the site, the radio's screens, error messages, user docs) is natural, professional English, as
+  a native technical writer would write it. "No filler" means no padding, never dropping words a native speaker would
+  use. Don't copy the clipped style of older strings.
+  - Write full sentences with normal connectives (so, then, to, because). Don't join two clauses with a colon to save
+    words: "Turn the radio off and on to start RadioFoundry", not "Turn it off and on: it starts RadioFoundry".
+  - Use active verbs and say who acts. The user gets the imperative ("Select Continue"), and the site calls itself
+    "this page". Avoid vague passives and states ("is transferred", "goes on by itself", "keep X as it is").
+  - An instruction names the action and when it ends ("Keep the cable plugged in until this page says the installation
+    is complete").
+  - Keep internal terms out (loader, application area, slot, SoC, probe).
+  - Read each string aloud. If it sounds translated, rewrite it, and check the rest of the flow it appears in.
 
 ## Git
 

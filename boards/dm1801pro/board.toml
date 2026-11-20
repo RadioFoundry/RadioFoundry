@@ -83,7 +83,7 @@ write_test = 0x71C000
 [codec]
 tool = "hrc7000_codec"
 profile = "dm1801pro-049"
-sources = ["a program flash read of the radio"]
+sources = ["a program memory backup of this radio"]
 
 # How the site draws the radio
 [frame]

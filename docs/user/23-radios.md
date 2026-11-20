@@ -797,7 +797,8 @@ part. After that it goes through the first chip by itself.
 
 To start the radio's update mode, turn it off and connect the programming cable. Hold **SK1** (the side key above **PTT**) and turn the radio
 on with the volume knob. When the LED lights red and the top line shows `IAP_A` or `IAP_B`, release **SK1**. Hold **SK1** to
-switch between them: `IAP_A` updates the first chip, `IAP_B` the second.
+switch between them: `IAP_A` updates the first chip, `IAP_B` the second. While the radio is answering the installer, a
+long press does not switch it, so the installer pauses for the switch: switch, then select **Continue**.
 
 ### GD-88 keys
 

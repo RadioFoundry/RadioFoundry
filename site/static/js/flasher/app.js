@@ -272,7 +272,7 @@ function problemNotice(p, { offer = null, boardId = S.board?.id } = {}) {
 		files.length ? h("p", {}, t(dump ? "flash.problem.dump.instead" : "flash.problem.unmapped.instead", vars), download ? [" ", download] : null) : null,
 		!files.length ? null : dump || foldSupported(files)
 			? h("details", {}, h("summary", {}, t("flash.problem.unmapped.all", { n: files.length })), list) : list,
-		also.length && !dump ? h("p", {}, t(files.length ? "flash.problem.unmapped.also" : "flash.problem.unmapped.only", { what: also.join("; ") })) : null,
+		also.length && !dump ? h("p", {}, t(files.length ? "flash.problem.unmapped.also" : "flash.problem.unmapped.only", { what: also.join(" or ") })) : null,
 		reportLine());	// a file the page can't use may be the page's fault: the user can send it with the report
 }
 

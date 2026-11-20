@@ -504,6 +504,13 @@ test("GD-88 practice radio: each receiver's loader reads its own pages, the stoc
 	await wait(100);
 	assert.equal(r.screen(), "IAP_A");
 	assert.equal(await iapOn(r.stream).whose(pages), viaApp, "IAP_A reads what the application read");
+	// a long press while the loader answers requests is not seen, so the page must stay quiet during a switch
+	const busy = iapOn(r.stream).whose(pages);
+	await wait(1);
+	r.holdSk1();
+	await busy;
+	await wait(50);
+	assert.equal(r.screen(), "IAP_A", "a press during requests does not switch");
 	r.holdSk1();
 	await wait(50);
 	assert.equal(r.screen(), "IAP_B");
