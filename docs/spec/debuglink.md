@@ -364,7 +364,7 @@ short. View 5: the `cps.*` and `cpsf.*` keys moved from `storage` to `cps` (27),
 | 32 | `t3_roam` | its roaming: the level, the adjacent sites, Vote Now and the weak control channel leave (3.26) |
 | 33 | `voice_cap` | the voice frames captured (RADIO op 41): `vcap.built vcap.want vcap.count` and `vcap.frames`, comma separated in order, each 18 hex digits as on air (ETSI TS 102 361-1 bit order) or `L` for a lost frame. Built without `CONFIG_VOICE_CAPTURE`: `vcap.built=0` |
 | 34 | `t3_msg` | Tier III: the last status, short data, caller number and supplementary data heard (3.26) |
-| 35 | `t3_ra` | Tier III: the last random access bursts and their answers, the TX to RX turnaround (3.26) |
+| 35 | `t3_ra` | Tier III: the last random access bursts and their answers, the TX to RX turnaround, why sends were refused (3.26) |
 | 36 | `p25` | P25 conventional on the channel ([p25.md](p25.md) 7.4): `p25.built` (0 without `CONFIG_P25`, and nothing else) `p25.on` (the engine runs on this channel), the call heard now or last `p25.rx played enc unit late nac src dst` (`src` 0: not known yet; `dst` a talk group, or a unit when `unit` is 1) `p25.tx` (`air_tx_state_t`: 0 idle, then priming, on, ending, done), `p25.rx_work_us rx_span_us` (while the engine runs, from a provider that counts its receive load, as `air.rx_work_us` in 3.28: work / span is the share of the CPU since P25 started), the settings `p25.rx_nac tx_nac rx_tgid talkaround unit_call tx_dst unit_id` (as op 39), while the engine runs the parameters it runs on `p25.run.rx_nac tx_nac rx_tgid talkaround unit_call tx_dst unit_id` (a stored P25 channel's own, else the settings; talkaround 1 on, 2 off), counters `p25.begins begin_fails mem_lent rx_calls tx_calls tx_filler units voice voice_bad voice_bits lc_fail es_fail rx_chunks tx_underruns tx_syms`; the voice path `p25v.built in frames bad concealed calls underruns underrun_at overflows bit_errors queue_max peak tx_frames tx_encoded tx_dropped tx_silent tx_mic_peak` (`p25v.built=0` without). RESET_COUNTERS zeroes the counters |
 | 37 | `p25_trunk` | the P25 trunking follower on a trunked channel ([p25-trunking.md](p25-trunking.md) 7): `p25t.built` (0 without `CONFIG_P25_TRUNK`, and nothing else) `p25t.on` (a trunked channel runs), the follower's view `p25t.state` (`P25_FOLLOW_*`: 0 off, 1 hunting, 2 on a control channel, 3 on a voice channel) `cc cc_hz voice_hz nac wacn sysid rfss site` (the control channel tried or held and the system heard; `wacn` 4294967295, `sysid` 65535, `rfss`/`site` 255 until heard), the call followed now or last `tg src dst unit_call enc`, `idens learned refused refused_tg fallback`, counters `blocks crc_fail mfr mbt mbt_op pdu_other grants follows enc_skip tdma no_iden wrong_sys hunts cc_lost voice_lost wrong_call` (from the channel's start), and the radio core's `retunes untuned skips` (RESET_COUNTERS zeroes these three). The transmit side ([p25-trunking.md](p25-trunking.md) 5): `p25t.tx` (1: on), `reg` (`P25_REG_*`: 0 off, 1 idle, 2 waiting, 3 affiliating, 4 registered and affiliated, 5 denied, 6 retrying, 7 no inbound frequency), `req` (`P25_REQ_*`: 0 idle, 1 waiting, 2 queued, 3 talking on the grant, 4 denied, 5 no answer, 6 unusable channel), `aff_tg` (the group affiliated), `talk_hz` (where it last transmitted on a grant), `deny_svc deny_reason` (the last deny's request opcode and reason), counters `reg_tx reg_ok aff_tx aff_ok req_tx req_grant denials queued timeouts send_fail inb_busy` (8 bits, from the channel's start) and the radio core's `bursts burst_refused` (inbound bursts keyed, and refused by the transmit checks) |
 | 38 | `nxdn` | NXDN conventional on the channel ([nxdn.md](nxdn.md) 6): `nxdn.built` (0 without `CONFIG_NXDN`, and nothing else) `nxdn.on` (the engine runs on this channel), the call heard now or last `nxdn.rx played enc unit late ran src dst emergency` (`src` 0: not known yet; `dst` a group, or a unit when `unit` is 1), `nxdn.tx` (`air_tx_state_t`: 0 idle, then priming, on, ending, done), `nxdn.deny` (`tx_deny_t` of the last refusal), the provider's fit (`AIR_FIT_*`, 3.28) at the rate in use and at each rate `nxdn.fit fit4800 fit9600`, the settings `nxdn.rate rx_ran tx_ran rx_gid unit_id unit_call tx_dst tx_emergency` (as op 40), while the engine runs the parameters it runs on `nxdn.run.rate rx_ran tx_ran rx_gid unit_id unit_call tx_dst` (a stored NXDN channel's own, [nxdn-codeplug.md](nxdn-codeplug.md), else the settings), counters `nxdn.begins begin_fails rx_calls tx_calls tx_filler frames lich_fail sacch_fail facch_fail voice voice_held fec_bits ran_rejects rx_chunks tx_underruns tx_syms`. The voice path is the DMR side's (`ambe.*` in `dmr_stats`). RESET_COUNTERS zeroes the counters |
@@ -899,9 +899,9 @@ the call followed (`call_dst`, `call_src`, `call_group`, `call_ours`); the acces
 `ax_result`, `ax_reason`, `ptt_wait`, `can_talk`); the last CSBK heard and sent (`last_rx_op`, `last_rx_slot`,
 `last_rx_age_ms`, `last_tx_op`, `last_tx_age_ms`, `last_tx` in hex; age -1: none); counters (`ticks`, `csbk`, `crc_bad`,
 `grants`, `followed`, `unmapped`, `last_unmapped`, `returns`, `hunts`, `foreign`, `learned`, `sent`, `ra_tries`,
-`send_fail`, `at_known`, `at_busy`); `lent`, the short LCs heard while camped that say the TSCC's slot is lent to a call
-(a composite TSCC); `lent_calls`, the call bursts on the TSCC's slot taken as lent where no short LC is heard
-([dmr-trunking.md](dmr-trunking.md) 5).
+`send_fail` (sends refused or failed; the reasons are in `t3_ra`), `at_known`, `at_busy`); `lent`, the short LCs heard
+while camped that say the TSCC's slot is lent to a call (a composite TSCC); `lent_calls`, the call bursts on the TSCC's
+slot taken as lent where no short LC is heard ([dmr-trunking.md](dmr-trunking.md) 5).
 
 The `t3_svc` section, also `t3.`-prefixed, has the services: `ax_info` (the final acknowledgement's Response_Info: a
 poll's answer), `reg_tgs` and `reg_tg_ok` (the registration's talkgroup list: how many it sent, and which the site
@@ -933,7 +933,19 @@ slot, then the PDU that answered it: after how many ms and TDMA frames, in which
 when nothing answered before the next try or the end; last, how long after the hand-over the stack reported it sent,
 0 when it didn't); the TX→RX turnaround, from the end of a transmission to the first burst heard on the same channel
 (`turns`, `turn_ms` the last, `turn_max_ms`, `turn_slow` those over 90 ms: an answer at +4 slots, 120 ms after an
-access began, comes after the radio is back on receive only under that).
+access began, comes after the radio is back on receive only under that); last, why sends were refused or failed, one
+8-bit saturating counter per reason (`send_fail` in `t3` counts them all):
+
+| Key | The send was refused because |
+|---|---|
+| `send_held` | a retune waits for a burst list still with the stack: the engine is elsewhere already |
+| `send_slot` | the radio is not tuned to the slot the engine asked for |
+| `send_talk` | PTT is held for talking (not waiting for a grant), or the radio transmits |
+| `send_limit` | the test TX limit refused the frequency |
+| `send_key` | the board refused to key the transmitter |
+| `send_stack` | the DMR stack refused the burst list (not running, transmitting, or busy) |
+| `send_data_busy` | of `send_stack`, those refused while another data list was with the stack |
+| `send_err` | the stack took the list but reported it not sent |
 
 Each of these sections fits one reply with every field at its widest; a key that would not goes in a section of its
 own (`tests/host/t3ViewTest.c`).
