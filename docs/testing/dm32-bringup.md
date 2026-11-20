@@ -198,6 +198,14 @@ The HR_C7000 copies its FM receive audio to the CPU (`modem-hrc7000.md` 8.5). AP
 Manual on-air testing with build `21bf5df8` (firmware source matching `c11d6e83`) confirmed scrambled NXDN voice
 between Baofeng DM-32UV radios and between a DM-32UV and Kenwood 5000-series radios. See [NXDN Scrambler](../spec/nxdn.md).
 
+## P25 talk permit tone
+
+Physical DM-32UV verification is pending. On the RF bench, open **Settings > Sound > Talk permit tone**
+and turn it on. Hold **PTT** on a conventional P25 channel. Verify one short beep from the speaker before RF
+keys, and verify that a brief press released during the beep does not key the transmitter. With the setting
+off, verify that the radio keys without the beep. On a trunked test system, verify that the beep follows the
+voice grant and precedes voice TX.
+
 ## Open items to settle on the bench
 
 - PIC: vectored (32 + source) works: the DMR slot, RF TX and PCM interrupts all arrive (settled on the radio).

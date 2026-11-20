@@ -325,6 +325,10 @@ On a radio that runs P25 ([feature matrix](../feature-matrix.md)), P25 is one of
 
 ### P25 channels
 
+To turn the P25 talk permit tone on or off, open **Settings > Sound > Talk permit tone**.
+The switch also applies to DMR, and **Tone volume** in the same menu controls its level.
+For P25, hold **PTT** through the beep and speak after it ends. On a trunked channel the beep follows the voice grant.
+
 A P25 channel comes from a codeplug written on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)), a zone shared by another radio, the VFO (in P25, open
 **Channels**, **New channel from current settings** and save it), or any channel: press **OK** on its Mode until it
 says P25, set the NAC and save. A channel made P25 starts with NAC 293. The channel keeps the network access codes, the
