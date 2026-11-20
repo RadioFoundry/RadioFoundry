@@ -418,13 +418,19 @@ export function makeStockRoutes(host) {
 		mark(parts[0], "active", "");
 		mark(parts[1], "waiting", t("flash.both.waiting"));
 		let stop = null;
+		// what the user does now: the first step without the main SoC's pages starts the radio normally (its application
+		// reads them), then enters update mode; only one of the two is shown
+		const needA = (i) => i === 0 && !parts[0].print;
+		const howTo = (i) => needA(i)
+			? withPicture(h("ol", { class: "steps c7-big" }, h("li", {}, t("flash.both.need_normal"))), radio.flash.stock_screen || null)
+			: withPicture(h("ol", { class: "steps c7-big" }, ...parts[i].steps.map((x) => h("li", {}, x))), parts[i].screen);
 
 		// step i: the user's go on the first, by itself on the second
 		const open = (i) => {
 			const p = parts[i];
 			mark(p, "active", "");
 			const go = i === 0 && button(t("flash.iap.go"), async () => { if (d.mode !== "none" || (await confirmNoCodec(() => { S().c7none = false; ctx.back(); }))) run(i); }, { primary: true });
-			fill(p.body, withPicture(h("ol", { class: "steps c7-big" }, ...p.steps.map((x) => h("li", {}, x))), p.screen), go ? h("div", { class: "actions" }, go) : null);
+			fill(p.body, howTo(i), go ? h("div", { class: "actions" }, go) : null);
 			S().forward(null);
 			if (i === 1) run(1);
 		};
@@ -432,8 +438,8 @@ export function makeStockRoutes(host) {
 		// wait until the loader of SoC i answers (never the other SoC's), then write it
 		async function run(i) {
 			const p = parts[i], other = parts[1 - i];
-			const status = h("p", { class: "muted c7-big" }, spinner(), " ", t("flash.iap.listening"));
-			fill(p.body, withPicture(h("ol", { class: "steps c7-big" }, ...p.steps.map((x) => h("li", {}, x))), p.screen), status);
+			const status = h("p", { class: "muted c7-big" }, spinner(), " ", t(needA(i) ? "flash.both.listening_normal" : "flash.iap.listening"));
+			fill(p.body, howTo(i), status);
 			stop = new AbortController();
 			S().forward(button(t("flash.c7.connect.cancel"), () => stop.abort(), { quiet: true }));
 			let wrote = false;	// the erase was sent: a try after a failure needs update mode entered again
@@ -456,16 +462,14 @@ export function makeStockRoutes(host) {
 					if (said === key) return;
 					said = key;
 					diag.note(`update mode: ${why}`, { step: i + 1 });
-					fill(status, notice(t(key), "info"), h("p", { class: "muted c7-big" }, spinner(), " ", t(key === "flash.both.need_normal" ? "flash.both.listening_normal" : "flash.iap.listening")));
+					fill(status, notice(t(key), "info"), h("p", { class: "muted c7-big" }, spinner(), " ", t(needA(i) ? "flash.both.listening_normal" : "flash.iap.listening")));
 				};
-				if (i === 0 && !p.print) say("flash.both.need_normal", "the main SoC's pages are not read yet");
 				for (;;) {
 					if (stop.signal.aborted) throw new Error("stopped");
 					if (Date.now() > until) throw new Error(t("flash.iap.no_update_mode"));
-					const needA = i === 0 && !p.print;
-					const um = await loader.probe(1500, 0, { all: needA });
-					if (um?.version && needA) {
-						say("flash.both.need_normal", "a loader answered before the main SoC's pages were read");
+					const um = await loader.probe(1500, 0, { all: needA(i) });
+					if (um?.version && needA(i)) {
+						say("flash.both.in_update_mode", "a loader answered before the main SoC's pages were read");
 					} else if (um?.version) {
 						const who = await loader.whose(pages);
 						if (who && (p.print ? who === p.print : who !== other.print)) {
@@ -473,7 +477,7 @@ export function makeStockRoutes(host) {
 							break;
 						}
 						if (who) say(i === 0 ? own("flash.both.not_a") : own("flash.both.not_b"), "the other SoC answers");
-					} else if (um?.stock && needA) {
+					} else if (um?.stock && needA(i)) {
 						const who = await loader.whose(pages);
 						if (who) {
 							if (!telling(who)) throw same();
@@ -481,6 +485,7 @@ export function makeStockRoutes(host) {
 							diag.note("update mode: the main SoC's pages read", { step: 1 });
 							// it says what to do next: the application answering on until the radio is off doesn't replace it
 							said = "flash.iap.not_update_mode";
+							fill(p.body, howTo(i), status);
 							fill(status, notice(t("flash.both.read_a"), "ok"), h("p", { class: "muted c7-big" }, spinner(), " ", t("flash.iap.listening")));
 						}
 					} else if (um?.stock) {
