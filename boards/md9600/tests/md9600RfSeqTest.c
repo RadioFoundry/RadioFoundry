@@ -1058,33 +1058,96 @@ static void test_cal(void)
 	md9600_cal_load();
 	CHECK(md9600_cal_apc(400000000u, 4, &dac) && dac == MD9600_APC_MAX);
 	CHECK(md9600_cal_apc(400000000u, 3, &dac) && dac == 1232 + (4000 - 1232) * 8 / 152);
-	// An erased top row (0xFF) is no value: no level transmits
+	// An erased top row (0xFF, 0x00 at 400-410 MHz) is no value: there, only the top level and the 25 W level built
+	// from it are refused; the fixed low levels still transmit, and every level does where the row holds values
 	cal_put(0x10, 0xFF, 3);
 	md9600_cal_load();
-	CHECK(!(md9600_cal_rf_rows(MD9600_UHF) & MD9600_CALOK_PA) && !md9600_cal_apc(400000000u, 0, &dac));
+	CHECK(!(md9600_cal_rf_rows(MD9600_UHF) & MD9600_CALOK_PA));
+	CHECK(!md9600_cal_pa_row(400000000u, 3, &dac) && !md9600_cal_pa_row(410000000u, 3, &dac));
+	CHECK(!md9600_cal_apc(400000000u, 4, &dac) && !md9600_cal_apc(400000000u, 3, &dac));
+	for (uint8_t l = 0; l < 3; l++) {
+		CHECK(md9600_cal_apc(400000000u, l, &dac) && dac == lv_u[l]);
+	}
+	for (uint8_t l = 0; l < 5; l++) {
+		CHECK(md9600_cal_apc(446000000u, l, &dac));
+	}
 
-	// A PA row that doesn't rise with the level, or rows so low that 25 W falls under 5 W's fixed drive: no level
-	// transmits
+	// A top row so low the top level would drive no harder than 25 W: only the top level is refused
 	cal_put(0x10, 30, 9);
 	md9600_cal_load();
-	CHECK(!(md9600_cal_rf_rows(MD9600_UHF) & MD9600_CALOK_PA) && !md9600_cal_apc(400000000u, 0, &dac));
+	CHECK(!(md9600_cal_rf_rows(MD9600_UHF) & MD9600_CALOK_PA) && !md9600_cal_apc(400000000u, 4, &dac));
+	for (uint8_t l = 0; l < 4; l++) {
+		CHECK(md9600_cal_apc(400000000u, l, &dac));
+	}
+	CHECK(md9600_cal_apc(400000000u, 3, &dac) && dac == 1232 + (480 - 1232) * 8 / 152);
+	// Rows so low that 25 W falls under 5 W's fixed drive: 25 W is refused, the top level still drives harder than
+	// 5 W and transmits
 	cal_put(0x10, 110, 9);
 	cal_put(0x1A0, 30, 9);
 	cal_put(0x190, 35, 9);
 	cal_put(0x10, 40, 9);
 	cal_put(0x20, 25, 9);
 	md9600_cal_load();
-	CHECK((md9600_cal_rf_rows(MD9600_UHF) & MD9600_CALOK_PA) && !md9600_cal_apc(400000000u, 2, &dac));
+	CHECK((md9600_cal_rf_rows(MD9600_UHF) & MD9600_CALOK_PA) && !md9600_cal_apc(400000000u, 3, &dac));
+	CHECK(md9600_cal_apc(400000000u, 2, &dac) && dac == 680);
+	CHECK(md9600_cal_apc(400000000u, 4, &dac) && dac == 40 * 16 + 337);
 	for (int l = 0; l < 4; l++) {
 		cal_put(pa_u[l], row_u[l], 9);
 	}
 	md9600_cal_load();
 	CHECK(md9600_cal_apc(400000000u, 4, &dac));
-	sec[1][0xA0 + 4] = (uint8_t)(51 + 4);	// the second row at 440 MHz down to the first row's value
+	// Two rows equal at one point (the second row at 440 MHz down to the first row's value): the band no longer looks
+	// plausible as a whole, but no level is built from a row that has no value, so every level still transmits
+	sec[1][0xA0 + 4] = (uint8_t)(51 + 4);
 	md9600_cal_load();
-	CHECK(!(md9600_cal_rf_rows(MD9600_UHF) & MD9600_CALOK_PA) && !md9600_cal_apc(446000000u, 0, &dac));
+	CHECK(!(md9600_cal_rf_rows(MD9600_UHF) & MD9600_CALOK_PA));
 	CHECK((md9600_cal_rf_rows(MD9600_UHF) & MD9600_CALOK_RX) && (md9600_cal_rf_rows(MD9600_VHF) & MD9600_CALOK_PA));
-	CHECK(md9600_cal_apc(136000000u, 0, &dac));	// the other band's rows still count
+	for (uint8_t l = 0; l < 5; l++) {
+		CHECK(md9600_cal_apc(446000000u, l, &dac));
+		CHECK(md9600_cal_apc(136000000u, l, &dac) && dac == lv_v[l]);	// the other band untouched
+	}
+	cal_put(0x1A0, row_u[1], 9);
+
+	// VHF as two radios in the field have it (UHF fine, VHF refused at 146.52 MHz on every level): a bad point at the
+	// band's top (174 MHz, equal rows there) refused the whole band. Now 2 m transmits on every level
+	cal_put(0x29 + 4, 70, 1);
+	cal_put(0x1A9 + 4, 70, 1);
+	md9600_cal_load();
+	CHECK(!(md9600_cal_rf_rows(MD9600_VHF) & MD9600_CALOK_PA));
+	for (uint8_t l = 0; l < 5; l++) {
+		CHECK(md9600_cal_apc(146520000u, l, &dac));
+	}
+	// An erased point (0xFF) in a row near the frequency: the levels built from that row are refused there, the low
+	// ones still transmit, and the row reads again past that point's neighbors
+	cal_put(0x199 + 2, 0xFF, 1);	// the third VHF row (rows 1-2 give 25 W) at 155 MHz
+	md9600_cal_load();
+	CHECK(!md9600_cal_pa_row(146520000u, 2, &dac) && !md9600_cal_apc(146520000u, 3, &dac));
+	for (uint8_t l = 0; l < 3; l++) {
+		CHECK(md9600_cal_apc(146520000u, l, &dac) && dac == lv_v[l]);
+	}
+	CHECK(md9600_cal_apc(146520000u, 4, &dac));
+	CHECK(md9600_cal_apc(136000000u, 3, &dac) && dac == lv_v[3]);
+	// VHF rows low enough that 25 W falls under 5 W's fixed drive (931 here, 947 for 5 W): 25 W refused, the rest
+	// transmits
+	for (int l = 0; l < 4; l++) {
+		cal_put(pa_v[l], row_v[l], 5);
+	}
+	cal_put(0x1A9, 54, 5);
+	cal_put(0x199, 58, 5);
+	md9600_cal_load();
+	CHECK(!md9600_cal_apc(146520000u, 3, &dac));
+	for (uint8_t l = 0; l < 5; l++) {
+		CHECK(l == 3 || md9600_cal_apc(146520000u, l, &dac));
+	}
+	// No front-end row for a band: nothing says the radio was calibrated there, no level transmits
+	memset(&sec[0][0x39], 0xFF, 5);
+	md9600_cal_load();
+	CHECK(!md9600_cal_apc(146520000u, 0, &dac) && md9600_cal_apc(446000000u, 0, &dac));
+	cal_put(0x39, 50, 5);
+	for (int l = 0; l < 4; l++) {
+		cal_put(pa_v[l], row_v[l], 5);
+	}
+	md9600_cal_load();
 	// The flash unreadable
 	sec_ok = false;
 	md9600_cal_load();
