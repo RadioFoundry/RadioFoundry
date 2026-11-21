@@ -15,12 +15,14 @@
     rfoundry_debug.py wake                           backlight on without a key event
     rfoundry_debug.py ptt --seconds S                key PTT for S seconds (at most 10; the firmware also times out)
     rfoundry_debug.py radio OP [ARG...]              channel +1, pos 3, zone 0, vfo on, freq MHZ, power lowest|LEVEL|+1, copy-vfo, ...
-    rfoundry_debug.py radio mode fm|dmr|p25|nxdn     the channel's mode for now (the VFO's own in the VFO)
+    rfoundry_debug.py radio mode fm|dmr|p25|nxdn|dpmr  the channel's mode for now (the VFO's own in the VFO)
     rfoundry_debug.py radio p25 [nac=N] [tg=N|unit=N] [rx_tgid=N] [talkaround=auto|on|off] [unit_id=N]
                                                 the P25 settings (CONFIG_P25; RAM only, view section p25)
     rfoundry_debug.py radio nxdn [rate=9600|4800] [ran=N] [rx_ran=N] [tx_ran=N] [rx_gid=N] [tg=N|unit=N]
                                  [unit_id=N] [emergency=0|1]
                                                 the NXDN settings (CONFIG_NXDN; RAM only, view section nxdn)
+    rfoundry_debug.py radio dpmr [called=HEX|common=N] [own=HEX|own_common=N] [cc=N] [mine=0|1]
+                                                the dPMR settings (CONFIG_DPMR; RAM only, view section dpmr)
     rfoundry_debug.py volume [N|knob]                print the speaker volume; N (0 mutes, 0..16) sets it, knob gives the knob back
     rfoundry_debug.py log [--follow]                 the firmware's dlog() ring
     rfoundry_debug.py chip                           chip ID, flash size, UID, option bytes (RDP, write protection)
@@ -203,7 +205,7 @@ PRESS, LONG, REPEAT, DOWN, UP = range(5)
 VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features", "dmr_data",
                  "storage", "dmr_ext", "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
                  "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc", "net_link", "cps", "board", "audio", "t3",
-                 "t3_svc", "t3_roam", "voice_cap", "t3_msg", "t3_ra", "p25", "p25_trunk", "nxdn"]
+                 "t3_svc", "t3_roam", "voice_cap", "t3_msg", "t3_ra", "p25", "p25_trunk", "nxdn", "dpmr"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
     OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_DMR_TARGET, OP_DMR_CONTACT, \
@@ -228,8 +230,9 @@ OP_PA_KEYUP = 37
 OP_VFO_SFR = 38
 OP_P25 = 42
 OP_NXDN = 43
+OP_DPMR = 44
 P25_TALKAROUND = {"auto": 0, "on": 1, "off": 2}
-CHANNEL_MODES = {"fm": 0, "dmr": 1, "p25": 2, "nxdn": 3}
+CHANNEL_MODES = {"fm": 0, "dmr": 1, "p25": 2, "nxdn": 3, "dpmr": 4}
 # The VFO's SFR role names (sfrRole_t, docs/spec/sfr.md 4): off, user, user of an ERDM repeater, repeater, ERDM style
 SFR_ROLES = {"off": 0, "user": 1, "user-erdm": 2, "rpt": 3, "rpt-erdm": 4}
 OP_PA_SWEEP = 39
@@ -1339,7 +1342,7 @@ class DebugLink:
         self.radio(OP_VOLUME, bytes([VOLUME_KNOB if step == "knob" else int(step)]))
 
     def dmr_fields(self, mode=None, cc=None, ts=None):
-        """Mode ("fm" / "dmr" / "p25" / "nxdn"), color code 0..15 and timeslot 1 / 2, each None to keep it. On a channel these
+        """Mode ("fm" / "dmr" / "p25" / "nxdn" / "dpmr"), color code 0..15 and timeslot 1 / 2, each None to keep it. On a channel these
         are temporary changes, in the VFO the VFO's own settings (RADIO op 31). A mode the build lacks raises
         DebugLinkError "unavailable"."""
         m = 0xFF if mode is None else CHANNEL_MODES[mode]
@@ -1393,6 +1396,26 @@ class DebugLink:
                "emergency": v["nxdn.tx_emergency"] == "1"}
         cur.update(kw)
         self.nxdn_settings(**cur)
+
+    def dpmr_settings(self, called=0xFFFFFF, own=0, cc=0, rx_mine=False):
+        """The dPMR settings (RADIO op 44; debuglink.md 3.8; RAM only, the dpmr view section shows them): who PTT
+        calls and our own ID (24 bits; a common ID n is n << 16 | 0xFFFF; own 0: the called ID is sent as ours), the
+        channel code (0 the frequency's, 1-16 group A, 17-32 group B), and whether only calls to us play. The engine
+        takes them when it isn't transmitting."""
+        if not (0 <= called <= 0xFFFFFF and 0 <= own <= 0xFFFFFF and 0 <= cc <= 32):
+            raise ValueError("dpmr_settings: IDs 24 bits, cc 0..32")
+        self.radio(OP_DPMR, struct.pack("<BB", 1 if rx_mine else 0, cc) + called.to_bytes(3, "little") +
+                   own.to_bytes(3, "little"))
+
+    def dpmr_settings_update(self, **kw):
+        """dpmr_settings with the settings in force (the dpmr view section) changed only where kw says."""
+        v = self.view(["dpmr"])
+        if v.get("dpmr.built") != "1":
+            raise DebugLinkError("unavailable")
+        cur = {"called": int(v["dpmr.set.called"], 16), "own": int(v["dpmr.set.own"], 16),
+               "cc": int(v["dpmr.set.cc"]), "rx_mine": v["dpmr.set.rx_mine"] == "1"}
+        cur.update(kw)
+        self.dpmr_settings(**cur)
 
     def vfo_sfr(self, role, inbound_ts=1, framing=0, hang=0):
         """The VFO's SFR role (RADIO op 38; sfr.md 4), saved with the VFO: role a SFR_ROLES name or 0..4, the inbound
@@ -2016,6 +2039,22 @@ def cmd_radio(link, a):
             else:
                 raise SystemExit(usage)
         link.nxdn_settings_update(**kw)
+    elif op == "dpmr":                # dpmr [called=HEX|common=N] [own=HEX|own_common=N] [cc=N] [mine=0|1]
+        kw = {}
+        usage = "dpmr [called=HEX|common=N] [own=HEX|own_common=N] [cc=0..32] [mine=0|1]"
+        for a in args:
+            k, _, val = a.partition("=")
+            if k in ("called", "own"):
+                kw[k] = int(val, 16)
+            elif k in ("common", "own_common"):
+                kw["called" if k == "common" else "own"] = (int(val, 0) << 16) | 0xFFFF
+            elif k == "cc":
+                kw["cc"] = int(val, 0)
+            elif k == "mine" and val in ("0", "1"):
+                kw["rx_mine"] = val == "1"
+            else:
+                raise SystemExit(usage)
+        link.dpmr_settings_update(**kw)
     elif op == "cc":                  # cc 0..15
         link.dmr_fields(cc=num(0))
     elif op == "ts":                  # ts 1|2
@@ -2922,7 +2961,7 @@ def main(argv=None):
                                   "monitor", "clear", "reply-cancel", "hotspot-exit", "target", "contact", "call-back",
                                   "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set", "usb",
                                   "usb-settings", "ppp", "vibrate", "mode", "cc", "ts", "sfr", "copy-vfo", "voice-test", "dtmf",
-                                  "tx-limit", "tx-drive", "pa-keyup", "pa-sweep", "pa-keyrun", "p25", "nxdn"])
+                                  "tx-limit", "tx-drive", "pa-keyup", "pa-sweep", "pa-keyrun", "p25", "nxdn", "dpmr"])
     p.add_argument("args", nargs="*")
     p = sub.add_parser("data", help="DMR data: sms, call alert, radio check, settings, inbox")
     p.add_argument("op", choices=["sms", "alert", "check", "settings", "inbox", "read", "emergency", "em-settings",

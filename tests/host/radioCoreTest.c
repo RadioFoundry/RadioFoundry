@@ -2038,7 +2038,15 @@ static void test_vfo_dmr(void)
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 1, 0xFF, 0 }, 3) == DL_ST_OK);
 	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && sim.started && !radio_nxdn_running());
 #endif
-	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 4, 0xFF, 0 }, 3) == DL_ST_BAD_ARG);
+	// dPMR (4) the same; past dPMR: a bad argument
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 4, 0xFF, 0 }, 3) ==
+	      (CONFIG_DPMR ? DL_ST_OK : DL_ST_UNAVAILABLE));
+#if CONFIG_DPMR
+	CHECK(sm.view.ch.mode == RADIO_MODE_DPMR && radio_dpmr_running() && !sim.started);
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 1, 0xFF, 0 }, 3) == DL_ST_OK);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && sim.started && !radio_dpmr_running());
+#endif
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 5, 0xFF, 0 }, 3) == DL_ST_BAD_ARG);
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0xFF, 16, 0 }, 3) == DL_ST_BAD_ARG);
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0xFF, 0xFF, 3 }, 3) == DL_ST_BAD_ARG);
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0xFF, 0xFF }, 2) == DL_ST_BAD_ARG);
@@ -8897,6 +8905,13 @@ bool dpmr_chan_save(uint16_t number, const channel_t *ch, const dpmr_chan_t *c)
 	return codeplug_set_channel(number, ch);
 }
 
+static void dpmr_view_text(char *buf, size_t cap)
+{
+	dl_text_t t;
+	dl_text_init(&t, buf, cap);
+	debuglink_view_dpmr(&sm.view, &t);
+}
+
 static void setup_codeplug_dpmr(void)
 {
 	setup_codeplug();
@@ -8939,6 +8954,10 @@ static void test_dpmr_rx(void)
 	CHECK(v->talk == DPMR_ID_ALL && v->tx_own == DPMR_ID_ALL && v->tx_cc == a2 && dpmr_cc_index(a2) == 2);
 	radio_dpmr_stats(&st);
 	CHECK(st.begins == 1 && st.begin_fails == 0);
+	static char buf[4096];
+	dpmr_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "dpmr.built=1\ndpmr.on=1\ndpmr.rx=0\n") != NULL && strstr(buf, "dpmr.talk=FFFFFF\n") != NULL);
+	CHECK(strstr(buf, "dpmr.fit=7\n") != NULL && strstr(buf, "dpmr.run.cc=2\n") != NULL);
 	run(300);				// noise: no call
 	CHECK(sm.view.state == RS_IDLE && !hw.led[LED_GREEN]);
 
@@ -8967,6 +8986,13 @@ static void test_dpmr_rx(void)
 	radio_dpmr_stats(&st);
 	CHECK(st.rx_calls == 1 && st.headers >= 1 && st.ends >= 1 && st.voice >= 40 && st.hi_fail == 0 &&
 	      st.cch_fail == 0);
+	dpmr_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "dpmr.ended=1\n") != NULL && strstr(buf, "dpmr.called=57FFFF\ndpmr.own=57FFFF\n") != NULL &&
+	      strstr(buf, "dpmr.rx_calls=1\n") != NULL);
+	// RESET_COUNTERS' part
+	debuglink_dpmr_reset();
+	radio_dpmr_stats(&st);
+	CHECK(st.rx_calls == 0 && st.voice == 0);
 	run(500);
 	v_decode_hook = NULL;
 
@@ -9169,6 +9195,19 @@ static void test_dpmr_mode(void)
 	req(RREQ_MODE, RADIO_MODE_DPMR);
 	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_DPMR && radio_dpmr_running() && hw_mode == RADIO_MODE_DMR);
 	CHECK(!(sm.view.temp & RADIO_TEMP_MODE));
+	// The settings from the debug link: own calls only, code B1, common ID 9 called, address 0x123456 ours
+	static const uint8_t op[] = { 0x01, 17, 0xFF, 0xFF, 0x09, 0x56, 0x34, 0x12 };
+	radio_dpmr_settings_t s;
+	CHECK(debuglink_radio_feature_op(DL_OP_DPMR, op, sizeof op) == DL_ST_OK);
+	radio_dpmr_settings(&s);
+	CHECK(s.rx_mine && s.cc == 17 && s.called == DPMR_ID_COMMON(9) && s.own == 0x123456u);
+	CHECK(sm.view.dpmr.talk == DPMR_ID_COMMON(9) && sm.view.dpmr.tx_cc == dpmr_cc_group(true, 0));
+	static const uint8_t bad_cc[] = { 0x00, 33, 0, 0, 0, 0, 0, 0 }, bad_flag[] = { 0x02, 0, 0, 0, 0, 0, 0, 0 };
+	CHECK(debuglink_radio_feature_op(DL_OP_DPMR, bad_cc, sizeof bad_cc) == DL_ST_BAD_ARG);
+	CHECK(debuglink_radio_feature_op(DL_OP_DPMR, bad_flag, sizeof bad_flag) == DL_ST_BAD_ARG);
+	CHECK(debuglink_radio_feature_op(DL_OP_DPMR, op, 7) == DL_ST_BAD_ARG);
+	CHECK(debuglink_is_feature_op(DL_OP_DPMR));
+	dpmr_defaults();
 	// Saved with the VFO, back after a restart
 	run(5000);
 	settings_read(&set);

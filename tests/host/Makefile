@@ -370,7 +370,7 @@ radioCoreTestP25Nxdn: $(RCP25NX) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE
 # vocoder path, its own engine memory (no P25 to share)
 TESTS   += radioCoreTestDpmr radioCoreTestAirAll
 RCDPMR  := $(RCORE) $(CORE)/radio/radio_dpmr.c $(CORE)/dpmr/dpmr_engine.c $(DPMR) $(CORE)/air/air_session.c \
-           $(CORE)/air/air_framer.c $(CORE)/hostlink/build_info.c
+           $(CORE)/air/air_framer.c $(CORE)/debuglink/debuglink_view_dpmr.c $(CORE)/hostlink/build_info.c
 radioCoreTestDpmr: $(RCDPMR) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                    $(CORE)/ui/ui_svc.h $(wildcard $(CORE)/dpmr/*.h) $(wildcard $(CORE)/air/*.h) $(wildcard $(CORE)/dmr/ambe/*.h)
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
@@ -378,7 +378,7 @@ radioCoreTestDpmr: $(RCDPMR) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dm
 
 # P25, NXDN and dPMR together, no lending vocoder: one engine at a time, NXDN and dPMR in the memory P25 keeps for
 # itself, a mode change between any two
-RCAIRALL := $(RCP25NX) $(CORE)/radio/radio_dpmr.c $(CORE)/dpmr/dpmr_engine.c $(DPMR)
+RCAIRALL := $(RCP25NX) $(CORE)/radio/radio_dpmr.c $(CORE)/dpmr/dpmr_engine.c $(DPMR) $(CORE)/debuglink/debuglink_view_dpmr.c
 radioCoreTestAirAll: $(RCAIRALL) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                      $(CORE)/ui/ui_svc.h $(wildcard $(CORE)/nxdn/*.h) $(wildcard $(CORE)/p25/*.h) $(wildcard $(CORE)/dpmr/*.h) \
                      $(wildcard $(CORE)/air/*.h) $(wildcard $(CORE)/dmr/ambe/*.h)
