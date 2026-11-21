@@ -1534,8 +1534,14 @@ zoneImportTest: zoneImportTest.c $(ZIMPORT) $(CORE)/codeplug/zone_import.h $(COR
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_DMR_TRUNK=0 -o $@ zoneImportTest.c $(ZIMPORT)
 # The same with the modes part: channels of a kind and their systems sent and taken (CONFIG_ZONE_SHARE_MODES)
 TESTS   += zoneImportModesTest
-zoneImportModesTest: zoneImportTest.c $(ZIMPORT) $(CORE)/codeplug/codeplug_records.c $(CORE)/codeplug/zone_import.h $(CORE)/dmr/zoneShare.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_P25=1 -o $@ zoneImportTest.c $(ZIMPORT) $(CORE)/codeplug/codeplug_records.c
+ZIAIR   := $(CORE)/codeplug/codeplug_records.c $(CORE)/codeplug/codeplug_air_contacts.c $(CORE)/p25/p25_codeplug.c
+zoneImportModesTest: zoneImportTest.c $(ZIMPORT) $(ZIAIR) $(CORE)/codeplug/zone_import.h $(CORE)/dmr/zoneShare.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_P25=1 -o $@ zoneImportTest.c $(ZIMPORT) $(ZIAIR)
+# ... and with P25 trunking, whose channels have the flag in their own block (a trunked channel's tag is a different
+# block from the conventional one)
+TESTS   += zoneImportP25TrunkTest
+zoneImportP25TrunkTest: zoneImportTest.c $(ZIMPORT) $(ZIAIR) $(CORE)/codeplug/zone_import.h $(CORE)/dmr/zoneShare.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -o $@ zoneImportTest.c $(ZIMPORT) $(ZIAIR)
 
 # The modes part with NXDN alone on (CONFIG_ZONE_SHARE_MODES follows either mode)
 TESTS   += zoneImportNxdnTest
@@ -1543,9 +1549,10 @@ zoneImportNxdnTest: zoneImportTest.c $(ZIMPORT) $(CORE)/codeplug/codeplug_record
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_NXDN=1 -o $@ zoneImportTest.c $(ZIMPORT) $(CORE)/codeplug/codeplug_records.c
 
 run: run-zimport
-run-zimport: zoneImportTest zoneImportModesTest zoneImportNxdnTest
+run-zimport: zoneImportTest zoneImportModesTest zoneImportP25TrunkTest zoneImportNxdnTest
 	./zoneImportTest
 	./zoneImportModesTest
+	./zoneImportP25TrunkTest
 	./zoneImportNxdnTest
 .PHONY: run-zimport
 

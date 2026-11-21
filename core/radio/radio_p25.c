@@ -24,6 +24,7 @@ typedef struct {
 	p25_follow_cfg_t cfg;
 	p25_follow_cc_t cc[P25_CP_CTL_MAX];
 	p25_follow_iden_t iden[P25_FOLLOW_IDENS];
+	uint16_t groups[CODEPLUG_LIST_LEN];	// the groups cfg follows besides the talk group
 	// The last retune the follower asked (its tune hook, from either task): want moves past done until the radio
 	// task has carried it out
 	volatile uint8_t want, done;
@@ -308,6 +309,12 @@ static void trunk_params(p25_trunk_t *t, const p25_trunk_cfg_t *l, bool tx, bool
 		c->flags |= P25_FOLLOW_BAD_CRC;
 	c->unit_id = (set.unit_id != 0 ? set.unit_id : l->unit_id) & 0xFFFFFFu;
 	c->talk_group = l->talk_group;
+	// The RX list's groups, when the channel names P25 contacts (p25-codeplug.md 3)
+	c->ngroups = l->group_count;
+	if (l->group_count != 0) {
+		memcpy(t->groups, l->groups, l->group_count * sizeof(t->groups[0]));
+		c->groups = t->groups;
+	}
 	if (tx && !l->listen_only && c->unit_id != 0 && c->talk_group != 0)
 		c->flags |= P25_FOLLOW_TX;
 	if (l->sys.options & P25_TSYS_NO_REG)

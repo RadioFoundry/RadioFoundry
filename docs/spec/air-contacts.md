@@ -69,6 +69,8 @@ valid entries of mode 2 (3.1). A group entry is that talk group, a unit entry a 
 65535. An empty, invalid or other-mode slot is no contact (talk group 1), and in the RX group list it is skipped. On a
 trunked channel the list's group entries are also the groups followed. The firmware reads a slot per use, not through
 the lookup cache of 3.2. A channel without the bit uses the DMR contact list as before, and a radio never sets the bit.
+The radio shows a flagged channel's target but doesn't edit the slots yet, and zone sharing sends the target by value as
+a DMR contact, with the bit clear ([zone-share.md](zone-share.md) 4.2).
 A firmware that predates this reads the slot number as a DMR contact index; the radio says it has the feature by the
 `p25contacts` token of `features=` ([debuglink.md](debuglink.md) 3.1).
 

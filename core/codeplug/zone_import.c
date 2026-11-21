@@ -12,6 +12,9 @@
 #include "codeplug/codeplug_kv.h"
 #include "codeplug/codeplug_tag.h"
 #include "codeplug/codeplug_records.h"
+#if CONFIG_P25 && CONFIG_ZONE_SHARE_MODES
+#include "p25/p25_codeplug.h"	// a flagged P25 channel's contact is a P25 contact slot (zone-share.md 4.2)
+#endif
 #endif
 
 // The import's working state: static, as the housekeeping task's stack is small. One import or export at a time (the
@@ -910,6 +913,40 @@ static bool contact_on_air(const channel_t *ch, zsContact_t *c, uint16_t *index)
 	return true;
 }
 
+// What tells one contact in the record from another: a DMR contact's index, or for a P25 channel whose contact is a P25
+// contact slot its target's value
+#define CT_KEY_AIR	0x80000000u
+
+// The talk contact of channel number (ch read by codeplug_channel) on air, with its key. A P25 channel whose contact is
+// a P25 contact slot goes as its target by value, a group, a unit or the all call, as a DMR contact: the receiver has
+// no table of P25 contacts to put a slot in, and the tag it gets has the flag clear (tag_on_air). False when it has none
+static bool talk_contact_on_air(uint16_t number, const channel_t *ch, zsContact_t *c, uint32_t *key)
+{
+#if CONFIG_P25 && CONFIG_ZONE_SHARE_MODES
+	p25_talk_t t;
+
+	if ((ch->kind == CODEPLUG_KIND_P25 || ch->kind == CODEPLUG_KIND_P25_TRUNK) &&
+	    p25_channel_talk(number, ch, true, &t) && t.air) {
+		if (!t.set) {
+			return false;
+		}
+		memset(c, 0, sizeof(*c));
+		c->type = t.unit ? ZS_CONTACT_PRIVATE : (t.id == P25_CP_TG_ALL) ? ZS_CONTACT_ALL_CALL : ZS_CONTACT_GROUP;
+		c->id = (c->type == ZS_CONTACT_ALL_CALL) ? 0xFFFFFF : t.id;
+		strncpy(c->name, t.name, ZS_NAME_MAX);
+		*key = CT_KEY_AIR | ((uint32_t)c->type << 24) | c->id;
+		return true;
+	}
+#else
+	(void)number;
+#endif
+	uint16_t index;
+	bool ok = contact_on_air(ch, c, &index);
+
+	*key = index;
+	return ok;
+}
+
 // A stable zone ID from the name: the same zone sent again updates the receiver's import
 static uint32_t zone_id_of(const char *name, uint8_t flags)
 {
@@ -1006,6 +1043,17 @@ static bool tag_on_air(uint16_t number, const channel_t *ch, zsTag_t *t)
 	if (len < 0 || len > ZS_BODY_MAX || !codeplug_tag_read(number, &raw)) {
 		return false;
 	}
+#if CONFIG_P25
+	// The block goes without the air-contacts flag: the channel's contact is sent as a DMR one (talk_contact_on_air)
+	if (len >= 1 && ch->kind == CODEPLUG_KIND_P25) {
+		ex_params[0] &= (uint8_t)~P25_CONV_AIR_CONTACTS;
+	}
+#if CONFIG_P25_TRUNK
+	if (len >= 1 && ch->kind == CODEPLUG_KIND_P25_TRUNK) {
+		ex_params[0] &= (uint8_t)~P25_TCH_AIR_CONTACTS;
+	}
+#endif
+#endif
 	memset(t, 0, sizeof(*t));
 	t->kind = ch->kind;
 	t->flags = raw.flags & ZS_TAG_FLAGS;		// the fallback is a channel number here: not carried
@@ -1074,7 +1122,8 @@ static void write_modes(zsWriter_t *w, const uint16_t *num, uint8_t channels, ui
 static int export_list(const char *name, uint8_t flags, const uint16_t *list, uint16_t n, uint8_t *out, int size,
 		       uint8_t *included)
 {
-	static uint16_t ct_src[ZS_CONTACTS_MAX];	// codeplug index of each record contact
+	static uint32_t ct_src[ZS_CONTACTS_MAX];	// each record contact's key (talk_contact_on_air)
+	static uint16_t ct_chan[ZS_CONTACTS_MAX];	// the channel whose contact it is, to read it again
 	static uint8_t ch_ct[CODEPLUG_ZONE_MAX];	// each included channel's record contact (1-based), 0 none
 	static uint16_t ch_num[CODEPLUG_ZONE_MAX];
 	uint8_t contacts = 0, channels = 0;
@@ -1119,9 +1168,9 @@ static int export_list(const char *name, uint8_t flags, const uint16_t *list, ui
 		}
 		channel_on_air(&ch, &z);
 		uint8_t ref = 0;
-		uint16_t idx = 0;
+		uint32_t idx = 0;
 
-		if (z.dmr && contact_on_air(&ch, &c, &idx)) {
+		if (z.dmr && talk_contact_on_air(list[i], &ch, &c, &idx)) {
 			for (uint8_t k = 0; k < contacts; k++) {
 				if (ct_src[k] == idx) {
 					ref = (uint8_t)(k + 1);
@@ -1142,6 +1191,7 @@ static int export_list(const char *name, uint8_t flags, const uint16_t *list, ui
 		}
 		used += need;
 		if (ref == contacts + 1) {
+			ct_chan[contacts] = list[i];
 			ct_src[contacts++] = idx;
 		}
 #if CONFIG_ZONE_SHARE_MODES
@@ -1168,13 +1218,9 @@ static int export_list(const char *name, uint8_t flags, const uint16_t *list, ui
 
 	zsWriterBegin(&w, out, budget, zone_id_of(name, flags), flags, name);
 	for (uint8_t k = 0; k < contacts; k++) {
-		channel_t probe;
+		uint32_t key;
 
-		memset(&probe, 0, sizeof(probe));
-		probe.contact = ct_src[k];
-		uint16_t idx;
-
-		if (!contact_on_air(&probe, &c, &idx)) {
+		if (!codeplug_channel(ct_chan[k], &ch) || !talk_contact_on_air(ct_chan[k], &ch, &c, &key) || key != ct_src[k]) {
 			return 0;
 		}
 		zsWriterContact(&w, &c);
