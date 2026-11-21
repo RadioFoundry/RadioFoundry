@@ -108,6 +108,9 @@ void ui_svc_poll(void)
 #if CONFIG_DMR_EMERGENCY
 	ui_svc_emergency_poll();
 #endif
+#if CONFIG_APRS_RX
+	ui_svc_aprs_msg_poll();
+#endif
 	// The event's own serial, not dmr_data_serial(): that one also moves when a message is read or deleted, and the
 	// last event would come again ("Message from" over "Message deleted", with its tone)
 	static uint32_t seen;
