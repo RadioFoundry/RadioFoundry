@@ -478,7 +478,9 @@ static void air_step(void);	// with the far radio's engine, below
 static bool far_on_air(void) { return false; }
 #endif
 
-const board_t board = {
+// Writable under the symbol the core reads as const (board.h): the caps change at run time here (a board whose beeps
+// can't sound on air)
+board_t board_rw __asm__("board") = {
 	.name = "fake",
 	.hwopts = fake_hwopts,
 	.hwopt_count = 1,
@@ -6654,6 +6656,124 @@ static void test_p25_tx(void)
 	far_stop();
 }
 
+// The talk permit on P25 (#803), as DMR's: Settings > Sound's switch, the channel's "no beep", the DMR row's start
+// tone. Played as the transmitter keys; on a board whose beeps can't sound on air, first, and the key-up waits for it
+static void test_p25_permit(void)
+{
+	beep_stats_t b0, b1;
+	radio_settings_t sr;
+
+	setup_codeplug_p25();
+	start();
+	p25_defaults();
+	aud.feed = true;	// the beeps play out on the PCM stream, so the hold before keying ends as on the radio
+	req(RREQ_ZONE_POS, 2);
+	run(100);
+	CHECK(sm.view.ch.mode == RADIO_MODE_P25 && radio_p25_running());
+
+	// Beeps that sound on air: the permit as it keys
+	beep_get_stats(&b0);
+	int calls = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	beep_get_stats(&b1);
+	CHECK(sm.view.state == RS_TX && hw.keyed && hw.tx_calls == calls + 1);
+	CHECK(b1.played == b0.played + 1 && b1.last == BEEP_TX_PERMIT);
+	run(300);
+	req(RREQ_PTT, 0);
+	run(600);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
+
+	// The switch off, then a no-beep channel: none
+	ui_svc_apply(UI_SET_TALK_PERMIT, 0);
+	run(20);
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	run(300);
+	req(RREQ_PTT, 0);
+	run(600);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played && sm.view.state == RS_IDLE);
+	ui_svc_apply(UI_SET_TALK_PERMIT, 1);
+	chans[3].no_beep = true;
+	req(RREQ_RELOAD, 0);
+	run(100);
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	run(300);
+	req(RREQ_PTT, 0);
+	run(600);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played && sm.view.state == RS_IDLE);
+	chans[3].no_beep = false;
+	req(RREQ_RELOAD, 0);
+	run(100);
+
+	// The DMR row's start tone on the speaker replaces it: a digital voice's talk permit (the FM row's is not asked)
+	radio_get_settings(&sr);
+	sr.sig_dmr[SIG_EV_BEGIN] = SIG_OUT_LOCAL;
+	sr.sig_hz[SIG_EV_BEGIN][0] = 910;
+	sr.sig_ms[SIG_EV_BEGIN][0] = 10;
+	radio_set_settings(&sr);
+	run(20);
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	beep_get_stats(&b1);
+	CHECK(sm.view.state == RS_TX && b1.played == b0.played + 1 && b1.last == BEEP_CUSTOM);
+	run(300);
+	req(RREQ_PTT, 0);
+	run(600);
+	sr.sig_dmr[SIG_EV_BEGIN] = SIG_OUT_DEFAULT;
+	sr.sig_hz[SIG_EV_BEGIN][0] = 0;
+	sr.sig_ms[SIG_EV_BEGIN][0] = 0;
+	radio_set_settings(&sr);
+	run(20);
+
+	// Beeps that can't sound on air: the short permit first, the key-up once it is over
+	uint32_t caps = board_rw.caps;
+	board_rw.caps |= CAP_BEEP_NOT_ON_AIR;
+	beep_get_stats(&b0);
+	calls = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	beep_get_stats(&b1);
+	CHECK(!hw.keyed && hw.tx_calls == calls && sm.view.state != RS_TX);
+	CHECK(b1.played == b0.played + 1 && b1.last == BEEP_TX_PERMIT_SHORT && beep_busy());
+	int waited = 0;
+	while (!hw.keyed && waited < 2000) {
+		run(10);
+		waited += 10;
+	}
+	// Keyed as the beep ends (about 80 ms here), not at the hold's limit
+	CHECK(hw.keyed && sm.view.state == RS_TX && hw.tx_calls == calls + 1 && waited >= 40 && waited < 400);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played + 1);	// once: none again as it keys
+	run(300);
+	req(RREQ_PTT, 0);
+	run(600);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
+
+	// Let go during the permit: it never keys
+	calls = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	run(10);
+	req(RREQ_PTT, 0);
+	run(1500);
+	CHECK(hw.tx_calls == calls && !hw.keyed && sm.view.state == RS_IDLE);
+
+	// The switch off: keyed at once, no beep
+	ui_svc_apply(UI_SET_TALK_PERMIT, 0);
+	run(20);
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	beep_get_stats(&b1);
+	CHECK(hw.keyed && sm.view.state == RS_TX && b1.played == b0.played);
+	req(RREQ_PTT, 0);
+	run(600);
+	ui_svc_apply(UI_SET_TALK_PERMIT, 1);
+	run(20);
+	board_rw.caps = caps;
+	aud.feed = false;
+}
+
 static void test_p25_denied(void)
 {
 	radio_p25_stats_t st;
@@ -7785,6 +7905,7 @@ static void test_p25(void)
 #endif
 #endif
 	test_p25_tx();
+	test_p25_permit();
 	test_p25_denied();
 	test_p25_leave();
 	test_p25_vfo();
