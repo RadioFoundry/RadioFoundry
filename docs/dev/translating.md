@@ -14,7 +14,7 @@ source of both. This page is the how-to; the rules are in [ui.md 2.5](../spec/ui
 | Tool | `tools/i18n.py` | `python3 -m rfoundrysite.i18n` (from `site/`) |
 | Build switch | `CONFIG_LANG_<CODE>`, one per language; `CONFIG_LANG_DEFAULT_<CODE>` to start in it | None: every language is on the site |
 | Missing string | Shown in English; fails CI | Shown in English; fails CI |
-| Characters | ASCII, Latin-1, supported [Extended Latin letters](#extended-latin-letters), and [CJK catalogs](#chinese-and-other-cjk-languages) | Any Unicode |
+| Characters | ASCII, Latin-1 (U+00A0 to U+00FF), supported [Extended Latin letters](#extended-latin-letters), and [CJK catalogs](#chinese-and-other-cjk-languages) | Any Unicode |
 
 ## Translating the radio
 
