@@ -173,6 +173,13 @@ def _limits(radio):
     return rfoundry_hil.board_hil(rfoundry_hil.board_id(radio.version().get("board"))).get("limits", {})
 
 
+def burst_carrier(sdr):
+    """The bursts' carrier offset in a dmr_watch_result() (median, Hz; corrected by the ppm the capture recorded), None
+    without a burst"""
+    fo = sorted(b["foff_hz"] for b in sdr.get("bursts", []))
+    return fo[len(fo) // 2] if fo else None
+
+
 def _tx_checks(sdr, heard, own, target, private, cc, before, after, alias, pytestconfig, limits=None):
     """The dmr_bench checks on one over from us (the module docstring): the SDR analysis, the bench modem's
     calls, the radio's counters before and after the over; limits: the board's overrides. Returns the
@@ -190,9 +197,8 @@ def _tx_checks(sdr, heard, own, target, private, cc, before, after, alias, pytes
         if fixed:
             warnings.warn(f"the bench modem corrected {fixed} AMBE bits in {frames} frames (overloaded?)")
     max_foff = pytestconfig.getoption("--max-foff")
-    fo = sorted(b["foff_hz"] for b in sdr.get("bursts", []))     # corrected by the ppm the capture recorded
-    if fo:
-        med = fo[len(fo) // 2]
+    med = burst_carrier(sdr)
+    if med is not None:
         c.add(f"|carrier offset| < {max_foff} Hz", abs(med) < max_foff, f"median {med:.0f} Hz")
     tx_calls = after.get("call.tx_calls", 0) - before.get("call.tx_calls", 0)
     c.add("radio: one TX call", tx_calls == 1, f"{tx_calls}")

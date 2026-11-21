@@ -45,6 +45,10 @@ unit to that talk group (p25.src, p25.dst), at least the call's voice frames les
 MAX_RX_BAD of them bad, no link control failure, and voice frames played where the build has the decoder
 (p25v.frames).
 
+test_p25_rx_offset[-500|500] (the same opt-ins): test_p25_rx_from_bench's call with the bench's carrier RX_OFFSET_HZ
+below and above --p25-mhz (the fsk4 transmitter's offset_hz), the same pass criteria. A bench board whose done record
+doesn't give the offset back skips (bench).
+
 test_p25_trunk_follow (opt-in: --p25-trunk-channel NAME; nothing is sent, PTT is not pressed): the stored P25 trunked
 channel of that name, its system's control channel heard at the rig (p25-trunking.md 7). The radio must run P25 on it
 (`mode=p25`, `ch.kind=3`), the follower must hold a control channel (`p25t.state=2`) within CC_WAIT_S with most blocks
@@ -344,6 +348,13 @@ def key_over(radio, sdr_bench, mhz, v0):
                       for k in ("tx_calls", "tx_underruns"))
 
 
+def sync_offset(lines):
+    """The carrier offset the soft modem fitted at its syncs (p25tool's lines; median, Hz), None where it measured no
+    level. Fitted to the sync's known symbols, it leaves out the mean of the symbols sent"""
+    syncs = [d for d in lines if d["ev"] == "sync" and "outer_hz" in d]
+    return statistics.median(d["offset_hz"] for d in syncs) if syncs else None
+
+
 def check_over(lines, nac, tg, src, group, grew):
     """The pass criteria of an over decoded off air (p25tool's lines): one call from src with nac, to talk group tg
     (group) or unit tg"""
@@ -389,7 +400,7 @@ def check_over(lines, nac, tg, src, group, grew):
     assert c["lc_fail"] == 0 and c["es_fail"] == 0, f"LC fails {c['lc_fail']}, ES fails {c['es_fail']}"
     assert syncs, "the soft modem measured no level"
     outer = statistics.median(d["outer_hz"] for d in syncs)
-    offset = statistics.median(d["offset_hz"] for d in syncs)
+    offset = sync_offset(lines)
     print(f"outer deviation {outer:.0f} Hz ({outer / 18:.1f} % of 1800), carrier offset {offset:+.0f} Hz (not judged)")
     assert DEV_PCT[0] <= outer / 18 <= DEV_PCT[1], f"outer deviation {outer:.0f} Hz"
     assert grew[0] == 1, f"the radio counted {grew[0]} P25 calls"
@@ -441,6 +452,7 @@ RX_PAIRS = 4            # LDU pairs: with the header and the terminator the call
 RX_SRC, RX_TG = 1234567, 4001
 MAX_RX_BAD = 0.05       # of the voice frames heard
 NAC_DEFAULT = 0x293
+RX_OFFSET_HZ = 500      # the bench's carrier off the channel, as test_dmr_audio_rx_offset's
 
 
 @pytest.mark.feature("p25")
@@ -449,6 +461,21 @@ NAC_DEFAULT = 0x293
 @pytest.mark.bench_modem
 @pytest.mark.needs_switch("VFO")
 def test_p25_rx_from_bench(radio, sdr_bench, pytestconfig):
+    rx_from_bench(radio, sdr_bench, pytestconfig)
+
+
+@pytest.mark.feature("p25")
+@pytest.mark.rf
+@pytest.mark.bench_service
+@pytest.mark.bench_modem
+@pytest.mark.needs_switch("VFO")
+@pytest.mark.parametrize("offset_hz", [-RX_OFFSET_HZ, RX_OFFSET_HZ])
+def test_p25_rx_offset(radio, sdr_bench, pytestconfig, offset_hz):
+    rx_from_bench(radio, sdr_bench, pytestconfig, offset_hz)
+
+
+def rx_from_bench(radio, sdr_bench, pytestconfig, offset_hz=0):
+    """test_p25_rx_from_bench's call and pass criteria, the bench's carrier offset_hz from --p25-mhz"""
     import p25tool
     mhz = rig(pytestconfig, "p25-mhz")
     hz = round(mhz * 1e6)
@@ -478,8 +505,10 @@ def test_p25_rx_from_bench(radio, sdr_bench, pytestconfig):
                 with open(path, "rb") as f:
                     data = f.read()
                 tx = sdr_bench.tx_start("fsk4", mhz, None, max_s=n / 4800 + 2, symbols=n, hex=data.hex(), shape="c4fm",
-                                        clip_hz=4064)
-                tx.wait(n / 4800 + 30)
+                                        clip_hz=4064, offset_hz=offset_hz or None)
+                done = tx.wait(n / 4800 + 30)
+            if float(done.get("offset_hz") or 0) != offset_hz:
+                skip("bench", f"the bench board sent no carrier offset (its done record: {done})")
             v1 = radio.wait_for(lambda x: x.get("p25.rx") != "1", 3.0, sections=("core", "p25"),
                                 what="the reception ended")
         finally:
@@ -489,9 +518,9 @@ def test_p25_rx_from_bench(radio, sdr_bench, pytestconfig):
         return (as_int(v1.get(key)) or 0) - (as_int(v0.get(key)) or 0)
 
     sent = RX_PAIRS * 18
-    print(f"\np25 from the bench: calls {grew('p25.rx_calls')}, units {grew('p25.units')}, voice frames "
-          f"{grew('p25.voice')} of {sent} ({grew('p25.voice_bad')} bad, {grew('p25.voice_bits')} bits corrected), "
-          f"played {grew('p25v.frames') if 'p25v.frames' in v1 else 'n/a'}, from {v1.get('p25.src')} to "
+    print(f"\np25 from the bench, carrier {offset_hz:+d} Hz: calls {grew('p25.rx_calls')}, units {grew('p25.units')}, "
+          f"voice frames {grew('p25.voice')} of {sent} ({grew('p25.voice_bad')} bad, {grew('p25.voice_bits')} bits "
+          f"corrected), played {grew('p25v.frames') if 'p25v.frames' in v1 else 'n/a'}, from {v1.get('p25.src')} to "
           f"{v1.get('p25.dst')}, RSSI {v1.get('rssi_dbm')} dBm")
     assert grew("p25.rx_calls") == 1, f"{grew('p25.rx_calls')} receptions counted"
     assert v1.get("p25.src") == str(RX_SRC) and v1.get("p25.dst") == str(RX_TG), \
