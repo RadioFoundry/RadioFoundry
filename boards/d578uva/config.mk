@@ -36,8 +36,11 @@ CONFIG_BT_PTT ?= y
 BOARD_UNSUPPORTED += FONT_XL	# the 160x128 panel is too small for the large font (it is for 240 px and wider)
 BOARD_UNSUPPORTED += VIBRATE	# no vibration motor (a mobile)
 # Left out of tools/ci.sh's maximal configuration: what doesn't fit the RAM with DMR on (above), TCP and the services
-# on it; and PPP, which stands in for the USB network adapter on radios without one
-MAXIMAL_SKIP := NET_PPP NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RIGCTL NET_APRSIS
+# on it, and the zone and channel control over UDP (about 100 bytes, built by default: the maximal set's languages and
+# fonts take that RAM); and PPP, which stands in for the USB network adapter on radios without one
+MAXIMAL_SKIP := NET_PPP NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RIGCTL NET_APRSIS NET_RADIO_UDP
+# (that one follows the IP gateway by default, so the maximal configuration turns it off by name)
+MAXIMAL_VARS := CONFIG_NET_RADIO_UDP=n
 # What the hardware can do but this radio's driver or glue doesn't yet
 BOARD_NOT_WRITTEN += HOTSPOT	# needs the voice frames on the MCU: the baseband's frame bypass isn't written
 BOARD_NOT_WRITTEN += HOTSPOT_SPLIT	# needs the hotspot (above)
