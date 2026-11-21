@@ -154,13 +154,21 @@ static void test_encode(void)
 	// A byte a writer filled with 0xFF is "not set", not a burst on every channel; turning the burst on there is
 	// never written as 0xFF again
 	r[0x2A] = 0xFF;
-	CHECK(codeplug_openfw_decode(r, &d) && !d.tone_burst);
+	CHECK(codeplug_openfw_decode(r, &d) && !d.tone_burst && !d.accept_bad_crc);
 	codeplug_openfw_encode(&d, r);
-	CHECK(r[0x2A] == 0xBF);
+	CHECK(r[0x2A] == 0x8F);
 	r[0x2A] = 0xFF;
 	d.tone_burst = true;
 	codeplug_openfw_encode(&d, r);
 	CHECK(r[0x2A] == 0xCF && codeplug_openfw_decode(r, &d) && d.tone_burst);
+	// Accept invalid CRC is bits 5-4 = 2; the 0xBF earlier versions wrote with the burst off reads as off
+	r[0x2A] = 0xBF;
+	CHECK(codeplug_openfw_decode(r, &d) && !d.accept_bad_crc && !d.tone_burst);
+	d.accept_bad_crc = true;
+	codeplug_openfw_encode(&d, r);
+	CHECK(r[0x2A] == 0xAF && codeplug_openfw_decode(r, &d) && d.accept_bad_crc && !d.tone_burst);
+	r[0x2A] = 0x30;
+	CHECK(codeplug_openfw_decode(r, &d) && !d.accept_bad_crc);
 }
 
 static void test_materialize(void)

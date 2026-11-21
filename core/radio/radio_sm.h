@@ -308,6 +308,7 @@ typedef struct {
 	uint32_t deny_led_ms;		// a TX deny: red, green, red, green, red, green from here
 	bool deny_led;
 	bool deny_rx;			// FM: PTT refused as busy over a reception, which plays on while PTT is held
+	int8_t rx_open_out;		// last board.radio->rx_open(), -1 = not yet (here: fills the padding before wake_led_ms)
 	uint32_t wake_led_ms;		// a repeater wake-up burst went out here: red for RADIO_LED_WAKE_MS
 	bool wake_led;
 	uint8_t wake_seen;		// dmr_call_view_t.wake_sent last seen
@@ -463,6 +464,7 @@ typedef struct {
 	uint16_t group_hang_ms, private_hang_ms;	// codeplug hang times, 0 = the stack's default reply window
 	uint32_t hs_rx_hz, hs_tx_hz;	// hotspot frequencies
 	uint8_t hs_power;		// hotspot board power level
+	bool hs_power_due;		// hotspot: hs_power came while the modem transmitted; keyed again at its end
 	bool hs_carrier;		// hotspot: the receiver hears a carrier
 #if RADIO_SM_CW
 	uint8_t cw_phase;		// a CW ID: CW_* in radio_sm.c, 0 = not keying
@@ -491,7 +493,7 @@ typedef struct {
 	uint32_t t3_probe_ms;		// on the fallback channel: when to look next; probing: until when
 	channel_t t3_fb_ch;
 	bool t3_both;			// on a control channel: both slots
-	bool t3_ptt_wait;		// PTT held on the TSCC: waiting for our grant
+	bool t3_ptt_wait;		// waiting for our grant after a PTT-initiated call request
 	bool t3_als_keyed;		// keyed by an Ambient Listening call (6.6.2.6), not by the user
 	uint32_t t3_als_quiet_ms;	// unkeyed at T_ALS: the call ends once the terminator is out
 	uint8_t t3_stun_kept;		// settings t3_stun as last written for the system in use (0: not stunned)

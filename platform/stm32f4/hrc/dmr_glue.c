@@ -500,6 +500,13 @@ static void sys_line_check(void)
 	NVIC_SetPendingIRQ(EXTI1_IRQn);
 }
 
+#if CONFIG_DMR
+// The soft combiner (dmr-modem.md 2.2.1), about 2 KB of heap, held only while DMR runs: set and freed by this task,
+// the one that combines
+static const dmrSoftHoldOps_t soft_ops = { pvPortMalloc, vPortFree, lock, unlock };
+static dmrSoftHold_t soft_hold = { &eng.soft, &soft_ops, { 0 } };
+#endif
+
 static void dmr_task(void *arg)
 {
 	(void)arg;
@@ -507,6 +514,9 @@ static void dmr_task(void *arg)
 	dmr_burst_t burst;
 	for (;;) {
 		ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(DMR_POLL_MS));
+#if CONFIG_DMR
+		dmrSoftHoldSet(&soft_hold, active && !AIR_ON());
+#endif
 		if (active) {
 			hrc6000_dmr_poll(&eng);
 			if (eng.st.tx_stalls + sys_stuck != lost_seen) {
@@ -1105,6 +1115,11 @@ const hal_baseband_t stm32_hrc_baseband = {
 	.rx_read = tap_read, .rx_stop = tap_stop, .tx_start = NULL, .tx_write = NULL, .tx_stop = NULL,
 	.now_us = air_now_us, .rx_time_us = tap_time,
 };
+
+hrc_t *stm32_hrc_copy_chip(void)
+{
+	return air_on && AIR->copy ? eng.dev : NULL;
+}
 #endif
 
 // --- Bring-up counters ---
@@ -1358,6 +1373,20 @@ bool stm32_hrc_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		put(&o, "bs -");
 #endif
 		break;
+	case 23: {	// soft combining (dmr-modem.md 2.2.1): bursts taken, sets decoded, payloads replaced, stages
+			// overwritten before they were taken
+#if CONFIG_DMR
+		dmrSoftStats_t ss;
+		dmrSoftHoldStats(&soft_hold, &ss);
+		put_kv(&o, "soft t", ss.taken);
+		put_kv(&o, " c", ss.combined);
+		put_kv(&o, " x", ss.changed);
+		put_kv(&o, " s", ss.stale);
+#else
+		put(&o, "soft -");
+#endif
+		break;
+	}
 	case 15:
 		put_kv(&o, "tx", m->tx_bursts);
 		put_kv(&o, " rf", m->rftx_ints);

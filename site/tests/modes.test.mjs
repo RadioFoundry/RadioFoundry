@@ -597,3 +597,43 @@ test("Tier III: follow every talk group and learning the system are option bits 
 	assert.ok(fields.some(([k, sec]) => k === "followAll" && sec === "calls"));
 	assert.ok(fields.some(([k, sec]) => k === "learnSystem" && sec === "identity"));
 });
+
+// --- The recommended ham systems (docs/spec/ham-trunking.md) ---
+
+import { newHamSystem } from "../static/js/codeplug/channelmodes.js";
+import { HAM_T3 } from "../static/js/codeplug/mode_t3.js";
+import { HAM_P25 } from "../static/js/codeplug/mode_p25.js";
+
+test("recommended ham systems: Tier III Huge NET 1 and P25 WACN 32350, transmit on, no key, one control channel", () => {
+	const m = empty();
+	const t3 = newHamSystem(m, 1, { name: "", rxHz: 442012500, txHz: 447012500, site: 5 });
+	assert.equal(t3.name, "Ham Tier III");
+	assert.deepEqual([t3.tx, t3.needsKey, t3.secret, t3.ownId], [true, false, null, 0]);
+	assert.deepEqual([t3.fields.model, t3.fields.net, t3.fields.category, t3.fields.colorCode, t3.fields.registerTalkgroups, t3.fields.learnSystem, t3.fields.sites],
+		[3, 1, "a", 1, true, false, []]);
+	assert.deepEqual(t3.entries.map((e) => [e.cls, e.control, e.chan, e.rxHz, e.txHz, e.cc]), [[0, true, 21, 442012500, 447012500, null]]);
+	// four carriers a site, every site's numbers its own, all within the LCN range
+	assert.equal(HAM_T3.lcn(HAM_T3.siteMax, 4), 4092);
+	const p25 = newHamSystem(m, 3, { name: "Club P25", rxHz: 442037500, txHz: 0 });
+	assert.equal(p25.name, "Club P25");
+	assert.deepEqual([p25.tx, p25.fields.wacn, p25.fields.sysid, p25.fields.ccNac, p25.fields.skipEnc], [true, HAM_P25.wacn, null, 0x293, true]);
+	assert.notEqual(p25.fields.wacn, 0xBEE00, "never the common commercial default");
+	assert.deepEqual(p25.entries.map((e) => [e.cls, e.group, e.control, e.rxHz, e.txHz]), [[0, 0, true, 442037500, 442037500]]);
+	assert.equal(newHamSystem(m, 4, { rxHz: 1 }), null, "NXDN has none");
+	// added and written: both validate without errors and read back the same
+	for (const s of [t3, p25]) m.systems.push(s);
+	numberAll(m);
+	assert.deepEqual(validate(m).filter((p) => p.level === "error" && p.table === "systems"), []);
+	const d = decode(encode(m));
+	assert.deepEqual(d.systems.map((s) => s.fields), [t3.fields, p25.fields]);
+});
+
+test("Systems tab: the recommended ham system's button is there for a type that has one", () => {
+	const m = empty();
+	const h = (tag, attrs, ...children) => ({ tag, attrs, children });
+	const labels = [];
+	const page = systemsTab({ model: m, t: (key) => key, h, button: (text, fn, opts) => (labels.push([text, !!opts?.disabled]), h("button")) }, null);
+	assert.ok(page);
+	// the type list starts on Tier III, which has one
+	assert.deepEqual(labels.find(([x]) => x === "editor.modes.add_ham"), ["editor.modes.add_ham", false]);
+});

@@ -39,6 +39,12 @@
 #ifndef RFOUNDRY_GIT_TIME
 #define RFOUNDRY_GIT_TIME 0u
 #endif
+#ifndef RFOUNDRY_GIT_SOURCE
+#define RFOUNDRY_GIT_SOURCE "unknown"
+#endif
+#ifndef RFOUNDRY_GIT_REPO
+#define RFOUNDRY_GIT_REPO ""
+#endif
 
 #define SHOT_HOLD_MS		1000	// a screen capture freezes UI redraws at most this long
 #define SHOT_TAIL_MS		250	// after the last chunk: long enough for the host's check pass to start
@@ -231,6 +237,10 @@ static size_t cmd_version(uint8_t *out, size_t cap)
 	}
 	if (RFOUNDRY_RELEASE[0] != '\0') {
 		dl_text_kv_str(&t, "release", RFOUNDRY_RELEASE);
+	}
+	dl_text_kv_str(&t, "source", RFOUNDRY_GIT_SOURCE);	// where the build came from (support-info.md 1)
+	if (RFOUNDRY_GIT_REPO[0] != '\0') {
+		dl_text_kv_str(&t, "repo", RFOUNDRY_GIT_REPO);
 	}
 	dl_text_kv_str(&t, "board", board.name);
 	dl_text(&t, "features=%s%s\n", build_modes_now(), build_features_now());
@@ -864,6 +874,12 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 #if CONFIG_AIR_RAW
 	case DL_CMD_AIR:
 		return debuglink_cmd_air(req, len, out, cap);
+#endif
+	case DL_CMD_SUPPORT:
+#if CONFIG_SUPPORT_INFO
+		return debuglink_cmd_support(req, len, out, cap);
+#else
+		return status_only(out, DL_ST_UNAVAILABLE);
 #endif
 	case DL_CMD_CODEPLUG:
 #if CONFIG_CPS_FAST

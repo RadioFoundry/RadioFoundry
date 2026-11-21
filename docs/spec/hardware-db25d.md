@@ -135,7 +135,11 @@ output is the modem's input (4.5): it gets the digital gain word 0xB174 (nibble 
 returns to FM. DMR voice and beeps leave the modem's codec line out instead (4.5), so the same step also sets the HR_C7000 line out
 gain (GCR_DACL, `hrc7000_volume_db`): 0 dB at the default step 8, 3 dB less a step below it (step 1 is -21 dB) and up to
 `DB25D_PCM_VOL_TOP_DB` (12 dB) at step 16; step 0 keeps the amplifier off. The radio sets `volume_pcm`, so beeps play at
-`beep_level` and the volume scales them on the way out. The dB at the speaker is not measured (unverified).
+`beep_level` and the volume scales them on the way out. The board also gives the radio core the line out gain as its curve
+(`volume_db10`), so above step 7 each beep is played softer by the gain added over step 7's (`radio-features.md` 4):
+at step 16 the beep is 15 dB below `beep_level`. The speaker volume itself never changes for a beep. The curve is the
+register's nominal dB, not measured at the speaker (unverified): if the line out gains less than that, beeps at the top
+steps sound softer than at step 7, never louder.
 
 Switching the amplifier on (PTA24 low) pops, whatever the order of the other speaker pins (measured). So the board
 gives the radio core an amplifier hang (`hal_audio_t.speaker_warm`, `speaker_hang_s` 5 s, `radio-features.md` 4):

@@ -8,6 +8,7 @@
 #include "platform.h"
 #include "hrc_afsk.h"
 #include "hrc_bcast.h"
+#include "ui/fmt.h"
 #if CONFIG_BCAST_FM
 #include "bcast/rda5807m/rda5807m_hal.h"
 #endif
@@ -74,6 +75,19 @@ static const char *const side_key_names[] = { "SK1", "SK2" };
 static const uint8_t home_keys[] = { KEY_LEFT, KEY_RIGHT };
 static const char *const home_key_names[] = { "P1", "P2" };
 
+// The support info (docs/spec/support-info.md 2): the FD6818 set-up start-up found (hardware-dm32.md 8.10: A the classic
+// RF section, B the newer one, "no lock" neither); the HR_C7000 is the MCU line
+static bool hw_line(uint8_t i, uint8_t *role, char *buf, uint8_t len)
+{
+	if (i != 0) {
+		return false;
+	}
+	char s = dm32_rf_setup();
+	*role = BOARD_HW_RF;
+	str_copy(buf, len, s == 'A' ? "FD6818 set-up A" : s == 'B' ? "FD6818 set-up B" : "FD6818 no lock");
+	return true;
+}
+
 const board_t board = {
 	.name = "DM-32UV",
 	.caps = CAP_KEYPAD | CAP_ENCODER | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR | CAP_BEEP_NOT_ON_AIR : 0) |
@@ -127,6 +141,7 @@ const board_t board = {
 #endif
 	.system = &hrc_system,
 	.chip_reg = dm32_chip_reg,
+	.hw_line = hw_line,
 #if CONFIG_BCAST_FM
 	.bcast = &rda5807m_hal,
 #endif
