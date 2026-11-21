@@ -257,13 +257,13 @@ static void test_window(void)
 	CHECK(count("\x02\x24\x00\x03") == BOOT_WINDOW, "%zu handshakes, want %d", count("\x02\x24\x00\x03"), BOOT_WINDOW);
 }
 
-// A cold start: clocks, this UART's pins, 115200 at 36 MHz
+// A cold start: clocks, this UART's pins, the divisor at 36 MHz: the loader's 19 on A's cable, A's UART3's 20 on B
 static void test_cold_setup(void)
 {
 	reset(0);
 	run();
 	CHECK(resumed, "the application was not started");
-	CHECK(dll == 19 && lcr == 3, "divisor %u LCR 0x%X", (unsigned)dll, (unsigned)lcr);
+	CHECK(dll == (SOC_B ? 20u : 19u) && lcr == 3, "divisor %u LCR 0x%X", (unsigned)dll, (unsigned)lcr);
 #if SOC_B
 	CHECK((diplex0 & 0x6000u) == 0x6000u, "UART3 pins not given to UART3");
 #else

@@ -10,6 +10,10 @@
 #define STAGE_UART		0x14090000u	// UART3
 // IO_DIPLEX0 bits 13 / 14: 1 = PTA13 / PTA14 are UART3 TXD / RXD
 #define STAGE_UART_PINS()	wr(IO_DIPLEX0, rd(IO_DIPLEX0) | 0x6000u)
+// 112500 baud at 36 MHz: the rate of A's UART3 under A's stub (divisor 20), 1.4 % from A's RadioFoundry on the
+// bridge. 19 would be 5.3 % fast against A's stub, enough to flip bit 7 of what B sends (docs/spec/rx2-link.md 4.2).
+// B's application sets the same divisor before it jumps here (STAGE_UART_DIV in boards/gd88b/app_gd88b.c)
+#define STAGE_UART_DIV		20u
 #define STAY_ADDR		0x0004FFF8u	// above the stage's stack (0x4F000 down) and every block it accepts
 #define STAY_MAGIC		0x53544159u	// "STAY"
 #define STAY_OFFERS		1200u		// about a minute at 50 ms

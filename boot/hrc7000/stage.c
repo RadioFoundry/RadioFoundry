@@ -63,7 +63,12 @@ static inline void jump(uint32_t a)
 #define GPIOB		0x14100000u
 #define GPIOC		0x14110000u
 
-#define UART_DIV	19u		// 36 MHz APB / 16 / 115200, as the IAP loader sets it
+// The UART divisor at the loader's 36 MHz APB: 19 (118421 baud) as the IAP loader sets it for the cable; a stage
+// whose UART faces another UART names that one's divisor instead
+#ifndef STAGE_UART_DIV
+#define STAGE_UART_DIV	19u
+#endif
+#define UART_DIV	STAGE_UART_DIV
 #define RAM_HI		0x00050000u	// start addresses below the stub's stack top
 #define LOAD_HI		0x0004E000u	// blocks below this: this stage's stack starts at 0x4F000 (boot.S)
 #define HS_SPINS	200000u		// about 50 ms between handshakes at the loader's 72 MHz

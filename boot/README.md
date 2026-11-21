@@ -56,7 +56,8 @@ SoC A (`gd88/`) is the DB25-D's stage with A's pins:
 SoC B (`gd88b/`) has no cable. Its UART3 (PTA13 / PTA14) is the link to A:
 
 1. The transmitter off: PTB20 / PTB21 (TX enables), PTB6 / PTB3 (TX tune), PTA17 / PTB10 (TX band switches) low.
-2. UART3 set up, then ten handshakes there, then the application.
+2. UART3 set up at divisor 20 (112500 baud at 36 MHz, the rate of A's UART3 under A's stub), then ten handshakes
+   there, then the application.
 3. If B's application wrote `STAY` (0x53544159) at 0x0004FFF8 before it jumped to the stage, the stage offers for up to
    a minute (1,200 handshakes). RadioFoundry on A asks for this with `RX2_STUB` and then bridges the cable to UART3, so the host
    loads the stub into B through A ([rx2-link.md](../docs/spec/rx2-link.md) 4). The stage clears the word either way.
