@@ -26,8 +26,8 @@ Each set has the same six files. Every file holds whole 20 ms frames, so the fra
 | `<set>.imbe` | full rate (7200 x 4400 bit/s), 11-byte frames of the 88 information bits, first bit first, no FEC, back to back, no header | 1,144 / 5,940 B | P25 Phase 1 |
 | `<set>_imbe_decoded.wav` | the `.imbe` frames decoded back to audio by `core/mbe` | 33,324 / 172,844 B | reference: what a P25 radio should play |
 
-The `.ambe` files were encoded with an AMBE+2 vocoder outside this repository. The 9-byte frame is the one the HIL
-tests' `--ambe` option and the SDR bench's voice jobs take. NXDN carries the same AMBE+2 frames.
+The `.ambe` 9-byte frame is the one the HIL tests' `--ambe` option and the SDR bench's voice jobs take. NXDN carries
+the same AMBE+2 frames.
 
 The `.imbe` frame is `IMBE_BYTES` in [core/mbe/imbe.h](../../../core/mbe/imbe.h) (`P25_IMBE_BYTES` in the P25 code):
 the frame the firmware's P25 voice path hands the call layer before the FEC. `tools/bench/p25tool.py gen --voice-file`
