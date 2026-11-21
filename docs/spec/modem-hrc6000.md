@@ -110,7 +110,7 @@ Names are the manual's. Only the bits we rely on are listed.
 | 0x34 | FM audio filters | 0x3C: compressor off, pre/de-emphasis on, 3 kHz filter |
 | 0x35 | FM TX deviation coefficient | section 8 |
 | 0x36 | FM audio feed-through | 0x02 on, 0x00 off (FM RX mute) |
-| 0x37 | DMR RX audio gain / MCU control | 0x80 + (0x40 if gain > 0) + (gain & 0x1F), gain clamped to -31..+31 dB; 0x9E at init |
+| 0x37 | DMR RX audio gain / MCU control (manual: `mcu_control_shift` bit 7, `zoom` bit 6, `shift_size` bits 4-0) | 0x80 + (0x40 if gain > 0) + (gain & 0x1F), gain clamped to -31..+31 steps; 0x9E at init. Scales the codec's DAC data (FM feed-through, DMR voice, prompt FIFO). Manual: bit 7 enables the change, bit 6 = 1 louder, 0 softer, a larger `shift_size` is louder either way (all 0 is the quietest), 1.5 dB a step. Measured at a radio's speaker: about 0.77 dB a step over -31..+31, 48 dB in all; the board gives the table (`hal_radio_t.volume_db10`) |
 | 0x3E / 0x3F | FM RX deviation coefficient / TX limiter | 0x08 / 0x04 |
 | 0x40 | TxEn (7), RxEn (6), MasterMode (5, 1 = active timing), Layer2Slot (4), CRC_MCU_Control (3), Decode_Mode (1-0, 11 = normal) | **0xC3** = TX+RX enabled, passive timing (follows received bursts). **0xE3** = TX+RX enabled, active timing (own timing). 0x43 = RX only, passive (manual default for RX). Bit 3 set = the MCU supplies the CRC; the chip sends the 96 info bits verbatim |
 | 0x41 | TxNxtSlotEn (7), RxNxtSlotEn (6), SyncFail (5), begin_v_layer2 (4) | written at every timeslot interrupt: **0x80** send in the next slot, **0x50** receive in the next slot (+ access-success flag), **0x40** receive (manual), **0x00** neither, **0x20** drop sync and search again. Bit 3 is CC_Match_Ctrl (1 = deframe without a CC match) |
@@ -698,8 +698,12 @@ deviation, 0xA0 = CTCSS or DCS deviation, 0x3F=0x04, 0x34=0x3C, 0x3E=0x08, page 
 bit 1 switches it on (the manual: in FM mode, receive opens the voice channel's codec switch). I2S PCM (beeps, prompts)
 doesn't reach the line out then, with the bit set or clear. A board whose FM audio comes from elsewhere puts 0x10 back
 to DMR after the FM receive rows (`hrc6000_fm_rx_pcm()`), so PCM plays in FM receive as it does in DMR. Where the
-chip must stay in FM (the FM copy, 10.6), the prompt tone FIFO (8.1) carries the speaker's PCM instead: it reaches the
-line out in FM mode ([gotchas.md](gotchas.md) 1.14).
+chip must stay in FM, the prompt tone FIFO (8.1) carries the speaker's PCM instead: the FIFO reaches the line out in FM mode
+([gotchas.md](gotchas.md) 1.14). That is the FM copy (10.6), which plays every block there, and FM receive on a board
+whose FM audio comes through the chip, which plays a beep there only while the PCM route is on. The FM feed-through
+(0x36) is off for that time, so the beep and the FM audio take turns on the line out. The board reports its chip in
+FM receive (`stm32_i2s_pcm_fm_chip`), and clears that report before a DMR set-up or a transmission: a beep while keyed stays
+off the speaker, and the FIFO doesn't reach the modulator (8.1).
 
 **Tones (0xA1 mode)**: 0x80 off, 0x88 CTCSS, 0x84 DCS, 0x82 DTMF, as traced. The manual's register table differs:
 0xA1 is `fm_mod`, bit 7 is reserved and must be 0, bit 6 MSK, and its appendix selects CTCSS with 0x08, CDCSS 0x04,

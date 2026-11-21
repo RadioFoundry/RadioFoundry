@@ -735,15 +735,32 @@ static void volume_apply(void)
 	db25d_main_af(audio_open && !vol_muted ? DB25D_AF_FM : DB25D_AF_MUTE);
 }
 
+// The step back from its percent
+static unsigned volume_step(uint8_t percent)
+{
+	unsigned step = (percent * RADIO_VOLUME_MAX + 50u) / 100u;
+	return step > RADIO_VOLUME_MAX ? RADIO_VOLUME_MAX : step;
+}
+
+// The line out gain the step gives the PCM path (vol_dac)
+static int8_t volume_db(uint8_t percent)
+{
+	return (int8_t)hrc7000_volume_db(volume_step(percent), RADIO_VOLUME_DEFAULT, RADIO_VOLUME_MAX, DB25D_PCM_VOL_TOP_DB);
+}
+
+// The same gain for the core's beep level (hal_radio_t.volume_db10): the register's own dB (hrc7000.h), not measured at
+// the speaker
+static int16_t volume_db10(uint8_t percent)
+{
+	return (int16_t)(volume_db(percent) * 10);
+}
+
 static void volume(uint8_t percent)
 {
-	unsigned step = (percent * RADIO_VOLUME_MAX + 50u) / 100u;	// the step back from its percent
-	if (step > RADIO_VOLUME_MAX) {
-		step = RADIO_VOLUME_MAX;
-	}
+	unsigned step = volume_step(percent);
 	vol_muted = step == 0;
 	vol_gain = step == 0 ? 0 : (uint8_t)(((step - 1u) * DB25D_VOL_GAIN_TOP + (RADIO_VOLUME_MAX - 1u) / 2u) / (RADIO_VOLUME_MAX - 1u));
-	vol_dac = hrc7000_dac_code(hrc7000_volume_db(step, RADIO_VOLUME_DEFAULT, RADIO_VOLUME_MAX, DB25D_PCM_VOL_TOP_DB));
+	vol_dac = hrc7000_dac_code(volume_db(percent));
 	if (modem.buf != NULL) {	// attached by init(), which applies vol_dac itself
 		hrc7000_set_dac_gain(&modem, vol_dac);
 		speaker_pins();		// step 0 and back: the amplifier
@@ -780,6 +797,7 @@ const hal_radio_t db25d_radio = {
 	.audio = audio,
 	.volume = volume,
 	.volume_pcm = true,	// the modem's line out gain scales DMR voice and beeps (vol_dac)
+	.volume_db10 = volume_db10,
 	.tx_tone = tx_tone,
 	.tx_tail = tx_tail,
 	.tx_tone_key = tx_tone_key,
