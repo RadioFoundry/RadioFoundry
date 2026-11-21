@@ -336,7 +336,7 @@ static void leave(p25_follow_t *f, uint8_t why, uint32_t now)
 // ── The transmit side: registration, affiliation, voice requests (docs/spec/p25-trunking.md 5) ──
 static bool tx_on(const p25_follow_t *f)
 {
-	return (f->cfg->flags & P25_FOLLOW_TX) && f->cfg->unit_id;
+	return (f->cfg->flags & P25_FOLLOW_TX) && f->cfg->unit_id && !f->view.unverified;
 }
 
 static uint32_t acc_rand(p25_follow_t *f, uint32_t span)
@@ -813,6 +813,7 @@ void p25_follow_tsbk(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 		return;
 	view_begin(f);
 	f->view.blocks++;
+	f->view.unverified = false;	// a block that passed its CRC
 	on_block(f, blk, nac, now);
 	view_end(f);
 }
@@ -834,10 +835,13 @@ void p25_follow_unit(p25_follow_t *f, const p25_rx_unit_t *u, uint32_t now)
 			f->acc.busy = p25_status_get(u->air, (uint16_t)(nss - 1)) == P25_SS_BUSY;
 
 		for (uint8_t k = 0; k < n && !f->tuning; k++) {
-			if (p25_block_get(u->air, k, blk) < 0) {
+			bool good = p25_block_get(u->air, k, blk) >= 0;
+			if (!good && !((f->cfg->flags & P25_FOLLOW_BAD_CRC) && rx_seen(&f->seen, blk, P25_TSBK_BYTES))) {
 				f->view.crc_fail++;
 				continue;
 			}
+			f->view.crc_taken += !good;
+			f->view.unverified = !good;
 			f->view.blocks++;
 			on_block(f, blk, u->nac, now);
 		}
@@ -963,7 +967,7 @@ void p25_follow_view(const p25_follow_t *f, p25_follow_view_t *out)
 
 uint8_t p25_follow_can_talk(const p25_follow_view_t *v, uint8_t flags)
 {
-	if (!(flags & P25_FOLLOW_TX) || v->reg == P25_REG_NO_TX)
+	if (!(flags & P25_FOLLOW_TX) || v->reg == P25_REG_NO_TX || v->unverified)
 		return P25_TALK_OFF;
 	if (v->state != P25_FOLLOW_CONTROL && v->state != P25_FOLLOW_VOICE)
 		return P25_TALK_NO_CC;

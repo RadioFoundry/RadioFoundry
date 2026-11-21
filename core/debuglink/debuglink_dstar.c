@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// D-STAR on the debug link (docs/spec/debuglink.md 3.29, docs/testing/dstar-bench.md): the "dstar" view section (what
+// D-STAR on the debug link (docs/spec/debuglink.md 3.30, docs/testing/dstar-bench.md): the "dstar" view section (what
 // was heard, what PTT sends, the voice path's counters, the flat paths' calibration in force) and the D-STAR command,
 // which the bench uses to tune the calibration, pick a test signal for the next transmissions, set UR and the station,
 // and reach the board's own flat path knobs. Without CONFIG_DSTAR: "dstar.built=0" and the command answers unavailable.

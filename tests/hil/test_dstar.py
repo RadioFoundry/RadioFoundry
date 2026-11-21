@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
 """D-STAR on the radio (docs/spec/dstar-modem.md, docs/testing/dstar-bench.md), through the debug link's dstar section
-and command (docs/spec/debuglink.md 3.29).
+and command (docs/spec/debuglink.md 3.30).
 
 test_dstar_view: the section is there with the calibration in force and the board's knobs. No RF.
 test_dstar_cal_roundtrip: a calibration value set over the debug link is stored and shown, and the board's value

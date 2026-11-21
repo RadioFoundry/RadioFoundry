@@ -246,6 +246,10 @@ bool aprs_rf_pending(void);
 bool aprs_can_receive(void);
 // The receive path is running (the receiver must stay awake: no battery saving)
 bool aprs_rx_listening(void);
+// The frequency the receive path decodes on, 0 when receiving is off or the radio can't (radio task)
+uint32_t aprs_rx_freq(void);
+// Stop the receive path at once (radio task): before tuning away from the APRS frequency (aprs_ax25.c)
+void aprs_rx_release(void);
 // A status packet (">text")
 bool aprs_send_status(const char *text);
 // A message with acks and retries; false when one is still waiting or the text is unusable
@@ -275,6 +279,8 @@ static inline uint8_t aprs_tx_power(uint8_t current) { return current; }
 static inline bool aprs_rf_pending(void) { return false; }
 static inline bool aprs_can_receive(void) { return false; }
 static inline bool aprs_rx_listening(void) { return false; }
+static inline uint32_t aprs_rx_freq(void) { return 0u; }
+static inline void aprs_rx_release(void) {}
 static inline bool aprs_send_status(const char *text) { (void)text; return false; }
 static inline bool aprs_send_message(const char *to, const char *text) { (void)to; (void)text; return false; }
 static inline bool aprs_send_message_opts(const char *to, const char *text, uint8_t flags)

@@ -74,6 +74,7 @@ Past bugs, by subsystem: [gotchas.md](gotchas.md). Contributors read [docs/dev](
 | [channel-modes.md](channel-modes.md) | Channel modes: how a channel, system, target or key of any digital mode is stored beside the open-firmware record |
 | [dmr-trunking-codeplug.md](dmr-trunking-codeplug.md) | DMR Tier III systems and trunked channels in the codeplug |
 | [p25-codeplug.md](p25-codeplug.md) | P25 conventional and trunked channels and systems in the codeplug |
+| [ham-trunking.md](ham-trunking.md) | The recommended ham Tier III and P25 trunked systems, and their templates |
 | [nxdn-codeplug.md](nxdn-codeplug.md) | NXDN conventional channels in the codeplug |
 | [dstar-codeplug.md](dstar-codeplug.md) | D-STAR DV channels and the radio-wide callsign and message in the codeplug |
 | [settings-store.md](settings-store.md) | Settings store and safe flash writes |
