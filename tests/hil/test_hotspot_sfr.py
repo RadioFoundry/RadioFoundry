@@ -26,7 +26,9 @@ and the own modem's ticks don't apply: the SDR's offset of the repeat from the i
 the last receive one (DM-32UV and DM-1801 Pro, 2026-10-18). The SDR's offset of the
 repeat from the inbound bursts (30 ms) is printed. A bench station that keeps its carrier up through the call hides
 our slot from the SDR until it drops: with no burst of ours seen inside the inbound call, the repeat is judged by the
-radio's sfr.repeated (at least 19: the 18 voice bursts and a header) instead of the SDR's voice count."""
+radio's sfr.repeated (at least 19: the 18 voice bursts and a header) instead of the SDR's voice count. An SDR that
+decodes no burst at all while the radio sent the bench call up skips the test: that receiver can't judge the repeat
+(one board as both bench transmitter and receiver can't hear while it sends)."""
 import re
 import statistics
 import struct
@@ -167,6 +169,11 @@ def test_sfr_repeats_bench_call(radio, sdr_bench, pytestconfig):
             offs.append(round((b["t_ms"] - prior[-1]) % 60.0, 1))
     print(f"repeat timing: {len(offs)} TS2 bursts, ms after the last inbound burst: "
           f"median {statistics.median(offs) if offs else None}, {offs[:12]}; diag {diag}")
+    if not bursts and len(up) > 0:
+        # The radio heard the bench call, the SDR nothing at all: not even that call. A board can't hear while it
+        # transmits (the same board for --bench-api and --bench-api-rx), or it is tuned elsewhere
+        skip("bench", f"the bench receiver decoded no burst, not even the bench call the radio sent up "
+                      f"({len(up)} DMR_DATA1): it can't judge the repeat")
     split = v1.get("sfr.split") == "1"
     if split:
         # The repeat went out on the radio's second transmitter: the own modem's TX ticks say nothing, the SDR does
