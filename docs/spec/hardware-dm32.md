@@ -1195,6 +1195,7 @@ With no receive tone RadioFoundry writes the DCS 0x2E / 0x2F pair, which is also
 | FM RX audio | the FD6818's AF output (0x47 = 0x0140) through 0x2F = 1 while the squelch is open. The C7000's FM playback (AUDIO_CONTROL bit 6, `fm_play_ctrl`) stays off: with 0x2F = 1 its AF input is disconnected. The C7000's sub-audio decode loses its input while the squelch is open (open question) (measured) |
 | DMR RX audio | CPU writes 160 bytes of decoded 8 kHz PCM to 0x180000A0 per 10 ms and sets AUDIO_CONTROL bit 5; PCM_rd interrupt (vector 59) asks for the next block; clear with INTERP_CLEAR bit 5 |
 | Beeps / prompts | 64 bytes (32 samples, low byte first, 8 kHz) at a time to the prompt FIFO 0x16000980 while AUDIO_CONTROL bit 31 (`ring_full_two`) is 0; enable with AUDIO_CONTROL bit 7 (`ring_play_ctrl`). high byte first sounds distorted (`modem-hrc7000.md` 8.4); not yet heard on this radio |
+| Amplifier users | the amplifier (0x35) is on while any user wants it (`amp()` in `boards/dm32/radio_dm32.c`): 0x01 receive audio (an open squelch), 0x02 speaker PCM (a beep, DMR or P25 voice), 0x04 the broadcast receiver, 0x40 the FM TX tone's sidetone. The debug link's `board.amp_users` ([debuglink.md](debuglink.md) 3.7, the `board` section) shows the bits in hex: 0x00 while nothing plays |
 
 ### 9.1 Internal audio codec registers (byte registers at 0x160009C0 + offset)
 
