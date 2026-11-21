@@ -602,7 +602,7 @@ test("connect step: a cable that takes no data is found as it opens, with what t
 	const was = { ...limits };
 	Object.assign(limits, { sendCheck: 50 });
 	const nav = Object.getOwnPropertyDescriptor(globalThis, "navigator");
-	t.after(() => { Object.assign(limits, was); Object.defineProperty(globalThis, "navigator", nav); });
+	t.after(() => { Object.assign(limits, was); nav ? Object.defineProperty(globalThis, "navigator", nav) : delete globalThis.navigator; });
 	let taken = 0;
 	const dead = { isOpen: false, getInfo: () => ({ usbVendorId: 0x067B, usbProductId: 0x2303 }),
 		async open() { this.isOpen = true; this.readable = null; this.writable = { getWriter: () => ({

@@ -8,12 +8,30 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 #include "config.h"
 #include "debuglink/dl_fmt.h"
 
 #define NET_KISS_PORT		8001	// the de facto KISS-over-TCP TNC port
 #define NET_HTTP_PORT		80
 #define NET_RIGCTL_PORT		4532	// Hamlib's rigctld
+
+// d starts as an HTTP request does (a method, then a space): what a browser sends when a web page posts to a port
+// that isn't HTTP. The line-based and KISS services drop such a connection before any of it is taken as commands
+static inline bool net_http_request(const uint8_t *d, size_t n)
+{
+	static const char *const methods[] = { "GET ", "POST ", "PUT ", "HEAD ", "OPTIONS ", "DELETE ", "PATCH ",
+					       "CONNECT " };
+
+	for (size_t i = 0; i < sizeof(methods) / sizeof(methods[0]); i++) {
+		size_t m = strlen(methods[i]);
+
+		if ((n >= m) && (memcmp(d, methods[i], m) == 0)) {
+			return true;
+		}
+	}
+	return false;
+}
 
 #if CONFIG_NET_HTTP || CONFIG_NET_RIGCTL || CONFIG_NET_RADIO_UDP
 // The radio core's view, fetched now into the host link task's one copy (hostlink_view.h; the services all run in

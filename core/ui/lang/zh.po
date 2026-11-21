@@ -1484,7 +1484,7 @@ msgctxt "ACT_ROW_TALK_TO"
 msgid "Talk to "
 msgstr "通话对象 "
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "ACT_ROW_PRIVATE_CALL"
 msgid "Private call"
 msgstr "个呼"
@@ -3620,6 +3620,11 @@ msgid "Channel"
 msgstr "信道"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_VALUE_MSGFMT_AUTOMATIC"
+msgid "Automatic"
+msgstr "自动"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_VALUE_MSGFMT_ETSI_SHORT"
 msgid "ETSI short"
 msgstr "ETSI 简码"
@@ -4635,6 +4640,11 @@ msgid "Another system heard"
 msgstr "只收到其他系统"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_WHY_TRUNK_OTHER_KIND"
+msgid "Incompatible system"
+msgstr "不支持的系统"
+
+#: core/ui/ui_screens.c
 msgctxt "DENY_WHY_TRUNK_REG_REFUSED"
 msgid "Registration refused"
 msgstr "注册已拒绝"
@@ -4755,6 +4765,16 @@ msgid "DMR modem off"
 msgstr "DMR 调制解调器关"
 
 #: core/ui/ui_screens.c
+msgctxt "TRUNK_TITLE_INCOMING_CALL"
+msgid "Incoming private call"
+msgstr "收到个呼"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_HINT_PTT_ANSWER"
+msgid "Press PTT to answer"
+msgstr "按 PTT 接听"
+
+#: core/ui/ui_screens.c
 msgctxt "TRUNK_STATE_FALLBACK"
 msgid "Fallback"
 msgstr "备用信道"
@@ -4778,6 +4798,11 @@ msgstr "搜索中"
 msgctxt "TRUNK_STATE_IN_CALL"
 msgid "In call"
 msgstr "通话中"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_CALLING"
+msgid "Calling"
+msgstr "正在呼叫"
 
 #: core/ui/ui_screens.c
 msgctxt "TRUNK_STATE_REFUSED"
@@ -4823,6 +4848,16 @@ msgstr "数听"
 msgctxt "HOME_CHIP_PRIVACY"
 msgid "Priv"
 msgstr "加密"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_KIND"
+msgid "Incompatible system"
+msgstr "不支持的系统"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_KIND_NOTE"
+msgid "Cannot join"
+msgstr "无法加入"
 
 #: core/ui/ui_screens.c
 msgctxt "TRUNK_MODEL_TINY"

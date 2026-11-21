@@ -580,6 +580,32 @@ static void testLrrp(void)
 	CHECK(countLrrp(0x0D) == 0);
 	CHECK(dmrDataServiceLrrpTriggerCount() == 0);
 
+	// A period under 30 s (1 s asked): reports 30 s apart, the first after 5 s
+	sentCount = 0;
+	receiveLrrp("0909220411223344343101");
+	runMainTask(8000);
+	CHECK(countLrrp(0x0B) == 1);
+	CHECK(countLrrp(0x0D) == 1);
+	runMainTask(25000);
+	CHECK(countLrrp(0x0D) == 1);
+	runMainTask(5000);
+	CHECK(countLrrp(0x0D) == 2);
+	receiveLrrp("0f06220411223344");
+	runMainTask(3000);
+	CHECK(dmrDataServiceLrrpTriggerCount() == 0);
+
+	// A period past what milliseconds hold in 32 bits (4294968 s): capped at a day, not a period of a few hundred ms
+	sentCount = 0;
+	receiveLrrp("090c220411223344343182869238");
+	runMainTask(8000);
+	CHECK(countLrrp(0x0B) == 1);
+	CHECK(countLrrp(0x0D) == 1);
+	runMainTask(120000);
+	CHECK(countLrrp(0x0D) == 1);
+	receiveLrrp("0f06220411223344");
+	runMainTask(3000);
+	CHECK(dmrDataServiceLrrpTriggerCount() == 0);
+
 	// Distance 500 m checked every 30 s: the first report, then only once it has moved 500 m
 	sentCount = 0;
 	receiveLrrp("090922015534311e788374");
@@ -1613,7 +1639,7 @@ static void testIpText(void)
 	dmrDataUDP_t udp;
 
 	// The default (docs/spec/dmr-data.md 8)
-	CHECK(settings.smsFormat == DMR_SMS_FORMAT_ETSI_IP);
+	CHECK(settings.smsFormat == DMR_SMS_FORMAT_DEFAULT);
 
 	// The builder: UTF-16BE, UDP 5016 to 5016, full IPv4 header (SAP 4), unconfirmed
 	int count = dmrDataBuildIPText(false, RADIO_A, OUR_ID, "Hi\xE9", DMR_TYPE_RATE_1_2, 0, bursts, DMR_DATA_MAX_BURSTS);
@@ -1639,6 +1665,40 @@ static void testIpText(void)
 	CHECK(dmrDataDecodeIPText(bomLe, sizeof(bomLe), text, sizeof(text)) && (strcmp(text, "le") == 0));
 	CHECK(dmrDataDecodeIPText(bomBe, sizeof(bomBe), text, sizeof(text)) && (strcmp(text, "b?") == 0));
 	CHECK(!dmrDataDecodeIPText(be, 1, text, sizeof(text)));
+	// Control characters are dropped, the C1 ones and DEL too: the UI's text takes 0x80-0x86 as its own glyphs and
+	// icons (core/ui/font.h), so a sender's U+0082 would have drawn an arrow. Latin-1 letters stay
+	static const uint8_t c1[] = { 0x00, 'a', 0x00, 0x82, 0x00, 0x85, 0x00, 0x7F, 0x00, 0x9F, 0x00, 0x0A, 0x00, 0xE9, 0x00, 0xA0 };
+	CHECK(dmrDataDecodeIPText(c1, sizeof(c1), text, sizeof(text)) && (strcmp(text, "a\xE9\xA0") == 0));
+	// The same in ISO 8859-1 defined short data, where the bytes are the characters
+	count = dmrDataBuildEtsiText(false, OUR_ID, RADIO_A, "x\x82y\x9Fz\xF1", false, 0, bursts, DMR_DATA_MAX_BURSTS);
+	r = DMR_DATA_RX_NONE;
+	dmrDataRxReset();
+	for (int i = 0; (i < count) && (r != DMR_DATA_RX_PACKET); i++)
+	{
+		r = dmrDataRxBurst(&bursts[i]);
+	}
+	CHECK((count > 0) && (r == DMR_DATA_RX_PACKET));
+	CHECK(dmrDataDecodeEtsiText(&dmrDataRxPacket, text, sizeof(text)) && (strcmp(text, "xyz\xF1") == 0));
+	dmrDataRxReset();
+
+#if CONFIG_DMR_TMS
+	// The same in a Motorola-format TMS message (UTF-16), decoded by dmrDataDecodeTMS: the controls drop, the
+	// Latin-1 letters stay. The string literals are kept separate so a \xNN escape never swallows the next letter.
+	// TMS-only: dmrDataBuildTMS/dmrDataDecodeTMS are compiled out of a CONFIG_DMR_TMS=0 firmware (dmrDataServiceTestNoTms).
+	dmrDataTMS_t tms;
+	count = dmrDataBuildTMS(false, OUR_ID, RADIO_A, "a" "\x82" "\x85" "\x7F" "\x9F" "\xE9" "z", 1, false,
+						   DMR_TYPE_RATE_1_2, 0, bursts, DMR_DATA_MAX_BURSTS);
+	r = DMR_DATA_RX_NONE;
+	dmrDataRxReset();
+	for (int i = 0; (i < count) && (r != DMR_DATA_RX_PACKET); i++)
+	{
+		r = dmrDataRxBurst(&bursts[i]);
+	}
+	CHECK((count > 0) && (r == DMR_DATA_RX_PACKET));
+	CHECK(dmrDataGetUDP(&dmrDataRxPacket, &udp) && dmrDataDecodeTMS(udp.payload, udp.length, &tms) &&
+		  (strcmp(tms.text, "a\xE9z") == 0));
+	dmrDataRxReset();
+#endif	// CONFIG_DMR_TMS
 
 	// Ours, individual, in the default format: confirmed data (no ACK of its own), done when the ETSI response ACKs it
 	reset();

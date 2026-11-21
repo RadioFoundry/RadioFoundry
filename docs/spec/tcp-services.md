@@ -77,27 +77,53 @@ The client receives the engine's output (section 3) exactly as the serial port w
 
 - One client at a time: a new connection replaces the old one (reset), so a client that vanished without closing
   doesn't hold the port.
+- From the host only, as rigctld's PTT: a connection from beyond the host is reset at once and the client keeps the
+  port. A connection whose first bytes start an HTTP request (a web page posting to this port) is reset before any of
+  it is decoded.
 - Needs the APRS KISS setting (Tools > APRS > KISS on USB), as on the serial port: without it the engine neither
   takes frames nor produces output.
 - On a radio without an APRS receive path (`aprs.md` 1) only transmit works; a client sees no received packets.
-- View keys (`net` section): `kiss.client kiss.conns kiss.frames_in kiss.frames_out kiss.dropped`.
+- View keys (`net` section): `kiss.client kiss.conns kiss.frames_in kiss.frames_out kiss.dropped kiss.refused` (the
+  connections reset as above).
 
 ## 5. HTTP status server (port 80)
 
-HTTP/1.0 (RFC 1945): GET and HEAD, one request per connection, `Connection: close`, `Content-Length` always, no
+HTTP/1.0 (RFC 1945): GET and HEAD (and OPTIONS from an allowed page, below), one request per connection, `Connection: close`, `Content-Length` always, no
 keep-alive or chunking (HTTP/1.1 clients accept a 1.0 answer). The request line may be 95 bytes long (else 414);
-header lines are skipped, except `Sec-WebSocket-Key` (any case) for `/ws`; a request not complete within 10 s is reset. Responses carry `Cache-Control: no-store` and
-`Access-Control-Allow-Origin: *` (a web page on the host may poll the radio).
+the header lines read (field names in any case) are `Host`, `Origin`, `Sec-Fetch-Site` and `Sec-WebSocket-Key` for
+`/ws`, the rest are skipped (a header line is cut at 167 bytes); a request not complete within 10 s is reset. Responses
+carry `Cache-Control: no-store`.
+
+Allowed pages may use the radio from a browser: the project's site (`radiofoundry.org` or a name under it) and pages
+served on the host itself (`localhost`, `127.0.0.1`), over `http://` or `https://`, any port. The `Origin` is matched
+whole (`radiofoundry.org.example.com` is not one) and may be 39 bytes long. Who may read an answer:
+
+| Answer | Read by |
+|---|---|
+| The static files | the radio's own page (no `Access-Control-Allow-Origin`) |
+| `/status` | any page: `Access-Control-Allow-Origin` is an allowed page's `Origin`, else `*` (no position in it) |
+| The other paths | the radio's own page and allowed pages: an allowed page's `Origin` is sent back in `Access-Control-Allow-Origin` |
+| `OPTIONS` from an allowed page | 204 with its `Origin` and `Access-Control-Allow-Private-Network: true` (a browser asks first when a public page reaches a private address); `OPTIONS` from anyone else is 405 |
+
+Where a request comes from (a browser says so in its headers; tools that send none are taken as they come):
+
+| Header | Taken | Else |
+|---|---|---|
+| `Host` | absent, an IPv4 address (with or without a port), or the radio's mDNS name with `.local` | 403 for everything but the static files. Open the page at the radio's address or its `.local` name |
+| `Origin` | absent, `http://` and one of the radio's addresses (its own, 12.255.255.254) or its `.local` name, or an allowed page | 403 for `/ws` and `/api/aprsis`: another page in a browser on the host |
+| `Sec-Fetch-Site` | absent, `same-origin` or `none` (typed or bookmarked), or any value with an allowed page's `Origin` | 403 for `/api/aprsis` (an image or link on another site sends no `Origin` on a GET) |
+
+`/api/usb?mode=serial` takes requests from other sites on purpose (the site's flasher opens it in a tab).
 
 | Path | Response |
 |---|---|
 | `/` and `/<file>` | the static files (below); `/` is `index.html`, the status as a table and the screen, refreshed every 3 s; with `CONFIG_NET_WEBCTL` the front panel page (5.1) |
-| `/ws` | with `CONFIG_NET_WEBCTL`: the WebSocket upgrade (5.1); 400 without a valid key or for HEAD, 503 while another client has it |
+| `/ws` | with `CONFIG_NET_WEBCTL`: the WebSocket upgrade (5.1); 400 without a valid key or for HEAD, 403 from another page (`Origin`), 503 while another client has it |
 | `/status` | JSON: `radio version uptime_s state` (idle / rx / tx / tx_denied) `vfo zone channel_number channel rx_hz tx_hz mode` (fm / dmr) `bw` ("12.5" / "25") `power rssi_dbm squelch battery_pct battery_mv` (both left out on a radio without a battery) `hotspot`, on a DMR channel `dmr: {own_id cc ts target private heard}`, `tcp_open`, `led_green led_red` (the radio's LEDs), `backlight` (percent), `draws` (counts screen redraws: fetch the screen when it changes) |
 | `/api/view` | JSON `{"sections": [...]}`: the debug link's view section names (needs `CONFIG_DEBUGLINK`) |
 | `/api/view?section=<name or number>` | the section's key=value lines as one flat JSON object; values that are decimal integers are numbers, the rest strings (hex values such as `net.host_ip` stay strings) |
 | `/api/screen.bmp` | the frame buffer as a BMP, top-down (negative height), at the panel's depth: 1 bpp with two palette entries (the paper and ink of the UI gallery), 4 bpp with the 16-entry palette (`gfx_palette`), both the frame buffer's rows as they are; 16 bpp as BI_BITFIELDS (RGB565 masks). About 10 KB on a 160 x 128 4 bpp screen, 38 KB on 240 x 320, 1 KB on 128 x 64 1 bpp; UI redraws are held while it goes out (as the debug link's screenshot does), so it is one frame; the hold ends with the last byte, so a page that polls it does not slow the UI |
-| `/api/aprsis` | the APRS-IS client's settings and state (section 7) |
+| `/api/aprsis` | the APRS-IS client's settings and state (section 7); 403 from another page (`Origin`, `Sec-Fetch-Site`) |
 | `/api/usb?mode=serial` | from the host only (else 403), over the USB network link only (else 400, as for any other query): a short HTML page that closes its tab, and 500 ms later the USB personality switches to serial (`hostlink_request_usb_network`, `usb-network.md` 1). For a web page that needs the serial port: it opens this in a tab, at 12.255.255.254 (the radio on this link, `usb-network.md` 1; every TCP service answers there too). HEAD answers and does not switch. A GET that changes state, because a page can only navigate to it: any page open in a browser on the host can send it too (an image, a no-cors fetch) and take the radio out of network mode until it restarts. Nothing else follows from it |
 | anything else | 404; another method 405; a malformed request line 400 (errors have an empty body) |
 
@@ -211,7 +237,9 @@ NET rigctl" rig). One command per line (CR ignored), the short form or the backs
 by spaces. A "get" answers its value lines; a "set" answers `RPRT 0`, an error `RPRT -<Hamlib error>` (1 invalid
 argument, 4 not implemented, 9 refused, 11 not available). A leading `+` (or `;` `|` `,`) asks for the extended answer:
 the command's long name with a colon, the values with their labels, then `RPRT`. A VFO argument right after the
-command (clients started with `--vfo`) is skipped. A line longer than 63 characters is answered -1 and not run.
+command (clients started with `--vfo`) is skipped. A line longer than 63 characters is answered -1 and not run. A
+line that starts as an HTTP request does (a method and a space: what a browser sends when a web page posts to this
+port) closes the connection unanswered, so nothing after it runs.
 
 | Command | Answer / action |
 |---|---|

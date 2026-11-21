@@ -770,7 +770,9 @@ static uint8_t net_burst(int8_t ts, uint8_t control, const uint8_t *frame, dmr_t
 	dmr_tx_burst_t b;
 	const uint8_t *lc = NULL;
 
+	*lc_out = NULL;		// the early returns (idle, a repeated terminator, a NAK) leave no LC: the callers read it
 	memset(&b, 0, sizeof(b));
+	*burst = b;		// likewise the burst: tx_sched copies it into the schedule entry on the idle path too
 	if (c & MMDVM_DMR_SYNC_DATA) {
 		uint8_t dt = c & 0x0F;
 

@@ -28,6 +28,16 @@ bool ui_svc_t3_name(uint8_t n, char *name)
 	return radio_t3_name(n, name);
 }
 
+void ui_svc_t3_reject(void)
+{
+	radio_req_t3(RADIO_T3_REJECT);
+}
+
+void ui_svc_t3_cancel(void)
+{
+	radio_req_t3(RADIO_T3_CANCEL);
+}
+
 void ui_svc_t3_poll(uint32_t id)
 {
 	radio_req_t3_poll(id);
