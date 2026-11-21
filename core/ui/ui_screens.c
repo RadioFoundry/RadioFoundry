@@ -2543,6 +2543,31 @@ static const font_t *dual_name_font(const ui_state_t *s, int i, const font_t *nf
 	return L->small;
 }
 
+// Row 3's text: a DMR channel's frequency then its chips, else the chips. At their widest (440.6125, CC12) they
+// overflow the narrowest row they share (240 px less a bezel inset, the big font), so the shorter forms give up the
+// gap, then the unit, never a digit: the end was cut there before ("CC1", #837)
+static char dual_r3[80];	// its three forms: static, the ui task's stack is tight
+
+static void dual_row3(const ui_dual_pane_t *p, char *buf, size_t len)
+{
+	sbuf_t b;
+	sb_init(&b, buf, len);
+	if (p->mode != RADIO_MODE_DMR || p->vfo) {
+		sb_str(&b, p->detail);
+		return;
+	}
+	static const char *const sep[] = { " MHz  ", " MHz ", " " };
+	sb_str(&b, TEXT_ALT_OPEN);
+	for (unsigned k = 0; k < sizeof sep / sizeof sep[0]; k++) {
+		if (k)
+			sb_str(&b, TEXT_ALT_NEXT);
+		sb_freq(&b, p->rx_hz);
+		sb_str(&b, sep[k]);
+		sb_str(&b, p->detail);
+	}
+	sb_str(&b, TEXT_ALT_CLOSE);
+}
+
 // A right-pointing triangle ah high (odd) and aw wide at x, y: the selected channel's mark
 static void dual_arrow(int x, int y, int ah, int aw, color_t c)
 {
@@ -2626,13 +2651,8 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 			need += gfx_text_width(dual_num_font(f), fit) + dual_num_font(f)->w / 2;
 		}
 		// Row 3 has room for it after the frequency and chips
-		sb_init(&b, fit, sizeof fit);
-		if (p->mode == RADIO_MODE_DMR && !p->vfo) {
-			sb_freq(&b, p->rx_hz);
-			sb_str(&b, " MHz  ");
-		}
-		sb_str(&b, p->detail);
-		int room3 = w - x0 - gfx_text_width(ft->detail, fit) - 2 * ft->detail->w;
+		dual_row3(p, dual_r3, sizeof dual_r3);
+		int room3 = w - x0 - gfx_text_width(ft->detail, dual_r3) - 2 * ft->detail->w;
 		pill3 = x0 + need > w - dual_pill_w(word) - sm->w / 2 - 1 && room3 >= dual_pill_w(word);
 	}
 	if ((tx || sel) && !pill3) {
@@ -2746,13 +2766,6 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 	if (ft->detail != NULL) {
 		const font_t *df = ft->detail;
 		int y3 = y2 + tf->h;
-		sb_init(&b, buf, sizeof buf);
-		if (p->mode == RADIO_MODE_DMR && !p->vfo) {
-			sb_freq(&b, p->rx_hz);
-			sb_str(&b, " MHz  ");
-		}
-		sb_str(&b, p->detail);
-		int lx = gfx_text(df, x0, y3, buf, ui_col.dim);
 		int r3 = w;
 		if (pill3) {
 			r3 -= dual_pill_w(word);
@@ -2760,6 +2773,15 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 				 tx ? ui_col.tx : ui_col.fg);
 			r3 -= sm->w / 2 + 1;
 		}
+		dual_row3(p, dual_r3, sizeof dual_r3);
+		bool more = true;
+		for (int level = 0; more; level++) {	// the longest form that fits, else the shortest, cut
+			gfx_text_alt(dual_r3, level, fit, sizeof fit, &more);
+			if (gfx_text_width(df, fit) <= r3 - x0)
+				break;
+		}
+		gfx_text_fit(df, fit, r3 - x0, buf, sizeof buf);
+		int lx = gfx_text(df, x0, y3, buf, ui_col.dim);
 		if (ft->zone)
 			gfx_text(df, x0, y3 + df->h, p->zone, ui_col.dim);
 		else
