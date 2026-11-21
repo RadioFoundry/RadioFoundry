@@ -136,31 +136,48 @@ void st7789_write_rows(const st7789_t *p, const uint16_t *fb, uint16_t y0, uint1
 
 void st7789_write_rows_indexed(const st7789_t *p, const uint8_t *fb, const uint16_t *palette, uint16_t y0, uint16_t y1)
 {
+	uint8_t s = p->scale != 0 ? p->scale : 1;
+	st7789_write_rect_indexed(p, fb, palette, 0, y0, (uint16_t)(p->width / s), y1);
+}
+
+void st7789_write_rect_indexed(const st7789_t *p, const uint8_t *fb, const uint16_t *palette, uint16_t x0, uint16_t y0,
+			       uint16_t x1, uint16_t y1)
+{
 	const st7789_bus_t *b = p->bus;
 	uint8_t s = p->scale != 0 ? p->scale : 1;
 	uint32_t fbw = p->width / s, fbh = p->height / s, stride = (fbw + 1u) / 2u;
+	if (x1 > fbw) {
+		x1 = (uint16_t)fbw;
+	}
 	if (y1 > fbh) {
 		y1 = (uint16_t)fbh;
 	}
-	if (y0 >= y1 || p->width > ST7789_MAX_LINE) {
+	if (x0 >= x1 || y0 >= y1 || p->width > ST7789_MAX_LINE) {
 		return;
 	}
+	uint32_t w = (uint32_t)(x1 - x0) * s;
 	b->begin();
-	window(p, 0, (uint16_t)(y0 * s), (uint16_t)(fbw * s), (uint16_t)(y1 * s));
+	window(p, (uint16_t)(x0 * s), (uint16_t)(y0 * s), (uint16_t)(x1 * s), (uint16_t)(y1 * s));
 	for (uint32_t y = y0; y < y1; y++) {
 		const uint8_t *row = fb + y * stride;
 		if (s == 1 && b->pixels4 != NULL) {
-			b->pixels4(row, palette, fbw);
+			uint32_t x = x0;
+			if (x & 1u) {	// a rectangle that starts mid-byte: its first pixel alone
+				line[0] = palette[row[x >> 1] & 0x0Fu];
+				b->pixels(line, 1);
+				x++;
+			}
+			b->pixels4(row + (x >> 1), palette, x1 - x);
 			continue;
 		}
-		for (uint32_t x = 0; x < fbw; x++) {
+		for (uint32_t x = x0; x < x1; x++) {
 			uint16_t c = palette[(row[x >> 1] >> ((x & 1u) ? 0 : 4)) & 0x0Fu];
 			for (uint32_t k = 0; k < s; k++) {
-				line[x * s + k] = c;
+				line[(x - x0) * s + k] = c;
 			}
 		}
 		for (uint32_t k = 0; k < s; k++) {
-			b->pixels(line, fbw * s);
+			b->pixels(line, w);
 		}
 	}
 	b->end();

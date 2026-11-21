@@ -2691,8 +2691,10 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	}
 	ui_st.battery_pct = bat;
 	battery_tick(v);
-	// A banner's countdown ticks; one that waits for the user has none
-	bool fast = v->state == RS_TX || stack[sp].scr == SCR_DIAG || (ui_st.banner.kind != UI_BANNER_NONE && !ui_st.banner.hold);
+	// A banner's countdown ticks; one that waits for the user has none. Not TX: the radio core publishes the view each
+	// time the TX timer's second changes, which redraws, and the extra frames cost the most CPU there (the vocoder
+	// leaves this task little)
+	bool fast = stack[sp].scr == SCR_DIAG || (ui_st.banner.kind != UI_BANNER_NONE && !ui_st.banner.hold);
 #if CONFIG_SUPPORT_INFO
 	fast = fast || (stack[sp].scr == SCR_ABOUT && ui_about_busy());	// each redraw hashes a step of the image
 #endif
@@ -2718,6 +2720,7 @@ void ui_app_draw(void)
 	uint32_t before = ui_strip_draws;
 	dirty = false;
 	draws++;
+	last_refresh = now;	// the refresh is for a screen nothing else redrew: a frame for any reason restarts it
 #if CONFIG_VOLUME_BAR
 	uint32_t hints = ui_hint_draws;
 #endif

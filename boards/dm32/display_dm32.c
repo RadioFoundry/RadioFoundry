@@ -92,6 +92,14 @@ static void flush(const void *fb, const uint16_t *palette, uint16_t y0, uint16_t
 	st7789_write_rows_indexed(&panel, (const uint8_t *)fb, palette, y0, y1);
 }
 
+static void flush_rect(const void *fb, const uint16_t *palette, uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
+{
+	if (!ready || fb == NULL) {
+		return;
+	}
+	st7789_write_rect_indexed(&panel, (const uint8_t *)fb, palette, x0, y0, x1, y1);
+}
+
 const hal_display_t dm32_display = {
 	.inset_top = CONFIG_DISPLAY_INSET_TOP, .inset_bottom = CONFIG_DISPLAY_INSET_BOTTOM,
 	.inset_left = CONFIG_DISPLAY_INSET_LEFT, .inset_right = CONFIG_DISPLAY_INSET_RIGHT,
@@ -100,5 +108,6 @@ const hal_display_t dm32_display = {
 	.bpp = 4,
 	.init = init,
 	.flush_indexed = flush,
+	.flush_rect = flush_rect,
 	.set_backlight = set_backlight,
 };

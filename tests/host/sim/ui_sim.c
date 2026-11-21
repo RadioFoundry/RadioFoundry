@@ -12,6 +12,7 @@
 //   mondown ... monup   the monitor key held (FM: the squelch held open)
 //   datatx / dataend    DMR data goes out without PTT (ARS, SMS, IP): the view says TX; it ends
 //   aprstx / aprsend    an APRS RF beacon keys the transmitter / returns to the selected channel
+//   dmrtx:<state>       during DMR TX: the call's state becomes wait, permit, talk or ending; one tick passes
 //   dtmf:<digits>       during TX: the radio core has sent these DTMF digits (the TX screen's DTMF line)
 //   wait:<ms>           time passes
 //   reboot              power off and on: the screens start over, the settings stay
@@ -416,11 +417,24 @@ static const struct {
 	{ map_s, sizeof map_s / sizeof map_s[0], 0, side_m, 2, side_names },
 };
 
+static void (*flush_rows_hook)(uint16_t y0, uint16_t y1);
+static void (*flush_rect_hook)(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
 static void d_init(void) {}
-static void d_flush(const void *fb, uint16_t y0, uint16_t y1) { (void)fb; (void)y0; (void)y1; }
+static void d_flush(const void *fb, uint16_t y0, uint16_t y1)
+{
+	(void)fb;
+	if (flush_rows_hook != NULL)
+		flush_rows_hook(y0, y1);
+}
 static void d_flush_indexed(const void *fb, const uint16_t *pal, uint16_t y0, uint16_t y1)
 {
-	(void)fb; (void)pal; (void)y0; (void)y1;
+	(void)pal;
+	d_flush(fb, y0, y1);
+}
+static void d_flush_rect(const void *fb, const uint16_t *pal, uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
+{
+	(void)fb; (void)pal;
+	flush_rect_hook(x0, y0, x1, y1);
 }
 static void d_backlight(uint8_t p) { (void)p; }
 // The backlight tests' raw hooks (CONFIG_BACKLIGHT_TEST): a 4096-count period at 7324 Hz, three rates
@@ -2546,12 +2560,22 @@ void sim_count_reset(void) { presses = 0; }
 void sim_set_shot_dir(const char *dir, const char *prefix) { shot_dir = dir; shot_prefix = prefix; }
 static void (*tick_hook)(uint32_t now_ms);
 void sim_set_tick_hook(void (*hook)(uint32_t now_ms)) { tick_hook = hook; }
+void sim_set_flush_hooks(void (*rows)(uint16_t y0, uint16_t y1),
+			 void (*rect)(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1))
+{
+	flush_rows_hook = rows;
+	flush_rect_hook = rect;
+	disp.flush_rect = rect != NULL ? d_flush_rect : NULL;
+}
 
 static void step(void)
 {
 	now_ms += TICK_MS;
-	if (view.state == RS_TX)
+	if (view.state == RS_TX) {
 		view.tx_elapsed_ms += TICK_MS;
+		if (view.tx_elapsed_ms % 1000u < TICK_MS)
+			changed();	// as the radio core's TX timer: the view is published when its second changes
+	}
 	if (ptt_up_at && now_ms >= ptt_up_at) {
 		ptt_up_at = 0;
 		input_event_t ev = { ACT_PTT, GESTURE_UP, 0 };
@@ -3092,6 +3116,23 @@ static bool run_token(char *t, char *err, size_t len)
 		view.tx_elapsed_ms = 0;
 		changed();
 		advance(1500);
+		return true;
+	}
+	if (strcmp(t, "dmrtx") == 0 && arg != NULL) {	// during DMR TX: the call's state changes; one tick passes
+		static const struct { const char *name; uint8_t state; } states[] = {
+			{ "wait", RDMR_TX_WAIT }, { "permit", RDMR_TX_PERMIT }, { "talk", RDMR_TX },
+			{ "ending", RDMR_TX_ENDING },
+		};
+		size_t i = 0;
+		while (i < sizeof states / sizeof states[0] && strcmp(arg, states[i].name) != 0)
+			i++;
+		if (i == sizeof states / sizeof states[0]) {
+			snprintf(err, len, "dmrtx: expected wait, permit, talk or ending, got %s", arg);
+			return false;
+		}
+		view.dmr.state = states[i].state;
+		changed();
+		advance(TICK_MS);
 		return true;
 	}
 	if (strcmp(t, "aprstx") == 0 || strcmp(t, "aprsend") == 0) {

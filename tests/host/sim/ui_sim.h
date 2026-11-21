@@ -58,6 +58,11 @@ void sim_set_shot_dir(const char *dir, const char *prefix);
 // Pass NULL to remove a hook.
 void sim_set_tick_hook(void (*hook)(uint32_t now_ms));
 void sim_set_beep_hook(void (*hook)(uint8_t beep, uint32_t now_ms));
+// What gfx_flush sends the panel, for a program that calls it (the simulator itself never flushes): rows, and
+// rectangles where the display offers flush_rect (rect not NULL). Takes effect at the next sim_reset; NULL, NULL
+// removes both
+void sim_set_flush_hooks(void (*rows)(uint16_t y0, uint16_t y1),
+			 void (*rect)(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1));
 
 // Every text gfx_text_fit shortens (with an ellipsis) goes to this hook (NULL: none); sim_rec.shortened counts them
 void sim_set_fit_hook(void (*hook)(const char *src, const char *out));

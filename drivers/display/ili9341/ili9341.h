@@ -45,6 +45,9 @@ void ili9341_init(const ili9341_t *p);
 // Send rows y0 .. y1-1 of a width x height 16-color frame buffer: two pixels a byte (high nibble left), palette of
 // 16 RGB565 colors
 void ili9341_write_rows_indexed(const ili9341_t *p, const uint8_t *fb, const uint16_t *palette, uint16_t y0, uint16_t y1);
+// The same for columns x0 .. x1-1 only
+void ili9341_write_rect_indexed(const ili9341_t *p, const uint8_t *fb, const uint16_t *palette, uint16_t x0, uint16_t y0,
+				uint16_t x1, uint16_t y1);
 void ili9341_fill(const ili9341_t *p, uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t color);
 void ili9341_display_on(const ili9341_t *p, bool on);
 

@@ -36,6 +36,17 @@ static void d_flush_indexed(const void *fb, const uint16_t *pal, uint16_t y0, ui
 	flushes++;
 	flushed_rows += y1 - y0;
 }
+// flush_rect: each rectangle as sent
+typedef struct { uint16_t x0, y0, x1, y1; bool pal; } rect_t;
+static rect_t rects[32];
+static int n_rects;
+static void d_flush_rect(const void *fb, const uint16_t *pal, uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
+{
+	(void)fb;
+	if (n_rects < 32)
+		rects[n_rects] = (rect_t){ x0, y0, x1, y1, pal != NULL };
+	n_rects++;
+}
 static void d_backlight(uint8_t p) { (void)p; }
 static hal_display_t disp = { .width = 160, .height = 120, .bpp = 16, .init = d_init, .flush = d_flush, .set_backlight = d_backlight };
 
@@ -266,6 +277,16 @@ static void test_indexed(void)
 	gfx_pixel(11, 20, blue);	// odd column: the low nibble
 	CHECK(gfx_get_pixel(0, 0) == red && gfx_get_pixel(12, 12) == green && gfx_get_pixel(11, 20) == blue);
 	CHECK(gfx_get_pixel(10, 20) == red && gfx_get_pixel(12, 20) == red);
+	// Fills are written a byte (two pixels) at a time: every start and end column, odd or even, keeps its neighbors
+	for (int x0 = 30; x0 < 34; x0++)
+		for (int w = 1; w < 6; w++) {
+			int y = 40 + (x0 - 30) * 6 + w;
+			gfx_fill(x0, y, w, 1, green);
+			bool ok = gfx_get_pixel(x0 - 1, y) == red && gfx_get_pixel(x0 + w, y) == red;
+			for (int x = x0; x < x0 + w; x++)
+				ok = ok && gfx_get_pixel(x, y) == green;
+			CHECK(ok);
+		}
 	// A capture reads RGB565, little endian
 	uint8_t px[4];
 	gfx_read_rgb565((20u * 160u + 10u) * 2u, px, 4);
@@ -319,6 +340,92 @@ static void test_indexed(void)
 	CHECK(own);
 	gfx_pixel(140, 110, red);
 	CHECK(gfx_get_pixel(140, 110) == red);
+	gfx_init(&disp);
+}
+
+// A display with flush_rect gets the changed tiles (8 rows by an eighth of the width) as rectangles; rows that changed
+// across the whole width still go out as one band of rows
+static void flush_reset(void)
+{
+	flushes = flushed_rows = n_rects = 0;
+}
+
+static void test_flush_rect(void)
+{
+	hal_display_t d = disp;
+	d.width = 160; d.height = 120; d.bpp = 4;
+	d.inset_top = d.inset_bottom = d.inset_left = d.inset_right = 0;
+	d.flush_indexed = d_flush_indexed;
+	d.flush_rect = d_flush_rect;
+	CHECK(gfx_init(&d));
+	const color_t bg = RGB565(0, 0, 0), ink = RGB565(255, 255, 255), red = RGB565(255, 0, 0);
+	gfx_clear(bg);
+	flush_reset();
+	gfx_flush();		// the first frame: every row, as rows
+	CHECK(flushes >= 1 && flushed_rows == 120 && n_rects == 0);
+	flush_reset();
+	gfx_flush();
+	CHECK(flushes == 0 && n_rects == 0);
+#if CONFIG_NET_WEBCTL
+	gfx_rows_take(0, 119);
+#endif
+
+	// A change inside one tile (columns 40..59, rows 16..23): that tile alone
+	gfx_fill(50, 20, 4, 3, ink);
+	flush_reset();
+	gfx_flush();
+	CHECK(flushes == 0 && n_rects == 1 && rects[0].x0 == 40 && rects[0].x1 == 60 && rects[0].y0 == 16 &&
+	      rects[0].y1 == 24 && rects[0].pal);
+#if CONFIG_NET_WEBCTL
+	CHECK(gfx_row_next(0) == 16 && gfx_row_next(24) < 0);	// the web control's copy gets the tile's rows
+	gfx_rows_take(0, 119);
+#endif
+	// Across a tile corner: two tiles side by side in each of two tile rows, one rectangle per tile row
+	gfx_fill(58, 6, 4, 4, red);
+	flush_reset();
+	gfx_flush();
+	CHECK(n_rects == 2 && rects[0].x0 == 40 && rects[0].x1 == 80 && rects[0].y0 == 0 && rects[0].y1 == 8 &&
+	      rects[1].x0 == 40 && rects[1].x1 == 80 && rects[1].y0 == 8 && rects[1].y1 == 16);
+	// Two changes apart in one tile row: a rectangle each. The last tile ends at the width
+	gfx_fill(5, 100, 2, 2, ink);
+	gfx_fill(150, 100, 2, 2, ink);
+	flush_reset();
+	gfx_flush();
+	CHECK(n_rects == 2 && rects[0].x0 == 0 && rects[0].x1 == 20 && rects[1].x0 == 140 && rects[1].x1 == 160 &&
+	      rects[0].y0 == 96 && rects[1].y1 == 104);
+	// The whole width of tile row 40..47 and part of 48..55: one band of rows, then a rectangle
+	gfx_fill(0, 40, 160, 2, red);
+	gfx_fill(0, 46, 30, 4, red);
+	flush_reset();
+	gfx_flush();
+	CHECK(flushes == 1 && flushed_rows == 8 && n_rects == 1 && rects[0].y0 == 48 && rects[0].x1 == 40);
+	// An entry that changed color redraws everything, as rows
+	gfx_clear(red);
+	gfx_fill(0, 0, 4, 4, bg);
+	flush_reset();
+	gfx_flush();
+	CHECK(flushes >= 1 && flushed_rows == 120 && n_rects == 0);
+	// The last tile row is cut at the panel's height
+	gfx_fill(0, 118, 2, 2, ink);
+	flush_reset();
+	gfx_flush();
+	CHECK(n_rects == 1 && rects[0].y0 == 112 && rects[0].y1 == 120);
+
+	// RGB565 gets no palette; a 1 bpp panel's tiles start on a byte (16 px of 128)
+	d.bpp = 16;
+	CHECK(gfx_init(&d));
+	gfx_flush();
+	gfx_pixel(25, 3, ink);
+	flush_reset();
+	gfx_flush();
+	CHECK(n_rects == 1 && !rects[0].pal && rects[0].x0 == 20 && rects[0].x1 == 40);
+	d.width = 128; d.height = 64; d.bpp = 1;
+	CHECK(gfx_init(&d));
+	gfx_flush();
+	gfx_pixel(17, 60, ink);
+	flush_reset();
+	gfx_flush();
+	CHECK(n_rects == 1 && rects[0].x0 == 16 && rects[0].x1 == 32 && rects[0].y0 == 56 && rects[0].y1 == 64);
 	gfx_init(&disp);
 }
 
@@ -734,6 +841,7 @@ int main(void)
 	CHECK(gfx_init(&disp) == (GFX_MAX_ROWS >= 320));
 
 	test_indexed();
+	test_flush_rect();
 	test_aa_text();
 	test_splash_footer();
 	test_pass_wait();

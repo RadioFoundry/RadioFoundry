@@ -238,26 +238,41 @@ void ili9341_init(const ili9341_t *p)
 
 void ili9341_write_rows_indexed(const ili9341_t *p, const uint8_t *fb, const uint16_t *palette, uint16_t y0, uint16_t y1)
 {
+	ili9341_write_rect_indexed(p, fb, palette, 0, y0, p->width, y1);
+}
+
+void ili9341_write_rect_indexed(const ili9341_t *p, const uint8_t *fb, const uint16_t *palette, uint16_t x0, uint16_t y0,
+				uint16_t x1, uint16_t y1)
+{
 	const ili9341_bus_t *b = p->bus;
-	uint32_t w = p->width, stride = (w + 1u) / 2u;
+	uint32_t stride = (p->width + 1u) / 2u;
+	if (x1 > p->width) {
+		x1 = p->width;
+	}
 	if (y1 > p->height) {
 		y1 = p->height;
 	}
-	if (y0 >= y1 || w > ILI9341_MAX_LINE) {
+	if (x0 >= x1 || y0 >= y1 || p->width > ILI9341_MAX_LINE) {
 		return;
 	}
 	b->begin();
-	window(p, 0, y0, (uint16_t)w, y1);
+	window(p, x0, y0, x1, y1);
 	for (uint32_t y = y0; y < y1; y++) {
 		const uint8_t *row = fb + y * stride;
 		if (b->pixels4 != NULL) {
-			b->pixels4(row, palette, w);
+			uint32_t x = x0;
+			if (x & 1u) {	// a rectangle that starts mid-byte: its first pixel alone
+				line[0] = palette[row[x >> 1] & 0x0Fu];
+				b->pixels(line, 1);
+				x++;
+			}
+			b->pixels4(row + (x >> 1), palette, x1 - x);
 			continue;
 		}
-		for (uint32_t x = 0; x < w; x++) {
-			line[x] = palette[(row[x >> 1] >> ((x & 1u) ? 0 : 4)) & 0x0Fu];
+		for (uint32_t x = x0; x < x1; x++) {
+			line[x - x0] = palette[(row[x >> 1] >> ((x & 1u) ? 0 : 4)) & 0x0Fu];
 		}
-		b->pixels(line, w);
+		b->pixels(line, (uint32_t)(x1 - x0));
 	}
 	b->end();
 }

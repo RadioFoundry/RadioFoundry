@@ -188,6 +188,35 @@ static void test_rows_indexed(void)
 	clear_log();
 	st7789_write_rows_indexed(&p, fb, pal, 7, 7);
 	CHECK(n_e == 0 && begins == 0);
+
+	// A rectangle: columns 30..59 of rows 3..4, the column window set to match
+	clear_log();
+	st7789_write_rect_indexed(&p, fb, pal, 30, 3, 60, 5);
+	int ca = find(0x2A);
+	ra = find(0x2B);
+	wr = find(0x2C);
+	CHECK(depth == 0 && begins == 1);
+	CHECK(ca >= 0 && log_e[ca].data[1] == 30 && log_e[ca].data[3] == 59);
+	CHECK(ra >= 0 && log_e[ra].data[1] == 3 && log_e[ra].data[3] == 4);
+	CHECK(wr >= 0 && log_e[wr].n_px == 30u * 2u);
+	// Pixel 30 is byte 15's high nibble (row 3: index 3), pixel 31 its low one (15); row 4 starts at px_log[30]
+	CHECK(px_log[0] == pal[3] && px_log[1] == pal[15] && px_log[29] == pal[29 & 15] && px_log[30] == pal[4]);
+	// Clipped to the frame; an empty one sends nothing
+	clear_log();
+	st7789_write_rect_indexed(&p, fb, pal, 200, 0, 300, 1);
+	ca = find(0x2A);
+	CHECK(ca >= 0 && log_e[ca].data[1] == 200 && log_e[ca].data[3] == 239 && log_e[find(0x2C)].n_px == 40u);
+	clear_log();
+	st7789_write_rect_indexed(&p, fb, pal, 50, 0, 50, 10);
+	CHECK(n_e == 0 && begins == 0);
+	// At 2x scale both the window and each pixel double
+	const st7789_t q = { &bus, 240, 320, 0xC0, true, 2 };
+	clear_log();
+	st7789_write_rect_indexed(&q, fb, pal, 10, 1, 20, 2);
+	ca = find(0x2A);
+	ra = find(0x2B);
+	CHECK(ca >= 0 && log_e[ca].data[1] == 20 && log_e[ca].data[3] == 39);
+	CHECK(ra >= 0 && log_e[ra].data[1] == 2 && log_e[ra].data[3] == 3 && log_e[find(0x2C)].n_px == 20u * 2u);
 }
 
 // A bus with the 16-color row hook: rows at scale 1 go through it, expanded here as a board would, and send what the
@@ -229,6 +258,31 @@ static void test_rows_pixels4(void)
 	CHECK(rows4 == 0 && log_e[find(0x2C)].n_px == 240u * 4u);
 }
 
+// A rectangle through the row hook sends what the line buffer sends, from even and odd columns, odd widths included
+static void test_rect_pixels4(void)
+{
+	static uint8_t fb[120 * 320];
+	uint16_t pal[16];
+	for (int i = 0; i < 16; i++)
+		pal[i] = (uint16_t)(0x0F01u * (unsigned)i);
+	for (size_t i = 0; i < sizeof fb; i++)
+		fb[i] = (uint8_t)(i * 13u + 5u);
+	const st7789_t p = { &bus, 240, 320, 0xC0, true, 1 }, p4 = { &bus4, 240, 320, 0xC0, true, 1 };
+	static const uint16_t cols[][2] = { { 0, 1 }, { 1, 2 }, { 1, 4 }, { 30, 60 }, { 31, 60 }, { 31, 61 }, { 239, 240 } };
+	static uint16_t want[1024];
+	for (size_t k = 0; k < sizeof cols / sizeof cols[0]; k++) {
+		clear_log();
+		st7789_write_rect_indexed(&p, fb, pal, cols[k][0], 7, cols[k][1], 10);
+		uint32_t n_want = n_px_log;
+		memcpy(want, px_log, sizeof want);
+		clear_log();
+		rows4 = 0;
+		st7789_write_rect_indexed(&p4, fb, pal, cols[k][0], 7, cols[k][1], 10);
+		CHECK(rows4 == 3 && depth == 0 && n_want == 3u * (cols[k][1] - cols[k][0]));
+		CHECK(n_px_log == n_want && memcmp(px_log, want, n_want * sizeof want[0]) == 0);
+	}
+}
+
 static void test_misc(void)
 {
 	const st7789_t p = { &bus, 240, 320, 0xC0, true, 2 };
@@ -248,6 +302,7 @@ int main(void)
 	test_rows();
 	test_rows_indexed();
 	test_rows_pixels4();
+	test_rect_pixels4();
 	test_misc();
 	if (failures) {
 		printf("st7789Test: %d failures\n", failures);
