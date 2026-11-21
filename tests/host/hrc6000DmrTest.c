@@ -238,6 +238,32 @@ static void test_chip_sequences(void)
 	CHECK(hrc6000_dmr_payload_len(DMR_BURST_CSBK) == 12 && hrc6000_dmr_payload_len(DMR_BURST_VOICE) == 27);
 }
 
+// Mic gain with the user's offset (hrc6000_mic_gain, radio-features.md 3.6): 3 dB a step, rounded, kept in 0..15
+// (above 15 the register's first stage stays at -12 dB and the steps start again), and the code where FM TX and DMR
+// entry write it
+static void test_mic_gain(void)
+{
+	CHECK(hrc6000_mic_gain(7, 0) == 7);
+	// Mic gain steps 0..10 are -10..+10 dB in 2 dB steps: -3 -3 -2 -1 -1 0 1 1 2 3 3 codes
+	static const int8_t want[11] = { 4, 4, 5, 6, 6, 7, 8, 8, 9, 10, 10 };
+	for (int i = 0; i <= 10; i++) {
+		CHECK(hrc6000_mic_gain(7, (int8_t)((i - 5) * 2)) == want[i]);
+	}
+	CHECK(hrc6000_mic_gain(1, -10) == 0 && hrc6000_mic_gain(14, 10) == HRC6000_MIC_GAIN_MAX);
+	CHECK(hrc6000_mic_gain(31, 0) == HRC6000_MIC_GAIN_MAX && hrc6000_mic_gain(7, -128) == 0);
+
+	hrc6000_fm_tx_t fm = { .uhf = true, .wide = false, .mic_gain = hrc6000_mic_gain(7, -10) };
+	log_reset();
+	CHECK(hrc6000_set_mode_fm_tx(&dev, &fm));
+	CHECK(last_write(4, 0xE4) == 0x24);
+	log_reset();
+	CHECK(hrc6000_dmr_enter(&dev, 0x11, 0x22, hrc6000_mic_gain(7, 6)));
+	CHECK(last_write(4, 0xE4) == 0x29);
+	log_reset();
+	CHECK(hrc_set_mic_gain(&dev, 20));	// clamped: 0x34 would be gain 4
+	CHECK(last_write(4, 0xE4) == 0x2F);
+}
+
 static void test_decode(void)
 {
 	hrc6000_rx_status_t s;
@@ -1601,6 +1627,7 @@ int main(void)
 {
 	hrc6000_attach(&dev, &bus);
 	test_chip_sequences();
+	test_mic_gain();
 	test_decode();
 	test_rx();
 	test_rx_stale_lc();

@@ -40,7 +40,8 @@
 #define DAC_MAX				4095u
 
 #define UHF_MIN_HZ		300000000u
-#define FM_MIC_GAIN		7	// 0..31, as the init value 0xE4 = 0x27
+// The levels at Mic gain step 5 (hrc6000_mic_gain: 3 dB a step), as the init value 0xE4 = 0x27
+#define FM_MIC_GAIN		7
 #define DMR_MIC_GAIN		7
 #define I2C_TRIES		3
 #define I2C_TIMEOUT_MS		5
@@ -83,6 +84,7 @@ static struct {
 	bool asleep;			// rx_sleep(true): receiver off
 	volatile bool afsk;		// APRS AFSK running (afsk_uvf.c): the TIM6 interrupt owns I2C3
 	bool inject;			// FM TX audio from the MCU (fm_tx_inject) instead of the microphone
+	volatile int8_t mic_offset_db;	// hal_radio_t.mic_gain: taken at the next FM TX start, DMR entry or DMR TX start
 
 	// DMR per-burst keying (shared with the modem ISRs)
 	volatile bool dmr_armed;	// tx() in DMR mode: TX frequency and drive known
@@ -686,7 +688,7 @@ static void dmr_enter(void)
 	uvf_cal_point_t cal;
 	uvf_cal_at(r.rx_valid ? r.rx_hz : board.bands[0].lo_hz, &cal);	// on false it fills safe defaults
 #if CONFIG_DMR
-	count(hrc6000_dmr_enter(&r.modem, cal.dmr_i, cal.dmr_q, DMR_MIC_GAIN));
+	count(hrc6000_dmr_enter(&r.modem, cal.dmr_i, cal.dmr_q, hrc6000_mic_gain(DMR_MIC_GAIN, r.mic_offset_db)));
 #endif
 	stm32_hrc_dmr_enter();
 }
@@ -789,7 +791,7 @@ static void init(void)
 		hal_delay_ms(1);
 	}
 	hrc6000_attach(&r.modem, &modem_bus);
-	count(hrc6000_power_on_init(&r.modem, DMR_MIC_GAIN));
+	count(hrc6000_power_on_init(&r.modem, hrc6000_mic_gain(DMR_MIC_GAIN, r.mic_offset_db)));
 	count(at1846s_init_finish(&r.rf));
 
 	r.mode = RADIO_MODE_FM;
@@ -886,6 +888,7 @@ static void inject_stop(void)
 	if (hrc_read(&r.modem, 4, 0xE0, &e0)) {
 		count(hrc_write(&r.modem, 4, 0xE0, (uint8_t)((e0 | 0x40u) & ~0x06u)));	// the microphone again
 	}
+	count(hrc_set_mic_gain(&r.modem, hrc6000_mic_gain(FM_MIC_GAIN, r.mic_offset_db)));	// at the user's level
 }
 
 bool uvf_fm_tx_inject(audio_tap_pull_t pull, audio_tap_mode_t mode)
@@ -904,6 +907,7 @@ bool uvf_fm_tx_inject(audio_tap_pull_t pull, audio_tap_mode_t mode)
 	}
 	uvf_pwm_audio(pull);
 	count(hrc_write(&r.modem, 4, 0xE0, (uint8_t)((e0 & ~0x40u) | 0x06u)));
+	count(hrc_set_mic_gain(&r.modem, FM_MIC_GAIN));	// the PWM level is scaled for this gain, not the user's Mic gain
 	r.inject = true;
 	return true;
 }
@@ -1018,6 +1022,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		// burst); each burst is keyed from the modem's RF TX interrupt (uvf_rf_dmr_switch)
 		int32_t dmr_offset = bw == RADIO_BW_25K ? UVF_TX_OFFSET_HZ_25K : UVF_TX_OFFSET_HZ_12K5;
 		count(hrc_set_mod_gain(&r.modem, cal.dmr_i, cal.dmr_q));
+		count(hrc_set_mic_gain(&r.modem, hrc6000_mic_gain(DMR_MIC_GAIN, r.mic_offset_db)));
 		r.dmr_tx_hz = (uint32_t)((int32_t)hz + dmr_offset);
 		r.dmr_drive = drive;
 		r.dmr_uhf = uhf;
@@ -1055,7 +1060,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		.mod2 = cal.fm_i,
 		.mod1 = cal.fm_q,
 		.ref_offset = uvf_ref_trimmed(cal.ref_offset, trim_ppb),
-		.mic_gain = FM_MIC_GAIN,
+		.mic_gain = hrc6000_mic_gain(FM_MIC_GAIN, r.mic_offset_db),
 	};
 	count(hrc6000_set_mode_fm_tx(&r.modem, &fm));
 
@@ -1330,6 +1335,13 @@ static void rx_sleep(bool sleep)
 }
 
 // SFR only (hal_radio_t.dmr_direct_query): rf_key asks at each burst whether it may key straight from RX
+// Settings > Mic gain as a dB offset (hal_radio_t.mic_gain): only stored, since any task may call; the next FM TX
+// start, DMR entry or DMR TX start writes 0xE4 with it
+static void mic_gain(int8_t db)
+{
+	r.mic_offset_db = db;
+}
+
 static void dmr_direct_query(bool (*sfr_repeats)(void))
 {
 	r.sfr_repeats = sfr_repeats;
@@ -1370,6 +1382,7 @@ const hal_radio_t uvf_radio = {
 	.dmr_keying = dmr_keying,
 	.tx_drive_level = tx_drive_level,
 	.tx_drive = tx_drive,
+	.mic_gain = mic_gain,
 };
 
 void uvf_radio_diag(uvf_radio_diag_t *d)

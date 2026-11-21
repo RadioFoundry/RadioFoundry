@@ -311,11 +311,15 @@ the debug link's SETTING op 29 sets it in RAM only.
 
 | Board | FM | DMR |
 |---|---|---|
-| with `hal_radio_t.mic_gain` (HR_C7000 boards) | the board's FM level for the channel bandwidth plus (step - 5) x 2 dB, written into the modem's mic gain at each FM transmit start | the board's DMR level plus the same offset, at each DMR entry and DMR transmit start; the samples to the vocoder are not scaled |
+| with `hal_radio_t.mic_gain` (HR_C6000 and HR_C7000 boards) | the board's FM level for the channel bandwidth plus (step - 5) x 2 dB, written into the modem's mic gain at each FM transmit start | the board's DMR level plus the same offset, at each DMR entry and DMR transmit start; the samples to the vocoder are not scaled |
 | without it | not changed | the mic samples are scaled before the vocoder (`ambeVoiceSetMicGain`, with saturation) |
 
 The board only stores the offset in the hook; a change takes effect at the next transmission. On an HR_C7000 radio
-the register is clamped to 0-42 dB (`hrc7000_mic_db`). The VOX meter reads the same codec ADC, so on these radios
+the register is clamped to 0-42 dB (`hrc7000_mic_db`). On an HR_C6000 radio the register (4:0xE4 bits 3-0) moves in
+3 dB steps, so `hrc6000_mic_gain` rounds the offset to the nearest step and clamps the result to 0-15: steps 0-10 give
+-3, -3, -2, -1, -1, 0, +1, +1, +2, +3, +3 register steps around the board's level (-9 to +9 dB). Host audio injected
+into the microphone input for FM transmit (`fm_tx_inject`) keeps the board's level, so the setting doesn't move a
+host's audio. The VOX meter reads the same codec ADC, so on these radios
 the mic gain also moves the VOX level. Without `CONFIG_DMR` and without the hook the row is dimmed.
 
 ### 3.7 DTMF transmit (CONFIG_DTMF)

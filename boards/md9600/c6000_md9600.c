@@ -45,7 +45,7 @@
 #include "semphr.h"
 
 #define C6000_PWD_WAIT_MS	12	// at least 10 ms after PWD low before the first access (as the other HR_C6000 radios)
-#define DMR_MIC_GAIN		7	// the other HR_C6000 radios' value (unverified here)
+#define DMR_MIC_GAIN		7	// at Mic gain step 5, the other HR_C6000 radios' value (unverified here)
 #define RX_GAIN_DB		2	// 4:0x37 = 0xC2 (unverified)
 #define SAFE_GAIN		0x80u	// modulation gain without a calibration value
 #define VOICE_SPI_PINS		(GPIO_PIN_3 | GPIO_PIN_4 | GPIO_PIN_5)	// PB3 SCK, PB4 MISO, PB5 MOSI (AF5)
@@ -61,7 +61,7 @@
 #define CAL_FM_I_VHF		0x179u
 #define CAL_FM_Q_UHF		0x180u
 #define CAL_FM_Q_VHF		0x189u
-#define FM_MIC_GAIN		7	// the other HR_C6000 radios' value (unverified here)
+#define FM_MIC_GAIN		7	// at Mic gain step 5, the other HR_C6000 radios' value (unverified here)
 
 // The configuration port on PE2-PE5 and the voice port on SPI1 (PB3-PB5, chip select PD7): mode 2 at PCLK2 / 16 =
 // 4.5 MHz, the other HR_C6000 radios' rate (unverified on this radio)
@@ -76,6 +76,7 @@ static hrc_bus_t modem_bus;
 static hrc_t modem;
 static md9600_c6000_diag_t diag;
 static uint32_t tuned_hz;
+static volatile int8_t mic_offset_db;	// md9600_c6000_mic_gain: taken at the next FM TX start, DMR entry or DMR TX start
 
 static void count(bool ok)
 {
@@ -208,7 +209,7 @@ void md9600_c6000_fm_tx(uint32_t hz, bool wide)
 		.mod2 = cal_gain(CAL_FM_I_UHF, CAL_FM_I_VHF, hz),
 		.mod1 = cal_gain(CAL_FM_Q_UHF, CAL_FM_Q_VHF, hz),
 		.ref_offset = off,
-		.mic_gain = FM_MIC_GAIN,
+		.mic_gain = hrc6000_mic_gain(FM_MIC_GAIN, mic_offset_db),
 	};
 	fm_tx = true;
 #if MD9600_TX_SIG
@@ -264,8 +265,9 @@ bool md9600_c6000_afsk_tone(uint16_t hz)
 
 #if MD9600_FM_TX_INJECT
 // Host audio on PC8 in place of the microphone (hal_audio_tap_t.fm_tx_inject): full scale to the whole PWM range. At
-// the FM mic gain, linear to about 950 Hz peak deviation for half scale at 1 kHz, the limiter near 1.4 kHz peak (UHF,
-// 12.5 kHz; bench 2026-11-05, hardware-md9600.md 19.9). The mic gain register isn't monotonic, so it stays
+// FM_MIC_GAIN, linear to about 950 Hz peak deviation for half scale at 1 kHz, the limiter near 1.4 kHz peak (UHF,
+// 12.5 kHz; bench 2026-11-05, hardware-md9600.md 19.9). The injection sets FM_MIC_GAIN for the over, so the user's
+// Mic gain doesn't move the host's level
 #define INJECT_AMP		127
 #define INJECT_NOMINAL_PEAK	26000	// about 1.5 kHz peak deviation at 1 kHz
 static bool injecting;
@@ -280,6 +282,7 @@ static void inject_stop(void)
 	uint8_t e0;
 	if (fm_tx && hrc_read(&modem, 4, 0xE0, &e0)) {
 		count(hrc_write(&modem, 4, 0xE0, (uint8_t)((e0 | 0x40u) & ~0x06u)));	// the microphone again
+		count(hrc_set_mic_gain(&modem, hrc6000_mic_gain(FM_MIC_GAIN, mic_offset_db)));	// at the user's level
 	}
 }
 
@@ -299,6 +302,7 @@ static bool fm_tx_inject(audio_tap_pull_t pull, audio_tap_mode_t mode)
 	}
 	md9600_pwm_audio(pull, INJECT_AMP);
 	count(hrc_write(&modem, 4, 0xE0, (uint8_t)((e0 & ~0x40u) | 0x06u)));	// MIC_P / MIC_N in, LINEIN1 out
+	count(hrc_set_mic_gain(&modem, FM_MIC_GAIN));
 	injecting = true;
 	return true;
 }
@@ -427,6 +431,18 @@ static const stm32_hrc_dmr_board_t dmr_board = {
 
 // --- radio hooks (radio_md9600.c) ---
 
+void md9600_c6000_mic_gain(int8_t db)
+{
+	mic_offset_db = db;
+}
+
+#if CONFIG_MD9600_DMR_TX
+void md9600_c6000_dmr_tx(void)
+{
+	count(hrc_set_mic_gain(&modem, hrc6000_mic_gain(DMR_MIC_GAIN, mic_offset_db)));
+}
+#endif
+
 void md9600_c6000_init(void)
 {
 	if (speaker_lock == NULL) {
@@ -437,7 +453,7 @@ void md9600_c6000_init(void)
 	PIN_WRITE(PIN_C6000_PWD, false);
 	hal_delay_ms(C6000_PWD_WAIT_MS);
 	hrc6000_attach(&modem, &modem_bus);
-	count(hrc6000_power_on_init(&modem, DMR_MIC_GAIN));
+	count(hrc6000_power_on_init(&modem, hrc6000_mic_gain(DMR_MIC_GAIN, mic_offset_db)));
 	fm_rx_setup();
 	count(hrc6000_set_rx_gain(&modem, RX_GAIN_DB));
 	count(hrc6000_tones_off(&modem));	// with the init's 0x80 the chip never syncs on DMR (hardware-md9600.md 4.2)
@@ -470,7 +486,7 @@ void md9600_c6000_mode(bool dmr, uint32_t hz)
 #if CONFIG_DMR
 		count(hrc6000_rx_iq_swap(&modem, iq_swap(hz), false));
 		count(hrc6000_dmr_enter(&modem, cal_gain(CAL_DMR_I_UHF, CAL_DMR_I_VHF, hz),
-					cal_gain(CAL_DMR_Q_UHF, CAL_DMR_Q_VHF, hz), DMR_MIC_GAIN));
+					cal_gain(CAL_DMR_Q_UHF, CAL_DMR_Q_VHF, hz), hrc6000_mic_gain(DMR_MIC_GAIN, mic_offset_db)));
 #endif
 		ref_offset(hz);
 		tuned_hz = hz;
