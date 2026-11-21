@@ -1,28 +1,20 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Small text builders for the UI (no printf: less flash and stack)
+// Small text builders for the UI: dynamic data a text shows (frequencies, times, places). The buffer and the
+// formatter are text/format.h
 #ifndef UI_FMT_H
 #define UI_FMT_H
 
 #include <stdint.h>
 #include <stddef.h>
 #include "hal_radio.h"
+#include "text/format.h"
 
-// Appends to a fixed buffer, always terminated, silently truncated
-typedef struct {
-	char *p;
-	char *end;	// last usable byte (for the terminator)
-} sbuf_t;
-
-void sb_init(sbuf_t *b, char *buf, size_t len);
-// Copies src into a buffer of cap bytes, truncated and always terminated: for text that may be a translation
-// (i18n.h), whose length isn't known when the code is written
-void str_copy(char *dst, size_t cap, const char *src);
-void sb_str(sbuf_t *b, const char *s);
-void sb_chr(sbuf_t *b, char c);
-// Unsigned decimal with at least min_digits digits (zero padded)
-void sb_u32(sbuf_t *b, uint32_t v, int min_digits);
-void sb_i32(sbuf_t *b, int32_t v);
+// A buffer of its own for a value a helper makes: SB_LOCAL(f, 12); sb_freq(&f, hz); then f_text is the value
+#define SB_LOCAL(name, size) \
+	char name##_text[size]; \
+	sbuf_t name; \
+	sb_init(&name, name##_text, sizeof name##_text)
 // Upper-case hex, exactly digits digits (a P25 NAC: 293, F7E)
 void sb_hex(sbuf_t *b, uint32_t v, int digits);
 // MHz with 3 decimals, more (up to 5) when the frequency needs them: 146.520, 446.00625

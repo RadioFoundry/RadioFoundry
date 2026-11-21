@@ -104,8 +104,7 @@ static void hub_item(uint16_t i, ui_item_t *it)
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
 	if (e == HUB_MESSAGES && ui_st.unread) {
-		sb_u32(&b, ui_st.unread, 1);
-		sb_str(&b, TR(HUB_VALUE_NEW, " new"));
+		TRF(&b, HUB_VALUE_NEW, "%u new", ui_st.unread);
 		it->flags |= UI_ITEM_WARN;
 	} else if (e == HUB_ZONES) {
 		// The zone (or VFO), left out where it doesn't fit beside the label (an empty last alternate)
@@ -217,8 +216,7 @@ static void act_item(uint16_t i, ui_item_t *it)
 		if (t.group)
 			t.name[0] = 0;	// "Talk to TG 91": the name is in the title
 		ui_sb_target(name, sizeof name, &t);
-		sb_str(&b, TR(ACT_ROW_TALK_TO, "Talk to "));
-		sb_str(&b, name);
+		TRF(&b, ACT_ROW_TALK_TO, "Talk to %s", name);
 		if (!(feats() & UI_FEAT_TALK_TARGET))
 			it->flags |= UI_ITEM_DIM;
 		break;
@@ -307,9 +305,7 @@ static void act_select(uint16_t i, bool hold)
 		break;
 	case A_CHECK:
 		if (ui_svc_radio_check(ui_target.id)) {
-			sb_str(&b, TR(ACT_TOAST_CHECKING, "Checking "));
-			sb_str(&b, name);
-			sb_str(&b, "...");
+			TRF(&b, ACT_TOAST_CHECKING, "Checking %s...", name);
 			ui_go_home();
 			ui_toast(msg);
 		} else {
@@ -318,8 +314,7 @@ static void act_select(uint16_t i, bool hold)
 		break;
 	case A_ALERT:
 		if (ui_svc_call_alert(ui_target.id)) {
-			sb_str(&b, TR(ACT_TOAST_CALL_ALERT_TO, "Call alert to "));
-			sb_str(&b, name);
+			TRF(&b, ACT_TOAST_CALL_ALERT_TO, "Call alert to %s", name);
 			ui_go_home();
 			ui_toast(msg);
 		} else {
@@ -460,8 +455,7 @@ static void send_text(const char *text, bool aprs, int reply_index)
 	}
 	sbuf_t b;
 	sb_init(&b, msg, sizeof msg);
-	sb_str(&b, TR(TOAST_SENDING_TO, "Sending to "));
-	sb_str(&b, name);
+	TRF(&b, MSG_TOAST_SENDING_TO, "Sending to %s", name);
 	ui_go_home();
 	ui_toast(msg);
 }
@@ -996,9 +990,7 @@ static const char *msg_title(void)
 	while (msg_row(row, &aprs, &index) &&
 	       (aprs != message_aprs() || index != message_index()))
 		row++;
-	sb_u32(&b, row + 1u, 1);
-	sb_str(&b, TR(PART_OF, " of "));
-	sb_u32(&b, ui_svc_msg_count() + ui_svc_aprs_msg_count(), 1);
+	TRF(&b, VALUE_N_OF_M, "%u of %u", row + 1u, (unsigned)(ui_svc_msg_count() + ui_svc_aprs_msg_count()));
 	return t;
 }
 
@@ -1010,10 +1002,9 @@ static const char *msg_body(void)
 			return TR(MSG_TOAST_DELETED, "Message deleted");
 		sbuf_t b;
 		sb_init(&b, message_buffer, sizeof message_buffer);
-		sb_str(&b, TR(MSG_BODY_FROM, "From "));
-		sb_str(&b, m.from);
-		sb_str(&b, ", ");
-		sb_age_long(&b, ui_st.now_ms - m.ms);
+		SB_LOCAL(age, 24);
+		sb_age_long(&age, ui_st.now_ms - m.ms);
+		TRF(&b, MSG_BODY_FROM, "From %s, %K", m.from, age_text);
 		sb_chr(&b, '\n');
 		sb_str(&b, m.text);
 		return message_buffer;
@@ -1024,13 +1015,15 @@ static const char *msg_body(void)
 	// "From Joe Smith, 2m ago" (the ID where there is no name; # gives the station's actions), then the text
 	sbuf_t b;
 	sb_init(&b, message_buffer, sizeof message_buffer);
-	sb_str(&b, m.sent ? TR(MSG_BODY_TO, "To ") : TR(MSG_BODY_FROM, "From "));
-	if (m.name[0])
-		sb_str(&b, m.name);
+	SB_LOCAL(id, 12);
+	sb_u32(&id, m.src, 1);
+	const char *who = m.name[0] ? m.name : id_text;
+	SB_LOCAL(age, 24);
+	sb_age_long(&age, m.age_ms);
+	if (m.sent)
+		TRF(&b, MSG_BODY_TO, "To %s, %K", who, age_text);
 	else
-		sb_u32(&b, m.src, 1);
-	sb_str(&b, ", ");
-	sb_age_long(&b, m.age_ms);
+		TRF(&b, MSG_BODY_FROM, "From %s, %K", who, age_text);
 	sb_chr(&b, '\n');
 	sb_str(&b, m.text);
 	return message_buffer;
@@ -1217,19 +1210,18 @@ static void chans_item(uint16_t i, ui_item_t *it)
 	// The zone's name whole; beside it "Here" for the zone in use and the channel count, as much as fits:
 	// "Here, 16 channels", "Here, 16 ch", "Here" (or "16 channels", "16 ch", nothing)
 	bool here = !v->vfo && zi == v->zone_index;
-	sb_str(&vb, TEXT_ALT_OPEN);
-	for (int form = 0; form < 3; form++) {
-		if (form)
-			sb_str(&vb, TEXT_ALT_NEXT);
-		if (here)
-			sb_str(&vb, form < 2 ? TR(ZONE_VALUE_HERE_AND, "Here, ") : TR(ZONE_VALUE_HERE, "Here"));
-		if (form < 2) {
-			sb_u32(&vb, z.count, 1);
-			sb_str(&vb, form == 0 ? (z.count == 1 ? TR(UNIT_CHANNEL, " channel") :
-				TR(UNIT_CHANNELS, " channels")) : TR(UNIT_CH, " ch"));
-		}
-	}
-	sb_str(&vb, TEXT_ALT_CLOSE);
+	if (here && z.count == 1)
+		TRF(&vb, ZONE_VALUE_HERE_CHANNEL, TEXT_ALT_OPEN "Here, %1$u channel" TEXT_ALT_NEXT "Here, %1$u ch"
+			TEXT_ALT_NEXT "Here" TEXT_ALT_CLOSE, z.count);
+	else if (here)
+		TRF(&vb, ZONE_VALUE_HERE_CHANNELS, TEXT_ALT_OPEN "Here, %1$u channels" TEXT_ALT_NEXT "Here, %1$u ch"
+			TEXT_ALT_NEXT "Here" TEXT_ALT_CLOSE, z.count);
+	else if (z.count == 1)
+		TRF(&vb, ZONE_VALUE_CHANNEL, TEXT_ALT_OPEN "%1$u channel" TEXT_ALT_NEXT "%1$u ch" TEXT_ALT_NEXT
+			TEXT_ALT_CLOSE, z.count);
+	else
+		TRF(&vb, ZONE_VALUE_CHANNELS, TEXT_ALT_OPEN "%1$u channels" TEXT_ALT_NEXT "%1$u ch" TEXT_ALT_NEXT
+			TEXT_ALT_CLOSE, z.count);
 }
 
 static void chans_context(uint16_t i);
@@ -1266,8 +1258,7 @@ static void chans_select(uint16_t i, bool hold)
 	if (codeplug_zone(zi, &z)) {
 		sbuf_t b;
 		sb_init(&b, msg, sizeof msg);
-		sb_str(&b, TR(ZONE_TOAST_ZONE, "Zone: "));
-		sb_str(&b, z.name);
+		TRF(&b, ZONE_TOAST_ZONE, "Zone: %s", z.name);
 		ui_toast(msg);
 	}
 }
@@ -1437,15 +1428,6 @@ static bool ze_post(void)
 	return false;
 }
 
-// "<text><name>" in ze_msg, as a toast
-static void ze_toast(const char *text, const char *name)
-{
-	sbuf_t b;
-	sb_init(&b, ze_msg, sizeof ze_msg);
-	sb_str(&b, text);
-	sb_str(&b, name);
-	ui_toast(ze_msg);
-}
 #endif
 
 static const zone_t *zone_of_frame(void)
@@ -1763,8 +1745,10 @@ static void share_to_item(uint16_t i, ui_item_t *it)
 		return;
 	sbuf_t b;
 	sb_init(&b, it->label, sizeof it->label);
-	sb_str(&b, t.group ? "TG " : TR(SHARE_ROW_PRIVATE_ID, "Private ID "));
-	sb_u32(&b, t.id, 1);
+	if (t.group)
+		sb_fmt(&b, "TG %u", (unsigned)t.id);
+	else
+		TRF(&b, SHARE_ROW_PRIVATE_ID, "Private ID %u", t.id);
 	str_copy(it->value, sizeof it->value,
 		TR(CHIP_NOT_SAVED, TEXT_ALT_OPEN "Not saved" TEXT_ALT_NEXT TEXT_ALT_CLOSE));
 }
@@ -1783,7 +1767,7 @@ static void share_to_select(uint16_t i, bool hold)
 		return;
 	}
 	uint8_t n = ui_svc_zone_send(share_zone, share_pos, share_one, t.id, t.group, &total);
-	char to[24], via[16];
+	char to[24];
 	sbuf_t b;
 	if (n == 0) {
 		ui_toast(TR(TOAST_CANT_SEND_NOW, "Can't send now: try again"));
@@ -1794,27 +1778,18 @@ static void share_to_select(uint16_t i, bool hold)
 	else
 		ui_sb_target(to, sizeof to, &t);
 	// The frequency it goes on: the channel's receive frequency, which is a repeater's output
-	sb_init(&b, via, sizeof via);
-	sb_str(&b, TR(SHARE_TOAST_VIA, " via "));
-	sb_freq(&b, v->ch.rx_hz);
+	SB_LOCAL(via, 12);
+	sb_freq(&via, v->ch.rx_hz);
 	sb_init(&b, toast_msg, sizeof toast_msg);
-	sb_str(&b, TEXT_ALT_OPEN);
+	// The narrow displays say only where
 	if (!share_one && n < total) {
 		// The record holds what fits (zone-share.md 4): say how much goes
-		sb_str(&b, TR(SHARE_TOAST_SENDING_COUNT, "Sending "));
-		sb_u32(&b, n, 1);
-		sb_str(&b, TR(PART_OF, " of "));
-		sb_u32(&b, total, 1);
-		sb_str(&b, TR(UNIT_CHANNELS, " channels"));
+		TRF(&b, SHARE_TOAST_SENDING_COUNT, TEXT_ALT_OPEN "Sending %1$u of %2$u channels via %3$K" TEXT_ALT_NEXT
+			"Sending via %3$K" TEXT_ALT_CLOSE, n, total, via_text);
 	} else {
-		sb_str(&b, TR(TOAST_SENDING_TO, "Sending to "));
-		sb_str(&b, to);
+		TRF(&b, SHARE_TOAST_SENDING_TO, TEXT_ALT_OPEN "Sending to %1$s via %2$K" TEXT_ALT_NEXT "Sending via %2$K"
+			TEXT_ALT_CLOSE, to, via_text);
 	}
-	sb_str(&b, via);
-	sb_str(&b, TEXT_ALT_NEXT);
-	sb_str(&b, TR(SHARE_TOAST_SENDING, "Sending"));	// the narrow displays: where
-	sb_str(&b, via);
-	sb_str(&b, TEXT_ALT_CLOSE);
 	ui_filter_reset();	// the keys typed here aren't the list's under it
 	ui_pop();
 	if (share_zone != UI_ZONE_NONE)
@@ -1909,24 +1884,23 @@ static const char *offer_body(void)
 	sb_init(&b, body, sizeof body);
 	if (!offer_get())
 		return NULL;
-	sb_str(&b, offer.channel ? TR(SHARE_BODY_CHANNEL, "Channel ") : TR(SHARE_BODY_ZONE, "Zone "));
-	sb_str(&b, offer.name);
-	if (!offer.channel) {
-		sb_str(&b, ", ");
-		sb_u32(&b, offer.channels, 1);
-		sb_str(&b, offer.channels == 1 ? TR(UNIT_CHANNEL, " channel") : TR(UNIT_CHANNELS, " channels"));
-	}
-	sb_str(&b, TR(SHARE_BODY_FROM, ", from "));
+	if (offer.channel)
+		TRF(&b, SHARE_BODY_CHANNEL, "Channel %s", offer.name);
+	else if (offer.channels == 1)
+		TRF(&b, SHARE_BODY_ZONE_CHANNEL, "Zone %s, %u channel", offer.name, offer.channels);
+	else
+		TRF(&b, SHARE_BODY_ZONE_CHANNELS, "Zone %s, %u channels", offer.name, offer.channels);
+	// "Jodi Ruiz 3112345", or the ID alone
+	SB_LOCAL(from, 32);
 	if (offer.from[0]) {
-		sb_str(&b, offer.from);
-		sb_chr(&b, ' ');
+		sb_str(&from, offer.from);
+		sb_chr(&from, ' ');
 	}
-	sb_u32(&b, offer.src, 1);
+	sb_u32(&from, offer.src, 1);
+	TRF(&b, SHARE_BODY_FROM, ", from %s", from_text);
 	if (offer.in_band < offer.channels) {
 		// Left out by the import (the result banner says the rest come in receive only)
-		sb_str(&b, ". ");
-		sb_u32(&b, (uint32_t)(offer.channels - offer.in_band), 1);
-		sb_str(&b, TR(SHARE_BODY_NOT_IN_BAND, " not in band"));
+		TRF(&b, SHARE_BODY_NOT_IN_BAND, ". %u not in band", (unsigned)(offer.channels - offer.in_band));
 	}
 	if (offer.unavailable != 0) {
 		// Trunked channels whose system neither this radio nor the share has (zone-share.md 5.2)
@@ -2014,8 +1988,7 @@ static void offer_zone_item(uint16_t i, ui_item_t *it)
 	str_copy(it->label, sizeof it->label, z.name);
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
-	sb_u32(&b, z.count, 1);
-	sb_str(&b, TR(SHARE_UNIT_CHANNELS, TEXT_ALT_OPEN " channels" TEXT_ALT_NEXT " ch" TEXT_ALT_CLOSE));
+	TRF(&b, SHARE_VALUE_CHANNELS, TEXT_ALT_OPEN "%1$u channels" TEXT_ALT_NEXT "%1$u ch" TEXT_ALT_CLOSE, z.count);
 	if (z.count >= CODEPLUG_ZONE_MAX)
 		it->flags |= UI_ITEM_DIM;
 }
@@ -3010,8 +2983,10 @@ static void sb_chinfo_zones(sbuf_t *b, uint16_t num)
 		sb_u32(b, found - 1u, 1);
 	}
 	sb_str(b, TEXT_ALT_NEXT);
-	sb_u32(b, found, 1);
-	sb_str(b, found == 1 ? TR(CHAN_UNIT_ZONE, " zone") : TR(CHAN_UNIT_ZONES, " zones"));
+	if (found == 1)
+		TRF(b, CHAN_VALUE_ZONE, "%u zone", found);
+	else
+		TRF(b, CHAN_VALUE_ZONES, "%u zones", found);
 	sb_str(b, TEXT_ALT_CLOSE);
 }
 
@@ -3374,9 +3349,10 @@ static void ced_save(bool as_new)
 #endif
 	sbuf_t b;
 	sb_init(&b, msg, sizeof msg);
-	sb_str(&b, as_new || ced_new ? TR(CHAN_TOAST_SAVED_AS, "Saved as channel ") :
-		TR(CHAN_TOAST_SAVED, "Saved channel "));
-	sb_u32(&b, num, 1);
+	if (as_new || ced_new)
+		TRF(&b, CHAN_TOAST_SAVED_AS, "Saved as channel %u", num);
+	else
+		TRF(&b, CHAN_TOAST_SAVED, "Saved channel %u", num);
 	ced_new = false;
 	ui_toast(msg);
 }
@@ -3962,8 +3938,7 @@ static const char *ct_problem(uint16_t *slot)
 	if (sc.dup_found) {
 		sbuf_t b;
 		sb_init(&b, toast_msg, sizeof toast_msg);
-		sb_str(&b, TR(CONTACT_WHY_ALREADY_EXISTS, "Already a contact: "));
-		sb_str(&b, c.name);
+		TRF(&b, CONTACT_WHY_ALREADY_EXISTS, "Already a contact: %s", c.name);
 		return toast_msg;
 	}
 	if (!read)
@@ -3986,8 +3961,7 @@ static void ct_save(void)
 	}
 	sbuf_t b;
 	sb_init(&b, toast_msg, sizeof toast_msg);
-	sb_str(&b, TR(CONTACT_TOAST_SAVED, "Saved contact "));
-	sb_str(&b, ct.name);
+	TRF(&b, CONTACT_TOAST_SAVED, "Saved contact %s", ct.name);
 	ui_pop();
 	if (ui_frame()->scr == SCR_ACTIONS && ui_target.id == ct.id && ui_target.group == (ct.type != CONTACT_PRIVATE)) {
 		ui_target.saved = true;		// the actions it came from: In contacts, under its new name
@@ -4165,10 +4139,7 @@ static void zchan_select(uint16_t i, bool hold)
 		zone_focus_num = num;
 		sbuf_t b;
 		sb_init(&b, ze_msg, sizeof ze_msg);
-		sb_str(&b, TR(ZONE_TOAST_POSITION, "Position "));
-		sb_u32(&b, pos + 1u, 1);
-		sb_str(&b, TR(PART_OF, " of "));
-		sb_u32(&b, ze_z.count, 1);
+		TRF(&b, ZONE_TOAST_POSITION, "Position %u of %u", pos + 1u, ze_z.count);
 		ui_toast(ze_msg);
 	} else if (i == ZC_COPY) {
 		uint16_t free = codeplug_free_channel();
@@ -4193,7 +4164,10 @@ static void zchan_select(uint16_t i, bool hold)
 		ze_op_new(ZONE_OP_REMOVE, pos);
 		if (ze_post()) {
 			ui_pop();
-			ze_toast(TR(ZONE_TOAST_REMOVED_FROM, "Removed from "), ze_z.name);
+			sbuf_t b;
+			sb_init(&b, ze_msg, sizeof ze_msg);
+			TRF(&b, ZONE_TOAST_REMOVED_FROM, "Removed from %s", ze_z.name);
+			ui_toast(ze_msg);
 		}
 	}
 }
@@ -4265,7 +4239,10 @@ static void zpick_select(uint16_t i, bool hold)
 	ui_pop();
 	ui_filter_reset();	// the whole list again (the 2 typed to find Add channel), on the channel added
 	ui_menus_resume();
-	ze_toast(TR(ZONE_TOAST_ADDED_TO, "Added to "), ze_z.name);
+	sbuf_t b;
+	sb_init(&b, ze_msg, sizeof ze_msg);
+	TRF(&b, ZONE_TOAST_ADDED_TO, "Added to %s", ze_z.name);
+	ui_toast(ze_msg);
 }
 
 static const ui_scr_def_t zpick_screen = {
@@ -4311,9 +4288,15 @@ static void chz_select(uint16_t i, bool hold)
 	zone_op_t *op = ze_op_new(at >= 0 ? ZONE_OP_REMOVE : ZONE_OP_INSERT, at >= 0 ? (uint16_t)at : chz_z.count);
 	op->zone = i;
 	op->channel = ui_frame()->arg;
-	if (ze_post())
-		ze_toast(at >= 0 ? TR(ZONE_TOAST_REMOVED_FROM, "Removed from ") : TR(ZONE_TOAST_ADDED_TO, "Added to "),
-			chz_z.name);
+	if (!ze_post())
+		return;
+	sbuf_t b;
+	sb_init(&b, ze_msg, sizeof ze_msg);
+	if (at >= 0)
+		TRF(&b, ZONE_TOAST_REMOVED_FROM, "Removed from %s", chz_z.name);
+	else
+		TRF(&b, ZONE_TOAST_ADDED_TO, "Added to %s", chz_z.name);
+	ui_toast(ze_msg);
 }
 
 static const ui_scr_def_t chz_screen = {
@@ -4375,7 +4358,10 @@ static void zones_new_named(void)
 	if (!ze_post())
 		return;
 	zones_new_pending = true;
-	ze_toast(TR(ZONE_TOAST_ADDED, "Added "), ze_name);
+	sbuf_t b;
+	sb_init(&b, ze_msg, sizeof ze_msg);
+	TRF(&b, ZONE_TOAST_ADDED, "Added %s", ze_name);
+	ui_toast(ze_msg);
 }
 
 static void zones_new(void)
@@ -4409,7 +4395,10 @@ static void zopt_select(uint16_t i, bool hold)
 		ui_pop();
 		char name[CODEPLUG_NAME_LEN + 1];
 		zone_copy_name(name, ze_z.name);
-		ze_toast(TR(ZONE_TOAST_COPIED_AS, "Copied as "), name);
+		sbuf_t b;
+		sb_init(&b, ze_msg, sizeof ze_msg);
+		TRF(&b, ZONE_TOAST_COPIED_AS, "Copied as %s", name);
+		ui_toast(ze_msg);
 #if CONFIG_ZONE_SHARE
 	} else if (i == ZO_SEND) {
 		if (ze_z.count == 0)
@@ -4453,7 +4442,10 @@ static void zdel_select(uint16_t i, bool hold)
 		return;
 	ui_pop();		// Zone options
 	ui_pop();		// and the zone's list: back to Zones
-	ze_toast(TR(ZONE_TOAST_DELETED, "Deleted "), ze_z.name);
+	sbuf_t b;
+	sb_init(&b, ze_msg, sizeof ze_msg);
+	TRF(&b, ZONE_TOAST_DELETED, "Deleted %s", ze_z.name);
+	ui_toast(ze_msg);
 }
 
 // The codeplug changed and nothing of ours is queued (our last change written, or refused, or a CPS write): the
@@ -4481,9 +4473,7 @@ static const char *zdel_body(void)
 {
 	sbuf_t b;
 	sb_init(&b, ze_msg, sizeof ze_msg);
-	sb_str(&b, TR(ZONE_ASK_DELETE, "Delete "));
-	sb_str(&b, ze_z.name);
-	sb_str(&b, TR(ZONE_ASK_CHANNELS_STAY, "? Channels stay."));
+	TRF(&b, ZONE_ASK_DELETE, "Delete %s? Channels stay.", ze_z.name);
 	return ze_msg;
 }
 
@@ -4633,18 +4623,14 @@ static const char *info_body(void)
 			// GGA counts only satellites a fix uses
 			sb_str(&b, TR(POS_BODY_NO_FIX_GO_OUTSIDE, "No fix yet. Go outside, away from buildings."));
 		} else {
-			sb_str(&b, TR(POS_BODY_FIX, "Fix, "));
-			sb_u32(&b, p.sats, 1);
-			sb_str(&b, TR(POS_UNIT_SATELLITES, " satellites"));
+			TRF(&b, POS_BODY_FIX, "Fix, %u satellites", p.sats);
 			sb_chr(&b, '\n');
 			sb_coord(&b, p.lat_e7, 'N', 'S');
 			sb_chr(&b, ' ');
 			sb_coord(&b, p.lon_e7, 'E', 'W');
 			if (p.alt_ok) {
 				sb_chr(&b, '\n');
-				sb_str(&b, TR(POS_BODY_ALTITUDE, "Altitude "));
-				sb_i32(&b, p.alt_m);
-				sb_str(&b, " m");
+				TRF(&b, POS_BODY_ALTITUDE, "Altitude %d m", p.alt_m);
 			}
 		}
 		break;
@@ -4669,11 +4655,9 @@ static const char *info_body(void)
 			sb_str(&b, TR(CPLUG_BODY_OTHER_FIRMWARE, "Other firmware's codeplug: ignored"));
 			sb_chr(&b, '\n');
 		}
-		sb_str(&b, TR(CPLUG_BODY_ZONES, "Zones: "));
-		sb_u32(&b, codeplug_zone_count(), 1);
+		TRF(&b, CPLUG_BODY_ZONES, "Zones: %u", codeplug_zone_count());
 		sb_chr(&b, '\n');
-		sb_str(&b, TR(CPLUG_BODY_CHANNELS_UP_TO, "Channels: up to "));
-		sb_u32(&b, codeplug_channel_count(), 1);
+		TRF(&b, CPLUG_BODY_CHANNELS_UP_TO, "Channels: up to %u", codeplug_channel_count());
 		break;
 	}
 	case INFO_USB_NET:
@@ -4729,12 +4713,7 @@ static const char *info_body(void)
 				TR(SFR_BODY_USER_OF_ERDM, "User of an ERDM repeater") :
 				TR(SFR_BODY_USER_OF_REPEATER, "User of a repeater"));
 			sb_chr(&b, '\n');
-			sb_str(&b, TR(SFR_BODY_TALK_ON_TS, "Talk on TS"));
-			sb_chr(&b, in);
-			sb_str(&b, TR(SFR_BODY_HEAR_TS, ", hear TS"));
-			sb_chr(&b, in);
-			sb_str(&b, TR(SFR_BODY_AND_TS, " and TS"));
-			sb_chr(&b, out);
+			TRF(&b, SFR_BODY_TALK_HEAR, "Talk on TS%1$d, hear TS%1$d and TS%2$d", in - '0', out - '0');
 		}
 #else
 		sb_str(&b, TR(WHY_SFR_NOT_IN_BUILD, "Single-freq repeater: not in this build"));
@@ -4917,8 +4896,7 @@ static const char *dmr_id_body(void)
 	sb_init(&b, id_body, sizeof id_body);
 	sb_str(&b, TR(BODY_SAVED_IN_CODEPLUG, "Saved in the codeplug"));
 	sb_chr(&b, '\n');
-	sb_str(&b, TR(BODY_RADIO, "Radio: "));
-	sb_str(&b, board.name);		// as the info page it replaces
+	TRF(&b, BODY_RADIO, "Radio: %K", board.name);	// as the info page it replaces
 	return id_body;
 }
 
@@ -5127,8 +5105,7 @@ static const char *ds_body(void)
 		[UI_ARS_NO_ANSWER] = TRN(DATA_STATE_NO_ANSWER, "No answer") };
 	uint8_t s = ui_svc_ars_state();
 	sb_chr(&b, '\n');
-	sb_str(&b, TR(DATA_BODY_ARS, "ARS: "));
-	sb_str(&b, tr(states[s <= UI_ARS_NO_ANSWER ? s : UI_ARS_OFF]));
+	TRF(&b, DATA_BODY_ARS, "ARS: %K", tr(states[s <= UI_ARS_NO_ANSWER ? s : UI_ARS_OFF]));
 #endif
 	return id_body;
 }
@@ -5325,10 +5302,11 @@ static void trim_draw(void)
 		// "At 440 MHz" wherever it fits beside the widest value (-4400 Hz), "@ 440 MHz" where it doesn't
 		char label[20];	// "At 440 MHz", room for a longer translation
 		sb_init(&b, label, sizeof label);
-		const char *at = TR(TRIM_BODY_AT, "At ");
-		sb_str(&b, gfx_text_width(f, at) + gfx_text_width(f, "440 MHz -4400 Hz") + 4 <= w ? at : "@ ");
-		sb_u32(&b, mhz[i], 1);
-		sb_str(&b, " MHz");
+		TRF(&b, TRIM_BODY_AT, "At %u MHz", mhz[i]);
+		if (gfx_text_width(f, label) + gfx_text_width(f, " -4400 Hz") + 4 > w) {
+			sb_init(&b, label, sizeof label);
+			sb_fmt(&b, "@ %u MHz", (unsigned)mhz[i]);
+		}
 		trim_line(f, y, label, buf);
 		y += f->h;
 	}
@@ -5454,34 +5432,32 @@ bool ui_about_busy(void)
 // chip
 static void about_support(sbuf_t *b)
 {
-	sb_str(b, TR(ABOUT_LABEL_SOURCE, "Source: "));
-	sb_str(b, tr(support_source_text(support_source())));
+	TRF(b, ABOUT_LABEL_SOURCE, "Source: %K", tr(support_source_text(support_source())));
 	sb_chr(b, '\n');
 	uint8_t d[SHA256_LEN];
 	uint32_t addr, len;
 	about_hashing = false;
 	if (image_hash_span(&addr, &len)) {
-		sb_str(b, TR(ABOUT_LABEL_IMAGE, "Image: "));
+		char hex[9];
+		const char *v = hex;
 		if (image_hash_step(IMAGE_HASH_UI, IMAGE_HASH_STEP_UI, d)) {
 			for (uint8_t i = 0; i < 4; i++) {
-				sb_chr(b, "0123456789abcdef"[d[i] >> 4]);
-				sb_chr(b, "0123456789abcdef"[d[i] & 15u]);
+				hex[2 * i] = "0123456789abcdef"[d[i] >> 4];
+				hex[2 * i + 1] = "0123456789abcdef"[d[i] & 15u];
 			}
+			hex[8] = '\0';
 		} else {
-			sb_str(b, TR(ABOUT_VALUE_IMAGE_CHECKING, "checking"));
+			v = TR(ABOUT_VALUE_IMAGE_CHECKING, "checking");
 			about_hashing = true;
 		}
+		TRF(b, ABOUT_LABEL_IMAGE, "Image: %K", v);
 		sb_chr(b, '\n');
 	}
 	support_line_t l;
 	for (uint8_t i = 0; support_hw_line(i, &l); i++) {
-		if (l.label != TR_NONE) {
-			sb_str(b, tr(l.label));
-		} else {
-			sb_str(b, l.label_text);
-			sb_str(b, ": ");
-		}
-		sb_str(b, l.value);
+		// one line format for every label, so a translation sets the punctuation; a hardware option's name is the
+		// board's own and is not translated
+		TRF(b, ABOUT_BODY_HW_LINE, "%K: %K", l.label != TR_NONE ? tr(l.label) : l.label_text, l.value);
 		sb_chr(b, '\n');
 	}
 }
@@ -5495,31 +5471,27 @@ static const char *about_text(void)
 	// every line "Label: value" (ui_draw_text_page shows labels dim), each on its own line: "RadioFoundry v26.11" was
 	// wider than the display and the release wrapped without its label. A release: its name, then the commit it was
 	// built from; any other build: the commit alone
-	sb_str(&b, TR(ABOUT_BODY_FIRMWARE, "Firmware: "));
-	sb_str(&b, "RadioFoundry\n");
+	TRF(&b, ABOUT_BODY_FIRMWARE, "Firmware: %K", "RadioFoundry");
+	sb_chr(&b, '\n');
 	if (RFOUNDRY_RELEASE[0] != '\0') {
-		sb_str(&b, TR(ABOUT_BODY_RELEASE, "Release: "));
-		sb_str(&b, RFOUNDRY_RELEASE);
+		TRF(&b, ABOUT_BODY_RELEASE, "Release: %K", RFOUNDRY_RELEASE);
 		sb_chr(&b, '\n');
 	}
-	sb_str(&b, TR(ABOUT_BODY_BUILD, "Build: "));
-	sb_str(&b, RFOUNDRY_GIT);
+	TRF(&b, ABOUT_BODY_BUILD, "Build: %K", RFOUNDRY_GIT);
 	// the commit's date (UTC; a dirty build's: the build's), which the web editor's update notice compares with a
 	// release's
 	if (RFOUNDRY_GIT_DATE[0] != '\0') {
 		sb_chr(&b, '\n');
-		sb_str(&b, TR(ABOUT_BODY_DATE, "Date: "));
-		sb_str(&b, RFOUNDRY_GIT_DATE);
+		TRF(&b, ABOUT_BODY_DATE, "Date: %K", RFOUNDRY_GIT_DATE);
 	}
 	sb_chr(&b, '\n');
-	sb_str(&b, TR(BODY_RADIO, "Radio: "));
-	sb_str(&b, board.name);
+	TRF(&b, BODY_RADIO, "Radio: %K", board.name);
 	sb_chr(&b, '\n');
 #if CONFIG_SUPPORT_INFO
 	about_support(&b);
 #endif
-	sb_str(&b, TR(ABOUT_BODY_LICENSE, "License: "));
-	sb_str(&b, "MIT, (c) 2026 The RadioFoundry Authors\n");
+	TRF(&b, ABOUT_BODY_LICENSE, "License: %K", "MIT, (c) 2026 The RadioFoundry Authors");
+	sb_chr(&b, '\n');
 	// The authors (the copyright line above) are everyone who has contributed: too many to list here, so the page
 	// names the maintainers (AUTHORS) and says where the contributors are listed. One maintainer per line, in AUTHORS
 	// order: a comma-joined list wraps mid-name on every display
@@ -5906,17 +5878,13 @@ static const char *roam_body(void)
 		sb_str(&b, TR(ROAM_BODY_SEARCHING, "Searching sites..."));
 		return t;
 	}
-	sb_str(&b, TR(ROAM_BODY_SITE, "Site "));
-	sb_u32(&b, v->roam.site + 1u, 1);
-	sb_str(&b, TR(PART_OF, " of "));
-	sb_u32(&b, v->roam.sites, 1);
-	sb_str(&b, ": ");
-	sb_str(&b, v->ch.name);
+	TRF(&b, ROAM_BODY_SITE, "Site %u of %u: %s", v->roam.site + 1u, v->roam.sites, v->ch.name);
 	if (v->roam.rssi_dbm != 0) {
 		sb_chr(&b, '\n');
-		sb_str(&b, TR(ROAM_BODY_SIGNAL, "Signal "));
-		sb_i32(&b, v->roam.rssi_dbm);
-		sb_str(&b, v->roam.weak ? TR(ROAM_BODY_DBM_WEAK, " dBm, weak") : " dBm");
+		if (v->roam.weak)
+			TRF(&b, ROAM_BODY_SIGNAL_WEAK, "Signal %d dBm, weak", v->roam.rssi_dbm);
+		else
+			TRF(&b, ROAM_BODY_SIGNAL, "Signal %d dBm", v->roam.rssi_dbm);
 	}
 	if (v->roam.state == RROAM_STATE_LOCKED) {
 		sb_chr(&b, '\n');
@@ -6014,8 +5982,7 @@ static void roam_select(uint16_t i, bool hold)
 		bool on = !v->roam.zone_on;
 		ui_svc_roam(RROAM_ZONE_TOGGLE);
 		if (on) {
-			sb_str(&b, TR(ROAM_TOAST_ON_FOR, "Roaming on for "));
-			sb_str(&b, v->zone_name);
+			TRF(&b, ROAM_TOAST_ON_FOR, "Roaming on for %s", v->zone_name);
 			ui_toast(msg);
 		} else {
 			ui_toast(TR(ROAM_TOAST_OFF, "Roaming off"));
@@ -6039,8 +6006,7 @@ static void roam_select(uint16_t i, bool hold)
 		bool lock = v->roam.state != RROAM_STATE_LOCKED;
 		ui_svc_roam(lock ? RROAM_LOCK : RROAM_UNLOCK);
 		if (lock) {
-			sb_str(&b, TR(ROAM_TOAST_LOCKED_TO, "Locked to "));
-			sb_str(&b, v->ch.name);
+			TRF(&b, ROAM_TOAST_LOCKED_TO, "Locked to %s", v->ch.name);
 			ui_toast(msg);
 		} else {
 			ui_toast(TR(ROAM_TOAST_ROAMING_AGAIN, "Roaming again"));
@@ -6127,9 +6093,7 @@ static const char *crash_body(void)
 		// The question only: it has to fit above the two rows on the smallest screens
 		char to[CODEPLUG_NAME_LEN + 4];
 		crash_target(to, sizeof to);
-		sb_str(&b, TR(CRASH_BODY_RESTARTED_SEND_TO, "Restarted after a crash. Send the report to "));
-		sb_str(&b, to);
-		sb_str(&b, "?");
+		TRF(&b, CRASH_BODY_RESTARTED_SEND_TO, "Restarted after a crash. Send the report to %s?", to);
 		return t;
 	}
 	sb_str(&b, c.summary);
@@ -6139,16 +6103,18 @@ static const char *crash_body(void)
 	}
 	if (c.count > 1) {
 		sb_str(&b, "\n");
-		sb_u32(&b, c.count, 1);
-		sb_str(&b, TR(CRASH_BODY_IN_A_ROW, " crashes in a row"));
+		TRF(&b, CRASH_BODY_IN_A_ROW, "%u crashes in a row", c.count);
 	}
 	sb_chr(&b, '\n');
-	sb_str(&b, TR(CRASH_BODY_RAN_FOR, "Ran for "));
-	sb_mmss(&b, c.uptime_ms / 1000u);
+	SB_LOCAL(ran, 12);
+	sb_mmss(&ran, c.uptime_ms / 1000u);
 	if (c.build != 0) {
-		sb_str(&b, TR(CRASH_BODY_BUILD, ", build "));
+		SB_LOCAL(build, 9);
 		for (int k = 28; k >= 0; k -= 4)
-			sb_chr(&b, "0123456789abcdef"[(c.build >> k) & 0xFu]);
+			sb_chr(&build, "0123456789abcdef"[(c.build >> k) & 0xFu]);
+		TRF(&b, CRASH_BODY_RAN_FOR_BUILD, "Ran for %K, build %K", ran_text, build_text);
+	} else {
+		TRF(&b, CRASH_BODY_RAN_FOR, "Ran for %K", ran_text);
 	}
 	return t;
 }
@@ -6270,8 +6236,8 @@ static void crash_to_select(uint16_t i, bool hold)
 	static char msg[24 + CODEPLUG_NAME_LEN];	// the toast keeps the pointer
 	sbuf_t b;
 	sb_init(&b, msg, sizeof msg);
-	sb_str(&b, TR(CRASH_TOAST_REPORTS_TO, "Crash reports to "));
-	sb_str(&b, t.name[0] ? t.name : TR(CRASH_TOAST_THIS_CONTACT, "this contact"));
+	TRF(&b, CRASH_TOAST_REPORTS_TO, "Crash reports to %s",
+		t.name[0] ? t.name : TR(CRASH_TOAST_THIS_CONTACT, "this contact"));
 	ui_pop();
 	ui_toast(msg);
 }
@@ -6376,9 +6342,8 @@ static const char *tools_hint(void)
 	uint16_t last = tools_last;
 	sbuf_t b;
 	sb_init(&b, hint, sizeof hint);
-	sb_str(&b, "1-");
-	sb_chr(&b, (char)('0' + (last < 9 ? last : 9)));	// "1-9": the zone offer's 0 isn't named
-	sb_str(&b, TR(TOOLS_HINT_OPEN_BACK, " open  Back"));
+	// "1-9": the zone offer's 0 isn't named
+	TRF(&b, TOOLS_HINT_OPEN_BACK, "1-%u open  Back", last < 9 ? last : 9u);
 	return hint;
 }
 
@@ -6897,20 +6862,18 @@ static void key_labels(void)
 		return;
 	key_label_lang = lang_current();
 	for (uint8_t r = 0; r < UI_KEY_ROLES; r++) {
-		for (uint8_t h = 0; h < 2; h++) {
-			sb_init(&b, key_label[2 * r + h], sizeof key_label[0]);
-			if (board.side_key_names != NULL && r < board.side_key_count) {
-				sb_str(&b, board.side_key_names[r]);
-			} else if (board.home_key_names != NULL && r >= board.side_key_count &&
-				   r < board.side_key_count + board.home_key_count) {
-				sb_str(&b, board.home_key_names[r - board.side_key_count]);
-			} else {
-				sb_str(&b, TR(SET_LABEL_KEY_N, "Key "));
-				sb_i32(&b, r + 1);
-			}
-			if (h)
-				sb_str(&b, TR(SET_LABEL_KEY_N_HOLD, " hold"));
+		// The key's name, then the same with "hold"
+		sb_init(&b, key_label[2 * r], sizeof key_label[0]);
+		if (board.side_key_names != NULL && r < board.side_key_count) {
+			sb_str(&b, board.side_key_names[r]);
+		} else if (board.home_key_names != NULL && r >= board.side_key_count &&
+			   r < board.side_key_count + board.home_key_count) {
+			sb_str(&b, board.home_key_names[r - board.side_key_count]);
+		} else {
+			TRF(&b, SET_LABEL_KEY_N, "Key %d", r + 1);
 		}
+		sb_init(&b, key_label[2 * r + 1], sizeof key_label[0]);
+		TRF(&b, SET_LABEL_KEY_HOLD, "%K hold", key_label[2 * r]);
 	}
 }
 #endif
@@ -7135,8 +7098,7 @@ static void sc_item(uint16_t i, ui_item_t *it)
 	sbuf_t b;
 	uint8_t ev = sc_event();
 	sb_init(&b, it->label, sizeof it->label);
-	sb_str(&b, TR(HOME_LABEL_STEP, "Step "));
-	sb_u32(&b, i + 1u, 1);
+	TRF(&b, SIG_LABEL_STEP_N, "Step %u", i + 1u);
 	sb_init(&b, it->value, sizeof it->value);
 	int32_t hz = sc_get(ev, (uint8_t)i, false), ms = sc_get(ev, (uint8_t)i, true);
 	if (sc_row == i) {
@@ -7215,12 +7177,7 @@ static void sc_select(uint16_t i, bool hold)
 		static char msg[40];
 		sbuf_t b;
 		sb_init(&b, msg, sizeof msg);
-		sb_str(&b, TR(SET_TOAST_NOT_CHANGED, "Not changed: "));
-		sb_i32(&b, 0);
-		sb_str(&b, TR(SET_TOAST_RANGE_TO, " to "));
-		sb_i32(&b, hi);
-		sb_str(&b, TR(SET_TOAST_STEPS_OF, ", steps of "));
-		sb_u32(&b, SIG_MS_UNIT, 1);
+		TRF(&b, SET_TOAST_NOT_CHANGED_STEPS, "Not changed: %d to %d, steps of %d", 0, hi, (int)SIG_MS_UNIT);
 		ui_toast(msg);
 		sc_row = SIG_STEPS;
 		return;
@@ -7656,14 +7613,10 @@ static bool group_key(const input_event_t *ev)
 			static char msg[40];
 			sbuf_t b;
 			sb_init(&b, msg, sizeof msg);
-			sb_str(&b, TR(SET_TOAST_NOT_CHANGED, "Not changed: "));
-			sb_i32(&b, lo);
-			sb_str(&b, TR(SET_TOAST_RANGE_TO, " to "));
-			sb_i32(&b, hi);
-			if (s->step > 1) {
-				sb_str(&b, TR(SET_TOAST_STEPS_OF, ", steps of "));
-				sb_i32(&b, s->step);
-			}
+			if (s->step > 1)
+				TRF(&b, SET_TOAST_NOT_CHANGED_STEPS, "Not changed: %d to %d, steps of %d", lo, hi, s->step);
+			else
+				TRF(&b, SET_TOAST_NOT_CHANGED, "Not changed: %d to %d", lo, hi);
 			ui_toast(msg);
 		} else {
 			set_store(s, set_value);

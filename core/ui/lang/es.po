@@ -59,33 +59,33 @@ msgstr "Desconocido"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_LABEL_MCU"
-msgid "MCU: "
-msgstr "MCU: "
+msgid "MCU"
+msgstr "MCU"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_LABEL_FLASH"
-msgid "Flash: "
-msgstr "Flash: "
+msgid "Flash"
+msgstr "Flash"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_LABEL_DISPLAY"
-msgid "Display: "
-msgstr "Pantalla: "
+msgid "Display"
+msgstr "Pantalla"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_LABEL_DMR_CHIP"
-msgid "DMR chip: "
-msgstr "Chip DMR: "
+msgid "DMR chip"
+msgstr "Chip DMR"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_LABEL_RF_CHIP"
-msgid "RF chip: "
-msgstr "Chip RF: "
+msgid "RF chip"
+msgstr "Chip RF"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_LABEL_HARDWARE"
-msgid "Hardware: "
-msgstr "Hardware: "
+msgid "Hardware"
+msgstr "Hardware"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_VALUE_HWOPT_UNSET"
@@ -98,9 +98,14 @@ msgid "Off"
 msgstr "No"
 
 #: core/ui/fmt.c
-msgctxt "PART_AGO"
-msgid " ago"
-msgstr " atrás"
+msgctxt "VALUE_AGE_LONG"
+msgid "%u%K ago"
+msgstr "%1$u%2$K atrás"
+
+#: core/ui/fmt.c
+msgctxt "VALUE_AGE"
+msgid "{%1$u%2$K ago|%1$u%2$K}"
+msgstr "{%1$u%2$K atrás|%1$u%2$K}"
 
 #: core/ui/ui_app.c core/ui/ui_screens.c
 msgctxt "HOME_HINT_MENU_QUICK"
@@ -134,13 +139,13 @@ msgstr "Destino: no disponible"
 
 #: core/ui/ui_app.c
 msgctxt "TALK_TOAST_DEFAULT_NOW"
-msgid "Default now: "
-msgstr "Predet. ahora: "
+msgid "Default now: %s"
+msgstr "Predet. ahora: %s"
 
 #: core/ui/ui_app.c
 msgctxt "TALK_TOAST_TALKING_TO"
-msgid "Talking to "
-msgstr "Hablando a "
+msgid "Talking to %s"
+msgstr "Hablando a %s"
 
 #: core/ui/ui_app.c core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "EMPTY_NO_CALLS_HEARD"
@@ -149,23 +154,23 @@ msgstr "Aún no se recibieron llamadas"
 
 #: core/ui/ui_app.c
 msgctxt "MSG_BANNER_FROM"
-msgid "Message from "
-msgstr "Mensaje de "
+msgid "Message from %s"
+msgstr "Mensaje de %s"
 
 #: core/ui/ui_app.c
 msgctxt "BANNER_SENT_TO"
-msgid "Sent to "
-msgstr "Enviado a "
+msgid "Sent to %s"
+msgstr "Enviado a %s"
 
 #: core/ui/ui_app.c
 msgctxt "MSG_BANNER_DELIVERED_TO"
-msgid "Delivered to "
-msgstr "Entregado a "
+msgid "Delivered to %s"
+msgstr "Entregado a %s"
 
 #: core/ui/ui_app.c
 msgctxt "BANNER_NO_ANSWER_FROM"
-msgid "No answer from "
-msgstr "Sin respuesta de "
+msgid "No answer from %s"
+msgstr "Sin respuesta de %s"
 
 #: core/ui/ui_app.c
 msgctxt "MSG_BANNER_NOT_DELIVERED"
@@ -174,8 +179,8 @@ msgstr "No entregado: reenviar"
 
 #: core/ui/ui_app.c
 msgctxt "ALERT_BANNER_FROM"
-msgid "Call alert from "
-msgstr "Alerta de "
+msgid "Call alert from %s"
+msgstr "Alerta de %s"
 
 #: core/ui/ui_app.c core/ui/ui_screens.c
 msgctxt "HINT_PTT_REPLIES"
@@ -184,13 +189,13 @@ msgstr "PTT responde"
 
 #: core/ui/ui_app.c
 msgctxt "CALL_BANNER_PRIVATE_FROM"
-msgid "Private call from "
-msgstr "Llamada privada de "
+msgid "Private call from %s"
+msgstr "Llamada privada de %s"
 
 #: core/ui/ui_app.c
 msgctxt "CHECK_BANNER_ANSWERED"
-msgid "answered ("
-msgstr "respondió ("
+msgid "answered (%u.%u s)"
+msgstr "respondió (%1$u.%2$u s)"
 
 #: core/ui/ui_app.c
 msgctxt "BANNER_OFF_OR_OUT_OF_RANGE"
@@ -214,8 +219,8 @@ msgstr "No se guardó: reintenta"
 
 #: core/ui/ui_app.c
 msgctxt "ALERT_BANNER_ANSWERED"
-msgid " answered the alert"
-msgstr " respondió la alerta"
+msgid "%s answered the alert"
+msgstr "%s respondió la alerta"
 
 #: core/ui/ui_app.c
 msgctxt "AUTOOFF_BANNER_FAILED"
@@ -229,18 +234,18 @@ msgstr "Apaga con la perilla"
 
 #: core/ui/ui_app.c
 msgctxt "SHARE_BANNER_CHANNEL_FROM"
-msgid "⤓ Channel from "
-msgstr "⤓ Canal de "
+msgid "⤓ Channel from %s"
+msgstr "⤓ Canal de %s"
 
 #: core/ui/ui_app.c
 msgctxt "SHARE_BANNER_ZONE_FROM"
-msgid "⤓ Zone from "
-msgstr "⤓ Zona de "
+msgid "⤓ Zone from %s"
+msgstr "⤓ Zona de %s"
 
 #: core/ui/ui_app.c
 msgctxt "SHARE_BANNER_NOT_SENT_TO"
-msgid "Not sent to "
-msgstr "No enviado a "
+msgid "Not sent to %s"
+msgstr "No enviado a %s"
 
 #: core/ui/ui_app.c
 msgctxt "SHARE_BANNER_TRY_ON_DMR"
@@ -249,28 +254,28 @@ msgstr "Reintenta en un canal DMR"
 
 #: core/ui/ui_app.c
 msgctxt "SHARE_BANNER_UPDATED"
-msgid "Updated "
-msgstr "Actualizado "
+msgid "Updated %s"
+msgstr "Actualizado %s"
 
 #: core/ui/ui_app.c
 msgctxt "SHARE_BANNER_IMPORTED"
-msgid "Imported "
-msgstr "Importado "
+msgid "Imported %s"
+msgstr "Importado %s"
 
 #: core/ui/ui_app.c
 msgctxt "SHARE_BANNER_SYSTEM_MISSING"
-msgid " trunked: system not set up"
-msgstr " troncales: sistema sin configurar"
+msgid "%u trunked: system not set up"
+msgstr "%u troncales: sistema sin configurar"
 
 #: core/ui/ui_app.c
 msgctxt "SHARE_BANNER_CHANNEL_RX_ONLY"
-msgid " channel, receive only"
-msgstr " canal, solo RX"
+msgid "%u channel, receive only"
+msgstr "%u canal, solo RX"
 
 #: core/ui/ui_app.c
 msgctxt "SHARE_BANNER_CHANNELS_RX_ONLY"
-msgid " channels, receive only"
-msgstr " canales, solo RX"
+msgid "%u channels, receive only"
+msgstr "%u canales, solo RX"
 
 #: core/ui/ui_app.c
 msgctxt "SHARE_BANNER_NOT_IMPORTED"
@@ -279,8 +284,8 @@ msgstr "Zona no importada"
 
 #: core/ui/ui_app.c
 msgctxt "FREQ_TOAST_BANDS"
-msgid "Bands: "
-msgstr "Bandas: "
+msgid "Bands: %K"
+msgstr "Bandas: %K"
 
 #: core/ui/ui_app.c
 msgctxt "FREQ_TOAST_TYPE_MHZ_DIGITS"
@@ -354,13 +359,13 @@ msgstr "Guardado ocupado: reintenta"
 
 #: core/ui/ui_app.c
 msgctxt "ZONE_TOAST_HOME_ZONE"
-msgid "Home zone: "
-msgstr "Zona base: "
+msgid "Home zone: %s"
+msgstr "Zona base: %s"
 
 #: core/ui/ui_app.c core/ui/ui_menus.c
 msgctxt "ZONE_TOAST_ZONE"
-msgid "Zone: "
-msgstr "Zona: "
+msgid "Zone: %s"
+msgstr "Zona: %s"
 
 #: core/ui/ui_app.c core/ui/ui_dual.c
 msgctxt "ZONE_TOAST_ONLY_ONE"
@@ -424,18 +429,13 @@ msgstr "Escaneando esta zona"
 
 #: core/ui/ui_app.c
 msgctxt "TALK_TOAST_DEFAULT"
-msgid "Default: "
-msgstr "Predet.: "
-
-#: core/ui/ui_app.c
-msgctxt "DIAL_TOAST_SPEED_DIAL"
-msgid "Speed dial "
-msgstr "Marcado rápido "
+msgid "Default: %s"
+msgstr "Predet.: %s"
 
 #: core/ui/ui_app.c
 msgctxt "DIAL_TOAST_IS_EMPTY"
-msgid " is empty: set it in qdmr"
-msgstr " vacío: defínelo en qdmr"
+msgid "Speed dial %d is empty: set it in qdmr"
+msgstr "Marcado rápido %d vacío: defínelo en qdmr"
 
 #: core/ui/ui_app.c
 msgctxt "HOME_TOAST_REPLY_ENDED"
@@ -564,8 +564,8 @@ msgstr "Sin clave: defínela en Ajustes > Privacidad"
 
 #: core/ui/ui_app.c
 msgctxt "QUICK_TOAST_POWER"
-msgid "Power "
-msgstr "Potencia "
+msgid "Power %K"
+msgstr "Potencia %K"
 
 #: core/ui/ui_app.c
 msgctxt "QUICK_TOAST_ALL_DIGITS_TYPED"
@@ -624,8 +624,8 @@ msgstr "Nada que abrir"
 
 #: core/ui/ui_app.c
 msgctxt "LIST_TITLE_FIND"
-msgid "Find: "
-msgstr "Buscar: "
+msgid "Find: %s_"
+msgstr "Buscar: %s_"
 
 #: core/ui/ui_app.c core/ui/ui_find.c
 msgctxt "LIST_EMPTY_NO_MATCH"
@@ -718,14 +718,9 @@ msgid "Any key keeps it on"
 msgstr "Una tecla la mantiene"
 
 #: core/ui/ui_app.c
-msgctxt "BATT_BANNER_BATTERY"
-msgid "Battery "
-msgstr "Batería "
-
-#: core/ui/ui_app.c
-msgctxt "BATT_PART_CHARGE_SOON"
-msgid "%: charge soon"
-msgstr "%: cargar pronto"
+msgctxt "BATT_BANNER_CHARGE_SOON"
+msgid "Battery %u%%: charge soon"
+msgstr "Batería %u%%: cargar pronto"
 
 #: core/ui/ui_app.c
 msgctxt "TRUNK_TOAST_BACK_ON"
@@ -744,8 +739,8 @@ msgstr "Esa zona fue borrada"
 
 #: core/ui/ui_app.c
 msgctxt "ROAM_TOAST_MOVED_TO"
-msgid "Moved to "
-msgstr "Movido a "
+msgid "Moved to %s"
+msgstr "Movido a %s"
 
 #: core/ui/ui_aprs.c core/ui/ui_menus.c
 msgctxt "VALUE_1_MIN"
@@ -863,14 +858,14 @@ msgid "No callsign"
 msgstr "Sin indicativo"
 
 #: core/ui/ui_aprs.c
-msgctxt "APRS_BODY_ON"
-msgid " on "
-msgstr " en "
+msgctxt "APRS_BODY_ON_SENDING"
+msgid "%s on %K (sending)"
+msgstr "%1$s en %2$K (enviando)"
 
 #: core/ui/ui_aprs.c
-msgctxt "APRS_BODY_SENDING"
-msgid " (sending)"
-msgstr " (enviando)"
+msgctxt "APRS_BODY_ON"
+msgid "%s on %K"
+msgstr "%1$s en %2$K"
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_BODY_NO_POSITION"
@@ -879,13 +874,13 @@ msgstr "Sin posición"
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_BODY_NEXT_IN"
-msgid "Next in "
-msgstr "Próx. en "
+msgid "Next in %K"
+msgstr "Próx. en %K"
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_BODY_SENT"
-msgid "  Sent "
-msgstr "  Env. "
+msgid "  Sent %u"
+msgstr "  Env. %u"
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_ROW_SEND_NOW"
@@ -1149,13 +1144,13 @@ msgstr "{Activa primero doble escucha|Doble escucha off}"
 
 #: core/ui/ui_dual.c
 msgctxt "DUAL_TOAST_B_ZONE"
-msgid "B zone: "
-msgstr "Zona B: "
+msgid "B zone: %s"
+msgstr "Zona B: %s"
 
 #: core/ui/ui_dual.c
 msgctxt "DUAL_TOAST_A_ZONE"
-msgid "A zone: "
-msgstr "Zona A: "
+msgid "A zone: %s"
+msgstr "Zona A: %s"
 
 #: core/ui/ui_dual.c
 msgctxt "DUAL_TOAST_NO_OTHER_ZONE"
@@ -1194,13 +1189,13 @@ msgstr "Señal FM"
 
 #: core/ui/ui_dual.c
 msgctxt "DUAL_VALUE_TO_YOU"
-msgid " to you"
-msgstr " a ti"
+msgid "{%1$s to you|%1$s}"
+msgstr "{%1$s a ti|%1$s}"
 
 #: core/ui/ui_dual.c
 msgctxt "DUAL_TOAST_OFF_ON"
-msgid "Dual watch off: on "
-msgstr "Doble escucha off: en "
+msgid "Dual watch off: on %s"
+msgstr "Doble escucha off: en %s"
 
 #: core/ui/ui_dual.c
 msgctxt "DUAL_TOAST_OFF_SCANNING"
@@ -1324,8 +1319,8 @@ msgstr "Roaming"
 
 #: core/ui/ui_find.c
 msgctxt "FIND_ROW_CH"
-msgid "Ch "
-msgstr "Can "
+msgid "Ch %u"
+msgstr "Can %u"
 
 #: core/ui/ui_find.c
 msgctxt "FIND_CHIP_CHANNEL"
@@ -1344,8 +1339,8 @@ msgstr "{Contacto|}"
 
 #: core/ui/ui_find.c
 msgctxt "FIND_ROW_TALK_TO_TG"
-msgid "Talk to TG "
-msgstr "Hablar a TG "
+msgid "Talk to TG %u"
+msgstr "Hablar a TG %u"
 
 #: core/ui/ui_find.c core/ui/ui_menus.c
 msgctxt "CHIP_NOT_SAVED"
@@ -1354,18 +1349,18 @@ msgstr "{No guardado|}"
 
 #: core/ui/ui_find.c
 msgctxt "FIND_ROW_PRIVATE_CALL"
-msgid "Private call "
-msgstr "Llamada privada "
+msgid "Private call %u"
+msgstr "Llamada privada %u"
 
 #: core/ui/ui_find.c
 msgctxt "FIND_ROW_TUNE_VFO_TO"
-msgid "Tune VFO to "
-msgstr "VFO a "
+msgid "Tune VFO to %K"
+msgstr "VFO a %K"
 
 #: core/ui/ui_find.c
 msgctxt "FIND_ROW_CREATE_CONTACT"
-msgid "Create contact "
-msgstr "Crear contacto "
+msgid "Create contact %u"
+msgstr "Crear contacto %u"
 
 #: core/ui/ui_find.c
 msgctxt "TRUNK_ROW_PHONE_CALL"
@@ -1409,18 +1404,18 @@ msgstr "Cuadrícula"
 
 #: core/ui/ui_gps.c
 msgctxt "GPS_VALUE_GOOD"
-msgid " good"
-msgstr " buena"
+msgid "%u.%u good"
+msgstr "%1$u.%2$u buena"
 
 #: core/ui/ui_gps.c
 msgctxt "GPS_VALUE_FAIR"
-msgid " fair"
-msgstr " regular"
+msgid "%u.%u fair"
+msgstr "%1$u.%2$u regular"
 
 #: core/ui/ui_gps.c
 msgctxt "GPS_VALUE_POOR"
-msgid " poor"
-msgstr " mala"
+msgid "%u.%u poor"
+msgstr "%1$u.%2$u mala"
 
 #: core/ui/ui_gps.c
 msgctxt "GPS_STATE_3D_FIX"
@@ -1448,14 +1443,9 @@ msgid "No signal"
 msgstr "Sin señal"
 
 #: core/ui/ui_gps.c
-msgctxt "GPS_BODY_USED"
-msgid " used, "
-msgstr " usados, "
-
-#: core/ui/ui_gps.c
-msgctxt "GPS_BODY_SEEN"
-msgid " seen"
-msgstr " vistos"
+msgctxt "GPS_BODY_USED_SEEN"
+msgid "%u used, %u seen"
+msgstr "%1$u usados, %2$u vistos"
 
 #: core/ui/ui_gps.c
 msgctxt "GPS_LABEL_SATS"
@@ -1487,15 +1477,10 @@ msgctxt "GPS_EMPTY_NO_SATELLITES"
 msgid "No satellites yet"
 msgstr "Aún sin satélites"
 
-#: core/ui/ui_gps.c core/ui/ui_menus.c core/ui/ui_screens.c
-msgctxt "PART_OF"
-msgid " of "
-msgstr " de "
-
 #: core/ui/ui_gps.c
 msgctxt "GPS_BODY_IN_THE_FIX"
-msgid " in the fix"
-msgstr " en la fijación"
+msgid "%u of %u in the fix"
+msgstr "%1$u de %2$u en la fijación"
 
 #: core/ui/ui_gps.c
 msgctxt "GPS_EMPTY_NO_FIX"
@@ -1529,8 +1514,8 @@ msgstr "Zonas"
 
 #: core/ui/ui_menus.c
 msgctxt "HUB_VALUE_NEW"
-msgid " new"
-msgstr " nuevos"
+msgid "%u new"
+msgstr "%u nuevos"
 
 #: core/ui/ui_menus.c
 msgctxt "HUB_VALUE_SCANNING"
@@ -1549,8 +1534,8 @@ msgstr "1-7 abrir  Atrás"
 
 #: core/ui/ui_menus.c
 msgctxt "ACT_ROW_TALK_TO"
-msgid "Talk to "
-msgstr "Hablar a "
+msgid "Talk to %s"
+msgstr "Hablar a %s"
 
 #: core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "ACT_ROW_PRIVATE_CALL"
@@ -1609,8 +1594,8 @@ msgstr "Mensajes: no disponible"
 
 #: core/ui/ui_menus.c
 msgctxt "ACT_TOAST_CHECKING"
-msgid "Checking "
-msgstr "Probando "
+msgid "Checking %s..."
+msgstr "Probando %s..."
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_RADIO_CHECK_NOT_IN_BUILD"
@@ -1619,8 +1604,8 @@ msgstr "Prueba radio: no disponible"
 
 #: core/ui/ui_menus.c
 msgctxt "ACT_TOAST_CALL_ALERT_TO"
-msgid "Call alert to "
-msgstr "Alerta a "
+msgid "Call alert to %s"
+msgstr "Alerta a %s"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_CALL_ALERT_NOT_IN_BUILD"
@@ -1703,9 +1688,9 @@ msgid "Couldn't send: try again"
 msgstr "No se envió: reintenta"
 
 #: core/ui/ui_menus.c
-msgctxt "TOAST_SENDING_TO"
-msgid "Sending to "
-msgstr "Enviando a "
+msgctxt "MSG_TOAST_SENDING_TO"
+msgid "Sending to %s"
+msgstr "Enviando a %s"
 
 #: core/ui/ui_menus.c
 msgctxt "TEXT_TITLE_CALLSIGN"
@@ -1803,14 +1788,19 @@ msgid "Couldn't delete: try again"
 msgstr "No se pudo borrar: reintenta"
 
 #: core/ui/ui_menus.c
+msgctxt "VALUE_N_OF_M"
+msgid "%u of %u"
+msgstr "%1$u de %2$u"
+
+#: core/ui/ui_menus.c
 msgctxt "MSG_BODY_FROM"
-msgid "From "
-msgstr "De "
+msgid "From %s, %K"
+msgstr "De %1$s, %2$K"
 
 #: core/ui/ui_menus.c
 msgctxt "MSG_BODY_TO"
-msgid "To "
-msgstr "A "
+msgid "To %s, %K"
+msgstr "A %1$s, %2$K"
 
 #: core/ui/ui_menus.c
 msgctxt "HINT_OK_CHOOSE_MORE_BACK"
@@ -1838,29 +1828,24 @@ msgid "Create New Zone"
 msgstr "Crear zona nueva"
 
 #: core/ui/ui_menus.c
-msgctxt "ZONE_VALUE_HERE_AND"
-msgid "Here, "
-msgstr "Actual, "
+msgctxt "ZONE_VALUE_HERE_CHANNEL"
+msgid "{Here, %1$u channel|Here, %1$u ch|Here}"
+msgstr "{Actual, %1$u canal|Actual, %1$u can|Actual}"
 
 #: core/ui/ui_menus.c
-msgctxt "ZONE_VALUE_HERE"
-msgid "Here"
-msgstr "Actual"
-
-#: core/ui/ui_menus.c core/ui/ui_svc_zone.c
-msgctxt "UNIT_CHANNEL"
-msgid " channel"
-msgstr " canal"
-
-#: core/ui/ui_menus.c core/ui/ui_svc_zone.c
-msgctxt "UNIT_CHANNELS"
-msgid " channels"
-msgstr " canales"
+msgctxt "ZONE_VALUE_HERE_CHANNELS"
+msgid "{Here, %1$u channels|Here, %1$u ch|Here}"
+msgstr "{Actual, %1$u canales|Actual, %1$u can|Actual}"
 
 #: core/ui/ui_menus.c
-msgctxt "UNIT_CH"
-msgid " ch"
-msgstr " can"
+msgctxt "ZONE_VALUE_CHANNEL"
+msgid "{%1$u channel|%1$u ch|}"
+msgstr "{%1$u canal|%1$u can|}"
+
+#: core/ui/ui_menus.c
+msgctxt "ZONE_VALUE_CHANNELS"
+msgid "{%1$u channels|%1$u ch|}"
+msgstr "{%1$u canales|%1$u can|}"
 
 #: core/ui/ui_menus.c
 msgctxt "ZONE_TOAST_VFO_TYPE_FREQUENCY"
@@ -1924,8 +1909,8 @@ msgstr "Guardando la zona: reintenta"
 
 #: core/ui/ui_menus.c
 msgctxt "SHARE_ROW_PRIVATE_ID"
-msgid "Private ID "
-msgstr "ID privado "
+msgid "Private ID %u"
+msgstr "ID privado %u"
 
 #: core/ui/ui_menus.c
 msgctxt "SHARE_TOAST_GO_TO_DMR_CHANNEL"
@@ -1938,19 +1923,14 @@ msgid "Can't send now: try again"
 msgstr "No se puede enviar: reintenta"
 
 #: core/ui/ui_menus.c
-msgctxt "SHARE_TOAST_VIA"
-msgid " via "
-msgstr " por "
-
-#: core/ui/ui_menus.c
 msgctxt "SHARE_TOAST_SENDING_COUNT"
-msgid "Sending "
-msgstr "Enviando "
+msgid "{Sending %1$u of %2$u channels via %3$K|Sending via %3$K}"
+msgstr "{Enviando %1$u de %2$u canales por %3$K|Enviando por %3$K}"
 
 #: core/ui/ui_menus.c
-msgctxt "SHARE_TOAST_SENDING"
-msgid "Sending"
-msgstr "Enviando"
+msgctxt "SHARE_TOAST_SENDING_TO"
+msgid "{Sending to %1$s via %2$K|Sending via %2$K}"
+msgstr "{Enviando a %1$s por %2$K|Enviando por %2$K}"
 
 #: core/ui/ui_menus.c
 msgctxt "SHARE_TITLE_TO"
@@ -2004,23 +1984,28 @@ msgstr "Oferta rechazada"
 
 #: core/ui/ui_menus.c core/ui/ui_svc_zone.c
 msgctxt "SHARE_BODY_CHANNEL"
-msgid "Channel "
-msgstr "Canal "
+msgid "Channel %s"
+msgstr "Canal %s"
 
 #: core/ui/ui_menus.c core/ui/ui_svc_zone.c
-msgctxt "SHARE_BODY_ZONE"
-msgid "Zone "
-msgstr "Zona "
+msgctxt "SHARE_BODY_ZONE_CHANNEL"
+msgid "Zone %s, %u channel"
+msgstr "Zona %1$s, %2$u canal"
+
+#: core/ui/ui_menus.c core/ui/ui_svc_zone.c
+msgctxt "SHARE_BODY_ZONE_CHANNELS"
+msgid "Zone %s, %u channels"
+msgstr "Zona %1$s, %2$u canales"
 
 #: core/ui/ui_menus.c
 msgctxt "SHARE_BODY_FROM"
-msgid ", from "
-msgstr ", de "
+msgid ", from %s"
+msgstr ", de %s"
 
 #: core/ui/ui_menus.c
 msgctxt "SHARE_BODY_NOT_IN_BAND"
-msgid " not in band"
-msgstr " fuera de banda"
+msgid ". %u not in band"
+msgstr ". %u fuera de banda"
 
 #: core/ui/ui_menus.c
 msgctxt "SHARE_BODY_CHANNEL_NO_SYSTEM"
@@ -2068,9 +2053,9 @@ msgid "No zone offer waiting"
 msgstr "Ninguna zona pendiente"
 
 #: core/ui/ui_menus.c
-msgctxt "SHARE_UNIT_CHANNELS"
-msgid "{ channels| ch}"
-msgstr "{ canales| can}"
+msgctxt "SHARE_VALUE_CHANNELS"
+msgid "{%1$u channels|%1$u ch}"
+msgstr "{%1$u canales|%1$u can}"
 
 #: core/ui/ui_menus.c
 msgctxt "SHARE_TITLE_ADD_TO_ZONE"
@@ -2188,14 +2173,14 @@ msgid "New Channel"
 msgstr "Canal nuevo"
 
 #: core/ui/ui_menus.c
-msgctxt "CHAN_UNIT_ZONE"
-msgid " zone"
-msgstr " zona"
+msgctxt "CHAN_VALUE_ZONE"
+msgid "%u zone"
+msgstr "%u zona"
 
 #: core/ui/ui_menus.c
-msgctxt "CHAN_UNIT_ZONES"
-msgid " zones"
-msgstr " zonas"
+msgctxt "CHAN_VALUE_ZONES"
+msgid "%u zones"
+msgstr "%u zonas"
 
 #: core/ui/ui_menus.c
 msgctxt "CHAN_VALUE_RADIO_DEFAULT"
@@ -2379,13 +2364,13 @@ msgstr "Sin cambios que guardar"
 
 #: core/ui/ui_menus.c
 msgctxt "CHAN_TOAST_SAVED_AS"
-msgid "Saved as channel "
-msgstr "Guardado como canal "
+msgid "Saved as channel %u"
+msgstr "Guardado como canal %u"
 
 #: core/ui/ui_menus.c
 msgctxt "CHAN_TOAST_SAVED"
-msgid "Saved channel "
-msgstr "Guardado canal "
+msgid "Saved channel %u"
+msgstr "Guardado canal %u"
 
 #: core/ui/ui_menus.c
 msgctxt "TOAST_ID_MAX_PRIVATE"
@@ -2544,8 +2529,8 @@ msgstr "Grupo máximo es 16777214"
 
 #: core/ui/ui_menus.c
 msgctxt "CONTACT_WHY_ALREADY_EXISTS"
-msgid "Already a contact: "
-msgstr "Ya es contacto: "
+msgid "Already a contact: %s"
+msgstr "Ya es contacto: %s"
 
 #: core/ui/ui_menus.c
 msgctxt "CONTACT_WHY_NO_ROOM"
@@ -2554,8 +2539,8 @@ msgstr "No entran más contactos"
 
 #: core/ui/ui_menus.c
 msgctxt "CONTACT_TOAST_SAVED"
-msgid "Saved contact "
-msgstr "Guardado contacto "
+msgid "Saved contact %s"
+msgstr "Guardado contacto %s"
 
 #: core/ui/ui_menus.c
 msgctxt "CONTACT_TOAST_ID_MAX"
@@ -2604,8 +2589,8 @@ msgstr "Ya es el último"
 
 #: core/ui/ui_menus.c
 msgctxt "ZONE_TOAST_POSITION"
-msgid "Position "
-msgstr "Posición "
+msgid "Position %u of %u"
+msgstr "Posición %1$u de %2$u"
 
 #: core/ui/ui_menus.c
 msgctxt "ZONE_TOAST_FULL"
@@ -2614,8 +2599,8 @@ msgstr "Zona llena"
 
 #: core/ui/ui_menus.c
 msgctxt "ZONE_TOAST_REMOVED_FROM"
-msgid "Removed from "
-msgstr "Quitado de "
+msgid "Removed from %s"
+msgstr "Quitado de %s"
 
 #: core/ui/ui_menus.c
 msgctxt "HINT_1_6_PICK_BACK"
@@ -2624,8 +2609,8 @@ msgstr "1-6 elegir  Atrás"
 
 #: core/ui/ui_menus.c
 msgctxt "ZONE_TOAST_ADDED_TO"
-msgid "Added to "
-msgstr "Añadido a "
+msgid "Added to %s"
+msgstr "Añadido a %s"
 
 #: core/ui/ui_menus.c
 msgctxt "ZONE_TITLE_ADD_CHANNEL"
@@ -2669,8 +2654,8 @@ msgstr "Renombrada"
 
 #: core/ui/ui_menus.c
 msgctxt "ZONE_TOAST_ADDED"
-msgid "Added "
-msgstr "Añadida "
+msgid "Added %s"
+msgstr "Añadida %s"
 
 #: core/ui/ui_menus.c core/ui/ui_svc_storage.c core/ui/ui_svc_zone.c
 msgctxt "ZONE_ERR_NO_ROOM"
@@ -2679,8 +2664,8 @@ msgstr "No entra otra zona"
 
 #: core/ui/ui_menus.c
 msgctxt "ZONE_TOAST_COPIED_AS"
-msgid "Copied as "
-msgstr "Copiada como "
+msgid "Copied as %s"
+msgstr "Copiada como %s"
 
 #: core/ui/ui_menus.c
 msgctxt "ZONE_TOAST_EMPTY_NOTHING_TO_SEND"
@@ -2714,18 +2699,13 @@ msgstr "Sí, borrar"
 
 #: core/ui/ui_menus.c
 msgctxt "ZONE_TOAST_DELETED"
-msgid "Deleted "
-msgstr "Borrada "
+msgid "Deleted %s"
+msgstr "Borrada %s"
 
 #: core/ui/ui_menus.c
 msgctxt "ZONE_ASK_DELETE"
-msgid "Delete "
-msgstr "¿Borrar "
-
-#: core/ui/ui_menus.c
-msgctxt "ZONE_ASK_CHANNELS_STAY"
-msgid "? Channels stay."
-msgstr "? Canales quedan."
+msgid "Delete %s? Channels stay."
+msgstr "¿Borrar %s? Canales quedan."
 
 #: core/ui/ui_menus.c
 msgctxt "ZONE_TITLE_DELETE"
@@ -2814,18 +2794,13 @@ msgstr "Aún sin posición. Sal al exterior, lejos de edificios."
 
 #: core/ui/ui_menus.c
 msgctxt "POS_BODY_FIX"
-msgid "Fix, "
-msgstr "Fijado, "
-
-#: core/ui/ui_menus.c
-msgctxt "POS_UNIT_SATELLITES"
-msgid " satellites"
-msgstr " satélites"
+msgid "Fix, %u satellites"
+msgstr "Fijado, %u satélites"
 
 #: core/ui/ui_menus.c
 msgctxt "POS_BODY_ALTITUDE"
-msgid "Altitude "
-msgstr "Altitud "
+msgid "Altitude %d m"
+msgstr "Altitud %d m"
 
 #: core/ui/ui_menus.c
 msgctxt "HOTSPOT_BODY_HOW_TO_START"
@@ -2859,13 +2834,13 @@ msgstr "Codeplug de otro firmware: ignorado"
 
 #: core/ui/ui_menus.c
 msgctxt "CPLUG_BODY_ZONES"
-msgid "Zones: "
-msgstr "Zonas: "
+msgid "Zones: %u"
+msgstr "Zonas: %u"
 
 #: core/ui/ui_menus.c
 msgctxt "CPLUG_BODY_CHANNELS_UP_TO"
-msgid "Channels: up to "
-msgstr "Canales: hasta "
+msgid "Channels: up to %u"
+msgstr "Canales: hasta %u"
 
 #: core/ui/ui_menus.c
 msgctxt "USBNET_BODY_IS_NETWORK"
@@ -2943,19 +2918,9 @@ msgid "User of a repeater"
 msgstr "Usuario de repetidor"
 
 #: core/ui/ui_menus.c
-msgctxt "SFR_BODY_TALK_ON_TS"
-msgid "Talk on TS"
-msgstr "Habla en TS"
-
-#: core/ui/ui_menus.c
-msgctxt "SFR_BODY_HEAR_TS"
-msgid ", hear TS"
-msgstr ", oye TS"
-
-#: core/ui/ui_menus.c
-msgctxt "SFR_BODY_AND_TS"
-msgid " and TS"
-msgstr " y TS"
+msgctxt "SFR_BODY_TALK_HEAR"
+msgid "Talk on TS%1$d, hear TS%1$d and TS%2$d"
+msgstr "Habla en TS%1$d, oye TS%1$d y TS%2$d"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_SFR_NOT_IN_BUILD"
@@ -3039,8 +3004,8 @@ msgstr "Guardado en el codeplug"
 
 #: core/ui/ui_menus.c
 msgctxt "BODY_RADIO"
-msgid "Radio: "
-msgstr "Radio: "
+msgid "Radio: %K"
+msgstr "Radio: %K"
 
 #: core/ui/ui_menus.c
 msgctxt "TOAST_SAVED"
@@ -3109,8 +3074,8 @@ msgstr "Sin respuesta"
 
 #: core/ui/ui_menus.c
 msgctxt "DATA_BODY_ARS"
-msgid "ARS: "
-msgstr "ARS: "
+msgid "ARS: %K"
+msgstr "ARS: %K"
 
 #: core/ui/ui_menus.c
 msgctxt "DATA_TITLE"
@@ -3124,8 +3089,8 @@ msgstr "Ajuste frec"
 
 #: core/ui/ui_menus.c
 msgctxt "TRIM_BODY_AT"
-msgid "At "
-msgstr "En "
+msgid "At %u MHz"
+msgstr "En %u MHz"
 
 #: core/ui/ui_menus.c
 msgctxt "TRIM_BODY_PLUS_RAISES"
@@ -3154,13 +3119,8 @@ msgstr "Hasta 10.0 ppm"
 
 #: core/ui/ui_menus.c
 msgctxt "ABOUT_LABEL_SOURCE"
-msgid "Source: "
-msgstr "Origen: "
-
-#: core/ui/ui_menus.c
-msgctxt "ABOUT_LABEL_IMAGE"
-msgid "Image: "
-msgstr "Imagen: "
+msgid "Source: %K"
+msgstr "Origen: %K"
 
 #: core/ui/ui_menus.c
 msgctxt "ABOUT_VALUE_IMAGE_CHECKING"
@@ -3168,29 +3128,39 @@ msgid "checking"
 msgstr "comprobando"
 
 #: core/ui/ui_menus.c
+msgctxt "ABOUT_LABEL_IMAGE"
+msgid "Image: %K"
+msgstr "Imagen: %K"
+
+#: core/ui/ui_menus.c
+msgctxt "ABOUT_BODY_HW_LINE"
+msgid "%K: %K"
+msgstr "%1$K: %2$K"
+
+#: core/ui/ui_menus.c
 msgctxt "ABOUT_BODY_FIRMWARE"
-msgid "Firmware: "
-msgstr "Firmware: "
+msgid "Firmware: %K"
+msgstr "Firmware: %K"
 
 #: core/ui/ui_menus.c
 msgctxt "ABOUT_BODY_RELEASE"
-msgid "Release: "
-msgstr "Versión: "
+msgid "Release: %K"
+msgstr "Versión: %K"
 
 #: core/ui/ui_menus.c
 msgctxt "ABOUT_BODY_BUILD"
-msgid "Build: "
-msgstr "Compilación: "
+msgid "Build: %K"
+msgstr "Compilación: %K"
 
 #: core/ui/ui_menus.c
 msgctxt "ABOUT_BODY_DATE"
-msgid "Date: "
-msgstr "Fecha: "
+msgid "Date: %K"
+msgstr "Fecha: %K"
 
 #: core/ui/ui_menus.c
 msgctxt "ABOUT_BODY_LICENSE"
-msgid "License: "
-msgstr "Licencia: "
+msgid "License: %K"
+msgstr "Licencia: %K"
 
 #: core/ui/ui_menus.c
 msgctxt "ABOUT_BODY_MAINTAINERS"
@@ -3264,18 +3234,18 @@ msgstr "Buscando sitios..."
 
 #: core/ui/ui_menus.c
 msgctxt "ROAM_BODY_SITE"
-msgid "Site "
-msgstr "Sitio "
+msgid "Site %u of %u: %s"
+msgstr "Sitio %1$u de %2$u: %3$s"
+
+#: core/ui/ui_menus.c
+msgctxt "ROAM_BODY_SIGNAL_WEAK"
+msgid "Signal %d dBm, weak"
+msgstr "Señal %d dBm, débil"
 
 #: core/ui/ui_menus.c
 msgctxt "ROAM_BODY_SIGNAL"
-msgid "Signal "
-msgstr "Señal "
-
-#: core/ui/ui_menus.c
-msgctxt "ROAM_BODY_DBM_WEAK"
-msgid " dBm, weak"
-msgstr " dBm, débil"
+msgid "Signal %d dBm"
+msgstr "Señal %d dBm"
 
 #: core/ui/ui_menus.c
 msgctxt "ROAM_BODY_LOCKED"
@@ -3354,8 +3324,8 @@ msgstr "Roaming solo en canales"
 
 #: core/ui/ui_menus.c
 msgctxt "ROAM_TOAST_ON_FOR"
-msgid "Roaming on for "
-msgstr "Roaming activo en "
+msgid "Roaming on for %s"
+msgstr "Roaming activo en %s"
 
 #: core/ui/ui_menus.c
 msgctxt "ROAM_TOAST_OFF"
@@ -3384,8 +3354,8 @@ msgstr "Buscando sitios"
 
 #: core/ui/ui_menus.c
 msgctxt "ROAM_TOAST_LOCKED_TO"
-msgid "Locked to "
-msgstr "Fijado a "
+msgid "Locked to %s"
+msgstr "Fijado a %s"
 
 #: core/ui/ui_menus.c
 msgctxt "ROAM_TOAST_ROAMING_AGAIN"
@@ -3409,8 +3379,8 @@ msgstr "Sin fallos registrados."
 
 #: core/ui/ui_menus.c
 msgctxt "CRASH_BODY_RESTARTED_SEND_TO"
-msgid "Restarted after a crash. Send the report to "
-msgstr "Reiniciada tras un fallo. ¿Enviar el informe a "
+msgid "Restarted after a crash. Send the report to %s?"
+msgstr "Reiniciada tras un fallo. ¿Enviar el informe a %s?"
 
 #: core/ui/ui_menus.c
 msgctxt "CRASH_BODY_REPORT_SENT"
@@ -3419,18 +3389,18 @@ msgstr "Informe enviado"
 
 #: core/ui/ui_menus.c
 msgctxt "CRASH_BODY_IN_A_ROW"
-msgid " crashes in a row"
-msgstr " fallos seguidos"
+msgid "%u crashes in a row"
+msgstr "%u fallos seguidos"
+
+#: core/ui/ui_menus.c
+msgctxt "CRASH_BODY_RAN_FOR_BUILD"
+msgid "Ran for %K, build %K"
+msgstr "Activo por %1$K, versión %2$K"
 
 #: core/ui/ui_menus.c
 msgctxt "CRASH_BODY_RAN_FOR"
-msgid "Ran for "
-msgstr "Activo por "
-
-#: core/ui/ui_menus.c
-msgctxt "CRASH_BODY_BUILD"
-msgid ", build "
-msgstr ", versión "
+msgid "Ran for %K"
+msgstr "Activo por %K"
 
 #: core/ui/ui_menus.c
 msgctxt "CRASH_ROW_SEND_REPORT"
@@ -3489,8 +3459,8 @@ msgstr "Log de fallos"
 
 #: core/ui/ui_menus.c
 msgctxt "CRASH_TOAST_REPORTS_TO"
-msgid "Crash reports to "
-msgstr "Informes de fallo a "
+msgid "Crash reports to %s"
+msgstr "Informes de fallo a %s"
 
 #: core/ui/ui_menus.c
 msgctxt "CRASH_TOAST_THIS_CONTACT"
@@ -3519,8 +3489,8 @@ msgstr "Informe de fallo no enviado"
 
 #: core/ui/ui_menus.c
 msgctxt "TOOLS_HINT_OPEN_BACK"
-msgid " open  Back"
-msgstr " abrir  Atrás"
+msgid "1-%u open  Back"
+msgstr "1-%u abrir  Atrás"
 
 #: core/ui/ui_menus.c
 msgctxt "TOOLS_ROW_USB_NETWORK"
@@ -4114,13 +4084,13 @@ msgstr "Aviso batería baja"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_LABEL_KEY_N"
-msgid "Key "
-msgstr "Tecla "
+msgid "Key %d"
+msgstr "Tecla %d"
 
 #: core/ui/ui_menus.c
-msgctxt "SET_LABEL_KEY_N_HOLD"
-msgid " hold"
-msgstr " mant"
+msgctxt "SET_LABEL_KEY_HOLD"
+msgid "%K hold"
+msgstr "%K mant"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_LABEL_LONG_PRESS_TIME"
@@ -4237,10 +4207,10 @@ msgctxt "HINT_0_9_OPEN_BACK"
 msgid "0-9 open  Back"
 msgstr "0-9 abrir  Atrás"
 
-#: core/ui/ui_menus.c core/ui/ui_screens.c
-msgctxt "HOME_LABEL_STEP"
-msgid "Step "
-msgstr "Paso "
+#: core/ui/ui_menus.c
+msgctxt "SIG_LABEL_STEP_N"
+msgid "Step %u"
+msgstr "Paso %u"
 
 #: core/ui/ui_menus.c
 msgctxt "SIG_VALUE_STANDARD_SOUND"
@@ -4268,19 +4238,9 @@ msgid "Idle Tone"
 msgstr "Tono Libre"
 
 #: core/ui/ui_menus.c
-msgctxt "SET_TOAST_NOT_CHANGED"
-msgid "Not changed: "
-msgstr "Sin cambio: "
-
-#: core/ui/ui_menus.c
-msgctxt "SET_TOAST_RANGE_TO"
-msgid " to "
-msgstr " a "
-
-#: core/ui/ui_menus.c
-msgctxt "SET_TOAST_STEPS_OF"
-msgid ", steps of "
-msgstr ", pasos de "
+msgctxt "SET_TOAST_NOT_CHANGED_STEPS"
+msgid "Not changed: %d to %d, steps of %d"
+msgstr "Sin cambio: %1$d a %2$d, pasos de %3$d"
 
 #: core/ui/ui_menus.c
 msgctxt "SIG_HINT_TYPE_OK_NEXT_BACK"
@@ -4396,6 +4356,11 @@ msgstr "Sin posición GPS actual"
 msgctxt "SET_TOAST_SAVED_AS_YOU_CHANGE"
 msgid "Settings are saved as you change them"
 msgstr "Los ajustes se guardan al cambiarlos"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_TOAST_NOT_CHANGED"
+msgid "Not changed: %d to %d"
+msgstr "Sin cambio: %1$d a %2$d"
 
 #: core/ui/ui_menus.c core/ui/ui_position.c
 msgctxt "HINT_OK_CHANGE_BACK"
@@ -4733,6 +4698,11 @@ msgid "ROAM"
 msgstr "ROAM"
 
 #: core/ui/ui_screens.c
+msgctxt "HOME_LABEL_STEP"
+msgid "Step %K"
+msgstr "Paso %K"
+
+#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_P25T_HUNT"
 msgid "Finding system"
 msgstr "Buscando sistema"
@@ -4789,8 +4759,8 @@ msgstr "Reinicia para aplicar"
 
 #: core/ui/ui_screens.c
 msgctxt "HW_BODY_SET"
-msgid "Set: "
-msgstr "Configura: "
+msgid "Set: %K"
+msgstr "Configura: %K"
 
 #: core/ui/ui_screens.c
 msgctxt "HW_FIX_POWER_CYCLE"
@@ -4809,8 +4779,8 @@ msgstr "Este canal es solo RX"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_BANDS"
-msgid "Bands "
-msgstr "Bandas "
+msgid "Bands %K"
+msgstr "Bandas %K"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_TIMEOUT"
@@ -5019,8 +4989,8 @@ msgstr "Privada para ti"
 
 #: core/ui/ui_screens.c
 msgctxt "CALL_VALUE_PRIVATE_TO"
-msgid "Private to "
-msgstr "Privada a "
+msgid "Private to %s"
+msgstr "Privada a %s"
 
 #: core/ui/ui_screens.c
 msgctxt "HOME_STATE_SFR_SENDING_ID"
@@ -5184,8 +5154,8 @@ msgstr ", solo categoría B"
 
 #: core/ui/ui_screens.c
 msgctxt "CALL_BODY_PRIVATE_ID"
-msgid "Private "
-msgstr "Privada "
+msgid "{Private %1$u|Private}"
+msgstr "{Privada %1$u|Privada}"
 
 #: core/ui/ui_screens.c
 msgctxt "STATE_TALKING"
@@ -5223,6 +5193,11 @@ msgid " Group"
 msgstr " Grupo"
 
 #: core/ui/ui_screens.c
+msgctxt "CALL_BODY_TIME_OF"
+msgid "%K of %K"
+msgstr "%1$K de %2$K"
+
+#: core/ui/ui_screens.c
 msgctxt "CALL_HINT_FINISHING"
 msgid "Finishing the call"
 msgstr "Terminando la llamada"
@@ -5258,6 +5233,11 @@ msgid "MON: digital monitor"
 msgstr "MON: monitor digital"
 
 #: core/ui/ui_screens.c
+msgctxt "CALL_VALUE_PRIVATE_TO_ID"
+msgid "Private to %u"
+msgstr "Privada a %u"
+
+#: core/ui/ui_screens.c
 msgctxt "ACTIVITY_STATE_SQUELCH_OPEN"
 msgid "Squelch open"
 msgstr "Squelch abierto"
@@ -5274,8 +5254,8 @@ msgstr "ENVIANDO"
 
 #: core/ui/ui_screens.c
 msgctxt "ACTIVITY_BODY_LEFT_OF"
-msgid " left of "
-msgstr " de "
+msgid "%K left of %K"
+msgstr "%1$K de %2$K"
 
 #: core/ui/ui_screens.c
 msgctxt "ACTIVITY_BODY_NO_TIME_LIMIT"
@@ -5294,8 +5274,8 @@ msgstr "Sin TX hasta entonces"
 
 #: core/ui/ui_screens.c
 msgctxt "ACTIVITY_BODY_LAST"
-msgid "Last activity "
-msgstr "Últ. actividad "
+msgid "Last activity %K"
+msgstr "Últ. actividad %K"
 
 #: core/ui/ui_screens.c
 msgctxt "ACTIVITY_EMPTY"
@@ -5344,8 +5324,8 @@ msgstr "0-9 frec  * Rápido  Arr/Ab"
 
 #: core/ui/ui_screens.c
 msgctxt "DUAL_BODY_HEARD"
-msgid "Heard "
-msgstr "Oído "
+msgid "{Heard %1$K|%1$K}"
+msgstr "{Oído %1$K|%1$K}"
 
 #: core/ui/ui_screens.c
 msgctxt "DUAL_STATE_BUSY"
@@ -5354,13 +5334,13 @@ msgstr "Ocupado"
 
 #: core/ui/ui_screens.c
 msgctxt "DUAL_STATE_SENDING_ON"
-msgid "SENDING on "
-msgstr "ENVIANDO en "
+msgid "SENDING on %K"
+msgstr "ENVIANDO en %K"
 
 #: core/ui/ui_screens.c
 msgctxt "DUAL_STATE_TALKING_ON"
-msgid "TALKING on "
-msgstr "HABLANDO en "
+msgid "TALKING on %K"
+msgstr "HABLANDO en %K"
 
 #: core/ui/ui_screens.c
 msgctxt "DUAL_STATE_RECEIVING_ON_BOTH"
@@ -5368,14 +5348,14 @@ msgid "Receiving on A and B"
 msgstr "Recibiendo en A y B"
 
 #: core/ui/ui_screens.c
-msgctxt "DUAL_STATE_RECEIVING_ON"
-msgid "Receiving on "
-msgstr "Recibiendo en "
+msgctxt "DUAL_STATE_RECEIVING_MUTED"
+msgid "Receiving on %K, muted"
+msgstr "Recibiendo en %K, mudo"
 
 #: core/ui/ui_screens.c
-msgctxt "DUAL_STATE_MUTED"
-msgid ", muted"
-msgstr ", mudo"
+msgctxt "DUAL_STATE_RECEIVING_ON"
+msgid "Receiving on %K"
+msgstr "Recibiendo en %K"
 
 #: core/ui/ui_screens.c
 msgctxt "DUAL_HINT_BACK_TO_B"
@@ -5579,8 +5559,8 @@ msgstr "{Arr/Ab: +/- desplaz.  Teclea: frec TX|Arr/Ab +/- desplaz.  0-9 frec TX|
 
 #: core/ui/ui_screens.c
 msgctxt "QUICK_HINT_OK_SETS"
-msgid "  OK sets"
-msgstr "  OK fija"
+msgid "TX %K  OK sets"
+msgstr "TX %K  OK fija"
 
 #: core/ui/ui_screens.c
 msgctxt "QUICK_TITLE"

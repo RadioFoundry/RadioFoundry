@@ -5,72 +5,6 @@
 #include "font.h"
 #include "i18n.h"
 
-void sb_init(sbuf_t *b, char *buf, size_t len)
-{
-	b->p = buf;
-	b->end = buf + (len ? len - 1 : 0);
-	if (len)
-		*buf = 0;
-}
-
-void str_copy(char *dst, size_t cap, const char *src)
-{
-	sbuf_t b;
-	sb_init(&b, dst, cap);
-	sb_str(&b, src);
-}
-
-void sb_chr(sbuf_t *b, char c)
-{
-	if (b->p < b->end) {
-		*b->p++ = c;
-		*b->p = 0;
-	}
-}
-
-void sb_str(sbuf_t *b, const char *s)
-{
-#if CONFIG_LANG_ZH
-	// A CJK catalog's text is UTF-8 (tools/i18n.py): when the buffer has no room for a whole character, drop it whole
-	// rather than leave half of it for the text layer to draw as a box
-	while (*s) {
-		const uint8_t *p = (const uint8_t *)s;
-		int seq = ((p[0] & 0xF0) == 0xE0 && (p[1] & 0xC0) == 0x80 && (p[2] & 0xC0) == 0x80) ? 3 : 1;
-		if ((size_t)(b->end - b->p) < (size_t)seq)
-			return;
-		while (seq--)
-			sb_chr(b, *s++);
-	}
-#else
-	while (*s)
-		sb_chr(b, *s++);
-#endif
-}
-
-void sb_u32(sbuf_t *b, uint32_t v, int min_digits)
-{
-	char tmp[10];
-	int n = 0;
-	do {
-		tmp[n++] = (char)('0' + v % 10u);
-		v /= 10u;
-	} while (v && n < 10);
-	while (n < min_digits && n < 10)
-		tmp[n++] = '0';
-	while (n)
-		sb_chr(b, tmp[--n]);
-}
-
-void sb_i32(sbuf_t *b, int32_t v)
-{
-	if (v < 0) {
-		sb_chr(b, '-');
-		sb_u32(b, (uint32_t)(-(int64_t)v), 1);
-	} else {
-		sb_u32(b, (uint32_t)v, 1);
-	}
-}
-
 void sb_hex(sbuf_t *b, uint32_t v, int digits)
 {
 	for (int sh = 4 * (digits - 1); sh >= 0; sh -= 4)
@@ -143,6 +77,7 @@ void sb_mmss(sbuf_t *b, uint32_t seconds)
 }
 
 // The age's number and unit letter: 45 's', 14 'm', 3 'h', 2 'd'
+// The unit goes to unit[0]: the caller's is a string of one letter
 static uint32_t age_unit(uint32_t ms, char *unit)
 {
 	uint32_t s = ms / 1000u;
@@ -164,26 +99,18 @@ static uint32_t age_unit(uint32_t ms, char *unit)
 
 void sb_age_long(sbuf_t *b, uint32_t ms)
 {
-	char unit;
-	sb_u32(b, age_unit(ms, &unit), 1);
-	sb_chr(b, unit);
-	sb_str(b, TR(PART_AGO, " ago"));
+	char unit[2] = "";
+	uint32_t v = age_unit(ms, unit);
+	TRF(b, VALUE_AGE_LONG, "%u%K ago", v, unit);
 }
 
 // "14m ago", "14m" as text alternates: the drawing keeps the longest that fits (font.h). One unit style everywhere,
 // so two ages on one screen always read alike
 void sb_age(sbuf_t *b, uint32_t ms)
 {
-	char unit;
-	uint32_t v = age_unit(ms, &unit);
-	sb_str(b, TEXT_ALT_OPEN);
-	sb_u32(b, v, 1);
-	sb_chr(b, unit);
-	sb_str(b, TR(PART_AGO, " ago"));
-	sb_str(b, TEXT_ALT_NEXT);
-	sb_u32(b, v, 1);
-	sb_chr(b, unit);
-	sb_str(b, TEXT_ALT_CLOSE);
+	char unit[2] = "";
+	uint32_t v = age_unit(ms, unit);
+	TRF(b, VALUE_AGE, TEXT_ALT_OPEN "%1$u%2$K ago" TEXT_ALT_NEXT "%1$u%2$K" TEXT_ALT_CLOSE, v, unit);
 }
 
 void sb_degrees(sbuf_t *b, int32_t e7)

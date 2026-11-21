@@ -1025,16 +1025,17 @@ static void draw_place(const radio_view_t *v, const ui_state_t *s)
 		char right[16];
 		sb_init(&b, right, sizeof right);
 		if (v->vfo) {
-			sb_str(&b, TR(HOME_LABEL_STEP, "Step "));
+			SB_LOCAL(step, 8);	// "12.5k"
 			uint32_t st = v->vfo_step_hz;
-			sb_u32(&b, st / 1000u, 1);
+			sb_u32(&step, st / 1000u, 1);
 			if (st % 1000u) {
-				sb_chr(&b, '.');
-				sb_u32(&b, (st % 1000u) / 10u, 2);
+				sb_chr(&step, '.');
+				sb_u32(&step, (st % 1000u) / 10u, 2);
 				// trim a trailing zero: 12.50 -> 12.5
-				if (b.p[-1] == '0') { b.p[-1] = 0; b.p--; }
+				if (step.p[-1] == '0') { step.p[-1] = 0; step.p--; }
 			}
-			sb_chr(&b, 'k');
+			sb_chr(&step, 'k');
+			TRF(&b, HOME_LABEL_STEP, "Step %K", step_text);
 		} else if (v->zone_size) {
 			sb_u32(&b, v->zone_pos + 1u, 1);
 			sb_chr(&b, '/');
@@ -1326,8 +1327,7 @@ static void hwopt_needed(sbuf_t *b)
 		sb_str(b, TR(HW_BODY_RESTART_TO_APPLY, "Restart to apply"));
 		return;
 	}
-	sb_str(b, TR(HW_BODY_SET, "Set: "));
-	sb_str(b, o->name);
+	TRF(b, HW_BODY_SET, "Set: %K", o->name);
 }
 
 static const char *hwopt_action(void)
@@ -1364,8 +1364,7 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 	case TXDENY_BAND: {
 		char bands[32];
 		ui_bands_text(bands, sizeof bands, true);
-		sb_str(&b, TR(DENY_WHY_BANDS, "Bands "));
-		sb_str(&b, bands);
+		TRF(&b, DENY_WHY_BANDS, "Bands %K", bands);
 		break;
 	}
 	case TXDENY_TIMEOUT: sb_str(&b, TR(DENY_WHY_TIMEOUT, "TX time-out reached")); break;
@@ -1638,11 +1637,9 @@ static void sb_call_dst(sbuf_t *b, const radio_dmr_call_t *c)
 	} else if (c->to_us) {
 		sb_str(b, TR(CALL_VALUE_PRIVATE_TO_YOU, "Private to you"));
 	} else {
-		sb_str(b, TR(CALL_VALUE_PRIVATE_TO, "Private to "));
-		if (c->dst_name[0] != '\0')
-			sb_str(b, c->dst_name);
-		else
-			sb_u32(b, c->dst, 1);
+		SB_LOCAL(id, 12);
+		sb_u32(&id, c->dst, 1);
+		TRF(b, CALL_VALUE_PRIVATE_TO, "Private to %s", c->dst_name[0] != '\0' ? c->dst_name : id_text);
 	}
 }
 
@@ -1973,12 +1970,8 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 	sb_init(&b, title, sizeof title);
 	if (v->state == RS_TX && d->target_private && d->target_id != 0xFFFFFFu) {
 		// A private call says so where a group call has its "TG": "Private 9991234", else "Private"
-		sb_str(&b, TEXT_ALT_OPEN);
-		sb_str(&b, TR(CALL_BODY_PRIVATE_ID, "Private "));
-		sb_u32(&b, d->target_id, 1);
-		sb_str(&b, TEXT_ALT_NEXT);
-		sb_str(&b, TR(VALUE_PRIVATE, "Private"));
-		sb_str(&b, TEXT_ALT_CLOSE);
+		TRF(&b, CALL_BODY_PRIVATE_ID, TEXT_ALT_OPEN "Private %1$u" TEXT_ALT_NEXT "Private" TEXT_ALT_CLOSE,
+			d->target_id);
 	} else if (v->state == RS_TX) {
 		sb_target(&b, d->target_id, d->target_private, "");
 	} else {
@@ -2024,10 +2017,14 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 			sb_str(&b, " ENC");
 		y = call_line(L->small, y, buf, ui_col.dim);
 		sb_init(&b, buf, sizeof buf);
-		sb_mmss(&b, v->tx_elapsed_ms / 1000u);
 		if (v->tot_s) {
-			sb_str(&b, TR(PART_OF, " of "));	// the time-out
-			sb_mmss(&b, v->tot_s);
+			SB_LOCAL(el, 12);
+			SB_LOCAL(tot, 12);
+			sb_mmss(&el, v->tx_elapsed_ms / 1000u);
+			sb_mmss(&tot, v->tot_s);
+			TRF(&b, CALL_BODY_TIME_OF, "%K of %K", el_text, tot_text);	// the time-out
+		} else {
+			sb_mmss(&b, v->tx_elapsed_ms / 1000u);
 		}
 		call_line(L->small, y, buf, ui_col.fg);
 		ui_draw_hint(d->state == RDMR_TX_ENDING ? TR(CALL_HINT_FINISHING, "Finishing the call") :
@@ -2170,11 +2167,11 @@ static void air_call_line(const air_call_t *c, const font_t *f, int y)
 			sb_str(&b, " " GLYPH_ARROW " ");
 		}
 		if (c->unit) {
-			sb_str(&b, TR(CALL_VALUE_PRIVATE_TO, "Private to "));
+			TRF(&b, CALL_VALUE_PRIVATE_TO_ID, "Private to %u", c->dst);
 		} else {
 			sb_str(&b, "TG ");
+			sb_u32(&b, c->dst, 1);
 		}
-		sb_u32(&b, c->dst, 1);
 		if (gfx_text_width(f, buf) <= gfx_width())
 			break;
 	}
@@ -2247,9 +2244,11 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 			}
 			if (v->tot_s) {
 				uint32_t el = v->tx_elapsed_ms / 1000u;
-				sb_mmss(&b, el < v->tot_s ? v->tot_s - el : 0);
-				sb_str(&b, TR(ACTIVITY_BODY_LEFT_OF, " left of "));	// the time-out
-				sb_mmss(&b, v->tot_s);
+				SB_LOCAL(left, 12);
+				SB_LOCAL(tot, 12);
+				sb_mmss(&left, el < v->tot_s ? v->tot_s - el : 0);
+				sb_mmss(&tot, v->tot_s);
+				TRF(&b, ACTIVITY_BODY_LEFT_OF, "%K left of %K", left_text, tot_text);	// the time-out
 			} else {
 				sb_str(&b, TR(ACTIVITY_BODY_NO_TIME_LIMIT, "No time limit"));
 			}
@@ -2296,8 +2295,9 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 		}
 #endif
 		if (v->last_rx_ms) {
-			sb_str(&b, TR(ACTIVITY_BODY_LAST, "Last activity "));
-			sb_age(&b, s->now_ms - v->last_rx_ms);
+			SB_LOCAL(age, 40);	// two alternates, and room for a translation
+			sb_age(&age, s->now_ms - v->last_rx_ms);
+			TRF(&b, ACTIVITY_BODY_LAST, "Last activity %K", age_text);
 		} else {
 			sb_str(&b, TR(ACTIVITY_EMPTY, "No activity yet"));
 		}
@@ -2471,6 +2471,14 @@ static int dual_pane_h(const dual_fit_t *ft)
 
 // Text right-aligned at x_end on a row of font rf that starts at y with height row_h, whole (or one of its
 // alternates) or not at all: returns its left edge, or x_end when it doesn't fit right of min_x
+// "Heard 2m ago", with "2m ago" as the shorter alternate
+static void dual_heard(sbuf_t *b, uint32_t ago_ms)
+{
+	SB_LOCAL(age, 24);
+	sb_age_long(&age, ago_ms);
+	TRF(b, DUAL_BODY_HEARD, TEXT_ALT_OPEN "Heard %1$K" TEXT_ALT_NEXT "%1$K" TEXT_ALT_CLOSE, age_text);
+}
+
 static int dual_right(const font_t *rf, int x_end, int y, int row_h, int min_x, const char *text, color_t c)
 {
 	char fit[48];
@@ -2670,12 +2678,7 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 	color_t agec = d->last == i ? ui_col.warn : ui_col.dim;
 	if (d->ended[i] && !rx && !tx && !busy) {
 		sb_init(&b, buf, sizeof buf);
-		sb_str(&b, TEXT_ALT_OPEN);
-		sb_str(&b, TR(DUAL_BODY_HEARD, "Heard "));
-		sb_age_long(&b, ago);
-		sb_str(&b, TEXT_ALT_NEXT);
-		sb_age_long(&b, ago);
-		sb_str(&b, TEXT_ALT_CLOSE);
+		dual_heard(&b, ago);
 		aged = dual_right(sm, rx_end, y1, nf->h, x + sm->w, buf, agec) < rx_end;
 	}
 
@@ -2713,12 +2716,7 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 	color_t rc = rx ? ui_col.fg : ui_col.dim;
 	if (ft->act == 0 && d->last == i && !rx && !tx && !aged) {
 		sb_init(&rb, right, sizeof right);
-		sb_str(&rb, TEXT_ALT_OPEN);
-		sb_str(&rb, TR(DUAL_BODY_HEARD, "Heard "));
-		sb_age_long(&rb, ago);
-		sb_str(&rb, TEXT_ALT_NEXT);
-		sb_age_long(&rb, ago);
-		sb_str(&rb, TEXT_ALT_CLOSE);
+		dual_heard(&rb, ago);
 		rc = ui_col.warn;
 	}
 	if (busy) {
@@ -2850,9 +2848,11 @@ static void dual_activity(const radio_view_t *v, const ui_state_t *s, int y, int
 		if (v->aprs_tx)
 			sb_str(&b, TR(STATE_SENDING, "SENDING"));
 		else {
-			sb_str(&b, sending_data(v) ? TR(DUAL_STATE_SENDING_ON, "SENDING on ") :
-				TR(DUAL_STATE_TALKING_ON, "TALKING on "));
-			sb_str(&b, d->sel ? "B" : "A");
+			const char *pane = d->sel ? "B" : "A";
+			if (sending_data(v))
+				TRF(&b, DUAL_STATE_SENDING_ON, "SENDING on %K", pane);
+			else
+				TRF(&b, DUAL_STATE_TALKING_ON, "TALKING on %K", pane);
 		}
 		gfx_text(sm, 0, y, buf, ui_col.tx);
 		if (!v->aprs_tx) {
@@ -2874,10 +2874,11 @@ static void dual_activity(const radio_view_t *v, const ui_state_t *s, int y, int
 			if (!d->pane[i].rx)
 				continue;
 			sb_init(&b, buf, sizeof buf);
-			sb_str(&b, TR(DUAL_STATE_RECEIVING_ON, "Receiving on "));
-			sb_str(&b, i ? "B" : "A");
+			const char *pane = i ? "B" : "A";
 			if (k)
-				sb_str(&b, TR(DUAL_STATE_MUTED, ", muted"));
+				TRF(&b, DUAL_STATE_RECEIVING_MUTED, "Receiving on %K, muted", pane);
+			else
+				TRF(&b, DUAL_STATE_RECEIVING_ON, "Receiving on %K", pane);
 			int x = gfx_text(sm, 0, y, buf, ui_col.rx) + sm->w;
 			if (w - x >= 4 * sm->w)
 				draw_meter(x, y + sm->h / 4, w - x, sm->h / 2, d->pane[i].rssi_dbm);
@@ -3771,13 +3772,13 @@ static const char *quick_split_hint(const radio_view_t *v, const ui_state_t *s, 
 			TEXT_ALT_NEXT "Up/Dn offset  0-9 TX freq" TEXT_ALT_NEXT "Up/Dn +/-  0-9 TX freq" TEXT_ALT_CLOSE);
 	sbuf_t b;
 	sb_init(&b, buf, len);
-	sb_str(&b, "TX ");
+	SB_LOCAL(typed, UI_ENTRY_MAX + 2);
 	for (uint8_t i = 0; i < UI_ENTRY_MAX; i++) {
 		if (i == UI_ENTRY_MHZ)
-			sb_chr(&b, '.');
-		sb_chr(&b, i < s->entry_len ? s->entry_digits[i] : '_');
+			sb_chr(&typed, '.');
+		sb_chr(&typed, i < s->entry_len ? s->entry_digits[i] : '_');
 	}
-	sb_str(&b, TR(QUICK_HINT_OK_SETS, "  OK sets"));
+	TRF(&b, QUICK_HINT_OK_SETS, "TX %K  OK sets", typed_text);
 	return buf;
 }
 
