@@ -2544,6 +2544,50 @@ static void test_dmr_denied(void)
 	chans[4].rx_only = false;
 }
 
+// A duplex DMR channel with nothing on its output but the modem's slot numbers (issue 721: the HR_C6000 labels slots
+// from noise): the repeater is never shown up, and PTT wakes it before anything else, then is refused. Its bursts
+// then show it up, and a key-up goes straight to voice
+static void test_dmr_rpt_ticks_alone(void)
+{
+	dmr_start(true);
+	chans[4].tx_hz = 433500000;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 3);
+	sim.repeater = true;
+	sim.ticks_only = true;
+	bool up = false;
+	for (int i = 0; i < 300; i++) {
+		run(100);
+		up = up || sm.view.dmr.repeater_up;
+	}
+	CHECK(sm.view.dmr.rmo && !up);
+	unsigned air = sim.air_count;
+	req(RREQ_PTT, 1);
+	run(300);
+	CHECK(sm.view.dmr.state == RDMR_TX_WAIT && sim.air_count == air + 1 && sim.air[air].kind == DMR_BURST_CSBK);
+	run(4000);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_NO_REPEATER);
+	bool only_csbks = true;
+	for (unsigned i = air; i < sim.air_count; i++) {
+		only_csbks = only_csbks && sim.air[i].kind == DMR_BURST_CSBK;
+	}
+	CHECK(only_csbks);
+	req(RREQ_PTT, 0);
+	run(600);
+
+	sim.ticks_only = false;	// the repeater's own bursts
+	run(100);
+	CHECK(sm.view.dmr.repeater_up);
+	air = sim.air_count;
+	req(RREQ_PTT, 1);
+	run(300);
+	CHECK(sm.view.dmr.state == RDMR_TX && sim.air_count > air && sim.air[air].kind == DMR_BURST_VOICE_LC_HEADER);
+	req(RREQ_PTT, 0);
+	run(600);
+	sim.repeater = false;
+	chans[4].tx_hz = chans[4].rx_hz;
+}
+
 // The LEDs while a repeater is woken and on a deny (radio-features.md 5.7): red blinks once per wake-up burst, not
 // solid, and the deny flashes red, green, red, green, red, green; a direct call is solid red throughout
 static void test_dmr_wake_leds(void)
@@ -9240,11 +9284,13 @@ static void test_t3_talk(void)
 		run(60);
 	}
 	CHECK(radio_t3v.state == T3_FOLLOW && radio_t3v.returns == 0);
-	run(4000);		// then nothing: the inactivity timer ends it
+	sim.ticks_only = true;	// then nothing (the modem's slot numbers run on): the inactivity timer ends it
+	run(4000);
 	CHECK(radio_t3v.state != T3_FOLLOW && sm.view.state != RS_TX);
 	req(RREQ_T3, RADIO_T3_STOP);
 	run(100);
 	sim.repeater = false;
+	sim.ticks_only = false;
 }
 
 // Voice bursts the radio sent on TS2 (the payload slot of a one-carrier site)
@@ -10163,6 +10209,9 @@ static void t3_cp_zone(uint16_t opts, uint8_t hold_s, uint16_t fb_chan, const ch
 {
 	dmr_start(true);
 	sim.repeater = true;
+	// The site's slot numbers only: its CSBKs are the test's, and the sim's idle bursts, knowing no frequency, would
+	// be a carrier on the payload channel too, so a followed call would never end
+	sim.ticks_only = true;
 	kv_t3_clear();
 	add(7, "Ops A", T3_RX_HZ, RADIO_MODE_DMR, true, CODEPLUG_POWER_DEFAULT);
 	chans[7].tx_hz = T3_TX_HZ;
@@ -10181,6 +10230,7 @@ static void t3_cp_done(void)
 	run(100);
 	kv_t3_clear();
 	sim.repeater = false;
+	sim.ticks_only = false;
 	setup_codeplug();
 }
 
@@ -10902,6 +10952,7 @@ static void test_t3_power_save(void)
 	CHECK(!radio_t3v.rx_off && ps_wakes == ps_sleeps);	// leaving wakes the receiver
 	fake_radio.rx_sleep = NULL;
 	fake_radio.rx_sleep_dmr = false;
+	sim.repeater = false;	// the site's carrier: later tests start with none on air
 }
 
 // IP Connection Advice (6.4.11): on a system with an IP gateway the registration carries IP_Inform, and the C_AHOY
@@ -10958,6 +11009,7 @@ static void test_t3_ip_advice(void)
 	CHECK(radio_t3v.reg == T3_REG_OK && radio_t3v.ip_advised);
 	req(RREQ_T3, RADIO_T3_STOP);
 	run(100);
+	sim.repeater = false;
 }
 
 
@@ -11054,6 +11106,7 @@ static void test_t3_short_lc(void)
 	CHECK(radio_t3v.csc_valid && radio_t3v.slc_ok == ok0 + 1u && radio_t3v.slc_bad == bad0 + 1u);
 	req(RREQ_T3, RADIO_T3_STOP);
 	run(100);
+	sim.repeater = false;
 }
 
 // Off-net IP on a system with an IP gateway (dmr-trunking.md 7.7): the data service's packet to IPI asks for a
@@ -11104,6 +11157,7 @@ static void test_t3_ip_gateway(void)
 	g.u.grant.dst = T3_ID_IPI;
 	g.u.grant.src = sm.view.dmr.own_id;
 	from = sim.air_count;
+	sim.ticks_only = false;	// the site keys the payload channel for the grant: its bursts say it is up
 	t3_csbk_rx(&g, 1);
 	run(1500);
 	CHECK(radio_t3v.state == T3_FOLLOW && radio_t3v.call_data && !radio_t3v.pd_wait);
@@ -11293,6 +11347,7 @@ int main(void)
 	test_vfo_copy();
 	test_vfo_copy_dmr();
 	test_dmr_denied();
+	test_dmr_rpt_ticks_alone();
 	test_dmr_wake_leds();
 	test_dmr_voice_features();
 	test_dmr_contact_added();
