@@ -195,6 +195,31 @@ static const flow_t flows[] = {
 #endif
 #endif
 #endif
+#if CONFIG_CHANNEL_EDIT && CONFIG_AM_RX
+	// AM past the air band (#848; airband-and-broadcast.md 3.4): Mode steps FM, AM, DMR where the radio receives AM
+	// there; an AM channel has no transmit, power, tone or DMR rows, and is saved as its tag over a stand-in record
+	{ "AM Mode: FM to AM", "amany chhz:3,145000000 ok 5 ok down down", "ok",
+	  "focus=Mode shows=AM hides=Power hides=RX_only hides=Width hides=Color_code", 1, false },
+	{ "AM Mode: AM to DMR", "amany chhz:3,145000000 ok 5 ok down down ok", "ok", "focus=Mode shows=DMR hides=AM", 1,
+	  false },
+	{ "AM Mode: none on a radio with air band AM only", "am chhz:3,145000000 ok 5 ok down down", "ok",
+	  "focus=Mode shows=DMR hides=AM", 1, false },
+	{ "AM Mode: none in the broadcast band", "amany chhz:3,100000000 ok 5 ok down down", "ok", "focus=Mode hides=AM", 1,
+	  false },
+	{ "AM Mode: saved as an AM channel", "amany chhz:3,145000000 ok 5 ok down down ok", "long:ok",
+	  "screen=channel writes=1 toast=Saved_channel_3 saved=5,dmr,1 shows=AM", 1, true },
+	{ "AM channel: opens as AM", "amany cham:3,433000000 ok 5 ok", "down down",
+	  "screen=channel focus=Mode shows=AM hides=Power hides=Color_code", 2, false },
+	{ "AM channel: made FM, Save asks", "amany cham:3,433000000 ok 5 ok down down ok", "long:ok",
+	  "screen=discard writes=0", 1, false },
+	{ "AM channel: on Home", "amany cham:3,433000000 up down", "", "screen=home am=1 kind=5 mode=fm shows=AM_receive",
+	  0, false },
+	{ "AM channel: PTT refused", "amany cham:3,433000000 up down", "pttdown", "tx=0 shows=AM:_receive_only", 1, false },
+	{ "AM channel: Copy to VFO keeps AM", "amany cham:3,433000000 up down", "quick 4",
+	  "vfo=1 am=1 kind=5 freq=433000000", 2, false },
+	{ "AM channel: parked on a radio without AM there", "am cham:3,433000000 up down", "",
+	  "screen=home am=0 shows=No_AM_here", 0, false },
+#endif
 	// The status strip's USB word (#58): IP as a network adapter, with the link arrows once the computer has it up,
 	// none on serial
 	{ "1 USB network: IP on the strip, no link arrows", "usbnet:on", "", "shows=IP nomarkafter=IP", 0, false },
@@ -848,6 +873,18 @@ static const flow_t flows[] = {
 	  false },
 	{ "S VFO mode: P25 shows on the strip", "p25 ok 4 up ok quick 4 back quick 4 back", "", "mode=p25 screen=home shows=P25",
 	  0, false },
+#if CONFIG_AM_RX
+	// A radio that receives AM past the air band: the mode tile goes FM, AM, DMR (#848)
+	{ "S VFO mode: FM to AM", "amany ok 4 up ok", "quick 4", "toast=VFO:_AM am=1 kind=5 mode=fm vfo=1 temporary=0", 2,
+	  false },
+	{ "S VFO mode: AM to DMR", "amany ok 4 up ok quick 4 back", "quick 4", "toast=VFO:_DMR mode=dmr am=0 kind=0", 2,
+	  false },
+	{ "S VFO mode: no AM with air band AM only", "am ok 4 up ok", "quick 4", "toast=VFO:_DMR mode=dmr", 2, false },
+	{ "S VFO AM: on Home", "amany ok 4 up ok quick 4 back", "", "screen=home shows=AM_receive hides=Air_Band", 0,
+	  false },
+	{ "S VFO AM: PTT refused", "amany ok 4 up ok quick 4 back", "pttdown", "tx=0 shows=AM:_receive_only", 1, false },
+	{ "Q AM VFO: no Width", "amany ok 4 up ok quick 4 back", "quick 8", "toast=FM_only:_this_is_AM", 2, false },
+#endif
 	{ "S VFO DMR: color code 7", "ok 4 up ok quick 4 back", "quick 3 7 ok", "cc=7 temporary=0", 4, false },
 	{ "S VFO DMR: timeslot 2", "ok 4 up ok quick 4 back", "quick 2 back", "ts=2 temporary=0", 3, false },
 	{ "S VFO DMR: talk to a typed TG", "ok 4 up ok quick 4 back", "quick 8 down ok 3 1 0 0 ok", "talk=3100 temporary=0",

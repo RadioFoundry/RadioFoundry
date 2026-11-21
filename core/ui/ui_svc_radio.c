@@ -13,6 +13,7 @@
 #include "radio/ref_trim.h"
 #include "radio/radio_cwid.h"
 #include "radio/radio_bcast.h"
+#include "radio/radio_am.h"
 #include "codeplug/codeplug_modes.h"	// channel kinds: a trunked one is never watched
 #include "input/input.h"
 #include "settings/settings.h"
@@ -157,7 +158,7 @@ bool ui_svc_vfo_sfr(uint8_t a)
 bool ui_svc_mode(uint8_t mode)
 {
 	if (mode != RADIO_MODE_FM && mode != RADIO_MODE_DMR && !(mode == RADIO_MODE_P25 && CONFIG_P25) &&
-	    !(mode == RADIO_MODE_NXDN && CONFIG_NXDN)) {
+	    !(mode == RADIO_MODE_NXDN && CONFIG_NXDN) && !(mode == RADIO_REQ_MODE_AM && CONFIG_AM_RX)) {
 		return false;
 	}
 	radio_req_mode(mode);
@@ -223,6 +224,9 @@ uint32_t ui_svc_feat_radio(void)
 #endif
 #if CONFIG_NXDN
 	       (radio_nxdn_fits() ? UI_FEAT_NXDN : 0) |
+#endif
+#if CONFIG_AM_RX
+	       (radio_am_anywhere() ? UI_FEAT_AM : 0) |
 #endif
 	       0;
 }
