@@ -288,10 +288,11 @@ void gd88_pa_own(bool on)
 #endif
 
 #if GD88_DMR_TX
-void gd88b_pa_own_counts(uint32_t *keys_out, uint32_t *skips_out)
+void gd88b_pa_own_counts(uint32_t *keys_out, uint32_t *skips_out, uint16_t *drive)
 {
 	*keys_out = own_keys;
 	*skips_out = own_skips;
+	*drive = own_pa;
 }
 #endif
 

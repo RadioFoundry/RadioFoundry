@@ -178,11 +178,11 @@ void gd88_path_own_tx(bool on, uint32_t hz)
 	hrc_irq_restore(s);
 }
 
-void gd88b_own_tx_counts(uint32_t *paths, uint32_t *path_refused, uint32_t *keys, uint32_t *skips)
+void gd88b_own_tx_counts(uint32_t *paths, uint32_t *path_refused, uint32_t *keys, uint32_t *skips, uint16_t *drive)
 {
 	*paths = own_paths;
 	*path_refused = own_refused;
-	gd88b_pa_own_counts(keys, skips);
+	gd88b_pa_own_counts(keys, skips, drive);
 }
 #endif
 

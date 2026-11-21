@@ -342,9 +342,13 @@ static void view(dl_text_t *t)
 	dl_text(t, "dmrtx.refused=%u\ndmrtx.dropped=%u\ndmrtx.arm_fails=%u\n", (unsigned)x->refused, (unsigned)x->dropped,
 		(unsigned)x->arm_fails);
 	uint32_t paths, path_refused, keys, skips;
-	gd88b_own_tx_counts(&paths, &path_refused, &keys, &skips);
+	uint16_t drive;
+	gd88b_own_tx_counts(&paths, &path_refused, &keys, &skips, &drive);
 	dl_text(t, "dmrtx.paths=%u\ndmrtx.path_refused=%u\ndmrtx.pa_keys=%u\ndmrtx.pa_skips=%u\n", (unsigned)paths,
 		(unsigned)path_refused, (unsigned)keys, (unsigned)skips);
+	// The drive the bursts ramp to (B's calibration at the armed level) and the main chip's GPIO word as the last
+	// burst keyed it (radio_gd88.c own_gpio): what B put on air without an I/Q capture
+	dl_text(t, "dmrtx.pa_drive=%u\ndmrtx.gpio=0x%04x\n", drive, gd88_own_gpio_word());
 #endif
 #endif
 	hrc_link_uart_stats_t u;

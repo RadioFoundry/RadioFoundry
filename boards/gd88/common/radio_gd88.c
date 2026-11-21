@@ -479,15 +479,29 @@ static void audio(bool on);
 // the modulation level for the TX frequency, the main chip the digital TX words (deviation off). With an SFR's split
 // on (A), B's transmitter is armed instead: it keys the bursts the modem's caller sends it (core/rx2/rx2_dmr.h)
 #if !GD88_TX
-// B's own transmitter: the main chip's GPIO5 selects its output to the PA, GPIO4 the
-// band (high: VHF). Per burst like the PA: held high, B's receiver hears nothing, and an SFR's repeat needs B's modem
-// to keep the inbound slot timing between bursts
-#define OWN_GPIO_PATH		5u
-#define OWN_GPIO_VHF		4u
+// B's own transmitter: the main chip's GPIO 0 (0x33 bit 6) selects its output to the PA instead of A's, GPIO 1 (bit 5)
+// the band (high: VHF; the same bit A's transmission uses, gd88_a_tx_band) and GPIO 3 (bit 3) is high while it
+// transmits. Per burst like the PA: held high, B's receiver hears nothing, and an SFR's repeat needs B's modem to keep
+// the inbound slot timing between bursts. GPIO 1 is left at the band after the burst, as A's transmission leaves it
+#define OWN_GPIO_PATH		0u
+#define OWN_GPIO_VHF		1u
+#define OWN_GPIO_TX		3u
+static uint16_t own_gpio_word;	// 0x33 as the last burst keyed it (the dmrtx.gpio view key)
 static void own_gpio(bool on, uint32_t hz)
 {
-	bk4819_gpio(&rf_main, OWN_GPIO_VHF, on && hz < UHF_FROM_HZ);
+	if (on) {
+		bk4819_gpio(&rf_main, OWN_GPIO_VHF, hz < UHF_FROM_HZ);
+	}
 	bk4819_gpio(&rf_main, OWN_GPIO_PATH, on);
+	bk4819_gpio(&rf_main, OWN_GPIO_TX, on);
+	if (on) {
+		own_gpio_word = rf_main.gpio;
+	}
+}
+
+uint16_t gd88_own_gpio_word(void)
+{
+	return own_gpio_word;
 }
 #endif
 

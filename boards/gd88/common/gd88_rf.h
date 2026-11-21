@@ -89,6 +89,7 @@ void gd88_pa_disarm(void);
 // path off, or back (paths_gd88b.c); its PA up to the armed drive (select, 200 us, supply, ramp) or down (pa_gd88b.c)
 void gd88_path_own_tx(bool on, uint32_t hz);
 void gd88_pa_own(bool on);
+uint16_t gd88_own_gpio_word(void);	// the main chip's 0x33 as the last own burst keyed it
 #endif
 #if GD88_TX && CONFIG_SFR
 // The SFR's repeat on B's transmitter (core/rx2/rx2_dmr.h) turned on or off: DMR TX armed here moves there or back
