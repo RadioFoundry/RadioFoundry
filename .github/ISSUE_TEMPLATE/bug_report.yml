@@ -23,6 +23,7 @@ body:
         - TYT MD-UV380 / MD-UV390 / Retevis RT3S / MD-UV390 Plus 10 W
         - TYT MD-9600 / Retevis RT90
         - Retevis RT10
+        - Baofeng DM-36 / DM36UV / DM36PRO / DM36 PLUS / DM36Ultra / MD36UV / AT36D / GT36D
         # end generated
         - Not radio-specific (tools, web site, docs)
         - Other (say which below)

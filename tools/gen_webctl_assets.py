@@ -49,6 +49,8 @@ def key_header(board):
             mk = f.read().replace("\\\n", " ")
         for m in re.finditer(r"(?m)^\s*BOARD_DIRS\s*[:+]?=(.*)$", mk):
             dirs += [d.strip("/") for d in m.group(1).split() if re.fullmatch(r"boards/[\w-]+/?", d)]
+        # a board built on another board's sources (include boards/<other>/board.mk) shares its headers
+        dirs += re.findall(r"(?m)^\s*include\s+(boards/[\w-]+)/board\.mk\s*$", mk)
     except OSError:
         pass
     for d in dirs:

@@ -571,6 +571,153 @@
    "build_options": [],
    "cps_radio_types": []
   },
+  "dm36": {
+   "id": "dm36",
+   "name": "Baofeng DM-36",
+   "model": "DM-36",
+   "part_of": null,
+   "platform": "hrc7000",
+   "platform_stubs": [],
+   "family": "serial-loader",
+   "link": "serial-cable",
+   "release": "testing",
+   "debuglink_names": [
+    "Baofeng DM-36",
+    "dm36"
+   ],
+   "rom_base": 50331648,
+   "app_base": 50380800,
+   "flash_end": 51380224,
+   "app_region": [
+    50380800,
+    51281920
+   ],
+   "sectors": [
+    [
+     0,
+     50380800,
+     901120
+    ],
+    [
+     1,
+     51281920,
+     98304
+    ]
+   ],
+   "protected": [
+    [
+     50331648,
+     50380800
+    ]
+   ],
+   "protect": [
+    {
+     "mem": "data",
+     "start": 0,
+     "end": 823296,
+     "what": "radio-owned header and native codeplug pool, including factory calibration (hardware-dm36.md 10)"
+    },
+    {
+     "mem": "data",
+     "start": 823296,
+     "end": 1347584,
+     "what": "dense radio-owned data (hardware-dm36.md 10)"
+    },
+    {
+     "mem": "data",
+     "start": 1376256,
+     "end": 1531904,
+     "what": "boot images (hardware-dm36.md 10)"
+    },
+    {
+     "mem": "data",
+     "start": 1572864,
+     "end": 2072576,
+     "what": "radio-owned tables and fonts (hardware-dm36.md 10)"
+    },
+    {
+     "mem": "data",
+     "start": 2101248,
+     "end": 2613248,
+     "what": "radio-owned data and voice prompts (hardware-dm36.md 10)"
+    },
+    {
+     "mem": "data",
+     "start": 7192576,
+     "end": 7241728,
+     "what": "sparse radio-owned sectors (hardware-dm36.md 10)"
+    }
+   ],
+   "keep_codec_supported": false,
+   "first_stage": null,
+   "codec_tool": "hrc7000_codec",
+   "codec_stock": [],
+   "codec": {
+    "id": "dm36-020",
+    "windows": [
+     [
+      51281920,
+      98304
+     ]
+    ],
+    "installed": [],
+    "sources": [
+     "a program flash read of the radio"
+    ]
+   },
+   "codec_code": 51281920,
+   "codec_slot": [
+    51281920,
+    51380224
+   ],
+   "codec_run": [
+    276992,
+    360448
+   ],
+   "codec_tables": [
+    402656840,
+    402669172
+   ],
+   "loader_id": "BFUV36-V1",
+   "loader_keys": "PTT + SK1 (reported)",
+   "loader_sign": "",
+   "bootloader_steps": [
+    "With the owner supervising, verify complete program- and data-flash backups and the recovery procedure before any write.",
+    "Enter the SoC boot ROM and load the universal stub with this board profile; do not use the stock updater.",
+    "Confirm the target, image bounds and readback plan; write only the reviewed application at program offset 0xC000, preserving 0x0000-0xBFFF.",
+    "Keep data flash read-only. Read back and compare the application before attempting a supervised first boot."
+   ],
+   "stock_download": null,
+   "key_sha256": null,
+   "key_prefix": null,
+   "dfu_ids": null,
+   "dfu_string1": null,
+   "dfu_product": null,
+   "dfu_layout": null,
+   "original_version": null,
+   "original_backup": null,
+   "stub": {
+    "tool": "stubtool",
+    "id": 5,
+    "tested": false,
+    "latch": 255,
+    "key": 255,
+    "nand": false,
+    "progmem": 1048576,
+    "stock_console": null,
+    "rom_entry": null,
+    "led": {
+     "red": 33,
+     "green": 32
+    },
+    "calibration": {
+     "area": 823296,
+     "page_id": 2
+    }
+   },
+   "build_options": [],
+   "cps_radio_types": []
+  },
   "md380": {
    "id": "md380",
    "name": "TYT MD-380",

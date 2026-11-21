@@ -1,0 +1,54 @@
+{
+ "board": "dm36",
+ "commit": "be3741831f10efa542462d4deda212b7c4dc050f",
+ "date": "2026-11-19T23:36:08Z",
+ "dirty": false,
+ "features": [
+  "debuglink"
+ ],
+ "firmware": {
+  "board": "Baofeng DM-36",
+  "codec": "dm36-020",
+  "display": "240x320x4",
+  "features": "P25,P25_TRUNK,NXDN,FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_AFSK,APRS_DMR,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,DMR_TRUNK,DMR_TRUNK_TX,SFR,HOTSPOT,HOTSPOT_SPLIT,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,NET_TCP,NET_PPP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,AM_RX,BCAST_FM,DIAG,UI_SETTINGS,CHANNEL_LIST,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,BATTERY_SAVE,CPS_FAST,DEBUGLINK,HOSTLINK",
+  "git": "be374183",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "radio"
+ ],
+ "kind": "run",
+ "options": {
+  "dmr-cc": 1,
+  "dmr-freq": 446.075,
+  "dmr-tg": 99,
+  "fm-mhz": 445.95
+ },
+ "sources": {
+  "debuglink": {
+   "core/cps/cps_lz4.c": "b961393163a43ca1d742d6e66d13c0d37c9ee3ce",
+   "core/debuglink": null,
+   "core/debuglink/dl_fmt.c": "5d4ed48e3605040d32262cd22ea96cc6d02d4473",
+   "core/debuglink/dl_frame.c": "412b8045f8ec30b661c477d9d818ab5bd75f90f2",
+   "docs/spec/debuglink.md": "910a61776581b5dec10205806ef5f7ab9be20fe9"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_ui.py::test_injected_keys_count_as_activity",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.12.3"
+ }
+}

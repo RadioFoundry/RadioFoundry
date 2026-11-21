@@ -384,6 +384,56 @@ static void test_am(void)
 	CHECK(chip.protocol_errors == 0);
 }
 
+// Set-up B's air band entry (fd6818_variant_b_dmr_b2f8, hardware-dm36.md 8.4): after the caller's 0x43 = 0x0048,
+// 0x47 = 0x6740, 0x4A = 0x5450, 0x13 = 0x03FF in that order, no 0x48; leaving it gives back set-up B's own 0x13 / 0x4A.
+// The other set-up B variants have no entry (the boards refuse AM there) and keep the default order
+static void test_am_setup_b(void)
+{
+	fd6818_t dev;
+	reset_chip();
+	fd6818_attach_variant(&dev, bus(), &fd6818_variant_b_dmr_b2f8);
+	fd6818_set_bandwidth(&dev, FD6818_BW_AM);
+	fd6818_set_am(&dev, true);
+	CHECK(chip.n == 4);
+	CHECK(chip.log[0].reg == FD6818_REG_BANDWIDTH && chip.log[0].val == 0x0048);
+	CHECK(chip.log[1].reg == FD6818_REG_AF && chip.log[1].val == 0x6740);
+	CHECK(chip.log[2].reg == FD6818_REG_AM_4A && chip.log[2].val == 0x5450);
+	CHECK(chip.log[3].reg == FD6818_REG_GAIN && chip.log[3].val == 0x03FF);
+	CHECK(find_last(FD6818_REG_VOLUME) < 0);
+	CHECK(fd6818_agc_word(&dev.agc) == 0x03FF);	// the gain loop starts where the entry left 0x13
+	chip.n = 0;
+	fd6818_set_am(&dev, false);
+	CHECK(chip.n == 3);
+	int i = find_last(FD6818_REG_GAIN);
+	CHECK(i >= 0 && chip.log[i].val == 0x03DF);
+	i = find_last(FD6818_REG_AM_4A);
+	CHECK(i >= 0 && chip.log[i].val == 0x5430);
+	i = find_last(FD6818_REG_AF);
+	CHECK(i >= 0 && chip.log[i].val == FD6818_AF_FM);
+	CHECK(fd6818_variant_b.am == NULL && fd6818_variant_b_dmr6943.am == NULL && fd6818_variant_default.am == NULL);
+	CHECK(chip.protocol_errors == 0);
+}
+
+// The FM AF output's mute (fd6818_af_mute): bits 11:8 cleared, back to the FM word, or in AM to the AM word
+static void test_af_mute(void)
+{
+	fd6818_t dev;
+	reset_chip();
+	fd6818_attach_variant(&dev, bus(), &fd6818_variant_b_dmr_b2f8);
+	fd6818_af_mute(&dev, true);
+	fd6818_af_mute(&dev, false);
+	CHECK(chip.n == 2 && chip.log[0].reg == FD6818_REG_AF && chip.log[0].val == 0x0040);
+	CHECK(chip.log[1].reg == FD6818_REG_AF && chip.log[1].val == 0x0140);
+#if CONFIG_AM_RX
+	fd6818_set_am(&dev, true);
+	chip.n = 0;
+	fd6818_af_mute(&dev, true);
+	fd6818_af_mute(&dev, false);
+	CHECK(chip.n == 2 && chip.log[0].val == 0x6040 && chip.log[1].val == 0x6740);
+#endif
+	CHECK(chip.protocol_errors == 0);
+}
+
 // The AM gain loop: a reading 1-9 dB over the target steps the gain down one entry, 10 dB or more cuts at once by the
 // excess less 8 dB, 6 dB or more under raises one entry per reading after the hold. A steady station settles just under
 // the target (hardware-dm32.md 8.7: over it the AM demodulator is overdriven)
@@ -653,6 +703,14 @@ static void test_setup_b(void)
 	fd6818_attach_variant(&dev, bus(), &fd6818_variant_b);
 	fd6818_set_mode(&dev, FD6818_MODE_DMR);
 	CHECK(chip.regs[0x47] == 0x0140 && chip.regs[0x48] == 0xB2F5);
+	fd6818_attach_variant(&dev, bus(), &fd6818_variant_b_dmr_b2f8);
+	fd6818_set_mode(&dev, FD6818_MODE_DMR);
+	CHECK(chip.regs[0x47] == 0x6943 && chip.regs[0x48] == 0xB2F8);	// the lower DMR level
+	{
+		const fd6818_variant_t *a = &fd6818_variant_b, *b = &fd6818_variant_b_dmr_b2f8;	// only the DMR words differ
+		CHECK(a->init == b->init && a->fm == b->fm && a->rx == b->rx && a->tx == b->tx && a->burst_rx == b->burst_rx &&
+		      a->burst_tx == b->burst_tx && a->bw_dmr == b->bw_dmr && a->dmr_n == b->dmr_n && a->dmr != b->dmr);
+	}
 	const fd6818_variant_t *a = &fd6818_variant_b, *b = &fd6818_variant_b_dmr6943;
 	CHECK(a->init == b->init && a->fm == b->fm && a->rx == b->rx && a->tx == b->tx && a->burst_rx == b->burst_rx &&
 		a->burst_tx == b->burst_tx && a->bw_dmr == b->bw_dmr && a->dmr_n == b->dmr_n && a->dmr != b->dmr);
@@ -734,6 +792,8 @@ int main(void)
 	test_rx_tones();
 	test_rx_sleep();
 	test_am();
+	test_am_setup_b();
+	test_af_mute();
 	test_am_agc();
 	test_am_noise();
 	if (failures) {

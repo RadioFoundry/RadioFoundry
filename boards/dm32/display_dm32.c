@@ -8,7 +8,7 @@
 // pins to the controller itself, so the key scan may leave them as GPIOs when it unlocks.
 #include "dm32.h"
 #include "config.h"
-#include "pins.h"
+#include <pins.h>
 #include "platform.h"
 #include "hal_time.h"
 #include "display/st7789/st7789.h"

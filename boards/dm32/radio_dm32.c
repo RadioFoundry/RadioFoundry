@@ -7,12 +7,16 @@
 // interrupts off (the bus's crit_enter); a frame takes about 50 us.
 #include "dm32.h"
 #include "config.h"
-#include "pins.h"
+#include <pins.h>
+#ifdef BOARD_VOLUME_HEADER
+#include BOARD_VOLUME_HEADER
+#endif
 #include "platform.h"
 #include "hal_time.h"
 #include "rf/fd6818/fd6818.h"
 #include "modem/hrc7000/hrc7000.h"
 #include "fm_rx_audio.h"
+#include "audio_route.h"
 #include "hrc_afsk.h"
 #include "radio/ref_trim.h"
 #include "radio/pa_keyup.h"
@@ -56,10 +60,17 @@ _Static_assert(SWITCH_AHEAD_US + KEYUP_PA_US_VHF <= SWITCH_AHEAD_SIMPLEX_MAX_US 
 	       SWITCH_AHEAD_US + KEYUP_PA_US_UHF <= SWITCH_AHEAD_SIMPLEX_MAX_US,
 	       "the simplex switch to TX must come after the inbound burst before ours");
 #if CONFIG_DMR
+// VHF, UHF; a board with another PA gives BOARD_KEYUP_VHF / BOARD_KEYUP_UHF (knee, slope in µs)
+#ifndef BOARD_KEYUP_VHF
+#define BOARD_KEYUP_VHF		520, 600
+#define BOARD_KEYUP_UHF		500, 1350	// measured: pa_cal.py, pa_shape.py
+#endif
+#define KEYUP_KS_(knee, slope)	.knee_us = (knee), .slope_us = (slope)
+#define KEYUP_KS(ks)		KEYUP_KS_(ks)	// expands the pair first
 static const pa_keyup_cfg_t keyup_cfg[2] = {
-	{ .dead_pm = 650, .knee_us = 520, .slope_us = 600, .window_us = KEYUP_BOOST_US,
+	{ .dead_pm = 650, KEYUP_KS(BOARD_KEYUP_VHF), .window_us = KEYUP_BOOST_US,
 	  .settle_us = KEYUP_DRIVE_US_VHF, .pa_us = KEYUP_PA_US_VHF },
-	{ .dead_pm = 793, .knee_us = 500, .slope_us = 1350, .window_us = KEYUP_BOOST_US,	// measured: pa_cal.py, pa_shape.py
+	{ .dead_pm = 793, KEYUP_KS(BOARD_KEYUP_UHF), .window_us = KEYUP_BOOST_US,
 	  .settle_us = KEYUP_DRIVE_US_UHF, .pa_us = KEYUP_PA_US_UHF },
 };
 #endif
@@ -107,9 +118,23 @@ static pa_keyup_t ku;			// the transmission's DMR key-up, set before the RF task
 static uint16_t last_rssi_raw, last_noise_raw;
 static bool pcm_on;		// a beep or DMR voice plays through the codec
 static bool rx_audio;		// the squelch is open (the radio's audio hook)
+#ifdef BOARD_VOLUME_HEADER
+static uint8_t vol_step = RADIO_VOLUME_DEFAULT;
+static bool vol_muted;
+#endif
 static bool asleep;		// the receiver is powered down between listen windows (rx_sleep)
 static bool aprs_listen;	// APRS takes the HR_C7000's FM audio (aprs_listen_route)
 static bool afsk_tx;		// APRS tones play through the prompt FIFO into the modulator (afsk_tx_route)
+
+// A board's own stock audio usages (audio_route.h): BOARD_PATH_PIN_BY_MODE, PTB14 by the mode (FM low, DMR high, never
+// by a transmission or a tone) instead of as PTB15's complement; BOARD_FM_AF_GATED, the FD6818's AF output muted in FM
+// while a tone plays or the squelch is closed
+#ifndef BOARD_PATH_PIN_BY_MODE
+#define BOARD_PATH_PIN_BY_MODE	0
+#endif
+#ifndef BOARD_FM_AF_GATED
+#define BOARD_FM_AF_GATED	0
+#endif
 
 // The speaker amplifier is on while any user wants it
 #define AMP_RADIO	0x01u	// receive audio
@@ -120,6 +145,10 @@ static bool afsk_tx;		// APRS tones play through the prompt FIFO into the modula
 static void speaker_source(void);
 static void ring_play(void);
 static void amp(uint8_t who, bool on);
+#ifdef BOARD_VOLUME_HEADER
+static void vol_apply(void);
+static void audio(bool on);
+#endif
 static void tx_tone_side(bool on);
 
 // ---- FD6818 bus ----
@@ -332,9 +361,13 @@ static const hrc_afsk_board_t afsk_board = {
 // Which RF section the radio has (hardware-dm32.md 8.10): the default set-up, tuned, locks the classic section's
 // synthesizer and never the newer one's; set-up B locks both, so the default goes first (fd6818_detect). Neither
 // locking leaves the default and blocks transmitting: on the wrong set-up the newer section transmitted 74 MHz off
+#ifndef BOARD_FD6818_VARIANT_B
+#define BOARD_FD6818_VARIANT_B	fd6818_variant_b_dmr6943
+#endif
+
 static void rf_detect(void)
 {
-	static const fd6818_variant_t *const v[] = { &fd6818_variant_default, &fd6818_variant_b_dmr6943 };
+	static const fd6818_variant_t *const v[] = { &fd6818_variant_default, &BOARD_FD6818_VARIANT_B };
 	uint8_t i = fd6818_detect(&fd, &fd_bus.bus, v, 2, RF_PROBE_HZ, RF_LOCK_MS);
 	rf_b = i == 1;
 	rf_unlocked = i == 2;
@@ -402,6 +435,9 @@ static void set_mode(radio_mode_t m)
 		hrc7000_fm_idle(&modem);
 		mode = RADIO_MODE_FM;
 	}
+#ifdef BOARD_VOLUME_HEADER
+	vol_apply();		// the mode tables wrote 0x48 back to 0xBBBF
+#endif
 	have_rx = false;	// the next rx() retunes everything
 }
 
@@ -409,7 +445,8 @@ static void set_mode(radio_mode_t m)
 // transmission, dmr_tx_end): the burst switch already put the FD6818 in RX; on the same channel it stays as it is
 static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am, bool keep)
 {
-	if (!board_in_band(hz, false) || (am && (mode != RADIO_MODE_FM || rf_b))) {	// AM: not worked out on set-up B
+	// AM on set-up B only where the board's variant has its air band entry (fd6818_variant_t.am)
+	if (!board_in_band(hz, false) || (am && (mode != RADIO_MODE_FM || (rf_b && fd.variant->am == NULL)))) {
 		return false;
 	}
 	dmr_disarm();	// a retune ends DMR TX (the hotspot's rx() disarms too)
@@ -446,6 +483,9 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am, 
 		}
 #if CONFIG_AM_RX
 		fd6818_set_am(&fd, am);	// every AM tune: full gain again for the new channel; FM: AM off
+#endif
+#ifdef BOARD_VOLUME_HEADER
+		vol_apply();
 #endif
 	}
 	rx_hz = hz;
@@ -533,7 +573,9 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		// 8.5 "Enter DMR TX": the PA select and drive wait for each burst's sequence. Between bursts the radio
 		// receives: the FD6818 in RX and the LNA on until the RF task switches to the first burst (burst_on). In TX
 		// here, the hotspot, which keys to listen, heard nothing until its first burst
-		hrc_pin_write(PIN_MIC_PATH, false);
+		if (!BOARD_PATH_PIN_BY_MODE) {
+			hrc_pin_write(PIN_MIC_PATH, false);
+		}
 		lna(have_rx ? rx_hz : hz, true);
 		fd6818_set_bandwidth(&fd, fd.variant->bw_dmr);
 		fd6818_set_state(&fd, FD6818_STATE_RX);
@@ -554,7 +596,9 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		hrc7000_set_subtone(&modem, true, c7_tone(tone != NULL ? tone->type : TONE_NONE),
 			tone != NULL ? tone->value : 0);	// before FM_PTT: the modem takes the DCS code then
 		hrc7000_fm_tx(&modem, tx_wide);
-		hrc_pin_write(PIN_MIC_PATH, true);
+		if (!BOARD_PATH_PIN_BY_MODE) {
+			hrc_pin_write(PIN_MIC_PATH, true);
+		}
 		fd6818_set_bandwidth(&fd, fm_bw_reg(bw));
 		if (rf_b) {
 			fd6818_write(&fd, FD_REG_TX_AUX, FD_TX_AUX_FM_PRE);
@@ -696,19 +740,28 @@ static void status(radio_status_t *st)
 // While APRS listens the HR_C7000 must hear the FD6818 all the time (its FM receive audio is what the demodulator
 // gets, squelch open or not), so PTB15 stays 0 and an open squelch plays FM through the HR_C7000's own FM playback
 // (AUDIO_CONTROL b6) and the codec instead
+//
+// BOARD_FM_AF_GATED: the mute comes before PTB15 turns to the codec, the unmute after it turns to the FD6818
 static void speaker_source(void)
 {
-	// The FD6818's output is squelched noise while the squelch is closed: the speaker listens to it only while it is open
-	bool fm_open = mode == RADIO_MODE_FM && !transmitting && !pcm_on && rx_audio;
-	bool analog = fm_open && !aprs_listen;
-	hrc_pin_write(PIN_SPK_SOURCE, analog);
+	dm32_audio_route_t r = dm32_audio_route((dm32_audio_state_t){
+		.fm = mode == RADIO_MODE_FM, .transmitting = transmitting, .pcm = pcm_on, .rx_audio = rx_audio,
+		.aprs_listen = aprs_listen,
+	}, BOARD_PATH_PIN_BY_MODE, BOARD_FM_AF_GATED);
+	bool gate = BOARD_FM_AF_GATED && mode == RADIO_MODE_FM && !transmitting && fd.bus != NULL;
+	if (gate && !r.af_on) {
+		fd6818_af_mute(&fd, true);
+	}
+	hrc_pin_write(PIN_SPK_SOURCE, r.fd6818_spk ? SPK_SOURCE_FD6818 : !SPK_SOURCE_FD6818);
 	if (!transmitting) {
-		hrc_pin_write(PIN_MIC_PATH, !analog);
+		hrc_pin_write(PIN_MIC_PATH, r.path_pin);
+	}
+	if (gate && r.af_on) {
+		fd6818_af_mute(&fd, false);
 	}
 	if (mode == RADIO_MODE_FM && !transmitting) {
-		bool play = fm_open && aprs_listen;
 		uint32_t s = hrc_irq_save();	// the AUDIO_CONTROL shadow is shared with the audio task
-		hrc7000_audio_bits(&modem, play ? C7_AUDIO_FM_PLAY : 0, play ? 0 : C7_AUDIO_FM_PLAY);
+		hrc7000_audio_bits(&modem, r.fm_play ? C7_AUDIO_FM_PLAY : 0, r.fm_play ? 0 : C7_AUDIO_FM_PLAY);
 		hrc_irq_restore(s);
 	}
 }
@@ -739,9 +792,45 @@ static void amp(uint8_t who, bool on)
 	hrc_irq_restore(s);
 }
 
+#ifdef BOARD_VOLUME_HEADER
+static void vol_apply(void)
+{
+	if (fd.bus == NULL || asleep) {
+		return;		// wake() and the next tune apply it
+	}
+
+	if (mode != RADIO_MODE_FM) {
+		return;		// DMR: 0x48 is the level into the HR_C7000's demodulator, the mode table's (DMR voice uses the line out)
+	}
+	fd6818_write(&fd, 0x48, board_volume_fm(vol_step));
+}
+
+static void volume(uint8_t percent)
+{
+	unsigned step = (percent * RADIO_VOLUME_MAX + 50u) / 100u;
+	if (step > RADIO_VOLUME_MAX) {
+		step = RADIO_VOLUME_MAX;
+	}
+	vol_muted = step == 0;
+	vol_step = (uint8_t)step;
+	uint8_t code = hrc7000_dac_code(hrc7000_volume_db(step, RADIO_VOLUME_DEFAULT, RADIO_VOLUME_MAX, 12));
+	if (fd.bus != NULL) {
+		hrc7000_set_dac_gain(&modem, code);
+	} else {
+		modem.dac_gain = code;	// before init(): its codec set-up writes the kept gain
+	}
+	vol_apply();
+	audio(rx_audio);	// step 0 and back: the amplifier
+}
+
+#endif
+
 static void audio(bool on)
 {
 	rx_audio = on;
+#ifdef BOARD_VOLUME_HEADER
+	on = on && !vol_muted;
+#endif
 	if (!on) {
 		amp(AMP_RADIO, false);	// before the source switch, so the switch doesn't click
 	}
@@ -874,7 +963,10 @@ const hal_radio_t dm32_radio = {
 #endif
 	.status = status,
 	.audio = audio,
-	.volume = NULL,
+#ifdef BOARD_VOLUME_HEADER
+	.volume = volume,
+	.volume_pcm = true,	// the line out gain scales DMR voice and beeps
+#endif
 #if CONFIG_REF_TRIM
 	.ref_trim = ref_trim,
 #endif

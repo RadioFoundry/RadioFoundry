@@ -376,10 +376,16 @@ void fd6818_set_am(fd6818_t *dev, bool am)
 			}
 			dev->am_noise_off = fd6818_am_noise_offset(r4f);
 		}
-		fd6818_write(dev, FD6818_REG_AF, FD6818_AF_AM);
-		fd6818_write(dev, FD6818_REG_GAIN, FD6818_GAIN_AM_FULL);
-		fd6818_write(dev, FD6818_REG_AM_4A, FD6818_AM_4A);
-		fd6818_agc_reset(&dev->agc);
+		static const regval_t am_default[] = {
+			{ FD6818_REG_AF, FD6818_AF_AM }, { FD6818_REG_GAIN, FD6818_GAIN_AM_FULL }, { FD6818_REG_AM_4A, FD6818_AM_4A },
+		};
+		const fd6818_variant_t *v = dev->variant;
+		if (v->am != NULL) {
+			write_table(dev, v->am, v->am_n);
+		} else {
+			write_table(dev, am_default, TBL_N(am_default));
+		}
+		fd6818_agc_reset(&dev->agc);	// the tables leave 0x13 at full gain, the top of the loop's table
 	} else if (dev->am) {
 		fd6818_write(dev, FD6818_REG_GAIN, dev->r13);
 		fd6818_write(dev, FD6818_REG_AF, FD6818_AF_FM);
@@ -468,6 +474,12 @@ uint8_t fd6818_agc_atten_db(const fd6818_agc_t *a)
 	return (uint8_t)-agc_table[a->idx].db;
 }
 #endif	// CONFIG_AM_RX
+
+void fd6818_af_mute(fd6818_t *dev, bool mute)
+{
+	uint16_t on = fd6818_am_on(dev) ? FD6818_AF_AM : FD6818_AF_FM;
+	fd6818_write(dev, FD6818_REG_AF, mute ? (uint16_t)(on & ~FD6818_AF_TYPE) : on);
+}
 
 void fd6818_rx_sleep(fd6818_t *dev, bool sleep, fd6818_mode_t mode)
 {

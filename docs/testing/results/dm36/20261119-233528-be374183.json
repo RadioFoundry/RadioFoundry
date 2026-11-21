@@ -1,0 +1,228 @@
+{
+ "board": "dm36",
+ "commit": "be3741831f10efa542462d4deda212b7c4dc050f",
+ "date": "2026-11-19T23:35:28Z",
+ "dirty": false,
+ "features": [
+  "debuglink",
+  "task_stacks"
+ ],
+ "firmware": {
+  "board": "Baofeng DM-36",
+  "codec": "dm36-020",
+  "display": "240x320x4",
+  "features": "P25,P25_TRUNK,NXDN,FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_AFSK,APRS_DMR,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,DMR_TRUNK,DMR_TRUNK_TX,SFR,HOTSPOT,HOTSPOT_SPLIT,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,NET_TCP,NET_PPP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,AM_RX,BCAST_FM,DIAG,UI_SETTINGS,CHANNEL_LIST,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,BATTERY_SAVE,CPS_FAST,DEBUGLINK,HOSTLINK",
+  "git": "be374183",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "radio"
+ ],
+ "kind": "run",
+ "options": {
+  "dmr-cc": 1,
+  "dmr-freq": 446.075,
+  "dmr-tg": 99,
+  "fm-mhz": 445.95
+ },
+ "sources": {
+  "debuglink": {
+   "core/cps/cps_lz4.c": "b961393163a43ca1d742d6e66d13c0d37c9ee3ce",
+   "core/debuglink": null,
+   "core/debuglink/dl_fmt.c": "5d4ed48e3605040d32262cd22ea96cc6d02d4473",
+   "core/debuglink/dl_frame.c": "412b8045f8ec30b661c477d9d818ab5bd75f90f2",
+   "docs/spec/debuglink.md": "910a61776581b5dec10205806ef5f7ab9be20fe9"
+  },
+  "task_stacks": {
+   "core/app/task_stack.c": "6c6de39203f316c0b6b4af84a29ade80268b0d29",
+   "docs/spec/debuglink.md": "910a61776581b5dec10205806ef5f7ab9be20fe9"
+  }
+ },
+ "tests": [
+  {
+   "excused": false,
+   "features": [],
+   "id": "boards/md9600/hil/test_md9600.py::test_board_view_keys",
+   "optional": [
+    "debuglink"
+   ],
+   "outcome": "skipped",
+   "reason": "[other_board] a test of boards/md9600; this radio is dm36",
+   "required": false,
+   "skip_kind": "other_board"
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_diag_has_clock_and_lines",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_log_readable",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_no_stalls",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_oversized_request_rejected",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_ping_latency",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_reset_counters_returns_clock",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_screenshot_geometry",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_unknown_command_and_bad_crc",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_version_and_features",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_view_sections",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_chip_reg.py::test_soc_register_matches_read_mem",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [],
+   "id": "tests/hil/test_radio_features.py::test_pa_keyup_op",
+   "optional": [
+    "debuglink"
+   ],
+   "outcome": "passed",
+   "required": false
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_tx_drive_op",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_tx_limit",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] transmits: run with --allow-rf",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "features": [
+    "task_stacks"
+   ],
+   "id": "tests/hil/test_task_stacks.py::test_every_task_has_stack_left",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "task_stacks"
+   ],
+   "id": "tests/hil/test_task_stacks.py::test_interrupt_stack_has_room",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_ui.py::test_injected_keys_count_as_activity",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "tools/rfoundry_debug.py:484: DebugLinkError",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_ui.py::test_screenshot_sanity",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.12.3"
+ }
+}

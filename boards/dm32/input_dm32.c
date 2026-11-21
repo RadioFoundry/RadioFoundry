@@ -4,7 +4,7 @@
 // The keypad rows are LCD DB0-DB4: a scan takes them back from the LCD controller under the LCD bus lock. SK1 / SK2
 // pull columns 3 / 4 low with no row driven (keymatrix.h).
 #include "dm32.h"
-#include "pins.h"
+#include <pins.h>
 #include "platform.h"
 #include "hal_time.h"
 #include "input/keymatrix/keymatrix.h"
@@ -14,15 +14,24 @@
 #define DIPLEX2_DB0_DB6_GPIO	(0x7Fu << 9)	// IO_DIPLEX2 bits 9-15: DB0-DB6 as GPIOs
 #define N			KEYMATRIX_NONE
 
-// [row][column 1..4] (6.1)
-static const uint8_t map[KEY_ROWS * KEY_COLS] = {
+// [row][column 1..4] (6.1); a board on these sources with its keys elsewhere on the same matrix gives BOARD_KEY_MAP
+static const uint8_t map[KEY_ROWS * KEY_COLS] =
+#ifdef BOARD_KEY_MAP
+	BOARD_KEY_MAP;
+#else
+{
 	KEY_GREEN, KEY_3, KEY_2, KEY_1,
 	KEY_LEFT, KEY_6, KEY_5, KEY_4,
 	KEY_RIGHT, KEY_9, KEY_8, KEY_7,
 	KEY_RED, KEY_HASH, KEY_0, KEY_STAR,
 	KEY_UP, KEY_DOWN, N, N,
 };
+#endif
+#ifdef PIN_SK1
+static const uint8_t direct[KEY_COLS] = { N, N, N, N };	// the side keys have their own pins (scan())
+#else
 static const uint8_t direct[KEY_COLS] = { N, N, KEY_SK1, KEY_SK2 };
+#endif
 static const keymatrix_t matrix = { .rows = KEY_ROWS, .cols = KEY_COLS, .map = map, .direct = direct };
 
 static uint32_t last_raw, stable;
@@ -108,6 +117,9 @@ static uint32_t scan(void)
 {
 	hrc_gpio_watch_scan();
 	uint32_t raw = scan_matrix();
+#ifdef PIN_SK1
+	raw |= (hrc_pin_read(PIN_SK1) ? 0u : 1u << KEY_SK1) | (hrc_pin_read(PIN_SK2) ? 0u : 1u << KEY_SK2);	// low = pressed
+#endif
 	shared_ptt_line_t line = { .flagged = hrc_host_uart_line_errors(), .keyed = dm32_radio_transmitting() };
 	line.rx_seen = hrc_host_uart_last_rx(&line.rx_ms);
 	line.tx_seen = hrc_host_uart_last_tx(&line.tx_ms);

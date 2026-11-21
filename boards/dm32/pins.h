@@ -4,6 +4,10 @@
 #ifndef DM32_PINS_H
 #define DM32_PINS_H
 
+// Meter-calibrated ADC counts per 10 V (hardware-dm32.md 3.7).
+#define BAT_RAW_PER_10V		832u
+#define KNOB_ADC_CH		0u		// the volume knob on a board with an ADC pot: ADC0_IN, PTC15
+
 #define PIN_FD_CLK		0x07	// FD6818 serial clock (bit-banged)
 #define PIN_FD_DATA		0x08	// FD6818 serial data, bidirectional
 #define PIN_GPS_RXD		0x09	// UART1 RXD (peripheral)
@@ -29,6 +33,7 @@
 #define GPS_POWER_ON_LEVEL	false	// low = GPS on (hardware-dm32.md 12)
 #define PIN_MIC_PATH		0x2E	// 1 = mic to the analog FM path, 0 = to the DMR codec
 #define PIN_SPK_SOURCE		0x2F	// 1 = the FD6818's audio to the speaker, 0 = into the HR_C7000 (DMR receive)
+#define SPK_SOURCE_FD6818	1	// the level of PIN_SPK_SOURCE that gives the speaker the FD6818's audio
 #define PIN_KEY_COL1		0x31	// keypad columns 1-4 (0x31-0x34), low = key closed
 #define PIN_KEY_COL4		0x34
 #define PIN_AMP_EN		0x35	// audio power amplifier, high = on

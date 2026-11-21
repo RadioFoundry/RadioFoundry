@@ -116,6 +116,9 @@ Reading a vendor codeplug and moving a radio from the vendor firmware. User step
 
 | Spec | Covers |
 |---|---|
+| [platform-hrc7000.md](platform-hrc7000.md) | HR_C7000 CPU, microphone level, data flash layout and factory serial loader |
+| [rf-fd6818.md](rf-fd6818.md) | FD6818 three-wire register bus |
+| [display-st7789.md](display-st7789.md) | ST7789-class panel reset and i8080 initialization |
 | [radios.md](radios.md) | The hardware survey: every radio's chips and the port order |
 | `hardware-<id>.md` | One radio: MCU and memory map, pins, chips, keys, display, power, bootloader and image format, calibration |
 

@@ -1,0 +1,112 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+id = "dm36"
+name = "Baofeng DM-36"
+maker = "Baofeng"
+model = "DM-36"
+also = ["DM36UV", "DM36PRO", "DM36 PLUS", "DM36Ultra", "MD36UV", "AT36D", "GT36D"]
+kind = "handheld"
+order = 21
+# the sixth character of the APRS tocall, APRDF6 (docs/spec/aprs.md 4.2): one per radio, never reused
+aprs_tocall = "6"
+
+[docs]
+hardware = "docs/spec/hardware-dm36.md"
+
+[hardware]
+bands = "136-174 / 400-470 MHz rated, UHF tuning to 480 MHz"
+power = "4.4 W VHF / 4.1 W UHF (FCC); the levels are the factory calibration's, checked on frequency at the lowest only"
+display = "2.0 inch 240x320 color, ST7789-class"
+# Shared renderer; bezel-safe insets remain unverified.
+gallery = "240x320i10x5"
+clock = { rtc = "backed", note = "RTC coin cell visible in the board photo; wiring unverified" }
+
+[status]
+level = "bring-up"
+summary = "Boot and debug link verified over the programming cable. Two-way FM and DMR voice checks are pending on this build."
+release = "testing"
+
+# The codec source is the handset backup. There is no release container.
+[flash]
+family = "serial-loader"
+keep_codec = false
+stock_versions = []
+backup = { stock = "none", rfoundry = "none", spi_size = 0x1000000 }
+notice = "Bring-up only; no release offered. First write requires owner supervision through the boot ROM stub, verified backups of both flashes, and a recovery plan. Preserve the bootloader; data flash writes only from 0x700000 (hardware-dm36.md 10.3). DMR voice uses the stock codec from a program flash read of the radio (hardware-dm36.md 2.1). Do not use the stock updater."
+
+[[flash.protect]]
+mem = "data"
+start = 0x000000
+end = 0x0C9000
+what = "radio-owned header and native codeplug pool, including factory calibration (hardware-dm36.md 10)"
+
+[[flash.protect]]
+mem = "data"
+start = 0x0C9000
+end = 0x149000
+what = "dense radio-owned data (hardware-dm36.md 10)"
+
+[[flash.protect]]
+mem = "data"
+start = 0x150000
+end = 0x176000
+what = "boot images (hardware-dm36.md 10)"
+
+[[flash.protect]]
+mem = "data"
+start = 0x180000
+end = 0x1FA000
+what = "radio-owned tables and fonts (hardware-dm36.md 10)"
+
+[[flash.protect]]
+mem = "data"
+start = 0x201000
+end = 0x27E000
+what = "radio-owned data and voice prompts (hardware-dm36.md 10)"
+
+[[flash.protect]]
+mem = "data"
+start = 0x6DC000
+end = 0x6E8000
+what = "sparse radio-owned sectors (hardware-dm36.md 10)"
+
+[flash.bootloader]
+keys = "PTT + SK1 (reported)"
+hold = ["ptt", "sk1"]
+steps = [
+    "With the owner supervising, verify complete program- and data-flash backups and the recovery procedure before any write.",
+    "Enter the SoC boot ROM and load the universal stub with this board profile; do not use the stock updater.",
+    "Confirm the target, image bounds and readback plan; write only the reviewed application at program offset 0xC000, preserving 0x0000-0xBFFF.",
+    "Keep data flash read-only. Read back and compare the application before attempting a supervised first boot.",
+]
+id = "BFUV36-V1"
+
+# The universal HR_C7000 stub's board profile: the radio's backup was read through it (hardware-dm36.md 2); no
+# data flash write test region until a writable area is established (hardware-dm36.md 10)
+[flash.stub]
+id = 5
+hold_power = false
+progmem = 0x100000
+tested = false
+# Read-only page-pool scan; the physical page can move (hardware-dm36.md 10.1).
+calibration = { area = 0xC9000, page_id = 2 }
+
+[codec]
+tool = "hrc7000_codec"
+profile = "dm36-020"
+sources = ["a program flash read of the radio"]
+
+[frame]
+shape = "handheld-tall"
+body = "#22252a"
+accent = "#e0a526"
+lens = [24, 34]
+
+[hil]
+display = "240x320x4"
+features = ["HOSTLINK", "DEBUGLINK"]
+no_features = ["USB", "GPS"]
+flash_jedec = ["852018"]
+calibration = true
+# ADC scaling remains a bring-up hypothesis (hardware-dm36.md 9.3).
+battery_mv = [5500, 8800]
