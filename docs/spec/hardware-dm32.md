@@ -486,7 +486,7 @@ ground. Whether F1/F2 are routed anywhere on the DM-32UV board is unknown (3.11)
 | 0x28 | PTB8 | Keypad backlight | out | high = on |
 | 0x2B | PTB11 | PTT | in | low = pressed |
 | 0x2C | PTB12 | GPS power | out | **low = GPS on**, high = off |
-| 0x2E | PTB14 | Audio path select: mic to analog FM path vs to DMR codec | out | 1 = analog (FM TX), 0 = DMR; set at each TX start |
+| 0x2E | PTB14 | Audio path select: mic to analog FM path vs to DMR codec | out | 1 = analog (FM TX), 0 = DMR; set at each TX start, and 0 while APRS tones play in FM TX (9.1) |
 | 0x2F | PTB15 | FD6818 audio switch | out | 1 = the FD6818's audio output to the speaker and away from the C7000's ADC; 0 = the audio into the C7000 (DMR receive needs this) and the speaker on the codec (measured) |
 | 0x31–0x34 | PTB17–20 | Keypad columns 1–4 | in | low = key closed |
 | 0x35 | PTB21 | Audio power amplifier enable | out | high = on |
@@ -1189,7 +1189,7 @@ With no receive tone RadioFoundry writes the DCS 0x2E / 0x2F pair, which is also
 |---|---|
 | Mic | into the C7000 codec ADC (MIC input 2: CR_MIC2 bit 6 = 1) |
 | Mic routing switch | GPIO 0x2E: 1 = analog FM path, 0 = DMR path |
-| Programming cable's host-to-radio line | Reaches the codec ADC on the DMR path: a 3 kHz square (0x55 at 6000 baud) reads 18 dB over a quiet over. FM transmit shows none of it: squares of 500 Hz to 3 kHz on the line add at most about 25 Hz of deviation with 0x2E = 1, and nothing with 0x2E = 0 during APRS tones, the codec's microphone muted or not. The line is the PTT line too: the 6000-baud square reads as framing errors only, and the 10 ms key scan, in step with the square, can see the pin low on every scan (a PTT press) |
+| Programming cable's host-to-radio line | Reaches the codec ADC on the DMR path: a 3 kHz square (0x55 at 6000 baud) reads 18 dB over a quiet over. FM transmit shows almost nothing: squares of 500 Hz to 3 kHz on the line add at most about 25 Hz of deviation with 0x2E = 1, and nothing with 0x2E = 0 during APRS tones, the codec's microphone muted or not. The line is the PTT line too: the 6000-baud square reads as framing errors only, and the 10 ms key scan, in step with the square, can see the pin low on every scan (a PTT press) |
 | Speaker | codec DAC line out 2 (LINEOUT_CTRL bit 0, `line2out_en`) → speaker source switch GPIO 0x2F → audio PA (enable GPIO 0x35) |
 | Speaker source | 0x2F = 1: the FD6818's AF output (and the C7000's AF input disconnected: PHASE_OUT goes flat); 0x2F = 0: the codec line out, AF into the C7000. 0x2E is driven as its complement outside TX. The amplifier (0x35) goes off before 0x2F changes (measured) |
 | FM RX audio while APRS listens | 0x2F stays 0, so the C7000 hears the FD6818 with the squelch open or shut and copies its FM audio to the CPU (`modem-hrc7000.md` 8.5). An open squelch plays FM through the C7000's FM playback (AUDIO_CONTROL bit 6) and the codec line out (`boards/dm32/radio_dm32.c`, `speaker_source`) (measured) |

@@ -6,8 +6,9 @@ tones go out, so nothing but the tones modulates the carrier. Manual and opt-in:
 
 No audio source can stand in for the microphone. Every tone the HIL tools can make joins the audio path after the
 codec ADC, and a tone on the programming cable's serial line (test_mic_uart_inject.py) reaches the DMR microphone
-path but not FM transmit where it was measured, so it never rides on the APRS tones, fixed or not. On radios with a programming cable in the speaker/mic jack the cable also cuts the internal microphone,
-and the debug link goes with the cable. So the person sends each position from the radio's own menu, cable out:
+path but not FM transmit where it was measured, so it never rides on the APRS tones, fixed or not. On radios with a
+programming cable in the speaker/mic jack the cable also cuts the internal microphone, and the debug link goes with
+the cable. So the person sends each position from the radio's own menu, cable out:
 
 1. With the cable in, the test sets up the APRS test frequency, path and lowest power as test_aprs.py does
    (`aprs_air`: --aprs-test-mhz, path none, the RAM test callsign), starts a WINDOW_S bench board AFSK decode and
@@ -29,10 +30,13 @@ import time
 import pytest
 
 from rfoundry_hil import skip
-from test_aprs import _aprs, _n, aprs_air, check_tones, print_frame  # noqa: F401  (aprs_air: the fixture)
+from test_aprs import (_aprs, _n, aprs_air, check_tones, print_capture,  # noqa: F401  (aprs_air: the fixture)
+                       print_frame)
 from test_mic_gain import wait_link
 
-WINDOW_S = 15        # unplug, Tools > APRS > Send position now, the transmission
+# Unplug, Tools > APRS > Send position now, the engine's wait for its next service pass (5.7 s once, test_aprs.py
+# CAPTURE_S), the transmission: press Send soon after GO
+WINDOW_S = 15
 SOUND_RATIO = 1.25   # over 2's deviation / over 1's: the frames are the same, so a muted microphone leaves them equal
 
 OVERS = (
@@ -57,11 +61,10 @@ def _over(radio, sdr_bench, s, n, name, how):
     sent = _n(v, "aprs.rf_sent") - _n(v0, "aprs.rf_sent")
     assert sent == 1, f"over {n} ({name}): aprs.rf_sent went up by {sent}, not 1: was Send position now pressed " \
                       f"once? {v}"
-    for seg in res.get("segments", []):
-        print(f"keyed {seg['t_start_s']:.2f}-{seg['t_end_s']:.2f} s, carrier {seg['carrier_hz']:+d} Hz, "
-              f"{seg['level_dbfs']} dBFS (floor {res.get('floor_dbfs')})")
-    if "fcs_bad" in res:
-        print(f"bench board: {res['decoded']} frames decoded, {res['fcs_bad']} with a bad FCS")
+    print_capture(res)
+    if "segments" in res and not res["segments"]:
+        pytest.fail(f"over {n} ({name}): the bench board heard no carrier in its {WINDOW_S} s window: was Send "
+                    "position now pressed soon enough after GO?")
     ours = [f for f in res["frames"] if f["src"] == f"{s.call}-{s.ssid}"]
     for f in ours:
         print_frame(f)
