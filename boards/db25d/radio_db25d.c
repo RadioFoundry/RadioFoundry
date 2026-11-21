@@ -742,7 +742,7 @@ static unsigned volume_step(uint8_t percent)
 	return step > RADIO_VOLUME_MAX ? RADIO_VOLUME_MAX : step;
 }
 
-// The line out gain the step gives the PCM path (vol_dac), for the core's beep level (hal_radio_t.volume_db)
+// The line out gain the step gives the PCM path (vol_dac)
 static int8_t volume_db(uint8_t percent)
 {
 	return (int8_t)hrc7000_volume_db(volume_step(percent), RADIO_VOLUME_DEFAULT, RADIO_VOLUME_MAX, DB25D_PCM_VOL_TOP_DB);
@@ -790,7 +790,6 @@ const hal_radio_t db25d_radio = {
 	.audio = audio,
 	.volume = volume,
 	.volume_pcm = true,	// the modem's line out gain scales DMR voice and beeps (vol_dac)
-	.volume_db = volume_db,
 	.tx_tone = tx_tone,
 	.tx_tail = tx_tail,
 	.tx_tone_key = tx_tone_key,

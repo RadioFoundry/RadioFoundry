@@ -229,6 +229,8 @@ static inline bool voice_streaming(void)
 }
 
 #if CONFIG_BEEP
+static void beep_volume_cap(radio_sm_t *sm);
+
 // The level a beep plays at, and whether it is mixed into the voice stream (running) or has its own stream
 static uint8_t beep_level_now(const radio_sm_t *sm)
 {
@@ -240,12 +242,7 @@ static uint8_t beep_level_now(const radio_sm_t *sm)
 	if (!r->volume_pcm) {
 		return radio_beep_level(level, sm->volume_sent);
 	}
-	if (r->volume_db != NULL && sm->volume_sent > 0) {
-		// The volume scales the beep in the speaker path: above the cap step, softer by the gain added there
-		level = radio_beep_pcm_level(level, r->volume_db((uint8_t)sm->volume_sent),
-					     r->volume_db(radio_volume_percent(RADIO_BEEP_VOLUME_STEP)));
-	}
-	return level;
+	return level;	// the volume acts on the beep in the speaker path, held at the cap step's (volume_apply)
 }
 
 static bool beep_shared_now(void)
@@ -261,6 +258,7 @@ static void beep(radio_sm_t *sm, uint8_t b)
 	if (radio_tone_off(sm->set.tones_off, b)) {
 		return;		// Settings > Sound turned it off (the codeplug's settings area)
 	}
+	beep_volume_cap(sm);
 	beep_play((beep_t)b, beep_level_now(sm), beep_shared_now());
 #else
 	(void)sm;
@@ -298,6 +296,7 @@ static void sig_local(radio_sm_t *sm, sig_event_t ev)
 #if CONFIG_BEEP && CONFIG_SIG_TONES
 	beep_seg_t seg[SIG_STEPS];
 	uint8_t n = sig_chain(sm->set.sig_hz[ev], sm->set.sig_ms[ev], ev, seg);
+	beep_volume_cap(sm);
 	beep_play_custom(seg, n, beep_level_now(sm), beep_shared_now());
 #else
 	(void)sm;
@@ -7986,6 +7985,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	sm->rx2_audio_out = -1;
 #endif
 	sm->volume_sent = -1;
+	sm->volume_out = -1;
 	sm->vol_step = RADIO_VOLUME_DEFAULT;
 	sm->vol_override = -1;
 	sm->knob_seen = -1;
@@ -8838,27 +8838,6 @@ uint8_t radio_beep_level(uint8_t cap, int16_t volume_percent)
 	return (uint8_t)volume_percent;
 }
 
-// 10^(-d/20) for d = 0..19 dB, Q15
-static const uint16_t db_down_q15[20] = {
-	32768, 29205, 26029, 23198, 20675, 18427, 16423, 14637, 13045, 11627,
-	10362, 9235, 8231, 7336, 6538, 5827, 5193, 4629, 4125, 3677,
-};
-
-uint8_t radio_beep_pcm_level(uint8_t level, int db_now, int db_cap)
-{
-	if (level == 0 || db_now <= db_cap) {
-		return level;
-	}
-	unsigned d = (unsigned)(db_now - db_cap);
-	uint32_t milli = (uint32_t)level * 1000u;	// the level in thousandths: 20 dB at a time is a tenth
-	for (; d >= 20; d -= 20) {
-		milli /= 10u;
-	}
-	milli = (milli * db_down_q15[d] + 16384u) >> 15;
-	uint32_t out = (milli + 500u) / 1000u;
-	return (uint8_t)(out == 0 ? 1 : out);
-}
-
 uint8_t radio_volume_stored(uint8_t step)
 {
 	return (uint8_t)(0x80u | ((step > RADIO_VOLUME_MAX ? RADIO_VOLUME_MAX : step) + 1u));
@@ -8908,9 +8887,62 @@ static void follow_volume(radio_sm_t *sm)
 		sm->volume_sent = (int16_t)v;
 		sm->view.volume = (int8_t)v;
 		changed(sm);
+	}
+}
+
+// Whether a beep sounds or its audio is still on the way to the speaker: beep_busy() is true from beep_play() until
+// the audio side has its last block, then the board's buffers (a prompt FIFO's ring, the I2S DMA) still hold up to
+// about 110 ms of it. The hold covers that on a board that can't tell (hal_audio_t.spk_pending)
+#define BEEP_VOLUME_HOLD_MS	150u
+
+static bool beep_sounding(radio_sm_t *sm, uint32_t now_ms)
+{
+#if CONFIG_BEEP
+	const hal_audio_t *a = board.audio;
+	if (beep_busy() || (a != NULL && a->spk_pending != NULL && a->spk_pending())) {
+		sm->beep_hold_ms = now_ms;
+		sm->beep_hold = true;
+		return true;
+	}
+	if (sm->beep_hold && now_ms - sm->beep_hold_ms < BEEP_VOLUME_HOLD_MS) {
+		return true;
+	}
+	sm->beep_hold = false;
+#else
+	(void)sm;
+	(void)now_ms;
+#endif
+	return false;
+}
+
+// The level the board gets: the volume, held at RADIO_BEEP_VOLUME_STEP's while a beep sounds on a board whose volume
+// scales the PCM path (volume_pcm), so beeps stop getting louder above that step whatever the board's gain curve.
+// Voice playing at the same time is that much softer for the beep's length
+static void volume_apply(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (board.radio->volume == NULL || sm->volume_sent < 0) {
+		return;
+	}
+	int v = sm->volume_sent;
+	int cap = radio_volume_percent(RADIO_BEEP_VOLUME_STEP);
+	if (board.radio->volume_pcm && v > cap && beep_sounding(sm, now_ms)) {
+		v = cap;
+	}
+	if (v != sm->volume_out) {
+		sm->volume_out = (int16_t)v;
 		board.radio->volume((uint8_t)v);
 	}
 }
+
+#if CONFIG_BEEP
+// A beep is about to play: the board's level down to the cap step's now, before the beep's first block
+static void beep_volume_cap(radio_sm_t *sm)
+{
+	sm->beep_hold_ms = sm->led_now;
+	sm->beep_hold = true;
+	volume_apply(sm, sm->led_now);
+}
+#endif
 
 // Battery monitor: a reading a second, none during or just after a transmission. A radio that measures its supply
 // instead gets the reading a second for display, and nothing acts on it: no thresholds are defined for a supply
@@ -9145,6 +9177,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		persist(sm, now_ms);
 	}
 	follow_volume(sm);
+	volume_apply(sm, now_ms);
 	battery_poll(sm, now_ms);
 #if CONFIG_BEEP
 	bool shared = voice_streaming();

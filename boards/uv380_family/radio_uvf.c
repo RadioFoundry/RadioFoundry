@@ -1155,19 +1155,14 @@ static void status(radio_status_t *st)
 	r.last_status = *st;
 }
 
-// Soft volume (hardware-dm1701.md 11.2, 17): the knob's 0..100 % maps linearly to -31..+31 dB of HR_C6000 RX gain,
-// which scales the PCM path (beeps, DMR voice) too
-static int8_t volume_db(uint8_t percent)
-{
-	return (int8_t)((int)percent * 62 / 100 - 31);
-}
-
+// Soft volume (hardware-dm1701.md 11.2, 17): the knob's 0..100 % maps linearly to -31..+31 HR_C6000 RX gain steps,
+// which scale the PCM path (beeps, DMR voice) too
 static void volume(uint8_t percent)
 {
 	// At the bottom the amp is off (speaker_apply), so the gain stays at unity: the I2S copy of the FM audio that
 	// APRS receive reads is scaled by it too
-	int8_t db = percent == 0 ? 0 : volume_db(percent);
-	count(hrc6000_set_rx_gain(&r.modem, db));
+	int db = percent == 0 ? 0 : (int)percent * 62 / 100 - 31;
+	count(hrc6000_set_rx_gain(&r.modem, (int8_t)db));
 	if ((percent == 0) != volume_zero) {
 		volume_zero = percent == 0;
 		speaker_apply();
@@ -1340,7 +1335,6 @@ const hal_radio_t uvf_radio = {
 	.audio = audio,
 	.volume = volume,
 	.volume_pcm = true,	// HR_C6000 4:0x37 scales the codec DAC's PCM as well
-	.volume_db = volume_db,
 	.tx_tone = tx_tone,
 	.tx_tail = tx_tail,
 	.tx_tone_key = tx_tone_key,
