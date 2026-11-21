@@ -3467,6 +3467,7 @@ static void t3_publish(radio_sm_t *sm)
 	v->votes = m->st.votes;
 	v->vote_moves = m->st.vote_moves;
 	v->weak_leaves = m->st.weak_leaves;
+	v->weak_hold_ms = m->weak_hold_ms;
 	v->adj_refused = m->st.adj_refused;
 	v->level_dbm = m->level_dbm;
 	v->leave_dbm = t3s.cfg.leave_dbm;

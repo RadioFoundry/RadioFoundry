@@ -874,6 +874,60 @@ static void test_weak(void)
 	CHECK(ms.state == T3_CAMPED && ms.st.weak_leaves == 0, "nowhere else to look: stays");
 }
 
+// Every TSCC weak: a pass that finds nothing better holds the radio on the one it comes back to, longer each time,
+// instead of leaving every T3_WEAK_MS and missing the grants sent meanwhile
+static void test_weak_hold(void)
+{
+	setup();
+	t3_ms_t ms;
+	cfg.leave_dbm = -105;
+	cfg.opts |= T3_OPT_LISTEN_ONLY;	// as on a site of another service: no access to wait on
+	cfg.nctrl = 2;
+	cfg.ctrl[0] = (t3_chan_t){ .lcn = 154, .cc = T3_CC_ANY, .rx_hz = RX(154), .tx_hz = RX(154) + 5000000u };
+	cfg.ctrl[1] = (t3_chan_t){ .lcn = 155, .cc = T3_CC_ANY, .rx_hz = RX(155), .tx_hz = RX(155) + 5000000u };
+	t3_ms_start(&ms, &cfg, T);
+	poll_all(&ms);
+	uint32_t camped_ms = 0;
+	for (uint32_t t = 0; t < 60000; t += 60) {
+		camp_at(&ms, 60, ours, -107);
+		camped_ms += ms.state == T3_CAMPED ? 60u : 0u;
+	}
+	CHECK(ms.st.weak_leaves == 2 && ms.weak_hold_ms == 2u * T3_WEAK_HOLD_MS,
+	      "two passes found nothing in a minute, the hold doubled: %u leaves, hold %u ms",
+	      (unsigned)ms.st.weak_leaves, (unsigned)ms.weak_hold_ms);
+	CHECK(camped_ms >= 50000u, "camped most of the minute: %u ms", (unsigned)camped_ms);
+	for (uint32_t t = 0; t < 30u * 60000u; t += 60) {
+		camp_at(&ms, 60, ours, -107);
+	}
+	CHECK(ms.weak_hold_ms == T3_WEAK_HOLD_MAX_MS && ms.st.weak_leaves <= 12u,
+	      "the hold stops at its most: %u ms, %u leaves in 30 min", (unsigned)ms.weak_hold_ms,
+	      (unsigned)ms.st.weak_leaves);
+	// Clearly above the threshold ends the hold: the next weak spell is left after T3_WEAK_MS again
+	camp_at(&ms, 600, ours, -90);
+	CHECK(ms.state == T3_CAMPED && ms.weak_hold_ms == 0 && ms.weak_hold_until == 0, "strong: the hold cleared");
+	uint32_t before = ms.st.weak_leaves;
+	uint32_t waited = 0;
+	for (; waited < 4u * T3_WEAK_MS && ms.st.weak_leaves == before; waited += 60) {
+		camp_at(&ms, 60, ours, -107);
+	}
+	CHECK(ms.st.weak_leaves == before + 1 && waited > T3_WEAK_MS, "weak again: left after T3_WEAK_MS (the level average falling first): %u ms", (unsigned)waited);
+	// Just at the threshold doesn't clear it
+	setup();
+	cfg.leave_dbm = -105;
+	cfg.opts |= T3_OPT_LISTEN_ONLY;	// as on a site of another service: no access to wait on
+	cfg.nctrl = 2;
+	cfg.ctrl[0] = (t3_chan_t){ .lcn = 154, .cc = T3_CC_ANY, .rx_hz = RX(154), .tx_hz = RX(154) + 5000000u };
+	cfg.ctrl[1] = (t3_chan_t){ .lcn = 155, .cc = T3_CC_ANY, .rx_hz = RX(155), .tx_hz = RX(155) + 5000000u };
+	t3_ms_start(&ms, &cfg, T);
+	poll_all(&ms);
+	for (uint32_t t = 0; t < 20000; t += 60) {
+		camp_at(&ms, 60, ours, -107);
+	}
+	CHECK(ms.weak_hold_ms == T3_WEAK_HOLD_MS, "held after one pass: %u", (unsigned)ms.weak_hold_ms);
+	camp_at(&ms, 600, ours, -104);
+	CHECK(ms.weak_hold_ms == T3_WEAK_HOLD_MS, "a level just above the threshold keeps the hold");
+}
+
 static void test_stop(void)
 {
 	setup();
@@ -902,6 +956,7 @@ int main(void)
 	test_adjacent();
 	test_vote();
 	test_weak();
+	test_weak_hold();
 	test_stop();
 	printf("t3MsTest: %d checks, %d failures\n", checks, failures);
 	return failures != 0;
