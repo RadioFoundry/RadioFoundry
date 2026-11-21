@@ -7,6 +7,8 @@
 #include "dmr_db25d.h"
 #include "pins.h"
 #include "platform.h"
+#include "rfchip_db25d.h"
+#include "ui/fmt.h"
 #if CONFIG_NET_PPP
 #include "hostlink/hostlink_ppp.h"
 #endif
@@ -79,6 +81,31 @@ static const hal_cps_t cps = {
 static const uint8_t side_keys[] = { KEY_P3, KEY_TONE, KEY_MIC_P4, KEY_MIC_P5 };
 static const char *const side_key_names[] = { "P3", "TONE", "Mic P4", "Mic P5" };
 
+// The support info (docs/spec/support-info.md 2): each RF chain's part and ID register as detection read them, then the
+// batch code the pair gives (hardware-db25d.md 4.8); the HR_C7000 is the MCU line
+static bool hw_line(uint8_t i, uint8_t *role, char *buf, uint8_t len)
+{
+	sbuf_t b;
+	sb_init(&b, buf, len);
+	if (i < 2) {
+		*role = BOARD_HW_RF;
+		sb_str(&b, i == 0 ? "main " : "LO ");
+		sb_str(&b, db25d_rf_chip_name(i == 1));
+		sb_str(&b, " id ");
+		sb_hex(&b, i == 0 ? db25d_rf_main_id() : db25d_rf_lo_id(), 4);
+		return true;
+	}
+	if (i == 2) {
+		char v[4];
+		db25d_rf_variant(v);
+		*role = BOARD_HW_BOARD;
+		sb_str(&b, "batch ");
+		sb_str(&b, v);
+		return true;
+	}
+	return false;
+}
+
 const board_t board = {
 	.name = "DB25-D",
 	.caps = CAP_ENCODER | CAP_NO_BATTERY | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR | CAP_BEEP_NOT_ON_AIR : 0),
@@ -123,6 +150,7 @@ const board_t board = {
 	.netif = &hostlink_ppp_netif,	// IPv4 over PPP on the host port's UART1 (docs/spec/ppp.md)
 #endif
 	.system = &hrc_system,
+	.hw_line = hw_line,
 #if CONFIG_NAND_STORAGE
 	.flash = &db25d_flash,
 #endif

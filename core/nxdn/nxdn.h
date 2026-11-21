@@ -85,6 +85,8 @@
 // Cipher type
 #define NXDN_CIPHER_NONE	0
 #define NXDN_CIPHER_SCRAMBLE	1
+#define NXDN_KEY_IDS		64u
+#define NXDN_SCRAMBLE_KEY_MAX	32767u
 #define NXDN_CIPHER_DES		2
 #define NXDN_CIPHER_AES		3
 // IDs (6.5): 16 bits
@@ -207,6 +209,7 @@ typedef struct {
 	uint8_t sf[NXDN_SACCH_MSG_BYTES];
 	uint8_t sf_parts;		// bit k: part k is in
 	int8_t sf_next;			// the part expected next, -1 none
+	uint16_t scramble_key;		// zero disables NXDN scramble decryption
 	nxdn_call_stats_t stats;
 } nxdn_call_rx_t;
 
@@ -221,6 +224,7 @@ typedef struct {
 	uint8_t ran, dir;
 	uint8_t sf_frame;	// frame of the superframe, 0..3
 	uint8_t nvoice;		// VCH filled in the frame in hand
+	uint16_t scramble_key;	// zero disables scrambling
 	uint16_t nsyms, ready, sent;
 	uint8_t msg[NXDN_FACCH1_BYTES];	// VCALL, as FACCH1 and SACCH carry it
 	uint8_t rel[NXDN_FACCH1_BYTES];	// TX_REL
@@ -232,7 +236,8 @@ uint16_t nxdn_call_tx_ready(const nxdn_call_tx_t *t, uint16_t *first);
 const uint8_t *nxdn_call_tx_syms(const nxdn_call_tx_t *t);
 void nxdn_call_tx_sent(nxdn_call_tx_t *t, uint16_t n);
 bool nxdn_call_tx_wants_voice(const nxdn_call_tx_t *t);
-void nxdn_call_tx_voice(nxdn_call_tx_t *t, const uint8_t ehr[NXDN_EHR_BYTES]);
+// False if the call cannot accept a voice frame or scrambling rejects its FEC.
+bool nxdn_call_tx_voice(nxdn_call_tx_t *t, const uint8_t ehr[NXDN_EHR_BYTES]);
 // The operator let go: the frame in hand is filled with silence (one without voice yet is not sent), then the
 // release frame
 void nxdn_call_tx_end(nxdn_call_tx_t *t, const uint8_t silence[NXDN_EHR_BYTES]);

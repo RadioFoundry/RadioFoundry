@@ -24,7 +24,7 @@
 #define EE_IMAGE_SIZE	0x10000u
 
 static const cps_io_t *io;
-static uint8_t req[CPS_REQUEST_MAX];
+static uint8_t req[CPS_REQUEST_MAX] RFOUNDRY_COLD_RAM;	// the CPS task's request being assembled (cps_feed)
 static size_t req_len;
 static bool overflow;
 static uint32_t last_rx_ms;

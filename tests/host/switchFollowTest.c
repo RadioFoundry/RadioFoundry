@@ -72,6 +72,28 @@ int main(void)
 	CHECK(!switch_follow_check(&f, 0, 0, 19, true));
 	CHECK(switch_follow_step(&f, 7, 12000 + (SWITCH_FOLLOW_ASKS + 2) * R) == SWITCH_CHECK);
 	CHECK(!switch_follow_check(&f, 0, 0, 19, true));
+	// A host's choice holds: another zone and position (not the knob's), and the zone change it brings isn't one
+	CHECK(switch_follow_step(&f, 3, 20000) == SWITCH_ASK);
+	CHECK(switch_follow_step(&f, 3, 20000 + R) == SWITCH_CHECK);
+	CHECK(!switch_follow_check(&f, 0, 3, 19, true));
+	switch_follow_hold(&f, 1, 20000 + R);
+	CHECK(switch_follow_step(&f, 3, 20000 + 2 * R) == SWITCH_CHECK);
+	CHECK(!switch_follow_check(&f, 0, 3, 19, true));	// not in the host's zone yet: wait
+	CHECK(switch_follow_step(&f, 3, 20000 + 3 * R) == SWITCH_CHECK);
+	CHECK(!switch_follow_check(&f, 1, 6, 8, true));	// there, at the host's position 6: left alone
+	CHECK(switch_follow_step(&f, 3, 20000 + 4 * R) == SWITCH_CHECK);
+	CHECK(!switch_follow_check(&f, 1, 7, 8, true));	// a host step in it: still left alone
+	// then the knob moves: it wins again
+	CHECK(switch_follow_step(&f, 4, 22000) == SWITCH_ASK);
+	CHECK(switch_follow_step(&f, 4, 22000 + R) == SWITCH_CHECK);
+	CHECK(switch_follow_check(&f, 1, 7, 8, true));
+	// A hold whose zone never comes (refused) gives up after SWITCH_HOLD_MS, and the knob is followed as before
+	CHECK(!switch_follow_check(&f, 1, 4, 8, true));
+	switch_follow_hold(&f, 5, 23000);
+	CHECK(switch_follow_step(&f, 4, 23000 + R) == SWITCH_CHECK);
+	CHECK(!switch_follow_check(&f, 1, 4, 8, true));
+	CHECK(switch_follow_step(&f, 4, 23000 + SWITCH_HOLD_MS + R) == SWITCH_CHECK);
+	CHECK(!switch_follow_check(&f, 1, 4, 8, true));
 	// Across the clock's wrap
 	CHECK(switch_follow_step(&f, 2, 0xFFFFFF00u) == SWITCH_ASK);
 	CHECK(switch_follow_step(&f, 2, 0xFFFFFF00u + R) == SWITCH_CHECK);

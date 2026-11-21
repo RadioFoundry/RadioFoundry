@@ -100,6 +100,14 @@ def settings_of(v):
             "emergency": v.get("nxdn.tx_emergency") == "1"}
 
 
+@pytest.mark.feature("nxdn_scrambler")
+def test_nxdn_scrambler_built(radio):
+    """The advertised feature is present alongside the NXDN engine; no key or radio state is changed."""
+    if "NXDN_SCRAMBLER" not in radio.features():
+        skip("not_built", "built without CONFIG_NXDN_SCRAMBLER")
+    assert radio.view(["nxdn"]).get("nxdn.built") == "1"
+
+
 @pytest.mark.feature("nxdn")
 def test_nxdn_mode_switch(radio):
     v = nxdn_view(radio)
@@ -451,6 +459,7 @@ def test_nxdn_rx_speech(radio, sdr_bench, pytestconfig, rate):
     def before():
         radio.reset_counters()
         got["before"] = radio.counters()[1]
+        got["audio"] = radio.view(["audio"])
 
     v0, v1 = rx_call(radio, sdr_bench, pytestconfig, rate, frames, ["--voice-file", ambe], before)
     time.sleep(1.5)                     # playback drains
@@ -468,9 +477,19 @@ def test_nxdn_rx_speech(radio, sdr_bench, pytestconfig, rate):
     peak = stats.get("voice.rx_peak")
     assert peak is not None and int(peak) >= PEAK_MIN, \
         f"decoded speech peaks at {peak} (silent output: wrong bits into the decoder?): {d}"
+    # A board whose chip keeps I2S off the speaker in the FM copy plays through its prompt FIFO (gotchas.md 1.14): every
+    # block of the call goes there, with no gaps after the first block and none refused
+    a0, a1 = got["audio"], radio.view(["audio"])
+    fifo = {k: (as_int(a1.get(f"audio.fifo_{k}")) or 0) - (as_int(a0.get(f"audio.fifo_{k}")) or 0)
+            for k in ("chunks", "gaps", "full")}
+    print(f"speaker FIFO: {fifo}" if fifo["chunks"] else "speaker FIFO: not used on this radio")
+    if fifo["chunks"]:
+        assert fifo["chunks"] >= d["voice.rx_frames"] * 5 * 9 // 10, f"FIFO chunks for {d['voice.rx_frames']} frames: {fifo}"
+        assert fifo["gaps"] <= FIFO_GAPS_MAX and fifo["full"] == 0, f"speaker FIFO: {fifo}"
 
 
-SCAN_CALLS = 3          # keyings the bench sends while the scan comes round to the NXDN channel
+FIFO_GAPS_MAX = 2      # silent chunks (4 ms each) the speaker FIFO may get in a call: none expected once primed
+SCAN_CALLS = 4          # calls the bench sends while the scan comes round to the NXDN channel
 SCAN_VOICE_FRAMES = 120 # 2.4 s a call: longer than a scan's round of a short zone
 SCAN_KEY_S = 8.0        # each repeats the call this long: a round of a 16-channel zone with two probes takes 5-6 s
 

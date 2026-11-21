@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Data flash on SPI0 (a 16 MB SPI NOR, GD25Q128 or Puya PY25Q128HA class), chip select on a GPIO the board names and
+// Data flash on SPI0 (a 16 MB SPI NOR, GD25Q128, Puya PY25Q128HA or Boya class), chip select on a GPIO the board names and
 // drives by hand (docs/spec/hardware-dm32.md 3.2, 10; hardware-dm1801pro.md 6.1). One mutex serializes every
 // transaction once the scheduler runs. Everything below the board's write floor belongs to the radio's own firmware:
 // reads only, writes and erases there are refused here, whatever the caller asks. Nothing past the probed size is read
@@ -69,7 +69,7 @@ static bool init(void)
 	}
 	give();
 	jedec = (uint32_t)nor.manufacturer << 16 | nor.device;
-	// Any vendor whose capacity code the driver knows: GD25Q128 C8 40 18, Puya 85 20 18
+	// Any vendor whose capacity code the driver knows: GD25Q128 C8 40 18, Puya 85 20 18, Boya 68 40 18
 	ready = ok;
 	hrc_flash_spi0.size = ok ? nor.size : 0;
 	// The board's map assumes its chip's size: on a smaller part the core gets no areas and stores nothing, rather
@@ -124,6 +124,7 @@ hal_flash_t hrc_flash_spi0 = {
 	.read = rd,
 	.write = wr,
 	.erase = er,
+	.jedec = hrc_flash_spi0_jedec,
 };
 
 void hrc_flash_spi0_configure(const hrc_flash_cfg_t *c)

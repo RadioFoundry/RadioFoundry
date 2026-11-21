@@ -32,6 +32,10 @@
 #include "hostlink/hostlink.h"
 #endif
 #include "rfoundry_about.h"
+#if CONFIG_SUPPORT_INFO
+#include "support/image_hash.h"
+#include "support/support_info.h"
+#endif
 #if CONFIG_SFR
 #include "dmr/sfr.h"
 #endif
@@ -425,7 +429,7 @@ static void compose_item(uint16_t i, ui_item_t *it)
 	}
 }
 
-static void send_text(const char *text, bool aprs)
+static void send_text(const char *text, bool aprs, int reply_index)
 {
 	static char msg[40];
 	char name[24];
@@ -443,8 +447,10 @@ static void send_text(const char *text, bool aprs)
 	} else {
 		ui_sb_target(name, sizeof name, &ui_target);
 	}
-	if (aprs ? !ui_svc_aprs_send_message(aprs_to, text, aprs_message_flags) :
-	    !ui_svc_msg_send(ui_target.id, ui_target.group, text)) {
+	bool sent = aprs ? ui_svc_aprs_send_message(aprs_to, text, aprs_message_flags) :
+		reply_index >= 0 ? ui_svc_msg_reply((uint16_t)reply_index, text) :
+		ui_svc_msg_send(ui_target.id, ui_target.group, text);
+	if (!sent) {
 		ui_toast(TR(MSG_TOAST_SEND_FAILED, "Couldn't send: try again"));
 		return;
 	}
@@ -470,7 +476,7 @@ static void compose_select(uint16_t i, bool hold)
 	}
 	if (i < CANNED_N) {
 		bool aprs = compose_aprs();
-		send_text(tr(canned[i]), aprs);
+		send_text(tr(canned[i]), aprs, -1);
 	}
 	else if (i == CANNED_N) {
 #if CONFIG_DMR_SMS || CONFIG_APRS_AFSK
@@ -929,10 +935,10 @@ static void msg_select(uint16_t i, bool hold)
 			if (ui_svc_aprs_msg(message_aprs_index(), &m, false)) {
 				str_copy(aprs_to, sizeof aprs_to, m.from);
 				aprs_message_flags = APRS_MSG_ACK;
-				send_text(tr(i == MV_REPLY_OK ? canned[0] : canned[1]), true);
+				send_text(tr(i == MV_REPLY_OK ? canned[0] : canned[1]), true, -1);
 			}
 		} else {
-			send_text(tr(i == MV_REPLY_OK ? canned[0] : canned[1]), false);
+			send_text(tr(i == MV_REPLY_OK ? canned[0] : canned[1]), false, message_index());
 		}
 		break;
 	case MV_CALL:
@@ -2106,6 +2112,8 @@ static uint8_t text_idx;
 static uint32_t text_ms;
 enum { TEXT_UPPER, TEXT_DIGITS, TEXT_LOWER, TEXT_MODES };	// the order # cycles through
 static uint8_t text_mode;
+enum { TEXT_NAME, TEXT_MESSAGE, TEXT_CALLSIGN, TEXT_PREFIXES };
+static uint8_t text_prefix;
 
 static void text_open(char *target, uint8_t max, uint8_t screen)
 {
@@ -2114,6 +2122,7 @@ static void text_open(char *target, uint8_t max, uint8_t screen)
 	text_buf = screen == SCR_MESSAGE_TEXT ? message_buffer : text_name_buf;
 	text_max = screen == SCR_MESSAGE_TEXT ? max :
 		(max < CODEPLUG_NAME_LEN ? max : CODEPLUG_NAME_LEN);
+	text_prefix = screen == SCR_MESSAGE_TEXT ? TEXT_MESSAGE : screen == SCR_APRS_TO ? TEXT_CALLSIGN : TEXT_NAME;
 	ui_push(screen, 0);
 }
 
@@ -2121,7 +2130,7 @@ static void text_open(char *target, uint8_t max, uint8_t screen)
 static void message_text_kept(void)
 {
 	if (message_buffer[0] != '\0')
-		send_text(message_buffer, compose_aprs());
+		send_text(message_buffer, compose_aprs(), -1);
 }
 
 static void ui_text_open_message(bool aprs)
@@ -2147,17 +2156,6 @@ static void text_enter(void)
 	text_len = (uint8_t)strlen(text_buf);
 	text_key = -1;
 	text_mode = TEXT_UPPER;
-}
-
-static uint16_t text_count(void) { return 1; }
-
-static void text_item(uint16_t i, ui_item_t *it)
-{
-	(void)i;
-	sbuf_t b;
-	sb_init(&b, it->label, sizeof it->label);
-	sb_str(&b, text_len >= sizeof it->label ? text_buf + text_len - sizeof it->label + 2u : text_buf);
-	sb_chr(&b, '_');	// the cursor; the mode is in the title
 }
 
 static char text_case(char c)
@@ -2191,6 +2189,61 @@ static void text_append(char c)
 	}
 	text_buf[text_len++] = c;
 	text_buf[text_len] = 0;
+}
+
+static void text_draw(void)
+{
+	static const tr_id_t prefixes[TEXT_PREFIXES] = { TRN(LABEL_NAME, "Name"), TRN(WORD_MESSAGE, "Message"),
+		TRN(TEXT_TITLE_CALLSIGN, "Callsign") };
+	static const char *const modes[TEXT_MODES] = { "ABC", "123", "abc" };
+	const ui_layout_t *L = &ui_layout;
+	char linebuf[32];
+	sbuf_t b;
+	uint8_t text_linewidth = gfx_width() / L->small->w;
+	uint8_t line_len;
+
+	gfx_clear(ui_col.bg);
+
+	int y = ui_draw_top(ui_view(), &ui_st, tr(prefixes[text_prefix]), modes[text_mode]) + 2;
+	// The count sits bottom right of the entry area, on a line of its own so the text never runs under it
+	int bottom = L->hint_y - L->small->h;
+	sb_init(&b, linebuf, sizeof linebuf);
+	sb_u32(&b, text_len, 1);
+	sb_chr(&b, '/');
+	sb_u32(&b, text_max, 1);
+	gfx_text(L->small, gfx_width() - gfx_text_width(L->small, linebuf) - 1, bottom, linebuf, ui_col.dim);
+	uint8_t roomy = (bottom - y) / L->small->h;	// number of lines of text we can show
+	uint16_t max_chars = roomy * text_linewidth;
+	uint16_t start_char;
+	if (max_chars >= text_len) {
+		start_char = 0;
+	} else {
+		// Ensure there is room for the "_" at the end of the message being entered
+		start_char = 1 + text_len - max_chars;
+	}
+
+	const font_t *small = L->small;
+	do {
+		line_len = 0;
+		sb_init(&b, linebuf, sizeof linebuf);
+		while (start_char < text_len && line_len < text_linewidth) {
+			sb_chr(&b, text_buf[start_char++]);
+			line_len++;
+		}
+		// Make sure the "_" is displayed, even if it wraps to the next line.
+		if (line_len < text_linewidth && start_char >= text_len) {
+			sb_chr(&b, '_');
+			start_char++;
+		}
+		gfx_text(small, 0, y, linebuf, ui_col.fg);
+		y += L->small->h;
+	} while (start_char < text_len + 1);
+
+	// TRN only marks the text for the catalog: tr() translates it where it is shown (list_draw did this before)
+	if (text_prefix != TEXT_MESSAGE)
+		ui_draw_hint(tr(TRN(TEXT_HINT_KEEP, TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK keep" TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE)), false);
+	else
+		ui_draw_hint(tr(TRN(TEXT_HINT_SEND, TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK send" TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE)), false);
 }
 
 static bool text_key_fn(const input_event_t *ev)
@@ -2268,37 +2321,21 @@ static bool text_key_fn(const input_event_t *ev)
 	return false;
 }
 
-// The title carries the mode, so it shows however long the name is: "Name Â· ABC"
-static const char *text_title(void)
-{
-	static const char *const modes[TEXT_MODES] = { "ABC", "123", "abc" };
-	return modes[text_mode];
-}
-
 #if CONFIG_CHANNEL_EDIT
 static const ui_scr_def_t text_screen = {
-	.name = "text", .flags = SF_LIST, .prefix = TRN(LABEL_NAME, "Name"), .title = text_title,
-	.hint = TRN(TEXT_HINT_KEEP, TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK keep"
-		TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE),
-	.count = text_count, .item = text_item, .key = text_key_fn, .enter = text_enter,
+	.name = "text", .flags = 0, .key = text_key_fn, .enter = text_enter, .draw = text_draw,
 };
 #endif
 
 #if CONFIG_APRS_AFSK
 static const ui_scr_def_t aprs_to_screen = {
-	.name = "aprs-to", .flags = SF_LIST, .prefix = TRN(TEXT_TITLE_CALLSIGN, "Callsign"), .title = text_title,
-	.hint = TRN(TEXT_HINT_KEEP, TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK keep"
-		TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE),
-	.count = text_count, .item = text_item, .key = text_key_fn, .enter = text_enter,
+	.name = "aprs-to", .flags = 0, .key = text_key_fn, .enter = text_enter, .draw = text_draw,
 };
 #endif
 
 #if CONFIG_DMR_SMS || CONFIG_APRS_AFSK
 static const ui_scr_def_t message_text_screen = {
-	.name = "message-text", .flags = SF_LIST, .prefix = TRN(WORD_MESSAGE, "Message"), .title = text_title,
-	.hint = TRN(TEXT_HINT_SEND, TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK send"
-		TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE),
-	.count = text_count, .item = text_item, .key = text_key_fn, .enter = text_enter,
+	.name = "message-text", .flags = 0, .key = text_key_fn, .enter = text_enter, .draw = text_draw,
 };
 #endif
 
@@ -5365,8 +5402,58 @@ static uint16_t about_first;	// first line shown
 static uint16_t about_max;	// the largest first line (from the last draw)
 
 // The text's bytes: the two lists make generated, this build's font lines, and 296 for the rest (the version lines,
-// the labels, and 35 for a translation's longer ones). A fixed size cut the last lines off where the lists are long
-#define ABOUT_TEXT_MAX (296u + RFOUNDRY_ABOUT_LIST_BYTES + (CONFIG_FONT_AA ? 32u : 0u) + (CONFIG_LANG_ZH ? 48u : 0u))
+// the labels, and 35 for a translation's longer ones). A fixed size cut the last lines off where the lists are long.
+// The support info: the source and image lines and six hardware lines of a label and up to 30 characters
+// (a board with more loses the last license lines, not the support info)
+#define ABOUT_TEXT_MAX (296u + RFOUNDRY_ABOUT_LIST_BYTES + (CONFIG_FONT_AA ? 32u : 0u) + (CONFIG_LANG_ZH ? 48u : 0u) + \
+	(CONFIG_SUPPORT_INFO ? 352u : 0u))
+
+#if CONFIG_SUPPORT_INFO
+static bool about_hashing;		// the image hash (image_hash.h) has a step still to come: the UI redraws About at its fast rate
+
+bool ui_about_busy(void)
+{
+	return about_hashing;
+}
+
+// What a support request needs (docs/spec/support-info.md): where the build came from (ours or not; the repository
+// is left to the debug link), the image's hash (the first 8 digits of its SHA-256, enough to match a release, worked
+// out while the page is open), then the hardware identity. Values the board already holds: nothing here waits for a
+// chip
+static void about_support(sbuf_t *b)
+{
+	sb_str(b, TR(ABOUT_LABEL_SOURCE, "Source: "));
+	sb_str(b, tr(support_source_text(support_source())));
+	sb_chr(b, '\n');
+	uint8_t d[SHA256_LEN];
+	uint32_t addr, len;
+	about_hashing = false;
+	if (image_hash_span(&addr, &len)) {
+		sb_str(b, TR(ABOUT_LABEL_IMAGE, "Image: "));
+		if (image_hash_step(IMAGE_HASH_UI, IMAGE_HASH_STEP_UI, d)) {
+			for (uint8_t i = 0; i < 4; i++) {
+				sb_chr(b, "0123456789abcdef"[d[i] >> 4]);
+				sb_chr(b, "0123456789abcdef"[d[i] & 15u]);
+			}
+		} else {
+			sb_str(b, TR(ABOUT_VALUE_IMAGE_CHECKING, "checking"));
+			about_hashing = true;
+		}
+		sb_chr(b, '\n');
+	}
+	support_line_t l;
+	for (uint8_t i = 0; support_hw_line(i, &l); i++) {
+		if (l.label != TR_NONE) {
+			sb_str(b, tr(l.label));
+		} else {
+			sb_str(b, l.label_text);
+			sb_str(b, ": ");
+		}
+		sb_str(b, l.value);
+		sb_chr(b, '\n');
+	}
+}
+#endif
 
 static const char *about_text(void)
 {
@@ -5396,6 +5483,9 @@ static const char *about_text(void)
 	sb_str(&b, TR(BODY_RADIO, "Radio: "));
 	sb_str(&b, board.name);
 	sb_chr(&b, '\n');
+#if CONFIG_SUPPORT_INFO
+	about_support(&b);
+#endif
 	sb_str(&b, TR(ABOUT_BODY_LICENSE, "License: "));
 	sb_str(&b, "MIT, (c) 2026 The RadioFoundry Authors\n");
 	// The authors (the copyright line above) are everyone who has contributed: too many to list here, so the page
@@ -6435,9 +6525,9 @@ static const tr_id_t n_backlight[] = { TRX(SET_VALUE_BACKLIGHT_5S_20S, "5s/20s")
 	TRN(SET_VALUE_BACKLIGHT_1M_DIM, "1m/dim"), TRN(SET_VALUE_BACKLIGHT_2M_DIM, "2m/dim"), TRN(VALUE_NEVER, "Never")
 };
 #if CONFIG_UI_COLOR
-static const int16_t v_theme[] = { 0, 1, 2 };
+static const int16_t v_theme[] = { UI_THEME_DARK, UI_THEME_LIGHT, UI_THEME_HIGH_CONTRAST, UI_THEME_NIGHT };
 static const tr_id_t n_theme[] = { TRN(SET_VALUE_THEME_DARK, "Dark"), TRN(SET_VALUE_THEME_LIGHT, "Light"),
-	TRN(SET_VALUE_THEME_HIGH_CONTRAST, "High contrast") };
+	TRN(SET_VALUE_THEME_HIGH_CONTRAST, "High contrast"), TRN(SET_VALUE_THEME_NIGHT, "Night (red)") };
 static const int16_t v_accent[] = { UI_ACCENT_DEFAULT, UI_ACCENT_RED, UI_ACCENT_ORANGE, UI_ACCENT_YELLOW, UI_ACCENT_TEAL,
 				     UI_ACCENT_BLUE, UI_ACCENT_PURPLE, UI_ACCENT_PINK };
 static const tr_id_t n_accent[] = { TRN(VALUE_DEFAULT, "Default"), TRN(SET_VALUE_ACCENT_RED, "Red"),
@@ -6569,13 +6659,14 @@ static const tr_id_t n_autooff[] = { TRN(VALUE_OFF, "Off"), TRN(VALUE_30_MIN, "3
 	TRX(VALUE_2_H, "2 h") };
 #if CONFIG_DMR_SMS
 static const int16_t v_msgfmt[] = {
-	2, 1,	// dmr_sms_format_t: ETSI IP text, ETSI short data, Motorola TMS
+	255, 2, 1,	// dmr_sms_format_t: Automatic, ETSI IP text, ETSI short data, Motorola TMS
 #if CONFIG_DMR_TMS
 	0,
 #endif
 };
 static const tr_id_t n_msgfmt[] = {
-	TRX(SET_VALUE_MSGFMT_ETSI, "ETSI"), TRN(SET_VALUE_MSGFMT_ETSI_SHORT, "ETSI short"),
+	TRN(SET_VALUE_MSGFMT_AUTOMATIC, "Automatic"), TRX(SET_VALUE_MSGFMT_ETSI, "ETSI"),
+	TRN(SET_VALUE_MSGFMT_ETSI_SHORT, "ETSI short"),
 #if CONFIG_DMR_TMS
 	TRX(VALUE_MOTOROLA, "Motorola"),
 #endif
@@ -7226,6 +7317,10 @@ static void set_value_text(const set_item_t *s, int32_t v, char *out, size_t len
 	sb_init(&b, out, len);
 	switch (s->type) {
 	case ST_TOGGLE:
+		// GPS reads Off on a radio without one (#349). Only shown so: the stored value stays, as the module is
+		// detected after start-up and the driver follows the setting once it is heard (position.md 2)
+		if (s->id == UI_SET_GPS && !board_has_gps())
+			v = 0;
 		sb_str(&b, v ? TR(VALUE_ON, "On") : TR(VALUE_OFF, "Off"));
 		break;
 	case ST_LIST:
@@ -7318,8 +7413,11 @@ static const char *set_why_not(const set_item_t *s)
 	case UI_SET_THEME:
 	case UI_SET_ACCENT:
 	case UI_SET_STRIP:
-		return board.display != NULL && board.display->bpp == 1 ?
-			TR(SET_WHY_COLOR_SCREENS_ONLY, "Colors are for color screens") : NULL;
+		if (board.display != NULL && board.display->bpp == 1)
+			return TR(SET_WHY_COLOR_SCREENS_ONLY, "Colors are for color screens");
+		// Night shows red only: its highlight is always its own red (ui_screens.c accent_apply)
+		return s->id == UI_SET_ACCENT && ui_svc_setting_get(UI_SET_THEME) == UI_THEME_NIGHT ?
+			TR(SET_WHY_NIGHT_RED_ONLY, "Night theme: red only") : NULL;
 	case UI_SET_MIC_GAIN:
 		if (!mic_gain_available())
 			return TR(WHY_MIC_GAIN_NOT_IN_BUILD, "Mic gain: not in this build");
@@ -7915,6 +8013,11 @@ static const ui_scr_def_t diag_screen = {
 static const ui_scr_def_t volume_screen = {
 	.name = "volume", .flags = SF_FIELD, .key = ui_volume_key, .draw = ui_volume_draw,
 };
+#if CONFIG_DMR_TRUNK
+static const ui_scr_def_t incoming_call_screen = {
+	.name = "incoming-call", .flags = SF_FIELD, .key = ui_incoming_call_key, .draw = ui_incoming_call_draw,
+};
+#endif
 static const ui_scr_def_t emergency_screen = {
 	.name = "emergency", .flags = SF_FIELD, .key = ui_emergency_key, .draw = ui_emergency_draw,
 };
@@ -8008,6 +8111,9 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_RECENT] = &recent_screen, [SCR_ZONES] = &channels_screen, [SCR_ZONE] = &zone_screen,
 	[SCR_TOOLS] = &tools_screen, [SCR_SETTINGS] = &settings_screen, [SCR_GROUP] = &group_screen,
 	[SCR_PICKER] = &picker_screen, [SCR_INFO] = &info_screen, [SCR_CONFIRM] = &confirm_screen,
+#if CONFIG_DMR_TRUNK
+	[SCR_INCOMING_CALL] = &incoming_call_screen,
+#endif
 	[SCR_DIAG] = &diag_screen, [SCR_EMERGENCY] = &emergency_screen, [SCR_SCAN] = &scan_screen,
 	[SCR_ROAM] = &roam_screen, [SCR_APRS] = &ui_aprs_screen, [SCR_APRS_HEARD] = &ui_aprs_heard_screen,
 	[SCR_APRS_STATION] = &ui_aprs_station_screen,

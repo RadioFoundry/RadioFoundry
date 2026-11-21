@@ -108,6 +108,8 @@ HWOPT_OP_LIST, HWOPT_OP_SET = range(2)
 AIR = 0x24                          # the air interface on the bench (CONFIG_AIR_RAW; docs/spec/debuglink.md 3.28)
 AIR_OP_STATUS, AIR_OP_TAP_START, AIR_OP_TAP_READ, AIR_OP_TAP_STOP, AIR_OP_OPEN, AIR_OP_CLOSE, AIR_OP_RX_READ, \
     AIR_OP_RX_RESTART, AIR_OP_TX_DATA, AIR_OP_TX_KEY, AIR_OP_TX_END, AIR_OP_TX_ABORT = range(12)
+SUPPORT = 0x25                      # the support info (CONFIG_SUPPORT_INFO; docs/spec/debuglink.md 3.29)
+SUPPORT_OP_INFO, SUPPORT_OP_HASH = range(2)
 AIR_OPEN_SOFT = 0x01
 AIR_TX_LAST = 0x01
 AIR_FIT = {0x1: "rx", 0x2: "tx", 0x4: "soft", 0x8: "shape_approx", 0x10: "dev_approx", 0x20: "rate_doubled",
@@ -126,7 +128,7 @@ WATCHDOG = 0x1D                     # the hardware watchdog's bench tests (CONFI
 WDT_OP_CLEAR_GAP, WDT_OP_TEST, WDT_OP_LOAD = range(3)
 WDT_TESTS = {"starve": 1, "spin": 2, "irq-off": 3}
 WDT_TOKEN = 0x474F4457              # 'WDOG'
-LINK_HOLD = 0x25                    # hold the host port for this client (docs/spec/debuglink.md 3.29)
+LINK_HOLD = 0x26                    # hold the host port for this client (docs/spec/debuglink.md 3.30)
 MEM_OP_READ, MEM_OP_WRITE, MEM_OP_SET, MEM_OP_CLEAR, MEM_OP_ARM, MEM_OP_DISARM, MEM_OP_PIN = range(7)
 MEM_WRITE_OPS = {"write": MEM_OP_WRITE, "set": MEM_OP_SET, "clear": MEM_OP_CLEAR}
 MEM_PIN_ACTIONS = {"read": 0, "in": 1, "low": 2, "high": 3}
@@ -353,7 +355,7 @@ def find_cables():
 
 
 # Commands (and their ops) that only read: everything else restarts the radio or changes it
-READ_ONLY = {"hwopt": None, "reg": None, "ping": None, "version": None, "diag": None, "view": None, "screenshot": None, "log": None, "chip": None,
+READ_ONLY = {"hwopt": None, "support": None, "reg": None, "ping": None, "version": None, "diag": None, "view": None, "screenshot": None, "log": None, "chip": None,
              "dump": None, "peek": None, "iddb": None, "crash": ("show",), "watchdog": ("show",), "rx2": ("info",),
              "air": ("status", "tap", "rx"), "storage": ("info", "dump"), "split": ("view",),
              "aprobe": ("status", "reg", "samples", "ram", "watch")}
@@ -819,6 +821,24 @@ class DebugLink:
                         "choices": kv.get(f"hwopt.{i}.choices", "").split("|"),
                         "state": kv.get(f"hwopt.{i}.state") or ("ask" if value < 0 else "ok")})
         return out
+
+    def support(self):
+        """The support info: {source, repo, hw.<part>, image.addr, image.size} (docs/spec/support-info.md)"""
+        return parse_kv(self.request(SUPPORT, bytes([SUPPORT_OP_INFO]))[1].decode("ascii", "replace"))
+
+    def image_hash(self, progress=None):
+        """The firmware image's SHA-256 as hex, a step of up to 32 KB per request (the radio carries on between them); None
+        where the platform reports no image span. progress(done, size) after each pending step."""
+        for _ in range(4096):
+            kv = parse_kv(self.request(SUPPORT, bytes([SUPPORT_OP_HASH]))[1].decode("ascii", "replace"))
+            state = kv.get("image.state")
+            if state == "done":
+                return kv.get("image.sha256")
+            if state != "pending":
+                return None
+            if progress is not None:
+                progress(int(kv.get("image.done", "0")), int(kv.get("image.size", "0")))
+        raise DebugLinkError("image hash: no end")
 
     def hwopt_set(self, option, choice):
         """Store a choice; raises DebugLinkError (status 7) when the board refuses it or the radio transmits."""
@@ -1668,12 +1688,12 @@ class DebugLink:
     def data_settings(self, ars_server=0, radio_check_reply=True, call_alert_ack=True, lrrp_reply=True,
                       sms_etsi=False, radio_check_etsi=False, sms_format=None):
         """The data service settings: ARS server ID (0 off), the answer switches, the ETSI forms. sms_format: the
-        default text message format, "etsi_ip" (the radio's default), "etsi" or "tms"; None: "etsi" when sms_etsi,
+        text message format: "auto", "etsi_ip", "etsi" or "tms"; None: "etsi" when sms_etsi,
         else "etsi_ip"."""
         if sms_format is None:
             sms_format = "etsi" if sms_etsi else "etsi_ip"
         flags = (1 if radio_check_reply else 0) | (2 if call_alert_ack else 0) | (4 if lrrp_reply else 0) | \
-            {"tms": 0, "etsi": 8, "etsi_ip": 32}[sms_format] | (16 if radio_check_etsi else 0)
+            {"tms": 0, "etsi": 8, "etsi_ip": 32, "auto": 40}[sms_format] | (16 if radio_check_etsi else 0)
         self.data_request(DATA_OP_SETTINGS, struct.pack("<IB", int(ars_server) & 0xFFFFFF, flags))
 
     def inbox(self, index=0):
@@ -1686,7 +1706,7 @@ class DebugLink:
             raise
         src, dst, group, flags = struct.unpack_from("<IIBB", r)
         return {"src": src, "dst": dst, "group": bool(group), "unread": bool(flags & 1),
-                "format": "etsi_ip" if flags & 4 else "etsi" if flags & 2 else "tms", "text": r[10:].decode("latin-1")}
+                "format": "t3_udt" if flags & 8 else "etsi_ip" if flags & 4 else "etsi" if flags & 2 else "tms", "text": r[10:].decode("latin-1")}
 
     def mark_read(self, index=0):
         self.data_request(DATA_OP_MARK_READ, bytes([index]))
@@ -2753,6 +2773,14 @@ def cmd_hwopt(link, a):
     return 0
 
 
+def cmd_support(link, a):
+    for k, v in link.support().items():
+        print(f"{k}={v}")
+    h = link.image_hash()
+    print(f"image.sha256={h}" if h else "image.sha256=unavailable")
+    return 0
+
+
 def cmd_air(link, a):
     if a.op == "status":
         st = link.air_status()
@@ -3223,6 +3251,7 @@ def main(argv=None):
     p = sub.add_parser("hwopt", help="hardware options: list, or set OPTION CHOICE (docs/spec/debuglink.md 3.25)")
     p.add_argument("option", nargs="?", help="number or name, e.g. 'Board revision'")
     p.add_argument("choice", nargs="?", help="one of the option's choices, e.g. V4A/V5")
+    sub.add_parser("support", help="the support info: build source, hardware, image hash (docs/spec/debuglink.md 3.29)")
     p = sub.add_parser("air", help="the air interface on the bench (CONFIG_AIR_RAW builds; docs/spec/debuglink.md 3.28)")
     p.add_argument("op", choices=["status", "tap", "open", "rx", "tx", "restart", "abort", "close"])
     p.add_argument("--seconds", type=float, default=5.0, help="tap, rx: how long")
@@ -3345,6 +3374,8 @@ def main(argv=None):
                 return cmd_pin(link, a)
             elif a.cmd == "hwopt":
                 return cmd_hwopt(link, a)
+            elif a.cmd == "support":
+                return cmd_support(link, a)
             elif a.cmd == "air":
                 return cmd_air(link, a)
             elif a.cmd == "storage":

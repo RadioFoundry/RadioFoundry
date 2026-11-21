@@ -212,6 +212,17 @@ static bool pin(uint8_t p, uint8_t action, uint8_t *state)
 }
 #endif
 
+#if CONFIG_SUPPORT_INFO
+// The linker's: the image's base (board.mk APP_BASE, a first stage included) and the end of its .bin (common.ld)
+extern const uint8_t __app_base[], __image_end[];
+
+static void image(uint32_t *addr, uint32_t *len)
+{
+	*addr = (uint32_t)(uintptr_t)__app_base;
+	*len = (uint32_t)(__image_end - __app_base);
+}
+#endif
+
 const hal_system_t hrc_system = {
 	.chip = chip,
 	.read = rd,
@@ -227,4 +238,7 @@ const hal_system_t hrc_system = {
 	.irq_unhandled = hrc_irq_unhandled,
 	.irq_stack_free = hrc_irq_stack_free,
 	.reg = reg,
+#if CONFIG_SUPPORT_INFO
+	.image = image,
+#endif
 };

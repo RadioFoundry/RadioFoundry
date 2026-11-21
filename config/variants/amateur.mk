@@ -8,6 +8,7 @@
 
 # Encryption that hides the meaning of a message isn't allowed on the amateur bands in most countries
 CONFIG_DMR_PRIVACY ?= n
+CONFIG_NXDN_SCRAMBLER ?= n
 # Motorola text message format: business radio fleets and dispatch software
 CONFIG_DMR_TMS ?= n
 # Registration with a presence server: dispatch systems

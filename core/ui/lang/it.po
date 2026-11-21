@@ -22,6 +22,71 @@ msgctxt "STUB_HINT_POWER_CYCLE"
 msgid "Power-cycle to exit"
 msgstr "Riavvia per uscire"
 
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_OFFICIAL"
+msgid "CI build"
+msgstr "Build CI"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_SERVICE"
+msgid "Build service"
+msgstr "Servizio di compilazione"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_PR"
+msgid "Pull request"
+msgstr "Pull request"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_LOCAL"
+msgid "Local build"
+msgstr "Build locale"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_FORK"
+msgid "Fork"
+msgstr "Fork"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_UNKNOWN"
+msgid "Unknown"
+msgstr "Sconosciuto"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_MCU"
+msgid "MCU: "
+msgstr "MCU: "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_FLASH"
+msgid "Flash: "
+msgstr "Flash: "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_DISPLAY"
+msgid "Display: "
+msgstr "Display: "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_DMR_CHIP"
+msgid "DMR chip: "
+msgstr "Chip DMR: "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_RF_CHIP"
+msgid "RF chip: "
+msgstr "Chip RF: "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_HARDWARE"
+msgid "Hardware: "
+msgstr "Hardware: "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_HWOPT_UNSET"
+msgid "not set"
+msgstr "non impostato"
+
 #: core/ui/fmt.c core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "VALUE_OFF"
 msgid "Off"
@@ -1482,7 +1547,7 @@ msgctxt "ACT_ROW_TALK_TO"
 msgid "Talk to "
 msgstr "Parla a "
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "ACT_ROW_PRIVATE_CALL"
 msgid "Private call"
 msgstr "Chiamata privata"
@@ -3058,6 +3123,21 @@ msgid "Up to 10.0 ppm"
 msgstr "Fino a 10.0 ppm"
 
 #: core/ui/ui_menus.c
+msgctxt "ABOUT_LABEL_SOURCE"
+msgid "Source: "
+msgstr "Origine: "
+
+#: core/ui/ui_menus.c
+msgctxt "ABOUT_LABEL_IMAGE"
+msgid "Image: "
+msgstr "Immagine: "
+
+#: core/ui/ui_menus.c
+msgctxt "ABOUT_VALUE_IMAGE_CHECKING"
+msgid "checking"
+msgstr "verifica"
+
+#: core/ui/ui_menus.c
 msgctxt "ABOUT_BODY_FIRMWARE"
 msgid "Firmware: "
 msgstr "Firmware: "
@@ -3488,6 +3568,11 @@ msgid "High contrast"
 msgstr "Alto contrasto"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_VALUE_THEME_NIGHT"
+msgid "Night (red)"
+msgstr "Notte (rosso)"
+
+#: core/ui/ui_menus.c
 msgctxt "VALUE_DEFAULT"
 msgid "Default"
 msgstr "Predefinito"
@@ -3616,6 +3701,11 @@ msgstr "Emergenza"
 msgctxt "SET_VALUE_UPDOWN_CHANNEL"
 msgid "Channel"
 msgstr "Canale"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_VALUE_MSGFMT_AUTOMATIC"
+msgid "Automatic"
+msgstr "Automatico"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_VALUE_MSGFMT_ETSI_SHORT"
@@ -4198,6 +4288,11 @@ msgid "Colors are for color screens"
 msgstr "I colori sono per schermi a colori"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_WHY_NIGHT_RED_ONLY"
+msgid "Night theme: red only"
+msgstr "Tema notte: solo rosso"
+
+#: core/ui/ui_menus.c
 msgctxt "WHY_MIC_GAIN_NOT_IN_BUILD"
 msgid "Mic gain: not in this build"
 msgstr "Guadagno mic: non in questa build"
@@ -4628,6 +4723,26 @@ msgid "Voice channel unusable"
 msgstr "Canale voce inutilizzabile"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_WHY_TRUNK_OTHER_SYS"
+msgid "Another system heard"
+msgstr "Sentito un altro sistema"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_TRUNK_OTHER_KIND"
+msgid "Incompatible system"
+msgstr "Sistema incompatibile"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_TRUNK_REG_REFUSED"
+msgid "Registration refused"
+msgstr "Registrazione rifiutata"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_TRUNK_UNMAPPED"
+msgid "Unknown channel "
+msgstr "Canale sconosciuto "
+
+#: core/ui/ui_screens.c
 msgctxt "DENY_WHY_NOT_ALLOWED"
 msgid "Not allowed here"
 msgstr "Non permesso qui"
@@ -4693,6 +4808,16 @@ msgid "End the bench on the PC"
 msgstr "Termina il banco sul PC"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_FIX_CHECK_SYSTEM"
+msgid "Check system settings"
+msgstr "Controlla le impostazioni del sistema"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_FIX_ASK_TO_ADD_ID"
+msgid "Ask to add your ID"
+msgstr "Chiedi di aggiungere l'ID"
+
+#: core/ui/ui_screens.c
 msgctxt "TRUNK_WORD_PHONE_LINE"
 msgid "Phone line"
 msgstr "Linea telefonica"
@@ -4728,9 +4853,29 @@ msgid "DMR modem off"
 msgstr "Modem DMR off"
 
 #: core/ui/ui_screens.c
+msgctxt "TRUNK_TITLE_INCOMING_CALL"
+msgid "Incoming private call"
+msgstr "Chiamata privata in arrivo"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_HINT_PTT_ANSWER"
+msgid "Press PTT to answer"
+msgstr "Premi PTT per rispondere"
+
+#: core/ui/ui_screens.c
 msgctxt "TRUNK_STATE_FALLBACK"
 msgid "Fallback"
 msgstr "Riserva"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_OTHER_SYSTEM"
+msgid "Other system"
+msgstr "Altro sistema"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_REG_REFUSED"
+msgid "Reg. refused"
+msgstr "Reg. rifiutata"
 
 #: core/ui/ui_screens.c
 msgctxt "TRUNK_STATE_SEARCHING"
@@ -4741,6 +4886,11 @@ msgstr "Ricerca"
 msgctxt "TRUNK_STATE_IN_CALL"
 msgid "In call"
 msgstr "In chiamata"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_CALLING"
+msgid "Calling"
+msgstr "Chiamata in corso"
 
 #: core/ui/ui_screens.c
 msgctxt "TRUNK_STATE_REFUSED"
@@ -4786,6 +4936,61 @@ msgstr "DMon"
 msgctxt "HOME_CHIP_PRIVACY"
 msgid "Priv"
 msgstr "Priv"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_KIND"
+msgid "Incompatible system"
+msgstr "Sistema incompatibile"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_KIND_NOTE"
+msgid "Cannot join"
+msgstr "Impossibile accedere"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_MODEL_TINY"
+msgid "Tiny"
+msgstr "Minimo"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_MODEL_SMALL"
+msgid "Small"
+msgstr "Piccolo"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_MODEL_LARGE"
+msgid "Large"
+msgstr "Grande"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_MODEL_HUGE"
+msgid "Huge"
+msgstr "Enorme"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_HEARD"
+msgid "Heard: "
+msgstr "Sentito: "
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_NET"
+msgid ", net "
+msgstr ", rete "
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_SITE"
+msgid "site "
+msgstr "sito "
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_CAT_A"
+msgid ", category A only"
+msgstr ", solo categoria A"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_CAT_B"
+msgid ", category B only"
+msgstr ", solo categoria B"
 
 #: core/ui/ui_screens.c
 msgctxt "CALL_BODY_PRIVATE_ID"

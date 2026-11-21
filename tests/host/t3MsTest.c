@@ -215,6 +215,68 @@ static void test_settle_crc_cc(void)
 	CHECK(ms.state == T3_HUNT, "candidate's color code differs");
 }
 
+// Accept invalid CRC (T3_OPT_ACCEPT_BAD_CRC): a PDU that fails its CRC is taken when the same bytes failed recently,
+// and the radio is listen-only until one passes
+static void test_accept_bad_crc(void)
+{
+	setup();
+	cfg.opts = (uint16_t)((cfg.opts & ~T3_OPT_LISTEN_ONLY) | T3_OPT_ACCEPT_BAD_CRC);
+	t3_ms_t ms;
+	t3_ms_start(&ms, &cfg, T);
+	poll_all(&ms);
+	adv(&ms, T3_SETTLE_MS);
+	uint8_t d[T3_CSBK_BYTES];
+	t3_csbk_t p = { .lb = true, .op = T3_OP_C_ALOHA };
+	p.u.aloha.syscode = ours;
+	p.u.aloha.reg = true;
+	t3_csbk_build(&p, T3_CRC_MASK_CSBK, d);
+	d[10] ^= 0x01;	// the CRC itself: the content stays right
+	rx(&ms, 1, T3_DT_CSBK, CC, d);
+	CHECK(ms.state == T3_HUNT && ms.st.crc_bad == 1 && ms.st.crc_taken == 0, "the first one is dropped: %s",
+	      t3_state_name(ms.state));
+	adv(&ms, 60);
+	rx(&ms, 1, T3_DT_CSBK, CC, d);
+	CHECK(ms.state == T3_CAMPED && ms.st.crc_taken == 1 && ms.st.crc_bad == 1, "the same one again is taken: %s",
+	      t3_state_name(ms.state));
+	CHECK(ms.unverified && ms.reg == T3_REG_LISTEN, "unverified: listen-only, reg %s", t3_reg_name(ms.reg));
+	adv(&ms, 60);
+	aloha(&ms, CC, ours, true);
+	CHECK(!ms.unverified && ms.reg == T3_REG_NEEDED, "a good CRC: may register, reg %s", t3_reg_name(ms.reg));
+
+	// An MBC whose header failed is taken when the whole MBC repeats, unverified though its continuation's CRC passes
+	t3_csbk_t h = { .lb = false, .op = T3_OP_C_BCAST };
+	h.u.bcast.type = T3_ANN_CHAN_FREQ;
+	h.u.bcast.syscode = ours;
+	h.u.bcast.parms2 = 2000;
+	t3_cdef_t c = { 0, 0, 2000, 465000000u, 460000000u };
+	for (int i = 0; i < 2; i++) {
+		adv(&ms, 60);
+		t3_csbk_build(&h, T3_CRC_MASK_MBC_HDR, d);
+		d[11] ^= 0x01;
+		rx(&ms, 1, T3_DT_MBC_HDR, CC, d);
+		adv(&ms, 60);
+		t3_cdef_build(&c, h.op, d);
+		rx(&ms, 1, T3_DT_MBC_CONT, CC, d);
+		CHECK(ms.unverified == (i == 1) && ms.st.crc_taken == 1u + (uint32_t)i && ms.st.crc_bad == 2,
+		      "MBC %d: taken only the second time", i);
+	}
+	adv(&ms, 60);
+	aloha(&ms, CC, ours, true);
+	CHECK(!ms.unverified, "verified again");
+
+	// Without the option the same CSBK is dropped every time
+	setup();
+	t3_ms_start(&ms, &cfg, T);
+	poll_all(&ms);
+	adv(&ms, T3_SETTLE_MS);
+	t3_csbk_build(&p, T3_CRC_MASK_CSBK, d);
+	d[10] ^= 0x01;
+	rx(&ms, 1, T3_DT_CSBK, CC, d);
+	adv(&ms, 60);
+	rx(&ms, 1, T3_DT_CSBK, CC, d);
+	CHECK(ms.state == T3_HUNT && ms.st.crc_bad == 2 && ms.st.crc_taken == 0 && !ms.unverified, "dropped");
+}
+
 static void test_follow(void)
 {
 	setup();
@@ -399,6 +461,85 @@ static void test_nosig(void)
 		t3_ms_slc(&ms, T, t3_sysparms_build(&sp));
 	}
 	CHECK(ms.state != T3_CAMPED, "short LCs alone don't");
+}
+
+// The screen names another system heard while hunting (t3_ms_other): from its Aloha with PAR, from two alike short
+// LCs without; for T3_OTHER_MS; never once camped
+static void test_other(void)
+{
+	setup();
+	t3_ms_t ms;
+	uint16_t code = 0;
+	t3_ms_start(&ms, &cfg, T);
+	poll_all(&ms);
+	CHECK(!t3_ms_other(&ms, T, &code), "nothing heard yet");
+	adv(&ms, 100);
+	t3_syscode_t s = { T3_MODEL_LARGE, 13, 7, T3_PAR_B };
+	uint16_t other = t3_syscode_join(&s);
+	aloha(&ms, CC, other, true);
+	CHECK(ms.state == T3_HUNT && t3_ms_other(&ms, T, &code) && code == other, "Aloha: 0x%04x", code);
+	adv(&ms, T3_OTHER_MS - 100);
+	CHECK(t3_ms_other(&ms, T, &code), "still shown before T3_OTHER_MS");
+	adv(&ms, 200);
+	CHECK(!t3_ms_other(&ms, T, &code), "gone after T3_OTHER_MS");
+
+	// Two alike short LCs: the code without PAR
+	t3_sysparms_t sp = { true, s.model, (uint16_t)(t3_syscode_14(other) & 0xFFF), true, 5 };
+	t3_ms_slc(&ms, T, t3_sysparms_build(&sp));
+	poll_all(&ms);
+	CHECK(!t3_ms_other(&ms, T, &code), "one short LC isn't trusted");
+	adv(&ms, 60);
+	t3_ms_slc(&ms, T, t3_sysparms_build(&sp));
+	poll_all(&ms);
+	CHECK(t3_ms_other(&ms, T, &code) && code == (other & ~3u), "short LC: 0x%04x", code);
+
+	// Camping on ours clears it, and another system's Aloha heard while camped is not shown
+	setup();
+	hunt_to_ours(&ms);
+	CHECK(ms.state == T3_CAMPED && !t3_ms_other(&ms, T, &code), "camped: not shown");
+	aloha(&ms, CC, theirs, true);
+	CHECK(!t3_ms_other(&ms, T, &code), "camped: another system's Aloha not shown");
+}
+
+// A trunking system of another kind (t3_ms_other_fid): its control channel sends CSBKs with its own FID and a good
+// CRC, no ETSI Aloha. Two with one FID name it; a failed CRC, a single one or an Aloha of ours do not
+static void other_fid_csbk(t3_ms_t *ms, uint8_t fid, bool crc_ok)
+{
+	uint8_t d[T3_CSBK_BYTES] = { 0x81, fid, 0x12, 0x13, 0x17, 0x18, 0x1b, 0x00, 0x00, 0x07 };
+	t3_crc_append(d, T3_CRC_MASK_CSBK);
+	d[11] ^= crc_ok ? 0u : 1u;
+	rx(ms, 1, T3_DT_CSBK, CC, d);
+	adv(ms, 60);
+}
+
+static void test_other_fid(void)
+{
+	setup();
+	t3_ms_t ms;
+	uint8_t fid = 0;
+	uint16_t code;
+	t3_ms_start(&ms, &cfg, T);
+	poll_all(&ms);
+	adv(&ms, 100);
+	other_fid_csbk(&ms, 0x06, false);
+	other_fid_csbk(&ms, 0x06, false);
+	CHECK(!t3_ms_other_fid(&ms, T, &fid), "failed CRCs name nothing");
+	other_fid_csbk(&ms, 0x06, true);
+	CHECK(!t3_ms_other_fid(&ms, T, &fid), "one isn't trusted");
+	other_fid_csbk(&ms, 0x10, true);
+	CHECK(!t3_ms_other_fid(&ms, T, &fid), "two FIDs: not one system");
+	other_fid_csbk(&ms, 0x10, true);
+	CHECK(ms.state == T3_HUNT && t3_ms_other_fid(&ms, T, &fid) && fid == 0x10, "FID 0x%02x", fid);
+	CHECK(!t3_ms_other(&ms, T, &code), "no C_SYScode");
+	adv(&ms, T3_OTHER_MS + 100);
+	CHECK(!t3_ms_other_fid(&ms, T, &fid), "gone after T3_OTHER_MS");
+
+	// Our TSCC sending manufacturer CSBKs between its Alohas: camped, not shown
+	setup();
+	hunt_to_ours(&ms);
+	other_fid_csbk(&ms, 0x10, true);
+	other_fid_csbk(&ms, 0x10, true);
+	CHECK(ms.state == T3_CAMPED && !t3_ms_other_fid(&ms, T, &fid), "camped: not shown");
 }
 
 static void test_slc(void)
@@ -733,6 +874,113 @@ static void test_weak(void)
 	CHECK(ms.state == T3_CAMPED && ms.st.weak_leaves == 0, "nowhere else to look: stays");
 }
 
+// Two programmed TSCCs of ours, both heard below a -105 dBm threshold
+static void weak_hold_setup(t3_ms_t *ms)
+{
+	setup();
+	cfg.leave_dbm = -105;
+	cfg.opts |= T3_OPT_LISTEN_ONLY;	// as on a site of another service: no access to wait on
+	cfg.nctrl = 2;
+	cfg.ctrl[0] = (t3_chan_t){ .lcn = 154, .cc = T3_CC_ANY, .rx_hz = RX(154), .tx_hz = RX(154) + 5000000u };
+	cfg.ctrl[1] = (t3_chan_t){ .lcn = 155, .cc = T3_CC_ANY, .rx_hz = RX(155), .tx_hz = RX(155) + 5000000u };
+	t3_ms_start(ms, &cfg, T);
+	poll_all(ms);
+}
+
+// Every TSCC weak: a pass that finds nothing better holds the radio on the one it comes back to, longer each time,
+// instead of leaving every T3_WEAK_MS and missing the grants sent meanwhile
+static void test_weak_hold(void)
+{
+	t3_ms_t ms;
+	weak_hold_setup(&ms);
+	uint32_t camped_ms = 0;
+	for (uint32_t t = 0; t < 60000; t += 60) {
+		camp_at(&ms, 60, ours, -107);
+		camped_ms += ms.state == T3_CAMPED ? 60u : 0u;
+	}
+	CHECK(ms.st.weak_leaves == 2 && ms.weak_hold_ms == 2u * T3_WEAK_HOLD_MS,
+	      "two passes found nothing in a minute, the hold doubled: %u leaves, hold %u ms",
+	      (unsigned)ms.st.weak_leaves, (unsigned)ms.weak_hold_ms);
+	CHECK(camped_ms >= 50000u, "camped most of the minute: %u ms", (unsigned)camped_ms);
+	for (uint32_t t = 0; t < 30u * 60000u; t += 60) {
+		camp_at(&ms, 60, ours, -107);
+	}
+	CHECK(ms.weak_hold_ms == T3_WEAK_HOLD_MAX_MS && ms.st.weak_leaves <= 12u,
+	      "the hold stops at its most: %u ms, %u leaves in 30 min", (unsigned)ms.weak_hold_ms,
+	      (unsigned)ms.st.weak_leaves);
+	// Clearly above the threshold ends the hold: the next weak spell is left after T3_WEAK_MS again
+	camp_at(&ms, 600, ours, -90);
+	CHECK(ms.state == T3_CAMPED && ms.weak_hold_ms == 0 && ms.weak_hold_until == 0, "strong: the hold cleared");
+	uint32_t before = ms.st.weak_leaves;
+	uint32_t waited = 0;
+	for (; waited < 4u * T3_WEAK_MS && ms.st.weak_leaves == before; waited += 60) {
+		camp_at(&ms, 60, ours, -107);
+	}
+	CHECK(ms.st.weak_leaves == before + 1 && waited > T3_WEAK_MS,
+	      "weak again: left after T3_WEAK_MS (the level average falling first): %u ms", (unsigned)waited);
+	// Just at the threshold doesn't clear it
+	weak_hold_setup(&ms);
+	for (uint32_t t = 0; t < 20000; t += 60) {
+		camp_at(&ms, 60, ours, -107);
+	}
+	CHECK(ms.weak_hold_ms == T3_WEAK_HOLD_MS, "held after one pass: %u", (unsigned)ms.weak_hold_ms);
+	camp_at(&ms, 600, ours, -104);
+	CHECK(ms.weak_hold_ms == T3_WEAK_HOLD_MS, "a level just above the threshold keeps the hold");
+	// A pass that confirms a TSCC just at the threshold ends the hold but keeps the backoff: weak again, the next pass
+	// that finds nothing holds twice as long
+	uint32_t spent = 0;
+	for (; spent < 10u * 60000u && ms.state != T3_HUNT; spent += 60) {
+		camp_at(&ms, 60, ours, -107);
+	}
+	CHECK(ms.state == T3_HUNT && ms.hunt_strict, "left after the hold: %u ms", (unsigned)spent);
+	camp_at(&ms, 600, ours, -104);
+	CHECK(ms.state == T3_CAMPED && ms.weak_hold_until == 0 && ms.weak_hold_ms == T3_WEAK_HOLD_MS,
+	      "confirmed at the threshold: no hold, the backoff kept (%u ms)", (unsigned)ms.weak_hold_ms);
+	for (spent = 0; spent < 60000u && ms.weak_hold_until == 0; spent += 60) {
+		camp_at(&ms, 60, ours, -107);
+	}
+	CHECK(ms.weak_hold_ms == 2u * T3_WEAK_HOLD_MS && spent >= T3_WEAK_MS,
+	      "weak again, nothing better: the hold doubled (%u ms) after %u ms", (unsigned)ms.weak_hold_ms, (unsigned)spent);
+	// A pass after the one that found nothing better hears no TSCC at all (a fade): the hold is still due
+	weak_hold_setup(&ms);
+	for (spent = 0; spent < 60000u && !ms.hunt_strict; spent += 60) {
+		camp_at(&ms, 60, ours, -107);
+	}
+	for (spent = 0; spent < 60000u && ms.hunt_strict; spent += 60) {
+		camp_at(&ms, 60, 0, -107);
+	}
+	camp_at(&ms, 3u * T3_DWELL_MS, 0, -107);	// past the end of the next pass too
+	CHECK(ms.state == T3_HUNT && !ms.hunt_strict && ms.weak_hold_ms == 0, "silent pass: hunting");
+	camp_at(&ms, 600, ours, -107);
+	CHECK(ms.state == T3_CAMPED && ms.weak_hold_ms == T3_WEAK_HOLD_MS && ms.weak_hold_until != 0,
+	      "back on a weak TSCC after a silent pass: held (%u ms)", (unsigned)ms.weak_hold_ms);
+	// The hold over, the deadline is dropped: left set, it would read as ahead again 2^31 ms on
+	camp_at(&ms, T3_WEAK_HOLD_MS + 600, ours, -104);
+	CHECK(ms.state == T3_CAMPED && ms.weak_hold_until == 0 && ms.weak_hold_ms == T3_WEAK_HOLD_MS,
+	      "hold over: deadline cleared, the backoff kept");
+	// The held TSCC lost (T_Nosig): the search ends the hold, the backoff stays
+	weak_hold_setup(&ms);
+	for (spent = 0; spent < 60000u && ms.weak_hold_until == 0; spent += 60) {
+		camp_at(&ms, 60, ours, -107);
+	}
+	CHECK(ms.state == T3_CAMPED && ms.weak_hold_until != 0, "held before the loss");
+	camp_at(&ms, T3_NOSIG_MS + 600, 0, -107);
+	CHECK(ms.state == T3_HUNT && ms.weak_hold_until == 0 && ms.weak_hold_ms == T3_WEAK_HOLD_MS,
+	      "TSCC lost: the hold ended, the backoff kept (%u ms)", (unsigned)ms.weak_hold_ms);
+}
+
+// The level average reaches a steady level to the dB: 1 dB below the threshold counts as weak
+static void test_level_average(void)
+{
+	t3_ms_t ms;
+	weak_hold_setup(&ms);
+	camp_at(&ms, 600, ours, -100);
+	camp_at(&ms, 3000, ours, -106);
+	CHECK(ms.level_dbm == -106, "falling to a steady -106: %d", ms.level_dbm);
+	camp_at(&ms, 3000, ours, -100);
+	CHECK(ms.level_dbm == -100, "rising to a steady -100: %d", ms.level_dbm);
+}
+
 static void test_stop(void)
 {
 	setup();
@@ -749,15 +997,20 @@ int main(void)
 {
 	test_hunt();
 	test_settle_crc_cc();
+	test_accept_bad_crc();
 	test_follow();
 	test_payload();
 	test_nosig();
 	test_slc();
+	test_other();
+	test_other_fid();
 	test_learn();
 	test_monitor_emergency();
 	test_adjacent();
 	test_vote();
 	test_weak();
+	test_weak_hold();
+	test_level_average();
 	test_stop();
 	printf("t3MsTest: %d checks, %d failures\n", checks, failures);
 	return failures != 0;

@@ -32,8 +32,10 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "config.h"
 #include "hrc7000.h"
 #include "hal_dmr_modem.h"
+#include "dmr/fec/dmrSoftComb.h"
 
 // --- Pure helpers ---
 
@@ -83,7 +85,7 @@ typedef struct {
 	uint32_t ticks;		// timeslot interrupts that ticked the engine
 	uint32_t ts_tx_ints, ts_rx_ints, sys_ints, rftx_ints;
 	uint32_t rx_voice, rx_lc_header, rx_terminator, rx_csbk, rx_data, rx_idle;
-	uint32_t rx_crc_err;	// delivered with a bad flag (voice, blocks) or dropped (headers, CSBK)
+	uint32_t rx_crc_err;	// delivered with a bad flag: the receivers check what they take
 	uint32_t rx_unusable;	// RC or no type: dropped
 	uint32_t late_entry;	// system interrupt bit 2
 	uint32_t slot_abnormal;	// bits 5, 6, 16
@@ -125,6 +127,7 @@ typedef struct {
 typedef struct {
 	dmr_event_t ev;
 	dmr_burst_t burst;
+	uint8_t soft_tag;	// the burst's soft values staged in soft (dmrSoftCombStage), 0 none
 } hrc7000_dmr_evslot_t;
 
 typedef struct {
@@ -208,6 +211,11 @@ typedef struct {
 	struct hrc7000_bs *bs;	// split duplex BS outbound in charge of the chip (hrc7000_bs.c), NULL otherwise
 #endif
 
+#if CONFIG_DMR
+	// Soft combining of control bursts whose CRC failed (dmr-modem.md 2.2.1): the glue's task sets it while DMR runs,
+	// NULL otherwise. The receive interrupt stages, hrc7000_dmr_pop combines
+	dmrSoftComb_t *volatile soft;
+#endif
 	hrc7000_dmr_evslot_t evq[HRC7000_DMR_EVQ_DEPTH];
 	volatile uint8_t evq_head, evq_tail;
 

@@ -38,7 +38,8 @@ enum {
 	DL_CMD_T3		= 0x22,	// a Tier III trunked system: stage, select, leave (debuglink_t3.c, 3.26)
 	DL_CMD_CPKV		= 0x23,	// a key of the codeplug settings area: read, write, remove (debuglink_cpkv.c, 3.27)
 	DL_CMD_AIR		= 0x24,	// the air interface on the bench: tap, session, RX, TX (CONFIG_AIR_RAW; debuglink_air.c, 3.28)
-	DL_CMD_LINK_HOLD	= 0x25,	// hold the host port for this client, or let go (docs/spec/debuglink.md 3.29)
+	DL_CMD_SUPPORT		= 0x25,	// the support info: source, hardware, image hash (CONFIG_SUPPORT_INFO; debuglink_support.c, 3.29)
+	DL_CMD_LINK_HOLD	= 0x26,	// hold the host port for this client, or let go (docs/spec/debuglink.md 3.30)
 };
 
 // DL_CMD_T3 operations (first payload byte; docs/spec/debuglink.md 3.26). Little endian
@@ -118,6 +119,11 @@ enum { DL_MEM_PIN_READ = 0, DL_MEM_PIN_INPUT = 1, DL_MEM_PIN_LOW = 2, DL_MEM_PIN
 // The arming key, little endian in the payload: bytes 'P' 'O' 'K' 'E'. The host tool sends it only when asked to
 // (rfoundry_debug.py --dangerous), so a write can't happen by accident
 #define DL_MEM_KEY		0x454B4F50u
+// DL_CMD_SUPPORT operations (the only payload byte; docs/spec/debuglink.md 3.29)
+enum {
+	DL_SUPPORT_OP_INFO	= 0,	// -> key=value text: source, repo, hw.<part>, image.addr / size
+	DL_SUPPORT_OP_HASH	= 1,	// -> image.state pending (image.done) or done (image.sha256), or none
+};
 
 // DL_CMD_CHIP_REG's chip number for the SoC's own registers (board.system->reg): an address u32 follows, not a page and
 // register. The board's RF chips are numbered below it

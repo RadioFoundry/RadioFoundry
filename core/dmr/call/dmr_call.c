@@ -8,6 +8,7 @@
 #include "config.h"
 #include "dmr/fec/dmrCach.h"
 #include "dmr/fec/dmrFec.h"
+#include "fec/rx_seen.h"
 #if CONFIG_SFR
 #include "dmr/sfr.h"
 #endif
@@ -184,6 +185,7 @@ static struct {
 	void *data_rx_ctx;
 	dmr_rx_tap_fn rx_tap;
 	void *rx_tap_ctx;
+	rx_seen_t lc_seen;	// listen.accept_bad_crc: LCs that failed their check lately
 } s;
 #if CONFIG_SFR && CONFIG_SFR_DUALPATH_RX
 // SFR user, dual-path RX: voice bursts taken but not played yet, oldest first (play order; s.vq_n of them). A burst waits
@@ -1002,13 +1004,23 @@ static void rx_pi_header(const dmr_burst_t *b, uint32_t now)
 static bool rx_header_lc(const dmr_burst_t *b, uint8_t mask, uint8_t lc[DMR_LC_BYTES])
 {
 	// The LC from the burst's own info bits (the modem's LC buffer may still hold the previous call, gotcha 1.4)
-	if (b->len >= DMR_LC_FULL_BYTES)
-		return dmr_lc_decode_full(b->payload, mask, lc) >= 0 || dmr_lc_decode_full(b->payload, 0, lc) >= 0;
-	if (b->lc_valid && b->crc_ok) {
-		memcpy(lc, b->lc, DMR_LC_BYTES);
+	bool full = b->len >= DMR_LC_FULL_BYTES;
+	if (full ? dmr_lc_decode_full(b->payload, mask, lc) >= 0 || dmr_lc_decode_full(b->payload, 0, lc) >= 0 :
+		   b->lc_valid && b->crc_ok) {
+		if (!full) {
+			memcpy(lc, b->lc, DMR_LC_BYTES);
+		}
 		return true;
 	}
-	return false;
+	// The channel's Accept invalid CRC: an LC that fails its check is taken when the same LC failed lately (a system
+	// that sends every LC that way repeats it; noise rarely does). The RS code is systematic: the LC is the first 9
+	const uint8_t *raw = full ? b->payload : b->lc;
+	if (!s.cfg.listen.accept_bad_crc || !rx_seen(&s.lc_seen, raw, DMR_LC_BYTES)) {
+		return false;
+	}
+	memcpy(lc, raw, DMR_LC_BYTES);
+	stats.rx_lc_taken++;
+	return true;
 }
 
 // A burst of another color code than ours (the modem doesn't filter with any_cc, polite to all or two CCs). Burst A, or a

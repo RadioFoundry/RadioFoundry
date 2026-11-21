@@ -213,11 +213,13 @@ static void test_rx(void)
 	CHECK(b.kind == DMR_BURST_VOICE && b.voice_index == 5 && b.lc_valid && b.lc[0] == 0xA0 && b.lc[8] == 0xA8);
 	CHECK(eng.st.late_entry == 1);
 
-	// A CSBK with a bad CRC is dropped; a voice burst with a bad EMB is delivered, flagged. (A dropped burst
-	// commits no event, so the array's interrupt list isn't cleared and the ISR's loop sees it up to 4 times)
-	deframe(rti(0, DMR_BURST_CSBK, 3, 0, 0, 0) | (1u << 26));
-	CHECK(count_kind(DMR_EV_BURST_RX, NULL) == 0 && eng.st.rx_crc_err >= 1);
-	uint32_t crc_errs = eng.st.rx_crc_err;
+	// A voice LC header with a bad RS goes up flagged, its LC not valid and no call started on its slot; a voice burst
+	// with a bad EMB is delivered, flagged
+	uint8_t slots = eng.voice_slots;
+	uint32_t crc_errs = eng.st.rx_crc_err, lc_headers = eng.st.rx_lc_header;
+	deframe(rti(0, DMR_BURST_VOICE_LC_HEADER, 3, 0, 0, 0) | (1u << 25));
+	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && !b.crc_ok && !b.lc_valid && eng.st.rx_crc_err == ++crc_errs);
+	CHECK(eng.voice_slots == slots && eng.st.rx_lc_header == lc_headers);
 	deframe(rti(3, 0, 3, 0, 1, 0) | (1u << 28));
 	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && !b.crc_ok && eng.st.rx_crc_err == crc_errs + 1);
 
@@ -1594,10 +1596,11 @@ static void test_rx_control_channel(void)
 	CHECK(hrc7000_dmr_short_lc(&eng, &ev) && ev.arg == (slc ^ 0x1000000u) && eng.st.slc_reads == 2);
 	count_kind(0xFF, NULL);
 
-	// CRC-16 flag: a CSBK is dropped, an MBC continuation goes up with crc_ok false (its CRC is the MBC's)
-	deframe(rti(0, DMR_BURST_CSBK, 2, 1, 0, 0) | (1u << 26));
-	CHECK(count_kind(DMR_EV_BURST_RX, NULL) == 0);
+	// CRC-16 flag: a CSBK goes up with crc_ok false (the receivers check it; Accept invalid CRC takes it), and so does
+	// an MBC continuation (its CRC is the MBC's)
 	dmr_burst_t b;
+	deframe(rti(0, DMR_BURST_CSBK, 2, 1, 0, 0) | (1u << 26));
+	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.kind == DMR_BURST_CSBK && !b.crc_ok && b.len == 12);
 	deframe(rti(0, DMR_BURST_MBC_CONT, 2, 1, 0, 0) | (1u << 26));
 	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.kind == DMR_BURST_MBC_CONT && !b.crc_ok && b.len == 12);
 }

@@ -48,10 +48,12 @@ const char *t3_reg_name(t3_reg_t r)
 	return "?";
 }
 
-// May the radio transmit at all? Access code behind this folds away when the build leaves it out
+// May the radio transmit at all? Access code behind this folds away when the build leaves it out. Not while the last
+// PDU taken failed its CRC (T3_OPT_ACCEPT_BAD_CRC): what it said may be wrong, and a site whose PDUs all fail the check
+// is one the radio can only listen to
 static bool may_send(const t3_ms_t *ms)
 {
-	return CONFIG_DMR_TRUNK_TX && !(ms->cfg->opts & T3_OPT_LISTEN_ONLY);
+	return CONFIG_DMR_TRUNK_TX && !(ms->cfg->opts & T3_OPT_LISTEN_ONLY) && !ms->unverified;
 }
 
 static uint32_t my_id(const t3_ms_t *ms)
@@ -134,9 +136,30 @@ static void send_udt(t3_ms_t *ms, uint8_t slot)
 static void finish(t3_ms_t *ms, uint32_t now, t3_res_t r);
 static bool is_voice(t3_svc_t s);
 
+// A programmed row numbered n: the plan table's (table false: t3_plan_lookup looked there already), else a control
+// channel's
+static bool row_lookup(const t3_cfg_t *c, uint16_t n, bool table, t3_chan_t *out)
+{
+	for (uint16_t i = 0; table && i < c->plan.ntable; i++) {
+		if (c->plan.table[i].lcn == n) {
+			*out = c->plan.table[i];
+			return true;
+		}
+	}
+	for (uint8_t i = 0; i < c->nctrl; i++) {
+		if (c->ctrl[i].lcn == n && c->ctrl[i].rx_hz != 0) {
+			*out = c->ctrl[i];
+			return true;
+		}
+	}
+	return false;
+}
+
 // A logical channel's frequencies: the plan (learned, table, fixed), else a programmed control channel with that
 // number. A one-carrier site grants its own carrier's other slot, which a radio with only the control channel
-// programmed (no plan, no Chan_Freq heard yet) knows that way
+// programmed (no plan, no Chan_Freq heard yet) knows that way.
+// Site tools and scanners often count each timeslot as a channel: (LPCN << 1 | slot bit) + 1, so LPCN 311 is their
+// 623 and 624. A row no LPCN matches is tried under that numbering last, either slot (both share the carrier)
 static bool chan_lookup(const t3_ms_t *ms, uint16_t lcn, t3_chan_t *out)
 {
 	const t3_cfg_t *c = ms->cfg;
@@ -146,13 +169,16 @@ static bool chan_lookup(const t3_ms_t *ms, uint16_t lcn, t3_chan_t *out)
 	if (lcn == T3_LPCN_NULL || lcn > T3_LPCN_MAX) {
 		return false;
 	}
-	for (uint8_t i = 0; i < c->nctrl; i++) {
-		if (c->ctrl[i].lcn == lcn && c->ctrl[i].rx_hz != 0) {
-			*out = c->ctrl[i];
-			return true;
-		}
+	if (row_lookup(c, lcn, false, out)) {
+		return true;
 	}
-	return false;
+	uint16_t per_slot = (uint16_t)(2u * lcn + 1u);
+	if (per_slot >= T3_LPCN_MAX ||
+	    !(row_lookup(c, per_slot, true, out) || row_lookup(c, (uint16_t)(per_slot + 1u), true, out))) {
+		return false;
+	}
+	out->lcn = lcn;		// the channel as the TS names it, for comparing calls and TSCCs
+	return true;
 }
 
 // ---- Hunting (6.3.2.1, Annex D) ----
@@ -193,8 +219,11 @@ static void hunt_next(t3_ms_t *ms, uint32_t now)
 		t3_chan_t c;
 		uint8_t i = ms->hunt_idx;
 		ms->hunt_idx = (uint8_t)((ms->hunt_idx + 1u) % n);
-		if (ms->hunt_idx == 0) {
-			ms->hunt_strict = false;	// a whole pass found nothing better: take any TSCC again
+		if (ms->hunt_idx == 0 && ms->hunt_strict) {
+			// A whole pass found nothing better: take any TSCC again, and hold on it. Set only here: a later pass
+			// that hears nothing (a fade at the edge of coverage) keeps the hold due
+			ms->weak_failed = true;
+			ms->hunt_strict = false;
 		}
 		if (hunt_candidate(ms, i, &c)) {
 			tune(ms, now, &c, 0, false);
@@ -237,6 +266,7 @@ static void enter_hunt(t3_ms_t *ms, uint32_t now, bool retry)
 	if (ms->ax.state != T3_AX_IDLE) {
 		finish(ms, now, T3_RES_LOST);
 	}
+	ms->ring_src = 0;
 	ms->state = T3_HUNT;
 	ms->confirmed = false;
 	ms->slc_here = false;
@@ -246,6 +276,8 @@ static void enter_hunt(t3_ms_t *ms, uint32_t now, bool retry)
 	ms->csc_valid = false;
 	ms->retry_tscc = retry && ms->tscc.rx_hz != 0;
 	ms->hunt_strict = false;
+	ms->weak_failed = false;
+	ms->weak_hold_until = 0;	// the hold was on the TSCC left (lost, or let go once the hold was over); the backoff stays
 	ms->vote.on = false;
 	ms->st.hunts++;
 	hunt_next(ms, now);
@@ -270,6 +302,8 @@ void t3_ms_stop(t3_ms_t *ms)
 	ms->nq = 0;
 	ms->tx.count = 0;
 	ms->tx.udt = false;
+	ms->ring_src = 0;
+	ms->ax.alerting = false;
 	ms->ax.state = T3_AX_IDLE;
 	ms->confirmed = false;
 }
@@ -457,7 +491,9 @@ static void on_grant(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_cha
 	if (!wants_grant(ms, p, &group)) {
 		return;
 	}
-	if (ms->ax.state != T3_AX_IDLE && !is_me(ms, p->u.grant.src) && !p->u.grant.emergency) {
+	const bool answered = ms->ax.state != T3_AX_IDLE && ms->ax.answering && p->op == T3_OP_PV_GRANT &&
+	                      p->u.grant.src == ms->ax.dst && is_me(ms, p->u.grant.dst);
+	if (ms->ax.state != T3_AX_IDLE && !answered && !is_me(ms, p->u.grant.src) && !p->u.grant.emergency) {
 		// Asking for a service: someone else's call doesn't take the radio off the TSCC meanwhile
 		return;
 	}
@@ -468,6 +504,9 @@ static void on_grant(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_cha
 		   !chan_lookup(ms, p->u.grant.lpcn, &c)) {
 		ms->st.unmapped++;
 		ms->st.last_unmapped = p->u.grant.lpcn;
+		if (ms->ax.state != T3_AX_IDLE && is_me(ms, p->u.grant.src)) {
+			finish(ms, now, T3_RES_UNMAPPED);	// our call can't be followed: say so now, not at TP_Timer
+		}
 		return;
 	}
 	if (ms->state == T3_FOLLOW) {
@@ -483,9 +522,10 @@ static void on_grant(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_cha
 		// Only a Late_Entry repeat of the call just left; a set-up grant (Late_Entry 0) is a new call (6.6.2.4.1)
 		return;
 	}
+	ms->ring_src = 0;
 	follow(ms, now, p, &c, group);
-	if (ms->call.ours && ms->ax.state != T3_AX_IDLE &&
-	    (ms->call.data ? ms->ax.svc == T3_SVC_PDATA : is_voice(ms->ax.svc))) {
+	if (answered || (ms->call.ours && ms->ax.state != T3_AX_IDLE &&
+	    (ms->call.data ? ms->ax.svc == T3_SVC_PDATA : is_voice(ms->ax.svc)))) {
 		finish(ms, now, T3_RES_GRANTED);
 	} else if (ms->ax.state != T3_AX_IDLE) {
 		// An emergency call took us off the TSCC: what we were asking for is lost
@@ -524,7 +564,7 @@ static bool ps_may_sleep(const t3_ms_t *ms, uint32_t now)
 {
 	return ms->ps_offset != 0 && ms->state == T3_CAMPED && ms->confirmed && ms->reg == T3_REG_OK &&
 	       ms->csc_valid && ms->ax.state == T3_AX_IDLE && ms->nq == 0 && ms->tx.count == 0 && !ms->tx.udt &&
-	       !ms->udt_rx.open &&
+	       ms->ring_src == 0 && !ms->udt_rx.open &&
 	       !(ms->massreg && (int32_t)(now - ms->massreg_at) >= 0) && (int32_t)(now - ms->awake_until) >= 0 &&
 	       !ps_frame(ms, now);
 }
@@ -578,8 +618,12 @@ static void set_reg(t3_ms_t *ms, bool reg)
 	uint16_t area = reg_area(ms, ms->syscode);
 	if (!reg) {
 		ms->reg = T3_REG_NOT_NEEDED;
-	} else if (!may_send(ms)) {	// listen-only, or a build without access
-		ms->reg = T3_REG_LISTEN;
+	} else if (!may_send(ms)) {	// listen-only, a build without access, or an unverified PDU
+		// A registration in force outlives an unverified Aloha: may_send keeps the radio quiet meanwhile, and the next
+		// good PDU must not register it again
+		if (!ms->unverified || ms->reg != T3_REG_OK || ms->reg_area != area) {
+			ms->reg = T3_REG_LISTEN;
+		}
 	} else if (area_denied(ms, area)) {
 		ms->reg = T3_REG_DENIED;
 	} else if (ms->reg != T3_REG_OK || ms->reg_area != area) {
@@ -603,6 +647,7 @@ const char *t3_res_name(t3_res_t r)
 	case T3_RES_LOST: return "lost";
 	case T3_RES_CANCELED: return "canceled";
 	case T3_RES_DIVERTED: return "diverted";
+	case T3_RES_UNMAPPED: return "unmapped";
 	}
 	return "?";
 }
@@ -671,6 +716,7 @@ static void finish(t3_ms_t *ms, uint32_t now, t3_res_t r)
 	t3_svc_t svc = ms->ax.svc;
 	ms->ax.state = T3_AX_IDLE;
 	ms->ax.result = r;
+	ms->ax.alerting = false;
 	if (ms->ax.resume) {
 		// 6.4.14.3.3.2: back to the payload channel whatever the answer; not when the TSCC was lost or an
 		// emergency grant took the radio elsewhere
@@ -698,6 +744,9 @@ static void start_access(t3_ms_t *ms, uint32_t now, t3_svc_t svc, uint32_t dst, 
 	ms->ax.dst = dst;
 	ms->ax.emergency = emergency;
 	ms->ax.als = false;
+	ms->ax.alerting = false;
+	ms->ax.answering = false;
+	ms->ax.rejecting = false;
 	ms->ax.resume = false;
 	ms->ax.ip = 0;
 	ms->ax.ip_inform = false;
@@ -811,6 +860,11 @@ static void build_rand(t3_ms_t *ms, uint8_t out[T3_CSBK_BYTES])
 		break;
 	case T3_SVC_IND_VOICE:
 		// Table 6.40: SUPED_VAL 0, then ALS_SERV
+		if (ms->ax.answering || ms->ax.rejecting) {
+			q->kind = T3_SK_ANSWER;
+			q->extra = ms->ax.rejecting ? 0x2u : 0;	// ACCEPT, followed by one reserved bit
+			break;
+		}
 		q->kind = T3_SK_IND_VOICE;
 		q->options = ms->ax.emergency ? T3_SO_EMERGENCY : 0;
 		q->extra = ms->ax.als ? 0x2u : 0u;
@@ -937,6 +991,7 @@ static void registered(t3_ms_t *ms, uint32_t now)
 	ms->reg = ms->reg_stale ? T3_REG_NEEDED : T3_REG_OK;	// stale: the list sent is no longer ours
 	ms->reg_stale = false;
 	ms->reg_area = reg_area(ms, ms->syscode);
+	ms->refused_area = 0;
 	ms->awake_until = now + or_default(ms->cfg->awake_ms, T3_AWAKE_MS);
 }
 
@@ -980,8 +1035,11 @@ static void on_ack(t3_ms_t *ms, uint32_t now, const t3_ack_t *a)
 		} else if (svc == T3_SVC_DEREGISTER) {
 			ms->reg = T3_REG_NEEDED;
 			ms->deregistered = true;
-		} else if (is_voice(svc) && a->reason == T3_RC_MS_ALERTING) {
-			// The called radio rings: the call goes on
+		} else if (is_voice(svc) && !ms->ax.rejecting && a->reason != T3_RC_CALLBACK) {
+			// A voice call ends in a grant or a refusal; Callback is the one acknowledgement that ends it (the
+			// called radio calls back). Any other goes on toward the grant: MS_Alerting (the called radio rings), or
+			// Message_Accepted, which some systems send to a request for a call already set up. TP_Timer
+			ms->ax.alerting = svc == T3_SVC_IND_VOICE && a->reason == T3_RC_MS_ALERTING;
 			ms->ax.state = T3_AX_ACKED;
 			ms->ax.ack_deadline = now + T3_TP_MS;
 			break;
@@ -1009,7 +1067,8 @@ static void on_ack(t3_ms_t *ms, uint32_t now, const t3_ack_t *a)
 			ms->ps_offset = 0;
 			finish(ms, now, T3_RES_DONE);
 		} else if (svc == T3_SVC_REGISTER && a->reason == T3_RC_REG_REFUSED) {
-			// Look for another TSCC; this one is tried again when the hunt comes back to it
+			// Look for another TSCC; this one is tried again when the hunt comes back to it. The screen says so
+			ms->refused_area = (uint16_t)(reg_area(ms, ms->syscode) + 1u);
 			finish(ms, now, T3_RES_REFUSED);
 			enter_hunt(ms, now, false);
 		} else {
@@ -1048,9 +1107,11 @@ static void answer_info(t3_ms_t *ms, uint8_t slot, bool payload, uint8_t reason,
 	ms->tx.udt = false;
 }
 
+// Response_Info for every reason but a poll's (table 7.41): G/I (bit 6) 0, as the target is the AHOY's source, an
+// individual or gateway ID, never a talkgroup; then Response_Check from the TSCC's C_SYScode
 static void answer(t3_ms_t *ms, uint8_t slot, bool payload, uint8_t reason, uint32_t to, bool then_return)
 {
-	answer_info(ms, slot, payload, reason, 0, to, then_return);
+	answer_info(ms, slot, payload, reason, t3_response_check(ms->syscode), to, then_return);
 }
 
 // A status delivered by C_AHOY (6.6.6.1.1.4): Service_Options_Mirror holds its 5 most significant bits, Appended_Blocks
@@ -1561,6 +1622,12 @@ static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h,
 	} else if (ms->stunned) {
 		return;		// stunned: no user services to answer for
 	} else if (to_me && !payload && h->kind == T3_SK_CANCEL) {
+		if (ms->ring_src == h->src) {
+			ms->ring_src = 0;
+		}
+		if (ms->ax.state != T3_AX_IDLE && ms->ax.answering && ms->ax.dst == h->src) {
+			finish(ms, now, T3_RES_LOST);
+		}
 		answer(ms, slot, false, T3_RC_MS_ACCEPTED, h->src, false);	// the caller gave up (6.6.1.2.2)
 	} else if (to_me && !payload && h->kind == T3_SK_IND_VOICE && h->als) {
 		// An ALS radio check (table 6.46): Message_Accepted, and a private grant from the same caller within
@@ -1572,6 +1639,22 @@ static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h,
 		ms->als_src = h->src;
 		ms->als_until = (now + T3_ALS_REQUEST_MS) | 1u;
 		answer(ms, slot, false, T3_RC_MESSAGE_ACCEPTED, h->src, false);
+	} else if (to_me && !payload && h->kind == T3_SK_IND_VOICE && h->kind_flag) {
+		if (h->src == 0 || h->src > T3_ID_USER_MAX) {
+			return;
+		}
+		uint8_t reason;
+		if (!(ms->cfg->opts & T3_OPT_PRIVATE)) {
+			reason = T3_RC_MS_NOT_SUPPORTED;
+		} else if (ms->state != T3_CAMPED || ms->ax.state != T3_AX_IDLE ||
+			   (ms->ring_src != 0 && ms->ring_src != h->src)) {
+			reason = T3_RC_EQUIP_BUSY;
+		} else {
+			ms->ring_src = h->src;
+			ms->ring_until = now + T3_ANSWER_CALL_MS;
+			reason = T3_RC_MS_ALERTING;
+		}
+		answer_info(ms, slot, false, reason, t3_response_check(ms->syscode), h->src, false);
 	} else if (to_me && !payload && h->kind == T3_SK_IND_VOICE) {
 		answer(ms, slot, false, T3_RC_MS_ACCEPTED, h->src, false);	// availability check: OACSU
 	} else if (payload && h->src == T3_ID_TSI && (h->kind == T3_SK_IND_DATA || h->kind == T3_SK_TG_DATA)) {
@@ -1601,6 +1684,34 @@ static bool authorized(t3_ms_t *ms, uint16_t code)
 	return t3_authorize(&ms->auth, code) == T3_AUTH_OK;
 }
 
+// Another system's control channel heard while hunting: kept for the screen, which names what was heard (t3_ms_other)
+static void heard_other(t3_ms_t *ms, uint32_t now, uint16_t code)
+{
+	if (ms->state == T3_HUNT) {
+		ms->other_code = code;
+		ms->other_ms = now != 0 ? now : 1u;
+	}
+}
+
+// A CSBK with a manufacturer's FID and a good CRC heard while hunting: several in a row with one FID name a trunking
+// system of another kind (t3_ms_other_fid). An ETSI TSCC may send such CSBKs too: it is confirmed by its Aloha first
+static void heard_fid(t3_ms_t *ms, uint32_t now, uint8_t fid)
+{
+	if (ms->state != T3_HUNT) {
+		return;
+	}
+	if (fid != ms->other_fid || ms->other_fid_ms == 0 || since(now, ms->other_fid_ms, T3_OTHER_MS)) {
+		ms->other_fid = fid;
+		ms->other_fid_n = 0;
+	}
+	if (ms->other_fid_n < T3_OTHER_FID_N) {
+		ms->other_fid_n++;
+	}
+	ms->other_fid_ms = now != 0 ? now : 1u;
+}
+
+static bool weak(const t3_ms_t *ms, int16_t dbm);
+
 static void confirm(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t3_aloha_t *a)
 {
 	if (ms->state == T3_HUNT && ms->hunt_strict && ms->cfg->leave_dbm != 0 && ms->level_dbm != 0 &&
@@ -1610,9 +1721,25 @@ static void confirm(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t
 		return;
 	}
 	if (ms->state == T3_HUNT) {
+		if (ms->hunt_strict || (ms->level_dbm != 0 && !weak(ms, ms->level_dbm))) {
+			// A TSCC at or above the threshold: the next weak spell may be left at once. The backoff stays: a level
+			// that only touched the threshold (one sample, at the edge of coverage) soon fails again, and only a
+			// level clearly above it (the tick) starts the hold over
+			ms->weak_hold_until = 0;
+		} else if (ms->weak_failed) {
+			// Back on a TSCC no stronger than the one left: leaving again finds nothing either, and every
+			// hunt misses what the TSCC sends meanwhile (grants included). Hold, longer after each such pass
+			ms->weak_hold_ms = ms->weak_hold_ms == 0 ? T3_WEAK_HOLD_MS :
+					   ms->weak_hold_ms >= T3_WEAK_HOLD_MAX_MS / 2u ? T3_WEAK_HOLD_MAX_MS :
+					   ms->weak_hold_ms * 2u;
+			ms->weak_hold_until = (now + ms->weak_hold_ms) | 1u;
+		}
+		ms->weak_failed = false;
 		ms->state = T3_CAMPED;
 		ms->tscc = ms->tuned;
 		ms->tscc.cc = cc;
+		ms->other_ms = 0;
+		ms->other_fid_ms = 0;
 	}
 	if (ms->syscode != 0 && ms->syscode != a->syscode) {
 		// Another network: what was learned belongs to the old one. A site change of one network keeps it
@@ -1670,6 +1797,7 @@ static void on_move(t3_ms_t *ms, uint32_t now, const t3_move_t *m, const t3_cdef
 	ms->massreg = false;
 	ms->tscc_slots = 0;
 	ms->csc_valid = false;
+	ms->weak_hold_until = 0;	// the hold was on the TSCC left
 	ms->moves++;
 	ms->last_valid_ms = now;
 	tune(ms, now, &ms->tscc, 0, false);
@@ -1767,6 +1895,7 @@ static void vote_end(t3_ms_t *ms, uint32_t now, bool moving)
 		ms->tscc = to;
 		ms->tuned.cc = to.cc;
 		ms->confirmed = false;
+		ms->weak_hold_until = 0;	// the hold was on the TSCC left
 		ms->massreg = false;
 		ms->tscc_slots = 0;
 		ms->csc_valid = false;
@@ -1826,7 +1955,14 @@ void t3_ms_level(t3_ms_t *ms, uint32_t now, int16_t dbm)
 	    ms->asleep || !since(now, ms->woke_ms, T3_SETTLE_MS)) {
 		return;
 	}
-	ms->level_dbm = ms->level_dbm == 0 ? dbm : (int16_t)((3 * (int32_t)ms->level_dbm + dbm) / 4);
+	// Rounded to the nearest dB: truncated toward 0, a falling level would stop up to 3 dB short (above the
+	// threshold it should cross)
+	int32_t sum = 3 * (int32_t)ms->level_dbm + dbm;
+	int16_t avg = ms->level_dbm == 0 ? dbm : (int16_t)((sum >= 0 ? sum + 2 : sum - 2) / 4);
+	if (avg == ms->level_dbm && dbm != avg) {
+		avg = (int16_t)(avg + (dbm < avg ? -1 : 1));	// rounded alone, a steady level stops 1 dB short
+	}
+	ms->level_dbm = avg;
 }
 
 // A complete PDU heard on the TSCC we are hunting or camped on. cdef: the appended block of an MBC, or NULL
@@ -1835,6 +1971,7 @@ static void on_tscc(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t
 	if (p->op == T3_OP_C_ALOHA) {
 		if (!authorized(ms, p->u.aloha.syscode)) {
 			ms->st.foreign++;
+			heard_other(ms, now, p->u.aloha.syscode);
 			if (ms->state == T3_HUNT) {
 				hunt_next(ms, now);
 			}
@@ -2289,37 +2426,70 @@ void t3_ms_rx(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t dt, uint8_t cc, c
 	}
 	uint8_t si = (uint8_t)(slot - 1u);
 	t3_csbk_t p;
-	if (dt == T3_DT_MBC_CONT) {
+	bool cont = dt == T3_DT_MBC_CONT;
+	if (cont) {
 		bool have = ms->mbc[si].open && !since(now, ms->mbc[si].ms, MBC_GAP_MS);
 		ms->mbc[si].open = false;
 		if (!have) {
 			return;
 		}
+		bool fid08 = ms->mbc[si].hdr.fid == T3_FID_08;
+		if (fid08 && d[0] == T3_OP_PD_GRANT && !ms->mbc[si].has_intermediate) {
+			// The FID 0x08 grant puts its absolute channel in the first of two continuations.
+			memcpy(ms->mbc[si].intermediate, d, T3_CSBK_BYTES);
+			ms->mbc[si].has_intermediate = true;
+			ms->mbc[si].open = true;
+			ms->mbc[si].ms = now;
+			return;
+		}
+		if (fid08) {
+			// Its last block's CRC covers both continuations: checked as a whole, never taken unverified
+			t3_cdef_t c;
+			if (!ms->mbc[si].has_intermediate || !t3_fid08_pd_cdef_parse(ms->mbc[si].intermediate, d, &c)) {
+				ms->st.crc_bad++;
+				return;
+			}
+			ms->unverified = ms->mbc[si].bad;
+			deliver(ms, now, slot, cc, &ms->mbc[si].hdr, &c);
+			return;
+		}
+	}
+	// A continuation carries the whole MBC's CRC, with no mask
+	bool good = t3_crc_ok(d, dt == T3_DT_CSBK ? T3_CRC_MASK_CSBK : cont ? 0 : T3_CRC_MASK_MBC_HDR);
+	if (!good && !((ms->cfg->opts & T3_OPT_ACCEPT_BAD_CRC) && rx_seen(&ms->seen, d, T3_CSBK_BYTES))) {
+		ms->st.crc_bad++;
+		return;
+	}
+	ms->st.crc_taken += !good;
+	// An MBC is unverified when either block failed: its header's verdict is kept per slot, as the other slot's PDUs
+	// come between header and continuation
+	ms->unverified = (cont && ms->mbc[si].bad) || !good;
+	if (cont) {
 		t3_cdef_t c;
-		if (!t3_crc_ok(d, 0) || !t3_cdef_parse(d, ms->mbc[si].hdr.op, &c)) {
+		if (!t3_cdef_parse(d, ms->mbc[si].hdr.op, &c)) {
 			ms->st.crc_bad++;
 			return;
 		}
 		deliver(ms, now, slot, cc, &ms->mbc[si].hdr, &c);
 		return;
 	}
-	uint16_t mask = dt == T3_DT_CSBK ? T3_CRC_MASK_CSBK : T3_CRC_MASK_MBC_HDR;
-	if (!t3_crc_ok(d, mask)) {
-		ms->st.crc_bad++;
-		return;
-	}
-	ms->st.csbk++;
+	ms->st.csbk += good;
 	bool known = t3_csbk_parse(d, &p);
 	if (ms->state == T3_FOLLOW && slot == ms->call.slot) {
-		// Any good CSBK on the call's slot keeps it alive, one with another FID included
+		// Any CSBK taken on the call's slot keeps it alive, one with another FID included
 		ms->last_act_ms = now;
 	}
-	if (!known || p.fid != 0) {
+	if (p.fid != 0 && good && dt == T3_DT_CSBK) {
+		heard_fid(ms, now, p.fid);	// taken by CRC only: one repeated with a failed CRC names nothing
+	}
+	if (!known || (p.fid != 0 && dt != T3_DT_MBC_HDR)) {
 		return;
 	}
 	if (dt == T3_DT_MBC_HDR) {
 		// The header of a multi-block PDU: wait for its continuation
 		ms->mbc[si].open = true;
+		ms->mbc[si].bad = !good;
+		ms->mbc[si].has_intermediate = false;
 		ms->mbc[si].hdr = p;
 		ms->mbc[si].ms = now;
 		return;
@@ -2364,6 +2534,7 @@ void t3_ms_slc(t3_ms_t *ms, uint32_t now, uint32_t slc)
 		ms->slc_foreign = (uint32_t)code + 1u;
 		if (again && ms->state == T3_HUNT) {
 			ms->slc_foreign = 0;
+			heard_other(ms, now, (uint16_t)(code & ~3u));	// PAR 0: the short LC doesn't carry it
 			hunt_next(ms, now);
 		}
 		return;
@@ -2457,6 +2628,9 @@ void t3_ms_call_burst(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc)
 
 bool t3_ms_poll(t3_ms_t *ms, uint32_t now, t3_act_t *act)
 {
+	if (ms->ring_src != 0 && !before(now, ms->ring_until)) {
+		ms->ring_src = 0;
+	}
 	switch (ms->state) {
 	case T3_OFF:
 		break;
@@ -2491,8 +2665,12 @@ bool t3_ms_poll(t3_ms_t *ms, uint32_t now, t3_act_t *act)
 			enter_hunt(ms, now, true);
 			break;
 		}
+		if (ms->weak_hold_until != 0 && !before(now, ms->weak_hold_until)) {
+			ms->weak_hold_until = 0;	// over: left set, it would read as ahead again 2^31 ms on
+		}
+		bool held = ms->weak_hold_until != 0;
 		if (!(ms->cfg->opts & T3_OPT_NO_ROAM) && weak(ms, ms->level_dbm) && ms->ax.state == T3_AX_IDLE &&
-		    hunt_count(ms) > 1) {
+		    hunt_count(ms) > 1 && !held) {
 			// Below the threshold (6.3.3.1 a) for T3_WEAK_MS, with somewhere else to look: hunt, and take only a
 			// stronger TSCC for one pass
 			if (ms->weak_since == 0) {
@@ -2506,6 +2684,12 @@ bool t3_ms_poll(t3_ms_t *ms, uint32_t now, t3_act_t *act)
 			}
 		} else {
 			ms->weak_since = 0;
+		}
+		if (ms->level_dbm != 0 && ms->cfg->leave_dbm != 0 &&
+		    ms->level_dbm >= ms->cfg->leave_dbm + T3_VOTE_MARGIN_DB) {
+			// Clearly above the threshold: a later weak spell (the radio moved) is left after T3_WEAK_MS again
+			ms->weak_hold_ms = 0;
+			ms->weak_hold_until = 0;
 		}
 		if (!may_send(ms)) {
 			break;
@@ -2585,6 +2769,29 @@ bool t3_ms_request(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, bool eme
 	ms->talk_id = dst;
 	start_access(ms, now, group ? T3_SVC_GROUP_VOICE : T3_SVC_IND_VOICE, dst, emergency);
 	return true;
+}
+
+static bool respond_call(t3_ms_t *ms, uint32_t now, bool reject)
+{
+	if (ms->ring_src == 0 || !before(now, ms->ring_until) || ms->ax.state != T3_AX_IDLE || !may_ask(ms)) {
+		return false;
+	}
+	start_access(ms, now, T3_SVC_IND_VOICE, ms->ring_src, false);
+	ms->ring_src = 0;
+	ms->ax.answering = !reject;
+	ms->ax.rejecting = reject;
+	ms->ax.supl = false;
+	return true;
+}
+
+bool t3_ms_answer_call(t3_ms_t *ms, uint32_t now)
+{
+	return respond_call(ms, now, false);
+}
+
+bool t3_ms_reject_call(t3_ms_t *ms, uint32_t now)
+{
+	return respond_call(ms, now, true);
 }
 
 bool t3_ms_status(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t status)
@@ -2854,6 +3061,33 @@ bool t3_ms_deregister(t3_ms_t *ms, uint32_t now)
 	}
 	start_access(ms, now, T3_SVC_DEREGISTER, 0, false);
 	return true;
+}
+
+bool t3_ms_other_fid(const t3_ms_t *ms, uint32_t now, uint8_t *fid)
+{
+	if (ms->state != T3_HUNT || ms->other_fid_ms == 0 || ms->other_fid_n < T3_OTHER_FID_N ||
+	    since(now, ms->other_fid_ms, T3_OTHER_MS)) {
+		return false;
+	}
+	*fid = ms->other_fid;
+	return true;
+}
+
+bool t3_ms_other(const t3_ms_t *ms, uint32_t now, uint16_t *code)
+{
+	if (ms->state != T3_HUNT || ms->other_ms == 0 || since(now, ms->other_ms, T3_OTHER_MS)) {
+		return false;
+	}
+	*code = ms->other_code;
+	return true;
+}
+
+bool t3_ms_reg_refused(const t3_ms_t *ms)
+{
+	if (ms->refused_area == 0 || ms->reg == T3_REG_OK || ms->reg == T3_REG_NOT_NEEDED) {
+		return false;
+	}
+	return ms->state == T3_HUNT || (uint16_t)(reg_area(ms, ms->syscode) + 1u) == ms->refused_area;
 }
 
 bool t3_ms_can_talk(const t3_ms_t *ms)

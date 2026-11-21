@@ -22,6 +22,8 @@ typedef enum {
 	RADIO_T3_INTERRUPT,		// ask the TS to stop the talker in the call followed (status 125)
 	RADIO_T3_ALS_END,		// end the ALS call the radio listens to (status 123)
 	RADIO_T3_SDPOLL,		// poll sd_dst for its short data: format sd_format, sd_len blocks
+	RADIO_T3_CANCEL,		// cancel an outgoing call while the called radio rings
+	RADIO_T3_REJECT,		// reject an incoming private call
 } radio_t3_cmd_t;
 
 #if CONFIG_DMR_TRUNK
