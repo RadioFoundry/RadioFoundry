@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // qdmr YAML in the codeplug editor: the YAML subset (static/js/codeplug/yaml.js), the mapping to the editing model
 // (static/js/codeplug/qdmr.js), round trips on a file written the way qdmr 0.15 writes one and on cpsSim's populated
-// codeplug, the Tools page converters, and, when dmrconf is installed, qdmr itself encoding what the editor exports.
+// codeplug, the radioFoundry block of every mode, the Tools page converters, and, when dmrconf is installed, qdmr itself encoding what the editor exports.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { execFileSync, spawnSync } from "node:child_process";
 
 import { CodeplugImage, CODEPLUG_SPAN } from "../static/js/codeplug/image.js";
-import { decode, encode, empty } from "../static/js/codeplug/model.js";
+import { decode, encode, empty, validate } from "../static/js/codeplug/model.js";
 import { parse, stringify, flow, Tag, YamlError } from "../static/js/codeplug/yaml.js";
 import { importQdmr, exportQdmr, QdmrError, parseFrequency, parseDuration, fromLocator, toLocator } from "../static/js/codeplug/qdmr.js";
 import { convertersFor } from "../static/js/flasher/codeplug.js";
@@ -332,6 +332,185 @@ test("export: cpsSim's codeplug round-trips through YAML", () => {
 });
 const POWER_NAMED = new Set([0, 1, 3, 6, 9, 10]);
 
+// --- The radioFoundry block (3.7) ---
+
+// A codeplug with every mode: a Tier III system (Large, NET 7, two control channels), a P25 trunked system (WACN, an
+// identifier plan row, a site and its control channel), an NXDN system; channels of each kind, a plain DMR channel with
+// Accept Invalid CRC and a P25 unit ID. Made-up IDs and frequencies
+const MODES = `---
+version: 0.15.1
+settings: {defaultID: id1}
+radioIDs:
+  - dmr: {id: id1, name: Q0TST, number: 9990567}
+contacts:
+  - dmr: {id: cont1, name: TG 3100, ring: false, type: GroupCall, number: 3100}
+  - dmr: {id: cont2, name: TG 91, ring: false, type: GroupCall, number: 91}
+groupLists:
+  - {id: grp1, name: Trunk, contacts: [cont1, cont2]}
+channels:
+  - dmr:
+      id: ch1
+      name: T3 Talk
+      rxFrequency: 441.1 MHz
+      txFrequency: 446.1 MHz
+      colorCode: 1
+      timeSlot: TS1
+      contact: cont1
+      groupList: grp1
+      radioFoundry: {mode: T3, system: sys1, transmit: true, acceptInvalidCrc: true}
+  - dmr:
+      id: ch2
+      name: P25 Trunk
+      rxFrequency: 441.2 MHz
+      txFrequency: 446.2 MHz
+      contact: cont2
+      radioFoundry: {mode: P25T, system: sys2, transmit: false, fallback: ch3, settings: {followAll: true}}
+  - fm:
+      id: ch3
+      name: P25 Simplex
+      rxFrequency: 441.3 MHz
+      txFrequency: 441.3 MHz
+      radioFoundry: {mode: P25, ownFrequencies: true, settings: {squelch: 1, rxNac: 0x293, txNac: "34A"}}
+  - dmr:
+      id: ch4
+      name: NXDN Ops
+      rxFrequency: 441.4 MHz
+      txFrequency: 446.4 MHz
+      contact: cont1
+      radioFoundry: {mode: NXDN, system: sys3, ownFrequencies: true, settings: {rate9600: false, rxRan: 5, txRan: 5}}
+  - dmr:
+      id: ch5
+      name: Repeater
+      rxFrequency: 439.5 MHz
+      txFrequency: 431.9 MHz
+      colorCode: 1
+      radioFoundry: {acceptInvalidCrc: true}
+  - fm:
+      id: ch6
+      name: FM
+      rxFrequency: 146.52 MHz
+      radioFoundry: {acceptInvalidCrc: true}
+radioFoundry:
+  systems:
+    - id: sys1
+      type: T3
+      name: Ham Trunk
+      transmit: true
+      authenticates: false
+      sharing: identity
+      fallback: ch5
+      settings: {model: 2, net: 7, category: a, colorCode: 1, registerTalkgroups: true, followAll: false, sites: [1, 2]}
+      entries:
+        - {chan: 1, control: true, rxHz: 441.1 MHz, txHz: 446.1 MHz, cc: 1}
+        - {chan: 2, control: true, rxHz: 441.15 MHz, txHz: 446.15 MHz}
+    - id: sys2
+      type: P25T
+      name: Ham P25
+      transmit: false
+      settings: {wacn: 0xA4321, sysid: 0x2A1, ccNac: ~, holdS: 3}
+      entries:
+        - {cls: 2, group: 1, baseHz: 441 MHz, spacingHz: 12500, txOffsetHz: 5000000, bwHz: 12500}
+        - {cls: 1, group: 0, rfss: 1, site: 1}
+        - {cls: 0, group: 0, control: true, rxHz: 441.2 MHz, txHz: 446.2 MHz, iden: 1, chanNo: 16}
+    - {id: sys3, type: NXDN, name: NX Net, ownId: 1234}
+  modeSettings:
+    P25: {unitId: 9990567}
+...
+`;
+
+const blockOf = (m) => ({
+	systems: m.systems.map((s) => ({ ...s, fallback: s.fallback?.name ?? null, raw: undefined, entries: s.entries.map((e) => ({ ...e, raw: undefined })) })),
+	channels: m.channels.map((c) => [c.name, c.kind ?? 0, c.system?.name ?? null, c.tagTx ?? null, c.baseOwn ?? null, c.fallback?.name ?? null, c.params ?? null, c.acceptBadCrc, c.mode, c.rxOnly, c.rxHz]),
+	settings: m.modeSettings,
+});
+
+test("radioFoundry block: every mode's systems and channels read, save and read again the same", () => {
+	const m = empty();
+	const r = importQdmr(m, MODES);
+	assert.deepEqual(r.notes, []);
+	const [t3, p25t, conv, nx, rep, fm] = m.channels;
+	const [s1, s2, s3] = m.systems;
+	assert.deepEqual(m.systems.map((s) => [s.number, s.type, s.name, s.tx]), [[1, 1, "Ham Trunk", true], [2, 3, "Ham P25", false], [3, 4, "NX Net", true]]);
+	assert.deepEqual([s1.fields.model, s1.fields.net, s1.fields.category, s1.fields.colorCode, s1.fields.registerTalkgroups, s1.fields.sites], [2, 7, "a", 1, true, [1, 2]]);
+	assert.equal(s1.fallback, rep);
+	assert.deepEqual(s1.entries.map((e) => [e.cls, e.chan, e.control, e.rxHz, e.txHz, e.cc]), [[0, 1, true, 441100000, 446100000, 1], [0, 2, true, 441150000, 446150000, null]]);
+	assert.deepEqual([s2.fields.wacn, s2.fields.sysid, s2.fields.ccNac, s2.fields.holdS], [0xA4321, 0x2A1, null, 3]);
+	assert.deepEqual(s2.entries.map((e) => [e.cls, e.group]), [[2, 1], [1, 0], [0, 0]]);
+	assert.deepEqual([s2.entries[0].txOffsetHz, s2.entries[2].iden, s2.entries[2].chanNo], [5000000, 1, 16]);
+	assert.equal(s3.ownId, 1234);
+	// a channel of a kind without frequencies of its own holds its system's first control channel, receive only
+	assert.deepEqual([t3.kind, t3.system, t3.tagTx, t3.acceptBadCrc, t3.mode, t3.rxOnly, t3.rxHz], [1, s1, true, true, "dmr", true, 441100000]);
+	assert.deepEqual([p25t.kind, p25t.system, p25t.tagTx, p25t.fallback, p25t.params], [3, s2, false, conv, { followAll: true }]);
+	assert.deepEqual([conv.kind, conv.baseOwn, conv.params], [2, true, { squelch: 1, rxNac: 0x293, txNac: 0x34A }]);
+	assert.deepEqual([nx.kind, nx.system, nx.params], [4, s3, { rate9600: false, squelch: 0, rxRan: 5, txRan: 5 }]);
+	// Accept Invalid CRC: a DMR channel's setting, none on FM
+	assert.deepEqual([rep.kind, rep.acceptBadCrc, fm.acceptBadCrc], [0, true, false]);
+	assert.deepEqual(m.modeSettings[2], { unitId: 9990567 });
+
+	// saved: hex fields as 0x numbers, frequencies with units; read again, the same
+	const out = exportQdmr(m);
+	assert.deepEqual(out.notes, []);
+	assert.match(out.text, /wacn: 0xA4321, sysid: 0x2A1, ccNac: ~/);
+	assert.match(out.text, /rxNac: 0x293, txNac: 0x34A/);
+	assert.match(out.text, /\{cls: 0, control: true, chan: 1, rxHz: 441\.1 MHz, txHz: 446\.1 MHz, cc: 1\}/);
+	const m2 = empty();
+	assert.deepEqual(importQdmr(m2, out.text).notes, []);
+	assert.deepEqual(blockOf(m2), blockOf(m));
+	assert.equal(exportQdmr(m2).text, out.text);
+
+	// and through the image
+	const d = decode(encode(m));
+	assert.deepEqual(blockOf(d).channels, blockOf(m).channels);
+	assert.deepEqual(d.systems.map((s) => [s.name, s.fields, s.entries.length]), m.systems.map((s) => [s.name, s.fields, s.entries.length]));
+});
+
+test("radioFoundry block: keys are never written; a system read back keeps the keys the model had", () => {
+	const m = empty();
+	importQdmr(m, MODES);
+	const key = "00112233445566778899AABBCCDDEEFF";
+	Object.assign(m.systems[0], { needsKey: true, secret: { key, psn: 0x123456 } });
+	m.systems[2].trafficKeys = [{ id: 1, seed: 4321 }];
+	m.channels[3].params.txKeyId = 1;
+	const { text, notes } = exportQdmr(m);
+	assert.deepEqual(notes, [{ code: "mode_keys", n: 2 }]);
+	assert.doesNotMatch(text, /00112233|seed|psn|secret|trafficKeys/i);
+	assert.match(text, /authenticates: true/);
+	assert.match(text, /txKeyId: 1/);
+	// into the same model: the same systems keep their keys
+	importQdmr(m, text);
+	assert.deepEqual(m.systems[0].secret, { key, psn: 0x123456 });
+	assert.deepEqual(m.systems[2].trafficKeys, [{ id: 1, seed: 4321 }]);
+	assert.equal(m.channels[3].params.txKeyId, 1);
+	// into another: none, and the system says it needs one
+	const other = empty();
+	importQdmr(other, text);
+	assert.equal(other.systems[0].secret, null);
+	assert.ok(validate(other).some((p) => p.code === "mode_no_secret"));
+});
+
+test("radioFoundry block: modes and system types this editor doesn't know are left out with a note", () => {
+	const m = empty();
+	const r = importQdmr(m, MODES.replace("mode: P25T,", "mode: M17,").replace("type: NXDN", "type: DSTAR"));
+	assert.deepEqual(r.notes, [{ code: "mode_unknown", n: 3 }]);
+	assert.deepEqual(m.systems.map((s) => s.name), ["Ham Trunk", "Ham P25"]);
+	assert.equal(m.channels[1].kind, 0);
+	// NXDN's system is optional: its channel stays NXDN, on no system
+	assert.deepEqual([m.channels[3].kind, m.channels[3].system], [4, null]);
+});
+
+test("radioFoundry block: a file without one keeps the model's systems; a model without modes writes none", () => {
+	const m = empty();
+	importQdmr(m, MODES);
+	const systems = m.systems;
+	importQdmr(m, SAMPLE);
+	assert.equal(m.systems, systems);
+	assert.equal(m.systems[0].fallback, null, "the channel it named was replaced");
+	assert.ok(m.channels.every((c) => !c.kind));
+	const plain = empty();
+	importQdmr(plain, SAMPLE);
+	assert.doesNotMatch(exportQdmr(plain).text, /radioFoundry/);
+});
+
 // --- Tools page converters ---
 
 test("converters: qdmr YAML to an image and an image to YAML", async () => {
@@ -399,3 +578,43 @@ test("dmrconf encodes the exported YAML to the same channels, contacts, lists an
 		rmSync(dir, { recursive: true, force: true });
 	}
 });
+
+test("dmrconf reads a file with the radioFoundry block and ignores the block", { skip: !DMRCONF && "dmrconf is not installed" }, () => {
+	const m = empty();
+	importQdmr(m, MODES);
+	const dir = mkdtempSync(join(tmpdir(), "rfoundry-qdmr-"));
+	try {
+		writeFileSync(join(dir, "c.yaml"), exportQdmr(m).text);
+		execFileSync("dmrconf", ["encode", "-y", "-R", "openuv380", join(dir, "c.yaml"), join(dir, "c.dfu")], { stdio: "pipe" });
+		const q = decode(fromDfu(new Uint8Array(readFileSync(join(dir, "c.dfu")))));
+		assert.deepEqual(q.channels.map((c) => c.name), m.channels.map((c) => c.name));
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+// --- The recommended ham systems' templates (docs/spec/ham-trunking.md) ---
+
+import { newHamSystem, identityKey } from "../static/js/codeplug/channelmodes.js";
+
+for (const [file, type] of [["ham-tier3.yaml", 1], ["ham-p25-trunked.yaml", 3]]) {
+	test(`template ${file}: opens without notes, holds the recommended system, validates and encodes`, () => {
+		const m = empty();
+		const r = importQdmr(m, readFileSync(new URL(`../../docs/examples/${file}`, import.meta.url), "utf8"));
+		assert.deepEqual(r.notes, []);
+		const [s] = m.systems;
+		const ctl = s.entries.find((e) => e.control);
+		const want = newHamSystem(m, type, { rxHz: ctl.rxHz, txHz: ctl.txHz, site: 0 });
+		assert.equal(s.type, type);
+		assert.deepEqual(s.fields, want.fields);
+		assert.equal(identityKey(s), identityKey(want));
+		assert.deepEqual([s.tx, s.needsKey], [true, false]);
+		const [c] = m.channels;
+		assert.deepEqual([c.kind, c.system, c.tagTx, c.rxHz, c.txHz], [type, s, true, ctl.rxHz, ctl.txHz]);
+		// every talkgroup is BrandMeister's, and fits P25's 16 bits
+		assert.ok(m.contacts.every((x) => x.id >= 1 && x.id <= 0xFFFF));
+		assert.deepEqual(validate(m).filter((p) => p.level === "error"), []);
+		const d = decode(encode(m));
+		assert.deepEqual(d.systems[0].fields, s.fields);
+	});
+}
