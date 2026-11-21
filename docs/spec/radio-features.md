@@ -319,8 +319,9 @@ the register is clamped to 0-42 dB (`hrc7000_mic_db`). On an HR_C6000 radio the 
 3 dB steps, so `hrc6000_mic_gain` rounds the offset to the nearest step and clamps the result to 0-15: steps 0-10 give
 -3, -3, -2, -1, -1, 0, +1, +1, +2, +3, +3 register steps around the board's level (-9 to +9 dB). Host audio injected
 into the microphone input for FM transmit (`fm_tx_inject`) keeps the board's level, so the setting doesn't move a
-host's audio. The VOX meter reads the same codec ADC, so on these radios
-the mic gain also moves the VOX level. Without `CONFIG_DMR` and without the hook the row is dimmed.
+host's audio. On an HR_C7000 radio the VOX meter reads the same codec ADC, so the mic gain also moves the VOX level.
+The HR_C6000 boards read VOX from an MCU ADC level tap ahead of the codec, so the setting leaves VOX alone. Without
+`CONFIG_DMR` and without the hook the row is dimmed.
 
 ### 3.7 DTMF transmit (CONFIG_DTMF)
 
