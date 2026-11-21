@@ -44,10 +44,9 @@ channel when MODEL and NET match its system, the site is in its site list (empty
 would need one system for each side, and a metro area that spans the line would be two networks. With one MODEL and
 NET, every ham site is a site of one network to the radio. The radio moves to a neighbor site that the current site
 announces (Adjacent_Site, [dmr-trunking.md](dmr-trunking.md) 7.18) or whose control channel is among the system's,
-up to 4 per system. Sites of one operator
-carry calls between them over their backbone. Sites of different operators are separate backbones and still one
-network on the air: each site is its own registration area, so the radio registers again at each site, and the
-current site carries the radio's calls.
+up to 4 per system. Sites of one operator carry calls between them over their backbone. Sites of different operators
+are separate backbones and still one network on the air: each site is its own registration area, so the radio
+registers again at each site, and the current site carries the radio's calls.
 
 **Why Huge, not Large.** Large has 16 NETs and 256 sites in each. A single ham NET under Large leaves 256 site
 numbers for the country, which runs short where sites are dense. Huge leaves 1024 under one NET. Several operators'
