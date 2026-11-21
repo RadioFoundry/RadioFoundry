@@ -28,7 +28,7 @@
 #define SAFE_W			(PANEL_W - CONFIG_DISPLAY_INSET_LEFT - CONFIG_DISPLAY_INSET_RIGHT)
 #define SAFE_H			(PANEL_H - CONFIG_DISPLAY_INSET_TOP - CONFIG_DISPLAY_INSET_BOTTOM)
 #if GFX_FB_SAFE_AREA
-// board.mk sizes the frame buffer for the default insets: smaller ones on the command line need a larger one there
+// config.mk sizes the frame buffer from the same insets; this catches the two drifting apart
 _Static_assert((SAFE_W + 1u) / 2u * SAFE_H <= GFX_FB_BYTES, "the safe area's frame buffer exceeds GFX_FB_BYTES");
 #endif
 

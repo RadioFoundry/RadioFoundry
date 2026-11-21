@@ -11,7 +11,5 @@ BOARD_DIRS := boards/dm32 drivers/rf/rfbus drivers/rf/fd6818 drivers/rf/subaudio
 	drivers/input/keymatrix drivers/input/quadrature drivers/input/sharedptt drivers/cal/baofeng \
 	drivers/bcast/rda5807m drivers/bus/i2c_gpio
 # The 240x320 panel at full resolution in 16 colors (display_dm32.c). The frame buffer holds only the safe area inside
-# the bezel's insets (config.mk: 10 px left and right, 5 top and bottom): 220 x 310 at 4 bits, 34,100 B instead of the
-# whole panel's 38,400. Nothing is drawn in the insets; the panel's own memory keeps their background. Smaller insets
-# need this raised (display_dm32.c checks it at build time). 320 panel rows
-MCU_DEFS   += -DGFX_INDEXED=1 -DGFX_FB_SAFE_AREA=1 -DGFX_FB_BYTES=34100u -DGFX_MAX_ROWS=320u
+# the bezel's insets, so config.mk sizes it (GFX_FB_BYTES) once the insets are known. 320 panel rows
+MCU_DEFS   += -DGFX_INDEXED=1 -DGFX_FB_SAFE_AREA=1 -DGFX_MAX_ROWS=320u
