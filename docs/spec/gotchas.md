@@ -457,7 +457,7 @@ instead of resetting.
 
 **7.6 UDT location and LRRP.** UDT NMEA: DPF 0, format 5, opcode 0x1A, one Rate 1/2 block, CRC-CCITT unmasked (an assumption;
 Motorola / Hytera receivers may differ). Positions older than 30 s go out without the fix flag. LRRP
-periodic interval minimum 5 s, distance checked every interval (30 s default), at most 2 triggers, emergency and one
+periodic interval 30 s to 1 day, distance checked every interval (30 s default), at most 2 triggers, emergency and one
 shot refused (0x0A).
 
 **7.7 TMS and compressed LRRP.** TMS (header, UDP port 4007) has its own switch, `CONFIG_DMR_TMS`

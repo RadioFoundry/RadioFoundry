@@ -2674,6 +2674,26 @@ static void test_hotspot(void)
 	CHECK(hw.tx_calls == tx0 + 2 && hw.tx_power == 2 && hw.keyed);
 	CHECK(rekeys == rk && hw.tx_off_calls == off0 + 1);
 	off0 = hw.tx_off_calls;
+	// TX inhibit drops the armed keying at once and holds it off; cleared, the keying is armed again
+	radio_settings_t set = sm.set;
+	set.tx_inhibit = true;
+	radio_sm_set_settings(&sm, &set, now);
+	CHECK(!sm.dmr_keyed && hw.rx_hz == 438800000 && hw.tx_calls == tx0 + 2);
+	req(RREQ_HS_POWER, 255);
+	radio_req_t f = { RREQ_HS_FREQ, 438800000, 438800000 };
+	radio_sm_request(&sm, &f, now);
+	CHECK(!sm.dmr_keyed && hw.tx_calls == tx0 + 2);
+	set.tx_inhibit = false;
+	radio_sm_set_settings(&sm, &set, now);
+	CHECK(sm.dmr_keyed && hw.tx_calls == tx0 + 3);
+	// Nor armed on a critical battery
+	sm.batt.level = BATT_CRITICAL;
+	req(RREQ_HS_POWER, 255);
+	CHECK(!sm.dmr_keyed && hw.tx_calls == tx0 + 3 && hw.rx_hz == 438800000);
+	sm.batt.level = BATT_OK;
+	req(RREQ_HS_POWER, 255);
+	CHECK(sm.dmr_keyed && hw.tx_calls == tx0 + 4);
+	off0 = hw.tx_off_calls;
 	r.arg = 121500000;	// refused: the radio stays where it was
 	r.arg2 = 121500000;
 	radio_sm_request(&sm, &r, now);
@@ -3603,6 +3623,25 @@ static void test_hotspot_cwid(void)
 	CHECK(sm.cw_phase == 0 && tone.hz == 0 && !hw.led[LED_RED]);
 	mm_cmd(MMDVM_GET_STATUS, NULL, 0);
 	CHECK(!(mm_last[5] & MMDVM_STATUS_TX));
+
+	// TX inhibit: no carrier for the ID, counted as not sent, the TX flag clear; the hotspot's keying back after it
+	radio_settings_t set = sm.set;
+	set.tx_inhibit = true;
+	radio_sm_set_settings(&sm, &set, now);
+	CHECK(!sm.dmr_keyed);
+	int tx0 = hw.tx_calls;
+	radio_hs_cw_get_stats(&cs0);
+	mm_cmd(MMDVM_SEND_CWID, (const uint8_t *)"AB", 2);
+	hs_run(300);
+	radio_hs_cw_get_stats(&cs);
+	CHECK(hw.tx_calls == tx0 && tone.hz == 0 && sm.cw_phase == 0 && cs.sent == cs0.sent && !cs.active);
+	mm_cmd(MMDVM_GET_STATUS, NULL, 0);
+	CHECK(!(mm_last[5] & MMDVM_STATUS_TX));
+	set.tx_inhibit = false;
+	radio_sm_set_settings(&sm, &set, now);
+	hs_run(100);
+	CHECK(sm.dmr_keyed && hw_mode == RADIO_MODE_DMR);
+	radio_hs_cw_get_stats(&cs0);
 
 	// Hotspot mode left in the middle of an ID: cut, counted as not sent
 	mm_cmd(MMDVM_SEND_CWID, (const uint8_t *)"TEST", 4);
@@ -9721,6 +9760,38 @@ static void test_t3_radio_check(void)
 	sim.repeater = false;
 }
 
+// What the trunking engine sends by itself (here the answer to the TSCC's check before data to us) keys nothing with
+// TX inhibit on: it goes through the same gate as PTT. With the inhibit off the same check is answered
+static void test_t3_inhibit(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	radio_settings_t set = sm.set;
+	set.tx_inhibit = true;
+	radio_sm_set_settings(&sm, &set, now);
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_IND_DATA;
+	h.u.ahoy.dst = T3_OWN;
+	h.u.ahoy.src = 1000001u;
+	unsigned air = sim.air_count, acks = t3_sent(T3_OP_C_ACKU);
+	unsigned inh = radio_t3v.send_inhibit, key = radio_t3v.send_key;
+	int tx = hw.tx_calls;
+	t3_csbk_rx(&h, 1);
+	t3_site_run(300);
+	CHECK(sim.air_count == air && t3_sent(T3_OP_C_ACKU) == acks && hw.tx_calls == tx && !sm.dmr_keyed);
+	CHECK(radio_t3v.send_inhibit > inh && radio_t3v.send_key == key);	// counted as inhibit, not a board refusal
+	set.tx_inhibit = false;
+	radio_sm_set_settings(&sm, &set, now);
+	t3_site_run(3000);
+	t3_csbk_rx(&h, 1);
+	t3_site_run(300);
+	CHECK(t3_sent(T3_OP_C_ACKU) > acks);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
 #if CONFIG_DMR_TRUNK_GW
 // Digits from the UI (RREQ_T3_DIAL) go to the system in use: PTT to the PSTN gateway asks for the call, and the
 // digits go up when the gateway asks; an empty string drops them, and the call is refused again
@@ -10180,6 +10251,51 @@ static void test_t3_other_system(void)
 	CHECK(sm.view.tx_deny == TXDENY_TRUNK && radio_t3v.why == RADIO_TRUNK_WHY_NO_CC && hw.tx_calls == keyed);
 	req(RREQ_PTT, 0);
 	run(100);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
+// The control channel carries a trunking system of another kind: CSBKs of its own FID with a good CRC, no ETSI Aloha.
+// The view names it (other_fid, no C_SYScode) and PTT is refused saying so, with nothing sent
+static void test_t3_other_kind(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	radio_t3_setup_t *s = radio_t3_staged();
+	radio_t3_reset(s);
+	s->cfg.own_id = T3_OWN;
+	s->cfg.auth.model = T3_MODEL_SMALL;
+	s->cfg.auth.net = 5;
+	s->cfg.auth.category = T3_PAR_A;
+	s->cfg.opts = T3_OPT_PRIVATE;
+	s->cc = 2;
+	s->cfg.ctrl[0] = (t3_chan_t){ .lcn = 1, .rx_hz = T3_RX_HZ, .tx_hz = T3_TX_HZ, .cc = 2 };
+	s->cfg.nctrl = 1;
+	s->chans[0] = s->cfg.ctrl[0];
+	s->nchans = 1;
+	s->cfg.tg[0] = (t3_tg_t){ T3_TG, T3_TG_LISTEN | T3_TG_TALK };
+	s->cfg.ntg = 1;
+	radio_t3_fix(s);
+	req(RREQ_T3, RADIO_T3_START);
+	for (int i = 0; i < 25; i++) {
+		uint8_t d[T3_CSBK_BYTES] = { 0x81, 0x06, 0x12, 0x13, 0x17, 0x18, 0x1b, 0x00, 0x00, 0x07 };
+		t3_crc_append(d, T3_CRC_MASK_CSBK);
+		t3_data_rx(DMR_BURST_CSBK, d, 1);
+		run(60);
+	}
+	radio_sm_t3_brief(&sm);	// as the radio task does before it publishes the view
+	CHECK(radio_t3v.state == T3_HUNT && radio_t3v.other == 0 && radio_t3v.other_fid == 0x06 &&
+	      sm.view.t3.other_fid == 0x06);
+	int keyed = hw.tx_calls;
+	unsigned air = sim.air_count;
+	req(RREQ_PTT, 1);
+	run(300);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TRUNK && radio_t3v.why == RADIO_TRUNK_WHY_OTHER_KIND);
+	CHECK(hw.tx_calls == keyed && sim.air_count == air);
+	req(RREQ_PTT, 0);
+	run(T3_OTHER_MS + 500);
+	CHECK(radio_t3v.other_fid == 0);
 	req(RREQ_T3, RADIO_T3_STOP);
 	run(100);
 	sim.repeater = false;
@@ -11089,6 +11205,7 @@ int main(void)
 	test_t3_sdata();
 	test_t3_udt_sms();
 	test_t3_radio_check();
+	test_t3_inhibit();
 	test_t3_clear_slot();
 #if CONFIG_DMR_TRUNK_GW
 	test_t3_dial();
@@ -11115,6 +11232,7 @@ int main(void)
 	test_t3_no_id();
 	test_t3_system_late();
 	test_t3_other_system();
+	test_t3_other_kind();
 	test_t3_fallback();
 	test_t3_follow_all();
 	test_t3_learn_syscode();

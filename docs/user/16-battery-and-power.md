@@ -53,7 +53,8 @@ receiving audio and returns to its set level when idle.
 
 **Settings > Display > Backlight Dim/Off** sets two times: when the backlight dims to a fifth of the brightness, and
 when it goes off. `30s/2m` dims after 30 s and goes off after 2 minutes. `30s/dim` dims after 30 s and stays on,
-readable at a glance (on a desk or a bench), at the cost of some battery. Any key brings it back.
+readable at a glance (on a desk or a bench), at the cost of some battery. Any key brings it back; with the
+backlight off, that key only turns it on, except PTT, Monitor and Emergency, which act at once.
 
 The backlight also comes on for what needs you:
 

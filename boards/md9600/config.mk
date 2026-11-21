@@ -58,9 +58,10 @@ BOARD_REQUIRED := FM
 # Supported, but the maximal configuration leaves PPP off: it stands in for the USB network adapter on UART-only radios
 # (docs/spec/ppp.md), and this one has the adapter. The all-feature image exceeds app FLASH with satellite tracking
 # enabled, so only the maximal build turns it off; the default build keeps it on.
-MAXIMAL_SKIP := NET_PPP
+MAXIMAL_SKIP := NET_PPP LANG_ES LANG_IT LANG_FR LANG_ZH
 MAXIMAL_VARS := CONFIG_SATELLITE_TLE=n
 # English only (the owner's choice, 2026-11-03)
 CONFIG_LANG_ES ?= n
+# The maximal configuration leaves the other languages and their fonts (about 110 KB) out of its flash check.
 CONFIG_RX_EXT ?= n
 BOARD_NOT_WRITTEN += RX_EXT	# no receive range in its chip documents (a PLL and an IF chain, no single receiver chip)

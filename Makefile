@@ -147,6 +147,11 @@ APP_ASM := $(foreach d,$(APP_DIRS),$(sort $(wildcard $(d)/*.S)))
 ifeq ($(CONFIG_STUB_ENTRY)$(CONFIG_DEBUGLINK),yn)
 APP_SRC += core/debuglink/dl_frame.c
 endif
+# Accept invalid CRC's repeat check, shared by the DMR call, Tier III and P25 trunking: core/fec is globbed with the air
+# interface only
+ifeq ($(CONFIG_DMR)$(CONFIG_AIR),yn)
+APP_SRC += core/fec/rx_seen.c
+endif
 # The fast codeplug protocol (core/cps is globbed with CPS_OPENFW): only with its own switch
 ifneq ($(CONFIG_CPS_FAST),y)
 APP_SRC := $(filter-out core/cps/cps_fast.c core/cps/cps_lz4.c,$(APP_SRC))
