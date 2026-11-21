@@ -94,7 +94,7 @@ number for every band (`dvsi_shape_q12`, per 500 Hz band): comparing the same au
 frame by frame (18 Nov) found the compression the same in every band, and a balance across the bands on top of it
 (`dvsi_eq_q12`), left off at first. It is on since 21 Nov (below), re-measured that day against the current encoder:
 -5.2 +0.3 +1.8 +2.1 +1.4 +1.6 -1.7 -4.9 dB. Our decoder doesn't undo it, so on our own round trip it costs STOI
-0.866 -> 0.810 (the 500 Hz cut alone 0.820); an ID-51 and a DM-32 hearing the same over decide whether to keep all of
+0.866 -> 0.810 (the 500 Hz cut alone 0.820); an ID-51 and one of our own radios hearing the same over decide whether to keep all of
 it. `flat` in the analyzer's state leaves it out, for the quality tests (7). The pitch conventions are what every IC-9700 frame
 showed (347 of speech, 490 of whistle and hum): on their own they did not make our frames intelligible, but they keep
 us inside what DVSI decoders are known to receive. `full_depth` in the analyzer's state turns the match off, for tests

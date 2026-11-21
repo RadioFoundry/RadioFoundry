@@ -574,8 +574,8 @@ static void dc_block(dstar_mbe_ana_t *s, const int16_t *pcm, int16_t *dst)
 // into the speech band, and it takes bass peaks out of the decoder's headroom now the leveler aims 6 dB higher
 // (dstar_mbe_level.c). The cost, on our own round trip, where no decoder undoes it (the research's quality run, 12
 // inputs, leveler off): STOI 0.866 -> 0.810, MCD 20.4 -> 37.3 dB; the 18 Nov table 0.798, the 500 Hz cut alone 0.820.
-// An ID-51 and a DM-32 hearing the same over decide whether to keep all of it; the cut alone ({ -3538, 0, ... }) is
-// the fallback. The research codec carries the same table, so the frames stay its bit for bit.
+// An ID-51 and one of our own radios hearing the same over decide whether to keep all of it; the cut alone
+// ({ -3538, 0, ... }) is the fallback. The research codec carries the same table, so the frames stay its bit for bit.
 //
 // Pitch conventions seen in every IC-9700 frame (347 of speech, 490 of whistle and hum): all-unvoiced frames always at
 // b0 34, voiced frames never above b0 113. On their own they did not make our frames intelligible, but they cost
