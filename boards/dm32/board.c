@@ -4,6 +4,7 @@
 #include "board.h"
 #include "config.h"
 #include "dm32.h"
+#include "bands_dm32.h"
 #include "pins.h"
 #include "platform.h"
 #include "hrc_afsk.h"
@@ -21,23 +22,6 @@
 #if CONFIG_RX_EXT
 static bool rx_ext_on;
 #endif
-
-static const band_t bands[] = {
-	{ 136000000, 174000000, true },
-	{ 400000000, 480000000, true },
-#if CONFIG_AM_RX
-	{ 108000000, 136000000, false },	// the air band, AM receive only (docs/spec/airband-and-broadcast.md 3)
-#endif
-#if CONFIG_BCAST_FM
-	{ 65000000, 108000000, false },		// the broadcast band, on the RDA5807M (airband-and-broadcast.md 4)
-#endif
-#if CONFIG_RX_EXT
-	// Receive only past the rated bands, while the user turns it on: the FD6818 band table (hardware-dm32.md 8.3). Keep these last
-	{ 16000000, 65000000, false },
-	{ 174000000, 400000000, false },
-	{ 480000000, 740000000, false },
-#endif
-};
 
 // Five of the power levels 0..8 of hardware-dm32.md 11.3: very low, low, mid, a step above mid, high (radio_dm32.c).
 // Labels are nominal: the radio is rated 5 W VHF / 4 W UHF at high power; check against a meter at the bring-up
@@ -92,10 +76,10 @@ const board_t board = {
 	.name = "DM-32UV",
 	.caps = CAP_KEYPAD | CAP_ENCODER | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR | CAP_BEEP_NOT_ON_AIR : 0) |
 		(CONFIG_AM_RX ? CAP_AM_RX : 0) | (CONFIG_BCAST_FM ? CAP_BCAST_FM : 0),
-	.bands = bands,
-	.band_count = sizeof(bands) / sizeof(bands[0]),
+	.bands = dm32_bands,
+	.band_count = sizeof(dm32_bands) / sizeof(dm32_bands[0]),
 #if CONFIG_RX_EXT
-	.rx_ext_count = 3,
+	.rx_ext_count = DM32_RX_EXT_COUNT,
 	.rx_ext_on = &rx_ext_on,
 #endif
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
