@@ -51,7 +51,8 @@ WRITE_FLOOR = 0x700000        # RadioFoundry never writes below this (hardware-d
 FLASH_SIZE = 0x1000000
 STOCK_PAGES = (0x000000, 0x0C9000)     # stock codeplug pages and the factory calibration page (hardware-dm32.md 10.1)
 NAME_MAX = 16                 # names in the open-firmware layout (open-firmware-cps.md 7.3)
-BANDS = ((136000000, 174000000), (400000000, 480000000))     # boards/dm32/board.c
+TX_BANDS = ((136000000, 174000000), (400000000, 480000000))  # boards/dm32/bands_dm32.h
+RX_BANDS = ((136000000, 174000000), (400000000, 520000000))  # the same: 480-520 MHz receives, never transmits
 CPS_BLOCK = 32                # bytes per CPS request, as qdmr
 BULK_BLOCK = 512              # bytes per CPS read for the data flash backup
 CPS_CEILING = 0xF00000        # the native codeplug's last 1 MB starts here: open-firmware data stays below (board.c)
@@ -115,8 +116,8 @@ def parse_freq(text):
     return int(round(float(m.group(1)) * mult))
 
 
-def in_band(hz):
-    return any(lo <= hz <= hi for lo, hi in BANDS)
+def in_band(hz, bands=RX_BANDS):
+    return any(lo <= hz <= hi for lo, hi in bands)
 
 
 def conversion_report(stock_text, rfoundry_text=None):
@@ -126,7 +127,7 @@ def conversion_report(stock_text, rfoundry_text=None):
     summary = m.codeplug_summary(stock_text)
     rep = {"stock": {k: len(ss.get(k) or []) for k in LIST_SECTIONS if ss.get(k)},
            "radio_ids": summary["radio_ids"], "over_limits": [], "long_names": [], "non_ascii": [],
-           "out_of_band": [], "lost_sections": [], "rfoundry": None, "renamed": []}
+           "out_of_band": [], "rx_only": [], "lost_sections": [], "rfoundry": None, "renamed": []}
     for key, n, lim, dropped in m.limit_report(summary):
         rep["over_limits"].append({"section": key, "count": n, "limit": lim, "dropped": dropped})
     for key in m.RFOUNDRY_LIMITS:
@@ -137,10 +138,15 @@ def conversion_report(stock_text, rfoundry_text=None):
                 rep["long_names"].append([key, name, name[:NAME_MAX]])
     for item in ss.get("channels") or []:
         name = m.item_field(item, "name") or "?"
-        bad = [f for f in (parse_freq(m.item_field(item, "rxFrequency")), parse_freq(m.item_field(item, "txFrequency")))
-               if f is not None and not in_band(f)]
-        if bad:
+        rx, tx = parse_freq(m.item_field(item, "rxFrequency")), parse_freq(m.item_field(item, "txFrequency"))
+        bad = [f for f in (rx, tx) if f is not None and not in_band(f)]
+        if rx is not None and not in_band(rx):
+            rep["out_of_band"].append([name, "%.5f MHz" % (rx / 1e6)])
+        elif bad:
+            # a TX past every band the radio hears: the stock channel transmits somewhere RadioFoundry can't tune
             rep["out_of_band"].append([name, "%.5f MHz" % (bad[0] / 1e6)])
+        elif tx is not None and not in_band(tx, TX_BANDS):
+            rep["rx_only"].append([name, "%.5f MHz" % (tx / 1e6)])
     if rfoundry_text is not None:
         so = m.yaml_sections(rfoundry_text)
         rep["rfoundry"] = {k: len(so.get(k) or []) for k in LIST_SECTIONS if so.get(k) or ss.get(k)}
@@ -179,9 +185,13 @@ def format_report(rep):
         out.append("names that differ after the conversion (%d):" % len(rep["renamed"]))
         out += ["  %s: %r -> %r" % tuple(x) for x in rep["renamed"][:50]]
     if rep["out_of_band"]:
-        out.append("channels outside the DM-32's bands 136-174 / 400-480 MHz (%d; they won't work on RadioFoundry):"
+        out.append("channels outside the DM-32's bands 136-174 / 400-520 MHz (%d; they won't work on RadioFoundry):"
                    % len(rep["out_of_band"]))
         out += ["  %s (%s)" % tuple(x) for x in rep["out_of_band"]]
+    if rep["rx_only"]:
+        out.append("channels that transmit above 480 MHz (%d; RadioFoundry receives them and refuses PTT there):"
+                   % len(rep["rx_only"]))
+        out += ["  %s (TX %s)" % tuple(x) for x in rep["rx_only"]]
     out.append("")
     out.append("Not carried over in any case: the stock menu, key and display settings, scan lists, roaming, GPS /")
     out.append("APRS systems, encryption keys, the stock contact database. RadioFoundry's own settings start at defaults.")
@@ -919,6 +929,15 @@ def self_test():
     check(rep["non_ascii"] == [["contacts", "René"]], "non-ASCII names %r" % rep["non_ascii"])
     check(len(rep["renamed"]) == 2, "renamed after the round trip %r" % rep["renamed"])
     check(sorted(x[0] for x in rep["out_of_band"]) == ["6m FM", "Air"], "out of band %r" % rep["out_of_band"])
+    check(rep["rx_only"] == [], "receive only %r" % rep["rx_only"])
+    # 480-520 MHz receives and never transmits (#852): a channel there is kept, receive only; past 520 it isn't
+    uhft = conversion_report(SAMPLE_STOCK_YAML.replace("52525 kHz", "506.9375 MHz"))
+    check(sorted(x[0] for x in uhft["out_of_band"]) == ["Air"] and uhft["rx_only"] == [["6m FM", "506.93750 MHz"]],
+          "480-520 receive only %r %r" % (uhft["out_of_band"], uhft["rx_only"]))
+    check("refuses PTT there" in format_report(uhft) and "6m FM (TX 506.93750 MHz)" in format_report(uhft),
+          "receive only report text")
+    past = conversion_report(SAMPLE_STOCK_YAML.replace("52525 kHz", "520.0125 MHz"))
+    check(sorted(x[0] for x in past["out_of_band"]) == ["6m FM", "Air"] and past["rx_only"] == [], "past 520 MHz")
     check(rep["radio_ids"] == [9990001, 9990009], "radio IDs")
     text = format_report(rep)
     check("left out: Z69, Z70" in text and "scanLists" in text and "6m FM" in text, "report text")
