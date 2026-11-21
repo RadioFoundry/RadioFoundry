@@ -1547,7 +1547,7 @@ msgctxt "ACT_ROW_TALK_TO"
 msgid "Talk to "
 msgstr "Hablar a "
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "ACT_ROW_PRIVATE_CALL"
 msgid "Private call"
 msgstr "Llamada privada"
@@ -3568,6 +3568,11 @@ msgid "High contrast"
 msgstr "Alto contraste"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_VALUE_THEME_NIGHT"
+msgid "Night (red)"
+msgstr "Noche (rojo)"
+
+#: core/ui/ui_menus.c
 msgctxt "VALUE_DEFAULT"
 msgid "Default"
 msgstr "Predet."
@@ -3696,6 +3701,11 @@ msgstr "Emergencia"
 msgctxt "SET_VALUE_UPDOWN_CHANNEL"
 msgid "Channel"
 msgstr "Canal"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_VALUE_MSGFMT_AUTOMATIC"
+msgid "Automatic"
+msgstr "Automático"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_VALUE_MSGFMT_ETSI_SHORT"
@@ -4278,6 +4288,11 @@ msgid "Colors are for color screens"
 msgstr "Colores solo en pantallas color"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_WHY_NIGHT_RED_ONLY"
+msgid "Night theme: red only"
+msgstr "Tema noche: solo rojo"
+
+#: core/ui/ui_menus.c
 msgctxt "WHY_MIC_GAIN_NOT_IN_BUILD"
 msgid "Mic gain: not in this build"
 msgstr "Ganancia mic: no disponible"
@@ -4713,6 +4728,11 @@ msgid "Another system heard"
 msgstr "Se oye otro sistema"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_WHY_TRUNK_OTHER_KIND"
+msgid "Incompatible system"
+msgstr "Sistema incompatible"
+
+#: core/ui/ui_screens.c
 msgctxt "DENY_WHY_TRUNK_REG_REFUSED"
 msgid "Registration refused"
 msgstr "Registro rechazado"
@@ -4833,6 +4853,16 @@ msgid "DMR modem off"
 msgstr "Módem DMR apagado"
 
 #: core/ui/ui_screens.c
+msgctxt "TRUNK_TITLE_INCOMING_CALL"
+msgid "Incoming private call"
+msgstr "Llamada privada entrante"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_HINT_PTT_ANSWER"
+msgid "Press PTT to answer"
+msgstr "Pulse PTT para responder"
+
+#: core/ui/ui_screens.c
 msgctxt "TRUNK_STATE_FALLBACK"
 msgid "Fallback"
 msgstr "Respaldo"
@@ -4856,6 +4886,11 @@ msgstr "Buscando"
 msgctxt "TRUNK_STATE_IN_CALL"
 msgid "In call"
 msgstr "En llamada"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_CALLING"
+msgid "Calling"
+msgstr "Llamando"
 
 #: core/ui/ui_screens.c
 msgctxt "TRUNK_STATE_REFUSED"
@@ -4901,6 +4936,16 @@ msgstr "DMon"
 msgctxt "HOME_CHIP_PRIVACY"
 msgid "Priv"
 msgstr "Priv"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_KIND"
+msgid "Incompatible system"
+msgstr "Sistema incompatible"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_KIND_NOTE"
+msgid "Cannot join"
+msgstr "No se puede unir"
 
 #: core/ui/ui_screens.c
 msgctxt "TRUNK_MODEL_TINY"

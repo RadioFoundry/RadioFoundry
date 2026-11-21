@@ -21,19 +21,6 @@
 #include "hostlink/hostlink_ppp.h"
 #endif
 
-// The RTOS heap, and with it every task stack, in the CCM (as on the other STM32F4 radios): nothing on a stack or from
-// pvPortMalloc may be a DMA buffer
-uint8_t ucHeap[configTOTAL_HEAP_SIZE] RFOUNDRY_CPU_RAM_NOINIT __attribute__((aligned(8)));
-
-// Zero the CCM's .ccmbss (RFOUNDRY_CPU_RAM) like .bss: run from __libc_init_array before main and before any interrupt
-extern uint32_t _sccmbss[], _eccmbss[];
-static void ccm_zero(void)
-{
-	for (uint32_t *p = _sccmbss; p < _eccmbss; p++)
-		*p = 0;
-}
-__attribute__((section(".preinit_array"), used)) static void (*const ccm_zero_entry)(void) = ccm_zero;
-
 // Both bands on every revision (hardware-md9600.md 5.1, unverified). Transmit stays refused in radio_md9600.c until
 // the revision is confirmed and the PA calibration is read
 static const band_t bands[] = {

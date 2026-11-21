@@ -1134,7 +1134,25 @@ part's synthesizer never locks: no receive anywhere, and transmit far off freque
 RadioFoundry checks which part is fitted at start-up.
 
 Set-up B rows marked "user" were checked on one user's radio with the newer section; none are yet checked on a
-RadioFoundry test radio.
+RadioFoundry test radio. A second radio with the newer section (below) confirms the rows marked "user, 2".
+
+**A second radio.** A DM-32UV bought new, factory firmware `DM32.NRFB.01.050`, program flash GD (C8 40 14),
+data flash Boya (68 40 18; section 10), factory calibration page at data flash 0xB1000 (inside the scan of section 11).
+Firmware: RadioFoundry 5519a66 with changes outside the set-up B paths (`fd6818_setup_b.c`, `fd6818.c`, `rf_detect` in
+`radio_dm32.c`). The codec was taken from the radio's own program flash. What was checked, on a dummy load or with a second radio
+at low power and an SDR on the frequency:
+
+| Check | Result |
+|---|---|
+| Start-up check | `flash 684018 cal factory rf B` at every boot: set-up A did not lock, set-up B did |
+| FM receive | an FM handheld on 70 cm heard clearly |
+| FM transmit | received by a second radio; the carrier about 0.5 ppm high, measured with an SDR |
+| DMR transmit | a capture of a 6 s over decodes clean: 107 bursts, every LC, RS and CRC good, voice frames with no bit errors |
+| DMR both ways | a private call to a network echo service through a local repeater came back and played: the repeater heard the radio and the radio decoded the repeater, so the DMR 0x47 / 0x48 pair and RF_MODE bit 15 clear are right |
+| Codec | the program flash's code window matched the `DM32.NRFB.01.050 program flash` profile's SHA-256 (`8d7f57eb...`, `codec-dm32.md`): a second radio with this build carries the same code there |
+
+Not checked on this radio: CTCSS or DCS on transmit or receive, battery save (the receiver sleep row), registers 0x3D
+and 0x0C read back by hand, and air band AM (which set-up B doesn't have yet, below).
 
 | | Classic section (set-up A, 8.2-8.8) | Newer section (set-up B) |
 |---|---|---|
@@ -1142,16 +1160,17 @@ RadioFoundry test radio.
 | 0x37 | 0x1D0F / 0x1D1F / 0x1F0F / 0x1F1F | 0x9D1F (bit 15 set) |
 | 0x30 into RX / TX | idle, then 0xBFF1 / 0xC1FE | idle, 0x0200, then 0xBFF1 / 0xC1FE |
 | 0x1A, 0x40 | band words (8.3) | 0x1A not written; 0x40 = 0x34F0, on FM transmit 0x3480 + the calibration byte |
-| DMR 0x47 / 0x48 | 0x0140 / 0xBBBF | 0x6943 / 0xB2FD; the DM-1801 Pro's 0x0140 / 0xB2F5 gave no DMR sync (user) |
+| DMR 0x47 / 0x48 | 0x0140 / 0xBBBF | 0x6943 / 0xB2FD; the DM-1801 Pro's 0x0140 / 0xB2F5 gave no DMR sync (user); 0x6943 / 0xB2FD works both ways (user, 2) |
 | 0x50 around each switch to TX | not written | FM: 0xBB20 before, 0x3B20 after (user: after only); DMR burst: 0x3B18 after (user: 0x3B20) |
 | 0x2E / 0x2F at each receive tune | not written | 0x8608 / 0x1890 with CTCSS, 0x9608 / 0x9890 with DCS or none |
-| HR_C7000 RF_MODE bit 15 (RX IQ invert) | set | clear (user; set: DMR syncs but decodes nothing usable) |
+| HR_C7000 RF_MODE bit 15 (RX IQ invert) | set | clear (user; set: DMR syncs but decodes nothing usable). Clear: DMR decodes (user, 2) |
 | Receiver sleep (8.8) | 0x37 = 0x1D11 / 0x1D00, wake 0x1F1F, 0x1F0F | 0x37 = 0x9D17 (FM) / 0x9D00 (DMR), wake 0x9D1F (user: idle only) |
-| 0x0C bit 9 (synthesizer locked) on set-up A | set at every frequency tried, 136-520 MHz | never set (user) |
+| 0x0C bit 9 (synthesizer locked) on set-up A | set at every frequency tried, 136-520 MHz | never set (user; user, 2: the start-up check chose B) |
 | 0x0C bit 9 on set-up B | set | set |
 | 0x3D | reads 0x2AAB | reads 0 (user) |
 
-The data flash can't tell the sections apart: a Puya part (JEDEC 852018) is fitted with both.
+The data flash can't tell the sections apart: a Puya part (JEDEC 852018) is fitted with both. One radio has a Boya part
+(JEDEC 684018; section 10), which works like the others.
 
 Start-up check (`radio_dm32.c` `rf_detect`, `fd6818_detect`): set-up A, tuned to 145 MHz in RX, waits up to 20 ms
 for 0x0C bit 9 to read set three times in a row, 1 ms apart (the bit can read set once while the synthesizer
@@ -1229,9 +1248,9 @@ For the USB audio design ([usb-audio.md](usb-audio.md) 2). Not measured.
 
 | Item | Value |
 |---|---|
-| Chip | GigaDevice GD25Q128 class, 16 MB; later radios use Puya PY25Q128HA |
+| Chip | GigaDevice GD25Q128 class, 16 MB; later radios use Puya PY25Q128HA, and at least one radio a Boya part |
 | Bus | SPI master 0 (0x140A0000), CS on GPIO 0x12 (manual, low active) plus SER |
-| JEDEC ID (0x9F) | GD25Q128: C8 40 18; Puya: 85 20 18 (unverified). The driver accepts only part ID 0x4018, so a Puya radio fails the check |
+| JEDEC ID (0x9F) | GD25Q128: C8 40 18; Puya: 85 20 18 (unverified); Boya: 68 40 18 (measured: the RAM stub's ID reads, the diagnostics line, and a full 16 MB read checked against the chip's sector CRCs, on one radio; RadioFoundry's settings and codeplug areas worked on it). The driver sizes any part by its capacity byte (0x18: 16 MB) |
 | Read | 0x03 + 24-bit address |
 | Fast read | 0x0B (not used) |
 | Page program | 0x06 (write enable), then 0x02 + address + up to 256 bytes within one page |
@@ -1499,7 +1518,7 @@ Runs on a radio: `docs/testing/dm32-bringup.md` is the bring-up checklist and li
 | Host link | UART0 115200 (divisor 46): debug link, CPS, MMDVM hotspot, PPP. Receive by interrupt into a 1,024-byte ring, transmit by polling. No USB: the radio has no USB data port (the USB-C socket is on the battery pack and only charges it; 3.11), so `CONFIG_USB=n`, `CONFIG_HOSTLINK=y` | `platform/hrc7000/uart.c` |
 | Display | 240x320 in 16 colors (a 37.5 KB frame buffer of palette indexes); MADCTL 0xC0, inversion on | `boards/dm32/display_dm32.c`, `drivers/display/st7789` |
 | Keys | matrix 5x4 on LCD DB0-DB4 / GPIO 0x31-0x34 under the LCD bus lock; SK1 / SK2 as column-to-ground keys; encoder on the GPIO B interrupt (B edges, acked); every other input without interrupts | `input_dm32.c`, `drivers/input/keymatrix` |
-| Data flash | SPI0 + manual CS; any JEDEC ID with a known capacity (GD25Q128, Puya); writes and erases below 0x700000 refused. The core's areas (`hal_flash_map_t`): open-firmware EEPROM image 0x700000, settings ring 0x711000 (8 sectors), journal 0x719000 (2 sectors), open-firmware flash image 0x720000 to 0xF00000, native codeplug 0xF00000 (1 MB); no calibration window, no TFTP staging area | `flash_dm32.c` |
+| Data flash | SPI0 + manual CS; any JEDEC ID with a known capacity (GD25Q128, Puya, Boya); writes and erases below 0x700000 refused. The core's areas (`hal_flash_map_t`): open-firmware EEPROM image 0x700000, settings ring 0x711000 (8 sectors), journal 0x719000 (2 sectors), open-firmware flash image 0x720000 to 0xF00000, native codeplug 0xF00000 (1 MB); no calibration window, no TFTP staging area | `flash_dm32.c` |
 | Calibration | 11, read only; a decoded copy at 0x710000 as a fallback; UHF below 400 MHz clamps to the first point | `drivers/cal/baofeng/baofeng_cal.c` |
 | Radio | FD6818 bit-banged (each frame with interrupts off: the DMR interrupts switch it per burst); C7000 FM and TX sub-audio, FD6818 RX sub-audio; PA drive on DAC B from the calibration | `radio_dm32.c`, `drivers/rf/fd6818`, `drivers/modem/hrc7000` |
 | DMR | the HR_C7000 slot engine behind `hal_dmr_modem.h` (`modem-hrc7000.md` 3, 5, 6); FD6818 idle -> TX at the RF TX interrupt, PA keyed 28 ms after each burst is armed, off at the first tick 20 ms after the RF TX interrupt | `drivers/modem/hrc7000/hrc7000_dmr.c`, `platform/hrc7000/dmr_glue.c`, `boards/dm32/radio_dm32.c` (the RF and PA hooks) |

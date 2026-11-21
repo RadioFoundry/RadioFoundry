@@ -232,7 +232,7 @@ export const p25TrunkKind = {
 	ownFreqs: false,
 	defaultTx: false,
 	fallback: true,
-	recordFields: ["contact", "rxList"],
+	recordFields: ["contact", "rxList", "acceptBadCrc"],
 	flags: { noFallback: 0x10 },
 	newParams: () => ({ followAll: false }),
 	decode: (b) => ({ followAll: (u8(b, 0) & 1) !== 0 }),

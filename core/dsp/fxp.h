@@ -4,7 +4,8 @@
 // version (suffix _c, always there, the one the host tests run). A core with instructions for one gets its own
 // body, which must give the plain version's result for every input:
 //
-//   Arm with the DSP extension (__ARM_FEATURE_DSP)   16 x 16 multiply-accumulates two at a time on packed pairs
+//   Arm with the DSP extension (__ARM_FEATURE_DSP)   16 x 16 multiply-accumulates two at a time on packed pairs; the
+//                                                    rounded high word of a 32 x 32 product in one (SMMULR)
 //   C-SKY with the HI/LO multiply unit               32 x 32 -> 64 products without a library call. Only in a file
 //     (FXP_CSKY_HILO defined for the file)           built with -Wa,-mdsp, and only in code that runs in one task:
 //                                                    the context switch does not save HI and LO
@@ -31,7 +32,9 @@
 #endif
 
 #define FXP_INLINE	static inline __attribute__((always_inline))
-typedef uint32_t __attribute__((may_alias)) fxp_u32a;
+// A word of two packed 16-bit values, at any halfword: aligned(2), or GCC may pair two loads into an LDRD or LDM, which
+// fault on an unaligned address where LDR does not (seen on the radio once a loop was unrolled)
+typedef uint32_t __attribute__((may_alias, aligned(2))) fxp_u32a;
 
 // --- Plain versions ---
 
@@ -68,10 +71,30 @@ FXP_INLINE int16_t fxp_sat16(int32_t x) { return (int16_t)fxp_clamp(x, -32768, 3
 
 // a * b, exact
 FXP_INLINE int64_t fxp_mul64_c(int32_t a, int32_t b) { return (int64_t)a * b; }
+// Four neighboring outputs of a two-channel FIR filter, the channels summed: c and x hold them interleaved (c[2i] and
+// x[2i] channel 0, c[2i + 1] and x[2i + 1] channel 1), so output k adds the sum over i < n of c[2i] x[2i + 2k] +
+// c[2i + 1] x[2i + 2k + 1] to y[k], k = 0-3, each wrapping at 32 bits. n taps a channel; reads x[0..2n + 7]
+FXP_INLINE void fxp_fir2ch4_c(const int16_t *c, const int16_t *x, unsigned n, int32_t *y)
+{
+	for (int k = 0; k < 4; k++) {
+		uint32_t a = (uint32_t)y[k];
+
+		for (unsigned i = 0; i < 2 * n; i++) {
+			a += FXP_P(c[i], x[i + 2 * k]);
+		}
+		y[k] = (int32_t)a;
+	}
+}
+
 // (a * b) >> s, the low 32 bits of the shifted product, 0 <= s < 32
 FXP_INLINE int32_t fxp_mulshr_c(int32_t a, int32_t b, int s)
 {
 	return (int32_t)(uint32_t)((uint64_t)((int64_t)a * b) >> s);
+}
+// (a * b + 2^31) >> 32: the high word of the product, rounded. Two Q31 values give their product in Q30
+FXP_INLINE int32_t fxp_mulhr_c(int32_t a, int32_t b)
+{
+	return (int32_t)((uint64_t)((int64_t)a * b + 0x80000000) >> 32);
 }
 
 // --- Per core ---
@@ -88,6 +111,15 @@ FXP_INLINE int32_t fxp_dot16_8(const int16_t *a, const int16_t *b)
 	return (int32_t)__smlad((int16x2_t)p[3], (int16x2_t)q[3], y);
 }
 
+// One instruction (SMMULR) where a 32 x 32 multiply and a 64-bit shift take four
+FXP_INLINE int32_t fxp_mulhr(int32_t a, int32_t b)
+{
+	int32_t y;
+
+	__asm__("smmulr %0, %1, %2" : "=r"(y) : "r"(a), "r"(b));
+	return y;
+}
+
 FXP_INLINE int32_t fxp_dot16(const int16_t *a, const int16_t *b, unsigned n)
 {
 	const fxp_u32a *p = (const fxp_u32a *)(const void *)a, *q = (const fxp_u32a *)(const void *)b;
@@ -97,7 +129,71 @@ FXP_INLINE int32_t fxp_dot16(const int16_t *a, const int16_t *b, unsigned n)
 		y = (int32_t)__smlad((int16x2_t)p[i], (int16x2_t)q[i], y);
 	return y;
 }
+
+// Each coefficient word (one tap of each channel) is loaded once for all four outputs, and each sample word once:
+// two loads and four SMLADs a tap, the sample words rotating through four registers (unrolled by four). c and x must
+// be 4-byte aligned
+FXP_INLINE void fxp_fir2ch4(const int16_t *c, const int16_t *x, unsigned n, int32_t *y)
+{
+	const fxp_u32a *p = (const fxp_u32a *)(const void *)c, *q = (const fxp_u32a *)(const void *)x;
+	int32_t a0 = y[0], a1 = y[1], a2 = y[2], a3 = y[3];
+	uint32_t h0 = q[0], h1 = q[1], h2 = q[2], k, h3;
+	unsigned blocks = n / 4;
+
+	q += 3;
+	if (blocks) {
+		__asm__ volatile(
+			"1:\n\t"
+			"ldr %[k], [%[p]], #4\n\t"
+			"ldr %[h3], [%[q]], #4\n\t"
+			"smlad %[a0], %[k], %[h0], %[a0]\n\t"
+			"smlad %[a1], %[k], %[h1], %[a1]\n\t"
+			"smlad %[a2], %[k], %[h2], %[a2]\n\t"
+			"smlad %[a3], %[k], %[h3], %[a3]\n\t"
+			"ldr %[k], [%[p]], #4\n\t"
+			"ldr %[h0], [%[q]], #4\n\t"
+			"smlad %[a0], %[k], %[h1], %[a0]\n\t"
+			"smlad %[a1], %[k], %[h2], %[a1]\n\t"
+			"smlad %[a2], %[k], %[h3], %[a2]\n\t"
+			"smlad %[a3], %[k], %[h0], %[a3]\n\t"
+			"ldr %[k], [%[p]], #4\n\t"
+			"ldr %[h1], [%[q]], #4\n\t"
+			"smlad %[a0], %[k], %[h2], %[a0]\n\t"
+			"smlad %[a1], %[k], %[h3], %[a1]\n\t"
+			"smlad %[a2], %[k], %[h0], %[a2]\n\t"
+			"smlad %[a3], %[k], %[h1], %[a3]\n\t"
+			"ldr %[k], [%[p]], #4\n\t"
+			"ldr %[h2], [%[q]], #4\n\t"
+			"smlad %[a0], %[k], %[h3], %[a0]\n\t"
+			"smlad %[a1], %[k], %[h0], %[a1]\n\t"
+			"smlad %[a2], %[k], %[h1], %[a2]\n\t"
+			"smlad %[a3], %[k], %[h2], %[a3]\n\t"
+			"subs %[n], %[n], #1\n\t"
+			"bne 1b"
+			: [a0] "+r"(a0), [a1] "+r"(a1), [a2] "+r"(a2), [a3] "+r"(a3), [p] "+r"(p), [q] "+r"(q), [n] "+r"(blocks),
+			  [h0] "+r"(h0), [h1] "+r"(h1), [h2] "+r"(h2), [k] "=&r"(k), [h3] "=&r"(h3)
+			:
+			: "cc", "memory");
+	}
+	// The last n % 4 taps: h0-h2 are again the next three sample words
+	for (unsigned i = 0; i < n % 4; i++) {
+		k = *p++;
+		h3 = *q++;
+		a0 = (int32_t)__smlad((int16x2_t)k, (int16x2_t)h0, a0);
+		a1 = (int32_t)__smlad((int16x2_t)k, (int16x2_t)h1, a1);
+		a2 = (int32_t)__smlad((int16x2_t)k, (int16x2_t)h2, a2);
+		a3 = (int32_t)__smlad((int16x2_t)k, (int16x2_t)h3, a3);
+		h0 = h1;
+		h1 = h2;
+		h2 = h3;
+	}
+	y[0] = a0;
+	y[1] = a1;
+	y[2] = a2;
+	y[3] = a3;
+}
 #else
+FXP_INLINE void fxp_fir2ch4(const int16_t *c, const int16_t *x, unsigned n, int32_t *y) { fxp_fir2ch4_c(c, x, n, y); }
 FXP_INLINE int32_t fxp_dot16_8(const int16_t *a, const int16_t *b) { return fxp_dot16_8_c(a, b); }
 FXP_INLINE int32_t fxp_dot16(const int16_t *a, const int16_t *b, unsigned n) { return fxp_dot16_c(a, b, n); }
 #endif
@@ -120,9 +216,20 @@ FXP_INLINE int32_t fxp_mulshr(int32_t a, int32_t b, int s)
 	__asm__("muls %2, %3\n\tmfhi %0\n\tmflo %1" : "=&r"(h), "=&r"(l) : "r"(a), "r"(b));
 	return s == 0 ? (int32_t)l : (int32_t)((h << (32 - s)) | (l >> s));
 }
+
+FXP_INLINE int32_t fxp_mulhr(int32_t a, int32_t b)
+{
+	uint32_t h, l;
+
+	__asm__("muls %2, %3\n\tmfhi %0\n\tmflo %1" : "=&r"(h), "=&r"(l) : "r"(a), "r"(b));
+	return (int32_t)(h + (l >> 31));	// + 2^31 carries into the high word when bit 31 of the low one is set
+}
 #else
 FXP_INLINE int64_t fxp_mul64(int32_t a, int32_t b) { return fxp_mul64_c(a, b); }
 FXP_INLINE int32_t fxp_mulshr(int32_t a, int32_t b, int s) { return fxp_mulshr_c(a, b, s); }
+#if !FXP_ARM_DSP
+FXP_INLINE int32_t fxp_mulhr(int32_t a, int32_t b) { return fxp_mulhr_c(a, b); }
+#endif
 #endif
 
 // acc + a * b (wraps like a hardware accumulate)

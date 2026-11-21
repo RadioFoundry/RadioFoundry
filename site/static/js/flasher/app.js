@@ -1410,6 +1410,9 @@ function nest(items) {
 		for (const f of items) if (parent[f.name] === p) { out.push({ f, depth: d }); walk(f.name, d + 1); }
 	};
 	walk(null, 0);
+	// never hide a feature: one left out of the tree (a needs cycle) is listed flat at the end
+	const placed = new Set(out.map((o) => o.f.name));
+	for (const f of items) if (!placed.has(f.name)) out.push({ f, depth: 0 });
 	return out;
 }
 

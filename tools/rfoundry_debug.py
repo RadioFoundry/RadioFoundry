@@ -1580,12 +1580,12 @@ class DebugLink:
     def data_settings(self, ars_server=0, radio_check_reply=True, call_alert_ack=True, lrrp_reply=True,
                       sms_etsi=False, radio_check_etsi=False, sms_format=None):
         """The data service settings: ARS server ID (0 off), the answer switches, the ETSI forms. sms_format: the
-        default text message format, "etsi_ip" (the radio's default), "etsi" or "tms"; None: "etsi" when sms_etsi,
+        text message format: "auto", "etsi_ip", "etsi" or "tms"; None: "etsi" when sms_etsi,
         else "etsi_ip"."""
         if sms_format is None:
             sms_format = "etsi" if sms_etsi else "etsi_ip"
         flags = (1 if radio_check_reply else 0) | (2 if call_alert_ack else 0) | (4 if lrrp_reply else 0) | \
-            {"tms": 0, "etsi": 8, "etsi_ip": 32}[sms_format] | (16 if radio_check_etsi else 0)
+            {"tms": 0, "etsi": 8, "etsi_ip": 32, "auto": 40}[sms_format] | (16 if radio_check_etsi else 0)
         self.data_request(DATA_OP_SETTINGS, struct.pack("<IB", int(ars_server) & 0xFFFFFF, flags))
 
     def inbox(self, index=0):
@@ -1598,7 +1598,7 @@ class DebugLink:
             raise
         src, dst, group, flags = struct.unpack_from("<IIBB", r)
         return {"src": src, "dst": dst, "group": bool(group), "unread": bool(flags & 1),
-                "format": "etsi_ip" if flags & 4 else "etsi" if flags & 2 else "tms", "text": r[10:].decode("latin-1")}
+                "format": "t3_udt" if flags & 8 else "etsi_ip" if flags & 4 else "etsi" if flags & 2 else "tms", "text": r[10:].decode("latin-1")}
 
     def mark_read(self, index=0):
         self.data_request(DATA_OP_MARK_READ, bytes([index]))

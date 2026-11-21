@@ -55,9 +55,9 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 |---|---|---|---|---|
 | Brightness | 10 to 100 %, steps of 10 | 100 % | Backlight brightness. Also in quick settings, tile 9 | Works |
 | Backlight Dim/Off | 5s/20s, 10s/40s, 30s/2m, 1m/4m, 2m/8m, 10s/dim, 30s/dim, 1m/dim, 2m/dim, Never | 30s/2m | Without a key press, the backlight dims to a fifth after the first time and goes off after the second. The "dim" choices dim and never go off | Works |
-| Theme | Dark, Light, High contrast | Dark | The screen colors. Not on radios with a monochrome screen | Works |
-| Highlight color | Default, Red, Orange, Yellow, Teal, Light blue, Purple, Pink | Default | The color of the selected row or tile and of the channel number on Home. Not on radios with a monochrome screen | Works |
-| Filled status bar | On, Off | On | Fills the top status line with the highlight color (light gray with Default, white in the high-contrast theme) and draws its text black. Not on radios with a monochrome screen | Works |
+| Theme | Dark, Light, High contrast, Night (red) | Dark | The screen colors. Night (red) uses only shades of red on black, so your eyes stay adapted to the dark; RX, TX and warnings differ by brightness and their word, not color. The power-on screen keeps its own colors. Not on radios with a monochrome screen | Works |
+| Highlight color | Default, Red, Orange, Yellow, Teal, Light blue, Purple, Pink | Default | The color of the selected row or tile and of the channel number on Home. Not in the Night theme, which is always red. Not on radios with a monochrome screen | Works |
+| Filled status bar | On, Off | On | Fills the top status line with the highlight color (light gray with Default, white in the high-contrast theme, bright red in Night) and draws its text black. Not on radios with a monochrome screen | Works |
 | Large text | On, Off | Off | Home shows only the status line, the channel and the talk target, large | Works |
 | Hint row | On, Off | On | The bottom line with key hints | Works |
 | Talkgroup name first | On, Off | Off | Home's talk line reads "World TG 91" instead of "TG 91 World": on a small screen the name is what fits. A side key set to **TG name / number** switches it too. On radios with DMR | Works |
@@ -119,7 +119,7 @@ and by APRS. None of them needs the others: a radio without APRS still reports i
 | Answer radio checks | On, Off | On | Answer radio checks from other radios ([Radio check](10-messages-and-signaling.md#radio-check)) | Works |
 | Answer call alerts | On, Off | On | Acknowledge call alerts, so the caller knows the page arrived | Works |
 | TFTP codeplug write | On, Off | On | Lets a computer write the codeplug over TFTP in USB network mode ([USB network](15-usb-network.md#programming-over-the-network)). Reading is always possible | Works |
-| Message format | ETSI, ETSI short, Motorola (where built) | ETSI | The encoding of new DMR text messages ([Messages](10-messages-and-signaling.md#message-formats)) | Works |
+| Message format | Automatic, ETSI, ETSI short, Motorola (where built) | Automatic | The encoding of new DMR text messages ([Messages](10-messages-and-signaling.md#message-formats)) | Works |
 | Accept zone shares | On, Off | On | On shows a zone or channel another radio sends you, to import or reject ([Sharing a zone](07-channels-zones-vfo.md#sharing-a-zone)). Off ignores them | Works |
 | USB network at start | On, Off | Off | The radio starts as a USB network adapter instead of a serial port ([USB network](15-usb-network.md#starting-in-network-mode)) | Works |
 | PC answers data | On, Off | Off | Control station mode: while the computer is connected in USB network mode, it answers the data sent to your radio instead of the radio ([USB network](15-usb-network.md#control-station-for-dispatch-software)) | Works |

@@ -429,7 +429,7 @@ static void compose_item(uint16_t i, ui_item_t *it)
 	}
 }
 
-static void send_text(const char *text, bool aprs)
+static void send_text(const char *text, bool aprs, int reply_index)
 {
 	static char msg[40];
 	char name[24];
@@ -447,8 +447,10 @@ static void send_text(const char *text, bool aprs)
 	} else {
 		ui_sb_target(name, sizeof name, &ui_target);
 	}
-	if (aprs ? !ui_svc_aprs_send_message(aprs_to, text, aprs_message_flags) :
-	    !ui_svc_msg_send(ui_target.id, ui_target.group, text)) {
+	bool sent = aprs ? ui_svc_aprs_send_message(aprs_to, text, aprs_message_flags) :
+		reply_index >= 0 ? ui_svc_msg_reply((uint16_t)reply_index, text) :
+		ui_svc_msg_send(ui_target.id, ui_target.group, text);
+	if (!sent) {
 		ui_toast(TR(MSG_TOAST_SEND_FAILED, "Couldn't send: try again"));
 		return;
 	}
@@ -474,7 +476,7 @@ static void compose_select(uint16_t i, bool hold)
 	}
 	if (i < CANNED_N) {
 		bool aprs = compose_aprs();
-		send_text(tr(canned[i]), aprs);
+		send_text(tr(canned[i]), aprs, -1);
 	}
 	else if (i == CANNED_N) {
 #if CONFIG_DMR_SMS || CONFIG_APRS_AFSK
@@ -933,10 +935,10 @@ static void msg_select(uint16_t i, bool hold)
 			if (ui_svc_aprs_msg(message_aprs_index(), &m, false)) {
 				str_copy(aprs_to, sizeof aprs_to, m.from);
 				aprs_message_flags = APRS_MSG_ACK;
-				send_text(tr(i == MV_REPLY_OK ? canned[0] : canned[1]), true);
+				send_text(tr(i == MV_REPLY_OK ? canned[0] : canned[1]), true, -1);
 			}
 		} else {
-			send_text(tr(i == MV_REPLY_OK ? canned[0] : canned[1]), false);
+			send_text(tr(i == MV_REPLY_OK ? canned[0] : canned[1]), false, message_index());
 		}
 		break;
 	case MV_CALL:
@@ -2128,7 +2130,7 @@ static void text_open(char *target, uint8_t max, uint8_t screen)
 static void message_text_kept(void)
 {
 	if (message_buffer[0] != '\0')
-		send_text(message_buffer, compose_aprs());
+		send_text(message_buffer, compose_aprs(), -1);
 }
 
 static void ui_text_open_message(bool aprs)
@@ -6523,9 +6525,9 @@ static const tr_id_t n_backlight[] = { TRX(SET_VALUE_BACKLIGHT_5S_20S, "5s/20s")
 	TRN(SET_VALUE_BACKLIGHT_1M_DIM, "1m/dim"), TRN(SET_VALUE_BACKLIGHT_2M_DIM, "2m/dim"), TRN(VALUE_NEVER, "Never")
 };
 #if CONFIG_UI_COLOR
-static const int16_t v_theme[] = { 0, 1, 2 };
+static const int16_t v_theme[] = { UI_THEME_DARK, UI_THEME_LIGHT, UI_THEME_HIGH_CONTRAST, UI_THEME_NIGHT };
 static const tr_id_t n_theme[] = { TRN(SET_VALUE_THEME_DARK, "Dark"), TRN(SET_VALUE_THEME_LIGHT, "Light"),
-	TRN(SET_VALUE_THEME_HIGH_CONTRAST, "High contrast") };
+	TRN(SET_VALUE_THEME_HIGH_CONTRAST, "High contrast"), TRN(SET_VALUE_THEME_NIGHT, "Night (red)") };
 static const int16_t v_accent[] = { UI_ACCENT_DEFAULT, UI_ACCENT_RED, UI_ACCENT_ORANGE, UI_ACCENT_YELLOW, UI_ACCENT_TEAL,
 				     UI_ACCENT_BLUE, UI_ACCENT_PURPLE, UI_ACCENT_PINK };
 static const tr_id_t n_accent[] = { TRN(VALUE_DEFAULT, "Default"), TRN(SET_VALUE_ACCENT_RED, "Red"),
@@ -6657,13 +6659,14 @@ static const tr_id_t n_autooff[] = { TRN(VALUE_OFF, "Off"), TRN(VALUE_30_MIN, "3
 	TRX(VALUE_2_H, "2 h") };
 #if CONFIG_DMR_SMS
 static const int16_t v_msgfmt[] = {
-	2, 1,	// dmr_sms_format_t: ETSI IP text, ETSI short data, Motorola TMS
+	255, 2, 1,	// dmr_sms_format_t: Automatic, ETSI IP text, ETSI short data, Motorola TMS
 #if CONFIG_DMR_TMS
 	0,
 #endif
 };
 static const tr_id_t n_msgfmt[] = {
-	TRX(SET_VALUE_MSGFMT_ETSI, "ETSI"), TRN(SET_VALUE_MSGFMT_ETSI_SHORT, "ETSI short"),
+	TRN(SET_VALUE_MSGFMT_AUTOMATIC, "Automatic"), TRX(SET_VALUE_MSGFMT_ETSI, "ETSI"),
+	TRN(SET_VALUE_MSGFMT_ETSI_SHORT, "ETSI short"),
 #if CONFIG_DMR_TMS
 	TRX(VALUE_MOTOROLA, "Motorola"),
 #endif
@@ -7314,6 +7317,10 @@ static void set_value_text(const set_item_t *s, int32_t v, char *out, size_t len
 	sb_init(&b, out, len);
 	switch (s->type) {
 	case ST_TOGGLE:
+		// GPS reads Off on a radio without one (#349). Only shown so: the stored value stays, as the module is
+		// detected after start-up and the driver follows the setting once it is heard (position.md 2)
+		if (s->id == UI_SET_GPS && !board_has_gps())
+			v = 0;
 		sb_str(&b, v ? TR(VALUE_ON, "On") : TR(VALUE_OFF, "Off"));
 		break;
 	case ST_LIST:
@@ -7406,8 +7413,11 @@ static const char *set_why_not(const set_item_t *s)
 	case UI_SET_THEME:
 	case UI_SET_ACCENT:
 	case UI_SET_STRIP:
-		return board.display != NULL && board.display->bpp == 1 ?
-			TR(SET_WHY_COLOR_SCREENS_ONLY, "Colors are for color screens") : NULL;
+		if (board.display != NULL && board.display->bpp == 1)
+			return TR(SET_WHY_COLOR_SCREENS_ONLY, "Colors are for color screens");
+		// Night shows red only: its highlight is always its own red (ui_screens.c accent_apply)
+		return s->id == UI_SET_ACCENT && ui_svc_setting_get(UI_SET_THEME) == UI_THEME_NIGHT ?
+			TR(SET_WHY_NIGHT_RED_ONLY, "Night theme: red only") : NULL;
 	case UI_SET_MIC_GAIN:
 		if (!mic_gain_available())
 			return TR(WHY_MIC_GAIN_NOT_IN_BUILD, "Mic gain: not in this build");
@@ -8003,6 +8013,11 @@ static const ui_scr_def_t diag_screen = {
 static const ui_scr_def_t volume_screen = {
 	.name = "volume", .flags = SF_FIELD, .key = ui_volume_key, .draw = ui_volume_draw,
 };
+#if CONFIG_DMR_TRUNK
+static const ui_scr_def_t incoming_call_screen = {
+	.name = "incoming-call", .flags = SF_FIELD, .key = ui_incoming_call_key, .draw = ui_incoming_call_draw,
+};
+#endif
 static const ui_scr_def_t emergency_screen = {
 	.name = "emergency", .flags = SF_FIELD, .key = ui_emergency_key, .draw = ui_emergency_draw,
 };
@@ -8096,6 +8111,9 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_RECENT] = &recent_screen, [SCR_ZONES] = &channels_screen, [SCR_ZONE] = &zone_screen,
 	[SCR_TOOLS] = &tools_screen, [SCR_SETTINGS] = &settings_screen, [SCR_GROUP] = &group_screen,
 	[SCR_PICKER] = &picker_screen, [SCR_INFO] = &info_screen, [SCR_CONFIRM] = &confirm_screen,
+#if CONFIG_DMR_TRUNK
+	[SCR_INCOMING_CALL] = &incoming_call_screen,
+#endif
 	[SCR_DIAG] = &diag_screen, [SCR_EMERGENCY] = &emergency_screen, [SCR_SCAN] = &scan_screen,
 	[SCR_ROAM] = &roam_screen, [SCR_APRS] = &ui_aprs_screen, [SCR_APRS_HEARD] = &ui_aprs_heard_screen,
 	[SCR_APRS_STATION] = &ui_aprs_station_screen,
