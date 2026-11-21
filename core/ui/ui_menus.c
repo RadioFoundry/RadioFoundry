@@ -2615,10 +2615,12 @@ static const struct { uint8_t off, len, bit; } ced_fields[CE_ZONES] = {
 // The Mode row's steps, in the order OK goes through them (channel-modes.md 2.4): the plain modes, the air modes, then
 // a kind of its own (a trunked channel). Each is offered where it can run; the step back to the one the channel was
 // opened with restores it as stored (its system, its NAC or RAN), so a slip never costs a channel its mode
-enum { CED_FM, CED_DMR, CED_P25, CED_NXDN, CED_KIND, CED_STEPS };
+enum { CED_FM, CED_AM, CED_DMR, CED_P25, CED_NXDN, CED_KIND, CED_STEPS };
 
 static uint8_t ced_step_of(const channel_t *ch)
 {
+	if (radio_am_kind(ch))
+		return CED_AM;
 	if (ced_is_p25(ch))
 		return CED_P25;
 	if (ced_is_nxdn(ch))
@@ -2628,9 +2630,10 @@ static uint8_t ced_step_of(const channel_t *ch)
 	return CONFIG_DMR && ch->mode == RADIO_MODE_DMR ? CED_DMR : CED_FM;
 }
 
-// Whether OK may step to s. A listen band is FM (AM) only. P25 and NXDN where the board runs them, as the VFO's mode
-// tile (ui_svc_features), and not for Copy here: it writes through the zone job, which takes the source's tag and has
-// no block of its own. A kind only back to the one it was opened with: its system can't be picked here
+// Whether OK may step to s. A listen band is FM (AM) only. AM past the air band where the receiver demodulates it
+// (in the air band FM is AM already). AM, P25 and NXDN where the board runs them, as the VFO's mode tile
+// (ui_svc_features), and not for Copy here: it writes through the zone job, which takes the source's tag and has no
+// block of its own. A kind only back to the one it was opened with: its system can't be picked here
 static bool ced_step_ok(uint8_t s, bool listen)
 {
 	bool orig = s == ced_step_of(&ced_orig), into = false;
@@ -2640,6 +2643,8 @@ static bool ced_step_ok(uint8_t s, bool listen)
 	switch (s) {
 	case CED_FM:
 		return true;
+	case CED_AM:
+		return orig || (!into && !listen && (feats() & UI_FEAT_AM) != 0 && radio_am_rx_at(ced_ch.rx_hz));
 	case CED_DMR:
 		return CONFIG_DMR && !listen;
 	case CED_P25:
@@ -2667,6 +2672,8 @@ static void ced_step_set(channel_t *c, uint8_t s)
 	c->kind = CODEPLUG_KIND_NONE;
 	c->system = CODEPLUG_SYSTEM_NONE;
 	c->mode = s == CED_DMR ? RADIO_MODE_DMR : RADIO_MODE_FM;
+	if (s == CED_AM)
+		radio_am_set(c, true);	// receive only whatever the RX only row said: Save writes it so (radio_am_save)
 #if CONFIG_P25
 	if (s == CED_P25) {
 		c->kind = CODEPLUG_KIND_P25;
@@ -2742,6 +2749,8 @@ static bool ced_changed(uint8_t r)
 // one (the radio core refuses those modes there), and Save asks before a stored one loses its tag
 static void ced_rx_band(channel_t *c)
 {
+	if (radio_am_kind(c) && !radio_am_rx_at(c->rx_hz))
+		radio_am_set(c, false);	// AM can't be received there: a plain FM channel, as a listen band makes one
 	if (!board_in_band(c->rx_hz, false) || board_in_band(c->rx_hz, true))
 		return;
 	c->rx_only = true;
@@ -2825,6 +2834,7 @@ static void ced_build(void)
 	bool listen = radio_listen_band(ced_ch.rx_hz);
 	bool p25 = ced_is_p25(&ced_ch), nxdn = ced_is_nxdn(&ced_ch), air = p25 || nxdn;
 	bool dmr = CONFIG_DMR && ced_ch.mode == RADIO_MODE_DMR && !listen && !air;
+	bool am = radio_am_kind(&ced_ch);	// receive only, no sub-audio, a filter of its own: no transmit or FM rows
 	bool edit = CONFIG_CHANNEL_EDIT;
 	bool fresh = false, changed = false, into = false;
 #if CONFIG_CHANNEL_EDIT
@@ -2845,7 +2855,10 @@ static void ced_build(void)
 				       (r == CE_CODE && !into) || (r == CE_RATE && nxdn && !into));
 		if (r == CE_CODE || r == CE_RATE ? !air_row : air && (fm_only || (dmr_only && !air_row)))
 			continue;
-		if (!air_row && ((fm_only && dmr) || (tone && listen) || (dmr_only && !dmr) || (r == CE_MODE && !CONFIG_DMR)))
+		if (!air_row && ((fm_only && dmr) || (tone && listen) || (dmr_only && !dmr) ||
+				  (r == CE_MODE && !CONFIG_DMR && !am && (feats() & UI_FEAT_AM) == 0)))
+			continue;
+		if (am && (fm_only || r == CE_TX || r == CE_POWER || r == CE_RX_ONLY || r == CE_TOT))
 			continue;
 		// The radio core skips the burst on a board with no TX tone, so no row for it there (a host board
 		// without a radio keeps the row)
@@ -2878,6 +2891,7 @@ static void chinfo_enter(void)
 		ced_new = true;
 		if (!codeplug_channel(src, &ced_ch))
 			ced_num = 0;
+		radio_am_take(&ced_ch);	// a channel set to AM: FM under its stand-in record, as the radio runs it
 		ced_src = src;
 		ced_air_read(src, &ced_ch);
 		ced_ch.roam = false;
@@ -2901,6 +2915,7 @@ static void chinfo_enter(void)
 #endif
 	if (!codeplug_channel(ced_num, &ced_ch))
 		ced_num = 0;
+	radio_am_take(&ced_ch);	// a channel set to AM: FM under its stand-in record, as the radio runs it
 	ced_air_read(ced_num, &ced_ch);
 #if CONFIG_CHANNEL_EDIT
 	ced_orig = ced_ch;

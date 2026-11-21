@@ -640,6 +640,11 @@ static bool parked(const channel_t *ch)
 	if (!codeplug_kind_built(ch->kind)) {
 		return true;
 	}
+#if CONFIG_AM_RX
+	if (radio_am_kind(ch)) {
+		return !radio_am_channel(ch);	// AM where this receiver can't demodulate it
+	}
+#endif
 	return ch->kind != CODEPLUG_KIND_DMR_TRUNK && ch->mode != RADIO_MODE_P25 && ch->mode != RADIO_MODE_NXDN;
 }
 
@@ -654,6 +659,9 @@ static bool channel_read(uint16_t number, channel_t *ch)
 #endif
 #if CONFIG_NXDN
 	radio_nxdn_take(ch);
+#endif
+#if CONFIG_AM_RX
+	radio_am_take(ch);
 #endif
 	return true;
 }
@@ -789,7 +797,8 @@ static void bcast_power(radio_sm_t *sm, bool on)
 // tuned; view.bcast_fault says it didn't answer. Never in hotspot mode, where the host link owns the radio
 static void bcast_tune(radio_sm_t *sm)
 {
-	sm->view.bcast = !sm->view.am && !sm->hotspot && radio_bcast_channel(&sm->view.ch);
+	// A parked channel stays silent here too (an AM channel the broadcast band's FM tuner can't receive in AM)
+	sm->view.bcast = !sm->view.am && !sm->hotspot && !parked(&sm->view.ch) && radio_bcast_channel(&sm->view.ch);
 	if (!sm->view.bcast) {
 		bcast_power(sm, false);
 		sm->view.bcast_fault = false;
@@ -844,7 +853,15 @@ static void tune(radio_sm_t *sm, uint32_t now_ms)
 		set_temporary(sm);
 	}
 #if CONFIG_AM_RX
-	sm->view.am = radio_am_channel(&sm->view.ch);	// an FM channel in the air band: AM, no sub-audio
+	radio_am_take(&sm->view.ch);	// an AM channel is FM underneath, however it got here
+	if (sm->view.vfo && radio_am_kind(&sm->view.ch) && !radio_am_channel(&sm->view.ch)) {
+		// The VFO tuned where AM can't be received (the broadcast band, past the receiver's AM ranges): plain FM,
+		// as the VFO comes out of a listen band; a stored channel set to AM is parked there instead
+		radio_am_set(&sm->view.ch, false);
+		radio_am_set(&sm->vfo_ch, false);
+	}
+	// An FM channel in the air band, or one set to AM where the receiver demodulates it: AM, no sub-audio
+	sm->view.am = radio_am_channel(&sm->view.ch);
 #endif
 	reset_tone(sm);
 #if CONFIG_BATTERY_SAVE
@@ -1066,8 +1083,13 @@ radio_vfo_copy_t radio_vfo_copy_check(const channel_t *ch, bool in_vfo)
 	if (in_vfo) {
 		return VFO_COPY_ALREADY;
 	}
-	if (ch->kind != CODEPLUG_KIND_NONE || (ch->mode == RADIO_MODE_DMR ? !CONFIG_VFO_DMR : !CONFIG_VFO_FM)) {
-		return VFO_COPY_NO_MODE;	// the VFO holds plain FM and DMR only
+	// The VFO holds plain FM and DMR, and AM where the receiver demodulates it (an AM channel parked here isn't)
+	bool am = false;
+#if CONFIG_AM_RX
+	am = radio_am_kind(ch) && radio_am_channel(ch);
+#endif
+	if ((ch->kind != CODEPLUG_KIND_NONE && !am) || (ch->mode == RADIO_MODE_DMR ? !CONFIG_VFO_DMR : !CONFIG_VFO_FM)) {
+		return VFO_COPY_NO_MODE;
 	}
 	if (!board_in_band(ch->rx_hz, false) || (ch->tx_hz != 0 && !board_in_band(ch->tx_hz, false))) {
 		return VFO_COPY_OUT_OF_BAND;
@@ -1099,6 +1121,10 @@ static void vfo_copy(radio_sm_t *sm, uint32_t now_ms)
 	v->rx_hz = c->rx_hz;
 	v->tx_hz = c->tx_hz != 0 && !c->dmo ? c->tx_hz : c->rx_hz;
 	v->mode = c->mode;
+#if CONFIG_AM_RX
+	radio_am_set(v, radio_am_kind(c));	// an AM channel makes the VFO AM; any other leaves it plain
+	v->mode = c->mode;
+#endif
 	v->bw = c->bw;
 	v->power = sm->temp_power ? sm->view.power : c->power;
 	if (c->mode == RADIO_MODE_DMR) {
@@ -1285,8 +1311,8 @@ static uint8_t tx_check(const radio_sm_t *sm)
 		return TXDENY_INHIBIT;		// the test TX limit denies PTT as the inhibit does
 	}
 #if CONFIG_AM_RX
-	if (sm->view.am || radio_am_tx_refused(ch->tx_hz)) {
-		return TXDENY_AM;	// the air band is receive only, whatever the codeplug says
+	if (sm->view.am || radio_am_tx_refused(ch->tx_hz) || radio_am_tx_never(ch)) {
+		return TXDENY_AM;	// the air band and every AM channel are receive only, whatever the codeplug says
 	}
 #endif
 #if CONFIG_BCAST_FM
@@ -7439,12 +7465,19 @@ static void restore_vfo(radio_sm_t *sm, const settings_t *st, uint8_t idx)
 	}
 	sm->vfo_ch.rx_hz = v.rx_hz;
 	sm->vfo_ch.tx_hz = v.tx_hz != 0 ? v.tx_hz : v.rx_hz;
-	// The saved mode if this build has that VFO (P25: and the board runs it); an older record holds FM
-	sm->vfo_ch.mode = v.mode == RADIO_MODE_DMR && CONFIG_VFO_DMR ? RADIO_MODE_DMR :
+	// The saved mode if this build has that VFO (P25: and the board runs it); an older record holds FM. AM (the AM
+	// kind on FM) where this receiver still demodulates AM at the saved frequency
+	bool am = false;
+#if CONFIG_AM_RX
+	am = v.mode == RADIO_REQ_MODE_AM && CONFIG_VFO_FM && radio_am_anywhere() && radio_am_rx_at(v.rx_hz);
+	radio_am_set(&sm->vfo_ch, am);
+#endif
+	sm->vfo_ch.mode = am ? RADIO_MODE_FM :
+		v.mode == RADIO_MODE_DMR && CONFIG_VFO_DMR ? RADIO_MODE_DMR :
 		v.mode == RADIO_MODE_FM && CONFIG_VFO_FM ? RADIO_MODE_FM :
 		v.mode == RADIO_MODE_P25 && p25_ok() ? RADIO_MODE_P25 :
 		v.mode == RADIO_MODE_NXDN && nxdn_ok() ? RADIO_MODE_NXDN : VFO_MODE_DEFAULT;
-	if (sm->vfo_ch.mode != v.mode) {
+	if (sm->vfo_ch.mode != v.mode && !am) {
 		sm->view.vfo_drop = (uint8_t)(v.mode + 1u);	// the debug link's vfo_drop: why the VFO came back changed
 	}
 	sm->vfo_ch.bw = v.bw == RADIO_BW_25K ? RADIO_BW_25K : RADIO_BW_12K5;
@@ -7463,12 +7496,18 @@ static void persist_vfo(const radio_sm_t *sm, settings_t *st, uint8_t idx)
 {
 	const channel_t *v = &sm->vfo_ch;
 	uint8_t power = v->power == CODEPLUG_POWER_DEFAULT ? SETTINGS_UNSET8 : v->power;
+	uint8_t mode = v->mode;
+#if CONFIG_AM_RX
+	if (radio_am_kind(v)) {
+		mode = RADIO_REQ_MODE_AM;	// a build or a radio without AM reads it as its default mode
+	}
+#endif
 #if CONFIG_DUAL_WATCH
 	if (idx != 0) {
 		if (sm->vfo_seeded) {
 			st->vfo2_rx_hz = v->rx_hz;
 			st->vfo2_tx_hz = v->tx_hz;
-			st->vfo2_mode = v->mode;	// P25 and NXDN too: a build without them reads its default
+			st->vfo2_mode = mode;	// P25, NXDN and AM too: a build without them reads its default
 			st->vfo2_bw = v->bw;
 			st->vfo2_power = power;
 			st->vfo2_cc = v->color_code;
@@ -7489,7 +7528,7 @@ static void persist_vfo(const radio_sm_t *sm, settings_t *st, uint8_t idx)
 	if (sm->vfo_seeded) {
 		st->vfo_rx_hz = v->rx_hz;
 		st->vfo_tx_hz = v->tx_hz;
-		settings_set_vfo_mode_bw(st, v->mode, v->bw);
+		settings_set_vfo_mode_bw(st, mode, v->bw);
 		st->vfo_power = power;
 		settings_set_vfo_cc_ts(st, v->color_code, v->timeslot);
 		st->vfo_rx_tone_type = v->rx_tone.type;
@@ -8590,12 +8629,28 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		break;
 	}
 #endif
-	case RREQ_MODE:
+	case RREQ_MODE: {
+		// The VFO's AM is the AM kind on its FM (radio_am.h): AM only there, and only where the receiver
+		// demodulates AM; any other mode takes the kind off again
+		bool vfo_am = false;
+#if CONFIG_AM_RX
+		vfo_am = sm->view.vfo && radio_am_kind(&sm->view.ch);
+		if (req->arg == RADIO_REQ_MODE_AM) {
+			if (busy || !sm->view.vfo || vfo_am || sm->view.ch.kind != CODEPLUG_KIND_NONE || !CONFIG_VFO_FM ||
+			    !radio_am_anywhere() || !radio_am_rx_at(sm->view.ch.rx_hz)) {
+				break;
+			}
+			radio_am_set(&sm->view.ch, true);
+			radio_am_set(&sm->vfo_ch, true);
+			tune(sm, now_ms);	// the call stack stops with DMR; AM from the next status
+			break;
+		}
+#endif
 		// Not on a channel of a kind: its mode is the kind's (channel-modes.md 6)
-		if (busy || sm->view.ch.kind != CODEPLUG_KIND_NONE ||
+		if (busy || (sm->view.ch.kind != CODEPLUG_KIND_NONE && !vfo_am) ||
 				(req->arg != RADIO_MODE_FM && req->arg != RADIO_MODE_DMR && req->arg != RADIO_MODE_P25 &&
 				 req->arg != RADIO_MODE_NXDN) ||
-				req->arg == sm->view.ch.mode ||
+				(req->arg == sm->view.ch.mode && !vfo_am) ||
 				(req->arg == RADIO_MODE_FM && !(sm->view.vfo ? CONFIG_VFO_FM : CONFIG_FM)) ||
 				(req->arg == RADIO_MODE_DMR && (radio_listen_band(sm->view.ch.rx_hz) ||
 								(sm->view.vfo && !CONFIG_VFO_DMR))) ||
@@ -8603,6 +8658,12 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 				(req->arg == RADIO_MODE_NXDN && (!nxdn_ok() || radio_listen_band(sm->view.ch.rx_hz)))) {
 			break;
 		}
+#if CONFIG_AM_RX
+		if (vfo_am) {
+			radio_am_set(&sm->view.ch, false);
+			radio_am_set(&sm->vfo_ch, false);
+		}
+#endif
 		sm->view.ch.mode = (uint8_t)req->arg;
 		if (sm->view.ch.mode == RADIO_MODE_DMR && sm->view.ch.timeslot != 2) {
 			sm->view.ch.timeslot = 1;
@@ -8614,6 +8675,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		set_temporary(sm);
 		tune(sm, now_ms);	// the call stack starts or stops with the mode
 		break;
+	}
 	case RREQ_DMR_HEAR_ALL:
 		set_hear_all_latch(sm, req->arg != 0);
 		break;

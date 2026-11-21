@@ -443,7 +443,7 @@ static void post_pair(uint8_t type, int32_t arg, uint32_t arg2, TickType_t wait)
 	send(&req, wait);
 }
 
-#if CONFIG_DMR || CONFIG_P25 || CONFIG_NXDN
+#if CONFIG_DMR || CONFIG_P25 || CONFIG_NXDN || CONFIG_AM_RX
 void radio_req_mode(uint8_t mode) { post(RREQ_MODE, mode, 0); }
 #endif
 #if CONFIG_P25

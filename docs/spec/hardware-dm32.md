@@ -1089,7 +1089,10 @@ full gain at each AM tune and writes 0x13 only when the gain changes. The squelc
 squelch does, and each level is 3 dB tighter; the factory rows are not read. The RSSI shown adds the gain the loop took
 off back. The RDA5807M runs through the shared HR_C7000 glue (`platform/hrc7000/bcast_hrc.c`)
 on PTA25 / PTA26 with no enable pin; its audio path turns the amplifier on and leaves the speaker source alone (B4).
-The air band is an RX-only band of 108-136 MHz and the broadcast range 65-108 MHz in `boards/dm32/board.c`.
+The air band is an RX-only band of 108-136 MHz and the broadcast range 65-108 MHz in `boards/dm32/board.c`. AM
+channels and the VFO's AM ([airband-and-broadcast.md](airband-and-broadcast.md) 3.4) may use 16-65 MHz and 108-740 MHz
+(`am_bands`: the FD6818's range less the broadcast band, the RDA5807M's), within the band table in force; the AM
+set-up is the air band's.
 
 **Where the gain loop settles.** Measured on a DM-32UV (rf A): a steady AM carrier from the SDR bench at four levels
 10 dB apart (30 dB in all) (on a 2 m frequency, which a bench build received as AM: same set-up and VHF path), 0x67 read over the

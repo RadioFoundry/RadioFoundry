@@ -31,12 +31,22 @@ bool radio_nxdn_fits(void);
 #define CODEPLUG_RUNS_NXDN	0
 #endif
 
+// What runs an AM channel: the build (CONFIG_AM_RX) and a board that receives AM (core/radio/radio_am.c). Where it
+// can't be demodulated, the AM module parks the channel (radio_am_channel)
+#if CONFIG_AM_RX
+bool radio_am_capable(void);
+#define CODEPLUG_RUNS_AM	radio_am_capable()
+#else
+#define CODEPLUG_RUNS_AM	0
+#endif
+
 // Channel kinds: the first byte of a channel tag
 #define CODEPLUG_KINDS(X) \
 	X(1, DMR_TRUNK, "T3", CONFIG_DMR_TRUNK)	/* DMR Tier III trunked (radio/radio_trunk.h) */ \
 	X(2, P25, "P25", CODEPLUG_RUNS_P25)	/* P25 conventional: the radio core runs it (core/radio/radio_p25.c) */ \
 	X(3, P25_TRUNK, "P25T", CONFIG_P25_TRUNK && CODEPLUG_RUNS_P25)	/* P25 trunked, receive only (radio_p25.c) */ \
-	X(4, NXDN, "NXDN", CODEPLUG_RUNS_NXDN)	/* NXDN conventional: the radio core runs it (core/radio/radio_nxdn.c) */
+	X(4, NXDN, "NXDN", CODEPLUG_RUNS_NXDN)	/* NXDN conventional: the radio core runs it (core/radio/radio_nxdn.c) */ \
+	X(5, AM, "AM", CODEPLUG_RUNS_AM)	/* AM receive anywhere the receiver can (core/radio/radio_am.c) */
 
 // System types: the first byte of a system record
 #define CODEPLUG_SYSTEM_TYPES(X) \

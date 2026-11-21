@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // What this build is, for VERSION in either listener (see build_info.h)
+#include <string.h>
 #include "config.h"
 #include "hostlink/build_info.h"
 #include "ui/i18n.h"
@@ -9,6 +10,9 @@
 #endif
 #if CONFIG_NXDN
 #include "radio/radio_nxdn.h"
+#endif
+#if CONFIG_AM_RX
+#include "radio/radio_am.h"
 #endif
 
 #ifndef RFOUNDRY_PRESET
@@ -220,20 +224,33 @@ static const char features[] =
 #endif
 	"HOSTLINK";	// both listeners run on the host link (USB CDC or a UART)
 
-// P25 and NXDN run where the board's air interface carries them: the Codeplug Editor offers their channels only there
+// P25 and NXDN run where the board's air interface carries them, AM channels where its receiver demodulates AM past
+// the air band: the Codeplug Editor offers their channels only there
 const char *build_modes_now(void)
 {
+	const char *am = "";
+#if CONFIG_AM_RX
+	am = radio_am_anywhere() ? "AM," : "";
+#endif
 #if CONFIG_P25 && CONFIG_NXDN
 	bool p25 = radio_p25_fits(), nxdn = radio_nxdn_fits();
-
-	return p25 && nxdn ? modes_both : p25 ? P25_FEATURES : nxdn ? "NXDN," : "";
+	const char *air = p25 && nxdn ? modes_both : p25 ? P25_FEATURES : nxdn ? "NXDN," : "";
 #elif CONFIG_P25
-	return radio_p25_fits() ? P25_FEATURES : "";
+	const char *air = radio_p25_fits() ? P25_FEATURES : "";
 #elif CONFIG_NXDN
-	return radio_nxdn_fits() ? "NXDN," : "";
+	const char *air = radio_nxdn_fits() ? "NXDN," : "";
 #else
-	return "";
+	const char *air = "";
 #endif
+	if (am[0] == '\0') {
+		return air;
+	}
+	// Both: one buffer, built again on each call (VERSION is answered on one task at a time)
+	static char both[sizeof "P25,P25_TRUNK,NXDN,AM,"];
+	size_t n = strlen(air);
+	memcpy(both, air, n);
+	memcpy(both + n, am, sizeof "AM,");
+	return both;
 }
 
 const char *build_features_now(void)

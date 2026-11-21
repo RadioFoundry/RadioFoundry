@@ -11,6 +11,7 @@
 #include "cjk_font.h"	// CJK_FONT_H: the line height a CJK language needs (CONFIG_LANG_ZH)
 #include "config.h"
 #include "codeplug/codeplug_modes.h"	// channel kinds: the mode word
+#include "radio/radio_am.h"
 #if CONFIG_DMR_TRUNK
 #include "dmr/trunk/t3_ms.h"	// the engine's states, for the trunked status words
 #endif
@@ -1216,10 +1217,14 @@ static void draw_chips(const radio_view_t *v, const ui_state_t *s)
 		return;
 	}
 #endif
-	if (v->am || v->bcast) {
-		// No tone, width or power here: the receiver is fixed. The air band squelch is real, the broadcast one isn't used
-		x = gfx_text(f, x, y, v->am ? TR(HOME_CHIP_AIR_BAND_AM, "Air Band AM") :
-			TR(HOME_CHIP_BROADCAST_FM, "Broadcast FM"), ui_col.fg) + f->w;
+	// A channel set to AM where this receiver can't demodulate it is parked: silent, and says so
+	bool am_parked = radio_am_kind(&v->ch) && !v->am;
+	if (v->am || v->bcast || am_parked) {
+		// No tone, width or power here: the receiver is fixed. The AM squelch is real, the broadcast one isn't used
+		x = gfx_text(f, x, y, am_parked ? TR(HOME_CHIP_AM_NOT_HERE, "No AM here") :
+			v->am ? (radio_am_band(v->ch.rx_hz) ? TR(HOME_CHIP_AIR_BAND_AM, "Air Band AM") :
+				 TR(HOME_CHIP_AM_RX, "AM receive")) :
+			TR(HOME_CHIP_BROADCAST_FM, "Broadcast FM"), am_parked ? ui_col.warn : ui_col.fg) + f->w;
 		if (v->am) {
 			sb_init(&b, buf, sizeof buf);
 			sb_str(&b, "SQ");
@@ -1379,7 +1384,10 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 	case TXDENY_REJECTED: sb_str(&b, TR(DENY_WHY_MODEM_REFUSED, "Modem refused to send")); break;
 	case TXDENY_HOTSPOT: sb_str(&b, TR(DENY_WHY_HOTSPOT_MODE, "Hotspot mode: PTT off")); break;
 	case TXDENY_NO_ID: sb_str(&b, TR(DENY_WHY_NO_DMR_ID, "No DMR ID in codeplug")); break;
-	case TXDENY_AM: sb_str(&b, TR(WHY_AIR_BAND_RX_ONLY, "Air band: receive only")); break;
+	case TXDENY_AM:
+		sb_str(&b, radio_am_kind(&v->ch) && !radio_am_band(v->ch.rx_hz) ? TR(WHY_AM_RX_ONLY, "AM: receive only") :
+		       TR(WHY_AIR_BAND_RX_ONLY, "Air band: receive only"));
+		break;
 	case TXDENY_BCAST: sb_str(&b, TR(WHY_BROADCAST_RX_ONLY, "Broadcast: receive only")); break;
 	case TXDENY_SFR_RPT: sb_str(&b, TR(DENY_WHY_REPEATER_CHANNEL, "Repeater channel: PTT off")); break;
 	case TXDENY_HWOPT: hwopt_needed(&b); break;
@@ -1428,6 +1436,9 @@ static const char *deny_action(const radio_view_t *v)
 	case TXDENY_HOTSPOT: return TR(HOTSPOT_HINT_OK_STOPS, "OK stop hotspot");
 	case TXDENY_NO_ID: return TR(DENY_FIX_SET_DMR_ID, "Set your DMR ID in qdmr");
 	case TXDENY_AM:
+		if (v->vfo && radio_am_kind(&v->ch) && !radio_am_band(v->ch.rx_hz))
+			return TR(DENY_FIX_VFO_MODE_FM, "Set the VFO to FM");	// the VFO's AM is its mode, not its band
+		/* fall through */
 	case TXDENY_BCAST: return v->vfo ? TR(DENY_FIX_TUNE_OUT_OF_BAND, "Tune out of the band") :
 		TR(DENY_FIX_PICK_ANOTHER_CHANNEL, "Pick another channel");
 	case TXDENY_SFR_RPT: return TR(DENY_FIX_PICK_USER_CHANNEL, "Pick a user channel to talk");
@@ -3675,7 +3686,7 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 			sb_str(&b, TR(VALUE_NONE, "None"));
 		else
 			sb_tone(&b, t);
-		return v->ch.mode == RADIO_MODE_FM;
+		return v->ch.mode == RADIO_MODE_FM && !radio_am_kind(&v->ch);	// AM has no sub-audio
 	}
 	case QT_MODE:
 		sb_str(&b, mode_word(v));	// what it is, as every other tile
@@ -3697,7 +3708,7 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 		return feat(UI_FEAT_MONITOR_LATCH);
 	case QT_VOX:
 		sb_str(&b, v->vox_on ? TR(VALUE_ON, "On") : TR(VALUE_OFF, "Off"));
-		return feat(UI_FEAT_VOX) && v->ch.mode == RADIO_MODE_FM;
+		return feat(UI_FEAT_VOX) && v->ch.mode == RADIO_MODE_FM && !radio_am_kind(&v->ch);	// AM never transmits
 	case QT_SCAN:
 #if CONFIG_DUAL_WATCH
 		sb_str(&b, s->dual.on ? TR(VALUE_ON, "On") : TR(VALUE_OFF, "Off"));
@@ -3709,7 +3720,7 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 		if (v->temp & RADIO_TEMP_BW)
 			sb_str(&b, GLYPH_DOT);
 		sb_str(&b, v->ch.bw == RADIO_BW_25K ? "25k" : "12.5k");
-		return v->ch.mode == RADIO_MODE_FM;
+		return v->ch.mode == RADIO_MODE_FM && !radio_am_kind(&v->ch);	// AM has a filter of its own
 	case QT_BRIGHTNESS:
 		sb_u32(&b, s->brightness, 1);
 		sb_chr(&b, '%');

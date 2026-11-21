@@ -178,6 +178,8 @@ static uint8_t shown_mode(const channel_t *c)
 {
 	if (!codeplug_kind_built(c->kind) || c->kind == CODEPLUG_KIND_DMR_TRUNK)
 		return c->mode;
+	if (radio_am_kind(c))
+		return RADIO_MODE_FM;	// AM is FM with the AM demodulator (radio_am_channel says which)
 	// The other kinds a build runs: P25 (trunked too) and NXDN
 	return c->kind == CODEPLUG_KIND_NXDN ? RADIO_MODE_NXDN : RADIO_MODE_P25;
 }
@@ -223,7 +225,8 @@ static void pane_fill(uint8_t i)
 	sbuf_t b;
 	sb_init(&b, p->detail, sizeof p->detail);
 	if (p->am) {
-		sb_str(&b, TR(HOME_CHIP_AIR_BAND_AM, "Air Band AM"));	// no tone or width: the receiver is fixed (Home's chip)
+		// no tone or width: the receiver is fixed (Home's chip)
+		sb_str(&b, radio_am_band(ch.rx_hz) ? TR(HOME_CHIP_AIR_BAND_AM, "Air Band AM") : TR(HOME_CHIP_AM_RX, "AM receive"));
 		return;
 	}
 #if CONFIG_DMR

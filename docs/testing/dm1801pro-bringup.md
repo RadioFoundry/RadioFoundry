@@ -127,6 +127,7 @@ Tune the VFO into the broadcast band ([airband-and-broadcast.md](../spec/airband
 |---|---|---|
 | VFO to the local ATIS | `am=1`, "Air Band AM" on Home, AM audio | FD6818 0x47 (AF type, `fd6818_set_am`), the AGC and filter ([airband-and-broadcast.md](../spec/airband-and-broadcast.md) 2, 3.3) |
 | PTT | "Air band: receive only", nothing keys | The core's refusal |
+| An AM channel at 2 m and at 70 cm, a low-power AM signal from the bench; PTT on it | `am=1`, `ch.kind=5`, AM audio; "AM: receive only", nothing keys | AM past the air band (`am_bands`, [airband-and-broadcast.md](../spec/airband-and-broadcast.md) 3.4), untested |
 
 ## 7. Accelerometer
 

@@ -42,6 +42,9 @@
 //   dlmode:fm|dmr|p25   the debug link sets the mode: the channel's for now, the VFO's own in the VFO
 //   dlvfo:<hz>          the debug link tunes the VFO to hz (it opens, as Find's Tune VFO)
 //   chhz:<n>,<hz>       stored channel n is an FM channel on hz (the air band with "am": received in AM)
+//   amany               this radio receives AM past the air band too (board_t.am_bands: 108-480 MHz), until the next
+//                       reset: the AM mode is offered, and the view says where a channel or the VFO is received in AM
+//   cham:<n>,<hz>       stored channel n is a channel set to AM on hz: its tag over a stand-in record
 //   hotspot:on|off      the host link enters / leaves hotspot mode
 //   usbnet:off|on|up    USB a serial port, a network adapter, or a network adapter the computer has brought up
 //   timeout             the TX timeout cuts the transmission off while PTT is still held (shows the timeout deny)
@@ -83,6 +86,7 @@
 #include "stubentry/stub_entry.h"
 #include "ui/ui_svc_aprs.h"
 #include "codeplug/codeplug_tag.h"
+#include "radio/radio_am.h"
 #if CONFIG_P25
 #include "p25/p25_codeplug.h"
 #include "radio/radio_p25.h"
@@ -434,6 +438,10 @@ static const hal_vocoder_t vocoder = { .options = v_options };
 // A receiver that does AM (the "am" token): radio_am_channel() reads only that rx_am is there
 static bool r_rx_am(uint32_t hz, radio_bw_t bw) { (void)hz; (void)bw; return true; }
 static const hal_radio_t am_radio = { .rx_am = r_rx_am };
+// ... and past the air band (the "amany" token): view.am and the VFO's AM are modeled then, as the radio core has them
+static const band_t sim_am_bands[] = { { 108000000, 480000000, false } };
+static bool am_any;
+static bool vfo_am;	// the VFO is set to AM (the radio core's vfo_ch kind)
 
 // The support info on About (docs/spec/support-info.md): an STM32F4, a small image to hash, a DMR and an RF chip
 static bool s_chip(hal_chip_t *c)
@@ -740,6 +748,7 @@ static struct {
 #endif
 } sim_edits[SIM_EDITS];
 static uint8_t n_edits;
+static channel_t sim_saved;	// the last channel written (the saved= check)
 
 static const channel_t *sim_edit(uint16_t number)
 {
@@ -760,6 +769,7 @@ static int sim_write(uint16_t number, const channel_t *ch)
 		n_edits++;
 	sim_edits[i].number = number;
 	sim_edits[i].ch = *ch;
+	sim_saved = *ch;
 #if CONFIG_P25 || CONFIG_NXDN
 	sim_edits[i].air_set = false;
 #endif
@@ -772,7 +782,12 @@ bool ui_svc_write_channel(uint16_t number, const channel_t *ch, uint16_t from)
 	(void)from;
 	if (sim_hold())
 		return sim_held;
-	return sim_write(number, ch) >= 0;
+	channel_t c = *ch;
+	if (radio_am_kind(&c)) {
+		c.mode = RADIO_MODE_DMR;	// a channel set to AM: its tag over the stand-in record (radio_am_save)
+		c.rx_only = true;
+	}
+	return sim_write(number, &c) >= 0;
 }
 
 #if CONFIG_P25 || CONFIG_NXDN
@@ -1269,6 +1284,8 @@ uint32_t radio_view_serial(void) { return serial; }
 static int32_t sim_step;	// UI_SET_VFO_STEP: 0 auto (the width's), else 10 Hz units
 static void changed(void)
 {
+	if (am_any)
+		view.am = radio_am_channel(&view.ch);
 	view.vfo_step_hz = sim_step == 833 ? 8333u : sim_step > 0 ? (uint32_t)sim_step * 10u :
 			   view.ch.bw == RADIO_BW_25K ? 25000u : 12500u;
 	view.vfo_step_auto = sim_step == 0;
@@ -1368,6 +1385,7 @@ static void load_channel(void)
 	strcpy(view.zone_name, z.name);
 	view.channel_number = z.channels[view.zone_pos];
 	codeplug_channel(view.channel_number, &ch_saved);
+	radio_am_take(&ch_saved);	// as the radio core reads it (channel_read)
 	view.ch = ch_saved;
 	view.power = board.power_default;
 	view.temp = 0;
@@ -1438,6 +1456,8 @@ static void sim_vfo(bool on)
 		view.ch.bw = vfo_bw;
 		view.ch.power = CODEPLUG_POWER_DEFAULT;
 		view.ch.mode = vfo_mode;
+		if (vfo_am)
+			radio_am_set(&view.ch, true);
 		view.ch.color_code = vfo_cc;
 		view.ch.timeslot = vfo_ts;
 		view.dmr.active = vfo_mode == RADIO_MODE_DMR;
@@ -1515,6 +1535,7 @@ uint8_t ui_svc_vfo_copy(const radio_view_t *v)
 	vfo_tx_hz = v->ch.tx_hz ? v->ch.tx_hz : v->ch.rx_hz;
 	vfo_bw = v->ch.bw;
 	vfo_mode = v->ch.mode;
+	vfo_am = radio_am_kind(&v->ch);	// an AM channel makes the VFO AM
 	if (v->ch.mode == RADIO_MODE_DMR) {
 		vfo_cc = v->ch.color_code;
 		vfo_ts = v->ch.timeslot;
@@ -1602,6 +1623,12 @@ static void ptt(bool down)
 {
 	if (down) {
 		to_selected();	// the radio core transmits on the selected channel
+		if (radio_am_tx_never(&view.ch) || (am_any && view.am)) {
+			view.state = RS_TX_DENIED;	// AM is receive only, before the channel's own RX only (tx_check)
+			view.tx_deny = TXDENY_AM;
+			changed();
+			return;
+		}
 		if (view.ch.rx_only) {
 			view.state = RS_TX_DENIED;
 			view.tx_deny = TXDENY_RX_ONLY;
@@ -1724,7 +1751,7 @@ uint32_t ui_svc_features(void)
 	return 0xFFFFFFFFu & ~(soft_volume ? 0 : UI_FEAT_VOLUME) & ~(bcast_rx ? 0 : UI_FEAT_BCAST) &
 	       ~(ref_trim ? 0 : UI_FEAT_REF_TRIM) &
 	       ~(knob_radio ? 0 : UI_FEAT_VOLUME_KNOB) & ~(p25_radio ? 0 : UI_FEAT_P25) &
-	       ~(nxdn_radio ? 0 : UI_FEAT_NXDN);
+	       ~(nxdn_radio ? 0 : UI_FEAT_NXDN) & ~(am_any ? 0 : UI_FEAT_AM);
 }
 // My radio's names (ui_svc_name_*): placeholders, as the user's own would be; a save writes at once
 static char sim_names[UI_NAME_COUNT][17];
@@ -1917,6 +1944,21 @@ bool ui_svc_vfo_sfr(uint8_t a)
 bool ui_svc_mode(uint8_t mode)
 {
 	retune();
+	if (mode == RADIO_REQ_MODE_AM) {
+		// The VFO's AM, where the receiver demodulates it, as the radio core takes it (RREQ_MODE)
+		if (!view.vfo || !radio_am_anywhere() || !radio_am_rx_at(view.ch.rx_hz))
+			return true;
+		vfo_am = true;
+		vfo_mode = RADIO_MODE_FM;
+		radio_am_set(&view.ch, true);
+		view.dmr.active = false;
+		changed();
+		return true;
+	}
+	if (view.vfo && vfo_am) {
+		vfo_am = false;
+		radio_am_set(&view.ch, false);
+	}
 	view.ch.mode = mode;
 	view.dmr.active = mode == RADIO_MODE_DMR;
 	if (view.vfo) {
@@ -2476,6 +2518,11 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	view.p25.talk = 1;
 #endif
 	board.radio = NULL;
+	board.am_bands = NULL;
+	board.am_band_count = 0;
+	am_any = false;
+	vfo_am = false;
+	view.am = false;
 	ref_trim = false;
 	knob_radio = false;
 	vol_held = false;
@@ -2673,6 +2720,11 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "mode") == 0) snprintf(got, sizeof got, "%s", view.ch.mode == RADIO_MODE_DMR ? "dmr" :
 								     view.ch.mode == RADIO_MODE_P25 ? "p25" :
 								     view.ch.mode == RADIO_MODE_NXDN ? "nxdn" : "fm");
+	else if (strcmp(key, "am") == 0) snprintf(got, sizeof got, "%u", view.am);	// received in AM (the "amany" model)
+	else if (strcmp(key, "kind") == 0) snprintf(got, sizeof got, "%u", view.ch.kind);
+	// The last channel written: its kind, record mode (fm, dmr) and receive only, as "5,dmr,1"
+	else if (strcmp(key, "saved") == 0) snprintf(got, sizeof got, "%u,%s,%u", sim_saved.kind,
+						      sim_saved.mode == RADIO_MODE_DMR ? "dmr" : "fm", sim_saved.rx_only);
 	else if (strcmp(key, "tx") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tx_count);
 	else if (strcmp(key, "txid") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tx_id);
 	else if (strcmp(key, "txpriv") == 0) snprintf(got, sizeof got, "%u", sim_rec.tx_private);
@@ -3173,6 +3225,24 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(100);
 		return true;
 	}
+	if (strcmp(t, "cham") == 0) {		// stored channel n is a channel set to AM on hz
+		unsigned n = 0, hz = 0;
+		channel_t c;
+		if (arg == NULL || sscanf(arg, "%u,%u", &n, &hz) != 2 || !codeplug_channel((uint16_t)n, &c)) {
+			snprintf(err, len, "bad %s", t);
+			return false;
+		}
+		radio_am_set(&c, true);
+		c.mode = RADIO_MODE_DMR;	// the stand-in record under the tag
+		c.rx_only = true;
+		c.rx_hz = c.tx_hz = hz;
+		if (sim_write((uint16_t)n, &c) < 0) {
+			snprintf(err, len, "no room for %s", t);
+			return false;
+		}
+		sim_rec.codeplug_writes--;	// the codeplug as found, not a write of the UI's
+		return true;
+	}
 	if (strcmp(t, "chhz") == 0) {		// stored channel n is an FM channel on hz
 		unsigned n = 0, hz = 0;
 		channel_t c;
@@ -3523,6 +3593,15 @@ static bool run_token(char *t, char *err, size_t len)
 	if (strcmp(t, "am") == 0) {		// this radio receives air band AM (CAP_AM_RX), until the next reset
 		board.caps |= CAP_AM_RX;
 		board.radio = &am_radio;
+		return true;
+	}
+	if (strcmp(t, "amany") == 0) {		// ... and AM past the air band (board_t.am_bands)
+		board.caps |= CAP_AM_RX;
+		board.radio = &am_radio;
+		board.am_bands = sim_am_bands;
+		board.am_band_count = 1;
+		am_any = true;
+		changed();
 		return true;
 	}
 	if (strcmp(t, "bcast") == 0) {		// this radio has a broadcast FM receiver

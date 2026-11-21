@@ -5,7 +5,8 @@
 Status: written, not yet tested on a radio (2026-10-22). What the radios RadioFoundry supports can do on the aeronautical
 VHF band (AM, 108-137 MHz) and FM broadcast (65-108 MHz), and how RadioFoundry does it on any radio that has the hardware.
 Both are receive only and need no menu: the frequency decides. An FM channel or the VFO in the air band is received
-in AM; one in the broadcast band plays on the broadcast receiver.
+in AM; one in the broadcast band plays on the broadcast receiver. Past the air band, a channel or the VFO can also be
+set to AM where the radio's receiver demodulates it (3.4), receive only as well.
 
 ## 1. Which radios
 
@@ -38,7 +39,8 @@ channels in that range). The band is an ITU allocation, the same everywhere, so 
 (`RADIO_AM_LO_HZ` / `RADIO_AM_HI_HZ` in `core/radio/radio_am.h`), not a board value. A DMR channel in the range is
 received in AM too: `tune()` sets `view.ch.mode` to FM in the air band and the broadcast range (`radio_listen_band()` in
 `core/radio/radio_bands.h`), the VFO's own mode with it, and RREQ_MODE refuses DMR there. The codeplug keeps the stored mode. Against a stored AM flag: it would need the native codeplug first, and an AM
-channel outside the air band has no use on these radios.
+channel outside the air band would have no use on these radios. AM wanted elsewhere is the AM channel kind of 3.4,
+which leaves the air band's rule as it is.
 
 The Codeplug Editor follows the same rule (`listenBand()` in `site/static/js/codeplug/model.js`, with the air band and
 65-108 MHz for broadcast): an RX frequency typed in either band turns on RX Only, the channel list shows the mode the
@@ -88,6 +90,25 @@ Why the squelch stays on noise_sq: the chip's own squelch (programming guide, sq
 noise_sq tells them apart: on the bench it read 59 to 72 on empty channels and fell as a carrier rose (about 61, 53,
 45 and 31 for carriers 5 dB apart, 14 to 19 for a strong one). Level 1 opens where the chip's own squelch does
 (under 0x4F's noise_sq_th_in).
+
+### 3.4 AM channels and the VFO's AM, past the air band
+
+Some receivers demodulate AM wherever they receive, not only in the air band: the FD6818 runs AM after the same front
+end as FM, so a 2 m or 70 cm AM signal (an amateur AM net, a test carrier) can be heard. A channel or the VFO can
+therefore be **set to AM** where the board says its receiver can.
+
+| Item | Behavior |
+|---|---|
+| Where | `radio_am_rx_at(hz)`: the air band on any AM radio, and a range of `board_t.am_bands` that the band table receives now (an RX extension range only while it is on). A board with no `am_bands` offers no AM mode (`radio_am_anywhere()` false); one without `CAP_AM_RX` has none at all |
+| Codeplug | Channel kind 5, AM ([channel-modes.md](channel-modes.md) 4): a channel tag with no system and no parameter block over the safe stand-in record (DMR, receive only, the channel's frequencies), so a reader that knows no tags sees a receive-only DMR channel and never transmits on it. The tag's transmit flag is always clear; the radio writes it so (`radio_am_save`, `core/radio/radio_am_cp.c`) and the Codeplug Editor keeps it so. Ids and rules as every other kind (2.4 there: a rename follows, a copy takes the tag, a plain write over it removes it) |
+| As run | `radio_am_take()` makes a read channel of the kind FM underneath; `radio_am_channel()` is true for it where `radio_am_rx_at()`, and `tune()` calls `rx_am()` exactly as for the air band (3.2: squelch, no sub-audio, the board's status). Where the receiver can't demodulate AM (the broadcast band's tuner, a range the board doesn't list) the channel is **parked**: tuned, silent, not on the broadcast receiver, never scanned, never keyed. On a build without `CONFIG_AM_RX` or a board without `CAP_AM_RX` the kind isn't built, so the channel is parked the same way ([channel-modes.md](channel-modes.md) 6) |
+| Transmit | Refused with `TXDENY_AM` for every channel of the kind, wherever it is and whatever its tag or record says (`radio_am_tx_never`), and while `view.am`. No board has an AM modulator, so AM transmit is not offered anywhere |
+| VFO | `radio_req_mode(RADIO_REQ_MODE_AM)` sets the VFO to AM (the kind on the VFO's channel, its mode FM) where `radio_am_anywhere()` and `radio_am_rx_at()` its frequency; any other mode takes it off. Kept with the VFO (its saved mode is `RADIO_REQ_MODE_AM`, 8; a build or a radio without AM restores its default mode). Tuned where AM can't be received (the broadcast band) the VFO becomes plain FM, as a DMR VFO in a listen band does. Copy to VFO takes an AM channel's AM along; a parked one is refused |
+| Screens | Mode word "AM" (the kind's short name). Home's chip "AM receive" (the air band keeps "Air Band AM") and the squelch level; a parked one says "No AM here". No tone, width or VOX tile ("FM only: this is AM"). PTT: "AM: receive only", in the VFO with "Set the VFO to FM". The channel editor's Mode steps FM, AM, DMR, ... where `UI_FEAT_AM` and `radio_am_rx_at()` the channel's RX, and not in a listen band (the air band is AM already); an AM channel has no TX, power, RX only, width, tone, VOX or time-out rows. The VFO's mode tile goes FM, AM, DMR the same way |
+| Codeplug Editor | `site/static/js/codeplug/mode_am.js`: offered where the radio's VERSION features say `AM` (`build_modes_now`: only where `radio_am_anywhere()`), or with no radio connected. Receive only is fixed on (`rxOnly`); transmit allowed is an error, an RX frequency in 65-108 MHz a warning |
+
+The air band itself is unchanged: an FM channel there is still received in AM by its frequency (3.1), with no tag.
+Untested on air past the air band: an FD6818's AM at 2 m and 70 cm needs a check against a real AM signal.
 
 ## 4. Broadcast FM
 
@@ -157,17 +178,20 @@ broadcast plays, so the two never ask for the speaker at once (hal_bcast.h `audi
 
 | Switch | Default | Covers |
 |---|---|---|
-| `CONFIG_AM_RX` | on with FM; off where the receiver has no AM | `radio_am.c` in the radio core, RREQ_VFO_STEP_SIZE; needs FM |
+| `CONFIG_AM_RX` | on with FM; off where the receiver has no AM | `radio_am.c` and `radio_am_cp.c` in the radio core, the AM channel kind (3.4), RREQ_VFO_STEP_SIZE; needs FM |
 | `CONFIG_BCAST_FM` | on; off where there is no broadcast receiver | `radio_bcast.c` in the radio core, the board's tuner glue, the step setting |
 
-The board must also set the capability bits; without them the code does nothing at run time. Per-board defaults:
+The board must also set the capability bits, and `board_t.am_bands` for AM past the air band; without them the code
+does nothing at run time. Per-board defaults:
 [feature-matrix.md](../feature-matrix.md).
 
 ## 6. Tests
 
 | Test | Covers |
 |---|---|
-| `tests/host/radioListenBandsTest.c` | AM and broadcast channels and VFO, TX refusal, squelch, the steps, a dead receiver |
+| `tests/host/radioListenBandsTest.c` | AM and broadcast channels and VFO, TX refusal, squelch, the steps, a dead receiver; AM channels at 145 and 433 MHz and the VFO in AM (3.4), parked where AM can't be received; built again for a board with air band AM only and one with none (the AM mode gated off) |
+| `tests/host/amCodeplugTest.c` | the AM kind saved from the radio and read back, its stand-in record, rename, copy, a later firmware's bytes, never transmit allowed |
 | `tests/host/fd6818Test.c` | the AF output word for AM and back to FM |
-| `tests/host/uiFlowTest.c` | the FM broadcast step row on a radio with the receiver; AM in dual watch (a VFO and a channel pane, the signal line) |
-| `tests/hil/test_listen_bands.py` | the VFO at 118.0 MHz gives `am=1`; at 100.1 MHz `bcast=1` and `bcast_fault=0`. Nothing keys |
+| `tests/host/uiFlowTest.c` | the FM broadcast step row on a radio with the receiver; AM in dual watch (a VFO and a channel pane, the signal line); AM in the channel editor's Mode and the VFO's mode tile, an AM channel on Home, PTT refused, Copy to VFO |
+| `site/tests/modes.test.mjs`, `editor.test.mjs`, `qdmr.test.mjs` | the AM kind in the Codeplug Editor: a byte for byte round trip, receive only kept, offered by the radio's features |
+| `tests/hil/test_listen_bands.py` | the VFO at 118.0 MHz gives `am=1`; at 100.1 MHz `bcast=1` and `bcast_fault=0`; set to AM at 145.5 MHz `am=1` and `ch.kind=5` where the radio reports `AM`. Nothing keys |

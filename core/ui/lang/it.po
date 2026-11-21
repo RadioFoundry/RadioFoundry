@@ -467,6 +467,11 @@ msgctxt "QUICK_WHY_FM_ONLY_NXDN_CHANNEL"
 msgid "FM only: this is NXDN"
 msgstr "Solo FM: questo è NXDN"
 
+#: core/ui/ui_app.c
+msgctxt "QUICK_WHY_FM_ONLY_AM"
+msgid "FM only: this is AM"
+msgstr "Solo FM: questo è AM"
+
 #: core/ui/ui_app.c core/ui/ui_menus.c
 msgctxt "WHY_NOT_IN_BUILD"
 msgid "Not in this build"
@@ -1056,6 +1061,11 @@ msgstr "OK scegli  Indietro"
 msgctxt "HOME_CHIP_AIR_BAND_AM"
 msgid "Air Band AM"
 msgstr "Aereo AM"
+
+#: core/ui/ui_dual.c core/ui/ui_screens.c
+msgctxt "HOME_CHIP_AM_RX"
+msgid "AM receive"
+msgstr "AM ricezione"
 
 #: core/ui/ui_dual.c core/ui/ui_screens.c
 msgctxt "CHIP_NO_TONE"
@@ -4588,6 +4598,11 @@ msgid "No TX frequency"
 msgstr "Nessuna frequenza TX"
 
 #: core/ui/ui_screens.c
+msgctxt "HOME_CHIP_AM_NOT_HERE"
+msgid "No AM here"
+msgstr "Niente AM qui"
+
+#: core/ui/ui_screens.c
 msgctxt "HOME_CHIP_BROADCAST_FM"
 msgid "Broadcast FM"
 msgstr "FM broadcast"
@@ -4676,6 +4691,11 @@ msgstr "Modo hotspot: PTT off"
 msgctxt "DENY_WHY_NO_DMR_ID"
 msgid "No DMR ID in codeplug"
 msgstr "Nessun ID DMR nel codeplug"
+
+#: core/ui/ui_screens.c
+msgctxt "WHY_AM_RX_ONLY"
+msgid "AM: receive only"
+msgstr "AM: solo ricezione"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_REPEATER_CHANNEL"
@@ -4791,6 +4811,11 @@ msgstr "OK ferma hotspot"
 msgctxt "DENY_FIX_SET_DMR_ID"
 msgid "Set your DMR ID in qdmr"
 msgstr "Imposta il tuo ID DMR in qdmr"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_FIX_VFO_MODE_FM"
+msgid "Set the VFO to FM"
+msgstr "Metti il VFO in FM"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_FIX_TUNE_OUT_OF_BAND"

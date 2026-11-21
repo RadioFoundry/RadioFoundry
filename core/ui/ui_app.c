@@ -23,6 +23,7 @@
 #include "i18n.h"
 #include "input/input.h"
 #include "radio/tones.h"
+#include "radio/radio_am.h"
 #include "config.h"
 #include "codeplug/codeplug_modes.h"	// CODEPLUG_KIND_NONE
 #if CONFIG_HOTSPOT || (CONFIG_USB_NETWORK && CONFIG_HOSTLINK)
@@ -1374,6 +1375,7 @@ static void quick_unavailable(uint8_t kind)
 			TR(QUICK_WHY_FM_ONLY_DMR_CHANNEL, "FM only: this is a DMR channel") :
 			view->ch.mode == RADIO_MODE_P25 ? TR(QUICK_WHY_FM_ONLY_P25_CHANNEL, "FM only: this is a P25 channel") :
 			view->ch.mode == RADIO_MODE_NXDN ? TR(QUICK_WHY_FM_ONLY_NXDN_CHANNEL, "FM only: this is NXDN") :
+			radio_am_kind(&view->ch) ? TR(QUICK_WHY_FM_ONLY_AM, "FM only: this is AM") :
 			TR(WHY_NOT_IN_BUILD, "Not in this build"));
 		break;
 	case QT_PRIVACY: ui_toast(TR(WHY_PRIVACY_NOT_IN_BUILD, "Privacy: not in this build")); break;
@@ -1419,17 +1421,22 @@ static void quick_activate(int tile)
 		ui_st.quick_edit = true;	// the hint row says what Up / Down and the digits do
 		break;
 	case QT_MODE: {
-		// FM, DMR, P25, NXDN in turn: P25 and NXDN where the board runs them (the view may change at once: the
-		// host simulator)
+		// FM, AM, DMR, P25, NXDN in turn: AM where the receiver demodulates it past the air band (in the air band
+		// FM is AM already), P25 and NXDN where the board runs them (the view may change at once: the host
+		// simulator)
 		uint32_t feat = ui_svc_features();
 		bool p25 = (feat & UI_FEAT_P25) != 0, nxdn = (feat & UI_FEAT_NXDN) != 0;
-		uint8_t to = view->ch.mode == RADIO_MODE_FM ? RADIO_MODE_DMR :
+		bool air = radio_am_band(view->ch.rx_hz);
+		bool am_ok = (feat & UI_FEAT_AM) != 0 && !air && radio_am_rx_at(view->ch.rx_hz);
+		bool am = radio_am_kind(&view->ch);
+		uint8_t to = view->ch.mode == RADIO_MODE_FM && !am && am_ok ? RADIO_REQ_MODE_AM :
+			view->ch.mode == RADIO_MODE_FM ? RADIO_MODE_DMR :
 			view->ch.mode == RADIO_MODE_DMR && p25 ? RADIO_MODE_P25 :
 			(view->ch.mode == RADIO_MODE_DMR || view->ch.mode == RADIO_MODE_P25) && nxdn ? RADIO_MODE_NXDN :
 			RADIO_MODE_FM;
 		static char msg[12];	// the toast keeps the pointer
 		sbuf_t b;
-		if (to != RADIO_MODE_FM && (view->am || view->bcast)) {
+		if (to != RADIO_MODE_FM && to != RADIO_REQ_MODE_AM && ((view->am && air) || view->bcast)) {
 			ui_toast(view->am ? TR(QUICK_WHY_AM_ONLY_AIR_BAND, "AM only in the air band") :
 				TR(QUICK_WHY_FM_ONLY_BROADCAST, "FM only in the broadcast band"));
 			break;
@@ -1440,7 +1447,7 @@ static void quick_activate(int tile)
 		}
 		sb_init(&b, msg, sizeof msg);
 		sb_str(&b, "VFO: ");	// the VFO keeps its mode; a mode's name is never translated
-		sb_str(&b, ui_mode_name(to));
+		sb_str(&b, to == RADIO_REQ_MODE_AM ? "AM" : ui_mode_name(to));
 		ui_toast(msg);
 		break;
 	}

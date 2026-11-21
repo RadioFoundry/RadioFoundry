@@ -134,7 +134,7 @@ static bool summary_line(uint8_t i, char *buf, uint8_t len)
 	switch (i) {
 	case 0:
 		dl_fmt(buf, len, "radio %s %s ch %u '%s' %u.%05u %s%s",
-		       v->ch.mode == RADIO_MODE_NXDN ? "NXDN" : v->ch.mode == RADIO_MODE_P25 ? "P25" : v->ch.mode == RADIO_MODE_DMR ? "DMR" : "FM", v->vfo ? "VFO" : "MEM", v->channel_number, v->ch.name, (unsigned)(v->ch.rx_hz / 1000000u),
+		       v->ch.mode == RADIO_MODE_NXDN ? "NXDN" : v->ch.mode == RADIO_MODE_P25 ? "P25" : v->ch.mode == RADIO_MODE_DMR ? "DMR" : v->am ? "AM" : "FM", v->vfo ? "VFO" : "MEM", v->channel_number, v->ch.name, (unsigned)(v->ch.rx_hz / 1000000u),
 		       (unsigned)((v->ch.rx_hz % 1000000u) / 10u), state_name((uint8_t)v->state),
 		       v->hotspot ? " HOTSPOT" : "");
 		return true;

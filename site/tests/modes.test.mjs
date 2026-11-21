@@ -637,3 +637,86 @@ test("Systems tab: the recommended ham system's button is there for a type that 
 	// the type list starts on Tier III, which has one
 	assert.deepEqual(labels.find(([x]) => x === "editor.modes.add_ham"), ["editor.modes.add_ham", false]);
 });
+
+// --- AM (kind 5): receive only on any channel's own frequencies ---
+
+function amSample() {
+	const m = empty();
+	const a = newChannel({ name: "Tower", rxHz: 124500000, txHz: 124500000, rxOnly: false });
+	const b = newChannel({ name: "AM HF", rxHz: 27185000, txHz: 27185000, rxOnly: false });
+	m.channels.push(a, b);
+	numberAll(m);
+	setKind(m, a, 5);
+	setKind(m, b, 5);
+	return { m, a, b };
+}
+
+test("AM: a channel is the stand-in record and a bare tag, receive only, and round-trips byte for byte", () => {
+	const { m, a } = amSample();
+	assert.equal(kindName(5), "AM");
+	assert.equal(a.tagTx, false, "a plain channel that could transmit becomes receive only");
+	assert.deepEqual([a.mode, a.rxOnly, a.rxHz, a.system], ["dmr", true, 124500000, null]);
+	const img = encode(m);
+	const raw = getValue(area(img), MODE_KEY.tag + a.number - 1);
+	// kind 5, no system, the name check, no flags (no transmit, no base-own, no fallback), no parameter bytes
+	assert.equal(hexOf(raw), hexOf(encodeTag({ kind: 5, system: 0xFF, check: nameCheck("Tower"), flags: 0, params: new Uint8Array(0) })));
+	assert.equal(raw.length, 5);
+	const d = decode(img);
+	const c = d.channels.find((x) => x.name === "Tower");
+	assert.deepEqual([c.kind, c.tagTx, c.baseOwn, c.system, c.fallback, c.params, c.mode, c.rxOnly, c.rxHz], [5, false, false, null, null, {}, "dmr", true, 124500000]);
+	assert.deepEqual(encode(d).bytes, img.bytes);
+	// parameter bytes a later version stored stay through an edit
+	const key = MODE_KEY.tag + a.number - 1;
+	putArea(img.bytes, setValue(area(img), key, Uint8Array.from([...raw, 0x12, 0x34])));
+	const d2 = decode(img);
+	d2.channels.find((x) => x.name === "Tower").name = "Tower 2";
+	assert.equal(hexOf(decodeTag(getValue(area(encode(d2)), key)).params), "1234");
+});
+
+test("AM: transmit allowed is an error; the broadcast FM band is warned, the air band and HF are not", () => {
+	const { m, a, b } = amSample();
+	let p = validate(m);
+	assert.ok(!has(p, "am_rx_only") && !has(p, "am_bcast"));
+	assert.ok(!p.some((x) => x.item === a && x.code.startsWith("listen_")), "the air band is AM's own");
+	a.tagTx = true;
+	p = validate(m);
+	assert.ok(p.some((x) => x.level === "error" && x.code === "am_rx_only" && x.item === a));
+	assert.ok(!has(p, "am_rx_only", b));
+	b.rxHz = b.txHz = 98500000;
+	assert.ok(validate(m).some((x) => x.level === "warning" && x.code === "am_bcast" && x.item === b));
+});
+
+test("AM: offered with the radio's AM feature, or with no radio", () => {
+	assert.deepEqual(offeredKinds(empty(), "FM,DMR,AM").map((k) => k.id), [5]);
+	assert.deepEqual(offeredKinds(empty(), "FM,DMR,NXDN").map((k) => k.id), [4]);
+	assert.ok(offeredKinds(empty(), null).some((k) => k.id === 5));
+	const { m, a } = amSample();
+	assert.deepEqual(offeredKinds(m, "FM,DMR").map((k) => k.id), [5], "the codeplug holds it");
+	assert.ok(has(validate(m, { features: "FM,DMR" }), "mode_not_in_radio", a));
+	assert.ok(!has(validate(m, { features: "FM,DMR,AM" }), "mode_not_in_radio", a));
+});
+
+test("AM channel form: no mode fields, no talk target, and Receive only held ticked", () => {
+	const m = empty();
+	const c = newChannel({ name: "Ch", rxHz: 124500000, txHz: 124500000, rxOnly: false });
+	m.channels.push(c);
+	numberAll(m);
+	const form = channelForm(m, t, { features: "FM,DMR,AM" });
+	const work = { ...c };
+	form.find((x) => x.key === "mode").set(work, "k5");
+	assert.equal(work.kind, 5);
+	assert.equal(work.tagTx, false);
+	const rxOnly = form.find((x) => x.key === "rxOnly");
+	assert.equal(rxOnly.get(work), true);
+	rxOnly.set(work, false);
+	assert.equal(work.tagTx, false, "unticking never allows transmit");
+	assert.equal(rxOnly.implied(() => "124.5", work), true, "the box is held");
+	assert.equal(rxOnly.implied(() => "446.1", { kind: 0 }), false);
+	for (const k of ["contact", "timeslot", "dmrId", "squelch"]) assert.equal(form.find((x) => x.key === k).show(work), false, k);
+	assert.ok(!form.some((x) => x.key?.startsWith("k5.")), "no fields of its own");
+	// the table's box is locked on an AM channel and its setter ignores a transmit
+	const col = columns("channels", m, t).find((x) => x.key === "rxOnly");
+	assert.equal(col.readOnly(work), true);
+	col.set(work, false);
+	assert.equal(work.tagTx, false);
+});

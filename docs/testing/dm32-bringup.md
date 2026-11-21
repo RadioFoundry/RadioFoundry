@@ -166,6 +166,7 @@ keying.
 | No audio: FD6818 0x47 (0x0140 gives FM audio), then the speaker source switch (GPIO 0x2F high) | AM audio route (A2) |
 | A strong and a weak station; a generator at -100 dBm with `rssi` on the link | AM AGC and filter (A3), the AM squelch offset (A4) |
 | PTT on an air channel and on a split channel with TX in 108-137 MHz | deny screen, red LED off, nothing on the SDR |
+| An AM channel (and the VFO set to AM) at 2 m and at 70 cm, a low-power AM signal from the bench: AM audio, `am=1`, `ch.kind=5`; PTT on it | AM past the air band (airband-and-broadcast.md 3.4, `am_bands`), untested on a radio; "AM: receive only", nothing keys |
 | The RDA5807M chip ID (0x58xx at 0x11) on PTA25 / PTA26 | it is there, the SDA pull-up (B1, B3) |
 | A strong local station with each reference clock setting; with and without the headset | reference clock (B2), audio path (B4), antenna (B5) |
 | The VFO on 100.1 MHz, then a local station: `bcast=1`, `bcast_fault=0`, the signal meter moves; the knob steps 200 kHz on the odd tenths | the tuner glue, the squelch threshold |

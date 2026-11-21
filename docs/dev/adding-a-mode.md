@@ -56,6 +56,7 @@ reports for the mode. A kind module gives:
 | `contacts`, `recordFields` | Whether its targets are contacts; the base record fields it uses |
 | `ownFreqs` | Whether the channel keeps its own frequencies (false: the system gives them) |
 | `defaultTx`, `fallback`, `flags` | Transmit on a new channel; whether it has a fallback channel; its flag bits 4-7 by name |
+| `rxOnly` | Optional: the kind never transmits, so the tag's transmit flag stays clear (the form's Receive only is fixed on) |
 | `newParams`, `decode`, `encode` | The parameter block. `encode(params, prev)` keeps the bytes past what it knows |
 | `fields()` | The form's fields, declared (`editor/modefields.js`: int, hex, freq, bool, select, list, hexbytes, text) |
 | `validate`, `settings` | Problems of a channel; the radio-wide record's fields, when it has one |

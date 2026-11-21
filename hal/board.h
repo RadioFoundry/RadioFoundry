@@ -41,7 +41,8 @@ enum {
 	CAP_DMR		= 1u << 3,
 	CAP_VOLUME_POT	= 1u << 4,
 	// The channel receiver demodulates AM in the air band (108-137 MHz, receive only; radio/radio_am.h). The band
-	// table must hold an RX-only band covering it, and board.radio->rx_am must be set
+	// table must hold an RX-only band covering it, and board.radio->rx_am must be set. board_t.am_bands says where
+	// else it can (an AM channel, the VFO in AM)
 	CAP_AM_RX	= 1u << 5,
 	// A separate broadcast FM receiver (board.bcast, hal_bcast.h)
 	CAP_BCAST_FM	= 1u << 6,
@@ -78,6 +79,12 @@ typedef struct {
 	// board_band_count(), and never set tx on these entries
 	uint8_t rx_ext_count;
 	bool *rx_ext_on;
+	// Optional, with CAP_AM_RX: the receive ranges, besides the air band, where the channel receiver also demodulates
+	// AM, so a channel or the VFO set to AM receives AM there (radio/radio_am.h; docs/spec/airband-and-broadcast.md
+	// 3.4). A frequency counts only while the band table above also receives it (an rx_ext range only while it is on),
+	// and tx is never set here: AM is receive only. NULL / 0: AM in the air band only, and no AM mode is offered
+	const band_t *am_bands;
+	uint8_t am_band_count;
 	uint8_t power_count;
 	const char *const *power_names;	// short labels for the status line, power_count entries
 	// Optional: the labels per band, where a level's power differs between bands (a top level of 45 W on one band and

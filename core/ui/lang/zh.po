@@ -469,6 +469,11 @@ msgctxt "QUICK_WHY_FM_ONLY_NXDN_CHANNEL"
 msgid "FM only: this is NXDN"
 msgstr "仅 FM：这是 NXDN"
 
+#: core/ui/ui_app.c
+msgctxt "QUICK_WHY_FM_ONLY_AM"
+msgid "FM only: this is AM"
+msgstr "仅 FM：这是 AM"
+
 #: core/ui/ui_app.c core/ui/ui_menus.c
 msgctxt "WHY_NOT_IN_BUILD"
 msgid "Not in this build"
@@ -1058,6 +1063,11 @@ msgstr "OK 选  返回"
 msgctxt "HOME_CHIP_AIR_BAND_AM"
 msgid "Air Band AM"
 msgstr "航空 AM"
+
+#: core/ui/ui_dual.c core/ui/ui_screens.c
+msgctxt "HOME_CHIP_AM_RX"
+msgid "AM receive"
+msgstr "AM 接收"
 
 #: core/ui/ui_dual.c core/ui/ui_screens.c
 msgctxt "CHIP_NO_TONE"
@@ -4590,6 +4600,11 @@ msgid "No TX frequency"
 msgstr "无发射频率"
 
 #: core/ui/ui_screens.c
+msgctxt "HOME_CHIP_AM_NOT_HERE"
+msgid "No AM here"
+msgstr "此处无 AM"
+
+#: core/ui/ui_screens.c
 msgctxt "HOME_CHIP_BROADCAST_FM"
 msgid "Broadcast FM"
 msgstr "调频广播"
@@ -4678,6 +4693,11 @@ msgstr "热点模式：PTT 关闭"
 msgctxt "DENY_WHY_NO_DMR_ID"
 msgid "No DMR ID in codeplug"
 msgstr "电台频率中无 DMR ID"
+
+#: core/ui/ui_screens.c
+msgctxt "WHY_AM_RX_ONLY"
+msgid "AM: receive only"
+msgstr "AM：仅接收"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_REPEATER_CHANNEL"
@@ -4793,6 +4813,11 @@ msgstr "OK 停止热点"
 msgctxt "DENY_FIX_SET_DMR_ID"
 msgid "Set your DMR ID in qdmr"
 msgstr "在 qdmr 中设置 DMR ID"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_FIX_VFO_MODE_FM"
+msgid "Set the VFO to FM"
+msgstr "请把 VFO 设为 FM"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_FIX_TUNE_OUT_OF_BAND"
