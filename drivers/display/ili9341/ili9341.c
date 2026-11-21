@@ -250,6 +250,10 @@ void ili9341_write_rows_indexed(const ili9341_t *p, const uint8_t *fb, const uin
 	window(p, 0, y0, (uint16_t)w, y1);
 	for (uint32_t y = y0; y < y1; y++) {
 		const uint8_t *row = fb + y * stride;
+		if (b->pixels4 != NULL) {
+			b->pixels4(row, palette, w);
+			continue;
+		}
 		for (uint32_t x = 0; x < w; x++) {
 			line[x] = palette[(row[x >> 1] >> ((x & 1u) ? 0 : 4)) & 0x0Fu];
 		}

@@ -13,14 +13,8 @@
 #include "hal_time.h"
 #include "display/ili9341/ili9341.h"
 
-#define LCDC_CMD		REG32(LCDC_BASE + 0x00)	// write: command byte (RS low)
-#define LCDC_DATA		REG32(LCDC_BASE + 0x04)	// write: data byte (RS high)
-#define LCDC_CFG		REG32(LCDC_BASE + 0x10)
-#define LCDC_EN			REG32(LCDC_BASE + 0x28)	// b0 enable, b1 ready
-// The controller's timing word, hardware-dm32.md's: a steady picture on the radio
-#define LCDC_CFG_VALUE		0x303u
-#define LCDC_PINS		0x7FFF8u		// IO_DIPLEX2 bits cleared: the bus pins to the controller
-#define LCDC_READY_SPINS	100000u
+// IO_DIPLEX2 bits cleared: the bus pins to the LCD controller
+#define LCDC_PINS		0x7FFF8u
 
 #define PANEL_W			320u
 #define PANEL_H			240u
@@ -33,43 +27,8 @@
 static bool ready;
 static ili9341_t panel;
 
-static inline void byte_gap(void)
-{
-	for (volatile uint32_t i = 0; i < 4; i++) {
-	}
-}
-
 static void bus_begin(void)
 {
-}
-
-static void bus_end(void)
-{
-	byte_gap();
-}
-
-static void bus_cmd(uint8_t c)
-{
-	LCDC_CMD = c;
-	byte_gap();
-}
-
-static void bus_data(const uint8_t *d, uint32_t n)
-{
-	for (uint32_t i = 0; i < n; i++) {
-		LCDC_DATA = d[i];
-		byte_gap();
-	}
-}
-
-static void bus_pixels(const uint16_t *px, uint32_t n)
-{
-	for (uint32_t i = 0; i < n; i++) {
-		LCDC_DATA = px[i] >> 8;
-		byte_gap();
-		LCDC_DATA = px[i] & 0xFFu;
-		byte_gap();
-	}
 }
 
 static void bus_reset(bool level)
@@ -79,10 +38,11 @@ static void bus_reset(bool level)
 
 static const ili9341_bus_t bus = {
 	.begin = bus_begin,
-	.end = bus_end,
-	.cmd = bus_cmd,
-	.data = bus_data,
-	.pixels = bus_pixels,
+	.end = hrc_lcdc_drain,
+	.cmd = hrc_lcdc_cmd,
+	.data = hrc_lcdc_data,
+	.pixels = hrc_lcdc_pixels,
+	.pixels4 = hrc_lcdc_pixels4,
 	.reset = bus_reset,
 	.delay_ms = hal_delay_ms,
 };
@@ -119,10 +79,7 @@ static void lcdc_init(void)
 	IO_DIPLEX2 &= ~LCDC_PINS;
 	hrc_irq_restore(s);
 	hrc_pin_out(PIN_LCD_RESET, true);
-	LCDC_CFG = LCDC_CFG_VALUE;
-	LCDC_EN |= 1u;
-	for (uint32_t n = LCDC_READY_SPINS; n != 0 && (LCDC_EN & 2u) == 0; n--) {
-	}
+	hrc_lcdc_start();
 }
 
 static void init(void)

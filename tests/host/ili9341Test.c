@@ -150,11 +150,43 @@ static void test_rows(void)
 	CHECK(n_words == 0 && px_total == 0);
 }
 
+// A bus with the 16-color row hook: each row goes through it once, with the row's bytes, the palette and the width
+static int rows4;
+static const uint8_t *row4_first;
+static void f_pixels4(const uint8_t *row, const uint16_t *palette, uint32_t n)
+{
+	uint16_t px[320];
+	if (rows4++ == 0)
+		row4_first = row;
+	for (uint32_t x = 0; x < n; x++)
+		px[x] = palette[(row[x >> 1] >> ((x & 1u) ? 0 : 4)) & 0x0Fu];
+	f_pixels(px, n);
+}
+
+static void test_rows_pixels4(void)
+{
+	static const ili9341_bus_t bus4 = {
+		.begin = f_begin, .end = f_end, .cmd = f_cmd, .data = f_data, .pixels = f_pixels, .reset = f_reset,
+		.delay_ms = f_delay, .pixels4 = f_pixels4,
+	};
+	ili9341_t p = { .bus = &bus4, .width = 320, .height = 240, .variant = ILI9341_VARIANT_3 };
+	static uint8_t fb[160 * 240];
+	static const uint16_t pal[16] = { 0x1111, 0x2222, [15] = 0xFFFF };
+	memset(fb, 0xF1, sizeof(fb));
+	clear();
+	rows4 = 0;
+	ili9341_write_rows_indexed(&p, fb, pal, 230, 300);
+	CHECK(rows4 == 10 && row4_first == fb + 230u * 160u && depth == 0);
+	CHECK(px_total == 10u * 320u);
+	CHECK(last_px[0] == 0xFFFF && last_px[1] == 0x2222);
+}
+
 int main(void)
 {
 	test_command_variants();
 	test_register_variant();
 	test_rows();
+	test_rows_pixels4();
 	if (failures) {
 		printf("ili9341Test: %d failure(s)\n", failures);
 		return 1;

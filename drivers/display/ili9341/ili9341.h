@@ -18,6 +18,9 @@ typedef struct {
 	void (*pixels)(const uint16_t *px, uint32_t n);	// RGB565, each sent high byte first
 	void (*reset)(bool level);		// reset pin level (low = in reset)
 	void (*delay_ms)(uint32_t ms);
+	// Optional (NULL: rows go through pixels): n pixels of a 16-color row (two a byte, high nibble left) through the
+	// palette, sent as pixels would. Spares the bus a line buffer pass where a pixel costs the CPU most
+	void (*pixels4)(const uint8_t *row, const uint16_t *palette, uint32_t n);
 } ili9341_bus_t;
 
 #define ILI9341_MAX_LINE	320u	// longest panel row in pixels

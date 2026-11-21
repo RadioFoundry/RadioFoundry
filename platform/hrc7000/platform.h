@@ -276,6 +276,16 @@ void hrc_backlight_pwm(const hrc_backlight_t *bl, uint8_t percent);
 // PTA15 / PWM0 with the default settings
 void hrc_backlight(uint8_t percent);
 
+// The i8080 LCD controller (lcdc.c). The board hands it the bus pins first. Start once, then bursts of commands and
+// data; drain before the pins go to another user
+void hrc_lcdc_start(void);
+void hrc_lcdc_drain(void);
+void hrc_lcdc_cmd(uint8_t c);
+void hrc_lcdc_data(const uint8_t *d, uint32_t n);
+void hrc_lcdc_pixels(const uint16_t *px, uint32_t n);		// RGB565, high byte first
+// n pixels of a 16-color row (two a byte, high nibble left) through a palette of 16 RGB565 colors
+void hrc_lcdc_pixels4(const uint8_t *row, const uint16_t *palette, uint32_t n);
+
 // Timer 1 at configTICK_RATE_HZ for the RTOS (called by the port when the scheduler starts)
 void hrc_tick_start(uint32_t hz);
 

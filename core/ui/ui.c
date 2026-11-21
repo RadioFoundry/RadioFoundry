@@ -41,8 +41,8 @@
 #define SPLASH_MS		1000
 #define FRAME_MIN_MS		50	// at most 20 redraws a second
 // Keys still waiting put a redraw off, so a burst of keys costs one: a changed list repaints most of a large panel
-// (a full frame of a 240x320 panel driven a byte at a time is near 0.2 s). Not longer than this, so the screen keeps
-// up with a held key
+// (a full frame of a 240x320 panel on an 8-bit bus costs tens of ms). Not longer than this, so the screen keeps up
+// with a held key
 #define FRAME_DEFER_MS		300
 // The idle task runs below this one and feeds the watchdog (watchdog.md 4): keys that come faster than the work
 // they cause (Find on a full codeplug, a filtered list of 1024 contacts) never let this task wait. After this long

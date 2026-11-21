@@ -1857,6 +1857,15 @@ run-webctlassets: httpAssetsTestWebctl
 	python3 -I $(ROOT)/tools/gen_http_assets.py --check out/http_webctl $(WEBCTL_ASSETS)
 .PHONY: run-webctlassets
 
+TESTS += hrc7000LcdcTest
+# The LCD controller's byte loops, with its register writes recorded (the test includes lcdc.c)
+hrc7000LcdcTest: hrc7000LcdcTest.c $(ROOT)/platform/hrc7000/lcdc.c
+	$(CC) $(CFLAGS) -Wshadow -o $@ $<
+run: run-hrc-lcdc
+run-hrc-lcdc: hrc7000LcdcTest
+	./hrc7000LcdcTest
+.PHONY: run-hrc-lcdc
+
 TESTS += hrc7000PcmTest
 # The harness supplies the RTOS calls; existing empty headers keep it independent of target submodules.
 hrc7000PcmTest: hrc7000PcmTest.c $(ROOT)/platform/hrc7000/audio_pcm.c $(ROOT)/platform/hrc7000/audio_pcm.h \
