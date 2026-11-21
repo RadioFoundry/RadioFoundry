@@ -35,6 +35,9 @@
 #if CONFIG_TFTP
 #include "net/tftp_codeplug.h"
 #endif
+#if CONFIG_NET_USRP
+#include "usbaudio/usrp_net.h"
+#endif
 #if CONFIG_CPS_OPENFW
 #include "cps/cps_openfw.h"
 #endif
@@ -131,9 +134,11 @@ static void startup_task(void *arg)
 	hostlink_set_hotspot_allowed(hotspot_allowed);
 #if CONFIG_TFTP
 	tftp_codeplug_allow_write((net_flags & SETTINGS_NET_TFTP_NO_WRITE) == 0);
-#else
-	(void)net_flags;
 #endif
+#if CONFIG_NET_USRP
+	usrp_net_enable((net_flags & SETTINGS_NET_USRP) != 0);
+#endif
+	(void)net_flags;
 #if CONFIG_CPS_OPENFW
 	cps_openfw_start();		// registers the CPS handler with the host link
 #endif

@@ -423,6 +423,9 @@ typedef enum {
 	// One step of a chain, set whole (its frequency and length in one write of the settings area): the value is
 	// UI_SIG_STEP(event, step, Hz, ms). Write only
 	UI_SET_SIG_STEP,
+	// Linking audio: USRP on the network, 1 on, 0 off (the default; Settings > Connections, CONFIG_NET_USRP;
+	// settings_t.net_flags SETTINGS_NET_USRP, usb-audio.md 9.1). Last, so the ids the UI flow tests name stay
+	UI_SET_USRP,
 	UI_SET_COUNT
 } ui_setting_t;
 

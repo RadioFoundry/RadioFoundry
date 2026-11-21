@@ -402,6 +402,7 @@ static inline void settings_set_tones_off(settings_t *s, uint8_t off)
 #define SETTINGS_NET_TFTP_NO_WRITE	0x01u	// TFTP refuses codeplug writes (0: allowed, as the CPS over USB; docs/spec/tftp.md)
 #define SETTINGS_NET_PASSTHROUGH	0x02u	// the PC is the endpoint of the radio's own IP data (docs/spec/usb-network.md 5.2)
 #define SETTINGS_NET_FIXED_LINK		0x04u	// the link is a fixed private pair (net_link_ip), not 12.<ID>/32 (5.3)
+#define SETTINGS_NET_USRP		0x08u	// Linking audio: USRP on the network on (usb-audio.md 9.1); 0: off, as before
 // settings_t.rs_flags
 #define SETTINGS_RS_ROGER_BEEP		0x01u
 #define SETTINGS_RS_TX_INHIBIT		0x02u

@@ -21,10 +21,12 @@ typedef struct {
 	uint32_t send_busy;	// frames dropped: the USB IN endpoint was busy
 	uint32_t refused;	// keyups not transmitted: hotspot mode, or FM on a board that can't take MCU audio
 	uint32_t ptt_downs;	// transmissions started for the peer
+	uint32_t foreign;	// frames ignored: from another address while a peer holds the link
 } usrp_net_stats_t;
 
 static usrp_link_t link;
 static usrp_net_stats_t st;
+static bool enabled;		// Settings > Connections > Linking audio (usrp_net_enable); off: nothing sent or taken
 static uint32_t view_ms;
 static bool view_read;
 static uint32_t peer_ip;	// learned from the last valid frame, 0 = none (the host's address then)
@@ -100,10 +102,16 @@ static void udp_in(bool air, uint32_t src, uint16_t sport, uint32_t dst, uint16_
 	(void)sport;
 	(void)dst;
 	(void)dport;
-	if (air || length < 0) {
+	if (air || length < 0 || !enabled) {
 		return;
 	}
 	uint32_t now = hal_millis();
+	// One peer at a time: while one holds the link (a valid frame in the last minute), another address can neither
+	// key the radio nor take the audio. Before one, any address may claim it (a node on a host the link routes to)
+	if (peer_ip != 0 && src != peer_ip && usrp_since(now, peer_ms) < USRP_PEER_IDLE_MS) {
+		st.foreign++;
+		return;
+	}
 	uint32_t bad = link.stats.bad;
 	bool voice = false;
 	usrp_event_t ev = usrp_link_rx(&link, data, (size_t)length, now, pcm, &voice);
@@ -120,7 +128,18 @@ static void udp_in(bool air, uint32_t src, uint16_t sport, uint32_t dst, uint16_
 void usrp_net_start(void)
 {
 	usrp_link_init(&link, NULL);
+	peer_ip = 0;	// a fresh start holds no peer
 	ipGatewayUdpBind(USRP_PORT, udp_in);
+}
+
+void usrp_net_enable(bool on)
+{
+	enabled = on;	// one byte, read by the host link task: usrp_net_poll unkeys and forgets the peer
+}
+
+bool usrp_net_enabled(void)
+{
+	return enabled;
 }
 
 static uint32_t peer(uint32_t now_ms)
@@ -138,7 +157,8 @@ static uint32_t peer(uint32_t now_ms)
 // reads its port again or refreshes the squelch state. After SEND_BUDGET_MS the rest of the backlog is dropped.
 static void send_rx(uint32_t now_ms)
 {
-	bool cos = hostlink_view.state == RS_RX && !tx_on && !hostlink_view.hotspot;
+	bool open = hostlink_view.state == RS_RX && !tx_on && !hostlink_view.hotspot;
+	bool cos = open && enabled;	// switched off mid-signal: the closing keyup 0 frame, then nothing
 	uint32_t t0 = hal_millis();
 	while (audio_mux_host_avail() >= USRP_FRAME_SAMPLES) {
 		if ((hal_millis() - t0) >= SEND_BUDGET_MS) {
@@ -150,7 +170,7 @@ static void send_rx(uint32_t now_ms)
 		}
 		audio_mux_host_read(pcm, USRP_FRAME_SAMPLES);
 #if CONFIG_NET_WEBCTL
-		webctl_audio(pcm, USRP_FRAME_SAMPLES, cos);	// the web page's receive audio: the same frames
+		webctl_audio(pcm, USRP_FRAME_SAMPLES, open);	// the web page's receive audio, Linking audio on or off
 #endif
 		if (!cos && !cos_sent) {
 			continue;
@@ -186,13 +206,16 @@ void usrp_net_poll(uint32_t now_ms, bool up)
 		cos_sent = false;
 		return;
 	}
-	if (hostlink_view.hotspot) {
-		unkey();	// hotspot mode owns the modem (usb-audio.md 6.5)
+	if (hostlink_view.hotspot || !enabled) {
+		unkey();	// hotspot mode owns the modem (usb-audio.md 6.5); off: no host keys the radio
 	}
 	event(usrp_link_tick(&link, now_ms));
 	audio_mux_host_rx(rx_source());
 	rx_on = !hostlink_view.hotspot;
 	send_rx(now_ms);
+	if (!enabled && !cos_sent) {
+		peer_ip = 0;	// after the closing frame went to it; on again: the host's address until a peer speaks
+	}
 }
 
 void usrp_net_view(dl_text_t *t)
@@ -203,14 +226,15 @@ void usrp_net_view(dl_text_t *t)
 
 	audio_mux_stats(&m);
 	audio_mux_slip_stats(&s);
-	dl_text(t, "usrp.peer=%u.%u.%u.%u\nusrp.keyed=%u\nusrp.tx=%u\nusrp.cos=%u\nusrp.rx_on=%u\n",
-		(unsigned)(peer_ip >> 24), (unsigned)((peer_ip >> 16) & 0xFFu), (unsigned)((peer_ip >> 8) & 0xFFu),
+	dl_text(t, "usrp.on=%u\nusrp.peer=%u.%u.%u.%u\nusrp.keyed=%u\nusrp.tx=%u\nusrp.cos=%u\nusrp.rx_on=%u\n",
+		enabled, (unsigned)(peer_ip >> 24), (unsigned)((peer_ip >> 16) & 0xFFu), (unsigned)((peer_ip >> 8) & 0xFFu),
 		(unsigned)(peer_ip & 0xFFu), link.keyed, tx_on, cos_sent, rx_on);
 	dl_text(t, "usrp.frames=%u\nusrp.voice=%u\nusrp.lost=%u\nusrp.out_of_order=%u\nusrp.bad=%u\n",
 		(unsigned)l->frames, (unsigned)l->voice, (unsigned)l->lost, (unsigned)l->out_of_order, (unsigned)l->bad);
 	dl_text(t, "usrp.keys=%u\nusrp.timeouts=%u\nusrp.tx_limits=%u\nusrp.sent=%u\nusrp.send_busy=%u\nusrp.refused=%u\n",
 		(unsigned)l->keys, (unsigned)l->timeouts, (unsigned)l->tx_limits, (unsigned)st.sent,
 		(unsigned)st.send_busy, (unsigned)st.refused);
+	dl_text(t, "usrp.foreign=%u\n", (unsigned)st.foreign);
 	dl_text(t, "usrp.ptt_downs=%u\nmux.blocks=%u\nmux.rx_samples=%u\nmux.rx_overflow=%u\nmux.tx_blocks=%u\n",
 		(unsigned)st.ptt_downs, (unsigned)m.blocks, (unsigned)m.rx_samples, (unsigned)m.rx_overflow,
 		(unsigned)m.tx_blocks);

@@ -6793,6 +6793,10 @@ static const set_item_t s_connections[] = {
 	LIST(TRN(SET_LABEL_USB_ADDRESS, "USB address"), "dispatch IP link", UI_SET_USB_FIXED_LINK, v_netlink,
 		n_netlink),
 #endif
+#if CONFIG_NET_USRP
+	TOGGLE(TRN(SET_LABEL_LINKING_AUDIO, "Linking audio"), "USRP AllStar AllStarLink DVSwitch Analog_Bridge node",
+		UI_SET_USRP),
+#endif
 #if DATA_IDS	// last, so the rows above keep their places
 	ACTION(TRN(SET_ROW_DATA_SERVICES, "Data services"), "ARS registration presence server IP gateway off-net",
 		SA_DATA_SERVICES),

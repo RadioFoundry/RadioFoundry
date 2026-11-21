@@ -3975,6 +3975,11 @@ msgid "USB address"
 msgstr "USB 地址"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_LABEL_LINKING_AUDIO"
+msgid "Linking audio"
+msgstr "连接音频"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_ROW_DATA_SERVICES"
 msgid "Data services"
 msgstr "数据服务"

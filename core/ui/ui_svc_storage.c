@@ -35,6 +35,9 @@
 #if CONFIG_TFTP
 #include "net/tftp_codeplug.h"
 #endif
+#if CONFIG_NET_USRP
+#include "usbaudio/usrp_net.h"
+#endif
 #if CONFIG_ZONE_SHARE
 #include "dmr/zone_share_api.h"
 #endif
@@ -339,6 +342,11 @@ static __attribute__((noinline)) int32_t setting_get_flash(uint8_t id)
 	case UI_SET_TFTP_WRITE:
 		settings_read(&st);
 		return (st.net_flags & SETTINGS_NET_TFTP_NO_WRITE) == 0;
+#if CONFIG_NET_USRP
+	case UI_SET_USRP:
+		settings_read(&st);
+		return (st.net_flags & SETTINGS_NET_USRP) != 0;
+#endif
 #if CONFIG_ZONE_SHARE
 	case UI_SET_ZONE_OFFERS:
 		settings_read(&st);
@@ -628,6 +636,15 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		tftp_codeplug_allow_write(value != 0);
 #endif
 		return true;
+#if CONFIG_NET_USRP
+	case UI_SET_USRP:
+		st = settings_begin();
+		st->net_flags = (uint8_t)(value != 0 ? (st->net_flags | SETTINGS_NET_USRP) :
+					  (st->net_flags & ~SETTINGS_NET_USRP));
+		settings_end(hal_millis());
+		usrp_net_enable(value != 0);
+		return true;
+#endif
 #if CONFIG_ZONE_SHARE
 	case UI_SET_ZONE_OFFERS:
 		if (value != 0 && value != 1)

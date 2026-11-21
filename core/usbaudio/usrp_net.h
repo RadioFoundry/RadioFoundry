@@ -8,7 +8,12 @@
  *
  * Addressing: the radio listens on USRP_PORT and sends to USRP_PEER_PORT at the address that last sent it a valid
  * frame, or at the host's address on the USB link until one has. These are the port pair AllStar and Analog_Bridge
- * set-ups commonly use, seen from the radio's side (the peer sends to 34001 and listens on 32001).
+ * set-ups commonly use, seen from the radio's side (the peer sends to 34001 and listens on 32001). While a peer holds
+ * the link (USRP_PEER_IDLE_MS), frames from other addresses are ignored.
+ *
+ * Off until Settings > Connections > Linking audio turns it on (settings_t.net_flags SETTINGS_NET_USRP, #703): a host
+ * that uses the link for data doesn't get audio it never asked for. Off sends nothing and takes no frame; the web
+ * page's receive audio (webctl) still flows.
  */
 #ifndef RFOUNDRY_USRP_NET_H
 #define RFOUNDRY_USRP_NET_H
@@ -22,6 +27,9 @@
 #define USRP_PEER_IDLE_MS	60000u	// a learned peer silent this long: back to the host's address
 
 void usrp_net_start(void);
+// Linking audio on or off (the stored setting at start-up, the menu, the debug link), from any task
+void usrp_net_enable(bool on);
+bool usrp_net_enabled(void);
 // Every host link pass in network mode; up: the link is up
 void usrp_net_poll(uint32_t now_ms, bool up);
 // usrp.* and the mux's counters, key=value lines (the debug link's net view)

@@ -40,8 +40,13 @@ def usrp_session(radio):
         skip("state", "the radio is in hotspot mode")
     serial = radio.link
     with network_mode(radio) as (udp, radio_ip, _):
-        if "usrp.peer" not in udp.view(["usrp"]):
+        v = udp.view(["usrp"])
+        if "usrp.peer" not in v:
             skip("not_built", "built without CONFIG_NET_USRP")
+        # Settings > Connections > Linking audio, off by default (#703): on for the session, put back after
+        was_off = v.get("usrp.on") == "0"
+        if was_off:
+            udp.setting("usrp", 1)
         peer = usrp_client.Peer(radio_ip)
         radio.link = udp
         try:
@@ -49,6 +54,8 @@ def usrp_session(radio):
         finally:
             peer.close()
             radio.link = serial
+            if was_off:
+                serial.setting("usrp", 0)
     # Back on serial: the receive tap is off and the audio stream stopped with it (nothing fills the ring)
     v = usrp_view(radio.link)
     time.sleep(1.0)

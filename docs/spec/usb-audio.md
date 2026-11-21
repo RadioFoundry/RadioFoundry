@@ -407,12 +407,16 @@ Running the probe: `tools/rfoundry_debug.py aprobe`, on a board with `CONFIG_AUD
 
 ### 9.1 USRP on the network (CONFIG_NET_USRP)
 
-What the radio does with the switch on, in the USB network personality (or PPP):
+What the radio does with the switch on, in the USB network personality (or PPP), once Settings > Connections >
+Linking audio is on. It is off by default (`settings_t.net_flags` `SETTINGS_NET_USRP`, debug link SETTING 38): a host
+that uses the link for data doesn't get audio it never asked for. Off, the radio sends no USRP and takes no USRP
+frame; a transmission running when it goes off is unkeyed, a frame with keyup 1 being sent gets its closing keyup 0
+frame. The web page's receive audio (`webctl`) flows either way.
 
 | Item | Behavior |
 |---|---|
 | Ports | listens on UDP 34001 at its own address; sends from 34001 to UDP 32001 (`USRP_PORT`, `USRP_PEER_PORT`). An AllStar node's `rxchannel = usrp/<radio address>:34001:32001`, or Analog_Bridge with `txPort = 34001`, `rxPort = 32001` |
-| Peer | the address of the last valid frame received; before one (or 60 s after the last), the host's address on the link. No setting yet |
+| Peer | the address of the last valid frame received; before one (or 60 s after the last), the host's address on the link. One peer at a time: while one holds the link, frames from other addresses are ignored (`usrp.foreign`), so another address can neither key the radio nor take its audio. No stored address: a node on the computer at the other end of the link needs none, one elsewhere sends first |
 | Receive (radio to peer) | a VOICE frame (16-bit PCM) every 20 ms while the radio's receiver is active (`state` rx: FM squelch and tone open, or a DMR call playing), keyup 1; one keyup 0 frame of silence when it closes; nothing in between. Not while transmitting or in hotspot mode |
 | Receive audio | FM: the I2S stream's input (the HR_C6000's FM receive audio, squelch gated, after its de-emphasis and filters). DMR: the decoded voice the speaker gets (beeps mixed in) |
 | Transmit | a frame with keyup 1 after keyup 0 (or none) keys the radio (`radio_req_ptt_host`); its audio and the following frames' go through a 60 ms jitter buffer. FM: the board's `fm_tx_inject` (refused on a board without `AUDIO_TAP_FM_TX`). DMR: the samples replace the microphone's on the way to the encoder; the call goes to the channel's talk target |
@@ -434,7 +438,8 @@ Known limits:
   at volume zero, and drops out while a beep plays (the feed-through is off for PCM). A tap independent of the
   speaker (the RX RAM, `modem-hrc6000.md` 8) would fix all three.
 - No flat mode: the PWM path stops at the codec's 3.5 kHz, so 9600 baud needs the 0x04 path or a modification.
-- Ports and peer are fixed; settings (UI, qdmr) come with phase 3's settings.
+- Ports are fixed and the peer is learned; a stored peer address (a receive-only node that isn't the link's host)
+  waits for a need ([#703](https://github.com/RadioFoundry/RadioFoundry/issues/703)).
 - The wire format is from the public descriptions; a capture against a live AllStar node or Analog_Bridge is still
   owed (owner question 4).
 
