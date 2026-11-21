@@ -7,6 +7,7 @@
 import * as iddb from "../iddb.js";
 import { LIMITS } from "../records.js";
 import { newContact } from "../model.js";
+import { isDmr } from "../contactmode.js";
 import { format } from "./radioid.js";
 import { foldLetters } from "../fields.js";
 
@@ -66,19 +67,21 @@ function latin1(s) {
 // Add users as private-call contacts. A user whose ID is already a private contact is skipped; when the contact list
 // fills, the rest are left out. Returns {added, existing, full}
 export function addContacts(m, users, { template, upper = false }) {
-	const have = new Set(m.contacts.filter((c) => c.type === "private").map((c) => c.id));
-	let added = 0, existing = 0, full = 0;
+	const dmr = m.contacts.filter(isDmr);
+	const have = new Set(dmr.filter((c) => c.type === "private").map((c) => c.id));
+	let added = 0, existing = 0, full = 0, room = LIMITS.contacts - dmr.length;
 	for (const u of users) {
 		if (have.has(u.id)) {
 			existing++;
 			continue;
 		}
-		if (m.contacts.length >= LIMITS.contacts) {
+		if (room <= 0) {
 			full++;
 			continue;
 		}
 		const name = latin1(format(u, template, { upper })).slice(0, LIMITS.name).trim() || u.call;
 		m.contacts.push(newContact({ name, id: u.id, type: "private" }));
+		room--;
 		have.add(u.id);
 		added++;
 	}

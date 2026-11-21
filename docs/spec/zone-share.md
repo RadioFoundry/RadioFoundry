@@ -130,6 +130,16 @@ What a sender carries of a system follows its sharing level ([channel-modes.md](
 Never carried: the radio's own ID on a system, a system's or a channel's fallback channel. Targets
 ([channel-modes.md](channel-modes.md) 5.2) are not carried yet: no kind in this tree refers to them.
 
+A P25 channel whose block has the P25 contacts bit set ([p25-codeplug.md](p25-codeplug.md) 2.4) is sent as a legacy
+channel: its tag's block goes with that bit clear (the trunked block's bit too), and its contact in the record's contact
+list is the slot's target by value, a group, a unit or the all call with its ID and name, as a DMR contact. The receiver
+has no table of P25 contacts to put a slot in, and a slot number sent as it is would be read there as a DMR contact. The
+receiver maps the contact to one of its own DMR contacts, as for any channel, and the channel reads it from there. With
+no contact, the target is the RX group list's first group slot, as on the sender. An empty or invalid slot sends no
+contact. The RX group lists are not sent (4.1), so a flagged channel's list and the groups a trunked channel follows
+besides its talk group are not carried. Two channels with the same target share one contact in the record. A build
+without P25 trunking sends a trunked channel's block as it is stored.
+
 A channel whose tag's parameter block passes 64 octets is left out. Without the modes part a sender leaves every
 channel of a kind out: its record is a stand-in that a receiver would take for a plain channel.
 

@@ -7,8 +7,9 @@
 // {row, column, code, params}, and the page words them.
 
 import { parseFreq, parseTone, mhz } from "./fields.js";
-import { LIMITS, POWER_NAMES, CALL_TYPES, validDtmf } from "./records.js";
-import { newChannel, newContact, remove, assignNumbers } from "./model.js";
+import { LIMITS, POWER_NAMES, validDtmf } from "./records.js";
+import { newChannel, newContact, remove, numberTable, p25Room } from "./model.js";
+import { isDmr, isP25, contactModeOf, channelContactMode, typeFor, allCallId, contactIdMax } from "./contactmode.js";
 
 // --- RFC 4180 ---
 
@@ -146,26 +147,31 @@ const asWord = (words, dflt, lo, hi) => (s) => {
 const POWER = { ...POWER_NAMES };
 const powerText = (n) => POWER_NAMES[n] || String(n);
 const MODES = { fm: "FM", dmr: "DMR" };
-const TYPES = Object.fromEntries(CALL_TYPES.map((k) => [k, k[0].toUpperCase() + k.slice(1)]));
+// A contact's call type as a file says it; a P25 contact's private call is a unit call (contactmode.js typeFor)
+const TYPES = { group: "Group", private: "Private", unit: "Unit", all: "All" };
+const CONTACT_MODES = { dmr: "DMR", p25: "P25" };
 
 // --- References by name ---
 
 // A record's name in a file: its name, or "#n" when the name can't stand for it (another record has it, or it holds
-// the member list separator or looks like "#n" itself)
+// the member list separator or looks like "#n" itself). A contact's number is a slot of its mode's list, so a P25
+// contact's is "#p25:n" (a bare "#n" is a DMR contact's, as it was before P25 contacts)
 function refText(x, list) {
 	if (x == null) return "";
 	if (typeof x === "number") return `#${x}`;
-	const plain = !x.name.includes(SEP) && !/^#\d+$/.test(x.name.trim()) && list.filter((y) => y.name === x.name).length === 1;
-	return plain || !x.number ? x.name : `#${x.number}`;
+	const plain = !x.name.includes(SEP) && !/^#(p25:)?\d+$/i.test(x.name.trim()) && list.filter((y) => y.name === x.name).length === 1;
+	if (plain || !x.number) return x.name;
+	return isP25(x) ? `#p25:${x.number}` : `#${x.number}`;
 }
 
-function findRef(text, list) {
+// contacts: the list is contacts, whose numbers are slots of their mode's list
+function findRef(text, list, contacts = false) {
 	const s = text.trim();
 	if (!s) return null;
-	const num = /^#(\d+)$/.exec(s);
+	const num = /^#(?:(p25|dmr):)?(\d+)$/i.exec(s);
 	if (num) {
-		const n = Number(num[1]);
-		const hit = list.find((x) => x.number === n);
+		const n = Number(num[2]), mode = (num[1] || "dmr").toLowerCase();
+		const hit = list.find((x) => x.number === n && (!contacts || contactModeOf(x) === mode));
 		if (!hit) throw new Bad("unknown_ref", { name: s });
 		return hit;
 	}
@@ -183,12 +189,12 @@ function refsText(list, pool) {
 }
 
 // Member lists: problems for the names that don't resolve, the rest kept
-function findRefs(text, pool, max, bad) {
+function findRefs(text, pool, max, bad, contacts = false) {
 	const out = [];
 	for (const part of text.split(SEP)) {
 		if (!part.trim()) continue;
 		try {
-			out.push(findRef(part, pool));
+			out.push(findRef(part, pool, contacts));
 		} catch (e) {
 			bad(e);
 		}
@@ -211,30 +217,65 @@ const c = (header, key, put, get = (r) => r[key] ?? "", aliases = []) => ({
 	},
 });
 
-const ref = (header, key, table, aliases = []) => ({
+// pool: the records a row may name, when not the whole table (a channel's contact is one of its kind's mode)
+const ref = (header, key, table, aliases = [], pool = (r, m) => m[table]) => ({
 	header, aliases, key,
-	get: (r, m) => refText(r[key], m[table]),
+	get: (r, m) => refText(r[key], pool(r, m)),
 	set: (r, s, m) => {
-		r[key] = findRef(s, m[table]);
+		r[key] = findRef(s, pool(r, m), table === "contacts");
 	},
 });
+
+// The contacts a channel may name: those of the mode its kind reads
+const channelContacts = (r, m) => m.contacts.filter((x) => contactModeOf(x) === channelContactMode(r));
 
 const NUMBER = (max) => ({ header: "Number", aliases: ["No", "#", "Index"], key: "number", get: (r) => r.number ?? "", set: (r, s) => {
 	r.number = asInt(1, max, null)(s);
 } });
 
 export const TABLES = {
+	// One table of both modes. The Mode column says which list a contact is stored in; a file without it holds DMR
+	// contacts (as before P25 contacts), so importing one leaves the P25 contacts as they are
 	contacts: {
 		file: "contacts.csv",
 		columns: [
 			NUMBER(LIMITS.contacts),
-			c("Name", "name", asName(LIMITS.name), undefined, ["Contact Name", "Contact"]),
-			c("ID", "id", asInt(1, 0xFFFFFF), undefined, ["DMR ID", "Call ID", "Radio ID", "TG", "Talkgroup"]),
+			c("Name", "name", asName(LIMITS.name), undefined, ["Contact Name", "Contact", "Alias"]),
+			{ header: "Mode", aliases: [], key: "mode", get: (r) => CONTACT_MODES[r.mode] ?? "", set: (r, s) => {
+				const v = s.trim().toLowerCase();
+				// blank: the contact's own mode (DMR for a new one)
+				if (!v) return;
+				const mode = Object.keys(CONTACT_MODES).find((k) => CONTACT_MODES[k].toLowerCase() === v);
+				if (!mode) throw new Bad("bad_value", { value: s.trim(), allowed: Object.values(CONTACT_MODES).join(", ") });
+				r.mode = mode;
+			} },
+			// the range by mode and call type is the editor's check (a column may come before the Mode's)
+			c("ID", "id", asInt(1, 0xFFFFFF), undefined, ["DMR ID", "Call ID", "Radio ID", "TG", "Talkgroup", "Unit", "Unit ID", "Talk Group"]),
 			c("Call Type", "type", asWord(TYPES, "group"), (r) => TYPES[r.type], ["Type"]),
-			c("Timeslot", "timeslot", asInt(0, 2, 0), (r) => r.timeslot || "", ["TS", "Timeslot Override"]),
+			c("Timeslot", "timeslot", asInt(0, 2, 0), (r) => (isP25(r) ? "" : r.timeslot || ""), ["TS", "Timeslot Override"]),
 		],
 		create: () => newContact(),
 		required: ["name", "id"],
+		// a Mode the file gives that is neither DMR nor P25 skips a new row, rather than making it a DMR contact
+		strict: ["mode"],
+		// the records a file replaces: with no Mode column, the DMR contacts
+		scope: (m, keys) => (keys.has("mode") ? m.contacts : m.contacts.filter(isDmr)),
+		// a row stands for a record of its own mode: slots are per list, and names may repeat across them
+		matches: (x, cell) => {
+			const v = (cell("mode") ?? "").trim().toLowerCase();
+			return !v || contactModeOf(x) === v;
+		},
+		// once every column is read: the call type as the contact's mode names it, an all call's ID the mode's, and the ID in
+		// the range of its mode and call type (the ID's column may come before the Mode's)
+		finish: (r) => {
+			r.type = typeFor(r.type, r.mode);
+			if (r.type === "all" && isP25(r)) r.id = allCallId(r.mode);
+			const max = contactIdMax(r);
+			if (r.type !== "all" && !(r.id >= 1 && r.id <= max)) throw new Bad("range", { min: 1, max });
+		},
+		finishColumn: "ID",
+		finishKeys: ["id"],
+		counts: (m, out) => [[out.filter(isDmr).length, LIMITS.contacts], [out.filter(isP25).length, p25Room(m)]],
 	},
 	rxLists: {
 		file: "rx-group-lists.csv",
@@ -243,7 +284,7 @@ export const TABLES = {
 			c("Name", "name", asName(LIMITS.name), undefined, ["Group List", "RX Group List"]),
 			{ header: "Contacts", aliases: ["Members", "Talkgroups"], key: "contacts", get: (r, m) => refsText(r.contacts, m.contacts),
 				set: (r, s, m, bad) => {
-					r.contacts = findRefs(s, m.contacts, LIMITS.rxListContacts, bad);
+					r.contacts = findRefs(s, m.contacts.filter((x) => isDmr(x) || isP25(x)), LIMITS.rxListContacts, bad, true);
 				} },
 		],
 		create: () => ({ number: null, name: "", contacts: [] }),
@@ -310,7 +351,7 @@ export const TABLES = {
 			c("Squelch", "squelch", asInt(0, 21, 0)),
 			c("Color Code", "colorCode", asInt(0, 15, 1), undefined, ["CC", "Colour Code"]),
 			c("Timeslot", "timeslot", asInt(1, 2, 1), undefined, ["TS", "Time Slot", "Slot"]),
-			ref("TX Contact", "contact", "contacts", ["Contact"]),
+			ref("TX Contact", "contact", "contacts", ["Contact"], channelContacts),
 			ref("RX Group List", "rxList", "rxLists", ["Group List", "RX List"]),
 			ref("APRS", "aprs", "aprs", ["APRS Configuration"]),
 			c("DMR ID", "dmrId", asId, (r) => r.dmrId || "", ["Channel DMR ID"]),
@@ -422,7 +463,7 @@ export function importTable(m, text, table = detect(text)) {
 	const problems = [];
 	const keys = new Set(found.map((f) => f.col.key));
 	const hasNumber = keys.has("number");
-	const old = m[table];
+	const old = spec.scope ? spec.scope(m, keys) : m[table];
 	const taken = new Set();
 	const out = [];
 	let added = 0, updated = 0;
@@ -436,9 +477,10 @@ export function importTable(m, text, table = detect(text)) {
 		// the record this row stands for: same number, else same name, else a new one
 		let rec = null;
 		const nText = hasNumber ? cell("number").trim() : "";
-		if (nText) rec = old.find((x) => !taken.has(x) && String(x.number) === nText) || null;
+		const fits = (x) => !taken.has(x) && (!spec.matches || spec.matches(x, cell));
+		if (nText) rec = old.find((x) => fits(x) && String(x.number) === nText) || null;
 		const nameText = (cell("name") ?? "").trim();
-		if (!rec && nameText) rec = old.find((x) => !taken.has(x) && x.name === nameText) || null;
+		if (!rec && nameText) rec = old.find((x) => fits(x) && x.name === nameText) || null;
 		const fresh = !rec;
 		if (fresh) rec = spec.create();
 		else taken.add(rec);
@@ -450,10 +492,19 @@ export function importTable(m, text, table = detect(text)) {
 			} catch (e) {
 				if (!(e instanceof Bad)) throw e;
 				// a new record without a usable required value (name, frequency, ID) would only be a default; skip it
-				const lost = fresh && spec.required.includes(col.key);
+				const lost = fresh && (spec.required.includes(col.key) || !!spec.strict?.includes(col.key));
 				problems.push({ row: i + 1, column: col.header, code: e.code, params: e.params, skipped: lost });
 				skip ||= lost;
 			}
+		}
+		try {
+			if (!skip) spec.finish?.(work);
+		} catch (e) {
+			if (!(e instanceof Bad)) throw e;
+			problems.push({ row: i + 1, column: spec.finishColumn ?? "", code: e.code, params: e.params, skipped: fresh });
+			skip ||= fresh;
+			// an existing record keeps the value it had
+			for (const k of spec.finishKeys ?? []) work[k] = rec[k];
 		}
 		if (!skip && !work.name) {
 			problems.push({ row: i + 1, column: "Name", code: "no_name", params: {}, skipped: true });
@@ -467,10 +518,13 @@ export function importTable(m, text, table = detect(text)) {
 	}
 	const gone = old.filter((x) => !taken.has(x));
 	remove(m, table, gone);
-	m[table] = out;
+	// what the file doesn't replace stays
+	m[table] = [...out, ...m[table].filter((x) => !out.includes(x) && !old.includes(x))];
 	// rows the file numbered twice keep the first; the rest get free numbers
-	if (table !== "zones") assignNumbers(out, LIMITS[table]);
-	if (out.length > LIMITS[table]) problems.push({ row: 0, column: "", code: "too_many", params: { max: LIMITS[table], count: out.length } });
+	numberTable(m, table);
+	for (const [count, max] of spec.counts ? spec.counts(m, m[table]) : [[out.length, LIMITS[table]]]) {
+		if (count > max) problems.push({ row: 0, column: "", code: "too_many", params: { max, count } });
+	}
 	return { table, added, updated, removed: gone.length, problems, unknown };
 }
 

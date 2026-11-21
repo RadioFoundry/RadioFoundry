@@ -6,10 +6,11 @@
 
 import { h, button } from "../flasher/dom.js";
 import { parseFreq, parseTone, mhz } from "../codeplug/fields.js";
-import { LIMITS, POWER_NAMES } from "../codeplug/records.js";
-import { refNumber, listenBand } from "../codeplug/model.js";
+import { LIMITS, POWER_NAMES, P25_ALL_CALL } from "../codeplug/records.js";
+import { refNumber, listenBand, numberTable } from "../codeplug/model.js";
+import { isP25, contactModeOf, channelContactMode, setContactMode, CALL_TYPES_OF, allCallId, contactIdMax } from "../codeplug/contactmode.js";
 import { keyValid } from "../codeplug/kv.js";
-import { kindRow, kindName, offeredKinds } from "../codeplug/modes.js";
+import { kindRow, kindName, offeredKinds, p25Offered } from "../codeplug/modes.js";
 import { setKind } from "../codeplug/channelmodes.js";
 import { specField } from "./modefields.js";
 
@@ -145,6 +146,18 @@ function refOptions(list, t, label = (x) => x.name) {
 
 const refLabel = (v, t) => (v == null ? "" : typeof v === "number" ? t("editor.missing", { n: v }) : v.name);
 
+// The contacts a channel may pick as its talk target: those of the mode its kind reads. A contact of the other mode it
+// already names stays listed (an older codeplug's P25 channel names a DMR contact)
+function contactOptions(m, t, r) {
+	const mode = channelContactMode(r ?? {});
+	const out = refOptions(m.contacts.filter((x) => contactModeOf(x) === mode), t);
+	if (r?.contact && typeof r.contact === "object" && !out.some(([x]) => x === r.contact)) out.push([r.contact, r.contact.name]);
+	else if (typeof r?.contact === "number") out.push([r.contact, t("editor.missing", { n: r.contact })]);
+	return out;
+}
+
+const CALL_LABELS = { group: "editor.call.group", private: "editor.call.private", unit: "editor.call.unit", all: "editor.call.all" };
+
 // --- Columns per table ---
 
 // The columns Bulk Edit can set: every editable one but the name and number, which must differ per record. None on a
@@ -188,7 +201,7 @@ export function columns(table, m, t, { features = null } = {}) {
 			only("fm", col("txTone", "editor.col.tx_tone", "text", tone(t), { format: (v) => toneText(v, t), editValue: (v) => v })),
 			only("dmr", col("colorCode", "editor.col.cc", "select", pick, { options: () => [...Array(16).keys()].map((n) => [n, String(n)]) })),
 			only("dmr", col("timeslot", "editor.col.ts", "select", pick, { options: () => [[1, "1"], [2, "2"]] })),
-			only("dmr", col("contact", "editor.col.contact", "select", pick, { options: () => refOptions(m.contacts, t), format: (v) => refLabel(v, t), sortValue: (r) => refLabel(r.contact, t) })),
+			only("dmr", col("contact", "editor.col.contact", "select", pick, { options: (r) => contactOptions(m, t, r), format: (v) => refLabel(v, t), sortValue: (r) => refLabel(r.contact, t) })),
 			only("dmr", col("rxList", "editor.col.rx_list", "select", pick, { options: () => refOptions(m.rxLists, t), format: (v) => refLabel(v, t), sortValue: (r) => refLabel(r.rxList, t) })),
 			{ ...col("rxOnly", "editor.col.rx_only", "bool", bool), get: rxOnlyGet, set: (r, v) => rxOnlySet(r, v) },
 			col("zoneSkip", "editor.col.zone_skip", "bool", bool),
@@ -199,14 +212,37 @@ export function columns(table, m, t, { features = null } = {}) {
 			{ key: "count", label: t("editor.col.channels"), type: "number", readOnly: true, get: (r) => r.channels.length, width: "7rem" },
 			{ key: "list", label: t("editor.col.members"), type: "text", readOnly: true, get: (r) => r.channels.map((c) => refLabel(c, t)).join(", ") },
 		];
-	case "contacts":
+	case "contacts": {
+		// P25 is offered where a P25 channel kind is, or on a contact that already is one
+		const modes = (r) => [...(r?.mode == null ? [[null, t("editor.contact.mode_choose")]] : []), ["dmr", "DMR"], ...(p25Offered(m, features) || isP25(r) ? [["p25", "P25"]] : [])];
+		const types = (r) => (CALL_TYPES_OF[r ? contactModeOf(r) : null] ?? ["group", "private", "unit", "all"]).map((k) => [k, t(CALL_LABELS[k])]);
+		const slots = [[0, t("editor.none")], [1, "1"], [2, "2"]];
 		return [
 			num,
 			col("name", "editor.col.name", "text", name(LIMITS.name)(t)),
-			col("id", "editor.col.id", "text", int(1, 0xFFFFFF)(t), { numeric: true, readOnly: false }),
-			col("type", "editor.col.call_type", "select", pick, { options: () => [["group", t("editor.call.group")], ["private", t("editor.call.private")], ["all", t("editor.call.all")]] }),
-			col("timeslot", "editor.col.ts_override", "select", pick, { options: () => [[0, t("editor.none")], [1, "1"], [2, "2"]] }),
+			// the mode decides the list a contact is stored in; changing it moves the contact to the first free slot of the other
+			col("mode", "editor.col.mode", "select", (r, k, v) => {
+				if (v == null) return;
+				setContactMode(r, v);
+				numberTable(m, "contacts");
+			}, { options: modes, filter: true, filterOptions: () => [["dmr", "DMR"], ["p25", "P25"]], filterKey: contactModeOf }),
+			col("id", "editor.col.id", "text", (r, k, v) => {
+				const n = Number(String(v).trim());
+				const max = contactIdMax(r);
+				if (!Number.isInteger(n) || n < 1 || n > max) return t("editor.err.range", { min: 1, max });
+				r[k] = n;
+			}, { numeric: true, readOnly: (r) => isP25(r) && r.type === "all", format: (v, r) => (r.type === "all" && isP25(r) ? P25_ALL_CALL : v) }),
+			col("type", "editor.col.call_type", "select", (r, k, v) => {
+				r[k] = v;
+				if (v === "all") r.id = allCallId(r.mode);
+			}, { options: types, filter: true, filterOptions: () => ["group", "private", "unit", "all"].map((k) => [k, t(CALL_LABELS[k])]) }),
+			// a P25 contact has no timeslot override: greyed out, its value kept for when the contact is DMR again
+			col("timeslot", "editor.col.ts_override", "select", pick, {
+				options: () => slots, readOnly: isP25, filter: true, filterOptions: () => slots, filterKey: (r) => (isP25(r) ? null : r.timeslot),
+				format: (v) => slots.find(([k]) => k === v)?.[1] ?? String(v ?? ""),
+			}),
 		];
+	}
 	case "rxLists":
 		return [
 			num,
@@ -355,7 +391,7 @@ export function channelForm(m, t, { features = null } = {}) {
 		dmr({ group: t("editor.form.digital") }),
 		dmr(sel("colorCode", "editor.col.cc", () => [...Array(16).keys()].map((n) => [n, String(n)]))),
 		dmr(sel("timeslot", "editor.col.ts", () => [[1, "1"], [2, "2"]])),
-		dmr(sel("contact", "editor.col.contact", () => refOptions(m.contacts, t))),
+		dmr(sel("contact", "editor.col.contact", (r) => contactOptions(m, t, r), { dynamicOptions: true })),
 		dmr(sel("rxList", "editor.col.rx_list", () => refOptions(m.rxLists, t))),
 		dmr(txt("dmrId", "editor.col.channel_id", dmrId(t), (v) => (v ? String(v) : ""))),
 		dmr(chk("dmo", "editor.col.dmo")),

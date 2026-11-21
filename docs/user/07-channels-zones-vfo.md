@@ -146,7 +146,7 @@ Focus a row and press **OK**:
 | Zones | opens every zone, marked "In" where the channel is. **OK** puts the channel in a zone or takes it out, saved at once. A new channel shows the row once saved |
 | RX, TX, own ID | type the digits, **OK** keeps them, **Back** takes the last digit back. Digits outside the radio's bands are refused as you type. A new RX moves TX with it, so a repeater keeps its offset. If the new RX is in another band (UHF to VHF), or TX would land outside the band, TX is set to the new RX |
 | Name | opens text entry (below) |
-| TX contact, RX group list | opens the list of contacts or group lists; type letters to find one |
+| TX contact, RX group list | opens the list of contacts or group lists; type letters to find one. On a P25 channel that uses [P25 contacts](04-programming.md#p25-and-nxdn) they are shown dimmed (the contact as its name, or "TG 3100") and OK says to use the Codeplug Editor: the radio doesn't edit P25 contacts yet |
 
 <img src="../ux/screens/160x120i5/channel_power.png" width="200" alt="Picking the power level with the knob">
 
@@ -319,6 +319,8 @@ On a radio that runs P25 ([feature matrix](../feature-matrix.md)), P25 is one of
 - PTT sends a P25 voice call to talkgroup 1 from your P25 unit ID, or your DMR ID when the codeplug has none.
 - Home shows "P25", what PTT calls ("TG 1") and the network access code ("NAC 293"). During a call it shows who calls
   and where ("ID 3101234 > TG 7"), or why the call isn't played ("Encrypted: not played", "Other TG: not played").
+  Talk groups and units in the codeplug's [P25 contacts](04-programming.md#p25-and-nxdn) show their name ("Engine 7 >
+  TG 7 Main Ops"); DMR contacts and the DMR ID database never name P25 IDs.
   FM's tone and width tiles say "FM only: this is a P25 channel".
 - The code, talkgroup and talkaround can be changed only from a computer for now (`rfoundry_debug.py radio p25`), and the
   change lasts until the radio is switched off.

@@ -23,11 +23,30 @@ function pencil() {
 	return svg;
 }
 
+// The funnel of a column's filter button: filled when the column is filtered, outlined when not
+function funnel(active) {
+	const svg = document.createElementNS(SVG, "svg");
+	svg.setAttribute("viewBox", "0 0 16 16");
+	svg.setAttribute("aria-hidden", "true");
+	svg.setAttribute("class", "funnel");
+	const path = document.createElementNS(SVG, "path");
+	path.setAttribute("d", "M2 2.5h12L9.5 8.2V13l-3 1.5V8.2z");
+	path.setAttribute("fill", active ? "currentColor" : "none");
+	path.setAttribute("stroke", "currentColor");
+	path.setAttribute("stroke-width", "1.3");
+	path.setAttribute("stroke-linejoin", "round");
+	svg.append(path);
+	return svg;
+}
+
 // A column: {key, label, type: "text" | "number" | "select" | "bool", get(row), set(row, value) -> error string or
-// undefined, format(value), options(row) -> [[value, label]], width, readOnly}
+// undefined, format(value), options(row) -> [[value, label]], width, readOnly, filter: true to give its header a
+// filter (a checklist of the column's values, as a spreadsheet's), filterKey(row) -> the value a row has for it (default:
+// get; null or "" is blank), filterOptions() -> [[value, label]] the checklist has besides the values the rows hold}
 export class Grid {
-	constructor({ columns, rows, onChange, onSelect, onOpen, t, empty = "" }) {
-		Object.assign(this, { columns, rows, onChange, onSelect, onOpen, t, empty });
+	// filters: {column key: Set of the values shown}, kept by the caller to outlive the grid; a column with no entry shows all
+	constructor({ columns, rows, onChange, onSelect, onOpen, t, empty = "", filters = {} }) {
+		Object.assign(this, { columns, rows, onChange, onSelect, onOpen, t, empty, filters });
 		this.filter = "";
 		this.sort = null;	// {key, dir}
 		this.selected = new Set();
@@ -55,6 +74,10 @@ export class Grid {
 
 	shown() {
 		let list = this.rows;
+		for (const [key, keep] of Object.entries(this.filters ?? {})) {
+			const c = this.columns.find((x) => x.key === key);
+			if (c) list = list.filter((r) => keep.has(this.filterKey(c, r)));
+		}
 		if (this.filter) {
 			const f = this.filter.toLowerCase();
 			list = list.filter((r) => this.columns.some((c) => this.text(c, r).toLowerCase().includes(f)));
@@ -71,6 +94,96 @@ export class Grid {
 			});
 		}
 		return list;
+	}
+
+	// The value a row has for a column's filter: null when it has none
+	filterKey(c, r) {
+		const v = c.filterKey ? c.filterKey(r) : c.get(r);
+		return v === undefined || v === "" ? null : v;
+	}
+
+	// The values a column's checklist offers: those it declares, then those the rows hold, as [value, label]
+	filterChoices(c) {
+		const out = new Map((c.filterOptions?.() ?? []).map(([k, label]) => [k, label]));
+		for (const r of this.rows) {
+			const k = this.filterKey(c, r);
+			if (out.has(k)) continue;
+			out.set(k, k === null ? this.t("editor.grid.filter_blanks") : c.type === "select" ? this.text(c, r) : String(k));
+		}
+		return [...out];
+	}
+
+	// The values a new row takes so it stays in view: a column filtered to one value gives that value
+	newRowDefaults() {
+		const out = {};
+		for (const [key, keep] of Object.entries(this.filters ?? {})) {
+			const [only] = keep;
+			if (keep.size === 1 && only !== null) out[key] = only;
+		}
+		return out;
+	}
+
+	// Set a column's filter to the values in keep (all of them: no filter) and show the rows again
+	setColumnFilter(c, keep) {
+		if (keep.size >= this.filterChoices(c).length) delete this.filters[c.key];
+		else this.filters[c.key] = keep;
+		this.render();
+	}
+
+	// A column's checklist, under its header button; a click away or Escape closes it
+	openFilter(c, btn) {
+		this.closeFilter();
+		const choices = this.filterChoices(c);
+		const keep = new Set(this.filters[c.key] ?? choices.map(([k]) => k));
+		const all = h("input", { type: "checkbox", id: `gf-all-${c.key}` });
+		const sync = () => {
+			all.checked = keep.size >= choices.length;
+			all.indeterminate = keep.size > 0 && keep.size < choices.length;
+		};
+		const boxes = choices.map(([k, label], i) => {
+			const box = h("input", { type: "checkbox", id: `gf-${c.key}-${i}` });
+			box.checked = keep.has(k);
+			box.addEventListener("change", () => {
+				box.checked ? keep.add(k) : keep.delete(k);
+				sync();
+				this.setColumnFilter(c, new Set(keep));
+			});
+			return [k, box, h("label", { class: "gf-item", for: box.id }, box, " ", label)];
+		});
+		all.addEventListener("change", () => {
+			keep.clear();
+			if (all.checked) for (const [k] of choices) keep.add(k);
+			for (const [k, box] of boxes) box.checked = keep.has(k);
+			sync();
+			this.setColumnFilter(c, new Set(keep));
+		});
+		sync();
+		const pop = h("div", { class: "grid-filter-pop", role: "dialog", "aria-label": this.t("editor.grid.filter_col", { column: c.label }) },
+			h("label", { class: "gf-item gf-all", for: all.id }, all, " ", this.t("editor.grid.filter_all")), ...boxes.map(([, , row]) => row));
+		const r = btn.getBoundingClientRect();
+		pop.style.top = `${Math.round(r.bottom + 4)}px`;
+		pop.style.left = `${Math.round(Math.max(4, Math.min(r.left, window.innerWidth - 220)))}px`;
+		const away = (e) => {
+			if (!pop.contains(e.target) && !e.target.closest?.(".grid-filter-btn")) this.closeFilter();
+		};
+		const esc = (e) => {
+			if (e.key === "Escape") this.closeFilter(true);
+		};
+		document.addEventListener("pointerdown", away, true);
+		document.addEventListener("keydown", esc, true);
+		this.popup = { pop, away, esc, col: c.key };
+		document.body.append(pop);
+		all.focus();
+	}
+
+	closeFilter(refocus = false) {
+		const p = this.popup;
+		if (!p) return;
+		this.popup = null;
+		document.removeEventListener("pointerdown", p.away, true);
+		document.removeEventListener("keydown", p.esc, true);
+		p.pop.remove();
+		if (refocus) this.table.querySelector(`.grid-filter-btn[data-col-key="${p.col}"]`)?.focus();
 	}
 
 	// always a string: a column's format may hand back the value itself (a record number), and the filter and sort
@@ -99,8 +212,17 @@ export class Grid {
 		all.checked = this.view.length > 0 && this.view.every((r) => this.selected.has(r));
 		const head = h("tr", {}, h("th", { class: "grid-check" }, all), this.onOpen ? h("th", { class: "grid-open" }) : null, ...this.columns.map((c) => {
 			const dir = this.sort?.key === c.key ? (this.sort.dir > 0 ? "ascending" : "descending") : "none";
-			return h("th", { scope: "col", "aria-sort": dir, style: c.width ? `width:${c.width}` : null },
-				h("button", { type: "button", class: "grid-sort", onclick: () => this.sortBy(c.key) }, c.label));
+			const sort = h("button", { type: "button", class: "grid-sort", onclick: () => this.sortBy(c.key) }, c.label);
+			if (!c.filter) return h("th", { scope: "col", "aria-sort": dir, style: c.width ? `width:${c.width}` : null }, sort);
+			const on = !!this.filters?.[c.key];
+			const name = this.t("editor.grid.filter_col", { column: c.label });
+			const btn = h("button", { type: "button", class: "grid-filter-btn" + (on ? " active" : ""), title: name, "aria-label": name, "aria-pressed": String(on),
+				"aria-haspopup": "dialog", "data-col-key": c.key, onclick: (e) => {
+					e.stopPropagation();
+					if (this.popup?.col === c.key) this.closeFilter(true);
+					else this.openFilter(c, btn);
+				} }, funnel(on));
+			return h("th", { scope: "col", "aria-sort": dir, style: c.width ? `width:${c.width}` : null }, h("div", { class: "grid-th" }, sort, btn));
 		}));
 		const body = h("tbody");
 		this.view.forEach((r, i) => {
