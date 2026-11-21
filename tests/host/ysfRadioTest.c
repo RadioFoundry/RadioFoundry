@@ -6,7 +6,8 @@
  * a simulated flash. Receive: a transmission from another station shows its callsigns and mode, plays its voice in
  * order and ends at its terminator; a DG-ID filter mutes another group's. Transmit: the over the module sends decodes
  * in an independent receiver with our callsigns, the encoded voice and the terminator, and tx_done follows it; the
- * first over's silence frame, written while the interrupt pulls, never goes out half written. The debug link's read
+ * first over's silence frame, written while the interrupt pulls, never goes out half written; the terminator goes out
+ * whole when the board pulls in blocks longer than the audio's. The debug link's read
  * of the counters, preempted by a switch to D-STAR, still gives Fusion's. The
  * refusals: no codec, no callsign, no engine area. The ends: a transmit route that stops pulling still ends after PTT
  * release, and a stop in mid-transmission leaves the next start receiving.
@@ -532,6 +533,44 @@ static void test_transmit_no_id(void)
 	radio_ysf_stop();
 }
 
+// The terminator goes out whole when the board pulls in blocks longer than the audio's, as a modem chip's transmit
+// RAM asks for them (halves of 256 samples, 32 ms): the terminator ends anywhere inside one, and the block it ends in
+// must be sent as the engine filled it. Its second data unit, the frame's last 30 ms or so, then decodes at the far
+// end with a good CRC, and no unit of the over fails
+static void test_transmit_whole_terminator(void)
+{
+	channel(0, 0, "G4XYZ");
+	radio_ysf_init(&audio);
+	CHECK(radio_ysf_start(5, &ch, 0), "start");
+	CHECK(radio_ysf_tx_start(now_ms) && tx_pull_fn != NULL, "tx start");
+	far_start();
+	uint32_t block = 0, owed = 0;
+	bool done = false;
+	for (int t = 0; t < 400 && !done; t++) {
+		int16_t mic[160], spk[160], pcm[256];
+		memset(mic, 0, sizeof mic);
+		if (block < 50) {
+			mic[0] = (int16_t)(++block);
+		} else if (block == 50) {
+			radio_ysf_tx_release();
+			block++;
+		}
+		stream_cb(mic, spk, NULL);
+		for (owed += 160; owed >= 256; owed -= 256) {
+			tx_pull_fn(pcm, 256);
+			ysf_engine_rx(&far_rx, pcm, 256);
+		}
+		now_ms += 20;
+		done = radio_ysf_tx_done(now_ms);
+	}
+	const ysf_rx_t *r = &far_rx.u.rx.fr;
+	CHECK(done && far.ends == 1, "done %d, far end: %u terminators", done, far.ends);
+	CHECK(r->csd_bad == 0 && r->csd_good >= 4, "far end: %u data units good, %u bad (the terminator cut short)",
+	      r->csd_good, r->csd_bad);
+	radio_ysf_rx_again(now_ms);
+	radio_ysf_stop();
+}
+
 // One over of a 400 Hz tone at a peak of `amp` from the mic: the largest sample the encoder got, and the stats
 static int32_t dn_over(int16_t amp, radio_ysf_stats_t *st)
 {
@@ -795,6 +834,7 @@ int main(void)
 	test_silence_first_over();
 	test_transmit();
 	test_transmit_no_id();
+	test_transmit_whole_terminator();
 	test_settings_cal();
 	test_refusals();
 	test_stalled_route();

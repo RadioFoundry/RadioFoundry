@@ -636,11 +636,13 @@ static bool voice_pull_fr(void *ctx, uint8_t imbe[YSF_VW_IMBE_BYTES])
 static void tx_pull(int16_t *pcm, uint16_t n)
 {
 	stats.tx_samples += n;
-	if (tx_done || !ysf_engine_tx(eng, pcm, n)) {
-		if (!tx_done) {
-			tx_done = true;
-		}
+	if (tx_done) {
 		memset(pcm, 0, n * sizeof(int16_t));
+	} else if (!ysf_engine_tx(eng, pcm, n)) {
+		// The block the terminator finished in is sent as the engine filled it, zeros after the end. Zeroing it as
+		// well cut the terminator's last data unit, up to a board's whole transmit block, and the far end lost the
+		// callsigns it carries
+		tx_done = true;
 	}
 }
 
