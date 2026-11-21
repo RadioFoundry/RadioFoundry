@@ -538,7 +538,8 @@ def test_theme_is_kept(home):
         r.wait_for(lambda x: x.get("settings.theme") == "1", sections=("storage",), what="theme Light stored")
         r.shot_until(lambda d: diff_fraction(before, d) > 0.2, what="Home in the light theme")
     finally:
-        settings_keys(r, "ok 7 2 down down ok ok")
+        # OK steps the theme on: Light, High contrast, Night, then Dark again
+        settings_keys(r, "ok 7 2 down down ok ok ok")
     r.wait_for(lambda x: x.get("settings.theme") == "0", sections=("storage",), what="theme Dark again")
 
 
