@@ -376,6 +376,13 @@
 #else
 #define RFOUNDRY_CPU_RAM_NOINIT
 #endif
+// Hot constant tables: copied to CPU-only RAM before main where the platform has one (RFOUNDRY_CPU_DATA_SECTION),
+// else left in flash. Only for tables a hot loop indexes at random; the copy costs RAM as well as flash
+#ifdef RFOUNDRY_CPU_DATA_SECTION
+#define RFOUNDRY_CPU_DATA		__attribute__((section(RFOUNDRY_CPU_DATA_SECTION)))
+#else
+#define RFOUNDRY_CPU_DATA
+#endif
 // Large, cold state can go in RAM the board sets apart that is slower or shared with another bus master, so it costs
 // no main RAM: zeroed at start-up like .bss. Only for buffers task code uses now and then (a flash sector, a request
 // being assembled): never one an interrupt, the audio or the modem touches, a stack, or one on a per-sample path.

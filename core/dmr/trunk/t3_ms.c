@@ -48,10 +48,12 @@ const char *t3_reg_name(t3_reg_t r)
 	return "?";
 }
 
-// May the radio transmit at all? Access code behind this folds away when the build leaves it out
+// May the radio transmit at all? Access code behind this folds away when the build leaves it out. Not while the last
+// PDU taken failed its CRC (T3_OPT_ACCEPT_BAD_CRC): what it said may be wrong, and a site whose PDUs all fail the check
+// is one the radio can only listen to
 static bool may_send(const t3_ms_t *ms)
 {
-	return CONFIG_DMR_TRUNK_TX && !(ms->cfg->opts & T3_OPT_LISTEN_ONLY);
+	return CONFIG_DMR_TRUNK_TX && !(ms->cfg->opts & T3_OPT_LISTEN_ONLY) && !ms->unverified;
 }
 
 static uint32_t my_id(const t3_ms_t *ms)
@@ -611,8 +613,12 @@ static void set_reg(t3_ms_t *ms, bool reg)
 	uint16_t area = reg_area(ms, ms->syscode);
 	if (!reg) {
 		ms->reg = T3_REG_NOT_NEEDED;
-	} else if (!may_send(ms)) {	// listen-only, or a build without access
-		ms->reg = T3_REG_LISTEN;
+	} else if (!may_send(ms)) {	// listen-only, a build without access, or an unverified PDU
+		// A registration in force outlives an unverified Aloha: may_send keeps the radio quiet meanwhile, and the next
+		// good PDU must not register it again
+		if (!ms->unverified || ms->reg != T3_REG_OK || ms->reg_area != area) {
+			ms->reg = T3_REG_LISTEN;
+		}
 	} else if (area_denied(ms, area)) {
 		ms->reg = T3_REG_DENIED;
 	} else if (ms->reg != T3_REG_OK || ms->reg_area != area) {
@@ -1682,6 +1688,23 @@ static void heard_other(t3_ms_t *ms, uint32_t now, uint16_t code)
 	}
 }
 
+// A CSBK with a manufacturer's FID and a good CRC heard while hunting: several in a row with one FID name a trunking
+// system of another kind (t3_ms_other_fid). An ETSI TSCC may send such CSBKs too: it is confirmed by its Aloha first
+static void heard_fid(t3_ms_t *ms, uint32_t now, uint8_t fid)
+{
+	if (ms->state != T3_HUNT) {
+		return;
+	}
+	if (fid != ms->other_fid || ms->other_fid_ms == 0 || since(now, ms->other_fid_ms, T3_OTHER_MS)) {
+		ms->other_fid = fid;
+		ms->other_fid_n = 0;
+	}
+	if (ms->other_fid_n < T3_OTHER_FID_N) {
+		ms->other_fid_n++;
+	}
+	ms->other_fid_ms = now != 0 ? now : 1u;
+}
+
 static void confirm(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t3_aloha_t *a)
 {
 	if (ms->state == T3_HUNT && ms->hunt_strict && ms->cfg->leave_dbm != 0 && ms->level_dbm != 0 &&
@@ -1695,6 +1718,7 @@ static void confirm(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t
 		ms->tscc = ms->tuned;
 		ms->tscc.cc = cc;
 		ms->other_ms = 0;
+		ms->other_fid_ms = 0;
 	}
 	if (ms->syscode != 0 && ms->syscode != a->syscode) {
 		// Another network: what was learned belongs to the old one. A site change of one network keeps it
@@ -2372,7 +2396,8 @@ void t3_ms_rx(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t dt, uint8_t cc, c
 	}
 	uint8_t si = (uint8_t)(slot - 1u);
 	t3_csbk_t p;
-	if (dt == T3_DT_MBC_CONT) {
+	bool cont = dt == T3_DT_MBC_CONT;
+	if (cont) {
 		bool have = ms->mbc[si].open && !since(now, ms->mbc[si].ms, MBC_GAP_MS);
 		ms->mbc[si].open = false;
 		if (!have) {
@@ -2387,27 +2412,45 @@ void t3_ms_rx(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t dt, uint8_t cc, c
 			ms->mbc[si].ms = now;
 			return;
 		}
+		if (fid08) {
+			// Its last block's CRC covers both continuations: checked as a whole, never taken unverified
+			t3_cdef_t c;
+			if (!ms->mbc[si].has_intermediate || !t3_fid08_pd_cdef_parse(ms->mbc[si].intermediate, d, &c)) {
+				ms->st.crc_bad++;
+				return;
+			}
+			ms->unverified = ms->mbc[si].bad;
+			deliver(ms, now, slot, cc, &ms->mbc[si].hdr, &c);
+			return;
+		}
+	}
+	// A continuation carries the whole MBC's CRC, with no mask
+	bool good = t3_crc_ok(d, dt == T3_DT_CSBK ? T3_CRC_MASK_CSBK : cont ? 0 : T3_CRC_MASK_MBC_HDR);
+	if (!good && !((ms->cfg->opts & T3_OPT_ACCEPT_BAD_CRC) && rx_seen(&ms->seen, d, T3_CSBK_BYTES))) {
+		ms->st.crc_bad++;
+		return;
+	}
+	ms->st.crc_taken += !good;
+	// An MBC is unverified when either block failed: its header's verdict is kept per slot, as the other slot's PDUs
+	// come between header and continuation
+	ms->unverified = (cont && ms->mbc[si].bad) || !good;
+	if (cont) {
 		t3_cdef_t c;
-		bool valid = fid08 ?
-			ms->mbc[si].has_intermediate && t3_fid08_pd_cdef_parse(ms->mbc[si].intermediate, d, &c) :
-			t3_crc_ok(d, 0) && t3_cdef_parse(d, ms->mbc[si].hdr.op, &c);
-		if (!valid) {
+		if (!t3_cdef_parse(d, ms->mbc[si].hdr.op, &c)) {
 			ms->st.crc_bad++;
 			return;
 		}
 		deliver(ms, now, slot, cc, &ms->mbc[si].hdr, &c);
 		return;
 	}
-	uint16_t mask = dt == T3_DT_CSBK ? T3_CRC_MASK_CSBK : T3_CRC_MASK_MBC_HDR;
-	if (!t3_crc_ok(d, mask)) {
-		ms->st.crc_bad++;
-		return;
-	}
-	ms->st.csbk++;
+	ms->st.csbk += good;
 	bool known = t3_csbk_parse(d, &p);
 	if (ms->state == T3_FOLLOW && slot == ms->call.slot) {
-		// Any good CSBK on the call's slot keeps it alive, one with another FID included
+		// Any CSBK taken on the call's slot keeps it alive, one with another FID included
 		ms->last_act_ms = now;
+	}
+	if (p.fid != 0 && good && dt == T3_DT_CSBK) {
+		heard_fid(ms, now, p.fid);	// taken by CRC only: one repeated with a failed CRC names nothing
 	}
 	if (!known || (p.fid != 0 && dt != T3_DT_MBC_HDR)) {
 		return;
@@ -2415,6 +2458,7 @@ void t3_ms_rx(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t dt, uint8_t cc, c
 	if (dt == T3_DT_MBC_HDR) {
 		// The header of a multi-block PDU: wait for its continuation
 		ms->mbc[si].open = true;
+		ms->mbc[si].bad = !good;
 		ms->mbc[si].has_intermediate = false;
 		ms->mbc[si].hdr = p;
 		ms->mbc[si].ms = now;
@@ -2976,6 +3020,16 @@ bool t3_ms_deregister(t3_ms_t *ms, uint32_t now)
 		finish(ms, now, T3_RES_CANCELED);
 	}
 	start_access(ms, now, T3_SVC_DEREGISTER, 0, false);
+	return true;
+}
+
+bool t3_ms_other_fid(const t3_ms_t *ms, uint32_t now, uint8_t *fid)
+{
+	if (ms->state != T3_HUNT || ms->other_fid_ms == 0 || ms->other_fid_n < T3_OTHER_FID_N ||
+	    since(now, ms->other_fid_ms, T3_OTHER_MS)) {
+		return false;
+	}
+	*fid = ms->other_fid;
 	return true;
 }
 

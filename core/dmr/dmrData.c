@@ -1158,10 +1158,12 @@ int dmrDataBuildIPText(bool group, uint32_t dst, uint32_t src, const char *text,
 	return bursts;
 }
 
-// A Unicode code point as Latin-1, '?' outside it; control characters are dropped (0)
+// A Unicode code point as Latin-1, '?' outside it; control characters are dropped (0). The C1 controls and DEL
+// (0x7F-0x9F) too: they are no letter, and in the UI's text the bytes 0x80-0x86 are its own glyphs and icons
+// (core/ui/font.h), so a sender's U+0082 would have drawn an arrow
 static char latin1(uint32_t cp)
 {
-	if (cp < 0x20)
+	if ((cp < 0x20) || ((cp >= 0x7F) && (cp < 0xA0)))
 	{
 		return 0;
 	}
@@ -1929,7 +1931,14 @@ bool dmrDataDecodeTMS(const uint8_t *payload, int length, dmrDataTMS_t *tms)
 			c = ' ';
 		}
 
-		tms->text[n++] = (c < 0x100) ? c : '?';
+		// Drop the control characters (C0, DEL and the C1 range) the same way the ETSI and UTF-16 paths do: the UI
+		// font takes 0x80-0x9F as its own glyphs, so a sender's U+0082 would otherwise draw an arrow. latin1() sits
+		// outside this CONFIG_DMR_TMS block, maps a code point to Latin-1, and returns 0 for a control to be dropped.
+		char ch = latin1(c);
+		if (ch != 0)
+		{
+			tms->text[n++] = ch;
+		}
 	}
 	tms->text[n] = 0;
 

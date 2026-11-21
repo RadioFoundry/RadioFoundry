@@ -156,7 +156,7 @@ static void ui_task(void *arg)
 			was_off = was_off && ui_app_backlight_hold() < 0;	// a key wakes the light, but not in the tests
 #endif
 			set_backlight(ui_app_brightness());
-			if (!was_off || ev.action == ACT_PTT || ev.action == ACT_MONITOR)
+			if (!was_off || ui_app_key_while_dark(&ev))
 				ui_app_key(&ev);
 			dirty = true;
 		}
