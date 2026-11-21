@@ -21,6 +21,9 @@
 #include "radio/radio.h"
 #include "radio/battery.h"
 #include "config.h"
+#if CONFIG_WATCHDOG
+#include "app/watchdog.h"
+#endif
 
 #ifndef RFOUNDRY_RELEASE
 #define RFOUNDRY_RELEASE ""
@@ -43,13 +46,34 @@
 #define FRAME_DEFER_MS		300
 // The idle task runs below this one and feeds the watchdog (watchdog.md 4): keys that come faster than the work
 // they cause (Find on a full codeplug, a filtered list of 1024 contacts) never let this task wait. After this long
-// busy it sleeps a tick, so the idle task's gap stays far below the hang check whatever the work costs
+// busy it rests (ui_rest), so the idle task's gap stays far below the hang check whatever the work costs. A flush counts
+// too: it rests between its bands (gfx_set_rest), as one frame of a large panel outlasts the hang check while DMR TX
+// leaves this task a tenth of the CPU
 #define BUSY_MAX_MS		250
+// A rest ends once the idle task has run, or after this long: while the vocoder and the radio keep the CPU busy, a
+// sleep of one tick often ends before the idle task gets in
+#define REST_MAX_MS		100
 
 static radio_view_t view;	// static: too large for a modest task stack
 static uint8_t backlight_now = 0xFF;
 static uint32_t radio_active_ms;
 static ui_app_status_t status;
+static uint32_t rested;	// the last time this task waited (hal_millis)
+
+// After BUSY_MAX_MS without a wait: sleep until the idle task has fed the watchdog (watchdog.md 4)
+static void ui_rest(void)
+{
+	if (hal_millis() - rested < BUSY_MAX_MS)
+		return;
+#if CONFIG_WATCHDOG
+	uint32_t feeds = watchdog_state()->feeds;
+	for (uint32_t t0 = hal_millis(); watchdog_state()->feeds == feeds && hal_millis() - t0 < REST_MAX_MS;)
+		vTaskDelay(1);
+#else
+	vTaskDelay(1);
+#endif
+	rested = hal_millis();
+}
 
 void ui_crit_enter(void) { taskENTER_CRITICAL(); }
 void ui_crit_exit(void) { taskEXIT_CRITICAL(); }
@@ -128,6 +152,8 @@ static void ui_task(void *arg)
 		gfx_flush();
 	}
 	ui_app_init();
+	rested = hal_millis();
+	gfx_set_rest(ui_rest);
 	set_backlight(backlight_wake());
 	vTaskDelay(pdMS_TO_TICKS(SPLASH_MS));
 	while (input_next(&ev, 0))
@@ -137,16 +163,12 @@ static void ui_task(void *arg)
 
 	uint32_t serial = radio_view_serial() - 1u;
 	uint32_t last_draw = 0;
-	uint32_t rested = hal_millis();	// the last time this task waited
 	bool dirty = true;
 	radio_active_ms = hal_millis();
 	for (;;) {
 		uint32_t now = hal_millis();
 		uint32_t wait = gfx_pass_wait_ms(dirty, gfx_held(now), now - last_draw, FRAME_MIN_MS, 100);
-		if (now - rested >= BUSY_MAX_MS) {
-			vTaskDelay(1);
-			rested = hal_millis();
-		}
+		ui_rest();
 		// Nothing queued and a wait: input_next blocks until a key or the time-out, and the idle task gets in
 		bool rests = wait != 0 && !input_pending();
 		bool got = input_next(&ev, wait);
