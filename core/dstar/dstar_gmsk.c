@@ -206,8 +206,8 @@ static void bit_out(dstar_gmsk_demod_t *d, int32_t v)
 
 void dstar_gmsk_demod(dstar_gmsk_demod_t *d, const int16_t *s, size_t n)
 {
-	// Never started (init refused the rate): its boxcar is 0 long, a division by zero below. Nothing, as the Fusion
-	// demodulator does then (ysf_c4fm.c); the work a sample is fixed, so there is no loop to bound
+	// Never started (init refused the rate): its boxcar is 0 long, a division by zero below. Nothing then; the work a
+	// sample is fixed, so there is no loop to bound
 	if (d->box_n == 0 || d->step == 0) {
 		return;
 	}

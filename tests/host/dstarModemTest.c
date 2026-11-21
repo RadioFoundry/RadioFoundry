@@ -532,8 +532,7 @@ static void sweep(void)
 	}
 }
 
-// A demodulator whose init refused the rate (the Auto detector's, 21 Nov, when its caller listened on regardless) is
-// fed: nothing comes out, and nothing divides by its boxcar of 0 samples
+// A demodulator whose init refused the rate is fed: nothing comes out, and nothing divides by its boxcar of 0 samples
 static unsigned guard_bits;
 static void guard_push(void *ctx, int16_t soft, int16_t unit)
 {
