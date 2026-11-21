@@ -13,7 +13,7 @@ Sources: qdmr's published manual (the "Extensible Codeplug File Format" chapter)
 GPL and was not read ([CLEANROOM.md](../CLEANROOM.md)).
 
 Code: `site/static/js/codeplug/yaml.js` (the YAML subset), `site/static/js/codeplug/qdmr.js` (the mapping),
-`site/static/js/editor/qdmrpart.js` (the editor's Open and Save), tests in `site/tests/qdmr.test.mjs`.
+`site/static/js/codeplug/qdmrmodes.js` (the `radioFoundry` block, 3.7), `site/static/js/editor/qdmrpart.js` (the editor's Open and Save), tests in `site/tests/qdmr.test.mjs`.
 
 ## 1. Syntax
 
@@ -54,6 +54,7 @@ The top-level keys, in qdmr's order:
 | `roaming` | Roaming channels and zones | Dropped |
 | `commercial` | `encryptionKeys` | Dropped |
 | `sms` | Message format and templates | Dropped |
+| `radioFoundry` | Systems and the kinds' radio-wide records: the editor's own block, which qdmr ignores | Yes, see 3.7 |
 
 Older qdmr versions and the manual name the element types `digital` and `analog`. The import accepts both spellings;
 the export writes `dmr` and `fm`, as qdmr 0.15 does.
@@ -151,6 +152,7 @@ DMR channels:
 | `roaming` | Roaming flag | Any value sets it; the export writes `!default ""` |
 | `extended.talkaround` | DMO flag | |
 | other `extended` keys | Dropped | |
+| `radioFoundry` | The channel's mode and Accept Invalid CRC | See 3.7 |
 
 FM channels:
 
@@ -205,19 +207,116 @@ qdmr's icon names, each a symbol of the primary table (`/`), as `dmrconf encode`
 
 A symbol from the alternate table, or `/D` and `/J`, exports as `None` with a note.
 
+### 3.7 The radioFoundry block
+
+qdmr has no element for the channel modes ([channel-modes.md](channel-modes.md)): systems, channels of a kind
+(Tier III, P25, P25 trunked, NXDN) and the kinds' radio-wide records. qdmr has no key for a channel's Accept Invalid
+CRC either. The editor carries all of them in a block named `radioFoundry`, one at the top level of the file and one in
+any channel element, the way qdmr carries its own blocks for some radios. `dmrconf` reads past keys it doesn't know, so a
+file with the block still opens in qdmr. qdmr never writes the block.
+
+Fields carry the names the editor's mode modules give them (`site/static/js/codeplug/mode_*.js`), one per field of
+the type's or the kind's codeplug spec. A key a module doesn't know is ignored. A key left out takes the default of a
+new system, entry or channel of that kind, so a hand-written file names only what it sets. Values:
+
+| Kind | Forms read | Form written |
+|---|---|---|
+| Frequency | As 2.2; `0` for none where the field allows none | `441.1 MHz`, `0` |
+| Hex field (P25 WACN, system ID, NAC) | A number (`0x293`, `659`) or hex text (`"293"`) | `0x293`, zero-padded to the field's digits |
+| "Any" or "the system's" | `~` | `~` |
+| List (Tier III sites) | A flow list of numbers | `[40, 44]` |
+| Other | Booleans and numbers | Same |
+
+**Top level.**
+
+| Key | Holds |
+|---|---|
+| `systems` | The systems, in table order, each a map (below) |
+| `modeSettings` | The kinds' radio-wide records ([channel-modes.md](channel-modes.md) 5.5) by the kind's short name: `P25: {unitId: 9990123}`, `NXDN: {unitId: 1234}`. The export writes a record only when it differs from its defaults |
+
+**A system.**
+
+| Key | Field | Notes |
+|---|---|---|
+| `id` | | `sys1`, `sys2` in table order. A channel's `system` names it |
+| `type` | System type | The short name of [channel-modes.md](channel-modes.md) 4: `T3`, `P25T`, `NXDN` |
+| `name` | Name | 16 characters |
+| `transmit` | Transmit side (flag bit 1) | Left out: the type's default (Tier III and NXDN on, P25 trunked off) |
+| `ownId` | The radio's ID on the system | 0: the kind's radio-wide one |
+| `authenticates` | Needs its secret (flag bit 0) | |
+| `sharing` | Sharing | `off`, `identity`, `whole` |
+| `fallback` | Fallback channel | A channel id |
+| `settings` | The type's block | Tier III: [dmr-trunking-codeplug.md](dmr-trunking-codeplug.md) 1. P25 trunked: [p25-codeplug.md](p25-codeplug.md) 3. NXDN: none |
+| `entries` | The system's entries ([channel-modes.md](channel-modes.md) 7.2) | A list of flow maps, below |
+
+Tier III `settings`: `model` (0 tiny, 1 small, 2 large, 3 huge), `net`, `category` (`a` or `b`), `colorCode`, the
+option flags `allCalls`, `emergencyAny`, `followAll`, `learnSystem`, `privateCalls`, `registerTalkgroups`,
+`acceptAls`, `acceptKill`, `noRoaming`, `acceptStun`, `ipGateway`, then `fallbackHold`, `planBaseHz`,
+`planFirstLcn`, `planSep` (the separation code, 0-7), `planTxLow`, `planNoLearn`, `planSplitHz`, `leaveDbm`,
+`powerSave` and `sites`.
+
+P25 trunked `settings`: `wacn`, `sysid`, `ccNac` (each `~` for any), `skipEnc`, `planOnly`, `noReg`, `holdS`,
+`roamDbm`.
+
+An entry: `cls` (the class; left out, 0), `group` (only for a class with groups), `control`, `flags` (the other flag
+bits, only when set), then the class's fields:
+
+| Type | Class | Fields |
+|---|---|---|
+| Tier III | 0 channel | `chan` (LCN), `rxHz`, `txHz`, `cc` (`~`: the system's) |
+| P25 trunked | 0 control channel | `group` (the site), `iden`, `chanNo`, `rxHz`, `txHz` |
+| P25 trunked | 1 site | `group`, `rfss`, `site` (`~`: not known) |
+| P25 trunked | 2 identifier plan row | `group` (the identifier), `baseHz`, `spacingHz`, `txOffsetHz`, `bwHz`, `tdma`, `slots` |
+
+**A channel's block.**
+
+| Key | Field | Notes |
+|---|---|---|
+| `mode` | Kind | The short name of [channel-modes.md](channel-modes.md) 4: `T3`, `P25`, `P25T`, `NXDN`. Left out: a plain channel |
+| `system` | The channel's system | A system id |
+| `transmit` | Transmit allowed (tag flag bit 0) | Left out: the kind's default |
+| `ownFrequencies` | The record stands on its own (tag flag bit 1) | |
+| `noFallback` | The kind's flag bit 4 | Tier III and P25 trunked |
+| `fallback` | The channel's own fallback | A channel id |
+| `settings` | The kind's parameter block | P25: `squelch`, `rxNac`, `txNac`. P25 trunked: `followAll`. NXDN: `rate9600`, `squelch`, `rxRan`, `txRan`, and `txKeyId` when set. Tier III: none |
+| `acceptInvalidCrc` | Accept Invalid CRC | A DMR channel's, plain or of a kind. Ignored on an FM channel |
+
+The channel element around the block is the channel's record. A channel of a kind without frequencies of its own
+(Tier III, P25 trunked) is the stand-in of [channel-modes.md](channel-modes.md) 2.3: a receive-only DMR channel on
+its system's first control channel. qdmr sees that receive-only channel.
+
+**Never written.** System secrets (the Tier III key and PSN) and traffic keys. The export says how many systems had
+keys (note `mode_keys`). On import, a system with the type and identity ([channel-modes.md](channel-modes.md) 7.1) of
+a system in the open codeplug keeps that system's secret and traffic keys; for a type without identity octets (NXDN),
+the type and name must match. Any other system has no keys, and validation flags a system that authenticates without
+one.
+
+**A missing block.** A file without any `radioFoundry` key (every file qdmr writes) leaves the open codeplug's systems
+and radio-wide records as they are. Its channels are plain, and a system's fallback to a replaced channel is cleared.
+A file with a block anywhere replaces the systems and the radio-wide records; a kind that `modeSettings` leaves out
+takes its defaults.
+
+**Unknown names.** A system type, channel mode or entry class the editor doesn't know is left out, and so is a
+channel's reference to a system the file doesn't define (note `mode_unknown`). A channel of an unknown mode is
+plain. A channel whose system is left out keeps its kind; a kind that needs a system fails validation until one is
+chosen.
+
 ## 4. What each direction reports
 
 The import returns the record counts and a list of notes, each a code and a count, for what it changed or left out:
 names shortened, scan lists, roaming, encryption keys, DMR position reporting, APRS periods, extra path entries,
 unknown icons, lists and zones over their limits, records over the table limits, unknown element types, channels
-without a valid frequency, sub-tones that aren't CTCSS or DCS, channels whose timeout was off. The editor lists them after the import.
+without a valid frequency, sub-tones that aren't CTCSS or DCS, channels whose timeout was off, channel modes and
+systems of a kind the editor doesn't know. The editor lists them after the import.
 
 The export returns notes for SFR settings, power levels qdmr has no name for, channel locations rounded to a locator,
-APRS frequencies with no FM channel to name, APRS symbols with no icon, and the silent and ambiguity flags. The VFOs
-and the DMR ID database are never part of a qdmr file.
+APRS frequencies with no FM channel to name, APRS symbols with no icon, the silent and ambiguity flags, systems whose
+keys were left out (3.7) and channel modes or systems of a kind the editor doesn't know. The VFOs and the DMR ID
+database are never part of a qdmr file.
 
 An import replaces the channel, zone, contact, DTMF contact, RX group list and APRS tables and the settings in 3.1, as
-one undoable change. Everything else in the open codeplug (the VFO frequencies, the radio's other settings, the DMR ID
+one undoable change, and the systems and the kinds' radio-wide records when the file has a `radioFoundry` block
+(3.7). Everything else in the open codeplug (the VFO frequencies, the radio's other settings, the DMR ID
 database) stays. The VFOs lose their contact, list and APRS references, since those pointed into the old tables.
 Records are numbered in file order.
 
@@ -240,13 +339,17 @@ boot settings as the editor, with these differences (qdmr 0.15.1):
 | `radioId: !default` | Flag 1 bit 7 set with ID 0 | Bit 7 clear, 00 16 00 |
 | `extended.talkaround`, `roaming` | Not written | DMO and roaming flags |
 
+`dmrconf encode` also reads a file with the `radioFoundry` block (3.7) and writes the same channels as without one.
+
 The APRS symbol difference means the firmware reads no symbol from a codeplug qdmr wrote (it takes a byte below `!`
 as none). A codeplug written by the editor carries the symbol characters.
 
 ## 6. Tests
 
 `site/tests/qdmr.test.mjs` covers the YAML subset, the value formats, an import of a file written in qdmr's form, the
-round trips YAML to model to YAML and cpsSim's codeplug to YAML to model, and the Tools page converters. When
+round trips YAML to model to YAML and cpsSim's codeplug to YAML to model, the `radioFoundry` block for every kind
+(round trip through YAML and the image, keys never written, unknown names, a file without the block), and the Tools
+page converters. When
 `dmrconf` is installed, a test exports a codeplug, runs `dmrconf encode -R openuv380` on it and compares the decoded
 binary with the editor's encoding, field by field, apart from the differences in section 5. Without `dmrconf` that
 test is skipped.

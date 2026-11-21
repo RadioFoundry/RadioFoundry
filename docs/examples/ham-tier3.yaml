@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+#
+# The recommended ham DMR Tier III system (docs/spec/ham-trunking.md 2), as a qdmr YAML codeplug the Codeplug Editor
+# opens (Open File). Before writing it to a radio, set:
+#   - radioIDs: your DMR ID from RadioID.net and your call sign;
+#   - the control channel (the system's entries and the channel's frequencies): your site's, from its operator;
+#   - chan: 4 x the site's number + 1 (site 5: 21).
+# The talkgroups are BrandMeister's. qdmr opens this file too and ignores the radioFoundry blocks.
+---
+version: 0.15.1
+settings: {defaultID: id1}
+radioIDs:
+  - dmr: {id: id1, name: N0CALL, number: 9990001}
+contacts:
+  - dmr: {id: cont1, name: Worldwide, ring: false, type: GroupCall, number: 91}
+  - dmr: {id: cont2, name: North America, ring: false, type: GroupCall, number: 93}
+  - dmr: {id: cont3, name: USA, ring: false, type: GroupCall, number: 3100}
+  - dmr: {id: cont4, name: Local, ring: false, type: GroupCall, number: 9}
+  - dmr: {id: cont5, name: Parrot, ring: false, type: PrivateCall, number: 9990}
+groupLists:
+  - {id: grp1, name: Ham Trunk, contacts: [cont1, cont2, cont3, cont4]}
+channels:
+  # a Tier III channel: the record holds the control channel, receive only; the site grants every call
+  - dmr:
+      id: ch1
+      name: Ham Trunk
+      rxFrequency: 442.0125 MHz
+      txFrequency: 447.0125 MHz
+      rxOnly: true
+      colorCode: 1
+      timeSlot: TS1
+      contact: cont3
+      groupList: grp1
+      radioFoundry: {mode: T3, system: sys1, transmit: true}
+zones:
+  - {id: zone1, name: Ham Trunk, A: [ch1], B: []}
+radioFoundry:
+  systems:
+    - id: sys1
+      type: T3
+      name: Ham Tier III
+      transmit: true
+      authenticates: false
+      sharing: identity
+      # one network for every ham site: Huge, NET 1, category A, color code 1; no site list, so any site will do
+      settings: {model: 3, net: 1, category: a, colorCode: 1, registerTalkgroups: true, privateCalls: true, learnSystem: false, sites: []}
+      entries:
+        - {cls: 0, control: true, chan: 1, rxHz: 442.0125 MHz, txHz: 447.0125 MHz, cc: ~}
+...

@@ -1,0 +1,48 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+#
+# The recommended ham P25 trunked system (docs/spec/ham-trunking.md 3), as a qdmr YAML codeplug the Codeplug Editor
+# opens (Open File). Before writing it to a radio, set:
+#   - radioIDs: your DMR ID from RadioID.net, which is also your P25 unit ID, and your call sign;
+#   - the control channel (the system's entries and the channel's frequencies): your site's, from its operator.
+# The talkgroups are BrandMeister's that fit P25's 16 bits (1-65534). qdmr opens this file too and ignores the
+# radioFoundry blocks.
+---
+version: 0.15.1
+settings: {defaultID: id1}
+radioIDs:
+  - dmr: {id: id1, name: N0CALL, number: 9990001}
+contacts:
+  - dmr: {id: cont1, name: Worldwide, ring: false, type: GroupCall, number: 91}
+  - dmr: {id: cont2, name: North America, ring: false, type: GroupCall, number: 93}
+  - dmr: {id: cont3, name: USA, ring: false, type: GroupCall, number: 3100}
+  - dmr: {id: cont4, name: Local, ring: false, type: GroupCall, number: 9}
+groupLists:
+  - {id: grp1, name: Ham P25, contacts: [cont1, cont2, cont3, cont4]}
+channels:
+  # a P25 trunked channel: the record holds the control channel, receive only; the site grants every call
+  - dmr:
+      id: ch1
+      name: Ham P25
+      rxFrequency: 442.0375 MHz
+      txFrequency: 447.0375 MHz
+      rxOnly: true
+      contact: cont3
+      groupList: grp1
+      radioFoundry: {mode: P25T, system: sys1, transmit: true, settings: {followAll: false}}
+zones:
+  - {id: zone1, name: Ham P25, A: [ch1], B: []}
+radioFoundry:
+  systems:
+    - id: sys1
+      type: P25T
+      name: Ham P25
+      transmit: true
+      authenticates: false
+      sharing: identity
+      # WACN 0x32350 on every ham system; any system ID, so any ham site will do; control channel NAC 0x293
+      settings: {wacn: 0x32350, sysid: ~, ccNac: 0x293, skipEnc: true, noReg: false}
+      entries:
+        # the site's control channel; the channel plan comes from the control channel
+        - {cls: 0, group: 0, control: true, rxHz: 442.0375 MHz, txHz: 447.0375 MHz}
+...

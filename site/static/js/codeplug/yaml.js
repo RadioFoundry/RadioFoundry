@@ -29,6 +29,13 @@ export class Flow {
 
 export const flow = (v) => new Flow(v);
 
+// A scalar the emitter writes as given: 0x293 for a number best read in hex. The text must read back as the value
+export class Raw {
+	constructor(text) {
+		this.text = text;
+	}
+}
+
 // --- Parser ---
 
 // Lines with their indent, comments removed; blank and comment-only lines dropped. A line that holds a block scalar's
@@ -419,7 +426,7 @@ export function stringify(v) {
 }
 
 function isCollection(v) {
-	return Array.isArray(v) || (v !== null && typeof v === "object" && !(v instanceof Tag) && !(v instanceof Flow));
+	return Array.isArray(v) || (v !== null && typeof v === "object" && !(v instanceof Tag) && !(v instanceof Flow) && !(v instanceof Raw));
 }
 
 function block(v, indent, out) {
@@ -458,6 +465,7 @@ function block(v, indent, out) {
 function inline(v) {
 	if (v instanceof Tag) return `${v.tag} ${inline(v.value)}`.trimEnd();
 	if (v instanceof Flow) v = v.value;
+	if (v instanceof Raw) return v.text;
 	if (Array.isArray(v)) return `[${v.map(inline).join(", ")}]`;
 	if (v !== null && typeof v === "object") {
 		return `{${Object.keys(v).filter((k) => v[k] !== undefined).map((k) => `${scalar(k)}: ${inline(v[k])}`).join(", ")}}`;

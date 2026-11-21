@@ -121,8 +121,9 @@ Per system:
 
 When the codeplug holds keys, **Save** as a codeplug file asks whether to include them;
 they are left out unless you tick **Include the keys in this file**. Anyone with a file that holds them can read them.
-CSV and qdmr files hold neither systems nor channel modes: a channel of another mode goes into them as a receive-only
-DMR channel, and comes back from one as that. Keep a codeplug file for them.
+A qdmr file holds systems and channel modes in a block of its own that qdmr ignores (below), but never keys. CSV files
+hold neither: a channel of another mode goes into one as a receive-only DMR channel, and comes back from one as that.
+Keep a codeplug file for them.
 
 ### P25 and NXDN
 
@@ -236,6 +237,13 @@ Afterwards the editor lists what it changed or left out, such as scan lists, enc
 shortened. Saving as qdmr YAML lists what qdmr's format can't hold: SFR settings, power levels qdmr has no name for,
 and locations, which are rounded to 6-character grid locators (about 5 km). The Tools page converts between qdmr YAML
 and codeplug files too, and converts an original firmware codeplug to either.
+
+Systems, channel modes (Tier III, P25, NXDN) and **Accept Invalid CRC** go into the qdmr file in a `radioFoundry`
+block. qdmr opens the file and ignores the block, and never writes one: save from the Codeplug Editor to keep the block.
+Opening a file with the block replaces the codeplug's systems too. Opening a file without one, such as any file qdmr
+wrote, keeps the systems. Keys are never saved in the file: when the file is opened again in a codeplug that has the
+same system, the system keeps its key; anywhere else, enter the key again on the **Systems** tab. The block's keys are
+in the [qdmr YAML spec](../spec/qdmr-yaml.md#37-the-radiofoundry-block).
 
 ### DMR ID database and contacts from RadioID.net
 
