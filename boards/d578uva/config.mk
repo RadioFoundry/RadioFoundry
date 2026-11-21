@@ -29,6 +29,7 @@ CONFIG_NAND_STORAGE ?= y
 # PTT and keys from the Bluetooth module on UART4 (PC10 / PC11). Found by asking it at start,
 # so a radio without the module (not every model has it) only shows it absent
 CONFIG_BT_PTT ?= y
+CONFIG_SATELLITE_TLE ?= n	# RAM: about 1.2 KB, and this build is about 0.9 KB short with APRS receive on
 # Air band AM and broadcast FM receive run on the KTMicro receiver on PB6/PB7, AM behind side B's chips.
 # APRS receive samples the receive audio on PC0 (boards/d578uv/afsk_d578uv.c)
 # What the radio's hardware can't do, one switch per line with the reason (tools/boards.py checks there is one;
@@ -37,10 +38,11 @@ BOARD_UNSUPPORTED += FONT_XL	# the 160x128 panel is too small for the large font
 BOARD_UNSUPPORTED += VIBRATE	# no vibration motor (a mobile)
 # Left out of tools/ci.sh's maximal configuration: what doesn't fit the RAM with DMR on (above), TCP and the services
 # on it, and the zone and channel control over UDP (about 100 bytes, built by default: the maximal set's languages and
-# fonts take that RAM); and PPP, which stands in for the USB network adapter on radios without one
-MAXIMAL_SKIP := NET_PPP NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RIGCTL NET_APRSIS NET_RADIO_UDP
+# fonts take that RAM); satellite tracking (off by default, above); and PPP, which stands in for the USB network
+# adapter on radios without one
+MAXIMAL_SKIP := NET_PPP NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RIGCTL NET_APRSIS NET_RADIO_UDP SATELLITE_TLE
 # (that one follows the IP gateway by default, so the maximal configuration turns it off by name)
-MAXIMAL_VARS := CONFIG_NET_RADIO_UDP=n
+MAXIMAL_VARS := CONFIG_NET_RADIO_UDP=n CONFIG_SATELLITE_TLE=n
 # What the hardware can do but this radio's driver or glue doesn't yet
 BOARD_NOT_WRITTEN += HOTSPOT	# needs the voice frames on the MCU: the baseband's frame bypass isn't written
 BOARD_NOT_WRITTEN += HOTSPOT_SPLIT	# needs the hotspot (above)

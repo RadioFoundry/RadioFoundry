@@ -15,6 +15,9 @@ MCU_DEFS   += $(D578UV_DEFS)
 # The UI task's deepest chain (a quick key that opens the crash report's screen) is 1784 bytes here: with make
 # stack-check's overhead and margin, 532 words, 8 bytes to spare
 MCU_DEFS   += -DUI_TASK_STACK_WORDS=532
+# The start task's deepest chain (the satellite channel sync's zone write down to a NAND page move) is 2528 bytes:
+# with the overhead and margin, 716 words
+MCU_DEFS   += -DSTART_TASK_STACK=720
 BOARD_DIRS := boards/d578uv drivers/display/st7735 drivers/flash/spi_nand drivers/input/quadrature drivers/modem/sct \
               drivers/rf/rfbus drivers/rf/subaudio drivers/rf/qa4818 drivers/gps/nmea_line drivers/gps/gps_rx \
               platform/gd32f30x/gps_uart drivers/bcast/ktamfm drivers/bcast/rda5807m drivers/bus/i2c_gpio
