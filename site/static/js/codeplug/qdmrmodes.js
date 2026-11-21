@@ -201,7 +201,7 @@ export function importModes(m, top, chans, chById, note, values) {
 		const mod = row.module;
 		Object.assign(c, {
 			kind: row.id, system: b.system == null ? null : sysById.get(String(untag(b.system))) ?? null,
-			tagTx: b.transmit == null ? !!mod.defaultTx : b.transmit === true, baseOwn: b.ownFrequencies === true,
+			tagTx: !mod.rxOnly && (b.transmit == null ? !!mod.defaultTx : b.transmit === true), baseOwn: b.ownFrequencies === true,
 			fallback: ref(b.fallback), params: fieldsIn(mod.newParams(), b.settings, mod.fields, values, mod.optionalParams), tagRaw: null,
 		});
 		for (const k of Object.keys(mod.flags ?? {})) c[k] = b[k] === true;

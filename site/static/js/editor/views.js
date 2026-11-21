@@ -86,15 +86,17 @@ function modeColumn(m, t, features) {
 		},
 	};
 }
-const kindMod = (r) => (r.kind ? kindRow(r.kind)?.module ?? null : null);
+const kindMod = (r) => (r?.kind ? kindRow(r.kind)?.module ?? null : null);
 // A channel of a kind keeps the record's fields its module lists (a talk target, a unit ID); the rest of FM and DMR
 // stays as stored and is not shown
 const recordField = (r, key) => !r.kind || !!kindMod(r)?.recordFields?.includes(key);
 // Frequencies of its own: a trunked kind's are its system's
 const ownFreqs = (r) => !r.kind || kindMod(r)?.ownFreqs !== false;
-// Receive only: for a channel of a kind, its tag's transmit allowed turned round (the record is receive only)
+// Receive only: for a channel of a kind, its tag's transmit allowed turned round (the record is receive only). A kind
+// whose module says rxOnly (AM) never allows transmit, whatever is ticked
+const kindRxOnly = (r) => !!kindMod(r)?.rxOnly;
 const rxOnlyGet = (r) => (r.kind ? !r.tagTx : r.rxOnly);
-const rxOnlySet = (r, v) => (r.kind ? (r.tagTx = !v) : (r.rxOnly = !!v));
+const rxOnlySet = (r, v) => (r.kind ? (r.tagTx = !v && !kindRxOnly(r)) : (r.rxOnly = !!v));
 
 const tone = (t) => (r, k, v) => {
 	const s = parseTone(v);
@@ -190,7 +192,7 @@ export function columns(table, m, t, { features = null } = {}) {
 			only("dmr", col("timeslot", "editor.col.ts", "select", pick, { options: () => [[1, "1"], [2, "2"]] })),
 			only("dmr", col("contact", "editor.col.contact", "select", pick, { options: () => refOptions(m.contacts, t), format: (v) => refLabel(v, t), sortValue: (r) => refLabel(r.contact, t) })),
 			only("dmr", col("rxList", "editor.col.rx_list", "select", pick, { options: () => refOptions(m.rxLists, t), format: (v) => refLabel(v, t), sortValue: (r) => refLabel(r.rxList, t) })),
-			{ ...col("rxOnly", "editor.col.rx_only", "bool", bool), get: rxOnlyGet, set: (r, v) => rxOnlySet(r, v) },
+			{ ...col("rxOnly", "editor.col.rx_only", "bool", bool), get: rxOnlyGet, set: (r, v) => rxOnlySet(r, v), readOnly: kindRxOnly },
 			col("zoneSkip", "editor.col.zone_skip", "bool", bool),
 		];
 	case "zones":
@@ -341,8 +343,9 @@ export function channelForm(m, t, { features = null } = {}) {
 			return band ? t(`editor.band.${band}`) : "";
 		} },
 		txt("tot", "editor.col.tot", tot(t), (v) => (v ? String(v) : t("editor.tot.default"))),
-		// a receive-only band makes the channel RX only on save (rxFreq): the box shows it as the RX frequency is typed
-		{ ...chk("rxOnly", "editor.col.rx_only"), implied: listening, get: rxOnlyGet, set: rxOnlySet },
+		// a receive-only band makes the channel RX only on save (rxFreq): the box shows it as the RX frequency is typed;
+		// a receive-only kind holds it ticked
+		{ ...chk("rxOnly", "editor.col.rx_only"), implied: (value, w) => listening(value) || kindRxOnly(w), get: rxOnlyGet, set: rxOnlySet },
 		{ group: t("editor.form.mode_params"), show: (r) => !!r.kind },
 		...kindFields,
 		fm({ group: t("editor.form.analog") }),
@@ -509,7 +512,7 @@ export function formDialog(title, fields, record, t, onSave, opts = {}) {
 				f.set ? f.set(work, v) : (work[f.key] = v);
 			}
 			if (f.implied) {
-				const on = f.implied(value);
+				const on = f.implied(value, work);
 				if (on) input.checked = true;
 				input.disabled = on;
 			}

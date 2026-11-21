@@ -7,7 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { bulkColumns, channelForm, columns, parseAreaKey } from "../static/js/editor/views.js";
-import { empty } from "../static/js/codeplug/model.js";
+import { empty, newChannel, numberAll } from "../static/js/codeplug/model.js";
 import { KEYS } from "../static/js/codeplug/kv.js";
 import { Grid } from "../static/js/editor/grid.js";
 
@@ -83,6 +83,29 @@ test("Tier III channels expose the talk target and RX group list in the grid and
 		assert.equal(grid.find((c) => c.key === key).readOnly(channel), true);
 		assert.equal(form.find((f) => f.key === key).show(channel), false);
 	}
+});
+
+test("the Mode select offers AM only when the radio reports AM (or with no radio), and AM makes the channel receive only", () => {
+	const model = empty();
+	const ch = newChannel({ name: "Tower", rxHz: 124500000, txHz: 124500000, rxOnly: false });
+	model.channels.push(ch);
+	numberAll(model);
+	const named = (k) => (k === "editor.mode_name.AM" ? "AM (receive only)" : k);
+	const modeOf = (features) => channelForm(model, named, { features }).find((f) => f.key === "mode");
+	assert.ok(modeOf("FM,DMR,AM").options(ch).some(([v, l]) => v === "k5" && l === "AM (receive only)"));
+	assert.ok(!modeOf("FM,DMR,P25").options(ch).some(([v]) => v === "k5"));
+	assert.ok(modeOf(null).options(ch).some(([v]) => v === "k5"), "no radio: every mode");
+	const form = channelForm(model, named, { features: "FM,DMR,AM" });
+	const work = { ...ch };
+	form.find((f) => f.key === "mode").set(work, "k5");
+	const rxOnly = form.find((f) => f.key === "rxOnly");
+	assert.deepEqual([work.kind, work.tagTx, rxOnly.get(work)], [5, false, true]);
+	rxOnly.set(work, false);
+	assert.equal(work.tagTx, false, "AM never transmits");
+	assert.equal(rxOnly.implied(() => "27.185", work), true, "the box stays ticked and fixed");
+	// back to FM: a plain channel, receive only as the AM channel was
+	form.find((f) => f.key === "mode").set(work, "fm");
+	assert.deepEqual([work.kind, work.rxOnly], [0, true]);
 });
 
 test("Bulk Edit sets no names or numbers, and has nothing to set on zones and RX lists", () => {

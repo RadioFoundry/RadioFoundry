@@ -12,7 +12,8 @@ import { tmpdir } from "node:os";
 import { execFileSync, spawnSync } from "node:child_process";
 
 import { CodeplugImage, CODEPLUG_SPAN } from "../static/js/codeplug/image.js";
-import { decode, encode, empty, validate } from "../static/js/codeplug/model.js";
+import { decode, encode, empty, validate, newChannel, numberAll } from "../static/js/codeplug/model.js";
+import { setKind } from "../static/js/codeplug/channelmodes.js";
 import { parse, stringify, flow, Tag, YamlError } from "../static/js/codeplug/yaml.js";
 import { importQdmr, exportQdmr, QdmrError, parseFrequency, parseDuration, fromLocator, toLocator } from "../static/js/codeplug/qdmr.js";
 import { convertersFor } from "../static/js/flasher/codeplug.js";
@@ -462,6 +463,26 @@ test("radioFoundry block: every mode's systems and channels read, save and read 
 	const d = decode(encode(m));
 	assert.deepEqual(blockOf(d).channels, blockOf(m).channels);
 	assert.deepEqual(d.systems.map((s) => [s.name, s.fields, s.entries.length]), m.systems.map((s) => [s.name, s.fields, s.entries.length]));
+});
+
+test("radioFoundry block: an AM channel saves and reads again receive only, even from a file that says transmit", () => {
+	const m = empty();
+	const c = newChannel({ name: "Tower", rxHz: 124500000, txHz: 124500000, rxOnly: false });
+	m.channels.push(c);
+	numberAll(m);
+	setKind(m, c, 5);
+	const out = exportQdmr(m);
+	assert.deepEqual(out.notes, []);
+	const m2 = empty();
+	assert.deepEqual(importQdmr(m2, out.text).notes, []);
+	assert.deepEqual(blockOf(m2).channels, blockOf(m).channels);
+	assert.deepEqual([m2.channels[0].kind, m2.channels[0].tagTx], [5, false]);
+	// a hand-edited file allowing transmit still reads receive only
+	const edited = out.text.replace("transmit: false", "transmit: true");
+	assert.notEqual(edited, out.text);
+	const m3 = empty();
+	importQdmr(m3, edited);
+	assert.deepEqual([m3.channels[0].kind, m3.channels[0].tagTx], [5, false]);
 });
 
 test("radioFoundry block: keys are never written; a system read back keeps the keys the model had", () => {

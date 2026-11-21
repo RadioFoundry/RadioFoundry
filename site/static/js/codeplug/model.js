@@ -18,6 +18,7 @@ import { parseTone } from "./fields.js";
 import { readHeader } from "./iddb.js";
 import { decodeArea, keyValid, recordValid, KEYS, RECORD_KEYS } from "./kv.js";
 import { decodeModes, encodeModes, syncModes, removeModes, validateModes, MODE_LIMITS } from "./channelmodes.js";
+import { kindRow } from "./modes.js";
 
 const REFS = ["contact", "rxList", "aprs"];
 
@@ -333,7 +334,8 @@ export function validate(m, { bands = null, features = null } = {}) {
 		if (c.colorCode < 0 || c.colorCode > 15) err("channels", c, "colorCode", "range", { min: 0, max: 15 });
 		if (c.mode === "dmr" && !c.kind && !c.contact && !c.rxOnly) warn("channels", c, "contact", "no_contact");
 		const band = listenBand(c.rxHz);
-		if (band && c.mode === "dmr") warn("channels", c, "mode", `listen_dmr_${band}`);
+		// a receive-only kind (AM) holds a DMR stand-in record but never runs DMR: its module checks its frequencies
+		if (band && c.mode === "dmr" && !kindRow(c.kind)?.module.rxOnly) warn("channels", c, "mode", `listen_dmr_${band}`);
 		const txBand = listenBand(c.txHz);
 		if (txBand && !c.rxOnly) warn("channels", c, "rxOnly", `listen_tx_${txBand}`);
 		for (const k of REFS) if (typeof c[k] === "number") warn("channels", c, k, "dangling", { number: c[k] });
