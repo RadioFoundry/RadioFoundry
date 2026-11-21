@@ -374,7 +374,8 @@ static void link_section(dl_text_t *t)
 		(unsigned)u.draws, u.dual);
 	dl_text(t, "input.idle_ms=%u\nui.backlight=%u\n", (unsigned)input_idle_ms(), ui_backlight());
 	if (board.display != NULL && board.display->panel != NULL) {
-		hal_display_panel_t pi;
+		// A board's hook fills only what it knows: the rest must read as not known, never as stack contents
+		hal_display_panel_t pi = { .factory = -1 };
 		board.display->panel(&pi);
 		if (pi.factory < 0) {
 			dl_text(t, "display.panel_raw=none\n");
