@@ -120,6 +120,9 @@ endif
 ifeq ($(CONFIG_NXDN),y)
 CORE_DIRS += core/nxdn
 endif
+ifeq ($(CONFIG_DPMR),y)
+CORE_DIRS += core/dpmr
+endif
 ifeq ($(CONFIG_MBE),y)
 CORE_DIRS += core/mbe
 endif
