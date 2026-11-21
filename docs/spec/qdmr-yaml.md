@@ -212,7 +212,7 @@ A symbol from the alternate table, or `/D` and `/J`, exports as `None` with a no
 qdmr has no element for the channel modes ([channel-modes.md](channel-modes.md)): systems, channels of a kind
 (Tier III, P25, P25 trunked, NXDN) and the kinds' radio-wide records. qdmr has no key for a channel's Accept Invalid
 CRC either. The editor carries all of them in a block named `radioFoundry`, one at the top level of the file and one in
-any channel element, the way qdmr carries its own `openGD77` block. `dmrconf` reads past keys it doesn't know, so a
+any channel element, the way qdmr carries its own blocks for some radios. `dmrconf` reads past keys it doesn't know, so a
 file with the block still opens in qdmr. qdmr never writes the block.
 
 Fields carry the names the editor's mode modules give them (`site/static/js/codeplug/mode_*.js`), one per field of

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The radioFoundry block of a qdmr YAML file (docs/spec/qdmr-yaml.md 3.7): what qdmr has no element for, carried in
-// keys qdmr ignores, the way qdmr carries its own openGD77 block. A top-level block holds the systems and the modes'
-// radio-wide settings; a channel's block holds its mode and its Accept Invalid CRC setting. Generic: every field is
-// written as the mode module (modes.js) names it, so a new mode needs nothing here. Keys are never written.
+// keys qdmr ignores, the way qdmr carries its own blocks for some radios. A top-level block holds the systems and the
+// modes' radio-wide settings; a channel's block holds its mode and its Accept Invalid CRC setting. Generic: every
+// field is written as the mode module (modes.js) names it, so a new mode needs nothing here. Keys are never written.
 
 import { flow, Raw } from "./yaml.js";
 import { KINDS, SYSTEM_TYPES, kindRow, typeRow } from "./modes.js";
