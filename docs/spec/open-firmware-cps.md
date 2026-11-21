@@ -370,6 +370,7 @@ range without letting them corrupt the live settings. It can ignore the range, o
 | 0x8000 | 0x10 | Reserved ("extended zone basic"), not read by the firmware |
 | 0x8010 | 0x20 | Zone in-use bitmap: bit j of byte i means zone slot (i x 8 + j) is in use. 68 slots are used |
 | 0x8030 | 68 x 0xB0 | Zone records (7.3.4), 80 channels each, to 0xAEF0. Open-firmware 16-channel layout: 68 x 0x30 |
+| 0xC000 | 341 x 0x18 | RadioFoundry's air mode contact table ([air-contacts.md](air-contacts.md)): P25 talk group and unit names, by mode. Outside the regions qdmr transfers |
 | 0xE000 | 0x1000 | RadioFoundry's codeplug settings area ([codeplug-settings.md](codeplug-settings.md)): keyed settings this layout has no field for. Outside the regions qdmr transfers |
 
 Zone layout detection: the firmware reads the 16 bytes at 0x8060 and looks at the last one (0x806F). In the 16-channel

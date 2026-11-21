@@ -22,9 +22,9 @@ Why there:
 - The firmware reads nothing in the EEPROM image past the zone table (it ends at 0xAEF0).
 - qdmr and the Codeplug Editor transfer the EEPROM image up to 0xB000 and keep the bytes they don't decode. qdmr never
   reads or writes the area.
-- Room on both sides. The open-firmware layout, if it grows, grows up from the zone table: 0xB000-0xDFFF (12 KB) is
-  left for that, so the area isn't the first thing a longer zone table meets. 0xF000-0xFFFF is left for the area's
-  first continuation (2.4).
+- Room on both sides. The open-firmware layout, if it grows, grows up from the zone table: 0xB000-0xBFFF (4 KB) is
+  left for that. 0xC000-0xDFFF holds the air mode contact table ([air-contacts.md](air-contacts.md)), so the area
+  isn't the first thing a longer zone table meets. 0xF000-0xFFFF is left for the area's first continuation (2.4).
 - The settings store, the journal, the calibration and the native area are elsewhere on every board.
 - Factory reset doesn't touch the open-firmware image, so it keeps the area too.
 - One sector: an edit is one journaled sector rewrite ([settings-store.md](settings-store.md) 4). A power cut leaves

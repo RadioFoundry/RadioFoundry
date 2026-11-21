@@ -7,6 +7,7 @@
 #include <string.h>
 #include "codeplug.h"
 #include "codeplug_kv.h"	// CODEPLUG_KV_ADDR: Start new clears the settings area
+#include "codeplug_air_contacts.h"	// CODEPLUG_AIR_CONTACTS_ADDR: ... and the air mode contact table
 #include "codeplug_tag.h"
 #include "board.h"
 #include "storage/storage.h"
@@ -994,7 +995,9 @@ bool codeplug_start_new(void)
 		     flash_write(CONTACT_BASE, NULL, CONTACT_COUNT * CONTACT_SIZE) &&
 		     // The settings area: keys from before the other firmware (it never wrote there) would come back to
 		     // life in a codeplug meant to be clean (docs/spec/codeplug-settings.md 5)
-		     flash_write(EE(CODEPLUG_KV_ADDR), NULL, STORAGE_SECTOR);
+		     flash_write(EE(CODEPLUG_KV_ADDR), NULL, STORAGE_SECTOR) &&
+		     // The air mode contact table, for the same reason (docs/spec/air-contacts.md 2)
+		     flash_write(EE(CODEPLUG_AIR_CONTACTS_ADDR), NULL, CODEPLUG_AIR_CONTACTS_LEN);
 		ev_bad = 0;	// cleared: ours from now on (a failure re-reads it, materialize)
 		banks_unread = 0;	// the owner chose to clear it: materialize writes every bitmap
 		ok = ok && materialize();

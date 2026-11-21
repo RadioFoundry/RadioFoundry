@@ -68,6 +68,7 @@ Past bugs, by subsystem: [gotchas.md](gotchas.md). Contributors read [docs/dev](
 | [qdmr-yaml.md](qdmr-yaml.md) | qdmr's YAML codeplug file and how the Codeplug Editor maps it |
 | [codeplug-native.md](codeplug-native.md) | The editing model and the native codeplug (draft) |
 | [codeplug-settings.md](codeplug-settings.md) | The codeplug settings area: keyed settings the open-firmware layout has no field for (ARS server, IP gateway) |
+| [air-contacts.md](air-contacts.md) | Air mode contacts: P25 talk group and unit names, a table apart from the DMR contacts |
 | [channel-modes.md](channel-modes.md) | Channel modes: how a channel, system, target or key of any digital mode is stored beside the open-firmware record |
 | [dmr-trunking-codeplug.md](dmr-trunking-codeplug.md) | DMR Tier III systems and trunked channels in the codeplug |
 | [p25-codeplug.md](p25-codeplug.md) | P25 conventional and trunked channels and systems in the codeplug |
